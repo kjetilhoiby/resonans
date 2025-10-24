@@ -9,7 +9,14 @@ export const load: PageServerLoad = async () => {
 		where: eq(goals.userId, DEFAULT_USER_ID),
 		with: {
 			category: true,
-			tasks: true
+			tasks: {
+				with: {
+					progress: {
+						orderBy: (progress, { desc }) => [desc(progress.completedAt)],
+						limit: 5
+					}
+				}
+			}
 		},
 		orderBy: (goals, { desc }) => [desc(goals.createdAt)]
 	});

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
 
 	interface Props {
@@ -44,6 +45,25 @@
 	// Toggle this to use real OpenAI API
 	const USE_REAL_API = true;
 	const API_ENDPOINT = USE_REAL_API ? '/api/chat' : '/api/chat-mock';
+
+	// Scroll til bunn ved mount og når meldinger endres
+	function scrollToBottom() {
+		setTimeout(() => {
+			chatContainer?.scrollTo({ top: chatContainer.scrollHeight, behavior: 'smooth' });
+		}, 100);
+	}
+
+	// Auto-scroll ved mount
+	onMount(() => {
+		scrollToBottom();
+	});
+
+	// Auto-scroll når meldinger endres
+	$effect(() => {
+		if (messages.length > 0) {
+			scrollToBottom();
+		}
+	});
 
 	async function startNewConversation() {
 		if (confirm('Start en ny samtale? Den nåværende samtalen blir lagret.')) {

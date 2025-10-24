@@ -1,9 +1,11 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { openai, SYSTEM_PROMPT } from '$lib/server/openai';
-import { createGoal, createTask } from '$lib/server/goals';
+import { createGoal, createTask, getUserActiveGoalsAndTasks, findSimilarGoals, findSimilarTasks } from '$lib/server/goals';
 import { ensureDefaultUser, DEFAULT_USER_ID } from '$lib/server/users';
 import { getOrCreateConversation, addMessage, getConversationHistory } from '$lib/server/conversations';
+import { logActivity } from '$lib/server/activities';
+import { buildMemoryContext, createMemory } from '$lib/server/memories';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 
 // Definer tools/functions som AI-en kan bruke
@@ -11,8 +13,46 @@ const tools = [
 	{
 		type: 'function' as const,
 		function: {
+			name: 'check_similar_goals',
+			description: 'Sjekk om det finnes lignende mål før du oppretter et nytt. BRUK ALLTID DETTE FØR create_goal!',
+			parameters: {
+				type: 'object',
+				properties: {
+					title: {
+						type: 'string',
+						description: 'Tittelen på målet du vurderer å opprette'
+					}
+				},
+				required: ['title']
+			}
+		}
+	},
+	{
+		type: 'function' as const,
+		function: {
+			name: 'check_similar_tasks',
+			description: 'Sjekk om det finnes lignende oppgaver under et mål før du oppretter en ny. BRUK ALLTID DETTE FØR create_task!',
+			parameters: {
+				type: 'object',
+				properties: {
+					goalId: {
+						type: 'string',
+						description: 'UUID til målet du vil opprette oppgave under'
+					},
+					title: {
+						type: 'string',
+						description: 'Tittelen på oppgaven du vurderer å opprette'
+					}
+				},
+				required: ['goalId', 'title']
+			}
+		}
+	},
+	{
+		type: 'function' as const,
+		function: {
 			name: 'create_goal',
-			description: 'Opprett et nytt mål for brukeren basert på samtalen. Bruk dette når brukeren har definert et konkret mål.',
+			description: 'Opprett et nytt mål for brukeren. VIKTIG: Sjekk ALLTID med check_similar_goals først! Hvis lignende mål finnes, spør brukeren om de vil oppdatere eksisterende eller opprette nytt.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -42,13 +82,13 @@ const tools = [
 		type: 'function' as const,
 		function: {
 			name: 'create_task',
-			description: 'Opprett en konkret oppgave knyttet til et mål. Bruk dette for å bryte ned et mål i handlingsbare steg.',
+			description: 'Opprett en konkret oppgave knyttet til et mål. VIKTIG: Sjekk ALLTID med check_similar_tasks først! Hvis lignende oppgave finnes, spør brukeren. goalId må være den faktiske UUID-en.',
 			parameters: {
 				type: 'object',
 				properties: {
 					goalId: {
 						type: 'string',
-						description: 'ID-en til målet denne oppgaven tilhører'
+						description: 'UUID til målet denne oppgaven tilhører. Dette er en lang ID-streng som f.eks "a1b2c3d4-e5f6-7890-abcd-ef1234567890". ALDRI bruk tittel, nummer eller slug - kun den faktiske UUID-en fra listen over aktive mål.'
 					},
 					title: {
 						type: 'string',
@@ -75,6 +115,88 @@ const tools = [
 				required: ['goalId', 'title', 'frequency']
 			}
 		}
+	},
+	{
+		type: 'function' as const,
+		function: {
+			name: 'log_activity',
+			description: 'Registrer en aktivitet/hendelse med målbare verdier. Dette kan være trening, date, stemningsregistrering, osv. Aktiviteten kobles automatisk til relevante oppgaver.',
+			parameters: {
+				type: 'object',
+				properties: {
+					type: {
+						type: 'string',
+						description: 'Type aktivitet. Format: kategori_spesifikk (f.eks: workout_run, workout_strength, relationship_date, relationship_tufte_talk, mental_mood_check)',
+						examples: ['workout_run', 'workout_strength', 'relationship_date', 'mental_mood_check']
+					},
+					duration: {
+						type: 'number',
+						description: 'Varighet i minutter (hvis relevant)'
+					},
+					note: {
+						type: 'string',
+						description: 'Brukerens notat om aktiviteten'
+					},
+					metrics: {
+						type: 'array',
+						description: 'Målbare verdier fra aktiviteten',
+						items: {
+							type: 'object',
+							properties: {
+								metricType: {
+									type: 'string',
+									description: 'Type måling (f.eks: distance, quality_rating, mood_score, energy_level)'
+								},
+								value: {
+									type: 'number',
+									description: 'Verdien som ble målt'
+								},
+								unit: {
+									type: 'string',
+									description: 'Enhet for målingen (f.eks: km, rating_1_10, minutes)'
+								}
+							},
+							required: ['metricType', 'value']
+						}
+					},
+					taskIds: {
+						type: 'array',
+						description: 'Valgfritt: Spesifikke task IDs denne aktiviteten skal telle mot. Hvis ikke angitt, matcher systemet automatisk.',
+						items: {
+							type: 'string'
+						}
+					}
+				},
+				required: ['type', 'metrics']
+			}
+		}
+	},
+	{
+		type: 'function' as const,
+		function: {
+			name: 'create_memory',
+			description: 'Lagre viktig informasjon om brukeren som skal huskes permanent. Bruk dette for fakta, preferanser, og viktig kontekst om brukeren.',
+			parameters: {
+				type: 'object',
+				properties: {
+					category: {
+						type: 'string',
+						description: 'Kategori for minnet',
+						enum: ['personal', 'relationship', 'fitness', 'mental_health', 'preferences', 'other']
+					},
+					content: {
+						type: 'string',
+						description: 'Selve minnet - skriv som en kort, faktisk påstand (f.eks: "Brukeren heter Kjetil", "Liker å løpe langs vannet", "I forhold med Emma")'
+					},
+					importance: {
+						type: 'string',
+						description: 'Hvor viktig er dette minnet?',
+						enum: ['high', 'medium', 'low']
+					}
+				},
+				required: ['category', 'content']
+			}
+		}
 	}
 ];
 
@@ -99,12 +221,45 @@ export const POST: RequestHandler = async ({ request }) => {
 			content: message
 		});
 
-		// Hent samtale-historikk (siste 10 meldinger for kontekst)
-		const history = await getConversationHistory(conversation.id, 10);
+		// Hent samtale-historikk (siste 5 meldinger for umiddelbar kontekst)
+		const history = await getConversationHistory(conversation.id, 5);
+
+		// Bygg memory context (viktig informasjon om brukeren)
+		const memoryContext = await buildMemoryContext(DEFAULT_USER_ID);
+
+		// Hent brukerens aktive mål og oppgaver for kontekst
+		const activeGoals = await getUserActiveGoalsAndTasks(DEFAULT_USER_ID);
+		
+		// Bygg kontekst-melding med aktive mål
+		let goalsContext = '\n\n--- BRUKERENS AKTIVE MÅL OG OPPGAVER ---\n';
+		if (activeGoals.length === 0) {
+			goalsContext += 'Brukeren har ingen aktive mål ennå.\n';
+		} else {
+			for (const goal of activeGoals) {
+				goalsContext += `\nMÅL: "${goal.title}" (ID: ${goal.id})\n`;
+				goalsContext += `Kategori: ${goal.category?.name || 'Ingen'}\n`;
+				goalsContext += `Status: ${goal.status}\n`;
+				if (goal.tasks.length > 0) {
+					goalsContext += `Oppgaver:\n`;
+					for (const task of goal.tasks) {
+						goalsContext += `  - "${task.title}" (ID: ${task.id})\n`;
+						if (task.targetValue) {
+							goalsContext += `    Mål: ${task.targetValue} ${task.unit || ''}\n`;
+						}
+						if (task.frequency) {
+							goalsContext += `    Frekvens: ${task.frequency}\n`;
+						}
+					}
+				} else {
+					goalsContext += `(Ingen oppgaver ennå)\n`;
+				}
+			}
+		}
+		goalsContext += '--- SLUTT PÅ MÅL OG OPPGAVER ---\n\n';
 
 		// Bygg meldingshistorikk for OpenAI
 		const messages: ChatCompletionMessageParam[] = [
-			{ role: 'system', content: SYSTEM_PROMPT }
+			{ role: 'system', content: SYSTEM_PROMPT + memoryContext + goalsContext }
 		];
 
 		// Legg til historikk (unntatt den siste brukermeldingen som allerede er der)
@@ -132,69 +287,173 @@ export const POST: RequestHandler = async ({ request }) => {
 
 		// Håndter tool calls hvis AI-en vil bruke dem
 		if (responseMessage?.tool_calls && responseMessage.tool_calls.length > 0) {
-			const toolCall = responseMessage.tool_calls[0];
-			
-			if (toolCall.type === 'function' && toolCall.function.name === 'create_goal') {
-				const args = JSON.parse(toolCall.function.arguments);
-				const goal = await createGoal({
-					userId: DEFAULT_USER_ID,
-					...args
-				});
-				createdGoalId = goal.id;
+			// Legg til assistant message med alle tool calls først
+			messages.push({
+				role: 'assistant',
+				content: null,
+				tool_calls: responseMessage.tool_calls
+			});
 
-				// Legg til tool response og be om nytt svar
-				messages.push({
-					role: 'assistant',
-					content: null,
-					tool_calls: responseMessage.tool_calls
-				});
-				messages.push({
-					role: 'tool',
-					content: JSON.stringify({ 
-						success: true, 
-						goalId: goal.id,
-						message: `Målet "${goal.title}" er opprettet!` 
-					}),
-					tool_call_id: toolCall.id
-				});
+			// Håndter alle tool calls
+			for (const toolCall of responseMessage.tool_calls) {
+				if (toolCall.type === 'function' && toolCall.function.name === 'check_similar_goals') {
+					const args = JSON.parse(toolCall.function.arguments);
+					const similarGoals = await findSimilarGoals(DEFAULT_USER_ID, args.title, 70);
 
-				// Nytt kall for å få et naturlig svar
-				completion = await openai.chat.completions.create({
-					model: 'gpt-4o-mini',
-					messages,
-					temperature: 0.7,
-					max_tokens: 1000
-				});
+					if (similarGoals.length > 0) {
+						const goalsList = similarGoals
+							.map(g => `- "${g.title}" (${g.similarity.toFixed(0)}% match, status: ${g.status})`)
+							.join('\n');
 
-				responseMessage = completion.choices[0]?.message;
-			} else if (toolCall.type === 'function' && toolCall.function.name === 'create_task') {
-				const args = JSON.parse(toolCall.function.arguments);
-				const task = await createTask(args);
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify({
+								found: true,
+								count: similarGoals.length,
+								goals: similarGoals,
+								message: `Fant ${similarGoals.length} lignende mål:\n${goalsList}\n\nVIKTIG: IKKE opprett nytt mål uten å spørre brukeren først! Spør: "Jeg ser du allerede har lignende mål. Vil du at jeg skal opprette et nytt mål likevel, eller skal vi jobbe videre med et av de eksisterende?"`
+							}),
+							tool_call_id: toolCall.id
+						});
+					} else {
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify({
+								found: false,
+								message: 'Ingen lignende mål funnet. Du kan trygt opprette det nye målet.'
+							}),
+							tool_call_id: toolCall.id
+						});
+					}
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'check_similar_tasks') {
+					const args = JSON.parse(toolCall.function.arguments);
+					const similarTasks = await findSimilarTasks(args.goalId, args.title, 70);
 
-				messages.push({
-					role: 'assistant',
-					content: null,
-					tool_calls: responseMessage.tool_calls
-				});
-				messages.push({
-					role: 'tool',
-					content: JSON.stringify({ 
-						success: true, 
-						taskId: task.id,
-						message: `Oppgaven "${task.title}" er opprettet!` 
-					}),
-					tool_call_id: toolCall.id
-				});
+					if (similarTasks.length > 0) {
+						const tasksList = similarTasks
+							.map(t => `- "${t.title}" (${t.similarity.toFixed(0)}% match)`)
+							.join('\n');
 
-				completion = await openai.chat.completions.create({
-					model: 'gpt-4o-mini',
-					messages,
-					temperature: 0.7,
-					max_tokens: 1000
-				});
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify({
+								found: true,
+								count: similarTasks.length,
+								tasks: similarTasks,
+								message: `Fant ${similarTasks.length} lignende oppgaver:\n${tasksList}\n\nVIKTIG: IKKE opprett ny oppgave uten å spørre brukeren først!`
+							}),
+							tool_call_id: toolCall.id
+						});
+					} else {
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify({
+								found: false,
+								message: 'Ingen lignende oppgaver funnet. Du kan trygt opprette den nye oppgaven.'
+							}),
+							tool_call_id: toolCall.id
+						});
+					}
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'create_goal') {
+					const args = JSON.parse(toolCall.function.arguments);
+					const goal = await createGoal({
+						userId: DEFAULT_USER_ID,
+						...args
+					});
+					createdGoalId = goal.id;
 
-				responseMessage = completion.choices[0]?.message;
+					messages.push({
+						role: 'tool',
+						content: JSON.stringify({ 
+							success: true, 
+							goalId: goal.id,
+							goalTitle: goal.title,
+							message: `✅ Målet "${goal.title}" er opprettet med ID: ${goal.id}. VIKTIG: Bruk denne eksakte ID-en hvis du skal lage oppgaver for dette målet!` 
+						}),
+						tool_call_id: toolCall.id
+					});
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'create_task') {
+					try {
+						const args = JSON.parse(toolCall.function.arguments);
+						const task = await createTask(args);
+
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify({ 
+								success: true, 
+								taskId: task.id,
+								message: `Oppgaven "${task.title}" er opprettet!` 
+							}),
+							tool_call_id: toolCall.id
+						});
+					} catch (error) {
+						// Håndter feil - f.eks. ugyldig goalId
+						let errorMessage = 'Kunne ikke opprette oppgave';
+						if (error instanceof Error && error.message.includes('foreign key')) {
+							errorMessage = `FEIL: goalId er ugyldig! Sjekk listen over aktive mål og bruk den eksakte UUID-en derfra. Ikke bruk tittel eller nummer.`;
+						}
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify({ 
+								success: false, 
+								error: errorMessage
+							}),
+							tool_call_id: toolCall.id
+						});
+					}
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'log_activity') {
+					const args = JSON.parse(toolCall.function.arguments);
+					const result = await logActivity({
+						userId: DEFAULT_USER_ID,
+						...args
+					});
+
+					// Bygg en fin melding om hva som ble registrert
+					const taskSummary = result.progressEntries.map((p) => 
+						`• ${p.task.title}${p.value ? ` (+${p.value} ${p.task.unit || ''})` : ''}`
+					).join('\n');
+
+					messages.push({
+						role: 'tool',
+						content: JSON.stringify({ 
+							success: true,
+							activityId: result.activity.id,
+							tasksUpdated: result.progressEntries.length,
+							message: `✅ Aktivitet registrert!\n\nTeller mot:\n${taskSummary || '(Ingen matchende oppgaver funnet)'}` 
+						}),
+						tool_call_id: toolCall.id
+					});
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'create_memory') {
+					const args = JSON.parse(toolCall.function.arguments);
+					const memory = await createMemory({
+						userId: DEFAULT_USER_ID,
+						category: args.category,
+						content: args.content,
+						importance: args.importance || 'medium',
+						source: conversation.id
+					});
+
+					messages.push({
+						role: 'tool',
+						content: JSON.stringify({ 
+							success: true,
+							memoryId: memory.id,
+							message: `Memory lagret: ${args.content}` 
+						}),
+						tool_call_id: toolCall.id
+					});
+				}
 			}
+
+			// Nytt kall for å få et naturlig svar (etter alle tool calls er håndtert)
+			completion = await openai.chat.completions.create({
+				model: 'gpt-4o-mini',
+				messages,
+				temperature: 0.7,
+				max_tokens: 1000
+			});
+
+			responseMessage = completion.choices[0]?.message;
 		}
 
 		const finalMessage = responseMessage?.content || 'Beklager, jeg fikk ikke generert noe svar.';

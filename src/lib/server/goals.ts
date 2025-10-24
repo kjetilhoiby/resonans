@@ -1,6 +1,7 @@
 import { db } from '$lib/db';
 import { goals, tasks, categories } from '$lib/db/schema';
 import { eq } from 'drizzle-orm';
+import { findSimilar } from './similarity';
 
 export interface GoalCreationParams {
 	userId: string;
@@ -50,14 +51,31 @@ export async function createTask(params: TaskCreationParams) {
 	const [task] = await db.insert(tasks).values({
 		goalId: params.goalId,
 		title: params.title,
-		description: params.description,
-		frequency: params.frequency,
-		targetValue: params.targetValue,
-		unit: params.unit,
+		description: params.description || null,
+		frequency: params.frequency || 'once',
+		targetValue: params.targetValue || null,
+		unit: params.unit || null,
 		status: 'active'
 	}).returning();
 
 	return task;
+}
+
+/**
+ * Hent brukerens aktive mål og oppgaver
+ */
+export async function getUserActiveGoalsAndTasks(userId: string) {
+	const userGoals = await db.query.goals.findMany({
+		where: eq(goals.userId, userId),
+		with: {
+			category: true,
+			tasks: {
+				where: eq(tasks.status, 'active')
+			}
+		}
+	});
+
+	return userGoals;
 }
 
 export async function getUserGoals(userId: string) {
@@ -73,4 +91,61 @@ export async function getGoalTasks(goalId: string) {
 	return await db.query.tasks.findMany({
 		where: eq(tasks.goalId, goalId)
 	});
+}
+
+/**
+ * Finn lignende mål basert på tittel
+ */
+export async function findSimilarGoals(userId: string, title: string, threshold = 70) {
+	const allGoals = await db.query.goals.findMany({
+		where: eq(goals.userId, userId),
+		with: {
+			category: true,
+			tasks: true
+		}
+	});
+
+	const similar = findSimilar(
+		title,
+		allGoals,
+		(goal) => goal.title,
+		threshold
+	);
+
+	return similar.map(({ item, similarity }) => ({
+		id: item.id,
+		title: item.title,
+		description: item.description,
+		status: item.status,
+		category: item.category,
+		tasks: item.tasks,
+		similarity
+	}));
+}
+
+/**
+ * Finn lignende oppgaver under et mål
+ */
+export async function findSimilarTasks(goalId: string, title: string, threshold = 70) {
+	const allTasks = await db.query.tasks.findMany({
+		where: eq(tasks.goalId, goalId)
+	});
+
+	const similar = findSimilar(
+		title,
+		allTasks,
+		(task) => task.title,
+		threshold
+	);
+
+	return similar.map(({ item, similarity }) => ({
+		id: item.id,
+		title: item.title,
+		description: item.description,
+		status: item.status,
+		frequency: item.frequency,
+		targetValue: item.targetValue,
+		unit: item.unit,
+		similarity
+	}));
 }

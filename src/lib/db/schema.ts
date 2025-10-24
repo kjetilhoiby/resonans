@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, integer, boolean, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, timestamp, integer, boolean, jsonb, decimal } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 
@@ -52,11 +52,34 @@ export const tasks = pgTable('tasks', {
 // Fremdriftsregistreringer
 export const progress = pgTable('progress', {
 	id: uuid('id').primaryKey().defaultRandom(),
+	activityId: uuid('activity_id').references(() => activities.id), // NY: kobling til aktivitet
 	taskId: uuid('task_id').references(() => tasks.id).notNull(),
 	userId: text('user_id').references(() => users.id).notNull(),
 	value: integer('value'), // faktisk verdi registrert
 	note: text('note'),
 	completedAt: timestamp('completed_at').defaultNow().notNull(),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+});
+
+// Aktiviteter - Selve hendelsen/aktiviteten
+export const activities = pgTable('activities', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id).notNull(),
+	type: text('type').notNull(), // 'workout_run', 'relationship_date', 'mental_mood_check', etc.
+	completedAt: timestamp('completed_at').notNull(),
+	duration: integer('duration'), // minutter (hvis relevant)
+	note: text('note'),
+	metadata: jsonb('metadata'), // Fleksibel data per type
+	createdAt: timestamp('created_at').defaultNow().notNull()
+});
+
+// Målbare verdier fra aktiviteten
+export const activityMetrics = pgTable('activity_metrics', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	activityId: uuid('activity_id').references(() => activities.id).notNull(),
+	metricType: text('metric_type').notNull(), // 'distance', 'quality_rating', 'mood_score', etc.
+	value: decimal('value').notNull(), // Bruker decimal for presisjon
+	unit: text('unit'), // 'km', 'rating_1_10', 'minutes', etc.
 	createdAt: timestamp('created_at').defaultNow().notNull()
 });
 
@@ -91,10 +114,25 @@ export const reminders = pgTable('reminders', {
 	createdAt: timestamp('created_at').defaultNow().notNull()
 });
 
+// Memories - Viktig informasjon om brukeren som AI husker
+export const memories = pgTable('memories', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id).notNull(),
+	category: text('category').notNull(), // 'personal', 'relationship', 'fitness', 'mental_health', 'preferences'
+	content: text('content').notNull(),
+	importance: text('importance').notNull().default('medium'), // 'high', 'medium', 'low'
+	source: text('source'),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull(),
+	lastAccessedAt: timestamp('last_accessed_at').defaultNow().notNull()
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
 	goals: many(goals),
-	conversations: many(conversations)
+	conversations: many(conversations),
+	activities: many(activities),
+	memories: many(memories)
 }));
 
 export const categoriesRelations = relations(categories, ({ many }) => ({
@@ -121,6 +159,37 @@ export const tasksRelations = relations(tasks, ({ one, many }) => ({
 	progress: many(progress)
 }));
 
+export const progressRelations = relations(progress, ({ one }) => ({
+	task: one(tasks, {
+		fields: [progress.taskId],
+		references: [tasks.id]
+	}),
+	user: one(users, {
+		fields: [progress.userId],
+		references: [users.id]
+	}),
+	activity: one(activities, {
+		fields: [progress.activityId],
+		references: [activities.id]
+	})
+}));
+
+export const activitiesRelations = relations(activities, ({ one, many }) => ({
+	user: one(users, {
+		fields: [activities.userId],
+		references: [users.id]
+	}),
+	metrics: many(activityMetrics),
+	progress: many(progress)
+}));
+
+export const activityMetricsRelations = relations(activityMetrics, ({ one }) => ({
+	activity: one(activities, {
+		fields: [activityMetrics.activityId],
+		references: [activities.id]
+	})
+}));
+
 export const conversationsRelations = relations(conversations, ({ one, many }) => ({
 	user: one(users, {
 		fields: [conversations.userId],
@@ -136,3 +205,9 @@ export const messagesRelations = relations(messages, ({ one }) => ({
 	})
 }));
 
+export const memoriesRelations = relations(memories, ({ one }) => ({
+	user: one(users, {
+		fields: [memories.userId],
+		references: [users.id]
+	})
+}));
