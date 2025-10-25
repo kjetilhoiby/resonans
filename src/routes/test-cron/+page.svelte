@@ -1,25 +1,14 @@
 <script lang="ts">
-	import { env } from '$env/dynamic/public';
-	
 	let testing = $state(false);
 	let result = $state<{ success: boolean; data?: any; error?: string } | null>(null);
-	let cronSecret = $state('');
 
-	async function testCron() {
-		if (!cronSecret) {
-			result = { success: false, error: 'Vennligst skriv inn CRON_SECRET' };
-			return;
-		}
-
+	async function testScheduler() {
 		testing = true;
 		result = null;
 
 		try {
-			const response = await fetch('/api/cron/daily-checkin', {
-				method: 'GET',
-				headers: {
-					'Authorization': `Bearer ${cronSecret}`
-				}
+			const response = await fetch('/api/scheduler/trigger', {
+				method: 'POST'
 			});
 
 			const data = await response.json();
@@ -42,33 +31,29 @@
 
 <div class="test-page">
 	<header class="header">
-		<h1>🧪 Test Cron Jobs</h1>
+		<h1>🧪 Test Scheduler</h1>
 		<a href="/" class="back-link">← Tilbake</a>
 	</header>
 
 	<main class="content">
 		<section class="card">
-			<h2>🕐 Daglig Check-in</h2>
+			<h2>⏰ In-App Scheduler</h2>
 			<p class="help-text">
-				Test cron-endepunktet som sender daglige notifikasjoner til alle brukere.
+				Scheduleren kjører direkte i applikasjonsserveren med <code>node-cron</code>. Ingen Vercel Cron plan nødvendig!
 			</p>
 
-			<div class="form-group">
-				<label for="secret">CRON_SECRET</label>
-				<input
-					type="password"
-					id="secret"
-					bind:value={cronSecret}
-					placeholder="Din cron secret fra environment variables"
-					class="input"
-				/>
-				<small class="hint">
-					Finnes i .env eller Vercel Environment Variables
-				</small>
+			<div class="info-box success-box">
+				<strong>✅ Fordeler med in-app scheduler:</strong>
+				<ul>
+					<li>Gratis - ingen Vercel Hobby plan nødvendig</li>
+					<li>Fungerer både lokalt og i produksjon</li>
+					<li>Norsk tidssone (Europe/Oslo) støttes direkte</li>
+					<li>Enklere å debugge og teste</li>
+				</ul>
 			</div>
 
-			<button onclick={testCron} disabled={testing || !cronSecret} class="test-button">
-				{testing ? '🔄 Tester...' : '🚀 Kjør Cron Job Nå'}
+			<button onclick={testScheduler} disabled={testing} class="test-button">
+				{testing ? '🔄 Sender...' : '🚀 Send Daglig Check-in Nå'}
 			</button>
 
 			{#if result}
@@ -85,12 +70,13 @@
 		</section>
 
 		<section class="card">
-			<h2>📋 Cron Schedule</h2>
+			<h2>📋 Scheduler Status</h2>
 			<table class="schedule-table">
 				<thead>
 					<tr>
 						<th>Job</th>
 						<th>Schedule</th>
+						<th>Tidssone</th>
 						<th>Beskrivelse</th>
 					</tr>
 				</thead>
@@ -98,30 +84,47 @@
 					<tr>
 						<td><strong>Daily Check-in</strong></td>
 						<td><code>0 9 * * *</code></td>
-						<td>Sender daglig oppdatering kl. 09:00 UTC</td>
+						<td>Europe/Oslo</td>
+						<td>Sender daglig oppdatering kl. 09:00 norsk tid</td>
 					</tr>
 				</tbody>
 			</table>
 
 			<div class="info-box">
-				<strong>⚠️ Viktig:</strong>
+				<strong>ℹ️ Slik fungerer det:</strong>
 				<ul>
-					<li>Vercel Cron krever Hobby plan eller høyere</li>
-					<li>Cron jobs kjører kun i production</li>
-					<li>UTC tid: 09:00 UTC = 10:00/11:00 norsk tid (avhengig av sommertid)</li>
+					<li>Scheduleren starter automatisk når serveren starter (se <code>hooks.server.ts</code>)</li>
+					<li>Kjører i bakgrunnen med <code>node-cron</code></li>
+					<li>Sender til alle brukere med webhook konfigurert</li>
+					<li>Respekterer brukerens notifikasjonsinnstillinger</li>
 				</ul>
 			</div>
 		</section>
 
 		<section class="card">
-			<h2>📖 Dokumentasjon</h2>
+			<h2>� Konfigurasjon</h2>
 			<p>
-				Se <a href="https://vercel.com/docs/cron-jobs" target="_blank">Vercel Cron Jobs dokumentasjon</a>
-				for mer informasjon.
+				For å endre tidspunkt, oppdater cron schedule i <code>src/lib/server/scheduler.ts</code>:
 			</p>
-			<p>
-				Lokal dokumentasjon finnes i <code>CRON_SETUP.md</code>
+			<pre style="background: #2d2d2d; color: #f8f8f2; padding: 1rem; border-radius: 0.5rem; overflow-x: auto;"><code>cron.schedule(
+  '0 9 * * *',  // Minutt Time Dag Måned Ukedag
+  async () => {
+    await sendDailyCheckIns();
+  },
+  {
+    timezone: 'Europe/Oslo'
+  }
+);</code></pre>
+
+			<p style="margin-top: 1rem;">
+				<strong>Eksempler på cron-uttrykk:</strong>
 			</p>
+			<ul>
+				<li><code>0 8 * * *</code> - Hver dag kl. 08:00</li>
+				<li><code>0 9 * * 1-5</code> - Hver ukedag kl. 09:00</li>
+				<li><code>0 18 * * 0</code> - Hver søndag kl. 18:00</li>
+				<li><code>*/5 * * * *</code> - Hvert 5. minutt (for testing)</li>
+			</ul>
 		</section>
 	</main>
 </div>
@@ -301,6 +304,11 @@
 		padding: 1rem;
 		margin: 1rem 0;
 		border-radius: 0.5rem;
+	}
+
+	.info-box.success-box {
+		background: #d4edda;
+		border-left: 4px solid #28a745;
 	}
 
 	.info-box ul {
