@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { page } from '$app/stores';
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
 
 	interface Props {
@@ -41,6 +42,7 @@
 	let isLoading = $state(false);
 	let chatContainer: HTMLDivElement;
 	let lastError = $state<string | null>(null);
+	let fromGoogleChat = $state(false);
 
 	// Toggle this to use real OpenAI API
 	const USE_REAL_API = true;
@@ -55,6 +57,41 @@
 
 	// Auto-scroll ved mount
 	onMount(() => {
+		// Sjekk om vi har context fra Google Chat
+		const urlParams = new URLSearchParams(window.location.search);
+		const contextMessage = urlParams.get('context');
+		const action = urlParams.get('action');
+
+		if (contextMessage) {
+			fromGoogleChat = true;
+
+			// Legg til context-meldingen som en assistant-melding
+			messages = [
+				...messages,
+				{
+					id: Date.now().toString(),
+					role: 'assistant',
+					content: decodeURIComponent(contextMessage),
+					timestamp: new Date()
+				}
+			];
+
+			// Sett pre-filled input basert på action
+			if (action === 'log') {
+				inputValue = 'Jeg vil logge aktivitet: ';
+			} else if (action === 'check') {
+				inputValue = 'Vis meg min fremgang';
+			}
+
+			// Fjern query params fra URL (uten refresh)
+			window.history.replaceState({}, '', window.location.pathname);
+
+			// Skjul info-boksen etter 5 sekunder
+			setTimeout(() => {
+				fromGoogleChat = false;
+			}, 5000);
+		}
+
 		scrollToBottom();
 	});
 
@@ -180,6 +217,13 @@
 		</div>
 	</header>
 
+	{#if fromGoogleChat}
+		<div class="info-banner">
+			<span>📱 Fortsetter fra Google Chat notifikasjon</span>
+			<button class="info-close" onclick={() => fromGoogleChat = false}>✕</button>
+		</div>
+	{/if}
+
 	{#if lastError}
 		<div class="error-banner">
 			<span>⚠️ {lastError}</span>
@@ -300,6 +344,37 @@
 		align-items: center;
 		gap: 1rem;
 		position: relative;
+	}
+
+	.info-banner {
+		background: #e3f2fd;
+		color: #1565c0;
+		padding: 1rem;
+		text-align: center;
+		border-bottom: 2px solid #42a5f5;
+		animation: slideDown 0.3s ease-out;
+		font-weight: 500;
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 1rem;
+		position: relative;
+	}
+
+	.info-close {
+		background: transparent;
+		border: none;
+		color: #1565c0;
+		font-size: 1.25rem;
+		cursor: pointer;
+		padding: 0.25rem 0.5rem;
+		line-height: 1;
+		transition: background 0.2s;
+		border-radius: 0.25rem;
+	}
+
+	.info-close:hover {
+		background: rgba(21, 101, 192, 0.1);
 	}
 
 	.error-actions {

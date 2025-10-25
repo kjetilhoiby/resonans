@@ -149,7 +149,11 @@ export function buildDailyCheckInMessage(data: {
 		});
 	}
 
-	// Legg til action buttons
+	// Legg til action buttons med smart context
+	const contextMessage = encodeURIComponent(
+		`📊 Daglig check-in: Du har ${goalsSummary.length} aktive mål. ${tasksDueToday.length > 0 ? `${tasksDueToday.length} oppgaver i dag.` : 'Ingen oppgaver planlagt i dag.'}`
+	);
+
 	widgets.push({
 		buttons: [
 			{
@@ -157,7 +161,17 @@ export function buildDailyCheckInMessage(data: {
 					text: '📝 Logg aktivitet',
 					onClick: {
 						openLink: {
-							url: `${appUrl}?action=log`
+							url: `${appUrl}?action=log&context=${contextMessage}`
+						}
+					}
+				}
+			},
+			{
+				textButton: {
+					text: '📊 Sjekk fremgang',
+					onClick: {
+						openLink: {
+							url: `${appUrl}?action=check&context=${contextMessage}`
 						}
 					}
 				}
@@ -168,16 +182,6 @@ export function buildDailyCheckInMessage(data: {
 					onClick: {
 						openLink: {
 							url: `${appUrl}/goals`
-						}
-					}
-				}
-			},
-			{
-				textButton: {
-					text: '💬 Chat',
-					onClick: {
-						openLink: {
-							url: appUrl
 						}
 					}
 				}
@@ -244,6 +248,16 @@ export function buildMilestoneMessage(data: {
 								buttons: [
 									{
 										textButton: {
+											text: '💬 Fortsett',
+											onClick: {
+												openLink: {
+													url: `${appUrl}?context=${encodeURIComponent(`🎉 Gratulerer! Du nådde ${milestone} på målet "${goalTitle}". ${message}`)}`
+												}
+											}
+										}
+									},
+									{
+										textButton: {
 											text: '🎯 Se fremgang',
 											onClick: {
 												openLink: {
@@ -300,7 +314,7 @@ export function buildReminderMessage(data: {
 											text: '✅ Logg aktivitet',
 											onClick: {
 												openLink: {
-													url: `${appUrl}?action=log`
+													url: `${appUrl}?action=log&context=${encodeURIComponent(`⏰ Påminnelse: ${taskTitle} (${goalTitle}). ${message}`)}`
 												}
 											}
 										}
