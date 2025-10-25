@@ -8,8 +8,14 @@ import { sendGoogleChatMessage, buildDailyCheckInMessage } from '$lib/server/goo
 /**
  * Manual trigger for daily check-in
  * Kan brukes for testing eller manuell sending
+ * Krever at brukeren er innlogget for å forhindre misbruk
  */
-export const POST: RequestHandler = async ({ url }) => {
+export const POST: RequestHandler = async ({ locals }) => {
+	// Sjekk at brukeren er innlogget
+	if (!locals.userId) {
+		return json({ error: 'Unauthorized - you must be logged in to trigger scheduler' }, { status: 401 });
+	}
+
 	try {
 		// Get all users with Google Chat webhook configured
 		const allUsers = await db.query.users.findMany();
