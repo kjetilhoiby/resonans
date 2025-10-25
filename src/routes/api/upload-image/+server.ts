@@ -3,6 +3,9 @@ import type { RequestHandler } from './$types';
 import { v2 as cloudinary } from 'cloudinary';
 import { env } from '$env/dynamic/private';
 
+// @ts-ignore - Buffer is available in Node.js runtime
+const BufferGlobal = Buffer;
+
 // Configure Cloudinary
 cloudinary.config({
 	cloud_name: env.CLOUDINARY_CLOUD_NAME,
@@ -12,6 +15,16 @@ cloudinary.config({
 
 export const POST: RequestHandler = async ({ request }) => {
 	try {
+		// Debug: Check if credentials are loaded
+		if (!env.CLOUDINARY_CLOUD_NAME || !env.CLOUDINARY_API_KEY || !env.CLOUDINARY_API_SECRET) {
+			console.error('Missing Cloudinary credentials:', {
+				cloud_name: !!env.CLOUDINARY_CLOUD_NAME,
+				api_key: !!env.CLOUDINARY_API_KEY,
+				api_secret: !!env.CLOUDINARY_API_SECRET
+			});
+			return json({ error: 'Cloudinary not configured' }, { status: 500 });
+		}
+
 		const formData = await request.formData();
 		const file = formData.get('image') as File;
 
@@ -19,14 +32,12 @@ export const POST: RequestHandler = async ({ request }) => {
 			return json({ error: 'No image provided' }, { status: 400 });
 		}
 
+		console.log('Uploading file:', file.name, file.type, file.size, 'bytes');
+
 		// Convert file to base64 for Cloudinary upload
 		const arrayBuffer = await file.arrayBuffer();
-		const bytes = new Uint8Array(arrayBuffer);
-		let binary = '';
-		for (let i = 0; i < bytes.byteLength; i++) {
-			binary += String.fromCharCode(bytes[i]);
-		}
-		const base64 = btoa(binary);
+		const buffer = BufferGlobal.from(arrayBuffer);
+		const base64 = buffer.toString('base64');
 		const dataURI = `data:${file.type};base64,${base64}`;
 
 		// Upload to Cloudinary
@@ -48,6 +59,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		});
 	} catch (error) {
 		console.error('Image upload failed:', error);
+		console.error('Error details:', error instanceof Error ? error.stack : error);
 		return json(
 			{
 				success: false,

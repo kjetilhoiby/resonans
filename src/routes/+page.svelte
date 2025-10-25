@@ -47,6 +47,7 @@
 	let selectedImage = $state<File | null>(null);
 	let imagePreview = $state<string | null>(null);
 	let fileInput: HTMLInputElement;
+	let isUploadingImage = $state(false);
 
 	// Toggle this to use real OpenAI API
 	const USE_REAL_API = true;
@@ -148,6 +149,7 @@
 
 		// Upload image first if present
 		if (selectedImage) {
+			isUploadingImage = true;
 			try {
 				const formData = new FormData();
 				formData.append('image', selectedImage);
@@ -166,7 +168,10 @@
 			} catch (error) {
 				console.error('Image upload error:', error);
 				lastError = 'Kunne ikke laste opp bilde. Prøv igjen.';
+				isUploadingImage = false;
 				return;
+			} finally {
+				isUploadingImage = false;
 			}
 		}
 
@@ -312,6 +317,15 @@
 	</div>
 
 	<form class="input-area" onsubmit={(e) => { e.preventDefault(); sendMessage(); }}>
+		{#if isUploadingImage}
+			<div class="upload-progress">
+				<div class="progress-bar">
+					<div class="progress-fill"></div>
+				</div>
+				<span class="progress-text">📤 Laster opp bilde...</span>
+			</div>
+		{/if}
+		
 		{#if imagePreview}
 			<div class="image-preview">
 				<img src={imagePreview} alt="Preview" />
@@ -331,7 +345,7 @@
 				type="button" 
 				class="upload-button" 
 				onclick={() => fileInput.click()}
-				disabled={isLoading}
+				disabled={isLoading || isUploadingImage}
 				title="Last opp bilde"
 			>
 				📷
@@ -339,12 +353,12 @@
 			<textarea
 				bind:value={inputValue}
 				onkeydown={handleKeyPress}
-				placeholder="Skriv din melding her... (Shift+Enter for ny linje)"
+				placeholder="Skriv din melding her... (Enter for å sende, Shift+Enter for ny linje)"
 				rows="3"
-				disabled={isLoading}
+				disabled={isLoading || isUploadingImage}
 			></textarea>
-			<button type="submit" disabled={isLoading || (!inputValue.trim() && !selectedImage)}>
-				Send
+			<button type="submit" disabled={isLoading || isUploadingImage || (!inputValue.trim() && !selectedImage)}>
+				{isUploadingImage ? '📤' : 'Send'}
 			</button>
 		</div>
 	</form>
@@ -634,6 +648,49 @@
 	.upload-button:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
+	}
+
+	.upload-progress {
+		padding: 1rem;
+		background: #e3f2fd;
+		border-radius: 0.5rem;
+		margin-bottom: 0.5rem;
+		animation: slideDown 0.3s ease-out;
+	}
+
+	.progress-bar {
+		width: 100%;
+		height: 6px;
+		background: #bbdefb;
+		border-radius: 3px;
+		overflow: hidden;
+		margin-bottom: 0.5rem;
+	}
+
+	.progress-fill {
+		height: 100%;
+		background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+		animation: progress 1.5s ease-in-out infinite;
+	}
+
+	.progress-text {
+		display: block;
+		color: #1976d2;
+		font-size: 0.875rem;
+		font-weight: 500;
+		text-align: center;
+	}
+
+	@keyframes progress {
+		0% {
+			width: 0%;
+		}
+		50% {
+			width: 70%;
+		}
+		100% {
+			width: 100%;
+		}
 	}
 
 	textarea {
