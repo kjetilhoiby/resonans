@@ -172,7 +172,8 @@
 			<p>Din personlige målcoach</p>
 		</div>
 		<div class="header-actions">
-			<a href="/goals" class="header-button">Se dine mål →</a>
+			<a href="/goals" class="header-button">📊 Mål</a>
+			<a href="/settings" class="header-button">⚙️ Innstillinger</a>
 			<button onclick={startNewConversation} class="header-button new-chat">
 				+ Ny samtale
 			</button>

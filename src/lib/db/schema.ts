@@ -8,6 +8,14 @@ export const users = pgTable('users', {
 	name: text('name').notNull(),
 	email: text('email').unique(),
 	googleChatWebhook: text('google_chat_webhook'),
+	notificationSettings: jsonb('notification_settings').$type<{
+		dailyCheckIn?: { enabled: boolean; time: string }; // format: "09:00"
+		weeklyReview?: { enabled: boolean; day: string; time: string }; // day: "sunday", time: "18:00"
+		milestones?: { enabled: boolean };
+		reminders?: { enabled: boolean };
+		inactivityAlerts?: { enabled: boolean; daysThreshold: number };
+	}>(),
+	timezone: text('timezone').default('Europe/Oslo'),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
 });

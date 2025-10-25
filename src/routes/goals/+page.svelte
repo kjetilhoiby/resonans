@@ -85,7 +85,10 @@
 	<header class="header">
 		<div class="header-content">
 			<h1>🎯 Dine Mål</h1>
-			<a href="/" class="back-link">← Tilbake til chat</a>
+			<div class="header-links">
+				<a href="/" class="back-link">← Chat</a>
+				<a href="/settings" class="back-link">⚙️ Innstillinger</a>
+			</div>
 		</div>
 	</header>
 
@@ -228,6 +231,11 @@
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
+	}
+
+	.header-links {
+		display: flex;
+		gap: 1rem;
 	}
 
 	h1 {

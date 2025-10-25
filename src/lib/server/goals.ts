@@ -70,7 +70,10 @@ export async function getUserActiveGoalsAndTasks(userId: string) {
 		with: {
 			category: true,
 			tasks: {
-				where: eq(tasks.status, 'active')
+				where: eq(tasks.status, 'active'),
+				with: {
+					progress: true
+				}
 			}
 		}
 	});
