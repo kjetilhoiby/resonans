@@ -102,11 +102,11 @@
 		</section>
 
 		<section class="card">
-			<h2>� Konfigurasjon</h2>
+			<h2>⚙️ Konfigurasjon</h2>
 			<p>
 				For å endre tidspunkt, oppdater cron schedule i <code>src/lib/server/scheduler.ts</code>:
 			</p>
-			<pre style="background: #2d2d2d; color: #f8f8f2; padding: 1rem; border-radius: 0.5rem; overflow-x: auto;"><code>cron.schedule(
+			<pre style="background: #2d2d2d; color: #f8f8f2; padding: 1rem; border-radius: 0.5rem; overflow-x: auto;"><code>{`cron.schedule(
   '0 9 * * *',  // Minutt Time Dag Måned Ukedag
   async () => {
     await sendDailyCheckIns();
@@ -114,7 +114,7 @@
   {
     timezone: 'Europe/Oslo'
   }
-);</code></pre>
+);`}</code></pre>
 
 			<p style="margin-top: 1rem;">
 				<strong>Eksempler på cron-uttrykk:</strong>
