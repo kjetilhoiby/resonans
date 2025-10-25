@@ -10,7 +10,10 @@
 				role: 'user' | 'assistant' | 'system';
 				content: string;
 				timestamp: string;
+				imageUrl?: string;
 			}>;
+			conversationId: string | null;
+			hasMore: boolean;
 		};
 	}
 
@@ -48,6 +51,9 @@
 	let imagePreview = $state<string | null>(null);
 	let fileInput: HTMLInputElement;
 	let isUploadingImage = $state(false);
+	let hasMoreMessages = $state(data?.hasMore ?? false);
+	let isLoadingMore = $state(false);
+	let conversationId = $state(data?.conversationId ?? null);
 
 	// Toggle this to use real OpenAI API
 	const USE_REAL_API = true;
@@ -76,15 +82,69 @@
 		}
 	}
 
-	// Scroll til bunn ved mount og når meldinger endres
-	function scrollToBottom() {
-		setTimeout(() => {
-			chatContainer?.scrollTo({ top: chatContainer.scrollHeight, behavior: 'smooth' });
-		}, 100);
+	// Håndter scroll - last eldre meldinger når bruker scroller til toppen
+	function handleScroll() {
+		if (!chatContainer || isLoadingMore || !hasMoreMessages || !conversationId) return;
+
+		// Sjekk om vi er nær toppen (100px margin)
+		if (chatContainer.scrollTop < 100) {
+			loadMoreMessages();
+		}
+	}
+
+	async function loadMoreMessages() {
+		if (isLoadingMore || !hasMoreMessages || !conversationId || messages.length === 0) return;
+
+		isLoadingMore = true;
+		const oldScrollHeight = chatContainer.scrollHeight;
+
+		try {
+			// Hent timestamp fra eldste melding
+			const oldestMessage = messages[0];
+			const beforeTimestamp = oldestMessage.timestamp.toISOString();
+
+			const response = await fetch('/api/messages/load-more', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ conversationId, beforeTimestamp })
+			});
+
+			if (!response.ok) throw new Error('Failed to load more messages');
+
+			const data = await response.json();
+			
+			if (data.messages.length > 0) {
+				// Legg til eldre meldinger først i arrayet
+				messages = [
+					...data.messages.map((msg: any) => ({
+						...msg,
+						timestamp: new Date(msg.timestamp)
+					})),
+					...messages
+				];
+
+				// Behold scroll-posisjon
+				setTimeout(() => {
+					const newScrollHeight = chatContainer.scrollHeight;
+					chatContainer.scrollTop = newScrollHeight - oldScrollHeight;
+				}, 0);
+			}
+
+			hasMoreMessages = data.hasMore;
+		} catch (error) {
+			console.error('Error loading more messages:', error);
+		} finally {
+			isLoadingMore = false;
+		}
 	}
 
 	// Auto-scroll ved mount
 	onMount(() => {
+		// Start ved bunnen (ingen animasjon)
+		if (chatContainer) {
+			chatContainer.scrollTop = chatContainer.scrollHeight;
+		}
+
 		// Sjekk om vi har context fra Google Chat
 		const urlParams = new URLSearchParams(window.location.search);
 		const contextMessage = urlParams.get('context');
@@ -118,15 +178,6 @@
 			setTimeout(() => {
 				fromGoogleChat = false;
 			}, 5000);
-		}
-
-		scrollToBottom();
-	});
-
-	// Auto-scroll når meldinger endres
-	$effect(() => {
-		if (messages.length > 0) {
-			scrollToBottom();
 		}
 	});
 
@@ -228,10 +279,12 @@
 				}];
 			}
 
-			// Scroll igjen
+			// Scroll til bunnen etter ny melding
 			setTimeout(() => {
-				chatContainer?.scrollTo({ top: chatContainer.scrollHeight, behavior: 'smooth' });
-			}, 100);
+				if (chatContainer) {
+					chatContainer.scrollTop = chatContainer.scrollHeight;
+				}
+			}, 0);
 		} catch (error) {
 			console.error('Feil ved sending av melding:', error);
 			
@@ -299,7 +352,14 @@
 		</div>
 	{/if}
 
-	<div class="messages" bind:this={chatContainer}>
+	<div class="messages" bind:this={chatContainer} onscroll={handleScroll}>
+		{#if isLoadingMore}
+			<div class="loading-more">
+				<div class="loading-more-spinner"></div>
+				<span>Laster eldre meldinger...</span>
+			</div>
+		{/if}
+
 		{#each messages as message (message.id)}
 			<ChatMessage 
 				role={message.role} 
@@ -558,6 +618,35 @@
 		background: #fafafa;
 		display: flex;
 		flex-direction: column;
+	}
+
+	.loading-more {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.75rem;
+		padding: 1rem;
+		color: #666;
+		font-size: 0.875rem;
+		animation: fadeIn 0.3s ease-in;
+	}
+
+	.loading-more-spinner {
+		width: 16px;
+		height: 16px;
+		border: 2px solid #e0e0e0;
+		border-top-color: #667eea;
+		border-radius: 50%;
+		animation: spin 0.8s linear infinite;
+	}
+
+	@keyframes spin {
+		to { transform: rotate(360deg); }
+	}
+
+	@keyframes fadeIn {
+		from { opacity: 0; }
+		to { opacity: 1; }
 	}
 
 	.typing-indicator {
