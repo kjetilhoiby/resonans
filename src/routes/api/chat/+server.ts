@@ -175,7 +175,7 @@ const tools = [
 		type: 'function' as const,
 		function: {
 			name: 'create_memory',
-			description: 'Lagre viktig informasjon om brukeren som skal huskes permanent. Bruk dette for fakta, preferanser, og viktig kontekst om brukeren.',
+			description: 'Lagre viktig informasjon om brukeren som skal huskes permanent. Kan være generelt eller tema-spesifikt.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -186,12 +186,16 @@ const tools = [
 					},
 					content: {
 						type: 'string',
-						description: 'Selve minnet - skriv som en kort, faktisk påstand (f.eks: "Brukeren heter Kjetil", "Liker å løpe langs vannet", "I forhold med Emma")'
+						description: 'Selve minnet - skriv som en kort, faktisk påstand (f.eks: "Brukeren heter Kjetil", "Har to barn: Ola (7), Emma (4)")'
 					},
 					importance: {
 						type: 'string',
 						description: 'Hvor viktig er dette minnet?',
 						enum: ['high', 'medium', 'low']
+					},
+					themeId: {
+						type: 'string',
+						description: 'Valgfritt: Tema-ID for tema-spesifikke memories. Brukes under tema-kartlegging.'
 					}
 				},
 				required: ['category', 'content']
@@ -491,6 +495,7 @@ export const POST: RequestHandler = async ({ request }) => {
 					const args = JSON.parse(toolCall.function.arguments);
 					const memory = await createMemory({
 						userId: DEFAULT_USER_ID,
+						themeId: args.themeId || null,
 						category: args.category,
 						content: args.content,
 						importance: args.importance || 'medium',
@@ -502,7 +507,8 @@ export const POST: RequestHandler = async ({ request }) => {
 						content: JSON.stringify({ 
 							success: true,
 							memoryId: memory.id,
-							message: `Memory lagret: ${args.content}` 
+							themeSpecific: !!args.themeId,
+							message: `Memory lagret${args.themeId ? ' (tema-spesifikk)' : ''}: ${args.content}` 
 						}),
 						tool_call_id: toolCall.id
 					});

@@ -4,6 +4,7 @@ import { eq, desc } from 'drizzle-orm';
 
 export interface CreateMemoryParams {
 	userId: string;
+	themeId?: string | null;
 	category: 'personal' | 'relationship' | 'fitness' | 'mental_health' | 'preferences' | 'other';
 	content: string;
 	importance?: 'high' | 'medium' | 'low';
@@ -11,15 +12,16 @@ export interface CreateMemoryParams {
 }
 
 /**
- * Opprett et nytt minne
+ * Opprett et nytt minne (kan være generelt eller tema-spesifikt)
  */
 export async function createMemory(params: CreateMemoryParams) {
-	const { userId, category, content, importance = 'medium', source } = params;
+	const { userId, themeId, category, content, importance = 'medium', source } = params;
 
 	const [memory] = await db
 		.insert(memories)
 		.values({
 			userId,
+			themeId: themeId || null,
 			category,
 			content,
 			importance,
