@@ -5,9 +5,10 @@
 		role: 'user' | 'assistant' | 'system';
 		content: string;
 		timestamp?: Date;
+		imageUrl?: string;
 	}
 
-	let { role, content, timestamp }: Props = $props();
+	let { role, content, timestamp, imageUrl }: Props = $props();
 
 	// Configure marked for safe rendering
 	marked.setOptions({
@@ -36,6 +37,13 @@
 			</span>
 		{/if}
 	</div>
+	
+	{#if imageUrl}
+		<div class="message-image">
+			<img src={imageUrl} alt="User uploaded content" />
+		</div>
+	{/if}
+	
 	<div class="message-content">
 		{@html htmlContent}
 	</div>
@@ -98,6 +106,19 @@
 	.timestamp {
 		color: #999;
 		font-size: 0.75rem;
+	}
+
+	.message-image {
+		margin: 0.75rem 0;
+		border-radius: 0.5rem;
+		overflow: hidden;
+	}
+
+	.message-image img {
+		max-width: 100%;
+		height: auto;
+		display: block;
+		border-radius: 0.5rem;
 	}
 
 	.message-content {

@@ -205,20 +205,21 @@ export const POST: RequestHandler = async ({ request }) => {
 		// Sørg for at default bruker eksisterer
 		await ensureDefaultUser();
 
-		const { message } = await request.json();
+		const { message, imageUrl } = await request.json();
 
-		if (!message || typeof message !== 'string') {
+		if ((!message || typeof message !== 'string') && !imageUrl) {
 			return json({ error: 'Invalid message' }, { status: 400 });
 		}
 
 		// Hent eller opprett samtale
 		const conversation = await getOrCreateConversation(DEFAULT_USER_ID);
 
-		// Lagre brukerens melding
+		// Lagre brukerens melding med imageUrl hvis present
 		await addMessage({
 			conversationId: conversation.id,
 			role: 'user',
-			content: message
+			content: message || '📷 [Bilde]',
+			imageUrl
 		});
 
 		// Hent samtale-historikk (siste 5 meldinger for umiddelbar kontekst)
@@ -272,14 +273,34 @@ export const POST: RequestHandler = async ({ request }) => {
 			}
 		}
 
+		// Legg til siste melding - støtt både tekst og bilde
+		if (imageUrl) {
+			// Bruk Vision API format
+			messages.push({
+				role: 'user',
+				content: [
+					{
+						type: 'image_url',
+						image_url: { url: imageUrl }
+					},
+					{
+						type: 'text',
+						text: message || 'Hva ser du på dette bildet? Kan du hjelpe meg å analysere det i forhold til målene mine?'
+					}
+				]
+			});
+		}
+		// Note: siste tekstmelding er allerede lagt til via history
+
 		// Første kall til OpenAI med tools
+		// Bruk gpt-4o når vi har bilder (Vision support)
 		let completion = await openai.chat.completions.create({
-			model: 'gpt-4o-mini',
+			model: imageUrl ? 'gpt-4o' : 'gpt-4o-mini',
 			messages,
 			tools,
 			tool_choice: 'auto',
 			temperature: 0.7,
-			max_tokens: 1000
+			max_tokens: imageUrl ? 1500 : 1000 // Mer tokens for bildeanalyse
 		});
 
 		let responseMessage = completion.choices[0]?.message;

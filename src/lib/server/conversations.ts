@@ -12,6 +12,7 @@ export interface AddMessageParams {
 	role: 'user' | 'assistant' | 'system';
 	content: string;
 	metadata?: any;
+	imageUrl?: string;
 }
 
 export async function getOrCreateConversation(userId: string) {
@@ -39,6 +40,7 @@ export async function addMessage(params: AddMessageParams) {
 		conversationId: params.conversationId,
 		role: params.role,
 		content: params.content,
+		imageUrl: params.imageUrl,
 		metadata: params.metadata
 	}).returning();
 

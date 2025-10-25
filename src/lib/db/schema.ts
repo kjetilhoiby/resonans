@@ -106,6 +106,7 @@ export const messages = pgTable('messages', {
 	conversationId: uuid('conversation_id').references(() => conversations.id).notNull(),
 	role: text('role').notNull(), // user, assistant, system
 	content: text('content').notNull(),
+	imageUrl: text('image_url'), // Cloudinary URL for bilder
 	metadata: jsonb('metadata'), // for ekstra data som tool_calls, etc.
 	createdAt: timestamp('created_at').defaultNow().notNull()
 });

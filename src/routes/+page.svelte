@@ -22,6 +22,7 @@
 		role: 'user' | 'assistant' | 'system';
 		content: string;
 		timestamp: Date;
+		imageUrl?: string;
 	}>>(
 		data?.messages && data.messages.length > 0
 			? data.messages.map(msg => ({
@@ -43,10 +44,36 @@
 	let chatContainer: HTMLDivElement;
 	let lastError = $state<string | null>(null);
 	let fromGoogleChat = $state(false);
+	let selectedImage = $state<File | null>(null);
+	let imagePreview = $state<string | null>(null);
+	let fileInput: HTMLInputElement;
 
 	// Toggle this to use real OpenAI API
 	const USE_REAL_API = true;
 	const API_ENDPOINT = USE_REAL_API ? '/api/chat' : '/api/chat-mock';
+
+	function handleImageSelect(event: Event) {
+		const input = event.target as HTMLInputElement;
+		const file = input.files?.[0];
+		
+		if (file) {
+			selectedImage = file;
+			// Create preview
+			const reader = new FileReader();
+			reader.onload = (e) => {
+				imagePreview = e.target?.result as string;
+			};
+			reader.readAsDataURL(file);
+		}
+	}
+
+	function clearImage() {
+		selectedImage = null;
+		imagePreview = null;
+		if (fileInput) {
+			fileInput.value = '';
+		}
+	}
 
 	// Scroll til bunn ved mount og når meldinger endres
 	function scrollToBottom() {
@@ -115,18 +142,46 @@
 	}
 
 	async function sendMessage() {
-		if (!inputValue.trim() || isLoading) return;
+		if ((!inputValue.trim() && !selectedImage) || isLoading) return;
+
+		let imageUrl: string | undefined;
+
+		// Upload image first if present
+		if (selectedImage) {
+			try {
+				const formData = new FormData();
+				formData.append('image', selectedImage);
+
+				const uploadResponse = await fetch('/api/upload-image', {
+					method: 'POST',
+					body: formData
+				});
+
+				if (!uploadResponse.ok) {
+					throw new Error('Image upload failed');
+				}
+
+				const uploadData = await uploadResponse.json();
+				imageUrl = uploadData.url;
+			} catch (error) {
+				console.error('Image upload error:', error);
+				lastError = 'Kunne ikke laste opp bilde. Prøv igjen.';
+				return;
+			}
+		}
 
 		const userMessage = {
 			id: Date.now().toString(),
 			role: 'user' as const,
-			content: inputValue.trim(),
-			timestamp: new Date()
+			content: inputValue.trim() || '📷 [Bilde]',
+			timestamp: new Date(),
+			imageUrl
 		};
 
 		const messageContent = inputValue.trim(); // Lagre for retry
 		messages = [...messages, userMessage];
 		inputValue = '';
+		clearImage(); // Clear image after adding to messages
 		isLoading = true;
 
 		// Scroll til bunnen
@@ -138,7 +193,10 @@
 			const response = await fetch(API_ENDPOINT, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ message: userMessage.content })
+				body: JSON.stringify({ 
+					message: userMessage.content,
+					imageUrl: userMessage.imageUrl 
+				})
 			});
 
 			if (!response.ok) {
@@ -242,6 +300,7 @@
 				role={message.role} 
 				content={message.content}
 				timestamp={message.timestamp}
+				imageUrl={message.imageUrl}
 			/>
 		{/each}
 		
@@ -253,16 +312,41 @@
 	</div>
 
 	<form class="input-area" onsubmit={(e) => { e.preventDefault(); sendMessage(); }}>
-		<textarea
-			bind:value={inputValue}
-			onkeydown={handleKeyPress}
-			placeholder="Skriv din melding her... (Shift+Enter for ny linje)"
-			rows="3"
-			disabled={isLoading}
-		></textarea>
-		<button type="submit" disabled={isLoading || !inputValue.trim()}>
-			Send
-		</button>
+		{#if imagePreview}
+			<div class="image-preview">
+				<img src={imagePreview} alt="Preview" />
+				<button type="button" class="remove-image" onclick={clearImage}>✕</button>
+			</div>
+		{/if}
+		
+		<div class="input-controls">
+			<input
+				type="file"
+				accept="image/*"
+				bind:this={fileInput}
+				onchange={handleImageSelect}
+				style="display: none;"
+			/>
+			<button 
+				type="button" 
+				class="upload-button" 
+				onclick={() => fileInput.click()}
+				disabled={isLoading}
+				title="Last opp bilde"
+			>
+				📷
+			</button>
+			<textarea
+				bind:value={inputValue}
+				onkeydown={handleKeyPress}
+				placeholder="Skriv din melding her... (Shift+Enter for ny linje)"
+				rows="3"
+				disabled={isLoading}
+			></textarea>
+			<button type="submit" disabled={isLoading || (!inputValue.trim() && !selectedImage)}>
+				Send
+			</button>
+		</div>
 	</form>
 </div>
 
@@ -480,12 +564,76 @@
 	}
 
 	.input-area {
-		display: flex;
-		gap: 1rem;
 		padding: 1rem;
 		background: white;
 		border-top: 1px solid #e0e0e0;
 		box-shadow: 0 -2px 8px rgba(0,0,0,0.05);
+	}
+
+	.input-controls {
+		display: flex;
+		gap: 1rem;
+	}
+
+	.image-preview {
+		position: relative;
+		padding: 0.5rem;
+		margin-bottom: 0.5rem;
+		border: 2px solid #667eea;
+		border-radius: 0.5rem;
+		background: white;
+	}
+
+	.image-preview img {
+		max-width: 200px;
+		max-height: 200px;
+		border-radius: 0.375rem;
+		display: block;
+	}
+
+	.remove-image {
+		position: absolute;
+		top: 0.25rem;
+		right: 0.25rem;
+		background: rgba(0,0,0,0.7);
+		color: white;
+		border: none;
+		border-radius: 50%;
+		width: 24px;
+		height: 24px;
+		cursor: pointer;
+		font-size: 0.875rem;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0;
+		transition: background 0.2s;
+	}
+
+	.remove-image:hover {
+		background: rgba(0,0,0,0.9);
+	}
+
+	.upload-button {
+		padding: 0.75rem 1rem;
+		background: #f0f0f0;
+		color: #333;
+		border: 1px solid #ddd;
+		border-radius: 0.5rem;
+		font-size: 1.25rem;
+		cursor: pointer;
+		transition: all 0.2s;
+		flex-shrink: 0;
+	}
+
+	.upload-button:hover:not(:disabled) {
+		background: #e0e0e0;
+		transform: translateY(-1px);
+	}
+
+	.upload-button:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 
 	textarea {
