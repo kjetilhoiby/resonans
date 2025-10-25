@@ -54,6 +54,13 @@
 	let hasMoreMessages = $state(data?.hasMore ?? false);
 	let isLoadingMore = $state(false);
 	let conversationId = $state(data?.conversationId ?? null);
+	
+	// Søkefunksjonalitet
+	let searchQuery = $state('');
+	let showSearch = $state(false);
+	let searchResults = $state<number[]>([]);
+	let currentSearchIndex = $state(0);
+	let searchInput: HTMLInputElement;
 
 	// Toggle this to use real OpenAI API
 	const USE_REAL_API = true;
@@ -316,6 +323,113 @@
 			sendMessage();
 		}
 	}
+
+	// Søkefunksjonalitet
+	function performSearch() {
+		if (!searchQuery.trim()) {
+			searchResults = [];
+			currentSearchIndex = 0;
+			return;
+		}
+
+		const query = searchQuery.toLowerCase();
+		const results: number[] = [];
+
+		messages.forEach((msg, index) => {
+			if (msg.content.toLowerCase().includes(query)) {
+				results.push(index);
+			}
+		});
+
+		searchResults = results;
+		currentSearchIndex = results.length > 0 ? 0 : 0;
+
+		if (results.length > 0) {
+			scrollToSearchResult(0);
+		}
+	}
+
+	function scrollToSearchResult(index: number) {
+		if (searchResults.length === 0) return;
+
+		const messageIndex = searchResults[index];
+		const messageElements = chatContainer.querySelectorAll('.message');
+		
+		// Fjern alle highlights
+		messageElements.forEach(el => {
+			el.classList.remove('search-highlight-active', 'search-highlight-other');
+		});
+
+		// Legg til highlight på alle treff
+		searchResults.forEach((resultIndex, i) => {
+			const element = messageElements[resultIndex];
+			if (element) {
+				if (i === index) {
+					// Aktiv treff - sterk lilla highlight
+					element.classList.add('search-highlight-active');
+				} else {
+					// Andre treff - lysere highlight
+					element.classList.add('search-highlight-other');
+				}
+			}
+		});
+
+		// Scroll til aktiv treff
+		const targetElement = messageElements[messageIndex];
+		if (targetElement) {
+			targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+		}
+	}
+
+	function nextSearchResult() {
+		if (searchResults.length === 0) return;
+		currentSearchIndex = (currentSearchIndex + 1) % searchResults.length;
+		scrollToSearchResult(currentSearchIndex);
+	}
+
+	function prevSearchResult() {
+		if (searchResults.length === 0) return;
+		currentSearchIndex = (currentSearchIndex - 1 + searchResults.length) % searchResults.length;
+		scrollToSearchResult(currentSearchIndex);
+	}
+
+	function toggleSearch() {
+		showSearch = !showSearch;
+		if (!showSearch) {
+			searchQuery = '';
+			searchResults = [];
+			currentSearchIndex = 0;
+		} else {
+			// Auto-fokuser søkefeltet når det åpnes
+			setTimeout(() => {
+				if (searchInput) {
+					searchInput.focus();
+				}
+			}, 100);
+		}
+	}
+
+	function closeOrClearSearch() {
+		if (searchQuery.trim()) {
+			// Hvis det er søketekst, tøm først
+			searchQuery = '';
+			searchResults = [];
+			currentSearchIndex = 0;
+			// Fjern highlights
+			const messageElements = chatContainer?.querySelectorAll('.message');
+			messageElements?.forEach(el => {
+				el.classList.remove('search-highlight-active', 'search-highlight-other');
+			});
+		} else {
+			// Hvis søket er tomt, lukk
+			showSearch = false;
+			// Fjern highlights
+			const messageElements = chatContainer?.querySelectorAll('.message');
+			messageElements?.forEach(el => {
+				el.classList.remove('search-highlight-active', 'search-highlight-other');
+			});
+		}
+	}
 </script>
 
 <div class="chat-container">
@@ -325,6 +439,9 @@
 			<p>Din personlige målcoach</p>
 		</div>
 		<div class="header-actions">
+			<button onclick={toggleSearch} class="header-button search-toggle" title="Søk i meldinger">
+				🔍
+			</button>
 			<a href="/goals" class="header-button">📊 Mål</a>
 			<a href="/settings" class="header-button">⚙️ Innstillinger</a>
 			<button onclick={startNewConversation} class="header-button new-chat">
@@ -332,6 +449,27 @@
 			</button>
 		</div>
 	</header>
+
+	{#if showSearch}
+		<div class="search-bar">
+			<input
+				type="text"
+				bind:value={searchQuery}
+				bind:this={searchInput}
+				oninput={performSearch}
+				placeholder="Søk i meldinger..."
+				class="search-input"
+			/>
+			{#if searchResults.length > 0}
+				<div class="search-navigation">
+					<span class="search-count">{currentSearchIndex + 1} av {searchResults.length}</span>
+					<button onclick={prevSearchResult} class="search-nav-btn" title="Forrige">↑</button>
+					<button onclick={nextSearchResult} class="search-nav-btn" title="Neste">↓</button>
+				</div>
+			{/if}
+			<button onclick={closeOrClearSearch} class="search-close" title={searchQuery.trim() ? 'Tøm søk' : 'Lukk søk'}>✕</button>
+		</div>
+	{/if}
 
 	{#if fromGoogleChat}
 		<div class="info-banner">
@@ -495,6 +633,82 @@
 		font-weight: 600;
 	}
 
+	.search-toggle {
+		font-size: 1.1rem;
+	}
+
+	.search-bar {
+		background: white;
+		border-bottom: 1px solid #e0e0e0;
+		padding: 0.75rem 1rem;
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		animation: slideDown 0.3s ease-out;
+		box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+	}
+
+	.search-input {
+		flex: 1;
+		padding: 0.5rem 0.75rem;
+		border: 1px solid #ddd;
+		border-radius: 0.375rem;
+		font-size: 0.9rem;
+		font-family: inherit;
+	}
+
+	.search-input:focus {
+		outline: none;
+		border-color: #667eea;
+	}
+
+	.search-navigation {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.search-count {
+		font-size: 0.875rem;
+		color: #666;
+		white-space: nowrap;
+	}
+
+	.search-nav-btn {
+		padding: 0.35rem 0.65rem;
+		background: #667eea;
+		color: white;
+		border: 1px solid #667eea;
+		border-radius: 0.25rem;
+		cursor: pointer;
+		font-size: 1rem;
+		font-weight: bold;
+		transition: background 0.2s;
+		min-width: 32px;
+	}
+
+	.search-nav-btn:hover {
+		background: #5568d3;
+	}
+
+	.search-close {
+		background: #f5f5f5;
+		border: 1px solid #ddd;
+		color: #666;
+		font-size: 1.1rem;
+		cursor: pointer;
+		padding: 0.35rem 0.65rem;
+		border-radius: 0.25rem;
+		transition: all 0.2s;
+		min-width: 32px;
+		font-weight: bold;
+	}
+
+	.search-close:hover {
+		background: #e0e0e0;
+		color: #333;
+	}
+
 	.error-banner {
 		background: #ffebee;
 		color: #c62828;
@@ -647,6 +861,22 @@
 	@keyframes fadeIn {
 		from { opacity: 0; }
 		to { opacity: 1; }
+	}
+
+	/* Søke-highlight effekter */
+	:global(.message.search-highlight-active) {
+		background: rgba(102, 126, 234, 0.25) !important;
+		border-left: 4px solid #667eea !important;
+		padding-left: calc(1rem - 4px) !important;
+		box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1) !important;
+		transition: all 0.3s ease;
+	}
+
+	:global(.message.search-highlight-other) {
+		background: rgba(255, 235, 59, 0.15) !important;
+		border-left: 3px solid #ffc107 !important;
+		padding-left: calc(1rem - 3px) !important;
+		transition: all 0.3s ease;
 	}
 
 	.typing-indicator {
