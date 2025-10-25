@@ -197,6 +197,49 @@ const tools = [
 				required: ['category', 'content']
 			}
 		}
+	},
+	{
+		type: 'function' as const,
+		function: {
+			name: 'manage_theme',
+			description: 'Administrer tema (tematiske områder) for å organisere mål og samtaler. Foreslå nye tema når bruker diskuterer mål som ikke passer i eksisterende tema.',
+			parameters: {
+				type: 'object',
+				properties: {
+					action: {
+						type: 'string',
+						description: 'Handling å utføre',
+						enum: ['suggest_create', 'create', 'list', 'archive']
+					},
+					name: {
+						type: 'string',
+						description: 'Temanavn (f.eks: "Vennskap", "Løping", "Familie")'
+					},
+					emoji: {
+						type: 'string',
+						description: 'Emoji som representerer temaet (f.eks: "🤝", "🏃‍♂️", "👨‍👩‍👦")'
+					},
+					parentTheme: {
+						type: 'string',
+						description: 'Overordnet kategori (f.eks: "Samliv", "Helse", "Foreldreliv", "Karriere", "Økonomi")',
+						enum: ['Samliv', 'Helse', 'Foreldreliv', 'Karriere', 'Økonomi', 'Personlig utvikling']
+					},
+					description: {
+						type: 'string',
+						description: 'Kort beskrivelse av hva dette temaet dekker'
+					},
+					reason: {
+						type: 'string',
+						description: 'Forklaring til bruker om hvorfor dette temaet er foreslått'
+					},
+					themeId: {
+						type: 'string',
+						description: 'Tema-ID (påkrevd for archive-handling)'
+					}
+				},
+				required: ['action']
+			}
+		}
 	}
 ];
 
@@ -461,6 +504,20 @@ export const POST: RequestHandler = async ({ request }) => {
 							memoryId: memory.id,
 							message: `Memory lagret: ${args.content}` 
 						}),
+						tool_call_id: toolCall.id
+					});
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'manage_theme') {
+					const args = JSON.parse(toolCall.function.arguments);
+					const { manageThemeTool } = await import('$lib/ai/tools/manage-theme');
+					
+					const result = await manageThemeTool.execute({
+						userId: DEFAULT_USER_ID,
+						...args
+					});
+
+					messages.push({
+						role: 'tool',
+						content: JSON.stringify(result),
 						tool_call_id: toolCall.id
 					});
 				}

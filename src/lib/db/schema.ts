@@ -29,11 +29,27 @@ export const categories = pgTable('categories', {
 	createdAt: timestamp('created_at').defaultNow().notNull()
 });
 
+// Tema - AI-styrte, fleksible grupperinger av mål med egen chat-kontekst
+export const themes = pgTable('themes', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id).notNull(),
+	name: text('name').notNull(), // "Vennskap", "Løping", "Foreldre-rolle"
+	emoji: text('emoji'), // 🤝, 🏃‍♂️, 👶
+	parentTheme: text('parent_theme'), // "Samliv", "Helse", "Foreldreliv" - kan være null
+	aiSuggested: boolean('ai_suggested').default(false).notNull(), // AI foreslo vs bruker opprettet
+	conversationId: uuid('conversation_id').references(() => conversations.id), // Egen chat per tema
+	description: text('description'), // AI-generert eller bruker-definert
+	archived: boolean('archived').default(false).notNull(), // For cleanup uten å slette
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+});
+
 // Mål (overordnede målsetninger)
 export const goals = pgTable('goals', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	userId: text('user_id').references(() => users.id).notNull(),
 	categoryId: uuid('category_id').references(() => categories.id),
+	themeId: uuid('theme_id').references(() => themes.id), // Ny: kobling til tema (nullable for bakoverkompatibilitet)
 	title: text('title').notNull(),
 	description: text('description'),
 	targetDate: timestamp('target_date'),
@@ -127,6 +143,7 @@ export const reminders = pgTable('reminders', {
 export const memories = pgTable('memories', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	userId: text('user_id').references(() => users.id).notNull(),
+	themeId: uuid('theme_id').references(() => themes.id), // Ny: memories kan være tema-spesifikke
 	category: text('category').notNull(), // 'personal', 'relationship', 'fitness', 'mental_health', 'preferences'
 	content: text('content').notNull(),
 	importance: text('importance').notNull().default('medium'), // 'high', 'medium', 'low'
@@ -141,11 +158,25 @@ export const usersRelations = relations(users, ({ many }) => ({
 	goals: many(goals),
 	conversations: many(conversations),
 	activities: many(activities),
-	memories: many(memories)
+	memories: many(memories),
+	themes: many(themes)
 }));
 
 export const categoriesRelations = relations(categories, ({ many }) => ({
 	goals: many(goals)
+}));
+
+export const themesRelations = relations(themes, ({ one, many }) => ({
+	user: one(users, {
+		fields: [themes.userId],
+		references: [users.id]
+	}),
+	conversation: one(conversations, {
+		fields: [themes.conversationId],
+		references: [conversations.id]
+	}),
+	goals: many(goals),
+	memories: many(memories)
 }));
 
 export const goalsRelations = relations(goals, ({ one, many }) => ({
@@ -156,6 +187,10 @@ export const goalsRelations = relations(goals, ({ one, many }) => ({
 	category: one(categories, {
 		fields: [goals.categoryId],
 		references: [categories.id]
+	}),
+	theme: one(themes, {
+		fields: [goals.themeId],
+		references: [themes.id]
 	}),
 	tasks: many(tasks)
 }));
@@ -218,5 +253,9 @@ export const memoriesRelations = relations(memories, ({ one }) => ({
 	user: one(users, {
 		fields: [memories.userId],
 		references: [users.id]
+	}),
+	theme: one(themes, {
+		fields: [memories.themeId],
+		references: [themes.id]
 	})
 }));

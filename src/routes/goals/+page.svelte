@@ -24,6 +24,20 @@
 						value: number | null;
 						note: string | null;
 						completedAt: Date;
+						activity: {
+							id: string;
+							type: string;
+							completedAt: Date;
+							duration: number | null;
+							note: string | null;
+							metadata: any;
+							metrics: Array<{
+								id: string;
+								metricType: string;
+								value: string;
+								unit: string | null;
+							}>;
+						} | null;
 					}>;
 				}>;
 			}>;
@@ -173,22 +187,21 @@
 													<span class="task-progress-label">{taskProgress}%</span>
 												</div>
 												<div class="progress-entries">
-													<strong>Siste registreringer:</strong>
-													{#each task.progress.slice(0, 3) as entry}
-														<div class="progress-entry">
-															<span class="entry-date">
-																{new Date(entry.completedAt).toLocaleDateString('no-NO', { 
-																	month: 'short', 
-																	day: 'numeric' 
-																})}
-															</span>
+													<strong>🔥 {task.progress.length} {task.progress.length === 1 ? 'gang' : 'ganger'}</strong>
+													{#each task.progress.slice(0, 5) as entry}
+														<div class="activity-line">
+															{new Date(entry.completedAt).toLocaleDateString('no-NO', { 
+																day: 'numeric',
+																month: 'short'
+															})}
 															{#if entry.value}
-																<span class="entry-value">
-																	{entry.value} {task.unit || ''}
-																</span>
+																• <strong>{entry.value}</strong>
 															{/if}
-															{#if entry.note}
-																<span class="entry-note">{entry.note}</span>
+															{#if entry.activity?.duration}
+																• {entry.activity.duration}min
+															{/if}
+															{#if entry.note || entry.activity?.note}
+																• <em>{entry.note || entry.activity?.note}</em>
 															{/if}
 														</div>
 													{/each}
@@ -482,11 +495,24 @@
 
 	.progress-entries strong {
 		display: block;
-		margin-bottom: 0.5rem;
-		color: #555;
-		font-size: 0.85rem;
+		margin-bottom: 0.75rem;
+		color: #333;
+		font-size: 0.9rem;
 	}
 
+	.activity-line {
+		color: #666;
+		font-size: 0.9rem;
+		padding: 4px 0;
+		line-height: 1.6;
+	}
+
+	.activity-line em {
+		color: #999;
+		font-size: 0.9rem;
+	}
+
+	/* Behold gammel styling for fallback */
 	.progress-entry {
 		display: flex;
 		gap: 0.75rem;
