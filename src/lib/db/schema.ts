@@ -159,7 +159,10 @@ export const usersRelations = relations(users, ({ many }) => ({
 	conversations: many(conversations),
 	activities: many(activities),
 	memories: many(memories),
-	themes: many(themes)
+	themes: many(themes),
+	sensors: many(sensors),
+	sensorEvents: many(sensorEvents),
+	sensorAggregates: many(sensorAggregates)
 }));
 
 export const categoriesRelations = relations(categories, ({ many }) => ({
@@ -257,5 +260,160 @@ export const memoriesRelations = relations(memories, ({ one }) => ({
 	theme: one(themes, {
 		fields: [memories.themeId],
 		references: [themes.id]
+	})
+}));
+
+// ============================================
+// SENSOR SYSTEM - Generic sensor integrations
+// ============================================
+
+// Sensor connections (Withings, TP-Link, ESP32, etc.)
+export const sensors = pgTable('sensors', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id).notNull(),
+	provider: text('provider').notNull(), // 'withings', 'tplink', 'esp32', 'manual'
+	type: text('type').notNull(), // 'health_tracker', 'smart_plug', 'iot_sensor', 'manual_log'
+	subtype: text('subtype'), // 'scale', 'watch', 'washer', 'vacuum', etc.
+	name: text('name').notNull(), // User-friendly name: "Vaskemaskinen", "Withings Scale"
+	credentials: text('credentials'), // Encrypted JSON: access_token, refresh_token, api_key, etc.
+	config: jsonb('config').$type<{
+		// Withings
+		userId?: string;
+		expiresAt?: number;
+		// TP-Link
+		ip?: string;
+		mac?: string;
+		thresholdWatts?: number;
+		// ESP32
+		apiKey?: string;
+		endpoint?: string;
+		// Generic
+		[key: string]: any;
+	}>(),
+	isActive: boolean('is_active').default(true).notNull(),
+	lastSync: timestamp('last_sync'),
+	lastError: text('last_error'),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+});
+
+// Raw sensor events (unified event stream)
+export const sensorEvents = pgTable('sensor_events', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id).notNull(),
+	sensorId: uuid('sensor_id').references(() => sensors.id).notNull(),
+	eventType: text('event_type').notNull(), // 'measurement', 'activity', 'state_change'
+	timestamp: timestamp('timestamp').notNull(), // When the event happened (sensor time)
+	data: jsonb('data').$type<{
+		// Withings measurements
+		weight?: number;
+		fatMass?: number;
+		muscleMass?: number;
+		steps?: number;
+		distance?: number;
+		calories?: number;
+		sleepDuration?: number;
+		sleepDeep?: number;
+		sleepLight?: number;
+		sleepRem?: number;
+		vo2max?: number;
+		heartRate?: number;
+		// Activity data
+		duration?: number;
+		intensity?: string;
+		// IoT data
+		powerWatts?: number;
+		state?: 'on' | 'off' | 'running';
+		runDuration?: number;
+		// Generic
+		[key: string]: any;
+	}>(),
+	metadata: jsonb('metadata').$type<{
+		source?: string; // API version, device model, etc.
+		quality?: number; // Data quality score
+		rawResponse?: any; // Original API response for debugging
+		[key: string]: any;
+	}>(),
+	createdAt: timestamp('created_at').defaultNow().notNull() // When we received it
+});
+
+// Pre-aggregated data for performance (weekly, monthly, yearly)
+export const sensorAggregates = pgTable('sensor_aggregates', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id).notNull(),
+	period: text('period').notNull(), // 'week', 'month', 'year'
+	periodKey: text('period_key').notNull(), // '2025W43', '2025M10', '2025'
+	startDate: timestamp('start_date').notNull(),
+	endDate: timestamp('end_date').notNull(),
+	metrics: jsonb('metrics').$type<{
+		// Health metrics (avg, min, max, sum)
+		weight?: { avg?: number; min?: number; max?: number; change?: number };
+		steps?: { sum?: number; avg?: number; max?: number };
+		sleep?: { avg?: number; min?: number; max?: number };
+		vo2max?: { avg?: number; latest?: number };
+		// Activity metrics
+		workouts?: { count?: number; totalDuration?: number; types?: Record<string, number> };
+		intenseMinutes?: { sum?: number; avg?: number };
+		// Household metrics
+		laundry?: { count?: number; avgDuration?: number };
+		dishes?: { count?: number };
+		vacuum?: { count?: number; totalDuration?: number };
+		// Custom metrics (from your ninthlife app)
+		sleepLag?: number; // (100 - % awake 22-00) or similar
+		earlyWake?: number; // % asleep 06-08
+		// Generic
+		[key: string]: any;
+	}>(),
+	eventCount: integer('event_count').notNull().default(0), // How many raw events
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+});
+
+// Sensor-connected goals (auto-updating progress)
+export const sensorGoals = pgTable('sensor_goals', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	goalId: uuid('goal_id').references(() => goals.id).notNull(),
+	metricType: text('metric_type').notNull(), // 'weight', 'steps', 'sleep', etc.
+	targetValue: decimal('target_value'),
+	targetChange: decimal('target_change'), // e.g., -5 for "lose 5kg"
+	currentValue: decimal('current_value'),
+	baselineValue: decimal('baseline_value'),
+	unit: text('unit'), // 'kg', 'steps/day', 'hours', etc.
+	autoUpdate: boolean('auto_update').default(true).notNull(),
+	lastUpdated: timestamp('last_updated'),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+});
+
+// Relations for sensors
+export const sensorsRelations = relations(sensors, ({ one, many }) => ({
+	user: one(users, {
+		fields: [sensors.userId],
+		references: [users.id]
+	}),
+	events: many(sensorEvents)
+}));
+
+export const sensorEventsRelations = relations(sensorEvents, ({ one }) => ({
+	user: one(users, {
+		fields: [sensorEvents.userId],
+		references: [users.id]
+	}),
+	sensor: one(sensors, {
+		fields: [sensorEvents.sensorId],
+		references: [sensors.id]
+	})
+}));
+
+export const sensorAggregatesRelations = relations(sensorAggregates, ({ one }) => ({
+	user: one(users, {
+		fields: [sensorAggregates.userId],
+		references: [users.id]
+	})
+}));
+
+export const sensorGoalsRelations = relations(sensorGoals, ({ one }) => ({
+	goal: one(goals, {
+		fields: [sensorGoals.goalId],
+		references: [goals.id]
 	})
 }));
