@@ -14,9 +14,15 @@
 </script>
 
 <div class="settings-page">
-	<header class="header">
-		<h1>⚙️ Innstillinger</h1>
-		<a href="/" class="back-link">← Tilbake</a>
+	<header class="page-header">
+		<div class="header-top">
+			<a href="/" class="back-button">
+				<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+					<path d="M12.5 15L7.5 10L12.5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+				</svg>
+			</a>
+			<h1>Innstillinger</h1>
+		</div>
 	</header>
 
 	<main class="content">
@@ -34,13 +40,11 @@
 
 		<!-- Debug info -->
 		{#if showDebug}
-			<div class="card" style="background: #f8f9fa; border: 2px solid #dee2e6;">
+			<div class="debug-card">
 				<h3>🐛 Debug Info</h3>
-				<pre style="background: #fff; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; font-size: 0.875rem;">
-User data: {JSON.stringify(user, null, 2)}
+				<pre>User data: {JSON.stringify(user, null, 2)}
 
-Settings: {JSON.stringify(settings, null, 2)}
-				</pre>
+Settings: {JSON.stringify(settings, null, 2)}</pre>
 			</div>
 		{/if}
 
@@ -57,8 +61,9 @@ Settings: {JSON.stringify(settings, null, 2)}
 			}}
 		>
 			<!-- Google Chat Integration -->
-			<section class="card">
-				<h2>📱 Google Chat Webhook</h2>
+			<section class="settings-card">
+				<div class="card-icon">📱</div>
+				<h2>Google Chat Webhook</h2>
 				<p class="help-text">
 					For å motta notifikasjoner i Google Chat, må du sette opp en webhook.
 				</p>
@@ -74,7 +79,7 @@ Settings: {JSON.stringify(settings, null, 2)}
 						class="input"
 					/>
 					<small class="hint">
-						<a href="/notifications" target="_blank">Se instruksjoner</a> for hvordan du oppretter en webhook.
+						<a href="/notifications">Se instruksjoner</a> for hvordan du oppretter en webhook.
 					</small>
 				</div>
 
@@ -90,9 +95,12 @@ Settings: {JSON.stringify(settings, null, 2)}
 			</section>
 
 			<!-- Daily Check-in -->
-			<section class="card">
+			<section class="settings-card">
 				<div class="section-header">
-					<h2>📅 Daglig Check-in</h2>
+					<div>
+						<div class="card-icon">📅</div>
+						<h2>Daglig Check-in</h2>
+					</div>
 					<label class="toggle">
 						<input
 							type="checkbox"
@@ -245,89 +253,138 @@ Settings: {JSON.stringify(settings, null, 2)}
 <style>
 	.settings-page {
 		min-height: 100vh;
-		background: #fafafa;
+		background: var(--bg-primary);
+		color: var(--text-secondary);
 	}
 
-	.header {
-		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-		color: white;
-		padding: 2rem;
-		box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+	.page-header {
+		background: var(--bg-header);
+		border-bottom: 1px solid var(--border-color);
+		padding: 1rem;
+		position: sticky;
+		top: 0;
+		z-index: 10;
+	}
+
+	.header-top {
+		max-width: 800px;
+		margin: 0 auto;
 		display: flex;
-		justify-content: space-between;
 		align-items: center;
+		gap: 1rem;
+	}
+
+	.back-button {
+		width: 44px;
+		height: 44px;
+		border-radius: 50%;
+		background: var(--bg-card);
+		border: 1px solid var(--border-color);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: var(--text-primary);
+		text-decoration: none;
+		transition: all 0.2s;
+	}
+
+	.back-button:hover {
+		background: var(--bg-hover);
+		border-color: var(--border-subtle);
 	}
 
 	h1 {
 		margin: 0;
-		font-size: 2rem;
-	}
-
-	.back-link {
-		color: white;
-		text-decoration: none;
-		padding: 0.5rem 1rem;
-		border: 2px solid white;
-		border-radius: 0.5rem;
-		transition: background 0.2s;
-	}
-
-	.back-link:hover {
-		background: rgba(255,255,255,0.2);
+		font-size: 1.5rem;
+		font-weight: 700;
+		color: var(--text-primary);
 	}
 
 	.content {
 		max-width: 800px;
 		margin: 0 auto;
-		padding: 2rem;
+		padding: 1.5rem 1rem;
 	}
 
 	.alert {
 		padding: 1rem;
-		border-radius: 0.5rem;
-		margin-bottom: 2rem;
+		border-radius: 8px;
+		margin-bottom: 1.5rem;
+		font-size: 0.9rem;
 	}
 
 	.alert.success {
-		background: #d4edda;
-		color: #155724;
-		border: 1px solid #c3e6cb;
+		background: var(--success-bg);
+		color: var(--success-text);
+		border: 1px solid var(--success-border);
 	}
 
 	.alert.error {
-		background: #f8d7da;
-		color: #721c24;
-		border: 1px solid #f5c6cb;
+		background: var(--error-bg);
+		color: var(--error-text);
+		border: 1px solid var(--error-border);
 	}
 
-	.card {
-		background: white;
-		border-radius: 1rem;
-		padding: 2rem;
-		margin-bottom: 2rem;
-		box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+	.debug-card {
+		background: var(--bg-card);
+		border: 2px solid var(--accent-primary);
+		border-radius: 12px;
+		padding: 1.5rem;
+		margin-bottom: 1.5rem;
 	}
 
-	.card h2 {
-		margin-top: 0;
-		color: #333;
-		font-size: 1.5rem;
+	.debug-card h3 {
+		margin: 0 0 1rem 0;
+		color: var(--text-primary);
+	}
+
+	.debug-card pre {
+		background: var(--bg-header);
+		padding: 1rem;
+		border-radius: 8px;
+		overflow-x: auto;
+		font-size: 0.875rem;
+		color: var(--success-text);
+	}
+
+	.settings-card {
+		background: var(--bg-card);
+		border: 1px solid var(--border-color);
+		border-radius: 12px;
+		padding: 1.5rem;
+		margin-bottom: 1.5rem;
+	}
+
+	.card-icon {
+		font-size: 2rem;
+		margin-bottom: 1rem;
+		display: inline-block;
+	}
+
+	.settings-card h2 {
+		margin: 0 0 0.5rem 0;
+		color: var(--text-primary);
+		font-size: 1.25rem;
+		font-weight: 600;
 	}
 
 	.section-header {
 		display: flex;
 		justify-content: space-between;
-		align-items: center;
+		align-items: flex-start;
 		margin-bottom: 1rem;
 	}
 
-	.section-header h2 {
-		margin: 0;
+	.section-header > div {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
 	}
 
 	.help-text {
-		color: #666;
+		color: var(--text-secondary);
 		margin-bottom: 1.5rem;
+		line-height: 1.6;
 	}
 
 	.form-group {
@@ -344,32 +401,36 @@ Settings: {JSON.stringify(settings, null, 2)}
 		display: block;
 		font-weight: 600;
 		margin-bottom: 0.5rem;
-		color: #333;
+		color: var(--text-primary);
+		font-size: 0.9rem;
 	}
 
 	.input {
 		width: 100%;
 		padding: 0.75rem;
-		border: 2px solid #e0e0e0;
-		border-radius: 0.5rem;
-		font-size: 1rem;
-		transition: border-color 0.2s;
+		border: 1px solid var(--border-color);
+		border-radius: 8px;
+		font-size: 0.95rem;
+		transition: all 0.2s;
+		background: var(--bg-input);
+		color: var(--text-primary);
 	}
 
 	.input:focus {
 		outline: none;
-		border-color: #667eea;
+		border-color: var(--accent-primary);
+		box-shadow: 0 0 0 3px var(--info-bg);
 	}
 
 	.hint {
 		display: block;
 		margin-top: 0.5rem;
-		color: #666;
-		font-size: 0.875rem;
+		color: var(--text-tertiary);
+		font-size: 0.85rem;
 	}
 
 	.hint a {
-		color: #667eea;
+		color: var(--accent-primary);
 		text-decoration: none;
 	}
 
@@ -382,20 +443,22 @@ Settings: {JSON.stringify(settings, null, 2)}
 		justify-content: space-between;
 		align-items: center;
 		padding: 1rem;
-		background: #f8f9fa;
-		border-radius: 0.5rem;
+		background: var(--bg-header);
+		border: 1px solid var(--border-color);
+		border-radius: 8px;
 		margin-bottom: 1rem;
 	}
 
 	.option-info strong {
 		display: block;
 		margin-bottom: 0.25rem;
-		color: #333;
+		color: var(--text-primary);
+		font-weight: 600;
 	}
 
 	.option-info p {
 		margin: 0;
-		color: #666;
+		color: var(--text-secondary);
 		font-size: 0.875rem;
 	}
 
@@ -403,8 +466,8 @@ Settings: {JSON.stringify(settings, null, 2)}
 	.toggle {
 		position: relative;
 		display: inline-block;
-		width: 60px;
-		height: 34px;
+		width: 52px;
+		height: 28px;
 		flex-shrink: 0;
 	}
 
@@ -421,29 +484,30 @@ Settings: {JSON.stringify(settings, null, 2)}
 		left: 0;
 		right: 0;
 		bottom: 0;
-		background-color: #ccc;
-		transition: 0.4s;
-		border-radius: 34px;
+		background-color: var(--bg-hover);
+		transition: 0.3s;
+		border-radius: 28px;
 	}
 
 	.toggle-slider:before {
 		position: absolute;
 		content: "";
-		height: 26px;
-		width: 26px;
-		left: 4px;
-		bottom: 4px;
-		background-color: white;
-		transition: 0.4s;
+		height: 22px;
+		width: 22px;
+		left: 3px;
+		bottom: 3px;
+		background-color: var(--text-tertiary);
+		transition: 0.3s;
 		border-radius: 50%;
 	}
 
 	.toggle input:checked + .toggle-slider {
-		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+		background: var(--accent-primary);
 	}
 
 	.toggle input:checked + .toggle-slider:before {
-		transform: translateX(26px);
+		transform: translateX(24px);
+		background-color: white;
 	}
 
 	.actions {
@@ -454,35 +518,35 @@ Settings: {JSON.stringify(settings, null, 2)}
 	}
 
 	.debug-button {
-		background: #6c757d;
-		color: white;
-		border: none;
-		padding: 1rem 1.5rem;
-		border-radius: 0.5rem;
+		background: var(--bg-hover);
+		color: var(--text-primary);
+		border: 1px solid var(--border-color);
+		padding: 0.875rem 1.5rem;
+		border-radius: 8px;
 		font-size: 0.875rem;
 		font-weight: 600;
 		cursor: pointer;
-		transition: opacity 0.2s;
+		transition: all 0.2s;
 	}
 
 	.debug-button:hover {
-		opacity: 0.8;
+		background: var(--bg-secondary);
 	}
 
 	.save-button {
-		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+		background: var(--accent-primary);
 		color: white;
 		border: none;
-		padding: 1rem 2rem;
-		border-radius: 0.5rem;
-		font-size: 1rem;
+		padding: 0.875rem 2rem;
+		border-radius: 8px;
+		font-size: 0.95rem;
 		font-weight: 600;
 		cursor: pointer;
-		transition: transform 0.2s, opacity 0.2s;
+		transition: all 0.2s;
 	}
 
 	.save-button:hover:not(:disabled) {
-		transform: translateY(-2px);
+		background: var(--accent-hover);
 	}
 
 	.save-button:disabled {

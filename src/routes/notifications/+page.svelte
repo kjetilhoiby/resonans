@@ -36,18 +36,25 @@
 </script>
 
 <div class="notifications-page">
-	<header class="header">
-		<h1>🔔 Notifikasjoner</h1>
-		<a href="/" class="back-link">← Tilbake</a>
+	<header class="page-header">
+		<div class="header-top">
+			<a href="/" class="back-button">
+				<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+					<path d="M12.5 15L7.5 10L12.5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+				</svg>
+			</a>
+			<h1>Notifikasjoner</h1>
+		</div>
 	</header>
 
 	<main class="content">
-		<section class="card">
-			<h2>📤 Google Chat - Daglig Check-in</h2>
+		<section class="notification-card">
+			<div class="card-icon">📤</div>
+			<h2>Google Chat - Daglig Check-in</h2>
 			<p>Send en daglig oppdatering til Google Chat med status på dine mål og oppgaver.</p>
 
 			<div class="info-box">
-				<strong>📋 Hva inkluderes:</strong>
+				<div class="info-title">Hva inkluderes:</div>
 				<ul>
 					<li>Oversikt over aktive mål med fremgang</li>
 					<li>Oppgaver som er relevante i dag</li>
@@ -55,8 +62,8 @@
 				</ul>
 			</div>
 
-			<button onclick={sendCheckIn} disabled={sending} class="send-button">
-				{sending ? '📤 Sender...' : '📤 Send Check-in Nå'}
+			<button onclick={sendCheckIn} disabled={sending} class="primary-button">
+				{sending ? 'Sender...' : 'Send Check-in Nå'}
 			</button>
 
 			{#if result}
@@ -66,40 +73,52 @@
 			{/if}
 		</section>
 
-		<section class="card">
-			<h2>⚙️ Konfigurasjon</h2>
+		<section class="notification-card">
+			<div class="card-icon">⚙️</div>
+			<h2>Konfigurasjon</h2>
 			<p>For å aktivere Google Chat notifikasjoner, må du sette opp en webhook URL.</p>
 
-			<div class="steps">
-				<h3>Steg 1: Opprett Google Chat Webhook</h3>
-				<ol>
-					<li>Åpne Google Chat i nettleseren</li>
-					<li>Opprett eller velg et space/rom</li>
-					<li>Klikk på space-navnet → "Apps & integrations"</li>
-					<li>Klikk "Add webhooks" → "Create webhook"</li>
-					<li>Gi den et navn (f.eks. "Resonans") og avatar</li>
-					<li>Kopier webhook URL-en</li>
-				</ol>
+			<div class="config-steps">
+				<div class="step">
+					<div class="step-number">1</div>
+					<div class="step-content">
+						<h3>Opprett Google Chat Webhook</h3>
+						<ol>
+							<li>Åpne Google Chat i nettleseren</li>
+							<li>Opprett eller velg et space/rom</li>
+							<li>Klikk på space-navnet → "Apps & integrations"</li>
+							<li>Klikk "Add webhooks" → "Create webhook"</li>
+							<li>Gi den et navn (f.eks. "Resonans") og avatar</li>
+							<li>Kopier webhook URL-en</li>
+						</ol>
+					</div>
+				</div>
 
-				<h3>Steg 2: Legg til i miljøvariabler</h3>
-				<p>Legg til webhook URL-en i <code>.env</code>-filen din:</p>
-				<pre><code>GOOGLE_CHAT_WEBHOOK=https://chat.googleapis.com/v1/spaces/...</code></pre>
+				<div class="step">
+					<div class="step-number">2</div>
+					<div class="step-content">
+						<h3>Legg til i miljøvariabler</h3>
+						<p>Legg til webhook URL-en i <code>.env</code>-filen din:</p>
+						<pre><code>GOOGLE_CHAT_WEBHOOK=https://chat.googleapis.com/v1/spaces/...</code></pre>
 
-				<p>Eller i Vercel:</p>
-				<ol>
-					<li>Gå til Vercel Dashboard → Settings → Environment Variables</li>
-					<li>Legg til: <code>GOOGLE_CHAT_WEBHOOK</code></li>
-					<li>Redeploy appen</li>
-				</ol>
+						<p>Eller i Vercel:</p>
+						<ol>
+							<li>Gå til Vercel Dashboard → Settings → Environment Variables</li>
+							<li>Legg til: <code>GOOGLE_CHAT_WEBHOOK</code></li>
+							<li>Redeploy appen</li>
+						</ol>
+					</div>
+				</div>
 			</div>
 		</section>
 
-		<section class="card">
-			<h2>🕐 Automatiske Notifikasjoner (Kommer snart)</h2>
+		<section class="notification-card coming-soon">
+			<div class="card-icon">🕐</div>
+			<h2>Automatiske Notifikasjoner</h2>
 			<p>Senere kan vi sette opp Vercel Cron Jobs for automatiske daglige check-ins.</p>
 			
 			<div class="info-box">
-				<strong>Planlagte features:</strong>
+				<div class="info-title">Planlagte features:</div>
 				<ul>
 					<li>Daglig check-in kl. 09:00</li>
 					<li>Ukentlig oppsummering søndager</li>
@@ -114,87 +133,132 @@
 <style>
 	.notifications-page {
 		min-height: 100vh;
-		background: #fafafa;
+		background: var(--bg-primary);
+		color: var(--text-secondary);
 	}
 
-	.header {
-		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-		color: white;
-		padding: 2rem;
-		box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+	.page-header {
+		background: var(--bg-header);
+		border-bottom: 1px solid var(--border-color);
+		padding: 1rem;
+		position: sticky;
+		top: 0;
+		z-index: 10;
+	}
+
+	.header-top {
+		max-width: 800px;
+		margin: 0 auto;
 		display: flex;
-		justify-content: space-between;
 		align-items: center;
+		gap: 1rem;
+	}
+
+	.back-button {
+		width: 44px;
+		height: 44px;
+		border-radius: 50%;
+		background: var(--bg-card);
+		border: 1px solid var(--border-color);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: var(--text-primary);
+		text-decoration: none;
+		transition: all 0.2s;
+	}
+
+	.back-button:hover {
+		background: var(--bg-hover);
+		border-color: var(--border-subtle);
 	}
 
 	h1 {
 		margin: 0;
-		font-size: 2rem;
-	}
-
-	.back-link {
-		color: white;
-		text-decoration: none;
-		padding: 0.5rem 1rem;
-		border: 2px solid white;
-		border-radius: 0.5rem;
-		transition: background 0.2s;
-	}
-
-	.back-link:hover {
-		background: rgba(255,255,255,0.2);
+		font-size: 1.5rem;
+		font-weight: 700;
+		color: var(--text-primary);
 	}
 
 	.content {
 		max-width: 800px;
 		margin: 0 auto;
-		padding: 2rem;
+		padding: 1.5rem 1rem;
 	}
 
-	.card {
-		background: white;
-		border-radius: 1rem;
-		padding: 2rem;
-		margin-bottom: 2rem;
-		box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+	.notification-card {
+		background: var(--bg-card);
+		border: 1px solid var(--border-color);
+		border-radius: 12px;
+		padding: 1.5rem;
+		margin-bottom: 1.5rem;
 	}
 
-	.card h2 {
-		margin-top: 0;
-		color: #333;
+	.notification-card.coming-soon {
+		opacity: 0.7;
+	}
+
+	.card-icon {
+		font-size: 2rem;
+		margin-bottom: 1rem;
+	}
+
+	.notification-card h2 {
+		margin: 0 0 0.5rem 0;
+		color: var(--text-primary);
+		font-size: 1.25rem;
+		font-weight: 600;
+	}
+
+	.notification-card p {
+		color: var(--text-secondary);
+		margin: 0 0 1rem 0;
+		line-height: 1.6;
 	}
 
 	.info-box {
-		background: #f0f4ff;
-		border-left: 4px solid #667eea;
+		background: var(--info-bg);
+		border-left: 3px solid var(--accent-primary);
 		padding: 1rem;
 		margin: 1rem 0;
-		border-radius: 0.5rem;
+		border-radius: 8px;
+	}
+
+	.info-title {
+		font-weight: 600;
+		color: var(--text-primary);
+		margin-bottom: 0.5rem;
 	}
 
 	.info-box ul {
 		margin: 0.5rem 0 0 0;
 		padding-left: 1.5rem;
+		color: var(--text-secondary);
 	}
 
-	.send-button {
-		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+	.info-box li {
+		margin-bottom: 0.25rem;
+	}
+
+	.primary-button {
+		background: var(--accent-primary);
 		color: white;
 		border: none;
-		padding: 1rem 2rem;
-		border-radius: 0.5rem;
-		font-size: 1rem;
+		padding: 0.875rem 1.5rem;
+		border-radius: 8px;
+		font-size: 0.95rem;
 		font-weight: 600;
 		cursor: pointer;
-		transition: transform 0.2s, opacity 0.2s;
+		transition: all 0.2s;
 		margin-top: 1rem;
+		width: 100%;
 	}
 
-	.send-button:hover:not(:disabled) {
-		transform: translateY(-2px);
+	.primary-button:hover:not(:disabled) {
+		background: var(--accent-hover);
 	}
 
-	.send-button:disabled {
+	.primary-button:disabled {
 		opacity: 0.6;
 		cursor: not-allowed;
 	}
@@ -202,49 +266,92 @@
 	.result {
 		margin-top: 1rem;
 		padding: 1rem;
-		border-radius: 0.5rem;
+		border-radius: 8px;
 		white-space: pre-line;
+		font-size: 0.9rem;
 	}
 
 	.result.success {
-		background: #d4edda;
-		color: #155724;
-		border: 1px solid #c3e6cb;
+		background: var(--success-bg);
+		color: var(--success-text);
+		border: 1px solid var(--success-border);
 	}
 
 	.result.error {
-		background: #f8d7da;
-		color: #721c24;
-		border: 1px solid #f5c6cb;
+		background: var(--error-bg);
+		color: var(--error-text);
+		border: 1px solid var(--error-border);
 	}
 
-	.steps h3 {
-		color: #667eea;
-		margin-top: 1.5rem;
+	.config-steps {
+		margin-top: 1rem;
 	}
 
-	.steps ol {
+	.step {
+		display: flex;
+		gap: 1rem;
+		margin-bottom: 2rem;
+	}
+
+	.step-number {
+		width: 32px;
+		height: 32px;
+		border-radius: 50%;
+		background: var(--accent-primary);
+		color: white;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-weight: 700;
+		flex-shrink: 0;
+	}
+
+	.step-content {
+		flex: 1;
+	}
+
+	.step-content h3 {
+		color: var(--text-primary);
+		margin: 0 0 0.75rem 0;
+		font-size: 1.1rem;
+	}
+
+	.step-content p {
+		margin: 0.75rem 0;
+	}
+
+	.step-content ol {
 		line-height: 1.8;
+		color: var(--text-secondary);
+		margin: 0.5rem 0;
+	}
+
+	.step-content li {
+		margin-bottom: 0.5rem;
 	}
 
 	code {
-		background: #f4f4f4;
-		padding: 0.2rem 0.4rem;
-		border-radius: 0.25rem;
-		font-family: 'Courier New', monospace;
-		font-size: 0.9em;
+		background: var(--bg-header);
+		border: 1px solid var(--border-color);
+		padding: 0.25rem 0.5rem;
+		border-radius: 4px;
+		font-family: 'SF Mono', 'Monaco', 'Courier New', monospace;
+		font-size: 0.85em;
+		color: var(--success-text);
 	}
 
 	pre {
-		background: #2d2d2d;
-		color: #f8f8f2;
+		background: var(--bg-header);
+		border: 1px solid var(--border-color);
 		padding: 1rem;
-		border-radius: 0.5rem;
+		border-radius: 8px;
 		overflow-x: auto;
+		margin: 1rem 0;
 	}
 
 	pre code {
-		background: none;
-		color: inherit;
+		background: transparent;
+		border: none;
+		padding: 0;
 	}
 </style>
