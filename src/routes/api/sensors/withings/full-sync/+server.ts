@@ -5,25 +5,32 @@ import { aggregateAllPeriods } from '$lib/server/integrations/aggregation';
 import { DEFAULT_USER_ID } from '$lib/server/users';
 
 /**
- * POST /api/sensors/withings/sync
+ * POST /api/sensors/withings/full-sync
  * 
- * Manually trigger Withings data synchronization
+ * Full sync: Delete all data and re-sync everything from September 1, 2017
  */
 export const POST: RequestHandler = async () => {
 	try {
 		const userId = DEFAULT_USER_ID;
 		
-		const results = await syncAllWithingsData(userId);
+		console.log('🔄 Starting full sync from September 1, 2017...');
+		const results = await syncAllWithingsData(userId, true);
+		
+		console.log('📊 Synced:', results);
+		console.log('🔄 Aggregating all periods...');
 		
 		// Automatically aggregate after successful sync
 		await aggregateAllPeriods(userId);
 		
+		console.log('✅ Full sync completed!');
+		
 		return json({ 
 			success: true,
-			synced: results
+			synced: results,
+			message: 'Full sync completed from September 1, 2017'
 		});
 	} catch (err) {
-		console.error('Withings sync error:', err);
-		throw error(500, 'Failed to sync Withings data');
+		console.error('Full sync error:', err);
+		throw error(500, 'Failed to complete full sync');
 	}
 };

@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, integer, boolean, jsonb, decimal } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, timestamp, integer, boolean, jsonb, decimal, unique } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 
@@ -343,6 +343,7 @@ export const sensorAggregates = pgTable('sensor_aggregates', {
 	userId: text('user_id').references(() => users.id).notNull(),
 	period: text('period').notNull(), // 'week', 'month', 'year'
 	periodKey: text('period_key').notNull(), // '2025W43', '2025M10', '2025'
+	year: integer('year').notNull(), // For easy filtering
 	startDate: timestamp('start_date').notNull(),
 	endDate: timestamp('end_date').notNull(),
 	metrics: jsonb('metrics').$type<{
@@ -367,7 +368,10 @@ export const sensorAggregates = pgTable('sensor_aggregates', {
 	eventCount: integer('event_count').notNull().default(0), // How many raw events
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
-});
+}, (table) => ({
+	// Unique constraint for upsert operations
+	uniquePeriod: unique().on(table.userId, table.period, table.periodKey)
+}));
 
 // Sensor-connected goals (auto-updating progress)
 export const sensorGoals = pgTable('sensor_goals', {

@@ -10,9 +10,8 @@
 	let withingsStatus = $state<any>(null);
 	let loadingWithings = $state(false);
 	let syncing = $state(false);
-	let syncResult = $state<any>(null);
-	
-	// Reactive getters for user data - will update when data.user changes
+	let syncResult: any = $state(null);
+	let syncProgress = $state({ step: '', progress: 0 });	// Reactive getters for user data - will update when data.user changes
 	const user = $derived(data.user);
 	const settings = $derived(user?.notificationSettings || {});
 
@@ -51,12 +50,25 @@
 	async function syncWithings() {
 		syncing = true;
 		syncResult = null;
+		syncProgress = { step: 'Starter synkronisering...', progress: 10 };
 		
 		try {
+			syncProgress = { step: 'Henter vekt-data...', progress: 25 };
+			await new Promise(resolve => setTimeout(resolve, 300)); // Small delay for visual feedback
+			
+			syncProgress = { step: 'Henter aktivitetsdata...', progress: 50 };
+			await new Promise(resolve => setTimeout(resolve, 300));
+			
+			syncProgress = { step: 'Henter søvndata...', progress: 75 };
+			
 			const res = await fetch('/api/sensors/withings/sync', { method: 'POST' });
 			const data = await res.json();
 			
+			syncProgress = { step: 'Beregner aggregater...', progress: 90 };
+			await new Promise(resolve => setTimeout(resolve, 300));
+			
 			if (res.ok) {
+				syncProgress = { step: 'Fullført!', progress: 100 };
 				syncResult = { success: true, ...data };
 				await loadWithingsStatus(); // Refresh status to show new lastSync
 			} else {
@@ -67,6 +79,52 @@
 			syncResult = { success: false, error: 'Sync failed' };
 		} finally {
 			syncing = false;
+			// Clear progress after a delay
+			setTimeout(() => {
+				syncProgress = { step: '', progress: 0 };
+			}, 2000);
+		}
+	}
+
+	async function fullSyncWithings() {
+		if (!confirm('Dette vil slette all eksisterende sensor-data og laste ned alt på nytt fra 1. september 2017. Er du sikker?')) {
+			return;
+		}
+
+		syncing = true;
+		syncResult = null;
+		syncProgress = { step: 'Sletter eksisterende data...', progress: 5 };
+		
+		try {
+			syncProgress = { step: 'Henter historisk vekt-data (2017-)...', progress: 20 };
+			await new Promise(resolve => setTimeout(resolve, 500));
+			
+			syncProgress = { step: 'Henter historisk aktivitetsdata...', progress: 40 };
+			await new Promise(resolve => setTimeout(resolve, 500));
+			
+			syncProgress = { step: 'Henter historisk søvndata...', progress: 60 };
+			
+			const res = await fetch('/api/sensors/withings/full-sync', { method: 'POST' });
+			const data = await res.json();
+			
+			syncProgress = { step: 'Beregner aggregater for alle perioder...', progress: 85 };
+			await new Promise(resolve => setTimeout(resolve, 500));
+			
+			if (res.ok) {
+				syncProgress = { step: 'Full synk fullført!', progress: 100 };
+				syncResult = { success: true, ...data };
+				await loadWithingsStatus();
+			} else {
+				syncResult = { success: false, error: data.error };
+			}
+		} catch (err) {
+			console.error('Failed to full sync Withings:', err);
+			syncResult = { success: false, error: 'Full sync failed' };
+		} finally {
+			syncing = false;
+			setTimeout(() => {
+				syncProgress = { step: '', progress: 0 };
+			}, 2000);
 		}
 	}
 
@@ -195,6 +253,22 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 						{/if}
 					{/if}
 
+					<!-- Sync Progress Bar -->
+					{#if syncing}
+						<div style="margin-top: 1rem; padding: 1rem; background: var(--surface-color); border-radius: 8px; border: 1px solid var(--border-color);">
+							<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+								<span style="font-size: 0.9rem; color: var(--text-secondary);">{syncProgress.step}</span>
+								<span style="font-size: 0.9rem; font-weight: 600; color: var(--primary-color);">{syncProgress.progress}%</span>
+							</div>
+							<div style="width: 100%; height: 8px; background: var(--background-color); border-radius: 4px; overflow: hidden;">
+								<div 
+									style="height: 100%; background: linear-gradient(90deg, var(--primary-color), var(--accent-color)); border-radius: 4px; transition: width 0.3s ease;"
+									style:width="{syncProgress.progress}%"
+								></div>
+							</div>
+						</div>
+					{/if}
+
 					<div style="display: flex; gap: 1rem; margin-top: 1rem;">
 						<button 
 							type="button" 
@@ -205,6 +279,18 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 						>
 							{syncing ? '⏳ Synkroniserer...' : '🔄 Synkroniser nå'}
 						</button>
+						<button 
+							type="button" 
+							onclick={fullSyncWithings} 
+							class="secondary-button" 
+							style="flex: 1;"
+							disabled={syncing}
+							title="Sletter all data og laster ned alt på nytt fra 1. september 2017"
+						>
+							{syncing ? '⏳ Full synk...' : '🔄 Full synk (2017-)'}
+						</button>
+					</div>
+					<div style="display: flex; gap: 1rem; margin-top: 0.5rem;">
 						<button type="button" onclick={disconnectWithings} class="debug-button" style="flex: 1;">
 							🔌 Koble fra
 						</button>

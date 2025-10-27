@@ -1,5 +1,5 @@
 import { db } from '$lib/db';
-import { sensors, sensorEvents } from '$lib/db/schema';
+import { sensors, sensorEvents, sensorAggregates } from '$lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { refreshAccessToken, fetchAllWithingsData, fetchWithingsSleep } from './withings';
 
@@ -144,10 +144,17 @@ export async function syncWeightData(
 	userId: string,
 	accessToken: string,
 	sensorId: string,
-	lastSync?: Date
+	lastSync?: Date,
+	fullSync = false
 ) {
-	const startdate = lastSync ? Math.floor(lastSync.getTime() / 1000) : undefined;
+	// Full sync starts from September 1, 2017
+	const startdate = fullSync 
+		? Math.floor(new Date('2017-09-01').getTime() / 1000)
+		: lastSync 
+			? Math.floor(lastSync.getTime() / 1000) 
+			: undefined;
 
+	console.log(`   Fetching weight data${startdate ? ` from ${new Date(startdate * 1000).toISOString().split('T')[0]}` : ''}...`);
 	const data = await fetchAllWithingsData(accessToken, {
 		action: 'getmeas',
 		meastype: 1, // Weight
@@ -155,9 +162,11 @@ export async function syncWeightData(
 		startdate
 	});
 
+	console.log(`   Parsing ${data.length} weight measurements...`);
 	const parsed = parseWeightData(data);
 
 	// Store events
+	console.log(`   Storing ${parsed.length} weight events in database...`);
 	for (const event of parsed) {
 		await db.insert(sensorEvents).values({
 			userId,
@@ -179,21 +188,28 @@ export async function syncActivityData(
 	userId: string,
 	accessToken: string,
 	sensorId: string,
-	lastSync?: Date
+	lastSync?: Date,
+	fullSync = false
 ) {
-	const startdateymd = lastSync
-		? lastSync.toISOString().split('T')[0]
-		: new Date('2020-01-01').toISOString().split('T')[0];
+	// Full sync starts from September 1, 2017
+	const startdateymd = fullSync
+		? '2017-09-01'
+		: lastSync
+			? lastSync.toISOString().split('T')[0]
+			: undefined;
 
+	console.log(`   Fetching activity data${startdateymd ? ` from ${startdateymd}` : ''}...`);
 	const data = await fetchAllWithingsData(accessToken, {
 		action: 'getactivity',
 		startdateymd,
 		enddateymd: new Date().toISOString().split('T')[0]
 	});
 
+	console.log(`   Parsing ${data.length} activity records...`);
 	const parsed = parseActivityData(data);
 
 	// Store events
+	console.log(`   Storing ${parsed.length} activity events in database...`);
 	for (const event of parsed) {
 		await db.insert(sensorEvents).values({
 			userId,
@@ -215,12 +231,17 @@ export async function syncSleepData(
 	userId: string,
 	accessToken: string,
 	sensorId: string,
-	lastSync?: Date
+	lastSync?: Date,
+	fullSync = false
 ) {
-	const startdateymd = lastSync
-		? lastSync.toISOString().split('T')[0]
-		: new Date('2020-01-01').toISOString().split('T')[0];
+	// Full sync starts from September 1, 2017
+	const startdateymd = fullSync
+		? '2017-09-01'
+		: lastSync
+			? lastSync.toISOString().split('T')[0]
+			: undefined;
 
+	console.log(`   Fetching sleep data${startdateymd ? ` from ${startdateymd}` : ''}...`);
 	// Use fetchWithingsSleep directly since sleep API is different
 	const allData: any[] = [];
 	let offset = 0;
@@ -229,6 +250,7 @@ export async function syncSleepData(
 
 	while (hasMore && page < 100) {
 		page++;
+		console.log(`   Fetching sleep page ${page}...`);
 		const response = await fetchWithingsSleep(accessToken, {
 			action: 'getsummary',
 			startdateymd,
@@ -242,14 +264,17 @@ export async function syncSleepData(
 
 		const batch = response.body.series || [];
 		allData.push(...(Array.isArray(batch) ? batch : []));
+		console.log(`   Got ${batch.length} sleep sessions (total: ${allData.length})`);
 
 		hasMore = response.body.more || false;
 		offset = response.body.offset || 0;
 	}
 
+	console.log(`   Parsing ${allData.length} sleep sessions...`);
 	const parsed = parseSleepData(allData);
 
 	// Store events
+	console.log(`   Storing ${parsed.length} sleep events in database...`);
 	for (const event of parsed) {
 		await db.insert(sensorEvents).values({
 			userId,
@@ -267,7 +292,7 @@ export async function syncSleepData(
 /**
  * Full sync of all Withings data
  */
-export async function syncAllWithingsData(userId: string): Promise<{
+export async function syncAllWithingsData(userId: string, fullSync = false): Promise<{
 	weight: number;
 	activity: number;
 	sleep: number;
@@ -279,14 +304,31 @@ export async function syncAllWithingsData(userId: string): Promise<{
 	}
 
 	const accessToken = await getValidAccessToken(sensor);
-	const lastSync = sensor.lastSync || undefined;
+	const lastSync = fullSync ? undefined : (sensor.lastSync || undefined);
+
+	// If full sync, delete all existing data first
+	if (fullSync) {
+		console.log('🗑️  Full sync: Deleting existing sensor data...');
+		await db.delete(sensorEvents).where(eq(sensorEvents.userId, userId));
+		console.log('   ✓ Deleted sensor events');
+		
+		await db.delete(sensorAggregates).where(eq(sensorAggregates.userId, userId));
+		console.log('   ✓ Deleted aggregates');
+		console.log('🔄 Starting data sync from September 1, 2017...');
+	}
 
 	// Sync all data types
-	const [weight, activity, sleep] = await Promise.all([
-		syncWeightData(userId, accessToken, sensor.id, lastSync),
-		syncActivityData(userId, accessToken, sensor.id, lastSync),
-		syncSleepData(userId, accessToken, sensor.id, lastSync)
-	]);
+	console.log('📊 Syncing weight data...');
+	const weight = await syncWeightData(userId, accessToken, sensor.id, lastSync, fullSync);
+	console.log(`   ✓ Synced ${weight} weight measurements`);
+	
+	console.log('🏃 Syncing activity data...');
+	const activity = await syncActivityData(userId, accessToken, sensor.id, lastSync, fullSync);
+	console.log(`   ✓ Synced ${activity} activity records`);
+	
+	console.log('😴 Syncing sleep data...');
+	const sleep = await syncSleepData(userId, accessToken, sensor.id, lastSync, fullSync);
+	console.log(`   ✓ Synced ${sleep} sleep sessions`);
 
 	// Update last sync timestamp
 	await db

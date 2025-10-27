@@ -442,6 +442,7 @@
 			<button onclick={toggleSearch} class="header-button search-toggle" title="Søk i meldinger">
 				🔍
 			</button>
+			<a href="/health" class="header-button">💪 Helse</a>
 			<a href="/goals" class="header-button">📊 Mål</a>
 			<a href="/settings" class="header-button">⚙️ Innstillinger</a>
 			<button onclick={startNewConversation} class="header-button new-chat">
