@@ -9,6 +9,8 @@
 	let showDebug = $state(false);
 	let withingsStatus = $state<any>(null);
 	let loadingWithings = $state(false);
+	let syncing = $state(false);
+	let syncResult = $state<any>(null);
 	
 	// Reactive getters for user data - will update when data.user changes
 	const user = $derived(data.user);
@@ -43,6 +45,28 @@
 			}
 		} catch (err) {
 			console.error('Failed to disconnect Withings:', err);
+		}
+	}
+
+	async function syncWithings() {
+		syncing = true;
+		syncResult = null;
+		
+		try {
+			const res = await fetch('/api/sensors/withings/sync', { method: 'POST' });
+			const data = await res.json();
+			
+			if (res.ok) {
+				syncResult = { success: true, ...data };
+				await loadWithingsStatus(); // Refresh status to show new lastSync
+			} else {
+				syncResult = { success: false, error: data.error };
+			}
+		} catch (err) {
+			console.error('Failed to sync Withings:', err);
+			syncResult = { success: false, error: 'Sync failed' };
+		} finally {
+			syncing = false;
 		}
 	}
 
@@ -158,10 +182,29 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 							{/if}
 						</div>
 					</div>
+
+					{#if syncResult}
+						{#if syncResult.success}
+							<div class="alert success" style="margin-top: 1rem;">
+								✅ {syncResult.message}
+							</div>
+						{:else}
+							<div class="alert error" style="margin-top: 1rem;">
+								❌ {syncResult.error}
+							</div>
+						{/if}
+					{/if}
+
 					<div style="display: flex; gap: 1rem; margin-top: 1rem;">
-						<a href="/api/sensors/withings/connect" class="primary-button" style="flex: 1; text-align: center; text-decoration: none;">
-							🔄 Synkroniser på nytt
-						</a>
+						<button 
+							type="button" 
+							onclick={syncWithings} 
+							class="primary-button" 
+							style="flex: 1;"
+							disabled={syncing}
+						>
+							{syncing ? '⏳ Synkroniserer...' : '🔄 Synkroniser nå'}
+						</button>
 						<button type="button" onclick={disconnectWithings} class="debug-button" style="flex: 1;">
 							🔌 Koble fra
 						</button>
