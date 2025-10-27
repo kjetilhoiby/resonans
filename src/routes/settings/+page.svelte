@@ -1,15 +1,51 @@
 <script lang="ts">
 	import type { PageData, ActionData } from './$types';
 	import { enhance } from '$app/forms';
+	import { onMount } from 'svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	let saving = $state(false);
 	let showDebug = $state(false);
+	let withingsStatus = $state<any>(null);
+	let loadingWithings = $state(false);
 	
 	// Reactive getters for user data - will update when data.user changes
 	const user = $derived(data.user);
 	const settings = $derived(user?.notificationSettings || {});
+
+	// Check Withings status on mount
+	onMount(async () => {
+		await loadWithingsStatus();
+	});
+
+	async function loadWithingsStatus() {
+		loadingWithings = true;
+		try {
+			const res = await fetch('/api/sensors/withings/status');
+			if (res.ok) {
+				withingsStatus = await res.json();
+			}
+		} catch (err) {
+			console.error('Failed to load Withings status:', err);
+		} finally {
+			loadingWithings = false;
+		}
+	}
+
+	async function disconnectWithings() {
+		if (!confirm('Er du sikker på at du vil koble fra Withings?')) return;
+		
+		try {
+			const res = await fetch('/api/sensors/withings/disconnect', { method: 'POST' });
+			if (res.ok) {
+				await loadWithingsStatus();
+			}
+		} catch (err) {
+			console.error('Failed to disconnect Withings:', err);
+		}
+	}
+
 
 </script>
 
@@ -92,6 +128,49 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 						<option value="UTC">UTC</option>
 					</select>
 				</div>
+			</section>
+
+			<!-- Withings Integration -->
+			<section class="settings-card">
+				<div class="card-icon">🏃‍♂️</div>
+				<h2>Withings Helsedata</h2>
+				<p class="help-text">
+					Koble til Withings for automatisk synkronisering av vekt, søvn, aktivitet og VO2max-data.
+				</p>
+
+				{#if loadingWithings}
+					<div style="padding: 2rem; text-align: center; color: var(--text-tertiary);">
+						Laster...
+					</div>
+				{:else if withingsStatus?.connected}
+					<div class="notification-option" style="background: var(--success-bg); border-color: var(--success-border);">
+						<div class="option-info">
+							<strong style="color: var(--success-text);">✅ Tilkoblet</strong>
+							<p style="color: var(--success-text);">
+								Siste synkronisering: {withingsStatus.sensor?.lastSync 
+									? new Date(withingsStatus.sensor.lastSync).toLocaleString('nb-NO')
+									: 'Aldri'}
+							</p>
+							{#if withingsStatus.sensor?.isExpired}
+								<p style="color: var(--error-text); margin-top: 0.5rem;">
+									⚠️ Token utløpt - koble til på nytt
+								</p>
+							{/if}
+						</div>
+					</div>
+					<div style="display: flex; gap: 1rem; margin-top: 1rem;">
+						<a href="/api/sensors/withings/connect" class="primary-button" style="flex: 1; text-align: center; text-decoration: none;">
+							🔄 Synkroniser på nytt
+						</a>
+						<button type="button" onclick={disconnectWithings} class="debug-button" style="flex: 1;">
+							🔌 Koble fra
+						</button>
+					</div>
+				{:else}
+					<a href="/api/sensors/withings/connect" class="primary-button" style="display: block; text-align: center; text-decoration: none;">
+						🔗 Koble til Withings
+					</a>
+				{/if}
 			</section>
 
 			<!-- Daily Check-in -->
