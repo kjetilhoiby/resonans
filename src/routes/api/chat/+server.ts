@@ -244,6 +244,50 @@ const tools = [
 				required: ['action']
 			}
 		}
+	},
+	{
+		type: 'function' as const,
+		function: {
+			name: 'query_sensor_data',
+			description: 'ALLTID bruk dette for å hente faktiske helsedata fra Withings. ALDRI oppgi data fra hukommelsen - data må hentes live! Bruk "latest" for nyeste uke, "trend" for flere perioder (f.eks. "siste 3 måneder"), "period_summary" for én periode, "raw_events" for detaljerte målinger.',
+			parameters: {
+				type: 'object',
+				properties: {
+					queryType: {
+						type: 'string',
+						description: 'Type spørring: "latest"=nyeste uke, "trend"=sammenlign perioder (BRUK for "siste X måneder/uker"), "period_summary"=én periode, "raw_events"=detaljert',
+						enum: ['latest', 'period_summary', 'trend', 'raw_events']
+					},
+					period: {
+						type: 'string',
+						description: 'Tidsperiode for aggregater',
+						enum: ['week', 'month', 'year']
+					},
+					periodKey: {
+						type: 'string',
+						description: 'Spesifikk periode (f.eks: "2025W43", "2025M10", "2025")'
+					},
+					metric: {
+						type: 'string',
+						description: 'Hvilken metrikk å fokusere på',
+						enum: ['weight', 'steps', 'sleep', 'intense_minutes', 'all']
+					},
+					limit: {
+						type: 'number',
+						description: 'Max antall resultater (for raw_events eller trend)'
+					},
+					startDate: {
+						type: 'string',
+						description: 'Startdato for raw events (ISO format)'
+					},
+					endDate: {
+						type: 'string',
+						description: 'Sluttdato for raw events (ISO format)'
+					}
+				},
+				required: ['queryType']
+			}
+		}
 	}
 ];
 
@@ -305,9 +349,18 @@ export const POST: RequestHandler = async ({ request }) => {
 		}
 		goalsContext += '--- SLUTT PÅ MÅL OG OPPGAVER ---\n\n';
 
+		// Add current date context
+		const today = new Date();
+		const dateContext = `\n--- DAGENS DATO ---\nDagens dato er: ${today.toLocaleDateString('nb-NO', { 
+			year: 'numeric', 
+			month: 'long', 
+			day: 'numeric',
+			weekday: 'long'
+		})} (${today.toISOString().split('T')[0]})\n--- SLUTT PÅ DATO ---\n\n`;
+
 		// Bygg meldingshistorikk for OpenAI
 		const messages: ChatCompletionMessageParam[] = [
-			{ role: 'system', content: SYSTEM_PROMPT + memoryContext + goalsContext }
+			{ role: 'system', content: SYSTEM_PROMPT + memoryContext + goalsContext + dateContext }
 		];
 
 		// Legg til historikk (unntatt den siste brukermeldingen som allerede er der)
@@ -353,8 +406,21 @@ export const POST: RequestHandler = async ({ request }) => {
 		let responseMessage = completion.choices[0]?.message;
 		let createdGoalId: string | null = null;
 
+		// Debug logging
+		console.log('\n🤖 OpenAI Response:');
+		console.log('Finish reason:', completion.choices[0]?.finish_reason);
+		console.log('Tool calls:', responseMessage?.tool_calls?.length || 0);
+		if (responseMessage?.tool_calls) {
+			console.log('Tools requested:', responseMessage.tool_calls.map(tc => 
+				tc.type === 'function' ? tc.function.name : tc.type
+			).join(', '));
+		}
+		console.log('Direct response:', responseMessage?.content?.substring(0, 100) || 'none');
+
 		// Håndter tool calls hvis AI-en vil bruke dem
 		if (responseMessage?.tool_calls && responseMessage.tool_calls.length > 0) {
+			console.log('\n🔧 Executing tools...');
+			
 			// Legg til assistant message med alle tool calls først
 			messages.push({
 				role: 'assistant',
@@ -364,6 +430,9 @@ export const POST: RequestHandler = async ({ request }) => {
 
 			// Håndter alle tool calls
 			for (const toolCall of responseMessage.tool_calls) {
+				console.log(`\n  Tool: ${toolCall.type === 'function' ? toolCall.function.name : toolCall.type}`);
+				console.log(`  Args: ${toolCall.type === 'function' ? toolCall.function.arguments.substring(0, 100) : 'N/A'}`);
+				
 				if (toolCall.type === 'function' && toolCall.function.name === 'check_similar_goals') {
 					const args = JSON.parse(toolCall.function.arguments);
 					const similarGoals = await findSimilarGoals(DEFAULT_USER_ID, args.title, 70);
@@ -520,6 +589,22 @@ export const POST: RequestHandler = async ({ request }) => {
 						userId: DEFAULT_USER_ID,
 						...args
 					});
+
+					messages.push({
+						role: 'tool',
+						content: JSON.stringify(result),
+						tool_call_id: toolCall.id
+					});
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'query_sensor_data') {
+					const args = JSON.parse(toolCall.function.arguments);
+					const { querySensorDataTool } = await import('$lib/ai/tools/query-sensor-data');
+					
+					console.log('  📊 Querying sensor data with:', args);
+					const result = await querySensorDataTool.execute({
+						userId: DEFAULT_USER_ID,
+						...args
+					});
+					console.log('  📊 Result:', result.success ? 'Success' : 'Failed', result.message);
 
 					messages.push({
 						role: 'tool',
