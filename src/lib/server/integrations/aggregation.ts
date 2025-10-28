@@ -1,6 +1,6 @@
 import { db } from '$lib/db';
 import { sensorEvents, sensorAggregates } from '$lib/db/schema';
-import { eq, and, gte, lte, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { generateWeeks, generateMonths, generateYears } from './time-periods';
 import type { WeekPeriod, MonthPeriod, YearPeriod } from './time-periods';
 
@@ -76,16 +76,20 @@ function calculateEarlyWake(events: any[]): number | undefined {
  */
 export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) {
 	const periodsToAggregate = weeks || generateWeeks();
+	
+	// Fetch ALL events once (much faster than per-week queries)
+	const allEvents = await db.query.sensorEvents.findMany({
+		where: eq(sensorEvents.userId, userId),
+		orderBy: [sensorEvents.timestamp]
+	});
+	
+	console.log(`   Processing ${periodsToAggregate.length} weeks with ${allEvents.length} total events...`);
 
 	for (const week of periodsToAggregate) {
-		// Fetch all events in this week
-		const events = await db.query.sensorEvents.findMany({
-			where: and(
-				eq(sensorEvents.userId, userId),
-				gte(sensorEvents.timestamp, week.startTime),
-				lte(sensorEvents.timestamp, week.endTime)
-			)
-		});
+		// Filter events for this week
+		const events = allEvents.filter(e => 
+			e.timestamp >= week.startTime && e.timestamp <= week.endTime
+		);
 
 		if (events.length === 0) continue; // Skip empty weeks
 
@@ -97,7 +101,10 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 			.filter((v): v is number => v !== undefined);
 		const calories = events.map((e) => e.data?.calories).filter((v): v is number => v !== undefined);
 		const distances = events.map((e) => e.data?.distance).filter((v): v is number => v !== undefined);
-		const intenseMinutes = events
+		
+		// Only get intense minutes from activity events
+		const activityEvents = events.filter(e => e.eventType === 'activity');
+		const intenseMinutes = activityEvents
 			.map((e) => (e.data?.intense || 0) + (e.data?.moderate || 0))
 			.filter((v) => v > 0);
 
@@ -185,21 +192,26 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 }
 
 /**
- * Aggregate monthly data
+ * Aggregate monthly data for a user
  */
 export async function aggregateMonthlyData(userId: string, months?: MonthPeriod[]) {
 	const periodsToAggregate = months || generateMonths();
+	
+	// Fetch ALL events once (much faster than per-month queries)
+	const allEvents = await db.query.sensorEvents.findMany({
+		where: eq(sensorEvents.userId, userId),
+		orderBy: [sensorEvents.timestamp]
+	});
+	
+	console.log(`   Processing ${periodsToAggregate.length} months with ${allEvents.length} total events...`);
 
 	for (const month of periodsToAggregate) {
-		const events = await db.query.sensorEvents.findMany({
-			where: and(
-				eq(sensorEvents.userId, userId),
-				gte(sensorEvents.timestamp, month.startTime),
-				lte(sensorEvents.timestamp, month.endTime)
-			)
-		});
+		// Filter events for this month
+		const events = allEvents.filter(e => 
+			e.timestamp >= month.startTime && e.timestamp <= month.endTime
+		);
 
-		if (events.length === 0) continue;
+		if (events.length === 0) continue; // Skip empty months
 
 		// Same aggregation logic as weekly
 		const weights = events.map((e) => e.data?.weight).filter((v): v is number => v !== undefined);
@@ -207,6 +219,14 @@ export async function aggregateMonthlyData(userId: string, months?: MonthPeriod[
 		const sleepDurations = events
 			.map((e) => e.data?.sleepDuration)
 			.filter((v): v is number => v !== undefined);
+		const calories = events.map((e) => e.data?.calories).filter((v): v is number => v !== undefined);
+		const distances = events.map((e) => e.data?.distance).filter((v): v is number => v !== undefined);
+		
+		// Only get intense minutes from activity events
+		const activityEvents = events.filter(e => e.eventType === 'activity');
+		const intenseMinutes = activityEvents
+			.map((e) => (e.data?.intense || 0) + (e.data?.moderate || 0))
+			.filter((v) => v > 0);
 
 		const metrics: any = {};
 
@@ -234,6 +254,27 @@ export async function aggregateMonthlyData(userId: string, months?: MonthPeriod[
 				avg: avg(sleepHours),
 				min: min(sleepHours),
 				max: max(sleepHours)
+			};
+		}
+
+		if (calories.length > 0) {
+			metrics.calories = {
+				sum: sum(calories),
+				avg: avg(calories)
+			};
+		}
+
+		if (distances.length > 0) {
+			metrics.distance = {
+				sum: sum(distances),
+				avg: avg(distances)
+			};
+		}
+
+		if (intenseMinutes.length > 0) {
+			metrics.intenseMinutes = {
+				sum: sum(intenseMinutes),
+				avg: avg(intenseMinutes)
 			};
 		}
 
@@ -265,15 +306,20 @@ export async function aggregateMonthlyData(userId: string, months?: MonthPeriod[
  */
 export async function aggregateYearlyData(userId: string, years?: YearPeriod[]) {
 	const periodsToAggregate = years || generateYears();
+	
+	// Fetch ALL events once (much faster than per-year queries)
+	const allEvents = await db.query.sensorEvents.findMany({
+		where: eq(sensorEvents.userId, userId),
+		orderBy: [sensorEvents.timestamp]
+	});
+	
+	console.log(`   Processing ${periodsToAggregate.length} years with ${allEvents.length} total events...`);
 
 	for (const year of periodsToAggregate) {
-		const events = await db.query.sensorEvents.findMany({
-			where: and(
-				eq(sensorEvents.userId, userId),
-				gte(sensorEvents.timestamp, year.startTime),
-				lte(sensorEvents.timestamp, year.endTime)
-			)
-		});
+		// Filter events for this year
+		const events = allEvents.filter(e => 
+			e.timestamp >= year.startTime && e.timestamp <= year.endTime
+		);
 
 		if (events.length === 0) continue;
 
@@ -282,6 +328,14 @@ export async function aggregateYearlyData(userId: string, years?: YearPeriod[]) 
 		const sleepDurations = events
 			.map((e) => e.data?.sleepDuration)
 			.filter((v): v is number => v !== undefined);
+		const calories = events.map((e) => e.data?.calories).filter((v): v is number => v !== undefined);
+		const distances = events.map((e) => e.data?.distance).filter((v): v is number => v !== undefined);
+		
+		// Only get intense minutes from activity events
+		const activityEvents = events.filter(e => e.eventType === 'activity');
+		const intenseMinutes = activityEvents
+			.map((e) => (e.data?.intense || 0) + (e.data?.moderate || 0))
+			.filter((v) => v > 0);
 
 		const metrics: any = {};
 
@@ -309,6 +363,27 @@ export async function aggregateYearlyData(userId: string, years?: YearPeriod[]) 
 				avg: avg(sleepHours),
 				min: min(sleepHours),
 				max: max(sleepHours)
+			};
+		}
+
+		if (calories.length > 0) {
+			metrics.calories = {
+				sum: sum(calories),
+				avg: avg(calories)
+			};
+		}
+
+		if (distances.length > 0) {
+			metrics.distance = {
+				sum: sum(distances),
+				avg: avg(distances)
+			};
+		}
+
+		if (intenseMinutes.length > 0) {
+			metrics.intenseMinutes = {
+				sum: sum(intenseMinutes),
+				avg: avg(intenseMinutes)
 			};
 		}
 

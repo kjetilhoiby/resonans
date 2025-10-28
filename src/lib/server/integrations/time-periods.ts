@@ -53,7 +53,7 @@ function getDateOfISOWeek(week: number, year: number): Date {
 /**
  * Generate all weeks from start year to now
  */
-export function generateWeeks(startYear = 2020): WeekPeriod[] {
+export function generateWeeks(startYear = 2017): WeekPeriod[] {
 	const weeks: WeekPeriod[] = [];
 	const currentYear = new Date().getFullYear();
 	const now = Date.now();
@@ -94,7 +94,7 @@ export function generateWeeks(startYear = 2020): WeekPeriod[] {
 /**
  * Generate all months from start year to now
  */
-export function generateMonths(startYear = 2020): MonthPeriod[] {
+export function generateMonths(startYear = 2017): MonthPeriod[] {
 	const months: MonthPeriod[] = [];
 	const now = new Date();
 	const currentYear = now.getFullYear();
@@ -127,7 +127,7 @@ export function generateMonths(startYear = 2020): MonthPeriod[] {
 /**
  * Generate all years from start to now
  */
-export function generateYears(startYear = 2020): YearPeriod[] {
+export function generateYears(startYear = 2017): YearPeriod[] {
 	const years: YearPeriod[] = [];
 	const currentYear = new Date().getFullYear();
 

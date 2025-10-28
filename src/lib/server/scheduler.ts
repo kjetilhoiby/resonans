@@ -171,8 +171,18 @@ async function sendDailyCheckIns() {
 	}
 }
 
+// Track if sync is currently running to prevent concurrent syncs
+let syncInProgress = false;
+
 async function syncWithingsData() {
+	// Prevent concurrent syncs
+	if (syncInProgress) {
+		console.log('⏭️  Skipping Withings sync - already in progress');
+		return;
+	}
+
 	try {
+		syncInProgress = true;
 		console.log('🔄 Starting Withings data sync...');
 		
 		const userId = DEFAULT_USER_ID;
@@ -193,5 +203,12 @@ async function syncWithingsData() {
 		}
 	} catch (error) {
 		console.error('❌ Withings sync job failed:', error);
+		// Log the full error for debugging
+		if (error instanceof Error) {
+			console.error('   Error details:', error.message);
+			console.error('   Stack:', error.stack);
+		}
+	} finally {
+		syncInProgress = false;
 	}
 }

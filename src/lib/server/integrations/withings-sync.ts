@@ -23,13 +23,21 @@ export async function getValidAccessToken(sensor: any): Promise<string> {
 	const credentials = JSON.parse(atob(sensor.credentials));
 	const now = Math.floor(Date.now() / 1000);
 
+	console.log('   Token expires at:', credentials.expires_at ? new Date(credentials.expires_at * 1000).toISOString() : 'unknown');
+	console.log('   Current time:', new Date(now * 1000).toISOString());
+	console.log('   Token expired?', credentials.expires_at && now >= credentials.expires_at - 300);
+
 	// Check if token is expired
 	if (credentials.expires_at && now >= credentials.expires_at - 300) {
 		// Refresh token (5 min buffer)
+		console.log('   Token expired, refreshing...');
 		const refreshed = await refreshAccessToken(credentials.refresh_token);
 
+		console.log('   Refresh response:', refreshed);
+
 		if (refreshed.status !== 0) {
-			throw new Error('Failed to refresh Withings token');
+			console.error('   Failed to refresh token:', refreshed);
+			throw new Error(`Failed to refresh Withings token: ${JSON.stringify(refreshed)}`);
 		}
 
 		const { access_token, refresh_token, expires_in } = refreshed.body;
@@ -165,17 +173,24 @@ export async function syncWeightData(
 	console.log(`   Parsing ${data.length} weight measurements...`);
 	const parsed = parseWeightData(data);
 
-	// Store events
+	// Store events in batches for performance
 	console.log(`   Storing ${parsed.length} weight events in database...`);
-	for (const event of parsed) {
-		await db.insert(sensorEvents).values({
-			userId,
-			sensorId,
-			eventType: 'measurement',
-			timestamp: event.timestamp,
-			data: event.data,
-			metadata: event.metadata
-		});
+	const batchSize = 100;
+	for (let i = 0; i < parsed.length; i += batchSize) {
+		const batch = parsed.slice(i, i + batchSize);
+		await db.insert(sensorEvents).values(
+			batch.map(event => ({
+				userId,
+				sensorId,
+				eventType: 'measurement' as const,
+				timestamp: event.timestamp,
+				data: event.data,
+				metadata: event.metadata
+			}))
+		);
+		if (i % 500 === 0 && i > 0) {
+			console.log(`      Stored ${i}/${parsed.length} weight events...`);
+		}
 	}
 
 	return parsed.length;
@@ -208,17 +223,24 @@ export async function syncActivityData(
 	console.log(`   Parsing ${data.length} activity records...`);
 	const parsed = parseActivityData(data);
 
-	// Store events
+	// Store events in batches for performance
 	console.log(`   Storing ${parsed.length} activity events in database...`);
-	for (const event of parsed) {
-		await db.insert(sensorEvents).values({
-			userId,
-			sensorId,
-			eventType: 'activity',
-			timestamp: event.timestamp,
-			data: event.data,
-			metadata: event.metadata
-		});
+	const batchSize = 100;
+	for (let i = 0; i < parsed.length; i += batchSize) {
+		const batch = parsed.slice(i, i + batchSize);
+		await db.insert(sensorEvents).values(
+			batch.map(event => ({
+				userId,
+				sensorId,
+				eventType: 'activity' as const,
+				timestamp: event.timestamp,
+				data: event.data,
+				metadata: event.metadata
+			}))
+		);
+		if (i % 500 === 0 && i > 0) {
+			console.log(`      Stored ${i}/${parsed.length} activity events...`);
+		}
 	}
 
 	return parsed.length;
@@ -273,17 +295,24 @@ export async function syncSleepData(
 	console.log(`   Parsing ${allData.length} sleep sessions...`);
 	const parsed = parseSleepData(allData);
 
-	// Store events
+	// Store events in batches for performance
 	console.log(`   Storing ${parsed.length} sleep events in database...`);
-	for (const event of parsed) {
-		await db.insert(sensorEvents).values({
-			userId,
-			sensorId,
-			eventType: 'measurement',
-			timestamp: event.timestamp,
-			data: event.data,
-			metadata: event.metadata
-		});
+	const batchSize = 100;
+	for (let i = 0; i < parsed.length; i += batchSize) {
+		const batch = parsed.slice(i, i + batchSize);
+		await db.insert(sensorEvents).values(
+			batch.map(event => ({
+				userId,
+				sensorId,
+				eventType: 'measurement' as const,
+				timestamp: event.timestamp,
+				data: event.data,
+				metadata: event.metadata
+			}))
+		);
+		if (i % 500 === 0 && i > 0) {
+			console.log(`      Stored ${i}/${parsed.length} sleep events...`);
+		}
 	}
 
 	return parsed.length;
