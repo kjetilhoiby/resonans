@@ -118,6 +118,7 @@ export async function fetchWithingsMeasurements(
 		enddateymd?: string; // YYYY-MM-DD
 		offset?: number;
 		lastupdate?: number; // Unix timestamp for incremental sync
+		data_fields?: string; // Comma-separated fields for workouts (e.g., 'steps,distance,calories')
 	}
 ): Promise<WithingsMeasureResponse> {
 	const endpoint = params.action.includes('activity') || params.action.includes('summary') || params.action.includes('workouts')

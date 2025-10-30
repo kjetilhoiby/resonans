@@ -303,6 +303,7 @@ export const sensorEvents = pgTable('sensor_events', {
 	userId: text('user_id').references(() => users.id).notNull(),
 	sensorId: uuid('sensor_id').references(() => sensors.id).notNull(),
 	eventType: text('event_type').notNull(), // 'measurement', 'activity', 'state_change'
+	dataType: text('data_type'), // 'weight', 'sleep', 'activity', 'workout', 'heartrate', etc. (for easier filtering)
 	timestamp: timestamp('timestamp').notNull(), // When the event happened (sensor time)
 	data: jsonb('data').$type<{
 		// Withings measurements
@@ -312,15 +313,34 @@ export const sensorEvents = pgTable('sensor_events', {
 		steps?: number;
 		distance?: number;
 		calories?: number;
+		// Sleep data
 		sleepDuration?: number;
 		sleepDeep?: number;
 		sleepLight?: number;
 		sleepRem?: number;
+		wakeupDuration?: number;
+		sleepScore?: number;
+		// Heart/breathing data (from sleep or measurements)
+		hr_average?: number; // Average heart rate (often from sleep)
+		rr_average?: number; // Average respiratory rate
+		heartRate?: number; // Spot heart rate measurement
+		avgHeartRate?: number; // Workout average heart rate
+		maxHeartRate?: number; // Workout max heart rate
+		minHeartRate?: number; // Workout min heart rate
 		vo2max?: number;
-		heartRate?: number;
-		// Activity data
+		spo2Average?: number; // Workout average SpO2
+		// Activity data (daily steps/activity summary)
 		duration?: number;
 		intensity?: string;
+		intense?: number; // Intense activity minutes
+		moderate?: number; // Moderate activity minutes
+		// Workout data (specific exercise sessions)
+		sportType?: string; // 'running', 'cycling', 'swimming', etc.
+		elevation?: number; // Total elevation gain
+		elevationMax?: number;
+		elevationMin?: number;
+		strokes?: number; // Swimming strokes
+		poolLaps?: number; // Swimming pool laps
 		// IoT data
 		powerWatts?: number;
 		state?: 'on' | 'off' | 'running';

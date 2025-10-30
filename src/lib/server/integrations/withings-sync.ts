@@ -146,6 +146,119 @@ function parseSleepData(series: any[]): any[] {
 }
 
 /**
+ * Map Withings workout category codes to readable sport types
+ */
+function getSportType(category: number): string {
+	const sportMap: Record<number, string> = {
+		1: 'walking',
+		2: 'running',
+		3: 'hiking',
+		4: 'skating',
+		5: 'bmx',
+		6: 'cycling',
+		7: 'swimming',
+		8: 'surfing',
+		9: 'kitesurfing',
+		10: 'windsurfing',
+		11: 'tennis',
+		12: 'table_tennis',
+		13: 'squash',
+		14: 'badminton',
+		15: 'lift_weights',
+		16: 'calisthenics',
+		17: 'elliptical',
+		18: 'pilates',
+		19: 'basketball',
+		20: 'soccer',
+		21: 'football',
+		22: 'rugby',
+		23: 'volleyball',
+		24: 'waterpolo',
+		25: 'horse_riding',
+		26: 'golf',
+		27: 'yoga',
+		28: 'dancing',
+		29: 'boxing',
+		30: 'fencing',
+		31: 'wrestling',
+		32: 'martial_arts',
+		33: 'skiing',
+		34: 'snowboarding',
+		35: 'other',
+		36: 'rowing',
+		37: 'zumba',
+		38: 'baseball',
+		39: 'handball',
+		40: 'hockey',
+		41: 'ice_hockey',
+		42: 'climbing',
+		43: 'ice_skating',
+		44: 'multi_sport',
+		128: 'no_activity',
+		187: 'indoor_walking',
+		188: 'indoor_running',
+		191: 'indoor_cycling',
+		272: 'e_bike'
+	};
+	return sportMap[category] || 'unknown';
+}
+
+/**
+ * Parse Withings workout data
+ * Filter out walking/no_activity to reduce noise
+ */
+function parseWorkoutData(series: any[]): any[] {
+	const filtered = series.filter((workout) => {
+		const category = workout.category;
+		// Filter out walking and no_activity (too much noise from automatic tracking)
+		const isWalking = category === 1 || category === 187 || category === 128;
+		return !isWalking;
+	});
+	
+	console.log(`   Filtered ${series.length - filtered.length} walking workouts (${filtered.length} remaining)`);
+	
+	// Debug: log first workout to see what data we get
+	if (filtered.length > 0) {
+		console.log('   📍 Sample workout data:', JSON.stringify(filtered[0], null, 2));
+	}
+	
+	return filtered.map((workout) => {
+		const sportType = getSportType(workout.category);
+		const duration = workout.enddate - workout.startdate; // seconds
+			
+			return {
+				timestamp: new Date(workout.startdate * 1000),
+				data: {
+					sportType,
+					duration,
+					distance: workout.data?.distance, // meters
+					calories: workout.data?.calories,
+					avgHeartRate: workout.data?.hr_average,
+					maxHeartRate: workout.data?.hr_max,
+					minHeartRate: workout.data?.hr_min,
+					// Swimming specific
+					strokes: workout.data?.strokes,
+					poolLaps: workout.data?.pool_laps,
+					// Elevation
+					elevation: workout.data?.elevation,
+					elevationMax: workout.data?.elevation_max,
+					elevationMin: workout.data?.elevation_min,
+				// Speed/pace
+				intensity: workout.data?.intensity,
+				// SPO2
+				spo2Average: workout.data?.spo2_average
+			},
+			metadata: {
+				enddate: workout.enddate,
+				modified: workout.modified,
+				deviceid: workout.deviceid,
+				category: workout.category
+			}
+		};
+	});
+}
+
+/**
  * Sync weight data from Withings
  */
 export async function syncWeightData(
@@ -183,6 +296,7 @@ export async function syncWeightData(
 				userId,
 				sensorId,
 				eventType: 'measurement' as const,
+				dataType: 'weight' as const,
 				timestamp: event.timestamp,
 				data: event.data,
 				metadata: event.metadata
@@ -233,6 +347,7 @@ export async function syncActivityData(
 				userId,
 				sensorId,
 				eventType: 'activity' as const,
+				dataType: 'activity' as const,
 				timestamp: event.timestamp,
 				data: event.data,
 				metadata: event.metadata
@@ -247,6 +362,7 @@ export async function syncActivityData(
 }
 
 /**
+ * Sync sleep data from Withings
  * Sync sleep data from Withings
  */
 export async function syncSleepData(
@@ -305,6 +421,7 @@ export async function syncSleepData(
 				userId,
 				sensorId,
 				eventType: 'measurement' as const,
+				dataType: 'sleep' as const,
 				timestamp: event.timestamp,
 				data: event.data,
 				metadata: event.metadata
@@ -319,12 +436,64 @@ export async function syncSleepData(
 }
 
 /**
+ * Sync workout data from Withings
+ */
+export async function syncWorkoutData(
+	userId: string,
+	accessToken: string,
+	sensorId: string,
+	lastSync?: Date,
+	fullSync = false
+) {
+	// Full sync starts from September 1, 2017
+	const startdateymd = fullSync
+		? '2017-09-01'
+		: lastSync
+			? lastSync.toISOString().split('T')[0]
+			: undefined;
+
+	console.log(`   Fetching workout data${startdateymd ? ` from ${startdateymd}` : ''}...`);
+	const data = await fetchAllWithingsData(accessToken, {
+		action: 'getworkouts',
+		startdateymd,
+		enddateymd: new Date().toISOString().split('T')[0]
+	});
+
+	console.log(`   Parsing ${data.length} workouts...`);
+	const parsed = parseWorkoutData(data);
+
+	// Store events in batches for performance
+	console.log(`   Storing ${parsed.length} workout events in database...`);
+	const batchSize = 100;
+	for (let i = 0; i < parsed.length; i += batchSize) {
+		const batch = parsed.slice(i, i + batchSize);
+		await db.insert(sensorEvents).values(
+			batch.map(event => ({
+				userId,
+				sensorId,
+				eventType: 'activity' as const,
+				dataType: 'workout' as const,
+				timestamp: event.timestamp,
+				data: event.data,
+				metadata: event.metadata
+			}))
+		);
+		if (i % 500 === 0 && i > 0) {
+			console.log(`      Stored ${i}/${parsed.length} workout events...`);
+		}
+	}
+
+	return parsed.length;
+}
+
+/**
  * Full sync of all Withings data
  */
 export async function syncAllWithingsData(userId: string, fullSync = false): Promise<{
 	weight: number;
 	activity: number;
 	sleep: number;
+	workouts: number;
 }> {
 	const sensor = await getWithingsSensor(userId);
 
@@ -358,6 +527,10 @@ export async function syncAllWithingsData(userId: string, fullSync = false): Pro
 	console.log('😴 Syncing sleep data...');
 	const sleep = await syncSleepData(userId, accessToken, sensor.id, lastSync, fullSync);
 	console.log(`   ✓ Synced ${sleep} sleep sessions`);
+	
+	console.log('💪 Syncing workout data...');
+	const workouts = await syncWorkoutData(userId, accessToken, sensor.id, lastSync, fullSync);
+	console.log(`   ✓ Synced ${workouts} workouts`);
 
 	// Update last sync timestamp
 	await db
@@ -368,5 +541,5 @@ export async function syncAllWithingsData(userId: string, fullSync = false): Pro
 		})
 		.where(eq(sensors.id, sensor.id));
 
-	return { weight, activity, sleep };
+	return { weight, activity, sleep, workouts };
 }

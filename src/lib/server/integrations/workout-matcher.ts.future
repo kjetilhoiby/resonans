@@ -1,0 +1,288 @@
+/**
+ * Match and merge Withings workouts with Strava activities
+ * 
+ * Strategy:
+ * 1. Sync both Withings and Strava independently
+ * 2. Find matches based on timestamp + sport type + distance
+ * 3. Enrich Withings workout with Strava GPS data
+ * 4. Store combined data in single sensorEvent
+ * 
+ * Matching criteria (in priority order):
+ * 1. Start time within ±5 minutes
+ * 2. Same sport type (with fuzzy mapping)
+ * 3. Distance within ±10% (if both have distance)
+ * 4. Duration within ±10% (optional, less reliable)
+ */
+
+import { db } from '$lib/db';
+import { sensorEvents } from '$lib/db/schema';
+import { eq, and, gte, lte } from 'drizzle-orm';
+
+// Map Strava activity types to Withings sport types
+const SPORT_TYPE_MAPPING: Record<string, string[]> = {
+	'Run': ['running', 'indoor_running'],
+	'Ride': ['cycling', 'indoor_cycling', 'e_bike'],
+	'VirtualRide': ['indoor_cycling'],
+	'Swim': ['swimming'],
+	'Hike': ['hiking'],
+	'Walk': ['walking'],
+	'NordicSki': ['skiing'],
+	'AlpineSki': ['skiing', 'snowboarding'],
+	'Snowboard': ['snowboarding'],
+	'Rowing': ['rowing'],
+	'Elliptical': ['elliptical'],
+	'Yoga': ['yoga'],
+	'WeightTraining': ['lift_weights', 'calisthenics']
+};
+
+interface WithingsWorkout {
+	id: string;
+	timestamp: Date;
+	sportType: string;
+	distance?: number;
+	duration: number;
+	data: any;
+}
+
+interface StravaActivity {
+	id: number;
+	start_date: string;
+	type: string;
+	distance?: number;
+	moving_time: number;
+	gpsRoute?: [number, number][];
+	elevationProfile?: number[];
+	splits?: any[];
+}
+
+/**
+ * Check if two sport types match
+ */
+function sportTypesMatch(withingsSport: string, stravaType: string): boolean {
+	const mappedTypes = SPORT_TYPE_MAPPING[stravaType] || [];
+	return mappedTypes.includes(withingsSport);
+}
+
+/**
+ * Check if two timestamps are within acceptable range
+ */
+function timestampsMatch(
+	withingsTime: Date,
+	stravaTime: Date,
+	maxDiffMinutes = 5
+): boolean {
+	const diffMs = Math.abs(withingsTime.getTime() - new Date(stravaTime).getTime());
+	const diffMinutes = diffMs / 1000 / 60;
+	return diffMinutes <= maxDiffMinutes;
+}
+
+/**
+ * Check if two distances are within acceptable range
+ */
+function distancesMatch(
+	withingsDistance?: number,
+	stravaDistance?: number,
+	maxDiffPercent = 10
+): boolean {
+	if (!withingsDistance || !stravaDistance) return true; // Skip if either missing
+	
+	const diff = Math.abs(withingsDistance - stravaDistance);
+	const avgDistance = (withingsDistance + stravaDistance) / 2;
+	const diffPercent = (diff / avgDistance) * 100;
+	
+	return diffPercent <= maxDiffPercent;
+}
+
+/**
+ * Find best matching Withings workout for a Strava activity
+ */
+export async function findMatchingWithingsWorkout(
+	userId: string,
+	stravaActivity: StravaActivity
+): Promise<WithingsWorkout | null> {
+	const stravaTime = new Date(stravaActivity.start_date);
+	
+	// Find Withings workouts within ±10 minutes
+	const tenMinutesMs = 10 * 60 * 1000;
+	const startWindow = new Date(stravaTime.getTime() - tenMinutesMs);
+	const endWindow = new Date(stravaTime.getTime() + tenMinutesMs);
+	
+	const candidates = await db.query.sensorEvents.findMany({
+		where: and(
+			eq(sensorEvents.userId, userId),
+			eq(sensorEvents.dataType, 'workout'),
+			gte(sensorEvents.timestamp, startWindow),
+			lte(sensorEvents.timestamp, endWindow)
+		)
+	});
+	
+	// Score each candidate
+	const scored = candidates.map(workout => {
+		const data = workout.data as any;
+		const sportType = data.sportType;
+		const distance = data.distance;
+		const duration = data.duration;
+		
+		let score = 0;
+		
+		// Sport type match (most important)
+		if (sportTypesMatch(sportType, stravaActivity.type)) {
+			score += 100;
+		}
+		
+		// Timestamp match (closer is better)
+		const timeDiffMs = Math.abs(
+			workout.timestamp.getTime() - stravaTime.getTime()
+		);
+		const timeDiffMinutes = timeDiffMs / 1000 / 60;
+		score += Math.max(0, 50 - timeDiffMinutes * 10); // 50 points if exact, 0 if 5+ min
+		
+		// Distance match
+		if (distancesMatch(distance, stravaActivity.distance)) {
+			score += 30;
+		}
+		
+		// Duration match (within 10%)
+		if (duration && stravaActivity.moving_time) {
+			const durationDiff = Math.abs(duration - stravaActivity.moving_time);
+			const avgDuration = (duration + stravaActivity.moving_time) / 2;
+			const diffPercent = (durationDiff / avgDuration) * 100;
+			if (diffPercent <= 10) {
+				score += 20;
+			}
+		}
+		
+		return { workout, score };
+	});
+	
+	// Get best match (must have at least sport type + timestamp match)
+	const best = scored
+		.filter(s => s.score >= 100) // Must match sport type at minimum
+		.sort((a, b) => b.score - a.score)[0];
+	
+	if (!best) return null;
+	
+	return {
+		id: best.workout.id,
+		timestamp: best.workout.timestamp,
+		sportType: (best.workout.data as any).sportType,
+		distance: (best.workout.data as any).distance,
+		duration: (best.workout.data as any).duration,
+		data: best.workout.data
+	};
+}
+
+/**
+ * Merge Strava GPS data into Withings workout
+ */
+export async function enrichWorkoutWithStrava(
+	workoutId: string,
+	stravaActivity: StravaActivity,
+	gpsRoute: [number, number][],
+	elevationProfile?: number[],
+	splits?: any[]
+): Promise<void> {
+	const workout = await db.query.sensorEvents.findFirst({
+		where: eq(sensorEvents.id, workoutId)
+	});
+	
+	if (!workout) {
+		throw new Error(`Workout ${workoutId} not found`);
+	}
+	
+	// Merge data
+	const enrichedData = {
+		...workout.data,
+		// Add Strava-specific data
+		gpsRoute,
+		elevationProfile,
+		splits,
+		stravaId: stravaActivity.id,
+		// Keep Withings data as source of truth for basic metrics
+		// but add Strava's more detailed versions if better
+		...(stravaActivity.distance && {
+			distanceStrava: stravaActivity.distance
+		})
+	};
+	
+	const enrichedMetadata = {
+		...workout.metadata,
+		stravaId: stravaActivity.id,
+		stravaUrl: `https://www.strava.com/activities/${stravaActivity.id}`,
+		enrichedAt: new Date().toISOString(),
+		matchScore: 'auto' // or score from matching algorithm
+	};
+	
+	// Update workout
+	await db.update(sensorEvents)
+		.set({
+			data: enrichedData,
+			metadata: enrichedMetadata,
+			updatedAt: new Date()
+		})
+		.where(eq(sensorEvents.id, workoutId));
+	
+	console.log(`✅ Enriched workout ${workoutId} with Strava data (activity ${stravaActivity.id})`);
+}
+
+/**
+ * Main sync function: Match and merge all unmatched workouts
+ */
+export async function syncAndMergeWorkouts(
+	userId: string,
+	stravaActivities: StravaActivity[]
+): Promise<{
+	matched: number;
+	unmatched: number;
+	enriched: number;
+}> {
+	let matched = 0;
+	let unmatched = 0;
+	let enriched = 0;
+	
+	for (const stravaActivity of stravaActivities) {
+		// Find matching Withings workout
+		const withingsWorkout = await findMatchingWithingsWorkout(userId, stravaActivity);
+		
+		if (withingsWorkout) {
+			matched++;
+			
+			// Check if already enriched
+			const metadata = withingsWorkout.data.metadata || {};
+			if (!metadata.stravaId) {
+				// Fetch GPS data from Strava
+				// (Implementation would call fetchStravaActivityStreams)
+				// For now, placeholder:
+				const gpsRoute: [number, number][] = []; // from Strava API
+				
+				await enrichWorkoutWithStrava(
+					withingsWorkout.id,
+					stravaActivity,
+					gpsRoute
+				);
+				
+				enriched++;
+			}
+		} else {
+			unmatched++;
+			console.log(`⚠️  No Withings match for Strava activity ${stravaActivity.id} (${stravaActivity.type} at ${stravaActivity.start_date})`);
+			
+			// Could optionally create a new workout from Strava data
+			// if user wants Strava-only activities
+		}
+	}
+	
+	return { matched, unmatched, enriched };
+}
+
+/**
+ * Example usage:
+ * 
+ * // After syncing both Withings and Strava:
+ * const stravaActivities = await fetchStravaActivities(accessToken, lastSync);
+ * const result = await syncAndMergeWorkouts(userId, stravaActivities);
+ * 
+ * console.log(`Matched ${result.matched} workouts`);
+ * console.log(`Enriched ${result.enriched} with GPS data`);
+ * console.log(`${result.unmatched} Strava activities without Withings match`);
+ */

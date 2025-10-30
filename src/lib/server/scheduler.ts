@@ -63,6 +63,25 @@ export function startScheduler() {
 		}
 	);
 
+	// Nattlig aggregering kl 00:00 (reduserer datatrafikk dramatisk)
+	// '0 0 * * *' = hver dag kl 00:00
+	cron.schedule(
+		'0 0 * * *',
+		async () => {
+			console.log('📊 Running nightly aggregation at', new Date().toISOString());
+			try {
+				const userId = DEFAULT_USER_ID;
+				await aggregateAllPeriods(userId);
+				console.log('✅ Nightly aggregation complete');
+			} catch (error) {
+				console.error('❌ Nightly aggregation failed:', error);
+			}
+		},
+		{
+			timezone: 'Europe/Oslo'
+		}
+	);
+
 	// Test: Send check-in hver 5. minutt (kun for testing - fjern i produksjon)
 	// cron.schedule('*/5 * * * *', async () => {
 	// 	console.log('🧪 Test check-in at', new Date().toISOString());
@@ -190,17 +209,8 @@ async function syncWithingsData() {
 		// Incremental sync (only new data since last sync)
 		const results = await syncAllWithingsData(userId, false);
 		
-		console.log(`📊 Synced: ${results.weight} weight, ${results.activity} activity, ${results.sleep} sleep`);
-		
-		// Only aggregate if we got new data
-		const totalSynced = results.weight + results.activity + results.sleep;
-		if (totalSynced > 0) {
-			console.log('🔄 Aggregating new data...');
-			await aggregateAllPeriods(userId);
-			console.log(`✅ Withings sync complete: ${totalSynced} new events`);
-		} else {
-			console.log('✅ Withings sync complete: no new data');
-		}
+		const totalSynced = results.weight + results.activity + results.sleep + results.workouts;
+		console.log(`✅ Withings sync complete: ${totalSynced} new events (aggregation runs nightly at 00:00)`);
 	} catch (error) {
 		console.error('❌ Withings sync job failed:', error);
 		// Log the full error for debugging

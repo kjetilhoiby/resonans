@@ -101,6 +101,7 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 			.filter((v): v is number => v !== undefined);
 		const calories = events.map((e) => e.data?.calories).filter((v): v is number => v !== undefined);
 		const distances = events.map((e) => e.data?.distance).filter((v): v is number => v !== undefined);
+		const heartRates = events.map((e) => e.data?.hr_average).filter((v): v is number => v !== undefined);
 		
 		// Only get intense minutes from activity events
 		const activityEvents = events.filter(e => e.eventType === 'activity');
@@ -117,7 +118,8 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 				min: min(weights),
 				max: max(weights),
 				latest: latest(weights),
-				change: weights.length > 1 ? (latest(weights)! - weights[0]) : 0
+				change: weights.length > 1 ? (latest(weights)! - weights[0]) : 0,
+				values: weights // All individual weight values for the period
 			};
 		}
 
@@ -125,7 +127,8 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 			metrics.steps = {
 				sum: sum(steps),
 				avg: avg(steps),
-				max: max(steps)
+				max: max(steps),
+				values: steps // All individual step counts
 			};
 		}
 
@@ -157,6 +160,15 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 			metrics.intenseMinutes = {
 				sum: sum(intenseMinutes),
 				avg: avg(intenseMinutes)
+			};
+		}
+
+		if (heartRates.length > 0) {
+			metrics.heartRate = {
+				avg: avg(heartRates),
+				min: min(heartRates),
+				max: max(heartRates),
+				values: heartRates // All individual resting heart rates
 			};
 		}
 

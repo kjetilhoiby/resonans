@@ -249,18 +249,18 @@ const tools = [
 		type: 'function' as const,
 		function: {
 			name: 'query_sensor_data',
-			description: 'ALLTID bruk dette for å hente faktiske helsedata fra Withings. ALDRI oppgi data fra hukommelsen - data må hentes live! Bruk "latest" for nyeste uke, "trend" for flere perioder (f.eks. "siste 3 måneder"), "period_summary" for én periode, "raw_events" for detaljerte målinger.',
+			description: 'ALLTID bruk dette for å hente faktiske helsedata fra Withings. ALDRI oppgi data fra hukommelsen - data må hentes live! Bruk "latest" for nyeste uke, "trend" for flere perioder (f.eks. "siste 3 måneder"), "period_summary" for én periode, "raw_events" for detaljerte målinger eller treningsøkter.',
 			parameters: {
 				type: 'object',
 				properties: {
 					queryType: {
 						type: 'string',
-						description: 'Type spørring: "latest"=nyeste uke, "trend"=sammenlign perioder (BRUK for "siste X måneder/uker"), "period_summary"=én periode, "raw_events"=detaljert',
+						description: 'Type spørring: "latest"=nyeste uke, "trend"=sammenlign perioder (f.eks. siste 3 mnd), "period_summary"=én periode, "raw_events"=enkeltverdier/alle målinger/treningsøkter (BRUK for "enkeltverdier", "alle målinger", "detaljert", "treningsøkter")',
 						enum: ['latest', 'period_summary', 'trend', 'raw_events']
 					},
 					period: {
 						type: 'string',
-						description: 'Tidsperiode for aggregater',
+						description: 'Tidsperiode for aggregater (kun for trend/period_summary)',
 						enum: ['week', 'month', 'year']
 					},
 					periodKey: {
@@ -270,7 +270,7 @@ const tools = [
 					metric: {
 						type: 'string',
 						description: 'Hvilken metrikk å fokusere på',
-						enum: ['weight', 'steps', 'sleep', 'intense_minutes', 'all']
+						enum: ['weight', 'steps', 'sleep', 'intense_minutes', 'heartrate', 'workouts', 'all']
 					},
 					limit: {
 						type: 'number',

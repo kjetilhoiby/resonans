@@ -1,0 +1,239 @@
+/**
+ * Strava API Integration (FUTURE IMPLEMENTATION)
+ * 
+ * Setup:
+ * 1. Create Strava API app: https://www.strava.com/settings/api
+ * 2. Add STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET to .env
+ * 3. Set callback URL: http://localhost:5173/api/sensors/strava/callback
+ * 
+ * OAuth Scopes needed:
+ * - activity:read - read activity data
+ * - activity:read_all - read private activities (optional)
+ * 
+ * Data we can fetch:
+ * - GPS routes (lat/lon arrays)
+ * - Elevation data
+ * - Heart rate zones
+ * - Pace/speed per km
+ * - Power data (cycling)
+ * - Splits (1km, 1mi)
+ * - Photos
+ * 
+ * Storage approach:
+ * 1. Store activities in sensorEvents with dataType='workout'
+ * 2. GPS data in JSONB: data.gpsRoute = [[lat, lon], ...]
+ * 3. Can generate GeoJSON on demand for maps
+ * 4. Polyline encoding for efficiency (same as Strava uses)
+ * 
+ * Sync strategy:
+ * - Webhook from Strava when new activity created
+ * - Or polling every 15 min for new activities
+ * - Match with Withings workouts by timestamp (within 5 min window)
+ * - Enrich Withings workout with Strava GPS data
+ * 
+ * Implementation files needed:
+ * - src/lib/server/integrations/strava.ts - API client
+ * - src/lib/server/integrations/strava-sync.ts - Sync logic
+ * - src/routes/api/sensors/strava/connect/+server.ts - OAuth start
+ * - src/routes/api/sensors/strava/callback/+server.ts - OAuth callback
+ * - src/routes/api/sensors/strava/webhook/+server.ts - Activity webhooks
+ * 
+ * Example GPS data structure:
+ * {
+ *   dataType: 'workout',
+ *   data: {
+ *     sportType: 'running',
+ *     distance: 8944.3,
+ *     duration: 2940,
+ *     // Strava-enhanced data:
+ *     gpsRoute: [[59.9139, 10.7522], [59.9140, 10.7523], ...],
+ *     elevationProfile: [10, 12, 15, 20, ...],
+ *     splits: [
+ *       { km: 1, time: 294, pace: 4.9, elevation_gain: 5 },
+ *       { km: 2, time: 588, pace: 4.9, elevation_gain: 10 }
+ *     ],
+ *     heartRateZones: {
+ *       zone1: 120, // seconds in each zone
+ *       zone2: 480,
+ *       zone3: 1200,
+ *       zone4: 900,
+ *       zone5: 240
+ *     }
+ *   },
+ *   metadata: {
+ *     stravaId: '12345678',
+ *     stravaUrl: 'https://www.strava.com/activities/12345678',
+ *     polyline: 'encoded_polyline_string' // Space-efficient GPS storage
+ *   }
+ * }
+ * 
+ * Map rendering (future):
+ * - Use Leaflet.js or Mapbox GL JS
+ * - Decode polyline to lat/lon array
+ * - Show route with elevation color-coding
+ * - Click on route to see pace/HR at that point
+ * 
+ * Rate limits:
+ * - 100 requests per 15 minutes
+ * - 1000 requests per day
+ * - Use webhooks to minimize polling
+ */
+
+import { STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET } from '$env/static/private';
+
+export interface StravaActivity {
+	id: number;
+	name: string;
+	type: string; // 'Run', 'Ride', 'Swim', etc.
+	start_date: string;
+	start_date_local: string;
+	distance: number; // meters
+	moving_time: number; // seconds
+	elapsed_time: number;
+	total_elevation_gain: number;
+	average_speed: number;
+	max_speed: number;
+	average_heartrate?: number;
+	max_heartrate?: number;
+	map: {
+		summary_polyline: string;
+	};
+}
+
+export interface StravaStream {
+	type: 'latlng' | 'altitude' | 'heartrate' | 'watts' | 'time';
+	data: any[];
+	series_type: 'distance' | 'time';
+	original_size: number;
+	resolution: 'low' | 'medium' | 'high';
+}
+
+/**
+ * Generate Strava OAuth URL
+ */
+export function getStravaAuthUrl(redirectUri: string, state?: string): string {
+	const params = new URLSearchParams({
+		client_id: STRAVA_CLIENT_ID,
+		redirect_uri: redirectUri,
+		response_type: 'code',
+		scope: 'activity:read,activity:read_all',
+		state: state || crypto.randomUUID()
+	});
+
+	return `https://www.strava.com/oauth/authorize?${params.toString()}`;
+}
+
+/**
+ * Exchange code for tokens
+ */
+export async function getStravaAccessToken(code: string) {
+	const response = await fetch('https://www.strava.com/oauth/token', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({
+			client_id: STRAVA_CLIENT_ID,
+			client_secret: STRAVA_CLIENT_SECRET,
+			code,
+			grant_type: 'authorization_code'
+		})
+	});
+
+	return response.json();
+}
+
+/**
+ * Get athlete's activities
+ */
+export async function fetchStravaActivities(
+	accessToken: string,
+	after?: number, // Unix timestamp
+	perPage = 30
+): Promise<StravaActivity[]> {
+	const params = new URLSearchParams({
+		per_page: perPage.toString(),
+		...(after && { after: after.toString() })
+	});
+
+	const response = await fetch(
+		`https://www.strava.com/api/v3/athlete/activities?${params}`,
+		{
+			headers: { Authorization: `Bearer ${accessToken}` }
+		}
+	);
+
+	return response.json();
+}
+
+/**
+ * Get detailed activity with GPS streams
+ */
+export async function fetchStravaActivityStreams(
+	accessToken: string,
+	activityId: number
+): Promise<StravaStream[]> {
+	const keys = 'latlng,altitude,heartrate,watts,time';
+	const response = await fetch(
+		`https://www.strava.com/api/v3/activities/${activityId}/streams?keys=${keys}&key_by_type=true`,
+		{
+			headers: { Authorization: `Bearer ${accessToken}` }
+		}
+	);
+
+	return response.json();
+}
+
+/**
+ * Decode Strava polyline to lat/lon array
+ * (Same algorithm as Google's polyline encoding)
+ */
+export function decodePolyline(encoded: string): [number, number][] {
+	const coordinates: [number, number][] = [];
+	let index = 0;
+	let lat = 0;
+	let lng = 0;
+
+	while (index < encoded.length) {
+		let b;
+		let shift = 0;
+		let result = 0;
+
+		do {
+			b = encoded.charCodeAt(index++) - 63;
+			result |= (b & 0x1f) << shift;
+			shift += 5;
+		} while (b >= 0x20);
+
+		const deltaLat = result & 1 ? ~(result >> 1) : result >> 1;
+		lat += deltaLat;
+
+		shift = 0;
+		result = 0;
+
+		do {
+			b = encoded.charCodeAt(index++) - 63;
+			result |= (b & 0x1f) << shift;
+			shift += 5;
+		} while (b >= 0x20);
+
+		const deltaLng = result & 1 ? ~(result >> 1) : result >> 1;
+		lng += deltaLng;
+
+		coordinates.push([lat / 1e5, lng / 1e5]);
+	}
+
+	return coordinates;
+}
+
+/**
+ * Convert GPS route to GeoJSON for mapping
+ */
+export function toGeoJSON(route: [number, number][]) {
+	return {
+		type: 'Feature',
+		geometry: {
+			type: 'LineString',
+			coordinates: route.map(([lat, lon]) => [lon, lat]) // GeoJSON uses [lon, lat]
+		},
+		properties: {}
+	};
+}
