@@ -288,6 +288,125 @@ const tools = [
 				required: ['queryType']
 			}
 		}
+	},
+	{
+		type: 'function' as const,
+		function: {
+			name: 'record_screen_time',
+			description: 'Registrer skjermtid fra et skjermbilde eller brukerens beskrivelse. Kan brukes for daglig skjermtid-tracking.',
+			parameters: {
+				type: 'object',
+				properties: {
+					date: {
+						type: 'string',
+						description: 'Dato for skjermtiden (ISO format: YYYY-MM-DD)'
+					},
+					totalMinutes: {
+						type: 'number',
+						description: 'Total skjermtid i minutter'
+					},
+					appBreakdown: {
+						type: 'object',
+						description: 'Fordeling av skjermtid per app (valgfritt)',
+						additionalProperties: {
+							type: 'number',
+							description: 'Minutter brukt i appen'
+						}
+					},
+					note: {
+						type: 'string',
+						description: 'Valgfri merknad eller kontekst'
+					}
+				},
+				required: ['date', 'totalMinutes']
+			}
+		}
+	},
+	{
+		type: 'function' as const,
+		function: {
+			name: 'record_workout',
+			description: 'Registrer en treningsøkt. Støtter både cardio (løping, sykling) og styrketrening.',
+			parameters: {
+				type: 'object',
+				properties: {
+					type: {
+						type: 'string',
+						description: 'Type trening',
+						enum: ['running', 'cycling', 'walking', 'strength', 'yoga', 'swimming', 'other']
+					},
+					date: {
+						type: 'string',
+						description: 'Dato for økten (ISO format: YYYY-MM-DD)'
+					},
+					durationMinutes: {
+						type: 'number',
+						description: 'Varighet i minutter'
+					},
+					distance: {
+						type: 'number',
+						description: 'Distanse i kilometer (kun for cardio)'
+					},
+					exercises: {
+						type: 'array',
+						description: 'Liste over øvelser for styrketrening',
+						items: {
+							type: 'object',
+							properties: {
+								name: { type: 'string' },
+								sets: { type: 'number' },
+								reps: { type: 'number' },
+								weight: { type: 'number', description: 'Vekt i kg' }
+							}
+						}
+					},
+					notes: {
+						type: 'string',
+						description: 'Valgfri merknad om økten'
+					}
+				},
+				required: ['type', 'date', 'durationMinutes']
+			}
+		}
+	},
+	{
+		type: 'function' as const,
+		function: {
+			name: 'record_mood',
+			description: 'Registrer humør/følelsestilstand for et tidspunkt.',
+			parameters: {
+				type: 'object',
+				properties: {
+					rating: {
+						type: 'number',
+						description: 'Humør på skala 1-10 (1=veldig dårlig, 10=utmerket)',
+						minimum: 1,
+						maximum: 10
+					},
+					date: {
+						type: 'string',
+						description: 'Dato (ISO format: YYYY-MM-DD)'
+					},
+					time: {
+						type: 'string',
+						description: 'Tidspunkt (HH:MM format, valgfritt)'
+					},
+					note: {
+						type: 'string',
+						description: 'Valgfri beskrivelse av humøret/hva som påvirket det'
+					},
+					tags: {
+						type: 'array',
+						description: 'Valgfrie tags som beskriver følelsen',
+						items: {
+							type: 'string',
+							enum: ['glad', 'trist', 'stresset', 'sliten', 'energisk', 'motivert', 'frustrert', 'rolig', 'bekymret', 'fornøyd']
+						}
+					}
+				},
+				required: ['rating', 'date']
+			}
+		}
 	}
 ];
 
@@ -605,6 +724,100 @@ export const POST: RequestHandler = async ({ request }) => {
 						...args
 					});
 					console.log('  📊 Result:', result.success ? 'Success' : 'Failed', result.message);
+
+					messages.push({
+						role: 'tool',
+						content: JSON.stringify(result),
+						tool_call_id: toolCall.id
+					});
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'record_screen_time') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  📱 Recording screen time:', args);
+
+					// Call API to save record
+					const response = await fetch(`${request.url.replace('/api/chat', '/api/ai-records')}`, {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({
+							type: 'screen_time',
+							date: args.date,
+							data: {
+								totalMinutes: args.totalMinutes,
+								appBreakdown: args.appBreakdown,
+								note: args.note
+							},
+							metadata: {
+								confidence: 'high',
+								original_tool: 'record_screen_time'
+							}
+						})
+					});
+
+					const result = await response.json();
+					console.log('  📱 Result:', result.success ? 'Success' : 'Failed', result.message);
+
+					messages.push({
+						role: 'tool',
+						content: JSON.stringify(result),
+						tool_call_id: toolCall.id
+					});
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'record_workout') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  🏃 Recording workout:', args);
+
+					const response = await fetch(`${request.url.replace('/api/chat', '/api/ai-records')}`, {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({
+							type: 'workout',
+							date: args.date,
+							data: {
+								sportType: args.type,
+								duration: args.durationMinutes * 60, // Convert to seconds
+								distance: args.distance ? args.distance * 1000 : undefined, // Convert to meters
+								exercises: args.exercises,
+								notes: args.notes
+							},
+							metadata: {
+								confidence: 'high',
+								original_tool: 'record_workout'
+							}
+						})
+					});
+
+					const result = await response.json();
+					console.log('  🏃 Result:', result.success ? 'Success' : 'Failed', result.message);
+
+					messages.push({
+						role: 'tool',
+						content: JSON.stringify(result),
+						tool_call_id: toolCall.id
+					});
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'record_mood') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  😊 Recording mood:', args);
+
+					const response = await fetch(`${request.url.replace('/api/chat', '/api/ai-records')}`, {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({
+							type: 'mood',
+							date: args.date,
+							data: {
+								rating: args.rating,
+								time: args.time,
+								note: args.note,
+								tags: args.tags
+							},
+							metadata: {
+								confidence: 'high',
+								original_tool: 'record_mood'
+							}
+						})
+					});
+
+					const result = await response.json();
+					console.log('  😊 Result:', result.success ? 'Success' : 'Failed', result.message);
 
 					messages.push({
 						role: 'tool',
