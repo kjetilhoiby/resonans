@@ -75,8 +75,8 @@
 		fetchWorkoutData();
 	});
 
-	$: if (mounted) {
-		$: mode, maxYears;
+	// Refetch when mode or maxYears changes
+	$: if (mounted && (mode || maxYears)) {
 		fetchWorkoutData();
 	}
 
