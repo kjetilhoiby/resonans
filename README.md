@@ -56,6 +56,18 @@ cp .env.example .env
 2. Opprett en webhook for et space
 3. Legg til i `GOOGLE_CHAT_WEBHOOK_URL`
 
+#### SpareBank 1 (valgfritt: read-only bankdata)
+1. Opprett klient i SpareBank 1 utviklerportal
+2. Sett callback/redirect URI til: `https://DITT_DOMENE/api/sensors/sparebank1/callback`
+3. Legg til i miljøvariabler:
+   - `SPAREBANK1_CLIENT_ID`
+   - `SPAREBANK1_CLIENT_SECRET`
+   - (valgfritt) `SPAREBANK1_FINANCIAL_INSTITUTION`
+   - (valgfritt) `SPAREBANK1_ACCOUNTS_ENDPOINT`
+   - (valgfritt) `SPAREBANK1_TRANSACTIONS_ENDPOINT`
+
+Når dette er satt opp kan du koble til via **Innstillinger → SpareBank 1 (read-only)**.
+
 ### 3. Sett opp database
 
 Generer og kjør migrasjoner:

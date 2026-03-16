@@ -12,12 +12,18 @@
 	let syncing = $state(false);
 	let syncResult: any = $state(null);
 	let syncProgress = $state({ step: '', progress: 0 });	// Reactive getters for user data - will update when data.user changes
+	let sparebank1Status = $state<any>(null);
+	let loadingSparebank1 = $state(false);
+	let syncingSparebank1 = $state(false);
+	let sparebank1SyncResult: any = $state(null);
+
 	const user = $derived(data.user);
 	const settings = $derived(user?.notificationSettings || {});
 
 	// Check Withings status on mount
 	onMount(async () => {
 		await loadWithingsStatus();
+		await loadSparebank1Status();
 	});
 
 	async function loadWithingsStatus() {
@@ -44,6 +50,55 @@
 			}
 		} catch (err) {
 			console.error('Failed to disconnect Withings:', err);
+		}
+	}
+
+	async function loadSparebank1Status() {
+		loadingSparebank1 = true;
+		try {
+			const res = await fetch('/api/sensors/sparebank1/status');
+			if (res.ok) {
+				sparebank1Status = await res.json();
+			}
+		} catch (err) {
+			console.error('Failed to load SpareBank1 status:', err);
+		} finally {
+			loadingSparebank1 = false;
+		}
+	}
+
+	async function disconnectSparebank1() {
+		if (!confirm('Er du sikker på at du vil koble fra SpareBank 1?')) return;
+
+		try {
+			const res = await fetch('/api/sensors/sparebank1/disconnect', { method: 'POST' });
+			if (res.ok) {
+				await loadSparebank1Status();
+			}
+		} catch (err) {
+			console.error('Failed to disconnect SpareBank1:', err);
+		}
+	}
+
+	async function syncSparebank1() {
+		syncingSparebank1 = true;
+		sparebank1SyncResult = null;
+
+		try {
+			const res = await fetch('/api/sensors/sparebank1/sync', { method: 'POST' });
+			const data = await res.json();
+
+			if (res.ok) {
+				sparebank1SyncResult = { success: true, ...data };
+				await loadSparebank1Status();
+			} else {
+				sparebank1SyncResult = { success: false, error: data.error };
+			}
+		} catch (err) {
+			console.error('Failed to sync SpareBank1:', err);
+			sparebank1SyncResult = { success: false, error: 'Sync failed' };
+		} finally {
+			syncingSparebank1 = false;
 		}
 	}
 
@@ -298,6 +353,69 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 				{:else}
 					<a href="/api/sensors/withings/connect" class="primary-button" style="display: block; text-align: center; text-decoration: none;">
 						🔗 Koble til Withings
+					</a>
+				{/if}
+			</section>
+
+			<!-- SpareBank 1 Integration -->
+			<section class="settings-card">
+				<div class="card-icon">🏦</div>
+				<h2>SpareBank 1 (read-only)</h2>
+				<p class="help-text">
+					Koble til bankkonto for lesetilgang til saldo og transaksjoner (ingen betaling eller overføring).
+				</p>
+
+				{#if loadingSparebank1}
+					<div style="padding: 2rem; text-align: center; color: var(--text-tertiary);">
+						Laster...
+					</div>
+				{:else if sparebank1Status?.connected}
+					<div class="notification-option" style="background: var(--success-bg); border-color: var(--success-border);">
+						<div class="option-info">
+							<strong style="color: var(--success-text);">✅ Tilkoblet</strong>
+							<p style="color: var(--success-text);">
+								Siste synkronisering: {sparebank1Status.sensor?.lastSync
+									? new Date(sparebank1Status.sensor.lastSync).toLocaleString('nb-NO')
+									: 'Aldri'}
+							</p>
+							{#if sparebank1Status.sensor?.isExpired}
+							<!-- isExpired = refresh token is missing, must re-authenticate -->
+								<p style="color: var(--error-text); margin-top: 0.5rem;">
+									⚠️ Token utløpt - koble til på nytt
+								</p>
+							{/if}
+						</div>
+					</div>
+
+					{#if sparebank1SyncResult}
+						{#if sparebank1SyncResult.success}
+							<div class="alert success" style="margin-top: 1rem;">
+								✅ {sparebank1SyncResult.message}
+							</div>
+						{:else}
+							<div class="alert error" style="margin-top: 1rem;">
+								❌ {sparebank1SyncResult.error}
+							</div>
+						{/if}
+					{/if}
+
+					<div style="display: flex; gap: 1rem; margin-top: 1rem;">
+						<button
+							type="button"
+							onclick={syncSparebank1}
+							class="primary-button"
+							style="flex: 1;"
+							disabled={syncingSparebank1}
+						>
+							{syncingSparebank1 ? '⏳ Synkroniserer...' : '🔄 Synkroniser nå'}
+						</button>
+						<button type="button" onclick={disconnectSparebank1} class="debug-button" style="flex: 1;">
+							🔌 Koble fra
+						</button>
+					</div>
+				{:else}
+					<a href="/api/sensors/sparebank1/connect" class="primary-button" style="display: block; text-align: center; text-decoration: none;">
+						🔗 Koble til SpareBank 1
 					</a>
 				{/if}
 			</section>
