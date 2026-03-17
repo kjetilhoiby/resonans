@@ -1,0 +1,42 @@
+import { json } from '@sveltejs/kit';
+import { env } from '$env/dynamic/private';
+import type { RequestHandler } from './$types';
+
+/**
+ * GET /api/cron/jobs
+ * Returnerer alle registrerte cron-jobber med path og schedule.
+ * GitHub Actions-workflowen bruker denne listen til å avgjøre
+ * hvilke jobber som skal kjøres hvert 5. minutt.
+ *
+ * Legg til nye cron-jobber her — ingen endringer nødvendig i workflow.
+ */
+
+export type CronJob = {
+	path: string;
+	schedule: string; // standard 5-felt cron-uttrykk (UTC)
+	description: string;
+	maxDurationSeconds?: number;
+};
+
+const JOBS: CronJob[] = [
+	{
+		path: '/api/cron/daily-checkin',
+		schedule: '0 9 * * *',
+		description: 'Daglig check-in melding via Google Chat'
+	},
+	{
+		path: '/api/cron/sparebank1-sync',
+		schedule: '0 */6 * * *', // hver 6. time
+		description: 'SpareBank 1 inkrementell synk',
+		maxDurationSeconds: 60
+	}
+];
+
+export const GET: RequestHandler = async ({ request }) => {
+	const authHeader = request.headers.get('authorization');
+	if (env.CRON_SECRET && authHeader !== `Bearer ${env.CRON_SECRET}`) {
+		return json({ error: 'Unauthorized' }, { status: 401 });
+	}
+
+	return json(JOBS);
+};

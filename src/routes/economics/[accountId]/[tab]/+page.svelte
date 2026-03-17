@@ -282,7 +282,7 @@
 			{#if lastUpdated}
 				<span class="refresh-time">Lastet kl. {lastUpdated.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' })}</span>
 			{:else}
-				<span class="refresh-time">Synkroniseres automatisk fra SpareBank 1 hver time</span>
+				<span class="refresh-time">Synkroniseres automatisk fra SpareBank 1 daglig kl. 06:00</span>
 			{/if}
 			<button
 				class="refresh-btn"

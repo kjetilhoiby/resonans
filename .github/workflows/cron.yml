@@ -1,0 +1,117 @@
+name: Cron dispatcher
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'   # GitHub Actions er master-klokka
+  workflow_dispatch:         # manuell kjøring fra Actions-fanen
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Dispatch due cron jobs
+        env:
+          APP_URL: ${{ secrets.APP_URL }}         # f.eks. https://resonans.vercel.app
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          node << 'EOF'
+          const APP_URL    = process.env.APP_URL.replace(/\/$/, '');
+          const SECRET     = process.env.CRON_SECRET;
+          const HEADERS    = { Authorization: `Bearer ${SECRET}` };
+
+          // ── Minimal cron expression evaluator (5-felt, UTC) ─────────────────
+          function matchField(field, value) {
+            if (field === '*') return true;
+            return field.split(',').some(part => {
+              if (part.includes('/')) {
+                const [range, step] = part.split('/');
+                const s = parseInt(step);
+                if (range === '*') return value % s === 0;
+                const [a, b] = range.split('-').map(Number);
+                return value >= a && value <= (isNaN(b) ? a : b) && (value - a) % s === 0;
+              }
+              if (part.includes('-')) {
+                const [a, b] = part.split('-').map(Number);
+                return value >= a && value <= b;
+              }
+              return parseInt(part) === value;
+            });
+          }
+
+          function cronMatches(expr, date) {
+            const [min, hour, dom, month, dow] = expr.trim().split(/\s+/);
+            return matchField(min,   date.getUTCMinutes())     &&
+                   matchField(hour,  date.getUTCHours())       &&
+                   matchField(dom,   date.getUTCDate())        &&
+                   matchField(month, date.getUTCMonth() + 1)   &&
+                   matchField(dow,   date.getUTCDay());
+          }
+
+          // Sjekk om jobben har kjørt innenfor de siste 7 minuttene
+          // (buffer for at GitHub Actions-scheduleren kan være litt treg)
+          function isDue(schedule) {
+            const now = new Date();
+            for (let i = 0; i <= 7; i++) {
+              const t = new Date(now.getTime() - i * 60_000);
+              t.setUTCSeconds(0, 0);
+              if (cronMatches(schedule, t)) return true;
+            }
+            return false;
+          }
+
+          // ── Hent jobbregisteret fra appen ───────────────────────────────────
+          async function main() {
+            console.log(`Henter jobbregister fra ${APP_URL}/api/cron/jobs …`);
+            const listRes = await fetch(`${APP_URL}/api/cron/jobs`, { headers: HEADERS });
+            if (!listRes.ok) {
+              console.error(`Feil ved henting av jobbregister: ${listRes.status} ${await listRes.text()}`);
+              process.exit(1);
+            }
+
+            const jobs = await listRes.json();
+            console.log(`Registrerte jobber: ${jobs.length}`);
+
+            const now = new Date();
+            console.log(`Nåværende tidspunkt (UTC): ${now.toISOString()}`);
+
+            const due = jobs.filter(j => isDue(j.schedule));
+            console.log(`Jobber som skal kjøre nå: ${due.length}`);
+
+            // Kjør due-jobber parallelt
+            const results = await Promise.allSettled(
+              due.map(async job => {
+                console.log(`  → Starter: ${job.path} (${job.schedule}) — ${job.description}`);
+                const timeout = (job.maxDurationSeconds ?? 30) * 1000;
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), timeout);
+
+                try {
+                  const res = await fetch(`${APP_URL}${job.path}`, {
+                    headers: HEADERS,
+                    signal: controller.signal
+                  });
+                  const body = await res.text();
+                  console.log(`  ✓ ${job.path} → ${res.status}: ${body.slice(0, 200)}`);
+                  return { job: job.path, status: res.status };
+                } catch (err) {
+                  console.error(`  ✗ ${job.path} → ${err.message}`);
+                  throw err;
+                } finally {
+                  clearTimeout(timer);
+                }
+              })
+            );
+
+            const failed = results.filter(r => r.status === 'rejected');
+            if (failed.length > 0) {
+              console.error(`${failed.length} jobb(er) feilet.`);
+              process.exit(1);
+            }
+
+            console.log('Ferdig.');
+          }
+
+          main();
+          EOF

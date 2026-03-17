@@ -9,7 +9,7 @@ export const config = { maxDuration: 60 };
 
 /**
  * Vercel Cron endpoint — synkroniserer SpareBank 1-data inkrementelt
- * Kjøres automatisk hver time (se vercel.json)
+ * Kjøres automatisk hver 6. time via GitHub Actions (se .github/workflows/cron.yml)
  * GET /api/cron/sparebank1-sync
  */
 export const GET: RequestHandler = async ({ request }) => {
