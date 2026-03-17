@@ -3,6 +3,7 @@ import { db } from '$lib/db';
 import { sensorEvents } from '$lib/db/schema';
 import { and, eq, desc, asc, sql } from 'drizzle-orm';
 import { DEFAULT_USER_ID } from '$lib/server/users';
+import { detectGlobalPayday } from '$lib/server/integrations/payday-detector';
 import type { RequestHandler } from './$types';
 
 /**
@@ -98,53 +99,58 @@ export const GET: RequestHandler = async ({ url }) => {
 	}
 
 	// ─── Detect payday dates ──────────────────────────────────────────────────
-	// Salary signal: large positive transaction (> 10 000 NOK by default) that
-	// appears to be income — description matching salary keywords, or simply the
-	// largest single-day inflow each month.
-	const SALARY_KEYWORDS = ['lønn', 'lonn', 'salary', 'arbeidsgiver', 'folktrygd', 'nav '];
-	const SALARY_MIN_AMOUNT = 10_000;
-
-	// First try: keyword match on income txs
-	const salaryTxs = transactions.filter((t) => {
-		const amount = Number(t.amount);
-		if (amount < SALARY_MIN_AMOUNT) return false;
-		const text = ((t.description ?? '') + ' ' + (t.typeText ?? '')).toLowerCase();
-		return SALARY_KEYWORDS.some((kw) => text.includes(kw));
-	});
-
-	// Fallback: largest inflow per month
+	// Try global detection first (finds salary account across all accounts).
+	// Fall back to per-account detection for accounts that receive salary directly.
 	let paydayDates: string[] = [];
+	let detectedPaydayDom: number | null = null;
 
-	if (salaryTxs.length >= 2) {
-		// One salary per calendar month — take first occurrence per month
-		const perMonth = new Map<string, string>(); // YYYY-MM → date
-		for (const tx of salaryTxs) {
-			const d = tx.timestamp.toISOString().split('T')[0];
-			const m = d.slice(0, 7);
-			if (!perMonth.has(m)) perMonth.set(m, d);
-		}
-		paydayDates = [...perMonth.values()].sort();
+	const globalPayday = await detectGlobalPayday(userId);
+
+	if (globalPayday && globalPayday.paydayDates.length >= 2) {
+		paydayDates = globalPayday.paydayDates;
+		detectedPaydayDom = globalPayday.detectedPaydayDom;
 	} else {
-		// Fallback: per month, take the day with the largest positive net
-		const monthInflows = new Map<string, { date: string; amount: number }>();
-		for (const tx of transactions) {
-			const amount = Number(tx.amount);
-			if (amount < SALARY_MIN_AMOUNT) continue;
-			const d = tx.timestamp.toISOString().split('T')[0];
-			const m = d.slice(0, 7);
-			const cur = monthInflows.get(m);
-			if (!cur || amount > cur.amount) monthInflows.set(m, { date: d, amount });
+		// Per-account fallback (original logic)
+		const SALARY_KEYWORDS = ['lønn', 'lonn', 'salary', 'arbeidsgiver', 'folktrygd', 'nav '];
+		const SALARY_MIN_AMOUNT = 10_000;
+
+		const salaryTxs = transactions.filter((t) => {
+			const amount = Number(t.amount);
+			if (amount < SALARY_MIN_AMOUNT) return false;
+			const text = ((t.description ?? '') + ' ' + (t.typeText ?? '')).toLowerCase();
+			return SALARY_KEYWORDS.some((kw) => text.includes(kw));
+		});
+
+		if (salaryTxs.length >= 2) {
+			const perMonth = new Map<string, string>();
+			for (const tx of salaryTxs) {
+				const d = tx.timestamp.toISOString().split('T')[0];
+				const m = d.slice(0, 7);
+				if (!perMonth.has(m)) perMonth.set(m, d);
+			}
+			paydayDates = [...perMonth.values()].sort();
+		} else {
+			const monthInflows = new Map<string, { date: string; amount: number }>();
+			for (const tx of transactions) {
+				const amount = Number(tx.amount);
+				if (amount < SALARY_MIN_AMOUNT) continue;
+				const d = tx.timestamp.toISOString().split('T')[0];
+				const m = d.slice(0, 7);
+				const cur = monthInflows.get(m);
+				if (!cur || amount > cur.amount) monthInflows.set(m, { date: d, amount });
+			}
+			paydayDates = [...monthInflows.values()].map((v) => v.date).sort();
 		}
-		paydayDates = [...monthInflows.values()].map((v) => v.date).sort();
+
+		if (paydayDates.length >= 2) {
+			const doms = paydayDates.map((d) => new Date(d).getDate());
+			detectedPaydayDom = Math.round(doms.reduce((a, b) => a + b, 0) / doms.length);
+		}
 	}
 
-	if (paydayDates.length < 2) {
+	if (paydayDates.length < 2 || detectedPaydayDom === null) {
 		return json({ periods: [], medianCurve: [], detectedPaydayDom: null });
 	}
-
-	// Compute the typical day-of-month for payday
-	const doms = paydayDates.map((d) => new Date(d).getDate());
-	const detectedPaydayDom = Math.round(doms.reduce((a, b) => a + b, 0) / doms.length);
 
 	// ─── Slice into salary periods ────────────────────────────────────────────
 	// Add a synthetic "next payday" for the current period using detectedPaydayDom
@@ -228,5 +234,5 @@ export const GET: RequestHandler = async ({ url }) => {
 		medianCurve.push({ day: d, relBalance: Math.round(median) });
 	}
 
-	return json({ periods: trimmed, medianCurve, detectedPaydayDom });
+	return json({ periods: trimmed, medianCurve, detectedPaydayDom, paydaySourceAccountId: globalPayday?.sourceAccountId ?? null });
 };

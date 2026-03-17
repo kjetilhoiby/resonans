@@ -6,6 +6,12 @@
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	const paydaySourceAccount = $derived(
+		data.paydaySourceAccountId && data.paydaySourceAccountId !== data.account.accountId
+			? (data.accounts.find((a) => a.accountId === data.paydaySourceAccountId) ?? null)
+			: null
+	);
 </script>
 
 <svelte:head>
@@ -29,6 +35,12 @@
 	/>
 
 	<EconomicsTabs accountId={data.account.accountId} activeTab="salary-month" />
+
+	{#if paydaySourceAccount}
+		<p class="payday-source">
+			📅 Lønnsdato oppdaget fra <a href="/economics/{encodeURIComponent(paydaySourceAccount.accountId)}/salary-month">{paydaySourceAccount.accountName ?? paydaySourceAccount.accountId}</a> — periodeinndelingen gjelder for alle kontoer.
+		</p>
+	{/if}
 
 	<div class="chart-card">
 		<SalaryMonth
@@ -79,4 +91,16 @@
 		padding: 1.5rem;
 		box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
 	}
+
+	.payday-source {
+		font-size: 0.8rem;
+		color: var(--text-secondary, #64748b);
+		margin: -0.75rem 0 1rem;
+	}
+	.payday-source a {
+		color: #2563eb;
+		text-decoration: none;
+		font-weight: 500;
+	}
+	.payday-source a:hover { text-decoration: underline; }
 </style>

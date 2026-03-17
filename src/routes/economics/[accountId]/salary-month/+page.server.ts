@@ -23,6 +23,7 @@ export const load: PageServerLoad = async ({ params, fetch }) => {
 		accounts,
 		periods: salaryData.periods ?? [],
 		medianCurve: salaryData.medianCurve ?? [],
-		detectedPaydayDom: salaryData.detectedPaydayDom ?? null
+		detectedPaydayDom: salaryData.detectedPaydayDom ?? null,
+		paydaySourceAccountId: salaryData.paydaySourceAccountId ?? null
 	};
 };
