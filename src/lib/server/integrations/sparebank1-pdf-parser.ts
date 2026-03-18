@@ -1,31 +1,41 @@
 /**
  * Parser for SpareBank 1 kontoutskrift PDF files.
  *
- * SpareBank 1 statements have a tabular format:
- *   Dato       Beskrivelse           Rentedato    Ut fra konto  Inn på konto   Saldo
- *   15.01.2025 LØNN FIRMA AS         15.01.2025                  52 000,00     64 345,00
- *   20.01.2025 REMA*1000 OSLO        20.01.2025    1 234,00                    63 111,00
+ * Uses pdfjs-dist directly to get x,y coordinates for every text item,
+ * allowing us to detect which column (Ut fra konto / Inn på konto / Saldo)
+ * each number belongs to — no sign inference from balance changes needed.
  *
- * After pdf-parse text extraction the layout is flattened to plain text.
- * We detect lines that start with DD.MM.YYYY and extract numbers from them.
- * Transaction sign is inferred from the running balance change.
+ * Column layout:
+ *   Dato  │ Beskrivelse │ Rentedato │ Ut fra konto │ Inn på konto │ Saldo
+ *
+ * Column boundaries are auto-detected from the header row on each PDF.
  */
 
-// Norwegian number format: "1 234,56" → 1234.56
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+export function normaliseAccountNumber(raw: string): string {
+	return raw.replace(/[\s.]/g, '');
+}
+
 function parseNorwNum(s: string): number {
 	return parseFloat(s.replace(/\s/g, '').replace(',', '.'));
 }
 
-// "15.01.2025" → Date (midnight UTC)
-function parseNorwDate(s: string): Date {
-	const [d, m, y] = s.split('.');
-	return new Date(`${y}-${m}-${d}T00:00:00.000Z`);
+function parseNorwDate(s: string): Date | null {
+	const m = s.trim().match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+	if (!m) return null;
+	return new Date(`${m[3]}-${m[2]}-${m[1]}T00:00:00.000Z`);
 }
 
-// Normalise account number to 11 digits (strip spaces, dots, spaces)
-export function normaliseAccountNumber(raw: string): string {
-	return raw.replace(/[\s.]/g, '');
+function isNorwNum(s: string): boolean {
+	return /^\d[\d\s]*,\d{2}$/.test(s.trim());
 }
+
+function isDate(s: string): boolean {
+	return /^\d{2}\.\d{2}\.\d{4}$/.test(s.trim());
+}
+
+// ── Public types ──────────────────────────────────────────────────────────────
 
 export interface PdfTransaction {
 	date: Date;
@@ -36,118 +46,195 @@ export interface PdfTransaction {
 }
 
 export interface ParsedStatement {
-	/** Raw account number from the PDF (may include dots/spaces) */
 	rawAccountNumber: string;
-	/** Normalised 11-digit number */
 	accountNumber: string;
-	/** "Inngående saldo" value if found */
 	openingBalance: number | null;
 	transactions: PdfTransaction[];
-	/** All balance snapshots: one per transaction + opening/closing anchors */
 	balanceSnapshots: { date: Date; balance: number }[];
 }
 
-// Regex pieces
-const DATE_PAT = '\\d{2}\\.\\d{2}\\.\\d{4}';
-const NORW_NUM = '\\d{1,3}(?:\\s\\d{3})*,\\d{2}';
-const DATE_RE = new RegExp(DATE_PAT, 'g');
-const NUM_RE = new RegExp(NORW_NUM, 'g');
+// ── Internal types ────────────────────────────────────────────────────────────
 
-/**
- * Parse the plain text output of pdf-parse into structured transactions.
- */
-export function parseSparebank1Text(text: string): ParsedStatement {
-	const lines = text.split(/\r?\n/);
+interface TextItem { x: number; y: number; text: string }
+type Row = TextItem[];
+interface ColBounds { utX: number; innX: number; saldoX: number }
 
-	// ── Find account number ──────────────────────────────────────────────────
-	let rawAccountNumber = '';
-	for (const line of lines) {
-		// Patterns: "1234.56.78901", "1234 56 78901", "12345678901"
-		const m = line.match(/(\d{4}[\s.]\d{2}[\s.]\d{5})|(?<!\d)(\d{11})(?!\d)/);
-		if (m) {
-			rawAccountNumber = (m[1] || m[2] || '').trim();
-			break;
+// ── pdfjs-dist extraction ─────────────────────────────────────────────────────
+
+/** Extract all text items (with x,y coords) from a PDF buffer via pdfjs-dist */
+async function extractItems(buf: Buffer): Promise<TextItem[]> {
+	// pdfjs-dist is an ESM package — dynamic import
+	const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs' as string);
+
+	const doc = await pdfjs.getDocument({
+		data: new Uint8Array(buf),
+		isEvalSupported: false,
+		useSystemFonts: true,
+	}).promise;
+
+	const items: TextItem[] = [];
+	for (let p = 1; p <= doc.numPages; p++) {
+		const page = await doc.getPage(p);
+		const content = await page.getTextContent();
+		const height = page.getViewport({ scale: 1 }).height;
+
+		for (const item of content.items) {
+			if (!('str' in item)) continue;
+			const str = (item as any).str as string;
+			if (!str.trim()) continue;
+			const tx = (item as any).transform as number[];
+			// PDF origin is bottom-left — flip y so row 0 = top of page
+			items.push({ x: tx[4], y: height - tx[5], text: str.trim() });
 		}
 	}
-	const accountNumber = normaliseAccountNumber(rawAccountNumber);
+	return items;
+}
 
-	// ── Parse transaction lines ──────────────────────────────────────────────
+// ── Row grouping ──────────────────────────────────────────────────────────────
+
+/** Round y to nearest 2 pts so items on the same visual line share a key */
+function rowKey(y: number): number {
+	return Math.round(y / 2) * 2;
+}
+
+function groupRows(items: TextItem[]): Row[] {
+	const map = new Map<number, TextItem[]>();
+	for (const item of items) {
+		const k = rowKey(item.y);
+		if (!map.has(k)) map.set(k, []);
+		map.get(k)!.push(item);
+	}
+	return [...map.values()]
+		.map((row) => row.sort((a, b) => a.x - b.x))
+		.sort((a, b) => a[0].y - b[0].y);
+}
+
+// ── Column detection ──────────────────────────────────────────────────────────
+
+/**
+ * Find the x-positions of the Ut, Inn, and Saldo columns from the header row.
+ * The header is the first row that contains the word "saldo".
+ */
+function detectColBounds(rows: Row[]): ColBounds | null {
+	for (const row of rows) {
+		const lower = row.map((i) => i.text.toLowerCase());
+		if (!lower.includes('saldo')) continue;
+
+		const utIdx    = lower.findIndex((t) => t === 'ut' || t.startsWith('ut fra'));
+		const innIdx   = lower.findIndex((t) => t === 'inn' || t.startsWith('inn på') || t.startsWith('inn pa'));
+		const saldoIdx = lower.indexOf('saldo');
+
+		if (utIdx === -1 || innIdx === -1 || saldoIdx === -1) continue;
+
+		return { utX: row[utIdx].x, innX: row[innIdx].x, saldoX: row[saldoIdx].x };
+	}
+	return null;
+}
+
+function classifyX(x: number, b: ColBounds): 'ut' | 'inn' | 'saldo' | 'other' {
+	if (x < b.utX - 5) return 'other';
+	const utMid   = (b.utX + b.innX) / 2;
+	const innMid  = (b.innX + b.saldoX) / 2;
+	if (x < utMid)  return 'ut';
+	if (x < innMid) return 'inn';
+	return 'saldo';
+}
+
+// ── Row parsing ───────────────────────────────────────────────────────────────
+
+function parseRows(rows: Row[], bounds: ColBounds) {
 	const transactions: PdfTransaction[] = [];
 	const balanceSnapshots: { date: Date; balance: number }[] = [];
 	let openingBalance: number | null = null;
-	let prevBalance: number | null = null;
+	let rawAccountNumber = '';
 
-	for (const rawLine of lines) {
-		const line = rawLine.trimEnd();
-		if (!line.match(/^\s*\d{2}\.\d{2}\.\d{4}/)) continue;
-
-		// Find all dates in this line
-		const dateMatches = [...line.matchAll(new RegExp(DATE_PAT, 'g'))];
-		if (dateMatches.length === 0) continue;
-
-		const bookingDate = parseNorwDate(dateMatches[0][0]);
-		const bookingDateEnd = (dateMatches[0].index ?? 0) + 10;
-
-		// Find all Norwegian-format numbers in the line
-		const numMatches = [...line.matchAll(new RegExp(NORW_NUM, 'g'))];
-		if (numMatches.length === 0) continue;
-
-		const balance = parseNorwNum(numMatches[numMatches.length - 1][0]);
-
-		// Description: text between booking date and the first number
-		// Skip an optional value date (rentedato) that appears before the numbers
-		const firstNumIdx = numMatches[0].index ?? line.length;
-		let descEnd = firstNumIdx;
-		if (dateMatches.length >= 2) {
-			const valDateIdx = dateMatches[1].index ?? line.length;
-			if (valDateIdx < firstNumIdx) descEnd = valDateIdx;
+	for (const row of rows) {
+		// Account number detection (any row)
+		if (!rawAccountNumber) {
+			const joined = row.map((i) => i.text).join(' ');
+			const m = joined.match(/(\d{4}[\s.]\d{2}[\s.]\d{5})|(?<!\d)(\d{11})(?!\d)/);
+			if (m) rawAccountNumber = (m[1] || m[2]).trim();
 		}
-		const description = line.substring(bookingDateEnd, descEnd).trim();
 
-		// Opening / closing balance lines (no actual transaction)
+		const bookingDate = parseNorwDate(row[0]?.text ?? '');
+		if (!bookingDate) continue;
+
+		// Classify each number in the row by column
+		const ut: number[] = [], inn: number[] = [], saldo: number[] = [];
+		for (const item of row) {
+			if (!isNorwNum(item.text)) continue;
+			const val = parseNorwNum(item.text);
+			const col = classifyX(item.x, bounds);
+			if      (col === 'ut')    ut.push(val);
+			else if (col === 'inn')   inn.push(val);
+			else if (col === 'saldo') saldo.push(val);
+		}
+
+		if (saldo.length === 0) continue;
+		const balance = saldo[saldo.length - 1];
+
+		// Description: non-date, non-number items left of the Ut column
+		const description = row
+			.filter((item, idx) =>
+				idx > 0 &&
+				!isNorwNum(item.text) &&
+				!isDate(item.text) &&
+				item.x < bounds.utX)
+			.map((i) => i.text)
+			.join(' ')
+			.trim();
+
 		const descLower = description.toLowerCase();
-		const isAnchorOnly =
-			descLower.includes('inngående saldo') ||
-			descLower.includes('inngaende saldo') ||
-			descLower.includes('utgående saldo') ||
-			descLower.includes('utgaende saldo') ||
-			numMatches.length < 2;
+		const isAnchor = ut.length === 0 && inn.length === 0;
 
-		if (isAnchorOnly) {
+		if (isAnchor) {
 			if (descLower.includes('inngående') || descLower.includes('inngaende')) {
 				openingBalance = balance;
 			}
 			balanceSnapshots.push({ date: bookingDate, balance });
-			prevBalance = balance;
 			continue;
 		}
 
-		// Amount: second-to-last number
-		const amount = parseNorwNum(numMatches[numMatches.length - 2][0]);
-
-		// Sign: infer from balance change vs previous balance
-		let signedAmount: number;
-		if (prevBalance !== null) {
-			const delta = balance - prevBalance;
-			// Allow ±1 cent rounding tolerance
-			const roundedDelta = Math.round(Math.abs(delta) * 100);
-			const roundedAmount = Math.round(amount * 100);
-			if (Math.abs(roundedDelta - roundedAmount) <= 1) {
-				signedAmount = delta >= 0 ? amount : -amount;
-			} else {
-				// Delta doesn't match — fall back to sign of delta
-				signedAmount = delta >= 0 ? amount : -amount;
-			}
+		// Sign is authoritative from column — no guessing needed
+		let amount: number;
+		if (inn.length > 0) {
+			amount = inn[inn.length - 1];      // positive
 		} else {
-			// No previous balance yet — can't determine sign reliably.
-			// Store as positive; caller can re-evaluate after full parse.
-			signedAmount = amount;
+			amount = -(ut[ut.length - 1]);     // negative
 		}
 
-		transactions.push({ date: bookingDate, description, amount: signedAmount, balance });
+		transactions.push({ date: bookingDate, description, amount, balance });
 		balanceSnapshots.push({ date: bookingDate, balance });
-		prevBalance = balance;
 	}
 
-	return { rawAccountNumber, accountNumber, openingBalance, transactions, balanceSnapshots };
+	return { transactions, balanceSnapshots, openingBalance, rawAccountNumber };
+}
+
+// ── Public API ────────────────────────────────────────────────────────────────
+
+/**
+ * Parse a SpareBank 1 PDF buffer into structured transactions + balance anchors.
+ * Returns an empty statement (with a warning hint) if the header row can't be
+ * found — the caller should log a warning for that file.
+ */
+export async function parseSparebank1Pdf(buf: Buffer): Promise<ParsedStatement> {
+	const items = await extractItems(buf);
+	const rows  = groupRows(items);
+	const bounds = detectColBounds(rows);
+
+	if (!bounds) {
+		return { rawAccountNumber: '', accountNumber: '', openingBalance: null,
+		         transactions: [], balanceSnapshots: [] };
+	}
+
+	const { transactions, balanceSnapshots, openingBalance, rawAccountNumber } =
+		parseRows(rows, bounds);
+
+	return {
+		rawAccountNumber,
+		accountNumber: normaliseAccountNumber(rawAccountNumber),
+		openingBalance,
+		transactions,
+		balanceSnapshots,
+	};
 }

@@ -3,7 +3,7 @@ import { db } from '$lib/db';
 import { sensorEvents, sensors } from '$lib/db/schema';
 import { and, eq, sql } from 'drizzle-orm';
 import { DEFAULT_USER_ID } from '$lib/server/users';
-import { parseSparebank1Text, normaliseAccountNumber } from '$lib/server/integrations/sparebank1-pdf-parser';
+import { parseSparebank1Pdf, normaliseAccountNumber } from '$lib/server/integrations/sparebank1-pdf-parser';
 import type { RequestHandler } from './$types';
 
 // Vercel: allow up to 60 s for a ZIP with many PDFs
@@ -30,7 +30,6 @@ export const POST: RequestHandler = async ({ request }) => {
 
 		// ── Dynamic imports (avoid Vite SSR bundling issues) ──────────────────
 		const JSZip = (await import('jszip')).default;
-		const pdfParse = (await import('pdf-parse')).default;
 
 		const zip = await JSZip.loadAsync(buffer);
 
@@ -107,16 +106,13 @@ export const POST: RequestHandler = async ({ request }) => {
 		const warnings: string[] = [];
 
 		for (const { name, buf } of pdfEntries) {
-			let pdfText: string;
+			let statement: Awaited<ReturnType<typeof parseSparebank1Pdf>>;
 			try {
-				const parsed = await pdfParse(buf);
-				pdfText = parsed.text;
+				statement = await parseSparebank1Pdf(buf);
 			} catch (err) {
 				warnings.push(`Kunne ikke lese ${name}: ${err}`);
 				continue;
 			}
-
-			const statement = parseSparebank1Text(pdfText);
 
 			if (!statement.accountNumber) {
 				warnings.push(`Fant ikke kontonummer i ${name} — hopper over`);
