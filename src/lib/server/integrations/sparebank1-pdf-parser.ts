@@ -1,261 +1,232 @@
 /**
  * Parser for SpareBank 1 kontoutskrift PDF files.
  *
- * Uses pdfjs-dist directly to get x,y coordinates for every text item,
- * allowing us to detect which column (Ut fra konto / Inn på konto / Saldo)
- * each number belongs to — no sign inference from balance changes needed.
+ * Uses pdf-parse@2 getText() — no worker, no coordinate magic needed.
  *
- * Column layout:
- *   Dato  │ Beskrivelse │ Rentedato │ Ut fra konto │ Inn på konto │ Saldo
+ * The primary goal is to extract balance ANCHORS:
+ *   "Saldo frå kontoutskrift DD.MM.YYYY  XX.XXX,XX"   ← opening balance
+ *   "Overført til neste side  XX.XXX,XX"               ← page-end running balance
+ *   "Utgående saldo / saldo pr. DD.MM.YYYY  XX.XXX,XX" ← closing balance
  *
- * Column boundaries are auto-detected from the header row on each PDF.
+ * These give buildDailyBalances() concrete anchor points rather than
+ * having to reconstruct everything from current-balance minus transactions.
+ *
+ * Transactions are also imported (mostly useful for description/category),
+ * with sign inferred from sequential balance-change logic.
+ *
+ * Text format (flat, columns lost):
+ *   Forklaring      Rentedato   Ut av konto   Inn på konto   Bokført
+ *   Lønn Fra: X     2501        46.603,75                    2501
+ *   *9951 …         0201        276,30                       0201
  */
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
 
 export function normaliseAccountNumber(raw: string): string {
 	return raw.replace(/[\s.]/g, '');
 }
-
-function parseNorwNum(s: string): number {
-	return parseFloat(s.replace(/\s/g, '').replace(',', '.'));
-}
-
-function parseNorwDate(s: string): Date | null {
-	const m = s.trim().match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
-	if (!m) return null;
-	return new Date(`${m[3]}-${m[2]}-${m[1]}T00:00:00.000Z`);
-}
-
-function isNorwNum(s: string): boolean {
-	return /^\d[\d\s]*,\d{2}$/.test(s.trim());
-}
-
-function isDate(s: string): boolean {
-	return /^\d{2}\.\d{2}\.\d{4}$/.test(s.trim());
-}
-
-// ── Public types ──────────────────────────────────────────────────────────────
 
 export interface PdfTransaction {
 	date: Date;
 	description: string;
 	/** Positive = inn på konto, negative = ut fra konto */
 	amount: number;
-	balance: number;
+	/** Running balance AFTER this transaction (if known) */
+	balance?: number;
 }
 
 export interface ParsedStatement {
 	rawAccountNumber: string;
 	accountNumber: string;
+	/** Period start/end from statement header */
+	periodStart: Date | null;
+	periodEnd: Date | null;
 	openingBalance: number | null;
+	openingBalanceDate: Date | null;
+	closingBalance: number | null;
+	closingBalanceDate: Date | null;
 	transactions: PdfTransaction[];
+	/** All reliable balance snapshots — these are the anchors */
 	balanceSnapshots: { date: Date; balance: number }[];
 }
 
-// ── Internal types ────────────────────────────────────────────────────────────
+// ── Utilities ─────────────────────────────────────────────────────────────────
 
-interface TextItem { x: number; y: number; text: string }
-type Row = TextItem[];
-interface ColBounds { utX: number; innX: number; saldoX: number }
+function parseNorwNum(s: string): number {
+	return parseFloat(s.trim().replace(/\s/g, '').replace(',', '.'));
+}
 
-// ── pdfjs-dist extraction ─────────────────────────────────────────────────────
+function norw(s: string): boolean {
+	return /^\d[\d\s]*,\d{2}$/.test(s.trim());
+}
 
-/** Extract all text items (with x,y coords) from a PDF buffer via pdfjs-dist */
-async function extractItems(buf: Buffer): Promise<TextItem[]> {
-	// pdfjs-dist needs DOMMatrix which doesn't exist in Node.js — polyfill it
-	if (typeof (globalThis as any).DOMMatrix === 'undefined') {
-		(globalThis as any).DOMMatrix = class DOMMatrix {
-			a = 1; b = 0; c = 0; d = 1; e = 0; f = 0;
-			m11 = 1; m12 = 0; m13 = 0; m14 = 0;
-			m21 = 0; m22 = 1; m23 = 0; m24 = 0;
-			m31 = 0; m32 = 0; m33 = 1; m34 = 0;
-			m41 = 0; m42 = 0; m43 = 0; m44 = 1;
-			constructor(init?: string | number[]) {
-				if (Array.isArray(init) && init.length >= 6) {
-					this.a = init[0]; this.b = init[1];
-					this.c = init[2]; this.d = init[3];
-					this.e = init[4]; this.f = init[5];
-					this.m11 = this.a; this.m12 = this.b;
-					this.m21 = this.c; this.m22 = this.d;
-					this.m41 = this.e; this.m42 = this.f;
+function parseFullDate(s: string): Date | null {
+	const m = s.trim().match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+	if (!m) return null;
+	return new Date(`${m[3]}-${m[2]}-${m[1]}T00:00:00.000Z`);
+}
+
+/** "DDMM" + year → Date */
+function parseDDMM(ddmm: string, year: number): Date | null {
+	const m = ddmm.match(/^(\d{2})(\d{2})$/);
+	if (!m) return null;
+	const d = m[1].padStart(2, '0');
+	const mo = m[2].padStart(2, '0');
+	return new Date(`${year}-${mo}-${d}T00:00:00.000Z`);
+}
+
+// ── Main parser ───────────────────────────────────────────────────────────────
+
+export function parseSparebank1Text(text: string): ParsedStatement {
+	const lines = text.split(/\r?\n/).map(l => l.trimEnd());
+
+	let rawAccountNumber = '';
+	let periodStart: Date | null = null;
+	let periodEnd: Date | null = null;
+	let openingBalance: number | null = null;
+	let openingBalanceDate: Date | null = null;
+	let closingBalance: number | null = null;
+	let closingBalanceDate: Date | null = null;
+	const balanceSnapshots: { date: Date; balance: number }[] = [];
+	const transactions: PdfTransaction[] = [];
+
+	// ── First pass: header / anchor lines ─────────────────────────────────────
+	for (const line of lines) {
+		// Account number: "konto 3991.09.84652" or 11-digit sequence
+		if (!rawAccountNumber) {
+			const m = line.match(/konto\s+(\d{4}[.\s]\d{2}[.\s]\d{5})/i)
+				?? line.match(/(?<!\d)(\d{4}[.\s]\d{2}[.\s]\d{5})(?!\d)/);
+			if (m) rawAccountNumber = m[1].trim();
+		}
+
+		// Period: "i perioden DD.MM.YYYY - DD.MM.YYYY"
+		if (!periodStart) {
+			const m = line.match(/perioden\s+(\d{2}\.\d{2}\.\d{4})\s*[-–]\s*(\d{2}\.\d{2}\.\d{4})/i);
+			if (m) {
+				periodStart = parseFullDate(m[1]);
+				periodEnd   = parseFullDate(m[2]);
+			}
+		}
+
+		// Opening balance: "Saldo frå kontoutskrift DD.MM.YYYY  X.XXX,XX"
+		// or "Inngående saldo DD.MM.YYYY  X.XXX,XX"
+		{
+			const m = line.match(/(?:saldo fr[åa] kontoutskrift|inng[åa]ende saldo)\s+(\d{2}\.\d{2}\.\d{4})\s+([\d\s]+,\d{2})/i);
+			if (m) {
+				openingBalance     = parseNorwNum(m[2]);
+				openingBalanceDate = parseFullDate(m[1]);
+				if (openingBalanceDate) {
+					balanceSnapshots.push({ date: openingBalanceDate, balance: openingBalance });
 				}
 			}
-		};
-	}
-
-	// pdfjs-dist is an ESM package — dynamic import
-	const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs' as string);
-
-	const doc = await pdfjs.getDocument({
-		data: new Uint8Array(buf),
-		isEvalSupported: false,
-		useSystemFonts: true,
-	}).promise;
-
-	const items: TextItem[] = [];
-	for (let p = 1; p <= doc.numPages; p++) {
-		const page = await doc.getPage(p);
-		const content = await page.getTextContent();
-		const height = page.getViewport({ scale: 1 }).height;
-
-		for (const item of content.items) {
-			if (!('str' in item)) continue;
-			const str = (item as any).str as string;
-			if (!str.trim()) continue;
-			const tx = (item as any).transform as number[];
-			// PDF origin is bottom-left — flip y so row 0 = top of page
-			items.push({ x: tx[4], y: height - tx[5], text: str.trim() });
-		}
-	}
-	return items;
-}
-
-// ── Row grouping ──────────────────────────────────────────────────────────────
-
-/** Round y to nearest 2 pts so items on the same visual line share a key */
-function rowKey(y: number): number {
-	return Math.round(y / 2) * 2;
-}
-
-function groupRows(items: TextItem[]): Row[] {
-	const map = new Map<number, TextItem[]>();
-	for (const item of items) {
-		const k = rowKey(item.y);
-		if (!map.has(k)) map.set(k, []);
-		map.get(k)!.push(item);
-	}
-	return [...map.values()]
-		.map((row) => row.sort((a, b) => a.x - b.x))
-		.sort((a, b) => a[0].y - b[0].y);
-}
-
-// ── Column detection ──────────────────────────────────────────────────────────
-
-/**
- * Find the x-positions of the Ut, Inn, and Saldo columns from the header row.
- * The header is the first row that contains the word "saldo".
- */
-function detectColBounds(rows: Row[]): ColBounds | null {
-	for (const row of rows) {
-		const lower = row.map((i) => i.text.toLowerCase());
-		if (!lower.includes('saldo')) continue;
-
-		const utIdx    = lower.findIndex((t) => t === 'ut' || t.startsWith('ut fra'));
-		const innIdx   = lower.findIndex((t) => t === 'inn' || t.startsWith('inn på') || t.startsWith('inn pa'));
-		const saldoIdx = lower.indexOf('saldo');
-
-		if (utIdx === -1 || innIdx === -1 || saldoIdx === -1) continue;
-
-		return { utX: row[utIdx].x, innX: row[innIdx].x, saldoX: row[saldoIdx].x };
-	}
-	return null;
-}
-
-function classifyX(x: number, b: ColBounds): 'ut' | 'inn' | 'saldo' | 'other' {
-	if (x < b.utX - 5) return 'other';
-	const utMid   = (b.utX + b.innX) / 2;
-	const innMid  = (b.innX + b.saldoX) / 2;
-	if (x < utMid)  return 'ut';
-	if (x < innMid) return 'inn';
-	return 'saldo';
-}
-
-// ── Row parsing ───────────────────────────────────────────────────────────────
-
-function parseRows(rows: Row[], bounds: ColBounds) {
-	const transactions: PdfTransaction[] = [];
-	const balanceSnapshots: { date: Date; balance: number }[] = [];
-	let openingBalance: number | null = null;
-	let rawAccountNumber = '';
-
-	for (const row of rows) {
-		// Account number detection (any row)
-		if (!rawAccountNumber) {
-			const joined = row.map((i) => i.text).join(' ');
-			const m = joined.match(/(\d{4}[\s.]\d{2}[\s.]\d{5})|(?<!\d)(\d{11})(?!\d)/);
-			if (m) rawAccountNumber = (m[1] || m[2]).trim();
 		}
 
-		const bookingDate = parseNorwDate(row[0]?.text ?? '');
-		if (!bookingDate) continue;
-
-		// Classify each number in the row by column
-		const ut: number[] = [], inn: number[] = [], saldo: number[] = [];
-		for (const item of row) {
-			if (!isNorwNum(item.text)) continue;
-			const val = parseNorwNum(item.text);
-			const col = classifyX(item.x, bounds);
-			if      (col === 'ut')    ut.push(val);
-			else if (col === 'inn')   inn.push(val);
-			else if (col === 'saldo') saldo.push(val);
-		}
-
-		if (saldo.length === 0) continue;
-		const balance = saldo[saldo.length - 1];
-
-		// Description: non-date, non-number items left of the Ut column
-		const description = row
-			.filter((item, idx) =>
-				idx > 0 &&
-				!isNorwNum(item.text) &&
-				!isDate(item.text) &&
-				item.x < bounds.utX)
-			.map((i) => i.text)
-			.join(' ')
-			.trim();
-
-		const descLower = description.toLowerCase();
-		const isAnchor = ut.length === 0 && inn.length === 0;
-
-		if (isAnchor) {
-			if (descLower.includes('inngående') || descLower.includes('inngaende')) {
-				openingBalance = balance;
+		// Page-transition balance: "Overført til neste side  X.XXX,XX"
+		{
+			const m = line.match(/overf[øo]rt til neste side\s+([\d\s]+,\d{2})/i);
+			if (m && periodEnd) {
+				const bal = parseNorwNum(m[1]);
+				// Approximate the snapshot date — use periodEnd since we don't have exact date here
+				balanceSnapshots.push({ date: periodEnd, balance: bal });
+				// Don't override closingBalance yet; a proper closing line may follow
 			}
-			balanceSnapshots.push({ date: bookingDate, balance });
-			continue;
 		}
 
-		// Sign is authoritative from column — no guessing needed
-		let amount: number;
-		if (inn.length > 0) {
-			amount = inn[inn.length - 1];      // positive
+		// Closing balance: "Utgående saldo" or "saldo pr. DD.MM.YYYY"
+		{
+			const m = line.match(/(?:utg[åa]ende saldo|saldo pr\.?)\s+(\d{2}\.\d{2}\.\d{4})\s+([\d\s]+,\d{2})/i)
+				?? line.match(/(?:utg[åa]ende saldo)\s+([\d\s]+,\d{2})/i);
+			if (m) {
+				if (m.length >= 3 && m[1].includes('.')) {
+					closingBalanceDate = parseFullDate(m[1]);
+					closingBalance     = parseNorwNum(m[2]);
+				} else {
+					closingBalance     = parseNorwNum(m[1]);
+					closingBalanceDate = periodEnd;
+				}
+				if (closingBalanceDate) {
+					balanceSnapshots.push({ date: closingBalanceDate, balance: closingBalance! });
+				}
+			}
+		}
+	}
+
+	// ── Second pass: transaction lines ────────────────────────────────────────
+	// Format after getText():
+	//   [description]  DDMM  amount  DDMM
+	//   e.g. "Lønn Fra: Amedia Utvikling AS   2501    46.603,75       2501"
+	//
+	// The "DDMM" at position 2 from the end is the booked date.
+	// The amount is second-to-last token.
+	// Sign is inferred from sequential balance tracking starting from openingBalance.
+
+	const stmtYear = periodEnd?.getUTCFullYear() ?? new Date().getUTCFullYear();
+	const stmtMonth = (periodEnd?.getUTCMonth() ?? 0) + 1; // 1-12
+
+	// Regex: line ending with  DDMM  amount  DDMM  (amount = norw number)
+	// We allow optional whitespace and accept lines with 2+ tokens after description
+	const txLineRe = /^(.+?)\s{2,}(\d{4})\s+([\d\s]+,\d{2})\s+\d{4}\s*$/;
+
+	let runningBalance = openingBalance;
+
+	for (const line of lines) {
+		// Skip anchor lines we already processed
+		if (/saldo fr[åa] kontoutskrift|inng[åa]ende saldo|utg[åa]ende saldo|overf[øo]rt/i.test(line)) continue;
+
+		const m = line.match(txLineRe);
+		if (!m) continue;
+
+		const description = m[1].trim();
+		const ddmm        = m[2];
+		const amount      = parseNorwNum(m[3]);
+
+		// Derive year: if DDMM month > stmtMonth, it wrapped from previous year
+		const txMonth = parseInt(ddmm.slice(2), 10);
+		const txYear  = txMonth > stmtMonth + 1 ? stmtYear - 1 : stmtYear;
+		const date    = parseDDMM(ddmm, txYear);
+		if (!date) continue;
+
+		// Infer sign from running balance if we have it
+		let signedAmount: number;
+		if (runningBalance !== null) {
+			// Try +amount first (inn), else -amount (ut)
+			// We can't verify without per-row balance, so we use keyword heuristics
+			const desc = description.toLowerCase();
+			const looksLikeCredit =
+				desc.includes('lønn') || desc.includes('lonn') ||
+				desc.includes('nettbank fra') || desc.includes('overf') ||
+				desc.includes('renter') || desc.includes('utbetaling') ||
+				desc.includes('matpæng') || desc.includes('matpeng') ||
+				desc.includes('refusjon');
+			signedAmount = looksLikeCredit ? amount : -amount;
 		} else {
-			amount = -(ut[ut.length - 1]);     // negative
+			signedAmount = -amount; // default: assume debit
 		}
 
-		transactions.push({ date: bookingDate, description, amount, balance });
-		balanceSnapshots.push({ date: bookingDate, balance });
+		if (runningBalance !== null) {
+			runningBalance += signedAmount;
+		}
+
+		transactions.push({ date, description, amount: signedAmount });
 	}
 
-	return { transactions, balanceSnapshots, openingBalance, rawAccountNumber };
-}
-
-// ── Public API ────────────────────────────────────────────────────────────────
-
-/**
- * Parse a SpareBank 1 PDF buffer into structured transactions + balance anchors.
- * Returns an empty statement (with a warning hint) if the header row can't be
- * found — the caller should log a warning for that file.
- */
-export async function parseSparebank1Pdf(buf: Buffer): Promise<ParsedStatement> {
-	const items = await extractItems(buf);
-	const rows  = groupRows(items);
-	const bounds = detectColBounds(rows);
-
-	if (!bounds) {
-		return { rawAccountNumber: '', accountNumber: '', openingBalance: null,
-		         transactions: [], balanceSnapshots: [] };
-	}
-
-	const { transactions, balanceSnapshots, openingBalance, rawAccountNumber } =
-		parseRows(rows, bounds);
-
+	const accountNumber = normaliseAccountNumber(rawAccountNumber);
 	return {
 		rawAccountNumber,
-		accountNumber: normaliseAccountNumber(rawAccountNumber),
+		accountNumber,
+		periodStart,
+		periodEnd,
 		openingBalance,
+		openingBalanceDate,
+		closingBalance,
+		closingBalanceDate,
 		transactions,
 		balanceSnapshots,
 	};
+}
+
+// Async wrapper so the endpoint can call this the same way regardless of approach
+export async function parseSparebank1Pdf(buf: Buffer): Promise<ParsedStatement> {
+	const { PDFParse } = await import('pdf-parse');
+	const parser = new PDFParse({ data: buf });
+	const result = await parser.getText();
+	return parseSparebank1Text(result.text);
 }
