@@ -57,8 +57,12 @@
 	);
 	const yMin = 0;
 	const yMax = $derived.by(() => {
-		if (allBalanceValues.length === 0) return 100000;
-		const raw = Math.max(...allBalanceValues);
+		// Scale to current period only — avoids outliers (feriepenger etc.) in
+		// historical periods from stretching the axis.
+		const current = periods.find((p) => p.isCurrent);
+		const vals = current ? current.days.map((d) => d.balance) : allBalanceValues;
+		if (vals.length === 0) return 100000;
+		const raw = Math.max(...vals);
 		return Math.ceil((raw * 1.2) / 1000) * 1000;
 	});
 
