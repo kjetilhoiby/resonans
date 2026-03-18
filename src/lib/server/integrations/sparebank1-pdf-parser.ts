@@ -63,6 +63,27 @@ interface ColBounds { utX: number; innX: number; saldoX: number }
 
 /** Extract all text items (with x,y coords) from a PDF buffer via pdfjs-dist */
 async function extractItems(buf: Buffer): Promise<TextItem[]> {
+	// pdfjs-dist needs DOMMatrix which doesn't exist in Node.js — polyfill it
+	if (typeof (globalThis as any).DOMMatrix === 'undefined') {
+		(globalThis as any).DOMMatrix = class DOMMatrix {
+			a = 1; b = 0; c = 0; d = 1; e = 0; f = 0;
+			m11 = 1; m12 = 0; m13 = 0; m14 = 0;
+			m21 = 0; m22 = 1; m23 = 0; m24 = 0;
+			m31 = 0; m32 = 0; m33 = 1; m34 = 0;
+			m41 = 0; m42 = 0; m43 = 0; m44 = 1;
+			constructor(init?: string | number[]) {
+				if (Array.isArray(init) && init.length >= 6) {
+					this.a = init[0]; this.b = init[1];
+					this.c = init[2]; this.d = init[3];
+					this.e = init[4]; this.f = init[5];
+					this.m11 = this.a; this.m12 = this.b;
+					this.m21 = this.c; this.m22 = this.d;
+					this.m41 = this.e; this.m42 = this.f;
+				}
+			}
+		};
+	}
+
 	// pdfjs-dist is an ESM package — dynamic import
 	const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs' as string);
 
