@@ -10,6 +10,68 @@ import type { RequestHandler } from './$types';
 export const config = { maxDuration: 60 };
 
 /**
+ * GET /api/admin/import-statements
+ * Returns a summary of stored balance anchors per account.
+ */
+export const GET: RequestHandler = async () => {
+	const userId = DEFAULT_USER_ID;
+
+	const rows = await db
+		.select({
+			accountId:     sql<string>`data->>'accountId'`,
+			accountNumber: sql<string>`COALESCE(data->>'accountNumber', data->>'accountId')`,
+			source:        sql<string>`COALESCE(metadata->>'source', 'api')`,
+			count:         sql<number>`count(*)::int`,
+			earliest:      sql<string>`min(timestamp)::date`,
+			latest:        sql<string>`max(timestamp)::date`
+		})
+		.from(sensorEvents)
+		.where(
+			and(
+				eq(sensorEvents.userId, userId),
+				eq(sensorEvents.dataType, 'bank_balance')
+			)
+		)
+		.groupBy(
+			sql`data->>'accountId'`,
+			sql`COALESCE(data->>'accountNumber', data->>'accountId')`,
+			sql`COALESCE(metadata->>'source', 'api')`
+		)
+		.orderBy(sql`data->>'accountId'`, sql`COALESCE(metadata->>'source', 'api')`);
+
+	// Merge rows for same account across sources
+	const byAccount = new Map<string, {
+		accountId: string;
+		accountNumber: string;
+		earliest: string;
+		latest: string;
+		totalAnchors: number;
+		sources: string[];
+	}>();
+
+	for (const r of rows) {
+		const key = r.accountId;
+		if (!byAccount.has(key)) {
+			byAccount.set(key, {
+				accountId: r.accountId,
+				accountNumber: r.accountNumber,
+				earliest: r.earliest,
+				latest: r.latest,
+				totalAnchors: 0,
+				sources: []
+			});
+		}
+		const entry = byAccount.get(key)!;
+		entry.totalAnchors += r.count;
+		entry.sources.push(r.source);
+		if (r.earliest < entry.earliest) entry.earliest = r.earliest;
+		if (r.latest   > entry.latest)   entry.latest   = r.latest;
+	}
+
+	return json({ accounts: [...byAccount.values()] });
+};
+
+/**
  * POST /api/admin/import-statements
  *
  * Accepts multipart/form-data with a field named "zip" containing a ZIP

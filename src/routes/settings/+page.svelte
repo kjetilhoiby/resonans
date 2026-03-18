@@ -19,6 +19,14 @@
 
 	let importingStatements = $state(false);
 	let importResult: any = $state(null);
+	let anchorAccounts = $state<{
+		accountId: string;
+		accountNumber: string;
+		earliest: string;
+		latest: string;
+		totalAnchors: number;
+		sources: string[];
+	}[]>([]);
 
 	const user = $derived(data.user);
 	const settings = $derived(user?.notificationSettings || {});
@@ -27,7 +35,18 @@
 	onMount(async () => {
 		await loadWithingsStatus();
 		await loadSparebank1Status();
+		await loadAnchorAccounts();
 	});
+
+	async function loadAnchorAccounts() {
+		try {
+			const res = await fetch('/api/admin/import-statements');
+			if (res.ok) {
+				const data = await res.json();
+				anchorAccounts = data.accounts ?? [];
+			}
+		} catch { /* ignore */ }
+	}
 
 	async function loadWithingsStatus() {
 		loadingWithings = true;
@@ -95,6 +114,7 @@
 			fd.append('zip', file);
 			const res = await fetch('/api/admin/import-statements', { method: 'POST', body: fd });
 			importResult = await res.json();
+			await loadAnchorAccounts();
 		} catch (err) {
 			importResult = { error: String(err) };
 		} finally {
@@ -449,7 +469,7 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 				<h2>Importer kontoutskrifter</h2>
 				<p class="help-text">
 					Last opp en ZIP-fil med SpareBank 1 kontoutskrifter (PDF) for å importere historiske
-					transaksjoner og saldoankre. Duplikater hoppes over automatisk.
+					saldoankre. Fungerer for alle kontoer — bare sleng alle PDF-ene i én ZIP.
 				</p>
 
 				<label class="primary-button" style="display:block; text-align:center; cursor:pointer;">
@@ -481,6 +501,31 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 							</ul>
 						{/if}
 					{/if}
+				{/if}
+
+				<!-- Anchor overview -->
+				{#if anchorAccounts.length > 0}
+					<div style="margin-top:1.25rem;">
+						<p style="font-size:0.8rem; font-weight:600; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-tertiary); margin-bottom:0.5rem;">Lagrede saldoankre</p>
+						<div style="display:flex; flex-direction:column; gap:0.5rem;">
+							{#each anchorAccounts as acc}
+								<div style="display:flex; align-items:center; justify-content:space-between; padding:0.6rem 0.75rem; background:var(--surface-color); border:1px solid var(--border-color); border-radius:8px; font-size:0.875rem;">
+									<div>
+										<span style="font-weight:600; font-family:monospace;">{acc.accountNumber}</span>
+										<span style="margin-left:0.5rem; font-size:0.75rem; color:var(--text-tertiary);">
+											{acc.sources.includes('pdf_import') ? '📄' : ''}{acc.sources.some(s => s !== 'pdf_import') ? '🔗' : ''}
+										</span>
+									</div>
+									<div style="text-align:right; color:var(--text-secondary);">
+										{new Date(acc.earliest).toLocaleDateString('nb-NO', {month:'short', year:'numeric'})}
+										–
+										{new Date(acc.latest).toLocaleDateString('nb-NO', {month:'short', year:'numeric'})}
+										<span style="margin-left:0.5rem; font-size:0.75rem; color:var(--text-tertiary);">({acc.totalAnchors} ankre)</span>
+									</div>
+								</div>
+							{/each}
+						</div>
+					</div>
 				{/if}
 			</section>
 
