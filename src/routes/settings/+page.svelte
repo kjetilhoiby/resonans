@@ -17,6 +17,9 @@
 	let syncingSparebank1 = $state(false);
 	let sparebank1SyncResult: any = $state(null);
 
+	let importingStatements = $state(false);
+	let importResult: any = $state(null);
+
 	const user = $derived(data.user);
 	const settings = $derived(user?.notificationSettings || {});
 
@@ -77,6 +80,26 @@
 			}
 		} catch (err) {
 			console.error('Failed to disconnect SpareBank1:', err);
+		}
+	}
+
+	async function importStatements(event: Event) {
+		const input = (event.target as HTMLInputElement);
+		const file = input.files?.[0];
+		if (!file) return;
+
+		importingStatements = true;
+		importResult = null;
+		try {
+			const fd = new FormData();
+			fd.append('zip', file);
+			const res = await fetch('/api/admin/import-statements', { method: 'POST', body: fd });
+			importResult = await res.json();
+		} catch (err) {
+			importResult = { error: String(err) };
+		} finally {
+			importingStatements = false;
+			input.value = '';
 		}
 	}
 
@@ -417,6 +440,47 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 					<a href="/api/sensors/sparebank1/connect" class="primary-button" style="display: block; text-align: center; text-decoration: none;">
 						🔗 Koble til SpareBank 1
 					</a>
+				{/if}
+			</section>
+
+			<!-- Import kontoutskrifter -->
+			<section class="settings-card">
+				<div class="card-icon">📂</div>
+				<h2>Importer kontoutskrifter</h2>
+				<p class="help-text">
+					Last opp en ZIP-fil med SpareBank 1 kontoutskrifter (PDF) for å importere historiske
+					transaksjoner og saldoankre. Duplikater hoppes over automatisk.
+				</p>
+
+				<label class="primary-button" style="display:block; text-align:center; cursor:pointer;">
+					{importingStatements ? '⏳ Importerer...' : '📤 Velg ZIP-fil'}
+					<input
+						type="file"
+						accept=".zip,application/zip"
+						style="display:none"
+						disabled={importingStatements}
+						onchange={importStatements}
+					/>
+				</label>
+
+				{#if importResult}
+					{#if importResult.error}
+						<div class="alert error" style="margin-top:1rem;">❌ {importResult.error}</div>
+					{:else}
+						<div class="alert success" style="margin-top:1rem;">
+							✅ Importerte {importResult.totalTransactions} transaksjoner og
+							{importResult.totalBalanceAnchors} saldoankre fra
+							{importResult.filesProcessed} PDF-er
+							{#if importResult.totalSkipped > 0}
+								({importResult.totalSkipped} duplikater hoppet over)
+							{/if}
+						</div>
+						{#if importResult.warnings?.length > 0}
+							<ul style="margin-top:0.5rem; font-size:0.85rem; color:var(--text-secondary);">
+								{#each importResult.warnings as w}<li>{w}</li>{/each}
+							</ul>
+						{/if}
+					{/if}
 				{/if}
 			</section>
 
