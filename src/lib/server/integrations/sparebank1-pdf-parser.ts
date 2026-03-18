@@ -1,3 +1,20 @@
+// DOMMatrix polyfill — pdfjs-dist (used internally by pdf-parse@2) requires it
+// but Node.js does not provide it.
+if (typeof (globalThis as Record<string, unknown>).DOMMatrix === 'undefined') {
+	(globalThis as Record<string, unknown>).DOMMatrix = class DOMMatrix {
+		a = 1; b = 0; c = 0; d = 1; e = 0; f = 0;
+		m11 = 1; m12 = 0; m21 = 0; m22 = 1; m41 = 0; m42 = 0;
+		constructor(init?: string | number[]) {
+			if (Array.isArray(init) && init.length >= 6) {
+				[this.a, this.b, this.c, this.d, this.e, this.f] = init;
+				this.m11 = this.a; this.m12 = this.b;
+				this.m21 = this.c; this.m22 = this.d;
+				this.m41 = this.e; this.m42 = this.f;
+			}
+		}
+	};
+}
+
 /**
  * Parser for SpareBank 1 kontoutskrift PDF files.
  *
