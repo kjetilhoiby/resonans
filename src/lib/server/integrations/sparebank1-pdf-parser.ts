@@ -1,20 +1,3 @@
-// DOMMatrix polyfill — pdfjs-dist (used internally by pdf-parse@2) requires it
-// but Node.js does not provide it.
-if (typeof (globalThis as Record<string, unknown>).DOMMatrix === 'undefined') {
-	(globalThis as Record<string, unknown>).DOMMatrix = class DOMMatrix {
-		a = 1; b = 0; c = 0; d = 1; e = 0; f = 0;
-		m11 = 1; m12 = 0; m21 = 0; m22 = 1; m41 = 0; m42 = 0;
-		constructor(init?: string | number[]) {
-			if (Array.isArray(init) && init.length >= 6) {
-				[this.a, this.b, this.c, this.d, this.e, this.f] = init;
-				this.m11 = this.a; this.m12 = this.b;
-				this.m21 = this.c; this.m22 = this.d;
-				this.m41 = this.e; this.m42 = this.f;
-			}
-		}
-	};
-}
-
 /**
  * Parser for SpareBank 1 kontoutskrift PDF files.
  *
@@ -68,11 +51,12 @@ export interface ParsedStatement {
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
 function parseNorwNum(s: string): number {
-	return parseFloat(s.trim().replace(/\s/g, '').replace(',', '.'));
+	// Strip thousands separators (space or period), then convert decimal comma to dot
+	return parseFloat(s.trim().replace(/[\s.]/g, '').replace(',', '.'));
 }
 
 function norw(s: string): boolean {
-	return /^\d[\d\s]*,\d{2}$/.test(s.trim());
+	return /^\d[\d\s.]*,\d{2}$/.test(s.trim());
 }
 
 function parseFullDate(s: string): Date | null {
@@ -126,7 +110,7 @@ export function parseSparebank1Text(text: string): ParsedStatement {
 		// Opening balance: "Saldo frå kontoutskrift DD.MM.YYYY  X.XXX,XX"
 		// or "Inngående saldo DD.MM.YYYY  X.XXX,XX"
 		{
-			const m = line.match(/(?:saldo fr[åa] kontoutskrift|inng[åa]ende saldo)\s+(\d{2}\.\d{2}\.\d{4})\s+([\d\s]+,\d{2})/i);
+			const m = line.match(/(?:saldo fr[åa] kontoutskrift|inng[åa]ende saldo)\s+(\d{2}\.\d{2}\.\d{4})\s+([\d.\s]+,\d{2})/i);
 			if (m) {
 				openingBalance     = parseNorwNum(m[2]);
 				openingBalanceDate = parseFullDate(m[1]);
@@ -138,7 +122,7 @@ export function parseSparebank1Text(text: string): ParsedStatement {
 
 		// Page-transition balance: "Overført til neste side  X.XXX,XX"
 		{
-			const m = line.match(/overf[øo]rt til neste side\s+([\d\s]+,\d{2})/i);
+			const m = line.match(/overf[øo]rt til neste side\s+([\d.\s]+,\d{2})/i);
 			if (m && periodEnd) {
 				const bal = parseNorwNum(m[1]);
 				// Approximate the snapshot date — use periodEnd since we don't have exact date here
@@ -147,12 +131,14 @@ export function parseSparebank1Text(text: string): ParsedStatement {
 			}
 		}
 
-		// Closing balance: "Utgående saldo" or "saldo pr. DD.MM.YYYY"
+		// Closing balance: "Utgående saldo DD.MM.YYYY  X.XXX,XX"
+		//   or "Saldo i Dykkar favør X.XXX,XX"  (SpareBank 1 dialectal phrasing)
 		{
-			const m = line.match(/(?:utg[åa]ende saldo|saldo pr\.?)\s+(\d{2}\.\d{2}\.\d{4})\s+([\d\s]+,\d{2})/i)
-				?? line.match(/(?:utg[åa]ende saldo)\s+([\d\s]+,\d{2})/i);
+			const m = line.match(/(?:utg[åa]ende saldo|saldo pr\.?)\s+(\d{2}\.\d{2}\.\d{4})\s+([\d.\s]+,\d{2})/i)
+				?? line.match(/(?:utg[åa]ende saldo)\s+([\d.\s]+,\d{2})/i)
+				?? line.match(/saldo i dykkar\s+\S+\s+([\d.\s]+,\d{2})/i);
 			if (m) {
-				if (m.length >= 3 && m[1].includes('.')) {
+				if (m.length >= 3 && m[2] !== undefined && /\d{2}\.\d{2}\.\d{4}/.test(m[1])) {
 					closingBalanceDate = parseFullDate(m[1]);
 					closingBalance     = parseNorwNum(m[2]);
 				} else {
@@ -180,7 +166,7 @@ export function parseSparebank1Text(text: string): ParsedStatement {
 
 	// Regex: line ending with  DDMM  amount  DDMM  (amount = norw number)
 	// We allow optional whitespace and accept lines with 2+ tokens after description
-	const txLineRe = /^(.+?)\s{2,}(\d{4})\s+([\d\s]+,\d{2})\s+\d{4}\s*$/;
+	const txLineRe = /^(.+?)\s{2,}(\d{4})\s+([\d.\s]+,\d{2})\s+\d{4}\s*$/;
 
 	let runningBalance = openingBalance;
 
@@ -242,8 +228,10 @@ export function parseSparebank1Text(text: string): ParsedStatement {
 
 // Async wrapper so the endpoint can call this the same way regardless of approach
 export async function parseSparebank1Pdf(buf: Buffer): Promise<ParsedStatement> {
-	const { PDFParse } = await import('pdf-parse');
-	const parser = new PDFParse({ data: buf });
-	const result = await parser.getText();
-	return parseSparebank1Text(result.text);
+	const { extractText } = await import('unpdf');
+	const data = new Uint8Array(buf);
+	// mergePages: false gives string[] — one entry per page with proper \n line breaks
+	// mergePages: true collapses everything to one giant line, losing line structure
+	const { text } = await extractText(data);
+	return parseSparebank1Text((text as string[]).join('\n\n'));
 }
