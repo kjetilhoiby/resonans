@@ -55,8 +55,19 @@
 	const allBalanceValues = $derived(
 		periods.flatMap((p) => p.days.map((d) => d.balance))
 	);
-	const yMin = 0;
-	const yMax = $derived(currentPaydayBalance * 1.5 || 100000);
+	// Allow negative balances to show; add 5 % padding below min
+	const yMin = $derived.by(() => {
+		if (allBalanceValues.length === 0) return 0;
+		const raw = Math.min(...allBalanceValues);
+		const span = Math.max(...allBalanceValues) - raw || 1;
+		return Math.floor((raw - span * 0.05) / 1000) * 1000;
+	});
+	const yMax = $derived.by(() => {
+		if (allBalanceValues.length === 0) return 100000;
+		const raw = Math.max(...allBalanceValues);
+		const span = raw - Math.min(...allBalanceValues) || 1;
+		return Math.ceil((raw + span * 0.08) / 1000) * 1000;
+	});
 
 	function xScale(day: number): number {
 		return ML + (day / (maxDay || 1)) * innerW;

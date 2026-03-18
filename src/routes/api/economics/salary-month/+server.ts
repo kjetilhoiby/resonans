@@ -1,9 +1,10 @@
 import { json } from '@sveltejs/kit';
 import { db } from '$lib/db';
 import { sensorEvents } from '$lib/db/schema';
-import { and, eq, desc, asc, sql } from 'drizzle-orm';
+import { and, eq, asc, sql } from 'drizzle-orm';
 import { DEFAULT_USER_ID } from '$lib/server/users';
 import { detectGlobalPayday } from '$lib/server/integrations/payday-detector';
+import { buildDailyBalances } from '$lib/server/integrations/balance-reconstructor';
 import type { RequestHandler } from './$types';
 
 /**
@@ -32,71 +33,14 @@ export const GET: RequestHandler = async ({ url }) => {
 
 	if (!accountId) return json({ error: 'Missing accountId' }, { status: 400 });
 
-	// ─── Reconstruct daily running balance (same as balance-history) ─────────
-	const latestBalance = await db
-		.select({
-			balance: sql<number>`(data->>'balance')::numeric`,
-			timestamp: sensorEvents.timestamp
-		})
-		.from(sensorEvents)
-		.where(
-			and(
-				eq(sensorEvents.userId, userId),
-				eq(sensorEvents.dataType, 'bank_balance'),
-				sql`data->>'accountId' = ${accountId}`
-			)
-		)
-		.orderBy(desc(sensorEvents.timestamp))
-		.limit(1);
+	// ─── Build multi-anchor daily balance map ─────────────────────────────────
+	const dailyRows = await buildDailyBalances(userId, accountId);
+	if (dailyRows.length === 0) return json({ periods: [], medianCurve: [], detectedPaydayDom: null });
 
-	if (latestBalance.length === 0) return json({ periods: [], medianCurve: [], detectedPaydayDom: null });
+	const dailyBalance = new Map<string, number>(dailyRows.map((r) => [r.date, r.balance]));
 
-	const currentBalance = Number(latestBalance[0].balance) || 0;
-
-	const transactions = await db
-		.select({
-			amount: sql<number>`(data->>'amount')::numeric`,
-			description: sql<string>`data->>'description'`,
-			typeText: sql<string>`data->>'category'`,
-			timestamp: sensorEvents.timestamp
-		})
-		.from(sensorEvents)
-		.where(
-			and(
-				eq(sensorEvents.userId, userId),
-				eq(sensorEvents.dataType, 'bank_transaction'),
-				sql`data->>'accountId' = ${accountId}`
-			)
-		)
-		.orderBy(asc(sensorEvents.timestamp));
-
-	if (transactions.length === 0) return json({ periods: [], medianCurve: [], detectedPaydayDom: null });
-
-	// ─── Build day-indexed balance map ────────────────────────────────────────
-	const totalTx = transactions.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-	const openingBalance = currentBalance - totalTx;
-
-	const txByDate = new Map<string, number>();
-	for (const tx of transactions) {
-		const date = tx.timestamp.toISOString().split('T')[0];
-		txByDate.set(date, (txByDate.get(date) ?? 0) + (Number(tx.amount) || 0));
-	}
-
-	// Generate every day from first tx → today
-	const firstDate = new Date(transactions[0].timestamp);
-	firstDate.setHours(0, 0, 0, 0);
 	const today = new Date();
 	today.setHours(0, 0, 0, 0);
-
-	const dailyBalance = new Map<string, number>(); // YYYY-MM-DD → balance at end of day
-	let running = openingBalance;
-	const cursor = new Date(firstDate);
-	while (cursor <= today) {
-		const dateStr = cursor.toISOString().split('T')[0];
-		running += txByDate.get(dateStr) ?? 0;
-		dailyBalance.set(dateStr, Math.round(running * 100) / 100);
-		cursor.setDate(cursor.getDate() + 1);
-	}
 
 	// ─── Detect payday dates ──────────────────────────────────────────────────
 	// Try global detection first (finds salary account across all accounts).
@@ -110,9 +54,26 @@ export const GET: RequestHandler = async ({ url }) => {
 		paydayDates = globalPayday.paydayDates;
 		detectedPaydayDom = globalPayday.detectedPaydayDom;
 	} else {
-		// Per-account fallback (original logic)
+		// Per-account fallback — fetch transactions lazily
 		const SALARY_KEYWORDS = ['lønn', 'lonn', 'salary', 'arbeidsgiver', 'folktrygd', 'nav '];
 		const SALARY_MIN_AMOUNT = 10_000;
+
+		const transactions = await db
+			.select({
+				amount:      sql<number>`(data->>'amount')::numeric`,
+				description: sql<string>`data->>'description'`,
+				typeText:    sql<string>`data->>'category'`,
+				timestamp:   sensorEvents.timestamp
+			})
+			.from(sensorEvents)
+			.where(
+				and(
+					eq(sensorEvents.userId, userId),
+					eq(sensorEvents.dataType, 'bank_transaction'),
+					sql`data->>'accountId' = ${accountId}`
+				)
+			)
+			.orderBy(asc(sensorEvents.timestamp));
 
 		const salaryTxs = transactions.filter((t) => {
 			const amount = Number(t.amount);
