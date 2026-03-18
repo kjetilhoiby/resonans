@@ -121,14 +121,12 @@ export function parseSparebank1Text(text: string): ParsedStatement {
 		}
 
 		// Page-transition balance: "Overført til neste side  X.XXX,XX"
+		// This is a running total mid-statement, not a date-stamped balance.
+		// We deliberately do NOT add it to balanceSnapshots — it has no exact
+		// date and would collide with (and corrupt) the closing balance anchor.
 		{
 			const m = line.match(/overf[øo]rt til neste side\s+([\d.\s]+,\d{2})/i);
-			if (m && periodEnd) {
-				const bal = parseNorwNum(m[1]);
-				// Approximate the snapshot date — use periodEnd since we don't have exact date here
-				balanceSnapshots.push({ date: periodEnd, balance: bal });
-				// Don't override closingBalance yet; a proper closing line may follow
-			}
+			if (m) { /* ignore — opening + closing anchors are sufficient */ }
 		}
 
 		// Closing balance: "Utgående saldo DD.MM.YYYY  X.XXX,XX"
@@ -164,9 +162,10 @@ export function parseSparebank1Text(text: string): ParsedStatement {
 	const stmtYear = periodEnd?.getUTCFullYear() ?? new Date().getUTCFullYear();
 	const stmtMonth = (periodEnd?.getUTCMonth() ?? 0) + 1; // 1-12
 
-	// Regex: line ending with  DDMM  amount  DDMM  (amount = norw number)
-	// We allow optional whitespace and accept lines with 2+ tokens after description
-	const txLineRe = /^(.+?)\s{2,}(\d{4})\s+([\d.\s]+,\d{2})\s+\d{4}\s*$/;
+	// Regex: line ending with DDMM amount DDMM
+	// unpdf outputs single-space separated tokens (not double-space like pdf-parse),
+	// so use greedy (.+) to grab description, then match the trailing fields.
+	const txLineRe = /^(.+)\s(\d{4})\s([\d.]+,\d{2})\s\d{4}\s*$/;
 
 	let runningBalance = openingBalance;
 

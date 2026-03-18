@@ -50,6 +50,8 @@ export async function buildDailyBalances(
 	}
 
 	// ── Fetch all transactions ────────────────────────────────────────────────
+	// Exclude pdf_import transactions — their signs are heuristic-guessed and
+	// would corrupt the daily balance. Month-boundary anchors are sufficient.
 	const transactions = await db
 		.select({
 			amount:   sql<number>`(data->>'amount')::numeric`,
@@ -60,7 +62,8 @@ export async function buildDailyBalances(
 			and(
 				eq(sensorEvents.userId, userId),
 				eq(sensorEvents.dataType, 'bank_transaction'),
-				sql`data->>'accountId' = ${accountId}`
+				sql`data->>'accountId' = ${accountId}`,
+				sql`(metadata->>'source') IS DISTINCT FROM 'pdf_import'`
 			)
 		)
 		.orderBy(asc(sensorEvents.timestamp));

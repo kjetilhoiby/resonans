@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import { db } from '$lib/db';
 import { sensorEvents, sensors } from '$lib/db/schema';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, sql, inArray } from 'drizzle-orm';
 import { DEFAULT_USER_ID } from '$lib/server/users';
 import { parseSparebank1Pdf, normaliseAccountNumber } from '$lib/server/integrations/sparebank1-pdf-parser';
 import type { RequestHandler } from './$types';
@@ -104,6 +104,9 @@ export const POST: RequestHandler = async ({ request }) => {
 		let totalBalanceAnchors = 0;
 		const filesProcessed: string[] = [];
 		const warnings: string[] = [];
+		// Track which accountIds have had their old pdf_import anchors purged
+		// so we do it at most once per account per ZIP upload.
+		const purgedAccounts = new Set<string>();
 
 		for (const { name, buf } of pdfEntries) {
 			let statement: Awaited<ReturnType<typeof parseSparebank1Pdf>>;
@@ -129,7 +132,23 @@ export const POST: RequestHandler = async ({ request }) => {
 				accountNumberToId.set(statement.accountNumber, accountId);
 			}
 
-			// Insert balance snapshots (anchors)
+			// Insert balance snapshots (anchors).
+			// First time we see this account in this upload: delete stale pdf_import
+			// anchors so a re-import fully replaces (no duplicate / conflicting rows).
+			if (!purgedAccounts.has(accountId)) {
+				await db
+					.delete(sensorEvents)
+					.where(
+						and(
+							eq(sensorEvents.userId, userId),
+							eq(sensorEvents.dataType, 'bank_balance'),
+							sql`data->>'accountId' = ${accountId}`,
+							sql`metadata->>'source' = 'pdf_import'`
+						)
+					);
+				purgedAccounts.add(accountId);
+			}
+
 			for (const snap of statement.balanceSnapshots) {
 				await db
 					.insert(sensorEvents)
@@ -146,8 +165,7 @@ export const POST: RequestHandler = async ({ request }) => {
 							currency: 'NOK'
 						},
 						metadata: { source: 'pdf_import', file: name }
-					})
-					.onConflictDoNothing();
+					});
 				totalBalanceAnchors++;
 			}
 
