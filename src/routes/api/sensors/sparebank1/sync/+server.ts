@@ -6,16 +6,27 @@ import type { RequestHandler } from './$types';
 /**
  * POST /api/sensors/sparebank1/sync
  * Manually trigger SpareBank1 data synchronization
+ * Query params:
+ * - fullHistory: if 'true', syncs from 2 years ago instead of last sync date
  */
-export const POST: RequestHandler = async () => {
+export const POST: RequestHandler = async ({ url }) => {
 	try {
 		const userId = DEFAULT_USER_ID;
-		const synced = await syncAllSparebank1Data(userId);
+		const fullHistory = url.searchParams.get('fullHistory') === 'true';
+		
+		const options = fullHistory 
+			? { fromDate: new Date(Date.now() - 2 * 365 * 24 * 60 * 60 * 1000) } // 2 years ago
+			: {};
+
+		const synced = await syncAllSparebank1Data(userId, options);
 
 		return json({
 			success: true,
 			synced,
-			message: `Synkronisert ${synced.accounts} kontoer og ${synced.transactionEvents} transaksjoner`
+			fullHistory,
+			message: fullHistory 
+				? `Full historikk: Synkronisert ${synced.accounts} kontoer og ${synced.transactionEvents} transaksjoner`
+				: `Synkronisert ${synced.accounts} kontoer og ${synced.transactionEvents} transaksjoner`
 		});
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);

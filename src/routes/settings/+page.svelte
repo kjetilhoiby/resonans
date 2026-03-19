@@ -145,12 +145,15 @@
 		}
 	}
 
-	async function syncSparebank1() {
+	async function syncSparebank1(fullHistory = false) {
 		syncingSparebank1 = true;
 		sparebank1SyncResult = null;
 
 		try {
-			const res = await fetch('/api/sensors/sparebank1/sync', { method: 'POST' });
+			const url = fullHistory 
+				? '/api/sensors/sparebank1/sync?fullHistory=true'
+				: '/api/sensors/sparebank1/sync';
+			const res = await fetch(url, { method: 'POST' });
 			const data = await res.json();
 
 			if (res.ok) {
@@ -467,17 +470,29 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 					<div style="display: flex; gap: 1rem; margin-top: 1rem;">
 						<button
 							type="button"
-							onclick={syncSparebank1}
+							onclick={() => syncSparebank1(false)}
 							class="primary-button"
 							style="flex: 1;"
 							disabled={syncingSparebank1}
 						>
 							{syncingSparebank1 ? '⏳ Synkroniserer...' : '🔄 Synkroniser nå'}
 						</button>
-						<button type="button" onclick={disconnectSparebank1} class="debug-button" style="flex: 1;">
+						<button
+							type="button"
+							onclick={() => syncSparebank1(true)}
+							class="primary-button"
+							style="flex: 1;"
+							disabled={syncingSparebank1}
+						>
+							{syncingSparebank1 ? '⏳ Henter...' : '📅 Full historikk (2 år)'}
+						</button>
+						<button type="button" onclick={disconnectSparebank1} class="debug-button" style="flex: 0.5;">
 							🔌 Koble fra
 						</button>
 					</div>
+					<p style="font-size:0.75rem; color:var(--text-tertiary); margin-top:0.5rem;">
+						"Synkroniser nå" henter nye transaksjoner. "Full historikk" henter alle transaksjoner fra de siste 2 årene.
+					</p>
 				{:else}
 					<a href="/api/sensors/sparebank1/connect" class="primary-button" style="display: block; text-align: center; text-decoration: none;">
 						🔗 Koble til SpareBank 1
