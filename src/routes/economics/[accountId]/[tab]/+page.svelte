@@ -7,6 +7,8 @@
 	import MerchantAnalysis from '$lib/components/charts/MerchantAnalysis.svelte';
 	import MoneyFlow from '$lib/components/charts/MoneyFlow.svelte';
 	import IrregularSpending from '$lib/components/IrregularSpending.svelte';
+	import CumulativeSpending from '$lib/components/charts/CumulativeSpending.svelte';
+	import type { CategoryId } from '$lib/server/integrations/transaction-categories';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -15,9 +17,7 @@
 	const accountId = $derived(data.accountId);
 	const activeTab = $derived(data.tab);
 
-	type TabSlug = 'saldo' | 'utgifter' | 'innsikt' | 'pengestrom' | 'variabelt';
-
-	function navigate(newAccountId: string, newTab: TabSlug) {
+	function navigate(newAccountId: string, newTab: string) {
 		goto(`/economics/${encodeURIComponent(newAccountId)}/${newTab}`, {
 			replaceState: true,
 			noScroll: true,
@@ -152,6 +152,23 @@
 	let loadingIrregular = $state(false);
 	let loadedIrregularFor = $state<string | null>(null);
 
+	// ── Cumulative ────────────────────────────────────────────────────────────
+	type CumulativeData = {
+		category: CategoryId;
+		periods: Array<{
+			label: string;
+			isCurrent: boolean;
+			paydayDate: string;
+			days: Array<{ day: number; cumulative: number; dailySpent: number }>;
+			total: number;
+		}>;
+		detectedPaydayDom: number | null;
+	};
+	let cumulativeData = $state<CumulativeData[]>([]);
+	let loadingCumulative = $state(false);
+	let loadedCumulativeFor = $state<string | null>(null);
+	let selectedCumulativeCategories = $state<CategoryId[]>(['dagligvare', 'transport', 'mat']);
+
 	// ── Trigger data loading when accountId / tab change ─────────────────────
 	$effect(() => {
 		const id = accountId;
@@ -163,6 +180,7 @@
 		else if (tab === 'innsikt' && loadedInsightFor !== id) loadInsight(id);
 		else if (tab === 'pengestrom' && loadedTransfers !== id) loadTransfers(id);
 		else if (tab === 'variabelt' && loadedIrregularFor !== id) loadIrregular(id);
+		else if (tab === 'akkumulert' && loadedCumulativeFor !== id) loadCumulative(id);
 	});
 
 	async function loadHistory(aid: string) {
@@ -222,6 +240,25 @@
 		irregularMonths = json.monthsInRange ?? 0;
 		loadedIrregularFor = aid;
 		loadingIrregular = false;
+		lastUpdated = new Date();
+	}
+
+	async function loadCumulative(aid: string) {
+		if (loadingCumulative) return;
+		loadingCumulative = true;
+		cumulativeData = [];
+
+		const promises = selectedCumulativeCategories.map(async (category) => {
+			const res = await fetch(
+				`/api/economics/cumulative-spending?accountId=${encodeURIComponent(aid)}&category=${category}&periods=6`
+			);
+			return await res.json();
+		});
+
+		const results = await Promise.all(promises);
+		cumulativeData = results;
+		loadedCumulativeFor = aid;
+		loadingCumulative = false;
 		lastUpdated = new Date();
 	}
 
@@ -439,6 +476,21 @@
 							totalAmount={irregularTotal}
 							monthsInRange={irregularMonths}
 						/>
+					{/if}
+
+				{:else if activeTab === 'akkumulert'}
+					{#if loadingCumulative}
+						<div class="loading">Laster akkumulert forbruk…</div>
+					{:else}
+						<div class="cumulative-grid">
+							{#each cumulativeData as catData}
+								<CumulativeSpending
+									category={catData.category}
+									periods={catData.periods}
+									detectedPaydayDom={catData.detectedPaydayDom}
+								/>
+							{/each}
+						</div>
 					{/if}
 
 				{:else}
@@ -747,4 +799,17 @@
 	}
 
 	.top-merchants .amount { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+	/* ── Cumulative spending grid ─────────────────────────────────── */
+	.cumulative-grid {
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: 1.5rem;
+	}
+
+	@media (min-width: 1200px) {
+		.cumulative-grid {
+			grid-template-columns: repeat(2, 1fr);
+		}
+	}
 </style>
