@@ -19,6 +19,8 @@
 
 	let importingStatements = $state(false);
 	let importResult: any = $state(null);
+	let resettingEconomics = $state(false);
+	let resetResult: any = $state(null);
 	let anchorAccounts = $state<{
 		accountId: string;
 		accountNumber: string;
@@ -120,6 +122,26 @@
 		} finally {
 			importingStatements = false;
 			input.value = '';
+		}
+	}
+
+	async function resetEconomicsData() {
+		if (!confirm('⚠️ ADVARSEL: Dette sletter ALL økonomidata (transaksjoner og saldo-snapshots).\n\nDu må re-synce SpareBank 1 og re-importere alle PDFer etterpå.\n\nEr du sikker?')) {
+			return;
+		}
+
+		resettingEconomics = true;
+		resetResult = null;
+		try {
+			const res = await fetch('/api/admin/reset-economics', { method: 'DELETE' });
+			resetResult = await res.json();
+			if (resetResult.success) {
+				await loadAnchorAccounts();
+			}
+		} catch (err) {
+			resetResult = { error: String(err) };
+		} finally {
+			resettingEconomics = false;
 		}
 	}
 
@@ -526,6 +548,32 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 							{/each}
 						</div>
 					</div>
+				{/if}
+
+				<!-- Reset button -->
+				<div style="margin-top:1.5rem; padding-top:1.5rem; border-top:1px solid var(--border-color);">
+					<button
+						type="button"
+						onclick={resetEconomicsData}
+						disabled={resettingEconomics}
+						class="danger-button"
+						style="width:100%;"
+					>
+						{resettingEconomics ? '⏳ Tømmer...' : '🗑️ Tøm all økonomidata'}
+					</button>
+					<p style="font-size:0.75rem; color:var(--text-tertiary); margin-top:0.5rem; text-align:center;">
+						Sletter alle transaksjoner og saldo-snapshots. Krever re-import etterpå.
+					</p>
+				</div>
+
+				{#if resetResult}
+					{#if resetResult.error}
+						<div class="alert error" style="margin-top:1rem;">❌ {resetResult.error}</div>
+					{:else}
+						<div class="alert success" style="margin-top:1rem;">
+							✅ Slettet {resetResult.deletedCount} hendelser. Klar for ny import!
+						</div>
+					{/if}
 				{/if}
 			</section>
 
@@ -985,6 +1033,28 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 	}
 
 	.save-button:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	.danger-button {
+		background: var(--error-bg, #2d1a1a);
+		color: var(--error-text, #ff6b6b);
+		border: 1px solid var(--error-border, #ff6b6b);
+		padding: 0.875rem 1.5rem;
+		border-radius: 8px;
+		font-size: 0.875rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.2s;
+	}
+
+	.danger-button:hover:not(:disabled) {
+		background: var(--error-border, #ff6b6b);
+		color: white;
+	}
+
+	.danger-button:disabled {
 		opacity: 0.6;
 		cursor: not-allowed;
 	}
