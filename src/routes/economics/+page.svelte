@@ -7,6 +7,8 @@
 	import MerchantAnalysis from '$lib/components/charts/MerchantAnalysis.svelte';
 	import MoneyFlow from '$lib/components/charts/MoneyFlow.svelte';
 	import IrregularSpending from '$lib/components/IrregularSpending.svelte';
+	import CumulativeSpending from '$lib/components/charts/CumulativeSpending.svelte';
+	import type { CategoryId } from '$lib/server/integrations/transaction-categories';
 
 	type Account = {
 		accountId: string;
@@ -25,7 +27,8 @@
 	let loadingHistory = $state(false);
 	let loadingSpending = $state(false);
 	let loadingInsight = $state(false);
-	let activeTab = $state<'saldo' | 'utgifter' | 'innsikt' | 'pengestrøm' | 'variabelt'>('saldo');
+	let loadingCumulative = $state(false);
+	let activeTab = $state<'saldo' | 'utgifter' | 'innsikt' | 'pengestrøm' | 'variabelt' | 'akkumulert'>('saldo');
 
 	// ── Balance interval filter (frontend-only) ──────────────────────────────
 	type BalanceInterval = '2025' | '12m' | '24m' | 'all';
@@ -126,6 +129,16 @@
 	let loadingIrregular = $state(false);
 	let loadedIrregularFor = $state<string | null>(null);
 
+	// Cumulative spending state
+	type CumulativeData = {
+		category: CategoryId;
+		data: Array<{ date: string; cumulative: number; dailySpent: number }>;
+		total: number;
+	};
+	let cumulativeData = $state<CumulativeData[]>([]);
+	let loadedCumulativeFor = $state<string | null>(null);
+	let selectedCumulativeCategories = $state<CategoryId[]>(['dagligvare', 'transport', 'mat']);
+
 	// Sync URL when account or tab changes
 	$effect(() => {
 		const id = selectedAccountId;
@@ -154,6 +167,8 @@
 			loadTransfers(id);
 		} else if (tab === 'variabelt' && loadedIrregularFor !== id) {
 			loadIrregular(id);
+		} else if (tab === 'akkumulert' && loadedCumulativeFor !== id) {
+			loadCumulative(id);
 		}
 	});
 
@@ -210,6 +225,31 @@
 		merchantAnalysisData = await res.json();
 		loadedInsightFor = accountId;
 		loadingInsight = false;
+	}
+
+	async function loadCumulative(accountId: string) {
+		if (loadingCumulative) return;
+		loadingCumulative = true;
+		cumulativeData = [];
+
+		// Get current month
+		const now = new Date();
+		const year = now.getFullYear();
+		const month = String(now.getMonth() + 1).padStart(2, '0');
+		const monthParam = `${year}-${month}`;
+
+		// Load data for each selected category
+		const promises = selectedCumulativeCategories.map(async (category) => {
+			const res = await fetch(
+				`/api/economics/cumulative-spending?accountId=${encodeURIComponent(accountId)}&category=${category}&month=${monthParam}`
+			);
+			return await res.json();
+		});
+
+		const results = await Promise.all(promises);
+		cumulativeData = results;
+		loadedCumulativeFor = accountId;
+		loadingCumulative = false;
 	}
 
 	let analyzing = $state(false);
@@ -304,6 +344,7 @@
 			<button class="tab" class:active={activeTab === 'innsikt'} onclick={() => (activeTab = 'innsikt')}>🔍 Innsikt</button>
 			<button class="tab" class:active={activeTab === 'pengestrøm'} onclick={() => (activeTab = 'pengestrøm')}>💸 Pengestrøm</button>
 			<button class="tab" class:active={activeTab === 'variabelt'} onclick={() => (activeTab = 'variabelt')}>📦 Variabelt</button>
+			<button class="tab" class:active={activeTab === 'akkumulert'} onclick={() => (activeTab = 'akkumulert')}>📈 Akkumulert</button>
 			<a
 				href={selectedAccountId ? `/economics/${encodeURIComponent(selectedAccountId)}/salary-month` : '#'}
 				class="tab tab-link"
@@ -423,6 +464,22 @@
 							totalAmount={irregularTotal}
 							monthsInRange={irregularMonths}
 						/>
+					{/if}
+				{:else if activeTab === 'akkumulert'}
+					<!-- Akkumulert forbruk tab -->
+					<h2>Akkumulert forbruk denne måneden</h2>
+					{#if loadingCumulative}
+						<div class="loading">Laster akkumulert forbruk…</div>
+					{:else}
+						<div class="cumulative-grid">
+							{#each cumulativeData as catData}
+								<CumulativeSpending
+									category={catData.category}
+									data={catData.data}
+									total={catData.total}
+								/>
+							{/each}
+						</div>
 					{/if}
 				{:else}
 					<!-- Innsikt tab -->
@@ -806,5 +863,18 @@
 		outline: none;
 		border-color: var(--primary-color);
 		box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+	}
+
+	/* ── Cumulative spending grid ─────────────────────────────────── */
+	.cumulative-grid {
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: 1.5rem;
+	}
+
+	@media (min-width: 1200px) {
+		.cumulative-grid {
+			grid-template-columns: repeat(2, 1fr);
+		}
 	}
 </style>
