@@ -1,8 +1,7 @@
 import type { RequestHandler } from './$types';
 import { json } from '@sveltejs/kit';
 import { db } from '$lib/db';
-import { sensorEvents } from '$lib/db/schema';
-import { sql, inArray } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 
 /**
  * DELETE /api/admin/reset-economics
@@ -20,16 +19,19 @@ export const DELETE: RequestHandler = async () => {
 			WHERE data_type IN ('bank_balance', 'bank_transaction')
 		`);
 
-		// Delete all bank events
-		const result = await db
-			.delete(sensorEvents)
-			.where(inArray(sensorEvents.dataType, ['bank_balance', 'bank_transaction']));
+		const count = Array.isArray(beforeCount) ? beforeCount[0]?.count : 0;
 
-		console.log(`✅ Deleted ${beforeCount.rows[0]?.count || 0} economics events`);
+		// Delete all bank events using raw SQL
+		await db.execute(sql`
+			DELETE FROM sensor_events
+			WHERE data_type IN ('bank_balance', 'bank_transaction')
+		`);
+
+		console.log(`✅ Deleted ${count} economics events`);
 
 		return json({
 			success: true,
-			deletedCount: beforeCount.rows[0]?.count || 0,
+			deletedCount: count,
 			message: 'All bank data deleted. Ready for fresh import.'
 		});
 	} catch (err) {
