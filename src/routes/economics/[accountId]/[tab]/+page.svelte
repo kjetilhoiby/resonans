@@ -71,6 +71,33 @@
 	let loadingHistory = $state(false);
 	let loadedHistoryFor = $state<string | null>(null);
 
+	// ── Balance interval filter (frontend-only) ──────────────────────────────
+	type BalanceInterval = '2025' | '12m' | '24m' | 'all';
+	let balanceInterval = $state<BalanceInterval>('all');
+
+	function getIntervalFromDate(interval: BalanceInterval): string | null {
+		if (interval === 'all') return null;
+		const now = new Date();
+		if (interval === '2025') return '2025-01-01';
+		if (interval === '12m') {
+			const d = new Date(now);
+			d.setMonth(d.getMonth() - 12);
+			return d.toISOString().split('T')[0];
+		}
+		if (interval === '24m') {
+			const d = new Date(now);
+			d.setMonth(d.getMonth() - 24);
+			return d.toISOString().split('T')[0];
+		}
+		return null;
+	}
+
+	const filteredBalanceHistory = $derived(() => {
+		const fromDate = getIntervalFromDate(balanceInterval);
+		if (!fromDate) return balanceHistory;
+		return balanceHistory.filter((d) => d.date >= fromDate);
+	});
+
 	// ── Spending ──────────────────────────────────────────────────────────────
 	type MonthData = {
 		month: string;
@@ -356,14 +383,27 @@
 		{#if selectedAccount}
 			<div class="chart-card">
 				{#if activeTab === 'saldo'}
-					<h2>Saldoutvikling – {selectedAccount.accountName ?? selectedAccount.accountId}</h2>
-					{#if selectedAccount.accountNumber}
-						<p class="account-number">{selectedAccount.accountNumber}</p>
-					{/if}
+					<div class="chart-header">
+						<div class="chart-title-group">
+							<h2>Saldoutvikling – {selectedAccount.accountName ?? selectedAccount.accountId}</h2>
+							{#if selectedAccount.accountNumber}
+								<p class="account-number">{selectedAccount.accountNumber}</p>
+							{/if}
+						</div>
+						<div class="interval-selector">
+							<label for="balance-interval">Periode:</label>
+							<select id="balance-interval" bind:value={balanceInterval}>
+								<option value="2025">Siden jan 2025</option>
+								<option value="12m">Siste 12 mnd</option>
+								<option value="24m">Siste 24 mnd</option>
+								<option value="all">Alt</option>
+							</select>
+						</div>
+					</div>
 					{#if loadingHistory}
 						<div class="loading">Beregner saldohistorikk…</div>
 					{:else}
-						<BalanceChart data={balanceHistory} currency={selectedAccount.currency ?? 'NOK'} accountId={accountId} />
+						<BalanceChart data={filteredBalanceHistory()} currency={selectedAccount.currency ?? 'NOK'} accountId={accountId} />
 					{/if}
 
 				{:else if activeTab === 'utgifter'}
@@ -479,6 +519,51 @@
 		border: 1px solid var(--border-color);
 		border-radius: 16px;
 		padding: 1.5rem 2rem 2rem;
+	}
+
+	.chart-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		margin-bottom: 1.5rem;
+		gap: 1rem;
+	}
+
+	.chart-title-group {
+		flex: 1;
+	}
+
+	.interval-selector {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-size: 0.875rem;
+	}
+
+	.interval-selector label {
+		color: var(--text-secondary);
+		font-weight: 500;
+	}
+
+	.interval-selector select {
+		padding: 0.4rem 0.6rem;
+		background: var(--bg-primary);
+		border: 1px solid var(--border-color);
+		border-radius: 6px;
+		color: var(--text-primary);
+		font-size: 0.875rem;
+		cursor: pointer;
+		transition: border-color 0.15s;
+	}
+
+	.interval-selector select:hover {
+		border-color: var(--accent-primary);
+	}
+
+	.interval-selector select:focus {
+		outline: none;
+		border-color: var(--accent-primary);
+		box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
 	}
 
 	.insight-empty {

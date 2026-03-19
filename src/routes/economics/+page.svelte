@@ -27,6 +27,33 @@
 	let loadingInsight = $state(false);
 	let activeTab = $state<'saldo' | 'utgifter' | 'innsikt' | 'pengestrøm' | 'variabelt'>('saldo');
 
+	// ── Balance interval filter (frontend-only) ──────────────────────────────
+	type BalanceInterval = '2025' | '12m' | '24m' | 'all';
+	let balanceInterval = $state<BalanceInterval>('all');
+
+	function getIntervalFromDate(interval: BalanceInterval): string | null {
+		if (interval === 'all') return null;
+		const now = new Date();
+		if (interval === '2025') return '2025-01-01';
+		if (interval === '12m') {
+			const d = new Date(now);
+			d.setMonth(d.getMonth() - 12);
+			return d.toISOString().split('T')[0];
+		}
+		if (interval === '24m') {
+			const d = new Date(now);
+			d.setMonth(d.getMonth() - 24);
+			return d.toISOString().split('T')[0];
+		}
+		return null;
+	}
+
+	const filteredBalanceHistory = $derived(() => {
+		const fromDate = getIntervalFromDate(balanceInterval);
+		if (!fromDate) return balanceHistory;
+		return balanceHistory.filter((d) => d.date >= fromDate);
+	});
+
 	type MonthData = {
 		month: string;
 		categories: { category: string; label: string; emoji: string; amount: number; count: number; isFixed: boolean }[];
@@ -341,14 +368,27 @@
 		{#if selectedAccount}
 			<div class="chart-card">
 				{#if activeTab === 'saldo'}
-					<h2>Saldoutvikling – {selectedAccount.accountName ?? selectedAccount.accountId}</h2>
-					{#if selectedAccount.accountNumber}
-						<p class="account-number">{selectedAccount.accountNumber}</p>
-					{/if}
+					<div class="chart-header">
+						<div class="chart-title-group">
+							<h2>Saldoutvikling – {selectedAccount.accountName ?? selectedAccount.accountId}</h2>
+							{#if selectedAccount.accountNumber}
+								<p class="account-number">{selectedAccount.accountNumber}</p>
+							{/if}
+						</div>
+						<div class="interval-selector">
+							<label for="balance-interval">Periode:</label>
+							<select id="balance-interval" bind:value={balanceInterval}>
+								<option value="2025">Siden jan 2025</option>
+								<option value="12m">Siste 12 mnd</option>
+								<option value="24m">Siste 24 mnd</option>
+								<option value="all">Alt</option>
+							</select>
+						</div>
+					</div>
 					{#if loadingHistory}
 						<div class="loading">Beregner saldohistorikk…</div>
 					{:else}
-						<BalanceChart data={balanceHistory} currency={selectedAccount.currency ?? 'NOK'} accountId={selectedAccountId} />
+						<BalanceChart data={filteredBalanceHistory()} currency={selectedAccount.currency ?? 'NOK'} accountId={selectedAccountId} />
 					{/if}
 				{:else if activeTab === 'utgifter'}
 					<h2>Utgiftsanalyse – {selectedAccount.accountName ?? selectedAccount.accountId}</h2>
@@ -713,5 +753,58 @@
 		text-align: right;
 		font-variant-numeric: tabular-nums;
 		font-weight: 600;
+	}
+
+	/* ── Balance interval filter ──────────────────────────────────── */
+	.chart-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		margin-bottom: 1rem;
+		flex-wrap: wrap;
+		gap: 1rem;
+	}
+
+	.chart-title-group h2 {
+		margin: 0 0 0.25rem 0;
+	}
+
+	.chart-title-group .account-number {
+		margin: 0;
+		font-size: 0.9rem;
+		color: var(--text-secondary);
+	}
+
+	.interval-selector {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.interval-selector label {
+		font-size: 0.9rem;
+		font-weight: 500;
+		color: var(--text-secondary);
+	}
+
+	.interval-selector select {
+		padding: 0.4rem 0.7rem;
+		border: 1px solid var(--border-color);
+		border-radius: 6px;
+		background: var(--bg-card);
+		color: var(--text-primary);
+		font-size: 0.9rem;
+		cursor: pointer;
+		transition: border-color 0.2s;
+	}
+
+	.interval-selector select:hover {
+		border-color: var(--primary-color);
+	}
+
+	.interval-selector select:focus {
+		outline: none;
+		border-color: var(--primary-color);
+		box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 	}
 </style>
