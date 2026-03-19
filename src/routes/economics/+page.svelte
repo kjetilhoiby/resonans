@@ -132,8 +132,14 @@
 	// Cumulative spending state
 	type CumulativeData = {
 		category: CategoryId;
-		data: Array<{ date: string; cumulative: number; dailySpent: number }>;
-		total: number;
+		periods: Array<{
+			label: string;
+			isCurrent: boolean;
+			paydayDate: string;
+			days: Array<{ day: number; cumulative: number; dailySpent: number }>;
+			total: number;
+		}>;
+		detectedPaydayDom: number | null;
 	};
 	let cumulativeData = $state<CumulativeData[]>([]);
 	let loadedCumulativeFor = $state<string | null>(null);
@@ -232,16 +238,10 @@
 		loadingCumulative = true;
 		cumulativeData = [];
 
-		// Get current month
-		const now = new Date();
-		const year = now.getFullYear();
-		const month = String(now.getMonth() + 1).padStart(2, '0');
-		const monthParam = `${year}-${month}`;
-
 		// Load data for each selected category
 		const promises = selectedCumulativeCategories.map(async (category) => {
 			const res = await fetch(
-				`/api/economics/cumulative-spending?accountId=${encodeURIComponent(accountId)}&category=${category}&month=${monthParam}`
+				`/api/economics/cumulative-spending?accountId=${encodeURIComponent(accountId)}&category=${category}&periods=6`
 			);
 			return await res.json();
 		});
@@ -467,7 +467,6 @@
 					{/if}
 				{:else if activeTab === 'akkumulert'}
 					<!-- Akkumulert forbruk tab -->
-					<h2>Akkumulert forbruk denne måneden</h2>
 					{#if loadingCumulative}
 						<div class="loading">Laster akkumulert forbruk…</div>
 					{:else}
@@ -475,8 +474,8 @@
 							{#each cumulativeData as catData}
 								<CumulativeSpending
 									category={catData.category}
-									data={catData.data}
-									total={catData.total}
+									periods={catData.periods}
+									detectedPaydayDom={catData.detectedPaydayDom}
 								/>
 							{/each}
 						</div>
