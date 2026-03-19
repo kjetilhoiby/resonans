@@ -57,7 +57,8 @@
 	const yMax = $derived.by(() => {
 		if (allCumulativeValues.length === 0) return 10000;
 		const raw = Math.max(...allCumulativeValues);
-		return Math.ceil((raw * 1.2) / 1000) * 1000;
+		if (!isFinite(raw) || raw <= 0) return 10000;
+		return Math.max(1000, Math.ceil((raw * 1.2) / 1000) * 1000);
 	});
 
 	function xScale(day: number): number {
@@ -70,9 +71,11 @@
 
 	// Y-axis ticks
 	function niceTicks(vMax: number, count = 5): number[] {
+		if (vMax <= 0) return [0];
 		const rawStep = vMax / count;
-		const mag = Math.pow(10, Math.floor(Math.log10(Math.abs(rawStep) || 1)));
+		const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
 		const step = Math.ceil(rawStep / mag) * mag;
+		if (step <= 0) return [0];
 		const ticks: number[] = [];
 		for (let v = 0; v <= vMax + step * 0.01; v += step) {
 			ticks.push(Math.round(v));
