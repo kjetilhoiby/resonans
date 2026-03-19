@@ -215,8 +215,20 @@ export async function syncAllSparebank1Data(
 	}
 
 	if (transactionEvents.length > 0) {
-		// Dedup: fetch existing transactions by content (accountId, amount, date, description)
-		// since transactionId can change between API calls
+		// Step 1: Deduplicate within the new batch itself (in-memory)
+		const seenKeys = new Set<string>();
+		const uniqueNewEvents = transactionEvents.filter((e) => {
+			const key = `${e.data.accountId}:${e.data.amount}:${e.timestamp.toISOString().split('T')[0]}:${e.data.description || ''}`;
+			if (seenKeys.has(key)) {
+				return false; // Skip duplicate within this batch
+			}
+			seenKeys.add(key);
+			return true;
+		});
+
+		console.log(`Filtered ${transactionEvents.length} -> ${uniqueNewEvents.length} unique transactions in batch`);
+
+		// Step 2: Deduplicate against existing database entries
 		const existingRows = await db.execute(sql`
 			SELECT 
 				data->>'accountId' as account_id,
@@ -234,10 +246,12 @@ export async function syncAllSparebank1Data(
 			)
 		);
 
-		const newEvents = transactionEvents.filter((e) => {
+		const newEvents = uniqueNewEvents.filter((e) => {
 			const key = `${e.data.accountId}:${e.data.amount}:${e.timestamp.toISOString().split('T')[0]}:${e.data.description || ''}`;
 			return !existingKeys.has(key);
 		});
+
+		console.log(`Filtered ${uniqueNewEvents.length} -> ${newEvents.length} new transactions (not in DB)`);
 
 		if (newEvents.length > 0) {
 			const batchSize = 200;
