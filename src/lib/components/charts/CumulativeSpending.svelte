@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { CATEGORIES } from '$lib/server/integrations/transaction-categories';
-	import type { CategoryId } from '$lib/server/integrations/transaction-categories';
+	import { CATEGORIES } from '$lib/integrations/transaction-categories-client';
+	import type { CategoryId } from '$lib/integrations/transaction-categories-client';
 
 	type DayPoint = {
 		day: number;

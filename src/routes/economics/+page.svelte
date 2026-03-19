@@ -8,7 +8,7 @@
 	import MoneyFlow from '$lib/components/charts/MoneyFlow.svelte';
 	import IrregularSpending from '$lib/components/IrregularSpending.svelte';
 	import CumulativeSpending from '$lib/components/charts/CumulativeSpending.svelte';
-	import type { CategoryId } from '$lib/server/integrations/transaction-categories';
+	import type { CategoryId } from '$lib/integrations/transaction-categories-client';
 
 	type Account = {
 		accountId: string;
@@ -101,13 +101,12 @@
 	};
 	let merchantAnalysisData = $state<MerchantAnalysisData | null>(null);
 
-	// Transfers state (cross-account, no accountId filter needed)
+	// Transfers state
 	type Transfer = {
 		date: string;
-		from: 'Kjetil' | 'Anita' | 'Sparekonto' | 'Felleskonto';
-		to: 'Kjetil' | 'Anita' | 'Sparekonto' | 'Felleskonto';
+		person: 'Kjetil' | 'Anita';
+		incoming: boolean;
 		amount: number;
-		type: 'monthly' | 'extra' | 'drain' | 'reimbursement' | 'savings';
 		description: string;
 	};
 	let transfersData = $state<Transfer[]>([]);
