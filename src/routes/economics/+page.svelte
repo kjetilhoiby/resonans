@@ -77,7 +77,7 @@
 
 		const urlAccount = page.url.searchParams.get('account');
 		const urlTab = page.url.searchParams.get('tab') as typeof activeTab | null;
-		const validTabs: (typeof activeTab)[] = ['saldo', 'utgifter', 'innsikt', 'pengestrøm', 'variabelt'];
+		const validTabs: (typeof activeTab)[] = ['saldo', 'utgifter', 'innsikt', 'pengestrøm', 'variabelt', 'akkumulert'];
 
 		selectedAccountId = (urlAccount && accounts.find((a) => a.accountId === urlAccount))
 			? urlAccount
