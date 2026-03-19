@@ -12,13 +12,16 @@ export const POST: RequestHandler = async () => {
 	try {
 		console.log('🔍 Finding and removing duplicates...');
 
-		// Remove duplicate balance events (same accountId + date)
+		// Remove duplicate balance events (same accountId + date + source)
 		const balanceDuplicates = await db.execute(sql`
 			WITH ranked AS (
 				SELECT 
 					id,
 					ROW_NUMBER() OVER (
-						PARTITION BY data->>'accountId', timestamp::date 
+						PARTITION BY 
+							data->>'accountId', 
+							timestamp::date,
+							metadata->>'source'
 						ORDER BY timestamp ASC
 					) as rn
 				FROM sensor_events
@@ -31,17 +34,24 @@ export const POST: RequestHandler = async () => {
 			RETURNING id
 		`);
 
-		// Remove duplicate transactions (same accountId + amount + date + description)
+		// Remove duplicate transactions (same transactionId within same source)
+		// We dedupe by transactionId for API, and by content hash for PDF (if they have no ID)
 		const transactionDuplicates = await db.execute(sql`
 			WITH ranked AS (
 				SELECT 
 					id,
 					ROW_NUMBER() OVER (
 						PARTITION BY 
-							data->>'accountId',
-							(data->>'amount')::numeric,
-							timestamp::date,
-							data->>'description'
+							metadata->>'source',
+							COALESCE(
+								metadata->>'transactionId',
+								md5(
+									data->>'accountId' || ':' ||
+									(data->>'amount')::text || ':' ||
+									(timestamp::date)::text || ':' ||
+									COALESCE(data->>'description', '')
+								)
+							)
 						ORDER BY timestamp ASC
 					) as rn
 				FROM sensor_events

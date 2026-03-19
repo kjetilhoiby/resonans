@@ -215,40 +215,37 @@ export async function syncAllSparebank1Data(
 	}
 
 	if (transactionEvents.length > 0) {
-		// Step 1: Deduplicate within the new batch itself (in-memory)
-		const seenKeys = new Set<string>();
+		// Step 1: Deduplicate within the new batch itself (by transactionId)
+		const seenIds = new Set<string>();
 		const uniqueNewEvents = transactionEvents.filter((e) => {
-			const key = `${e.data.accountId}:${e.data.amount}:${e.timestamp.toISOString().split('T')[0]}:${e.data.description || ''}`;
-			if (seenKeys.has(key)) {
+			const txId = (e.metadata as any)?.transactionId;
+			if (!txId) return true; // Keep if no ID
+			if (seenIds.has(txId)) {
 				return false; // Skip duplicate within this batch
 			}
-			seenKeys.add(key);
+			seenIds.add(txId);
 			return true;
 		});
 
 		console.log(`Filtered ${transactionEvents.length} -> ${uniqueNewEvents.length} unique transactions in batch`);
 
-		// Step 2: Deduplicate against existing database entries
+		// Step 2: Deduplicate against existing API transactions (same source only)
 		const existingRows = await db.execute(sql`
-			SELECT 
-				data->>'accountId' as account_id,
-				(data->>'amount')::numeric as amount,
-				timestamp::date as date,
-				data->>'description' as description
+			SELECT metadata->>'transactionId' as tx_id
 			FROM sensor_events
 			WHERE sensor_id = ${sensor.id}
 			AND data_type = 'bank_transaction'
+			AND metadata->>'source' = 'api'
+			AND metadata->>'transactionId' IS NOT NULL
 		`);
 		
-		const existingKeys = new Set(
-			existingRows.map((r: any) => 
-				`${r.account_id}:${r.amount}:${r.date}:${r.description || ''}`
-			)
+		const existingIds = new Set(
+			existingRows.map((r: any) => r.tx_id).filter(Boolean)
 		);
 
 		const newEvents = uniqueNewEvents.filter((e) => {
-			const key = `${e.data.accountId}:${e.data.amount}:${e.timestamp.toISOString().split('T')[0]}:${e.data.description || ''}`;
-			return !existingKeys.has(key);
+			const txId = (e.metadata as any)?.transactionId;
+			return !txId || !existingIds.has(txId);
 		});
 
 		console.log(`Filtered ${uniqueNewEvents.length} -> ${newEvents.length} new transactions (not in DB)`);
