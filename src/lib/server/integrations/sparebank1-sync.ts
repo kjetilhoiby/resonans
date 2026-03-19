@@ -215,16 +215,29 @@ export async function syncAllSparebank1Data(
 	}
 
 	if (transactionEvents.length > 0) {
-		// Dedup: fetch existing transaction IDs for this sensor to avoid duplicates
-		const existingRows = await db
-			.select({ txId: sql<string>`metadata->>'transactionId'` })
-			.from(sensorEvents)
-			.where(and(eq(sensorEvents.sensorId, sensor.id), eq(sensorEvents.dataType, 'bank_transaction')));
-		const existingIds = new Set(existingRows.map((r) => r.txId).filter(Boolean));
-
-		const newEvents = transactionEvents.filter(
-			(e) => !existingIds.has((e.metadata as any)?.transactionId)
+		// Dedup: fetch existing transactions by content (accountId, amount, date, description)
+		// since transactionId can change between API calls
+		const existingRows = await db.execute(sql`
+			SELECT 
+				data->>'accountId' as account_id,
+				(data->>'amount')::numeric as amount,
+				timestamp::date as date,
+				data->>'description' as description
+			FROM sensor_events
+			WHERE sensor_id = ${sensor.id}
+			AND data_type = 'bank_transaction'
+		`);
+		
+		const existingKeys = new Set(
+			existingRows.map((r: any) => 
+				`${r.account_id}:${r.amount}:${r.date}:${r.description || ''}`
+			)
 		);
+
+		const newEvents = transactionEvents.filter((e) => {
+			const key = `${e.data.accountId}:${e.data.amount}:${e.timestamp.toISOString().split('T')[0]}:${e.data.description || ''}`;
+			return !existingKeys.has(key);
+		});
 
 		if (newEvents.length > 0) {
 			const batchSize = 200;

@@ -31,18 +31,21 @@ export const POST: RequestHandler = async () => {
 			RETURNING id
 		`);
 
-		// Remove duplicate transactions (same transactionId)
+		// Remove duplicate transactions (same accountId + amount + date + description)
 		const transactionDuplicates = await db.execute(sql`
 			WITH ranked AS (
 				SELECT 
 					id,
 					ROW_NUMBER() OVER (
-						PARTITION BY metadata->>'transactionId' 
+						PARTITION BY 
+							data->>'accountId',
+							(data->>'amount')::numeric,
+							timestamp::date,
+							data->>'description'
 						ORDER BY timestamp ASC
 					) as rn
 				FROM sensor_events
 				WHERE data_type = 'bank_transaction'
-				AND metadata->>'transactionId' IS NOT NULL
 			)
 			DELETE FROM sensor_events
 			WHERE id IN (
