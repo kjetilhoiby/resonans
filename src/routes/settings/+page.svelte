@@ -21,6 +21,8 @@
 	let importResult: any = $state(null);
 	let resettingEconomics = $state(false);
 	let resetResult: any = $state(null);
+	let deduplicating = $state(false);
+	let deduplicateResult: any = $state(null);
 	let anchorAccounts = $state<{
 		accountId: string;
 		accountNumber: string;
@@ -142,6 +144,26 @@
 			resetResult = { error: String(err) };
 		} finally {
 			resettingEconomics = false;
+		}
+	}
+
+	async function deduplicateEconomicsData() {
+		if (!confirm('Fjern duplikater i økonomidata?\n\nDette beholder den eldste versjonen av hver transaksjon/saldo.')) {
+			return;
+		}
+
+		deduplicating = true;
+		deduplicateResult = null;
+		try {
+			const res = await fetch('/api/admin/deduplicate-economics', { method: 'POST' });
+			deduplicateResult = await res.json();
+			if (deduplicateResult.success) {
+				await loadAnchorAccounts();
+			}
+		} catch (err) {
+			deduplicateResult = { error: String(err) };
+		} finally {
+			deduplicating = false;
 		}
 	}
 
@@ -565,8 +587,31 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 					</div>
 				{/if}
 
-				<!-- Reset button -->
+				<!-- Data management buttons -->
 				<div style="margin-top:1.5rem; padding-top:1.5rem; border-top:1px solid var(--border-color);">
+					<button
+						type="button"
+						onclick={deduplicateEconomicsData}
+						disabled={deduplicating}
+						class="primary-button"
+						style="width:100%; margin-bottom:1rem;"
+					>
+						{deduplicating ? '⏳ Fjerner duplikater...' : '🧹 Fjern duplikater'}
+					</button>
+					<p style="font-size:0.75rem; color:var(--text-tertiary); margin-top:-0.5rem; margin-bottom:1rem; text-align:center;">
+						Fjerner duplikate transaksjoner og saldo-snapshots (beholder eldste).
+					</p>
+
+					{#if deduplicateResult}
+						{#if deduplicateResult.error}
+							<div class="alert error" style="margin-bottom:1rem;">❌ {deduplicateResult.error}</div>
+						{:else}
+							<div class="alert success" style="margin-bottom:1rem;">
+								✅ {deduplicateResult.message} ({deduplicateResult.removed.balanceEvents} saldo, {deduplicateResult.removed.transactionEvents} transaksjoner)
+							</div>
+						{/if}
+					{/if}
+
 					<button
 						type="button"
 						onclick={resetEconomicsData}
@@ -579,17 +624,17 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 					<p style="font-size:0.75rem; color:var(--text-tertiary); margin-top:0.5rem; text-align:center;">
 						Sletter alle transaksjoner og saldo-snapshots. Krever re-import etterpå.
 					</p>
-				</div>
 
-				{#if resetResult}
-					{#if resetResult.error}
-						<div class="alert error" style="margin-top:1rem;">❌ {resetResult.error}</div>
-					{:else}
-						<div class="alert success" style="margin-top:1rem;">
-							✅ Slettet {resetResult.deletedCount} hendelser. Klar for ny import!
-						</div>
+					{#if resetResult}
+						{#if resetResult.error}
+							<div class="alert error" style="margin-top:1rem;">❌ {resetResult.error}</div>
+						{:else}
+							<div class="alert success" style="margin-top:1rem;">
+								✅ Slettet {resetResult.deletedCount} hendelser. Klar for ny import!
+							</div>
+						{/if}
 					{/if}
-				{/if}
+				</div>
 			</section>
 
 			<!-- Daily Check-in -->

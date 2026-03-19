@@ -134,13 +134,37 @@ export async function syncAllSparebank1Data(
 			},
 			metadata: {
 				provider: 'sparebank1',
+				source: 'api',
 				accountKey: account.key || null
 			}
 		};
 	});
 
+	// Dedup balance events: Only insert if not already present for same account + date
 	if (balanceEvents.length > 0) {
-		await db.insert(sensorEvents).values(balanceEvents);
+		const existingBalanceRows = await db
+			.select({ 
+				accountId: sql<string>`data->>'accountId'`,
+				date: sql<string>`timestamp::date`
+			})
+			.from(sensorEvents)
+			.where(and(
+				eq(sensorEvents.sensorId, sensor.id), 
+				eq(sensorEvents.dataType, 'bank_balance')
+			));
+		
+		const existingBalanceKeys = new Set(
+			existingBalanceRows.map((r) => `${r.accountId}:${r.date}`)
+		);
+
+		const newBalanceEvents = balanceEvents.filter((e) => {
+			const key = `${e.data.accountId}:${e.timestamp.toISOString().split('T')[0]}`;
+			return !existingBalanceKeys.has(key);
+		});
+
+		if (newBalanceEvents.length > 0) {
+			await db.insert(sensorEvents).values(newBalanceEvents);
+		}
 	}
 
 	let transactionEvents: any[] = [];
@@ -180,6 +204,7 @@ export async function syncAllSparebank1Data(
 						},
 						metadata: {
 							provider: 'sparebank1',
+							source: 'api',
 							transactionId: transaction.id || transaction.transactionId
 						}
 					};
