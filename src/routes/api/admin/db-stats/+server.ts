@@ -7,56 +7,57 @@ import { eq, sql } from 'drizzle-orm';
 export const GET: RequestHandler = async () => {
 	try {
 		// Get balance snapshots grouped by account and source
-		const balanceStats = await db
-			.select({
-				accountId: sql<string>`data->>'accountId'`,
-				source: sql<string>`metadata->>'source'`,
-				count: sql<number>`count(*)::int`,
-				minDate: sql<string>`min(timestamp::date)`,
-				maxDate: sql<string>`max(timestamp::date)`,
-				example: sql<any>`jsonb_build_object('accountNumber', data->>'accountNumber', 'balance', data->>'balance')`
-			})
-			.from(sensorEvents)
-			.where(eq(sensorEvents.dataType, 'bank_balance'))
-			.groupBy(sql`data->>'accountId'`, sql`metadata->>'source'`);
+		const balanceStats = await db.execute(sql`
+			SELECT 
+				data->>'accountId' as "accountId",
+				metadata->>'source' as source,
+				count(*)::int as count,
+				min(timestamp::date)::text as "minDate",
+				max(timestamp::date)::text as "maxDate"
+			FROM sensor_events
+			WHERE data_type = 'bank_balance'
+			AND data->>'accountId' IS NOT NULL
+			GROUP BY data->>'accountId', metadata->>'source'
+		`);
 
 		// Get transaction stats grouped by account and source
-		const transactionStats = await db
-			.select({
-				accountId: sql<string>`data->>'accountId'`,
-				source: sql<string>`metadata->>'source'`,
-				count: sql<number>`count(*)::int`,
-				minDate: sql<string>`min(timestamp::date)`,
-				maxDate: sql<string>`max(timestamp::date)`,
-				sumAmount: sql<number>`sum((data->>'amount')::numeric)`
-			})
-			.from(sensorEvents)
-			.where(eq(sensorEvents.dataType, 'bank_transaction'))
-			.groupBy(sql`data->>'accountId'`, sql`metadata->>'source'`);
+		const transactionStats = await db.execute(sql`
+			SELECT 
+				data->>'accountId' as "accountId",
+				metadata->>'source' as source,
+				count(*)::int as count,
+				min(timestamp::date)::text as "minDate",
+				max(timestamp::date)::text as "maxDate",
+				sum((data->>'amount')::numeric)::float as "sumAmount"
+			FROM sensor_events
+			WHERE data_type = 'bank_transaction'
+			AND data->>'accountId' IS NOT NULL
+			GROUP BY data->>'accountId', metadata->>'source'
+		`);
 
 		// Get unique account IDs and their account numbers
-		const accounts = await db
-			.select({
-				accountId: sql<string>`data->>'accountId'`,
-				accountNumber: sql<string>`data->>'accountNumber'`,
-				firstSeen: sql<string>`min(timestamp)`,
-				lastSeen: sql<string>`max(timestamp)`
-			})
-			.from(sensorEvents)
-			.where(sql`data->>'accountId' IS NOT NULL`)
-			.groupBy(sql`data->>'accountId'`, sql`data->>'accountNumber'`);
+		const accounts = await db.execute(sql`
+			SELECT 
+				data->>'accountId' as "accountId",
+				data->>'accountNumber' as "accountNumber",
+				min(timestamp)::text as "firstSeen",
+				max(timestamp)::text as "lastSeen"
+			FROM sensor_events
+			WHERE data->>'accountId' IS NOT NULL
+			GROUP BY data->>'accountId', data->>'accountNumber'
+		`);
 
 		return json({
 			accounts,
 			balanceSnapshots: balanceStats,
 			transactions: transactionStats,
 			summary: {
-				totalBalanceSnapshots: balanceStats.reduce((sum, s) => sum + s.count, 0),
-				totalTransactions: transactionStats.reduce((sum, s) => sum + s.count, 0),
-				uniqueAccounts: accounts.length,
+				totalBalanceSnapshots: Array.isArray(balanceStats) ? balanceStats.reduce((sum: number, s: any) => sum + (s.count || 0), 0) : 0,
+				totalTransactions: Array.isArray(transactionStats) ? transactionStats.reduce((sum: number, s: any) => sum + (s.count || 0), 0) : 0,
+				uniqueAccounts: Array.isArray(accounts) ? accounts.length : 0,
 				sources: {
-					balance: [...new Set(balanceStats.map((s) => s.source))],
-					transaction: [...new Set(transactionStats.map((s) => s.source))]
+					balance: Array.isArray(balanceStats) ? [...new Set(balanceStats.map((s: any) => s.source).filter(Boolean))] : [],
+					transaction: Array.isArray(transactionStats) ? [...new Set(transactionStats.map((s: any) => s.source).filter(Boolean))] : []
 				}
 			}
 		});
