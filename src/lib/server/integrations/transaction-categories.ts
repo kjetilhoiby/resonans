@@ -75,7 +75,18 @@ const RULES: Rule[] = [
 
 	// Dagligvare
 	{
-		keywords: ['rema 1000', 'rema1000', 'kiwi ', 'coop ', 'meny ', 'spar ', 'bunnpris', 'extra ', 'joker ', 'obs ', 'aldi ', 'lidl ', 'nærbutikk', 'kolonial', 'marked ', 'dagligvare', 'matbutikk', 'matvarer', 'grocery', 'willys', 'ica ', 'hakon gruppen'],
+		keywords: [
+			'rema 1000', 'rema1000', 'kiwi ', 'coop ', 'meny ', 'spar ', 'bunnpris',
+			'extra ', 'joker ', 'obs ', 'aldi ', 'lidl ', 'nærbutikk', 'kolonial',
+			'marked ', 'dagligvare', 'matbutikk', 'matvarer', 'grocery',
+			'willys', 'ica ', 'hakon gruppen',
+			// Netthandel dagligvare
+			'oda ', 'oda.com', 'oda as',
+			'adams matkasse', 'adamsmatkasse',
+			'godtlevert',
+			'hverdagsmat',
+			'matmesteren',
+		],
 		category: 'dagligvare'
 	},
 
