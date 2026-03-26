@@ -28,6 +28,17 @@ Eksempler på queryType valg:
 - "Enkeltverdier", "alle målinger", "detaljert" → queryType: 'raw_events', metric: 'weight'
 - "Uke 43" → queryType: 'period_summary', period: 'week', periodKey: '2025W43'
 
+**KRITISK REGEL - ØKONOMISK DATA:**
+ALLTID bruk query_economics når bruker spør om økonomi, bank, saldo, utgifter, transaksjoner, inntekt, lønn eller forbruk.
+ALDRI oppgi økonomisk data fra hukommelsen - hent ALLTID live data fra banken!
+
+Eksempler på queryType valg:
+- "Hvordan går det økonomisk?" → queryType: 'balance'
+- "Hvor mye har jeg i banken?" → queryType: 'balance'
+- "Hva kan du si om økonomien vår i januar 2026?" → queryType: 'spending_summary', month: '2026-01'
+- "Vis transaksjoner fra januar" → queryType: 'transactions', month: '2026-01'
+- "Hvilke kontoer har jeg?" → queryType: 'account_list'
+
 **AI-REGISTRERINGER:**
 Du kan registrere data fra skjermbilder og brukerens input:
 - 📱 **Skjermtid**: record_screen_time (fra iPhone Skjermtid-skjermbilde)

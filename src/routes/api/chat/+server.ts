@@ -6,6 +6,7 @@ import { ensureDefaultUser, DEFAULT_USER_ID } from '$lib/server/users';
 import { getOrCreateConversation, addMessage, getConversationHistory } from '$lib/server/conversations';
 import { logActivity } from '$lib/server/activities';
 import { buildMemoryContext, createMemory } from '$lib/server/memories';
+import { queryEconomicsTool } from '$lib/ai/tools/query-economics';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 
 // Definer tools/functions som AI-en kan bruke
@@ -372,6 +373,54 @@ const tools = [
 	{
 		type: 'function' as const,
 		function: {
+					name: 'query_economics',
+					description: 'Hent økonomisk data fra tilkoblede bankkontoer. Brukes for saldo, transaksjoner, forbruk per måned og kontoliste.',
+					parameters: {
+						type: 'object',
+						properties: {
+							queryType: {
+								type: 'string',
+								description: 'Type økonomi-spørring',
+								enum: ['balance', 'transactions', 'spending_summary', 'account_list']
+							},
+							month: {
+								type: 'string',
+								description: 'Måned i format YYYY-MM, for eksempel 2026-01'
+							},
+							dateRange: {
+								type: 'object',
+								properties: {
+									start: {
+										type: 'string',
+										description: 'Startdato i format YYYY-MM-DD'
+									},
+									end: {
+										type: 'string',
+										description: 'Sluttdato i format YYYY-MM-DD'
+									}
+								}
+							},
+							accountId: {
+								type: 'string',
+								description: 'Valgfri konto-ID for å begrense spørringen til én konto'
+							},
+							limit: {
+								type: 'number',
+								description: 'Maks antall transaksjoner å hente tilbake'
+							},
+							sortBy: {
+								type: 'string',
+								description: 'Sortering for transaksjoner',
+								enum: ['date', 'amount']
+							}
+						},
+						required: ['queryType']
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
 			name: 'record_mood',
 			description: 'Registrer humør/følelsestilstand for et tidspunkt.',
 			parameters: {
@@ -724,6 +773,21 @@ export const POST: RequestHandler = async ({ request }) => {
 						...args
 					});
 					console.log('  📊 Result:', result.success ? 'Success' : 'Failed', result.message);
+
+					messages.push({
+						role: 'tool',
+						content: JSON.stringify(result),
+						tool_call_id: toolCall.id
+					});
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'query_economics') {
+					const args = JSON.parse(toolCall.function.arguments);
+
+					console.log('  💰 Querying economics with:', args);
+					const result = await queryEconomicsTool.execute({
+						userId: DEFAULT_USER_ID,
+						...args
+					});
+					console.log('  💰 Result:', result.success ? 'Success' : 'Failed', result.message);
 
 					messages.push({
 						role: 'tool',

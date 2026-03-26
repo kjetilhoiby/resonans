@@ -60,7 +60,7 @@
 	let showSearch = $state(false);
 	let searchResults = $state<number[]>([]);
 	let currentSearchIndex = $state(0);
-	let searchInput: HTMLInputElement;
+	let searchInput = $state<HTMLInputElement | null>(null);
 
 	// Toggle this to use real OpenAI API
 	const USE_REAL_API = true;
