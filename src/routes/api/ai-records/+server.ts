@@ -1,16 +1,16 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
-import { sensorEvents } from '$lib/db/schema';
-import { DEFAULT_USER_ID } from '$lib/server/users';
+import { sensorEvents, sensors } from '$lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 
 /**
  * API for AI-genererte registreringer
  * POST /api/ai-records
  */
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, locals }) => {
 	try {
+		const userId = locals.userId;
 		const { type, data, date, metadata } = await request.json();
 
 		// Valider required fields
@@ -32,7 +32,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
 		const existingEvent = await db.query.sensorEvents.findFirst({
 			where: and(
-				eq(sensorEvents.userId, DEFAULT_USER_ID),
+				eq(sensorEvents.userId, userId),
 				eq(sensorEvents.dataType, type),
 				// Check if timestamp is within the same day
 			)
@@ -73,18 +73,17 @@ export const POST: RequestHandler = async ({ request }) => {
 		};
 
 		// Get AI sensor (create if not exists)
-		const { sensors } = await import('$lib/db/schema');
 		let [aiSensor] = await db
 			.select()
 			.from(sensors)
-			.where(eq(sensors.provider, 'ai_assistant'))
+			.where(and(eq(sensors.provider, 'ai_assistant'), eq(sensors.userId, userId)))
 			.limit(1);
 
 		if (!aiSensor) {
 			[aiSensor] = await db
 				.insert(sensors)
 				.values({
-					userId: DEFAULT_USER_ID,
+					userId,
 					provider: 'ai_assistant',
 					type: 'manual_log',
 					name: 'AI Assistant',
@@ -101,7 +100,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		const [newEvent] = await db
 			.insert(sensorEvents)
 			.values({
-				userId: DEFAULT_USER_ID,
+				userId,
 				sensorId: aiSensor.id,
 				eventType: 'measurement',
 				dataType: type,

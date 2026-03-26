@@ -7,6 +7,9 @@ export const users = pgTable('users', {
 	id: text('id').primaryKey(), // Custom ID for å støtte 'default-user'
 	name: text('name').notNull(),
 	email: text('email').unique(),
+	isAdmin: boolean('is_admin').default(false).notNull(),
+	partnerUserId: text('partner_user_id'),
+	partnerConfirmedAt: timestamp('partner_confirmed_at'),
 	googleChatWebhook: text('google_chat_webhook'),
 	notificationSettings: jsonb('notification_settings').$type<{
 		dailyCheckIn?: { enabled: boolean; time: string }; // format: "09:00"
@@ -18,6 +21,42 @@ export const users = pgTable('users', {
 	timezone: text('timezone').default('Europe/Oslo'),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
+});
+
+export const authAccounts = pgTable('auth_accounts', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id).notNull(),
+	provider: text('provider').notNull(),
+	providerAccountId: text('provider_account_id').notNull(),
+	email: text('email'),
+	emailVerified: boolean('email_verified').default(false).notNull(),
+	name: text('name'),
+	image: text('image'),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	uniqueProviderAccount: unique().on(table.provider, table.providerAccountId),
+	uniqueUserProvider: unique().on(table.userId, table.provider)
+}));
+
+export const allowedEmails = pgTable('allowed_emails', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	email: text('email').notNull().unique(),
+	note: text('note'),
+	invitedByUserId: text('invited_by_user_id').references(() => users.id),
+	lastUsedAt: timestamp('last_used_at'),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+});
+
+export const marriageInvites = pgTable('marriage_invites', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	inviterUserId: text('inviter_user_id').references(() => users.id).notNull(),
+	inviteeEmail: text('invitee_email').notNull(),
+	inviteeUserId: text('invitee_user_id').references(() => users.id),
+	status: text('status').notNull().default('pending'),
+	token: text('token').notNull().unique(),
+	respondedAt: timestamp('responded_at'),
+	createdAt: timestamp('created_at').defaultNow().notNull()
 });
 
 // Kategorier for mål (f.eks. parforhold, trening, mental helse)
@@ -160,9 +199,37 @@ export const usersRelations = relations(users, ({ many }) => ({
 	activities: many(activities),
 	memories: many(memories),
 	themes: many(themes),
+	authAccounts: many(authAccounts),
+	allowedEmails: many(allowedEmails),
+	sentMarriageInvites: many(marriageInvites),
 	sensors: many(sensors),
 	sensorEvents: many(sensorEvents),
 	sensorAggregates: many(sensorAggregates)
+}));
+
+export const authAccountsRelations = relations(authAccounts, ({ one }) => ({
+	user: one(users, {
+		fields: [authAccounts.userId],
+		references: [users.id]
+	})
+}));
+
+export const allowedEmailsRelations = relations(allowedEmails, ({ one }) => ({
+	invitedByUser: one(users, {
+		fields: [allowedEmails.invitedByUserId],
+		references: [users.id]
+	})
+}));
+
+export const marriageInvitesRelations = relations(marriageInvites, ({ one }) => ({
+	inviterUser: one(users, {
+		fields: [marriageInvites.inviterUserId],
+		references: [users.id]
+	}),
+	inviteeUser: one(users, {
+		fields: [marriageInvites.inviteeUserId],
+		references: [users.id]
+	})
 }));
 
 export const categoriesRelations = relations(categories, ({ many }) => ({

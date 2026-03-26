@@ -1,6 +1,5 @@
 import { json } from '@sveltejs/kit';
 import { db } from '$lib/db';
-import { DEFAULT_USER_ID } from '$lib/server/users';
 import type { RequestHandler } from './$types';
 
 function decodeCredentials(encoded: string) {
@@ -15,9 +14,9 @@ function decodeCredentials(encoded: string) {
  * Get SpareBank1 connection status
  * GET /api/sensors/sparebank1/status
  */
-export const GET: RequestHandler = async () => {
+export const GET: RequestHandler = async ({ locals }) => {
 	try {
-		const userId = DEFAULT_USER_ID;
+		const userId = locals.userId;
 
 		const sensor = await db.query.sensors.findFirst({
 			where: (sensors, { and, eq }) =>

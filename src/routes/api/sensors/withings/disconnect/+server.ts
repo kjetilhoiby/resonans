@@ -2,16 +2,15 @@ import { json } from '@sveltejs/kit';
 import { db } from '$lib/db';
 import { sensors } from '$lib/db/schema';
 import { eq, and } from 'drizzle-orm';
-import { DEFAULT_USER_ID } from '$lib/server/users';
 import type { RequestHandler } from './$types';
 
 /**
  * Disconnect Withings account
  * POST /api/sensors/withings/disconnect
  */
-export const POST: RequestHandler = async () => {
+export const POST: RequestHandler = async ({ locals }) => {
 	try {
-		const userId = DEFAULT_USER_ID;
+		const userId = locals.userId;
 
 		// Soft delete: mark as inactive
 		await db.update(sensors)

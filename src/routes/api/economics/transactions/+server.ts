@@ -2,7 +2,6 @@ import { json } from '@sveltejs/kit';
 import { db } from '$lib/db';
 import { sensorEvents } from '$lib/db/schema';
 import { and, eq, asc, sql } from 'drizzle-orm';
-import { DEFAULT_USER_ID } from '$lib/server/users';
 import { categorizeTransaction } from '$lib/server/integrations/transaction-categories';
 import { loadMerchantMappings } from '$lib/server/integrations/spending-analyzer';
 import type { RequestHandler } from './$types';
@@ -13,8 +12,8 @@ import type { RequestHandler } from './$types';
  *   ?accountId=xxx&month=2025-01&category=dagligvare   (spending drill-down)
  *   ?accountId=xxx&fromDate=2025-01-10&toDate=2025-01-25  (balance chart brush)
  */
-export const GET: RequestHandler = async ({ url }) => {
-	const userId = DEFAULT_USER_ID;
+export const GET: RequestHandler = async ({ url, locals }) => {
+	const userId = locals.userId;
 	const accountId = url.searchParams.get('accountId');
 	const month = url.searchParams.get('month');
 	const categoryFilter = url.searchParams.get('category');

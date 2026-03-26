@@ -2,11 +2,11 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { openai, SYSTEM_PROMPT } from '$lib/server/openai';
 import { createGoal, createTask, getUserActiveGoalsAndTasks, findSimilarGoals, findSimilarTasks } from '$lib/server/goals';
-import { ensureDefaultUser, DEFAULT_USER_ID } from '$lib/server/users';
 import { getOrCreateConversation, addMessage, getConversationHistory } from '$lib/server/conversations';
 import { logActivity } from '$lib/server/activities';
 import { buildMemoryContext, createMemory } from '$lib/server/memories';
 import { queryEconomicsTool } from '$lib/ai/tools/query-economics';
+import { USER_ID_HEADER_NAME } from '$lib/server/request-user';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 
 // Definer tools/functions som AI-en kan bruke
@@ -459,10 +459,9 @@ const tools = [
 	}
 ];
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, locals }) => {
 	try {
-		// Sørg for at default bruker eksisterer
-		await ensureDefaultUser();
+		const userId = locals.userId;
 
 		const { message, imageUrl } = await request.json();
 
@@ -471,7 +470,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		}
 
 		// Hent eller opprett samtale
-		const conversation = await getOrCreateConversation(DEFAULT_USER_ID);
+		const conversation = await getOrCreateConversation(userId);
 
 		// Lagre brukerens melding med imageUrl hvis present
 		await addMessage({
@@ -485,10 +484,10 @@ export const POST: RequestHandler = async ({ request }) => {
 		const history = await getConversationHistory(conversation.id, 5);
 
 		// Bygg memory context (viktig informasjon om brukeren)
-		const memoryContext = await buildMemoryContext(DEFAULT_USER_ID);
+		const memoryContext = await buildMemoryContext(userId);
 
 		// Hent brukerens aktive mål og oppgaver for kontekst
-		const activeGoals = await getUserActiveGoalsAndTasks(DEFAULT_USER_ID);
+		const activeGoals = await getUserActiveGoalsAndTasks(userId);
 		
 		// Bygg kontekst-melding med aktive mål
 		let goalsContext = '\n\n--- BRUKERENS AKTIVE MÅL OG OPPGAVER ---\n';
@@ -603,7 +602,7 @@ export const POST: RequestHandler = async ({ request }) => {
 				
 				if (toolCall.type === 'function' && toolCall.function.name === 'check_similar_goals') {
 					const args = JSON.parse(toolCall.function.arguments);
-					const similarGoals = await findSimilarGoals(DEFAULT_USER_ID, args.title, 70);
+					const similarGoals = await findSimilarGoals(userId, args.title, 70);
 
 					if (similarGoals.length > 0) {
 						const goalsList = similarGoals
@@ -662,7 +661,7 @@ export const POST: RequestHandler = async ({ request }) => {
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'create_goal') {
 					const args = JSON.parse(toolCall.function.arguments);
 					const goal = await createGoal({
-						userId: DEFAULT_USER_ID,
+						userId,
 						...args
 					});
 					createdGoalId = goal.id;
@@ -709,7 +708,7 @@ export const POST: RequestHandler = async ({ request }) => {
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'log_activity') {
 					const args = JSON.parse(toolCall.function.arguments);
 					const result = await logActivity({
-						userId: DEFAULT_USER_ID,
+						userId,
 						...args
 					});
 
@@ -731,7 +730,7 @@ export const POST: RequestHandler = async ({ request }) => {
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'create_memory') {
 					const args = JSON.parse(toolCall.function.arguments);
 					const memory = await createMemory({
-						userId: DEFAULT_USER_ID,
+						userId,
 						themeId: args.themeId || null,
 						category: args.category,
 						content: args.content,
@@ -754,7 +753,7 @@ export const POST: RequestHandler = async ({ request }) => {
 					const { manageThemeTool } = await import('$lib/ai/tools/manage-theme');
 					
 					const result = await manageThemeTool.execute({
-						userId: DEFAULT_USER_ID,
+						userId,
 						...args
 					});
 
@@ -769,7 +768,7 @@ export const POST: RequestHandler = async ({ request }) => {
 					
 					console.log('  📊 Querying sensor data with:', args);
 					const result = await querySensorDataTool.execute({
-						userId: DEFAULT_USER_ID,
+						userId,
 						...args
 					});
 					console.log('  📊 Result:', result.success ? 'Success' : 'Failed', result.message);
@@ -784,7 +783,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
 					console.log('  💰 Querying economics with:', args);
 					const result = await queryEconomicsTool.execute({
-						userId: DEFAULT_USER_ID,
+						userId,
 						...args
 					});
 					console.log('  💰 Result:', result.success ? 'Success' : 'Failed', result.message);
@@ -801,7 +800,10 @@ export const POST: RequestHandler = async ({ request }) => {
 					// Call API to save record
 					const response = await fetch(`${request.url.replace('/api/chat', '/api/ai-records')}`, {
 						method: 'POST',
-						headers: { 'Content-Type': 'application/json' },
+						headers: {
+							'Content-Type': 'application/json',
+							[USER_ID_HEADER_NAME]: userId
+						},
 						body: JSON.stringify({
 							type: 'screen_time',
 							date: args.date,
@@ -831,7 +833,10 @@ export const POST: RequestHandler = async ({ request }) => {
 
 					const response = await fetch(`${request.url.replace('/api/chat', '/api/ai-records')}`, {
 						method: 'POST',
-						headers: { 'Content-Type': 'application/json' },
+						headers: {
+							'Content-Type': 'application/json',
+							[USER_ID_HEADER_NAME]: userId
+						},
 						body: JSON.stringify({
 							type: 'workout',
 							date: args.date,
@@ -863,7 +868,10 @@ export const POST: RequestHandler = async ({ request }) => {
 
 					const response = await fetch(`${request.url.replace('/api/chat', '/api/ai-records')}`, {
 						method: 'POST',
-						headers: { 'Content-Type': 'application/json' },
+						headers: {
+							'Content-Type': 'application/json',
+							[USER_ID_HEADER_NAME]: userId
+						},
 						body: JSON.stringify({
 							type: 'mood',
 							date: args.date,

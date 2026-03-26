@@ -2,7 +2,6 @@ import { json } from '@sveltejs/kit';
 import { db } from '$lib/db';
 import { sensorEvents } from '$lib/db/schema';
 import { and, eq, asc, sql } from 'drizzle-orm';
-import { DEFAULT_USER_ID } from '$lib/server/users';
 import { detectGlobalPayday } from '$lib/server/integrations/payday-detector';
 import { buildDailyBalances } from '$lib/server/integrations/balance-reconstructor';
 import type { RequestHandler } from './$types';
@@ -26,8 +25,8 @@ import type { RequestHandler } from './$types';
  *   detectedPaydayDom: number | null   // typical day-of-month
  * }
  */
-export const GET: RequestHandler = async ({ url }) => {
-	const userId = DEFAULT_USER_ID;
+export const GET: RequestHandler = async ({ url, locals }) => {
+	const userId = locals.userId;
 	const accountId = url.searchParams.get('accountId');
 	const maxPeriods = Math.min(24, parseInt(url.searchParams.get('periods') ?? '13'));
 

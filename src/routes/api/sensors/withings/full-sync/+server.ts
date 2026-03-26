@@ -2,16 +2,15 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { syncAllWithingsData } from '$lib/server/integrations/withings-sync';
 import { aggregateAllPeriods } from '$lib/server/integrations/aggregation';
-import { DEFAULT_USER_ID } from '$lib/server/users';
 
 /**
  * POST /api/sensors/withings/full-sync
  * 
  * Full sync: Delete all data and re-sync everything from September 1, 2017
  */
-export const POST: RequestHandler = async () => {
+export const POST: RequestHandler = async ({ locals }) => {
 	try {
-		const userId = DEFAULT_USER_ID;
+		const userId = locals.userId;
 		
 		console.log('🔄 Starting full sync from September 1, 2017...');
 		const results = await syncAllWithingsData(userId, true);

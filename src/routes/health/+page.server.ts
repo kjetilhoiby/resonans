@@ -1,11 +1,10 @@
 import { db } from '$lib/db';
 import { sensorAggregates } from '$lib/db/schema';
 import { eq, and, desc } from 'drizzle-orm';
-import { DEFAULT_USER_ID } from '$lib/server/users';
 import type { PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async () => {
-	const userId = DEFAULT_USER_ID;
+export const load: PageServerLoad = async ({ locals }) => {
+	const userId = locals.userId;
 
 	// Get recent weekly aggregates (last 12 weeks)
 	const weeklyData = await db.query.sensorAggregates.findMany({

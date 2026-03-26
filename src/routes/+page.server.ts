@@ -1,15 +1,14 @@
 import { db } from '$lib/db';
 import { conversations, messages } from '$lib/db/schema';
 import { eq, desc, lt } from 'drizzle-orm';
-import { DEFAULT_USER_ID } from '$lib/server/users';
 import type { PageServerLoad } from './$types';
 
 const MESSAGES_PER_PAGE = 30;
 
-export const load: PageServerLoad = async () => {
+export const load: PageServerLoad = async ({ locals }) => {
 	// Finn den nyeste samtalen for brukeren
 	const conversation = await db.query.conversations.findFirst({
-		where: eq(conversations.userId, DEFAULT_USER_ID),
+		where: eq(conversations.userId, locals.userId),
 		orderBy: [desc(conversations.updatedAt)]
 	});
 

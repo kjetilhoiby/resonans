@@ -2,7 +2,6 @@ import { json } from '@sveltejs/kit';
 import { db } from '$lib/db';
 import { sensorEvents } from '$lib/db/schema';
 import { and, eq, asc, sql } from 'drizzle-orm';
-import { DEFAULT_USER_ID } from '$lib/server/users';
 import {
 	categorizeTransaction,
 	detectRecurring,
@@ -29,8 +28,8 @@ import type { RequestHandler } from './$types';
  *   allCategories: [{ category, label, emoji }]
  * }
  */
-export const GET: RequestHandler = async ({ url }) => {
-	const userId = DEFAULT_USER_ID;
+export const GET: RequestHandler = async ({ url, locals }) => {
+	const userId = locals.userId;
 	const accountId = url.searchParams.get('accountId'); // null = all accounts
 	const monthsBack = Math.min(24, parseInt(url.searchParams.get('months') ?? '12'));
 

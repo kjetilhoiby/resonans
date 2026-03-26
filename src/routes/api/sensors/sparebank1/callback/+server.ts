@@ -1,7 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import { db } from '$lib/db';
 import { sensors } from '$lib/db/schema';
-import { DEFAULT_USER_ID } from '$lib/server/users';
 import { getSparebank1AccessToken } from '$lib/server/integrations/sparebank1';
 import { and, eq } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
@@ -10,7 +9,7 @@ import type { RequestHandler } from './$types';
  * Handle SpareBank1 OAuth callback
  * GET /api/sensors/sparebank1/callback?code=...&state=...
  */
-export const GET: RequestHandler = async ({ url, cookies }) => {
+export const GET: RequestHandler = async ({ url, cookies, locals }) => {
 	const code = url.searchParams.get('code');
 	const state = url.searchParams.get('state');
 	const error = url.searchParams.get('error');
@@ -54,7 +53,7 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
 			})
 		);
 
-		const userId = DEFAULT_USER_ID;
+		const userId = locals.userId;
 		const existingSensor = await db.query.sensors.findFirst({
 			where: and(
 				eq(sensors.userId, userId),

@@ -1,5 +1,4 @@
 import { json } from '@sveltejs/kit';
-import { DEFAULT_USER_ID } from '$lib/server/users';
 import { syncAllSparebank1Data } from '$lib/server/integrations/sparebank1-sync';
 import type { RequestHandler } from './$types';
 
@@ -9,9 +8,9 @@ import type { RequestHandler } from './$types';
  * Query params:
  * - fullHistory: if 'true', syncs from 2 years ago instead of last sync date
  */
-export const POST: RequestHandler = async ({ url }) => {
+export const POST: RequestHandler = async ({ url, locals }) => {
 	try {
-		const userId = DEFAULT_USER_ID;
+		const userId = locals.userId;
 		const fullHistory = url.searchParams.get('fullHistory') === 'true';
 		
 		const options = fullHistory 

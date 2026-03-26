@@ -2,15 +2,14 @@ import { json } from '@sveltejs/kit';
 import { db } from '$lib/db';
 import { sensorEvents } from '$lib/db/schema';
 import { and, eq, desc, sql } from 'drizzle-orm';
-import { DEFAULT_USER_ID } from '$lib/server/users';
 import type { RequestHandler } from './$types';
 
 /**
  * GET /api/economics/accounts
  * Returns list of bank accounts with latest balance from bank_balance events
  */
-export const GET: RequestHandler = async () => {
-	const userId = DEFAULT_USER_ID;
+export const GET: RequestHandler = async ({ locals }) => {
+	const userId = locals.userId;
 
 	// Get the latest bank_balance event per accountId
 	const rows = await db

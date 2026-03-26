@@ -1,6 +1,5 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { DEFAULT_USER_ID } from '$lib/server/users';
 import { getUserActiveGoalsAndTasks } from '$lib/server/goals';
 import { sendGoogleChatMessage, buildDailyCheckInMessage } from '$lib/server/google-chat';
 import { db } from '$lib/db';
@@ -12,10 +11,10 @@ import { eq } from 'drizzle-orm';
  * 
  * Denne endepunktet kan kalles manuelt eller av en scheduled job (Vercel Cron)
  */
-export const POST: RequestHandler = async ({ url }) => {
+export const POST: RequestHandler = async ({ url, locals }) => {
 	try {
 		// Support for å spesifisere userId via query param
-		const userId = url.searchParams.get('userId') || DEFAULT_USER_ID;
+		const userId = url.searchParams.get('userId') || locals.userId;
 
 		// Hent brukerens webhook og innstillinger
 		const user = await db.query.users.findFirst({

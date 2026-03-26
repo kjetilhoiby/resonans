@@ -2,16 +2,15 @@ import { json } from '@sveltejs/kit';
 import { db } from '$lib/db';
 import { sensorEvents } from '$lib/db/schema';
 import { eq, and, gte } from 'drizzle-orm';
-import { DEFAULT_USER_ID } from '$lib/server/users';
 import type { RequestHandler } from './$types';
 
 /**
  * Get weight data for year-over-year comparison
  * GET /api/weight?years=2
  */
-export const GET: RequestHandler = async ({ url }) => {
+export const GET: RequestHandler = async ({ url, locals }) => {
 	try {
-		const userId = DEFAULT_USER_ID;
+		const userId = locals.userId;
 		const currentYear = new Date().getFullYear();
 		
 		// Get years parameter from query string, default to 2

@@ -2,9 +2,8 @@ import { json, type RequestEvent } from '@sveltejs/kit';
 import { db } from '$lib/db';
 import { goals, tasks, progress } from '$lib/db/schema';
 import { eq } from 'drizzle-orm';
-import { DEFAULT_USER_ID } from '$lib/server/users';
 
-export const DELETE = async ({ url }: RequestEvent) => {
+export const DELETE = async ({ url, locals }: RequestEvent) => {
 	try {
 		const goalId = url.searchParams.get('id');
 
@@ -21,7 +20,7 @@ export const DELETE = async ({ url }: RequestEvent) => {
 			return json({ error: 'Goal not found' }, { status: 404 });
 		}
 
-		if (goal.userId !== DEFAULT_USER_ID) {
+		if (goal.userId !== locals.userId) {
 			return json({ error: 'Unauthorized' }, { status: 403 });
 		}
 

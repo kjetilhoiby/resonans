@@ -1,12 +1,11 @@
 import { db } from '$lib/db';
 import { goals } from '$lib/db/schema';
 import { eq } from 'drizzle-orm';
-import { DEFAULT_USER_ID } from '$lib/server/users';
 import type { PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async () => {
+export const load: PageServerLoad = async ({ locals }) => {
 	const userGoals = await db.query.goals.findMany({
-		where: eq(goals.userId, DEFAULT_USER_ID),
+		where: eq(goals.userId, locals.userId),
 		with: {
 			category: true,
 			tasks: {

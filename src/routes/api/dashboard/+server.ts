@@ -3,10 +3,9 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { themes, goals, tasks, memories, activities, progress } from '$lib/db/schema';
 import { eq, and, gte, desc, sql, inArray } from 'drizzle-orm';
-import { DEFAULT_USER_ID } from '$lib/server/users';
 
 export const GET: RequestHandler = async ({ locals }) => {
-	const userId = DEFAULT_USER_ID;
+	const userId = locals.userId;
 	const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
 	// Hent aktive themes

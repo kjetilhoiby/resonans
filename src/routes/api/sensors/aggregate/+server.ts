@@ -1,16 +1,15 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { aggregateAllPeriods } from '$lib/server/integrations/aggregation';
-import { DEFAULT_USER_ID } from '$lib/server/users';
 
 /**
  * POST /api/sensors/aggregate
  * 
  * Manually trigger aggregation of sensor data
  */
-export const POST: RequestHandler = async () => {
+export const POST: RequestHandler = async ({ locals }) => {
 	try {
-		const userId = DEFAULT_USER_ID;
+		const userId = locals.userId;
 		
 		await aggregateAllPeriods(userId);
 		

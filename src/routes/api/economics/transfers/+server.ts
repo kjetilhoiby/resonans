@@ -2,7 +2,6 @@ import { json } from '@sveltejs/kit';
 import { db } from '$lib/db';
 import { sensorEvents } from '$lib/db/schema';
 import { and, eq, asc, desc, sql } from 'drizzle-orm';
-import { DEFAULT_USER_ID } from '$lib/server/users';
 import type { RequestHandler } from './$types';
 
 /**
@@ -15,8 +14,8 @@ import type { RequestHandler } from './$types';
  *   outgoing = money leaving  the account     (red)
  * Also returns daily balance history for the account.
  */
-export const GET: RequestHandler = async ({ url }) => {
-	const userId = DEFAULT_USER_ID;
+export const GET: RequestHandler = async ({ url, locals }) => {
+	const userId = locals.userId;
 	const accountId = url.searchParams.get('accountId');
 	if (!accountId) return json({ error: 'Missing accountId' }, { status: 400 });
 

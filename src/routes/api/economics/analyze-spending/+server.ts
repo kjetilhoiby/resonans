@@ -1,5 +1,4 @@
 import { json } from '@sveltejs/kit';
-import { DEFAULT_USER_ID } from '$lib/server/users';
 import { analyzeSpending } from '$lib/server/integrations/spending-analyzer';
 import type { RequestHandler } from './$types';
 
@@ -20,8 +19,8 @@ export const config = { maxDuration: 120 };
  *
  * Response: AnalysisResult
  */
-export const POST: RequestHandler = async ({ request }) => {
-	const userId = DEFAULT_USER_ID;
+export const POST: RequestHandler = async ({ request, locals }) => {
+	const userId = locals.userId;
 
 	let body: { accountId?: string; force?: boolean } = {};
 	try {
@@ -43,12 +42,12 @@ export const POST: RequestHandler = async ({ request }) => {
  * GET /api/economics/analyze-spending
  * Returns the current mapping stats (how many merchants classified, etc.)
  */
-export const GET: RequestHandler = async () => {
+export const GET: RequestHandler = async ({ locals }) => {
 	const { db } = await import('$lib/db');
 	const { merchantMappings } = await import('$lib/db/schema');
 	const { eq, count, sql } = await import('drizzle-orm');
 
-	const userId = DEFAULT_USER_ID;
+	const userId = locals.userId;
 
 	const [stats] = await db
 		.select({

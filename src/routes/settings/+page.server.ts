@@ -2,28 +2,36 @@ import { db } from '$lib/db';
 import { users } from '$lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { fail } from '@sveltejs/kit';
-import { ensureDefaultUser, DEFAULT_USER_ID } from '$lib/server/users';
+import { ensureUser } from '$lib/server/users';
+import {
+	acceptMarriageInvite,
+	cancelMarriageInvite,
+	declineMarriageInvite,
+	getRelationshipOverview,
+	invitePartner,
+	RelationshipError
+} from '$lib/server/relationship';
 import type { Actions, PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async () => {
-	// Ensure user exists before loading
-	await ensureDefaultUser();
+export const load: PageServerLoad = async ({ locals }) => {
+	await ensureUser(locals.userId);
 
 	const user = await db.query.users.findFirst({
-		where: eq(users.id, DEFAULT_USER_ID)
+		where: eq(users.id, locals.userId)
 	});
+	const relationship = await getRelationshipOverview(locals.userId);
 
 	return {
-		user: user || null
+		user: user || null,
+		relationship
 	};
 };
 
 export const actions = {
-	updateSettings: async ({ request }) => {
-		const userId = DEFAULT_USER_ID;
-		
-		// Ensure user exists
-		await ensureDefaultUser();
+	updateSettings: async ({ request, locals }) => {
+		const userId = locals.userId;
+
+		await ensureUser(userId);
 		
 		const data = await request.formData();
 
@@ -71,6 +79,77 @@ export const actions = {
 		} catch (error) {
 			console.error('Failed to update settings:', error);
 			return fail(500, { error: 'Kunne ikke lagre innstillinger' });
+		}
+	},
+	invitePartner: async ({ request, locals }) => {
+		const data = await request.formData();
+		const inviteeEmail = String(data.get('inviteeEmail') || '').trim();
+
+		if (!inviteeEmail) {
+			return fail(400, { error: 'Du må skrive inn e-postadressen til partneren din.' });
+		}
+
+		try {
+			await invitePartner(locals.userId, inviteeEmail);
+			return {
+				success: true,
+				message: `Invitasjon sendt til ${inviteeEmail}. Når partneren din logger inn, kan invitasjonen godkjennes i innstillingene.`
+			};
+		} catch (error) {
+			if (error instanceof RelationshipError) {
+				return fail(400, { error: error.message });
+			}
+
+			console.error('Failed to invite partner:', error);
+			return fail(500, { error: 'Kunne ikke sende partnerinvitasjonen.' });
+		}
+	},
+	acceptMarriageInvite: async ({ request, locals }) => {
+		const data = await request.formData();
+		const inviteId = String(data.get('inviteId') || '');
+
+		try {
+			await acceptMarriageInvite(inviteId, locals.userId);
+			return { success: true, message: 'Ekteskapet er bekreftet. Dere er nå koblet sammen i appen.' };
+		} catch (error) {
+			if (error instanceof RelationshipError) {
+				return fail(400, { error: error.message });
+			}
+
+			console.error('Failed to accept marriage invite:', error);
+			return fail(500, { error: 'Kunne ikke godkjenne invitasjonen.' });
+		}
+	},
+	declineMarriageInvite: async ({ request, locals }) => {
+		const data = await request.formData();
+		const inviteId = String(data.get('inviteId') || '');
+
+		try {
+			await declineMarriageInvite(inviteId, locals.userId);
+			return { success: true, message: 'Invitasjonen ble avslått.' };
+		} catch (error) {
+			if (error instanceof RelationshipError) {
+				return fail(400, { error: error.message });
+			}
+
+			console.error('Failed to decline marriage invite:', error);
+			return fail(500, { error: 'Kunne ikke avslå invitasjonen.' });
+		}
+	},
+	cancelMarriageInvite: async ({ request, locals }) => {
+		const data = await request.formData();
+		const inviteId = String(data.get('inviteId') || '');
+
+		try {
+			await cancelMarriageInvite(inviteId, locals.userId);
+			return { success: true, message: 'Partnerinvitasjonen ble trukket tilbake.' };
+		} catch (error) {
+			if (error instanceof RelationshipError) {
+				return fail(400, { error: error.message });
+			}
+
+			console.error('Failed to cancel marriage invite:', error);
+			return fail(500, { error: 'Kunne ikke trekke tilbake invitasjonen.' });
 		}
 	}
 } satisfies Actions;

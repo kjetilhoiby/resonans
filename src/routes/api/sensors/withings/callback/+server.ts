@@ -3,14 +3,13 @@ import { getAccessToken } from '$lib/server/integrations/withings';
 import { db } from '$lib/db';
 import { sensors } from '$lib/db/schema';
 import { eq } from 'drizzle-orm';
-import { DEFAULT_USER_ID } from '$lib/server/users';
 import type { RequestHandler } from './$types';
 
 /**
  * Handle Withings OAuth callback
  * GET /api/sensors/withings/callback?code=...&state=...
  */
-export const GET: RequestHandler = async ({ url }) => {
+export const GET: RequestHandler = async ({ url, locals }) => {
 	const code = url.searchParams.get('code');
 	const state = url.searchParams.get('state');
 	const error = url.searchParams.get('error');
@@ -48,7 +47,7 @@ export const GET: RequestHandler = async ({ url }) => {
 		}));
 
 		// Store or update sensor connection
-		const userId = DEFAULT_USER_ID;
+		const userId = locals.userId;
 
 		// Check if sensor already exists
 		const existingSensor = await db.query.sensors.findFirst({

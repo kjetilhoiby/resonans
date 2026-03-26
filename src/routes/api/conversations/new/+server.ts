@@ -2,15 +2,15 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { conversations } from '$lib/db/schema';
-import { ensureDefaultUser, DEFAULT_USER_ID } from '$lib/server/users';
+import { ensureUser } from '$lib/server/users';
 
-export const POST: RequestHandler = async () => {
+export const POST: RequestHandler = async ({ locals }) => {
 	try {
-		await ensureDefaultUser();
+		await ensureUser(locals.userId);
 
 		// Opprett ny samtale
 		const [newConversation] = await db.insert(conversations).values({
-			userId: DEFAULT_USER_ID,
+			userId: locals.userId,
 			title: `Ny samtale - ${new Date().toLocaleDateString('no-NO')}`
 		}).returning();
 

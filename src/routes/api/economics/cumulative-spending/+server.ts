@@ -2,10 +2,10 @@ import { json } from '@sveltejs/kit';
 import { db } from '$lib/db';
 import { sensorEvents } from '$lib/db/schema';
 import { and, eq, asc, sql } from 'drizzle-orm';
-import { DEFAULT_USER_ID } from '$lib/server/users';
 import { categorizeTransaction } from '$lib/server/integrations/transaction-categories';
 import { loadMerchantMappings } from '$lib/server/integrations/spending-analyzer';
 import { detectGlobalPayday } from '$lib/server/integrations/payday-detector';
+import type { RequestHandler } from './$types';
 
 /**
  * GET /api/economics/cumulative-spending
@@ -16,8 +16,8 @@ import { detectGlobalPayday } from '$lib/server/integrations/payday-detector';
  *   - category: filter by category (dagligvare, transport, mat, etc.)
  *   - periods: number of salary periods to return (default: 6)
  */
-export const GET = async ({ url }: { url: URL }) => {
-	const userId = DEFAULT_USER_ID;
+export const GET: RequestHandler = async ({ url, locals }) => {
+	const userId = locals.userId;
 	const accountId = url.searchParams.get('accountId');
 	const categoryFilter = url.searchParams.get('category');
 	const maxPeriods = Math.min(12, parseInt(url.searchParams.get('periods') ?? '6'));

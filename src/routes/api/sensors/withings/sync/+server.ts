@@ -2,16 +2,15 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { syncAllWithingsData } from '$lib/server/integrations/withings-sync';
 import { aggregateAllPeriods } from '$lib/server/integrations/aggregation';
-import { DEFAULT_USER_ID } from '$lib/server/users';
 
 /**
  * POST /api/sensors/withings/sync
  * 
  * Manually trigger Withings data synchronization
  */
-export const POST: RequestHandler = async () => {
+export const POST: RequestHandler = async ({ locals }) => {
 	try {
-		const userId = DEFAULT_USER_ID;
+		const userId = locals.userId;
 		
 		const results = await syncAllWithingsData(userId);
 		

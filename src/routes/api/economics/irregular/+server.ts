@@ -2,7 +2,6 @@ import { json } from '@sveltejs/kit';
 import { db } from '$lib/db';
 import { sensorEvents } from '$lib/db/schema';
 import { and, eq, sql, asc } from 'drizzle-orm';
-import { DEFAULT_USER_ID } from '$lib/server/users';
 import {
 	categorizeTransaction,
 	type CategoryId
@@ -57,8 +56,8 @@ export type IrregularResponse = {
  * Excludes groceries and fixed recurring charges.
  * Merchants are ranked by total spend.
  */
-export const GET: RequestHandler = async ({ url }) => {
-	const userId = DEFAULT_USER_ID;
+export const GET: RequestHandler = async ({ url, locals }) => {
+	const userId = locals.userId;
 	const accountId = url.searchParams.get('accountId');
 	const monthsBack = Math.min(24, parseInt(url.searchParams.get('months') ?? '18'));
 	const minAmount = parseInt(url.searchParams.get('minAmount') ?? '500');

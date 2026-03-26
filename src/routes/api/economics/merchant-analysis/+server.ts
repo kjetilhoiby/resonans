@@ -2,7 +2,6 @@ import { json } from '@sveltejs/kit';
 import { db } from '$lib/db';
 import { sensorEvents } from '$lib/db/schema';
 import { and, eq, sql } from 'drizzle-orm';
-import { DEFAULT_USER_ID } from '$lib/server/users';
 import { categorizeTransaction } from '$lib/server/integrations/transaction-categories';
 import { loadMerchantMappings } from '$lib/server/integrations/spending-analyzer';
 import type { RequestHandler } from './$types';
@@ -16,8 +15,8 @@ import type { RequestHandler } from './$types';
  *  - Period clusters: merchants concentrated in a short time window (renovations, gifts…)
  *  - Subscriptions: monthly fixed services with creep detection
  */
-export const GET: RequestHandler = async ({ url }) => {
-	const userId = DEFAULT_USER_ID;
+export const GET: RequestHandler = async ({ url, locals }) => {
+	const userId = locals.userId;
 	const accountId = url.searchParams.get('accountId');
 	const monthsBack = Math.min(24, parseInt(url.searchParams.get('months') ?? '13'));
 

@@ -34,6 +34,7 @@
 
 	const user = $derived(data.user);
 	const settings = $derived(user?.notificationSettings || {});
+	const relationship = $derived(data.relationship);
 
 	// Check Withings status on mount
 	onMount(async () => {
@@ -279,7 +280,7 @@
 <div class="settings-page">
 	<header class="page-header">
 		<div class="header-top">
-			<a href="/" class="back-button">
+			<a href="/" class="back-button" aria-label="Tilbake til forsiden">
 				<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
 					<path d="M12.5 15L7.5 10L12.5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
 				</svg>
@@ -291,7 +292,7 @@
 	<main class="content">
 		{#if form?.success}
 			<div class="alert success">
-				✅ Innstillingene dine ble lagret!
+				✅ {form.message || 'Innstillingene dine ble lagret!'}
 			</div>
 		{/if}
 
@@ -310,6 +311,77 @@
 Settings: {JSON.stringify(settings, null, 2)}</pre>
 			</div>
 		{/if}
+
+		<section class="settings-card">
+			<div class="card-icon">💍</div>
+			<h2>Partner</h2>
+			<p class="help-text">
+				Inviter ektefellen din inn i appen, og la den andre parten bekrefte koblingen.
+			</p>
+
+			{#if relationship?.partner}
+				<div class="notification-option" style="background: var(--success-bg); border-color: var(--success-border);">
+					<div class="option-info">
+						<strong style="color: var(--success-text);">✅ Ekteskapet er bekreftet</strong>
+						<p style="color: var(--success-text);">
+							Du er koblet til {relationship.partner.name || relationship.partner.email}.
+						</p>
+					</div>
+				</div>
+			{:else}
+				{#if relationship?.incomingInvite}
+					<div class="notification-option" style="margin-bottom: 1rem;">
+						<div class="option-info">
+							<strong>Innkommende partnerinvitasjon</strong>
+							<p>{relationship.incomingInvite.inviterName} vil bekrefte ekteskapet med deg.</p>
+						</div>
+						<div style="display:flex; gap:0.75rem; flex-wrap:wrap; margin-top:0.75rem;">
+							<form method="POST" action="?/acceptMarriageInvite">
+								<input type="hidden" name="inviteId" value={relationship.incomingInvite.id} />
+								<button type="submit" class="primary-button">💞 Godta</button>
+							</form>
+							<form method="POST" action="?/declineMarriageInvite">
+								<input type="hidden" name="inviteId" value={relationship.incomingInvite.id} />
+								<button type="submit" class="secondary-button">Nei takk</button>
+							</form>
+						</div>
+					</div>
+				{/if}
+
+				{#if relationship?.outgoingInvite}
+					<div class="notification-option" style="margin-bottom: 1rem;">
+						<div class="option-info">
+							<strong>Invitasjon sendt</strong>
+							<p>
+								Venter på svar fra {relationship.outgoingInvite.inviteeEmail}.
+							</p>
+						</div>
+						<form method="POST" action="?/cancelMarriageInvite" style="margin-top:0.75rem;">
+							<input type="hidden" name="inviteId" value={relationship.outgoingInvite.id} />
+							<button type="submit" class="secondary-button">Trekk tilbake invitasjonen</button>
+						</form>
+					</div>
+				{:else}
+					<form method="POST" action="?/invitePartner">
+						<div class="form-group">
+							<label for="inviteeEmail">Partnerens e-postadresse</label>
+							<input
+								type="email"
+								id="inviteeEmail"
+								name="inviteeEmail"
+								placeholder="partner@example.com"
+								class="input"
+								required
+							/>
+							<small class="hint">
+								Når invitasjonen er sendt, blir e-posten også lagt til i invite-only-listen.
+							</small>
+						</div>
+						<button type="submit" class="primary-button">💌 Send partnerinvitasjon</button>
+					</form>
+				{/if}
+			{/if}
+		</section>
 
 		<form 
 			method="POST" 
