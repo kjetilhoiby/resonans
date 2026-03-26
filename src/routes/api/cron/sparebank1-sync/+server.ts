@@ -1,49 +1,58 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
-import { DEFAULT_USER_ID } from '$lib/server/users';
+import { db } from '$lib/db';
+import { sensors } from '$lib/db/schema';
+import { and, eq } from 'drizzle-orm';
 import { syncAllSparebank1Data } from '$lib/server/integrations/sparebank1-sync';
 
-// Allow up to 60 seconds for incremental sync
-export const config = { maxDuration: 60 };
+// Allow up to 120 seconds — syncs multiple users sequentially
+export const config = { maxDuration: 120 };
 
 /**
- * Vercel Cron endpoint — synkroniserer SpareBank 1-data inkrementelt
- * Kjøres automatisk hver 6. time via GitHub Actions (se .github/workflows/cron.yml)
  * GET /api/cron/sparebank1-sync
+ * Synkroniserer SpareBank 1-data for alle brukere med en aktiv SpareBank 1-sensor.
+ * Kjøres automatisk via GitHub Actions (se /api/cron/jobs for schedule).
  */
 export const GET: RequestHandler = async ({ request }) => {
-	// Verify Vercel Cron secret
 	const authHeader = request.headers.get('authorization');
-	if (env.VERCEL_ENV && authHeader !== `Bearer ${env.CRON_SECRET}`) {
+	if (env.CRON_SECRET && authHeader !== `Bearer ${env.CRON_SECRET}`) {
 		return json({ error: 'Unauthorized' }, { status: 401 });
 	}
 
-	try {
-		const userId = DEFAULT_USER_ID;
+	// Find all users with an active SpareBank 1 sensor
+	const activeSensors = await db.query.sensors.findMany({
+		where: and(eq(sensors.provider, 'sparebank1'), eq(sensors.isActive, true))
+	});
 
-		// Fetch last 2 days to catch any delayed/corrected transactions
-		const fromDate = new Date();
-		fromDate.setDate(fromDate.getDate() - 2);
+	const userIds = [...new Set(activeSensors.map((s) => s.userId))];
+	console.log(`[SB1 cron sync] ${userIds.length} user(s) to sync`);
 
-		console.log(`[SB1 cron sync] Starting incremental sync from ${fromDate.toISOString().slice(0, 10)}…`);
+	// Fetch last 2 days to catch any delayed/corrected transactions
+	const fromDate = new Date();
+	fromDate.setDate(fromDate.getDate() - 2);
+	const fromDateStr = fromDate.toISOString().slice(0, 10);
 
-		const synced = await syncAllSparebank1Data(userId, { fromDate });
+	const results: Record<string, unknown>[] = [];
 
-		console.log(
-			`[SB1 cron sync] Done: ${synced.accounts} kontoer, ` +
-			`${synced.balanceEvents} saldo-events, ` +
-			`${synced.transactionEvents} nye transaksjoner`
-		);
-
-		return json({
-			success: true,
-			fromDate: fromDate.toISOString().slice(0, 10),
-			synced
-		});
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		console.error('[SB1 cron sync] Error:', message);
-		return json({ success: false, error: message }, { status: 500 });
+	for (const userId of userIds) {
+		try {
+			console.log(`[SB1 cron sync] user=${userId} from=${fromDateStr}…`);
+			const synced = await syncAllSparebank1Data(userId, { fromDate });
+			console.log(
+				`[SB1 cron sync] user=${userId} done: ${synced.accounts} kontoer, ` +
+					`${synced.balanceEvents} saldo-events, ${synced.transactionEvents} transaksjoner`
+			);
+			results.push({ userId, success: true, synced });
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			console.error(`[SB1 cron sync] user=${userId} failed: ${message}`);
+			results.push({ userId, success: false, error: message });
+		}
 	}
+
+	const succeeded = results.filter((r) => r.success).length;
+	const failed = results.filter((r) => !r.success).length;
+
+	return json({ success: true, fromDate: fromDateStr, users: userIds.length, succeeded, failed, results });
 };

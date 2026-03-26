@@ -20,6 +20,12 @@ export type CronJob = {
 
 const JOBS: CronJob[] = [
 	{
+		path: '/api/cron/aggregate',
+		schedule: '0 0 * * *', // midnatt UTC
+		description: 'Nattlig aggregering — ukentlig/månedlig/årlig (alle brukere)',
+		maxDurationSeconds: 300
+	},
+	{
 		path: '/api/cron/daily-checkin',
 		schedule: '0 9 * * *',
 		description: 'Daglig check-in melding via Google Chat'
@@ -27,8 +33,14 @@ const JOBS: CronJob[] = [
 	{
 		path: '/api/cron/sparebank1-sync',
 		schedule: '0 */6 * * *', // hver 6. time
-		description: 'SpareBank 1 inkrementell synk',
-		maxDurationSeconds: 60
+		description: 'SpareBank 1 inkrementell synk (alle brukere)',
+		maxDurationSeconds: 120
+	},
+	{
+		path: '/api/cron/withings-sync',
+		schedule: '*/5 5-22 * * *', // hvert 5. minutt mellom 05:00–22:00 UTC
+		description: 'Withings sensordata synk (alle brukere)',
+		maxDurationSeconds: 120
 	}
 ];
 

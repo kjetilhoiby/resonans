@@ -1,12 +1,8 @@
 import cron from 'node-cron';
 import { env } from '$env/dynamic/private';
 import { db } from '$lib/db';
-import { users } from '$lib/db/schema';
 import { getUserActiveGoalsAndTasks } from '$lib/server/goals';
 import { sendGoogleChatMessage, buildDailyCheckInMessage } from '$lib/server/google-chat';
-import { syncAllWithingsData } from '$lib/server/integrations/withings-sync';
-import { aggregateAllPeriods } from '$lib/server/integrations/aggregation';
-import { DEFAULT_USER_ID } from '$lib/server/users';
 
 /**
  * In-app cron scheduler using node-cron
@@ -37,62 +33,12 @@ export function startScheduler() {
 		}
 	);
 
-	// Withings synk hver time
-	// '0 * * * *' = hvert hele time
-	cron.schedule(
-		'0 * * * *',
-		async () => {
-			console.log('🔄 Running hourly Withings sync at', new Date().toISOString());
-			await syncWithingsData();
-		},
-		{
-			timezone: 'Europe/Oslo'
-		}
-	);
-
-	// Withings synk hvert 5. minutt (dagtid: 05:00-23:00)
-	// '*/5 5-22 * * *' = hvert 5. minutt mellom 05:00 og 22:59
-	cron.schedule(
-		'*/5 5-22 * * *',
-		async () => {
-			console.log('🔄 Running 5-min Withings sync at', new Date().toISOString());
-			await syncWithingsData();
-		},
-		{
-			timezone: 'Europe/Oslo'
-		}
-	);
-
-	// Nattlig aggregering kl 00:00 (reduserer datatrafikk dramatisk)
-	// '0 0 * * *' = hver dag kl 00:00
-	cron.schedule(
-		'0 0 * * *',
-		async () => {
-			console.log('📊 Running nightly aggregation at', new Date().toISOString());
-			try {
-				const userId = DEFAULT_USER_ID;
-				await aggregateAllPeriods(userId);
-				console.log('✅ Nightly aggregation complete');
-			} catch (error) {
-				console.error('❌ Nightly aggregation failed:', error);
-			}
-		},
-		{
-			timezone: 'Europe/Oslo'
-		}
-	);
-
-	// Test: Send check-in hver 5. minutt (kun for testing - fjern i produksjon)
-	// cron.schedule('*/5 * * * *', async () => {
-	// 	console.log('🧪 Test check-in at', new Date().toISOString());
-	// 	await sendDailyCheckIns();
-	// });
+	// Withings-synk og nattlig aggregering håndteres av GitHub Actions cron
+	// via /api/cron/withings-sync og /api/cron/aggregate (se /api/cron/jobs).
 
 	isSchedulerRunning = true;
 	console.log('✅ Scheduler started:');
 	console.log('   - Daily check-in at 09:00 Europe/Oslo');
-	console.log('   - Withings sync every 5 min (05:00-23:00)');
-	console.log('   - Withings sync every hour (23:00-05:00)');
 }
 
 async function sendDailyCheckIns() {
@@ -190,35 +136,3 @@ async function sendDailyCheckIns() {
 	}
 }
 
-// Track if sync is currently running to prevent concurrent syncs
-let syncInProgress = false;
-
-async function syncWithingsData() {
-	// Prevent concurrent syncs
-	if (syncInProgress) {
-		console.log('⏭️  Skipping Withings sync - already in progress');
-		return;
-	}
-
-	try {
-		syncInProgress = true;
-		console.log('🔄 Starting Withings data sync...');
-		
-		const userId = DEFAULT_USER_ID;
-		
-		// Incremental sync (only new data since last sync)
-		const results = await syncAllWithingsData(userId, false);
-		
-		const totalSynced = results.weight + results.activity + results.sleep + results.workouts;
-		console.log(`✅ Withings sync complete: ${totalSynced} new events (aggregation runs nightly at 00:00)`);
-	} catch (error) {
-		console.error('❌ Withings sync job failed:', error);
-		// Log the full error for debugging
-		if (error instanceof Error) {
-			console.error('   Error details:', error.message);
-			console.error('   Stack:', error.stack);
-		}
-	} finally {
-		syncInProgress = false;
-	}
-}
