@@ -1,5 +1,5 @@
 import { db } from '$lib/db';
-import { goals, tasks, categories } from '$lib/db/schema';
+import { goals, tasks, categories, sensorGoals } from '$lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { findSimilar } from './similarity';
 
@@ -151,4 +151,47 @@ export async function findSimilarTasks(goalId: string, title: string, threshold 
 		unit: item.unit,
 		similarity
 	}));
+}
+
+/**
+ * Enable automatic sensor-based progress tracking for a goal
+ * E.g., link a "Run 3x/week" goal to Withings workout data (metricType='running')
+ * Once linked, new workouts matching the metricType will auto-create progress records
+ */
+export async function enableSensorGoalTracking(
+	goalId: string,
+	metricType: string,
+	options?: {
+		targetValue?: number;
+		unit?: string;
+	}
+) {
+	// Check if this sensor goal already exists
+	const existing = await db.query.sensorGoals.findFirst({
+		where: eq(sensorGoals.goalId, goalId)
+	});
+
+	if (existing) {
+		console.log(`[goals] sensor goal already exists for goal=${goalId}`);
+		return existing;
+	}
+
+	// Create new sensor goal linking
+	const [sensorGoal] = await db
+		.insert(sensorGoals)
+		.values({
+			goalId,
+			metricType,
+			targetValue: options?.targetValue ? String(options.targetValue) : null,
+			unit: options?.unit || null,
+			autoUpdate: true,
+			lastUpdated: new Date(),
+			createdAt: new Date()
+		})
+		.returning();
+
+	console.log(
+		`[goals] enabled auto-tracking for goal=${goalId} with metricType=${metricType}`
+	);
+	return sensorGoal;
 }

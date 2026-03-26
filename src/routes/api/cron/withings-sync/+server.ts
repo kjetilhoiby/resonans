@@ -5,6 +5,7 @@ import { db } from '$lib/db';
 import { sensors } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { syncAllWithingsData } from '$lib/server/integrations/withings-sync';
+import { registerWorkoutsAsProgress } from '$lib/server/sensor-goal-automation';
 
 // Allow up to 120 seconds — syncs multiple users sequentially
 export const config = { maxDuration: 120 };
@@ -29,14 +30,25 @@ export const GET: RequestHandler = async ({ request }) => {
 	const userIds = [...new Set(withingsSensors.map((s) => s.userId))];
 	console.log(`[withings-sync cron] ${userIds.length} user(s) to sync`);
 
-	const results: Record<string, unknown>[] = [];
+	const results: Array<Record<string, unknown>> = [];
 
 	for (const userId of userIds) {
 		try {
+			const syncStartTime = new Date();
 			const synced = await syncAllWithingsData(userId, false);
 			const total = synced.weight + synced.activity + synced.sleep + synced.workouts;
 			console.log(`[withings-sync cron] user=${userId} synced ${total} new events`);
-			results.push({ userId, success: true, synced });
+
+			// Auto-register workouts as progress if sensor goals exist
+			let automation: Record<string, unknown> = { registered: 0, errors: [] };
+			try {
+				automation = await registerWorkoutsAsProgress(userId, syncStartTime);
+			} catch (err) {
+				const msg = err instanceof Error ? err.message : String(err);
+				console.error(`[withings-sync cron] automation failed for user=${userId}: ${msg}`);
+			}
+
+			results.push({ userId, success: true, synced, automation });
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
 			console.error(`[withings-sync cron] user=${userId} failed: ${message}`);

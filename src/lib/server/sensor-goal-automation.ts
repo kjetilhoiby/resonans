@@ -1,0 +1,193 @@
+import { db } from '$lib/db';
+import { progress, sensorGoals, sensorEvents } from '$lib/db/schema';
+import { eq, and, gte } from 'drizzle-orm';
+import { randomUUID } from 'crypto';
+
+/**
+ * After Withings sync completes, this function:
+ * 1. Queries newly synced sensorEvents with dataType='workout'
+ * 2. Maps workout types (running, cycling, etc.) to sensorGoals
+ * 3. Creates progress records linked to those workouts
+ *
+ * Called from /api/cron/withings-sync after syncAllWithingsData()
+ */
+export async function registerWorkoutsAsProgress(userId: string, syncStartTime: Date) {
+	console.log(`[sensor-automation] user=${userId} registering workouts from last sync...`);
+
+	// Query sensorEvents created during this sync
+	const newWorkouts = await db.query.sensorEvents.findMany({
+		where: and(
+			eq(sensorEvents.userId, userId),
+			eq(sensorEvents.dataType, 'workout'),
+			gte(sensorEvents.createdAt, syncStartTime)
+		)
+	});
+
+	if (!newWorkouts.length) {
+		console.log(`[sensor-automation] user=${userId} no new workouts to register`);
+		return { registered: 0, errors: [] };
+	}
+
+	console.log(
+		`[sensor-automation] user=${userId} found ${newWorkouts.length} new workouts, matching to sensor goals...`
+	);
+
+	const errors: string[] = [];
+	let registered = 0;
+
+	// Find all sensor goals for this user with autoUpdate enabled
+	const userSensorGoals = await db.query.sensorGoals.findMany({
+		where: eq(sensorGoals.autoUpdate, true),
+		with: {
+			goal: {
+				with: {
+					tasks: true
+				}
+			}
+		}
+	});
+
+	// Filter to only goals for this user
+	const applicableSensorGoals = userSensorGoals.filter((sg) => sg.goal.userId === userId);
+
+	if (!applicableSensorGoals.length) {
+		console.log(`[sensor-automation] user=${userId} has no auto-update sensor goals`);
+		return { registered: 0, errors: [] };
+	}
+
+	// For each workout, try to match it to sensor goals
+	for (const sensorEvent of newWorkouts) {
+		try {
+			const sportType = sensorEvent.data?.sportType as string; // e.g., 'running'
+
+			if (!sportType) {
+				console.log(`[sensor-automation] sensorEvent ${sensorEvent.id} has no sportType`);
+				continue;
+			}
+
+			// Map sport type to metricType for matching
+			const metricTypesToMatch = getMetricTypesForSportType(sportType);
+
+			// Find matching sensor goals
+			const matchingSensorGoals = applicableSensorGoals.filter((sg) =>
+				metricTypesToMatch.includes(sg.metricType)
+			);
+
+			if (!matchingSensorGoals.length) {
+				console.log(
+					`[sensor-automation] user=${userId} sportType=${sportType} has no matching sensor goals`
+				);
+				continue;
+			}
+
+			// For each matching sensor goal, create a progress record on the associated task
+			for (const sensorGoal of matchingSensorGoals) {
+				try {
+					// Find the first active task in this goal to link the progress to
+					const targetTask = sensorGoal.goal.tasks.find((t) => t.status === 'active');
+
+					if (!targetTask) {
+						console.log(
+							`[sensor-automation] sensor goal ${sensorGoal.id} has no active tasks`
+						);
+						continue;
+					}
+
+					// Create a progress record with value=1 (one workout completed)
+					const progressId = randomUUID();
+					await db.insert(progress).values({
+						id: progressId,
+						taskId: targetTask.id,
+						userId,
+						value: 1,
+						note: getProgressNote(sensorEvent),
+						completedAt: sensorEvent.timestamp,
+						createdAt: new Date()
+					});
+
+					console.log(
+						`[sensor-automation] user=${userId} created progress for task=${targetTask.id} from workout=${sensorEvent.id}`
+					);
+					registered++;
+				} catch (err) {
+					const msg = err instanceof Error ? err.message : String(err);
+					console.error(`[sensor-automation] error creating progress: ${msg}`);
+					errors.push(`Could not create progress for sensor goal ${sensorGoal.id}: ${msg}`);
+				}
+			}
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			console.error(`[sensor-automation] error processing workout: ${msg}`);
+			errors.push(`Could not process sensorEvent ${sensorEvent.id}: ${msg}`);
+		}
+	}
+
+	console.log(
+		`[sensor-automation] complete: ${registered} progress records created, ${errors.length} errors`
+	);
+	return { registered, errors };
+}
+
+
+/**
+ * Maps sport types to the metricTypes they should update in sensorGoals
+ * e.g., 'running' -> ['workouts', 'runs']
+ */
+function getMetricTypesForSportType(sportType: string): string[] {
+	const mapping: Record<string, string[]> = {
+		running: ['workouts', 'runs', 'running'],
+		cycling: ['workouts', 'cycling'],
+		swimming: ['workouts', 'swimming'],
+		walking: ['workouts', 'walking'],
+		hiking: ['workouts', 'hiking'],
+		trail: ['workouts', 'trail_running', 'hiking'],
+		tennis: ['workouts', 'tennis'],
+		volleyball: ['workouts', 'volleyball'],
+		badminton: ['workouts', 'badminton'],
+		basketball: ['workouts', 'basketball'],
+		// Add more as needed
+	};
+
+	return mapping[sportType.toLowerCase()] || [];
+}
+
+/**
+ * Generate a human-readable note for the progress record from a sensorEvent
+ */
+function getProgressNote(sensorEvent: {
+	data?: Record<string, any> | null;
+	timestamp: Date;
+}): string {
+	const parts: string[] = [];
+	const data = sensorEvent.data || {};
+
+	// Sport type
+	if (data.sportType) {
+		const sport = String(data.sportType)
+			.toLowerCase()
+			.charAt(0)
+			.toUpperCase() + String(data.sportType).slice(1);
+		parts.push(sport);
+	}
+
+	// Distance if available (convert from meters to km)
+	if (data.distance) {
+		const distKm = (Number(data.distance) / 1000).toFixed(1);
+		parts.push(`${distKm} km`);
+	}
+
+	// Duration if available (convert from seconds to min/hours)
+	if (data.duration) {
+		const seconds = Number(data.duration);
+		const minutes = Math.round(seconds / 60);
+		const hours = Math.floor(minutes / 60);
+		const mins = minutes % 60;
+		if (hours > 0) {
+			parts.push(`${hours}h ${mins}m`);
+		} else {
+			parts.push(`${minutes}m`);
+		}
+	}
+
+	return parts.length > 0 ? parts.join(' • ') : 'Workout logged';
+}
