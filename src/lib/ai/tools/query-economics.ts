@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { db } from '$lib/db';
 import { sensorEvents } from '$lib/db/schema';
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { eq, and, desc, asc, sql } from 'drizzle-orm';
+import { detectGlobalPayday } from '$lib/server/integrations/payday-detector';
 
 export const queryEconomicsTool = {
 	name: 'query_economics',
@@ -17,7 +18,7 @@ Use this tool when user asks about:
 Query types:
 - 'balance': Get current/latest account balances
 - 'transactions': Get transactions for a specific period (requires month or dateRange)
-- 'spending_summary': Get spending by category for a period (requires month)
+- 'spending_summary': Get spending by category for a period (requires month or payPeriod)
 - 'account_list': List all connected accounts
 
 The tool returns actual data from your bank that you can trust.`,
@@ -28,6 +29,7 @@ The tool returns actual data from your bank that you can trust.`,
 			'balance: Get current account balances. transactions: Get individual transactions. spending_summary: Get spending by category. account_list: List all accounts.'
 		),
 		month: z.string().optional().describe('Month in YYYY-MM format (e.g., "2026-01")'),
+		payPeriod: z.enum(['current']).optional().describe('Use "current" to query from the last payday until today (i.e. the current salary month). Preferred over "month" for questions about "this pay month" or "hittil denne lønnsmåneden".'),
 		dateRange: z.object({
 			start: z.string().describe('Start date in YYYY-MM-DD format'),
 			end: z.string().describe('End date in YYYY-MM-DD format')
@@ -41,12 +43,24 @@ The tool returns actual data from your bank that you can trust.`,
 		userId: string;
 		queryType: 'balance' | 'transactions' | 'spending_summary' | 'account_list';
 		month?: string;
+		payPeriod?: 'current';
 		dateRange?: { start: string; end: string };
 		accountId?: string;
 		limit?: number;
 		sortBy?: 'date' | 'amount';
 	}) => {
-		const { userId, queryType, month, dateRange, accountId, limit = 50, sortBy = 'date' } = args;
+		const { userId, queryType, month, payPeriod, dateRange, accountId, limit = 50, sortBy = 'date' } = args;
+
+		// Resolve pay-period into a concrete dateRange
+		let resolvedDateRange = dateRange;
+		if (payPeriod === 'current' && !resolvedDateRange && !month) {
+			const payday = await detectGlobalPayday(userId);
+			if (payday && payday.paydayDates.length > 0) {
+				const lastPayday = payday.paydayDates[payday.paydayDates.length - 1];
+				const today = new Date().toISOString().split('T')[0];
+				resolvedDateRange = { start: lastPayday, end: today };
+			}
+		}
 
 		try {
 			// Get account list
@@ -158,7 +172,7 @@ The tool returns actual data from your bank that you can trust.`,
 
 			// Get transactions
 			if (queryType === 'transactions') {
-				if (!month && !dateRange) {
+				if (!month && !resolvedDateRange) {
 					return {
 						success: false,
 						message: 'Please specify either "month" (YYYY-MM) or "dateRange" with start/end dates'
@@ -167,10 +181,11 @@ The tool returns actual data from your bank that you can trust.`,
 
 				let from: Date;
 				let to: Date;
+				const txPeriodLabel = month || (resolvedDateRange ? `${resolvedDateRange.start} to ${resolvedDateRange.end}` : 'the specified period');
 
-				if (dateRange) {
-					from = new Date(dateRange.start);
-					to = new Date(dateRange.end);
+				if (resolvedDateRange) {
+					from = new Date(resolvedDateRange.start);
+					to = new Date(resolvedDateRange.end);
 					to.setDate(to.getDate() + 1);
 				} else if (month) {
 					const [year, mo] = month.split('-').map(Number);
@@ -217,11 +232,11 @@ The tool returns actual data from your bank that you can trust.`,
 						data: {
 							transactions: [],
 							count: 0,
-							period: month || `${dateRange?.start} to ${dateRange?.end}`,
+							period: txPeriodLabel,
 							totalSpent: 0,
 							totalIncome: 0
 						},
-						message: `No transactions found for ${month || 'the specified period'}`
+						message: `No transactions found for ${txPeriodLabel}`
 					};
 				}
 
@@ -243,7 +258,7 @@ The tool returns actual data from your bank that you can trust.`,
 							category: t.category
 						})),
 						count: transactions.length,
-						period: month || `${dateRange?.start} to ${dateRange?.end}`,
+						period: txPeriodLabel,
 						totalSpent: Math.abs(totalSpent),
 						totalIncome,
 						net: totalSpent + totalIncome
@@ -254,7 +269,7 @@ The tool returns actual data from your bank that you can trust.`,
 
 			// Get spending summary by category
 			if (queryType === 'spending_summary') {
-				if (!month && !dateRange) {
+				if (!month && !resolvedDateRange) {
 					return {
 						success: false,
 						message: 'Please specify either "month" (YYYY-MM) or "dateRange" with start/end dates'
@@ -263,15 +278,18 @@ The tool returns actual data from your bank that you can trust.`,
 
 				let from: Date;
 				let to: Date;
+				let periodLabel: string;
 
-				if (dateRange) {
-					from = new Date(dateRange.start);
-					to = new Date(dateRange.end);
+				if (resolvedDateRange) {
+					from = new Date(resolvedDateRange.start);
+					to = new Date(resolvedDateRange.end);
 					to.setDate(to.getDate() + 1);
+					periodLabel = `${resolvedDateRange.start} to ${resolvedDateRange.end}`;
 				} else if (month) {
 					const [year, mo] = month.split('-').map(Number);
 					from = new Date(year, mo - 1, 1);
 					to = new Date(year, mo, 1);
+					periodLabel = month;
 				} else {
 					return {
 						success: false,
@@ -294,7 +312,7 @@ The tool returns actual data from your bank that you can trust.`,
 							sql`timestamp < ${to.toISOString()}`
 						);
 
-				const transactions = await db
+				const allTxs = await db
 					.select({
 						amount: sql<number>`(data->>'amount')::numeric`,
 						category: sql<string>`data->>'category'`,
@@ -303,48 +321,49 @@ The tool returns actual data from your bank that you can trust.`,
 					.from(sensorEvents)
 					.where(where);
 
+				// Only count outgoing (spending) transactions — amount < 0
+				const transactions = allTxs.filter((tx) => (Number(tx.amount) || 0) < 0);
+
+				if (transactions.length === 0) {
+					return {
+						success: true,
+						data: { categories: [], totalSpent: 0, period: periodLabel, topCategories: [] },
+						message: `No spending transactions found for ${periodLabel}`
+					};
+				}
+
 				// Group by category
 				const byCategory = new Map<string, { total: number; count: number }>();
 				for (const tx of transactions) {
 					const cat = tx.category || 'Annet';
 					const current = byCategory.get(cat) || { total: 0, count: 0 };
 					byCategory.set(cat, {
-						total: current.total + (tx.amount || 0),
+						total: current.total + (Number(tx.amount) || 0),
 						count: current.count + 1
 					});
 				}
 
-				// Sort by amount
+				// Sort by absolute spending (largest first)
 				const sorted = Array.from(byCategory.entries())
 					.map(([cat, data]) => ({
 						category: cat,
-						total: data.total,
+						spent: Math.abs(data.total),
 						count: data.count,
-						avg: data.total / data.count
+						avg: Math.abs(data.total / data.count)
 					}))
-					.sort((a, b) => b.total - a.total);
+					.sort((a, b) => b.spent - a.spent);
 
-				const totalSpent = sorted
-					.filter((c) => c.total < 0)
-					.reduce((sum, c) => sum + c.total, 0);
+				const totalSpent = sorted.reduce((sum, c) => sum + c.spent, 0);
 
 				return {
 					success: true,
 					data: {
-						categories: sorted.map(c => ({
-							category: c.category,
-							spent: Math.abs(c.total),
-							count: c.count,
-							avg: Math.abs(c.avg)
-						})),
-						totalSpent: Math.abs(totalSpent),
-						period: month || `${dateRange?.start} to ${dateRange?.end}`,
-						topCategories: sorted
-							.filter((c) => c.total < 0)
-							.slice(0, 5)
-							.map((c) => ({ category: c.category, spent: Math.abs(c.total) }))
+						categories: sorted,
+						totalSpent,
+						period: periodLabel,
+						topCategories: sorted.slice(0, 5)
 					},
-					message: `Total spent: ${Math.abs(totalSpent).toLocaleString('nb-NO')} kr across ${sorted.length} categories`
+					message: `Total spent: ${totalSpent.toLocaleString('nb-NO')} kr across ${sorted.length} spending categories (period: ${periodLabel})`
 				};
 			}
 

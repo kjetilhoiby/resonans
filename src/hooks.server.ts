@@ -8,7 +8,7 @@ import { resolveRequestUserId } from '$lib/server/request-user';
 // Start scheduler when server starts
 startScheduler();
 
-const PUBLIC_PATH_PREFIXES = ['/auth', '/_app'];
+const PUBLIC_PATH_PREFIXES = ['/auth', '/_app', '/design'];
 const PUBLIC_API_PREFIXES = ['/api/cron', '/api/scheduler/trigger'];
 
 function isPublicPath(pathname: string) {

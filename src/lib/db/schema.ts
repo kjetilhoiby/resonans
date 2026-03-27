@@ -178,6 +178,28 @@ export const reminders = pgTable('reminders', {
 	createdAt: timestamp('created_at').defaultNow().notNull()
 });
 
+// Brukerdefinerbare widgets til hjemmeskjerm
+// Hvert widget er en dynamisk dataspørring: metrikk × aggregering × periode × range
+export const userWidgets = pgTable('user_widgets', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id).notNull(),
+	title: text('title').notNull(),                         // "Snitt søvn siste 7 dager"
+	metricType: text('metric_type').notNull(),              // 'weight'|'sleepDuration'|'steps'|'distance'|'amount'|'workoutCount'|'heartrate'|'mood'
+	aggregation: text('aggregation').notNull(),             // 'avg'|'sum'|'count'|'latest'
+	period: text('period').notNull(),                       // 'day'|'week'|'month'
+	range: text('range').notNull(),                         // 'last7'|'last14'|'last30'|'current_week'|'current_month'|'current_year'
+	goal: decimal('goal'),                                  // Brukerens målverdi (nullable)
+	thresholdWarn: decimal('threshold_warn'),               // Verdi under/over hvilken widgeten viser advarsel
+	thresholdSuccess: decimal('threshold_success'),         // Verdi over/under hvilken widgeten viser suksess
+	unit: text('unit').notNull(),                           // 'kg'|'h'|'km'|'kr'|'skritt'|'slag/min' etc.
+	filterCategory: text('filter_category'),                // Valgfri kategorifilter for amount-metrikk (f.eks. 'dagligvare', 'mat', 'transport')
+	color: text('color').notNull().default('#7c8ef5'),      // Hex-farge for widget
+	pinned: boolean('pinned').default(false).notNull(),     // Vises på hjemmeskjerm
+	sortOrder: integer('sort_order').default(0).notNull(),  // Rekkefølge på hjemmeskjerm
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+});
+
 // Memories - Viktig informasjon om brukeren som AI husker
 export const memories = pgTable('memories', {
 	id: uuid('id').primaryKey().defaultRandom(),
@@ -198,6 +220,7 @@ export const usersRelations = relations(users, ({ many }) => ({
 	conversations: many(conversations),
 	activities: many(activities),
 	memories: many(memories),
+	userWidgets: many(userWidgets),
 	themes: many(themes),
 	authAccounts: many(authAccounts),
 	allowedEmails: many(allowedEmails),

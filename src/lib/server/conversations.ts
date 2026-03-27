@@ -1,6 +1,6 @@
 import { db } from '$lib/db';
 import { conversations, messages } from '$lib/db/schema';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, and } from 'drizzle-orm';
 
 export interface CreateConversationParams {
 	userId: string;
@@ -56,6 +56,16 @@ export async function getConversationMessages(conversationId: string) {
 	return await db.query.messages.findMany({
 		where: eq(messages.conversationId, conversationId),
 		orderBy: (messages, { asc }) => [asc(messages.createdAt)]
+	});
+}
+
+/**
+ * Henter en spesifikk samtale og verifiserer at den tilhører brukeren.
+ * Returnerer null om ikke funnet eller feil bruker.
+ */
+export async function getConversationByIdForUser(conversationId: string, userId: string) {
+	return await db.query.conversations.findFirst({
+		where: and(eq(conversations.id, conversationId), eq(conversations.userId, userId))
 	});
 }
 

@@ -148,6 +148,15 @@ const RULES: Rule[] = [
 	},
 ];
 
+export { RULES };
+
+/** Returns the keyword list for a given category ID, or null if unknown. */
+export function getKeywordsForCategory(categoryId: string): string[] | null {
+	const rules = RULES.filter((r) => r.category === categoryId);
+	if (rules.length === 0) return null;
+	return rules.flatMap((r) => r.keywords);
+}
+
 export type CategorizeResult = {
 	category: CategoryId;
 	label: string;

@@ -2,11 +2,14 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { openai, SYSTEM_PROMPT } from '$lib/server/openai';
 import { createGoal, createTask, getUserActiveGoalsAndTasks, findSimilarGoals, findSimilarTasks } from '$lib/server/goals';
-import { getOrCreateConversation, addMessage, getConversationHistory } from '$lib/server/conversations';
+import { getOrCreateConversation, addMessage, getConversationHistory, getConversationByIdForUser } from '$lib/server/conversations';
 import { logActivity } from '$lib/server/activities';
 import { buildMemoryContext, createMemory } from '$lib/server/memories';
 import { queryEconomicsTool } from '$lib/ai/tools/query-economics';
 import { USER_ID_HEADER_NAME } from '$lib/server/request-user';
+import { db } from '$lib/db';
+import { userWidgets } from '$lib/db/schema';
+import { and, eq, sql } from 'drizzle-orm';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 
 // Definer tools/functions som AI-en kan bruke
@@ -456,6 +459,115 @@ const tools = [
 				required: ['rating', 'date']
 			}
 		}
+	},
+	{
+		type: 'function' as const,
+		function: {
+			name: 'create_widget',
+			description: 'Opprett en ny widget som viser en bestemt metrikk på hjemskjermen. Bruk når brukeren vil se en spesifikk statistikk, f.eks. "vis meg søvn per dag siste 30 dager" eller "lagre en widget for løpedistanse denne uken". Widgeten kan festes til hjemskjermen.',
+			parameters: {
+				type: 'object',
+				properties: {
+					title: {
+						type: 'string',
+						description: 'Kort, beskrivende tittel på widgeten (maks 40 tegn), f.eks. "Søvn / dag", "Ukentlig løping"'
+					},
+					metricType: {
+						type: 'string',
+						description: 'Hvilken metrikk widgeten viser',
+						enum: ['weight', 'sleepDuration', 'steps', 'distance', 'workoutCount', 'heartrate', 'mood', 'screenTime', 'amount']
+					},
+					aggregation: {
+						type: 'string',
+						description: 'Aggregeringsmetode: avg=gjennomsnitt, sum=sum, count=antall, latest=siste verdi',
+						enum: ['avg', 'sum', 'count', 'latest']
+					},
+					period: {
+						type: 'string',
+						description: 'Tidsoppløsning for sparkline: day=daglig, week=ukentlig, month=månedlig',
+						enum: ['day', 'week', 'month']
+					},
+					range: {
+						type: 'string',
+						description: 'Tidsvindu for data: last7=siste 7 dager, last14=siste 14 dager, last30=siste 30 dager, current_week=inneværende uke, current_month=inneværende måned, current_year=inneværende år',
+						enum: ['last7', 'last14', 'last30', 'current_week', 'current_month', 'current_year']
+					},
+					filterCategory: {
+						type: 'string',
+						description: 'Valgfri kategorifilter for amount-metrikk. Bruk dette for å vise kun utgifter i en bestemt kategori. Gyldige verdier: dagligvare, mat, bolig, transport, helse, abonnement, underholdning, shopping, barn, forsikring, sparing, overføring, lønn, annet',
+						enum: ['dagligvare', 'mat', 'bolig', 'transport', 'helse', 'abonnement', 'underholdning', 'shopping', 'barn', 'forsikring', 'sparing', 'overføring', 'lønn', 'annet']
+					},
+					unit: {
+						type: 'string',
+						description: 'Enhet som vises på widgeten, f.eks. "kg", "timer", "km", "steg", "kr"'
+					},
+					goal: {
+						type: 'number',
+						description: 'Valgfritt mål for å vise fremgang som prosentring (f.eks. 10000 for steg, 8 for søvntimer)'
+					},
+					color: {
+						type: 'string',
+						description: 'Hex-farge for widgeten, f.eks. #7c8ef5 (blå), #82c882 (grønn), #e07070 (rød), #f0b429 (gul), #5fa0a0 (teal)',
+						enum: ['#7c8ef5', '#82c882', '#e07070', '#f0b429', '#5fa0a0', '#d4829a']
+					},
+					pinned: {
+						type: 'boolean',
+						description: 'Om widgeten skal festes til hjemskjermen med én gang (default: true)'
+					}
+				},
+				required: ['title', 'metricType', 'aggregation', 'period', 'range', 'unit']
+			}
+		}
+	},
+	{
+		type: 'function' as const,
+		function: {
+			name: 'get_widgets',
+			description: 'Henter brukerens eksisterende widgets. Bruk denne FØRST når brukeren vil konfigurere, oppdatere eller slette en spesifikk widget, slik at du kan finne riktig widget-ID.',
+			parameters: {
+				type: 'object',
+				properties: {},
+				required: []
+			}
+		}
+	},
+	{
+		type: 'function' as const,
+		function: {
+			name: 'update_widget',
+			description: 'Oppdater konfigurasjon på en eksisterende widget. Bruk etter get_widgets for å finne riktig widgetId. Kan sette terskelverdier (thresholdWarn/thresholdSuccess), mål, tittel og farge.',
+			parameters: {
+				type: 'object',
+				properties: {
+					widgetId: {
+						type: 'string',
+						description: 'ID til widgeten som skal oppdateres (fra get_widgets)'
+					},
+					title: {
+						type: 'string',
+						description: 'Ny tittel (valgfritt)'
+					},
+					goal: {
+						type: 'number',
+						description: 'Nytt mål (sett til null for å fjerne)'
+					},
+					thresholdWarn: {
+						type: 'number',
+						description: 'Terskelverdi for advarsel (gul/rød). For høyere-er-bedre-metrikker (steg, søvn): verdi UNDER denne = advarsel. For lavere-er-bedre (vekt, forbruk): verdi OVER denne = advarsel. Sett til null for å fjerne.'
+					},
+					thresholdSuccess: {
+						type: 'number',
+						description: 'Terskelverdi for suksess (grønn). For høyere-er-bedre-metrikker: verdi OVER denne = suksess. For lavere-er-bedre: verdi UNDER denne = suksess. Sett til null for å fjerne.'
+					},
+					color: {
+						type: 'string',
+						enum: ['#7c8ef5', '#82c882', '#e07070', '#f0b429', '#5fa0a0', '#d4829a'],
+						description: 'Ny farge (valgfritt)'
+					}
+				},
+				required: ['widgetId']
+			}
+		}
 	}
 ];
 
@@ -463,14 +575,18 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	try {
 		const userId = locals.userId;
 
-		const { message, imageUrl } = await request.json();
+		const { message, imageUrl, conversationId: requestedConversationId } = await request.json();
 
 		if ((!message || typeof message !== 'string') && !imageUrl) {
 			return json({ error: 'Invalid message' }, { status: 400 });
 		}
 
-		// Hent eller opprett samtale
-		const conversation = await getOrCreateConversation(userId);
+		// Bruk oppgitt conversationId (verifisert mot bruker) eller hent/opprett standard
+		const conversation =
+			requestedConversationId && typeof requestedConversationId === 'string'
+				? ((await getConversationByIdForUser(requestedConversationId, userId)) ??
+					(await getOrCreateConversation(userId)))
+				: await getOrCreateConversation(userId);
 
 		// Lagre brukerens melding med imageUrl hvis present
 		await addMessage({
@@ -896,6 +1012,144 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 						content: JSON.stringify(result),
 						tool_call_id: toolCall.id
 					});
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'create_widget') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  📊 Creating widget:', args);
+
+					try {
+						// Sjekk om bruker allerede har en pinned widget med samme metricType + range + filterCategory
+						const existing = await db
+							.select({ id: userWidgets.id, title: userWidgets.title })
+							.from(userWidgets)
+							.where(
+								and(
+									eq(userWidgets.userId, userId),
+									eq(userWidgets.metricType, args.metricType),
+									eq(userWidgets.range, args.range),
+									eq(userWidgets.pinned, true),
+									args.filterCategory
+										? eq(userWidgets.filterCategory, args.filterCategory)
+										: sql`filter_category IS NULL`
+								)
+							)
+							.limit(1);
+
+						if (existing.length > 0) {
+							console.log('  📊 Widget already exists:', existing[0].id);
+							messages.push({
+								role: 'tool',
+								content: JSON.stringify({ success: true, widgetId: existing[0].id, title: existing[0].title, pinned: true, alreadyExisted: true }),
+								tool_call_id: toolCall.id
+							});
+						} else {
+							const [widget] = await db
+								.insert(userWidgets)
+								.values({
+									userId,
+									title: (args.title || '').trim().slice(0, 80),
+									metricType: args.metricType,
+									aggregation: args.aggregation,
+									period: args.period,
+									range: args.range,
+									goal: args.goal != null ? String(args.goal) : null,
+									filterCategory: args.filterCategory ?? null,
+									unit: (args.unit || '').slice(0, 20),
+									color: args.color || '#7c8ef5',
+									pinned: args.pinned !== false,
+									sortOrder: 0,
+								})
+								.returning();
+
+							console.log('  📊 Widget created:', widget.id);
+							messages.push({
+								role: 'tool',
+								content: JSON.stringify({ success: true, widgetId: widget.id, title: widget.title, pinned: widget.pinned }),
+								tool_call_id: toolCall.id
+							});
+						}
+					} catch (e) {
+						console.error('  📊 Widget creation failed:', e);
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify({ success: false, error: 'Klarte ikke opprette widget' }),
+							tool_call_id: toolCall.id
+						});
+					}
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'get_widgets') {
+					try {
+						const widgets = await db
+							.select({
+								id: userWidgets.id,
+								title: userWidgets.title,
+								metricType: userWidgets.metricType,
+								aggregation: userWidgets.aggregation,
+								period: userWidgets.period,
+								range: userWidgets.range,
+								unit: userWidgets.unit,
+								goal: userWidgets.goal,
+								thresholdWarn: userWidgets.thresholdWarn,
+								thresholdSuccess: userWidgets.thresholdSuccess,
+								color: userWidgets.color,
+								pinned: userWidgets.pinned,
+							})
+							.from(userWidgets)
+							.where(eq(userWidgets.userId, userId))
+							.orderBy(userWidgets.sortOrder, userWidgets.createdAt);
+
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify({ widgets }),
+							tool_call_id: toolCall.id
+						});
+					} catch (e) {
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify({ error: 'Klarte ikke hente widgets' }),
+							tool_call_id: toolCall.id
+						});
+					}
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'update_widget') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  📊 Updating widget:', args.widgetId, args);
+
+					try {
+						const updates: Record<string, unknown> = { updatedAt: new Date() };
+						if (typeof args.title === 'string' && args.title.trim()) updates.title = args.title.trim().slice(0, 80);
+						if (typeof args.goal === 'number') updates.goal = String(args.goal);
+						if (args.goal === null) updates.goal = null;
+						if (typeof args.thresholdWarn === 'number') updates.thresholdWarn = String(args.thresholdWarn);
+						if (args.thresholdWarn === null) updates.thresholdWarn = null;
+						if (typeof args.thresholdSuccess === 'number') updates.thresholdSuccess = String(args.thresholdSuccess);
+						if (args.thresholdSuccess === null) updates.thresholdSuccess = null;
+						if (typeof args.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(args.color)) updates.color = args.color;
+
+						const [updated] = await db
+							.update(userWidgets)
+							.set(updates)
+							.where(and(eq(userWidgets.id, args.widgetId), eq(userWidgets.userId, userId)))
+							.returning({ id: userWidgets.id, title: userWidgets.title });
+
+						if (!updated) {
+							messages.push({
+								role: 'tool',
+								content: JSON.stringify({ success: false, error: 'Widget ikke funnet' }),
+								tool_call_id: toolCall.id
+							});
+						} else {
+							messages.push({
+								role: 'tool',
+								content: JSON.stringify({ success: true, widgetId: updated.id, title: updated.title }),
+								tool_call_id: toolCall.id
+							});
+						}
+					} catch (e) {
+						console.error('  📊 Widget update failed:', e);
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify({ success: false, error: 'Klarte ikke oppdatere widget' }),
+							tool_call_id: toolCall.id
+						});
+					}
 				}
 			}
 
