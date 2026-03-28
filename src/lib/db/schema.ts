@@ -200,6 +200,29 @@ export const userWidgets = pgTable('user_widgets', {
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
 });
 
+// Sjekklister — tidsavgrensede lister (pakkelister, forberedelser, etc.)
+export const checklists = pgTable('checklists', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	title: text('title').notNull(),                  // "Forberede tur til Bergen"
+	emoji: text('emoji').notNull().default('✅'),     // "✈️", "🎒", "🚗"
+	context: text('context'),                         // 'tur', 'pakkeliste', 'event', etc.
+	completedAt: timestamp('completed_at'),           // satt når alle punkter er avkrysset
+	createdAt: timestamp('created_at').defaultNow().notNull()
+});
+
+// Enkeltpunkter i en sjekkliste
+export const checklistItems = pgTable('checklist_items', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	checklistId: uuid('checklist_id').references(() => checklists.id, { onDelete: 'cascade' }).notNull(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	text: text('text').notNull(),
+	checked: boolean('checked').notNull().default(false),
+	sortOrder: integer('sort_order').notNull().default(0),
+	checkedAt: timestamp('checked_at'),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+});
+
 // Memories - Viktig informasjon om brukeren som AI husker
 export const memories = pgTable('memories', {
 	id: uuid('id').primaryKey().defaultRandom(),
@@ -227,7 +250,8 @@ export const usersRelations = relations(users, ({ many }) => ({
 	sentMarriageInvites: many(marriageInvites),
 	sensors: many(sensors),
 	sensorEvents: many(sensorEvents),
-	sensorAggregates: many(sensorAggregates)
+	sensorAggregates: many(sensorAggregates),
+	checklists: many(checklists)
 }));
 
 export const authAccountsRelations = relations(authAccounts, ({ one }) => ({
@@ -561,5 +585,25 @@ export const sensorGoalsRelations = relations(sensorGoals, ({ one }) => ({
 	goal: one(goals, {
 		fields: [sensorGoals.goalId],
 		references: [goals.id]
+	})
+}));
+
+// Checklist relations
+export const checklistsRelations = relations(checklists, ({ one, many }) => ({
+	user: one(users, {
+		fields: [checklists.userId],
+		references: [users.id]
+	}),
+	items: many(checklistItems)
+}));
+
+export const checklistItemsRelations = relations(checklistItems, ({ one }) => ({
+	checklist: one(checklists, {
+		fields: [checklistItems.checklistId],
+		references: [checklists.id]
+	}),
+	user: one(users, {
+		fields: [checklistItems.userId],
+		references: [users.id]
 	})
 }));

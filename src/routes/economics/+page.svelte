@@ -304,7 +304,7 @@
 <div class="container">
 	<div class="header">
 		<div class="header-top">
-			<a href="/" class="back-button" aria-label="Tilbake">
+			<a href="/" class="btn-nav" aria-label="Tilbake">
 				<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
 					<path d="M12.5 15L7.5 10L12.5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
 				</svg>
@@ -376,7 +376,7 @@
 						{analysisResult.updatedMappings} oppdatert •
 						{analysisResult.skippedRecent} nylig analysert
 					</span>
-					<button class="close-analysis" onclick={() => (analysisResult = null)} aria-label="Lukk">✕</button>
+					<button class="btn-ghost close-analysis" onclick={() => (analysisResult = null)} aria-label="Lukk">✕</button>
 				</div>
 				{#if analysisResult.insights.length > 0}
 					<ul class="insights">
@@ -521,20 +521,6 @@
 		display: flex;
 		align-items: center;
 		gap: 1rem;
-	}
-
-	.back-button {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 36px;
-		height: 36px;
-		border-radius: 50%;
-		background: var(--surface-color);
-		border: 1px solid var(--border-color);
-		color: var(--text-primary);
-		text-decoration: none;
-		flex-shrink: 0;
 	}
 
 	h1 { margin: 0; font-size: 2rem; }
@@ -750,13 +736,8 @@
 	}
 
 	.close-analysis {
-		background: none;
-		border: none;
-		color: var(--text-secondary);
-		cursor: pointer;
-		font-size: 1rem;
-		padding: 0.1rem 0.3rem;
 		margin-left: auto;
+		padding: 0.1rem 0.3rem;
 	}
 
 	.insights {

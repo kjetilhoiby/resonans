@@ -72,9 +72,7 @@ export const POST: RequestHandler = async ({ url }) => {
 				const message = buildDailyCheckInMessage({
 					appUrl: url.origin,
 					userName: user.name,
-					goalsSummary: goalsSummary.filter((g) => g.status === 'active'),
-					tasksDueToday
-				});
+						avatarUrl: user.image,
 
 				const success = await sendGoogleChatMessage(user.googleChatWebhook, message);
 

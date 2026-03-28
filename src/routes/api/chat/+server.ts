@@ -8,7 +8,7 @@ import { buildMemoryContext, createMemory } from '$lib/server/memories';
 import { queryEconomicsTool } from '$lib/ai/tools/query-economics';
 import { USER_ID_HEADER_NAME } from '$lib/server/request-user';
 import { db } from '$lib/db';
-import { userWidgets } from '$lib/db/schema';
+import { userWidgets, checklists, checklistItems } from '$lib/db/schema';
 import { and, eq, sql } from 'drizzle-orm';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 
@@ -64,6 +64,10 @@ const tools = [
 						type: 'string',
 						description: 'Kategori for målet (f.eks: "Trening", "Parforhold", "Mental helse", "Karriere")',
 						enum: ['Trening', 'Parforhold', 'Mental helse', 'Karriere', 'Økonomi', 'Hobby', 'Annet']
+					},
+					themeId: {
+						type: 'string',
+						description: 'Valgfritt tema-ID hvis målet skal kobles til et eksisterende tema, for eksempel et nylig opprettet tema.'
 					},
 					title: {
 						type: 'string',
@@ -242,7 +246,7 @@ const tools = [
 					},
 					themeId: {
 						type: 'string',
-						description: 'Tema-ID (påkrevd for archive-handling)'
+						description: 'Valgfritt: Tema-ID. For archive kan du også bruke name direkte hvis navnet er entydig.'
 					}
 				},
 				required: ['action']
@@ -568,6 +572,37 @@ const tools = [
 				required: ['widgetId']
 			}
 		}
+	},
+	{
+		type: 'function' as const,
+		function: {
+			name: 'create_checklist',
+			description: 'Opprett en sjekkliste for brukeren med konkrete punkter. Bruk når brukeren nevner at de skal på tur, forberede noe, pakke, eller har en liste de vil holde orden på. Foreslå relevante punkter basert på konteksten.',
+			parameters: {
+				type: 'object',
+				properties: {
+					title: {
+						type: 'string',
+						description: 'Tittel på sjekklisten, f.eks. "Forberede tur til Bergen" eller "Pakkeliste sommerferie"'
+					},
+					emoji: {
+						type: 'string',
+						description: 'Emoji som representerer listen, f.eks. ✈️ 🎒 🚗 🏖️ ⛷️ 🗺️'
+					},
+					context: {
+						type: 'string',
+						description: 'Kontekst for listen',
+						enum: ['tur', 'reise', 'pakkeliste', 'event', 'forberedelse', 'handling', 'annet']
+					},
+					items: {
+						type: 'array',
+						description: 'Liste over konkrete punkter. Lag 6-12 relevante, spesifikke punkter.',
+						items: { type: 'string' }
+					}
+				},
+				required: ['title', 'emoji', 'items']
+			}
+		}
 	}
 ];
 
@@ -688,6 +723,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 		let responseMessage = completion.choices[0]?.message;
 		let createdGoalId: string | null = null;
+		let createdTheme: { id: string; name: string; emoji?: string | null; conversationId?: string | null } | null = null;
+		let archivedTheme: { id: string; name: string; emoji?: string | null } | null = null;
 
 		// Debug logging
 		console.log('\n🤖 OpenAI Response:');
@@ -870,8 +907,26 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					
 					const result = await manageThemeTool.execute({
 						userId,
+						conversationId: conversation.id,
 						...args
 					});
+
+					if (result.success && result.theme?.id) {
+						createdTheme = {
+							id: result.theme.id,
+							name: result.theme.name,
+							emoji: result.theme.emoji ?? null,
+							conversationId: result.theme.conversationId ?? null
+						};
+					}
+
+					if (result.success && result.archivedTheme?.id) {
+						archivedTheme = {
+							id: result.archivedTheme.id,
+							name: result.archivedTheme.name,
+							emoji: result.archivedTheme.emoji ?? null
+						};
+					}
 
 					messages.push({
 						role: 'tool',
@@ -1150,6 +1205,53 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 							tool_call_id: toolCall.id
 						});
 					}
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'create_checklist') {
+					const args = JSON.parse(toolCall.function.arguments) as {
+						title: string;
+						emoji: string;
+						context?: string;
+						items: string[];
+					};
+
+					try {
+						const [checklist] = await db.insert(checklists).values({
+							userId,
+							title: args.title,
+							emoji: args.emoji,
+							context: args.context ?? null
+						}).returning();
+
+						if (args.items?.length) {
+							await db.insert(checklistItems).values(
+								args.items.map((text, i) => ({
+									checklistId: checklist.id,
+									userId,
+									text,
+									sortOrder: i
+								}))
+							);
+						}
+
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify({
+								success: true,
+								checklistId: checklist.id,
+								title: checklist.title,
+								emoji: checklist.emoji,
+								itemCount: args.items?.length ?? 0,
+								message: `✅ Sjekkliste "${checklist.title}" opprettet med ${args.items?.length ?? 0} punkter! Den vises nå som en widget på hjemskjermen.`
+							}),
+							tool_call_id: toolCall.id
+						});
+					} catch (e) {
+						console.error('  📋 Checklist creation failed:', e);
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify({ success: false, error: 'Klarte ikke opprette sjekkliste' }),
+							tool_call_id: toolCall.id
+						});
+					}
 				}
 			}
 
@@ -1176,8 +1278,14 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 		return json({ 
 			message: finalMessage,
+			conversationId: conversation.id,
 			goalCreated: createdGoalId !== null,
-			goalId: createdGoalId
+			goalId: createdGoalId,
+			themeCreated: createdTheme !== null,
+			theme: createdTheme,
+			themeArchived: archivedTheme !== null,
+			archivedTheme,
+			checklistCreated: true
 		});
 	} catch (error) {
 		console.error('Error in chat API:', error);

@@ -1,6 +1,6 @@
 import { db } from '$lib/db';
-import { conversations, messages } from '$lib/db/schema';
-import { eq, desc, and } from 'drizzle-orm';
+import { conversations, messages, themes } from '$lib/db/schema';
+import { eq, desc, and, sql } from 'drizzle-orm';
 
 export interface CreateConversationParams {
 	userId: string;
@@ -13,6 +13,38 @@ export interface AddMessageParams {
 	content: string;
 	metadata?: any;
 	imageUrl?: string;
+}
+
+function isGenericConversationTitle(title: string | null | undefined) {
+	if (!title) return true;
+	return title === 'Ny samtale' || title.startsWith('Ny samtale -');
+}
+
+function generateConversationTitle(content: string) {
+	const cleaned = content
+		.replace(/[#*_`>~\-]+/g, ' ')
+		.replace(/\[[^\]]*\]\([^)]*\)/g, ' ')
+		.replace(/https?:\/\/\S+/g, ' ')
+		.replace(/[^\p{L}\p{N}\s]/gu, ' ')
+		.toLowerCase()
+		.trim();
+
+	const stopwords = new Set([
+		'jeg', 'du', 'vi', 'det', 'den', 'de', 'en', 'et', 'ei', 'og', 'å', 'av', 'på', 'i', 'til',
+		'for', 'med', 'om', 'at', 'er', 'har', 'skal', 'vil', 'kan', 'som', 'meg', 'min', 'mitt',
+		'mine', 'din', 'ditt', 'dine', 'vår', 'vårt', 'våre', 'hjelp', 'trenger', 'ønsker', 'lurer'
+	]);
+
+	const parts = cleaned
+		.split(/\s+/)
+		.filter((word) => word.length > 1 && !stopwords.has(word))
+		.slice(0, 3);
+
+	if (parts.length === 0) return 'Ny samtale';
+
+	return parts
+		.map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+		.join(' ');
 }
 
 export async function getOrCreateConversation(userId: string) {
@@ -44,9 +76,33 @@ export async function addMessage(params: AddMessageParams) {
 		metadata: params.metadata
 	}).returning();
 
-	// Oppdater conversation timestamp
+	const conversation = await db.query.conversations.findFirst({
+		where: eq(conversations.id, params.conversationId)
+	});
+
+	const updates: { updatedAt: Date; title?: string } = {
+		updatedAt: new Date()
+	};
+
+	if (params.role === 'user' && conversation && isGenericConversationTitle(conversation.title)) {
+		const themedConversation = await db.query.themes.findFirst({
+			where: eq(themes.conversationId, params.conversationId)
+		});
+
+		if (!themedConversation) {
+			const userMessageCount = await db
+				.select({ count: sql<number>`count(*)::int` })
+				.from(messages)
+				.where(and(eq(messages.conversationId, params.conversationId), eq(messages.role, 'user')));
+
+			if ((userMessageCount[0]?.count ?? 0) <= 1) {
+				updates.title = generateConversationTitle(params.content);
+			}
+		}
+	}
+
 	await db.update(conversations)
-		.set({ updatedAt: new Date() })
+		.set(updates)
 		.where(eq(conversations.id, params.conversationId));
 
 	return message;
@@ -78,4 +134,36 @@ export async function getConversationHistory(conversationId: string, limit: numb
 
 	// Returner i kronologisk rekkefølge (eldst først)
 	return msgs.reverse();
+}
+
+export async function getUserConversationList(userId: string) {
+	const userConversations = await db.query.conversations.findMany({
+		where: eq(conversations.userId, userId),
+		orderBy: [desc(conversations.updatedAt)]
+	});
+
+	return await Promise.all(
+		userConversations.map(async (conversation) => {
+			const [latestMessage] = await db.query.messages.findMany({
+				where: eq(messages.conversationId, conversation.id),
+				orderBy: [desc(messages.createdAt)],
+				limit: 1
+			});
+
+			const linkedTheme = await db.query.themes.findFirst({
+				where: eq(themes.conversationId, conversation.id)
+			});
+
+			return {
+				id: conversation.id,
+				title: conversation.title || 'Ny samtale',
+				updatedAt: conversation.updatedAt,
+				createdAt: conversation.createdAt,
+				preview: latestMessage?.content || '',
+				linkedTheme: linkedTheme
+					? { id: linkedTheme.id, name: linkedTheme.name, emoji: linkedTheme.emoji }
+					: null
+			};
+		})
+	);
 }

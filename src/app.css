@@ -82,3 +82,215 @@ body {
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
 }
+
+/* ─────────────────────────────────────────────────────────────────
+   Resonans UI — globale knapper og skjemaelementer
+   Kilde: /design (levende stilguide). Bruker CSS-variabler for lys/mørk-støtte.
+   ───────────────────────────────────────────────────────────────── */
+
+.btn-primary {
+	padding: 8px 18px;
+	border-radius: 8px;
+	border: none;
+	background: var(--accent-primary);
+	color: #fff;
+	font: inherit;
+	font-size: 0.82rem;
+	font-weight: 600;
+	cursor: pointer;
+	transition: background 0.12s;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	text-decoration: none;
+}
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-secondary {
+	padding: 8px 18px;
+	border-radius: 8px;
+	border: 1px solid var(--border-color);
+	background: var(--bg-card);
+	color: var(--text-secondary);
+	font: inherit;
+	font-size: 0.82rem;
+	font-weight: 500;
+	cursor: pointer;
+	transition: border-color 0.12s, color 0.12s;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	text-decoration: none;
+}
+.btn-secondary:hover { border-color: var(--text-tertiary); color: var(--text-primary); }
+.btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-ghost {
+	padding: 8px 18px;
+	border-radius: 8px;
+	border: none;
+	background: transparent;
+	color: var(--text-tertiary);
+	font: inherit;
+	font-size: 0.82rem;
+	cursor: pointer;
+	transition: color 0.12s;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	text-decoration: none;
+}
+.btn-ghost:hover { color: var(--text-primary); }
+
+.btn-chip {
+	padding: 5px 12px;
+	border-radius: 999px;
+	border: 1px solid var(--border-color);
+	background: transparent;
+	color: var(--text-tertiary);
+	font: inherit;
+	font-size: 0.75rem;
+	cursor: pointer;
+	transition: border-color 0.12s, color 0.12s, background 0.12s;
+	white-space: nowrap;
+	display: inline-flex;
+	align-items: center;
+}
+.btn-chip:hover,
+.btn-chip.active {
+	border-color: var(--text-secondary);
+	color: var(--text-primary);
+	background: var(--bg-card);
+}
+
+.btn-danger {
+	padding: 8px 18px;
+	border-radius: 8px;
+	border: 1px solid var(--error-border);
+	background: transparent;
+	color: var(--error-text);
+	font: inherit;
+	font-size: 0.82rem;
+	cursor: pointer;
+	transition: background 0.12s, border-color 0.12s;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}
+.btn-danger:hover { background: var(--error-bg); border-color: var(--error-text); }
+.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-icon {
+	width: 32px;
+	height: 32px;
+	border-radius: 8px;
+	border: 1px solid var(--border-color);
+	background: transparent;
+	color: var(--text-tertiary);
+	font: inherit;
+	font-size: 1rem;
+	cursor: pointer;
+	transition: border-color 0.12s, color 0.12s, background 0.12s;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	text-decoration: none;
+}
+.btn-icon:hover { border-color: var(--text-secondary); color: var(--text-primary); background: var(--bg-card); }
+
+.btn-icon-danger {
+	width: 32px;
+	height: 32px;
+	border-radius: 50%;
+	border: 1px solid var(--border-color);
+	background: transparent;
+	color: var(--text-tertiary);
+	font: inherit;
+	font-size: 1.1rem;
+	cursor: pointer;
+	transition: border-color 0.12s, color 0.12s, background 0.12s;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0;
+	line-height: 1;
+}
+.btn-icon-danger:hover {
+	background: var(--error-bg);
+	border-color: var(--error-text);
+	color: var(--error-text);
+}
+
+/* Sirkulær tilbake-navigasjonsknapp med ikon */
+.btn-nav {
+	width: 44px;
+	height: 44px;
+	border-radius: 50%;
+	border: 1px solid var(--border-color);
+	background: var(--bg-card);
+	color: var(--text-primary);
+	font: inherit;
+	cursor: pointer;
+	transition: background 0.15s, border-color 0.15s;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	text-decoration: none;
+	flex-shrink: 0;
+}
+.btn-nav:hover { background: var(--bg-hover); border-color: var(--text-tertiary); }
+
+/* Subtabs — Chat / Data / Filer */
+.subtab {
+	padding: 7px 16px;
+	border: none;
+	background: transparent;
+	color: var(--text-tertiary);
+	font: inherit;
+	font-size: 0.75rem;
+	font-weight: 500;
+	cursor: pointer;
+	transition: color 0.12s, background 0.12s;
+	border-right: 1px solid var(--border-color);
+}
+.subtab:last-child { border-right: none; }
+.subtab.active { color: var(--text-primary); background: var(--bg-card); }
+.subtab:hover { color: var(--text-secondary); }
+
+/* Skjemaelementer */
+.ds-input {
+	width: 100%;
+	padding: 10px 14px;
+	border-radius: 10px;
+	border: 1px solid var(--border-color);
+	background: var(--bg-card);
+	color: var(--text-primary);
+	font: inherit;
+	font-size: 0.82rem;
+	outline: none;
+	transition: border-color 0.12s;
+}
+.ds-input:focus { border-color: var(--text-secondary); }
+.ds-input::placeholder { color: var(--text-tertiary); }
+
+.ds-slider {
+	-webkit-appearance: none;
+	appearance: none;
+	width: 100%;
+	height: 4px;
+	border-radius: 2px;
+	background: linear-gradient(to right, var(--accent-primary) var(--pct, 50%), var(--border-color) var(--pct, 50%));
+	outline: none;
+	cursor: pointer;
+}
+.ds-slider::-webkit-slider-thumb {
+	-webkit-appearance: none;
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	background: var(--text-primary);
+	border: 2px solid var(--bg-primary);
+	box-shadow: 0 0 0 2px var(--accent-primary);
+	cursor: pointer;
+}

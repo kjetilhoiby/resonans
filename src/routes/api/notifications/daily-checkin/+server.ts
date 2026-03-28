@@ -76,6 +76,7 @@ export const POST: RequestHandler = async ({ url, locals }) => {
 		const appUrl = url.origin;
 		const message = buildDailyCheckInMessage({
 			appUrl,
+			avatarUrl: user.image,
 			goalsSummary: goalsSummary.filter((g) => g.status === 'active'),
 			tasksDueToday
 		});

@@ -40,19 +40,19 @@
 		<h1>📊 Helse</h1>
 		<div style="display: flex; gap: 0.5rem;">
 			<button 
-				class={selectedPeriod === 'week' ? 'primary-button' : 'secondary-button'}
+				class="btn-chip" class:active={selectedPeriod === 'week'}
 				onclick={() => selectedPeriod = 'week'}
 			>
 				Ukentlig
 			</button>
 			<button 
-				class={selectedPeriod === 'month' ? 'primary-button' : 'secondary-button'}
+				class="btn-chip" class:active={selectedPeriod === 'month'}
 				onclick={() => selectedPeriod = 'month'}
 			>
 				Månedlig
 			</button>
 			<button 
-				class={selectedPeriod === 'year' ? 'primary-button' : 'secondary-button'}
+				class="btn-chip" class:active={selectedPeriod === 'year'}
 				onclick={() => selectedPeriod = 'year'}
 			>
 				Årlig

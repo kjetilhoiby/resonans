@@ -11,16 +11,16 @@
 	<div class="chart-controls">
 		<div class="mode-toggle">
 			<button 
-				class="toggle-btn" 
+				class="btn-chip" 
 				class:active={chartMode === 'comparison'}
-				on:click={() => chartMode = 'comparison'}
+				onclick={() => chartMode = 'comparison'}
 			>
 				2-års sammenligning
 			</button>
 			<button 
-				class="toggle-btn" 
+				class="btn-chip" 
 				class:active={chartMode === 'historical'}
-				on:click={() => chartMode = 'historical'}
+				onclick={() => chartMode = 'historical'}
 			>
 				Historisk oversikt (5 år)
 			</button>
@@ -59,32 +59,7 @@
 	.mode-toggle {
 		display: flex;
 		gap: 0.5rem;
-		background: #f3f4f6;
-		padding: 0.25rem;
-		border-radius: 0.5rem;
 		width: fit-content;
-	}
-
-	.toggle-btn {
-		padding: 0.75rem 1.5rem;
-		border: none;
-		border-radius: 0.25rem;
-		background: transparent;
-		color: #6b7280;
-		font-weight: 500;
-		font-size: 0.875rem;
-		cursor: pointer;
-		transition: all 0.2s;
-	}
-
-	.toggle-btn:hover {
-		color: #374151;
-	}
-
-	.toggle-btn.active {
-		background: white;
-		color: #1f2937;
-		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 	}
 
 	.charts {

@@ -100,8 +100,8 @@
 		<div class="header-top">
 			<h1>Mål</h1>
 			<div class="header-actions">
-				<a href="/" class="icon-button" title="Chat">💬</a>
-				<a href="/settings" class="icon-button" title="Innstillinger">⚙️</a>
+				<a href="/" class="btn-icon" title="Chat">💬</a>
+				<a href="/settings" class="btn-icon" title="Innstillinger">⚙️</a>
 			</div>
 		</div>
 		<div class="header-stats">
@@ -117,7 +117,7 @@
 			<div class="empty-state">
 				<div class="empty-icon">🎯</div>
 				<p>Ingen mål ennå</p>
-				<a href="/" class="primary-button">Start i chatten</a>
+				<a href="/" class="btn-primary">Start i chatten</a>
 			</div>
 		{:else}
 			<div class="goals-list">
@@ -128,7 +128,7 @@
 							<div class="goal-title-row">
 								<h2>{goal.title}</h2>
 								<button 
-									class="delete-button" 
+									class="btn-icon-danger" 
 									onclick={(e) => { e.preventDefault(); deleteGoal(goal.id, goal.title); }}
 									title="Slett"
 								>×</button>
@@ -235,25 +235,7 @@
 		gap: 0.5rem;
 	}
 
-	.icon-button {
-		width: 44px;
-		height: 44px;
-		border-radius: 50%;
-		background: var(--bg-card);
-		border: 1px solid var(--border-color);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		text-decoration: none;
-		font-size: 1.2rem;
-		transition: all 0.2s;
-		color: var(--text-primary);
-	}
 
-	.icon-button:hover {
-		background: var(--bg-hover);
-		transform: scale(1.05);
-	}
 
 	.header-stats {
 		display: flex;
@@ -306,20 +288,7 @@
 		margin-bottom: 2rem;
 	}
 
-	.primary-button {
-		display: inline-block;
-		padding: 0.875rem 1.75rem;
-		background: var(--accent-primary);
-		color: white;
-		text-decoration: none;
-		border-radius: 12px;
-		font-weight: 600;
-		transition: all 0.2s;
-	}
 
-	.primary-button:hover {
-		background: var(--accent-hover);
-	}
 
 	.goals-list {
 		display: flex;
@@ -360,28 +329,7 @@
 		flex: 1;
 	}
 
-	.delete-button {
-		background: transparent;
-		border: 1px solid var(--border-color);
-		color: var(--text-tertiary);
-		width: 32px;
-		height: 32px;
-		border-radius: 50%;
-		font-size: 1.5rem;
-		cursor: pointer;
-		transition: all 0.2s;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		padding: 0;
-		line-height: 1;
-	}
 
-	.delete-button:hover {
-		background: var(--error-bg);
-		border-color: var(--error-text);
-		color: var(--error-text);
-	}
 
 	.goal-category {
 		font-size: 0.85rem;

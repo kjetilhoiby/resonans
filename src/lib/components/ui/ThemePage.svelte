@@ -9,6 +9,10 @@
     conversationId  UUID til temaets conversation (for API-kall)
 -->
 <script lang="ts">
+	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
+	import { onMount } from 'svelte';
+	import { get } from 'svelte/store';
 	import ChatInput from './ChatInput.svelte';
 	import TriageCard from './TriageCard.svelte';
 	import GoalRing from './GoalRing.svelte';
@@ -47,6 +51,16 @@
 	/* ── Subtab-tilstand ────────────────────────────────── */
 	type Tab = 'chat' | 'data' | 'filer';
 	let tab = $state<Tab>('chat');
+	let handoffPhase = $state<'intro' | 'content'>('content');
+
+	onMount(() => {
+		if (get(page).url.searchParams.get('handoff') !== '1') return;
+		handoffPhase = 'intro';
+		const timer = setTimeout(() => {
+			handoffPhase = 'content';
+		}, 950);
+		return () => clearTimeout(timer);
+	});
 
 	/* ── Chat-tilstand ──────────────────────────────────── */
 	interface ChatMsg {
@@ -61,6 +75,7 @@
 	);
 	let chatLoading = $state(false);
 	let chatError = $state('');
+	let archiveRedirect = $state<{ name: string; emoji?: string | null } | null>(null);
 
 	async function sendMessage(text: string) {
 		chatMessages.push({ role: 'user', text });
@@ -76,6 +91,18 @@
 
 			if (!res.ok) throw new Error(await res.text());
 			const data = await res.json();
+
+			if (data.themeArchived && data.archivedTheme?.id === theme.id) {
+				archiveRedirect = {
+					name: data.archivedTheme.name,
+					emoji: data.archivedTheme.emoji ?? theme.emoji
+				};
+				setTimeout(() => {
+					void goto('/?archivedTheme=1');
+				}, 1050);
+				return;
+			}
+
 			chatMessages.push({ role: 'assistant', text: data.message });
 		} catch (err) {
 			chatError = 'Noe gikk galt. Prøv igjen.';
@@ -103,36 +130,56 @@
 </script>
 
 <div class="theme-page">
-	<!-- ── Topptekst ── -->
-	<header class="tp-header">
-		<div class="tp-title-row">
-			<span class="tp-emoji">{theme.emoji ?? '🎯'}</span>
-			<h1 class="tp-title">{theme.name}</h1>
+	{#if archiveRedirect}
+		<section class="tp-archived" aria-live="polite">
+			<div class="tp-archived-chip">
+				<span class="tp-archived-icon">{archiveRedirect.emoji ?? '◎'}</span>
+				<span>Tema arkivert</span>
+			</div>
+			<h1 class="tp-archived-title">{archiveRedirect.name}</h1>
+			<p class="tp-archived-copy">Sender deg tilbake til hjem…</p>
+		</section>
+	{:else}
+	{#if handoffPhase === 'intro'}
+		<section class="tp-launch" aria-live="polite">
+			<div class="tp-launch-chip">
+				<span class="tp-launch-icon">{theme.emoji ?? '◎'}</span>
+				<span>Nytt tema</span>
+			</div>
+			<h1 class="tp-launch-title">{theme.name}</h1>
+			<p class="tp-launch-copy">Kobler deg inn i Samtaler, Mål og Filer…</p>
+		</section>
+	{:else}
+		<!-- ── Topptekst ── -->
+		<header class="tp-header tp-enter">
+			<div class="tp-title-row">
+				<span class="tp-emoji">{theme.emoji ?? '🎯'}</span>
+				<h1 class="tp-title">{theme.name}</h1>
+			</div>
+			{#if theme.description}
+				<p class="tp-desc">{theme.description}</p>
+			{/if}
+		</header>
+
+		<!-- ── Tabs ── -->
+		<div class="tp-tabs tp-enter" role="tablist" aria-label="Tema-seksjoner">
+			{#each (['chat', 'data', 'filer'] as Tab[]) as t}
+				<button
+					class="tp-tab"
+					class:active={tab === t}
+					role="tab"
+					aria-selected={tab === t}
+					onclick={() => (tab = t)}
+				>
+					{#if t === 'chat'}💬 Samtaler
+					{:else if t === 'data'}🎯 Mål
+					{:else}📁 Filer{/if}
+				</button>
+			{/each}
 		</div>
-		{#if theme.description}
-			<p class="tp-desc">{theme.description}</p>
-		{/if}
-	</header>
 
-	<!-- ── Tabs ── -->
-	<div class="tp-tabs" role="tablist" aria-label="Tema-seksjoner">
-		{#each (['chat', 'data', 'filer'] as Tab[]) as t}
-			<button
-				class="tp-tab"
-				class:active={tab === t}
-				role="tab"
-				aria-selected={tab === t}
-				onclick={() => (tab = t)}
-			>
-				{#if t === 'chat'}💬 Chat
-				{:else if t === 'data'}📊 Data
-				{:else}📁 Filer{/if}
-			</button>
-		{/each}
-	</div>
-
-	<!-- ── Tab-innhold ── -->
-	<div class="tp-body">
+		<!-- ── Tab-innhold ── -->
+		<div class="tp-body tp-enter">
 		<!-- CHAT -->
 		{#if tab === 'chat'}
 			<div class="chat-panel">
@@ -239,7 +286,9 @@
 				{/if}
 			</div>
 		{/if}
-	</div>
+		</div>
+	{/if}
+	{/if}
 </div>
 
 <style>
@@ -250,6 +299,164 @@
 		font-family: 'Inter', system-ui, sans-serif;
 		display: flex;
 		flex-direction: column;
+	}
+
+	.tp-launch {
+		min-height: 100dvh;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 14px;
+		padding: 20px;
+		background:
+			radial-gradient(110% 80% at 50% -10%, rgba(106, 132, 233, 0.22), transparent 55%),
+			linear-gradient(180deg, #11141d 0%, #0e0f13 100%);
+		animation: launchBackdrop 0.9s ease;
+	}
+
+	.tp-archived {
+		min-height: 100dvh;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 14px;
+		padding: 20px;
+		background:
+			radial-gradient(90% 70% at 50% -10%, rgba(72, 181, 129, 0.18), transparent 58%),
+			linear-gradient(180deg, #101713 0%, #0d1110 100%);
+		animation: launchBackdrop 0.45s ease;
+	}
+
+	.tp-archived-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		padding: 9px 14px;
+		border: 1px solid #2f4f3f;
+		border-radius: 999px;
+		background: #132018;
+		color: #c5efd6;
+		font-size: 0.8rem;
+	}
+
+	.tp-archived-icon {
+		width: 24px;
+		height: 24px;
+		border-radius: 8px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		background: #173022;
+		border: 1px solid #2f6248;
+	}
+
+	.tp-archived-title {
+		margin: 0;
+		font-size: clamp(1.7rem, 5.3vw, 2.2rem);
+		letter-spacing: -0.03em;
+		color: #ecfff4;
+	}
+
+	.tp-archived-copy {
+		margin: 0;
+		font-size: 0.88rem;
+		color: #8fc6a5;
+	}
+
+	.tp-launch-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		padding: 9px 14px;
+		border: 1px solid #334166;
+		border-radius: 999px;
+		background: #141a2a;
+		color: #c8d2fa;
+		font-size: 0.8rem;
+		animation: launchDrop 0.5s cubic-bezier(0.2, 0.84, 0.24, 1);
+	}
+
+	.tp-launch-icon {
+		width: 24px;
+		height: 24px;
+		border-radius: 8px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		background: #1a2236;
+		border: 1px solid #3a4a74;
+	}
+
+	.tp-launch-title {
+		margin: 0;
+		font-size: clamp(1.8rem, 5.4vw, 2.3rem);
+		letter-spacing: -0.03em;
+		color: #f0f3ff;
+		animation: launchRise 0.58s ease;
+	}
+
+	.tp-launch-copy {
+		margin: 0;
+		font-size: 0.88rem;
+		color: #95a0c9;
+		animation: launchFade 0.65s ease;
+	}
+
+	.tp-enter {
+		animation: contentRise 0.4s ease;
+	}
+
+	@keyframes launchBackdrop {
+		from {
+			opacity: 0.1;
+		}
+		to {
+			opacity: 1;
+		}
+	}
+
+	@keyframes launchDrop {
+		from {
+			opacity: 0;
+			transform: translateY(-28px) scale(0.94);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0) scale(1);
+		}
+	}
+
+	@keyframes launchRise {
+		from {
+			opacity: 0;
+			transform: translateY(12px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	@keyframes launchFade {
+		from {
+			opacity: 0;
+		}
+		to {
+			opacity: 1;
+		}
+	}
+
+	@keyframes contentRise {
+		from {
+			opacity: 0;
+			transform: translateY(10px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
 	}
 
 	/* ── Header ── */
@@ -372,6 +579,17 @@
 	.chat-input-wrap {
 		padding: 10px 12px env(safe-area-inset-bottom, 12px);
 		border-top: 1px solid #1a1a1a;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.tp-launch,
+		.tp-launch-chip,
+		.tp-launch-title,
+		.tp-launch-copy,
+		.tp-archived,
+		.tp-enter {
+			animation: none !important;
+		}
 	}
 
 	/* ── Data tab ── */

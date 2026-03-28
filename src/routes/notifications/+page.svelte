@@ -38,7 +38,7 @@
 <div class="notifications-page">
 	<header class="page-header">
 		<div class="header-top">
-			<a href="/" class="back-button">
+			<a href="/" class="btn-nav" aria-label="Tilbake">
 				<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
 					<path d="M12.5 15L7.5 10L12.5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
 				</svg>
@@ -62,7 +62,7 @@
 				</ul>
 			</div>
 
-			<button onclick={sendCheckIn} disabled={sending} class="primary-button">
+			<button onclick={sendCheckIn} disabled={sending} class="btn-primary" style="margin-top:1rem; width:100%">
 				{sending ? 'Sender...' : 'Send Check-in Nå'}
 			</button>
 
@@ -154,25 +154,6 @@
 		gap: 1rem;
 	}
 
-	.back-button {
-		width: 44px;
-		height: 44px;
-		border-radius: 50%;
-		background: var(--bg-card);
-		border: 1px solid var(--border-color);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		color: var(--text-primary);
-		text-decoration: none;
-		transition: all 0.2s;
-	}
-
-	.back-button:hover {
-		background: var(--bg-hover);
-		border-color: var(--border-subtle);
-	}
-
 	h1 {
 		margin: 0;
 		font-size: 1.5rem;
@@ -238,29 +219,6 @@
 
 	.info-box li {
 		margin-bottom: 0.25rem;
-	}
-
-	.primary-button {
-		background: var(--accent-primary);
-		color: white;
-		border: none;
-		padding: 0.875rem 1.5rem;
-		border-radius: 8px;
-		font-size: 0.95rem;
-		font-weight: 600;
-		cursor: pointer;
-		transition: all 0.2s;
-		margin-top: 1rem;
-		width: 100%;
-	}
-
-	.primary-button:hover:not(:disabled) {
-		background: var(--accent-hover);
-	}
-
-	.primary-button:disabled {
-		opacity: 0.6;
-		cursor: not-allowed;
 	}
 
 	.result {

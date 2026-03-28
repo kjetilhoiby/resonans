@@ -77,6 +77,7 @@ export async function sendGoogleChatMessage(
 export function buildDailyCheckInMessage(data: {
 	appUrl: string;
 	userName?: string;
+	avatarUrl?: string | null;
 	goalsSummary: Array<{
 		title: string;
 		progress: number;
@@ -87,7 +88,7 @@ export function buildDailyCheckInMessage(data: {
 		goalTitle: string;
 	}>;
 }): GoogleChatMessage {
-	const { appUrl, userName, goalsSummary, tasksDueToday } = data;
+	const { appUrl, userName, avatarUrl, goalsSummary, tasksDueToday } = data;
 
 	const greeting = userName ? `Hei ${userName}!` : 'Hei!';
 	const today = new Date().toLocaleDateString('no-NO', {
@@ -194,7 +195,8 @@ export function buildDailyCheckInMessage(data: {
 			{
 				header: {
 					title: '🎯 Resonans - Daglig check-in',
-					subtitle: today
+					subtitle: today,
+					...(avatarUrl ? { imageUrl: avatarUrl } : {})
 				},
 				sections: [
 					{

@@ -280,7 +280,7 @@
 <div class="settings-page">
 	<header class="page-header">
 		<div class="header-top">
-			<a href="/" class="back-button" aria-label="Tilbake til forsiden">
+			<a href="/" class="btn-nav" aria-label="Tilbake til forsiden">
 				<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
 					<path d="M12.5 15L7.5 10L12.5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
 				</svg>
@@ -338,11 +338,11 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 						<div style="display:flex; gap:0.75rem; flex-wrap:wrap; margin-top:0.75rem;">
 							<form method="POST" action="?/acceptMarriageInvite">
 								<input type="hidden" name="inviteId" value={relationship.incomingInvite.id} />
-								<button type="submit" class="primary-button">💞 Godta</button>
+								<button type="submit" class="btn-primary">💞 Godta</button>
 							</form>
 							<form method="POST" action="?/declineMarriageInvite">
 								<input type="hidden" name="inviteId" value={relationship.incomingInvite.id} />
-								<button type="submit" class="secondary-button">Nei takk</button>
+								<button type="submit" class="btn-secondary">Nei takk</button>
 							</form>
 						</div>
 					</div>
@@ -358,7 +358,7 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 						</div>
 						<form method="POST" action="?/cancelMarriageInvite" style="margin-top:0.75rem;">
 							<input type="hidden" name="inviteId" value={relationship.outgoingInvite.id} />
-							<button type="submit" class="secondary-button">Trekk tilbake invitasjonen</button>
+							<button type="submit" class="btn-secondary">Trekk tilbake invitasjonen</button>
 						</form>
 					</div>
 				{:else}
@@ -377,7 +377,7 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 								Når invitasjonen er sendt, blir e-posten også lagt til i invite-only-listen.
 							</small>
 						</div>
-						<button type="submit" class="primary-button">💌 Send partnerinvitasjon</button>
+						<button type="submit" class="btn-primary">💌 Send partnerinvitasjon</button>
 					</form>
 				{/if}
 			{/if}
@@ -490,7 +490,7 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 						<button 
 							type="button" 
 							onclick={syncWithings} 
-							class="primary-button" 
+							class="btn-primary" 
 							style="flex: 1;"
 							disabled={syncing}
 						>
@@ -499,7 +499,7 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 						<button 
 							type="button" 
 							onclick={fullSyncWithings} 
-							class="secondary-button" 
+							class="btn-secondary" 
 							style="flex: 1;"
 							disabled={syncing}
 							title="Sletter all data og laster ned alt på nytt fra 1. september 2017"
@@ -508,12 +508,12 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 						</button>
 					</div>
 					<div style="display: flex; gap: 1rem; margin-top: 0.5rem;">
-						<button type="button" onclick={disconnectWithings} class="debug-button" style="flex: 1;">
+						<button type="button" onclick={disconnectWithings} class="btn-ghost" style="flex: 1;">
 							🔌 Koble fra
 						</button>
 					</div>
 				{:else}
-					<a href="/api/sensors/withings/connect" class="primary-button" style="display: block; text-align: center; text-decoration: none;">
+					<a href="/api/sensors/withings/connect" class="btn-primary" style="display:block; text-align:center;">
 						🔗 Koble til Withings
 					</a>
 				{/if}
@@ -565,7 +565,7 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 						<button
 							type="button"
 							onclick={() => syncSparebank1(false)}
-							class="primary-button"
+							class="btn-primary"
 							style="flex: 1;"
 							disabled={syncingSparebank1}
 						>
@@ -574,13 +574,13 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 						<button
 							type="button"
 							onclick={() => syncSparebank1(true)}
-							class="primary-button"
+							class="btn-primary"
 							style="flex: 1;"
 							disabled={syncingSparebank1}
 						>
 							{syncingSparebank1 ? '⏳ Henter...' : '📅 Full historikk (2 år)'}
 						</button>
-						<button type="button" onclick={disconnectSparebank1} class="debug-button" style="flex: 0.5;">
+						<button type="button" onclick={disconnectSparebank1} class="btn-ghost" style="flex: 0.5;">
 							🔌 Koble fra
 						</button>
 					</div>
@@ -588,7 +588,7 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 						"Synkroniser nå" henter nye transaksjoner. "Full historikk" henter alle transaksjoner fra de siste 2 årene.
 					</p>
 				{:else}
-					<a href="/api/sensors/sparebank1/connect" class="primary-button" style="display: block; text-align: center; text-decoration: none;">
+					<a href="/api/sensors/sparebank1/connect" class="btn-primary" style="display:block; text-align:center;">
 						🔗 Koble til SpareBank 1
 					</a>
 				{/if}
@@ -603,7 +603,7 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 					saldoankre. Fungerer for alle kontoer — bare sleng alle PDF-ene i én ZIP.
 				</p>
 
-				<label class="primary-button" style="display:block; text-align:center; cursor:pointer;">
+				<label class="btn-primary" style="display:block; text-align:center; cursor:pointer;">
 					{importingStatements ? '⏳ Importerer...' : '📤 Velg ZIP-fil'}
 					<input
 						type="file"
@@ -665,7 +665,7 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 						type="button"
 						onclick={deduplicateEconomicsData}
 						disabled={deduplicating}
-						class="primary-button"
+						class="btn-primary"
 						style="width:100%; margin-bottom:1rem;"
 					>
 						{deduplicating ? '⏳ Fjerner duplikater...' : '🧹 Fjern duplikater'}
@@ -688,7 +688,7 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 						type="button"
 						onclick={resetEconomicsData}
 						disabled={resettingEconomics}
-						class="danger-button"
+						class="btn-danger"
 						style="width:100%;"
 					>
 						{resettingEconomics ? '⏳ Tømmer...' : '🗑️ Tøm all økonomidata'}
@@ -854,10 +854,10 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 			</section>
 
 			<div class="actions">
-				<button type="button" onclick={() => showDebug = !showDebug} class="debug-button">
+				<button type="button" onclick={() => showDebug = !showDebug} class="btn-ghost">
 					{showDebug ? '🐛 Skjul Debug' : '🐛 Vis Debug'}
 				</button>
-				<button type="submit" class="save-button" disabled={saving}>
+				<button type="submit" class="btn-primary" disabled={saving}>
 					{saving ? '💾 Lagrer...' : '💾 Lagre Innstillinger'}
 				</button>
 			</div>
@@ -870,6 +870,38 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 		min-height: 100vh;
 		background: var(--bg-primary);
 		color: var(--text-secondary);
+
+		/* Tving mørkt tema — synker med /design og HomeScreen */
+		--bg-primary: #0f0f0f;
+		--bg-secondary: #111;
+		--bg-card: #1a1a1a;
+		--bg-header: #111;
+		--bg-input: #1a1a1a;
+		--bg-hover: #222;
+
+		--text-primary: #eee;
+		--text-secondary: #aaa;
+		--text-tertiary: #555;
+
+		--border-color: #2a2a2a;
+		--border-subtle: #1e1e1e;
+
+		--accent-primary: #4a5af0;
+		--accent-hover: #3a4adf;
+
+		--success-bg: rgba(74, 222, 128, 0.08);
+		--success-text: #4ade80;
+		--success-border: rgba(74, 222, 128, 0.2);
+
+		--error-bg: rgba(224, 112, 112, 0.08);
+		--error-text: #e07070;
+		--error-border: #6a2a2a;
+
+		--info-bg: rgba(74, 90, 240, 0.12);
+		--info-border: rgba(74, 90, 240, 0.3);
+
+		--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+		--shadow-md: 0 4px 6px rgba(0, 0, 0, 0.6);
 	}
 
 	.page-header {
@@ -887,25 +919,6 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 		display: flex;
 		align-items: center;
 		gap: 1rem;
-	}
-
-	.back-button {
-		width: 44px;
-		height: 44px;
-		border-radius: 50%;
-		background: var(--bg-card);
-		border: 1px solid var(--border-color);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		color: var(--text-primary);
-		text-decoration: none;
-		transition: all 0.2s;
-	}
-
-	.back-button:hover {
-		background: var(--bg-hover);
-		border-color: var(--border-subtle);
 	}
 
 	h1 {
@@ -1130,64 +1143,5 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 		justify-content: flex-end;
 		gap: 1rem;
 		margin-top: 2rem;
-	}
-
-	.debug-button {
-		background: var(--bg-hover);
-		color: var(--text-primary);
-		border: 1px solid var(--border-color);
-		padding: 0.875rem 1.5rem;
-		border-radius: 8px;
-		font-size: 0.875rem;
-		font-weight: 600;
-		cursor: pointer;
-		transition: all 0.2s;
-	}
-
-	.debug-button:hover {
-		background: var(--bg-secondary);
-	}
-
-	.save-button {
-		background: var(--accent-primary);
-		color: white;
-		border: none;
-		padding: 0.875rem 2rem;
-		border-radius: 8px;
-		font-size: 0.95rem;
-		font-weight: 600;
-		cursor: pointer;
-		transition: all 0.2s;
-	}
-
-	.save-button:hover:not(:disabled) {
-		background: var(--accent-hover);
-	}
-
-	.save-button:disabled {
-		opacity: 0.6;
-		cursor: not-allowed;
-	}
-
-	.danger-button {
-		background: var(--error-bg, #2d1a1a);
-		color: var(--error-text, #ff6b6b);
-		border: 1px solid var(--error-border, #ff6b6b);
-		padding: 0.875rem 1.5rem;
-		border-radius: 8px;
-		font-size: 0.875rem;
-		font-weight: 600;
-		cursor: pointer;
-		transition: all 0.2s;
-	}
-
-	.danger-button:hover:not(:disabled) {
-		background: var(--error-border, #ff6b6b);
-		color: white;
-	}
-
-	.danger-button:disabled {
-		opacity: 0.6;
-		cursor: not-allowed;
 	}
 </style>

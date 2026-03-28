@@ -186,7 +186,7 @@
 	<section class="chat-section" class:expanded={chatExpanded}>
 		{#if chatExpanded}
 			<div class="chat-header">
-				<button class="back-button" onclick={collapseChat}>
+				<button class="btn-ghost" onclick={collapseChat} style="margin-left:-0.5rem">
 					← Tilbake
 				</button>
 				<h2>Chat med AI</h2>
@@ -221,7 +221,7 @@
 				onkeydown={(e) => e.key === 'Enter' && sendMessage()}
 			/>
 			{#if chatExpanded}
-				<button class="send-button" onclick={sendMessage} disabled={isLoading || !inputValue.trim()}>
+				<button class="btn-primary send-btn" onclick={sendMessage} disabled={isLoading || !inputValue.trim()}>
 					Send
 				</button>
 			{/if}
@@ -411,16 +411,6 @@
 		gap: 1rem;
 	}
 
-	.back-button {
-		background: none;
-		border: none;
-		color: var(--text-primary);
-		font-size: 0.95rem;
-		cursor: pointer;
-		padding: 0.5rem;
-		margin-left: -0.5rem;
-	}
-
 	.chat-header h2 {
 		margin: 0;
 		font-size: 1.1rem;
@@ -463,7 +453,7 @@
 		border-top: 1px solid var(--border-color);
 	}
 
-	.send-button {
+	.send-btn {
 		background: var(--accent-primary);
 		border: none;
 		border-radius: 24px;
@@ -474,11 +464,11 @@
 		transition: all 0.2s;
 	}
 
-	.send-button:hover:not(:disabled) {
+	.send-btn:hover:not(:disabled) {
 		background: var(--accent-hover);
 	}
 
-	.send-button:disabled {
+	.send-btn:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
 	}

@@ -6,6 +6,7 @@ import { findSimilar } from './similarity';
 export interface GoalCreationParams {
 	userId: string;
 	categoryName: string;
+	themeId?: string;
 	title: string;
 	description: string;
 	targetDate?: string;
@@ -38,6 +39,7 @@ export async function createGoal(params: GoalCreationParams) {
 	const [goal] = await db.insert(goals).values({
 		userId: params.userId,
 		categoryId: category.id,
+		themeId: params.themeId || null,
 		title: params.title,
 		description: params.description,
 		targetDate: params.targetDate ? new Date(params.targetDate) : null,
