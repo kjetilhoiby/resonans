@@ -10,6 +10,9 @@
 		selectedPeriod === 'month' ? data.monthly :
 		data.yearly
 	);
+
+	const lastPeriod = $derived(periodData.length > 0 ? periodData[periodData.length - 1] : null);
+	const lastMetrics = $derived(lastPeriod?.metrics ?? null);
 	
 	// Format period key for display
 	function formatPeriodKey(key: string, period: string): string {
@@ -70,43 +73,43 @@
 	{:else}
 		<!-- Summary cards -->
 		<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
-			{#if periodData[periodData.length - 1]?.metrics?.weight}
+			{#if lastMetrics?.weight}
 				<div class="stat-card">
-					<div class="stat-label">Vekt (siste)</div>
+					<div class="stat-label">Vekt (snitt)</div>
 					<div class="stat-value">
-						{formatMetric(periodData[periodData.length - 1].metrics.weight.latest)} kg
+						{formatMetric(lastMetrics.weight.avg)} kg
 					</div>
-					{#if periodData[periodData.length - 1].metrics.weight.change}
-						<div class="stat-change" class:positive={periodData[periodData.length - 1].metrics.weight.change < 0}>
-							{periodData[periodData.length - 1].metrics.weight.change > 0 ? '+' : ''}{formatMetric(periodData[periodData.length - 1].metrics.weight.change, 2)} kg
+					{#if lastMetrics.weight.change != null}
+						<div class="stat-change" class:positive={lastMetrics.weight.change < 0}>
+							{lastMetrics.weight.change > 0 ? '+' : ''}{formatMetric(lastMetrics.weight.change, 2)} kg
 						</div>
 					{/if}
 				</div>
 			{/if}
 			
-			{#if periodData[periodData.length - 1]?.metrics?.steps}
+			{#if lastMetrics?.steps}
 				<div class="stat-card">
 					<div class="stat-label">Skritt (snitt)</div>
 					<div class="stat-value">
-						{formatMetric(periodData[periodData.length - 1].metrics.steps.avg, 0)}
+						{formatMetric(lastMetrics.steps.avg, 0)}
 					</div>
 				</div>
 			{/if}
 			
-			{#if periodData[periodData.length - 1]?.metrics?.sleep}
+			{#if lastMetrics?.sleep}
 				<div class="stat-card">
 					<div class="stat-label">Søvn (snitt)</div>
 					<div class="stat-value">
-						{formatMetric(periodData[periodData.length - 1].metrics.sleep.avg)}t
+						{formatMetric(lastMetrics.sleep.avg)}t
 					</div>
 				</div>
 			{/if}
 			
-			{#if periodData[periodData.length - 1]?.metrics?.intenseMinutes}
+			{#if lastMetrics?.intenseMinutes}
 				<div class="stat-card">
 					<div class="stat-label">Intense minutter</div>
 					<div class="stat-value">
-						{formatMetric(periodData[periodData.length - 1].metrics.intenseMinutes.sum, 0)}
+						{formatMetric(lastMetrics.intenseMinutes.sum, 0)}
 					</div>
 				</div>
 			{/if}

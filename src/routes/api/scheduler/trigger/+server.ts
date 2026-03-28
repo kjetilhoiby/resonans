@@ -14,7 +14,14 @@ export const POST: RequestHandler = async ({ url }) => {
 		// Get all users with Google Chat webhook configured
 		const allUsers = await db.query.users.findMany();
 
-		const results = [];
+		const results: Array<{
+			userId: string;
+			userName: string | null;
+			success: boolean;
+			goalCount?: number;
+			taskCount?: number;
+			error?: string;
+		}> = [];
 
 		for (const user of allUsers) {
 			// Skip if no webhook configured
@@ -72,7 +79,9 @@ export const POST: RequestHandler = async ({ url }) => {
 				const message = buildDailyCheckInMessage({
 					appUrl: url.origin,
 					userName: user.name,
-						avatarUrl: user.image,
+					goalsSummary: goalsSummary.filter((g) => g.status === 'active'),
+					tasksDueToday
+				});
 
 				const success = await sendGoogleChatMessage(user.googleChatWebhook, message);
 

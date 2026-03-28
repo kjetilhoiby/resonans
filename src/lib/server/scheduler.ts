@@ -109,7 +109,6 @@ async function sendDailyCheckIns() {
 				const message = buildDailyCheckInMessage({
 					appUrl,
 					userName: user.name,
-					avatarUrl: user.image,
 					goalsSummary: goalsSummary.filter((g) => g.status === 'active'),
 					tasksDueToday
 				});

@@ -130,7 +130,7 @@
 		<!-- Ring -->
 		<div class="dw-ring">
 			{#if pct != null}
-				<GoalRing {pct} size={56} stroke={4} color={displayColor} />
+				<GoalRing {pct} size={56} strokeWidth={4} color={displayColor} />
 			{:else}
 				<div class="dw-plain-circle" style:border-color={displayColor}></div>
 			{/if}
