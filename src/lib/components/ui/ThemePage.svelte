@@ -15,6 +15,7 @@
 	import { get } from 'svelte/store';
 	import ChatInput from './ChatInput.svelte';
 	import HealthDashboard from './HealthDashboard.svelte';
+	import EconomicsDashboard from './EconomicsDashboard.svelte';
 	import TriageCard from './TriageCard.svelte';
 	import GoalRing from './GoalRing.svelte';
 
@@ -53,18 +54,32 @@
 			sources?: Array<{ id: string; name: string; provider: string; isActive: boolean; lastSync: string | null }>;
 			recentEvents?: Array<{ id: string; timestamp: string; dataType: string; data: Record<string, unknown> }>;
 		} | null;
+		economicsDashboard?: {
+			accounts: Array<{ accountId: string; accountName: string | null; accountType: string | null; balance: number; currency: string | null }>;
+			totalBalance: number;
+			currentMonth: string;
+			monthSpending: {
+				totalSpending: number;
+				totalFixed: number;
+				totalVariable: number;
+				totalIncome: number;
+				categories: Array<{ category: string; label: string; emoji: string; amount: number; count: number; isFixed: boolean }>;
+			};
+			recentTransactions: Array<{ date: string; description: string; amount: number; emoji: string; label: string }>;
+		} | null;
 	}
 
-	let { theme, initialMessages, goals, conversationId, themeInstruction = '', healthDashboard = null }: Props = $props();
+	let { theme, initialMessages, goals, conversationId, themeInstruction = '', healthDashboard = null, economicsDashboard = null }: Props = $props();
 
 	/* ── Subtab-tilstand ────────────────────────────────── */
 	type Tab = 'chat' | 'data' | 'filer';
 	const isHealthTheme = theme.name.trim().toLowerCase() === 'helse';
+	const isEconomicsTheme = theme.name.trim().toLowerCase() === 'økonomi';
 	const requestedTab = get(page).url.searchParams.get('tab');
 	let tab = $state<Tab>(
 		requestedTab === 'chat' || requestedTab === 'data' || requestedTab === 'filer'
 			? requestedTab
-			: isHealthTheme
+			: isHealthTheme || isEconomicsTheme
 				? 'data'
 				: 'chat'
 	);
@@ -222,7 +237,7 @@
 					onclick={() => (tab = t)}
 				>
 					{#if t === 'chat'}💬 Samtaler
-					{:else if t === 'data'}{isHealthTheme ? '💪 Helse' : '🎯 Mål'}
+				{:else if t === 'data'}{isHealthTheme ? '💪 Helse' : isEconomicsTheme ? '💰 Økonomi' : '🎯 Mål'}
 					{:else}📁 Filer{/if}
 				</button>
 			{/each}
@@ -278,6 +293,18 @@
 					/>
 				{/if}
 
+				{#if isEconomicsTheme && economicsDashboard}
+					<EconomicsDashboard
+						accounts={economicsDashboard.accounts}
+						totalBalance={economicsDashboard.totalBalance}
+						currentMonth={economicsDashboard.currentMonth}
+						monthSpending={economicsDashboard.monthSpending}
+						recentTransactions={economicsDashboard.recentTransactions}
+						embedded={true}
+					/>
+				{/if}
+
+				{#if !isEconomicsTheme}
 				{#if goals.length === 0}
 					<div class="data-empty" class:data-empty-tight={isHealthTheme && healthDashboard}>
 						<p>Ingen aktive mål i dette temaet ennå.</p>
@@ -330,6 +357,7 @@
 							</div>
 						{/each}
 					</div>
+				{/if}
 				{/if}
 			</div>
 

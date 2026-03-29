@@ -11,5 +11,6 @@
 	goals={data.goals}
 	conversationId={data.conversationId}
 	healthDashboard={data.healthDashboard}
+	economicsDashboard={data.economicsDashboard}
 	themeInstruction={data.themeInstruction}
 />
