@@ -10,6 +10,7 @@
 	initialMessages={data.messages}
 	goals={data.goals}
 	conversationId={data.conversationId}
+	themeConversations={data.themeConversations}
 	healthDashboard={data.healthDashboard}
 	economicsDashboard={data.economicsDashboard}
 	themeInstruction={data.themeInstruction}

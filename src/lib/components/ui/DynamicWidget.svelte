@@ -9,11 +9,12 @@
 		color: string;
 		pinned: boolean;
 		onpress?: () => void;
+		onchat?: (summary: string) => void;
 		onunpin?: () => void;
 		onconfig?: () => void;
 	}
 
-	let { widgetId, title, unit, color, pinned, onpress, onunpin, onconfig }: Props = $props();
+	let { widgetId, title, unit, color, pinned, onpress, onchat, onunpin, onconfig }: Props = $props();
 
 	interface WidgetData {
 		current: number | null;
@@ -106,6 +107,20 @@
 		data?.state && data.state !== 'normal' ? STATE_COLORS[data.state] : color
 	);
 
+	const chatSummary = $derived.by(() => {
+		if (!data) return title;
+		if (data.delta != null && data.delta !== 0) {
+			const sign = data.delta > 0 ? '+' : '';
+			const formatted = Number.isInteger(data.delta)
+				? `${sign}${data.delta}`
+				: `${sign}${data.delta.toFixed(1)}`;
+			return `${formatted} ${data.unit ?? unit} – ${title.toLowerCase()}`;
+		}
+		if (data.current != null) {
+			return `${displayVal} ${displayUnit} – ${title.toLowerCase()}`;
+		}
+		return title;
+	});
 </script>
 
 <div
@@ -149,6 +164,14 @@
 				onpointerdown={(e) => { e.stopPropagation(); showUnpin = false; }}
 			></div>
 			<div class="dw-popup" role="dialog" aria-label="Widget-alternativer" style={popupStyle}>
+				<button
+					class="dw-popup-btn dw-popup-chat"
+					onpointerdown={(e) => e.stopPropagation()}
+					onclick={(e) => { e.stopPropagation(); showUnpin = false; onchat?.(chatSummary); }}
+					aria-label="Start chat om denne widgeten"
+				>
+					Start chat
+				</button>
 				<button
 					class="dw-popup-btn dw-popup-config"
 					onpointerdown={(e) => e.stopPropagation()}
@@ -282,14 +305,23 @@
 		background: #2a1a1a;
 	}
 
-	.dw-popup-config {
-		color: #9ba8f5;
+	.dw-popup-chat {
+		color: #7c8ef5;
 		border-bottom: 1px solid #2a2a2a;
 		border-radius: 6px 6px 0 0;
+	}
+	.dw-popup-chat:hover {
+		background: #1a1a2e;
+	}
+
+	.dw-popup-config {
+		color: #aaa;
+		border-bottom: 1px solid #2a2a2a;
+		border-radius: 0;
 		margin-bottom: 2px;
 	}
 	.dw-popup-config:hover {
-		background: #1a1a2e;
+		background: #222;
 	}
 
 	.dw-popup-cancel {

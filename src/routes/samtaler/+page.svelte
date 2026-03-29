@@ -30,45 +30,35 @@
 
 	let { data }: Props = $props();
 
+	const isListView = $derived(data.selectedConversation === null);
+
 	function toChatMessages(messages: ConversationMessage[]) {
 		return messages
-			.filter((message) => message.role !== 'system')
-			.map((message) => ({
-				id: message.id,
-				role: message.role as 'user' | 'assistant',
-				text: message.content
-			}));
+			.filter((m) => m.role !== 'system')
+			.map((m) => ({ id: m.id, role: m.role as 'user' | 'assistant', text: m.content }));
 	}
 
-	let selectedConversation = $state(data.selectedConversation);
 	let chatMessages = $state(toChatMessages(data.messages));
 	let chatLoading = $state(false);
 	let chatError = $state('');
 	let creatingConversation = $state(false);
 
 	$effect(() => {
-		selectedConversation = data.selectedConversation;
 		chatMessages = toChatMessages(data.messages);
 		chatError = '';
 	});
 
-	const formattedUpdatedAt = $derived(
-		selectedConversation
-			? new Intl.DateTimeFormat('nb-NO', {
-				day: 'numeric',
-				month: 'short',
-				hour: '2-digit',
-				minute: '2-digit'
-			}).format(new Date(selectedConversation.updatedAt))
+	const conversation = $derived(data.selectedConversation);
+
+	const formattedDate = $derived(
+		conversation
+			? new Intl.DateTimeFormat('nb-NO', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+				.format(new Date(conversation.updatedAt))
 			: ''
 	);
 
-	async function openConversation(id: string) {
-		const clickedConversation = data.conversations.find((conversation) => conversation.id === id) ?? null;
-		selectedConversation = clickedConversation;
-		chatMessages = [];
-		chatError = '';
-		await goto(`/samtaler?conversation=${id}`);
+	function fmtDay(iso: string) {
+		return new Intl.DateTimeFormat('nb-NO', { day: 'numeric', month: 'short' }).format(new Date(iso));
 	}
 
 	async function createConversation() {
@@ -76,27 +66,24 @@
 		try {
 			const res = await fetch('/api/conversations/new', { method: 'POST' });
 			if (!res.ok) throw new Error();
-			const payload = await res.json();
-			await goto(`/samtaler?conversation=${payload.conversationId}`);
+			const { conversationId } = await res.json();
+			await goto(`/samtaler?conversation=${conversationId}`);
 		} finally {
 			creatingConversation = false;
 		}
 	}
 
 	async function sendMessage(text: string) {
-		if (!selectedConversation) return;
-
+		if (!conversation) return;
 		chatMessages = [...chatMessages, { id: crypto.randomUUID(), role: 'user', text }];
 		chatLoading = true;
 		chatError = '';
-
 		try {
 			const res = await fetch('/api/chat', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ message: text, conversationId: selectedConversation.id })
+				body: JSON.stringify({ message: text, conversationId: conversation.id })
 			});
-
 			if (!res.ok) throw new Error(await res.text());
 			const payload = await res.json();
 			chatMessages = [...chatMessages, { id: crypto.randomUUID(), role: 'assistant', text: payload.message }];
@@ -108,100 +95,91 @@
 	}
 </script>
 
-<div class="conversations-page">
-	<header class="cp-header">
-		<div>
-			<p class="cp-kicker">Samtaler</p>
-			<h1 class="cp-title">Fortsett der du slapp</h1>
-		</div>
-		<div class="cp-header-actions">
-			<button class="cp-home-btn" onclick={() => goto('/')} aria-label="Tilbake fra samtaler">
-				&lt;- Samtaler
-			</button>
-			<button class="cp-new-btn" onclick={createConversation} disabled={creatingConversation}>
-				{creatingConversation ? 'Lager…' : 'Ny samtale'}
-			</button>
-		</div>
-	</header>
+<svelte:head><title>Samtaler</title></svelte:head>
 
-	<div class="cp-body">
-		<aside class="cp-list" aria-label="Samtaleliste">
+{#if isListView}
+	<!-- ══ LISTE-VIEW ══════════════════════════════════════════════════════════ -->
+	<div class="list-page">
+		<header class="lp-header">
+			<div class="lp-header-left">
+				<button class="lp-back" onclick={() => goto('/')} aria-label="Tilbake">←</button>
+				<h1 class="lp-title">Samtaler</h1>
+			</div>
+			<button class="lp-new-btn" onclick={createConversation} disabled={creatingConversation}>
+				{creatingConversation ? 'Lager…' : '+ Ny'}
+			</button>
+		</header>
+
+		<div class="lp-list">
 			{#if data.conversations.length === 0}
-				<div class="cp-empty-list">Ingen samtaler ennå.</div>
+				<p class="lp-empty">Ingen samtaler ennå. Start en ny fra forsiden.</p>
 			{:else}
-				{#each data.conversations as conversation}
-					<button
-						class="cp-item"
-						class:is-active={selectedConversation?.id === conversation.id}
-						onclick={() => openConversation(conversation.id)}
-					>
-						<div class="cp-item-top">
-							<span class="cp-item-title">{conversation.title}</span>
-							<span class="cp-item-time">{new Intl.DateTimeFormat('nb-NO', { day: 'numeric', month: 'short' }).format(new Date(conversation.updatedAt))}</span>
+				{#each data.conversations as c}
+					<button class="lp-item" onclick={() => goto(`/samtaler?conversation=${c.id}`)}>
+						<div class="lp-item-main">
+							<span class="lp-item-title">{c.title}</span>
+							{#if c.linkedTheme}
+								<span class="lp-theme-dot">{c.linkedTheme.emoji ?? '◎'}</span>
+							{/if}
+							<span class="lp-item-date">{fmtDay(c.updatedAt)}</span>
 						</div>
-						{#if conversation.linkedTheme}
-							<div class="cp-theme-pill">
-								<span>{conversation.linkedTheme.emoji ?? '◎'}</span>
-								<span>{conversation.linkedTheme.name}</span>
-							</div>
+						{#if c.preview}
+							<p class="lp-item-preview">{c.preview}</p>
 						{/if}
-						<p class="cp-preview">{conversation.preview || 'Ingen meldinger ennå.'}</p>
 					</button>
 				{/each}
 			{/if}
-		</aside>
-
-		<section class="cp-chat" aria-label="Valgt samtale">
-			{#if selectedConversation}
-				{@const linkedTheme = selectedConversation.linkedTheme}
-				<div class="cp-chat-header">
-					<div class="cp-chat-heading">
-						<h2>{selectedConversation.title}</h2>
-						<p>Sist oppdatert {formattedUpdatedAt}</p>
-					</div>
-					{#if linkedTheme}
-						<button class="cp-open-theme" onclick={() => goto(`/tema/${linkedTheme.id}`)}>
-							<span>{linkedTheme.emoji ?? '◎'}</span>
-							<span>Åpne tema</span>
-						</button>
-					{/if}
-				</div>
-
-				<div class="cp-messages">
-					{#if chatMessages.length === 0}
-						<p class="cp-empty-chat">Ingen meldinger ennå.</p>
-					{/if}
-					{#each chatMessages as message}
-						{#if message.role === 'user'}
-							<div class="cp-bubble cp-user">{message.text}</div>
-						{:else}
-							<TriageCard text={message.text} />
-						{/if}
-					{/each}
-					{#if chatLoading}
-						<TriageCard loading={true} />
-					{/if}
-					{#if chatError}
-						<p class="cp-error">{chatError}</p>
-					{/if}
-				</div>
-
-				<div class="cp-input">
-					<ChatInput
-						placeholder="Skriv videre i samtalen…"
-						disabled={chatLoading}
-						onsubmit={sendMessage}
-					/>
-				</div>
-			{:else}
-				<div class="cp-empty-chat">Velg en samtale eller start en ny.</div>
-			{/if}
-		</section>
+		</div>
 	</div>
-</div>
+
+{:else}
+	<!-- ══ CHAT-VIEW ═══════════════════════════════════════════════════════════ -->
+	<div class="chat-page">
+		<header class="cp-header">
+			<button class="cp-back" onclick={() => goto('/samtaler')} aria-label="Tilbake til liste">←</button>
+			<div class="cp-heading-wrap">
+				<p class="cp-title">{conversation?.title ?? ''}</p>
+				<p class="cp-subtitle">{formattedDate}</p>
+			</div>
+			{#if conversation?.linkedTheme}
+				{@const t = conversation.linkedTheme}
+				<button class="cp-theme-btn" onclick={() => goto(`/tema/${t.id}`)}>
+					{t.emoji ?? '◎'} {t.name}
+				</button>
+			{/if}
+		</header>
+
+		<div class="cp-messages">
+			{#if chatMessages.length === 0}
+				<p class="cp-empty">Ingen meldinger ennå.</p>
+			{/if}
+			{#each chatMessages as msg}
+				{#if msg.role === 'user'}
+					<div class="cp-bubble-user">{msg.text}</div>
+				{:else}
+					<TriageCard text={msg.text} />
+				{/if}
+			{/each}
+			{#if chatLoading}
+				<TriageCard loading={true} />
+			{/if}
+			{#if chatError}
+				<p class="cp-error">{chatError}</p>
+			{/if}
+		</div>
+
+		<div class="cp-input">
+			<ChatInput placeholder="Skriv videre i samtalen…" disabled={chatLoading} onsubmit={sendMessage} />
+		</div>
+	</div>
+{/if}
 
 <style>
-	.conversations-page {
+	/* ══ Delt ════════════════════════════════════════════════════════════════ */
+	:global(body) { background: #0f0f0f; }
+
+	/* ══ Liste-view ══════════════════════════════════════════════════════════ */
+	.list-page {
 		min-height: 100dvh;
 		background: #0f0f0f;
 		color: #d0d0d0;
@@ -210,223 +188,237 @@
 		flex-direction: column;
 	}
 
-	.cp-header {
+	.lp-header {
 		display: flex;
+		align-items: center;
 		justify-content: space-between;
-		align-items: flex-end;
-		gap: 16px;
-		padding: 48px 20px 18px;
-		border-bottom: 1px solid #1e1e1e;
+		padding: 52px 20px 16px;
 	}
 
-	.cp-kicker {
-		margin: 0 0 4px;
-		font-size: 0.68rem;
-		text-transform: uppercase;
-		letter-spacing: 0.14em;
-		color: #5d5d5d;
+	.lp-header-left {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+	}
+
+	.lp-back {
+		background: none;
+		border: none;
+		color: #666;
+		font: inherit;
+		font-size: 1.1rem;
+		cursor: pointer;
+		padding: 4px 8px 4px 0;
+		transition: color 0.12s;
+	}
+	.lp-back:hover { color: #ccc; }
+
+	.lp-title {
+		margin: 0;
+		font-size: 1.35rem;
+		font-weight: 700;
+		letter-spacing: -0.03em;
+		color: #f0f0f0;
+	}
+
+	.lp-new-btn {
+		background: #161616;
+		border: none;
+		border-radius: 999px;
+		padding: 8px 16px;
+		color: #ccc;
+		font: inherit;
+		font-size: 0.82rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: background 0.12s, color 0.12s;
+	}
+	.lp-new-btn:hover:not(:disabled) { background: #1f1f1f; color: #fff; }
+	.lp-new-btn:disabled { opacity: 0.5; cursor: default; }
+
+	.lp-list {
+		flex: 1;
+		padding: 8px 16px 32px;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.lp-empty {
+		margin: 40px auto;
+		font-size: 0.85rem;
+		color: #555;
+		text-align: center;
+	}
+
+	.lp-item {
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+		padding: 13px 14px;
+		border-radius: 12px;
+		background: transparent;
+		border: none;
+		text-align: left;
+		cursor: pointer;
+		transition: background 0.1s;
+		width: 100%;
+	}
+	.lp-item:hover { background: #141414; }
+
+	.lp-item-main {
+		display: flex;
+		align-items: baseline;
+		gap: 6px;
+		min-width: 0;
+	}
+
+	.lp-item-title {
+		font-size: 0.9rem;
+		font-weight: 600;
+		color: #e8e8e8;
+		flex: 1;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.lp-theme-dot {
+		font-size: 0.8rem;
+		flex-shrink: 0;
+	}
+
+	.lp-item-date {
+		font-size: 0.72rem;
+		color: #555;
+		white-space: nowrap;
+		flex-shrink: 0;
+	}
+
+	.lp-item-preview {
+		margin: 0;
+		font-size: 0.78rem;
+		color: #666;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		line-height: 1.3;
+	}
+
+	/* ══ Chat-view ═══════════════════════════════════════════════════════════ */
+	.chat-page {
+		height: 100dvh;
+		background: #0f0f0f;
+		color: #d0d0d0;
+		font-family: 'Inter', system-ui, sans-serif;
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
+	}
+
+	.cp-header {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 52px 16px 14px;
+		border-bottom: 1px solid #1a1a1a;
+		flex-shrink: 0;
+	}
+
+	.cp-back {
+		background: none;
+		border: none;
+		color: #666;
+		font: inherit;
+		font-size: 1.1rem;
+		cursor: pointer;
+		padding: 4px 8px 4px 0;
+		transition: color 0.12s;
+		flex-shrink: 0;
+	}
+	.cp-back:hover { color: #ccc; }
+
+	.cp-heading-wrap {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
 	}
 
 	.cp-title {
 		margin: 0;
-		font-size: 1.45rem;
-		line-height: 1.1;
-		letter-spacing: -0.04em;
-		color: #f0f0f0;
-	}
-
-	.cp-new-btn,
-	.cp-open-theme {
-		border: 1px solid #313131;
-		background: #151515;
-		color: #e0e0e0;
-		border-radius: 999px;
-		padding: 10px 14px;
-		font: inherit;
-		font-size: 0.82rem;
-		cursor: pointer;
-	}
-
-	.cp-new-btn:hover,
-	.cp-open-theme:hover {
-		border-color: #4b5fa8;
-	}
-
-	.cp-home-btn {
-		border: none;
-		background: transparent;
-		color: #8a8a8a;
-		padding: 8px 6px;
-		font: inherit;
-		font-size: 0.82rem;
-		cursor: pointer;
-	}
-
-	.cp-home-btn:hover {
-		color: #d0d0d0;
-	}
-
-	.cp-header-actions {
-		display: inline-flex;
-		align-items: center;
-		gap: 10px;
-	}
-
-	.cp-body {
-		flex: 1;
-		display: grid;
-		grid-template-columns: 320px minmax(0, 1fr);
-		min-height: 0;
-	}
-
-	.cp-list {
-		border-right: 1px solid #1e1e1e;
-		padding: 12px;
-		overflow-y: auto;
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
-	}
-
-	.cp-item {
-		background: #141414;
-		border: 1px solid #242424;
-		border-radius: 16px;
-		padding: 12px;
-		text-align: left;
-		color: inherit;
-		cursor: pointer;
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-	}
-
-	.cp-item.is-active {
-		border-color: #4b5fa8;
-		background: #161b28;
-	}
-
-	.cp-item-top {
-		display: flex;
-		justify-content: space-between;
-		gap: 10px;
-	}
-
-	.cp-item-title {
-		font-size: 0.9rem;
+		font-size: 0.95rem;
 		font-weight: 700;
 		color: #f0f0f0;
-	}
-
-	.cp-item-time {
-		font-size: 0.72rem;
-		color: #6d6d6d;
 		white-space: nowrap;
-	}
-
-	.cp-preview {
-		margin: 0;
-		font-size: 0.78rem;
-		line-height: 1.4;
-		color: #8a8a8a;
-		line-clamp: 2;
-		display: -webkit-box;
-		-webkit-line-clamp: 2;
-		-webkit-box-orient: vertical;
 		overflow: hidden;
+		text-overflow: ellipsis;
+		letter-spacing: -0.01em;
 	}
 
-	.cp-theme-pill {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		font-size: 0.72rem;
-		color: #aeb7dd;
-		background: #1a2130;
-		border: 1px solid #2e3c63;
-		border-radius: 999px;
-		padding: 5px 9px;
-		width: fit-content;
-	}
-
-	.cp-chat {
-		min-height: 0;
-		display: flex;
-		flex-direction: column;
-	}
-
-	.cp-chat-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		gap: 14px;
-		padding: 16px 18px;
-		border-bottom: 1px solid #1e1e1e;
-	}
-
-	.cp-chat-heading h2 {
-		margin: 0 0 4px;
-		font-size: 1rem;
-		color: #f0f0f0;
-	}
-
-	.cp-chat-heading p {
+	.cp-subtitle {
 		margin: 0;
-		font-size: 0.75rem;
-		color: #707070;
+		font-size: 0.7rem;
+		color: #555;
 	}
+
+	.cp-theme-btn {
+		background: none;
+		border: none;
+		color: #7a8acc;
+		font: inherit;
+		font-size: 0.75rem;
+		cursor: pointer;
+		white-space: nowrap;
+		flex-shrink: 0;
+		padding: 4px 0;
+	}
+	.cp-theme-btn:hover { color: #adb6eb; }
 
 	.cp-messages {
 		flex: 1;
 		overflow-y: auto;
-		padding: 16px 18px;
+		padding: 16px;
 		display: flex;
 		flex-direction: column;
 		gap: 12px;
+		-webkit-overflow-scrolling: touch;
+		scrollbar-width: thin;
+		scrollbar-color: #1e1e1e transparent;
 	}
 
-	.cp-bubble {
-		max-width: 80%;
-		padding: 10px 14px;
-		border-radius: 14px;
-		font-size: 0.88rem;
-		line-height: 1.5;
-		white-space: pre-wrap;
-	}
-
-	.cp-user {
+	.cp-bubble-user {
 		align-self: flex-end;
 		background: #1a1a2e;
 		border: 1px solid #2a2a4a;
-		color: #dbdcf7;
+		border-radius: 14px 14px 4px 14px;
+		padding: 10px 14px;
+		font-size: 0.88rem;
+		line-height: 1.5;
+		max-width: 80%;
+		white-space: pre-wrap;
+		word-break: break-word;
+		color: #ccc;
 	}
 
 	.cp-input {
-		padding: 14px 18px 18px;
-		border-top: 1px solid #1e1e1e;
+		padding: 10px 16px env(safe-area-inset-bottom, 14px);
+		border-top: 1px solid #1a1a1a;
+		flex-shrink: 0;
 	}
 
-	.cp-empty-list,
-	.cp-empty-chat,
-	.cp-error {
+	.cp-empty {
+		margin: auto;
 		font-size: 0.85rem;
-		color: #747474;
+		color: #404040;
+		text-align: center;
+		font-style: italic;
 	}
 
-	@media (max-width: 900px) {
-		.cp-body {
-			grid-template-columns: 1fr;
-		}
-
-		.cp-list {
-			border-right: none;
-			border-bottom: 1px solid #1e1e1e;
-			max-height: 38dvh;
-		}
-
-		.cp-chat-header {
-			align-items: flex-start;
-			flex-direction: column;
-		}
+	.cp-error {
+		font-size: 0.8rem;
+		color: #e07070;
+		margin: 0;
 	}
 </style>

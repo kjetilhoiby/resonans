@@ -1,6 +1,6 @@
 import { db } from '$lib/db';
 import { conversations, messages, themes } from '$lib/db/schema';
-import { eq, desc, and, sql } from 'drizzle-orm';
+import { eq, desc, and, asc, sql } from 'drizzle-orm';
 
 export interface CreateConversationParams {
 	userId: string;
@@ -136,6 +136,49 @@ export async function getConversationHistory(conversationId: string, limit: numb
 	return msgs.reverse();
 }
 
+export async function getConversationsByTheme(userId: string, themeId: string) {
+	let themeConversations: Array<typeof conversations.$inferSelect> = [];
+	try {
+		themeConversations = await db.query.conversations.findMany({
+			where: and(
+				eq(conversations.userId, userId),
+				eq(conversations.themeId, themeId)
+			),
+			orderBy: [desc(conversations.updatedAt)]
+		});
+	} catch {
+		// Fallback for environments where theme_id migration is not yet applied.
+		return [];
+	}
+
+	return await Promise.all(
+		themeConversations.map(async (conversation) => {
+			const [firstUserMessage] = await db.query.messages.findMany({
+				where: and(
+					eq(messages.conversationId, conversation.id),
+					eq(messages.role, 'user')
+				),
+				orderBy: [asc(messages.createdAt)],
+				limit: 1
+			});
+
+			const raw = firstUserMessage?.content || '';
+			const firstSentence = raw.split(/[.!?]\s/)[0].replace(/\*\*/g, '').trim();
+			const preview = firstSentence.length > 120
+				? firstSentence.slice(0, 117) + '…'
+				: firstSentence;
+
+			return {
+				id: conversation.id,
+				title: conversation.title || 'Ny samtale',
+				updatedAt: conversation.updatedAt,
+				createdAt: conversation.createdAt,
+				preview
+			};
+		})
+	);
+}
+
 export async function getUserConversationList(userId: string) {
 	const userConversations = await db.query.conversations.findMany({
 		where: eq(conversations.userId, userId),
@@ -144,9 +187,13 @@ export async function getUserConversationList(userId: string) {
 
 	return await Promise.all(
 		userConversations.map(async (conversation) => {
-			const [latestMessage] = await db.query.messages.findMany({
-				where: eq(messages.conversationId, conversation.id),
-				orderBy: [desc(messages.createdAt)],
+			// Hent første brukermelding for preview
+			const [firstUserMessage] = await db.query.messages.findMany({
+				where: and(
+					eq(messages.conversationId, conversation.id),
+					eq(messages.role, 'user')
+				),
+				orderBy: [asc(messages.createdAt)],
 				limit: 1
 			});
 
@@ -154,12 +201,19 @@ export async function getUserConversationList(userId: string) {
 				where: eq(themes.conversationId, conversation.id)
 			});
 
+			// Første setning, maks 120 tegn
+			const raw = firstUserMessage?.content || '';
+			const firstSentence = raw.split(/[.!?]\s/)[0].replace(/\*\*/g, '').trim();
+			const preview = firstSentence.length > 120
+				? firstSentence.slice(0, 117) + '…'
+				: firstSentence;
+
 			return {
 				id: conversation.id,
 				title: conversation.title || 'Ny samtale',
 				updatedAt: conversation.updatedAt,
 				createdAt: conversation.createdAt,
-				preview: latestMessage?.content || '',
+				preview,
 				linkedTheme: linkedTheme
 					? { id: linkedTheme.id, name: linkedTheme.name, emoji: linkedTheme.emoji }
 					: null

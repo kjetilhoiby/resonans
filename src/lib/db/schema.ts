@@ -150,6 +150,7 @@ export const activityMetrics = pgTable('activity_metrics', {
 export const conversations = pgTable('conversations', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	userId: text('user_id').references(() => users.id).notNull(),
+	themeId: uuid('theme_id').references(() => themes.id, { onDelete: 'set null' }),
 	title: text('title'),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
@@ -355,6 +356,10 @@ export const conversationsRelations = relations(conversations, ({ one, many }) =
 	user: one(users, {
 		fields: [conversations.userId],
 		references: [users.id]
+	}),
+	theme: one(themes, {
+		fields: [conversations.themeId],
+		references: [themes.id]
 	}),
 	messages: many(messages)
 }));

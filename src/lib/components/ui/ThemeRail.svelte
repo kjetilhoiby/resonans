@@ -73,29 +73,26 @@
 		gap: 5px;
 		padding: 6px 14px;
 		border-radius: 99px;
-		border: 1.5px solid color-mix(in srgb, var(--c) 30%, #2a2a2a);
-		background: color-mix(in srgb, var(--c) 8%, #111);
-		color: color-mix(in srgb, var(--c) 55%, #aaa);
+		border: none;
+		background: color-mix(in srgb, var(--c) 12%, #202020);
+		color: color-mix(in srgb, var(--c) 65%, #aaa);
 		font-size: 0.75rem;
 		font-weight: 500;
 		white-space: nowrap;
 		cursor: pointer;
 		transition:
 			background 0.15s,
-			border-color 0.15s,
 			color 0.15s;
 		flex-shrink: 0;
 	}
 
 	.theme-pill:hover {
-		border-color: color-mix(in srgb, var(--c) 60%, #2a2a2a);
-		background: color-mix(in srgb, var(--c) 16%, #111);
+		background: color-mix(in srgb, var(--c) 20%, #272727);
 		color: color-mix(in srgb, var(--c) 80%, #ccc);
 	}
 
 	.theme-pill.active {
-		border-color: var(--c);
-		background: color-mix(in srgb, var(--c) 20%, #111);
+		background: color-mix(in srgb, var(--c) 24%, #1a1a1a);
 		color: #fff;
 		box-shadow: 0 0 12px color-mix(in srgb, var(--c) 18%, transparent);
 	}

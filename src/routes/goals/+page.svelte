@@ -225,14 +225,15 @@
 <style>
 	.goals-page {
 		min-height: 100vh;
-		background: var(--bg-primary);
-		color: var(--text-primary);
+		background: #0f0f0f;
+		color: #ccc;
+		font-family: 'Inter', system-ui, sans-serif;
 	}
 
 	.page-header {
 		padding: 1.5rem;
-		background: var(--bg-header);
-		border-bottom: 1px solid var(--border-color);
+		background: #111;
+		border-bottom: 1px solid #1e1e1e;
 	}
 
 	.header-top {
@@ -246,7 +247,7 @@
 		font-size: 2rem;
 		font-weight: 700;
 		margin: 0;
-		color: var(--text-primary);
+		color: #e8e8e8;
 	}
 
 	.header-actions {
@@ -260,23 +261,23 @@
 	}
 
 	.stat-card {
-		background: var(--bg-card);
+		background: #1a1a1a;
 		padding: 1rem 1.5rem;
 		border-radius: 12px;
-		border: 1px solid var(--border-color);
+		border: 1px solid #242424;
 	}
 
 	.stat-value {
 		display: block;
 		font-size: 2rem;
 		font-weight: 700;
-		color: var(--text-primary);
+		color: #e8e8e8;
 		margin-bottom: 0.25rem;
 	}
 
 	.stat-label {
 		font-size: 0.85rem;
-		color: var(--text-tertiary);
+		color: #666;
 		text-transform: uppercase;
 		letter-spacing: 0.5px;
 	}
@@ -290,9 +291,9 @@
 	.empty-state {
 		text-align: center;
 		padding: 4rem 2rem;
-		background: var(--bg-card);
+		background: #1a1a1a;
 		border-radius: 16px;
-		border: 1px solid var(--border-color);
+		border: 1px solid #242424;
 	}
 
 	.empty-icon {
@@ -301,7 +302,7 @@
 	}
 
 	.empty-state p {
-		color: var(--text-secondary);
+		color: #888;
 		margin-bottom: 2rem;
 	}
 
@@ -312,17 +313,17 @@
 	}
 
 	.goal-card {
-		background: var(--bg-card);
-		border: 1px solid var(--border-color);
+		background: #141414;
+		border: 1px solid #242424;
 		border-radius: 16px;
 		padding: 1.5rem;
 		transition: all 0.2s;
 	}
 
 	.goal-card:hover {
-		border-color: var(--border-subtle);
+		border-color: #2e2e2e;
 		transform: translateY(-2px);
-		box-shadow: var(--shadow-md);
+		box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5);
 	}
 
 	.goal-header {
@@ -340,13 +341,13 @@
 		margin: 0;
 		font-size: 1.25rem;
 		font-weight: 600;
-		color: var(--text-primary);
+		color: #e8e8e8;
 		flex: 1;
 	}
 
 	.goal-category {
 		font-size: 0.85rem;
-		color: var(--text-secondary);
+		color: #888;
 	}
 
 	.goal-track-pill {
@@ -372,7 +373,7 @@
 	.progress-bar {
 		flex: 1;
 		height: 8px;
-		background: var(--bg-hover);
+		background: #222;
 		border-radius: 4px;
 		overflow: hidden;
 	}
@@ -386,14 +387,14 @@
 	.progress-text {
 		font-size: 1.25rem;
 		font-weight: 600;
-		color: var(--text-primary);
+		color: #e8e8e8;
 		min-width: 60px;
 		text-align: right;
 	}
 
 	.meta-info {
 		font-size: 0.85rem;
-		color: var(--text-secondary);
+		color: #888;
 		margin-bottom: 1rem;
 	}
 
@@ -405,8 +406,8 @@
 	}
 
 	.task-card {
-		background: var(--bg-secondary);
-		border: 1px solid var(--border-subtle);
+		background: #1a1a1a;
+		border: 1px solid #222;
 		border-radius: 12px;
 		padding: 1rem;
 	}
@@ -419,21 +420,21 @@
 	}
 
 	.task-title {
-		color: var(--text-primary);
+		color: #ddd;
 		font-weight: 500;
 		font-size: 0.95rem;
 	}
 
 	.task-frequency {
 		font-size: 0.75rem;
-		color: var(--text-tertiary);
+		color: #555;
 		text-transform: uppercase;
 		letter-spacing: 0.5px;
 	}
 
 	.task-meta {
 		font-size: 0.85rem;
-		color: var(--text-secondary);
+		color: #888;
 		margin-bottom: 0.75rem;
 	}
 
@@ -447,20 +448,20 @@
 	.task-progress-bar {
 		flex: 1;
 		height: 6px;
-		background: var(--bg-hover);
+		background: #222;
 		border-radius: 3px;
 		overflow: hidden;
 	}
 
 	.task-progress-fill {
 		height: 100%;
-		background: var(--accent-primary);
+		background: #7c8ef5;
 		transition: width 0.3s ease;
 	}
 
 	.task-progress-label {
 		font-size: 0.85rem;
-		color: var(--text-secondary);
+		color: #888;
 		font-weight: 600;
 		min-width: 45px;
 		text-align: right;
@@ -472,12 +473,12 @@
 		gap: 1rem;
 		margin-top: 0.75rem;
 		padding-top: 0.75rem;
-		border-top: 1px solid var(--border-subtle);
+		border-top: 1px solid #1e1e1e;
 	}
 
 	.activity-count {
 		font-size: 0.85rem;
-		color: var(--text-primary);
+		color: #ddd;
 		font-weight: 600;
 	}
 
@@ -489,7 +490,7 @@
 	.activity-dot {
 		width: 8px;
 		height: 8px;
-		background: var(--accent-primary);
+		background: #7c8ef5;
 		border-radius: 50%;
 		display: inline-block;
 	}

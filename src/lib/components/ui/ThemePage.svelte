@@ -42,11 +42,20 @@
 		description?: string | null;
 	}
 
+	interface ThemeConversation {
+		id: string;
+		title: string;
+		preview: string | null;
+		updatedAt: string;
+		createdAt: string;
+	}
+
 	interface Props {
 		theme: Theme;
 		initialMessages: Message[];
 		goals: Goal[];
 		conversationId: string;
+		themeConversations?: ThemeConversation[];
 		themeInstruction?: string;
 		healthDashboard?: {
 			weekly: unknown[];
@@ -70,13 +79,14 @@
 		} | null;
 	}
 
-	let { theme, initialMessages, goals, conversationId, themeInstruction = '', healthDashboard = null, economicsDashboard = null }: Props = $props();
+	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '', healthDashboard = null, economicsDashboard = null }: Props = $props();
 
 	/* ── Subtab-tilstand ────────────────────────────────── */
 	type Tab = 'chat' | 'data' | 'filer';
 	const isHealthTheme = theme.name.trim().toLowerCase() === 'helse';
 	const isEconomicsTheme = theme.name.trim().toLowerCase() === 'økonomi';
 	const requestedTab = get(page).url.searchParams.get('tab');
+	const isHandoff = get(page).url.searchParams.get('handoff') === '1';
 	let tab = $state<Tab>(
 		requestedTab === 'chat' || requestedTab === 'data' || requestedTab === 'filer'
 			? requestedTab
@@ -110,8 +120,73 @@
 	let chatError = $state('');
 	let archiveRedirect = $state<{ name: string; emoji?: string | null } | null>(null);
 
+	/* ── Samtaler-liste tilstand ────────────────────────── */
+	let selectedConvId = $state<string | null>(isHandoff ? conversationId : null);
+	let selectedConvMessages = $state<ChatMsg[]>([]);
+	let convLoadingMessages = $state(false);
+	let convCreating = $state(false);
+
+	const activeConversationMessages = $derived(
+		selectedConvId === conversationId ? chatMessages : selectedConvMessages
+	);
+
+	function fmtDay(iso: string): string {
+		const d = new Date(iso);
+		const today = new Date();
+		const isToday =
+			d.getDate() === today.getDate() &&
+			d.getMonth() === today.getMonth() &&
+			d.getFullYear() === today.getFullYear();
+		if (isToday)
+			return new Intl.DateTimeFormat('nb-NO', { hour: '2-digit', minute: '2-digit' }).format(d);
+		return new Intl.DateTimeFormat('nb-NO', { day: 'numeric', month: 'short' }).format(d);
+	}
+
+	async function openConversation(convId: string) {
+		if (convId === conversationId) {
+			selectedConvId = conversationId;
+			return;
+		}
+		convLoadingMessages = true;
+		try {
+			const res = await fetch(`/api/conversations/${convId}/messages`);
+			if (!res.ok) throw new Error('Lasting feilet');
+			const data: Array<{ role: string; content: string }> = await res.json();
+			selectedConvMessages = data.map((m) => ({
+				role: m.role as 'user' | 'assistant',
+				text: m.content
+			}));
+			selectedConvId = convId;
+		} catch {
+			chatError = 'Kunne ikke laste samtalen.';
+		} finally {
+			convLoadingMessages = false;
+		}
+	}
+
+	async function createNewConversation() {
+		convCreating = true;
+		try {
+			const res = await fetch(`/api/tema/${theme.id}/conversations`, { method: 'POST' });
+			if (!res.ok) throw new Error('Oppretting feilet');
+			const data: { conversationId: string } = await res.json();
+			selectedConvMessages = [];
+			selectedConvId = data.conversationId;
+		} catch {
+			chatError = 'Kunne ikke opprette samtale.';
+		} finally {
+			convCreating = false;
+		}
+	}
+
 	async function sendMessage(text: string) {
-		chatMessages.push({ role: 'user', text });
+		if (selectedConvId === null) return;
+		const isCanon = selectedConvId === conversationId;
+		if (isCanon) {
+			chatMessages.push({ role: 'user', text });
+		} else {
+			selectedConvMessages.push({ role: 'user', text });
+		}
 		chatLoading = true;
 		chatError = '';
 
@@ -119,13 +194,13 @@
 			const res = await fetch('/api/chat', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ message: text, conversationId })
+				body: JSON.stringify({ message: text, conversationId: selectedConvId })
 			});
 
 			if (!res.ok) throw new Error(await res.text());
 			const data = await res.json();
 
-			if (data.themeArchived && data.archivedTheme?.id === theme.id) {
+			if (isCanon && data.themeArchived && data.archivedTheme?.id === theme.id) {
 				archiveRedirect = {
 					name: data.archivedTheme.name,
 					emoji: data.archivedTheme.emoji ?? theme.emoji
@@ -136,7 +211,11 @@
 				return;
 			}
 
-			chatMessages.push({ role: 'assistant', text: data.message });
+			if (isCanon) {
+				chatMessages.push({ role: 'assistant', text: data.message });
+			} else {
+				selectedConvMessages.push({ role: 'assistant', text: data.message });
+			}
 		} catch (err) {
 			chatError = 'Noe gikk galt. Prøv igjen.';
 		} finally {
@@ -315,37 +394,92 @@
 		<div class="tp-body tp-enter">
 		<!-- CHAT -->
 		{#if tab === 'chat'}
-			<div class="chat-panel">
-				<div class="chat-messages" aria-live="polite" aria-label="Samtalehistorikk">
-					{#if chatMessages.length === 0}
-						<p class="chat-empty">Ingen meldinger ennå — start samtalen nedenfor.</p>
-					{/if}
+			{#if selectedConvId === null}
+				<!-- Samtale-liste -->
+				<div class="conv-list-panel">
+					<div class="conv-list-actions">
+						<button
+							class="conv-new-btn"
+							onclick={createNewConversation}
+							disabled={convCreating}
+						>
+							{convCreating ? '…' : '+ Ny samtale'}
+						</button>
+					</div>
 
-					{#each chatMessages as msg}
-						{#if msg.role === 'user'}
-							<div class="bubble bubble-user">{msg.text}</div>
-						{:else}
-							<TriageCard text={msg.text} />
-						{/if}
-					{/each}
-
-					{#if chatLoading}
-						<TriageCard loading={true} />
+					{#if convLoadingMessages}
+						<p class="conv-list-loading">Laster…</p>
+					{:else if themeConversations.length === 0}
+						<div class="conv-list-empty">
+							<p>Ingen samtaler ennå.</p>
+						</div>
+					{:else}
+						<div class="conv-list">
+							{#each themeConversations as conv}
+								<button
+									class="conv-item"
+									onclick={() => openConversation(conv.id)}
+								>
+									<div class="conv-item-main">
+										<span class="conv-item-title">{conv.title}</span>
+										<span class="conv-item-date">{fmtDay(conv.updatedAt)}</span>
+									</div>
+									{#if conv.preview}
+										<p class="conv-item-preview">{conv.preview}</p>
+									{/if}
+								</button>
+							{/each}
+						</div>
 					{/if}
 
 					{#if chatError}
-						<p class="chat-error">{chatError}</p>
+						<p class="chat-error" style="padding: 0 16px;">{chatError}</p>
 					{/if}
 				</div>
+			{:else}
+				<!-- Åpen samtale -->
+				<div class="chat-panel">
+					<div class="conv-back-bar">
+						<button
+							class="conv-back-btn"
+							onclick={() => { selectedConvId = null; chatError = ''; }}
+							aria-label="Tilbake til samtaler"
+						>
+							← Samtaler
+						</button>
+					</div>
 
-				<div class="chat-input-wrap">
-					<ChatInput
-						placeholder="Spør om {theme.name.toLowerCase()}…"
-						disabled={chatLoading}
-						onsubmit={sendMessage}
-					/>
+					<div class="chat-messages" aria-live="polite" aria-label="Samtalehistorikk">
+						{#if activeConversationMessages.length === 0}
+							<p class="chat-empty">Ingen meldinger ennå — start samtalen nedenfor.</p>
+						{/if}
+
+						{#each activeConversationMessages as msg}
+							{#if msg.role === 'user'}
+								<div class="bubble bubble-user">{msg.text}</div>
+							{:else}
+								<TriageCard text={msg.text} />
+							{/if}
+						{/each}
+
+						{#if chatLoading}
+							<TriageCard loading={true} />
+						{/if}
+
+						{#if chatError}
+							<p class="chat-error">{chatError}</p>
+						{/if}
+					</div>
+
+					<div class="chat-input-wrap">
+						<ChatInput
+							placeholder="Spør om {theme.name.toLowerCase()}…"
+							disabled={chatLoading}
+							onsubmit={sendMessage}
+						/>
+					</div>
 				</div>
-			</div>
+			{/if}
 
 		<!-- DATA -->
 		{:else if tab === 'data'}
@@ -953,6 +1087,133 @@ Eksempel:
 
 	.instruction-empty {
 		color: #777;
+	}
+
+	/* ── Samtaler-liste ── */
+	.conv-list-panel {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		overflow-y: auto;
+		padding: 12px 0 env(safe-area-inset-bottom, 16px);
+	}
+
+	.conv-list-actions {
+		display: flex;
+		justify-content: flex-end;
+		padding: 0 16px 10px;
+	}
+
+	.conv-new-btn {
+		background: #1e1e1e;
+		border: 1px solid #2e2e2e;
+		color: #7c8ef5;
+		font: inherit;
+		font-size: 0.8rem;
+		padding: 7px 16px;
+		border-radius: 99px;
+		cursor: pointer;
+		transition: background 0.12s;
+	}
+
+	.conv-new-btn:hover:not(:disabled) {
+		background: #222;
+	}
+
+	.conv-new-btn:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+
+	.conv-list {
+		display: flex;
+		flex-direction: column;
+	}
+
+	.conv-item {
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+		padding: 12px 16px;
+		background: none;
+		border: none;
+		border-bottom: 1px solid #1a1a1a;
+		color: inherit;
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
+		transition: background 0.1s;
+	}
+
+	.conv-item:hover {
+		background: #161616;
+	}
+
+	.conv-item-main {
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
+		gap: 8px;
+	}
+
+	.conv-item-title {
+		font-size: 0.88rem;
+		font-weight: 600;
+		color: #d4d4d4;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		min-width: 0;
+	}
+
+	.conv-item-date {
+		flex-shrink: 0;
+		font-size: 0.72rem;
+		color: #555;
+	}
+
+	.conv-item-preview {
+		margin: 0;
+		font-size: 0.78rem;
+		color: #555;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.conv-list-empty {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 48px 20px;
+		color: #444;
+		font-size: 0.85rem;
+	}
+
+	.conv-list-loading {
+		padding: 24px 16px;
+		color: #444;
+		font-size: 0.82rem;
+		text-align: center;
+	}
+
+	.conv-back-bar {
+		padding: 8px 16px 4px;
+		border-bottom: 1px solid #1a1a1a;
+	}
+
+	.conv-back-btn {
+		background: none;
+		border: none;
+		color: #7c8ef5;
+		font: inherit;
+		font-size: 0.82rem;
+		padding: 4px 0;
+		cursor: pointer;
+	}
+
+	.conv-back-btn:hover {
+		color: #a0adff;
 	}
 
 </style>

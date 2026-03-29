@@ -3,6 +3,7 @@ import { themes, goals, messages as messagesTable, conversations } from '$lib/db
 import { loadHealthDashboardData } from '$lib/server/health-dashboard';
 import { loadEconomicsDashboardData } from '$lib/server/economics-dashboard';
 import { getThemeInstruction } from '$lib/server/theme-instructions';
+import { getConversationsByTheme } from '$lib/server/conversations';
 import { eq, and, asc } from 'drizzle-orm';
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
@@ -19,18 +20,44 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	// Opprett samtale for temaet om det mangler
 	let conversationId = theme.conversationId;
 	if (!conversationId) {
-		const [conv] = await db
-			.insert(conversations)
-			.values({ userId: locals.userId, title: theme.name })
-			.returning();
+		let conv: { id: string };
+		try {
+			[conv] = await db
+				.insert(conversations)
+				.values({ userId: locals.userId, themeId: theme.id, title: theme.name })
+				.returning({ id: conversations.id });
+		} catch {
+			// Fallback when theme_id column is not yet available in DB.
+			[conv] = await db
+				.insert(conversations)
+				.values({ userId: locals.userId, title: theme.name })
+				.returning({ id: conversations.id });
+		}
 		await db
 			.update(themes)
 			.set({ conversationId: conv.id })
 			.where(eq(themes.id, theme.id));
 		conversationId = conv.id;
+	} else {
+		// Retroaktivt: koble eksisterende canonical samtale til temaet om den mangler themeId
+		try {
+			const existingConv = await db.query.conversations.findFirst({
+				where: eq(conversations.id, conversationId)
+			});
+			if (existingConv && !existingConv.themeId) {
+				await db.update(conversations)
+					.set({ themeId: theme.id })
+					.where(eq(conversations.id, conversationId));
+			}
+		} catch {
+			// Ignore when theme_id column is missing; page can still render.
+		}
 	}
 
-	// Last meldinger for denne samtalen (nyeste 50, i kronologisk rekkefølge)
+	// Last alle samtaler for dette temaet
+	const themeConversations = await getConversationsByTheme(locals.userId, theme.id);
+
+	// Last meldinger for den valgte/canonicale samtalen
 	const msgs = await db
 		.select({
 			id: messagesTable.id,
@@ -72,6 +99,11 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 			emoji: theme.emoji,
 			description: theme.description
 		},
+		themeConversations: themeConversations.map((c) => ({
+			...c,
+			updatedAt: c.updatedAt.toISOString(),
+			createdAt: c.createdAt.toISOString()
+		})),
 		messages: msgs.map((m) => ({
 			id: m.id,
 			role: m.role as 'user' | 'assistant' | 'system',

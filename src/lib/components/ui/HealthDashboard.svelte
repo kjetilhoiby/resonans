@@ -447,50 +447,75 @@
 		return `${sign}${value.toFixed(decimals)} ${unit}`;
 	}
 
+	function describeWindow(mode: WindowMode): string {
+		if (mode === '7d') return 'siste 7 dager';
+		if (mode === '30d') return 'siste 30 dager';
+		if (mode === '365d') return 'siste 365 dager';
+		if (mode === 'week') return 'denne uken';
+		if (mode === 'month') return 'denne måneden';
+		return 'i år';
+	}
+
+	const windowCopy = $derived(describeWindow(selectedWindow));
+
 	const metricCards = $derived([
 		{
-			label: 'Akkumulert løpedistanse',
+			label: 'Løping',
 			value: runningKm > 0 ? `${runningKm.toFixed(1)} km` : '–',
-			subvalue: runningTrackMatch
-				? `${runningTrackMatch.track.label} · mål ${runningTargetForWindow.toFixed(1)} km`
-				: 'mål ikke satt',
+			subvalue: runningKm > 0
+				? runningTrackMatch
+					? `${windowCopy}: ${runningKm.toFixed(1)} km · mål ${runningTargetForWindow.toFixed(1)} km`
+					: `${windowCopy}: totalt løpt i perioden`
+				: `${windowCopy}: ingen løpsdata registrert`,
 			color: runningRingColor,
 			pct: runningPct
 		},
 		{
-			label: 'Snitt søvn / natt',
+			label: 'Søvn per natt',
 			value: sleepHoursAvg != null ? `${formatMetric(sleepHoursAvg)} t` : '–',
-			subvalue: 'søvnmengde per natt',
+			subvalue:
+				sleepHoursAvg != null
+					? `${windowCopy}: snitt timer søvn per natt (mål 7.5 t)`
+					: `${windowCopy}: ingen søvndata registrert`,
 			color: '#5fa0a0',
 			pct: pctHigherBetter(sleepHoursAvg, 7.5)
 		},
 		{
-			label: 'Søvnlag',
-			value: sleepLagComposite != null ? formatMetric(sleepLagComposite, 1) : '–',
-			subvalue: '22-00 manglende + 06-08 søvn',
+			label: 'Søvnavvik',
+			value: sleepLagComposite != null ? `${formatMetric(sleepLagComposite, 1)} t` : '–',
+			subvalue:
+				sleepLagComposite != null
+					? `${windowCopy}: avvik i døgnrytme (lavere er bedre)`
+					: `${windowCopy}: ikke nok data til avviksberegning`,
 			color: '#7b9aa8',
 			pct: pctLowerBetter(sleepLagComposite, 8)
 		},
 		{
-			label: 'Snitt skritt / dag',
+			label: 'Skritt per dag',
 			value: avgStepsPerDay != null ? `${formatMetric(avgStepsPerDay, 0)}` : '–',
-			subvalue: 'skritt per dag',
+			subvalue:
+				avgStepsPerDay != null
+					? `${windowCopy}: dagssnitt (mål 8 000)`
+					: `${windowCopy}: ingen aktivitetsdata registrert`,
 			color: '#82c882',
 			pct: pctHigherBetter(avgStepsPerDay, 8000)
 		},
 		{
-			label: 'Snitt aktive min / dag',
-			value: avgActiveMinutesPerDay != null ? `${formatMetric(avgActiveMinutesPerDay, 0)}` : '–',
-			subvalue: 'aktive minutter per dag',
+			label: 'Aktive minutter per dag',
+			value: avgActiveMinutesPerDay != null ? `${formatMetric(avgActiveMinutesPerDay, 0)} min` : '–',
+			subvalue:
+				avgActiveMinutesPerDay != null
+					? `${windowCopy}: dagssnitt (mål 30 min)`
+					: `${windowCopy}: ingen trenings-/aktivitetstid registrert`,
 			color: '#f0b429',
 			pct: pctHigherBetter(avgActiveMinutesPerDay, 30)
 		},
 		{
-			label: 'Endring i vekt',
+			label: 'Vektendring',
 			value: formatSigned(weightDelta, 'kg', 2),
 			subvalue: weightTrackMatch
-				? `${weightTrackMatch.track.label} · mål ${formatSigned(weightProjectedTarget, 'kg', 2)}`
-				: 'pluss/minus i valgt periode',
+				? `${windowCopy}: ${formatSigned(weightDelta, 'kg', 2)} · mål ${formatSigned(weightProjectedTarget, 'kg', 2)}`
+				: `${windowCopy}: pluss/minus i perioden`,
 			color: weightTrackMatch ? weightProgressColor : weightDelta == null ? '#7c8ef5' : weightDelta <= 0 ? '#82c882' : '#e07070',
 			pct: weightTrackMatch ? weightProgressPct : weightDelta == null ? 50 : pctLowerBetter(Math.abs(weightDelta), 2)
 		}

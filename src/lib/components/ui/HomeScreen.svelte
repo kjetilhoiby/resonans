@@ -482,6 +482,20 @@
 
 
 
+	function navigateForWidget(w: UserWidget) {
+		const healthMetrics = ['weight', 'sleepDuration', 'steps', 'distance', 'workoutCount', 'heartrate', 'mood'];
+		const econMetrics = ['amount'];
+		if (healthMetrics.includes(w.metricType)) {
+			const t = themes.find((t) => t.name.trim().toLowerCase() === 'helse');
+			void goto(t ? `/tema/${t.id}` : '/health');
+		} else if (econMetrics.includes(w.metricType)) {
+			const t = themes.find((t) => t.name.trim().toLowerCase() === 'økonomi');
+			void goto(t ? `/tema/${t.id}` : '/economics');
+		} else {
+			void goto('/');
+		}
+	}
+
 	const dateLabel = $derived(
 		new Intl.DateTimeFormat('nb-NO', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date())
 	);
@@ -512,7 +526,8 @@
 						unit={w.unit}
 						color={w.color}
 						pinned={w.pinned}
-						onpress={() => openChat(`Fortell meg mer om ${w.title.toLowerCase()}`)}
+						onpress={() => navigateForWidget(w)}
+						onchat={(summary) => openChat(summary)}
 						onunpin={() => unpinWidget(w.id)}
 						onconfig={() => (configWidget = w)}
 					/>
@@ -850,12 +865,13 @@
 		display: none;
 	}
 
-	/* ── Tittel-sone ── */
+	/* ── Tittel-sone (15 %) ── */
 	.zone-title {
+		flex: 15 0 0;
+		min-height: 0;
 		display: flex;
 		align-items: center;
-		padding: var(--screen-title-top-pad, 34px) 20px 0;
-		min-height: 0;
+		padding: var(--screen-title-top-pad, 28px) 20px 0;
 	}
 
 	.title-row {
@@ -886,16 +902,21 @@
 		color: #aaa;
 	}
 
-	/* ── Widget-sone (35 %) ── */
+	/* ── Widget-sone (35 %) — kort med avrundede hjørner ── */
 	.zone-widgets {
-		padding: 12px 20px 8px;
-		border-top: 1px solid #1e1e1e;
+		flex: 35 0 0;
+		min-height: 0;
+		padding: 14px 16px 10px;
+		background: #171717;
+		border-radius: 18px;
+		margin: 0 12px;
 	}
 
-	/* ── Tema-sone (20 %) ── */
+	/* ── Tema-sone (15 %) ── */
 	.zone-tema {
+		flex: 15 0 0;
+		min-height: 0;
 		padding: 12px 20px 8px;
-		border-top: 1px solid #1e1e1e;
 	}
 
 	/* ── Zone-label ── */
@@ -907,12 +928,12 @@
 		margin: 0 0 10px;
 	}
 
-	/* ── Widget-rad ── */
+	/* ── Widget-rad — sentrert, bryter til ny linje ved behov ── */
 	.widget-row {
-		display: grid;
-		grid-template-columns: repeat(2, 72px);
+		display: flex;
+		flex-wrap: wrap;
 		gap: 16px;
-		justify-content: start;
+		justify-content: center;
 	}
 
 	.onboarding-cta {
@@ -950,25 +971,25 @@
 		color: #555;
 	}
 
-	/* ── Input-sone: kollapset → pill-knapp, utvidet → full chat ── */
+	/* ── Input-sone (30 %) — kort med avrundede hjørner ── */
 	.zone-input {
-		padding: 16px 20px env(safe-area-inset-bottom, 20px);
-		border-top: 1px solid #1e1e1e;
+		flex: 30 0 0;
+		min-height: 0;
+		padding: 12px 14px 12px;
+		background: #171717;
+		border-radius: 18px;
+		margin: 0 12px env(safe-area-inset-bottom, 8px);
 		display: flex;
 		align-items: stretch;
-		margin-top: auto;
 	}
 
 	.zone-chat-open {
-		flex: 1;
-		flex-shrink: 0;
+		position: fixed;
+		inset: 0;
+		z-index: 50;
 		display: flex;
 		flex-direction: column;
-		padding: 0;
-		border-top: 1px solid #1e1e1e;
-		margin-top: 0;
-		/* Fyller resten av skjermen etter at de andre sonene er skjult */
-		height: calc(100dvh - 1px);
+		background: #0f0f0f;
 	}
 
 	/* ── Chat: åpne-knapp (kollapset) ── */
@@ -990,8 +1011,8 @@
 		align-items: center;
 		gap: 10px;
 		width: 100%;
-		background: #12151d;
-		border: 1px solid #252d40;
+		background: #1a1d2a;
+		border: none;
 		border-radius: 14px;
 		padding: 11px 13px;
 		color: #c9d1f5;
@@ -1002,8 +1023,7 @@
 	}
 
 	.resume-chat-btn:hover {
-		border-color: #3c4f9f;
-		background: #151923;
+		background: #1e2235;
 	}
 
 	.resume-chat-label {
@@ -1021,15 +1041,15 @@
 		align-items: center;
 		justify-content: center;
 		gap: 8px;
-		background: linear-gradient(180deg, #181818 0%, #121212 100%);
-		border: 1px solid #2a2a2a;
+		background: linear-gradient(180deg, #1e1e1e 0%, #191919 100%);
+		border: none;
 		border-radius: 18px;
 		padding: 22px 12px;
 		cursor: pointer;
 		color: #888;
 		font: inherit;
 		font-size: 0.9rem;
-		transition: border-color 0.15s, background 0.15s, transform 0.15s;
+		transition: background 0.15s, transform 0.15s;
 		text-align: center;
 		width: 100%;
 	}
@@ -1043,8 +1063,7 @@
 		gap: 14px;
 	}
 	.capture-action:hover {
-		background: linear-gradient(180deg, #1d1d1d 0%, #151515 100%);
-		border-color: #3c4f9f;
+		background: linear-gradient(180deg, #242424 0%, #1e1e1e 100%);
 		transform: translateY(-1px);
 		color: #c1c7e8;
 	}
@@ -1378,7 +1397,7 @@
 		display: flex;
 		align-items: center;
 		gap: 10px;
-		padding: 12px 16px;
+		padding: env(safe-area-inset-top, 12px) 16px 12px;
 		border-bottom: 1px solid #1a1a1a;
 		flex-shrink: 0;
 	}
@@ -1564,12 +1583,7 @@
 	}
 
 
-	@media (max-width: 560px) {
-		.zone-input {
-			padding-left: 16px;
-			padding-right: 16px;
-		}
-	}
+
 </style>
 
 
