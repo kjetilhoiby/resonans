@@ -30,8 +30,8 @@ Fix health flow so users land in a stable Health theme experience after Withings
 ### 3) Validation and shipping
 - [x] Run svelte-check after onboarding fix.
 - [x] Smoke-check Withings callback types/redirect behavior.
-- [ ] Commit with clear message.
-- [ ] Push to main.
+- [x] Commit with clear message.
+- [x] Push to main.
 
 ## Execution log
 - 2026-03-29: Added reusable health dashboard and server loaders; embedded in Health theme and Health route.
@@ -40,6 +40,7 @@ Fix health flow so users land in a stable Health theme experience after Withings
 - 2026-03-29: Existing users with existing `Helse` theme now land directly on `tab=data` without intro handoff.
 - 2026-03-29: `npm run check` executed. Result: scope files are clean, but workspace has pre-existing chart/type errors outside health/onboarding scope.
 - 2026-03-29: SpareBank1 parity note: when implementing economy-theme auto-provisioning later, mirror the same `created`/`handoff` gating used in Withings callback.
+- 2026-03-29: Committed as `ef2dce5` and pushed to `main`.
 
 ## Resume notes
 - Key files:
