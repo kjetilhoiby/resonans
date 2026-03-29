@@ -2,6 +2,9 @@
 	import { goto } from '$app/navigation';
 	import AccountPicker from '$lib/components/economics/AccountPicker.svelte';
 	import EconomicsTabs from '$lib/components/economics/EconomicsTabs.svelte';
+	import CompactRecordList from '$lib/components/ui/CompactRecordList.svelte';
+	import GoalRing from '$lib/components/ui/GoalRing.svelte';
+	import PeriodPills from '$lib/components/ui/PeriodPills.svelte';
 	import BalanceChart from '$lib/components/charts/BalanceChart.svelte';
 	import SpendingChart from '$lib/components/charts/SpendingChart.svelte';
 	import MerchantAnalysis from '$lib/components/charts/MerchantAnalysis.svelte';
@@ -74,6 +77,8 @@
 	// ── Balance interval filter (frontend-only) ──────────────────────────────
 	type BalanceInterval = '2025' | '12m' | '24m' | 'all';
 	let balanceInterval = $state<BalanceInterval>('all');
+	type TransactionWindow = '14d' | '30d' | '90d';
+	let transactionWindow = $state<TransactionWindow>('30d');
 
 	function getIntervalFromDate(interval: BalanceInterval): string | null {
 		if (interval === 'all') return null;
@@ -96,6 +101,21 @@
 		const fromDate = getIntervalFromDate(balanceInterval);
 		if (!fromDate) return balanceHistory;
 		return balanceHistory.filter((d) => d.date >= fromDate);
+	});
+
+	const summaryWidgets = $derived(() => {
+		if (!selectedAccount) return [];
+		const balance = selectedAccount.balance ?? 0;
+		const available = selectedAccount.availableBalance ?? balance;
+		const currency = selectedAccount.currency ?? 'NOK';
+		const baseline = Math.max(Math.abs(balance), 1);
+		const availabilityPct = Math.round(Math.max(0, Math.min(100, (available / baseline) * 100)));
+
+		return [
+			{ label: 'Saldo', value: formatNOK(balance, currency), pct: Math.min(100, Math.max(8, Math.round((Math.abs(balance) / 100000) * 100))), color: '#7c8ef5' },
+			{ label: 'Disponibelt', value: formatNOK(available, currency), pct: availabilityPct, color: '#5fa0a0' },
+			{ label: 'Likviditet', value: `${availabilityPct}%`, pct: availabilityPct, color: '#f0b429' }
+		];
 	});
 
 	// ── Spending ──────────────────────────────────────────────────────────────
@@ -168,10 +188,25 @@
 	let loadedCumulativeFor = $state<string | null>(null);
 	let selectedCumulativeCategories = $state<CategoryId[]>(['dagligvare', 'transport', 'mat']);
 
+	type TransactionRow = {
+		transactionId: string;
+		date: string;
+		description: string;
+		amount: number;
+		category: string;
+		label: string;
+		emoji: string;
+		isFixed: boolean;
+	};
+	let transactions = $state<TransactionRow[]>([]);
+	let loadingTransactions = $state(false);
+	let loadedTransactionsKey = $state<string | null>(null);
+
 	// ── Trigger data loading when accountId / tab change ─────────────────────
 	$effect(() => {
 		const id = accountId;
 		const tab = activeTab;
+		const txWindow = transactionWindow;
 		if (!id) return;
 
 		if (tab === 'saldo' && loadedHistoryFor !== id) loadHistory(id);
@@ -180,7 +215,14 @@
 		else if (tab === 'pengestrom' && loadedTransfers !== id) loadTransfers(id);
 		else if (tab === 'variabelt' && loadedIrregularFor !== id) loadIrregular(id);
 		else if (tab === 'akkumulert' && loadedCumulativeFor !== id) loadCumulative(id);
+		else if (tab === 'transaksjoner' && loadedTransactionsKey !== `${id}:${txWindow}`) loadTransactions(id, txWindow);
 	});
+
+	function dateDaysAgo(days: number): string {
+		const date = new Date();
+		date.setDate(date.getDate() - days);
+		return date.toISOString().split('T')[0];
+	}
 
 	async function loadHistory(aid: string) {
 		if (loadingHistory) return;
@@ -261,6 +303,23 @@
 		lastUpdated = new Date();
 	}
 
+	async function loadTransactions(aid: string, window: TransactionWindow) {
+		if (loadingTransactions) return;
+		loadingTransactions = true;
+		transactions = [];
+
+		const days = window === '14d' ? 14 : window === '30d' ? 30 : 90;
+		const fromDate = dateDaysAgo(days);
+		const toDate = new Date().toISOString().split('T')[0];
+		const res = await fetch(
+			`/api/economics/transactions?accountId=${encodeURIComponent(aid)}&fromDate=${fromDate}&toDate=${toDate}`
+		);
+		transactions = await res.json();
+		loadedTransactionsKey = `${aid}:${window}`;
+		loadingTransactions = false;
+		lastUpdated = new Date();
+	}
+
 	// ── AI analysis ───────────────────────────────────────────────────────────
 	let analyzing = $state(false);
 	let analysisResult = $state<{
@@ -304,6 +363,17 @@
 	function formatNOK(value: number, currency = 'NOK'): string {
 		return new Intl.NumberFormat('nb-NO', { style: 'currency', currency, maximumFractionDigits: 0 }).format(value);
 	}
+
+	const transactionItems = $derived(
+		transactions.slice(0, 60).map((tx) => ({
+			id: tx.transactionId,
+			title: `${tx.emoji} ${tx.label}`,
+			subtitle: tx.description,
+			meta: tx.date,
+			amount: formatNOK(tx.amount, selectedAccount?.currency ?? 'NOK'),
+			amountTone: tx.amount > 0 ? ('positive' as const) : ('negative' as const)
+		}))
+	);
 </script>
 
 <svelte:head>
@@ -330,6 +400,19 @@
 			<p>Gå til <a href="/settings">Innstillinger</a> for å koble til SpareBank 1.</p>
 		</div>
 	{:else}
+		{#if selectedAccount}
+			<div class="summary-widget-grid">
+				{#each summaryWidgets() as widget}
+					<div class="summary-widget">
+						<GoalRing pct={widget.pct} color={widget.color} trackColor="#1a1a1a" size={82} strokeWidth={6}>
+							<span class="summary-value">{widget.value}</span>
+						</GoalRing>
+						<p class="summary-label">{widget.label}</p>
+					</div>
+				{/each}
+			</div>
+		{/if}
+
 		<!-- Account picker -->
 		<AccountPicker
 			{accounts}
@@ -426,15 +509,13 @@
 								<p class="account-number">{selectedAccount.accountNumber}</p>
 							{/if}
 						</div>
-						<div class="interval-selector">
-							<label for="balance-interval">Periode:</label>
-							<select id="balance-interval" bind:value={balanceInterval}>
-								<option value="2025">Siden jan 2025</option>
-								<option value="12m">Siste 12 mnd</option>
-								<option value="24m">Siste 24 mnd</option>
-								<option value="all">Alt</option>
-							</select>
-						</div>
+						<PeriodPills
+							options={['2025', '12m', '24m', 'Alt']}
+							value={balanceInterval === 'all' ? 'Alt' : balanceInterval}
+							onchange={(value) => {
+								balanceInterval = value === 'Alt' ? 'all' : (value as BalanceInterval);
+							}}
+						/>
 					</div>
 					{#if loadingHistory}
 						<div class="loading">Beregner saldohistorikk…</div>
@@ -490,6 +571,28 @@
 								/>
 							{/each}
 						</div>
+					{/if}
+
+				{:else if activeTab === 'transaksjoner'}
+					<div class="transactions-head">
+						<h2>Transaksjoner – {selectedAccount.accountName ?? selectedAccount.accountId}</h2>
+						<PeriodPills
+							options={['14d', '30d', '90d']}
+							value={transactionWindow}
+							onchange={(value) => {
+								transactionWindow = value as TransactionWindow;
+								loadedTransactionsKey = null;
+							}}
+						/>
+					</div>
+					{#if loadingTransactions}
+						<div class="loading">Laster transaksjoner…</div>
+					{:else}
+						<CompactRecordList
+							title="Nylige bevegelser"
+							items={transactionItems}
+							emptyText="Ingen transaksjoner i valgt periode."
+						/>
 					{/if}
 
 				{:else}
@@ -563,6 +666,39 @@
 		color: var(--text-secondary);
 	}
 
+	.summary-widget-grid {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 10px;
+		margin-bottom: 14px;
+	}
+
+	.summary-widget {
+		background: #121212;
+		border: 1px solid #252525;
+		border-radius: 14px;
+		padding: 12px 10px;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.summary-value {
+		font-size: 0.66rem;
+		font-weight: 700;
+		color: #ebebeb;
+		max-width: 54px;
+		text-align: center;
+		line-height: 1.2;
+	}
+
+	.summary-label {
+		margin: 0;
+		font-size: 0.82rem;
+		color: #9e9e9e;
+	}
+
 
 
 	.chart-card {
@@ -584,37 +720,13 @@
 		flex: 1;
 	}
 
-	.interval-selector {
+	.transactions-head {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
-		gap: 0.5rem;
-		font-size: 0.875rem;
-	}
-
-	.interval-selector label {
-		color: var(--text-secondary);
-		font-weight: 500;
-	}
-
-	.interval-selector select {
-		padding: 0.4rem 0.6rem;
-		background: var(--bg-primary);
-		border: 1px solid var(--border-color);
-		border-radius: 6px;
-		color: var(--text-primary);
-		font-size: 0.875rem;
-		cursor: pointer;
-		transition: border-color 0.15s;
-	}
-
-	.interval-selector select:hover {
-		border-color: var(--accent-primary);
-	}
-
-	.interval-selector select:focus {
-		outline: none;
-		border-color: var(--accent-primary);
-		box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+		justify-content: space-between;
+		gap: 10px;
+		margin-bottom: 10px;
 	}
 
 	.insight-empty {
@@ -809,6 +921,32 @@
 	@media (min-width: 1200px) {
 		.cumulative-grid {
 			grid-template-columns: repeat(2, 1fr);
+		}
+	}
+
+	@media (max-width: 760px) {
+		.container {
+			padding: 1rem;
+		}
+
+		h1 {
+			font-size: 1.45rem;
+		}
+
+		h2 {
+			font-size: 1.06rem;
+		}
+
+		.summary-widget-grid {
+			grid-template-columns: 1fr;
+		}
+
+		.chart-card {
+			padding: 1rem;
+		}
+
+		.refresh-bar {
+			flex-wrap: wrap;
 		}
 	}
 </style>

@@ -49,6 +49,8 @@
 			weekly: unknown[];
 			monthly: unknown[];
 			yearly: unknown[];
+			sources?: Array<{ id: string; name: string; provider: string; isActive: boolean; lastSync: string | null }>;
+			recentEvents?: Array<{ id: string; timestamp: string; dataType: string; data: Record<string, unknown> }>;
 		} | null;
 	}
 
@@ -236,6 +238,8 @@
 						weekly={healthDashboard.weekly as any}
 						monthly={healthDashboard.monthly as any}
 						yearly={healthDashboard.yearly as any}
+						sources={healthDashboard.sources ?? []}
+						recentEvents={healthDashboard.recentEvents ?? []}
 						embedded={true}
 					/>
 				{/if}

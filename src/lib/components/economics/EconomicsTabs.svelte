@@ -1,5 +1,5 @@
 <script lang="ts">
-	export type EconomicsTabSlug = 'saldo' | 'utgifter' | 'innsikt' | 'pengestrom' | 'variabelt' | 'akkumulert' | 'salary-month';
+	export type EconomicsTabSlug = 'saldo' | 'utgifter' | 'innsikt' | 'pengestrom' | 'variabelt' | 'akkumulert' | 'transaksjoner' | 'salary-month';
 
 	let {
 		accountId,
@@ -16,6 +16,7 @@
 		{ slug: 'pengestrom',   label: '💸 Pengestrøm', href: (id) => `/economics/${encodeURIComponent(id)}/pengestrom`   },
 		{ slug: 'variabelt',    label: '📦 Variabelt',  href: (id) => `/economics/${encodeURIComponent(id)}/variabelt`    },
 		{ slug: 'akkumulert',   label: '📈 Akkumulert', href: (id) => `/economics/${encodeURIComponent(id)}/akkumulert`   },
+		{ slug: 'transaksjoner',label: '🧾 Transaksjoner', href: (id) => `/economics/${encodeURIComponent(id)}/transaksjoner` },
 		{ slug: 'salary-month', label: '📅 Lønnsmåned', href: (id) => `/economics/${encodeURIComponent(id)}/salary-month` },
 	];
 </script>

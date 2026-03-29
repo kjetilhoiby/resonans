@@ -33,23 +33,23 @@
 <style>
 	.period-pills {
 		display: flex;
-		gap: 4px;
+		gap: 6px;
 	}
 
 	.period-btn {
-		padding: 3px 8px;
+		padding: 6px 11px;
 		border-radius: 999px;
 		border: 1px solid #2a2a2a;
 		background: #111;
 		color: #444;
 		font: inherit;
-		font-size: 0.58rem;
+		font-size: 0.8rem;
 		font-weight: 600;
-		text-transform: lowercase;
+		text-transform: none;
 		cursor: pointer;
 		transition: border-color 0.12s, color 0.12s, background 0.12s;
 		white-space: nowrap;
-		line-height: 1.4;
+		line-height: 1.3;
 	}
 
 	.period-btn.active {

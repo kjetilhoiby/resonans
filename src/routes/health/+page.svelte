@@ -10,7 +10,13 @@
 </svelte:head>
 
 <div class="container">
-	<HealthDashboard weekly={data.weekly} monthly={data.monthly} yearly={data.yearly} />
+	<HealthDashboard
+		weekly={data.weekly}
+		monthly={data.monthly}
+		yearly={data.yearly}
+		sources={data.sources}
+		recentEvents={data.recentEvents}
+	/>
 </div>
 
 <style>

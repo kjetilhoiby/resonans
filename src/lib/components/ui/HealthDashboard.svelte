@@ -1,5 +1,8 @@
 <script lang="ts">
+	import CompactRecordList from './CompactRecordList.svelte';
+	import CompactTrendChart from './CompactTrendChart.svelte';
 	import GoalRing from './GoalRing.svelte';
+	import PeriodPills from './PeriodPills.svelte';
 
 	type Period = 'week' | 'month' | 'year';
 
@@ -22,10 +25,12 @@
 		weekly: AggregatePeriod[];
 		monthly: AggregatePeriod[];
 		yearly: AggregatePeriod[];
+		sources?: Array<{ id: string; name: string; provider: string; isActive: boolean; lastSync: string | null }>;
+		recentEvents?: Array<{ id: string; timestamp: string; dataType: string; data: Record<string, unknown> }>;
 		embedded?: boolean;
 	}
 
-	let { weekly, monthly, yearly, embedded = false }: Props = $props();
+	let { weekly, monthly, yearly, sources = [], recentEvents = [], embedded = false }: Props = $props();
 
 	let selectedPeriod = $state<Period>('week');
 
@@ -51,6 +56,65 @@
 	function formatMetric(value: number | undefined, decimals = 1): string {
 		if (value === undefined || value === null) return '–';
 		return value.toFixed(decimals);
+	}
+
+	function formatDate(value: string): string {
+		return new Intl.DateTimeFormat('nb-NO', {
+			day: '2-digit',
+			month: '2-digit',
+			hour: '2-digit',
+			minute: '2-digit'
+		}).format(new Date(value));
+	}
+
+	function formatEvent(item: { id: string; timestamp: string; dataType: string; data: Record<string, unknown> }) {
+		if (item.dataType === 'weight') {
+			const weight = typeof item.data.weight === 'number' ? item.data.weight : null;
+			return {
+				id: item.id,
+				title: 'Vektmåling',
+				subtitle: weight != null ? `${weight.toFixed(1)} kg` : 'Måling registrert',
+				meta: formatDate(item.timestamp)
+			};
+		}
+
+		if (item.dataType === 'sleep') {
+			const sleepDuration = typeof item.data.sleepDuration === 'number' ? item.data.sleepDuration : null;
+			return {
+				id: item.id,
+				title: 'Søvn',
+				subtitle: sleepDuration != null ? `${(sleepDuration / 3600).toFixed(1)} timer` : 'Søvndata registrert',
+				meta: formatDate(item.timestamp)
+			};
+		}
+
+		if (item.dataType === 'activity') {
+			const steps = typeof item.data.steps === 'number' ? item.data.steps : null;
+			return {
+				id: item.id,
+				title: 'Aktivitet',
+				subtitle: steps != null ? `${steps.toLocaleString('nb-NO')} skritt` : 'Aktivitet registrert',
+				meta: formatDate(item.timestamp)
+			};
+		}
+
+		if (item.dataType === 'workout') {
+			const duration = typeof item.data.duration === 'number' ? item.data.duration : null;
+			const sportType = typeof item.data.sportType === 'string' ? item.data.sportType : 'Økt';
+			return {
+				id: item.id,
+				title: 'Treningsøkt',
+				subtitle: duration != null ? `${sportType} · ${Math.round(duration / 60)} min` : sportType,
+				meta: formatDate(item.timestamp)
+			};
+		}
+
+		return {
+			id: item.id,
+			title: item.dataType,
+			subtitle: 'Hendelse registrert',
+			meta: formatDate(item.timestamp)
+		};
 	}
 
 	function collectSeries(getValue: (period: AggregatePeriod) => number | undefined) {
@@ -105,6 +169,31 @@
 			pct: scalePct(sleepAvg, collectSeries((period) => period.metrics?.sleep?.avg))
 		}
 	]);
+
+	const weightTrend = $derived(
+		periodData
+			.map((period) => ({ label: formatPeriodKey(period.periodKey, period.period), value: period.metrics?.weight?.avg }))
+			.filter((period): period is { label: string; value: number } => typeof period.value === 'number')
+	);
+
+	const sleepTrend = $derived(
+		periodData
+			.map((period) => ({ label: formatPeriodKey(period.periodKey, period.period), value: period.metrics?.sleep?.avg }))
+			.filter((period): period is { label: string; value: number } => typeof period.value === 'number')
+	);
+
+	const sourceItems = $derived(
+		sources.map((source) => ({
+			id: source.id,
+			title: source.name,
+			subtitle: source.provider,
+			meta: source.lastSync ? `Synket ${formatDate(source.lastSync)}` : 'Aldri synket',
+			amount: source.isActive ? 'Aktiv' : 'Inaktiv',
+			amountTone: source.isActive ? ('positive' as const) : ('neutral' as const)
+		}))
+	);
+
+	const eventItems = $derived(recentEvents.slice(0, 24).map((item) => formatEvent(item)));
 </script>
 
 <div class:hd-embedded={embedded} class="health-dashboard">
@@ -116,21 +205,13 @@
 	{/if}
 
 	<div class="hd-pills" role="tablist" aria-label="Helseperioder">
-		{#each ([
-			{ id: 'week', label: 'Ukentlig' },
-			{ id: 'month', label: 'Månedlig' },
-			{ id: 'year', label: 'Årlig' }
-		] as const) as option}
-			<button
-				class="hd-pill"
-				class:is-active={selectedPeriod === option.id}
-				onclick={() => (selectedPeriod = option.id)}
-				role="tab"
-				aria-selected={selectedPeriod === option.id}
-			>
-				{option.label}
-			</button>
-		{/each}
+		<PeriodPills
+			options={['Ukentlig', 'Månedlig', 'Årlig']}
+			value={selectedPeriod === 'week' ? 'Ukentlig' : selectedPeriod === 'month' ? 'Månedlig' : 'Årlig'}
+			onchange={(value) => {
+				selectedPeriod = value === 'Ukentlig' ? 'week' : value === 'Månedlig' ? 'month' : 'year';
+			}}
+		/>
 	</div>
 
 	{#if periodData.length === 0}
@@ -155,6 +236,16 @@
 					</div>
 				</div>
 			{/each}
+		</div>
+
+		<div class="hd-trend-grid">
+			<CompactTrendChart title="Vekttrend" points={weightTrend} color="#e07070" unit="kg" />
+			<CompactTrendChart title="Søvntrend" points={sleepTrend} color="#5fa0a0" unit="t" />
+		</div>
+
+		<div class="hd-list-grid">
+			<CompactRecordList title="Kilder" items={sourceItems} emptyText="Ingen aktive helsekilder ennå." />
+			<CompactRecordList title="Nylige helsehendelser" items={eventItems} emptyText="Ingen hendelser registrert ennå." />
 		</div>
 
 		<div class="hd-table-card">
@@ -227,26 +318,7 @@
 	}
 
 	.hd-pills {
-		display: flex;
-		gap: 8px;
-		flex-wrap: wrap;
-	}
-
-	.hd-pill {
-		background: #141414;
-		border: 1px solid #262626;
-		border-radius: 999px;
-		color: #777;
-		font: inherit;
-		font-size: 0.78rem;
-		padding: 8px 12px;
-		cursor: pointer;
-	}
-
-	.hd-pill.is-active {
-		background: #1a1f31;
-		border-color: #3c4f9f;
-		color: #d4daf6;
+		display: inline-flex;
 	}
 
 	.hd-empty,
@@ -305,6 +377,13 @@
 		gap: 14px;
 	}
 
+	.hd-trend-grid,
+	.hd-list-grid {
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: 12px;
+	}
+
 	.hd-table-head {
 		display: flex;
 		flex-direction: column;
@@ -343,6 +422,29 @@
 
 	@media (max-width: 640px) {
 		.hd-grid {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+
+		.hd-title {
+			font-size: 1.32rem;
+		}
+
+		.hd-card-label,
+		.hd-table-title {
+			font-size: 0.94rem;
+		}
+
+		.hd-card-sub,
+		.hd-copy,
+		.hd-table-copy,
+		.hd-empty-sub {
+			font-size: 0.84rem;
+		}
+	}
+
+	@media (min-width: 920px) {
+		.hd-trend-grid,
+		.hd-list-grid {
 			grid-template-columns: repeat(2, minmax(0, 1fr));
 		}
 	}

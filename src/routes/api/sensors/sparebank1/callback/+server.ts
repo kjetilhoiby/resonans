@@ -1,7 +1,8 @@
-import { redirect } from '@sveltejs/kit';
+import { isRedirect, redirect } from '@sveltejs/kit';
 import { db } from '$lib/db';
 import { sensors } from '$lib/db/schema';
 import { getSparebank1AccessToken } from '$lib/server/integrations/sparebank1';
+import { ensureThemeForUser } from '$lib/server/themes';
 import { and, eq } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
 
@@ -95,8 +96,17 @@ export const GET: RequestHandler = async ({ url, cookies, locals }) => {
 			});
 		}
 
-		throw redirect(302, '/settings?success=sparebank1_connected');
+		const { theme: economicsTheme, created } = await ensureThemeForUser({
+			userId,
+			name: 'Økonomi',
+			emoji: '💰',
+			description: 'Kontoer, transaksjoner, forbruksmønster og pengestrøm.'
+		});
+
+		const handoffParam = created ? '&handoff=1' : '';
+		throw redirect(302, `/tema/${economicsTheme.id}?tab=data&connected=sparebank1${handoffParam}`);
 	} catch (err) {
+		if (isRedirect(err)) throw err;
 		console.error('SpareBank1 callback error:', err);
 		throw redirect(302, '/settings?error=sparebank1_unknown');
 	}
