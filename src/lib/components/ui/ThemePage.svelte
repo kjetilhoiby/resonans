@@ -76,6 +76,18 @@
 				categories: Array<{ category: string; label: string; emoji: string; amount: number; count: number; isFixed: boolean }>;
 			};
 			recentTransactions: Array<{ date: string; description: string; amount: number; emoji: string; label: string }>;
+			paydaySpend: {
+				paydayDate: string | null;
+				daysSincePayday: number;
+				totalSpend: number;
+				spendPerDay: number;
+				grocerySpend: number;
+				grocerySpendPerDay: number;
+				prevSpendPerDay: number | null;
+				prevGrocerySpendPerDay: number | null;
+				transactions: Array<{ date: string; description: string; amount: number; category: string; emoji: string; label: string }>;
+				groceryTransactions: Array<{ date: string; description: string; amount: number; category: string; emoji: string; label: string }>;
+			};
 		} | null;
 	}
 
@@ -502,6 +514,7 @@
 						currentMonth={economicsDashboard.currentMonth}
 						monthSpending={economicsDashboard.monthSpending}
 						recentTransactions={economicsDashboard.recentTransactions}
+						paydaySpend={economicsDashboard.paydaySpend}
 						embedded={true}
 					/>
 				{/if}

@@ -865,9 +865,9 @@
 		display: none;
 	}
 
-	/* ── Tittel-sone (15 %) ── */
+	/* ── Tittel-sone (10 %) ── */
 	.zone-title {
-		flex: 15 0 0;
+		flex: 10 0 0;
 		min-height: 0;
 		display: flex;
 		align-items: center;
@@ -902,9 +902,9 @@
 		color: #aaa;
 	}
 
-	/* ── Widget-sone (35 %) — kort med avrundede hjørner ── */
+	/* ── Widget-sone (40 %) — kort med avrundede hjørner ── */
 	.zone-widgets {
-		flex: 35 0 0;
+		flex: 40 0 0;
 		min-height: 0;
 		padding: 14px 16px 10px;
 		background: #171717;
@@ -912,9 +912,9 @@
 		margin: 0 12px;
 	}
 
-	/* ── Tema-sone (15 %) ── */
+	/* ── Tema-sone (10 %) ── */
 	.zone-tema {
-		flex: 15 0 0;
+		flex: 10 0 0;
 		min-height: 0;
 		padding: 12px 20px 8px;
 	}
@@ -971,16 +971,19 @@
 		color: #555;
 	}
 
-	/* ── Input-sone (30 %) — kort med avrundede hjørner ── */
+	/* ── Input-sone (40 %) — kort med avrundede hjørner ── */
 	.zone-input {
-		flex: 30 0 0;
+		flex: 40 0 0;
 		min-height: 0;
-		padding: 12px 14px 12px;
+		padding: 12px 14px;
+		padding-bottom: calc(12px + env(safe-area-inset-bottom, 8px));
 		background: #171717;
 		border-radius: 18px;
-		margin: 0 12px env(safe-area-inset-bottom, 8px);
+		margin: 0 12px;
 		display: flex;
 		align-items: stretch;
+		box-sizing: border-box;
+		overflow: hidden;
 	}
 
 	.zone-chat-open {

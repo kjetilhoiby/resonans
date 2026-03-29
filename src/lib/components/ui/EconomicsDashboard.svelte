@@ -2,7 +2,8 @@
 	import { onMount } from 'svelte';
 	import CompactRecordList from './CompactRecordList.svelte';
 	import GoalRing from './GoalRing.svelte';
-import type { GoalTrack } from '$lib/domain/goal-tracks';
+	import TransactionList from './TransactionList.svelte';
+	import type { GoalTrack } from '$lib/domain/goal-tracks';
 
 	interface EconomicsAccount {
 		accountId: string;
@@ -29,6 +30,28 @@ import type { GoalTrack } from '$lib/domain/goal-tracks';
 		label: string;
 	}
 
+	interface TxItem {
+		date: string;
+		description: string;
+		amount: number;
+		category: string;
+		emoji: string;
+		label: string;
+	}
+
+	interface PaydaySpend {
+		paydayDate: string | null;
+		daysSincePayday: number;
+		totalSpend: number;
+		spendPerDay: number;
+		grocerySpend: number;
+		grocerySpendPerDay: number;
+		prevSpendPerDay: number | null;
+		prevGrocerySpendPerDay: number | null;
+		transactions: TxItem[];
+		groceryTransactions: TxItem[];
+	}
+
 	interface Props {
 		accounts: EconomicsAccount[];
 		totalBalance: number;
@@ -41,6 +64,7 @@ import type { GoalTrack } from '$lib/domain/goal-tracks';
 			categories: CategoryRow[];
 		};
 		recentTransactions: RecentTx[];
+		paydaySpend: PaydaySpend;
 		embedded?: boolean;
 	}
 
@@ -50,8 +74,12 @@ import type { GoalTrack } from '$lib/domain/goal-tracks';
 		currentMonth,
 		monthSpending,
 		recentTransactions,
+		paydaySpend,
 		embedded = false
 	}: Props = $props();
+
+	// Transaction overlay state
+	let txOverlay = $state<null | 'all' | 'grocery'>(null);
 
 	let groceryGoalInput = $state('9000');
 	let groceryGoalSaving = $state(false);
@@ -90,51 +118,36 @@ import type { GoalTrack } from '$lib/domain/goal-tracks';
 		return map[type.toLowerCase()] ?? type;
 	}
 
-	const totalSpending = $derived(monthSpending.totalSpending);
-	const totalFixed = $derived(monthSpending.totalFixed);
-	const totalVariable = $derived(monthSpending.totalVariable);
+	// Payday ring logic
+	// Ring fill = current per-day vs prev month per-day (50% = same, <50% = spending less, >50% = more)
+	function paydayRingPct(current: number, prev: number | null): number {
+		if (!prev || prev === 0) return 50;
+		const ratio = current / prev; // 1.0 = same
+		// Map 0.5×..2×  → 0..100 pct, with 1.0 → 50
+		return Math.min(100, Math.max(4, Math.round(ratio * 50)));
+	}
 
-	// Ring pct: spending as fraction of income (capped to 100)
-	const spendPct = $derived(
-		monthSpending.totalIncome > 0
-			? Math.min(100, Math.round((totalSpending / monthSpending.totalIncome) * 100))
-			: Math.min(100, Math.round((totalSpending / Math.max(totalSpending, 1)) * 100))
-	);
-	const fixedPct = $derived(
-		totalSpending > 0 ? Math.round((totalFixed / totalSpending) * 100) : 0
-	);
-	const variablePct = $derived(100 - fixedPct);
+	function paydayRingColor(current: number, prev: number | null): string {
+		if (!prev || prev === 0) return '#7c8ef5';
+		const ratio = current / prev;
+		if (ratio <= 0.95) return '#82c882'; // spending less — green
+		if (ratio <= 1.1) return '#f0b429';  // roughly same — yellow
+		return '#e07070';                    // spending more — red
+	}
 
-	const summaryCards = $derived([
-		{
-			label: 'Total saldo',
-			value: formatNOK(totalBalance),
-			subvalue: `${accounts.length} konto${accounts.length === 1 ? '' : 'er'}`,
-			color: '#7c8ef5',
-			pct: Math.min(100, Math.max(8, Math.round((Math.abs(totalBalance) / 500000) * 100)))
-		},
-		{
-			label: formatMonthLabel(currentMonth),
-			value: formatNOK(totalSpending),
-			subvalue: 'brukt denne måneden',
-			color: '#f0b429',
-			pct: spendPct
-		},
-		{
-			label: 'Fast',
-			value: formatNOK(totalFixed),
-			subvalue: `${fixedPct}% av forbruk`,
-			color: '#e07070',
-			pct: fixedPct
-		},
-		{
-			label: 'Variabelt',
-			value: formatNOK(totalVariable),
-			subvalue: `${variablePct}% av forbruk`,
-			color: '#5fa0a0',
-			pct: variablePct
-		}
-	]);
+	const totalRingPct = $derived(paydayRingPct(paydaySpend.spendPerDay, paydaySpend.prevSpendPerDay));
+	const totalRingColor = $derived(paydayRingColor(paydaySpend.spendPerDay, paydaySpend.prevSpendPerDay));
+	const groceryRingPct = $derived(paydayRingPct(paydaySpend.grocerySpendPerDay, paydaySpend.prevGrocerySpendPerDay));
+	const groceryRingColor = $derived(paydayRingColor(paydaySpend.grocerySpendPerDay, paydaySpend.prevGrocerySpendPerDay));
+
+	function formatPerDay(kr: number): string {
+		return `${new Intl.NumberFormat('nb-NO', { maximumFractionDigits: 0 }).format(kr)} kr/dag`;
+	}
+
+	function formatPaydayDate(iso: string | null): string {
+		if (!iso) return 'ukjent dato';
+		return new Intl.DateTimeFormat('nb-NO', { day: 'numeric', month: 'short' }).format(new Date(iso));
+	}
 
 	const accountItems = $derived(
 		accounts.map((a) => ({
@@ -264,24 +277,55 @@ import type { GoalTrack } from '$lib/domain/goal-tracks';
 		</div>
 	{/if}
 
-	<!-- Summary cards -->
+	<!-- Payday spend widgets -->
 	<div class="ed-grid">
-		{#each summaryCards as card}
-			<div class="ed-card">
-				<div class="ed-card-ring">
-					<GoalRing pct={card.pct} color={card.color} size={88} strokeWidth={6}>
-						{#snippet children()}
-							<text x="44" y="40" text-anchor="middle" fill={card.color} font-size="10" font-weight="700">{card.value.replace(/\s*kr/i, '')}</text>
-							<text x="44" y="52" text-anchor="middle" fill={card.color} font-size="8" opacity="0.7">kr</text>
-						{/snippet}
-					</GoalRing>
-				</div>
-				<div class="ed-card-copy">
-					<p class="ed-card-label">{card.label}</p>
-					<p class="ed-card-sub">{card.subvalue}</p>
-				</div>
+		<!-- Widget 1: Total forbruk per dag siden lønn -->
+		<button class="ed-card ed-card-btn" type="button" onclick={() => (txOverlay = 'all')}>
+			<div class="ed-card-ring">
+				<GoalRing pct={totalRingPct} color={totalRingColor} size={88} strokeWidth={6}>
+					{#snippet children()}
+						<text x="44" y="38" text-anchor="middle" fill={totalRingColor} font-size="9" font-weight="700">
+							{new Intl.NumberFormat('nb-NO', { maximumFractionDigits: 0 }).format(paydaySpend.spendPerDay)}
+						</text>
+						<text x="44" y="50" text-anchor="middle" fill={totalRingColor} font-size="7.5" opacity="0.8">kr/dag</text>
+					{/snippet}
+				</GoalRing>
 			</div>
-		{/each}
+			<div class="ed-card-copy">
+				<p class="ed-card-label">Forbruk / dag</p>
+				<p class="ed-card-sub">siden lønn {formatPaydayDate(paydaySpend.paydayDate)}</p>
+				{#if paydaySpend.prevSpendPerDay}
+					<p class="ed-card-compare" style:color={totalRingColor}>
+						{paydaySpend.spendPerDay <= paydaySpend.prevSpendPerDay ? '↓' : '↑'}
+						{formatPerDay(paydaySpend.prevSpendPerDay)} forrige
+					</p>
+				{/if}
+			</div>
+		</button>
+
+		<!-- Widget 2: Dagligvare per dag siden lønn -->
+		<button class="ed-card ed-card-btn" type="button" onclick={() => (txOverlay = 'grocery')}>
+			<div class="ed-card-ring">
+				<GoalRing pct={groceryRingPct} color={groceryRingColor} size={88} strokeWidth={6}>
+					{#snippet children()}
+						<text x="44" y="38" text-anchor="middle" fill={groceryRingColor} font-size="9" font-weight="700">
+							{new Intl.NumberFormat('nb-NO', { maximumFractionDigits: 0 }).format(paydaySpend.grocerySpendPerDay)}
+						</text>
+						<text x="44" y="50" text-anchor="middle" fill={groceryRingColor} font-size="7.5" opacity="0.8">kr/dag</text>
+					{/snippet}
+				</GoalRing>
+			</div>
+			<div class="ed-card-copy">
+				<p class="ed-card-label">Dagligvare / dag</p>
+				<p class="ed-card-sub">siden lønn {formatPaydayDate(paydaySpend.paydayDate)}</p>
+				{#if paydaySpend.prevGrocerySpendPerDay}
+					<p class="ed-card-compare" style:color={groceryRingColor}>
+						{paydaySpend.grocerySpendPerDay <= paydaySpend.prevGrocerySpendPerDay ? '↓' : '↑'}
+						{formatPerDay(paydaySpend.prevGrocerySpendPerDay)} forrige
+					</p>
+				{/if}
+			</div>
+		</button>
 	</div>
 
 	<!-- Spending by category -->
@@ -361,6 +405,21 @@ import type { GoalTrack } from '$lib/domain/goal-tracks';
 	{/if}
 </div>
 
+<!-- Transaction list overlay -->
+{#if txOverlay === 'all'}
+	<TransactionList
+		transactions={paydaySpend.transactions}
+		title="Forbruk siden lønn"
+		onclose={() => (txOverlay = null)}
+	/>
+{:else if txOverlay === 'grocery'}
+	<TransactionList
+		transactions={paydaySpend.groceryTransactions}
+		title="Dagligvarer siden lønn"
+		onclose={() => (txOverlay = null)}
+	/>
+{/if}
+
 <style>
 	.economics-dashboard {
 		display: flex;
@@ -410,6 +469,24 @@ import type { GoalTrack } from '$lib/domain/goal-tracks';
 		align-items: center;
 		gap: 10px;
 		text-align: center;
+	}
+
+	.ed-card-btn {
+		cursor: pointer;
+		appearance: none;
+		-webkit-appearance: none;
+		transition: border-color 0.15s;
+	}
+
+	.ed-card-btn:active {
+		border-color: #3a4a85;
+		background: #181820;
+	}
+
+	.ed-card-compare {
+		margin: 0;
+		font-size: 0.7rem;
+		opacity: 0.85;
 	}
 
 	.ed-card-ring {
