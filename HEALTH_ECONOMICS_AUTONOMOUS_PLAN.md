@@ -51,6 +51,7 @@ Owner: Copilot
 - 2026-03-29: Targeted diagnostics passed for all touched files.
 - 2026-03-29: Full `npm run check` executed; existing baseline chart errors remain in `BalanceChart`, `Line`, `Markers`, and `RunningProgress` outside this scope.
 - 2026-03-29: Committed as `c492ddd` and pushed to `main`.
+- 2026-03-29: Added editable theme instruction file under Filer-tab with API persistence, plus onboarding-future-vision seeding support.
 
 ## Resume notes
 - Start with shared components under `src/lib/components/ui`.

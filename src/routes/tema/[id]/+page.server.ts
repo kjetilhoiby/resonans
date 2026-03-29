@@ -1,6 +1,7 @@
 import { db } from '$lib/db';
 import { themes, goals, messages as messagesTable, conversations } from '$lib/db/schema';
 import { loadHealthDashboardData } from '$lib/server/health-dashboard';
+import { getThemeInstruction } from '$lib/server/theme-instructions';
 import { eq, and, asc } from 'drizzle-orm';
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
@@ -59,6 +60,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 
 	const isHealthTheme = theme.name.trim().toLowerCase() === 'helse';
 	const healthDashboard = isHealthTheme ? await loadHealthDashboardData(locals.userId) : null;
+	const instruction = await getThemeInstruction(locals.userId, theme.id);
 
 	return {
 		theme: {
@@ -75,6 +77,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		})),
 		goals: themeGoals,
 		conversationId,
-		healthDashboard
+		healthDashboard,
+		themeInstruction: instruction
 	};
 };

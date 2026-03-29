@@ -5,6 +5,7 @@ import { createGoal, createTask, getUserActiveGoalsAndTasks, findSimilarGoals, f
 import { getOrCreateConversation, addMessage, getConversationHistory, getConversationByIdForUser } from '$lib/server/conversations';
 import { logActivity } from '$lib/server/activities';
 import { buildMemoryContext, createMemory } from '$lib/server/memories';
+import { isFutureVisionText, seedThemeInstructionFromFutureVision } from '$lib/server/theme-instructions';
 import { queryEconomicsTool } from '$lib/ai/tools/query-economics';
 import { USER_ID_HEADER_NAME } from '$lib/server/request-user';
 import { db } from '$lib/db';
@@ -890,6 +891,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 						importance: args.importance || 'medium',
 						source: conversation.id
 					});
+
+					if (args.themeId && typeof args.content === 'string' && isFutureVisionText(args.content)) {
+						await seedThemeInstructionFromFutureVision(userId, args.themeId, args.content);
+					}
 
 					messages.push({
 						role: 'tool',

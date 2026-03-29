@@ -45,6 +45,7 @@
 		initialMessages: Message[];
 		goals: Goal[];
 		conversationId: string;
+		themeInstruction?: string;
 		healthDashboard?: {
 			weekly: unknown[];
 			monthly: unknown[];
@@ -54,7 +55,7 @@
 		} | null;
 	}
 
-	let { theme, initialMessages, goals, conversationId, healthDashboard = null }: Props = $props();
+	let { theme, initialMessages, goals, conversationId, themeInstruction = '', healthDashboard = null }: Props = $props();
 
 	/* ── Subtab-tilstand ────────────────────────────────── */
 	type Tab = 'chat' | 'data' | 'filer';
@@ -141,8 +142,41 @@
 		return 55; // Fase 5 vil beregne dette fra aktiviteter
 	}
 
-	/* ── Filer-tab: stub ────────────────────────────────── */
-	let files: { name: string; uploadedAt: string }[] = [];
+	/* ── Filer-tab: instruksjonsfil ─────────────────────── */
+	const instructionFileName = 'instrukser.md';
+	let instructionDraft = $state(themeInstruction ?? '');
+	let instructionSaving = $state(false);
+	let instructionSaved = $state(false);
+	let instructionError = $state('');
+
+	$effect(() => {
+		instructionDraft = themeInstruction ?? '';
+	});
+
+	async function saveInstruction() {
+		instructionSaving = true;
+		instructionSaved = false;
+		instructionError = '';
+
+		try {
+			const res = await fetch(`/api/tema/${theme.id}/instruction`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ content: instructionDraft })
+			});
+
+			if (!res.ok) throw new Error('Lagring feilet');
+
+			instructionSaved = true;
+			setTimeout(() => {
+				instructionSaved = false;
+			}, 1400);
+		} catch {
+			instructionError = 'Lagring feilet. Prøv igjen.';
+		} finally {
+			instructionSaving = false;
+		}
+	}
 </script>
 
 <div class="theme-page">
@@ -303,20 +337,44 @@
 		{:else}
 			<div class="files-panel">
 				<div class="files-header">
-					<span class="files-count">{files.length} filer</span>
-					<!-- Opplasting kobles til /api/upload-image i Fase 5 -->
-					<button class="files-upload-btn" disabled aria-label="Last opp (kommer snart)">
-						+ Last opp
+					<span class="files-count">1 fil</span>
+					<button class="files-upload-btn" onclick={saveInstruction} disabled={instructionSaving} aria-label="Lagre instruksfil">
+						{instructionSaving ? 'Lagrer…' : 'Lagre'}
 					</button>
 				</div>
 
-				{#if files.length === 0}
-					<div class="files-empty">
-						<span class="files-icon">📎</span>
-						<p>Ingen filer her ennå</p>
-						<p class="files-hint">Last opp bilder, PDF-er eller notater knyttet til dette temaet.</p>
+				<div class="instruction-file">
+					<div class="instruction-file-head">
+						<span class="instruction-file-icon">📄</span>
+						<span class="instruction-file-name">{instructionFileName}</span>
 					</div>
-				{/if}
+
+					<textarea
+						class="instruction-editor"
+						bind:value={instructionDraft}
+						rows="14"
+						placeholder="# Instrukser
+
+Skriv hvordan du vil jobbe med dette temaet.
+
+Eksempel:
+- Hvor ser jeg meg om fem år?
+- Hva er viktigst nå?
+- Hvilke mål må justeres?"
+					></textarea>
+
+					<div class="instruction-foot">
+						{#if instructionError}
+							<span class="instruction-error">{instructionError}</span>
+						{:else if instructionSaved}
+							<span class="instruction-saved">Lagret</span>
+						{:else if !instructionDraft.trim()}
+							<span class="instruction-empty">Tom fil klar for utfylling</span>
+						{:else}
+							<span class="instruction-empty">Redigerbar instruksfil for temaet</span>
+						{/if}
+					</div>
+				</div>
 			</div>
 		{/if}
 		</div>
@@ -750,36 +808,79 @@
 	.files-upload-btn {
 		background: #1a1a1a;
 		border: 1px solid #2a2a2a;
-		color: #555;
+		color: #666;
 		font: inherit;
 		font-size: 0.78rem;
 		padding: 6px 14px;
 		border-radius: 99px;
-		cursor: not-allowed;
+		cursor: pointer;
 	}
 
-	.files-empty {
+	.files-upload-btn:disabled {
+		opacity: 0.6;
+		cursor: default;
+	}
+
+	.instruction-file {
+		border: 1px solid #242424;
+		border-radius: 14px;
+		background: #131313;
+		padding: 12px;
 		display: flex;
 		flex-direction: column;
+		gap: 10px;
+	}
+
+	.instruction-file-head {
+		display: flex;
 		align-items: center;
 		gap: 8px;
-		padding: 48px 20px;
-		text-align: center;
 	}
 
-	.files-icon {
-		font-size: 2rem;
-		opacity: 0.3;
+	.instruction-file-icon {
+		font-size: 0.98rem;
+		opacity: 0.7;
 	}
 
-	.files-empty p {
-		font-size: 0.85rem;
-		color: #444;
-		margin: 0;
+	.instruction-file-name {
+		font-size: 0.86rem;
+		font-weight: 600;
+		color: #aaa;
 	}
 
-	.files-hint {
-		font-size: 0.75rem !important;
-		color: #333 !important;
+	.instruction-editor {
+		width: 100%;
+		border-radius: 12px;
+		border: 1px solid #2a2a2a;
+		background: #0f0f0f;
+		color: #d4d4d4;
+		font: inherit;
+		font-size: 0.95rem;
+		line-height: 1.5;
+		padding: 12px;
+		resize: vertical;
+		min-height: 180px;
 	}
+
+	.instruction-editor:focus {
+		outline: none;
+		border-color: #3c4f9f;
+	}
+
+	.instruction-foot {
+		font-size: 0.8rem;
+	}
+
+	.instruction-saved {
+		color: #74cf9e;
+	}
+
+	.instruction-error {
+		color: #ee8c8c;
+	}
+
+	.instruction-empty {
+		color: #777;
+	}
+
 </style>
