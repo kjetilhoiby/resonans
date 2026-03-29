@@ -14,6 +14,7 @@
 	import { onMount } from 'svelte';
 	import { get } from 'svelte/store';
 	import ChatInput from './ChatInput.svelte';
+	import HealthDashboard from './HealthDashboard.svelte';
 	import TriageCard from './TriageCard.svelte';
 	import GoalRing from './GoalRing.svelte';
 
@@ -44,13 +45,26 @@
 		initialMessages: Message[];
 		goals: Goal[];
 		conversationId: string;
+		healthDashboard?: {
+			weekly: unknown[];
+			monthly: unknown[];
+			yearly: unknown[];
+		} | null;
 	}
 
-	let { theme, initialMessages, goals, conversationId }: Props = $props();
+	let { theme, initialMessages, goals, conversationId, healthDashboard = null }: Props = $props();
 
 	/* ── Subtab-tilstand ────────────────────────────────── */
 	type Tab = 'chat' | 'data' | 'filer';
-	let tab = $state<Tab>('chat');
+	const isHealthTheme = theme.name.trim().toLowerCase() === 'helse';
+	const requestedTab = get(page).url.searchParams.get('tab');
+	let tab = $state<Tab>(
+		requestedTab === 'chat' || requestedTab === 'data' || requestedTab === 'filer'
+			? requestedTab
+			: isHealthTheme
+				? 'data'
+				: 'chat'
+	);
 	let handoffPhase = $state<'intro' | 'content'>('content');
 
 	onMount(() => {
@@ -172,7 +186,7 @@
 					onclick={() => (tab = t)}
 				>
 					{#if t === 'chat'}💬 Samtaler
-					{:else if t === 'data'}🎯 Mål
+					{:else if t === 'data'}{isHealthTheme ? '💪 Helse' : '🎯 Mål'}
 					{:else}📁 Filer{/if}
 				</button>
 			{/each}
@@ -217,8 +231,17 @@
 		<!-- DATA -->
 		{:else if tab === 'data'}
 			<div class="data-panel">
+				{#if isHealthTheme && healthDashboard}
+					<HealthDashboard
+						weekly={healthDashboard.weekly as any}
+						monthly={healthDashboard.monthly as any}
+						yearly={healthDashboard.yearly as any}
+						embedded={true}
+					/>
+				{/if}
+
 				{#if goals.length === 0}
-					<div class="data-empty">
+					<div class="data-empty" class:data-empty-tight={isHealthTheme && healthDashboard}>
 						<p>Ingen aktive mål i dette temaet ennå.</p>
 						<button
 							class="data-new-btn"
@@ -231,6 +254,12 @@
 						</button>
 					</div>
 				{:else}
+					{#if isHealthTheme && healthDashboard}
+						<div class="data-section-head">
+							<h2 class="data-section-title">Mål</h2>
+							<p class="data-section-copy">Koble mål til Helse-temaet for å se dem sammen med sensordata.</p>
+						</div>
+					{/if}
 					<div class="goals-grid">
 						{#each goals as goal}
 							{@const pct = goalPct(goal)}
@@ -596,6 +625,9 @@
 	.data-panel {
 		padding: 16px;
 		overflow-y: auto;
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
 	}
 
 	.data-empty {
@@ -607,6 +639,30 @@
 		color: #444;
 		font-size: 0.85rem;
 		text-align: center;
+	}
+
+	.data-empty-tight {
+		padding-top: 8px;
+	}
+
+	.data-section-head {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.data-section-title {
+		margin: 0;
+		font-size: 0.92rem;
+		font-weight: 700;
+		color: #e8e8e8;
+	}
+
+	.data-section-copy {
+		margin: 0;
+		font-size: 0.78rem;
+		line-height: 1.5;
+		color: #666;
 	}
 
 	.data-new-btn {

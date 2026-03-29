@@ -162,12 +162,70 @@
 	// -- Chat-sone --
 	let chatOpen = $state(false);
 	let chatPrefill = $state('');
-	let chatMessages = $state<{ role: 'user' | 'assistant'; text: string }[]>([]);
+	let chatMessages = $state<{ role: 'user' | 'assistant'; text: string; imageUrl?: string }[]>([]);
 	let chatLoading = $state(false);
 	let currentConversationId = $state<string | null>(null);
 	let latestClosedConversationId = $state<string | null>(null);
 	let createdThemeLink = $state<{ id: string; name: string; emoji?: string | null } | null>(null);
 	let launchingThemeId = $state<string | null>(null);
+
+	// ── Kamera-flyt ────────────────────────────────────────────────────────────
+	let cameraOpen = $state(false);
+	let cameraFileInput = $state<HTMLInputElement | null>(null);
+	let cameraSelectedFile = $state<File | null>(null);
+	let cameraPreview = $state<string | null>(null);
+	let cameraCaption = $state('');
+	let cameraUploading = $state(false);
+	let cameraError = $state(false);
+
+	// ── Lyd-flyt ───────────────────────────────────────────────────────────────
+	let voiceOpen = $state(false);
+	let voiceText = $state('');
+
+	// ── Sjekkin-flyt ──────────────────────────────────────────────────────────
+	let moodOpen = $state(false);
+	let moodSlider = $state(50);
+	let moodFactors = $state<string[]>([]);
+	let moodNote = $state('');
+	const MOOD_FACTORS = [
+		{ id: 'søvn',       label: 'Søvn',      icon: '💤' },
+		{ id: 'trening',    label: 'Trening',   icon: '🏃' },
+		{ id: 'mat',        label: 'Mat',       icon: '🥗' },
+		{ id: 'jobb',       label: 'Jobb',      icon: '💼' },
+		{ id: 'familie',    label: 'Familie',   icon: '🧑‍👧' },
+		{ id: 'sosialt',    label: 'Sosialt',   icon: '👥' },
+		{ id: 'vær',        label: 'Vær',      icon: '☀️' },
+		{ id: 'økonomi',    label: 'Økonomi',  icon: '💸' },
+		{ id: 'helse',      label: 'Helse',     icon: '🩺' },
+		{ id: 'kreativitet', label: 'Kreativitet', icon: '🎨' },
+		{ id: 'tid-alene',  label: 'Tid alene', icon: '🧘' },
+		{ id: 'natur',      label: 'Natur',     icon: '🌿' },
+	];
+	const moodLabel = $derived(
+		moodSlider < 20  ? 'Veldig lav' :
+		moodSlider < 40  ? 'Lav' :
+		moodSlider < 60  ? 'OK' :
+		moodSlider < 80  ? 'Bra' : 'Strålende'
+	);
+	const moodEmoji = $derived(
+		moodSlider < 20  ? '😔' :
+		moodSlider < 40  ? '😐' :
+		moodSlider < 60  ? '🙂' :
+		moodSlider < 80  ? '😊' : '🤩'
+	);
+	const moodColor = $derived(
+		moodSlider < 20  ? '#e07070' :
+		moodSlider < 40  ? '#f0b429' :
+		moodSlider < 60  ? '#aaa' :
+		moodSlider < 80  ? '#82c882' : '#7c8ef5'
+	);
+
+	// ── Fil-flyt ───────────────────────────────────────────────────────────────
+	let fileFlowOpen = $state(false);
+	let fileFlowInput = $state<HTMLInputElement | null>(null);
+	let fileFlowSelected = $state<File | null>(null);
+	let fileFlowNote = $state('');
+
 	const QUICK_ACTIONS: QuickAction[] = [
 		{
 			id: 'chat',
@@ -195,7 +253,7 @@
 		},
 		{
 			id: 'mood',
-			label: 'Stemning',
+			label: 'Sjekkin',
 			icon: '◐',
 			description: 'Registrer dagsform, energi eller følelsen du står i akkurat nå.',
 			placeholder: 'Hvordan har du det akkurat nå, og hva tror du påvirker det?',
@@ -221,22 +279,119 @@
 		chatOpen = true;
 	}
 
-	async function startQuickAction(action: QuickAction) {
+	function startQuickAction(action: QuickAction) {
 		chatMessages = [];
 		chatPrefill = '';
 		createdThemeLink = null;
 		currentConversationId = null;
-		openChat('', action.id);
-
-		try {
-			const res = await fetch('/api/conversations/new', { method: 'POST' });
-			if (res.ok) {
-				const data = await res.json();
-				currentConversationId = data.conversationId ?? null;
-			}
-		} catch {
-			// Hvis dette feiler faller vi tilbake til serverens default-strategi ved første melding.
+		if (action.id === 'chat') {
+			openChat('', 'chat');
+		} else if (action.id === 'camera') {
+			cameraOpen = true;
+		} else if (action.id === 'voice') {
+			voiceOpen = true;
+		} else if (action.id === 'mood') {
+			moodOpen = true;
+		} else if (action.id === 'file') {
+			fileFlowOpen = true;
 		}
+	}
+
+	// ── Kamera-flyt ─────────────────────────────────────────────────────────────
+	function closeCameraFlow() {
+		cameraOpen = false;
+		cameraSelectedFile = null;
+		cameraPreview = null;
+		cameraCaption = '';
+		cameraError = false;
+	}
+
+	function handleCameraFileSelect(event: Event) {
+		const input = event.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		cameraSelectedFile = file;
+		const reader = new FileReader();
+		reader.onload = (e) => { cameraPreview = e.target?.result as string; };
+		reader.readAsDataURL(file);
+	}
+
+	async function submitCamera() {
+		if (!cameraSelectedFile) return;
+		cameraUploading = true;
+		cameraError = false;
+		try {
+			const formData = new FormData();
+			formData.append('image', cameraSelectedFile);
+			const uploadRes = await fetch('/api/upload-image', { method: 'POST', body: formData });
+			if (!uploadRes.ok) throw new Error('Upload failed');
+			const { url } = await uploadRes.json();
+			const caption = cameraCaption.trim();
+			closeCameraFlow();
+			chatOpen = true;
+			await sendChat(caption || '📷 [Bilde]', url);
+		} catch {
+			cameraError = true;
+		} finally {
+			cameraUploading = false;
+		}
+	}
+
+	// ── Lyd-flyt ─────────────────────────────────────────────────────────────────
+	function closeVoiceFlow() { voiceOpen = false; voiceText = ''; }
+
+	function submitVoice() {
+		const t = voiceText.trim();
+		if (!t) return;
+		closeVoiceFlow();
+		chatOpen = true;
+		sendChat(t);
+	}
+
+	// ── Sjekkin-flyt ─────────────────────────────────────────────────────────────
+	function closeMoodFlow() { moodOpen = false; moodSlider = 50; moodFactors = []; moodNote = ''; }
+
+	function toggleFactor(id: string) {
+		if (moodFactors.includes(id)) {
+			moodFactors = moodFactors.filter(f => f !== id);
+		} else {
+			moodFactors = [...moodFactors, id];
+		}
+	}
+
+	function submitMood() {
+		const factors = moodFactors
+			.map(id => MOOD_FACTORS.find(f => f.id === id))
+			.filter(Boolean)
+			.map(f => `${f!.icon} ${f!.label}`)
+			.join(', ');
+		const note = moodNote.trim();
+		const msg = [
+			`Sjekkin: ${moodEmoji} ${moodLabel} (${moodSlider}/100)`,
+			factors ? `Påvirket av: ${factors}` : null,
+			note || null,
+		].filter(Boolean).join('\n');
+		closeMoodFlow();
+		chatOpen = true;
+		sendChat(msg);
+	}
+
+	// ── Fil-flyt ──────────────────────────────────────────────────────────────────
+	function closeFileFlow() { fileFlowOpen = false; fileFlowSelected = null; fileFlowNote = ''; }
+
+	function handleFileFlowSelect(event: Event) {
+		const input = event.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (file) fileFlowSelected = file;
+	}
+
+	function submitFile() {
+		if (!fileFlowSelected) return;
+		const note = fileFlowNote.trim();
+		const filename = fileFlowSelected.name;
+		closeFileFlow();
+		chatOpen = true;
+		sendChat(`Fil: ${filename}${note ? '\n\n' + note : ''}`);
 	}
 
 	function switchQuickAction(action: QuickAction) {
@@ -261,8 +416,9 @@
 		await goto(`/tema/${themeId}?handoff=1`);
 	}
 
-	async function sendChat(text: string) {
-		chatMessages = [...chatMessages, { role: 'user', text }];
+	async function sendChat(text: string, imageUrl?: string) {
+		const displayText = text || (imageUrl ? '📷 [Bilde]' : '');
+		chatMessages = [...chatMessages, { role: 'user', text: displayText, imageUrl }];
 		chatLoading = true;
 		try {
 			if (!currentConversationId) {
@@ -280,7 +436,7 @@
 			const res = await fetch('/api/chat', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ message: text, conversationId: currentConversationId })
+				body: JSON.stringify({ message: displayText, conversationId: currentConversationId, imageUrl })
 			});
 			if (!res.ok) throw new Error();
 			const data = await res.json();
@@ -419,18 +575,6 @@
 				</div>
 				<button class="chat-link" onclick={() => goto(currentConversationId ? `/samtaler?conversation=${currentConversationId}` : '/samtaler')} aria-label="Åpne samtaler">Samtaler</button>
 			</div>
-			<div class="quick-action-switcher" aria-label="Velg hurtigflyt">
-				{#each QUICK_ACTIONS as action}
-					<button
-						class="quick-action-chip"
-						class:is-active={action.id === activeQuickAction.id}
-						onclick={() => switchQuickAction(action)}
-					>
-						<span class="quick-action-icon">{action.icon}</span>
-						<span>{action.label}</span>
-					</button>
-				{/each}
-			</div>
 			<div class="chat-messages" aria-live="polite">
 				{#if chatMessages.length === 0 && !chatLoading}
 					<div class="quick-flow-card">
@@ -444,7 +588,12 @@
 				{/if}
 				{#each chatMessages as msg}
 					{#if msg.role === 'user'}
-						<div class="bubble-user">{msg.text}</div>
+						<div class="bubble-user">
+							{#if msg.imageUrl}
+								<img class="bubble-img" src={msg.imageUrl} alt="Bilde" />
+							{/if}
+							{#if msg.text && msg.text !== '📷 [Bilde]'}<span>{msg.text}</span>{/if}
+						</div>
 					{:else}
 						<TriageCard text={msg.text} />
 					{/if}
@@ -467,19 +616,6 @@
 						<span class="theme-link-arrow">→</span>
 					</button>
 				{/if}
-				<div class="composer-tools" aria-label="Tilgjengelige inndata">
-					{#each QUICK_ACTIONS as action}
-						<button
-							type="button"
-							class="composer-tool"
-							class:is-active={action.id === activeQuickAction.id}
-							onclick={() => switchQuickAction(action)}
-						>
-							<span class="composer-tool-icon">{action.icon}</span>
-							<span>{action.label}</span>
-						</button>
-					{/each}
-				</div>
 				{#key `${activeQuickAction.id}:${chatPrefill}`}
 					<ChatInput
 						placeholder={activeQuickAction.placeholder}
@@ -489,25 +625,180 @@
 					/>
 				{/key}
 			</div>
+		{:else if cameraOpen}
+			<!-- ── Kamera-flyt ── -->
+			<div class="flow-panel">
+				<div class="flow-header">
+					<button class="flow-back" onclick={closeCameraFlow} aria-label="Tilbake">←</button>
+					<span class="flow-title">Kamera</span>
+				</div>
+				<input
+					type="file"
+					accept="image/*"
+					style="display:none"
+					bind:this={cameraFileInput}
+					onchange={handleCameraFileSelect}
+				/>
+				<div class="flow-body">
+					{#if !cameraPreview}
+						<button class="upload-zone" onclick={() => cameraFileInput?.click()}>
+							<span class="upload-zone-icon">◉</span>
+							<p class="upload-zone-label">Velg bilde eller ta foto</p>
+							<p class="upload-zone-sub">Skjermtid · Kvittering · Blodprøve · Notat</p>
+						</button>
+					{:else}
+						<div class="img-preview">
+							<img src={cameraPreview} alt="Forhåndsvisning" />
+							<button class="preview-clear" onclick={() => { cameraPreview = null; cameraSelectedFile = null; }} aria-label="Fjern bilde">✕</button>
+						</div>
+						<textarea
+							class="flow-textarea"
+							placeholder="Beskriv eller legg til kontekst (valgfritt)…"
+							bind:value={cameraCaption}
+							rows="2"
+						></textarea>
+						{#if cameraError}
+							<p class="flow-error">Noe gikk galt. Prøv igjen.</p>
+						{/if}
+						<button class="flow-submit" onclick={submitCamera} disabled={cameraUploading}>
+							{cameraUploading ? 'Laster opp…' : 'Send til chat →'}
+						</button>
+					{/if}
+				</div>
+			</div>
+		{:else if voiceOpen}
+			<!-- ── Lyd-flyt ── -->
+			<div class="flow-panel">
+				<div class="flow-header">
+					<button class="flow-back" onclick={closeVoiceFlow} aria-label="Tilbake">←</button>
+					<span class="flow-title">Lyd</span>
+				</div>
+				<div class="flow-body">
+					<p class="flow-hint">Skriv det du ville sagt — fritt og uformelt.</p>
+					<textarea
+						class="flow-textarea flow-textarea--lg"
+						placeholder="Bare si det…"
+						bind:value={voiceText}
+						rows="5"
+					></textarea>
+					<button class="flow-submit" onclick={submitVoice} disabled={!voiceText.trim()}>
+						Send til chat →
+					</button>
+				</div>
+			</div>
+		{:else if moodOpen}
+			<!-- ── Stemning-flyt ── -->
+			<div class="flow-panel">
+				<div class="flow-header">
+					<button class="flow-back" onclick={closeMoodFlow} aria-label="Tilbake">←</button>
+					<span class="flow-title">Stemning</span>
+				</div>
+				<div class="flow-body">
+					<!-- Slider -->
+					<div class="ci-slider-wrap">
+						<div class="ci-slider-display" style:color={moodColor}>
+							<span class="ci-slider-emoji">{moodEmoji}</span>
+							<span class="ci-slider-label">{moodLabel}</span>
+							<span class="ci-slider-num">{moodSlider}</span>
+						</div>
+						<input
+							type="range"
+							class="ci-slider"
+							min="0" max="100" step="1"
+							bind:value={moodSlider}
+							style:--thumb-color={moodColor}
+							aria-label="Stemningsnivå"
+						/>
+						<div class="ci-slider-ends">
+							<span>😔</span>
+							<span>🤩</span>
+						</div>
+					</div>
+
+					<!-- Faktor-grid -->
+					<div class="ci-factors-label">Hva påvirker stemningen din mest?</div>
+					<div class="ci-factors-grid">
+						{#each MOOD_FACTORS as factor}
+							<button
+								class="ci-factor-btn"
+								class:is-active={moodFactors.includes(factor.id)}
+								onclick={() => toggleFactor(factor.id)}
+								aria-pressed={moodFactors.includes(factor.id)}
+							>
+								<span class="ci-factor-icon">{factor.icon}</span>
+								<span class="ci-factor-label">{factor.label}</span>
+							</button>
+						{/each}
+					</div>
+
+					<!-- Notat -->
+					<textarea
+						class="flow-textarea"
+						placeholder="Vil du legge til noe? (valgfritt)"
+						bind:value={moodNote}
+						rows="2"
+					></textarea>
+					<button class="flow-submit" onclick={submitMood}>
+						Send til chat →
+					</button>
+				</div>
+			</div>
+		{:else if fileFlowOpen}
+			<!-- ── Fil-flyt ── -->
+			<div class="flow-panel">
+				<div class="flow-header">
+					<button class="flow-back" onclick={closeFileFlow} aria-label="Tilbake">←</button>
+					<span class="flow-title">Fil</span>
+				</div>
+				<input
+					type="file"
+					accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,text/*"
+					style="display:none"
+					bind:this={fileFlowInput}
+					onchange={handleFileFlowSelect}
+				/>
+				<div class="flow-body">
+					{#if !fileFlowSelected}
+						<button class="upload-zone" onclick={() => fileFlowInput?.click()}>
+							<span class="upload-zone-icon">▣</span>
+							<p class="upload-zone-label">Velg fil</p>
+							<p class="upload-zone-sub">PDF · Word · Excel · Tekst</p>
+						</button>
+					{:else}
+						<div class="file-chip">
+							<span class="file-chip-icon">▣</span>
+							<span class="file-chip-name">{fileFlowSelected.name}</span>
+							<button class="preview-clear" onclick={() => fileFlowSelected = null} aria-label="Fjern fil">✕</button>
+						</div>
+						<textarea
+							class="flow-textarea"
+							placeholder="Hva vil du gjøre med denne filen? (valgfritt)"
+							bind:value={fileFlowNote}
+							rows="2"
+						></textarea>
+						<button class="flow-submit" onclick={submitFile}>
+							Send til chat →
+						</button>
+					{/if}
+				</div>
+			</div>
 		{:else}
 			<div class="capture-panel">
-				<div class="capture-intro">
-					<p class="capture-kicker">Hurtigregistrering</p>
-					<h2 class="capture-title">Hva vil du fange akkurat nå?</h2>
-					<p class="capture-text">Velg format først. Deretter åpner vi en enkel flyt hvor du kan skrive, lime inn eller starte med råinnhold.</p>
 				{#if latestClosedConversationId}
 					<button class="resume-chat-btn" onclick={() => goto(`/samtaler?conversation=${latestClosedConversationId}`)}>
 						<span class="resume-chat-label">Fortsett sist samtale</span>
 						<span class="resume-chat-arrow">→</span>
 					</button>
 				{/if}
-				</div>
 				<div class="capture-grid">
-					{#each QUICK_ACTIONS as action}
+					<button class="capture-action capture-action--primary" onclick={() => startQuickAction(QUICK_ACTIONS[0])}>
+						<span class="capture-action-icon">{QUICK_ACTIONS[0].icon}</span>
+						<span class="capture-action-label">{QUICK_ACTIONS[0].label}</span>
+					</button>
+					{#each QUICK_ACTIONS.slice(1) as action}
 						<button class="capture-action" onclick={() => startQuickAction(action)}>
 							<span class="capture-action-icon">{action.icon}</span>
 							<span class="capture-action-label">{action.label}</span>
-							<span class="capture-action-text">{action.description}</span>
 						</button>
 					{/each}
 				</div>
@@ -708,40 +999,10 @@
 		width: 100%;
 	}
 
-	.capture-intro {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-	}
-
-	.capture-kicker {
-		margin: 0;
-		font-size: 0.65rem;
-		text-transform: uppercase;
-		letter-spacing: 0.12em;
-		color: #4b4b4b;
-	}
-
-	.capture-title {
-		margin: 0;
-		font-size: 1rem;
-		line-height: 1.2;
-		color: #e8e8e8;
-		letter-spacing: -0.03em;
-	}
-
-	.capture-text {
-		margin: 0;
-		font-size: 0.82rem;
-		line-height: 1.45;
-		color: #7b7b7b;
-		max-width: 34rem;
-	}
-
 	.capture-grid {
 		display: grid;
-		grid-template-columns: repeat(5, minmax(0, 1fr));
-		gap: 10px;
+		grid-template-columns: 1fr 1fr;
+		gap: 8px;
 	}
 
 	.resume-chat-btn {
@@ -777,18 +1038,29 @@
 	.capture-action {
 		display: flex;
 		flex-direction: column;
-		align-items: flex-start;
+		align-items: center;
+		justify-content: center;
 		gap: 8px;
 		background: linear-gradient(180deg, #181818 0%, #121212 100%);
 		border: 1px solid #2a2a2a;
 		border-radius: 18px;
-		padding: 14px 12px 13px;
+		padding: 22px 12px;
 		cursor: pointer;
 		color: #888;
 		font: inherit;
 		font-size: 0.9rem;
 		transition: border-color 0.15s, background 0.15s, transform 0.15s;
+		text-align: center;
+		width: 100%;
+	}
+
+	.capture-action--primary {
+		grid-column: 1 / -1;
+		flex-direction: row;
+		justify-content: flex-start;
 		text-align: left;
+		padding: 16px 20px;
+		gap: 14px;
 	}
 	.capture-action:hover {
 		background: linear-gradient(180deg, #1d1d1d 0%, #151515 100%);
@@ -816,13 +1088,312 @@
 		color: #ddd;
 	}
 
-	.capture-action-text {
-		font-size: 0.72rem;
-		line-height: 1.35;
-		color: #777;
+	/* ── Flow-panel (kamera / lyd / stemning / fil) ──────────────────────── */
+	.flow-panel {
+		display: flex;
+		flex-direction: column;
+		height: 100%;
+		overflow: hidden;
 	}
 
-	/* ── Chat: utvidet innhold ── */
+	.flow-header {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 12px 16px;
+		border-bottom: 1px solid #1a1a1a;
+		flex-shrink: 0;
+	}
+
+	.flow-back {
+		background: none;
+		border: none;
+		color: #555;
+		font: inherit;
+		font-size: 1.1rem;
+		cursor: pointer;
+		padding: 4px 8px 4px 0;
+		transition: color 0.12s;
+	}
+	.flow-back:hover { color: #ccc; }
+
+	.flow-title {
+		font-size: 0.9rem;
+		font-weight: 700;
+		color: #aaa;
+	}
+
+	.flow-body {
+		flex: 1;
+		overflow-y: auto;
+		padding: 16px;
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+	}
+
+	.flow-hint {
+		margin: 0;
+		font-size: 0.85rem;
+		color: #555;
+	}
+
+	.flow-textarea {
+		width: 100%;
+		background: #161616;
+		border: 1px solid #2a2a2a;
+		border-radius: 12px;
+		padding: 12px 14px;
+		color: #ccc;
+		font: inherit;
+		font-size: 0.88rem;
+		line-height: 1.5;
+		resize: none;
+		box-sizing: border-box;
+	}
+	.flow-textarea:focus {
+		outline: none;
+		border-color: #3c4f9f;
+	}
+	.flow-textarea::placeholder { color: #3a3a3a; }
+	.flow-textarea--lg { min-height: 120px; }
+
+	.flow-submit {
+		background: #4a5af0;
+		border: none;
+		color: #fff;
+		border-radius: 14px;
+		padding: 13px 20px;
+		font: inherit;
+		font-size: 0.9rem;
+		font-weight: 600;
+		cursor: pointer;
+		width: 100%;
+		transition: background 0.15s, opacity 0.15s;
+	}
+	.flow-submit:hover:not(:disabled) { background: #3a4adf; }
+	.flow-submit:disabled { opacity: 0.4; cursor: default; }
+
+	.flow-error {
+		margin: 0;
+		font-size: 0.8rem;
+		color: #e07070;
+	}
+
+	/* Upload zone (kamera + fil) */
+	.upload-zone {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 10px;
+		background: #111;
+		border: 2px dashed #2a2a2a;
+		border-radius: 18px;
+		padding: 36px 20px;
+		cursor: pointer;
+		width: 100%;
+		transition: border-color 0.15s, background 0.15s;
+		font: inherit;
+	}
+	.upload-zone:hover { border-color: #3c4f9f; background: #121218; }
+
+	.upload-zone-icon {
+		font-size: 2rem;
+		color: #4a5af0;
+		opacity: 0.7;
+	}
+
+	.upload-zone-label {
+		margin: 0;
+		font-size: 0.9rem;
+		font-weight: 600;
+		color: #ccc;
+	}
+
+	.upload-zone-sub {
+		margin: 0;
+		font-size: 0.75rem;
+		color: #555;
+	}
+
+	/* Image preview */
+	.img-preview {
+		position: relative;
+		border-radius: 14px;
+		overflow: hidden;
+		max-height: 200px;
+	}
+	.img-preview img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		display: block;
+	}
+
+	.preview-clear {
+		position: absolute;
+		top: 8px;
+		right: 8px;
+		background: rgba(0,0,0,0.7);
+		border: none;
+		color: #fff;
+		border-radius: 50%;
+		width: 28px;
+		height: 28px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+		font-size: 0.8rem;
+	}
+
+	/* File chip */
+	.file-chip {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		background: #161616;
+		border: 1px solid #2a2a2a;
+		border-radius: 12px;
+		padding: 12px 14px;
+	}
+
+	.file-chip-icon {
+		color: #7c8ef5;
+		font-size: 1.2rem;
+		flex-shrink: 0;
+	}
+
+	.file-chip-name {
+		flex: 1;
+		font-size: 0.85rem;
+		color: #ccc;
+		word-break: break-all;
+	}
+
+	/* ── Sjekkin-flyt ────────────────────────────────────────────────────────── */
+	.ci-slider-wrap {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+
+	.ci-slider-display {
+		display: flex;
+		align-items: baseline;
+		gap: 10px;
+		transition: color 0.2s;
+	}
+
+	.ci-slider-emoji {
+		font-size: 2rem;
+		line-height: 1;
+		transition: filter 0.2s;
+	}
+
+	.ci-slider-label {
+		font-size: 1.1rem;
+		font-weight: 700;
+		letter-spacing: -0.02em;
+	}
+
+	.ci-slider-num {
+		font-size: 0.75rem;
+		opacity: 0.5;
+		font-variant-numeric: tabular-nums;
+		margin-left: auto;
+	}
+
+	.ci-slider {
+		-webkit-appearance: none;
+		appearance: none;
+		width: 100%;
+		height: 6px;
+		border-radius: 999px;
+		background: #222;
+		outline: none;
+		cursor: pointer;
+	}
+	.ci-slider::-webkit-slider-thumb {
+		-webkit-appearance: none;
+		appearance: none;
+		width: 22px;
+		height: 22px;
+		border-radius: 50%;
+		background: var(--thumb-color, #4a5af0);
+		border: 3px solid #0f0f0f;
+		box-shadow: 0 0 0 1px var(--thumb-color, #4a5af0);
+		transition: background 0.2s, box-shadow 0.2s;
+		cursor: grab;
+	}
+	.ci-slider::-moz-range-thumb {
+		width: 22px;
+		height: 22px;
+		border-radius: 50%;
+		background: var(--thumb-color, #4a5af0);
+		border: 3px solid #0f0f0f;
+		cursor: grab;
+	}
+
+	.ci-slider-ends {
+		display: flex;
+		justify-content: space-between;
+		font-size: 0.9rem;
+		opacity: 0.4;
+	}
+
+	.ci-factors-label {
+		font-size: 0.72rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: #555;
+		margin-top: 4px;
+	}
+
+	.ci-factors-grid {
+		display: grid;
+		grid-template-columns: repeat(4, 1fr);
+		gap: 8px;
+	}
+
+	.ci-factor-btn {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 5px;
+		background: #141414;
+		border: 1.5px solid #252525;
+		border-radius: 14px;
+		padding: 10px 6px;
+		cursor: pointer;
+		font: inherit;
+		transition: border-color 0.12s, background 0.12s, transform 0.1s;
+	}
+	.ci-factor-btn:hover { border-color: #3c4f9f; background: #16191f; }
+	.ci-factor-btn.is-active {
+		border-color: #4a5af0;
+		background: #12152a;
+		transform: scale(1.04);
+	}
+
+	.ci-factor-icon { font-size: 1.3rem; line-height: 1; }
+	.ci-factor-label {
+		font-size: 0.62rem;
+		font-weight: 600;
+		color: #888;
+		text-align: center;
+		line-height: 1.2;
+	}
+	.ci-factor-btn.is-active .ci-factor-label { color: #c5cdf8; }
+
+	/* Bubble image */
+	.bubble-img {
+		display: block;
+		max-width: 100%;
+		border-radius: 10px;
+		margin-bottom: 6px;
+	}
 	.chat-header {
 		display: flex;
 		align-items: center;
@@ -880,38 +1451,6 @@
 		color: #d4daf6;
 	}
 
-	.quick-action-switcher {
-		display: flex;
-		gap: 8px;
-		overflow-x: auto;
-		padding: 10px 14px 0;
-		scrollbar-width: none;
-	}
-
-	.quick-action-switcher::-webkit-scrollbar {
-		display: none;
-	}
-
-	.quick-action-chip {
-		border: 1px solid #2a2a2a;
-		background: #131313;
-		color: #767676;
-		border-radius: 999px;
-		padding: 8px 12px;
-		display: inline-flex;
-		align-items: center;
-		gap: 7px;
-		font: inherit;
-		font-size: 0.78rem;
-		cursor: pointer;
-		white-space: nowrap;
-	}
-
-	.quick-action-chip.is-active {
-		background: #1a1f31;
-		border-color: #3c4f9f;
-		color: #d3dafb;
-	}
 
 	.quick-flow-card {
 		align-self: stretch;
@@ -1044,62 +1583,11 @@
 		color: #8f9bd0;
 	}
 
-	.composer-tools {
-		display: flex;
-		gap: 8px;
-		overflow-x: auto;
-		scrollbar-width: none;
-	}
-
-	.composer-tools::-webkit-scrollbar {
-		display: none;
-	}
-
-	.composer-tool {
-		border: 1px solid #252525;
-		background: #111;
-		color: #6f6f6f;
-		border-radius: 999px;
-		padding: 7px 11px;
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		font: inherit;
-		font-size: 0.76rem;
-		cursor: pointer;
-		white-space: nowrap;
-	}
-
-	.composer-tool.is-active {
-		background: #1a1f31;
-		border-color: #3a4e9a;
-		color: #ced5f8;
-	}
-
-	.composer-tool-icon,
-	.quick-action-icon {
-		font-size: 0.82rem;
-		line-height: 1;
-	}
-
-	@media (max-width: 860px) {
-		.capture-grid {
-			grid-template-columns: repeat(3, minmax(0, 1fr));
-		}
-	}
 
 	@media (max-width: 560px) {
 		.zone-input {
 			padding-left: 16px;
 			padding-right: 16px;
-		}
-
-		.capture-grid {
-			grid-template-columns: repeat(2, minmax(0, 1fr));
-		}
-
-		.capture-action {
-			min-height: 112px;
 		}
 	}
 </style>

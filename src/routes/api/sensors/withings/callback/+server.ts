@@ -1,7 +1,8 @@
-import { redirect } from '@sveltejs/kit';
+import { isRedirect, redirect } from '@sveltejs/kit';
 import { getAccessToken } from '$lib/server/integrations/withings';
 import { db } from '$lib/db';
 import { sensors } from '$lib/db/schema';
+import { ensureThemeForUser } from '$lib/server/themes';
 import { eq } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
 
@@ -11,7 +12,6 @@ import type { RequestHandler } from './$types';
  */
 export const GET: RequestHandler = async ({ url, locals }) => {
 	const code = url.searchParams.get('code');
-	const state = url.searchParams.get('state');
 	const error = url.searchParams.get('error');
 
 	if (error) {
@@ -93,9 +93,17 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 			});
 		}
 
-		// Redirect to settings with success message
-		throw redirect(302, '/settings?success=withings_connected');
+		const { theme: healthTheme, created } = await ensureThemeForUser({
+			userId,
+			name: 'Helse',
+			emoji: '💪',
+			description: 'Withings-data, helseutvikling og mål knyttet til kropp, søvn og aktivitet.'
+		});
+
+		const handoffParam = created ? '&handoff=1' : '';
+		throw redirect(302, `/tema/${healthTheme.id}?tab=data&connected=withings${handoffParam}`);
 	} catch (err) {
+		if (isRedirect(err)) throw err;
 		console.error('Withings callback error:', err);
 		throw redirect(302, '/settings?error=unknown');
 	}
