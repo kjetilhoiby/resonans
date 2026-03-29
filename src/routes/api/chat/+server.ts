@@ -284,7 +284,7 @@ const tools = [
 		type: 'function' as const,
 		function: {
 			name: 'query_sensor_data',
-			description: 'ALLTID bruk dette for å hente faktiske helsedata fra Withings. ALDRI oppgi data fra hukommelsen - data må hentes live! Bruk "latest" for nyeste uke, "trend" for flere perioder (f.eks. "siste 3 måneder"), "period_summary" for én periode, "raw_events" for detaljerte målinger eller treningsøkter.',
+			description: 'ALLTID bruk dette for å hente faktiske helsedata fra Withings. ALDRI oppgi data fra hukommelsen - data må hentes live! VIKTIG: Bruk "metric"-parameteren for å kun hente det brukeren spør om (f.eks. metric="workouts" for løping, metric="weight" for vekt). Bruk "latest" for nyeste uke, "trend" for flere perioder, "period_summary" for én periode, "raw_events" for detaljerte målinger.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -304,7 +304,7 @@ const tools = [
 					},
 					metric: {
 						type: 'string',
-						description: 'Hvilken metrikk å fokusere på',
+						description: 'Hvilken metrikk å fokusere på. VIKTIG: Bruk dette for å filtrere! Eksempler: metric="workouts" hvis brukeren spør om løping/trening, metric="weight" for vekt, metric="sleep" for søvn, metric="steps" for skritt. Bruk metric="all" kun for generelle spørsmål om helsedata.',
 						enum: ['weight', 'steps', 'sleep', 'intense_minutes', 'heartrate', 'workouts', 'all']
 					},
 					limit: {
@@ -495,7 +495,7 @@ const tools = [
 		type: 'function' as const,
 		function: {
 			name: 'create_widget',
-			description: 'Opprett en ny widget som viser en bestemt metrikk på hjemskjermen. Bruk når brukeren vil se en spesifikk statistikk, f.eks. "vis meg søvn per dag siste 30 dager" eller "lagre en widget for løpedistanse denne uken". Widgeten kan festes til hjemskjermen.',
+			description: 'Opprett en ny widget som viser en bestemt metrikk på hjemskjermen. Bruk når brukeren vil se en spesifikk statistikk, f.eks. "vis meg søvn per dag siste 30 dager" eller "lagre en widget for løpedistanse denne uken". Widgeten kan festes til hjemskjermen. VIKTIG: Hvis brukeren nevner et konkret mål (f.eks. "15 km per uke", "8 timer søvn", "10000 skritt"), SKAL du sette goal-parameteren.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -534,7 +534,7 @@ const tools = [
 					},
 					goal: {
 						type: 'number',
-						description: 'Valgfritt mål for å vise fremgang som prosentring (f.eks. 10000 for steg, 8 for søvntimer)'
+						description: 'MÅL-VERDI for å vise fremgang som prosentring. BRUK ALLTID dette når brukeren nevner et konkret mål! Eksempler: 15 (for 15 km/uke), 10000 (for 10000 skritt/dag), 8 (for 8 timer søvn/natt). Hvis brukeren sier "jeg vil løpe 15 km hver uke", så er goal=15.'
 					},
 					color: {
 						type: 'string',

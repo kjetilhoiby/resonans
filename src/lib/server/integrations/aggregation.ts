@@ -109,6 +109,9 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 			.map((e) => (e.data?.intense || 0) + (e.data?.moderate || 0))
 			.filter((v) => v > 0);
 
+		// Count workouts (activity events with distance > 0)
+		const workoutEvents = activityEvents.filter(e => e.data?.distance && e.data.distance > 0);
+
 		// Calculate metrics
 		const metrics: any = {};
 
@@ -169,6 +172,12 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 				min: min(heartRates),
 				max: max(heartRates),
 				values: heartRates // All individual resting heart rates
+			};
+		}
+
+		if (workoutEvents.length > 0) {
+			metrics.workouts = {
+				count: workoutEvents.length
 			};
 		}
 
@@ -240,6 +249,9 @@ export async function aggregateMonthlyData(userId: string, months?: MonthPeriod[
 			.map((e) => (e.data?.intense || 0) + (e.data?.moderate || 0))
 			.filter((v) => v > 0);
 
+		// Count workouts (activity events with distance > 0)
+		const workoutEvents = activityEvents.filter(e => e.data?.distance && e.data.distance > 0);
+
 		const metrics: any = {};
 
 		if (weights.length > 0) {
@@ -287,6 +299,12 @@ export async function aggregateMonthlyData(userId: string, months?: MonthPeriod[
 			metrics.intenseMinutes = {
 				sum: sum(intenseMinutes),
 				avg: avg(intenseMinutes)
+			};
+		}
+
+		if (workoutEvents.length > 0) {
+			metrics.workouts = {
+				count: workoutEvents.length
 			};
 		}
 
@@ -349,6 +367,9 @@ export async function aggregateYearlyData(userId: string, years?: YearPeriod[]) 
 			.map((e) => (e.data?.intense || 0) + (e.data?.moderate || 0))
 			.filter((v) => v > 0);
 
+		// Count workouts (activity events with distance > 0)
+		const workoutEvents = activityEvents.filter(e => e.data?.distance && e.data.distance > 0);
+
 		const metrics: any = {};
 
 		if (weights.length > 0) {
@@ -396,6 +417,12 @@ export async function aggregateYearlyData(userId: string, years?: YearPeriod[]) 
 			metrics.intenseMinutes = {
 				sum: sum(intenseMinutes),
 				avg: avg(intenseMinutes)
+			};
+		}
+
+		if (workoutEvents.length > 0) {
+			metrics.workouts = {
+				count: workoutEvents.length
 			};
 		}
 

@@ -22,7 +22,15 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		.where(where)
 		.orderBy(asc(userWidgets.sortOrder), asc(userWidgets.createdAt));
 
-	return json(widgets);
+	// Transform decimal strings to numbers for frontend
+	const transformedWidgets = widgets.map(w => ({
+		...w,
+		goal: w.goal ? parseFloat(w.goal) : null,
+		thresholdWarn: w.thresholdWarn ? parseFloat(w.thresholdWarn) : null,
+		thresholdSuccess: w.thresholdSuccess ? parseFloat(w.thresholdSuccess) : null,
+	}));
+
+	return json(transformedWidgets);
 };
 
 const VALID_METRICS = ['weight', 'sleepDuration', 'steps', 'distance', 'workoutCount', 'heartrate', 'mood', 'screenTime', 'amount'] as const;
@@ -75,5 +83,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		})
 		.returning();
 
-	return json(widget, { status: 201 });
+	// Transform decimal strings to numbers for frontend
+	const transformed = {
+		...widget,
+		goal: widget.goal ? parseFloat(widget.goal) : null,
+		thresholdWarn: widget.thresholdWarn ? parseFloat(widget.thresholdWarn) : null,
+		thresholdSuccess: widget.thresholdSuccess ? parseFloat(widget.thresholdSuccess) : null,
+	};
+
+	return json(transformed, { status: 201 });
 };

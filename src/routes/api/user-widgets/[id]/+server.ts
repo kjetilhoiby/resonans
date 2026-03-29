@@ -42,7 +42,15 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 		.where(and(eq(userWidgets.id, id), eq(userWidgets.userId, userId)))
 		.returning();
 
-	return json(updated);
+	// Transform decimal strings to numbers for frontend
+	const transformed = {
+		...updated,
+		goal: updated.goal ? parseFloat(updated.goal) : null,
+		thresholdWarn: updated.thresholdWarn ? parseFloat(updated.thresholdWarn) : null,
+		thresholdSuccess: updated.thresholdSuccess ? parseFloat(updated.thresholdSuccess) : null,
+	};
+
+	return json(transformed);
 };
 
 export const DELETE: RequestHandler = async ({ params, locals }) => {

@@ -70,33 +70,74 @@ The tool returns actual data from Withings sensors that the user can trust.`,
 				const latest = weeklyAggregates[0];
 				const metrics = latest.metrics as any;
 
+				// Build response based on requested metric (default: all)
+				const allMetrics = {
+					weight: metrics?.weight ? {
+						current: metrics.weight.latest,
+						avg: metrics.weight.avg,
+						change: metrics.weight.change
+					} : undefined,
+					steps: metrics?.steps ? {
+						avg: metrics.steps.avg,
+						total: metrics.steps.sum
+					} : undefined,
+					sleep: metrics?.sleep ? {
+						avg: metrics.sleep.avg
+					} : undefined,
+					intenseMinutes: metrics?.intenseMinutes ? {
+						avg: metrics.intenseMinutes.avg,
+						total: metrics.intenseMinutes.sum
+					} : undefined,
+					heartRate: metrics?.heartRate ? {
+						avg: metrics.heartRate.avg,
+						min: metrics.heartRate.min,
+						max: metrics.heartRate.max
+					} : undefined,
+					workouts: metrics?.workouts ? {
+						count: metrics.workouts.count,
+						totalDistance: metrics.workouts.totalDistance,
+						totalDuration: metrics.workouts.totalDuration
+					} : undefined,
+					distance: metrics?.distance ? {
+						total: metrics.distance.sum,
+						avg: metrics.distance.avg
+					} : undefined
+				};
+
+				// Filter by metric if specified
+				let responseData: any = { period: latest.periodKey };
+				if (metric && metric !== 'all') {
+					// Return only the requested metric
+				if (metric === 'workouts') {
+					// For workouts, include both workouts count and distance data
+					if (allMetrics.workouts) {
+						responseData.workouts = allMetrics.workouts;
+					}
+					if (allMetrics.distance) {
+						responseData.distance = allMetrics.distance;
+					}
+					// If we have distance but no workout count, distance indicates workouts exist
+					if (!allMetrics.workouts && !allMetrics.distance) {
+						return {
+							success: false,
+							message: `No workout or distance data found for ${latest.periodKey}`
+						};
+					}
+							success: false,
+							message: `No ${metric} data found for ${latest.periodKey}`
+						};
+					}
+				} else {
+					// Return all available metrics
+					responseData = { period: latest.periodKey, ...allMetrics };
+				}
+
 				return {
 					success: true,
-					data: {
-						period: latest.periodKey,
-						weight: {
-							current: metrics?.weight?.latest,
-							avg: metrics?.weight?.avg,
-							change: metrics?.weight?.change
-						},
-						steps: {
-							avg: metrics?.steps?.avg,
-							total: metrics?.steps?.sum
-						},
-						sleep: {
-							avg: metrics?.sleep?.avg
-						},
-						intenseMinutes: {
-							avg: metrics?.intenseMinutes?.avg,
-							total: metrics?.intenseMinutes?.sum
-						},
-						heartRate: {
-							avg: metrics?.heartRate?.avg,
-							min: metrics?.heartRate?.min,
-							max: metrics?.heartRate?.max
-						}
-					},
-					message: `Latest data from ${latest.periodKey} with ${latest.eventCount} measurements`
+					data: responseData,
+					message: metric && metric !== 'all' 
+						? `Latest ${metric} data from ${latest.periodKey}` 
+						: `Latest data from ${latest.periodKey} with ${latest.eventCount} measurements`
 				};
 			}
 
