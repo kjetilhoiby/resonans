@@ -1,95 +1,107 @@
 <script lang="ts">
+	type GoalTrackMeta = {
+		kind?: string | null;
+		window?: string | null;
+		targetValue?: number | null;
+		unit?: string | null;
+		durationDays?: number | null;
+	};
+
+	type GoalItem = {
+		id: string;
+		title: string;
+		description: string | null;
+		status: string;
+		targetDate: Date | null;
+		metadata: {
+			metricId?: string | null;
+			goalTrack?: GoalTrackMeta | null;
+		} | null;
+		createdAt: Date;
+		category: {
+			name: string;
+			icon: string | null;
+		} | null;
+		tasks: Array<{
+			id: string;
+			title: string;
+			frequency: string | null;
+			status: string;
+			targetValue: number | null;
+			unit: string | null;
+			progress: Array<{
+				id: string;
+				value: number | null;
+				note: string | null;
+				completedAt: Date;
+				activity: {
+					id: string;
+					type: string;
+					completedAt: Date;
+					duration: number | null;
+					note: string | null;
+					metadata: any;
+					metrics: Array<{
+						id: string;
+						metricType: string;
+						value: string;
+						unit: string | null;
+					}>;
+				} | null;
+			}>;
+		}>;
+	};
+
 	interface Props {
 		data: {
-			goals: Array<{
-				id: string;
-				title: string;
-				description: string | null;
-				status: string;
-				targetDate: Date | null;
-				createdAt: Date;
-				category: {
-					name: string;
-					icon: string | null;
-				} | null;
-				tasks: Array<{
-					id: string;
-					title: string;
-					frequency: string | null;
-					status: string;
-					targetValue: number | null;
-					unit: string | null;
-					progress: Array<{
-						id: string;
-						value: number | null;
-						note: string | null;
-						completedAt: Date;
-						activity: {
-							id: string;
-							type: string;
-							completedAt: Date;
-							duration: number | null;
-							note: string | null;
-							metadata: any;
-							metrics: Array<{
-								id: string;
-								metricType: string;
-								value: string;
-								unit: string | null;
-							}>;
-						} | null;
-					}>;
-				}>;
-			}>;
+			goals: GoalItem[];
 		};
 	}
 
 	let { data }: Props = $props();
 
-	// Beregn progresjon for en oppgave
-	function calculateTaskProgress(task: any): number {
+	function calculateTaskProgress(task: GoalItem['tasks'][number]): number {
 		if (!task.targetValue || !task.progress || task.progress.length === 0) {
 			return task.progress && task.progress.length > 0 ? 100 : 0;
 		}
-		const totalValue = task.progress.reduce((sum: number, p: any) => sum + (p.value || 0), 0);
+
+		const totalValue = task.progress.reduce((sum, entry) => sum + (entry.value || 0), 0);
 		return Math.min(Math.round((totalValue / task.targetValue) * 100), 100);
 	}
 
-	// Beregn total progresjon for et mål
-	function calculateGoalProgress(goal: any): number {
+	function calculateGoalProgress(goal: GoalItem): number {
 		if (goal.tasks.length === 0) return 0;
 		const taskProgresses = goal.tasks.map(calculateTaskProgress);
-		const avgProgress = taskProgresses.reduce((sum: number, p: number) => sum + p, 0) / taskProgresses.length;
+		const avgProgress = taskProgresses.reduce((sum, pct) => sum + pct, 0) / taskProgresses.length;
 		return Math.round(avgProgress);
 	}
 
-	async function deleteGoal(goalId: string, goalTitle: string) {
-		console.log('deleteGoal called with:', goalId, goalTitle);
-		
-		const confirmed = confirm(`Er du sikker på at du vil slette målet "${goalTitle}"? Dette vil også slette alle oppgaver og fremgang knyttet til målet.`);
-		console.log('User confirmed:', confirmed);
-		
-		if (!confirmed) {
-			return;
+	function formatGoalTrack(goal: GoalItem): string | null {
+		const track = goal.metadata?.goalTrack;
+		if (!track || typeof track.targetValue !== 'number') return null;
+
+		const unit = track.unit ? ` ${track.unit}` : '';
+		if (track.window === 'custom' && track.durationDays) {
+			return `${goal.metadata?.metricId || 'metric'} · ${track.targetValue}${unit} / ${track.durationDays} dager`;
 		}
 
+		return `${goal.metadata?.metricId || 'metric'} · ${track.targetValue}${unit} / ${track.window || 'periode'}`;
+	}
+
+	async function deleteGoal(goalId: string, goalTitle: string) {
+		const confirmed = confirm(`Er du sikker på at du vil slette målet "${goalTitle}"? Dette vil også slette alle oppgaver og fremgang knyttet til målet.`);
+		if (!confirmed) return;
+
 		try {
-			console.log('Sending DELETE request...');
 			const response = await fetch(`/goals?id=${goalId}`, {
 				method: 'DELETE'
 			});
-
 			const result = await response.json();
-			console.log('Response:', response.status, result);
-
 			if (!response.ok) {
 				throw new Error(result.error || 'Kunne ikke slette målet');
 			}
-
-			// Reload page to show updated goals list
 			window.location.reload();
 		} catch (error) {
-			console.error('Delete error:', error);
 			alert(`Feil ved sletting: ${error instanceof Error ? error.message : 'Ukjent feil'}`);
 		}
 	}
@@ -106,7 +118,7 @@
 		</div>
 		<div class="header-stats">
 			<div class="stat-card">
-				<div class="stat-value">{data.goals.filter(g => g.status === 'active').length}</div>
+				<div class="stat-value">{data.goals.filter((goal) => goal.status === 'active').length}</div>
 				<div class="stat-label">Aktive mål</div>
 			</div>
 		</div>
@@ -123,25 +135,34 @@
 			<div class="goals-list">
 				{#each data.goals as goal}
 					{@const goalProgress = calculateGoalProgress(goal)}
+					{@const goalTrackLabel = formatGoalTrack(goal)}
 					<div class="goal-card">
 						<div class="goal-header">
 							<div class="goal-title-row">
 								<h2>{goal.title}</h2>
-								<button 
-									class="btn-icon-danger" 
-									onclick={(e) => { e.preventDefault(); deleteGoal(goal.id, goal.title); }}
+								<button
+									class="btn-icon-danger"
+									onclick={(event) => {
+										event.preventDefault();
+										deleteGoal(goal.id, goal.title);
+									}}
 									title="Slett"
-								>×</button>
+								>
+									×
+								</button>
 							</div>
 							{#if goal.category}
 								<div class="goal-category">{goal.category.icon || '📌'} {goal.category.name}</div>
+							{/if}
+							{#if goalTrackLabel}
+								<div class="goal-track-pill">{goalTrackLabel}</div>
 							{/if}
 						</div>
 
 						{#if goal.tasks.length > 0}
 							<div class="progress-section">
 								<div class="progress-bar">
-									<div class="progress-fill" style="width: {goalProgress}%"></div>
+									<div class="progress-fill" style={`width: ${goalProgress}%`}></div>
 								</div>
 								<div class="progress-text">{goalProgress}%</div>
 							</div>
@@ -149,8 +170,8 @@
 
 						{#if goal.targetDate}
 							<div class="meta-info">
-								🗓️ {new Date(goal.targetDate).toLocaleDateString('no-NO', { 
-									month: 'short', 
+								🗓️ {goal.targetDate.toLocaleDateString('no-NO', {
+									month: 'short',
 									day: 'numeric',
 									year: 'numeric'
 								})}
@@ -170,15 +191,13 @@
 										</div>
 
 										{#if task.targetValue}
-											<div class="task-meta">
-												Mål: {task.targetValue} {task.unit || ''}
-											</div>
+											<div class="task-meta">Mål: {task.targetValue} {task.unit || ''}</div>
 										{/if}
 
 										{#if task.progress && task.progress.length > 0}
 											<div class="task-progress">
 												<div class="task-progress-bar">
-													<div class="task-progress-fill" style="width: {taskProgress}%"></div>
+													<div class="task-progress-fill" style={`width: ${taskProgress}%`}></div>
 												</div>
 												<div class="task-progress-label">{taskProgress}%</div>
 											</div>
@@ -187,7 +206,7 @@
 												<div class="activity-count">🔥 {task.progress.length}x</div>
 												<div class="recent-activities">
 													{#each task.progress.slice(0, 3) as entry}
-														<span class="activity-dot" title={new Date(entry.completedAt).toLocaleDateString('no-NO')}>•</span>
+														<span class="activity-dot" title={entry.completedAt.toLocaleDateString('no-NO')}>•</span>
 													{/each}
 												</div>
 											</div>
@@ -234,8 +253,6 @@
 		display: flex;
 		gap: 0.5rem;
 	}
-
-
 
 	.header-stats {
 		display: flex;
@@ -288,8 +305,6 @@
 		margin-bottom: 2rem;
 	}
 
-
-
 	.goals-list {
 		display: flex;
 		flex-direction: column;
@@ -329,11 +344,22 @@
 		flex: 1;
 	}
 
-
-
 	.goal-category {
 		font-size: 0.85rem;
 		color: var(--text-secondary);
+	}
+
+	.goal-track-pill {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		padding: 0.35rem 0.7rem;
+		border-radius: 999px;
+		background: rgba(124, 142, 245, 0.12);
+		border: 1px solid rgba(124, 142, 245, 0.28);
+		color: #b9c3ff;
+		font-size: 0.76rem;
+		margin-top: 0.45rem;
 	}
 
 	.progress-section {

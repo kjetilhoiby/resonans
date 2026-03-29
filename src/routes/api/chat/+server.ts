@@ -57,7 +57,7 @@ const tools = [
 		type: 'function' as const,
 		function: {
 			name: 'create_goal',
-			description: 'Opprett et nytt mål for brukeren. VIKTIG: Sjekk ALLTID med check_similar_goals først! Hvis lignende mål finnes, spør brukeren om de vil oppdatere eksisterende eller opprette nytt.',
+			description: 'Opprett et nytt mål for brukeren. VIKTIG: Sjekk ALLTID med check_similar_goals først! Hvis målet er målbart, send også canonical metricId og goal track-feltene slik at dashboardene kan bruke målet direkte.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -81,6 +81,32 @@ const tools = [
 					targetDate: {
 						type: 'string',
 						description: 'Måldato i ISO format (YYYY-MM-DD), hvis brukeren har spesifisert en tidsfrist'
+					},
+					metricId: {
+						type: 'string',
+						description: 'Canonical metric id når målet er målbart. Bruk f.eks. running_distance, weight_change, grocery_spend, sleep_avg_night, steps_avg_day eller active_minutes_avg_day.'
+					},
+					goalKind: {
+						type: 'string',
+						description: 'Hvordan målet evalueres i dashboardet',
+						enum: ['level', 'change', 'trajectory']
+					},
+					goalWindow: {
+						type: 'string',
+						description: 'Hvilken horisont målet gjelder for',
+						enum: ['week', 'month', 'quarter', 'year', 'custom']
+					},
+					targetValue: {
+						type: 'number',
+						description: 'Målverdien for metrikksporet. Eksempler: 20 for km per uke, -3 for kg ned, 9000 for kroner per måned.'
+					},
+					unit: {
+						type: 'string',
+						description: 'Enhet for målverdien, f.eks. km, kg eller kr.'
+					},
+					durationDays: {
+						type: 'number',
+						description: 'Brukes kun når goalWindow er custom, f.eks. 60 for 2 måneder eller 730 for 2 år.'
 					}
 				},
 				required: ['categoryName', 'title', 'description']

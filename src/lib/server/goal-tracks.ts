@@ -75,3 +75,13 @@ export async function saveGoalTracksByMetric(userId: string, metricIdInput: stri
 
 	return created;
 }
+
+export async function upsertGoalTrack(userId: string, metricIdInput: string, track: GoalTrack) {
+	const existing = await getGoalTracksByMetric(userId, metricIdInput);
+	const next = [...existing.filter((item) => item.id !== track.id), track].sort(
+		(a, b) => (b.priority ?? 0) - (a.priority ?? 0)
+	);
+
+	await saveGoalTracksByMetric(userId, metricIdInput, next);
+	return track;
+}
