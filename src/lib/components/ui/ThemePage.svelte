@@ -16,6 +16,7 @@
 	import ChatInput from './ChatInput.svelte';
 	import HealthDashboard from './HealthDashboard.svelte';
 	import EconomicsDashboard from './EconomicsDashboard.svelte';
+	import ScreenTitle from './ScreenTitle.svelte';
 	import TriageCard from './TriageCard.svelte';
 	import GoalRing from './GoalRing.svelte';
 
@@ -164,6 +165,73 @@
 	let instructionSaved = $state(false);
 	let instructionError = $state('');
 
+	/* ── Navigasjon: klikk + swipe ─────────────────────── */
+	let touchStartX = 0;
+	let touchStartY = 0;
+	let touchActive = false;
+	let swipeUsed = false;
+	let pinchStartDistance = 0;
+	let pinchActive = false;
+
+	function goHome() {
+		void goto('/');
+	}
+
+	function touchDistance(touches: TouchList): number {
+		if (touches.length < 2) return 0;
+		const dx = touches[0].clientX - touches[1].clientX;
+		const dy = touches[0].clientY - touches[1].clientY;
+		return Math.hypot(dx, dy);
+	}
+
+	function onTouchStart(event: TouchEvent) {
+		if (event.touches.length === 2) {
+			pinchStartDistance = touchDistance(event.touches);
+			pinchActive = pinchStartDistance > 0;
+			touchActive = false;
+			return;
+		}
+
+		if (event.touches.length !== 1) {
+			touchActive = false;
+			return;
+		}
+		const touch = event.touches[0];
+		touchStartX = touch.clientX;
+		touchStartY = touch.clientY;
+		touchActive = true;
+		swipeUsed = false;
+	}
+
+	function onTouchMove(event: TouchEvent) {
+		if (pinchActive && event.touches.length === 2) {
+			const currentDistance = touchDistance(event.touches);
+			// Pinch in (fingre nærmere hverandre) defokuserer temaet.
+			if (pinchStartDistance - currentDistance > 44) {
+				pinchActive = false;
+				goHome();
+			}
+			return;
+		}
+
+		if (!touchActive || swipeUsed || event.touches.length !== 1) return;
+		const touch = event.touches[0];
+		const deltaX = touch.clientX - touchStartX;
+		const deltaY = Math.abs(touch.clientY - touchStartY);
+
+		// Edge-swipe: start nær venstre kant og dra tydelig mot høyre.
+		if (touchStartX <= 38 && deltaX > 92 && deltaY < 70) {
+			swipeUsed = true;
+			touchActive = false;
+			goHome();
+		}
+	}
+
+	function onTouchEnd() {
+		touchActive = false;
+		pinchActive = false;
+	}
+
 	$effect(() => {
 		instructionDraft = themeInstruction ?? '';
 	});
@@ -194,7 +262,7 @@
 	}
 </script>
 
-<div class="theme-page">
+<div class="theme-page" ontouchstart={onTouchStart} ontouchmove={onTouchMove} ontouchend={onTouchEnd}>
 	{#if archiveRedirect}
 		<section class="tp-archived" aria-live="polite">
 			<div class="tp-archived-chip">
@@ -217,13 +285,13 @@
 	{:else}
 		<!-- ── Topptekst ── -->
 		<header class="tp-header tp-enter">
-			<div class="tp-title-row">
-				<span class="tp-emoji">{theme.emoji ?? '🎯'}</span>
-				<h1 class="tp-title">{theme.name}</h1>
-			</div>
-			{#if theme.description}
-				<p class="tp-desc">{theme.description}</p>
-			{/if}
+			<ScreenTitle
+				title={theme.name}
+				subtitle={theme.description ?? ''}
+				emoji={theme.emoji ?? '🎯'}
+				onpress={goHome}
+				ariaLabel="Gå til forsiden"
+			/>
 		</header>
 
 		<!-- ── Tabs ── -->
@@ -580,35 +648,11 @@ Eksempel:
 
 	/* ── Header ── */
 	.tp-header {
-		padding: 48px 20px 16px;
+		padding: var(--screen-title-top-pad, 34px) 20px 16px;
 		border-bottom: 1px solid #1e1e1e;
 	}
 
-	.tp-title-row {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		margin-bottom: 6px;
-	}
 
-	.tp-emoji {
-		font-size: 1.6rem;
-	}
-
-	.tp-title {
-		font-size: 1.4rem;
-		font-weight: 700;
-		letter-spacing: -0.03em;
-		color: #e8e8e8;
-		margin: 0;
-	}
-
-	.tp-desc {
-		font-size: 0.8rem;
-		color: #555;
-		margin: 0;
-		line-height: 1.5;
-	}
 
 	/* ── Tabs ── */
 	.tp-tabs {

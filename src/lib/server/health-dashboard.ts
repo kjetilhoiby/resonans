@@ -16,7 +16,7 @@ export async function loadHealthDashboardData(userId: string) {
 					inArray(sensorEvents.sensorId, healthSensorIds)
 				),
 				orderBy: [desc(sensorEvents.timestamp)],
-				limit: 80
+				limit: 500
 			})
 		: [];
 

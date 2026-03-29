@@ -14,6 +14,7 @@
 	import WidgetCircle from './WidgetCircle.svelte';
 	import DynamicWidget from './DynamicWidget.svelte';
 	import WidgetConfigSheet from './WidgetConfigSheet.svelte';
+	import ScreenTitle from './ScreenTitle.svelte';
 	import ThemeRail from './ThemeRail.svelte';
 	import ChatInput from './ChatInput.svelte';
 	import TriageCard from './TriageCard.svelte';
@@ -491,10 +492,7 @@
 	<!-- ── SONE 1: Tittel ── -->
 	<section class="zone zone-title" class:hidden={chatOpen}>
 		<div class="title-row">
-			<div class="title-left">
-				<span class="app-name">Resonans</span>
-				<span class="date-chip">{dateLabel}</span>
-			</div>
+			<ScreenTitle title="Resonans" subtitle={dateLabel} />
 			<div class="title-right">
 				<a href="/goals" class="icon-link" aria-label="Mål">◎</a>
 				<a href="/settings" class="icon-link" aria-label="Innstillinger">⚙</a>
@@ -856,7 +854,7 @@
 	.zone-title {
 		display: flex;
 		align-items: center;
-		padding: env(safe-area-inset-top, 12px) 20px 0;
+		padding: var(--screen-title-top-pad, 34px) 20px 0;
 		min-height: 0;
 	}
 
@@ -865,24 +863,6 @@
 		align-items: center;
 		justify-content: space-between;
 		width: 100%;
-	}
-
-	.title-left {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-	}
-
-	.app-name {
-		font-size: 1.25rem;
-		font-weight: 700;
-		color: #eee;
-		letter-spacing: -0.03em;
-	}
-
-	.date-chip {
-		font-size: 0.7rem;
-		color: #444;
 	}
 
 	.title-right {
