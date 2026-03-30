@@ -1,6 +1,7 @@
 import { db } from '$lib/db';
 import { conversations, messages, themes } from '$lib/db/schema';
 import { eq, desc, and, asc, sql } from 'drizzle-orm';
+import { ensureConversationThemeIdColumn } from '$lib/server/conversation-schema';
 
 export interface CreateConversationParams {
 	userId: string;
@@ -48,6 +49,8 @@ function generateConversationTitle(content: string) {
 }
 
 export async function getOrCreateConversation(userId: string) {
+	await ensureConversationThemeIdColumn();
+
 	// Finn den nyeste aktive samtalen for brukeren
 	const existingConversation = await db.query.conversations.findFirst({
 		where: eq(conversations.userId, userId),
@@ -68,6 +71,8 @@ export async function getOrCreateConversation(userId: string) {
 }
 
 export async function addMessage(params: AddMessageParams) {
+	await ensureConversationThemeIdColumn();
+
 	const [message] = await db.insert(messages).values({
 		conversationId: params.conversationId,
 		role: params.role,
@@ -120,6 +125,8 @@ export async function getConversationMessages(conversationId: string) {
  * Returnerer null om ikke funnet eller feil bruker.
  */
 export async function getConversationByIdForUser(conversationId: string, userId: string) {
+	await ensureConversationThemeIdColumn();
+
 	return await db.query.conversations.findFirst({
 		where: and(eq(conversations.id, conversationId), eq(conversations.userId, userId))
 	});
@@ -137,19 +144,15 @@ export async function getConversationHistory(conversationId: string, limit: numb
 }
 
 export async function getConversationsByTheme(userId: string, themeId: string) {
-	let themeConversations: Array<typeof conversations.$inferSelect> = [];
-	try {
-		themeConversations = await db.query.conversations.findMany({
-			where: and(
-				eq(conversations.userId, userId),
-				eq(conversations.themeId, themeId)
-			),
-			orderBy: [desc(conversations.updatedAt)]
-		});
-	} catch {
-		// Fallback for environments where theme_id migration is not yet applied.
-		return [];
-	}
+	await ensureConversationThemeIdColumn();
+
+	const themeConversations = await db.query.conversations.findMany({
+		where: and(
+			eq(conversations.userId, userId),
+			eq(conversations.themeId, themeId)
+		),
+		orderBy: [desc(conversations.updatedAt)]
+	});
 
 	return await Promise.all(
 		themeConversations.map(async (conversation) => {
@@ -180,6 +183,8 @@ export async function getConversationsByTheme(userId: string, themeId: string) {
 }
 
 export async function getUserConversationList(userId: string) {
+	await ensureConversationThemeIdColumn();
+
 	const userConversations = await db.query.conversations.findMany({
 		where: eq(conversations.userId, userId),
 		orderBy: [desc(conversations.updatedAt)]

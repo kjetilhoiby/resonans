@@ -2,11 +2,13 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { conversations } from '$lib/db/schema';
+import { ensureConversationThemeIdColumn } from '$lib/server/conversation-schema';
 import { ensureUser } from '$lib/server/users';
 
 export const POST: RequestHandler = async ({ locals }) => {
 	try {
 		await ensureUser(locals.userId);
+		await ensureConversationThemeIdColumn();
 
 		// Opprett ny samtale
 		const [newConversation] = await db.insert(conversations).values({

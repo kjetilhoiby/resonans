@@ -3,12 +3,15 @@ import { themes, goals, messages as messagesTable, conversations } from '$lib/db
 import { loadHealthDashboardData } from '$lib/server/health-dashboard';
 import { loadEconomicsDashboardData } from '$lib/server/economics-dashboard';
 import { getThemeInstruction } from '$lib/server/theme-instructions';
+import { ensureConversationThemeIdColumn } from '$lib/server/conversation-schema';
 import { getConversationsByTheme } from '$lib/server/conversations';
 import { eq, and, asc } from 'drizzle-orm';
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
+	await ensureConversationThemeIdColumn();
+
 	const theme = await db.query.themes.findFirst({
 		where: and(eq(themes.id, params.id), eq(themes.userId, locals.userId))
 	});
@@ -20,19 +23,10 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	// Opprett samtale for temaet om det mangler
 	let conversationId = theme.conversationId;
 	if (!conversationId) {
-		let conv: { id: string };
-		try {
-			[conv] = await db
-				.insert(conversations)
-				.values({ userId: locals.userId, themeId: theme.id, title: theme.name })
-				.returning({ id: conversations.id });
-		} catch {
-			// Fallback when theme_id column is not yet available in DB.
-			[conv] = await db
-				.insert(conversations)
-				.values({ userId: locals.userId, title: theme.name })
-				.returning({ id: conversations.id });
-		}
+		const [conv] = await db
+			.insert(conversations)
+			.values({ userId: locals.userId, themeId: theme.id, title: theme.name })
+			.returning({ id: conversations.id });
 		await db
 			.update(themes)
 			.set({ conversationId: conv.id })
@@ -40,17 +34,13 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		conversationId = conv.id;
 	} else {
 		// Retroaktivt: koble eksisterende canonical samtale til temaet om den mangler themeId
-		try {
-			const existingConv = await db.query.conversations.findFirst({
-				where: eq(conversations.id, conversationId)
-			});
-			if (existingConv && !existingConv.themeId) {
-				await db.update(conversations)
-					.set({ themeId: theme.id })
-					.where(eq(conversations.id, conversationId));
-			}
-		} catch {
-			// Ignore when theme_id column is missing; page can still render.
+		const existingConv = await db.query.conversations.findFirst({
+			where: eq(conversations.id, conversationId)
+		});
+		if (existingConv && !existingConv.themeId) {
+			await db.update(conversations)
+				.set({ themeId: theme.id })
+				.where(eq(conversations.id, conversationId));
 		}
 	}
 

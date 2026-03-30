@@ -1,11 +1,14 @@
 import { db } from '$lib/db';
 import { conversations, messages } from '$lib/db/schema';
 import { eq, desc, lt } from 'drizzle-orm';
+import { ensureConversationThemeIdColumn } from '$lib/server/conversation-schema';
 import type { PageServerLoad } from './$types';
 
 const MESSAGES_PER_PAGE = 30;
 
 export const load: PageServerLoad = async ({ locals }) => {
+	await ensureConversationThemeIdColumn();
+
 	// Finn den nyeste samtalen for brukeren
 	const conversation = await db.query.conversations.findFirst({
 		where: eq(conversations.userId, locals.userId),

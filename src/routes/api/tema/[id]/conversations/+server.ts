@@ -3,12 +3,14 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { conversations, themes } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
+import { ensureConversationThemeIdColumn } from '$lib/server/conversation-schema';
 import { getConversationsByTheme } from '$lib/server/conversations';
 import { ensureUser } from '$lib/server/users';
 
 // GET /api/tema/[id]/conversations — hent samtaler for et tema
 export const GET: RequestHandler = async ({ params, locals }) => {
 	await ensureUser(locals.userId);
+	await ensureConversationThemeIdColumn();
 
 	const theme = await db.query.themes.findFirst({
 		where: and(eq(themes.id, params.id), eq(themes.userId, locals.userId))
@@ -26,26 +28,18 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 // POST /api/tema/[id]/conversations — opprett ny samtale koblet til temaet
 export const POST: RequestHandler = async ({ params, locals }) => {
 	await ensureUser(locals.userId);
+	await ensureConversationThemeIdColumn();
 
 	const theme = await db.query.themes.findFirst({
 		where: and(eq(themes.id, params.id), eq(themes.userId, locals.userId))
 	});
 	if (!theme) error(404, 'Tema ikke funnet');
 
-	let newConv: { id: string };
-	try {
-		[newConv] = await db.insert(conversations).values({
-			userId: locals.userId,
-			themeId: params.id,
-			title: `${theme.name} – ${new Date().toLocaleDateString('nb-NO')}`
-		}).returning({ id: conversations.id });
-	} catch {
-		// Fallback when theme_id column is not yet available in DB.
-		[newConv] = await db.insert(conversations).values({
-			userId: locals.userId,
-			title: `${theme.name} – ${new Date().toLocaleDateString('nb-NO')}`
-		}).returning({ id: conversations.id });
-	}
+	const [newConv] = await db.insert(conversations).values({
+		userId: locals.userId,
+		themeId: params.id,
+		title: `${theme.name} – ${new Date().toLocaleDateString('nb-NO')}`
+	}).returning({ id: conversations.id });
 
 	return json({ conversationId: newConv.id });
 };

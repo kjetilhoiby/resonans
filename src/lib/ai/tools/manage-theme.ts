@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { db } from '$lib/db';
 import { themes, goals, conversations } from '$lib/db/schema';
 import { eq, and } from 'drizzle-orm';
+import { ensureConversationThemeIdColumn } from '$lib/server/conversation-schema';
 
 const UUID_REGEX =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -137,6 +138,7 @@ Be conversational and explain why a theme makes sense.`,
 				}
 
 				let themeConversationId = conversationId;
+				await ensureConversationThemeIdColumn();
 
 				if (themeConversationId) {
 					await db

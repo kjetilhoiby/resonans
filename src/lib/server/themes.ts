@@ -1,6 +1,7 @@
 import { db } from '$lib/db';
 import { conversations, themes } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
+import { ensureConversationThemeIdColumn } from '$lib/server/conversation-schema';
 
 interface EnsureThemeInput {
 	userId: string;
@@ -17,6 +18,8 @@ export async function ensureThemeForUser({
 	description,
 	parentTheme = null
 }: EnsureThemeInput) {
+	await ensureConversationThemeIdColumn();
+
 	const existingTheme = await db.query.themes.findFirst({
 		where: and(eq(themes.userId, userId), eq(themes.name, name))
 	});
