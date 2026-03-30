@@ -108,24 +108,38 @@ The tool returns actual data from Withings sensors that the user can trust.`,
 				let responseData: any = { period: latest.periodKey };
 				if (metric && metric !== 'all') {
 					// Return only the requested metric
-				if (metric === 'workouts') {
-					// For workouts, include both workouts count and distance data
-					if (allMetrics.workouts) {
-						responseData.workouts = allMetrics.workouts;
-					}
-					if (allMetrics.distance) {
-						responseData.distance = allMetrics.distance;
-					}
-					// If we have distance but no workout count, distance indicates workouts exist
-					if (!allMetrics.workouts && !allMetrics.distance) {
-						return {
-							success: false,
-							message: `No workout or distance data found for ${latest.periodKey}`
-						};
-					}
-							success: false,
-							message: `No ${metric} data found for ${latest.periodKey}`
-						};
+					if (metric === 'workouts') {
+						// For workouts, include both workouts count and distance data
+						if (allMetrics.workouts) {
+							responseData.workouts = allMetrics.workouts;
+						}
+						if (allMetrics.distance) {
+							responseData.distance = allMetrics.distance;
+						}
+						if (!allMetrics.workouts && !allMetrics.distance) {
+							return {
+								success: false,
+								message: `No workout or distance data found for ${latest.periodKey}`
+							};
+						}
+					} else {
+						const metricMap = {
+							weight: allMetrics.weight,
+							steps: allMetrics.steps,
+							sleep: allMetrics.sleep,
+							intense_minutes: allMetrics.intenseMinutes,
+							heartrate: allMetrics.heartRate
+						} as const;
+
+						const selectedMetric = metricMap[metric];
+						if (!selectedMetric) {
+							return {
+								success: false,
+								message: `No ${metric} data found for ${latest.periodKey}`
+							};
+						}
+
+						responseData[metric] = selectedMetric;
 					}
 				} else {
 					// Return all available metrics

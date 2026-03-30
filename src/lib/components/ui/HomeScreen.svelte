@@ -68,6 +68,7 @@
 		thresholdSuccess: number | null;
 	}
 	let pinnedWidgets = $state<UserWidget[]>([]);
+	let widgetsLoading = $state(true);
 	let configWidget = $state<UserWidget | null>(null);
 
 	// -- Sjekklister --
@@ -91,6 +92,8 @@
 			if (widgetsRes.ok) pinnedWidgets = await widgetsRes.json();
 		} catch {
 			// Stille feil — fallback til mock-data
+		} finally {
+			widgetsLoading = false;
 		}
 		await fetchChecklists();
 		// Åpne chat-overlay automatisk hvis ?chat=1 er satt i URL
@@ -518,33 +521,37 @@
 	<section class="zone zone-widgets" class:hidden={chatOpen} aria-label="Sensor-oversikt">
 
 		<div class="widget-row">
-			{#if pinnedWidgets.length > 0}
-				{#each pinnedWidgets as w}
-					<DynamicWidget
-						widgetId={w.id}
-						title={w.title}
-						unit={w.unit}
-						color={w.color}
-						pinned={w.pinned}
-						onpress={() => navigateForWidget(w)}
-						onchat={(summary) => openChat(summary)}
-						onunpin={() => unpinWidget(w.id)}
-						onconfig={() => (configWidget = w)}
-					/>
-				{/each}
-			{:else}
-				{#each WIDGETS as w}
-					<WidgetCircle
-						label={w.label}
-						val={w.val}
-						unit={w.unit}
-						color={w.color}
-						active={false}
-						onpress={() => goto(w.sensorType === 'spending' ? '/economics' : `/sensor/${w.sensorType}`)}
-						onchat={() => openChat(`Spør om ${w.label.toLowerCase()}`)}
-					/>
-				{/each}
-			{/if}
+			{#if widgetsLoading}
+			{#each { length: 3 } as _, i}
+				<div class="widget-skeleton" style:animation-delay="{i * 120}ms"></div>
+			{/each}
+		{:else if pinnedWidgets.length > 0}
+			{#each pinnedWidgets as w}
+				<DynamicWidget
+					widgetId={w.id}
+					title={w.title}
+					unit={w.unit}
+					color={w.color}
+					pinned={w.pinned}
+					onpress={() => navigateForWidget(w)}
+					onchat={(summary) => openChat(summary)}
+					onunpin={() => unpinWidget(w.id)}
+					onconfig={() => (configWidget = w)}
+				/>
+			{/each}
+		{:else}
+			{#each WIDGETS as w}
+				<WidgetCircle
+					label={w.label}
+					val={w.val}
+					unit={w.unit}
+					color={w.color}
+					active={false}
+					onpress={() => goto(w.sensorType === 'spending' ? '/economics' : `/sensor/${w.sensorType}`)}
+					onchat={() => openChat(`Spør om ${w.label.toLowerCase()}`)}
+				/>
+			{/each}
+		{/if}
 
 			{#each activeChecklists as cl (cl.id)}
 				<ChecklistWidget
@@ -934,6 +941,40 @@
 		flex-wrap: wrap;
 		gap: 16px;
 		justify-content: center;
+	}
+
+	/* ── Widget-skeleton (laster) ── */
+	.widget-skeleton {
+		width: 72px;
+		height: 88px;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.widget-skeleton::before {
+		content: '';
+		width: 56px;
+		height: 56px;
+		border-radius: 50%;
+		background: #1e1e1e;
+		animation: skeleton-pulse 1.4s ease-in-out infinite;
+	}
+
+	.widget-skeleton::after {
+		content: '';
+		width: 40px;
+		height: 8px;
+		border-radius: 4px;
+		background: #1e1e1e;
+		animation: skeleton-pulse 1.4s ease-in-out infinite;
+		animation-delay: inherit;
+	}
+
+	@keyframes skeleton-pulse {
+		0%, 100% { background: #1e1e1e; }
+		50%       { background: #2c2c2c; }
 	}
 
 	.onboarding-cta {
