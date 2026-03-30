@@ -1,5 +1,5 @@
 import { db } from '$lib/db';
-import { sensorAggregates, sensorEvents, sensors } from '$lib/db/schema';
+import { sensorAggregates, sensorEvents, sensors, goals as goalsTable, themes } from '$lib/db/schema';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 
 export async function loadHealthDashboardData(userId: string) {
@@ -19,6 +19,19 @@ export async function loadHealthDashboardData(userId: string) {
 				limit: 500
 			})
 		: [];
+
+	// Last helsemål (mål koblet til Helse-temaet)
+	const healthTheme = await db.query.themes.findFirst({
+		where: and(eq(themes.userId, userId), eq(themes.name, 'Helse'))
+	});
+
+	const healthGoals = healthTheme ? await db.query.goals.findMany({
+		where: and(
+			eq(goalsTable.userId, userId),
+			eq(goalsTable.themeId, healthTheme.id),
+			inArray(goalsTable.status, ['active', 'paused'])
+		)
+	}) : [];
 
 	const [weeklyData, monthlyData, yearlyData] = await Promise.all([
 		db.query.sensorAggregates.findMany({
@@ -53,6 +66,13 @@ export async function loadHealthDashboardData(userId: string) {
 			timestamp: event.timestamp.toISOString(),
 			dataType: event.dataType ?? 'ukjent',
 			data: event.data ?? {}
+		})),
+		goals: healthGoals.map((goal) => ({
+			id: goal.id,
+			title: goal.title,
+			description: goal.description,
+			status: goal.status,
+			metadata: (goal.metadata ?? {}) as Record<string, unknown>
 		}))
 	};
 }

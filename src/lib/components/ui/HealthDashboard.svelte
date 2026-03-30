@@ -31,6 +31,14 @@
 		metrics?: PeriodMetrics | null;
 	}
 
+	interface Goal {
+		id: string;
+		title: string;
+		status: string;
+		description?: string | null;
+		metadata?: Record<string, unknown>;
+	}
+
 	interface Props {
 		weekly: AggregatePeriod[];
 		monthly: AggregatePeriod[];
@@ -38,24 +46,18 @@
 		sources?: Array<{ id: string; name: string; provider: string; isActive: boolean; lastSync: string | null }>;
 		recentEvents?: Array<{ id: string; timestamp: string; dataType: string; data: Record<string, unknown> }>;
 		embedded?: boolean;
+		goals?: Goal[];
 	}
 
-	let { weekly, monthly, yearly, sources = [], recentEvents = [], embedded = false }: Props = $props();
+	let { weekly, monthly, yearly, sources = [], recentEvents = [], embedded = false, goals = [] }: Props = $props();
 
 	let selectedWindow = $state<WindowMode>('30d');
 	let runningGoalWeekInput = $state('20');
 	let runningGoalQuarterInput = $state('150');
 	let runningGoalYearInput = $state('1000');
-	let runningGoalSaving = $state(false);
-	let runningGoalError = $state('');
 	let weightGoalShortInput = $state('-3');
 	let weightGoalLongInput = $state('-20');
-	let weightSeasonSpringInput = $state('1.4');
-	let weightSeasonSummerInput = $state('1.2');
-	let weightSeasonAutumnInput = $state('0.3');
-	let weightSeasonWinterInput = $state('0.1');
-	let weightGoalSaving = $state(false);
-	let weightGoalError = $state('');
+	let showEventDetails = $state(false);
 
 	const aggregatePeriod = $derived<'week' | 'month' | 'year'>(
 		selectedWindow === 'month' ? 'month' : selectedWindow === 'year' ? 'year' : 'week'
@@ -65,6 +67,116 @@
 	);
 	const lastPeriod = $derived(periodData.length ? periodData[periodData.length - 1] : null);
 	const lastMetrics = $derived(lastPeriod?.metrics ?? null);
+
+	const GOAL_COLORS: Record<string, string> = {
+		active: '#7c8ef5',
+		paused: '#888',
+		completed: '#48b581',
+		archived: '#444'
+	};
+
+	let editingGoalId = $state<string | null>(null);
+	let deletingGoalId = $state<string | null>(null);
+
+	function goalPct(goal: Goal): number {
+		if (goal.status === 'completed') return 100;
+		if (goal.status === 'paused') return 35;
+		
+		const metadata = goal.metadata as any;
+		if (!metadata?.startDate || !metadata?.endDate || !metadata?.targetValue) return 0;
+		
+		const now = new Date();
+		const start = new Date(metadata.startDate);
+		const end = new Date(metadata.endDate || metadata.targetDate);
+		
+		if (now < start) return 0;
+		if (now > end) return 100;
+		
+		const totalDays = (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
+		const elapsedDays = (now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
+		const expectedProgress = (elapsedDays / totalDays) * 100;
+		
+		return Math.min(100, Math.max(0, Math.round(expectedProgress)));
+	}
+	
+	function goalDelta(goal: Goal): { value: number; unit: string } | null {
+		const metadata = goal.metadata as any;
+		if (!metadata?.metricId || !metadata?.targetValue) return null;
+		
+		if (metadata.metricId === 'running_distance' && recentEvents) {
+			const startDate = metadata.startDate ? new Date(metadata.startDate) : new Date(0);
+			const endDate = metadata.endDate ? new Date(metadata.endDate) : new Date();
+			const now = new Date();
+			
+			const runningEvents = recentEvents.filter(e => {
+				const eventDate = new Date(e.timestamp);
+				return e.dataType === 'workout' && 
+				       eventDate >= startDate && 
+				       eventDate <= now;
+			});
+			
+			let totalKm = 0;
+			for (const event of runningEvents) {
+				const sportType = typeof event.data.sportType === 'string' ? event.data.sportType.toLowerCase() : '';
+				if (sportType && sportType !== 'running') continue;
+				
+				const distance = typeof event.data.distance === 'number' ? event.data.distance : 
+				                 typeof event.data.distanceMeters === 'number' ? event.data.distanceMeters : null;
+				
+				if (distance !== null) {
+					totalKm += distance > 80 ? distance / 1000 : distance;
+				}
+			}
+			
+			const totalDays = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
+			const elapsedDays = Math.min(totalDays, (now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+			const expectedKm = (elapsedDays / totalDays) * metadata.targetValue;
+			
+			const delta = totalKm - expectedKm;
+			return { value: delta, unit: 'km' };
+		}
+		
+		if (metadata.metricId === 'weight_change' && recentEvents) {
+			const startDate = metadata.startDate ? new Date(metadata.startDate) : new Date(0);
+			const now = new Date();
+			
+			const weightEvents = recentEvents
+				.filter(e => e.dataType === 'weight' && new Date(e.timestamp) >= startDate)
+				.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+			
+			if (weightEvents.length === 0) return null;
+			
+			const latestWeight = typeof weightEvents[0].data.weight === 'number' ? weightEvents[0].data.weight : null;
+			const startWeight = metadata.startValue;
+			
+			if (latestWeight === null || startWeight === null) return null;
+			
+			const actualChange = latestWeight - startWeight;
+			const targetChange = metadata.targetValue;
+			
+			const totalDays = metadata.endDate ? 
+				(new Date(metadata.endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24) : 90;
+			const elapsedDays = Math.min(totalDays, (now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+			const expectedChange = (elapsedDays / totalDays) * targetChange;
+			
+			const delta = actualChange - expectedChange;
+			return { value: delta, unit: 'kg' };
+		}
+		
+		return null;
+	}
+
+	async function deleteGoal(goalId: string) {
+		try {
+			const response = await fetch(`/api/goals/${goalId}`, {
+				method: 'DELETE'
+			});
+			if (!response.ok) throw new Error('Failed to delete goal');
+			window.location.reload();
+		} catch (err) {
+			console.error('Error deleting goal:', err);
+		}
+	}
 
 	function formatPeriodKey(key: string, period: string): string {
 		if (period === 'week') {
@@ -359,10 +471,6 @@
 	const weightTrackSet = $derived((() => {
 		const shortTarget = Number.parseFloat(weightGoalShortInput.replace(',', '.'));
 		const longTarget = Number.parseFloat(weightGoalLongInput.replace(',', '.'));
-		const spring = Number.parseFloat(weightSeasonSpringInput.replace(',', '.'));
-		const summer = Number.parseFloat(weightSeasonSummerInput.replace(',', '.'));
-		const autumn = Number.parseFloat(weightSeasonAutumnInput.replace(',', '.'));
-		const winter = Number.parseFloat(weightSeasonWinterInput.replace(',', '.'));
 
 		const shortTrack: GoalTrack = {
 			id: 'weight-short',
@@ -385,15 +493,7 @@
 			durationDays: 730,
 			targetValue: Number.isFinite(longTarget) ? longTarget : -20,
 			unit: 'kg',
-			priority: 95,
-			metadata: {
-				seasonalProfile: {
-					spring: Number.isFinite(spring) ? spring : 1.4,
-					summer: Number.isFinite(summer) ? summer : 1.2,
-					autumn: Number.isFinite(autumn) ? autumn : 0.3,
-					winter: Number.isFinite(winter) ? winter : 0.1
-				}
-			}
+			priority: 95
 		};
 
 		return [shortTrack, longTrack];
@@ -563,114 +663,9 @@
 				const longTrack = tracks.find((t) => t.id === 'weight-long');
 				if (shortTrack?.targetValue) weightGoalShortInput = String(shortTrack.targetValue);
 				if (longTrack?.targetValue) weightGoalLongInput = String(longTrack.targetValue);
-				const seasonal = longTrack?.metadata?.seasonalProfile;
-				if (seasonal?.spring) weightSeasonSpringInput = String(seasonal.spring);
-				if (seasonal?.summer) weightSeasonSummerInput = String(seasonal.summer);
-				if (seasonal?.autumn) weightSeasonAutumnInput = String(seasonal.autumn);
-				if (seasonal?.winter) weightSeasonWinterInput = String(seasonal.winter);
 			}
 		} catch {
 			// stille feil, defaults brukes
-		}
-	}
-
-	async function saveRunningGoal() {
-		const week = Number.parseFloat(runningGoalWeekInput.replace(',', '.'));
-		const quarter = Number.parseFloat(runningGoalQuarterInput.replace(',', '.'));
-		const year = Number.parseFloat(runningGoalYearInput.replace(',', '.'));
-
-		if (!Number.isFinite(week) || week <= 0 || !Number.isFinite(quarter) || quarter <= 0 || !Number.isFinite(year) || year <= 0) {
-			runningGoalError = 'Skriv gyldige mål over 0 for uke, kvartal og år.';
-			return;
-		}
-		if (week * 52 > year * 1.25) {
-			runningGoalError = 'Ukesmålet ser uforholdsmessig høyt ut mot årsmålet. Juster tallene litt.';
-			return;
-		}
-
-		runningGoalSaving = true;
-		runningGoalError = '';
-
-		try {
-			const payload: GoalTrack[] = [
-				{ id: 'run-week', metricId: 'running_distance', label: 'Løping per uke', kind: 'level', window: 'week', targetValue: week, unit: 'km', priority: 100 },
-				{ id: 'run-quarter', metricId: 'running_distance', label: 'Løping per kvartal', kind: 'level', window: 'quarter', targetValue: quarter, unit: 'km', priority: 95 },
-				{ id: 'run-year', metricId: 'running_distance', label: 'Løping per år', kind: 'level', window: 'year', targetValue: year, unit: 'km', priority: 90 }
-			];
-			const res = await fetch('/api/goal-tracks/running_distance', {
-				method: 'PUT',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ tracks: payload })
-			});
-			if (!res.ok) throw new Error('save_failed');
-			runningGoalWeekInput = week.toString();
-			runningGoalQuarterInput = quarter.toString();
-			runningGoalYearInput = year.toString();
-		} catch {
-			runningGoalError = 'Klarte ikke lagre mål akkurat nå.';
-		} finally {
-			runningGoalSaving = false;
-		}
-	}
-
-	async function saveWeightGoal() {
-		const shortTarget = Number.parseFloat(weightGoalShortInput.replace(',', '.'));
-		const longTarget = Number.parseFloat(weightGoalLongInput.replace(',', '.'));
-		const spring = Number.parseFloat(weightSeasonSpringInput.replace(',', '.'));
-		const summer = Number.parseFloat(weightSeasonSummerInput.replace(',', '.'));
-		const autumn = Number.parseFloat(weightSeasonAutumnInput.replace(',', '.'));
-		const winter = Number.parseFloat(weightSeasonWinterInput.replace(',', '.'));
-
-		if (!Number.isFinite(shortTarget) || !Number.isFinite(longTarget)) {
-			weightGoalError = 'Skriv gyldige vekttall for begge mål.';
-			return;
-		}
-		if (!Number.isFinite(spring) || !Number.isFinite(summer) || !Number.isFinite(autumn) || !Number.isFinite(winter)) {
-			weightGoalError = 'Sesongvekter må være gyldige tall.';
-			return;
-		}
-
-		weightGoalSaving = true;
-		weightGoalError = '';
-		try {
-			const payload: GoalTrack[] = [
-				{
-					id: 'weight-short',
-					metricId: 'weight_change',
-					label: 'Vektmål 2 måneder',
-					kind: 'change',
-					window: 'custom',
-					durationDays: 60,
-					targetValue: shortTarget,
-					unit: 'kg',
-					priority: 100
-				},
-				{
-					id: 'weight-long',
-					metricId: 'weight_change',
-					label: 'Vektmål 2 år',
-					kind: 'trajectory',
-					window: 'custom',
-					durationDays: 730,
-					targetValue: longTarget,
-					unit: 'kg',
-					priority: 95,
-					metadata: {
-						seasonalProfile: { spring, summer, autumn, winter }
-					}
-				}
-			];
-
-			const res = await fetch('/api/goal-tracks/weight_change', {
-				method: 'PUT',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ tracks: payload })
-			});
-			if (!res.ok) throw new Error('save_failed');
-		} catch {
-			weightGoalError = 'Klarte ikke lagre vektmål akkurat nå.';
-		} finally {
-			weightGoalSaving = false;
 		}
 	}
 </script>
@@ -699,69 +694,6 @@
 		/>
 	</div>
 
-	<div class="hd-goal-inline">
-		<label class="hd-goal-label" for="running-goal-week">Løpemål (uke / kvartal / år)</label>
-		<div class="hd-goal-controls">
-			<input
-				id="running-goal-week"
-				class="hd-goal-input"
-				type="number"
-				step="0.5"
-				min="1"
-				bind:value={runningGoalWeekInput}
-			/>
-			<input
-				class="hd-goal-input"
-				type="number"
-				step="1"
-				min="1"
-				bind:value={runningGoalQuarterInput}
-			/>
-			<input
-				class="hd-goal-input"
-				type="number"
-				step="1"
-				min="1"
-				bind:value={runningGoalYearInput}
-			/>
-			<button class="hd-goal-save" type="button" onclick={saveRunningGoal} disabled={runningGoalSaving}>
-				{runningGoalSaving ? 'Lagrer…' : 'Lagre'}
-			</button>
-		</div>
-		{#if runningGoalError}
-			<p class="hd-goal-error">{runningGoalError}</p>
-		{/if}
-	</div>
-
-	<div class="hd-goal-inline">
-		<label class="hd-goal-label" for="weight-goal-short">Vektmål (2 mnd / 2 år + sesongprofil)</label>
-		<div class="hd-goal-controls">
-			<input
-				id="weight-goal-short"
-				class="hd-goal-input"
-				type="number"
-				step="0.1"
-				bind:value={weightGoalShortInput}
-			/>
-			<input
-				class="hd-goal-input"
-				type="number"
-				step="0.1"
-				bind:value={weightGoalLongInput}
-			/>
-			<input class="hd-goal-input hd-goal-input-mini" type="number" step="0.1" bind:value={weightSeasonSpringInput} title="Vår" />
-			<input class="hd-goal-input hd-goal-input-mini" type="number" step="0.1" bind:value={weightSeasonSummerInput} title="Sommer" />
-			<input class="hd-goal-input hd-goal-input-mini" type="number" step="0.1" bind:value={weightSeasonAutumnInput} title="Høst" />
-			<input class="hd-goal-input hd-goal-input-mini" type="number" step="0.1" bind:value={weightSeasonWinterInput} title="Vinter" />
-			<button class="hd-goal-save" type="button" onclick={saveWeightGoal} disabled={weightGoalSaving}>
-				{weightGoalSaving ? 'Lagrer…' : 'Lagre'}
-			</button>
-		</div>
-		{#if weightGoalError}
-			<p class="hd-goal-error">{weightGoalError}</p>
-		{/if}
-	</div>
-
 	{#if periodData.length === 0}
 		<div class="hd-empty">
 			<p>Ingen data tilgjengelig ennå.</p>
@@ -784,11 +716,6 @@
 					</div>
 				</div>
 			{/each}
-		</div>
-
-		<div class="hd-list-grid">
-			<CompactRecordList title="Kilder" items={sourceItems} emptyText="Ingen aktive helsekilder ennå." />
-			<CompactRecordList title="Nylige helsehendelser" items={eventItems} emptyText="Ingen hendelser registrert ennå." />
 		</div>
 
 		<div class="hd-table-card">
@@ -823,6 +750,87 @@
 				</table>
 			</div>
 		</div>
+
+		{#if goals.length > 0}
+			<div class="hd-goals-section">
+				<h2 class="hd-section-title">Aktive mål</h2>
+				<div class="hd-goals-grid">
+					{#each goals.filter(g => g.status === 'active') as goal}
+						{@const pct = goalPct(goal)}
+						{@const color = GOAL_COLORS[goal.status] ?? '#7c8ef5'}
+						{@const delta = goalDelta(goal)}
+						<div class="hd-goal-card-new">
+							<div class="hd-goal-ring">
+								<GoalRing {pct} {color} r={28} strokeWidth={5} size={80}>
+									{#snippet children()}
+										{#if delta}
+											<text
+												x="40"
+												y="40"
+												text-anchor="middle"
+												fill={delta.value >= 0 ? '#48b581' : '#ee8c8c'}
+												font-size="14"
+												font-weight="700"
+											>{delta.value >= 0 ? '+' : ''}{delta.value.toFixed(1)}</text>
+											<text
+												x="40"
+												y="52"
+												text-anchor="middle"
+												fill={delta.value >= 0 ? '#48b581' : '#ee8c8c'}
+												font-size="9"
+												font-weight="600"
+											>{delta.unit}</text>
+										{:else}
+											<text
+												x="40"
+												y="44"
+												text-anchor="middle"
+												fill={color}
+												font-size="12"
+												font-weight="700"
+											>{pct}%</text>
+										{/if}
+									{/snippet}
+								</GoalRing>
+							</div>
+							<div class="hd-goal-info">
+								<span class="hd-goal-title-new">{goal.title}</span>
+								{#if goal.description}
+									<span class="hd-goal-desc-new">{goal.description}</span>
+								{/if}
+							</div>
+							<div class="hd-goal-actions">
+								<a href="/tema/helse?tab=mål" class="hd-goal-edit-btn">Rediger</a>
+								<button
+									class="hd-goal-delete-btn"
+									onclick={() => {
+										if (confirm(`Sikker på at du vil arkivere målet "${goal.title}"?`)) {
+											void deleteGoal(goal.id);
+										}
+									}}
+								>Slett</button>
+							</div>
+						</div>
+					{/each}
+				</div>
+			</div>
+		{/if}
+
+		<!-- Kilder -->
+		<div class="hd-sources-section">
+			<CompactRecordList title="Kilder" items={sourceItems} emptyText="Ingen aktive helsekilder ennå." />
+		</div>
+
+		<!-- Kollapset hendelsesdetaljer -->
+		<details class="hd-events-details" bind:open={showEventDetails}>
+			<summary class="hd-events-summary">
+				<span class="hd-events-title">Hendelsesdetaljer</span>
+				<span class="hd-events-count">({eventItems.length} hendelser)</span>
+			</summary>
+			<div class="hd-events-content">
+				<CompactRecordList title="" items={eventItems} emptyText="Ingen hendelser registrert ennå." />
+			</div>
+		</details>
 	{/if}
 </div>
 
@@ -860,79 +868,115 @@
 		color: #777;
 	}
 
-	.hd-pills {
-		display: inline-flex;
-	}
-
-	.hd-goal-inline {
+	.hd-goals-section {
 		display: flex;
 		flex-direction: column;
-		gap: 8px;
-		padding: 12px;
-		border: 1px solid #232323;
+		gap: 12px;
+		padding: 16px;
 		background: #141414;
-		border-radius: 14px;
+		border-radius: 18px;
 	}
 
-	.hd-goal-label {
-		font-size: 0.78rem;
-		color: #9b9b9b;
-	}
-
-	.hd-goal-controls {
-		display: flex;
-		gap: 8px;
-		align-items: center;
-	}
-
-	.hd-goal-input {
-		width: 92px;
-		background: #101010;
-		border: 1px solid #2c2c2c;
-		border-radius: 10px;
-		padding: 8px 10px;
-		color: #ddd;
-		font: inherit;
-		font-size: 0.86rem;
-	}
-
-	.hd-goal-input-mini {
-		width: 64px;
-	}
-
-	.hd-goal-input:focus {
-		outline: none;
-		border-color: #3c4f9f;
-	}
-
-	.hd-goal-save {
-		background: #293560;
-		color: #d5defe;
-		border: 1px solid #3a4a85;
-		border-radius: 10px;
-		padding: 8px 12px;
-		font: inherit;
-		font-size: 0.78rem;
-		font-weight: 600;
-		cursor: pointer;
-	}
-
-	.hd-goal-save:disabled {
-		opacity: 0.55;
-		cursor: default;
-	}
-
-	.hd-goal-error {
+	.hd-section-title {
 		margin: 0;
-		font-size: 0.76rem;
-		color: #e07070;
+		font-size: 0.92rem;
+		font-weight: 600;
+		color: #ccc;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.hd-goals-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+		gap: 12px;
+	}
+
+	.hd-goal-card-new {
+		display: flex;
+		align-items: center;
+		gap: 14px;
+		padding: 14px;
+		background: #0d0d0d;
+		border-radius: 12px;
+	}
+
+	.hd-goal-ring {
+		flex-shrink: 0;
+	}
+
+	.hd-goal-info {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		min-width: 0;
+	}
+
+	.hd-goal-title-new {
+		font-size: 0.95rem;
+		font-weight: 600;
+		color: #eee;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.hd-goal-desc-new {
+		font-size: 0.82rem;
+		line-height: 1.4;
+		color: #888;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.hd-goal-actions {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		flex-shrink: 0;
+	}
+
+	.hd-goal-edit-btn,
+	.hd-goal-delete-btn {
+		padding: 6px 12px;
+		font-size: 0.8rem;
+		font-weight: 500;
+		border-radius: 8px;
+		border: 1px solid #2a2a2a;
+		background: #1a1a1a;
+		color: #bbb;
+		cursor: pointer;
+		transition: all 0.15s ease;
+		text-decoration: none;
+		text-align: center;
+	}
+
+	.hd-goal-edit-btn:hover {
+		background: #232323;
+		border-color: #3a3a3a;
+		color: #eee;
+	}
+
+	.hd-goal-delete-btn {
+		color: #ee8c8c;
+	}
+
+	.hd-goal-delete-btn:hover {
+		background: #2a1a1a;
+		border-color: #3a2020;
+		color: #ff9999;
+	}
+
+	.hd-pills {
+		display: inline-flex;
 	}
 
 	.hd-empty,
 	.hd-table-card,
 	.hd-card {
 		background: #141414;
-		border: 1px solid #232323;
 		border-radius: 18px;
 	}
 
@@ -982,12 +1026,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 14px;
-	}
-
-	.hd-list-grid {
-		display: grid;
-		grid-template-columns: 1fr;
-		gap: 12px;
 	}
 
 	.hd-table-head {
@@ -1048,9 +1086,51 @@
 		}
 	}
 
-	@media (min-width: 920px) {
-		.hd-list-grid {
-			grid-template-columns: repeat(2, minmax(0, 1fr));
-		}
+	.hd-sources-section {
+		margin-top: 12px;
+	}
+
+	.hd-events-details {
+		background: #141414;
+		border-radius: 18px;
+		margin-top: 12px;
+		padding: 0;
+	}
+
+	.hd-events-summary {
+		cursor: pointer;
+		padding: 16px;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		list-style: none;
+		user-select: none;
+	}
+
+	.hd-events-summary::-webkit-details-marker {
+		display: none;
+	}
+
+	.hd-events-summary::marker {
+		display: none;
+	}
+
+	.hd-events-title {
+		font-size: 0.88rem;
+		font-weight: 700;
+		color: #e7e7e7;
+	}
+
+	.hd-events-count {
+		font-size: 0.74rem;
+		color: #777;
+		background: #1a1a1a;
+		border: 1px solid #2a2a2a;
+		border-radius: 12px;
+		padding: 3px 10px;
+	}
+
+	.hd-events-content {
+		padding: 0 16px 16px 16px;
 	}
 </style>

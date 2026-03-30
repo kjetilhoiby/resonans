@@ -19,6 +19,10 @@ export interface GoalCreationParams {
 	targetValue?: number;
 	unit?: string;
 	durationDays?: number;
+	// Health goal specific fields
+	startDate?: string; // For date-bounded goals (running) and baseline tracking (weight)
+	endDate?: string;   // For explicit period end (running goals)
+	startValue?: number; // Baseline value for trajectory goals (weight)
 }
 
 export interface TaskCreationParams {
@@ -36,8 +40,13 @@ export async function createGoal(params: GoalCreationParams) {
 		typeof params.targetValue === 'number' && Number.isFinite(params.targetValue)
 			? params.targetValue
 			: null;
+	
+	// Build health-aware metadata
 	const metadata = {
 		metricId: resolvedMetricId,
+		startDate: params.startDate || null,
+		endDate: params.endDate || null,
+		startValue: typeof params.startValue === 'number' && Number.isFinite(params.startValue) ? params.startValue : null,
 		goalTrack:
 			resolvedMetricId && numericTargetValue !== null
 				? {

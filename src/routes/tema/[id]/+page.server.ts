@@ -12,9 +12,22 @@ import type { PageServerLoad } from './$types';
 export const load: PageServerLoad = async ({ params, locals }) => {
 	await ensureConversationThemeIdColumn();
 
-	const theme = await db.query.themes.findFirst({
-		where: and(eq(themes.id, params.id), eq(themes.userId, locals.userId))
-	});
+	// Sjekk om params.id er en UUID (inneholder bindestreker og er 36 tegn)
+	const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(params.id);
+	
+	let theme;
+	if (isUUID) {
+		// Finn tema basert på UUID
+		theme = await db.query.themes.findFirst({
+			where: and(eq(themes.id, params.id), eq(themes.userId, locals.userId))
+		});
+	} else {
+		// Finn tema basert på navn (for URL-er som /tema/helse)
+		const themeName = params.id.charAt(0).toUpperCase() + params.id.slice(1);
+		theme = await db.query.themes.findFirst({
+			where: and(eq(themes.name, themeName), eq(themes.userId, locals.userId))
+		});
+	}
 
 	if (!theme) {
 		error(404, 'Tema ikke funnet');

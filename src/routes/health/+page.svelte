@@ -16,6 +16,7 @@
 		yearly={data.yearly}
 		sources={data.sources}
 		recentEvents={data.recentEvents}
+		goals={data.goals}
 	/>
 </div>
 
