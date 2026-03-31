@@ -19,7 +19,7 @@ Hvis du bare vil teste chat-funksjonen raskt:
    npm run dev
    ```
 
-4. Åpne [http://localhost:5173](http://localhost:5173) og start å chatte!
+4. Åpne [http://localhost:5174](http://localhost:5174) og start å chatte!
 
 ## Full setup med database
 

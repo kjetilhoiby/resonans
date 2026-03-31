@@ -9,7 +9,7 @@
 	import { cubicOut } from 'svelte/easing';
 	import { tick } from 'svelte';
 	import ChatInput from './ChatInput.svelte';
-	import TriageCard from './TriageCard.svelte';
+	import TriageCard from '../composed/TriageCard.svelte';
 
 	interface ChatMsg {
 		role: 'user' | 'assistant';
@@ -49,7 +49,7 @@
 			if (!res.ok) throw new Error();
 			const data = await res.json();
 			messages = [...messages, { role: 'assistant', text: data.message }];
-			if (data.checklistCreated) onChecklistCreated?.();
+			if (data.checklistChanged) onChecklistCreated?.();
 		} catch {
 			messages = [...messages, { role: 'assistant', text: 'Noe gikk galt. Prøv igjen.' }];
 		} finally {

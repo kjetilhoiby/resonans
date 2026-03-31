@@ -7,9 +7,9 @@
     onclose     lukker panelet
 -->
 <script lang="ts">
-	import GoalRing from './GoalRing.svelte';
-	import PeriodPills from './PeriodPills.svelte';
-	import RelationSparkline from './RelationSparkline.svelte';
+	import GoalRing from '../ui/GoalRing.svelte';
+	import PeriodPills from '../ui/PeriodPills.svelte';
+	import RelationSparkline from '../ui/RelationSparkline.svelte';
 
 	interface SensorData {
 		label: string;

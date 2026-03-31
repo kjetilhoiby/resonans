@@ -131,10 +131,10 @@ For lokal Postgres: `createdb resonans`
 Når databasen er klar:
 
 1. Start dev server: `npm run dev`
-2. Åpne http://localhost:5173
+2. Åpne http://localhost:5174
 3. Chat med AI-en om dine mål
 4. AI-en vil automatisk opprette mål i databasen
-5. Gå til http://localhost:5173/goals for å se målene
+5. Gå til http://localhost:5174/goals for å se målene
 
 ## Produksjon (Vercel)
 

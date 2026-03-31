@@ -86,7 +86,7 @@ npm run db:push
 npm run dev
 ```
 
-Appen kjører nå på [http://localhost:5173](http://localhost:5173)
+Appen kjører nå på [http://localhost:5174](http://localhost:5174)
 
 ## 📝 Database-kommandoer
 

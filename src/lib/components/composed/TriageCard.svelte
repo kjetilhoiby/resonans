@@ -10,6 +10,7 @@
 -->
 <script lang="ts">
 	import { marked } from 'marked';
+	import Icon from '../ui/Icon.svelte';
 
 	interface Action {
 		label: string;
@@ -42,7 +43,7 @@
 	<div class="tc-card" role="status" aria-live="polite">
 		<!-- Avatar + boble -->
 		<div class="tc-header">
-			<span class="tc-avatar" aria-label="Resonans AI">◈</span>
+			<span class="tc-avatar" aria-label="Resonans AI"><Icon name="chat" size={15} decorative={false} title="Resonans AI" /></span>
 			<div class="tc-text">{@html htmlContent}</div>
 		</div>
 
@@ -75,7 +76,11 @@
 	}
 
 	.tc-avatar {
-		font-size: 0.85rem;
+		width: 22px;
+		height: 22px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
 		color: #7c8ef5;
 		flex-shrink: 0;
 		margin-top: 2px;

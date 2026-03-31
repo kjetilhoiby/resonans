@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import ChatInput from '$lib/components/ui/ChatInput.svelte';
-	import TriageCard from '$lib/components/ui/TriageCard.svelte';
+	import Icon from '$lib/components/ui/Icon.svelte';
+	import TriageCard from '$lib/components/composed/TriageCard.svelte';
+	import { getThemeHueStyle } from '$lib/domain/theme-hues';
 
 	interface ConversationSummary {
 		id: string;
@@ -35,7 +37,12 @@
 	function toChatMessages(messages: ConversationMessage[]) {
 		return messages
 			.filter((m) => m.role !== 'system')
-			.map((m) => ({ id: m.id, role: m.role as 'user' | 'assistant', text: m.content }));
+			.map((m) => ({
+				id: m.id,
+				role: m.role as 'user' | 'assistant',
+				text: m.content,
+				imageUrl: m.imageUrl ?? null
+			}));
 	}
 
 	let chatMessages = $state(toChatMessages(data.messages));
@@ -75,7 +82,7 @@
 
 	async function sendMessage(text: string) {
 		if (!conversation) return;
-		chatMessages = [...chatMessages, { id: crypto.randomUUID(), role: 'user', text }];
+		chatMessages = [...chatMessages, { id: crypto.randomUUID(), role: 'user', text, imageUrl: null }];
 		chatLoading = true;
 		chatError = '';
 		try {
@@ -86,7 +93,7 @@
 			});
 			if (!res.ok) throw new Error(await res.text());
 			const payload = await res.json();
-			chatMessages = [...chatMessages, { id: crypto.randomUUID(), role: 'assistant', text: payload.message }];
+			chatMessages = [...chatMessages, { id: crypto.randomUUID(), role: 'assistant', text: payload.message, imageUrl: null }];
 		} catch {
 			chatError = 'Noe gikk galt. Prøv igjen.';
 		} finally {
@@ -102,7 +109,7 @@
 	<div class="list-page">
 		<header class="lp-header">
 			<div class="lp-header-left">
-				<button class="lp-back" onclick={() => goto('/')} aria-label="Tilbake">←</button>
+				<button class="lp-back" onclick={() => goto('/')} aria-label="Tilbake"><Icon name="back" size={18} /></button>
 				<h1 class="lp-title">Samtaler</h1>
 			</div>
 			<button class="lp-new-btn" onclick={createConversation} disabled={creatingConversation}>
@@ -115,11 +122,11 @@
 				<p class="lp-empty">Ingen samtaler ennå. Start en ny fra forsiden.</p>
 			{:else}
 				{#each data.conversations as c}
-					<button class="lp-item" onclick={() => goto(`/samtaler?conversation=${c.id}`)}>
+					<button class="lp-item" style={c.linkedTheme ? getThemeHueStyle(c.linkedTheme.name) : undefined} onclick={() => goto(`/samtaler?conversation=${c.id}`)}>
 						<div class="lp-item-main">
 							<span class="lp-item-title">{c.title}</span>
 							{#if c.linkedTheme}
-								<span class="lp-theme-dot">{c.linkedTheme.emoji ?? '◎'}</span>
+								<span class="lp-theme-dot">{#if c.linkedTheme.emoji}{c.linkedTheme.emoji}{:else}<Icon name="goals" size={14} />{/if}</span>
 							{/if}
 							<span class="lp-item-date">{fmtDay(c.updatedAt)}</span>
 						</div>
@@ -136,15 +143,15 @@
 	<!-- ══ CHAT-VIEW ═══════════════════════════════════════════════════════════ -->
 	<div class="chat-page">
 		<header class="cp-header">
-			<button class="cp-back" onclick={() => goto('/samtaler')} aria-label="Tilbake til liste">←</button>
+			<button class="cp-back" onclick={() => goto('/samtaler')} aria-label="Tilbake til liste"><Icon name="back" size={18} /></button>
 			<div class="cp-heading-wrap">
 				<p class="cp-title">{conversation?.title ?? ''}</p>
 				<p class="cp-subtitle">{formattedDate}</p>
 			</div>
 			{#if conversation?.linkedTheme}
 				{@const t = conversation.linkedTheme}
-				<button class="cp-theme-btn" onclick={() => goto(`/tema/${t.id}`)}>
-					{t.emoji ?? '◎'} {t.name}
+				<button class="cp-theme-btn" style={getThemeHueStyle(t.name)} onclick={() => goto(`/tema/${t.id}`)}>
+					{#if t.emoji}{t.emoji}{:else}<Icon name="goals" size={14} />{/if} {t.name}
 				</button>
 			{/if}
 		</header>
@@ -155,7 +162,14 @@
 			{/if}
 			{#each chatMessages as msg}
 				{#if msg.role === 'user'}
-					<div class="cp-bubble-user">{msg.text}</div>
+					<div class="cp-bubble-user">
+						{#if msg.imageUrl}
+							<img class="cp-bubble-img" src={msg.imageUrl} alt="Vedlagt bilde" />
+						{/if}
+						{#if msg.text && msg.text !== '📷 [Bilde]'}
+							<span>{msg.text}</span>
+						{/if}
+					</div>
 				{:else}
 					<TriageCard text={msg.text} />
 				{/if}
@@ -400,6 +414,16 @@
 		white-space: pre-wrap;
 		word-break: break-word;
 		color: #ccc;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+
+	.cp-bubble-img {
+		max-width: min(340px, 100%);
+		border-radius: 10px;
+		display: block;
+		border: 1px solid #2a2a4a;
 	}
 
 	.cp-input {

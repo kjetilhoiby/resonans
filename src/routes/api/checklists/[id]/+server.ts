@@ -3,11 +3,10 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { checklists } from '$lib/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
-import { USER_ID_HEADER_NAME } from '$lib/server/request-user';
 
 // PATCH /api/checklists/[id] — oppdater tittel, emoji, eller merk som fullført
-export const PATCH: RequestHandler = async ({ params, request }) => {
-	const userId = request.headers.get(USER_ID_HEADER_NAME) ?? 'default-user';
+export const PATCH: RequestHandler = async ({ locals, params, request }) => {
+	const userId = locals.userId;
 	const body = await request.json() as {
 		title?: string;
 		emoji?: string;
@@ -32,8 +31,8 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 };
 
 // DELETE /api/checklists/[id]
-export const DELETE: RequestHandler = async ({ params, request }) => {
-	const userId = request.headers.get(USER_ID_HEADER_NAME) ?? 'default-user';
+export const DELETE: RequestHandler = async ({ locals, params }) => {
+	const userId = locals.userId;
 
 	const deleted = await db
 		.delete(checklists)

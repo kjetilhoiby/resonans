@@ -2,6 +2,9 @@
 
 Denne filen er ment som kontekst til nye samtaler. Den oppsummerer designprinsipper, UX-beslutninger, datamodell og flyt-arkitektur som er besluttet eller under utvikling.
 
+Relaterte dokumenter:
+- `PWA_DATA_LOADING_PLAN.md` — plan for raskere navigasjon, dashboard-cache, bakgrunnsprefetch og PWA-retning
+
 ---
 
 ## Levende stilguide
@@ -308,11 +311,250 @@ Alternativ hjemskjerm-variant med CSS-klasser `hs2-*`.
 
 ---
 
+## Ikoninventar (egne + emoji)
+
+Mål: samle dagens ikonbruk i én referanse før vi lager et tydelig, eget ikonsett.
+
+### 1) Egne ikoner (tegn/symboler)
+
+Brukes som et lettvekts «ikonalfabet» flere steder i appen:
+
+- Primære handlinger: `◈` (Prat), `◉` (Kamera), `∿` (Lyd), `◐` (Sjekkin), `▣` (Fil)
+- Navigasjon/lenker: `◎`, `⬡`, `⚙`, `←`, `→`, `✕`, `×`
+
+Kilder i kode:
+- `src/lib/components/domain/HomeScreen.svelte`
+- `src/routes/samtaler/+page.svelte`
+- `src/routes/maal/+page.svelte`
+- `src/routes/goals/+page.svelte`
+
+### 2) Egne ikoner (inline SVG)
+
+Vi bruker per nå ikke ekstern ikonpakke; ikoner tegnes inline i komponentene.
+
+- Tilbake-chevron (20x20 / 24x24)
+- Søk (forstørrelsesglass)
+- Oppdater/refresh (roterende pil)
+
+Kilder i kode:
+- `src/lib/components/ui/TransactionList.svelte`
+- `src/routes/economics/[accountId]/[tab]/+page.svelte`
+- `src/routes/settings/+page.svelte`
+- `src/routes/notifications/+page.svelte`
+
+### 3) Emoji i aktiv app (UI)
+
+- Stemning og check-in: `😔 😐 🙂 😊 🤩`
+- Påvirkningsfaktorer: `💤 🏃 🥗 💼 🧑‍👧 👥 ☀️ 💸 🩺 🎨 🧘 🌿`
+- Mål/samtaler/generelt: `💬 ⚙️ 🎯 📌 🗓️`
+- Innstillinger/notifikasjoner: `💍 📱 🏃‍♂️ 🏦 📂 📅 📤 🕐`
+
+Kilder i kode:
+- `src/lib/components/domain/HomeScreen.svelte`
+- `src/routes/goals/+page.svelte`
+- `src/routes/samtaler/+page.svelte`
+- `src/routes/settings/+page.svelte`
+- `src/routes/notifications/+page.svelte`
+
+### 4) Emoji i data/API-lag
+
+- Dashboard-forslag: `✅ 🎯 📊 💬`
+- Standard checklist: `✅`
+- Auto-opprettede tema ved integrasjoner: `💪` (Helse), `💰` (Økonomi)
+- Økonomikategorier: `🛒 🍽️ 🏠 🏦 🚗 💊 📱 🎉 🛍️ 👶 🛡️ 💰 🔄 💵 📦`
+
+Kilder i kode:
+- `src/routes/api/dashboard/+server.ts`
+- `src/routes/api/checklists/+server.ts`
+- `src/routes/api/sensors/withings/callback/+server.ts`
+- `src/routes/api/sensors/sparebank1/callback/+server.ts`
+- `src/routes/api/economics/merchant-analysis/+server.ts`
+
+### 5) Prototyping/design-sider
+
+`/design` og `/design-exploration` inneholder mange ekstra emojier brukt til demo/flyt-gallerier. Disse er nyttige som inspirasjonsbank, men bør ikke tolkes som «godkjent» produksjonssett.
+
+### 6) Resonans ikonbibliotek v1 (forslag)
+
+Første mål er å standardisere handlinger og navigasjon med egne ikoner, og la emoji leve videre som domene-markorer (tema/kategori/stemning).
+
+Kjerneregler:
+- Egne ikoner brukes for handling, navigasjon og systemstatus.
+- Emoji brukes for personlig kontekst: tema, humør, kategorier, feiring.
+- Alle egne ikoner tegnes med samme stil: avrundede caps/joins, konsistent stroke og optisk sentrering.
+
+Anbefalt baseline:
+- Grid: 24 x 24
+- Stroke: 1.75
+- Radius: 2
+- Variantstotte: outline (primar), filled (kun aktiv tilstand)
+
+Foreslatte ikoner (token -> betydning):
+- `ri-chat` -> prat/samtale
+- `ri-camera` -> bilde/fangst
+- `ri-wave` -> lyd/snakk
+- `ri-checkin` -> stemning/sjekk inn
+- `ri-file` -> dokument/vedlegg
+- `ri-goals` -> mal
+- `ri-settings` -> innstillinger
+- `ri-back` -> tilbake
+- `ri-forward` -> ga videre
+- `ri-search` -> sok
+- `ri-refresh` -> oppdater/sync
+- `ri-close` -> lukk/fjern
+
+### 7) Migreringskart v1 (dagens -> nye tokens)
+
+Handlingssymboler i HomeScreen:
+- `◈` -> `ri-chat`
+- `◉` -> `ri-camera`
+- `∿` -> `ri-wave`
+- `◐` -> `ri-checkin`
+- `▣` -> `ri-file`
+
+Navigasjon og kontroll:
+- `◎` -> `ri-goals` (eller `ri-theme` om vi innforer eget tema-token)
+- `⬡` -> `ri-home` (nytt token dersom vi standardiserer bunnnav)
+- `⚙` / `⚙️` -> `ri-settings`
+- `←` -> `ri-back`
+- `→` -> `ri-forward`
+- `✕` / `×` -> `ri-close`
+
+Inline SVG som allerede matcher v1-retning:
+- Chevron tilbake -> `ri-back`
+- Forstorrelsesglass -> `ri-search`
+- Refresh-pil -> `ri-refresh`
+
+### 8) Foreslatt innforingsrekkefolge
+
+Fase 1 (lav risiko):
+- Bytt kun handlingsikoner i hjemskjerm og samtaler til v1-tokens.
+- Behold emoji i tema-rail, check-in faktorer og kategorier.
+
+Fase 2 (navigasjon):
+- Erstatt nav/shell-symboler (`◎`, `⬡`, `⚙`) med egne ikoner.
+
+Fase 3 (opprydding):
+- Fjern duplikate tegnvarianter (`✕` vs `×`, `⚙` vs `⚙️`).
+- Dokumenter endelig ikonordbok i design-siden med preview-komponent.
+
+### 9) Hue-strategi (forelopig)
+
+Mål:
+- Gjore appen mindre tung og ensformig
+- Unnga at opplevelsen blir «regnbue» eller tilfeldig
+- Beholde ett samlet visuelt system pa tvers av temaer
+
+Prinsipp:
+- Appen har én standard-hue som basis.
+- Et lite antall kuraterte kjernetemaer kan fa egen hue.
+- Brukeropprettede temaer faller tilbake til standard-hue inntil videre.
+
+Forelopig retning:
+- Standard: rolig base-hue for hele appen
+- Parforhold / relasjoner: dempet, beroligende gronn hue
+- Helse: enten standard-hue eller en kjoligere gronn/blagronn variant
+- Okonomi: enten standard-hue eller en strammere amber-variant
+- Andre temaer: default
+
+Begrensning:
+- Vi forhandsdefinerer ikke vilkarlige tema -> farge-kombinasjoner na.
+- Vi apner ikke for fri fargevelger for brukerlagde tema enda.
+- Dersom brukerfargevalg kommer senere, bor det skje via et lite kuratert preset-sett, ikke fri HSL/HSV-picker.
+
+Startpalett (v1):
+
+| Tema | Hue | Intensjon |
+|---|---:|---|
+| `default` | 228 | Noytral base for hele appen |
+| `relasjoner` | 148 | Beroligende, dempet gronn for parforhold og nære relasjoner |
+| `helse` | 172 | Kjolig gronn-blagronn for kropp, søvn og vitalitet |
+| `okonomi` | 38 | Strammere amber for penger og struktur |
+
+Regel:
+- Bare disse fargene brukes som eksplisitte tema-unntak i første omgang.
+- Nye eller ukjente tema bruker `default`.
+
+### 10) Hue-rigg for darkmode og lightmode
+
+Samme hue-system skal fungere i begge modi. Vi lager derfor ikke ett fargesystem for dark og et annet for light; vi gjenbruker samme hue, men med ulike lyshetsstiger.
+
+Prinsipp:
+- `hue` barer tematisk identitet
+- `saturation` holdes innenfor et smalt, kontrollert spenn
+- `lightness` byttes per modus og per token-niva
+
+Eksempelmodell:
+
+```css
+/* dark */
+--bg-0: hsl(var(--theme-hue) 100% 5%);
+--bg-1: hsl(var(--theme-hue) 58% 8%);
+--bg-2: hsl(var(--theme-hue) 44% 12%);
+--border: hsl(var(--theme-hue) 26% 28%);
+--fg: hsl(var(--theme-hue) 92% 78%);
+
+/* light */
+--bg-0: hsl(var(--theme-hue) 70% 98%);
+--bg-1: hsl(var(--theme-hue) 46% 96%);
+--bg-2: hsl(var(--theme-hue) 30% 92%);
+--border: hsl(var(--theme-hue) 20% 78%);
+--fg: hsl(var(--theme-hue) 36% 24%);
+```
+
+Konsekvens:
+- Mork og lys modus foles som samme tema, ikke to forskjellige personligheter.
+- Hue-fade mellom temaer fungerer i begge modi fordi bare hue endres kontinuerlig.
+- Kontrast kan finjusteres per modus uten at temalogikken endres.
+
+Anbefaling na:
+- Bygg videre pa ett hue-token per tema: `--theme-hue`
+- La resten av tokenene (`--bg-*`, `--border`, `--fg`, `--accent`) avledes av hue + modus
+- Start med dark som primar modus i design-siden, men hold tokenstrukturen kompatibel med light fra starten
+
+Foreslatt token-oppsett i appen:
+
+```css
+/* tema-identitet */
+--theme-hue: 228;
+
+/* modus-uavhengig struktur */
+--bg-0: ...;
+--bg-1: ...;
+--bg-2: ...;
+--border-subtle: ...;
+--border-strong: ...;
+--fg-primary: ...;
+--fg-secondary: ...;
+--accent: ...;
+
+/* eksempel: temaspesifikk override */
+[data-theme-key='relasjoner'] {
+  --theme-hue: 148;
+}
+
+[data-theme-key='helse'] {
+  --theme-hue: 172;
+}
+
+[data-theme-key='okonomi'] {
+  --theme-hue: 38;
+}
+```
+
+Implementasjonsretning:
+- Tema setter bare `--theme-hue` eller `data-theme-key`
+- Modus (`dark` / `light`) bestemmer hvilken lyshetsstige som brukes
+- Komponentene leser kun avledede tokens, ikke harde hex-farger
+
+---
+
 ## CSS-arkitektur
 
 - Globale knapper: `btn-primary`, `btn-secondary`, `btn-ghost`, `btn-chip`, `btn-danger`, `btn-icon` — definert i `app.css` med CSS-variabler
 - Mørk tema: CSS-variabler (`--bg-primary`, `--bg-card`, `--accent-primary` osv.) overstyres per-side i rot-klassens CSS-blokk
 - Design-tokenene: `#0f0f0f` bg · `#1a1a1a` card · `#2a2a2a` border · `#4a5af0` accent · `#eee` text
+- Videre retning: farge-tokenene bor gradvis flyttes til hue-drevet HSL, slik at samme temalogikk fungerer i darkmode og lightmode
 
 ---
 

@@ -10,8 +10,64 @@ import { queryEconomicsTool } from '$lib/ai/tools/query-economics';
 import { USER_ID_HEADER_NAME } from '$lib/server/request-user';
 import { db } from '$lib/db';
 import { userWidgets, checklists, checklistItems } from '$lib/db/schema';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
+
+type AttachmentKind = 'image' | 'audio' | 'document' | 'other';
+
+interface AttachmentPayload {
+	url: string;
+	kind: AttachmentKind;
+	name?: string;
+	mimeType?: string;
+	note?: string;
+	publicId?: string;
+	source?: 'camera' | 'file' | 'voice' | 'sheet';
+	sizeBytes?: number;
+	contentText?: string;
+	extractionKind?: string;
+}
+
+function isAttachmentPayload(value: unknown): value is AttachmentPayload {
+	if (!value || typeof value !== 'object') return false;
+
+	const candidate = value as Record<string, unknown>;
+	return (
+		typeof candidate.url === 'string' &&
+		(candidate.kind === 'image' || candidate.kind === 'audio' || candidate.kind === 'document' || candidate.kind === 'other')
+	);
+}
+
+function describeAttachment(attachment: AttachmentPayload): string {
+	const lines = [
+		`Vedleggstype: ${attachment.kind}`,
+		attachment.name ? `Filnavn: ${attachment.name}` : null,
+		attachment.mimeType ? `Mime-type: ${attachment.mimeType}` : null,
+		attachment.source ? `Kilde: ${attachment.source}` : null,
+		attachment.note ? `Brukernotat: ${attachment.note}` : null,
+		attachment.extractionKind ? `Innholdskilde: ${attachment.extractionKind}` : null,
+		attachment.contentText ? `Ekstrahert innhold:\n${attachment.contentText}` : null,
+		attachment.url ? `Vedleggs-URL: ${attachment.url}` : null
+	].filter(Boolean);
+
+	return lines.join('\n');
+}
+
+function buildUserMessageForModel(message: string, attachment: AttachmentPayload | null): string {
+	if (!attachment) {
+		return message;
+	}
+
+	return `${message}\n\n--- VEDLEGG ---\n${describeAttachment(attachment)}\n--- SLUTT PÅ VEDLEGG ---`;
+}
+
+function getDefaultAttachmentLabel(attachment: AttachmentPayload | null): string {
+	if (!attachment) return 'Vedlegg';
+	if (attachment.kind === 'image') return '📷 [Bilde]';
+	if (attachment.kind === 'audio') return `🎙️ ${attachment.name || 'Lydfil'}`;
+	if (attachment.kind === 'document') return `📄 ${attachment.name || 'Dokument'}`;
+	return `📎 ${attachment.name || 'Vedlegg'}`;
+}
 
 // Definer tools/functions som AI-en kan bruke
 const tools = [
@@ -630,6 +686,40 @@ const tools = [
 				required: ['title', 'emoji', 'items']
 			}
 		}
+	},
+	{
+		type: 'function' as const,
+		function: {
+			name: 'get_active_checklists',
+			description: 'Hent brukerens aktive sjekklister med punkter. Bruk dette før du utvider en eksisterende liste eller når brukeren refererer til en liste de allerede har.',
+			parameters: {
+				type: 'object',
+				properties: {},
+				required: []
+			}
+		}
+	},
+	{
+		type: 'function' as const,
+		function: {
+			name: 'add_checklist_items',
+			description: 'Legg til nye punkter i en eksisterende sjekkliste. Bruk etter get_active_checklists når brukeren vil utvide, supplere eller forbedre en liste som allerede finnes.',
+			parameters: {
+				type: 'object',
+				properties: {
+					checklistId: {
+						type: 'string',
+						description: 'ID til sjekklisten som skal utvides.'
+					},
+					items: {
+						type: 'array',
+						description: 'Nye punkter som skal legges til. Send bare de nye punktene, ikke hele listen på nytt.',
+						items: { type: 'string' }
+					}
+				},
+				required: ['checklistId', 'items']
+			}
+		}
 	}
 ];
 
@@ -637,9 +727,17 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	try {
 		const userId = locals.userId;
 
-		const { message, imageUrl, conversationId: requestedConversationId } = await request.json();
+		const body = await request.json();
+		const { message, imageUrl, conversationId: requestedConversationId } = body;
+		const attachment = isAttachmentPayload(body.attachment) ? body.attachment : null;
+		const effectiveImageUrl =
+			typeof imageUrl === 'string' && imageUrl.length > 0
+				? imageUrl
+				: attachment?.kind === 'image'
+					? attachment.url
+					: undefined;
 
-		if ((!message || typeof message !== 'string') && !imageUrl) {
+		if ((!message || typeof message !== 'string') && !effectiveImageUrl && !attachment) {
 			return json({ error: 'Invalid message' }, { status: 400 });
 		}
 
@@ -651,11 +749,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				: await getOrCreateConversation(userId);
 
 		// Lagre brukerens melding med imageUrl hvis present
-		await addMessage({
+		const savedUserMessage = await addMessage({
 			conversationId: conversation.id,
 			role: 'user',
-			content: message || '📷 [Bilde]',
-			imageUrl
+			content: message || getDefaultAttachmentLabel(attachment),
+			imageUrl: effectiveImageUrl,
+			metadata: attachment ? { attachment } : undefined
 		});
 
 		// Hent samtale-historikk (siste 5 meldinger for umiddelbar kontekst)
@@ -673,8 +772,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			goalsContext += 'Brukeren har ingen aktive mål ennå.\n';
 		} else {
 			for (const goal of activeGoals) {
+				const categoryName = Array.isArray(goal.category)
+					? goal.category[0]?.name
+					: goal.category?.name;
 				goalsContext += `\nMÅL: "${goal.title}" (ID: ${goal.id})\n`;
-				goalsContext += `Kategori: ${goal.category?.name || 'Ingen'}\n`;
+				goalsContext += `Kategori: ${categoryName || 'Ingen'}\n`;
 				goalsContext += `Status: ${goal.status}\n`;
 				if (goal.tasks.length > 0) {
 					goalsContext += `Oppgaver:\n`;
@@ -710,48 +812,71 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 		// Legg til historikk (unntatt den siste brukermeldingen som allerede er der)
 		for (const msg of history) {
+			if (msg.id === savedUserMessage.id) {
+				continue;
+			}
+
 			if (msg.role === 'user' || msg.role === 'assistant') {
+				const messageAttachment = isAttachmentPayload((msg.metadata as { attachment?: unknown } | null | undefined)?.attachment)
+					? (msg.metadata as { attachment: AttachmentPayload }).attachment
+					: null;
 				messages.push({
 					role: msg.role,
-					content: msg.content
+					content: msg.role === 'user'
+						? buildUserMessageForModel(msg.content, messageAttachment)
+						: msg.content
 				});
 			}
 		}
 
-		// Legg til siste melding - støtt både tekst og bilde
-		if (imageUrl) {
+		// Legg til siste melding - støtt både tekst og vedlegg
+		if (effectiveImageUrl) {
 			// Bruk Vision API format
 			messages.push({
 				role: 'user',
 				content: [
 					{
 						type: 'image_url',
-						image_url: { url: imageUrl }
+						image_url: { url: effectiveImageUrl }
 					},
 					{
 						type: 'text',
-						text: message || 'Hva ser du på dette bildet? Kan du hjelpe meg å analysere det i forhold til målene mine?'
+						text: buildUserMessageForModel(
+							typeof message === 'string' && message.trim().length > 0
+								? message
+								: 'Hva ser du på dette bildet, og hva bør vi gjøre videre?',
+							attachment
+						)
 					}
 				]
 			});
+		} else {
+			messages.push({
+				role: 'user',
+				content: buildUserMessageForModel(
+					typeof message === 'string' ? message : getDefaultAttachmentLabel(attachment),
+					attachment
+				)
+			});
 		}
-		// Note: siste tekstmelding er allerede lagt til via history
 
 		// Første kall til OpenAI med tools
 		// Bruk gpt-4o når vi har bilder (Vision support)
 		let completion = await openai.chat.completions.create({
-			model: imageUrl ? 'gpt-4o' : 'gpt-4o-mini',
+			model: effectiveImageUrl ? 'gpt-4o' : 'gpt-4o-mini',
 			messages,
 			tools,
 			tool_choice: 'auto',
 			temperature: 0.7,
-			max_tokens: imageUrl ? 1500 : 1000 // Mer tokens for bildeanalyse
+			max_tokens: effectiveImageUrl ? 1500 : 1000 // Mer tokens for bildeanalyse
 		});
 
 		let responseMessage = completion.choices[0]?.message;
 		let createdGoalId: string | null = null;
 		let createdTheme: { id: string; name: string; emoji?: string | null; conversationId?: string | null } | null = null;
 		let archivedTheme: { id: string; name: string; emoji?: string | null } | null = null;
+		let checklistCreated = false;
+		let checklistUpdated = false;
 
 		// Debug logging
 		console.log('\n🤖 OpenAI Response:');
@@ -764,18 +889,16 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		}
 		console.log('Direct response:', responseMessage?.content?.substring(0, 100) || 'none');
 
-		// Håndter tool calls hvis AI-en vil bruke dem
-		if (responseMessage?.tool_calls && responseMessage.tool_calls.length > 0) {
-			console.log('\n🔧 Executing tools...');
-			
-			// Legg til assistant message med alle tool calls først
+		// Håndter tool calls i flere runder slik at modellen kan gjøre oppslag -> beslutning -> endring.
+		for (let toolRound = 0; toolRound < 5 && responseMessage?.tool_calls?.length; toolRound += 1) {
+			console.log(`\n🔧 Executing tools (round ${toolRound + 1})...`);
+
 			messages.push({
 				role: 'assistant',
 				content: null,
 				tool_calls: responseMessage.tool_calls
 			});
 
-			// Håndter alle tool calls
 			for (const toolCall of responseMessage.tool_calls) {
 				console.log(`\n  Tool: ${toolCall.type === 'function' ? toolCall.function.name : toolCall.type}`);
 				console.log(`  Args: ${toolCall.type === 'function' ? toolCall.function.arguments.substring(0, 100) : 'N/A'}`);
@@ -1263,6 +1386,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 							);
 						}
 
+						checklistCreated = true;
+
 						messages.push({
 							role: 'tool',
 							content: JSON.stringify({
@@ -1283,13 +1408,137 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 							tool_call_id: toolCall.id
 						});
 					}
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'get_active_checklists') {
+					try {
+						const activeChecklists = await db.query.checklists.findMany({
+							where: and(eq(checklists.userId, userId), isNull(checklists.completedAt)),
+							with: {
+								items: {
+									orderBy: (items, { asc }) => [asc(items.sortOrder), asc(items.createdAt)]
+								}
+							},
+							orderBy: (c, { desc }) => [desc(c.createdAt)]
+						});
+
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify({
+								count: activeChecklists.length,
+								checklists: activeChecklists.map((checklist) => ({
+									id: checklist.id,
+									title: checklist.title,
+									emoji: checklist.emoji,
+									context: checklist.context,
+									itemCount: checklist.items.length,
+									completedCount: checklist.items.filter((item) => item.checked).length,
+									items: checklist.items.map((item) => ({
+										id: item.id,
+										text: item.text,
+										checked: item.checked
+									}))
+								}))
+							}),
+							tool_call_id: toolCall.id
+						});
+					} catch (e) {
+						console.error('  📋 Checklist lookup failed:', e);
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify({ success: false, error: 'Klarte ikke hente aktive sjekklister' }),
+							tool_call_id: toolCall.id
+						});
+					}
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'add_checklist_items') {
+					const args = JSON.parse(toolCall.function.arguments) as {
+						checklistId: string;
+						items: string[];
+					};
+
+					try {
+						const checklist = await db.query.checklists.findFirst({
+							where: and(eq(checklists.id, args.checklistId), eq(checklists.userId, userId)),
+							with: {
+								items: {
+									orderBy: (items, { asc }) => [asc(items.sortOrder), asc(items.createdAt)]
+								}
+							}
+						});
+
+						if (!checklist) {
+							messages.push({
+								role: 'tool',
+								content: JSON.stringify({ success: false, error: 'Sjekkliste ikke funnet' }),
+								tool_call_id: toolCall.id
+							});
+							continue;
+						}
+
+						const normalizeItem = (text: string) => text.trim().replace(/\s+/g, ' ').toLowerCase();
+						const existingItems = new Set(checklist.items.map((item) => normalizeItem(item.text)));
+						const candidateItems = (args.items ?? [])
+							.map((item) => item.trim())
+							.filter(Boolean);
+						const itemsToAdd = candidateItems.filter((item, index) => {
+							const normalized = normalizeItem(item);
+							const firstOccurrence = candidateItems.findIndex((candidate) => normalizeItem(candidate) === normalized) === index;
+							return firstOccurrence && !existingItems.has(normalized);
+						});
+						const skippedItems = candidateItems.filter((item) => !itemsToAdd.includes(item));
+
+						if (itemsToAdd.length > 0) {
+							const nextSortOrder = checklist.items.reduce((maxSortOrder, item) => Math.max(maxSortOrder, item.sortOrder), -1) + 1;
+
+							await db.insert(checklistItems).values(
+								itemsToAdd.map((text, index) => ({
+									checklistId: checklist.id,
+									userId,
+									text,
+									sortOrder: nextSortOrder + index
+								}))
+							);
+
+							if (checklist.completedAt) {
+								await db
+									.update(checklists)
+									.set({ completedAt: null })
+									.where(eq(checklists.id, checklist.id));
+							}
+
+							checklistUpdated = true;
+						}
+
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify({
+								success: true,
+								checklistId: checklist.id,
+								title: checklist.title,
+								addedCount: itemsToAdd.length,
+								addedItems: itemsToAdd,
+								skippedItems,
+								message: itemsToAdd.length > 0
+									? `La til ${itemsToAdd.length} nye punkter i "${checklist.title}".`
+									: `Ingen nye punkter lagt til i "${checklist.title}" fordi de allerede fantes.`
+							}),
+							tool_call_id: toolCall.id
+						});
+					} catch (e) {
+						console.error('  📋 Checklist update failed:', e);
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify({ success: false, error: 'Klarte ikke utvide sjekkliste' }),
+							tool_call_id: toolCall.id
+						});
+					}
 				}
 			}
 
-			// Nytt kall for å få et naturlig svar (etter alle tool calls er håndtert)
+			// Ny runde der modellen kan bruke tool-resultatene til flere oppslag eller gi slutt-svar.
 			completion = await openai.chat.completions.create({
 				model: 'gpt-4o-mini',
 				messages,
+				tools,
+				tool_choice: 'auto',
 				temperature: 0.7,
 				max_tokens: 1000
 			});
@@ -1316,7 +1565,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			theme: createdTheme,
 			themeArchived: archivedTheme !== null,
 			archivedTheme,
-			checklistCreated: true
+			checklistCreated,
+			checklistUpdated,
+			checklistChanged: checklistCreated || checklistUpdated
 		});
 	} catch (error) {
 		console.error('Error in chat API:', error);

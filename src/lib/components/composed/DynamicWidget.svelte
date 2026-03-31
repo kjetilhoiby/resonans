@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import GoalRing from './GoalRing.svelte';
+	import GoalRing from '../ui/GoalRing.svelte';
 
 	interface Props {
 		widgetId: string;
@@ -145,7 +145,7 @@
 		<!-- Ring -->
 		<div class="dw-ring">
 			{#if pct != null}
-				<GoalRing {pct} size={56} strokeWidth={4} color={displayColor} />
+				<GoalRing {pct} size={70} strokeWidth={4} color={displayColor} />
 			{:else}
 				<div class="dw-plain-circle" style:border-color={displayColor}></div>
 			{/if}
@@ -204,12 +204,12 @@
 <style>
 	.dw {
 		position: relative;
-		width: 72px;
-		min-height: 88px;
+		width: 90px;
+		min-height: 106px;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 3px;
+		gap: 4px;
 		cursor: pointer;
 		-webkit-tap-highlight-color: transparent;
 		user-select: none;
@@ -239,16 +239,16 @@
 
 	.dw-ring {
 		position: relative;
-		width: 56px;
-		height: 56px;
+		width: 70px;
+		height: 70px;
 	}
 
 	.dw-plain-circle {
-		width: 52px;
-		height: 52px;
+		width: 64px;
+		height: 64px;
 		border: 3px solid var(--c);
 		border-radius: 50%;
-		margin: 2px;
+		margin: 3px;
 		opacity: 0.3;
 	}
 
@@ -258,7 +258,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		font-size: 0.9rem;
+		font-size: 1rem;
 		font-weight: 700;
 		color: #eee;
 		line-height: 1;

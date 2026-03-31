@@ -10,8 +10,8 @@
     summary     komplett sensor-summary fra /api/sensor-summary
 -->
 <script lang="ts">
-	import GoalRing from './GoalRing.svelte';
-	import PeriodPills from './PeriodPills.svelte';
+	import GoalRing from '../ui/GoalRing.svelte';
+	import PeriodPills from '../ui/PeriodPills.svelte';
 
 	type SensorType = 'weight' | 'sleep' | 'steps' | 'running';
 

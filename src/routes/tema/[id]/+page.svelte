@@ -1,5 +1,5 @@
 <script lang="ts">
-	import ThemePage from '$lib/components/ui/ThemePage.svelte';
+	import ThemePage from '$lib/components/domain/ThemePage.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -11,7 +11,5 @@
 	goals={data.goals}
 	conversationId={data.conversationId}
 	themeConversations={data.themeConversations}
-	healthDashboard={data.healthDashboard}
-	economicsDashboard={data.economicsDashboard}
 	themeInstruction={data.themeInstruction}
 />

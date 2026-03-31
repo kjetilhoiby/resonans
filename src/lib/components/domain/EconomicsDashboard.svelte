@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import CompactRecordList from './CompactRecordList.svelte';
-	import GoalRing from './GoalRing.svelte';
-	import TransactionList from './TransactionList.svelte';
+	import CompactRecordList from '../ui/CompactRecordList.svelte';
+	import GoalRing from '../ui/GoalRing.svelte';
+	import Section from '../ui/Section.svelte';
+	import TransactionList from '../ui/TransactionList.svelte';
 	import type { GoalTrack } from '$lib/domain/goal-tracks';
 
 	interface EconomicsAccount {
@@ -330,11 +331,7 @@
 
 	<!-- Spending by category -->
 	{#if topCategories.length > 0}
-		<div class="ed-category-card">
-			<header class="ed-section-head">
-				<h3 class="ed-section-title">Fordeling {formatMonthLabel(currentMonth)}</h3>
-				<span class="ed-section-meta">{topCategories.length} kategorier</span>
-			</header>
+		<Section title="Fordeling {formatMonthLabel(currentMonth)}" meta={`${topCategories.length} kategorier`}>
 			<ul class="ed-cat-list">
 				{#each topCategories as cat}
 					{@const barPct = Math.max(4, Math.round((cat.amount / maxCategoryAmount) * 100))}
@@ -348,14 +345,10 @@
 					</li>
 				{/each}
 			</ul>
-		</div>
+		</Section>
 	{/if}
 
-	<div class="ed-goal-card">
-		<header class="ed-section-head">
-			<h3 class="ed-section-title">Dagligvarer: mål + pace</h3>
-			<span class="ed-section-meta">{formatMonthLabel(currentMonth)}</span>
-		</header>
+	<Section title="Dagligvarer: mål + pace" meta={formatMonthLabel(currentMonth)}>
 		<div class="ed-goal-main">
 			<div class="ed-goal-ring">
 				<GoalRing pct={groceryGoalPct} color={groceryGoalColor} size={88} strokeWidth={6}>
@@ -381,7 +374,7 @@
 		{#if groceryGoalError}
 			<p class="ed-goal-error">{groceryGoalError}</p>
 		{/if}
-	</div>
+	</Section>
 
 	<!-- Accounts + recent transactions -->
 	<div class="ed-list-grid">
@@ -514,27 +507,6 @@
 		color: #666;
 	}
 
-	/* Category card */
-	.ed-category-card {
-		background: #141414;
-		border: 1px solid #232323;
-		border-radius: 18px;
-		padding: 16px;
-		display: flex;
-		flex-direction: column;
-		gap: 12px;
-	}
-
-	.ed-goal-card {
-		background: #141414;
-		border: 1px solid #232323;
-		border-radius: 18px;
-		padding: 16px;
-		display: flex;
-		flex-direction: column;
-		gap: 12px;
-	}
-
 	.ed-goal-main {
 		display: grid;
 		grid-template-columns: 88px 1fr;
@@ -592,24 +564,6 @@
 		margin: 0;
 		font-size: 0.76rem;
 		color: #e07070;
-	}
-
-	.ed-section-head {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-	}
-
-	.ed-section-title {
-		margin: 0;
-		font-size: 0.88rem;
-		font-weight: 600;
-		color: #ccc;
-	}
-
-	.ed-section-meta {
-		font-size: 0.75rem;
-		color: #555;
 	}
 
 	.ed-cat-list {

@@ -12,7 +12,7 @@ AI-en husker nå tidligere meldinger i samtalen! Dette gir:
 
 ### Test 1: Basis samtale-historikk
 
-1. **Åpne http://localhost:5173**
+1. **Åpne http://localhost:5174**
 
 2. **Send første melding:**
    ```

@@ -3,11 +3,10 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { checklists, checklistItems } from '$lib/db/schema';
 import { eq, isNull, and } from 'drizzle-orm';
-import { USER_ID_HEADER_NAME } from '$lib/server/request-user';
 
 // GET /api/checklists — hent aktive (ikke fullførte) sjekklister med punkter
-export const GET: RequestHandler = async ({ request, url }) => {
-	const userId = request.headers.get(USER_ID_HEADER_NAME) ?? 'default-user';
+export const GET: RequestHandler = async ({ locals, url }) => {
+	const userId = locals.userId;
 	const activeOnly = url.searchParams.get('active') !== 'false';
 
 	const rows = await db.query.checklists.findMany({
@@ -26,8 +25,9 @@ export const GET: RequestHandler = async ({ request, url }) => {
 };
 
 // POST /api/checklists — opprett ny sjekkliste med punkter
-export const POST: RequestHandler = async ({ request }) => {
-	const userId = request.headers.get(USER_ID_HEADER_NAME) ?? 'default-user';
+
+export const POST: RequestHandler = async ({ locals, request }) => {
+	const userId = locals.userId;
 	const body = await request.json();
 
 	const { title, emoji = '✅', context, items = [] } = body as {

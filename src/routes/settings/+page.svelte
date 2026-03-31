@@ -16,6 +16,8 @@
 	let loadingSparebank1 = $state(false);
 	let syncingSparebank1 = $state(false);
 	let sparebank1SyncResult: any = $state(null);
+	let googleSheetsStatus = $state<any>(null);
+	let loadingGoogleSheets = $state(false);
 
 	let importingStatements = $state(false);
 	let importResult: any = $state(null);
@@ -40,6 +42,7 @@
 	onMount(async () => {
 		await loadWithingsStatus();
 		await loadSparebank1Status();
+		await loadGoogleSheetsStatus();
 		await loadAnchorAccounts();
 	});
 
@@ -91,6 +94,32 @@
 			console.error('Failed to load SpareBank1 status:', err);
 		} finally {
 			loadingSparebank1 = false;
+		}
+	}
+
+	async function loadGoogleSheetsStatus() {
+		loadingGoogleSheets = true;
+		try {
+			const res = await fetch('/api/sensors/google-sheets/status');
+			if (res.ok) {
+				googleSheetsStatus = await res.json();
+			}
+		} catch (err) {
+			console.error('Failed to load Google Sheets status:', err);
+		} finally {
+			loadingGoogleSheets = false;
+		}
+	}
+
+	async function disconnectGoogleSheets() {
+		if (!confirm('Er du sikker på at du vil koble fra Google Regneark?')) return;
+		try {
+			const res = await fetch('/api/sensors/google-sheets/disconnect', { method: 'POST' });
+			if (res.ok) {
+				await loadGoogleSheetsStatus();
+			}
+		} catch (err) {
+			console.error('Failed to disconnect Google Sheets:', err);
 		}
 	}
 
@@ -590,6 +619,52 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 				{:else}
 					<a href="/api/sensors/sparebank1/connect" class="btn-primary" style="display:block; text-align:center;">
 						🔗 Koble til SpareBank 1
+					</a>
+				{/if}
+			</section>
+
+			<!-- Google Sheets Integration -->
+			<section class="settings-card">
+				<div class="card-icon">📊</div>
+				<h2>Google Regneark</h2>
+				<p class="help-text">
+					Koble til Google Regneark for lesetilgang til regneark. Gir AI-assistenten tilgang til å lese inn data du deler.
+				</p>
+
+				{#if loadingGoogleSheets}
+					<div style="padding: 2rem; text-align: center; color: var(--text-tertiary);">Laster...</div>
+				{:else if googleSheetsStatus?.connected}
+					<div class="notification-option" style="background: var(--success-bg); border-color: var(--success-border);">
+						<div class="option-info">
+							<strong style="color: var(--success-text);">✅ Tilkoblet</strong>
+							<p style="color: var(--success-text);">
+								Siste bruk: {googleSheetsStatus.sensor?.lastSync
+									? new Date(googleSheetsStatus.sensor.lastSync).toLocaleString('nb-NO')
+									: 'Aldri'}
+							</p>
+							{#if googleSheetsStatus.sensor?.isExpired}
+								<p style="color: var(--error-text); margin-top: 0.5rem;">
+									⚠️ Token utløpt — koble til på nytt
+								</p>
+							{/if}
+							{#if googleSheetsStatus.sensor?.lastError}
+								<p style="color: var(--error-text); margin-top: 0.25rem; font-size: 0.8rem;">
+									{googleSheetsStatus.sensor.lastError}
+								</p>
+							{/if}
+						</div>
+					</div>
+					<div style="display: flex; gap: 1rem; margin-top: 0.5rem;">
+						<button type="button" onclick={disconnectGoogleSheets} class="btn-ghost" style="flex: 1;">
+							🔌 Koble fra
+						</button>
+						<a href="/api/sensors/google-sheets/connect" class="btn-primary" style="flex: 1; text-align: center;">
+							🔗 Koble til på nytt
+						</a>
+					</div>
+				{:else}
+					<a href="/api/sensors/google-sheets/connect" class="btn-primary" style="display:block; text-align:center;">
+						🔗 Koble til Google Regneark
 					</a>
 				{/if}
 			</section>

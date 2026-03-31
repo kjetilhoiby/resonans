@@ -13,12 +13,16 @@
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { get } from 'svelte/store';
-	import ChatInput from './ChatInput.svelte';
+	import ChatInput from '../ui/ChatInput.svelte';
 	import HealthDashboard from './HealthDashboard.svelte';
 	import EconomicsDashboard from './EconomicsDashboard.svelte';
-	import ScreenTitle from './ScreenTitle.svelte';
-	import TriageCard from './TriageCard.svelte';
-	import GoalRing from './GoalRing.svelte';
+	import ScreenTitle from '../ui/ScreenTitle.svelte';
+	import Icon from '../ui/Icon.svelte';
+	import TriageCard from '../composed/TriageCard.svelte';
+	import GoalRing from '../ui/GoalRing.svelte';
+	import { getThemeHueStyle } from '$lib/domain/theme-hues';
+	import { fetchDashboard, getCachedDashboard, type EconomicsDashboardData, type HealthDashboardData } from '$lib/client/dashboard-cache';
+	import { getThemeDashboardDefinition, resolveThemeDashboardKind } from '$lib/domain/theme-dashboard-registry';
 
 	/* ── Types ──────────────────────────────────────────── */
 	interface Theme {
@@ -58,56 +62,55 @@
 		conversationId: string;
 		themeConversations?: ThemeConversation[];
 		themeInstruction?: string;
-		healthDashboard?: {
-			weekly: unknown[];
-			monthly: unknown[];
-			yearly: unknown[];
-			sources?: Array<{ id: string; name: string; provider: string; isActive: boolean; lastSync: string | null }>;
-			recentEvents?: Array<{ id: string; timestamp: string; dataType: string; data: Record<string, unknown> }>;
-		} | null;
-		economicsDashboard?: {
-			accounts: Array<{ accountId: string; accountName: string | null; accountType: string | null; balance: number; currency: string | null }>;
-			totalBalance: number;
-			currentMonth: string;
-			monthSpending: {
-				totalSpending: number;
-				totalFixed: number;
-				totalVariable: number;
-				totalIncome: number;
-				categories: Array<{ category: string; label: string; emoji: string; amount: number; count: number; isFixed: boolean }>;
-			};
-			recentTransactions: Array<{ date: string; description: string; amount: number; emoji: string; label: string }>;
-			paydaySpend: {
-				paydayDate: string | null;
-				daysSincePayday: number;
-				totalSpend: number;
-				spendPerDay: number;
-				grocerySpend: number;
-				grocerySpendPerDay: number;
-				prevSpendPerDay: number | null;
-				prevGrocerySpendPerDay: number | null;
-				transactions: Array<{ date: string; description: string; amount: number; category: string; emoji: string; label: string }>;
-				groceryTransactions: Array<{ date: string; description: string; amount: number; category: string; emoji: string; label: string }>;
-			};
-		} | null;
 	}
 
-	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '', healthDashboard = null, economicsDashboard = null }: Props = $props();
+	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '' }: Props = $props();
 
 	/* ── Subtab-tilstand ────────────────────────────────── */
 	type Tab = 'chat' | 'data' | 'mål' | 'filer';
-	const isHealthTheme = theme.name.trim().toLowerCase() === 'helse';
-	const isEconomicsTheme = theme.name.trim().toLowerCase() === 'økonomi';
+	const activeDashboardKind = resolveThemeDashboardKind(theme.name);
+	const activeDashboard = getThemeDashboardDefinition(theme.name);
+	const hasThemeDashboard = activeDashboardKind !== null;
 	const requestedTab = get(page).url.searchParams.get('tab');
 	const isHandoff = get(page).url.searchParams.get('handoff') === '1';
 	let tab = $state<Tab>(
 		requestedTab === 'chat' || requestedTab === 'data' || requestedTab === 'mål' || requestedTab === 'filer'
 			? requestedTab as Tab
-			: isHealthTheme || isEconomicsTheme
+			: hasThemeDashboard
 				? 'data'
 				: 'chat'
 	);
 	let handoffPhase = $state<'intro' | 'content'>('content');
+	let healthDashboard = $state<HealthDashboardData | null>(null);
+	let economicsDashboard = $state<EconomicsDashboardData | null>(null);
+	let dashboardLoading = $state(false);
+	let dashboardLoaded = $state(false);
+	let dashboardError = $state('');
+	let dashboardRequestId = 0;
+	let dashboardCachedAt = $state<string | null>(null);
+
+	const healthDashboardProps = $derived.by(() => {
+		if (activeDashboardKind !== 'health' || !healthDashboard) return null;
+		return {
+			weekly: healthDashboard.weekly as any,
+			monthly: healthDashboard.monthly as any,
+			yearly: healthDashboard.yearly as any,
+			sources: healthDashboard.sources ?? [],
+			recentEvents: healthDashboard.recentEvents ?? []
+		};
+	});
+
+	const economicsDashboardProps = $derived.by(() => {
+		if (activeDashboardKind !== 'economics' || !economicsDashboard) return null;
+		return {
+			accounts: economicsDashboard.accounts,
+			totalBalance: economicsDashboard.totalBalance,
+			currentMonth: economicsDashboard.currentMonth,
+			monthSpending: economicsDashboard.monthSpending,
+			recentTransactions: economicsDashboard.recentTransactions,
+			paydaySpend: economicsDashboard.paydaySpend
+		};
+	});
 
 	onMount(() => {
 		if (get(page).url.searchParams.get('handoff') !== '1') return;
@@ -116,6 +119,73 @@
 			handoffPhase = 'content';
 		}, 950);
 		return () => clearTimeout(timer);
+	});
+
+	function dashboardKind() {
+		return activeDashboardKind;
+	}
+
+	function applyCachedDashboard() {
+		const kind = dashboardKind();
+		if (!kind) return null;
+
+		const cached = getCachedDashboard(theme.id, kind);
+		if (!cached) return null;
+
+		dashboardCachedAt = cached.cachedAt;
+		dashboardLoaded = true;
+		if (kind === 'health') {
+			healthDashboard = cached.data as HealthDashboardData;
+		} else {
+			economicsDashboard = cached.data as EconomicsDashboardData;
+		}
+
+		return cached;
+	}
+
+	async function ensureDashboardLoaded(force = false) {
+		if (!hasThemeDashboard || dashboardLoading) return;
+
+		const kind = dashboardKind();
+		if (!kind) return;
+
+		const cached = applyCachedDashboard();
+		if (!force && cached) {
+			const age = Date.now() - new Date(cached.cachedAt).getTime();
+			if (age < 60_000) return;
+		}
+		if (dashboardLoaded && !force && !cached) return;
+
+		dashboardLoading = true;
+		dashboardError = '';
+		const requestId = ++dashboardRequestId;
+
+		try {
+			const result = await fetchDashboard(theme.id, kind, force);
+			if (requestId !== dashboardRequestId) return;
+
+			dashboardCachedAt = result.cachedAt;
+
+			if (kind === 'health') {
+				healthDashboard = result.data as HealthDashboardData;
+			} else {
+				economicsDashboard = result.data as EconomicsDashboardData;
+			}
+			dashboardLoaded = true;
+		} catch {
+			if (requestId !== dashboardRequestId) return;
+			dashboardError = 'Kunne ikke laste dashboarddata.';
+		} finally {
+			if (requestId === dashboardRequestId) {
+				dashboardLoading = false;
+			}
+		}
+	}
+
+	$effect(() => {
+		if (tab === 'data' && hasThemeDashboard) {
+			void ensureDashboardLoaded();
+		}
 	});
 
 	/* ── Chat-tilstand ──────────────────────────────────── */
@@ -724,7 +794,7 @@
 	}
 </script>
 
-<div class="theme-page" ontouchstart={onTouchStart} ontouchmove={onTouchMove} ontouchend={onTouchEnd}>
+<div class="theme-page" style={getThemeHueStyle(theme.name)} ontouchstart={onTouchStart} ontouchmove={onTouchMove} ontouchend={onTouchEnd}>
 	{#if archiveRedirect}
 		<section class="tp-archived" aria-live="polite">
 			<div class="tp-archived-chip">
@@ -767,7 +837,7 @@
 					onclick={() => (tab = t)}
 				>
 					{#if t === 'chat'}💬 Samtaler
-				{:else if t === 'data'}{isHealthTheme ? '💪 Helse' : isEconomicsTheme ? '💰 Økonomi' : '📊 Data'}
+				{:else if t === 'data'}{activeDashboard ? `${activeDashboard.icon} ${activeDashboard.label}` : '📊 Data'}
 					{:else if t === 'mål'}🎯 Mål
 					{:else}📁 Filer{/if}
 				</button>
@@ -829,7 +899,7 @@
 							onclick={() => { selectedConvId = null; chatError = ''; }}
 							aria-label="Tilbake til samtaler"
 						>
-							← Samtaler
+							<Icon name="back" size={16} /> Samtaler
 						</button>
 					</div>
 
@@ -868,32 +938,46 @@
 		<!-- DATA -->
 		{:else if tab === 'data'}
 			<div class="data-panel">
-				{#if isHealthTheme && healthDashboard}
+				{#if hasThemeDashboard && dashboardLoading && !dashboardLoaded}
+					<div class="data-empty data-empty-tight">
+						<p>Laster dashboard…</p>
+					</div>
+				{/if}
+
+				{#if hasThemeDashboard && dashboardError && !dashboardLoaded}
+					<div class="data-empty data-empty-tight">
+						<p>{dashboardError}</p>
+						<button class="data-new-btn" onclick={() => void ensureDashboardLoaded(true)}>
+							Prøv igjen
+						</button>
+					</div>
+				{/if}
+
+				{#if healthDashboardProps}
 					<HealthDashboard
-						weekly={healthDashboard.weekly as any}
-						monthly={healthDashboard.monthly as any}
-						yearly={healthDashboard.yearly as any}
-						sources={healthDashboard.sources ?? []}
-						recentEvents={healthDashboard.recentEvents ?? []}
+						{...healthDashboardProps}
 						embedded={true}
 					/>
 				{/if}
 
-				{#if isEconomicsTheme && economicsDashboard}
+				{#if economicsDashboardProps}
 					<EconomicsDashboard
-						accounts={economicsDashboard.accounts}
-						totalBalance={economicsDashboard.totalBalance}
-						currentMonth={economicsDashboard.currentMonth}
-						monthSpending={economicsDashboard.monthSpending}
-						recentTransactions={economicsDashboard.recentTransactions}
-						paydaySpend={economicsDashboard.paydaySpend}
+						{...economicsDashboardProps}
 						embedded={true}
 					/>
 				{/if}
 
-				{#if !isEconomicsTheme && !isHealthTheme}
+				{#if hasThemeDashboard && dashboardLoading && dashboardLoaded}
+					<p class="data-refreshing">Oppdaterer dashboard…</p>
+				{/if}
+
+				{#if hasThemeDashboard && dashboardCachedAt}
+					<p class="data-refreshing">Sist lagret: {new Intl.DateTimeFormat('nb-NO', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }).format(new Date(dashboardCachedAt))}</p>
+				{/if}
+
+				{#if !hasThemeDashboard}
 				{#if goals.length === 0}
-					<div class="data-empty" class:data-empty-tight={isHealthTheme && healthDashboard}>
+					<div class="data-empty" class:data-empty-tight={false}>
 						<p>Ingen aktive mål i dette temaet ennå.</p>
 						<button
 							class="data-new-btn"
@@ -906,12 +990,6 @@
 						</button>
 					</div>
 				{:else}
-					{#if isHealthTheme && healthDashboard}
-						<div class="data-section-head">
-							<h2 class="data-section-title">Mål</h2>
-							<p class="data-section-copy">Koble mål til Helse-temaet for å se dem sammen med sensordata.</p>
-						</div>
-					{/if}
 					<div class="goals-grid">
 						{#each goals as goal}
 							{@const pct = goalPct(goal)}
@@ -1151,7 +1229,7 @@
 				{/if}
 
 				<!-- Helse-spesifikke målkontroller -->
-				{#if isHealthTheme}
+				{#if activeDashboardKind === 'health'}
 					<div class="goals-create-section">
 						<h2 class="goals-section-title">Opprett helsemål</h2>
 						<p class="goals-section-copy">Sett løpemål og vektmål med fleksible tidsrammer.</p>
@@ -1298,7 +1376,7 @@
 					</div>
 				{/if}
 
-				{#if goals.length === 0 && !isHealthTheme}
+				{#if goals.length === 0 && activeDashboardKind !== 'health'}
 					<div class="goals-empty">
 						<p>Ingen aktive mål i dette temaet ennå.</p>
 						<button
@@ -1362,9 +1440,23 @@ Eksempel:
 
 <style>
 	.theme-page {
+		--theme-hue: 228;
+		--tp-bg-0: hsl(var(--theme-hue) 22% 8%);
+		--tp-bg-1: hsl(var(--theme-hue) 20% 10%);
+		--tp-bg-2: hsl(var(--theme-hue) 24% 13%);
+		--tp-border: hsl(var(--theme-hue) 16% 18%);
+		--tp-border-strong: hsl(var(--theme-hue) 28% 34%);
+		--tp-text: hsl(var(--theme-hue) 20% 92%);
+		--tp-text-soft: hsl(var(--theme-hue) 18% 70%);
+		--tp-text-muted: hsl(var(--theme-hue) 12% 46%);
+		--tp-accent: hsl(var(--theme-hue) 70% 70%);
+		--tp-accent-bg: hsl(var(--theme-hue) 40% 22%);
+		--tp-accent-bg-strong: hsl(var(--theme-hue) 42% 28%);
 		min-height: 100dvh;
-		background: #0f0f0f;
-		color: #ccc;
+		background:
+			radial-gradient(120% 90% at 50% -10%, hsl(var(--theme-hue) 72% 60% / 0.12), transparent 52%),
+			linear-gradient(180deg, var(--tp-bg-1) 0%, var(--tp-bg-0) 100%);
+		color: var(--tp-text-soft);
 		font-family: 'Inter', system-ui, sans-serif;
 		display: flex;
 		flex-direction: column;
@@ -1379,8 +1471,8 @@ Eksempel:
 		gap: 14px;
 		padding: 20px;
 		background:
-			radial-gradient(110% 80% at 50% -10%, rgba(106, 132, 233, 0.22), transparent 55%),
-			linear-gradient(180deg, #11141d 0%, #0e0f13 100%);
+			radial-gradient(110% 80% at 50% -10%, hsl(var(--theme-hue) 75% 62% / 0.22), transparent 55%),
+			linear-gradient(180deg, var(--tp-bg-2) 0%, var(--tp-bg-0) 100%);
 		animation: launchBackdrop 0.9s ease;
 	}
 
@@ -1393,8 +1485,8 @@ Eksempel:
 		gap: 14px;
 		padding: 20px;
 		background:
-			radial-gradient(90% 70% at 50% -10%, rgba(72, 181, 129, 0.18), transparent 58%),
-			linear-gradient(180deg, #101713 0%, #0d1110 100%);
+			radial-gradient(90% 70% at 50% -10%, hsl(var(--theme-hue) 70% 60% / 0.18), transparent 58%),
+			linear-gradient(180deg, var(--tp-bg-2) 0%, var(--tp-bg-0) 100%);
 		animation: launchBackdrop 0.45s ease;
 	}
 
@@ -1403,10 +1495,10 @@ Eksempel:
 		align-items: center;
 		gap: 8px;
 		padding: 9px 14px;
-		border: 1px solid #2f4f3f;
+		border: 1px solid var(--tp-border-strong);
 		border-radius: 999px;
-		background: #132018;
-		color: #c5efd6;
+		background: var(--tp-accent-bg);
+		color: var(--tp-text);
 		font-size: 0.8rem;
 	}
 
@@ -1417,21 +1509,21 @@ Eksempel:
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		background: #173022;
-		border: 1px solid #2f6248;
+		background: var(--tp-accent-bg-strong);
+		border: 1px solid var(--tp-border-strong);
 	}
 
 	.tp-archived-title {
 		margin: 0;
 		font-size: clamp(1.7rem, 5.3vw, 2.2rem);
 		letter-spacing: -0.03em;
-		color: #ecfff4;
+		color: var(--tp-text);
 	}
 
 	.tp-archived-copy {
 		margin: 0;
 		font-size: 0.88rem;
-		color: #8fc6a5;
+		color: var(--tp-text-soft);
 	}
 
 	.tp-launch-chip {
@@ -1439,10 +1531,10 @@ Eksempel:
 		align-items: center;
 		gap: 8px;
 		padding: 9px 14px;
-		border: 1px solid #334166;
+		border: 1px solid var(--tp-border-strong);
 		border-radius: 999px;
-		background: #141a2a;
-		color: #c8d2fa;
+		background: var(--tp-accent-bg);
+		color: var(--tp-text);
 		font-size: 0.8rem;
 		animation: launchDrop 0.5s cubic-bezier(0.2, 0.84, 0.24, 1);
 	}
@@ -1454,22 +1546,22 @@ Eksempel:
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		background: #1a2236;
-		border: 1px solid #3a4a74;
+		background: var(--tp-accent-bg-strong);
+		border: 1px solid var(--tp-border-strong);
 	}
 
 	.tp-launch-title {
 		margin: 0;
 		font-size: clamp(1.8rem, 5.4vw, 2.3rem);
 		letter-spacing: -0.03em;
-		color: #f0f3ff;
+		color: var(--tp-text);
 		animation: launchRise 0.58s ease;
 	}
 
 	.tp-launch-copy {
 		margin: 0;
 		font-size: 0.88rem;
-		color: #95a0c9;
+		color: var(--tp-text-soft);
 		animation: launchFade 0.65s ease;
 	}
 
@@ -1531,7 +1623,7 @@ Eksempel:
 	/* ── Header ── */
 	.tp-header {
 		padding: var(--screen-title-top-pad, 34px) 20px 16px;
-		border-bottom: 1px solid #1e1e1e;
+		border-bottom: 1px solid var(--tp-border);
 	}
 
 
@@ -1539,7 +1631,7 @@ Eksempel:
 	/* ── Tabs ── */
 	.tp-tabs {
 		display: flex;
-		border-bottom: 1px solid #1e1e1e;
+		border-bottom: 1px solid var(--tp-border);
 		padding: 0 12px;
 		gap: 4px;
 	}
@@ -1548,7 +1640,7 @@ Eksempel:
 		background: none;
 		border: none;
 		border-bottom: 2px solid transparent;
-		color: #444;
+		color: var(--tp-text-muted);
 		font: inherit;
 		font-size: 0.78rem;
 		padding: 10px 12px;
@@ -1558,12 +1650,12 @@ Eksempel:
 	}
 
 	.tp-tab.active {
-		color: #ccc;
-		border-bottom-color: #7c8ef5;
+		color: var(--tp-text);
+		border-bottom-color: var(--tp-accent);
 	}
 
 	.tp-tab:hover:not(.active) {
-		color: #888;
+		color: var(--tp-text-soft);
 	}
 
 	/* ── Body ── */
@@ -1596,8 +1688,8 @@ Eksempel:
 
 	.bubble-user {
 		align-self: flex-end;
-		background: #1a1a2e;
-		border: 1px solid #2a2a4a;
+		background: hsl(var(--theme-hue) 28% 14%);
+		border: 1px solid hsl(var(--theme-hue) 24% 26%);
 		border-radius: 14px 14px 4px 14px;
 		padding: 9px 14px;
 		font-size: 0.88rem;
@@ -1605,6 +1697,7 @@ Eksempel:
 		max-width: 78%;
 		white-space: pre-wrap;
 		word-break: break-word;
+		color: var(--tp-text);
 	}
 
 	.chat-empty {
@@ -1659,26 +1752,6 @@ Eksempel:
 
 	.data-empty-tight {
 		padding-top: 8px;
-	}
-
-	.data-section-head {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-	}
-
-	.data-section-title {
-		margin: 0;
-		font-size: 0.92rem;
-		font-weight: 700;
-		color: #e8e8e8;
-	}
-
-	.data-section-copy {
-		margin: 0;
-		font-size: 0.78rem;
-		line-height: 1.5;
-		color: #666;
 	}
 
 	.data-new-btn {
@@ -1857,9 +1930,9 @@ Eksempel:
 	}
 
 	.goal-edit-save {
-		background: #293560;
-		color: #d5defe;
-		border: 1px solid #3a4a85;
+		background: var(--tp-accent-bg-strong);
+		color: var(--tp-text);
+		border: 1px solid var(--tp-border-strong);
 		border-radius: 10px;
 		padding: 8px 16px;
 		font: inherit;
@@ -1989,8 +2062,8 @@ Eksempel:
 
 	.goal-control-input:focus {
 		outline: none;
-		border-color: #3c4f9f;
-		box-shadow: 0 0 0 2px rgba(60, 79, 159, 0.15);
+		border-color: var(--tp-border-strong);
+		box-shadow: 0 0 0 2px hsl(var(--theme-hue) 50% 44% / 0.16);
 	}
 
 	.goal-control-actions {
@@ -1999,9 +2072,9 @@ Eksempel:
 	}
 
 	.goal-control-save {
-		background: #293560;
-		color: #d5defe;
-		border: 1px solid #3a4a85;
+		background: var(--tp-accent-bg-strong);
+		color: var(--tp-text);
+		border: 1px solid var(--tp-border-strong);
 		border-radius: 10px;
 		padding: 8px 16px;
 		font: inherit;
@@ -2045,7 +2118,7 @@ Eksempel:
 	.goal-type-btn {
 		background: #1a1a1a;
 		border: 1px solid #2a2a2a;
-		color: #7c8ef5;
+		color: var(--tp-accent);
 		font: inherit;
 		font-size: 0.82rem;
 		font-weight: 600;
@@ -2057,7 +2130,7 @@ Eksempel:
 
 	.goal-type-btn:hover {
 		background: #242424;
-		border-color: #3c4f9f;
+		border-color: var(--tp-border-strong);
 	}
 
 	.goals-empty {
@@ -2074,7 +2147,7 @@ Eksempel:
 	.goals-new-btn {
 		background: #1a1a1a;
 		border: 1px solid #2a2a2a;
-		color: #7c8ef5;
+		color: var(--tp-accent);
 		font: inherit;
 		font-size: 0.8rem;
 		padding: 8px 16px;
@@ -2289,13 +2362,16 @@ Eksempel:
 
 	.conv-back-bar {
 		padding: 8px 16px 4px;
-		border-bottom: 1px solid #1a1a1a;
+		border-bottom: 1px solid var(--tp-border);
 	}
 
 	.conv-back-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
 		background: none;
 		border: none;
-		color: #7c8ef5;
+		color: var(--tp-accent);
 		font: inherit;
 		font-size: 0.82rem;
 		padding: 4px 0;
@@ -2303,7 +2379,7 @@ Eksempel:
 	}
 
 	.conv-back-btn:hover {
-		color: #a0adff;
+		color: var(--tp-text);
 	}
 
 </style>

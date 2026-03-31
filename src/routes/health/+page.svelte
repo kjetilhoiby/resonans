@@ -1,5 +1,5 @@
 <script lang="ts">
-	import HealthDashboard from '$lib/components/ui/HealthDashboard.svelte';
+	import HealthDashboard from '$lib/components/domain/HealthDashboard.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

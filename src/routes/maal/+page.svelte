@@ -1,5 +1,5 @@
 <script lang="ts">
-	import GoalCard from '$lib/components/ui/GoalCard.svelte';
+	import GoalCard from '$lib/components/composed/GoalCard.svelte';
 	import { page } from '$app/stores';
 	import type { PageData } from './$types';
 

@@ -3,11 +3,19 @@
 	import PeriodPills from '$lib/components/ui/PeriodPills.svelte';
 	import StreakBadge from '$lib/components/ui/StreakBadge.svelte';
 	import ChatBubble from '$lib/components/ui/ChatBubble.svelte';
+	import ChatInput from '$lib/components/ui/ChatInput.svelte';
 	import RelationSparkline from '$lib/components/ui/RelationSparkline.svelte';
+	import Section from '$lib/components/ui/Section.svelte';
+	import CompactRecordList from '$lib/components/ui/CompactRecordList.svelte';
+	import ScreenTitle from '$lib/components/ui/ScreenTitle.svelte';
+	import Icon from '$lib/components/ui/Icon.svelte';
+	import { THEME_HUES, getThemeHueStyle, type ThemeHueKey } from '$lib/domain/theme-hues';
 
 	const sections = [
 		'Designprinsipper',
+		'Layout & Structure',
 		'Knapper',
+		'Ikoner',
 		'Widgets',
 		'Chat-bobler',
 		'Input & skjema',
@@ -59,6 +67,50 @@
 	const emojiSet = ['😔', '😐', '🙂', '😊', '🤩'];
 
 	let energyVal = $state<number | null>(null);
+
+	type DesignIconToken =
+		| 'chat'
+		| 'camera'
+		| 'wave'
+		| 'checkin'
+		| 'file'
+		| 'goals'
+		| 'settings'
+		| 'back'
+		| 'forward'
+		| 'search'
+		| 'refresh'
+		| 'close';
+
+	const iconSpecs: Array<{
+		token: DesignIconToken;
+		label: string;
+		legacy: string;
+	}> = [
+		{ token: 'chat', label: 'Samtale', legacy: '◈ / 💬' },
+		{ token: 'camera', label: 'Kamera', legacy: '◉' },
+		{ token: 'wave', label: 'Lyd', legacy: '∿' },
+		{ token: 'checkin', label: 'Sjekk inn', legacy: '◐' },
+		{ token: 'file', label: 'Fil', legacy: '▣' },
+		{ token: 'goals', label: 'Mål', legacy: '◎ / 🎯' },
+		{ token: 'settings', label: 'Innstillinger', legacy: '⚙ / ⚙️' },
+		{ token: 'back', label: 'Tilbake', legacy: '←' },
+		{ token: 'forward', label: 'Frem', legacy: '→' },
+		{ token: 'search', label: 'Søk', legacy: 'inline SVG' },
+		{ token: 'refresh', label: 'Oppdater', legacy: 'inline SVG' },
+		{ token: 'close', label: 'Lukk', legacy: '✕ / ×' }
+	];
+
+	let iconThemeHue = $state(THEME_HUES.default);
+	let iconThemeMode = $state<'dark' | 'light'>('dark');
+	const iconThemePresets: Array<{ key: ThemeHueKey; name: string; hue: number; note: string }> = [
+		{ key: 'default', name: 'Default', hue: THEME_HUES.default, note: 'Base for hele appen' },
+		{ key: 'relations', name: 'Relasjoner', hue: THEME_HUES.relations, note: 'Rolig grønn for parforhold' },
+		{ key: 'health', name: 'Helse', hue: THEME_HUES.health, note: 'Kjølig grønn-blå' },
+		{ key: 'economy', name: 'Økonomi', hue: THEME_HUES.economy, note: 'Strammere amber' },
+		{ key: 'literature', name: 'Litteratur', hue: THEME_HUES.literature, note: 'Varm og rolig lesetone' },
+		{ key: 'work', name: 'Arbeid', hue: THEME_HUES.work, note: 'Kjølig fokusfarge' }
+	];
 
 	// ── Ukeplan-demo ────────────────────────────────────────────────────────────
 	let weekGoalChecks = $state([true, false, false]);
@@ -146,6 +198,66 @@
 			</div>
 		</section>
 
+		<!-- ══ LAYOUT & STRUCTURE ══════════════════════════════════════════════════════ -->
+		<section id="Layout & Structure" class="section">
+			<h2 class="section-heading">Layout & Structure</h2>
+			<p class="section-desc">
+				Base komponenter for layout og struktur. Brukes på tvers av alle dashboards.
+			</p>
+
+			<!-- Section -->
+			<h3 class="subsection">Section</h3>
+			<p class="section-desc">
+				Standard contentwrapper: <code>Section.svelte</code>. Mørkegrå bakgrunn (#141414), avrundet (18px), ingen border.
+				Valgfri tittel og meta-info (f.eks. "3 items").
+			</p>
+
+			<div style="max-width: 420px; display: flex; flex-direction: column; gap: 12px;">
+				<Section title="Eksempel uten innhold">
+					<p style="margin: 0; color: #888; font-size: 0.82rem;">Dette er innholdet i seksjonen.</p>
+				</Section>
+
+				<Section title="Med metadata" meta="3 items">
+					<ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px;">
+						<li style="color: #aaa; font-size: 0.82rem;">• Item 1</li>
+						<li style="color: #aaa; font-size: 0.82rem;">• Item 2</li>
+						<li style="color: #aaa; font-size: 0.82rem;">• Item 3</li>
+					</ul>
+				</Section>
+
+				<Section>
+					<p style="margin: 0; color: #888; font-size: 0.82rem;">Seksjon uten tittel</p>
+				</Section>
+			</div>
+
+			<!-- ScreenTitle -->
+			<h3 class="subsection">ScreenTitle</h3>
+			<p class="section-desc">
+				Standard page header med tittel og valgfri undertekst: <code>ScreenTitle.svelte</code>
+			</p>
+			<div style="max-width: 420px;">
+				<ScreenTitle title="Helse" subtitle="Vekt, løping, søvn og aktivitet" />
+			</div>
+
+			<!-- CompactRecordList -->
+			<h3 class="subsection">CompactRecordList</h3>
+			<p class="section-desc">
+				Kompakt liste med tittel, label og meta-info: <code>CompactRecordList.svelte</code>.
+				Brukes for kilder, kontoer, siste transaksjoner osv.
+			</p>
+			<div style="max-width: 420px;">
+				<CompactRecordList
+					title="Kilder"
+					items={[
+						{ id: '1', title: 'Withings Account', subtitle: 'withings', meta: 'Synket 30.3., 13:15' },
+						{ id: '2', title: 'Apple Health', subtitle: 'apple', meta: 'Synket 29.3., 08:42' },
+						{ id: '3', title: 'Strava', subtitle: 'strava', meta: 'Ikke synket' }
+					]}
+					emptyText="Ingen kilder ennå."
+				/>
+			</div>
+		</section>
+
 		<!-- ══ KNAPPER ══════════════════════════════════════════════════════════ -->
 		<section id="Knapper" class="section">
 			<h2 class="section-heading">Knapper</h2>
@@ -185,15 +297,104 @@
 				</div>
 
 				<div class="variant">
-					<button class="btn-icon">⚙️</button>
+					<button class="btn-icon"><Icon name="settings" size={16} /></button>
 					<span class="vname">Ikon<br><code>.btn-icon</code></span>
 				</div>
 
 				<div class="variant">
-					<button class="btn-icon-danger">×</button>
+					<button class="btn-icon-danger"><Icon name="close" size={14} /></button>
 					<span class="vname">Ikon · slett<br><code>.btn-icon-danger</code></span>
 				</div>
 
+			</div>
+		</section>
+
+		<!-- ══ IKONER ═══════════════════════════════════════════════════════════ -->
+		<section id="Ikoner" class="section">
+			<h2 class="section-heading">Ikoner</h2>
+			<p class="section-desc">
+				Forslag til Resonans v1 ikonsett. Eget ikonsett brukes for handling og navigasjon; emoji beholdes for
+				domene, stemning og personlig kontekst.
+			</p>
+			<p class="section-desc">
+				Theme-lab: Bakgrunn og forgrunn drives av <code>hsl(hue, saturation, lightness)</code>, der vi holder hue konstant
+				per tema og justerer lyshet i trinn. Det gir myke overganger mellom temaer.
+			</p>
+			<p class="section-desc">
+				Samme rigg skal ogsa kunne brukes i darkmode og lightmode: hue beholdes, mens lyshetsstigen for
+				bakgrunn, border og tekst byttes per modus.
+			</p>
+
+			<div class="icon-theme-lab" class:light-mode={iconThemeMode === 'light'} style={`--icon-hue:${iconThemeHue};`}>
+				<div class="icon-theme-controls">
+					<div class="icon-hue-row">
+						<label for="icon-hue" class="icon-hue-label">Tema-hue</label>
+						<input id="icon-hue" type="range" min="0" max="360" step="1" bind:value={iconThemeHue} class="icon-hue-slider" />
+						<span class="icon-hue-value">{iconThemeHue}°</span>
+					</div>
+					<div class="icon-mode-row" role="tablist" aria-label="Visningsmodus">
+						<button
+							type="button"
+							class="icon-mode-btn"
+							class:active={iconThemeMode === 'dark'}
+							onclick={() => (iconThemeMode = 'dark')}
+						>Dark</button>
+						<button
+							type="button"
+							class="icon-mode-btn"
+							class:active={iconThemeMode === 'light'}
+							onclick={() => (iconThemeMode = 'light')}
+						>Light</button>
+					</div>
+					<div class="icon-preset-row">
+						{#each iconThemePresets as preset}
+							<button
+								type="button"
+								class="icon-preset-btn"
+								class:active={iconThemeHue === preset.hue}
+								onclick={() => (iconThemeHue = preset.hue)}
+							>
+								<span>{preset.name}</span>
+								<small>{preset.note}</small>
+							</button>
+						{/each}
+					</div>
+					<div class="icon-token-strip" aria-label="Fargetokens">
+						<div class="icon-token-swatch">
+							<span class="icon-token-dot icon-token-dot--bg0"></span>
+							<span>bg-0</span>
+						</div>
+						<div class="icon-token-swatch">
+							<span class="icon-token-dot icon-token-dot--bg1"></span>
+							<span>bg-1</span>
+						</div>
+						<div class="icon-token-swatch">
+							<span class="icon-token-dot icon-token-dot--bg2"></span>
+							<span>bg-2</span>
+						</div>
+						<div class="icon-token-swatch">
+							<span class="icon-token-dot icon-token-dot--border"></span>
+							<span>border</span>
+						</div>
+						<div class="icon-token-swatch">
+							<span class="icon-token-dot icon-token-dot--fg"></span>
+							<span>fg</span>
+						</div>
+					</div>
+				</div>
+
+				<div class="icon-grid">
+					{#each iconSpecs as icon}
+						<article class="icon-card">
+							<div class="icon-preview" aria-hidden="true">
+								<Icon name={icon.token} size={24} />
+							</div>
+							<p class="icon-token">ri-{icon.token}</p>
+							<p class="icon-label">{icon.label}</p>
+							<p class="icon-legacy">Erstatter: {icon.legacy}</p>
+						</article>
+					{/each}
+				</div>
 			</div>
 		</section>
 
@@ -378,6 +579,17 @@
 					<ChatBubble role="bot" text="✦ Prosjekt opprettet: Sykkelreparasjon." branch="Prosjekter" />
 				{/if}
 			</div>
+
+			<h3 class="subsection">ChatInput</h3>
+			<p class="section-desc">
+				<code>ChatInput.svelte</code> — gjenbrukbar meldingsboks med auto-resize textarea.
+			</p>
+			<div style="max-width: 420px;">
+				<ChatInput
+					placeholder="Skriv en melding…"
+					onsubmit={(msg) => console.log('Sendt:', msg)}
+				/>
+			</div>
 		</section>
 
 		<!-- ══ INPUT & SKJEMA ═══════════════════════════════════════════════════ -->
@@ -473,40 +685,165 @@
 		<!-- ══ HJEMSKJERM ════════════════════════════════════════════════════════ -->
 		<section id="Hjemskjerm" class="section">
 			<h2 class="section-heading">Hjemskjerm</h2>
-			<p class="section-desc">Tre soner + tittel. Høydefordeling: 10 / 35 / 20 / 35 (tittel / widgets / tema / inputs). Ingen tab-bar.</p>
+			<p class="section-desc">Tre soner + tittel. Her utforsker vi forskjellige måter å prioritere plass på.</p>
 
-			<h3 class="subsection">Sonefordeling</h3>
-			<div class="hs-mockup">
-				<div class="hs-zone hs-title">
-					<span class="hs-zone-label">Tittel</span>
-					<span class="hs-zone-pct">10 %</span>
-				</div>
-				<div class="hs-zone hs-widgets">
-					<span class="hs-zone-label">Widget-samling</span>
-					<span class="hs-zone-pct">35 %</span>
-					<div class="hs-widget-dots">
-						{#each [1,2,3,4] as _}
-							<div class="hs-dot"></div>
-						{/each}
+			<h3 class="subsection">Layout-alternativer — høydefordeling</h3>
+			<p class="section-desc">Hvilken balanse mellom widgets, tema og input gir best brukeropplevelse?</p>
+			
+			<div class="layout-compare">
+				<!-- NÅVÆRENDE -->
+				<div class="layout-option">
+					<p class="layout-label">Nåværende (10/35/20/35)</p>
+					<div class="hs-mockup">
+						<div class="hs-zone hs-title" style="height: 10%">
+							<span class="hs-zone-label">Tittel</span>
+							<span class="hs-zone-pct">10%</span>
+						</div>
+						<div class="hs-zone hs-widgets" style="height: 35%">
+							<span class="hs-zone-label">Widgets</span>
+							<span class="hs-zone-pct">35%</span>
+							<div class="hs-widget-dots">
+								{#each [1,2,3,4,5,6] as _}
+									<div class="hs-dot"></div>
+								{/each}
+							</div>
+						</div>
+						<div class="hs-zone hs-tema" style="height: 20%">
+							<span class="hs-zone-label">Tema</span>
+							<span class="hs-zone-pct">20%</span>
+							<div class="hs-chips">
+								{#each ['Trening', 'Økonomi'] as t}
+									<span class="hs-chip">{t}</span>
+								{/each}
+							</div>
+						</div>
+						<div class="hs-zone hs-input" style="height: 35%">
+							<span class="hs-zone-label">Input</span>
+							<span class="hs-zone-pct">35%</span>
+						</div>
+					</div>
+					<div class="layout-notes">
+						<p class="note-item">✗ Widgets tar mye plass</p>
+						<p class="note-item">✗ Tema får lite rom (2x1 maks)</p>
+						<p class="note-item">✓ Input har god plass</p>
 					</div>
 				</div>
-				<div class="hs-zone hs-tema">
-					<span class="hs-zone-label">Tema-rail</span>
-					<span class="hs-zone-pct">20 %</span>
-					<div class="hs-chips">
-						{#each ['Trening', 'Søvn', 'Økonomi'] as t}
-							<span class="hs-chip">{t}</span>
-						{/each}
+
+				<!-- BALANSERT -->
+				<div class="layout-option">
+					<p class="layout-label">Balansert (10/25/30/35)</p>
+					<div class="hs-mockup">
+						<div class="hs-zone hs-title" style="height: 10%">
+							<span class="hs-zone-label">Tittel</span>
+							<span class="hs-zone-pct">10%</span>
+						</div>
+						<div class="hs-zone hs-widgets" style="height: 25%">
+							<span class="hs-zone-label">Widgets</span>
+							<span class="hs-zone-pct">25%</span>
+							<div class="hs-widget-dots">
+								{#each [1,2,3,4] as _}
+									<div class="hs-dot"></div>
+								{/each}
+							</div>
+						</div>
+						<div class="hs-zone hs-tema hs-tema-large" style="height: 30%">
+							<span class="hs-zone-label">Tema</span>
+							<span class="hs-zone-pct">30%</span>
+							<div class="tema-grid-preview">
+								{#each [1,2,3,4] as _}
+									<div class="tema-box"></div>
+								{/each}
+							</div>
+						</div>
+						<div class="hs-zone hs-input" style="height: 35%">
+							<span class="hs-zone-label">Input</span>
+							<span class="hs-zone-pct">35%</span>
+						</div>
+					</div>
+					<div class="layout-notes">
+						<p class="note-item">✓ Widgets kompakte (4 viktigste)</p>
+						<p class="note-item">✓ Tema 2x2 grid passer!</p>
+<p class="note-item">✓ Input beholder viktighet</p>
 					</div>
 				</div>
-				<div class="hs-zone hs-input">
-					<span class="hs-zone-label">Input-samling</span>
-					<span class="hs-zone-pct">35 %</span>
-					<div class="hs-input-tools">
-						{#each ['💬 Chat', '📷 Bilde', '😊 Humør', '⚡ Energi'] as tool}
-							<span class="hs-chip">{tool}</span>
-						{/each}
+
+				<!-- TEMA-FOKUSERT -->
+				<div class="layout-option">
+					<p class="layout-label">Tema-fokusert (10/20/35/35)</p>
+					<div class="hs-mockup">
+						<div class="hs-zone hs-title" style="height: 10%">
+							<span class="hs-zone-label">Tittel</span>
+							<span class="hs-zone-pct">10%</span>
+						</div>
+						<div class="hs-zone hs-widgets" style="height: 20%">
+							<span class="hs-zone-label">Widgets</span>
+							<span class="hs-zone-pct">20%</span>
+							<div class="hs-widget-dots">
+								{#each [1,2,3] as _}
+									<div class="hs-dot"></div>
+								{/each}
+							</div>
+						</div>
+						<div class="hs-zone hs-tema hs-tema-large" style="height: 35%">
+							<span class="hs-zone-label">Tema</span>
+							<span class="hs-zone-pct">35%</span>
+							<div class="tema-grid-preview">
+								{#each [1,2,3,4,5,6] as _}
+									<div class="tema-box"></div>
+								{/each}
+							</div>
+						</div>
+						<div class="hs-zone hs-input" style="height: 35%">
+							<span class="hs-zone-label">Input</span>
+							<span class="hs-zone-pct">35%</span>
+						</div>
 					</div>
+					<div class="layout-notes">
+						<p class="note-item">✓ Tema får maksimal vekt (2x3)</p>
+						<p class="note-item">? Widgets minimale (3 prioriterte)</p>
+						<p class="note-item">✓ Input uendret</p>
+					</div>
+				</div>
+			</div>
+
+			<h3 class="subsection" style="margin-top: 40px">Forbedrede komponenter (v2)</h3>
+			<p class="section-desc">Store runde tema-knapper med hvite ikoner · input med felt + ikon-knapper</p>
+			
+			<!-- TEMA-KNAPPER V2 -->
+			<div class="hs-v2-demo">
+				<p class="demo-label">Tema-knapper — store runde med ikoner</p>
+				
+				<div class="tema-v3-grid">
+					{#each [
+						{emoji: '💪', name: 'Helse'},
+						{emoji: '💰', name: 'Økonomi'},
+						{emoji: '❤️', name: 'Partner'},
+						{emoji: '🧘', name: 'Meditasjon'}
+					] as t}
+						<button class="tema-btn-v3" style={getThemeHueStyle(t.name)}>
+							<span class="tema-btn-v3-icon">{t.emoji}</span>
+							<span class="tema-btn-v3-label">{t.name}</span>
+						</button>
+					{/each}
+				</div>
+			</div>
+
+			<!-- INPUT V3: FELT + IKON-KNAPPER -->
+			<div class="hs-v2-demo">
+				<p class="demo-label">Input — felt + tre ikon-knapper</p>
+				<div class="input-v4">
+					<div class="input-field-wrap">
+						<input class="input-field-v4" type="text" placeholder="Hva tenker du på?" />
+					</div>
+					<button class="icon-btn-v4" aria-label="Send">
+						<Icon name="forward" size={16} />
+					</button>
+					<button class="icon-btn-v4" aria-label="Legg ved">
+						<Icon name="attach" size={16} />
+					</button>
+					<button class="icon-btn-v4" aria-label="Sjekk inn">
+						<Icon name="checkin" size={16} />
+					</button>
 				</div>
 			</div>
 		</section>
@@ -854,9 +1191,9 @@
 				<div class="cta-variant-group">
 					<span class="cta-state-label">Ingen temaer · ingen ukeplan</span>
 					<button class="up-cta">
-						<span class="up-cta-icon">◎</span>
+						<span class="up-cta-icon"><Icon name="goals" size={16} /></span>
 						<span class="up-cta-text">Lag en ukeplan</span>
-						<span class="up-cta-arrow">→</span>
+						<span class="up-cta-arrow"><Icon name="forward" size={16} /></span>
 					</button>
 				</div>
 
@@ -883,7 +1220,7 @@
 					<button class="up-cta up-cta--reflect">
 						<span class="up-cta-icon">🌙</span>
 						<span class="up-cta-text">Gjør ukens mini-gjennomgang</span>
-						<span class="up-cta-arrow">→</span>
+						<span class="up-cta-arrow"><Icon name="forward" size={16} /></span>
 					</button>
 				</div>
 
@@ -1182,6 +1519,222 @@
 		white-space: nowrap;
 	}
 
+	/* ── Ikon-grid ── */
+	.icon-theme-lab {
+		--icon-bg-0: hsl(var(--icon-hue) 100% 5%);
+		--icon-bg-1: hsl(var(--icon-hue) 58% 8%);
+		--icon-bg-2: hsl(var(--icon-hue) 44% 12%);
+		--icon-border: hsl(var(--icon-hue) 26% 28%);
+		--icon-border-strong: hsl(var(--icon-hue) 42% 40%);
+		--icon-fg: hsl(var(--icon-hue) 92% 78%);
+		--icon-fg-soft: hsl(var(--icon-hue) 62% 74%);
+		--icon-text: hsl(var(--icon-hue) 26% 90%);
+		--icon-muted: hsl(var(--icon-hue) 20% 68%);
+		--icon-subtle: hsl(var(--icon-hue) 14% 52%);
+		display: flex;
+		flex-direction: column;
+		gap: 14px;
+		transition: background-color 260ms ease, border-color 260ms ease, color 260ms ease;
+	}
+
+	.icon-theme-lab.light-mode {
+		--icon-bg-0: hsl(var(--icon-hue) 70% 98%);
+		--icon-bg-1: hsl(var(--icon-hue) 46% 96%);
+		--icon-bg-2: hsl(var(--icon-hue) 30% 92%);
+		--icon-border: hsl(var(--icon-hue) 20% 78%);
+		--icon-border-strong: hsl(var(--icon-hue) 34% 58%);
+		--icon-fg: hsl(var(--icon-hue) 42% 30%);
+		--icon-fg-soft: hsl(var(--icon-hue) 50% 38%);
+		--icon-text: hsl(var(--icon-hue) 22% 18%);
+		--icon-muted: hsl(var(--icon-hue) 16% 34%);
+		--icon-subtle: hsl(var(--icon-hue) 14% 44%);
+	}
+
+	.icon-theme-controls {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		background: var(--icon-bg-1);
+		border: 1px solid var(--icon-border);
+		border-radius: 12px;
+		padding: 12px;
+	}
+
+	.icon-hue-row {
+		display: grid;
+		grid-template-columns: auto 1fr auto;
+		align-items: center;
+		gap: 10px;
+	}
+
+	.icon-hue-label {
+		font-size: 0.72rem;
+		font-weight: 600;
+		color: var(--icon-muted);
+	}
+
+	.icon-hue-slider {
+		width: 100%;
+		accent-color: var(--icon-fg-soft);
+	}
+
+	.icon-hue-value {
+		font-size: 0.72rem;
+		color: var(--icon-fg-soft);
+		font-family: 'SF Mono', 'Fira Mono', monospace;
+	}
+
+	.icon-mode-row {
+		display: inline-flex;
+		gap: 6px;
+		align-self: flex-start;
+		background: var(--icon-bg-0);
+		border: 1px solid var(--icon-border);
+		border-radius: 999px;
+		padding: 4px;
+	}
+
+	.icon-mode-btn {
+		padding: 5px 10px;
+		border: none;
+		background: transparent;
+		color: var(--icon-muted);
+		border-radius: 999px;
+		font: inherit;
+		font-size: 0.72rem;
+		cursor: pointer;
+		transition: background-color 220ms ease, color 220ms ease;
+	}
+
+	.icon-mode-btn.active {
+		background: var(--icon-bg-2);
+		color: var(--icon-fg);
+	}
+
+	.icon-preset-row {
+		display: flex;
+		gap: 8px;
+		flex-wrap: wrap;
+	}
+
+	.icon-preset-btn {
+		padding: 8px 10px;
+		border-radius: 12px;
+		border: 1px solid var(--icon-border);
+		background: var(--icon-bg-0);
+		color: var(--icon-muted);
+		font: inherit;
+		font-size: 0.7rem;
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 2px;
+		cursor: pointer;
+		transition: background-color 220ms ease, border-color 220ms ease, color 220ms ease;
+	}
+
+	.icon-preset-btn small {
+		font-size: 0.62rem;
+		color: var(--icon-subtle);
+	}
+
+	.icon-preset-btn:hover {
+		border-color: var(--icon-border-strong);
+		color: var(--icon-fg-soft);
+	}
+
+	.icon-preset-btn.active {
+		border-color: var(--icon-border-strong);
+		background: var(--icon-bg-2);
+		color: var(--icon-fg);
+	}
+
+	.icon-token-strip {
+		display: flex;
+		gap: 10px;
+		flex-wrap: wrap;
+	}
+
+	.icon-token-swatch {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 0.68rem;
+		color: var(--icon-muted);
+	}
+
+	.icon-token-dot {
+		width: 12px;
+		height: 12px;
+		border-radius: 999px;
+		border: 1px solid var(--icon-border);
+		display: inline-block;
+	}
+
+	.icon-token-dot--bg0 { background: var(--icon-bg-0); }
+	.icon-token-dot--bg1 { background: var(--icon-bg-1); }
+	.icon-token-dot--bg2 { background: var(--icon-bg-2); }
+	.icon-token-dot--border { background: var(--icon-border); border-color: var(--icon-border-strong); }
+	.icon-token-dot--fg { background: var(--icon-fg); border-color: transparent; }
+
+	.icon-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+		gap: 14px;
+	}
+
+	.icon-card {
+		background: var(--icon-bg-1);
+		border: 1px solid var(--icon-border);
+		border-radius: 14px;
+		padding: 12px;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		transition: border-color 240ms ease, background-color 240ms ease;
+	}
+
+	.icon-card:hover {
+		border-color: var(--icon-border-strong);
+		background: var(--icon-bg-2);
+	}
+
+	.icon-preview {
+		width: 44px;
+		height: 44px;
+		border-radius: 12px;
+		display: grid;
+		place-items: center;
+		background: var(--icon-bg-0);
+		border: 1px solid var(--icon-border);
+		color: var(--icon-fg);
+		transition: border-color 260ms ease, background-color 260ms ease, color 260ms ease;
+	}
+
+	.icon-token {
+		margin: 0;
+		font-family: 'SF Mono', 'Fira Mono', monospace;
+		font-size: 0.68rem;
+		color: var(--icon-fg-soft);
+		transition: color 260ms ease;
+	}
+
+	.icon-label {
+		margin: 0;
+		font-size: 0.78rem;
+		font-weight: 600;
+		color: var(--icon-text);
+		transition: color 260ms ease;
+	}
+
+	.icon-legacy {
+		margin: 0;
+		font-size: 0.67rem;
+		color: var(--icon-subtle);
+		line-height: 1.35;
+		transition: color 260ms ease;
+	}
+
 	/* ── Ring-center-innhold (i snippets til GoalRing) ── */
 	.rv-big {
 		font-size: 0.9rem;
@@ -1307,6 +1860,44 @@
 	}
 
 	/* ── Hjemskjerm-mockup ── */
+	.layout-compare {
+		display: flex;
+		gap: 24px;
+		flex-wrap: wrap;
+		margin-bottom: 40px;
+	}
+
+	.layout-option {
+		flex: 1;
+		min-width: 240px;
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+	}
+
+	.layout-label {
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: #888;
+		text-align: center;
+	}
+
+	.layout-notes {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		font-size: 0.7rem;
+		padding: 8px;
+		background: #0d0d0d;
+		border-radius: 8px;
+	}
+
+	.note-item {
+		margin: 0;
+		color: #666;
+		line-height: 1.4;
+	}
+
 	.hs-mockup {
 		display: flex;
 		flex-direction: column;
@@ -1376,10 +1967,22 @@
 		font-size: 0.65rem;
 	}
 
-	.hs-input-tools {
-		display: flex;
+	.hs-tema-large {
+		background: #0f0f14 !important;
+	}
+
+	.tema-grid-preview {
+		display: grid;
+		grid-template-columns: repeat(2, 1fr);
 		gap: 6px;
-		flex-wrap: wrap;
+		flex: 1;
+	}
+
+	.tema-box {
+		background: #1a1a1a;
+		border: 1px solid #2a2a2a;
+		border-radius: 12px;
+		aspect-ratio: 1;
 	}
 
 	/* ── Interaksjonsflyter ── */
@@ -2209,4 +2812,111 @@
                 padding-left: 19px;
         }
 
+	/* ── Hjemskjerm v2 demos ── */
+	.hs-v2-demo {
+		margin-bottom: 32px;
+	}
+
+	.demo-label {
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: #888;
+		margin-bottom: 12px;
+	}
+
+	/* Tema v3 (store runde knapper med hvite ikoner) */
+	.tema-v3-grid {
+		display: grid;
+		grid-template-columns: repeat(2, 1fr);
+		gap: 14px;
+		max-width: 400px;
+	}
+
+	.tema-btn-v3 {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 10px;
+		background: #1a1a1a;
+		border: 1px solid #2a2a2a;
+		border-radius: 20px;
+		padding: 28px 16px;
+		cursor: pointer;
+		transition: background 0.15s;
+	}
+
+	.tema-btn-v3:hover {
+		background: #222;
+	}
+
+	.tema-btn-v3-icon {
+		font-size: 2rem;
+	}
+
+	.tema-btn-v3-label {
+		font-size: 0.85rem;
+		color: #ccc;
+		font-weight: 500;
+	}
+
+	/* Input v4 (felt + tre ikon-knapper) */
+	.input-v4 {
+		display: flex;
+		gap: 10px;
+		align-items: center;
+		max-width: 500px;
+	}
+
+	.input-v4 .input-field-wrap {
+		flex: 1;
+	}
+
+	.input-field-v4 {
+		flex: 1;
+		background: #161616;
+		border: 1px solid #2a2a2a;
+		border-radius: 14px;
+		padding: 12px 16px;
+		color: #ccc;
+		font: inherit;
+		font-size: 0.88rem;
+		outline: none;
+		transition: border-color 0.15s;
+	}
+
+	.input-field-v4:focus {
+		border-color: #3c4f9f;
+	}
+
+	.input-field-v4::placeholder {
+		color: #555;
+	}
+
+	.icon-btn-v4 {
+		width: 42px;
+		height: 42px;
+		border-radius: 12px;
+		background: #1a1a1a;
+		border: 1px solid #2a2a2a;
+		color: #ccc;
+		font-size: 1.1rem;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+		transition: background 0.15s, color 0.15s;
+		flex-shrink: 0;
+	}
+
+	.icon-btn-v4:hover {
+		background: #222;
+		color: #fff;
+	}
+
+	.icon-btn-v4:active {
+		transform: scale(0.95);
+	}
+
 </style>
+

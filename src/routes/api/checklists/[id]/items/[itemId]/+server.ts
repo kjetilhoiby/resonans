@@ -3,11 +3,10 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { checklistItems, checklists } from '$lib/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
-import { USER_ID_HEADER_NAME } from '$lib/server/request-user';
 
 // PATCH /api/checklists/[id]/items/[itemId] — toggle checked / endre tekst
-export const PATCH: RequestHandler = async ({ params, request }) => {
-	const userId = request.headers.get(USER_ID_HEADER_NAME) ?? 'default-user';
+export const PATCH: RequestHandler = async ({ locals, params, request }) => {
+	const userId = locals.userId;
 	const body = await request.json() as { checked?: boolean; text?: string };
 
 	const updates: Record<string, unknown> = {};
@@ -50,8 +49,8 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 };
 
 // DELETE /api/checklists/[id]/items/[itemId]
-export const DELETE: RequestHandler = async ({ params, request }) => {
-	const userId = request.headers.get(USER_ID_HEADER_NAME) ?? 'default-user';
+export const DELETE: RequestHandler = async ({ locals, params }) => {
+	const userId = locals.userId;
 
 	const deleted = await db
 		.delete(checklistItems)

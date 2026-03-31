@@ -22,7 +22,7 @@ Denne testen bruker forhåndsdefinerte svar og krever ingen API-nøkler.
    ```
 
 3. **Test chat:**
-   - Åpne [http://localhost:5173](http://localhost:5173)
+   - Åpne [http://localhost:5174](http://localhost:5174)
    - Skriv meldinger og se mock-responser
 
 ## Test 2: Ekte OpenAI Chat
@@ -78,7 +78,7 @@ Denne testen bruker forhåndsdefinerte svar og krever ingen API-nøkler.
    }
    ```
    
-   Besøk: [http://localhost:5173/api/db-test](http://localhost:5173/api/db-test)
+   Besøk: [http://localhost:5174/api/db-test](http://localhost:5174/api/db-test)
 
 ## Test 4: End-to-end
 
@@ -117,7 +117,7 @@ For å teste ytelse:
 npm install -g autocannon
 
 # Test chat API
-autocannon -c 10 -d 10 http://localhost:5173/api/chat-mock
+autocannon -c 10 -d 10 http://localhost:5174/api/chat-mock
 ```
 
 Dette sender 10 samtidige requests i 10 sekunder.

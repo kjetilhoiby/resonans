@@ -4,7 +4,7 @@
  * Setup:
  * 1. Create Strava API app: https://www.strava.com/settings/api
  * 2. Add STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET to .env
- * 3. Set callback URL: http://localhost:5173/api/sensors/strava/callback
+ * 3. Set callback URL: http://localhost:5174/api/sensors/strava/callback
  * 
  * OAuth Scopes needed:
  * - activity:read - read activity data

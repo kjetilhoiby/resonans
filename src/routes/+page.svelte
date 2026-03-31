@@ -1,5 +1,5 @@
 <script lang="ts">
-	import HomeScreen from '$lib/components/ui/HomeScreen.svelte';
+	import HomeScreen from '$lib/components/domain/HomeScreen.svelte';
 
 	interface Theme {
 		id: string;

@@ -6,7 +6,7 @@
     onTaskComplete  kalt med taskId når bruker logger fremskritt
 -->
 <script lang="ts">
-	import GoalRing from './GoalRing.svelte';
+	import GoalRing from '../ui/GoalRing.svelte';
 
 	interface ProgressRecord {
 		id: string;

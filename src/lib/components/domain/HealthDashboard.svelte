@@ -8,9 +8,9 @@
 		type GoalTrack,
 		type WidgetWindow
 	} from '$lib/domain/goal-tracks';
-	import CompactRecordList from './CompactRecordList.svelte';
-	import GoalRing from './GoalRing.svelte';
-	import PeriodPills from './PeriodPills.svelte';
+	import CompactRecordList from '../ui/CompactRecordList.svelte';
+	import GoalRing from '../ui/GoalRing.svelte';
+	import PeriodPills from '../ui/PeriodPills.svelte';
 
 	type WindowMode = '7d' | '30d' | '365d' | 'week' | 'month' | 'year';
 
