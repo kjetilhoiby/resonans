@@ -69,6 +69,70 @@ function getDefaultAttachmentLabel(attachment: AttachmentPayload | null): string
 	return `📎 ${attachment.name || 'Vedlegg'}`;
 }
 
+interface DuckDuckGoTopic {
+	FirstURL?: string;
+	Text?: string;
+	Topics?: DuckDuckGoTopic[];
+}
+
+function collectDuckDuckGoTopics(topics: DuckDuckGoTopic[], maxItems = 6): Array<{ title: string; url: string }> {
+	const collected: Array<{ title: string; url: string }> = [];
+	const visit = (items: DuckDuckGoTopic[]) => {
+		for (const item of items) {
+			if (collected.length >= maxItems) return;
+			if (item.FirstURL && item.Text) {
+				collected.push({ title: item.Text, url: item.FirstURL });
+			}
+			if (Array.isArray(item.Topics) && item.Topics.length > 0) {
+				visit(item.Topics);
+			}
+		}
+	};
+
+	visit(topics);
+	return collected;
+}
+
+async function executeWebSearch(query: string) {
+	const searchUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+	const response = await fetch(searchUrl, {
+		headers: { Accept: 'application/json' }
+	});
+
+	if (!response.ok) {
+		throw new Error(`Web search failed with status ${response.status}`);
+	}
+
+	const payload = (await response.json()) as {
+		Heading?: string;
+		AbstractText?: string;
+		AbstractURL?: string;
+		RelatedTopics?: DuckDuckGoTopic[];
+	};
+
+	const relatedTopics = Array.isArray(payload.RelatedTopics)
+		? collectDuckDuckGoTopics(payload.RelatedTopics)
+		: [];
+
+	const primary = payload.AbstractText
+		? {
+			title: payload.Heading || 'Sammendrag',
+			snippet: payload.AbstractText,
+			url: payload.AbstractURL || ''
+		}
+		: null;
+
+	return {
+		success: true,
+		query,
+		primary,
+		results: relatedTopics,
+		message: relatedTopics.length > 0 || primary
+			? `Fant kilder på web for "${query}".`
+			: `Ingen tydelige treff for "${query}". Prøv et mer spesifikt søk.`
+	};
+}
+
 // Definer tools/functions som AI-en kan bruke
 const tools = [
 	{
@@ -505,6 +569,23 @@ const tools = [
 							}
 						},
 						required: ['queryType']
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
+					name: 'web_search',
+					description: 'Søk på web når spørsmålet handler om innhold utenfor brukerens egne sensordata, spesielt bokfakta, referanser, forfattere, kapitler eller kontekst som ikke finnes i samtalehistorikken.',
+					parameters: {
+						type: 'object',
+						properties: {
+							query: {
+								type: 'string',
+								description: 'Søkestreng for web, gjerne konkret med boktittel, forfatter og tema.'
+							}
+						},
+						required: ['query']
 					}
 				}
 			},
@@ -1221,6 +1302,41 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 						content: JSON.stringify(result),
 						tool_call_id: toolCall.id
 					});
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'web_search') {
+					const args = JSON.parse(toolCall.function.arguments) as { query?: string };
+					const searchQuery = typeof args.query === 'string' ? args.query.trim() : '';
+
+					if (!searchQuery) {
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify({
+								success: false,
+								message: 'Mangler query for web_search.'
+							}),
+							tool_call_id: toolCall.id
+						});
+						continue;
+					}
+
+					try {
+						const result = await executeWebSearch(searchQuery);
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify(result),
+							tool_call_id: toolCall.id
+						});
+					} catch (error) {
+						console.error('  🌐 Web search failed:', error);
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify({
+								success: false,
+								query: searchQuery,
+								message: 'Web search feilet. Prøv igjen med en mer konkret formulering.'
+							}),
+							tool_call_id: toolCall.id
+						});
+					}
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'create_widget') {
 					const args = JSON.parse(toolCall.function.arguments);
 					console.log('  📊 Creating widget:', args);

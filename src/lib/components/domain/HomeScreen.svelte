@@ -339,7 +339,7 @@
 			id: 'voice',
 			label: 'Lyd',
 			icon: 'wave',
-			description: 'Bruk stemmen når du vil få noe ut raskt uten å formulere deg perfekt.',
+			description: 'Bruk stemmen, eller last opp en video med lyd, når du vil få noe ut raskt uten å formulere deg perfekt.',
 			placeholder: 'Skriv stikkord for det du ville sagt høyt.',
 			helper: 'Bra for raske tanker, refleksjoner etter noe som nettopp skjedde, eller en spontan idé.'
 		},
@@ -1060,7 +1060,7 @@
 				<input
 					bind:this={voiceFileInput}
 					type="file"
-					accept="audio/*,.m4a,.mp3,.wav,.aac,.ogg,.webm"
+					accept="audio/*,video/*,.m4a,.mp3,.wav,.aac,.ogg,.webm,.mp4,.mov,.m4v"
 					class="sr-only"
 					onchange={handleVoiceFileSelect}
 				/>
@@ -1068,8 +1068,8 @@
 					{#if !voiceSelectedFile}
 						<button class="upload-zone" onclick={() => voiceFileInput?.click()}>
 							<span class="upload-zone-icon"><Icon name="wave" size={28} /></span>
-							<p class="upload-zone-label">Velg lydfil</p>
-							<p class="upload-zone-sub">Opptak · talememo · møteklipp · refleksjon</p>
+							<p class="upload-zone-label">Velg lyd- eller videofil</p>
+							<p class="upload-zone-sub">Opptak · talememo · møteklipp · skjermopptak med lyd</p>
 						</button>
 					{:else}
 						<div class="selected-file-chip">

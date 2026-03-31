@@ -28,7 +28,7 @@ interface AttachmentTriageResult {
 
 interface AttachmentExtraction {
 	contentText: string;
-	extractionKind: 'vision' | 'audio_transcript' | 'pdf_text' | 'docx_text' | 'sheet_text' | 'plain_text' | 'metadata_only';
+	extractionKind: 'vision' | 'audio_transcript' | 'video_audio_transcript' | 'pdf_text' | 'docx_text' | 'sheet_text' | 'plain_text' | 'metadata_only';
 }
 
 cloudinary.config({
@@ -42,6 +42,8 @@ function detectAttachmentKind(file: File): AttachmentKind {
 	const fileName = file.name.toLowerCase();
 
 	if (mimeType.startsWith('image/')) return 'image';
+	// Video treated as audio-like content so we can transcribe spoken content.
+	if (mimeType.startsWith('video/')) return 'audio';
 	if (mimeType.startsWith('audio/')) return 'audio';
 	if (
 		mimeType.includes('pdf') ||
@@ -215,16 +217,20 @@ async function extractSheetText(buffer: Buffer): Promise<string> {
 }
 
 async function extractTextContent(file: File, buffer: Buffer, kind: AttachmentKind): Promise<AttachmentExtraction> {
+	const mimeType = file.type.toLowerCase();
+	const fileName = file.name.toLowerCase();
+	const isVideoSource = mimeType.startsWith('video/') || ['.mp4', '.mov', '.m4v', '.webm'].some((ext) => fileName.endsWith(ext));
+
 	if (kind === 'audio') {
 		try {
 			const transcription = await openai.audio.transcriptions.create({
-				file: new File([buffer], file.name, { type: file.type || 'audio/mpeg' }),
+				file: new File([buffer], file.name, { type: file.type || (isVideoSource ? 'video/mp4' : 'audio/mpeg') }),
 				model: 'gpt-4o-mini-transcribe'
 			});
 			const transcript = cleanExtractedText(transcription.text ?? '');
 			return {
 				contentText: limitContent(transcript),
-				extractionKind: transcript ? 'audio_transcript' : 'metadata_only'
+				extractionKind: transcript ? (isVideoSource ? 'video_audio_transcript' : 'audio_transcript') : 'metadata_only'
 			};
 		} catch (error) {
 			console.error('Audio transcription failed:', error);
@@ -235,9 +241,6 @@ async function extractTextContent(file: File, buffer: Buffer, kind: AttachmentKi
 	if (kind !== 'document') {
 		return { contentText: '', extractionKind: kind === 'image' ? 'vision' : 'metadata_only' };
 	}
-
-	const fileName = file.name.toLowerCase();
-	const mimeType = file.type.toLowerCase();
 
 	try {
 		if (fileName.endsWith('.pdf') || mimeType.includes('pdf')) {
