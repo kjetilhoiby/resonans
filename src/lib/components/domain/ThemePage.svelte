@@ -9,7 +9,7 @@
     conversationId  UUID til temaets conversation (for API-kall)
 -->
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { goto, preloadCode } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { get } from 'svelte/store';
@@ -23,6 +23,7 @@
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
 	import { fetchDashboard, getCachedDashboard, type EconomicsDashboardData, type HealthDashboardData } from '$lib/client/dashboard-cache';
 	import { getThemeDashboardDefinition, resolveThemeDashboardKind } from '$lib/domain/theme-dashboard-registry';
+	import { finishNavMetric, startNavMetric } from '$lib/client/nav-metrics';
 
 	/* ── Types ──────────────────────────────────────────── */
 	interface Theme {
@@ -113,6 +114,9 @@
 	});
 
 	onMount(() => {
+		finishNavMetric('tema');
+		void preloadCode('/');
+
 		if (get(page).url.searchParams.get('handoff') !== '1') return;
 		handoffPhase = 'intro';
 		const timer = setTimeout(() => {
@@ -706,6 +710,7 @@
 	let pinchActive = false;
 
 	function goHome() {
+		startNavMetric('tema', 'home');
 		void goto('/');
 	}
 

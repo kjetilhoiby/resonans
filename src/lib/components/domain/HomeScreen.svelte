@@ -8,7 +8,7 @@
     themes    aktive temaer fra DB (for tema-grid)
 -->
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { goto, preloadCode } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { fly } from 'svelte/transition';
@@ -23,6 +23,7 @@
 	import ChecklistSheet from '../ui/ChecklistSheet.svelte';
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
 	import { prefetchDashboard } from '$lib/client/dashboard-cache';
+	import { finishNavMetric, startNavMetric } from '$lib/client/nav-metrics';
 	import { resolveThemeDashboardKind, type DashboardKind } from '$lib/domain/theme-dashboard-registry';
 
 	interface Theme {
@@ -206,6 +207,8 @@
 		let cleanupPrefetch = () => {};
 
 		void (async () => {
+			finishNavMetric('home');
+
 			const cachedSummary = readCachedPayload<SensorSummary>(HOME_SENSOR_CACHE_KEY, HOME_SENSOR_CACHE_MAX_AGE_MS);
 			if (cachedSummary) {
 				sensorSummary = cachedSummary;
@@ -244,6 +247,19 @@
 
 			await fetchChecklists();
 			cleanupPrefetch = scheduleDashboardPrefetch();
+
+			// Warm up theme route code so first navigation on mobile feels snappier.
+			if (typeof window !== 'undefined') {
+				const runPreload = () => {
+					void preloadCode('/tema/*');
+				};
+
+				if ('requestIdleCallback' in window) {
+					window.requestIdleCallback(runPreload, { timeout: 1200 });
+				} else {
+					setTimeout(runPreload, 180);
+				}
+			}
 
 			if ($page.url.searchParams.get('chat') === '1') {
 				openChat();
@@ -1149,9 +1165,11 @@
 		const econMetrics = ['amount'];
 		if (healthMetrics.includes(w.metricType)) {
 			const t = themes.find((t) => t.name.trim().toLowerCase() === 'helse');
+			startNavMetric('home', 'tema');
 			void goto(t ? `/tema/${t.id}` : '/health');
 		} else if (econMetrics.includes(w.metricType)) {
 			const t = themes.find((t) => t.name.trim().toLowerCase() === 'økonomi');
+			startNavMetric('home', 'tema');
 			void goto(t ? `/tema/${t.id}` : '/economics');
 		} else {
 			void goto('/');
@@ -1264,7 +1282,7 @@
 		{#if themes.length}
 			<div class="tema-v3-grid">
 				{#each themes.slice(0, 6) as theme}
-					<button class="tema-btn-v3" style={getThemeHueStyle(theme.name)} onclick={() => goto(`/tema/${theme.id}`)}>
+					<button class="tema-btn-v3" style={getThemeHueStyle(theme.name)} onclick={() => { startNavMetric('home', 'tema'); void goto(`/tema/${theme.id}`); }}>
 						<span class="tema-btn-v3-icon">{theme.emoji}</span>
 						<span class="tema-btn-v3-label">{theme.name}</span>
 					</button>
