@@ -8,6 +8,7 @@
 		goal: number | null;
 		thresholdWarn: number | null;
 		thresholdSuccess: number | null;
+		filterCategory?: string | null;
 	}
 
 	interface Props {
@@ -41,12 +42,53 @@
 		{ hex: '#d4829a', name: 'Rosa' },
 	];
 
+	const FILTER_CATEGORIES = [
+		'dagligvare',
+		'mat',
+		'bolig',
+		'transport',
+		'helse',
+		'abonnement',
+		'underholdning',
+		'shopping',
+		'barn',
+		'forsikring',
+		'sparing',
+		'overføring',
+		'lønn',
+		'annet',
+	] as const;
+
+	const UNIT_OPTIONS: Record<string, string[]> = {
+		weight: ['kg', 'lb'],
+		sleepDuration: ['timer', 'h', 'min'],
+		steps: ['steg'],
+		distance: ['km', 'm'],
+		workoutCount: ['økter'],
+		heartrate: ['bpm'],
+		mood: ['score'],
+		screenTime: ['min', 'timer'],
+		amount: ['kr', 'NOK'],
+	};
+
 	// Lokale skjema-felt
 	let title = $state(widget.title);
 	let goalStr = $state(widget.goal != null ? String(widget.goal) : '');
 	let warnStr = $state(widget.thresholdWarn != null ? String(widget.thresholdWarn) : '');
 	let successStr = $state(widget.thresholdSuccess != null ? String(widget.thresholdSuccess) : '');
 	let color = $state(widget.color);
+	let unit = $state(widget.unit);
+	let filterCategory = $state(widget.filterCategory ?? '');
+
+	type FilterPreview = {
+		totalSpendTxCountInRange: number;
+		categorizedMatchCount: number;
+		keywordMatchCount: number;
+		sampleMatches: Array<{ date: string; description: string; amount: number }>;
+	};
+	let previewLoading = $state(false);
+	let previewError = $state('');
+	let preview = $state<FilterPreview | null>(null);
 
 	// Retning: auto-detekt fra terskler hvis satt, ellers metrikk-standard
 	function detectDirection(): boolean {
@@ -64,7 +106,53 @@
 		warnStr = widget.thresholdWarn != null ? String(widget.thresholdWarn) : '';
 		successStr = widget.thresholdSuccess != null ? String(widget.thresholdSuccess) : '';
 		color = widget.color;
+		unit = widget.unit;
+		filterCategory = widget.filterCategory ?? '';
 		higherIsBetter = detectDirection();
+	});
+
+	$effect(() => {
+		if (!open || widget.metricType !== 'amount') {
+			preview = null;
+			previewError = '';
+			previewLoading = false;
+			return;
+		}
+
+		if (!filterCategory) {
+			preview = null;
+			previewError = '';
+			previewLoading = false;
+			return;
+		}
+
+		previewLoading = true;
+		previewError = '';
+
+		const params = new URLSearchParams({ debug: '1', filterCategory });
+		void fetch(`/api/widget-data/${widget.id}?${params.toString()}`)
+			.then(async (res) => {
+				if (!res.ok) throw new Error('Klarte ikke hente treff-preview');
+				const data = await res.json();
+				const amountFilter = data?.debug?.amountFilter;
+				if (!amountFilter) {
+					preview = null;
+					return;
+				}
+				preview = {
+					totalSpendTxCountInRange: amountFilter.totalSpendTxCountInRange ?? 0,
+					categorizedMatchCount: amountFilter.categorizedMatchCount ?? 0,
+					keywordMatchCount: amountFilter.keywordMatchCount ?? 0,
+					sampleMatches: Array.isArray(amountFilter.sampleMatches) ? amountFilter.sampleMatches : [],
+				};
+			})
+			.catch((e) => {
+				preview = null;
+				previewError = e instanceof Error ? e.message : 'Noe gikk galt';
+			})
+			.finally(() => {
+				previewLoading = false;
+			});
 	});
 
 	function numOrNull(s: string): number | null {
@@ -75,6 +163,8 @@
 	function handleSave() {
 		onsave({
 			title: title.trim() || widget.title,
+			unit: unit.trim() || widget.unit,
+			filterCategory: filterCategory || null,
 			goal: numOrNull(goalStr),
 			thresholdWarn: numOrNull(warnStr),
 			thresholdSuccess: numOrNull(successStr),
@@ -97,31 +187,91 @@
 		<h2 class="sheet-title">Konfigurer widget</h2>
 
 		<div class="form">
-			<!-- Tittel -->
-			<label class="field">
-				<span class="field-label">Tittel</span>
-				<input
-					class="field-input"
-					type="text"
-					maxlength="80"
-					bind:value={title}
-					placeholder={widget.title}
-				/>
-			</label>
+			<section class="config-section">
+				<p class="config-section-title">Grunnoppsett</p>
+				<label class="field">
+					<span class="field-label">Tittel</span>
+					<input
+						class="field-input"
+						type="text"
+						maxlength="80"
+						bind:value={title}
+						placeholder={widget.title}
+					/>
+				</label>
 
-			<!-- Mål -->
-			<label class="field">
-				<span class="field-label">Mål <span class="field-unit">({widget.unit})</span></span>
-				<input
-					class="field-input"
-					type="number"
-					inputmode="decimal"
-					bind:value={goalStr}
-					placeholder="Ingen"
-				/>
-			</label>
+				<label class="field">
+					<span class="field-label">Måleenhet</span>
+					<select class="field-input" bind:value={unit}>
+						{#if !(UNIT_OPTIONS[widget.metricType] ?? []).includes(widget.unit)}
+							<option value={widget.unit}>{widget.unit}</option>
+						{/if}
+						{#each UNIT_OPTIONS[widget.metricType] ?? [widget.unit] as unitOption}
+							<option value={unitOption}>{unitOption}</option>
+						{/each}
+					</select>
+				</label>
 
-			<!-- Terskler -->
+				<label class="field">
+					<span class="field-label">Mål <span class="field-unit">({unit})</span></span>
+					<input
+						class="field-input"
+						type="number"
+						inputmode="decimal"
+						bind:value={goalStr}
+						placeholder="Ingen"
+					/>
+				</label>
+			</section>
+
+			<section class="config-section">
+				<p class="config-section-title">Filtre</p>
+				{#if widget.metricType === 'amount'}
+					<label class="field">
+						<span class="field-label">Kategori-filter</span>
+						<select class="field-input" bind:value={filterCategory}>
+							<option value="">Alle kategorier</option>
+							{#each FILTER_CATEGORIES as category}
+								<option value={category}>{category}</option>
+							{/each}
+						</select>
+					</label>
+
+					<div class="filter-preview">
+						<div class="filter-preview-head">
+							<span class="field-label">Treff-preview</span>
+							{#if previewLoading}<span class="filter-preview-muted">Laster…</span>{/if}
+						</div>
+						{#if previewError}
+							<p class="filter-preview-error">{previewError}</p>
+						{:else if !filterCategory}
+							<p class="filter-preview-muted">Velg en kategori for å se treff.</p>
+						{:else if preview}
+							<p class="filter-preview-stats">
+								Treff: <strong>{preview.categorizedMatchCount}</strong> av {preview.totalSpendTxCountInRange} transaksjoner
+								{#if preview.keywordMatchCount > 0}
+									 · fallback-keywords: {preview.keywordMatchCount}
+								{/if}
+							</p>
+							{#if preview.sampleMatches.length > 0}
+								<ul class="filter-match-list">
+									{#each preview.sampleMatches as row}
+										<li>
+											<span>{row.date}</span>
+											<span>{row.description}</span>
+											<span>{Math.round(row.amount)} kr</span>
+										</li>
+									{/each}
+								</ul>
+							{/if}
+						{/if}
+					</div>
+				{:else}
+					<p class="filter-preview-muted">Filtre er tilgjengelig for økonomi-widgets.</p>
+				{/if}
+			</section>
+
+			<section class="config-section">
 			<fieldset class="threshold-group">
 				<legend class="field-label">Terskler</legend>
 
@@ -189,8 +339,9 @@
 					</div>
 				{/if}
 			</fieldset>
+			</section>
 
-			<!-- Farge -->
+			<section class="config-section">
 			<div class="field">
 				<span class="field-label">Farge</span>
 				<div class="color-swatches">
@@ -208,6 +359,7 @@
 					{/each}
 				</div>
 			</div>
+			</section>
 		</div>
 
 		<!-- Handlinger -->
@@ -264,6 +416,24 @@
 		display: flex;
 		flex-direction: column;
 		gap: 14px;
+	}
+
+	.config-section {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		padding: 10px;
+		border: 1px solid #242424;
+		border-radius: 10px;
+		background: #141414;
+	}
+
+	.config-section-title {
+		margin: 0;
+		font-size: 0.66rem;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: #767676;
 	}
 
 	.field {
@@ -372,6 +542,58 @@
 	.range.warn { color: #f0b429; }
 	.range.normal { color: #555; }
 	.range.success { color: #82c882; }
+
+	.filter-preview {
+		border: 1px solid #2a2a2a;
+		border-radius: 8px;
+		padding: 8px 10px;
+		background: #101010;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.filter-preview-head {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+
+	.filter-preview-muted,
+	.filter-preview-stats,
+	.filter-preview-error {
+		margin: 0;
+		font-size: 0.72rem;
+	}
+
+	.filter-preview-muted {
+		color: #777;
+	}
+
+	.filter-preview-error {
+		color: #d97a7a;
+	}
+
+	.filter-preview-stats {
+		color: #aaa;
+	}
+
+	.filter-match-list {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.filter-match-list li {
+		display: grid;
+		grid-template-columns: 72px 1fr auto;
+		gap: 8px;
+		font-size: 0.68rem;
+		color: #9b9b9b;
+	}
 
 	.color-swatches {
 		display: flex;

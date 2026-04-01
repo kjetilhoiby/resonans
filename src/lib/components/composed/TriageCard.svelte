@@ -34,10 +34,16 @@
 </script>
 
 {#if loading}
-	<div class="tc-skeleton">
-		<div class="tc-sk-line tc-sk-long"></div>
-		<div class="tc-sk-line tc-sk-medium"></div>
-		<div class="tc-sk-line tc-sk-short"></div>
+	<div class="tc-card tc-card-loading" role="status" aria-live="polite" aria-label="Venter på svar fra Resonans AI">
+		<div class="tc-header">
+			<span class="tc-avatar" aria-hidden="true"><Icon name="chat" size={15} /></span>
+			<div class="tc-text tc-loading-text">
+				<span class="tc-loading-label">Resonans svarer</span>
+				<span class="tc-loading-dots" aria-hidden="true">
+					<span></span><span></span><span></span>
+				</span>
+			</div>
+		</div>
 	</div>
 {:else}
 	<div class="tc-card" role="status" aria-live="polite">
@@ -214,43 +220,80 @@
 		color: #c0ccff;
 	}
 
-	/* Skeleton */
-	.tc-skeleton {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-		padding: 10px 14px;
-		background: #111;
-		border: 1px solid #242424;
-		border-radius: 4px 14px 14px 14px;
+	.tc-card-loading {
 		max-width: 65%;
-		align-self: flex-start;
 	}
 
-	.tc-sk-line {
-		height: 12px;
-		border-radius: 6px;
-		background: linear-gradient(90deg, #1a1a1a 25%, #252525 50%, #1a1a1a 75%);
-		background-size: 200% 100%;
-		animation: shimmer 1.4s infinite;
+	.tc-loading-text {
+		color: #d8ddff;
+		border-color: #343f70;
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		position: relative;
+		overflow: hidden;
 	}
 
-	.tc-sk-long {
-		width: 95%;
-	}
-	.tc-sk-medium {
-		width: 72%;
-	}
-	.tc-sk-short {
-		width: 48%;
+	.tc-loading-text::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		background: linear-gradient(110deg, transparent 0%, rgba(152, 173, 255, 0.12) 45%, transparent 90%);
+		transform: translateX(-115%);
+		animation: tcLoadingSweep 2.6s ease-in-out infinite;
+		pointer-events: none;
 	}
 
-	@keyframes shimmer {
-		0% {
-			background-position: 200% 0;
-		}
+	.tc-loading-label {
+		position: relative;
+		z-index: 1;
+		font-weight: 500;
+	}
+
+	.tc-loading-dots {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		position: relative;
+		z-index: 1;
+	}
+
+	.tc-loading-dots span {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: #aebaf7;
+		opacity: 0.3;
+		animation: tcDotPulse 1.2s ease-in-out infinite;
+	}
+
+	.tc-loading-dots span:nth-child(2) {
+		animation-delay: 0.2s;
+	}
+
+	.tc-loading-dots span:nth-child(3) {
+		animation-delay: 0.4s;
+	}
+
+	@keyframes tcDotPulse {
+		0%,
 		100% {
-			background-position: -200% 0;
+			opacity: 0.3;
+			transform: translateY(0) scale(0.9);
+		}
+		50% {
+			opacity: 1;
+			transform: translateY(-1px) scale(1);
+		}
+	}
+
+	@keyframes tcLoadingSweep {
+		0% {
+			transform: translateX(-115%);
+		}
+		55%,
+		100% {
+			transform: translateX(115%);
 		}
 	}
 </style>

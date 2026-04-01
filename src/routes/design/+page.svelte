@@ -948,6 +948,274 @@
 
 			</div><!-- /flow-grid -->
 
+			<h3 class="subsection" style="margin-top: 40px">Ny flyt: Spør om widget (chat-first)</h3>
+			<p class="section-desc">Forslag i chat før opprettelse: preview, konfigurering, målsetting og eksplisitt bekreftelse.</p>
+
+			<div class="wf-grid">
+				<div class="wf-card">
+					<div class="wf-head">
+						<span class="wf-num">A</span>
+						<span class="wf-title">1. Bruker beskriver widget</span>
+					</div>
+					<div class="wf-chat">
+						<ChatBubble role="user" text="Lag en widget for dagligvareforbruk per dag siste 30 dager." />
+						<ChatBubble role="bot" text="Skjønner. Jeg foreslår en widget med preview først før vi oppretter." />
+						<div class="wf-actions wf-actions--compact">
+							<button class="btn-primary">Opprett widget</button>
+							<button class="btn-chip">Konfigurer</button>
+							<button class="btn-ghost">Forkast</button>
+						</div>
+					</div>
+				</div>
+
+				<div class="wf-card">
+					<div class="wf-head">
+						<span class="wf-num">B</span>
+						<span class="wf-title">2. Forslagskort med preview</span>
+					</div>
+					<div class="wf-preview">
+						<ChatBubble role="bot" text="Slik ser forslaget ut. Vil du opprette, justere eller forkaste?" />
+						<div class="wf-actions wf-actions--compact">
+							<button class="btn-primary">Opprett widget</button>
+							<button class="btn-chip">Konfigurer</button>
+							<button class="btn-ghost">Forkast</button>
+						</div>
+						<div class="wf-preview-top">
+							<span class="wf-chip">amount</span>
+							<span class="wf-chip">sum</span>
+							<span class="wf-chip">day</span>
+							<span class="wf-chip">last30</span>
+							<span class="wf-chip">dagligvare</span>
+						</div>
+						<div class="wf-preview-body">
+							<div class="wf-ring-wrap">
+								<GoalRing pct={71} size={74} strokeWidth={5} color="#f0b429" />
+								<div class="wf-ring-value">17.7k</div>
+							</div>
+							<div class="wf-copy">
+								<p class="wf-name">Dagligvareforbruk / dag</p>
+								<p class="wf-meta">Preview basert på siste 30 dager</p>
+							</div>
+						</div>
+						<div class="wf-actions">
+							<button class="btn-primary">Opprett widget</button>
+							<button class="btn-chip">Konfigurer</button>
+							<button class="btn-ghost">Forkast</button>
+						</div>
+
+						<div class="wf-configurator">
+							<div class="wf-config-head">Konfigurator (sheet)</div>
+							<div class="wf-config-grid">
+								<div class="wf-config-item">
+									<span class="wf-config-label">Tittel</span>
+									<span class="wf-config-value">Dagligvareforbruk / dag</span>
+								</div>
+								<div class="wf-config-item">
+									<span class="wf-config-label">Metrikk</span>
+									<span class="wf-config-value">amount</span>
+								</div>
+								<div class="wf-config-item">
+									<span class="wf-config-label">Aggregation</span>
+									<span class="wf-config-value">sum</span>
+								</div>
+								<div class="wf-config-item">
+									<span class="wf-config-label">Periode / range</span>
+									<span class="wf-config-value">day · last30</span>
+								</div>
+								<div class="wf-config-item">
+									<span class="wf-config-label">Kategori</span>
+									<span class="wf-config-value">dagligvare</span>
+								</div>
+								<div class="wf-config-item">
+									<span class="wf-config-label">Mål</span>
+									<span class="wf-config-value">ikke satt</span>
+								</div>
+							</div>
+							<div class="wf-actions wf-actions--compact">
+								<button class="btn-primary">Opprett widget</button>
+								<button class="btn-chip">Konfigurer</button>
+								<button class="btn-ghost">Forkast</button>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div class="wf-card">
+					<div class="wf-head">
+						<span class="wf-num">C</span>
+						<span class="wf-title">3. Målsetting før opprett</span>
+					</div>
+					<div class="wf-chat">
+						<ChatBubble role="bot" text="Hva er optimalt nivå for denne metrikken?" />
+						<div class="wf-actions wf-actions--compact">
+							<button class="btn-primary">Opprett widget</button>
+							<button class="btn-chip">Konfigurer</button>
+							<button class="btn-ghost">Forkast</button>
+						</div>
+						<ChatBubble role="user" text="Mindre enn snittet av forrige periode." />
+						<ChatBubble role="bot" text="Notert: relativt mål < avg(prev_period). Klar til opprettelse." />
+						<div class="wf-actions wf-actions--compact">
+							<button class="btn-primary">Opprett widget</button>
+							<button class="btn-chip">Konfigurer</button>
+							<button class="btn-ghost">Forkast</button>
+						</div>
+					</div>
+					<div class="wf-pill-row">
+						<span class="wf-pill">target: relative_prev_period</span>
+						<span class="wf-pill">operator: lt</span>
+					</div>
+				</div>
+			</div>
+
+			<div class="wf-state-row">
+				<span class="wf-state">intent_detected</span>
+				<span class="wf-state-arrow">→</span>
+				<span class="wf-state">draft_created</span>
+				<span class="wf-state-arrow">→</span>
+				<span class="wf-state">preview_rendered</span>
+				<span class="wf-state-arrow">→</span>
+				<span class="wf-state">configure/refine</span>
+				<span class="wf-state-arrow">→</span>
+				<span class="wf-state wf-state-ok">confirm_create</span>
+			</div>
+
+			<h3 class="subsection" style="margin-top: 28px">Fullskjerm-konfigurator (forslag)</h3>
+			<p class="section-desc">Sticky preview øverst + skrollbar seksjonsliste under. Nedtrekk for tekstvalg og sliders for tall.</p>
+			<div class="wf-fullscreen">
+				<div class="wf-fullscreen-preview">
+					<div class="wf-fullscreen-preview-main">
+						<div class="wf-ring-wrap">
+							<GoalRing pct={71} size={82} strokeWidth={6} color="#f0b429" />
+							<div class="wf-ring-value">17.7k</div>
+						</div>
+						<div>
+							<p class="wf-name" style="font-size:0.82rem">Dagligvareforbruk / dag</p>
+							<p class="wf-meta">Live preview oppdateres mens du justerer feltene</p>
+						</div>
+					</div>
+					<div class="wf-actions wf-actions--compact">
+						<button class="btn-primary">Opprett widget</button>
+						<button class="btn-chip">Konfigurer</button>
+						<button class="btn-ghost">Forkast</button>
+					</div>
+				</div>
+
+				<div class="wf-fullscreen-body">
+					<div class="wf-fullscreen-section">
+						<div class="wf-fullscreen-title">Grunnoppsett</div>
+						<div class="wf-form-grid">
+							<label class="wf-field">
+								<span>Tittel</span>
+								<input value="Dagligvareforbruk / dag" readonly />
+							</label>
+							<label class="wf-field">
+								<span>Metrikk</span>
+								<select>
+									<option selected>amount</option>
+									<option>weight</option>
+									<option>steps</option>
+								</select>
+							</label>
+							<label class="wf-field">
+								<span>Aggregation</span>
+								<select>
+									<option>avg</option>
+									<option selected>sum</option>
+									<option>latest</option>
+								</select>
+							</label>
+							<label class="wf-field">
+								<span>Kategori</span>
+								<select>
+									<option selected>dagligvare</option>
+									<option>mat</option>
+									<option>transport</option>
+								</select>
+							</label>
+						</div>
+					</div>
+
+					<div class="wf-fullscreen-section">
+						<div class="wf-fullscreen-title">Tid og oppløsning</div>
+						<div class="wf-form-grid">
+							<label class="wf-field">
+								<span>Periode</span>
+								<select>
+									<option selected>day</option>
+									<option>week</option>
+									<option>month</option>
+								</select>
+							</label>
+							<label class="wf-field">
+								<span>Range</span>
+								<select>
+									<option>last7</option>
+									<option>last14</option>
+									<option selected>last30</option>
+									<option>current_month</option>
+								</select>
+							</label>
+						</div>
+					</div>
+
+					<div class="wf-fullscreen-section">
+						<div class="wf-fullscreen-title">Mål og terskler</div>
+						<div class="wf-form-grid">
+							<label class="wf-field wf-field--full">
+								<span>Måltype</span>
+								<select>
+									<option>ingen</option>
+									<option>absolutt</option>
+									<option selected>relativ mot forrige periode</option>
+								</select>
+							</label>
+							<label class="wf-field wf-field--full">
+								<span>Toleranse (%)</span>
+								<input type="range" min="0" max="20" value="5" />
+							</label>
+							<label class="wf-field wf-field--full">
+								<span>Varselgrense</span>
+								<input type="range" min="0" max="100" value="60" />
+							</label>
+						</div>
+					</div>
+
+					<div class="wf-fullscreen-section">
+						<div class="wf-fullscreen-title">Råverdier fra filter</div>
+						<div class="wf-raw-head">
+							<span class="wf-raw-count">47 treff</span>
+							<div class="wf-raw-chips">
+								<span class="wf-chip">kategori: dagligvare</span>
+								<span class="wf-chip">range: last30</span>
+								<span class="wf-chip">vis: matcher</span>
+							</div>
+						</div>
+						<div class="wf-raw-list" role="table" aria-label="Råverdier som matcher filter">
+							<div class="wf-raw-row wf-raw-row--head" role="row">
+								<span>Dato</span>
+								<span>Beskrivelse</span>
+								<span>Beløp</span>
+								<span>Match</span>
+							</div>
+							{#each [
+								{ date: '31.03', desc: 'KIWI STORO', amount: '−289 kr', match: 'regel' },
+								{ date: '30.03', desc: 'REMA 1000 Bjølsen', amount: '−412 kr', match: 'regel' },
+								{ date: '29.03', desc: 'ODA AS', amount: '−1 084 kr', match: 'mapping' },
+								{ date: '27.03', desc: 'MENY RINGNES PARK', amount: '−356 kr', match: 'regel' },
+								{ date: '25.03', desc: 'COOP EXTRA SAGENE', amount: '−243 kr', match: 'regel' }
+							] as row}
+								<div class="wf-raw-row" role="row">
+									<span>{row.date}</span>
+									<span>{row.desc}</span>
+									<span>{row.amount}</span>
+									<span>{row.match}</span>
+								</div>
+							{/each}
+						</div>
+					</div>
+				</div>
+			</div>
+
 			<!-- Animasjonsnotater -->
 			<h3 class="subsection" style="margin-top: 40px">Animasjonsprinsipper</h3>
 			<div class="anim-notes">
@@ -1697,6 +1965,355 @@
 	.icon-card:hover {
 		border-color: var(--icon-border-strong);
 		background: var(--icon-bg-2);
+	}
+
+	/* ── Widget flow demo ── */
+	.wf-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+		gap: 14px;
+	}
+
+	.wf-card {
+		background: #141414;
+		border: 1px solid #232323;
+		border-radius: 14px;
+		padding: 12px;
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+
+	.wf-head {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.wf-num {
+		width: 20px;
+		height: 20px;
+		border-radius: 999px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		background: #1f2a56;
+		color: #9fb0ff;
+		font-size: 0.68rem;
+		font-weight: 700;
+	}
+
+	.wf-title {
+		font-size: 0.76rem;
+		font-weight: 650;
+		color: #b7b7b7;
+	}
+
+	.wf-chat {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+
+	.wf-preview {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+
+	.wf-preview-top {
+		display: flex;
+		gap: 6px;
+		flex-wrap: wrap;
+	}
+
+	.wf-chip {
+		font-size: 0.62rem;
+		padding: 3px 7px;
+		border-radius: 999px;
+		background: #1d1d1d;
+		border: 1px solid #2c2c2c;
+		color: #777;
+	}
+
+	.wf-preview-body {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+	}
+
+	.wf-ring-wrap {
+		position: relative;
+		width: 74px;
+		height: 74px;
+		flex-shrink: 0;
+	}
+
+	.wf-ring-value {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 0.78rem;
+		font-weight: 700;
+		color: #ddd;
+	}
+
+	.wf-name {
+		margin: 0;
+		font-size: 0.76rem;
+		color: #cfcfcf;
+	}
+
+	.wf-meta {
+		margin: 3px 0 0;
+		font-size: 0.68rem;
+		color: #666;
+	}
+
+	.wf-actions {
+		display: flex;
+		gap: 8px;
+		flex-wrap: wrap;
+	}
+
+	.wf-actions--compact :global(button) {
+		padding: 7px 10px;
+		font-size: 0.72rem;
+	}
+
+	.wf-configurator {
+		margin-top: 4px;
+		padding: 10px;
+		border: 1px solid #2b2b2b;
+		border-radius: 12px;
+		background: #111111;
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+
+	.wf-config-head {
+		font-size: 0.68rem;
+		font-weight: 700;
+		color: #8d8d8d;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+	}
+
+	.wf-config-grid {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 8px;
+	}
+
+	.wf-config-item {
+		background: #161616;
+		border: 1px solid #2a2a2a;
+		border-radius: 9px;
+		padding: 7px 8px;
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+	}
+
+	.wf-config-label {
+		font-size: 0.6rem;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: #666;
+	}
+
+	.wf-config-value {
+		font-size: 0.74rem;
+		color: #c4c4c4;
+	}
+
+	.wf-pill-row {
+		display: flex;
+		gap: 6px;
+		flex-wrap: wrap;
+	}
+
+	.wf-pill {
+		font-size: 0.64rem;
+		padding: 4px 8px;
+		border-radius: 8px;
+		background: #171717;
+		border: 1px solid #2a2a2a;
+		color: #8c8c8c;
+	}
+
+	.wf-state-row {
+		margin-top: 12px;
+		display: flex;
+		gap: 8px;
+		align-items: center;
+		flex-wrap: wrap;
+	}
+
+	.wf-state {
+		font-size: 0.64rem;
+		padding: 5px 8px;
+		border-radius: 7px;
+		background: #171717;
+		border: 1px solid #292929;
+		color: #7c7c7c;
+	}
+
+	.wf-state-ok {
+		border-color: #355f45;
+		color: #86b99a;
+	}
+
+	.wf-state-arrow {
+		color: #4d4d4d;
+		font-size: 0.72rem;
+	}
+
+	.wf-fullscreen {
+		margin-top: 10px;
+		height: min(78vh, 680px);
+		border: 1px solid #262626;
+		border-radius: 14px;
+		overflow: hidden;
+		background: #101010;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.wf-fullscreen-preview {
+		position: sticky;
+		top: 0;
+		z-index: 2;
+		background: #111111;
+		border-bottom: 1px solid #242424;
+		padding: 12px;
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+
+	.wf-fullscreen-preview-main {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+	}
+
+	.wf-fullscreen-body {
+		overflow: auto;
+		padding: 12px;
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+	}
+
+	.wf-fullscreen-section {
+		background: #141414;
+		border: 1px solid #252525;
+		border-radius: 12px;
+		padding: 10px;
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+
+	.wf-fullscreen-title {
+		font-size: 0.68rem;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: #7a7a7a;
+		font-weight: 700;
+	}
+
+	.wf-form-grid {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 10px;
+	}
+
+	.wf-field {
+		display: flex;
+		flex-direction: column;
+		gap: 5px;
+	}
+
+	.wf-field--full {
+		grid-column: 1 / -1;
+	}
+
+	.wf-field span {
+		font-size: 0.64rem;
+		color: #6d6d6d;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+	}
+
+	.wf-field input,
+	.wf-field select {
+		height: 34px;
+		border-radius: 8px;
+		border: 1px solid #2b2b2b;
+		background: #0f0f0f;
+		color: #d3d3d3;
+		padding: 0 10px;
+		font-size: 0.76rem;
+	}
+
+	.wf-field input[type='range'] {
+		height: auto;
+		padding: 0;
+		accent-color: #4a5af0;
+	}
+
+	.wf-raw-head {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 10px;
+		flex-wrap: wrap;
+	}
+
+	.wf-raw-count {
+		font-size: 0.72rem;
+		font-weight: 650;
+		color: #9b9b9b;
+	}
+
+	.wf-raw-chips {
+		display: flex;
+		gap: 6px;
+		flex-wrap: wrap;
+	}
+
+	.wf-raw-list {
+		border: 1px solid #2a2a2a;
+		border-radius: 10px;
+		overflow: hidden;
+	}
+
+	.wf-raw-row {
+		display: grid;
+		grid-template-columns: 62px 1fr 86px 68px;
+		gap: 8px;
+		padding: 8px 10px;
+		font-size: 0.72rem;
+		color: #b8b8b8;
+		border-top: 1px solid #212121;
+	}
+
+	.wf-raw-row:first-child {
+		border-top: none;
+	}
+
+	.wf-raw-row--head {
+		background: #121212;
+		font-size: 0.62rem;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: #6f6f6f;
+		font-weight: 700;
 	}
 
 	.icon-preview {

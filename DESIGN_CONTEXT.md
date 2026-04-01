@@ -103,6 +103,85 @@ Prompten lever *ved siden av* flyten den tilhører. Tools-laget er allerede på 
 | Årsrunden (kavalkaden) | nyttår | narrativ rapport med stats |
 | Identitetsintervju | onboarding / ny bruker | life/flerårs-mål |
 
+### Flyt: "Spør om widget" (foreslå → konfigurer → opprett)
+
+Mål: bruker skal slippe "blind opprettelse" og få en tydelig preview + bekreftelse i chat før widget lagres.
+
+#### Nåværende opplevelse (problem)
+- Bruker beskriver widget i chat
+- Bot oppretter widget direkte
+- Bot svarer "opprettet, se hjemskjerm"
+- Bruker må navigere ut av chat for preview og evt. slette/restarte
+
+#### Ønsket opplevelse
+1. Bruker beskriver ønsket widget i chat
+2. Bot svarer med et **widget-forslagskort** i chat:
+  - navn, metrikk, aggregation, periode/range, enhet, ev. filterCategory
+  - live preview av forventet verdi (samme datastrøm som ekte widget)
+3. Bruker kan velge direkte i kortet:
+  - `Opprett widget`
+  - `Konfigurer`
+  - `Forkast`
+4. Bruker kan også justere via tekst ("gjør den ukentlig", "bare dagligvare")
+5. Ved `Konfigurer` åpnes konfig-sheet med flere valg
+6. Før opprettelse spør bot om mål hvis relevant:
+  - fast mål: "400"
+  - relativt mål: "mindre enn snittet av forrige periode"
+7. Widget opprettes først ved eksplisitt bekreftelse (knapp eller tydelig "ja, opprett")
+
+#### Beslutningsregel
+- **Ingen persist** i `user_widgets` før steget `confirm_create` er fullført.
+- Inntil da er widgeten et `widget_draft` knyttet til samtalen.
+
+#### Tilstandsmaskin
+`intent_detected` → `draft_created` → `preview_rendered` → (`refine_text` | `configure`) → `confirm_create` → (`created` | `discarded`)
+
+#### Widget-draft (konsept)
+```ts
+type WidgetDraft = {
+  id: string;
+  conversationId: string;
+  title: string;
+  metricType: 'amount' | 'weight' | 'sleepDuration' | 'steps' | 'distance' | 'workoutCount' | 'heartrate' | 'mood' | 'screenTime';
+  aggregation: 'avg' | 'sum' | 'count' | 'latest';
+  period: 'day' | 'week' | 'month';
+  range: 'last7' | 'last14' | 'last30' | 'current_week' | 'current_month' | 'current_year';
+  filterCategory?: string | null;
+  unit: string;
+  color: string;
+  target?:
+   | { mode: 'absolute'; value: number }
+   | { mode: 'relative_prev_period'; operator: 'lt' | 'lte' | 'gt' | 'gte'; marginPct?: number };
+};
+```
+
+#### Konfigureringsvalg i sheet
+- Tittel
+- Metrikk
+- Aggregation
+- Periode og range
+- Kategori-filter (for amount)
+- Farge
+- Mål:
+  - absolutt tall
+  - relativt mot forrige periode (f.eks. `< avg(prev_period)`)
+
+#### Chat-eksempler for målsetting
+- "Sett målet til 400" → `target.mode='absolute', value=400`
+- "Mindre enn snittet av forrige periode" → `target.mode='relative_prev_period', operator='lt'`
+- "5% lavere enn forrige periode" → `target.mode='relative_prev_period', operator='lt', marginPct=5`
+
+#### UX-krav
+- Forslagskort skal vises i samme chat-tråd, ikke kreve navigasjon
+- Preview skal oppdateres etter hver justering
+- Opprett-knapp skal være tilgjengelig helt fra første forslag
+- Forkast skal være ett trykk
+
+#### Backend-prinsipp
+- Rebruk eksisterende beregningslogikk for widget-data til preview (ingen egen "nesten-lik" path)
+- Før opprettelse brukes draft-parametre mot preview-endepunkt
+- Ved opprettelse mappes draft 1:1 til `user_widgets`
+
 ---
 
 ## Datamodell

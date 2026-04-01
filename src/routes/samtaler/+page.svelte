@@ -3,7 +3,9 @@
 	import ChatInput from '$lib/components/ui/ChatInput.svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import TriageCard from '$lib/components/composed/TriageCard.svelte';
+	import WidgetProposalCard from '$lib/components/domain/WidgetProposalCard.svelte';
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
+	import type { WidgetDraft } from '$lib/ai/tools/propose-widget';
 
 	interface ConversationSummary {
 		id: string;
@@ -45,7 +47,9 @@
 			}));
 	}
 
-	let chatMessages = $state(toChatMessages(data.messages));
+	type ChatMsg = { id: string; role: 'user' | 'assistant'; text: string; imageUrl: string | null; widgetProposal?: WidgetDraft | null };
+
+	let chatMessages = $state<ChatMsg[]>(toChatMessages(data.messages));
 	let chatLoading = $state(false);
 	let chatError = $state('');
 	let creatingConversation = $state(false);
@@ -93,7 +97,7 @@
 			});
 			if (!res.ok) throw new Error(await res.text());
 			const payload = await res.json();
-			chatMessages = [...chatMessages, { id: crypto.randomUUID(), role: 'assistant', text: payload.message, imageUrl: null }];
+			chatMessages = [...chatMessages, { id: crypto.randomUUID(), role: 'assistant', text: payload.message, imageUrl: null, widgetProposal: payload.widgetProposal ?? null }];
 		} catch {
 			chatError = 'Noe gikk galt. Prøv igjen.';
 		} finally {
@@ -172,6 +176,12 @@
 					</div>
 				{:else}
 					<TriageCard text={msg.text} />
+					{#if msg.widgetProposal}
+						<WidgetProposalCard
+							draft={msg.widgetProposal}
+							ondiscard={() => { msg.widgetProposal = null; }}
+						/>
+					{/if}
 				{/if}
 			{/each}
 			{#if chatLoading}

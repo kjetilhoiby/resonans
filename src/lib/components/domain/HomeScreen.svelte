@@ -11,6 +11,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
+	import { fly } from 'svelte/transition';
 	import WidgetCircle from '../ui/WidgetCircle.svelte';
 	import DynamicWidget from '../composed/DynamicWidget.svelte';
 	import WidgetConfigSheet from '../ui/WidgetConfigSheet.svelte';
@@ -32,6 +33,12 @@
 
 	interface Props {
 		themes: Theme[];
+		recentConversations: {
+			id: string;
+			title: string;
+			preview: string;
+			updatedAt: string;
+		}[];
 	}
 
 	type QuickActionId = 'chat' | 'camera' | 'voice' | 'mood' | 'file';
@@ -81,7 +88,7 @@
 		actions?: ChatAction[];
 	}
 
-	let { themes }: Props = $props();
+	let { themes, recentConversations }: Props = $props();
 
 	// -- Sensor-data (oppdateres fra API ved mount) --
 	interface SensorSummary {
@@ -105,14 +112,60 @@
 		goal: number | null;
 		thresholdWarn: number | null;
 		thresholdSuccess: number | null;
+		filterCategory: string | null;
 	}
 	let pinnedWidgets = $state<UserWidget[]>([]);
+	let hiddenWidgets = $state<UserWidget[]>([]);
 	let widgetsLoading = $state(true);
 	let configWidget = $state<UserWidget | null>(null);
+	let widgetPanelOpen = $state(false);
 
 	// -- Sjekklister --
 	let activeChecklists = $state<Checklist[]>([]);
 	let openChecklist = $state<Checklist | null>(null);
+
+	const HOME_SENSOR_CACHE_KEY = 'resonans:home:sensor-summary:v1';
+	const HOME_PINNED_WIDGETS_CACHE_KEY = 'resonans:home:pinned-widgets:v1';
+	const HOME_SENSOR_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
+	const HOME_PINNED_WIDGETS_CACHE_MAX_AGE_MS = 10 * 60 * 1000;
+
+	interface CachedPayload<T> {
+		cachedAt: string;
+		data: T;
+	}
+
+	function readCachedPayload<T>(key: string, maxAgeMs: number): T | null {
+		if (typeof window === 'undefined') return null;
+
+		try {
+			const raw = window.localStorage.getItem(key);
+			if (!raw) return null;
+
+			const parsed = JSON.parse(raw) as CachedPayload<T>;
+			if (!parsed?.cachedAt) return null;
+
+			const ageMs = Date.now() - new Date(parsed.cachedAt).getTime();
+			if (!Number.isFinite(ageMs) || ageMs > maxAgeMs) return null;
+
+			return parsed.data ?? null;
+		} catch {
+			return null;
+		}
+	}
+
+	function writeCachedPayload<T>(key: string, data: T) {
+		if (typeof window === 'undefined') return;
+
+		try {
+			const payload: CachedPayload<T> = {
+				cachedAt: new Date().toISOString(),
+				data
+			};
+			window.localStorage.setItem(key, JSON.stringify(payload));
+		} catch {
+			// Ignorer lagringsfeil (f.eks. quota eller private mode)
+		}
+	}
 
 	async function fetchChecklists() {
 		try {
@@ -153,13 +206,36 @@
 		let cleanupPrefetch = () => {};
 
 		void (async () => {
+			const cachedSummary = readCachedPayload<SensorSummary>(HOME_SENSOR_CACHE_KEY, HOME_SENSOR_CACHE_MAX_AGE_MS);
+			if (cachedSummary) {
+				sensorSummary = cachedSummary;
+				widgetsLoading = false;
+			}
+
+			const cachedPinnedWidgets = readCachedPayload<UserWidget[]>(
+				HOME_PINNED_WIDGETS_CACHE_KEY,
+				HOME_PINNED_WIDGETS_CACHE_MAX_AGE_MS
+			);
+			if (cachedPinnedWidgets && cachedPinnedWidgets.length > 0) {
+				pinnedWidgets = cachedPinnedWidgets;
+				widgetsLoading = false;
+			}
+
 			try {
 				const [summaryRes, widgetsRes] = await Promise.all([
 					fetch('/api/sensor-summary'),
-					fetch('/api/user-widgets?pinned=true')
+					fetch('/api/user-widgets')
 				]);
-				if (summaryRes.ok) sensorSummary = await summaryRes.json();
-				if (widgetsRes.ok) pinnedWidgets = await widgetsRes.json();
+				if (summaryRes.ok) {
+					sensorSummary = await summaryRes.json();
+					writeCachedPayload(HOME_SENSOR_CACHE_KEY, sensorSummary);
+				}
+				if (widgetsRes.ok) {
+					const allWidgets = await widgetsRes.json();
+					pinnedWidgets = allWidgets.filter((w: UserWidget) => w.pinned);
+					hiddenWidgets = allWidgets.filter((w: UserWidget) => !w.pinned);
+					writeCachedPayload(HOME_PINNED_WIDGETS_CACHE_KEY, pinnedWidgets);
+				}
 			} catch {
 				// Stille feil — fallback til mock-data
 			} finally {
@@ -249,6 +325,20 @@
 	let latestClosedConversationId = $state<string | null>(null);
 	let createdThemeLink = $state<{ id: string; name: string; emoji?: string | null } | null>(null);
 	let launchingThemeId = $state<string | null>(null);
+	let chatInputAutoFocus = $state(false);
+	let returnToChatAfterFlow = $state(false);
+
+	// ── Media history types ───────────────────────────────────────────────────
+	interface MediaHistoryItem {
+		id: string;
+		kind: 'image' | 'audio' | 'document' | 'other';
+		name: string;
+		url: string;
+		mimeType?: string;
+		note?: string;
+		source?: 'camera' | 'file' | 'voice' | 'sheet';
+		createdAt: string;
+	}
 
 	// ── Kamera-flyt ────────────────────────────────────────────────────────────
 	let cameraOpen = $state(false);
@@ -258,6 +348,8 @@
 	let cameraCaption = $state('');
 	let cameraUploading = $state(false);
 	let cameraError = $state(false);
+	let cameraHistory = $state<MediaHistoryItem[]>([]);
+	let cameraHistoryLoading = $state(false);
 
 	// ── Lyd-flyt ───────────────────────────────────────────────────────────────
 	let voiceOpen = $state(false);
@@ -266,6 +358,8 @@
 	let voiceSelectedFile = $state<File | null>(null);
 	let voiceUploading = $state(false);
 	let voiceError = $state(false);
+	let voiceHistory = $state<MediaHistoryItem[]>([]);
+	let voiceHistoryLoading = $state(false);
 
 	// ── Sjekkin-flyt ──────────────────────────────────────────────────────────
 	let moodOpen = $state(false);
@@ -317,11 +411,13 @@
 	let sheetFlowRange = $state('');
 	let sheetFlowUploading = $state(false);
 	let sheetFlowError = $state('');
+	let fileHistory = $state<MediaHistoryItem[]>([]);
+	let fileHistoryLoading = $state(false);
 
 	const QUICK_ACTIONS: QuickAction[] = [
 		{
 			id: 'chat',
-			label: 'Prat',
+			label: 'Samtale',
 			icon: 'chat',
 			description: 'Start med en fri tanke, et spørsmål eller et behov for retning.',
 			placeholder: 'Hva vil du tenke høyt om akkurat nå?',
@@ -364,11 +460,38 @@
 	const activeQuickAction = $derived(
 		QUICK_ACTIONS.find((action) => action.id === selectedQuickAction) ?? QUICK_ACTIONS[0]
 	);
-	const hasHomeDraft = $derived(chatPrefill.trim().length > 0);
+	const hasPersistedConversation = $derived(Boolean(currentConversationId));
+	const chatConversationTitle = $derived.by(() => {
+		if (!hasPersistedConversation) return '';
+		const firstUserMessage = chatMessages.find((msg) => msg.role === 'user' && msg.text && msg.text !== '📷 [Bilde]');
+		const base = firstUserMessage?.text?.trim() || 'Ny samtale';
+		return base.length > 42 ? `${base.slice(0, 42).trimEnd()}…` : base;
+	});
+	const followUpConversations = $derived.by(() => {
+		const activeId = currentConversationId || latestClosedConversationId;
+		return recentConversations
+			.filter((c) => c.id !== activeId)
+			.slice(0, 3);
+	});
+	const inputExpanded = $derived(chatOpen || cameraOpen || voiceOpen || moodOpen || fileFlowOpen);
 
-	function openChat(prefill = '', actionId: QuickActionId = selectedQuickAction) {
+	function formatFollowUpDate(iso: string) {
+		return new Intl.DateTimeFormat('nb-NO', { day: 'numeric', month: 'short' }).format(new Date(iso));
+	}
+
+	function shouldAutoFocusInput() {
+		if (typeof window === 'undefined') return false;
+		return window.matchMedia('(pointer: fine)').matches;
+	}
+
+	function openChat(
+		prefill = '',
+		actionId: QuickActionId = selectedQuickAction,
+		options?: { focusInput?: boolean }
+	) {
 		selectedQuickAction = actionId;
 		chatPrefill = prefill;
+		chatInputAutoFocus = options?.focusInput ?? shouldAutoFocusInput();
 		chatOpen = true;
 	}
 
@@ -391,13 +514,6 @@
 	}
 
 	// ── Kamera-flyt ─────────────────────────────────────────────────────────────
-	function closeCameraFlow() {
-		cameraOpen = false;
-		cameraSelectedFile = null;
-		cameraPreview = null;
-		cameraCaption = '';
-		cameraError = false;
-	}
 
 	function handleCameraFileSelect(event: Event) {
 		const input = event.target as HTMLInputElement;
@@ -465,6 +581,7 @@
 
 		selectedQuickAction = 'chat';
 		chatOpen = true;
+		returnToChatAfterFlow = false;
 		chatPrefill = '';
 		chatMessages = [
 			...chatMessages,
@@ -506,6 +623,11 @@
 		if (voiceFileInput) {
 			voiceFileInput.value = '';
 		}
+		if (returnToChatAfterFlow) {
+			chatOpen = true;
+			chatInputAutoFocus = true;
+		}
+		returnToChatAfterFlow = false;
 	}
 
 	function handleVoiceFileSelect(event: Event) {
@@ -532,7 +654,6 @@
 	}
 
 	// ── Sjekkin-flyt ─────────────────────────────────────────────────────────────
-	function closeMoodFlow() { moodOpen = false; moodSlider = 50; moodFactors = []; moodNote = ''; }
 
 	function toggleFactor(id: string) {
 		if (moodFactors.includes(id)) {
@@ -556,7 +677,7 @@
 		].filter(Boolean).join('\n');
 		closeMoodFlow();
 		chatOpen = true;
-		sendChat(msg);
+		void sendChat(msg);
 	}
 
 	// ── Fil-flyt ──────────────────────────────────────────────────────────────────
@@ -569,6 +690,11 @@
 		sheetFlowUrl = '';
 		sheetFlowRange = '';
 		sheetFlowError = '';
+		if (returnToChatAfterFlow) {
+			chatOpen = true;
+			chatInputAutoFocus = true;
+		}
+		returnToChatAfterFlow = false;
 	}
 
 	function handleFileFlowSelect(event: Event) {
@@ -718,20 +844,32 @@
 		}
 	}
 
-	function startHomeChat() {
-		const draft = chatPrefill.trim();
-		if (draft) {
-			openChat(draft, 'chat');
+	function startHomeChat(draftOverride?: string) {
+		const draft = (draftOverride ?? chatPrefill).trim();
+		if (!draft) {
+			openChat('', 'chat', { focusInput: true });
 			return;
 		}
-		startQuickAction(QUICK_ACTIONS[0]);
+
+		chatPrefill = '';
+		openChat('', 'chat', { focusInput: false });
+		void sendChat(draft);
 	}
 
-	function startHomeAttachment(kind: 'camera' | 'voice' | 'file') {
-		const draft = chatPrefill.trim();
-		chatMessages = [];
-		createdThemeLink = null;
-		currentConversationId = null;
+	function startHomeAttachment(
+		kind: 'camera' | 'voice' | 'file',
+		draftOverride?: string,
+		options?: { preserveConversation?: boolean }
+	) {
+		const draft = (draftOverride ?? chatPrefill).trim();
+		if (!options?.preserveConversation) {
+			chatMessages = [];
+			createdThemeLink = null;
+			currentConversationId = null;
+		}
+		returnToChatAfterFlow = Boolean(options?.preserveConversation);
+		chatOpen = false;
+		chatInputAutoFocus = false;
 		if (kind === 'camera') {
 			cameraCaption = draft;
 			cameraOpen = true;
@@ -747,16 +885,123 @@
 		fileFlowOpen = true;
 	}
 
+	function startMoodFlow(preserveConversation: boolean, draftOverride?: string) {
+		if (!preserveConversation) {
+			chatMessages = [];
+			createdThemeLink = null;
+			currentConversationId = null;
+		}
+		moodNote = (draftOverride ?? '').trim();
+		returnToChatAfterFlow = preserveConversation;
+		chatOpen = false;
+		chatInputAutoFocus = false;
+		moodOpen = true;
+	}
+
 	function closeChat() {
 		if (currentConversationId && chatMessages.length > 0) {
 			latestClosedConversationId = currentConversationId;
 		}
 		chatMessages = [];
 		chatPrefill = '';
+		chatInputAutoFocus = false;
 		createdThemeLink = null;
 		launchingThemeId = null;
 		currentConversationId = null;
 		chatOpen = false;
+		returnToChatAfterFlow = false;
+	}
+
+	function closeCameraFlow() {
+		cameraOpen = false;
+		cameraSelectedFile = null;
+		cameraPreview = null;
+		cameraCaption = '';
+		cameraError = false;
+		if (returnToChatAfterFlow) {
+			chatOpen = true;
+			chatInputAutoFocus = true;
+		}
+		returnToChatAfterFlow = false;
+	}
+
+	function closeMoodFlow() {
+		moodOpen = false;
+		moodSlider = 50;
+		moodFactors = [];
+		moodNote = '';
+		if (returnToChatAfterFlow) {
+			chatOpen = true;
+			chatInputAutoFocus = true;
+		}
+		returnToChatAfterFlow = false;
+	}
+
+	function openWidgetConfigSheet(widget: UserWidget) {
+		widgetPanelOpen = false;
+		configWidget = widget;
+	}
+
+	async function fetchMediaHistory(kind: 'image' | 'audio' | 'document') {
+		try {
+			const res = await fetch(`/api/media-history?kind=${kind}&limit=12`);
+			if (res.ok) {
+				const data = await res.json();
+				return (data.mediaHistory ?? []) as MediaHistoryItem[];
+			}
+		} catch (err) {
+			console.error('Error fetching media history:', err);
+		}
+		return [];
+	}
+
+	async function loadCameraHistory() {
+		cameraHistoryLoading = true;
+		cameraHistory = await fetchMediaHistory('image');
+		cameraHistoryLoading = false;
+	}
+
+	async function loadVoiceHistory() {
+		voiceHistoryLoading = true;
+		voiceHistory = await fetchMediaHistory('audio');
+		voiceHistoryLoading = false;
+	}
+
+	async function loadFileHistory() {
+		fileHistoryLoading = true;
+		fileHistory = await fetchMediaHistory('document');
+		fileHistoryLoading = false;
+	}
+
+	async function reuseCameraMedia(item: MediaHistoryItem) {
+		try {
+			cameraPreview = item.url;
+			cameraCaption = item.note ?? '';
+		} catch (err) {
+			console.error('Error reusing camera media:', err);
+		}
+	}
+
+	async function reuseVoiceMedia(item: MediaHistoryItem) {
+		try {
+			const res = await fetch(item.url);
+			const blob = await res.blob();
+			voiceSelectedFile = new File([blob], item.name, { type: item.mimeType });
+			voiceText = item.note ?? '';
+		} catch (err) {
+			console.error('Error reusing voice media:', err);
+		}
+	}
+
+	async function reuseFileMedia(item: MediaHistoryItem) {
+		try {
+			const res = await fetch(item.url);
+			const blob = await res.blob();
+			fileFlowSelected = new File([blob], item.name, { type: item.mimeType });
+			fileFlowNote = item.note ?? '';
+		} catch (err) {
+			console.error('Error reusing file media:', err);
+		}
 	}
 
 	async function openCreatedTheme(themeId: string) {
@@ -811,12 +1056,77 @@
 	}
 
 	async function unpinWidget(id: string) {
+		const widget = pinnedWidgets.find((w) => w.id === id);
 		pinnedWidgets = pinnedWidgets.filter((w) => w.id !== id);
-		await fetch(`/api/user-widgets/${id}`, {
+		if (widget) hiddenWidgets = [widget, ...hiddenWidgets];
+		writeCachedPayload(HOME_PINNED_WIDGETS_CACHE_KEY, pinnedWidgets);
+		const res = await fetch(`/api/user-widgets/${id}`, {
 			method: 'PATCH',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ pinned: false })
 		});
+		if (!res.ok && widget) {
+			hiddenWidgets = hiddenWidgets.filter((w) => w.id !== id);
+			pinnedWidgets = [widget, ...pinnedWidgets];
+			writeCachedPayload(HOME_PINNED_WIDGETS_CACHE_KEY, pinnedWidgets);
+		}
+	}
+
+	async function repinWidget(id: string) {
+		const widget = hiddenWidgets.find((w) => w.id === id);
+		hiddenWidgets = hiddenWidgets.filter((w) => w.id !== id);
+		if (widget) pinnedWidgets = [...pinnedWidgets, { ...widget, pinned: true }];
+		writeCachedPayload(HOME_PINNED_WIDGETS_CACHE_KEY, pinnedWidgets);
+
+		const res = await fetch(`/api/user-widgets/${id}`, {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ pinned: true })
+		});
+
+		if (!res.ok && widget) {
+			pinnedWidgets = pinnedWidgets.filter((w) => w.id !== id);
+			hiddenWidgets = [widget, ...hiddenWidgets];
+			writeCachedPayload(HOME_PINNED_WIDGETS_CACHE_KEY, pinnedWidgets);
+		}
+	}
+
+	async function moveWidget(id: string, direction: 'up' | 'down') {
+		const index = pinnedWidgets.findIndex((w) => w.id === id);
+		if (index === -1) return;
+		const targetIndex = direction === 'up' ? index - 1 : index + 1;
+		if (targetIndex < 0 || targetIndex >= pinnedWidgets.length) return;
+
+		const next = [...pinnedWidgets];
+		[next[index], next[targetIndex]] = [next[targetIndex], next[index]];
+		pinnedWidgets = next;
+		writeCachedPayload(HOME_PINNED_WIDGETS_CACHE_KEY, pinnedWidgets);
+
+		await Promise.all(
+			next.map((widget, i) =>
+				fetch(`/api/user-widgets/${widget.id}`, {
+					method: 'PATCH',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ sortOrder: i })
+				})
+			)
+		);
+	}
+
+	async function deleteWidget(id: string) {
+		const inPinned = pinnedWidgets.find((w) => w.id === id);
+		const inHidden = hiddenWidgets.find((w) => w.id === id);
+
+		if (inPinned) pinnedWidgets = pinnedWidgets.filter((w) => w.id !== id);
+		if (inHidden) hiddenWidgets = hiddenWidgets.filter((w) => w.id !== id);
+		writeCachedPayload(HOME_PINNED_WIDGETS_CACHE_KEY, pinnedWidgets);
+
+		const res = await fetch(`/api/user-widgets/${id}`, { method: 'DELETE' });
+		if (!res.ok) {
+			if (inPinned) pinnedWidgets = [...pinnedWidgets, inPinned];
+			if (inHidden) hiddenWidgets = [...hiddenWidgets, inHidden];
+			writeCachedPayload(HOME_PINNED_WIDGETS_CACHE_KEY, pinnedWidgets);
+		}
 	}
 
 	async function saveWidgetConfig(id: string, updates: Partial<UserWidget>) {
@@ -829,10 +1139,10 @@
 		if (res.ok) {
 			const updated = await res.json();
 			pinnedWidgets = pinnedWidgets.map((w) => w.id === id ? { ...w, ...updated } : w);
+			hiddenWidgets = hiddenWidgets.map((w) => w.id === id ? { ...w, ...updated } : w);
+			writeCachedPayload(HOME_PINNED_WIDGETS_CACHE_KEY, pinnedWidgets);
 		}
 	}
-
-
 
 	function navigateForWidget(w: UserWidget) {
 		const healthMetrics = ['weight', 'sleepDuration', 'steps', 'distance', 'workoutCount', 'heartrate', 'mood'];
@@ -851,23 +1161,53 @@
 	const dateLabel = $derived(
 		new Intl.DateTimeFormat('nb-NO', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date())
 	);
+
+	// Load media history when flows open
+	$effect(() => {
+		if (cameraOpen) {
+			void loadCameraHistory();
+		}
+	});
+
+	$effect(() => {
+		if (voiceOpen) {
+			void loadVoiceHistory();
+		}
+	});
+
+	$effect(() => {
+		if (fileFlowOpen) {
+			void loadFileHistory();
+		}
+	});
 </script>
 
-<div class="home-screen">
+<div class="home-screen" class:home-screen-chat-open={chatOpen}>
 
 	<!-- ── SONE 1: Tittel ── -->
-	<section class="zone zone-title" class:hidden={chatOpen}>
-		<div class="title-row">
-			<ScreenTitle title="Resonans" subtitle={dateLabel} />
-			<div class="title-right">
-				<a href="/goals" class="icon-link" aria-label="Mål"><Icon name="goals" size={20} /></a>
-				<a href="/settings" class="icon-link" aria-label="Innstillinger"><Icon name="settings" size={18} /></a>
+	{#if !inputExpanded}
+		<section class="zone zone-title" out:fly={{ y: -24, duration: 750 }} in:fly={{ y: -14, duration: 600 }}>
+			<div class="title-row">
+				<ScreenTitle title="Resonans" subtitle={dateLabel} />
+				<div class="title-right">
+					<a href="/goals" class="icon-link" aria-label="Mål"><Icon name="goals" size={20} /></a>
+					<a href="/settings" class="icon-link" aria-label="Innstillinger"><Icon name="settings" size={18} /></a>
+				</div>
 			</div>
-		</div>
-	</section>
+		</section>
+	{/if}
 
 	<!-- ── SONE 2: Widgets ── -->
-	<section class="zone zone-widgets" class:hidden={chatOpen} aria-label="Sensor-oversikt">
+	{#if !inputExpanded}
+		<section class="zone zone-widgets" aria-label="Sensor-oversikt" out:fly={{ y: -30, duration: 750 }} in:fly={{ y: -18, duration: 600 }}>
+		<button
+			class="widget-panel-fab"
+			onclick={() => (widgetPanelOpen = !widgetPanelOpen)}
+			aria-label="Administrer widgets"
+			title="Administrer widgets"
+		>
+			+
+		</button>
 
 		<div class="widget-row">
 			{#if widgetsLoading}
@@ -885,7 +1225,7 @@
 					onpress={() => navigateForWidget(w)}
 					onchat={(summary) => openChat(summary)}
 					onunpin={() => unpinWidget(w.id)}
-					onconfig={() => (configWidget = w)}
+						onconfig={() => openWidgetConfigSheet(w)}
 				/>
 			{/each}
 		{:else}
@@ -913,10 +1253,13 @@
 				/>
 			{/each}
 		</div>
-	</section>
+
+		</section>
+	{/if}
 
 	<!-- ── SONE 3: Tema ── -->
-	<section class="zone zone-tema" class:hidden={chatOpen} aria-label="Temaer">
+	{#if !inputExpanded}
+		<section class="zone zone-tema" aria-label="Temaer" out:fly={{ y: -34, duration: 750 }} in:fly={{ y: -22, duration: 600 }}>
 		<p class="zone-label">Temaer</p>
 		{#if themes.length}
 			<div class="tema-v3-grid">
@@ -934,29 +1277,44 @@
 			<span class="cta-arrow">→</span>
 		</button>
 		{/if}
-	</section>
+		</section>
+	{/if}
 
 	<!-- ── SONE 4: Chat ── -->
-	<section class="zone zone-input" class:zone-chat-open={chatOpen} aria-label="Chat">
+	<section class="zone zone-input" class:zone-chat-open={inputExpanded} aria-label="Chat">
 		{#if chatOpen}
 			<div class="chat-header">
-				<button class="chat-back" onclick={closeChat} aria-label="Lukk chat"><Icon name="back" size={18} /></button>
 				<div class="chat-heading-wrap">
-					<span class="chat-heading">{activeQuickAction.label}</span>
-					<span class="chat-subheading">{activeQuickAction.description}</span>
+					<span class="chat-heading">{hasPersistedConversation ? 'Samtale' : activeQuickAction.label}</span>
+					{#if hasPersistedConversation}
+						<span class="chat-subheading chat-subheading-title">{chatConversationTitle}</span>
+						<button class="chat-list-link" onclick={() => goto('/samtaler')} aria-label="Gå til alle samtaler">
+							← Alle samtaler
+						</button>
+					{/if}
 				</div>
-				<button class="chat-link" onclick={() => goto(currentConversationId ? `/samtaler?conversation=${currentConversationId}` : '/samtaler')} aria-label="Åpne samtaler">Samtaler</button>
+				<div class="chat-header-actions">
+					{#if hasPersistedConversation}
+						<button class="chat-link" onclick={() => goto(`/samtaler?conversation=${currentConversationId}`)} aria-label="Åpne denne samtalen">Åpne</button>
+					{/if}
+					<button class="chat-close" onclick={closeChat} aria-label="Lukk samtale"><Icon name="close" size={15} /></button>
+				</div>
 			</div>
 			<div class="chat-messages" aria-live="polite">
 				{#if chatMessages.length === 0 && !chatLoading}
-					<div class="quick-flow-card">
-						<div class="quick-flow-mark"><Icon name={activeQuickAction.icon} size={18} /></div>
-						<div class="quick-flow-copy">
-							<p class="quick-flow-title">{activeQuickAction.label}</p>
-							<p class="quick-flow-text">{activeQuickAction.helper}</p>
+					{#if followUpConversations.length > 0}
+						<div class="followup-list" aria-label="Nylige samtaler å følge opp">
+							{#each followUpConversations as convo}
+								<button class="followup-item" onclick={() => goto(`/samtaler?conversation=${convo.id}`)}>
+									<span class="followup-title">{convo.title}</span>
+									<span class="followup-date">{formatFollowUpDate(convo.updatedAt)}</span>
+									{#if convo.preview}
+										<span class="followup-preview">{convo.preview}</span>
+									{/if}
+								</button>
+							{/each}
 						</div>
-					</div>
-					<p class="chat-empty">Skriv første utkast, så hjelper vi deg å plassere det videre etterpå.</p>
+					{/if}
 				{/if}
 				{#each chatMessages as msg}
 					{#if msg.role === 'user'}
@@ -1000,11 +1358,17 @@
 						<span class="theme-link-arrow">→</span>
 					</button>
 				{/if}
-				{#key `${activeQuickAction.id}:${chatPrefill}`}
+				{#key `${activeQuickAction.id}:${chatPrefill}:${chatInputAutoFocus ? 'focus' : 'nofocus'}`}
 					<ChatInput
 						placeholder={activeQuickAction.placeholder}
 						initialValue={chatPrefill}
+						autoFocus={chatInputAutoFocus}
+						showActionRig={true}
 						disabled={chatLoading}
+						onAttachment={(kind, draft) => startHomeAttachment(kind, draft, { preserveConversation: true })}
+						onMood={(draft) => startMoodFlow(true, draft)}
+						onTextChange={(text) => (chatPrefill = text)}
+						onBackspaceEmpty={closeChat}
 						onsubmit={sendChat}
 					/>
 				{/key}
@@ -1030,6 +1394,26 @@
 							<p class="upload-zone-label">Velg bilde eller ta foto</p>
 							<p class="upload-zone-sub">Skjermtid · Kvittering · Blodprøve · Notat</p>
 						</button>
+						{#if cameraHistory.length > 0}
+							<div class="media-history">
+								<p class="media-history-label">Tidligere bilder</p>
+								<div class="media-history-grid">
+									{#each cameraHistory as item}
+										<button
+											class="media-history-item"
+											onclick={() => reuseCameraMedia(item)}
+											title={item.name}
+											aria-label={`Gjenbruk: ${item.name}`}
+										>
+											<img src={item.url} alt={item.name} />
+											<span class="media-item-name">{item.name.split('.')[0].slice(0, 10)}</span>
+										</button>
+									{/each}
+								</div>
+							</div>
+						{:else if cameraHistoryLoading}
+							<p class="media-history-loading">Laster tidligere bilder…</p>
+						{/if}
 					{:else}
 						<div class="img-preview">
 							<img src={cameraPreview} alt="Forhåndsvisning" />
@@ -1071,6 +1455,29 @@
 							<p class="upload-zone-label">Velg lyd- eller videofil</p>
 							<p class="upload-zone-sub">Opptak · talememo · møteklipp · skjermopptak med lyd</p>
 						</button>
+						{#if voiceHistory.length > 0}
+							<div class="media-history">
+								<p class="media-history-label">Tidligere lydopptak</p>
+								<div class="media-history-list">
+									{#each voiceHistory as item}
+										<button
+											class="media-history-list-item"
+											onclick={() => reuseVoiceMedia(item)}
+											title={item.name}
+											aria-label={`Gjenbruk: ${item.name}`}
+										>
+											<span class="media-list-icon">🎙️</span>
+											<div class="media-list-meta">
+												<span class="media-list-name">{item.name}</span>
+												<span class="media-list-date">{new Date(item.createdAt).toLocaleDateString('nb-NO')}</span>
+											</div>
+										</button>
+									{/each}
+								</div>
+							</div>
+						{:else if voiceHistoryLoading}
+							<p class="media-history-loading">Laster tidligere opptak…</p>
+						{/if}
 					{:else}
 						<div class="selected-file-chip">
 							<div class="selected-file-chip__meta">
@@ -1213,6 +1620,29 @@
 							<p class="upload-zone-label">Velg fil</p>
 							<p class="upload-zone-sub">PDF · Word · Excel · Tekst</p>
 						</button>
+						{#if fileHistory.length > 0}
+							<div class="media-history">
+								<p class="media-history-label">Tidligere filer</p>
+								<div class="media-history-list">
+									{#each fileHistory as item}
+										<button
+											class="media-history-list-item"
+											onclick={() => reuseFileMedia(item)}
+											title={item.name}
+											aria-label={`Gjenbruk: ${item.name}`}
+										>
+											<span class="media-list-icon">📄</span>
+											<div class="media-list-meta">
+												<span class="media-list-name">{item.name}</span>
+												<span class="media-list-date">{new Date(item.createdAt).toLocaleDateString('nb-NO')}</span>
+											</div>
+										</button>
+									{/each}
+								</div>
+							</div>
+						{:else if fileHistoryLoading}
+							<p class="media-history-loading">Laster tidligere filer…</p>
+						{/if}
 						<button class="flow-ghost" onclick={() => (fileFlowMode = 'sheet')}>
 							Eller bruk Google Sheet snapshot
 						</button>
@@ -1244,85 +1674,71 @@
 				</div>
 			</div>
 		{:else}
-			<div class="input-v4">
-				<textarea
-					class="input-field-v4"
-					placeholder="Hva tenker du på?"
-					bind:value={chatPrefill}
-					rows="3"
-					onkeydown={(e) => {
-						if (e.key === 'Enter' && !e.shiftKey && chatPrefill.trim()) {
-							e.preventDefault();
-							startHomeChat();
-						}
-					}}
-				></textarea>
-				<div class="input-actions-v4">
-					{#if hasHomeDraft}
-						<button
-							class="icon-btn-v4"
-							title="Send"
-							onclick={startHomeChat}
-						>
-							<Icon name="forward" size={18} />
-						</button>
-						<button
-							class="icon-btn-v4"
-							title="Legg til bilde til chat"
-							onclick={() => startHomeAttachment('camera')}
-						>
-							<Icon name="camera" size={18} />
-						</button>
-						<button
-							class="icon-btn-v4"
-							title="Legg til lyd til chat"
-							onclick={() => startHomeAttachment('voice')}
-						>
-							<Icon name="wave" size={18} />
-						</button>
-						<button
-							class="icon-btn-v4"
-							title="Legg til fil til chat"
-							onclick={() => startHomeAttachment('file')}
-						>
-							<Icon name="attach" size={18} />
-						</button>
-					{:else}
-						<button
-							class="icon-btn-v4"
-							title="Legg ved bilde"
-							onclick={() => startQuickAction(QUICK_ACTIONS[1])}
-						>
-							<Icon name="camera" size={18} />
-						</button>
-						<button
-							class="icon-btn-v4"
-							title="Legg ved lyd"
-							onclick={() => startQuickAction(QUICK_ACTIONS[2])}
-						>
-							<Icon name="wave" size={18} />
-						</button>
-						<button
-							class="icon-btn-v4"
-							title="Legg ved fil"
-							onclick={() => startQuickAction(QUICK_ACTIONS[4])}
-						>
-							<Icon name="attach" size={18} />
-						</button>
-						<button
-							class="icon-btn-v4"
-							title="Sjekk inn"
-							onclick={() => startQuickAction(QUICK_ACTIONS[3])}
-						>
-							<Icon name="checkin" size={18} />
-						</button>
-					{/if}
-				</div>
-			</div>
+			<ChatInput
+				placeholder="Hva tenker du på?"
+				initialValue={chatPrefill}
+				showActionRig={true}
+				onOpen={() => openChat(chatPrefill, 'chat', { focusInput: true })}
+				onAttachment={(kind, draft) => startHomeAttachment(kind, draft)}
+				onMood={(draft) => startMoodFlow(false, draft)}
+				onTextChange={(text) => (chatPrefill = text)}
+				onsubmit={(message) => startHomeChat(message)}
+			/>
 		{/if}
 	</section>
 
 </div>
+
+{#if widgetPanelOpen}
+	<div class="widget-sheet-backdrop" onclick={() => (widgetPanelOpen = false)} aria-hidden="true"></div>
+	<section class="widget-panel" aria-label="Administrer widgets">
+		<div class="widget-panel-handle" aria-hidden="true"></div>
+		<div class="widget-panel-head">
+			<p>Widget-panel</p>
+			<button class="widget-panel-close" onclick={() => (widgetPanelOpen = false)}>Lukk</button>
+		</div>
+
+		<div class="widget-panel-content">
+			<div class="widget-panel-section">
+				<p class="widget-panel-title">På hjemskjerm</p>
+				{#if pinnedWidgets.length === 0}
+					<p class="widget-panel-empty">Ingen aktive widgets</p>
+				{:else}
+					{#each pinnedWidgets as w, i (w.id)}
+						<div class="widget-panel-row">
+							<span class="widget-panel-name">{w.title}</span>
+							<div class="widget-panel-actions">
+								<button class="widget-btn" onclick={() => openWidgetConfigSheet(w)}>Konfig</button>
+								<button class="widget-btn" onclick={() => moveWidget(w.id, 'up')} disabled={i === 0}>↑</button>
+								<button class="widget-btn" onclick={() => moveWidget(w.id, 'down')} disabled={i === pinnedWidgets.length - 1}>↓</button>
+								<button class="widget-btn" onclick={() => unpinWidget(w.id)}>Fjern</button>
+								<button class="widget-btn widget-btn-danger" onclick={() => deleteWidget(w.id)}>Slett</button>
+							</div>
+						</div>
+					{/each}
+				{/if}
+			</div>
+
+			<div class="widget-panel-section">
+				<p class="widget-panel-title">Skjulte widgets</p>
+				{#if hiddenWidgets.length === 0}
+					<p class="widget-panel-empty">Ingen skjulte widgets</p>
+				{:else}
+					{#each hiddenWidgets as w (w.id)}
+						<div class="widget-panel-row">
+							<span class="widget-panel-name">{w.title}</span>
+							<div class="widget-panel-actions">
+								<button class="widget-btn" onclick={() => openWidgetConfigSheet(w)}>Konfig</button>
+								<button class="widget-btn" onclick={() => repinWidget(w.id)}>Legg til</button>
+								<button class="widget-btn widget-btn-danger" onclick={() => deleteWidget(w.id)}>Slett</button>
+							</div>
+						</div>
+					{/each}
+				{/if}
+			</div>
+		</div>
+	</section>
+{/if}
 
 <!-- ── WIDGET CONFIG SHEET ── -->
 {#if configWidget}
@@ -1364,9 +1780,6 @@
 		flex-shrink: 0;
 	}
 
-	.hidden {
-		display: none;
-	}
 
 	/* ── Tittel-sone (10 %) ── */
 	.zone-title {
@@ -1412,6 +1825,7 @@
 		background: #171717;
 		border-radius: 18px;
 		margin: 0 12px;
+		position: relative;
 	}
 
 	/* ── Tema-sone (30 %) ── */
@@ -1436,6 +1850,161 @@
 		flex-wrap: wrap;
 		gap: 16px;
 		justify-content: center;
+	}
+
+	.widget-panel-fab {
+		position: absolute;
+		right: 10px;
+		bottom: 10px;
+		z-index: 4;
+		width: 32px;
+		height: 32px;
+		border-radius: 999px;
+		border: 1px solid #3a3a3a;
+		background: #101010;
+		color: #d8d8d8;
+		font-size: 1.2rem;
+		line-height: 1;
+		cursor: pointer;
+	}
+
+	.widget-panel-fab:hover {
+		border-color: #4a5af0;
+		color: #ffffff;
+	}
+
+	.widget-sheet-backdrop {
+		position: fixed;
+		inset: 0;
+		z-index: 39;
+		background: rgba(0, 0, 0, 0.52);
+	}
+
+	.widget-panel {
+		position: fixed;
+		left: 10px;
+		right: 10px;
+		bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+		z-index: 40;
+		max-height: min(72dvh, 560px);
+		background: #111;
+		border: 1px solid #2b2b2b;
+		border-radius: 18px;
+		padding: 8px 10px 10px;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		overflow: hidden;
+		box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+	}
+
+	.widget-panel-handle {
+		width: 40px;
+		height: 4px;
+		margin: 2px auto 6px;
+		border-radius: 999px;
+		background: #333;
+	}
+
+	.widget-panel-content {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		overflow: auto;
+		padding-right: 2px;
+	}
+
+	.widget-panel-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	.widget-panel-head p {
+		margin: 0;
+		font-size: 0.82rem;
+		font-weight: 600;
+		color: #e6e6e6;
+	}
+
+	.widget-panel-close {
+		border: 1px solid #333;
+		background: #191919;
+		color: #cfcfcf;
+		border-radius: 999px;
+		padding: 3px 10px;
+		font-size: 0.7rem;
+		cursor: pointer;
+	}
+
+	.widget-panel-close:hover {
+		border-color: #4a5af0;
+		color: #fff;
+	}
+
+	.widget-panel-section {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.widget-panel-title {
+		margin: 0;
+		font-size: 0.66rem;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: #7a7a7a;
+	}
+
+	.widget-panel-empty {
+		margin: 0;
+		font-size: 0.74rem;
+		color: #727272;
+	}
+
+	.widget-panel-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		padding: 7px 8px;
+		background: #171717;
+		border: 1px solid #272727;
+		border-radius: 10px;
+	}
+
+	.widget-panel-name {
+		font-size: 0.76rem;
+		color: #d6d6d6;
+		min-width: 0;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.widget-panel-actions {
+		display: flex;
+		gap: 4px;
+	}
+
+	.widget-btn {
+		border: 1px solid #333;
+		background: #1f1f1f;
+		color: #ccc;
+		border-radius: 8px;
+		padding: 3px 7px;
+		font-size: 0.68rem;
+		cursor: pointer;
+	}
+
+	.widget-btn:disabled {
+		opacity: 0.45;
+		cursor: default;
+	}
+
+	.widget-btn-danger {
+		border-color: #5a2e2e;
+		color: #ffb4b4;
 	}
 
 	/* ── Widget-skeleton (laster) ── */
@@ -1564,6 +2133,7 @@
 		justify-content: flex-end;
 		box-sizing: border-box;
 		overflow: hidden;
+		transition: border-radius 300ms cubic-bezier(0.22, 1, 0.36, 1), margin 300ms cubic-bezier(0.22, 1, 0.36, 1), background 300ms cubic-bezier(0.22, 1, 0.36, 1);
 	}
 
 	.zone-chat-open {
@@ -1573,69 +2143,8 @@
 		display: flex;
 		flex-direction: column;
 		background: #0f0f0f;
-	}
-
-	/* ── Input v4: felt + kontekstavhengige handlinger ── */
-	.input-v4 {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto;
-		gap: 10px;
-		align-items: stretch;
-		width: 100%;
-	}
-
-	.input-actions-v4 {
-		display: flex;
-		flex-direction: column;
-		justify-content: flex-end;
-		gap: 10px;
-	}
-
-	.input-field-v4 {
-		flex: 1;
-		background: #161616;
-		border: 1px solid #2a2a2a;
-		border-radius: 12px;
-		padding: 14px 16px;
-		color: #ddd;
-		font: inherit;
-		font-size: 0.9rem;
-		line-height: 1.45;
-		min-height: 126px;
-		resize: none;
-		overflow-y: auto;
-		transition: border-color 0.15s;
-	}
-
-	.input-field-v4::placeholder {
-		color: #555;
-	}
-
-	.input-field-v4:focus {
-		outline: none;
-		border-color: #3a3a3a;
-	}
-
-	.icon-btn-v4 {
-		width: 44px;
-		height: 44px;
-		border-radius: 12px;
-		background: #1a1a1a;
-		border: 1px solid #2a2a2a;
-		color: #aaa;
-		font-size: 1.1rem;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		cursor: pointer;
-		transition: background 0.15s, border-color 0.15s, transform 0.15s;
-		flex-shrink: 0;
-	}
-
-	.icon-btn-v4:hover {
-		background: #222;
-		border-color: #3a3a3a;
-		transform: translateY(-2px);
+		border-radius: 0;
+		margin: 0;
 	}
 
 	/* ── Flow-panel (kamera / lyd / stemning / fil) ──────────────────────── */
@@ -2123,23 +2632,38 @@
 		flex-shrink: 0;
 	}
 
-	.chat-back {
-		background: none;
-		border: none;
-		color: #555;
-		font: inherit;
-		font-size: 1.1rem;
-		cursor: pointer;
-		padding: 4px 8px 4px 0;
-		transition: color 0.12s;
+	.chat-header-actions {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
 	}
-	.chat-back:hover { color: #ccc; }
+
+	.chat-close {
+		width: 30px;
+		height: 30px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 999px;
+		border: 1px solid #2a2a2a;
+		background: #111;
+		color: #8f8f8f;
+		cursor: pointer;
+		flex-shrink: 0;
+		transition: border-color 0.12s, color 0.12s;
+	}
+
+	.chat-close:hover {
+		border-color: #3a3a3a;
+		color: #d8d8d8;
+	}
 
 	.chat-heading {
-		font-size: 0.9rem;
+		font-size: 1.05rem;
 		font-weight: 700;
-		color: #aaa;
-		letter-spacing: -0.01em;
+		color: #ebebeb;
+		letter-spacing: -0.025em;
+		line-height: 1.2;
 	}
 
 	.chat-heading-wrap {
@@ -2152,6 +2676,30 @@
 	.chat-subheading {
 		font-size: 0.74rem;
 		color: #5d5d5d;
+	}
+
+	.chat-subheading-title {
+		color: #9398b6;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		max-width: 100%;
+	}
+
+	.chat-list-link {
+		margin-top: 1px;
+		align-self: flex-start;
+		padding: 0;
+		border: none;
+		background: none;
+		color: #7683bf;
+		font: inherit;
+		font-size: 0.72rem;
+		cursor: pointer;
+	}
+
+	.chat-list-link:hover {
+		color: #aab4ea;
 	}
 
 	.chat-link {
@@ -2171,48 +2719,68 @@
 		color: #d4daf6;
 	}
 
-
-	.quick-flow-card {
-		align-self: stretch;
-		display: flex;
-		gap: 12px;
-		background: linear-gradient(180deg, #13151c 0%, #101114 100%);
-		border: 1px solid #222839;
-		border-radius: 18px;
-		padding: 14px;
+	@media (prefers-reduced-motion: reduce) {
+		.zone-input {
+			transition: none;
+		}
 	}
 
-	.quick-flow-mark {
-		width: 42px;
-		height: 42px;
-		border-radius: 12px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		background: #161b28;
-		border: 1px solid #2a3557;
-		color: #b6c2f8;
-		flex-shrink: 0;
-	}
 
-	.quick-flow-copy {
+	.followup-list {
 		display: flex;
 		flex-direction: column;
-		gap: 4px;
+		gap: 8px;
+		opacity: 0.58;
+		margin-top: 2px;
 	}
 
-	.quick-flow-title {
-		margin: 0;
-		font-size: 0.88rem;
-		font-weight: 700;
-		color: #e3e6f6;
+	.followup-item {
+		text-align: left;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		grid-template-areas:
+			'title date'
+			'preview preview';
+		gap: 3px 10px;
+		padding: 9px 10px;
+		background: transparent;
+		border: 1px solid #1a1a1a;
+		border-radius: 10px;
+		color: #7a7a7a;
+		cursor: pointer;
+		transition: opacity 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 	}
 
-	.quick-flow-text {
-		margin: 0;
+	.followup-item:hover {
+		opacity: 0.9;
+		border-color: #2b2b2b;
+		color: #9a9a9a;
+	}
+
+	.followup-title {
+		grid-area: title;
 		font-size: 0.79rem;
-		line-height: 1.45;
-		color: #8d93aa;
+		font-weight: 600;
+		letter-spacing: -0.01em;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.followup-date {
+		grid-area: date;
+		font-size: 0.7rem;
+		color: #666;
+	}
+
+	.followup-preview {
+		grid-area: preview;
+		font-size: 0.72rem;
+		line-height: 1.3;
+		color: #666;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.chat-messages {
@@ -2225,14 +2793,6 @@
 		-webkit-overflow-scrolling: touch;
 		scrollbar-width: thin;
 		scrollbar-color: #222 transparent;
-	}
-
-	.chat-empty {
-		color: #2e2e2e;
-		font-size: 0.85rem;
-		text-align: center;
-		margin: auto;
-		font-style: italic;
 	}
 
 	.bubble-user {
@@ -2305,6 +2865,129 @@
 
 
 
+	/* Media history gallery */
+	.media-history {
+		margin-top: 16px;
+		padding-top: 12px;
+		border-top: 1px solid #2a2a2a;
+	}
+
+	.media-history-label {
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: #888;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		margin: 0 0 10px 0;
+	}
+
+	.media-history-loading {
+		font-size: 0.75rem;
+		color: #666;
+		margin: 8px 0;
+	}
+
+	.media-history-grid {
+		display: grid;
+		grid-template-columns: repeat(4, 1fr);
+		gap: 8px;
+	}
+
+	.media-history-item {
+		aspect-ratio: 1;
+		border: 1px solid #2a2a2a;
+		border-radius: 8px;
+		overflow: hidden;
+		cursor: pointer;
+		background: #0f0f0f;
+		transition: border-color 0.15s, opacity 0.15s;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: flex-start;
+		padding: 0;
+		font: inherit;
+	}
+
+	.media-history-item img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+	}
+
+	.media-history-item:hover {
+		border-color: #4a5af0;
+		opacity: 0.85;
+	}
+
+	.media-item-name {
+		position: absolute;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		background: rgba(0, 0, 0, 0.8);
+		color: #ccc;
+		font-size: 0.65rem;
+		padding: 3px 4px;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		text-align: center;
+	}
+
+	.media-history-list {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.media-history-list-item {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 8px 10px;
+		border: 1px solid #2a2a2a;
+		border-radius: 6px;
+		background: transparent;
+		cursor: pointer;
+		transition: border-color 0.15s, background 0.15s;
+		text-align: left;
+		font: inherit;
+		color: inherit;
+		width: 100%;
+	}
+
+	.media-history-list-item:hover {
+		border-color: #4a5af0;
+		background: rgba(74, 90, 240, 0.05);
+	}
+
+	.media-list-icon {
+		font-size: 1.2rem;
+		flex-shrink: 0;
+	}
+
+	.media-list-meta {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		flex: 1;
+		min-width: 0;
+	}
+
+	.media-list-name {
+		font-size: 0.8rem;
+		font-weight: 500;
+		color: #ddd;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.media-list-date {
+		font-size: 0.7rem;
+		color: #666;
+	}
 </style>
 
 

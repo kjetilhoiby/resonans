@@ -28,6 +28,51 @@
 	let data = $state<WidgetData | null>(null);
 	let loading = $state(true);
 	let error = $state(false);
+	let refreshing = $state(false);
+
+	const WIDGET_DATA_CACHE_MAX_AGE_MS = 30 * 60 * 1000;
+
+	interface CachedWidgetData {
+		cachedAt: string;
+		data: WidgetData;
+	}
+
+	function getWidgetCacheKey(id: string): string {
+		return `resonans:home:widget-data:${id}:v1`;
+	}
+
+	function readCachedWidgetData(id: string): WidgetData | null {
+		if (typeof window === 'undefined') return null;
+
+		try {
+			const raw = window.localStorage.getItem(getWidgetCacheKey(id));
+			if (!raw) return null;
+
+			const parsed = JSON.parse(raw) as CachedWidgetData;
+			if (!parsed?.cachedAt || !parsed?.data) return null;
+
+			const ageMs = Date.now() - new Date(parsed.cachedAt).getTime();
+			if (!Number.isFinite(ageMs) || ageMs > WIDGET_DATA_CACHE_MAX_AGE_MS) return null;
+
+			return parsed.data;
+		} catch {
+			return null;
+		}
+	}
+
+	function writeCachedWidgetData(id: string, widgetData: WidgetData) {
+		if (typeof window === 'undefined') return;
+
+		try {
+			const payload: CachedWidgetData = {
+				cachedAt: new Date().toISOString(),
+				data: widgetData
+			};
+			window.localStorage.setItem(getWidgetCacheKey(id), JSON.stringify(payload));
+		} catch {
+			// Ignorer localStorage-feil
+		}
+	}
 
 	// Long-press for unpin
 	let pressTimer: ReturnType<typeof setTimeout> | null = null;
@@ -75,17 +120,31 @@
 	}
 
 	onMount(async () => {
+		const cached = readCachedWidgetData(widgetId);
+		if (cached) {
+			data = cached;
+			loading = false;
+			refreshing = true;
+		}
+
 		try {
 			const res = await fetch(`/api/widget-data/${widgetId}`);
 			if (res.ok) {
-				data = await res.json();
+				const fresh = (await res.json()) as WidgetData;
+				const hasMeaningfulData = fresh.current !== null || fresh.sparkline.length > 0;
+
+				if (hasMeaningfulData || !cached) {
+					data = fresh;
+					writeCachedWidgetData(widgetId, fresh);
+				}
 			} else {
-				error = true;
+				error = !cached;
 			}
 		} catch {
-			error = true;
+			error = !cached;
 		} finally {
 			loading = false;
+			refreshing = false;
 		}
 	});
 
@@ -144,6 +203,9 @@
 	{:else}
 		<!-- Ring -->
 		<div class="dw-ring">
+			{#if refreshing}
+				<div class="dw-refresh-indicator" aria-label="Oppdaterer data"></div>
+			{/if}
 			{#if pct != null}
 				<GoalRing {pct} size={70} strokeWidth={4} color={displayColor} />
 			{:else}
@@ -241,6 +303,24 @@
 		position: relative;
 		width: 70px;
 		height: 70px;
+	}
+
+	.dw-refresh-indicator {
+		position: absolute;
+		top: 2px;
+		right: 2px;
+		width: 8px;
+		height: 8px;
+		border-radius: 999px;
+		background: var(--c);
+		opacity: 0.75;
+		box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.35);
+		animation: refreshPulse 1.2s ease-out infinite;
+	}
+
+	@keyframes refreshPulse {
+		0% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.35); }
+		100% { box-shadow: 0 0 0 7px rgba(255, 255, 255, 0); }
 	}
 
 	.dw-plain-circle {

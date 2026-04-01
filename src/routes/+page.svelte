@@ -8,10 +8,18 @@
 	}
 
 	interface Props {
-		data: { themes: Theme[] };
+		data: {
+			themes: Theme[];
+			recentConversations: {
+				id: string;
+				title: string;
+				preview: string;
+				updatedAt: string;
+			}[];
+		};
 	}
 
 	let { data }: Props = $props();
 </script>
 
-<HomeScreen themes={data.themes} />
+<HomeScreen themes={data.themes} recentConversations={data.recentConversations} />

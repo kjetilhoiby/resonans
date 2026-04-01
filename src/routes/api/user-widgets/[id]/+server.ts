@@ -33,6 +33,7 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 	if (typeof body.thresholdSuccess === 'number') updates.thresholdSuccess = String(body.thresholdSuccess);
 	if (body.thresholdSuccess === null) updates.thresholdSuccess = null;
 	if (typeof body.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(body.color)) updates.color = body.color;
+	if (typeof body.unit === 'string' && body.unit.trim()) updates.unit = body.unit.trim().slice(0, 20);
 	if (typeof body.filterCategory === 'string' && body.filterCategory.trim()) updates.filterCategory = body.filterCategory.trim();
 	if (body.filterCategory === null) updates.filterCategory = null;
 

@@ -631,8 +631,63 @@ const tools = [
 	{
 		type: 'function' as const,
 		function: {
+			name: 'propose_widget',
+			description: 'Foreslå en widget til brukeren UTEN å opprette den i databasen. Bruk ALLTID DETTE FØR create_widget. Returnerer et widget-draft som brukeren ser i et forslagskort der de kan bekrefte, konfigurere eller forkaste. Bruk når bruker vil ha en ny widget ("lag widget for dagligvare", "vis søvn siste 30 dager", "widget for løpedistanse"). ALDRI opprett widget direkte uten forslag og bekreftelse.',
+			parameters: {
+				type: 'object',
+				properties: {
+					title: {
+						type: 'string',
+						description: 'Kort, beskrivende tittel på widgeten (maks 40 tegn), f.eks. "Søvn / dag", "Ukentlig løping"'
+					},
+					metricType: {
+						type: 'string',
+						description: 'Hvilken metrikk widgeten viser',
+						enum: ['weight', 'sleepDuration', 'steps', 'distance', 'workoutCount', 'heartrate', 'mood', 'screenTime', 'amount']
+					},
+					aggregation: {
+						type: 'string',
+						description: 'Aggregeringsmetode: avg=gjennomsnitt, sum=sum, count=antall, latest=siste verdi',
+						enum: ['avg', 'sum', 'count', 'latest']
+					},
+					period: {
+						type: 'string',
+						description: 'Tidsoppløsning for sparkline: day=daglig, week=ukentlig, month=månedlig',
+						enum: ['day', 'week', 'month']
+					},
+					range: {
+						type: 'string',
+						description: 'Tidsvindu for data',
+						enum: ['last7', 'last14', 'last30', 'current_week', 'current_month', 'current_year']
+					},
+					filterCategory: {
+						type: 'string',
+						description: 'Valgfri kategorifilter for amount-metrikk',
+						enum: ['dagligvare', 'mat', 'bolig', 'transport', 'helse', 'abonnement', 'underholdning', 'shopping', 'barn', 'forsikring', 'sparing', 'overføring', 'lønn', 'annet']
+					},
+					unit: {
+						type: 'string',
+						description: 'Enhet som vises på widgeten, f.eks. "kg", "timer", "km", "steg", "kr"'
+					},
+					goal: {
+						type: 'number',
+						description: 'MÅL-VERDI for å vise fremgang som prosentring. Sett når bruker nevner konkret mål.'
+					},
+					color: {
+						type: 'string',
+						description: 'Hex-farge for widgeten',
+						enum: ['#7c8ef5', '#82c882', '#e07070', '#f0b429', '#5fa0a0', '#d4829a']
+					}
+				},
+				required: ['title', 'metricType', 'aggregation', 'period', 'range', 'unit']
+			}
+		}
+	},
+	{
+		type: 'function' as const,
+		function: {
 			name: 'create_widget',
-			description: 'Opprett en ny widget som viser en bestemt metrikk på hjemskjermen. Bruk når brukeren vil se en spesifikk statistikk, f.eks. "vis meg søvn per dag siste 30 dager" eller "lagre en widget for løpedistanse denne uken". Widgeten kan festes til hjemskjermen. VIKTIG: Hvis brukeren nevner et konkret mål (f.eks. "15 km per uke", "8 timer søvn", "10000 skritt"), SKAL du sette goal-parameteren.',
+			description: 'Opprett widget i databasen. Bruk KUN etter at brukeren eksplisitt har bekreftet et propose_widget-forslag. ALDRI uten forutgående propose_widget og bekreftelse fra bruker. Widgeten festes til hjemskjermen.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -958,6 +1013,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		let archivedTheme: { id: string; name: string; emoji?: string | null } | null = null;
 		let checklistCreated = false;
 		let checklistUpdated = false;
+		let widgetProposal: import('$lib/ai/tools/propose-widget').WidgetDraft | null = null;
 
 		// Debug logging
 		console.log('\n🤖 OpenAI Response:');
@@ -1337,6 +1393,28 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 							tool_call_id: toolCall.id
 						});
 					}
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'propose_widget') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  📊 Proposing widget:', args);
+					try {
+						const { proposeWidgetTool } = await import('$lib/ai/tools/propose-widget');
+						const result = await proposeWidgetTool.execute({ userId, ...args });
+						if (result.success) {
+							widgetProposal = result.draft;
+						}
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify(result),
+							tool_call_id: toolCall.id
+						});
+					} catch (e) {
+						console.error('  📊 Widget proposal failed:', e);
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify({ success: false, error: 'Klarte ikke lage widget-forslag' }),
+							tool_call_id: toolCall.id
+						});
+					}
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'create_widget') {
 					const args = JSON.parse(toolCall.function.arguments);
 					console.log('  📊 Creating widget:', args);
@@ -1683,7 +1761,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			archivedTheme,
 			checklistCreated,
 			checklistUpdated,
-			checklistChanged: checklistCreated || checklistUpdated
+			checklistChanged: checklistCreated || checklistUpdated,
+			widgetProposal,
 		});
 	} catch (error) {
 		console.error('Error in chat API:', error);

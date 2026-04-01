@@ -16,6 +16,8 @@ import { db, pgClient } from '$lib/db';
 import { userWidgets } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { getKeywordsForCategory } from '$lib/server/integrations/transaction-categories';
+import { categorizeTransaction } from '$lib/server/integrations/transaction-categories';
+import { loadMerchantMappings } from '$lib/server/integrations/spending-analyzer';
 import type { RequestHandler } from './$types';
 
 // Støttede metrikk-typer og hvilken dataType/felt de henter fra
@@ -101,6 +103,204 @@ function buildCategoryFilter(dataType: string, filterCategory?: string | null): 
 	return `AND (data->>'description') ILIKE ANY(ARRAY[${escaped}])`;
 }
 
+function normalizeCategoryId(categoryId: string | null | undefined): string | null {
+	if (!categoryId) return null;
+	const normalized = categoryId
+		.toLowerCase()
+		.normalize('NFD')
+		.replace(/[\u0300-\u036f]/g, '')
+		.trim();
+
+	if (normalized === 'dagligvarer') return 'dagligvare';
+	return normalized;
+}
+
+type BankTxRow = {
+	timestamp: Date;
+	amount: number;
+	description: string | null;
+	typeText: string | null;
+};
+
+type AmountFilterDebug = {
+	filterCategory: string;
+	filterCategoryNormalized: string | null;
+	totalSpendTxCountInRange: number;
+	categorizedMatchCount: number;
+	keywordMatchCount: number;
+	merchantMappingCount: number;
+	topClassifiedCategories: Array<{ category: string; count: number }>;
+	sampleMatches: Array<{ date: string; description: string; amount: number }>;
+};
+
+async function fetchKeywordFilteredAmountRows(
+	userId: string,
+	from: Date,
+	to: Date,
+	filterCategory: string,
+): Promise<Array<{ timestamp: Date; value: number }>> {
+	const categoryFilter = buildCategoryFilter('bank_transaction', filterCategory);
+	if (!categoryFilter) return [];
+
+	const rows = await pgClient.unsafe(
+		`
+		SELECT
+			timestamp,
+			ABS((data->>'amount')::numeric) AS value
+		FROM sensor_events
+		WHERE user_id = $1
+		  AND data_type = 'bank_transaction'
+		  AND timestamp >= $2
+		  AND timestamp <= $3
+		  AND (data->>'amount')::numeric < 0
+		  ${categoryFilter}
+		ORDER BY timestamp ASC
+		`,
+		[userId, from.toISOString(), to.toISOString()]
+	) as unknown as Array<{ timestamp: Date; value: string | number }>;
+
+	return rows.map((row) => ({
+		timestamp: new Date(row.timestamp),
+		value: Math.abs(Number(row.value) || 0),
+	}));
+}
+
+async function fetchCategorizedAmountRows(
+	userId: string,
+	from: Date,
+	to: Date,
+	filterCategory: string,
+): Promise<Array<{ timestamp: Date; value: number }>> {
+	const rows = await pgClient.unsafe(
+		`
+		SELECT
+			timestamp,
+			(data->>'amount')::numeric AS amount,
+			data->>'description' AS description,
+			COALESCE(data->>'typeText', data->>'category') AS "typeText"
+		FROM sensor_events
+		WHERE user_id = $1
+		  AND data_type = 'bank_transaction'
+		  AND timestamp >= $2
+		  AND timestamp <= $3
+		  AND (data->>'amount')::numeric < 0
+		ORDER BY timestamp ASC
+		`,
+		[userId, from.toISOString(), to.toISOString()]
+	) as unknown as BankTxRow[];
+
+	const merchantMappingCache = await loadMerchantMappings(userId);
+	const wantedCategory = normalizeCategoryId(filterCategory);
+
+	const categorizedRows = rows
+		.filter((tx) => {
+			const classified = categorizeTransaction(tx.description, tx.typeText, tx.amount, merchantMappingCache);
+			return normalizeCategoryId(classified.category) === wantedCategory;
+		})
+		.map((tx) => ({
+			timestamp: new Date(tx.timestamp),
+			value: Math.abs(Number(tx.amount) || 0),
+		}));
+
+	if (categorizedRows.length > 0) {
+		return categorizedRows;
+	}
+
+	// Fallback: hvis mapping/kategorisering ikke treffer ennå, bruk keyword-filter
+	return fetchKeywordFilteredAmountRows(userId, from, to, filterCategory);
+}
+
+async function collectAmountFilterDebug(
+	userId: string,
+	from: Date,
+	to: Date,
+	filterCategory: string,
+): Promise<AmountFilterDebug> {
+	const rows = await pgClient.unsafe(
+		`
+		SELECT
+			timestamp,
+			(data->>'amount')::numeric AS amount,
+			data->>'description' AS description,
+			COALESCE(data->>'typeText', data->>'category') AS "typeText"
+		FROM sensor_events
+		WHERE user_id = $1
+		  AND data_type = 'bank_transaction'
+		  AND timestamp >= $2
+		  AND timestamp <= $3
+		  AND (data->>'amount')::numeric < 0
+		ORDER BY timestamp ASC
+		`,
+		[userId, from.toISOString(), to.toISOString()]
+	) as unknown as BankTxRow[];
+
+	const merchantMappingCache = await loadMerchantMappings(userId);
+	const wantedCategory = normalizeCategoryId(filterCategory);
+	const categoryCounter = new Map<string, number>();
+	let categorizedMatchCount = 0;
+
+	for (const tx of rows) {
+		const classified = categorizeTransaction(tx.description, tx.typeText, tx.amount, merchantMappingCache);
+		const normalizedCategory = normalizeCategoryId(classified.category) ?? 'ukjent';
+		categoryCounter.set(normalizedCategory, (categoryCounter.get(normalizedCategory) ?? 0) + 1);
+		if (normalizedCategory === wantedCategory) {
+			categorizedMatchCount += 1;
+		}
+	}
+
+	const keywordRows = await fetchKeywordFilteredAmountRows(userId, from, to, filterCategory);
+	const topClassifiedCategories = [...categoryCounter.entries()]
+		.sort((a, b) => b[1] - a[1])
+		.slice(0, 5)
+		.map(([category, count]) => ({ category, count }));
+
+	const sampleMatches = rows
+		.filter((tx) => {
+			const classified = categorizeTransaction(tx.description, tx.typeText, tx.amount, merchantMappingCache);
+			return normalizeCategoryId(classified.category) === wantedCategory;
+		})
+		.slice(0, 6)
+		.map((tx) => ({
+			date: new Date(tx.timestamp).toISOString().slice(0, 10),
+			description: tx.description ?? tx.typeText ?? 'Ukjent',
+			amount: Math.abs(Number(tx.amount) || 0),
+		}));
+
+	return {
+		filterCategory,
+		filterCategoryNormalized: wantedCategory,
+		totalSpendTxCountInRange: rows.length,
+		categorizedMatchCount,
+		keywordMatchCount: keywordRows.length,
+		merchantMappingCount: merchantMappingCache.size,
+		topClassifiedCategories,
+		sampleMatches,
+	};
+}
+
+function getBucketKey(timestamp: Date, period: string): string {
+	const d = new Date(timestamp);
+	if (period === 'month') {
+		return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+	}
+	if (period === 'week') {
+		const day = (d.getDay() + 6) % 7;
+		d.setDate(d.getDate() - day);
+		d.setHours(0, 0, 0, 0);
+		return `${d.getFullYear()}-W${String(Math.ceil((((d.getTime() - new Date(d.getFullYear(), 0, 1).getTime()) / 86400000) + 1) / 7)).padStart(2, '0')}`;
+	}
+	d.setHours(0, 0, 0, 0);
+	return d.toISOString().slice(0, 10);
+}
+
+function aggregateValues(values: number[], aggregation: string): number {
+	if (values.length === 0) return 0;
+	if (aggregation === 'count') return values.length;
+	if (aggregation === 'latest') return values[values.length - 1] ?? 0;
+	if (aggregation === 'avg') return values.reduce((sum, v) => sum + v, 0) / values.length;
+	return values.reduce((sum, v) => sum + v, 0);
+}
+
 /** Henter tidsseriedata gruppert per periode */
 async function fetchTimeSeries(
 	userId: string,
@@ -111,6 +311,25 @@ async function fetchTimeSeries(
 	to: Date,
 	filterCategory?: string | null,
 ): Promise<{ bucket: string; value: number }[]> {
+	if (metricConf.dataType === 'bank_transaction' && filterCategory) {
+		const rows = await fetchCategorizedAmountRows(userId, from, to, filterCategory);
+		const byBucket = new Map<string, number[]>();
+
+		for (const row of rows) {
+			const key = getBucketKey(row.timestamp, period);
+			const list = byBucket.get(key) ?? [];
+			list.push(row.value);
+			byBucket.set(key, list);
+		}
+
+		return [...byBucket.entries()]
+			.sort(([a], [b]) => a.localeCompare(b))
+			.map(([bucket, values]) => ({
+				bucket,
+				value: aggregateValues(values, aggregation),
+			}));
+	}
+
 	const pgTrunc = period === 'day' ? 'day' : period === 'week' ? 'week' : 'month';
 	// bucketAggregation overstyrer brukerens aggregation-valg for data som trenger spesiell håndtering (f.eks. skrittduplisering)
 	const userAggFn = aggregation === 'sum' ? 'SUM' : aggregation === 'count' ? 'COUNT' : aggregation === 'latest' ? 'MAX' : 'AVG';
@@ -150,6 +369,12 @@ async function fetchSingleValue(
 	to: Date,
 	filterCategory?: string | null,
 ): Promise<number | null> {
+	if (metricConf.dataType === 'bank_transaction' && filterCategory) {
+		const rows = await fetchCategorizedAmountRows(userId, from, to, filterCategory);
+		if (rows.length === 0) return null;
+		return aggregateValues(rows.map((row) => row.value), aggregation);
+	}
+
 	const userAggFn = aggregation === 'sum' ? 'SUM' : aggregation === 'count' ? 'COUNT' : aggregation === 'latest' ? 'MAX' : 'AVG';
 	const nullCheck = metricConf.countStar ? '' : `AND (${metricConf.field})::numeric IS NOT NULL`;
 	const amountFilter = metricConf.dataType === 'bank_transaction' ? `AND (data->>'amount')::numeric < 0` : '';
@@ -231,9 +456,11 @@ function computeState(
 	return 'normal';
 }
 
-export const GET: RequestHandler = async ({ params, locals }) => {
+export const GET: RequestHandler = async ({ params, locals, url }) => {
 	const widgetId = params.id;
 	const userId = locals.userId;
+	const debugEnabled = url.searchParams.get('debug') === '1';
+	const filterCategoryOverride = url.searchParams.get('filterCategory');
 
 	const widget = await db.query.userWidgets.findFirst({
 		where: and(
@@ -249,10 +476,14 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 
 	const { from, to } = getRangeDate(widget.range);
 	const prev = getPreviousRange(widget.range);
+	let effectiveRange = widget.range;
+	let usedRangeFallback = false;
 
 	// Hent tidsserie (for sparkline), periodeaggregat (for current) og forrige periode (for delta) i parallell
-	const filterCategory = widget.filterCategory ?? null;
-	const [series, currentValue, prevValue] = await Promise.all([
+	const filterCategory = filterCategoryOverride !== null
+		? (filterCategoryOverride.trim() || null)
+		: (widget.filterCategory ?? null);
+	let [series, currentValue, prevValue] = await Promise.all([
 		fetchTimeSeries(userId, metricConf, widget.aggregation, widget.period, from, to, filterCategory),
 		// For avg/sum: bruk periodeaggregat som current (mer representativt enn kun siste dag)
 		// For latest: siste bøtteverdi er riktigst (peker på nyeste måling)
@@ -261,6 +492,53 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 			: Promise.resolve(null),
 		fetchSingleValue(userId, metricConf, widget.aggregation, prev.from, prev.to, filterCategory),
 	]);
+
+	if (
+		widget.metricType === 'amount' &&
+		filterCategory &&
+		widget.range === 'current_month' &&
+		series.length === 0
+	) {
+		const fallbackFromTo = getRangeDate('last30');
+		const fallbackPrev = getPreviousRange('last30');
+		const [fallbackSeries, fallbackCurrentValue, fallbackPrevValue] = await Promise.all([
+			fetchTimeSeries(
+				userId,
+				metricConf,
+				widget.aggregation,
+				widget.period,
+				fallbackFromTo.from,
+				fallbackFromTo.to,
+				filterCategory
+			),
+			widget.aggregation !== 'latest'
+				? fetchSingleValue(
+					userId,
+					metricConf,
+					widget.aggregation,
+					fallbackFromTo.from,
+					fallbackFromTo.to,
+					filterCategory
+				)
+				: Promise.resolve(null),
+			fetchSingleValue(
+				userId,
+				metricConf,
+				widget.aggregation,
+				fallbackPrev.from,
+				fallbackPrev.to,
+				filterCategory
+			)
+		]);
+
+		if (fallbackSeries.length > 0) {
+			series = fallbackSeries;
+			currentValue = fallbackCurrentValue;
+			prevValue = fallbackPrevValue;
+			effectiveRange = 'last30';
+			usedRangeFallback = true;
+		}
+	}
 
 	const sparkline = series.map((r) => roundVal(r.value, widget.metricType) ?? 0);
 	// current: periodeaggregat for avg/sum, siste sparkline-punkt for latest
@@ -285,5 +563,35 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 		}
 	}
 
-	return json({ current, sparkline, unit: widget.unit, delta, pct, state: computeState(current, warnNum, successNum) });
+	const amountFilterDebug =
+		debugEnabled && widget.metricType === 'amount' && filterCategory
+			? await collectAmountFilterDebug(userId, from, to, filterCategory)
+			: null;
+
+	return json({
+		current,
+		sparkline,
+		unit: widget.unit,
+		delta,
+		pct,
+		state: computeState(current, warnNum, successNum),
+		...(debugEnabled
+			? {
+				debug: {
+					widgetId,
+					metricType: widget.metricType,
+					aggregation: widget.aggregation,
+					period: widget.period,
+					range: widget.range,
+					filterCategory,
+					effectiveRange,
+					usedRangeFallback,
+					from: from.toISOString(),
+					to: to.toISOString(),
+					seriesBuckets: series.length,
+					amountFilter: amountFilterDebug,
+				}
+			}
+			: {})
+	});
 };
