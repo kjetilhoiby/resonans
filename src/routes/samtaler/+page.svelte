@@ -4,8 +4,12 @@
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import TriageCard from '$lib/components/composed/TriageCard.svelte';
 	import WidgetProposalCard from '$lib/components/domain/WidgetProposalCard.svelte';
+	import ChatStatusWidget from '$lib/components/domain/ChatStatusWidget.svelte';
+	import AnnotatedImageCard from '$lib/components/domain/AnnotatedImageCard.svelte';
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
 	import type { WidgetDraft } from '$lib/ai/tools/propose-widget';
+	import type { WeatherStatusWidget } from '$lib/ai/tools/weather-forecast';
+	import type { PhotoAnnotationResult } from '$lib/ai/tools/annotate-photo';
 
 	interface ConversationSummary {
 		id: string;
@@ -22,6 +26,10 @@
 		content: string;
 		timestamp: string;
 		imageUrl?: string | null;
+		widgetProposal?: WidgetDraft | null;
+		statusWidget?: WeatherStatusWidget | null;
+		photoAnnotation?: PhotoAnnotationResult | null;
+		photoAnnotationImageUrl?: string | null;
 	}
 
 	interface Props {
@@ -43,11 +51,24 @@
 				id: m.id,
 				role: m.role as 'user' | 'assistant',
 				text: m.content,
-				imageUrl: m.imageUrl ?? null
+				imageUrl: m.imageUrl ?? null,
+				widgetProposal: m.widgetProposal ?? null,
+				statusWidget: m.statusWidget ?? null,
+				photoAnnotation: m.photoAnnotation ?? null,
+				photoAnnotationImageUrl: m.photoAnnotationImageUrl ?? null
 			}));
 	}
 
-	type ChatMsg = { id: string; role: 'user' | 'assistant'; text: string; imageUrl: string | null; widgetProposal?: WidgetDraft | null };
+	type ChatMsg = {
+		id: string;
+		role: 'user' | 'assistant';
+		text: string;
+		imageUrl: string | null;
+		widgetProposal?: WidgetDraft | null;
+		statusWidget?: WeatherStatusWidget | null;
+		photoAnnotation?: PhotoAnnotationResult | null;
+		photoAnnotationImageUrl?: string | null;
+	};
 
 	let chatMessages = $state<ChatMsg[]>(toChatMessages(data.messages));
 	let chatLoading = $state(false);
@@ -97,7 +118,19 @@
 			});
 			if (!res.ok) throw new Error(await res.text());
 			const payload = await res.json();
-			chatMessages = [...chatMessages, { id: crypto.randomUUID(), role: 'assistant', text: payload.message, imageUrl: null, widgetProposal: payload.widgetProposal ?? null }];
+			chatMessages = [
+				...chatMessages,
+				{
+					id: crypto.randomUUID(),
+					role: 'assistant',
+					text: payload.message,
+					imageUrl: null,
+					widgetProposal: payload.widgetProposal ?? null,
+					statusWidget: payload.statusWidget ?? null,
+					photoAnnotation: payload.photoAnnotation ?? null,
+					photoAnnotationImageUrl: payload.photoAnnotationImageUrl ?? null
+				}
+			];
 		} catch {
 			chatError = 'Noe gikk galt. Prøv igjen.';
 		} finally {
@@ -181,6 +214,12 @@
 							draft={msg.widgetProposal}
 							ondiscard={() => { msg.widgetProposal = null; }}
 						/>
+					{/if}
+					{#if msg.statusWidget}
+						<ChatStatusWidget widget={msg.statusWidget} />
+					{/if}
+					{#if msg.photoAnnotation && msg.photoAnnotationImageUrl}
+						<AnnotatedImageCard imageUrl={msg.photoAnnotationImageUrl} annotation={msg.photoAnnotation} />
 					{/if}
 				{/if}
 			{/each}

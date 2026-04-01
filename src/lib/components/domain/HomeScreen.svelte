@@ -1424,7 +1424,7 @@
 						<span class="theme-link-arrow">→</span>
 					</button>
 				{/if}
-				{#key `${activeQuickAction.id}:${chatPrefill}:${chatInputAutoFocus ? 'focus' : 'nofocus'}`}
+				{#key `${activeQuickAction.id}:${chatInputAutoFocus ? 'focus' : 'nofocus'}`}
 					<ChatInput
 						placeholder={activeQuickAction.placeholder}
 						initialValue={chatPrefill}

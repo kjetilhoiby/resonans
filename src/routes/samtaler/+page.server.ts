@@ -33,7 +33,11 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			role: m.role as 'user' | 'assistant' | 'system',
 			content: m.content,
 			timestamp: m.createdAt.toISOString(),
-			imageUrl: m.imageUrl
+			imageUrl: m.imageUrl,
+			widgetProposal: (m.metadata as { widgetProposal?: unknown } | null)?.widgetProposal ?? null,
+			statusWidget: (m.metadata as { statusWidget?: unknown } | null)?.statusWidget ?? null,
+			photoAnnotation: (m.metadata as { photoAnnotation?: unknown } | null)?.photoAnnotation ?? null,
+			photoAnnotationImageUrl: (m.metadata as { photoAnnotationImageUrl?: unknown } | null)?.photoAnnotationImageUrl ?? null
 		}))
 	};
 };

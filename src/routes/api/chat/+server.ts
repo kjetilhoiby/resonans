@@ -9,7 +9,7 @@ import { isFutureVisionText, seedThemeInstructionFromFutureVision } from '$lib/s
 import { queryEconomicsTool } from '$lib/ai/tools/query-economics';
 import { USER_ID_HEADER_NAME } from '$lib/server/request-user';
 import { db } from '$lib/db';
-import { userWidgets, checklists, checklistItems } from '$lib/db/schema';
+import { userWidgets, checklists, checklistItems, users } from '$lib/db/schema';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 
@@ -575,6 +575,31 @@ const tools = [
 			{
 				type: 'function' as const,
 				function: {
+					name: 'weather_forecast',
+					description: 'Hent værprognose fra MET.no basert på koordinater. Brukes når bruker spør om vær, eller når du vil berike svar med lokalt vær nå og neste time.',
+					parameters: {
+						type: 'object',
+						properties: {
+							latitude: {
+								type: 'number',
+								description: 'Breddegrad (f.eks. 59.91 for Oslo).'
+							},
+							longitude: {
+								type: 'number',
+								description: 'Lengdegrad (f.eks. 10.75 for Oslo).'
+							},
+							locationName: {
+								type: 'string',
+								description: 'Valgfri etikett for stedet, f.eks. bynavn.'
+							}
+						},
+						required: []
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
 					name: 'web_search',
 					description: 'Søk på web når spørsmålet handler om innhold utenfor brukerens egne sensordata, spesielt bokfakta, referanser, forfattere, kapitler eller kontekst som ikke finnes i samtalehistorikken.',
 					parameters: {
@@ -586,6 +611,34 @@ const tools = [
 							}
 						},
 						required: ['query']
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
+					name: 'annotate_photo_composition',
+					description: 'Lag visuelle bildeannoteringer for fotoanalyse (ledende linjer, fokusområder, tredjedeler). Bruk når bruker vil ha komposisjonsanalyse med figurer tegnet oppå bildet.',
+					parameters: {
+						type: 'object',
+						properties: {
+							imageUrl: {
+								type: 'string',
+								description: 'URL til bildet som skal annoteres. Hvis utelatt, bruk nylig vedlagt bilde i samtalen.'
+							},
+							summary: {
+								type: 'string',
+								description: 'Kort oppsummering av komposisjonsanalysen.'
+							},
+							overlays: {
+								type: 'array',
+								description: 'Liste med figurer i normaliserte koordinater (0..1).',
+								items: {
+									type: 'object'
+								}
+							}
+						},
+						required: ['summary', 'overlays']
 					}
 				}
 			},
@@ -866,6 +919,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		const body = await request.json();
 		const { message, imageUrl, conversationId: requestedConversationId } = body;
 		const attachment = isAttachmentPayload(body.attachment) ? body.attachment : null;
+		const userProfile = await db.query.users.findFirst({
+			columns: { timezone: true },
+			where: eq(users.id, userId)
+		});
+		const userTimezone = userProfile?.timezone ?? 'Europe/Oslo';
 		const effectiveImageUrl =
 			typeof imageUrl === 'string' && imageUrl.length > 0
 				? imageUrl
@@ -1014,6 +1072,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		let checklistCreated = false;
 		let checklistUpdated = false;
 		let widgetProposal: import('$lib/ai/tools/propose-widget').WidgetDraft | null = null;
+		let statusWidget: import('$lib/ai/tools/weather-forecast').WeatherStatusWidget | null = null;
+		let photoAnnotation: import('$lib/ai/tools/annotate-photo').PhotoAnnotationResult | null = null;
+		let photoAnnotationImageUrl: string | null = null;
 
 		// Debug logging
 		console.log('\n🤖 OpenAI Response:');
@@ -1393,6 +1454,76 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 							tool_call_id: toolCall.id
 						});
 					}
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'weather_forecast') {
+					const args = JSON.parse(toolCall.function.arguments) as {
+						latitude?: number;
+						longitude?: number;
+						locationName?: string;
+					};
+
+					try {
+						const { weatherForecastTool } = await import('$lib/ai/tools/weather-forecast');
+						const result = await weatherForecastTool.execute({
+							timezone: userTimezone,
+							...args
+						});
+
+						if (result.success && result.widget) {
+							statusWidget = result.widget;
+						}
+
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify(result),
+							tool_call_id: toolCall.id
+						});
+					} catch (error) {
+						console.error('  ☁️ Weather lookup failed:', error);
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify({
+								success: false,
+								message: 'Værdata kunne ikke hentes nå.'
+							}),
+							tool_call_id: toolCall.id
+						});
+					}
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'annotate_photo_composition') {
+					const args = JSON.parse(toolCall.function.arguments) as {
+						imageUrl?: string;
+						summary?: string;
+						overlays?: unknown[];
+					};
+
+					try {
+						const { annotatePhotoCompositionTool } = await import('$lib/ai/tools/annotate-photo');
+						const result = await annotatePhotoCompositionTool.execute({
+							imageUrl: args.imageUrl || effectiveImageUrl || '',
+							summary: args.summary || '',
+							overlays: Array.isArray(args.overlays) ? args.overlays as import('$lib/ai/tools/annotate-photo').CompositionOverlay[] : []
+						});
+
+						if (result.success && result.annotation) {
+							photoAnnotation = result.annotation;
+							photoAnnotationImageUrl = args.imageUrl || effectiveImageUrl || null;
+						}
+
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify(result),
+							tool_call_id: toolCall.id
+						});
+					} catch (error) {
+						console.error('  🖼️ Photo annotation failed:', error);
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify({
+								success: false,
+								message: 'Klarte ikke lage bildeannotering.'
+							}),
+							tool_call_id: toolCall.id
+						});
+					}
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'propose_widget') {
 					const args = JSON.parse(toolCall.function.arguments);
 					console.log('  📊 Proposing widget:', args);
@@ -1741,13 +1872,19 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		}
 
 		const finalMessage = responseMessage?.content || 'Beklager, jeg fikk ikke generert noe svar.';
+		const assistantMetadata: Record<string, unknown> = {};
+		if (createdGoalId) assistantMetadata.goalId = createdGoalId;
+		if (widgetProposal) assistantMetadata.widgetProposal = widgetProposal;
+		if (statusWidget) assistantMetadata.statusWidget = statusWidget;
+		if (photoAnnotation) assistantMetadata.photoAnnotation = photoAnnotation;
+		if (photoAnnotationImageUrl) assistantMetadata.photoAnnotationImageUrl = photoAnnotationImageUrl;
 
 		// Lagre assistentens svar til database
 		await addMessage({
 			conversationId: conversation.id,
 			role: 'assistant',
 			content: finalMessage,
-			metadata: createdGoalId ? { goalId: createdGoalId } : null
+			metadata: Object.keys(assistantMetadata).length > 0 ? assistantMetadata : null
 		});
 
 		return json({ 
@@ -1763,6 +1900,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			checklistUpdated,
 			checklistChanged: checklistCreated || checklistUpdated,
 			widgetProposal,
+			statusWidget,
+			photoAnnotation,
+			photoAnnotationImageUrl,
 		});
 	} catch (error) {
 		console.error('Error in chat API:', error);
