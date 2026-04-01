@@ -1,11 +1,9 @@
 <script lang="ts">
 	import type { PageData, ActionData } from './$types';
-	import { enhance } from '$app/forms';
 	import { onMount } from 'svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
-	let saving = $state(false);
 	let showDebug = $state(false);
 	let withingsStatus = $state<any>(null);
 	let loadingWithings = $state(false);
@@ -37,6 +35,25 @@
 	const user = $derived(data.user);
 	const settings = $derived(user?.notificationSettings || {});
 	const relationship = $derived(data.relationship);
+	const connectedSources = $derived(
+		(withingsStatus?.connected ? 1 : 0) +
+		(sparebank1Status?.connected ? 1 : 0) +
+		(googleSheetsStatus?.connected ? 1 : 0) +
+		(user?.googleChatWebhook ? 1 : 0)
+	);
+	const enabledNotifications = $derived(
+		(settings.dailyCheckIn?.enabled === false ? 0 : 1) +
+		(settings.weeklyReview?.enabled === false ? 0 : 1) +
+		(settings.milestones?.enabled === false ? 0 : 1) +
+		(settings.reminders?.enabled === false ? 0 : 1) +
+		(settings.inactivityAlerts?.enabled === false ? 0 : 1)
+	);
+	const hasSourceWarning = $derived(
+		Boolean(withingsStatus?.sensor?.isExpired) ||
+		Boolean(sparebank1Status?.sensor?.isExpired) ||
+		Boolean(googleSheetsStatus?.sensor?.isExpired)
+	);
+	const hasProfileWarning = $derived(!user?.name || !user?.email);
 
 	// Check Withings status on mount
 	onMount(async () => {
@@ -341,602 +358,140 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 			</div>
 		{/if}
 
-		<section class="settings-card">
-			<div class="card-icon">💍</div>
-			<h2>Partner</h2>
-			<p class="help-text">
-				Inviter ektefellen din inn i appen, og la den andre parten bekrefte koblingen.
-			</p>
+		<details id="profil" class="settings-group" open>
+			<summary>
+				<span>Profil</span>
+				<span class="summary-meta">{hasProfileWarning ? 'Mangler profilinfo' : 'Klar'}</span>
+			</summary>
 
-			{#if relationship?.partner}
-				<div class="notification-option" style="background: var(--success-bg); border-color: var(--success-border);">
+			<section class="settings-card">
+				<div class="card-icon">👤</div>
+				<h2>Profil</h2>
+				<p class="help-text">
+					Samle personinfo på ett sted. Navn og e-post vises her nå; høyde og kjønn kan legges til i neste steg.
+				</p>
+				<div class="notification-option">
 					<div class="option-info">
-						<strong style="color: var(--success-text);">✅ Ekteskapet er bekreftet</strong>
-						<p style="color: var(--success-text);">
-							Du er koblet til {relationship.partner.name || relationship.partner.email}.
-						</p>
+						<strong>Navn</strong>
+						<p>{user?.name || 'Ikke satt'}</p>
 					</div>
 				</div>
-			{:else}
-				{#if relationship?.incomingInvite}
-					<div class="notification-option" style="margin-bottom: 1rem;">
-						<div class="option-info">
-							<strong>Innkommende partnerinvitasjon</strong>
-							<p>{relationship.incomingInvite.inviterName} vil bekrefte ekteskapet med deg.</p>
-						</div>
-						<div style="display:flex; gap:0.75rem; flex-wrap:wrap; margin-top:0.75rem;">
-							<form method="POST" action="?/acceptMarriageInvite">
-								<input type="hidden" name="inviteId" value={relationship.incomingInvite.id} />
-								<button type="submit" class="btn-primary">💞 Godta</button>
-							</form>
-							<form method="POST" action="?/declineMarriageInvite">
-								<input type="hidden" name="inviteId" value={relationship.incomingInvite.id} />
-								<button type="submit" class="btn-secondary">Nei takk</button>
-							</form>
-						</div>
+				<div class="notification-option">
+					<div class="option-info">
+						<strong>E-post</strong>
+						<p>{user?.email || 'Ikke satt'}</p>
 					</div>
-				{/if}
+				</div>
+				<div class="notification-option">
+					<div class="option-info">
+						<strong>Bilde</strong>
+						<p>Hentes fra innloggingsleverandør (kommer som redigerbart felt senere).</p>
+					</div>
+				</div>
+				<div class="notification-option">
+					<div class="option-info">
+						<strong>Høyde og kjønn</strong>
+						<p>Ikke modellert i brukerprofil enda. Kan legges til som neste iterasjon.</p>
+					</div>
+				</div>
+			</section>
 
-				{#if relationship?.outgoingInvite}
-					<div class="notification-option" style="margin-bottom: 1rem;">
+			<section class="settings-card">
+				<div class="card-icon">💍</div>
+				<h2>Partner</h2>
+				<p class="help-text">
+					Inviter ektefellen din inn i appen, og la den andre parten bekrefte koblingen.
+				</p>
+
+				{#if relationship?.partner}
+					<div class="notification-option" style="background: var(--success-bg); border-color: var(--success-border);">
 						<div class="option-info">
-							<strong>Invitasjon sendt</strong>
-							<p>
-								Venter på svar fra {relationship.outgoingInvite.inviteeEmail}.
+							<strong style="color: var(--success-text);">✅ Ekteskapet er bekreftet</strong>
+							<p style="color: var(--success-text);">
+								Du er koblet til {relationship.partner.name || relationship.partner.email}.
 							</p>
 						</div>
-						<form method="POST" action="?/cancelMarriageInvite" style="margin-top:0.75rem;">
-							<input type="hidden" name="inviteId" value={relationship.outgoingInvite.id} />
-							<button type="submit" class="btn-secondary">Trekk tilbake invitasjonen</button>
-						</form>
 					</div>
 				{:else}
-					<form method="POST" action="?/invitePartner">
-						<div class="form-group">
-							<label for="inviteeEmail">Partnerens e-postadresse</label>
-							<input
-								type="email"
-								id="inviteeEmail"
-								name="inviteeEmail"
-								placeholder="partner@example.com"
-								class="input"
-								required
-							/>
-							<small class="hint">
-								Når invitasjonen er sendt, blir e-posten også lagt til i invite-only-listen.
-							</small>
+					{#if relationship?.incomingInvite}
+						<div class="notification-option" style="margin-bottom: 1rem;">
+							<div class="option-info">
+								<strong>Innkommende partnerinvitasjon</strong>
+								<p>{relationship.incomingInvite.inviterName} vil bekrefte ekteskapet med deg.</p>
+							</div>
+							<div style="display:flex; gap:0.75rem; flex-wrap:wrap; margin-top:0.75rem;">
+								<form method="POST" action="?/acceptMarriageInvite">
+									<input type="hidden" name="inviteId" value={relationship.incomingInvite.id} />
+									<button type="submit" class="btn-primary">💞 Godta</button>
+								</form>
+								<form method="POST" action="?/declineMarriageInvite">
+									<input type="hidden" name="inviteId" value={relationship.incomingInvite.id} />
+									<button type="submit" class="btn-secondary">Nei takk</button>
+								</form>
+							</div>
 						</div>
-						<button type="submit" class="btn-primary">💌 Send partnerinvitasjon</button>
-					</form>
+					{/if}
+
+					{#if relationship?.outgoingInvite}
+						<div class="notification-option" style="margin-bottom: 1rem;">
+							<div class="option-info">
+								<strong>Invitasjon sendt</strong>
+								<p>
+									Venter på svar fra {relationship.outgoingInvite.inviteeEmail}.
+								</p>
+							</div>
+							<form method="POST" action="?/cancelMarriageInvite" style="margin-top:0.75rem;">
+								<input type="hidden" name="inviteId" value={relationship.outgoingInvite.id} />
+								<button type="submit" class="btn-secondary">Trekk tilbake invitasjonen</button>
+							</form>
+						</div>
+					{:else}
+						<form method="POST" action="?/invitePartner">
+							<div class="form-group">
+								<label for="inviteeEmail">Partnerens e-postadresse</label>
+								<input
+									type="email"
+									id="inviteeEmail"
+									name="inviteeEmail"
+									placeholder="partner@example.com"
+									class="input"
+									required
+								/>
+								<small class="hint">
+									Når invitasjonen er sendt, blir e-posten også lagt til i invite-only-listen.
+								</small>
+							</div>
+							<button type="submit" class="btn-primary">💌 Send partnerinvitasjon</button>
+						</form>
+					{/if}
 				{/if}
-			{/if}
+			</section>
+		</details>
+
+		<section class="overview-grid">
+			<article class="overview-card" id="sources-overview">
+				<div class="overview-head">
+					<span class="status-dot {hasSourceWarning ? 'warn' : connectedSources > 0 ? 'ok' : 'off'}"></span>
+					<h2>Kilder</h2>
+				</div>
+				<p>{connectedSources}/4 tilkoblet{hasSourceWarning ? ' · én eller flere trenger ny innlogging' : ''}</p>
+				<a href="/settings/sources" class="overview-link">Åpne kilder</a>
+			</article>
+			<article class="overview-card" id="notifications-overview">
+				<div class="overview-head">
+					<span class="status-dot {enabledNotifications >= 3 ? 'ok' : enabledNotifications > 0 ? 'warn' : 'off'}"></span>
+					<h2>Varslinger</h2>
+				</div>
+				<p>{enabledNotifications}/5 varslingstyper aktiv</p>
+				<a href="/notifications" class="overview-link">Åpne varslinger</a>
+			</article>
 		</section>
 
-		<form 
-			method="POST" 
-			action="?/updateSettings"
-			use:enhance={() => {
-				saving = true;
-				return async ({ update }) => {
-					await update();
-					saving = false;
-					window.location.reload(); // Force reload to see updated data
-				};
-			}}
-		>
-			<!-- Google Chat Integration -->
-			<section class="settings-card">
-				<div class="card-icon">📱</div>
-				<h2>Google Chat Webhook</h2>
-				<p class="help-text">
-					For å motta notifikasjoner i Google Chat, må du sette opp en webhook.
-				</p>
-
-				<div class="form-group">
-					<label for="webhook">Webhook URL</label>
-					<input
-						type="url"
-						id="webhook"
-						name="googleChatWebhook"
-						value={user?.googleChatWebhook || ''}
-						placeholder="https://chat.googleapis.com/v1/spaces/..."
-						class="input"
-					/>
-					<small class="hint">
-						<a href="/notifications">Se instruksjoner</a> for hvordan du oppretter en webhook.
-					</small>
-				</div>
-
-				<div class="form-group">
-					<label for="timezone">Tidssone</label>
-					<select id="timezone" name="timezone" value={user?.timezone || 'Europe/Oslo'} class="input">
-						<option value="Europe/Oslo">Europe/Oslo (Norge)</option>
-						<option value="Europe/Copenhagen">Europe/Copenhagen (Danmark)</option>
-						<option value="Europe/Stockholm">Europe/Stockholm (Sverige)</option>
-						<option value="UTC">UTC</option>
-					</select>
-				</div>
-			</section>
-
-			<!-- Withings Integration -->
-			<section class="settings-card">
-				<div class="card-icon">🏃‍♂️</div>
-				<h2>Withings Helsedata</h2>
-				<p class="help-text">
-					Koble til Withings for automatisk synkronisering av vekt, søvn, aktivitet og VO2max-data.
-				</p>
-
-				{#if loadingWithings}
-					<div style="padding: 2rem; text-align: center; color: var(--text-tertiary);">
-						Laster...
-					</div>
-				{:else if withingsStatus?.connected}
-					<div class="notification-option" style="background: var(--success-bg); border-color: var(--success-border);">
-						<div class="option-info">
-							<strong style="color: var(--success-text);">✅ Tilkoblet</strong>
-							<p style="color: var(--success-text);">
-								Siste synkronisering: {withingsStatus.sensor?.lastSync 
-									? new Date(withingsStatus.sensor.lastSync).toLocaleString('nb-NO')
-									: 'Aldri'}
-							</p>
-							{#if withingsStatus.sensor?.isExpired}
-								<p style="color: var(--error-text); margin-top: 0.5rem;">
-									⚠️ Token utløpt - koble til på nytt
-								</p>
-							{/if}
-						</div>
-					</div>
-
-					{#if syncResult}
-						{#if syncResult.success}
-							<div class="alert success" style="margin-top: 1rem;">
-								✅ {syncResult.message}
-							</div>
-						{:else}
-							<div class="alert error" style="margin-top: 1rem;">
-								❌ {syncResult.error}
-							</div>
-						{/if}
-					{/if}
-
-					<!-- Sync Progress Bar -->
-					{#if syncing}
-						<div style="margin-top: 1rem; padding: 1rem; background: var(--surface-color); border-radius: 8px; border: 1px solid var(--border-color);">
-							<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-								<span style="font-size: 0.9rem; color: var(--text-secondary);">{syncProgress.step}</span>
-								<span style="font-size: 0.9rem; font-weight: 600; color: var(--primary-color);">{syncProgress.progress}%</span>
-							</div>
-							<div style="width: 100%; height: 8px; background: var(--background-color); border-radius: 4px; overflow: hidden;">
-								<div 
-									style="height: 100%; background: linear-gradient(90deg, var(--primary-color), var(--accent-color)); border-radius: 4px; transition: width 0.3s ease;"
-									style:width="{syncProgress.progress}%"
-								></div>
-							</div>
-						</div>
-					{/if}
-
-					<div style="display: flex; gap: 1rem; margin-top: 1rem;">
-						<button 
-							type="button" 
-							onclick={syncWithings} 
-							class="btn-primary" 
-							style="flex: 1;"
-							disabled={syncing}
-						>
-							{syncing ? '⏳ Synkroniserer...' : '🔄 Synkroniser nå'}
-						</button>
-						<button 
-							type="button" 
-							onclick={fullSyncWithings} 
-							class="btn-secondary" 
-							style="flex: 1;"
-							disabled={syncing}
-							title="Sletter all data og laster ned alt på nytt fra 1. september 2017"
-						>
-							{syncing ? '⏳ Full synk...' : '🔄 Full synk (2017-)'}
-						</button>
-					</div>
-					<div style="display: flex; gap: 1rem; margin-top: 0.5rem;">
-						<button type="button" onclick={disconnectWithings} class="btn-ghost" style="flex: 1;">
-							🔌 Koble fra
-						</button>
-					</div>
-				{:else}
-					<a href="/api/sensors/withings/connect" class="btn-primary" style="display:block; text-align:center;">
-						🔗 Koble til Withings
-					</a>
-				{/if}
-			</section>
-
-			<!-- SpareBank 1 Integration -->
-			<section class="settings-card">
-				<div class="card-icon">🏦</div>
-				<h2>SpareBank 1 (read-only)</h2>
-				<p class="help-text">
-					Koble til bankkonto for lesetilgang til saldo og transaksjoner (ingen betaling eller overføring).
-				</p>
-
-				{#if loadingSparebank1}
-					<div style="padding: 2rem; text-align: center; color: var(--text-tertiary);">
-						Laster...
-					</div>
-				{:else if sparebank1Status?.connected}
-					<div class="notification-option" style="background: var(--success-bg); border-color: var(--success-border);">
-						<div class="option-info">
-							<strong style="color: var(--success-text);">✅ Tilkoblet</strong>
-							<p style="color: var(--success-text);">
-								Siste synkronisering: {sparebank1Status.sensor?.lastSync
-									? new Date(sparebank1Status.sensor.lastSync).toLocaleString('nb-NO')
-									: 'Aldri'}
-							</p>
-							{#if sparebank1Status.sensor?.isExpired}
-							<!-- isExpired = refresh token is missing, must re-authenticate -->
-								<p style="color: var(--error-text); margin-top: 0.5rem;">
-									⚠️ Token utløpt - koble til på nytt
-								</p>
-							{/if}
-						</div>
-					</div>
-
-					{#if sparebank1SyncResult}
-						{#if sparebank1SyncResult.success}
-							<div class="alert success" style="margin-top: 1rem;">
-								✅ {sparebank1SyncResult.message}
-							</div>
-						{:else}
-							<div class="alert error" style="margin-top: 1rem;">
-								❌ {sparebank1SyncResult.error}
-							</div>
-						{/if}
-					{/if}
-
-					<div style="display: flex; gap: 1rem; margin-top: 1rem;">
-						<button
-							type="button"
-							onclick={() => syncSparebank1(false)}
-							class="btn-primary"
-							style="flex: 1;"
-							disabled={syncingSparebank1}
-						>
-							{syncingSparebank1 ? '⏳ Synkroniserer...' : '🔄 Synkroniser nå'}
-						</button>
-						<button
-							type="button"
-							onclick={() => syncSparebank1(true)}
-							class="btn-primary"
-							style="flex: 1;"
-							disabled={syncingSparebank1}
-						>
-							{syncingSparebank1 ? '⏳ Henter...' : '📅 Full historikk (2 år)'}
-						</button>
-						<button type="button" onclick={disconnectSparebank1} class="btn-ghost" style="flex: 0.5;">
-							🔌 Koble fra
-						</button>
-					</div>
-					<p style="font-size:0.75rem; color:var(--text-tertiary); margin-top:0.5rem;">
-						"Synkroniser nå" henter nye transaksjoner. "Full historikk" henter alle transaksjoner fra de siste 2 årene.
-					</p>
-				{:else}
-					<a href="/api/sensors/sparebank1/connect" class="btn-primary" style="display:block; text-align:center;">
-						🔗 Koble til SpareBank 1
-					</a>
-				{/if}
-			</section>
-
-			<!-- Google Sheets Integration -->
-			<section class="settings-card">
-				<div class="card-icon">📊</div>
-				<h2>Google Regneark</h2>
-				<p class="help-text">
-					Koble til Google Regneark for lesetilgang til regneark. Gir AI-assistenten tilgang til å lese inn data du deler.
-				</p>
-
-				{#if loadingGoogleSheets}
-					<div style="padding: 2rem; text-align: center; color: var(--text-tertiary);">Laster...</div>
-				{:else if googleSheetsStatus?.connected}
-					<div class="notification-option" style="background: var(--success-bg); border-color: var(--success-border);">
-						<div class="option-info">
-							<strong style="color: var(--success-text);">✅ Tilkoblet</strong>
-							<p style="color: var(--success-text);">
-								Siste bruk: {googleSheetsStatus.sensor?.lastSync
-									? new Date(googleSheetsStatus.sensor.lastSync).toLocaleString('nb-NO')
-									: 'Aldri'}
-							</p>
-							{#if googleSheetsStatus.sensor?.isExpired}
-								<p style="color: var(--error-text); margin-top: 0.5rem;">
-									⚠️ Token utløpt — koble til på nytt
-								</p>
-							{/if}
-							{#if googleSheetsStatus.sensor?.lastError}
-								<p style="color: var(--error-text); margin-top: 0.25rem; font-size: 0.8rem;">
-									{googleSheetsStatus.sensor.lastError}
-								</p>
-							{/if}
-						</div>
-					</div>
-					<div style="display: flex; gap: 1rem; margin-top: 0.5rem;">
-						<button type="button" onclick={disconnectGoogleSheets} class="btn-ghost" style="flex: 1;">
-							🔌 Koble fra
-						</button>
-						<a href="/api/sensors/google-sheets/connect" class="btn-primary" style="flex: 1; text-align: center;">
-							🔗 Koble til på nytt
-						</a>
-					</div>
-				{:else}
-					<a href="/api/sensors/google-sheets/connect" class="btn-primary" style="display:block; text-align:center;">
-						🔗 Koble til Google Regneark
-					</a>
-				{/if}
-			</section>
-
-			<!-- Import kontoutskrifter -->
-			<section class="settings-card">
-				<div class="card-icon">📂</div>
-				<h2>Importer kontoutskrifter</h2>
-				<p class="help-text">
-					Last opp en ZIP-fil med SpareBank 1 kontoutskrifter (PDF) for å importere historiske
-					saldoankre. Fungerer for alle kontoer — bare sleng alle PDF-ene i én ZIP.
-				</p>
-
-				<label class="btn-primary" style="display:block; text-align:center; cursor:pointer;">
-					{importingStatements ? '⏳ Importerer...' : '📤 Velg ZIP-fil'}
-					<input
-						type="file"
-						accept=".zip,application/zip"
-						style="display:none"
-						disabled={importingStatements}
-						onchange={importStatements}
-					/>
-				</label>
-
-				{#if importResult}
-					{#if importResult.error}
-						<div class="alert error" style="margin-top:1rem;">❌ {importResult.error}</div>
-					{:else}
-						<div class="alert success" style="margin-top:1rem;">
-							✅ Importerte {importResult.totalTransactions} transaksjoner og
-							{importResult.totalBalanceAnchors} saldoankre fra
-							{importResult.filesProcessed} PDF-er
-							{#if importResult.totalSkipped > 0}
-								({importResult.totalSkipped} duplikater hoppet over)
-							{/if}
-						</div>
-						{#if importResult.warnings?.length > 0}
-							<ul style="margin-top:0.5rem; font-size:0.85rem; color:var(--text-secondary);">
-								{#each importResult.warnings as w}<li>{w}</li>{/each}
-							</ul>
-						{/if}
-					{/if}
-				{/if}
-
-				<!-- Anchor overview -->
-				{#if anchorAccounts.length > 0}
-					<div style="margin-top:1.25rem;">
-						<p style="font-size:0.8rem; font-weight:600; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-tertiary); margin-bottom:0.5rem;">Lagrede saldoankre</p>
-						<div style="display:flex; flex-direction:column; gap:0.5rem;">
-							{#each anchorAccounts as acc}
-								<div style="display:flex; align-items:center; justify-content:space-between; padding:0.6rem 0.75rem; background:var(--surface-color); border:1px solid var(--border-color); border-radius:8px; font-size:0.875rem;">
-									<div>
-										<span style="font-weight:600; font-family:monospace;">{acc.accountNumber}</span>
-										<span style="margin-left:0.5rem; font-size:0.75rem; color:var(--text-tertiary);">
-											{acc.sources.includes('pdf_import') ? '📄' : ''}{acc.sources.some(s => s !== 'pdf_import') ? '🔗' : ''}
-										</span>
-									</div>
-									<div style="text-align:right; color:var(--text-secondary);">
-										{new Date(acc.earliest).toLocaleDateString('nb-NO', {month:'short', year:'numeric'})}
-										–
-										{new Date(acc.latest).toLocaleDateString('nb-NO', {month:'short', year:'numeric'})}
-										<span style="margin-left:0.5rem; font-size:0.75rem; color:var(--text-tertiary);">({acc.totalAnchors} ankre)</span>
-									</div>
-								</div>
-							{/each}
-						</div>
-					</div>
-				{/if}
-
-				<!-- Data management buttons -->
-				<div style="margin-top:1.5rem; padding-top:1.5rem; border-top:1px solid var(--border-color);">
-					<button
-						type="button"
-						onclick={deduplicateEconomicsData}
-						disabled={deduplicating}
-						class="btn-primary"
-						style="width:100%; margin-bottom:1rem;"
-					>
-						{deduplicating ? '⏳ Fjerner duplikater...' : '🧹 Fjern duplikater'}
-					</button>
-					<p style="font-size:0.75rem; color:var(--text-tertiary); margin-top:-0.5rem; margin-bottom:1rem; text-align:center;">
-						Fjerner duplikate transaksjoner og saldo-snapshots (beholder eldste).
-					</p>
-
-					{#if deduplicateResult}
-						{#if deduplicateResult.error}
-							<div class="alert error" style="margin-bottom:1rem;">❌ {deduplicateResult.error}</div>
-						{:else}
-							<div class="alert success" style="margin-bottom:1rem;">
-								✅ {deduplicateResult.message} ({deduplicateResult.removed.balanceEvents} saldo, {deduplicateResult.removed.transactionEvents} transaksjoner)
-							</div>
-						{/if}
-					{/if}
-
-					<button
-						type="button"
-						onclick={resetEconomicsData}
-						disabled={resettingEconomics}
-						class="btn-danger"
-						style="width:100%;"
-					>
-						{resettingEconomics ? '⏳ Tømmer...' : '🗑️ Tøm all økonomidata'}
-					</button>
-					<p style="font-size:0.75rem; color:var(--text-tertiary); margin-top:0.5rem; text-align:center;">
-						Sletter alle transaksjoner og saldo-snapshots. Krever re-import etterpå.
-					</p>
-
-					{#if resetResult}
-						{#if resetResult.error}
-							<div class="alert error" style="margin-top:1rem;">❌ {resetResult.error}</div>
-						{:else}
-							<div class="alert success" style="margin-top:1rem;">
-								✅ Slettet {resetResult.deletedCount} hendelser. Klar for ny import!
-							</div>
-						{/if}
-					{/if}
-				</div>
-			</section>
-
-			<!-- Daily Check-in -->
-			<section class="settings-card">
-				<div class="section-header">
-					<div>
-						<div class="card-icon">📅</div>
-						<h2>Daglig Check-in</h2>
-					</div>
-					<label class="toggle">
-						<input
-							type="checkbox"
-							name="dailyCheckInEnabled"
-							checked={settings.dailyCheckIn?.enabled ?? true}
-						/>
-						<span class="toggle-slider"></span>
-					</label>
-				</div>
-
-				{#if settings.dailyCheckIn?.enabled !== false}
-					<p class="help-text">
-						Få en daglig oppdatering med oversikt over dine mål og dagens oppgaver.
-					</p>
-
-					<div class="form-group">
-						<label for="dailyTime">Tidspunkt</label>
-						<input
-							type="time"
-							id="dailyTime"
-							name="dailyCheckInTime"
-							value={settings.dailyCheckIn?.time || '09:00'}
-							class="input"
-						/>
-					</div>
-				{/if}
-			</section>
-
-			<!-- Weekly Review -->
-			<section class="card">
-				<div class="section-header">
-					<h2>📊 Ukentlig Oppsummering</h2>
-					<label class="toggle">
-						<input
-							type="checkbox"
-							name="weeklyReviewEnabled"
-							checked={settings.weeklyReview?.enabled ?? true}
-						/>
-						<span class="toggle-slider"></span>
-					</label>
-				</div>
-
-				{#if settings.weeklyReview?.enabled !== false}
-					<p class="help-text">
-						Få en ukentlig oppsummering av fremgang og milepæler.
-					</p>
-
-					<div class="form-row">
-						<div class="form-group">
-							<label for="weeklyDay">Dag</label>
-							<select id="weeklyDay" name="weeklyReviewDay" value={settings.weeklyReview?.day || 'sunday'} class="input">
-								<option value="sunday">Søndag</option>
-								<option value="monday">Mandag</option>
-								<option value="friday">Fredag</option>
-								<option value="saturday">Lørdag</option>
-							</select>
-						</div>
-
-						<div class="form-group">
-							<label for="weeklyTime">Tidspunkt</label>
-							<input
-								type="time"
-								id="weeklyTime"
-								name="weeklyReviewTime"
-								value={settings.weeklyReview?.time || '18:00'}
-								class="input"
-							/>
-						</div>
-					</div>
-				{/if}
-			</section>
-
-			<!-- Other Notifications -->
-			<section class="card">
-				<h2>🔔 Andre Notifikasjoner</h2>
-
-				<div class="notification-option">
-					<div class="option-info">
-						<strong>🎯 Milepæler</strong>
-						<p>Få beskjed når du når 25%, 50%, 75% og 100% av et mål</p>
-					</div>
-					<label class="toggle">
-						<input
-							type="checkbox"
-							name="milestonesEnabled"
-							checked={settings.milestones?.enabled ?? true}
-						/>
-						<span class="toggle-slider"></span>
-					</label>
-				</div>
-
-				<div class="notification-option">
-					<div class="option-info">
-						<strong>⏰ Påminnelser</strong>
-						<p>Påminnelser om oppgaver som forfaller snart</p>
-					</div>
-					<label class="toggle">
-						<input
-							type="checkbox"
-							name="remindersEnabled"
-							checked={settings.reminders?.enabled ?? true}
-						/>
-						<span class="toggle-slider"></span>
-					</label>
-				</div>
-
-				<div class="notification-option">
-					<div class="option-info">
-						<strong>💤 Inaktivitetsvarsler</strong>
-						<p>Få beskjed når du ikke har logget aktivitet på en stund</p>
-					</div>
-					<label class="toggle">
-						<input
-							type="checkbox"
-							name="inactivityAlertsEnabled"
-							checked={settings.inactivityAlerts?.enabled ?? true}
-						/>
-						<span class="toggle-slider"></span>
-					</label>
-				</div>
-
-				{#if settings.inactivityAlerts?.enabled !== false}
-					<div class="form-group" style="margin-top: 1rem;">
-						<label for="inactivityDays">Antall dager inaktivitet før varsel</label>
-						<input
-							type="number"
-							id="inactivityDays"
-							name="inactivityDaysThreshold"
-							value={settings.inactivityAlerts?.daysThreshold || 3}
-							min="1"
-							max="14"
-							class="input"
-						/>
-					</div>
-				{/if}
-			</section>
-
-			<div class="actions">
-				<button type="button" onclick={() => showDebug = !showDebug} class="btn-ghost">
-					{showDebug ? '🐛 Skjul Debug' : '🐛 Vis Debug'}
-				</button>
-				<button type="submit" class="btn-primary" disabled={saving}>
-					{saving ? '💾 Lagrer...' : '💾 Lagre Innstillinger'}
-				</button>
-			</div>
-		</form>
+		<div class="actions">
+			<button type="button" onclick={() => showDebug = !showDebug} class="btn-ghost">
+				{showDebug ? '🐛 Skjul Debug' : '🐛 Vis Debug'}
+			</button>
+		</div>
 	</main>
 </div>
 
@@ -1009,6 +564,100 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 		padding: 1.5rem 1rem;
 	}
 
+	.overview-grid {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.9rem;
+		margin-bottom: 1.25rem;
+	}
+
+	.overview-card {
+		background: var(--bg-card);
+		border: 1px solid var(--border-color);
+		border-radius: 12px;
+		padding: 1rem;
+	}
+
+	.overview-card h2 {
+		margin: 0;
+		font-size: 1rem;
+		color: var(--text-primary);
+	}
+
+	.overview-card p {
+		margin: 0.45rem 0 0;
+		color: var(--text-secondary);
+		font-size: 0.9rem;
+	}
+
+	.overview-head {
+		display: flex;
+		align-items: center;
+		gap: 0.45rem;
+	}
+
+	.status-dot {
+		width: 10px;
+		height: 10px;
+		border-radius: 50%;
+		display: inline-block;
+	}
+
+	.status-dot.ok { background: #4ade80; }
+	.status-dot.warn { background: #f0b429; }
+	.status-dot.off { background: #666; }
+
+	.overview-link {
+		display: inline-block;
+		margin-top: 0.65rem;
+		font-size: 0.85rem;
+		color: var(--accent-primary);
+		text-decoration: none;
+	}
+
+	.settings-group {
+		border: 1px solid var(--border-color);
+		border-radius: 12px;
+		margin-bottom: 1.5rem;
+		background: color-mix(in srgb, var(--bg-card) 40%, transparent);
+	}
+
+	.settings-group > summary {
+		list-style: none;
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 0.9rem 1rem;
+		cursor: pointer;
+		color: var(--text-primary);
+		font-weight: 600;
+		border-bottom: 1px solid transparent;
+	}
+
+	.settings-group[open] > summary {
+		border-bottom-color: var(--border-subtle);
+	}
+
+	.settings-group > summary::-webkit-details-marker {
+		display: none;
+	}
+
+	.summary-meta {
+		font-size: 0.8rem;
+		font-weight: 500;
+		color: var(--text-secondary);
+	}
+
+	@media (max-width: 640px) {
+		.overview-grid {
+			grid-template-columns: 1fr;
+		}
+
+		.summary-meta {
+			display: none;
+		}
+	}
+
 	.alert {
 		padding: 1rem;
 		border-radius: 8px;
@@ -1071,19 +720,6 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 		font-weight: 600;
 	}
 
-	.section-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: flex-start;
-		margin-bottom: 1rem;
-	}
-
-	.section-header > div {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
-
 	.help-text {
 		color: var(--text-secondary);
 		margin-bottom: 1.5rem;
@@ -1092,12 +728,6 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 
 	.form-group {
 		margin-bottom: 1.5rem;
-	}
-
-	.form-row {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 1rem;
 	}
 
 	label {
@@ -1132,15 +762,6 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 		font-size: 0.85rem;
 	}
 
-	.hint a {
-		color: var(--accent-primary);
-		text-decoration: none;
-	}
-
-	.hint a:hover {
-		text-decoration: underline;
-	}
-
 	.notification-option {
 		display: flex;
 		justify-content: space-between;
@@ -1163,54 +784,6 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 		margin: 0;
 		color: var(--text-secondary);
 		font-size: 0.875rem;
-	}
-
-	/* Toggle Switch */
-	.toggle {
-		position: relative;
-		display: inline-block;
-		width: 52px;
-		height: 28px;
-		flex-shrink: 0;
-	}
-
-	.toggle input {
-		opacity: 0;
-		width: 0;
-		height: 0;
-	}
-
-	.toggle-slider {
-		position: absolute;
-		cursor: pointer;
-		top: 0;
-		left: 0;
-		right: 0;
-		bottom: 0;
-		background-color: var(--bg-hover);
-		transition: 0.3s;
-		border-radius: 28px;
-	}
-
-	.toggle-slider:before {
-		position: absolute;
-		content: "";
-		height: 22px;
-		width: 22px;
-		left: 3px;
-		bottom: 3px;
-		background-color: var(--text-tertiary);
-		transition: 0.3s;
-		border-radius: 50%;
-	}
-
-	.toggle input:checked + .toggle-slider {
-		background: var(--accent-primary);
-	}
-
-	.toggle input:checked + .toggle-slider:before {
-		transform: translateX(24px);
-		background-color: white;
 	}
 
 	.actions {

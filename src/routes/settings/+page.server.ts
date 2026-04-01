@@ -32,11 +32,18 @@ export const actions = {
 		const userId = locals.userId;
 
 		await ensureUser(userId);
+		const existingUser = await db.query.users.findFirst({ where: eq(users.id, userId) });
 		
 		const data = await request.formData();
 
-		const googleChatWebhook = data.get('googleChatWebhook') as string | null;
-		const timezone = data.get('timezone') as string;
+		const hasGoogleChatWebhook = data.has('googleChatWebhook');
+		const hasTimezone = data.has('timezone');
+		const googleChatWebhook = hasGoogleChatWebhook
+			? (data.get('googleChatWebhook') as string | null)
+			: (existingUser?.googleChatWebhook ?? null);
+		const timezone = hasTimezone
+			? ((data.get('timezone') as string) || 'Europe/Oslo')
+			: (existingUser?.timezone ?? 'Europe/Oslo');
 
 		// Parse notification settings
 		const notificationSettings = {

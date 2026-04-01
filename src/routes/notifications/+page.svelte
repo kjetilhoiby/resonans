@@ -196,7 +196,7 @@
 					<path d="M12.5 15L7.5 10L12.5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
 				</svg>
 			</a>
-			<h1>Notifikasjoner</h1>
+			<h1>Varslinger</h1>
 		</div>
 	</header>
 
@@ -263,7 +263,7 @@
 		<section class="notification-card">
 			<div class="card-icon">⚙️</div>
 			<h2>Konfigurasjon</h2>
-			<p>For å aktivere Google Chat notifikasjoner, må du sette opp en webhook URL.</p>
+			<p>For å aktivere Google Chat-varslinger, må du sette opp en webhook URL.</p>
 
 			<div class="config-steps">
 				<div class="step">
@@ -301,7 +301,7 @@
 
 		<section class="notification-card coming-soon">
 			<div class="card-icon">🕐</div>
-			<h2>Automatiske Notifikasjoner</h2>
+			<h2>Automatiske varslinger</h2>
 			<p>Senere kan vi sette opp Vercel Cron Jobs for automatiske daglige check-ins.</p>
 			
 			<div class="info-box">
@@ -310,7 +310,7 @@
 					<li>Daglig check-in kl. 09:00</li>
 					<li>Ukentlig oppsummering søndager</li>
 					<li>Påminnelser for oppgaver</li>
-					<li>Milepæl-notifikasjoner</li>
+					<li>Milepælvarsler</li>
 				</ul>
 			</div>
 		</section>
