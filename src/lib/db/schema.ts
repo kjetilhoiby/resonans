@@ -238,6 +238,24 @@ export const memories = pgTable('memories', {
 	lastAccessedAt: timestamp('last_accessed_at').defaultNow().notNull()
 });
 
+// Web push subscriptions for PWA notifications
+export const webPushSubscriptions = pgTable('web_push_subscriptions', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	endpoint: text('endpoint').notNull(),
+	p256dh: text('p256dh').notNull(),
+	auth: text('auth').notNull(),
+	userAgent: text('user_agent'),
+	disabled: boolean('disabled').default(false).notNull(),
+	lastSuccessAt: timestamp('last_success_at'),
+	lastFailureAt: timestamp('last_failure_at'),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	uniqueEndpoint: unique().on(table.endpoint),
+	idxUserId: index('web_push_subscriptions_user_id_idx').on(table.userId)
+}));
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
 	goals: many(goals),
@@ -252,7 +270,8 @@ export const usersRelations = relations(users, ({ many }) => ({
 	sensors: many(sensors),
 	sensorEvents: many(sensorEvents),
 	sensorAggregates: many(sensorAggregates),
-	checklists: many(checklists)
+	checklists: many(checklists),
+	webPushSubscriptions: many(webPushSubscriptions)
 }));
 
 export const authAccountsRelations = relations(authAccounts, ({ one }) => ({
@@ -379,6 +398,13 @@ export const memoriesRelations = relations(memories, ({ one }) => ({
 	theme: one(themes, {
 		fields: [memories.themeId],
 		references: [themes.id]
+	})
+}));
+
+export const webPushSubscriptionsRelations = relations(webPushSubscriptions, ({ one }) => ({
+	user: one(users, {
+		fields: [webPushSubscriptions.userId],
+		references: [users.id]
 	})
 }));
 

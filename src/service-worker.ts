@@ -49,6 +49,50 @@ self.addEventListener('fetch', (event) => {
 	}
 });
 
+self.addEventListener('push', (event) => {
+	const payload = (() => {
+		try {
+			return event.data?.json() as { title?: string; body?: string; url?: string; tag?: string } | undefined;
+		} catch {
+			return { body: event.data?.text() };
+		}
+	})();
+
+	const title = payload?.title ?? 'Resonans';
+	const body = payload?.body ?? 'Ny oppdatering';
+	const url = payload?.url ?? '/';
+
+	event.waitUntil(
+		self.registration.showNotification(title, {
+			body,
+			icon: '/icons/icon-192.svg',
+			badge: '/icons/icon-192.svg',
+			tag: payload?.tag ?? 'resonans-push',
+			data: { url }
+		})
+	);
+});
+
+self.addEventListener('notificationclick', (event) => {
+	event.notification.close();
+	const targetUrl = (event.notification.data?.url as string | undefined) ?? '/';
+
+	event.waitUntil(
+		(async () => {
+			const allClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+			for (const client of allClients) {
+				const windowClient = client as WindowClient;
+				if ('focus' in windowClient) {
+					await windowClient.focus();
+					windowClient.navigate(targetUrl);
+					return;
+				}
+			}
+			await self.clients.openWindow(targetUrl);
+		})()
+	);
+});
+
 async function cacheFirst(request: Request): Promise<Response> {
 	const cache = await caches.open(APP_CACHE);
 	const cached = await cache.match(request);

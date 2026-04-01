@@ -1,6 +1,155 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+
 	let sending = $state(false);
 	let result = $state<{ success: boolean; message: string } | null>(null);
+	let pushLoading = $state(false);
+	let pushResult = $state<{ success: boolean; message: string } | null>(null);
+	let pushSupported = $state(false);
+	let pushConfigured = $state(false);
+	let pushSubscribed = $state(false);
+	let pushPermission = $state<'default' | 'denied' | 'granted'>('default');
+	let vapidPublicKey = $state<string | null>(null);
+
+	function urlBase64ToUint8Array(base64String: string): Uint8Array {
+		const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+		const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+		const rawData = atob(base64);
+		return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
+	}
+
+	async function refreshPushStatus() {
+		if (typeof window === 'undefined') return;
+		pushSupported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+		pushPermission = pushSupported ? Notification.permission : 'denied';
+
+		try {
+			const response = await fetch('/api/push/status');
+			const data = await response.json();
+			if (response.ok) {
+				pushConfigured = Boolean(data.configured);
+				pushSubscribed = Boolean(data.subscribed);
+				vapidPublicKey = (data.publicKey as string | null) ?? null;
+			}
+		} catch {
+			// stille
+		}
+	}
+
+	async function enablePush() {
+		pushLoading = true;
+		pushResult = null;
+
+		try {
+			if (!pushSupported) {
+				pushResult = { success: false, message: 'Push støttes ikke i denne nettleseren/enheten.' };
+				return;
+			}
+
+			if (!pushConfigured || !vapidPublicKey) {
+				pushResult = { success: false, message: 'Server mangler VAPID-konfigurasjon.' };
+				return;
+			}
+
+			if (Notification.permission === 'default') {
+				const perm = await Notification.requestPermission();
+				pushPermission = perm;
+			}
+
+			if (Notification.permission !== 'granted') {
+				pushResult = {
+					success: false,
+					message: 'Tillat varsler i nettleseren/PWA for å aktivere push.'
+				};
+				return;
+			}
+
+			const registration = await navigator.serviceWorker.ready;
+			const keyBytes = urlBase64ToUint8Array(vapidPublicKey);
+			const appServerKey = keyBytes.buffer.slice(
+				keyBytes.byteOffset,
+				keyBytes.byteOffset + keyBytes.byteLength
+			) as ArrayBuffer;
+			const subscription = await registration.pushManager.subscribe({
+				userVisibleOnly: true,
+				applicationServerKey: appServerKey
+			});
+
+			const response = await fetch('/api/push/subscribe', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ subscription: subscription.toJSON() })
+			});
+
+			if (!response.ok) {
+				const data = await response.json().catch(() => ({}));
+				throw new Error(data.error || 'Kunne ikke lagre push subscription');
+			}
+
+			pushSubscribed = true;
+			pushResult = { success: true, message: 'Push aktivert for denne enheten.' };
+		} catch (error) {
+			pushResult = {
+				success: false,
+				message: `Kunne ikke aktivere push: ${error instanceof Error ? error.message : 'Ukjent feil'}`
+			};
+		} finally {
+			pushLoading = false;
+		}
+	}
+
+	async function disablePush() {
+		pushLoading = true;
+		pushResult = null;
+		try {
+			const registration = await navigator.serviceWorker.ready;
+			const subscription = await registration.pushManager.getSubscription();
+			if (!subscription) {
+				pushSubscribed = false;
+				return;
+			}
+
+			await fetch('/api/push/unsubscribe', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ endpoint: subscription.endpoint })
+			});
+
+			await subscription.unsubscribe();
+			pushSubscribed = false;
+			pushResult = { success: true, message: 'Push deaktivert på denne enheten.' };
+		} catch (error) {
+			pushResult = {
+				success: false,
+				message: `Kunne ikke deaktivere push: ${error instanceof Error ? error.message : 'Ukjent feil'}`
+			};
+		} finally {
+			pushLoading = false;
+		}
+	}
+
+	async function sendTestPush() {
+		pushLoading = true;
+		pushResult = null;
+		try {
+			const response = await fetch('/api/push/test', { method: 'POST' });
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data.error || 'Kunne ikke sende test push');
+			}
+			pushResult = {
+				success: true,
+				message: `Sendte test-push til ${data.sent}/${data.total} abonnement(er).`
+			};
+		} catch (error) {
+			pushResult = {
+				success: false,
+				message: `Kunne ikke sende test-push: ${error instanceof Error ? error.message : 'Ukjent feil'}`
+			};
+		} finally {
+			pushLoading = false;
+		}
+	}
 
 	async function sendCheckIn() {
 		sending = true;
@@ -33,6 +182,10 @@
 			sending = false;
 		}
 	}
+
+	onMount(() => {
+		void refreshPushStatus();
+	});
 </script>
 
 <div class="notifications-page">
@@ -48,6 +201,40 @@
 	</header>
 
 	<main class="content">
+		<section class="notification-card">
+			<div class="card-icon">📱</div>
+			<h2>Native Push (PWA)</h2>
+			<p>Aktiver pushvarsler direkte til enheten din fra Resonans PWA.</p>
+
+			<div class="info-box">
+				<div class="info-title">Status</div>
+				<ul>
+					<li>Støtte: {pushSupported ? 'Ja' : 'Nei'}</li>
+					<li>Server-konfigurasjon: {pushConfigured ? 'OK' : 'Mangler VAPID'}</li>
+					<li>Tillatelse: {pushPermission}</li>
+					<li>Abonnert: {pushSubscribed ? 'Ja' : 'Nei'}</li>
+				</ul>
+			</div>
+
+			<div class="push-actions">
+				<button onclick={enablePush} disabled={pushLoading || pushSubscribed || !pushConfigured} class="btn-primary">
+					{pushLoading ? 'Jobber...' : pushSubscribed ? 'Push aktivert' : 'Aktiver Push'}
+				</button>
+				<button onclick={disablePush} disabled={pushLoading || !pushSubscribed} class="btn-secondary">
+					Deaktiver Push
+				</button>
+				<button onclick={sendTestPush} disabled={pushLoading || !pushSubscribed} class="btn-secondary">
+					Send Test Push
+				</button>
+			</div>
+
+			{#if pushResult}
+				<div class="result {pushResult.success ? 'success' : 'error'}">
+					{pushResult.message}
+				</div>
+			{/if}
+		</section>
+
 		<section class="notification-card">
 			<div class="card-icon">📤</div>
 			<h2>Google Chat - Daglig Check-in</h2>
@@ -239,6 +426,13 @@
 		background: var(--error-bg);
 		color: var(--error-text);
 		border: 1px solid var(--error-border);
+	}
+
+	.push-actions {
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: 0.6rem;
+		margin-top: 1rem;
 	}
 
 	.config-steps {

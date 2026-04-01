@@ -36,6 +36,7 @@
 		"@prisma/client": "^6.18.0",
 		"@types/node-cron": "^3.0.11",
 		"@types/pdf-parse": "^1.1.5",
+		"@types/web-push": "^3.6.4",
 		"cloudinary": "^2.8.0",
 		"d3-scale": "^4.0.2",
 		"d3-shape": "^3.2.0",
@@ -50,6 +51,7 @@
 		"pdf-parse": "^2.4.5",
 		"postgres": "^3.4.7",
 		"unpdf": "^1.4.0",
+		"web-push": "^3.6.7",
 		"zod": "^4.1.12"
 	}
 }
