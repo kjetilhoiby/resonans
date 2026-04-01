@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { openai, SYSTEM_PROMPT } from '$lib/server/openai';
+import { buildSystemPromptWithFocus, openai } from '$lib/server/openai';
 import { createGoal, createTask, getUserActiveGoalsAndTasks, findSimilarGoals, findSimilarTasks } from '$lib/server/goals';
 import { getOrCreateConversation, addMessage, getConversationHistory, getConversationByIdForUser } from '$lib/server/conversations';
 import { logActivity } from '$lib/server/activities';
@@ -1006,8 +1006,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		})} (${today.toISOString().split('T')[0]})\n--- SLUTT PÅ DATO ---\n\n`;
 
 		// Bygg meldingshistorikk for OpenAI
+		const latestUserInput = typeof message === 'string' && message.trim().length > 0
+			? message
+			: (attachment?.note || attachment?.contentText || '');
+		const systemPrompt = buildSystemPromptWithFocus(latestUserInput);
+
 		const messages: ChatCompletionMessageParam[] = [
-			{ role: 'system', content: SYSTEM_PROMPT + memoryContext + goalsContext + dateContext }
+			{ role: 'system', content: systemPrompt + memoryContext + goalsContext + dateContext }
 		];
 
 		// Legg til historikk (unntatt den siste brukermeldingen som allerede er der)
