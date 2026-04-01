@@ -7,6 +7,7 @@
 	import ChatStatusWidget from '$lib/components/domain/ChatStatusWidget.svelte';
 	import AnnotatedImageCard from '$lib/components/domain/AnnotatedImageCard.svelte';
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
+	import type { WidgetCreationFlow } from '$lib/flows/widget-creation/flow';
 	import type { WeatherStatusWidget } from '$lib/ai/tools/weather-forecast';
 	import type { PhotoAnnotationResult } from '$lib/ai/tools/annotate-photo';
 
@@ -26,6 +27,7 @@
 		timestamp: string;
 		imageUrl?: string | null;
 		widgetProposal?: import('$lib/artifacts/widget-draft').WidgetDraft | null;
+		widgetFlow?: WidgetCreationFlow | null;
 		statusWidget?: WeatherStatusWidget | null;
 		photoAnnotation?: PhotoAnnotationResult | null;
 		photoAnnotationImageUrl?: string | null;
@@ -52,6 +54,7 @@
 				text: m.content,
 				imageUrl: m.imageUrl ?? null,
 				widgetProposal: m.widgetProposal ?? null,
+				widgetFlow: m.widgetFlow ?? null,
 				statusWidget: m.statusWidget ?? null,
 				photoAnnotation: m.photoAnnotation ?? null,
 				photoAnnotationImageUrl: m.photoAnnotationImageUrl ?? null
@@ -64,6 +67,7 @@
 		text: string;
 		imageUrl: string | null;
 		widgetProposal?: import('$lib/artifacts/widget-draft').WidgetDraft | null;
+		widgetFlow?: WidgetCreationFlow | null;
 		statusWidget?: WeatherStatusWidget | null;
 		photoAnnotation?: PhotoAnnotationResult | null;
 		photoAnnotationImageUrl?: string | null;
@@ -125,6 +129,7 @@
 					text: payload.message,
 					imageUrl: null,
 					widgetProposal: payload.widgetProposal ?? null,
+					widgetFlow: payload.widgetFlow ?? null,
 					statusWidget: payload.statusWidget ?? null,
 					photoAnnotation: payload.photoAnnotation ?? null,
 					photoAnnotationImageUrl: payload.photoAnnotationImageUrl ?? null

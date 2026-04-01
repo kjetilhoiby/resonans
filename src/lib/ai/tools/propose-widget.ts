@@ -1,5 +1,6 @@
 import { findSimilarWidget } from '$lib/skills/widget-creation/service';
 import type { WidgetDraft } from '$lib/artifacts/widget-draft';
+import { createWidgetFlowFromDraft } from '$lib/flows/widget-creation/flow';
 
 export const proposeWidgetTool = {
 	name: 'propose_widget',
@@ -51,10 +52,12 @@ Aldri opprett widget direkte uten at bruker har sett og bekreftet forslaget.`,
 		};
 
 		const duplicate = existing ? { id: existing.id, title: existing.title } : null;
+		const flow = createWidgetFlowFromDraft(draft, duplicate?.id ?? null);
 
 		return {
 			success: true,
 			draft,
+			flow,
 			duplicate,
 			message: duplicate
 				? `En lignende widget "${duplicate.title}" finnes allerede. Vil du opprette en ny også, eller oppdatere den eksisterende?`

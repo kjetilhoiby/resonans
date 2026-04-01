@@ -279,6 +279,10 @@ export function detectPromptFocusModules(input: string): PromptFocusModule[] {
 
 export function buildSystemPromptWithFocus(input: string) {
    const modules = detectPromptFocusModules(input);
+   return buildSystemPromptFromModules(modules);
+}
+
+export function buildSystemPromptFromModules(modules: PromptFocusModule[]) {
    if (modules.length === 0) return SYSTEM_PROMPT;
 
    const focusBlock = modules.map((id) => `- ${id}: ${MODULE_HINTS[id]}`).join('\n');

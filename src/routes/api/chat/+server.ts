@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { buildSystemPromptWithFocus, openai } from '$lib/server/openai';
+import { buildSystemPromptFromModules, openai } from '$lib/server/openai';
 import { createGoal, createTask, getUserActiveGoalsAndTasks, findSimilarGoals, findSimilarTasks } from '$lib/server/goals';
 import { getOrCreateConversation, addMessage, getConversationHistory, getConversationByIdForUser } from '$lib/server/conversations';
 import { logActivity } from '$lib/server/activities';
@@ -13,7 +13,12 @@ import {
 	listWidgetsForChat,
 	updateUserWidget
 } from '$lib/skills/widget-creation/service';
+import {
+	markWidgetFlowCreated,
+	type WidgetCreationFlow
+} from '$lib/flows/widget-creation/flow';
 import { USER_ID_HEADER_NAME } from '$lib/server/request-user';
+import { routeChatRequest } from '$lib/server/chat-router';
 import { db } from '$lib/db';
 import { checklists, checklistItems, users } from '$lib/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -1009,7 +1014,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		const latestUserInput = typeof message === 'string' && message.trim().length > 0
 			? message
 			: (attachment?.note || attachment?.contentText || '');
-		const systemPrompt = buildSystemPromptWithFocus(latestUserInput);
+		const routingDecision = routeChatRequest(latestUserInput);
+		const systemPrompt = buildSystemPromptFromModules(routingDecision.focusModules);
 
 		const messages: ChatCompletionMessageParam[] = [
 			{ role: 'system', content: systemPrompt + memoryContext + goalsContext + dateContext }
@@ -1083,6 +1089,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		let checklistCreated = false;
 		let checklistUpdated = false;
 		let widgetProposal: import('$lib/artifacts/widget-draft').WidgetDraft | null = null;
+		let widgetFlow: WidgetCreationFlow | null = null;
 		let statusWidget: import('$lib/ai/tools/weather-forecast').WeatherStatusWidget | null = null;
 		let photoAnnotation: import('$lib/ai/tools/annotate-photo').PhotoAnnotationResult | null = null;
 		let photoAnnotationImageUrl: string | null = null;
@@ -1543,6 +1550,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 						const result = await proposeWidgetTool.execute({ userId, ...args });
 						if (result.success) {
 							widgetProposal = result.draft;
+							widgetFlow = result.flow ?? null;
 						}
 						messages.push({
 							role: 'tool',
@@ -1574,6 +1582,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 						if (existing) {
 							console.log('  📊 Widget already exists:', existing.id);
+							widgetFlow = markWidgetFlowCreated(widgetFlow, existing.id);
 							messages.push({
 								role: 'tool',
 								content: JSON.stringify({ success: true, widgetId: existing.id, title: existing.title, pinned: true, alreadyExisted: true }),
@@ -1592,6 +1601,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 								color: args.color || '#7c8ef5',
 								pinned: args.pinned !== false
 							});
+
+							widgetFlow = markWidgetFlowCreated(widgetFlow, widget.id);
 
 							console.log('  📊 Widget created:', widget.id);
 							messages.push({
@@ -1849,6 +1860,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		const assistantMetadata: Record<string, unknown> = {};
 		if (createdGoalId) assistantMetadata.goalId = createdGoalId;
 		if (widgetProposal) assistantMetadata.widgetProposal = widgetProposal;
+		if (widgetFlow) assistantMetadata.widgetFlow = widgetFlow;
+		assistantMetadata.routingDecision = routingDecision;
 		if (statusWidget) assistantMetadata.statusWidget = statusWidget;
 		if (photoAnnotation) assistantMetadata.photoAnnotation = photoAnnotation;
 		if (photoAnnotationImageUrl) assistantMetadata.photoAnnotationImageUrl = photoAnnotationImageUrl;
@@ -1873,7 +1886,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			checklistCreated,
 			checklistUpdated,
 			checklistChanged: checklistCreated || checklistUpdated,
+			routingDecision,
 			widgetProposal,
+			widgetFlow,
 			statusWidget,
 			photoAnnotation,
 			photoAnnotationImageUrl,
