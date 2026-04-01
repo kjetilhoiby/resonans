@@ -1,4 +1,5 @@
 import { detectPromptFocusModules } from '$lib/server/openai';
+import { DOMAIN_METADATA } from '$lib/domains';
 
 export type ChatDomain = 'health' | 'economics' | 'planning' | 'themes' | 'general';
 export type ChatSkill = 'widget_creation' | 'checklist_planning' | 'goal_planning' | 'theme_management' | 'general_chat';
@@ -8,6 +9,7 @@ export interface ChatRoutingDecision {
 	skills: ChatSkill[];
 	focusModules: ReturnType<typeof detectPromptFocusModules>;
 	hints: string[];
+	domainHints?: string[];
 }
 
 export function routeChatRequest(input: string): ChatRoutingDecision {
@@ -16,9 +18,16 @@ export function routeChatRequest(input: string): ChatRoutingDecision {
 	const domains = new Set<ChatDomain>();
 	const skills = new Set<ChatSkill>();
 	const hints: string[] = [];
+	const domainHints: string[] = [];
 
-	if (focusModules.includes('health')) domains.add('health');
-	if (focusModules.includes('economics')) domains.add('economics');
+	if (focusModules.includes('health')) {
+		domains.add('health');
+		domainHints.push(DOMAIN_METADATA.health.systemPromptHint);
+	}
+	if (focusModules.includes('economics')) {
+		domains.add('economics');
+		domainHints.push(DOMAIN_METADATA.economics.systemPromptHint);
+	}
 	if (focusModules.includes('themes')) domains.add('themes');
 	if (focusModules.includes('planning')) domains.add('planning');
 
@@ -47,6 +56,7 @@ export function routeChatRequest(input: string): ChatRoutingDecision {
 		domains: Array.from(domains),
 		skills: Array.from(skills),
 		focusModules,
-		hints
+		hints,
+		domainHints: domainHints.length > 0 ? domainHints : undefined
 	};
 }
