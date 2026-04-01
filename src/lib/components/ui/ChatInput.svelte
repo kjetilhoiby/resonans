@@ -8,6 +8,7 @@
     onsubmit      callback(message, imageUrl?)
 -->
 <script lang="ts">
+	import { tick } from 'svelte';
 	import Icon from './Icon.svelte';
 
 	type AttachmentAction = 'camera' | 'voice' | 'file';
@@ -18,6 +19,7 @@
 		initialValue?: string;
 		autoFocus?: boolean;
 		showActionRig?: boolean;
+		interceptOpen?: boolean;
 		onAttachment?: (kind: AttachmentAction, draft: string) => void;
 		onMood?: (draft: string) => void;
 		onOpen?: () => void;
@@ -32,6 +34,7 @@
 		initialValue = '',
 		autoFocus = false,
 		showActionRig = false,
+		interceptOpen = false,
 		onAttachment,
 		onMood,
 		onOpen,
@@ -81,6 +84,17 @@
 		onOpen?.();
 	}
 
+	function onPointerDown(e: PointerEvent) {
+		if (!interceptOpen) return;
+		e.preventDefault();
+		onOpen?.();
+	}
+
+	function onMouseDown(e: MouseEvent) {
+		if (!interceptOpen) return;
+		e.preventDefault();
+	}
+
 	function triggerAttachment(kind: AttachmentAction) {
 		if (disabled) return;
 		onAttachment?.(kind, text.trim());
@@ -93,9 +107,22 @@
 
 	$effect(() => {
 		if (!autoFocus || disabled || !textareaEl) return;
-		requestAnimationFrame(() => {
-			textareaEl?.focus({ preventScroll: true });
-		});
+		const el = textareaEl;
+		let cancelled = false;
+
+		void (async () => {
+			await tick();
+			await new Promise((resolve) => requestAnimationFrame(resolve));
+			if (cancelled) return;
+			el.focus({ preventScroll: true });
+			const cursor = el.value.length;
+			el.setSelectionRange(cursor, cursor);
+			el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+		})();
+
+		return () => {
+			cancelled = true;
+		};
 	});
 </script>
 
@@ -116,7 +143,8 @@
 		rows="1"
 		autocapitalize="sentences"
 		onfocus={openFromInput}
-		onpointerdown={openFromInput}
+		onpointerdown={onPointerDown}
+		onmousedown={onMouseDown}
 		oninput={autoResize}
 		onkeydown={onKeyDown}
 		aria-label="Melding"

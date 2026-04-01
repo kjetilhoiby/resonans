@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192" role="img" aria-label="Resonans">
+  <rect width="192" height="192" rx="40" fill="#0f0f0f"/>
+  <circle cx="96" cy="96" r="62" fill="none" stroke="#4a5af0" stroke-width="10" opacity="0.35"/>
+  <path d="M56 96c14-24 25-36 40-36s26 12 40 36" fill="none" stroke="#7c8ef5" stroke-width="10" stroke-linecap="round"/>
+  <circle cx="96" cy="96" r="10" fill="#82c882"/>
+</svg>

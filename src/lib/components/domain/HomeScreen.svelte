@@ -1678,6 +1678,7 @@
 				placeholder="Hva tenker du på?"
 				initialValue={chatPrefill}
 				showActionRig={true}
+				interceptOpen={true}
 				onOpen={() => openChat(chatPrefill, 'chat', { focusInput: true })}
 				onAttachment={(kind, draft) => startHomeAttachment(kind, draft)}
 				onMood={(draft) => startMoodFlow(false, draft)}
@@ -2810,8 +2811,12 @@
 	}
 
 	.chat-input-area {
+		position: sticky;
+		bottom: 0;
 		padding: 10px 14px env(safe-area-inset-bottom, 14px);
 		border-top: 1px solid #1a1a1a;
+		background: linear-gradient(180deg, rgba(15, 15, 15, 0.72) 0%, #0f0f0f 18%);
+		backdrop-filter: blur(10px);
 		flex-shrink: 0;
 		display: flex;
 		flex-direction: column;
