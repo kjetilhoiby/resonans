@@ -263,14 +263,6 @@ Du: [REGISTRER FREMGANG] "Wow, fantastisk! 3 km på 18 minutter er solid! Hvorda
 
 type PromptFocusModule = 'health' | 'economics' | 'widgets' | 'themes' | 'planning';
 
-const MODULE_HINTS: Record<PromptFocusModule, string> = {
-   health: 'Fokuser pa helsedata med query_sensor_data og presis oppfolging av vekt/sovn/steg/trening.',
-   economics: 'Fokuser pa oekonomidata med query_economics og tydelige periodetolkninger (inkludert lonnsmnd/payPeriod).',
-   widgets: 'Fokuser pa widget-flyt: propose_widget -> bekreftelse -> create_widget, og bruk update/get ved konfigurering.',
-   themes: 'Fokuser pa tema-flyt med manage_theme og tema-spesifikke memories der det passer.',
-   planning: 'Fokuser pa konkrete neste steg, tasks/checklists og lav friksjon for handling.'
-};
-
 export function detectPromptFocusModules(input: string): PromptFocusModule[] {
    const text = input.toLowerCase();
    const modules = new Set<PromptFocusModule>();
@@ -282,18 +274,6 @@ export function detectPromptFocusModules(input: string): PromptFocusModule[] {
    if (/plan|uke|todo|sjekkliste|oppgave|maal|mål/.test(text)) modules.add('planning');
 
    return Array.from(modules);
-}
-
-export function buildSystemPromptWithFocus(input: string) {
-   const modules = detectPromptFocusModules(input);
-   return buildSystemPromptFromModules(modules);
-}
-
-export function buildSystemPromptFromModules(modules: PromptFocusModule[]) {
-   if (modules.length === 0) return SYSTEM_PROMPT;
-
-   const focusBlock = modules.map((id) => `- ${id}: ${MODULE_HINTS[id]}`).join('\n');
-   return `${SYSTEM_PROMPT}\n\n**AKTIVE FOKUSMODULER FOR DENNE MELDINGEN:**\n${focusBlock}`;
 }
 
 

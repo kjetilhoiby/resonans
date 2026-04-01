@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { buildSystemPromptFromModules, openai } from '$lib/server/openai';
+import { buildModularSystemPrompt } from '$lib/server/prompts';
+import { openai } from '$lib/server/openai';
 import { createGoal, createTask, getUserActiveGoalsAndTasks, findSimilarGoals, findSimilarTasks } from '$lib/server/goals';
 import { getOrCreateConversation, addMessage, getConversationHistory, getConversationByIdForUser } from '$lib/server/conversations';
 import { logActivity } from '$lib/server/activities';
@@ -1015,7 +1016,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			? message
 			: (attachment?.note || attachment?.contentText || '');
 		const routingDecision = routeChatRequest(latestUserInput);
-		const systemPrompt = buildSystemPromptFromModules(routingDecision.focusModules);
+		const systemPrompt = buildModularSystemPrompt(routingDecision);
 
 		const messages: ChatCompletionMessageParam[] = [
 			{ role: 'system', content: systemPrompt + memoryContext + goalsContext + dateContext }
