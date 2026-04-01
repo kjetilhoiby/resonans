@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import GoalRing from '../ui/GoalRing.svelte';
+	import { getCachedWidgetData, fetchWidgetData } from '$lib/client/widget-data-cache';
+	import type { WidgetData } from '$lib/client/widget-data-cache';
 
 	interface Props {
 		widgetId: string;
@@ -16,63 +18,10 @@
 
 	let { widgetId, title, unit, color, pinned, onpress, onchat, onunpin, onconfig }: Props = $props();
 
-	interface WidgetData {
-		current: number | null;
-		sparkline: number[];
-		unit: string;
-		delta: number | null;
-		pct: number | null;
-		state: 'success' | 'warn' | 'normal';
-	}
-
 	let data = $state<WidgetData | null>(null);
 	let loading = $state(true);
 	let error = $state(false);
 	let refreshing = $state(false);
-
-	const WIDGET_DATA_CACHE_MAX_AGE_MS = 30 * 60 * 1000;
-
-	interface CachedWidgetData {
-		cachedAt: string;
-		data: WidgetData;
-	}
-
-	function getWidgetCacheKey(id: string): string {
-		return `resonans:home:widget-data:${id}:v1`;
-	}
-
-	function readCachedWidgetData(id: string): WidgetData | null {
-		if (typeof window === 'undefined') return null;
-
-		try {
-			const raw = window.localStorage.getItem(getWidgetCacheKey(id));
-			if (!raw) return null;
-
-			const parsed = JSON.parse(raw) as CachedWidgetData;
-			if (!parsed?.cachedAt || !parsed?.data) return null;
-
-			const ageMs = Date.now() - new Date(parsed.cachedAt).getTime();
-			if (!Number.isFinite(ageMs) || ageMs > WIDGET_DATA_CACHE_MAX_AGE_MS) return null;
-
-			return parsed.data;
-		} catch {
-			return null;
-		}
-	}
-
-	function writeCachedWidgetData(id: string, widgetData: WidgetData) {
-		if (typeof window === 'undefined') return;
-
-		try {
-			const payload: CachedWidgetData = {
-				cachedAt: new Date().toISOString(),
-				data: widgetData
-			};
-			window.localStorage.setItem(getWidgetCacheKey(id), JSON.stringify(payload));
-		} catch {
-			// Ignorer localStorage-feil
-		}
-	}
 
 	// Long-press for unpin
 	let pressTimer: ReturnType<typeof setTimeout> | null = null;
@@ -120,7 +69,7 @@
 	}
 
 	onMount(async () => {
-		const cached = readCachedWidgetData(widgetId);
+		const cached = getCachedWidgetData(widgetId);
 		if (cached) {
 			data = cached;
 			loading = false;
@@ -128,15 +77,10 @@
 		}
 
 		try {
-			const res = await fetch(`/api/widget-data/${widgetId}`);
-			if (res.ok) {
-				const fresh = (await res.json()) as WidgetData;
+			const fresh = await fetchWidgetData(widgetId);
+			if (fresh) {
 				const hasMeaningfulData = fresh.current !== null || fresh.sparkline.length > 0;
-
-				if (hasMeaningfulData || !cached) {
-					data = fresh;
-					writeCachedWidgetData(widgetId, fresh);
-				}
+				if (hasMeaningfulData || !cached) data = fresh;
 			} else {
 				error = !cached;
 			}

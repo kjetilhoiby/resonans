@@ -23,6 +23,7 @@
 	import ChecklistSheet from '../ui/ChecklistSheet.svelte';
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
 	import { prefetchDashboard } from '$lib/client/dashboard-cache';
+	import { prefetchWidgetData } from '$lib/client/widget-data-cache';
 	import { finishNavMetric, startNavMetric } from '$lib/client/nav-metrics';
 	import { resolveThemeDashboardKind, type DashboardKind } from '$lib/domain/theme-dashboard-registry';
 
@@ -181,7 +182,7 @@
 
 	function scheduleDashboardPrefetch() {
 		const prefetchTargets = themes
-			.slice(0, 4)
+			.slice(0, 2)
 			.map((theme) => ({ themeId: theme.id, kind: getDashboardKindForTheme(theme) }))
 			.filter((item): item is { themeId: string; kind: DashboardKind } => item.kind !== null);
 
@@ -199,8 +200,25 @@
 			return () => browserWindow.cancelIdleCallback(idleId);
 		}
 
-		const timeoutId = globalThis.setTimeout(runPrefetch, 350);
+		const timeoutId = globalThis.setTimeout(runPrefetch, 1200);
 		return () => globalThis.clearTimeout(timeoutId);
+	}
+
+	function scheduleWidgetDataPrefetch(widgets: UserWidget[]) {
+		if (widgets.length === 0 || typeof window === 'undefined') return;
+		const connection = (navigator as { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
+		if (connection?.saveData) return;
+		if (connection?.effectiveType && /2g/.test(connection.effectiveType)) return;
+
+		const ids = widgets.slice(0, 3).map((w) => w.id);
+		const run = () => {
+			for (const id of ids) void prefetchWidgetData(id);
+		};
+		if ('requestIdleCallback' in window) {
+			window.requestIdleCallback(run, { timeout: 1200 });
+		} else {
+			setTimeout(run, 100);
+		}
 	}
 
 	onMount(() => {
@@ -221,6 +239,12 @@
 			);
 			if (cachedPinnedWidgets && cachedPinnedWidgets.length > 0) {
 				pinnedWidgets = cachedPinnedWidgets;
+							// Start widget-data-henting umiddelbart for cachede IDs, så DynamicWidget
+							// finner in-memory treff allerede før/under sin egen onMount-fetch.
+							if (cachedPinnedWidgets && cachedPinnedWidgets.length > 0) {
+								scheduleWidgetDataPrefetch(cachedPinnedWidgets);
+							}
+
 				widgetsLoading = false;
 			}
 
@@ -490,6 +514,7 @@
 			.slice(0, 3);
 	});
 	const inputExpanded = $derived(chatOpen || cameraOpen || voiceOpen || moodOpen || fileFlowOpen);
+	let chatSection: HTMLElement | null = $state(null);
 
 	function formatFollowUpDate(iso: string) {
 		return new Intl.DateTimeFormat('nb-NO', { day: 'numeric', month: 'short' }).format(new Date(iso));
@@ -1198,6 +1223,29 @@
 			void loadFileHistory();
 		}
 	});
+
+	// Fix iOS keyboard scroll: resize fixed overlay to match visual viewport
+	$effect(() => {
+		if (!inputExpanded) return;
+		if (typeof window === 'undefined' || !window.visualViewport) return;
+		const vv = window.visualViewport;
+		function updateLayout() {
+			if (!chatSection) return;
+			chatSection.style.height = `${vv.height}px`;
+			chatSection.style.top = `${vv.offsetTop}px`;
+		}
+		vv.addEventListener('resize', updateLayout);
+		vv.addEventListener('scroll', updateLayout);
+		updateLayout();
+		return () => {
+			vv.removeEventListener('resize', updateLayout);
+			vv.removeEventListener('scroll', updateLayout);
+			if (chatSection) {
+				chatSection.style.height = '';
+				chatSection.style.top = '';
+			}
+		};
+	});
 </script>
 
 <div class="home-screen" class:home-screen-chat-open={chatOpen}>
@@ -1299,7 +1347,7 @@
 	{/if}
 
 	<!-- ── SONE 4: Chat ── -->
-	<section class="zone zone-input" class:zone-chat-open={inputExpanded} aria-label="Chat">
+	<section class="zone zone-input" class:zone-chat-open={inputExpanded} aria-label="Chat" bind:this={chatSection}>
 		{#if chatOpen}
 			<div class="chat-header">
 				<div class="chat-heading-wrap">
