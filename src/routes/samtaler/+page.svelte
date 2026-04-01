@@ -7,7 +7,6 @@
 	import ChatStatusWidget from '$lib/components/domain/ChatStatusWidget.svelte';
 	import AnnotatedImageCard from '$lib/components/domain/AnnotatedImageCard.svelte';
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
-	import type { WidgetDraft } from '$lib/ai/tools/propose-widget';
 	import type { WeatherStatusWidget } from '$lib/ai/tools/weather-forecast';
 	import type { PhotoAnnotationResult } from '$lib/ai/tools/annotate-photo';
 
@@ -26,7 +25,7 @@
 		content: string;
 		timestamp: string;
 		imageUrl?: string | null;
-		widgetProposal?: WidgetDraft | null;
+		widgetProposal?: import('$lib/artifacts/widget-draft').WidgetDraft | null;
 		statusWidget?: WeatherStatusWidget | null;
 		photoAnnotation?: PhotoAnnotationResult | null;
 		photoAnnotationImageUrl?: string | null;
@@ -64,7 +63,7 @@
 		role: 'user' | 'assistant';
 		text: string;
 		imageUrl: string | null;
-		widgetProposal?: WidgetDraft | null;
+		widgetProposal?: import('$lib/artifacts/widget-draft').WidgetDraft | null;
 		statusWidget?: WeatherStatusWidget | null;
 		photoAnnotation?: PhotoAnnotationResult | null;
 		photoAnnotationImageUrl?: string | null;

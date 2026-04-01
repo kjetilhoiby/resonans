@@ -1,18 +1,5 @@
-import { db } from '$lib/db';
-import { userWidgets } from '$lib/db/schema';
-import { and, eq, sql } from 'drizzle-orm';
-
-export type WidgetDraft = {
-	title: string;
-	metricType: 'weight' | 'sleepDuration' | 'steps' | 'distance' | 'workoutCount' | 'heartrate' | 'mood' | 'screenTime' | 'amount';
-	aggregation: 'avg' | 'sum' | 'count' | 'latest';
-	period: 'day' | 'week' | 'month';
-	range: 'last7' | 'last14' | 'last30' | 'current_week' | 'current_month' | 'current_year';
-	filterCategory: string | null;
-	unit: string;
-	goal: number | null;
-	color: string;
-};
+import { findSimilarWidget } from '$lib/skills/widget-creation/service';
+import type { WidgetDraft } from '$lib/artifacts/widget-draft';
 
 export const proposeWidgetTool = {
 	name: 'propose_widget',
@@ -41,20 +28,15 @@ Aldri opprett widget direkte uten at bruker har sett og bekreftet forslaget.`,
 		const { userId, title, metricType, aggregation, period, range, filterCategory, unit, goal, color } = args;
 
 		// Sjekk om det finnes en tilsvarende widget allerede
-		const existing = await db
-			.select({ id: userWidgets.id, title: userWidgets.title })
-			.from(userWidgets)
-			.where(
-				and(
-					eq(userWidgets.userId, userId),
-					eq(userWidgets.metricType, metricType as WidgetDraft['metricType']),
-					eq(userWidgets.range, range as WidgetDraft['range']),
-					filterCategory
-						? eq(userWidgets.filterCategory, filterCategory)
-						: sql`filter_category IS NULL`
-				)
-			)
-			.limit(1);
+		const existing = await findSimilarWidget(
+			userId,
+			{
+				metricType: metricType as WidgetDraft['metricType'],
+				range: range as WidgetDraft['range'],
+				filterCategory: filterCategory ?? null
+			},
+			{ pinnedOnly: false }
+		);
 
 		const draft: WidgetDraft = {
 			title: title.trim().slice(0, 80),
@@ -68,7 +50,7 @@ Aldri opprett widget direkte uten at bruker har sett og bekreftet forslaget.`,
 			color: color && /^#[0-9a-fA-F]{6}$/.test(color) ? color : '#7c8ef5',
 		};
 
-		const duplicate = existing.length > 0 ? { id: existing[0].id, title: existing[0].title } : null;
+		const duplicate = existing ? { id: existing.id, title: existing.title } : null;
 
 		return {
 			success: true,

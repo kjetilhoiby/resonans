@@ -9,7 +9,7 @@
 -->
 <script lang="ts">
 	import GoalRing from '$lib/components/ui/GoalRing.svelte';
-	import type { WidgetDraft } from '$lib/ai/tools/propose-widget';
+	import type { WidgetDraft } from '$lib/artifacts/widget-draft';
 
 	interface Props {
 		draft: WidgetDraft;

@@ -7,10 +7,16 @@ import { logActivity } from '$lib/server/activities';
 import { buildMemoryContext, createMemory } from '$lib/server/memories';
 import { isFutureVisionText, seedThemeInstructionFromFutureVision } from '$lib/server/theme-instructions';
 import { queryEconomicsTool } from '$lib/ai/tools/query-economics';
+import {
+	createUserWidget,
+	findSimilarWidget,
+	listWidgetsForChat,
+	updateUserWidget
+} from '$lib/skills/widget-creation/service';
 import { USER_ID_HEADER_NAME } from '$lib/server/request-user';
 import { db } from '$lib/db';
-import { userWidgets, checklists, checklistItems, users } from '$lib/db/schema';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { checklists, checklistItems, users } from '$lib/db/schema';
+import { and, eq, isNull } from 'drizzle-orm';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 
 type AttachmentKind = 'image' | 'audio' | 'document' | 'other';
@@ -1071,7 +1077,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		let archivedTheme: { id: string; name: string; emoji?: string | null } | null = null;
 		let checklistCreated = false;
 		let checklistUpdated = false;
-		let widgetProposal: import('$lib/ai/tools/propose-widget').WidgetDraft | null = null;
+		let widgetProposal: import('$lib/artifacts/widget-draft').WidgetDraft | null = null;
 		let statusWidget: import('$lib/ai/tools/weather-forecast').WeatherStatusWidget | null = null;
 		let photoAnnotation: import('$lib/ai/tools/annotate-photo').PhotoAnnotationResult | null = null;
 		let photoAnnotationImageUrl: string | null = null;
@@ -1551,48 +1557,36 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					console.log('  📊 Creating widget:', args);
 
 					try {
-						// Sjekk om bruker allerede har en pinned widget med samme metricType + range + filterCategory
-						const existing = await db
-							.select({ id: userWidgets.id, title: userWidgets.title })
-							.from(userWidgets)
-							.where(
-								and(
-									eq(userWidgets.userId, userId),
-									eq(userWidgets.metricType, args.metricType),
-									eq(userWidgets.range, args.range),
-									eq(userWidgets.pinned, true),
-									args.filterCategory
-										? eq(userWidgets.filterCategory, args.filterCategory)
-										: sql`filter_category IS NULL`
-								)
-							)
-							.limit(1);
+						const existing = await findSimilarWidget(
+							userId,
+							{
+								metricType: args.metricType,
+								range: args.range,
+								filterCategory: args.filterCategory ?? null
+							},
+							{ pinnedOnly: true }
+						);
 
-						if (existing.length > 0) {
-							console.log('  📊 Widget already exists:', existing[0].id);
+						if (existing) {
+							console.log('  📊 Widget already exists:', existing.id);
 							messages.push({
 								role: 'tool',
-								content: JSON.stringify({ success: true, widgetId: existing[0].id, title: existing[0].title, pinned: true, alreadyExisted: true }),
+								content: JSON.stringify({ success: true, widgetId: existing.id, title: existing.title, pinned: true, alreadyExisted: true }),
 								tool_call_id: toolCall.id
 							});
 						} else {
-							const [widget] = await db
-								.insert(userWidgets)
-								.values({
-									userId,
-									title: (args.title || '').trim().slice(0, 80),
-									metricType: args.metricType,
-									aggregation: args.aggregation,
-									period: args.period,
-									range: args.range,
-									goal: args.goal != null ? String(args.goal) : null,
-									filterCategory: args.filterCategory ?? null,
-									unit: (args.unit || '').slice(0, 20),
-									color: args.color || '#7c8ef5',
-									pinned: args.pinned !== false,
-									sortOrder: 0,
-								})
-								.returning();
+							const widget = await createUserWidget(userId, {
+								title: args.title || '',
+								metricType: args.metricType,
+								aggregation: args.aggregation,
+								period: args.period,
+								range: args.range,
+								goal: args.goal ?? null,
+								filterCategory: args.filterCategory ?? null,
+								unit: args.unit || '',
+								color: args.color || '#7c8ef5',
+								pinned: args.pinned !== false
+							});
 
 							console.log('  📊 Widget created:', widget.id);
 							messages.push({
@@ -1611,24 +1605,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					}
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'get_widgets') {
 					try {
-						const widgets = await db
-							.select({
-								id: userWidgets.id,
-								title: userWidgets.title,
-								metricType: userWidgets.metricType,
-								aggregation: userWidgets.aggregation,
-								period: userWidgets.period,
-								range: userWidgets.range,
-								unit: userWidgets.unit,
-								goal: userWidgets.goal,
-								thresholdWarn: userWidgets.thresholdWarn,
-								thresholdSuccess: userWidgets.thresholdSuccess,
-								color: userWidgets.color,
-								pinned: userWidgets.pinned,
-							})
-							.from(userWidgets)
-							.where(eq(userWidgets.userId, userId))
-							.orderBy(userWidgets.sortOrder, userWidgets.createdAt);
+						const widgets = await listWidgetsForChat(userId);
 
 						messages.push({
 							role: 'tool',
@@ -1647,21 +1624,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					console.log('  📊 Updating widget:', args.widgetId, args);
 
 					try {
-						const updates: Record<string, unknown> = { updatedAt: new Date() };
-						if (typeof args.title === 'string' && args.title.trim()) updates.title = args.title.trim().slice(0, 80);
-						if (typeof args.goal === 'number') updates.goal = String(args.goal);
-						if (args.goal === null) updates.goal = null;
-						if (typeof args.thresholdWarn === 'number') updates.thresholdWarn = String(args.thresholdWarn);
-						if (args.thresholdWarn === null) updates.thresholdWarn = null;
-						if (typeof args.thresholdSuccess === 'number') updates.thresholdSuccess = String(args.thresholdSuccess);
-						if (args.thresholdSuccess === null) updates.thresholdSuccess = null;
-						if (typeof args.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(args.color)) updates.color = args.color;
-
-						const [updated] = await db
-							.update(userWidgets)
-							.set(updates)
-							.where(and(eq(userWidgets.id, args.widgetId), eq(userWidgets.userId, userId)))
-							.returning({ id: userWidgets.id, title: userWidgets.title });
+						const updated = await updateUserWidget(userId, args.widgetId, {
+							title: args.title,
+							goal: args.goal,
+							thresholdWarn: args.thresholdWarn,
+							thresholdSuccess: args.thresholdSuccess,
+							color: args.color
+						});
 
 						if (!updated) {
 							messages.push({
