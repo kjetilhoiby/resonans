@@ -5,16 +5,18 @@ import { getUserConversationList } from '$lib/server/conversations';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals }) => {
-	const activeThemes = await db
-		.select({
-			id: themes.id,
-			name: themes.name,
-			emoji: themes.emoji,
-		})
-		.from(themes)
-		.where(and(eq(themes.userId, locals.userId), eq(themes.archived, false)));
+	const [activeThemes, conversationList] = await Promise.all([
+		db
+			.select({
+				id: themes.id,
+				name: themes.name,
+				emoji: themes.emoji,
+			})
+			.from(themes)
+			.where(and(eq(themes.userId, locals.userId), eq(themes.archived, false))),
+		getUserConversationList(locals.userId)
+	]);
 
-	const conversationList = await getUserConversationList(locals.userId);
 	const recentConversations = conversationList.slice(0, 6).map((c) => ({
 		id: c.id,
 		title: c.title,

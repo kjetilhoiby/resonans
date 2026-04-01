@@ -1,6 +1,6 @@
 import { db } from '$lib/db';
 import { conversations, messages, themes } from '$lib/db/schema';
-import { eq, desc, and, asc, sql } from 'drizzle-orm';
+import { eq, desc, and, asc, sql, inArray } from 'drizzle-orm';
 import { ensureConversationThemeIdColumn } from '$lib/server/conversation-schema';
 
 export interface CreateConversationParams {
@@ -190,39 +190,44 @@ export async function getUserConversationList(userId: string) {
 		orderBy: [desc(conversations.updatedAt)]
 	});
 
-	return await Promise.all(
-		userConversations.map(async (conversation) => {
-			// Hent første brukermelding for preview
-			const [firstUserMessage] = await db.query.messages.findMany({
-				where: and(
-					eq(messages.conversationId, conversation.id),
-					eq(messages.role, 'user')
-				),
-				orderBy: [asc(messages.createdAt)],
-				limit: 1
-			});
+	if (userConversations.length === 0) return [];
 
-			const linkedTheme = await db.query.themes.findFirst({
-				where: eq(themes.conversationId, conversation.id)
-			});
+	const conversationIds = userConversations.map((c) => c.id);
 
-			// Første setning, maks 120 tegn
-			const raw = firstUserMessage?.content || '';
-			const firstSentence = raw.split(/[.!?]\s/)[0].replace(/\*\*/g, '').trim();
-			const preview = firstSentence.length > 120
-				? firstSentence.slice(0, 117) + '…'
-				: firstSentence;
-
-			return {
-				id: conversation.id,
-				title: conversation.title || 'Ny samtale',
-				updatedAt: conversation.updatedAt,
-				createdAt: conversation.createdAt,
-				preview,
-				linkedTheme: linkedTheme
-					? { id: linkedTheme.id, name: linkedTheme.name, emoji: linkedTheme.emoji }
-					: null
-			};
+	// Batch: hent første brukermelding per samtale og linked themes i parallell
+	const [firstUserMessages, linkedThemes] = await Promise.all([
+		db
+			.selectDistinctOn([messages.conversationId], {
+				conversationId: messages.conversationId,
+				content: messages.content
+			})
+			.from(messages)
+			.where(and(inArray(messages.conversationId, conversationIds), eq(messages.role, 'user')))
+			.orderBy(messages.conversationId, asc(messages.createdAt)),
+		db.query.themes.findMany({
+			where: inArray(themes.conversationId, conversationIds),
+			columns: { id: true, name: true, emoji: true, conversationId: true }
 		})
-	);
+	]);
+
+	const previewMap = new Map(firstUserMessages.map((m) => [m.conversationId, m.content]));
+	const themeMap = new Map(linkedThemes.map((t) => [t.conversationId, t]));
+
+	return userConversations.map((conversation) => {
+		const raw = previewMap.get(conversation.id) || '';
+		const firstSentence = raw.split(/[.!?]\s/)[0].replace(/\*\*/g, '').trim();
+		const preview = firstSentence.length > 120 ? firstSentence.slice(0, 117) + '…' : firstSentence;
+		const linkedTheme = themeMap.get(conversation.id) ?? null;
+
+		return {
+			id: conversation.id,
+			title: conversation.title || 'Ny samtale',
+			updatedAt: conversation.updatedAt,
+			createdAt: conversation.createdAt,
+			preview,
+			linkedTheme: linkedTheme
+				? { id: linkedTheme.id, name: linkedTheme.name, emoji: linkedTheme.emoji }
+				: null
+		};
+	});
 }
