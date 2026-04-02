@@ -3,7 +3,7 @@ import { db } from '$lib/db';
 import { sensors } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { getValidDropboxAccessToken } from '$lib/server/integrations/dropbox-sync';
-import { listDropboxFolder } from '$lib/server/integrations/dropbox';
+import { continueDropboxFolder, listDropboxFolder } from '$lib/server/integrations/dropbox';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ locals, url }) => {
@@ -23,15 +23,22 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		}
 
 		const accessToken = await getValidDropboxAccessToken(sensor);
-		const listing = await listDropboxFolder(accessToken, path);
-		const folders = listing.entries
+		let listing = await listDropboxFolder(accessToken, path, { recursive: true });
+		const allEntries = [...listing.entries];
+
+		while (listing.has_more) {
+			listing = await continueDropboxFolder(accessToken, listing.cursor);
+			allEntries.push(...listing.entries);
+		}
+
+		const folders = allEntries
 			.filter((entry) => entry['.tag'] === 'folder')
 			.map((entry) => ({
 				id: entry.id,
 				name: entry.name,
 				path: entry.path_display || entry.path_lower || ''
 			}))
-			.sort((a, b) => a.name.localeCompare(b.name, 'nb'));
+			.sort((a, b) => a.path.localeCompare(b.path, 'nb'));
 
 		return json({
 			path,

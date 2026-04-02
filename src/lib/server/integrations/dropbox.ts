@@ -28,6 +28,31 @@ interface ListFolderResponse {
 	has_more: boolean;
 }
 
+interface ListDropboxFolderOptions {
+	recursive?: boolean;
+	limit?: number;
+}
+
+async function readDropboxResponse(response: Response) {
+	const text = await response.text();
+	if (!text) return null;
+
+	try {
+		return JSON.parse(text);
+	} catch {
+		return text;
+	}
+}
+
+function stringifyDropboxPayload(payload: unknown): string {
+	if (typeof payload === 'string') return payload;
+	try {
+		return JSON.stringify(payload);
+	} catch {
+		return String(payload);
+	}
+}
+
 function getRequiredEnv(name: string): string {
 	const value = env[name];
 	if (!value) {
@@ -78,9 +103,9 @@ export async function getDropboxAccessToken(code: string, redirectUri: string): 
 		})
 	});
 
-	const payload = await response.json();
+	const payload = await readDropboxResponse(response);
 	if (!response.ok) {
-		throw new Error(`Dropbox token exchange failed: ${JSON.stringify(payload)}`);
+		throw new Error(`Dropbox token exchange failed: ${stringifyDropboxPayload(payload)}`);
 	}
 
 	return payload as DropboxTokenResponse;
@@ -103,26 +128,30 @@ export async function refreshDropboxAccessToken(refreshToken: string): Promise<D
 		})
 	});
 
-	const payload = await response.json();
+	const payload = await readDropboxResponse(response);
 	if (!response.ok) {
-		throw new Error(`Dropbox token refresh failed: ${JSON.stringify(payload)}`);
+		throw new Error(`Dropbox token refresh failed: ${stringifyDropboxPayload(payload)}`);
 	}
 
 	return payload as DropboxTokenResponse;
 }
 
-export async function listDropboxFolder(accessToken: string, path = ''): Promise<ListFolderResponse> {
+export async function listDropboxFolder(
+	accessToken: string,
+	path = '',
+	options: ListDropboxFolderOptions = {}
+): Promise<ListFolderResponse> {
 	const response = await api('https://api.dropboxapi.com/2/files/list_folder', accessToken, {
 		path,
-		recursive: false,
+		recursive: options.recursive ?? false,
 		include_deleted: false,
 		include_non_downloadable_files: false,
-		limit: 200
+		limit: options.limit ?? 200
 	});
 
-	const payload = await response.json();
+	const payload = await readDropboxResponse(response);
 	if (!response.ok) {
-		throw new Error(`Dropbox list_folder failed: ${JSON.stringify(payload)}`);
+		throw new Error(`Dropbox list_folder failed: ${stringifyDropboxPayload(payload)}`);
 	}
 
 	return payload as ListFolderResponse;
@@ -133,9 +162,9 @@ export async function continueDropboxFolder(accessToken: string, cursor: string)
 		cursor
 	});
 
-	const payload = await response.json();
+	const payload = await readDropboxResponse(response);
 	if (!response.ok) {
-		throw new Error(`Dropbox list_folder/continue failed: ${JSON.stringify(payload)}`);
+		throw new Error(`Dropbox list_folder/continue failed: ${stringifyDropboxPayload(payload)}`);
 	}
 
 	return payload as ListFolderResponse;
