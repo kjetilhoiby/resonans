@@ -2,7 +2,7 @@ import { json } from '@sveltejs/kit';
 import { db } from '$lib/db';
 import { sensorEvents, sensors } from '$lib/db/schema';
 import { and, eq, sql, inArray } from 'drizzle-orm';
-import { DEFAULT_USER_ID } from '$lib/server/users';
+import { requireAdmin } from '$lib/server/admin-auth';
 import { parseSparebank1Pdf, normaliseAccountNumber } from '$lib/server/integrations/sparebank1-pdf-parser';
 import type { RequestHandler } from './$types';
 
@@ -13,8 +13,9 @@ export const config = { maxDuration: 60 };
  * GET /api/admin/import-statements
  * Returns a summary of stored balance anchors per account.
  */
-export const GET: RequestHandler = async () => {
-	const userId = DEFAULT_USER_ID;
+export const GET: RequestHandler = async ({ locals }) => {
+	await requireAdmin(locals.userId);
+	const userId = locals.userId;
 
 	const rows = await db
 		.select({
@@ -79,8 +80,9 @@ export const GET: RequestHandler = async () => {
  *
  * Returns a summary of imported / skipped records.
  */
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, locals }) => {
 	try {
+		await requireAdmin(locals.userId);
 		const formData = await request.formData();
 		const file = formData.get('zip');
 		if (!(file instanceof File)) {
@@ -109,7 +111,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		}
 
 		// ── Get or create a "pdf_import" sensor ──────────────────────────────
-		const userId = DEFAULT_USER_ID;
+		const userId = locals.userId;
 		let sensor = await db.query.sensors.findFirst({
 			where: and(eq(sensors.userId, userId), eq(sensors.provider, 'sparebank1_pdf'))
 		});

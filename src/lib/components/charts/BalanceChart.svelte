@@ -111,7 +111,7 @@
 	$: brushToDate   = brushActive ? xScale.invert(brushRight) : null;
 
 	function getInnerX(e: MouseEvent): number {
-		const rect = (e.currentTarget as SVGElement).getBoundingClientRect();
+		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
 		return e.clientX - rect.left - PADDING.left;
 	}
 
@@ -235,17 +235,19 @@
 			</button>
 		</div>
 
-		<div style="position: relative;">
+		<div
+			style="position: relative;"
+			on:mousedown={svgMouseDown}
+			on:mousemove={svgMouseMove}
+			on:mouseup={svgMouseUp}
+			on:mouseleave={svgMouseLeave}
+		>
 			<svg
 				width={w}
 				height={totalH}
 				role="img"
 				aria-label="Saldoutvikling"
 				style="cursor: {brushing ? 'col-resize' : 'crosshair'}"
-				on:mousedown={svgMouseDown}
-				on:mousemove={svgMouseMove}
-				on:mouseup={svgMouseUp}
-				on:mouseleave={svgMouseLeave}
 			>
 				<defs>
 					<linearGradient id="balanceGradient" x1="0" y1="0" x2="0" y2="1">

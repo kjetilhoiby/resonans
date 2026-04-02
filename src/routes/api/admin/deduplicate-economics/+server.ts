@@ -1,6 +1,7 @@
 import type { RequestHandler } from './$types';
 import { json } from '@sveltejs/kit';
 import { db } from '$lib/db';
+import { requireAdmin } from '$lib/server/admin-auth';
 import { sql } from 'drizzle-orm';
 
 /**
@@ -8,8 +9,9 @@ import { sql } from 'drizzle-orm';
  * Removes duplicate bank_balance and bank_transaction events
  * Keeps the oldest entry for each unique combination
  */
-export const POST: RequestHandler = async () => {
+export const POST: RequestHandler = async ({ locals }) => {
 	try {
+		await requireAdmin(locals.userId);
 		console.log('🔍 Finding and removing duplicates...');
 
 		// Remove duplicate balance events (same accountId + date + source)
@@ -26,6 +28,7 @@ export const POST: RequestHandler = async () => {
 					) as rn
 				FROM sensor_events
 				WHERE data_type = 'bank_balance'
+				AND user_id = ${locals.userId}
 			)
 			DELETE FROM sensor_events
 			WHERE id IN (
@@ -56,6 +59,7 @@ export const POST: RequestHandler = async () => {
 					) as rn
 				FROM sensor_events
 				WHERE data_type = 'bank_transaction'
+				AND user_id = ${locals.userId}
 			)
 			DELETE FROM sensor_events
 			WHERE id IN (

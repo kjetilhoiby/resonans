@@ -118,7 +118,8 @@ export const tasks = pgTable('tasks', {
 // Fremdriftsregistreringer
 export const progress = pgTable('progress', {
 	id: uuid('id').primaryKey().defaultRandom(),
-	activityId: uuid('activity_id').references(() => activities.id), // NY: kobling til aktivitet
+	// DEPRECATED: Legacy kobling til activities-tabellen. Nye registreringer går via sensorEvents.
+	activityId: uuid('activity_id').references(() => activities.id),
 	taskId: uuid('task_id').references(() => tasks.id).notNull(),
 	userId: text('user_id').references(() => users.id).notNull(),
 	value: integer('value'), // faktisk verdi registrert
@@ -127,6 +128,9 @@ export const progress = pgTable('progress', {
 	createdAt: timestamp('created_at').defaultNow().notNull()
 });
 
+// DEPRECATED LEGACY TABLE: activities
+// Brukes ikke lenger som primær kilde. Nye aktiviteter skrives til sensorEvents.
+// Beholdes midlertidig for bakoverkompatibilitet og kontrollert utfasing.
 // Aktiviteter - Selve hendelsen/aktiviteten
 export const activities = pgTable('activities', {
 	id: uuid('id').primaryKey().defaultRandom(),
@@ -138,7 +142,8 @@ export const activities = pgTable('activities', {
 	metadata: jsonb('metadata'), // Fleksibel data per type
 	createdAt: timestamp('created_at').defaultNow().notNull()
 });
-
+// DEPRECATED LEGACY TABLE: activity_metrics
+// Tilhørende legacy-tabell for activities. Nye målinger lagres i sensorEvents.data.
 // Målbare verdier fra aktiviteten
 export const activityMetrics = pgTable('activity_metrics', {
 	id: uuid('id').primaryKey().defaultRandom(),

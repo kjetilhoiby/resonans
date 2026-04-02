@@ -31,9 +31,10 @@
 		checklist: Checklist;
 		onclose: () => void;
 		onDeleted?: () => void;
+		onChanged?: () => void;
 	}
 
-	let { checklist, onclose, onDeleted }: Props = $props();
+	let { checklist, onclose, onDeleted, onChanged }: Props = $props();
 
 	let items = $state<ChecklistItem[]>([...checklist.items]);
 	let newItemText = $state('');
@@ -45,6 +46,25 @@
 	const total = $derived(items.length);
 	const allDone = $derived(total > 0 && done === total);
 	const pct = $derived(total > 0 ? done / total : 0);
+	const calendarHref = $derived.by(() => {
+		const context = checklist.context;
+		if (!context) return '/ukeplan';
+
+		const dayMatch = context.match(/^week:(\d{4}-W\d{2}):day:(\d{4}-\d{2}-\d{2})$/);
+		if (dayMatch) {
+			const weekKey = encodeURIComponent(dayMatch[1]);
+			const dayKey = encodeURIComponent(dayMatch[2]);
+			return `/ukeplan?week=${weekKey}&day=${dayKey}`;
+		}
+
+		const weekMatch = context.match(/^week:(\d{4}-W\d{2})$/);
+		if (weekMatch) {
+			const weekKey = encodeURIComponent(weekMatch[1]);
+			return `/ukeplan?week=${weekKey}`;
+		}
+
+		return '/ukeplan';
+	});
 
 	// Vis payoff-animasjon én gang når alt er fullført
 	$effect(() => {
@@ -56,15 +76,23 @@
 	async function toggleItem(item: ChecklistItem) {
 		const newChecked = !item.checked;
 		// Optimistisk oppdatering
+		const previousItems = items;
 		items = items.map((i) =>
 			i.id === item.id ? { ...i, checked: newChecked } : i
 		);
 
-		await fetch(`/api/checklists/${checklist.id}/items/${item.id}`, {
+		const res = await fetch(`/api/checklists/${checklist.id}/items/${item.id}`, {
 			method: 'PATCH',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ checked: newChecked })
 		});
+
+		if (!res.ok) {
+			items = previousItems;
+			return;
+		}
+
+		onChanged?.();
 	}
 
 	async function addItem() {
@@ -80,8 +108,9 @@
 				body: JSON.stringify({ text, sortOrder: items.length })
 			});
 			if (res.ok) {
-				const item = await res.json() as ChecklistItem;
-				items = [...items, item];
+				const created = await res.json() as ChecklistItem[];
+				items = [...items, ...created];
+				onChanged?.();
 			}
 		} finally {
 			addingItem = false;
@@ -182,6 +211,7 @@
 
 	<!-- Footer: delete -->
 	<div class="cs-footer">
+		<a class="cs-calendar-link" href={calendarHref}>Aapne i kalender</a>
 		<button class="cs-delete-btn" onclick={deleteChecklist}>Slett liste</button>
 	</div>
 </div>
@@ -424,8 +454,27 @@
 
 	/* ── Footer ── */
 	.cs-footer {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
 		padding: 8px 20px 20px;
 		flex-shrink: 0;
+	}
+
+	.cs-calendar-link {
+		font-size: 0.74rem;
+		color: #8ea0ff;
+		text-decoration: none;
+		border: 1px solid #2f365f;
+		background: #151821;
+		padding: 6px 10px;
+		border-radius: 8px;
+	}
+
+	.cs-calendar-link:hover {
+		color: #c7d0ff;
+		border-color: #4653a6;
 	}
 
 	.cs-delete-btn {

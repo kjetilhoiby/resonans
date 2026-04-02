@@ -1,5 +1,6 @@
 import { db } from '$lib/db';
 import { progress, sensorGoals, sensorEvents } from '$lib/db/schema';
+import { getSensorGoalMetricTypesForSportType } from '$lib/server/workout-taxonomy';
 import { eq, and, gte } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 
@@ -66,7 +67,7 @@ export async function registerWorkoutsAsProgress(userId: string, syncStartTime: 
 			}
 
 			// Map sport type to metricType for matching
-			const metricTypesToMatch = getMetricTypesForSportType(sportType);
+			const metricTypesToMatch = getSensorGoalMetricTypesForSportType(sportType);
 
 			// Find matching sensor goals
 			const matchingSensorGoals = applicableSensorGoals.filter((sg) =>
@@ -128,28 +129,6 @@ export async function registerWorkoutsAsProgress(userId: string, syncStartTime: 
 	return { registered, errors };
 }
 
-
-/**
- * Maps sport types to the metricTypes they should update in sensorGoals
- * e.g., 'running' -> ['workouts', 'runs']
- */
-function getMetricTypesForSportType(sportType: string): string[] {
-	const mapping: Record<string, string[]> = {
-		running: ['workouts', 'runs', 'running'],
-		cycling: ['workouts', 'cycling'],
-		swimming: ['workouts', 'swimming'],
-		walking: ['workouts', 'walking'],
-		hiking: ['workouts', 'hiking'],
-		trail: ['workouts', 'trail_running', 'hiking'],
-		tennis: ['workouts', 'tennis'],
-		volleyball: ['workouts', 'volleyball'],
-		badminton: ['workouts', 'badminton'],
-		basketball: ['workouts', 'basketball'],
-		// Add more as needed
-	};
-
-	return mapping[sportType.toLowerCase()] || [];
-}
 
 /**
  * Generate a human-readable note for the progress record from a sensorEvent

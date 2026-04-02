@@ -173,10 +173,54 @@
 		}
 	}
 
+	function toLocalIsoDate(date: Date) {
+		const year = date.getFullYear();
+		const month = String(date.getMonth() + 1).padStart(2, '0');
+		const day = String(date.getDate()).padStart(2, '0');
+		return `${year}-${month}-${day}`;
+	}
+
+	function getLocalIsoWeekDashed(now: Date = new Date()) {
+		const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+		const dayNum = d.getUTCDay() || 7;
+		d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+		const year = d.getUTCFullYear();
+		const yearStart = new Date(Date.UTC(year, 0, 1));
+		const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+		const week = String(weekNo).padStart(2, '0');
+		return `${year}-W${week}`;
+	}
+
+	function checklistPriority(checklist: Checklist) {
+		const context = checklist.context ?? '';
+		const weekKey = getLocalIsoWeekDashed();
+		const todayIso = toLocalIsoDate(new Date());
+		const tomorrowDate = new Date();
+		tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+		const tomorrowIso = toLocalIsoDate(tomorrowDate);
+
+		if (context === `week:${weekKey}`) return 0;
+		if (context === `week:${weekKey}:day:${todayIso}`) return 1;
+		if (context === `week:${weekKey}:day:${tomorrowIso}`) return 2;
+		return 10;
+	}
+
+	function sortActiveChecklists(rows: Checklist[]) {
+		return [...rows].sort((a, b) => {
+			const aPriority = checklistPriority(a);
+			const bPriority = checklistPriority(b);
+			if (aPriority !== bPriority) return aPriority - bPriority;
+			return a.title.localeCompare(b.title, 'nb-NO');
+		});
+	}
+
 	async function fetchChecklists() {
 		try {
 			const res = await fetch('/api/checklists?active=true');
-			if (res.ok) activeChecklists = await res.json();
+			if (res.ok) {
+				const rows = await res.json() as Checklist[];
+				activeChecklists = sortActiveChecklists(rows);
+			}
 		} catch { /* stille */ }
 	}
 
@@ -1272,7 +1316,7 @@
 	{#if !inputExpanded}
 		<section class="zone zone-title" out:fly={{ y: -24, duration: 750 }} in:fly={{ y: -14, duration: 600 }}>
 			<div class="title-row">
-				<ScreenTitle title="Resonans" subtitle={dateLabel} />
+				<ScreenTitle title="Resonans" subtitle={dateLabel} onpress={() => goto('/ukeplan')} ariaLabel="Aapne ukeplan" />
 				<div class="title-right">
 					<a href="/goals" class="icon-link" aria-label="Mål"><Icon name="goals" size={20} /></a>
 					<a href="/settings" class="icon-link" aria-label="Innstillinger"><Icon name="settings" size={18} /></a>
@@ -1293,7 +1337,8 @@
 			+
 		</button>
 
-		<div class="widget-row">
+		<div class="widget-stack">
+		<div class="widget-row widget-row-metrics">
 			{#if widgetsLoading}
 			{#each { length: 3 } as _, i}
 				<div class="widget-skeleton" style:animation-delay="{i * 120}ms"></div>
@@ -1325,7 +1370,10 @@
 				/>
 			{/each}
 		{/if}
+		</div>
 
+			{#if activeChecklists.length > 0}
+				<div class="widget-row widget-row-checklists">
 			{#each activeChecklists as cl (cl.id)}
 				<ChecklistWidget
 					checklist={cl}
@@ -1336,6 +1384,8 @@
 					}}
 				/>
 			{/each}
+				</div>
+			{/if}
 		</div>
 
 		</section>
@@ -1847,6 +1897,9 @@
 	<ChecklistSheet
 		checklist={openChecklist}
 		onclose={() => (openChecklist = null)}
+		onChanged={() => {
+			void fetchChecklists();
+		}}
 		onDeleted={() => {
 			activeChecklists = activeChecklists.filter((c) => c.id !== openChecklist?.id);
 			openChecklist = null;
@@ -1936,12 +1989,23 @@
 		margin: 0 0 10px;
 	}
 
-	/* ── Widget-rad — sentrert, bryter til ny linje ved behov ── */
+	/* ── Widget-rader ── */
+	.widget-stack {
+		display: flex;
+		flex-direction: column;
+		gap: 14px;
+	}
+
 	.widget-row {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 16px;
 		justify-content: center;
+	}
+
+	.widget-row-checklists {
+		padding-top: 10px;
+		border-top: 1px solid #202020;
 	}
 
 	.widget-panel-fab {

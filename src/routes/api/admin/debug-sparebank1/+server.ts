@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { DEFAULT_USER_ID } from '$lib/server/users';
+import { requireAdmin } from '$lib/server/admin-auth';
 import { getSparebank1Sensor, getValidSparebank1AccessToken } from '$lib/server/integrations/sparebank1-sync';
 import { fetchSparebank1Accounts, fetchSparebank1Transactions } from '$lib/server/integrations/sparebank1';
 import type { RequestHandler } from './$types';
@@ -8,9 +8,10 @@ import type { RequestHandler } from './$types';
  * Debug endpoint to inspect raw SpareBank 1 API responses
  * GET /api/admin/debug-sparebank1
  */
-export const GET: RequestHandler = async ({ url }) => {
+export const GET: RequestHandler = async ({ locals }) => {
 	try {
-		const userId = DEFAULT_USER_ID;
+		await requireAdmin(locals.userId);
+		const userId = locals.userId;
 		const sensor = await getSparebank1Sensor(userId);
 
 		if (!sensor) {

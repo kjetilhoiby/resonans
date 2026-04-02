@@ -124,6 +124,13 @@
 	function handleBarMouseLeave() {
 		hoveredMonth = null;
 	}
+
+	function handleBarKeydown(event: KeyboardEvent, month: string) {
+		if (event.key === 'Enter' || event.key === ' ') {
+			event.preventDefault();
+			selectedMonth = month;
+		}
+	}
 </script>
 
 <div class="chart-wrapper" bind:clientWidth={w}>
@@ -259,8 +266,12 @@
 							width={barW}
 							height={BAR_H}
 							fill="transparent"
+							role="button"
+							tabindex="0"
+							aria-label={`Velg ${formatMonth(m.month)}`}
 							style="cursor: pointer;"
 							onclick={() => (selectedMonth = m.month)}
+							onkeydown={(event) => handleBarKeydown(event, m.month)}
 							onmouseenter={(e) => handleBarMouseEnter(e, m.month)}
 							onmouseleave={handleBarMouseLeave}
 						/>

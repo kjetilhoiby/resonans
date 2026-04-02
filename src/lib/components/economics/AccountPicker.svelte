@@ -36,9 +36,8 @@
 	}
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
 {#if open}
-	<div class="backdrop" onclick={() => (open = false)}></div>
+	<button class="backdrop" type="button" aria-label="Lukk kontovelger" onclick={() => (open = false)}></button>
 {/if}
 
 <div class="picker">

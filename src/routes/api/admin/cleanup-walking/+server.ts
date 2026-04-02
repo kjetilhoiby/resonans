@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import { db } from '$lib/db';
 import { sensorEvents } from '$lib/db/schema';
+import { requireAdmin } from '$lib/server/admin-auth';
 import { sql, and, eq } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
 
@@ -8,14 +9,16 @@ import type { RequestHandler } from './$types';
  * Delete walking workouts from database
  * POST /api/admin/cleanup-walking
  */
-export const POST: RequestHandler = async () => {
+export const POST: RequestHandler = async ({ locals }) => {
 	try {
+		await requireAdmin(locals.userId);
 		console.log('🗑️  Deleting walking workouts...');
 		
 		// Delete workouts where sportType is walking/indoor_walking/no_activity
 		const result = await db.delete(sensorEvents)
 			.where(
 				and(
+					eq(sensorEvents.userId, locals.userId),
 					eq(sensorEvents.dataType, 'workout'),
 					sql`(
 						${sensorEvents.data}->>'sportType' = 'walking' 

@@ -34,6 +34,26 @@
 	const done = $derived(checklist.items.filter((i) => i.checked).length);
 	const pct = $derived(total > 0 ? done / total : 0);
 	const isComplete = $derived(done === total && total > 0);
+	const ringText = $derived(`${done}/${total}`);
+
+	function getContextLabel(context: string | null) {
+		if (!context) return null;
+
+		const dayMatch = context.match(/^week:(\d{4}-W\d{2}):day:(\d{4}-\d{2}-\d{2})$/);
+		if (dayMatch) {
+			const weekday = new Intl.DateTimeFormat('nb-NO', { weekday: 'short' }).format(new Date(dayMatch[2]));
+			return weekday.replace('.', '').toLowerCase();
+		}
+
+		const weekMatch = context.match(/^week:\d{4}-W(\d{2})$/);
+		if (weekMatch) {
+			return `uke ${Number.parseInt(weekMatch[1], 10)}`;
+		}
+
+		return null;
+	}
+
+	const contextLabel = $derived.by(() => getContextLabel(checklist.context));
 
 	// SVG ring (samme radius som GoalRing)
 	const R = 32;
@@ -80,19 +100,15 @@
 			/>
 		</svg>
 		<div class="cl-ring-inner">
-			{#if isComplete}
-				<span class="cl-done-check">✓</span>
-			{:else}
-				<span class="cl-emoji">{checklist.emoji}</span>
-			{/if}
+			<span class="cl-ring-count" class:complete={isComplete}>{ringText}</span>
 		</div>
 	</div>
 
-	<!-- Counter -->
-	<p class="cl-count" style="color:{ringColor}">{done}/{total}</p>
-
-	<!-- Title -->
-	<p class="cl-title">{checklist.title}</p>
+	<!-- Label -->
+	<p class="cl-label" class:complete={isComplete}>{contextLabel ?? checklist.title}</p>
+	{#if contextLabel}
+		<p class="cl-subtitle">{checklist.title}</p>
+	{/if}
 
 	{#if isComplete}
 		<p class="cl-complete-label">Ferdig!</p>
@@ -150,38 +166,42 @@
 		justify-content: center;
 	}
 
-	.cl-emoji {
-		font-size: 1.25rem;
+	.cl-ring-count {
+		font-size: 1rem;
 		line-height: 1;
-	}
-
-	.cl-done-check {
-		font-size: 1.4rem;
-		color: #5fa080;
-		font-weight: 700;
-	}
-
-	.cl-count {
-		font-size: 0.62rem;
+		color: #d9dcff;
 		font-weight: 700;
 		font-variant-numeric: tabular-nums;
-		margin: 0;
-		letter-spacing: 0.02em;
 	}
 
-	.cl-title {
-		font-size: 0.6rem;
-		color: #666;
+	.cl-ring-count.complete {
+		color: #9fd1b3;
+	}
+
+	.cl-label {
+		font-size: 0.66rem;
+		font-weight: 700;
+		color: #9aa0c9;
+		margin: 0;
+		text-transform: lowercase;
+		letter-spacing: 0.03em;
+	}
+
+	.cl-label.complete {
+		color: #7bb38f;
+	}
+
+	.cl-subtitle {
+		font-size: 0.56rem;
+		color: #666a78;
 		margin: 0;
 		text-align: center;
 		max-width: 72px;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-		line-height: 1.3;
+		line-height: 1.2;
 	}
-
-	.cl-complete .cl-title { color: #5fa080; }
 
 	.cl-complete-label {
 		font-size: 0.58rem;

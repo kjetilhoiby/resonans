@@ -5,6 +5,14 @@ export default defineConfig({
 	plugins: [sveltekit()],
 	server: {
 		port: 5174,
-		strictPort: true // Fail hvis porten er opptatt
+		strictPort: true,
+		watch: {
+			ignored: [
+				'**/.vercel/**',
+				'**/.svelte-kit/**',
+				'**/build/**',
+				'**/.output/**'
+			]
+		}
 	}
 });

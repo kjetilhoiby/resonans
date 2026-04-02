@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { DEFAULT_USER_ID } from '$lib/server/users';
+import { requireAdmin } from '$lib/server/admin-auth';
 import { syncAllSparebank1Data } from '$lib/server/integrations/sparebank1-sync';
 import type { RequestHandler } from './$types';
 
@@ -11,8 +11,9 @@ export const config = { maxDuration: 300 };
  * POST /api/admin/sparebank1-historical-sync
  * Body: { fromDate: "2025-01-01" }  (optional, defaults to 2025-01-01)
  */
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, locals }) => {
 	try {
+		await requireAdmin(locals.userId);
 		const body = await request.json().catch(() => ({}));
 		const fromDateStr: string = body.fromDate ?? '2025-01-01';
 		const fromDate = new Date(fromDateStr);
@@ -21,7 +22,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			return json({ error: `Invalid fromDate: ${fromDateStr}` }, { status: 400 });
 		}
 
-		const userId = DEFAULT_USER_ID;
+		const userId = locals.userId;
 		console.log(`[SB1 historical sync] Starting from ${fromDateStr}...`);
 
 		const synced = await syncAllSparebank1Data(userId, { fromDate });

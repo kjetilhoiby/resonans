@@ -1,5 +1,6 @@
 import { db } from '$lib/db';
 import { sensorEvents } from '$lib/db/schema';
+import { describeWorkoutSportType } from '$lib/server/workout-taxonomy';
 import { and, eq } from 'drizzle-orm';
 
 export interface WorkoutContextSummary {
@@ -68,15 +69,6 @@ function formatWorkoutDate(timestampIso: string): string {
 	}).format(new Date(timestampIso));
 }
 
-function describeSportType(sportType: string): string {
-	const normalized = sportType.trim().toLowerCase();
-	if (normalized === 'running' || normalized === 'indoor_running') return 'Løpetur';
-	if (normalized === 'cycling' || normalized === 'indoor_cycling') return 'Sykkeløkt';
-	if (normalized === 'swimming') return 'Svømmeøkt';
-	if (normalized === 'walking' || normalized === 'indoor_walking') return 'Gåtur';
-	return 'Treningsøkt';
-}
-
 export function buildWorkoutChatPrompt(workout: Omit<WorkoutContextSummary, 'chatPrompt'>): string {
 	const parts = [
 		`Jeg vil analysere denne økten i detalj under Helse-temaet.`,
@@ -126,7 +118,7 @@ export async function getWorkoutContextForUser(
 		id: workout.id,
 		timestamp: workout.timestamp.toISOString(),
 		sportType,
-		title: describeSportType(sportType),
+		title: describeWorkoutSportType(sportType),
 		distanceMeters,
 		distanceKm: distanceMeters != null ? distanceMeters / 1000 : null,
 		durationSeconds,

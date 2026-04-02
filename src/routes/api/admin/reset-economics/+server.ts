@@ -1,6 +1,7 @@
 import type { RequestHandler } from './$types';
 import { json } from '@sveltejs/kit';
 import { db } from '$lib/db';
+import { requireAdmin } from '$lib/server/admin-auth';
 import { sql } from 'drizzle-orm';
 
 /**
@@ -8,8 +9,9 @@ import { sql } from 'drizzle-orm';
  * Deletes ALL bank_balance and bank_transaction events
  * Used to start fresh with a re-import
  */
-export const DELETE: RequestHandler = async () => {
+export const DELETE: RequestHandler = async ({ locals }) => {
 	try {
+		await requireAdmin(locals.userId);
 		console.log('🗑️  Resetting economics data (deleting all bank events)...');
 
 		// Count before deletion
@@ -17,6 +19,7 @@ export const DELETE: RequestHandler = async () => {
 			SELECT count(*)::int as count
 			FROM sensor_events
 			WHERE data_type IN ('bank_balance', 'bank_transaction')
+			AND user_id = ${locals.userId}
 		`);
 
 		const count = Array.isArray(beforeCount) ? beforeCount[0]?.count : 0;
@@ -25,6 +28,7 @@ export const DELETE: RequestHandler = async () => {
 		await db.execute(sql`
 			DELETE FROM sensor_events
 			WHERE data_type IN ('bank_balance', 'bank_transaction')
+			AND user_id = ${locals.userId}
 		`);
 
 		console.log(`✅ Deleted ${count} economics events`);

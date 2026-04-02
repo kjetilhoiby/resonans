@@ -1,10 +1,12 @@
 import type { RequestHandler } from './$types';
 import { json } from '@sveltejs/kit';
 import { db } from '$lib/db';
+import { requireAdmin } from '$lib/server/admin-auth';
 import { sql } from 'drizzle-orm';
 
-export const GET: RequestHandler = async () => {
+export const GET: RequestHandler = async ({ locals }) => {
 	try {
+		await requireAdmin(locals.userId);
 		// Check if we have ANY events with metadata->source field
 		const sourceCounts = await db.execute(sql`
 			SELECT 
@@ -15,6 +17,7 @@ export const GET: RequestHandler = async () => {
 				max(timestamp::date)::text as "maxDate"
 			FROM sensor_events
 			WHERE data_type IN ('bank_balance', 'bank_transaction')
+			AND user_id = ${locals.userId}
 			GROUP BY metadata->>'source', data_type
 			ORDER BY count DESC
 		`);
@@ -28,6 +31,7 @@ export const GET: RequestHandler = async () => {
 				max(timestamp::date)::text as "maxDate"
 			FROM sensor_events
 			WHERE data_type IN ('bank_balance', 'bank_transaction')
+			AND user_id = ${locals.userId}
 			GROUP BY data_type
 		`);
 
@@ -39,6 +43,7 @@ export const GET: RequestHandler = async () => {
 				count(*) FILTER (WHERE metadata->>'source' IS NOT NULL)::int as "withSource"
 			FROM sensor_events
 			WHERE data_type IN ('bank_balance', 'bank_transaction')
+			AND user_id = ${locals.userId}
 		`);
 
 		return json({

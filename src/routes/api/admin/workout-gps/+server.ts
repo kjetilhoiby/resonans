@@ -2,16 +2,17 @@ import { json } from '@sveltejs/kit';
 import { db } from '$lib/db';
 import { getWithingsSensor, getValidAccessToken } from '$lib/server/integrations/withings-sync';
 import { fetchWithingsMeasurements } from '$lib/server/integrations/withings';
-import { DEFAULT_USER_ID } from '$lib/server/users';
+import { requireAdmin } from '$lib/server/admin-auth';
 import type { RequestHandler } from './$types';
 
 /**
  * Fetch GPS data for a specific workout
  * GET /api/admin/workout-gps?workoutid=XXX
  */
-export const GET: RequestHandler = async ({ url }) => {
+export const GET: RequestHandler = async ({ url, locals }) => {
 	try {
-		const userId = DEFAULT_USER_ID;
+		await requireAdmin(locals.userId);
+		const userId = locals.userId;
 		const sensor = await getWithingsSensor(userId);
 
 		if (!sensor) {

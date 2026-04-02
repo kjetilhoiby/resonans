@@ -187,38 +187,6 @@
 		margin-bottom: 1.5rem;
 	}
 
-	.form-group {
-		margin-bottom: 1.5rem;
-	}
-
-	label {
-		display: block;
-		font-weight: 600;
-		margin-bottom: 0.5rem;
-		color: #333;
-	}
-
-	.input {
-		width: 100%;
-		padding: 0.75rem;
-		border: 2px solid #e0e0e0;
-		border-radius: 0.5rem;
-		font-size: 1rem;
-		transition: border-color 0.2s;
-	}
-
-	.input:focus {
-		outline: none;
-		border-color: #667eea;
-	}
-
-	.hint {
-		display: block;
-		margin-top: 0.5rem;
-		color: #666;
-		font-size: 0.875rem;
-	}
-
 	.test-button {
 		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 		color: white;

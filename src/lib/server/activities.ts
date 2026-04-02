@@ -1,5 +1,5 @@
 import { db } from '$lib/db';
-import { sensorEvents, sensors, progress, tasks } from '$lib/db/schema';
+import { sensorEvents, sensors, progress, tasks, goals } from '$lib/db/schema';
 import { buildCanonicalActivityFeed } from '$lib/server/activity-layer';
 import { eq, and } from 'drizzle-orm';
 
@@ -160,7 +160,7 @@ async function findMatchingTasks(
 		where: eq(tasks.status, 'active'),
 		with: {
 			goal: {
-				where: and(eq(tasks.status, 'active'))
+				where: and(eq(goals.userId, userId), eq(goals.status, 'active'))
 			}
 		}
 	});

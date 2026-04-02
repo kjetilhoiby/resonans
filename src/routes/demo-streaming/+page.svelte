@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { streamingChat } from '$lib/client/streaming-chat';
-	import type { Snippet } from 'svelte';
 
 	interface ProgressEvent {
 		stage: string;
@@ -182,7 +181,7 @@
 			disabled={isStreaming}
 			on:keydown={handleKeydown}
 			rows={3}
-		/>
+		></textarea>
 		<button on:click={handleSubmit} disabled={!userMessage.trim() || isStreaming}>
 			{isStreaming ? '⚡ Streaming...' : '📤 Send'}
 		</button>

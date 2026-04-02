@@ -4,13 +4,36 @@ import { db } from '$lib/db';
 import { checklistItems, checklists } from '$lib/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
 
+async function syncChecklistCompletion(checklistId: string) {
+	const remaining = await db.query.checklistItems.findMany({
+		where: and(eq(checklistItems.checklistId, checklistId), eq(checklistItems.checked, false)),
+		columns: { id: true }
+	});
+
+	const allItems = await db.query.checklistItems.findMany({
+		where: eq(checklistItems.checklistId, checklistId),
+		columns: { id: true }
+	});
+
+	if (allItems.length > 0 && remaining.length === 0) {
+		await db
+			.update(checklists)
+			.set({ completedAt: new Date() })
+			.where(and(eq(checklists.id, checklistId), isNull(checklists.completedAt)));
+		return;
+	}
+
+	await db.update(checklists).set({ completedAt: null }).where(eq(checklists.id, checklistId));
+}
+
 // PATCH /api/checklists/[id]/items/[itemId] — toggle checked / endre tekst
 export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 	const userId = locals.userId;
-	const body = await request.json() as { checked?: boolean; text?: string };
+	const body = await request.json() as { checked?: boolean; text?: string; sortOrder?: number };
 
 	const updates: Record<string, unknown> = {};
 	if (body.text !== undefined) updates.text = body.text;
+	if (body.sortOrder !== undefined) updates.sortOrder = body.sortOrder;
 	if (body.checked !== undefined) {
 		updates.checked = body.checked;
 		updates.checkedAt = body.checked ? new Date() : null;
@@ -27,23 +50,7 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 
 	if (!updated) return json({ error: 'Ikke funnet' }, { status: 404 });
 
-	// Sjekk om alle punkter i listen er avkrysset → merk listen som fullført
-	const remaining = await db.query.checklistItems.findMany({
-		where: and(
-			eq(checklistItems.checklistId, params.id),
-			eq(checklistItems.checked, false)
-		)
-	});
-
-	if (remaining.length === 0 && body.checked) {
-		await db
-			.update(checklists)
-			.set({ completedAt: new Date() })
-			.where(and(
-				eq(checklists.id, params.id),
-				isNull(checklists.completedAt)
-			));
-	}
+	await syncChecklistCompletion(params.id);
 
 	return json(updated);
 };
@@ -61,5 +68,8 @@ export const DELETE: RequestHandler = async ({ locals, params }) => {
 		.returning();
 
 	if (!deleted.length) return json({ error: 'Ikke funnet' }, { status: 404 });
+
+	await syncChecklistCompletion(params.id);
+
 	return json({ ok: true });
 };

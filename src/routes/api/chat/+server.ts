@@ -284,14 +284,14 @@ const tools = [
 		type: 'function' as const,
 		function: {
 			name: 'log_activity',
-			description: 'Registrer en aktivitet/hendelse med målbare verdier. Dette kan være trening, date, stemningsregistrering, osv. Aktiviteten kobles automatisk til relevante oppgaver.',
+			description: 'Registrer en aktivitet/hendelse med målbare verdier. Dette kan være trening, date eller andre gjennomførte aktiviteter. Aktiviteten kobles automatisk til relevante oppgaver.',
 			parameters: {
 				type: 'object',
 				properties: {
 					type: {
 						type: 'string',
-						description: 'Type aktivitet. Format: kategori_spesifikk (f.eks: workout_run, workout_strength, relationship_date, relationship_tufte_talk, mental_mood_check)',
-						examples: ['workout_run', 'workout_strength', 'relationship_date', 'mental_mood_check']
+						description: 'Type aktivitet. Format: kategori_spesifikk (f.eks: workout_run, workout_strength, relationship_date, life_admin_errands)',
+						examples: ['workout_run', 'workout_strength', 'relationship_date', 'life_admin_errands']
 					},
 					duration: {
 						type: 'number',
@@ -309,7 +309,7 @@ const tools = [
 							properties: {
 								metricType: {
 									type: 'string',
-									description: 'Type måling (f.eks: distance, quality_rating, mood_score, energy_level)'
+									description: 'Type måling (f.eks: distance, quality_rating, energy_level)'
 								},
 								value: {
 									type: 'number',

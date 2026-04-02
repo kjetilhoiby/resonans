@@ -1,4 +1,6 @@
 import type { RequestEvent } from '@sveltejs/kit';
+import { dev } from '$app/environment';
+import { error } from '@sveltejs/kit';
 import { DEFAULT_USER_ID, ensureUser } from '$lib/server/users';
 import { isGoogleAuthConfigured } from '$lib/server/auth-config';
 
@@ -38,6 +40,11 @@ export async function resolveRequestUserId(event: RequestEvent): Promise<string>
 	const userId = userIdFromHeader ?? userIdFromQuery ?? userIdFromCookie ?? DEFAULT_USER_ID;
 
 	if (authConfigured && !userIdFromHeader && !userIdFromQuery && !userIdFromCookie) {
+		const isSystemPath =
+			event.url.pathname.startsWith('/api/cron') || event.url.pathname.startsWith('/api/scheduler/trigger');
+		if (!dev && !isSystemPath) {
+			throw error(401, 'User context required');
+		}
 		return DEFAULT_USER_ID;
 	}
 

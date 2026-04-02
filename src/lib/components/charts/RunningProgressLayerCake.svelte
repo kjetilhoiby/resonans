@@ -45,7 +45,7 @@
 	 */
 	
 	// Component props
-	export let title = 'Akkumulert løpedistanse';
+	export let title = 'Løpsdistanse år-mot-år';
 	export let mode: 'comparison' | 'historical' = 'comparison'; // comparison = current vs last year, historical = all years
 	export let maxYears = 5; // Only used in historical mode
 
@@ -321,7 +321,7 @@
 
 <div class="running-progress">
 	<div class="header">
-		<h2>🏃‍♂️ Løpsdistanse år-mot-år</h2>
+		<h2>🏃‍♂️ {title}</h2>
 		{#if !loading}
 			<div class="stats">
 				<!-- Always show current year -->

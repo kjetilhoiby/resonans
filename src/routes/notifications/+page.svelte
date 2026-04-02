@@ -11,6 +11,8 @@
 	let pushPermission = $state<'default' | 'denied' | 'granted'>('default');
 	let vapidPublicKey = $state<string | null>(null);
 	let missingEnvVars = $state<string[]>([]);
+	let debugInfo = $state<any>(null);
+	let debugLoading = $state(false);
 
 	function urlBase64ToUint8Array(base64String: string): Uint8Array {
 		const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -96,10 +98,13 @@
 				applicationServerKey: appServerKey
 			});
 
+			const subData = subscription.toJSON();
+			console.log('📤 Sender subscription:', subData);
+
 			const response = await fetch('/api/push/subscribe', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ subscription: subscription.toJSON() })
+				body: JSON.stringify({ subscription: subData })
 			});
 
 			if (!response.ok) {
@@ -107,6 +112,12 @@
 				throw new Error(data.error || 'Kunne ikke lagre push subscription');
 			}
 
+			console.log('✅ Subscription lagret på server');
+			
+			// Verify by checking status immediately
+			await new Promise(resolve => setTimeout(resolve, 100));
+			await refreshPushStatus();
+			
 			pushSubscribed = true;
 			pushResult = { success: true, message: 'Push aktivert for denne enheten.' };
 		} catch (error) {
@@ -169,6 +180,18 @@
 			};
 		} finally {
 			pushLoading = false;
+		}
+	}
+
+	async function fetchDebugInfo() {
+		debugLoading = true;
+		try {
+			const response = await fetch('/api/push/debug');
+			debugInfo = await response.json();
+		} catch (error) {
+			debugInfo = { error: error instanceof Error ? error.message : 'Ukjent feil' };
+		} finally {
+			debugLoading = false;
 		}
 	}
 
@@ -262,6 +285,50 @@
 					{pushResult.message}
 				</div>
 			{/if}
+
+			<div style="margin-top: 2rem; padding-top: 2rem; border-top: 1px solid var(--color-surface-3);">
+				<button 
+					onclick={fetchDebugInfo} 
+					disabled={debugLoading}
+					class="btn-tertiary"
+					style="font-size: 0.85rem; padding: 0.5rem 1rem;"
+				>
+					{debugLoading ? 'Laster debug-info...' : '🔧 Vis database debug'}
+				</button>
+				
+				{#if debugInfo}
+					<div style="margin-top: 1rem; padding: 1rem; background: var(--color-surface-2); border-radius: 4px; font-family: monospace; font-size: 0.85rem; overflow-x: auto;">
+						<div>👤 Din userId: <strong>{debugInfo.currentUserId}</strong></div>
+						<div>📊 Abonnement for deg: <strong>{debugInfo.forCurrentUser?.length || 0}</strong></div>
+						<div>📈 Totalt i database: <strong>{debugInfo.totalInDatabase}</strong></div>
+						
+						{#if debugInfo.forCurrentUser?.length > 0}
+							<div style="margin-top: 1rem; border-top: 1px solid var(--color-surface-3); padding-top: 1rem;">
+								<div style="font-weight: bold;">Dine abonnement:</div>
+								{#each debugInfo.forCurrentUser as sub, i}
+									<div style="margin-top: 0.5rem; padding: 0.5rem; background: var(--color-surface-3); border-radius: 3px;">
+										<div>#{i + 1}</div>
+										<div>Endpoint: {sub.endpoint}</div>
+										<div>Disabled: {sub.disabled}</div>
+										<div>Created: {new Date(sub.createdAt).toLocaleString('no-NO')}</div>
+									</div>
+								{/each}
+							</div>
+						{/if}
+						
+						{#if debugInfo.allSubscriptions?.length > 0}
+							<div style="margin-top: 1rem; border-top: 1px solid var(--color-surface-3); padding-top: 1rem; opacity: 0.7;">
+								<div style="font-weight: bold;">Alle abonnement i systemet:</div>
+								{#each debugInfo.allSubscriptions as sub}
+									<div style="margin-top: 0.5rem; font-size: 0.8rem;">
+										{sub.userId?.substring(0, 8)}... - {sub.endpoint?.substring(0, 40)}... (disabled: {sub.disabled})
+									</div>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				{/if}
+			</div>
 		</section>
 
 		<section class="notification-card">
@@ -546,5 +613,26 @@
 		background: transparent;
 		border: none;
 		padding: 0;
+	}
+
+	.btn-tertiary {
+		background: transparent;
+		border: 1px solid var(--border-color);
+		color: var(--text-secondary);
+		padding: 0.5rem 1rem;
+		border-radius: 6px;
+		cursor: pointer;
+		font-size: 0.85rem;
+		transition: all 0.2s ease;
+	}
+
+	.btn-tertiary:hover:not(:disabled) {
+		background: var(--bg-header);
+		color: var(--text-primary);
+	}
+
+	.btn-tertiary:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 </style>

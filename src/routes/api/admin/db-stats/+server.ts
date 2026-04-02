@@ -1,11 +1,13 @@
 import type { RequestHandler } from './$types';
 import { json } from '@sveltejs/kit';
 import { db } from '$lib/db';
+import { requireAdmin } from '$lib/server/admin-auth';
 import { sensorEvents } from '$lib/db/schema';
 import { eq, sql } from 'drizzle-orm';
 
-export const GET: RequestHandler = async () => {
+export const GET: RequestHandler = async ({ locals }) => {
 	try {
+		await requireAdmin(locals.userId);
 		// Get balance snapshots grouped by account and source
 		const balanceStats = await db.execute(sql`
 			SELECT 
@@ -16,6 +18,7 @@ export const GET: RequestHandler = async () => {
 				max(timestamp::date)::text as "maxDate"
 			FROM sensor_events
 			WHERE data_type = 'bank_balance'
+			AND user_id = ${locals.userId}
 			AND data->>'accountId' IS NOT NULL
 			GROUP BY data->>'accountId', metadata->>'source'
 		`);
@@ -31,6 +34,7 @@ export const GET: RequestHandler = async () => {
 				sum((data->>'amount')::numeric)::float as "sumAmount"
 			FROM sensor_events
 			WHERE data_type = 'bank_transaction'
+			AND user_id = ${locals.userId}
 			AND data->>'accountId' IS NOT NULL
 			GROUP BY data->>'accountId', metadata->>'source'
 		`);
@@ -44,6 +48,7 @@ export const GET: RequestHandler = async () => {
 				max(timestamp)::text as "lastSeen"
 			FROM sensor_events
 			WHERE data->>'accountId' IS NOT NULL
+			AND user_id = ${locals.userId}
 			GROUP BY data->>'accountId', data->>'accountNumber'
 		`);
 
