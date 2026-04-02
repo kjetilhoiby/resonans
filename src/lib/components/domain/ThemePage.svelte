@@ -24,6 +24,7 @@
 	import { fetchDashboard, getCachedDashboard, type EconomicsDashboardData, type HealthDashboardData } from '$lib/client/dashboard-cache';
 	import { getThemeDashboardDefinition, resolveThemeDashboardKind } from '$lib/domain/theme-dashboard-registry';
 	import { finishNavMetric, startNavMetric } from '$lib/client/nav-metrics';
+	import { streamProxyChat } from '$lib/client/proxy-chat-stream';
 
 	/* ── Types ──────────────────────────────────────────── */
 	interface Theme {
@@ -205,6 +206,8 @@
 	);
 	let chatLoading = $state(false);
 	let chatError = $state('');
+	let chatStreamingText = $state('');
+	let chatStreamingStatus = $state('');
 	let archiveRedirect = $state<{ name: string; emoji?: string | null } | null>(null);
 
 	/* ── Samtaler-liste tilstand ────────────────────────── */
@@ -276,16 +279,21 @@
 		}
 		chatLoading = true;
 		chatError = '';
+		chatStreamingText = '';
+		chatStreamingStatus = 'Starter...';
 
 		try {
-			const res = await fetch('/api/chat', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ message: text, conversationId: selectedConvId })
+			const data = await streamProxyChat({
+				message: text,
+				conversationId: selectedConvId,
+				onStatus: (status) => {
+					chatStreamingStatus = status;
+				},
+				onToken: (token) => {
+					chatStreamingStatus = '';
+					chatStreamingText += token;
+				}
 			});
-
-			if (!res.ok) throw new Error(await res.text());
-			const data = await res.json();
 
 			if (isCanon && data.themeArchived && data.archivedTheme?.id === theme.id) {
 				archiveRedirect = {
@@ -306,6 +314,8 @@
 		} catch (err) {
 			chatError = 'Noe gikk galt. Prøv igjen.';
 		} finally {
+			chatStreamingText = '';
+			chatStreamingStatus = '';
 			chatLoading = false;
 		}
 	}
@@ -922,7 +932,11 @@
 						{/each}
 
 						{#if chatLoading}
-							<TriageCard loading={true} />
+							{#if chatStreamingText}
+								<TriageCard text={chatStreamingText} streaming={true} />
+							{:else}
+								<TriageCard loading={true} status={chatStreamingStatus} />
+							{/if}
 						{/if}
 
 						{#if chatError}

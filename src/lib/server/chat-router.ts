@@ -49,6 +49,10 @@ export function routeChatRequest(input: string): ChatRoutingDecision {
 		skills.add('theme_management');
 	}
 
+	if (/nyhet|nyheter|siste|oppdatering|aktuelt|aktuell|krig|konflikt|politikk|valg|børs|marked|iran|ukraina|gaza/.test(text)) {
+		hints.push('Bruk web_search for ferske eller tidsavhengige fakta før du svarer.');
+	}
+
 	if (domains.size === 0) domains.add('general');
 	if (skills.size === 0) skills.add('general_chat');
 

@@ -25,6 +25,7 @@
 	import { prefetchDashboard } from '$lib/client/dashboard-cache';
 	import { prefetchWidgetData } from '$lib/client/widget-data-cache';
 	import { finishNavMetric, startNavMetric } from '$lib/client/nav-metrics';
+	import { streamProxyChat } from '$lib/client/proxy-chat-stream';
 	import { resolveThemeDashboardKind, type DashboardKind } from '$lib/domain/theme-dashboard-registry';
 
 	interface Theme {
@@ -361,6 +362,8 @@
 	let chatPrefill = $state('');
 	let chatMessages = $state<ChatMessage[]>([]);
 	let chatLoading = $state(false);
+	let chatStreamingText = $state('');
+	let chatStreamingStatus = $state('');
 	let currentConversationId = $state<string | null>(null);
 	let latestClosedConversationId = $state<string | null>(null);
 	let createdThemeLink = $state<{ id: string; name: string; emoji?: string | null } | null>(null);
@@ -1054,6 +1057,8 @@
 		const displayText = text || (imageUrl ? '📷 [Bilde]' : '');
 		chatMessages = [...chatMessages, { role: 'user', text: displayText, imageUrl, attachment }];
 		chatLoading = true;
+		chatStreamingText = '';
+		chatStreamingStatus = 'Starter...';
 		try {
 			if (!currentConversationId) {
 				try {
@@ -1067,18 +1072,19 @@
 				}
 			}
 
-			const res = await fetch('/api/chat', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					message: displayText,
-					conversationId: currentConversationId,
-					imageUrl,
-					attachment
-				})
+			const data = await streamProxyChat({
+				message: displayText,
+				conversationId: currentConversationId,
+				imageUrl,
+				attachment,
+				onStatus: (status) => {
+					chatStreamingStatus = status;
+				},
+				onToken: (token) => {
+					chatStreamingStatus = '';
+					chatStreamingText += token;
+				}
 			});
-			if (!res.ok) throw new Error();
-			const data = await res.json();
 			currentConversationId = data.conversationId ?? currentConversationId;
 			if (data.themeCreated && data.theme?.id) {
 				createdThemeLink = {
@@ -1092,6 +1098,8 @@
 		} catch {
 			chatMessages = [...chatMessages, { role: 'assistant', text: 'Noe gikk galt. Prøv igjen.' }];
 		} finally {
+			chatStreamingText = '';
+			chatStreamingStatus = '';
 			chatLoading = false;
 		}
 	}
@@ -1406,7 +1414,11 @@
 					{/if}
 				{/each}
 				{#if chatLoading}
-					<TriageCard loading={true} />
+					{#if chatStreamingText}
+						<TriageCard text={chatStreamingText} streaming={true} />
+					{:else}
+						<TriageCard loading={true} status={chatStreamingStatus} />
+					{/if}
 				{/if}
 			</div>
 			<div class="chat-input-area">

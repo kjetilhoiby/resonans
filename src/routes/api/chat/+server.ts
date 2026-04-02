@@ -81,67 +81,64 @@ function getDefaultAttachmentLabel(attachment: AttachmentPayload | null): string
 	return `📎 ${attachment.name || 'Vedlegg'}`;
 }
 
-interface DuckDuckGoTopic {
-	FirstURL?: string;
-	Text?: string;
-	Topics?: DuckDuckGoTopic[];
-}
-
-function collectDuckDuckGoTopics(topics: DuckDuckGoTopic[], maxItems = 6): Array<{ title: string; url: string }> {
-	const collected: Array<{ title: string; url: string }> = [];
-	const visit = (items: DuckDuckGoTopic[]) => {
-		for (const item of items) {
-			if (collected.length >= maxItems) return;
-			if (item.FirstURL && item.Text) {
-				collected.push({ title: item.Text, url: item.FirstURL });
-			}
-			if (Array.isArray(item.Topics) && item.Topics.length > 0) {
-				visit(item.Topics);
-			}
-		}
-	};
-
-	visit(topics);
-	return collected;
-}
-
 async function executeWebSearch(query: string) {
-	const searchUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+	// DuckDuckGo HTML lite – faktisk nettsøk, ikke bare Instant Answer API
+	const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
 	const response = await fetch(searchUrl, {
-		headers: { Accept: 'application/json' }
+		headers: {
+			'User-Agent': 'Mozilla/5.0 (compatible; Resonans/1.0)',
+			'Accept': 'text/html,application/xhtml+xml'
+		}
 	});
 
 	if (!response.ok) {
 		throw new Error(`Web search failed with status ${response.status}`);
 	}
 
-	const payload = (await response.json()) as {
-		Heading?: string;
-		AbstractText?: string;
-		AbstractURL?: string;
-		RelatedTopics?: DuckDuckGoTopic[];
-	};
+	const html = await response.text();
 
-	const relatedTopics = Array.isArray(payload.RelatedTopics)
-		? collectDuckDuckGoTopics(payload.RelatedTopics)
-		: [];
+	// Parse resultater fra DDG HTML-respons
+	const results: Array<{ title: string; snippet: string; url: string }> = [];
 
-	const primary = payload.AbstractText
-		? {
-			title: payload.Heading || 'Sammendrag',
-			snippet: payload.AbstractText,
-			url: payload.AbstractURL || ''
-		}
-		: null;
+	// Hent tittel + URL fra <a class="result__a" ...>
+	const linkRe = /<a[^>]+class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
+	// Hent snippet fra <a class="result__snippet" ...>
+	const snippetRe = /<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
+
+	const links: Array<{ title: string; url: string }> = [];
+	let m: RegExpExecArray | null;
+	while ((m = linkRe.exec(html)) !== null && links.length < 8) {
+		const rawUrl = m[1];
+		const title = m[2].replace(/<[^>]+>/g, '').trim();
+		// DDG wraps URLs via redirect – extract uddg param or use as-is
+		let url = rawUrl;
+		try {
+			const uddg = new URL('https://x.com' + rawUrl).searchParams.get('uddg');
+			if (uddg) url = decodeURIComponent(uddg);
+		} catch { /* keep raw */ }
+		if (title) links.push({ title, url });
+	}
+
+	const snippets: string[] = [];
+	while ((m = snippetRe.exec(html)) !== null && snippets.length < 8) {
+		snippets.push(m[1].replace(/<[^>]+>/g, '').trim());
+	}
+
+	for (let i = 0; i < links.length; i++) {
+		results.push({
+			title: links[i].title,
+			snippet: snippets[i] ?? '',
+			url: links[i].url
+		});
+	}
 
 	return {
 		success: true,
 		query,
-		primary,
-		results: relatedTopics,
-		message: relatedTopics.length > 0 || primary
-			? `Fant kilder på web for "${query}".`
-			: `Ingen tydelige treff for "${query}". Prøv et mer spesifikt søk.`
+		results,
+		message: results.length > 0
+			? `Fant ${results.length} treff for "${query}".`
+			: `Ingen treff for "${query}".`
 	};
 }
 
@@ -613,13 +610,13 @@ const tools = [
 				type: 'function' as const,
 				function: {
 					name: 'web_search',
-					description: 'Søk på web når spørsmålet handler om innhold utenfor brukerens egne sensordata, spesielt bokfakta, referanser, forfattere, kapitler eller kontekst som ikke finnes i samtalehistorikken.',
+					description: 'Søk på web når brukeren spør om aktuelle hendelser, nyheter, tidsavhengige fakta, krig, politikk, personer, referanser eller annen kunnskap som ikke finnes i brukerdata eller samtalehistorikken. Bruk dette før du svarer på spørsmål om hva som skjer nå eller nylig har skjedd.',
 					parameters: {
 						type: 'object',
 						properties: {
 							query: {
 								type: 'string',
-								description: 'Søkestreng for web, gjerne konkret med boktittel, forfatter og tema.'
+								description: 'Konkret søkestreng for web, gjerne med tema, navn, sted og tidsrom, for eksempel "Iran war update April 2026".'
 							}
 						},
 						required: ['query']
@@ -924,11 +921,76 @@ const tools = [
 	}
 ];
 
-export const POST: RequestHandler = async ({ request, locals }) => {
-	try {
-		const userId = locals.userId;
+export class _ChatRequestError extends Error {
+	status: number;
 
-		const body = await request.json();
+	constructor(message: string, status: number) {
+		super(message);
+		this.status = status;
+	}
+}
+
+export interface _ChatProgressEvent {
+	stage: string;
+	message: string;
+	detail?: Record<string, unknown>;
+}
+
+export interface _RunChatRequestParams {
+	body: {
+		message?: string;
+		imageUrl?: string;
+		conversationId?: string;
+		attachment?: unknown;
+	};
+	userId: string;
+	requestUrl: string;
+	requestFetch: typeof fetch;
+	onProgress?: (event: _ChatProgressEvent) => void | Promise<void>;
+}
+
+function getToolProgressMessage(toolName: string) {
+	const labels: Record<string, string> = {
+		check_similar_goals: 'Sjekker lignende mål...',
+		check_similar_tasks: 'Sjekker lignende oppgaver...',
+		create_goal: 'Oppretter mål...',
+		create_task: 'Oppretter oppgave...',
+		log_activity: 'Registrerer aktivitet...',
+		create_memory: 'Lagrer hukommelse...',
+		manage_theme: 'Oppdaterer tema...',
+		query_sensor_data: 'Henter sensordata...',
+		query_economics: 'Henter økonomidata...',
+		record_screen_time: 'Registrerer skjermtid...',
+		record_workout: 'Registrerer treningsøkt...',
+		record_mood: 'Registrerer humør...',
+		web_search: 'Søker på nettet...',
+		weather_forecast: 'Henter værdata...',
+		annotate_photo_composition: 'Analyserer bilde...',
+		propose_widget: 'Lager widget-forslag...',
+		create_widget: 'Oppretter widget...',
+		get_widgets: 'Henter widgets...',
+		update_widget: 'Oppdaterer widget...',
+		create_checklist: 'Oppretter sjekkliste...',
+		get_active_checklists: 'Henter sjekklister...',
+		add_checklist_items: 'Legger til sjekklistepunkter...'
+	};
+
+	return labels[toolName] ?? `Kjører verktøy: ${toolName}...`;
+}
+
+async function emitProgress(
+	onProgress: _RunChatRequestParams['onProgress'],
+	stage: string,
+	message: string,
+	detail?: Record<string, unknown>
+) {
+	await onProgress?.({ stage, message, detail });
+}
+
+export async function _runChatRequest({ body, userId, requestUrl, requestFetch, onProgress }: _RunChatRequestParams) {
+	try {
+		await emitProgress(onProgress, 'validating', 'Validerer forespørsel...');
+
 		const { message, imageUrl, conversationId: requestedConversationId } = body;
 		const attachment = isAttachmentPayload(body.attachment) ? body.attachment : null;
 		const userProfile = await db.query.users.findFirst({
@@ -944,7 +1006,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					: undefined;
 
 		if ((!message || typeof message !== 'string') && !effectiveImageUrl && !attachment) {
-			return json({ error: 'Invalid message' }, { status: 400 });
+			throw new _ChatRequestError('Invalid message', 400);
 		}
 
 		// Bruk oppgitt conversationId (verifisert mot bruker) eller hent/opprett standard
@@ -954,6 +1016,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					(await getOrCreateConversation(userId)))
 				: await getOrCreateConversation(userId);
 
+		await emitProgress(onProgress, 'conversation_ready', 'Samtalen er klar.', {
+			conversationId: conversation.id
+		});
+
 		// Lagre brukerens melding med imageUrl hvis present
 		const savedUserMessage = await addMessage({
 			conversationId: conversation.id,
@@ -962,6 +1028,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			imageUrl: effectiveImageUrl,
 			metadata: attachment ? { attachment } : undefined
 		});
+
+		await emitProgress(onProgress, 'message_saved', 'Meldingen er lagret.');
 
 		// Hent samtale-historikk (siste 5 meldinger for umiddelbar kontekst)
 		const history = await getConversationHistory(conversation.id, 5);
@@ -1018,6 +1086,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		const routingDecision = routeChatRequest(latestUserInput);
 		const systemPrompt = buildModularSystemPrompt(routingDecision);
 
+		await emitProgress(onProgress, 'routing_complete', 'Forespørselen er analysert.', {
+			domains: routingDecision.domains,
+			skills: routingDecision.skills
+		});
+
 		const messages: ChatCompletionMessageParam[] = [
 			{ role: 'system', content: systemPrompt + memoryContext + goalsContext + dateContext }
 		];
@@ -1072,8 +1145,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			});
 		}
 
+		await emitProgress(onProgress, 'context_ready', 'Kontekst og historikk er lastet.', {
+			historyCount: history.length
+		});
+
 		// Første kall til OpenAI med tools
 		// Bruk gpt-4o når vi har bilder (Vision support)
+		await emitProgress(onProgress, 'model_request', 'Sender forespørsel til modellen...');
 		let completion = await openai.chat.completions.create({
 			model: effectiveImageUrl ? 'gpt-4o' : 'gpt-4o-mini',
 			messages,
@@ -1095,6 +1173,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		let photoAnnotation: import('$lib/ai/tools/annotate-photo').PhotoAnnotationResult | null = null;
 		let photoAnnotationImageUrl: string | null = null;
 
+		await emitProgress(onProgress, 'model_response', 'Første modellrespons mottatt.', {
+			finishReason: completion.choices[0]?.finish_reason ?? null,
+			toolCalls: responseMessage?.tool_calls?.length || 0
+		});
+
 		// Debug logging
 		console.log('\n🤖 OpenAI Response:');
 		console.log('Finish reason:', completion.choices[0]?.finish_reason);
@@ -1109,6 +1192,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		// Håndter tool calls i flere runder slik at modellen kan gjøre oppslag -> beslutning -> endring.
 		for (let toolRound = 0; toolRound < 5 && responseMessage?.tool_calls?.length; toolRound += 1) {
 			console.log(`\n🔧 Executing tools (round ${toolRound + 1})...`);
+			await emitProgress(onProgress, 'tool_round_started', `Starter verktøyrunde ${toolRound + 1}.`, {
+				round: toolRound + 1,
+				toolCount: responseMessage.tool_calls.length
+			});
 
 			messages.push({
 				role: 'assistant',
@@ -1117,8 +1204,17 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			});
 
 			for (const toolCall of responseMessage.tool_calls) {
-				console.log(`\n  Tool: ${toolCall.type === 'function' ? toolCall.function.name : toolCall.type}`);
-				console.log(`  Args: ${toolCall.type === 'function' ? toolCall.function.arguments.substring(0, 100) : 'N/A'}`);
+				const toolName = toolCall.type === 'function' ? toolCall.function.name : toolCall.type;
+				const toolArgs = toolCall.type === 'function' ? toolCall.function.arguments : 'N/A';
+				console.log(`\n  Tool: ${toolName}`);
+				console.log(`  Args: ${toolArgs.substring(0, 200)}`);
+				if (toolCall.type === 'function') {
+					await emitProgress(onProgress, 'tool_started', getToolProgressMessage(toolCall.function.name), {
+						round: toolRound + 1,
+						toolName: toolCall.function.name
+					});
+				}
+				const messagesBefore = messages.length;
 				
 				if (toolCall.type === 'function' && toolCall.function.name === 'check_similar_goals') {
 					const args = JSON.parse(toolCall.function.arguments);
@@ -1340,7 +1436,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					console.log('  📱 Recording screen time:', args);
 
 					// Call API to save record
-					const response = await fetch(`${request.url.replace('/api/chat', '/api/ai-records')}`, {
+					const response = await requestFetch(`${requestUrl.replace('/api/chat', '/api/ai-records')}`, {
 						method: 'POST',
 						headers: {
 							'Content-Type': 'application/json',
@@ -1373,7 +1469,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					const args = JSON.parse(toolCall.function.arguments);
 					console.log('  🏃 Recording workout:', args);
 
-					const response = await fetch(`${request.url.replace('/api/chat', '/api/ai-records')}`, {
+					const response = await requestFetch(`${requestUrl.replace('/api/chat', '/api/ai-records')}`, {
 						method: 'POST',
 						headers: {
 							'Content-Type': 'application/json',
@@ -1408,7 +1504,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					const args = JSON.parse(toolCall.function.arguments);
 					console.log('  😊 Recording mood:', args);
 
-					const response = await fetch(`${request.url.replace('/api/chat', '/api/ai-records')}`, {
+					const response = await requestFetch(`${requestUrl.replace('/api/chat', '/api/ai-records')}`, {
 						method: 'POST',
 						headers: {
 							'Content-Type': 'application/json',
@@ -1842,9 +1938,31 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 						});
 					}
 				}
+				// Log tool result
+				const toolResultMsg = messages[messages.length - 1];
+				if (messages.length > messagesBefore && toolResultMsg?.role === 'tool') {
+					try {
+						const resultObj = JSON.parse(toolResultMsg.content as string);
+						const success = resultObj.success !== false;
+						const summary =
+							resultObj.results?.map((r: { title?: string; snippet?: string }) => `"${r.title || ''}" – ${(r.snippet || '').substring(0, 80)}`).join('\n    ') ||
+							resultObj.message?.substring(0, 200) ||
+							(success ? '(success)' : '(failed)');
+						console.log(`  Result [${toolName}]: ${success ? '✅' : '❌'} ${summary}`);
+					} catch {
+						console.log(`  Result [${toolName}]: (raw) ${String(toolResultMsg.content).substring(0, 200)}`);
+					}
+				}
+				if (toolCall.type === 'function') {
+					await emitProgress(onProgress, 'tool_completed', `Ferdig med ${toolCall.function.name}.`, {
+						round: toolRound + 1,
+						toolName: toolCall.function.name
+					});
+				}
 			}
 
 			// Ny runde der modellen kan bruke tool-resultatene til flere oppslag eller gi slutt-svar.
+			await emitProgress(onProgress, 'model_followup_request', 'Ber modellen bruke verktøyresultatene...');
 			completion = await openai.chat.completions.create({
 				model: 'gpt-4o-mini',
 				messages,
@@ -1855,6 +1973,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			});
 
 			responseMessage = completion.choices[0]?.message;
+			await emitProgress(onProgress, 'model_followup_response', 'Modellen svarte etter verktøyrunden.', {
+				finishReason: completion.choices[0]?.finish_reason ?? null,
+				toolCalls: responseMessage?.tool_calls?.length || 0
+			});
 		}
 
 		const finalMessage = responseMessage?.content || 'Beklager, jeg fikk ikke generert noe svar.';
@@ -1867,6 +1989,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		if (photoAnnotation) assistantMetadata.photoAnnotation = photoAnnotation;
 		if (photoAnnotationImageUrl) assistantMetadata.photoAnnotationImageUrl = photoAnnotationImageUrl;
 
+		await emitProgress(onProgress, 'finalizing', 'Lagrer og ferdigstiller svar...');
+
 		// Lagre assistentens svar til database
 		await addMessage({
 			conversationId: conversation.id,
@@ -1875,7 +1999,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			metadata: Object.keys(assistantMetadata).length > 0 ? assistantMetadata : null
 		});
 
-		return json({ 
+		await emitProgress(onProgress, 'completed', 'Svar klart.', {
+			conversationId: conversation.id
+		});
+
+		return {
 			message: finalMessage,
 			conversationId: conversation.id,
 			goalCreated: createdGoalId !== null,
@@ -1893,11 +2021,14 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			statusWidget,
 			photoAnnotation,
 			photoAnnotationImageUrl,
-		});
+		};
 	} catch (error) {
 		console.error('Error in chat API:', error);
 		
-		// Gi mer spesifikke feilmeldinger
+		if (error instanceof _ChatRequestError) {
+			throw error;
+		}
+		
 		let errorMessage = 'Internal server error';
 		
 		if (error instanceof Error) {
@@ -1910,9 +2041,25 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			}
 		}
 		
-		return json(
-			{ error: errorMessage },
-			{ status: 500 }
-		);
+		throw new _ChatRequestError(errorMessage, 500);
+	}
+}
+
+export const POST: RequestHandler = async ({ request, locals, fetch }) => {
+	try {
+		const payload = await _runChatRequest({
+			body: await request.json(),
+			userId: locals.userId,
+			requestUrl: request.url,
+			requestFetch: fetch
+		});
+
+		return json(payload);
+	} catch (error) {
+		if (error instanceof _ChatRequestError) {
+			return json({ error: error.message }, { status: error.status });
+		}
+
+		return json({ error: 'Internal server error' }, { status: 500 });
 	}
 };
