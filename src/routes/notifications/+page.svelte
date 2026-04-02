@@ -10,6 +10,7 @@
 	let pushSubscribed = $state(false);
 	let pushPermission = $state<'default' | 'denied' | 'granted'>('default');
 	let vapidPublicKey = $state<string | null>(null);
+	let missingEnvVars = $state<string[]>([]);
 
 	function urlBase64ToUint8Array(base64String: string): Uint8Array {
 		const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -30,6 +31,9 @@
 				pushConfigured = Boolean(data.configured);
 				pushSubscribed = Boolean(data.subscribed);
 				vapidPublicKey = (data.publicKey as string | null) ?? null;
+				missingEnvVars = Array.isArray(data.missingEnvVars)
+					? data.missingEnvVars.filter((value: unknown): value is string => typeof value === 'string')
+					: [];
 			}
 		} catch {
 			// stille
@@ -214,6 +218,14 @@
 					<li>Tillatelse: {pushPermission}</li>
 					<li>Abonnert: {pushSubscribed ? 'Ja' : 'Nei'}</li>
 				</ul>
+				{#if !pushConfigured && missingEnvVars.length > 0}
+					<p class="config-warning">
+						Mangler miljøvariabler på server: {missingEnvVars.join(', ')}.
+					</p>
+					<p class="config-warning-detail">
+						Legg dem inn i Vercel under Settings → Environment Variables, og redeploy appen.
+					</p>
+				{/if}
 			</div>
 
 			<div class="push-actions">
@@ -402,6 +414,18 @@
 		margin: 0.5rem 0 0 0;
 		padding-left: 1.5rem;
 		color: var(--text-secondary);
+	}
+
+	.config-warning {
+		margin: 0.9rem 0 0;
+		color: var(--error-text);
+		font-weight: 600;
+	}
+
+	.config-warning-detail {
+		margin: 0.35rem 0 0;
+		color: var(--text-secondary);
+		font-size: 0.9rem;
 	}
 
 	.info-box li {

@@ -1,6 +1,7 @@
 import { db } from '$lib/db';
 import { sensorAggregates, sensorEvents, sensors, goals as goalsTable, themes } from '$lib/db/schema';
 import { and, desc, eq, inArray, or } from 'drizzle-orm';
+import { buildCanonicalActivityFeed, buildUnifiedWorkoutActivities } from '$lib/server/activity-layer';
 
 export async function loadHealthDashboardData(userId: string) {
 	const healthSensors = await db.query.sensors.findMany({
@@ -53,6 +54,15 @@ export async function loadHealthDashboardData(userId: string) {
 		})
 	]);
 
+	const unifiedActivities = await buildUnifiedWorkoutActivities(userId, {
+		since: new Date(Date.now() - 1000 * 60 * 60 * 24 * 90),
+		limit: 1200
+	});
+	const canonicalFeed = await buildCanonicalActivityFeed(userId, {
+		since: new Date(Date.now() - 1000 * 60 * 60 * 24 * 90),
+		limit: 250
+	});
+
 	return {
 		weekly: weeklyData.reverse(),
 		monthly: monthlyData.reverse(),
@@ -70,6 +80,11 @@ export async function loadHealthDashboardData(userId: string) {
 			dataType: event.dataType ?? 'ukjent',
 			data: event.data ?? {}
 		})),
+		activityLayer: {
+			version: 1,
+			feed: canonicalFeed,
+			workouts: unifiedActivities
+		},
 		goals: healthGoals.map((goal) => ({
 			id: goal.id,
 			title: goal.title,

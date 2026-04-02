@@ -59,6 +59,19 @@ Du må legge til følgende miljøvariabler i Vercel Dashboard:
 
 ### Optional
 - `GOOGLE_CHAT_WEBHOOK_URL` - For pushvarsler (kommer senere)
+- `VAPID_PUBLIC_KEY` - Offentlig nøkkel for PWA pushvarsler
+- `VAPID_PRIVATE_KEY` - Privat nøkkel for PWA pushvarsler
+- `VAPID_SUBJECT` - Kontaktadresse for push, f.eks. `mailto:hello@example.com`
+
+### Generer VAPID-nøkler
+
+Kjør dette lokalt én gang:
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+Legg deretter verdiene inn i Vercel under `Settings → Environment Variables` for `Production`, `Preview` og `Development`, og redeploy appen.
 
 ### Hvordan legge til miljøvariabler:
 1. Gå til prosjektet ditt på Vercel

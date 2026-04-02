@@ -1,5 +1,6 @@
 import { db } from '$lib/db';
-import { activities, activityMetrics, progress, tasks } from '$lib/db/schema';
+import { sensorEvents, sensors, progress, tasks } from '$lib/db/schema';
+import { buildCanonicalActivityFeed } from '$lib/server/activity-layer';
 import { eq, and } from 'drizzle-orm';
 
 export interface ActivityMetric {
@@ -19,8 +20,53 @@ export interface LogActivityParams {
 	taskIds?: string[]; // Optional: specify which tasks this counts towards
 }
 
+function normalizeLoggedActivity(type: string, baseData: Record<string, any>) {
+	if (type.startsWith('workout_')) {
+		return {
+			dataType: 'workout',
+			data: {
+				...baseData,
+				sportType: type.replace(/^workout_/, ''),
+				originalActivityType: type
+			}
+		};
+	}
+
+	return {
+		dataType: type,
+		data: {
+			...baseData,
+			originalActivityType: type
+		}
+	};
+}
+
+async function getOrCreateAiSensor(userId: string) {
+	let [sensor] = await db
+		.select()
+		.from(sensors)
+		.where(and(eq(sensors.provider, 'ai_assistant'), eq(sensors.userId, userId)))
+		.limit(1);
+
+	if (!sensor) {
+		[sensor] = await db
+			.insert(sensors)
+			.values({
+				userId,
+				provider: 'ai_assistant',
+				type: 'manual_log',
+				name: 'AI Assistant',
+				isActive: true,
+				config: { model: 'gpt-4o', source: 'chat' }
+			})
+			.returning();
+	}
+	return sensor;
+}
+
 /**
- * Registrer en aktivitet med metrics og automatisk kobling til relevante tasks
+ * Registrer en aktivitet med metrics — skriver til sensorEvents (unified lag)
+ * og kobler automatisk til relevante tasks via progress-tabellen.
  */
 export async function logActivity(params: LogActivityParams) {
 	const {
@@ -34,66 +80,52 @@ export async function logActivity(params: LogActivityParams) {
 		taskIds
 	} = params;
 
-	// Start en transaksjon
+	// Flaten metrics-array til navngitte felter i data-objektet
+	const metricsData: Record<string, any> = {};
+	for (const m of metrics) {
+		metricsData[m.metricType] = m.value;
+		if (m.unit) metricsData[`${m.metricType}Unit`] = m.unit;
+	}
+	if (duration) metricsData.duration = duration;
+	if (note) metricsData.note = note;
+	const normalizedActivity = normalizeLoggedActivity(type, { ...metricsData, _metrics: metrics, ...(metadata || {}) });
+
+	const sensor = await getOrCreateAiSensor(userId);
+
 	const result = await db.transaction(async (tx) => {
-		// 1. Opprett aktiviteten
-		const [activity] = await tx
-			.insert(activities)
+		// 1. Skriv til sensorEvents (unified kilde for all aktivitetsdata)
+		const [event] = await tx
+			.insert(sensorEvents)
 			.values({
 				userId,
-				type,
-				completedAt,
-				duration,
-				note,
-				metadata: metadata || {}
+				sensorId: sensor.id,
+				eventType: 'activity',
+				dataType: normalizedActivity.dataType,
+				timestamp: completedAt,
+				data: normalizedActivity.data,
+				metadata: { source: 'log_activity_tool' }
 			})
 			.returning();
 
-		// 2. Opprett alle metrics
-		if (metrics.length > 0) {
-			await tx.insert(activityMetrics).values(
-				metrics.map((metric) => ({
-					activityId: activity.id,
-					metricType: metric.metricType,
-					value: metric.value.toString(), // decimal lagres som string
-					unit: metric.unit
-				}))
-			);
-		}
-
-		// 3. Finn relevante tasks (eller bruk spesifiserte)
+		// 2. Finn relevante tasks (eller bruk spesifiserte)
 		let relevantTasks;
 		if (taskIds && taskIds.length > 0) {
-			// Bruk spesifiserte tasks
-			relevantTasks = await tx.query.tasks.findMany({
-				where: and(
-					eq(tasks.status, 'active'),
-					// Match på taskIds - dette krever litt mer kompleks logikk
-				)
-			});
-			// For nå: hent alle aktive tasks og filtrer
 			const allTasks = await tx.query.tasks.findMany({
 				where: eq(tasks.status, 'active'),
-				with: {
-					goal: true
-				}
+				with: { goal: true }
 			});
 			relevantTasks = allTasks.filter((t) => taskIds.includes(t.id));
 		} else {
-			// Auto-match basert på type
 			relevantTasks = await findMatchingTasks(tx, userId, type, metrics);
 		}
 
-		// 4. Opprett progress entries for hver relevant task
+		// 3. Opprett progress entries tilknyttet tasks
 		const progressEntries = [];
 		for (const task of relevantTasks) {
-			// Beregn value basert på task og metrics
 			const value = calculateProgressValue(task, metrics);
-
 			const [progressEntry] = await tx
 				.insert(progress)
 				.values({
-					activityId: activity.id,
 					taskId: task.id,
 					userId,
 					value,
@@ -101,15 +133,11 @@ export async function logActivity(params: LogActivityParams) {
 					completedAt
 				})
 				.returning();
-
-			progressEntries.push({
-				...progressEntry,
-				task
-			});
+			progressEntries.push({ ...progressEntry, task });
 		}
 
 		return {
-			activity,
+			activity: { id: event.id, type, completedAt, note },
 			metrics,
 			progressEntries
 		};
@@ -218,24 +246,22 @@ function calculateProgressValue(task: any, metrics: ActivityMetric[]): number | 
 }
 
 /**
- * Hent aktiviteter for en bruker med alle metrics og progress
+ * Hent AI-registrerte aktiviteter for en bruker fra sensorEvents
  */
 export async function getUserActivities(userId: string, limit = 50) {
-	return await db.query.activities.findMany({
-		where: eq(activities.userId, userId),
-		with: {
-			metrics: true,
-			progress: {
-				with: {
-					task: {
-						with: {
-							goal: true
-						}
-					}
-				}
-			}
-		},
-		orderBy: (activities, { desc }) => [desc(activities.completedAt)],
-		limit
-	});
+	const feed = await buildCanonicalActivityFeed(userId, { limit });
+
+	return feed.map((item) => ({
+		id: item.activityId,
+		type: item.dataType,
+		completedAt: new Date(item.timestamp),
+		note:
+			typeof item.payload.note === 'string'
+				? item.payload.note
+				: typeof item.payload.notes === 'string'
+					? item.payload.notes
+					: item.summary,
+		metadata: item.payload,
+		metrics: (Array.isArray(item.payload._metrics) ? item.payload._metrics : []) as ActivityMetric[]
+	}));
 }

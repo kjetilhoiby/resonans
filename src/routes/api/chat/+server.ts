@@ -1534,7 +1534,8 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 							},
 							metadata: {
 								confidence: 'high',
-								original_tool: 'record_workout'
+								original_tool: 'record_workout',
+								sourceImageUrl: effectiveImageUrl || undefined
 							}
 						})
 					});

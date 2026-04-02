@@ -106,6 +106,8 @@ export const tasks = pgTable('tasks', {
 	title: text('title').notNull(),
 	description: text('description'),
 	frequency: text('frequency'), // daily, weekly, monthly, once
+	periodType: text('period_type'), // 'week' | 'month' | 'year' | null (null = løpende)
+	periodId: text('period_id'),   // '2026-W14' | '2026-04' | '2026' | null
 	targetValue: integer('target_value'), // f.eks. antall repetisjoner
 	unit: text('unit'), // f.eks. "ganger per uke", "minutter"
 	status: text('status').notNull().default('active'),

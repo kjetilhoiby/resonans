@@ -11,13 +11,6 @@ export const load: PageServerLoad = async ({ locals }) => {
 			tasks: {
 				with: {
 					progress: {
-						with: {
-							activity: {
-								with: {
-									metrics: true
-								}
-							}
-						},
 						orderBy: (progress, { desc }) => [desc(progress.completedAt)],
 						limit: 10
 					}

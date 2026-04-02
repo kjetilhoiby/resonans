@@ -3,6 +3,13 @@ import { env } from '$env/dynamic/private';
 
 let configured = false;
 
+export function getMissingWebPushEnvVars(): string[] {
+	const missing: string[] = [];
+	if (!env.VAPID_PUBLIC_KEY) missing.push('VAPID_PUBLIC_KEY');
+	if (!env.VAPID_PRIVATE_KEY) missing.push('VAPID_PRIVATE_KEY');
+	return missing;
+}
+
 function ensureConfigured() {
 	if (configured) return;
 	const publicKey = env.VAPID_PUBLIC_KEY;

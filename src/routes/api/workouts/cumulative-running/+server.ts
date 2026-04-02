@@ -1,7 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { db } from '$lib/db';
-import { sensorEvents } from '$lib/db/schema';
-import { eq, and, gte } from 'drizzle-orm';
+import { buildUnifiedWorkoutActivities } from '$lib/server/activity-layer';
 import type { RequestHandler } from './$types';
 
 /**
@@ -17,21 +15,23 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		const years = parseInt(url.searchParams.get('years') || '5');
 		const startDate = new Date(currentYear - (years - 1), 0, 1);
 
-		// Fetch all running workouts from the specified number of years
-		const workouts = await db.query.sensorEvents.findMany({
-			where: and(
-				eq(sensorEvents.userId, userId),
-				eq(sensorEvents.dataType, 'workout'),
-				gte(sensorEvents.timestamp, startDate)
-			),
-			orderBy: (events, { asc }) => [asc(events.timestamp)]
+		const workouts = await buildUnifiedWorkoutActivities(userId, {
+			since: startDate,
+			limit: 5000
 		});
 
 		// Filter for running workouts only
 		const runningWorkouts = workouts.filter((w) => {
-			const sportType = (w.data as any)?.sportType;
+			const sportType = (w.sportType || '').toLowerCase();
 			return sportType === 'running' || sportType === 'indoor_running';
-		});
+		}).map((w) => ({
+			id: w.activityId,
+			timestamp: w.startTime,
+			data: {
+				sportType: w.sportType,
+				distance: w.distanceMeters ?? undefined
+			}
+		}));
 
 		return json(runningWorkouts);
 	} catch (error) {

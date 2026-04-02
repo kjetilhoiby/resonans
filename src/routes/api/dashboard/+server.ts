@@ -1,8 +1,9 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
-import { themes, goals, tasks, memories, activities, progress } from '$lib/db/schema';
-import { eq, and, gte, desc, sql, inArray } from 'drizzle-orm';
+import { buildCanonicalActivityFeed } from '$lib/server/activity-layer';
+import { themes, goals, tasks, memories, progress } from '$lib/db/schema';
+import { eq, and, gte, desc, inArray } from 'drizzle-orm';
 
 export const GET: RequestHandler = async ({ locals }) => {
 	const userId = locals.userId;
@@ -58,19 +59,10 @@ export const GET: RequestHandler = async ({ locals }) => {
 			.where(inArray(tasks.goalId, goalIds));
 	}
 
-	// Hent nylig aktivitet (siste 7 dager)
-	const recentActivity = await db
-		.select({
-			id: activities.id,
-			type: activities.type,
-			completedAt: activities.completedAt,
-			note: activities.note,
-			metadata: activities.metadata
-		})
-		.from(activities)
-		.where(and(eq(activities.userId, userId), gte(activities.completedAt, sevenDaysAgo)))
-		.orderBy(desc(activities.completedAt))
-		.limit(50);
+	const recentActivity = await buildCanonicalActivityFeed(userId, {
+		since: sevenDaysAgo,
+		limit: 50
+	});
 
 	// Hent progress (for beregning av streaks)
 	const recentProgress = await db
@@ -187,7 +179,7 @@ async function generateSuggestedActions({
 		today.setHours(0, 0, 0, 0);
 		
 		const todayActivity = recentActivity.filter((a) => {
-			const activityDate = new Date(a.completedAt);
+			const activityDate = toActivityDate(a);
 			activityDate.setHours(0, 0, 0, 0);
 			return activityDate.getTime() === today.getTime();
 		});
@@ -211,9 +203,9 @@ async function generateSuggestedActions({
 		const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
 		const goalWithNoActivity = activeGoals.find(goal => {
 			const lastActivity = recentActivity.find(a => 
-				a.metadata?.goalId === goal.id
+				(a.payload as Record<string, unknown> | undefined)?.goalId === goal.id
 			);
-			return !lastActivity || new Date(lastActivity.completedAt) < threeDaysAgo;
+			return !lastActivity || toActivityDate(lastActivity) < threeDaysAgo;
 		});
 
 		if (goalWithNoActivity) {
@@ -266,7 +258,7 @@ function calculateStreak(activities: any[]): number {
 
 	// Sorter activities etter dato (nyeste først)
 	const sorted = [...activities].sort(
-		(a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime()
+		(a, b) => toActivityDate(b).getTime() - toActivityDate(a).getTime()
 	);
 
 	let streak = 0;
@@ -274,7 +266,7 @@ function calculateStreak(activities: any[]): number {
 	currentDate.setHours(0, 0, 0, 0);
 
 	for (let i = 0; i < sorted.length; i++) {
-		const activityDate = new Date(sorted[i].completedAt);
+		const activityDate = toActivityDate(sorted[i]);
 		activityDate.setHours(0, 0, 0, 0);
 
 		const diffDays = Math.floor(
@@ -289,6 +281,10 @@ function calculateStreak(activities: any[]): number {
 	}
 
 	return streak;
+}
+
+function toActivityDate(activity: { completedAt?: Date | string; timestamp?: Date | string }) {
+	return new Date(activity.timestamp ?? activity.completedAt ?? new Date());
 }
 
 function formatTimeUntil(date: Date | null): string {
