@@ -19,6 +19,23 @@
 		return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
 	}
 
+	async function ensureServiceWorkerReady(timeoutMs = 8000): Promise<ServiceWorkerRegistration> {
+		if (!('serviceWorker' in navigator)) {
+			throw new Error('Service worker støttes ikke i denne nettleseren.');
+		}
+
+		const existing = await navigator.serviceWorker.getRegistration();
+		if (!existing) {
+			await navigator.serviceWorker.register('/service-worker.js');
+		}
+
+		const timeoutPromise = new Promise<never>((_, reject) => {
+			window.setTimeout(() => reject(new Error('Service worker ble ikke klar i tide. Prøv å laste siden på nytt.')), timeoutMs);
+		});
+
+		return Promise.race([navigator.serviceWorker.ready, timeoutPromise]);
+	}
+
 	async function refreshPushStatus() {
 		if (typeof window === 'undefined') return;
 		pushSupported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
@@ -68,7 +85,7 @@
 				return;
 			}
 
-			const registration = await navigator.serviceWorker.ready;
+			const registration = await ensureServiceWorkerReady();
 			const keyBytes = urlBase64ToUint8Array(vapidPublicKey);
 			const appServerKey = keyBytes.buffer.slice(
 				keyBytes.byteOffset,
@@ -106,7 +123,7 @@
 		pushLoading = true;
 		pushResult = null;
 		try {
-			const registration = await navigator.serviceWorker.ready;
+			const registration = await ensureServiceWorkerReady();
 			const subscription = await registration.pushManager.getSubscription();
 			if (!subscription) {
 				pushSubscribed = false;
