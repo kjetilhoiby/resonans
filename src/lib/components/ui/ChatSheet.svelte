@@ -10,11 +10,14 @@
 	import { tick } from 'svelte';
 	import ChatInput from './ChatInput.svelte';
 	import TriageCard from '../composed/TriageCard.svelte';
+	import ChatStatusWidget from '../domain/ChatStatusWidget.svelte';
 	import { streamProxyChat } from '$lib/client/proxy-chat-stream';
+	import type { WeatherStatusWidget } from '$lib/ai/tools/weather-forecast';
 
 	interface ChatMsg {
 		role: 'user' | 'assistant';
 		text: string;
+		statusWidget?: WeatherStatusWidget | null;
 	}
 
 	interface Props {
@@ -58,7 +61,14 @@
 					await scrollToBottom();
 				}
 			});
-			messages = [...messages, { role: 'assistant', text: data.message }];
+			messages = [
+				...messages,
+				{
+					role: 'assistant',
+					text: data.message,
+					statusWidget: data.statusWidget ?? data.metadata?.statusWidget ?? null
+				}
+			];
 			if (data.checklistChanged) onChecklistCreated?.();
 		} catch {
 			messages = [...messages, { role: 'assistant', text: 'Noe gikk galt. Prøv igjen.' }];
@@ -103,6 +113,9 @@
 				<div class="cs-bubble-user">{msg.text}</div>
 			{:else}
 				<TriageCard text={msg.text} />
+				{#if msg.statusWidget}
+					<ChatStatusWidget widget={msg.statusWidget} />
+				{/if}
 			{/if}
 		{/each}
 		{#if loading}

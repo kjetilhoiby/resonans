@@ -182,11 +182,11 @@
 					role: 'assistant',
 					text: finalPayload.message ?? finalPayload.fullMessage ?? streamingText,
 					imageUrl: null,
-					widgetProposal: finalPayload.widgetProposal ?? null,
-					widgetFlow: finalPayload.widgetFlow ?? null,
-					statusWidget: finalPayload.statusWidget ?? null,
-					photoAnnotation: finalPayload.photoAnnotation ?? null,
-					photoAnnotationImageUrl: finalPayload.photoAnnotationImageUrl ?? null
+					widgetProposal: finalPayload.widgetProposal ?? finalPayload.metadata?.widgetProposal ?? null,
+					widgetFlow: finalPayload.widgetFlow ?? finalPayload.metadata?.widgetFlow ?? null,
+					statusWidget: finalPayload.statusWidget ?? finalPayload.metadata?.statusWidget ?? null,
+					photoAnnotation: finalPayload.photoAnnotation ?? finalPayload.metadata?.photoAnnotation ?? null,
+					photoAnnotationImageUrl: finalPayload.photoAnnotationImageUrl ?? finalPayload.metadata?.photoAnnotationImageUrl ?? null
 				}
 			];
 

@@ -16,6 +16,8 @@
 	let sparebank1SyncResult: any = $state(null);
 	let googleSheetsStatus = $state<any>(null);
 	let loadingGoogleSheets = $state(false);
+	let dropboxStatus = $state<any>(null);
+	let loadingDropbox = $state(false);
 
 	let importingStatements = $state(false);
 	let importResult: any = $state(null);
@@ -38,6 +40,7 @@
 	const connectedSources = $derived(
 		(withingsStatus?.connected ? 1 : 0) +
 		(sparebank1Status?.connected ? 1 : 0) +
+		(dropboxStatus?.connected ? 1 : 0) +
 		(googleSheetsStatus?.connected ? 1 : 0) +
 		(user?.googleChatWebhook ? 1 : 0)
 	);
@@ -51,6 +54,7 @@
 	const hasSourceWarning = $derived(
 		Boolean(withingsStatus?.sensor?.isExpired) ||
 		Boolean(sparebank1Status?.sensor?.isExpired) ||
+		Boolean(dropboxStatus?.sensor?.isExpired) ||
 		Boolean(googleSheetsStatus?.sensor?.isExpired)
 	);
 	const hasProfileWarning = $derived(!user?.name || !user?.email);
@@ -59,9 +63,24 @@
 	onMount(async () => {
 		await loadWithingsStatus();
 		await loadSparebank1Status();
+		await loadDropboxStatus();
 		await loadGoogleSheetsStatus();
 		await loadAnchorAccounts();
 	});
+
+	async function loadDropboxStatus() {
+		loadingDropbox = true;
+		try {
+			const res = await fetch('/api/sensors/dropbox/status');
+			if (res.ok) {
+				dropboxStatus = await res.json();
+			}
+		} catch (err) {
+			console.error('Failed to load Dropbox status:', err);
+		} finally {
+			loadingDropbox = false;
+		}
+	}
 
 	async function loadAnchorAccounts() {
 		try {
@@ -474,7 +493,7 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 					<span class="status-dot {hasSourceWarning ? 'warn' : connectedSources > 0 ? 'ok' : 'off'}"></span>
 					<h2>Kilder</h2>
 				</div>
-				<p>{connectedSources}/4 tilkoblet{hasSourceWarning ? ' · én eller flere trenger ny innlogging' : ''}</p>
+				<p>{connectedSources}/5 tilkoblet{hasSourceWarning ? ' · én eller flere trenger ny innlogging' : ''}</p>
 				<a href="/settings/sources" class="overview-link">Åpne kilder</a>
 			</article>
 			<article class="overview-card" id="notifications-overview">

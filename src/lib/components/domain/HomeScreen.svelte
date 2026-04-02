@@ -19,6 +19,7 @@
 	import Icon from '../ui/Icon.svelte';
 	import ChatInput from '../ui/ChatInput.svelte';
 	import TriageCard from '../composed/TriageCard.svelte';
+	import ChatStatusWidget from './ChatStatusWidget.svelte';
 	import ChecklistWidget, { type Checklist } from '../composed/ChecklistWidget.svelte';
 	import ChecklistSheet from '../ui/ChecklistSheet.svelte';
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
@@ -27,6 +28,7 @@
 	import { finishNavMetric, startNavMetric } from '$lib/client/nav-metrics';
 	import { streamProxyChat } from '$lib/client/proxy-chat-stream';
 	import { resolveThemeDashboardKind, type DashboardKind } from '$lib/domain/theme-dashboard-registry';
+	import type { WeatherStatusWidget } from '$lib/ai/tools/weather-forecast';
 
 	interface Theme {
 		id: string;
@@ -89,6 +91,7 @@
 		imageUrl?: string;
 		attachment?: AttachmentRef;
 		actions?: ChatAction[];
+		statusWidget?: WeatherStatusWidget | null;
 	}
 
 	let { themes, recentConversations }: Props = $props();
@@ -1093,7 +1096,14 @@
 					emoji: data.theme.emoji ?? null
 				};
 			}
-			chatMessages = [...chatMessages, { role: 'assistant', text: data.message }];
+			chatMessages = [
+				...chatMessages,
+				{
+					role: 'assistant',
+					text: data.message,
+					statusWidget: data.statusWidget ?? data.metadata?.statusWidget ?? null
+				}
+			];
 			if (data.checklistChanged) await fetchChecklists();
 		} catch {
 			chatMessages = [...chatMessages, { role: 'assistant', text: 'Noe gikk galt. Prøv igjen.' }];
@@ -1411,6 +1421,9 @@
 						</div>
 					{:else}
 						<TriageCard text={msg.text} actions={msg.actions} />
+						{#if msg.statusWidget}
+							<ChatStatusWidget widget={msg.statusWidget} />
+						{/if}
 					{/if}
 				{/each}
 				{#if chatLoading}

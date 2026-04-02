@@ -987,6 +987,45 @@ async function emitProgress(
 	await onProgress?.({ stage, message, detail });
 }
 
+type ChatModel = 'gpt-4o' | 'gpt-4o-mini';
+
+interface ModelDecision {
+	model: ChatModel;
+	reason: string;
+}
+
+function chooseChatModel(params: {
+	phase: 'initial' | 'followup';
+	hasImage: boolean;
+	userInput: string;
+	toolCallCount?: number;
+	toolRound?: number;
+}): ModelDecision {
+	const normalizedInput = params.userInput.toLowerCase();
+	const isTimeSensitiveQuestion = /nyhet|nyheter|siste|oppdatering|aktuelt|aktuell|krig|konflikt|valg|politikk|børs|marked/.test(normalizedInput);
+	const isComparisonOrPlanning = /sammenlign|analyse|strategi|plan|vei opp|fordeler|ulemper|hva bør jeg/.test(normalizedInput);
+
+	if (params.hasImage) {
+		return { model: 'gpt-4o', reason: 'image_input' };
+	}
+
+	if (params.phase === 'initial') {
+		if (isTimeSensitiveQuestion) {
+			return { model: 'gpt-4o', reason: 'time_sensitive_question' };
+		}
+		if (isComparisonOrPlanning) {
+			return { model: 'gpt-4o', reason: 'complex_reasoning_prompt' };
+		}
+		return { model: 'gpt-4o-mini', reason: 'default_fast_path' };
+	}
+
+	if ((params.toolCallCount ?? 0) >= 3 && (params.toolRound ?? 0) <= 1) {
+		return { model: 'gpt-4o', reason: 'high_tool_fanout_followup' };
+	}
+
+	return { model: 'gpt-4o-mini', reason: 'default_followup_fast_path' };
+}
+
 export async function _runChatRequest({ body, userId, requestUrl, requestFetch, onProgress }: _RunChatRequestParams) {
 	try {
 		await emitProgress(onProgress, 'validating', 'Validerer forespørsel...');
@@ -1148,12 +1187,20 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		await emitProgress(onProgress, 'context_ready', 'Kontekst og historikk er lastet.', {
 			historyCount: history.length
 		});
+		const initialModelDecision = chooseChatModel({
+			phase: 'initial',
+			hasImage: Boolean(effectiveImageUrl),
+			userInput: latestUserInput
+		});
 
 		// Første kall til OpenAI med tools
-		// Bruk gpt-4o når vi har bilder (Vision support)
-		await emitProgress(onProgress, 'model_request', 'Sender forespørsel til modellen...');
+		await emitProgress(onProgress, 'model_request', 'Sender forespørsel til modellen...', {
+			model: initialModelDecision.model,
+			reason: initialModelDecision.reason
+		});
+		console.log('🧠 Model selected (initial):', initialModelDecision.model, `(${initialModelDecision.reason})`);
 		let completion = await openai.chat.completions.create({
-			model: effectiveImageUrl ? 'gpt-4o' : 'gpt-4o-mini',
+			model: initialModelDecision.model,
 			messages,
 			tools,
 			tool_choice: 'auto',
@@ -1962,9 +2009,25 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			}
 
 			// Ny runde der modellen kan bruke tool-resultatene til flere oppslag eller gi slutt-svar.
-			await emitProgress(onProgress, 'model_followup_request', 'Ber modellen bruke verktøyresultatene...');
+			const followupModelDecision = chooseChatModel({
+				phase: 'followup',
+				hasImage: Boolean(effectiveImageUrl),
+				userInput: latestUserInput,
+				toolCallCount: responseMessage.tool_calls.length,
+				toolRound
+			});
+			await emitProgress(onProgress, 'model_followup_request', 'Ber modellen bruke verktøyresultatene...', {
+				model: followupModelDecision.model,
+				reason: followupModelDecision.reason,
+				round: toolRound + 1
+			});
+			console.log(
+				'🧠 Model selected (followup):',
+				followupModelDecision.model,
+				`(${followupModelDecision.reason}, round ${toolRound + 1})`
+			);
 			completion = await openai.chat.completions.create({
-				model: 'gpt-4o-mini',
+				model: followupModelDecision.model,
 				messages,
 				tools,
 				tool_choice: 'auto',

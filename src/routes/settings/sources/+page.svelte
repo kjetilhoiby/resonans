@@ -22,9 +22,18 @@
 	let googleSheetsStatus = $state<any>(null);
 	let loadingGoogleSheets = $state(false);
 
+	let dropboxStatus = $state<any>(null);
+	let loadingDropbox = $state(false);
+	let syncingDropbox = $state(false);
+	let loadingDropboxFolders = $state(false);
+	let dropboxResult = $state<{ success: boolean; message: string } | null>(null);
+	let dropboxFolders = $state<Array<{ id: string; name: string; path: string }>>([]);
+	let selectedDropboxFolder = $state('');
+
 	const connectedCount = $derived(
 		(withingsStatus?.connected ? 1 : 0) +
 		(sparebank1Status?.connected ? 1 : 0) +
+		(dropboxStatus?.connected ? 1 : 0) +
 		(googleSheetsStatus?.connected ? 1 : 0) +
 		(webhook.trim().length > 0 ? 1 : 0)
 	);
@@ -33,6 +42,7 @@
 		await Promise.all([
 			loadWithingsStatus(),
 			loadSparebank1Status(),
+			loadDropboxStatus(),
 			loadGoogleSheetsStatus()
 		]);
 	});
@@ -143,13 +153,92 @@
 		await fetch('/api/sensors/google-sheets/disconnect', { method: 'POST' });
 		await loadGoogleSheetsStatus();
 	}
+
+	async function loadDropboxStatus() {
+		loadingDropbox = true;
+		try {
+			const res = await fetch('/api/sensors/dropbox/status');
+			if (res.ok) {
+				dropboxStatus = await res.json();
+				selectedDropboxFolder = dropboxStatus?.sensor?.dropboxFolderPath || '';
+			}
+		} finally {
+			loadingDropbox = false;
+		}
+	}
+
+	async function loadDropboxFolders(path = '') {
+		loadingDropboxFolders = true;
+		dropboxResult = null;
+		try {
+			const res = await fetch(`/api/sensors/dropbox/folders?path=${encodeURIComponent(path)}`);
+			const payload = await res.json();
+			if (!res.ok) throw new Error(payload.error || 'Kunne ikke hente mapper');
+			dropboxFolders = payload.folders || [];
+		} catch (error) {
+			dropboxResult = {
+				success: false,
+				message: error instanceof Error ? error.message : 'Kunne ikke hente mapper'
+			};
+		} finally {
+			loadingDropboxFolders = false;
+		}
+	}
+
+	async function saveDropboxWatchFolder() {
+		dropboxResult = null;
+		try {
+			const res = await fetch('/api/sensors/dropbox/watch-folder', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ path: selectedDropboxFolder })
+			});
+			const payload = await res.json();
+			if (!res.ok) throw new Error(payload.error || 'Kunne ikke lagre mappevalg');
+			dropboxResult = { success: true, message: payload.message || 'Mappe lagret' };
+			await loadDropboxStatus();
+		} catch (error) {
+			dropboxResult = {
+				success: false,
+				message: error instanceof Error ? error.message : 'Ukjent feil'
+			};
+		}
+	}
+
+	async function syncDropbox(fullRescan = false) {
+		syncingDropbox = true;
+		dropboxResult = null;
+		try {
+			const suffix = fullRescan ? '?fullRescan=true' : '';
+			const res = await fetch(`/api/sensors/dropbox/sync${suffix}`, { method: 'POST' });
+			const payload = await res.json();
+			if (!res.ok) throw new Error(payload.error || 'Dropbox sync feilet');
+			dropboxResult = { success: true, message: payload.message || 'Dropbox synkronisert' };
+			await loadDropboxStatus();
+		} catch (error) {
+			dropboxResult = {
+				success: false,
+				message: error instanceof Error ? error.message : 'Ukjent feil'
+			};
+		} finally {
+			syncingDropbox = false;
+		}
+	}
+
+	async function disconnectDropbox() {
+		if (!confirm('Koble fra Dropbox?')) return;
+		await fetch('/api/sensors/dropbox/disconnect', { method: 'POST' });
+		dropboxFolders = [];
+		selectedDropboxFolder = '';
+		await loadDropboxStatus();
+	}
 </script>
 
 <div class="page">
 	<header class="header">
 		<a href="/settings" class="btn-nav" aria-label="Tilbake til innstillinger">←</a>
 		<h1>Kilder</h1>
-		<p>{connectedCount}/4 tilkoblet</p>
+		<p>{connectedCount}/5 tilkoblet</p>
 	</header>
 
 	<section class="card">
@@ -206,6 +295,39 @@
 			<a href="/api/sensors/sparebank1/connect" class="btn-primary">Koble til SpareBank 1</a>
 		{/if}
 		{#if sparebank1Result}<p class={sparebank1Result.success ? 'ok' : 'err'}>{sparebank1Result.message}</p>{/if}
+	</section>
+
+	<section class="card">
+		<h2>Dropbox (TCX/GPX)</h2>
+		{#if loadingDropbox}
+			<p>Laster...</p>
+		{:else if dropboxStatus?.connected}
+			<p class="ok">Tilkoblet</p>
+			<div class="field">
+				<label for="dropbox-folder">Mappe som overvåkes</label>
+				<select id="dropbox-folder" class="input" bind:value={selectedDropboxFolder}>
+					<option value="">Velg mappe...</option>
+					{#each dropboxFolders as folder}
+						<option value={folder.path}>{folder.path}</option>
+					{/each}
+				</select>
+			</div>
+			<div class="row">
+				<button class="btn-secondary" onclick={() => loadDropboxFolders('')} disabled={loadingDropboxFolders}>
+					{loadingDropboxFolders ? 'Henter mapper...' : 'Hent mapper'}
+				</button>
+				<button class="btn-secondary" onclick={saveDropboxWatchFolder} disabled={!selectedDropboxFolder}>Lagre mappe</button>
+				<button class="btn-secondary" onclick={() => syncDropbox(false)} disabled={syncingDropbox}>{syncingDropbox ? 'Synker...' : 'Synk nå'}</button>
+				<button class="btn-secondary" onclick={() => syncDropbox(true)} disabled={syncingDropbox}>Rescan</button>
+				<button class="btn-ghost" onclick={disconnectDropbox}>Koble fra</button>
+			</div>
+			{#if dropboxStatus?.sensor?.dropboxFolderPath}
+				<p>Aktiv mappe: {dropboxStatus.sensor.dropboxFolderPath}</p>
+			{/if}
+		{:else}
+			<a href="/api/sensors/dropbox/connect" class="btn-primary">Koble til Dropbox</a>
+		{/if}
+		{#if dropboxResult}<p class={dropboxResult.success ? 'ok' : 'err'}>{dropboxResult.message}</p>{/if}
 	</section>
 
 	<section class="card">

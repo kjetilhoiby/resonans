@@ -41,6 +41,12 @@ const JOBS: CronJob[] = [
 		schedule: '*/5 5-22 * * *', // hvert 5. minutt mellom 05:00–22:00 UTC
 		description: 'Withings sensordata synk (alle brukere)',
 		maxDurationSeconds: 120
+	},
+	{
+		path: '/api/cron/dropbox-sync',
+		schedule: '*/10 * * * *', // hvert 10. minutt
+		description: 'Dropbox TCX/GPX import (alle brukere)',
+		maxDurationSeconds: 120
 	}
 ];
 
