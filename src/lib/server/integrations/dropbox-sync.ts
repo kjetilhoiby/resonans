@@ -8,6 +8,8 @@ import {
 	refreshDropboxAccessToken,
 	type DropboxListFolderEntry
 } from '$lib/server/integrations/dropbox';
+import { getWorkoutContextForUser, type WorkoutContextSummary } from '$lib/server/workout-context';
+import { notifyUserAboutImportedWorkouts } from '$lib/server/workout-notifications';
 
 interface DropboxCredentials {
 	access_token: string;
@@ -295,7 +297,10 @@ async function sourcePathExists(sensorId: string, sourcePath: string) {
 	return existing.length > 0;
 }
 
-export async function syncDropboxWorkoutsForUser(userId: string, options?: { fullRescan?: boolean }) {
+export async function syncDropboxWorkoutsForUser(
+	userId: string,
+	options?: { fullRescan?: boolean; appUrl?: string }
+) {
 	const sensor = await getDropboxSensor(userId);
 	if (!sensor) {
 		throw new Error('Dropbox er ikke koblet til');
@@ -338,6 +343,7 @@ export async function syncDropboxWorkoutsForUser(userId: string, options?: { ful
 	let imported = 0;
 	let skipped = 0;
 	let failed = 0;
+	const importedWorkoutIds: string[] = [];
 
 	for (const file of workoutFiles) {
 		const sourcePath = file.path_lower || file.path_display || file.name;
@@ -368,7 +374,7 @@ export async function syncDropboxWorkoutsForUser(userId: string, options?: { ful
 				time: p.time
 			}));
 
-			await db.insert(sensorEvents).values({
+			const [insertedWorkout] = await db.insert(sensorEvents).values({
 				userId,
 				sensorId: sensor.id,
 				eventType: 'activity',
@@ -395,9 +401,10 @@ export async function syncDropboxWorkoutsForUser(userId: string, options?: { ful
 					serverModified: file.server_modified,
 					clientModified: file.client_modified
 				}
-			});
+			}).returning({ id: sensorEvents.id });
 
 			imported += 1;
+			if (insertedWorkout?.id) importedWorkoutIds.push(insertedWorkout.id);
 		} catch (error) {
 			failed += 1;
 			console.error('[dropbox-sync] import failed for file:', sourcePath, error);
@@ -421,17 +428,32 @@ export async function syncDropboxWorkoutsForUser(userId: string, options?: { ful
 		})
 		.where(eq(sensors.id, sensor.id));
 
+	let notified = 0;
+	if (options?.fullRescan !== true && options?.appUrl && importedWorkoutIds.length > 0) {
+		const importedWorkouts = (
+			await Promise.all(importedWorkoutIds.map((workoutId) => getWorkoutContextForUser(userId, workoutId)))
+		).filter((workout): workout is WorkoutContextSummary => workout !== null);
+
+		const notificationResult = await notifyUserAboutImportedWorkouts({
+			userId,
+			appUrl: options.appUrl,
+			workouts: importedWorkouts
+		});
+		notified = notificationResult.sent;
+	}
+
 	return {
 		imported,
 		skipped,
 		failed,
+		notified,
 		cursor,
 		watchedPath,
 		totalCandidates: workoutFiles.length
 	};
 }
 
-export async function syncDropboxWorkoutsForAllUsers() {
+export async function syncDropboxWorkoutsForAllUsers(options?: { appUrl?: string }) {
 	const activeSensors = await db.query.sensors.findMany({
 		where: and(
 			eq(sensors.provider, 'dropbox'),
@@ -445,7 +467,7 @@ export async function syncDropboxWorkoutsForAllUsers() {
 
 	for (const userId of userIds) {
 		try {
-			const result = await syncDropboxWorkoutsForUser(userId);
+			const result = await syncDropboxWorkoutsForUser(userId, { appUrl: options?.appUrl });
 			results.push({ userId, success: true, ...result });
 		} catch (error) {
 			results.push({

@@ -16,6 +16,7 @@ export const users = pgTable('users', {
 		weeklyReview?: { enabled: boolean; day: string; time: string }; // day: "sunday", time: "18:00"
 		milestones?: { enabled: boolean };
 		reminders?: { enabled: boolean };
+		workoutImports?: { enabled: boolean };
 		inactivityAlerts?: { enabled: boolean; daysThreshold: number };
 	}>(),
 	timezone: text('timezone').default('Europe/Oslo'),

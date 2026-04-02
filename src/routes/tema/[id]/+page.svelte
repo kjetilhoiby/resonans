@@ -2,7 +2,7 @@
 	import ThemePage from '$lib/components/domain/ThemePage.svelte';
 	import type { PageData } from './$types';
 
-	let { data }: { data: PageData } = $props();
+	let { data }: { data: PageData & { selectedWorkout?: unknown } } = $props();
 </script>
 
 <ThemePage
@@ -12,4 +12,5 @@
 	conversationId={data.conversationId}
 	themeConversations={data.themeConversations}
 	themeInstruction={data.themeInstruction}
+	selectedWorkout={data.selectedWorkout}
 />

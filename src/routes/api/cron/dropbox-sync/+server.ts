@@ -5,13 +5,13 @@ import { syncDropboxWorkoutsForAllUsers } from '$lib/server/integrations/dropbox
 
 export const config = { maxDuration: 120 };
 
-export const GET: RequestHandler = async ({ request }) => {
+export const GET: RequestHandler = async ({ request, url }) => {
 	const authHeader = request.headers.get('authorization');
 	if (env.CRON_SECRET && authHeader !== `Bearer ${env.CRON_SECRET}`) {
 		return json({ error: 'Unauthorized' }, { status: 401 });
 	}
 
-	const result = await syncDropboxWorkoutsForAllUsers();
+	const result = await syncDropboxWorkoutsForAllUsers({ appUrl: url.origin });
 	const failed = result.results.filter((r) => r.success === false).length;
 	return json({
 		success: true,

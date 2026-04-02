@@ -42,6 +42,48 @@ export interface GoogleChatWidget {
 	}>;
 }
 
+export interface WorkoutImportedMessageData {
+	appUrl: string;
+	workoutTitle: string;
+	workoutTimestamp: string;
+	distanceKm?: number | null;
+	durationSeconds?: number | null;
+	paceSecondsPerKm?: number | null;
+	elevationMeters?: number | null;
+	avgHeartRate?: number | null;
+	maxHeartRate?: number | null;
+	sourceName?: string | null;
+	healthChatUrl: string;
+	healthDataUrl: string;
+}
+
+function formatWorkoutDate(timestampIso: string): string {
+	return new Intl.DateTimeFormat('nb-NO', {
+		weekday: 'long',
+		day: 'numeric',
+		month: 'long',
+		hour: '2-digit',
+		minute: '2-digit'
+	}).format(new Date(timestampIso));
+}
+
+function formatWorkoutDuration(durationSeconds?: number | null): string | null {
+	if (!durationSeconds) return null;
+	const totalMinutes = Math.round(durationSeconds / 60);
+	const hours = Math.floor(totalMinutes / 60);
+	const minutes = totalMinutes % 60;
+	return hours > 0 ? `${hours} t ${minutes} min` : `${minutes} min`;
+}
+
+function formatWorkoutPace(paceSecondsPerKm?: number | null): string | null {
+	if (!paceSecondsPerKm) return null;
+	const minutes = Math.floor(paceSecondsPerKm / 60);
+	const seconds = Math.round(paceSecondsPerKm % 60)
+		.toString()
+		.padStart(2, '0');
+	return `${minutes}:${seconds} /km`;
+}
+
 /**
  * Send melding til Google Chat webhook
  */
@@ -324,6 +366,113 @@ export function buildReminderMessage(data: {
 								]
 							}
 						]
+					}
+				]
+			}
+		]
+	};
+}
+
+export function buildWorkoutImportedMessage(data: WorkoutImportedMessageData): GoogleChatMessage {
+	const widgets: GoogleChatWidget[] = [
+		{
+			textParagraph: {
+				text: `<b>${data.workoutTitle}</b><br>${formatWorkoutDate(data.workoutTimestamp)}`
+			}
+		}
+	];
+
+	if (data.distanceKm != null) {
+		widgets.push({
+			keyValue: {
+				topLabel: 'Distanse',
+				content: `${data.distanceKm.toFixed(2)} km`
+			}
+		});
+	}
+
+	const duration = formatWorkoutDuration(data.durationSeconds);
+	if (duration) {
+		widgets.push({
+			keyValue: {
+				topLabel: 'Varighet',
+				content: duration
+			}
+		});
+	}
+
+	const pace = formatWorkoutPace(data.paceSecondsPerKm);
+	if (pace) {
+		widgets.push({
+			keyValue: {
+				topLabel: 'Tempo',
+				content: pace
+			}
+		});
+	}
+
+	if (data.elevationMeters != null) {
+		widgets.push({
+			keyValue: {
+				topLabel: 'Høydemeter',
+				content: `${Math.round(data.elevationMeters)} m`
+			}
+		});
+	}
+
+	if (data.avgHeartRate != null) {
+		const maxText = data.maxHeartRate != null ? ` · maks ${Math.round(data.maxHeartRate)}` : '';
+		widgets.push({
+			keyValue: {
+				topLabel: 'Puls',
+				content: `Snitt ${Math.round(data.avgHeartRate)}${maxText}`
+			}
+		});
+	}
+
+	if (data.sourceName) {
+		widgets.push({
+			textParagraph: {
+				text: `<i>Kilde: ${data.sourceName}</i>`
+			}
+		});
+	}
+
+	widgets.push({
+		buttons: [
+			{
+				textButton: {
+					text: '💬 Åpne i Helse-chat',
+					onClick: {
+						openLink: {
+							url: data.healthChatUrl
+						}
+					}
+				}
+			},
+			{
+				textButton: {
+					text: '📊 Åpne Helse',
+					onClick: {
+						openLink: {
+							url: data.healthDataUrl
+						}
+					}
+				}
+			}
+		]
+	});
+
+	return {
+		cards: [
+			{
+				header: {
+					title: '🏃 Ny treningsøkt registrert',
+					subtitle: 'Dropbox-import fullført'
+				},
+				sections: [
+					{
+						widgets
 					}
 				]
 			}

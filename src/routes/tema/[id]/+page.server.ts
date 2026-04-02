@@ -3,12 +3,14 @@ import { themes, goals, messages as messagesTable, conversations } from '$lib/db
 import { getThemeInstruction } from '$lib/server/theme-instructions';
 import { ensureConversationThemeIdColumn } from '$lib/server/conversation-schema';
 import { getConversationsByTheme } from '$lib/server/conversations';
+import { getWorkoutContextForUser } from '$lib/server/workout-context';
 import { eq, and, asc } from 'drizzle-orm';
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async ({ params, locals }) => {
+export const load: PageServerLoad = async ({ params, locals, url }) => {
 	await ensureConversationThemeIdColumn();
+	const selectedWorkoutId = url.searchParams.get('workout');
 
 	// Sjekk om params.id er en UUID (inneholder bindestreker og er 36 tegn)
 	const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(params.id);
@@ -88,6 +90,9 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		);
 
 	const instruction = await getThemeInstruction(locals.userId, theme.id);
+	const selectedWorkout = selectedWorkoutId
+		? await getWorkoutContextForUser(locals.userId, selectedWorkoutId)
+		: null;
 
 	return {
 		theme: {
@@ -109,6 +114,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		})),
 		goals: themeGoals,
 		conversationId,
-		themeInstruction: instruction
+		themeInstruction: instruction,
+		selectedWorkout
 	};
 };

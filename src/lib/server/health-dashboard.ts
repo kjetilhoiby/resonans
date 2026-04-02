@@ -1,10 +1,13 @@
 import { db } from '$lib/db';
 import { sensorAggregates, sensorEvents, sensors, goals as goalsTable, themes } from '$lib/db/schema';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, or } from 'drizzle-orm';
 
 export async function loadHealthDashboardData(userId: string) {
 	const healthSensors = await db.query.sensors.findMany({
-		where: and(eq(sensors.userId, userId), eq(sensors.type, 'health_tracker')),
+		where: and(
+			eq(sensors.userId, userId),
+			or(eq(sensors.type, 'health_tracker'), eq(sensors.type, 'workout_files'))
+		),
 		orderBy: [desc(sensors.updatedAt)]
 	});
 

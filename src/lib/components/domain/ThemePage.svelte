@@ -57,6 +57,24 @@
 		createdAt: string;
 	}
 
+	interface SelectedWorkout {
+		id: string;
+		timestamp: string;
+		sportType: string;
+		title: string;
+		distanceMeters: number | null;
+		distanceKm: number | null;
+		durationSeconds: number | null;
+		paceSecondsPerKm: number | null;
+		elevationMeters: number | null;
+		avgHeartRate: number | null;
+		maxHeartRate: number | null;
+		source: string | null;
+		sourceName: string | null;
+		sourceFormat: string | null;
+		chatPrompt: string;
+	}
+
 	interface Props {
 		theme: Theme;
 		initialMessages: Message[];
@@ -64,9 +82,10 @@
 		conversationId: string;
 		themeConversations?: ThemeConversation[];
 		themeInstruction?: string;
+		selectedWorkout?: SelectedWorkout | null;
 	}
 
-	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '' }: Props = $props();
+	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '', selectedWorkout = null }: Props = $props();
 
 	/* ── Subtab-tilstand ────────────────────────────────── */
 	type Tab = 'chat' | 'data' | 'mål' | 'filer';
@@ -74,9 +93,13 @@
 	const activeDashboard = getThemeDashboardDefinition(theme.name);
 	const hasThemeDashboard = activeDashboardKind !== null;
 	const requestedTab = get(page).url.searchParams.get('tab');
+	const requestedPrompt = get(page).url.searchParams.get('prompt') ?? '';
+	const hasLinkedWorkout = Boolean(selectedWorkout);
 	const isHandoff = get(page).url.searchParams.get('handoff') === '1';
 	let tab = $state<Tab>(
-		requestedTab === 'chat' || requestedTab === 'data' || requestedTab === 'mål' || requestedTab === 'filer'
+		hasLinkedWorkout
+			? 'chat'
+			: requestedTab === 'chat' || requestedTab === 'data' || requestedTab === 'mål' || requestedTab === 'filer'
 			? requestedTab as Tab
 			: hasThemeDashboard
 				? 'data'
@@ -211,10 +234,11 @@
 	let archiveRedirect = $state<{ name: string; emoji?: string | null } | null>(null);
 
 	/* ── Samtaler-liste tilstand ────────────────────────── */
-	let selectedConvId = $state<string | null>(isHandoff ? conversationId : null);
+	let selectedConvId = $state<string | null>(isHandoff || hasLinkedWorkout || requestedPrompt ? conversationId : null);
 	let selectedConvMessages = $state<ChatMsg[]>([]);
 	let convLoadingMessages = $state(false);
 	let convCreating = $state(false);
+	let chatDraft = $state(requestedPrompt || selectedWorkout?.chatPrompt || '');
 
 	const activeConversationMessages = $derived(
 		selectedConvId === conversationId ? chatMessages : selectedConvMessages
@@ -230,6 +254,38 @@
 		if (isToday)
 			return new Intl.DateTimeFormat('nb-NO', { hour: '2-digit', minute: '2-digit' }).format(d);
 		return new Intl.DateTimeFormat('nb-NO', { day: 'numeric', month: 'short' }).format(d);
+	}
+
+	function formatWorkoutDistance(distanceKm: number | null): string {
+		if (distanceKm == null) return 'Ukjent distanse';
+		return `${distanceKm.toFixed(2)} km`;
+	}
+
+	function formatWorkoutDuration(durationSeconds: number | null): string {
+		if (durationSeconds == null) return 'Ukjent varighet';
+		const totalMinutes = Math.round(durationSeconds / 60);
+		const hours = Math.floor(totalMinutes / 60);
+		const minutes = totalMinutes % 60;
+		return hours > 0 ? `${hours} t ${minutes} min` : `${minutes} min`;
+	}
+
+	function formatWorkoutPace(paceSecondsPerKm: number | null): string {
+		if (paceSecondsPerKm == null) return 'Ukjent tempo';
+		const minutes = Math.floor(paceSecondsPerKm / 60);
+		const seconds = Math.round(paceSecondsPerKm % 60)
+			.toString()
+			.padStart(2, '0');
+		return `${minutes}:${seconds} /km`;
+	}
+
+	function formatWorkoutTimestamp(timestamp: string): string {
+		return new Intl.DateTimeFormat('nb-NO', {
+			weekday: 'short',
+			day: 'numeric',
+			month: 'short',
+			hour: '2-digit',
+			minute: '2-digit'
+		}).format(new Date(timestamp));
 	}
 
 	async function openConversation(convId: string) {
@@ -918,6 +974,30 @@
 						</button>
 					</div>
 
+					{#if selectedWorkout}
+						<section class="chat-workout-context" aria-label="Valgt treningsøkt">
+							<div class="chat-workout-head">
+								<div>
+									<p class="chat-workout-kicker">Valgt økt</p>
+									<h3>{selectedWorkout.title}</h3>
+									<p>{formatWorkoutTimestamp(selectedWorkout.timestamp)}</p>
+								</div>
+								<button class="chat-workout-data-btn" onclick={() => (tab = 'data')}>Se data</button>
+							</div>
+							<div class="chat-workout-metrics">
+								<span>{formatWorkoutDistance(selectedWorkout.distanceKm)}</span>
+								<span>{formatWorkoutDuration(selectedWorkout.durationSeconds)}</span>
+								<span>{formatWorkoutPace(selectedWorkout.paceSecondsPerKm)}</span>
+								{#if selectedWorkout.avgHeartRate != null}
+									<span>Puls {Math.round(selectedWorkout.avgHeartRate)}</span>
+								{/if}
+							</div>
+							{#if selectedWorkout.sourceName}
+								<p class="chat-workout-source">Kilde: {selectedWorkout.sourceName}</p>
+							{/if}
+						</section>
+					{/if}
+
 					<div class="chat-messages" aria-live="polite" aria-label="Samtalehistorikk">
 						{#if activeConversationMessages.length === 0}
 							<p class="chat-empty">Ingen meldinger ennå — start samtalen nedenfor.</p>
@@ -948,7 +1028,11 @@
 						<ChatInput
 							placeholder="Spør om {theme.name.toLowerCase()}…"
 							disabled={chatLoading}
-							onsubmit={sendMessage}
+							initialValue={chatDraft}
+							onsubmit={(message) => {
+								chatDraft = '';
+								return sendMessage(message);
+							}}
 						/>
 					</div>
 				</div>
@@ -2399,6 +2483,73 @@ Eksempel:
 
 	.conv-back-btn:hover {
 		color: var(--tp-text);
+	}
+
+	.chat-workout-context {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		padding: 14px 16px;
+		margin: 0 0 12px;
+		border-radius: 18px;
+		background: color-mix(in srgb, var(--theme-hue, #7c8ef5) 12%, #0e1118 88%);
+		border: 1px solid color-mix(in srgb, var(--theme-hue, #7c8ef5) 34%, #1d2230 66%);
+	}
+
+	.chat-workout-head {
+		display: flex;
+		justify-content: space-between;
+		gap: 12px;
+		align-items: flex-start;
+	}
+
+	.chat-workout-head h3,
+	.chat-workout-head p,
+	.chat-workout-kicker,
+	.chat-workout-source {
+		margin: 0;
+	}
+
+	.chat-workout-kicker {
+		font-size: 0.72rem;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: #b7c3df;
+	}
+
+	.chat-workout-head h3 {
+		font-size: 1rem;
+		color: #f2f5ff;
+	}
+
+	.chat-workout-head p,
+	.chat-workout-source {
+		font-size: 0.88rem;
+		color: #b7c3df;
+	}
+
+	.chat-workout-metrics {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+
+	.chat-workout-metrics span {
+		padding: 6px 10px;
+		border-radius: 999px;
+		background: rgba(10, 13, 20, 0.46);
+		border: 1px solid rgba(196, 206, 255, 0.14);
+		font-size: 0.84rem;
+		color: #edf1ff;
+	}
+
+	.chat-workout-data-btn {
+		padding: 8px 12px;
+		border-radius: 999px;
+		border: 1px solid rgba(196, 206, 255, 0.18);
+		background: rgba(10, 13, 20, 0.46);
+		color: #edf1ff;
+		cursor: pointer;
 	}
 
 </style>
