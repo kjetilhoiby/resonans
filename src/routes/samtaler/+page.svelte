@@ -7,7 +7,7 @@
 	import ChatStatusWidget from '$lib/components/domain/ChatStatusWidget.svelte';
 	import AnnotatedImageCard from '$lib/components/domain/AnnotatedImageCard.svelte';
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
-	import type { WidgetDraft } from '$lib/ai/tools/propose-widget';
+	import type { WidgetCreationFlow } from '$lib/flows/widget-creation/flow';
 	import type { WeatherStatusWidget } from '$lib/ai/tools/weather-forecast';
 	import type { PhotoAnnotationResult } from '$lib/ai/tools/annotate-photo';
 
@@ -26,7 +26,8 @@
 		content: string;
 		timestamp: string;
 		imageUrl?: string | null;
-		widgetProposal?: WidgetDraft | null;
+		widgetProposal?: import('$lib/artifacts/widget-draft').WidgetDraft | null;
+		widgetFlow?: WidgetCreationFlow | null;
 		statusWidget?: WeatherStatusWidget | null;
 		photoAnnotation?: PhotoAnnotationResult | null;
 		photoAnnotationImageUrl?: string | null;
@@ -53,6 +54,7 @@
 				text: m.content,
 				imageUrl: m.imageUrl ?? null,
 				widgetProposal: m.widgetProposal ?? null,
+				widgetFlow: m.widgetFlow ?? null,
 				statusWidget: m.statusWidget ?? null,
 				photoAnnotation: m.photoAnnotation ?? null,
 				photoAnnotationImageUrl: m.photoAnnotationImageUrl ?? null
@@ -64,7 +66,8 @@
 		role: 'user' | 'assistant';
 		text: string;
 		imageUrl: string | null;
-		widgetProposal?: WidgetDraft | null;
+		widgetProposal?: import('$lib/artifacts/widget-draft').WidgetDraft | null;
+		widgetFlow?: WidgetCreationFlow | null;
 		statusWidget?: WeatherStatusWidget | null;
 		photoAnnotation?: PhotoAnnotationResult | null;
 		photoAnnotationImageUrl?: string | null;
@@ -74,6 +77,8 @@
 	let chatLoading = $state(false);
 	let chatError = $state('');
 	let creatingConversation = $state(false);
+	let streamingText = $state('');
+	let streamingStatus = $state('');
 
 	$effect(() => {
 		chatMessages = toChatMessages(data.messages);
@@ -109,30 +114,88 @@
 		if (!conversation) return;
 		chatMessages = [...chatMessages, { id: crypto.randomUUID(), role: 'user', text, imageUrl: null }];
 		chatLoading = true;
+		streamingText = '';
+		streamingStatus = 'Starter...';
 		chatError = '';
+
 		try {
-			const res = await fetch('/api/chat', {
+			const res = await fetch('/api/chat-stream-messages', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ message: text, conversationId: conversation.id })
+				body: JSON.stringify({
+					mode: 'proxy',
+					message: text,
+					conversationId: conversation.id,
+					routing: {},
+					systemPrompt: '',
+					messages: []
+				})
 			});
-			if (!res.ok) throw new Error(await res.text());
-			const payload = await res.json();
+			if (!res.ok || !res.body) throw new Error('Kunne ikke starte streaming');
+
+			const reader = res.body.getReader();
+			const decoder = new TextDecoder();
+			let buffer = '';
+			let finalPayload: any = null;
+
+			while (true) {
+				const { done, value } = await reader.read();
+				if (done) break;
+
+				buffer += decoder.decode(value, { stream: true });
+				const lines = buffer.split('\n');
+
+				for (let i = 0; i < lines.length - 1; i++) {
+					const line = lines[i].trim();
+					if (!line.startsWith('data: ')) continue;
+
+					const event = JSON.parse(line.slice(6));
+					if (event.type === 'status') {
+						streamingStatus = event.data?.message ?? 'Resonans tenker...';
+					} else if (event.type === 'token') {
+						streamingStatus = '';
+						streamingText += event.data?.token ?? '';
+					} else if (event.type === 'complete') {
+						finalPayload = event.data;
+					}
+				}
+
+				buffer = lines[lines.length - 1];
+			}
+
+			const finalLine = buffer.trim();
+			if (finalLine.startsWith('data: ')) {
+				const event = JSON.parse(finalLine.slice(6));
+				if (event.type === 'complete') {
+					finalPayload = event.data;
+				}
+			}
+
+			if (!finalPayload) {
+				throw new Error('Mangler avsluttende stream-payload');
+			}
+
 			chatMessages = [
 				...chatMessages,
 				{
 					id: crypto.randomUUID(),
 					role: 'assistant',
-					text: payload.message,
+					text: finalPayload.message ?? finalPayload.fullMessage ?? streamingText,
 					imageUrl: null,
-					widgetProposal: payload.widgetProposal ?? null,
-					statusWidget: payload.statusWidget ?? null,
-					photoAnnotation: payload.photoAnnotation ?? null,
-					photoAnnotationImageUrl: payload.photoAnnotationImageUrl ?? null
+					widgetProposal: finalPayload.widgetProposal ?? null,
+					widgetFlow: finalPayload.widgetFlow ?? null,
+					statusWidget: finalPayload.statusWidget ?? null,
+					photoAnnotation: finalPayload.photoAnnotation ?? null,
+					photoAnnotationImageUrl: finalPayload.photoAnnotationImageUrl ?? null
 				}
 			];
+
+			streamingText = '';
+			streamingStatus = '';
 		} catch {
 			chatError = 'Noe gikk galt. Prøv igjen.';
+			streamingText = '';
+			streamingStatus = '';
 		} finally {
 			chatLoading = false;
 		}
@@ -224,7 +287,11 @@
 				{/if}
 			{/each}
 			{#if chatLoading}
-				<TriageCard loading={true} />
+				{#if streamingText}
+					<TriageCard text={streamingText} streaming={true} />
+				{:else}
+					<TriageCard loading={true} status={streamingStatus} />
+				{/if}
 			{/if}
 			{#if chatError}
 				<p class="cp-error">{chatError}</p>

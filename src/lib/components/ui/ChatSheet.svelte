@@ -10,6 +10,7 @@
 	import { tick } from 'svelte';
 	import ChatInput from './ChatInput.svelte';
 	import TriageCard from '../composed/TriageCard.svelte';
+	import { streamProxyChat } from '$lib/client/proxy-chat-stream';
 
 	interface ChatMsg {
 		role: 'user' | 'assistant';
@@ -26,6 +27,8 @@
 
 	let messages = $state<ChatMsg[]>([]);
 	let loading = $state(false);
+	let streamingText = $state('');
+	let streamingStatus = $state('');
 	let messagesEl = $state<HTMLDivElement | null>(null);
 
 	async function scrollToBottom() {
@@ -38,21 +41,30 @@
 	async function sendMessage(text: string) {
 		messages = [...messages, { role: 'user', text }];
 		loading = true;
+		streamingText = '';
+		streamingStatus = 'Starter...';
 		await scrollToBottom();
 
 		try {
-			const res = await fetch('/api/chat', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ message: text })
+			const data = await streamProxyChat({
+				message: text,
+				onStatus: async (status) => {
+					streamingStatus = status;
+					await scrollToBottom();
+				},
+				onToken: async (token) => {
+					streamingStatus = '';
+					streamingText += token;
+					await scrollToBottom();
+				}
 			});
-			if (!res.ok) throw new Error();
-			const data = await res.json();
 			messages = [...messages, { role: 'assistant', text: data.message }];
 			if (data.checklistChanged) onChecklistCreated?.();
 		} catch {
 			messages = [...messages, { role: 'assistant', text: 'Noe gikk galt. Prøv igjen.' }];
 		} finally {
+			streamingText = '';
+			streamingStatus = '';
 			loading = false;
 			await scrollToBottom();
 		}
@@ -94,7 +106,11 @@
 			{/if}
 		{/each}
 		{#if loading}
-			<TriageCard loading={true} />
+			{#if streamingText}
+				<TriageCard text={streamingText} streaming={true} />
+			{:else}
+				<TriageCard loading={true} status={streamingStatus} />
+			{/if}
 		{/if}
 	</div>
 

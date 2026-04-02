@@ -21,9 +21,11 @@
 		text?: string;
 		actions?: Action[];
 		loading?: boolean;
+		streaming?: boolean;
+		status?: string;
 	}
 
-	let { text = '', actions = [], loading = false }: Props = $props();
+	let { text = '', actions = [], loading = false, streaming = false, status = '' }: Props = $props();
 
 	marked.setOptions({
 		breaks: true,
@@ -38,11 +40,25 @@
 		<div class="tc-header">
 			<span class="tc-avatar" aria-hidden="true"><Icon name="chat" size={15} /></span>
 			<div class="tc-text tc-loading-text">
-				<span class="tc-loading-label">Resonans svarer</span>
-				<span class="tc-loading-dots" aria-hidden="true">
-					<span></span><span></span><span></span>
-				</span>
+				{#if status}
+					<span class="tc-loading-label tc-status-label">{status}</span>
+					<span class="tc-loading-dots" aria-hidden="true">
+						<span></span><span></span><span></span>
+					</span>
+				{:else}
+					<span class="tc-loading-label">Resonans svarer</span>
+					<span class="tc-loading-dots" aria-hidden="true">
+						<span></span><span></span><span></span>
+					</span>
+				{/if}
 			</div>
+		</div>
+	</div>
+{:else if streaming && text}
+	<div class="tc-card" role="status" aria-live="polite">
+		<div class="tc-header">
+			<span class="tc-avatar" aria-label="Resonans AI"><Icon name="chat" size={15} decorative={false} title="Resonans AI" /></span>
+			<div class="tc-text">{@html htmlContent}<span class="tc-cursor" aria-hidden="true">▌</span></div>
 		</div>
 	</div>
 {:else}
@@ -248,6 +264,28 @@
 		position: relative;
 		z-index: 1;
 		font-weight: 500;
+	}
+
+	.tc-status-label {
+		color: #9eabff;
+		font-size: 0.85rem;
+		font-weight: 400;
+		font-style: italic;
+		transition: all 0.3s ease;
+	}
+
+	.tc-cursor {
+		display: inline;
+		color: #7c8ef5;
+		opacity: 1;
+		margin-left: 1px;
+		animation: tcCursorBlink 0.9s step-end infinite;
+		font-size: 0.9em;
+	}
+
+	@keyframes tcCursorBlink {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0; }
 	}
 
 	.tc-loading-dots {

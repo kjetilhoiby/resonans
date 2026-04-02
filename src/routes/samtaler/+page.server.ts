@@ -35,6 +35,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			timestamp: m.createdAt.toISOString(),
 			imageUrl: m.imageUrl,
 			widgetProposal: (m.metadata as { widgetProposal?: unknown } | null)?.widgetProposal ?? null,
+			widgetFlow: (m.metadata as { widgetFlow?: unknown } | null)?.widgetFlow ?? null,
 			statusWidget: (m.metadata as { statusWidget?: unknown } | null)?.statusWidget ?? null,
 			photoAnnotation: (m.metadata as { photoAnnotation?: unknown } | null)?.photoAnnotation ?? null,
 			photoAnnotationImageUrl: (m.metadata as { photoAnnotationImageUrl?: unknown } | null)?.photoAnnotationImageUrl ?? null

@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { fly, slide } from 'svelte/transition';
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
+	import { streamProxyChat } from '$lib/client/proxy-chat-stream';
 
 	// Dashboard data
 	let dashboardData = $state<{
@@ -44,6 +45,8 @@
 	}>>([]);
 	let inputValue = $state('');
 	let isLoading = $state(false);
+	let streamingContent = $state('');
+	let streamingStatus = $state('');
 
 	// Hent dashboard data
 	onMount(async () => {
@@ -75,6 +78,8 @@
 		const userMessage = inputValue.trim();
 		inputValue = '';
 		isLoading = true;
+		streamingContent = '';
+		streamingStatus = 'Starter...';
 
 		// Legg til brukermelding
 		messages = [
@@ -88,27 +93,31 @@
 		];
 
 		try {
-			const res = await fetch('/api/chat', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ message: userMessage })
+			const data = await streamProxyChat({
+				message: userMessage,
+				onStatus: (status) => {
+					streamingStatus = status;
+				},
+				onToken: (token) => {
+					streamingStatus = '';
+					streamingContent += token;
+				}
 			});
 
-			if (res.ok) {
-				const data = await res.json();
-				messages = [
-					...messages,
-					{
-						id: crypto.randomUUID(),
-						role: 'assistant',
-						content: data.message,
-						timestamp: new Date()
-					}
-				];
-			}
+			messages = [
+				...messages,
+				{
+					id: crypto.randomUUID(),
+					role: 'assistant',
+					content: data.message,
+					timestamp: new Date()
+				}
+			];
 		} catch (error) {
 			console.error('Chat error:', error);
 		} finally {
+			streamingContent = '';
+			streamingStatus = '';
 			isLoading = false;
 		}
 	}
@@ -202,11 +211,11 @@
 				{/each}
 				
 				{#if isLoading}
-					<div class="loading-indicator">
-						<span class="loading-dot"></span>
-						<span class="loading-dot"></span>
-						<span class="loading-dot"></span>
-					</div>
+					<ChatMessage
+						role="assistant"
+						content={streamingContent || streamingStatus}
+						timestamp={new Date()}
+					/>
 				{/if}
 			</div>
 		{/if}
@@ -471,39 +480,5 @@
 	.send-btn:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
-	}
-
-	.loading-indicator {
-		display: flex;
-		gap: 0.5rem;
-		padding: 1rem;
-		justify-content: center;
-	}
-
-	.loading-dot {
-		width: 8px;
-		height: 8px;
-		background: var(--text-tertiary);
-		border-radius: 50%;
-		animation: pulse 1.4s infinite ease-in-out;
-	}
-
-	.loading-dot:nth-child(1) {
-		animation-delay: -0.32s;
-	}
-
-	.loading-dot:nth-child(2) {
-		animation-delay: -0.16s;
-	}
-
-	@keyframes pulse {
-		0%, 80%, 100% {
-			opacity: 0.4;
-			transform: scale(0.8);
-		}
-		40% {
-			opacity: 1;
-			transform: scale(1);
-		}
 	}
 </style>
