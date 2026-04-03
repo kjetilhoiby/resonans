@@ -31,7 +31,7 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 	const { id } = params;
 	const body = await request.json();
 
-	const { createOverride, overrideCategory } = body;
+	const { createOverride, overrideCategory, overrideSubcategory } = body;
 
 	if (createOverride && overrideCategory) {
 		// Get the merchant mapping to find the merchantKey
@@ -70,6 +70,14 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 					updatedAt: new Date()
 				}
 			});
+
+		// Also update subcategory on the mapping itself if provided
+		if (overrideSubcategory !== undefined) {
+			await db
+				.update(merchantMappings)
+				.set({ subcategory: overrideSubcategory || null })
+				.where(and(eq(merchantMappings.id, id), eq(merchantMappings.userId, userId)));
+		}
 
 		return json({ success: true, overrideCreated: true });
 	}

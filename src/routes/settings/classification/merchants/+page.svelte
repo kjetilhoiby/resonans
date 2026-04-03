@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { CATEGORIES, SUBCATEGORIES } from '$lib/integrations/transaction-categories-client';
 	import type { CategoryId } from '$lib/integrations/transaction-categories-client';
 
 	interface MerchantMapping {
@@ -26,6 +27,7 @@
 	let showOverrideModal = $state(false);
 	let selectedMapping = $state<MerchantMapping | null>(null);
 	let overrideCategory = $state('');
+	let overrideSubcategory = $state('');
 	let showBulkOverrideModal = $state(false);
 	let bulkFromCategory = $state('');
 	let bulkToCategory = $state('');
@@ -36,27 +38,7 @@
 	let analysisResult = $state<any>(null);
 	let analysisError = $state<string | null>(null);
 
-	const categoryOptions: Array<{ id: CategoryId; label: string; emoji: string }> = [
-		{ id: 'innskudd', label: 'Inntekter', emoji: '💵' },
-		{ id: 'dagligvarer', label: 'Dagligvarer', emoji: '🛒' },
-		{ id: 'kafe_og_restaurant', label: 'Kafe og restaurant', emoji: '🍽️' },
-		{ id: 'faste_boutgifter', label: 'Faste boutgifter', emoji: '🏠' },
-		{ id: 'annet_lan_og_gjeld', label: 'Lån og gjeld', emoji: '🏦' },
-		{ id: 'bil_og_transport', label: 'Transport og bil', emoji: '🚗' },
-		{ id: 'helse_og_velvaere', label: 'Helse og velvære', emoji: '💊' },
-		{ id: 'medier_og_underholdning', label: 'Medier og underholdning', emoji: '📱' },
-		{ id: 'hobby_og_fritid', label: 'Hobby og fritid', emoji: '🎉' },
-		{ id: 'hjem_og_hage', label: 'Hjem og hage', emoji: '🔨' },
-		{ id: 'klaer_og_utstyr', label: 'Klær og utstyr', emoji: '🛍️' },
-		{ id: 'barn', label: 'Barn', emoji: '👶' },
-		{ id: 'barnehage_og_sfo', label: 'Barnehage og SFO', emoji: '🎒' },
-		{ id: 'forsikring', label: 'Forsikring', emoji: '🛡️' },
-		{ id: 'bilforsikring_og_billan', label: 'Bilforsikring og billån', emoji: '🚙' },
-		{ id: 'sparing', label: 'Sparing', emoji: '💰' },
-		{ id: 'reise', label: 'Reise', emoji: '✈️' },
-		{ id: 'diverse', label: 'Diverse', emoji: '🔄' },
-		{ id: 'ukategorisert', label: 'Ukategorisert', emoji: '📦' }
-	];
+	const categoryOptions = Object.values(CATEGORIES);
 
 	onMount(async () => {
 		await loadMappings();
@@ -99,6 +81,7 @@
 	function openOverrideModal(mapping: MerchantMapping) {
 		selectedMapping = mapping;
 		overrideCategory = mapping.overrideCategory || mapping.category;
+		overrideSubcategory = mapping.subcategory || '';
 		showOverrideModal = true;
 	}
 
@@ -111,7 +94,8 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					createOverride: true,
-					overrideCategory
+					overrideCategory,
+					overrideSubcategory: overrideSubcategory || null
 				})
 			});
 
@@ -119,6 +103,7 @@
 				showOverrideModal = false;
 				selectedMapping = null;
 				overrideCategory = '';
+				overrideSubcategory = '';
 				await loadMappings();
 			} else {
 				alert('Kunne ikke opprette override');
@@ -601,12 +586,23 @@
 			</p>
 			<div class="form-group">
 				<label for="override-category">Velg kategori</label>
-				<select id="override-category" bind:value={overrideCategory} class="input">
+				<select id="override-category" bind:value={overrideCategory} onchange={() => overrideSubcategory = ''} class="input">
 					{#each categoryOptions as cat}
 						<option value={cat.id}>{cat.emoji} {cat.label}</option>
 					{/each}
 				</select>
 			</div>
+			{#if overrideCategory && SUBCATEGORIES[overrideCategory as CategoryId]?.length}
+				<div class="form-group">
+					<label for="override-subcategory">Velg underkategori (valgfritt)</label>
+					<select id="override-subcategory" bind:value={overrideSubcategory} class="input">
+						<option value="">— Ingen underkategori —</option>
+						{#each SUBCATEGORIES[overrideCategory as CategoryId]! as sub}
+							<option value={sub.key}>{sub.label}</option>
+						{/each}
+					</select>
+				</div>
+			{/if}
 			<div class="modal-actions">
 				<button type="button" onclick={createOverride} class="btn-primary">
 					{selectedMapping.hasOverride ? 'Oppdater override' : 'Opprett override'}

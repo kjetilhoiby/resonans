@@ -43,7 +43,8 @@ export async function getSparebank1Sensor(userId: string) {
 			eq(sensors.userId, userId),
 			eq(sensors.provider, 'sparebank1'),
 			eq(sensors.isActive, true)
-		)
+		),
+		orderBy: (sensors, { desc }) => [desc(sensors.lastSync)]
 	});
 }
 
@@ -216,44 +217,94 @@ export async function syncAllSparebank1Data(
 
 	if (transactionEvents.length > 0) {
 		// Step 1: Deduplicate within the new batch itself (by transactionId)
-		const seenIds = new Set<string>();
-		const uniqueNewEvents = transactionEvents.filter((e) => {
-			const txId = (e.metadata as any)?.transactionId;
-			if (!txId) return true; // Keep if no ID
-			if (seenIds.has(txId)) {
-				return false; // Skip duplicate within this batch
+		// Step 1: Deduplicate within this batch by semantic key
+		// SB1 does NOT issue stable transactionIds — the same transaction can appear
+		// with a new ID on every sync call (especially PENDING, but also BOOKED).
+		// Primary dedup must therefore be semantic: (accountId, date, description, amount).
+		// Prefer BOOKED over PENDING when both appear in the same batch.
+		const makeSemanticKey = (e: any): string => {
+			const date = e.timestamp.toISOString().split('T')[0];
+			const amount = Math.round((e.data.amount ?? 0) * 100);
+			return `${e.data.accountId}:${date}:${e.data.description}:${amount}`;
+		};
+		const batchMap = new Map<string, any>();
+		for (const e of transactionEvents) {
+			const key = makeSemanticKey(e);
+			const existing = batchMap.get(key);
+			if (!existing || e.data.bookingStatus === 'BOOKED') {
+				batchMap.set(key, e);
 			}
-			seenIds.add(txId);
-			return true;
-		});
+		}
+		const uniqueNewEvents = [...batchMap.values()];
 
 		console.log(`Filtered ${transactionEvents.length} -> ${uniqueNewEvents.length} unique transactions in batch`);
 
-		// Step 2: Deduplicate against existing API transactions (same source only)
+		// Step 2: Fetch existing semantic keys from DB; skip anything already stored.
+		// We fetch only from the relevant date range (earliest date in this batch) to
+		// avoid loading the entire transaction history on every sync.
+		const batchDates = uniqueNewEvents.map((e) => e.timestamp as Date);
+		const earliestDate = batchDates.length
+			? new Date(Math.min(...batchDates.map((d) => d.getTime())))
+			: new Date();
+
 		const existingRows = await db.execute(sql`
-			SELECT metadata->>'transactionId' as tx_id
+			SELECT
+				data->>'accountId'                          AS account_id,
+				timestamp::date                             AS date,
+				data->>'description'                        AS description,
+				ROUND((data->>'amount')::numeric, 2)        AS amount,
+				data->>'bookingStatus'                      AS booking_status
 			FROM sensor_events
 			WHERE sensor_id = ${sensor.id}
-			AND data_type = 'bank_transaction'
-			AND metadata->>'source' = 'api'
-			AND metadata->>'transactionId' IS NOT NULL
+			  AND data_type = 'bank_transaction'
+			  AND timestamp >= ${earliestDate.toISOString()}::timestamptz
 		`);
-		
-		const existingIds = new Set(
-			existingRows.map((r: any) => r.tx_id).filter(Boolean)
+
+		// Build a Set of existing semantic signatures
+		const existingSemanticKeys = new Set(
+			existingRows.map((r: any) =>
+				`${r.account_id}:${String(r.date).split('T')[0]}:${r.description}:${Math.round(Number(r.amount) * 100)}`
+			)
+		);
+		// Also track which existing entries are PENDING so we can upgrade them to BOOKED
+		const existingPendingKeys = new Set(
+			existingRows
+				.filter((r: any) => r.booking_status === 'PENDING')
+				.map((r: any) =>
+					`${r.account_id}:${String(r.date).split('T')[0]}:${r.description}:${Math.round(Number(r.amount) * 100)}`
+				)
 		);
 
-		const newEvents = uniqueNewEvents.filter((e) => {
-			const txId = (e.metadata as any)?.transactionId;
-			return !txId || !existingIds.has(txId);
-		});
+		// For incoming BOOKED transactions that match an existing PENDING record,
+		// delete the PENDING rows so the BOOKED version can be inserted cleanly.
+		const incomingBooked = uniqueNewEvents.filter((e) => e.data.bookingStatus === 'BOOKED');
+		for (const event of incomingBooked) {
+			const key = makeSemanticKey(event);
+			if (existingPendingKeys.has(key)) {
+				const date = event.timestamp.toISOString().split('T')[0];
+				const amount = Math.round((event.data.amount ?? 0) * 100) / 100;
+				await db.execute(sql`
+					DELETE FROM sensor_events
+					WHERE sensor_id = ${sensor.id}
+					  AND data_type = 'bank_transaction'
+					  AND data->>'bookingStatus' = 'PENDING'
+					  AND data->>'accountId' = ${event.data.accountId ?? ''}
+					  AND data->>'description' = ${event.data.description ?? ''}
+					  AND ROUND((data->>'amount')::numeric, 2) = ${amount}
+					  AND timestamp::date = ${date}::date
+				`);
+				existingSemanticKeys.delete(key); // allow BOOKED to be inserted
+			}
+		}
+
+		const newEvents = uniqueNewEvents.filter((e) => !existingSemanticKeys.has(makeSemanticKey(e)));
 
 		console.log(`Filtered ${uniqueNewEvents.length} -> ${newEvents.length} new transactions (not in DB)`);
 
 		if (newEvents.length > 0) {
 			const batchSize = 200;
 			for (let index = 0; index < newEvents.length; index += batchSize) {
-				await db.insert(sensorEvents).values(newEvents.slice(index, index + batchSize));
+				await db.insert(sensorEvents).values(newEvents.slice(index, index + batchSize)).onConflictDoNothing();
 			}
 		}
 

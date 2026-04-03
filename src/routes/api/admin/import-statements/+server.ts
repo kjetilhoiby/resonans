@@ -271,7 +271,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			if (newTxEvents.length > 0) {
 				const batchSize = 200;
 				for (let i = 0; i < newTxEvents.length; i += batchSize) {
-					await db.insert(sensorEvents).values(newTxEvents.slice(i, i + batchSize));
+					await db.insert(sensorEvents).values(newTxEvents.slice(i, i + batchSize)).onConflictDoNothing();
 				}
 			}
 

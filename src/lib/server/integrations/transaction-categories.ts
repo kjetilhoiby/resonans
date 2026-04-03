@@ -10,28 +10,12 @@ import {
 	loadTransactionMatchingRules,
 	type TransactionMatchingRule
 } from '$lib/server/classification-overrides';
+import { CATEGORIES } from '$lib/integrations/transaction-categories-client';
 import type { CategoryId, Category } from '$lib/integrations/transaction-categories-client';
 
 // Re-export types for external consumers
 export type { CategoryId, Category };
-
-export const CATEGORIES: Record<CategoryId, Category> = {
-	dagligvare:    { id: 'dagligvare',   label: 'Dagligvare',            emoji: '🛒', defaultFixed: false },
-	mat:           { id: 'mat',          label: 'Mat og drikke',          emoji: '🍽️', defaultFixed: false },
-	bolig:         { id: 'bolig',        label: 'Bolig',                  emoji: '🏠', defaultFixed: true  },
-	lån:           { id: 'lån',          label: 'Lån og avdrag',          emoji: '🏦', defaultFixed: true  },
-	transport:     { id: 'transport',    label: 'Transport',              emoji: '🚗', defaultFixed: false },
-	helse:         { id: 'helse',        label: 'Helse',                  emoji: '💊', defaultFixed: false },
-	abonnement:    { id: 'abonnement',   label: 'Abonnementer',           emoji: '📱', defaultFixed: true  },
-	underholdning: { id: 'underholdning',label: 'Underholdning',          emoji: '🎉', defaultFixed: false },
-	shopping:      { id: 'shopping',     label: 'Shopping',               emoji: '🛍️', defaultFixed: false },
-	barn:          { id: 'barn',         label: 'Barn og familie',        emoji: '👶', defaultFixed: true  },
-	forsikring:    { id: 'forsikring',   label: 'Forsikring',             emoji: '🛡️', defaultFixed: true  },
-	sparing:       { id: 'sparing',      label: 'Sparing',                emoji: '💰', defaultFixed: true  },
-	overføring:    { id: 'overføring',   label: 'Overføringer',           emoji: '🔄', defaultFixed: false },
-	lønn:          { id: 'lønn',         label: 'Lønn og inntekt',        emoji: '💵', defaultFixed: false },
-	annet:         { id: 'annet',        label: 'Annet',                  emoji: '📦', defaultFixed: false },
-};
+export { CATEGORIES };
 
 /**
  * Transaction matching rules have been moved to database table: transaction_matching_rules
@@ -118,18 +102,19 @@ export function categorizeTransaction(
 
 	// SB1 typeText fallback mapping
 	const sb1Map: Record<string, CategoryId> = {
-		'mat og drikke': 'dagligvare',
-		'dagligvarer': 'dagligvare',
-		'restaurant': 'mat',
-		'transport': 'transport',
-		'reise': 'transport',
-		'flyreise': 'transport',
-		'helse': 'helse',
-		'underholdning': 'underholdning',
-		'shopping': 'shopping',
-		'klær': 'shopping',
-		'lønn': 'lønn',
-		'overføring': 'overføring',
+		'mat og drikke': 'dagligvarer',
+		'dagligvarer': 'dagligvarer',
+		'restaurant': 'kafe_og_restaurant',
+		'kafe': 'kafe_og_restaurant',
+		'transport': 'bil_og_transport',
+		'reise': 'reise',
+		'flyreise': 'reise',
+		'helse': 'helse_og_velvaere',
+		'underholdning': 'medier_og_underholdning',
+		'shopping': 'klaer_og_utstyr',
+		'klær': 'klaer_og_utstyr',
+		'lønn': 'innskudd',
+		'overføring': 'diverse',
 		'sparing': 'sparing',
 		'forsikring': 'forsikring',
 	};
@@ -144,12 +129,12 @@ export function categorizeTransaction(
 
 	// Income fallback
 	if (amount > 0) {
-		const cat = CATEGORIES['lønn'];
-		return { category: 'lønn', label: cat.label, emoji: cat.emoji, isFixed: false };
+		const cat = CATEGORIES['innskudd'];
+		return { category: 'innskudd', label: cat.label, emoji: cat.emoji, isFixed: false };
 	}
 
-	const cat = CATEGORIES['annet'];
-	return { category: 'annet', label: cat.label, emoji: cat.emoji, isFixed: false };
+	const cat = CATEGORIES['ukategorisert'];
+	return { category: 'ukategorisert', label: cat.label, emoji: cat.emoji, isFixed: false };
 }
 
 /**
