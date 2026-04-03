@@ -21,6 +21,7 @@ export const POST: RequestHandler = async ({ locals }) => {
 
 	let sent = 0;
 	let removed = 0;
+	const errors: string[] = [];
 
 	for (const sub of subscriptions) {
 		const result = await sendWebPush(
@@ -39,6 +40,8 @@ export const POST: RequestHandler = async ({ locals }) => {
 			}
 		);
 
+		console.log(`[Push Test] sub=${sub.endpoint.substring(0, 50)}... ok=${result.ok} status=${result.statusCode} error=${result.error}`);
+
 		if (result.ok) {
 			sent += 1;
 			await db
@@ -48,7 +51,10 @@ export const POST: RequestHandler = async ({ locals }) => {
 			continue;
 		}
 
-		const gone = result.statusCode === 404 || result.statusCode === 410;
+		errors.push(`[${result.statusCode ?? 'no-status'}] ${result.error ?? 'unknown'}`);
+
+		// 400, 404, 410 = subscription is invalid/expired, remove it
+		const gone = result.statusCode === 400 || result.statusCode === 404 || result.statusCode === 410;
 		if (gone) {
 			removed += 1;
 			await db.delete(webPushSubscriptions).where(eq(webPushSubscriptions.id, sub.id));
@@ -60,5 +66,5 @@ export const POST: RequestHandler = async ({ locals }) => {
 		}
 	}
 
-	return json({ success: true, sent, removed, total: subscriptions.length });
+	return json({ success: true, sent, removed, total: subscriptions.length, errors });
 };

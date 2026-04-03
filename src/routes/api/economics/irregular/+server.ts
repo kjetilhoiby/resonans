@@ -7,6 +7,7 @@ import {
 	type CategoryId
 } from '$lib/server/integrations/transaction-categories';
 import { loadMerchantMappings } from '$lib/server/integrations/spending-analyzer';
+import { loadClassificationOverrides, loadTransactionMatchingRules } from '$lib/server/classification-overrides';
 import type { RequestHandler } from './$types';
 
 // Categories excluded from this view
@@ -95,7 +96,11 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		return json({ merchants: [], monthsInRange: monthsBack, totalAmount: 0 } as IrregularResponse);
 	}
 
-	const merchantMappings = await loadMerchantMappings(userId);
+	const [merchantMappings, transactionOverrideCache, transactionRules] = await Promise.all([
+		loadMerchantMappings(userId),
+		loadClassificationOverrides(userId, 'transaction'),
+		loadTransactionMatchingRules()
+	]);
 
 	// Build merchant groups
 	type TxRow = {
@@ -117,7 +122,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		const abs = Math.abs(amount);
 		if (abs < minAmount) continue;
 
-		const cat = categorizeTransaction(r.description, r.typeText, amount, merchantMappings);
+		const cat = categorizeTransaction(r.description, r.typeText, amount, merchantMappings, transactionOverrideCache, transactionRules);
 		if (EXCLUDED_CATEGORIES.includes(cat.category)) continue;
 
 		const key = (r.description ?? 'ukjent').toLowerCase().trim();

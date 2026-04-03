@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { CATEGORIES, type CategoryId } from '$lib/integrations/transaction-categories-client';
+
 	interface Tx {
 		date: string;
 		description: string;
@@ -18,6 +20,8 @@
 
 	let search = $state('');
 	let selectedCategory = $state<string | null>(null);
+	let editingTxIndex = $state<number | null>(null);
+	let savingOverride = $state(false);
 
 	const categories = $derived(
 		[...new Map(transactions.map((t) => [t.category, { id: t.category, label: t.label, emoji: t.emoji }])).values()]
@@ -51,6 +55,44 @@
 
 	function formatDate(iso: string): string {
 		return new Intl.DateTimeFormat('nb-NO', { day: '2-digit', month: '2-digit' }).format(new Date(iso));
+	}
+
+	async function saveOverride(tx: Tx, newCategoryId: CategoryId) {
+		if (newCategoryId === tx.category) {
+			editingTxIndex = null;
+			return;
+		}
+
+		savingOverride = true;
+		try {
+			const res = await fetch('/api/classification-overrides', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					domain: 'transaction',
+					description: tx.description,
+					amount: tx.amount,
+					correctedCategory: newCategoryId
+				})
+			});
+
+			if (!res.ok) {
+				const data = await res.json();
+				throw new Error(data.error || 'Kunde ikke lagre overstyring');
+			}
+
+			// Oppdater lokal visning
+			const newCat = CATEGORIES[newCategoryId];
+			tx.category = newCat.id;
+			tx.emoji = newCat.emoji;
+			tx.label = newCat.label;
+			editingTxIndex = null;
+		} catch (err) {
+			console.error('Failed to save override:', err);
+			alert('Kunne ikke lagre kategori-endring. Prøv igjen.');
+		} finally {
+			savingOverride = false;
+		}
 	}
 </script>
 
@@ -113,14 +155,52 @@
 			<p class="tl-empty">Ingen transaksjoner matcher søket.</p>
 		{:else}
 			<ul class="tl-list">
-				{#each filtered as tx}
+				{#each filtered as tx, idx}
 					<li class="tl-item">
-						<span class="tl-emoji">{tx.emoji}</span>
-						<div class="tl-item-main">
-							<p class="tl-desc">{tx.description.length > 36 ? `${tx.description.slice(0, 34)}…` : tx.description}</p>
-							<p class="tl-meta">{tx.label} · {formatDate(tx.date)}</p>
-						</div>
-						<p class="tl-amount">{formatNOK(Math.abs(tx.amount))}</p>
+						{#if editingTxIndex === idx}
+							<div class="tl-category-picker">
+								<div class="tl-picker-header">
+									<span class="tl-picker-title">Velg kategori:</span>
+									<button
+										class="tl-picker-close"
+										type="button"
+										onclick={() => (editingTxIndex = null)}
+										disabled={savingOverride}
+										aria-label="Avbryt"
+									>
+										✕
+									</button>
+								</div>
+								<div class="tl-picker-categories">
+									{#each Object.values(CATEGORIES) as cat}
+										<button
+											class="tl-picker-cat"
+											class:tl-picker-cat-active={cat.id === tx.category}
+											type="button"
+											disabled={savingOverride}
+											onclick={() => saveOverride(tx, cat.id)}
+										>
+											{cat.emoji} {cat.label}
+										</button>
+									{/each}
+								</div>
+							</div>
+						{:else}
+							<button
+								class="tl-emoji-btn"
+								type="button"
+								onclick={() => (editingTxIndex = idx)}
+								aria-label="Endre kategori"
+								title="Endre kategori"
+							>
+								{tx.emoji}
+							</button>
+							<div class="tl-item-main">
+								<p class="tl-desc">{tx.description.length > 36 ? `${tx.description.slice(0, 34)}…` : tx.description}</p>
+								<p class="tl-meta">{tx.label} · {formatDate(tx.date)}</p>
+							</div>
+							<p class="tl-amount">{formatNOK(Math.abs(tx.amount))}</p>
+						{/if}
 					</li>
 				{/each}
 			</ul>
@@ -285,11 +365,6 @@
 		border-bottom: none;
 	}
 
-	.tl-emoji {
-		font-size: 1.1rem;
-		text-align: center;
-	}
-
 	.tl-item-main {
 		display: flex;
 		flex-direction: column;
@@ -318,5 +393,106 @@
 		font-weight: 600;
 		color: #ccc;
 		white-space: nowrap;
+	}
+
+	.tl-emoji-btn {
+		font-size: 1.1rem;
+		text-align: center;
+		background: transparent;
+		border: 1px solid transparent;
+		border-radius: 6px;
+		padding: 2px 4px;
+		cursor: pointer;
+		transition: all 0.15s;
+		width: 2rem;
+		height: 2rem;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.tl-emoji-btn:hover {
+		background: #1a1a1a;
+		border-color: #2a2a2a;
+	}
+
+	.tl-category-picker {
+		grid-column: 1 / -1;
+		background: #141414;
+		border: 1px solid #2a2a2a;
+		border-radius: 12px;
+		padding: 12px;
+		margin: -4px 0;
+	}
+
+	.tl-picker-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 10px;
+	}
+
+	.tl-picker-title {
+		font-size: 0.8rem;
+		font-weight: 600;
+		color: #999;
+	}
+
+	.tl-picker-close {
+		background: transparent;
+		border: none;
+		color: #666;
+		font-size: 1.2rem;
+		cursor: pointer;
+		padding: 0;
+		width: 24px;
+		height: 24px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.tl-picker-close:hover:not(:disabled) {
+		color: #aaa;
+	}
+
+	.tl-picker-close:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.tl-picker-categories {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+		gap: 6px;
+	}
+
+	.tl-picker-cat {
+		background: #1a1a1a;
+		border: 1px solid #2a2a2a;
+		border-radius: 8px;
+		padding: 8px;
+		font: inherit;
+		font-size: 0.75rem;
+		color: #bbb;
+		cursor: pointer;
+		text-align: left;
+		transition: all 0.15s;
+	}
+
+	.tl-picker-cat:hover:not(:disabled) {
+		background: #222;
+		border-color: #3a3a3a;
+	}
+
+	.tl-picker-cat:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	.tl-picker-cat-active {
+		background: #1e2550;
+		border-color: #3a4a85;
+		color: #a8b4f8;
 	}
 </style>

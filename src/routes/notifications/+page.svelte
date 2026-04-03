@@ -170,9 +170,18 @@
 				throw new Error(data.error || 'Kunne ikke sende test push');
 			}
 			pushResult = {
-				success: true,
-				message: `Sendte test-push til ${data.sent}/${data.total} abonnement(er).`
+				success: data.sent > 0,
+				message: data.sent > 0
+					? `✅ Sendte test-push til ${data.sent}/${data.total} aktive abonnement(er).${data.removed > 0 ? ` (Fjernet ${data.removed} utdaterte)` : ''}`
+					: `❌ Sendte 0/${data.total}. ${data.removed > 0 ? `Fjernet ${data.removed} utdaterte abonnement. Prøv å deaktivere og aktivere Push på nytt.` : `Feil: ${Array.isArray(data.errors) && data.errors.length > 0 ? data.errors.join(', ') : 'Ukjent'}`}`
 			};
+			
+			// Refresh status and debug info after test
+			await new Promise(resolve => setTimeout(resolve, 200));
+			await refreshPushStatus();
+			if (debugInfo) {
+				await fetchDebugInfo();
+			}
 		} catch (error) {
 			pushResult = {
 				success: false,

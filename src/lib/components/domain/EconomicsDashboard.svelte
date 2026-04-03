@@ -178,7 +178,7 @@
 	);
 
 	const groceryCategory = $derived(
-		monthSpending.categories.find((c) => c.category === 'dagligvare') ?? null
+		monthSpending.categories.find((c) => c.category === 'dagligvarer') ?? null
 	);
 	const grocerySpentSoFar = $derived(groceryCategory?.amount ?? 0);
 	const groceryGoalMonthly = $derived(

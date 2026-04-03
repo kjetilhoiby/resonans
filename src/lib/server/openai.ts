@@ -91,10 +91,10 @@ VIKTIG: Bruk alltid payPeriod: 'current' i stedet for month når bruker spør om
 
 **AMOUNT-WIDGET MED KATEGORIFILTER:**
 For «forbruk dagligvare», «matkostnader», «transport» etc.: bruk ALLTID filterCategory når du oppretter amount-widget. Uten filterCategory viser widgeten ALLE utgifter summert.
-- "Vis dagligvareforbruk" → metricType: 'amount', filterCategory: 'dagligvare', aggregation: 'sum'
-- "Matkostnader per dag" → metricType: 'amount', filterCategory: 'mat', aggregation: 'avg'
-- "Transport denne måneden" → metricType: 'amount', filterCategory: 'transport', aggregation: 'sum', range: 'current_month'
-Gyldige kategorier: dagligvare, mat, bolig, transport, helse, abonnement, underholdning, shopping, barn, forsikring, sparing, overføring, lønn, annet
+- "Vis dagligvareforbruk" → metricType: 'amount', filterCategory: 'dagligvarer', aggregation: 'sum'
+- "Matkostnader per dag" → metricType: 'amount', filterCategory: 'kafe_og_restaurant', aggregation: 'avg'
+- "Transport denne måneden" → metricType: 'amount', filterCategory: 'bil_og_transport', aggregation: 'sum', range: 'current_month'
+Gyldige kategorier: innskudd, dagligvarer, kafe_og_restaurant, faste_boutgifter, annet_lan_og_gjeld, bil_og_transport, helse_og_velvaere, medier_og_underholdning, hobby_og_fritid, hjem_og_hage, klaer_og_utstyr, barn, barnehage_og_sfo, forsikring, bilforsikring_og_billan, sparing, reise, diverse, ukategorisert
 
 **AI-REGISTRERINGER:**
 Du kan registrere data fra skjermbilder og brukerens input:

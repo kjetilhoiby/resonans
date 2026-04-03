@@ -4,6 +4,7 @@ import { sensorEvents } from '$lib/db/schema';
 import { and, eq, sql } from 'drizzle-orm';
 import { categorizeTransaction } from '$lib/server/integrations/transaction-categories';
 import { loadMerchantMappings } from '$lib/server/integrations/spending-analyzer';
+import { loadClassificationOverrides, loadTransactionMatchingRules } from '$lib/server/classification-overrides';
 import type { RequestHandler } from './$types';
 
 /**
@@ -38,7 +39,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 				sql`timestamp >= ${cutoff.toISOString()}`
 			);
 
-	const [rows, mappings] = await Promise.all([
+	const [rows, mappings, transactionOverrideCache, transactionRules] = await Promise.all([
 		db
 			.select({
 				timestamp: sensorEvents.timestamp,
@@ -49,7 +50,9 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 			})
 			.from(sensorEvents)
 			.where(where),
-		loadMerchantMappings(userId)
+		loadMerchantMappings(userId),
+		loadClassificationOverrides(userId, 'transaction'),
+		loadTransactionMatchingRules()
 	]);
 
 	if (rows.length === 0) {
@@ -86,7 +89,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		const amount = Number(r.amount) || 0;
 		if (amount > 0) { totalIncome += amount; continue; } // skip income from spending views
 
-		const cat = categorizeTransaction(r.description, r.typeText, amount, mappings);
+		const cat = categorizeTransaction(r.description, r.typeText, amount, mappings, transactionOverrideCache, transactionRules);
 		const subcategory = (mappings.get((r.description ?? '').toLowerCase().trim()) as any)?.subcategory ?? null;
 
 		txs.push({

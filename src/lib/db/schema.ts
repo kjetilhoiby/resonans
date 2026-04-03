@@ -201,7 +201,7 @@ export const userWidgets = pgTable('user_widgets', {
 	thresholdWarn: decimal('threshold_warn'),               // Verdi under/over hvilken widgeten viser advarsel
 	thresholdSuccess: decimal('threshold_success'),         // Verdi over/under hvilken widgeten viser suksess
 	unit: text('unit').notNull(),                           // 'kg'|'h'|'km'|'kr'|'skritt'|'slag/min' etc.
-	filterCategory: text('filter_category'),                // Valgfri kategorifilter for amount-metrikk (f.eks. 'dagligvare', 'mat', 'transport')
+	filterCategory: text('filter_category'),                // Valgfri kategorifilter for amount-metrikk (f.eks. 'dagligvarer', 'kafe_og_restaurant', 'bil_og_transport')
 	color: text('color').notNull().default('#7c8ef5'),      // Hex-farge for widget
 	pinned: boolean('pinned').default(false).notNull(),     // Vises på hjemmeskjerm
 	sortOrder: integer('sort_order').default(0).notNull(),  // Rekkefølge på hjemmeskjerm
@@ -591,6 +591,78 @@ export const merchantMappings = pgTable('merchant_mappings', {
 }, (table) => ({
 	uniqueUserMerchant: unique().on(table.userId, table.merchantKey),
 	idxUserId: index('merchant_mappings_user_id_idx').on(table.userId)
+}));
+
+/**
+ * Per-user manual overrides that should take precedence over heuristic classification.
+ * Used for both transaction and task-domain categorization.
+ */
+export const classificationOverrides = pgTable('classification_overrides', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id).notNull(),
+	/** Domain for the override: 'transaction' | 'task' */
+	domain: text('domain').notNull(),
+	/** Stable normalized key for input sample (e.g. merchant/signature or activity signature) */
+	fingerprint: text('fingerprint').notNull(),
+	/** User-corrected category to enforce for the matching fingerprint */
+	correctedCategory: text('corrected_category').notNull(),
+	/** How many times this override has been confirmed by the user */
+	weight: integer('weight').notNull().default(1),
+	/** optional source descriptor ('manual_ui', etc.) */
+	source: text('source').notNull().default('manual_ui'),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	uniqueUserDomainFingerprint: unique().on(table.userId, table.domain, table.fingerprint),
+	idxUserDomain: index('classification_overrides_user_domain_idx').on(table.userId, table.domain)
+}));
+
+/**
+ * Task classification rules - global keyword-based matching rules for activity → task category mapping.
+ * Replaces hardcoded TASK_MATCH_RULES array from activities.ts
+ */
+export const taskClassificationRules = pgTable('task_classification_rules', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	/** Category identifier (e.g. 'workout', 'relationship', 'mental') */
+	category: text('category').notNull(),
+	/** Keywords to match against (e.g. ['trening', 'løp', 'km', 'workout']) */
+	keywords: text('keywords').array().notNull(),
+	/** Priority/weight for matching (default: 2 per keyword match) */
+	priority: integer('priority').notNull().default(2),
+	/** Whether this rule is active */
+	active: boolean('active').notNull().default(true),
+	/** Optional description for admin UI */
+	description: text('description'),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	idxCategory: index('task_classification_rules_category_idx').on(table.category),
+	idxActive: index('task_classification_rules_active_idx').on(table.active)
+}));
+
+/**
+ * Transaction matching rules - global keyword-based matching rules for transaction categorization.
+ * Replaces hardcoded RULES array from transaction-categories.ts
+ */
+export const transactionMatchingRules = pgTable('transaction_matching_rules', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	/** Category identifier (e.g. 'faste_boutgifter', 'dagligvarer', 'kafe_og_restaurant') */
+	category: text('category').notNull(),
+	/** Keywords to match against transaction description/typeText */
+	keywords: text('keywords').array().notNull(),
+	/** Whether this category should be marked as fixed expense (overrides category defaultFixed) */
+	fixed: boolean('fixed'),
+	/** Whether this rule is active */
+	active: boolean('active').notNull().default(true),
+	/** Optional description for admin UI */
+	description: text('description'),
+	/** Display order (lower = higher priority in UI) */
+	displayOrder: integer('display_order').notNull().default(0),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	idxCategory: index('transaction_matching_rules_category_idx').on(table.category),
+	idxActive: index('transaction_matching_rules_active_idx').on(table.active)
 }));
 
 // Relations for sensors

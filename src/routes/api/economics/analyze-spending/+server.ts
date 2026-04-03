@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { analyzeSpending } from '$lib/server/integrations/spending-analyzer';
+import { analyzeSpending, generateSpendingInsights } from '$lib/server/integrations/spending-analyzer';
 import type { RequestHandler } from './$types';
 
 // Allow up to 120 seconds on Vercel (Pro plan supports up to 300s)
@@ -8,32 +8,63 @@ export const config = { maxDuration: 120 };
 /**
  * POST /api/economics/analyze-spending
  *
- * Triggers the LLM-powered spending analyzer.
- * Groups all transactions by merchant, computes stats, and asks OpenAI
- * to classify each unique merchant into categories + subcategories.
- * Results are stored in merchant_mappings and used by future categorizations.
+ * Triggers merchant classification and/or insights generation.
+ * 
+ * Classification: LLM categorizes merchants into SB1 taxonomy
+ * Insights: LLM generates natural-language spending insights
  *
  * Body (JSON, all optional):
- *   accountId?: string   — limit to one account
- *   force?: boolean      — re-classify even recently-analyzed merchants
+ *   accountId?: string     — limit to one account
+ *   force?: boolean        — re-classify even recently-analyzed merchants
+ *   testLimit?: number     — limit classification to N merchants (for testing)
+ *   mode?: 'classify' | 'insights' | 'both'  — what to run (default: 'both')
  *
- * Response: AnalysisResult
+ * Response: { classification?: ClassificationResult, insights?: InsightsResult }
  */
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const userId = locals.userId;
+	const startTime = Date.now();
+	console.log(`[analyze-spending API] Request started for user ${userId}`);
 
-	let body: { accountId?: string; force?: boolean } = {};
+	let body: { 
+		accountId?: string; 
+		force?: boolean; 
+		testLimit?: number;
+		mode?: 'classify' | 'insights' | 'both';
+	} = {};
 	try {
 		body = await request.json();
+		console.log(`[analyze-spending API] Request body:`, body);
 	} catch {
 		// no body is fine
 	}
 
+	const mode = body.mode ?? 'both';
+
 	try {
-		const result = await analyzeSpending(userId, body.accountId, body.force ?? false);
+		const result: any = {};
+
+		if (mode === 'classify' || mode === 'both') {
+			console.log(`[analyze-spending API] Starting classification...`);
+			result.classification = await analyzeSpending(
+				userId, 
+				body.accountId, 
+				body.force ?? false, 
+				body.testLimit
+			);
+			console.log(`[analyze-spending API] Classification complete`);
+		}
+
+		if (mode === 'insights' || mode === 'both') {
+			console.log(`[analyze-spending API] Starting insights generation...`);
+			result.insights = await generateSpendingInsights(userId, body.accountId);
+			console.log(`[analyze-spending API] Insights complete`);
+		}
+
+		console.log(`[analyze-spending API] Total request time: ${Date.now() - startTime}ms`);
 		return json(result);
 	} catch (e) {
-		console.error('[analyze-spending] Error:', e);
+		console.error('[analyze-spending API] Error:', e);
 		return json({ error: String(e) }, { status: 500 });
 	}
 };

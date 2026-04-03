@@ -9,6 +9,7 @@ import {
 	type CategoryId
 } from '$lib/server/integrations/transaction-categories';
 import { loadMerchantMappings } from '$lib/server/integrations/spending-analyzer';
+import { loadClassificationOverrides, loadTransactionMatchingRules } from '$lib/server/classification-overrides';
 import type { RequestHandler } from './$types';
 
 /**
@@ -59,7 +60,11 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	}
 
 	// Load per-user merchant mappings (LLM-generated) — checked first in categorizeTransaction
-	const merchantMappingCache = await loadMerchantMappings(userId);
+	const [merchantMappingCache, transactionOverrideCache, transactionRules] = await Promise.all([
+		loadMerchantMappings(userId),
+		loadClassificationOverrides(userId, 'transaction'),
+		loadTransactionMatchingRules()
+	]);
 
 	// Filter to monthsBack window
 	const cutoff = new Date();
@@ -132,7 +137,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		if (!monthMap.has(tx.month)) continue;
 		const monthData = monthMap.get(tx.month)!;
 
-		const classified = categorizeTransaction(tx.description, tx.typeText, tx.amount, merchantMappingCache);
+		const classified = categorizeTransaction(tx.description, tx.typeText, tx.amount, merchantMappingCache, transactionOverrideCache, transactionRules);
 
 		// Recurrence check can promote to fixed
 		const isFixed =

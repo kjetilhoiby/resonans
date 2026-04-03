@@ -4,6 +4,7 @@ import { sensorEvents } from '$lib/db/schema';
 import { and, eq, asc, sql } from 'drizzle-orm';
 import { categorizeTransaction } from '$lib/server/integrations/transaction-categories';
 import { loadMerchantMappings } from '$lib/server/integrations/spending-analyzer';
+import { loadClassificationOverrides, loadTransactionMatchingRules } from '$lib/server/classification-overrides';
 import { detectGlobalPayday } from '$lib/server/integrations/payday-detector';
 import type { RequestHandler } from './$types';
 
@@ -116,7 +117,11 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	}
 
 	// ─── Fetch and categorize all transactions ───────────────────────────────
-	const merchantMappingCache = await loadMerchantMappings(userId);
+	const [merchantMappingCache, transactionOverrideCache, transactionRules] = await Promise.all([
+		loadMerchantMappings(userId),
+		loadClassificationOverrides(userId, 'transaction'),
+		loadTransactionMatchingRules()
+	]);
 
 	const where = accountId
 		? and(
@@ -143,7 +148,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	const transactions = rows
 		.map((r) => {
 			const amount = Number(r.amount) || 0;
-			const cat = categorizeTransaction(r.description, r.typeText, amount, merchantMappingCache);
+			const cat = categorizeTransaction(r.description, r.typeText, amount, merchantMappingCache, transactionOverrideCache, transactionRules);
 			return {
 				date: r.timestamp.toISOString().split('T')[0],
 				amount: Math.abs(amount),

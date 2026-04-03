@@ -34,9 +34,9 @@ ALDRI oppgi økonomisk data fra hukommelsen - hent ALLTID live data fra banken!
 
 **Forbruk-widgets dengan kategorifilter:**
 For «forbruk dagligvare», «matkostnader», «transport» osv.: bruk ALLTID filterCategory.
-- "Vis dagligvareforbruk" → metricType: 'amount', filterCategory: 'dagligvare', aggregation: 'sum'
-- "Matkostnader per dag" → metricType: 'amount', filterCategory: 'mat', aggregation: 'avg'
-Gyldige kategorier: dagligvare, mat, bolig, transport, helse, abonnement, underholdning, shopping, barn, forsikring, sparing, overføring, lønn, annet`,
+- "Vis dagligvareforbruk" → metricType: 'amount', filterCategory: 'dagligvarer', aggregation: 'sum'
+- "Matkostnader per dag" → metricType: 'amount', filterCategory: 'kafe_og_restaurant', aggregation: 'avg'
+Gyldige kategorier: innskudd, dagligvarer, kafe_og_restaurant, faste_boutgifter, annet_lan_og_gjeld, bil_og_transport, helse_og_velvaere, medier_og_underholdning, hobby_og_fritid, hjem_og_hage, klaer_og_utstyr, barn, barnehage_og_sfo, forsikring, bilforsikring_og_billan, sparing, reise, diverse, ukategorisert`,
 
 	widgets: `**WIDGETS - SVÆRT VIKTIG:**
 Flow-regel:

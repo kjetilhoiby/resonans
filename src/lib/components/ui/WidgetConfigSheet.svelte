@@ -43,20 +43,25 @@
 	];
 
 	const FILTER_CATEGORIES = [
-		'dagligvare',
-		'mat',
-		'bolig',
-		'transport',
-		'helse',
-		'abonnement',
-		'underholdning',
-		'shopping',
+		'innskudd',
+		'dagligvarer',
+		'kafe_og_restaurant',
+		'faste_boutgifter',
+		'annet_lan_og_gjeld',
+		'bil_og_transport',
+		'helse_og_velvaere',
+		'medier_og_underholdning',
+		'hobby_og_fritid',
+		'hjem_og_hage',
+		'klaer_og_utstyr',
 		'barn',
+		'barnehage_og_sfo',
 		'forsikring',
+		'bilforsikring_og_billan',
 		'sparing',
-		'overføring',
-		'lønn',
-		'annet',
+		'reise',
+		'diverse',
+		'ukategorisert',
 	] as const;
 
 	const UNIT_OPTIONS: Record<string, string[]> = {

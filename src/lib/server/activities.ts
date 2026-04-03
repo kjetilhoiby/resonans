@@ -1,6 +1,13 @@
 import { db } from '$lib/db';
 import { sensorEvents, sensors, progress, tasks, goals } from '$lib/db/schema';
 import { buildCanonicalActivityFeed } from '$lib/server/activity-layer';
+import {
+	buildTaskFingerprint,
+	getOverrideCategory,
+	loadClassificationOverrides,
+	loadTaskClassificationRules,
+	type TaskClassificationRule
+} from '$lib/server/classification-overrides';
 import { eq, and } from 'drizzle-orm';
 
 export interface ActivityMetric {
@@ -18,6 +25,44 @@ export interface LogActivityParams {
 	metadata?: Record<string, any>;
 	metrics: ActivityMetric[];
 	taskIds?: string[]; // Optional: specify which tasks this counts towards
+}
+
+// Task classification rules now loaded from database via loadTaskClassificationRules()
+// See task_classification_rules table in schema.ts
+const UNIT_MATCH_SCORE = 3;
+
+function normalizeText(value: string): string {
+	return value.toLowerCase();
+}
+
+function scoreTaskForActivity(
+	task: { title: string; description: string | null; unit: string | null; goal: { title: string } | null },
+	effectiveCategory: string,
+	metrics: ActivityMetric[],
+	rules: TaskClassificationRule[]
+): number {
+	if (!task.goal) return 0;
+
+	const normalizedCategory = effectiveCategory.toLowerCase();
+	const rule = rules.find((candidate) => candidate.category === normalizedCategory);
+	const taskText = normalizeText(`${task.title} ${task.description || ''} ${task.goal.title}`);
+
+	let score = 0;
+
+	if (rule) {
+		const matchedKeywords = rule.keywords.filter((keyword) => taskText.includes(keyword));
+		score += matchedKeywords.length * rule.priority;
+	}
+
+	if (task.unit) {
+		const taskUnit = normalizeText(task.unit);
+		const hasMatchingMetricUnit = metrics.some((metric) => normalizeText(metric.unit || '') === taskUnit);
+		if (hasMatchingMetricUnit) {
+			score += UNIT_MATCH_SCORE;
+		}
+	}
+
+	return score;
 }
 
 function normalizeLoggedActivity(type: string, baseData: Record<string, any>) {
@@ -165,63 +210,26 @@ async function findMatchingTasks(
 		}
 	});
 
-	// Filter basert på aktivitetstype og metrics
-	// Dette er forenklet - kan gjøres smartere med AI senere
-	const matchingTasks = allTasks.filter((task: any) => {
-		if (!task.goal) return false;
+	// Load classification rules and overrides
+	const [overrideCache, classificationRules] = await Promise.all([
+		loadClassificationOverrides(userId, 'task'),
+		loadTaskClassificationRules()
+	]);
 
-		// Matching logikk basert på type
-		const typeCategory = activityType.split('_')[0]; // f.eks. 'workout' fra 'workout_run'
+	const taskFingerprint = buildTaskFingerprint(activityType, metrics);
+	const overrideCategory = getOverrideCategory(overrideCache, taskFingerprint);
+	const effectiveCategory = overrideCategory ?? activityType.split('_')[0].toLowerCase();
 
-		// Match basert på category eller title keywords
-		const taskText = `${task.title} ${task.description || ''} ${task.goal.title}`.toLowerCase();
+	const scoredMatches = allTasks
+		.map((task: any) => ({
+			task,
+			score: scoreTaskForActivity(task, effectiveCategory, metrics, classificationRules)
+		}))
+		.filter((candidate) => candidate.score > 0)
+		.sort((a, b) => b.score - a.score);
 
-		// Sjekk om det er relevant basert på type
-		if (typeCategory === 'workout' || typeCategory === 'exercise') {
-			if (
-				taskText.includes('trening') ||
-				taskText.includes('løp') ||
-				taskText.includes('km') ||
-				taskText.includes('workout')
-			) {
-				return true;
-			}
-		}
-
-		if (typeCategory === 'relationship') {
-			if (
-				taskText.includes('deit') ||
-				taskText.includes('date') ||
-				taskText.includes('parforhold') ||
-				taskText.includes('relationship')
-			) {
-				return true;
-			}
-		}
-
-		if (typeCategory === 'mental') {
-			if (
-				taskText.includes('stemning') ||
-				taskText.includes('mood') ||
-				taskText.includes('mental') ||
-				taskText.includes('følelse')
-			) {
-				return true;
-			}
-		}
-
-		// Sjekk også om unit matcher
-		if (task.unit) {
-			const hasMatchingMetric = metrics.some(
-				(m) => m.unit?.toLowerCase() === task.unit?.toLowerCase()
-			);
-			if (hasMatchingMetric) return true;
-		}
-
-		return false;
-	});
-
-	return matchingTasks;
+	// NOTE: Neste steg kan være LLM/tool-fallback når scoredMatches er tom.
+	return scoredMatches.map((candidate) => candidate.task);
 }
 
 /**

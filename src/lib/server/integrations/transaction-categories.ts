@@ -3,6 +3,13 @@
  * Uses keyword matching on description + SB1 typeText/category fields.
  */
 
+import {
+	buildTransactionFingerprint,
+	getOverrideCategory,
+	type ClassificationOverrideCache,
+	loadTransactionMatchingRules,
+	type TransactionMatchingRule
+} from '$lib/server/classification-overrides';
 import type { CategoryId, Category } from '$lib/integrations/transaction-categories-client';
 
 // Re-export types for external consumers
@@ -26,136 +33,11 @@ export const CATEGORIES: Record<CategoryId, Category> = {
 	annet:         { id: 'annet',        label: 'Annet',                  emoji: '📦', defaultFixed: false },
 };
 
-type Rule = {
-	keywords: string[];
-	category: CategoryId;
-	fixed?: boolean; // override defaultFixed if set
-};
-
-const RULES: Rule[] = [
-	// Inntekter
-	{ keywords: ['lønn', 'lonn', 'salary', 'arbeidsgiver', 'folktrygd', 'nav '], category: 'lønn' },
-
-	// Lån og avdrag — must come before bolig/transport so huslån/billån matcher først
-	{
-		keywords: [
-			'terminkrav', 'avdrag laan', 'avdrag lån', 'lånerenter', 'lånekasse',
-			'statens lånekasse', 'husbanken', 'bufetat lån', 'refinansier',
-			'huslån', 'billån', 'boliglån', 'forbrukslån', 'rammelån',
-			'annuitetslån', 'serielån'
-		],
-		category: 'lån', fixed: true
-	},
-
-	// Sparing og investering
-	{ keywords: ['sparekonto', 'spareavtale', 'aksjesparekonto', 'ask ', 'fond', 'nordnet', 'kron.no', 'kron '], category: 'sparing', fixed: true },
-
-	// Bolig
-	{
-		keywords: [
-			'husleie', 'leie av', 'borettslag', 'sameie', 'obos', 'usbl ',
-			'felleskostnader', 'felleskostn', 'strøm', 'fjernvarme', 'nettleie',
-			'eiendomsskatt', 'kommunale', 'renovasjon', 'vann og avløp',
-			'lys og varme', 'hafslund', 'lyse nett', 'agder energi', 'tibber', 'fortum'
-		],
-		category: 'bolig', fixed: true
-	},
-
-	// Forsikring
-	{
-		keywords: ['forsikring', 'gjensidige', 'tryg ', 'if forsikring', 'storebrand forsikring', 'fremtind', 'codan', 'frende', 'sb1 forsikring', 'sparebank 1 forsikring'],
-		category: 'forsikring', fixed: true
-	},
-
-	// Abonnementer (faste)
-	{
-		keywords: ['netflix', 'spotify', 'viaplay', 'tv 2 play', 'tv2 play', 'discovery+', 'hbo', 'max ', 'disney+', 'nrk', 'apple.com', 'itunes', 'google play', 'youtube premium', 'microsoft 365', 'adobe', 'telia ', 'telenor', 'ice.net', 'chili mobil', 'onlyfans', 'dropbox', 'github'],
-		category: 'abonnement', fixed: true
-	},
-
-	// Dagligvare
-	{
-		keywords: [
-			'rema 1000', 'rema1000', 'kiwi ', 'coop ', 'meny ', 'spar ', 'bunnpris',
-			'extra ', 'joker ', 'obs ', 'aldi ', 'lidl ', 'nærbutikk', 'kolonial',
-			'marked ', 'dagligvare', 'matbutikk', 'matvarer', 'grocery',
-			'willys', 'ica ', 'hakon gruppen',
-			// Netthandel dagligvare
-			'oda ', 'oda.com', 'oda as',
-			'adams matkasse', 'adamsmatkasse',
-			'godtlevert',
-			'hverdagsmat',
-			'matmesteren',
-		],
-		category: 'dagligvare'
-	},
-
-	// Mat ute og take-away
-	{
-		keywords: ['mcdonalds', 'mcdonald', 'burger king', 'kfc ', 'pizza', 'sushi', 'thai ', 'indian ', 'restaurant', 'café', 'cafe ', 'kafe ', 'kafé', 'bar ', ' pub ', 'foodora', 'wolt', 'just eat', 'dominos', 'subway ', 'starbucks', 'waynes coffee', 'espresso house', 'deli', 'bakeri', 'kantine', 'kebab', 'pølse'],
-		category: 'mat'
-	},
-
-	// Barn og familie — faste utgifter (bhg, aks, svømmekurs osv.)
-	{
-		keywords: [
-			'barnehage', 'bhg ', ' bhg', 'barnehageplass',
-			'aktivitetsskole', ' aks ', 'aks-', '-aks', 'aks etter',
-			' sfo ', 'skolefritidsordning',
-			'svømmekurs', 'svømmeopplæring', 'svømmeskole', 'svømmeklubben',
-			'korpsavgift', 'fotballavgift', 'håndballavgift', 'treningsavgift',
-			'idrettslag', 'musikkorps', 'kulturskole',
-			'skolepenger', 'lekesett', 'leker', 'toys',
-			'klær barn', 'barneklær', 'jollyroom', 'babyworld', 'mothercare', 'babysam'
-		],
-		category: 'barn', fixed: true
-	},
-
-	// Transport
-	{
-		keywords: ['ruter ', 'vy ', 'nsb ', 'flytoget', 'norwegian.no', 'norwegian air', 'sas ', 'widerøe', 'flyr ', 'tripcom', 'booking.com', 'parkering', 'apcoa', 'europark', 'bompenger', 'autopass', 'passeringsgebyr', 'ferjeleie', 'atb ', 'kolumbus', 'skyss ', 'uber ', 'bolt ', 'taxi', 'cabonline', 'norgesbuss', 'valdresekspressen'],
-		category: 'transport'
-	},
-
-	// Bil
-	{
-		keywords: ['bensinstasjon', 'circle k', 'uno-x', 'esso ', 'shell ', 'st1 ', 'neste ', 'drivstoff', 'elbil', 'lading', 'recharge ', 'mer charging', 'tesla ', 'bilverksted', 'dekk', 'bilservice', 'biltema', 'bil service', 'verksted', 'elbilforeningen', 'naf ', 'vianett', 'autopass'],
-		category: 'transport', fixed: false
-	},
-
-	// Helse
-	{
-		keywords: ['apotek', 'vitusapotek', 'boots apotek', 'apotek1', 'lege ', 'fastlege', 'tannlege', 'sykehus', 'legevakt', 'helsestasjon', 'fysioterapi', 'kiropraktor', 'psykolog', 'psykiater', 'optiker', 'brilleland', 'synsam', 'specsavers'],
-		category: 'helse'
-	},
-
-	// Trening / underholdning (NB: svømmekurs er under barn ovenfor)
-	{
-		keywords: ['sats ', 'elixia', 'evo fitness', 'treningssenter', 'gym ', 'svømmehall', 'kino ', 'oslo kino', 'nordisk film kino', 'billetservice', 'ticketmaster', 'konsert', 'teater', 'museum', 'steam ', 'playstation', 'xbox', 'nintendo', 'gaming', 'sport 1', 'g-sport', 'intersport'],
-		category: 'underholdning'
-	},
-
-	// Shopping / klær
-	{
-		keywords: ['h&m ', 'hm.com', 'zara ', 'cubus ', 'dressman', 'lindex ', 'mango ', 'weekday', 'zalando', 'boozt', 'nelly.com', 'nike ', 'adidas ', 'stadium ', 'xxl ', 'jula ', 'elkjøp', 'apple store', 'power ', 'komplett.no', 'amazon', 'ebay ', 'wish ', 'temu ', 'ikea', 'jysk', 'biltema', 'byggmakker', 'obs bygg', 'maxbo'],
-		category: 'shopping'
-	},
-
-	// Overføringer
-	{
-		keywords: ['vipps', 'overføring', 'betaling til', 'betaling fra', 'ovf.', 'til konto', 'fra konto', 'portefølje', 'internoverføring'],
-		category: 'overføring'
-	},
-];
-
-export { RULES };
-
-/** Returns the keyword list for a given category ID, or null if unknown. */
-export function getKeywordsForCategory(categoryId: string): string[] | null {
-	const rules = RULES.filter((r) => r.category === categoryId);
-	if (rules.length === 0) return null;
-	return rules.flatMap((r) => r.keywords);
-}
+/**
+ * Transaction matching rules have been moved to database table: transaction_matching_rules
+ * Load them using loadTransactionMatchingRules() from classification-overrides.ts
+ * See seed-transaction-rules.mjs for the default rules.
+ */
 
 export type CategorizeResult = {
 	category: CategoryId;
@@ -177,14 +59,31 @@ export type MerchantMappingCache = Map<
  * @param typeText    - typeText/category field from SB1 (e.g. "MAT OG DRIKKE")
  * @param amount      - transaction amount (negative = spending)
  * @param mappings    - optional per-user merchant mappings (checked first, fast path)
+ * @param overrides   - optional per-user manual category overrides
+ * @param rules       - transaction matching rules from database (load via loadTransactionMatchingRules)
  */
 export function categorizeTransaction(
 	description: string | null,
 	typeText: string | null,
 	amount: number,
-	mappings?: MerchantMappingCache
+	mappings?: MerchantMappingCache,
+	overrides?: ClassificationOverrideCache,
+	rules?: TransactionMatchingRule[]
 ): CategorizeResult {
 	const text = [description ?? '', typeText ?? ''].join(' ').toLowerCase();
+
+	// --- Highest priority: explicit user override by fingerprint ---
+	const fingerprint = buildTransactionFingerprint(description, typeText, amount);
+	const overrideCategory = getOverrideCategory(overrides, fingerprint);
+	if (overrideCategory && CATEGORIES[overrideCategory as CategoryId]) {
+		const cat = CATEGORIES[overrideCategory as CategoryId];
+		return {
+			category: cat.id,
+			label: cat.label,
+			emoji: cat.emoji,
+			isFixed: cat.defaultFixed
+		};
+	}
 
 	// --- Fast path: check per-user LLM-generated mappings first ---
 	if (mappings && description) {
@@ -201,15 +100,19 @@ export function categorizeTransaction(
 		}
 	}
 
-	for (const rule of RULES) {
-		if (rule.keywords.some((kw) => text.includes(kw.toLowerCase()))) {
-			const cat = CATEGORIES[rule.category];
-			return {
-				category: cat.id,
-				label: cat.label,
-				emoji: cat.emoji,
-				isFixed: rule.fixed !== undefined ? rule.fixed : cat.defaultFixed,
-			};
+	// --- Keyword matching from database rules ---
+	if (rules) {
+		for (const rule of rules) {
+			if (rule.keywords.some((kw) => text.includes(kw.toLowerCase()))) {
+				const cat = CATEGORIES[rule.category as CategoryId];
+				if (!cat) continue; // Skip if category not defined
+				return {
+					category: cat.id,
+					label: cat.label,
+					emoji: cat.emoji,
+					isFixed: rule.fixed !== null ? rule.fixed : cat.defaultFixed,
+				};
+			}
 		}
 	}
 

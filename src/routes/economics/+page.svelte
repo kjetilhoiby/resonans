@@ -142,7 +142,7 @@
 	};
 	let cumulativeData = $state<CumulativeData[]>([]);
 	let loadedCumulativeFor = $state<string | null>(null);
-	let selectedCumulativeCategories = $state<CategoryId[]>(['dagligvare', 'transport', 'mat']);
+	let selectedCumulativeCategories = $state<CategoryId[]>(['dagligvarer', 'bil_og_transport', 'kafe_og_restaurant']);
 
 	// Sync URL when account or tab changes
 	$effect(() => {

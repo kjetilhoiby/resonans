@@ -725,7 +725,7 @@ const tools = [
 					filterCategory: {
 						type: 'string',
 						description: 'Valgfri kategorifilter for amount-metrikk',
-						enum: ['dagligvare', 'mat', 'bolig', 'transport', 'helse', 'abonnement', 'underholdning', 'shopping', 'barn', 'forsikring', 'sparing', 'overføring', 'lønn', 'annet']
+						enum: ['innskudd', 'dagligvarer', 'kafe_og_restaurant', 'faste_boutgifter', 'annet_lan_og_gjeld', 'bil_og_transport', 'helse_og_velvaere', 'medier_og_underholdning', 'hobby_og_fritid', 'hjem_og_hage', 'klaer_og_utstyr', 'barn', 'barnehage_og_sfo', 'forsikring', 'bilforsikring_og_billan', 'sparing', 'reise', 'diverse', 'ukategorisert']
 					},
 					unit: {
 						type: 'string',
@@ -779,8 +779,8 @@ const tools = [
 					},
 					filterCategory: {
 						type: 'string',
-						description: 'Valgfri kategorifilter for amount-metrikk. Bruk dette for å vise kun utgifter i en bestemt kategori. Gyldige verdier: dagligvare, mat, bolig, transport, helse, abonnement, underholdning, shopping, barn, forsikring, sparing, overføring, lønn, annet',
-						enum: ['dagligvare', 'mat', 'bolig', 'transport', 'helse', 'abonnement', 'underholdning', 'shopping', 'barn', 'forsikring', 'sparing', 'overføring', 'lønn', 'annet']
+						description: 'Valgfri kategorifilter for amount-metrikk. Bruk dette for å vise kun utgifter i en bestemt kategori. Gyldige verdier: innskudd (inntekter), dagligvarer, kafe_og_restaurant, faste_boutgifter, annet_lan_og_gjeld, bil_og_transport, helse_og_velvaere, medier_og_underholdning, hobby_og_fritid, hjem_og_hage, klaer_og_utstyr, barn, barnehage_og_sfo, forsikring, bilforsikring_og_billan, sparing, reise, diverse, ukategorisert',
+						enum: ['innskudd', 'dagligvarer', 'kafe_og_restaurant', 'faste_boutgifter', 'annet_lan_og_gjeld', 'bil_og_transport', 'helse_og_velvaere', 'medier_og_underholdning', 'hobby_og_fritid', 'hjem_og_hage', 'klaer_og_utstyr', 'barn', 'barnehage_og_sfo', 'forsikring', 'bilforsikring_og_billan', 'sparing', 'reise', 'diverse', 'ukategorisert']
 					},
 					unit: {
 						type: 'string',

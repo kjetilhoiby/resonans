@@ -1,24 +1,29 @@
 /**
  * Client-safe transaction category definitions.
+ * Based on SpareBank1's taxonomy for consistency with Norwegian banking standards.
  * This file can be imported by both server and client code.
  */
 
 export type CategoryId =
-	| 'dagligvare'
-	| 'mat'
-	| 'bolig'
-	| 'lån'
-	| 'transport'
-	| 'helse'
-	| 'abonnement'
-	| 'underholdning'
-	| 'shopping'
-	| 'barn'
 	| 'forsikring'
+	| 'bilforsikring_og_billan'
+	| 'barnehage_og_sfo'
+	| 'dagligvarer'
+	| 'kafe_og_restaurant'
+	| 'bil_og_transport'
+	| 'reise'
+	| 'faste_boutgifter'
+	| 'hjem_og_hage'
+	| 'medier_og_underholdning'
+	| 'hobby_og_fritid'
+	| 'helse_og_velvaere'
+	| 'klaer_og_utstyr'
+	| 'barn'
 	| 'sparing'
-	| 'overføring'
-	| 'lønn'
-	| 'annet';
+	| 'annet_lan_og_gjeld'
+	| 'diverse'
+	| 'innskudd'
+	| 'ukategorisert';
 
 export type Category = {
 	id: CategoryId;
@@ -29,19 +34,23 @@ export type Category = {
 };
 
 export const CATEGORIES: Record<CategoryId, Category> = {
-	dagligvare:    { id: 'dagligvare',   label: 'Dagligvare',            emoji: '🛒', defaultFixed: false },
-	mat:           { id: 'mat',          label: 'Mat og drikke',          emoji: '🍽️', defaultFixed: false },
-	bolig:         { id: 'bolig',        label: 'Bolig',                  emoji: '🏠', defaultFixed: true  },
-	lån:           { id: 'lån',          label: 'Lån og avdrag',          emoji: '🏦', defaultFixed: true  },
-	transport:     { id: 'transport',    label: 'Transport',              emoji: '🚗', defaultFixed: false },
-	helse:         { id: 'helse',        label: 'Helse',                  emoji: '💊', defaultFixed: false },
-	abonnement:    { id: 'abonnement',   label: 'Abonnementer',           emoji: '📱', defaultFixed: true  },
-	underholdning: { id: 'underholdning',label: 'Underholdning',          emoji: '🎉', defaultFixed: false },
-	shopping:      { id: 'shopping',     label: 'Shopping',               emoji: '🛍️', defaultFixed: false },
-	barn:          { id: 'barn',         label: 'Barn og familie',        emoji: '👶', defaultFixed: true  },
-	forsikring:    { id: 'forsikring',   label: 'Forsikring',             emoji: '🛡️', defaultFixed: true  },
-	sparing:       { id: 'sparing',      label: 'Sparing',                emoji: '💰', defaultFixed: true  },
-	overføring:    { id: 'overføring',   label: 'Overføringer',           emoji: '🔄', defaultFixed: false },
-	lønn:          { id: 'lønn',         label: 'Lønn og inntekt',        emoji: '💵', defaultFixed: false },
-	annet:         { id: 'annet',        label: 'Annet',                  emoji: '📦', defaultFixed: false },
+	innskudd:                { id: 'innskudd',               label: 'Inntekter',                emoji: '💵', defaultFixed: false },
+	dagligvarer:             { id: 'dagligvarer',            label: 'Dagligvarer',              emoji: '🛒', defaultFixed: false },
+	kafe_og_restaurant:      { id: 'kafe_og_restaurant',     label: 'Kafe og restaurant',       emoji: '🍽️', defaultFixed: false },
+	faste_boutgifter:        { id: 'faste_boutgifter',       label: 'Faste boutgifter',         emoji: '🏠', defaultFixed: true  },
+	annet_lan_og_gjeld:      { id: 'annet_lan_og_gjeld',     label: 'Lån og gjeld',             emoji: '🏦', defaultFixed: true  },
+	bil_og_transport:        { id: 'bil_og_transport',       label: 'Transport og bil',         emoji: '🚗', defaultFixed: false },
+	helse_og_velvaere:       { id: 'helse_og_velvaere',      label: 'Helse og velvære',         emoji: '💊', defaultFixed: false },
+	medier_og_underholdning: { id: 'medier_og_underholdning',label: 'Medier og underholdning',  emoji: '📱', defaultFixed: false },
+	hobby_og_fritid:         { id: 'hobby_og_fritid',        label: 'Hobby og fritid',          emoji: '🎉', defaultFixed: false },
+	hjem_og_hage:            { id: 'hjem_og_hage',           label: 'Hjem og hage',             emoji: '🔨', defaultFixed: false },
+	klaer_og_utstyr:         { id: 'klaer_og_utstyr',        label: 'Klær og utstyr',           emoji: '🛍️', defaultFixed: false },
+	barn:                    { id: 'barn',                   label: 'Barn',                     emoji: '👶', defaultFixed: false },
+	barnehage_og_sfo:        { id: 'barnehage_og_sfo',       label: 'Barnehage og SFO',         emoji: '🎒', defaultFixed: true  },
+	forsikring:              { id: 'forsikring',             label: 'Forsikring',               emoji: '🛡️', defaultFixed: true  },
+	bilforsikring_og_billan: { id: 'bilforsikring_og_billan',label: 'Bilforsikring og billån',  emoji: '🚙', defaultFixed: true  },
+	sparing:                 { id: 'sparing',                label: 'Sparing',                  emoji: '💰', defaultFixed: true  },
+	reise:                   { id: 'reise',                  label: 'Reise',                    emoji: '✈️', defaultFixed: false },
+	diverse:                 { id: 'diverse',                label: 'Diverse',                  emoji: '🔄', defaultFixed: false },
+	ukategorisert:           { id: 'ukategorisert',          label: 'Ukategorisert',            emoji: '📦', defaultFixed: false },
 };

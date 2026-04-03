@@ -4,6 +4,7 @@ import { sensorEvents } from '$lib/db/schema';
 import { and, eq, asc, sql } from 'drizzle-orm';
 import { categorizeTransaction } from '$lib/server/integrations/transaction-categories';
 import { loadMerchantMappings } from '$lib/server/integrations/spending-analyzer';
+import { loadClassificationOverrides, loadTransactionMatchingRules } from '$lib/server/classification-overrides';
 import type { RequestHandler } from './$types';
 
 /**
@@ -50,7 +51,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 				sql`timestamp < ${to.toISOString()}`
 			);
 
-	const [rows, merchantMappingCache] = await Promise.all([
+	const [rows, merchantMappingCache, transactionOverrideCache, transactionRules] = await Promise.all([
 		db
 			.select({
 				timestamp: sensorEvents.timestamp,
@@ -63,13 +64,15 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 			.from(sensorEvents)
 			.where(where)
 			.orderBy(asc(sensorEvents.timestamp)),
-		loadMerchantMappings(userId)
+		loadMerchantMappings(userId),
+		loadClassificationOverrides(userId, 'transaction'),
+		loadTransactionMatchingRules()
 	]);
 
 	const transactions = rows
 		.map((r) => {
 			const amount = Number(r.amount) || 0;
-			const cat = categorizeTransaction(r.description, r.typeText, amount, merchantMappingCache);
+			const cat = categorizeTransaction(r.description, r.typeText, amount, merchantMappingCache, transactionOverrideCache, transactionRules);
 			return {
 				transactionId: r.transactionId,
 				date: r.timestamp.toISOString().split('T')[0],

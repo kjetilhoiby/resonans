@@ -15,9 +15,9 @@ import { json, error } from '@sveltejs/kit';
 import { db, pgClient } from '$lib/db';
 import { userWidgets } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
-import { getKeywordsForCategory } from '$lib/server/integrations/transaction-categories';
 import { categorizeTransaction } from '$lib/server/integrations/transaction-categories';
 import { loadMerchantMappings } from '$lib/server/integrations/spending-analyzer';
+import { loadClassificationOverrides, loadTransactionMatchingRules } from '$lib/server/classification-overrides';
 import type { RequestHandler } from './$types';
 
 // Støttede metrikk-typer og hvilken dataType/felt de henter fra
@@ -111,7 +111,6 @@ function normalizeCategoryId(categoryId: string | null | undefined): string | nu
 		.replace(/[\u0300-\u036f]/g, '')
 		.trim();
 
-	if (normalized === 'dagligvarer') return 'dagligvare';
 	return normalized;
 }
 
@@ -189,12 +188,16 @@ async function fetchCategorizedAmountRows(
 		[userId, from.toISOString(), to.toISOString()]
 	) as unknown as BankTxRow[];
 
-	const merchantMappingCache = await loadMerchantMappings(userId);
+	const [merchantMappingCache, transactionOverrideCache, transactionRules] = await Promise.all([
+		loadMerchantMappings(userId),
+		loadClassificationOverrides(userId, 'transaction'),
+		loadTransactionMatchingRules()
+	]);
 	const wantedCategory = normalizeCategoryId(filterCategory);
 
 	const categorizedRows = rows
 		.filter((tx) => {
-			const classified = categorizeTransaction(tx.description, tx.typeText, tx.amount, merchantMappingCache);
+			const classified = categorizeTransaction(tx.description, tx.typeText, tx.amount, merchantMappingCache, transactionOverrideCache, transactionRules);
 			return normalizeCategoryId(classified.category) === wantedCategory;
 		})
 		.map((tx) => ({
@@ -234,13 +237,17 @@ async function collectAmountFilterDebug(
 		[userId, from.toISOString(), to.toISOString()]
 	) as unknown as BankTxRow[];
 
-	const merchantMappingCache = await loadMerchantMappings(userId);
+	const [merchantMappingCache, transactionOverrideCache, transactionRules] = await Promise.all([
+		loadMerchantMappings(userId),
+		loadClassificationOverrides(userId, 'transaction'),
+		loadTransactionMatchingRules()
+	]);
 	const wantedCategory = normalizeCategoryId(filterCategory);
 	const categoryCounter = new Map<string, number>();
 	let categorizedMatchCount = 0;
 
 	for (const tx of rows) {
-		const classified = categorizeTransaction(tx.description, tx.typeText, tx.amount, merchantMappingCache);
+		const classified = categorizeTransaction(tx.description, tx.typeText, tx.amount, merchantMappingCache, transactionOverrideCache, transactionRules);
 		const normalizedCategory = normalizeCategoryId(classified.category) ?? 'ukjent';
 		categoryCounter.set(normalizedCategory, (categoryCounter.get(normalizedCategory) ?? 0) + 1);
 		if (normalizedCategory === wantedCategory) {
@@ -256,7 +263,7 @@ async function collectAmountFilterDebug(
 
 	const sampleMatches = rows
 		.filter((tx) => {
-			const classified = categorizeTransaction(tx.description, tx.typeText, tx.amount, merchantMappingCache);
+			const classified = categorizeTransaction(tx.description, tx.typeText, tx.amount, merchantMappingCache, transactionOverrideCache, transactionRules);
 			return normalizeCategoryId(classified.category) === wantedCategory;
 		})
 		.slice(0, 6)

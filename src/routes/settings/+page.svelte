@@ -504,6 +504,14 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 				<p>{enabledNotifications}/5 varslingstyper aktiv</p>
 				<a href="/notifications" class="overview-link">Åpne varslinger</a>
 			</article>
+			<article class="overview-card" id="classification-overview">
+				<div class="overview-head">
+					<span class="status-dot ok"></span>
+					<h2>Klassifisering</h2>
+				</div>
+				<p>Manuelle korrigeringer og regler</p>
+				<a href="/settings/classification" class="overview-link">Åpne klassifisering</a>
+			</article>
 		</section>
 
 		<div class="actions">

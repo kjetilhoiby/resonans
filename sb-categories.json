@@ -1,0 +1,540 @@
+{
+    "main": [
+        {
+            "key": "forsikring",
+            "value": "Forsikring"
+        },
+        {
+            "key": "bilforsikring_og_billan",
+            "value": "Bilforsikring og billån"
+        },
+        {
+            "key": "barnehage_og_sfo",
+            "value": "Barnehage og SFO"
+        },
+        {
+            "key": "dagligvarer",
+            "value": "Dagligvarer"
+        },
+        {
+            "key": "kafe_og_restaurant",
+            "value": "Kafe og restaurant"
+        },
+        {
+            "key": "bil_og_transport",
+            "value": "Transport og bil"
+        },
+        {
+            "key": "reise",
+            "value": "Reise"
+        },
+        {
+            "key": "faste_boutgifter",
+            "value": "Faste boutgifter"
+        },
+        {
+            "key": "hjem_og_hage",
+            "value": "Hjem og hage"
+        },
+        {
+            "key": "medier_og_underholdning",
+            "value": "Medier og underholdning"
+        },
+        {
+            "key": "hobby_og_fritid",
+            "value": "Hobby og fritid"
+        },
+        {
+            "key": "helse_og_velvaere",
+            "value": "Helse og velvære"
+        },
+        {
+            "key": "klaer_og_utstyr",
+            "value": "Klær og utstyr"
+        },
+        {
+            "key": "barn",
+            "value": "Barn"
+        },
+        {
+            "key": "sparing",
+            "value": "Sparing"
+        },
+        {
+            "key": "annet_lan_og_gjeld",
+            "value": "Annet lån og gjeld"
+        },
+        {
+            "key": "diverse",
+            "value": "Diverse"
+        },
+        {
+            "key": "innskudd",
+            "value": "Inntekter"
+        },
+        {
+            "key": "ukategorisert",
+            "value": "Ukategorisert"
+        }
+    ],
+    "sub": {
+        "hobby_og_fritid": [
+            {
+                "key": "arrangement",
+                "value": "Arrangement"
+            },
+            {
+                "key": "dating",
+                "value": "Dating"
+            },
+            {
+                "key": "digital_markedsplass",
+                "value": "Digital markedsplass"
+            },
+            {
+                "key": "dyr",
+                "value": "Dyr"
+            },
+            {
+                "key": "foto",
+                "value": "Foto"
+            },
+            {
+                "key": "fritidsaktiviteter",
+                "value": "Fritidsaktiviteter"
+            },
+            {
+                "key": "gavekort",
+                "value": "Gavekort"
+            },
+            {
+                "key": "hobby",
+                "value": "Hobby"
+            },
+            {
+                "key": "hytte",
+                "value": "Hytte"
+            },
+            {
+                "key": "kino",
+                "value": "Kino"
+            },
+            {
+                "key": "leker",
+                "value": "Leker"
+            },
+            {
+                "key": "museum",
+                "value": "Museum"
+            },
+            {
+                "key": "nettjenester",
+                "value": "Nettjenester"
+            },
+            {
+                "key": "post",
+                "value": "Post"
+            },
+            {
+                "key": "trening",
+                "value": "Trening"
+            },
+            {
+                "key": "lan_hobby_fritidsutstyr",
+                "value": "Lån på hobby- og fritidsutstyr"
+            }
+        ],
+        "klaer_og_utstyr": [
+            {
+                "key": "klaer",
+                "value": "Klær"
+            },
+            {
+                "key": "sko",
+                "value": "Sko"
+            },
+            {
+                "key": "smykker",
+                "value": "Smykker og tilbehør"
+            },
+            {
+                "key": "sportsutstyr",
+                "value": "Sportsutstyr"
+            }
+        ],
+        "sparing": [
+            {
+                "key": "sparing",
+                "value": "Sparing"
+            }
+        ],
+        "medier_og_underholdning": [
+            {
+                "key": "apper_og_spill",
+                "value": "Apper og spill"
+            },
+            {
+                "key": "aviser",
+                "value": "Aviser"
+            },
+            {
+                "key": "bokhandler",
+                "value": "Bokhandel"
+            },
+            {
+                "key": "pengespill",
+                "value": "Pengespill"
+            },
+            {
+                "key": "strommetjenester",
+                "value": "Strømmetjenester"
+            },
+            {
+                "key": "tidsskrifter",
+                "value": "Tidsskrift"
+            },
+            {
+                "key": "tv",
+                "value": "TV"
+            }
+        ],
+        "annet_lan_og_gjeld": [
+            {
+                "key": "betalingsoppfolging",
+                "value": "Betalingsoppfølging"
+            },
+            {
+                "key": "lan",
+                "value": "Diverse lån"
+            },
+            {
+                "key": "studielan",
+                "value": "Studielån"
+            }
+        ],
+        "hjem_og_hage": [
+            {
+                "key": "byggvare",
+                "value": "Byggevarer"
+            },
+            {
+                "key": "hage_og_blomster",
+                "value": "Hage og blomster"
+            },
+            {
+                "key": "handverker",
+                "value": "Håndverker"
+            },
+            {
+                "key": "hvitevarer_og_elektronikk",
+                "value": "Hvitevarer og elektronikk"
+            },
+            {
+                "key": "kjokkenutstyr",
+                "value": "Kjøkkenutstyr"
+            },
+            {
+                "key": "mobler_og_interior",
+                "value": "Møbler og interiør"
+            },
+            {
+                "key": "verktoy",
+                "value": "Verktøy"
+            }
+        ],
+        "bil_og_transport": [
+            {
+                "key": "bilavgifter",
+                "value": "Bilavgifter"
+            },
+            {
+                "key": "bildeler_og_pleie",
+                "value": "Bildeler og pleie"
+            },
+            {
+                "key": "bilforhandler",
+                "value": "Bilforhandler"
+            },
+            {
+                "key": "bom",
+                "value": "Bom"
+            },
+            {
+                "key": "drivstoff",
+                "value": "Drivstoff"
+            },
+            {
+                "key": "kollektivtransport",
+                "value": "Kollektivtransport"
+            },
+            {
+                "key": "leiebil",
+                "value": "Leiebil"
+            },
+            {
+                "key": "parkering",
+                "value": "Parkering"
+            },
+            {
+                "key": "taxi",
+                "value": "Taxi"
+            },
+            {
+                "key": "trafikkskole",
+                "value": "Trafikkskole"
+            },
+            {
+                "key": "verksted",
+                "value": "Verksted"
+            }
+        ],
+        "faste_boutgifter": [
+            {
+                "key": "alarm",
+                "value": "Alarm"
+            },
+            {
+                "key": "boligutgifter",
+                "value": "Boligutgifter"
+            },
+            {
+                "key": "eiendomsforvaltning",
+                "value": "Eiendomsforvaltning"
+            },
+            {
+                "key": "internett",
+                "value": "Internett"
+            },
+            {
+                "key": "kommunale_avgifter",
+                "value": "Kommunale avgifter"
+            },
+            {
+                "key": "mobiltelefon",
+                "value": "Mobiltelefon"
+            },
+            {
+                "key": "stroem",
+                "value": "Strøm"
+            },
+            {
+                "key": "utleie_og_salg",
+                "value": "Utleie og salg"
+            },
+            {
+                "key": "boliglan",
+                "value": "Boliglån"
+            },
+            {
+                "key": "boligforsikring",
+                "value": "Forsikring av bolig"
+            }
+        ],
+        "helse_og_velvaere": [
+            {
+                "key": "apotek",
+                "value": "Apotek"
+            },
+            {
+                "key": "briller_og_opptikk",
+                "value": "Briller og optikk"
+            },
+            {
+                "key": "helsekost",
+                "value": "Helsekost"
+            },
+            {
+                "key": "lege",
+                "value": "Lege og helsetjenester"
+            },
+            {
+                "key": "skjonnhet",
+                "value": "Skjønnhet"
+            },
+            {
+                "key": "tannlege",
+                "value": "Tannlege"
+            },
+            {
+                "key": "velvare",
+                "value": "Velvære"
+            }
+        ],
+        "ukategorisert": [
+            {
+                "key": "annet",
+                "value": "Ukjent"
+            }
+        ],
+        "kafe_og_restaurant": [
+            {
+                "key": "fastfood",
+                "value": "Fastfood"
+            },
+            {
+                "key": "godteri",
+                "value": "Godteri"
+            },
+            {
+                "key": "kafe",
+                "value": "Kafe"
+            },
+            {
+                "key": "kantine",
+                "value": "Kantine"
+            },
+            {
+                "key": "kiosk",
+                "value": "Kiosk"
+            },
+            {
+                "key": "restaurant",
+                "value": "Restaurant"
+            },
+            {
+                "key": "utesteder",
+                "value": "Utesteder"
+            }
+        ],
+        "innskudd": [
+            {
+                "key": "annet_innskudd",
+                "value": "Annet innskudd"
+            },
+            {
+                "key": "lonn",
+                "value": "Lønn"
+            },
+            {
+                "key": "utbytte",
+                "value": "Utbytte"
+            }
+        ],
+        "bilforsikring_og_billan": [
+            {
+                "key": "bilforsikring",
+                "value": "Bilforsikring"
+            },
+            {
+                "key": "billan",
+                "value": "Billån"
+            }
+        ],
+        "barn": [
+            {
+                "key": "barnebutikker",
+                "value": "Barnebutikker"
+            },
+            {
+                "key": "annet_til_barna",
+                "value": "Annet til barna"
+            }
+        ],
+        "diverse": [
+            {
+                "key": "bankboks",
+                "value": "Bankboks"
+            },
+            {
+                "key": "betaling",
+                "value": "Betaling"
+            },
+            {
+                "key": "kredittkort",
+                "value": "Kredittkort"
+            },
+            {
+                "key": "krypto_epenger",
+                "value": "Krypto og e-penger"
+            },
+            {
+                "key": "kurs_utdanning",
+                "value": "Kurs og utdanning"
+            },
+            {
+                "key": "medlemskap_veldedighet",
+                "value": "Medlemskap og veldedighet"
+            },
+            {
+                "key": "minibank",
+                "value": "Minibank"
+            },
+            {
+                "key": "overforing",
+                "value": "Overføring"
+            },
+            {
+                "key": "renter_innskudd",
+                "value": "Innskuddsrenter"
+            },
+            {
+                "key": "renter_og_gebyrer",
+                "value": "Renter og gebyrer"
+            },
+            {
+                "key": "skatt",
+                "value": "Skatt"
+            },
+            {
+                "key": "vennebetaling",
+                "value": "Vennebetaling"
+            },
+            {
+                "key": "andre_utgifter",
+                "value": "Andre utgifter"
+            },
+            {
+                "key": "gave",
+                "value": "Gave"
+            },
+            {
+                "key": "utlegg_og_refusjon",
+                "value": "Utlegg og refusjon"
+            }
+        ],
+        "forsikring": [
+            {
+                "key": "forsikring",
+                "value": "Forsikring"
+            }
+        ],
+        "dagligvarer": [
+            {
+                "key": "andre_dagligvarer",
+                "value": "Andre dagligvarer"
+            },
+            {
+                "key": "dagligvarer",
+                "value": "Matvarer"
+            }
+        ],
+        "barnehage_og_sfo": [
+            {
+                "key": "barnehager",
+                "value": "Barnehage"
+            },
+            {
+                "key": "sfo",
+                "value": "SFO"
+            }
+        ],
+        "reise": [
+            {
+                "key": "annen_reise",
+                "value": "Annen reise"
+            },
+            {
+                "key": "flybilletter",
+                "value": "Flybilletter"
+            },
+            {
+                "key": "overnatting",
+                "value": "Overnatting"
+            },
+            {
+                "key": "reiseselskap",
+                "value": "Reiseselskap"
+            }
+        ]
+    }
+}
