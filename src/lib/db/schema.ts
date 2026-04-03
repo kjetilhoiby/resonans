@@ -97,7 +97,9 @@ export const goals = pgTable('goals', {
 	metadata: jsonb('metadata'), // fleksibel JSON for ekstra data
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
-});
+}, (table) => ({
+	idxUserId: index('goals_user_id_idx').on(table.userId)
+}));
 
 // Konkrete oppgaver knyttet til mål
 export const tasks = pgTable('tasks', {
@@ -173,7 +175,9 @@ export const messages = pgTable('messages', {
 	imageUrl: text('image_url'), // Cloudinary URL for bilder
 	metadata: jsonb('metadata'), // for ekstra data som tool_calls, etc.
 	createdAt: timestamp('created_at').defaultNow().notNull()
-});
+}, (table) => ({
+	idxConversationId: index('messages_conversation_id_idx').on(table.conversationId)
+}));
 
 // Planlagte påminnelser/check-ins
 export const reminders = pgTable('reminders', {
@@ -185,7 +189,9 @@ export const reminders = pgTable('reminders', {
 	sent: boolean('sent').default(false).notNull(),
 	sentAt: timestamp('sent_at'),
 	createdAt: timestamp('created_at').defaultNow().notNull()
-});
+}, (table) => ({
+	idxUserScheduledSent: index('reminders_user_scheduled_sent_idx').on(table.userId, table.scheduledFor, table.sent)
+}));
 
 // Brukerdefinerbare widgets til hjemmeskjerm
 // Hvert widget er en dynamisk dataspørring: metrikk × aggregering × periode × range
@@ -244,7 +250,9 @@ export const memories = pgTable('memories', {
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull(),
 	lastAccessedAt: timestamp('last_accessed_at').defaultNow().notNull()
-});
+}, (table) => ({
+	idxUserId: index('memories_user_id_idx').on(table.userId)
+}));
 
 // Web push subscriptions for PWA notifications
 export const webPushSubscriptions = pgTable('web_push_subscriptions', {
@@ -508,7 +516,9 @@ export const sensorEvents = pgTable('sensor_events', {
 		[key: string]: any;
 	}>(),
 	createdAt: timestamp('created_at').defaultNow().notNull() // When we received it
-});
+}, (table) => ({
+	idxUserDataTypeTimestamp: index('sensor_events_user_data_type_timestamp_idx').on(table.userId, table.dataType, table.timestamp)
+}));
 
 // Pre-aggregated data for performance (weekly, monthly, yearly)
 export const sensorAggregates = pgTable('sensor_aggregates', {
