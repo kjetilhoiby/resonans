@@ -287,7 +287,8 @@ export const usersRelations = relations(users, ({ many }) => ({
 	sensorEvents: many(sensorEvents),
 	sensorAggregates: many(sensorAggregates),
 	checklists: many(checklists),
-	webPushSubscriptions: many(webPushSubscriptions)
+	webPushSubscriptions: many(webPushSubscriptions),
+	backgroundJobs: many(backgroundJobs)
 }));
 
 export const authAccountsRelations = relations(authAccounts, ({ one }) => ({
@@ -520,6 +521,56 @@ export const sensorEvents = pgTable('sensor_events', {
 	idxUserDataTypeTimestamp: index('sensor_events_user_data_type_timestamp_idx').on(table.userId, table.dataType, table.timestamp)
 }));
 
+// Materialized transaction projection used by chat/widgets/dashboard queries.
+export const categorizedEvents = pgTable('categorized_events', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id).notNull(),
+	sensorEventId: uuid('sensor_event_id').references(() => sensorEvents.id).notNull(),
+	timestamp: timestamp('timestamp').notNull(),
+	accountId: text('account_id'),
+	amount: decimal('amount').notNull(),
+	description: text('description'),
+	typeText: text('type_text'),
+	resolvedCategory: text('resolved_category').notNull(),
+	resolvedLabel: text('resolved_label'),
+	resolvedEmoji: text('resolved_emoji'),
+	isFixed: boolean('is_fixed').notNull().default(false),
+	source: text('source').notNull().default('pipeline'),
+	classifierVersion: integer('classifier_version').notNull().default(1),
+	categorizedAt: timestamp('categorized_at').defaultNow().notNull(),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	uniqueSensorEvent: unique().on(table.sensorEventId),
+	idxUserTimestamp: index('categorized_events_user_timestamp_idx').on(table.userId, table.timestamp),
+	idxUserCategoryTimestamp: index('categorized_events_user_category_timestamp_idx').on(table.userId, table.resolvedCategory, table.timestamp),
+	idxUserAccountTimestamp: index('categorized_events_user_account_timestamp_idx').on(table.userId, table.accountId, table.timestamp)
+}));
+
+// Generic background job queue for long-running operations (sync, transcription, imports, etc.)
+export const backgroundJobs = pgTable('background_jobs', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id),
+	type: text('type').notNull(),
+	status: text('status').notNull().default('queued'), // queued|running|retry|completed|failed|canceled
+	payload: jsonb('payload').$type<Record<string, unknown>>().notNull().default({}),
+	result: jsonb('result').$type<Record<string, unknown> | null>(),
+	error: text('error'),
+	attempts: integer('attempts').notNull().default(0),
+	maxAttempts: integer('max_attempts').notNull().default(3),
+	priority: integer('priority').notNull().default(0),
+	runAt: timestamp('run_at').notNull().defaultNow(),
+	lockedAt: timestamp('locked_at'),
+	lockedBy: text('locked_by'),
+	startedAt: timestamp('started_at'),
+	finishedAt: timestamp('finished_at'),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	idxBackgroundJobsDue: index('background_jobs_due_idx').on(table.status, table.runAt, table.priority, table.createdAt),
+	idxBackgroundJobsUserCreated: index('background_jobs_user_created_idx').on(table.userId, table.createdAt)
+}));
+
 // Pre-aggregated data for performance (weekly, monthly, yearly)
 export const sensorAggregates = pgTable('sensor_aggregates', {
 	id: uuid('id').primaryKey().defaultRandom(),
@@ -692,6 +743,24 @@ export const sensorEventsRelations = relations(sensorEvents, ({ one }) => ({
 	sensor: one(sensors, {
 		fields: [sensorEvents.sensorId],
 		references: [sensors.id]
+	})
+}));
+
+export const categorizedEventsRelations = relations(categorizedEvents, ({ one }) => ({
+	user: one(users, {
+		fields: [categorizedEvents.userId],
+		references: [users.id]
+	}),
+	sensorEvent: one(sensorEvents, {
+		fields: [categorizedEvents.sensorEventId],
+		references: [sensorEvents.id]
+	})
+}));
+
+export const backgroundJobsRelations = relations(backgroundJobs, ({ one }) => ({
+	user: one(users, {
+		fields: [backgroundJobs.userId],
+		references: [users.id]
 	})
 }));
 

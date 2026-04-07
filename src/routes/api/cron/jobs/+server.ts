@@ -47,6 +47,12 @@ const JOBS: CronJob[] = [
 		schedule: '*/10 * * * *', // hvert 10. minutt
 		description: 'Dropbox TCX/GPX import (alle brukere)',
 		maxDurationSeconds: 120
+	},
+	{
+		path: '/api/cron/background-jobs',
+		schedule: '*/5 * * * *', // hvert 5. minutt
+		description: 'Prosesserer intern databasedrevet jobbkø',
+		maxDurationSeconds: 120
 	}
 ];
 
