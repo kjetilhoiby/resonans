@@ -8,10 +8,10 @@ import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const envPath = resolve(__dirname, '../.env');
+const envPath = resolve(__dirname, '../.env.local');
 readFileSync(envPath, 'utf8').split('\n').forEach((line) => {
 	const [k, ...v] = line.split('=');
-	if (k && !process.env[k]) process.env[k] = v.join('=').trim();
+	if (k && !process.env[k]) process.env[k] = v.join('=').trim().replace(/^["']|["']$/g, '');
 });
 
 if (!process.env.DATABASE_URL) {
