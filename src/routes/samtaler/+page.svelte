@@ -79,6 +79,14 @@
 	let creatingConversation = $state(false);
 	let streamingText = $state('');
 	let streamingStatus = $state('');
+	let streamingSteps = $state<string[]>([]);
+	let chatStopped = $state(false);
+	let stoppedText = $state('');
+	let lastUserText = $state('');
+	let lastUserMsgId = $state('');
+	let inputDraft = $state('');
+	let inputKey = $state(0);
+	let abortController: AbortController | null = null;
 
 	$effect(() => {
 		chatMessages = toChatMessages(data.messages);
@@ -112,11 +120,18 @@
 
 	async function sendMessage(text: string) {
 		if (!conversation) return;
-		chatMessages = [...chatMessages, { id: crypto.randomUUID(), role: 'user', text, imageUrl: null }];
+		const msgId = crypto.randomUUID();
+		chatMessages = [...chatMessages, { id: msgId, role: 'user', text, imageUrl: null }];
 		chatLoading = true;
-		streamingText = '';
-		streamingStatus = 'Starter...';
+		chatStopped = false;
 		chatError = '';
+		stoppedText = '';
+		streamingText = '';
+		streamingStatus = '';
+		streamingSteps = [];
+		lastUserText = text;
+		lastUserMsgId = msgId;
+		abortController = new AbortController();
 
 		try {
 			const res = await fetch('/api/chat-stream-messages', {
@@ -129,7 +144,8 @@
 					routing: {},
 					systemPrompt: '',
 					messages: []
-				})
+				}),
+				signal: abortController.signal
 			});
 			if (!res.ok || !res.body) throw new Error('Kunne ikke starte streaming');
 
@@ -151,7 +167,9 @@
 
 					const event = JSON.parse(line.slice(6));
 					if (event.type === 'status') {
-						streamingStatus = event.data?.message ?? 'Resonans tenker...';
+						const msg = event.data?.message ?? 'Resonans tenker...';
+						streamingSteps = [...streamingSteps, msg];
+						streamingStatus = msg;
 					} else if (event.type === 'token') {
 						streamingStatus = '';
 						streamingText += event.data?.token ?? '';
@@ -192,13 +210,39 @@
 
 			streamingText = '';
 			streamingStatus = '';
-		} catch {
-			chatError = 'Noe gikk galt. Prøv igjen.';
+			streamingSteps = [];
+		} catch (e) {
+			if (e instanceof Error && e.name === 'AbortError') {
+				chatStopped = true;
+				stoppedText = streamingText;
+			} else {
+				chatError = 'Noe gikk galt. Prøv igjen.';
+			}
 			streamingText = '';
 			streamingStatus = '';
+			streamingSteps = [];
 		} finally {
+			abortController = null;
 			chatLoading = false;
 		}
+	}
+
+	function stopChat() {
+		abortController?.abort();
+	}
+
+	function retryMessage() {
+		chatError = '';
+		chatMessages = chatMessages.filter((m) => m.id !== lastUserMsgId);
+		sendMessage(lastUserText);
+	}
+
+	function editStoppedMessage() {
+		chatStopped = false;
+		stoppedText = '';
+		chatMessages = chatMessages.filter((m) => m.id !== lastUserMsgId);
+		inputDraft = lastUserText;
+		inputKey++;
 	}
 </script>
 
@@ -262,14 +306,29 @@
 			{/if}
 			{#each chatMessages as msg}
 				{#if msg.role === 'user'}
-					<div class="cp-bubble-user">
-						{#if msg.imageUrl}
-							<img class="cp-bubble-img" src={msg.imageUrl} alt="Vedlagt bilde" />
-						{/if}
-						{#if msg.text && msg.text !== '📷 [Bilde]'}
-							<span>{msg.text}</span>
-						{/if}
-					</div>
+					{#if chatStopped && msg.id === lastUserMsgId}
+						<button
+							class="cp-bubble-user cp-bubble-stoppable"
+							onclick={editStoppedMessage}
+						>
+							{#if msg.imageUrl}
+								<img class="cp-bubble-img" src={msg.imageUrl} alt="Vedlagt bilde" />
+							{/if}
+							{#if msg.text && msg.text !== '📷 [Bilde]'}
+								<span>{msg.text}</span>
+							{/if}
+							<span class="cp-edit-hint">Trykk for å redigere</span>
+						</button>
+					{:else}
+						<div class="cp-bubble-user">
+							{#if msg.imageUrl}
+								<img class="cp-bubble-img" src={msg.imageUrl} alt="Vedlagt bilde" />
+							{/if}
+							{#if msg.text && msg.text !== '📷 [Bilde]'}
+								<span>{msg.text}</span>
+							{/if}
+						</div>
+					{/if}
 				{:else}
 					<TriageCard text={msg.text} />
 					{#if msg.widgetProposal}
@@ -290,16 +349,29 @@
 				{#if streamingText}
 					<TriageCard text={streamingText} streaming={true} />
 				{:else}
-					<TriageCard loading={true} status={streamingStatus} />
+					<TriageCard loading={true} steps={streamingSteps} />
 				{/if}
 			{/if}
+			{#if chatStopped && stoppedText}
+				<TriageCard text={stoppedText} stopped={true} />
+			{/if}
 			{#if chatError}
-				<p class="cp-error">{chatError}</p>
+				<div class="cp-error-row">
+					<p class="cp-error">{chatError}</p>
+					<button class="cp-retry-btn" onclick={retryMessage}>↺ Prøv på nytt</button>
+				</div>
 			{/if}
 		</div>
 
 		<div class="cp-input">
-			<ChatInput placeholder="Skriv videre i samtalen…" disabled={chatLoading} onsubmit={sendMessage} />
+			{#if chatLoading}
+				<div class="cp-stop-row">
+					<button class="cp-stop-btn" onclick={stopChat}>■ Stopp</button>
+				</div>
+			{/if}
+			{#key inputKey}
+				<ChatInput placeholder="Skriv videre i samtalen…" disabled={chatLoading} initialValue={inputDraft} onsubmit={sendMessage} />
+			{/key}
 		</div>
 	</div>
 {/if}
@@ -535,6 +607,23 @@
 		gap: 8px;
 	}
 
+	.cp-bubble-stoppable {
+		cursor: pointer;
+		opacity: 0.75;
+		border-color: #3a3a60;
+		transition: opacity 0.15s;
+		text-align: left;
+		font: inherit;
+	}
+	.cp-bubble-stoppable:hover { opacity: 1; }
+
+	.cp-edit-hint {
+		font-size: 0.68rem;
+		color: #5a5a8a;
+		font-style: italic;
+		letter-spacing: 0.02em;
+	}
+
 	.cp-bubble-img {
 		max-width: min(340px, 100%);
 		border-radius: 10px;
@@ -546,7 +635,50 @@
 		padding: 10px 16px env(safe-area-inset-bottom, 14px);
 		border-top: 1px solid #1a1a1a;
 		flex-shrink: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
 	}
+
+	.cp-stop-row {
+		display: flex;
+		justify-content: center;
+	}
+
+	.cp-stop-btn {
+		background: none;
+		border: 1px solid #2a2a2a;
+		border-radius: 999px;
+		padding: 5px 14px;
+		color: #666;
+		font: inherit;
+		font-size: 0.75rem;
+		font-weight: 500;
+		letter-spacing: 0.04em;
+		cursor: pointer;
+		transition: border-color 0.12s, color 0.12s;
+	}
+	.cp-stop-btn:hover { border-color: #555; color: #aaa; }
+
+	.cp-error-row {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+	}
+
+	.cp-retry-btn {
+		background: none;
+		border: 1px solid #3a2a2a;
+		border-radius: 999px;
+		padding: 4px 12px;
+		color: #a06060;
+		font: inherit;
+		font-size: 0.75rem;
+		cursor: pointer;
+		white-space: nowrap;
+		transition: border-color 0.12s, color 0.12s;
+	}
+	.cp-retry-btn:hover { border-color: #7a4040; color: #d08080; }
 
 	.cp-empty {
 		margin: auto;
@@ -560,5 +692,6 @@
 		font-size: 0.8rem;
 		color: #e07070;
 		margin: 0;
+		flex: 1;
 	}
 </style>

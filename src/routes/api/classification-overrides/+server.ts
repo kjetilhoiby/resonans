@@ -13,6 +13,7 @@ import type { RequestHandler } from './$types';
 type OverrideRequest = {
 	domain?: ClassificationDomain;
 	correctedCategory?: string;
+	correctedSubcategory?: string | null;
 	source?: string;
 	fingerprint?: string;
 	description?: string | null;
@@ -73,6 +74,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		domain: body.domain,
 		fingerprint,
 		correctedCategory,
+		correctedSubcategory: body.correctedSubcategory ?? null,
 		source: body.source ?? 'manual_ui'
 	});
 
@@ -81,6 +83,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		domain: saved.domain,
 		fingerprint: saved.fingerprint,
 		correctedCategory: saved.correctedCategory,
+		correctedSubcategory: saved.correctedSubcategory,
 		weight: saved.weight,
 		source: saved.source,
 		updatedAt: saved.updatedAt

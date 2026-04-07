@@ -6,6 +6,7 @@
 import {
 	buildTransactionFingerprint,
 	getOverrideCategory,
+	getOverrideSubcategory,
 	type ClassificationOverrideCache,
 	loadTransactionMatchingRules,
 	type TransactionMatchingRule
@@ -61,11 +62,13 @@ export function categorizeTransaction(
 	const overrideCategory = getOverrideCategory(overrides, fingerprint);
 	if (overrideCategory && CATEGORIES[overrideCategory as CategoryId]) {
 		const cat = CATEGORIES[overrideCategory as CategoryId];
+		const overrideSubcategory = getOverrideSubcategory(overrides, fingerprint);
 		return {
 			category: cat.id,
 			label: cat.label,
 			emoji: cat.emoji,
-			isFixed: cat.defaultFixed
+			isFixed: cat.defaultFixed,
+			subcategory: overrideSubcategory ?? undefined
 		};
 	}
 

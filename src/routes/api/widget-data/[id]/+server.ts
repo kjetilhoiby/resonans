@@ -94,11 +94,15 @@ function getPreviousRange(range: string): { from: Date; to: Date } {
  * to only the given spending category using keyword matching on description.
  * Returns '' (empty string) when no filter applies.
  */
-function buildCategoryFilter(dataType: string, filterCategory?: string | null): string {
+function buildCategoryFilter(dataType: string, filterCategory?: string | null, rules?: import('$lib/server/classification-overrides').TransactionMatchingRule[]): string {
 	if (dataType !== 'bank_transaction' || !filterCategory) return '';
-	const keywords = getKeywordsForCategory(filterCategory);
-	if (!keywords || keywords.length === 0) return '';
-	// Build ILIKE ANY(ARRAY[...]) — safe because keywords come from a static config file
+	if (!rules || rules.length === 0) return '';
+	const normalized = normalizeCategoryId(filterCategory);
+	const keywords = rules
+		.filter((r) => normalizeCategoryId(r.category) === normalized)
+		.flatMap((r) => r.keywords);
+	if (keywords.length === 0) return '';
+	// Build ILIKE ANY(ARRAY[...]) — safe because keywords come from DB rules (no user input)
 	const escaped = keywords.map((k) => `'%${k.replace(/'/g, "''")}%'`).join(', ');
 	return `AND (data->>'description') ILIKE ANY(ARRAY[${escaped}])`;
 }
@@ -137,8 +141,10 @@ async function fetchKeywordFilteredAmountRows(
 	from: Date,
 	to: Date,
 	filterCategory: string,
+	rules?: import('$lib/server/classification-overrides').TransactionMatchingRule[],
 ): Promise<Array<{ timestamp: Date; value: number }>> {
-	const categoryFilter = buildCategoryFilter('bank_transaction', filterCategory);
+	const loadedRules = rules ?? await loadTransactionMatchingRules();
+	const categoryFilter = buildCategoryFilter('bank_transaction', filterCategory, loadedRules);
 	if (!categoryFilter) return [];
 
 	const rows = await pgClient.unsafe(
@@ -210,7 +216,7 @@ async function fetchCategorizedAmountRows(
 	}
 
 	// Fallback: hvis mapping/kategorisering ikke treffer ennå, bruk keyword-filter
-	return fetchKeywordFilteredAmountRows(userId, from, to, filterCategory);
+	return fetchKeywordFilteredAmountRows(userId, from, to, filterCategory, transactionRules);
 }
 
 async function collectAmountFilterDebug(
@@ -255,7 +261,7 @@ async function collectAmountFilterDebug(
 		}
 	}
 
-	const keywordRows = await fetchKeywordFilteredAmountRows(userId, from, to, filterCategory);
+	const keywordRows = await fetchKeywordFilteredAmountRows(userId, from, to, filterCategory, transactionRules);
 	const topClassifiedCategories = [...categoryCounter.entries()]
 		.sort((a, b) => b[1] - a[1])
 		.slice(0, 5)

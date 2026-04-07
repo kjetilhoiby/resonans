@@ -6,6 +6,7 @@ export type ClassificationDomain = 'transaction' | 'task';
 
 export type ClassificationOverride = {
 	correctedCategory: string;
+	correctedSubcategory: string | null;
 	weight: number;
 };
 
@@ -57,12 +58,13 @@ export async function loadClassificationOverrides(
 		columns: {
 			fingerprint: true,
 			correctedCategory: true,
+			correctedSubcategory: true,
 			weight: true
 		}
 	});
 
 	return new Map(
-		rows.map((row) => [row.fingerprint, { correctedCategory: row.correctedCategory, weight: row.weight }])
+		rows.map((row) => [row.fingerprint, { correctedCategory: row.correctedCategory, correctedSubcategory: row.correctedSubcategory ?? null, weight: row.weight }])
 	);
 }
 
@@ -74,11 +76,20 @@ export function getOverrideCategory(
 	return cache.get(fingerprint)?.correctedCategory ?? null;
 }
 
+export function getOverrideSubcategory(
+	cache: ClassificationOverrideCache | undefined,
+	fingerprint: string
+): string | null {
+	if (!cache) return null;
+	return cache.get(fingerprint)?.correctedSubcategory ?? null;
+}
+
 export async function upsertClassificationOverride(params: {
 	userId: string;
 	domain: ClassificationDomain;
 	fingerprint: string;
 	correctedCategory: string;
+	correctedSubcategory?: string | null;
 	source?: string;
 }) {
 	const existing = await db.query.classificationOverrides.findFirst({
@@ -95,6 +106,7 @@ export async function upsertClassificationOverride(params: {
 			.update(classificationOverrides)
 			.set({
 				correctedCategory: params.correctedCategory,
+				correctedSubcategory: params.correctedSubcategory ?? null,
 				weight: incrementWeight ? existing.weight + 1 : 1,
 				source: params.source ?? existing.source,
 				updatedAt: new Date()
@@ -111,6 +123,7 @@ export async function upsertClassificationOverride(params: {
 			domain: params.domain,
 			fingerprint: params.fingerprint,
 			correctedCategory: params.correctedCategory,
+			correctedSubcategory: params.correctedSubcategory ?? null,
 			source: params.source ?? 'manual_ui'
 		})
 		.returning();

@@ -23,9 +23,13 @@
 		loading?: boolean;
 		streaming?: boolean;
 		status?: string;
+		steps?: string[];
+		stopped?: boolean;
 	}
 
-	let { text = '', actions = [], loading = false, streaming = false, status = '' }: Props = $props();
+	let { text = '', actions = [], loading = false, streaming = false, status = '', steps = [], stopped = false }: Props = $props();
+
+	let stepsExpanded = $state(false);
 
 	marked.setOptions({
 		breaks: true,
@@ -36,23 +40,45 @@
 </script>
 
 {#if loading}
-	<div class="tc-card tc-card-loading" role="status" aria-live="polite" aria-label="Venter på svar fra Resonans AI">
+	<div class="tc-card tc-card-loading" role="status" aria-live="polite" aria-label="Tenker…">
 		<div class="tc-header">
 			<span class="tc-avatar" aria-hidden="true"><Icon name="chat" size={15} /></span>
-			<div class="tc-text tc-loading-text">
-				{#if status}
-					<span class="tc-loading-label tc-status-label">{status}</span>
-					<span class="tc-loading-dots" aria-hidden="true">
+			<div class="tc-thinking-wrap">
+				<div class="tc-thinking-row">
+					<span class="tc-thinking-label">Tenker</span>
+					<span class="tc-thinking-dots" aria-hidden="true">
 						<span></span><span></span><span></span>
 					</span>
-				{:else}
-					<span class="tc-loading-label">Resonans svarer</span>
-					<span class="tc-loading-dots" aria-hidden="true">
-						<span></span><span></span><span></span>
-					</span>
+					{#if steps.length > 0}
+						<button
+							class="tc-expand-btn"
+							onclick={() => (stepsExpanded = !stepsExpanded)}
+							aria-expanded={stepsExpanded}
+							aria-label="Vis detaljer"
+						>
+							<span class="tc-chevron" class:rotated={stepsExpanded}>›</span>
+						</button>
+					{/if}
+				</div>
+				{#if stepsExpanded && steps.length > 0}
+					<div class="tc-steps" role="list">
+						{#each steps as step}
+							<p class="tc-step" role="listitem">{step}</p>
+						{/each}
+					</div>
+				{:else if steps.length > 0}
+					<p class="tc-latest-step">{steps[steps.length - 1]}</p>
 				{/if}
 			</div>
 		</div>
+	</div>
+{:else if stopped && text}
+	<div class="tc-card tc-card-stopped" role="status">
+		<div class="tc-header">
+			<span class="tc-avatar" aria-label="Resonans AI"><Icon name="chat" size={15} decorative={false} title="Resonans AI" /></span>
+			<div class="tc-text tc-text-stopped">{@html htmlContent}</div>
+		</div>
+		<div class="tc-stopped-badge">Avbrutt</div>
 	</div>
 {:else if streaming && text}
 	<div class="tc-card" role="status" aria-live="polite">
@@ -240,38 +266,114 @@
 		max-width: 65%;
 	}
 
-	.tc-loading-text {
-		color: #d8ddff;
-		border-color: #343f70;
-		display: inline-flex;
+	.tc-thinking-wrap {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		background: #111;
+		border: 1px solid #242424;
+		border-radius: 4px 14px 14px 14px;
+		padding: 10px 14px;
+	}
+
+	.tc-thinking-row {
+		display: flex;
 		align-items: center;
-		gap: 8px;
-		position: relative;
-		overflow: hidden;
+		gap: 5px;
 	}
 
-	.tc-loading-text::after {
-		content: '';
-		position: absolute;
-		inset: 0;
-		background: linear-gradient(110deg, transparent 0%, rgba(152, 173, 255, 0.12) 45%, transparent 90%);
-		transform: translateX(-115%);
-		animation: tcLoadingSweep 2.6s ease-in-out infinite;
-		pointer-events: none;
-	}
-
-	.tc-loading-label {
-		position: relative;
-		z-index: 1;
+	.tc-thinking-label {
+		font-size: 0.85rem;
+		color: #707070;
 		font-weight: 500;
 	}
 
-	.tc-status-label {
-		color: #9eabff;
-		font-size: 0.85rem;
-		font-weight: 400;
+	.tc-thinking-dots {
+		display: inline-flex;
+		align-items: center;
+		gap: 3px;
+	}
+
+	.tc-thinking-dots span {
+		width: 4px;
+		height: 4px;
+		border-radius: 50%;
+		background: #505050;
+		animation: tcThinkDot 1.6s ease-in-out infinite;
+	}
+
+	.tc-thinking-dots span:nth-child(2) { animation-delay: 0.25s; }
+	.tc-thinking-dots span:nth-child(3) { animation-delay: 0.5s; }
+
+	@keyframes tcThinkDot {
+		0%, 100% { opacity: 0.25; transform: scale(0.85); }
+		50%       { opacity: 0.85; transform: scale(1.1); }
+	}
+
+	.tc-expand-btn {
+		background: none;
+		border: none;
+		padding: 0 2px;
+		cursor: pointer;
+		line-height: 1;
+		color: #484848;
+		font-size: 1rem;
+		transition: color 0.12s;
+		margin-left: 2px;
+	}
+	.tc-expand-btn:hover { color: #aaa; }
+
+	.tc-chevron {
+		display: inline-block;
+		transition: transform 0.18s;
+		transform: rotate(0deg);
+	}
+	.tc-chevron.rotated { transform: rotate(90deg); }
+
+	.tc-steps {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		padding-top: 4px;
+		border-top: 1px solid #1e1e1e;
+	}
+
+	.tc-step {
+		margin: 0;
+		font-size: 0.73rem;
+		color: #555;
 		font-style: italic;
-		transition: all 0.3s ease;
+		line-height: 1.45;
+	}
+
+	.tc-latest-step {
+		margin: 0;
+		font-size: 0.73rem;
+		color: #4a4a4a;
+		font-style: italic;
+		line-height: 1.45;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		max-width: 28ch;
+	}
+
+	/* ── Stopped variant ───────────────────────────────────── */
+	.tc-card-stopped {
+		opacity: 0.7;
+	}
+
+	.tc-text-stopped {
+		color: #888;
+	}
+
+	.tc-stopped-badge {
+		margin-left: 30px;
+		font-size: 0.68rem;
+		color: #555;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		font-weight: 600;
 	}
 
 	.tc-cursor {
@@ -286,52 +388,5 @@
 	@keyframes tcCursorBlink {
 		0%, 100% { opacity: 1; }
 		50% { opacity: 0; }
-	}
-
-	.tc-loading-dots {
-		display: inline-flex;
-		align-items: center;
-		gap: 4px;
-		position: relative;
-		z-index: 1;
-	}
-
-	.tc-loading-dots span {
-		width: 6px;
-		height: 6px;
-		border-radius: 50%;
-		background: #aebaf7;
-		opacity: 0.3;
-		animation: tcDotPulse 1.2s ease-in-out infinite;
-	}
-
-	.tc-loading-dots span:nth-child(2) {
-		animation-delay: 0.2s;
-	}
-
-	.tc-loading-dots span:nth-child(3) {
-		animation-delay: 0.4s;
-	}
-
-	@keyframes tcDotPulse {
-		0%,
-		100% {
-			opacity: 0.3;
-			transform: translateY(0) scale(0.9);
-		}
-		50% {
-			opacity: 1;
-			transform: translateY(-1px) scale(1);
-		}
-	}
-
-	@keyframes tcLoadingSweep {
-		0% {
-			transform: translateX(-115%);
-		}
-		55%,
-		100% {
-			transform: translateX(115%);
-		}
 	}
 </style>

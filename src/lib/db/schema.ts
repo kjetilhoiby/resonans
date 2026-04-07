@@ -667,6 +667,8 @@ export const classificationOverrides = pgTable('classification_overrides', {
 	fingerprint: text('fingerprint').notNull(),
 	/** User-corrected category to enforce for the matching fingerprint */
 	correctedCategory: text('corrected_category').notNull(),
+	/** Optional subcategory override (e.g. 'skatt' under 'diverse') */
+	correctedSubcategory: text('corrected_subcategory'),
 	/** How many times this override has been confirmed by the user */
 	weight: integer('weight').notNull().default(1),
 	/** optional source descriptor ('manual_ui', etc.) */

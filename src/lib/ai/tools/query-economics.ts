@@ -3,6 +3,10 @@ import { db } from '$lib/db';
 import { sensorEvents } from '$lib/db/schema';
 import { eq, and, desc, asc, sql } from 'drizzle-orm';
 import { detectGlobalPayday } from '$lib/server/integrations/payday-detector';
+import { categorizeTransaction } from '$lib/server/integrations/transaction-categories';
+import { loadMerchantMappings } from '$lib/server/integrations/spending-analyzer';
+import { loadClassificationOverrides, loadTransactionMatchingRules } from '$lib/server/classification-overrides';
+import { normalizeCategoryId } from '$lib/integrations/transaction-categories-client';
 
 export const queryEconomicsTool = {
 	name: 'query_economics',
@@ -18,16 +22,18 @@ Use this tool when user asks about:
 Query types:
 - 'balance': Get current/latest account balances
 - 'transactions': Get transactions for a specific period (requires month or dateRange)
-- 'spending_summary': Get spending by category for a period (requires month or payPeriod)
+- 'spending_summary': Get spending by category for a period (requires month or payPeriod). Optionally filter to a single category using the 'category' param (e.g. 'dagligvarer', 'kafe_og_restaurant').
+- 'category_trend': Get monthly totals for a SINGLE spending category over a date range (requires dateRange + category). Use this when the user asks for month-by-month spending within one category, e.g. "vis dagligvare per måned" or "trend for kafe siste 6 måneder". Returns an array of {month, spent} rows ready for a table.
 - 'account_list': List all connected accounts
 
 The tool returns actual data from your bank that you can trust.`,
 
 	parameters: z.object({
 		userId: z.string().describe('User ID'),
-		queryType: z.enum(['balance', 'transactions', 'spending_summary', 'account_list']).describe(
-			'balance: Get current account balances. transactions: Get individual transactions. spending_summary: Get spending by category. account_list: List all accounts.'
+		queryType: z.enum(['balance', 'transactions', 'spending_summary', 'category_trend', 'account_list']).describe(
+			'balance: Get current account balances. transactions: Get individual transactions. spending_summary: Get spending by category (optional category filter). category_trend: Monthly totals for a single category over a date range. account_list: List all accounts.'
 		),
+		category: z.string().optional().describe('Normalized category ID to filter by (e.g. "dagligvarer", "kafe_og_restaurant", "bil_og_transport"). Used in spending_summary and category_trend.'),
 		month: z.string().optional().describe('Month in YYYY-MM format (e.g., "2026-01")'),
 		payPeriod: z.enum(['current']).optional().describe('Use "current" to query from the last payday until today (i.e. the current salary month). Preferred over "month" for questions about "this pay month" or "hittil denne lønnsmåneden".'),
 		dateRange: z.object({
@@ -41,15 +47,16 @@ The tool returns actual data from your bank that you can trust.`,
 
 	execute: async (args: {
 		userId: string;
-		queryType: 'balance' | 'transactions' | 'spending_summary' | 'account_list';
+		queryType: 'balance' | 'transactions' | 'spending_summary' | 'category_trend' | 'account_list';
 		month?: string;
 		payPeriod?: 'current';
 		dateRange?: { start: string; end: string };
+		category?: string;
 		accountId?: string;
 		limit?: number;
 		sortBy?: 'date' | 'amount';
 	}) => {
-		const { userId, queryType, month, payPeriod, dateRange, accountId, limit = 50, sortBy = 'date' } = args;
+		const { userId, queryType, month, payPeriod, dateRange, category, accountId, limit = 50, sortBy = 'date' } = args;
 
 		// Resolve pay-period into a concrete dateRange
 		let resolvedDateRange = dateRange;
@@ -315,59 +322,151 @@ The tool returns actual data from your bank that you can trust.`,
 				const allTxs = await db
 					.select({
 						amount: sql<number>`(data->>'amount')::numeric`,
-						category: sql<string>`data->>'category'`,
-						description: sql<string>`data->>'description'`
-					})
-					.from(sensorEvents)
-					.where(where);
+					description: sql<string>`data->>'description'`,
+					typeText: sql<string>`COALESCE(data->>'typeText', data->>'category')`,
+				})
+				.from(sensorEvents)
+				.where(where);
 
-				// Only count outgoing (spending) transactions — amount < 0
-				const transactions = allTxs.filter((tx) => (Number(tx.amount) || 0) < 0);
+			// Only count outgoing (spending) transactions — amount < 0
+			const spendingTxs = allTxs.filter((tx) => (Number(tx.amount) || 0) < 0);
 
-				if (transactions.length === 0) {
-					return {
-						success: true,
-						data: { categories: [], totalSpent: 0, period: periodLabel, topCategories: [] },
-						message: `No spending transactions found for ${periodLabel}`
-					};
-				}
-
-				// Group by category
-				const byCategory = new Map<string, { total: number; count: number }>();
-				for (const tx of transactions) {
-					const cat = tx.category || 'Annet';
-					const current = byCategory.get(cat) || { total: 0, count: 0 };
-					byCategory.set(cat, {
-						total: current.total + (Number(tx.amount) || 0),
-						count: current.count + 1
-					});
-				}
-
-				// Sort by absolute spending (largest first)
-				const sorted = Array.from(byCategory.entries())
-					.map(([cat, data]) => ({
-						category: cat,
-						spent: Math.abs(data.total),
-						count: data.count,
-						avg: Math.abs(data.total / data.count)
-					}))
-					.sort((a, b) => b.spent - a.spent);
-
-				const totalSpent = sorted.reduce((sum, c) => sum + c.spent, 0);
-
+			if (spendingTxs.length === 0) {
 				return {
 					success: true,
-					data: {
-						categories: sorted,
-						totalSpent,
-						period: periodLabel,
-						topCategories: sorted.slice(0, 5)
-					},
-					message: `Total spent: ${totalSpent.toLocaleString('nb-NO')} kr across ${sorted.length} spending categories (period: ${periodLabel})`
+					data: { categories: [], totalSpent: 0, period: periodLabel, topCategories: [] },
+					message: `No spending transactions found for ${periodLabel}`
 				};
 			}
 
+			// Use proper categorizeTransaction classification
+			const [merchantMappingCache, transactionOverrideCache, transactionRules] = await Promise.all([
+				loadMerchantMappings(userId),
+				loadClassificationOverrides(userId, 'transaction'),
+				loadTransactionMatchingRules()
+			]);
+
+			const wantedCategory = category ? normalizeCategoryId(category) : null;
+
+			// Group by classified category
+			const byCategory = new Map<string, { total: number; count: number }>();
+			for (const tx of spendingTxs) {
+				const classified = categorizeTransaction(tx.description, tx.typeText, Number(tx.amount), merchantMappingCache, transactionOverrideCache, transactionRules);
+				const cat = normalizeCategoryId(classified.category) ?? classified.category;
+				if (wantedCategory && cat !== wantedCategory) continue;
+				const current = byCategory.get(cat) || { total: 0, count: 0 };
+				byCategory.set(cat, {
+					total: current.total + (Number(tx.amount) || 0),
+					count: current.count + 1
+				});
+			}
+
+			// Sort by absolute spending (largest first)
+			const sorted = Array.from(byCategory.entries())
+				.map(([cat, data]) => ({
+					category: cat,
+					spent: Math.abs(data.total),
+					count: data.count,
+					avg: Math.abs(data.total / data.count)
+				}))
+				.sort((a, b) => b.spent - a.spent);
+
+			const totalSpent = sorted.reduce((sum, c) => sum + c.spent, 0);
+
 			return {
+				success: true,
+				data: {
+					categories: sorted,
+					totalSpent,
+					period: periodLabel,
+					topCategories: sorted.slice(0, 5)
+				},
+				message: wantedCategory
+					? `Total spent on ${wantedCategory}: ${totalSpent.toLocaleString('nb-NO')} kr (period: ${periodLabel})`
+					: `Total spent: ${totalSpent.toLocaleString('nb-NO')} kr across ${sorted.length} spending categories (period: ${periodLabel})`
+			};
+		}
+
+		// Get monthly trend for a single spending category
+		if (queryType === 'category_trend') {
+			if (!category) {
+				return { success: false, message: 'category_trend requires a category parameter (e.g. "dagligvarer")' };
+			}
+			if (!resolvedDateRange && !month) {
+				return { success: false, message: 'category_trend requires dateRange or month' };
+			}
+
+			let from: Date;
+			let to: Date;
+			if (resolvedDateRange) {
+				from = new Date(resolvedDateRange.start);
+				to = new Date(resolvedDateRange.end);
+				to.setDate(to.getDate() + 1);
+			} else {
+				const [year, mo] = month!.split('-').map(Number);
+				from = new Date(year, mo - 1, 1);
+				to = new Date(year, mo, 1);
+			}
+
+			const where = accountId
+				? and(
+						eq(sensorEvents.userId, userId),
+						eq(sensorEvents.dataType, 'bank_transaction'),
+						sql`data->>'accountId' = ${accountId}`,
+						sql`timestamp >= ${from.toISOString()}`,
+						sql`timestamp < ${to.toISOString()}`
+					)
+				: and(
+						eq(sensorEvents.userId, userId),
+						eq(sensorEvents.dataType, 'bank_transaction'),
+						sql`timestamp >= ${from.toISOString()}`,
+						sql`timestamp < ${to.toISOString()}`
+					);
+
+			const allTxs = await db
+				.select({
+					timestamp: sensorEvents.timestamp,
+					amount: sql<number>`(data->>'amount')::numeric`,
+					description: sql<string>`data->>'description'`,
+					typeText: sql<string>`COALESCE(data->>'typeText', data->>'category')`,
+				})
+				.from(sensorEvents)
+				.where(where);
+
+			const spendingTxs = allTxs.filter((tx) => (Number(tx.amount) || 0) < 0);
+
+			const [merchantMappingCache, transactionOverrideCache, transactionRules] = await Promise.all([
+				loadMerchantMappings(userId),
+				loadClassificationOverrides(userId, 'transaction'),
+				loadTransactionMatchingRules()
+			]);
+
+			const wantedCategory = normalizeCategoryId(category);
+
+			// Group matching transactions by month
+			const byMonth = new Map<string, number>();
+			for (const tx of spendingTxs) {
+				const classified = categorizeTransaction(tx.description, tx.typeText, Number(tx.amount), merchantMappingCache, transactionOverrideCache, transactionRules);
+				if (normalizeCategoryId(classified.category) !== wantedCategory) continue;
+				const monthKey = tx.timestamp.toISOString().slice(0, 7); // YYYY-MM
+				byMonth.set(monthKey, (byMonth.get(monthKey) ?? 0) + Math.abs(Number(tx.amount)));
+			}
+
+			const monthRows = Array.from(byMonth.entries())
+				.map(([m, spent]) => ({ month: m, spent: Math.round(spent * 100) / 100 }))
+				.sort((a, b) => a.month.localeCompare(b.month));
+
+			const totalSpent = monthRows.reduce((s, r) => s + r.spent, 0);
+			const avgPerMonth = monthRows.length > 0 ? totalSpent / monthRows.length : 0;
+
+			return {
+				success: true,
+				data: { category: wantedCategory, months: monthRows, totalSpent, avgPerMonth },
+				message: `Monthly ${wantedCategory} spending: ${monthRows.map((r) => `${r.month}: ${r.spent.toLocaleString('nb-NO')} kr`).join(', ')}`
+			};
+		}
+
+		return {
 				success: false,
 				message: 'Unknown query type'
 			};

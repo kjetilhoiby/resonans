@@ -537,18 +537,23 @@ const tools = [
 		type: 'function' as const,
 		function: {
 					name: 'query_economics',
-					description: 'Hent økonomisk data fra tilkoblede bankkontoer. Brukes for saldo, transaksjoner, forbruk per måned og kontoliste.',
+					description: 'Hent økonomisk data fra tilkoblede bankkontoer. Brukes for saldo, transaksjoner, forbruk per måned og kontoliste.\n\nqueryType:\n- balance: Hent kontosaldo\n- transactions: Hent enkelt-transaksjoner (krever month eller dateRange)\n- spending_summary: Hent forbruk gruppert per kategori (krever month eller payPeriod). Kan filtreres til én kategori med "category".\n- category_trend: Hent månedlige totaler for ÉN kategori over et dato-spenn (krever dateRange + category). BRUK DETTE når bruker ber om månedlig utvikling for én kategori, f.eks. "dagligvare per måned".\n- account_list: List alle tilkoblede kontoer',
 					parameters: {
 						type: 'object',
 						properties: {
 							queryType: {
 								type: 'string',
 								description: 'Type økonomi-spørring',
-								enum: ['balance', 'transactions', 'spending_summary', 'account_list']
+								enum: ['balance', 'transactions', 'spending_summary', 'category_trend', 'account_list']
 							},
 							month: {
 								type: 'string',
 								description: 'Måned i format YYYY-MM, for eksempel 2026-01'
+							},
+							payPeriod: {
+								type: 'string',
+								description: 'Bruk "current" for å hente data fra siste lønnsdag til i dag (inneværende lønnsmåned)',
+								enum: ['current']
 							},
 							dateRange: {
 								type: 'object',
@@ -562,6 +567,10 @@ const tools = [
 										description: 'Sluttdato i format YYYY-MM-DD'
 									}
 								}
+							},
+							category: {
+								type: 'string',
+								description: 'Normalisert kategori-ID for filtrering. Eksempler: "dagligvarer", "kafe_og_restaurant", "bil_og_transport", "helse_og_velvaere", "faste_boutgifter", "forsikring", "sparing", "reise", "medier_og_underholdning". Brukes med spending_summary og category_trend.'
 							},
 							accountId: {
 								type: 'string',

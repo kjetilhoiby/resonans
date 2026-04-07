@@ -4,6 +4,7 @@
 	import GoalRing from '../ui/GoalRing.svelte';
 	import Section from '../ui/Section.svelte';
 	import TransactionList from '../ui/TransactionList.svelte';
+	import TransactionExplorer from '../ui/TransactionExplorer.svelte';
 	import type { GoalTrack } from '$lib/domain/goal-tracks';
 
 	interface EconomicsAccount {
@@ -81,6 +82,7 @@
 
 	// Transaction overlay state
 	let txOverlay = $state<null | 'all' | 'grocery'>(null);
+	let showExplorer = $state(false);
 
 	let groceryGoalInput = $state('9000');
 	let groceryGoalSaving = $state(false);
@@ -390,6 +392,16 @@
 		/>
 	</div>
 
+	{#if accounts.length > 0}
+		<button class="ed-explore-btn" type="button" onclick={() => (showExplorer = true)}>
+			<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<circle cx="11" cy="11" r="8"></circle>
+				<line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+			</svg>
+			Utforsk alle transaksjoner
+		</button>
+	{/if}
+
 	{#if accounts.length === 0}
 		<div class="ed-empty">
 			<p>Ingen økonomidata tilgjengelig ennå.</p>
@@ -397,6 +409,11 @@
 		</div>
 	{/if}
 </div>
+
+<!-- Transaction explorer overlay -->
+{#if showExplorer}
+	<TransactionExplorer onclose={() => (showExplorer = false)} />
+{/if}
 
 <!-- Transaction list overlay -->
 {#if txOverlay === 'all'}
@@ -444,6 +461,29 @@
 		font-size: 0.82rem;
 		line-height: 1.5;
 		color: #777;
+	}
+
+	.ed-explore-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 8px;
+		width: 100%;
+		padding: 12px 16px;
+		background: #141414;
+		border: 1px solid #2a2a2a;
+		border-radius: 14px;
+		color: #888;
+		font: inherit;
+		font-size: 0.85rem;
+		cursor: pointer;
+		transition: border-color 0.15s, color 0.15s, background 0.15s;
+	}
+
+	.ed-explore-btn:active {
+		background: #1a1a2a;
+		border-color: #3a4a85;
+		color: #a8b4f8;
 	}
 
 	.ed-grid {

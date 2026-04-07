@@ -1,7 +1,7 @@
 <!--
   HomeScreen — fire-sone hjemskjerm.
 
-  Layout: 10 / 25 / 30 / 35  (tittel / widgets / tema / input)
+  Layout: 10 / 28 / 24 / 28  (tittel / widgets / tema / input)
   Ingen tab-bar, ingen overlays. Soner animerer til fullskjerm ved tap.
 
   Props:
@@ -1962,9 +1962,9 @@
 		color: #aaa;
 	}
 
-	/* ── Widget-sone (25 %) — kort med avrundede hjørner ── */
+	/* ── Widget-sone (28 %) — kort med avrundede hjørner ── */
 	.zone-widgets {
-		flex: 25 0 0;
+		flex: 28 0 0;
 		min-height: 0;
 		padding: 14px 16px 10px;
 		background: #171717;
@@ -1973,11 +1973,11 @@
 		position: relative;
 	}
 
-	/* ── Tema-sone (30 %) ── */
+	/* ── Tema-sone (24 %) ── */
 	.zone-tema {
-		flex: 30 0 0;
+		flex: 24 0 0;
 		min-height: 0;
-		padding: 12px 20px 8px;
+		padding: 8px 20px 6px;
 	}
 
 	/* ── Zone-label ── */
@@ -1986,7 +1986,7 @@
 		text-transform: uppercase;
 		letter-spacing: 0.1em;
 		color: #444;
-		margin: 0 0 10px;
+		margin: 0 0 6px;
 	}
 
 	/* ── Widget-rader ── */
@@ -2246,11 +2246,11 @@
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 8px;
+		gap: 6px;
 		background: linear-gradient(180deg, hsl(var(--theme-hue) 20% 12%) 0%, hsl(var(--theme-hue) 18% 10%) 100%);
 		border: none;
 		border-radius: 16px;
-		padding: 16px 8px;
+		padding: 10px 8px;
 		cursor: pointer;
 		transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
 		font: inherit;
@@ -2264,7 +2264,7 @@
 	}
 
 	.tema-btn-v3-icon {
-		font-size: 1.5rem;
+		font-size: 1.3rem;
 		line-height: 1;
 		filter: drop-shadow(0 2px 8px hsl(var(--theme-hue) 70% 18% / 0.25));
 	}
@@ -2275,12 +2275,12 @@
 		color: hsl(var(--theme-hue) 22% 80%);
 	}
 
-	/* ── Input-sone (35 %) — kort med avrundede hjørner ── */
+	/* ── Input-sone (28 %) — kort med avrundede hjørner ── */
 	.zone-input {
-		flex: 35 0 0;
+		flex: 28 0 0;
 		min-height: 0;
-		padding: 12px 14px;
-		padding-bottom: calc(12px + env(safe-area-inset-bottom, 8px));
+		padding: 8px 14px;
+		padding-bottom: calc(8px + env(safe-area-inset-bottom, 8px));
 		background: #171717;
 		border-radius: 18px;
 		margin: 0 12px;
