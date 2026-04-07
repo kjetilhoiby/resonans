@@ -10,7 +10,7 @@ import {
 	loadTransactionMatchingRules,
 	type TransactionMatchingRule
 } from '$lib/server/classification-overrides';
-import { CATEGORIES } from '$lib/integrations/transaction-categories-client';
+import { CATEGORIES, normalizeCategoryId } from '$lib/integrations/transaction-categories-client';
 import type { CategoryId, Category } from '$lib/integrations/transaction-categories-client';
 
 // Re-export types for external consumers
@@ -88,8 +88,9 @@ export function categorizeTransaction(
 	if (rules) {
 		for (const rule of rules) {
 			if (rule.keywords.some((kw) => text.includes(kw.toLowerCase()))) {
-				const cat = CATEGORIES[rule.category as CategoryId];
-				if (!cat) continue; // Skip if category not defined
+				const catId = normalizeCategoryId(rule.category);
+				const cat = CATEGORIES[catId];
+				if (!cat) continue; // Should never hit this after normalization, but guard anyway
 				return {
 					category: cat.id,
 					label: cat.label,

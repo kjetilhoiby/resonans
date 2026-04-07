@@ -55,6 +55,119 @@ export const CATEGORIES: Record<CategoryId, Category> = {
 	ukategorisert:           { id: 'ukategorisert',          label: 'Ukategorisert',            emoji: '📦', defaultFixed: false },
 };
 
+/**
+ * Alias map: maps legacy/seed rule category names and common variants to canonical CategoryId.
+ * This covers the mismatch between seed-transaction-rules.mjs (uses e.g. 'dagligvare', 'mat')
+ * and the SB1-based CATEGORIES object (uses 'dagligvarer', 'kafe_og_restaurant', etc.).
+ */
+const CATEGORY_ALIASES: Record<string, CategoryId> = {
+	// Dagligvarer
+	dagligvare:               'dagligvarer',
+	matvarer:                 'dagligvarer',
+	matbutikk:                'dagligvarer',
+	grocery:                  'dagligvarer',
+
+	// Kafe og restaurant
+	mat:                      'kafe_og_restaurant',
+	mat_ute:                  'kafe_og_restaurant',
+	restaurant:               'kafe_og_restaurant',
+	kafe:                     'kafe_og_restaurant',
+	fastfood:                 'kafe_og_restaurant',
+	takeaway:                 'kafe_og_restaurant',
+
+	// Transport
+	transport:                'bil_og_transport',
+	bil:                      'bil_og_transport',
+	drivstoff:                'bil_og_transport',
+
+	// Bolig / faste boutgifter
+	bolig:                    'faste_boutgifter',
+	husleie:                  'faste_boutgifter',
+	boutgifter:               'faste_boutgifter',
+	strom:                    'faste_boutgifter',
+	strøm:                    'faste_boutgifter',
+
+	// Lån og gjeld
+	lan:                      'annet_lan_og_gjeld',
+	lån:                      'annet_lan_og_gjeld',
+	gjeld:                    'annet_lan_og_gjeld',
+
+	// Medier og underholdning
+	abonnement:               'medier_og_underholdning',
+	underholdning:            'medier_og_underholdning',
+	strommetjenester:         'medier_og_underholdning',
+	strømmetjenester:         'medier_og_underholdning',
+	media:                    'medier_og_underholdning',
+
+	// Klær og utstyr
+	shopping:                 'klaer_og_utstyr',
+	klaer:                    'klaer_og_utstyr',
+	klær:                     'klaer_og_utstyr',
+
+	// Helse
+	helse:                    'helse_og_velvaere',
+	apotek:                   'helse_og_velvaere',
+	lege:                     'helse_og_velvaere',
+
+	// Inntekter
+	lonn:                     'innskudd',
+	lønn:                     'innskudd',
+	inntekt:                  'innskudd',
+	salary:                   'innskudd',
+
+	// Sparing
+	sparing:                  'sparing',
+	investering:              'sparing',
+
+	// Barnehage og SFO
+	barnehage:                'barnehage_og_sfo',
+	sfo:                      'barnehage_og_sfo',
+
+	// Bilforsikring og billån
+	bilforsikring:            'bilforsikring_og_billan',
+	billan:                   'bilforsikring_og_billan',
+	billån:                   'bilforsikring_og_billan',
+
+	// Barn
+	barneklær:                'barn',
+	leker:                    'barn',
+
+	// Hobby og fritid
+	hobby:                    'hobby_og_fritid',
+	fritid:                   'hobby_og_fritid',
+	trening:                  'hobby_og_fritid',
+	kino:                     'hobby_og_fritid',
+
+	// Hjem og hage
+	hjem:                     'hjem_og_hage',
+	hage:                     'hjem_og_hage',
+	moblering:                'hjem_og_hage',
+
+	// Diverse / overføring
+	overforing:               'diverse',
+	overføring:               'diverse',
+	internoverføring:         'diverse',
+	betaling:                 'diverse',
+
+	// Fallback
+	annet:                    'ukategorisert',
+	other:                    'ukategorisert',
+	ukjent:                   'ukategorisert',
+};
+
+/**
+ * Normalize any incoming category string to a canonical CategoryId.
+ * - Returns the value as-is if it's already a valid CategoryId
+ * - Maps legacy/seed rule names via CATEGORY_ALIASES
+ * - Falls back to 'ukategorisert'
+ */
+export function normalizeCategoryId(raw: string | null | undefined): CategoryId {
+	if (!raw) return 'ukategorisert';
+	const key = raw.trim().toLowerCase();
+	if (key in CATEGORIES) return key as CategoryId;
+	return CATEGORY_ALIASES[key] ?? 'ukategorisert';
+}
+
 export const SUBCATEGORIES: Partial<Record<CategoryId, Array<{ key: string; label: string }>>> = {
 	innskudd:                [{ key: 'lonn', label: 'Lønn' }, { key: 'utbytte', label: 'Utbytte' }, { key: 'annet_innskudd', label: 'Annet innskudd' }],
 	dagligvarer:             [{ key: 'dagligvarer', label: 'Matvarer' }, { key: 'andre_dagligvarer', label: 'Andre dagligvarer' }],
