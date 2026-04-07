@@ -11,7 +11,7 @@
 	import MoneyFlow from '$lib/components/charts/MoneyFlow.svelte';
 	import IrregularSpending from '$lib/components/IrregularSpending.svelte';
 	import CumulativeSpending from '$lib/components/charts/CumulativeSpending.svelte';
-	import type { CategoryId } from '$lib/integrations/transaction-categories-client';
+	import { CATEGORIES, SUBCATEGORIES, type CategoryId } from '$lib/integrations/transaction-categories-client';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -190,10 +190,12 @@
 
 	type TransactionRow = {
 		transactionId: string;
+		accountId: string;
 		date: string;
 		description: string;
 		amount: number;
 		category: string;
+		subcategory: string | null;
 		label: string;
 		emoji: string;
 		isFixed: boolean;
@@ -201,6 +203,11 @@
 	let transactions = $state<TransactionRow[]>([]);
 	let loadingTransactions = $state(false);
 	let loadedTransactionsKey = $state<string | null>(null);
+	let transactionFromDate = $state(dateDaysAgo(30));
+	let transactionToDate = $state(new Date().toISOString().split('T')[0]);
+	let transactionCategoryFilter = $state<string>('');
+	let transactionSubcategoryFilter = $state<string>('');
+	let selectedTransactionAccountIds = $state<string[]>([]);
 
 	// ── Trigger data loading when accountId / tab change ─────────────────────
 	$effect(() => {
@@ -209,13 +216,22 @@
 		const txWindow = transactionWindow;
 		if (!id) return;
 
+		if (accounts.length > 0 && selectedTransactionAccountIds.length === 0) {
+			selectedTransactionAccountIds = [id];
+		}
+
 		if (tab === 'saldo' && loadedHistoryFor !== id) loadHistory(id);
 		else if (tab === 'utgifter' && loadedSpendingFor !== id) loadSpending(id);
 		else if (tab === 'innsikt' && loadedInsightFor !== id) loadInsight(id);
 		else if (tab === 'pengestrom' && loadedTransfers !== id) loadTransfers(id);
 		else if (tab === 'variabelt' && loadedIrregularFor !== id) loadIrregular(id);
 		else if (tab === 'akkumulert' && loadedCumulativeFor !== id) loadCumulative(id);
-		else if (tab === 'transaksjoner' && loadedTransactionsKey !== `${id}:${txWindow}`) loadTransactions(id, txWindow);
+		else if (tab === 'transaksjoner' && loadedTransactionsKey !== `${id}:${txWindow}`) {
+			const days = txWindow === '14d' ? 14 : txWindow === '30d' ? 30 : 90;
+			transactionFromDate = dateDaysAgo(days);
+			transactionToDate = new Date().toISOString().split('T')[0];
+			loadTransactions();
+		}
 	});
 
 	function dateDaysAgo(days: number): string {
@@ -303,19 +319,68 @@
 		lastUpdated = new Date();
 	}
 
-	async function loadTransactions(aid: string, window: TransactionWindow) {
+	const transactionSubcategoryOptions = $derived(() => {
+		if (!transactionCategoryFilter) return [];
+		const key = transactionCategoryFilter as CategoryId;
+		return SUBCATEGORIES[key] ?? [];
+	});
+
+	const transactionCategoryOptions = Object.values(CATEGORIES)
+		.map((cat) => ({ id: cat.id, label: `${cat.emoji} ${cat.label}` }))
+		.sort((a, b) => a.label.localeCompare(b.label, 'nb-NO'));
+
+	function toggleTransactionAccount(accountIdToToggle: string) {
+		if (selectedTransactionAccountIds.includes(accountIdToToggle)) {
+			selectedTransactionAccountIds = selectedTransactionAccountIds.filter((id) => id !== accountIdToToggle);
+		} else {
+			selectedTransactionAccountIds = [...selectedTransactionAccountIds, accountIdToToggle];
+		}
+		loadedTransactionsKey = null;
+	}
+
+	function selectAllTransactionAccounts() {
+		selectedTransactionAccountIds = accounts.map((a) => a.accountId);
+		loadedTransactionsKey = null;
+	}
+
+	function resetTransactionFilters() {
+		selectedTransactionAccountIds = [accountId];
+		const days = transactionWindow === '14d' ? 14 : transactionWindow === '30d' ? 30 : 90;
+		transactionFromDate = dateDaysAgo(days);
+		transactionToDate = new Date().toISOString().split('T')[0];
+		transactionCategoryFilter = '';
+		transactionSubcategoryFilter = '';
+		loadedTransactionsKey = null;
+		loadTransactions();
+	}
+
+	async function loadTransactions() {
 		if (loadingTransactions) return;
 		loadingTransactions = true;
 		transactions = [];
 
-		const days = window === '14d' ? 14 : window === '30d' ? 30 : 90;
-		const fromDate = dateDaysAgo(days);
-		const toDate = new Date().toISOString().split('T')[0];
+		const accountIds = selectedTransactionAccountIds.length > 0
+			? selectedTransactionAccountIds
+			: accounts.map((a) => a.accountId);
+
+		const params = new URLSearchParams({
+			fromDate: transactionFromDate,
+			toDate: transactionToDate,
+			accountIds: accountIds.join(',')
+		});
+
+		if (transactionCategoryFilter) {
+			params.set('category', transactionCategoryFilter);
+		}
+		if (transactionSubcategoryFilter) {
+			params.set('subcategory', transactionSubcategoryFilter);
+		}
+
 		const res = await fetch(
-			`/api/economics/transactions?accountId=${encodeURIComponent(aid)}&fromDate=${fromDate}&toDate=${toDate}`
+			`/api/economics/transactions?${params.toString()}`
 		);
 		transactions = await res.json();
-		loadedTransactionsKey = `${aid}:${window}`;
+		loadedTransactionsKey = `${accountId}:${transactionWindow}`;
 		loadingTransactions = false;
 		lastUpdated = new Date();
 	}
@@ -365,10 +430,10 @@
 	}
 
 	const transactionItems = $derived(
-		transactions.slice(0, 60).map((tx) => ({
+		transactions.map((tx) => ({
 			id: tx.transactionId,
-			title: `${tx.emoji} ${tx.label}`,
-			subtitle: tx.description,
+			title: `${tx.emoji} ${tx.label}${tx.subcategory ? ` · ${tx.subcategory}` : ''}`,
+			subtitle: `${tx.description}${tx.accountId ? ` · konto ${tx.accountId}` : ''}`,
 			meta: tx.date,
 			amount: formatNOK(tx.amount, selectedAccount?.currency ?? 'NOK'),
 			amountTone: tx.amount > 0 ? ('positive' as const) : ('negative' as const)
@@ -575,21 +640,84 @@
 
 				{:else if activeTab === 'transaksjoner'}
 					<div class="transactions-head">
-						<h2>Transaksjoner – {selectedAccount.accountName ?? selectedAccount.accountId}</h2>
+						<h2>Transaksjonsutforsker</h2>
 						<PeriodPills
 							options={['14d', '30d', '90d']}
 							value={transactionWindow}
 							onchange={(value) => {
 								transactionWindow = value as TransactionWindow;
 								loadedTransactionsKey = null;
+								const days = value === '14d' ? 14 : value === '30d' ? 30 : 90;
+								transactionFromDate = dateDaysAgo(days);
+								transactionToDate = new Date().toISOString().split('T')[0];
+								loadTransactions();
 							}}
 						/>
+					</div>
+					<div class="tx-explorer-filters">
+						<div class="tx-filter-row">
+							<label>
+								Fra dato
+								<input type="date" bind:value={transactionFromDate} />
+							</label>
+							<label>
+								Til dato
+								<input type="date" bind:value={transactionToDate} />
+							</label>
+							<label>
+								Kategori
+								<select
+									bind:value={transactionCategoryFilter}
+									onchange={() => {
+										transactionSubcategoryFilter = '';
+										loadedTransactionsKey = null;
+									}}
+								>
+									<option value="">Alle kategorier</option>
+									{#each transactionCategoryOptions as option}
+										<option value={option.id}>{option.label}</option>
+									{/each}
+								</select>
+							</label>
+							<label>
+								Subkategori
+								<select bind:value={transactionSubcategoryFilter} disabled={!transactionCategoryFilter}>
+									<option value="">Alle subkategorier</option>
+									{#each transactionSubcategoryOptions() as option}
+										<option value={option.key}>{option.label}</option>
+									{/each}
+								</select>
+							</label>
+						</div>
+						<div class="tx-filter-row tx-accounts-row">
+							<span class="tx-filter-label">Kontoer</span>
+							<button class="tx-mini-btn" type="button" onclick={selectAllTransactionAccounts}>Velg alle</button>
+							<button class="tx-mini-btn" type="button" onclick={resetTransactionFilters}>Nullstill</button>
+						</div>
+						<div class="tx-account-list">
+							{#each accounts as account}
+								<label class="tx-account-chip">
+									<input
+										type="checkbox"
+										checked={selectedTransactionAccountIds.includes(account.accountId)}
+										onchange={() => toggleTransactionAccount(account.accountId)}
+									/>
+									<span>{account.accountName ?? account.accountId}</span>
+								</label>
+							{/each}
+						</div>
+						<div class="tx-filter-actions">
+							<button class="refresh-button" type="button" onclick={() => { loadedTransactionsKey = null; loadTransactions(); }}>
+								Oppdater treff
+							</button>
+							<span class="tx-match-count">{transactions.length} treff</span>
+						</div>
 					</div>
 					{#if loadingTransactions}
 						<div class="loading">Laster transaksjoner…</div>
 					{:else}
 						<CompactRecordList
-							title="Nylige bevegelser"
+							title="Alle treff"
 							items={transactionItems}
 							emptyText="Ingen transaksjoner i valgt periode."
 						/>
@@ -727,6 +855,89 @@
 		justify-content: space-between;
 		gap: 10px;
 		margin-bottom: 10px;
+	}
+
+	.tx-explorer-filters {
+		background: var(--surface-color);
+		border: 1px solid var(--border-color);
+		border-radius: 12px;
+		padding: 1rem;
+		margin-bottom: 1rem;
+		display: grid;
+		gap: 0.75rem;
+	}
+
+	.tx-filter-row {
+		display: flex;
+		align-items: flex-end;
+		gap: 0.75rem;
+		flex-wrap: wrap;
+	}
+
+	.tx-filter-row label {
+		display: grid;
+		gap: 0.35rem;
+		font-size: 0.82rem;
+		color: var(--text-secondary);
+	}
+
+	.tx-filter-row input,
+	.tx-filter-row select {
+		border: 1px solid var(--border-color);
+		border-radius: 8px;
+		padding: 0.5rem 0.6rem;
+		font-size: 0.88rem;
+		background: var(--bg-color);
+		color: var(--text-primary);
+	}
+
+	.tx-accounts-row {
+		align-items: center;
+	}
+
+	.tx-filter-label {
+		font-size: 0.82rem;
+		font-weight: 600;
+		color: var(--text-secondary);
+	}
+
+	.tx-account-list {
+		display: flex;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+	}
+
+	.tx-account-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.45rem;
+		background: var(--bg-color);
+		border: 1px solid var(--border-color);
+		border-radius: 999px;
+		padding: 0.35rem 0.7rem;
+		font-size: 0.8rem;
+		color: var(--text-secondary);
+	}
+
+	.tx-mini-btn {
+		border: 1px solid var(--border-color);
+		background: var(--bg-color);
+		color: var(--text-secondary);
+		border-radius: 8px;
+		padding: 0.35rem 0.6rem;
+		font-size: 0.8rem;
+		cursor: pointer;
+	}
+
+	.tx-filter-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+	}
+
+	.tx-match-count {
+		font-size: 0.82rem;
+		color: var(--text-secondary);
 	}
 
 	.insight-empty {
@@ -947,6 +1158,16 @@
 
 		.refresh-bar {
 			flex-wrap: wrap;
+		}
+
+		.tx-filter-row {
+			flex-direction: column;
+			align-items: stretch;
+		}
+
+		.tx-filter-actions {
+			flex-direction: column;
+			align-items: flex-start;
 		}
 	}
 </style>

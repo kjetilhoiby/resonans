@@ -16,8 +16,10 @@ import type { RequestHandler } from './$types';
 export const GET: RequestHandler = async ({ url, locals }) => {
 	const userId = locals.userId;
 	const accountId = url.searchParams.get('accountId');
+	const accountIdsParam = url.searchParams.get('accountIds');
 	const month = url.searchParams.get('month');
 	const categoryFilter = url.searchParams.get('category');
+	const subcategoryFilter = url.searchParams.get('subcategory');
 	const fromDateParam = url.searchParams.get('fromDate');
 	const toDateParam = url.searchParams.get('toDate');
 
@@ -36,20 +38,28 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		return json({ error: 'Missing month or fromDate+toDate' }, { status: 400 });
 	}
 
-	const where = accountId
-		? and(
-				eq(sensorEvents.userId, userId),
-				eq(sensorEvents.dataType, 'bank_transaction'),
-				sql`data->>'accountId' = ${accountId}`,
-				sql`timestamp >= ${from.toISOString()}`,
-				sql`timestamp < ${to.toISOString()}`
-			)
-		: and(
-				eq(sensorEvents.userId, userId),
-				eq(sensorEvents.dataType, 'bank_transaction'),
-				sql`timestamp >= ${from.toISOString()}`,
-				sql`timestamp < ${to.toISOString()}`
-			);
+	const requestedAccountIds = accountIdsParam
+		? accountIdsParam.split(',').map((v) => v.trim()).filter(Boolean)
+		: [];
+
+	if (requestedAccountIds.length === 0 && accountId) {
+		requestedAccountIds.push(accountId);
+	}
+
+	const where = and(
+		eq(sensorEvents.userId, userId),
+		eq(sensorEvents.dataType, 'bank_transaction'),
+		sql`timestamp >= ${from.toISOString()}`,
+		sql`timestamp < ${to.toISOString()}`,
+		...(requestedAccountIds.length > 0
+			? [
+				sql`data->>'accountId' IN (${sql.join(
+					requestedAccountIds.map((id) => sql`${id}`),
+					sql`, `
+				)})`
+			]
+			: [])
+	);
 
 	const [rows, merchantMappingCache, transactionOverrideCache, transactionRules] = await Promise.all([
 		db
@@ -75,17 +85,24 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 			const cat = categorizeTransaction(r.description, r.typeText, amount, merchantMappingCache, transactionOverrideCache, transactionRules);
 			return {
 				transactionId: r.transactionId,
+				accountId: r.accountId,
 				date: r.timestamp.toISOString().split('T')[0],
 				description: r.description ?? '',
 				amount,
 				category: cat.category,
+				subcategory: cat.subcategory ?? null,
 				label: cat.label,
 				emoji: cat.emoji,
 				isFixed: cat.isFixed
 			};
 		})
-		.filter((t) => !categoryFilter || t.category === categoryFilter)
-		.sort((a, b) => a.amount - b.amount); // most negative first (largest expense)
+		.filter((t) => (!categoryFilter || t.category === categoryFilter))
+		.filter((t) => (!subcategoryFilter || t.subcategory === subcategoryFilter))
+		.sort((a, b) => {
+			if (a.date > b.date) return -1;
+			if (a.date < b.date) return 1;
+			return a.amount - b.amount;
+		});
 
 	return json(transactions);
 };
