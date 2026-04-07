@@ -32,6 +32,11 @@ const authorizationHandle: Handle = async ({ event, resolve }) => {
 		return resolve(event);
 	}
 
+	// Allow requests that carry an explicit user-id header (e.g. curl / cron jobs)
+	if (event.request.headers.get('x-resonans-user-id')) {
+		return resolve(event);
+	}
+
 	const session = await event.locals.auth();
 	if (session?.user?.id) {
 		return resolve(event);
