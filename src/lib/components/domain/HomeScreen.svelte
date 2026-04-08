@@ -1252,8 +1252,7 @@
 		const econMetrics = ['amount'];
 		if (healthMetrics.includes(w.metricType)) {
 			const t = themes.find((t) => t.name.trim().toLowerCase() === 'helse');
-			startNavMetric('home', 'tema');
-			void goto(t ? `/tema/${t.id}` : '/health');
+			if (t) { startNavMetric('home', 'tema'); void goto(`/tema/${t.id}`); }
 		} else if (econMetrics.includes(w.metricType)) {
 			const t = themes.find((t) => t.name.trim().toLowerCase() === 'økonomi');
 			startNavMetric('home', 'tema');

@@ -71,7 +71,7 @@ export async function notifyUserAboutImportedWorkouts(args: {
 	let sent = 0;
 
 	for (const workout of workouts) {
-		const activityUrl = new URL(`/health/activity/${workout.id}`, appUrl).toString();
+		const activityUrl = new URL(`/aktivitet/${workout.id}`, appUrl).toString();
 
 		// Google Chat
 		if (user?.googleChatWebhook) {

@@ -90,6 +90,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		workout,
 		trackPoints,
 		assessment,
-		healthThemeId: healthTheme?.id ?? null
+		healthThemeId: healthTheme?.id ?? null,
+		healthGoals
 	};
 };

@@ -66,9 +66,7 @@
 	const endPt = $derived(points.length > 1 ? toSvg(points[points.length - 1]) : null);
 </script>
 
-{#if points.length < 2}
-	<div class="gpx-empty">Ingen kartdata tilgjengelig</div>
-{:else}
+{#if points.length >= 2}
 	<svg
 		xmlns="http://www.w3.org/2000/svg"
 		viewBox="0 0 {width} {height}"
@@ -125,14 +123,5 @@
 		border-radius: 10px;
 	}
 
-	.gpx-empty {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		height: 160px;
-		color: #555;
-		font-size: 0.85rem;
-		background: #0d1117;
-		border-radius: 10px;
-	}
+
 </style>

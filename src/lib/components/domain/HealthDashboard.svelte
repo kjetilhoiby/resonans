@@ -952,7 +952,7 @@
 					{#each activities.slice(0, 20) as act}
 						{@const trackEventId = act.evidence.find(e => e.hasTrackPoints)?.eventId ?? null}
 						{@const discrepancies = sourceDiscrepancies(act.evidence)}
-						<div class="hd-activity-row">
+						<a class="hd-activity-row" href="/aktivitet/{act.activityId}">
 							<div class="hd-activity-icon">{sportIcon(act.sportType)}</div>
 							<div class="hd-activity-info">
 								<span class="hd-activity-label">{sportLabel(act.sportType)}</span>
@@ -983,13 +983,13 @@
 								<button
 									class="hd-map-btn"
 									class:hd-map-btn-active={mapEventId === trackEventId}
-									onclick={() => openMap(trackEventId)}
+									onclick={(e) => { e.preventDefault(); openMap(trackEventId); }}
 									title="Vis kart"
 								>
 									{mapLoading && mapEventId === trackEventId ? '…' : '🗺️'}
 								</button>
 							{/if}
-						</div>
+						</a>
 						{#if mapEventId === trackEventId}
 							<div class="hd-map-panel">
 								{#if mapLoading}
@@ -1345,6 +1345,9 @@
 		padding: 10px 8px;
 		border-radius: 10px;
 		transition: background 0.12s;
+		text-decoration: none;
+		color: inherit;
+		cursor: pointer;
 	}
 
 	.hd-activity-row:hover {
