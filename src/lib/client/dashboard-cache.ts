@@ -1,11 +1,34 @@
 import { dashboardEndpointForTheme, type DashboardKind } from '$lib/domain/theme-dashboard-registry';
 
+export interface WorkoutActivity {
+	activityId: string;
+	startTime: string;
+	sportType: string;
+	distanceMeters: number | null;
+	durationSeconds: number | null;
+	paceSecondsPerKm: number | null;
+	elevationMeters: number | null;
+	avgHeartRate: number | null;
+	maxHeartRate: number | null;
+	sources: string[];
+	evidence: Array<{
+		eventId: string;
+		hasTrackPoints: boolean;
+		provider: string;
+		sensorType: string;
+		distanceMeters: number | null;
+		durationSeconds: number | null;
+		avgHeartRate: number | null;
+	}>;
+}
+
 export interface HealthDashboardData {
 	weekly: unknown[];
 	monthly: unknown[];
 	yearly: unknown[];
 	sources?: Array<{ id: string; name: string; provider: string; isActive: boolean; lastSync: string | null }>;
 	recentEvents?: Array<{ id: string; timestamp: string; dataType: string; data: Record<string, unknown> }>;
+	activityLayer?: { workouts: WorkoutActivity[] };
 }
 
 export interface EconomicsDashboardData {

@@ -46,6 +46,10 @@ export interface WorkoutEvidence {
 	hasImageEvidence: boolean;
 	imageUrl?: string;
 	notes?: string;
+	// Råverdier fra denne kilden — brukes til å vise kilde-vs-kilde-sammenligning
+	distanceMeters: number | null;
+	durationSeconds: number | null;
+	avgHeartRate: number | null;
 }
 
 export interface UnifiedWorkoutActivity {
@@ -175,14 +179,19 @@ function buildEvidence(event: WorkoutEvidenceEvent): WorkoutEvidence {
 					? event.metadata.sourceImageUrl
 					: undefined;
 	const notesValue = typeof event.data.notes === 'string' ? event.data.notes : undefined;
+	const distanceMeters = normalizeDistanceMeters(event.data.distance);
+	const durationSeconds = normalizeDurationSeconds(event.data.duration);
+	const avgHeartRate =
+		normalizeHeartRate(event.data.avgHeartRate) ??
+		normalizeHeartRate(event.data.heartRate);
 	return {
 		eventId: event.id,
 		sensorId: event.sensorId,
 		provider: event.provider,
 		sensorType: event.sensorType,
 		timestamp: event.timestamp.toISOString(),
-		hasDistance: normalizeDistanceMeters(event.data.distance) !== null,
-		hasDuration: normalizeDurationSeconds(event.data.duration) !== null,
+		hasDistance: distanceMeters !== null,
+		hasDuration: durationSeconds !== null,
 		hasHeartRate:
 			normalizeHeartRate(event.data.avgHeartRate) !== null ||
 			normalizeHeartRate(event.data.maxHeartRate) !== null ||
@@ -190,7 +199,10 @@ function buildEvidence(event: WorkoutEvidenceEvent): WorkoutEvidence {
 		hasTrackPoints,
 		hasImageEvidence: Boolean(imageUrl),
 		imageUrl,
-		notes: notesValue
+		notes: notesValue,
+		distanceMeters,
+		durationSeconds,
+		avgHeartRate
 	};
 }
 

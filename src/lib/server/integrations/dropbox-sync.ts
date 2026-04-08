@@ -36,7 +36,7 @@ interface TrackPoint {
 	time?: string;
 }
 
-interface ParsedWorkout {
+export interface ParsedWorkout {
 	sportType: string;
 	startTime: Date;
 	duration: number;
@@ -210,7 +210,7 @@ function parseTcx(content: string): ParsedWorkout | null {
 	};
 }
 
-function parseWorkoutFile(path: string, content: string): ParsedWorkout | null {
+export function parseWorkoutFile(path: string, content: string): ParsedWorkout | null {
 	if (path.toLowerCase().endsWith('.gpx')) return parseGpx(content);
 	if (path.toLowerCase().endsWith('.tcx')) return parseTcx(content);
 	return null;

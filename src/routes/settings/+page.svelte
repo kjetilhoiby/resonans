@@ -19,20 +19,6 @@
 	let dropboxStatus = $state<any>(null);
 	let loadingDropbox = $state(false);
 
-	let importingStatements = $state(false);
-	let importResult: any = $state(null);
-	let resettingEconomics = $state(false);
-	let resetResult: any = $state(null);
-	let deduplicating = $state(false);
-	let deduplicateResult: any = $state(null);
-	let anchorAccounts = $state<{
-		accountId: string;
-		accountNumber: string;
-		earliest: string;
-		latest: string;
-		totalAnchors: number;
-		sources: string[];
-	}[]>([]);
 
 	const user = $derived(data.user);
 	const settings = $derived(user?.notificationSettings || {});
@@ -65,7 +51,6 @@
 		await loadSparebank1Status();
 		await loadDropboxStatus();
 		await loadGoogleSheetsStatus();
-		await loadAnchorAccounts();
 	});
 
 	async function loadDropboxStatus() {
@@ -80,16 +65,6 @@
 		} finally {
 			loadingDropbox = false;
 		}
-	}
-
-	async function loadAnchorAccounts() {
-		try {
-			const res = await fetch('/api/admin/import-statements');
-			if (res.ok) {
-				const data = await res.json();
-				anchorAccounts = data.accounts ?? [];
-			}
-		} catch { /* ignore */ }
 	}
 
 	async function loadWithingsStatus() {
@@ -169,67 +144,6 @@
 			}
 		} catch (err) {
 			console.error('Failed to disconnect SpareBank1:', err);
-		}
-	}
-
-	async function importStatements(event: Event) {
-		const input = (event.target as HTMLInputElement);
-		const file = input.files?.[0];
-		if (!file) return;
-
-		importingStatements = true;
-		importResult = null;
-		try {
-			const fd = new FormData();
-			fd.append('zip', file);
-			const res = await fetch('/api/admin/import-statements', { method: 'POST', body: fd });
-			importResult = await res.json();
-			await loadAnchorAccounts();
-		} catch (err) {
-			importResult = { error: String(err) };
-		} finally {
-			importingStatements = false;
-			input.value = '';
-		}
-	}
-
-	async function resetEconomicsData() {
-		if (!confirm('⚠️ ADVARSEL: Dette sletter ALL økonomidata (transaksjoner og saldo-snapshots).\n\nDu må re-synce SpareBank 1 og re-importere alle PDFer etterpå.\n\nEr du sikker?')) {
-			return;
-		}
-
-		resettingEconomics = true;
-		resetResult = null;
-		try {
-			const res = await fetch('/api/admin/reset-economics', { method: 'DELETE' });
-			resetResult = await res.json();
-			if (resetResult.success) {
-				await loadAnchorAccounts();
-			}
-		} catch (err) {
-			resetResult = { error: String(err) };
-		} finally {
-			resettingEconomics = false;
-		}
-	}
-
-	async function deduplicateEconomicsData() {
-		if (!confirm('Fjern duplikater i økonomidata?\n\nDette beholder den eldste versjonen av hver transaksjon/saldo.')) {
-			return;
-		}
-
-		deduplicating = true;
-		deduplicateResult = null;
-		try {
-			const res = await fetch('/api/admin/deduplicate-economics', { method: 'POST' });
-			deduplicateResult = await res.json();
-			if (deduplicateResult.success) {
-				await loadAnchorAccounts();
-			}
-		} catch (err) {
-			deduplicateResult = { error: String(err) };
-		} finally {
-			deduplicating = false;
 		}
 	}
 

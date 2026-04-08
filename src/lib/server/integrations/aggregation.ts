@@ -106,7 +106,7 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 		// Only get intense minutes from activity events
 		const activityEvents = events.filter(e => e.eventType === 'activity');
 		const intenseMinutes = activityEvents
-			.map((e) => (e.data?.intense || 0) + (e.data?.moderate || 0))
+			.map((e) => ((e.data?.intense || 0) + (e.data?.moderate || 0)) / 60) // Withings returns seconds
 			.filter((v) => v > 0);
 
 		// Count workouts (activity events with distance > 0)
@@ -246,7 +246,7 @@ export async function aggregateMonthlyData(userId: string, months?: MonthPeriod[
 		// Only get intense minutes from activity events
 		const activityEvents = events.filter(e => e.eventType === 'activity');
 		const intenseMinutes = activityEvents
-			.map((e) => (e.data?.intense || 0) + (e.data?.moderate || 0))
+			.map((e) => ((e.data?.intense || 0) + (e.data?.moderate || 0)) / 60) // Withings returns seconds
 			.filter((v) => v > 0);
 
 		// Count workouts (activity events with distance > 0)
@@ -364,7 +364,7 @@ export async function aggregateYearlyData(userId: string, years?: YearPeriod[]) 
 		// Only get intense minutes from activity events
 		const activityEvents = events.filter(e => e.eventType === 'activity');
 		const intenseMinutes = activityEvents
-			.map((e) => (e.data?.intense || 0) + (e.data?.moderate || 0))
+			.map((e) => ((e.data?.intense || 0) + (e.data?.moderate || 0)) / 60) // Withings returns seconds
 			.filter((v) => v > 0);
 
 		// Count workouts (activity events with distance > 0)

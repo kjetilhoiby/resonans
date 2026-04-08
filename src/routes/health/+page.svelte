@@ -17,6 +17,7 @@
 		sources={data.sources}
 		recentEvents={data.recentEvents}
 		goals={data.goals}
+		activities={data.activityLayer?.workouts ?? []}
 	/>
 </div>
 

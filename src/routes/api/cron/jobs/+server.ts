@@ -44,7 +44,7 @@ const JOBS: CronJob[] = [
 	},
 	{
 		path: '/api/cron/dropbox-sync',
-		schedule: '*/10 * * * *', // hvert 10. minutt
+		schedule: '*/5 * * * *', // hvert 5. minutt
 		description: 'Dropbox TCX/GPX import (alle brukere)',
 		maxDurationSeconds: 120
 	},

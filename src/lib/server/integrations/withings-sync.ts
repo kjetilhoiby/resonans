@@ -110,9 +110,9 @@ function parseActivityData(activities: any[]): any[] {
 			distance: activity.distance,
 			calories: activity.calories,
 			elevation: activity.elevation,
-			soft: activity.soft, // Light activity minutes
-			moderate: activity.moderate, // Moderate activity minutes
-			intense: activity.intense, // Intense activity minutes
+			soft: activity.soft, // Light activity (in seconds, per Withings API)
+			moderate: activity.moderate, // Moderate activity (in seconds, per Withings API)
+			intense: activity.intense, // Intense activity (in seconds, per Withings API)
 			hr_average: activity.hr_average,
 			hr_min: activity.hr_min,
 			hr_max: activity.hr_max

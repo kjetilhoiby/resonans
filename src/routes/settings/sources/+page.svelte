@@ -30,6 +30,17 @@
 	let dropboxFolders = $state<Array<{ id: string; name: string; path: string }>>([]);
 	let selectedDropboxFolder = $state('');
 
+	let importingStatements = $state(false);
+	let importResult: any = $state(null);
+	let anchorAccounts = $state<{
+		accountId: string;
+		accountNumber: string;
+		earliest: string;
+		latest: string;
+		totalAnchors: number;
+		sources: string[];
+	}[]>([]);
+
 	const connectedCount = $derived(
 		(withingsStatus?.connected ? 1 : 0) +
 		(sparebank1Status?.connected ? 1 : 0) +
@@ -43,9 +54,41 @@
 			loadWithingsStatus(),
 			loadSparebank1Status(),
 			loadDropboxStatus(),
-			loadGoogleSheetsStatus()
+			loadGoogleSheetsStatus(),
+			loadAnchorAccounts()
 		]);
 	});
+
+	async function loadAnchorAccounts() {
+		try {
+			const res = await fetch('/api/admin/import-statements');
+			if (res.ok) {
+				const payload = await res.json();
+				anchorAccounts = payload.accounts ?? [];
+			}
+		} catch { /* ignore */ }
+	}
+
+	async function importStatements(event: Event) {
+		const input = (event.target as HTMLInputElement);
+		const file = input.files?.[0];
+		if (!file) return;
+
+		importingStatements = true;
+		importResult = null;
+		try {
+			const fd = new FormData();
+			fd.append('zip', file);
+			const res = await fetch('/api/admin/import-statements', { method: 'POST', body: fd });
+			importResult = await res.json();
+			await loadAnchorAccounts();
+		} catch (err) {
+			importResult = { error: String(err) };
+		} finally {
+			importingStatements = false;
+			input.value = '';
+		}
+	}
 
 	async function saveSourceConfig() {
 		savingSourceConfig = true;
@@ -331,6 +374,51 @@
 	</section>
 
 	<section class="card">
+		<h2>Kontoutskrifter – SpareBank 1 (PDF)</h2>
+		<p>Last opp en ZIP-fil med SpareBank 1 PDF-kontoutskrifter for å importere historiske transaksjoner og saldo-ankre.</p>
+		<label class="upload-label">
+			<input
+				type="file"
+				accept=".zip"
+				onchange={importStatements}
+				disabled={importingStatements}
+				style="display:none"
+			/>
+			<span class="btn-secondary" style="cursor:pointer;">
+				{importingStatements ? 'Importerer...' : 'Last opp ZIP'}
+			</span>
+		</label>
+		{#if importResult}
+			{#if importResult.error}
+				<p class="err">❌ {importResult.error}</p>
+			{:else}
+				<p class="ok">
+					✅ {importResult.pdfsProcessed ?? 0} PDF(er) behandlet ·
+					{importResult.transactionsImported ?? 0} transaksjoner ·
+					{importResult.balancesImported ?? 0} saldo-ankre
+					{#if (importResult.skipped ?? 0) > 0}· {importResult.skipped} duplikater hoppet over{/if}
+				</p>
+			{/if}
+		{/if}
+		{#if anchorAccounts.length > 0}
+			<table class="anchor-table">
+				<thead><tr><th>Konto</th><th>Ankre</th><th>Tidligst</th><th>Siste</th><th>Kilde(r)</th></tr></thead>
+				<tbody>
+					{#each anchorAccounts as acc}
+						<tr>
+							<td>{acc.accountNumber}</td>
+							<td>{acc.totalAnchors}</td>
+							<td>{acc.earliest}</td>
+							<td>{acc.latest}</td>
+							<td>{acc.sources.join(', ')}</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		{/if}
+	</section>
+
+	<section class="card">
 		<h2>Google Regneark</h2>
 		{#if loadingGoogleSheets}
 			<p>Laster...</p>
@@ -361,4 +449,8 @@
 	.err { color: #f87171; margin: 0.6rem 0 0; }
 	.btn-nav { color: var(--text-primary); text-decoration: none; }
 	.btn-primary, .btn-secondary, .btn-ghost { text-decoration: none; }
+	.upload-label { display: inline-flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; }
+	.anchor-table { width: 100%; border-collapse: collapse; margin-top: 0.75rem; font-size: 0.82rem; color: var(--text-secondary); }
+	.anchor-table th, .anchor-table td { padding: 0.4rem 0.6rem; text-align: left; border-bottom: 1px solid var(--border-color); }
+	.anchor-table th { color: var(--text-tertiary); font-weight: 500; }
 </style>

@@ -121,7 +121,8 @@
 			monthly: healthDashboard.monthly as any,
 			yearly: healthDashboard.yearly as any,
 			sources: healthDashboard.sources ?? [],
-			recentEvents: healthDashboard.recentEvents ?? []
+			recentEvents: healthDashboard.recentEvents ?? [],
+			activities: (healthDashboard.activityLayer?.workouts ?? []) as any
 		};
 	});
 
