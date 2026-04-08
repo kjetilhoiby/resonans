@@ -5,6 +5,8 @@ import { db } from '$lib/db';
 import { sensors, sensorEvents, users } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { parseWorkoutFile, type ParsedWorkout } from '$lib/server/integrations/dropbox-sync';
+import { getWorkoutContextForUser } from '$lib/server/workout-context';
+import { notifyUserAboutImportedWorkouts } from '$lib/server/workout-notifications';
 
 // Postmark inbound webhook payload (simplified)
 interface PostmarkAttachment {
@@ -131,6 +133,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
 
 	let imported = 0;
 	let failed = 0;
+	const importedWorkoutIds: string[] = [];
 
 	for (const attachment of attachments) {
 		try {
@@ -143,7 +146,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
 
 			const { data, metadata } = buildWorkoutData(parsed);
 
-			await db.insert(sensorEvents).values({
+			const [inserted] = await db.insert(sensorEvents).values({
 				userId: user.id,
 				sensorId: sensor.id,
 				eventType: 'activity',
@@ -151,8 +154,9 @@ export const POST: RequestHandler = async ({ request, url }) => {
 				timestamp: parsed.startTime,
 				data,
 				metadata: { ...metadata, sourceName: attachment.Name }
-			});
+			}).returning({ id: sensorEvents.id });
 
+			if (inserted?.id) importedWorkoutIds.push(inserted.id);
 			imported += 1;
 		} catch (error) {
 			failed += 1;
@@ -163,6 +167,20 @@ export const POST: RequestHandler = async ({ request, url }) => {
 	await db.update(sensors)
 		.set({ lastSync: new Date(), updatedAt: new Date() })
 		.where(eq(sensors.id, sensor.id));
+
+	// Send push-varsel med direktelenke til detaljside
+	if (importedWorkoutIds.length > 0) {
+		const appUrl = new URL(request.url).origin;
+		const importedWorkouts = (
+			await Promise.all(importedWorkoutIds.map((id) => getWorkoutContextForUser(user.id, id)))
+		).filter((w): w is NonNullable<typeof w> => w !== null);
+
+		await notifyUserAboutImportedWorkouts({
+			userId: user.id,
+			appUrl,
+			workouts: importedWorkouts
+		}).catch((err) => console.error('[email-inbound] notification failed:', err));
+	}
 
 	return json({ success: true, imported, failed });
 };
