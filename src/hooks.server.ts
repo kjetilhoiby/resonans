@@ -55,6 +55,9 @@ const authorizationHandle: Handle = async ({ event, resolve }) => {
 };
 
 const requestUserHandle: Handle = async ({ event, resolve }) => {
+	if (isPublicPath(event.url.pathname)) {
+		return resolve(event);
+	}
 	event.locals.userId = await resolveRequestUserId(event);
 	return resolve(event);
 };
