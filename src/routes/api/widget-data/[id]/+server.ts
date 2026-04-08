@@ -15,9 +15,8 @@ import { json, error } from '@sveltejs/kit';
 import { db, pgClient } from '$lib/db';
 import { userWidgets } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
-import { categorizeTransaction } from '$lib/server/integrations/transaction-categories';
-import { loadMerchantMappings } from '$lib/server/integrations/spending-analyzer';
-import { loadClassificationOverrides, loadTransactionMatchingRules } from '$lib/server/classification-overrides';
+import { ensureCategorizedEventsForRange } from '$lib/server/integrations/categorized-events';
+import { loadTransactionMatchingRules } from '$lib/server/classification-overrides';
 import type { RequestHandler } from './$types';
 
 // Støttede metrikk-typer og hvilken dataType/felt de henter fra
@@ -107,6 +106,33 @@ function buildCategoryFilter(dataType: string, filterCategory?: string | null, r
 	return `AND (data->>'description') ILIKE ANY(ARRAY[${escaped}])`;
 }
 
+function getKeywordsForCategory(filterCategory: string): string[] {
+	const key = normalizeCategoryId(filterCategory);
+	if (!key) return [];
+
+	const CATEGORY_KEYWORDS: Record<string, string[]> = {
+		dagligvarer: ['rema', 'kiwi', 'meny', 'coop', 'spar', 'joker', 'bunnpris', 'matbutikk', 'dagligvarer'],
+		kafe_og_restaurant: ['restaurant', 'cafe', 'kafe', 'espresso', 'bar', 'take away', 'foodora', 'wolt', 'justeat'],
+		bil_og_transport: ['bompenger', 'bom', 'drivstoff', 'shell', 'circle k', 'st1', 'uno-x', 'parkering', 'ruter', 'vy', 'taxi'],
+		reise: ['fly', 'sas', 'norwegian', 'hotell', 'airbnb', 'booking', 'reise'],
+		faste_boutgifter: ['husleie', 'felleskost', 'strom', 'strøm', 'internett', 'mobil', 'telenor', 'telia', 'fjordkraft'],
+		helse_og_velvaere: ['apotek', 'vitusapotek', 'boots', 'lege', 'tannlege', 'helse', 'fysioterapi', 'sats', 'fresh fitness'],
+		medier_og_underholdning: ['spotify', 'netflix', 'hbo', 'viaplay', 'youtube', 'apple.com/bill', 'google play', 'steam'],
+		hobby_og_fritid: ['kino', 'ticketmaster', 'sport', 'fritid', 'hobby', 'xxl', 'inter sport'],
+		hjem_og_hage: ['ikea', 'byggmakker', 'obs bygg', 'jula', 'clas ohlson', 'plantasjen'],
+		klaer_og_utstyr: ['zalando', 'hm', 'h&m', 'cubus', 'bik bok', 'dressmann', 'nike', 'adidas'],
+		barn: ['barn', 'babyshop', 'lekia', 'br leker'],
+		barnehage_og_sfo: ['barnehage', 'sfo'],
+		forsikring: ['forsikring', 'gjensidige', 'if skadeforsikring', 'tryg'],
+		bilforsikring_og_billan: ['billan', 'billån', 'bilforsikring', 'toyota finans'],
+		sparing: ['sparing', 'aksje', 'fond', 'nordnet', 'dnb markets'],
+		diverse: ['vipps', 'overforing', 'overføring', 'gebyr', 'renter', 'bank'],
+		innskudd: ['lonn', 'lønn', 'utbetaling', 'refund', 'innskudd']
+	};
+
+	return CATEGORY_KEYWORDS[key] ?? [];
+}
+
 function normalizeCategoryId(categoryId: string | null | undefined): string | null {
 	if (!categoryId) return null;
 	const normalized = categoryId
@@ -118,20 +144,13 @@ function normalizeCategoryId(categoryId: string | null | undefined): string | nu
 	return normalized;
 }
 
-type BankTxRow = {
-	timestamp: Date;
-	amount: number;
-	description: string | null;
-	typeText: string | null;
-};
-
 type AmountFilterDebug = {
 	filterCategory: string;
 	filterCategoryNormalized: string | null;
 	totalSpendTxCountInRange: number;
 	categorizedMatchCount: number;
 	keywordMatchCount: number;
-	merchantMappingCount: number;
+	projectionCoveragePct: number;
 	topClassifiedCategories: Array<{ category: string; count: number }>;
 	sampleMatches: Array<{ date: string; description: string; amount: number }>;
 };
@@ -176,47 +195,38 @@ async function fetchCategorizedAmountRows(
 	to: Date,
 	filterCategory: string,
 ): Promise<Array<{ timestamp: Date; value: number }>> {
+	await ensureCategorizedEventsForRange({ userId, from, to: new Date(to.getTime() + 1) });
+
+	const wantedCategory = normalizeCategoryId(filterCategory);
+	if (!wantedCategory) return [];
+
 	const rows = await pgClient.unsafe(
 		`
 		SELECT
 			timestamp,
-			(data->>'amount')::numeric AS amount,
-			data->>'description' AS description,
-			COALESCE(data->>'typeText', data->>'category') AS "typeText"
-		FROM sensor_events
+			ABS(amount::numeric) AS value
+		FROM categorized_events
 		WHERE user_id = $1
-		  AND data_type = 'bank_transaction'
+		  AND resolved_category = $4
 		  AND timestamp >= $2
 		  AND timestamp <= $3
-		  AND (data->>'amount')::numeric < 0
+		  AND amount::numeric < 0
 		ORDER BY timestamp ASC
 		`,
-		[userId, from.toISOString(), to.toISOString()]
-	) as unknown as BankTxRow[];
+		[userId, from.toISOString(), to.toISOString(), wantedCategory]
+	) as unknown as Array<{ timestamp: Date; value: string | number }>;
 
-	const [merchantMappingCache, transactionOverrideCache, transactionRules] = await Promise.all([
-		loadMerchantMappings(userId),
-		loadClassificationOverrides(userId, 'transaction'),
-		loadTransactionMatchingRules()
-	]);
-	const wantedCategory = normalizeCategoryId(filterCategory);
-
-	const categorizedRows = rows
-		.filter((tx) => {
-			const classified = categorizeTransaction(tx.description, tx.typeText, tx.amount, merchantMappingCache, transactionOverrideCache, transactionRules);
-			return normalizeCategoryId(classified.category) === wantedCategory;
-		})
-		.map((tx) => ({
-			timestamp: new Date(tx.timestamp),
-			value: Math.abs(Number(tx.amount) || 0),
-		}));
+	const categorizedRows = rows.map((tx) => ({
+		timestamp: new Date(tx.timestamp),
+		value: Math.abs(Number(tx.value) || 0),
+	}));
 
 	if (categorizedRows.length > 0) {
 		return categorizedRows;
 	}
 
 	// Fallback: hvis mapping/kategorisering ikke treffer ennå, bruk keyword-filter
-	return fetchKeywordFilteredAmountRows(userId, from, to, filterCategory, transactionRules);
+	return fetchKeywordFilteredAmountRows(userId, from, to, filterCategory);
 }
 
 async function collectAmountFilterDebug(
@@ -225,67 +235,72 @@ async function collectAmountFilterDebug(
 	to: Date,
 	filterCategory: string,
 ): Promise<AmountFilterDebug> {
+	await ensureCategorizedEventsForRange({ userId, from, to: new Date(to.getTime() + 1) });
+
+	const wantedCategory = normalizeCategoryId(filterCategory);
+
 	const rows = await pgClient.unsafe(
 		`
 		SELECT
-			timestamp,
-			(data->>'amount')::numeric AS amount,
-			data->>'description' AS description,
-			COALESCE(data->>'typeText', data->>'category') AS "typeText"
-		FROM sensor_events
+			resolved_category AS category,
+			COUNT(*)::int AS count
+		FROM categorized_events
 		WHERE user_id = $1
-		  AND data_type = 'bank_transaction'
 		  AND timestamp >= $2
 		  AND timestamp <= $3
-		  AND (data->>'amount')::numeric < 0
-		ORDER BY timestamp ASC
+		  AND amount::numeric < 0
+		GROUP BY resolved_category
+		ORDER BY count DESC
 		`,
 		[userId, from.toISOString(), to.toISOString()]
-	) as unknown as BankTxRow[];
+	) as unknown as Array<{ category: string | null; count: number }>;
 
-	const [merchantMappingCache, transactionOverrideCache, transactionRules] = await Promise.all([
-		loadMerchantMappings(userId),
-		loadClassificationOverrides(userId, 'transaction'),
-		loadTransactionMatchingRules()
-	]);
-	const wantedCategory = normalizeCategoryId(filterCategory);
-	const categoryCounter = new Map<string, number>();
-	let categorizedMatchCount = 0;
+	const totalSpendTxCountInRange = rows.reduce((sum, row) => sum + Number(row.count || 0), 0);
+	const categorizedMatchCount = rows
+		.filter((row) => normalizeCategoryId(row.category) === wantedCategory)
+		.reduce((sum, row) => sum + Number(row.count || 0), 0);
 
-	for (const tx of rows) {
-		const classified = categorizeTransaction(tx.description, tx.typeText, tx.amount, merchantMappingCache, transactionOverrideCache, transactionRules);
-		const normalizedCategory = normalizeCategoryId(classified.category) ?? 'ukjent';
-		categoryCounter.set(normalizedCategory, (categoryCounter.get(normalizedCategory) ?? 0) + 1);
-		if (normalizedCategory === wantedCategory) {
-			categorizedMatchCount += 1;
-		}
-	}
+	const keywordRows = await fetchKeywordFilteredAmountRows(userId, from, to, filterCategory);
+	const topClassifiedCategories = rows.slice(0, 5).map((row) => ({
+		category: row.category ?? 'ukategorisert',
+		count: Number(row.count || 0)
+	}));
 
-	const keywordRows = await fetchKeywordFilteredAmountRows(userId, from, to, filterCategory, transactionRules);
-	const topClassifiedCategories = [...categoryCounter.entries()]
-		.sort((a, b) => b[1] - a[1])
-		.slice(0, 5)
-		.map(([category, count]) => ({ category, count }));
+	const sampleRows = await pgClient.unsafe(
+		`
+		SELECT
+			timestamp,
+			description,
+			amount::numeric AS amount
+		FROM categorized_events
+		WHERE user_id = $1
+		  AND timestamp >= $2
+		  AND timestamp <= $3
+		  AND amount::numeric < 0
+		  AND resolved_category = $4
+		ORDER BY timestamp DESC
+		LIMIT 6
+		`,
+		[userId, from.toISOString(), to.toISOString(), wantedCategory]
+	) as unknown as Array<{ timestamp: Date; description: string | null; amount: string | number }>;
 
-	const sampleMatches = rows
-		.filter((tx) => {
-			const classified = categorizeTransaction(tx.description, tx.typeText, tx.amount, merchantMappingCache, transactionOverrideCache, transactionRules);
-			return normalizeCategoryId(classified.category) === wantedCategory;
-		})
+	const sampleMatches = sampleRows
 		.slice(0, 6)
 		.map((tx) => ({
 			date: new Date(tx.timestamp).toISOString().slice(0, 10),
-			description: tx.description ?? tx.typeText ?? 'Ukjent',
+			description: tx.description ?? 'Ukjent',
 			amount: Math.abs(Number(tx.amount) || 0),
 		}));
 
 	return {
 		filterCategory,
 		filterCategoryNormalized: wantedCategory,
-		totalSpendTxCountInRange: rows.length,
+		totalSpendTxCountInRange,
 		categorizedMatchCount,
 		keywordMatchCount: keywordRows.length,
-		merchantMappingCount: merchantMappingCache.size,
+		projectionCoveragePct: totalSpendTxCountInRange === 0
+			? 100
+			: Math.round((totalSpendTxCountInRange / Math.max(totalSpendTxCountInRange, keywordRows.length)) * 100),
 		topClassifiedCategories,
 		sampleMatches,
 	};

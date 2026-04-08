@@ -413,7 +413,7 @@ const tools = [
 		type: 'function' as const,
 		function: {
 			name: 'query_sensor_data',
-			description: 'ALLTID bruk dette for å hente faktiske helsedata fra Withings. ALDRI oppgi data fra hukommelsen - data må hentes live! VIKTIG: Bruk "metric"-parameteren for å kun hente det brukeren spør om (f.eks. metric="workouts" for løping, metric="weight" for vekt). Bruk "latest" for nyeste uke, "trend" for flere perioder, "period_summary" for én periode, "raw_events" for detaljerte målinger.',
+			description: 'ALLTID bruk dette for å hente faktiske helsedata fra Withings. ALDRI oppgi data fra hukommelsen - data må hentes live! VIKTIG: Bruk "metric"-parameteren for å kun hente det brukeren spør om (f.eks. metric="workouts" for løping, metric="weight" for vekt). Bruk "latest" for nyeste uke, "trend" for flere perioder, "period_summary" for én periode, "raw_events" for detaljerte målinger. Hvis bruker spør "fra 2017", "siden 2017" eller annet startår: send periodKey med startåret (f.eks. "2017") for trend. Hvis verktøyet ikke finner data: svar med manglende data og neste steg, IKKE estimer eller finn på tall.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -429,7 +429,7 @@ const tools = [
 					},
 					periodKey: {
 						type: 'string',
-						description: 'Spesifikk periode (f.eks: "2025W43", "2025M10", "2025")'
+						description: 'Spesifikk periode (f.eks: "2025W43", "2025M10", "2025"). For trend med historisk start (f.eks. "fra 2017"), sett periodKey til startåret.'
 					},
 					metric: {
 						type: 'string',
@@ -537,7 +537,7 @@ const tools = [
 		type: 'function' as const,
 		function: {
 					name: 'query_economics',
-					description: 'Hent økonomisk data fra tilkoblede bankkontoer. Brukes for saldo, transaksjoner, forbruk per måned og kontoliste.\n\nqueryType:\n- balance: Hent kontosaldo\n- transactions: Hent enkelt-transaksjoner (krever month eller dateRange)\n- spending_summary: Hent forbruk gruppert per kategori (krever month eller payPeriod). Kan filtreres til én kategori med "category".\n- category_trend: Hent månedlige totaler for ÉN kategori over et dato-spenn (krever dateRange + category). BRUK DETTE når bruker ber om månedlig utvikling for én kategori, f.eks. "dagligvare per måned".\n- account_list: List alle tilkoblede kontoer',
+					description: 'Hent økonomisk data fra tilkoblede bankkontoer. Brukes for saldo, transaksjoner, forbruk per måned og kontoliste.\n\nqueryType:\n- balance: Hent kontosaldo\n- transactions: Hent enkelt-transaksjoner (krever month eller dateRange)\n- spending_summary: Hent forbruk gruppert per kategori (krever month eller payPeriod). Kan filtreres til én kategori med "category".\n- category_trend: Hent månedlige totaler for ÉN kategori over et dato-spenn (krever dateRange + category). BRUK DETTE når bruker ber om månedlig utvikling for én kategori, f.eks. "dagligvare per måned".\n- account_list: List alle tilkoblede kontoer\n\nFor spørsmål om lønnsmåned/siden lønn: bruk payPeriod="current".',
 					parameters: {
 						type: 'object',
 						properties: {
@@ -552,7 +552,7 @@ const tools = [
 							},
 							payPeriod: {
 								type: 'string',
-								description: 'Bruk "current" for å hente data fra siste lønnsdag til i dag (inneværende lønnsmåned)',
+								description: 'Bruk "current" for inneværende lønnsmåned (fra siste lønnsdag til i dag).',
 								enum: ['current']
 							},
 							dateRange: {
@@ -571,6 +571,10 @@ const tools = [
 							category: {
 								type: 'string',
 								description: 'Normalisert kategori-ID for filtrering. Eksempler: "dagligvarer", "kafe_og_restaurant", "bil_og_transport", "helse_og_velvaere", "faste_boutgifter", "forsikring", "sparing", "reise", "medier_og_underholdning". Brukes med spending_summary og category_trend.'
+							},
+							filterCategory: {
+								type: 'string',
+								description: 'Valgfri kategori (alias for category), f.eks. dagligvarer, kafe_og_restaurant, bil_og_transport'
 							},
 							accountId: {
 								type: 'string',
@@ -997,6 +1001,59 @@ async function emitProgress(
 }
 
 type ChatModel = 'gpt-4o' | 'gpt-4o-mini';
+
+function inferStartYearFromText(input: string): string | null {
+	const matches = input.match(/\b(19|20)\d{2}\b/g);
+	if (!matches || matches.length === 0) return null;
+
+	const years = matches
+		.map((token) => Number.parseInt(token, 10))
+		.filter((year) => Number.isFinite(year) && year >= 1900 && year <= 2100);
+
+	if (years.length === 0) return null;
+	return String(Math.min(...years));
+}
+
+function inferEconomicsArgsFromText(input: string): {
+	payPeriod?: 'current';
+	month?: string;
+	dateRange?: { start: string; end: string };
+	filterCategory?: string;
+} {
+	const normalized = input.toLowerCase();
+	let filterCategory: string | undefined;
+
+	if (/dagligvare|dagligvarer|matbutikk/.test(normalized)) {
+		filterCategory = 'dagligvarer';
+	} else if (/restaurant|kafe|kafé|matkostnad/.test(normalized)) {
+		filterCategory = 'kafe_og_restaurant';
+	} else if (/transport|drivstoff|bompeng|parkering|kollektiv|taxi/.test(normalized)) {
+		filterCategory = 'bil_og_transport';
+	}
+
+	if (
+		normalized.includes('lønnsmåned') ||
+		normalized.includes('siden lønn') ||
+		normalized.includes('siste lønn') ||
+		normalized.includes('hittil denne måneden')
+	) {
+		return { payPeriod: 'current', filterCategory };
+	}
+
+	const monthMatch = input.match(/\b(19|20)\d{2}-(0[1-9]|1[0-2])\b/);
+	if (monthMatch) {
+		return { month: monthMatch[0], filterCategory };
+	}
+
+	const yearMatch = input.match(/\b(19|20)\d{2}\b/);
+	if (yearMatch && /(fra|siden)/i.test(normalized)) {
+		const startYear = yearMatch[0];
+		const today = new Date().toISOString().slice(0, 10);
+		return { dateRange: { start: `${startYear}-01-01`, end: today }, filterCategory };
+	}
+
+	return filterCategory ? { filterCategory } : {};
+}
 
 interface ModelDecision {
 	model: ChatModel;
@@ -1458,6 +1515,14 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 					});
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'query_sensor_data') {
 					const args = JSON.parse(toolCall.function.arguments);
+
+					if (args?.queryType === 'trend' && args?.period && !args?.periodKey) {
+						const inferredStartYear = inferStartYearFromText(latestUserInput);
+						if (inferredStartYear) {
+							args.periodKey = inferredStartYear;
+							console.log('  📊 Inferred trend periodKey from user input:', inferredStartYear);
+						}
+					}
 					const { querySensorDataTool } = await import('$lib/ai/tools/query-sensor-data');
 					
 					console.log('  📊 Querying sensor data with:', args);
@@ -1474,6 +1539,19 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 					});
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'query_economics') {
 					const args = JSON.parse(toolCall.function.arguments);
+
+					if ((args?.queryType === 'transactions' || args?.queryType === 'spending_summary') && !args?.month && !args?.dateRange && !args?.payPeriod) {
+						const inferred = inferEconomicsArgsFromText(latestUserInput);
+						if (inferred.payPeriod && !args.payPeriod) args.payPeriod = inferred.payPeriod;
+						if (inferred.month && !args.month) args.month = inferred.month;
+						if (inferred.dateRange && !args.dateRange) args.dateRange = inferred.dateRange;
+						if (inferred.filterCategory && !args.filterCategory) args.filterCategory = inferred.filterCategory;
+					}
+
+					if ((args?.queryType === 'transactions' || args?.queryType === 'spending_summary') && !args?.filterCategory) {
+						const inferred = inferEconomicsArgsFromText(latestUserInput);
+						if (inferred.filterCategory) args.filterCategory = inferred.filterCategory;
+					}
 
 					console.log('  💰 Querying economics with:', args);
 					const result = await queryEconomicsTool.execute({
@@ -2041,7 +2119,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 				messages,
 				tools,
 				tool_choice: 'auto',
-				temperature: 0.7,
+				temperature: 0.3,
 				max_tokens: 1000
 			});
 

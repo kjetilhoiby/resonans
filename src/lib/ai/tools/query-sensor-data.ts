@@ -3,6 +3,336 @@ import { db } from '$lib/db';
 import { sensorEvents, sensorAggregates } from '$lib/db/schema';
 import { eq, and, gte, lte, desc } from 'drizzle-orm';
 
+type SensorMetric = 'weight' | 'steps' | 'sleep' | 'intense_minutes' | 'heartrate' | 'workouts' | 'all';
+
+function metricToDataType(metric?: SensorMetric): string | null {
+	if (!metric || metric === 'all') return null;
+	if (metric === 'weight') return 'weight';
+	if (metric === 'steps' || metric === 'intense_minutes') return 'activity';
+	if (metric === 'sleep' || metric === 'heartrate') return 'sleep';
+	if (metric === 'workouts') return 'workout';
+	return null;
+}
+
+function startForPeriod(period: 'week' | 'month' | 'year', limit: number): Date {
+	const now = new Date();
+	if (period === 'week') {
+		const d = new Date(now);
+		d.setDate(d.getDate() - 7 * Math.max(1, limit));
+		return d;
+	}
+	if (period === 'month') {
+		const d = new Date(now);
+		d.setMonth(d.getMonth() - Math.max(1, limit));
+		return d;
+	}
+	const d = new Date(now);
+	d.setFullYear(d.getFullYear() - Math.max(1, limit));
+	return d;
+}
+
+function isoWeekStart(year: number, week: number): Date {
+	const jan4 = new Date(Date.UTC(year, 0, 4));
+	const jan4Day = jan4.getUTCDay() || 7;
+	const mondayWeek1 = new Date(jan4);
+	mondayWeek1.setUTCDate(jan4.getUTCDate() - (jan4Day - 1));
+	const start = new Date(mondayWeek1);
+	start.setUTCDate(mondayWeek1.getUTCDate() + (week - 1) * 7);
+	return start;
+}
+
+function normalizePeriodKey(period: 'week' | 'month' | 'year', periodKey: string): string[] {
+	const raw = periodKey.trim();
+	const candidates = new Set<string>([raw]);
+
+	if (period === 'month') {
+		const compact = raw.match(/^(\d{4})M(\d{1,2})$/i);
+		if (compact) {
+			const m = compact[2].padStart(2, '0');
+			candidates.add(`${compact[1]}M${m}`);
+			candidates.add(`${compact[1]}-${m}`);
+		}
+
+		const dashed = raw.match(/^(\d{4})[-/](\d{1,2})$/);
+		if (dashed) {
+			const m = dashed[2].padStart(2, '0');
+			candidates.add(`${dashed[1]}M${m}`);
+			candidates.add(`${dashed[1]}-${m}`);
+		}
+	}
+
+	if (period === 'week') {
+		const compact = raw.match(/^(\d{4})W(\d{1,2})$/i);
+		if (compact) {
+			const w = compact[2].padStart(2, '0');
+			candidates.add(`${compact[1]}W${w}`);
+			candidates.add(`${compact[1]}-W${w}`);
+		}
+
+		const dashed = raw.match(/^(\d{4})[-/]?W?(\d{1,2})$/i);
+		if (dashed) {
+			const w = dashed[2].padStart(2, '0');
+			candidates.add(`${dashed[1]}W${w}`);
+			candidates.add(`${dashed[1]}-W${w}`);
+		}
+	}
+
+	if (period === 'year') {
+		const year = raw.match(/^(\d{4})$/);
+		if (year) candidates.add(year[1]);
+	}
+
+	return Array.from(candidates);
+}
+
+function normalizeTrendStartKey(period: 'week' | 'month' | 'year', periodKey?: string): string | null {
+	if (!periodKey) return null;
+	const raw = periodKey.trim();
+
+	if (period === 'year') {
+		const year = raw.match(/^(\d{4})$/);
+		return year ? year[1] : null;
+	}
+
+	if (period === 'month') {
+		const yearOnly = raw.match(/^(\d{4})$/);
+		if (yearOnly) return `${yearOnly[1]}M01`;
+		const normalized = normalizePeriodKey('month', raw).find((k) => /^\d{4}M\d{2}$/.test(k));
+		return normalized ?? null;
+	}
+
+	const yearOnly = raw.match(/^(\d{4})$/);
+	if (yearOnly) return `${yearOnly[1]}W01`;
+	const normalized = normalizePeriodKey('week', raw).find((k) => /^\d{4}W\d{2}$/.test(k));
+	return normalized ?? null;
+}
+
+function defaultTrendLimit(period: 'week' | 'month' | 'year'): number {
+	if (period === 'month') return 120;
+	if (period === 'week') return 104;
+	return 20;
+}
+
+function rangeForPeriodKey(period: 'week' | 'month' | 'year', periodKey?: string): { startDate: string; endDate: string; label: string } {
+	if (!periodKey) {
+		const now = new Date();
+		if (period === 'month') {
+			const y = now.getFullYear();
+			const m = now.getMonth();
+			const start = new Date(Date.UTC(y, m, 1, 0, 0, 0));
+			const end = new Date(Date.UTC(y, m + 1, 0, 23, 59, 59));
+			return {
+				startDate: start.toISOString(),
+				endDate: end.toISOString(),
+				label: `${y}M${String(m + 1).padStart(2, '0')}`
+			};
+		}
+		if (period === 'year') {
+			const y = now.getFullYear();
+			const start = new Date(Date.UTC(y, 0, 1, 0, 0, 0));
+			const end = new Date(Date.UTC(y, 11, 31, 23, 59, 59));
+			return {
+				startDate: start.toISOString(),
+				endDate: end.toISOString(),
+				label: String(y)
+			};
+		}
+
+		const tmp = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+		const day = tmp.getUTCDay() || 7;
+		tmp.setUTCDate(tmp.getUTCDate() - (day - 1));
+		const start = new Date(tmp);
+		const end = new Date(tmp);
+		end.setUTCDate(start.getUTCDate() + 6);
+		end.setUTCHours(23, 59, 59, 0);
+		const year = start.getUTCFullYear();
+		const week = Math.ceil((((start.getTime() - Date.UTC(year, 0, 1)) / 86400000) + 1) / 7);
+		return {
+			startDate: start.toISOString(),
+			endDate: end.toISOString(),
+			label: `${year}W${String(week).padStart(2, '0')}`
+		};
+	}
+
+	if (period === 'month') {
+		const normalized = normalizePeriodKey('month', periodKey).find((k) => /^\d{4}M\d{2}$/.test(k));
+		if (normalized) {
+			const year = Number.parseInt(normalized.slice(0, 4), 10);
+			const month = Number.parseInt(normalized.slice(5, 7), 10);
+			const start = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0));
+			const end = new Date(Date.UTC(year, month, 0, 23, 59, 59));
+			return { startDate: start.toISOString(), endDate: end.toISOString(), label: normalized };
+		}
+	}
+
+	if (period === 'week') {
+		const normalized = normalizePeriodKey('week', periodKey).find((k) => /^\d{4}W\d{2}$/.test(k));
+		if (normalized) {
+			const year = Number.parseInt(normalized.slice(0, 4), 10);
+			const week = Number.parseInt(normalized.slice(5, 7), 10);
+			const start = isoWeekStart(year, week);
+			const end = new Date(start);
+			end.setUTCDate(start.getUTCDate() + 6);
+			end.setUTCHours(23, 59, 59, 0);
+			return { startDate: start.toISOString(), endDate: end.toISOString(), label: normalized };
+		}
+	}
+
+	if (period === 'year') {
+		const year = Number.parseInt(periodKey.slice(0, 4), 10);
+		if (Number.isFinite(year)) {
+			const start = new Date(Date.UTC(year, 0, 1, 0, 0, 0));
+			const end = new Date(Date.UTC(year, 11, 31, 23, 59, 59));
+			return { startDate: start.toISOString(), endDate: end.toISOString(), label: String(year) };
+		}
+	}
+
+	const fallbackStart = startForPeriod(period, 1);
+	return {
+		startDate: fallbackStart.toISOString(),
+		endDate: new Date().toISOString(),
+		label: periodKey
+	};
+}
+
+function summarizeRawEvents(events: Array<{ timestamp: Date; dataType: string; data: any }>, metric?: SensorMetric) {
+	const safeMetric = metric ?? 'all';
+
+	const weightValues = events
+		.map((e) => (typeof e.data?.weight === 'number' ? e.data.weight as number : null))
+		.filter((v): v is number => v !== null)
+		.reverse();
+
+	const stepsValues = events
+		.map((e) => (typeof e.data?.steps === 'number' ? e.data.steps as number : null))
+		.filter((v): v is number => v !== null);
+
+	const sleepValues = events
+		.map((e) => (typeof e.data?.sleepDuration === 'number' ? (e.data.sleepDuration as number) / 3600 : null))
+		.filter((v): v is number => v !== null);
+
+	const intenseValues = events
+		.map((e) => (typeof e.data?.intenseMinutes === 'number' ? e.data.intenseMinutes as number : null))
+		.filter((v): v is number => v !== null);
+
+	const heartValues = events
+		.map((e) => {
+			if (typeof e.data?.heartRate === 'number') return e.data.heartRate as number;
+			if (typeof e.data?.hr === 'number') return e.data.hr as number;
+			return null;
+		})
+		.filter((v): v is number => v !== null);
+
+	const workouts = events.filter((e) => e.dataType === 'workout');
+	let workoutDistanceKm = 0;
+	for (const w of workouts) {
+		const distance = typeof w.data?.distanceMeters === 'number'
+			? (w.data.distanceMeters as number) / 1000
+			: typeof w.data?.distance === 'number'
+				? ((w.data.distance as number) > 100 ? (w.data.distance as number) / 1000 : (w.data.distance as number))
+				: 0;
+		workoutDistanceKm += distance;
+	}
+
+	const avg = (vals: number[]) => vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
+
+	const response: Record<string, unknown> = {
+		eventCount: events.length
+	};
+
+	if (safeMetric === 'all' || safeMetric === 'weight') {
+		response.weight = weightValues.length
+			? {
+				latest: weightValues[weightValues.length - 1],
+				avg: avg(weightValues),
+				min: Math.min(...weightValues),
+				max: Math.max(...weightValues),
+				change: weightValues.length > 1 ? weightValues[weightValues.length - 1] - weightValues[0] : 0
+			}
+			: undefined;
+	}
+
+	if (safeMetric === 'all' || safeMetric === 'steps') {
+		response.steps = stepsValues.length
+			? {
+				sum: stepsValues.reduce((s, v) => s + v, 0),
+				avg: avg(stepsValues),
+				max: Math.max(...stepsValues)
+			}
+			: undefined;
+	}
+
+	if (safeMetric === 'all' || safeMetric === 'sleep') {
+		response.sleep = sleepValues.length
+			? {
+				avg: avg(sleepValues),
+				min: Math.min(...sleepValues),
+				max: Math.max(...sleepValues)
+			}
+			: undefined;
+	}
+
+	if (safeMetric === 'all' || safeMetric === 'intense_minutes') {
+		response.intenseMinutes = intenseValues.length
+			? {
+				sum: intenseValues.reduce((s, v) => s + v, 0),
+				avg: avg(intenseValues)
+			}
+			: undefined;
+	}
+
+	if (safeMetric === 'all' || safeMetric === 'heartrate') {
+		response.heartRate = heartValues.length
+			? {
+				avg: avg(heartValues),
+				min: Math.min(...heartValues),
+				max: Math.max(...heartValues)
+			}
+			: undefined;
+	}
+
+	if (safeMetric === 'all' || safeMetric === 'workouts') {
+		response.workouts = workouts.length
+			? {
+				count: workouts.length,
+				totalDistance: workoutDistanceKm
+			}
+			: undefined;
+	}
+
+	return response;
+}
+
+async function loadRawEventsFallback(args: {
+	userId: string;
+	metric?: SensorMetric;
+	startDate?: string;
+	endDate?: string;
+	limit?: number;
+}) {
+	const conditions = [eq(sensorEvents.userId, args.userId)];
+
+	if (args.startDate) {
+		conditions.push(gte(sensorEvents.timestamp, new Date(args.startDate)));
+	}
+	if (args.endDate) {
+		conditions.push(lte(sensorEvents.timestamp, new Date(args.endDate)));
+	}
+
+	const dataType = metricToDataType(args.metric);
+	if (dataType) {
+		conditions.push(eq(sensorEvents.dataType, dataType));
+	}
+
+	const events = await db.query.sensorEvents.findMany({
+		where: and(...conditions),
+		orderBy: [desc(sensorEvents.timestamp)],
+		limit: args.limit ?? 200
+	});
+
+	return events;
+}
+
 export const querySensorDataTool = {
 	name: 'query_sensor_data',
 	description: `Query sensor data (health metrics from Withings) to answer questions about user's health patterns.
@@ -29,7 +359,7 @@ The tool returns actual data from Withings sensors that the user can trust.`,
 			'latest: Get most recent metrics. period_summary: Get aggregates for a period. trend: Compare multiple periods. raw_events: Get individual measurements or workouts.'
 		),
 		period: z.enum(['week', 'month', 'year']).optional().describe('Time period for aggregates'),
-		periodKey: z.string().optional().describe('Specific period (e.g., "2025W43", "2025M10", "2025")'),
+		periodKey: z.string().optional().describe('Specific period (e.g., "2025W43" or "2025-W43", "2025M10" or "2025-10", "2025")'),
 		metric: z.enum(['weight', 'steps', 'sleep', 'intense_minutes', 'heartrate', 'workouts', 'all']).optional().describe('Which metric to focus on'),
 		limit: z.number().optional().describe('Max number of results (for raw_events or trend)'),
 		startDate: z.string().optional().describe('Start date for raw events (ISO format)'),
@@ -41,7 +371,7 @@ The tool returns actual data from Withings sensors that the user can trust.`,
 		queryType: 'latest' | 'period_summary' | 'trend' | 'raw_events';
 		period?: 'week' | 'month' | 'year';
 		periodKey?: string;
-		metric?: 'weight' | 'steps' | 'sleep' | 'intense_minutes' | 'heartrate' | 'workouts' | 'all';
+			metric?: SensorMetric;
 		limit?: number;
 		startDate?: string;
 		endDate?: string;
@@ -61,9 +391,39 @@ The tool returns actual data from Withings sensors that the user can trust.`,
 				});
 
 				if (weeklyAggregates.length === 0) {
+					const fallbackEvents = await loadRawEventsFallback({
+						userId,
+						metric,
+						startDate: new Date(Date.now() - 1000 * 60 * 60 * 24 * 30).toISOString(),
+						limit: 50
+					});
+
+					if (fallbackEvents.length === 0) {
+						return {
+							success: false,
+							message:
+								'Fant ingen sensordata i verken sensor_aggregates eller sensor_events. Bruker må sannsynligvis synke Withings-data.'
+						};
+					}
+
+					const latestEvent = fallbackEvents[0];
+					const latestWeight = typeof latestEvent.data?.weight === 'number' ? latestEvent.data.weight : null;
+
 					return {
-						success: false,
-						message: 'No sensor data found. User may need to sync Withings data.'
+						success: true,
+						data: {
+							source: 'sensor_events_fallback',
+							latestTimestamp: latestEvent.timestamp,
+							latestWeight,
+							eventCount: fallbackEvents.length,
+							items: fallbackEvents.slice(0, 10).map((e) => ({
+								timestamp: e.timestamp,
+								dataType: e.dataType,
+								data: e.data
+							}))
+						},
+						message:
+							'Mangler pre-aggregerte data, men fant rå sensordata i sensor_events. Svar er basert på fallback.'
 					};
 				}
 
@@ -184,18 +544,45 @@ The tool returns actual data from Withings sensors that the user can trust.`,
 					periodKey = latestAggregate.periodKey;
 				}
 
-				const aggregate = await db.query.sensorAggregates.findFirst({
-					where: and(
-						eq(sensorAggregates.userId, userId),
-						eq(sensorAggregates.period, period),
-						eq(sensorAggregates.periodKey, periodKey)
-					)
-				});
+				const candidateKeys = normalizePeriodKey(period, periodKey);
+				let aggregate = null as Awaited<ReturnType<typeof db.query.sensorAggregates.findFirst>>;
+
+				for (const key of candidateKeys) {
+					aggregate = await db.query.sensorAggregates.findFirst({
+						where: and(
+							eq(sensorAggregates.userId, userId),
+							eq(sensorAggregates.period, period),
+							eq(sensorAggregates.periodKey, key)
+						)
+					});
+					if (aggregate) break;
+				}
 
 				if (!aggregate) {
+					const range = rangeForPeriodKey(period, periodKey);
+					const fallbackEvents = await loadRawEventsFallback({
+						userId,
+						metric,
+						startDate: range.startDate,
+						endDate: range.endDate,
+						limit: 1500
+					});
+
+					if (fallbackEvents.length === 0) {
+						return {
+							success: false,
+							message: `No data found for ${periodKey}`
+						};
+					}
+
+					const summary = summarizeRawEvents(fallbackEvents, metric);
 					return {
-						success: false,
-						message: `No data found for ${periodKey}`
+						success: true,
+						data: {
+							period: range.label,
+							...summary
+						},
+						message: `Summary for ${range.label} from raw sensor events (${fallbackEvents.length} measurements)`
 					};
 				}
 
@@ -227,26 +614,84 @@ The tool returns actual data from Withings sensors that the user can trust.`,
 					};
 				}
 
+				const requestedStartKey = normalizeTrendStartKey(period, periodKey);
+				const trendLimit = limit ?? (requestedStartKey ? 240 : defaultTrendLimit(period));
+
 				const aggregates = await db.query.sensorAggregates.findMany({
 					where: and(
 						eq(sensorAggregates.userId, userId),
 						eq(sensorAggregates.period, period)
 					),
 					orderBy: [desc(sensorAggregates.year), desc(sensorAggregates.periodKey)],
-					limit: limit || 12 // Default to last 12 periods
+					limit: trendLimit
 				});
 
-				console.log(`   Found ${aggregates.length} aggregates, showing top 5 periods:`, 
-					aggregates.slice(0, 5).map(a => a.periodKey));
+				const filteredAggregates = requestedStartKey
+					? aggregates.filter((a) => a.periodKey >= requestedStartKey)
+					: aggregates;
 
-				if (aggregates.length === 0) {
+				console.log(
+					`   Found ${filteredAggregates.length}/${aggregates.length} aggregates, showing top 5 periods:`,
+					filteredAggregates.slice(0, 5).map((a) => a.periodKey)
+				);
+
+				if (filteredAggregates.length === 0) {
+					const fallbackStart = requestedStartKey
+						? new Date(rangeForPeriodKey(period, requestedStartKey).startDate)
+						: startForPeriod(period, trendLimit);
+					const fallbackEvents = await loadRawEventsFallback({
+						userId,
+						metric,
+						startDate: fallbackStart.toISOString(),
+						limit: requestedStartKey ? 3000 : 600
+					});
+
+					if (fallbackEvents.length === 0) {
+						return {
+							success: false,
+							message: 'Ingen trenddata funnet i sensor_aggregates eller sensor_events'
+						};
+					}
+
+					if (metric === 'weight' || !metric || metric === 'all') {
+						const weightPoints = fallbackEvents
+							.filter((e) => typeof e.data?.weight === 'number')
+							.map((e) => ({
+								timestamp: e.timestamp,
+								weight: e.data.weight as number
+							}))
+							.reverse();
+
+						return {
+							success: true,
+							data: {
+								source: 'sensor_events_fallback',
+								metric: 'weight',
+								points: weightPoints,
+								eventCount: weightPoints.length
+							},
+							message:
+								`Fant ingen aggregerte ${period}-perioder; returnerer ${weightPoints.length} rå vektmålinger fra sensor_events.`
+						};
+					}
+
 					return {
-						success: false,
-						message: 'No aggregate data found'
+						success: true,
+						data: {
+							source: 'sensor_events_fallback',
+							metric: metric ?? 'all',
+							events: fallbackEvents.map((e) => ({
+								timestamp: e.timestamp,
+								dataType: e.dataType,
+								data: e.data
+							}))
+						},
+						message:
+							`Fant ingen aggregerte ${period}-perioder; returnerer rå hendelser fra sensor_events i stedet.`
 					};
 				}
 
-				const trendData = aggregates.map(agg => {
+				const trendData = filteredAggregates.map((agg) => {
 					const metrics = agg.metrics as any;
 					return {
 						period: agg.periodKey,
@@ -263,49 +708,50 @@ The tool returns actual data from Withings sensors that the user can trust.`,
 				return {
 					success: true,
 					data: trendData,
-					message: `Trend data for last ${aggregates.length} ${period}s`
+					message: requestedStartKey
+						? `Trend data for ${trendData.length} ${period}s from ${requestedStartKey}`
+						: `Trend data for last ${trendData.length} ${period}s`
 				};
 			}
 
 			// Get raw sensor events
 			if (queryType === 'raw_events') {
 				const conditions = [eq(sensorEvents.userId, userId)];
+				let appliedRangeLabel: string | null = null;
 
-				// Default to last 90 days if no date range specified
-				if (!startDate && !endDate) {
-					const ninetyDaysAgo = new Date();
-					ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-					conditions.push(gte(sensorEvents.timestamp, ninetyDaysAgo));
-				} else {
+				// Priority: explicit start/end -> period/periodKey -> last 90 days
+				if (startDate || endDate) {
 					if (startDate) {
 						conditions.push(gte(sensorEvents.timestamp, new Date(startDate)));
 					}
 					if (endDate) {
 						conditions.push(lte(sensorEvents.timestamp, new Date(endDate)));
 					}
+					appliedRangeLabel = startDate && endDate ? `${startDate}..${endDate}` : startDate ?? endDate ?? null;
+				} else if (period) {
+					const range = rangeForPeriodKey(period, periodKey);
+					conditions.push(gte(sensorEvents.timestamp, new Date(range.startDate)));
+					conditions.push(lte(sensorEvents.timestamp, new Date(range.endDate)));
+					appliedRangeLabel = range.label;
+				} else {
+					const ninetyDaysAgo = new Date();
+					ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+					conditions.push(gte(sensorEvents.timestamp, ninetyDaysAgo));
+					appliedRangeLabel = 'last_90_days';
 				}
 
-				// Filter by dataType if metric specified  
-				if (metric && metric !== 'all') {
-					if (metric === 'weight') {
-						conditions.push(eq(sensorEvents.dataType, 'weight'));
-					} else if (metric === 'steps' || metric === 'intense_minutes') {
-						conditions.push(eq(sensorEvents.dataType, 'activity'));
-					} else if (metric === 'sleep' || metric === 'heartrate') {
-						// Both sleep and heartrate come from sleep measurements
-						conditions.push(eq(sensorEvents.dataType, 'sleep'));
-					} else if (metric === 'workouts') {
-						conditions.push(eq(sensorEvents.dataType, 'workout'));
-					}
+				const dataType = metricToDataType(metric);
+				if (dataType) {
+					conditions.push(eq(sensorEvents.dataType, dataType));
 				}
 
 				const events = await db.query.sensorEvents.findMany({
 					where: and(...conditions),
 					orderBy: [desc(sensorEvents.timestamp)],
-					limit: limit || 100
+					limit: limit || (period ? 1500 : 100)
 				});
 
-				console.log(`   Found ${events.length} raw events (metric: ${metric || 'all'})`);
+				console.log(`   Found ${events.length} raw events (metric: ${metric || 'all'}, range: ${appliedRangeLabel || 'default'})`);
 
 				if (events.length === 0) {
 					return {
@@ -316,13 +762,16 @@ The tool returns actual data from Withings sensors that the user can trust.`,
 
 				return {
 					success: true,
-					data: events.map(e => ({
-						timestamp: e.timestamp,
-						eventType: e.eventType,
-						dataType: e.dataType,
-						data: e.data
-					})),
-					message: `Found ${events.length} raw ${metric || 'sensor'} events`
+					data: {
+						range: appliedRangeLabel,
+						events: events.map(e => ({
+							timestamp: e.timestamp,
+							eventType: e.eventType,
+							dataType: e.dataType,
+							data: e.data
+						}))
+					},
+					message: `Found ${events.length} raw ${metric || 'sensor'} events${appliedRangeLabel ? ` for ${appliedRangeLabel}` : ''}`
 				};
 			}
 

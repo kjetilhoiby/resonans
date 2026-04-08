@@ -69,6 +69,11 @@
 	interface Props {
 		data: {
 			week: WeekInfo;
+			weekNav: {
+				previousWeekKey: string;
+				nextWeekKey: string;
+				isCurrentWeek: boolean;
+			};
 			weekChecklist: WeekChecklist | null;
 			weekTasks: WeekTask[];
 			weekNote: string;
@@ -76,6 +81,14 @@
 			vision: string;
 			longTermGoals: GoalReminder[];
 			dayChecklists: Record<string, DayChecklist>;
+			dayNotes: Record<string, string>;
+			previousWeekSummary: {
+				weekKey: string;
+				note: string;
+				reflection: string;
+				carryoverItems: string[];
+				incompleteTasks: string[];
+			};
 		};
 	}
 
@@ -98,10 +111,14 @@
 	let weekChecklistState = $state<WeekChecklist | null>(data.weekChecklist ? structuredClone(data.weekChecklist) : null);
 	let dayChecklistsState = $state<Record<string, DayChecklist>>(structuredClone(data.dayChecklists));
 	let weekNoteValue = $state(data.weekNote);
+	let reflectionValue = $state(data.reflection);
+	let visionValue = $state(data.vision);
 	let weekComposerText = $state('');
 	let weekComposerCount = $state(1);
 	let dayComposerText = $state('');
 	let dayComposerCount = $state(1);
+	let dayNotesState = $state<Record<string, string>>(structuredClone(data.dayNotes));
+	let planningImportBusy = $state(false);
 	let editingItem = $state<EditingItem | null>(null);
 	let dragItem = $state<{ checklistId: string; itemId: string } | null>(null);
 	let skipEditBlur = false;
@@ -111,11 +128,30 @@
 	let saveStates = $state<Record<string, SaveState>>({
 		weekNote: 'idle',
 		weekItems: 'idle',
-		dayItems: 'idle'
+		dayItems: 'idle',
+		dayNote: 'idle',
+		weekReview: 'idle'
 	});
 
 	const selectedDayChecklist = $derived(dayChecklistsState[selectedDayIso] ?? null);
 	const selectedDay = $derived(data.week.days.find((day) => day.isoDate === selectedDayIso) ?? data.week.days[0]);
+	const selectedDayNote = $derived(dayNotesState[selectedDayIso] ?? '');
+
+	function setSelectedDay(dayIso: string) {
+		selectedDayIso = dayIso;
+		if (typeof window !== 'undefined') {
+			const params = new URLSearchParams(window.location.search);
+			params.set('day', dayIso);
+			const next = `${window.location.pathname}?${params.toString()}`;
+			window.history.replaceState(window.history.state, '', next);
+		}
+	}
+
+	function weekHref(weekKey: string) {
+		const params = new URLSearchParams();
+		params.set('week', weekKey);
+		return `/ukeplan?${params.toString()}`;
+	}
 
 	function checklistProgress(checklist: WeekChecklist | null) {
 		if (!checklist || checklist.items.length === 0) return { done: 0, total: 0, pct: 0 };
@@ -424,12 +460,133 @@
 	}
 
 	async function submitDayComposer() {
-		if (!selectedDayChecklist) return;
-		await createChecklistItem(selectedDayChecklist.id, dayComposerText, dayComposerCount);
+		const checklist = await ensureDayChecklist(selectedDayIso);
+		if (!checklist) return;
+		await createChecklistItem(checklist.id, dayComposerText, dayComposerCount);
 		dayComposerText = '';
 		dayComposerCount = 1;
 		await tick();
 		dayComposerInput?.focus();
+	}
+
+	async function ensureDayChecklist(dayIso: string) {
+		const existing = dayChecklistsState[dayIso];
+		if (existing) return existing;
+
+		const response = await fetch('/api/checklists', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				title: `Dag ${dayIso}`,
+				emoji: '☑️',
+				context: `week:${data.week.dashedKey}:day:${dayIso}`
+			})
+		});
+
+		if (!response.ok) return null;
+
+		const created = await response.json() as DayChecklist;
+		dayChecklistsState = {
+			...dayChecklistsState,
+			[dayIso]: {
+				id: created.id,
+				title: created.title,
+				completedAt: created.completedAt,
+				items: created.items ?? []
+			}
+		};
+
+		return dayChecklistsState[dayIso];
+	}
+
+	async function ensureWeekChecklist() {
+		if (weekChecklistState) return weekChecklistState;
+
+		const response = await fetch('/api/checklists', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				title: `Uke ${data.week.week}`,
+				emoji: '🗓️',
+				context: data.week.contextKey
+			})
+		});
+
+		if (!response.ok) return null;
+
+		const created = await response.json() as WeekChecklist;
+		weekChecklistState = {
+			id: created.id,
+			title: created.title,
+			emoji: created.emoji,
+			completedAt: created.completedAt,
+			items: created.items ?? []
+		};
+
+		return weekChecklistState;
+	}
+
+	async function importFromPreviousWeek() {
+		const suggestions = [...data.previousWeekSummary.carryoverItems, ...data.previousWeekSummary.incompleteTasks]
+			.map((text) => text.trim())
+			.filter((text) => text.length > 0);
+		if (suggestions.length === 0) return;
+
+		const checklist = await ensureWeekChecklist();
+		if (!checklist) return;
+
+		planningImportBusy = true;
+		const existingTexts = new Set((checklist.items ?? []).map((item) => item.text.trim().toLowerCase()));
+		for (const text of suggestions) {
+			if (existingTexts.has(text.toLowerCase())) continue;
+			await createChecklistItem(checklist.id, text, 1);
+			existingTexts.add(text.toLowerCase());
+		}
+		planningImportBusy = false;
+	}
+
+	async function saveDayNote() {
+		const dayIso = selectedDayIso;
+		const note = dayNotesState[dayIso] ?? '';
+		setSaveState('dayNote', 'saving');
+
+		const form = new FormData();
+		form.set('weekKey', data.week.dashedKey);
+		form.set('dayIso', dayIso);
+		form.set('dayNote', note);
+
+		const response = await fetch('?/saveDayNote', {
+			method: 'POST',
+			body: form
+		});
+
+		if (!response.ok) {
+			setSaveState('dayNote', 'idle');
+			return;
+		}
+
+		flashSaved('dayNote');
+	}
+
+	async function saveWeekReview() {
+		setSaveState('weekReview', 'saving');
+
+		const form = new FormData();
+		form.set('weekKey', data.week.dashedKey);
+		form.set('reflection', reflectionValue);
+		form.set('vision', visionValue);
+
+		const response = await fetch('?/saveNotes', {
+			method: 'POST',
+			body: form
+		});
+
+		if (!response.ok) {
+			setSaveState('weekReview', 'idle');
+			return;
+		}
+
+		flashSaved('weekReview');
 	}
 
 	function handleComposerKeydown(event: KeyboardEvent, scope: 'week' | 'day') {
@@ -446,12 +603,42 @@
 <div class="week-plan-page">
 	<header class="wp-header">
 		<a class="wp-back" href="/" aria-label="Tilbake til hjem"><Icon name="back" size={18} /></a>
+		<a class="wp-week-nav" href={weekHref(data.weekNav.previousWeekKey)} aria-label="Forrige uke">‹</a>
 		<ScreenTitle
 			title={`Uke ${data.week.week}`}
 			subtitle={`Planrom for ${data.week.dashedKey}`}
 			ariaLabel="Ukeplan"
 		/>
+		<a class="wp-week-nav" href={weekHref(data.weekNav.nextWeekKey)} aria-label="Neste uke">›</a>
 	</header>
+
+	<section class="wp-card">
+		<div class="wp-card-head">
+			<h2>Planlegg uka</h2>
+			<span class="wp-pill">fra {data.previousWeekSummary.weekKey}</span>
+		</div>
+		{#if data.previousWeekSummary.note}
+			<p class="wp-helper">Forrige ukes intro: {data.previousWeekSummary.note}</p>
+		{/if}
+		{#if data.previousWeekSummary.reflection}
+			<p class="wp-helper">Laring: {data.previousWeekSummary.reflection}</p>
+		{/if}
+		{#if data.previousWeekSummary.carryoverItems.length > 0 || data.previousWeekSummary.incompleteTasks.length > 0}
+			<div class="wp-suggestion-list">
+				{#each data.previousWeekSummary.carryoverItems as item}
+					<div class="wp-suggestion-item">Overligger: {item}</div>
+				{/each}
+				{#each data.previousWeekSummary.incompleteTasks as task}
+					<div class="wp-suggestion-item">Ukesmaal ikke helt i havn: {task}</div>
+				{/each}
+			</div>
+			<button class="wp-btn" type="button" onclick={() => void importFromPreviousWeek()} disabled={planningImportBusy}>
+				{planningImportBusy ? 'Legger til ...' : 'Legg forslag i ukelista'}
+			</button>
+		{:else}
+			<p class="wp-empty">Ingen tydelige overliggere fra forrige uke.</p>
+		{/if}
+	</section>
 
 	<section class="wp-card">
 		<div class="wp-card-head">
@@ -459,6 +646,7 @@
 			<span class="wp-pill">uke {data.week.week}</span>
 		</div>
 		<form method="POST" action="?/saveWeekNote" class="wp-notes-form" use:enhance={autosaveEnhance('weekNote')} data-allow-empty-autosave="true">
+			<input type="hidden" name="weekKey" value={data.week.dashedKey} />
 			<div class="wp-field-shell">
 				<textarea
 					id="weekNote"
@@ -473,6 +661,38 @@
 				<span class="wp-save-dot" class:is-saving={saveStates.weekNote === 'saving'} class:is-saved={saveStates.weekNote === 'saved'} aria-hidden="true"></span>
 			</div>
 		</form>
+	</section>
+
+	<section class="wp-card">
+		<div class="wp-card-head">
+			<h2>Evaluer uka</h2>
+			<span class="wp-pill">enkelt</span>
+		</div>
+		<div class="wp-field-shell">
+			<textarea
+				class="wp-textarea"
+				rows="2"
+				placeholder="Gikk uka etter planen? Hva laerer du til neste uke?"
+				bind:value={reflectionValue}
+				onfocus={markInitialValue}
+				onblur={async () => {
+					await saveWeekReview();
+				}}
+			></textarea>
+		</div>
+		<div class="wp-field-shell">
+			<textarea
+				class="wp-textarea"
+				rows="2"
+				placeholder="Hvordan kjennes retningen mot de langsiktige målene?"
+				bind:value={visionValue}
+				onfocus={markInitialValue}
+				onblur={async () => {
+					await saveWeekReview();
+				}}
+			></textarea>
+			<span class="wp-save-dot" class:is-saving={saveStates.weekReview === 'saving'} class:is-saved={saveStates.weekReview === 'saved'} aria-hidden="true"></span>
+		</div>
 	</section>
 
 	<section class="wp-card">
@@ -592,7 +812,8 @@
 			</div>
 		{:else}
 			<p class="wp-empty">Ingen ukeliste er opprettet for denne uken.</p>
-			<form method="POST" action="?/createChecklist">
+			<form method="POST" action="?/createChecklistForWeek">
+				<input type="hidden" name="weekKey" value={data.week.dashedKey} />
 				<button class="wp-btn" type="submit">Opprett ukeliste</button>
 			</form>
 		{/if}
@@ -611,12 +832,33 @@
 					class="wp-day-btn"
 					class:today={day.isoDate === todayIso}
 					class:selected={selectedDayIso === day.isoDate}
-					onclick={() => (selectedDayIso = day.isoDate)}
+					onclick={() => setSelectedDay(day.isoDate)}
 				>
 					<span class="wp-day-label">{day.label}</span>
 					<span class="wp-day-number">{day.day}</span>
 				</button>
 			{/each}
+		</div>
+
+		<div class="wp-notes-form">
+			<div class="wp-field-shell">
+				<textarea
+					class="wp-textarea"
+					rows="2"
+					placeholder={`Liten plan for ${selectedDay.label}...`}
+					value={selectedDayNote}
+					oninput={(event) => {
+						const target = event.currentTarget as HTMLTextAreaElement;
+						dayNotesState = { ...dayNotesState, [selectedDayIso]: target.value };
+					}}
+					onfocus={markInitialValue}
+					onblur={async (event) => {
+						submitOnBlurIfChanged(event);
+						await saveDayNote();
+					}}
+				></textarea>
+				<span class="wp-save-dot" class:is-saving={saveStates.dayNote === 'saving'} class:is-saved={saveStates.dayNote === 'saved'} aria-hidden="true"></span>
+			</div>
 		</div>
 
 		{#if selectedDayChecklist}
@@ -692,10 +934,28 @@
 			</div>
 		{:else}
 			<p class="wp-empty">Ingen dagsmaal for valgt dag ennå.</p>
-			<form method="POST" action="?/createDayChecklist">
-				<input type="hidden" name="dayIso" value={selectedDayIso} />
-				<button class="wp-btn" type="submit">Opprett dagsmaal</button>
-			</form>
+			<div class="wp-add-form">
+				<div class="wp-field-shell">
+					<div class="wp-inline-inputs">
+						<input
+							bind:this={dayComposerInput}
+							bind:value={dayComposerText}
+							class="wp-input"
+							type="text"
+							placeholder={`Skriv første dagsmaal for ${selectedDay.label} og trykk Enter`}
+							onkeydown={(event) => handleComposerKeydown(event, 'day')}
+						/>
+						<input
+							bind:value={dayComposerCount}
+							class="wp-input wp-input-count"
+							type="number"
+							min="1"
+							max="12"
+						/>
+					</div>
+					<span class="wp-save-dot" class:is-saving={saveStates.dayItems === 'saving'} class:is-saved={saveStates.dayItems === 'saved'} aria-hidden="true"></span>
+				</div>
+			</div>
 		{/if}
 	</section>
 
@@ -762,6 +1022,22 @@
 		flex-shrink: 0;
 	}
 
+	.wp-week-nav {
+		width: 30px;
+		height: 30px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 999px;
+		border: 1px solid #273149;
+		background: #11172a;
+		color: #bac6f9;
+		text-decoration: none;
+		font-size: 1rem;
+		font-weight: 700;
+		flex-shrink: 0;
+	}
+
 	.wp-days {
 		display: grid;
 		grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -810,6 +1086,21 @@
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
+	}
+
+	.wp-suggestion-list {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.wp-suggestion-item {
+		font-size: 0.76rem;
+		color: #aeb4c6;
+		background: #0e121c;
+		border: 1px solid #242c40;
+		border-radius: 8px;
+		padding: 7px 9px;
 	}
 
 	.wp-card-head {

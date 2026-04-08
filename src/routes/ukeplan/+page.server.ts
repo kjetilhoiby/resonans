@@ -85,6 +85,37 @@ function getIsoWeekInfo(now: Date = new Date()) {
 	};
 }
 
+function getIsoWeekInfoFromKey(weekKey: string) {
+	const match = weekKey.match(/^(\d{4})-W(\d{2})$/);
+	if (!match) return null;
+
+	const year = Number.parseInt(match[1], 10);
+	const week = Number.parseInt(match[2], 10);
+	if (!Number.isFinite(year) || !Number.isFinite(week) || week < 1 || week > 53) return null;
+
+	const jan4 = new Date(Date.UTC(year, 0, 4));
+	const jan4Day = jan4.getUTCDay() || 7;
+	const week1Monday = new Date(jan4);
+	week1Monday.setUTCDate(jan4.getUTCDate() - jan4Day + 1);
+
+	const monday = new Date(week1Monday);
+	monday.setUTCDate(week1Monday.getUTCDate() + (week - 1) * 7);
+
+	const resolved = getIsoWeekInfo(monday);
+	return resolved.dashedKey === weekKey ? resolved : null;
+}
+
+function shiftWeek(week: ReturnType<typeof getIsoWeekInfo>, delta: number) {
+	const monday = new Date(`${week.days[0].isoDate}T00:00:00.000Z`);
+	monday.setUTCDate(monday.getUTCDate() + delta * 7);
+	return getIsoWeekInfo(monday);
+}
+
+function resolveWeekFromFormData(formData: FormData) {
+	const weekKey = String(formData.get('weekKey') || '').trim();
+	return getIsoWeekInfoFromKey(weekKey) ?? getIsoWeekInfo();
+}
+
 async function upsertWeekNote(userId: string, source: string, content: string) {
 	const trimmed = content.trim();
 	const existing = await db.query.memories.findFirst({
@@ -115,15 +146,23 @@ async function upsertWeekNote(userId: string, source: string, content: string) {
 	});
 }
 
-export const load: PageServerLoad = async ({ locals }) => {
+export const load: PageServerLoad = async ({ locals, url }) => {
 	const userId = locals.userId;
-	const week = getIsoWeekInfo();
+	const requestedWeek = url.searchParams.get('week');
+	const week = requestedWeek ? (getIsoWeekInfoFromKey(requestedWeek) ?? getIsoWeekInfo()) : getIsoWeekInfo();
+	const previousWeek = shiftWeek(week, -1);
+	const nextWeek = shiftWeek(week, 1);
 	const weekStart = new Date(`${week.days[0].isoDate}T00:00:00.000Z`);
 	const weekEndExclusive = new Date(weekStart);
 	weekEndExclusive.setUTCDate(weekEndExclusive.getUTCDate() + 7);
 	const dayContexts = week.days.map((d) => `week:${week.dashedKey}:day:${d.isoDate}`);
+	const dayNoteSources = week.days.map((d) => `week-plan:${week.compactKey}:day:${d.isoDate}:note`);
 
-	const [weekChecklist, weekTasks, weekProgressRows, reflectionNote, visionNote, weekNote, longTermGoals, dayChecklists] = await Promise.all([
+	const previousWeekStart = new Date(`${previousWeek.days[0].isoDate}T00:00:00.000Z`);
+	const previousWeekEndExclusive = new Date(previousWeekStart);
+	previousWeekEndExclusive.setUTCDate(previousWeekEndExclusive.getUTCDate() + 7);
+
+	const [weekChecklist, weekTasks, weekProgressRows, reflectionNote, visionNote, weekNote, longTermGoals, dayChecklists, dayNotes, previousWeekChecklist, previousWeekNote, previousWeekReflection, previousWeekTasks, previousWeekProgressRows] = await Promise.all([
 		db.query.checklists.findFirst({
 			where: and(eq(checklists.userId, userId), eq(checklists.context, week.contextKey)),
 			with: {
@@ -166,6 +205,39 @@ export const load: PageServerLoad = async ({ locals }) => {
 					orderBy: (items, { asc: orderAsc }) => [orderAsc(items.sortOrder), orderAsc(items.createdAt)]
 				}
 			}
+		}),
+		db.query.memories.findMany({
+			where: and(eq(memories.userId, userId), inArray(memories.source, dayNoteSources)),
+			columns: {
+				source: true,
+				content: true
+			}
+		}),
+		db.query.checklists.findFirst({
+			where: and(eq(checklists.userId, userId), eq(checklists.context, previousWeek.contextKey)),
+			with: {
+				items: {
+					orderBy: (items, { asc: orderAsc }) => [orderAsc(items.sortOrder), orderAsc(items.createdAt)]
+				}
+			},
+			orderBy: (c, { desc: orderDesc }) => [orderDesc(c.createdAt)]
+		}),
+		db.query.memories.findFirst({
+			where: and(eq(memories.userId, userId), eq(memories.source, `week-plan:${previousWeek.compactKey}:note`))
+		}),
+		db.query.memories.findFirst({
+			where: and(eq(memories.userId, userId), eq(memories.source, `week-plan:${previousWeek.compactKey}:reflection`))
+		}),
+		loadWeekTasks(userId, previousWeek.dashedKey, previousWeek.compactKey),
+		db.query.progress.findMany({
+			where: and(
+				eq(progress.userId, userId),
+				gte(progress.completedAt, previousWeekStart),
+				lt(progress.completedAt, previousWeekEndExclusive)
+			),
+			columns: {
+				taskId: true
+			}
 		})
 	]);
 
@@ -188,8 +260,38 @@ export const load: PageServerLoad = async ({ locals }) => {
 		];
 	}));
 
+	const dayNoteMap = Object.fromEntries(dayNotes.map((note) => {
+		const dayKey = note.source?.match(/:day:(\d{4}-\d{2}-\d{2}):note$/)?.[1] ?? note.source;
+		return [dayKey, note.content];
+	}));
+
+	const previousProgressCounts = previousWeekProgressRows.reduce((acc, row) => {
+		if (!row.taskId) return acc;
+		acc[row.taskId] = (acc[row.taskId] ?? 0) + 1;
+		return acc;
+	}, {} as Record<string, number>);
+
+	const previousIncompleteTasks = previousWeekTasks
+		.filter((task) => {
+			const repeatCount =
+				task.frequency === 'weekly' && typeof task.targetValue === 'number' && task.targetValue > 1
+					? Math.min(task.targetValue, 12)
+					: 1;
+			return (previousProgressCounts[task.id] ?? 0) < repeatCount;
+		})
+		.map((task) => task.title);
+
+	const carryoverItems = (previousWeekChecklist?.items ?? [])
+		.filter((item) => !item.checked)
+		.map((item) => item.text);
+
 	return {
 		week,
+		weekNav: {
+			previousWeekKey: previousWeek.dashedKey,
+			nextWeekKey: nextWeek.dashedKey,
+			isCurrentWeek: week.dashedKey === getIsoWeekInfo().dashedKey
+		},
 		weekChecklist: weekChecklist
 			? {
 				id: weekChecklist.id,
@@ -220,7 +322,15 @@ export const load: PageServerLoad = async ({ locals }) => {
 			title: goal.title,
 			targetDate: goal.targetDate?.toISOString() ?? null
 		})),
-		dayChecklists: dayChecklistMap
+		dayChecklists: dayChecklistMap,
+		dayNotes: dayNoteMap,
+		previousWeekSummary: {
+			weekKey: previousWeek.dashedKey,
+			note: previousWeekNote?.content ?? '',
+			reflection: previousWeekReflection?.content ?? '',
+			carryoverItems,
+			incompleteTasks: previousIncompleteTasks
+		}
 	};
 };
 
@@ -228,6 +338,28 @@ export const actions = {
 	createChecklist: async ({ locals }) => {
 		const userId = locals.userId;
 		const week = getIsoWeekInfo();
+
+		const existing = await db.query.checklists.findFirst({
+			where: and(eq(checklists.userId, userId), eq(checklists.context, week.contextKey)),
+			orderBy: (c, { desc: orderDesc }) => [orderDesc(c.createdAt)]
+		});
+
+		if (!existing) {
+			await db.insert(checklists).values({
+				userId,
+				title: `Uke ${week.week}`,
+				emoji: '🗓️',
+				context: week.contextKey
+			});
+		}
+
+		return { success: true };
+	},
+
+	createChecklistForWeek: async ({ locals, request }) => {
+		const userId = locals.userId;
+		const data = await request.formData();
+		const week = resolveWeekFromFormData(data);
 
 		const existing = await db.query.checklists.findFirst({
 			where: and(eq(checklists.userId, userId), eq(checklists.context, week.contextKey)),
@@ -294,8 +426,8 @@ export const actions = {
 
 	createDayChecklist: async ({ request, locals }) => {
 		const userId = locals.userId;
-		const week = getIsoWeekInfo();
 		const data = await request.formData();
+		const week = resolveWeekFromFormData(data);
 		const dayIso = String(data.get('dayIso') || '').trim();
 
 		if (!dayIso) {
@@ -362,18 +494,33 @@ export const actions = {
 
 	saveWeekNote: async ({ request, locals }) => {
 		const userId = locals.userId;
-		const week = getIsoWeekInfo();
 		const data = await request.formData();
+		const week = resolveWeekFromFormData(data);
 		const weekNote = String(data.get('weekNote') || '');
 
 		await upsertWeekNote(userId, `week-plan:${week.compactKey}:note`, weekNote);
 		return { success: true };
 	},
 
+	saveDayNote: async ({ request, locals }) => {
+		const userId = locals.userId;
+		const data = await request.formData();
+		const week = resolveWeekFromFormData(data);
+		const dayIso = String(data.get('dayIso') || '').trim();
+		const note = String(data.get('dayNote') || '');
+
+		if (!dayIso) {
+			return fail(400, { error: 'Mangler dag.' });
+		}
+
+		await upsertWeekNote(userId, `week-plan:${week.compactKey}:day:${dayIso}:note`, note);
+		return { success: true };
+	},
+
 	saveNotes: async ({ request, locals }) => {
 		const userId = locals.userId;
-		const week = getIsoWeekInfo();
 		const data = await request.formData();
+		const week = resolveWeekFromFormData(data);
 		const reflection = String(data.get('reflection') || '');
 		const vision = String(data.get('vision') || '');
 

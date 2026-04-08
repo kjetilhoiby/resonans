@@ -27,10 +27,6 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		return json({ error: 'Missing category parameter' }, { status: 400 });
 	}
 
-	if (!accountId) {
-		return json({ error: 'Missing accountId parameter' }, { status: 400 });
-	}
-
 	// ─── Detect payday dates ──────────────────────────────────────────────────
 	const globalPayday = await detectGlobalPayday(userId);
 

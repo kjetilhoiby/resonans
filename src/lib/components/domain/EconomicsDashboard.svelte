@@ -5,6 +5,10 @@
 	import Section from '../ui/Section.svelte';
 	import TransactionList from '../ui/TransactionList.svelte';
 	import TransactionExplorer from '../ui/TransactionExplorer.svelte';
+	import SpendingChart from '../charts/SpendingChart.svelte';
+	import CumulativeSpending from '../charts/CumulativeSpending.svelte';
+	import { CATEGORIES } from '$lib/integrations/transaction-categories-client';
+	import type { CategoryId } from '$lib/integrations/transaction-categories-client';
 	import type { GoalTrack } from '$lib/domain/goal-tracks';
 
 	interface EconomicsAccount {
@@ -79,6 +83,37 @@
 		paydaySpend,
 		embedded = false
 	}: Props = $props();
+
+	// Subtab state
+	type SubTab = 'oversikt' | 'forbruk' | 'lonnsmaned';
+	let subTab = $state<SubTab>('oversikt');
+
+	// Forbruk tab — monthly spending history
+	type SpendingMonthData = {
+		month: string;
+		categories: CategoryRow[];
+		totalSpending: number;
+		totalFixed: number;
+		totalVariable: number;
+		totalIncome: number;
+	};
+	let spendingMonths = $state<SpendingMonthData[]>([]);
+	let loadingSpending = $state(false);
+	let spendingLoaded = $state(false);
+
+	// Lønnsmåned tab — cumulative spending per salary period
+	type CumDayPoint = { day: number; cumulative: number; dailySpent: number };
+	type CumPeriod = { label: string; isCurrent: boolean; paydayDate: string; days: CumDayPoint[]; total: number };
+	type CumResult = { category: CategoryId; periods: CumPeriod[]; detectedPaydayDom: number | null };
+
+	const CUMULATIVE_CATS: CategoryId[] = [
+		'dagligvarer', 'kafe_og_restaurant', 'bil_og_transport',
+		'klaer_og_utstyr', 'hobby_og_fritid', 'helse_og_velvaere',
+		'medier_og_underholdning', 'reise', 'hjem_og_hage'
+	];
+	let selectedCumCats = $state<CategoryId[]>(['dagligvarer', 'kafe_og_restaurant', 'bil_og_transport']);
+	let cumulativeByCategory = $state<Partial<Record<CategoryId, CumResult>>>({});
+	let loadingCumCats = $state<CategoryId[]>([]);
 
 	// Transaction overlay state
 	let txOverlay = $state<null | 'all' | 'grocery'>(null);
@@ -270,9 +305,68 @@
 			groceryGoalSaving = false;
 		}
 	}
+
+	function switchSubTab(tab: SubTab) {
+		subTab = tab;
+		if (tab === 'forbruk' && !spendingLoaded) void loadSpending();
+		if (tab === 'lonnsmaned') ensureCumulativeLoaded();
+	}
+
+	function ensureCumulativeLoaded() {
+		for (const cat of selectedCumCats) {
+			if (!cumulativeByCategory[cat] && !loadingCumCats.includes(cat)) {
+				void loadCumulative(cat);
+			}
+		}
+	}
+
+	async function loadSpending() {
+		loadingSpending = true;
+		try {
+			const res = await fetch('/api/economics/spending?months=12');
+			const data = await res.json();
+			spendingMonths = data.months ?? [];
+			spendingLoaded = true;
+		} finally {
+			loadingSpending = false;
+		}
+	}
+
+	async function loadCumulative(cat: CategoryId) {
+		loadingCumCats = [...loadingCumCats, cat];
+		try {
+			const res = await fetch(`/api/economics/cumulative-spending?category=${cat}&periods=6`);
+			const data = await res.json();
+			cumulativeByCategory = {
+				...cumulativeByCategory,
+				[cat]: { category: cat, periods: data.periods ?? [], detectedPaydayDom: data.detectedPaydayDom ?? null }
+			};
+		} finally {
+			loadingCumCats = loadingCumCats.filter((c) => c !== cat);
+		}
+	}
+
+	function toggleCumCat(cat: CategoryId) {
+		if (selectedCumCats.includes(cat)) {
+			selectedCumCats = selectedCumCats.filter((c) => c !== cat);
+		} else {
+			selectedCumCats = [...selectedCumCats, cat];
+			if (!cumulativeByCategory[cat] && !loadingCumCats.includes(cat)) {
+				void loadCumulative(cat);
+			}
+		}
+	}
 </script>
 
 <div class:ed-embedded={embedded} class="economics-dashboard">
+	<!-- Subtabs -->
+	<div class="ed-subtabs" role="tablist">
+		<button class="ed-subtab" class:active={subTab === 'oversikt'} onclick={() => switchSubTab('oversikt')} role="tab" aria-selected={subTab === 'oversikt'}>Oversikt</button>
+		<button class="ed-subtab" class:active={subTab === 'forbruk'} onclick={() => switchSubTab('forbruk')} role="tab" aria-selected={subTab === 'forbruk'}>Forbruk</button>
+		<button class="ed-subtab" class:active={subTab === 'lonnsmaned'} onclick={() => switchSubTab('lonnsmaned')} role="tab" aria-selected={subTab === 'lonnsmaned'}>Lønnsmåned</button>
+	</div>
+
+	{#if subTab === 'oversikt'}
 	{#if !embedded}
 		<div class="ed-header">
 			<h1 class="ed-title">Økonomi</h1>
@@ -407,6 +501,54 @@
 			<p>Ingen økonomidata tilgjengelig ennå.</p>
 			<p class="ed-empty-sub">Koble til SpareBank1 under Innstillinger for å se saldo og transaksjoner her.</p>
 		</div>
+	{/if}
+
+	{:else if subTab === 'forbruk'}
+		{#if loadingSpending}
+			<div class="ed-loading">Laster månedlig forbruk…</div>
+		{:else if spendingMonths.length === 0 && spendingLoaded}
+			<div class="ed-loading">Ingen forbruksdata tilgjengelig.</div>
+		{:else}
+			<p class="ed-subtab-hint">Klikk en måned og deretter en kategori for å se transaksjoner.</p>
+			<SpendingChart data={spendingMonths} />
+		{/if}
+
+	{:else}
+		<!-- Lønnsmåned: cumulative spending per category within salary periods -->
+		<div class="ed-cat-chips">
+			{#each CUMULATIVE_CATS as cat}
+				{@const def = CATEGORIES[cat]}
+				<button
+					class="ed-cat-chip"
+					class:selected={selectedCumCats.includes(cat)}
+					onclick={() => toggleCumCat(cat)}
+				>{def.emoji} {def.label}</button>
+			{/each}
+		</div>
+
+		{#if selectedCumCats.length === 0}
+			<p class="ed-loading">Velg kategorier over for å se lønnsmånedsgraf.</p>
+		{:else}
+			<div class="ed-cumulative-stack">
+				{#each selectedCumCats as cat}
+					{@const result = cumulativeByCategory[cat]}
+					{@const isLoading = loadingCumCats.includes(cat)}
+					{#if isLoading}
+						<div class="ed-loading">Laster {CATEGORIES[cat]?.label}…</div>
+					{:else if result && result.periods.length > 0}
+						<div class="ed-cum-chart">
+							<CumulativeSpending
+								category={cat}
+								periods={result.periods}
+								detectedPaydayDom={result.detectedPaydayDom}
+							/>
+						</div>
+					{:else if result && result.periods.length === 0}
+						<p class="ed-loading">Ingen data for {CATEGORIES[cat]?.label}.</p>
+					{/if}
+				{/each}
+			</div>
+		{/if}
 	{/if}
 </div>
 
@@ -680,5 +822,85 @@
 		padding: 28px 20px;
 		text-align: center;
 		color: #aaa;
+	}
+
+	/* ── Subtabs ── */
+	.ed-subtabs {
+		display: flex;
+		gap: 4px;
+		border-bottom: 1px solid #1e1e1e;
+		padding-bottom: 12px;
+	}
+
+	.ed-subtab {
+		flex: 1;
+		background: transparent;
+		border: 1px solid #1e1e1e;
+		border-radius: 8px;
+		color: #555;
+		font-size: 0.76rem;
+		font-weight: 500;
+		padding: 6px 8px;
+		cursor: pointer;
+		transition: color 0.15s, border-color 0.15s, background 0.15s;
+	}
+
+	.ed-subtab.active {
+		background: #161622;
+		border-color: #3a4280;
+		color: #9da8f0;
+	}
+
+	.ed-loading {
+		padding: 2.5rem 1rem;
+		text-align: center;
+		color: #444;
+		font-size: 0.82rem;
+	}
+
+	.ed-subtab-hint {
+		margin: 0 0 12px;
+		font-size: 0.76rem;
+		color: #444;
+	}
+
+	/* ── Category chips (Lønnsmåned tab) ── */
+	.ed-cat-chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		padding: 4px 0 14px;
+	}
+
+	.ed-cat-chip {
+		background: transparent;
+		border: 1px solid #1e1e1e;
+		border-radius: 20px;
+		color: #555;
+		font-size: 0.74rem;
+		padding: 5px 11px;
+		cursor: pointer;
+		transition: color 0.15s, border-color 0.15s, background 0.15s;
+	}
+
+	.ed-cat-chip.selected {
+		background: #161622;
+		border-color: #3a4280;
+		color: #9da8f0;
+	}
+
+	/* ── Cumulative chart stack ── */
+	.ed-cumulative-stack {
+		display: flex;
+		flex-direction: column;
+		gap: 20px;
+	}
+
+	.ed-cum-chart {
+		background: #0c0c0c;
+		border: 1px solid #1a1a1a;
+		border-radius: 14px;
+		padding: 12px 8px;
+		overflow: hidden;
 	}
 </style>

@@ -1,14 +1,11 @@
 import { db } from '$lib/db';
-import { sensorEvents } from '$lib/db/schema';
+import { categorizedEvents, sensorEvents } from '$lib/db/schema';
 import { and, eq, desc, sql } from 'drizzle-orm';
 import {
-	categorizeTransaction,
 	detectRecurring,
-	CATEGORIES,
-	type CategoryId
+	CATEGORIES
 } from '$lib/server/integrations/transaction-categories';
-import { loadMerchantMappings } from '$lib/server/integrations/spending-analyzer';
-import { loadClassificationOverrides, loadTransactionMatchingRules } from '$lib/server/classification-overrides';
+import { ensureCategorizedEventsForRange } from '$lib/server/integrations/categorized-events';
 
 export type EconomicsAccount = {
 	accountId: string;
@@ -110,55 +107,55 @@ export async function loadEconomicsDashboardData(userId: string): Promise<Econom
 	const currentMonth = now.toISOString().slice(0, 7); // "2026-03"
 	const monthStart = new Date(`${currentMonth}-01T00:00:00Z`);
 	const queryFrom = new Date(now.getTime() - 70 * 24 * 60 * 60 * 1000);
+	await ensureCategorizedEventsForRange({ userId, from: queryFrom, to: new Date(now.getTime() + 1) });
 
 	const txRows = await db
 		.select({
-			timestamp: sensorEvents.timestamp,
-			amount: sql<number>`(data->>'amount')::numeric`,
-			description: sql<string>`data->>'description'`,
-			typeText: sql<string>`data->>'category'`
+			timestamp: categorizedEvents.timestamp,
+			amount: categorizedEvents.amount,
+			description: categorizedEvents.description,
+			resolvedCategory: categorizedEvents.resolvedCategory,
+			resolvedLabel: categorizedEvents.resolvedLabel,
+			resolvedEmoji: categorizedEvents.resolvedEmoji,
+			isFixed: categorizedEvents.isFixed
 		})
-		.from(sensorEvents)
+		.from(categorizedEvents)
 		.where(
 			and(
-				eq(sensorEvents.userId, userId),
-				eq(sensorEvents.dataType, 'bank_transaction'),
-				sql`timestamp >= ${queryFrom.toISOString()}`
+				eq(categorizedEvents.userId, userId),
+				sql`${categorizedEvents.timestamp} >= ${queryFrom.toISOString()}`
 			)
 		)
-		.orderBy(desc(sensorEvents.timestamp));
+		.orderBy(desc(categorizedEvents.timestamp));
 
 	const allTxs = txRows.map((r) => ({
 		timestamp: r.timestamp,
 		amount: Number(r.amount) || 0,
 		description: r.description ?? '',
-		typeText: r.typeText ?? ''
+		category: r.resolvedCategory,
+		label: r.resolvedLabel,
+		emoji: r.resolvedEmoji,
+		isFixed: r.isFixed
 	}));
 
 	// Current-month slice for monthly spending stats
 	const txs = allTxs.filter((t) => t.timestamp >= monthStart);
 
 	// ── 3. Categorise spending ───────────────────────────────────────────────
-	const [merchantMappingCache, transactionOverrideCache, transactionRules] = await Promise.all([
-		loadMerchantMappings(userId),
-		loadClassificationOverrides(userId, 'transaction'),
-		loadTransactionMatchingRules()
-	]);
 
 	const recurringKeys = detectRecurring(
 		txs.map((t) => ({ description: t.description, amount: t.amount, month: currentMonth }))
 	);
 
-	const categoryMap = new Map<CategoryId, EconomicsCategoryRow>();
+	const categoryMap = new Map<string, EconomicsCategoryRow>();
 	let totalSpending = 0;
 	let totalFixed = 0;
 	let totalVariable = 0;
 	let totalIncome = 0;
 
 	for (const tx of txs) {
-		const classified = categorizeTransaction(tx.description, tx.typeText, tx.amount, merchantMappingCache, transactionOverrideCache, transactionRules);
 		const key = `${tx.description.toLowerCase().trim()}|${Math.round(tx.amount / 10) * 10}`;
-		const isFixed = classified.isFixed || recurringKeys.has(key);
+		const isFixed = tx.isFixed || recurringKeys.has(key);
 		const absAmount = Math.abs(tx.amount);
 
 		if (tx.amount > 0) {
@@ -170,8 +167,8 @@ export async function loadEconomicsDashboardData(userId: string): Promise<Econom
 		if (isFixed) totalFixed += absAmount;
 		else totalVariable += absAmount;
 
-		const catId = classified.category as CategoryId;
-		const catDef = CATEGORIES[catId] ?? CATEGORIES['annet'];
+		const catId = tx.category || 'ukategorisert';
+		const catDef = CATEGORIES[catId as keyof typeof CATEGORIES] ?? CATEGORIES['ukategorisert'];
 
 		if (!categoryMap.has(catId)) {
 			categoryMap.set(catId, {
@@ -193,15 +190,15 @@ export async function loadEconomicsDashboardData(userId: string): Promise<Econom
 	);
 
 	// ── 4. Recent transactions (last 8, any direction) ──────────────────────
-	const recentTransactions: EconomicsRecentTx[] = txs.slice(0, 8).map((tx) => {
-		const classified = categorizeTransaction(tx.description, tx.typeText, tx.amount, merchantMappingCache, transactionOverrideCache, transactionRules);
-		const catDef = CATEGORIES[classified.category as CategoryId] ?? CATEGORIES['annet'];
+	// Use allTxs (not txs) so we always show 8 entries even early in the month
+	const recentTransactions: EconomicsRecentTx[] = allTxs.slice(0, 8).map((tx) => {
+		const catDef = CATEGORIES[tx.category as keyof typeof CATEGORIES] ?? CATEGORIES['ukategorisert'];
 		return {
 			date: tx.timestamp.toISOString(),
 			description: tx.description,
 			amount: tx.amount,
-			emoji: catDef.emoji,
-			label: catDef.label
+			emoji: tx.emoji ?? catDef.emoji,
+			label: tx.label ?? catDef.label
 		};
 	});
 
@@ -242,8 +239,7 @@ export async function loadEconomicsDashboardData(userId: string): Promise<Econom
 	const groceryTxList: EconomicsTx[] = [];
 
 	for (const tx of txsSincePayday) {
-		const classified = categorizeTransaction(tx.description, tx.typeText, tx.amount, merchantMappingCache, transactionOverrideCache, transactionRules);
-		const catDef = CATEGORIES[classified.category as CategoryId] ?? CATEGORIES['annet'];
+		const catDef = CATEGORIES[tx.category as keyof typeof CATEGORIES] ?? CATEGORIES['ukategorisert'];
 		const absAmt = Math.abs(tx.amount);
 		totalSpendSincePayday += absAmt;
 
@@ -251,13 +247,13 @@ export async function loadEconomicsDashboardData(userId: string): Promise<Econom
 			date: tx.timestamp.toISOString(),
 			description: tx.description,
 			amount: tx.amount,
-			category: classified.category,
-			emoji: catDef.emoji,
-			label: catDef.label
+			category: tx.category,
+			emoji: tx.emoji ?? catDef.emoji,
+			label: tx.label ?? catDef.label
 		};
 		paydayTxList.push(txEntry);
 
-		if (classified.category === 'dagligvarer') {
+		if (tx.category === 'dagligvarer') {
 			grocerySpendSincePayday += absAmt;
 			groceryTxList.push(txEntry);
 		}
@@ -281,10 +277,9 @@ export async function loadEconomicsDashboardData(userId: string): Promise<Econom
 		let prevTotal = 0;
 		let prevGrocery = 0;
 		for (const tx of prevTxs) {
-			const classified = categorizeTransaction(tx.description, tx.typeText, tx.amount, merchantMappingCache, transactionOverrideCache, transactionRules);
 			const absAmt = Math.abs(tx.amount);
 			prevTotal += absAmt;
-			if (classified.category === 'dagligvarer') prevGrocery += absAmt;
+			if (tx.category === 'dagligvarer') prevGrocery += absAmt;
 		}
 
 		const prevDays = Math.max(1, Math.round((prevEnd.getTime() - prevStart.getTime()) / msPerDay));

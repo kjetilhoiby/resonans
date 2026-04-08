@@ -124,14 +124,26 @@
 		}
 	}
 
-	async function syncWithings() {
+	async function syncWithings(fullHistory = false) {
 		syncingWithings = true;
 		withingsResult = null;
 		try {
-			const res = await fetch('/api/sensors/withings/sync', { method: 'POST' });
+			if (fullHistory) {
+				const ok = confirm('Dette importerer hele tilgjengelige Withings-historikken og erstatter eksisterende helsedata. Fortsette?');
+				if (!ok) {
+					syncingWithings = false;
+					return;
+				}
+			}
+
+			const endpoint = fullHistory ? '/api/sensors/withings/full-sync' : '/api/sensors/withings/sync';
+			const res = await fetch(endpoint, { method: 'POST' });
 			const payload = await res.json();
 			if (!res.ok) throw new Error(payload.error || 'Sync feilet');
-			withingsResult = { success: true, message: payload.message || 'Withings synkronisert.' };
+			withingsResult = {
+				success: true,
+				message: payload.message || (fullHistory ? 'Withings full historikk importert.' : 'Withings synkronisert.')
+			};
 			await loadWithingsStatus();
 		} catch (error) {
 			withingsResult = { success: false, message: error instanceof Error ? error.message : 'Ukjent feil' };
@@ -314,7 +326,8 @@
 		{:else if withingsStatus?.connected}
 			<p class="ok">Tilkoblet</p>
 			<div class="row">
-				<button class="btn-secondary" onclick={syncWithings} disabled={syncingWithings}>{syncingWithings ? 'Synker...' : 'Synk nå'}</button>
+				<button class="btn-secondary" onclick={() => syncWithings(false)} disabled={syncingWithings}>{syncingWithings ? 'Synker...' : 'Synk nå'}</button>
+				<button class="btn-secondary" onclick={() => syncWithings(true)} disabled={syncingWithings}>Importer full historikk</button>
 				<button class="btn-ghost" onclick={disconnectWithings}>Koble fra</button>
 			</div>
 		{:else}

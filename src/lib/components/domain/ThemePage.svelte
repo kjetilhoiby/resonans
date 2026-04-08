@@ -1,6 +1,6 @@
 <!--
   ThemePage — tre-tab-visning for ett tema.
-  Tabs: Chat | Data | Filer
+	Tabs: Chat | Data | Mål | Flyter | Filer
 
   Props:
     theme           tema-objekt fra DB
@@ -88,18 +88,23 @@
 	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '', selectedWorkout = null }: Props = $props();
 
 	/* ── Subtab-tilstand ────────────────────────────────── */
-	type Tab = 'chat' | 'data' | 'mål' | 'filer';
+	type Tab = 'chat' | 'data' | 'mål' | 'flyter' | 'filer';
 	const activeDashboardKind = resolveThemeDashboardKind(theme.name);
 	const activeDashboard = getThemeDashboardDefinition(theme.name);
 	const hasThemeDashboard = activeDashboardKind !== null;
 	const requestedTab = get(page).url.searchParams.get('tab');
+	const availableTabs = $derived<Tab[]>(
+		activeDashboardKind === 'health'
+			? ['chat', 'data', 'mål', 'flyter', 'filer']
+			: ['chat', 'data', 'mål', 'filer']
+	);
 	const requestedPrompt = get(page).url.searchParams.get('prompt') ?? '';
 	const hasLinkedWorkout = Boolean(selectedWorkout);
 	const isHandoff = get(page).url.searchParams.get('handoff') === '1';
 	let tab = $state<Tab>(
 		hasLinkedWorkout
 			? 'chat'
-			: requestedTab === 'chat' || requestedTab === 'data' || requestedTab === 'mål' || requestedTab === 'filer'
+			: requestedTab === 'chat' || requestedTab === 'data' || requestedTab === 'mål' || requestedTab === 'flyter' || requestedTab === 'filer'
 			? requestedTab as Tab
 			: hasThemeDashboard
 				? 'data'
@@ -768,6 +773,68 @@
 		}
 	}
 
+	/* ── Flyter-tab: onboarding for vektnedgang ─────────── */
+	let onboardingHistoryInput = $state('');
+	let onboardingStartDate = $state('');
+	let onboardingEndDate = $state('');
+	let onboardingStartWeightInput = $state('');
+	let onboardingTargetWeightInput = $state('');
+	let onboardingSaving = $state(false);
+	let onboardingMessage = $state<string | null>(null);
+
+	function initWeightOnboardingDefaults() {
+		if (onboardingStartDate && onboardingEndDate) return;
+		const today = new Date();
+		onboardingStartDate = formatDate(today);
+		const end = new Date(today);
+		end.setDate(end.getDate() + 90);
+		onboardingEndDate = formatDate(end);
+		onboardingStartWeightInput = getLatestWeight();
+	}
+
+	$effect(() => {
+		if (tab === 'flyter' && activeDashboardKind === 'health') {
+			initWeightOnboardingDefaults();
+		}
+	});
+
+	async function saveWeightOnboarding() {
+		onboardingSaving = true;
+		onboardingMessage = null;
+
+		try {
+			const startWeight = Number.parseFloat(onboardingStartWeightInput.replace(',', '.'));
+			const targetWeight = Number.parseFloat(onboardingTargetWeightInput.replace(',', '.'));
+			const targetChange = Number.isFinite(startWeight) && Number.isFinite(targetWeight)
+				? targetWeight - startWeight
+				: undefined;
+
+			const response = await fetch('/api/health/weight-onboarding', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					historyText: onboardingHistoryInput,
+					startDate: onboardingStartDate,
+					endDate: onboardingEndDate,
+					startWeight: Number.isFinite(startWeight) ? startWeight : null,
+					targetWeight: Number.isFinite(targetWeight) ? targetWeight : null,
+					targetChange
+				})
+			});
+
+			const payload = await response.json();
+			if (!response.ok || payload.success === false) {
+				throw new Error(payload?.message || 'Kunne ikke lagre onboarding');
+			}
+
+			onboardingMessage = 'Onboarding lagret. Historikk og mål brukes nå i coachingen.';
+		} catch (error) {
+			onboardingMessage = error instanceof Error ? error.message : 'Ukjent feil ved lagring';
+		} finally {
+			onboardingSaving = false;
+		}
+	}
+
 	/* ── Navigasjon: klikk + swipe ─────────────────────── */
 	let touchStartX = 0;
 	let touchStartY = 0;
@@ -900,7 +967,7 @@
 
 		<!-- ── Tabs ── -->
 		<div class="tp-tabs tp-enter" role="tablist" aria-label="Tema-seksjoner">
-			{#each (['chat', 'data', 'mål', 'filer'] as Tab[]) as t}
+			{#each availableTabs as t}
 				<button
 					class="tp-tab"
 					class:active={tab === t}
@@ -911,6 +978,7 @@
 					{#if t === 'chat'}💬 Samtaler
 				{:else if t === 'data'}{activeDashboard ? `${activeDashboard.icon} ${activeDashboard.label}` : '📊 Data'}
 					{:else if t === 'mål'}🎯 Mål
+					{:else if t === 'flyter'}🧭 Flyter
 					{:else}📁 Filer{/if}
 				</button>
 			{/each}
@@ -1491,6 +1559,54 @@
 						</button>
 					</div>
 				{/if}
+			</div>
+
+		<!-- FLYTER -->
+		{:else if tab === 'flyter'}
+			<div class="flows-panel">
+				<div class="flows-section">
+					<h2 class="goals-section-title">Vektnedgang-onboarding</h2>
+					<p class="goals-section-copy">Skriv litt om historikken din og sett start- og måldato for en realistisk bane.</p>
+					<div class="flow-card">
+						<label class="goal-control-field">
+							Historikk og kontekst
+							<textarea
+								class="flow-textarea"
+								bind:value={onboardingHistoryInput}
+								rows="5"
+								placeholder="Hva har fungert før, hva har vært vanskelig, og hva ønsker du nå?"
+							></textarea>
+						</label>
+						<div class="goal-control-row">
+							<label class="goal-control-field">
+								Startdato
+								<input class="goal-control-input" type="date" bind:value={onboardingStartDate} />
+							</label>
+							<label class="goal-control-field">
+								Måldato
+								<input class="goal-control-input" type="date" bind:value={onboardingEndDate} />
+							</label>
+						</div>
+						<div class="goal-control-row">
+							<label class="goal-control-field">
+								Startvekt (kg)
+								<input class="goal-control-input" type="number" step="0.1" min="0" bind:value={onboardingStartWeightInput} placeholder="80.0" />
+							</label>
+							<label class="goal-control-field">
+								Målvekt (kg)
+								<input class="goal-control-input" type="number" step="0.1" min="0" bind:value={onboardingTargetWeightInput} placeholder="75.0" />
+							</label>
+						</div>
+						<div class="goal-control-actions">
+							<button class="goal-control-save" type="button" onclick={saveWeightOnboarding} disabled={onboardingSaving}>
+								{onboardingSaving ? 'Lagrer…' : 'Lagre onboarding'}
+							</button>
+						</div>
+						{#if onboardingMessage}
+							<p class="flow-message">{onboardingMessage}</p>
+						{/if}
+					</div>
+				</div>
 			</div>
 
 		<!-- FILER -->
@@ -2257,6 +2373,55 @@ Eksempel:
 		padding: 8px 16px;
 		border-radius: 99px;
 		cursor: pointer;
+	}
+
+	/* ── Flyter tab ── */
+	.flows-panel {
+		padding: 16px;
+		overflow-y: auto;
+		display: flex;
+		flex-direction: column;
+		gap: 24px;
+	}
+
+	.flows-section {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+	}
+
+	.flow-card {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		padding: 16px;
+		background: #141414;
+		border: 1px solid #242424;
+		border-radius: 14px;
+	}
+
+	.flow-textarea {
+		width: 100%;
+		border-radius: 12px;
+		border: 1px solid #2a2a2a;
+		background: #0f0f0f;
+		color: #d4d4d4;
+		font: inherit;
+		font-size: 0.9rem;
+		padding: 10px 12px;
+		resize: vertical;
+	}
+
+	.flow-textarea:focus {
+		outline: none;
+		border-color: var(--tp-border-strong);
+		box-shadow: 0 0 0 2px hsl(var(--theme-hue) 50% 44% / 0.16);
+	}
+
+	.flow-message {
+		margin: 0;
+		font-size: 0.78rem;
+		color: #b8c0ff;
 	}
 
 	/* ── Filer tab ── */

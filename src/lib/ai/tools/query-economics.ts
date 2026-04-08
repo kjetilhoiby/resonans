@@ -1,12 +1,37 @@
 import { z } from 'zod';
 import { db } from '$lib/db';
-import { sensorEvents } from '$lib/db/schema';
-import { eq, and, desc, asc, sql } from 'drizzle-orm';
+import { categorizedEvents, sensorEvents } from '$lib/db/schema';
+import { eq, and, desc, sql } from 'drizzle-orm';
 import { detectGlobalPayday } from '$lib/server/integrations/payday-detector';
+import { ensureCategorizedEventsForRange, queryCategorizedEvents } from '$lib/server/integrations/categorized-events';
 import { categorizeTransaction } from '$lib/server/integrations/transaction-categories';
 import { loadMerchantMappings } from '$lib/server/integrations/spending-analyzer';
 import { loadClassificationOverrides, loadTransactionMatchingRules } from '$lib/server/classification-overrides';
 import { normalizeCategoryId } from '$lib/integrations/transaction-categories-client';
+
+function normalizeEconomicsCategory(value?: string | null): string | null {
+	if (!value) return null;
+	const raw = value.trim().toLowerCase();
+	if (!raw) return null;
+
+	const aliasMap: Record<string, string> = {
+		dagligvare: 'dagligvarer',
+		dagligvarer: 'dagligvarer',
+		mat: 'dagligvarer',
+		matbutikk: 'dagligvarer',
+		transport: 'bil_og_transport',
+		bil: 'bil_og_transport',
+		restaurant: 'kafe_og_restaurant',
+		kafe: 'kafe_og_restaurant'
+	};
+
+	return aliasMap[raw] ?? raw;
+}
+
+function looksLikeGroceryDescription(description?: string | null): boolean {
+	if (!description) return false;
+	return /(kiwi|rema|meny|coop|spar|joker|bunnpris|obs|extra)/i.test(description);
+}
 
 export const queryEconomicsTool = {
 	name: 'query_economics',
@@ -40,6 +65,7 @@ The tool returns actual data from your bank that you can trust.`,
 			start: z.string().describe('Start date in YYYY-MM-DD format'),
 			end: z.string().describe('End date in YYYY-MM-DD format')
 		}).optional().describe('Date range for transactions'),
+		filterCategory: z.string().optional().describe('Optional category filter (e.g., "dagligvarer", "kafe_og_restaurant", "bil_og_transport")'),
 		accountId: z.string().optional().describe('Account ID to filter by (if multiple accounts)'),
 		limit: z.number().optional().describe('Max number of transactions to return'),
 		sortBy: z.enum(['date', 'amount']).optional().describe('Sort order')
@@ -52,11 +78,14 @@ The tool returns actual data from your bank that you can trust.`,
 		payPeriod?: 'current';
 		dateRange?: { start: string; end: string };
 		category?: string;
+		filterCategory?: string;
 		accountId?: string;
 		limit?: number;
 		sortBy?: 'date' | 'amount';
 	}) => {
-		const { userId, queryType, month, payPeriod, dateRange, category, accountId, limit = 50, sortBy = 'date' } = args;
+		const { userId, queryType, month, payPeriod, dateRange, category, filterCategory, accountId, limit = 50, sortBy = 'date' } = args;
+		// Support both category and filterCategory for backwards compatibility
+		const normalizedCategory = normalizeEconomicsCategory(category || filterCategory);
 
 		// Resolve pay-period into a concrete dateRange
 		let resolvedDateRange = dateRange;
@@ -67,6 +96,37 @@ The tool returns actual data from your bank that you can trust.`,
 				const today = new Date().toISOString().split('T')[0];
 				resolvedDateRange = { start: lastPayday, end: today };
 			}
+		}
+
+		if (month && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+			return {
+				success: false,
+				message: 'Invalid month format. Use YYYY-MM (e.g., 2026-01).'
+			};
+		}
+
+		if (resolvedDateRange) {
+			const start = new Date(resolvedDateRange.start);
+			const end = new Date(resolvedDateRange.end);
+			if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+				return {
+					success: false,
+					message: 'Invalid dateRange. Use YYYY-MM-DD for both start and end.'
+				};
+			}
+			if (start > end) {
+				return {
+					success: false,
+					message: 'Invalid dateRange. start must be before end.'
+				};
+			}
+		}
+
+		if ((queryType === 'transactions' || queryType === 'spending_summary') && payPeriod === 'current' && !resolvedDateRange && !month) {
+			return {
+				success: false,
+				message: 'Could not determine current pay period automatically. Please specify month or dateRange, or sync more bank data.'
+			};
 		}
 
 		try {
@@ -205,33 +265,17 @@ The tool returns actual data from your bank that you can trust.`,
 					};
 				}
 
-				const where = accountId
-					? and(
-							eq(sensorEvents.userId, userId),
-							eq(sensorEvents.dataType, 'bank_transaction'),
-							sql`data->>'accountId' = ${accountId}`,
-							sql`timestamp >= ${from.toISOString()}`,
-							sql`timestamp < ${to.toISOString()}`
-						)
-					: and(
-							eq(sensorEvents.userId, userId),
-							eq(sensorEvents.dataType, 'bank_transaction'),
-							sql`timestamp >= ${from.toISOString()}`,
-							sql`timestamp < ${to.toISOString()}`
-						);
+				await ensureCategorizedEventsForRange({ userId, from, to });
 
-				const transactions = await db
-					.select({
-						timestamp: sensorEvents.timestamp,
-						amount: sql<number>`(data->>'amount')::numeric`,
-						description: sql<string>`data->>'description'`,
-						accountId: sql<string>`data->>'accountId'`,
-						category: sql<string>`data->>'category'`
-					})
-					.from(sensorEvents)
-					.where(where)
-					.orderBy(sortBy === 'amount' ? sql`(data->>'amount')::numeric DESC` : desc(sensorEvents.timestamp))
-					.limit(limit);
+				const transactions = await queryCategorizedEvents({
+					userId,
+					from,
+					to,
+					accountId,
+					category: normalizedCategory ?? undefined,
+					limit,
+					sortBy
+				});
 
 				if (transactions.length === 0) {
 					return {
@@ -247,13 +291,26 @@ The tool returns actual data from your bank that you can trust.`,
 					};
 				}
 
-				const totalSpent = transactions
-					.filter((t) => (t.amount || 0) < 0)
-					.reduce((sum, t) => sum + (t.amount || 0), 0);
+				const totals = await db
+					.select({
+						totalSpent: sql<number>`COALESCE(SUM(CASE WHEN ${categorizedEvents.amount} < 0 THEN ${categorizedEvents.amount} ELSE 0 END), 0)`,
+						totalIncome: sql<number>`COALESCE(SUM(CASE WHEN ${categorizedEvents.amount} > 0 THEN ${categorizedEvents.amount} ELSE 0 END), 0)`,
+						totalCount: sql<number>`COUNT(*)`
+					})
+					.from(categorizedEvents)
+					.where(
+						and(
+							eq(categorizedEvents.userId, userId),
+							sql`${categorizedEvents.timestamp} >= ${from.toISOString()}`,
+							sql`${categorizedEvents.timestamp} < ${to.toISOString()}`,
+							...(accountId ? [eq(categorizedEvents.accountId, accountId)] : []),
+							...(normalizedCategory ? [eq(categorizedEvents.resolvedCategory, normalizedCategory)] : [])
+						)
+					);
 
-				const totalIncome = transactions
-					.filter((t) => (t.amount || 0) > 0)
-					.reduce((sum, t) => sum + (t.amount || 0), 0);
+				const totalSpent = Number(totals[0]?.totalSpent ?? 0);
+				const totalIncome = Number(totals[0]?.totalIncome ?? 0);
+				const totalCount = Number(totals[0]?.totalCount ?? transactions.length);
 
 				return {
 					success: true,
@@ -262,15 +319,17 @@ The tool returns actual data from your bank that you can trust.`,
 							date: t.timestamp.toISOString().split('T')[0],
 							description: t.description,
 							amount: t.amount,
-							category: t.category
+							category: t.resolvedCategory
 						})),
-						count: transactions.length,
+						count: totalCount,
+						returnedCount: transactions.length,
 						period: txPeriodLabel,
+						filterCategory: normalizedCategory,
 						totalSpent: Math.abs(totalSpent),
 						totalIncome,
 						net: totalSpent + totalIncome
 					},
-					message: `Found ${transactions.length} transactions. Income: ${totalIncome.toLocaleString('nb-NO')} kr, Spent: ${Math.abs(totalSpent).toLocaleString('nb-NO')} kr`
+					message: `Found ${totalCount} transactions (${transactions.length} returned). Income: ${totalIncome.toLocaleString('nb-NO')} kr, Spent: ${Math.abs(totalSpent).toLocaleString('nb-NO')} kr`
 				};
 			}
 
@@ -304,88 +363,82 @@ The tool returns actual data from your bank that you can trust.`,
 					};
 				}
 
-				const where = accountId
-					? and(
-							eq(sensorEvents.userId, userId),
-							eq(sensorEvents.dataType, 'bank_transaction'),
-							sql`data->>'accountId' = ${accountId}`,
-							sql`timestamp >= ${from.toISOString()}`,
-							sql`timestamp < ${to.toISOString()}`
-						)
-					: and(
-							eq(sensorEvents.userId, userId),
-							eq(sensorEvents.dataType, 'bank_transaction'),
-							sql`timestamp >= ${from.toISOString()}`,
-							sql`timestamp < ${to.toISOString()}`
-						);
+				await ensureCategorizedEventsForRange({ userId, from, to });
 
-				const allTxs = await db
-					.select({
-						amount: sql<number>`(data->>'amount')::numeric`,
-					description: sql<string>`data->>'description'`,
-					typeText: sql<string>`COALESCE(data->>'typeText', data->>'category')`,
-				})
-				.from(sensorEvents)
-				.where(where);
+				const periodSpending = await queryCategorizedEvents({
+					userId,
+					from,
+					to,
+					accountId,
+					spendingOnly: true,
+					sortBy: 'date'
+				});
 
-			// Only count outgoing (spending) transactions — amount < 0
-			const spendingTxs = allTxs.filter((tx) => (Number(tx.amount) || 0) < 0);
+				const transactions = normalizedCategory
+					? periodSpending.filter((tx) => tx.resolvedCategory === normalizedCategory)
+					: periodSpending;
 
-			if (spendingTxs.length === 0) {
+				if (transactions.length === 0) {
+					const likelyUncategorizedGrocery = normalizedCategory === 'dagligvarer'
+						? periodSpending.filter((tx) => tx.resolvedCategory === 'ukategorisert' && looksLikeGroceryDescription(tx.description)).length
+						: 0;
+
+					return {
+						success: true,
+						data: {
+							categories: [],
+							totalSpent: 0,
+							period: periodLabel,
+							filterCategory: normalizedCategory,
+							topCategories: [],
+							diagnostics: {
+								periodSpendingCount: periodSpending.length,
+								likelyUncategorizedGrocery
+							}
+						},
+						message: normalizedCategory
+							? `No spending transactions found for category ${normalizedCategory} in ${periodLabel}`
+							: `No spending transactions found for ${periodLabel}`
+					};
+				}
+
+				// Group by category
+				const byCategory = new Map<string, { total: number; count: number }>();
+				for (const tx of transactions) {
+					const cat = tx.resolvedCategory || 'ukategorisert';
+					const current = byCategory.get(cat) || { total: 0, count: 0 };
+					byCategory.set(cat, {
+						total: current.total + (Number(tx.amount) || 0),
+						count: current.count + 1
+					});
+				}
+
+				// Sort by absolute spending (largest first)
+				const sorted = Array.from(byCategory.entries())
+					.map(([cat, data]) => ({
+						category: cat,
+						spent: Math.abs(data.total),
+						count: data.count,
+						avg: Math.abs(data.total / data.count)
+					}))
+					.sort((a, b) => b.spent - a.spent);
+
+				const totalSpent = sorted.reduce((sum, c) => sum + c.spent, 0);
+
 				return {
 					success: true,
-					data: { categories: [], totalSpent: 0, period: periodLabel, topCategories: [] },
-					message: `No spending transactions found for ${periodLabel}`
+					data: {
+						categories: sorted,
+						totalSpent,
+						period: periodLabel,
+						filterCategory: normalizedCategory,
+						topCategories: sorted.slice(0, 5)
+					},
+					message: normalizedCategory
+						? `Total spent in ${normalizedCategory}: ${totalSpent.toLocaleString('nb-NO')} kr (period: ${periodLabel})`
+						: `Total spent: ${totalSpent.toLocaleString('nb-NO')} kr across ${sorted.length} spending categories (period: ${periodLabel})`
 				};
 			}
-
-			// Use proper categorizeTransaction classification
-			const [merchantMappingCache, transactionOverrideCache, transactionRules] = await Promise.all([
-				loadMerchantMappings(userId),
-				loadClassificationOverrides(userId, 'transaction'),
-				loadTransactionMatchingRules()
-			]);
-
-			const wantedCategory = category ? normalizeCategoryId(category) : null;
-
-			// Group by classified category
-			const byCategory = new Map<string, { total: number; count: number }>();
-			for (const tx of spendingTxs) {
-				const classified = categorizeTransaction(tx.description, tx.typeText, Number(tx.amount), merchantMappingCache, transactionOverrideCache, transactionRules);
-				const cat = normalizeCategoryId(classified.category) ?? classified.category;
-				if (wantedCategory && cat !== wantedCategory) continue;
-				const current = byCategory.get(cat) || { total: 0, count: 0 };
-				byCategory.set(cat, {
-					total: current.total + (Number(tx.amount) || 0),
-					count: current.count + 1
-				});
-			}
-
-			// Sort by absolute spending (largest first)
-			const sorted = Array.from(byCategory.entries())
-				.map(([cat, data]) => ({
-					category: cat,
-					spent: Math.abs(data.total),
-					count: data.count,
-					avg: Math.abs(data.total / data.count)
-				}))
-				.sort((a, b) => b.spent - a.spent);
-
-			const totalSpent = sorted.reduce((sum, c) => sum + c.spent, 0);
-
-			return {
-				success: true,
-				data: {
-					categories: sorted,
-					totalSpent,
-					period: periodLabel,
-					topCategories: sorted.slice(0, 5)
-				},
-				message: wantedCategory
-					? `Total spent on ${wantedCategory}: ${totalSpent.toLocaleString('nb-NO')} kr (period: ${periodLabel})`
-					: `Total spent: ${totalSpent.toLocaleString('nb-NO')} kr across ${sorted.length} spending categories (period: ${periodLabel})`
-			};
-		}
 
 		// Get monthly trend for a single spending category
 		if (queryType === 'category_trend') {

@@ -1,6 +1,6 @@
 import { db } from '$lib/db';
 import { sensorAggregates, sensorEvents, sensors, goals as goalsTable, themes } from '$lib/db/schema';
-import { and, desc, eq, inArray, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { buildCanonicalActivityFeed, buildUnifiedWorkoutActivities } from '$lib/server/activity-layer';
 
 export async function loadHealthDashboardData(userId: string) {
@@ -63,6 +63,20 @@ export async function loadHealthDashboardData(userId: string) {
 		limit: 250
 	});
 
+	const [weightEventCountRow, weightAggregateCountRow] = await Promise.all([
+		db
+			.select({ count: sql<number>`count(*)` })
+			.from(sensorEvents)
+			.where(and(eq(sensorEvents.userId, userId), eq(sensorEvents.dataType, 'weight'))),
+		db
+			.select({ count: sql<number>`count(*)` })
+			.from(sensorAggregates)
+			.where(and(eq(sensorAggregates.userId, userId), sql`metrics ? 'weight'`))
+	]);
+
+	const weightEventCount = weightEventCountRow[0]?.count ?? 0;
+	const weightAggregateCount = weightAggregateCountRow[0]?.count ?? 0;
+
 	return {
 		weekly: weeklyData.reverse(),
 		monthly: monthlyData.reverse(),
@@ -84,6 +98,16 @@ export async function loadHealthDashboardData(userId: string) {
 			version: 1,
 			feed: canonicalFeed,
 			workouts: unifiedActivities
+		},
+		tooling: {
+			querySensorDataTool: true,
+			tables: {
+				sensorEvents: 'sensor_events',
+				sensorAggregates: 'sensor_aggregates'
+			},
+			weightEventCount,
+			weightAggregateCount,
+			healthSensorsCount: healthSensors.length
 		},
 		goals: healthGoals.map((goal) => ({
 			id: goal.id,
