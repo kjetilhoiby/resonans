@@ -80,9 +80,68 @@ export const themes = pgTable('themes', {
 	conversationId: uuid('conversation_id').references(() => conversations.id), // Egen chat per tema
 	description: text('description'), // AI-generert eller bruker-definert
 	archived: boolean('archived').default(false).notNull(), // For cleanup uten å slette
+	tripProfile: jsonb('trip_profile').$type<{
+		destination?: string;
+		country?: string;
+		lat?: number;
+		lng?: number;
+		startDate?: string;   // ISO 'YYYY-MM-DD'
+		endDate?: string;     // ISO 'YYYY-MM-DD'
+		overnightStays?: Array<{
+			id: string;
+			name: string;
+			checkIn: string;
+			checkOut: string;
+			refNumber?: string;
+			lockCode?: string;
+			address?: string;
+			notes?: string;
+		}>;
+	}>(),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
 });
+
+// Tema-lister: navngitte huskelister, itineraries, aktivitetsforslag osv.
+export const themeLists = pgTable('theme_lists', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	themeId: uuid('theme_id').references(() => themes.id, { onDelete: 'cascade' }).notNull(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	title: text('title').notNull(),
+	emoji: text('emoji').notNull().default('📝'),
+	listType: text('list_type').notNull().default('general'), // 'itinerary'|'activities'|'packing'|'general'
+	sortOrder: integer('sort_order').notNull().default(0),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+});
+
+// Elementer i en tema-liste
+export const themeListItems = pgTable('theme_list_items', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	listId: uuid('list_id').references(() => themeLists.id, { onDelete: 'cascade' }).notNull(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	text: text('text').notNull(),
+	checked: boolean('checked').notNull().default(false),
+	notes: text('notes'),
+	itemDate: text('item_date'), // ISO date for itinerary/datedagenda items
+	sortOrder: integer('sort_order').notNull().default(0),
+	checkedAt: timestamp('checked_at'),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+});
+
+// Filer knyttet til et tema (bilder, PDF-er, dokumenter)
+export const themeFiles = pgTable('theme_files', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	themeId: uuid('theme_id').references(() => themes.id, { onDelete: 'cascade' }).notNull(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	name: text('name').notNull(),
+	url: text('url').notNull(), // Cloudinary URL
+	fileType: text('file_type'), // 'image'|'pdf'|'document'
+	mimeType: text('mime_type'),
+	sizeBytes: integer('size_bytes'),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => ({
+	idxThemeId: index('theme_files_theme_id_idx').on(table.themeId)
+}));
 
 // Mål (overordnede målsetninger)
 export const goals = pgTable('goals', {
@@ -288,7 +347,9 @@ export const usersRelations = relations(users, ({ many }) => ({
 	sensorAggregates: many(sensorAggregates),
 	checklists: many(checklists),
 	webPushSubscriptions: many(webPushSubscriptions),
-	backgroundJobs: many(backgroundJobs)
+	backgroundJobs: many(backgroundJobs),
+	themeLists: many(themeLists),
+	themeFiles: many(themeFiles)
 }));
 
 export const authAccountsRelations = relations(authAccounts, ({ one }) => ({
@@ -330,7 +391,9 @@ export const themesRelations = relations(themes, ({ one, many }) => ({
 		references: [conversations.id]
 	}),
 	goals: many(goals),
-	memories: many(memories)
+	memories: many(memories),
+	lists: many(themeLists),
+	files: many(themeFiles)
 }));
 
 export const goalsRelations = relations(goals, ({ one, many }) => ({
@@ -797,6 +860,41 @@ export const checklistItemsRelations = relations(checklistItems, ({ one }) => ({
 	}),
 	user: one(users, {
 		fields: [checklistItems.userId],
+		references: [users.id]
+	})
+}));
+
+// ThemeList relations
+export const themeListsRelations = relations(themeLists, ({ one, many }) => ({
+	theme: one(themes, {
+		fields: [themeLists.themeId],
+		references: [themes.id]
+	}),
+	user: one(users, {
+		fields: [themeLists.userId],
+		references: [users.id]
+	}),
+	items: many(themeListItems)
+}));
+
+export const themeListItemsRelations = relations(themeListItems, ({ one }) => ({
+	list: one(themeLists, {
+		fields: [themeListItems.listId],
+		references: [themeLists.id]
+	}),
+	user: one(users, {
+		fields: [themeListItems.userId],
+		references: [users.id]
+	})
+}));
+
+export const themeFilesRelations = relations(themeFiles, ({ one }) => ({
+	theme: one(themes, {
+		fields: [themeFiles.themeId],
+		references: [themes.id]
+	}),
+	user: one(users, {
+		fields: [themeFiles.userId],
 		references: [users.id]
 	})
 }));

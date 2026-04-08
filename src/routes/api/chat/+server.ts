@@ -1140,8 +1140,8 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		const history = await getConversationHistory(conversation.id, 5);
 
 		// Bygg memory context (viktig informasjon om brukeren)
-		const memoryContext = await buildMemoryContext(userId);
-
+                // Sender med themeId slik at fil-innhold for aktivt tema vises i konteksten
+                const memoryContext = await buildMemoryContext(userId, conversation.themeId ?? null);
 		// Hent brukerens aktive mål og oppgaver for kontekst
 		const activeGoals = await getUserActiveGoalsAndTasks(userId);
 		

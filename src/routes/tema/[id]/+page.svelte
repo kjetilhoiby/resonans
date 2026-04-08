@@ -12,5 +12,8 @@
 	conversationId={data.conversationId}
 	themeConversations={data.themeConversations}
 	themeInstruction={data.themeInstruction}
+	themeFiles={data.themeFiles}
+	tripProfile={data.tripProfile}
+	tripLists={data.tripLists}
 	selectedWorkout={data.selectedWorkout}
 />

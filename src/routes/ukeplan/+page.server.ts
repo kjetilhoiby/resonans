@@ -162,7 +162,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	const previousWeekEndExclusive = new Date(previousWeekStart);
 	previousWeekEndExclusive.setUTCDate(previousWeekEndExclusive.getUTCDate() + 7);
 
-	const [weekChecklist, weekTasks, weekProgressRows, reflectionNote, visionNote, weekNote, longTermGoals, dayChecklists, dayNotes, previousWeekChecklist, previousWeekNote, previousWeekReflection, previousWeekTasks, previousWeekProgressRows] = await Promise.all([
+	const [weekChecklist, weekTasks, weekProgressRows, reflectionNote, visionNote, weekNote, longTermGoals, dayChecklists, dayNotes, previousWeekChecklist, previousWeekNote, previousWeekReflection, previousWeekTasks, previousWeekProgressRows, travelThemes] = await Promise.all([
 		db.query.checklists.findFirst({
 			where: and(eq(checklists.userId, userId), eq(checklists.context, week.contextKey)),
 			with: {
@@ -238,6 +238,10 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			columns: {
 				taskId: true
 			}
+		}),
+		db.query.themes.findMany({
+			where: and(eq(themes.userId, userId), eq(themes.archived, false)),
+			columns: { id: true, name: true, emoji: true, tripProfile: true }
 		})
 	]);
 
@@ -285,6 +289,25 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		.filter((item) => !item.checked)
 		.map((item) => item.text);
 
+	// Find trips that overlap this week
+	const weekStartStr = week.days[0].isoDate;
+	const weekEndStr = week.days[6].isoDate;
+	const activeTrips = travelThemes
+		.filter((t) => {
+			const p = t.tripProfile;
+			if (!p?.startDate || !p?.endDate) return false;
+			// Overlaps if trip starts before week ends AND trip ends after week starts
+			return p.startDate <= weekEndStr && p.endDate >= weekStartStr;
+		})
+		.map((t) => ({
+			id: t.id,
+			name: t.name,
+			emoji: t.emoji,
+			destination: t.tripProfile?.destination ?? null,
+			startDate: t.tripProfile!.startDate!,
+			endDate: t.tripProfile!.endDate!
+		}));
+
 	return {
 		week,
 		weekNav: {
@@ -324,6 +347,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		})),
 		dayChecklists: dayChecklistMap,
 		dayNotes: dayNoteMap,
+		activeTrips,
 		previousWeekSummary: {
 			weekKey: previousWeek.dashedKey,
 			note: previousWeekNote?.content ?? '',

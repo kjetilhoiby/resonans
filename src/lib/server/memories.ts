@@ -1,6 +1,8 @@
 import { db } from '$lib/db';
 import { memories } from '$lib/db/schema';
-import { eq, desc } from 'drizzle-orm';
+import { and, eq, desc, like, not } from 'drizzle-orm';
+
+export const THEME_FILE_MEMORY_SOURCE_PREFIX = 'theme_file:';
 
 export interface CreateMemoryParams {
 	userId: string;
@@ -66,37 +68,80 @@ export async function deleteMemory(memoryId: string) {
 }
 
 /**
- * Bygg kontekst-streng fra memories
+ * Slett alle memories med en gitt source-verdi (brukes f.eks. når en tematil knyttet fil slettes)
  */
-export async function buildMemoryContext(userId: string): Promise<string> {
-	const userMemories = await getUserMemories(userId);
+export async function deleteMemoryBySource(source: string) {
+	await db.delete(memories).where(eq(memories.source, source));
+}
 
-	if (userMemories.length === 0) {
-		return '\n--- MEMORIES ---\nIngen lagrede memories ennå.\n--- SLUTT PÅ MEMORIES ---\n';
-	}
+/**
+ * Bygg kontekst-streng fra memories.
+ *
+ * Hvis themeId oppgis vises tema-spesifikke fil-minner (“FILER I TEMAET”) før vanlige memories.
+ */
+export async function buildMemoryContext(userId: string, themeId?: string | null): Promise<string> {
+	let fileContext = '';
 
-	let context = '\n--- MEMORIES (Viktig informasjon om brukeren) ---\n';
-	
-	// Grupper etter kategori
-	const categorized = userMemories.reduce((acc, mem) => {
-		if (!acc[mem.category]) acc[mem.category] = [];
-		acc[mem.category].push(mem);
-		return acc;
-	}, {} as Record<string, typeof userMemories>);
+	// ── Tema-filer (parsed innhold) ─────────────────────────────
+	if (themeId) {
+		const fileMemories = await db.query.memories.findMany({
+			where: and(
+				eq(memories.userId, userId),
+				eq(memories.themeId, themeId),
+				like(memories.source, `${THEME_FILE_MEMORY_SOURCE_PREFIX}%`)
+			),
+			orderBy: [desc(memories.updatedAt)]
+		});
 
-	for (const [category, mems] of Object.entries(categorized)) {
-		context += `\n${category.toUpperCase()}:\n`;
-		for (const mem of mems) {
-			const importanceSymbol = mem.importance === 'high' ? '⭐' : mem.importance === 'medium' ? '•' : '-';
-			context += `${importanceSymbol} ${mem.content}\n`;
+		if (fileMemories.length > 0) {
+			fileContext = '\n--- FILER I TEMAET (opplastet innhold) ---\n';
+			for (const mem of fileMemories) {
+				fileContext += `\n${mem.content}\n`;
+			}
+			fileContext += '--- SLUTT PÅ TEMA-FILER ---\n';
 		}
 	}
 
-	context += '\n--- SLUTT PÅ MEMORIES ---\n';
+	// ── Vanlige memories (ekskluder fil-minner som allerede er inkludert) ───
+	const userMemories = await db.query.memories.findMany({
+		where: and(
+			eq(memories.userId, userId),
+			not(like(memories.source, `${THEME_FILE_MEMORY_SOURCE_PREFIX}%`))
+		),
+		orderBy: [desc(memories.importance), desc(memories.lastAccessedAt)],
+		limit: 20
+	});
 
-	// Touch alle memories som brukes
-	for (const mem of userMemories) {
-		await touchMemory(mem.id);
+	if (userMemories.length === 0 && !fileContext) {
+		return '\n--- MEMORIES ---\nIngen lagrede memories ennå.\n--- SLUTT PÅ MEMORIES ---\n';
+	}
+
+	let context = '';
+
+	if (fileContext) context += fileContext;
+
+	if (userMemories.length > 0) {
+		context += '\n--- MEMORIES (Viktig informasjon om brukeren) ---\n';
+
+		const categorized = userMemories.reduce((acc, mem) => {
+			if (!acc[mem.category]) acc[mem.category] = [];
+			acc[mem.category].push(mem);
+			return acc;
+		}, {} as Record<string, typeof userMemories>);
+
+		for (const [category, mems] of Object.entries(categorized)) {
+			context += `\n${category.toUpperCase()}:\n`;
+			for (const mem of mems) {
+				const importanceSymbol = mem.importance === 'high' ? '⭐' : mem.importance === 'medium' ? '•' : '-';
+				context += `${importanceSymbol} ${mem.content}\n`;
+			}
+		}
+
+		context += '\n--- SLUTT PÅ MEMORIES ---\n';
+
+		for (const mem of userMemories) {
+			await touchMemory(mem.id);
+		}
 	}
 
 	return context;

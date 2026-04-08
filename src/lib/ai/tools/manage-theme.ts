@@ -35,6 +35,9 @@ Examples of when to suggest new themes:
 - User: "I want to work on my friendship with Jonas" → Suggest "Vennskap" under "Samliv"
 - User: "I need to focus on running" → Suggest "Løping" under "Helse"
 - User: "Work on relationship with parents" → Suggest "Familie" under "Samliv"
+- User: "Lag tema for Japan-tur i juni fra 10. til 25. juni" → Suggest travel theme with tripDestination="Japan", tripStartDate="YYYY-06-10", tripEndDate="YYYY-06-25"
+
+For travel/trip themes: ALWAYS extract and pass tripDestination, tripStartDate and tripEndDate when the user mentions them during theme creation.
 
 Be conversational and explain why a theme makes sense.`,
 
@@ -49,7 +52,10 @@ Be conversational and explain why a theme makes sense.`,
 		parentTheme: z.string().optional().describe('Parent category (e.g., "Samliv", "Helse", "Foreldreliv", "Karriere")'),
 		description: z.string().optional().describe('Brief description of what this theme covers'),
 		reason: z.string().optional().describe('Explanation for why this theme is suggested (for user-facing messages)'),
-		themeId: z.string().optional().describe('Theme ID or exact theme name (required for archive action)')
+		themeId: z.string().optional().describe('Theme ID or exact theme name (required for archive action)'),
+		tripDestination: z.string().optional().describe('Travel destination city/country (for travel themes, e.g. "Tokyo", "Japan")'),
+		tripStartDate: z.string().optional().describe('Trip start date in ISO format YYYY-MM-DD'),
+		tripEndDate: z.string().optional().describe('Trip end date in ISO format YYYY-MM-DD')
 	}),
 
 	execute: async (args: {
@@ -62,8 +68,11 @@ Be conversational and explain why a theme makes sense.`,
 		description?: string;
 		reason?: string;
 		themeId?: string;
+		tripDestination?: string;
+		tripStartDate?: string;
+		tripEndDate?: string;
 	}) => {
-		const { action, userId, conversationId, name, emoji, parentTheme, description, reason, themeId } = args;
+		const { action, userId, conversationId, name, emoji, parentTheme, description, reason, themeId, tripDestination, tripStartDate, tripEndDate } = args;
 
 		try {
 			// List existing themes
@@ -153,6 +162,11 @@ Be conversational and explain why a theme makes sense.`,
 					themeConversationId = newConversation.id;
 				}
 
+				// Build trip profile if travel data was provided
+				const tripProfile = tripDestination || tripStartDate || tripEndDate
+					? { destination: tripDestination, startDate: tripStartDate, endDate: tripEndDate }
+					: undefined;
+
 				// Create the theme
 				const [newTheme] = await db.insert(themes).values({
 					userId,
@@ -162,7 +176,8 @@ Be conversational and explain why a theme makes sense.`,
 					description,
 					aiSuggested: true,
 					conversationId: themeConversationId,
-					archived: false
+					archived: false,
+					...(tripProfile ? { tripProfile } : {})
 				}).returning();
 
 				return {
@@ -172,9 +187,10 @@ Be conversational and explain why a theme makes sense.`,
 						name: newTheme.name,
 						emoji: newTheme.emoji,
 						parentTheme: newTheme.parentTheme,
-						conversationId: newTheme.conversationId
+						conversationId: newTheme.conversationId,
+						tripProfile: newTheme.tripProfile ?? null
 					},
-					message: `Created theme: ${newTheme.emoji} ${newTheme.name}${parentTheme ? ` under ${parentTheme}` : ''}`
+					message: `Created theme: ${newTheme.emoji} ${newTheme.name}${parentTheme ? ` under ${parentTheme}` : ''}${tripDestination ? ` (tur til ${tripDestination}${tripStartDate ? ` fra ${tripStartDate}` : ''}${tripEndDate ? ` til ${tripEndDate}` : ''})` : ''}`
 				};
 			}
 

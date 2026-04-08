@@ -1,4 +1,4 @@
-export type DashboardKind = 'health' | 'economics';
+export type DashboardKind = 'health' | 'economics' | 'travel';
 
 export interface ThemeDashboardDefinition {
 	kind: DashboardKind;
@@ -46,6 +46,32 @@ const THEME_DASHBOARD_MATCHERS: Array<{ kind: DashboardKind; terms: string[] }> 
 			'spending',
 			'savings'
 		]
+	},
+	{
+		kind: 'travel',
+		terms: [
+			'tur',
+			'turer',
+			'reise',
+			'reiser',
+			'ferie',
+			'ferieturer',
+			'utland',
+			'utenlandstur',
+			'trip',
+			'travel',
+			'vacation',
+			'holiday',
+			'backpacking',
+			'city-break',
+			'citybreak',
+			'road trip',
+			'roadtrip',
+			'krydstokt',
+			'cruise',
+			'fly',
+			'flytur'
+		]
 	}
 ];
 
@@ -59,6 +85,11 @@ const DASHBOARD_DEFINITIONS: Record<DashboardKind, ThemeDashboardDefinition> = {
 		kind: 'economics',
 		label: 'Økonomi',
 		icon: '💰'
+	},
+	travel: {
+		kind: 'travel',
+		label: 'Tur',
+		icon: '🗺️'
 	}
 };
 

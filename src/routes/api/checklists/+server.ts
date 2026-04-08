@@ -2,17 +2,24 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { checklists, checklistItems } from '$lib/db/schema';
-import { eq, isNull, and } from 'drizzle-orm';
+import { eq, isNull, and, inArray } from 'drizzle-orm';
 
 // GET /api/checklists — hent aktive (ikke fullførte) sjekklister med punkter
+// ?contexts=c1,c2,c3 — filtrer på konkrete context-verdier
 export const GET: RequestHandler = async ({ locals, url }) => {
 	const userId = locals.userId;
 	const activeOnly = url.searchParams.get('active') !== 'false';
+	const contextsParam = url.searchParams.get('contexts');
+	const contextList = contextsParam ? contextsParam.split(',').filter(Boolean) : null;
+
+	const whereClause = contextList
+		? and(eq(checklists.userId, userId), inArray(checklists.context, contextList))
+		: activeOnly
+			? and(eq(checklists.userId, userId), isNull(checklists.completedAt))
+			: eq(checklists.userId, userId);
 
 	const rows = await db.query.checklists.findMany({
-		where: activeOnly
-			? and(eq(checklists.userId, userId), isNull(checklists.completedAt))
-			: eq(checklists.userId, userId),
+		where: whereClause,
 		with: {
 			items: {
 				orderBy: (items, { asc }) => [asc(items.sortOrder), asc(items.createdAt)]

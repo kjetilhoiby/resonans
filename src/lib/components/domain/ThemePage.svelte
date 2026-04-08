@@ -1,6 +1,6 @@
 <!--
   ThemePage — tre-tab-visning for ett tema.
-	Tabs: Chat | Data | Mål | Flyter | Filer
+	Tabs: Chat | Data | Mål | Flyter | Filer | Lister (reise)
 
   Props:
     theme           tema-objekt fra DB
@@ -16,6 +16,8 @@
 	import ChatInput from '../ui/ChatInput.svelte';
 	import HealthDashboard from './HealthDashboard.svelte';
 	import EconomicsDashboard from './EconomicsDashboard.svelte';
+	import TripDashboard from './TripDashboard.svelte';
+	import TripListsPanel from './TripListsPanel.svelte';
 	import ScreenTitle from '../ui/ScreenTitle.svelte';
 	import Icon from '../ui/Icon.svelte';
 	import TriageCard from '../composed/TriageCard.svelte';
@@ -83,28 +85,45 @@
 		themeConversations?: ThemeConversation[];
 		themeInstruction?: string;
 		selectedWorkout?: SelectedWorkout | null;
+		tripProfile?: Record<string, unknown> | null;
+		tripLists?: import('./TripListsPanel.svelte').ThemeList[];
+		themeFiles?: ThemeFile[];
 	}
 
-	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '', selectedWorkout = null }: Props = $props();
+	interface ThemeFile {
+		id: string;
+		name: string;
+		url: string;
+		fileType: string | null;
+		mimeType: string | null;
+		sizeBytes: number | null;
+		createdAt: string;
+	}
+
+	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '', selectedWorkout = null, tripProfile = null, tripLists = [], themeFiles: initialThemeFiles = [] }: Props = $props();
 
 	/* ── Subtab-tilstand ────────────────────────────────── */
-	type Tab = 'chat' | 'data' | 'mål' | 'flyter' | 'filer';
+	type Tab = 'chat' | 'data' | 'mål' | 'flyter' | 'filer' | 'lister';
 	const activeDashboardKind = resolveThemeDashboardKind(theme.name);
 	const activeDashboard = getThemeDashboardDefinition(theme.name);
 	const hasThemeDashboard = activeDashboardKind !== null;
+	const isTravel = activeDashboardKind === 'travel';
 	const requestedTab = get(page).url.searchParams.get('tab');
 	const availableTabs = $derived<Tab[]>(
 		activeDashboardKind === 'health'
 			? ['chat', 'data', 'mål', 'flyter', 'filer']
+		: activeDashboardKind === 'travel'
+			? ['chat', 'data', 'lister', 'filer']
 			: ['chat', 'data', 'mål', 'filer']
 	);
 	const requestedPrompt = get(page).url.searchParams.get('prompt') ?? '';
 	const hasLinkedWorkout = Boolean(selectedWorkout);
 	const isHandoff = get(page).url.searchParams.get('handoff') === '1';
+	const validTabs: Tab[] = ['chat', 'data', 'mål', 'flyter', 'filer', 'lister'];
 	let tab = $state<Tab>(
 		hasLinkedWorkout
 			? 'chat'
-			: requestedTab === 'chat' || requestedTab === 'data' || requestedTab === 'mål' || requestedTab === 'flyter' || requestedTab === 'filer'
+			: validTabs.includes(requestedTab as Tab)
 			? requestedTab as Tab
 			: hasThemeDashboard
 				? 'data'
@@ -118,6 +137,49 @@
 	let dashboardError = $state('');
 	let dashboardRequestId = 0;
 	let dashboardCachedAt = $state<string | null>(null);
+
+	/* ── Reise-state ────────────────────────────────────── */
+	let currentTripProfile = $state(tripProfile as import('./TripDashboard.svelte').TripProfile | null);
+	let tripListsState = $state<import('./TripListsPanel.svelte').ThemeList[]>(tripLists);
+	let themeFiles = $state<ThemeFile[]>(initialThemeFiles);
+	let fileUploading = $state(false);
+	let fileUploadError = $state('');
+
+	async function uploadFile(event: Event) {
+		const input = event.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		fileUploading = true;
+		fileUploadError = '';
+		try {
+			const fd = new FormData();
+			fd.append('file', file);
+			const res = await fetch(`/api/tema/${theme.id}/files`, { method: 'POST', body: fd });
+			if (!res.ok) {
+				const err = await res.json().catch(() => ({}));
+				throw new Error(err.error ?? 'Upload feilet');
+			}
+			const saved: ThemeFile = await res.json();
+			themeFiles = [...themeFiles, saved];
+		} catch (err) {
+			fileUploadError = err instanceof Error ? err.message : 'Opplasting feilet.';
+		} finally {
+			fileUploading = false;
+			input.value = '';
+		}
+	}
+
+	async function deleteFile(fileId: string) {
+		themeFiles = themeFiles.filter((f) => f.id !== fileId);
+		await fetch(`/api/tema/${theme.id}/files/${fileId}`, { method: 'DELETE' });
+	}
+
+	function formatBytes(bytes: number | null): string {
+		if (!bytes) return '';
+		if (bytes < 1024) return `${bytes} B`;
+		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+	}
 
 	const healthDashboardProps = $derived.by(() => {
 		if (activeDashboardKind !== 'health' || !healthDashboard) return null;
@@ -226,6 +288,7 @@
 	interface ChatMsg {
 		role: 'user' | 'assistant';
 		text: string;
+		imageUrl?: string;
 	}
 
 	let chatMessages = $state<ChatMsg[]>(
@@ -245,6 +308,31 @@
 	let convLoadingMessages = $state(false);
 	let convCreating = $state(false);
 	let chatDraft = $state(requestedPrompt || selectedWorkout?.chatPrompt || '');
+
+	/* ── Bilde-opplasting til chat ─────────────────────── */
+	let chatImageUploading = $state(false);
+	let chatImagePreview = $state<string | null>(null);
+	let chatImageUrl = $state<string | null>(null);
+	let chatImageInputEl = $state<HTMLInputElement | null>(null);
+
+	async function uploadChatImage(file: File) {
+		chatImageUploading = true;
+		try {
+			const fd = new FormData();
+			fd.append('file', file);
+			const res = await fetch('/api/upload-image', { method: 'POST', body: fd });
+			if (!res.ok) throw new Error('Opplasting feilet');
+			const { url } = await res.json();
+			chatImageUrl = url;
+			chatImagePreview = URL.createObjectURL(file);
+		} catch {
+			chatError = 'Bilde-opplasting feilet. Prøv igjen.';
+			chatImagePreview = null;
+			chatImageUrl = null;
+		} finally {
+			chatImageUploading = false;
+		}
+	}
 
 	const activeConversationMessages = $derived(
 		selectedConvId === conversationId ? chatMessages : selectedConvMessages
@@ -331,13 +419,13 @@
 		}
 	}
 
-	async function sendMessage(text: string) {
+	async function sendMessage(text: string, imageUrl?: string) {
 		if (selectedConvId === null) return;
 		const isCanon = selectedConvId === conversationId;
 		if (isCanon) {
-			chatMessages.push({ role: 'user', text });
+			chatMessages.push({ role: 'user', text: text || '📷', imageUrl: imageUrl || undefined });
 		} else {
-			selectedConvMessages.push({ role: 'user', text });
+			selectedConvMessages.push({ role: 'user', text: text || '📷', imageUrl: imageUrl || undefined });
 		}
 		chatLoading = true;
 		chatError = '';
@@ -346,7 +434,8 @@
 
 		try {
 			const data = await streamProxyChat({
-				message: text,
+				message: text || 'Analyser dette bildet og lagr relevante data.',
+				imageUrl: imageUrl || undefined,
 				conversationId: selectedConvId,
 				onStatus: (status) => {
 					chatStreamingStatus = status;
@@ -479,11 +568,17 @@
 	}
 
 	/* ── Filer-tab: instruksjonsfil ─────────────────────── */
-	const instructionFileName = 'instrukser.md';
+	const instructionFileName = 'instrukser';
 	let instructionDraft = $state(themeInstruction ?? '');
 	let instructionSaving = $state(false);
 	let instructionSaved = $state(false);
 	let instructionError = $state('');
+
+	function fileIcon(type: string | null): string {
+		if (type === 'image') return '🖼';
+		if (type === 'pdf') return '📋';
+		return '📄';
+	}
 
 	/* ── Mål-tab: målredigering ─────────────────────────── */
 	let editingGoalId = $state<string | null>(null);
@@ -979,6 +1074,7 @@
 				{:else if t === 'data'}{activeDashboard ? `${activeDashboard.icon} ${activeDashboard.label}` : '📊 Data'}
 					{:else if t === 'mål'}🎯 Mål
 					{:else if t === 'flyter'}🧭 Flyter
+					{:else if t === 'lister'}📋 Lister
 					{:else}📁 Filer{/if}
 				</button>
 			{/each}
@@ -1074,6 +1170,9 @@
 
 						{#each activeConversationMessages as msg}
 							{#if msg.role === 'user'}
+								{#if msg.imageUrl}
+									<img class="bubble-img" src={msg.imageUrl} alt="Bilde" loading="lazy" />
+								{/if}
 								<div class="bubble bubble-user">{msg.text}</div>
 							{:else}
 								<TriageCard text={msg.text} />
@@ -1094,13 +1193,36 @@
 					</div>
 
 					<div class="chat-input-wrap">
+						{#if chatImagePreview}
+							<div class="chat-image-preview">
+								<img src={chatImagePreview} alt="Forhåndsvisning" class="chat-image-thumb" />
+								<button class="chat-image-remove" onclick={() => { chatImagePreview = null; chatImageUrl = null; }} aria-label="Fjern bilde">×</button>
+							</div>
+						{/if}
 						<ChatInput
 							placeholder="Spør om {theme.name.toLowerCase()}…"
-							disabled={chatLoading}
+							disabled={chatLoading || chatImageUploading}
 							initialValue={chatDraft}
 							onsubmit={(message) => {
 								chatDraft = '';
-								return sendMessage(message);
+								const img = chatImageUrl;
+								chatImageUrl = null;
+								chatImagePreview = null;
+								return sendMessage(message, img ?? undefined);
+							}}
+							onAttachment={(kind) => {
+								if (kind === 'camera' || kind === 'file') chatImageInputEl?.click();
+							}}
+						/>
+						<input
+							bind:this={chatImageInputEl}
+							type="file"
+							accept="image/*"
+							class="files-upload-input"
+							onchange={(e) => {
+								const f = (e.currentTarget as HTMLInputElement).files?.[0];
+								if (f) void uploadChatImage(f);
+								(e.currentTarget as HTMLInputElement).value = '';
 							}}
 						/>
 					</div>
@@ -1110,6 +1232,13 @@
 		<!-- DATA -->
 		{:else if tab === 'data'}
 			<div class="data-panel">
+				{#if isTravel}
+					<TripDashboard
+						themeId={theme.id}
+						themeEmoji={theme.emoji}
+						bind:tripProfile={currentTripProfile}
+					/>
+				{:else}
 				{#if hasThemeDashboard && dashboardLoading && !dashboardLoaded}
 					<div class="data-empty data-empty-tight">
 						<p>Laster dashboard…</p>
@@ -1155,7 +1284,6 @@
 							class="data-new-btn"
 							onclick={() => {
 								tab = 'chat';
-								// Pre-fill could be nice in future
 							}}
 						>
 							+ Si til AI at du vil sette et mål
@@ -1216,7 +1344,15 @@
 					</div>
 				{/if}
 				{/if}
+				{/if}
 			</div>
+
+		<!-- LISTER (reise) -->
+		{:else if tab === 'lister'}
+			<TripListsPanel
+				themeId={theme.id}
+				bind:lists={tripListsState}
+			/>
 
 		<!-- MÅL -->
 		{:else if tab === 'mål'}
@@ -1613,16 +1749,31 @@
 		{:else}
 			<div class="files-panel">
 				<div class="files-header">
-					<span class="files-count">1 fil</span>
-					<button class="files-upload-btn" onclick={saveInstruction} disabled={instructionSaving} aria-label="Lagre instruksfil">
-						{instructionSaving ? 'Lagrer…' : 'Lagre'}
-					</button>
+					<span class="files-count">{1 + themeFiles.length} {1 + themeFiles.length === 1 ? 'fil' : 'filer'}</span>
+					<label class="files-upload-btn" aria-label="Last opp fil">
+						{fileUploading ? 'Laster opp…' : '+ Legg til fil'}
+						<input
+							type="file"
+							accept="image/*,application/pdf,.txt,.md,.csv"
+							disabled={fileUploading}
+							class="files-upload-input"
+							onchange={uploadFile}
+						/>
+					</label>
 				</div>
 
+				{#if fileUploadError}
+					<p class="file-upload-error">{fileUploadError}</p>
+				{/if}
+
+				<!-- Instruksjonsfil -->
 				<div class="instruction-file">
 					<div class="instruction-file-head">
 						<span class="instruction-file-icon">📄</span>
 						<span class="instruction-file-name">{instructionFileName}</span>
+						<button class="files-save-btn" onclick={saveInstruction} disabled={instructionSaving} aria-label="Lagre instruksfil">
+							{instructionSaving ? 'Lagrer…' : 'Lagre'}
+						</button>
 					</div>
 
 					<textarea
@@ -1651,6 +1802,22 @@ Eksempel:
 						{/if}
 					</div>
 				</div>
+
+				<!-- Opplastede filer -->
+				{#if themeFiles.length > 0}
+					<ul class="uploaded-files-list">
+						{#each themeFiles as uf (uf.id)}
+							<li class="uploaded-file-row">
+								<span class="uploaded-file-icon">{fileIcon(uf.fileType)}</span>
+								<a class="uploaded-file-name" href={uf.url} target="_blank" rel="noopener noreferrer">{uf.name}</a>
+								{#if uf.sizeBytes}
+									<span class="uploaded-file-size">{formatBytes(uf.sizeBytes)}</span>
+								{/if}
+								<button class="uploaded-file-delete" onclick={() => deleteFile(uf.id)} aria-label="Slett {uf.name}">🗑</button>
+							</li>
+						{/each}
+					</ul>
+				{/if}
 			</div>
 		{/if}
 		</div>
@@ -1918,6 +2085,50 @@ Eksempel:
 		white-space: pre-wrap;
 		word-break: break-word;
 		color: var(--tp-text);
+	}
+
+	.bubble-img {
+		align-self: flex-end;
+		max-width: 78%;
+		max-height: 280px;
+		object-fit: contain;
+		border-radius: 12px;
+		border: 1px solid hsl(var(--theme-hue) 24% 26%);
+		margin-bottom: 4px;
+	}
+
+	.chat-image-preview {
+		position: relative;
+		display: inline-flex;
+		align-items: flex-start;
+		margin-bottom: 6px;
+	}
+
+	.chat-image-thumb {
+		max-height: 80px;
+		max-width: 120px;
+		object-fit: cover;
+		border-radius: 8px;
+		border: 1px solid hsl(var(--theme-hue) 24% 30%);
+	}
+
+	.chat-image-remove {
+		position: absolute;
+		top: -6px;
+		right: -6px;
+		width: 20px;
+		height: 20px;
+		border-radius: 50%;
+		background: #222;
+		border: 1px solid #555;
+		color: #ccc;
+		font-size: 14px;
+		line-height: 1;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+		padding: 0;
 	}
 
 	.chat-empty {
@@ -2519,6 +2730,99 @@ Eksempel:
 
 	.instruction-empty {
 		color: #777;
+	}
+
+	.files-save-btn {
+		margin-left: auto;
+		background: #1a1a1a;
+		border: 1px solid #2a2a2a;
+		color: #888;
+		font: inherit;
+		font-size: 0.78rem;
+		padding: 4px 12px;
+		border-radius: 99px;
+		cursor: pointer;
+	}
+
+	.files-save-btn:disabled {
+		opacity: 0.6;
+		cursor: default;
+	}
+
+	.files-upload-input {
+		display: none;
+	}
+
+	.file-upload-error {
+		margin: 0;
+		padding: 8px 12px;
+		border-radius: 10px;
+		background: #1f1010;
+		border: 1px solid #3a1a1a;
+		color: #ee8c8c;
+		font-size: 0.82rem;
+	}
+
+	.uploaded-files-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.uploaded-file-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 10px 12px;
+		border: 1px solid #242424;
+		border-radius: 12px;
+		background: #131313;
+	}
+
+	.uploaded-file-icon {
+		font-size: 1rem;
+		opacity: 0.8;
+		flex-shrink: 0;
+	}
+
+	.uploaded-file-name {
+		flex: 1;
+		font-size: 0.86rem;
+		font-weight: 600;
+		color: #aaa;
+		text-decoration: none;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.uploaded-file-name:hover {
+		color: #c8c8f8;
+	}
+
+	.uploaded-file-size {
+		font-size: 0.78rem;
+		color: #555;
+		flex-shrink: 0;
+	}
+
+	.uploaded-file-delete {
+		background: none;
+		border: none;
+		cursor: pointer;
+		font-size: 0.9rem;
+		opacity: 0.5;
+		padding: 2px 4px;
+		border-radius: 6px;
+		flex-shrink: 0;
+		transition: opacity 0.12s;
+	}
+
+	.uploaded-file-delete:hover {
+		opacity: 1;
 	}
 
 	/* ── Samtaler-liste ── */

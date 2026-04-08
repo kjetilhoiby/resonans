@@ -82,6 +82,14 @@
 			longTermGoals: GoalReminder[];
 			dayChecklists: Record<string, DayChecklist>;
 			dayNotes: Record<string, string>;
+			activeTrips: Array<{
+				id: string;
+				name: string;
+				emoji: string | null;
+				destination: string | null;
+				startDate: string;
+				endDate: string;
+			}>;
 			previousWeekSummary: {
 				weekKey: string;
 				note: string;
@@ -136,6 +144,19 @@
 	const selectedDayChecklist = $derived(dayChecklistsState[selectedDayIso] ?? null);
 	const selectedDay = $derived(data.week.days.find((day) => day.isoDate === selectedDayIso) ?? data.week.days[0]);
 	const selectedDayNote = $derived(dayNotesState[selectedDayIso] ?? '');
+
+	// Map iso-date → trip emoji for days that are part of a trip
+	const tripDayEmoji = $derived.by(() => {
+		const map: Record<string, string> = {};
+		for (const trip of data.activeTrips) {
+			for (const day of data.week.days) {
+				if (day.isoDate >= trip.startDate && day.isoDate <= trip.endDate) {
+					map[day.isoDate] = trip.emoji ?? '🗺️';
+				}
+			}
+		}
+		return map;
+	});
 
 	function setSelectedDay(dayIso: string) {
 		selectedDayIso = dayIso;
@@ -612,6 +633,22 @@
 		<a class="wp-week-nav" href={weekHref(data.weekNav.nextWeekKey)} aria-label="Neste uke">›</a>
 	</header>
 
+	{#if data.activeTrips.length > 0}
+		<div class="wp-trips">
+			{#each data.activeTrips as trip}
+				<a class="wp-trip-banner" href="/tema/{trip.id}">
+					<span class="wp-trip-icon">{trip.emoji ?? '🗺️'}</span>
+					<span class="wp-trip-text">
+						<strong>{trip.name}</strong>
+						{#if trip.destination}<span class="wp-trip-dest">{trip.destination}</span>{/if}
+						<span class="wp-trip-dates">{trip.startDate} – {trip.endDate}</span>
+					</span>
+					<span class="wp-trip-arrow">→</span>
+				</a>
+			{/each}
+		</div>
+	{/if}
+
 	<section class="wp-card">
 		<div class="wp-card-head">
 			<h2>Planlegg uka</h2>
@@ -827,13 +864,18 @@
 
 		<div class="wp-days" aria-label="Ukas dager">
 			{#each data.week.days as day}
+				{@const tripEmoji = tripDayEmoji[day.isoDate]}
 				<button
 					type="button"
 					class="wp-day-btn"
 					class:today={day.isoDate === todayIso}
 					class:selected={selectedDayIso === day.isoDate}
+					class:on-trip={!!tripEmoji}
 					onclick={() => setSelectedDay(day.isoDate)}
 				>
+					{#if tripEmoji}
+						<span class="wp-day-trip-emoji" aria-label="På tur">{tripEmoji}</span>
+					{/if}
 					<span class="wp-day-label">{day.label}</span>
 					<span class="wp-day-number">{day.day}</span>
 				</button>
@@ -1054,6 +1096,18 @@
 		border: 1px solid #262a36;
 		background: #0b0d13;
 		cursor: pointer;
+		position: relative;
+	}
+
+	.wp-day-btn.on-trip {
+		border-color: #2a3a4a;
+		background: #0a1018;
+	}
+
+	.wp-day-trip-emoji {
+		font-size: 0.65rem;
+		line-height: 1;
+		margin-bottom: 1px;
 	}
 
 	.wp-day-btn.today {
@@ -1076,6 +1130,64 @@
 		font-size: 0.86rem;
 		color: #ddd;
 		font-weight: 700;
+	}
+
+	.wp-trips {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		padding: 0 4px;
+	}
+
+	.wp-trip-banner {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 10px 14px;
+		background: linear-gradient(135deg, rgba(124, 142, 245, 0.12), rgba(124, 142, 245, 0.06));
+		border: 1px solid rgba(124, 142, 245, 0.25);
+		border-radius: 12px;
+		text-decoration: none;
+		color: inherit;
+		transition: background 0.15s;
+	}
+
+	.wp-trip-banner:hover {
+		background: linear-gradient(135deg, rgba(124, 142, 245, 0.2), rgba(124, 142, 245, 0.1));
+	}
+
+	.wp-trip-icon {
+		font-size: 1.5rem;
+		flex-shrink: 0;
+	}
+
+	.wp-trip-text {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		flex: 1;
+		min-width: 0;
+	}
+
+	.wp-trip-text strong {
+		font-size: 0.95rem;
+		color: #e8eaf6;
+	}
+
+	.wp-trip-dest {
+		font-size: 0.82rem;
+		color: #9fa8da;
+	}
+
+	.wp-trip-dates {
+		font-size: 0.78rem;
+		color: #7986cb;
+	}
+
+	.wp-trip-arrow {
+		font-size: 1rem;
+		color: #7986cb;
+		flex-shrink: 0;
 	}
 
 	.wp-card {

@@ -1,5 +1,5 @@
 import { db } from '$lib/db';
-import { themes, goals, messages as messagesTable, conversations } from '$lib/db/schema';
+import { themes, goals, messages as messagesTable, conversations, themeFiles, themeLists } from '$lib/db/schema';
 import { getThemeInstruction } from '$lib/server/theme-instructions';
 import { ensureConversationThemeIdColumn } from '$lib/server/conversation-schema';
 import { getConversationsByTheme } from '$lib/server/conversations';
@@ -90,6 +90,16 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		);
 
 	const instruction = await getThemeInstruction(locals.userId, theme.id);
+	const uploadedFiles = await db
+		.select()
+		.from(themeFiles)
+		.where(and(eq(themeFiles.themeId, theme.id), eq(themeFiles.userId, locals.userId)))
+		.orderBy(asc(themeFiles.createdAt));
+	const tripListsRaw = await db.query.themeLists.findMany({
+		where: and(eq(themeLists.themeId, theme.id), eq(themeLists.userId, locals.userId)),
+		with: { items: { orderBy: (i, { asc: a }) => [a(i.sortOrder), a(i.createdAt)] } },
+		orderBy: [asc(themeLists.sortOrder), asc(themeLists.createdAt)]
+	});
 	const selectedWorkout = selectedWorkoutId
 		? await getWorkoutContextForUser(locals.userId, selectedWorkoutId)
 		: null;
@@ -115,6 +125,31 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		goals: themeGoals,
 		conversationId,
 		themeInstruction: instruction,
+		themeFiles: uploadedFiles.map((f) => ({
+			id: f.id,
+			name: f.name,
+			url: f.url,
+			fileType: f.fileType,
+			mimeType: f.mimeType,
+			sizeBytes: f.sizeBytes,
+			createdAt: f.createdAt.toISOString()
+		})),
+		tripProfile: theme.tripProfile ?? null,
+		tripLists: tripListsRaw.map((l) => ({
+			id: l.id,
+			title: l.title,
+			emoji: l.emoji,
+			listType: l.listType,
+			sortOrder: l.sortOrder,
+			items: l.items.map((i) => ({
+				id: i.id,
+				text: i.text,
+				checked: i.checked ?? false,
+				notes: i.notes ?? null,
+				itemDate: i.itemDate ?? null,
+				sortOrder: i.sortOrder
+			}))
+		})),
 		selectedWorkout
 	};
 };
