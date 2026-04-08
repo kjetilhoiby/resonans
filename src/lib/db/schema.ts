@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, integer, boolean, jsonb, decimal, unique, index } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, timestamp, integer, boolean, jsonb, decimal, unique, index, uniqueIndex } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 
@@ -518,7 +518,8 @@ export const sensorEvents = pgTable('sensor_events', {
 	}>(),
 	createdAt: timestamp('created_at').defaultNow().notNull() // When we received it
 }, (table) => ({
-	idxUserDataTypeTimestamp: index('sensor_events_user_data_type_timestamp_idx').on(table.userId, table.dataType, table.timestamp)
+	idxUserDataTypeTimestamp: index('sensor_events_user_data_type_timestamp_idx').on(table.userId, table.dataType, table.timestamp),
+	uniqSensorDatatypeTimestamp: uniqueIndex('sensor_events_sensor_datatype_timestamp_unique').on(table.sensorId, table.dataType, table.timestamp)
 }));
 
 // Materialized transaction projection used by chat/widgets/dashboard queries.

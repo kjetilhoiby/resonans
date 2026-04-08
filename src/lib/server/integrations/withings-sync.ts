@@ -301,7 +301,7 @@ export async function syncWeightData(
 				data: event.data,
 				metadata: event.metadata
 			}))
-		);
+		).onConflictDoNothing();
 		if (i % 500 === 0 && i > 0) {
 			console.log(`      Stored ${i}/${parsed.length} weight events...`);
 		}
@@ -352,7 +352,7 @@ export async function syncActivityData(
 				data: event.data,
 				metadata: event.metadata
 			}))
-		);
+		).onConflictDoNothing();
 		if (i % 500 === 0 && i > 0) {
 			console.log(`      Stored ${i}/${parsed.length} activity events...`);
 		}
@@ -426,7 +426,7 @@ export async function syncSleepData(
 				data: event.data,
 				metadata: event.metadata
 			}))
-		);
+		).onConflictDoNothing();
 		if (i % 500 === 0 && i > 0) {
 			console.log(`      Stored ${i}/${parsed.length} sleep events...`);
 		}
@@ -477,7 +477,7 @@ export async function syncWorkoutData(
 				data: event.data,
 				metadata: event.metadata
 			}))
-		);
+		).onConflictDoNothing();
 		if (i % 500 === 0 && i > 0) {
 			console.log(`      Stored ${i}/${parsed.length} workout events...`);
 		}
