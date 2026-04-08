@@ -12,6 +12,15 @@
 		sortOrder: number;
 	}
 
+	interface DayForecast {
+		date: string;
+		symbolCode: string;
+		tempMin: number;
+		tempMax: number;
+		wind: number;
+		precipitation: number;
+	}
+
 	interface DayEntry {
 		isoDate: string;
 		label: string;
@@ -25,9 +34,24 @@
 		themeEmoji: string | null;
 		startDate: string; // YYYY-MM-DD
 		endDate: string;   // YYYY-MM-DD
+		dailyWeather?: DayForecast[];
 	}
 
-	let { themeEmoji, startDate, endDate }: Props = $props();
+	let { themeEmoji, startDate, endDate, dailyWeather = [] }: Props = $props();
+
+	const weatherByDate = $derived(new Map(dailyWeather.map((d) => [d.date, d])));
+
+	function metSymbolToEmoji(symbol: string): string {
+		if (symbol.startsWith('clearsky')) return '☀️';
+		if (symbol.startsWith('fair')) return '🌤️';
+		if (symbol.startsWith('partlycloudy')) return '⛅';
+		if (symbol.startsWith('cloudy')) return '☁️';
+		if (symbol.startsWith('fog')) return '🌫️';
+		if (symbol.includes('thunder')) return '⛈️';
+		if (symbol.includes('snow') || symbol.includes('sleet')) return '❄️';
+		if (symbol.includes('rain') || symbol.includes('shower')) return '🌧️';
+		return '🌡️';
+	}
 
 	// ── ISO week key helper ─────────────────────────────────
 	function isoWeekKey(isoDate: string): string {
@@ -192,6 +216,7 @@
 				{@const itemCount = day.checklist?.items.length ?? 0}
 				{@const doneCount = day.checklist?.items.filter((i) => i.checked).length ?? 0}
 				{@const isExpanded = expandedDay === day.isoDate}
+				{@const wx = weatherByDate.get(day.isoDate)}
 
 				<div
 					class="tdc-day"
@@ -205,6 +230,14 @@
 						aria-expanded={isExpanded}
 					>
 						<span class="tdc-day-label">{day.label}</span>
+						{#if wx}
+							<span class="tdc-wx">
+								<span class="tdc-wx-sym">{metSymbolToEmoji(wx.symbolCode)}</span>
+								<span class="tdc-wx-temps"><span class="tdc-wx-max">↑{wx.tempMax}°</span><span class="tdc-wx-min">↓{wx.tempMin}°</span></span>
+								{#if wx.precipitation > 0}<span class="tdc-wx-precip">💧{wx.precipitation}</span>{/if}
+								<span class="tdc-wx-wind">💨{wx.wind}</span>
+							</span>
+						{/if}
 						{#if itemCount > 0}
 							<span class="tdc-day-badge">{doneCount}/{itemCount}</span>
 						{/if}
@@ -334,6 +367,21 @@
 		font-size: 0.6rem;
 		color: var(--tp-text-muted);
 	}
+
+	/* Inline weather in day header */
+	.tdc-wx {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		font-size: 0.7rem;
+		flex-shrink: 0;
+	}
+	.tdc-wx-sym { font-size: 0.95rem; line-height: 1; }
+	.tdc-wx-temps { display: flex; gap: 2px; font-weight: 600; }
+	.tdc-wx-max { color: var(--tp-text); }
+	.tdc-wx-min { color: var(--tp-text-muted); }
+	.tdc-wx-precip { color: #5b9bd8; }
+	.tdc-wx-wind { color: var(--tp-text-muted); }
 
 	.tdc-day-body {
 		padding: 0 12px 12px;

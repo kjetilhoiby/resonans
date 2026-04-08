@@ -158,6 +158,109 @@
 		return map;
 	});
 
+	// Weather for trip days — fetched client-side per trip destination
+	interface DayWeatherEntry { symbol: string; tempMax: number }
+	let tripDayWeather = $state<Record<string, DayWeatherEntry>>({});
+
+	// "worst weather" priority (higher = shown over better weather)
+	function weatherSeverity(symbol: string): number {
+		if (symbol.includes('thunder')) return 6;
+		if (symbol.includes('snow')) return 5;
+		if (symbol.includes('sleet')) return 4;
+		if (symbol.includes('rain') || symbol.includes('shower')) return 3;
+		if (symbol.startsWith('fog')) return 2;
+		if (symbol.startsWith('cloudy') || symbol.startsWith('partlycloudy')) return 1;
+		return 0; // clear/fair
+	}
+
+	function metSymbolToEmoji(symbol: string): string {
+		if (symbol.startsWith('clearsky')) return '☀️';
+		if (symbol.startsWith('fair')) return '🌤️';
+		if (symbol.startsWith('partlycloudy')) return '⛅';
+		if (symbol.startsWith('cloudy')) return '☁️';
+		if (symbol.startsWith('fog')) return '🌫️';
+		if (symbol.includes('thunder')) return '⛈️';
+		if (symbol.includes('snow') || symbol.includes('sleet')) return '❄️';
+		if (symbol.includes('rain') || symbol.includes('shower')) return '🌧️';
+		return '🌡️';
+	}
+
+	import { onMount } from 'svelte';
+	onMount(async () => {
+		const weekDates = new Set(data.week.days.map((d) => d.isoDate));
+		for (const trip of data.activeTrips) {
+			// Only fetch if some trip days overlap this week
+			const hasDaysThisWeek = data.week.days.some(
+				(d) => d.isoDate >= trip.startDate && d.isoDate <= trip.endDate
+			);
+			if (!hasDaysThisWeek) continue;
+			// Geocode destination to get lat/lng
+			try {
+				const geoRes = await fetch(
+					`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(trip.destination ?? '')}&format=json&limit=1`,
+					{ headers: { 'Accept-Language': 'nb,en' } }
+				);
+				const geoData: Array<{ lat: string; lon: string }> = await geoRes.json();
+				if (!geoData.length) continue;
+				const lat = parseFloat(geoData[0].lat);
+				const lng = parseFloat(geoData[0].lon);
+
+				const wxRes = await fetch(
+					`https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${lat.toFixed(4)}&lon=${lng.toFixed(4)}`,
+					{ headers: { 'User-Agent': 'resonans/1.0 https://github.com/kjetilhoiby/resonans' } }
+				);
+				if (!wxRes.ok) continue;
+				const wxData = await wxRes.json();
+				const timeseries: Array<{
+					time: string;
+					data: {
+						instant: { details: { air_temperature: number } };
+						next_1_hours?: { summary?: { symbol_code?: string } };
+						next_6_hours?: { summary?: { symbol_code?: string }; details?: { air_temperature_max?: number } };
+					};
+				}> = wxData.properties.timeseries;
+
+				// Aggregate per day: worst symbol + highest tempMax
+				type DayAgg = { temps: number[]; symbol?: string; severity: number };
+				const dayMap = new Map<string, DayAgg>();
+				for (const entry of timeseries) {
+					const date = entry.time.slice(0, 10);
+					if (!weekDates.has(date)) continue;
+					if (!dayMap.has(date)) dayMap.set(date, { temps: [], severity: -1 });
+					const agg = dayMap.get(date)!;
+					agg.temps.push(entry.data.instant.details.air_temperature);
+					const sym =
+						entry.data.next_6_hours?.summary?.symbol_code ??
+						entry.data.next_1_hours?.summary?.symbol_code;
+					if (sym) {
+						const sev = weatherSeverity(sym);
+						if (sev > agg.severity) { agg.symbol = sym; agg.severity = sev; }
+					}
+					// Prefer noon symbol for "main" symbol if no worse one found
+					if (entry.time.includes('T12:00:00Z') && !agg.symbol) {
+						agg.symbol = sym;
+					}
+				}
+
+				const newEntries: Record<string, DayWeatherEntry> = {};
+				for (const [date, agg] of dayMap.entries()) {
+					if (!agg.symbol) continue;
+					const tempMax = agg.temps.length ? Math.round(Math.max(...agg.temps)) : 0;
+					// Only overwrite if this trip has worse weather or higher temp
+					const existing = tripDayWeather[date];
+					if (!existing ||
+						weatherSeverity(agg.symbol) > weatherSeverity(existing.symbol) ||
+						(weatherSeverity(agg.symbol) === weatherSeverity(existing.symbol) && tempMax > existing.tempMax)) {
+						newEntries[date] = { symbol: agg.symbol, tempMax };
+					}
+				}
+				tripDayWeather = { ...tripDayWeather, ...newEntries };
+			} catch {
+				// best-effort; silently skip
+			}
+		}
+	});
+
 	function setSelectedDay(dayIso: string) {
 		selectedDayIso = dayIso;
 		if (typeof window !== 'undefined') {
@@ -865,6 +968,7 @@
 		<div class="wp-days" aria-label="Ukas dager">
 			{#each data.week.days as day}
 				{@const tripEmoji = tripDayEmoji[day.isoDate]}
+				{@const wx = tripDayWeather[day.isoDate]}
 				<button
 					type="button"
 					class="wp-day-btn"
@@ -873,8 +977,13 @@
 					class:on-trip={!!tripEmoji}
 					onclick={() => setSelectedDay(day.isoDate)}
 				>
-					{#if tripEmoji}
+					{#if tripEmoji && !wx}
 						<span class="wp-day-trip-emoji" aria-label="På tur">{tripEmoji}</span>
+					{/if}
+					{#if wx}
+						<span class="wp-day-wx" aria-label="Vær">
+							<span class="wp-day-wx-sym">{metSymbolToEmoji(wx.symbol)}</span><span class="wp-day-wx-temp">{wx.tempMax}°</span>
+						</span>
 					{/if}
 					<span class="wp-day-label">{day.label}</span>
 					<span class="wp-day-number">{day.day}</span>
@@ -1108,6 +1217,20 @@
 		font-size: 0.65rem;
 		line-height: 1;
 		margin-bottom: 1px;
+	}
+
+	.wp-day-wx {
+		display: flex;
+		align-items: center;
+		gap: 1px;
+		line-height: 1;
+		margin-bottom: 1px;
+	}
+	.wp-day-wx-sym { font-size: 0.8rem; }
+	.wp-day-wx-temp {
+		font-size: 0.62rem;
+		font-weight: 700;
+		color: #ccc;
 	}
 
 	.wp-day-btn.today {

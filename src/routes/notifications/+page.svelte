@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import Icon from '$lib/components/ui/Icon.svelte';
 
 	let sending = $state(false);
 	let result = $state<{ success: boolean; message: string } | null>(null);
@@ -366,7 +367,7 @@
 		</section>
 
 		<section class="notification-card">
-			<div class="card-icon">⚙️</div>
+			<div class="card-icon"><Icon name="settings" size={32} /></div>
 			<h2>Konfigurasjon</h2>
 			<p>For å aktivere Google Chat-varslinger, må du sette opp en webhook URL.</p>
 

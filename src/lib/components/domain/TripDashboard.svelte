@@ -9,6 +9,8 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import TripDayCalendar from './TripDayCalendar.svelte';
+	import TripBudget from './TripBudget.svelte';
+	import Icon from '../ui/Icon.svelte';
 	import type { Map as MapLibreMap } from 'maplibre-gl';
 
 	export interface OvernightStay {
@@ -131,51 +133,106 @@
 		temp: number;
 		symbolCode: string;
 		windspeed: number;
-		feelsLike?: number;
-	}
+        }
 
-	let weather = $state<WeatherData | null>(null);
-	let weatherLoading = $state(false);
-	let weatherError = $state('');
+        interface DayForecast {
+                date: string;          // YYYY-MM-DD
+                symbolCode: string;
+                tempMin: number;
+                tempMax: number;
+                wind: number;          // max m/s for the day
+                precipitation: number; // total mm
+        }
 
-	// api.met.no symbol_code → emoji
-	function metSymbolToEmoji(symbol: string): string {
-		if (symbol.startsWith('clearsky')) return '☀️';
-		if (symbol.startsWith('fair')) return '🌤️';
-		if (symbol.startsWith('partlycloudy')) return '⛅';
-		if (symbol.startsWith('cloudy')) return '☁️';
-		if (symbol.startsWith('fog')) return '🌫️';
-		if (symbol.includes('thunder')) return '⛈️';
-		if (symbol.includes('snow') || symbol.includes('sleet')) return '❄️';
-		if (symbol.includes('rain') || symbol.includes('shower')) return '🌧️';
-		return '🌡️';
-	}
+        let weather = $state<WeatherData | null>(null);
+        let dailyForecast = $state<DayForecast[]>([]);
+        let weatherLoading = $state(false);
+        let weatherError = $state('');
 
-	async function fetchWeather(lat: number, lng: number) {
-		weatherLoading = true;
-		weatherError = '';
-		try {
-			const url = `https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${lat.toFixed(4)}&lon=${lng.toFixed(4)}`;
-			const res = await fetch(url, {
-				headers: { 'User-Agent': 'resonans/1.0 https://github.com/kjetilhoiby/resonans' }
-			});
-			if (!res.ok) throw new Error('weather_fetch');
-			const data = await res.json();
-			const current = data.properties.timeseries[0];
-			const instant = current.data.instant.details;
-			const next1h = current.data.next_1_hours?.summary?.symbol_code ?? 'cloudy';
-			weather = {
-				temp: Math.round(instant.air_temperature),
-				symbolCode: next1h,
-				windspeed: Math.round(instant.wind_speed),
-				feelsLike: undefined // met.no doesn't provide feels-like in compact
-			};
-		} catch {
-			weatherError = 'Kunne ikke laste vær.';
-		} finally {
-			weatherLoading = false;
-		}
-	}
+        // api.met.no symbol_code → emoji
+        function metSymbolToEmoji(symbol: string): string {
+                if (symbol.startsWith('clearsky')) return '☀️';
+                if (symbol.startsWith('fair')) return '🌤️';
+                if (symbol.startsWith('partlycloudy')) return '⛅';
+                if (symbol.startsWith('cloudy')) return '☁️';
+                if (symbol.startsWith('fog')) return '🌫️';
+                if (symbol.includes('thunder')) return '⛈️';
+                if (symbol.includes('snow') || symbol.includes('sleet')) return '❄️';
+                if (symbol.includes('rain') || symbol.includes('shower')) return '🌧️';
+                return '🌡️';
+        }
+
+        async function fetchWeather(lat: number, lng: number) {
+                weatherLoading = true;
+                weatherError = '';
+                try {
+                        const url = `https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${lat.toFixed(4)}&lon=${lng.toFixed(4)}`;
+                        const res = await fetch(url, {
+                                headers: { 'User-Agent': 'resonans/1.0 https://github.com/kjetilhoiby/resonans' }
+                        });
+                        if (!res.ok) throw new Error('weather_fetch');
+                        const data = await res.json();
+                        const timeseries: Array<{
+                                time: string;
+                                data: {
+                                        instant: { details: { air_temperature: number; wind_speed: number } };
+                                        next_1_hours?: { summary?: { symbol_code?: string }; details?: { precipitation_amount?: number } };
+                                        next_6_hours?: { summary?: { symbol_code?: string }; details?: { air_temperature_max?: number; air_temperature_min?: number; precipitation_amount?: number } };
+                                };
+                        }> = data.properties.timeseries;
+
+                        // Current conditions from first entry
+                        const current = timeseries[0];
+                        const instant = current.data.instant.details;
+                        const next1h = current.data.next_1_hours?.summary?.symbol_code ?? 'cloudy';
+                        weather = {
+                                temp: Math.round(instant.air_temperature),
+                                symbolCode: next1h,
+                                windspeed: Math.round(instant.wind_speed)
+                        };
+
+                        // Build daily forecasts
+                        type DayAgg = { temps: number[]; winds: number[]; precip: number; symbol?: string };
+                        const dayMap = new Map<string, DayAgg>();
+
+                        for (const entry of timeseries) {
+                                const date = entry.time.slice(0, 10);
+                                if (!dayMap.has(date)) dayMap.set(date, { temps: [], winds: [], precip: 0 });
+                                const agg = dayMap.get(date)!;
+                                const det = entry.data.instant.details;
+                                if (det.air_temperature != null) agg.temps.push(det.air_temperature);
+                                if (det.wind_speed != null) agg.winds.push(det.wind_speed);
+                                // Use 1h precipitation to sum per-hour (avoids 6h overlap)
+                                const p1 = entry.data.next_1_hours?.details?.precipitation_amount;
+                                if (p1 != null) agg.precip += p1;
+                                // Symbol: prefer the noon entry (next_6_hours gives best picture)
+                                if (entry.time.includes('T12:00:00Z')) {
+                                        agg.symbol =
+                                                entry.data.next_6_hours?.summary?.symbol_code ??
+                                                entry.data.next_1_hours?.summary?.symbol_code;
+                                }
+                                // Fallback: first entry of the day
+                                if (!agg.symbol) {
+                                        agg.symbol =
+                                                entry.data.next_6_hours?.summary?.symbol_code ??
+                                                entry.data.next_1_hours?.summary?.symbol_code;
+                                }
+                        }
+
+                        dailyForecast = Array.from(dayMap.entries()).map(([date, agg]) => ({
+                                date,
+                                symbolCode: agg.symbol ?? 'cloudy',
+                                tempMin: agg.temps.length ? Math.round(Math.min(...agg.temps)) : 0,
+                                tempMax: agg.temps.length ? Math.round(Math.max(...agg.temps)) : 0,
+                                wind: agg.winds.length ? Math.round(Math.max(...agg.winds)) : 0,
+                                precipitation: Math.round(agg.precip * 10) / 10
+                        }));
+                } catch {
+                        weatherError = 'Kunne ikke laste vær.';
+                } finally {
+                        weatherLoading = false;
+                }
+        }
 
 	/* ── Nedtelling ───────────────────────────────── */
 	const countdown = $derived.by(() => {
@@ -299,12 +356,35 @@
 			{#if weatherLoading}
 				<div class="trip-weather-loading">Laster vær…</div>
 			{:else if weather}
-				<div class="trip-weather-card">
-					<span class="trip-weather-icon">{metSymbolToEmoji(weather.symbolCode)}</span>
-					<span class="trip-weather-temp">{weather.temp}°</span>
-					<span class="trip-weather-detail">{weather.windspeed} m/s</span>
-					<button class="trip-weather-refresh" onclick={() => tripProfile?.lat != null && tripProfile?.lng != null && fetchWeather(tripProfile.lat, tripProfile.lng)} title="Oppdater vær" aria-label="Oppdater vær">↻</button>
-				</div>
+                                <!-- Nåværende forhold -->
+                                <div class="trip-weather-card">
+                                        <span class="trip-weather-icon">{metSymbolToEmoji(weather.symbolCode)}</span>
+                                        <span class="trip-weather-temp">{weather.temp}°</span>
+                                        <span class="trip-weather-detail">💨 {weather.windspeed} m/s</span>
+                                        <button class="trip-weather-refresh" onclick={() => tripProfile?.lat != null && tripProfile?.lng != null && fetchWeather(tripProfile.lat, tripProfile.lng)} title="Oppdater vær" aria-label="Oppdater vær">↻</button>
+                                </div>
+                                <!-- Dagsprognose-stripe -->
+                                {#if dailyForecast.length > 0}
+                                        {@const tripStart = tripProfile?.startDate ?? ''}
+                                        {@const tripEnd = tripProfile?.endDate ?? ''}
+                                        {@const tripDays = dailyForecast.filter((d) => d.date >= tripStart && d.date <= tripEnd)}
+                                        {#if tripDays.length > 0}
+                                        <div class="trip-forecast-strip">
+                                                {#each tripDays as day}
+                                                        {@const isToday = day.date === new Date().toISOString().slice(0, 10)}
+                                                        <div class="trip-forecast-day" class:trip-forecast-today={isToday}>
+                                                                <span class="tfd-weekday">{new Intl.DateTimeFormat('nb-NO', { weekday: 'short' }).format(new Date(day.date + 'T12:00:00Z'))}</span>
+                                                                <span class="tfd-symbol">{metSymbolToEmoji(day.symbolCode)}</span>
+                                                                <span class="tfd-temps"><span class="tfd-max">↑{day.tempMax}°</span><span class="tfd-min">↓{day.tempMin}°</span></span>
+                                                                {#if day.precipitation > 0}
+                                                                        <span class="tfd-precip">💧{day.precipitation}</span>
+                                                                {/if}
+                                                                <span class="tfd-wind">💨{day.wind}</span>
+                                                        </div>
+                                                {/each}
+                                        </div>
+                                        {/if}
+                                {/if}
 			{:else if weatherError}
 				<p class="trip-weather-error">{weatherError}</p>
 			{:else if !tripProfile?.lat}
@@ -360,11 +440,22 @@
 					themeEmoji={themeEmoji}
 					startDate={tripProfile.startDate}
 					endDate={tripProfile.endDate}
+					dailyWeather={dailyForecast}
 				/>
 			</div>
 		{/if}
 
-		<button class="trip-edit-btn" onclick={openEdit}>⚙️ Rediger turdetaljer</button>
+		{#if tripProfile?.startDate && tripProfile?.endDate}
+			<div class="trip-budget-section">
+				<TripBudget
+					themeId={themeId}
+					startDate={tripProfile.startDate}
+					endDate={tripProfile.endDate}
+				/>
+			</div>
+		{/if}
+
+		<button class="trip-edit-btn" onclick={openEdit}><Icon name="settings" size={16} /> Rediger turdetaljer</button>
 	{/if}
 
 	<!-- ── Editér / onboarding ── -->
@@ -574,22 +665,61 @@
 		padding: 8px 0;
 	}
 
-	/* Map */
-	.trip-map-wrap {
-		margin: 0 16px 16px;
-		border-radius: 12px;
-		overflow: hidden;
-		border: 1px solid var(--tp-border);
-	}
-	.trip-map {
-		width: 100%;
-		height: 220px;
-		display: block;
-	}
-	.trip-map-link {
-		display: block;
-		padding: 6px 10px;
-		font-size: 0.72rem;
+        /* Daily forecast strip */
+        .trip-forecast-strip {
+                display: flex;
+                overflow-x: auto;
+                gap: 6px;
+                padding: 8px 0 2px;
+                scrollbar-width: none;
+        }
+        .trip-forecast-strip::-webkit-scrollbar { display: none; }
+        .trip-forecast-day {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 2px;
+                min-width: 52px;
+                background: var(--tp-bg-2);
+                border: 1px solid var(--tp-border);
+                border-radius: 10px;
+                padding: 7px 6px 6px;
+                flex-shrink: 0;
+        }
+        .trip-forecast-today {
+                border-color: var(--tp-accent);
+                background: var(--tp-accent-bg);
+        }
+        .tfd-weekday {
+                font-size: 0.65rem;
+                text-transform: capitalize;
+                color: var(--tp-text-muted);
+                font-weight: 600;
+        }
+        .trip-forecast-today .tfd-weekday { color: var(--tp-accent); }
+        .tfd-symbol { font-size: 1.2rem; line-height: 1; }
+        .tfd-temps {
+                display: flex;
+                gap: 3px;
+                font-size: 0.7rem;
+                font-weight: 600;
+        }
+        .tfd-max { color: var(--tp-text); }
+        .tfd-min { color: var(--tp-text-muted); }
+        .tfd-precip {
+                font-size: 0.62rem;
+                color: #5b9bd8;
+        }
+        .tfd-wind {
+                font-size: 0.62rem;
+                color: var(--tp-text-muted);
+        }
+
+        /* Map */
+        .trip-map-link {
+                display: block;
+                padding: 6px 10px;
+                font-size: 0.72rem;
 		color: var(--tp-text-muted);
 		text-decoration: none;
 		background: var(--tp-bg-2);
@@ -663,6 +793,12 @@
 
 	.trip-calendar-section {
 		padding: 12px 16px 0;
+	}
+
+	.trip-budget-section {
+		padding: 16px 16px 0;
+		border-top: 1px solid var(--tp-border);
+		margin-top: 12px;
 	}
 
 	.trip-edit-btn {

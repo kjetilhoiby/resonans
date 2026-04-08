@@ -1,4 +1,6 @@
 <script lang="ts">
+	import Icon from '$lib/components/ui/Icon.svelte';
+
 	type GoalTrackMeta = {
 		kind?: string | null;
 		window?: string | null;
@@ -112,8 +114,8 @@
 		<div class="header-top">
 			<h1>Mål</h1>
 			<div class="header-actions">
-				<a href="/" class="btn-icon" title="Chat">💬</a>
-				<a href="/settings" class="btn-icon" title="Innstillinger">⚙️</a>
+				<a href="/" class="btn-icon" title="Chat"><Icon name="chat" size={20} /></a>
+				<a href="/settings" class="btn-icon" title="Innstillinger"><Icon name="settings" size={20} /></a>
 			</div>
 		</div>
 		<div class="header-stats">
@@ -127,7 +129,7 @@
 	<main class="content">
 		{#if data.goals.length === 0}
 			<div class="empty-state">
-				<div class="empty-icon">🎯</div>
+				<div class="empty-icon"><Icon name="goals" size={48} /></div>
 				<p>Ingen mål ennå</p>
 				<a href="/" class="btn-primary">Start i chatten</a>
 			</div>
