@@ -15,6 +15,8 @@ interface SuggestedAction {
 	id: string;
 	label: string;
 	prompt: string;
+	themeId?: string; // ID til foreslått tema
+	themeName?: string; // Navn på foreslått tema
 }
 
 interface AttachmentTriageResult {
@@ -24,6 +26,11 @@ interface AttachmentTriageResult {
 	detectedIntent: string;
 	confidence: 'low' | 'medium' | 'high';
 	extractedSignals: string[];
+	suggestedTheme?: { // Foreslått tema basert på innhold
+		themeId: string;
+		themeName: string;
+		confidence: 'high' | 'medium' | 'low';
+	};
 }
 
 interface AttachmentExtraction {

@@ -417,6 +417,10 @@
 	let launchingThemeId = $state<string | null>(null);
 	let chatInputAutoFocus = $state(false);
 	let returnToChatAfterFlow = $state(false);
+	
+	// Tema-routing state
+	let suggestedTheme = $state<{ themeId: string; themeName: string; confidence: string; reasoning?: string } | null>(null);
+	let routedToTheme = $state<{ themeId: string; themeName: string } | null>(null);
 
 	// ── Media history types ───────────────────────────────────────────────────
 	interface MediaHistoryItem {
@@ -1106,6 +1110,9 @@
 		chatLoading = true;
 		chatStreamingText = '';
 		chatStreamingStatus = 'Starter...';
+		suggestedTheme = null;
+		routedToTheme = null;
+		
 		try {
 			if (!currentConversationId) {
 				try {
@@ -1130,6 +1137,13 @@
 				onToken: (token) => {
 					chatStreamingStatus = '';
 					chatStreamingText += token;
+				},
+				onThemeRouted: (theme) => {
+					routedToTheme = theme;
+					currentConversationId = null; // Reset så neste melding også kan routes
+				},
+				onThemeSuggested: (theme) => {
+					suggestedTheme = theme;
 				}
 			});
 			currentConversationId = data.conversationId ?? currentConversationId;
@@ -1484,6 +1498,28 @@
 				{/if}
 			</div>
 			<div class="chat-input-area">
+				{#if routedToTheme}
+					{@const theme = routedToTheme}
+					<div class="theme-routing-banner routed">
+						<span class="theme-routing-icon">✓</span>
+						<span class="theme-routing-text">Melding automatisk koblet til tema: <strong>{theme.themeName}</strong></span>
+						<button class="theme-routing-dismiss" onclick={() => (routedToTheme = null)}>✕</button>
+					</div>
+				{/if}
+				{#if suggestedTheme && !routedToTheme}
+					{@const theme = suggestedTheme}
+					<div class="theme-routing-banner suggested">
+						<span class="theme-routing-icon">💡</span>
+						<span class="theme-routing-text">Foreslår å koble til tema: <strong>{theme.themeName}</strong></span>
+						<div class="theme-routing-actions">
+							<button class="theme-routing-accept" onclick={() => {
+								// Naviger til temaet
+								goto(`/tema/${theme.themeId}`);
+							}}>Gå til tema</button>
+							<button class="theme-routing-dismiss" onclick={() => (suggestedTheme = null)}>Avvis</button>
+						</div>
+					</div>
+				{/if}
 				{#if createdThemeLink}
 					{@const themeLink = createdThemeLink}
 					<button
@@ -3020,6 +3056,107 @@
 	.theme-link-arrow {
 		margin-left: auto;
 		color: hsl(var(--theme-hue) 32% 68%);
+	}
+
+	.theme-routing-banner {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		width: 100%;
+		border-radius: 12px;
+		padding: 10px 12px;
+		font-size: 0.8rem;
+		animation: slideIn 0.3s ease;
+	}
+
+	@keyframes slideIn {
+		from {
+			opacity: 0;
+			transform: translateY(-8px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	.theme-routing-banner.routed {
+		background: hsl(142 30% 12%);
+		border: 1px solid hsl(142 35% 22%);
+		color: hsl(142 50% 82%);
+	}
+
+	.theme-routing-banner.suggested {
+		background: hsl(45 28% 12%);
+		border: 1px solid hsl(45 32% 24%);
+		color: hsl(45 48% 84%);
+		flex-wrap: wrap;
+	}
+
+	.theme-routing-icon {
+		flex-shrink: 0;
+		font-size: 1.1rem;
+	}
+
+	.theme-routing-text {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.theme-routing-text strong {
+		font-weight: 600;
+	}
+
+	.theme-routing-actions {
+		display: flex;
+		gap: 6px;
+		width: 100%;
+		margin-top: 4px;
+	}
+
+	.theme-routing-accept {
+		flex: 1;
+		background: hsl(45 35% 18%);
+		border: 1px solid hsl(45 38% 28%);
+		color: hsl(45 50% 88%);
+		padding: 6px 10px;
+		border-radius: 8px;
+		font-size: 0.75rem;
+		cursor: pointer;
+		transition: background 0.15s ease, border-color 0.15s ease;
+	}
+
+	.theme-routing-accept:hover {
+		background: hsl(45 38% 22%);
+		border-color: hsl(45 42% 35%);
+	}
+
+	.theme-routing-dismiss {
+		background: transparent;
+		border: none;
+		color: inherit;
+		opacity: 0.6;
+		padding: 2px 6px;
+		cursor: pointer;
+		font-size: 0.85rem;
+		transition: opacity 0.15s ease;
+	}
+
+	.theme-routing-dismiss:hover {
+		opacity: 1;
+	}
+
+	.suggested .theme-routing-dismiss {
+		flex: 0 0 auto;
+		padding: 6px 10px;
+		background: hsla(0 0% 100% / 0.08);
+		border: 1px solid hsla(0 0% 100% / 0.12);
+		border-radius: 8px;
+		font-size: 0.75rem;
+	}
+
+	.suggested .theme-routing-dismiss:hover {
+		background: hsla(0 0% 100% / 0.12);
 	}
 
 

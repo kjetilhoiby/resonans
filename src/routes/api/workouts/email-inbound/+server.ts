@@ -154,7 +154,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
 				timestamp: parsed.startTime,
 				data,
 				metadata: { ...metadata, sourceName: attachment.Name }
-			}).returning({ id: sensorEvents.id });
+			}).onConflictDoNothing().returning({ id: sensorEvents.id });
 
 			if (inserted?.id) importedWorkoutIds.push(inserted.id);
 			imported += 1;

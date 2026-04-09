@@ -582,7 +582,11 @@ export const sensorEvents = pgTable('sensor_events', {
 	createdAt: timestamp('created_at').defaultNow().notNull() // When we received it
 }, (table) => ({
 	idxUserDataTypeTimestamp: index('sensor_events_user_data_type_timestamp_idx').on(table.userId, table.dataType, table.timestamp),
-	uniqSensorDatatypeTimestamp: uniqueIndex('sensor_events_sensor_datatype_timestamp_unique').on(table.sensorId, table.dataType, table.timestamp)
+	// Partial unique index for non-bank_balance events (original dedup behaviour)
+	uniqSensorDatatypeTimestamp: uniqueIndex('sensor_events_sensor_datatype_timestamp_unique').on(table.sensorId, table.dataType, table.timestamp).where(sql`data_type != 'bank_balance'`),
+	// Partial unique index for bank_balance events — includes accountId so multiple
+	// accounts can share the same sensor + timestamp without violating uniqueness
+	uniqBankBalance: uniqueIndex('sensor_events_bank_balance_unique').on(table.sensorId, table.dataType, table.timestamp, sql`(data->>'accountId')`).where(sql`data_type = 'bank_balance'`)
 }));
 
 // Materialized transaction projection used by chat/widgets/dashboard queries.

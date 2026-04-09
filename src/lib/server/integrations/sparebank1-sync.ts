@@ -164,7 +164,7 @@ export async function syncAllSparebank1Data(
 		});
 
 		if (newBalanceEvents.length > 0) {
-			await db.insert(sensorEvents).values(newBalanceEvents);
+			await db.insert(sensorEvents).values(newBalanceEvents).onConflictDoNothing();
 		}
 	}
 

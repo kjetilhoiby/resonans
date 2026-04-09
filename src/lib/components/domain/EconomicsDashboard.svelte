@@ -9,7 +9,6 @@
 	import CumulativeSpending from '../charts/CumulativeSpending.svelte';
 	import { CATEGORIES } from '$lib/integrations/transaction-categories-client';
 	import type { CategoryId } from '$lib/integrations/transaction-categories-client';
-	import type { GoalTrack } from '$lib/domain/goal-tracks';
 
 	interface EconomicsAccount {
 		accountId: string;
@@ -119,10 +118,6 @@
 	let txOverlay = $state<null | 'all' | 'grocery'>(null);
 	let showExplorer = $state(false);
 
-	let groceryGoalInput = $state('9000');
-	let groceryGoalSaving = $state(false);
-	let groceryGoalError = $state('');
-
 	function formatNOK(amount: number): string {
 		return new Intl.NumberFormat('nb-NO', {
 			style: 'currency',
@@ -210,101 +205,18 @@
 
 	// Top categories — max 6
 	const topCategories = $derived(monthSpending.categories.slice(0, 6));
-	const maxCategoryAmount = $derived(
-		topCategories.length ? Math.max(...topCategories.map((c) => c.amount)) : 1
-	);
 
-	const groceryCategory = $derived(
-		monthSpending.categories.find((c) => c.category === 'dagligvarer') ?? null
-	);
-	const grocerySpentSoFar = $derived(groceryCategory?.amount ?? 0);
-	const groceryGoalMonthly = $derived(
-		Number.isFinite(Number.parseFloat(groceryGoalInput.replace(',', '.')))
-			? Number.parseFloat(groceryGoalInput.replace(',', '.'))
-			: 0
-	);
-
-	const monthProgress = $derived((() => {
-		const [yearStr, monthStr] = currentMonth.split('-');
-		const year = Number.parseInt(yearStr, 10);
-		const month = Number.parseInt(monthStr, 10);
-		const now = new Date();
-		const isCurrentMonth = now.getFullYear() === year && now.getMonth() + 1 === month;
-		const monthDays = new Date(year, month, 0).getDate();
-		const elapsedDays = isCurrentMonth ? Math.min(monthDays, now.getDate()) : monthDays;
-		const remainingDays = Math.max(0, monthDays - elapsedDays);
-		const pacePerDay = elapsedDays > 0 ? grocerySpentSoFar / elapsedDays : 0;
-		const projected = pacePerDay * monthDays;
-		const remainingBudget = Math.max(0, groceryGoalMonthly - grocerySpentSoFar);
-		const allowedPerDay = remainingDays > 0 ? remainingBudget / remainingDays : 0;
-		return { monthDays, elapsedDays, remainingDays, pacePerDay, projected, allowedPerDay };
-	})());
-
-	const groceryGoalPct = $derived(
-		groceryGoalMonthly > 0
-			? Math.max(0, Math.min(100, Math.round((grocerySpentSoFar / groceryGoalMonthly) * 100)))
-			: 0
-	);
-	const groceryGoalColor = $derived(
-		groceryGoalMonthly <= 0
-			? '#7c8ef5'
-			: monthProgress.projected <= groceryGoalMonthly
-				? '#82c882'
-				: monthProgress.projected <= groceryGoalMonthly * 1.1
-					? '#f0b429'
-					: '#e07070'
-	);
-
-	onMount(() => {
-		void loadGroceryGoal();
-	});
-
-	async function loadGroceryGoal() {
-		try {
-			const res = await fetch('/api/goal-tracks/grocery_spend');
-			if (!res.ok) return;
-			const data = (await res.json()) as { tracks?: GoalTrack[] };
-			const track = (data.tracks ?? []).find((t) => t.id === 'grocery-month' || t.window === 'month');
-			if (track?.targetValue) groceryGoalInput = String(track.targetValue);
-		} catch {
-			// stille feil
-		}
-	}
-
-	async function saveGroceryGoal() {
-		const parsed = Number.parseFloat(groceryGoalInput.replace(',', '.'));
-		if (!Number.isFinite(parsed) || parsed <= 0) {
-			groceryGoalError = 'Skriv et gyldig månedsmål over 0 kr.';
-			return;
-		}
-		groceryGoalSaving = true;
-		groceryGoalError = '';
-		try {
-			const tracks: GoalTrack[] = [
-				{
-					id: 'grocery-month',
-					metricId: 'grocery_spend',
-					label: 'Dagligvarer per måned',
-					kind: 'level',
-					window: 'month',
-					targetValue: parsed,
-					unit: 'kr',
-					priority: 100
+	// Auto-load cumulative data for top 5 categories
+	$effect(() => {
+		if (subTab === 'lonnsmaned' && topCategories.length > 0) {
+			const topCats = topCategories.slice(0, 5).map(c => c.category as CategoryId);
+			for (const cat of topCats) {
+				if (!cumulativeByCategory[cat] && !loadingCumCats.includes(cat)) {
+					void loadCumulative(cat);
 				}
-			];
-			const res = await fetch('/api/goal-tracks/grocery_spend', {
-				method: 'PUT',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ tracks })
-			});
-			if (!res.ok) throw new Error('save_failed');
-			groceryGoalInput = parsed.toString();
-		} catch {
-			groceryGoalError = 'Klarte ikke lagre dagligvaremål akkurat nå.';
-		} finally {
-			groceryGoalSaving = false;
+			}
 		}
-	}
+	});
 
 	function switchSubTab(tab: SubTab) {
 		subTab = tab;
@@ -427,50 +339,29 @@
 
 	<!-- Spending by category -->
 	{#if topCategories.length > 0}
-		<Section title="Fordeling {formatMonthLabel(currentMonth)}" meta={`${topCategories.length} kategorier`}>
-			<ul class="ed-cat-list">
-				{#each topCategories as cat}
-					{@const barPct = Math.max(4, Math.round((cat.amount / maxCategoryAmount) * 100))}
-					<li class="ed-cat-row">
-						<span class="ed-cat-emoji">{cat.emoji}</span>
-						<span class="ed-cat-label">{cat.label}</span>
-						<div class="ed-cat-bar-wrap">
-							<div class="ed-cat-bar" style:width="{barPct}%" class:is-fixed={cat.isFixed}></div>
+		<Section title="Kategorier {formatMonthLabel(currentMonth)}" meta="Akkumulert per dag">
+			<div class="ed-cumulative-compact">
+				{#each topCategories.slice(0, 5) as cat}
+					{@const catId = cat.category as CategoryId}
+					{@const cumData = cumulativeByCategory[catId]}
+					{@const isLoading = loadingCumCats.includes(catId)}
+					{#if isLoading}
+						<div class="ed-loading-inline">Laster {cat.label}…</div>
+					{:else if cumData && cumData.periods.length > 0}
+						<div class="ed-cum-compact-chart">
+							<CumulativeSpending
+								category={catId}
+								periods={cumData.periods}
+								detectedPaydayDom={cumData.detectedPaydayDom}
+							/>
 						</div>
-						<span class="ed-cat-amount">{formatNOK(cat.amount)}</span>
-					</li>
+					{:else if cumData}
+						<div class="ed-loading-inline">Ingen data for {cat.label}</div>
+					{/if}
 				{/each}
-			</ul>
+			</div>
 		</Section>
 	{/if}
-
-	<Section title="Dagligvarer: mål + pace" meta={formatMonthLabel(currentMonth)}>
-		<div class="ed-goal-main">
-			<div class="ed-goal-ring">
-				<GoalRing pct={groceryGoalPct} color={groceryGoalColor} size={88} strokeWidth={6}>
-					{#snippet children()}
-						<text x="44" y="42" text-anchor="middle" fill={groceryGoalColor} font-size="12" font-weight="700">{Math.round(groceryGoalPct)}%</text>
-					{/snippet}
-				</GoalRing>
-			</div>
-			<div class="ed-goal-copy">
-				<p>Mål: {formatNOK(groceryGoalMonthly || 0)} / mnd</p>
-				<p>Brukt: {formatNOK(grocerySpentSoFar)}</p>
-				<p>Pace: {formatNOK(monthProgress.pacePerDay)} / dag</p>
-				<p>Tillatt: {formatNOK(monthProgress.allowedPerDay)} / dag</p>
-				<p>Projeksjon: {formatNOK(monthProgress.projected)}</p>
-			</div>
-		</div>
-		<div class="ed-goal-controls">
-			<input class="ed-goal-input" type="number" min="1" step="100" bind:value={groceryGoalInput} />
-			<button class="ed-goal-save" type="button" onclick={saveGroceryGoal} disabled={groceryGoalSaving}>
-				{groceryGoalSaving ? 'Lagrer…' : 'Lagre mål'}
-			</button>
-		</div>
-		{#if groceryGoalError}
-			<p class="ed-goal-error">{groceryGoalError}</p>
-		{/if}
-	</Section>
 
 	<!-- Accounts + recent transactions -->
 	<div class="ed-list-grid">
@@ -689,117 +580,25 @@
 		color: #666;
 	}
 
-	.ed-goal-main {
-		display: grid;
-		grid-template-columns: 88px 1fr;
-		gap: 12px;
-		align-items: center;
-	}
-
-	.ed-goal-copy p {
-		margin: 0;
-		font-size: 0.78rem;
-		color: #aaa;
-		line-height: 1.5;
-	}
-
-	.ed-goal-controls {
-		display: flex;
-		gap: 8px;
-		align-items: center;
-	}
-
-	.ed-goal-input {
-		width: 130px;
-		background: #101010;
-		border: 1px solid #2c2c2c;
-		border-radius: 10px;
-		padding: 8px 10px;
-		color: #ddd;
-		font: inherit;
-		font-size: 0.84rem;
-	}
-
-	.ed-goal-input:focus {
-		outline: none;
-		border-color: #3c4f9f;
-	}
-
-	.ed-goal-save {
-		background: #293560;
-		color: #d5defe;
-		border: 1px solid #3a4a85;
-		border-radius: 10px;
-		padding: 8px 12px;
-		font: inherit;
-		font-size: 0.78rem;
-		font-weight: 600;
-		cursor: pointer;
-	}
-
-	.ed-goal-save:disabled {
-		opacity: 0.55;
-		cursor: default;
-	}
-
-	.ed-goal-error {
-		margin: 0;
-		font-size: 0.76rem;
-		color: #e07070;
-	}
-
-	.ed-cat-list {
-		list-style: none;
-		margin: 0;
-		padding: 0;
+	/* Cumulative compact view */
+	.ed-cumulative-compact {
 		display: flex;
 		flex-direction: column;
-		gap: 6px;
+		gap: 20px;
 	}
 
-	.ed-cat-row {
-		display: grid;
-		grid-template-columns: 1.4rem 1fr 2fr auto;
-		align-items: center;
-		gap: 8px;
+	.ed-cum-compact-chart {
+		width: 100%;
 	}
 
-	.ed-cat-emoji {
-		font-size: 1rem;
+	.ed-loading-inline {
+		padding: 12px;
 		text-align: center;
-	}
-
-	.ed-cat-label {
 		font-size: 0.8rem;
-		color: #ccc;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-
-	.ed-cat-bar-wrap {
-		height: 6px;
-		background: #222;
-		border-radius: 3px;
-		overflow: hidden;
-	}
-
-	.ed-cat-bar {
-		height: 100%;
-		background: #f0b429;
-		border-radius: 3px;
-		transition: width 0.4s ease;
-	}
-
-	.ed-cat-bar.is-fixed {
-		background: #e07070;
-	}
-
-	.ed-cat-amount {
-		font-size: 0.78rem;
-		color: #999;
-		text-align: right;
-		white-space: nowrap;
+		color: #888;
+		background: #141414;
+		border: 1px solid #232323;
+		border-radius: 12px;
 	}
 
 	/* List grid */

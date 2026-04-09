@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { fly, fade, scale } from 'svelte/transition';
-	import { tweened } from 'svelte/motion';
-	import { cubicOut, quintOut } from 'svelte/easing';
+	import { tweened, spring } from 'svelte/motion';
+	import { cubicOut, quintOut, elasticOut } from 'svelte/easing';
 
 	// ── Screen navigation ────────────────────────────────────────────────────
 	type Screen = 'home' | 'theme' | 'chat';
@@ -16,26 +16,51 @@
 		dir = toIdx >= from ? 1 : -1;
 		screen = to;
 		screenKey++;
+		triggerNavWave();
 	}
+
+	// ── Global motion state ──────────────────────────────────────────────────
+	const globalHue = tweened(160, { duration: 800, easing: cubicOut });
+	const breathIntensity = spring(1, { stiffness: 0.05, damping: 0.4 });
+	let interactionRipples = $state<{ id: number; x: number; y: number; hue: number }[]>([]);
+	let navWave = $state(0);
 
 	// ── Ambient breath (rAF) ─────────────────────────────────────────────────
 	let breathPhase = $state(0);
 	let rafId = 0;
+	let globalHueValue = $state(160);
+	let breathIntensityValue = $state(1);
 
 	function tick() {
-		breathPhase += 0.008;
+		breathPhase += 0.008 * breathIntensityValue;
+		navWave = Math.max(0, navWave - 0.05);
 		rafId = requestAnimationFrame(tick);
 	}
 
+	function triggerNavWave() {
+		navWave = 1;
+		breathIntensity.set(1.5);
+		setTimeout(() => breathIntensity.set(1), 800);
+	}
+
 	// ── Float particles ───────────────────────────────────────────────────────
-	interface FloatParticle { x: number; baseY: number; speed: number; phase: number; size: number; opacity: number; }
-	const floatParticles: FloatParticle[] = Array.from({ length: 18 }, (_, i) => ({
-		x: (i / 18) * 100 + Math.random() * 5,
+	interface FloatParticle { 
+		x: number; 
+		baseY: number; 
+		speed: number; 
+		phase: number; 
+		size: number; 
+		opacity: number;
+		reactivity: number; // How much particle reacts to global state
+	}
+	const floatParticles: FloatParticle[] = Array.from({ length: 24 }, (_, i) => ({
+		x: (i / 24) * 100 + Math.random() * 5,
 		baseY: 10 + Math.random() * 80,
 		speed: 0.3 + Math.random() * 0.7,
 		phase: Math.random() * Math.PI * 2,
-		size: 2 + Math.random() * 5,
-		opacity: 0.06 + Math.random() * 0.12,
+		size: 2 + Math.random() * 6,
+		opacity: 0.06 + Math.random() * 0.14,
+		reactivity: 0.5 + Math.random() * 0.5,
 	}));
 
 	// ── Widget pulse ─────────────────────────────────────────────────────────
@@ -47,6 +72,16 @@
 		{ id: 'focus',   label: 'Fokus',     value: '3 sesjoner', icon: '🎯', hue: 140 },
 	];
 	let widgetPulse = $state<Record<string, number>>({});
+
+	function pulseWidget(w: Widget) {
+		widgetPulse = { ...widgetPulse, [w.id]: Date.now() };
+		// Trigger ambient reaction
+		breathIntensity.set(1.3);
+		setTimeout(() => breathIntensity.set(1), 400);
+		setTimeout(() => {
+			widgetPulse = Object.fromEntries(Object.entries(widgetPulse).filter(([k]) => k !== w.id));
+		}, 600);
+	}
 
 	// ── Theme options ─────────────────────────────────────────────────────────
 	interface Theme { id: string; label: string; hue: number; emoji: string; }
@@ -61,16 +96,41 @@
 	// ── Burst overlay ─────────────────────────────────────────────────────────
 	interface Burst { id: number; hue: number; x: number; y: number; }
 	let bursts = $state<Burst[]>([]);
+	let phoneShellRef: HTMLDivElement;
 
 	function triggerBurst(theme: Theme, event?: MouseEvent | PointerEvent) {
+		let x = 50;
+		let y = 50;
+		
+		if (event && phoneShellRef) {
+			const rect = phoneShellRef.getBoundingClientRect();
+			x = ((event as MouseEvent).clientX - rect.left) / rect.width * 100;
+			y = ((event as MouseEvent).clientY - rect.top) / rect.height * 100;
+		}
+		
 		const b: Burst = {
 			id: Date.now(),
 			hue: theme.hue,
-			x: event ? (event as MouseEvent).clientX : 50,
-			y: event ? (event as MouseEvent).clientY : 50,
+			x,
+			y,
 		};
 		bursts = [...bursts, b];
 		activeTheme = theme;
+		
+		// Global hue transition
+		globalHue.set(theme.hue);
+		
+		// Interaction ripple
+		const ripple = { id: Date.now(), x: b.x, y: b.y, hue: theme.hue };
+		interactionRipples = [...interactionRipples, ripple];
+		setTimeout(() => {
+			interactionRipples = interactionRipples.filter(r => r.id !== ripple.id);
+		}, 1200);
+		
+		// Breath surge
+		breathIntensity.set(2);
+		setTimeout(() => breathIntensity.set(1), 600);
+		
 		setTimeout(() => { bursts = bursts.filter(x => x.id !== b.id); }, 700);
 		setTimeout(() => navigate('theme'), 300);
 	}
@@ -123,22 +183,21 @@
 
 		const pulseInterval = setInterval(() => {
 			const w = widgets[Math.floor(Math.random() * widgets.length)];
-			const wid = w.id;
-			widgetPulse = { ...widgetPulse, [wid]: Date.now() };
-			setTimeout(() => {
-				widgetPulse = Object.fromEntries(Object.entries(widgetPulse).filter(([k]) => k !== wid));
-			}, 600);
+			pulseWidget(w);
 		}, 1800);
 
 		const ringUnsub = ringStore.subscribe(v => { ringActual = v; });
 		const bar0Unsub = bar0.subscribe(v => { bar0actual = v; });
 		const bar1Unsub = bar1.subscribe(v => { bar1actual = v; });
 		const bar2Unsub = bar2.subscribe(v => { bar2actual = v; });
+		const hueUnsub = globalHue.subscribe(v => { globalHueValue = v; });
+		const breathUnsub = breathIntensity.subscribe(v => { breathIntensityValue = v; });
 
 		return () => {
 			cancelAnimationFrame(rafId);
 			clearInterval(pulseInterval);
 			ringUnsub(); bar0Unsub(); bar1Unsub(); bar2Unsub();
+			hueUnsub(); breathUnsub();
 		};
 	});
 
@@ -148,37 +207,58 @@
 	});
 
 	// ── Ambient position helpers ──────────────────────────────────────────────
-	function orbX(i: number) { return 30 + i * 20 + Math.sin(breathPhase + i * 2.1) * 18; }
-	function orbY(i: number) { return 25 + i * 12 + Math.cos(breathPhase * 0.7 + i * 1.4) * 14; }
-	function partY(p: FloatParticle) { return p.baseY + Math.sin(breathPhase * p.speed + p.phase) * 4; }
+	function orbX(i: number) { 
+		return 30 + i * 20 + Math.sin(breathPhase + i * 2.1) * 18 * breathIntensityValue + navWave * 8;
+	}
+	function orbY(i: number) { 
+		return 25 + i * 12 + Math.cos(breathPhase * 0.7 + i * 1.4) * 14 * breathIntensityValue - navWave * 6;
+	}
+	function partY(p: FloatParticle) { 
+		return p.baseY + Math.sin(breathPhase * p.speed + p.phase) * 4 * breathIntensityValue * p.reactivity + navWave * 10 * p.reactivity;
+	}
+	function partX(p: FloatParticle) {
+		return p.x + Math.cos(breathPhase * p.speed * 0.5 + p.phase) * 2 * p.reactivity;
+	}
+	function partOpacity(p: FloatParticle) {
+		return p.opacity * (0.8 + breathIntensityValue * 0.4);
+	}
 </script>
 
 <svelte:head>
 	<title>Animation Exploration</title>
 </svelte:head>
 
-{#each bursts as b (b.id)}
-	<div
-		class="burst-overlay"
-		style="--bx:{b.x}px;--by:{b.y}px;--bhue:{b.hue}"
-		in:scale={{ duration: 600, start: 0 }}
-		out:fade={{ duration: 200 }}
-	></div>
-{/each}
-
 <div class="page-wrap">
 
-	<div class="phone-shell" style="--hue:{activeTheme.hue}">
+	<div class="phone-shell" style="--hue:{globalHueValue}" bind:this={phoneShellRef}>
+
+		{#each interactionRipples as r (r.id)}
+			<div
+				class="ripple-overlay"
+				style="--rx:{r.x}%;--ry:{r.y}%;--rhue:{r.hue}"
+				in:scale={{ duration: 1200, start: 0, easing: cubicOut }}
+				out:fade={{ duration: 100 }}
+			></div>
+		{/each}
+
+		{#each bursts as b (b.id)}
+			<div
+				class="burst-overlay"
+				style="--bx:{b.x}%;--by:{b.y}%;--bhue:{b.hue}"
+				in:scale={{ duration: 600, start: 0 }}
+				out:fade={{ duration: 200 }}
+			></div>
+		{/each}
 
 		<div class="ambient-layer" aria-hidden="true">
 			{#each [0,1,2] as i}
 				<div class="orb orb-{i}"
-					style="left:{orbX(i)}%;top:{orbY(i)}%;opacity:{0.18 + i*0.04}"
+					style="left:{orbX(i)}%;top:{orbY(i)}%;opacity:{0.18 + i*0.04};filter:blur({40 + navWave * 20}px) saturate({100 + breathIntensityValue * 30}%)"
 				></div>
 			{/each}
 			{#each floatParticles as p}
 				<div class="float-p"
-					style="left:{p.x}%;top:{partY(p)}%;width:{p.size}px;height:{p.size}px;opacity:{p.opacity}"
+					style="left:{partX(p)}%;top:{partY(p)}%;width:{p.size}px;height:{p.size}px;opacity:{partOpacity(p)}"
 				></div>
 			{/each}
 		</div>
@@ -334,32 +414,40 @@
 		<h3>Teknikker brukt</h3>
 		<div class="anno-list">
 			<div class="anno">
-				<strong>Ambient pust</strong>
-				<p>requestAnimationFrame loop med sinusbevegelse for orber og partikler — alltid i gang, aldri merkbar CPU.</p>
+				<strong>Global motion state</strong>
+				<p>Ambient layer reagerer på all interaksjon — breathIntensity (spring) og navWave synkroniserer orber og partikler.</p>
 			</div>
 			<div class="anno">
-				<strong>Widget-puls</strong>
-				<p>Async setInterval velger tilfeldig widget hvert 1.8s. CSS scale+glow uten JS.</p>
+				<strong>Hue morphing</strong>
+				<p>tweened() globalHue flyter gjennom hele UI ved tema-bytte — ikke bare lokal fargeendring.</p>
 			</div>
 			<div class="anno">
-				<strong>Tema-eksplosjon</strong>
-				<p>Burst overlay med radial-gradient fra klikk-koordinat, navigerer etter 300ms.</p>
+				<strong>Interaction ripples</strong>
+				<p>Radial wave overlay med lengre duration (1200ms) sprer seg fra klikk — separat fra burst.</p>
+			</div>
+			<div class="anno">
+				<strong>Particle reactivity</strong>
+				<p>24 partikler med individuell reactivity-faktor — noen reagerer kraftigere på global state.</p>
+			</div>
+			<div class="anno">
+				<strong>Breath intensity</strong>
+				<p>Spring-animert pust som surger ved interaksjon — påvirker amplitude på alle orber og partikler.</p>
+			</div>
+			<div class="anno">
+				<strong>Nav wave</strong>
+				<p>Transient 0→1 wave ved skjermbytte som forskyver hele ambient layer — decay via rAF.</p>
+			</div>
+			<div class="anno">
+				<strong>Widget→ambient sync</strong>
+				<p>Widget-puls trigger breathIntensity surge — lokal effekt sprer seg til hele systemet.</p>
 			</div>
 			<div class="anno">
 				<strong>Staggered entry</strong>
-				<p>Hvert element har fly transition med incrementelt delay.</p>
+				<p>Hvert element har fly transition med incrementelt delay for cascading effekt.</p>
 			</div>
 			<div class="anno">
 				<strong>Tweened data</strong>
 				<p>tweened() store — tallene teller opp visuelt når temaside åpnes.</p>
-			</div>
-			<div class="anno">
-				<strong>Chat scripting</strong>
-				<p>Async sekvens med skriveindikator (bouncing dots) før AI-melding.</p>
-			</div>
-			<div class="anno">
-				<strong>Retnings-slides</strong>
-				<p>Directional fly basert på skjermrekkefølge — naturlig slide-retning.</p>
 			</div>
 		</div>
 	</aside>
@@ -385,15 +473,17 @@
 		height: 680px;
 		background: #0e0e16;
 		border-radius: 40px;
-		border: 1.5px solid rgba(255,255,255,0.08);
+		border: none;
 		overflow: hidden;
 		box-shadow:
 			0 0 0 1px rgba(0,0,0,0.6),
 			0 32px 80px rgba(0,0,0,0.7),
-			inset 0 1px 0 rgba(255,255,255,0.04);
+			inset 0 1px 0 rgba(255,255,255,0.04),
+			inset 0 0 0 1px hsl(var(--hue) 60% 50% / 0.15);
 		display: flex;
 		flex-direction: column;
 		flex-shrink: 0;
+		transition: box-shadow 0.8s ease-out;
 	}
 
 	.ambient-layer {
@@ -407,11 +497,11 @@
 		border-radius: 50%;
 		background: radial-gradient(circle, hsl(var(--hue) 75% 55%) 0%, transparent 70%);
 		transform: translate(-50%, -50%);
-		filter: blur(40px);
+		transition: filter 0.6s ease-out;
 	}
 	.orb-0 { width: 200px; height: 200px; }
-	.orb-1 { width: 140px; height: 140px; filter: blur(55px); }
-	.orb-2 { width: 100px; height: 100px; filter: blur(30px); }
+	.orb-1 { width: 140px; height: 140px; }
+	.orb-2 { width: 100px; height: 100px; }
 
 	.float-p {
 		position: absolute;
@@ -419,6 +509,28 @@
 		background: white;
 		transform: translate(-50%, -50%);
 		pointer-events: none;
+		transition: opacity 0.3s ease-out;
+	}
+
+	.ripple-overlay {
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+		z-index: 9998;
+		background: radial-gradient(
+			circle at var(--rx) var(--ry),
+			hsl(var(--rhue) 70% 50% / 0.2) 0%,
+			hsl(var(--rhue) 80% 60% / 0.08) 30%,
+			transparent 65%
+		);
+	}
+
+	.burst-overlay {
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+		z-index: 9999;
+		background: radial-gradient(circle at var(--bx) var(--by), hsl(var(--bhue) 80% 60% / 0.55) 0%, transparent 60%);
 	}
 
 	.screen-viewport {
@@ -458,14 +570,6 @@
 		transform: scale(1.4);
 	}
 
-	.burst-overlay {
-		position: fixed;
-		inset: 0;
-		pointer-events: none;
-		z-index: 9999;
-		background: radial-gradient(circle at var(--bx) var(--by), hsl(var(--bhue) 80% 60% / 0.55) 0%, transparent 60%);
-	}
-
 	.s-home { display: flex; flex-direction: column; gap: 0.85rem; }
 	.home-header { display: flex; justify-content: space-between; align-items: center; }
 	.greeting { font-size: 1rem; font-weight: 600; }
@@ -484,7 +588,7 @@
 	}
 	.widget-card {
 		background: rgba(255,255,255,0.05);
-		border: 1px solid rgba(255,255,255,0.07);
+		border: none;
 		border-radius: 16px;
 		padding: 0.75rem;
 		display: flex;
@@ -496,11 +600,20 @@
 		animation: card-in 0.42s both;
 	}
 	.widget-card.pulsing {
-		transform: scale(1.04);
-		box-shadow: 0 0 18px hsl(var(--whue) 70% 55% / 0.45);
-		border-color: hsl(var(--whue) 70% 55% / 0.4);
+		animation: widget-pulse 0.6s ease-out;
 	}
 	@keyframes card-in { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: none; } }
+	@keyframes widget-pulse {
+		0% { transform: scale(1); }
+		40% { 
+			transform: scale(1.06) translateY(-2px);
+			box-shadow: 0 0 24px hsl(var(--whue) 70% 55% / 0.6), 0 4px 16px hsl(var(--whue) 70% 45% / 0.3);
+		}
+		100% { 
+			transform: scale(1);
+			box-shadow: 0 0 0 transparent;
+		}
+	}
 
 	.w-icon { font-size: 1.2rem; }
 	.w-val { font-size: 1rem; font-weight: 700; color: hsl(var(--whue) 70% 70%); }
@@ -515,7 +628,7 @@
 	}
 	.tema-btn {
 		background: rgba(255,255,255,0.04);
-		border: 1px solid hsl(var(--thue) 60% 50% / 0.25);
+		border: none;
 		border-radius: 12px;
 		padding: 0.7rem 0.5rem;
 		display: flex;
@@ -525,13 +638,19 @@
 		color: #f0f0f8;
 		font-size: 0.82rem;
 		font-weight: 500;
-		transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+		transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
 		animation: card-in 0.4s both;
 	}
 	.tema-btn:hover {
-		background: hsl(var(--thue) 60% 50% / 0.15);
-		transform: translateY(-2px);
-		box-shadow: 0 4px 14px hsl(var(--thue) 60% 50% / 0.3);
+		background: hsl(var(--thue) 60% 50% / 0.18);
+		transform: translateY(-3px) scale(1.02);
+		box-shadow: 
+			0 6px 20px hsl(var(--thue) 60% 50% / 0.35),
+			inset 0 1px 0 hsl(var(--thue) 80% 70% / 0.2);
+	}
+	.tema-btn:active {
+		transform: translateY(-1px) scale(0.98);
+		transition-duration: 0.1s;
 	}
 	.t-emoji { font-size: 1.1rem; }
 	.t-label { font-size: 0.8rem; }
@@ -541,7 +660,7 @@
 		align-items: center;
 		gap: 0.5rem;
 		background: rgba(255,255,255,0.04);
-		border: 1px solid rgba(255,255,255,0.08);
+		border: none;
 		border-radius: 20px;
 		padding: 0.6rem 1rem;
 		cursor: pointer;
@@ -635,13 +754,13 @@
 	.bubble-user {
 		align-self: flex-end;
 		background: hsl(var(--hue) 55% 40% / 0.5);
-		border: 1px solid hsl(var(--hue) 55% 55% / 0.3);
+		border: none;
 		color: hsl(var(--hue) 80% 88%);
 	}
 	.bubble-ai {
 		align-self: flex-start;
 		background: rgba(255,255,255,0.07);
-		border: 1px solid rgba(255,255,255,0.1);
+		border: none;
 		color: rgba(255,255,255,0.88);
 	}
 	.bubble.typing {

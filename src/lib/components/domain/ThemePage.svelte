@@ -27,12 +27,17 @@
 	import { getThemeDashboardDefinition, resolveThemeDashboardKind } from '$lib/domain/theme-dashboard-registry';
 	import { finishNavMetric, startNavMetric } from '$lib/client/nav-metrics';
 	import { streamProxyChat } from '$lib/client/proxy-chat-stream';
+	import FlowCard from '../flows/FlowCard.svelte';
+	import FlowSheet from '../flows/FlowSheet.svelte';
+	import { getFlowsByTheme } from '$lib/flows/registry';
+	import type { Flow } from '$lib/flows/types';
 
 	/* ── Types ──────────────────────────────────────────── */
 	interface Theme {
 		id: string;
 		name: string;
 		emoji: string | null;
+		parentTheme?: string | null;
 		description?: string | null;
 	}
 
@@ -112,9 +117,11 @@
 	const availableTabs = $derived<Tab[]>(
 		activeDashboardKind === 'health'
 			? ['chat', 'data', 'mål', 'flyter', 'filer']
-		: activeDashboardKind === 'travel'
-			? ['chat', 'data', 'lister', 'filer']
-			: ['chat', 'data', 'mål', 'filer']
+			: activeDashboardKind === 'economics'
+				? ['chat', 'data', 'mål', 'flyter', 'filer']
+				: activeDashboardKind === 'travel'
+					? ['chat', 'data', 'lister', 'filer']
+					: ['chat', 'data', 'mål', 'filer']
 	);
 	const requestedPrompt = get(page).url.searchParams.get('prompt') ?? '';
 	const hasLinkedWorkout = Boolean(selectedWorkout);
@@ -868,66 +875,109 @@
 		}
 	}
 
-	/* ── Flyter-tab: onboarding for vektnedgang ─────────── */
-	let onboardingHistoryInput = $state('');
-	let onboardingStartDate = $state('');
-	let onboardingEndDate = $state('');
-	let onboardingStartWeightInput = $state('');
-	let onboardingTargetWeightInput = $state('');
-	let onboardingSaving = $state(false);
-	let onboardingMessage = $state<string | null>(null);
+	/* ── Flyter-tab: flow discovery ─────────── */
+	let selectedFlow = $state<Flow | null>(null);
+	const availableFlows = $derived(getFlowsByTheme(theme.name, theme.parentTheme));
 
-	function initWeightOnboardingDefaults() {
-		if (onboardingStartDate && onboardingEndDate) return;
-		const today = new Date();
-		onboardingStartDate = formatDate(today);
-		const end = new Date(today);
-		end.setDate(end.getDate() + 90);
-		onboardingEndDate = formatDate(end);
-		onboardingStartWeightInput = getLatestWeight();
+	async function handleFlowComplete(flowId: string, data: Record<string, any>) {
+		// Handle flow completion based on flow ID
+		if (flowId === 'health_weight_onboarding') {
+			// Save weight onboarding data
+			const startWeight = typeof data.startWeight === 'number' ? data.startWeight : null;
+			const targetWeight = typeof data.targetWeight === 'number' ? data.targetWeight : null;
+			const targetChange = startWeight && targetWeight ? targetWeight - startWeight : undefined;
+
+			try {
+				const response = await fetch('/api/health/weight-onboarding', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						historyText: data.historyText || '',
+						startDate: data.startDate || '',
+						endDate: data.endDate || '',
+						startWeight,
+						targetWeight,
+						targetChange
+					})
+				});
+
+				const payload = await response.json();
+				if (!response.ok || payload.success === false) {
+					throw new Error(payload?.message || 'Kunne ikke lagre onboarding');
+				}
+				
+				// Refresh dashboard if we're on health theme
+				if (activeDashboardKind === 'health') {
+					void ensureDashboardLoaded(true);
+				}
+			} catch (error) {
+				console.error('Flow completion error:', error);
+			}
+		} else if (flowId === 'economics_category_budget') {
+			// Save category budget goal
+			try {
+				const category = data.category as string;
+				const monthlyBudget = Number(data.monthlyBudget);
+				
+				if (!category || !Number.isFinite(monthlyBudget) || monthlyBudget <= 0) {
+					throw new Error('Invalid category or budget value');
+				}
+
+				// Map category to metric ID (e.g., 'dagligvarer' -> 'grocery_spend')
+				const metricId = category === 'dagligvarer' ? 'grocery_spend' : `${category}_spend`;
+				const categoryLabels: Record<string, string> = {
+					dagligvarer: 'Dagligvarer',
+					kafe_og_restaurant: 'Kafe og restaurant',
+					bil_og_transport: 'Transport og bil',
+					helse_og_velvaere: 'Helse og velvære',
+					medier_og_underholdning: 'Medier og underholdning',
+					hobby_og_fritid: 'Hobby og fritid',
+					hjem_og_hage: 'Hjem og hage',
+					klaer_og_utstyr: 'Klær og utstyr',
+					barn: 'Barn',
+					reise: 'Reise'
+				};
+
+				const response = await fetch(`/api/goal-tracks/${metricId}`, {
+					method: 'PUT',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						tracks: [
+							{
+								id: `${category}-month`,
+								metricId,
+								label: `${categoryLabels[category] || category} per måned`,
+								kind: 'level',
+								window: 'month',
+								targetValue: monthlyBudget,
+								unit: 'kr',
+								priority: 100
+							}
+						]
+					})
+				});
+
+				if (!response.ok) {
+					throw new Error('Failed to save category budget');
+				}
+
+				// Refresh economics dashboard
+				if (activeDashboardKind === 'economics') {
+					void ensureDashboardLoaded(true);
+				}
+			} catch (error) {
+				console.error('Flow completion error:', error);
+			}
+		}
+		// Add handling for other flow types here as needed
 	}
 
-	$effect(() => {
-		if (tab === 'flyter' && activeDashboardKind === 'health') {
-			initWeightOnboardingDefaults();
-		}
-	});
+	function startFlow(flow: Flow) {
+		selectedFlow = flow;
+	}
 
-	async function saveWeightOnboarding() {
-		onboardingSaving = true;
-		onboardingMessage = null;
-
-		try {
-			const startWeight = Number.parseFloat(onboardingStartWeightInput.replace(',', '.'));
-			const targetWeight = Number.parseFloat(onboardingTargetWeightInput.replace(',', '.'));
-			const targetChange = Number.isFinite(startWeight) && Number.isFinite(targetWeight)
-				? targetWeight - startWeight
-				: undefined;
-
-			const response = await fetch('/api/health/weight-onboarding', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					historyText: onboardingHistoryInput,
-					startDate: onboardingStartDate,
-					endDate: onboardingEndDate,
-					startWeight: Number.isFinite(startWeight) ? startWeight : null,
-					targetWeight: Number.isFinite(targetWeight) ? targetWeight : null,
-					targetChange
-				})
-			});
-
-			const payload = await response.json();
-			if (!response.ok || payload.success === false) {
-				throw new Error(payload?.message || 'Kunne ikke lagre onboarding');
-			}
-
-			onboardingMessage = 'Onboarding lagret. Historikk og mål brukes nå i coachingen.';
-		} catch (error) {
-			onboardingMessage = error instanceof Error ? error.message : 'Ukjent feil ved lagring';
-		} finally {
-			onboardingSaving = false;
-		}
+	function closeFlow() {
+		selectedFlow = null;
 	}
 
 	/* ── Navigasjon: klikk + swipe ─────────────────────── */
@@ -1700,49 +1750,21 @@
 		<!-- FLYTER -->
 		{:else if tab === 'flyter'}
 			<div class="flows-panel">
-				<div class="flows-section">
-					<h2 class="goals-section-title">Vektnedgang-onboarding</h2>
-					<p class="goals-section-copy">Skriv litt om historikken din og sett start- og måldato for en realistisk bane.</p>
-					<div class="flow-card">
-						<label class="goal-control-field">
-							Historikk og kontekst
-							<textarea
-								class="flow-textarea"
-								bind:value={onboardingHistoryInput}
-								rows="5"
-								placeholder="Hva har fungert før, hva har vært vanskelig, og hva ønsker du nå?"
-							></textarea>
-						</label>
-						<div class="goal-control-row">
-							<label class="goal-control-field">
-								Startdato
-								<input class="goal-control-input" type="date" bind:value={onboardingStartDate} />
-							</label>
-							<label class="goal-control-field">
-								Måldato
-								<input class="goal-control-input" type="date" bind:value={onboardingEndDate} />
-							</label>
+				{#if availableFlows.length > 0}
+					<div class="flows-section">
+						<h2 class="flows-section-title">Tilgjengelige flyter</h2>
+						<p class="flows-section-copy">Strukturerte flyter som hjelper deg i gang med {theme.name}.</p>
+						<div class="flows-grid">
+							{#each availableFlows as flow}
+								<FlowCard {flow} onstart={() => startFlow(flow)} />
+							{/each}
 						</div>
-						<div class="goal-control-row">
-							<label class="goal-control-field">
-								Startvekt (kg)
-								<input class="goal-control-input" type="number" step="0.1" min="0" bind:value={onboardingStartWeightInput} placeholder="80.0" />
-							</label>
-							<label class="goal-control-field">
-								Målvekt (kg)
-								<input class="goal-control-input" type="number" step="0.1" min="0" bind:value={onboardingTargetWeightInput} placeholder="75.0" />
-							</label>
-						</div>
-						<div class="goal-control-actions">
-							<button class="goal-control-save" type="button" onclick={saveWeightOnboarding} disabled={onboardingSaving}>
-								{onboardingSaving ? 'Lagrer…' : 'Lagre onboarding'}
-							</button>
-						</div>
-						{#if onboardingMessage}
-							<p class="flow-message">{onboardingMessage}</p>
-						{/if}
 					</div>
-				</div>
+				{:else}
+					<div class="flows-empty">
+						<p class="flows-empty-message">Ingen flyter tilgjengelig for dette temaet ennå.</p>
+					</div>
+				{/if}
 			</div>
 
 		<!-- FILER -->
@@ -1824,6 +1846,19 @@ Eksempel:
 	{/if}
 	{/if}
 </div>
+
+<!-- Flow overlay -->
+{#if selectedFlow}
+	{@const flow = selectedFlow}
+	<FlowSheet
+		flow={flow}
+		onclose={closeFlow}
+		oncomplete={(data) => {
+			handleFlowComplete(flow.id, data);
+			closeFlow();
+		}}
+	/>
+{/if}
 
 <style>
 	.theme-page {
@@ -2601,40 +2636,6 @@ Eksempel:
 		gap: 12px;
 	}
 
-	.flow-card {
-		display: flex;
-		flex-direction: column;
-		gap: 12px;
-		padding: 16px;
-		background: #141414;
-		border: 1px solid #242424;
-		border-radius: 14px;
-	}
-
-	.flow-textarea {
-		width: 100%;
-		border-radius: 12px;
-		border: 1px solid #2a2a2a;
-		background: #0f0f0f;
-		color: #d4d4d4;
-		font: inherit;
-		font-size: 0.9rem;
-		padding: 10px 12px;
-		resize: vertical;
-	}
-
-	.flow-textarea:focus {
-		outline: none;
-		border-color: var(--tp-border-strong);
-		box-shadow: 0 0 0 2px hsl(var(--theme-hue) 50% 44% / 0.16);
-	}
-
-	.flow-message {
-		margin: 0;
-		font-size: 0.78rem;
-		color: #b8c0ff;
-	}
-
 	/* ── Filer tab ── */
 	.files-panel {
 		padding: 16px;
@@ -3020,6 +3021,41 @@ Eksempel:
 		background: rgba(10, 13, 20, 0.46);
 		color: #edf1ff;
 		cursor: pointer;
+	}
+
+	/* Flows grid */
+	.flows-section-title {
+		margin: 0 0 6px 0;
+		padding: 0;
+		font-size: 1.1rem;
+		font-weight: 600;
+		color: var(--tp-text);
+		letter-spacing: -0.02em;
+	}
+
+	.flows-section-copy {
+		margin: 0 0 18px 0;
+		padding: 0;
+		font-size: 0.88rem;
+		color: var(--tp-text-soft);
+		line-height: 1.5;
+	}
+
+	.flows-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+		gap: 14px;
+		margin-bottom: 24px;
+	}
+
+	.flows-empty {
+		padding: 40px 20px;
+		text-align: center;
+		color: var(--tp-text-muted);
+		font-size: 0.88rem;
+		border: 1px dashed var(--tp-border);
+		border-radius: 12px;
+		background: var(--tp-bg-1);
 	}
 
 </style>

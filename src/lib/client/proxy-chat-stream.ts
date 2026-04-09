@@ -7,6 +7,8 @@ interface ProxyChatStreamOptions {
 	onToken?: (token: string) => void;
 	onComplete?: (payload: Record<string, any>) => void;
 	onError?: (message: string) => void;
+	onThemeRouted?: (theme: { themeId: string; themeName: string; confidence: string }) => void;
+	onThemeSuggested?: (theme: { themeId: string; themeName: string; confidence: string; reasoning?: string }) => void;
 }
 
 export async function streamProxyChat({
@@ -17,7 +19,9 @@ export async function streamProxyChat({
 	onStatus,
 	onToken,
 	onComplete,
-	onError
+	onError,
+	onThemeRouted,
+	onThemeSuggested
 }: ProxyChatStreamOptions): Promise<Record<string, any>> {
 	const response = await fetch('/api/chat-stream-messages', {
 		method: 'POST',
@@ -66,6 +70,11 @@ export async function streamProxyChat({
 				throw new Error(errorMessage);
 			} else if (event.type === 'complete') {
 				finalPayload = event.data;
+			} else if (event.type === 'theme_routed') {
+				onThemeRouted?.(event.data);
+				onStatus?.(event.data?.message ?? 'Tema-routing fullført');
+			} else if (event.type === 'theme_suggested') {
+				onThemeSuggested?.(event.data);
 			}
 		}
 

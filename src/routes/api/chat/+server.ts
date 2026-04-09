@@ -1114,10 +1114,40 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			throw new _ChatRequestError('Invalid message', 400);
 		}
 
-		// Bruk oppgitt conversationId (verifisert mot bruker) eller hent/opprett standard
+		// TEMA-ROUTING: Detekter automatisk riktig tema hvis ingen conversationId er oppgitt
+		let resolvedConversationId = requestedConversationId;
+		let themeRoutingDecision = null;
+
+		if (!resolvedConversationId && message && typeof message === 'string') {
+			const { detectThemeForMessage } = await import('$lib/server/themes');
+			themeRoutingDecision = await detectThemeForMessage(message, userId);
+
+			// Bruk tema-conversation hvis vi har høy eller medium konfidens
+			if (
+				themeRoutingDecision.confidence === 'high' ||
+				themeRoutingDecision.confidence === 'medium'
+			) {
+				resolvedConversationId = themeRoutingDecision.conversationId ?? undefined;
+				await emitProgress(onProgress, 'theme_routed', `Melding automatisk koblet til tema: ${themeRoutingDecision.themeName}`, {
+					themeId: themeRoutingDecision.themeId,
+					themeName: themeRoutingDecision.themeName,
+					confidence: themeRoutingDecision.confidence
+				});
+			} else if (themeRoutingDecision.confidence === 'low') {
+				// Lav konfidens: Send som metadata for at frontend kan vise forslag
+				await emitProgress(onProgress, 'theme_suggested', `Foreslår tema: ${themeRoutingDecision.themeName}`, {
+					themeId: themeRoutingDecision.themeId,
+					themeName: themeRoutingDecision.themeName,
+					confidence: themeRoutingDecision.confidence,
+					reasoning: themeRoutingDecision.reasoning
+				});
+			}
+		}
+
+		// Bruk oppgitt/detektert conversationId eller hent/opprett standard
 		const conversation =
-			requestedConversationId && typeof requestedConversationId === 'string'
-				? ((await getConversationByIdForUser(requestedConversationId, userId)) ??
+			resolvedConversationId && typeof resolvedConversationId === 'string'
+				? ((await getConversationByIdForUser(resolvedConversationId, userId)) ??
 					(await getOrCreateConversation(userId)))
 				: await getOrCreateConversation(userId);
 
