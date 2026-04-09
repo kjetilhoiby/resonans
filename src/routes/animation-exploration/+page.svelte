@@ -1,1238 +1,703 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
 	import { fly, fade, scale } from 'svelte/transition';
-	import { spring, tweened } from 'svelte/motion';
-	import { cubicOut, elasticOut, quintOut, backOut } from 'svelte/easing';
+	import { tweened } from 'svelte/motion';
+	import { cubicOut, quintOut } from 'svelte/easing';
 
-	// ── Nav ──────────────────────────────────────────────────────────────────
-	const sections = [
-		{ id: 'weather',     label: '🌦 Vær-partikler' },
-		{ id: 'theme-pulse', label: '✨ Tema-puls' },
-		{ id: 'transitions', label: '🔄 Sideoverganger' },
-		{ id: 'focus-fade',  label: '🌫 Fokus & fade' },
-		{ id: 'markers',     label: '📍 Animerte markører' },
-		{ id: 'haptic',      label: '💥 Haptisk feedback' },
-	] as const;
-	type SectionId = typeof sections[number]['id'];
-	let activeSection = $state<SectionId>('weather');
+	// ── Screen navigation ────────────────────────────────────────────────────
+	type Screen = 'home' | 'theme' | 'chat';
+	const screenOrder: Screen[] = ['home', 'theme', 'chat'];
+	let screen = $state<Screen>('home');
+	let screenKey = $state(0);
+	let dir = $state<1 | -1>(1);
 
-	function scrollTo(id: SectionId) {
-		activeSection = id;
-		document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+	function navigate(to: Screen) {
+		const from = screenOrder.indexOf(screen);
+		const toIdx = screenOrder.indexOf(to);
+		dir = toIdx >= from ? 1 : -1;
+		screen = to;
+		screenKey++;
 	}
 
-	// ─────────────────────────────────────────────────────────────────────────
-	// § 1 — WEATHER PARTICLES
-	// ─────────────────────────────────────────────────────────────────────────
+	// ── Ambient breath (rAF) ─────────────────────────────────────────────────
+	let breathPhase = $state(0);
+	let rafId = 0;
 
-	type WeatherKind = 'rain' | 'snow' | 'sun' | 'thunder';
-	let weather = $state<WeatherKind>('rain');
-
-	interface Particle {
-		id: number;
-		x: number;   // % left
-		delay: number; // ms
-		dur: number;   // ms
-		size: number;  // px
-		opacity: number;
-		wobble: number; // horizontal drift %
+	function tick() {
+		breathPhase += 0.008;
+		rafId = requestAnimationFrame(tick);
 	}
 
-	function makeParticles(n: number): Particle[] {
-		return Array.from({ length: n }, (_, i) => ({
-			id: i,
-			x: Math.random() * 100,
-			delay: Math.random() * 2000,
-			dur: 600 + Math.random() * 800,
-			size: 1 + Math.random() * 2,
-			opacity: 0.35 + Math.random() * 0.5,
-			wobble: (Math.random() - 0.5) * 6,
-		}));
-	}
+	// ── Float particles ───────────────────────────────────────────────────────
+	interface FloatParticle { x: number; baseY: number; speed: number; phase: number; size: number; opacity: number; }
+	const floatParticles: FloatParticle[] = Array.from({ length: 18 }, (_, i) => ({
+		x: (i / 18) * 100 + Math.random() * 5,
+		baseY: 10 + Math.random() * 80,
+		speed: 0.3 + Math.random() * 0.7,
+		phase: Math.random() * Math.PI * 2,
+		size: 2 + Math.random() * 5,
+		opacity: 0.06 + Math.random() * 0.12,
+	}));
 
-	const rainParticles = makeParticles(55);
-	const snowParticles = makeParticles(40);
-
-	// Lightning flash for thunder
-	let lightningVisible = $state(false);
-	let lightningTimer: ReturnType<typeof setTimeout> | null = null;
-
-	function triggerLightning() {
-		lightningVisible = true;
-		lightningTimer = setTimeout(() => {
-			lightningVisible = false;
-			lightningTimer = setTimeout(triggerLightning, 2000 + Math.random() * 4000);
-		}, 120);
-	}
-
-	$effect(() => {
-		if (weather === 'thunder') {
-			lightningTimer = setTimeout(triggerLightning, 800);
-		} else {
-			if (lightningTimer) clearTimeout(lightningTimer);
-			lightningVisible = false;
-		}
-		return () => { if (lightningTimer) clearTimeout(lightningTimer); };
-	});
-
-	// Sun rays rotation
-	let sunAngle = $state(0);
-	let sunRaf: number;
-	$effect(() => {
-		if (weather !== 'sun') { cancelAnimationFrame(sunRaf); return; }
-		function tick() {
-			sunAngle = (sunAngle + 0.15) % 360;
-			sunRaf = requestAnimationFrame(tick);
-		}
-		sunRaf = requestAnimationFrame(tick);
-		return () => cancelAnimationFrame(sunRaf);
-	});
-
-	// ─────────────────────────────────────────────────────────────────────────
-	// § 2 — THEME PULSE  (velg tema → eksplosjon)
-	// ─────────────────────────────────────────────────────────────────────────
-
-	interface ThemeItem {
-		id: string;
-		name: string;
-		emoji: string;
-		hue: number;
-	}
-
-	const themes: ThemeItem[] = [
-		{ id: 'helse',    name: 'Helse',    emoji: '🏃', hue: 142 },
-		{ id: 'okonomi',  name: 'Økonomi',  emoji: '💰', hue: 45  },
-		{ id: 'relasjoner', name: 'Relasjoner', emoji: '❤️', hue: 0  },
-		{ id: 'kreativitet', name: 'Kreativitet', emoji: '🎨', hue: 280 },
-		{ id: 'utvikling', name: 'Utvikling', emoji: '🌱', hue: 90 },
-		{ id: 'fokus',    name: 'Fokus',    emoji: '🎯', hue: 210 },
+	// ── Widget pulse ─────────────────────────────────────────────────────────
+	interface Widget { id: string; label: string; value: string; icon: string; hue: number; }
+	const widgets: Widget[] = [
+		{ id: 'steps',   label: 'Skritt',    value: '7 840',      icon: '👣', hue: 200 },
+		{ id: 'sleep',   label: 'Søvn',      value: '7t 12m',     icon: '🌙', hue: 260 },
+		{ id: 'spend',   label: 'Forbruk',   value: '2 340 kr',   icon: '💳', hue: 30  },
+		{ id: 'focus',   label: 'Fokus',     value: '3 sesjoner', icon: '🎯', hue: 140 },
 	];
+	let widgetPulse = $state<Record<string, number>>({});
 
-	let selectedTheme = $state<string | null>(null);
-	let pulseThemeId  = $state<string | null>(null);
-	let pulseRings = $state<{ id: number; theme: ThemeItem }[]>([]);
-	let pulseCounter = 0;
-
-	function selectTheme(t: ThemeItem) {
-		selectedTheme = t.id;
-		pulseThemeId = t.id;
-		const id = ++pulseCounter;
-		pulseRings = [...pulseRings, { id, theme: t }];
-		setTimeout(() => {
-			pulseRings = pulseRings.filter(r => r.id !== id);
-		}, 1200);
-	}
-
-	// ─────────────────────────────────────────────────────────────────────────
-	// § 3 — PAGE TRANSITIONS
-	// ─────────────────────────────────────────────────────────────────────────
-
-	type TransitionKind = 'slide' | 'morph' | 'reveal';
-
-	const transPages = [
-		{ id: 'home',  label: 'Hjem',   bg: '#0a0a0a', accent: '#667eea', emoji: '🏠' },
-		{ id: 'theme', label: 'Tema',   bg: '#0d1f1a', accent: '#22c55e', emoji: '🏃' },
-		{ id: 'chat',  label: 'Chat',   bg: '#10101e', accent: '#7c8ef5', emoji: '💬' },
+	// ── Theme options ─────────────────────────────────────────────────────────
+	interface Theme { id: string; label: string; hue: number; emoji: string; }
+	const themes: Theme[] = [
+		{ id: 'helse',   label: 'Helse',   hue: 160, emoji: '💚' },
+		{ id: 'okonomi', label: 'Økonomi', hue: 45,  emoji: '💛' },
+		{ id: 'fokus',   label: 'Fokus',   hue: 220, emoji: '💙' },
+		{ id: 'energi',  label: 'Energi',  hue: 350, emoji: '❤️' },
 	];
-	let activeTransPage = $state(0);
-	let transitionKind = $state<TransitionKind>('slide');
-	let transKey = $state(0); // force remount
+	let activeTheme = $state<Theme>(themes[0]);
 
-	function goToPage(i: number) {
-		activeTransPage = i;
-		transKey++;
+	// ── Burst overlay ─────────────────────────────────────────────────────────
+	interface Burst { id: number; hue: number; x: number; y: number; }
+	let bursts = $state<Burst[]>([]);
+
+	function triggerBurst(theme: Theme, event?: MouseEvent | PointerEvent) {
+		const b: Burst = {
+			id: Date.now(),
+			hue: theme.hue,
+			x: event ? (event as MouseEvent).clientX : 50,
+			y: event ? (event as MouseEvent).clientY : 50,
+		};
+		bursts = [...bursts, b];
+		activeTheme = theme;
+		setTimeout(() => { bursts = bursts.filter(x => x.id !== b.id); }, 700);
+		setTimeout(() => navigate('theme'), 300);
 	}
 
-	// ─────────────────────────────────────────────────────────────────────────
-	// § 4 — FOCUS FADE  (seksjoner ute av fokus fader)
-	// ─────────────────────────────────────────────────────────────────────────
+	// ── Theme screen tweened data ─────────────────────────────────────────────
+	const ringStore = tweened(0, { duration: 1400, easing: cubicOut });
+	const bar0 = tweened(0, { duration: 1100, easing: quintOut });
+	const bar1 = tweened(0, { duration: 1300, easing: quintOut });
+	const bar2 = tweened(0, { duration: 1000, easing: quintOut });
 
-	const focusItems = [
-		{ id: 'f1', label: 'Søvn',    value: '8t 12m', sub: 'I natt',      color: '#5fa0a0' },
-		{ id: 'f2', label: 'Vekt',    value: '101,4',   sub: 'kg i dag',   color: '#e07070' },
-		{ id: 'f3', label: 'Løping',  value: '24,2',    sub: 'km denne uka', color: '#7c8ef5' },
-		{ id: 'f4', label: 'Økonomi', value: '14,2k',   sub: 'brukt apr',  color: '#f0b429' },
-		{ id: 'f5', label: 'Mood',    value: '78 / 100', sub: 'i dag',     color: '#22c55e' },
+	let bar0actual = $state(0);
+	let bar1actual = $state(0);
+	let bar2actual = $state(0);
+	let ringActual = $state(0);
+
+	function startThemeData() {
+		ringStore.set(0.73); bar0.set(0.65); bar1.set(0.82); bar2.set(0.48);
+	}
+
+	// ── Chat simulation ───────────────────────────────────────────────────────
+	interface ChatMsg { id: number; role: 'user' | 'ai'; text: string; }
+	const chatScript: { role: 'user' | 'ai'; text: string; delay: number }[] = [
+		{ role: 'user', text: 'Hvordan går det med helsemålene mine?', delay: 400 },
+		{ role: 'ai',   text: 'Du har trent 4 av 5 dager denne uken — imponerende! 💪', delay: 1200 },
+		{ role: 'user', text: 'Hva med søvnen?', delay: 700 },
+		{ role: 'ai',   text: 'Snittsøvn er 7t 12m. Du er innenfor målet på 7 timer.', delay: 1100 },
+		{ role: 'ai',   text: 'Vil du se detaljert analyse for i dag?', delay: 600 },
 	];
-	let focusedItem = $state<string | null>(null);
+	let chatVisible = $state<ChatMsg[]>([]);
+	let chatTyping = $state(false);
+	let chatInput = $state('');
 
-	// ─────────────────────────────────────────────────────────────────────────
-	// § 5 — ANIMATED MARKERS  (ring / progress / badge)
-	// ─────────────────────────────────────────────────────────────────────────
-
-	const ringGoal = 10000;
-	const ringActual = tweened(0, { duration: 1400, easing: cubicOut });
-	const arcCircumference = 2 * Math.PI * 42;
-
-	let markersVisible = $state(false);
-	$effect(() => {
-		if (markersVisible) {
-			void ringActual.set(7340);
-		} else {
-			void ringActual.set(0);
-		}
-	});
-
-	const arcDash = $derived(Math.min($ringActual / ringGoal, 1) * arcCircumference);
-
-	// Streaks
-	const streakDays = [true, true, true, false, true, true, true];
-	let streakVisible = $state(false);
-
-	// Progress bars (top-level stores so $-syntax works)
-	const bar0actual = tweened(0, { duration: 1100, easing: quintOut });
-	const bar1actual = tweened(0, { duration: 1300, easing: quintOut });
-	const bar2actual = tweened(0, { duration: 900,  easing: quintOut });
-	const barActuals = [bar0actual, bar1actual, bar2actual];
-	const barGoals = [
-		{ label: 'Søvnmål',  color: '#5fa0a0', goal: 8,     actual: bar0actual },
-		{ label: 'Skritt',   color: '#7c8ef5', goal: 10000, actual: bar1actual },
-		{ label: 'Kalorier', color: '#f0b429', goal: 500,   actual: bar2actual },
-	];
-	const barValues = [7.2, 8342, 380];
-
-	let barsVisible = $state(false);
-	$effect(() => {
-		if (barsVisible) {
-			barActuals.forEach((store, i) => { void store.set(barValues[i]); });
-		} else {
-			barActuals.forEach(store => { void store.set(0); });
-		}
-	});
-
-	// ─────────────────────────────────────────────────────────────────────────
-	// § 6 — HAPTIC FEEDBACK DEMO
-	// ─────────────────────────────────────────────────────────────────────────
-
-	interface Ripple { id: number; x: number; y: number; }
-	let ripples = $state<Ripple[]>([]);
-	let rippleCounter = 0;
-
-	function spawnRipple(e: MouseEvent | TouchEvent, container: HTMLElement) {
-		const rect = container.getBoundingClientRect();
-		let cx: number, cy: number;
-		if (e instanceof TouchEvent) {
-			cx = e.touches[0].clientX - rect.left;
-			cy = e.touches[0].clientY - rect.top;
-		} else {
-			cx = e.clientX - rect.left;
-			cy = e.clientY - rect.top;
-		}
-		const id = ++rippleCounter;
-		ripples = [...ripples, { id, x: cx, y: cy }];
-		setTimeout(() => { ripples = ripples.filter(r => r.id !== id); }, 700);
-	}
-
-	// Explosion for "big actions"
-	interface Explosion { id: number; x: number; y: number; color: string; }
-	let explosions = $state<Explosion[]>([]);
-	let explosionCounter = 0;
-
-	function spawnExplosion(e: MouseEvent, container: HTMLElement, color: string) {
-		const rect = container.getBoundingClientRect();
-		const x = e.clientX - rect.left;
-		const y = e.clientY - rect.top;
-		const id = ++explosionCounter;
-		explosions = [...explosions, { id, x, y, color }];
-		setTimeout(() => { explosions = explosions.filter(ex => ex.id !== id); }, 900);
-	}
-
-	// Intersection observer to trigger marker animations
-	let sectionEl5: HTMLElement | undefined = $state();
-	let sectionEl6: HTMLElement | undefined = $state();
-	let sectionEl4: HTMLElement | undefined = $state();
-
-	onMount(() => {
-		const obs = new IntersectionObserver((entries) => {
-			for (const e of entries) {
-				if (e.isIntersecting) {
-					if (e.target === sectionEl5)  { markersVisible = true; barsVisible = true; streakVisible = true; }
-				}
+	async function runChatScript() {
+		chatVisible = [];
+		let id = 0;
+		for (const msg of chatScript) {
+			await new Promise(r => setTimeout(r, msg.delay));
+			if (msg.role === 'ai') {
+				chatTyping = true;
+				await new Promise(r => setTimeout(r, 700));
+				chatTyping = false;
 			}
-		}, { threshold: 0.3 });
-		if (sectionEl5) obs.observe(sectionEl5);
-		return () => obs.disconnect();
+			chatVisible = [...chatVisible, { id: id++, role: msg.role, text: msg.text }];
+		}
+	}
+
+	// ── Lifecycle ─────────────────────────────────────────────────────────────
+	$effect(() => {
+		rafId = requestAnimationFrame(tick);
+
+		const pulseInterval = setInterval(() => {
+			const w = widgets[Math.floor(Math.random() * widgets.length)];
+			const wid = w.id;
+			widgetPulse = { ...widgetPulse, [wid]: Date.now() };
+			setTimeout(() => {
+				widgetPulse = Object.fromEntries(Object.entries(widgetPulse).filter(([k]) => k !== wid));
+			}, 600);
+		}, 1800);
+
+		const ringUnsub = ringStore.subscribe(v => { ringActual = v; });
+		const bar0Unsub = bar0.subscribe(v => { bar0actual = v; });
+		const bar1Unsub = bar1.subscribe(v => { bar1actual = v; });
+		const bar2Unsub = bar2.subscribe(v => { bar2actual = v; });
+
+		return () => {
+			cancelAnimationFrame(rafId);
+			clearInterval(pulseInterval);
+			ringUnsub(); bar0Unsub(); bar1Unsub(); bar2Unsub();
+		};
 	});
+
+	$effect(() => {
+		if (screen === 'theme') startThemeData();
+		if (screen === 'chat') runChatScript();
+	});
+
+	// ── Ambient position helpers ──────────────────────────────────────────────
+	function orbX(i: number) { return 30 + i * 20 + Math.sin(breathPhase + i * 2.1) * 18; }
+	function orbY(i: number) { return 25 + i * 12 + Math.cos(breathPhase * 0.7 + i * 1.4) * 14; }
+	function partY(p: FloatParticle) { return p.baseY + Math.sin(breathPhase * p.speed + p.phase) * 4; }
 </script>
 
 <svelte:head>
-	<title>Animasjonsutforskning — Resonans</title>
+	<title>Animation Exploration</title>
 </svelte:head>
 
-<!-- ═══════════════════════════════════════════════════════════════════
-     TOP NAV
-     ═══════════════════════════════════════════════════════════════════ -->
-<nav class="top-nav">
-	<a href="/" class="nav-back">← Hjem</a>
-	<span class="nav-title">Animasjonsutforskning</span>
-</nav>
+{#each bursts as b (b.id)}
+	<div
+		class="burst-overlay"
+		style="--bx:{b.x}px;--by:{b.y}px;--bhue:{b.hue}"
+		in:scale={{ duration: 600, start: 0 }}
+		out:fade={{ duration: 200 }}
+	></div>
+{/each}
 
-<!-- sticky pill nav -->
-<div class="pill-nav">
-	{#each sections as s}
-		<button
-			class="pill"
-			class:active={activeSection === s.id}
-			onclick={() => scrollTo(s.id)}
-		>
-			{s.label}
-		</button>
-	{/each}
-</div>
+<div class="page-wrap">
 
-<main class="page">
+	<div class="phone-shell" style="--hue:{activeTheme.hue}">
 
-<!-- ═══════════════════════════════════════════════════════════════════
-     § 1  VÆR-PARTIKLER
-     ═══════════════════════════════════════════════════════════════════ -->
-<section id="weather" class="demo-section">
-	<h2>🌦 Vær-widget med partikkeleffekter</h2>
-	<p class="desc">Partikler reflekterer værtilstand — nedbør, snø, sol og torden. Passet til et kompakt widget-format.</p>
-
-	<div class="weather-toggle">
-		{#each (['rain','snow','sun','thunder'] as WeatherKind[]) as w}
-			<button class="wtog" class:active={weather === w} onclick={() => (weather = w)}>
-				{w === 'rain' ? '🌧' : w === 'snow' ? '❄️' : w === 'sun' ? '☀️' : '⛈'}
-				{w}
-			</button>
-		{/each}
-	</div>
-
-	<div class="weather-widget" class:ww-rain={weather === 'rain'} class:ww-snow={weather === 'snow'} class:ww-sun={weather === 'sun'} class:ww-thunder={weather === 'thunder'}>
-
-		<!-- Lightning flash overlay -->
-		{#if lightningVisible}
-			<div class="lightning-flash" transition:fade={{ duration: 80 }}></div>
-		{/if}
-
-		<!-- Rain drops -->
-		{#if weather === 'rain' || weather === 'thunder'}
-			{#each rainParticles as p (p.id)}
-				<div
-					class="raindrop"
-					style:left="{p.x}%"
-					style:animation-delay="{p.delay}ms"
-					style:animation-duration="{p.dur}ms"
-					style:width="{p.size}px"
-					style:opacity={p.opacity}
-					style:--wobble="{p.wobble}px"
+		<div class="ambient-layer" aria-hidden="true">
+			{#each [0,1,2] as i}
+				<div class="orb orb-{i}"
+					style="left:{orbX(i)}%;top:{orbY(i)}%;opacity:{0.18 + i*0.04}"
 				></div>
 			{/each}
-		{/if}
-
-		<!-- Snowflakes -->
-		{#if weather === 'snow'}
-			{#each snowParticles as p (p.id)}
-				<div
-					class="snowflake"
-					style:left="{p.x}%"
-					style:animation-delay="{p.delay}ms"
-					style:animation-duration="{p.dur * 2.5}ms"
-					style:width="{p.size * 2.5}px"
-					style:height="{p.size * 2.5}px"
-					style:opacity={p.opacity}
-					style:--wobble="{p.wobble}px"
+			{#each floatParticles as p}
+				<div class="float-p"
+					style="left:{p.x}%;top:{partY(p)}%;width:{p.size}px;height:{p.size}px;opacity:{p.opacity}"
 				></div>
 			{/each}
-		{/if}
-
-		<!-- Sun rays -->
-		{#if weather === 'sun'}
-			<div class="sun-orb" style:transform="rotate({sunAngle}deg)">
-				{#each { length: 8 } as _, i}
-					<div class="sun-ray" style:transform="rotate({i * 45}deg)"></div>
-				{/each}
-			</div>
-			<!-- Shimmer particles floating up -->
-			{#each rainParticles.slice(0, 18) as p (p.id)}
-				<div
-					class="shimmer-particle"
-					style:left="{p.x}%"
-					style:animation-delay="{p.delay * 1.5}ms"
-					style:animation-duration="{p.dur * 3}ms"
-					style:width="{p.size + 1}px"
-					style:height="{p.size + 1}px"
-					style:opacity={p.opacity * 0.6}
-				></div>
-			{/each}
-		{/if}
-
-		<!-- Widget content -->
-		<div class="ww-content">
-			<div class="ww-icon">
-				{weather === 'rain' ? '🌧' : weather === 'snow' ? '❄️' : weather === 'sun' ? '☀️' : '⛈'}
-			</div>
-			<div class="ww-temp">
-				{weather === 'sun' ? '22°' : weather === 'snow' ? '-4°' : weather === 'rain' ? '9°' : '11°'}
-			</div>
-			<div class="ww-label">
-				{weather === 'sun' ? 'Klarvær, sol hele dagen' : weather === 'snow' ? 'Snøfall, kraftig vind' : weather === 'rain' ? 'Regn, 3–6 mm' : '⚡ Torden, vær forsiktig'}
-			</div>
 		</div>
-	</div>
 
-	<p class="hint">Bytt mellom vokabene ovenfor for å se ulike partikkelanimasjoner</p>
-</section>
-
-
-<!-- ═══════════════════════════════════════════════════════════════════
-     § 2  TEMA-PULS
-     ═══════════════════════════════════════════════════════════════════ -->
-<section id="theme-pulse" class="demo-section">
-	<h2>✨ Tema-valg med puls-eksplosjon</h2>
-	<p class="desc">Visuell haptisk feedback ved valg av tema — utvidende ringer + farge-flash som forankrer valget i kroppen.</p>
-
-	<div class="theme-grid-demo" style="position:relative; overflow:hidden;">
-		<!-- Pulse rings (absolute overlay) -->
-		{#each pulseRings as ring (ring.id)}
-			<div
-				class="pulse-ring-container"
-				class:animating={true}
-				style:--hue={ring.theme.hue}
-			>
-				<div class="pulse-ring pr1"></div>
-				<div class="pulse-ring pr2"></div>
-				<div class="pulse-ring pr3"></div>
-			</div>
-		{/each}
-
-		{#each themes as t}
-			<button
-				class="tema-demo-btn"
-				class:tema-selected={selectedTheme === t.id}
-				style:--hue={t.hue}
-				onclick={() => selectTheme(t)}
-			>
-				<span class="tema-emoji">{t.emoji}</span>
-				<span class="tema-name">{t.name}</span>
-				{#if selectedTheme === t.id}
-					<span class="tema-check" in:scale={{ duration: 300, easing: backOut }}>✓</span>
-				{/if}
-			</button>
-		{/each}
-	</div>
-
-	<p class="hint">Trykk på et tema for å se eksplosjon/puls-effekten</p>
-</section>
-
-
-<!-- ═══════════════════════════════════════════════════════════════════
-     § 3  SIDEOVERGANGER
-     ═══════════════════════════════════════════════════════════════════ -->
-<section id="transitions" class="demo-section">
-	<h2>🔄 Sideoverganger</h2>
-	<p class="desc">Overgang fra hjemskjerm → tema-side → chat. Tre stilarter: slide, morph og reveal.</p>
-
-	<div class="trans-controls">
-		{#each (['slide','morph','reveal'] as TransitionKind[]) as k}
-			<button class="wtog" class:active={transitionKind === k} onclick={() => (transitionKind = k)}>{k}</button>
-		{/each}
-	</div>
-
-	<div class="trans-stage">
-		<!-- Page tabs -->
-		<div class="trans-tabs">
-			{#each transPages as p, i}
-				<button
-					class="trans-tab"
-					class:active={activeTransPage === i}
-					style:--accent={p.accent}
-					onclick={() => goToPage(i)}
+		<div class="screen-viewport">
+			{#key screenKey}
+				<div
+					class="screen"
+					in:fly={{ x: 60 * dir, duration: 320, easing: cubicOut }}
+					out:fly={{ x: -60 * dir, duration: 240, easing: cubicOut }}
 				>
-					{p.emoji} {p.label}
-				</button>
-			{/each}
-		</div>
 
-		<!-- Page viewport -->
-		<div class="trans-viewport">
-			{#key transKey}
-				{@const p = transPages[activeTransPage]}
-				{#if transitionKind === 'slide'}
-					<div
-						class="trans-page"
-						style:background={p.bg}
-						style:--accent={p.accent}
-						in:fly={{ x: 40, duration: 360, easing: quintOut }}
-						out:fly={{ x: -40, duration: 300, easing: quintOut }}
-					>
-						<div class="trans-page-icon">{p.emoji}</div>
-						<div class="trans-page-title" style:color={p.accent}>{p.label}</div>
-						<div class="trans-page-sub">Slide-overgang fra venstre</div>
-					</div>
-				{:else if transitionKind === 'morph'}
-					<div
-						class="trans-page"
-						style:background={p.bg}
-						style:--accent={p.accent}
-						in:scale={{ start: 0.92, duration: 380, easing: cubicOut }}
-						out:fade={{ duration: 220 }}
-					>
-						<div class="trans-page-icon">{p.emoji}</div>
-						<div class="trans-page-title" style:color={p.accent}>{p.label}</div>
-						<div class="trans-page-sub">Morph — scale + fade</div>
-					</div>
-				{:else}
-					<div
-						class="trans-page"
-						style:background={p.bg}
-						style:--accent={p.accent}
-						in:fly={{ y: 30, duration: 400, easing: cubicOut }}
-						out:fade={{ duration: 220 }}
-					>
-						<div class="trans-page-icon">{p.emoji}</div>
-						<div class="trans-page-title" style:color={p.accent}>{p.label}</div>
-						<div class="trans-page-sub">Reveal — glider opp</div>
-					</div>
-				{/if}
+					{#if screen === 'home'}
+						<div class="s-home">
+							<header class="home-header" in:fly={{ y: -20, duration: 500, delay: 60 }}>
+								<span class="greeting">God morgen 👋</span>
+								<span class="date-chip">Tors 10. apr</span>
+							</header>
+
+							<div class="widgets-grid">
+								{#each widgets as w, i}
+									<div
+										class="widget-card"
+										class:pulsing={widgetPulse[w.id]}
+										style="--whue:{w.hue};animation-delay:{i*80}ms"
+										in:fly={{ y: 28, duration: 420, delay: 120 + i * 80, easing: cubicOut }}
+									>
+										<span class="w-icon">{w.icon}</span>
+										<span class="w-val">{w.value}</span>
+										<span class="w-label">{w.label}</span>
+									</div>
+								{/each}
+							</div>
+
+							<p class="section-label" in:fade={{ delay: 500 }}>Utforsk tema</p>
+							<div class="tema-grid">
+								{#each themes as t, i}
+									<button
+										class="tema-btn"
+										style="--thue:{t.hue};animation-delay:{i*60}ms"
+										in:fly={{ y: 20, duration: 380, delay: 400 + i * 70, easing: cubicOut }}
+										onclick={(e) => triggerBurst(t, e)}
+									>
+										<span class="t-emoji">{t.emoji}</span>
+										<span class="t-label">{t.label}</span>
+									</button>
+								{/each}
+							</div>
+
+							<div
+								class="chat-strip"
+								in:fly={{ y: 16, duration: 340, delay: 700, easing: cubicOut }}
+								onclick={() => navigate('chat')}
+								role="button"
+								tabindex="0"
+								onkeydown={(e) => e.key === 'Enter' && navigate('chat')}
+							>
+								<span class="chat-icon">💬</span>
+								<span>Spør om helsa di…</span>
+							</div>
+						</div>
+
+					{:else if screen === 'theme'}
+						<div class="s-theme">
+							<button class="back-btn" onclick={() => navigate('home')}>← Hjem</button>
+
+							<div class="theme-hero" in:fly={{ y: -16, duration: 500, delay: 80 }}>
+								<span class="hero-emoji">{activeTheme.emoji}</span>
+								<h2>{activeTheme.label}</h2>
+							</div>
+
+							<div class="ring-wrap" in:scale={{ duration: 600, delay: 200, start: 0.7 }}>
+								<svg viewBox="0 0 100 100" class="ring-svg">
+									<circle cx="50" cy="50" r="38" class="ring-bg"/>
+									<circle
+										cx="50" cy="50" r="38"
+										class="ring-fg"
+										stroke-dasharray="{ringActual * 238.76} 238.76"
+										stroke-linecap="round"
+									/>
+								</svg>
+								<div class="ring-label">{Math.round(ringActual * 100)}%</div>
+							</div>
+
+							<div class="bars-section" in:fly={{ y: 20, duration: 400, delay: 400 }}>
+								{#each [['Trening', bar0actual, 160], ['Søvn', bar1actual, 260], ['Kosthold', bar2actual, 30]] as [label, val, hue]}
+									<div class="bar-row">
+										<span class="bar-label">{label}</span>
+										<div class="bar-track">
+											<div class="bar-fill" style="width:{(val as number) * 100}%;background:hsl({hue} 70% 55%)"></div>
+										</div>
+										<span class="bar-pct">{Math.round((val as number)*100)}%</span>
+									</div>
+								{/each}
+							</div>
+
+							<button class="chat-cta" onclick={() => navigate('chat')} in:fly={{ y: 16, duration: 340, delay: 700 }}>
+								Chat om {activeTheme.label.toLowerCase()} →
+							</button>
+						</div>
+
+					{:else}
+						<div class="s-chat">
+							<button class="back-btn" onclick={() => navigate('theme')}>← {activeTheme.label}</button>
+							<div class="chat-head" in:fly={{ y: -12, duration: 400, delay: 80 }}>
+								<span class="ai-avatar">🤖</span>
+								<span class="ai-name">Resonans</span>
+							</div>
+							<div class="chat-messages">
+								{#each chatVisible as msg (msg.id)}
+									<div
+										class="bubble bubble-{msg.role}"
+										in:fly={{ x: msg.role === 'user' ? 30 : -30, y: 8, duration: 340, easing: cubicOut }}
+									>{msg.text}</div>
+								{/each}
+								{#if chatTyping}
+									<div class="bubble bubble-ai typing" in:fade>
+										<span></span><span></span><span></span>
+									</div>
+								{/if}
+							</div>
+							<div class="chat-input-row">
+								<input
+									class="chat-input"
+									placeholder="Skriv…"
+									bind:value={chatInput}
+									onkeydown={(e) => { if (e.key === 'Enter' && chatInput.trim()) {
+										chatVisible = [...chatVisible, { id: Date.now(), role: 'user', text: chatInput }];
+										chatInput = '';
+									}}}
+								/>
+							</div>
+						</div>
+					{/if}
+
+				</div>
 			{/key}
 		</div>
-	</div>
-</section>
 
-
-<!-- ═══════════════════════════════════════════════════════════════════
-     § 4  FOKUS & FADE
-     ═══════════════════════════════════════════════════════════════════ -->
-<section id="focus-fade" class="demo-section" bind:this={sectionEl4}>
-	<h2>🌫 Fokus & Fade</h2>
-	<p class="desc">Hover/tap en sensor-sone → resten fader ut. Skaper ro og fokus uten å fjerne kontekst.</p>
-
-	<div class="focus-list">
-		{#each focusItems as item}
-			<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-			<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-			<div
-				class="focus-card"
-				class:is-focused={focusedItem === item.id}
-				class:is-blurred={focusedItem !== null && focusedItem !== item.id}
-				style:--color={item.color}
-				role="listitem"
-				onmouseenter={() => (focusedItem = item.id)}
-				onmouseleave={() => (focusedItem = null)}
-				onfocus={() => (focusedItem = item.id)}
-				onblur={() => (focusedItem = null)}
-				tabindex="0"
-			>
-				<div class="fc-accent-bar"></div>
-				<div class="fc-body">
-					<div class="fc-value">{item.value}</div>
-					<div class="fc-label">{item.label}</div>
-					<div class="fc-sub">{item.sub}</div>
-				</div>
-				{#if focusedItem === item.id}
-					<div class="fc-glow" transition:fade={{ duration: 200 }}></div>
-				{/if}
-			</div>
-		{/each}
-	</div>
-
-	<p class="hint">Hover/tap en av kortene for å se fokus-effekten</p>
-</section>
-
-
-<!-- ═══════════════════════════════════════════════════════════════════
-     § 5  ANIMERTE MARKØRER
-     ═══════════════════════════════════════════════════════════════════ -->
-<section id="markers" class="demo-section" bind:this={sectionEl5}>
-	<h2>📍 Animerte markører</h2>
-	<p class="desc">Ring-progress, fremdriftslinjer og streak-badges animerer inn ved synlighet. Verdi "telles opp" fra 0.</p>
-
-	<div class="markers-grid">
-
-		<!-- Ring -->
-		<div class="marker-card">
-			<h3>Mål-ring</h3>
-			<svg class="ring-svg" viewBox="0 0 100 100">
-				<circle cx="50" cy="50" r="42" fill="none" stroke="var(--border-color)" stroke-width="7"/>
-				<circle
-					cx="50" cy="50" r="42"
-					fill="none"
-					stroke="#7c8ef5"
-					stroke-width="7"
-					stroke-linecap="round"
-					stroke-dasharray="{arcCircumference}"
-					stroke-dashoffset="{arcCircumference - arcDash}"
-					transform="rotate(-90 50 50)"
-					style="transition: stroke-dashoffset 0.05s linear;"
-				/>
-				<text x="50" y="46" text-anchor="middle" fill="var(--text-primary)" font-size="13" font-weight="700">{Math.round($ringActual).toLocaleString('nb')}</text>
-				<text x="50" y="60" text-anchor="middle" fill="var(--text-secondary)" font-size="8">av {ringGoal.toLocaleString('nb')} skritt</text>
-			</svg>
-			<button class="small-btn" onclick={() => { markersVisible = false; setTimeout(() => (markersVisible = true), 80); }}>
-				Spill av igjen
-			</button>
-		</div>
-
-		<!-- Progress bars -->
-		<div class="marker-card">
-			<h3>Fremdriftslinjer</h3>
-			{#each barGoals as bg, i}
-				{@const val = [($bar0actual), ($bar1actual), ($bar2actual)][i]}
-				<div class="bar-row">
-					<div class="bar-meta">
-						<span class="bar-label">{bg.label}</span>
-						<span class="bar-val" style:color={bg.color}>
-							{i === 0
-								? `${val.toFixed(1)}h`
-								: i === 1
-									? Math.round(val).toLocaleString('nb')
-									: `${Math.round(val)} kcal`}
-						</span>
-					</div>
-					<div class="bar-track">
-						<div
-							class="bar-fill"
-							style:width="{Math.min(val / bg.goal, 1) * 100}%"
-							style:background={bg.color}
-						></div>
-					</div>
-				</div>
-			{/each}
-			<button class="small-btn" onclick={() => { barsVisible = false; setTimeout(() => (barsVisible = true), 80); }}>
-				Spill av igjen
-			</button>
-		</div>
-
-		<!-- Streak badges -->
-		<div class="marker-card">
-			<h3>Streak-badges</h3>
-			<div class="streak-row">
-				{#each streakDays as done, i}
-					{#if streakVisible}
-						<div
-							class="streak-dot"
-							class:streak-done={done}
-							in:scale={{ delay: i * 80, duration: 340, easing: backOut }}
-						>
-							{done ? '✓' : '·'}
-						</div>
-					{:else}
-						<div class="streak-dot"></div>
-					{/if}
-				{/each}
-			</div>
-			<p class="streak-label">6 av 7 dager aktiv</p>
-			<button class="small-btn" onclick={() => { streakVisible = false; setTimeout(() => (streakVisible = true), 80); }}>
-				Spill av igjen
-			</button>
-		</div>
-
-	</div>
-</section>
-
-
-<!-- ═══════════════════════════════════════════════════════════════════
-     § 6  HAPTISK FEEDBACK / RIPPLE / EKSPLOSJON
-     ═══════════════════════════════════════════════════════════════════ -->
-<section id="haptic" class="demo-section" bind:this={sectionEl6}>
-	<h2>💥 Visuell haptisk feedback</h2>
-	<p class="desc">Ripple ved vanlig tap, eksplosjon ved primærhandlinger. Forankrer brukervalg uten lyd.</p>
-
-	<!-- Ripple demo -->
-	<div class="haptic-row">
-		<h3>Ripple-knapp</h3>
-		<div class="ripple-area" style="position:relative; overflow:hidden;" role="presentation"
-			onmousedown={(e) => spawnRipple(e, e.currentTarget as HTMLElement)}
-			ontouchstart={(e) => spawnRipple(e, e.currentTarget as HTMLElement)}
-		>
-			{#each ripples as r (r.id)}
-				<span
-					class="ripple"
-					style:left="{r.x}px"
-					style:top="{r.y}px"
-				></span>
-			{/each}
-			<button class="ripple-btn" tabindex="-1">Trykk her</button>
-		</div>
-	</div>
-
-	<!-- Explosion / colour burst -->
-	<div class="haptic-row">
-		<h3>Primær-eksplosjon</h3>
-		<div class="explosion-area" style="position:relative; overflow:hidden;" role="presentation">
-			{#each explosions as ex (ex.id)}
-				<span
-					class="explosion-ring e1"
-					style:left="{ex.x}px"
-					style:top="{ex.y}px"
-					style:border-color={ex.color}
-				></span>
-				<span
-					class="explosion-ring e2"
-					style:left="{ex.x}px"
-					style:top="{ex.y}px"
-					style:border-color={ex.color}
-				></span>
-				{#each { length: 8 } as _, i}
-					<span
-						class="explosion-particle"
-						style:left="{ex.x}px"
-						style:top="{ex.y}px"
-						style:background={ex.color}
-						style:--angle="{i * 45}deg"
-					></span>
-				{/each}
-			{/each}
-			{#each themes as t}
+		<div class="nav-dots">
+			{#each screenOrder as s}
 				<button
-					class="explosion-btn"
-					style:--hue={t.hue}
-					onclick={(e) => spawnExplosion(e, (e.currentTarget as HTMLElement).closest('.explosion-area') as HTMLElement, `hsl(${t.hue}, 65%, 55%)`)}
-				>
-					{t.emoji} {t.name}
-				</button>
+					class="nav-dot"
+					class:active={screen === s}
+					onclick={() => navigate(s)}
+					aria-label={s}
+				></button>
 			{/each}
 		</div>
 	</div>
 
-	<!-- Bounce confirm -->
-	<div class="haptic-row">
-		<h3>Bounce-bekreftelse</h3>
-		<div class="bounce-row">
-			<button class="bounce-btn" style="--hue:210">Lagre</button>
-			<button class="bounce-btn" style="--hue:0">Slett</button>
-			<button class="bounce-btn" style="--hue:142">Send</button>
-			<button class="bounce-btn" style="--hue:45">Del</button>
+	<aside class="sidebar">
+		<h3>Teknikker brukt</h3>
+		<div class="anno-list">
+			<div class="anno">
+				<strong>Ambient pust</strong>
+				<p>requestAnimationFrame loop med sinusbevegelse for orber og partikler — alltid i gang, aldri merkbar CPU.</p>
+			</div>
+			<div class="anno">
+				<strong>Widget-puls</strong>
+				<p>Async setInterval velger tilfeldig widget hvert 1.8s. CSS scale+glow uten JS.</p>
+			</div>
+			<div class="anno">
+				<strong>Tema-eksplosjon</strong>
+				<p>Burst overlay med radial-gradient fra klikk-koordinat, navigerer etter 300ms.</p>
+			</div>
+			<div class="anno">
+				<strong>Staggered entry</strong>
+				<p>Hvert element har fly transition med incrementelt delay.</p>
+			</div>
+			<div class="anno">
+				<strong>Tweened data</strong>
+				<p>tweened() store — tallene teller opp visuelt når temaside åpnes.</p>
+			</div>
+			<div class="anno">
+				<strong>Chat scripting</strong>
+				<p>Async sekvens med skriveindikator (bouncing dots) før AI-melding.</p>
+			</div>
+			<div class="anno">
+				<strong>Retnings-slides</strong>
+				<p>Directional fly basert på skjermrekkefølge — naturlig slide-retning.</p>
+			</div>
 		</div>
-		<p class="hint">Trykk og hold for å se bounce-animasjonen</p>
-	</div>
-</section>
+	</aside>
 
-</main>
+</div>
 
 <style>
-/* ── Layout ──────────────────────────────────────────────────────── */
-.top-nav {
-	position: sticky;
-	top: 0;
-	z-index: 100;
-	display: flex;
-	align-items: center;
-	gap: 12px;
-	padding: 12px 20px;
-	background: var(--bg-primary);
-	border-bottom: 1px solid var(--border-subtle);
-}
-.nav-back {
-	color: var(--text-secondary);
-	font-size: 0.85rem;
-	text-decoration: none;
-}
-.nav-title {
-	font-size: 0.9rem;
-	font-weight: 600;
-}
+	:global(body) { background: #0a0a0f; }
 
-.pill-nav {
-	position: sticky;
-	top: 45px;
-	z-index: 90;
-	display: flex;
-	gap: 6px;
-	padding: 8px 16px;
-	overflow-x: auto;
-	background: var(--bg-primary);
-	border-bottom: 1px solid var(--border-subtle);
-	scrollbar-width: none;
-}
-.pill-nav::-webkit-scrollbar { display: none; }
-.pill {
-	flex-shrink: 0;
-	padding: 5px 12px;
-	border-radius: 20px;
-	border: 1px solid var(--border-color);
-	background: var(--bg-card);
-	color: var(--text-secondary);
-	font-size: 0.78rem;
-	cursor: pointer;
-	transition: background 0.15s, color 0.15s;
-}
-.pill.active {
-	background: var(--accent-primary);
-	color: #fff;
-	border-color: transparent;
-}
+	.page-wrap {
+		display: flex;
+		gap: 3rem;
+		align-items: flex-start;
+		justify-content: center;
+		min-height: 100vh;
+		padding: 3rem 2rem;
+		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+	}
 
-.page {
-	max-width: 680px;
-	margin: 0 auto;
-	padding: 0 0 80px;
-}
+	.phone-shell {
+		position: relative;
+		width: 340px;
+		height: 680px;
+		background: #0e0e16;
+		border-radius: 40px;
+		border: 1.5px solid rgba(255,255,255,0.08);
+		overflow: hidden;
+		box-shadow:
+			0 0 0 1px rgba(0,0,0,0.6),
+			0 32px 80px rgba(0,0,0,0.7),
+			inset 0 1px 0 rgba(255,255,255,0.04);
+		display: flex;
+		flex-direction: column;
+		flex-shrink: 0;
+	}
 
-.demo-section {
-	padding: 48px 20px 40px;
-	border-bottom: 1px solid var(--border-subtle);
-}
-.demo-section h2 {
-	font-size: 1.2rem;
-	font-weight: 700;
-	margin: 0 0 6px;
-}
-.desc {
-	font-size: 0.85rem;
-	color: var(--text-secondary);
-	margin: 0 0 24px;
-	line-height: 1.5;
-}
-.hint {
-	font-size: 0.78rem;
-	color: var(--text-tertiary);
-	margin-top: 12px;
-}
+	.ambient-layer {
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+		z-index: 0;
+	}
+	.orb {
+		position: absolute;
+		border-radius: 50%;
+		background: radial-gradient(circle, hsl(var(--hue) 75% 55%) 0%, transparent 70%);
+		transform: translate(-50%, -50%);
+		filter: blur(40px);
+	}
+	.orb-0 { width: 200px; height: 200px; }
+	.orb-1 { width: 140px; height: 140px; filter: blur(55px); }
+	.orb-2 { width: 100px; height: 100px; filter: blur(30px); }
 
-/* ── Weather toggle ──────────────────────────────────────────────── */
-.weather-toggle { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
-.wtog {
-	padding: 6px 14px;
-	border-radius: 8px;
-	border: 1px solid var(--border-color);
-	background: var(--bg-card);
-	color: var(--text-secondary);
-	font-size: 0.82rem;
-	cursor: pointer;
-	transition: background 0.12s, color 0.12s;
-}
-.wtog.active { background: var(--accent-primary); color: #fff; border-color: transparent; }
+	.float-p {
+		position: absolute;
+		border-radius: 50%;
+		background: white;
+		transform: translate(-50%, -50%);
+		pointer-events: none;
+	}
 
-/* ── Weather widget ─────────────────────────────────────────────── */
-.weather-widget {
-	position: relative;
-	overflow: hidden;
-	height: 200px;
-	border-radius: 20px;
-	display: flex;
-	align-items: flex-end;
-	transition: background 0.8s, box-shadow 0.8s;
-}
-.ww-rain    { background: linear-gradient(160deg, #1a2535 0%, #2d3f5a 100%); box-shadow: 0 8px 32px rgba(60,100,160,0.25); }
-.ww-snow    { background: linear-gradient(160deg, #1e2a40 0%, #3a4a6a 100%); box-shadow: 0 8px 32px rgba(100,140,200,0.25); }
-.ww-sun     { background: linear-gradient(160deg, #1a3a2a 0%, #3a6040 100%); box-shadow: 0 8px 32px rgba(60,160,80,0.25); }
-.ww-thunder { background: linear-gradient(160deg, #0e1520 0%, #1a2030 100%); box-shadow: 0 8px 40px rgba(120,80,200,0.4); }
+	.screen-viewport {
+		position: relative;
+		flex: 1;
+		overflow: hidden;
+		z-index: 1;
+	}
+	.screen {
+		position: absolute;
+		inset: 0;
+		overflow-y: auto;
+		scrollbar-width: none;
+		padding: 1.25rem 1.2rem 0.5rem;
+		color: #f0f0f8;
+	}
+	.screen::-webkit-scrollbar { display: none; }
 
-.lightning-flash {
-	position: absolute;
-	inset: 0;
-	background: rgba(220,200,255,0.35);
-	pointer-events: none;
-	z-index: 10;
-}
+	.nav-dots {
+		display: flex;
+		justify-content: center;
+		gap: 6px;
+		padding: 0.6rem 0 1rem;
+		z-index: 2;
+	}
+	.nav-dot {
+		width: 6px; height: 6px;
+		border-radius: 50%;
+		background: rgba(255,255,255,0.25);
+		border: none;
+		cursor: pointer;
+		padding: 0;
+		transition: background 0.25s, transform 0.2s;
+	}
+	.nav-dot.active {
+		background: hsl(var(--hue) 70% 60%);
+		transform: scale(1.4);
+	}
 
-/* Rain */
-@keyframes rain-fall {
-	0%   { transform: translateY(-10px) translateX(0); opacity: 0; }
-	10%  { opacity: 1; }
-	90%  { opacity: 1; }
-	100% { transform: translateY(210px) translateX(var(--wobble)); opacity: 0; }
-}
-.raindrop {
-	position: absolute;
-	top: 0;
-	height: 14px;
-	background: linear-gradient(to bottom, transparent, rgba(160,200,255,0.85));
-	border-radius: 2px;
-	animation: rain-fall linear infinite;
-}
+	.burst-overlay {
+		position: fixed;
+		inset: 0;
+		pointer-events: none;
+		z-index: 9999;
+		background: radial-gradient(circle at var(--bx) var(--by), hsl(var(--bhue) 80% 60% / 0.55) 0%, transparent 60%);
+	}
 
-/* Snow */
-@keyframes snow-fall {
-	0%   { transform: translateY(-10px) translateX(0) rotate(0deg); opacity: 0; }
-	10%  { opacity: 1; }
-	90%  { opacity: 1; }
-	100% { transform: translateY(210px) translateX(var(--wobble)) rotate(360deg); opacity: 0; }
-}
-.snowflake {
-	position: absolute;
-	top: 0;
-	border-radius: 50%;
-	background: rgba(220,235,255,0.9);
-	animation: snow-fall ease-in-out infinite;
-}
+	.s-home { display: flex; flex-direction: column; gap: 0.85rem; }
+	.home-header { display: flex; justify-content: space-between; align-items: center; }
+	.greeting { font-size: 1rem; font-weight: 600; }
+	.date-chip {
+		font-size: 0.72rem;
+		background: rgba(255,255,255,0.08);
+		border-radius: 20px;
+		padding: 3px 10px;
+		color: rgba(255,255,255,0.6);
+	}
 
-/* Sun rays */
-.sun-orb {
-	position: absolute;
-	top: 24px;
-	right: 30px;
-	width: 60px;
-	height: 60px;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-}
-.sun-ray {
-	position: absolute;
-	top: 50%;
-	left: 50%;
-	width: 28px;
-	height: 2px;
-	margin-top: -1px;
-	margin-left: 10px;
-	background: linear-gradient(to right, rgba(255,220,60,0.9), transparent);
-	transform-origin: 0 50%;
-	border-radius: 2px;
-}
-@keyframes shimmer-up {
-	0%   { transform: translateY(200px); opacity: 0; }
-	30%  { opacity: 1; }
-	80%  { opacity: 0.6; }
-	100% { transform: translateY(-20px); opacity: 0; }
-}
-.shimmer-particle {
-	position: absolute;
-	bottom: 0;
-	border-radius: 50%;
-	background: rgba(255,220,100,0.7);
-	animation: shimmer-up ease-in-out infinite;
-}
+	.widgets-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0.6rem;
+	}
+	.widget-card {
+		background: rgba(255,255,255,0.05);
+		border: 1px solid rgba(255,255,255,0.07);
+		border-radius: 16px;
+		padding: 0.75rem;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		position: relative;
+		overflow: hidden;
+		transition: transform 0.25s, box-shadow 0.3s;
+		animation: card-in 0.42s both;
+	}
+	.widget-card.pulsing {
+		transform: scale(1.04);
+		box-shadow: 0 0 18px hsl(var(--whue) 70% 55% / 0.45);
+		border-color: hsl(var(--whue) 70% 55% / 0.4);
+	}
+	@keyframes card-in { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: none; } }
 
-/* Widget content */
-.ww-content {
-	position: relative;
-	z-index: 5;
-	padding: 20px 24px;
-}
-.ww-icon   { font-size: 2.2rem; margin-bottom: 4px; }
-.ww-temp   { font-size: 2.6rem; font-weight: 700; color: #fff; line-height: 1; }
-.ww-label  { font-size: 0.82rem; color: rgba(255,255,255,0.7); margin-top: 4px; }
+	.w-icon { font-size: 1.2rem; }
+	.w-val { font-size: 1rem; font-weight: 700; color: hsl(var(--whue) 70% 70%); }
+	.w-label { font-size: 0.68rem; color: rgba(255,255,255,0.45); }
 
-/* ── Theme pulse ────────────────────────────────────────────────── */
-.theme-grid-demo {
-	display: grid;
-	grid-template-columns: repeat(3, 1fr);
-	gap: 12px;
-	padding: 4px;
-}
+	.section-label { font-size: 0.72rem; color: rgba(255,255,255,0.4); margin: 0; letter-spacing: 0.04em; text-transform: uppercase; }
 
-@keyframes pulse-ring-anim {
-	0%   { transform: translate(-50%, -50%) scale(0.4); opacity: 0.8; }
-	100% { transform: translate(-50%, -50%) scale(3.5); opacity: 0; }
-}
-.pulse-ring-container {
-	position: absolute;
-	top: 50%;
-	left: 50%;
-	pointer-events: none;
-	z-index: 20;
-}
-.pulse-ring {
-	position: absolute;
-	border-radius: 50%;
-	border: 2px solid hsl(var(--hue, 210), 65%, 60%);
-	transform: translate(-50%, -50%);
-	animation: pulse-ring-anim 1.1s cubic-bezier(0.2, 0.8, 0.4, 1) forwards;
-}
-.pr1 { width: 60px;  height: 60px;  animation-delay: 0ms;  }
-.pr2 { width: 60px;  height: 60px;  animation-delay: 150ms; opacity: 0.6; }
-.pr3 { width: 60px;  height: 60px;  animation-delay: 300ms; opacity: 0.3; }
+	.tema-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0.5rem;
+	}
+	.tema-btn {
+		background: rgba(255,255,255,0.04);
+		border: 1px solid hsl(var(--thue) 60% 50% / 0.25);
+		border-radius: 12px;
+		padding: 0.7rem 0.5rem;
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		cursor: pointer;
+		color: #f0f0f8;
+		font-size: 0.82rem;
+		font-weight: 500;
+		transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+		animation: card-in 0.4s both;
+	}
+	.tema-btn:hover {
+		background: hsl(var(--thue) 60% 50% / 0.15);
+		transform: translateY(-2px);
+		box-shadow: 0 4px 14px hsl(var(--thue) 60% 50% / 0.3);
+	}
+	.t-emoji { font-size: 1.1rem; }
+	.t-label { font-size: 0.8rem; }
 
-.tema-demo-btn {
-	position: relative;
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	justify-content: center;
-	gap: 6px;
-	padding: 16px 8px;
-	border-radius: 16px;
-	border: 1.5px solid var(--border-subtle);
-	background: var(--bg-card);
-	cursor: pointer;
-	transition: transform 0.18s, border-color 0.18s, background 0.18s, box-shadow 0.18s;
-	overflow: hidden;
-}
-.tema-demo-btn:hover {
-	transform: scale(1.04);
-	border-color: hsl(var(--hue, 210), 55%, 60%);
-}
-.tema-demo-btn.tema-selected {
-	border-color: hsl(var(--hue, 210), 65%, 60%);
-	background: hsla(var(--hue, 210), 55%, 55%, 0.12);
-	box-shadow: 0 0 0 3px hsla(var(--hue, 210), 65%, 60%, 0.2);
-}
-.tema-emoji { font-size: 1.8rem; }
-.tema-name  { font-size: 0.78rem; color: var(--text-secondary); }
-.tema-check {
-	position: absolute;
-	top: 8px;
-	right: 10px;
-	font-size: 0.75rem;
-	color: hsl(var(--hue, 210), 65%, 60%);
-	font-weight: 700;
-}
+	.chat-strip {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		background: rgba(255,255,255,0.04);
+		border: 1px solid rgba(255,255,255,0.08);
+		border-radius: 20px;
+		padding: 0.6rem 1rem;
+		cursor: pointer;
+		font-size: 0.82rem;
+		color: rgba(255,255,255,0.45);
+		transition: background 0.2s;
+		margin-bottom: 0.5rem;
+	}
+	.chat-strip:hover { background: rgba(255,255,255,0.08); }
+	.chat-icon { font-size: 1rem; }
 
-/* ── Transitions ────────────────────────────────────────────────── */
-.trans-controls { display: flex; gap: 8px; margin-bottom: 16px; }
-.trans-stage    { border-radius: 16px; overflow: hidden; border: 1px solid var(--border-color); }
-.trans-tabs {
-	display: flex;
-	border-bottom: 1px solid var(--border-color);
-	background: var(--bg-card);
-}
-.trans-tab {
-	flex: 1;
-	padding: 10px 8px;
-	font-size: 0.82rem;
-	border: none;
-	background: transparent;
-	color: var(--text-secondary);
-	cursor: pointer;
-	transition: background 0.12s, color 0.12s;
-	border-bottom: 2px solid transparent;
-}
-.trans-tab.active {
-	color: var(--accent-primary);
-	border-bottom-color: var(--accent-primary);
-	background: var(--bg-hover);
-}
-.trans-viewport {
-	position: relative;
-	overflow: hidden;
-	height: 180px;
-}
-.trans-page {
-	position: absolute;
-	inset: 0;
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	justify-content: center;
-	gap: 8px;
-}
-.trans-page-icon  { font-size: 2.5rem; }
-.trans-page-title { font-size: 1.4rem; font-weight: 700; }
-.trans-page-sub   { font-size: 0.78rem; color: rgba(255,255,255,0.5); }
+	.s-theme { display: flex; flex-direction: column; gap: 0.9rem; align-items: center; }
+	.back-btn {
+		align-self: flex-start;
+		background: none;
+		border: none;
+		color: rgba(255,255,255,0.5);
+		cursor: pointer;
+		font-size: 0.82rem;
+		padding: 0;
+		transition: color 0.2s;
+	}
+	.back-btn:hover { color: rgba(255,255,255,0.9); }
 
-/* ── Focus fade ─────────────────────────────────────────────────── */
-.focus-list {
-	display: flex;
-	gap: 10px;
-	flex-wrap: wrap;
-}
-.focus-card {
-	position: relative;
-	overflow: hidden;
-	flex: 1;
-	min-width: 90px;
-	border-radius: 14px;
-	border: 1px solid var(--border-subtle);
-	background: var(--bg-card);
-	padding: 14px 10px;
-	cursor: pointer;
-	transition: opacity 0.3s, transform 0.3s, box-shadow 0.3s;
-	outline: none;
-}
-.focus-card.is-blurred {
-	opacity: 0.22;
-	transform: scale(0.96);
-}
-.focus-card.is-focused {
-	box-shadow: 0 0 0 2px var(--color), 0 4px 20px color-mix(in srgb, var(--color) 30%, transparent);
-	transform: scale(1.03);
-}
-.fc-accent-bar {
-	position: absolute;
-	top: 0; left: 0; right: 0;
-	height: 3px;
-	background: var(--color);
-	border-radius: 14px 14px 0 0;
-}
-.fc-body   { padding-top: 4px; }
-.fc-value  { font-size: 1.1rem; font-weight: 700; }
-.fc-label  { font-size: 0.72rem; color: var(--text-secondary); margin-top: 2px; }
-.fc-sub    { font-size: 0.68rem; color: var(--text-tertiary); }
-.fc-glow {
-	position: absolute;
-	inset: 0;
-	background: radial-gradient(circle at 50% 110%, color-mix(in srgb, var(--color) 20%, transparent) 0%, transparent 70%);
-	pointer-events: none;
-}
+	.theme-hero { display: flex; align-items: center; gap: 0.6rem; }
+	.hero-emoji { font-size: 2rem; }
+	.theme-hero h2 { margin: 0; font-size: 1.4rem; color: hsl(var(--hue) 70% 70%); font-weight: 700; }
 
-/* ── Markers ────────────────────────────────────────────────────── */
-.markers-grid {
-	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-	gap: 16px;
-}
-.marker-card {
-	background: var(--bg-card);
-	border: 1px solid var(--border-subtle);
-	border-radius: 16px;
-	padding: 20px;
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	gap: 12px;
-}
-.marker-card h3 {
-	font-size: 0.85rem;
-	font-weight: 600;
-	margin: 0;
-	align-self: flex-start;
-}
-.ring-svg { width: 110px; height: 110px; }
+	.ring-wrap {
+		position: relative;
+		width: 120px; height: 120px;
+	}
+	.ring-svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+	.ring-bg { fill: none; stroke: rgba(255,255,255,0.08); stroke-width: 8; }
+	.ring-fg {
+		fill: none;
+		stroke: hsl(var(--hue) 70% 55%);
+		stroke-width: 8;
+		filter: drop-shadow(0 0 6px hsl(var(--hue) 70% 55%));
+	}
+	.ring-label {
+		position: absolute; inset: 0;
+		display: flex; align-items: center; justify-content: center;
+		font-size: 1.3rem; font-weight: 700;
+		color: hsl(var(--hue) 70% 70%);
+	}
 
-.bar-row { width: 100%; display: flex; flex-direction: column; gap: 4px; }
-.bar-meta { display: flex; justify-content: space-between; font-size: 0.75rem; }
-.bar-label { color: var(--text-secondary); }
-.bar-val   { font-weight: 600; }
-.bar-track {
-	height: 6px;
-	background: var(--bg-secondary);
-	border-radius: 4px;
-	overflow: hidden;
-}
-.bar-fill {
-	height: 100%;
-	border-radius: 4px;
-	transition: width 0.05s linear;
-}
+	.bars-section { width: 100%; display: flex; flex-direction: column; gap: 0.6rem; }
+	.bar-row { display: flex; align-items: center; gap: 0.5rem; }
+	.bar-label { font-size: 0.75rem; width: 62px; color: rgba(255,255,255,0.6); }
+	.bar-track { flex: 1; height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden; }
+	.bar-fill { height: 100%; border-radius: 3px; }
+	.bar-pct { font-size: 0.7rem; width: 30px; text-align: right; color: rgba(255,255,255,0.5); }
 
-.streak-row   { display: flex; gap: 8px; }
-.streak-dot {
-	width: 34px; height: 34px;
-	border-radius: 50%;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	font-size: 0.8rem;
-	border: 2px solid var(--border-color);
-	color: var(--text-tertiary);
-	transition: background 0.2s, border-color 0.2s;
-}
-.streak-dot.streak-done {
-	background: #22c55e;
-	border-color: #22c55e;
-	color: #fff;
-	font-weight: 700;
-}
-.streak-label { font-size: 0.75rem; color: var(--text-secondary); }
+	.chat-cta {
+		width: 100%;
+		padding: 0.7rem;
+		background: hsl(var(--hue) 60% 45% / 0.25);
+		border: 1px solid hsl(var(--hue) 60% 55% / 0.4);
+		border-radius: 14px;
+		color: hsl(var(--hue) 70% 75%);
+		font-size: 0.88rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: background 0.2s, transform 0.15s;
+	}
+	.chat-cta:hover { background: hsl(var(--hue) 60% 45% / 0.4); transform: translateY(-1px); }
 
-.small-btn {
-	padding: 6px 14px;
-	border-radius: 8px;
-	border: 1px solid var(--border-color);
-	background: var(--bg-secondary);
-	color: var(--text-secondary);
-	font-size: 0.75rem;
-	cursor: pointer;
-	margin-top: 4px;
-}
+	.s-chat { display: flex; flex-direction: column; height: 100%; gap: 0.5rem; }
+	.chat-head { display: flex; align-items: center; gap: 0.5rem; }
+	.ai-avatar { font-size: 1.4rem; }
+	.ai-name { font-weight: 600; font-size: 0.9rem; }
+	.chat-messages {
+		flex: 1;
+		overflow-y: auto;
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		padding-bottom: 0.5rem;
+		scrollbar-width: none;
+	}
+	.chat-messages::-webkit-scrollbar { display: none; }
 
-/* ── Haptic feedback ────────────────────────────────────────────── */
-.haptic-row { margin-bottom: 28px; }
-.haptic-row h3 { font-size: 0.9rem; font-weight: 600; margin: 0 0 12px; }
+	.bubble {
+		max-width: 80%;
+		padding: 0.55rem 0.85rem;
+		border-radius: 16px;
+		font-size: 0.82rem;
+		line-height: 1.45;
+	}
+	.bubble-user {
+		align-self: flex-end;
+		background: hsl(var(--hue) 55% 40% / 0.5);
+		border: 1px solid hsl(var(--hue) 55% 55% / 0.3);
+		color: hsl(var(--hue) 80% 88%);
+	}
+	.bubble-ai {
+		align-self: flex-start;
+		background: rgba(255,255,255,0.07);
+		border: 1px solid rgba(255,255,255,0.1);
+		color: rgba(255,255,255,0.88);
+	}
+	.bubble.typing {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		padding: 0.65rem 0.9rem;
+	}
+	.bubble.typing span {
+		width: 6px; height: 6px;
+		border-radius: 50%;
+		background: rgba(255,255,255,0.5);
+		animation: bounce 1s infinite;
+	}
+	.bubble.typing span:nth-child(2) { animation-delay: 0.15s; }
+	.bubble.typing span:nth-child(3) { animation-delay: 0.3s; }
+	@keyframes bounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-5px)} }
 
-/* Ripple */
-.ripple-area {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	height: 90px;
-	background: var(--bg-card);
-	border-radius: 14px;
-	border: 1px solid var(--border-subtle);
-	cursor: pointer;
-}
-.ripple-btn {
-	pointer-events: none;
-	padding: 10px 24px;
-	border-radius: 10px;
-	background: var(--accent-primary);
-	color: #fff;
-	font-size: 0.9rem;
-	font-weight: 600;
-	border: none;
-}
-@keyframes ripple-expand {
-	0%   { width: 0;     height: 0;     opacity: 0.6; }
-	100% { width: 180px; height: 180px; opacity: 0; }
-}
-.ripple {
-	position: absolute;
-	border-radius: 50%;
-	background: rgba(102, 126, 234, 0.35);
-	transform: translate(-50%, -50%);
-	pointer-events: none;
-	animation: ripple-expand 0.65s cubic-bezier(0.2, 0.8, 0.4, 1) forwards;
-}
+	.chat-input-row { padding-bottom: 0.2rem; }
+	.chat-input {
+		width: 100%;
+		background: rgba(255,255,255,0.06);
+		border: 1px solid rgba(255,255,255,0.1);
+		border-radius: 20px;
+		padding: 0.55rem 1rem;
+		color: #f0f0f8;
+		font-size: 0.82rem;
+		outline: none;
+		box-sizing: border-box;
+		transition: border-color 0.2s;
+	}
+	.chat-input:focus { border-color: hsl(var(--hue) 60% 55% / 0.6); }
 
-/* Explosion */
-.explosion-area {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 8px;
-	padding: 16px;
-	background: var(--bg-card);
-	border-radius: 14px;
-	border: 1px solid var(--border-subtle);
-	min-height: 80px;
-}
-.explosion-btn {
-	padding: 8px 16px;
-	border-radius: 10px;
-	border: 1.5px solid hsl(var(--hue, 210), 55%, 55%);
-	background: hsla(var(--hue, 210), 55%, 55%, 0.1);
-	color: hsl(var(--hue, 210), 55%, 65%);
-	font-size: 0.82rem;
-	cursor: pointer;
-	transition: background 0.12s;
-}
-.explosion-btn:hover { background: hsla(var(--hue, 210), 55%, 55%, 0.2); }
+	.sidebar {
+		width: 260px;
+		flex-shrink: 0;
+		color: rgba(255,255,255,0.7);
+	}
+	.sidebar h3 {
+		font-size: 0.78rem;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: rgba(255,255,255,0.3);
+		margin: 0 0 1.2rem;
+		font-weight: 500;
+	}
+	.anno-list { display: flex; flex-direction: column; gap: 1rem; }
+	.anno {
+		border-left: 2px solid hsl(var(--hue, 160) 60% 50% / 0.35);
+		padding-left: 0.85rem;
+	}
+	.anno strong { font-size: 0.8rem; color: rgba(255,255,255,0.85); display: block; margin-bottom: 0.25rem; }
+	.anno p { font-size: 0.73rem; margin: 0; line-height: 1.5; color: rgba(255,255,255,0.45); }
 
-@keyframes exp-ring {
-	0%   { width: 0;     height: 0;     opacity: 0.8; }
-	100% { width: 140px; height: 140px; opacity: 0; }
-}
-.explosion-ring {
-	position: absolute;
-	border-radius: 50%;
-	border: 2px solid;
-	transform: translate(-50%, -50%);
-	pointer-events: none;
-}
-.e1 { animation: exp-ring 0.7s cubic-bezier(0.2, 0.8, 0.4, 1) forwards; }
-.e2 { animation: exp-ring 0.9s cubic-bezier(0.2, 0.8, 0.4, 1) 80ms forwards; opacity: 0.5; }
-
-@keyframes exp-particle {
-	0%   { transform: translate(-50%, -50%) rotate(var(--angle)) translateX(0); opacity: 1; }
-	100% { transform: translate(-50%, -50%) rotate(var(--angle)) translateX(50px); opacity: 0; }
-}
-.explosion-particle {
-	position: absolute;
-	width: 5px;
-	height: 5px;
-	border-radius: 50%;
-	transform: translate(-50%, -50%);
-	pointer-events: none;
-	animation: exp-particle 0.7s cubic-bezier(0.2, 0.8, 0.4, 1) forwards;
-}
-
-/* Bounce */
-.bounce-row {
-	display: flex;
-	gap: 10px;
-	flex-wrap: wrap;
-}
-@keyframes bounce-confirm {
-	0%   { transform: scale(1); }
-	30%  { transform: scale(0.88); }
-	65%  { transform: scale(1.14); }
-	85%  { transform: scale(0.96); }
-	100% { transform: scale(1); }
-}
-.bounce-btn {
-	padding: 10px 20px;
-	border-radius: 10px;
-	border: 1.5px solid hsl(var(--hue, 210), 55%, 55%);
-	background: hsla(var(--hue, 210), 55%, 55%, 0.1);
-	color: hsl(var(--hue, 210), 55%, 65%);
-	font-size: 0.85rem;
-	font-weight: 600;
-	cursor: pointer;
-	transition: background 0.12s;
-}
-.bounce-btn:active {
-	animation: bounce-confirm 0.42s cubic-bezier(0.3, 0.8, 0.4, 1);
-}
+	@media (max-width: 720px) {
+		.page-wrap { flex-direction: column; align-items: center; padding: 1.5rem 1rem; }
+		.sidebar { width: 100%; max-width: 340px; }
+	}
 </style>
