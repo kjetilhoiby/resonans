@@ -426,6 +426,14 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 				<p>Manuelle korrigeringer og regler</p>
 				<a href="/settings/classification" class="overview-link">Åpne klassifisering</a>
 			</article>
+			<article class="overview-card" id="tracking-overview">
+				<div class="overview-head">
+					<span class="status-dot ok"></span>
+					<h2>Tracking-serier</h2>
+				</div>
+				<p>Vaner, aktiviteter og målinger</p>
+				<a href="/settings/tracking" class="overview-link">Åpne tracking</a>
+			</article>
 		</section>
 
 		<div class="actions">

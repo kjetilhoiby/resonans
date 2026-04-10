@@ -2,6 +2,24 @@
 	import { onMount } from 'svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
 
+	let { data, form }: {
+		data: {
+			settings: {
+				dailyCheckIn: { enabled: boolean; time: string };
+				dayPlanning: { enabled: boolean; time: string };
+				dayClose: { enabled: boolean; time: string };
+				nudgeProfile: {
+					weekdayMode: 'interactive' | 'digest';
+					weekendMode: 'interactive' | 'digest';
+					quietHours: { enabled: boolean; start: string; end: string };
+					digestTimeWeekday: string;
+					digestTimeWeekend: string;
+				};
+			};
+		};
+		form?: { success?: boolean; message?: string; error?: string };
+	} = $props();
+
 	let sending = $state(false);
 	let result = $state<{ success: boolean; message: string } | null>(null);
 	let pushLoading = $state(false);
@@ -14,6 +32,8 @@
 	let missingEnvVars = $state<string[]>([]);
 	let debugInfo = $state<any>(null);
 	let debugLoading = $state(false);
+	let nudgeMetrics = $state<{ sent: number; opened: number; started: number; completed: number } | null>(null);
+	let nudgeMetricsLoading = $state(false);
 
 	function urlBase64ToUint8Array(base64String: string): Uint8Array {
 		const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -237,8 +257,24 @@
 		}
 	}
 
+	async function loadNudgeMetrics() {
+		nudgeMetricsLoading = true;
+		try {
+			const res = await fetch('/api/nudges/metrics?days=30');
+			const data = await res.json();
+			if (res.ok) {
+				nudgeMetrics = data.totals || { sent: 0, opened: 0, started: 0, completed: 0 };
+			}
+		} catch {
+			// best effort
+		} finally {
+			nudgeMetricsLoading = false;
+		}
+	}
+
 	onMount(() => {
 		void refreshPushStatus();
+		void loadNudgeMetrics();
 	});
 </script>
 
@@ -255,6 +291,94 @@
 	</header>
 
 	<main class="content">
+		{#if form?.success}
+			<div class="result success">✅ {form.message || 'Lagret'}</div>
+		{/if}
+		{#if form?.error}
+			<div class="result error">❌ {form.error}</div>
+		{/if}
+
+		<section class="notification-card">
+			<div class="card-icon">⏰</div>
+			<h2>Nudge-tider</h2>
+			<p>Styr når Resonans skal minne deg på å planlegge dag og avslutte dag.</p>
+
+			<form method="POST" action="?/updateNudges" class="nudge-form">
+				<label class="nudge-row">
+					<input type="checkbox" name="dailyCheckInEnabled" checked={data.settings.dailyCheckIn.enabled} />
+					<span>Daglig check-in</span>
+					<input type="time" name="dailyCheckInTime" value={data.settings.dailyCheckIn.time} />
+				</label>
+
+				<label class="nudge-row">
+					<input type="checkbox" name="dayPlanningEnabled" checked={data.settings.dayPlanning.enabled} />
+					<span>Planlegg dag (hvis ikke planlagt)</span>
+					<input type="time" name="dayPlanningTime" value={data.settings.dayPlanning.time} />
+				</label>
+
+				<label class="nudge-row">
+					<input type="checkbox" name="dayCloseEnabled" checked={data.settings.dayClose.enabled} />
+					<span>Avslutt dag (hvis åpne punkter)</span>
+					<input type="time" name="dayCloseTime" value={data.settings.dayClose.time} />
+				</label>
+
+				<div class="nudge-subhead">Nudgeprofil og triage</div>
+
+				<label class="nudge-row nudge-row-select">
+					<span>Hverdag</span>
+					<select name="nudgeWeekdayMode">
+						<option value="interactive" selected={data.settings.nudgeProfile.weekdayMode === 'interactive'}>Interaktiv (med CTA)</option>
+						<option value="digest" selected={data.settings.nudgeProfile.weekdayMode === 'digest'}>Digest (uten CTA)</option>
+					</select>
+				</label>
+
+				<label class="nudge-row nudge-row-select">
+					<span>Helg</span>
+					<select name="nudgeWeekendMode">
+						<option value="interactive" selected={data.settings.nudgeProfile.weekendMode === 'interactive'}>Interaktiv (med CTA)</option>
+						<option value="digest" selected={data.settings.nudgeProfile.weekendMode === 'digest'}>Digest (uten CTA)</option>
+					</select>
+				</label>
+
+				<label class="nudge-row">
+					<input type="checkbox" name="nudgeQuietEnabled" checked={data.settings.nudgeProfile.quietHours.enabled} />
+					<span>Stillevindu (triage til digest)</span>
+					<div class="nudge-time-range">
+						<input type="time" name="nudgeQuietStart" value={data.settings.nudgeProfile.quietHours.start} />
+						<input type="time" name="nudgeQuietEnd" value={data.settings.nudgeProfile.quietHours.end} />
+					</div>
+				</label>
+
+				<label class="nudge-row">
+					<span>Digest-tid hverdag</span>
+					<input type="time" name="digestTimeWeekday" value={data.settings.nudgeProfile.digestTimeWeekday} />
+				</label>
+
+				<label class="nudge-row">
+					<span>Digest-tid helg</span>
+					<input type="time" name="digestTimeWeekend" value={data.settings.nudgeProfile.digestTimeWeekend} />
+				</label>
+
+				<button type="submit" class="btn-primary" style="margin-top:0.75rem; width:100%">Lagre nudge-tider</button>
+			</form>
+
+			<div class="info-box" style="margin-top:1rem;">
+				<div class="info-title">Nudge-effekt siste 30 dager</div>
+				{#if nudgeMetricsLoading}
+					<p>Laster effektmåling ...</p>
+				{:else if nudgeMetrics}
+					<ul>
+						<li>Sendt: {nudgeMetrics.sent}</li>
+						<li>Åpnet: {nudgeMetrics.opened}</li>
+						<li>Flyt startet: {nudgeMetrics.started}</li>
+						<li>Flyt fullført: {nudgeMetrics.completed}</li>
+					</ul>
+				{:else}
+					<p>Ingen data enda.</p>
+				{/if}
+			</div>
+		</section>
+
 		<section class="notification-card">
 			<div class="card-icon">📱</div>
 			<h2>Native Push (PWA)</h2>
@@ -551,6 +675,57 @@
 		grid-template-columns: 1fr;
 		gap: 0.6rem;
 		margin-top: 1rem;
+	}
+
+	.nudge-form {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.nudge-subhead {
+		font-size: 0.78rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--text-secondary);
+		font-weight: 650;
+		margin-top: 0.25rem;
+	}
+
+	.nudge-row {
+		display: grid;
+		grid-template-columns: auto 1fr auto;
+		gap: 0.6rem;
+		align-items: center;
+		padding: 0.7rem;
+		border-radius: 8px;
+		background: var(--bg-header);
+		border: 1px solid var(--border-color);
+	}
+
+	.nudge-row input[type='time'] {
+		background: var(--bg-primary);
+		color: var(--text-primary);
+		border: 1px solid var(--border-color);
+		border-radius: 6px;
+		padding: 0.35rem 0.5rem;
+	}
+
+	.nudge-row-select {
+		grid-template-columns: 1fr auto;
+	}
+
+	.nudge-row select {
+		background: var(--bg-primary);
+		color: var(--text-primary);
+		border: 1px solid var(--border-color);
+		border-radius: 6px;
+		padding: 0.35rem 0.5rem;
+	}
+
+	.nudge-time-range {
+		display: inline-flex;
+		gap: 0.35rem;
 	}
 
 	.config-steps {

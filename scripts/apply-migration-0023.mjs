@@ -8,7 +8,8 @@ import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const envPath = resolve(__dirname, '../.env.local');
+const envPath = ['.env.local', '.env'].map((f) => resolve(__dirname, '..', f)).find((p) => { try { readFileSync(p); return true; } catch { return false; } });
+if (!envPath) { console.error('No .env or .env.local found'); process.exit(1); }
 
 readFileSync(envPath, 'utf8')
 	.split('\n')

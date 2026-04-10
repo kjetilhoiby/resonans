@@ -31,6 +31,11 @@ const JOBS: CronJob[] = [
 		description: 'Daglig check-in melding via Google Chat'
 	},
 	{
+		path: '/api/cron/day-planning-nudges',
+		schedule: '0 * * * *',
+		description: 'Timebasert lokal nudge for planlegg dag (07:00) og avslutt dag (21:00)'
+	},
+	{
 		path: '/api/cron/sparebank1-sync',
 		schedule: '0 */6 * * *', // hver 6. time
 		description: 'SpareBank 1 inkrementell synk (alle brukere)',

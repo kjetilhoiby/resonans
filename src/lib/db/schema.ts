@@ -15,6 +15,13 @@ export const users = pgTable('users', {
 		dailyCheckIn?: { enabled: boolean; time: string }; // format: "09:00"
 		dayPlanning?: { enabled: boolean; time: string }; // default "07:00"
 		dayClose?: { enabled: boolean; time: string }; // default "21:00"
+		nudgeProfile?: {
+			weekdayMode?: 'interactive' | 'digest';
+			weekendMode?: 'interactive' | 'digest';
+			quietHours?: { enabled: boolean; start: string; end: string };
+			digestTimeWeekday?: string;
+			digestTimeWeekend?: string;
+		};
 		weeklyReview?: { enabled: boolean; day: string; time: string }; // day: "sunday", time: "18:00"
 		milestones?: { enabled: boolean };
 		reminders?: { enabled: boolean };
@@ -254,6 +261,25 @@ export const reminders = pgTable('reminders', {
 	idxUserScheduledSent: index('reminders_user_scheduled_sent_idx').on(table.userId, table.scheduledFor, table.sent)
 }));
 
+// Nudge effect measurement (sent/opened/flow-started/flow-completed)
+export const nudgeEvents = pgTable('nudge_events', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	channel: text('channel').notNull().default('google_chat'),
+	nudgeType: text('nudge_type').notNull(), // 'plan_day' | 'close_day' | 'digest_day'
+	mode: text('mode'), // 'interactive' | 'digest'
+	context: jsonb('context').$type<Record<string, unknown>>(),
+	sentAt: timestamp('sent_at'),
+	openedAt: timestamp('opened_at'),
+	flowStartedAt: timestamp('flow_started_at'),
+	flowCompletedAt: timestamp('flow_completed_at'),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	idxNudgeEventsUserCreated: index('nudge_events_user_created_idx').on(table.userId, table.createdAt),
+	idxNudgeEventsUserSent: index('nudge_events_user_sent_idx').on(table.userId, table.sentAt)
+}));
+
 // Brukerdefinerbare widgets til hjemmeskjerm
 // Hvert widget er en dynamisk dataspørring: metrikk × aggregering × periode × range
 export const userWidgets = pgTable('user_widgets', {
@@ -440,7 +466,8 @@ export const usersRelations = relations(users, ({ many }) => ({
 	themeLists: many(themeLists),
 	themeFiles: many(themeFiles),
 	trackingSeries: many(trackingSeries),
-	trackingSeriesExamples: many(trackingSeriesExamples)
+	trackingSeriesExamples: many(trackingSeriesExamples),
+	nudgeEvents: many(nudgeEvents)
 }));
 
 export const authAccountsRelations = relations(authAccounts, ({ one }) => ({
@@ -578,6 +605,13 @@ export const memoriesRelations = relations(memories, ({ one }) => ({
 export const webPushSubscriptionsRelations = relations(webPushSubscriptions, ({ one }) => ({
 	user: one(users, {
 		fields: [webPushSubscriptions.userId],
+		references: [users.id]
+	})
+}));
+
+export const nudgeEventsRelations = relations(nudgeEvents, ({ one }) => ({
+	user: one(users, {
+		fields: [nudgeEvents.userId],
 		references: [users.id]
 	})
 }));

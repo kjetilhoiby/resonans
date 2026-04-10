@@ -138,6 +138,12 @@
 	const dayFromQuery = typeof window !== 'undefined'
 		? new URLSearchParams(window.location.search).get('day')
 		: null;
+	const nudgeTrackFromQuery = typeof window !== 'undefined'
+		? new URLSearchParams(window.location.search).get('nudgeTrack')
+		: null;
+	const nudgeEventIdFromQuery = typeof window !== 'undefined'
+		? new URLSearchParams(window.location.search).get('nudgeEventId')
+		: null;
 	const selectedDefault = data.week.days.some((d) => d.isoDate === dayFromQuery)
 		? (dayFromQuery as string)
 		: (data.week.days.some((d) => d.isoDate === todayIso) ? todayIso : data.week.days[0].isoDate);
@@ -160,6 +166,8 @@
 	let dayPlannerMessage = $state('');
 	let dayPlannerIntro = $state('');
 	let dayPlannerSuggestions = $state<Array<{ id: string; text: string; source: 'carryover' | 'week'; selected: boolean }>>([]);
+	let nudgeFlowStarted = $state(false);
+	let nudgeFlowCompleted = $state(false);
 	let editingItem = $state<EditingItem | null>(null);
 	let dragItem = $state<{ checklistId: string; itemId: string } | null>(null);
 	let skipEditBlur = false;
@@ -178,6 +186,26 @@
 	const selectedDay = $derived(data.week.days.find((day) => day.isoDate === selectedDayIso) ?? data.week.days[0]);
 	const selectedDayNote = $derived(dayNotesState[selectedDayIso] ?? '');
 	const selectedDayHeadline = $derived(dayHeadlinesState[selectedDayIso] ?? '');
+	const nudgeTrack = nudgeTrackFromQuery;
+	const nudgeEventId = nudgeEventIdFromQuery;
+
+	async function reportNudgeStage(stage: 'flow_started' | 'flow_completed') {
+		if (!nudgeEventId) return;
+		if (stage === 'flow_started' && nudgeFlowStarted) return;
+		if (stage === 'flow_completed' && nudgeFlowCompleted) return;
+
+		try {
+			await fetch(`/api/nudges/events/${nudgeEventId}/stage`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ stage })
+			});
+			if (stage === 'flow_started') nudgeFlowStarted = true;
+			if (stage === 'flow_completed') nudgeFlowCompleted = true;
+		} catch {
+			// best effort only
+		}
+	}
 
 	// Map iso-date → trip emoji for days that are part of a trip
 	const tripDayEmoji = $derived.by(() => {
@@ -530,6 +558,9 @@
 
 	async function openDayPlanner() {
 		if (dayPlannerBusy) return;
+		if (nudgeTrack === 'plan_day') {
+			await reportNudgeStage('flow_started');
+		}
 		dayPlannerBusy = true;
 		dayPlannerMessage = '';
 
@@ -601,6 +632,9 @@
 		dayPlannerBusy = false;
 		dayPlannerOpen = false;
 		dayPlannerMessage = `Planlagt: ${toCreate.length} nye dagsoppgaver.`;
+		if (nudgeTrack === 'plan_day') {
+			await reportNudgeStage('flow_completed');
+		}
 	}
 
 	async function toggleChecklistItem(checklistId: string, itemId: string, checked: boolean) {
@@ -812,6 +846,9 @@
 
 	async function closeSelectedDay(mode: 'unsolved' | 'carryover') {
 		if (!selectedDayChecklist || dayCloseBusy) return;
+		if (nudgeTrack === 'close_day') {
+			await reportNudgeStage('flow_started');
+		}
 		const sourceChecklist = selectedDayChecklist;
 		const openItems = sourceChecklist.items.filter((item) => !item.checked);
 
@@ -851,6 +888,16 @@
 			? 'Dag avsluttet. Aapne punkter er tatt med til neste dag.'
 			: 'Dag avsluttet. Aapne punkter ble staende som uloeste.';
 		flashSaved('dayItems');
+		if (nudgeTrack === 'close_day') {
+			await reportNudgeStage('flow_completed');
+		}
+	}
+
+	async function planNextDayFromClose() {
+		const nextDayIso = addDaysIsoDate(selectedDayIso, 1);
+		setSelectedDay(nextDayIso);
+		await tick();
+		await openDayPlanner();
 	}
 
 	async function ensureWeekChecklist() {
@@ -1310,6 +1357,9 @@
 					</button>
 					<button class="wp-btn wp-btn-secondary" type="button" onclick={() => void closeSelectedDay('carryover')} disabled={dayCloseBusy}>
 						{dayCloseBusy ? 'Jobber ...' : 'Avslutt dag og ta med aapne til neste dag'}
+					</button>
+					<button class="wp-btn wp-btn-secondary" type="button" onclick={() => void planNextDayFromClose()} disabled={dayCloseBusy}>
+						Planlegg neste dag
 					</button>
 				</div>
 			{/if}

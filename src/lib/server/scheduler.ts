@@ -3,6 +3,7 @@ import { env } from '$env/dynamic/private';
 import { db } from '$lib/db';
 import { getUserActiveGoalsAndTasks } from '$lib/server/goals';
 import { sendGoogleChatMessage, buildDailyCheckInMessage } from '$lib/server/google-chat';
+import { runDayPlanningAndCloseNudges } from '$lib/server/day-planning-nudges';
 
 /**
  * In-app cron scheduler using node-cron
@@ -33,12 +34,26 @@ export function startScheduler() {
 		}
 	);
 
+	// Kjører hver hele time og sender 07:00/21:00 nudges basert på hver brukers lokale tidssone.
+	cron.schedule(
+		'0 * * * *',
+		async () => {
+			console.log('⏰ Running day planning/day close nudges at', new Date().toISOString());
+			const appUrl = env.ORIGIN || 'https://resonans.vercel.app';
+			await runDayPlanningAndCloseNudges(appUrl);
+		},
+		{
+			timezone: 'UTC'
+		}
+	);
+
 	// Withings-synk og nattlig aggregering håndteres av GitHub Actions cron
 	// via /api/cron/withings-sync og /api/cron/aggregate (se /api/cron/jobs).
 
 	isSchedulerRunning = true;
 	console.log('✅ Scheduler started:');
 	console.log('   - Daily check-in at 09:00 Europe/Oslo');
+	console.log('   - Day planning/day close nudges every hour (local time aware)');
 }
 
 async function sendDailyCheckIns() {

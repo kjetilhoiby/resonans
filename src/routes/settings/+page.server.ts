@@ -46,7 +46,9 @@ export const actions = {
 			: (existingUser?.timezone ?? 'Europe/Oslo');
 
 		// Parse notification settings
+		const existingSettings = (existingUser?.notificationSettings ?? {}) as Record<string, unknown>;
 		const notificationSettings = {
+			...existingSettings,
 			dailyCheckIn: {
 				enabled: data.get('dailyCheckInEnabled') === 'on',
 				time: data.get('dailyCheckInTime') as string

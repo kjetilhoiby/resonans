@@ -250,6 +250,160 @@ export function buildDailyCheckInMessage(data: {
 	};
 }
 
+export function buildDayPlanningNudgeMessage(data: {
+	appUrl: string;
+	userName?: string | null;
+	dayIso: string;
+	carryoverCount: number;
+	nudgeEventId?: string;
+}): GoogleChatMessage {
+	const { appUrl, userName, dayIso, carryoverCount, nudgeEventId } = data;
+	const greeting = userName ? `Hei ${userName}!` : 'Hei!';
+	const eventParam = nudgeEventId ? `&nudgeEventId=${encodeURIComponent(nudgeEventId)}` : '';
+
+	return {
+		cards: [
+			{
+				header: {
+					title: '🗓️ Planlegg dag',
+					subtitle: dayIso
+				},
+				sections: [
+					{
+						widgets: [
+							{
+								textParagraph: {
+									text: `<b>${greeting}</b><br>Dagen er ikke planlagt ennå. Sett en enlinjer og velg dagsoppgaver.`
+								}
+							},
+							{
+								keyValue: {
+									topLabel: 'Overliggere fra i går',
+									content: `${carryoverCount}`
+								}
+							},
+							{
+								buttons: [
+									{
+										textButton: {
+											text: 'Planlegg dag nå',
+											onClick: {
+												openLink: {
+													url: `${appUrl}/ukeplan?day=${dayIso}&nudgeTrack=plan_day${eventParam}`
+												}
+											}
+										}
+									}
+								]
+							}
+						]
+					}
+				]
+			}
+		]
+	};
+}
+
+export function buildDayCloseNudgeMessage(data: {
+	appUrl: string;
+	userName?: string | null;
+	dayIso: string;
+	openItems: number;
+	nudgeEventId?: string;
+}): GoogleChatMessage {
+	const { appUrl, userName, dayIso, openItems, nudgeEventId } = data;
+	const greeting = userName ? `Hei ${userName}!` : 'Hei!';
+	const eventParam = nudgeEventId ? `&nudgeEventId=${encodeURIComponent(nudgeEventId)}` : '';
+
+	return {
+		cards: [
+			{
+				header: {
+					title: '🌙 Avslutt dag',
+					subtitle: dayIso
+				},
+				sections: [
+					{
+						widgets: [
+							{
+								textParagraph: {
+									text: `<b>${greeting}</b><br>Du har fortsatt <b>${openItems}</b> åpne punkt i dag.`
+								}
+							},
+							{
+								buttons: [
+									{
+										textButton: {
+											text: 'Avslutt dag',
+											onClick: {
+												openLink: {
+													url: `${appUrl}/ukeplan?day=${dayIso}&nudgeTrack=close_day${eventParam}`
+												}
+											}
+										}
+									}
+								]
+							}
+						]
+					}
+				]
+			}
+		]
+	};
+}
+
+export function buildNudgeDigestMessage(data: {
+	userName?: string | null;
+	dayIso: string;
+	plannedItems: number;
+	openItems: number;
+	carryoverCount: number;
+	reason: string;
+}): GoogleChatMessage {
+	const { userName, dayIso, plannedItems, openItems, carryoverCount, reason } = data;
+	const greeting = userName ? `Hei ${userName}!` : 'Hei!';
+
+	return {
+		cards: [
+			{
+				header: {
+					title: '🧭 Dagsoppsummering',
+					subtitle: `${dayIso} · ${reason}`
+				},
+				sections: [
+					{
+						widgets: [
+							{
+								textParagraph: {
+									text: `<b>${greeting}</b><br>Vi holder det rolig nå. Her er status uten oppfordringer.`
+								}
+							},
+							{
+								keyValue: {
+									topLabel: 'Planlagt i dag',
+									content: `${plannedItems}`
+								}
+							},
+							{
+								keyValue: {
+									topLabel: 'Aapne punkt',
+									content: `${openItems}`
+								}
+							},
+							{
+								keyValue: {
+									topLabel: 'Overliggere fra i gaar',
+									content: `${carryoverCount}`
+								}
+							}
+						]
+					}
+				]
+			}
+		]
+	};
+}
+
 /**
  * Bygg milestone notification
  */
