@@ -42,6 +42,8 @@
 
 	let sparebank1Result = $state<{ success: boolean; message: string; debug?: Sparebank1SyncDebug } | null>(null);
 	let showSparebank1Details = $state(false);
+	let sparebank1ImportMode = $state<'days' | 'from2020'>('days');
+	let sparebank1ImportDays = $state(30);
 
 	let googleSheetsStatus = $state<any>(null);
 	let loadingGoogleSheets = $state(false);
@@ -192,14 +194,19 @@
 		}
 	}
 
-	async function syncSparebank1(fullHistory = false) {
+	async function syncSparebank1(mode: 'default' | 'days' | 'from2020' = 'default') {
 		syncingSparebank1 = true;
 		sparebank1Result = null;
 		showSparebank1Details = false;
 		try {
-			const url = fullHistory
-				? '/api/sensors/sparebank1/sync?fullHistory=true'
-				: '/api/sensors/sparebank1/sync';
+			let url = '/api/sensors/sparebank1/sync';
+			if (mode === 'from2020') {
+				url = '/api/sensors/sparebank1/sync?from2020=true';
+			} else if (mode === 'days') {
+				const safeDays = Math.max(1, Math.min(365, Math.floor(Number(sparebank1ImportDays) || 1)));
+				sparebank1ImportDays = safeDays;
+				url = `/api/sensors/sparebank1/sync?days=${safeDays}`;
+			}
 			const res = await fetch(url, { method: 'POST' });
 			const payload = await res.json();
 			if (!res.ok) throw new Error(payload.error || 'Sync feilet');
@@ -392,9 +399,46 @@
 			<p>Laster...</p>
 		{:else if sparebank1Status?.connected}
 			<p class="ok">Tilkoblet</p>
+			<div class="field">
+				<p class="field-title">Importperiode</p>
+				<div class="row import-mode-row">
+					<label class="option-pill">
+						<input
+							type="radio"
+							name="sparebank1-import-mode"
+							value="days"
+							checked={sparebank1ImportMode === 'days'}
+							onchange={() => (sparebank1ImportMode = 'days')}
+						/>
+						<span>Siste</span>
+						<input
+							type="number"
+							min="1"
+							max="365"
+							class="input days-input"
+							bind:value={sparebank1ImportDays}
+							disabled={sparebank1ImportMode !== 'days'}
+						/>
+						<span>dager</span>
+					</label>
+
+					<label class="option-pill">
+						<input
+							type="radio"
+							name="sparebank1-import-mode"
+							value="from2020"
+							checked={sparebank1ImportMode === 'from2020'}
+							onchange={() => (sparebank1ImportMode = 'from2020')}
+						/>
+						<span>Fra 2020 (uten begrensning)</span>
+					</label>
+				</div>
+			</div>
 			<div class="row">
-				<button class="btn-secondary" onclick={() => syncSparebank1(false)} disabled={syncingSparebank1}>Synk nå</button>
-				<button class="btn-secondary" onclick={() => syncSparebank1(true)} disabled={syncingSparebank1}>Full historikk</button>
+				<button class="btn-secondary" onclick={() => syncSparebank1('default')} disabled={syncingSparebank1}>Synk nå</button>
+				<button class="btn-secondary" onclick={() => syncSparebank1(sparebank1ImportMode)} disabled={syncingSparebank1}>
+					Importer valgt periode
+				</button>
 				<button class="btn-ghost" onclick={disconnectSparebank1}>Koble fra</button>
 			</div>
 		{:else}
@@ -563,6 +607,7 @@
 	.card h2 { margin-top: 0; color: var(--text-primary); }
 	.field { margin-bottom: 0.9rem; }
 	.field label { display: block; margin-bottom: 0.4rem; color: var(--text-primary); }
+	.field-title { margin: 0 0 0.4rem; color: var(--text-primary); }
 	.input { width: 100%; padding: 0.65rem; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-primary); color: var(--text-primary); }
 	.row { display: flex; gap: 0.6rem; flex-wrap: wrap; }
 	.ok { color: #4ade80; margin: 0.6rem 0 0; }
@@ -586,4 +631,15 @@
 	.debug-table { width: 100%; border-collapse: collapse; font-size: 0.79rem; color: var(--text-secondary); }
 	.debug-table th, .debug-table td { padding: 0.34rem 0.45rem; text-align: left; border-bottom: 1px solid var(--border-color); white-space: nowrap; }
 	.debug-table th { color: var(--text-tertiary); font-weight: 500; }
+	.import-mode-row { align-items: center; gap: 0.5rem; }
+	.option-pill {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.45rem;
+		padding: 0.4rem 0.55rem;
+		border: 1px solid var(--border-color);
+		border-radius: 10px;
+		background: var(--bg-primary);
+	}
+	.days-input { width: 6rem; padding: 0.35rem 0.45rem; }
 </style>
