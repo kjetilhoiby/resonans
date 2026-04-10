@@ -229,8 +229,24 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 							currency: 'NOK'
 						},
 						metadata: { source: 'pdf_import', file: name }
-						})
-						.onConflictDoNothing();
+					})
+					.onConflictDoNothing();
+				totalBalanceAnchors++;
+			}
+
+			// Insert transactions (deduped by content hash)
+			const newTxEvents = [];
+			for (const tx of statement.transactions) {
+				const dateStr = tx.date.toISOString().split('T')[0];
+				const hash = `${statement.accountNumber}:${dateStr}:${tx.description}:${Math.round(Math.abs(tx.amount) * 100)}`;
+
+				if (existingHashes.has(hash)) {
+					totalSkipped++;
+					continue;
+				}
+
+				existingHashes.add(hash);
+				newTxEvents.push({
 					userId,
 					sensorId,
 					eventType: 'activity' as const,

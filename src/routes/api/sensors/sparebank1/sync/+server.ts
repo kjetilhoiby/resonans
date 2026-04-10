@@ -12,10 +12,13 @@ export const POST: RequestHandler = async ({ url, locals }) => {
 	try {
 		const userId = locals.userId;
 		const fullHistory = url.searchParams.get('fullHistory') === 'true';
-		
-		const options = fullHistory 
-			? { fromDate: new Date(Date.now() - 2 * 365 * 24 * 60 * 60 * 1000) } // 2 years ago
-			: {};
+
+		const options = fullHistory
+			? {
+					fromDate: new Date(Date.now() - 2 * 365 * 24 * 60 * 60 * 1000), // 2 years ago
+					includeDebug: true
+			  }
+			: { includeDebug: true };
 
 		const synced = await syncAllSparebank1Data(userId, options);
 

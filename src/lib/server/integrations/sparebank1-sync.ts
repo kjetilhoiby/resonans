@@ -37,6 +37,43 @@ function encodeCredentials(credentials: BankCredentials): string {
 	return btoa(JSON.stringify(credentials));
 }
 
+export type Sparebank1TransactionDebugDecision =
+	| 'queued_for_insert'
+	| 'skipped_existing_in_db'
+	| 'duplicate_in_batch'
+	| 'replaced_by_booked_in_batch';
+
+export type Sparebank1TransactionDebugRow = {
+	accountId: string;
+	timestamp: string;
+	date: string;
+	description: string;
+	amount: number;
+	bookingStatus: string | null;
+	semanticKey: string;
+	decision: Sparebank1TransactionDebugDecision;
+	reason: string;
+	transactionId?: string | null;
+};
+
+export type Sparebank1SyncDebug = {
+	since: string | null;
+	rawTransactionCount: number;
+	uniqueTransactionCount: number;
+	queuedForInsertCount: number;
+	skippedExistingCount: number;
+	duplicateInBatchCount: number;
+	replacedByBookedInBatchCount: number;
+	transactions: Sparebank1TransactionDebugRow[];
+};
+
+export type Sparebank1SyncResult = {
+	balanceEvents: number;
+	transactionEvents: number;
+	accounts: number;
+	debug?: Sparebank1SyncDebug;
+};
+
 export async function getSparebank1Sensor(userId: string) {
 	return db.query.sensors.findFirst({
 		where: and(
@@ -95,12 +132,8 @@ export async function getValidSparebank1AccessToken(sensor: any): Promise<string
 
 export async function syncAllSparebank1Data(
 	userId: string,
-	options: { fromDate?: Date } = {}
-): Promise<{
-	balanceEvents: number;
-	transactionEvents: number;
-	accounts: number;
-}> {
+	options: { fromDate?: Date; includeDebug?: boolean } = {}
+): Promise<Sparebank1SyncResult> {
 	const sensor = await getSparebank1Sensor(userId);
 
 	if (!sensor) {
@@ -109,6 +142,12 @@ export async function syncAllSparebank1Data(
 
 	const accessToken = await getValidSparebank1AccessToken(sensor);
 	const since = options.fromDate ?? sensor.lastSync ?? undefined;
+	const includeDebug = options.includeDebug === true;
+	const txDebugByEvent = new WeakMap<object, Sparebank1TransactionDebugRow>();
+	const txDebugRows: Sparebank1TransactionDebugRow[] = [];
+	const replacedPendingKeys = new Set<string>();
+	let rawTransactionCount = 0;
+	let uniqueTransactionCount = 0;
 
 	await fetchSparebank1HelloWorld(accessToken);
 
@@ -216,6 +255,29 @@ export async function syncAllSparebank1Data(
 	}
 
 	if (transactionEvents.length > 0) {
+		rawTransactionCount = transactionEvents.length;
+		for (const event of transactionEvents) {
+			const date = event.timestamp.toISOString().split('T')[0];
+			const amount = Math.round((event.data.amount ?? 0) * 100);
+			const semanticKey = `${event.data.accountId}:${date}:${event.data.description}:${amount}`;
+			if (includeDebug) {
+				const row: Sparebank1TransactionDebugRow = {
+					accountId: event.data.accountId ?? '',
+					timestamp: event.timestamp.toISOString(),
+					date,
+					description: event.data.description ?? '',
+					amount: Number(event.data.amount ?? 0),
+					bookingStatus: event.data.bookingStatus ?? null,
+					semanticKey,
+					decision: 'queued_for_insert',
+					reason: 'Candidate before dedup checks',
+					transactionId: event.metadata?.transactionId ?? null
+				};
+				txDebugByEvent.set(event, row);
+				txDebugRows.push(row);
+			}
+		}
+
 		// Step 1: Deduplicate within the new batch itself (by transactionId)
 		// Step 1: Deduplicate within this batch by semantic key
 		// SB1 does NOT issue stable transactionIds — the same transaction can appear
@@ -231,11 +293,33 @@ export async function syncAllSparebank1Data(
 		for (const e of transactionEvents) {
 			const key = makeSemanticKey(e);
 			const existing = batchMap.get(key);
-			if (!existing || e.data.bookingStatus === 'BOOKED') {
+			if (!existing) {
 				batchMap.set(key, e);
+				continue;
+			}
+
+			const currentIsBooked = e.data.bookingStatus === 'BOOKED';
+			const existingIsBooked = existing.data.bookingStatus === 'BOOKED';
+
+			if (currentIsBooked && !existingIsBooked) {
+				if (includeDebug) {
+					const existingDebug = txDebugByEvent.get(existing);
+					if (existingDebug) {
+						existingDebug.decision = 'replaced_by_booked_in_batch';
+						existingDebug.reason = 'Replaced by BOOKED variant with same semantic key in this sync';
+					}
+				}
+				batchMap.set(key, e);
+			} else if (includeDebug) {
+				const currentDebug = txDebugByEvent.get(e);
+				if (currentDebug) {
+					currentDebug.decision = 'duplicate_in_batch';
+					currentDebug.reason = 'Duplicate semantic key in same sync batch';
+				}
 			}
 		}
 		const uniqueNewEvents = [...batchMap.values()];
+		uniqueTransactionCount = uniqueNewEvents.length;
 
 		console.log(`Filtered ${transactionEvents.length} -> ${uniqueNewEvents.length} unique transactions in batch`);
 
@@ -281,6 +365,7 @@ export async function syncAllSparebank1Data(
 		for (const event of incomingBooked) {
 			const key = makeSemanticKey(event);
 			if (existingPendingKeys.has(key)) {
+				replacedPendingKeys.add(key);
 				const date = event.timestamp.toISOString().split('T')[0];
 				const amount = Math.round((event.data.amount ?? 0) * 100) / 100;
 				await db.execute(sql`
@@ -298,6 +383,24 @@ export async function syncAllSparebank1Data(
 		}
 
 		const newEvents = uniqueNewEvents.filter((e) => !existingSemanticKeys.has(makeSemanticKey(e)));
+
+		if (includeDebug) {
+			for (const event of uniqueNewEvents) {
+				const key = makeSemanticKey(event);
+				const debug = txDebugByEvent.get(event);
+				if (!debug) continue;
+
+				if (existingSemanticKeys.has(key)) {
+					debug.decision = 'skipped_existing_in_db';
+					debug.reason = 'Already exists in sensor_events by semantic key';
+				} else {
+					debug.decision = 'queued_for_insert';
+					debug.reason = replacedPendingKeys.has(key)
+						? 'BOOKED transaction replaces existing PENDING row'
+						: 'Unique in batch and not found in DB';
+				}
+			}
+		}
 
 		console.log(`Filtered ${uniqueNewEvents.length} -> ${newEvents.length} new transactions (not in DB)`);
 
@@ -323,6 +426,20 @@ export async function syncAllSparebank1Data(
 	return {
 		balanceEvents: balanceEvents.length,
 		transactionEvents: transactionEvents.length,
-		accounts: accounts.length
+		accounts: accounts.length,
+		...(includeDebug
+			? {
+					debug: {
+						since: since ? since.toISOString() : null,
+						rawTransactionCount,
+						uniqueTransactionCount,
+						queuedForInsertCount: txDebugRows.filter((r) => r.decision === 'queued_for_insert').length,
+						skippedExistingCount: txDebugRows.filter((r) => r.decision === 'skipped_existing_in_db').length,
+						duplicateInBatchCount: txDebugRows.filter((r) => r.decision === 'duplicate_in_batch').length,
+						replacedByBookedInBatchCount: txDebugRows.filter((r) => r.decision === 'replaced_by_booked_in_batch').length,
+						transactions: [...txDebugRows].sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+					}
+			  }
+			: {})
 	};
 }

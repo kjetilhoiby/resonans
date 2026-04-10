@@ -17,7 +17,31 @@
 	let sparebank1Status = $state<any>(null);
 	let loadingSparebank1 = $state(false);
 	let syncingSparebank1 = $state(false);
-	let sparebank1Result = $state<{ success: boolean; message: string } | null>(null);
+	type Sparebank1DebugTransaction = {
+		accountId: string;
+		timestamp: string;
+		description: string;
+		amount: number;
+		bookingStatus: string | null;
+		decision: string;
+		reason: string;
+		semanticKey: string;
+		transactionId?: string | null;
+	};
+
+	type Sparebank1SyncDebug = {
+		since: string | null;
+		rawTransactionCount: number;
+		uniqueTransactionCount: number;
+		queuedForInsertCount: number;
+		skippedExistingCount: number;
+		duplicateInBatchCount: number;
+		replacedByBookedInBatchCount: number;
+		transactions: Sparebank1DebugTransaction[];
+	};
+
+	let sparebank1Result = $state<{ success: boolean; message: string; debug?: Sparebank1SyncDebug } | null>(null);
+	let showSparebank1Details = $state(false);
 
 	let googleSheetsStatus = $state<any>(null);
 	let loadingGoogleSheets = $state(false);
@@ -171,6 +195,7 @@
 	async function syncSparebank1(fullHistory = false) {
 		syncingSparebank1 = true;
 		sparebank1Result = null;
+		showSparebank1Details = false;
 		try {
 			const url = fullHistory
 				? '/api/sensors/sparebank1/sync?fullHistory=true'
@@ -178,12 +203,37 @@
 			const res = await fetch(url, { method: 'POST' });
 			const payload = await res.json();
 			if (!res.ok) throw new Error(payload.error || 'Sync feilet');
-			sparebank1Result = { success: true, message: payload.message || 'SpareBank 1 synkronisert.' };
+			sparebank1Result = {
+				success: true,
+				message: payload.message || 'SpareBank 1 synkronisert.',
+				debug: payload?.synced?.debug
+			};
 			await loadSparebank1Status();
 		} catch (error) {
 			sparebank1Result = { success: false, message: error instanceof Error ? error.message : 'Ukjent feil' };
 		} finally {
 			syncingSparebank1 = false;
+		}
+	}
+
+	function formatDateTime(iso: string) {
+		const date = new Date(iso);
+		if (Number.isNaN(date.getTime())) return iso;
+		return date.toLocaleString('nb-NO');
+	}
+
+	function formatDecision(decision: string) {
+		switch (decision) {
+			case 'queued_for_insert':
+				return 'Klar for insert';
+			case 'skipped_existing_in_db':
+				return 'Filtrert: finnes i DB';
+			case 'duplicate_in_batch':
+				return 'Filtrert: duplikat i batch';
+			case 'replaced_by_booked_in_batch':
+				return 'Filtrert: erstattet av BOOKED';
+			default:
+				return decision;
 		}
 	}
 
@@ -350,7 +400,64 @@
 		{:else}
 			<a href="/api/sensors/sparebank1/connect" class="btn-primary">Koble til SpareBank 1</a>
 		{/if}
-		{#if sparebank1Result}<p class={sparebank1Result.success ? 'ok' : 'err'}>{sparebank1Result.message}</p>{/if}
+		{#if sparebank1Result}
+			<p class={sparebank1Result.success ? 'ok' : 'err'}>{sparebank1Result.message}</p>
+			{#if sparebank1Result.success && sparebank1Result.debug}
+				<div class="details-wrap">
+					<button
+						type="button"
+						class="btn-ghost"
+						onclick={() => (showSparebank1Details = !showSparebank1Details)}
+					>
+						{showSparebank1Details ? 'Skjul detaljer' : 'Vis detaljer'}
+					</button>
+
+					{#if showSparebank1Details}
+						<div class="debug-panel">
+							<p class="debug-summary">
+								Funnet: {sparebank1Result.debug.rawTransactionCount} ·
+								Unike i batch: {sparebank1Result.debug.uniqueTransactionCount} ·
+								Klar for insert: {sparebank1Result.debug.queuedForInsertCount} ·
+								Filtrert i DB: {sparebank1Result.debug.skippedExistingCount} ·
+								Batch-duplikater: {sparebank1Result.debug.duplicateInBatchCount} ·
+								Erstattet av BOOKED: {sparebank1Result.debug.replacedByBookedInBatchCount}
+							</p>
+							{#if sparebank1Result.debug.since}
+								<p class="debug-since">Fra dato: {formatDateTime(sparebank1Result.debug.since)}</p>
+							{/if}
+							<div class="debug-table-wrap">
+								<table class="debug-table">
+									<thead>
+										<tr>
+											<th>Tidspunkt</th>
+											<th>Konto</th>
+											<th>Beskrivelse</th>
+											<th>Beløp</th>
+											<th>Status</th>
+											<th>Resultat</th>
+											<th>Årsak</th>
+										</tr>
+									</thead>
+									<tbody>
+										{#each sparebank1Result.debug.transactions as tx}
+											<tr>
+												<td>{formatDateTime(tx.timestamp)}</td>
+												<td>{tx.accountId}</td>
+												<td>{tx.description || '-'}</td>
+												<td>{tx.amount.toFixed(2)}</td>
+												<td>{tx.bookingStatus || '-'}</td>
+												<td>{formatDecision(tx.decision)}</td>
+												<td>{tx.reason}</td>
+											</tr>
+										{/each}
+									</tbody>
+								</table>
+							</div>
+						</div>
+					{/if}
+				</div>
+			{/if}
+		{/if}
 	</section>
 
 	<section class="card">
@@ -466,4 +573,17 @@
 	.anchor-table { width: 100%; border-collapse: collapse; margin-top: 0.75rem; font-size: 0.82rem; color: var(--text-secondary); }
 	.anchor-table th, .anchor-table td { padding: 0.4rem 0.6rem; text-align: left; border-bottom: 1px solid var(--border-color); }
 	.anchor-table th { color: var(--text-tertiary); font-weight: 500; }
+	.details-wrap { margin-top: 0.65rem; }
+	.debug-panel {
+		margin-top: 0.6rem;
+		padding: 0.7rem;
+		border: 1px solid var(--border-color);
+		border-radius: 10px;
+		background: color-mix(in oklab, var(--bg-card) 90%, var(--bg-primary) 10%);
+	}
+	.debug-summary, .debug-since { margin: 0 0 0.5rem; font-size: 0.85rem; color: var(--text-secondary); }
+	.debug-table-wrap { overflow-x: auto; }
+	.debug-table { width: 100%; border-collapse: collapse; font-size: 0.79rem; color: var(--text-secondary); }
+	.debug-table th, .debug-table td { padding: 0.34rem 0.45rem; text-align: left; border-bottom: 1px solid var(--border-color); white-space: nowrap; }
+	.debug-table th { color: var(--text-tertiary); font-weight: 500; }
 </style>
