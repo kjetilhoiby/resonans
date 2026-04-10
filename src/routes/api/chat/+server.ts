@@ -5,6 +5,7 @@ import { openai } from '$lib/server/openai';
 import { createGoal, createTask, getUserActiveGoalsAndTasks, findSimilarGoals, findSimilarTasks } from '$lib/server/goals';
 import { getOrCreateConversation, addMessage, getConversationHistory, getConversationByIdForUser } from '$lib/server/conversations';
 import { logActivity } from '$lib/server/activities';
+import { recordTrackingEvent } from '$lib/server/tracking-series';
 import { buildMemoryContext, createMemory } from '$lib/server/memories';
 import { isFutureVisionText, seedThemeInstructionFromFutureVision } from '$lib/server/theme-instructions';
 import { queryEconomicsTool } from '$lib/ai/tools/query-economics';
@@ -18,7 +19,6 @@ import {
 	markWidgetFlowCreated,
 	type WidgetCreationFlow
 } from '$lib/flows/widget-creation/flow';
-import { USER_ID_HEADER_NAME } from '$lib/server/request-user';
 import { routeChatRequest } from '$lib/server/chat-router';
 import { db } from '$lib/db';
 import { checklists, checklistItems, users } from '$lib/db/schema';
@@ -456,80 +456,73 @@ const tools = [
 	{
 		type: 'function' as const,
 		function: {
-			name: 'record_screen_time',
-			description: 'Registrer skjermtid fra et skjermbilde eller brukerens beskrivelse. Kan brukes for daglig skjermtid-tracking.',
+			name: 'record_tracking_event',
+			description: 'Generisk registrering av vaner/aktiviteter/målinger i tracking-systemet. Bruk denne i stedet for hardkodede record_* tools. Kan opprette ny serie ved første registrering eller bruke eksisterende seriesId ved senere registreringer.',
 			parameters: {
 				type: 'object',
 				properties: {
+					seriesId: {
+						type: 'string',
+						description: 'Valgfritt: eksisterende tracking-serie-ID. Bruk når registrering skal knyttes til en kjent serie.'
+					},
+					recordTypeKey: {
+						type: 'string',
+						description: 'Nøkkel for registreringstype, f.eks. micro_yoga, screen_time, mood.'
+					},
+					recordTypeLabel: {
+						type: 'string',
+						description: 'Lesbart navn for typen, brukes ved første opprettelse.'
+					},
+					kind: {
+						type: 'string',
+						enum: ['activity', 'measurement'],
+						description: 'Om registreringen primært er en aktivitet eller måling.'
+					},
 					date: {
 						type: 'string',
-						description: 'Dato for skjermtiden (ISO format: YYYY-MM-DD)'
-					},
-					totalMinutes: {
-						type: 'number',
-						description: 'Total skjermtid i minutter'
-					},
-					appBreakdown: {
-						type: 'object',
-						description: 'Fordeling av skjermtid per app (valgfritt)',
-						additionalProperties: {
-							type: 'number',
-							description: 'Minutter brukt i appen'
-						}
+						description: 'Dato for registreringen (ISO format: YYYY-MM-DD)'
 					},
 					note: {
 						type: 'string',
-						description: 'Valgfri merknad eller kontekst'
-					}
-				},
-				required: ['date', 'totalMinutes']
-			}
-		}
-	},
-	{
-		type: 'function' as const,
-		function: {
-			name: 'record_workout',
-			description: 'Registrer en treningsøkt. Støtter både cardio (løping, sykling) og styrketrening.',
-			parameters: {
-				type: 'object',
-				properties: {
-					type: {
-						type: 'string',
-						description: 'Type trening',
-						enum: ['running', 'cycling', 'walking', 'strength', 'yoga', 'swimming', 'other']
+						description: 'Valgfri kontekst/merknad.'
 					},
-					date: {
-						type: 'string',
-						description: 'Dato for økten (ISO format: YYYY-MM-DD)'
-					},
-					durationMinutes: {
-						type: 'number',
-						description: 'Varighet i minutter'
-					},
-					distance: {
-						type: 'number',
-						description: 'Distanse i kilometer (kun for cardio)'
-					},
-					exercises: {
+					measurements: {
 						type: 'array',
-						description: 'Liste over øvelser for styrketrening',
+						description: 'Liste over målinger knyttet til registreringen, f.eks. reps/minutter/score.',
 						items: {
 							type: 'object',
 							properties: {
-								name: { type: 'string' },
-								sets: { type: 'number' },
-								reps: { type: 'number' },
-								weight: { type: 'number', description: 'Vekt i kg' }
-							}
+								key: { type: 'string' },
+								value: {
+									oneOf: [{ type: 'number' }, { type: 'string' }, { type: 'boolean' }]
+								},
+								unit: { type: 'string' }
+							},
+							required: ['key', 'value']
 						}
 					},
-					notes: {
+					autoCreateSeries: {
+						type: 'boolean',
+						description: 'Om ny serie skal opprettes automatisk hvis ingen eksisterer.'
+					},
+					title: {
 						type: 'string',
-						description: 'Valgfri merknad om økten'
+						description: 'Tittel for serien ved første opprettelse.'
+					},
+					themeId: {
+						type: 'string',
+						description: 'Valgfri tema-ID for serien.'
+					},
+					autoRegister: {
+						type: 'boolean',
+						description: 'Skal denne serien kunne auto-registreres av triage neste gang?'
+					},
+					confirmationPolicy: {
+						type: 'string',
+						enum: ['always', 'low_confidence_only', 'never']
 					}
 				},
-				required: ['type', 'date', 'durationMinutes']
+				required: ['date']
 			}
 		}
 	},
@@ -667,97 +660,58 @@ const tools = [
 			{
 				type: 'function' as const,
 				function: {
-			name: 'record_mood',
-			description: 'Registrer humør/følelsestilstand for et tidspunkt.',
-			parameters: {
-				type: 'object',
-				properties: {
-					rating: {
-						type: 'number',
-						description: 'Humør på skala 1-10 (1=veldig dårlig, 10=utmerket)',
-						minimum: 1,
-						maximum: 10
-					},
-					date: {
-						type: 'string',
-						description: 'Dato (ISO format: YYYY-MM-DD)'
-					},
-					time: {
-						type: 'string',
-						description: 'Tidspunkt (HH:MM format, valgfritt)'
-					},
-					note: {
-						type: 'string',
-						description: 'Valgfri beskrivelse av humøret/hva som påvirket det'
-					},
-					tags: {
-						type: 'array',
-						description: 'Valgfrie tags som beskriver følelsen',
-						items: {
-							type: 'string',
-							enum: ['glad', 'trist', 'stresset', 'sliten', 'energisk', 'motivert', 'frustrert', 'rolig', 'bekymret', 'fornøyd']
-						}
+					name: 'propose_widget',
+					description: 'Foreslå en widget til brukeren UTEN å opprette den i databasen. Bruk ALLTID DETTE FØR create_widget. Returnerer et widget-draft som brukeren ser i et forslagskort der de kan bekrefte, konfigurere eller forkaste. Bruk når bruker vil ha en ny widget ("lag widget for dagligvare", "vis søvn siste 30 dager", "widget for løpedistanse"). ALDRI opprett widget direkte uten forslag og bekreftelse.',
+					parameters: {
+						type: 'object',
+						properties: {
+							title: {
+								type: 'string',
+								description: 'Kort, beskrivende tittel på widgeten (maks 40 tegn), f.eks. "Søvn / dag", "Ukentlig løping"'
+							},
+							metricType: {
+								type: 'string',
+								description: 'Hvilken metrikk widgeten viser',
+								enum: ['weight', 'sleepDuration', 'steps', 'distance', 'workoutCount', 'heartrate', 'mood', 'screenTime', 'amount']
+							},
+							aggregation: {
+								type: 'string',
+								description: 'Aggregeringsmetode: avg=gjennomsnitt, sum=sum, count=antall, latest=siste verdi',
+								enum: ['avg', 'sum', 'count', 'latest']
+							},
+							period: {
+								type: 'string',
+								description: 'Tidsoppløsning for sparkline: day=daglig, week=ukentlig, month=månedlig',
+								enum: ['day', 'week', 'month']
+							},
+							range: {
+								type: 'string',
+								description: 'Tidsvindu for data',
+								enum: ['last7', 'last14', 'last30', 'current_week', 'current_month', 'current_year']
+							},
+							filterCategory: {
+								type: 'string',
+								description: 'Valgfri kategorifilter for amount-metrikk',
+								enum: ['innskudd', 'dagligvarer', 'kafe_og_restaurant', 'faste_boutgifter', 'annet_lan_og_gjeld', 'bil_og_transport', 'helse_og_velvaere', 'medier_og_underholdning', 'hobby_og_fritid', 'hjem_og_hage', 'klaer_og_utstyr', 'barn', 'barnehage_og_sfo', 'forsikring', 'bilforsikring_og_billan', 'sparing', 'reise', 'diverse', 'ukategorisert']
+							},
+							unit: {
+								type: 'string',
+								description: 'Enhet som vises på widgeten, f.eks. "kg", "timer", "km", "steg", "kr"'
+							},
+							goal: {
+								type: 'number',
+								description: 'MÅL-VERDI for å vise fremgang som prosentring. Sett når bruker nevner konkret mål.'
+							},
+							color: {
+								type: 'string',
+								description: 'Hex-farge for widgeten',
+								enum: ['#7c8ef5', '#82c882', '#e07070', '#f0b429', '#5fa0a0', '#d4829a']
+							}
+						},
+						required: ['title', 'metricType', 'aggregation', 'period', 'range', 'unit']
 					}
-				},
-				required: ['rating', 'date']
-			}
-		}
-	},
-	{
-		type: 'function' as const,
-		function: {
-			name: 'propose_widget',
-			description: 'Foreslå en widget til brukeren UTEN å opprette den i databasen. Bruk ALLTID DETTE FØR create_widget. Returnerer et widget-draft som brukeren ser i et forslagskort der de kan bekrefte, konfigurere eller forkaste. Bruk når bruker vil ha en ny widget ("lag widget for dagligvare", "vis søvn siste 30 dager", "widget for løpedistanse"). ALDRI opprett widget direkte uten forslag og bekreftelse.',
-			parameters: {
-				type: 'object',
-				properties: {
-					title: {
-						type: 'string',
-						description: 'Kort, beskrivende tittel på widgeten (maks 40 tegn), f.eks. "Søvn / dag", "Ukentlig løping"'
-					},
-					metricType: {
-						type: 'string',
-						description: 'Hvilken metrikk widgeten viser',
-						enum: ['weight', 'sleepDuration', 'steps', 'distance', 'workoutCount', 'heartrate', 'mood', 'screenTime', 'amount']
-					},
-					aggregation: {
-						type: 'string',
-						description: 'Aggregeringsmetode: avg=gjennomsnitt, sum=sum, count=antall, latest=siste verdi',
-						enum: ['avg', 'sum', 'count', 'latest']
-					},
-					period: {
-						type: 'string',
-						description: 'Tidsoppløsning for sparkline: day=daglig, week=ukentlig, month=månedlig',
-						enum: ['day', 'week', 'month']
-					},
-					range: {
-						type: 'string',
-						description: 'Tidsvindu for data',
-						enum: ['last7', 'last14', 'last30', 'current_week', 'current_month', 'current_year']
-					},
-					filterCategory: {
-						type: 'string',
-						description: 'Valgfri kategorifilter for amount-metrikk',
-						enum: ['innskudd', 'dagligvarer', 'kafe_og_restaurant', 'faste_boutgifter', 'annet_lan_og_gjeld', 'bil_og_transport', 'helse_og_velvaere', 'medier_og_underholdning', 'hobby_og_fritid', 'hjem_og_hage', 'klaer_og_utstyr', 'barn', 'barnehage_og_sfo', 'forsikring', 'bilforsikring_og_billan', 'sparing', 'reise', 'diverse', 'ukategorisert']
-					},
-					unit: {
-						type: 'string',
-						description: 'Enhet som vises på widgeten, f.eks. "kg", "timer", "km", "steg", "kr"'
-					},
-					goal: {
-						type: 'number',
-						description: 'MÅL-VERDI for å vise fremgang som prosentring. Sett når bruker nevner konkret mål.'
-					},
-					color: {
-						type: 'string',
-						description: 'Hex-farge for widgeten',
-						enum: ['#7c8ef5', '#82c882', '#e07070', '#f0b429', '#5fa0a0', '#d4829a']
-					}
-				},
-				required: ['title', 'metricType', 'aggregation', 'period', 'range', 'unit']
-			}
-		}
-	},
+				}
+			},
 	{
 		type: 'function' as const,
 		function: {
@@ -973,9 +927,7 @@ function getToolProgressMessage(toolName: string) {
 		manage_theme: 'Oppdaterer tema...',
 		query_sensor_data: 'Henter sensordata...',
 		query_economics: 'Henter økonomidata...',
-		record_screen_time: 'Registrerer skjermtid...',
-		record_workout: 'Registrerer treningsøkt...',
-		record_mood: 'Registrerer humør...',
+		record_tracking_event: 'Registrerer tracking-hendelse...',
 		web_search: 'Søker på nettet...',
 		weather_forecast: 'Henter værdata...',
 		annotate_photo_composition: 'Analyserer bilde...',
@@ -1595,108 +1547,49 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 						content: JSON.stringify(result),
 						tool_call_id: toolCall.id
 					});
-				} else if (toolCall.type === 'function' && toolCall.function.name === 'record_screen_time') {
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'record_tracking_event') {
 					const args = JSON.parse(toolCall.function.arguments);
-					console.log('  📱 Recording screen time:', args);
+					console.log('  🧩 Recording tracking event:', args);
 
-					// Call API to save record
-					const response = await requestFetch(`${requestUrl.replace('/api/chat', '/api/ai-records')}`, {
-						method: 'POST',
-						headers: {
-							'Content-Type': 'application/json',
-							[USER_ID_HEADER_NAME]: userId
-						},
-						body: JSON.stringify({
-							type: 'screen_time',
-							date: args.date,
-							data: {
-								totalMinutes: args.totalMinutes,
-								appBreakdown: args.appBreakdown,
-								note: args.note
-							},
-							metadata: {
-								confidence: 'high',
-								original_tool: 'record_screen_time'
-							}
-						})
+					const result = await recordTrackingEvent({
+						userId,
+						seriesId: typeof args.seriesId === 'string' ? args.seriesId : undefined,
+						recordTypeKey: typeof args.recordTypeKey === 'string' ? args.recordTypeKey : undefined,
+						recordTypeLabel: typeof args.recordTypeLabel === 'string' ? args.recordTypeLabel : undefined,
+						kind: args.kind === 'measurement' ? 'measurement' : 'activity',
+						date: typeof args.date === 'string' ? args.date : new Date().toISOString().slice(0, 10),
+						note: typeof args.note === 'string' ? args.note : undefined,
+						measurements: Array.isArray(args.measurements) ? args.measurements : [],
+						autoCreateSeries: args.autoCreateSeries !== false,
+						title: typeof args.title === 'string' ? args.title : undefined,
+						themeId: typeof args.themeId === 'string' ? args.themeId : undefined,
+						conversationId: conversation.id,
+						autoRegister: args.autoRegister === true,
+						confirmationPolicy:
+							args.confirmationPolicy === 'always' ||
+							args.confirmationPolicy === 'low_confidence_only' ||
+							args.confirmationPolicy === 'never'
+								? args.confirmationPolicy
+								: undefined,
+						sourceImageUrl: effectiveImageUrl,
+						metadata: {
+							original_tool: 'record_tracking_event',
+							confidence: 'high'
+						}
 					});
-
-					const result = await response.json();
-					console.log('  📱 Result:', result.success ? 'Success' : 'Failed', result.message);
 
 					messages.push({
 						role: 'tool',
-						content: JSON.stringify(result),
-						tool_call_id: toolCall.id
-					});
-				} else if (toolCall.type === 'function' && toolCall.function.name === 'record_workout') {
-					const args = JSON.parse(toolCall.function.arguments);
-					console.log('  🏃 Recording workout:', args);
-
-					const response = await requestFetch(`${requestUrl.replace('/api/chat', '/api/ai-records')}`, {
-						method: 'POST',
-						headers: {
-							'Content-Type': 'application/json',
-							[USER_ID_HEADER_NAME]: userId
-						},
-						body: JSON.stringify({
-							type: 'workout',
-							date: args.date,
-							data: {
-								sportType: args.type,
-								duration: args.durationMinutes * 60, // Convert to seconds
-								distance: args.distance ? args.distance * 1000 : undefined, // Convert to meters
-								exercises: args.exercises,
-								notes: args.notes
-							},
-							metadata: {
-								confidence: 'high',
-								original_tool: 'record_workout',
-								sourceImageUrl: effectiveImageUrl || undefined
-							}
-						})
-					});
-
-					const result = await response.json();
-					console.log('  🏃 Result:', result.success ? 'Success' : 'Failed', result.message);
-
-					messages.push({
-						role: 'tool',
-						content: JSON.stringify(result),
-						tool_call_id: toolCall.id
-					});
-				} else if (toolCall.type === 'function' && toolCall.function.name === 'record_mood') {
-					const args = JSON.parse(toolCall.function.arguments);
-					console.log('  😊 Recording mood:', args);
-
-					const response = await requestFetch(`${requestUrl.replace('/api/chat', '/api/ai-records')}`, {
-						method: 'POST',
-						headers: {
-							'Content-Type': 'application/json',
-							[USER_ID_HEADER_NAME]: userId
-						},
-						body: JSON.stringify({
-							type: 'mood',
-							date: args.date,
-							data: {
-								rating: args.rating,
-								time: args.time,
-								note: args.note,
-								tags: args.tags
-							},
-							metadata: {
-								confidence: 'high',
-								original_tool: 'record_mood'
-							}
-						})
-					});
-
-					const result = await response.json();
-					console.log('  😊 Result:', result.success ? 'Success' : 'Failed', result.message);
-
-					messages.push({
-						role: 'tool',
-						content: JSON.stringify(result),
+						content: JSON.stringify({
+							success: result.success,
+							duplicate: result.duplicate ?? false,
+							eventId: result.event?.id ?? null,
+							seriesId: result.series?.id ?? null,
+							recordTypeKey: result.recordType?.key ?? null,
+							message: result.duplicate
+								? 'Duplikat oppdaget for denne perioden, registreringen ble ikke lagret.'
+								: 'Tracking-registrering lagret.'
+						}),
 						tool_call_id: toolCall.id
 					});
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'web_search') {

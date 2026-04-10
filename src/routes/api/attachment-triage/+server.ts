@@ -4,6 +4,12 @@ import { v2 as cloudinary } from 'cloudinary';
 import { env } from '$env/dynamic/private';
 import { openai } from '$lib/server/openai';
 import JSZip from 'jszip';
+import {
+	buildImageSignature,
+	computeByteHash,
+	runTrackingTriage,
+	type TrackingTriageResult
+} from '$lib/server/tracking-triage';
 
 // @ts-ignore - Buffer is available in Node.js runtime
 const BufferGlobal = Buffer;
@@ -438,7 +444,7 @@ JSON-format:
 	return normalizeSuggestedActions(params.kind, params.note, params.name, parseTriageResult(content));
 }
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, locals }) => {
 	try {
 		if (!env.CLOUDINARY_CLOUD_NAME || !env.CLOUDINARY_API_KEY || !env.CLOUDINARY_API_SECRET) {
 			return json({ error: 'Cloudinary not configured' }, { status: 500 });
@@ -496,6 +502,48 @@ export const POST: RequestHandler = async ({ request }) => {
 			extractionKind: extraction.extractionKind
 		});
 
+		let tracking: TrackingTriageResult | null = null;
+		if (kind === 'image') {
+			const byteHash = computeByteHash(buffer);
+			const imageSignature = await buildImageSignature({
+				attachmentUrl: uploaded.secure_url,
+				note,
+				byteHash
+			}).catch(() => null);
+
+			const userId = locals.userId;
+			if (userId) {
+				tracking = await runTrackingTriage(
+					{
+						userId,
+						attachment: {
+							url: uploaded.secure_url,
+							kind,
+							note,
+							contentText: extraction.contentText,
+							source
+						},
+						triage: {
+							summary: triage.summary,
+							extractedSignals: triage.extractedSignals,
+							detectedIntent: triage.detectedIntent,
+							confidence: triage.confidence
+						},
+						byteHash
+					},
+					imageSignature
+				).catch(() => null);
+			}
+
+			if (imageSignature) {
+				triage.extractedSignals = [
+					...triage.extractedSignals,
+					`layout:${imageSignature.layoutPattern ?? 'unknown'}`,
+					`markers:${imageSignature.markerDensity ?? 'low'}`
+					].slice(0, 8);
+			}
+		}
+
 		return json({
 			success: true,
 			attachment: {
@@ -510,7 +558,8 @@ export const POST: RequestHandler = async ({ request }) => {
 				contentText: extraction.contentText,
 				extractionKind: extraction.extractionKind
 			},
-			triage
+			triage,
+			tracking
 		});
 	} catch (error) {
 		console.error('Attachment triage failed:', error);

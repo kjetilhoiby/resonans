@@ -82,6 +82,7 @@
 			longTermGoals: GoalReminder[];
 			dayChecklists: Record<string, DayChecklist>;
 			dayNotes: Record<string, string>;
+			dayHeadlines: Record<string, string>;
 			activeTrips: Array<{
 				id: string;
 				name: string;
@@ -107,6 +108,31 @@
 		return `${year}-${month}-${day}`;
 	}
 
+	function getIsoWeekDashedFromIsoDate(isoDate: string) {
+		const [yearRaw, monthRaw, dayRaw] = isoDate.split('-');
+		const year = Number.parseInt(yearRaw ?? '', 10);
+		const month = Number.parseInt(monthRaw ?? '', 10);
+		const day = Number.parseInt(dayRaw ?? '', 10);
+		if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+			return data.week.dashedKey;
+		}
+
+		const d = new Date(Date.UTC(year, month - 1, day));
+		const dayNum = d.getUTCDay() || 7;
+		d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+		const isoYear = d.getUTCFullYear();
+		const yearStart = new Date(Date.UTC(isoYear, 0, 1));
+		const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+		const week = String(weekNo).padStart(2, '0');
+		return `${isoYear}-W${week}`;
+	}
+
+	function addDaysIsoDate(isoDate: string, days: number) {
+		const date = new Date(`${isoDate}T00:00:00.000Z`);
+		date.setUTCDate(date.getUTCDate() + days);
+		return date.toISOString().slice(0, 10);
+	}
+
 	let { data }: Props = $props();
 	const todayIso = toLocalIsoDate(new Date());
 	const dayFromQuery = typeof window !== 'undefined'
@@ -124,9 +150,16 @@
 	let weekComposerText = $state('');
 	let weekComposerCount = $state(1);
 	let dayComposerText = $state('');
-	let dayComposerCount = $state(1);
 	let dayNotesState = $state<Record<string, string>>(structuredClone(data.dayNotes));
+	let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayHeadlines));
 	let planningImportBusy = $state(false);
+	let dayCloseBusy = $state(false);
+	let dayCloseMessage = $state('');
+	let dayPlannerOpen = $state(false);
+	let dayPlannerBusy = $state(false);
+	let dayPlannerMessage = $state('');
+	let dayPlannerIntro = $state('');
+	let dayPlannerSuggestions = $state<Array<{ id: string; text: string; source: 'carryover' | 'week'; selected: boolean }>>([]);
 	let editingItem = $state<EditingItem | null>(null);
 	let dragItem = $state<{ checklistId: string; itemId: string } | null>(null);
 	let skipEditBlur = false;
@@ -144,6 +177,7 @@
 	const selectedDayChecklist = $derived(dayChecklistsState[selectedDayIso] ?? null);
 	const selectedDay = $derived(data.week.days.find((day) => day.isoDate === selectedDayIso) ?? data.week.days[0]);
 	const selectedDayNote = $derived(dayNotesState[selectedDayIso] ?? '');
+	const selectedDayHeadline = $derived(dayHeadlinesState[selectedDayIso] ?? '');
 
 	// Map iso-date → trip emoji for days that are part of a trip
 	const tripDayEmoji = $derived.by(() => {
@@ -263,6 +297,8 @@
 
 	function setSelectedDay(dayIso: string) {
 		selectedDayIso = dayIso;
+		dayPlannerMessage = '';
+		dayPlannerOpen = false;
 		if (typeof window !== 'undefined') {
 			const params = new URLSearchParams(window.location.search);
 			params.set('day', dayIso);
@@ -414,6 +450,157 @@
 			items: [...current.items, ...created]
 		}));
 		flashSaved(key);
+	}
+
+	async function appendChecklistItems(checklistId: string, texts: string[]) {
+		const checklist = getChecklistById(checklistId);
+		let nextSortOrder = checklist?.items.length ?? 0;
+		const created: ChecklistItem[] = [];
+
+		for (const rawText of texts) {
+			const text = rawText.trim();
+			if (!text) continue;
+
+			const response = await fetch(`/api/checklists/${checklistId}/items`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ text, count: 1, sortOrder: nextSortOrder })
+			});
+
+			if (!response.ok) continue;
+			const added = await response.json() as ChecklistItem[];
+			created.push(...added);
+			nextSortOrder += Math.max(added.length, 1);
+		}
+
+		if (created.length > 0 && checklist) {
+			updateChecklistById(checklistId, (current) => ({
+				...current,
+				items: [...current.items, ...created]
+			}));
+		}
+
+		return created;
+	}
+
+	async function setChecklistCompleted(checklistId: string, completed: boolean) {
+		const completedAt = completed ? new Date().toISOString() : null;
+		const response = await fetch(`/api/checklists/${checklistId}`, {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ completedAt })
+		});
+
+		if (!response.ok) return false;
+
+		updateChecklistById(checklistId, (current) => ({
+			...current,
+			completedAt
+		}));
+
+		return true;
+	}
+
+	async function fetchDayChecklistByContext(context: string) {
+		const response = await fetch(`/api/checklists?contexts=${encodeURIComponent(context)}`);
+		if (!response.ok) return null;
+		const rows = await response.json() as DayChecklist[];
+		return rows[0] ?? null;
+	}
+
+	function togglePlannerSuggestion(id: string) {
+		dayPlannerSuggestions = dayPlannerSuggestions.map((item) =>
+			item.id === id ? { ...item, selected: !item.selected } : item
+		);
+	}
+
+	async function saveDayHeadline(dayIso: string, headline: string) {
+		const form = new FormData();
+		form.set('weekKey', data.week.dashedKey);
+		form.set('dayIso', dayIso);
+		form.set('headline', headline);
+
+		const response = await fetch('?/saveDayHeadline', {
+			method: 'POST',
+			body: form
+		});
+
+		return response.ok;
+	}
+
+	async function openDayPlanner() {
+		if (dayPlannerBusy) return;
+		dayPlannerBusy = true;
+		dayPlannerMessage = '';
+
+		const prevDayIso = addDaysIsoDate(selectedDayIso, -1);
+		const prevWeekKey = getIsoWeekDashedFromIsoDate(prevDayIso);
+		const prevContext = `week:${prevWeekKey}:day:${prevDayIso}`;
+		const prevChecklist = await fetchDayChecklistByContext(prevContext);
+
+		const carryovers = (prevChecklist?.items ?? [])
+			.filter((item) => !item.checked)
+			.map((item) => item.text.trim())
+			.filter((text) => text.length > 0);
+
+		const weekTaskSuggestions = data.weekTasks
+			.filter((task) => task.completedCount < task.repeatCount)
+			.map((task) => task.title.trim())
+			.filter((text) => text.length > 0);
+
+		const unique = new Set<string>();
+		const nextSuggestions: Array<{ id: string; text: string; source: 'carryover' | 'week'; selected: boolean }> = [];
+		for (const text of carryovers) {
+			const key = text.toLowerCase();
+			if (unique.has(key)) continue;
+			unique.add(key);
+			nextSuggestions.push({ id: `carry:${key}`, text, source: 'carryover', selected: true });
+		}
+		for (const text of weekTaskSuggestions) {
+			const key = text.toLowerCase();
+			if (unique.has(key)) continue;
+			unique.add(key);
+			nextSuggestions.push({ id: `week:${key}`, text, source: 'week', selected: false });
+		}
+
+		dayPlannerSuggestions = nextSuggestions;
+		dayPlannerIntro = dayHeadlinesState[selectedDayIso] ?? '';
+		dayPlannerOpen = true;
+		dayPlannerBusy = false;
+	}
+
+	async function applyDayPlanner() {
+		if (dayPlannerBusy) return;
+		dayPlannerBusy = true;
+		dayPlannerMessage = '';
+
+		const checklist = await ensureDayChecklist(selectedDayIso);
+		if (!checklist) {
+			dayPlannerBusy = false;
+			dayPlannerMessage = 'Kunne ikke opprette dagsliste.';
+			return;
+		}
+
+		const selectedSuggestions = dayPlannerSuggestions
+			.filter((item) => item.selected)
+			.map((item) => item.text.trim())
+			.filter((text) => text.length > 0);
+
+		const existingTexts = new Set(
+			(checklist.items ?? []).map((item) => item.text.trim().toLowerCase())
+		);
+		const toCreate = selectedSuggestions.filter((text) => !existingTexts.has(text.toLowerCase()));
+		if (toCreate.length > 0) {
+			await appendChecklistItems(checklist.id, toCreate);
+		}
+
+		const intro = dayPlannerIntro.trim();
+		dayHeadlinesState = { ...dayHeadlinesState, [selectedDayIso]: intro };
+		await saveDayHeadline(selectedDayIso, intro);
+
+		dayPlannerBusy = false;
+		dayPlannerOpen = false;
+		dayPlannerMessage = `Planlagt: ${toCreate.length} nye dagsoppgaver.`;
 	}
 
 	async function toggleChecklistItem(checklistId: string, itemId: string, checked: boolean) {
@@ -586,9 +773,8 @@
 	async function submitDayComposer() {
 		const checklist = await ensureDayChecklist(selectedDayIso);
 		if (!checklist) return;
-		await createChecklistItem(checklist.id, dayComposerText, dayComposerCount);
+		await createChecklistItem(checklist.id, dayComposerText, 1);
 		dayComposerText = '';
-		dayComposerCount = 1;
 		await tick();
 		dayComposerInput?.focus();
 	}
@@ -596,6 +782,7 @@
 	async function ensureDayChecklist(dayIso: string) {
 		const existing = dayChecklistsState[dayIso];
 		if (existing) return existing;
+		const weekKey = getIsoWeekDashedFromIsoDate(dayIso);
 
 		const response = await fetch('/api/checklists', {
 			method: 'POST',
@@ -603,7 +790,7 @@
 			body: JSON.stringify({
 				title: `Dag ${dayIso}`,
 				emoji: '☑️',
-				context: `week:${data.week.dashedKey}:day:${dayIso}`
+				context: `week:${weekKey}:day:${dayIso}`
 			})
 		});
 
@@ -621,6 +808,49 @@
 		};
 
 		return dayChecklistsState[dayIso];
+	}
+
+	async function closeSelectedDay(mode: 'unsolved' | 'carryover') {
+		if (!selectedDayChecklist || dayCloseBusy) return;
+		const sourceChecklist = selectedDayChecklist;
+		const openItems = sourceChecklist.items.filter((item) => !item.checked);
+
+		dayCloseBusy = true;
+		dayCloseMessage = '';
+
+		if (mode === 'carryover' && openItems.length > 0) {
+			const nextDayIso = addDaysIsoDate(selectedDayIso, 1);
+			const targetChecklist = await ensureDayChecklist(nextDayIso);
+			if (!targetChecklist) {
+				dayCloseBusy = false;
+				dayCloseMessage = 'Kunne ikke opprette neste dagsliste.';
+				return;
+			}
+
+			const existingTexts = new Set(
+				(targetChecklist.items ?? []).map((item) => item.text.trim().toLowerCase())
+			);
+			const itemsToCarry = openItems
+				.map((item) => item.text.trim())
+				.filter((text) => text.length > 0)
+				.filter((text) => !existingTexts.has(text.toLowerCase()));
+
+			if (itemsToCarry.length > 0) {
+				await appendChecklistItems(targetChecklist.id, itemsToCarry);
+			}
+		}
+
+		const closed = await setChecklistCompleted(sourceChecklist.id, true);
+		dayCloseBusy = false;
+		if (!closed) {
+			dayCloseMessage = 'Kunne ikke avslutte dagen.';
+			return;
+		}
+
+		dayCloseMessage = mode === 'carryover'
+			? 'Dag avsluttet. Aapne punkter er tatt med til neste dag.'
+			: 'Dag avsluttet. Aapne punkter ble staende som uloeste.';
+		flashSaved('dayItems');
 	}
 
 	async function ensureWeekChecklist() {
@@ -992,6 +1222,65 @@
 		</div>
 
 		<div class="wp-notes-form">
+			<div class="wp-day-plan-headline">
+				<div class="wp-day-plan-headline-row">
+					<div>
+						<p class="wp-subhead">Planlegg dag</p>
+						{#if selectedDayHeadline}
+							<p class="wp-helper">Enlinjer: {selectedDayHeadline}</p>
+						{:else}
+							<p class="wp-helper">Hent overliggere + ukesmaal, og sett en kort enlinjer for dagen.</p>
+						{/if}
+					</div>
+					<button class="wp-btn" type="button" onclick={() => void openDayPlanner()} disabled={dayPlannerBusy}>
+						{dayPlannerBusy ? 'Henter ...' : 'Planlegg dag'}
+					</button>
+				</div>
+
+				{#if dayPlannerOpen}
+					<div class="wp-day-planner">
+						<label class="wp-day-planner-label" for="plannerIntro">Enlinjer for dagen</label>
+						<input
+							id="plannerIntro"
+							class="wp-input"
+							type="text"
+							bind:value={dayPlannerIntro}
+							placeholder="F.eks: To barn på svømming og Anita på FAU-møte"
+						/>
+
+						{#if dayPlannerSuggestions.length > 0}
+							<p class="wp-day-planner-label">Forslag til dagsoppgaver</p>
+							<div class="wp-day-planner-suggestions">
+								{#each dayPlannerSuggestions as suggestion}
+									<button
+										type="button"
+										class="wp-day-planner-item"
+										class:selected={suggestion.selected}
+										onclick={() => togglePlannerSuggestion(suggestion.id)}
+									>
+										<span>{suggestion.text}</span>
+										<span class="wp-day-planner-source">{suggestion.source === 'carryover' ? 'overligger' : 'ukesmaal'}</span>
+									</button>
+								{/each}
+							</div>
+						{:else}
+							<p class="wp-empty">Ingen forslag funnet akkurat nå.</p>
+						{/if}
+
+						<div class="wp-day-planner-actions">
+							<button class="wp-btn" type="button" onclick={() => void applyDayPlanner()} disabled={dayPlannerBusy}>
+								{dayPlannerBusy ? 'Lagrer ...' : 'Bruk dette i dagslista'}
+							</button>
+							<button class="wp-btn wp-btn-secondary" type="button" onclick={() => (dayPlannerOpen = false)} disabled={dayPlannerBusy}>Avbryt</button>
+						</div>
+					</div>
+				{/if}
+
+				{#if dayPlannerMessage}
+					<p class="wp-helper">{dayPlannerMessage}</p>
+				{/if}
+			</div>
+
 			<div class="wp-field-shell">
 				<textarea
 					class="wp-textarea"
@@ -1013,6 +1302,21 @@
 		</div>
 
 		{#if selectedDayChecklist}
+			{@const openDayItems = selectedDayChecklist.items.filter((item) => !item.checked)}
+			{#if openDayItems.length > 0}
+				<div class="wp-day-close-actions">
+					<button class="wp-btn" type="button" onclick={() => void closeSelectedDay('unsolved')} disabled={dayCloseBusy}>
+						{dayCloseBusy ? 'Jobber ...' : 'Avslutt dag (marker uloest)'}
+					</button>
+					<button class="wp-btn wp-btn-secondary" type="button" onclick={() => void closeSelectedDay('carryover')} disabled={dayCloseBusy}>
+						{dayCloseBusy ? 'Jobber ...' : 'Avslutt dag og ta med aapne til neste dag'}
+					</button>
+				</div>
+			{/if}
+			{#if dayCloseMessage}
+				<p class="wp-helper">{dayCloseMessage}</p>
+			{/if}
+
 			<ul class="wp-checklist">
 				{#each selectedDayChecklist.items as item}
 					<li
@@ -1063,23 +1367,14 @@
 
 			<div class="wp-add-form">
 				<div class="wp-field-shell">
-					<div class="wp-inline-inputs">
-						<input
-							bind:this={dayComposerInput}
-							bind:value={dayComposerText}
-							class="wp-input"
-							type="text"
-							placeholder={`Skriv dagsmaal for ${selectedDay.label} og trykk Enter`}
-							onkeydown={(event) => handleComposerKeydown(event, 'day')}
-						/>
-						<input
-							bind:value={dayComposerCount}
-							class="wp-input wp-input-count"
-							type="number"
-							min="1"
-							max="12"
-						/>
-					</div>
+					<input
+						bind:this={dayComposerInput}
+						bind:value={dayComposerText}
+						class="wp-input"
+						type="text"
+						placeholder={`Skriv dagsmaal for ${selectedDay.label} og trykk Enter`}
+						onkeydown={(event) => handleComposerKeydown(event, 'day')}
+					/>
 					<span class="wp-save-dot" class:is-saving={saveStates.dayItems === 'saving'} class:is-saved={saveStates.dayItems === 'saved'} aria-hidden="true"></span>
 				</div>
 			</div>
@@ -1087,23 +1382,14 @@
 			<p class="wp-empty">Ingen dagsmaal for valgt dag ennå.</p>
 			<div class="wp-add-form">
 				<div class="wp-field-shell">
-					<div class="wp-inline-inputs">
-						<input
-							bind:this={dayComposerInput}
-							bind:value={dayComposerText}
-							class="wp-input"
-							type="text"
-							placeholder={`Skriv første dagsmaal for ${selectedDay.label} og trykk Enter`}
-							onkeydown={(event) => handleComposerKeydown(event, 'day')}
-						/>
-						<input
-							bind:value={dayComposerCount}
-							class="wp-input wp-input-count"
-							type="number"
-							min="1"
-							max="12"
-						/>
-					</div>
+					<input
+						bind:this={dayComposerInput}
+						bind:value={dayComposerText}
+						class="wp-input"
+						type="text"
+						placeholder={`Skriv første dagsmaal for ${selectedDay.label} og trykk Enter`}
+						onkeydown={(event) => handleComposerKeydown(event, 'day')}
+					/>
 					<span class="wp-save-dot" class:is-saving={saveStates.dayItems === 'saving'} class:is-saved={saveStates.dayItems === 'saved'} aria-hidden="true"></span>
 				</div>
 			</div>
@@ -1503,6 +1789,92 @@
 		grid-template-columns: 1fr auto;
 		gap: 8px;
 		align-items: center;
+	}
+
+	.wp-day-plan-headline {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		padding: 8px;
+		border-radius: 10px;
+		border: 1px solid #242c40;
+		background: #0e121c;
+	}
+
+	.wp-day-plan-headline-row {
+		display: flex;
+		justify-content: space-between;
+		gap: 10px;
+		align-items: flex-start;
+	}
+
+	.wp-day-planner {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+
+	.wp-day-planner-label {
+		font-size: 0.72rem;
+		color: #9aa3bb;
+		font-weight: 600;
+	}
+
+	.wp-day-planner-suggestions {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.wp-day-planner-item {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 10px;
+		padding: 8px 9px;
+		border-radius: 8px;
+		border: 1px solid #2a3347;
+		background: #121726;
+		color: #ccd4ef;
+		cursor: pointer;
+		text-align: left;
+	}
+
+	.wp-day-planner-item.selected {
+		border-color: #4b5fb4;
+		background: #182244;
+	}
+
+	.wp-day-planner-source {
+		font-size: 0.64rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: #8b98c7;
+		flex-shrink: 0;
+	}
+
+	.wp-day-planner-actions {
+		display: flex;
+		gap: 8px;
+		flex-wrap: wrap;
+	}
+
+	.wp-day-close-actions {
+		display: flex;
+		gap: 8px;
+		margin: 8px 0 10px;
+		flex-wrap: wrap;
+	}
+
+	.wp-btn-secondary {
+		background: #11172a;
+		border-color: #273149;
+		color: #bac6f9;
+	}
+
+	.wp-btn-secondary:hover:not(:disabled) {
+		background: #1a2442;
+		border-color: #3a4e86;
 	}
 
 	.wp-edit-input {

@@ -630,6 +630,21 @@
 			confidence: 'low' | 'medium' | 'high';
 			extractedSignals: string[];
 		};
+		tracking?: {
+			matched: boolean;
+			seriesId?: string;
+			title?: string;
+			recordTypeKey?: string;
+			confidence?: 'low' | 'medium' | 'high';
+			action?: 'auto_register' | 'confirm' | 'none';
+			reasoning?: string;
+			extracted?: {
+				date?: string;
+				note?: string;
+				measurements?: Array<{ key: string; value: number | string | boolean; unit?: string }>;
+			};
+			autoRecordedEventId?: string;
+		} | null;
 	}
 
 	async function requestAttachmentTriage(
@@ -664,15 +679,54 @@
 		].filter(Boolean).join('\n\n');
 	}
 
+	function buildTrackingPrompt(tracking: NonNullable<AttachmentTriageResponse['tracking']>) {
+		const date = tracking.extracted?.date || new Date().toISOString().slice(0, 10);
+		const note = tracking.extracted?.note || '';
+		const measurements = (tracking.extracted?.measurements || [])
+			.map((m) => `${m.key}=${String(m.value)}${m.unit ? ` ${m.unit}` : ''}`)
+			.join(', ');
+
+		return [
+			`Registrer dette i tracking-serien ${tracking.title || tracking.recordTypeKey || 'ukjent'} (${tracking.seriesId || ''}).`,
+			`Dato: ${date}`,
+			note ? `Notat: ${note}` : null,
+			measurements ? `Målinger: ${measurements}` : null,
+			'Bruk record_tracking_event og seriesId fra meldingen.'
+		]
+			.filter(Boolean)
+			.join('\n');
+	}
+
 	function presentAttachmentTriage(result: AttachmentTriageResponse) {
 		const attachment = result.attachment;
 		const triageText = buildAttachmentTriageText(result.triage);
-		const actions = result.triage.suggestedActions.map((action) => ({
+		const actions: ChatAction[] = result.triage.suggestedActions.map((action) => ({
 			label: action.label,
 			onclick: () => {
 				void sendChat(action.prompt, attachment.kind === 'image' ? attachment.url : undefined, attachment);
 			}
 		}));
+
+		let trackingText: string | null = null;
+		if (result.tracking?.matched) {
+			const conf = result.tracking.confidence || 'low';
+			const label = result.tracking.title || result.tracking.recordTypeKey || 'ukjent serie';
+			if (result.tracking.autoRecordedEventId) {
+				trackingText = `Tracking-match: ${label} (${conf}). Registrering lagret automatisk.`;
+			} else if (result.tracking.action === 'confirm') {
+				trackingText = `Tracking-match: ${label} (${conf}). Klar for bekreftet registrering.`;
+				actions.unshift({
+					label: 'Registrer i serie',
+					onclick: () => {
+						if (!result.tracking) return;
+						const prompt = buildTrackingPrompt(result.tracking);
+						void sendChat(prompt, attachment.kind === 'image' ? attachment.url : undefined, attachment);
+					}
+				});
+			}
+		}
+
+		const assistantText = [triageText, trackingText].filter(Boolean).join('\n\n');
 
 		selectedQuickAction = 'chat';
 		chatOpen = true;
@@ -688,7 +742,7 @@
 			},
 			{
 				role: 'assistant',
-				text: triageText,
+				text: assistantText,
 				actions
 			}
 		];

@@ -13,6 +13,8 @@ export const users = pgTable('users', {
 	googleChatWebhook: text('google_chat_webhook'),
 	notificationSettings: jsonb('notification_settings').$type<{
 		dailyCheckIn?: { enabled: boolean; time: string }; // format: "09:00"
+		dayPlanning?: { enabled: boolean; time: string }; // default "07:00"
+		dayClose?: { enabled: boolean; time: string }; // default "21:00"
 		weeklyReview?: { enabled: boolean; day: string; time: string }; // day: "sunday", time: "18:00"
 		milestones?: { enabled: boolean };
 		reminders?: { enabled: boolean };
@@ -331,6 +333,93 @@ export const webPushSubscriptions = pgTable('web_push_subscriptions', {
 	idxUserId: index('web_push_subscriptions_user_id_idx').on(table.userId)
 }));
 
+// Definisjon av registrerbare typer (global katalog)
+export const recordTypeDefinitions = pgTable('record_type_definitions', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	key: text('key').notNull().unique(), // f.eks. 'micro_yoga', 'screen_time'
+	label: text('label').notNull(),
+	description: text('description'),
+	kind: text('kind').notNull().default('activity'), // 'activity' | 'measurement'
+	defaultEventType: text('default_event_type').notNull().default('activity'),
+	defaultDataType: text('default_data_type').notNull(),
+	defaultParentTheme: text('default_parent_theme'),
+	measurementSchema: jsonb('measurement_schema').$type<{
+		fields?: Array<{
+			key: string;
+			label?: string;
+			type?: 'number' | 'boolean' | 'string';
+			unit?: string;
+			required?: boolean;
+		}>;
+	}>(),
+	matchingHints: jsonb('matching_hints').$type<{
+		keywords?: string[];
+		visualTokens?: string[];
+		appNames?: string[];
+	}>(),
+	dedupePolicy: text('dedupe_policy').notNull().default('none'), // 'none' | 'one_per_day' | 'one_per_hour'
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+});
+
+// Bruker-spesifikk serie for en registreringsflyt (f.eks. daglig mikroyoga)
+export const trackingSeries = pgTable('tracking_series', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	recordTypeId: uuid('record_type_id').references(() => recordTypeDefinitions.id).notNull(),
+	themeId: uuid('theme_id').references(() => themes.id, { onDelete: 'set null' }),
+	taskId: uuid('task_id').references(() => tasks.id, { onDelete: 'set null' }),
+	createdFromConversationId: uuid('created_from_conversation_id').references(() => conversations.id, {
+		onDelete: 'set null'
+	}),
+	title: text('title').notNull(),
+	status: text('status').notNull().default('active'), // 'active' | 'paused' | 'archived'
+	autoRegister: boolean('auto_register').notNull().default(false),
+	confirmationPolicy: text('confirmation_policy').notNull().default('low_confidence_only'), // 'always'|'low_confidence_only'|'never'
+	captureHints: jsonb('capture_hints').$type<{
+		sources?: string[];
+		notes?: string;
+	}>(),
+	promptHints: text('prompt_hints'),
+	signatureProfile: jsonb('signature_profile').$type<{
+		layoutPatterns?: string[];
+		dominantColors?: string[];
+		markerTokens?: string[];
+		lastFingerprint?: string;
+	}>(),
+	lastUsedAt: timestamp('last_used_at'),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	idxUserStatus: index('tracking_series_user_status_idx').on(table.userId, table.status),
+	idxRecordType: index('tracking_series_record_type_idx').on(table.recordTypeId)
+}));
+
+// Bekreftede vedleggseksempler/signaturer for matching neste gang
+export const trackingSeriesExamples = pgTable('tracking_series_examples', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	trackingSeriesId: uuid('tracking_series_id').references(() => trackingSeries.id, {
+		onDelete: 'cascade'
+	}).notNull(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	attachmentUrl: text('attachment_url').notNull(),
+	attachmentKind: text('attachment_kind').notNull().default('image'),
+	imageSignature: jsonb('image_signature').$type<{
+		version?: number;
+		byteHash?: string;
+		layoutPattern?: string;
+		dominantColors?: string[];
+		markerDensity?: 'low' | 'medium' | 'high';
+		structuralTokens?: string[];
+		sparseSemantics?: boolean;
+	}>(),
+	parsedPayload: jsonb('parsed_payload').$type<Record<string, unknown>>(),
+	confirmed: boolean('confirmed').notNull().default(true),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => ({
+	idxSeriesCreated: index('tracking_series_examples_series_created_idx').on(table.trackingSeriesId, table.createdAt)
+}));
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
 	goals: many(goals),
@@ -349,7 +438,9 @@ export const usersRelations = relations(users, ({ many }) => ({
 	webPushSubscriptions: many(webPushSubscriptions),
 	backgroundJobs: many(backgroundJobs),
 	themeLists: many(themeLists),
-	themeFiles: many(themeFiles)
+	themeFiles: many(themeFiles),
+	trackingSeries: many(trackingSeries),
+	trackingSeriesExamples: many(trackingSeriesExamples)
 }));
 
 export const authAccountsRelations = relations(authAccounts, ({ one }) => ({
@@ -393,7 +484,8 @@ export const themesRelations = relations(themes, ({ one, many }) => ({
 	goals: many(goals),
 	memories: many(memories),
 	lists: many(themeLists),
-	files: many(themeFiles)
+	files: many(themeFiles),
+	trackingSeries: many(trackingSeries)
 }));
 
 export const goalsRelations = relations(goals, ({ one, many }) => ({
@@ -417,7 +509,8 @@ export const tasksRelations = relations(tasks, ({ one, many }) => ({
 		fields: [tasks.goalId],
 		references: [goals.id]
 	}),
-	progress: many(progress)
+	progress: many(progress),
+	trackingSeries: many(trackingSeries)
 }));
 
 export const progressRelations = relations(progress, ({ one }) => ({
@@ -460,7 +553,8 @@ export const conversationsRelations = relations(conversations, ({ one, many }) =
 		fields: [conversations.themeId],
 		references: [themes.id]
 	}),
-	messages: many(messages)
+	messages: many(messages),
+	trackingSeries: many(trackingSeries)
 }));
 
 export const messagesRelations = relations(messages, ({ one }) => ({
@@ -845,6 +939,45 @@ export const sensorGoalsRelations = relations(sensorGoals, ({ one }) => ({
 	goal: one(goals, {
 		fields: [sensorGoals.goalId],
 		references: [goals.id]
+	})
+}));
+
+export const recordTypeDefinitionsRelations = relations(recordTypeDefinitions, ({ many }) => ({
+	series: many(trackingSeries)
+}));
+
+export const trackingSeriesRelations = relations(trackingSeries, ({ one, many }) => ({
+	user: one(users, {
+		fields: [trackingSeries.userId],
+		references: [users.id]
+	}),
+	recordType: one(recordTypeDefinitions, {
+		fields: [trackingSeries.recordTypeId],
+		references: [recordTypeDefinitions.id]
+	}),
+	theme: one(themes, {
+		fields: [trackingSeries.themeId],
+		references: [themes.id]
+	}),
+	task: one(tasks, {
+		fields: [trackingSeries.taskId],
+		references: [tasks.id]
+	}),
+	createdFromConversation: one(conversations, {
+		fields: [trackingSeries.createdFromConversationId],
+		references: [conversations.id]
+	}),
+	examples: many(trackingSeriesExamples)
+}));
+
+export const trackingSeriesExamplesRelations = relations(trackingSeriesExamples, ({ one }) => ({
+	series: one(trackingSeries, {
+		fields: [trackingSeriesExamples.trackingSeriesId],
+		references: [trackingSeries.id]
+	}),
+	user: one(users, {
+		fields: [trackingSeriesExamples.userId],
+		references: [users.id]
 	})
 }));
 

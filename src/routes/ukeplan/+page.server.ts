@@ -157,12 +157,13 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	weekEndExclusive.setUTCDate(weekEndExclusive.getUTCDate() + 7);
 	const dayContexts = week.days.map((d) => `week:${week.dashedKey}:day:${d.isoDate}`);
 	const dayNoteSources = week.days.map((d) => `week-plan:${week.compactKey}:day:${d.isoDate}:note`);
+	const dayHeadlineSources = week.days.map((d) => `week-plan:${week.compactKey}:day:${d.isoDate}:headline`);
 
 	const previousWeekStart = new Date(`${previousWeek.days[0].isoDate}T00:00:00.000Z`);
 	const previousWeekEndExclusive = new Date(previousWeekStart);
 	previousWeekEndExclusive.setUTCDate(previousWeekEndExclusive.getUTCDate() + 7);
 
-	const [weekChecklist, weekTasks, weekProgressRows, reflectionNote, visionNote, weekNote, longTermGoals, dayChecklists, dayNotes, previousWeekChecklist, previousWeekNote, previousWeekReflection, previousWeekTasks, previousWeekProgressRows, travelThemes] = await Promise.all([
+	const [weekChecklist, weekTasks, weekProgressRows, reflectionNote, visionNote, weekNote, longTermGoals, dayChecklists, dayNotes, dayHeadlines, previousWeekChecklist, previousWeekNote, previousWeekReflection, previousWeekTasks, previousWeekProgressRows, travelThemes] = await Promise.all([
 		db.query.checklists.findFirst({
 			where: and(eq(checklists.userId, userId), eq(checklists.context, week.contextKey)),
 			with: {
@@ -208,6 +209,13 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		}),
 		db.query.memories.findMany({
 			where: and(eq(memories.userId, userId), inArray(memories.source, dayNoteSources)),
+			columns: {
+				source: true,
+				content: true
+			}
+		}),
+		db.query.memories.findMany({
+			where: and(eq(memories.userId, userId), inArray(memories.source, dayHeadlineSources)),
 			columns: {
 				source: true,
 				content: true
@@ -266,6 +274,11 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 
 	const dayNoteMap = Object.fromEntries(dayNotes.map((note) => {
 		const dayKey = note.source?.match(/:day:(\d{4}-\d{2}-\d{2}):note$/)?.[1] ?? note.source;
+		return [dayKey, note.content];
+	}));
+
+	const dayHeadlineMap = Object.fromEntries(dayHeadlines.map((note) => {
+		const dayKey = note.source?.match(/:day:(\d{4}-\d{2}-\d{2}):headline$/)?.[1] ?? note.source;
 		return [dayKey, note.content];
 	}));
 
@@ -347,6 +360,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		})),
 		dayChecklists: dayChecklistMap,
 		dayNotes: dayNoteMap,
+		dayHeadlines: dayHeadlineMap,
 		activeTrips,
 		previousWeekSummary: {
 			weekKey: previousWeek.dashedKey,
@@ -538,6 +552,21 @@ export const actions = {
 		}
 
 		await upsertWeekNote(userId, `week-plan:${week.compactKey}:day:${dayIso}:note`, note);
+		return { success: true };
+	},
+
+	saveDayHeadline: async ({ request, locals }) => {
+		const userId = locals.userId;
+		const data = await request.formData();
+		const week = resolveWeekFromFormData(data);
+		const dayIso = String(data.get('dayIso') || '').trim();
+		const headline = String(data.get('headline') || '');
+
+		if (!dayIso) {
+			return fail(400, { error: 'Mangler dag.' });
+		}
+
+		await upsertWeekNote(userId, `week-plan:${week.compactKey}:day:${dayIso}:headline`, headline);
 		return { success: true };
 	},
 
