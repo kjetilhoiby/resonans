@@ -32,8 +32,30 @@
 	let missingEnvVars = $state<string[]>([]);
 	let debugInfo = $state<any>(null);
 	let debugLoading = $state(false);
-	let nudgeMetrics = $state<{ sent: number; opened: number; started: number; completed: number } | null>(null);
+	let nudgeMetrics = $state<{
+		totals: { sent: number; opened: number; started: number; completed: number };
+		conversion: {
+			openRatePercent: number | null;
+			startRateFromOpenedPercent: number | null;
+			completeRateFromStartedPercent: number | null;
+			completeRateFromSentPercent: number | null;
+		};
+		timing: {
+			sentToOpened: { count: number; avgMinutes: number | null };
+			openedToStarted: { count: number; avgMinutes: number | null };
+			startedToCompleted: { count: number; avgMinutes: number | null };
+			sentToCompleted: { count: number; avgMinutes: number | null };
+		};
+	} | null>(null);
 	let nudgeMetricsLoading = $state(false);
+
+	function formatPercent(value: number | null) {
+		return value === null ? '-' : `${value.toFixed(1)} %`;
+	}
+
+	function formatMinutes(value: number | null) {
+		return value === null ? '-' : `${value.toFixed(1)} min`;
+	}
 
 	function urlBase64ToUint8Array(base64String: string): Uint8Array {
 		const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -263,7 +285,21 @@
 			const res = await fetch('/api/nudges/metrics?days=30');
 			const data = await res.json();
 			if (res.ok) {
-				nudgeMetrics = data.totals || { sent: 0, opened: 0, started: 0, completed: 0 };
+				nudgeMetrics = {
+					totals: data.totals || { sent: 0, opened: 0, started: 0, completed: 0 },
+					conversion: data.conversion || {
+						openRatePercent: null,
+						startRateFromOpenedPercent: null,
+						completeRateFromStartedPercent: null,
+						completeRateFromSentPercent: null
+					},
+					timing: data.timing || {
+						sentToOpened: { count: 0, avgMinutes: null },
+						openedToStarted: { count: 0, avgMinutes: null },
+						startedToCompleted: { count: 0, avgMinutes: null },
+						sentToCompleted: { count: 0, avgMinutes: null }
+					}
+				};
 			}
 		} catch {
 			// best effort
@@ -368,10 +404,24 @@
 					<p>Laster effektmåling ...</p>
 				{:else if nudgeMetrics}
 					<ul>
-						<li>Sendt: {nudgeMetrics.sent}</li>
-						<li>Åpnet: {nudgeMetrics.opened}</li>
-						<li>Flyt startet: {nudgeMetrics.started}</li>
-						<li>Flyt fullført: {nudgeMetrics.completed}</li>
+						<li>Sendt: {nudgeMetrics.totals.sent}</li>
+						<li>Åpnet: {nudgeMetrics.totals.opened}</li>
+						<li>Flyt startet: {nudgeMetrics.totals.started}</li>
+						<li>Flyt fullført: {nudgeMetrics.totals.completed}</li>
+					</ul>
+					<div class="info-title" style="margin-top:0.75rem;">Konvertering</div>
+					<ul>
+						<li>Åpnet fra sendt: {formatPercent(nudgeMetrics.conversion.openRatePercent)}</li>
+						<li>Startet fra åpnet: {formatPercent(nudgeMetrics.conversion.startRateFromOpenedPercent)}</li>
+						<li>Fullført fra startet: {formatPercent(nudgeMetrics.conversion.completeRateFromStartedPercent)}</li>
+						<li>Fullført fra sendt: {formatPercent(nudgeMetrics.conversion.completeRateFromSentPercent)}</li>
+					</ul>
+					<div class="info-title" style="margin-top:0.75rem;">Snittid per steg</div>
+					<ul>
+						<li>Sendt → åpnet: {formatMinutes(nudgeMetrics.timing.sentToOpened.avgMinutes)} ({nudgeMetrics.timing.sentToOpened.count} hendelser)</li>
+						<li>Åpnet → startet: {formatMinutes(nudgeMetrics.timing.openedToStarted.avgMinutes)} ({nudgeMetrics.timing.openedToStarted.count} hendelser)</li>
+						<li>Startet → fullført: {formatMinutes(nudgeMetrics.timing.startedToCompleted.avgMinutes)} ({nudgeMetrics.timing.startedToCompleted.count} hendelser)</li>
+						<li>Sendt → fullført: {formatMinutes(nudgeMetrics.timing.sentToCompleted.avgMinutes)} ({nudgeMetrics.timing.sentToCompleted.count} hendelser)</li>
 					</ul>
 				{:else}
 					<p>Ingen data enda.</p>
