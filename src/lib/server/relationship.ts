@@ -1,7 +1,8 @@
 import { db } from '$lib/db';
 import { allowedEmails, marriageInvites, users } from '$lib/db/schema';
 import { normalizeEmail } from '$lib/server/auth-allowlist';
-import { and, desc, eq, or } from 'drizzle-orm';
+import { sendPartnerInviteEmail } from '$lib/server/mailer';
+import { and, desc, eq } from 'drizzle-orm';
 
 export class RelationshipError extends Error {}
 
@@ -65,7 +66,15 @@ export async function invitePartner(inviterUserId: string, inviteeEmailInput: st
 		})
 		.returning();
 
-	return invite;
+	const inviterName = inviter.name || inviter.email || 'Partneren din';
+	const emailSent = await sendPartnerInviteEmail({
+		toEmail: inviteeEmail,
+		inviterName,
+		inviterEmail: inviter.email,
+		inviteToken: invite.token
+	});
+
+	return { invite, emailSent };
 }
 
 export async function acceptMarriageInvite(inviteId: string, userId: string) {

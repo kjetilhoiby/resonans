@@ -41,11 +41,27 @@
 			completeRateFromSentPercent: number | null;
 		};
 		timing: {
-			sentToOpened: { count: number; avgMinutes: number | null };
-			openedToStarted: { count: number; avgMinutes: number | null };
-			startedToCompleted: { count: number; avgMinutes: number | null };
-			sentToCompleted: { count: number; avgMinutes: number | null };
+			sentToOpened: { count: number; avgMinutes: number | null; medianMinutes: number | null; p90Minutes: number | null };
+			openedToStarted: { count: number; avgMinutes: number | null; medianMinutes: number | null; p90Minutes: number | null };
+			startedToCompleted: { count: number; avgMinutes: number | null; medianMinutes: number | null; p90Minutes: number | null };
+			sentToCompleted: { count: number; avgMinutes: number | null; medianMinutes: number | null; p90Minutes: number | null };
 		};
+		byType: Record<string, {
+			label: string;
+			totals: { sent: number; opened: number; started: number; completed: number };
+			conversion: {
+				openRatePercent: number | null;
+				startRateFromOpenedPercent: number | null;
+				completeRateFromStartedPercent: number | null;
+				completeRateFromSentPercent: number | null;
+			};
+			timing: {
+				sentToOpened: { count: number; avgMinutes: number | null; medianMinutes: number | null; p90Minutes: number | null };
+				openedToStarted: { count: number; avgMinutes: number | null; medianMinutes: number | null; p90Minutes: number | null };
+				startedToCompleted: { count: number; avgMinutes: number | null; medianMinutes: number | null; p90Minutes: number | null };
+				sentToCompleted: { count: number; avgMinutes: number | null; medianMinutes: number | null; p90Minutes: number | null };
+			};
+		}>;
 	} | null>(null);
 	let nudgeMetricsLoading = $state(false);
 
@@ -55,6 +71,13 @@
 
 	function formatMinutes(value: number | null) {
 		return value === null ? '-' : `${value.toFixed(1)} min`;
+	}
+
+	function labelNudgeType(value: string) {
+		if (value === 'plan_day') return 'Planlegg dag';
+		if (value === 'close_day') return 'Avslutt dag';
+		if (value === 'digest_day') return 'Digest';
+		return value;
 	}
 
 	function urlBase64ToUint8Array(base64String: string): Uint8Array {
@@ -294,11 +317,12 @@
 						completeRateFromSentPercent: null
 					},
 					timing: data.timing || {
-						sentToOpened: { count: 0, avgMinutes: null },
-						openedToStarted: { count: 0, avgMinutes: null },
-						startedToCompleted: { count: 0, avgMinutes: null },
-						sentToCompleted: { count: 0, avgMinutes: null }
-					}
+						sentToOpened: { count: 0, avgMinutes: null, medianMinutes: null, p90Minutes: null },
+						openedToStarted: { count: 0, avgMinutes: null, medianMinutes: null, p90Minutes: null },
+						startedToCompleted: { count: 0, avgMinutes: null, medianMinutes: null, p90Minutes: null },
+						sentToCompleted: { count: 0, avgMinutes: null, medianMinutes: null, p90Minutes: null }
+					},
+					byType: data.byType || {}
 				};
 			}
 		} catch {
@@ -418,11 +442,24 @@
 					</ul>
 					<div class="info-title" style="margin-top:0.75rem;">Snittid per steg</div>
 					<ul>
-						<li>Sendt → åpnet: {formatMinutes(nudgeMetrics.timing.sentToOpened.avgMinutes)} ({nudgeMetrics.timing.sentToOpened.count} hendelser)</li>
-						<li>Åpnet → startet: {formatMinutes(nudgeMetrics.timing.openedToStarted.avgMinutes)} ({nudgeMetrics.timing.openedToStarted.count} hendelser)</li>
-						<li>Startet → fullført: {formatMinutes(nudgeMetrics.timing.startedToCompleted.avgMinutes)} ({nudgeMetrics.timing.startedToCompleted.count} hendelser)</li>
-						<li>Sendt → fullført: {formatMinutes(nudgeMetrics.timing.sentToCompleted.avgMinutes)} ({nudgeMetrics.timing.sentToCompleted.count} hendelser)</li>
+						<li>Sendt → åpnet: snitt {formatMinutes(nudgeMetrics.timing.sentToOpened.avgMinutes)}, median {formatMinutes(nudgeMetrics.timing.sentToOpened.medianMinutes)}, p90 {formatMinutes(nudgeMetrics.timing.sentToOpened.p90Minutes)} ({nudgeMetrics.timing.sentToOpened.count} hendelser)</li>
+						<li>Åpnet → startet: snitt {formatMinutes(nudgeMetrics.timing.openedToStarted.avgMinutes)}, median {formatMinutes(nudgeMetrics.timing.openedToStarted.medianMinutes)}, p90 {formatMinutes(nudgeMetrics.timing.openedToStarted.p90Minutes)} ({nudgeMetrics.timing.openedToStarted.count} hendelser)</li>
+						<li>Startet → fullført: snitt {formatMinutes(nudgeMetrics.timing.startedToCompleted.avgMinutes)}, median {formatMinutes(nudgeMetrics.timing.startedToCompleted.medianMinutes)}, p90 {formatMinutes(nudgeMetrics.timing.startedToCompleted.p90Minutes)} ({nudgeMetrics.timing.startedToCompleted.count} hendelser)</li>
+						<li>Sendt → fullført: snitt {formatMinutes(nudgeMetrics.timing.sentToCompleted.avgMinutes)}, median {formatMinutes(nudgeMetrics.timing.sentToCompleted.medianMinutes)}, p90 {formatMinutes(nudgeMetrics.timing.sentToCompleted.p90Minutes)} ({nudgeMetrics.timing.sentToCompleted.count} hendelser)</li>
 					</ul>
+					{#if Object.entries(nudgeMetrics.byType).length > 0}
+						<div class="info-title" style="margin-top:0.75rem;">Per nudge-type</div>
+						<ul>
+							{#each Object.entries(nudgeMetrics.byType) as [type, stats]}
+								<li>
+									<strong>{labelNudgeType(type)}:</strong>
+									sendt {stats.totals.sent}, åpnet {stats.totals.opened}, fullført {stats.totals.completed},
+									fullført/sendt {formatPercent(stats.conversion.completeRateFromSentPercent)},
+									median sendt → fullført {formatMinutes(stats.timing.sentToCompleted.medianMinutes)}
+								</li>
+							{/each}
+						</ul>
+					{/if}
 				{:else}
 					<p>Ingen data enda.</p>
 				{/if}

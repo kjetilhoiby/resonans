@@ -62,6 +62,12 @@ Du må legge til følgende miljøvariabler i Vercel Dashboard:
 - `VAPID_PUBLIC_KEY` - Offentlig nøkkel for PWA pushvarsler
 - `VAPID_PRIVATE_KEY` - Privat nøkkel for PWA pushvarsler
 - `VAPID_SUBJECT` - Kontaktadresse for push, f.eks. `mailto:hello@example.com`
+- `SMTP_HOST` - SMTP-server host (f.eks. smtp.sendgrid.net)
+- `SMTP_PORT` - SMTP-port (vanligvis `587` eller `465`)
+- `SMTP_SECURE` - `true` for TLS direkte (typisk port 465), ellers `false`
+- `SMTP_USER` - SMTP-brukernavn
+- `SMTP_PASS` - SMTP-passord/API key
+- `SMTP_FROM` - Avsenderadresse, f.eks. `Resonans <noreply@dittdomene.no>`
 
 ### Generer VAPID-nøkler
 

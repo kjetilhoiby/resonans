@@ -99,10 +99,12 @@ export const actions = {
 		}
 
 		try {
-			await invitePartner(locals.userId, inviteeEmail);
+			const result = await invitePartner(locals.userId, inviteeEmail);
 			return {
 				success: true,
-				message: `Invitasjon sendt til ${inviteeEmail}. Når partneren din logger inn, kan invitasjonen godkjennes i innstillingene.`
+				message: result.emailSent
+					? `Invitasjon sendt til ${inviteeEmail} på e-post. Når partneren din logger inn, kan invitasjonen godkjennes i innstillingene.`
+					: `Invitasjon registrert for ${inviteeEmail}, men e-post kunne ikke sendes akkurat nå. Partneren kan fortsatt logge inn med denne e-posten og godkjenne invitasjonen i innstillingene.`
 			};
 		} catch (error) {
 			if (error instanceof RelationshipError) {
