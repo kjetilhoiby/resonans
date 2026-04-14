@@ -34,7 +34,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const description = invite
 		? buildInviteDescription(invite.inviterName)
 		: 'Denne partnerinvitasjonen er ikke lenger tilgjengelig.';
-    const ogUrl = `${appOrigin}/partner-invite/${params.token}`;
+	const ogUrl = `${appOrigin}/partner-invite/${params.token}`;
 
 	const canRespond = Boolean(
 		invite &&
@@ -42,6 +42,9 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 			currentUser?.email &&
 			currentUser.email.toLowerCase() === invite.inviteeEmail.toLowerCase()
 	);
+
+	const autoAccept = url.searchParams.get('autoAccept') === '1';
+	const signInNext = `${url.pathname}?autoAccept=1`;
 
 	return {
 		invite,
@@ -53,7 +56,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 			}
 			: null,
 		canRespond,
-		signInUrl: `/auth?next=${encodeURIComponent(url.pathname)}`,
+		autoAccept,
+		signInUrl: `/auth?next=${encodeURIComponent(signInNext)}`,
 		meta: {
 			title,
 			description,

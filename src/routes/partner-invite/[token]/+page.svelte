@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -7,6 +8,7 @@
 	const currentUser = $derived(data.currentUser);
 	const canRespond = $derived(data.canRespond);
 	const meta = $derived(data.meta);
+	let autoAcceptForm = $state<HTMLFormElement | null>(null);
 
 	function statusText(status: string) {
 		if (status === 'accepted') return 'Allerede godtatt';
@@ -14,6 +16,12 @@
 		if (status === 'cancelled') return 'Trukket tilbake';
 		return 'Venter på svar';
 	}
+
+	onMount(() => {
+		if (data.autoAccept && invite?.status === 'pending' && canRespond && autoAcceptForm) {
+			autoAcceptForm.requestSubmit();
+		}
+	});
 </script>
 
 <svelte:head>
@@ -78,8 +86,8 @@
 				<a class="btn-secondary" href="/signout">Logg ut</a>
 			{:else}
 				<div class="cta-group cta-row">
-					<form method="POST" action="?/accept">
-						<button type="submit" class="btn-primary">Godta invitasjonen</button>
+					<form method="POST" action="?/accept" bind:this={autoAcceptForm}>
+						<button type="submit" class="btn-primary">Godta og gå til hjem</button>
 					</form>
 					<form method="POST" action="?/decline">
 						<button type="submit" class="btn-secondary">Avslå</button>
