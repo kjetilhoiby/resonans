@@ -96,6 +96,21 @@
 
 	let { themes, recentConversations }: Props = $props();
 
+	function normalizeThemeName(value: string) {
+		return value
+			.toLowerCase()
+			.normalize('NFD')
+			.replace(/[\u0300-\u036f]/g, '');
+	}
+
+	function isRelationshipThemeName(name: string) {
+		const normalized = normalizeThemeName(name);
+		return /(parforhold|partner|samliv|relasjon|forhold)/.test(normalized);
+	}
+
+	const relationshipOnboardingActive = $derived($page.url.searchParams.get('onboarding') === 'partner');
+	const relationshipTheme = $derived(themes.find((theme) => isRelationshipThemeName(theme.name)) ?? null);
+
 	// -- Sensor-data (oppdateres fra API ved mount) --
 	interface SensorSummary {
 		weight: { current: number | null; unit: string; delta: number; sparkline: number[] };
@@ -615,6 +630,13 @@
 		} else if (action.id === 'file') {
 			fileFlowOpen = true;
 		}
+	}
+
+	function openPartnerOnboardingChat() {
+		openChat(
+			'Vi har nettopp koblet oss som partnere i Resonans. Hjelp oss å sette opp et parforhold-tema, foreslå 3 fokusområder, og lag første ukes mini-plan med konkrete steg.',
+			'chat'
+		);
 	}
 
 	// ── Kamera-flyt ─────────────────────────────────────────────────────────────
@@ -1434,17 +1456,31 @@
 				/>
 			{/each}
 		{:else}
-			{#each WIDGETS as w}
-				<WidgetCircle
-					label={w.label}
-					val={w.val}
-					unit={w.unit}
-					color={w.color}
-					active={false}
-					onpress={() => goto(w.sensorType === 'spending' ? '/economics' : `/sensor/${w.sensorType}`)}
-					onchat={() => openChat(`Spør om ${w.label.toLowerCase()}`)}
-				/>
-			{/each}
+			{#if relationshipOnboardingActive}
+				<div class="partner-onboarding-card">
+					<p class="partner-onboarding-kicker">Partnermodus aktivert</p>
+					<h3>Kom i gang sammen i stedet for tomme widgets</h3>
+					<p>
+						Start med en felles oppstartsplan for parforhold og samliv, så bygger vi widgets etter det som faktisk er viktig for dere.
+					</p>
+					<div class="partner-onboarding-actions">
+						<button class="partner-onboarding-btn primary" onclick={openPartnerOnboardingChat}>Start partner-onboarding</button>
+						<button class="partner-onboarding-btn" onclick={() => goto('/ukeplan')}>Åpne ukeplan sammen</button>
+					</div>
+				</div>
+			{:else}
+				{#each WIDGETS as w}
+					<WidgetCircle
+						label={w.label}
+						val={w.val}
+						unit={w.unit}
+						color={w.color}
+						active={false}
+						onpress={() => goto(w.sensorType === 'spending' ? '/economics' : `/sensor/${w.sensorType}`)}
+						onchat={() => openChat(`Spør om ${w.label.toLowerCase()}`)}
+					/>
+				{/each}
+			{/if}
 		{/if}
 		</div>
 
@@ -1471,6 +1507,23 @@
 	{#if !inputExpanded}
 		<section class="zone zone-tema" aria-label="Temaer" out:fly={{ y: -34, duration: 750 }} in:fly={{ y: -22, duration: 600 }}>
 		<p class="zone-label">Temaer</p>
+		{#if relationshipOnboardingActive}
+			<div class="partner-onboarding-card partner-onboarding-card-theme">
+				<p class="partner-onboarding-kicker">Felles start</p>
+				<h3>Sett retning for parforholdet deres</h3>
+				<p>
+					Lag et eget tema for samliv, prioriteringer og ukerytme. Derfra kan dere bygge mål, samtaler og oppgaver sammen.
+				</p>
+				<div class="partner-onboarding-actions">
+					{#if relationshipTheme}
+						<button class="partner-onboarding-btn primary" onclick={() => goto(`/tema/${relationshipTheme.id}`)}>Åpne partnertema</button>
+					{:else}
+						<button class="partner-onboarding-btn primary" onclick={openPartnerOnboardingChat}>Opprett partnertema</button>
+					{/if}
+					<button class="partner-onboarding-btn" onclick={() => goto('/samtaler')}>Åpne samtaler</button>
+				</div>
+			</div>
+		{/if}
 		{#if themes.length}
 			<div class="tema-v3-grid">
 				{#each themes.slice(0, 6) as theme}
@@ -2314,6 +2367,65 @@
 		background: #222;
 		border-color: #4a5af0;
 		color: #aaa;
+	}
+
+	.partner-onboarding-card {
+		width: 100%;
+		padding: 14px;
+		border-radius: 14px;
+		background: linear-gradient(155deg, rgba(51, 86, 153, 0.24), rgba(25, 29, 40, 0.9));
+		border: 1px solid rgba(130, 160, 255, 0.32);
+		box-shadow: 0 14px 26px rgba(6, 8, 14, 0.28);
+	}
+
+	.partner-onboarding-card-theme {
+		margin-bottom: 10px;
+	}
+
+	.partner-onboarding-kicker {
+		margin: 0;
+		font-size: 0.68rem;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		color: #9fb8ff;
+	}
+
+	.partner-onboarding-card h3 {
+		margin: 6px 0 8px;
+		font-size: 1rem;
+		line-height: 1.3;
+		color: #ecf2ff;
+	}
+
+	.partner-onboarding-card p {
+		margin: 0;
+		font-size: 0.82rem;
+		line-height: 1.45;
+		color: #d2daee;
+	}
+
+	.partner-onboarding-actions {
+		margin-top: 10px;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+
+	.partner-onboarding-btn {
+		border: 1px solid rgba(180, 198, 240, 0.3);
+		background: rgba(13, 16, 26, 0.6);
+		color: #dce4f6;
+		border-radius: 999px;
+		padding: 7px 12px;
+		font-size: 0.75rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.partner-onboarding-btn.primary {
+		background: linear-gradient(145deg, #5476ef, #4364d9);
+		border-color: transparent;
+		color: #fff;
 	}
 
 	.cta-icon {
