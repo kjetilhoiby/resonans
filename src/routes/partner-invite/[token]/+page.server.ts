@@ -16,7 +16,7 @@ function getAppOrigin(url: URL) {
 }
 
 function buildInviteDescription(inviterName: string) {
-	return `${inviterName} vil koble dere sammen i Resonans for felles oversikt, refleksjon og hverdagsstøtte.`;
+	return `${inviterName} inviterer deg til et delt partnerrom i Resonans for parforhold, samliv og hverdag.`;
 }
 
 export const load: PageServerLoad = async ({ params, locals, url }) => {
@@ -34,6 +34,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const description = invite
 		? buildInviteDescription(invite.inviterName)
 		: 'Denne partnerinvitasjonen er ikke lenger tilgjengelig.';
+    const ogUrl = `${appOrigin}/partner-invite/${params.token}`;
 
 	const canRespond = Boolean(
 		invite &&
@@ -56,7 +57,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		meta: {
 			title,
 			description,
-			imageUrl: `${appOrigin}/partner-invite/${params.token}/og-image`
+			imageUrl: `${appOrigin}/partner-invite/${params.token}/og-image?v=2`,
+			url: ogUrl
 		}
 	};
 };
@@ -75,7 +77,7 @@ export const actions = {
 
 		try {
 			await acceptMarriageInvite(invite.id, session.user.id);
-			throw redirect(303, '/settings');
+			throw redirect(303, '/?onboarding=partner');
 		} catch (error) {
 			if (error instanceof RelationshipError) {
 				return fail(400, { error: error.message });
@@ -97,7 +99,7 @@ export const actions = {
 
 		try {
 			await declineMarriageInvite(invite.id, session.user.id);
-			throw redirect(303, '/settings');
+			throw redirect(303, '/');
 		} catch (error) {
 			if (error instanceof RelationshipError) {
 				return fail(400, { error: error.message });

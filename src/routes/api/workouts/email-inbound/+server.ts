@@ -229,6 +229,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
 				metadata: { ...metadata, sourceName: attachment.Name }
 			}).onConflictDoUpdate({
 				target: [sensorEvents.sensorId, sensorEvents.dataType, sensorEvents.timestamp],
+				targetWhere: sql`data_type NOT IN ('bank_balance', 'bank_transaction')`,
 				set: {
 					data: sql`excluded.data`,
 					metadata: sql`excluded.metadata`

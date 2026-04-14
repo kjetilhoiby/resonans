@@ -1,5 +1,6 @@
 import { env } from '$env/dynamic/private';
 import { getMarriageInviteByToken } from '$lib/server/relationship';
+import { Resvg } from '@resvg/resvg-js';
 import type { RequestHandler } from './$types';
 
 function escapeXml(value: string) {
@@ -24,7 +25,7 @@ export const GET: RequestHandler = async ({ params, url }) => {
 		? `${inviterName} inviterer deg til Resonans`
 		: 'Partnerinvitasjon til Resonans';
 	const subtitle = invite
-		? `Invitert på ${inviteeEmail} for å koble dere sammen i Resonans.`
+		? `Invitert på ${inviteeEmail} for parforhold, samliv og hverdagsstotte.`
 		: 'Åpne lenken for å se invitasjonen.';
 
 	const svg = `
@@ -43,15 +44,28 @@ export const GET: RequestHandler = async ({ params, url }) => {
 			<text x="112" y="152" fill="#6B7280" font-family="Verdana, sans-serif" font-size="28" letter-spacing="4">PARTNERINVITASJON</text>
 			<text x="112" y="262" fill="#0F172A" font-family="Verdana, sans-serif" font-size="62" font-weight="700">${escapeXml(title)}</text>
 			<text x="112" y="348" fill="#334155" font-family="Verdana, sans-serif" font-size="34">${escapeXml(subtitle)}</text>
-			<text x="112" y="452" fill="#0F172A" font-family="Verdana, sans-serif" font-size="30" font-weight="700">Resonans</text>
-			<text x="112" y="492" fill="#475569" font-family="Verdana, sans-serif" font-size="24">Felles oversikt, refleksjon og små nudge i samme app.</text>
+			<g>
+				<circle cx="1064" cy="510" r="44" fill="#0F172A" fill-opacity="0.92"/>
+				<text x="1041" y="523" fill="#FFFFFF" font-family="Verdana, sans-serif" font-size="34" font-weight="700">R</text>
+			</g>
+			<text x="112" y="452" fill="#0F172A" font-family="Verdana, sans-serif" font-size="30" font-weight="700">Resonans partnerrom</text>
+			<text x="112" y="492" fill="#475569" font-family="Verdana, sans-serif" font-size="24">Del fokus, prioriteringer og sma hverdagssteg sammen.</text>
 			<text x="112" y="542" fill="#64748B" font-family="Verdana, sans-serif" font-size="20">${escapeXml(appOrigin)}</text>
 		</svg>
 	`;
 
-	return new Response(svg.trim(), {
+	const resvg = new Resvg(svg, {
+		fitTo: {
+			mode: 'width',
+			value: 1200
+		}
+	});
+	const pngData = resvg.render();
+	const pngBuffer = pngData.asPng();
+
+	return new Response(pngBuffer, {
 		headers: {
-			'content-type': 'image/svg+xml; charset=utf-8',
+			'content-type': 'image/png',
 			'cache-control': 'public, max-age=300'
 		}
 	});

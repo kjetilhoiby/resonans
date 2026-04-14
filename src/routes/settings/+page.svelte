@@ -357,7 +357,7 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 				{#if relationship?.partner}
 					<div class="notification-option" style="background: var(--success-bg); border-color: var(--success-border);">
 						<div class="option-info">
-							<strong style="color: var(--success-text);">✅ Ekteskapet er bekreftet</strong>
+							<strong style="color: var(--success-text);">✅ Partnerkoblingen er bekreftet</strong>
 							<p style="color: var(--success-text);">
 								Du er koblet til {relationship.partner.name || relationship.partner.email}.
 							</p>
@@ -368,7 +368,7 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 						<div class="notification-option" style="margin-bottom: 1rem;">
 							<div class="option-info">
 								<strong>Innkommende partnerinvitasjon</strong>
-								<p>{relationship.incomingInvite.inviterName} vil bekrefte ekteskapet med deg.</p>
+								<p>{relationship.incomingInvite.inviterName} vil koble seg til deg i Resonans.</p>
 							</div>
 							<div style="display:flex; gap:0.75rem; flex-wrap:wrap; margin-top:0.75rem;">
 								<form method="POST" action="?/acceptMarriageInvite">

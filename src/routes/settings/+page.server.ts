@@ -1,7 +1,7 @@
 import { db } from '$lib/db';
 import { users } from '$lib/db/schema';
 import { eq } from 'drizzle-orm';
-import { fail } from '@sveltejs/kit';
+import { fail, redirect } from '@sveltejs/kit';
 import { ensureUser } from '$lib/server/users';
 import {
 	acceptMarriageInvite,
@@ -125,7 +125,7 @@ export const actions = {
 
 		try {
 			await acceptMarriageInvite(inviteId, locals.userId);
-			return { success: true, message: 'Ekteskapet er bekreftet. Dere er nå koblet sammen i appen.' };
+			throw redirect(303, '/?onboarding=partner');
 		} catch (error) {
 			if (error instanceof RelationshipError) {
 				return fail(400, { error: error.message });
