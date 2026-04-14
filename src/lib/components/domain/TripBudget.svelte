@@ -27,9 +27,10 @@
 		themeId: string;
 		startDate: string;
 		endDate: string;
+		accountIds?: string[];
 	}
 
-	let { themeId, startDate, endDate }: Props = $props();
+	let { themeId, startDate, endDate, accountIds }: Props = $props();
 
 	// ── State ──────────────────────────────────────────────
 	type Tab = 'tur' | 'søk';
@@ -37,6 +38,7 @@
 
 	let accounts = $state<Account[]>([]);
 	let selectedAccountId = $state<string>('');  // '' = all
+	let selectedCategory = $state<string>('');  // '' = all categories
 
 	// Tur-tab
 	let turTransactions = $state<Transaction[]>([]);
@@ -67,20 +69,40 @@
 		turLoading = true;
 		try {
 			const p = new URLSearchParams({ from: startDate, to: endDate });
-			if (selectedAccountId) p.set('accountId', selectedAccountId);
-			const res = await fetch(`/api/tema/${themeId}/transactions?${p}`);
+			if (accountIds && accountIds.length > 0) {
+				p.set('accountIds', accountIds.join(','));
+			} else if (selectedAccountId) {
+				p.set('accountIds', selectedAccountId);
+			}
+			const res = await fetch(`/api/transactions?${p}`);
 			if (!res.ok) return;
-			const data = await res.json() as { transactions: Transaction[]; accounts: Account[]; totalSpent: number };
+			const data = await res.json() as { transactions: Transaction[]; totalSpent: number };
 			turTransactions = data.transactions;
 			turTotal = data.totalSpent;
-			if (data.accounts.length) accounts = data.accounts;
 			turLoaded = true;
+			
+			// Load accounts separately on first load
+			if (accounts.length === 0) {
+				void loadAccounts();
+			}
 		} finally {
 			turLoading = false;
 		}
 	}
 
 	// ── Search ─────────────────────────────────────────────
+	async function loadAccounts() {
+		try {
+			const res = await fetch('/api/accounts');
+			if (res.ok) {
+				const data = (await res.json()) as { accounts: Account[] };
+				accounts = data.accounts || [];
+			}
+		} catch {
+			// Silently fail - accounts are optional
+		}
+	}
+	
 	async function runSearch() {
 		const q = searchText.trim();
 		if (!q && !searchFrom) return;
@@ -91,13 +113,16 @@
 			if (q) p.set('search', q);
 			if (searchFrom) p.set('from', searchFrom);
 			if (searchTo) p.set('to', searchTo || new Date().toISOString().slice(0, 10));
-			if (selectedAccountId) p.set('accountId', selectedAccountId);
-			const res = await fetch(`/api/tema/${themeId}/transactions?${p}`);
+			if (accountIds && accountIds.length > 0) {
+				p.set('accountIds', accountIds.join(','));
+			} else if (selectedAccountId) {
+				p.set('accountIds', selectedAccountId);
+			}
+			const res = await fetch(`/api/transactions?${p}`);
 			if (!res.ok) return;
-			const data = await res.json() as { transactions: Transaction[]; accounts: Account[]; totalSpent: number };
+			const data = await res.json() as { transactions: Transaction[]; totalSpent: number };
 			searchResults = data.transactions;
 			searchTotal = data.totalSpent;
-			if (!accounts.length && data.accounts.length) accounts = data.accounts;
 			searchDone = true;
 		} finally {
 			searching = false;
@@ -105,18 +130,33 @@
 	}
 
 	// ── Category breakdown (tur) ───────────────────────────
+	import { CATEGORIES } from '$lib/integrations/transaction-categories-client';
+	import type { CategoryId } from '$lib/integrations/transaction-categories-client';
+	
 	const breakdown = $derived.by(() => {
 		const txList = activeTab === 'tur' ? turTransactions : searchResults;
-		const map = new Map<string, { label: string; emoji: string; total: number }>();
+		const map = new Map<string, { categoryId: string; label: string; emoji: string; total: number }>();
 		for (const tx of txList) {
 			if (tx.amount >= 0) continue; // skip income
-			const key = tx.category ?? 'annet';
-			const entry = map.get(key) ?? { label: tx.label ?? key, emoji: tx.emoji ?? '💸', total: 0 };
+			const catId = (tx.category ?? 'ukategorisert') as CategoryId;
+			const catDef = CATEGORIES[catId] ?? CATEGORIES.ukategorisert;
+			const entry = map.get(catId) ?? { categoryId: catId, label: catDef.label, emoji: catDef.emoji, total: 0 };
 			entry.total += Math.abs(tx.amount);
-			map.set(key, entry);
+			map.set(catId, entry);
 		}
 		return Array.from(map.values()).sort((a, b) => b.total - a.total);
 	});
+
+	// ── Filtered transactions ──────────────────────────────
+	const filteredTransactions = $derived.by(() => {
+		const txList = activeTab === 'tur' ? turTransactions : searchResults;
+		if (!selectedCategory) return txList;
+		return txList.filter(tx => tx.category === selectedCategory);
+	});
+
+	function toggleCategory(catId: string) {
+		selectedCategory = selectedCategory === catId ? '' : catId;
+	}
 
 	// Load tur on mount
 	import { onMount } from 'svelte';
@@ -182,18 +222,23 @@
 				{#if breakdown.length > 0}
 					<div class="tb-breakdown">
 						{#each breakdown as cat}
-							<div class="tb-cat-row">
+							<button
+								type="button"
+								class="tb-cat-row"
+								class:tb-cat-active={selectedCategory === cat.categoryId}
+								onclick={() => toggleCategory(cat.categoryId)}
+							>
 								<span class="tb-cat-emoji">{cat.emoji}</span>
 								<span class="tb-cat-label">{cat.label}</span>
 								<span class="tb-cat-amount">{fmtAmount(cat.total)} kr</span>
-							</div>
+							</button>
 						{/each}
 					</div>
 				{/if}
 
 				<!-- Transaction list -->
 				<ul class="tb-tx-list">
-					{#each turTransactions as tx (tx.id)}
+					{#each filteredTransactions as tx (tx.id)}
 						{@const isSpend = tx.amount < 0}
 						<li class="tb-tx" class:tb-tx-income={!isSpend}>
 							<span class="tb-tx-emoji">{tx.emoji ?? '💸'}</span>
@@ -249,8 +294,27 @@
 					<span class="tb-total-label">Totalt brukt ({searchResults.length} transaksjoner)</span>
 					<span class="tb-total-amount">{fmtAmount(searchTotal)} kr</span>
 				</div>
+
+				<!-- Category breakdown -->
+				{#if breakdown.length > 0}
+					<div class="tb-breakdown">
+						{#each breakdown as cat}
+							<button
+								type="button"
+								class="tb-cat-row"
+								class:tb-cat-active={selectedCategory === cat.categoryId}
+								onclick={() => toggleCategory(cat.categoryId)}
+							>
+								<span class="tb-cat-emoji">{cat.emoji}</span>
+								<span class="tb-cat-label">{cat.label}</span>
+								<span class="tb-cat-amount">{fmtAmount(cat.total)} kr</span>
+							</button>
+						{/each}
+					</div>
+				{/if}
+
 				<ul class="tb-tx-list">
-					{#each searchResults as tx (tx.id)}
+					{#each filteredTransactions as tx (tx.id)}
 						{@const isSpend = tx.amount < 0}
 						<li class="tb-tx" class:tb-tx-income={!isSpend}>
 							<span class="tb-tx-emoji">{tx.emoji ?? '💸'}</span>
@@ -365,6 +429,27 @@
 		align-items: center;
 		gap: 6px;
 		font-size: 0.78rem;
+		width: 100%;
+		background: none;
+		border: none;
+		border-radius: 6px;
+		padding: 5px 6px;
+		text-align: left;
+		cursor: pointer;
+		transition: background 0.15s;
+	}
+
+	.tb-cat-row:hover {
+		background: var(--tp-bg-2);
+	}
+
+	.tb-cat-active {
+		background: var(--tp-accent-bg) !important;
+	}
+
+	.tb-cat-active .tb-cat-label,
+	.tb-cat-active .tb-cat-amount {
+		color: var(--tp-accent);
 	}
 
 	.tb-cat-emoji { font-size: 0.9rem; }

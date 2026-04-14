@@ -23,7 +23,7 @@
 	import TriageCard from '../composed/TriageCard.svelte';
 	import GoalRing from '../ui/GoalRing.svelte';
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
-	import { fetchDashboard, getCachedDashboard, type EconomicsDashboardData, type HealthDashboardData } from '$lib/client/dashboard-cache';
+	import { fetchDashboard, getCachedDashboard, type EconomicsDashboardData, type HealthDashboardData, type TravelDashboardData } from '$lib/client/dashboard-cache';
 	import { getThemeDashboardDefinition, resolveThemeDashboardKind } from '$lib/domain/theme-dashboard-registry';
 	import { finishNavMetric, startNavMetric } from '$lib/client/nav-metrics';
 	import { streamProxyChat } from '$lib/client/proxy-chat-stream';
@@ -139,6 +139,7 @@
 	let handoffPhase = $state<'intro' | 'content'>('content');
 	let healthDashboard = $state<HealthDashboardData | null>(null);
 	let economicsDashboard = $state<EconomicsDashboardData | null>(null);
+	let travelDashboard = $state<TravelDashboardData | null>(null);
 	let dashboardLoading = $state(false);
 	let dashboardLoaded = $state(false);
 	let dashboardError = $state('');
@@ -239,8 +240,10 @@
 		dashboardLoaded = true;
 		if (kind === 'health') {
 			healthDashboard = cached.data as HealthDashboardData;
-		} else {
+		} else if (kind === 'economics') {
 			economicsDashboard = cached.data as EconomicsDashboardData;
+		} else if (kind === 'travel') {
+			travelDashboard = cached.data as TravelDashboardData;
 		}
 
 		return cached;
@@ -271,13 +274,16 @@
 
 			if (kind === 'health') {
 				healthDashboard = result.data as HealthDashboardData;
-			} else {
+			} else if (kind === 'economics') {
 				economicsDashboard = result.data as EconomicsDashboardData;
+			} else if (kind === 'travel') {
+				travelDashboard = result.data as TravelDashboardData;
 			}
 			dashboardLoaded = true;
 		} catch {
 			if (requestId !== dashboardRequestId) return;
 			dashboardError = 'Kunne ikke laste dashboarddata.';
+			dashboardLoaded = true; // Prevent retry spam
 		} finally {
 			if (requestId === dashboardRequestId) {
 				dashboardLoading = false;

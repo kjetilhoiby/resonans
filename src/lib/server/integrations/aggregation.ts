@@ -1,7 +1,7 @@
 import { db } from '$lib/db';
 import { sensorEvents, sensorAggregates } from '$lib/db/schema';
-import { eq } from 'drizzle-orm';
-import { generateWeeks, generateMonths, generateYears } from './time-periods';
+import { eq, and, gte, lte } from 'drizzle-orm';
+import { generateWeeks, generateMonths, generateYears, getCurrentWeek, getCurrentMonth, getCurrentYear } from './time-periods';
 import type { WeekPeriod, MonthPeriod, YearPeriod } from './time-periods';
 
 /**
@@ -77,9 +77,13 @@ function calculateEarlyWake(events: any[]): number | undefined {
 export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) {
 	const periodsToAggregate = weeks || generateWeeks();
 	
-	// Fetch ALL events once (much faster than per-week queries)
+	// When specific periods are given, only fetch events within that range
+	const rangeStart = periodsToAggregate[periodsToAggregate.length - 1]?.startTime;
+	const rangeEnd = periodsToAggregate[0]?.endTime;
 	const allEvents = await db.query.sensorEvents.findMany({
-		where: eq(sensorEvents.userId, userId),
+		where: rangeStart && rangeEnd
+			? and(eq(sensorEvents.userId, userId), gte(sensorEvents.timestamp, rangeStart), lte(sensorEvents.timestamp, rangeEnd))
+			: eq(sensorEvents.userId, userId),
 		orderBy: [sensorEvents.timestamp]
 	});
 	
@@ -218,13 +222,17 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 export async function aggregateMonthlyData(userId: string, months?: MonthPeriod[]) {
 	const periodsToAggregate = months || generateMonths();
 	
-	// Fetch ALL events once (much faster than per-month queries)
+	// When specific periods are given, only fetch events within that range
+	const rangeStart = periodsToAggregate[periodsToAggregate.length - 1]?.startTime;
+	const rangeEnd = periodsToAggregate[0]?.endTime;
 	const allEvents = await db.query.sensorEvents.findMany({
-		where: eq(sensorEvents.userId, userId),
+		where: rangeStart && rangeEnd
+			? and(eq(sensorEvents.userId, userId), gte(sensorEvents.timestamp, rangeStart), lte(sensorEvents.timestamp, rangeEnd))
+			: eq(sensorEvents.userId, userId),
 		orderBy: [sensorEvents.timestamp]
 	});
 	
-	console.log(`   Processing ${periodsToAggregate.length} months with ${allEvents.length} total events...`);
+	console.log(`      Processing ${periodsToAggregate.length} months with ${allEvents.length} total events...`);
 
 	for (const month of periodsToAggregate) {
 		// Filter events for this month
@@ -337,13 +345,17 @@ export async function aggregateMonthlyData(userId: string, months?: MonthPeriod[
 export async function aggregateYearlyData(userId: string, years?: YearPeriod[]) {
 	const periodsToAggregate = years || generateYears();
 	
-	// Fetch ALL events once (much faster than per-year queries)
+	// When specific periods are given, only fetch events within that range
+	const rangeStart = periodsToAggregate[periodsToAggregate.length - 1]?.startTime;
+	const rangeEnd = periodsToAggregate[0]?.endTime;
 	const allEvents = await db.query.sensorEvents.findMany({
-		where: eq(sensorEvents.userId, userId),
+		where: rangeStart && rangeEnd
+			? and(eq(sensorEvents.userId, userId), gte(sensorEvents.timestamp, rangeStart), lte(sensorEvents.timestamp, rangeEnd))
+			: eq(sensorEvents.userId, userId),
 		orderBy: [sensorEvents.timestamp]
 	});
 	
-	console.log(`   Processing ${periodsToAggregate.length} years with ${allEvents.length} total events...`);
+	console.log(`         Processing ${periodsToAggregate.length} years with ${allEvents.length} total events...`);
 
 	for (const year of periodsToAggregate) {
 		// Filter events for this year
@@ -447,6 +459,20 @@ export async function aggregateYearlyData(userId: string, years?: YearPeriod[]) 
 				}
 			});
 	}
+}
+
+/**
+ * Aggregate only current week, month, and year for a user (fast, for incremental syncs)
+ */
+export async function aggregateCurrentPeriods(userId: string) {
+	const startTime = Date.now();
+
+	console.log('📊 Aggregating current period data...');
+	await aggregateWeeklyData(userId, [getCurrentWeek()]);
+	await aggregateMonthlyData(userId, [getCurrentMonth()]);
+	await aggregateYearlyData(userId, [getCurrentYear()]);
+
+	console.log(`✅ Current period aggregation completed in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
 }
 
 /**

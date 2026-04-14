@@ -10,6 +10,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import TripDayCalendar from './TripDayCalendar.svelte';
 	import TripBudget from './TripBudget.svelte';
+	import TripHealthStats from './TripHealthStats.svelte';
 	import Icon from '../ui/Icon.svelte';
 	import type { Map as MapLibreMap } from 'maplibre-gl';
 
@@ -31,6 +32,7 @@
 		lng?: number;
 		startDate?: string;
 		endDate?: string;
+		accountIds?: string[];
 		overnightStays?: OvernightStay[];
 	}
 
@@ -48,18 +50,49 @@
 	let saving = $state(false);
 	let saveError = $state('');
 
+	// Available bank accounts
+	interface BankAccount {
+		id: string;
+		name: string | null;
+	}
+	let availableAccounts = $state<BankAccount[]>([]);
+
 	// Editable form fields
 	let editDestination = $state('');
 	let editStartDate = $state('');
 	let editEndDate = $state('');
+	let editAccountIds = $state<string[]>([]);
 	let editStays = $state<OvernightStay[]>([]);
 
 	function openEdit() {
 		editDestination = tripProfile?.destination ?? '';
 		editStartDate = tripProfile?.startDate ?? '';
 		editEndDate = tripProfile?.endDate ?? '';
+		editAccountIds = tripProfile?.accountIds ?? [];
 		editStays = (tripProfile?.overnightStays ?? []).map((s) => ({ ...s }));
 		editMode = true;
+		void fetchAccounts(); // Load available accounts for selection
+	}
+
+	async function fetchAccounts() {
+		if (availableAccounts.length > 0) return; // Already loaded
+		try {
+			const res = await fetch('/api/accounts');
+			if (res.ok) {
+				const data = (await res.json()) as { accounts: BankAccount[] };
+				availableAccounts = data.accounts || [];
+			}
+		} catch {
+			// Silently fail - account selection is optional
+		}
+	}
+
+	function toggleAccount(accountId: string) {
+		if (editAccountIds.includes(accountId)) {
+			editAccountIds = editAccountIds.filter(id => id !== accountId);
+		} else {
+			editAccountIds = [...editAccountIds, accountId];
+		}
 	}
 
 	function addStay() {
@@ -105,6 +138,7 @@
 			lng,
 			startDate: editStartDate || undefined,
 			endDate: editEndDate || undefined,
+			accountIds: editAccountIds.length > 0 ? editAccountIds : undefined,
 			overnightStays: editStays.length > 0 ? editStays : undefined
 		};
 
@@ -451,7 +485,14 @@
 					themeId={themeId}
 					startDate={tripProfile.startDate}
 					endDate={tripProfile.endDate}
+					accountIds={tripProfile.accountIds}
 				/>
+			</div>
+		{/if}
+
+		{#if tripProfile?.startDate && tripProfile?.endDate}
+			<div class="trip-health-section">
+				<TripHealthStats themeId={themeId} />
 			</div>
 		{/if}
 
@@ -484,6 +525,26 @@
 					<input class="trip-input" type="date" bind:value={editEndDate} />
 				</label>
 			</div>
+
+			<!-- Bankkontoer for utgiftsfiltrering -->
+			{#if availableAccounts.length > 0}
+				<div class="trip-field">
+					<span class="trip-field-label">Bankkontoer (valgfritt)</span>
+					<p class="trip-field-help">Velg hvilke kontoer som skal inkluderes i utgiftsberegningen. Lar tomt for å inkludere alle.</p>
+					<div class="account-selector">
+						{#each availableAccounts as account}
+							<label class="account-checkbox">
+								<input 
+									type="checkbox" 
+									checked={editAccountIds.includes(account.id)}
+									onchange={() => toggleAccount(account.id)}
+								/>
+								<span>{account.name || account.id}</span>
+							</label>
+						{/each}
+					</div>
+				</div>
+			{/if}
 
 			<!-- Overnattinger -->
 			<div class="trip-stays-edit">
@@ -801,6 +862,12 @@
 		margin-top: 12px;
 	}
 
+	.trip-health-section {
+		padding: 16px 16px 0;
+		border-top: 1px solid var(--tp-border);
+		margin-top: 12px;
+	}
+
 	.trip-edit-btn {
 		margin: 8px 16px 0;
 		background: none;
@@ -839,6 +906,11 @@
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
 	}
+	.trip-field-help {
+		font-size: 0.75rem;
+		color: var(--tp-text-muted);
+		margin: 4px 0 8px 0;
+	}
 	.trip-input {
 		background: var(--tp-bg-2);
 		border: 1px solid var(--tp-border);
@@ -851,6 +923,27 @@
 		box-sizing: border-box;
 	}
 	.trip-input:focus { border-color: var(--tp-border-strong); }
+	
+	.account-selector {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		background: var(--tp-bg-2);
+		border: 1px solid var(--tp-border);
+		border-radius: 8px;
+		padding: 12px;
+	}
+	.account-checkbox {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		font-size: 0.88rem;
+		cursor: pointer;
+	}
+	.account-checkbox input[type="checkbox"] {
+		cursor: pointer;
+	}
+	
 	.trip-field-row {
 		display: flex;
 		gap: 10px;

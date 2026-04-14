@@ -25,10 +25,11 @@
 
 	// ── Transactions ─────────────────────────────────────────────────────────
 	type TxRow = {
-		transactionId: string;
+		id: string;
 		accountId: string;
 		date: string;
 		description: string;
+		typeText: string | null;
 		amount: number;
 		category: string;
 		subcategory: string | null;
@@ -140,17 +141,19 @@
 				: accounts.map((a) => a.accountId);
 
 		const params = new URLSearchParams({
-			fromDate,
-			toDate,
-			accountIds: ids.join(',')
+			from: fromDate,
+			to: toDate,
+			accountIds: ids.join(','),
+			limit: '500'
 		});
 		if (categoryFilter) params.set('category', categoryFilter);
 		if (subcategoryFilter) params.set('subcategory', subcategoryFilter);
 
 		try {
-			const res = await fetch(`/api/economics/transactions?${params.toString()}`);
+			const res = await fetch(`/api/transactions?${params.toString()}`);
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
-			transactions = await res.json();
+			const data = await res.json();
+			transactions = data.transactions || [];
 			loaded = true;
 		} catch {
 			errorMsg = 'Klarte ikke hente transaksjoner. Prøv igjen.';
@@ -182,18 +185,24 @@
 				body: JSON.stringify({
 					domain: 'transaction',
 					description: tx.description,
+					typeText: tx.typeText,
 					amount: tx.amount,
 					correctedCategory: newCategoryId,
 					correctedSubcategory: subcategoryKey ?? null
 				})
 			});
 			if (!res.ok) throw new Error('Failed');
+			
+			// Update local transaction immediately
 			const newCat = CATEGORIES[newCategoryId];
 			tx.category = newCat.id;
 			tx.emoji = newCat.emoji;
 			tx.label = newCat.label;
 			tx.subcategory = subcategoryKey ?? null;
 			closePicker();
+			
+			// Reload after sync completes (increased from 500ms to 2000ms for reliability)
+			setTimeout(() => loadTransactions(), 2000);
 		} catch {
 			alert('Kunne ikke lagre kategori-endring. Prøv igjen.');
 		} finally {
@@ -456,7 +465,7 @@
 			<ul class="te-list">
 				{#each filtered as tx}
 					<li class="te-item">
-						{#if editingTxId === tx.transactionId}
+						{#if editingTxId === tx.id}
 							<div class="te-category-picker">
 								<div class="te-picker-header">
 									{#if pendingCategoryId}
@@ -532,7 +541,7 @@
 							<button
 								class="te-emoji-btn"
 								type="button"
-								onclick={() => openPicker(tx.transactionId)}
+								onclick={() => openPicker(tx.id)}
 								aria-label="Endre kategori"
 								title="Endre kategori"
 							>

@@ -7,6 +7,7 @@ import {
 	upsertClassificationOverride,
 	type ClassificationDomain
 } from '$lib/server/classification-overrides';
+import { syncAllCategorizedEvents } from '$lib/server/integrations/categorized-events';
 import { and, desc, eq } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
 
@@ -77,6 +78,15 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		correctedSubcategory: body.correctedSubcategory ?? null,
 		source: body.source ?? 'manual_ui'
 	});
+
+	// Resync categorized_events if this is a transaction override
+	// This ensures tema pages and other views see the updated category immediately
+	if (body.domain === 'transaction') {
+		// Run in background, don't block the response
+		syncAllCategorizedEvents(userId).catch((err) => {
+			console.error('Failed to sync categorized events after override:', err);
+		});
+	}
 
 	return json({
 		id: saved.id,

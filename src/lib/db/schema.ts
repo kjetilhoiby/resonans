@@ -96,6 +96,7 @@ export const themes = pgTable('themes', {
 		lng?: number;
 		startDate?: string;   // ISO 'YYYY-MM-DD'
 		endDate?: string;     // ISO 'YYYY-MM-DD'
+		accountIds?: string[]; // Optional filter: only include transactions from these accounts
 		overnightStays?: Array<{
 			id: string;
 			name: string;
@@ -710,8 +711,9 @@ export const sensorEvents = pgTable('sensor_events', {
 	createdAt: timestamp('created_at').defaultNow().notNull() // When we received it
 }, (table) => ({
 	idxUserDataTypeTimestamp: index('sensor_events_user_data_type_timestamp_idx').on(table.userId, table.dataType, table.timestamp),
-	// Partial unique index for non-bank_balance events (original dedup behaviour)
-	uniqSensorDatatypeTimestamp: uniqueIndex('sensor_events_sensor_datatype_timestamp_unique').on(table.sensorId, table.dataType, table.timestamp).where(sql`data_type != 'bank_balance'`),
+	// Partial unique index for non-bank events (excludes bank_balance and bank_transaction)
+	// Bank transactions use semantic deduplication (accountId+date+desc+amount) instead
+	uniqSensorDatatypeTimestamp: uniqueIndex('sensor_events_sensor_datatype_timestamp_unique').on(table.sensorId, table.dataType, table.timestamp).where(sql`data_type NOT IN ('bank_balance', 'bank_transaction')`),
 	// Partial unique index for bank_balance events — includes accountId so multiple
 	// accounts can share the same sensor + timestamp without violating uniqueness
 	uniqBankBalance: uniqueIndex('sensor_events_bank_balance_unique').on(table.sensorId, table.dataType, table.timestamp, sql`(data->>'accountId')`).where(sql`data_type = 'bank_balance'`)
@@ -728,6 +730,7 @@ export const categorizedEvents = pgTable('categorized_events', {
 	description: text('description'),
 	typeText: text('type_text'),
 	resolvedCategory: text('resolved_category').notNull(),
+	resolvedSubcategory: text('resolved_subcategory'),
 	resolvedLabel: text('resolved_label'),
 	resolvedEmoji: text('resolved_emoji'),
 	isFixed: boolean('is_fixed').notNull().default(false),

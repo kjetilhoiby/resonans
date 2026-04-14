@@ -1,6 +1,6 @@
 import { db } from '$lib/db';
 import { sensors, sensorEvents, sensorAggregates } from '$lib/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { refreshAccessToken, fetchAllWithingsData, fetchWithingsSleep } from './withings';
 
 /**
@@ -101,10 +101,13 @@ function parseWeightData(measuregrps: any[]): any[] {
 
 /**
  * Parse Withings activity data
+ * Activity.date is in format "YYYY-MM-DD" representing the user's local day
  */
 function parseActivityData(activities: any[]): any[] {
 	return activities.map((activity) => ({
-		timestamp: new Date(activity.date),
+		// Parse as UTC midnight to avoid timezone shifts
+		// "2026-04-12" → 2026-04-12T00:00:00.000Z
+		timestamp: new Date(activity.date + 'T00:00:00.000Z'),
 		data: {
 			steps: activity.steps,
 			distance: activity.distance,
@@ -117,7 +120,7 @@ function parseActivityData(activities: any[]): any[] {
 			hr_min: activity.hr_min,
 			hr_max: activity.hr_max
 		},
-		metadata: { modified: activity.modified }
+		metadata: { modified: activity.modified, date_string: activity.date }
 	}));
 }
 
@@ -205,21 +208,29 @@ function getSportType(category: number): string {
 
 /**
  * Parse Withings workout data
- * Filter out walking/no_activity to reduce noise
+ * Smart filtering: Keep significant walks (>30 min or >2km), discard automatic short walks
  */
 function parseWorkoutData(series: any[]): any[] {
 	const filtered = series.filter((workout) => {
 		const category = workout.category;
-		// Filter out walking and no_activity (too much noise from automatic tracking)
+		const duration = workout.enddate - workout.startdate; // seconds
+		const distance = workout.data?.distance || 0; // meters
+		
 		const isWalking = category === 1 || category === 187 || category === 128;
-		return !isWalking;
+		
+		if (isWalking) {
+			// Keep significant walks: longer than 30 minutes OR longer than 2km
+			const isSignificantWalk = duration > 1800 || distance > 2000;
+			return isSignificantWalk;
+		}
+		
+		// Keep all non-walking workouts
+		return true;
 	});
 	
-	console.log(`   Filtered ${series.length - filtered.length} walking workouts (${filtered.length} remaining)`);
-	
-	// Debug: log first workout to see what data we get
-	if (filtered.length > 0) {
-		console.log('   📍 Sample workout data:', JSON.stringify(filtered[0], null, 2));
+	const filteredOutCount = series.length - filtered.length;
+	if (filteredOutCount > 0) {
+		console.log(`   Filtered ${filteredOutCount} short walking workouts (${filtered.length} remaining)`);
 	}
 	
 	return filtered.map((workout) => {
@@ -312,6 +323,9 @@ export async function syncWeightData(
 
 /**
  * Sync activity data from Withings
+ * 
+ * Note: Withings updates activity data retroactively throughout the day.
+ * We use a 3-day overlap window to catch late updates.
  */
 export async function syncActivityData(
 	userId: string,
@@ -321,13 +335,16 @@ export async function syncActivityData(
 	fullSync = false
 ) {
 	// Full sync starts from September 1, 2017
+	// Incremental sync: always fetch last 3 days to catch retroactive updates
 	const startdateymd = fullSync
 		? '2017-09-01'
-		: lastSync
-			? lastSync.toISOString().split('T')[0]
-			: undefined;
+		: (() => {
+			const overlapDate = new Date();
+			overlapDate.setDate(overlapDate.getDate() - 3); // 3-day overlap window
+			return overlapDate.toISOString().split('T')[0];
+		})();
 
-	console.log(`   Fetching activity data${startdateymd ? ` from ${startdateymd}` : ''}...`);
+	console.log(`   Fetching activity data from ${startdateymd}...`);
 	const data = await fetchAllWithingsData(accessToken, {
 		action: 'getactivity',
 		startdateymd,
@@ -338,21 +355,34 @@ export async function syncActivityData(
 	const parsed = parseActivityData(data);
 
 	// Store events in batches for performance
+	// Use onConflictDoUpdate to capture retroactive data corrections from Withings
 	console.log(`   Storing ${parsed.length} activity events in database...`);
 	const batchSize = 100;
 	for (let i = 0; i < parsed.length; i += batchSize) {
 		const batch = parsed.slice(i, i + batchSize);
-		await db.insert(sensorEvents).values(
-			batch.map(event => ({
-				userId,
-				sensorId,
-				eventType: 'activity' as const,
-				dataType: 'activity' as const,
-				timestamp: event.timestamp,
-				data: event.data,
-				metadata: event.metadata
-			}))
-		).onConflictDoNothing();
+		
+		for (const event of batch) {
+			await db
+				.insert(sensorEvents)
+				.values({
+					userId,
+					sensorId,
+					eventType: 'activity' as const,
+					dataType: 'activity' as const,
+					timestamp: event.timestamp,
+					data: event.data,
+					metadata: event.metadata
+				})
+				.onConflictDoUpdate({
+					target: [sensorEvents.sensorId, sensorEvents.dataType, sensorEvents.timestamp],
+					targetWhere: sql`data_type NOT IN ('bank_balance', 'bank_transaction')`,
+					set: {
+						data: event.data,
+						metadata: event.metadata
+					}
+				});
+		}
+		
 		if (i % 500 === 0 && i > 0) {
 			console.log(`      Stored ${i}/${parsed.length} activity events...`);
 		}
@@ -437,6 +467,8 @@ export async function syncSleepData(
 
 /**
  * Sync workout data from Withings
+ * 
+ * Note: Uses 3-day overlap window to catch retroactive updates.
  */
 export async function syncWorkoutData(
 	userId: string,
@@ -446,13 +478,16 @@ export async function syncWorkoutData(
 	fullSync = false
 ) {
 	// Full sync starts from September 1, 2017
+	// Incremental sync: always fetch last 3 days to catch retroactive updates
 	const startdateymd = fullSync
 		? '2017-09-01'
-		: lastSync
-			? lastSync.toISOString().split('T')[0]
-			: undefined;
+		: (() => {
+			const overlapDate = new Date();
+			overlapDate.setDate(overlapDate.getDate() - 3); // 3-day overlap window
+			return overlapDate.toISOString().split('T')[0];
+		})();
 
-	console.log(`   Fetching workout data${startdateymd ? ` from ${startdateymd}` : ''}...`);
+	console.log(`   Fetching workout data from ${startdateymd}...`);
 	const data = await fetchAllWithingsData(accessToken, {
 		action: 'getworkouts',
 		startdateymd,
@@ -467,17 +502,29 @@ export async function syncWorkoutData(
 	const batchSize = 100;
 	for (let i = 0; i < parsed.length; i += batchSize) {
 		const batch = parsed.slice(i, i + batchSize);
-		await db.insert(sensorEvents).values(
-			batch.map(event => ({
-				userId,
-				sensorId,
-				eventType: 'activity' as const,
-				dataType: 'workout' as const,
-				timestamp: event.timestamp,
-				data: event.data,
-				metadata: event.metadata
-			}))
-		).onConflictDoNothing();
+		
+		for (const event of batch) {
+			await db
+				.insert(sensorEvents)
+				.values({
+					userId,
+					sensorId,
+					eventType: 'activity' as const,
+					dataType: 'workout' as const,
+					timestamp: event.timestamp,
+					data: event.data,
+					metadata: event.metadata
+				})
+				.onConflictDoUpdate({
+					target: [sensorEvents.sensorId, sensorEvents.dataType, sensorEvents.timestamp],
+					targetWhere: sql`data_type NOT IN ('bank_balance', 'bank_transaction')`,
+					set: {
+						data: event.data,
+						metadata: event.metadata
+					}
+				});
+		}
+		
 		if (i % 500 === 0 && i > 0) {
 			console.log(`      Stored ${i}/${parsed.length} workout events...`);
 		}

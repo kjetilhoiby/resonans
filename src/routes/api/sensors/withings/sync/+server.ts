@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { syncAllWithingsData } from '$lib/server/integrations/withings-sync';
-import { aggregateAllPeriods } from '$lib/server/integrations/aggregation';
+import { aggregateCurrentPeriods } from '$lib/server/integrations/aggregation';
 
 /**
  * POST /api/sensors/withings/sync
@@ -14,8 +14,8 @@ export const POST: RequestHandler = async ({ locals }) => {
 		
 		const results = await syncAllWithingsData(userId);
 		
-		// Automatically aggregate after successful sync
-		await aggregateAllPeriods(userId);
+		// Aggregate only current periods (fast incremental update)
+		await aggregateCurrentPeriods(userId);
 		
 		return json({ 
 			success: true,

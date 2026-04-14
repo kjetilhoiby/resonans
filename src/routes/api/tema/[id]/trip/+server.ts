@@ -11,7 +11,7 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	}
 
 	// Sanitize: only allow known fields
-	const allowed = ['destination', 'country', 'lat', 'lng', 'startDate', 'endDate', 'overnightStays'];
+	const allowed = ['destination', 'country', 'lat', 'lng', 'startDate', 'endDate', 'accountIds', 'overnightStays'];
 	const profile: Record<string, unknown> = {};
 	for (const key of allowed) {
 		if (key in body) profile[key] = body[key];

@@ -57,9 +57,16 @@ export interface EconomicsDashboardData {
 	};
 }
 
+export interface TravelDashboardData {
+	themeName: string;
+	themeEmoji: string | null;
+	status: string;
+}
+
 type DashboardPayloadMap = {
 	health: HealthDashboardData;
 	economics: EconomicsDashboardData;
+	travel: TravelDashboardData;
 };
 
 export interface DashboardCacheEntry<K extends DashboardKind = DashboardKind> {

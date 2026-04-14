@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { merchantMappings, classificationOverrides } from '$lib/db/schema';
+import { syncAllCategorizedEvents } from '$lib/server/integrations/categorized-events';
 import { eq, and } from 'drizzle-orm';
 
 export const DELETE: RequestHandler = async ({ locals, params }) => {
@@ -78,6 +79,11 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 				.set({ subcategory: overrideSubcategory || null })
 				.where(and(eq(merchantMappings.id, id), eq(merchantMappings.userId, userId)));
 		}
+
+		// Resync categorized_events to reflect the new override
+		syncAllCategorizedEvents(userId).catch((err) => {
+			console.error('Failed to sync categorized events after merchant override:', err);
+		});
 
 		return json({ success: true, overrideCreated: true });
 	}
