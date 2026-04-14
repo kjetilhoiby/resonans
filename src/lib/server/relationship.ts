@@ -77,6 +77,26 @@ export async function invitePartner(inviterUserId: string, inviteeEmailInput: st
 	return { invite, emailSent };
 }
 
+export async function getMarriageInviteByToken(token: string) {
+	const invite = await db.query.marriageInvites.findFirst({
+		where: eq(marriageInvites.token, token)
+	});
+
+	if (!invite) {
+		return null;
+	}
+
+	const inviter = await db.query.users.findFirst({
+		where: eq(users.id, invite.inviterUserId)
+	});
+
+	return {
+		...invite,
+		inviterName: inviter?.name || inviter?.email || 'Noen du kjenner',
+		inviterEmail: inviter?.email || null
+	};
+}
+
 export async function acceptMarriageInvite(inviteId: string, userId: string) {
 	const invite = await db.query.marriageInvites.findFirst({
 		where: eq(marriageInvites.id, inviteId)

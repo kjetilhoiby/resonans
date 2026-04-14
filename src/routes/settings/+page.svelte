@@ -18,11 +18,13 @@
 	let loadingGoogleSheets = $state(false);
 	let dropboxStatus = $state<any>(null);
 	let loadingDropbox = $state(false);
+	let copyInviteMessage = $state('');
 
 
 	const user = $derived(data.user);
 	const settings = $derived(user?.notificationSettings || {});
 	const relationship = $derived(data.relationship);
+	const partnerInviteShareUrl = $derived(data.partnerInviteShareUrl);
 	const connectedSources = $derived(
 		(withingsStatus?.connected ? 1 : 0) +
 		(sparebank1Status?.connected ? 1 : 0) +
@@ -52,6 +54,22 @@
 		await loadDropboxStatus();
 		await loadGoogleSheetsStatus();
 	});
+
+	async function copyPartnerInviteLink() {
+		if (!partnerInviteShareUrl) return;
+
+		try {
+			await navigator.clipboard.writeText(partnerInviteShareUrl);
+			copyInviteMessage = 'Lenken er kopiert.';
+		} catch (error) {
+			console.error('Failed to copy partner invite link:', error);
+			copyInviteMessage = 'Kunne ikke kopiere lenken automatisk.';
+		}
+
+		setTimeout(() => {
+			copyInviteMessage = '';
+		}, 2500);
+	}
 
 	async function loadDropboxStatus() {
 		loadingDropbox = true;
@@ -372,6 +390,24 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 								<p>
 									Venter på svar fra {relationship.outgoingInvite.inviteeEmail}.
 								</p>
+								{#if partnerInviteShareUrl}
+									<div style="margin-top:0.75rem; display:grid; gap:0.5rem;">
+										<label for="partnerInviteShareUrl">Delingslenke</label>
+										<div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
+											<input
+												id="partnerInviteShareUrl"
+												class="input"
+												value={partnerInviteShareUrl}
+												readonly
+												style="flex:1 1 20rem;"
+											/>
+											<button type="button" class="btn-secondary" onclick={copyPartnerInviteLink}>Kopier lenke</button>
+										</div>
+										{#if copyInviteMessage}
+											<small class="hint">{copyInviteMessage}</small>
+										{/if}
+									</div>
+								{/if}
 							</div>
 							<form method="POST" action="?/cancelMarriageInvite" style="margin-top:0.75rem;">
 								<input type="hidden" name="inviteId" value={relationship.outgoingInvite.id} />

@@ -92,6 +92,8 @@ export const POST: RequestHandler = async ({ request, url }) => {
 	const token = url.searchParams.get('token');
 	const secret = env.EMAIL_WEBHOOK_SECRET;
 
+	console.log('[email-inbound] auth check — secret set:', !!secret, '| token set:', !!token, '| secret len:', secret?.length ?? 0, '| token len:', token?.length ?? 0, '| match:', secret && token ? timingSafeEqual(token, secret) : false);
+
 	if (!secret || !token || !timingSafeEqual(token, secret)) {
 		return json({ error: 'Unauthorized' }, { status: 401 });
 	}

@@ -20,7 +20,6 @@ import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ locals }) => {
 	const userId = locals.userId;
-	const t0 = performance.now();
 
 	const sevenWeeksAgo = new Date();
 	sevenWeeksAgo.setDate(sevenWeeksAgo.getDate() - 49);
@@ -69,8 +68,6 @@ export const GET: RequestHandler = async ({ locals }) => {
 				)
 			),
 	]);
-
-	console.info(`[sensor-summary] parallel queries: ${Math.round(performance.now() - t0)}ms`);
 
 	// Kronologisk rekkefølge (eldst → nyest)
 	const weeks = weeklyAggs.reverse();

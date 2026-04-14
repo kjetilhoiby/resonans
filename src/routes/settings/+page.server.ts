@@ -13,17 +13,21 @@ import {
 } from '$lib/server/relationship';
 import type { Actions, PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async ({ locals }) => {
+export const load: PageServerLoad = async ({ locals, url }) => {
 	await ensureUser(locals.userId);
 
 	const user = await db.query.users.findFirst({
 		where: eq(users.id, locals.userId)
 	});
 	const relationship = await getRelationshipOverview(locals.userId);
+	const partnerInviteShareUrl = relationship.outgoingInvite
+		? `${url.origin}/partner-invite/${relationship.outgoingInvite.token}`
+		: null;
 
 	return {
 		user: user || null,
-		relationship
+		relationship,
+		partnerInviteShareUrl
 	};
 };
 

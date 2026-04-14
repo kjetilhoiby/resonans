@@ -56,7 +56,7 @@ function checkWorkoutEmails() {
       });
 
       try {
-        var response = UrlFetchApp.fetch(WEBHOOK_URL + '?token=' + WEBHOOK_SECRET, {
+        var response = UrlFetchApp.fetch(WEBHOOK_URL + '?token=' + encodeURIComponent(WEBHOOK_SECRET), {
           method: 'post',
           contentType: 'application/json',
           payload: payload,
@@ -77,6 +77,135 @@ function checkWorkoutEmails() {
       }
     }
   }
+}
+
+/**
+ * Kjør denne manuelt fra Apps Script-editoren for å teste webhooken og se alle GPX-mails.
+ * Viser status uten å markere noen meldinger som lest.
+ */
+function testWebhook() {
+  Logger.log('=== WEBHOOK TEST ===');
+  Logger.log('URL: ' + WEBHOOK_URL);
+
+  // Sjekk om label eksisterer
+  var label = GmailApp.getUserLabelByName(GMAIL_LABEL);
+  if (!label) {
+    Logger.log('FEIL: Label "' + GMAIL_LABEL + '" finnes ikke i Gmail');
+    return;
+  }
+
+  var threads = label.getThreads(0, 50);
+  Logger.log('Fant ' + threads.length + ' tråder med label "' + GMAIL_LABEL + '"');
+
+  var gpxCount = 0;
+  var readCount = 0;
+
+  for (var i = 0; i < threads.length; i++) {
+    var messages = threads[i].getMessages();
+    for (var j = 0; j < messages.length; j++) {
+      var msg = messages[j];
+      var atts = msg.getAttachments();
+      var gpxAtts = atts.filter(function(a) {
+        var n = a.getName().toLowerCase();
+        return n.endsWith('.gpx') || n.endsWith('.tcx');
+      });
+      if (gpxAtts.length > 0) {
+        gpxCount++;
+        var status = msg.isUnread() ? 'ULEST' : 'LEST (vil ikke plukkes opp automatisk)';
+        Logger.log('[' + status + '] ' + msg.getDate() + ' — ' + msg.getSubject() + ' (' + gpxAtts.map(function(a) { return a.getName(); }).join(', ') + ')');
+        if (!msg.isUnread()) readCount++;
+      }
+    }
+  }
+
+  Logger.log('Totalt GPX-meldinger: ' + gpxCount + ', derav allerede lest: ' + readCount);
+
+  if (gpxCount === 0) {
+    Logger.log('Ingen GPX-vedlegg funnet. Sjekk at Gmail-filteret setter label "' + GMAIL_LABEL + '" på innkommende meldinger');
+    return;
+  }
+
+  // Send én minimal test-request til webhook for å verifisere at den svarer
+  Logger.log('\n--- Sender testpuls til webhook ---');
+  var testPayload = JSON.stringify({
+    From: SENDER_EMAIL,
+    Subject: 'webhook-test',
+    Attachments: []
+  });
+  try {
+    var res = UrlFetchApp.fetch(WEBHOOK_URL + '?token=' + encodeURIComponent(WEBHOOK_SECRET), {
+      method: 'post',
+      contentType: 'application/json',
+      payload: testPayload,
+      muteHttpExceptions: true
+    });
+    Logger.log('HTTP ' + res.getResponseCode() + ': ' + res.getContentText());
+    if (res.getResponseCode() === 401) {
+      Logger.log('FEIL: WEBHOOK_SECRET stemmer ikke med Vercel-miljøet');
+    } else if (res.getResponseCode() === 200) {
+      Logger.log('OK: Webhook svarer. (Ingen vedlegg = skipped, det er normalt)');
+    }
+  } catch (e) {
+    Logger.log('NETTVERKSFEIL: ' + e.toString());
+  }
+}
+
+/**
+ * Tving re-prosessering av ALLE meldinger med GPX-vedlegg under labelen,
+ * inkludert allerede-leste. Bruk dette for å importere Dublin-mails manuelt.
+ */
+function reprocessAllGpxMails() {
+  var label = GmailApp.getUserLabelByName(GMAIL_LABEL);
+  if (!label) { Logger.log('Label ikke funnet'); return; }
+
+  var threads = label.getThreads(0, 50);
+  var imported = 0;
+
+  for (var i = 0; i < threads.length; i++) {
+    var messages = threads[i].getMessages();
+    for (var j = 0; j < messages.length; j++) {
+      var message = messages[j];
+      var attachments = message.getAttachments();
+      var workoutAttachments = [];
+
+      for (var k = 0; k < attachments.length; k++) {
+        var att = attachments[k];
+        var name = att.getName().toLowerCase();
+        if (name.endsWith('.gpx') || name.endsWith('.tcx')) {
+          workoutAttachments.push({
+            Name: att.getName(),
+            Content: Utilities.base64Encode(att.getBytes()),
+            ContentType: att.getContentType(),
+            ContentLength: att.getSize()
+          });
+        }
+      }
+
+      if (workoutAttachments.length === 0) continue;
+
+      var payload = JSON.stringify({
+        From: SENDER_EMAIL,
+        Subject: message.getSubject(),
+        Attachments: workoutAttachments
+      });
+
+      try {
+        var response = UrlFetchApp.fetch(WEBHOOK_URL + '?token=' + encodeURIComponent(WEBHOOK_SECRET), {
+          method: 'post',
+          contentType: 'application/json',
+          payload: payload,
+          muteHttpExceptions: true
+        });
+        var body = response.getContentText();
+        Logger.log(message.getSubject() + ' → HTTP ' + response.getResponseCode() + ': ' + body);
+        if (response.getResponseCode() === 200) imported++;
+      } catch (e) {
+        Logger.log('Feil for ' + message.getSubject() + ': ' + e.toString());
+      }
+    }
+  }
+
+  Logger.log('Ferdig. Sendte ' + imported + ' meldinger til webhook.');
 }
 
 // Kjør denne funksjonen én gang manuelt for å sette opp automatisk kjøring hvert minutt

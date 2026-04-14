@@ -19,6 +19,7 @@
 		{/if}
 
 		<form method="POST" action="/auth/signin/google">
+			<input type="hidden" name="callbackUrl" value={data.next} />
 			<button class="auth-submit" type="submit">Fortsett med Google</button>
 		</form>
 	</div>
