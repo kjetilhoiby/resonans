@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
 import { db } from '$lib/db';
 import { sensors, sensorEvents, users } from '$lib/db/schema';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { parseWorkoutFile, type ParsedWorkout } from '$lib/server/integrations/dropbox-sync';
 import { getWorkoutContextForUser } from '$lib/server/workout-context';
 import { notifyUserAboutImportedWorkouts } from '$lib/server/workout-notifications';
