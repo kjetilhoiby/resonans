@@ -6,7 +6,7 @@
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import Icon from '../ui/Icon.svelte';
+	import GpxMapSvg from '$lib/components/charts/GpxMapSvg.svelte';
 
 	interface DailySteps {
 		date: string;
@@ -18,14 +18,29 @@
 		hours: number;
 	}
 
+	interface TrackPoint {
+		lat: number;
+		lon: number;
+		ele?: number | null;
+		hr?: number | null;
+		time?: string | null;
+	}
+
 	interface Workout {
 		id: string;
 		timestamp: string;
 		date: string;
 		sportType: string;
-		distance: number | null;
-		duration: number | null;
-		category?: number;
+		distanceKm: number | null;
+		durationMin: number | null;
+		avgHeartRate: number | null;
+		maxHeartRate: number | null;
+		paceSecPerKm: number | null;
+		elevationMeters: number | null;
+		hasTrackPoints: boolean;
+		trackEventId: string | null;
+		sources: string[];
+		evidence: number;
 	}
 
 	interface HealthData {
@@ -61,6 +76,41 @@
 	let loading = $state(true);
 	let error = $state('');
 	let data = $state<HealthData | null>(null);
+	let dismissedIds = $state(new Set<string>());
+	let expandedIds = $state(new Set<string>());
+	let trackCache = $state(new Map<string, TrackPoint[]>());
+	let trackLoading = $state(new Set<string>());
+
+	async function dismissWorkout(id: string) {
+		dismissedIds = new Set([...dismissedIds, id]);
+		await fetch(`/api/workouts/${id}/dismiss`, { method: 'POST' });
+	}
+
+	async function toggleExpand(w: Workout) {
+		if (expandedIds.has(w.id)) {
+			expandedIds = new Set([...expandedIds].filter((x) => x !== w.id));
+			return;
+		}
+		expandedIds = new Set([...expandedIds, w.id]);
+		if (!trackCache.has(w.id) && w.trackEventId) {
+			trackLoading = new Set([...trackLoading, w.id]);
+			try {
+				const res = await fetch(`/api/activities/${w.trackEventId}/track`);
+				if (res.ok) {
+					const json = await res.json();
+					trackCache = new Map([...trackCache, [w.id, json.trackPoints ?? []]]);
+				}
+			} finally {
+				trackLoading = new Set([...trackLoading].filter((x) => x !== w.id));
+			}
+		}
+	}
+
+	function fmtPace(secPerKm: number): string {
+		const m = Math.floor(secPerKm / 60);
+		const s = String(Math.round(secPerKm % 60)).padStart(2, '0');
+		return `${m}:${s} /km`;
+	}
 
 	onMount(async () => {
 		try {
@@ -171,18 +221,76 @@
 					<div class="ths-stat-value">{data.workouts.count}</div>
 				</div>
 				<div class="ths-workout-list">
-					{#each data.workouts.list as workout}
-						<div class="ths-workout-item">
-							<div class="ths-workout-type">{formatSportType(workout.sportType)}</div>
-							<div class="ths-workout-details">date
+					{#each data.workouts.list.filter(w => !dismissedIds.has(w.id)) as workout}
+						<div class="ths-workout-item" class:expanded={expandedIds.has(workout.id)}>
+							<!-- Header -->
+							<div class="ths-workout-row">
+								<div class="ths-workout-type">{formatSportType(workout.sportType)}</div>
+								<div class="ths-workout-actions">
+									{#if workout.hasTrackPoints}
+										<button class="ths-map-btn" class:active={expandedIds.has(workout.id)} onclick={() => toggleExpand(workout)} title="Vis kart">
+											<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7l6-3 6 3 6-3v13l-6 3-6-3-6 3V7z"/><path d="M9 4v13M15 7v13"/></svg>
+										</button>
+									{/if}
+									<button class="ths-dismiss-btn" onclick={() => dismissWorkout(workout.id)} title="Skjul denne økten">×</button>
+								</div>
+							</div>
+							<!-- Stats row -->
+							<div class="ths-workout-details">
 								<span class="ths-workout-date">{fmtDate(workout.timestamp)}</span>
-								{#if workout.distance}
-									<span class="ths-workout-stat">{workout.distance} km</span>
+								{#if workout.distanceKm}
+									<span class="ths-workout-stat">{workout.distanceKm} km</span>
 								{/if}
-								{#if workout.duration}
-									<span class="ths-workout-stat">{workout.duration} min</span>
+								{#if workout.durationMin}
+									<span class="ths-workout-stat">{workout.durationMin} min</span>
+								{/if}
+								{#if workout.paceSecPerKm}
+									<span class="ths-workout-stat">{fmtPace(workout.paceSecPerKm)}</span>
+								{/if}
+								{#if workout.elevationMeters}
+									<span class="ths-workout-stat">↑{workout.elevationMeters} m</span>
 								{/if}
 							</div>
+							<!-- HR badges -->
+							{#if workout.avgHeartRate || workout.maxHeartRate}
+								<div class="ths-hr-row">
+									{#if workout.avgHeartRate}
+										<span class="ths-hr-badge">♥ {workout.avgHeartRate} bpm snitt</span>
+									{/if}
+									{#if workout.maxHeartRate}
+										<span class="ths-hr-badge max">♥ {workout.maxHeartRate} maks</span>
+									{/if}
+								</div>
+							{/if}
+							<!-- Mini-map (ekspandert) -->
+							{#if expandedIds.has(workout.id)}
+								<div class="ths-mini-map">
+									{#if trackLoading.has(workout.id)}
+										<div class="ths-map-placeholder">Laster kart...</div>
+									{:else if (trackCache.get(workout.id) ?? []).length >= 2}
+										<GpxMapSvg points={trackCache.get(workout.id)!} width={320} height={180} />
+										{#if (trackCache.get(workout.id) ?? []).some(p => p.hr)}
+											{@const pts = trackCache.get(workout.id)!}
+											{@const hrPts = pts.filter(p => p.hr != null)}
+											{@const minHr = Math.min(...hrPts.map(p => p.hr!))}
+											{@const maxHr = Math.max(...hrPts.map(p => p.hr!))}
+											{@const W = 320}
+											{@const H = 48}
+											{@const poly = hrPts.map((p, i) => `${(i / (hrPts.length - 1)) * W},${H - ((p.hr! - minHr) / (maxHr - minHr || 1)) * (H - 6)}`).join(' ')}
+											<div class="ths-hr-chart">
+												<svg viewBox="0 0 {W} {H}" width="100%" height="{H}" aria-hidden="true">
+													<polyline points={poly} fill="none" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+												</svg>
+												<div class="ths-hr-labels">
+													<span>{minHr}</span><span>{maxHr} bpm</span>
+												</div>
+											</div>
+										{/if}
+									{:else}
+										<div class="ths-map-placeholder">Ingen kartdata</div>
+									{/if}
+								</div>
+							{/if}
 						</div>
 					{/each}
 				</div>
@@ -348,28 +456,131 @@
 		border: 1px solid #1a1f2e;
 		border-radius: 8px;
 		padding: 10px 12px;
+		transition: border-color 0.15s;
+	}
+
+	.ths-workout-item.expanded {
+		border-color: #2d3748;
+	}
+
+	.ths-workout-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 4px;
+	}
+
+	.ths-workout-actions {
+		display: flex;
+		gap: 6px;
+		align-items: center;
+	}
+
+	.ths-map-btn {
+		background: none;
+		border: 1px solid #2d3748;
+		border-radius: 4px;
+		color: #64748b;
+		cursor: pointer;
+		padding: 3px 5px;
+		line-height: 0;
+		transition: color 0.15s, border-color 0.15s;
+	}
+
+	.ths-map-btn:hover,
+	.ths-map-btn.active {
+		color: #60a5fa;
+		border-color: #60a5fa;
+	}
+
+	.ths-dismiss-btn {
+		background: none;
+		border: none;
+		color: #475569;
+		cursor: pointer;
+		font-size: 1.1rem;
+		line-height: 1;
+		padding: 0 2px;
+		transition: color 0.15s;
+	}
+
+	.ths-dismiss-btn:hover {
+		color: #f87171;
 	}
 
 	.ths-workout-type {
 		font-size: 0.875rem;
 		font-weight: 600;
 		color: #cbd5e1;
-		margin-bottom: 4px;
 	}
 
 	.ths-workout-details {
 		display: flex;
-		gap: 12px;
+		flex-wrap: wrap;
+		gap: 8px;
 		font-size: 0.75rem;
 		color: #94a3b8;
+		margin-bottom: 6px;
 	}
 
 	.ths-workout-date {
-		color: #94a3b8;
+		color: #64748b;
 	}
 
 	.ths-workout-stat {
-		color: #64748b;
+		color: #94a3b8;
+		font-weight: 500;
+	}
+
+	.ths-hr-row {
+		display: flex;
+		gap: 6px;
+		flex-wrap: wrap;
+		margin-bottom: 6px;
+	}
+
+	.ths-hr-badge {
+		background: #1a1f2e;
+		border: 1px solid #2d3748;
+		border-radius: 99px;
+		color: #f87171;
+		font-size: 0.7rem;
 		font-weight: 600;
+		padding: 2px 8px;
+	}
+
+	.ths-hr-badge.max {
+		color: #fca5a5;
+		background: #1c1217;
+		border-color: #4a2020;
+	}
+
+	.ths-mini-map {
+		margin-top: 8px;
+		border-radius: 6px;
+		overflow: hidden;
+		border: 1px solid #1a1f2e;
+	}
+
+	.ths-map-placeholder {
+		height: 60px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: #475569;
+		font-size: 0.75rem;
+	}
+
+	.ths-hr-chart {
+		background: #090d12;
+		padding: 6px 8px 2px;
+	}
+
+	.ths-hr-labels {
+		display: flex;
+		justify-content: space-between;
+		font-size: 0.65rem;
+		color: #64748b;
+		padding: 0 2px;
 	}
 </style>

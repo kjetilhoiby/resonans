@@ -13,6 +13,8 @@
 	let loadingWithings = $state(false);
 	let syncingWithings = $state(false);
 	let withingsResult = $state<{ success: boolean; message: string } | null>(null);
+	let withingsImportMode = $state<'days' | 'from2017'>('days');
+	let withingsImportDays = $state(30);
 
 	let sparebank1Status = $state<any>(null);
 	let loadingSparebank1 = $state(false);
@@ -150,25 +152,27 @@
 		}
 	}
 
-	async function syncWithings(fullHistory = false) {
+	async function syncWithings(mode: 'default' | 'days' | 'from2017' = 'default') {
 		syncingWithings = true;
 		withingsResult = null;
 		try {
-			if (fullHistory) {
-				const ok = confirm('Dette importerer hele tilgjengelige Withings-historikken og erstatter eksisterende helsedata. Fortsette?');
-				if (!ok) {
-					syncingWithings = false;
-					return;
-				}
+			let url = '/api/sensors/withings/sync';
+			if (mode === 'from2017') {
+				const ok = confirm('Dette sletter all eksisterende Withings-data og reimporterer hele historikken fra 2017. Fortsette?');
+				if (!ok) { syncingWithings = false; return; }
+				url = '/api/sensors/withings/sync?from2017=true';
+			} else if (mode === 'days') {
+				const safeDays = Math.max(1, Math.min(365, Math.floor(Number(withingsImportDays) || 1)));
+				withingsImportDays = safeDays;
+				url = `/api/sensors/withings/sync?days=${safeDays}`;
 			}
 
-			const endpoint = fullHistory ? '/api/sensors/withings/full-sync' : '/api/sensors/withings/sync';
-			const res = await fetch(endpoint, { method: 'POST' });
+			const res = await fetch(url, { method: 'POST' });
 			const payload = await res.json();
 			if (!res.ok) throw new Error(payload.error || 'Sync feilet');
 			withingsResult = {
 				success: true,
-				message: payload.message || (fullHistory ? 'Withings full historikk importert.' : 'Withings synkronisert.')
+				message: payload.message || (mode === 'from2017' ? 'Withings historikk importert fra 2017.' : 'Withings synkronisert.')
 			};
 			await loadWithingsStatus();
 		} catch (error) {
@@ -382,9 +386,45 @@
 			<p>Laster...</p>
 		{:else if withingsStatus?.connected}
 			<p class="ok">Tilkoblet</p>
+			<div class="field">
+				<p class="field-title">Importperiode</p>
+				<div class="row import-mode-row">
+					<label class="option-pill">
+						<input
+							type="radio"
+							name="withings-import-mode"
+							value="days"
+							checked={withingsImportMode === 'days'}
+							onchange={() => (withingsImportMode = 'days')}
+						/>
+						<span>Siste</span>
+						<input
+							type="number"
+							min="1"
+							max="365"
+							class="input days-input"
+							bind:value={withingsImportDays}
+							disabled={withingsImportMode !== 'days'}
+						/>
+						<span>dager</span>
+					</label>
+					<label class="option-pill">
+						<input
+							type="radio"
+							name="withings-import-mode"
+							value="from2017"
+							checked={withingsImportMode === 'from2017'}
+							onchange={() => (withingsImportMode = 'from2017')}
+						/>
+						<span>Fra 2017 (uten begrensning)</span>
+					</label>
+				</div>
+			</div>
 			<div class="row">
-				<button class="btn-secondary" onclick={() => syncWithings(false)} disabled={syncingWithings}>{syncingWithings ? 'Synker...' : 'Synk nå'}</button>
-				<button class="btn-secondary" onclick={() => syncWithings(true)} disabled={syncingWithings}>Importer full historikk</button>
+				<button class="btn-secondary" onclick={() => syncWithings('default')} disabled={syncingWithings}>{syncingWithings ? 'Synker...' : 'Synk nå'}</button>
+				<button class="btn-secondary" onclick={() => syncWithings(withingsImportMode)} disabled={syncingWithings}>
+					Importer valgt periode
+				</button>
 				<button class="btn-ghost" onclick={disconnectWithings}>Koble fra</button>
 			</div>
 		{:else}

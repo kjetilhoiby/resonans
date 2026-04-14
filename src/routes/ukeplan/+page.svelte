@@ -2,8 +2,10 @@
 	import { enhance } from '$app/forms';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import { tick } from 'svelte';
+	import { goto } from '$app/navigation';
 	import ScreenTitle from '$lib/components/ui/ScreenTitle.svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
+	import { finishNavMetric, startNavMetric } from '$lib/client/nav-metrics';
 
 	type SaveState = 'idle' | 'saving' | 'saved';
 
@@ -249,6 +251,7 @@
 
 	import { onMount } from 'svelte';
 	onMount(async () => {
+		finishNavMetric('ukeplan');
 		const weekDates = new Set(data.week.days.map((d) => d.isoDate));
 		for (const trip of data.activeTrips) {
 			// Only fetch if some trip days overlap this week
@@ -1003,7 +1006,7 @@
 
 <div class="week-plan-page">
 	<header class="wp-header">
-		<a class="wp-back" href="/" aria-label="Tilbake til hjem"><Icon name="back" size={18} /></a>
+		<button class="wp-back" aria-label="Tilbake til hjem" onclick={() => { startNavMetric('ukeplan', 'home'); void goto('/'); }}><Icon name="back" size={18} /></button>
 		<a class="wp-week-nav" href={weekHref(data.weekNav.previousWeekKey)} aria-label="Forrige uke">‹</a>
 		<ScreenTitle
 			title={`Uke ${data.week.week}`}

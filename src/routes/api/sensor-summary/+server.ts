@@ -20,17 +20,57 @@ import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ locals }) => {
 	const userId = locals.userId;
+	const t0 = performance.now();
 
-	// Hent de siste 8 ukentlige aggregatene (8 for å beregne delta uke-over-uke)
-	const weeklyAggs = await db
-		.select({
-			periodKey: sensorAggregates.periodKey,
-			metrics: sensorAggregates.metrics
-		})
-		.from(sensorAggregates)
-		.where(and(eq(sensorAggregates.userId, userId), eq(sensorAggregates.period, 'week')))
-		.orderBy(desc(sensorAggregates.periodKey))
-		.limit(8);
+	const sevenWeeksAgo = new Date();
+	sevenWeeksAgo.setDate(sevenWeeksAgo.getDate() - 49);
+
+	const sevenMonthsAgo = new Date();
+	sevenMonthsAgo.setMonth(sevenMonthsAgo.getMonth() - 7);
+	sevenMonthsAgo.setDate(1);
+	sevenMonthsAgo.setHours(0, 0, 0, 0);
+
+	// Alle tre queries parallelt
+	const [weeklyAggs, runEvents, txRows] = await Promise.all([
+		db
+			.select({ periodKey: sensorAggregates.periodKey, metrics: sensorAggregates.metrics })
+			.from(sensorAggregates)
+			.where(and(eq(sensorAggregates.userId, userId), eq(sensorAggregates.period, 'week')))
+			.orderBy(desc(sensorAggregates.periodKey))
+			.limit(8),
+		db
+			.select({
+				timestamp: sensorEvents.timestamp,
+				distance: sql<number>`(data->>'distance')::numeric`
+			})
+			.from(sensorEvents)
+			.where(
+				and(
+					eq(sensorEvents.userId, userId),
+					eq(sensorEvents.dataType, 'workout'),
+					sql`data->>'sportType' IN ('running', 'indoor_running')`,
+					sql`(data->>'distance')::numeric > 0`,
+					gte(sensorEvents.timestamp, sevenWeeksAgo)
+				)
+			)
+			.orderBy(desc(sensorEvents.timestamp)),
+		db
+			.select({
+				timestamp: sensorEvents.timestamp,
+				amount: sql<number>`(data->>'amount')::numeric`
+			})
+			.from(sensorEvents)
+			.where(
+				and(
+					eq(sensorEvents.userId, userId),
+					eq(sensorEvents.dataType, 'bank_transaction'),
+					gte(sensorEvents.timestamp, sevenMonthsAgo),
+					sql`(data->>'amount')::numeric < 0`
+				)
+			),
+	]);
+
+	console.info(`[sensor-summary] parallel queries: ${Math.round(performance.now() - t0)}ms`);
 
 	// Kronologisk rekkefølge (eldst → nyest)
 	const weeks = weeklyAggs.reverse();
@@ -65,28 +105,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 		.map((v) => Math.round(v));
 	const currentSteps = stepsSeries.at(-1) ?? null;
 
-	// ── Løping: hent fra råevents siste 7 uker ──
-	const sevenWeeksAgo = new Date();
-	sevenWeeksAgo.setDate(sevenWeeksAgo.getDate() - 49);
-
-	const runEvents = await db
-		.select({
-			timestamp: sensorEvents.timestamp,
-			distance: sql<number>`(data->>'distance')::numeric`
-		})
-		.from(sensorEvents)
-		.where(
-			and(
-				eq(sensorEvents.userId, userId),
-				eq(sensorEvents.dataType, 'workout'),
-				sql`data->>'sportType' IN ('running', 'indoor_running')`,
-				sql`(data->>'distance')::numeric > 0`,
-				gte(sensorEvents.timestamp, sevenWeeksAgo)
-			)
-		)
-		.orderBy(desc(sensorEvents.timestamp));
-
-	// Grupper løpeøkter per ISO-uke og summer distansen (km)
+	// ── Løping: grupper fra forhåndshentede råevents ──
 	// Withings returnerer distanse i meter → konverter til km
 	type WeekBucket = Map<string, number>;
 	const runByWeek: WeekBucket = new Map();
@@ -103,28 +122,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 	});
 	const weekKm = runSparkline.at(-1) ?? 0;
 
-	// ── Økonomi: månedlig variable forbruk fra bank_transactions ──
-	// Hent siste 7 måneder med negative beløp (utgifter)
-	const sevenMonthsAgo = new Date();
-	sevenMonthsAgo.setMonth(sevenMonthsAgo.getMonth() - 7);
-	sevenMonthsAgo.setDate(1);
-	sevenMonthsAgo.setHours(0, 0, 0, 0);
-
-	const txRows = await db
-		.select({
-			timestamp: sensorEvents.timestamp,
-			amount: sql<number>`(data->>'amount')::numeric`
-		})
-		.from(sensorEvents)
-		.where(
-			and(
-				eq(sensorEvents.userId, userId),
-				eq(sensorEvents.dataType, 'bank_transaction'),
-				gte(sensorEvents.timestamp, sevenMonthsAgo),
-				sql`(data->>'amount')::numeric < 0`
-			)
-		);
-
+	// ── Økonomi: grupper fra forhåndshentede bank_transactions ──
 	// Grupper per måned (YYYY-MM) og summer absolutt forbruk
 	const spendByMonth = new Map<string, number>();
 	for (const row of txRows) {

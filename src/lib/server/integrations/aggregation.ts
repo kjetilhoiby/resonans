@@ -1,7 +1,7 @@
 import { db } from '$lib/db';
 import { sensorEvents, sensorAggregates } from '$lib/db/schema';
 import { eq, and, gte, lte } from 'drizzle-orm';
-import { generateWeeks, generateMonths, generateYears, getCurrentWeek, getCurrentMonth, getCurrentYear } from './time-periods';
+import { generateWeeks, generateMonths, generateYears, getCurrentWeek, getCurrentMonth, getCurrentYear, getWeeksSince, getMonthsSince, getYearsSince } from './time-periods';
 import type { WeekPeriod, MonthPeriod, YearPeriod } from './time-periods';
 
 /**
@@ -459,6 +459,24 @@ export async function aggregateYearlyData(userId: string, years?: YearPeriod[]) 
 				}
 			});
 	}
+}
+
+/**
+ * Aggregate all periods that overlap with [fromDate, now] — for incremental imports spanning multiple weeks/months
+ */
+export async function aggregatePeriodsFrom(userId: string, fromDate: Date) {
+	const startTime = Date.now();
+
+	const weeks = getWeeksSince(fromDate);
+	const months = getMonthsSince(fromDate);
+	const years = getYearsSince(fromDate);
+
+	console.log(`📊 Aggregating ${weeks.length} weeks, ${months.length} months, ${years.length} years from ${fromDate.toISOString().split('T')[0]}...`);
+	await aggregateWeeklyData(userId, weeks);
+	await aggregateMonthlyData(userId, months);
+	await aggregateYearlyData(userId, years);
+
+	console.log(`✅ Period aggregation completed in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
 }
 
 /**

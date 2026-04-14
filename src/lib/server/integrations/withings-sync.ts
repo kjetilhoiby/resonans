@@ -325,7 +325,7 @@ export async function syncWeightData(
  * Sync activity data from Withings
  * 
  * Note: Withings updates activity data retroactively throughout the day.
- * We use a 3-day overlap window to catch late updates.
+ * We use a 7-day overlap window to catch late updates.
  */
 export async function syncActivityData(
 	userId: string,
@@ -335,12 +335,12 @@ export async function syncActivityData(
 	fullSync = false
 ) {
 	// Full sync starts from September 1, 2017
-	// Incremental sync: always fetch last 3 days to catch retroactive updates
+	// Incremental sync: always fetch last 7 days to catch retroactive updates
 	const startdateymd = fullSync
 		? '2017-09-01'
 		: (() => {
 			const overlapDate = new Date();
-			overlapDate.setDate(overlapDate.getDate() - 3); // 3-day overlap window
+			overlapDate.setDate(overlapDate.getDate() - 7); // 7-day overlap window
 			return overlapDate.toISOString().split('T')[0];
 		})();
 
@@ -468,7 +468,7 @@ export async function syncSleepData(
 /**
  * Sync workout data from Withings
  * 
- * Note: Uses 3-day overlap window to catch retroactive updates.
+ * Note: Uses 7-day overlap window to catch retroactive updates.
  */
 export async function syncWorkoutData(
 	userId: string,
@@ -478,12 +478,12 @@ export async function syncWorkoutData(
 	fullSync = false
 ) {
 	// Full sync starts from September 1, 2017
-	// Incremental sync: always fetch last 3 days to catch retroactive updates
+	// Incremental sync: always fetch last 7 days to catch retroactive updates
 	const startdateymd = fullSync
 		? '2017-09-01'
 		: (() => {
 			const overlapDate = new Date();
-			overlapDate.setDate(overlapDate.getDate() - 3); // 3-day overlap window
+			overlapDate.setDate(overlapDate.getDate() - 7); // 7-day overlap window
 			return overlapDate.toISOString().split('T')[0];
 		})();
 
@@ -536,7 +536,7 @@ export async function syncWorkoutData(
 /**
  * Full sync of all Withings data
  */
-export async function syncAllWithingsData(userId: string, fullSync = false): Promise<{
+export async function syncAllWithingsData(userId: string, fullSync = false, overrideLastSync?: Date): Promise<{
 	weight: number;
 	activity: number;
 	sleep: number;
@@ -549,7 +549,7 @@ export async function syncAllWithingsData(userId: string, fullSync = false): Pro
 	}
 
 	const accessToken = await getValidAccessToken(sensor);
-	const lastSync = fullSync ? undefined : (sensor.lastSync || undefined);
+	const lastSync = fullSync ? undefined : (overrideLastSync ?? sensor.lastSync ?? undefined);
 
 	// If full sync, delete all existing data first
 	if (fullSync) {

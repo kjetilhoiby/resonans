@@ -8,7 +8,7 @@
     themes    aktive temaer fra DB (for tema-grid)
 -->
 <script lang="ts">
-	import { goto, preloadCode } from '$app/navigation';
+	import { goto, preloadCode, preloadData } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { fly } from 'svelte/transition';
@@ -25,7 +25,7 @@
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
 	import { prefetchDashboard } from '$lib/client/dashboard-cache';
 	import { prefetchWidgetData } from '$lib/client/widget-data-cache';
-	import { finishNavMetric, startNavMetric } from '$lib/client/nav-metrics';
+	import { finishNavMetric, startNavMetric, timeAsync } from '$lib/client/nav-metrics';
 	import { streamProxyChat } from '$lib/client/proxy-chat-stream';
 	import { resolveThemeDashboardKind, type DashboardKind } from '$lib/domain/theme-dashboard-registry';
 	import type { WeatherStatusWidget } from '$lib/ai/tools/weather-forecast';
@@ -296,11 +296,16 @@
 				widgetsLoading = false;
 			}
 
+			// Start checklists concurrently — ingen datavhengighet til sensor/widget
+			const checklistPromise = timeAsync('checklists', () => fetchChecklists());
+
 			try {
-				const [summaryRes, widgetsRes] = await Promise.all([
-					fetch('/api/sensor-summary'),
-					fetch('/api/user-widgets')
-				]);
+				const [summaryRes, widgetsRes] = await timeAsync('sensor+widgets parallel', () =>
+					Promise.all([
+						fetch('/api/sensor-summary'),
+						fetch('/api/user-widgets')
+					])
+				);
 				if (summaryRes.ok) {
 					sensorSummary = await summaryRes.json();
 					writeCachedPayload(HOME_SENSOR_CACHE_KEY, sensorSummary);
@@ -317,13 +322,17 @@
 				widgetsLoading = false;
 			}
 
-			await fetchChecklists();
+			await checklistPromise;
 			cleanupPrefetch = scheduleDashboardPrefetch();
 
-			// Warm up theme route code so first navigation on mobile feels snappier.
+			// Warm up theme route code and server data so first navigation feels snappier.
 			if (typeof window !== 'undefined') {
 				const runPreload = () => {
 					void preloadCode('/tema/*');
+					// Prefetch server load-data for topp-temaer mens brukeren er idle
+					for (const theme of themes.slice(0, 2)) {
+						void preloadData(`/tema/${theme.id}`);
+					}
 				};
 
 				if ('requestIdleCallback' in window) {
@@ -1383,7 +1392,7 @@
 	{#if !inputExpanded}
 		<section class="zone zone-title" out:fly={{ y: -24, duration: 750 }} in:fly={{ y: -14, duration: 600 }}>
 			<div class="title-row">
-				<ScreenTitle title="Resonans" subtitle={dateLabel} onpress={() => goto('/ukeplan')} ariaLabel="Aapne ukeplan" />
+				<ScreenTitle title="Resonans" subtitle={dateLabel} onpress={() => { startNavMetric('home', 'ukeplan'); void goto('/ukeplan'); }} ariaLabel="Aapne ukeplan" />
 				<div class="title-right">
 					<a href="/goals" class="icon-link" aria-label="Mål"><Icon name="goals" size={20} /></a>
 					<a href="/settings" class="icon-link" aria-label="Innstillinger"><Icon name="settings" size={18} /></a>

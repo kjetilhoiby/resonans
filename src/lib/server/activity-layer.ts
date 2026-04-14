@@ -1,6 +1,6 @@
 import { db } from '$lib/db';
 import { sensorEvents, sensors } from '$lib/db/schema';
-import { and, eq, gte } from 'drizzle-orm';
+import { and, eq, gte, sql } from 'drizzle-orm';
 
 interface ActivityLayerOptions {
 	since?: Date;
@@ -210,7 +210,12 @@ export async function buildUnifiedWorkoutActivities(
 	userId: string,
 	options: ActivityLayerOptions = {}
 ): Promise<UnifiedWorkoutActivity[]> {
-	const conditions = [eq(sensorEvents.userId, userId), eq(sensorEvents.dataType, 'workout')];
+	const conditions = [
+		eq(sensorEvents.userId, userId),
+		eq(sensorEvents.dataType, 'workout'),
+		// Exclude manually dismissed workouts (metadata.dismissed = true)
+		sql`(metadata->>'dismissed') IS DISTINCT FROM 'true'`
+	];
 	if (options.since) {
 		conditions.push(gte(sensorEvents.timestamp, options.since));
 	}
@@ -338,7 +343,15 @@ export async function buildUnifiedWorkoutActivities(
 				evidence: events.map(buildEvidence)
 			};
 		})
-		.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+		.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
+		.filter((w) => {
+			// Exclude unrecognized sport type — always Withings auto-detected noise with no classification
+			if (w.sportType === 'unknown') return false;
+			// Exclude sub-2-minute sessions with no track evidence — logging artifacts, not real workouts
+			const hasTrackPoints = w.evidence.some((e) => e.hasTrackPoints);
+			if (!hasTrackPoints && w.durationSeconds !== null && w.durationSeconds < 120) return false;
+			return true;
+		});
 
 	return unified;
 }

@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { themes, sensorEvents } from '$lib/db/schema';
 import { eq, and, gte, lte, sql } from 'drizzle-orm';
+import { buildUnifiedWorkoutActivities } from '$lib/server/activity-layer';
 
 /**
  * GET /api/tema/[id]/health-stats
@@ -108,26 +109,14 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 		)
 		.orderBy(sensorEvents.timestamp);
 
-	// Fetch workout data during trip
-	const workouts = await db
-		.select({
-			id: sensorEvents.id,
-			timestamp: sensorEvents.timestamp,
-			sportType: sql<string>`COALESCE(data->>'sportType', 'unknown')`,
-			distance: sql<number>`COALESCE((data->>'distance')::numeric / 1000.0, NULL)`,
-			duration: sql<number>`(data->>'duration')::numeric`,
-			category: sql<number>`(data->>'category')::integer`
-		})
-		.from(sensorEvents)
-		.where(
-			and(
-				eq(sensorEvents.userId, userId),
-				eq(sensorEvents.dataType, 'workout'),
-				gte(sensorEvents.timestamp, startDate),
-				lte(sensorEvents.timestamp, endDate)
-			)
-		)
-		.orderBy(sensorEvents.timestamp);
+	// Fetch workout data during trip via the unified activity layer
+	// This merges Withings + GPX/email sources and deduplicates overlapping sessions
+	const unifiedWorkouts = await buildUnifiedWorkoutActivities(userId, {
+		since: startDate,
+		limit: 500
+	});
+	// Filter down to the trip window (buildUnifiedWorkoutActivities only supports `since`, not `until`)
+	const workouts = unifiedWorkouts.filter(w => new Date(w.startTime) <= endDate);
 
 	// Fetch sleep data during trip
 	const sleepData = await db
@@ -223,24 +212,22 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 			},
 			workouts: {
 				count: workouts.length,
-				list: workouts.map((w) => {
-					// Normalize distance to km
-					let distanceKm = null;
-					if (w.distance) {
-						const dist = typeof w.distance === 'string' ? parseFloat(w.distance) : w.distance;
-						distanceKm = dist > 100 ? Math.round((dist / 1000) * 10) / 10 : Math.round(dist * 10) / 10;
-					}
-					
-					return {
-						id: w.id,
-						timestamp: w.timestamp,
-						date: new Date(w.timestamp).toISOString().split('T')[0],
-						sportType: w.sportType || 'unknown',
-						distance: distanceKm,
-						duration: w.duration ? Math.round(w.duration / 60) : null, // Convert to minutes
-						category: w.category // Include for debugging
-					};
-				})
+				list: workouts.map((w) => ({
+					id: w.activityId,
+					timestamp: w.startTime,
+					date: w.startTime.split('T')[0],
+					sportType: w.sportType,
+					distanceKm: w.distanceMeters ? Math.round((w.distanceMeters / 1000) * 10) / 10 : null,
+					durationMin: w.durationSeconds ? Math.round(w.durationSeconds / 60) : null,
+					avgHeartRate: w.avgHeartRate ? Math.round(w.avgHeartRate) : null,
+					maxHeartRate: w.maxHeartRate ? Math.round(w.maxHeartRate) : null,
+					paceSecPerKm: w.paceSecondsPerKm ? Math.round(w.paceSecondsPerKm) : null,
+					elevationMeters: w.elevationMeters ? Math.round(w.elevationMeters) : null,
+					hasTrackPoints: w.evidence.some((e) => e.hasTrackPoints),
+					trackEventId: w.evidence.find((e) => e.hasTrackPoints)?.eventId ?? null,
+					sources: w.sources,
+					evidence: w.evidenceCount
+				}))
 			},
 			sleep: {
 				avgPerDay: avgSleepPerDay,

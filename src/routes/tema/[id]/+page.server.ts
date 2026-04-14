@@ -57,52 +57,45 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		}
 	}
 
-	// Last alle samtaler for dette temaet
-	const themeConversations = await getConversationsByTheme(locals.userId, theme.id);
-
-	// Last meldinger for den valgte/canonicale samtalen
-	const msgs = await db
-		.select({
-			id: messagesTable.id,
-			role: messagesTable.role,
-			content: messagesTable.content,
-			timestamp: messagesTable.createdAt
-		})
-		.from(messagesTable)
-		.where(eq(messagesTable.conversationId, conversationId))
-		.orderBy(asc(messagesTable.createdAt))
-		.limit(50);
-
-	// Last aktive mål for dette temaet
-	const themeGoals = await db
-		.select({
-			id: goals.id,
-			title: goals.title,
-			status: goals.status,
-			description: goals.description
-		})
-		.from(goals)
-		.where(
-			and(
-				eq(goals.themeId, theme.id),
-				eq(goals.userId, locals.userId)
-			)
-		);
-
-	const instruction = await getThemeInstruction(locals.userId, theme.id);
-	const uploadedFiles = await db
-		.select()
-		.from(themeFiles)
-		.where(and(eq(themeFiles.themeId, theme.id), eq(themeFiles.userId, locals.userId)))
-		.orderBy(asc(themeFiles.createdAt));
-	const tripListsRaw = await db.query.themeLists.findMany({
-		where: and(eq(themeLists.themeId, theme.id), eq(themeLists.userId, locals.userId)),
-		with: { items: { orderBy: (i, { asc: a }) => [a(i.sortOrder), a(i.createdAt)] } },
-		orderBy: [asc(themeLists.sortOrder), asc(themeLists.createdAt)]
-	});
-	const selectedWorkout = selectedWorkoutId
-		? await getWorkoutContextForUser(locals.userId, selectedWorkoutId)
-		: null;
+	// Last alle uavhengige data parallelt
+	const [themeConversations, msgs, themeGoals, instruction, uploadedFiles, tripListsRaw, selectedWorkout] =
+		await Promise.all([
+			getConversationsByTheme(locals.userId, theme.id),
+			db
+				.select({
+					id: messagesTable.id,
+					role: messagesTable.role,
+					content: messagesTable.content,
+					timestamp: messagesTable.createdAt
+				})
+				.from(messagesTable)
+				.where(eq(messagesTable.conversationId, conversationId))
+				.orderBy(asc(messagesTable.createdAt))
+				.limit(50),
+			db
+				.select({
+					id: goals.id,
+					title: goals.title,
+					status: goals.status,
+					description: goals.description
+				})
+				.from(goals)
+				.where(and(eq(goals.themeId, theme.id), eq(goals.userId, locals.userId))),
+			getThemeInstruction(locals.userId, theme.id),
+			db
+				.select()
+				.from(themeFiles)
+				.where(and(eq(themeFiles.themeId, theme.id), eq(themeFiles.userId, locals.userId)))
+				.orderBy(asc(themeFiles.createdAt)),
+			db.query.themeLists.findMany({
+				where: and(eq(themeLists.themeId, theme.id), eq(themeLists.userId, locals.userId)),
+				with: { items: { orderBy: (i, { asc: a }) => [a(i.sortOrder), a(i.createdAt)] } },
+				orderBy: [asc(themeLists.sortOrder), asc(themeLists.createdAt)]
+			}),
+			selectedWorkoutId
+				? getWorkoutContextForUser(locals.userId, selectedWorkoutId)
+				: Promise.resolve(null)
+		]);
 
 	return {
 		theme: {

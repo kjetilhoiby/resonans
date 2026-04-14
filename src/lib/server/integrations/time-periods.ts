@@ -170,3 +170,24 @@ export function getCurrentYear(): YearPeriod {
 	const years = generateYears();
 	return years[0];
 }
+
+/**
+ * Get all week periods that overlap with [fromDate, now]
+ */
+export function getWeeksSince(fromDate: Date): WeekPeriod[] {
+	return generateWeeks().filter(w => w.endTime >= fromDate);
+}
+
+/**
+ * Get all month periods that overlap with [fromDate, now]
+ */
+export function getMonthsSince(fromDate: Date): MonthPeriod[] {
+	return generateMonths().filter(m => m.endTime >= fromDate);
+}
+
+/**
+ * Get all year periods that overlap with [fromDate, now]
+ */
+export function getYearsSince(fromDate: Date): YearPeriod[] {
+	return generateYears().filter(y => y.endTime >= fromDate);
+}

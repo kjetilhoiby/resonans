@@ -47,3 +47,16 @@ export function finishNavMetric(expectedTo: string): number | null {
 	console.info(`[nav-metric] ${marker.from} -> ${marker.to}: ${Math.round(durationMs)}ms`);
 	return durationMs;
 }
+
+export async function timeAsync<T>(label: string, fn: () => Promise<T>): Promise<T> {
+	if (!isBrowser()) return fn();
+	const t0 = performance.now();
+	try {
+		const result = await fn();
+		console.info(`[perf] ${label}: ${Math.round(performance.now() - t0)}ms`);
+		return result;
+	} catch (err) {
+		console.info(`[perf] ${label}: ${Math.round(performance.now() - t0)}ms (feil)`);
+		throw err;
+	}
+}
