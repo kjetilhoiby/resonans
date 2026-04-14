@@ -15,7 +15,8 @@
 
 	let { points, width = 400, height = 280 }: Props = $props();
 
-	const padding = 20;
+	// Unique clip-path ID per instance to avoid collisions when multiple maps render
+	const clipId = 'map-clip-' + Math.random().toString(36).slice(2, 8);
 
 	const bounds = $derived.by(() => {
 		if (points.length === 0) return null;
@@ -30,40 +31,80 @@
 		return { minLat, maxLat, minLon, maxLon };
 	});
 
-	function toSvg(p: TrackPoint): [number, number] {
-		if (!bounds) return [0, 0];
-		const latRange = bounds.maxLat - bounds.minLat;
-		const lonRange = bounds.maxLon - bounds.minLon;
-		// Aspect-ratio-aware scaling
-		const innerW = width - padding * 2;
-		const innerH = height - padding * 2;
-		// Use Mercator-ish projection (scale lon by cos(lat))
-		const latMid = (bounds.minLat + bounds.maxLat) / 2;
-		const cosLat = Math.cos((latMid * Math.PI) / 180);
-		const adjustedLonRange = lonRange * cosLat;
-		let scaleX = adjustedLonRange > 0 ? innerW / adjustedLonRange : 1;
-		let scaleY = latRange > 0 ? innerH / latRange : 1;
-		const scale = Math.min(scaleX, scaleY);
-		const offsetX = (innerW - adjustedLonRange * scale) / 2;
-		const offsetY = (innerH - latRange * scale) / 2;
+	// Web Mercator helpers
+	function lonToFrac(lon: number, Z: number): number {
+		return ((lon + 180) / 360) * Math.pow(2, Z);
+	}
+	function latToFrac(lat: number, Z: number): number {
+		const rad = (lat * Math.PI) / 180;
+		return ((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2) * Math.pow(2, Z);
+	}
 
-		const x = padding + offsetX + (p.lon - bounds.minLon) * cosLat * scale;
-		const y = padding + offsetY + (bounds.maxLat - p.lat) * scale;
+	interface TileInfo {
+		url: string;
+		svgX: number;
+		svgY: number;
+		tileW: number;
+		tileH: number;
+	}
+	interface Viewport {
+		Z: number;
+		left: number;
+		right: number;
+		top: number;
+		bottom: number;
+		tiles: TileInfo[];
+	}
+
+	const viewport = $derived.by((): Viewport | null => {
+		if (!bounds) return null;
+		const lonSpan = Math.max(bounds.maxLon - bounds.minLon, 0.001);
+		// Pick zoom so ~3 tiles span the track width
+		const Z = Math.max(10, Math.min(16, Math.round(Math.log2((3 * 360) / lonSpan))));
+		const pad = 0.6;
+		const left = lonToFrac(bounds.minLon, Z) - pad;
+		const right = lonToFrac(bounds.maxLon, Z) + pad;
+		const top = latToFrac(bounds.maxLat, Z) - pad;
+		const bottom = latToFrac(bounds.minLat, Z) + pad;
+		const spanW = right - left;
+		const spanH = bottom - top;
+		const maxTile = Math.pow(2, Z);
+		const tiles: TileInfo[] = [];
+		for (let tx = Math.floor(left); tx <= Math.floor(right); tx++) {
+			for (let ty = Math.floor(top); ty <= Math.floor(bottom); ty++) {
+				const txW = ((tx % maxTile) + maxTile) % maxTile;
+				tiles.push({
+					url: 'https://tile.openstreetmap.org/' + Z + '/' + txW + '/' + ty + '.png',
+					svgX: ((tx - left) / spanW) * width,
+					svgY: ((ty - top) / spanH) * height,
+					tileW: width / spanW,
+					tileH: height / spanH
+				});
+			}
+		}
+		return { Z, left, right, top, bottom, tiles };
+	});
+
+	function toSvg(p: TrackPoint): [number, number] {
+		if (!viewport) return [0, 0];
+		const { Z, left, right, top, bottom } = viewport;
+		const x = ((lonToFrac(p.lon, Z) - left) / (right - left)) * width;
+		const y = ((latToFrac(p.lat, Z) - top) / (bottom - top)) * height;
 		return [x, y];
 	}
 
 	const pathD = $derived.by(() => {
-		if (points.length < 2) return '';
-		let d = '';
-		for (let i = 0; i < points.length; i++) {
-			const [x, y] = toSvg(points[i]);
-			d += i === 0 ? `M ${x.toFixed(1)},${y.toFixed(1)}` : ` L ${x.toFixed(1)},${y.toFixed(1)}`;
-		}
-		return d;
+		if (points.length < 2 || !viewport) return '';
+		return points
+			.map((p, i) => {
+				const [x, y] = toSvg(p);
+				return (i === 0 ? 'M ' : 'L ') + x.toFixed(1) + ',' + y.toFixed(1);
+			})
+			.join(' ');
 	});
 
-	const startPt = $derived(points.length > 0 ? toSvg(points[0]) : null);
-	const endPt = $derived(points.length > 1 ? toSvg(points[points.length - 1]) : null);
+	const startPt = $derived(points.length > 0 && viewport ? toSvg(points[0]) : null);
+	const endPt = $derived(points.length > 1 && viewport ? toSvg(points[points.length - 1]) : null);
 </script>
 
 {#if points.length >= 2}
@@ -74,44 +115,45 @@
 		aria-label="Rute-kart"
 		role="img"
 	>
-		<!-- Background -->
-		<rect width={width} height={height} fill="#0d1117" rx="10" />
+		<defs>
+			<clipPath id={clipId}>
+				<rect width={width} height={height} rx="10" />
+			</clipPath>
+		</defs>
 
-		<!-- Grid (subtle) -->
-		{#each Array(5) as _, i}
-			<line
-				x1={padding}
-				y1={padding + (i / 4) * (height - padding * 2)}
-				x2={width - padding}
-				y2={padding + (i / 4) * (height - padding * 2)}
-				stroke="#1e2632"
-				stroke-width="1"
-			/>
-			<line
-				x1={padding + (i / 4) * (width - padding * 2)}
-				y1={padding}
-				x2={padding + (i / 4) * (width - padding * 2)}
-				y2={height - padding}
-				stroke="#1e2632"
-				stroke-width="1"
-			/>
-		{/each}
+		<!-- Fallback bg while tiles load -->
+		<rect width={width} height={height} fill="#e8e4de" rx="10" />
 
-		<!-- Track shadow -->
-		<path d={pathD} fill="none" stroke="#4a9eff44" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
-		<!-- Track -->
-		<path d={pathD} fill="none" stroke="#4a9eff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
-
-		<!-- Start marker (green) -->
-		{#if startPt}
-			<circle cx={startPt[0]} cy={startPt[1]} r="6" fill="#48b581" stroke="#0d1117" stroke-width="2" />
-			<text x={startPt[0] + 9} y={startPt[1] + 4} fill="#48b581" font-size="10" font-weight="600">Start</text>
+		<!-- OSM tile layer -->
+		{#if viewport}
+			<g clip-path="url(#{clipId})">
+				{#each viewport.tiles as tile}
+					<image
+						href={tile.url}
+						x={tile.svgX}
+						y={tile.svgY}
+						width={tile.tileW}
+						height={tile.tileH}
+						preserveAspectRatio="none"
+					/>
+				{/each}
+			</g>
 		{/if}
 
-		<!-- End marker (orange) -->
-		{#if endPt}
-			<circle cx={endPt[0]} cy={endPt[1]} r="6" fill="#f0b429" stroke="#0d1117" stroke-width="2" />
-		{/if}
+		<!-- Track + markers -->
+		<g clip-path="url(#{clipId})">
+			<path d={pathD} fill="none" stroke="rgba(0,0,0,0.35)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+			<path d={pathD} fill="none" stroke="#e8372b" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+			{#if startPt}
+				<circle cx={startPt[0]} cy={startPt[1]} r="6" fill="#28a745" stroke="white" stroke-width="2" />
+			{/if}
+			{#if endPt}
+				<circle cx={endPt[0]} cy={endPt[1]} r="6" fill="#f0b429" stroke="white" stroke-width="2" />
+			{/if}
+		</g>
+
+		<!-- OSM attribution (required by tile usage policy) -->
+		<text x={width - 4} y={height - 4} text-anchor="end" fill="rgba(0,0,0,0.45)" font-size="8" font-family="sans-serif">© OpenStreetMap contributors</text>
 	</svg>
 {/if}
 

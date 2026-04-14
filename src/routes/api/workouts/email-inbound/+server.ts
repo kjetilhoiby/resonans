@@ -55,12 +55,83 @@ async function findOrCreateEmailSensor(userId: string) {
 	return created;
 }
 
+type RawPoint = { lat: number; lon: number; ele?: number | null; hr?: number | null; time?: string | null };
+
+function decimateTrack(pts: RawPoint[], maxPoints: number): RawPoint[] {
+	if (pts.length <= maxPoints) return pts;
+
+	// Haversine distance in metres between two lat/lon points
+	function dist(a: RawPoint, b: RawPoint): number {
+		const R = 6371000;
+		const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+		const dLon = ((b.lon - a.lon) * Math.PI) / 180;
+		const s = Math.sin(dLat / 2) ** 2 + Math.cos((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+		return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
+	}
+
+	// Heading in radians
+	function bearing(a: RawPoint, b: RawPoint): number {
+		const dLon = ((b.lon - a.lon) * Math.PI) / 180;
+		const lat1 = (a.lat * Math.PI) / 180;
+		const lat2 = (b.lat * Math.PI) / 180;
+		return Math.atan2(Math.sin(dLon) * Math.cos(lat2), Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon));
+	}
+
+	// Score each interior point by how much it differs from its neighbours
+	// in direction, HR and derived speed. Start/end always kept.
+	const scores = new Float64Array(pts.length); // 0 = always keep, higher = more important
+	scores[0] = Infinity;
+	scores[pts.length - 1] = Infinity;
+
+	// Pre-compute per-segment speeds (m/s) for normalisation
+	const speeds: number[] = [];
+	for (let i = 1; i < pts.length; i++) {
+		const d = dist(pts[i - 1], pts[i]);
+		const tA = pts[i - 1].time ? new Date(pts[i - 1].time!).getTime() : 0;
+		const tB = pts[i].time ? new Date(pts[i].time!).getTime() : 0;
+		const dt = tA && tB ? (tB - tA) / 1000 : 0;
+		speeds.push(dt > 0 ? d / dt : 0);
+	}
+	const maxSpeed = Math.max(...speeds, 1);
+	const hrValues = pts.map((p) => p.hr ?? null).filter((v): v is number => v !== null);
+	const hrRange = hrValues.length ? Math.max(...hrValues) - Math.min(...hrValues) : 1;
+
+	for (let i = 1; i < pts.length - 1; i++) {
+		// Direction change (rad, 0–π)
+		const b1 = bearing(pts[i - 1], pts[i]);
+		const b2 = bearing(pts[i], pts[i + 1]);
+		let dirDelta = Math.abs(b2 - b1);
+		if (dirDelta > Math.PI) dirDelta = 2 * Math.PI - dirDelta;
+		const dirScore = dirDelta / Math.PI; // 0–1
+
+		// Speed change (normalised)
+		const speedDelta = Math.abs(speeds[i] - speeds[i - 1]) / maxSpeed;
+
+		// HR change (normalised, 0 if no HR data)
+		const hrA = pts[i - 1].hr;
+		const hrB = pts[i].hr;
+		const hrScore = hrA != null && hrB != null ? Math.abs(hrB - hrA) / (hrRange || 1) : 0;
+
+		scores[i] = dirScore * 0.5 + speedDelta * 0.3 + hrScore * 0.2;
+	}
+
+	// Select top maxPoints indices by score, always including 0 and last
+	const indices = Array.from({ length: pts.length }, (_, i) => i);
+	indices.sort((a, b) => scores[b] - scores[a]);
+	const kept = new Set(indices.slice(0, maxPoints));
+
+	// Return in original chronological order
+	return pts.filter((_, i) => kept.has(i));
+}
+
 function buildWorkoutData(parsed: ParsedWorkout) {
 	const paceSecondsPerKm = parsed.distance > 0
 		? parsed.duration / (parsed.distance / 1000)
 		: undefined;
 
-	const sampledTrack = parsed.trackPoints.slice(0, 500).map((p) => ({
+	const MAX_POINTS = 1800;
+	const raw = parsed.trackPoints;
+	const sampledTrack = decimateTrack(raw, MAX_POINTS).map((p) => ({
 		lat: p.lat,
 		lon: p.lon,
 		ele: p.ele,
@@ -156,7 +227,13 @@ export const POST: RequestHandler = async ({ request, url }) => {
 				timestamp: parsed.startTime,
 				data,
 				metadata: { ...metadata, sourceName: attachment.Name }
-			}).onConflictDoNothing().returning({ id: sensorEvents.id });
+			}).onConflictDoUpdate({
+				target: [sensorEvents.sensorId, sensorEvents.dataType, sensorEvents.timestamp],
+				set: {
+					data: sql`excluded.data`,
+					metadata: sql`excluded.metadata`
+				}
+			}).returning({ id: sensorEvents.id });
 
 			if (inserted?.id) importedWorkoutIds.push(inserted.id);
 			imported += 1;
