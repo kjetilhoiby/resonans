@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 
-const VALID_TYPES = ['weight', 'sleep', 'steps', 'running'] as const;
+const VALID_TYPES = ['weight', 'sleep', 'steps', 'running', 'relationship'] as const;
 type SensorType = (typeof VALID_TYPES)[number];
 
 export const load: PageServerLoad = async ({ params, fetch }) => {

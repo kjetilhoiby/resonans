@@ -155,11 +155,12 @@ Be conversational and explain why a theme makes sense.`,
 						.set({ title: `${emoji || '📁'} ${name}`, updatedAt: new Date() })
 						.where(eq(conversations.id, themeConversationId));
 				} else {
-					const [newConversation] = await db.insert(conversations).values({
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
+					const result = await db.insert(conversations).values({
 						userId,
 						title: `${emoji || '📁'} ${name}`
 					}).returning();
-					themeConversationId = newConversation.id;
+					themeConversationId = (result as any[])[0].id;
 				}
 
 				// Build trip profile if travel data was provided
@@ -168,7 +169,8 @@ Be conversational and explain why a theme makes sense.`,
 					: undefined;
 
 				// Create the theme
-				const [newTheme] = await db.insert(themes).values({
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+				const newTheme = ((await db.insert(themes).values({
 					userId,
 					name,
 					emoji: emoji || '📁',
@@ -178,7 +180,7 @@ Be conversational and explain why a theme makes sense.`,
 					conversationId: themeConversationId,
 					archived: false,
 					...(tripProfile ? { tripProfile } : {})
-				}).returning();
+				}).returning()) as any[])[0];
 
 				return {
 					success: true,

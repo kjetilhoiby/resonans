@@ -37,10 +37,11 @@ export async function ensureThemeForUser({
 		let conversationId = existingTheme.conversationId;
 
 		if (!conversationId) {
-			const [newConversation] = await db.insert(conversations).values({
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			const newConversation = ((await db.insert(conversations).values({
 				userId,
 				title: `${existingTheme.emoji || emoji} ${existingTheme.name}`
-			}).returning();
+			}).returning()) as any[])[0];
 			conversationId = newConversation.id;
 		}
 
@@ -63,12 +64,14 @@ export async function ensureThemeForUser({
 		};
 	}
 
-	const [conversation] = await db.insert(conversations).values({
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const conversation = ((await db.insert(conversations).values({
 		userId,
 		title: `${emoji} ${name}`
-	}).returning();
+	}).returning()) as any[])[0];
 
-	const [theme] = await db.insert(themes).values({
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const theme = ((await db.insert(themes).values({
 		userId,
 		name,
 		emoji,
@@ -77,7 +80,7 @@ export async function ensureThemeForUser({
 		conversationId: conversation.id,
 		archived: false,
 		aiSuggested: false
-	}).returning();
+	}).returning()) as any[])[0];
 
 	return {
 		theme,

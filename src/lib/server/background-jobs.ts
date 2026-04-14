@@ -1,4 +1,4 @@
-import { db } from '$lib/db';
+import { db, pgClient } from '$lib/db';
 import { backgroundJobs } from '$lib/db/schema';
 import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import { syncAllSparebank1Data } from '$lib/server/integrations/sparebank1-sync';
@@ -74,7 +74,15 @@ function calculateRetryDelaySeconds(attempt: number): number {
 }
 
 async function claimNextDueJob(workerId: string) {
-	const rows = await db.execute(sql`
+	const rows = await pgClient.unsafe<{
+		id: string;
+		user_id: string | null;
+		type: string;
+		payload: Record<string, unknown> | null;
+		attempts: number;
+		max_attempts: number;
+		run_at: Date;
+	}[]>(`
 		WITH next_job AS (
 			SELECT id
 			FROM background_jobs
@@ -89,24 +97,16 @@ async function claimNextDueJob(workerId: string) {
 			status = 'running',
 			attempts = bj.attempts + 1,
 			locked_at = NOW(),
-			locked_by = ${workerId},
+			locked_by = $1,
 			started_at = COALESCE(bj.started_at, NOW()),
 			updated_at = NOW(),
 			error = NULL
 		FROM next_job
 		WHERE bj.id = next_job.id
 		RETURNING bj.*
-	`);
+	`, [workerId]);
 
-	return (rows[0] ?? null) as {
-		id: string;
-		user_id: string | null;
-		type: string;
-		payload: Record<string, unknown> | null;
-		attempts: number;
-		max_attempts: number;
-		run_at: Date;
-	};
+	return (rows[0] ?? null);
 }
 
 async function executeJob(job: any): Promise<Record<string, unknown>> {

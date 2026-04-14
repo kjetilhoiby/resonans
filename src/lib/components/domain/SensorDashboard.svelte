@@ -3,7 +3,7 @@
   Brukes av /sensor/[type] ruten.
 
   Viser ekte data via props (lastet server-side).
-  Supports: weight | sleep | steps | running
+	Supports: weight | sleep | steps | running | relationship
 
   Props:
     type        sensor-type: 'weight' | 'sleep' | 'steps' | 'running'
@@ -13,13 +13,24 @@
 	import GoalRing from '../ui/GoalRing.svelte';
 	import PeriodPills from '../ui/PeriodPills.svelte';
 
-	type SensorType = 'weight' | 'sleep' | 'steps' | 'running';
+	type SensorType = 'weight' | 'sleep' | 'steps' | 'running' | 'relationship';
 
 	interface SensorSummary {
 		weight: { current: number | null; unit: string; delta: number; sparkline: number[] };
 		sleep: { current: number | null; unit: string; sparkline: number[] };
 		steps: { current: number | null; unit: string; sparkline: number[] };
 		running: { weekKm: number; unit: string; sparkline: number[] };
+		relationship?: {
+			current: number | null;
+			unit: string;
+			delta: number;
+			sparkline: number[];
+			revealed?: boolean;
+			partnerSubmitted?: boolean;
+			mismatchDays14?: number;
+			bothNegativeDays14?: number;
+			followUpRecommended?: boolean;
+		};
 	}
 
 	interface Props {
@@ -34,6 +45,7 @@
 		sleep: { label: 'Søvn', emoji: '🌙', color: '#5fa0a0', goal: 7.5, goalUnit: 'h' },
 		steps: { label: 'Skritt', emoji: '👟', color: '#82c882', goal: 10000, goalUnit: '/dag' },
 		running: { label: 'Løping', emoji: '🏃', color: '#7c8ef5', goal: 30, goalUnit: 'km/uke' },
+		relationship: { label: 'Parsjekk', emoji: '💞', color: '#b56ae0', goal: 6, goalUnit: '/7' },
 	};
 
 	const meta = $derived(SENSOR_META[type]);
@@ -69,6 +81,18 @@
 				delta: 0,
 				pct: summary.steps.current !== null && meta.goal
 					? Math.min(100, Math.round((summary.steps.current / meta.goal!) * 100))
+					: 0,
+			};
+		}
+		if (type === 'relationship') {
+			const current = summary.relationship?.current ?? null;
+			return {
+				val: current !== null ? String(current) : '–',
+				unit: summary.relationship?.unit || '/7',
+				sparkline: summary.relationship?.sparkline || [],
+				delta: summary.relationship?.delta || 0,
+				pct: current !== null && meta.goal
+					? Math.min(100, Math.round((current / meta.goal!) * 100))
 					: 0,
 			};
 		}
@@ -140,6 +164,14 @@
 		{#if type === 'weight' && data.delta !== 0}
 			<p class="sd-delta" style="color:{data.delta < 0 ? '#5fa0a0' : '#e07070'}">
 				{data.delta > 0 ? '+' : ''}{data.delta} kg vs forrige uke
+			</p>
+		{:else if type === 'relationship'}
+			<p class="sd-delta" style="color:{(summary.relationship?.followUpRecommended ?? false) ? '#f0b429' : '#5fa0a0'}">
+				{summary.relationship?.revealed
+					? (summary.relationship?.followUpRecommended
+						? `Oppfoelging anbefalt (${summary.relationship?.mismatchDays14 || 0} mismatch siste 14 dager)`
+						: 'Stabil parsjekk den siste perioden')
+					: 'Venter paa begge svar for reveal'}
 			</p>
 		{/if}
 	</div>

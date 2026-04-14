@@ -37,10 +37,11 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			: defaultTitle;
 
 		// Opprett ny samtale
-		const [newConversation] = await db.insert(conversations).values({
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const newConversation = ((await db.insert(conversations).values({
 			userId: locals.userId,
 			title
-		}).returning();
+		}).returning()) as any[])[0];
 
 		return json({ 
 			success: true,

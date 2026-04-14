@@ -14,12 +14,14 @@
  */
 import { json } from '@sveltejs/kit';
 import { db } from '$lib/db';
-import { sensorAggregates, sensorEvents } from '$lib/db/schema';
-import { and, eq, desc, gte, sql } from 'drizzle-orm';
+import { sensorAggregates, sensorEvents, users } from '$lib/db/schema';
+import { and, eq, desc, gte, inArray, sql } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ locals }) => {
 	const userId = locals.userId;
+	const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
+	const partnerUserId = user?.partnerUserId || null;
 
 	const sevenWeeksAgo = new Date();
 	sevenWeeksAgo.setDate(sevenWeeksAgo.getDate() - 49);
@@ -29,8 +31,11 @@ export const GET: RequestHandler = async ({ locals }) => {
 	sevenMonthsAgo.setDate(1);
 	sevenMonthsAgo.setHours(0, 0, 0, 0);
 
+	const relationshipSince = new Date();
+	relationshipSince.setDate(relationshipSince.getDate() - 30);
+
 	// Alle tre queries parallelt
-	const [weeklyAggs, runEvents, txRows] = await Promise.all([
+	const [weeklyAggs, runEvents, txRows, relationshipRows] = await Promise.all([
 		db
 			.select({ periodKey: sensorAggregates.periodKey, metrics: sensorAggregates.metrics })
 			.from(sensorAggregates)
@@ -67,6 +72,24 @@ export const GET: RequestHandler = async ({ locals }) => {
 					sql`(data->>'amount')::numeric < 0`
 				)
 			),
+		partnerUserId
+			? db
+				.select({
+					userId: sensorEvents.userId,
+					timestamp: sensorEvents.timestamp,
+					day: sql<string>`${sensorEvents.data}->>'day'`,
+					score: sql<number>`(data->>'score')::int`
+				})
+				.from(sensorEvents)
+				.where(
+					and(
+						eq(sensorEvents.dataType, 'relationship_checkin'),
+						inArray(sensorEvents.userId, [userId, partnerUserId]),
+						gte(sensorEvents.timestamp, relationshipSince)
+					)
+				)
+				.orderBy(desc(sensorEvents.timestamp))
+			: Promise.resolve([]),
 	]);
 
 	// Kronologisk rekkefølge (eldst → nyest)
@@ -146,6 +169,47 @@ export const GET: RequestHandler = async ({ locals }) => {
 			? Math.round(currentMonthSpend - prevMonthSpend)
 			: 0;
 
+	const relationshipByDay = new Map<string, { mine?: number; partner?: number }>();
+	for (const row of relationshipRows) {
+		if (!row.day || !Number.isFinite(row.score)) continue;
+		const bucket = relationshipByDay.get(row.day) || {};
+		if (row.userId === userId) bucket.mine = row.score;
+		else bucket.partner = row.score;
+		relationshipByDay.set(row.day, bucket);
+	}
+
+	const dayKeysAsc = Array.from(relationshipByDay.keys()).sort();
+	const pairAverages = dayKeysAsc
+		.map((key) => {
+			const day = relationshipByDay.get(key);
+			if (!day || typeof day.mine !== 'number' || typeof day.partner !== 'number') return null;
+			return (day.mine + day.partner) / 2;
+		})
+		.filter((value): value is number => value !== null);
+
+	const latestDay = dayKeysAsc.at(-1);
+	const latest = latestDay ? relationshipByDay.get(latestDay) : null;
+	const latestMine = latest && typeof latest.mine === 'number' ? latest.mine : null;
+	const latestPartner = latest && typeof latest.partner === 'number' ? latest.partner : null;
+	const revealToday = latestMine !== null && latestPartner !== null;
+
+	const priorAverage = pairAverages.length > 1 ? pairAverages[pairAverages.length - 2] : null;
+	const currentAverage = pairAverages.length > 0 ? pairAverages[pairAverages.length - 1] : null;
+	const relationshipDelta =
+		currentAverage !== null && priorAverage !== null
+			? Math.round((currentAverage - priorAverage) * 10) / 10
+			: 0;
+
+	const recentTwoWeeks = dayKeysAsc.slice(-14);
+	let mismatchDays14 = 0;
+	let bothNegativeDays14 = 0;
+	for (const key of recentTwoWeeks) {
+		const day = relationshipByDay.get(key);
+		if (!day || typeof day.mine !== 'number' || typeof day.partner !== 'number') continue;
+		if (Math.abs(day.mine - day.partner) >= 2) mismatchDays14++;
+		if (day.mine <= 3 && day.partner <= 3) bothNegativeDays14++;
+	}
+
 	return json({
 		weight: {
 			current: currentWeight !== null ? Math.round(currentWeight * 10) / 10 : null,
@@ -173,6 +237,17 @@ export const GET: RequestHandler = async ({ locals }) => {
 			unit: 'kr',
 			delta: spendDelta,
 			sparkline: spendSparkline
+		},
+		relationship: {
+			current: latestMine,
+			unit: '/7',
+			delta: relationshipDelta,
+			sparkline: pairAverages.slice(-7).map((value) => Math.round(value * 10) / 10),
+			revealed: revealToday,
+			partnerSubmitted: latestPartner !== null,
+			mismatchDays14,
+			bothNegativeDays14,
+			followUpRecommended: mismatchDays14 > 0 || bothNegativeDays14 > 0
 		}
 	});
 };

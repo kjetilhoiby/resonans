@@ -3,7 +3,7 @@ import { db } from '$lib/db';
 import { sensorEvents, sensorAggregates } from '$lib/db/schema';
 import { eq, and, gte, lte, desc } from 'drizzle-orm';
 
-type SensorMetric = 'weight' | 'steps' | 'sleep' | 'intense_minutes' | 'heartrate' | 'workouts' | 'all';
+type SensorMetric = 'weight' | 'steps' | 'sleep' | 'intense_minutes' | 'heartrate' | 'workouts' | 'relationship' | 'all';
 
 function metricToDataType(metric?: SensorMetric): string | null {
 	if (!metric || metric === 'all') return null;
@@ -11,6 +11,7 @@ function metricToDataType(metric?: SensorMetric): string | null {
 	if (metric === 'steps' || metric === 'intense_minutes') return 'activity';
 	if (metric === 'sleep' || metric === 'heartrate') return 'sleep';
 	if (metric === 'workouts') return 'workout';
+	if (metric === 'relationship') return 'relationship_checkin';
 	return null;
 }
 
@@ -236,6 +237,19 @@ function summarizeRawEvents(events: Array<{ timestamp: Date; dataType: string; d
 
 	const avg = (vals: number[]) => vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
 
+	const relationshipValues = events
+		.filter((e) => e.dataType === 'relationship_checkin')
+		.map((e) => {
+			if (typeof e.data?.score !== 'number') return null;
+			return {
+				day: typeof e.data?.day === 'string' ? e.data.day : e.timestamp.toISOString().slice(0, 10),
+				score: e.data.score as number,
+				note: typeof e.data?.note === 'string' ? e.data.note : null
+			};
+		})
+		.filter((row): row is { day: string; score: number; note: string | null } => row !== null)
+		.reverse();
+
 	const response: Record<string, unknown> = {
 		eventCount: events.length
 	};
@@ -300,6 +314,18 @@ function summarizeRawEvents(events: Array<{ timestamp: Date; dataType: string; d
 			: undefined;
 	}
 
+	if (safeMetric === 'all' || safeMetric === 'relationship') {
+		response.relationship = relationshipValues.length
+			? {
+				latest: relationshipValues[relationshipValues.length - 1],
+				avg: avg(relationshipValues.map((row) => row.score)),
+				min: Math.min(...relationshipValues.map((row) => row.score)),
+				max: Math.max(...relationshipValues.map((row) => row.score)),
+				eventCount: relationshipValues.length
+			}
+			: undefined;
+	}
+
 	return response;
 }
 
@@ -343,6 +369,7 @@ Use this tool when user asks about:
 - Sleep quality: "How am I sleeping?", "Did I sleep well last night?"
 - Intense exercise: "Am I getting enough intense exercise?"
 - Workouts: "What workouts did I do?", "How many kilometers did I run this month?"
+- Relationship check-ins: "Hvordan har vi hatt det den siste uka?", "Vis parsjekk-score"
 - General health: "Show me my health summary", "How am I doing?"
 
 Query types:
@@ -360,7 +387,7 @@ The tool returns actual data from Withings sensors that the user can trust.`,
 		),
 		period: z.enum(['week', 'month', 'year']).optional().describe('Time period for aggregates'),
 		periodKey: z.string().optional().describe('Specific period (e.g., "2025W43" or "2025-W43", "2025M10" or "2025-10", "2025")'),
-		metric: z.enum(['weight', 'steps', 'sleep', 'intense_minutes', 'heartrate', 'workouts', 'all']).optional().describe('Which metric to focus on'),
+		metric: z.enum(['weight', 'steps', 'sleep', 'intense_minutes', 'heartrate', 'workouts', 'relationship', 'all']).optional().describe('Which metric to focus on'),
 		limit: z.number().optional().describe('Max number of results (for raw_events or trend)'),
 		startDate: z.string().optional().describe('Start date for raw events (ISO format)'),
 		endDate: z.string().optional().describe('End date for raw events (ISO format)')

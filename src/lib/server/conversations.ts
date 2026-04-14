@@ -1,4 +1,4 @@
-import { db } from '$lib/db';
+import { db, pgClient } from '$lib/db';
 import { conversations, messages, themes } from '$lib/db/schema';
 import { eq, desc, and, asc, sql, inArray } from 'drizzle-orm';
 import { ensureConversationThemeIdColumn } from '$lib/server/conversation-schema';
@@ -62,10 +62,12 @@ export async function getOrCreateConversation(userId: string) {
 	}
 
 	// Opprett ny samtale hvis ingen finnes
-	const [newConversation] = await db.insert(conversations).values({
+	const result = await db.insert(conversations).values({
 		userId,
 		title: 'Ny samtale'
 	}).returning();
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const newConversation = (result as any[])[0];
 
 	return newConversation;
 }

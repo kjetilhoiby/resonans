@@ -1,4 +1,4 @@
-import { db } from '$lib/db';
+import { db, pgClient } from '$lib/db';
 import { sensorEvents, sensors } from '$lib/db/schema';
 import { and, eq, sql } from 'drizzle-orm';
 import {
@@ -331,7 +331,13 @@ export async function syncAllSparebank1Data(
 			? new Date(Math.min(...batchDates.map((d) => d.getTime())))
 			: new Date();
 
-		const existingRows = await db.execute(sql`
+		const existingRows = await pgClient.unsafe<{
+			account_id: string;
+			date: string;
+			description: string;
+			amount: string;
+			booking_status: string;
+		}[]>(`
 			SELECT
 				data->>'accountId'                          AS account_id,
 				timestamp::date                             AS date,
@@ -339,10 +345,10 @@ export async function syncAllSparebank1Data(
 				ROUND((data->>'amount')::numeric, 2)        AS amount,
 				data->>'bookingStatus'                      AS booking_status
 			FROM sensor_events
-			WHERE sensor_id = ${sensor.id}
+			WHERE sensor_id = $1
 			  AND data_type = 'bank_transaction'
-			  AND timestamp >= ${earliestDate.toISOString()}::timestamptz
-		`);
+			  AND timestamp >= $2::timestamptz
+		`, [sensor.id, earliestDate.toISOString()]);
 
 		// Build a Set of existing semantic signatures
 		const existingSemanticKeys = new Set(
