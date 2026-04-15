@@ -137,58 +137,54 @@ export async function logActivity(params: LogActivityParams) {
 
 	const sensor = await getOrCreateAiSensor(userId);
 
-	const result = await db.transaction(async (tx) => {
-		// 1. Skriv til sensorEvents (unified kilde for all aktivitetsdata)
-		const [event] = await tx
-			.insert(sensorEvents)
+	// 1. Skriv til sensorEvents (unified kilde for all aktivitetsdata)
+	const [event] = await db
+		.insert(sensorEvents)
+		.values({
+			userId,
+			sensorId: sensor.id,
+			eventType: 'activity',
+			dataType: normalizedActivity.dataType,
+			timestamp: completedAt,
+			data: normalizedActivity.data,
+			metadata: { source: 'log_activity_tool' }
+		})
+		.returning();
+
+	// 2. Finn relevante tasks (eller bruk spesifiserte)
+	let relevantTasks;
+	if (taskIds && taskIds.length > 0) {
+		const allTasks = await db.query.tasks.findMany({
+			where: eq(tasks.status, 'active'),
+			with: { goal: true }
+		});
+		relevantTasks = allTasks.filter((t) => taskIds.includes(t.id));
+	} else {
+		relevantTasks = await findMatchingTasks(db, userId, type, metrics);
+	}
+
+	// 3. Opprett progress entries tilknyttet tasks
+	const progressEntries = [];
+	for (const task of relevantTasks) {
+		const value = calculateProgressValue(task, metrics);
+		const [progressEntry] = await db
+			.insert(progress)
 			.values({
+				taskId: task.id,
 				userId,
-				sensorId: sensor.id,
-				eventType: 'activity',
-				dataType: normalizedActivity.dataType,
-				timestamp: completedAt,
-				data: normalizedActivity.data,
-				metadata: { source: 'log_activity_tool' }
+				value,
+				note,
+				completedAt
 			})
 			.returning();
+		progressEntries.push({ ...progressEntry, task });
+	}
 
-		// 2. Finn relevante tasks (eller bruk spesifiserte)
-		let relevantTasks;
-		if (taskIds && taskIds.length > 0) {
-			const allTasks = await tx.query.tasks.findMany({
-				where: eq(tasks.status, 'active'),
-				with: { goal: true }
-			});
-			relevantTasks = allTasks.filter((t) => taskIds.includes(t.id));
-		} else {
-			relevantTasks = await findMatchingTasks(tx, userId, type, metrics);
-		}
-
-		// 3. Opprett progress entries tilknyttet tasks
-		const progressEntries = [];
-		for (const task of relevantTasks) {
-			const value = calculateProgressValue(task, metrics);
-			const [progressEntry] = await tx
-				.insert(progress)
-				.values({
-					taskId: task.id,
-					userId,
-					value,
-					note,
-					completedAt
-				})
-				.returning();
-			progressEntries.push({ ...progressEntry, task });
-		}
-
-		return {
-			activity: { id: event.id, type, completedAt, note },
-			metrics,
-			progressEntries
-		};
-	});
-
-	return result;
+	return {
+		activity: { id: event.id, type, completedAt, note },
+		metrics,
+		progressEntries
+	};
 }
 
 /**
@@ -200,15 +196,22 @@ async function findMatchingTasks(
 	activityType: string,
 	metrics: ActivityMetric[]
 ) {
-	// Hent alle aktive tasks for brukeren
-	const allTasks = await tx.query.tasks.findMany({
+	// Hent alle aktive tasks for brukeren (ekskluder de som har tracking series — de håndteres via record_tracking_event)
+	const allTasksRaw = await tx.query.tasks.findMany({
 		where: eq(tasks.status, 'active'),
 		with: {
 			goal: {
 				where: and(eq(goals.userId, userId), eq(goals.status, 'active'))
+			},
+			trackingSeries: {
+				where: (s: any, { eq: eqS }: any) => eqS(s.status, 'active'),
+				columns: { id: true }
 			}
 		}
 	});
+
+	// Tasks koblet til en aktiv tracking series skal oppdateres via record_tracking_event, ikke log_activity
+	const allTasks = allTasksRaw.filter((t: any) => !t.trackingSeries?.length);
 
 	// Load classification rules and overrides
 	const [overrideCache, classificationRules] = await Promise.all([

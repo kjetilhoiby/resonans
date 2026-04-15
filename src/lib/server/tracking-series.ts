@@ -1,8 +1,11 @@
 import { db } from '$lib/db';
 import {
+	goals,
+	progress,
 	recordTypeDefinitions,
 	sensors,
 	sensorEvents,
+	tasks,
 	trackingSeries,
 	trackingSeriesExamples
 } from '$lib/db/schema';
@@ -27,21 +30,28 @@ export interface ImageSignatureInput {
 export interface RecordTrackingEventInput {
 	userId: string;
 	seriesId?: string;
+	taskId?: string;
+	taskTitle?: string;
 	recordTypeKey?: string;
 	recordTypeLabel?: string;
 	kind?: 'activity' | 'measurement';
-	date: string;
+	date?: string;
 	note?: string;
 	measurements?: TrackingMeasurementInput[];
 	metadata?: Record<string, unknown>;
 	sourceImageUrl?: string;
 	imageSignature?: ImageSignatureInput | null;
 	autoCreateSeries?: boolean;
+	createSeriesOnly?: boolean;
 	title?: string;
 	themeId?: string;
 	conversationId?: string;
 	autoRegister?: boolean;
 	confirmationPolicy?: 'always' | 'low_confidence_only' | 'never';
+}
+
+function normalizeTaskTitle(value: string) {
+	return value.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
 async function getOrCreateAssistantSensor(userId: string) {
@@ -122,9 +132,32 @@ async function maybeFindDuplicateEvent(userId: string, dataType: string, when: D
 }
 
 export async function recordTrackingEvent(params: RecordTrackingEventInput) {
-	const when = new Date(params.date);
+	const when = new Date(params.date ?? new Date().toISOString().slice(0, 10));
 	if (Number.isNaN(when.getTime())) {
 		throw new Error('Invalid date format for tracking event');
+	}
+
+	let resolvedTask: { id: string; title: string } | null = null;
+	let resolvedTaskId = params.taskId;
+
+	if (!resolvedTaskId && params.taskTitle?.trim()) {
+		const normalizedTarget = normalizeTaskTitle(params.taskTitle);
+		const candidateTasks = await db.query.tasks.findMany({
+			where: eq(tasks.status, 'active'),
+			with: {
+				goal: {
+					where: and(eq(goals.userId, params.userId), eq(goals.status, 'active')),
+					columns: { id: true }
+				}
+			},
+			columns: { id: true, title: true }
+		});
+
+		const matchedTask = candidateTasks.find((task) => normalizeTaskTitle(task.title) === normalizedTarget);
+		if (matchedTask) {
+			resolvedTaskId = matchedTask.id;
+			resolvedTask = { id: matchedTask.id, title: matchedTask.title };
+		}
 	}
 
 	const sensor = await getOrCreateAssistantSensor(params.userId);
@@ -134,6 +167,17 @@ export async function recordTrackingEvent(params: RecordTrackingEventInput) {
 			where: and(eq(trackingSeries.id, params.seriesId), eq(trackingSeries.userId, params.userId))
 		})
 		: null;
+
+	// Look up series by taskId if no seriesId provided
+	if (!series && resolvedTaskId) {
+		series = await db.query.trackingSeries.findFirst({
+			where: and(
+				eq(trackingSeries.userId, params.userId),
+				eq(trackingSeries.taskId, resolvedTaskId),
+				eq(trackingSeries.status, 'active')
+			)
+		});
+	}
 
 	let recordType = series
 		? await db.query.recordTypeDefinitions.findFirst({
@@ -155,6 +199,17 @@ export async function recordTrackingEvent(params: RecordTrackingEventInput) {
 		});
 	}
 
+	// Look up existing active series by recordTypeKey if still not found
+	if (!series && recordType) {
+		series = await db.query.trackingSeries.findFirst({
+			where: and(
+				eq(trackingSeries.userId, params.userId),
+				eq(trackingSeries.recordTypeId, recordType.id),
+				eq(trackingSeries.status, 'active')
+			)
+		});
+	}
+
 	if (!series && params.autoCreateSeries !== false) {
 		const [createdSeries] = await db
 			.insert(trackingSeries)
@@ -162,6 +217,7 @@ export async function recordTrackingEvent(params: RecordTrackingEventInput) {
 				userId: params.userId,
 				recordTypeId: recordType.id,
 				themeId: params.themeId,
+				taskId: resolvedTaskId ?? null,
 				createdFromConversationId: params.conversationId,
 				title: params.title?.trim() || recordType.label,
 				autoRegister: params.autoRegister ?? false,
@@ -170,6 +226,27 @@ export async function recordTrackingEvent(params: RecordTrackingEventInput) {
 			})
 			.returning();
 		series = createdSeries;
+	}
+
+	if (params.createSeriesOnly) {
+		if (series) {
+			await db
+				.update(trackingSeries)
+				.set({
+					lastUsedAt: new Date(),
+					updatedAt: new Date()
+				})
+				.where(eq(trackingSeries.id, series.id));
+		}
+
+		return {
+			success: true,
+			createdOnly: true,
+			event: null,
+			series,
+			recordType,
+			linkedTask: resolvedTask
+		};
 	}
 
 	const dedupePolicy = recordType.dedupePolicy || 'none';
@@ -243,13 +320,25 @@ export async function recordTrackingEvent(params: RecordTrackingEventInput) {
 				confirmed: true
 			});
 		}
+
+		// Write a progress row if series is linked to a task — this drives the ukeplan slot UI
+		if (series.taskId) {
+			await db.insert(progress).values({
+				taskId: series.taskId,
+				userId: params.userId,
+				value: 1,
+				note: params.note ?? null,
+				completedAt: when
+			});
+		}
 	}
 
 	return {
 		success: true,
 		event: saved,
 		series,
-		recordType
+		recordType,
+		linkedTask: resolvedTask
 	};
 }
 

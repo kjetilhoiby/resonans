@@ -147,6 +147,36 @@ export async function processTaskIntentParseJob(params: {
 				frequency: parsed.intent.frequency,
 				targetValue: parsed.intent.targetValue,
 				unit: parsed.intent.unit,
+				metadata: (await db.query.tasks.findFirst({
+					where: eq(tasks.id, task.id),
+					columns: { metadata: true }
+				}))?.metadata ?? {},
+				updatedAt: new Date()
+			})
+			.where(and(eq(tasks.id, task.id), eq(tasks.goalId, task.goalId)));
+
+		// Update metadata with intentStatus = 'parsed'
+		await db
+			.update(tasks)
+			.set({
+				metadata: {
+					...(task.metadata ?? {}),
+					intentStatus: 'parsed',
+					intentError: null
+				},
+				updatedAt: new Date()
+			})
+			.where(and(eq(tasks.id, task.id), eq(tasks.goalId, task.goalId)));
+	} else {
+		// Update metadata with intentStatus = 'failed' and the error reason
+		await db
+			.update(tasks)
+			.set({
+				metadata: {
+					...(task.metadata ?? {}),
+					intentStatus: 'failed',
+					intentError: parsed.reason ?? 'unknown'
+				},
 				updatedAt: new Date()
 			})
 			.where(and(eq(tasks.id, task.id), eq(tasks.goalId, task.goalId)));

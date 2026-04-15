@@ -7,7 +7,7 @@
 <script lang="ts">
 	import { fly, fade } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
-	import { tick } from 'svelte';
+	import { tick, onMount } from 'svelte';
 	import ChatInput from './ChatInput.svelte';
 	import TriageCard from '../composed/TriageCard.svelte';
 	import ChatStatusWidget from '../domain/ChatStatusWidget.svelte';
@@ -22,17 +22,54 @@
 
 	interface Props {
 		prefill?: string;
+		autoSend?: boolean;
 		onclose: () => void;
 		onChecklistCreated?: () => void;
 	}
 
-	let { prefill = '', onclose, onChecklistCreated }: Props = $props();
+	let { prefill = '', autoSend = false, onclose, onChecklistCreated }: Props = $props();
 
 	let messages = $state<ChatMsg[]>([]);
 	let loading = $state(false);
 	let streamingText = $state('');
 	let streamingStatus = $state('');
 	let messagesEl = $state<HTMLDivElement | null>(null);
+
+	onMount(() => {
+		if (autoSend && prefill) {
+			void sendContext(prefill);
+		}
+	});
+
+	async function sendContext(text: string) {
+		loading = true;
+		streamingText = '';
+		streamingStatus = 'Starter...';
+		await scrollToBottom();
+		try {
+			const data = await streamProxyChat({
+				message: text,
+				onStatus: async (status) => {
+					streamingStatus = status;
+					await scrollToBottom();
+				},
+				onToken: async (token) => {
+					streamingStatus = '';
+					streamingText += token;
+					await scrollToBottom();
+				}
+			});
+			messages = [{ role: 'assistant', text: data.message, statusWidget: data.statusWidget ?? data.metadata?.statusWidget ?? null }];
+			if (data.checklistChanged) onChecklistCreated?.();
+		} catch {
+			messages = [{ role: 'assistant', text: 'Noe gikk galt. Prøv igjen.' }];
+		} finally {
+			streamingText = '';
+			streamingStatus = '';
+			loading = false;
+			await scrollToBottom();
+		}
+	}
 
 	async function scrollToBottom() {
 		await tick();
@@ -106,7 +143,7 @@
 	<!-- Meldinger -->
 	<div class="cs-messages" bind:this={messagesEl} aria-live="polite">
 		{#if messages.length === 0 && !loading}
-			<p class="cs-empty">Si hva du tenker på…</p>
+			<p class="cs-empty">{autoSend ? 'Starter…' : 'Si hva du tenker på…'}</p>
 		{/if}
 		{#each messages as msg (msg)}
 			{#if msg.role === 'user'}
@@ -131,7 +168,7 @@
 	<div class="cs-input-wrap">
 		<ChatInput
 			placeholder="Skriv her…"
-			initialValue={prefill}
+			initialValue={autoSend ? '' : prefill}
 			disabled={loading}
 			onsubmit={sendMessage}
 		/>

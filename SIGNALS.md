@@ -183,6 +183,12 @@ Status nå:
 
 ### Fase B - Første målbare task->signal mapping
 
+**Task creation auditert**: Alle oppgaveoppretting-flyter enqueue-er `task_intent_parse`:
+- Generell API (`POST /api/tasks`)
+- Chat tool (`create_task`)
+- Begge sjekker om oppgaven trenger parsing og enqueue-er parse-job asynkront.
+- Ukeplan/sjekklistepunkter: oppretter **sjekklistepunkter**, ikke oppgaver (bruker shared list-repeat parser).
+
 Start med 3 robuste signaler:
 1. `activity_run_pr_week`
 2. `running_minutes_week`
@@ -207,6 +213,35 @@ Status nå:
 	- topp unmatched-reasons
 	- topp failure-errors
 - Nytt bruker-skopet debug-endepunkt: `GET /api/goals/intent-jobs?limit=20` for siste parse-jobs med payload/resultat.
+- Tilsvarende operasjonell observability er lagt til for `task_intent_parse`.
+- Nytt bruker-skopet debug-endepunkt: `GET /api/tasks/intent-jobs?limit=20`.
+- Task parse error display er implementert i ukeplan-UI:
+	- Viser `Tolkes...` / `Aktiv sporing` / `Trenger avklaring` badges for oppgaver
+	- Viser menneskelig feilmelding når parse feiler (samme mapper som for mål)
+	- Tasks metadata-felt lagrer intentStatus og intentError for persistens
+- Task evaluation implementert:
+	- Evaluerer oppgaveprogress for hver uke sammenlignet med frekvensmål
+	- Lagrer evaluering (currentValue, targetValue, met) i task metadata.intentEvaluation
+	- Cron-endepunkt `/api/cron/task-evaluation` evaluerer alle oppgaver for alle brukere hver gang den kjøres
+	- UI viser evaluering som "X/Y denne uka (Z%) · pågår/oppnådd"
+- Domain signal producer utvidet med task-signal:
+	- Nytt signal: `task_completion_weekly`
+	- Beregner ukentlig fullføringsgrad for aktive weekly-oppgaver med targetValue
+	- Oppdaterer både `domain_signals` og `tasks.metadata.intentEvaluation` i samme kjøring
+	- Kjøres via eksisterende `/api/cron/domain-signals`
+- Observability utvidet:
+	- `/api/cron/domain-signals` returnerer nå `producerBreakdown` med antall produserte signaler per producer-type.
+	- `/api/cron/domain-signals?hours=168` returnerer også `observability` med aggregater for:
+		- `taskCompletionWeekly` (`task_completion_weekly`)
+		- `activityRunWeekly` (`activity_run_pr_week`)
+	  - inneholder total, antall brukere, truthy/falsy outcomes, severity-fordeling og latestObservedAt.
+	- Nytt debug-endepunkt: `GET /api/signals?signalType=task_completion_weekly&limit=20&hours=168`
+	  - viser siste signalrader for innlogget bruker
+	  - inkluderer summary per signalType (count + latestObservedAt)
+
+Produktstatus:
+- Ukeplan viser nå strukturert task-frekvens tydeligere i listen, for eksempel `4 ganger denne uka` i stedet for bare rå `weekly`.
+- Ukeplan gjengir nå parse-status og feilmeldinger for oppgaver, parallelt med målsidestatus
 
 2. Sett promoteringsterskler
 - høy frekvens + moderat/høy latency

@@ -72,7 +72,24 @@ Prosess:
 1. Bruker sier et mål
 2. Kall check_similar_goals FØRST
 3. Hvis lignende mål finnes: spør bruker først før opprettelse
-4. Kun opprett hvis bruker eksplisitt sier ja til nytt mål`,
+4. Kun opprett hvis bruker eksplisitt sier ja til nytt mål
+
+**FREKVENSBASERTE AKTIVITETSMÅL (f.eks. "mikroyoga 5 ganger per uke"):**
+Når bruker vil gjøre en aktivitet X ganger pr uke/dag:
+1. check_similar_goals → create_goal (categoryName: "Trening" el. "Mental helse")
+2. create_task: frequency='weekly', targetValue=N, unit='ganger per uke' (IKKE sett periodId/periodType)
+3. record_tracking_event: recordTypeKey=[aktivitetsnavn lowercase_underscored], taskId=[fra steg 2], title=[lesbart navn], autoCreateSeries=true, createSeriesOnly=true, kind='activity'
+	→ Dette oppretter og kobler tracking-serie til oppgaven uten å registrere at aktiviteten allerede er gjort i dag
+
+Etter opprettelse, si til brukeren:
+"Nå kan du si 'jeg har gjort [aktivitet]' så registrerer jeg det og teller fremgang på ukemål-siden din."
+
+**NÅR BRUKER SIER DE HAR GJORT EN AKTIVITET:**
+- Kall record_tracking_event med recordTypeKey=[aktivitetsnavn] og date=i dag
+- Systemet finner eksisterende serie automatisk og teller fremgang mot oppgaven
+- Hvis bruker refererer til en oppgave fra dagsplan/ukeplan, send også taskTitle=[oppgavetittel] for å finne riktig task selv om taskId ikke er kjent
+- Gi alltid tydelig kvittering + neste forslag, f.eks: "Registrert. Du kan også skrive 'jeg har gjort mikroyoga' neste gang."
+- Si hvor mange ganger de har gjort aktiviteten denne uka vs. målet`,
 
 	themes: `**TEMA (THEMES):**
 ALLTID foreslå tema når bruker nevner mål som passer i en kategori!

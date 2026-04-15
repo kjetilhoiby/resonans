@@ -46,6 +46,12 @@ const contracts = [
 		description: 'Number of running workouts this ISO week for weekly running-goal tracking.'
 	},
 	{
+		signalType: 'task_completion_weekly',
+		ownerDomain: 'home',
+		allowedConsumerDomains: ['home', 'relationship', 'health'],
+		description: 'Weekly completion ratio for active weekly tasks with explicit targets.'
+	},
+	{
 		signalType: 'economics_budget_pressure_7d',
 		ownerDomain: 'economics',
 		allowedConsumerDomains: ['home', 'relationship'],

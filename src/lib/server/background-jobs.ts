@@ -114,7 +114,59 @@ export async function listRecentGoalIntentParseJobsForUser(userId: string, limit
 	});
 }
 
+export async function listRecentTaskIntentParseJobsForUser(userId: string, limit = 20) {
+	const safeLimit = Math.max(1, Math.min(limit, 100));
+
+	const jobs = await db
+		.select({
+			id: backgroundJobs.id,
+			status: backgroundJobs.status,
+			attempts: backgroundJobs.attempts,
+			maxAttempts: backgroundJobs.maxAttempts,
+			error: backgroundJobs.error,
+			payload: backgroundJobs.payload,
+			result: backgroundJobs.result,
+			createdAt: backgroundJobs.createdAt,
+			updatedAt: backgroundJobs.updatedAt,
+			finishedAt: backgroundJobs.finishedAt
+		})
+		.from(backgroundJobs)
+		.where(and(eq(backgroundJobs.userId, userId), eq(backgroundJobs.type, 'task_intent_parse')))
+		.orderBy(desc(backgroundJobs.createdAt))
+		.limit(safeLimit);
+
+	return jobs.map((job) => {
+		const payload = (job.payload ?? {}) as Record<string, unknown>;
+		const result = (job.result ?? {}) as Record<string, unknown>;
+		const parsed = (result.parsed ?? {}) as Record<string, unknown>;
+
+		return {
+			id: job.id,
+			status: job.status,
+			attempts: job.attempts,
+			maxAttempts: job.maxAttempts,
+			error: job.error,
+			taskId: typeof payload.taskId === 'string' ? payload.taskId : null,
+			rawText: typeof payload.rawText === 'string' ? payload.rawText : null,
+			matched: typeof parsed.matched === 'boolean' ? parsed.matched : null,
+			reason: typeof parsed.reason === 'string' ? parsed.reason : null,
+			parsedIntent: (parsed.parsedIntent ?? null) as Record<string, unknown> | null,
+			createdAt: job.createdAt,
+			updatedAt: job.updatedAt,
+			finishedAt: job.finishedAt
+		};
+	});
+}
+
 export async function getGoalIntentParseObservability(hours = 24 * 7) {
+	return getIntentParseObservability('goal_intent_parse', hours);
+}
+
+export async function getTaskIntentParseObservability(hours = 24 * 7) {
+	return getIntentParseObservability('task_intent_parse', hours);
+}
+
+async function getIntentParseObservability(jobType: 'goal_intent_parse' | 'task_intent_parse', hours = 24 * 7) {
 	const safeHours = Math.max(1, Math.min(hours, 24 * 90));
 
 	const summaryRows = await pgClient.unsafe<{
@@ -143,9 +195,9 @@ export async function getGoalIntentParseObservability(hours = 24 * 7) {
 				  AND COALESCE((result->'parsed'->>'matched')::boolean, false) = false
 			)::int AS unmatched
 		FROM background_jobs
-		WHERE type = 'goal_intent_parse'
+		WHERE type = $2
 		  AND created_at >= NOW() - ($1::int * INTERVAL '1 hour')
-	`, [safeHours]);
+	`, [safeHours, jobType]);
 
 	const reasonsRows = await pgClient.unsafe<{
 		reason: string;
@@ -155,14 +207,14 @@ export async function getGoalIntentParseObservability(hours = 24 * 7) {
 			COALESCE(result->'parsed'->>'reason', 'unknown') AS reason,
 			COUNT(*)::int AS count
 		FROM background_jobs
-		WHERE type = 'goal_intent_parse'
+		WHERE type = $2
 		  AND status = 'completed'
 		  AND COALESCE((result->'parsed'->>'matched')::boolean, false) = false
 		  AND created_at >= NOW() - ($1::int * INTERVAL '1 hour')
 		GROUP BY 1
 		ORDER BY count DESC
 		LIMIT 5
-	`, [safeHours]);
+	`, [safeHours, jobType]);
 
 	const errorRows = await pgClient.unsafe<{
 		error: string;
@@ -172,13 +224,13 @@ export async function getGoalIntentParseObservability(hours = 24 * 7) {
 			COALESCE(NULLIF(error, ''), 'unknown') AS error,
 			COUNT(*)::int AS count
 		FROM background_jobs
-		WHERE type = 'goal_intent_parse'
+		WHERE type = $2
 		  AND status = 'failed'
 		  AND created_at >= NOW() - ($1::int * INTERVAL '1 hour')
 		GROUP BY 1
 		ORDER BY count DESC
 		LIMIT 5
-	`, [safeHours]);
+	`, [safeHours, jobType]);
 
 	const summary = summaryRows[0] ?? {
 		total: 0,
@@ -192,6 +244,7 @@ export async function getGoalIntentParseObservability(hours = 24 * 7) {
 	};
 
 	return {
+		jobType,
 		hours: safeHours,
 		total: Number(summary.total ?? 0),
 		status: {

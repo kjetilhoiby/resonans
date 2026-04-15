@@ -4,9 +4,11 @@
 	let { data }: { data: PageData } = $props();
 
 	type Series = PageData['series'][number];
+	type RecentEvent = PageData['recentEvents'][number];
 	type ConfirmationPolicy = 'always' | 'low_confidence_only' | 'never';
 
 	let seriesList = $state<Series[]>(structuredClone(data.series) as Series[]);
+	let recentEvents = $state<RecentEvent[]>(structuredClone(data.recentEvents) as RecentEvent[]);
 	let editingId = $state<string | null>(null);
 	let saving = $state(false);
 	let resultMsg = $state<{ id: string; ok: boolean; text: string } | null>(null);
@@ -79,6 +81,19 @@
 		}
 	}
 
+	async function deleteEvent(event: RecentEvent) {
+		const label = event.taskTitle || event.seriesTitle || event.recordTypeKey;
+		if (!confirm(`Slett registreringen for "${label}" fra ${formatDateTime(event.timestamp)}?`)) return;
+		const res = await fetch('/api/settings/tracking', {
+			method: 'DELETE',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ eventId: event.id })
+		});
+		if (res.ok) {
+			recentEvents = recentEvents.filter((item) => item.id !== event.id);
+		}
+	}
+
 	function statusLabel(s: string) {
 		if (s === 'active') return 'Aktiv';
 		if (s === 'paused') return 'Pauset';
@@ -91,6 +106,13 @@
 		if (p === 'low_confidence_only') return 'Bekreft ved lav tillit';
 		if (p === 'never') return 'Aldri bekreft';
 		return p;
+	}
+
+	function formatDateTime(value: string | Date) {
+		return new Date(value).toLocaleString('nb-NO', {
+			dateStyle: 'short',
+			timeStyle: 'short'
+		});
 	}
 
 	const activeCount = $derived(seriesList.filter((s) => s.status === 'active').length);
@@ -203,6 +225,28 @@
 	{/if}
 
 	<section class="card info-card">
+		<h2>Siste registreringer</h2>
+		{#if recentEvents.length === 0}
+			<p>Ingen tracking-registreringer funnet ennå.</p>
+		{:else}
+			<div class="event-list">
+				{#each recentEvents as event (event.id)}
+					<div class="event-row">
+						<div class="event-copy">
+							<p class="event-title">{event.taskTitle || event.seriesTitle || event.recordTypeKey}</p>
+							<p class="event-meta">{formatDateTime(event.timestamp)} · type: {event.recordTypeKey}</p>
+							{#if event.note}
+								<p class="event-note">{event.note}</p>
+							{/if}
+						</div>
+						<button class="btn-danger" type="button" onclick={() => void deleteEvent(event)}>Slett</button>
+					</div>
+				{/each}
+			</div>
+		{/if}
+	</section>
+
+	<section class="card info-card">
 		<h2>Slik fungerer tracking-serier</h2>
 		<p>Serier opprettes automatisk første gang du logger via chat eller bekrefter en bilde-triage. Det er ikke mulig å opprette tomme serier manuelt her.</p>
 		<ul>
@@ -277,6 +321,13 @@
 
 	.empty-card { text-align: center; padding: 2rem 1rem; }
 	.empty-text { color: var(--text-tertiary); margin: 0; }
+	.event-list { display: flex; flex-direction: column; gap: 0.85rem; }
+	.event-row { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; padding-top: 0.2rem; }
+	.event-row + .event-row { border-top: 1px solid var(--border-color); padding-top: 0.95rem; }
+	.event-copy { min-width: 0; }
+	.event-title { margin: 0 0 0.2rem; color: var(--text-primary); font-size: 0.95rem; }
+	.event-meta { margin: 0 0 0.2rem; color: var(--text-tertiary); font-size: 0.8rem; }
+	.event-note { margin: 0; color: var(--text-secondary); font-size: 0.86rem; }
 
 	.info-card h2 { margin-top: 0; color: var(--text-primary); font-size: 0.95rem; }
 	.info-card p, .info-card li { font-size: 0.85rem; color: var(--text-tertiary); }

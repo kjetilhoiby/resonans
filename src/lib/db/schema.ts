@@ -182,6 +182,7 @@ export const tasks = pgTable('tasks', {
 	periodId: text('period_id'),   // '2026-W14' | '2026-04' | '2026' | null
 	targetValue: integer('target_value'), // f.eks. antall repetisjoner
 	unit: text('unit'), // f.eks. "ganger per uke", "minutter"
+	metadata: jsonb('metadata').default({}).notNull(), // fleksibel JSON for ekstra data (intentStatus, intentError, etc)
 	status: text('status').notNull().default('active'),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()

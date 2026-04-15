@@ -1,6 +1,6 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { db } from '$lib/db';
-import { trackingSeries, recordTypeDefinitions } from '$lib/db/schema';
+import { progress, sensorEvents, trackingSeries, recordTypeDefinitions } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { ensureUser } from '$lib/server/users';
 
@@ -64,6 +64,44 @@ export const DELETE: RequestHandler = async ({ locals, request }) => {
 	await ensureUser(locals.userId);
 	const userId = locals.userId;
 	const body = await request.json() as Record<string, unknown>;
+	const eventId = typeof body.eventId === 'string' ? body.eventId : null;
+
+	if (eventId) {
+		const existingEvent = await db.query.sensorEvents.findFirst({
+			where: and(eq(sensorEvents.id, eventId), eq(sensorEvents.userId, userId)),
+			columns: { id: true, timestamp: true, data: true, metadata: true }
+		});
+		if (!existingEvent) return json({ error: 'Event not found' }, { status: 404 });
+
+		const eventData = (existingEvent.data ?? {}) as { trackingSeriesId?: string };
+		const linkedSeriesId = typeof eventData.trackingSeriesId === 'string' ? eventData.trackingSeriesId : null;
+
+		if (linkedSeriesId) {
+			const linkedSeries = await db.query.trackingSeries.findFirst({
+				where: and(eq(trackingSeries.id, linkedSeriesId), eq(trackingSeries.userId, userId)),
+				columns: { taskId: true }
+			});
+
+			if (linkedSeries?.taskId) {
+				await db
+					.delete(progress)
+					.where(
+						and(
+							eq(progress.userId, userId),
+							eq(progress.taskId, linkedSeries.taskId),
+							eq(progress.completedAt, existingEvent.timestamp)
+						)
+					);
+			}
+		}
+
+		await db
+			.delete(sensorEvents)
+			.where(and(eq(sensorEvents.id, eventId), eq(sensorEvents.userId, userId)));
+
+		return json({ success: true });
+	}
+
 	const seriesId = typeof body.id === 'string' ? body.id : null;
 	if (!seriesId) return json({ error: 'id required' }, { status: 400 });
 

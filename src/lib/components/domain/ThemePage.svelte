@@ -1390,55 +1390,6 @@
 						bind:tripProfile={currentTripProfile}
 					/>
 				{:else}
-				<section class="signal-panel">
-					<div class="signal-panel-head">
-						<h3>Signalinput til temaet</h3>
-						<span>{enabledSignalCount} aktiv{enabledSignalCount === 1 ? '' : 'e'}</span>
-					</div>
-					<p class="signal-panel-copy">
-						Velg hvilke kontrakter dette temaet skal bruke som datainput.
-					</p>
-
-					{#if signalsLoading && !signalsLoaded}
-						<p class="signal-state">Laster signaler…</p>
-					{:else if signalsError}
-						<div class="signal-state signal-state-error">
-							<span>{signalsError}</span>
-							<button class="signal-retry-btn" onclick={() => void loadThemeSignals(true)}>Prøv igjen</button>
-						</div>
-					{:else if signalContracts.length === 0}
-						<p class="signal-state">Ingen signal-kontrakter tilgjengelig ennå.</p>
-					{:else}
-						<div class="signal-list">
-							{#each signalContracts as signal}
-								<label class="signal-item" for={`signal-${signal.signalType}`}>
-									<div class="signal-item-main">
-										<div class="signal-item-title-row">
-											<strong>{signal.signalType}</strong>
-											<span class="signal-owner">{signal.ownerDomain}</span>
-										</div>
-										{#if signal.description}
-											<p class="signal-item-desc">{signal.description}</p>
-										{/if}
-										{#if signal.latest}
-											<p class="signal-item-latest">
-												Sist: {formatSignalValue(signal.latest)} · {formatSignalObservedAt(signal.latest.observedAt)}
-											</p>
-										{/if}
-									</div>
-									<input
-										id={`signal-${signal.signalType}`}
-										type="checkbox"
-										checked={signal.enabled}
-										disabled={savingSignalType === signal.signalType}
-										onchange={(event) => setThemeSignalEnabled(signal.signalType, (event.currentTarget as HTMLInputElement).checked)}
-									/>
-								</label>
-							{/each}
-						</div>
-					{/if}
-				</section>
-
 				{#if hasThemeDashboard && dashboardLoading && !dashboardLoaded}
 					<div class="data-empty data-empty-tight">
 						<p>Laster dashboard…</p>
@@ -1545,6 +1496,55 @@
 				{/if}
 				{/if}
 				{/if}
+
+				<details class="signal-collapsed-wrap">
+					<summary class="signal-collapsed-summary">
+						<span>Signalinput</span>
+						<span class="signal-collapsed-count">{enabledSignalCount} aktiv{enabledSignalCount === 1 ? '' : 'e'}</span>
+					</summary>
+					<div class="signal-collapsed-body">
+						<p class="signal-panel-copy">Velg hvilke kontrakter dette temaet skal bruke som datainput.</p>
+
+						{#if signalsLoading && !signalsLoaded}
+							<p class="signal-state">Laster signaler…</p>
+						{:else if signalsError}
+							<div class="signal-state signal-state-error">
+								<span>{signalsError}</span>
+								<button class="signal-retry-btn" onclick={() => void loadThemeSignals(true)}>Prøv igjen</button>
+							</div>
+						{:else if signalContracts.length === 0}
+							<p class="signal-state">Ingen signal-kontrakter tilgjengelig ennå.</p>
+						{:else}
+							<div class="signal-list">
+								{#each signalContracts as signal}
+									<label class="signal-item" for={`signal-${signal.signalType}`}>
+										<div class="signal-item-main">
+											<div class="signal-item-title-row">
+												<strong>{signal.signalType}</strong>
+												<span class="signal-owner">{signal.ownerDomain}</span>
+											</div>
+											{#if signal.description}
+												<p class="signal-item-desc">{signal.description}</p>
+											{/if}
+											{#if signal.latest}
+												<p class="signal-item-latest">
+													Sist: {formatSignalValue(signal.latest)} · {formatSignalObservedAt(signal.latest.observedAt)}
+												</p>
+											{/if}
+										</div>
+										<input
+											id={`signal-${signal.signalType}`}
+											type="checkbox"
+											checked={signal.enabled}
+											disabled={savingSignalType === signal.signalType}
+											onchange={(event) => setThemeSignalEnabled(signal.signalType, (event.currentTarget as HTMLInputElement).checked)}
+										/>
+									</label>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				</details>
 			</div>
 
 		<!-- LISTER (reise) -->
@@ -2381,32 +2381,42 @@ Eksempel:
 		cursor: pointer;
 	}
 
-	.signal-panel {
-		border: 1px solid #272727;
-		border-radius: 14px;
-		padding: 12px;
-		background: #111;
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
+	.signal-collapsed-wrap {
+		margin-top: 6px;
+		border: 1px solid #242424;
+		border-radius: 12px;
+		background: #0f0f0f;
+		overflow: hidden;
 	}
 
-	.signal-panel-head {
+	.signal-collapsed-summary {
+		list-style: none;
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
 		gap: 12px;
+		padding: 10px 12px;
+		cursor: pointer;
+		font-size: 0.82rem;
+		font-weight: 600;
+		color: #d7d7d7;
 	}
 
-	.signal-panel-head h3 {
-		margin: 0;
-		font-size: 0.9rem;
-		color: #eaeaea;
+	.signal-collapsed-summary::-webkit-details-marker {
+		display: none;
 	}
 
-	.signal-panel-head span {
-		font-size: 0.75rem;
+	.signal-collapsed-count {
+		font-size: 0.72rem;
 		color: #8e9cff;
+	}
+
+	.signal-collapsed-body {
+		padding: 0 12px 12px;
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		border-top: 1px solid #1e1e1e;
 	}
 
 	.signal-panel-copy {

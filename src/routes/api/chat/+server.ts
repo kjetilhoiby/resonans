@@ -285,7 +285,7 @@ const tools = [
 		type: 'function' as const,
 		function: {
 			name: 'log_activity',
-			description: 'Registrer en aktivitet/hendelse med målbare verdier. Dette kan være trening, date eller andre gjennomførte aktiviteter. Aktiviteten kobles automatisk til relevante oppgaver.',
+			description: 'Registrer en tradisjonell aktivitet/trening med målbare verdier (løp, styrketrening, date osv). IKKE bruk denne for vaner/mål som er koblet til tracking series (f.eks. mikroyoga, skjermtid) — bruk record_tracking_event for disse. Aktiviteten kobles automatisk til relevante oppgaver uten tracking series.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -458,7 +458,7 @@ const tools = [
 		type: 'function' as const,
 		function: {
 			name: 'record_tracking_event',
-			description: 'Generisk registrering av vaner/aktiviteter/målinger i tracking-systemet. Bruk denne i stedet for hardkodede record_* tools. Kan opprette ny serie ved første registrering eller bruke eksisterende seriesId ved senere registreringer.',
+			description: 'Generisk registrering av vaner/aktiviteter/målinger i tracking-systemet. Bruk denne i stedet for hardkodede record_* tools. Kan opprette ny serie ved første registrering eller bruke eksisterende seriesId/taskId ved senere registreringer. Systemet finner automatisk eksisterende serie for recordTypeKey hvis seriesId ikke oppgis.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -466,9 +466,17 @@ const tools = [
 						type: 'string',
 						description: 'Valgfritt: eksisterende tracking-serie-ID. Bruk når registrering skal knyttes til en kjent serie.'
 					},
+					taskId: {
+						type: 'string',
+						description: 'Valgfritt: task-ID som serien skal kobles til. Bruk dette rett etter create_task for å knytte tracking-serien til oppgaven. Gjør at registreringer automatisk teller fremgang på ukemål-siden.'
+					},
+					taskTitle: {
+						type: 'string',
+						description: 'Valgfritt: task-tittel fra dagsplan/ukeplan (f.eks. "mikroyoga"). Brukes som fallback for å finne riktig oppgave når taskId ikke er kjent.'
+					},
 					recordTypeKey: {
 						type: 'string',
-						description: 'Nøkkel for registreringstype, f.eks. micro_yoga, screen_time, mood.'
+						description: 'Nøkkel for registreringstype, f.eks. mikroyoga, screen_time, mood. Bruk lowercase med underscore. Systemet gjenbruker eksisterende serie for samme nøkkel.'
 					},
 					recordTypeLabel: {
 						type: 'string',
@@ -506,6 +514,10 @@ const tools = [
 						type: 'boolean',
 						description: 'Om ny serie skal opprettes automatisk hvis ingen eksisterer.'
 					},
+					createSeriesOnly: {
+						type: 'boolean',
+						description: 'Hvis true opprettes eller kobles kun tracking-serien, uten at det registreres en gjennomføring for i dag. Bruk denne når et mål settes opp første gang.'
+					},
 					title: {
 						type: 'string',
 						description: 'Tittel for serien ved første opprettelse.'
@@ -523,7 +535,7 @@ const tools = [
 						enum: ['always', 'low_confidence_only', 'never']
 					}
 				},
-				required: ['date']
+				required: []
 			}
 		}
 	},
@@ -1578,6 +1590,8 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 					const result = await recordTrackingEvent({
 						userId,
 						seriesId: typeof args.seriesId === 'string' ? args.seriesId : undefined,
+						taskId: typeof args.taskId === 'string' ? args.taskId : undefined,
+						taskTitle: typeof args.taskTitle === 'string' ? args.taskTitle : undefined,
 						recordTypeKey: typeof args.recordTypeKey === 'string' ? args.recordTypeKey : undefined,
 						recordTypeLabel: typeof args.recordTypeLabel === 'string' ? args.recordTypeLabel : undefined,
 						kind: args.kind === 'measurement' ? 'measurement' : 'activity',
@@ -1585,6 +1599,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 						note: typeof args.note === 'string' ? args.note : undefined,
 						measurements: Array.isArray(args.measurements) ? args.measurements : [],
 						autoCreateSeries: args.autoCreateSeries !== false,
+						createSeriesOnly: args.createSeriesOnly === true,
 						title: typeof args.title === 'string' ? args.title : undefined,
 						themeId: typeof args.themeId === 'string' ? args.themeId : undefined,
 						conversationId: conversation.id,
@@ -1607,12 +1622,16 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 						content: JSON.stringify({
 							success: result.success,
 							duplicate: result.duplicate ?? false,
+							createdOnly: result.createdOnly ?? false,
 							eventId: result.event?.id ?? null,
 							seriesId: result.series?.id ?? null,
 							recordTypeKey: result.recordType?.key ?? null,
+							linkedTaskTitle: result.linkedTask?.title ?? null,
 							message: result.duplicate
 								? 'Duplikat oppdaget for denne perioden, registreringen ble ikke lagret.'
-								: 'Tracking-registrering lagret.'
+								: result.createdOnly
+									? `✅ Sporing satt opp${result.linkedTask?.title ? ` for "${result.linkedTask.title}"` : ''}.\n\nNår du faktisk har gjort aktiviteten kan du skrive:\n- "Jeg har gjort mikroyoga"\n- "Logg mikroyoga i dag"`
+								: `✅ Registrert${result.recordType?.label ? ` ${result.recordType.label}` : ''}${result.linkedTask?.title ? ` og koblet til "${result.linkedTask.title}"` : ''}.\n\nNeste gang kan du skrive for eksempel:\n- "Jeg har gjort mikroyoga"\n- "Logg mikroyoga i dag"`
 						}),
 						tool_call_id: toolCall.id
 					});

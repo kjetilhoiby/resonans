@@ -10,7 +10,7 @@ type ParsedGoalIntent = {
 		threshold: number;
 		comparator: '>=';
 		period: 'week';
-		activityType: 'running';
+		activityType: string;
 		sourceText: string;
 	};
 };
@@ -39,17 +39,28 @@ function parseCountToken(token: string): number | null {
 	return NUMBER_WORDS[normalized] ?? null;
 }
 
+function normalizeActivityKey(name: string): string | null {
+	if (!name) return null;
+	const key = name
+		.toLowerCase()
+		.replace(/[æ]/g, 'ae')
+		.replace(/[ø]/g, 'o')
+		.replace(/[å]/g, 'aa')
+		.replace(/[^a-z0-9]+/g, '_')
+		.replace(/^_+|_+$/g, '');
+	return key || null;
+}
+
 export function parseGoalIntent(rawText: string): ParsedGoalIntent {
 	const text = rawText.trim();
 	if (!text) return { matched: false, reason: 'empty_text' };
 
 	const lower = text.toLowerCase();
-	const mentionsRunning = /\bl[øo]p(e|ing)?\b|\brun(ning)?\b/.test(lower);
-	if (!mentionsRunning) {
-		return { matched: false, reason: 'unsupported_activity' };
-	}
 
-	const countMatch = lower.match(/(\d+|en|ett|to|tre|fire|fem|seks|syv|sju|atte|ni|ti)\s+ganger\s+(i|per|pr\.?)\s+uk(e|a)/);
+	// Must have a weekly frequency pattern
+	const countMatch = lower.match(
+		/(\d+|en|ett|to|tre|fire|fem|seks|syv|sju|atte|ni|ti)\s+ganger\s+(i|per|pr\.?)\s+uk(e|a)/
+	);
 	if (!countMatch) {
 		return { matched: false, reason: 'unsupported_period_or_threshold' };
 	}
@@ -59,14 +70,41 @@ export function parseGoalIntent(rawText: string): ParsedGoalIntent {
 		return { matched: false, reason: 'invalid_threshold' };
 	}
 
+	// Running — backward compat, use existing signal
+	const mentionsRunning = /\bl[øo]p(e|ing)?\b|\brun(ning)?\b/.test(lower);
+	if (mentionsRunning) {
+		return {
+			matched: true,
+			intent: {
+				signalType: 'activity_run_pr_week',
+				threshold,
+				comparator: '>=',
+				period: 'week',
+				activityType: 'running',
+				sourceText: text
+			}
+		};
+	}
+
+	// Generic activity — extract the activity name from text before the count
+	const activityMatch = lower.match(
+		/^(.+?)\s+(?:\d+|en|ett|to|tre|fire|fem|seks|syv|sju|atte|ni|ti)\s+ganger/
+	);
+	const rawActivityName = activityMatch ? activityMatch[1].trim() : (lower.split(/\s+/)[0] ?? '');
+	const activityType = normalizeActivityKey(rawActivityName);
+
+	if (!activityType) {
+		return { matched: false, reason: 'unsupported_activity' };
+	}
+
 	return {
 		matched: true,
 		intent: {
-			signalType: 'activity_run_pr_week',
+			signalType: 'tracking_series_activity_pr_week',
 			threshold,
 			comparator: '>=',
 			period: 'week',
-			activityType: 'running',
+			activityType,
 			sourceText: text
 		}
 	};

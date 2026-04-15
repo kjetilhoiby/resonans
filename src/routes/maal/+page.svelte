@@ -1,37 +1,82 @@
 <script lang="ts">
-	import GoalCard from '$lib/components/composed/GoalCard.svelte';
 	import { page } from '$app/stores';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
-	// Optimistisk lokal oppdatering av progress
-	type AnyProgress = { id: string; completedAt: Date };
-	let goalsLocal = $state(
-		data.goals.map((g) => ({
-			...g,
-			tasks: g.tasks.map((t) => ({ ...t, progress: t.progress as AnyProgress[] }))
-		}))
-	);
+	type Series = (typeof data.allSeries)[number];
+	type Task = (typeof data.goals)[number]['tasks'][number];
+	type Goal = (typeof data.goals)[number];
 
-	async function logProgress(taskId: string) {
-		// Optimistisk: legg til en fake progress-record umiddelbart
-		for (const g of goalsLocal) {
-			for (const t of g.tasks) {
-				if (t.id === taskId) {
-					t.progress = [{ id: crypto.randomUUID(), completedAt: new Date() }, ...t.progress];
-				}
-			}
-		}
-		await fetch(`/api/tasks/${taskId}/progress`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({})
-		});
-	}
+	let goalsLocal = $state<Goal[]>([...data.goals]);
+	let deletingId = $state<string | null>(null);
+	let expandedId = $state<string | null>(null);
+	let linkingTaskId = $state<string | null>(null);
+	let savingLink = $state<string | null>(null);
 
 	const active = $derived(goalsLocal.filter((g) => g.status === 'active'));
 	const other = $derived(goalsLocal.filter((g) => g.status !== 'active'));
+
+	async function deleteGoal(goalId: string) {
+		if (deletingId) return;
+		deletingId = goalId;
+		try {
+			const res = await fetch(`/api/goals/${goalId}`, { method: 'DELETE' });
+			if (res.ok) {
+				goalsLocal = goalsLocal.filter((g) => g.id !== goalId);
+			}
+		} finally {
+			deletingId = null;
+		}
+	}
+
+	async function linkSeries(task: Task, seriesId: string | null) {
+		if (savingLink) return;
+		savingLink = task.id;
+		try {
+			const res = await fetch(`/api/tracking-series/link-task`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ taskId: task.id, seriesId })
+			});
+			if (res.ok) {
+				// Refresh: update local task's trackingSeries list
+				const matched = seriesId ? data.allSeries.find((s) => s.id === seriesId) : null;
+				goalsLocal = goalsLocal.map((g) => ({
+					...g,
+					tasks: g.tasks.map((t) => {
+						if (t.id !== task.id) return t;
+						return {
+							...t,
+							trackingSeries: matched ? [{ ...matched }] : []
+						};
+					})
+				}));
+			}
+		} finally {
+			savingLink = null;
+			linkingTaskId = null;
+		}
+	}
+
+	function getWeeklyTasks(goal: Goal): Task[] {
+		return goal.tasks.filter((t) => t.frequency === 'weekly' || t.frequency === 'daily');
+	}
+
+	function seriesLabel(series: Series) {
+		const rt = series.recordType as { label?: string; key?: string } | null | undefined;
+		return series.title || rt?.label || rt?.key || series.id;
+	}
+
+	function intentBadge(task: Task): string | null {
+		const meta = task.metadata as Record<string, unknown> | null;
+		if (!meta) return null;
+		const status = meta.intentStatus as string | undefined;
+		if (status === 'parsed') return '✓ Kobles til signal';
+		if (status === 'failed') return '⚠ Ingen signal';
+		if (status === 'pending') return '⏳ Analyseres…';
+		return null;
+	}
 </script>
 
 <div class="maal-page">
@@ -42,31 +87,101 @@
 	{#if active.length === 0 && other.length === 0}
 		<p class="empty">Ingen mål ennå. Start en samtale for å opprette ett.</p>
 	{:else}
-		{#if active.length > 0}
-			<section class="goal-section">
-				<h2 class="section-label">Aktive</h2>
-				<ul class="goal-list" role="list">
-					{#each active as goal}
-						<li>
-							<GoalCard {goal} onTaskComplete={logProgress} />
-						</li>
-					{/each}
-				</ul>
-			</section>
-		{/if}
+		{#each [{ label: 'Aktive', list: active }, { label: 'Tidligere', list: other }] as section}
+			{#if section.list.length > 0}
+				<section class="goal-section">
+					<h2 class="section-label">{section.label}</h2>
+					<ul class="goal-list" role="list">
+						{#each section.list as goal}
+							{@const isExpanded = expandedId === goal.id}
+							{@const weeklyTasks = getWeeklyTasks(goal)}
+							<li class="goal-item" class:expanded={isExpanded}>
+								<div class="goal-row">
+									<button
+										class="goal-toggle"
+										onclick={() => (expandedId = isExpanded ? null : goal.id)}
+										aria-expanded={isExpanded}
+									>
+										<span class="goal-title">{goal.title}</span>
+										{#if goal.theme}
+											{@const theme = goal.theme as { emoji: string | null; name: string }}
+											<span class="goal-meta">{theme.emoji ?? ''} {theme.name}</span>
+										{:else if goal.category}
+											{@const category = goal.category as { name: string }}
+											<span class="goal-meta">{category.name}</span>
+										{/if}
+									</button>
+									<button
+										class="delete-btn"
+										onclick={() => deleteGoal(goal.id)}
+										disabled={deletingId === goal.id}
+										aria-label="Slett mål"
+									>
+										{deletingId === goal.id ? '…' : '✕'}
+									</button>
+								</div>
 
-		{#if other.length > 0}
-			<section class="goal-section">
-				<h2 class="section-label">Tidligere</h2>
-				<ul class="goal-list" role="list">
-					{#each other as goal}
-						<li>
-							<GoalCard {goal} onTaskComplete={logProgress} />
-						</li>
-					{/each}
-				</ul>
-			</section>
-		{/if}
+								{#if isExpanded}
+									<div class="goal-detail">
+										{#if goal.description}
+											<p class="goal-desc">{goal.description}</p>
+										{/if}
+
+										{#if weeklyTasks.length > 0}
+											<div class="tasks-section">
+												<span class="tasks-label">Sporbare oppgaver</span>
+												{#each weeklyTasks as task}
+													{@const linked = task.trackingSeries?.[0] ?? null}
+													{@const badge = intentBadge(task)}
+													<div class="task-row">
+														<span class="task-title">{task.title}</span>
+														{#if badge}
+															<span class="intent-badge" class:parsed={badge.startsWith('✓')} class:failed={badge.startsWith('⚠')}>{badge}</span>
+														{/if}
+
+														{#if linkingTaskId === task.id}
+															<div class="series-picker">
+																<select
+																	class="series-select"
+																	disabled={savingLink === task.id}
+																	onchange={(e) => linkSeries(task, (e.currentTarget as HTMLSelectElement).value || null)}
+																>
+																	<option value="">— ingen kobling —</option>
+																	{#each data.allSeries as s}
+																		<option value={s.id} selected={linked?.id === s.id}>
+																			{seriesLabel(s)}
+																		</option>
+																	{/each}
+																</select>
+																<button class="cancel-link" onclick={() => (linkingTaskId = null)}>Avbryt</button>
+															</div>
+														{:else}
+															<div class="series-row">
+																{#if linked}
+																	<span class="series-chip">{seriesLabel(linked)}</span>
+																{:else}
+																	<span class="no-series">Ingen metrikk</span>
+																{/if}
+																<button
+																	class="edit-link"
+																	onclick={() => (linkingTaskId = task.id)}
+																>
+																	{linked ? 'Bytt' : 'Koble'}
+																</button>
+															</div>
+														{/if}
+													</div>
+												{/each}
+											</div>
+										{/if}
+									</div>
+								{/if}
+							</li>
+						{/each}
+					</ul>
+				</section>
+			{/if}
+		{/each}
 	{/if}
 </div>
 
@@ -133,7 +248,195 @@
 		margin: 0;
 		display: flex;
 		flex-direction: column;
+		gap: 8px;
+	}
+
+	.goal-item {
+		background: #1a1a1a;
+		border: 1px solid #252525;
+		border-radius: 12px;
+		overflow: hidden;
+	}
+
+	.goal-item.expanded {
+		border-color: #333;
+	}
+
+	.goal-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.goal-toggle {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 2px;
+		padding: 14px 16px;
+		background: none;
+		border: none;
+		cursor: pointer;
+		text-align: left;
+	}
+
+	.goal-title {
+		font-size: 0.95rem;
+		font-weight: 600;
+		color: #e0e0e0;
+		line-height: 1.3;
+	}
+
+	.goal-meta {
+		font-size: 0.72rem;
+		color: #555;
+	}
+
+	.delete-btn {
+		flex-shrink: 0;
+		width: 32px;
+		height: 32px;
+		margin-right: 12px;
+		background: none;
+		border: 1px solid #2e2e2e;
+		border-radius: 6px;
+		color: #555;
+		cursor: pointer;
+		font-size: 0.8rem;
+		transition: color 0.15s, border-color 0.15s;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.delete-btn:hover {
+		color: #e07070;
+		border-color: #e07070;
+	}
+
+	.delete-btn:disabled {
+		opacity: 0.4;
+		cursor: default;
+	}
+
+	/* ─ Expanded detail ─ */
+
+	.goal-detail {
+		padding: 0 16px 14px;
+		border-top: 1px solid #222;
+	}
+
+	.goal-desc {
+		font-size: 0.82rem;
+		color: #666;
+		margin: 10px 0 12px;
+		line-height: 1.5;
+	}
+
+	.tasks-section {
+		display: flex;
+		flex-direction: column;
 		gap: 10px;
+		margin-top: 8px;
+	}
+
+	.tasks-label {
+		font-size: 0.68rem;
+		color: #444;
+		text-transform: uppercase;
+		letter-spacing: 0.07em;
+	}
+
+	.task-row {
+		background: #141414;
+		border: 1px solid #272727;
+		border-radius: 8px;
+		padding: 10px 12px;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.task-title {
+		font-size: 0.85rem;
+		color: #ccc;
+	}
+
+	.intent-badge {
+		font-size: 0.7rem;
+		color: #555;
+	}
+
+	.intent-badge.parsed {
+		color: #6db36d;
+	}
+
+	.intent-badge.failed {
+		color: #c87a50;
+	}
+
+	.series-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.series-chip {
+		font-size: 0.75rem;
+		background: #242424;
+		border: 1px solid #333;
+		border-radius: 20px;
+		padding: 2px 10px;
+		color: #7c8ef5;
+	}
+
+	.no-series {
+		font-size: 0.75rem;
+		color: #3a3a3a;
+	}
+
+	.edit-link {
+		font-size: 0.72rem;
+		color: #555;
+		background: none;
+		border: 1px solid #2a2a2a;
+		border-radius: 4px;
+		padding: 2px 8px;
+		cursor: pointer;
+		transition: color 0.15s;
+	}
+
+	.edit-link:hover {
+		color: #7c8ef5;
+	}
+
+	.series-picker {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.series-select {
+		flex: 1;
+		background: #1e1e1e;
+		border: 1px solid #333;
+		border-radius: 6px;
+		color: #ccc;
+		font-size: 0.8rem;
+		padding: 4px 6px;
+	}
+
+	.cancel-link {
+		font-size: 0.72rem;
+		color: #555;
+		background: none;
+		border: none;
+		cursor: pointer;
+	}
+
+	.cancel-link:hover {
+		color: #ccc;
 	}
 
 	.empty {

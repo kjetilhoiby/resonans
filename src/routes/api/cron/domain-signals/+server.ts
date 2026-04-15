@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
-import { runDomainSignalProducers } from '$lib/server/domain-signals';
+import { getDomainSignalObservability, runDomainSignalProducers } from '$lib/server/domain-signals';
 
 export const config = { maxDuration: 120 };
 
@@ -13,8 +13,24 @@ export const GET: RequestHandler = async ({ request }) => {
 	}
 
 	try {
-		const result = await runDomainSignalProducers();
-		return json({ success: true, ...result });
+		const url = new URL(request.url);
+		const hoursRaw = Number.parseInt(url.searchParams.get('hours') ?? '168', 10);
+		const hours = Number.isFinite(hoursRaw) ? hoursRaw : 168;
+
+		const [result, taskCompletionWeekly, activityRunWeekly] = await Promise.all([
+			runDomainSignalProducers(),
+			getDomainSignalObservability('task_completion_weekly', hours),
+			getDomainSignalObservability('activity_run_pr_week', hours)
+		]);
+
+		return json({
+			success: true,
+			...result,
+			observability: {
+				taskCompletionWeekly,
+				activityRunWeekly
+			}
+		});
 	} catch (error) {
 		console.error('Domain signal cron failed:', error);
 		return json(

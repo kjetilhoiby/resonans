@@ -1,5 +1,5 @@
 import { fail } from '@sveltejs/kit';
-import { and, eq, gte, inArray, lt, or } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, lt, or } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/db';
 import { checklistItems, checklists, goals, memories, progress, tasks, themes } from '$lib/db/schema';
@@ -12,6 +12,8 @@ async function loadWeekTasks(userId: string, dashedKey: string, compactKey: stri
 			title: tasks.title,
 			frequency: tasks.frequency,
 			targetValue: tasks.targetValue,
+			unit: tasks.unit,
+			metadata: tasks.metadata,
 			goalTitle: goals.title,
 			themeName: themes.name
 		})
@@ -24,15 +26,25 @@ async function loadWeekTasks(userId: string, dashedKey: string, compactKey: stri
 			and(
 				eq(tasks.status, 'active'),
 				eq(goals.userId, userId),
-				eq(tasks.periodType, 'week'),
-				or(eq(tasks.periodId, dashedKey), eq(tasks.periodId, compactKey))
+				or(
+					// Period-specific weekly tasks (e.g. single-week task)
+					and(
+						eq(tasks.periodType, 'week'),
+						or(eq(tasks.periodId, dashedKey), eq(tasks.periodId, compactKey))
+					),
+					// Ongoing recurring weekly tasks (no specific period)
+					and(isNull(tasks.periodType), eq(tasks.frequency, 'weekly'))
+				)
 			)
 		);
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
+		// Check the *actual* database error (in error.cause), not error.message which
+		// embeds the full SQL and would always match any column name we reference.
+		const cause = (error as any)?.cause;
+		const causeMessage = cause instanceof Error ? cause.message : String(cause ?? '');
 
 		// Backward compatibility for databases where period columns are not migrated yet.
-		if (!/period_type|period_id/i.test(message)) {
+		if (!/period_type|period_id/i.test(causeMessage)) {
 			throw error;
 		}
 
@@ -330,6 +342,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			title: task.title,
 			frequency: task.frequency,
 			targetValue: task.targetValue,
+			unit: task.unit,
+			metadata: task.metadata ?? null,
 			repeatCount:
 				task.frequency === 'weekly' && typeof task.targetValue === 'number' && task.targetValue > 1
 					? Math.min(task.targetValue, 12)

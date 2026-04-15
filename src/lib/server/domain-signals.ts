@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { db } from '$lib/db';
+import { db, pgClient } from '$lib/db';
 import { users } from '$lib/db/schema';
 
 type Severity = 'info' | 'low' | 'medium' | 'high';
@@ -61,6 +61,13 @@ function toSeverityFromRatio(ratio: number): Severity {
 function toNumber(value: unknown) {
 	const n = typeof value === 'number' ? value : Number(value);
 	return Number.isFinite(n) ? n : 0;
+}
+
+function ratioToSeverity(ratio: number): Severity {
+	if (ratio >= 1) return 'info';
+	if (ratio >= 0.7) return 'low';
+	if (ratio >= 0.4) return 'medium';
+	return 'high';
 }
 
 async function upsertDomainSignal(input: UpsertDomainSignalInput) {
@@ -237,13 +244,7 @@ async function produceActivityRunPrWeekSignal(userId: string, now: Date) {
 	}
 
 	const completionRatio = maxThreshold > 0 ? runCount / maxThreshold : 0;
-	const severity: Severity = completionRatio >= 1
-		? 'info'
-		: completionRatio >= 0.7
-			? 'low'
-			: completionRatio >= 0.4
-				? 'medium'
-				: 'high';
+	const severity = ratioToSeverity(completionRatio);
 
 	await upsertDomainSignal({
 		signalType: 'activity_run_pr_week',
@@ -270,6 +271,118 @@ async function produceActivityRunPrWeekSignal(userId: string, now: Date) {
 		runCount,
 		matchedGoals,
 		metGoals
+	};
+}
+
+async function produceTaskCompletionWeeklySignal(userId: string, now: Date) {
+	const windowStart = startOfIsoWeekUtc(now);
+
+	await ensureSignalContract({
+		signalType: 'task_completion_weekly',
+		ownerDomain: 'home',
+		allowedConsumerDomains: ['home', 'relationship', 'health'],
+		description: 'Weekly completion ratio for active weekly tasks with explicit targets.'
+	});
+
+	const rows = await db.execute(sql`
+		SELECT
+			t.id,
+			t.target_value::int AS target_value,
+			COALESCE(SUM(COALESCE(p.value, 1)), 0)::int AS current_value
+		FROM tasks t
+		JOIN goals g ON g.id = t.goal_id
+		LEFT JOIN progress p
+			ON p.task_id = t.id
+			AND p.user_id = ${userId}
+			AND p.completed_at >= ${windowStart}
+			AND p.completed_at < ${now}
+		WHERE g.user_id = ${userId}
+		  AND g.status = 'active'
+		  AND t.status = 'active'
+		  AND t.frequency = 'weekly'
+		  AND COALESCE(t.target_value, 0) > 0
+		GROUP BY t.id, t.target_value
+	`);
+
+	const tasksWeekly = rows as unknown as Array<{
+		id: string;
+		target_value: number;
+		current_value: number;
+	}>;
+
+	if (tasksWeekly.length === 0) {
+		return null;
+	}
+
+	let metCount = 0;
+	let totalCurrent = 0;
+	let totalTarget = 0;
+	let completionRatioSum = 0;
+
+	for (const task of tasksWeekly) {
+		const target = Math.max(1, toNumber(task.target_value));
+		const current = Math.max(0, toNumber(task.current_value));
+		const met = current >= target;
+		const completionRatio = Math.min(1, target > 0 ? current / target : 0);
+
+		if (met) metCount += 1;
+		totalCurrent += current;
+		totalTarget += target;
+		completionRatioSum += completionRatio;
+
+		const evaluation = {
+			signalType: 'task_completion_weekly',
+			window: 'week',
+			windowStart: windowStart.toISOString(),
+			windowEnd: now.toISOString(),
+			currentValue: current,
+			targetValue: target,
+			comparator: '>=',
+			met,
+			lastEvaluatedAt: now.toISOString()
+		};
+
+		await db.execute(sql`
+			UPDATE tasks
+			SET metadata = jsonb_set(
+				COALESCE(metadata, '{}'::jsonb),
+				'{intentEvaluation}',
+				${JSON.stringify(evaluation)}::jsonb
+			),
+			updated_at = NOW()
+			WHERE id = ${task.id}
+		`);
+	}
+
+	const taskCount = tasksWeekly.length;
+	const averageCompletionRatio = taskCount > 0 ? completionRatioSum / taskCount : 0;
+	const allMet = metCount === taskCount;
+
+	await upsertDomainSignal({
+		signalType: 'task_completion_weekly',
+		ownerDomain: 'home',
+		userId,
+		valueNumber: Number((averageCompletionRatio * 100).toFixed(2)),
+		valueBool: allMet,
+		valueText: `${metCount}/${taskCount}`,
+		severity: ratioToSeverity(averageCompletionRatio),
+		confidence: 0.85,
+		windowStart,
+		windowEnd: now,
+		observedAt: now,
+		context: {
+			taskCount,
+			metCount,
+			totalCurrent,
+			totalTarget,
+			averageCompletionRatio
+		}
+	});
+
+	return {
+		taskCount,
+		metCount,
+		averageCompletionRatio
 	};
 }
 
@@ -484,38 +597,176 @@ async function produceRelationshipLogisticsStressIndex14d(
 	});
 }
 
+async function produceTrackingSeriesActivityPrWeekSignal(userId: string, now: Date) {
+	const windowStart = startOfIsoWeekUtc(now);
+
+	const goalRows = await db.execute(sql`
+		SELECT id, metadata
+		FROM goals
+		WHERE user_id = ${userId}
+		  AND status = 'active'
+		  AND COALESCE(metadata->>'intentStatus', '') = 'parsed'
+		  AND COALESCE(metadata->'parsedIntent'->>'signalType', '') = 'tracking_series_activity_pr_week'
+		  AND COALESCE(metadata->'parsedIntent'->>'period', '') = 'week'
+	`);
+
+	const typedGoals = goalRows as unknown as Array<{
+		id: string;
+		metadata: Record<string, unknown> | null;
+	}>;
+
+	if (typedGoals.length === 0) return null;
+
+	let produced = 0;
+
+	for (const goal of typedGoals) {
+		const metadata = (goal.metadata ?? {}) as Record<string, unknown>;
+		const parsedIntent = (metadata.parsedIntent ?? {}) as Record<string, unknown>;
+		const activityType = String(parsedIntent.activityType ?? '');
+		const threshold = toNumber(parsedIntent.threshold);
+		if (!activityType || threshold < 1) continue;
+
+		const countRows = await db.execute(sql`
+			SELECT COUNT(*)::int AS value
+			FROM sensor_events
+			WHERE user_id = ${userId}
+			  AND timestamp >= ${windowStart}
+			  AND timestamp < ${now}
+			  AND data->>'recordTypeKey' = ${activityType}
+		`);
+		const count = toNumber((countRows as unknown as Array<{ value: number }>)[0]?.value);
+
+		const met = count >= threshold;
+		const evaluation = {
+			signalType: 'tracking_series_activity_pr_week',
+			activityType,
+			window: 'week',
+			windowStart: windowStart.toISOString(),
+			windowEnd: now.toISOString(),
+			currentValue: count,
+			targetValue: threshold,
+			comparator: '>=',
+			met,
+			lastEvaluatedAt: now.toISOString()
+		};
+
+		await db.execute(sql`
+			UPDATE goals
+			SET metadata = ${JSON.stringify({ ...metadata, intentEvaluation: evaluation })}::jsonb,
+				updated_at = NOW()
+			WHERE id = ${goal.id}
+		`);
+
+		// Also stamp intentEvaluation onto all active weekly tasks for this goal
+		// so ukeplan can render the evaluation badge from task.metadata
+		await db.execute(sql`
+			UPDATE tasks
+			SET metadata = jsonb_set(
+				COALESCE(metadata, '{}'::jsonb),
+				'{intentEvaluation}',
+				${JSON.stringify(evaluation)}::jsonb
+			),
+			updated_at = NOW()
+			WHERE goal_id = ${goal.id}
+			  AND status = 'active'
+			  AND frequency = 'weekly'
+		`);
+
+		const completionRatio = threshold > 0 ? count / threshold : 0;
+		const severity: Severity =
+			completionRatio >= 1 ? 'info' : completionRatio >= 0.7 ? 'low' : completionRatio >= 0.4 ? 'medium' : 'high';
+		const signalType = `tracking_series_activity_pr_week_${activityType}`;
+
+		await ensureSignalContract({
+			signalType,
+			ownerDomain: 'health',
+			allowedConsumerDomains: ['health'],
+			description: `Weekly ${activityType} activity count vs goal (manual tracking).`
+		});
+
+		await upsertDomainSignal({
+			signalType,
+			ownerDomain: 'health',
+			userId,
+			valueNumber: count,
+			valueBool: met,
+			valueText: `${count}`,
+			severity,
+			confidence: 0.9,
+			windowStart,
+			windowEnd: now,
+			observedAt: now,
+			context: { activityType, count, threshold, completionRatio, met }
+		});
+
+		produced++;
+	}
+
+	return produced > 0 ? { produced } : null;
+}
+
 export async function runDomainSignalProducers(now: Date = new Date()) {
 	const allUsers = await db.select({ id: users.id, partnerUserId: users.partnerUserId }).from(users);
 
 	let processed = 0;
 	let produced = 0;
 	let failed = 0;
+	const producerBreakdown = {
+		activityRunWeekly: 0,
+		taskCompletionWeekly: 0,
+		trackingSeriesWeekly: 0,
+		economicsBudgetPressure7d: 0,
+		homeOverdueSharedTasks7d: 0,
+		homePlanningReliability14d: 0,
+		relationshipCoordinationReadinessToday: 0,
+		relationshipLogisticsStressIndex14d: 0
+	};
 	const errors: Array<{ userId: string; error: string }> = [];
 
 	for (const user of allUsers) {
 		processed += 1;
 		try {
 			const runWeekly = await produceActivityRunPrWeekSignal(user.id, now);
-			if (runWeekly) produced += 1;
+			if (runWeekly) {
+				produced += 1;
+				producerBreakdown.activityRunWeekly += 1;
+			}
+
+			const taskWeekly = await produceTaskCompletionWeeklySignal(user.id, now);
+			if (taskWeekly) {
+				produced += 1;
+				producerBreakdown.taskCompletionWeekly += 1;
+			}
+
+			const trackingWeekly = await produceTrackingSeriesActivityPrWeekSignal(user.id, now);
+			if (trackingWeekly) {
+				produced += trackingWeekly.produced;
+				producerBreakdown.trackingSeriesWeekly += trackingWeekly.produced;
+			}
 
 			const budgetPressureSeverity = await produceEconomicsBudgetPressure7d(user.id, now);
 			produced += 1;
+			producerBreakdown.economicsBudgetPressure7d += 1;
 
 			const overdueCount7d = await produceHomeOverdueSharedTasks7d(user.id, now);
 			produced += 1;
+			producerBreakdown.homeOverdueSharedTasks7d += 1;
 
 			const planningReliability14d = await produceHomePlanningReliability14d(user.id, now);
 			produced += 1;
+			producerBreakdown.homePlanningReliability14d += 1;
 
 			if (user.partnerUserId) {
 				await produceRelationshipCoordinationReadinessToday(user.id, user.partnerUserId, now);
 				produced += 1;
+				producerBreakdown.relationshipCoordinationReadinessToday += 1;
 				await produceRelationshipLogisticsStressIndex14d(user.id, user.partnerUserId, now, {
 					budgetPressureSeverity,
 					overdueCount7d,
 					planningReliability14d
 				});
 				produced += 1;
+				producerBreakdown.relationshipLogisticsStressIndex14d += 1;
 			}
 		} catch (error) {
 			failed += 1;
@@ -530,7 +781,82 @@ export async function runDomainSignalProducers(now: Date = new Date()) {
 		timestamp: now.toISOString(),
 		processedUsers: processed,
 		producedSignals: produced,
+		producerBreakdown,
 		failedUsers: failed,
 		errors
+	};
+}
+
+export async function getDomainSignalObservability(signalType: string, hours = 24 * 7) {
+	const safeHours = Math.max(1, Math.min(hours, 24 * 90));
+
+	const summaryRows = await pgClient.unsafe<{
+		total: number;
+		users: number;
+		truthy: number;
+		falsy: number;
+		avg_value_number: number | null;
+	}[]>(`
+		SELECT
+			COUNT(*)::int AS total,
+			COUNT(DISTINCT user_id)::int AS users,
+			COUNT(*) FILTER (WHERE value_bool IS TRUE)::int AS truthy,
+			COUNT(*) FILTER (WHERE value_bool IS FALSE)::int AS falsy,
+			AVG(value_number)::float8 AS avg_value_number
+		FROM domain_signals
+		WHERE signal_type = $2
+		  AND observed_at >= NOW() - ($1::int * INTERVAL '1 hour')
+	`, [safeHours, signalType]);
+
+	const severityRows = await pgClient.unsafe<{
+		severity: string;
+		count: number;
+	}[]>(`
+		SELECT
+			severity,
+			COUNT(*)::int AS count
+		FROM domain_signals
+		WHERE signal_type = $2
+		  AND observed_at >= NOW() - ($1::int * INTERVAL '1 hour')
+		GROUP BY severity
+		ORDER BY count DESC
+	`, [safeHours, signalType]);
+
+	const latestRows = await pgClient.unsafe<{
+		latest_observed_at: string | null;
+	}[]>(`
+		SELECT
+			MAX(observed_at)::text AS latest_observed_at
+		FROM domain_signals
+		WHERE signal_type = $2
+		  AND observed_at >= NOW() - ($1::int * INTERVAL '1 hour')
+	`, [safeHours, signalType]);
+
+	const summary = summaryRows[0] ?? {
+		total: 0,
+		users: 0,
+		truthy: 0,
+		falsy: 0,
+		avg_value_number: null
+	};
+
+	return {
+		signalType,
+		hours: safeHours,
+		total: Number(summary.total ?? 0),
+		users: Number(summary.users ?? 0),
+		outcomes: {
+			truthy: Number(summary.truthy ?? 0),
+			falsy: Number(summary.falsy ?? 0)
+		},
+		avgValueNumber:
+			typeof summary.avg_value_number === 'number' && Number.isFinite(summary.avg_value_number)
+				? Number(summary.avg_value_number.toFixed(2))
+				: null,
+		severity: severityRows.map((row) => ({
+			severity: row.severity,
+			count: Number(row.count ?? 0)
+		})),
+		latestObservedAt: latestRows[0]?.latest_observed_at ?? null
 	};
 }

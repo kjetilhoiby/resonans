@@ -44,6 +44,8 @@
 		title: string;
 		frequency: string | null;
 		targetValue: number | null;
+		unit: string | null;
+		metadata: any;
 		repeatCount: number;
 		completedCount: number;
 		goalTitle: string | null;
@@ -371,6 +373,68 @@
 
 	function doneTask(task: WeekTask) {
 		return task.completedCount >= task.repeatCount;
+	}
+
+	function formatStructuredTaskMeta(task: WeekTask) {
+		if (!task.frequency) return null;
+
+		if (typeof task.targetValue === 'number' && task.targetValue > 0) {
+			if (task.frequency === 'daily') {
+				return `${task.targetValue} ${task.unit || 'ganger'} per dag`;
+			}
+			if (task.frequency === 'weekly') {
+				return `${task.targetValue} ${task.unit || 'ganger'} denne uka`;
+			}
+			if (task.frequency === 'monthly') {
+				return `${task.targetValue} ${task.unit || 'ganger'} denne måneden`;
+			}
+		}
+
+		const labels: Record<string, string> = {
+			daily: 'daglig',
+			weekly: 'ukentlig',
+			monthly: 'månedlig',
+			once: 'én gang'
+		};
+
+		return labels[task.frequency] ?? task.frequency;
+	}
+
+	function getTaskIntentBadge(task: WeekTask):
+		| { label: string; tone: 'pending' | 'parsed' | 'failed' }
+		| null {
+		const status = task.metadata?.intentStatus;
+		if (status === 'pending') return { label: 'Tolkes...', tone: 'pending' };
+		if (status === 'parsed') return { label: 'Aktiv sporing', tone: 'parsed' };
+		if (status === 'failed') return { label: 'Trenger avklaring', tone: 'failed' };
+		return null;
+	}
+
+	function getTaskIntentFailureReasonLabel(task: WeekTask): string | null {
+		if (task.metadata?.intentStatus !== 'failed') return null;
+		const reason = task.metadata?.intentError;
+		if (!reason) return null;
+
+		const reasonMap: Record<string, string> = {
+			empty_text: 'Ingen tekst å tolke.',
+			unsupported_activity: 'Støtter foreløpig bare løpemål i denne flyten.',
+			unsupported_period_or_threshold: 'Fant ikke tydelig frekvens som "X ganger per uke".',
+			invalid_threshold: 'Kunne ikke lese målverdi for antall per uke.',
+			unknown: 'Ukjent parse-feil.'
+		};
+
+		return reasonMap[reason] ?? `Tolking feilet (${reason}).`;
+	}
+
+	function getTaskEvaluationLabel(task: WeekTask): string | null {
+		const e = task.metadata?.intentEvaluation;
+		if (!e) return null;
+		if (typeof e.currentValue !== 'number' || typeof e.targetValue !== 'number') return null;
+		if (e.targetValue <= 0) return null;
+
+		const pct = Math.max(0, Math.min(100, Math.round((e.currentValue / e.targetValue) * 100)));
+		const metText = e.met ? 'oppnådd' : 'pågår';
+		return `${e.currentValue}/${e.targetValue} denne uka (${pct}%) · ${metText}`;
 	}
 
 	function markInitialValue(event: FocusEvent) {
@@ -960,15 +1024,23 @@
 	}
 
 	function buildWeekReviewPrefill() {
-		const weekGoals = data.weekTasks.map((t) => t.title).join(', ');
-		const dayGoals = Object.values(dayChecklistsState)
-			.flatMap((c) => c.items.map((i) => i.text))
-			.slice(0, 20)
-			.join(', ');
-		const parts: string[] = ['Jeg vil gjøre en kort refleksjon over uka.'];
-		if (weekGoals) parts.push(`Ukesmål: ${weekGoals}.`);
-		if (dayGoals) parts.push(`Dagsmål denne uka: ${dayGoals}.`);
-		parts.push('Hva gikk bra, hva lærte jeg, og hva tar jeg med videre?');
+		const weekGoals = data.weekTasks.map((t) => t.title);
+		const completedDayItems = Object.values(dayChecklistsState)
+			.flatMap((c) => c.items.filter((i) => i.checked).map((i) => i.text))
+			.slice(0, 15);
+		const openDayItems = Object.values(dayChecklistsState)
+			.flatMap((c) => c.items.filter((i) => !i.checked).map((i) => i.text))
+			.slice(0, 10);
+
+		const parts: string[] = [
+			`Du er en refleksjonsassistent som hjelper brukeren å avslutte uke ${data.week.week}.`,
+			`Din jobb er å guide brukeren gjennom en kort, strukturert ukesavslutning i tre steg: (1) feire det som gikk bra, (2) identifisere læring, (3) bestemme hva som tas med videre.`,
+			`Still ett spørsmål av gangen. Start med å ønske velkommen og spørre om ukens høydepunkter.`
+		];
+		if (weekGoals.length > 0) parts.push(`Ukesmål var: ${weekGoals.join('; ')}.`);
+		if (completedDayItems.length > 0) parts.push(`Fullførte dagspunkter: ${completedDayItems.join('; ')}.`);
+		if (openDayItems.length > 0) parts.push(`Åpne punkter: ${openDayItems.join('; ')}.`);
+		if (data.weekNote) parts.push(`Ukesnotat: "${data.weekNote}".`);
 		return parts.join(' ');
 	}
 
@@ -1156,9 +1228,9 @@
 		<div class="wp-card-head">
 			<h2>Evaluer uka</h2>
 		</div>
-		<p class="wp-helper">Start en chat om uka med ukesmål og dagsmål som kontekst.</p>
+		<p class="wp-helper">Bot tar brukeren gjennom feire, lære og planlegg videre – ett spørsmål av gangen.</p>
 		<button class="btn-secondary" type="button" onclick={() => (weekReviewChatOpen = true)}>
-			Start ukes-refleksjon
+			Avslutt uka
 		</button>
 	</section>
 
@@ -1176,6 +1248,10 @@
 		{#if data.weekTasks.length > 0}
 			<ul class="wp-task-list">
 				{#each data.weekTasks as task}
+					{@const structuredMeta = formatStructuredTaskMeta(task)}
+					{@const intentBadge = getTaskIntentBadge(task)}
+					{@const intentFailureReason = getTaskIntentFailureReasonLabel(task)}
+					{@const evaluationLabel = getTaskEvaluationLabel(task)}
 					<li class="wp-task">
 						<div class="wp-task-main">
 							<div>
@@ -1183,8 +1259,17 @@
 								<p class="wp-task-meta">
 									{task.goalTitle ?? 'Uten mål'}
 									{#if task.themeName} · {task.themeName}{/if}
-									{#if task.frequency} · {task.frequency}{/if}
+									{#if structuredMeta} · {structuredMeta}{/if}
 								</p>
+								{#if intentBadge}
+									<div class={`wp-task-intent-pill wp-task-intent-${intentBadge.tone}`}>{intentBadge.label}</div>
+								{/if}
+								{#if evaluationLabel}
+									<div class="wp-task-evaluation">{evaluationLabel}</div>
+								{/if}
+								{#if intentFailureReason}
+									<div class="wp-task-intent-failure-reason">{intentFailureReason}</div>
+								{/if}
 							</div>
 							<div class="wp-slot-row" aria-label="Progresjon">
 								{#each Array.from({ length: task.repeatCount }) as _, index}
@@ -1543,6 +1628,7 @@
 {#if weekReviewChatOpen}
 	<ChatSheet
 		prefill={buildWeekReviewPrefill()}
+		autoSend={true}
 		onclose={() => (weekReviewChatOpen = false)}
 	/>
 {/if}
@@ -1818,6 +1904,50 @@
 		margin: 4px 0 0;
 		font-size: 0.72rem;
 		color: #626b82;
+	}
+
+	.wp-task-intent-pill {
+		margin: 6px 0 0;
+		font-size: 0.65rem;
+		padding: 4px 8px;
+		border-radius: 6px;
+		font-weight: 600;
+		display: inline-block;
+	}
+
+	.wp-task-intent-pending {
+		background: rgba(255, 193, 7, 0.1);
+		color: #ffc107;
+		border: 1px solid rgba(255, 193, 7, 0.3);
+	}
+
+	.wp-task-intent-parsed {
+		background: rgba(76, 175, 80, 0.1);
+		color: #4caf50;
+		border: 1px solid rgba(76, 175, 80, 0.3);
+	}
+
+	.wp-task-intent-failed {
+		background: rgba(244, 67, 54, 0.1);
+		color: #f44336;
+		border: 1px solid rgba(244, 67, 54, 0.3);
+	}
+
+	.wp-task-intent-failure-reason {
+		margin: 4px 0 0;
+		font-size: 0.65rem;
+		color: #d94f4f;
+		padding: 4px 0;
+		line-height: 1.3;
+	}
+
+	.wp-task-evaluation {
+		margin: 6px 0 0;
+		font-size: 0.7rem;
+		color: #7ec97e;
+		padding: 0;
+		line-height: 1.3;
+		font-weight: 500;
 	}
 
 	.wp-slot-row {
