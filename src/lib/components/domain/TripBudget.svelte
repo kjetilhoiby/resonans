@@ -168,22 +168,41 @@
 		selectedAccountId; // reactive dependency
 		if (turLoaded) void loadTur();
 	});
+
+	let collapsed = $state(true);
+
+	const tripDays = $derived.by(() => {
+		if (!startDate || !endDate) return 1;
+		const diff = Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000) + 1;
+		return diff > 0 ? diff : 1;
+	});
+
+	const perDay = $derived(turLoaded && turTotal > 0 ? Math.round(turTotal / tripDays) : null);
 </script>
 
 <div class="tb">
-	<div class="tb-header">
-		<h3 class="tb-title">💳 Reiseregnskap</h3>
+	<button class="tb-collapse-btn" onclick={() => collapsed = !collapsed} aria-expanded={!collapsed}>
+		<div class="tb-collapse-left">
+			<span class="tb-title">💳 Forbruk</span>
+			{#if collapsed && perDay !== null}
+				<span class="tb-summary-line">{fmtAmount(perDay)} kr/dag</span>
+			{/if}
+		</div>
+		<span class="tb-chevron" class:tb-chevron-open={!collapsed}>›</span>
+	</button>
 
-		<!-- Account selector -->
-		{#if accounts.length > 1}
+	{#if !collapsed}
+	<!-- Account selector -->
+	{#if accounts.length > 1}
+		<div style="margin-bottom: 8px;">
 			<select class="tb-account-sel" bind:value={selectedAccountId} aria-label="Velg konto">
 				<option value="">Alle kontoer</option>
 				{#each accounts as acc}
 					<option value={acc.id}>{acc.name ?? acc.id}</option>
 				{/each}
 			</select>
-		{/if}
-	</div>
+		</div>
+	{/if}
 
 	<!-- Tabs -->
 	<div class="tb-tabs" role="tablist">
@@ -331,6 +350,7 @@
 			{/if}
 		{/if}
 	{/if}
+	{/if}
 </div>
 
 <style>
@@ -338,14 +358,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0;
-	}
-
-	.tb-header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 8px;
-		margin-bottom: 8px;
 	}
 
 	.tb-title {
@@ -581,5 +593,43 @@
 		font-size: 0.8rem;
 		color: var(--tp-text-muted);
 		padding: 12px 0;
+	}
+
+	.tb-collapse-btn {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		width: 100%;
+		background: none;
+		border: none;
+		padding: 2px 0 10px;
+		cursor: pointer;
+		text-align: left;
+		gap: 8px;
+	}
+
+	.tb-collapse-left {
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+	}
+
+	.tb-summary-line {
+		font-size: 0.9rem;
+		font-weight: 600;
+		color: var(--tp-text);
+	}
+
+	.tb-chevron {
+		font-size: 1rem;
+		color: var(--tp-text-muted);
+		transition: transform 0.2s;
+		line-height: 1;
+		flex-shrink: 0;
+		transform: rotate(0deg);
+	}
+
+	.tb-chevron.tb-chevron-open {
+		transform: rotate(90deg);
 	}
 </style>

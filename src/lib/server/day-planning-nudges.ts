@@ -1,9 +1,10 @@
 import { and, desc, eq, gte, ilike, or, sql } from 'drizzle-orm';
 import { db } from '$lib/db';
-import { checklists, conversations, memories, messages, users } from '$lib/db/schema';
+import { checklists, conversations, memories, messages, sensorEvents, users } from '$lib/db/schema';
 import {
 	buildDayCloseNudgeMessage,
 	buildDayPlanningNudgeMessage,
+	buildRelationshipCheckinMorningNudgeMessage,
 	buildNudgeDigestMessage,
 	sendGoogleChatMessage
 } from '$lib/server/google-chat';
@@ -12,6 +13,7 @@ import { createNudgeEvent, markNudgeSent } from '$lib/server/nudge-events';
 interface NotificationSettings {
 	dayPlanning?: { enabled?: boolean; time?: string };
 	dayClose?: { enabled?: boolean; time?: string };
+	relationshipCheckinMorning?: { enabled?: boolean; time?: string };
 	nudgeProfile?: {
 		weekdayMode?: 'interactive' | 'digest';
 		weekendMode?: 'interactive' | 'digest';
@@ -174,6 +176,22 @@ async function findChecklistByContext(userId: string, context: string) {
 	});
 }
 
+async function hasRelationshipCheckinForDay(userId: string, dayIso: string) {
+	const existing = await db
+		.select({ id: sensorEvents.id })
+		.from(sensorEvents)
+		.where(
+			and(
+				eq(sensorEvents.userId, userId),
+				eq(sensorEvents.dataType, 'relationship_checkin'),
+				sql`${sensorEvents.data}->>'day' = ${dayIso}`
+			)
+		)
+		.limit(1);
+
+	return existing.length > 0;
+}
+
 export async function runDayPlanningAndCloseNudges(appUrl: string, now: Date = new Date()) {
 	const allUsers = await db.query.users.findMany();
 
@@ -181,12 +199,19 @@ export async function runDayPlanningAndCloseNudges(appUrl: string, now: Date = n
 		userId: string;
 		planningSent: boolean;
 		closeSent: boolean;
+		relationshipMorningSent: boolean;
 		skippedReason?: string;
 	}> = [];
 
 	for (const user of allUsers) {
 		if (!user.googleChatWebhook) {
-			results.push({ userId: user.id, planningSent: false, closeSent: false, skippedReason: 'no-webhook' });
+			results.push({
+				userId: user.id,
+				planningSent: false,
+				closeSent: false,
+				relationshipMorningSent: false,
+				skippedReason: 'no-webhook'
+			});
 			continue;
 		}
 
@@ -203,9 +228,11 @@ export async function runDayPlanningAndCloseNudges(appUrl: string, now: Date = n
 
 		const planningTime = settings.dayPlanning?.time || '07:00';
 		const closeTime = settings.dayClose?.time || '21:00';
+		const relationshipMorningTime = settings.relationshipCheckinMorning?.time || '08:30';
 
 		let planningSent = false;
 		let closeSent = false;
+		let relationshipMorningSent = false;
 
 		if (mode === 'interactive' && isEnabled(settings.dayPlanning) && local.hm === planningTime) {
 			const todayContext = contextForDay(todayIso);
@@ -308,7 +335,30 @@ export async function runDayPlanningAndCloseNudges(appUrl: string, now: Date = n
 			}
 		}
 
-		results.push({ userId: user.id, planningSent, closeSent });
+		if (isEnabled(settings.relationshipCheckinMorning) && local.hm === relationshipMorningTime) {
+			const hasPartner = Boolean(user.partnerUserId && user.partnerConfirmedAt);
+			if (hasPartner) {
+				const alreadySubmitted = await hasRelationshipCheckinForDay(user.id, todayIso);
+				if (!alreadySubmitted) {
+					const eventId = await createNudgeEvent({
+						userId: user.id,
+						nudgeType: 'relationship_checkin_morning',
+						mode,
+						context: { dayIso: todayIso, trigger: 'schedule' }
+					});
+					const message = buildRelationshipCheckinMorningNudgeMessage({
+						appUrl,
+						userName: user.name,
+						dayIso: todayIso,
+						nudgeEventId: eventId ?? undefined
+					});
+					relationshipMorningSent = await sendGoogleChatMessage(user.googleChatWebhook, message);
+					if (relationshipMorningSent && eventId) await markNudgeSent(eventId);
+				}
+			}
+		}
+
+		results.push({ userId: user.id, planningSent, closeSent, relationshipMorningSent });
 	}
 
 	return {
@@ -316,6 +366,7 @@ export async function runDayPlanningAndCloseNudges(appUrl: string, now: Date = n
 		processedUsers: results.length,
 		planningSent: results.filter((r) => r.planningSent).length,
 		closeSent: results.filter((r) => r.closeSent).length,
+		relationshipMorningSent: results.filter((r) => r.relationshipMorningSent).length,
 		results
 	};
 }

@@ -18,6 +18,19 @@
 		metadata: {
 			metricId?: string | null;
 			goalTrack?: GoalTrackMeta | null;
+			intentStatus?: 'pending' | 'parsed' | 'failed' | null;
+			intentError?: string | null;
+			intentEvaluation?: {
+				signalType?: string;
+				window?: string;
+				windowStart?: string;
+				windowEnd?: string;
+				currentValue?: number;
+				targetValue?: number;
+				comparator?: string;
+				met?: boolean;
+				lastEvaluatedAt?: string;
+			} | null;
 		} | null;
 		createdAt: Date;
 		category: {
@@ -90,6 +103,43 @@
 		return `${goal.metadata?.metricId || 'metric'} · ${track.targetValue}${unit} / ${track.window || 'periode'}`;
 	}
 
+	function getIntentBadge(goal: GoalItem):
+		| { label: string; tone: 'pending' | 'parsed' | 'failed' }
+		| null {
+		const status = goal.metadata?.intentStatus;
+		if (status === 'pending') return { label: 'Tolkes...', tone: 'pending' };
+		if (status === 'parsed') return { label: 'Aktiv sporing', tone: 'parsed' };
+		if (status === 'failed') return { label: 'Trenger avklaring', tone: 'failed' };
+		return null;
+	}
+
+	function getIntentEvaluationLabel(goal: GoalItem): string | null {
+		const e = goal.metadata?.intentEvaluation;
+		if (!e) return null;
+		if (typeof e.currentValue !== 'number' || typeof e.targetValue !== 'number') return null;
+		if (e.targetValue <= 0) return null;
+
+		const pct = Math.max(0, Math.min(100, Math.round((e.currentValue / e.targetValue) * 100)));
+		const metText = e.met ? 'oppnådd' : 'pågår';
+		return `${e.currentValue}/${e.targetValue} denne uka (${pct}%) · ${metText}`;
+	}
+
+	function getIntentFailureReasonLabel(goal: GoalItem): string | null {
+		if (goal.metadata?.intentStatus !== 'failed') return null;
+		const reason = goal.metadata?.intentError;
+		if (!reason) return null;
+
+		const reasonMap: Record<string, string> = {
+			empty_text: 'Ingen tekst å tolke.',
+			unsupported_activity: 'Støtter foreløpig bare løpemål i denne flyten.',
+			unsupported_period_or_threshold: 'Fant ikke tydelig frekvens som "X ganger per uke".',
+			invalid_threshold: 'Kunne ikke lese målverdi for antall per uke.',
+			unknown: 'Ukjent parse-feil.'
+		};
+
+		return reasonMap[reason] ?? `Tolking feilet (${reason}).`;
+	}
+
 	async function deleteGoal(goalId: string, goalTitle: string) {
 		const confirmed = confirm(`Er du sikker på at du vil slette målet "${goalTitle}"? Dette vil også slette alle oppgaver og fremgang knyttet til målet.`);
 		if (!confirmed) return;
@@ -138,6 +188,9 @@
 				{#each data.goals as goal}
 					{@const goalProgress = calculateGoalProgress(goal)}
 					{@const goalTrackLabel = formatGoalTrack(goal)}
+					{@const intentBadge = getIntentBadge(goal)}
+					{@const intentEvaluationLabel = getIntentEvaluationLabel(goal)}
+					{@const intentFailureReason = getIntentFailureReasonLabel(goal)}
 					<div class="goal-card">
 						<div class="goal-header">
 							<div class="goal-title-row">
@@ -158,6 +211,15 @@
 							{/if}
 							{#if goalTrackLabel}
 								<div class="goal-track-pill">{goalTrackLabel}</div>
+							{/if}
+							{#if intentBadge}
+								<div class={`goal-intent-pill goal-intent-${intentBadge.tone}`}>{intentBadge.label}</div>
+							{/if}
+							{#if intentEvaluationLabel}
+								<div class="goal-intent-evaluation">{intentEvaluationLabel}</div>
+							{/if}
+							{#if intentFailureReason}
+								<div class="goal-intent-failure-reason">{intentFailureReason}</div>
 							{/if}
 						</div>
 
@@ -363,6 +425,46 @@
 		color: #b9c3ff;
 		font-size: 0.76rem;
 		margin-top: 0.45rem;
+	}
+
+	.goal-intent-pill {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		padding: 0.35rem 0.7rem;
+		border-radius: 999px;
+		font-size: 0.74rem;
+		margin-top: 0.45rem;
+	}
+
+	.goal-intent-pending {
+		background: rgba(255, 187, 72, 0.14);
+		border: 1px solid rgba(255, 187, 72, 0.35);
+		color: #ffd48c;
+	}
+
+	.goal-intent-parsed {
+		background: rgba(95, 212, 161, 0.14);
+		border: 1px solid rgba(95, 212, 161, 0.36);
+		color: #9ef1c9;
+	}
+
+	.goal-intent-failed {
+		background: rgba(255, 117, 117, 0.14);
+		border: 1px solid rgba(255, 117, 117, 0.34);
+		color: #ffb6b6;
+	}
+
+	.goal-intent-evaluation {
+		margin-top: 0.45rem;
+		font-size: 0.78rem;
+		color: #8eb6ff;
+	}
+
+	.goal-intent-failure-reason {
+		margin-top: 0.4rem;
+		font-size: 0.76rem;
+		color: #ff9b9b;
 	}
 
 	.progress-section {

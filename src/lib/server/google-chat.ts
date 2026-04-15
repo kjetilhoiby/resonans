@@ -352,6 +352,53 @@ export function buildDayCloseNudgeMessage(data: {
 	};
 }
 
+export function buildRelationshipCheckinMorningNudgeMessage(data: {
+	appUrl: string;
+	userName?: string | null;
+	dayIso: string;
+	nudgeEventId?: string;
+}): GoogleChatMessage {
+	const { appUrl, userName, dayIso, nudgeEventId } = data;
+	const greeting = userName ? `God morgen ${userName}!` : 'God morgen!';
+	const eventParam = nudgeEventId ? `&nudgeEventId=${encodeURIComponent(nudgeEventId)}` : '';
+
+	return {
+		cards: [
+			{
+				header: {
+					title: '☀️ Morgen-check: parforhold',
+					subtitle: dayIso
+				},
+				sections: [
+					{
+						widgets: [
+							{
+								textParagraph: {
+									text: `<b>${greeting}</b><br>Ta 20 sekunder og legg inn dagens parsjekk før dagen drar i gang.`
+								}
+							},
+							{
+								buttons: [
+									{
+										textButton: {
+											text: 'Svar på parsjekk',
+											onClick: {
+												openLink: {
+													url: `${appUrl}/settings#profil?nudgeTrack=relationship_checkin_morning${eventParam}`
+												}
+											}
+										}
+									}
+								]
+							}
+						]
+					}
+				]
+			}
+		]
+	};
+}
+
 export function buildNudgeDigestMessage(data: {
 	userName?: string | null;
 	dayIso: string;
@@ -386,13 +433,13 @@ export function buildNudgeDigestMessage(data: {
 							},
 							{
 								keyValue: {
-									topLabel: 'Aapne punkt',
+									topLabel: 'Åpne punkt',
 									content: `${openItems}`
 								}
 							},
 							{
 								keyValue: {
-									topLabel: 'Overliggere fra i gaar',
+									topLabel: 'Overliggere fra i går',
 									content: `${carryoverCount}`
 								}
 							}

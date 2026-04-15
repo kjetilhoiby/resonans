@@ -1,6 +1,10 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { createGoal } from '$lib/server/goals';
+import { enqueueBackgroundJob } from '$lib/server/background-jobs';
+import { db } from '$lib/db';
+import { goals } from '$lib/db/schema';
+import { eq } from 'drizzle-orm';
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	try {
@@ -46,6 +50,47 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			endDate: endDate || undefined,
 			startValue: startValue !== undefined ? startValue : undefined
 		});
+
+		const textParts = [title, typeof description === 'string' ? description : '']
+			.map((v) => (typeof v === 'string' ? v.trim() : ''))
+			.filter(Boolean);
+		const rawText = textParts.join('. ');
+		const shouldQueueIntentParse = !metricId || typeof metricId !== 'string' || !metricId.trim();
+
+		if (shouldQueueIntentParse) {
+			try {
+				await enqueueBackgroundJob({
+					userId,
+					type: 'goal_intent_parse',
+					payload: {
+						goalId: goal.id,
+						rawText
+					},
+					priority: 10,
+					maxAttempts: 2
+				});
+
+				const nextMetadata = {
+					...((goal.metadata ?? {}) as Record<string, unknown>),
+					intentStatus: 'pending',
+					intentSourceText: rawText,
+					intentQueuedAt: new Date().toISOString(),
+					intentError: null
+				};
+
+				await db
+					.update(goals)
+					.set({
+						metadata: nextMetadata,
+						updatedAt: new Date()
+					})
+					.where(eq(goals.id, goal.id));
+
+				goal.metadata = nextMetadata;
+			} catch (queueError) {
+				console.warn('Failed to enqueue goal intent parse job:', queueError);
+			}
+		}
 
 		return json({ goal }, { status: 201 });
 	} catch (error) {

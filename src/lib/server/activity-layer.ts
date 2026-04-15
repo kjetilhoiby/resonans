@@ -1,6 +1,6 @@
 import { db } from '$lib/db';
 import { sensorEvents, sensors } from '$lib/db/schema';
-import { and, eq, gte, sql } from 'drizzle-orm';
+import { and, eq, gte } from 'drizzle-orm';
 
 interface ActivityLayerOptions {
 	since?: Date;
@@ -212,9 +212,7 @@ export async function buildUnifiedWorkoutActivities(
 ): Promise<UnifiedWorkoutActivity[]> {
 	const conditions = [
 		eq(sensorEvents.userId, userId),
-		eq(sensorEvents.dataType, 'workout'),
-		// Exclude manually dismissed workouts (metadata.dismissed = true)
-		sql`(metadata->>'dismissed') IS DISTINCT FROM 'true'`
+		eq(sensorEvents.dataType, 'workout')
 	];
 	if (options.since) {
 		conditions.push(gte(sensorEvents.timestamp, options.since));
@@ -345,6 +343,12 @@ export async function buildUnifiedWorkoutActivities(
 		})
 		.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
 		.filter((w) => {
+			// Exclude clusters where any event has been dismissed — filter at cluster level so
+			// partial dismissals (e.g. events[0] removed from DB query) don't let the cluster re-emerge
+			if (w.evidence.some((e) => {
+				const meta = normalizedEvents.find((ev) => ev.id === e.eventId)?.metadata;
+				return meta?.dismissed === true || meta?.dismissed === 'true';
+			})) return false;
 			// Exclude unrecognized sport type — always Withings auto-detected noise with no classification
 			if (w.sportType === 'unknown') return false;
 			// Exclude sub-2-minute sessions with no track evidence — logging artifacts, not real workouts

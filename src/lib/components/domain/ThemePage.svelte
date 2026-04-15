@@ -105,6 +105,24 @@
 		createdAt: string;
 	}
 
+	interface ThemeSignalContract {
+		signalType: string;
+		ownerDomain: string;
+		allowedConsumerDomains: string[];
+		description: string | null;
+		enabled: boolean;
+		config: Record<string, unknown>;
+		latest: {
+			valueNumber: number | null;
+			valueText: string | null;
+			valueBool: boolean | null;
+			severity: string;
+			confidence: string;
+			observedAt: string;
+			context: Record<string, unknown>;
+		} | null;
+	}
+
 	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '', selectedWorkout = null, tripProfile = null, tripLists = [], themeFiles: initialThemeFiles = [] }: Props = $props();
 
 	/* ── Subtab-tilstand ────────────────────────────────── */
@@ -152,6 +170,12 @@
 	let themeFiles = $state<ThemeFile[]>(initialThemeFiles);
 	let fileUploading = $state(false);
 	let fileUploadError = $state('');
+	let signalContracts = $state<ThemeSignalContract[]>([]);
+	let signalsLoading = $state(false);
+	let signalsLoaded = $state(false);
+	let signalsError = $state('');
+	let savingSignalType = $state<string | null>(null);
+	const enabledSignalCount = $derived(signalContracts.filter((item) => item.enabled).length);
 
 	async function uploadFile(event: Event) {
 		const input = event.target as HTMLInputElement;
@@ -187,6 +211,71 @@
 		if (bytes < 1024) return `${bytes} B`;
 		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
 		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+	}
+
+	function formatSignalValue(latest: ThemeSignalContract['latest']) {
+		if (!latest) return 'Ingen data ennå';
+		if (latest.valueText) return latest.valueText;
+		if (latest.valueNumber !== null) return Number(latest.valueNumber).toFixed(1);
+		if (latest.valueBool !== null) return latest.valueBool ? 'Ja' : 'Nei';
+		return 'Ingen data';
+	}
+
+	function formatSignalObservedAt(iso: string) {
+		return new Intl.DateTimeFormat('nb-NO', {
+			day: '2-digit',
+			month: '2-digit',
+			hour: '2-digit',
+			minute: '2-digit'
+		}).format(new Date(iso));
+	}
+
+	async function loadThemeSignals(force = false) {
+		if (signalsLoading) return;
+		if (signalsLoaded && !force) return;
+
+		signalsLoading = true;
+		signalsError = '';
+		try {
+			const res = await fetch(`/api/tema/${theme.id}/signals`);
+			if (!res.ok) {
+				const err = await res.json().catch(() => ({}));
+				throw new Error(err.error ?? 'Kunne ikke laste signaler');
+			}
+			const data = await res.json() as { contracts: ThemeSignalContract[] };
+			signalContracts = data.contracts ?? [];
+			signalsLoaded = true;
+		} catch (err) {
+			signalsError = err instanceof Error ? err.message : 'Kunne ikke laste signaler';
+		} finally {
+			signalsLoading = false;
+		}
+	}
+
+	async function setThemeSignalEnabled(signalType: string, enabled: boolean) {
+		savingSignalType = signalType;
+		signalsError = '';
+		const previous = signalContracts;
+		signalContracts = signalContracts.map((item) =>
+			item.signalType === signalType ? { ...item, enabled } : item
+		);
+
+		try {
+			const res = await fetch(`/api/tema/${theme.id}/signals`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ signalType, enabled })
+			});
+			if (!res.ok) {
+				const err = await res.json().catch(() => ({}));
+				throw new Error(err.error ?? 'Kunne ikke oppdatere signal');
+			}
+		} catch (err) {
+			signalContracts = previous;
+			signalsError = err instanceof Error ? err.message : 'Kunne ikke oppdatere signal';
+		} finally {
+			savingSignalType = null;
+		}
 	}
 
 	const healthDashboardProps = $derived.by(() => {
@@ -294,6 +383,12 @@
 	$effect(() => {
 		if (tab === 'data' && hasThemeDashboard) {
 			void ensureDashboardLoaded();
+		}
+	});
+
+	$effect(() => {
+		if (tab === 'data') {
+			void loadThemeSignals();
 		}
 	});
 
@@ -1295,6 +1390,55 @@
 						bind:tripProfile={currentTripProfile}
 					/>
 				{:else}
+				<section class="signal-panel">
+					<div class="signal-panel-head">
+						<h3>Signalinput til temaet</h3>
+						<span>{enabledSignalCount} aktiv{enabledSignalCount === 1 ? '' : 'e'}</span>
+					</div>
+					<p class="signal-panel-copy">
+						Velg hvilke kontrakter dette temaet skal bruke som datainput.
+					</p>
+
+					{#if signalsLoading && !signalsLoaded}
+						<p class="signal-state">Laster signaler…</p>
+					{:else if signalsError}
+						<div class="signal-state signal-state-error">
+							<span>{signalsError}</span>
+							<button class="signal-retry-btn" onclick={() => void loadThemeSignals(true)}>Prøv igjen</button>
+						</div>
+					{:else if signalContracts.length === 0}
+						<p class="signal-state">Ingen signal-kontrakter tilgjengelig ennå.</p>
+					{:else}
+						<div class="signal-list">
+							{#each signalContracts as signal}
+								<label class="signal-item" for={`signal-${signal.signalType}`}>
+									<div class="signal-item-main">
+										<div class="signal-item-title-row">
+											<strong>{signal.signalType}</strong>
+											<span class="signal-owner">{signal.ownerDomain}</span>
+										</div>
+										{#if signal.description}
+											<p class="signal-item-desc">{signal.description}</p>
+										{/if}
+										{#if signal.latest}
+											<p class="signal-item-latest">
+												Sist: {formatSignalValue(signal.latest)} · {formatSignalObservedAt(signal.latest.observedAt)}
+											</p>
+										{/if}
+									</div>
+									<input
+										id={`signal-${signal.signalType}`}
+										type="checkbox"
+										checked={signal.enabled}
+										disabled={savingSignalType === signal.signalType}
+										onchange={(event) => setThemeSignalEnabled(signal.signalType, (event.currentTarget as HTMLInputElement).checked)}
+									/>
+								</label>
+							{/each}
+						</div>
+					{/if}
+				</section>
+
 				{#if hasThemeDashboard && dashboardLoading && !dashboardLoaded}
 					<div class="data-empty data-empty-tight">
 						<p>Laster dashboard…</p>
@@ -2234,6 +2378,123 @@ Eksempel:
 		font-size: 0.8rem;
 		padding: 8px 16px;
 		border-radius: 99px;
+		cursor: pointer;
+	}
+
+	.signal-panel {
+		border: 1px solid #272727;
+		border-radius: 14px;
+		padding: 12px;
+		background: #111;
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+
+	.signal-panel-head {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 12px;
+	}
+
+	.signal-panel-head h3 {
+		margin: 0;
+		font-size: 0.9rem;
+		color: #eaeaea;
+	}
+
+	.signal-panel-head span {
+		font-size: 0.75rem;
+		color: #8e9cff;
+	}
+
+	.signal-panel-copy {
+		margin: 0;
+		font-size: 0.78rem;
+		color: #7d7d7d;
+	}
+
+	.signal-list {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+
+	.signal-item {
+		display: flex;
+		gap: 10px;
+		align-items: flex-start;
+		justify-content: space-between;
+		padding: 10px;
+		border-radius: 10px;
+		border: 1px solid #242424;
+		background: #141414;
+	}
+
+	.signal-item-main {
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.signal-item-title-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex-wrap: wrap;
+	}
+
+	.signal-item-title-row strong {
+		font-size: 0.8rem;
+		color: #ddd;
+		word-break: break-word;
+	}
+
+	.signal-owner {
+		font-size: 0.68rem;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: #9a9a9a;
+	}
+
+	.signal-item-desc,
+	.signal-item-latest {
+		margin: 0;
+		font-size: 0.72rem;
+		line-height: 1.4;
+		color: #8a8a8a;
+	}
+
+	.signal-item input[type='checkbox'] {
+		width: 18px;
+		height: 18px;
+		margin-top: 2px;
+	}
+
+	.signal-state {
+		margin: 0;
+		font-size: 0.78rem;
+		color: #9a9a9a;
+	}
+
+	.signal-state-error {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 12px;
+		color: #ee8c8c;
+	}
+
+	.signal-retry-btn {
+		border: 1px solid #3a3a3a;
+		background: #1a1a1a;
+		color: #ddd;
+		border-radius: 999px;
+		padding: 6px 10px;
+		font: inherit;
+		font-size: 0.74rem;
 		cursor: pointer;
 	}
 

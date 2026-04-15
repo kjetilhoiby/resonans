@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 import type { RequestHandler } from './$types';
-import { processDueBackgroundJobs } from '$lib/server/background-jobs';
+import { getGoalIntentParseObservability, processDueBackgroundJobs } from '$lib/server/background-jobs';
 
 export const config = { maxDuration: 120 };
 
@@ -15,10 +15,13 @@ export const GET: RequestHandler = async ({ request }) => {
 		return json({ error: 'Unauthorized' }, { status: 401 });
 	}
 
-	const result = await processDueBackgroundJobs({
-		limit: 5,
-		workerId: `cron-${new Date().toISOString()}`
-	});
+	const [result, goalIntentParse] = await Promise.all([
+		processDueBackgroundJobs({
+			limit: 5,
+			workerId: `cron-${new Date().toISOString()}`
+		}),
+		getGoalIntentParseObservability(24 * 7)
+	]);
 
-	return json({ success: true, ...result });
+	return json({ success: true, ...result, observability: { goalIntentParse } });
 };

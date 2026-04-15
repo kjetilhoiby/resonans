@@ -149,11 +149,38 @@
 		};
 		return map[sport] || `🏃 ${sport}`;
 	}
+
+	let collapsed = $state(true);
+
+	const summaryStats = $derived.by(() => {
+		if (!data) return null;
+		const parts: string[] = [];
+		if (data.steps.avgPerDay) {
+			parts.push(`${data.steps.avgPerDay.toLocaleString('nb-NO')} skritt/dag`);
+		}
+		const totalKm = data.workouts.list.reduce((s, w) => s + (w.distanceKm ?? 0), 0);
+		if (totalKm > 0) {
+			parts.push(`${Math.round(totalKm * 10) / 10} km trent`);
+		}
+		if (data.sleep.avgPerDay) {
+			parts.push(`${data.sleep.avgPerDay}t søvn/natt`);
+		}
+		return parts.length > 0 ? parts.join(' · ') : null;
+	});
 </script>
 
 <div class="ths-container">
-	<h3 class="ths-title">🏥 Helsestatistikk</h3>
+	<button class="ths-collapse-btn" onclick={() => collapsed = !collapsed} aria-expanded={!collapsed}>
+		<div class="ths-collapse-left">
+			<span class="ths-title">🏃 Aktivitet</span>
+			{#if collapsed && summaryStats}
+				<span class="ths-summary-line">{summaryStats}</span>
+			{/if}
+		</div>
+		<span class="ths-chevron" class:ths-chevron-open={!collapsed}>›</span>
+	</button>
 
+	{#if !collapsed}
 	{#if loading}
 		<p class="ths-loading">Laster helsedata...</p>
 	{:else if error}
@@ -323,21 +350,23 @@
 			<p class="ths-empty">Ingen helsedata tilgjengelig for denne turperioden.</p>
 		{/if}
 	{/if}
+	{/if}
 </div>
 
 <style>
 	.ths-container {
-		background: #0a0e14;
-		border: 1px solid #1a1f2e;
-		border-radius: 12px;
-		padding: 20px;
+		display: flex;
+		flex-direction: column;
+		gap: 0;
 	}
 
 	.ths-title {
-		font-size: 1.1rem;
-		font-weight: 700;
-		color: #e2e8f0;
-		margin: 0 0 16px 0;
+		font-size: 0.8rem;
+		font-weight: 600;
+		color: #94a3b8;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		margin: 0;
 	}
 
 	.ths-loading,
@@ -582,5 +611,43 @@
 		font-size: 0.65rem;
 		color: #64748b;
 		padding: 0 2px;
+	}
+
+	.ths-collapse-btn {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		width: 100%;
+		background: none;
+		border: none;
+		padding: 2px 0 10px;
+		cursor: pointer;
+		text-align: left;
+		gap: 8px;
+	}
+
+	.ths-collapse-left {
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+	}
+
+	.ths-summary-line {
+		font-size: 0.9rem;
+		font-weight: 600;
+		color: #e2e8f0;
+	}
+
+	.ths-chevron {
+		font-size: 1rem;
+		color: #64748b;
+		transition: transform 0.2s;
+		line-height: 1;
+		flex-shrink: 0;
+		transform: rotate(0deg);
+	}
+
+	.ths-chevron.ths-chevron-open {
+		transform: rotate(90deg);
 	}
 </style>

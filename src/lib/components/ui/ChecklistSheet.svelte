@@ -211,7 +211,7 @@
 
 	<!-- Footer: delete -->
 	<div class="cs-footer">
-		<a class="cs-calendar-link" href={calendarHref}>Aapne i kalender</a>
+		<a class="cs-calendar-link" href={calendarHref}>Åpne i kalender</a>
 		<button class="cs-delete-btn" onclick={deleteChecklist}>Slett liste</button>
 	</div>
 </div>

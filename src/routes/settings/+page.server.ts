@@ -11,6 +11,11 @@ import {
 	invitePartner,
 	RelationshipError
 } from '$lib/server/relationship';
+import {
+	getRelationshipCheckinStatus,
+	RelationshipCheckinError,
+	submitRelationshipCheckin
+} from '$lib/server/relationship-checkin';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
@@ -20,6 +25,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		where: eq(users.id, locals.userId)
 	});
 	const relationship = await getRelationshipOverview(locals.userId);
+	const relationshipCheckinStatus = await getRelationshipCheckinStatus(locals.userId);
 	const partnerInviteShareUrl = relationship.outgoingInvite
 		? `${url.origin}/partner-invite/${relationship.outgoingInvite.token}`
 		: null;
@@ -27,6 +33,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	return {
 		user: user || null,
 		relationship,
+		relationshipCheckinStatus,
 		partnerInviteShareUrl
 	};
 };
@@ -117,6 +124,36 @@ export const actions = {
 
 			console.error('Failed to invite partner:', error);
 			return fail(500, { error: 'Kunne ikke sende partnerinvitasjonen.' });
+		}
+	},
+	submitRelationshipCheckin: async ({ request, locals }) => {
+		const data = await request.formData();
+		const score = Number(data.get('score'));
+		const noteRaw = data.get('note');
+		const note = typeof noteRaw === 'string' ? noteRaw : null;
+		const dayRaw = data.get('day');
+		const day = typeof dayRaw === 'string' ? dayRaw : undefined;
+
+		try {
+			const status = await submitRelationshipCheckin({
+				userId: locals.userId,
+				score,
+				note,
+				day
+			});
+
+			return {
+				success: true,
+				message: 'Parsjekken er lagret.',
+				relationshipCheckinStatus: status
+			};
+		} catch (error) {
+			if (error instanceof RelationshipCheckinError) {
+				return fail(400, { error: error.message });
+			}
+
+			console.error('Failed to submit relationship check-in:', error);
+			return fail(500, { error: 'Kunne ikke lagre parsjekk.' });
 		}
 	},
 	acceptMarriageInvite: async ({ request, locals }) => {

@@ -33,7 +33,13 @@ const JOBS: CronJob[] = [
 	{
 		path: '/api/cron/day-planning-nudges',
 		schedule: '0 * * * *',
-		description: 'Timebasert lokal nudge for planlegg dag (07:00) og avslutt dag (21:00)'
+		description: 'Timebasert lokal nudge for planlegg dag (07:00), parsjekk morgen (08:30) og avslutt dag (21:00)'
+	},
+	{
+		path: '/api/cron/domain-signals',
+		schedule: '15 * * * *',
+		description: 'Produserer avledede cross-domain signaler for temaer og domene-kontrakter',
+		maxDurationSeconds: 120
 	},
 	{
 		path: '/api/cron/sparebank1-sync',

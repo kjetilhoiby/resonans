@@ -430,12 +430,7 @@
 		{#if tripProfile?.lat != null && tripProfile?.lng != null}
 			<div class="trip-map-wrap">
 				<div bind:this={mapContainer} class="trip-map"></div>
-				<a
-					class="trip-map-link"
-					href="https://www.openstreetmap.org/?mlat={tripProfile.lat}&mlon={tripProfile.lng}#map=12/{tripProfile.lat}/{tripProfile.lng}"
-					target="_blank"
-					rel="noopener noreferrer"
-				>Åpne i OpenStreetMap ↗</a>
+
 			</div>
 		{/if}
 
@@ -775,18 +770,6 @@
                 font-size: 0.62rem;
                 color: var(--tp-text-muted);
         }
-
-        /* Map */
-        .trip-map-link {
-                display: block;
-                padding: 6px 10px;
-                font-size: 0.72rem;
-		color: var(--tp-text-muted);
-		text-decoration: none;
-		background: var(--tp-bg-2);
-		text-align: right;
-	}
-	.trip-map-link:hover { color: var(--tp-accent); }
 
 	/* Overnight stays (read) */
 	.trip-stays {

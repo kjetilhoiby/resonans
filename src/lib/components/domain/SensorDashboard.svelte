@@ -169,9 +169,9 @@
 			<p class="sd-delta" style="color:{(summary.relationship?.followUpRecommended ?? false) ? '#f0b429' : '#5fa0a0'}">
 				{summary.relationship?.revealed
 					? (summary.relationship?.followUpRecommended
-						? `Oppfoelging anbefalt (${summary.relationship?.mismatchDays14 || 0} mismatch siste 14 dager)`
+						? `Oppfølging anbefalt (${summary.relationship?.mismatchDays14 || 0} mismatch siste 14 dager)`
 						: 'Stabil parsjekk den siste perioden')
-					: 'Venter paa begge svar for reveal'}
+						: 'Venter på begge svar for reveal'}
 			</p>
 		{/if}
 	</div>

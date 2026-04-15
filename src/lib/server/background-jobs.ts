@@ -2,6 +2,8 @@ import { db, pgClient } from '$lib/db';
 import { backgroundJobs } from '$lib/db/schema';
 import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import { syncAllSparebank1Data } from '$lib/server/integrations/sparebank1-sync';
+import { processGoalIntentParseJob } from '$lib/server/goal-intent-parser';
+import { processTaskIntentParseJob } from '$lib/server/task-intent-parser';
 
 export type BackgroundJobStatus = 'queued' | 'running' | 'retry' | 'completed' | 'failed' | 'canceled';
 
@@ -68,6 +70,152 @@ export async function listRecentBackgroundJobs(limit = 50) {
 		.limit(Math.max(1, Math.min(limit, 200)));
 }
 
+export async function listRecentGoalIntentParseJobsForUser(userId: string, limit = 20) {
+	const safeLimit = Math.max(1, Math.min(limit, 100));
+
+	const jobs = await db
+		.select({
+			id: backgroundJobs.id,
+			status: backgroundJobs.status,
+			attempts: backgroundJobs.attempts,
+			maxAttempts: backgroundJobs.maxAttempts,
+			error: backgroundJobs.error,
+			payload: backgroundJobs.payload,
+			result: backgroundJobs.result,
+			createdAt: backgroundJobs.createdAt,
+			updatedAt: backgroundJobs.updatedAt,
+			finishedAt: backgroundJobs.finishedAt
+		})
+		.from(backgroundJobs)
+		.where(and(eq(backgroundJobs.userId, userId), eq(backgroundJobs.type, 'goal_intent_parse')))
+		.orderBy(desc(backgroundJobs.createdAt))
+		.limit(safeLimit);
+
+	return jobs.map((job) => {
+		const payload = (job.payload ?? {}) as Record<string, unknown>;
+		const result = (job.result ?? {}) as Record<string, unknown>;
+		const parsed = (result.parsed ?? {}) as Record<string, unknown>;
+
+		return {
+			id: job.id,
+			status: job.status,
+			attempts: job.attempts,
+			maxAttempts: job.maxAttempts,
+			error: job.error,
+			goalId: typeof payload.goalId === 'string' ? payload.goalId : null,
+			rawText: typeof payload.rawText === 'string' ? payload.rawText : null,
+			matched: typeof parsed.matched === 'boolean' ? parsed.matched : null,
+			reason: typeof parsed.reason === 'string' ? parsed.reason : null,
+			parsedIntent: (parsed.parsedIntent ?? null) as Record<string, unknown> | null,
+			createdAt: job.createdAt,
+			updatedAt: job.updatedAt,
+			finishedAt: job.finishedAt
+		};
+	});
+}
+
+export async function getGoalIntentParseObservability(hours = 24 * 7) {
+	const safeHours = Math.max(1, Math.min(hours, 24 * 90));
+
+	const summaryRows = await pgClient.unsafe<{
+		total: number;
+		queued: number;
+		running: number;
+		retry: number;
+		completed: number;
+		failed: number;
+		matched: number;
+		unmatched: number;
+	}[]>(`
+		SELECT
+			COUNT(*)::int AS total,
+			COUNT(*) FILTER (WHERE status = 'queued')::int AS queued,
+			COUNT(*) FILTER (WHERE status = 'running')::int AS running,
+			COUNT(*) FILTER (WHERE status = 'retry')::int AS retry,
+			COUNT(*) FILTER (WHERE status = 'completed')::int AS completed,
+			COUNT(*) FILTER (WHERE status = 'failed')::int AS failed,
+			COUNT(*) FILTER (
+				WHERE status = 'completed'
+				  AND COALESCE((result->'parsed'->>'matched')::boolean, false) = true
+			)::int AS matched,
+			COUNT(*) FILTER (
+				WHERE status = 'completed'
+				  AND COALESCE((result->'parsed'->>'matched')::boolean, false) = false
+			)::int AS unmatched
+		FROM background_jobs
+		WHERE type = 'goal_intent_parse'
+		  AND created_at >= NOW() - ($1::int * INTERVAL '1 hour')
+	`, [safeHours]);
+
+	const reasonsRows = await pgClient.unsafe<{
+		reason: string;
+		count: number;
+	}[]>(`
+		SELECT
+			COALESCE(result->'parsed'->>'reason', 'unknown') AS reason,
+			COUNT(*)::int AS count
+		FROM background_jobs
+		WHERE type = 'goal_intent_parse'
+		  AND status = 'completed'
+		  AND COALESCE((result->'parsed'->>'matched')::boolean, false) = false
+		  AND created_at >= NOW() - ($1::int * INTERVAL '1 hour')
+		GROUP BY 1
+		ORDER BY count DESC
+		LIMIT 5
+	`, [safeHours]);
+
+	const errorRows = await pgClient.unsafe<{
+		error: string;
+		count: number;
+	}[]>(`
+		SELECT
+			COALESCE(NULLIF(error, ''), 'unknown') AS error,
+			COUNT(*)::int AS count
+		FROM background_jobs
+		WHERE type = 'goal_intent_parse'
+		  AND status = 'failed'
+		  AND created_at >= NOW() - ($1::int * INTERVAL '1 hour')
+		GROUP BY 1
+		ORDER BY count DESC
+		LIMIT 5
+	`, [safeHours]);
+
+	const summary = summaryRows[0] ?? {
+		total: 0,
+		queued: 0,
+		running: 0,
+		retry: 0,
+		completed: 0,
+		failed: 0,
+		matched: 0,
+		unmatched: 0
+	};
+
+	return {
+		hours: safeHours,
+		total: Number(summary.total ?? 0),
+		status: {
+			queued: Number(summary.queued ?? 0),
+			running: Number(summary.running ?? 0),
+			retry: Number(summary.retry ?? 0),
+			completed: Number(summary.completed ?? 0),
+			failed: Number(summary.failed ?? 0)
+		},
+		outcomes: {
+			matched: Number(summary.matched ?? 0),
+			unmatched: Number(summary.unmatched ?? 0)
+		},
+		topUnmatchedReasons: reasonsRows.map((row) => ({
+			reason: row.reason,
+			count: Number(row.count ?? 0)
+		})),
+		topFailureErrors: errorRows.map((row) => ({
+			error: row.error,
+			count: Number(row.count ?? 0)
+		}))
+	};
+}
+
 function calculateRetryDelaySeconds(attempt: number): number {
 	// Exponential backoff: 60s, 120s, 240s, ... capped at 1 hour.
 	return Math.min(3600, Math.pow(2, Math.max(0, attempt - 1)) * 60);
@@ -126,6 +274,48 @@ async function executeJob(job: any): Promise<Record<string, unknown>> {
 			return {
 				fromDate: fromDate.toISOString().slice(0, 10),
 				synced
+			};
+		}
+		case 'goal_intent_parse': {
+			if (!job.user_id) {
+				throw new Error('goal_intent_parse requires user_id');
+			}
+
+			const payload = (job.payload ?? {}) as { goalId?: string; rawText?: string };
+			if (!payload.goalId || typeof payload.goalId !== 'string') {
+				throw new Error('goal_intent_parse requires payload.goalId');
+			}
+
+			const parsed = await processGoalIntentParseJob({
+				userId: job.user_id,
+				goalId: payload.goalId,
+				rawText: typeof payload.rawText === 'string' ? payload.rawText : undefined
+			});
+
+			return {
+				goalId: payload.goalId,
+				parsed
+			};
+		}
+		case 'task_intent_parse': {
+			if (!job.user_id) {
+				throw new Error('task_intent_parse requires user_id');
+			}
+
+			const payload = (job.payload ?? {}) as { taskId?: string; rawText?: string };
+			if (!payload.taskId || typeof payload.taskId !== 'string') {
+				throw new Error('task_intent_parse requires payload.taskId');
+			}
+
+			const parsed = await processTaskIntentParseJob({
+				userId: job.user_id,
+				taskId: payload.taskId,
+				rawText: typeof payload.rawText === 'string' ? payload.rawText : undefined
+			});
+
+			return {
+				taskId: payload.taskId,
+				parsed
 			};
 		}
 		default:

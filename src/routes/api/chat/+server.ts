@@ -20,6 +20,7 @@ import {
 	type WidgetCreationFlow
 } from '$lib/flows/widget-creation/flow';
 import { routeChatRequest } from '$lib/server/chat-router';
+import { enqueueBackgroundJob } from '$lib/server/background-jobs';
 import { db } from '$lib/db';
 import { checklists, checklistItems, users } from '$lib/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -1390,7 +1391,30 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'create_task') {
 					try {
 						const args = JSON.parse(toolCall.function.arguments);
-						const task = await createTask(args);
+						const task = await createTask({
+							userId,
+							...args
+						});
+
+						const textParts = [task.title, task.description || '']
+							.map((v) => (typeof v === 'string' ? v.trim() : ''))
+							.filter(Boolean);
+						const rawText = textParts.join('. ');
+
+						try {
+							await enqueueBackgroundJob({
+								userId,
+								type: 'task_intent_parse',
+								payload: {
+									taskId: task.id,
+									rawText
+								},
+								priority: 8,
+								maxAttempts: 2
+							});
+						} catch (queueError) {
+							console.warn('Failed to enqueue task intent parse job:', queueError);
+						}
 
 						messages.push({
 							role: 'tool',

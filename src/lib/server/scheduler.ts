@@ -4,6 +4,7 @@ import { db } from '$lib/db';
 import { getUserActiveGoalsAndTasks } from '$lib/server/goals';
 import { sendGoogleChatMessage, buildDailyCheckInMessage } from '$lib/server/google-chat';
 import { runDayPlanningAndCloseNudges } from '$lib/server/day-planning-nudges';
+import { runDomainSignalProducers } from '$lib/server/domain-signals';
 
 /**
  * In-app cron scheduler using node-cron
@@ -34,13 +35,14 @@ export function startScheduler() {
 		}
 	);
 
-	// Kjører hver hele time og sender 07:00/21:00 nudges basert på hver brukers lokale tidssone.
+	// Kjører hver hele time og sender lokale nudges (planlegg dag, parsjekk morgen, avslutt dag).
 	cron.schedule(
 		'0 * * * *',
 		async () => {
-			console.log('⏰ Running day planning/day close nudges at', new Date().toISOString());
+			console.log('⏰ Running local nudges (day planning/relationship/day close) at', new Date().toISOString());
 			const appUrl = env.ORIGIN || 'https://resonans.vercel.app';
 			await runDayPlanningAndCloseNudges(appUrl);
+			await runDomainSignalProducers();
 		},
 		{
 			timezone: 'UTC'
@@ -53,7 +55,7 @@ export function startScheduler() {
 	isSchedulerRunning = true;
 	console.log('✅ Scheduler started:');
 	console.log('   - Daily check-in at 09:00 Europe/Oslo');
-	console.log('   - Day planning/day close nudges every hour (local time aware)');
+	console.log('   - Local nudges + domain signals every hour (UTC scheduler, local-time aware nudges)');
 }
 
 async function sendDailyCheckIns() {

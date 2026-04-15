@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { checklists, checklistItems } from '$lib/db/schema';
 import { eq, isNull, and, inArray } from 'drizzle-orm';
+import { expandRepeatedListItems } from '$lib/server/list-repeat-parser';
 
 // GET /api/checklists — hent aktive (ikke fullførte) sjekklister med punkter
 // ?contexts=c1,c2,c3 — filtrer på konkrete context-verdier
@@ -55,9 +56,11 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		context: context ?? null
 	}).returning();
 
-	if (items.length > 0) {
+	const expandedItems = expandRepeatedListItems(items, 12);
+
+	if (expandedItems.length > 0) {
 		await db.insert(checklistItems).values(
-			items.map((text, i) => ({
+			expandedItems.map((text, i) => ({
 				checklistId: checklist.id,
 				userId,
 				text,

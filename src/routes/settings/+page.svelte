@@ -24,6 +24,7 @@
 	const user = $derived(data.user);
 	const settings = $derived(user?.notificationSettings || {});
 	const relationship = $derived(data.relationship);
+	const relationshipCheckin = $derived((form as any)?.relationshipCheckinStatus || data.relationshipCheckinStatus);
 	const partnerInviteShareUrl = $derived(data.partnerInviteShareUrl);
 	const connectedSources = $derived(
 		(withingsStatus?.connected ? 1 : 0) +
@@ -351,7 +352,7 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 				<div class="card-icon">💍</div>
 				<h2>Partner</h2>
 				<p class="help-text">
-					Inviter ektefellen din inn i appen, og la den andre parten bekrefte koblingen.
+					Inviter partneren din inn i appen, og la den andre parten bekrefte koblingen.
 				</p>
 
 				{#if relationship?.partner}
@@ -433,6 +434,72 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 							<button type="submit" class="btn-primary">💌 Send partnerinvitasjon</button>
 						</form>
 					{/if}
+				{/if}
+
+				{#if relationship?.partner && relationshipCheckin?.hasPartner}
+					<div class="checkin-card">
+						<h3>Daglig parsjekk</h3>
+						<p class="checkin-help">
+							Svar fra 1 til 7 på hvordan dere har det i dag. Svarene vises når begge har sendt inn.
+						</p>
+
+						<form method="POST" action="?/submitRelationshipCheckin" class="checkin-form">
+							<input type="hidden" name="day" value={relationshipCheckin.day} />
+							<fieldset class="score-grid">
+								<legend>Hvordan kjennes dagen i dag?</legend>
+								{#each [1, 2, 3, 4, 5, 6, 7] as score}
+									<label class="score-option">
+										<input
+											type="radio"
+											name="score"
+											value={score}
+											required
+											checked={relationshipCheckin.myScore === score}
+										/>
+										<span>{score}</span>
+									</label>
+								{/each}
+							</fieldset>
+
+							<div class="form-group" style="margin-bottom:1rem;">
+								<label for="relationshipCheckinNote">Kort notat (valgfritt)</label>
+								<textarea
+									id="relationshipCheckinNote"
+									name="note"
+									rows="3"
+									class="input"
+									placeholder="Hva var bra eller krevende i dag?"
+								>{relationshipCheckin.myNote || ''}</textarea>
+							</div>
+
+							<button type="submit" class="btn-primary">Lagre parsjekk</button>
+						</form>
+
+						{#if relationshipCheckin.submitted && !relationshipCheckin.revealed}
+							<div class="checkin-status waiting">
+								Du har sendt inn for {relationshipCheckin.day}. Vi viser resultatet når partneren din også har svart.
+							</div>
+						{/if}
+
+						{#if relationshipCheckin.revealed}
+							<div class="checkin-status revealed">
+								<div>
+									<strong>Din score:</strong> {relationshipCheckin.myScore}
+								</div>
+								<div>
+									<strong>Partners score:</strong> {relationshipCheckin.partnerScore}
+								</div>
+								{#if relationshipCheckin.partnerNote}
+									<p class="checkin-note">Partnernotat: {relationshipCheckin.partnerNote}</p>
+								{/if}
+								{#if relationshipCheckin.followUpRecommended}
+									<p class="checkin-followup">
+										Forslag: ta en kort prat i kveld mens dette fortsatt er ferskt.
+									</p>
+								{/if}
+							</div>
+						{/if}
+					</div>
 				{/if}
 			</section>
 		</details>
@@ -740,6 +807,11 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 		box-shadow: 0 0 0 3px var(--info-bg);
 	}
 
+	textarea.input {
+		resize: vertical;
+		min-height: 88px;
+	}
+
 	.hint {
 		display: block;
 		margin-top: 0.5rem;
@@ -776,5 +848,93 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 		justify-content: flex-end;
 		gap: 1rem;
 		margin-top: 2rem;
+	}
+
+	.checkin-card {
+		margin-top: 1rem;
+		padding: 1rem;
+		border-radius: 10px;
+		border: 1px solid var(--border-color);
+		background: var(--bg-header);
+	}
+
+	.checkin-card h3 {
+		margin: 0 0 0.45rem;
+		font-size: 1rem;
+		color: var(--text-primary);
+	}
+
+	.checkin-help {
+		margin: 0 0 0.85rem;
+		font-size: 0.9rem;
+		color: var(--text-secondary);
+	}
+
+	.checkin-form {
+		display: grid;
+		gap: 0.75rem;
+	}
+
+	.score-grid {
+		margin: 0;
+		padding: 0;
+		border: 0;
+	}
+
+	.score-grid legend {
+		margin-bottom: 0.45rem;
+		font-size: 0.9rem;
+		font-weight: 600;
+		color: var(--text-primary);
+	}
+
+	.score-option {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		margin-right: 0.35rem;
+		margin-bottom: 0.35rem;
+		min-width: 2rem;
+		padding: 0.35rem 0.45rem;
+		border-radius: 999px;
+		border: 1px solid var(--border-color);
+		background: var(--bg-input);
+		cursor: pointer;
+	}
+
+	.score-option input {
+		margin-right: 0.25rem;
+	}
+
+	.checkin-status {
+		margin-top: 0.75rem;
+		padding: 0.75rem;
+		border-radius: 8px;
+		font-size: 0.9rem;
+	}
+
+	.checkin-status.waiting {
+		background: var(--info-bg);
+		border: 1px solid var(--info-border);
+		color: var(--text-primary);
+	}
+
+	.checkin-status.revealed {
+		background: color-mix(in srgb, var(--success-bg) 80%, transparent);
+		border: 1px solid var(--success-border);
+		color: var(--text-primary);
+		display: grid;
+		gap: 0.35rem;
+	}
+
+	.checkin-note {
+		margin: 0.15rem 0 0;
+		color: var(--text-secondary);
+	}
+
+	.checkin-followup {
+		margin: 0.2rem 0 0;
+		color: #f9d980;
+		font-weight: 600;
 	}
 </style>

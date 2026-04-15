@@ -1414,7 +1414,7 @@
 	{#if !inputExpanded}
 		<section class="zone zone-title" out:fly={{ y: -24, duration: 750 }} in:fly={{ y: -14, duration: 600 }}>
 			<div class="title-row">
-				<ScreenTitle title="Resonans" subtitle={dateLabel} onpress={() => { startNavMetric('home', 'ukeplan'); void goto('/ukeplan'); }} ariaLabel="Aapne ukeplan" />
+				<ScreenTitle title="Resonans" subtitle={dateLabel} onpress={() => { startNavMetric('home', 'ukeplan'); void goto('/ukeplan'); }} ariaLabel="Åpne ukeplan" />
 				<div class="title-right">
 					<a href="/goals" class="icon-link" aria-label="Mål"><Icon name="goals" size={20} /></a>
 					<a href="/settings" class="icon-link" aria-label="Innstillinger"><Icon name="settings" size={18} /></a>

@@ -1,6 +1,6 @@
 import { db } from '$lib/db';
 import { goals, tasks, categories, sensorGoals } from '$lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { findSimilar } from './similarity';
 import { METRIC_CATALOG, resolveMetricId, type MetricId } from '$lib/domain/metric-catalog';
 import type { GoalTrack, GoalTrackKind, GoalWindow } from '$lib/domain/goal-tracks';
@@ -27,9 +27,12 @@ export interface GoalCreationParams {
 
 export interface TaskCreationParams {
 	goalId: string;
+	userId?: string;
 	title: string;
 	description?: string;
 	frequency?: string;
+	periodType?: string;
+	periodId?: string;
 	targetValue?: number;
 	unit?: string;
 }
@@ -133,11 +136,24 @@ function inferGoalKind(metricId: MetricId, targetValue: number): GoalTrackKind {
 }
 
 export async function createTask(params: TaskCreationParams) {
+	if (params.userId) {
+		const ownerGoal = await db.query.goals.findFirst({
+			where: and(eq(goals.id, params.goalId), eq(goals.userId, params.userId)),
+			columns: { id: true }
+		});
+
+		if (!ownerGoal) {
+			throw new Error('Goal not found for user');
+		}
+	}
+
 	const [task] = await db.insert(tasks).values({
 		goalId: params.goalId,
 		title: params.title,
 		description: params.description || null,
 		frequency: params.frequency || 'once',
+		periodType: params.periodType || null,
+		periodId: params.periodId || null,
 		targetValue: params.targetValue || null,
 		unit: params.unit || null,
 		status: 'active'

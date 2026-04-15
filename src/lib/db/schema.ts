@@ -15,6 +15,7 @@ export const users = pgTable('users', {
 		dailyCheckIn?: { enabled: boolean; time: string }; // format: "09:00"
 		dayPlanning?: { enabled: boolean; time: string }; // default "07:00"
 		dayClose?: { enabled: boolean; time: string }; // default "21:00"
+		relationshipCheckinMorning?: { enabled: boolean; time: string }; // default "08:30"
 		nudgeProfile?: {
 			weekdayMode?: 'interactive' | 'digest';
 			weekendMode?: 'interactive' | 'digest';
@@ -267,7 +268,7 @@ export const nudgeEvents = pgTable('nudge_events', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
 	channel: text('channel').notNull().default('google_chat'),
-	nudgeType: text('nudge_type').notNull(), // 'plan_day' | 'close_day' | 'digest_day'
+	nudgeType: text('nudge_type').notNull(), // 'plan_day' | 'close_day' | 'digest_day' | 'relationship_checkin_morning'
 	mode: text('mode'), // 'interactive' | 'digest'
 	context: jsonb('context').$type<Record<string, unknown>>(),
 	sentAt: timestamp('sent_at'),
@@ -279,6 +280,62 @@ export const nudgeEvents = pgTable('nudge_events', {
 }, (table) => ({
 	idxNudgeEventsUserCreated: index('nudge_events_user_created_idx').on(table.userId, table.createdAt),
 	idxNudgeEventsUserSent: index('nudge_events_user_sent_idx').on(table.userId, table.sentAt)
+}));
+
+// Registry of allowed cross-domain signal contracts.
+export const signalContracts = pgTable('signal_contracts', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	signalType: text('signal_type').notNull().unique(),
+	ownerDomain: text('owner_domain').notNull(), // 'health' | 'economics' | 'home' | 'relationship'
+	allowedConsumerDomains: text('allowed_consumer_domains').array().notNull().default(sql`ARRAY[]::text[]`),
+	schemaVersion: integer('schema_version').notNull().default(1),
+	status: text('status').notNull().default('active'), // 'active' | 'deprecated'
+	description: text('description'),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	idxSignalContractsOwnerStatus: index('signal_contracts_owner_status_idx').on(table.ownerDomain, table.status)
+}));
+
+// Materialized derived signals used across domains and user-composed themes.
+export const domainSignals = pgTable('domain_signals', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	signalType: text('signal_type').notNull().references(() => signalContracts.signalType),
+	ownerDomain: text('owner_domain').notNull(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	relatedUserId: text('related_user_id').references(() => users.id, { onDelete: 'set null' }),
+	valueNumber: decimal('value_number'),
+	valueText: text('value_text'),
+	valueBool: boolean('value_bool'),
+	severity: text('severity').notNull().default('info'), // 'info' | 'low' | 'medium' | 'high'
+	confidence: decimal('confidence').notNull().default('0.5'),
+	windowStart: timestamp('window_start').notNull(),
+	windowEnd: timestamp('window_end').notNull(),
+	observedAt: timestamp('observed_at').notNull(),
+	context: jsonb('context').$type<Record<string, unknown>>().notNull().default({}),
+	schemaVersion: integer('schema_version').notNull().default(1),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	idxDomainSignalsUserObserved: index('domain_signals_user_observed_idx').on(table.userId, table.observedAt),
+	idxDomainSignalsTypeObserved: index('domain_signals_type_observed_idx').on(table.signalType, table.observedAt),
+	uniqDomainSignalWindow: uniqueIndex('domain_signals_user_type_window_unique').on(table.userId, table.signalType, table.windowEnd)
+}));
+
+// Which signals are enabled as input for a user theme.
+export const themeSignalLinks = pgTable('theme_signal_links', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	themeId: uuid('theme_id').references(() => themes.id, { onDelete: 'cascade' }).notNull(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	signalType: text('signal_type').notNull().references(() => signalContracts.signalType),
+	enabled: boolean('enabled').notNull().default(true),
+	config: jsonb('config').$type<Record<string, unknown>>().notNull().default({}),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	uniqueThemeSignal: unique().on(table.themeId, table.signalType),
+	idxThemeSignalLinksTheme: index('theme_signal_links_theme_idx').on(table.themeId, table.enabled),
+	idxThemeSignalLinksUser: index('theme_signal_links_user_idx').on(table.userId, table.signalType)
 }));
 
 // Brukerdefinerbare widgets til hjemmeskjerm
@@ -614,6 +671,42 @@ export const nudgeEventsRelations = relations(nudgeEvents, ({ one }) => ({
 	user: one(users, {
 		fields: [nudgeEvents.userId],
 		references: [users.id]
+	})
+}));
+
+export const signalContractsRelations = relations(signalContracts, ({ many }) => ({
+	links: many(themeSignalLinks),
+	signals: many(domainSignals)
+}));
+
+export const domainSignalsRelations = relations(domainSignals, ({ one }) => ({
+	contract: one(signalContracts, {
+		fields: [domainSignals.signalType],
+		references: [signalContracts.signalType]
+	}),
+	user: one(users, {
+		fields: [domainSignals.userId],
+		references: [users.id]
+	}),
+	relatedUser: one(users, {
+		fields: [domainSignals.relatedUserId],
+		references: [users.id],
+		relationName: 'domain_signals_related_user'
+	})
+}));
+
+export const themeSignalLinksRelations = relations(themeSignalLinks, ({ one }) => ({
+	theme: one(themes, {
+		fields: [themeSignalLinks.themeId],
+		references: [themes.id]
+	}),
+	user: one(users, {
+		fields: [themeSignalLinks.userId],
+		references: [users.id]
+	}),
+	contract: one(signalContracts, {
+		fields: [themeSignalLinks.signalType],
+		references: [signalContracts.signalType]
 	})
 }));
 

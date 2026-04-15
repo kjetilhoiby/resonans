@@ -3,6 +3,7 @@ import { and, eq, gte, inArray, lt, or } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/db';
 import { checklistItems, checklists, goals, memories, progress, tasks, themes } from '$lib/db/schema';
+import { parseListRepeatCount } from '$lib/server/list-repeat-parser';
 
 async function loadWeekTasks(userId: string, dashedKey: string, compactKey: string) {
 	const baseSelect = db
@@ -37,19 +38,6 @@ async function loadWeekTasks(userId: string, dashedKey: string, compactKey: stri
 
 		return await baseSelect.where(and(eq(tasks.status, 'active'), eq(goals.userId, userId)));
 	}
-}
-
-function parseRepeatCount(raw: string): { count: number; label: string } {
-	const text = raw.trim();
-	const match = text.match(/^(\d{1,2})\s+(.+)$/);
-	if (!match) return { count: 1, label: text };
-
-	const count = Number.parseInt(match[1], 10);
-	if (!Number.isFinite(count) || count < 1 || count > 12) {
-		return { count: 1, label: text };
-	}
-
-	return { count, label: match[2].trim() };
 }
 
 function getIsoWeekInfo(now: Date = new Date()) {
@@ -440,14 +428,14 @@ export const actions = {
 			where: eq(checklistItems.checklistId, checklistId),
 			columns: { id: true }
 		});
-		const parsed = parseRepeatCount(text);
-		const repeatCount = Math.min(Math.max(parsed.count, requestedRepeats), 12);
+		const parsed = parseListRepeatCount(text, requestedRepeats, 12);
+		const repeatCount = parsed.repeatCount;
 
 		await db.insert(checklistItems).values(
 			Array.from({ length: repeatCount }, (_, index) => ({
 				checklistId,
 				userId,
-				text: repeatCount > 1 ? `${parsed.label} (${index + 1}/${repeatCount})` : text,
+				text: repeatCount > 1 ? `${parsed.label} (${index + 1}/${repeatCount})` : parsed.label,
 				sortOrder: existingItems.length + index
 			}))
 		);
