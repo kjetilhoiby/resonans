@@ -58,6 +58,14 @@
 	let dropboxFolders = $state<Array<{ id: string; name: string; path: string }>>([]);
 	let selectedDropboxFolder = $state('');
 
+	let spondStatus = $state<any>(null);
+	let loadingSpond = $state(false);
+	let syncingSpond = $state(false);
+	let spondResult = $state<{ success: boolean; message: string } | null>(null);
+	let spondEmail = $state('');
+	let spondPassword = $state('');
+	let connectingSpond = $state(false);
+
 	let importingStatements = $state(false);
 	let importResult: any = $state(null);
 	let anchorAccounts = $state<{
@@ -74,6 +82,7 @@
 		(sparebank1Status?.connected ? 1 : 0) +
 		(dropboxStatus?.connected ? 1 : 0) +
 		(googleSheetsStatus?.connected ? 1 : 0) +
+		(spondStatus?.connected ? 1 : 0) +
 		(webhook.trim().length > 0 ? 1 : 0)
 	);
 
@@ -83,6 +92,7 @@
 			loadSparebank1Status(),
 			loadDropboxStatus(),
 			loadGoogleSheetsStatus(),
+			loadSpondStatus(),
 			loadAnchorAccounts()
 		]);
 	});
@@ -186,6 +196,60 @@
 		if (!confirm('Koble fra Withings?')) return;
 		await fetch('/api/sensors/withings/disconnect', { method: 'POST' });
 		await loadWithingsStatus();
+	}
+
+	async function loadSpondStatus() {
+		loadingSpond = true;
+		try {
+			const res = await fetch('/api/sensors/spond/status');
+			if (res.ok) spondStatus = await res.json();
+		} finally {
+			loadingSpond = false;
+		}
+	}
+
+	async function connectSpond() {
+		connectingSpond = true;
+		spondResult = null;
+		try {
+			const res = await fetch('/api/sensors/spond/connect', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ email: spondEmail.trim(), password: spondPassword })
+			});
+			const payload = await res.json();
+			if (!res.ok) throw new Error(payload.message || 'Tilkobling feilet');
+			spondResult = { success: true, message: payload.message };
+			spondEmail = '';
+			spondPassword = '';
+			await loadSpondStatus();
+		} catch (err) {
+			spondResult = { success: false, message: err instanceof Error ? err.message : 'Ukjent feil' };
+		} finally {
+			connectingSpond = false;
+		}
+	}
+
+	async function syncSpond() {
+		syncingSpond = true;
+		spondResult = null;
+		try {
+			const res = await fetch('/api/sensors/spond/sync', { method: 'POST' });
+			const payload = await res.json();
+			if (!res.ok) throw new Error(payload.message || 'Sync feilet');
+			spondResult = { success: true, message: payload.message };
+			await loadSpondStatus();
+		} catch (err) {
+			spondResult = { success: false, message: err instanceof Error ? err.message : 'Ukjent feil' };
+		} finally {
+			syncingSpond = false;
+		}
+	}
+
+	async function disconnectSpond() {
+		if (!confirm('Koble fra Spond? Dette sletter alle importerte hendelser.')) return;
+		await fetch('/api/sensors/spond/disconnect', { method: 'POST' });
+		await loadSpondStatus();
 	}
 
 	async function loadSparebank1Status() {
@@ -434,6 +498,55 @@
 	</section>
 
 	<section class="card">
+		<h2>Spond</h2>
+		<p class="field-desc">Importer barnas (og egne) aktiviteter fra Spond-grupper.</p>
+		{#if loadingSpond}
+			<p>Laster...</p>
+		{:else if spondStatus?.connected}
+			<p class="ok">Tilkoblet</p>
+			{#if spondStatus.sensor?.lastSync}
+				<p class="meta">Siste synk: {new Date(spondStatus.sensor.lastSync).toLocaleString('nb-NO')}</p>
+			{/if}
+			<div class="row">
+				<button class="btn-secondary" onclick={syncSpond} disabled={syncingSpond}>
+					{syncingSpond ? 'Synker...' : 'Synk nå'}
+				</button>
+				<button class="btn-ghost" onclick={disconnectSpond}>Koble fra</button>
+			</div>
+		{:else}
+			<div class="field">
+				<label for="spond-email">E-post</label>
+				<input
+					id="spond-email"
+					type="email"
+					class="input"
+					bind:value={spondEmail}
+					placeholder="din@epost.no"
+					autocomplete="username"
+				/>
+			</div>
+			<div class="field">
+				<label for="spond-password">Passord</label>
+				<input
+					id="spond-password"
+					type="password"
+					class="input"
+					bind:value={spondPassword}
+					autocomplete="current-password"
+				/>
+			</div>
+			<button
+				class="btn-primary"
+				onclick={connectSpond}
+				disabled={connectingSpond || !spondEmail || !spondPassword}
+			>
+				{connectingSpond ? 'Kobler til...' : 'Koble til Spond'}
+			</button>
+		{/if}
+		{#if spondResult}<p class={spondResult.success ? 'ok' : 'err'}>{spondResult.message}</p>{/if}
+	</section>
+
+	<section class="card">
 		<h2>SpareBank 1</h2>
 		{#if loadingSparebank1}
 			<p>Laster...</p>
@@ -652,6 +765,8 @@
 	.row { display: flex; gap: 0.6rem; flex-wrap: wrap; }
 	.ok { color: #4ade80; margin: 0.6rem 0 0; }
 	.err { color: #f87171; margin: 0.6rem 0 0; }
+	.meta { color: var(--text-tertiary); font-size: 0.85rem; margin: 0.2rem 0 0.6rem; }
+	.field-desc { color: var(--text-secondary); font-size: 0.88rem; margin: 0 0 0.8rem; }
 	.btn-nav { color: var(--text-primary); text-decoration: none; }
 	.btn-primary, .btn-secondary, .btn-ghost { text-decoration: none; }
 	.upload-label { display: inline-flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; }

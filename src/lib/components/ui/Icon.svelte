@@ -13,7 +13,8 @@
 		| 'refresh'
 		| 'close'
 		| 'attach'
-		| 'check';
+		| 'check'
+		| 'calendar';
 
 	interface Props {
 		name: IconName;
@@ -86,5 +87,10 @@
 		<path d="M8.5 12.5 15 6a3 3 0 1 1 4.2 4.2l-8.1 8.1a5 5 0 0 1-7.1-7.1l8.5-8.5" />
 	{:else if name === 'check'}
 		<path d="m5.5 12.5 4 4 9-10" />
+	{:else if name === 'calendar'}
+		<rect x="3.5" y="5.5" width="17" height="16" rx="2" />
+		<path d="M3.5 10.5h17" />
+		<path d="M8 4V7" />
+		<path d="M16 4V7" />
 	{/if}
 </svg>

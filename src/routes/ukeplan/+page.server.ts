@@ -1,8 +1,8 @@
 import { fail } from '@sveltejs/kit';
-import { and, eq, gte, inArray, isNull, lt, or } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, lt, lte, or } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/db';
-import { checklistItems, checklists, goals, memories, progress, tasks, themes } from '$lib/db/schema';
+import { checklistItems, checklists, goals, memories, progress, tasks, themes, sensorEvents, sensors } from '$lib/db/schema';
 import { parseListRepeatCount } from '$lib/server/list-repeat-parser';
 
 async function loadWeekTasks(userId: string, dashedKey: string, compactKey: string) {
@@ -163,7 +163,11 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	const previousWeekEndExclusive = new Date(previousWeekStart);
 	previousWeekEndExclusive.setUTCDate(previousWeekEndExclusive.getUTCDate() + 7);
 
-	const [weekChecklist, weekTasks, weekProgressRows, reflectionNote, visionNote, weekNote, longTermGoals, dayChecklists, dayNotes, dayHeadlines, previousWeekChecklist, previousWeekNote, previousWeekReflection, previousWeekTasks, previousWeekProgressRows, travelThemes] = await Promise.all([
+	const spondSensor = await db.query.sensors.findFirst({
+		where: and(eq(sensors.userId, userId), eq(sensors.provider, 'spond'), eq(sensors.isActive, true))
+	});
+
+	const [weekChecklist, weekTasks, weekProgressRows, reflectionNote, visionNote, weekNote, longTermGoals, dayChecklists, dayNotes, dayHeadlines, previousWeekChecklist, previousWeekNote, previousWeekReflection, previousWeekTasks, previousWeekProgressRows, travelThemes, rawSpondEvents] = await Promise.all([
 		db.query.checklists.findFirst({
 			where: and(eq(checklists.userId, userId), eq(checklists.context, week.contextKey)),
 			with: {
@@ -250,7 +254,18 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		db.query.themes.findMany({
 			where: and(eq(themes.userId, userId), eq(themes.archived, false)),
 			columns: { id: true, name: true, emoji: true, tripProfile: true }
-		})
+		}),
+		spondSensor
+			? db.query.sensorEvents.findMany({
+					where: and(
+						eq(sensorEvents.sensorId, spondSensor.id),
+						eq(sensorEvents.dataType, 'spond_event'),
+						gte(sensorEvents.timestamp, weekStart),
+						lt(sensorEvents.timestamp, weekEndExclusive)
+					),
+					columns: { id: true, timestamp: true, data: true, metadata: true }
+			  })
+			: Promise.resolve([] as Array<{ id: string; timestamp: Date; data: unknown; metadata: unknown }>)
 	]);
 
 	const progressCounts = weekProgressRows.reduce((acc, row) => {
@@ -321,6 +336,53 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			endDate: t.tripProfile!.endDate!
 		}));
 
+	// Group Spond events by ISO date, including RSVP status for the account holder's family
+	const myMemberIds: string[] = (spondSensor?.config as any)?.myMemberIds ?? [];
+	const myMemberSet = new Set(myMemberIds);
+
+	const spondEventsByDay: Record<string, Array<{
+		id: string;
+		name: string;
+		startTimestamp: string;
+		endTimestamp: string;
+		cancelled: boolean;
+		groupName: string | null;
+		location: { name: string | null; address: string | null } | null;
+		rsvp: 'accepted' | 'declined' | 'unanswered' | 'unknown';
+	}>> = {};
+
+	for (const e of rawSpondEvents) {
+		const d = e.data as any;
+		const dayKey = (e.timestamp as Date).toISOString().slice(0, 10);
+		if (!spondEventsByDay[dayKey]) spondEventsByDay[dayKey] = [];
+
+		// Determine RSVP for the account holder's family members
+		let rsvp: 'accepted' | 'declined' | 'unanswered' | 'unknown' = 'unknown';
+		if (myMemberSet.size > 0) {
+			const acceptedIds: string[] = d?.responses?.acceptedIds ?? [];
+			const declinedIds: string[] = d?.responses?.declinedIds ?? [];
+			const unansweredIds: string[] = d?.responses?.unansweredIds ?? [];
+			const isAccepted = acceptedIds.some((id: string) => myMemberSet.has(id));
+			const isDeclined = declinedIds.some((id: string) => myMemberSet.has(id));
+			const isUnanswered = unansweredIds.some((id: string) => myMemberSet.has(id));
+			if (isAccepted) rsvp = 'accepted';
+			else if (isDeclined) rsvp = 'declined';
+			else if (isUnanswered) rsvp = 'unanswered';
+		}
+
+		spondEventsByDay[dayKey].push({
+			id: e.id,
+			name: d?.name ?? 'Ukjent',
+			startTimestamp: d?.startTimestamp ?? e.timestamp.toISOString(),
+			endTimestamp: d?.endTimestamp ?? e.timestamp.toISOString(),
+			cancelled: d?.cancelled ?? false,
+			groupName: d?.groupName ?? null,
+			location: d?.location ?? null,
+			rsvp,
+			spondEventId: (e.metadata as any)?.spondEventId ?? null
+		});
+	}
+
 	return {
 		week,
 		weekNav: {
@@ -364,6 +426,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		dayNotes: dayNoteMap,
 		dayHeadlines: dayHeadlineMap,
 		activeTrips,
+		spondEventsByDay,
 		previousWeekSummary: {
 			weekKey: previousWeek.dashedKey,
 			note: previousWeekNote?.content ?? '',

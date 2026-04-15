@@ -96,6 +96,17 @@
 				startDate: string;
 				endDate: string;
 			}>;
+			spondEventsByDay: Record<string, Array<{
+				id: string;
+				name: string;
+				startTimestamp: string;
+				endTimestamp: string;
+				cancelled: boolean;
+				groupName: string | null;
+				location: { name: string | null; address: string | null } | null;
+				rsvp: 'accepted' | 'declined' | 'unanswered' | 'unknown';
+				spondEventId: string | null;
+			}>>;
 			previousWeekSummary: {
 				weekKey: string;
 				note: string;
@@ -177,10 +188,12 @@
 	let weekReviewChatOpen = $state(false);
 	let editingItem = $state<EditingItem | null>(null);
 	let dragItem = $state<{ checklistId: string; itemId: string } | null>(null);
+	let dragOverItemId = $state<string | null>(null);
 	let skipEditBlur = false;
 	let weekComposerInput = $state<HTMLInputElement | null>(null);
 	let dayComposerInput = $state<HTMLInputElement | null>(null);
 	let editInput = $state<HTMLInputElement | null>(null);
+	let weekPickerInput = $state<HTMLInputElement | null>(null);
 	let saveStates = $state<Record<string, SaveState>>({
 		weekNote: 'idle',
 		weekItems: 'idle',
@@ -193,6 +206,7 @@
 	const selectedDay = $derived(data.week.days.find((day) => day.isoDate === selectedDayIso) ?? data.week.days[0]);
 	const selectedDayNote = $derived(dayNotesState[selectedDayIso] ?? '');
 	const selectedDayHeadline = $derived(dayHeadlinesState[selectedDayIso] ?? '');
+	const selectedDaySpondEvents = $derived(data.spondEventsByDay?.[selectedDayIso] ?? []);
 	const nudgeTrack = nudgeTrackFromQuery;
 	const nudgeEventId = nudgeEventIdFromQuery;
 
@@ -844,6 +858,35 @@
 		editInput?.select();
 	}
 
+	function startTouchDrag(event: TouchEvent, checklistId: string, itemId: string) {
+		event.preventDefault();
+		dragItem = { checklistId, itemId };
+		dragOverItemId = null;
+
+		function onMove(e: TouchEvent) {
+			e.preventDefault();
+			const touch = e.touches[0];
+			if (!touch) return;
+			const el = document.elementFromPoint(touch.clientX, touch.clientY);
+			const row = el?.closest('[data-item-id]') as HTMLElement | null;
+			dragOverItemId = row?.dataset.itemId ?? null;
+		}
+
+		function onEnd() {
+			const src = dragItem;
+			const target = dragOverItemId;
+			dragItem = null;
+			dragOverItemId = null;
+			document.removeEventListener('touchmove', onMove);
+			if (src && target && target !== src.itemId) {
+				void reorderChecklistItems(src.checklistId, src.itemId, target);
+			}
+		}
+
+		document.addEventListener('touchmove', onMove, { passive: false });
+		document.addEventListener('touchend', onEnd, { once: true });
+	}
+
 	function handleEditBlur() {
 		if (skipEditBlur) {
 			skipEditBlur = false;
@@ -1147,14 +1190,29 @@
 
 <div class="week-plan-page">
 	<header class="wp-header">
-		<button class="wp-back" aria-label="Tilbake til hjem" onclick={() => { startNavMetric('ukeplan', 'home'); void goto('/'); }}><Icon name="back" size={18} /></button>
-		<a class="wp-week-nav" href={weekHref(data.weekNav.previousWeekKey)} aria-label="Forrige uke">‹</a>
 		<ScreenTitle
 			title={`Uke ${data.week.week}`}
-			subtitle={`Planrom for ${data.week.dashedKey}`}
-			ariaLabel="Ukeplan"
+			ariaLabel="Tilbake til hjem"
+			onpress={() => { startNavMetric('ukeplan', 'home'); void goto('/'); }}
 		/>
-		<a class="wp-week-nav" href={weekHref(data.weekNav.nextWeekKey)} aria-label="Neste uke">›</a>
+		<div class="wp-calendar-wrap">
+			<button
+				class="wp-calendar-btn"
+				type="button"
+				aria-label="Velg uke"
+				onclick={() => weekPickerInput?.showPicker?.()}
+			><Icon name="calendar" size={18} /></button>
+			<input
+				bind:this={weekPickerInput}
+				type="date"
+				class="wp-week-picker-input"
+				value={data.week.days[0].isoDate}
+				onchange={(event) => {
+					const val = (event.currentTarget as HTMLInputElement).value;
+					if (val) void goto(weekHref(getIsoWeekDashedFromIsoDate(val)));
+				}}
+			/>
+		</div>
 	</header>
 
 	{#if data.activeTrips.length > 0}
@@ -1176,7 +1234,6 @@
 	<section class="wp-card">
 		<div class="wp-card-head">
 			<h2>Planlegg uka</h2>
-			<span class="wp-pill">fra {data.previousWeekSummary.weekKey}</span>
 		</div>
 		{#if data.previousWeekSummary.note}
 			<p class="wp-helper">Forrige ukes intro: {data.previousWeekSummary.note}</p>
@@ -1204,7 +1261,6 @@
 	<section class="wp-card">
 		<div class="wp-card-head">
 			<h2>Ukesnotat</h2>
-			<span class="wp-pill">uke {data.week.week}</span>
 		</div>
 		<form method="POST" action="?/saveWeekNote" class="wp-notes-form" use:enhance={autosaveEnhance('weekNote')} data-allow-empty-autosave="true">
 			<input type="hidden" name="weekKey" value={data.week.dashedKey} />
@@ -1296,15 +1352,20 @@
 				{#each weekChecklistState.items as item}
 					<li
 						class="wp-check-row"
+						class:is-dragging={dragItem?.itemId === item.id}
+						class:is-drag-over={dragOverItemId === item.id && dragItem?.itemId !== item.id}
+						data-item-id={item.id}
 						draggable={editingItem?.itemId !== item.id}
 						ondragstart={() => (dragItem = { checklistId: weekChecklistId, itemId: item.id })}
-						ondragover={(event) => event.preventDefault()}
+						ondragover={(event) => { event.preventDefault(); dragOverItemId = item.id; }}
+						ondragleave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) dragOverItemId = null; }}
 						ondrop={() => {
 							if (!dragItem) return;
 							void reorderChecklistItems(weekChecklistId, dragItem.itemId, item.id);
 							dragItem = null;
+							dragOverItemId = null;
 						}}
-						ondragend={() => (dragItem = null)}
+						ondragend={() => { dragItem = null; dragOverItemId = null; }}
 					>
 						<div class="wp-check-row-main">
 							<button type="button" class="wp-check-toggle" onclick={() => void toggleChecklistItem(weekChecklistId, item.id, !item.checked)} aria-label="Toggle">
@@ -1334,7 +1395,7 @@
 									<span class="wp-check-text" class:checked={item.checked}>{item.text}</span>
 								</button>
 							{/if}
-							<span class="wp-drag-handle" aria-hidden="true">⋮⋮</span>
+							<span class="wp-drag-handle" aria-hidden="true" ontouchstart={(event) => startTouchDrag(event, weekChecklistId, item.id)}>⋮⋮</span>
 						</div>
 					</li>
 				{/each}
@@ -1365,7 +1426,6 @@
 	<section class="wp-card">
 		<div class="wp-card-head">
 			<h2>Dager og dagsmål</h2>
-			<span class="wp-pill">{selectedDay.label} {selectedDay.day}</span>
 		</div>
 
 		<div class="wp-days" aria-label="Ukas dager">
@@ -1395,6 +1455,33 @@
 		</div>
 
 		<div class="wp-notes-form">
+			{#if selectedDaySpondEvents.length > 0}
+				<ul class="wp-spond-list">
+					{#each selectedDaySpondEvents as event}
+						{@const start = new Date(event.startTimestamp)}
+						{@const timeStr = start.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' })}
+						{@const href = event.spondEventId ? `https://spond.com/client/sponds/${event.spondEventId}` : null}
+						<li class="wp-spond-item" class:cancelled={event.cancelled} data-rsvp={event.rsvp}>
+							<span class="wp-spond-dot" aria-hidden="true"></span>
+							<span class="wp-spond-time">{timeStr}</span>
+							{#if href}
+								<a class="wp-spond-name" {href} target="_blank" rel="noopener noreferrer">{event.name}</a>
+							{:else}
+								<span class="wp-spond-name">{event.name}</span>
+							{/if}
+							{#if event.rsvp === 'unanswered'}
+								<span class="wp-spond-rsvp wp-spond-rsvp--pending" title="Ikke svart">?</span>
+							{:else if event.rsvp === 'declined'}
+								<span class="wp-spond-rsvp wp-spond-rsvp--declined" title="Takket nei">✗</span>
+							{/if}
+							{#if event.groupName}
+								<span class="wp-spond-group">{event.groupName}</span>
+							{/if}
+						</li>
+					{/each}
+				</ul>
+			{/if}
+
 			<div class="wp-day-plan-headline">
 				<div class="wp-day-plan-headline-row">
 					<div>
@@ -1489,15 +1576,20 @@
 				{#each selectedDayChecklist.items as item}
 					<li
 						class="wp-check-row"
+						class:is-dragging={dragItem?.itemId === item.id}
+						class:is-drag-over={dragOverItemId === item.id && dragItem?.itemId !== item.id}
+						data-item-id={item.id}
 						draggable={editingItem?.itemId !== item.id}
 						ondragstart={() => (dragItem = { checklistId: selectedDayChecklist.id, itemId: item.id })}
-						ondragover={(event) => event.preventDefault()}
+						ondragover={(event) => { event.preventDefault(); dragOverItemId = item.id; }}
+						ondragleave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) dragOverItemId = null; }}
 						ondrop={() => {
 							if (!dragItem) return;
 							void reorderChecklistItems(selectedDayChecklist.id, dragItem.itemId, item.id);
 							dragItem = null;
+							dragOverItemId = null;
 						}}
-						ondragend={() => (dragItem = null)}
+						ondragend={() => { dragItem = null; dragOverItemId = null; }}
 					>
 						<div class="wp-check-row-main">
 							<button type="button" class="wp-check-toggle" onclick={() => void toggleChecklistItem(selectedDayChecklist.id, item.id, !item.checked)} aria-label="Toggle">
@@ -1527,7 +1619,7 @@
 									<span class="wp-check-text" class:checked={item.checked}>{item.text}</span>
 								</button>
 							{/if}
-							<span class="wp-drag-handle" aria-hidden="true">⋮⋮</span>
+							<span class="wp-drag-handle" aria-hidden="true" ontouchstart={(event) => startTouchDrag(event, selectedDayChecklist.id, item.id)}>⋮⋮</span>
 						</div>
 					</li>
 				{/each}
@@ -1567,7 +1659,6 @@
 	<section class="wp-card">
 		<div class="wp-card-head">
 			<h2>Målbilde og retning</h2>
-			<span class="wp-pill">fra måned/år</span>
 		</div>
 
 		{#if data.vision}
@@ -1637,9 +1728,7 @@
 	.week-plan-page {
 		min-height: 100vh;
 		width: 100%;
-		padding: 18px 16px 110px;
-		max-width: 760px;
-		margin: 0 auto;
+		padding: var(--screen-title-top-pad, 34px) 20px 110px;
 		display: flex;
 		flex-direction: column;
 		gap: 14px;
@@ -1651,38 +1740,37 @@
 
 	.wp-header {
 		display: flex;
-		align-items: center;
+		align-items: flex-start;
+		justify-content: space-between;
 		gap: 12px;
 	}
 
-	.wp-back {
+	.wp-calendar-wrap {
+		position: relative;
+		flex-shrink: 0;
+	}
+
+	.wp-calendar-btn {
 		width: 34px;
 		height: 34px;
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
 		border-radius: 10px;
-		border: 1px solid #222735;
+		border: none;
 		background: #0f1118;
-		color: #ddd;
-		text-decoration: none;
+		color: #bac6f9;
 		flex-shrink: 0;
 	}
 
-	.wp-week-nav {
-		width: 30px;
-		height: 30px;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		border-radius: 999px;
-		border: 1px solid #273149;
-		background: #11172a;
-		color: #bac6f9;
-		text-decoration: none;
-		font-size: 1rem;
-		font-weight: 700;
-		flex-shrink: 0;
+	.wp-week-picker-input {
+		position: absolute;
+		opacity: 0;
+		pointer-events: none;
+		width: 0;
+		height: 0;
+		top: 100%;
+		right: 0;
 	}
 
 	.wp-days {
@@ -1698,7 +1786,7 @@
 		justify-content: center;
 		padding: 8px 4px;
 		border-radius: 10px;
-		border: 1px solid #262a36;
+		border: none;
 		background: #0b0d13;
 		cursor: pointer;
 		position: relative;
@@ -1764,7 +1852,7 @@
 		gap: 10px;
 		padding: 10px 14px;
 		background: linear-gradient(135deg, rgba(124, 142, 245, 0.12), rgba(124, 142, 245, 0.06));
-		border: 1px solid rgba(124, 142, 245, 0.25);
+		border: none;
 		border-radius: 12px;
 		text-decoration: none;
 		color: inherit;
@@ -1811,7 +1899,7 @@
 
 	.wp-card {
 		background: linear-gradient(180deg, rgba(9, 11, 17, 0.95), rgba(8, 10, 15, 0.95));
-		border: 1px solid #1f2430;
+		border: none;
 		border-radius: 14px;
 		padding: 12px;
 		display: flex;
@@ -1829,7 +1917,7 @@
 		font-size: 0.76rem;
 		color: #aeb4c6;
 		background: #0e121c;
-		border: 1px solid #242c40;
+		border: none;
 		border-radius: 8px;
 		padding: 7px 9px;
 	}
@@ -1851,7 +1939,7 @@
 		font-size: 0.66rem;
 		color: #8a90a3;
 		background: #10131a;
-		border: 1px solid #252c3a;
+		border: none;
 		padding: 3px 8px;
 		border-radius: 999px;
 	}
@@ -1862,6 +1950,73 @@
 		text-transform: uppercase;
 		color: #70788f;
 		font-weight: 650;
+	}
+
+	.wp-spond-list {
+		margin: 0 0 0.9rem;
+		padding: 0;
+		list-style: none;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+	.wp-spond-item {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.22rem 0;
+		font-size: 0.82rem;
+		line-height: 1.3;
+	}
+	.wp-spond-item.cancelled {
+		opacity: 0.35;
+		text-decoration: line-through;
+	}
+	.wp-spond-dot {
+		width: 5px;
+		height: 5px;
+		border-radius: 50%;
+		background: #9b8ff5;
+		flex-shrink: 0;
+	}
+	.wp-spond-item[data-rsvp="unanswered"] .wp-spond-dot { background: #f59e0b; }
+	.wp-spond-item[data-rsvp="declined"] .wp-spond-dot { background: #555; }
+	.wp-spond-item[data-rsvp="accepted"] .wp-spond-dot { background: #4ade80; }
+	.wp-spond-time {
+		color: var(--text-tertiary);
+		font-size: 0.76rem;
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
+		flex-shrink: 0;
+	}
+	.wp-spond-name {
+		color: var(--text-secondary);
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		text-decoration: none;
+	}
+	a.wp-spond-name:hover {
+		color: var(--text-primary);
+		text-decoration: underline;
+	}
+	.wp-spond-rsvp {
+		font-size: 0.7rem;
+		font-weight: 700;
+		flex-shrink: 0;
+	}
+	.wp-spond-rsvp--pending { color: #f59e0b; }
+	.wp-spond-rsvp--declined { color: #6b7280; }
+	.wp-spond-group {
+		color: var(--text-tertiary);
+		font-size: 0.72rem;
+		flex-shrink: 0;
+		max-width: 35%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.wp-task-list,
@@ -1876,7 +2031,7 @@
 
 	.wp-task,
 	.wp-check-row {
-		border: 1px solid #232734;
+		border: none;
 		background: #0e1119;
 		border-radius: 10px;
 		padding: 10px;
@@ -2051,7 +2206,7 @@
 		gap: 8px;
 		padding: 8px;
 		border-radius: 10px;
-		border: 1px solid #242c40;
+		border: none;
 		background: #0e121c;
 	}
 
@@ -2087,7 +2242,7 @@
 		gap: 10px;
 		padding: 8px 9px;
 		border-radius: 8px;
-		border: 1px solid #2a3347;
+		border: none;
 		background: #121726;
 		color: #ccd4ef;
 		cursor: pointer;
@@ -2180,6 +2335,16 @@
 		font-size: 0.92rem;
 		cursor: grab;
 		user-select: none;
+		touch-action: none;
+	}
+
+	.wp-check-row.is-dragging {
+		opacity: 0.35;
+	}
+
+	.wp-check-row.is-drag-over {
+		box-shadow: 0 -2px 0 0 #7c8ef5;
+		background: rgba(124, 142, 245, 0.08);
 	}
 
 	.wp-add-form,
@@ -2197,7 +2362,7 @@
 	.wp-textarea {
 		width: 100%;
 		background: #0f121b;
-		border: 1px solid #242b3a;
+		border: none;
 		color: #ddd;
 		border-radius: 10px;
 		font: inherit;
@@ -2275,7 +2440,7 @@
 		padding: 10px;
 		border-radius: 9px;
 		background: #0f131c;
-		border: 1px solid #242c3a;
+		border: none;
 	}
 
 	.wp-reminder-title {
@@ -2295,7 +2460,7 @@
 		color: #c5ccdf;
 		padding: 10px;
 		border-radius: 10px;
-		border: 1px solid #232b3a;
+		border: none;
 		background: #0f131d;
 	}
 
