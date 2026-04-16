@@ -193,6 +193,26 @@
 			` L${first[0].toFixed(2)},${GP.y1.toFixed(2)} Z`;
 	}
 
+	// N evenly-spaced points along a horizontal line across the graph x-range at height y.
+	function linePoints(y: number, N: number): [number, number][] {
+		const pts: [number, number][] = [];
+		for (let i = 0; i < N; i++) {
+			const t = i / (N - 1);
+			pts.push([GP.x0 + t * (GP.x1 - GP.x0), y]);
+		}
+		return pts;
+	}
+
+	// Flat area path: horizontal top edge + close down to baseline.
+	function flatAreaD(y: number, N: number): string {
+		const pts = linePoints(y, N);
+		const last = pts[pts.length - 1];
+		const first = pts[0];
+		return pointsToD(pts) +
+			` L${last[0].toFixed(2)},${GP.y1.toFixed(2)}` +
+			` L${first[0].toFixed(2)},${GP.y1.toFixed(2)} Z`;
+	}
+
 	const MORPH_N = 60; // number of points — higher = smoother curve
 
 	function openGoalDetail(goal: Goal, event: MouseEvent) {
@@ -224,18 +244,33 @@
 			const fromArea = areaCircleD(ox, oy, r, MORPH_N);
 			const toArea   = areaD(goal.series, MORPH_N);
 
+			// Intermediate: flat horizontal line at the data's mean y-value.
+			const meanV  = goal.series.reduce((a, b) => a + b) / goal.series.length;
+			const lineY  = GP.y1 - meanV * (GP.y1 - GP.y0);
+			const midLine = pointsToD(linePoints(lineY, MORPH_N));
+			const midArea = flatAreaD(lineY, MORPH_N);
+
 			// Set initial d so paths are visible before animation starts.
 			// WAAPI animates the CSS `d` property which requires path('...') syntax.
 			morphPathEl.setAttribute('d', fromLine);
 			areaPathEl.setAttribute('d', fromArea);
 
+			// 3-stage morph: circle (0) → flat line (offset 0.4) → graph (1)
 			morphPathEl.animate(
-				[{ d: `path('${fromLine}')` }, { d: `path('${toLine}')` }],
-				{ duration: 700, easing: 'cubic-bezier(0.4,0,0.2,1)', fill: 'forwards' }
+				[
+					{ d: `path('${fromLine}')`, offset: 0,    easing: 'cubic-bezier(0.4,0,0.6,1)' },
+					{ d: `path('${midLine}')`,  offset: 0.42, easing: 'cubic-bezier(0.2,0,0.2,1)' },
+					{ d: `path('${toLine}')`,   offset: 1 },
+				],
+				{ duration: 960, fill: 'forwards' }
 			);
 			areaPathEl.animate(
-				[{ d: `path('${fromArea}')` }, { d: `path('${toArea}')` }],
-				{ duration: 700, easing: 'cubic-bezier(0.4,0,0.2,1)', fill: 'forwards' }
+				[
+					{ d: `path('${fromArea}')`, offset: 0,    easing: 'cubic-bezier(0.4,0,0.6,1)' },
+					{ d: `path('${midArea}')`,  offset: 0.42, easing: 'cubic-bezier(0.2,0,0.2,1)' },
+					{ d: `path('${toArea}')`,   offset: 1 },
+				],
+				{ duration: 960, fill: 'forwards' }
 			);
 		}));
 	}
@@ -251,29 +286,49 @@
 			const fromArea = areaD(g.series, MORPH_N);
 			const toArea   = areaCircleD(ox, oy, r, MORPH_N);
 
+			const meanV  = g.series.reduce((a, b) => a + b) / g.series.length;
+			const lineY  = GP.y1 - meanV * (GP.y1 - GP.y0);
+			const midLine = pointsToD(linePoints(lineY, MORPH_N));
+			const midArea = flatAreaD(lineY, MORPH_N);
+
+			// Reverse 3-stage: graph → flat line → circle
 			morphPathEl.animate(
-				[{ d: `path('${fromLine}')` }, { d: `path('${toLine}')` }],
-				{ duration: 460, easing: 'cubic-bezier(0.4,0,0.2,1)', fill: 'forwards' }
+				[
+					{ d: `path('${fromLine}')`, offset: 0,    easing: 'cubic-bezier(0.4,0,0.6,1)' },
+					{ d: `path('${midLine}')`,  offset: 0.5,  easing: 'cubic-bezier(0.2,0,0.4,1)' },
+					{ d: `path('${toLine}')`,   offset: 1 },
+				],
+				{ duration: 580, fill: 'forwards' }
 			);
 			areaPathEl.animate(
-				[{ d: `path('${fromArea}')` }, { d: `path('${toArea}')` }],
-				{ duration: 460, easing: 'cubic-bezier(0.4,0,0.2,1)', fill: 'forwards' }
+				[
+					{ d: `path('${fromArea}')`, offset: 0,    easing: 'cubic-bezier(0.4,0,0.6,1)' },
+					{ d: `path('${midArea}')`,  offset: 0.5,  easing: 'cubic-bezier(0.2,0,0.4,1)' },
+					{ d: `path('${toArea}')`,   offset: 1 },
+				],
+				{ duration: 580, fill: 'forwards' }
 			);
 			setTimeout(() => {
 				detailVisible = false;
 				goalDetail = null;
-			}, 480);
+			}, 600);
 		} else {
 			detailVisible = false;
 			goalDetail = null;
 		}
 	}
 
-	// ── Theme options (kept for flood/nav) ────────────────────────────────────
+	// ── Theme options ────────────────────────────────────────────────────────
 	interface Theme { id: string; label: string; hue: number; emoji: string; }
 	let activeTheme = $state<Theme>({ id: 'helse', label: 'Helse', hue: 160, emoji: '💚' });
+	const themes: Theme[] = [
+		{ id: 'helse',    label: 'Helse',    hue: 160, emoji: '💚' },
+		{ id: 'okonomi',  label: 'Økonomi',  hue: 42,  emoji: '💛' },
+		{ id: 'trening',  label: 'Trening',  hue: 220, emoji: '💙' },
+		{ id: 'mindset',  label: 'Mindset',  hue: 300, emoji: '💜' },
+	];
 
-	// ── Flood expand (kept for future use) ───────────────────────────────────
+	// ── Flood expand ─────────────────────────────────────────────────────────
 	interface Flood { id: number; hue: number; cx: number; cy: number; r: number; }
 	let flood = $state<Flood | null>(null);
 
@@ -281,6 +336,33 @@
 	interface FlyingLabel { hue: number; emoji: string; label: string; cx: number; cy: number; }
 	let flyingLabel = $state<FlyingLabel | null>(null);
 	let flyingActive = $state(false);
+
+	function clickTheme(theme: Theme, event: MouseEvent) {
+		if (!phoneShellRef) return;
+		const rect = phoneShellRef.getBoundingClientRect();
+		const cx = event.clientX - rect.left;
+		const cy = event.clientY - rect.top;
+
+		// Flood explosion from click position
+		flood = { id: Date.now(), hue: theme.hue, cx, cy, r: 20 };
+		setTimeout(() => { flood = null; }, 420);
+
+		// Flying label: start at button, fly up to theme-hero
+		flyingLabel = { hue: theme.hue, emoji: theme.emoji, label: theme.label, cx, cy };
+		flyingActive = false;
+		requestAnimationFrame(() => requestAnimationFrame(() => { flyingActive = true; }));
+
+		globalHue.set(theme.hue);
+		activeTheme = theme;
+		breathIntensity.set(1.8);
+		setTimeout(() => breathIntensity.set(1), 600);
+
+		setTimeout(() => {
+			flyingLabel = null;
+			flyingActive = false;
+			navigate('theme');
+		}, 340);
+	}
 
 	// ── Theme screen tweened data (kept for chat nav) ───────────────────────
 	const ringStore = tweened(0, { duration: 1400, easing: cubicOut });
@@ -513,44 +595,45 @@
 								<span class="date-chip">Tors 10. apr</span>
 							</header>
 
-							<div class="widgets-grid">
-								{#each widgets as w, i}
-									<div
-										class="widget-card"
-										class:pulsing={widgetPulse[w.id]}
-										style="--whue:{w.hue};animation-delay:{i*80}ms"
-										in:fly={{ y: 28, duration: 420, delay: 120 + i * 80, easing: cubicOut }}
-									>
-										<span class="w-icon">{w.icon}</span>
-										<span class="w-val">{w.value}</span>
-										<span class="w-label">{w.label}</span>
-									</div>
-								{/each}
-							</div>
+					<p class="section-label" in:fade={{ delay: 280 }}>Mål</p>
+					<div class="goals-grid">
+						{#each goals as g, i}
+							<button
+								class="goal-circle"
+								style="--ghue:{g.hue}"
+								in:scale={{ duration: 420, delay: 380 + i * 80, start: 0.5, easing: elasticOut }}
+								onclick={(e) => openGoalDetail(g, e)}
+							>
+								<svg viewBox="0 0 60 60" class="goal-ring-svg">
+									<circle cx="30" cy="30" r="27" class="gr-bg"/>
+									<circle cx="30" cy="30" r="27"
+										class="gr-fg"
+										stroke-dasharray="{g.progress * 169.6} 169.6"
+										stroke-linecap="round"
+									/>
+								</svg>
+								<span class="goal-emoji">{g.emoji}</span>
+								<span class="goal-pct">{Math.round(g.progress * 100)}%</span>
+								<span class="goal-name">{g.label}</span>
+							</button>
+						{/each}
+					</div>
 
-							<p class="section-label" in:fade={{ delay: 500 }}>Mål</p>
-							<div class="goals-grid">
-								{#each goals as g, i}
-									<button
-										class="goal-circle"
-										style="--ghue:{g.hue}"
-										in:scale={{ duration: 420, delay: 380 + i * 80, start: 0.5, easing: elasticOut }}
-										onclick={(e) => openGoalDetail(g, e)}
-									>
-										<svg viewBox="0 0 60 60" class="goal-ring-svg">
-											<circle cx="30" cy="30" r="27" class="gr-bg"/>
-											<circle cx="30" cy="30" r="27"
-												class="gr-fg"
-												stroke-dasharray="{g.progress * 169.6} 169.6"
-												stroke-linecap="round"
-											/>
-										</svg>
-										<span class="goal-emoji">{g.emoji}</span>
-										<span class="goal-pct">{Math.round(g.progress * 100)}%</span>
-										<span class="goal-name">{g.label}</span>
-									</button>
-								{/each}
-							</div>
+					<p class="section-label" in:fade={{ delay: 500 }}>Tema</p>
+					<div class="tema-pills">
+						{#each themes as t, i}
+							<button
+								class="tema-btn"
+								class:active={activeTheme.id === t.id}
+								style="--thue:{t.hue}"
+								in:fly={{ y: 20, duration: 380, delay: 560 + i * 60, easing: cubicOut }}
+								onclick={(e) => clickTheme(t, e)}
+							>
+								<span class="tb-emoji">{t.emoji}</span>
+								<span class="tb-label">{t.label}</span>
+							</button>
+						{/each}
+						</div>
 
 							<div
 								class="chat-strip"
@@ -754,7 +837,7 @@
 		animation: flood-expand 0.40s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 	}
 	@keyframes flood-expand {
-		to { transform: translate(-50%, -50%) scale(40); }
+		to { transform: translate(-50%, -50%) scale(80); }
 	}
 
 	.flying-label {
@@ -834,43 +917,36 @@
 		color: rgba(255,255,255,0.6);
 	}
 
-	.widgets-grid {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 0.6rem;
-	}
-	.widget-card {
-		background: rgba(255,255,255,0.05);
-		border: none;
-		border-radius: 16px;
-		padding: 0.75rem;
+	.tema-pills {
 		display: flex;
-		flex-direction: column;
-		gap: 2px;
+		gap: 0.55rem;
+		flex-wrap: wrap;
+		margin-bottom: 0.5rem;
+	}
+	.tema-btn {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+		background: rgba(255,255,255,0.06);
+		border: 1px solid hsl(var(--thue) 40% 30% / 0.4);
+		border-radius: 999px;
+		padding: 0.42rem 0.9rem;
+		color: hsl(var(--thue) 60% 72%);
+		font-size: 0.78rem;
+		font-weight: 500;
+		cursor: pointer;
 		position: relative;
 		overflow: hidden;
-		transition: transform 0.25s, box-shadow 0.3s;
-		animation: card-in 0.42s both;
+		transition: background 0.2s, border-color 0.2s, transform 0.15s;
 	}
-	.widget-card.pulsing {
-		animation: widget-pulse 0.6s ease-out;
+	.tema-btn:active { transform: scale(0.94); }
+	.tema-btn.active {
+		background: hsl(var(--thue) 38% 18%);
+		border-color: hsl(var(--thue) 55% 42%);
+		color: hsl(var(--thue) 70% 80%);
 	}
-	@keyframes card-in { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: none; } }
-	@keyframes widget-pulse {
-		0% { transform: scale(1); }
-		40% { 
-			transform: scale(1.06) translateY(-2px);
-			box-shadow: 0 0 24px hsl(var(--whue) 70% 55% / 0.6), 0 4px 16px hsl(var(--whue) 70% 45% / 0.3);
-		}
-		100% { 
-			transform: scale(1);
-			box-shadow: 0 0 0 transparent;
-		}
-	}
-
-	.w-icon { font-size: 1.2rem; }
-	.w-val { font-size: 1rem; font-weight: 700; color: hsl(var(--whue) 70% 70%); }
-	.w-label { font-size: 0.68rem; color: rgba(255,255,255,0.45); }
+	.tb-emoji { font-size: 1rem; line-height: 1; }
+	.tb-label { letter-spacing: 0.01em; }
 
 	.section-label { font-size: 0.72rem; color: rgba(255,255,255,0.4); margin: 0; letter-spacing: 0.04em; text-transform: uppercase; }
 

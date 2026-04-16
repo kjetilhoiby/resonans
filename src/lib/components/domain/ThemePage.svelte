@@ -18,6 +18,7 @@
 	import EconomicsDashboard from './EconomicsDashboard.svelte';
 	import TripDashboard from './TripDashboard.svelte';
 	import TripListsPanel from './TripListsPanel.svelte';
+	import BookDashboard from './BookDashboard.svelte';
 	import ScreenTitle from '../ui/ScreenTitle.svelte';
 	import Icon from '../ui/Icon.svelte';
 	import TriageCard from '../composed/TriageCard.svelte';
@@ -131,6 +132,7 @@
 	const activeDashboard = getThemeDashboardDefinition(theme.name);
 	const hasThemeDashboard = activeDashboardKind !== null;
 	const isTravel = activeDashboardKind === 'travel';
+	const isBooks = activeDashboardKind === 'books';
 	const requestedTab = get(page).url.searchParams.get('tab');
 	const availableTabs = $derived<Tab[]>(
 		activeDashboardKind === 'health'
@@ -139,7 +141,9 @@
 				? ['chat', 'data', 'mål', 'flyter', 'filer']
 				: activeDashboardKind === 'travel'
 					? ['chat', 'data', 'lister', 'filer']
-					: ['chat', 'data', 'mål', 'filer']
+					: activeDashboardKind === 'books'
+						? ['chat', 'data', 'filer']
+						: ['chat', 'data', 'mål', 'filer']
 	);
 	const requestedPrompt = get(page).url.searchParams.get('prompt') ?? '';
 	const hasLinkedWorkout = Boolean(selectedWorkout);
@@ -1382,6 +1386,9 @@
 
 		<!-- DATA -->
 		{:else if tab === 'data'}
+			{#if isBooks}
+				<BookDashboard themeId={theme.id} />
+			{:else}
 			<div class="data-panel">
 				{#if isTravel}
 					<TripDashboard
@@ -1546,6 +1553,7 @@
 					</div>
 				</details>
 			</div>
+			{/if}
 
 		<!-- LISTER (reise) -->
 		{:else if tab === 'lister'}

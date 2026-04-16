@@ -186,6 +186,7 @@
 	let dayCloseFlowOpen = $state(false);
 	let dayCloseDecisions = $state<Record<string, 'carryover' | 'unsolved'>>({});
 	let weekReviewChatOpen = $state(false);
+	let weekPlanChatOpen = $state(false);
 	let editingItem = $state<EditingItem | null>(null);
 	let dragItem = $state<{ checklistId: string; itemId: string } | null>(null);
 	let dragOverItemId = $state<string | null>(null);
@@ -207,6 +208,22 @@
 	const selectedDayNote = $derived(dayNotesState[selectedDayIso] ?? '');
 	const selectedDayHeadline = $derived(dayHeadlinesState[selectedDayIso] ?? '');
 	const selectedDaySpondEvents = $derived(data.spondEventsByDay?.[selectedDayIso] ?? []);
+	const hasOpenDayItems = $derived(selectedDayChecklist ? selectedDayChecklist.items.some((i) => !i.checked) : false);
+	const hasCarryovers = $derived(data.previousWeekSummary.carryoverItems.length > 0 || data.previousWeekSummary.incompleteTasks.length > 0);
+	const hasPreviousWeekContext = $derived(hasCarryovers || !!data.previousWeekSummary.note || !!data.previousWeekSummary.reflection);
+
+	const _now = new Date();
+	const _isSunday = _now.getDay() === 0;
+	const _isAfter18 = _now.getHours() >= 18;
+
+	const weekIsPlanned = $derived(!!data.weekNote || (weekChecklistState?.items.length ?? 0) > 0);
+	const weekIsClosed = $derived(!!data.reflection);
+	const dayIsPlanned = $derived(!!selectedDayHeadline);
+
+	const showPlanWeek = $derived(hasPreviousWeekContext && !weekIsPlanned);
+	const showPlanDay = $derived(!dayIsPlanned);
+	const showCloseDay = $derived(_isAfter18 && hasOpenDayItems);
+	const showCloseWeek = $derived(_isSunday && !weekIsClosed);
 	const nudgeTrack = nudgeTrackFromQuery;
 	const nudgeEventId = nudgeEventIdFromQuery;
 
@@ -1066,6 +1083,19 @@
 		if (andPlanNext) await planNextDayFromClose();
 	}
 
+	function buildWeekPlanPrefill() {
+		const parts: string[] = [
+			`Du er en planleggingsassistent som hjelper brukeren å planlegge uke ${data.week.week}.`,
+			`Din jobb er å hjelpe brukeren sette gode ukesmål basert på forrige ukes erfaring. Still ett spørsmål av gangen.`
+		];
+		if (data.previousWeekSummary.note) parts.push(`Forrige uke: "${data.previousWeekSummary.note}".`);
+		if (data.previousWeekSummary.reflection) parts.push(`Læring fra forrige uke: "${data.previousWeekSummary.reflection}".`);
+		const carryovers = [...data.previousWeekSummary.carryoverItems, ...data.previousWeekSummary.incompleteTasks];
+		if (carryovers.length > 0) parts.push(`Overliggere fra forrige uke: ${carryovers.join('; ')}.`);
+		if (data.weekTasks.length > 0) parts.push(`Allerede planlagte ukesmål: ${data.weekTasks.map((t) => t.title).join('; ')}.`);
+		return parts.join(' ');
+	}
+
 	function buildWeekReviewPrefill() {
 		const weekGoals = data.weekTasks.map((t) => t.title);
 		const completedDayItems = Object.values(dayChecklistsState)
@@ -1195,68 +1225,64 @@
 			ariaLabel="Tilbake til hjem"
 			onpress={() => { startNavMetric('ukeplan', 'home'); void goto('/'); }}
 		/>
-		<div class="wp-calendar-wrap">
-			<button
-				class="wp-calendar-btn"
-				type="button"
-				aria-label="Velg uke"
-				onclick={() => weekPickerInput?.showPicker?.()}
-			><Icon name="calendar" size={18} /></button>
-			<input
-				bind:this={weekPickerInput}
-				type="date"
-				class="wp-week-picker-input"
-				value={data.week.days[0].isoDate}
-				onchange={(event) => {
-					const val = (event.currentTarget as HTMLInputElement).value;
-					if (val) void goto(weekHref(getIsoWeekDashedFromIsoDate(val)));
-				}}
-			/>
+		<div class="wp-header-actions">
+			{#each data.activeTrips as trip}
+				<a class="wp-calendar-btn" href="/tema/{trip.id}" aria-label={trip.name}>
+					{trip.emoji ?? '🗺️'}
+				</a>
+			{/each}
+			<div class="wp-calendar-wrap">
+				<button
+					class="wp-calendar-btn"
+					type="button"
+					aria-label="Velg uke"
+					onclick={() => weekPickerInput?.showPicker?.()}
+				><Icon name="calendar" size={18} /></button>
+				<input
+					bind:this={weekPickerInput}
+					type="date"
+					class="wp-week-picker-input"
+					value={data.week.days[0].isoDate}
+					onchange={(event) => {
+						const val = (event.currentTarget as HTMLInputElement).value;
+						if (val) void goto(weekHref(getIsoWeekDashedFromIsoDate(val)));
+					}}
+				/>
+			</div>
 		</div>
 	</header>
 
-	{#if data.activeTrips.length > 0}
-		<div class="wp-trips">
-			{#each data.activeTrips as trip}
-				<a class="wp-trip-banner" href="/tema/{trip.id}">
-					<span class="wp-trip-icon">{trip.emoji ?? '🗺️'}</span>
-					<span class="wp-trip-text">
-						<strong>{trip.name}</strong>
-						{#if trip.destination}<span class="wp-trip-dest">{trip.destination}</span>{/if}
-						<span class="wp-trip-dates">{trip.startDate} – {trip.endDate}</span>
-					</span>
-					<span class="wp-trip-arrow">→</span>
-				</a>
-			{/each}
-		</div>
+	{#if showPlanWeek || showPlanDay || showCloseDay || showCloseWeek || hasCarryovers}
+	<div class="wp-action-ribbon">
+		{#if showPlanWeek}
+			<button class="btn-chip" type="button" onclick={() => (weekPlanChatOpen = true)}>
+				Planlegg uka
+			</button>
+		{/if}
+		{#if hasCarryovers && !weekIsPlanned}
+			<button class="btn-chip" type="button" onclick={() => void importFromPreviousWeek()} disabled={planningImportBusy}>
+				{planningImportBusy ? 'Legger til ...' : 'Legg inn forrige uke'}
+			</button>
+		{/if}
+		{#if showPlanDay}
+			<button class="btn-chip" type="button" onclick={() => void openDayPlanner()} disabled={dayPlannerBusy}>
+				{dayPlannerBusy ? 'Henter ...' : 'Planlegg dag'}
+			</button>
+		{/if}
+		{#if showCloseDay}
+			<button class="btn-chip" type="button" onclick={openDayCloseFlow} disabled={dayCloseBusy}>
+				{dayCloseBusy ? 'Jobber ...' : 'Avslutt dag'}
+			</button>
+		{/if}
+		{#if showCloseWeek}
+			<button class="btn-chip" type="button" onclick={() => (weekReviewChatOpen = true)}>
+				Avslutt uka
+			</button>
+		{/if}
+	</div>
 	{/if}
 
-	<section class="wp-card">
-		<div class="wp-card-head">
-			<h2>Planlegg uka</h2>
-		</div>
-		{#if data.previousWeekSummary.note}
-			<p class="wp-helper">Forrige ukes intro: {data.previousWeekSummary.note}</p>
-		{/if}
-		{#if data.previousWeekSummary.reflection}
-			<p class="wp-helper">Laring: {data.previousWeekSummary.reflection}</p>
-		{/if}
-		{#if data.previousWeekSummary.carryoverItems.length > 0 || data.previousWeekSummary.incompleteTasks.length > 0}
-			<div class="wp-suggestion-list">
-				{#each data.previousWeekSummary.carryoverItems as item}
-					<div class="wp-suggestion-item">Overligger: {item}</div>
-				{/each}
-				{#each data.previousWeekSummary.incompleteTasks as task}
-					<div class="wp-suggestion-item">Ukesmål ikke helt i havn: {task}</div>
-				{/each}
-			</div>
-			<button class="btn-primary" type="button" onclick={() => void importFromPreviousWeek()} disabled={planningImportBusy}>
-				{planningImportBusy ? 'Legger til ...' : 'Legg forslag i ukelista'}
-			</button>
-		{:else}
-			<p class="wp-empty">Ingen tydelige overliggere fra forrige uke.</p>
-		{/if}
-	</section>
+
 
 	<section class="wp-card">
 		<div class="wp-card-head">
@@ -1282,16 +1308,6 @@
 
 	<section class="wp-card">
 		<div class="wp-card-head">
-			<h2>Evaluer uka</h2>
-		</div>
-		<p class="wp-helper">Bot tar brukeren gjennom feire, lære og planlegg videre – ett spørsmål av gangen.</p>
-		<button class="btn-secondary" type="button" onclick={() => (weekReviewChatOpen = true)}>
-			Avslutt uka
-		</button>
-	</section>
-
-	<section class="wp-card">
-		<div class="wp-card-head">
 			<h2>Ukas oppgaver</h2>
 			{#if weekChecklistState}
 				<span class="wp-pill">{data.weekTasks.length + progress.total} totalt</span>
@@ -1300,7 +1316,6 @@
 			{/if}
 		</div>
 
-		<div class="wp-subhead">Fra temaer og langsiktige mål</div>
 		{#if data.weekTasks.length > 0}
 			<ul class="wp-task-list">
 				{#each data.weekTasks as task}
@@ -1336,11 +1351,7 @@
 					</li>
 				{/each}
 			</ul>
-		{:else}
-			<p class="wp-empty">Ingen temaoppgaver er satt for denne uken.</p>
 		{/if}
-
-		<div class="wp-subhead">Egne ukeoppgaver</div>
 
 		{#if weekChecklistState}
 			{@const weekChecklistId = weekChecklistState.id}
@@ -1415,7 +1426,6 @@
 				</div>
 			</div>
 		{:else}
-			<p class="wp-empty">Ingen ukeliste er opprettet for denne uken.</p>
 			<form method="POST" action="?/createChecklistForWeek">
 				<input type="hidden" name="weekKey" value={data.week.dashedKey} />
 				<button class="btn-secondary" type="submit">Opprett ukeliste</button>
@@ -1482,64 +1492,52 @@
 				</ul>
 			{/if}
 
-			<div class="wp-day-plan-headline">
-				<div class="wp-day-plan-headline-row">
-					<div>
-						<p class="wp-subhead">Planlegg dag</p>
-						{#if selectedDayHeadline}
-							<p class="wp-helper">Enlinjer: {selectedDayHeadline}</p>
-						{:else}
-							<p class="wp-helper">Hent overliggere + ukesmål, og sett en kort enlinjer for dagen.</p>
-						{/if}
-					</div>
-					<button class="btn-secondary" type="button" onclick={() => void openDayPlanner()} disabled={dayPlannerBusy}>
-						{dayPlannerBusy ? 'Henter ...' : 'Start'}
-					</button>
-				</div>
+			{#if selectedDayHeadline}
+				<p class="wp-helper">{selectedDayHeadline}</p>
+			{/if}
 
-				{#if dayPlannerOpen}
-					<div class="wp-day-planner">
-						<label class="wp-day-planner-label" for="plannerIntro">Enlinjer for dagen</label>
-						<input
-							id="plannerIntro"
-							class="wp-input"
-							type="text"
-							bind:value={dayPlannerIntro}
-							placeholder="F.eks: To barn på svømming og Anita på FAU-møte"
-						/>
+			{#if dayPlannerOpen}
+				<div class="wp-day-planner">
+					<label class="wp-day-planner-label" for="plannerIntro">Enlinjer for dagen</label>
+					<input
+						id="plannerIntro"
+						class="wp-input"
+						type="text"
+						bind:value={dayPlannerIntro}
+						placeholder="F.eks: To barn på svømming og Anita på FAU-møte"
+					/>
 
-						{#if dayPlannerSuggestions.length > 0}
-							<p class="wp-day-planner-label">Forslag til dagsoppgaver</p>
-							<div class="wp-day-planner-suggestions">
-								{#each dayPlannerSuggestions as suggestion}
-									<button
-										type="button"
-										class="wp-day-planner-item"
-										class:selected={suggestion.selected}
-										onclick={() => togglePlannerSuggestion(suggestion.id)}
-									>
-										<span>{suggestion.text}</span>
-										<span class="wp-day-planner-source">{suggestion.source === 'carryover' ? 'overligger' : 'ukesmål'}</span>
-									</button>
-								{/each}
-							</div>
-						{:else}
-							<p class="wp-empty">Ingen forslag funnet akkurat nå.</p>
-						{/if}
-
-						<div class="wp-ribbon">
-							<button class="btn-chip" type="button" onclick={() => void applyDayPlanner()} disabled={dayPlannerBusy}>
-								{dayPlannerBusy ? 'Lagrer ...' : 'Bruk i dagslista'}
-							</button>
-							<button class="btn-chip" type="button" onclick={() => (dayPlannerOpen = false)} disabled={dayPlannerBusy}>Avbryt</button>
+					{#if dayPlannerSuggestions.length > 0}
+						<p class="wp-day-planner-label">Forslag til dagsoppgaver</p>
+						<div class="wp-day-planner-suggestions">
+							{#each dayPlannerSuggestions as suggestion}
+								<button
+									type="button"
+									class="wp-day-planner-item"
+									class:selected={suggestion.selected}
+									onclick={() => togglePlannerSuggestion(suggestion.id)}
+								>
+									<span>{suggestion.text}</span>
+									<span class="wp-day-planner-source">{suggestion.source === 'carryover' ? 'overligger' : 'ukesmål'}</span>
+								</button>
+							{/each}
 						</div>
-					</div>
-				{/if}
+					{:else}
+						<p class="wp-empty">Ingen forslag funnet akkurat nå.</p>
+					{/if}
 
-				{#if dayPlannerMessage}
-					<p class="wp-helper">{dayPlannerMessage}</p>
-				{/if}
-			</div>
+					<div class="wp-ribbon">
+						<button class="btn-chip" type="button" onclick={() => void applyDayPlanner()} disabled={dayPlannerBusy}>
+							{dayPlannerBusy ? 'Lagrer ...' : 'Bruk i dagslista'}
+						</button>
+						<button class="btn-chip" type="button" onclick={() => (dayPlannerOpen = false)} disabled={dayPlannerBusy}>Avbryt</button>
+					</div>
+				</div>
+			{/if}
+
+			{#if dayPlannerMessage}
+				<p class="wp-helper">{dayPlannerMessage}</p>
+			{/if}
 
 			<div class="wp-field-shell">
 				<textarea
@@ -1561,17 +1559,11 @@
 			</div>
 		</div>
 
-		{#if selectedDayChecklist}
-			{@const openDayItems = selectedDayChecklist.items.filter((item) => !item.checked)}
-			{#if openDayItems.length > 0}
-				<button class="btn-ghost" type="button" onclick={openDayCloseFlow} disabled={dayCloseBusy}>
-					{dayCloseBusy ? 'Jobber ...' : 'Avslutt dag'}
-				</button>
-			{/if}
-			{#if dayCloseMessage}
-				<p class="wp-helper">{dayCloseMessage}</p>
-			{/if}
+		{#if dayCloseMessage}
+			<p class="wp-helper">{dayCloseMessage}</p>
+		{/if}
 
+		{#if selectedDayChecklist}
 			<ul class="wp-checklist">
 				{#each selectedDayChecklist.items as item}
 					<li
@@ -1624,38 +1616,24 @@
 					</li>
 				{/each}
 			</ul>
-
-			<div class="wp-add-form">
-				<div class="wp-field-shell">
-					<input
-						bind:this={dayComposerInput}
-						bind:value={dayComposerText}
-						class="wp-input"
-						type="text"
-						placeholder={`Skriv dagsmål for ${selectedDay.label} og trykk Enter`}
-						onkeydown={(event) => handleComposerKeydown(event, 'day')}
-					/>
-					<span class="wp-save-dot" class:is-saving={saveStates.dayItems === 'saving'} class:is-saved={saveStates.dayItems === 'saved'} aria-hidden="true"></span>
-				</div>
-			</div>
-		{:else}
-			<p class="wp-empty">Ingen dagsmål for valgt dag ennå.</p>
-			<div class="wp-add-form">
-				<div class="wp-field-shell">
-					<input
-						bind:this={dayComposerInput}
-						bind:value={dayComposerText}
-						class="wp-input"
-						type="text"
-						placeholder={`Skriv første dagsmål for ${selectedDay.label} og trykk Enter`}
-						onkeydown={(event) => handleComposerKeydown(event, 'day')}
-					/>
-					<span class="wp-save-dot" class:is-saving={saveStates.dayItems === 'saving'} class:is-saved={saveStates.dayItems === 'saved'} aria-hidden="true"></span>
-				</div>
-			</div>
 		{/if}
+
+		<div class="wp-add-form">
+			<div class="wp-field-shell">
+				<input
+					bind:this={dayComposerInput}
+					bind:value={dayComposerText}
+					class="wp-input"
+					type="text"
+					placeholder={`Skriv dagsmål for ${selectedDay.label} og trykk Enter`}
+					onkeydown={(event) => handleComposerKeydown(event, 'day')}
+				/>
+				<span class="wp-save-dot" class:is-saving={saveStates.dayItems === 'saving'} class:is-saved={saveStates.dayItems === 'saved'} aria-hidden="true"></span>
+			</div>
+		</div>
 	</section>
 
+	{#if data.vision || data.longTermGoals.length > 0}
 	<section class="wp-card">
 		<div class="wp-card-head">
 			<h2>Målbilde og retning</h2>
@@ -1674,12 +1652,9 @@
 					</li>
 				{/each}
 			</ul>
-		{:else}
-			<p class="wp-empty">Ingen aktive høynivå-mål funnet enda.</p>
 		{/if}
-
-		<p class="wp-helper">Refleksjon samles inn via nudge mot slutten av søndag.</p>
 	</section>
+	{/if}
 </div>
 
 {#if dayCloseFlowOpen}
@@ -1716,6 +1691,14 @@
 	</div>
 {/if}
 
+{#if weekPlanChatOpen}
+	<ChatSheet
+		prefill={buildWeekPlanPrefill()}
+		autoSend={true}
+		onclose={() => (weekPlanChatOpen = false)}
+	/>
+{/if}
+
 {#if weekReviewChatOpen}
 	<ChatSheet
 		prefill={buildWeekReviewPrefill()}
@@ -1745,6 +1728,13 @@
 		gap: 12px;
 	}
 
+	.wp-header-actions {
+		display: flex;
+		align-items: flex-start;
+		gap: 6px;
+		flex-shrink: 0;
+	}
+
 	.wp-calendar-wrap {
 		position: relative;
 		flex-shrink: 0;
@@ -1761,6 +1751,8 @@
 		background: #0f1118;
 		color: #bac6f9;
 		flex-shrink: 0;
+		text-decoration: none;
+		font-size: 1.1rem;
 	}
 
 	.wp-week-picker-input {
@@ -1828,73 +1820,21 @@
 	}
 
 	.wp-day-label {
-		font-size: 0.67rem;
+		font-size: 0.72rem;
 		color: #888;
 		text-transform: capitalize;
 	}
 
 	.wp-day-number {
-		font-size: 0.86rem;
+		font-size: 0.95rem;
 		color: #ddd;
 		font-weight: 700;
 	}
 
-	.wp-trips {
+	.wp-action-ribbon {
 		display: flex;
-		flex-direction: column;
-		gap: 6px;
-		padding: 0 4px;
-	}
-
-	.wp-trip-banner {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		padding: 10px 14px;
-		background: linear-gradient(135deg, rgba(124, 142, 245, 0.12), rgba(124, 142, 245, 0.06));
-		border: none;
-		border-radius: 12px;
-		text-decoration: none;
-		color: inherit;
-		transition: background 0.15s;
-	}
-
-	.wp-trip-banner:hover {
-		background: linear-gradient(135deg, rgba(124, 142, 245, 0.2), rgba(124, 142, 245, 0.1));
-	}
-
-	.wp-trip-icon {
-		font-size: 1.5rem;
-		flex-shrink: 0;
-	}
-
-	.wp-trip-text {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-		flex: 1;
-		min-width: 0;
-	}
-
-	.wp-trip-text strong {
-		font-size: 0.95rem;
-		color: #e8eaf6;
-	}
-
-	.wp-trip-dest {
-		font-size: 0.82rem;
-		color: #9fa8da;
-	}
-
-	.wp-trip-dates {
-		font-size: 0.78rem;
-		color: #7986cb;
-	}
-
-	.wp-trip-arrow {
-		font-size: 1rem;
-		color: #7986cb;
-		flex-shrink: 0;
+		flex-wrap: wrap;
+		gap: 8px;
 	}
 
 	.wp-card {
@@ -1907,6 +1847,14 @@
 		gap: 10px;
 	}
 
+	.wp-prev-context {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		padding-left: 10px;
+		border-left: 2px solid rgba(186, 198, 249, 0.15);
+	}
+
 	.wp-suggestion-list {
 		display: flex;
 		flex-direction: column;
@@ -1914,7 +1862,7 @@
 	}
 
 	.wp-suggestion-item {
-		font-size: 0.76rem;
+		font-size: 0.95rem;
 		color: #aeb4c6;
 		background: #0e121c;
 		border: none;
@@ -1931,12 +1879,12 @@
 
 	.wp-card h2 {
 		margin: 0;
-		font-size: 0.9rem;
+		font-size: 0.95rem;
 		color: #ddd;
 	}
 
 	.wp-pill {
-		font-size: 0.66rem;
+		font-size: 0.72rem;
 		color: #8a90a3;
 		background: #10131a;
 		border: none;
@@ -1984,7 +1932,7 @@
 	.wp-spond-item[data-rsvp="accepted"] .wp-spond-dot { background: #4ade80; }
 	.wp-spond-time {
 		color: var(--text-tertiary);
-		font-size: 0.76rem;
+		font-size: 0.72rem;
 		font-variant-numeric: tabular-nums;
 		white-space: nowrap;
 		flex-shrink: 0;
@@ -2003,7 +1951,7 @@
 		text-decoration: underline;
 	}
 	.wp-spond-rsvp {
-		font-size: 0.7rem;
+		font-size: 0.72rem;
 		font-weight: 700;
 		flex-shrink: 0;
 	}
@@ -2046,7 +1994,7 @@
 
 	.wp-task-title {
 		margin: 0;
-		font-size: 0.84rem;
+		font-size: 0.95rem;
 		color: #ddd;
 	}
 
@@ -2063,7 +2011,7 @@
 
 	.wp-task-intent-pill {
 		margin: 6px 0 0;
-		font-size: 0.65rem;
+		font-size: 0.72rem;
 		padding: 4px 8px;
 		border-radius: 6px;
 		font-weight: 600;
@@ -2090,7 +2038,7 @@
 
 	.wp-task-intent-failure-reason {
 		margin: 4px 0 0;
-		font-size: 0.65rem;
+		font-size: 0.82rem;
 		color: #d94f4f;
 		padding: 4px 0;
 		line-height: 1.3;
@@ -2098,7 +2046,7 @@
 
 	.wp-task-evaluation {
 		margin: 6px 0 0;
-		font-size: 0.7rem;
+		font-size: 0.82rem;
 		color: #7ec97e;
 		padding: 0;
 		line-height: 1.3;
@@ -2184,7 +2132,7 @@
 	}
 
 	.wp-check-text {
-		font-size: 0.82rem;
+		font-size: 0.95rem;
 		color: #ccc;
 	}
 
@@ -2255,7 +2203,7 @@
 	}
 
 	.wp-day-planner-source {
-		font-size: 0.64rem;
+		font-size: 0.72rem;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
 		color: #8b98c7;
@@ -2325,7 +2273,7 @@
 	}
 
 	.wp-close-item-text {
-		font-size: 0.9rem;
+		font-size: 0.95rem;
 		color: #ccd;
 		flex: 1;
 	}
@@ -2444,18 +2392,18 @@
 	}
 
 	.wp-reminder-title {
-		font-size: 0.82rem;
+		font-size: 0.95rem;
 		color: #d3d8e6;
 	}
 
 	.wp-reminder-date {
-		font-size: 0.74rem;
+		font-size: 0.82rem;
 		color: #7c86a2;
 	}
 
 	.wp-vision-text {
 		margin: 0;
-		font-size: 0.82rem;
+		font-size: 0.95rem;
 		line-height: 1.55;
 		color: #c5ccdf;
 		padding: 10px;
@@ -2466,14 +2414,14 @@
 
 	.wp-helper {
 		margin: 2px 0 0;
-		font-size: 0.74rem;
+		font-size: 0.82rem;
 		color: #76809c;
 	}
 
 	.wp-empty {
 		margin: 0;
 		color: #7a8399;
-		font-size: 0.78rem;
+		font-size: 0.82rem;
 	}
 
 	@media (max-width: 640px) {

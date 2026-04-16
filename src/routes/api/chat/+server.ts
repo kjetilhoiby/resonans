@@ -19,7 +19,7 @@ import {
 	markWidgetFlowCreated,
 	type WidgetCreationFlow
 } from '$lib/flows/widget-creation/flow';
-import { routeChatRequest } from '$lib/server/chat-router';
+import { routeChatRequest, aiRouteChatRequest } from '$lib/server/chat-router';
 import { enqueueBackgroundJob } from '$lib/server/background-jobs';
 import { db } from '$lib/db';
 import { checklists, checklistItems, users } from '$lib/db/schema';
@@ -927,6 +927,8 @@ export interface _RunChatRequestParams {
 	requestUrl: string;
 	requestFetch: typeof fetch;
 	onProgress?: (event: _ChatProgressEvent) => void | Promise<void>;
+	systemPromptPrefix?: string;
+	preferredModel?: string;
 }
 
 function getToolProgressMessage(toolName: string) {
@@ -965,7 +967,7 @@ async function emitProgress(
 	await onProgress?.({ stage, message, detail });
 }
 
-type ChatModel = 'gpt-4o' | 'gpt-4o-mini';
+type ChatModel = 'gpt-4o' | 'gpt-4o-mini' | 'gpt-4.1' | 'gpt-5.4';
 
 function inferStartYearFromText(input: string): string | null {
 	const matches = input.match(/\b(19|20)\d{2}\b/g);
@@ -1057,7 +1059,7 @@ function chooseChatModel(params: {
 	return { model: 'gpt-4o-mini', reason: 'default_followup_fast_path' };
 }
 
-export async function _runChatRequest({ body, userId, requestUrl, requestFetch, onProgress }: _RunChatRequestParams) {
+export async function _runChatRequest({ body, userId, requestUrl, requestFetch, onProgress, systemPromptPrefix, preferredModel }: _RunChatRequestParams) {
 	try {
 		await emitProgress(onProgress, 'validating', 'Validerer forespørsel...');
 
@@ -1079,33 +1081,79 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			throw new _ChatRequestError('Invalid message', 400);
 		}
 
-		// TEMA-ROUTING: Detekter automatisk riktig tema hvis ingen conversationId er oppgitt
+		// TEMA + BOK ROUTING: Kjør parallelt for rask respons
 		let resolvedConversationId = requestedConversationId;
 		let themeRoutingDecision = null;
 
-		if (!resolvedConversationId && message && typeof message === 'string') {
-			const { detectThemeForMessage } = await import('$lib/server/themes');
-			themeRoutingDecision = await detectThemeForMessage(message, userId);
+		// Fetch recent books for routing — skip when already in a specialized context (e.g. book chat)
+		const isSpecializedContext = Boolean(systemPromptPrefix);
+		let recentBooks: { id: string; title: string; author: string | null; themeId: string; themeName: string | null }[] = [];
+		if (!isSpecializedContext) {
+			const { books: booksSchema } = await import('$lib/db/schema');
+			const { themes: themesSchema } = await import('$lib/db/schema');
+			const { desc } = await import('drizzle-orm');
+			recentBooks = await db
+				.select({
+					id: booksSchema.id,
+					title: booksSchema.title,
+					author: booksSchema.author,
+					themeId: booksSchema.themeId,
+					themeName: themesSchema.name
+				})
+				.from(booksSchema)
+				.leftJoin(themesSchema, eq(booksSchema.themeId, themesSchema.id))
+				.where(eq(booksSchema.userId, userId))
+				.orderBy(desc(booksSchema.updatedAt))
+				.limit(5);
+		}
 
-			// Bruk tema-conversation hvis vi har høy eller medium konfidens
-			if (
-				themeRoutingDecision.confidence === 'high' ||
-				themeRoutingDecision.confidence === 'medium'
-			) {
-				resolvedConversationId = themeRoutingDecision.conversationId ?? undefined;
-				await emitProgress(onProgress, 'theme_routed', `Melding automatisk koblet til tema: ${themeRoutingDecision.themeName}`, {
-					themeId: themeRoutingDecision.themeId,
-					themeName: themeRoutingDecision.themeName,
-					confidence: themeRoutingDecision.confidence
-				});
-			} else if (themeRoutingDecision.confidence === 'low') {
-				// Lav konfidens: Send som metadata for at frontend kan vise forslag
-				await emitProgress(onProgress, 'theme_suggested', `Foreslår tema: ${themeRoutingDecision.themeName}`, {
-					themeId: themeRoutingDecision.themeId,
-					themeName: themeRoutingDecision.themeName,
-					confidence: themeRoutingDecision.confidence,
-					reasoning: themeRoutingDecision.reasoning
-				});
+		// AI routing — must happen before conversation creation to allow early-exit without orphaned data
+		const latestUserInput = typeof message === 'string' && message.trim().length > 0
+			? message
+			: (attachment?.note || attachment?.contentText || '');
+		const routingDecision = await aiRouteChatRequest(latestUserInput, isSpecializedContext ? {} : { recentBooks });
+
+		// Book routing: navigate without creating a conversation or saving a message
+		if (!isSpecializedContext && routingDecision.routedBook) {
+			const { bookId, bookTitle, themeId } = routingDecision.routedBook;
+			await emitProgress(onProgress, 'book_routed', `Melding koblet til bok: ${bookTitle}`, {
+				bookId,
+				bookTitle,
+				themeId
+			});
+			return {
+				message: `Åpner «${bookTitle}»…`,
+				conversationId: null,
+				bookRouted: true,
+				book: { id: bookId, title: bookTitle, themeId }
+			};
+		}
+
+		if (message && typeof message === 'string') {
+			if (!resolvedConversationId) {
+				// New conversation: run theme detection
+				const { detectThemeForMessage } = await import('$lib/server/themes');
+				themeRoutingDecision = await detectThemeForMessage(message, userId);
+
+				// Tema-routing
+				if (
+					themeRoutingDecision.confidence === 'high' ||
+					themeRoutingDecision.confidence === 'medium'
+				) {
+					resolvedConversationId = themeRoutingDecision.conversationId ?? undefined;
+					await emitProgress(onProgress, 'theme_routed', `Melding automatisk koblet til tema: ${themeRoutingDecision.themeName}`, {
+						themeId: themeRoutingDecision.themeId,
+						themeName: themeRoutingDecision.themeName,
+						confidence: themeRoutingDecision.confidence
+					});
+				} else if (themeRoutingDecision.confidence === 'low') {
+					await emitProgress(onProgress, 'theme_suggested', `Foreslår tema: ${themeRoutingDecision.themeName}`, {
+						themeId: themeRoutingDecision.themeId,
+						themeName: themeRoutingDecision.themeName,
+						confidence: themeRoutingDecision.confidence,
+						reasoning: themeRoutingDecision.reasoning
+					});
+				}
 			}
 		}
 
@@ -1180,19 +1228,17 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		})} (${today.toISOString().split('T')[0]})\n--- SLUTT PÅ DATO ---\n\n`;
 
 		// Bygg meldingshistorikk for OpenAI
-		const latestUserInput = typeof message === 'string' && message.trim().length > 0
-			? message
-			: (attachment?.note || attachment?.contentText || '');
-		const routingDecision = routeChatRequest(latestUserInput);
 		const systemPrompt = buildModularSystemPrompt(routingDecision);
+		const promptPrefix = systemPromptPrefix ? `${systemPromptPrefix}\n\n` : '';
 
 		await emitProgress(onProgress, 'routing_complete', 'Forespørselen er analysert.', {
 			domains: routingDecision.domains,
-			skills: routingDecision.skills
+			skills: routingDecision.skills,
+			mode: routingDecision.mode
 		});
 
 		const messages: ChatCompletionMessageParam[] = [
-			{ role: 'system', content: systemPrompt + memoryContext + goalsContext + dateContext }
+			{ role: 'system', content: promptPrefix + systemPrompt + memoryContext + goalsContext + dateContext }
 		];
 
 		// Legg til historikk (unntatt den siste brukermeldingen som allerede er der)
@@ -1248,11 +1294,22 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		await emitProgress(onProgress, 'context_ready', 'Kontekst og historikk er lastet.', {
 			historyCount: history.length
 		});
-		const initialModelDecision = chooseChatModel({
-			phase: 'initial',
-			hasImage: Boolean(effectiveImageUrl),
-			userInput: latestUserInput
-		});
+		// Determine conversation mode: skip tools for conversational/literary contexts,
+		// use stronger model when routing suggests it or user has picked one.
+		const aiSuggestsConversation = routingDecision.mode === 'conversation';
+		const isHighCapabilityModel = preferredModel?.startsWith('gpt-5') ?? false;
+		const isConversationalMode = Boolean(systemPromptPrefix) || aiSuggestsConversation || isHighCapabilityModel;
+
+		const resolvedModel = preferredModel
+			?? (isConversationalMode ? (routingDecision.modelSuggestion ?? 'gpt-5.4') : undefined);
+
+		const initialModelDecision = resolvedModel
+			? { model: resolvedModel as ChatModel, reason: preferredModel ? 'user_preferred_model' : `ai_routed_${routingDecision.mode}` }
+			: chooseChatModel({
+				phase: 'initial',
+				hasImage: Boolean(effectiveImageUrl),
+				userInput: latestUserInput
+			});
 
 		// Første kall til OpenAI med tools
 		await emitProgress(onProgress, 'model_request', 'Sender forespørsel til modellen...', {
@@ -1263,10 +1320,11 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		let completion = await openai.chat.completions.create({
 			model: initialModelDecision.model,
 			messages,
-			tools,
-			tool_choice: 'auto',
-			temperature: 0.7,
-			max_tokens: effectiveImageUrl ? 1500 : 1000 // Mer tokens for bildeanalyse
+			...(isConversationalMode ? {} : { tools, tool_choice: 'auto' as const }),
+			temperature: 0.8,
+			...(initialModelDecision.model.startsWith('gpt-5')
+				? { max_completion_tokens: isConversationalMode ? 2000 : 1000 }
+				: { max_tokens: effectiveImageUrl ? 1500 : 1000 })
 		});
 
 		let responseMessage = completion.choices[0]?.message;

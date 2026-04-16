@@ -537,6 +537,14 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 				<p>Vaner, aktiviteter og målinger</p>
 				<a href="/settings/tracking" class="overview-link">Åpne tracking</a>
 			</article>
+			<article class="overview-card" id="jobs-overview">
+				<div class="overview-head">
+					<span class="status-dot ok"></span>
+					<h2>Bakgrunnsjobber</h2>
+				</div>
+				<p>Se og administrer aktive og feilede jobber</p>
+				<a href="/settings/jobs" class="overview-link">Åpne jobber</a>
+			</article>
 		</section>
 
 		<div class="actions">

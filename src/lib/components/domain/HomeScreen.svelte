@@ -441,6 +441,9 @@
 	let launchingThemeId = $state<string | null>(null);
 	let chatInputAutoFocus = $state(false);
 	let returnToChatAfterFlow = $state(false);
+	let selectedChatModel = $state<string>(
+		(typeof localStorage !== 'undefined' && localStorage.getItem('chat-model')) || 'auto'
+	);
 	
 	// Tema-routing state
 	let suggestedTheme = $state<{ themeId: string; themeName: string; confidence: string; reasoning?: string } | null>(null);
@@ -1211,11 +1214,13 @@
 				}
 			}
 
+			let bookWasRouted = false;
 			const data = await streamProxyChat({
 				message: displayText,
 				conversationId: currentConversationId,
 				imageUrl,
 				attachment,
+				preferredModel: selectedChatModel !== 'auto' ? selectedChatModel : undefined,
 				onStatus: (status) => {
 					chatStreamingStatus = status;
 				},
@@ -1225,12 +1230,21 @@
 				},
 				onThemeRouted: (theme) => {
 					routedToTheme = theme;
-					currentConversationId = null; // Reset så neste melding også kan routes
+					currentConversationId = null;
 				},
 				onThemeSuggested: (theme) => {
 					suggestedTheme = theme;
+				},
+				onBookRouted: (book) => {
+					bookWasRouted = true;
+					chatLoading = false;
+					chatStreamingText = '';
+					chatStreamingStatus = '';
+					closeChat();
+					goto(`/tema/${book.themeId}?tab=data&book=${book.bookId}`);
 				}
 			});
+			if (bookWasRouted) return;
 			currentConversationId = data.conversationId ?? currentConversationId;
 			if (data.themeCreated && data.theme?.id) {
 				createdThemeLink = {
@@ -1560,6 +1574,16 @@
 					{#if hasPersistedConversation}
 						<button class="chat-link" onclick={() => goto(`/samtaler?conversation=${currentConversationId}`)} aria-label="Åpne denne samtalen">Åpne</button>
 					{/if}
+					<button
+						class="model-pill"
+						onclick={() => {
+							const opts = ['auto', 'gpt-4o-mini', 'gpt-4.1', 'gpt-5.4'];
+							const labels: Record<string, string> = { 'auto': 'Auto', 'gpt-4o-mini': 'Mini', 'gpt-4.1': '4.1', 'gpt-5.4': '5.4' };
+							selectedChatModel = opts[(opts.indexOf(selectedChatModel) + 1) % opts.length];
+							if (typeof localStorage !== 'undefined') localStorage.setItem('chat-model', selectedChatModel);
+						}}
+						title="Modell — klikk for å bytte"
+					>{{ 'auto': 'Auto', 'gpt-4o-mini': 'Mini', 'gpt-4.1': '4.1', 'gpt-5.4': '5.4' }[selectedChatModel] ?? selectedChatModel}</button>
 					<button class="chat-close" onclick={closeChat} aria-label="Lukk samtale"><Icon name="close" size={15} /></button>
 				</div>
 			</div>
@@ -3002,6 +3026,25 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 8px;
+	}
+
+	.model-pill {
+		padding: 2px 9px;
+		border-radius: 999px;
+		border: 1px solid #252525;
+		background: #111;
+		color: #555;
+		font-size: 0.68rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: border-color 0.12s, color 0.12s;
+		letter-spacing: 0.03em;
+		flex-shrink: 0;
+	}
+
+	.model-pill:hover {
+		border-color: #333;
+		color: #999;
 	}
 
 	.chat-close {

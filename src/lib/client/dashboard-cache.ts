@@ -63,10 +63,31 @@ export interface TravelDashboardData {
 	status: string;
 }
 
+export interface BooksDashboardData {
+	themeName: string;
+	themeEmoji: string | null;
+	totalBooks: number;
+	reading: number;
+	completed: number;
+	books: Array<{
+		id: string;
+		title: string;
+		author: string | null;
+		status: string;
+		currentPage: number;
+		totalPages: number | null;
+		contextStatus: string;
+		startedAt: string | null;
+		finishedAt: string | null;
+		createdAt: string;
+	}>;
+}
+
 type DashboardPayloadMap = {
 	health: HealthDashboardData;
 	economics: EconomicsDashboardData;
 	travel: TravelDashboardData;
+	books: BooksDashboardData;
 };
 
 export interface DashboardCacheEntry<K extends DashboardKind = DashboardKind> {

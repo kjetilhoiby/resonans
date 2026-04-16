@@ -3,12 +3,14 @@ interface ProxyChatStreamOptions {
 	conversationId?: string | null;
 	imageUrl?: string;
 	attachment?: unknown;
+	preferredModel?: string;
 	onStatus?: (message: string) => void;
 	onToken?: (token: string) => void;
 	onComplete?: (payload: Record<string, any>) => void;
 	onError?: (message: string) => void;
 	onThemeRouted?: (theme: { themeId: string; themeName: string; confidence: string }) => void;
 	onThemeSuggested?: (theme: { themeId: string; themeName: string; confidence: string; reasoning?: string }) => void;
+	onBookRouted?: (book: { bookId: string; bookTitle: string; themeId: string }) => void;
 }
 
 export async function streamProxyChat({
@@ -16,12 +18,14 @@ export async function streamProxyChat({
 	conversationId = null,
 	imageUrl,
 	attachment,
+	preferredModel,
 	onStatus,
 	onToken,
 	onComplete,
 	onError,
 	onThemeRouted,
-	onThemeSuggested
+	onThemeSuggested,
+	onBookRouted
 }: ProxyChatStreamOptions): Promise<Record<string, any>> {
 	const response = await fetch('/api/chat-stream-messages', {
 		method: 'POST',
@@ -32,6 +36,7 @@ export async function streamProxyChat({
 			conversationId,
 			imageUrl,
 			attachment,
+			preferredModel,
 			routing: {},
 			systemPrompt: '',
 			messages: []
@@ -47,6 +52,7 @@ export async function streamProxyChat({
 	const decoder = new TextDecoder();
 	let buffer = '';
 	let finalPayload: Record<string, any> | null = null;
+	let bookRouted = false;
 
 	while (true) {
 		const { done, value } = await reader.read();
@@ -75,6 +81,9 @@ export async function streamProxyChat({
 				onStatus?.(event.data?.message ?? 'Tema-routing fullført');
 			} else if (event.type === 'theme_suggested') {
 				onThemeSuggested?.(event.data);
+			} else if (event.type === 'book_routed') {
+				bookRouted = true;
+				onBookRouted?.(event.data);
 			}
 		}
 
@@ -87,6 +96,11 @@ export async function streamProxyChat({
 		if (event.type === 'complete') {
 			finalPayload = event.data;
 		}
+	}
+
+	// Book-routing: stream ends after navigation — no complete payload needed
+	if (!finalPayload && bookRouted) {
+		return {};
 	}
 
 	if (!finalPayload) {

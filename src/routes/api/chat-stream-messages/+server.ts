@@ -49,6 +49,7 @@ interface StreamRequest {
 	mode?: 'direct' | 'proxy';
 	imageUrl?: string;
 	attachment?: unknown;
+	preferredModel?: string;
 	routing: any;
 	systemPrompt: string;
 	messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
@@ -76,7 +77,8 @@ export const POST: RequestHandler = async ({ request, locals, fetch, url }) => {
 			mode = 'direct',
 			message = '',
 			imageUrl,
-			attachment
+			attachment,
+			preferredModel
 		} = body;
 
 		const encoder = new TextEncoder();
@@ -104,15 +106,33 @@ export const POST: RequestHandler = async ({ request, locals, fetch, url }) => {
 								},
 								userId,
 								requestUrl: `${url.origin}/api/chat`,
-								requestFetch: fetch,
+								requestFetch: fetch,							preferredModel: preferredModel || undefined,								systemPromptPrefix: systemPrompt || undefined,
 								onProgress: async (event) => {
-									controller.enqueue(
-										sendStreamEvent('status', { stage: event.stage, message: event.message, detail: event.detail }, encoder)
-									);
+									// Routing events must be forwarded with their real type so the client can handle them
+									const routingEventTypes = ['book_routed', 'theme_routed', 'theme_suggested', 'routing_complete'];
+									if (routingEventTypes.includes(event.stage)) {
+										controller.enqueue(
+											sendStreamEvent(event.stage, event.detail ?? { message: event.message }, encoder)
+										);
+									} else {
+										controller.enqueue(
+											sendStreamEvent('status', { stage: event.stage, message: event.message, detail: event.detail }, encoder)
+										);
+									}
 								}
 							});
 
 							const responseText = String(payload.message ?? '');
+
+							// If this was a book/theme routing redirect, close stream without streaming tokens
+							if ((payload as any).bookRouted) {
+								controller.enqueue(
+									sendStreamEvent('complete', { ...payload, fullMessage: responseText }, encoder)
+								);
+								controller.close();
+								return;
+							}
+
 							controller.enqueue(
 								sendStreamEvent('status', { stage: 'rendering', message: 'Skriver svar...' }, encoder)
 							);

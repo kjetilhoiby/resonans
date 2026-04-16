@@ -571,7 +571,8 @@ export const themesRelations = relations(themes, ({ one, many }) => ({
 	memories: many(memories),
 	lists: many(themeLists),
 	files: many(themeFiles),
-	trackingSeries: many(trackingSeries)
+	trackingSeries: many(trackingSeries),
+	books: many(books)
 }));
 
 export const goalsRelations = relations(goals, ({ one, many }) => ({
@@ -838,6 +839,77 @@ export const categorizedEvents = pgTable('categorized_events', {
 	idxUserTimestamp: index('categorized_events_user_timestamp_idx').on(table.userId, table.timestamp),
 	idxUserCategoryTimestamp: index('categorized_events_user_category_timestamp_idx').on(table.userId, table.resolvedCategory, table.timestamp),
 	idxUserAccountTimestamp: index('categorized_events_user_account_timestamp_idx').on(table.userId, table.accountId, table.timestamp)
+}));
+
+// Bøker knyttet til et litteratur-tema
+export const books = pgTable('books', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	themeId: uuid('theme_id').references(() => themes.id, { onDelete: 'cascade' }).notNull(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	title: text('title').notNull(),
+	author: text('author'),
+	coverUrl: text('cover_url'),
+	totalPages: integer('total_pages'),
+	currentPage: integer('current_page').notNull().default(0),
+	status: text('status').notNull().default('not_started'), // 'not_started'|'reading'|'completed'|'paused'
+	conversationId: uuid('conversation_id').references(() => conversations.id, { onDelete: 'set null' }),
+	contextStatus: text('context_status').notNull().default('none'), // 'none'|'pending'|'partial'|'ready'
+	contextPack: jsonb('context_pack').$type<{
+		metadata?: { year?: number; genre?: string };
+		authorContext?: { bio?: string; themes?: string[]; howBookFits?: string };
+		themes?: string[];
+		reception?: { critics?: string; readers?: string; patterns?: string[] };
+		relatedWorks?: string[];
+		conversationHints?: string[];
+	} | null>(),
+	startedAt: timestamp('started_at'),
+	finishedAt: timestamp('finished_at'),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	idxBooksThemeId: index('books_theme_id_idx').on(table.themeId),
+	idxBooksUserId: index('books_user_id_idx').on(table.userId)
+}));
+
+// Klipp/sitater fra bøker — passasjer, refleksjoner, lydbokmomenter
+export const bookClips = pgTable('book_clips', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	bookId: uuid('book_id').references(() => books.id, { onDelete: 'cascade' }).notNull(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	text: text('text').notNull(), // Sitert passasje eller notat
+	page: integer('page'), // Sidetall (valgfritt)
+	position: text('position'), // Tidsstempel for lydbøker (f.eks. "1:24:35")
+	note: text('note'), // Brukerens refleksjon
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => ({
+	idxBookClipsBookId: index('book_clips_book_id_idx').on(table.bookId)
+}));
+
+export const booksRelations = relations(books, ({ one, many }) => ({
+	theme: one(themes, {
+		fields: [books.themeId],
+		references: [themes.id]
+	}),
+	user: one(users, {
+		fields: [books.userId],
+		references: [users.id]
+	}),
+	conversation: one(conversations, {
+		fields: [books.conversationId],
+		references: [conversations.id]
+	}),
+	clips: many(bookClips)
+}));
+
+export const bookClipsRelations = relations(bookClips, ({ one }) => ({
+	book: one(books, {
+		fields: [bookClips.bookId],
+		references: [books.id]
+	}),
+	user: one(users, {
+		fields: [bookClips.userId],
+		references: [users.id]
+	})
 }));
 
 // Generic background job queue for long-running operations (sync, transcription, imports, etc.)

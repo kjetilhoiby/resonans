@@ -4,6 +4,7 @@ import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import { syncAllSparebank1Data } from '$lib/server/integrations/sparebank1-sync';
 import { processGoalIntentParseJob } from '$lib/server/goal-intent-parser';
 import { processTaskIntentParseJob } from '$lib/server/task-intent-parser';
+import { processBookContextCollectJob } from '$lib/server/book-context-collector';
 
 export type BackgroundJobStatus = 'queued' | 'running' | 'retry' | 'completed' | 'failed' | 'canceled';
 
@@ -46,6 +47,32 @@ export async function getBackgroundJobById(jobId: string) {
 		.where(eq(backgroundJobs.id, jobId))
 		.limit(1);
 
+	return job ?? null;
+}
+
+export async function cancelBackgroundJob(jobId: string) {
+	const [job] = await db
+		.update(backgroundJobs)
+		.set({ status: 'canceled', updatedAt: new Date() })
+		.where(and(eq(backgroundJobs.id, jobId)))
+		.returning({ id: backgroundJobs.id, status: backgroundJobs.status });
+	return job ?? null;
+}
+
+export async function retryBackgroundJob(jobId: string) {
+	const [job] = await db
+		.update(backgroundJobs)
+		.set({ status: 'queued', attempts: 0, error: null, runAt: new Date(), updatedAt: new Date(), lockedAt: null, lockedBy: null })
+		.where(eq(backgroundJobs.id, jobId))
+		.returning({ id: backgroundJobs.id, status: backgroundJobs.status });
+	return job ?? null;
+}
+
+export async function deleteBackgroundJob(jobId: string) {
+	const [job] = await db
+		.delete(backgroundJobs)
+		.where(eq(backgroundJobs.id, jobId))
+		.returning({ id: backgroundJobs.id });
 	return job ?? null;
 }
 
@@ -370,6 +397,23 @@ async function executeJob(job: any): Promise<Record<string, unknown>> {
 				taskId: payload.taskId,
 				parsed
 			};
+		}
+		case 'book_context_collect': {
+			const payload = (job.payload ?? {}) as { bookId?: string; title?: string; author?: string | null };
+			if (!payload.bookId || typeof payload.bookId !== 'string') {
+				throw new Error('book_context_collect requires payload.bookId');
+			}
+			if (!payload.title || typeof payload.title !== 'string') {
+				throw new Error('book_context_collect requires payload.title');
+			}
+
+			const contextPack = await processBookContextCollectJob({
+				bookId: payload.bookId,
+				title: payload.title,
+				author: typeof payload.author === 'string' ? payload.author : null
+			});
+
+			return { bookId: payload.bookId, contextPack };
 		}
 		default:
 			throw new Error(`Unknown background job type: ${job.type}`);

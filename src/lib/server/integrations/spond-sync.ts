@@ -1,6 +1,6 @@
 import { db } from '$lib/db';
 import { sensors, sensorEvents } from '$lib/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { spondLogin, spondGetGroups, spondGetEvents, spondGetProfile, type SpondEvent, type SpondGroup } from './spond';
 
 /**
@@ -150,7 +150,13 @@ export async function syncSpondData(userId: string): Promise<{ events: number; g
 		await db
 			.insert(sensorEvents)
 			.values(rows)
-			.onConflictDoNothing();
+			.onConflictDoUpdate({
+				target: [sensorEvents.sensorId, sensorEvents.dataType, sensorEvents.timestamp],
+				set: {
+					data: sql`excluded.data`,
+					metadata: sql`excluded.metadata`
+				}
+			});
 
 		totalEvents += events.length;
 	}

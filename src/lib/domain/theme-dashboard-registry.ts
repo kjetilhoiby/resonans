@@ -1,4 +1,4 @@
-export type DashboardKind = 'health' | 'economics' | 'travel';
+export type DashboardKind = 'health' | 'economics' | 'travel' | 'books';
 
 export interface ThemeDashboardDefinition {
 	kind: DashboardKind;
@@ -72,6 +72,20 @@ const THEME_DASHBOARD_MATCHERS: Array<{ kind: DashboardKind; terms: string[] }> 
 			'fly',
 			'flytur'
 		]
+	},
+	{
+		kind: 'books',
+		terms: [
+			'bok',
+			'bøker',
+			'lesing',
+			'litteratur',
+			'reading',
+			'books',
+			'literature',
+			'bibliotek',
+			'library'
+		]
 	}
 ];
 
@@ -90,6 +104,11 @@ const DASHBOARD_DEFINITIONS: Record<DashboardKind, ThemeDashboardDefinition> = {
 		kind: 'travel',
 		label: 'Tur',
 		icon: '🗺️'
+	},
+	books: {
+		kind: 'books',
+		label: 'Bøker',
+		icon: '📚'
 	}
 };
 
@@ -103,9 +122,16 @@ function normalizeThemeName(name: string | null | undefined): string {
 
 export function resolveThemeDashboardKind(themeName: string | null | undefined): DashboardKind | null {
 	const normalized = normalizeThemeName(themeName);
+	// Split into words for precise matching — prevents e.g. "tur" (3 chars) matching "litteratur"
+	const words = normalized.split(/\s+/);
 
 	for (const matcher of THEME_DASHBOARD_MATCHERS) {
-		if (matcher.terms.some((term) => normalized.includes(normalizeThemeName(term)))) {
+		if (matcher.terms.some((term) => {
+			const t = normalizeThemeName(term);
+			// Exact word match for all terms; also substring match for longer terms (≥5 chars)
+			// so that compounds like "sommerferie" still match "ferie"
+			return words.some((w) => w === t) || (t.length >= 5 && normalized.includes(t));
+		})) {
 			return matcher.kind;
 		}
 	}
