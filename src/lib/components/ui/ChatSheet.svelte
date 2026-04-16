@@ -14,20 +14,34 @@
 	import { streamProxyChat } from '$lib/client/proxy-chat-stream';
 	import type { WeatherStatusWidget } from '$lib/ai/tools/weather-forecast';
 
+	const PLAN_KLAR_MARKER = '[PLAN_KLAR]';
+
+	function parseMessage(raw: string): { text: string; confirmAction?: string } {
+		if (raw.includes(PLAN_KLAR_MARKER)) {
+			return {
+				text: raw.replace(PLAN_KLAR_MARKER, '').trim(),
+				confirmAction: 'Ja, lagre planen'
+			};
+		}
+		return { text: raw };
+	}
+
 	interface ChatMsg {
 		role: 'user' | 'assistant';
 		text: string;
 		statusWidget?: WeatherStatusWidget | null;
+		confirmAction?: string;
 	}
 
 	interface Props {
 		prefill?: string;
 		autoSend?: boolean;
+		systemPrompt?: string;
 		onclose: () => void;
 		onChecklistCreated?: () => void;
 	}
 
-	let { prefill = '', autoSend = false, onclose, onChecklistCreated }: Props = $props();
+	let { prefill = '', autoSend = false, systemPrompt, onclose, onChecklistCreated }: Props = $props();
 
 	let messages = $state<ChatMsg[]>([]);
 	let loading = $state(false);
@@ -49,6 +63,7 @@
 		try {
 			const data = await streamProxyChat({
 				message: text,
+				systemPrompt,
 				onStatus: async (status) => {
 					streamingStatus = status;
 					await scrollToBottom();
@@ -59,7 +74,8 @@
 					await scrollToBottom();
 				}
 			});
-			messages = [{ role: 'assistant', text: data.message, statusWidget: data.statusWidget ?? data.metadata?.statusWidget ?? null }];
+			const parsed = parseMessage(String(data.message ?? ''));
+			messages = [{ role: 'assistant', ...parsed, statusWidget: data.statusWidget ?? data.metadata?.statusWidget ?? null }];
 			if (data.checklistChanged) onChecklistCreated?.();
 		} catch {
 			messages = [{ role: 'assistant', text: 'Noe gikk galt. Prøv igjen.' }];
@@ -88,6 +104,7 @@
 		try {
 			const data = await streamProxyChat({
 				message: text,
+				systemPrompt,
 				onStatus: async (status) => {
 					streamingStatus = status;
 					await scrollToBottom();
@@ -98,13 +115,10 @@
 					await scrollToBottom();
 				}
 			});
+			const parsed = parseMessage(String(data.message ?? ''));
 			messages = [
 				...messages,
-				{
-					role: 'assistant',
-					text: data.message,
-					statusWidget: data.statusWidget ?? data.metadata?.statusWidget ?? null
-				}
+				{ role: 'assistant', ...parsed, statusWidget: data.statusWidget ?? data.metadata?.statusWidget ?? null }
 			];
 			if (data.checklistChanged) onChecklistCreated?.();
 		} catch {
@@ -145,13 +159,20 @@
 		{#if messages.length === 0 && !loading}
 			<p class="cs-empty">{autoSend ? 'Starter…' : 'Si hva du tenker på…'}</p>
 		{/if}
-		{#each messages as msg (msg)}
+		{#each messages as msg, i (i)}
 			{#if msg.role === 'user'}
 				<div class="cs-bubble-user">{msg.text}</div>
 			{:else}
 				<TriageCard text={msg.text} />
 				{#if msg.statusWidget}
 					<ChatStatusWidget widget={msg.statusWidget} />
+				{/if}
+				{#if msg.confirmAction && i === messages.length - 1 && !loading}
+					<button
+						class="cs-confirm-btn"
+						type="button"
+						onclick={() => void sendMessage(msg.confirmAction!)}
+					>{msg.confirmAction}</button>
 				{/if}
 			{/if}
 		{/each}
@@ -270,5 +291,22 @@
 		padding: 10px 14px env(safe-area-inset-bottom, 14px);
 		border-top: 1px solid #1a1a1a;
 		flex-shrink: 0;
+	}
+
+	.cs-confirm-btn {
+		align-self: flex-start;
+		background: #1a2a1a;
+		border: 1px solid #2a5a2a;
+		border-radius: 20px;
+		padding: 9px 18px;
+		font-size: 0.88rem;
+		font-weight: 600;
+		color: #7ed87e;
+		cursor: pointer;
+		transition: background 0.12s, border-color 0.12s;
+	}
+	.cs-confirm-btn:hover {
+		background: #1f3a1f;
+		border-color: #3a7a3a;
 	}
 </style>

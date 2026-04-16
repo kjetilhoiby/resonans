@@ -849,8 +849,11 @@ export const books = pgTable('books', {
 	title: text('title').notNull(),
 	author: text('author'),
 	coverUrl: text('cover_url'),
+	format: text('format').notNull().default('print'), // 'print'|'audio'|'both'
 	totalPages: integer('total_pages'),
 	currentPage: integer('current_page').notNull().default(0),
+	totalMinutes: integer('total_minutes'), // Total lydboklengde i minutter
+	currentMinutes: integer('current_minutes').notNull().default(0), // Nåværende lydboktid i minutter
 	status: text('status').notNull().default('not_started'), // 'not_started'|'reading'|'completed'|'paused'
 	conversationId: uuid('conversation_id').references(() => conversations.id, { onDelete: 'set null' }),
 	contextStatus: text('context_status').notNull().default('none'), // 'none'|'pending'|'partial'|'ready'
@@ -880,9 +883,24 @@ export const bookClips = pgTable('book_clips', {
 	page: integer('page'), // Sidetall (valgfritt)
 	position: text('position'), // Tidsstempel for lydbøker (f.eks. "1:24:35")
 	note: text('note'), // Brukerens refleksjon
+	source: text('source'), // 'manual'|'screenshot'|'audio_clip'
+	audioUrl: text('audio_url'), // URL til lydklipp (hvis fra skjermopptak)
 	createdAt: timestamp('created_at').defaultNow().notNull()
 }, (table) => ({
 	idxBookClipsBookId: index('book_clips_book_id_idx').on(table.bookId)
+}));
+
+// Fremdriftslogg — én rad per lagring, brukes til graf og prediksjon
+export const bookProgressLog = pgTable('book_progress_log', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	bookId: uuid('book_id').references(() => books.id, { onDelete: 'cascade' }).notNull(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	currentPage: integer('current_page'),
+	currentMinutes: integer('current_minutes'),
+	loggedAt: timestamp('logged_at').defaultNow().notNull()
+}, (table) => ({
+	idxProgressLogBookId: index('book_progress_log_book_id_idx').on(table.bookId),
+	idxProgressLogLoggedAt: index('book_progress_log_logged_at_idx').on(table.loggedAt)
 }));
 
 export const booksRelations = relations(books, ({ one, many }) => ({
@@ -898,7 +916,19 @@ export const booksRelations = relations(books, ({ one, many }) => ({
 		fields: [books.conversationId],
 		references: [conversations.id]
 	}),
-	clips: many(bookClips)
+	clips: many(bookClips),
+	progressLog: many(bookProgressLog)
+}));
+
+export const bookProgressLogRelations = relations(bookProgressLog, ({ one }) => ({
+	book: one(books, {
+		fields: [bookProgressLog.bookId],
+		references: [books.id]
+	}),
+	user: one(users, {
+		fields: [bookProgressLog.userId],
+		references: [users.id]
+	})
 }));
 
 export const bookClipsRelations = relations(bookClips, ({ one }) => ({

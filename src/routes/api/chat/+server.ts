@@ -22,7 +22,7 @@ import {
 import { routeChatRequest, aiRouteChatRequest } from '$lib/server/chat-router';
 import { enqueueBackgroundJob } from '$lib/server/background-jobs';
 import { db } from '$lib/db';
-import { checklists, checklistItems, users } from '$lib/db/schema';
+import { checklists, checklistItems, memories, users } from '$lib/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 
@@ -898,6 +898,36 @@ const tools = [
 				required: ['checklistId', 'items']
 			}
 		}
+	},
+	{
+		type: 'function' as const,
+		function: {
+			name: 'plan_day',
+			description: 'Lagre dagsplan for brukeren: enlinjer (kort beskrivelse av hva dagen handler om) og dagsoppgaver. Kall dette verktøyet etter at du har avklart enlinjer og oppgaver med brukeren.',
+			parameters: {
+				type: 'object',
+				properties: {
+					dayIso: {
+						type: 'string',
+						description: 'ISO-dato for dagen, f.eks. "2025-01-20"'
+					},
+					weekDashedKey: {
+						type: 'string',
+						description: 'Ukenøkkel i format "2025-W03"'
+					},
+					headline: {
+						type: 'string',
+						description: 'Enlinjer for dagen – én setning som oppsummerer hva dagen handler om'
+					},
+					tasks: {
+						type: 'array',
+						description: 'Konkrete dagsoppgaver å legge i dagslista',
+						items: { type: 'string' }
+					}
+				},
+				required: ['dayIso', 'weekDashedKey', 'headline', 'tasks']
+			}
+		}
 	}
 ];
 
@@ -952,7 +982,8 @@ function getToolProgressMessage(toolName: string) {
 		update_widget: 'Oppdaterer widget...',
 		create_checklist: 'Oppretter sjekkliste...',
 		get_active_checklists: 'Henter sjekklister...',
-		add_checklist_items: 'Legger til sjekklistepunkter...'
+		add_checklist_items: 'Legger til sjekklistepunkter...',
+		plan_day: 'Lagrer dagsplan...'
 	};
 
 	return labels[toolName] ?? `Kjører verktøy: ${toolName}...`;
@@ -2093,6 +2124,105 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 						messages.push({
 							role: 'tool',
 							content: JSON.stringify({ success: false, error: 'Klarte ikke utvide sjekkliste' }),
+							tool_call_id: toolCall.id
+						});
+					}
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'plan_day') {
+					const args = JSON.parse(toolCall.function.arguments) as {
+						dayIso: string;
+						weekDashedKey: string;
+						headline: string;
+						tasks: string[];
+					};
+
+					try {
+						const compactKey = args.weekDashedKey.replace('-W', 'W');
+						const headlineSource = `week-plan:${compactKey}:day:${args.dayIso}:headline`;
+
+						const existingHeadline = await db.query.memories.findFirst({
+							where: and(eq(memories.userId, userId), eq(memories.source, headlineSource))
+						});
+
+						if (args.headline.trim()) {
+							if (existingHeadline) {
+								await db
+									.update(memories)
+									.set({ content: args.headline.trim(), updatedAt: new Date(), lastAccessedAt: new Date() })
+									.where(eq(memories.id, existingHeadline.id));
+							} else {
+								await db.insert(memories).values({
+									userId,
+									category: 'other',
+									content: args.headline.trim(),
+									importance: 'medium',
+									source: headlineSource
+								});
+							}
+						}
+
+						const dayContext = `week:${args.weekDashedKey}:day:${args.dayIso}`;
+						let dayChecklist = await db.query.checklists.findFirst({
+							where: and(eq(checklists.userId, userId), eq(checklists.context, dayContext)),
+							with: {
+								items: {
+									orderBy: (items, { asc }) => [asc(items.sortOrder), asc(items.createdAt)]
+								}
+							}
+						});
+
+						if (!dayChecklist) {
+							const [newChecklist] = await db
+								.insert(checklists)
+								.values({
+									userId,
+									title: `Dag ${args.dayIso}`,
+									emoji: '☑️',
+									context: dayContext
+								})
+								.returning();
+							dayChecklist = { ...newChecklist!, items: [] };
+						}
+
+						const existingTexts = new Set(
+							(dayChecklist.items ?? []).map((item) => item.text.trim().toLowerCase())
+						);
+						const toAdd = (args.tasks ?? [])
+							.map((t) => t.trim())
+							.filter((t) => t.length > 0 && !existingTexts.has(t.toLowerCase()));
+
+						if (toAdd.length > 0) {
+							const nextSortOrder =
+								(dayChecklist.items ?? []).reduce(
+									(max, item) => Math.max(max, item.sortOrder),
+									-1
+								) + 1;
+							await db.insert(checklistItems).values(
+								toAdd.map((text, i) => ({
+									checklistId: dayChecklist!.id,
+									userId,
+									text,
+									sortOrder: nextSortOrder + i
+								}))
+							);
+						}
+
+						checklistCreated = true;
+
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify({
+								success: true,
+								headline: args.headline,
+								addedTasks: toAdd.length,
+								message: `Dagsplan lagret! Enlinjer: "${args.headline}". ${toAdd.length > 0 ? `${toAdd.length} oppgaver lagt til.` : 'Ingen nye oppgaver.'}`
+							}),
+							tool_call_id: toolCall.id
+						});
+					} catch (e) {
+						console.error('  📅 plan_day failed:', e);
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify({ success: false, error: 'Klarte ikke lagre dagsplan' }),
 							tool_call_id: toolCall.id
 						});
 					}

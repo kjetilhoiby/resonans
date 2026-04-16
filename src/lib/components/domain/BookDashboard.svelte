@@ -4,6 +4,7 @@
 	import Icon from '../ui/Icon.svelte';
 	import { page } from '$app/stores';
 	import { get } from 'svelte/store';
+	import { tick } from 'svelte';
 
 	interface Props {
 		themeId: string;
@@ -16,6 +17,9 @@
 		coverUrl: string | null;
 		totalPages: number | null;
 		currentPage: number;
+		format: 'print' | 'audio' | 'both';
+		totalMinutes: number | null;
+		currentMinutes: number;
 		status: 'not_started' | 'reading' | 'completed' | 'paused';
 		conversationId: string | null;
 		contextStatus: 'none' | 'pending' | 'partial' | 'ready';
@@ -32,12 +36,37 @@
 		page: number | null;
 		position: string | null;
 		note: string | null;
+		source: string | null;
+		audioUrl: string | null;
 		createdAt: string;
 	}
 
 	interface ChatMsg {
 		role: 'user' | 'assistant';
 		text: string;
+	}
+
+	interface ProgressLogEntry {
+		id: string;
+		currentPage: number | null;
+		currentMinutes: number | null;
+		loggedAt: string;
+	}
+
+	const CHART_VW = 340, CHART_VH = 155;
+	const CHART_PL = 48, CHART_PT = 10, CHART_PB = 30;
+	const CHART_CW = CHART_VW - CHART_PL - 14;
+	const CHART_CH = CHART_VH - CHART_PT - CHART_PB;
+
+	interface ProgressChartData {
+		linePath: string;
+		predPath: string | null;
+		dots: { cx: number; cy: number; label: string }[];
+		etaDate: Date | null;
+		paceLabel: string | null;
+		xLabels: { x: number; label: string; star?: boolean }[];
+		yLines: { y: number; label: string }[];
+		hasEnoughData: boolean;
 	}
 
 	let { themeId }: Props = $props();
@@ -95,8 +124,41 @@
 
 	/* ── Progress ───────────────────────────────────────── */
 	let progressPage = $state('');
+	let posHours = $state(0);
+	let posMins = $state(0);
+	let totalDurHours = $state(0);
+	let totalDurMins = $state(0);
 	let progressSaving = $state(false);
 	let progressError = $state('');
+
+	/* ── Progress log + chart ──────────────────────── */
+	let progressLog = $state<ProgressLogEntry[]>([]);
+	let progressLogLoaded = $state(false);
+	let progressChart = $derived.by(() => selectedBook ? buildProgressChart(progressLog, selectedBook) : null);
+
+	/* ── Chat scroll ────────────────────────────────────── */
+	let chatMessagesEl = $state<HTMLDivElement | null>(null);
+
+	function scrollChatToBottom() {
+		tick().then(() => {
+			if (chatMessagesEl) chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+		});
+	}
+
+	/* ── Image attachment (screenshot parsing) ───────────── */
+	let pendingImageUrl = $state<string | null>(null);
+	let imageUploadLoading = $state(false);
+	let bookImageInput = $state<HTMLInputElement | null>(null);
+
+	/* ── Audio attachment ────────────────────────────────── */
+	let pendingAudioUrl = $state<string | null>(null);
+	let pendingAudioName = $state<string | null>(null);
+	let audioUploadLoading = $state(false);
+	let bookAudioInput = $state<HTMLInputElement | null>(null);
+
+	/* ── Add book format ─────────────────────────────────── */
+	let manualFormat = $state<'print' | 'audio' | 'both'>('print');
+	let manualTotalMinutes = $state('');
 
 	/* ── Init ───────────────────────────────────────────── */
 	$effect(() => {
@@ -199,7 +261,7 @@
 		}
 	}
 
-	async function addBook(data: { title: string; author: string | null; coverUrl: string | null; totalPages: number | null }) {
+	async function addBook(data: { title: string; author: string | null; coverUrl: string | null; totalPages: number | null; format?: 'print' | 'audio' | 'both'; totalMinutes?: number | null }) {
 		addSaving = true;
 		addError = '';
 		try {
@@ -229,6 +291,8 @@
 		manualTitle = '';
 		manualAuthor = '';
 		manualPages = '';
+		manualFormat = 'print';
+		manualTotalMinutes = '';
 		addError = '';
 	}
 
@@ -240,6 +304,12 @@
 		clips = [];
 		clipsLoaded = false;
 		progressPage = String(book.currentPage || '');
+		posHours = Math.floor((book.currentMinutes || 0) / 60);
+		posMins = (book.currentMinutes || 0) % 60;
+		totalDurHours = Math.floor((book.totalMinutes || 0) / 60);
+		totalDurMins = (book.totalMinutes || 0) % 60;
+		progressLog = [];
+		progressLogLoaded = false;
 
 		// Load chat history
 		if (book.conversationId) {
@@ -254,6 +324,7 @@
 			} catch { /* ignore */ }
 		}
 		chatMessagesLoaded = true;
+		scrollChatToBottom();
 
 		// Poll context status if pending
 		if (book.contextStatus === 'pending') {
@@ -266,6 +337,9 @@
 		chatMessages = [];
 		chatStreamingText = '';
 		clips = [];
+		pendingImageUrl = null;
+		progressLog = [];
+		progressLogLoaded = false;
 	}
 
 	async function pollContextStatus(bookId: string) {
@@ -296,6 +370,8 @@
 			metadata?: { year?: number; genre?: string };
 		};
 
+		const isAudio = book.format === 'audio' || book.format === 'both';
+
 		const parts: string[] = [
 			`Du er en oppmerksom og reflektert leser som samtaler om «${book.title}»${book.author ? ` av ${book.author}` : ''}. Du kjenner boken godt — bruk den kunnskapen som grunnlag, ikke som pensum.`,
 
@@ -314,6 +390,25 @@ Unngå:
 Avslutt gjerne med ett åpent, konkret spørsmål som bygger videre på det brukeren faktisk reagerte på.`
 		];
 
+		if (isAudio) {
+			const progressInfo = book.currentMinutes && book.totalMinutes
+				? `Brukeren er på ${formatMinutes(book.currentMinutes)} av ${formatMinutes(book.totalMinutes)}.`
+				: book.currentMinutes
+					? `Brukeren har hørt ${formatMinutes(book.currentMinutes)}.`
+					: '';
+
+			parts.push(`Brukeren hører denne boken som lydbok.${progressInfo ? ' ' + progressInfo : ''}
+
+Hvis brukeren sender et skjermbilde fra en lydspiller:
+- Les av nåværende posisjon (format T:MM:SS), total lengde, og boktittel
+- Oppgi tallene tydelig som: «Posisjon: 2:34:15 av 8:12:00 (ca. 32%)»
+- Si gjerne noe om hva det tilsvarer i boken tematisk, hvis du kan
+
+Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
+- Behandle teksten som et mulig sitat og diskuter innholdet
+- Avslutt med «Vil du lagre dette som et klipp?» hvis innholdet er sitérbart`);
+		}
+
 		if (pack.metadata?.genre) parts.push(`Sjanger: ${pack.metadata.genre}.`);
 		if (pack.themes?.length) parts.push(`Sentrale temaer i boken: ${pack.themes.join(', ')}.`);
 		if (pack.authorContext?.bio) parts.push(`Om forfatteren: ${pack.authorContext.bio}`);
@@ -330,9 +425,53 @@ Avslutt gjerne med ett åpent, konkret spørsmål som bygger videre på det bruk
 		return parts.join('\n\n');
 	}
 
+	async function handleBookImageAttachment(e: Event) {
+		const file = (e.target as HTMLInputElement).files?.[0];
+		if (!file) return;
+		imageUploadLoading = true;
+		try {
+			const fd = new FormData();
+			fd.append('image', file);
+			const res = await fetch('/api/upload-image', { method: 'POST', body: fd });
+			if (!res.ok) throw new Error();
+			const data = await res.json();
+			pendingImageUrl = data.url ?? data.secure_url ?? null;
+		} catch { /* ignore */ } finally {
+			imageUploadLoading = false;
+			if (bookImageInput) bookImageInput.value = '';
+		}
+	}
+
+	async function handleBookAudioAttachment(e: Event) {
+		const file = (e.target as HTMLInputElement).files?.[0];
+		if (!file) return;
+		audioUploadLoading = true;
+		try {
+			const fd = new FormData();
+			fd.append('image', file); // Cloudinary accepts audio via resource_type: auto
+			const res = await fetch('/api/upload-image', { method: 'POST', body: fd });
+			if (!res.ok) throw new Error();
+			const data = await res.json();
+			pendingAudioUrl = data.url ?? data.secure_url ?? null;
+			pendingAudioName = file.name;
+		} catch { /* ignore */ } finally {
+			audioUploadLoading = false;
+			if (bookAudioInput) bookAudioInput.value = '';
+		}
+	}
+
 	async function sendChatMessage(text: string) {
 		if (!selectedBook?.conversationId) return;
-		chatMessages.push({ role: 'user', text });
+
+		const imageUrl = pendingImageUrl;
+		const audioUrl = pendingAudioUrl;
+		pendingImageUrl = null;
+		pendingAudioUrl = null;
+		pendingAudioName = null;
+
+		const userLabel = imageUrl ? `📷 ${text || 'Skjermbilde'}` : audioUrl ? `🎵 ${text || 'Lydklipp'}` : text;
+		chatMessages.push({ role: 'user', text: userLabel });
+		scrollChatToBottom();
 		chatLoading = true;
 		chatError = '';
 		chatStreamingText = '';
@@ -340,17 +479,21 @@ Avslutt gjerne med ett åpent, konkret spørsmål som bygger videre på det bruk
 
 		try {
 			const systemPrompt = buildBookSystemPrompt(selectedBook);
+			const body: Record<string, unknown> = {
+				mode: 'proxy',
+				message: text || (imageUrl ? 'Hva ser du på dette bildet?' : 'Transkriber og kommenter dette lydklippet.'),
+				conversationId: selectedBook.conversationId,
+				routing: {},
+				systemPrompt,
+				messages: []
+			};
+			if (imageUrl) body.imageUrl = imageUrl;
+			if (audioUrl) body.audioUrl = audioUrl;
+
 			const response = await fetch('/api/chat-stream-messages', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					mode: 'proxy',
-					message: text,
-					conversationId: selectedBook.conversationId,
-					routing: {},
-					systemPrompt,
-					messages: []
-				})
+				body: JSON.stringify(body)
 			});
 
 			if (!response.ok || !response.body) throw new Error('Streaming feilet');
@@ -378,6 +521,7 @@ Avslutt gjerne med ett åpent, konkret spørsmål som bygger videre på det bruk
 
 			const message = (finalPayload as any)?.message ?? chatStreamingText;
 			chatMessages.push({ role: 'assistant', text: message });
+			scrollChatToBottom();
 		} catch {
 			chatError = 'Noe gikk galt. Prøv igjen.';
 		} finally {
@@ -399,6 +543,17 @@ Avslutt gjerne med ett åpent, konkret spørsmål som bygger videre på det bruk
 	$effect(() => {
 		if (bookTab === 'klipp' && selectedBook && !clipsLoaded) {
 			void loadClips();
+		}
+	});
+
+	$effect(() => {
+		// Scroll to bottom whenever messages or streaming text change
+		if (chatMessagesLoaded || chatStreamingText) scrollChatToBottom();
+	});
+
+	$effect(() => {
+		if (bookTab === 'fremdrift' && selectedBook && !progressLogLoaded) {
+			void loadProgressLog();
 		}
 	});
 
@@ -440,15 +595,30 @@ Avslutt gjerne med ett åpent, konkret spørsmål som bygger videre på det bruk
 
 	async function saveProgress() {
 		if (!selectedBook) return;
-		const page = parseInt(progressPage, 10);
-		if (!Number.isFinite(page) || page < 0) { progressError = 'Ugyldig sidetall.'; return; }
 		progressSaving = true;
 		progressError = '';
 		try {
+			const updates: Record<string, number> = {};
+
+			if (selectedBook.format !== 'audio' && progressPage.trim()) {
+				const page = parseInt(progressPage, 10);
+				if (!Number.isFinite(page) || page < 0) { progressError = 'Ugyldig sidetall.'; progressSaving = false; return; }
+				updates.currentPage = page;
+			}
+
+			if (selectedBook.format !== 'print') {
+				const mins = (posHours || 0) * 60 + (posMins || 0);
+				if (mins !== selectedBook.currentMinutes) updates.currentMinutes = mins;
+				const total = (totalDurHours || 0) * 60 + (totalDurMins || 0);
+				if (total > 0 && total !== selectedBook.totalMinutes) updates.totalMinutes = total;
+			}
+
+			if (Object.keys(updates).length === 0) { progressError = 'Ingen endringer.'; progressSaving = false; return; }
+
 			const res = await fetch(`/api/tema/${themeId}/books/${selectedBook.id}`, {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ currentPage: page })
+				body: JSON.stringify(updates)
 			});
 			if (!res.ok) throw new Error();
 			const updated: Book = await res.json();
@@ -459,6 +629,15 @@ Avslutt gjerne med ett åpent, konkret spørsmål som bygger videre på det bruk
 		} finally {
 			progressSaving = false;
 		}
+	}
+
+	async function deleteBook() {
+		if (!selectedBook) return;
+		if (!confirm(`Slett «${selectedBook.title}»? Dette kan ikke angres.`)) return;
+		const id = selectedBook.id;
+		await fetch(`/api/tema/${themeId}/books/${id}`, { method: 'DELETE' });
+		books = books.filter((b) => b.id !== id);
+		selectedBook = null;
 	}
 
 	async function setStatus(status: Book['status']) {
@@ -479,6 +658,138 @@ Avslutt gjerne med ett åpent, konkret spørsmål som bygger videre på det bruk
 	function progressPct(book: Book): number {
 		if (!book.totalPages || book.totalPages <= 0) return 0;
 		return Math.min(100, Math.round((book.currentPage / book.totalPages) * 100));
+	}
+
+	function minutesPct(book: Book): number {
+		if (!book.totalMinutes || book.totalMinutes <= 0) return 0;
+		return Math.min(100, Math.round(((book.currentMinutes || 0) / book.totalMinutes) * 100));
+	}
+
+	/** Format integer minutes as "Xt Ym" */
+	function formatMinutes(mins: number): string {
+		const h = Math.floor(mins / 60);
+		const m = mins % 60;
+		return h > 0 ? `${h}t ${m < 10 ? '0' : ''}${m}m` : `${m}m`;
+	}
+
+	/** Parse "1:25", "1:24:35", or raw "85" → integer minutes */
+	function parseProgressMinutes(s: string): number | null {
+		const trimmed = s.trim();
+		if (/^\d+$/.test(trimmed)) return parseInt(trimmed, 10);
+		const match = trimmed.match(/^(\d+):(\d{2})(?::(\d{2}))?$/);
+		if (!match) return null;
+		const h = parseInt(match[1], 10);
+		const m = parseInt(match[2], 10);
+		const secs = match[3] ? parseInt(match[3], 10) : 0;
+		return Math.round(h * 60 + m + secs / 60);
+	}
+
+	function linReg(pts: { x: number; y: number }[]): { slope: number; intercept: number } | null {
+		const n = pts.length;
+		if (n < 2) return null;
+		const sx = pts.reduce((s, p) => s + p.x, 0);
+		const sy = pts.reduce((s, p) => s + p.y, 0);
+		const sxy = pts.reduce((s, p) => s + p.x * p.y, 0);
+		const sx2 = pts.reduce((s, p) => s + p.x * p.x, 0);
+		const d = n * sx2 - sx * sx;
+		if (d === 0) return null;
+		const slope = (n * sxy - sx * sy) / d;
+		return { slope, intercept: (sy - slope * sx) / n };
+	}
+
+	function fmtEta(d: Date): string {
+		const months = ['jan','feb','mar','apr','mai','jun','jul','aug','sep','okt','nov','des'];
+		return `${d.getDate()}. ${months[d.getMonth()]} ${d.getFullYear()}`;
+	}
+
+	function buildProgressChart(log: ProgressLogEntry[], book: Book): ProgressChartData | null {
+		const metric: 'page' | 'minutes' = book.format === 'print' ? 'page' : 'minutes';
+		const total = metric === 'page' ? (book.totalPages ?? 0) : (book.totalMinutes ?? 0);
+		const dayMap = new Map<string, number>();
+		for (const e of log) {
+			const day = e.loggedAt.slice(0, 10);
+			const v = metric === 'page' ? e.currentPage : e.currentMinutes;
+			if (v !== null && v !== undefined) dayMap.set(day, v);
+		}
+		const rawDays = [...dayMap.entries()].sort((a, b) => a[0] < b[0] ? -1 : 1);
+		if (rawDays.length === 0) return null;
+
+		const hasEnoughData = rawDays.length >= 2;
+		const t0 = Date.parse(rawDays[0][0] + 'T00:00:00');
+		const tLast = Date.parse(rawDays[rawDays.length - 1][0] + 'T00:00:00');
+
+		let etaDate: Date | null = null;
+		let paceLabel: string | null = null;
+		let etaMs: number | null = null;
+		let reg: { slope: number; intercept: number } | null = null;
+		if (hasEnoughData && total > 0) {
+			const regPts = rawDays.map(([day, val]) => ({
+				x: (Date.parse(day + 'T00:00:00') - t0) / 86400000, y: val
+			}));
+			reg = linReg(regPts);
+			if (reg && reg.slope > 0) {
+				const etaDays = (total - reg.intercept) / reg.slope;
+				if (etaDays > 0 && etaDays < 3650) {
+					etaMs = t0 + etaDays * 86400000;
+					etaDate = new Date(etaMs);
+					paceLabel = metric === 'page'
+						? `${reg.slope.toFixed(1)} sider/dag`
+						: `${formatMinutes(Math.round(reg.slope))}/dag`;
+				}
+			}
+		}
+
+		const span = Math.max(tLast - t0, 86400000);
+		const tMax = etaMs && etaMs > tLast && (etaMs - t0) < Math.max(span * 3, 30 * 86400000)
+			? etaMs : tLast;
+		const tRange = Math.max(tMax - t0, 86400000);
+		const xOf = (ms: number) => CHART_PL + ((ms - t0) / tRange) * CHART_CW;
+		const yOf = (v: number) => total > 0
+			? CHART_PT + CHART_CH * (1 - Math.max(0, Math.min(v, total)) / total)
+			: CHART_PT + CHART_CH;
+		const f1 = (n: number) => parseFloat(n.toFixed(1));
+		const fmtDay = (d: string) => { const [, mm, dd] = d.split('-'); return `${dd}.${mm}`; };
+
+		const dots = rawDays.map(([day, val]) => {
+			const ms = Date.parse(day + 'T00:00:00');
+			const lbl = metric === 'page' ? `s.${val}` : formatMinutes(val);
+			return { cx: f1(xOf(ms)), cy: f1(yOf(val)), label: `${fmtDay(day)}: ${lbl}` };
+		});
+		const linePath = dots.map((d, i) => `${i === 0 ? 'M' : 'L'}${d.cx},${d.cy}`).join(' ');
+
+		let predPath: string | null = null;
+		if (etaMs && dots.length >= 1) {
+			const last = dots[dots.length - 1];
+			const etaX = f1(Math.min(xOf(etaMs), CHART_PL + CHART_CW));
+			predPath = `M${last.cx},${last.cy} L${etaX},${f1(yOf(total))}`;
+		}
+
+		const xLabels: { x: number; label: string; star?: boolean }[] = [
+			{ x: f1(xOf(t0)), label: fmtDay(rawDays[0][0]) }
+		];
+		if (rawDays.length > 1) xLabels.push({ x: f1(xOf(tLast)), label: fmtDay(rawDays[rawDays.length - 1][0]) });
+		if (etaDate && etaMs) {
+			const d = etaDate;
+			const lbl = `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}`;
+			xLabels.push({ x: f1(Math.min(xOf(etaMs), CHART_PL + CHART_CW - 18)), label: lbl, star: true });
+		}
+
+		const yLines: { y: number; label: string }[] = [];
+		if (total > 0) {
+			const yl = (v: number) => metric === 'page' ? String(v) : formatMinutes(v);
+			yLines.push({ y: f1(yOf(0)), label: yl(0) });
+			yLines.push({ y: f1(yOf(total)), label: yl(total) });
+		}
+		return { linePath, predPath, dots, etaDate, paceLabel, xLabels, yLines, hasEnoughData };
+	}
+
+	async function loadProgressLog() {
+		if (!selectedBook) return;
+		try {
+			const res = await fetch(`/api/tema/${themeId}/books/${selectedBook.id}/progress-log`);
+			if (res.ok) progressLog = await res.json();
+		} catch { /* ignore */ }
+		progressLogLoaded = true;
 	}
 
 	function statusLabel(s: Book['status']): string {
@@ -517,12 +828,19 @@ Avslutt gjerne med ett åpent, konkret spørsmål som bygger videre på det bruk
 					<span class="bk-ctx-badge ready">✦ Kontekst klar</span>
 				{/if}
 			</div>
-			{#if selectedBook.totalPages}
+			{#if selectedBook.format !== 'audio' && selectedBook.totalPages}
 				{@const pct = progressPct(selectedBook)}
 				<div class="bk-progress-bar" title="{selectedBook.currentPage} av {selectedBook.totalPages} sider ({pct}%)">
 					<div class="bk-progress-fill" style="width:{pct}%"></div>
 				</div>
 				<p class="bk-progress-label">{selectedBook.currentPage} / {selectedBook.totalPages} sider</p>
+			{/if}
+			{#if selectedBook.format !== 'print' && selectedBook.totalMinutes}
+				{@const pct = minutesPct(selectedBook)}
+				<div class="bk-progress-bar" title="🎧 {formatMinutes(selectedBook.currentMinutes)} av {formatMinutes(selectedBook.totalMinutes)} ({pct}%)">
+					<div class="bk-progress-fill" style="width:{pct}%"></div>
+				</div>
+				<p class="bk-progress-label">🎧 {formatMinutes(selectedBook.currentMinutes)} / {formatMinutes(selectedBook.totalMinutes)}</p>
 			{/if}
 		</div>
 
@@ -536,7 +854,7 @@ Avslutt gjerne med ett åpent, konkret spørsmål som bygger videre på det bruk
 		{#if bookTab === 'chat'}
 			<!-- ── Chat ── -->
 			<div class="bk-chat">
-				<div class="bk-chat-messages" aria-live="polite">
+				<div class="bk-chat-messages" bind:this={chatMessagesEl} aria-live="polite">
 					{#if !chatMessagesLoaded}
 						<p class="bk-empty">Laster…</p>
 					{:else if chatMessages.length === 0}
@@ -566,10 +884,44 @@ Avslutt gjerne med ett åpent, konkret spørsmål som bygger videre på det bruk
 						<p class="bk-error">{chatError}</p>
 					{/if}
 				</div>
+				{#if pendingImageUrl}
+					<div class="bk-pending-image">
+						<img src={pendingImageUrl} alt="Vedlegg" class="bk-pending-thumb" />
+						<button class="bk-pending-remove" onclick={() => (pendingImageUrl = null)} aria-label="Fjern bilde">×</button>
+					</div>
+				{/if}
+				{#if pendingAudioUrl}
+					<div class="bk-pending-audio">
+						<span class="bk-pending-audio-name">🎵 {pendingAudioName ?? 'Lydklipp'}</span>
+						<button class="bk-pending-remove" onclick={() => { pendingAudioUrl = null; pendingAudioName = null; }} aria-label="Fjern lyd">×</button>
+					</div>
+				{/if}
+				{#if imageUploadLoading || audioUploadLoading}
+					<p class="bk-upload-status">{imageUploadLoading ? 'Laster opp bilde…' : 'Laster opp lyd…'}</p>
+				{/if}
+				<input
+					bind:this={bookImageInput}
+					type="file"
+					accept="image/*"
+					style="display:none"
+					onchange={handleBookImageAttachment}
+				/>
+				<input
+					bind:this={bookAudioInput}
+					type="file"
+					accept="audio/*,video/*"
+					style="display:none"
+					onchange={handleBookAudioAttachment}
+				/>
 				<ChatInput
+					showActionRig
 					placeholder="Hva tenker du om «{selectedBook.title}»?"
-					disabled={chatLoading}
+					disabled={chatLoading || imageUploadLoading || audioUploadLoading}
 					onsubmit={(msg) => sendChatMessage(msg)}
+					onAttachment={(kind) => {
+						if (kind === 'camera') bookImageInput?.click();
+						else if (kind === 'voice') bookAudioInput?.click();
+					}}
 				/>
 			</div>
 
@@ -647,33 +999,111 @@ Avslutt gjerne med ett åpent, konkret spørsmål som bygger videre på det bruk
 					</div>
 				</div>
 
-				<div class="bk-fremdrift-section">
-					<p class="bk-fremdrift-label">Logg sidetall</p>
-					<div class="bk-page-row">
-						<input
-							class="bk-page-input"
-							type="number"
-							min="0"
-							placeholder="Side"
-							bind:value={progressPage}
-						/>
-						{#if selectedBook.totalPages}
-							<span class="bk-page-of">av {selectedBook.totalPages}</span>
-						{/if}
-						<button class="bk-save-btn bk-save-btn-sm" onclick={saveProgress} disabled={progressSaving}>
-							{progressSaving ? '…' : 'Lagre'}
-						</button>
+				{#if selectedBook.format !== 'audio'}
+					<div class="bk-fremdrift-section">
+						<p class="bk-fremdrift-label">Sider lest</p>
+						<div class="bk-page-row">
+							<input
+								class="bk-page-input"
+								type="number"
+								min="0"
+								placeholder="Side"
+								bind:value={progressPage}
+							/>
+							{#if selectedBook.totalPages}
+								<span class="bk-page-of">av {selectedBook.totalPages}</span>
+							{/if}
+						</div>
 					</div>
+				{/if}
+
+				{#if selectedBook.format !== 'print'}
+					<div class="bk-fremdrift-section">
+						<p class="bk-fremdrift-label">Posisjon</p>
+						{#if (totalDurHours || 0) * 60 + (totalDurMins || 0) > 0}
+							{@const sliderMax = (totalDurHours || 0) * 60 + (totalDurMins || 0)}
+							<input
+								type="range"
+								class="bk-time-slider"
+								min="0"
+								max={sliderMax}
+								value={(posHours || 0) * 60 + (posMins || 0)}
+								oninput={(e) => {
+									const v = parseInt((e.target as HTMLInputElement).value);
+									posHours = Math.floor(v / 60);
+									posMins = v % 60;
+								}}
+							/>
+						{/if}
+						<div class="bk-hm-row">
+							<div class="bk-hm-field">
+								<input type="number" class="bk-hm-input" min="0" bind:value={posHours} />
+								<span class="bk-hm-label">t</span>
+							</div>
+							<div class="bk-hm-field">
+								<input type="number" class="bk-hm-input" min="0" max="59" bind:value={posMins} />
+								<span class="bk-hm-label">min</span>
+							</div>
+							{#if (totalDurHours || 0) * 60 + (totalDurMins || 0) > 0}
+								<span class="bk-hm-of">av {totalDurHours}t {totalDurMins < 10 ? '0' : ''}{totalDurMins}m</span>
+							{/if}
+						</div>
+
+						<p class="bk-fremdrift-label" style="margin-top:0.75rem">Total varighet</p>
+						<div class="bk-hm-row">
+							<div class="bk-hm-field">
+								<input type="number" class="bk-hm-input" min="0" bind:value={totalDurHours} />
+								<span class="bk-hm-label">t</span>
+							</div>
+							<div class="bk-hm-field">
+								<input type="number" class="bk-hm-input" min="0" max="59" bind:value={totalDurMins} />
+								<span class="bk-hm-label">min</span>
+							</div>
+						</div>
+					</div>
+				{/if}
+
+				<div class="bk-fremdrift-section">
+					<button class="bk-save-btn bk-save-btn-sm" onclick={saveProgress} disabled={progressSaving}>
+						{progressSaving ? '…' : 'Lagre fremdrift'}
+					</button>
 					{#if progressError}<p class="bk-error">{progressError}</p>{/if}
 				</div>
 
-				{#if selectedBook.totalPages}
+				{#if selectedBook.format !== 'audio' && selectedBook.totalPages}
 					{@const pct = progressPct(selectedBook)}
-					<div class="bk-big-progress">
+					<div class="bk-big-progress" title="{selectedBook.currentPage}/{selectedBook.totalPages} sider">
 						<div class="bk-big-fill" style="width:{pct}%"></div>
-						<span class="bk-big-pct">{pct}%</span>
+						<span class="bk-big-pct">{pct}% sider</span>
 					</div>
 				{/if}
+
+				{#if selectedBook.format !== 'print' && selectedBook.totalMinutes}
+					{@const pct = minutesPct(selectedBook)}
+					<div class="bk-big-progress" title="{formatMinutes(selectedBook.currentMinutes)} av {formatMinutes(selectedBook.totalMinutes)}">
+						<div class="bk-big-fill" style="width:{pct}%"></div>
+						<span class="bk-big-pct">{pct}% lyd · {formatMinutes(selectedBook.currentMinutes)}</span>
+					</div>
+				{/if}
+
+				<div class="bk-fremdrift-section">
+					<p class="bk-fremdrift-label">Format</p>
+					<div class="bk-format-btns">
+						{#each ([['print', '📖 Papir'], ['audio', '🎧 Lydbok'], ['both', '📖🎧 Begge']] as const) as [f, label]}
+							<button
+								class="bk-status-btn"
+								class:active={selectedBook.format === f}
+								onclick={async () => {
+									const res = await fetch(`/api/tema/${themeId}/books/${selectedBook!.id}`, {
+										method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+										body: JSON.stringify({ format: f })
+									});
+									if (res.ok) { const u: Book = await res.json(); selectedBook = u; books = books.map(b => b.id === u.id ? u : b); }
+								}}
+							>{label}</button>
+						{/each}
+					</div>
+				</div>
 
 				{#if selectedBook.startedAt}
 					<p class="bk-fremdrift-info">Startet: {fmtDate(selectedBook.startedAt)}</p>
@@ -681,6 +1111,43 @@ Avslutt gjerne med ett åpent, konkret spørsmål som bygger videre på det bruk
 				{#if selectedBook.finishedAt}
 					<p class="bk-fremdrift-info">Ferdig: {fmtDate(selectedBook.finishedAt)}</p>
 				{/if}
+
+				<!-- Progress chart -->
+				<div class="bk-fremdrift-section">
+					<p class="bk-fremdrift-label">Fremdriftsgraf</p>
+					{#if !progressLogLoaded}
+						<p class="bk-empty" style="padding:4px 0">Laster…</p>
+					{:else if !progressChart}
+						<p class="bk-empty" style="padding:4px 0">Logg fremdrift for å se graf.</p>
+					{:else}
+						<svg class="bk-chart-svg" viewBox="0 0 {CHART_VW} {CHART_VH}" aria-label="Fremdriftsgraf">
+							{#each progressChart.yLines as yl}
+								<line class="bk-chart-grid" x1={CHART_PL} y1={yl.y} x2={CHART_PL + CHART_CW} y2={yl.y} />
+								<text class="bk-chart-ylabel" x={CHART_PL - 4} y={yl.y + 4} text-anchor="end">{yl.label}</text>
+							{/each}
+							{#if progressChart.predPath}
+								<path class="bk-chart-pred" d={progressChart.predPath} />
+							{/if}
+							<path class="bk-chart-line" d={progressChart.linePath} />
+							{#each progressChart.dots as dot}
+								<circle class="bk-chart-dot" cx={dot.cx} cy={dot.cy} r="3.5"><title>{dot.label}</title></circle>
+							{/each}
+							<line class="bk-chart-axis" x1={CHART_PL} y1={CHART_PT + CHART_CH} x2={CHART_PL + CHART_CW} y2={CHART_PT + CHART_CH} />
+							{#each progressChart.xLabels as xl}
+								<text class="bk-chart-xlabel" class:bk-chart-xlabel-eta={xl.star} x={xl.x} y={CHART_VH - 2} text-anchor="middle">{xl.label}</text>
+							{/each}
+						</svg>
+						<div class="bk-chart-meta">
+							{#if progressChart.paceLabel}<span class="bk-chart-pace">⚡ {progressChart.paceLabel}</span>{/if}
+							{#if progressChart.etaDate}<span class="bk-chart-eta">📅 Est. ferdig: <strong>{fmtEta(progressChart.etaDate)}</strong></span>{/if}
+							{#if !progressChart.hasEnoughData}<span class="bk-chart-hint">Logg på flere dager for prediksjon.</span>{/if}
+						</div>
+					{/if}
+				</div>
+
+				<div class="bk-fremdrift-section" style="margin-top:1.5rem">
+					<button class="bk-delete-btn" onclick={deleteBook}>🗑 Slett bok</button>
+				</div>
 			</div>
 		{/if}
 	</div>
@@ -749,13 +1216,30 @@ Avslutt gjerne med ett åpent, konkret spørsmål som bygger videre på det bruk
 					<div class="bk-add-form">
 						<input class="bk-add-input" placeholder="Tittel *" bind:value={manualTitle} />
 						<input class="bk-add-input" placeholder="Forfatter (valgfritt)" bind:value={manualAuthor} />
-						<input class="bk-add-input" type="number" min="1" placeholder="Antall sider (valgfritt)" bind:value={manualPages} />
+						<div class="bk-format-btns" style="margin-bottom:0.5rem">
+							{#each ([['print', '📖 Papir'], ['audio', '🎧 Lydbok'], ['both', '📖🎧 Begge']] as const) as [f, label]}
+								<button type="button" class="bk-status-btn" class:active={manualFormat === f} onclick={() => (manualFormat = f)}>{label}</button>
+							{/each}
+						</div>
+						{#if manualFormat !== 'audio'}
+							<input class="bk-add-input" type="number" min="1" placeholder="Antall sider (valgfritt)" bind:value={manualPages} />
+						{/if}
+						{#if manualFormat !== 'print'}
+							<input class="bk-add-input" placeholder="Total lydboktid, minutter (valgfritt)" bind:value={manualTotalMinutes} />
+						{/if}
 						{#if addError}<p class="bk-error">{addError}</p>{/if}
 						<div class="bk-manual-actions">
 							<button class="bk-manual-link" onclick={() => (manualMode = false)}>← Tilbake til søk</button>
 							<button
 								class="bk-save-btn"
-								onclick={() => addBook({ title: manualTitle.trim(), author: manualAuthor.trim() || null, coverUrl: null, totalPages: manualPages ? Number(manualPages) : null })}
+								onclick={() => addBook({
+									title: manualTitle.trim(),
+									author: manualAuthor.trim() || null,
+									coverUrl: null,
+									totalPages: manualPages ? Number(manualPages) : null,
+									format: manualFormat,
+									totalMinutes: manualTotalMinutes ? Number(manualTotalMinutes) : null
+								})}
 								disabled={addSaving || !manualTitle.trim()}
 							>
 								{addSaving ? 'Legger til…' : 'Legg til bok'}
@@ -788,11 +1272,14 @@ Avslutt gjerne med ett åpent, konkret spørsmål som bygger videre på det bruk
 							</div>
 							<span class="bk-card-status-dot" class:reading={book.status === 'reading'} class:completed={book.status === 'completed'} title={statusLabel(book.status)}></span>
 						</div>
-						{#if book.totalPages}
-							<div class="bk-card-bar">
-								<div class="bk-card-fill" style="width:{pct}%"></div>
-							</div>
+						{#if book.format !== 'audio' && book.totalPages}
+							{@const pct = progressPct(book)}
+							<div class="bk-card-bar"><div class="bk-card-fill" style="width:{pct}%"></div></div>
 							<p class="bk-card-pct">{pct}% · {book.currentPage}/{book.totalPages} s.</p>
+						{:else if book.format !== 'print' && book.totalMinutes}
+							{@const pct = minutesPct(book)}
+							<div class="bk-card-bar"><div class="bk-card-fill" style="width:{pct}%"></div></div>
+							<p class="bk-card-pct">🎧 {pct}% · {formatMinutes(book.currentMinutes)}</p>
 						{:else}
 							<p class="bk-card-pct">{statusEmoji(book.status)} {statusLabel(book.status)}</p>
 						{/if}
@@ -954,6 +1441,51 @@ Avslutt gjerne med ett åpent, konkret spørsmål som bygger videre på det bruk
 		line-height: 1.5;
 		white-space: pre-wrap;
 		word-break: break-word;
+	}
+
+	.bk-pending-image {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 4px 16px;
+	}
+	.bk-pending-thumb {
+		height: 48px;
+		width: 48px;
+		object-fit: cover;
+		border-radius: 6px;
+	}
+	.bk-pending-audio {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 6px 16px;
+		background: #0f1025;
+		border-top: 1px solid #1e1e2a;
+	}
+	.bk-pending-audio-name {
+		font-size: 0.82rem;
+		color: #a0a8ff;
+		flex: 1;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.bk-pending-remove {
+		background: none;
+		border: none;
+		color: #888;
+		font-size: 1rem;
+		cursor: pointer;
+		padding: 0 4px;
+		line-height: 1;
+	}
+	.bk-pending-remove:hover { color: #ff9999; }
+	.bk-upload-status {
+		font-size: 0.78rem;
+		color: #888;
+		padding: 2px 16px;
+		margin: 0;
 	}
 
 	/* Clips */
@@ -1144,6 +1676,49 @@ Avslutt gjerne med ett åpent, konkret spørsmål som bygger videre på det bruk
 	.bk-page-of {
 		font-size: 0.82rem;
 		color: #666;
+	}
+
+	.bk-time-slider {
+		width: 100%;
+		margin: 4px 0 10px;
+		accent-color: #6b7fff;
+		cursor: pointer;
+	}
+
+	.bk-hm-row {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		flex-wrap: wrap;
+	}
+
+	.bk-hm-field {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+	}
+
+	.bk-hm-input {
+		width: 58px;
+		text-align: center;
+		background: #141414;
+		border: 1px solid #2a2a2a;
+		border-radius: 8px;
+		color: #e8e8e8;
+		font: inherit;
+		font-size: 1rem;
+		padding: 6px 8px;
+	}
+
+	.bk-hm-label {
+		font-size: 0.82rem;
+		color: #888;
+	}
+
+	.bk-hm-of {
+		font-size: 0.82rem;
+		color: #555;
+		margin-left: 4px;
 	}
 
 	.bk-big-progress {
@@ -1464,4 +2039,30 @@ Avslutt gjerne med ett åpent, konkret spørsmål som bygger videre på det bruk
 	.bk-save-btn-sm {
 		padding: 6px 12px;
 	}
+	.bk-delete-btn {
+		font: inherit;
+		font-size: 0.82rem;
+		padding: 6px 12px;
+		background: transparent;
+		border: 1px solid #6a3b3b;
+		color: #ff9999;
+		border-radius: 8px;
+		cursor: pointer;
+	}
+	.bk-delete-btn:hover { background: #3b1e1e; }
+
+	/* ── Progress chart ──────────────────────────────────── */
+	.bk-chart-svg { width: 100%; height: auto; display: block; overflow: visible; }
+	.bk-chart-grid { stroke: #1e1e2a; stroke-width: 1; }
+	.bk-chart-axis { stroke: #2a2a3a; stroke-width: 1; }
+	.bk-chart-line { fill: none; stroke: #6b7fff; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+	.bk-chart-pred { fill: none; stroke: #6b7fff; stroke-width: 1.5; stroke-dasharray: 4 3; opacity: 0.5; }
+	.bk-chart-dot { fill: #6b7fff; stroke: #0d0d14; stroke-width: 1.5; cursor: default; }
+	.bk-chart-ylabel { fill: #555; font-size: 9px; }
+	.bk-chart-xlabel { fill: #555; font-size: 9px; }
+	.bk-chart-xlabel-eta { fill: #88aaff; }
+	.bk-chart-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 6px 0 2px; font-size: 0.79rem; }
+	.bk-chart-pace { color: #a0a8ff; }
+	.bk-chart-eta { color: #c8d4ff; }
+	.bk-chart-hint { color: #555; font-size: 0.76rem; }
 </style>

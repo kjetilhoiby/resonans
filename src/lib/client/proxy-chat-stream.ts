@@ -4,6 +4,7 @@ interface ProxyChatStreamOptions {
 	imageUrl?: string;
 	attachment?: unknown;
 	preferredModel?: string;
+	systemPrompt?: string;
 	onStatus?: (message: string) => void;
 	onToken?: (token: string) => void;
 	onComplete?: (payload: Record<string, any>) => void;
@@ -19,6 +20,7 @@ export async function streamProxyChat({
 	imageUrl,
 	attachment,
 	preferredModel,
+	systemPrompt,
 	onStatus,
 	onToken,
 	onComplete,
@@ -38,7 +40,7 @@ export async function streamProxyChat({
 			attachment,
 			preferredModel,
 			routing: {},
-			systemPrompt: '',
+			systemPrompt: systemPrompt ?? '',
 			messages: []
 		})
 	});

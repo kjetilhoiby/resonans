@@ -2,10 +2,11 @@
 	import { enhance } from '$app/forms';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import { tick } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import ScreenTitle from '$lib/components/ui/ScreenTitle.svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import ChatSheet from '$lib/components/ui/ChatSheet.svelte';
+	import DayPlanSheet from '$lib/components/ui/DayPlanSheet.svelte';
 	import { finishNavMetric, startNavMetric } from '$lib/client/nav-metrics';
 
 	type SaveState = 'idle' | 'saving' | 'saved';
@@ -176,11 +177,10 @@
 	let planningImportBusy = $state(false);
 	let dayCloseBusy = $state(false);
 	let dayCloseMessage = $state('');
-	let dayPlannerOpen = $state(false);
-	let dayPlannerBusy = $state(false);
-	let dayPlannerMessage = $state('');
-	let dayPlannerIntro = $state('');
-	let dayPlannerSuggestions = $state<Array<{ id: string; text: string; source: 'carryover' | 'week'; selected: boolean }>>([]);
+	let dayPlanSheetOpen = $state(false);
+	let dayPlanSheetBusy = $state(false);
+	let dayPlanSheetCarryovers = $state<string[]>([]);
+	let dayPlanSheetWeekTasks = $state<string[]>([]);
 	let nudgeFlowStarted = $state(false);
 	let nudgeFlowCompleted = $state(false);
 	let dayCloseFlowOpen = $state(false);
@@ -220,12 +220,17 @@
 	const weekIsClosed = $derived(!!data.reflection);
 	const dayIsPlanned = $derived(!!selectedDayHeadline);
 
-	const showPlanWeek = $derived(hasPreviousWeekContext && !weekIsPlanned);
+	const showPlanWeek = $derived(!weekIsPlanned); // TODO: restore condition: hasPreviousWeekContext && !weekIsPlanned
 	const showPlanDay = $derived(!dayIsPlanned);
 	const showCloseDay = $derived(_isAfter18 && hasOpenDayItems);
 	const showCloseWeek = $derived(_isSunday && !weekIsClosed);
 	const nudgeTrack = nudgeTrackFromQuery;
 	const nudgeEventId = nudgeEventIdFromQuery;
+
+	// Sync day headlines from server after invalidation (e.g. after AI saves via plan_day tool)
+	$effect(() => {
+		dayHeadlinesState = { ...data.dayHeadlines };
+	});
 
 	async function reportNudgeStage(stage: 'flow_started' | 'flow_completed') {
 		if (!nudgeEventId) return;
@@ -364,8 +369,7 @@
 
 	function setSelectedDay(dayIso: string) {
 		selectedDayIso = dayIso;
-		dayPlannerMessage = '';
-		dayPlannerOpen = false;
+		dayPlanSheetOpen = false;
 		if (typeof window !== 'undefined') {
 			const params = new URLSearchParams(window.location.search);
 			params.set('day', dayIso);
@@ -637,105 +641,30 @@
 		return rows[0] ?? null;
 	}
 
-	function togglePlannerSuggestion(id: string) {
-		dayPlannerSuggestions = dayPlannerSuggestions.map((item) =>
-			item.id === id ? { ...item, selected: !item.selected } : item
-		);
-	}
-
-	async function saveDayHeadline(dayIso: string, headline: string) {
-		const form = new FormData();
-		form.set('weekKey', data.week.dashedKey);
-		form.set('dayIso', dayIso);
-		form.set('headline', headline);
-
-		const response = await fetch('?/saveDayHeadline', {
-			method: 'POST',
-			body: form
-		});
-
-		return response.ok;
-	}
-
-	async function openDayPlanner() {
-		if (dayPlannerBusy) return;
+	async function openDayPlanSheet() {
+		if (dayPlanSheetBusy) return;
 		if (nudgeTrack === 'plan_day') {
 			await reportNudgeStage('flow_started');
 		}
-		dayPlannerBusy = true;
-		dayPlannerMessage = '';
+		dayPlanSheetBusy = true;
 
 		const prevDayIso = addDaysIsoDate(selectedDayIso, -1);
 		const prevWeekKey = getIsoWeekDashedFromIsoDate(prevDayIso);
 		const prevContext = `week:${prevWeekKey}:day:${prevDayIso}`;
 		const prevChecklist = await fetchDayChecklistByContext(prevContext);
 
-		const carryovers = (prevChecklist?.items ?? [])
+		dayPlanSheetCarryovers = (prevChecklist?.items ?? [])
 			.filter((item) => !item.checked)
 			.map((item) => item.text.trim())
 			.filter((text) => text.length > 0);
 
-		const weekTaskSuggestions = data.weekTasks
+		dayPlanSheetWeekTasks = data.weekTasks
 			.filter((task) => task.completedCount < task.repeatCount)
 			.map((task) => task.title.trim())
 			.filter((text) => text.length > 0);
 
-		const unique = new Set<string>();
-		const nextSuggestions: Array<{ id: string; text: string; source: 'carryover' | 'week'; selected: boolean }> = [];
-		for (const text of carryovers) {
-			const key = text.toLowerCase();
-			if (unique.has(key)) continue;
-			unique.add(key);
-			nextSuggestions.push({ id: `carry:${key}`, text, source: 'carryover', selected: true });
-		}
-		for (const text of weekTaskSuggestions) {
-			const key = text.toLowerCase();
-			if (unique.has(key)) continue;
-			unique.add(key);
-			nextSuggestions.push({ id: `week:${key}`, text, source: 'week', selected: false });
-		}
-
-		dayPlannerSuggestions = nextSuggestions;
-		dayPlannerIntro = dayHeadlinesState[selectedDayIso] ?? '';
-		dayPlannerOpen = true;
-		dayPlannerBusy = false;
-	}
-
-	async function applyDayPlanner() {
-		if (dayPlannerBusy) return;
-		dayPlannerBusy = true;
-		dayPlannerMessage = '';
-
-		const checklist = await ensureDayChecklist(selectedDayIso);
-		if (!checklist) {
-			dayPlannerBusy = false;
-			dayPlannerMessage = 'Kunne ikke opprette dagsliste.';
-			return;
-		}
-
-		const selectedSuggestions = dayPlannerSuggestions
-			.filter((item) => item.selected)
-			.map((item) => item.text.trim())
-			.filter((text) => text.length > 0);
-
-		const existingTexts = new Set(
-			(checklist.items ?? []).map((item) => item.text.trim().toLowerCase())
-		);
-		const toCreate = selectedSuggestions.filter((text) => !existingTexts.has(text.toLowerCase()));
-		if (toCreate.length > 0) {
-			await appendChecklistItems(checklist.id, toCreate);
-		}
-
-		const intro = dayPlannerIntro.trim();
-		dayHeadlinesState = { ...dayHeadlinesState, [selectedDayIso]: intro };
-		await saveDayHeadline(selectedDayIso, intro);
-
-		dayPlannerBusy = false;
-		dayPlannerOpen = false;
-		dayPlannerMessage = `Planlagt: ${toCreate.length} nye dagsoppgaver.`;
-		if (nudgeTrack === 'plan_day') {
-			await reportNudgeStage('flow_completed');
-		}
+		dayPlanSheetBusy = false;
+		dayPlanSheetOpen = true;
 	}
 
 	async function toggleChecklistItem(checklistId: string, itemId: string, checked: boolean) {
@@ -1026,7 +955,7 @@
 		const nextDayIso = addDaysIsoDate(selectedDayIso, 1);
 		setSelectedDay(nextDayIso);
 		await tick();
-		await openDayPlanner();
+		await openDayPlanSheet();
 	}
 
 	function openDayCloseFlow() {
@@ -1265,8 +1194,8 @@
 			</button>
 		{/if}
 		{#if showPlanDay}
-			<button class="btn-chip" type="button" onclick={() => void openDayPlanner()} disabled={dayPlannerBusy}>
-				{dayPlannerBusy ? 'Henter ...' : 'Planlegg dag'}
+			<button class="btn-chip" type="button" onclick={() => void openDayPlanSheet()} disabled={dayPlanSheetBusy}>
+				{dayPlanSheetBusy ? 'Henter ...' : 'Planlegg dag'}
 			</button>
 		{/if}
 		{#if showCloseDay}
@@ -1496,49 +1425,6 @@
 				<p class="wp-helper">{selectedDayHeadline}</p>
 			{/if}
 
-			{#if dayPlannerOpen}
-				<div class="wp-day-planner">
-					<label class="wp-day-planner-label" for="plannerIntro">Enlinjer for dagen</label>
-					<input
-						id="plannerIntro"
-						class="wp-input"
-						type="text"
-						bind:value={dayPlannerIntro}
-						placeholder="F.eks: To barn på svømming og Anita på FAU-møte"
-					/>
-
-					{#if dayPlannerSuggestions.length > 0}
-						<p class="wp-day-planner-label">Forslag til dagsoppgaver</p>
-						<div class="wp-day-planner-suggestions">
-							{#each dayPlannerSuggestions as suggestion}
-								<button
-									type="button"
-									class="wp-day-planner-item"
-									class:selected={suggestion.selected}
-									onclick={() => togglePlannerSuggestion(suggestion.id)}
-								>
-									<span>{suggestion.text}</span>
-									<span class="wp-day-planner-source">{suggestion.source === 'carryover' ? 'overligger' : 'ukesmål'}</span>
-								</button>
-							{/each}
-						</div>
-					{:else}
-						<p class="wp-empty">Ingen forslag funnet akkurat nå.</p>
-					{/if}
-
-					<div class="wp-ribbon">
-						<button class="btn-chip" type="button" onclick={() => void applyDayPlanner()} disabled={dayPlannerBusy}>
-							{dayPlannerBusy ? 'Lagrer ...' : 'Bruk i dagslista'}
-						</button>
-						<button class="btn-chip" type="button" onclick={() => (dayPlannerOpen = false)} disabled={dayPlannerBusy}>Avbryt</button>
-					</div>
-				</div>
-			{/if}
-
-			{#if dayPlannerMessage}
-				<p class="wp-helper">{dayPlannerMessage}</p>
-			{/if}
-
 			<div class="wp-field-shell">
 				<textarea
 					class="wp-textarea"
@@ -1704,6 +1590,24 @@
 		prefill={buildWeekReviewPrefill()}
 		autoSend={true}
 		onclose={() => (weekReviewChatOpen = false)}
+	/>
+{/if}
+
+{#if dayPlanSheetOpen}
+	<DayPlanSheet
+		dayIso={selectedDayIso}
+		dayLabel={selectedDay.label}
+		weekDashedKey={data.week.dashedKey}
+		carryovers={dayPlanSheetCarryovers}
+		weekTasks={dayPlanSheetWeekTasks}
+		existingHeadline={dayHeadlinesState[selectedDayIso] ?? ''}
+		onclose={() => (dayPlanSheetOpen = false)}
+		onsaved={async () => {
+			if (nudgeTrack === 'plan_day') {
+				await reportNudgeStage('flow_completed');
+			}
+			await invalidateAll();
+		}}
 	/>
 {/if}
 
@@ -2163,51 +2067,6 @@
 		justify-content: space-between;
 		gap: 10px;
 		align-items: flex-start;
-	}
-
-	.wp-day-planner {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-	}
-
-	.wp-day-planner-label {
-		font-size: 0.72rem;
-		color: #9aa3bb;
-		font-weight: 600;
-	}
-
-	.wp-day-planner-suggestions {
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
-	}
-
-	.wp-day-planner-item {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		gap: 10px;
-		padding: 8px 9px;
-		border-radius: 8px;
-		border: none;
-		background: #121726;
-		color: #ccd4ef;
-		cursor: pointer;
-		text-align: left;
-	}
-
-	.wp-day-planner-item.selected {
-		border-color: #4b5fb4;
-		background: #182244;
-	}
-
-	.wp-day-planner-source {
-		font-size: 0.72rem;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-		color: #8b98c7;
-		flex-shrink: 0;
 	}
 
 	.wp-ribbon {

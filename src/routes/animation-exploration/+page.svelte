@@ -345,7 +345,7 @@
 
 		// Flood explosion from click position
 		flood = { id: Date.now(), hue: theme.hue, cx, cy, r: 20 };
-		setTimeout(() => { flood = null; }, 420);
+		setTimeout(() => { flood = null; }, 780);
 
 		// Flying label: start at button, fly up to theme-hero
 		flyingLabel = { hue: theme.hue, emoji: theme.emoji, label: theme.label, cx, cy };
@@ -834,7 +834,7 @@
 		z-index: 9998;
 		pointer-events: none;
 		transform: translate(-50%, -50%) scale(1);
-		animation: flood-expand 0.40s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+		animation: flood-expand 0.75s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 	}
 	@keyframes flood-expand {
 		to { transform: translate(-50%, -50%) scale(80); }

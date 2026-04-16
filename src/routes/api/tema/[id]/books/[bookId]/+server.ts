@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
-import { books, bookClips, themes } from '$lib/db/schema';
+import { books, bookClips, themes, bookProgressLog } from '$lib/db/schema';
 import { eq, and, asc } from 'drizzle-orm';
 
 // GET — book detail + clips
@@ -34,6 +34,9 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 
 	if (typeof body?.currentPage === 'number') updates.currentPage = body.currentPage;
 	if (typeof body?.totalPages === 'number') updates.totalPages = body.totalPages;
+	if (typeof body?.currentMinutes === 'number') updates.currentMinutes = body.currentMinutes;
+	if (typeof body?.totalMinutes === 'number') updates.totalMinutes = body.totalMinutes;
+	if (typeof body?.format === 'string' && ['print', 'audio', 'both'].includes(body.format)) updates.format = body.format;
 	if (typeof body?.status === 'string') {
 		const validStatuses = ['not_started', 'reading', 'completed', 'paused'];
 		if (!validStatuses.includes(body.status)) {
@@ -59,6 +62,16 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 		.set(updates)
 		.where(eq(books.id, params.bookId))
 		.returning();
+
+	// Log progress snapshot if page or minutes changed
+	if (updates.currentPage !== undefined || updates.currentMinutes !== undefined) {
+		await db.insert(bookProgressLog).values({
+			bookId: params.bookId,
+			userId: locals.userId,
+			currentPage: updates.currentPage ?? updated.currentPage,
+			currentMinutes: updates.currentMinutes ?? updated.currentMinutes
+		});
+	}
 
 	return json(updated);
 };

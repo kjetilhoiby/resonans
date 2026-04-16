@@ -34,6 +34,10 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 	const title = typeof body?.title === 'string' ? body.title.trim() : '';
 	const author = typeof body?.author === 'string' ? body.author.trim() : null;
 	const totalPages = typeof body?.totalPages === 'number' ? body.totalPages : null;
+	const totalMinutes = typeof body?.totalMinutes === 'number' ? body.totalMinutes : null;
+	const format = (typeof body?.format === 'string' && ['print', 'audio', 'both'].includes(body.format))
+		? (body.format as 'print' | 'audio' | 'both')
+		: 'print';
 
 	if (!title) return json({ error: 'title required' }, { status: 400 });
 
@@ -55,6 +59,8 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 			title,
 			author: author || null,
 			totalPages: totalPages || null,
+			totalMinutes: totalMinutes || null,
+			format,
 			conversationId: conv.id,
 			contextStatus: 'pending'
 		})
