@@ -15,6 +15,5 @@ export { default as TransactionList } from './TransactionList.svelte';
 export { default as Icon } from './Icon.svelte';
 
 // Sheets & Overlays
-export { default as ChatSheet } from './ChatSheet.svelte';
 export { default as ChecklistSheet } from './ChecklistSheet.svelte';
 export { default as WidgetConfigSheet } from './WidgetConfigSheet.svelte';

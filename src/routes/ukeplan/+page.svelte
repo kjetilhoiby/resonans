@@ -5,8 +5,8 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import ScreenTitle from '$lib/components/ui/ScreenTitle.svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
-	import ChatSheet from '$lib/components/ui/ChatSheet.svelte';
-	import DayPlanSheet from '$lib/components/ui/DayPlanSheet.svelte';
+	import FlowSheet from '$lib/components/flows/FlowSheet.svelte';
+	import { FLOWS } from '$lib/flows/registry';
 	import { finishNavMetric, startNavMetric } from '$lib/client/nav-metrics';
 
 	type SaveState = 'idle' | 'saving' | 'saved';
@@ -1012,12 +1012,12 @@
 		if (andPlanNext) await planNextDayFromClose();
 	}
 
-	function buildWeekPlanPrefill() {
+	function buildWeekPlanSystemPrompt() {
 		const parts: string[] = [
-			`Du er en planleggingsassistent som hjelper brukeren å planlegge uke ${data.week.week}.`,
-			`Din jobb er å hjelpe brukeren sette gode ukesmål basert på forrige ukes erfaring. Still ett spørsmål av gangen.`
+			`Du er en planleggingsassistent som hjelper brukeren planlegge uke ${data.week.week}.`,
+			`Jobb-instruksjon: hjelp brukeren sette konkrete ukesmål. Still ett spørsmål av gangen. Vær kort og direkte.`
 		];
-		if (data.previousWeekSummary.note) parts.push(`Forrige uke: "${data.previousWeekSummary.note}".`);
+		if (data.previousWeekSummary.note) parts.push(`Forrige ukes notat: "${data.previousWeekSummary.note}".`);
 		if (data.previousWeekSummary.reflection) parts.push(`Læring fra forrige uke: "${data.previousWeekSummary.reflection}".`);
 		const carryovers = [...data.previousWeekSummary.carryoverItems, ...data.previousWeekSummary.incompleteTasks];
 		if (carryovers.length > 0) parts.push(`Overliggere fra forrige uke: ${carryovers.join('; ')}.`);
@@ -1025,7 +1025,14 @@
 		return parts.join(' ');
 	}
 
-	function buildWeekReviewPrefill() {
+	function buildWeekPlanPrefill() {
+		const hasContext = data.previousWeekSummary.note || data.previousWeekSummary.carryoverItems.length > 0 || data.weekTasks.length > 0;
+		return hasContext
+			? `Planlegg uke ${data.week.week}`
+			: `Planlegg uke ${data.week.week} — ingen data fra forrige uke`;
+	}
+
+	function buildWeekReviewSystemPrompt() {
 		const weekGoals = data.weekTasks.map((t) => t.title);
 		const completedDayItems = Object.values(dayChecklistsState)
 			.flatMap((c) => c.items.filter((i) => i.checked).map((i) => i.text))
@@ -1035,15 +1042,18 @@
 			.slice(0, 10);
 
 		const parts: string[] = [
-			`Du er en refleksjonsassistent som hjelper brukeren å avslutte uke ${data.week.week}.`,
-			`Din jobb er å guide brukeren gjennom en kort, strukturert ukesavslutning i tre steg: (1) feire det som gikk bra, (2) identifisere læring, (3) bestemme hva som tas med videre.`,
-			`Still ett spørsmål av gangen. Start med å ønske velkommen og spørre om ukens høydepunkter.`
+			`Du er en refleksjonsassistent som hjelper brukeren avslutte uke ${data.week.week}.`,
+			`Struktur: (1) feire det som gikk bra, (2) identifisere læring, (3) bestemme hva som tas med videre. Still ett spørsmål av gangen. Start med ukens høydepunkter.`
 		];
-		if (weekGoals.length > 0) parts.push(`Ukesmål var: ${weekGoals.join('; ')}.`);
+		if (weekGoals.length > 0) parts.push(`Ukesmål: ${weekGoals.join('; ')}.`);
 		if (completedDayItems.length > 0) parts.push(`Fullførte dagspunkter: ${completedDayItems.join('; ')}.`);
-		if (openDayItems.length > 0) parts.push(`Åpne punkter: ${openDayItems.join('; ')}.`);
+		if (openDayItems.length > 0) parts.push(`Åpne/uløste punkter: ${openDayItems.join('; ')}.`);
 		if (data.weekNote) parts.push(`Ukesnotat: "${data.weekNote}".`);
 		return parts.join(' ');
+	}
+
+	function buildWeekReviewPrefill() {
+		return `Avslutt uke ${data.week.week}`;
 	}
 
 	async function ensureWeekChecklist() {
@@ -1184,28 +1194,35 @@
 	{#if showPlanWeek || showPlanDay || showCloseDay || showCloseWeek || hasCarryovers}
 	<div class="wp-action-ribbon">
 		{#if showPlanWeek}
-			<button class="btn-chip" type="button" onclick={() => (weekPlanChatOpen = true)}>
-				Planlegg uka
+			<button class="wp-flow-btn wp-flow-btn--week" type="button" onclick={() => (weekPlanChatOpen = true)}>
+				<span class="wp-flow-btn-icon">🗓️</span>
+				<span class="wp-flow-btn-label">Planlegg uka</span>
 			</button>
 		{/if}
 		{#if hasCarryovers && !weekIsPlanned}
-			<button class="btn-chip" type="button" onclick={() => void importFromPreviousWeek()} disabled={planningImportBusy}>
-				{planningImportBusy ? 'Legger til ...' : 'Legg inn forrige uke'}
+			<button class="wp-flow-btn wp-flow-btn--util" type="button" onclick={() => void importFromPreviousWeek()} disabled={planningImportBusy}>
+				<span class="wp-flow-btn-icon">{planningImportBusy ? '⏳' : '↩️'}</span>
+				<span class="wp-flow-btn-label">{planningImportBusy ? 'Legger til …' : 'Importer forrige uke'}</span>
 			</button>
 		{/if}
 		{#if showPlanDay}
-			<button class="btn-chip" type="button" onclick={() => void openDayPlanSheet()} disabled={dayPlanSheetBusy}>
-				{dayPlanSheetBusy ? 'Henter ...' : 'Planlegg dag'}
+			<button class="wp-flow-btn wp-flow-btn--day" type="button" onclick={() => void openDayPlanSheet()} disabled={dayPlanSheetBusy}>
+				<span class="wp-flow-btn-icon">{dayPlanSheetBusy ? '⏳' : '📋'}</span>
+				<span class="wp-flow-btn-label">{dayPlanSheetBusy ? 'Henter …' : 'Planlegg dag'}</span>
+				<span class="wp-flow-btn-sub">{selectedDay.label}</span>
 			</button>
 		{/if}
 		{#if showCloseDay}
-			<button class="btn-chip" type="button" onclick={openDayCloseFlow} disabled={dayCloseBusy}>
-				{dayCloseBusy ? 'Jobber ...' : 'Avslutt dag'}
+			<button class="wp-flow-btn wp-flow-btn--day wp-flow-btn--close" type="button" onclick={openDayCloseFlow} disabled={dayCloseBusy}>
+				<span class="wp-flow-btn-icon">{dayCloseBusy ? '⏳' : '✅'}</span>
+				<span class="wp-flow-btn-label">{dayCloseBusy ? 'Jobber …' : 'Avslutt dag'}</span>
+				<span class="wp-flow-btn-sub">{selectedDay.label}</span>
 			</button>
 		{/if}
 		{#if showCloseWeek}
-			<button class="btn-chip" type="button" onclick={() => (weekReviewChatOpen = true)}>
-				Avslutt uka
+			<button class="wp-flow-btn wp-flow-btn--week wp-flow-btn--close" type="button" onclick={() => (weekReviewChatOpen = true)}>
+				<span class="wp-flow-btn-icon">🪞</span>
+				<span class="wp-flow-btn-label">Avslutt uka</span>
 			</button>
 		{/if}
 	</div>
@@ -1544,65 +1561,59 @@
 </div>
 
 {#if dayCloseFlowOpen}
-	<div class="wp-overlay" role="dialog" aria-modal="true">
-		<div class="wp-overlay-panel">
-			<div class="wp-overlay-head">
-				<h3>Avslutt dag</h3>
-				<button class="btn-icon" type="button" onclick={() => (dayCloseFlowOpen = false)}>✕</button>
-			</div>
-			{#if selectedDayChecklist}
-				{#each selectedDayChecklist.items.filter((i) => !i.checked) as item (item.id)}
-					<div class="wp-close-item" class:is-carryover={dayCloseDecisions[item.id] === 'carryover'}>
-						<span class="wp-close-item-text">{item.text}</span>
-						<button
-							class="btn-icon"
-							type="button"
-							onclick={() => toggleCloseDecision(item.id)}
-							aria-label={dayCloseDecisions[item.id] === 'carryover' ? 'Ta ikke med' : 'Ta med til neste dag'}
-						>
-							{dayCloseDecisions[item.id] === 'carryover' ? '→' : '×'}
-						</button>
-					</div>
-				{/each}
-			{/if}
-			<div class="wp-ribbon">
-				<button class="btn-secondary" type="button" onclick={() => void applyDayCloseFlow()} disabled={dayCloseBusy}>
-					{dayCloseBusy ? 'Jobber ...' : 'Avslutt'}
-				</button>
-				<button class="btn-ghost" type="button" onclick={() => void applyDayCloseFlow(true)} disabled={dayCloseBusy}>
-					Avslutt og planlegg neste dag
-				</button>
-			</div>
-		</div>
-	</div>
+	<FlowSheet
+		flow={FLOWS['day_close']}
+		context={{
+			dayLabel: selectedDay.label,
+			openItems: (selectedDayChecklist?.items ?? [])
+				.filter((i) => !i.checked)
+				.map((i) => ({ id: i.id, text: i.text }))
+		}}
+		onclose={() => (dayCloseFlowOpen = false)}
+		oncomplete={async (fd) => {
+			const d = fd as { decisions?: Record<string, 'carryover' | 'unsolved'> };
+			if (d.decisions) dayCloseDecisions = d.decisions;
+			dayCloseFlowOpen = false;
+			await applyDayCloseFlow(false);
+		}}
+	/>
 {/if}
 
 {#if weekPlanChatOpen}
-	<ChatSheet
-		prefill={buildWeekPlanPrefill()}
-		autoSend={true}
+	<FlowSheet
+		flow={FLOWS['planning_week_plan']}
+		context={{
+			systemPrompts: { chat: buildWeekPlanSystemPrompt() },
+			prompts: { chat: buildWeekPlanPrefill() }
+		}}
 		onclose={() => (weekPlanChatOpen = false)}
 	/>
 {/if}
 
 {#if weekReviewChatOpen}
-	<ChatSheet
-		prefill={buildWeekReviewPrefill()}
-		autoSend={true}
+	<FlowSheet
+		flow={FLOWS['planning_week_review']}
+		context={{
+			systemPrompts: { chat: buildWeekReviewSystemPrompt() },
+			prompts: { chat: buildWeekReviewPrefill() }
+		}}
 		onclose={() => (weekReviewChatOpen = false)}
 	/>
 {/if}
 
 {#if dayPlanSheetOpen}
-	<DayPlanSheet
-		dayIso={selectedDayIso}
-		dayLabel={selectedDay.label}
-		weekDashedKey={data.week.dashedKey}
-		carryovers={dayPlanSheetCarryovers}
-		weekTasks={dayPlanSheetWeekTasks}
-		existingHeadline={dayHeadlinesState[selectedDayIso] ?? ''}
+	<FlowSheet
+		flow={FLOWS['day_plan']}
+		context={{
+			dayIso: selectedDayIso,
+			dayLabel: selectedDay.label,
+			weekDashedKey: data.week.dashedKey,
+			carryovers: dayPlanSheetCarryovers,
+			weekTasks: dayPlanSheetWeekTasks,
+			existingHeadline: dayHeadlinesState[selectedDayIso] ?? ''
+		}}
 		onclose={() => (dayPlanSheetOpen = false)}
-		onsaved={async () => {
+		oncomplete={async () => {
 			if (nudgeTrack === 'plan_day') {
 				await reportNudgeStage('flow_completed');
 			}
@@ -1738,8 +1749,81 @@
 	.wp-action-ribbon {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 8px;
+		gap: 10px;
 	}
+
+	.wp-flow-btn {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 3px;
+		padding: 12px 16px;
+		min-width: 88px;
+		border-radius: 12px;
+		border: 1px solid var(--border-color);
+		background: var(--bg-card);
+		color: var(--text-secondary);
+		font: inherit;
+		cursor: pointer;
+		transition: border-color 0.15s, color 0.15s, background 0.15s, box-shadow 0.15s, transform 0.1s;
+		text-align: center;
+	}
+	.wp-flow-btn:hover:not(:disabled) {
+		color: var(--text-primary);
+		background: rgba(255, 255, 255, 0.05);
+		transform: translateY(-1px);
+	}
+	.wp-flow-btn:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+	.wp-flow-btn-icon {
+		font-size: 1.55rem;
+		line-height: 1;
+	}
+	.wp-flow-btn-label {
+		font-size: 0.72rem;
+		font-weight: 600;
+		letter-spacing: 0.01em;
+		white-space: nowrap;
+	}
+	.wp-flow-btn-sub {
+		font-size: 0.65rem;
+		color: var(--text-muted, var(--text-tertiary));
+		white-space: nowrap;
+	}
+
+	/* week-level: purple accent */
+	.wp-flow-btn--week {
+		border-color: rgba(139, 92, 246, 0.3);
+	}
+	.wp-flow-btn--week:hover:not(:disabled) {
+		border-color: rgba(139, 92, 246, 0.65);
+		background: rgba(139, 92, 246, 0.08);
+		box-shadow: 0 0 14px rgba(139, 92, 246, 0.14);
+	}
+
+	/* day-level: teal accent */
+	.wp-flow-btn--day {
+		border-color: rgba(52, 211, 153, 0.28);
+	}
+	.wp-flow-btn--day:hover:not(:disabled) {
+		border-color: rgba(52, 211, 153, 0.65);
+		background: rgba(52, 211, 153, 0.06);
+		box-shadow: 0 0 14px rgba(52, 211, 153, 0.10);
+	}
+
+	/* utility (import): amber accent */
+	.wp-flow-btn--util {
+		border-color: rgba(251, 191, 36, 0.28);
+	}
+	.wp-flow-btn--util:hover:not(:disabled) {
+		border-color: rgba(251, 191, 36, 0.6);
+		background: rgba(251, 191, 36, 0.06);
+		box-shadow: 0 0 14px rgba(251, 191, 36, 0.10);
+	}
+
+	/* "close/done" variants get slightly bolder base border via their colour modifier */
 
 	.wp-card {
 		background: linear-gradient(180deg, rgba(9, 11, 17, 0.95), rgba(8, 10, 15, 0.95));
@@ -2078,63 +2162,6 @@
 
 	.wp-edit-input {
 		height: 34px;
-	}
-
-	.wp-overlay {
-		position: fixed;
-		inset: 0;
-		background: rgba(0, 0, 0, 0.55);
-		display: flex;
-		align-items: flex-end;
-		justify-content: center;
-		z-index: 200;
-	}
-
-	.wp-overlay-panel {
-		background: #151a27;
-		border-radius: 18px 18px 0 0;
-		width: 100%;
-		max-width: 640px;
-		padding: 20px 20px 32px;
-		display: flex;
-		flex-direction: column;
-		gap: 12px;
-		max-height: 80vh;
-		overflow-y: auto;
-	}
-
-	.wp-overlay-head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-	}
-
-	.wp-overlay-head h3 {
-		font-size: 1rem;
-		font-weight: 600;
-		color: #dde;
-		margin: 0;
-	}
-
-	.wp-close-item {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding: 8px 10px;
-		border-radius: 8px;
-		background: #1b2133;
-		gap: 8px;
-	}
-
-	.wp-close-item.is-carryover {
-		background: #1a2440;
-		outline: 1px solid #3a4a7a;
-	}
-
-	.wp-close-item-text {
-		font-size: 0.95rem;
-		color: #ccd;
-		flex: 1;
 	}
 
 	.wp-drag-handle {

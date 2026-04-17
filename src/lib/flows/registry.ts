@@ -287,100 +287,38 @@ export const FLOWS: Record<FlowId, Flow> = {
 
 	planning_week_plan: {
 		id: 'planning_week_plan',
-		name: 'Planlegg uke',
-		description: 'Gjennomgå forrige uke og planlegg den kommende',
-		icon: '📅',
+		name: 'Planlegg uka',
+		description: 'Sett mål og lag plan for kommende uke',
+		icon: '🗓️',
 		domain: 'planning',
-		trigger: 'auto_suggest',
-		estimatedMinutes: 10,
-		badge: 'Ukentlig',
+		trigger: 'manual',
+		estimatedMinutes: 5,
 		steps: [
 			{
-				id: 'review_previous',
+				id: 'chat',
 				type: 'chat',
-				prompt:
-					'La meg hente oppsummering fra forrige uke. Hva gikk godt? Hva kunne vært bedre?'
-			},
-			{
-				id: 'carryover',
-				type: 'mixed',
-				title: 'Forrige uke',
-				prompt: 'Vil du ta med noe fra forrige uke?',
-				fields: [
-					{
-						id: 'carryoverNotes',
-						type: 'textarea',
-						label: 'Notater fra forrige uke',
-						placeholder: 'Ting som må følges opp...'
-					}
-				]
-			},
-			{
-				id: 'this_week',
-				type: 'form',
-				title: 'Denne uken',
-				fields: [
-					{
-						id: 'weekPriorities',
-						type: 'textarea',
-						label: 'Hovedprioriteringer denne uken',
-						placeholder: 'Hva er viktigst å få gjort?',
-						required: true
-					},
-					{
-						id: 'weekGoals',
-						type: 'textarea',
-						label: 'Konkrete mål',
-						placeholder: 'Trene 3x, fullføre rapport, etc'
-					}
-				]
+				title: 'Planlegg uka',
+				prompt: 'Planlegg uke',
+				autoSend: true
 			}
 		]
 	},
 
 	planning_week_review: {
 		id: 'planning_week_review',
-		name: 'Evaluer uke',
-		description: 'Reflekter over uken som gikk og lær til neste gang',
-		icon: '📝',
+		name: 'Avslutt uka',
+		description: 'Reflekter over uka og ta med deg læring',
+		icon: '🪞',
 		domain: 'planning',
-		trigger: 'auto_suggest',
+		trigger: 'manual',
 		estimatedMinutes: 5,
-		badge: 'Ukentlig',
 		steps: [
 			{
-				id: 'reflection',
-				type: 'form',
-				title: 'Ukeevaluering',
-				fields: [
-					{
-						id: 'weekReflection',
-						type: 'textarea',
-						label: 'Gikk uka etter planen?',
-						placeholder: 'Hva lærte du til neste uke?',
-						required: true
-					},
-					{
-						id: 'visionAlignment',
-						type: 'textarea',
-						label: 'Retning mot langsiktige mål',
-						placeholder: 'Hvordan kjennes retningen mot de langsiktige målene?'
-					},
-					{
-						id: 'weekScore',
-						type: 'slider',
-						label: 'Hvordan vil du score uken? (1-10)',
-						min: 1,
-						max: 10,
-						step: 1,
-						defaultValue: 7
-					}
-				]
-			},
-			{
-				id: 'insights',
+				id: 'chat',
 				type: 'chat',
-				prompt: 'La meg analysere uken din og gi deg noen innsikter for forbedring.'
+				title: 'Avslutt uka',
+				prompt: 'Avslutt uke',
+				autoSend: true
 			}
 		]
 	},
@@ -433,6 +371,70 @@ export const FLOWS: Record<FlowId, Flow> = {
 				id: 'breakdown',
 				type: 'chat',
 				prompt: 'La meg foreslå konkrete oppgaver for å nå dette målet.'
+			}
+		]
+	},
+
+	day_plan: {
+		id: 'day_plan',
+		name: 'Planlegg dag',
+		description: 'Sett overskrift og velg oppgaver for dagen',
+		icon: '📋',
+		domain: 'planning',
+		trigger: 'manual',
+		estimatedMinutes: 3,
+		steps: [
+			{
+				id: 'headline',
+				type: 'form',
+				title: 'Hva handler dagen om?',
+				fields: [
+					{
+						id: 'headline',
+						type: 'textarea',
+						label: 'Dagsoverskrift',
+						placeholder: 'F.eks: Holde familien flytende mens Nils er syk.',
+						required: true
+					}
+				]
+			},
+			{
+				id: 'tasks',
+				type: 'checklist',
+				title: 'Velg dagsoppgaver',
+				itemsKey: 'carryovers',
+				extraItemsKey: 'weekTasks',
+				aiSuggestionsFromField: 'headline'
+			}
+		],
+		onComplete: async (data, context) => {
+			await fetch('/api/day-plan', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					dayIso: context.dayIso,
+					weekDashedKey: context.weekDashedKey,
+					headline: data.headline ?? '',
+					tasks: (data.selectedTasks as string[]) ?? []
+				})
+			});
+		}
+	},
+
+	day_close: {
+		id: 'day_close',
+		name: 'Avslutt dag',
+		description: 'Bestem hva du tar med til neste dag',
+		icon: '✓',
+		domain: 'planning',
+		trigger: 'manual',
+		estimatedMinutes: 2,
+		steps: [
+			{
+				id: 'decisions',
+				type: 'decision-list',
+				title: 'Hva tar du med til neste dag?',
+				openItemsKey: 'openItems'
 			}
 		]
 	}

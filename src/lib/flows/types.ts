@@ -11,7 +11,9 @@ export type FlowId =
 	| 'economics_category_budget'
 	| 'planning_week_plan'
 	| 'planning_week_review'
-	| 'planning_goal_setup';
+	| 'planning_goal_setup'
+	| 'day_plan'
+	| 'day_close';
 
 export type FlowDomain = 'health' | 'economics' | 'planning' | 'general';
 
@@ -19,10 +21,23 @@ export type FlowTrigger = 'manual' | 'auto_suggest' | 'onboarding';
 
 export interface FlowStep {
 	id: string;
-	type: 'chat' | 'form' | 'mixed';
+	type: 'chat' | 'form' | 'mixed' | 'checklist' | 'decision-list';
 	title?: string;
-	prompt?: string; // For chat-steg
-	fields?: FlowFormField[]; // For form/mixed-steg
+	/** For chat: initial assistant message shown before user types */
+	prompt?: string;
+	/** For chat: system prompt sent with every message in this step */
+	systemPrompt?: string;
+	/** For chat: send `prompt` automatically on mount (no user input needed to trigger first response) */
+	autoSend?: boolean;
+	fields?: FlowFormField[];
+	/** For checklist: which contextData key holds the items seed, e.g. 'carryovers' */
+	itemsKey?: string;
+	/** For checklist: which contextData key holds additional (deselected) items, e.g. 'weekTasks' */
+	extraItemsKey?: string;
+	/** For checklist: whether to fetch AI suggestions based on a headline field id */
+	aiSuggestionsFromField?: string;
+	/** For decision-list: which contextData key holds the open items */
+	openItemsKey?: string;
 	validation?: (data: Record<string, any>) => boolean | string;
 }
 
@@ -39,6 +54,28 @@ export interface FlowFormField {
 	defaultValue?: any;
 }
 
+/** Dynamic runtime data passed to FlowSheet per invocation */
+export interface FlowContext {
+	/** Carry-over items from previous day */
+	carryovers?: string[];
+	/** Recurring week tasks */
+	weekTasks?: string[];
+	/** ISO date of the day being planned/closed */
+	dayIso?: string;
+	/** Dashed week key, e.g. "2026-W17" */
+	weekDashedKey?: string;
+	/** Pre-existing headline text */
+	existingHeadline?: string;
+	/** Open (unchecked) items for day-close */
+	openItems?: Array<{ id: string; text: string }>;
+	/** Passed through to AI suggestion fetching */
+	dayLabel?: string;
+	/** Per-step dynamic system prompts keyed by step id — overrides FlowStep.systemPrompt */
+	systemPrompts?: Record<string, string>;
+	/** Per-step initial prompt/prefill keyed by step id — overrides FlowStep.prompt */
+	prompts?: Record<string, string>;
+}
+
 export interface Flow {
 	id: FlowId;
 	name: string;
@@ -47,13 +84,11 @@ export interface Flow {
 	domain: FlowDomain;
 	trigger: FlowTrigger;
 	estimatedMinutes?: number;
-	steps?: FlowStep[]; // For multi-step flows
-	// Handler-funksjon som kjøres når flow er ferdig
-	onComplete?: (data: Record<string, any>, userId: string) => Promise<void>;
-	// Metadata for visning
-	badge?: string; // "Ny", "Anbefalt", etc
-	theme?: string; // Theme-navn (f.eks "Helse") hvis flow skal vises kun på ett tema
-	parentTheme?: string; // ParentTheme-navn (f.eks "Helse") hvis flow skal vises på alle temaer under
+	steps?: FlowStep[];
+	onComplete?: (data: Record<string, any>, context: FlowContext) => Promise<void>;
+	badge?: string;
+	theme?: string;
+	parentTheme?: string;
 }
 
 export interface FlowSession {

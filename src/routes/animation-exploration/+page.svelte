@@ -343,9 +343,8 @@
 		const cx = event.clientX - rect.left;
 		const cy = event.clientY - rect.top;
 
-		// Flood explosion from click position
+		// Flood explosion from click position — fills screen before navigate
 		flood = { id: Date.now(), hue: theme.hue, cx, cy, r: 20 };
-		setTimeout(() => { flood = null; }, 780);
 
 		// Flying label: start at button, fly up to theme-hero
 		flyingLabel = { hue: theme.hue, emoji: theme.emoji, label: theme.label, cx, cy };
@@ -355,13 +354,11 @@
 		globalHue.set(theme.hue);
 		activeTheme = theme;
 		breathIntensity.set(1.8);
-		setTimeout(() => breathIntensity.set(1), 600);
+		setTimeout(() => breathIntensity.set(1), 800);
 
-		setTimeout(() => {
-			flyingLabel = null;
-			flyingActive = false;
-			navigate('theme');
-		}, 340);
+		// Navigate while flood still covers screen (600ms), then fade flood to reveal new screen
+		setTimeout(() => { navigate('theme'); }, 600);
+		setTimeout(() => { flood = null; flyingLabel = null; flyingActive = false; }, 660);
 	}
 
 	// ── Theme screen tweened data (kept for chat nav) ───────────────────────
@@ -834,7 +831,7 @@
 		z-index: 9998;
 		pointer-events: none;
 		transform: translate(-50%, -50%) scale(1);
-		animation: flood-expand 0.75s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+		animation: flood-expand 0.65s cubic-bezier(0.2, 0, 0.4, 1) forwards;
 	}
 	@keyframes flood-expand {
 		to { transform: translate(-50%, -50%) scale(80); }
