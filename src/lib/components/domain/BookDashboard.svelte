@@ -2,6 +2,7 @@
 	import ChatInput from '../ui/ChatInput.svelte';
 	import TriageCard from '../composed/TriageCard.svelte';
 	import Icon from '../ui/Icon.svelte';
+	import AudioKaraokePlayer from './AudioKaraokePlayer.svelte';
 	import { page } from '$app/stores';
 	import { get } from 'svelte/store';
 	import { tick } from 'svelte';
@@ -29,6 +30,12 @@
 		createdAt: string;
 	}
 
+	interface WordTimestamp {
+		word: string;
+		start: number;
+		end: number;
+	}
+
 	interface BookClip {
 		id: string;
 		bookId: string;
@@ -38,6 +45,8 @@
 		note: string | null;
 		source: string | null;
 		audioUrl: string | null;
+		words: WordTimestamp[] | null;
+		characters: string[] | null;
 		createdAt: string;
 	}
 
@@ -81,6 +90,7 @@
 	type BookTab = 'chat' | 'klipp' | 'fremdrift';
 	let selectedBook = $state<Book | null>(null);
 	let bookTab = $state<BookTab>('chat');
+	let headerCollapsed = $state(false);
 
 	/* ── Add book / search ──────────────────────────────── */
 	interface OLBook {
@@ -119,8 +129,12 @@
 	let clipPage = $state('');
 	let clipPosition = $state('');
 	let clipNote = $state('');
+	let clipCharacters = $state(''); // comma-separated input
 	let clipSaving = $state(false);
 	let clipError = $state('');
+
+	// Collapsible clip drawer shown inside chat tab
+	let chatClipsOpen = $state(false);
 
 	/* ── Progress ───────────────────────────────────────── */
 	let progressPage = $state('');
@@ -130,6 +144,13 @@
 	let totalDurMins = $state(0);
 	let progressSaving = $state(false);
 	let progressError = $state('');
+	let progressAutoSaved = $state(false);
+	let totalDurExpanded = $state(false);
+
+	/* ── Discover book ───────────────────────────────────── */
+	let discoverLoading = $state(false);
+	let discoverError = $state('');
+	let bookDiscoverInput = $state<HTMLInputElement | null>(null);
 
 	/* ── Progress log + chart ──────────────────────── */
 	let progressLog = $state<ProgressLogEntry[]>([]);
@@ -153,7 +174,9 @@
 	/* ── Audio attachment ────────────────────────────────── */
 	let pendingAudioUrl = $state<string | null>(null);
 	let pendingAudioName = $state<string | null>(null);
+	let pendingTranscript = $state<string | null>(null); // transcript ready for chat
 	let audioUploadLoading = $state(false);
+	let audioUploadStatus = $state(''); // progress label shown in UI
 	let bookAudioInput = $state<HTMLInputElement | null>(null);
 
 	/* ── Add book format ─────────────────────────────────── */
@@ -291,7 +314,6 @@
 		manualTitle = '';
 		manualAuthor = '';
 		manualPages = '';
-		manualFormat = 'print';
 		manualTotalMinutes = '';
 		addError = '';
 	}
@@ -299,11 +321,13 @@
 	async function openBook(book: Book) {
 		selectedBook = book;
 		bookTab = 'chat';
+		headerCollapsed = false;
 		chatMessages = [];
 		chatMessagesLoaded = false;
 		clips = [];
 		clipsLoaded = false;
 		progressPage = String(book.currentPage || '');
+		totalDurExpanded = false;
 		posHours = Math.floor((book.currentMinutes || 0) / 60);
 		posMins = (book.currentMinutes || 0) % 60;
 		totalDurHours = Math.floor((book.totalMinutes || 0) / 60);
@@ -338,6 +362,9 @@
 		chatStreamingText = '';
 		clips = [];
 		pendingImageUrl = null;
+		pendingAudioUrl = null;
+		pendingAudioName = null;
+		pendingTranscript = null;
 		progressLog = [];
 		progressLogLoaded = false;
 	}
@@ -401,8 +428,8 @@ Avslutt gjerne med ett åpent, konkret spørsmål som bygger videre på det bruk
 
 Hvis brukeren sender et skjermbilde fra en lydspiller:
 - Les av nåværende posisjon (format T:MM:SS), total lengde, og boktittel
-- Oppgi tallene tydelig som: «Posisjon: 2:34:15 av 8:12:00 (ca. 32%)»
-- Si gjerne noe om hva det tilsvarer i boken tematisk, hvis du kan
+- Kommentér gjerne hva posisjonen tilsvarer tematisk i boken
+- Legg ALLTID til taggen <!--FREMDRIFT:NNN/MMM--> HELT PÅ SLUTTEN av svaret ditt, der NNN er nåværende posisjon i hele minutter og MMM er total varighet i hele minutter (0 hvis ukjent). Ikke forklar taggen.
 
 Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 - Behandle teksten som et mulig sitat og diskuter innholdet
@@ -425,6 +452,61 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		return parts.join('\n\n');
 	}
 
+	/** Silently PATCH book progress from AI-detected screenshot data, then update local state. */
+	async function applyAutoProgress(bookId: string, currentMinutes: number, totalMinutes: number) {
+		const updates: Record<string, number> = { currentMinutes };
+		if (totalMinutes > 0) updates.totalMinutes = totalMinutes;
+		try {
+			const r = await fetch(`/api/tema/${themeId}/books/${bookId}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(updates)
+			});
+			if (r.ok) {
+				const updated: Book = await r.json();
+				selectedBook = updated;
+				books = books.map((b) => (b.id === bookId ? updated : b));
+				posHours = Math.floor(currentMinutes / 60);
+				posMins = currentMinutes % 60;
+				if (totalMinutes > 0) {
+					totalDurHours = Math.floor(totalMinutes / 60);
+					totalDurMins = totalMinutes % 60;
+				}
+				progressAutoSaved = true;
+				setTimeout(() => { progressAutoSaved = false; }, 4000);
+			}
+		} catch { /* silent */ }
+	}
+
+	/** Analyze a book cover / audiobook screenshot and pre-fill the add-book form. */
+	async function discoverBookFromImage(e: Event) {
+		const file = (e.target as HTMLInputElement).files?.[0];
+		if (!file) return;
+		if (bookDiscoverInput) bookDiscoverInput.value = '';
+		discoverLoading = true;
+		discoverError = '';
+		try {
+			const fd = new FormData();
+			fd.append('image', file);
+			const res = await fetch('/api/books/analyze-image', { method: 'POST', body: fd });
+			const data = await res.json();
+			if (!res.ok) { discoverError = data.error ?? 'Kunne ikke lese bildet.'; return; }
+			if (!data.title) { discoverError = 'Fant ingen boktittel i bildet.'; return; }
+			// Pre-fill manual form and switch to it
+			manualTitle = data.title;
+			manualAuthor = data.author ?? '';
+			manualFormat = data.format ?? 'print';
+			if (data.totalMinutes) manualTotalMinutes = String(data.totalMinutes);
+			manualMode = true;
+			// Also kick off a background search to find cover etc.
+			void doSearch(data.title);
+		} catch {
+			discoverError = 'Noe gikk galt.';
+		} finally {
+			discoverLoading = false;
+		}
+	}
+
 	async function handleBookImageAttachment(e: Event) {
 		const file = (e.target as HTMLInputElement).files?.[0];
 		if (!file) return;
@@ -444,19 +526,37 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 
 	async function handleBookAudioAttachment(e: Event) {
 		const file = (e.target as HTMLInputElement).files?.[0];
-		if (!file) return;
+		if (!file || !selectedBook) return;
+		if (bookAudioInput) bookAudioInput.value = '';
+
 		audioUploadLoading = true;
+		audioUploadStatus = 'Laster opp…';
+		pendingAudioName = file.name;
+		pendingAudioUrl = null;
+		pendingTranscript = null;
+
 		try {
 			const fd = new FormData();
-			fd.append('image', file); // Cloudinary accepts audio via resource_type: auto
-			const res = await fetch('/api/upload-image', { method: 'POST', body: fd });
-			if (!res.ok) throw new Error();
+			fd.append('file', file);
+			audioUploadStatus = 'Transkriberer…';
+			const res = await fetch(`/api/tema/${themeId}/books/${selectedBook.id}/transcribe`, {
+				method: 'POST', body: fd
+			});
+			if (!res.ok) {
+				const err = await res.json().catch(() => ({}));
+				audioUploadStatus = err.error ?? 'Transkripsjon feilet.';
+				return;
+			}
 			const data = await res.json();
-			pendingAudioUrl = data.url ?? data.secure_url ?? null;
-			pendingAudioName = file.name;
-		} catch { /* ignore */ } finally {
+			pendingTranscript = data.transcript;
+			pendingAudioUrl = data.audioUrl ?? null;
+			// Add new clip to the in-memory list immediately
+			if (data.clip) clips = [data.clip, ...clips];
+			audioUploadStatus = '';
+		} catch {
+			audioUploadStatus = 'Noe gikk galt.';
+		} finally {
 			audioUploadLoading = false;
-			if (bookAudioInput) bookAudioInput.value = '';
 		}
 	}
 
@@ -464,12 +564,17 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		if (!selectedBook?.conversationId) return;
 
 		const imageUrl = pendingImageUrl;
-		const audioUrl = pendingAudioUrl;
+		const transcript = pendingTranscript;
 		pendingImageUrl = null;
 		pendingAudioUrl = null;
 		pendingAudioName = null;
+		pendingTranscript = null;
 
-		const userLabel = imageUrl ? `📷 ${text || 'Skjermbilde'}` : audioUrl ? `🎵 ${text || 'Lydklipp'}` : text;
+		const userLabel = imageUrl
+			? `📷 ${text || 'Skjermbilde'}`
+			: transcript
+				? `🎵 ${text || 'Lydklipp'}`
+				: text;
 		chatMessages.push({ role: 'user', text: userLabel });
 		scrollChatToBottom();
 		chatLoading = true;
@@ -479,16 +584,21 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 
 		try {
 			const systemPrompt = buildBookSystemPrompt(selectedBook);
+			let outMessage = text || (imageUrl ? 'Hva ser du på dette bildet?' : 'Kommenter dette lydklippet.');
+			if (transcript) {
+				outMessage = (text
+					? `${text}\n\n`
+					: '') + `[Lydklipp-transkripsjon]\n${transcript}`;
+			}
 			const body: Record<string, unknown> = {
 				mode: 'proxy',
-				message: text || (imageUrl ? 'Hva ser du på dette bildet?' : 'Transkriber og kommenter dette lydklippet.'),
+				message: outMessage,
 				conversationId: selectedBook.conversationId,
 				routing: {},
 				systemPrompt,
 				messages: []
 			};
 			if (imageUrl) body.imageUrl = imageUrl;
-			if (audioUrl) body.audioUrl = audioUrl;
 
 			const response = await fetch('/api/chat-stream-messages', {
 				method: 'POST',
@@ -519,8 +629,15 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 				buffer = lines[lines.length - 1];
 			}
 
-			const message = (finalPayload as any)?.message ?? chatStreamingText;
-			chatMessages.push({ role: 'assistant', text: message });
+			const rawMessage = (finalPayload as any)?.message ?? chatStreamingText;
+			const fremdriftMatch = rawMessage.match(/<!--FREMDRIFT:(\d+)\/(\d+)-->/);
+			const displayMessage = fremdriftMatch
+				? rawMessage.replace(/\s*<!--FREMDRIFT:\d+\/\d+-->\s*/, '').trim()
+				: rawMessage;
+			chatMessages.push({ role: 'assistant', text: displayMessage });
+			if (fremdriftMatch && selectedBook) {
+				void applyAutoProgress(selectedBook.id, parseInt(fremdriftMatch[1], 10), parseInt(fremdriftMatch[2], 10));
+			}
 			scrollChatToBottom();
 		} catch {
 			chatError = 'Noe gikk galt. Prøv igjen.';
@@ -541,14 +658,14 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 	}
 
 	$effect(() => {
-		if (bookTab === 'klipp' && selectedBook && !clipsLoaded) {
+		if (selectedBook && !clipsLoaded) {
 			void loadClips();
 		}
 	});
 
 	$effect(() => {
-		// Scroll to bottom whenever messages or streaming text change
-		if (chatMessagesLoaded || chatStreamingText) scrollChatToBottom();
+		// Scroll to bottom whenever the element mounts, messages load, or streaming text changes
+		if (chatMessagesEl && (chatMessagesLoaded || chatStreamingText)) scrollChatToBottom();
 	});
 
 	$effect(() => {
@@ -562,6 +679,9 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		clipSaving = true;
 		clipError = '';
 		try {
+			const characters = clipCharacters.trim()
+				? clipCharacters.split(',').map((c) => c.trim()).filter(Boolean)
+				: null;
 			const res = await fetch(`/api/tema/${themeId}/books/${selectedBook.id}/clips`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
@@ -569,7 +689,8 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 					text: clipText.trim(),
 					page: clipPage ? Number(clipPage) : null,
 					position: clipPosition.trim() || null,
-					note: clipNote.trim() || null
+					note: clipNote.trim() || null,
+					characters
 				})
 			});
 			if (!res.ok) throw new Error();
@@ -579,6 +700,7 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 			clipPage = '';
 			clipPosition = '';
 			clipNote = '';
+			clipCharacters = '';
 			showAddClip = false;
 		} catch {
 			clipError = 'Kunne ikke lagre klippet.';
@@ -808,39 +930,52 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 {#if selectedBook}
 	<!-- ── Book view ── -->
 	<div class="bk-view">
-		<div class="bk-header">
-			<button class="bk-back" onclick={closeBook}>
-				<Icon name="back" size={16} /> Bibliotek
-			</button>
-			<div class="bk-meta">
-				<span class="bk-title">{selectedBook.title}</span>
-				{#if selectedBook.author}
-					<span class="bk-author">{selectedBook.author}</span>
+		{#if progressAutoSaved}
+			<div class="bk-autosave-toast">✅ Fremdrift oppdatert automatisk</div>
+		{/if}
+		<div class="bk-header" class:collapsed={headerCollapsed}>
+			<div class="bk-header-top">
+				<button class="bk-back" onclick={closeBook}>
+					<Icon name="back" size={16} /> Bibliotek
+				</button>
+				{#if headerCollapsed}
+					<span class="bk-title-inline">{selectedBook.title}</span>
 				{/if}
+				<button class="bk-collapse-toggle" onclick={() => (headerCollapsed = !headerCollapsed)} aria-label="{headerCollapsed ? 'Vis detaljer' : 'Skjul detaljer'}">
+					{headerCollapsed ? '▾' : '▴'}
+				</button>
 			</div>
-			<div class="bk-status-row">
-				<span class="bk-status-badge" class:reading={selectedBook.status === 'reading'} class:completed={selectedBook.status === 'completed'} class:paused={selectedBook.status === 'paused'}>
-					{statusEmoji(selectedBook.status)} {statusLabel(selectedBook.status)}
-				</span>
-				{#if selectedBook.contextStatus === 'pending'}
-					<span class="bk-ctx-badge pending">⏳ Samler bokkontekst…</span>
-				{:else if selectedBook.contextStatus === 'ready'}
-					<span class="bk-ctx-badge ready">✦ Kontekst klar</span>
+			{#if !headerCollapsed}
+				<div class="bk-meta">
+					<span class="bk-title">{selectedBook.title}</span>
+					{#if selectedBook.author}
+						<span class="bk-author">{selectedBook.author}</span>
+					{/if}
+				</div>
+				<div class="bk-status-row">
+					<span class="bk-status-badge" class:reading={selectedBook.status === 'reading'} class:completed={selectedBook.status === 'completed'} class:paused={selectedBook.status === 'paused'}>
+						{statusEmoji(selectedBook.status)} {statusLabel(selectedBook.status)}
+					</span>
+					{#if selectedBook.contextStatus === 'pending'}
+						<span class="bk-ctx-badge pending">⏳ Samler bokkontekst…</span>
+					{:else if selectedBook.contextStatus === 'ready'}
+						<span class="bk-ctx-badge ready">✦ Kontekst klar</span>
+					{/if}
+				</div>
+				{#if selectedBook.format !== 'audio' && selectedBook.totalPages}
+					{@const pct = progressPct(selectedBook)}
+					<div class="bk-progress-bar" title="{selectedBook.currentPage} av {selectedBook.totalPages} sider ({pct}%)">
+						<div class="bk-progress-fill" style="width:{pct}%"></div>
+					</div>
+					<p class="bk-progress-label">{selectedBook.currentPage} / {selectedBook.totalPages} sider</p>
 				{/if}
-			</div>
-			{#if selectedBook.format !== 'audio' && selectedBook.totalPages}
-				{@const pct = progressPct(selectedBook)}
-				<div class="bk-progress-bar" title="{selectedBook.currentPage} av {selectedBook.totalPages} sider ({pct}%)">
-					<div class="bk-progress-fill" style="width:{pct}%"></div>
-				</div>
-				<p class="bk-progress-label">{selectedBook.currentPage} / {selectedBook.totalPages} sider</p>
-			{/if}
-			{#if selectedBook.format !== 'print' && selectedBook.totalMinutes}
-				{@const pct = minutesPct(selectedBook)}
-				<div class="bk-progress-bar" title="🎧 {formatMinutes(selectedBook.currentMinutes)} av {formatMinutes(selectedBook.totalMinutes)} ({pct}%)">
-					<div class="bk-progress-fill" style="width:{pct}%"></div>
-				</div>
-				<p class="bk-progress-label">🎧 {formatMinutes(selectedBook.currentMinutes)} / {formatMinutes(selectedBook.totalMinutes)}</p>
+				{#if selectedBook.format !== 'print' && selectedBook.totalMinutes}
+					{@const pct = minutesPct(selectedBook)}
+					<div class="bk-progress-bar" title="🎧 {formatMinutes(selectedBook.currentMinutes)} av {formatMinutes(selectedBook.totalMinutes)} ({pct}%)">
+						<div class="bk-progress-fill" style="width:{pct}%"></div>
+					</div>
+					<p class="bk-progress-label">🎧 {formatMinutes(selectedBook.currentMinutes)} / {formatMinutes(selectedBook.totalMinutes)}</p>
+				{/if}
 			{/if}
 		</div>
 
@@ -890,14 +1025,14 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 						<button class="bk-pending-remove" onclick={() => (pendingImageUrl = null)} aria-label="Fjern bilde">×</button>
 					</div>
 				{/if}
-				{#if pendingAudioUrl}
+				{#if pendingAudioUrl || pendingTranscript}
 					<div class="bk-pending-audio">
-						<span class="bk-pending-audio-name">🎵 {pendingAudioName ?? 'Lydklipp'}</span>
-						<button class="bk-pending-remove" onclick={() => { pendingAudioUrl = null; pendingAudioName = null; }} aria-label="Fjern lyd">×</button>
+						<span class="bk-pending-audio-name">🎵 {pendingAudioName ?? 'Lydklipp'} {pendingTranscript ? '— transkribert ✓' : ''}</span>
+						<button class="bk-pending-remove" onclick={() => { pendingAudioUrl = null; pendingAudioName = null; pendingTranscript = null; }} aria-label="Fjern lyd">×</button>
 					</div>
 				{/if}
 				{#if imageUploadLoading || audioUploadLoading}
-					<p class="bk-upload-status">{imageUploadLoading ? 'Laster opp bilde…' : 'Laster opp lyd…'}</p>
+					<p class="bk-upload-status">{imageUploadLoading ? 'Laster opp bilde…' : audioUploadStatus || 'Laster opp lyd…'}</p>
 				{/if}
 				<input
 					bind:this={bookImageInput}
@@ -923,6 +1058,41 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 						else if (kind === 'voice') bookAudioInput?.click();
 					}}
 				/>
+
+				<!-- ── Audio clips drawer ── -->
+				{#if clipsLoaded && clips.some((c) => c.audioUrl)}
+					{@const audioClips = clips.filter((c) => c.audioUrl)}
+					<div class="bk-chat-clips-drawer">
+						<button
+							class="bk-chat-clips-toggle"
+							onclick={() => (chatClipsOpen = !chatClipsOpen)}
+						>
+							🎵 {audioClips.length} lydklipp {chatClipsOpen ? '▴' : '▾'}
+						</button>
+						{#if chatClipsOpen}
+							<div class="bk-chat-clips-list">
+								{#each audioClips as clip}
+									<div class="bk-chat-clip-row">
+										<div class="bk-chat-clip-meta">
+											{#if clip.position}<span class="bk-clip-loc">⏱ {clip.position}</span>{/if}
+											{#if clip.characters?.length}
+												{#each clip.characters as char}
+													<span class="bk-clip-char">{char}</span>
+												{/each}
+											{/if}
+											<span class="bk-clip-date">{fmtDate(clip.createdAt)}</span>
+										</div>
+										<AudioKaraokePlayer
+											src={clip.audioUrl!}
+											words={clip.words}
+											text={clip.text}
+										/>
+									</div>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				{/if}
 			</div>
 
 		{:else if bookTab === 'klipp'}
@@ -943,9 +1113,14 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 							rows={3}
 						></textarea>
 						<div class="bk-clip-meta-row">
-							<input class="bk-clip-input" type="number" min="1" placeholder="Side (valgfritt)" bind:value={clipPage} />
-							<input class="bk-clip-input" placeholder="Lydboktid f.eks. 1:24:35" bind:value={clipPosition} />
+							<input class="bk-clip-input" type="number" min="1" placeholder="Side" bind:value={clipPage} />
+							<input class="bk-clip-input" placeholder="Tid f.eks. 1:24:35" bind:value={clipPosition} />
 						</div>
+						<input
+							class="bk-clip-input bk-clip-input-full"
+							placeholder="Karakterer, f.eks. Line, Morgan (kommasepparert)"
+							bind:value={clipCharacters}
+						/>
 						<textarea
 							class="bk-clip-textarea"
 							placeholder="Din refleksjon (valgfritt)…"
@@ -966,11 +1141,29 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 				{:else}
 					<div class="bk-clips-list">
 						{#each clips as clip}
-							<div class="bk-clip-card">
-								<blockquote class="bk-clip-text">{clip.text}</blockquote>
+							{@const hasAudio = !!clip.audioUrl}
+							<div class="bk-clip-card" class:bk-clip-audio={hasAudio}>
+
+								<!-- Audio player (self-contained, handles scrubbing + karaoke) -->
+								{#if hasAudio}
+									<AudioKaraokePlayer
+										src={clip.audioUrl!}
+										words={clip.words}
+										text={clip.text}
+									/>
+								{:else}
+									<blockquote class="bk-clip-text">{clip.text}</blockquote>
+								{/if}
+
+								<!-- Footer: position, characters, date, delete -->
 								<div class="bk-clip-footer">
-									{#if clip.page}<span class="bk-clip-loc">Side {clip.page}</span>{/if}
+									{#if clip.page}<span class="bk-clip-loc">📄 Side {clip.page}</span>{/if}
 									{#if clip.position}<span class="bk-clip-loc">⏱ {clip.position}</span>{/if}
+									{#if clip.characters?.length}
+										{#each clip.characters as char}
+											<span class="bk-clip-char">{char}</span>
+										{/each}
+									{/if}
 									<span class="bk-clip-date">{fmtDate(clip.createdAt)}</span>
 									<button class="bk-clip-delete" onclick={() => deleteClip(clip.id)} aria-label="Slett klipp">×</button>
 								</div>
@@ -1049,17 +1242,21 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 							{/if}
 						</div>
 
-						<p class="bk-fremdrift-label" style="margin-top:0.75rem">Total varighet</p>
-						<div class="bk-hm-row">
-							<div class="bk-hm-field">
-								<input type="number" class="bk-hm-input" min="0" bind:value={totalDurHours} />
-								<span class="bk-hm-label">t</span>
+						{#if !selectedBook.totalMinutes || totalDurExpanded}
+							<p class="bk-fremdrift-label" style="margin-top:0.75rem">Total varighet</p>
+							<div class="bk-hm-row">
+								<div class="bk-hm-field">
+									<input type="number" class="bk-hm-input" min="0" bind:value={totalDurHours} />
+									<span class="bk-hm-label">t</span>
+								</div>
+								<div class="bk-hm-field">
+									<input type="number" class="bk-hm-input" min="0" max="59" bind:value={totalDurMins} />
+									<span class="bk-hm-label">min</span>
+								</div>
 							</div>
-							<div class="bk-hm-field">
-								<input type="number" class="bk-hm-input" min="0" max="59" bind:value={totalDurMins} />
-								<span class="bk-hm-label">min</span>
-							</div>
-						</div>
+						{:else}
+							<p class="bk-fremdrift-meta">Varighet: {formatMinutes(selectedBook.totalMinutes)} <button class="bk-link" onclick={() => (totalDurExpanded = true)}>Endre</button></p>
+						{/if}
 					</div>
 				{/if}
 
@@ -1212,6 +1409,11 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 					<button class="bk-manual-link" onclick={() => (manualMode = true)}>
 						Legg til manuelt
 					</button>
+					<button class="bk-manual-link" onclick={() => bookDiscoverInput?.click()} disabled={discoverLoading}>
+						{discoverLoading ? '⏳ Analyserer bilde…' : '📷 Oppdag bok fra bilde'}
+					</button>
+					{#if discoverError}<p class="bk-error">{discoverError}</p>{/if}
+					<input type="file" accept="image/*" style="display:none" bind:this={bookDiscoverInput} onchange={discoverBookFromImage} />
 				{:else}
 					<div class="bk-add-form">
 						<input class="bk-add-input" placeholder="Tittel *" bind:value={manualTitle} />
@@ -1293,20 +1495,57 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 <style>
 	/* ── Book view ──────────────────────────────────────── */
 	.bk-view {
+		position: fixed;
+		inset: 0;
+		z-index: 80;
+		background: #0c0c14;
 		display: flex;
 		flex-direction: column;
-		height: 100%;
 		overflow: hidden;
 	}
 
 	.bk-header {
-		padding: 12px 16px 0;
+		padding: 10px 16px 0;
 		display: flex;
 		flex-direction: column;
 		gap: 4px;
 		border-bottom: 1px solid #1e1e1e;
 		padding-bottom: 10px;
+		flex-shrink: 0;
 	}
+	.bk-header.collapsed {
+		padding-bottom: 6px;
+	}
+
+	.bk-header-top {
+		display: flex;
+		align-items: center;
+	}
+
+	.bk-title-inline {
+		flex: 1;
+		font-size: 0.88rem;
+		font-weight: 600;
+		color: #d0d0e8;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		padding: 0 8px;
+	}
+
+	.bk-collapse-toggle {
+		margin-left: auto;
+		background: none;
+		border: none;
+		color: #555;
+		font-size: 0.85rem;
+		cursor: pointer;
+		padding: 2px 4px;
+		line-height: 1;
+		border-radius: 4px;
+		transition: color 0.15s;
+	}
+	.bk-collapse-toggle:hover { color: #aaa; }
 
 	.bk-back {
 		display: flex;
@@ -1318,13 +1557,13 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		font-size: 0.82rem;
 		cursor: pointer;
 		padding: 0;
-		margin-bottom: 4px;
 	}
 
 	.bk-meta {
 		display: flex;
 		flex-direction: column;
 		gap: 2px;
+		margin-top: 4px;
 	}
 
 	.bk-title {
@@ -1392,6 +1631,7 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		display: flex;
 		gap: 4px;
 		padding: 8px 16px 0;
+		flex-shrink: 0;
 	}
 
 	.bk-tab {
@@ -1608,6 +1848,71 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		border-top: 1px solid #1a1a1a;
 	}
 
+	.bk-clip-input-full {
+		width: 100%;
+		box-sizing: border-box;
+	}
+
+	/* Audio clip card accent */
+	.bk-clip-audio {
+		border-color: #2a2a4a;
+	}
+
+	/* Character tags */
+	.bk-clip-char {
+		font-size: 0.7rem;
+		padding: 2px 7px;
+		border-radius: 99px;
+		background: #1a1a2a;
+		border: 1px solid #3a3a5a;
+		color: #9090c8;
+	}
+
+	/* ── Audio clips drawer in chat tab ── */
+	.bk-chat-clips-drawer {
+		border-top: 1px solid #1a1a2a;
+		flex-shrink: 0;
+	}
+
+	.bk-chat-clips-toggle {
+		width: 100%;
+		background: none;
+		border: none;
+		color: #7070a0;
+		font: inherit;
+		font-size: 0.78rem;
+		padding: 8px 16px;
+		cursor: pointer;
+		text-align: left;
+		transition: color 0.15s;
+	}
+	.bk-chat-clips-toggle:hover { color: #a0a8ff; }
+
+	.bk-chat-clips-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0;
+		max-height: 320px;
+		overflow-y: auto;
+		padding: 0 16px 8px;
+	}
+
+	.bk-chat-clip-row {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		padding: 10px 0;
+		border-top: 1px solid #111118;
+	}
+	.bk-chat-clip-row:first-child { border-top: none; }
+
+	.bk-chat-clip-meta {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		flex-wrap: wrap;
+	}
+
 	/* Progress */
 	.bk-fremdrift-panel {
 		padding: 16px;
@@ -1750,6 +2055,38 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		font-size: 0.78rem;
 		color: #666;
 		margin: 0;
+	}
+
+	.bk-fremdrift-meta {
+		font-size: 0.82rem;
+		color: #888;
+		margin: 0.4rem 0 0;
+	}
+
+	.bk-link {
+		background: none;
+		border: none;
+		color: #7c8ef5;
+		font-size: inherit;
+		cursor: pointer;
+		padding: 0;
+		text-decoration: underline;
+	}
+
+	.bk-autosave-toast {
+		position: absolute;
+		top: 8px;
+		left: 50%;
+		transform: translateX(-50%);
+		background: #1a2a1a;
+		border: 1px solid #2d5a2d;
+		color: #7ec87e;
+		font-size: 0.82rem;
+		padding: 6px 14px;
+		border-radius: 20px;
+		z-index: 90;
+		white-space: nowrap;
+		pointer-events: none;
 	}
 
 	/* Library */

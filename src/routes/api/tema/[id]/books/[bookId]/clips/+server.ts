@@ -38,6 +38,9 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 	const note = typeof body?.note === 'string' ? body.note.trim() : null;
 	const source = typeof body?.source === 'string' ? body.source.trim() : null;
 	const audioUrl = typeof body?.audioUrl === 'string' ? body.audioUrl.trim() : null;
+	const characters = Array.isArray(body?.characters)
+		? (body.characters as unknown[]).filter((c): c is string => typeof c === 'string')
+		: null;
 
 	const [clip] = await db
 		.insert(bookClips)
@@ -49,7 +52,8 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 			position: position || null,
 			note: note || null,
 			source: source || null,
-			audioUrl: audioUrl || null
+			audioUrl: audioUrl || null,
+			characters: characters ?? undefined
 		})
 		.returning();
 

@@ -219,7 +219,14 @@ export async function runDayPlanningAndCloseNudges(appUrl: string, now: Date = n
 		const timezone = user.timezone || 'Europe/Oslo';
 		const local = localNow(timezone, now);
 		const todayIso = local.isoDate;
-		const triage = await getNudgeTriage(user.id);
+		let triage: Awaited<ReturnType<typeof getNudgeTriage>>;
+		try {
+			triage = await getNudgeTriage(user.id);
+		} catch (err) {
+			console.error(`❌ getNudgeTriage failed for user ${user.id}:`, err);
+			results.push({ userId: user.id, planningSent: false, closeSent: false, relationshipMorningSent: false, skippedReason: 'triage-error' });
+			continue;
+		}
 		const mode = resolveNudgeMode(settings, todayIso, local.hm, triage);
 		const profile = settings.nudgeProfile;
 		const digestTime = isWeekend(todayIso)

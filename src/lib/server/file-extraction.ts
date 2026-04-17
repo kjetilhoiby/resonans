@@ -92,6 +92,42 @@ async function extractAudio(buffer: Buffer, filename: string, mimeType: string):
 	return clamp(transcription.text ?? '');
 }
 
+export interface WordTimestamp {
+	word: string;
+	start: number;
+	end: number;
+}
+
+export interface AudioTranscriptionResult {
+	text: string;
+	words: WordTimestamp[];
+}
+
+/**
+ * Transcribe audio/video and return text + empty words array.
+ * Uses gpt-4o-mini-transcribe for best quality. Word timestamps are not
+ * available on this model, so words is always empty.
+ *
+ * TODO: Vurder Deepgram Nova-2 ($0.0043/min) for bedre norsk + ord-timestamps (karaoke).
+ *   Docs: https://developers.deepgram.com/docs/getting-started-with-pre-recorded-audio
+ */
+export async function transcribeAudioWithWords(
+	buffer: Buffer,
+	filename: string,
+	mimeType: string
+): Promise<AudioTranscriptionResult> {
+	const isVideo = mimeType.startsWith('video/');
+	const file = new File([buffer], filename, {
+		type: mimeType || (isVideo ? 'video/mp4' : 'audio/mpeg')
+	});
+	const transcription = await openai.audio.transcriptions.create({
+		file,
+		model: 'gpt-4o-mini-transcribe',
+		language: 'no'
+	});
+	return { text: clamp(transcription.text ?? ''), words: [] };
+}
+
 function extractPlainText(buffer: Buffer): string {
 	return clamp(buffer.toString('utf-8'));
 }

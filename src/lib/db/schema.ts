@@ -885,6 +885,10 @@ export const bookClips = pgTable('book_clips', {
 	note: text('note'), // Brukerens refleksjon
 	source: text('source'), // 'manual'|'screenshot'|'audio_clip'
 	audioUrl: text('audio_url'), // URL til lydklipp (hvis fra skjermopptak)
+	// Word-level timestamps from Whisper: [{word, start, end}]
+	words: jsonb('words').$type<Array<{ word: string; start: number; end: number }>>(),
+	// People/characters mentioned in this clip
+	characters: text('characters').array(),
 	createdAt: timestamp('created_at').defaultNow().notNull()
 }, (table) => ({
 	idxBookClipsBookId: index('book_clips_book_id_idx').on(table.bookId)

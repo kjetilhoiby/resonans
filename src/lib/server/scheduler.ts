@@ -41,8 +41,16 @@ export function startScheduler() {
 		async () => {
 			console.log('⏰ Running local nudges (day planning/relationship/day close) at', new Date().toISOString());
 			const appUrl = env.ORIGIN || 'https://resonans.vercel.app';
-			await runDayPlanningAndCloseNudges(appUrl);
-			await runDomainSignalProducers();
+			try {
+				await runDayPlanningAndCloseNudges(appUrl);
+			} catch (err) {
+				console.error('❌ runDayPlanningAndCloseNudges failed:', err);
+			}
+			try {
+				await runDomainSignalProducers();
+			} catch (err) {
+				console.error('❌ runDomainSignalProducers failed:', err);
+			}
 		},
 		{
 			timezone: 'UTC'
