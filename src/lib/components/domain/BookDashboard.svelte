@@ -1663,7 +1663,10 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 
 	.bk-chat-messages {
 		flex: 1;
-		overflow-y: auto;
+		overflow-y: scroll;
+		-webkit-overflow-scrolling: touch;
+		overscroll-behavior: contain;
+		touch-action: pan-y;
 		padding: 8px 16px;
 		display: flex;
 		flex-direction: column;

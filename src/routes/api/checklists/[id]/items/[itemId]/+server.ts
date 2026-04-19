@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
-import { checklistItems, checklists } from '$lib/db/schema';
+import { checklistItems, checklists, progress } from '$lib/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
 
 async function syncChecklistCompletion(checklistId: string) {
@@ -49,6 +49,54 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 		.returning();
 
 	if (!updated) return json({ error: 'Ikke funnet' }, { status: 404 });
+
+	// When an item is checked and it has a linked task, log a progress record
+	if (body.checked === true) {
+		const meta = (updated.metadata ?? {}) as Record<string, unknown>;
+		const linkedTaskId = typeof meta.linkedTaskId === 'string' ? meta.linkedTaskId : null;
+
+		if (linkedTaskId && !meta.progressRecordId) {
+			const [progressRecord] = await db
+				.insert(progress)
+				.values({
+					taskId: linkedTaskId,
+					userId,
+					value: 1,
+					note: `Auto-loggert fra dagsjekkliste: "${updated.text}"`,
+					completedAt: updated.checkedAt ?? new Date()
+				})
+				.returning({ id: progress.id });
+
+			if (progressRecord) {
+				// Store the progress record ID in metadata so we don't double-log
+				await db
+					.update(checklistItems)
+					.set({ metadata: { ...meta, progressRecordId: progressRecord.id } })
+					.where(eq(checklistItems.id, updated.id));
+
+				updated.metadata = { ...meta, progressRecordId: progressRecord.id };
+			}
+		}
+	}
+
+	// When an item is unchecked, remove the progress record if present
+	if (body.checked === false) {
+		const meta = (updated.metadata ?? {}) as Record<string, unknown>;
+		const progressRecordId = typeof meta.progressRecordId === 'string' ? meta.progressRecordId : null;
+
+		if (progressRecordId) {
+			await db.delete(progress).where(eq(progress.id, progressRecordId));
+
+			const newMeta = { ...meta };
+			delete newMeta.progressRecordId;
+			await db
+				.update(checklistItems)
+				.set({ metadata: newMeta })
+				.where(eq(checklistItems.id, updated.id));
+
+			updated.metadata = newMeta;
+		}
+	}
 
 	await syncChecklistCompletion(params.id);
 

@@ -2,6 +2,7 @@ import { db } from '$lib/db';
 import { sensors, sensorEvents, sensorAggregates } from '$lib/db/schema';
 import { eq, and, sql } from 'drizzle-orm';
 import { refreshAccessToken, fetchAllWithingsData, fetchWithingsSleep } from './withings';
+import { enqueueBackgroundJob } from '$lib/server/background-jobs';
 
 /**
  * Get active Withings sensor for user
@@ -578,6 +579,37 @@ export async function syncAllWithingsData(userId: string, fullSync = false, over
 	console.log('💪 Syncing workout data...');
 	const workouts = await syncWorkoutData(userId, accessToken, sensor.id, lastSync, fullSync);
 	console.log(`   ✓ Synced ${workouts} workouts`);
+
+	// After workout sync, enqueue auto-check for today's checklist items
+	// and sync sensor events → task progress for the whole week
+	if (workouts > 0) {
+		const today = new Date().toISOString().slice(0, 10);
+		await enqueueBackgroundJob({
+			userId,
+			type: 'checklist_autocheck',
+			payload: { date: today },
+			priority: 1
+		});
+
+		// ISO week bounds for the current week
+		const now = new Date();
+		const dayOfWeek = now.getUTCDay() || 7; // Mon=1 … Sun=7
+		const weekStart = new Date(now);
+		weekStart.setUTCDate(now.getUTCDate() - dayOfWeek + 1);
+		weekStart.setUTCHours(0, 0, 0, 0);
+		const weekEnd = new Date(weekStart);
+		weekEnd.setUTCDate(weekStart.getUTCDate() + 7);
+
+		await enqueueBackgroundJob({
+			userId,
+			type: 'sync_sensor_to_task_progress',
+			payload: {
+				weekStart: weekStart.toISOString(),
+				weekEnd: weekEnd.toISOString()
+			},
+			priority: 2
+		});
+	}
 
 	// Update last sync timestamp
 	await db

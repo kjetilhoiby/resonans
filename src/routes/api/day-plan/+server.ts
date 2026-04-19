@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { checklists, checklistItems, memories } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
+import { parseChecklistItemIntent, findLinkedTask } from '$lib/server/checklist-intent-linker';
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const userId = locals.userId;
@@ -79,14 +80,45 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		if (toAdd.length > 0) {
 			const nextOrder =
 				(dayChecklist.items ?? []).reduce((m, i) => Math.max(m, i.sortOrder), -1) + 1;
-			await db.insert(checklistItems).values(
-				toAdd.map((text, i) => ({
-					checklistId: dayChecklist!.id,
-					userId,
-					text,
-					sortOrder: nextOrder + i
-				}))
+
+			// Parse intent + find linked task for each day item
+			const itemsToInsert = await Promise.all(
+				toAdd.map(async (text, i) => {
+					const intent = parseChecklistItemIntent(text);
+					let metadata: Record<string, unknown> = {};
+					if (intent.matched) {
+						const linkedTask = await findLinkedTask({
+							userId,
+							itemText: text,
+							weekDashedKey,
+							weekCompactKey: compactKey
+						});
+						if (linkedTask) {
+							metadata = {
+								linkedTaskId: linkedTask.taskId,
+								linkedTaskTitle: linkedTask.taskTitle,
+								activityType: intent.activityType,
+								...(intent.durationMinutes !== undefined && { durationMinutes: intent.durationMinutes }),
+								...(intent.distanceKm !== undefined && { distanceKm: intent.distanceKm })
+							};
+						} else if (intent.activityType) {
+							metadata = {
+								activityType: intent.activityType,
+								...(intent.durationMinutes !== undefined && { durationMinutes: intent.durationMinutes }),
+								...(intent.distanceKm !== undefined && { distanceKm: intent.distanceKm })
+							};
+						}
+					}
+					return {
+						checklistId: dayChecklist!.id,
+						userId,
+						text,
+						sortOrder: nextOrder + i,
+						...(Object.keys(metadata).length > 0 && { metadata })
+					};
+				})
 			);
+			await db.insert(checklistItems).values(itemsToInsert);
 		}
 	}
 

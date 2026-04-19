@@ -1,6 +1,6 @@
 import { db } from '$lib/db';
 import { goals, tasks, categories, sensorGoals } from '$lib/db/schema';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { findSimilar } from './similarity';
 import { METRIC_CATALOG, resolveMetricId, type MetricId } from '$lib/domain/metric-catalog';
 import type { GoalTrack, GoalTrackKind, GoalWindow } from '$lib/domain/goal-tracks';
@@ -295,4 +295,30 @@ export async function enableSensorGoalTracking(
 		`[goals] enabled auto-tracking for goal=${goalId} with metricType=${metricType}`
 	);
 	return sensorGoal;
+}
+
+/**
+ * Returns the id of the user's "Planlegging" meta-goal, creating it if it doesn't exist.
+ * Used when checklist items in week/day planning need a task but have no explicit goal.
+ */
+export async function getOrCreatePlanningGoal(userId: string): Promise<string> {
+	const rows = await db.execute(sql`
+		SELECT id FROM goals
+		WHERE user_id = ${userId}
+		  AND status = 'active'
+		  AND metadata->>'isPlanningGoal' = 'true'
+		LIMIT 1
+	`);
+	const existing = rows as unknown as Array<{ id: string }>;
+	if (existing.length > 0) return existing[0].id;
+
+	const [goal] = await db.insert(goals).values({
+		userId,
+		title: 'Planlegging',
+		description: 'Ukesmål og planlagte oppgaver uten overordnet mål',
+		status: 'active',
+		metadata: { isPlanningGoal: true }
+	}).returning({ id: goals.id });
+
+	return goal!.id;
 }

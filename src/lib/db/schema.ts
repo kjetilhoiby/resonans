@@ -381,6 +381,18 @@ export const checklistItems = pgTable('checklist_items', {
 	checked: boolean('checked').notNull().default(false),
 	sortOrder: integer('sort_order').notNull().default(0),
 	checkedAt: timestamp('checked_at'),
+	metadata: jsonb('metadata').default({}).notNull().$type<{
+		// Intent linking
+		linkedTaskId?: string;
+		linkedTaskTitle?: string;
+		activityType?: string;
+		durationMinutes?: number;
+		distanceKm?: number;
+		// Tracking state
+		autoChecked?: boolean;
+		autoCheckedAt?: string;
+		progressRecordId?: string;
+	}>(),
 	createdAt: timestamp('created_at').defaultNow().notNull()
 });
 

@@ -5,6 +5,8 @@ import { syncAllSparebank1Data } from '$lib/server/integrations/sparebank1-sync'
 import { processGoalIntentParseJob } from '$lib/server/goal-intent-parser';
 import { processTaskIntentParseJob } from '$lib/server/task-intent-parser';
 import { processBookContextCollectJob } from '$lib/server/book-context-collector';
+import { autocheckChecklistItemsForDay } from '$lib/server/checklist-autocheck';
+import { syncSensorProgressForTasks } from '$lib/server/sensor-progress-sync';
 
 export type BackgroundJobStatus = 'queued' | 'running' | 'retry' | 'completed' | 'failed' | 'canceled';
 
@@ -414,6 +416,28 @@ async function executeJob(job: any): Promise<Record<string, unknown>> {
 			});
 
 			return { bookId: payload.bookId, contextPack };
+		}
+		case 'checklist_autocheck': {
+			if (!job.user_id) throw new Error('checklist_autocheck requires user_id');
+			const payload = (job.payload ?? {}) as { date?: string };
+			if (!payload.date || typeof payload.date !== 'string') {
+				throw new Error('checklist_autocheck requires payload.date (ISO string)');
+			}
+			const results = await autocheckChecklistItemsForDay({ userId: job.user_id, date: payload.date });
+			return { date: payload.date, results };
+		}
+		case 'sync_sensor_to_task_progress': {
+			if (!job.user_id) throw new Error('sync_sensor_to_task_progress requires user_id');
+			const payload = (job.payload ?? {}) as { weekStart?: string; weekEnd?: string };
+			if (!payload.weekStart || !payload.weekEnd) {
+				throw new Error('sync_sensor_to_task_progress requires payload.weekStart and weekEnd');
+			}
+			const result = await syncSensorProgressForTasks({
+				userId: job.user_id,
+				weekStart: new Date(payload.weekStart),
+				weekEnd: new Date(payload.weekEnd)
+			});
+			return { weekStart: payload.weekStart, weekEnd: payload.weekEnd, ...result };
 		}
 		default:
 			throw new Error(`Unknown background job type: ${job.type}`);

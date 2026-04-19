@@ -30,6 +30,14 @@
 		id: string;
 		text: string;
 		checked: boolean;
+		metadata?: {
+			linkedTaskId?: string;
+			linkedTaskTitle?: string;
+			activityType?: string;
+			durationMinutes?: number;
+			distanceKm?: number;
+			autoChecked?: boolean;
+		};
 	}
 
 	interface WeekChecklist {
@@ -1015,8 +1023,18 @@
 	function buildWeekPlanSystemPrompt() {
 		const parts: string[] = [
 			`Du er en planleggingsassistent som hjelper brukeren planlegge uke ${data.week.week}.`,
-			`Jobb-instruksjon: hjelp brukeren sette konkrete ukesmål. Still ett spørsmål av gangen. Vær kort og direkte.`
+			`Jobb-instruksjon: hjelp brukeren sette konkrete ukesmål forankret i de overordnede målene. Still ett spørsmål av gangen. Vær kort og direkte.`
 		];
+		if (data.longTermGoals.length > 0) {
+			const goalLines = data.longTermGoals.map((g) => {
+				const deadline = g.targetDate ? ` (frist: ${new Date(g.targetDate).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short', year: 'numeric' })})` : '';
+				return `"${g.title}" (ID: ${g.id})${deadline}`;
+			}).join('; ');
+			parts.push(`Overordnede mål: ${goalLines}.`);
+			parts.push(`INSTRUKSJON: For hvert ukesmål brukeren godkjenner, kall create_task med riktig goalId fra listen over. Kall check_similar_tasks først. Oppsummer til slutt hvilke oppgaver som ble opprettet.`);
+		} else {
+			parts.push(`INSTRUKSJON: Brukeren har ingen overordnede mål ennå. Hjelp dem sette konkrete ukesmål. For hvert mål de godkjenner, kall create_task (bruk getOrCreatePlanningGoal eller be dem opprette et mål først).`);
+		}
 		if (data.previousWeekSummary.note) parts.push(`Forrige ukes notat: "${data.previousWeekSummary.note}".`);
 		if (data.previousWeekSummary.reflection) parts.push(`Læring fra forrige uke: "${data.previousWeekSummary.reflection}".`);
 		const carryovers = [...data.previousWeekSummary.carryoverItems, ...data.previousWeekSummary.incompleteTasks];
@@ -1512,7 +1530,15 @@
 							{:else}
 								<button type="button" class="wp-item-text-btn" onclick={() => void startEditing(selectedDayChecklist.id, item)}>
 									<span class="wp-check-text" class:checked={item.checked}>{item.text}</span>
-								</button>
+									{#if item.metadata?.linkedTaskId}
+										<span class="wp-intent-badge" title="Koblet til ukesmål: {item.metadata.linkedTaskTitle ?? ''}">
+											{item.metadata.autoChecked ? '⚡' : '🔗'}
+											{item.metadata.linkedTaskTitle
+												? item.metadata.linkedTaskTitle.slice(0, 24) + (item.metadata.linkedTaskTitle.length > 24 ? '…' : '')
+												: 'Ukesmål'}
+										</span>
+								{/if}
+							</button>
 							{/if}
 							<span class="wp-drag-handle" aria-hidden="true" ontouchstart={(event) => startTouchDrag(event, selectedDayChecklist.id, item.id)}>⋮⋮</span>
 						</div>
@@ -1587,6 +1613,10 @@
 			prompts: { chat: buildWeekPlanPrefill() }
 		}}
 		onclose={() => (weekPlanChatOpen = false)}
+		oncomplete={async () => {
+			weekPlanChatOpen = false;
+			await invalidateAll();
+		}}
 	/>
 {/if}
 
@@ -1613,7 +1643,12 @@
 			existingHeadline: dayHeadlinesState[selectedDayIso] ?? ''
 		}}
 		onclose={() => (dayPlanSheetOpen = false)}
-		oncomplete={async () => {
+		oncomplete={async (fd) => {
+			// Optimistically update local state so the headline is visible immediately
+			const headline = fd['headline'] as string | undefined;
+			if (headline) {
+				dayHeadlinesState = { ...dayHeadlinesState, [selectedDayIso]: headline };
+			}
 			if (nudgeTrack === 'plan_day') {
 				await reportNudgeStage('flow_completed');
 			}
@@ -2127,6 +2162,30 @@
 	.wp-check-text.checked {
 		color: #737d95;
 		text-decoration: line-through;
+	}
+
+	.wp-intent-badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 3px;
+		font-size: 0.68rem;
+		color: rgba(100, 200, 170, 0.85);
+		background: rgba(52, 211, 153, 0.08);
+		border: 1px solid rgba(52, 211, 153, 0.18);
+		border-radius: 6px;
+		padding: 1px 6px;
+		margin-left: 6px;
+		vertical-align: middle;
+		white-space: nowrap;
+		max-width: 140px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.wp-intent-badge--unlinked {
+		color: rgba(160, 160, 180, 0.7);
+		background: rgba(100, 100, 130, 0.08);
+		border-color: rgba(100, 100, 130, 0.18);
 	}
 
 	.wp-edit-shell {
