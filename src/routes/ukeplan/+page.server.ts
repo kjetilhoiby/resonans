@@ -4,6 +4,7 @@ import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/db';
 import { checklistItems, checklists, goals, memories, progress, tasks, themes, sensorEvents, sensors } from '$lib/db/schema';
 import { parseListRepeatCount } from '$lib/server/list-repeat-parser';
+import { buildUnifiedWorkoutActivities } from '$lib/server/activity-layer';
 
 async function loadWeekTasks(userId: string, dashedKey: string, compactKey: string) {
 	const baseSelect = db
@@ -397,28 +398,14 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		const endDate = meta?.endDate ? new Date(meta.endDate) : (goal.targetDate ? new Date(goal.targetDate) : new Date());
 		const targetKm: number = meta?.goalTrack?.targetValue ?? 0;
 
-		// Query running workouts for this goal period
-		const events = await db
-			.select({
-				distance: sensorEvents.data
-			})
-			.from(sensorEvents)
-			.where(
-				and(
-					eq(sensorEvents.userId, userId),
-					eq(sensorEvents.dataType, 'workout'),
-					gte(sensorEvents.timestamp, startDate),
-					lte(sensorEvents.timestamp, endDate)
-				)
-			);
-
+		// Bruk activity-laget som deduplicerer via 2-timers kluster + kilde-prioritet
+		const workouts = await buildUnifiedWorkoutActivities(userId, { since: startDate, limit: 500 });
 		let currentKm = 0;
-		for (const event of events) {
-			const data = event.distance as any;
-			const sportType = (data?.sportType || '').toLowerCase();
-			if (!RUNNING_SPORT_TYPES.has(sportType)) continue;
-			const distance = data?.distanceMeters ?? data?.distance;
-			if (distance) currentKm += distance > 80 ? distance / 1000 : distance;
+		for (const w of workouts) {
+			if (new Date(w.startTime) > endDate) continue;
+			const sport = (w.sportType || '').toLowerCase();
+			if (!RUNNING_SPORT_TYPES.has(sport)) continue;
+			currentKm += (w.distanceMeters ?? 0) / 1000;
 		}
 		currentKm = Math.round(currentKm * 10) / 10;
 
@@ -474,7 +461,9 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		longTermGoals: longTermGoals.map((goal) => ({
 			id: goal.id,
 			title: goal.title,
-			targetDate: goal.targetDate?.toISOString() ?? null
+			targetDate: goal.targetDate?.toISOString() ?? null,
+			metadata: goal.metadata ?? null,
+			sensorProgress: sensorProgressMap[goal.id] ?? null
 		})),
 		dayChecklists: dayChecklistMap,
 		dayNotes: dayNoteMap,

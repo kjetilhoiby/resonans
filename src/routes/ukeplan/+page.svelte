@@ -67,6 +67,13 @@
 		id: string;
 		title: string;
 		targetDate: string | null;
+		metadata: any;
+		sensorProgress: {
+			currentKm: number;
+			expectedKm: number;
+			targetKm: number;
+			status: 'green' | 'yellow' | 'red';
+		} | null;
 	}
 
 	interface DayChecklist {
@@ -1763,9 +1770,42 @@
 		{#if data.longTermGoals.length > 0}
 			<ul class="wp-reminder-list">
 				{#each data.longTermGoals as goal}
-					<li class="wp-reminder-row">
-						<span class="wp-reminder-title">{goal.title}</span>
-						<span class="wp-reminder-date">{formatDate(goal.targetDate)}</span>
+					{@const progress = goal.sensorProgress}
+					<li class="wp-reminder-row" class:has-sensor-progress={!!progress}>
+						<div class="wp-reminder-main">
+							<span class="wp-reminder-title">{goal.title}</span>
+							<span class="wp-reminder-date">{formatDate(goal.targetDate)}</span>
+						</div>
+						{#if progress}
+							<div class="wp-sensor-progress">
+								<div class="wp-progress-bar">
+									<div 
+										class="wp-progress-fill"
+										class:green={progress.status === 'green'}
+										class:yellow={progress.status === 'yellow'}
+										class:red={progress.status === 'red'}
+										style={`width: ${Math.min(100, (progress.currentKm / progress.targetKm) * 100)}%`}
+									></div>
+								</div>
+								<div class="wp-progress-meta">
+									<span class="wp-progress-km">{progress.currentKm} km</span>
+									<span 
+										class="wp-progress-status"
+										class:status-green={progress.status === 'green'}
+										class:status-yellow={progress.status === 'yellow'}
+										class:status-red={progress.status === 'red'}
+									>
+										{#if progress.status === 'green'}
+											✓
+										{:else if progress.status === 'yellow'}
+											⚠
+										{:else}
+											✕
+										{/if}
+									</span>
+								</div>
+							</div>
+						{/if}
 					</li>
 				{/each}
 			</ul>
@@ -2566,23 +2606,94 @@
 
 	.wp-reminder-row {
 		display: flex;
-		justify-content: space-between;
-		align-items: baseline;
-		gap: 10px;
+		flex-direction: column;
+		gap: 8px;
 		padding: 10px;
 		border-radius: 9px;
 		background: #0f131c;
 		border: none;
 	}
 
+	.wp-reminder-row.has-sensor-progress {
+		gap: 10px;
+	}
+
+	.wp-reminder-main {
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
+		gap: 10px;
+	}
+
 	.wp-reminder-title {
 		font-size: 0.95rem;
 		color: #d3d8e6;
+		flex: 1;
 	}
 
 	.wp-reminder-date {
 		font-size: 0.82rem;
 		color: #7c86a2;
+		white-space: nowrap;
+	}
+
+	.wp-sensor-progress {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.wp-progress-bar {
+		height: 6px;
+		background: #1a202c;
+		border-radius: 3px;
+		overflow: hidden;
+	}
+
+	.wp-progress-fill {
+		height: 100%;
+		transition: width 0.3s ease, background-color 0.3s ease;
+		border-radius: 3px;
+	}
+
+	.wp-progress-fill.green {
+		background: linear-gradient(90deg, #4ade80, #22c55e);
+	}
+
+	.wp-progress-fill.yellow {
+		background: linear-gradient(90deg, #facc15, #eab308);
+	}
+
+	.wp-progress-fill.red {
+		background: linear-gradient(90deg, #ef4444, #dc2626);
+	}
+
+	.wp-progress-meta {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		font-size: 0.75rem;
+	}
+
+	.wp-progress-km {
+		color: #9ca3af;
+	}
+
+	.wp-progress-status {
+		font-size: 1rem;
+		font-weight: bold;
+	}
+
+	.wp-progress-status.status-green {
+		color: #4ade80;
+	}
+
+	.wp-progress-status.status-yellow {
+		color: #facc15;
+	}
+
+	.wp-progress-status.status-red {
+		color: #ef4444;
 	}
 
 	.wp-vision-text {

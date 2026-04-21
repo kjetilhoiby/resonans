@@ -1,42 +1,49 @@
 import { db } from '$lib/db';
 import { goals, sensorEvents } from '$lib/db/schema';
-import { eq, and, gte, lte } from 'drizzle-orm';
+import { and, desc, eq, gte } from 'drizzle-orm';
+import { buildUnifiedWorkoutActivities } from '$lib/server/activity-layer';
 import type { PageServerLoad } from './$types';
 
 const RUNNING_SPORT_TYPES = new Set(['running', 'indoor_running', 'trail_running', 'løp', 'run']);
 
-// Lightweight running distance query for a specific date range — avoids loading 3+ years of data
+type RunningSummary = {
+	currentKm: number;
+	startDate: string;
+	endDate: string;
+	dailyKm: { date: string; km: number }[];
+};
+
 async function getRunningSummaryForRange(
 	userId: string,
 	startDate: Date,
 	endDate: Date
-): Promise<number> {
-	const events = await db
-		.select({
-			distance: sensorEvents.data
-		})
-		.from(sensorEvents)
-		.where(
-			and(
-				eq(sensorEvents.userId, userId),
-				eq(sensorEvents.dataType, 'workout'),
-				gte(sensorEvents.timestamp, startDate),
-				lte(sensorEvents.timestamp, endDate)
-			)
-		);
-
-	let totalKm = 0;
-	for (const event of events) {
-		const data = event.distance as any;
-		const sportType = (data?.sportType || '').toLowerCase();
-		if (!RUNNING_SPORT_TYPES.has(sportType)) continue;
-		const distance = data?.distanceMeters ?? data?.distance;
-		if (distance) totalKm += distance > 80 ? distance / 1000 : distance;
+): Promise<RunningSummary> {
+	const workouts = await buildUnifiedWorkoutActivities(userId, { since: startDate, limit: 500 });
+	const dailyMap = new Map<string, number>();
+	for (const w of workouts) {
+		const wDate = new Date(w.startTime);
+		if (wDate > endDate) continue;
+		const sport = (w.sportType || '').toLowerCase();
+		if (!RUNNING_SPORT_TYPES.has(sport)) continue;
+		const km = (w.distanceMeters ?? 0) / 1000;
+		const dateKey = wDate.toISOString().slice(0, 10);
+		dailyMap.set(dateKey, Math.round(((dailyMap.get(dateKey) ?? 0) + km) * 10) / 10);
 	}
-	return Math.round(totalKm * 10) / 10;
+	const dailyKm = Array.from(dailyMap.entries())
+		.sort(([a], [b]) => a.localeCompare(b))
+		.map(([date, km]) => ({ date, km }));
+	const currentKm = Math.round(dailyKm.reduce((s, d) => s + d.km, 0) * 10) / 10;
+	return {
+		currentKm,
+		startDate: startDate.toISOString().slice(0, 10),
+		endDate: endDate.toISOString().slice(0, 10),
+		dailyKm
+	};
 }
 
 export const load: PageServerLoad = async ({ locals }) => {
+	const t0 = performance.now();
+
 	const userGoals = await db.query.goals.findMany({
 		where: eq(goals.userId, locals.userId),
 		with: {
@@ -52,6 +59,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 		},
 		orderBy: (goals, { desc }) => [desc(goals.createdAt)]
 	});
+	console.log(`[goals/load] goals query: ${(performance.now() - t0).toFixed(0)}ms (${userGoals.length} goals)`);
 
 	// For goals with running_distance metric and dates, fetch accumulated km
 	const runningGoals = userGoals.filter((g) => {
@@ -59,7 +67,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 		return meta?.metricId === 'running_distance' && (meta?.startDate || meta?.goalTrack);
 	});
 
-	let sensorProgressMap: Record<string, { currentKm: number; targetKm: number }> = {};
+	let sensorProgressMap: Record<string, { currentKm: number; targetKm: number; startDate: string; endDate: string; dailyKm: { date: string; km: number }[] }> = {};
 
 	// Fetch running km for each goal individually to avoid loading unnecessary historical data
 	for (const goal of runningGoals) {
@@ -68,12 +76,65 @@ export const load: PageServerLoad = async ({ locals }) => {
 		const endDate = meta?.endDate ? new Date(meta.endDate) : new Date();
 		const targetKm: number = meta?.goalTrack?.targetValue ?? 0;
 
-		const currentKm = await getRunningSummaryForRange(locals.userId, startDate, endDate);
-		sensorProgressMap[goal.id] = { currentKm, targetKm };
+		const tRun = performance.now();
+		const summary = await getRunningSummaryForRange(locals.userId, startDate, endDate);
+		console.log(`[goals/load] running summary "${goal.title}": ${(performance.now() - tRun).toFixed(0)}ms → ${summary.currentKm} km (${summary.dailyKm.length} days with runs)`);
+		sensorProgressMap[goal.id] = { ...summary, targetKm };
 	}
+
+	// For weight_change goals, fetch the most recent weight measurement
+	const weightGoals = userGoals.filter((g) => {
+		const meta = g.metadata as any;
+		return meta?.metricId === 'weight_change' && typeof meta?.startValue === 'number';
+	});
+
+	type WeightProgress = {
+		currentWeight: number;
+		startWeight: number;
+		targetWeight: number;
+		pct: number;
+	};
+	let weightProgressMap: Record<string, WeightProgress> = {};
+
+	for (const goal of weightGoals) {
+		const meta = goal.metadata as any;
+		const startDate = meta?.startDate ? new Date(meta.startDate) : new Date(goal.createdAt);
+		const startWeight: number = meta.startValue;
+		const targetDelta: number = meta?.goalTrack?.targetValue ?? 0;
+		const targetWeight = startWeight + targetDelta;
+
+		const tW = performance.now();
+		const [latest] = await db
+			.select({ weight: sensorEvents.data })
+			.from(sensorEvents)
+			.where(
+				and(
+					eq(sensorEvents.userId, locals.userId),
+					eq(sensorEvents.dataType, 'weight'),
+					gte(sensorEvents.timestamp, startDate)
+				)
+			)
+			.orderBy(desc(sensorEvents.timestamp))
+			.limit(1);
+		console.log(`[goals/load] weight query "${goal.title}": ${(performance.now() - tW).toFixed(0)}ms`);
+
+		if (!latest?.weight?.weight) continue;
+
+		const currentWeight = latest.weight.weight;
+		const totalDelta = targetWeight - startWeight;
+		const achievedDelta = currentWeight - startWeight;
+		const pct = totalDelta !== 0
+			? Math.max(0, Math.min(100, Math.round((achievedDelta / totalDelta) * 100)))
+			: 0;
+
+		weightProgressMap[goal.id] = { currentWeight, startWeight, targetWeight, pct };
+	}
+
+	console.log(`[goals/load] TOTAL: ${(performance.now() - t0).toFixed(0)}ms`);
 
 	return {
 		goals: userGoals,
-		sensorProgressMap
+		sensorProgressMap,
+		weightProgressMap
 	};
 };

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Icon from '$lib/components/ui/Icon.svelte';
+	import RunningBurnupChart from './RunningBurnupChart.svelte';
 
 	type GoalTrackMeta = {
 		kind?: string | null;
@@ -69,10 +70,18 @@
 		}>;
 	};
 
+	type WeightProgress = {
+		currentWeight: number;
+		startWeight: number;
+		targetWeight: number;
+		pct: number;
+	};
+
 	interface Props {
 		data: {
 			goals: GoalItem[];
-			sensorProgressMap: Record<string, { currentKm: number; targetKm: number }>;
+			sensorProgressMap: Record<string, { currentKm: number; targetKm: number; startDate: string; endDate: string; dailyKm: { date: string; km: number }[] }>;
+			weightProgressMap: Record<string, WeightProgress>;
 		};
 	}
 
@@ -171,9 +180,11 @@
 			}
 			// Remove from local state instead of full reload
 			data.goals = data.goals.filter((g) => g.id !== goalId);
-			// Also update sensorProgressMap
-			const { [goalId]: _, ...rest } = data.sensorProgressMap;
-			data.sensorProgressMap = rest;
+			// Also update sensorProgressMap and weightProgressMap
+			const { [goalId]: _s, ...restSensor } = data.sensorProgressMap;
+			data.sensorProgressMap = restSensor;
+			const { [goalId]: _w, ...restWeight } = data.weightProgressMap;
+			data.weightProgressMap = restWeight;
 		} catch (error) {
 			alert(`Feil ved sletting: ${error instanceof Error ? error.message : 'Ukjent feil'}`);
 		}
@@ -216,6 +227,7 @@
 					{@const startDate = formatDate(goal.metadata?.startDate)}
 					{@const endDate = formatDate(goal.metadata?.endDate)}
 					{@const sensorProgress = data.sensorProgressMap[goal.id]}
+					{@const weightProgress = data.weightProgressMap[goal.id]}
 					<div class="goal-card" class:expanded={isExpanded}>
 						<!-- Alltid synlig: sammendrag -->
 						<button
@@ -250,6 +262,17 @@
 											<span class="sensor-pct">{pct}%</span>
 										</div>
 									</div>
+								{:else if weightProgress}
+									<div class="sensor-progress">
+										<div class="sensor-progress-bar">
+											<div class="sensor-progress-fill" style={`width: ${weightProgress.pct}%`}></div>
+										</div>
+										<div class="sensor-progress-label">
+											<span class="sensor-current">{weightProgress.currentWeight} kg</span>
+											<span class="sensor-target">→ {weightProgress.targetWeight} kg</span>
+											<span class="sensor-pct">{weightProgress.pct}%</span>
+										</div>
+									</div>
 								{:else if goal.tasks.length > 0}
 									<div class="progress-section">
 										<div class="progress-bar">
@@ -269,6 +292,16 @@
 							<div class="goal-details">
 								{#if goal.description}
 									<p class="goal-description">{goal.description}</p>
+								{/if}
+
+								{#if sensorProgress && sensorProgress.dailyKm}
+									<RunningBurnupChart
+										dailyKm={sensorProgress.dailyKm}
+										targetKm={sensorProgress.targetKm}
+										startDate={sensorProgress.startDate}
+										endDate={sensorProgress.endDate}
+										currentKm={sensorProgress.currentKm}
+									/>
 								{/if}
 
 								<div class="goal-meta-row">

@@ -210,6 +210,7 @@ export async function buildUnifiedWorkoutActivities(
 	userId: string,
 	options: ActivityLayerOptions = {}
 ): Promise<UnifiedWorkoutActivity[]> {
+	const t0 = performance.now();
 	const conditions = [
 		eq(sensorEvents.userId, userId),
 		eq(sensorEvents.dataType, 'workout')
@@ -223,14 +224,17 @@ export async function buildUnifiedWorkoutActivities(
 		orderBy: (events, { asc }) => [asc(events.timestamp)],
 		limit: options.limit ?? 1000
 	});
+	console.log(`[activity-layer] sensorEvents query: ${(performance.now() - t0).toFixed(0)}ms → ${workoutEvents.length} rows`);
 
 	if (workoutEvents.length === 0) return [];
 
+	const t1 = performance.now();
 	const sensorIds = [...new Set(workoutEvents.map((event) => event.sensorId))];
 	const sensorRows = await db.query.sensors.findMany({
 		where: and(eq(sensors.userId, userId)),
 		columns: { id: true, provider: true, type: true }
 	});
+	console.log(`[activity-layer] sensors query: ${(performance.now() - t1).toFixed(0)}ms → ${sensorRows.length} sensors (${sensorIds.length} unique)`);
 	const sensorMap = new Map(sensorRows.map((sensor) => [sensor.id, sensor]));
 
 	const normalizedEvents: WorkoutEvidenceEvent[] = workoutEvents.map((event) => {
@@ -357,6 +361,7 @@ export async function buildUnifiedWorkoutActivities(
 			return true;
 		});
 
+	console.log(`[activity-layer] buildUnifiedWorkoutActivities TOTAL: ${(performance.now() - t0).toFixed(0)}ms → ${unified.length} deduplicated workouts`);
 	return unified;
 }
 
