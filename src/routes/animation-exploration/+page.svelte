@@ -154,13 +154,18 @@
 		return pts;
 	}
 
-	// Sample a circle (center, radius) at N evenly-spaced angles.
-	// Start at the same place as the ring's 12-o'clock (angle = -pi/2).
+	// Sample a semicircle from LEFT (9-o'clock) through TOP (12-o'clock) to RIGHT (3-o'clock).
+	// In SVG coordinates (y increases downward) the arc bows *upward* on screen.
+	// Point 0 = (cx-r, cy), point N-1 = (cx+r, cy), midpoint = (cx, cy-r).
+	// x is strictly monotonically increasing left→right — no crossings when morphed to the graph.
 	function circlePoints(cx: number, cy: number, r: number, N: number): [number, number][] {
 		const pts: [number, number][] = [];
 		for (let i = 0; i < N; i++) {
-			const angle = -Math.PI / 2 + (i / (N - 1)) * 2 * Math.PI;
-			pts.push([cx + Math.cos(angle) * r, cy + Math.sin(angle) * r]);
+			// t goes 0→1, angle sweeps π→0 (left→right through the top)
+			const t = i / (N - 1);
+			const angle = Math.PI * (1 - t);          // π at i=0, 0 at i=N-1
+			pts.push([cx + Math.cos(angle) * r, cy - Math.sin(angle) * r]);
+			//                                    ↑ minus: sin is +ve in this range, minus flips arc upward
 		}
 		return pts;
 	}

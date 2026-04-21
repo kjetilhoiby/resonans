@@ -36,21 +36,44 @@
 	const isComplete = $derived(done === total && total > 0);
 	const ringText = $derived(`${done}/${total}`);
 
-	function getContextLabel(context: string | null) {
-		if (!context) return null;
+	function toLocalIsoDate(d: Date): string {
+		return d.toLocaleDateString('sv', { timeZone: 'Europe/Oslo' });
+	}
+
+	function getContextLabel(context: string | null): { primary: string; secondary: string | null } {
+		if (!context) return { primary: checklist.title, secondary: null };
+
+		const todayIso = toLocalIsoDate(new Date());
+		const tomorrow = new Date();
+		tomorrow.setDate(tomorrow.getDate() + 1);
+		const tomorrowIso = toLocalIsoDate(tomorrow);
 
 		const dayMatch = context.match(/^week:(\d{4}-W\d{2}):day:(\d{4}-\d{2}-\d{2})$/);
 		if (dayMatch) {
-			const weekday = new Intl.DateTimeFormat('nb-NO', { weekday: 'short' }).format(new Date(dayMatch[2]));
-			return weekday.replace('.', '').toLowerCase();
+			const iso = dayMatch[2];
+			if (iso === todayIso) return { primary: 'I dag', secondary: null };
+			if (iso === tomorrowIso) return { primary: 'I morgen', secondary: null };
+			const weekday = new Intl.DateTimeFormat('nb-NO', { weekday: 'short' }).format(new Date(iso + 'T12:00:00'));
+			const cap = weekday.replace('.', '');
+			return { primary: cap.charAt(0).toUpperCase() + cap.slice(1), secondary: null };
 		}
 
-		const weekMatch = context.match(/^week:\d{4}-W(\d{2})$/);
+		const weekMatch = context.match(/^week:(\d{4}-W(\d{2}))$/);
 		if (weekMatch) {
-			return `uke ${Number.parseInt(weekMatch[1], 10)}`;
+			const currentWeek = toLocalIsoDate(new Date()).slice(0, 4) + '-W' +
+				String(getIsoWeekNumber(new Date())).padStart(2, '0');
+			if (`week:${currentWeek}` === context) return { primary: 'Hele uka', secondary: null };
+			return { primary: `Uke ${Number.parseInt(weekMatch[2], 10)}`, secondary: null };
 		}
 
-		return null;
+		return { primary: checklist.title, secondary: null };
+	}
+
+	function getIsoWeekNumber(d: Date): number {
+		const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+		date.setUTCDate(date.getUTCDate() + 4 - (date.getUTCDay() || 7));
+		const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+		return Math.ceil(((date.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
 	}
 
 	const contextLabel = $derived.by(() => getContextLabel(checklist.context));
@@ -105,9 +128,9 @@
 	</div>
 
 	<!-- Label -->
-	<p class="cl-label" class:complete={isComplete}>{contextLabel ?? checklist.title}</p>
-	{#if contextLabel}
-		<p class="cl-subtitle">{checklist.title}</p>
+	<p class="cl-label" class:complete={isComplete}>{contextLabel.primary}</p>
+	{#if contextLabel.secondary}
+		<p class="cl-subtitle">{contextLabel.secondary}</p>
 	{/if}
 
 	{#if isComplete}
@@ -183,7 +206,6 @@
 		font-weight: 700;
 		color: #9aa0c9;
 		margin: 0;
-		text-transform: lowercase;
 		letter-spacing: 0.03em;
 	}
 

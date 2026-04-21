@@ -6,6 +6,7 @@ import { sensors } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { syncAllWithingsData } from '$lib/server/integrations/withings-sync';
 import { registerWorkoutsAsProgress } from '$lib/server/sensor-goal-automation';
+import { autocheckWakeTimeForDate } from '$lib/server/checklist-autocheck';
 
 // Allow up to 120 seconds — syncs multiple users sequentially
 export const config = { maxDuration: 120 };
@@ -48,7 +49,17 @@ export const GET: RequestHandler = async ({ request }) => {
 				console.error(`[withings-sync cron] automation failed for user=${userId}: ${msg}`);
 			}
 
-			results.push({ userId, success: true, synced, automation });
+			// Auto-check wake-time checklist items against today's sleep data
+			let wakeCheck: Record<string, unknown> = {};
+			try {
+				const todayOslo = new Date().toLocaleDateString('sv', { timeZone: 'Europe/Oslo' });
+				wakeCheck = await autocheckWakeTimeForDate({ userId, date: todayOslo });
+			} catch (err) {
+				const msg = err instanceof Error ? err.message : String(err);
+				console.error(`[withings-sync cron] wake autocheck failed for user=${userId}: ${msg}`);
+			}
+
+			results.push({ userId, success: true, synced, automation, wakeCheck });
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
 			console.error(`[withings-sync cron] user=${userId} failed: ${message}`);

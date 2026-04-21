@@ -57,6 +57,7 @@
 		confirmAction?: string;
 	}
 	let chatMessages = $state<RichChatMsg[]>([]);
+	let flowConversationId = $state<string | null>(null);
 	let chatLoading = $state(false);
 	let chatStreamingText = $state('');
 	let chatStreamingStatus = $state('');
@@ -267,10 +268,13 @@
 		try {
 			const data = await streamProxyChat({
 				message: text,
+				conversationId: flowConversationId,
+				forceNewConversation: !flowConversationId,
 				systemPrompt: context.systemPrompts?.[currentStep?.id ?? ''] ?? currentStep?.systemPrompt,
 				onStatus: async (status) => { chatStreamingStatus = status; await scrollChatToBottom(); },
 				onToken: async (token) => { chatStreamingStatus = ''; chatStreamingText += token; await scrollChatToBottom(); }
 			});
+			if (data.conversationId && !flowConversationId) flowConversationId = data.conversationId;
 			const parsed = parseChatMessage(String(data.message ?? ''));
 			chatMessages = [...chatMessages, { role: 'assistant', ...parsed, statusWidget: data.statusWidget ?? data.metadata?.statusWidget ?? null }];
 		} catch {

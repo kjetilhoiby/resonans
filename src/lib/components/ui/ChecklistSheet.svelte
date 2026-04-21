@@ -10,6 +10,7 @@
 <script lang="ts">
 	import { fly, fade, scale } from 'svelte/transition';
 	import { elasticOut, cubicOut } from 'svelte/easing';
+	import { groupChecklistItems, activityEmoji } from '$lib/utils/checklist-group';
 
 	export interface ChecklistItem {
 		id: string;
@@ -157,7 +158,9 @@
 	<!-- Header -->
 	<div class="cs-header">
 		<div class="cs-header-left">
-			<span class="cs-header-emoji">{checklist.emoji}</span>
+			{#if checklist.emoji && checklist.emoji !== '🗓️' && checklist.emoji !== '☑️'}
+				<span class="cs-header-emoji">{checklist.emoji}</span>
+			{/if}
 			<div>
 				<h2 class="cs-title">{checklist.title}</h2>
 				<p class="cs-subtitle">{done} av {total} fullført</p>
@@ -176,19 +179,36 @@
 
 	<!-- Items list -->
 	<div class="cs-items">
-		{#each items as item (item.id)}
-			<button
-				class="cs-item"
-				class:cs-item-checked={item.checked}
-				onclick={() => toggleItem(item)}
-			>
-				<div class="cs-checkbox" class:cs-checkbox-checked={item.checked}>
-					{#if item.checked}
-						<span class="cs-tick" transition:scale={{ duration: 200, easing: elasticOut }}>✓</span>
-					{/if}
+		{#each groupChecklistItems(items) as group}
+			{#if group.type === 'group'}
+				<div class="cs-group-row">
+					<span class="cs-group-label">{activityEmoji(group.label) ? activityEmoji(group.label) + ' ' : ''}{group.label}</span>
+					<div class="cs-slot-row">
+						{#each group.items as item (item.id)}
+							<button
+								type="button"
+								class="cs-slot"
+								class:cs-slot-checked={item.checked}
+								onclick={() => toggleItem(item)}
+								aria-label={item.checked ? 'Marker som ikke gjort' : 'Marker som gjort'}
+							>{item.checked ? '✓' : ''}</button>
+						{/each}
+					</div>
 				</div>
-				<span class="cs-item-text">{item.text}</span>
-			</button>
+			{:else}
+				<button
+					class="cs-item"
+					class:cs-item-checked={group.item.checked}
+					onclick={() => toggleItem(group.item)}
+				>
+					<span class="cs-item-text">{group.item.text}</span>
+					<div class="cs-checkbox" class:cs-checkbox-checked={group.item.checked}>
+						{#if group.item.checked}
+							<span class="cs-tick" transition:scale={{ duration: 200, easing: elasticOut }}>✓</span>
+						{/if}
+					</div>
+				</button>
+			{/if}
 		{/each}
 	</div>
 
@@ -241,7 +261,9 @@
 					/>
 				</svg>
 				<div class="cs-payoff-ring-inner">
-					<span class="cs-payoff-emoji">{checklist.emoji}</span>
+					{#if checklist.emoji && checklist.emoji !== '🗓️' && checklist.emoji !== '☑️'}
+						<span class="cs-payoff-emoji">{checklist.emoji}</span>
+					{/if}
 				</div>
 			</div>
 
@@ -359,6 +381,7 @@
 	.cs-item {
 		display: flex;
 		align-items: center;
+		justify-content: space-between;
 		gap: 12px;
 		padding: 10px 12px;
 		border-radius: 10px;
@@ -373,8 +396,8 @@
 	.cs-item:active { background: #1a1a1a; }
 
 	.cs-checkbox {
-		width: 22px;
-		height: 22px;
+		width: 24px;
+		height: 24px;
 		border-radius: 50%;
 		border: 2px solid #333;
 		flex-shrink: 0;
@@ -411,6 +434,50 @@
 	.cs-item-checked .cs-item-text {
 		color: #444;
 		text-decoration: line-through;
+	}
+
+	/* ── Grouped repeated items ── */
+	.cs-group-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 10px;
+		padding: 10px 12px;
+		border-radius: 10px;
+	}
+
+	.cs-group-label {
+		font-size: 0.88rem;
+		color: #ccc;
+		flex: 1;
+		min-width: 0;
+	}
+
+	.cs-slot-row {
+		display: flex;
+		gap: 6px;
+		flex-shrink: 0;
+	}
+
+	.cs-slot {
+		width: 24px;
+		height: 24px;
+		border-radius: 50%;
+		border: 2px solid #333;
+		background: transparent;
+		color: #7c8ef5;
+		font-size: 0.8rem;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		transition: border-color 0.15s, background 0.15s;
+	}
+	.cs-slot:hover { border-color: #555; }
+	.cs-slot.cs-slot-checked {
+		border-color: #5fa080;
+		background: #5fa080;
+		color: #fff;
 	}
 
 	/* ── Add row ── */

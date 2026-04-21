@@ -1,7 +1,7 @@
 # SIGNALS.md
 
 Status: Draft v1 (MVP parsing flyt aktiv)
-Sist oppdatert: 2026-04-14
+Sist oppdatert: 2026-04-15
 
 ## 1. Målbilde
 
@@ -140,7 +140,7 @@ Ferdig:
 
 Mangler:
 - Task-intent parsing er koblet for chat + generell task-API, men ikke nødvendigvis alle spesialflyter.
-- LLM fallback i mål-parser mangler fortsatt (nå kun regelbasert parsing for første mønster).
+- LLM fallback er implementert for både mål- og oppgave-parser ved no-match i regelmotor.
 
 ## 8. Implementasjonsplan (neste steg)
 
@@ -179,7 +179,7 @@ Status nå:
 	- parser mønstre som `X ganger per dag/uke/måned` og `hver dag`
 	- fyller `frequency`, `targetValue` og `unit` på oppgaven ved match.
 - `POST /api/tasks` er lagt til for generell oppgaveopprettelse og enqueue-er `task_intent_parse` for ustrukturerte oppgaver.
-- LLM fallback mangler fortsatt.
+- LLM fallback er implementert i begge parsere (regelmotor først, deretter LLM ved no-match).
 
 ### Fase B - Første målbare task->signal mapping
 

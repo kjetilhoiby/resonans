@@ -388,10 +388,15 @@ export const checklistItems = pgTable('checklist_items', {
 		activityType?: string;
 		durationMinutes?: number;
 		distanceKm?: number;
+		// Wake-time intent
+		wakeTargetHour?: number;
+		wakeTargetMinute?: number;
 		// Tracking state
 		autoChecked?: boolean;
 		autoCheckedAt?: string;
 		progressRecordId?: string;
+		wakeHour?: number;
+		wakeMinute?: number;
 	}>(),
 	createdAt: timestamp('created_at').defaultNow().notNull()
 });

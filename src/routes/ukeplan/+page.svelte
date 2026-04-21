@@ -8,6 +8,7 @@
 	import FlowSheet from '$lib/components/flows/FlowSheet.svelte';
 	import { FLOWS } from '$lib/flows/registry';
 	import { finishNavMetric, startNavMetric } from '$lib/client/nav-metrics';
+	import { groupChecklistItems, activityEmoji, type GroupedChecklistEntry } from '$lib/utils/checklist-group';
 
 	type SaveState = 'idle' | 'saving' | 'saved';
 
@@ -78,6 +79,12 @@
 		checklistId: string;
 		itemId: string;
 		text: string;
+	}
+
+	interface EditingTask {
+		taskId: string;
+		title: string;
+		originalTitle: string;
 	}
 
 	interface Props {
@@ -196,6 +203,9 @@
 	let weekReviewChatOpen = $state(false);
 	let weekPlanChatOpen = $state(false);
 	let editingItem = $state<EditingItem | null>(null);
+	let editingTask = $state<EditingTask | null>(null);
+	let editTaskInput = $state<HTMLInputElement | null>(null);
+	let skipEditTask = false;
 	let dragItem = $state<{ checklistId: string; itemId: string } | null>(null);
 	let dragOverItemId = $state<string | null>(null);
 	let skipEditBlur = false;
@@ -462,6 +472,7 @@
 			empty_text: 'Ingen tekst å tolke.',
 			unsupported_activity: 'Støtter foreløpig bare løpemål i denne flyten.',
 			unsupported_period_or_threshold: 'Fant ikke tydelig frekvens som "X ganger per uke".',
+			no_quantifiable_target: 'Fant ikke frekvens – legg til f.eks. "5 ganger per uke".',
 			invalid_threshold: 'Kunne ikke lese målverdi for antall per uke.',
 			unknown: 'Ukjent parse-feil.'
 		};
@@ -478,6 +489,36 @@
 		const pct = Math.max(0, Math.min(100, Math.round((e.currentValue / e.targetValue) * 100)));
 		const metText = e.met ? 'oppnådd' : 'pågår';
 		return `${e.currentValue}/${e.targetValue} denne uka (${pct}%) · ${metText}`;
+	}
+
+	// GroupedChecklistEntry, groupChecklistItems and activityEmoji are imported from $lib/utils/checklist-group
+
+	let deletingTaskId = $state<string | null>(null);
+
+	async function deleteTask(taskId: string) {
+		deletingTaskId = taskId;
+		try {
+			const fd = new FormData();
+			fd.set('taskId', taskId);
+			await fetch('?/deleteTask', { method: 'POST', body: fd });
+			await invalidateAll();
+		} finally {
+			deletingTaskId = null;
+		}
+	}
+
+	async function saveEditTask() {
+		if (skipEditTask) { skipEditTask = false; return; }
+		if (!editingTask) return;
+		const { taskId, title, originalTitle } = editingTask;
+		editingTask = null;
+		const trimmed = title.trim();
+		if (!trimmed || trimmed === originalTitle) return;
+		const fd = new FormData();
+		fd.set('taskId', taskId);
+		fd.set('title', trimmed);
+		await fetch('?/updateTask', { method: 'POST', body: fd });
+		await invalidateAll();
 	}
 
 	function markInitialValue(event: FocusEvent) {
@@ -1290,7 +1331,32 @@
 					<li class="wp-task">
 						<div class="wp-task-main">
 							<div>
-								<p class="wp-task-title" class:done={doneTask(task)}>{task.title}</p>
+								{#if editingTask?.taskId === task.id}
+									<div class="wp-edit-shell">
+										<input
+											bind:this={editTaskInput}
+											class="wp-task-edit-input"
+											type="text"
+											bind:value={editingTask.title}
+											onkeydown={(e) => { if (e.key === 'Enter') void saveEditTask(); if (e.key === 'Escape') editingTask = null; }}
+											onblur={() => void saveEditTask()}
+										/>
+										<button
+											type="button"
+											class="btn-icon-danger"
+											onmousedown={() => (skipEditTask = true)}
+											onclick={() => void deleteTask(task.id)}
+											aria-label="Slett oppgave"
+										>×</button>
+									</div>
+								{:else}
+									<button
+										type="button"
+										class="wp-task-title-btn"
+										class:done={doneTask(task)}
+										onclick={() => { editingTask = { taskId: task.id, title: task.title, originalTitle: task.title }; }}
+									>{task.title}</button>
+								{/if}
 								<p class="wp-task-meta">
 									{task.goalTitle ?? 'Uten mål'}
 									{#if task.themeName} · {task.themeName}{/if}
@@ -1324,55 +1390,74 @@
 			</div>
 
 			<ul class="wp-checklist">
-				{#each weekChecklistState.items as item}
-					<li
-						class="wp-check-row"
-						class:is-dragging={dragItem?.itemId === item.id}
-						class:is-drag-over={dragOverItemId === item.id && dragItem?.itemId !== item.id}
-						data-item-id={item.id}
-						draggable={editingItem?.itemId !== item.id}
-						ondragstart={() => (dragItem = { checklistId: weekChecklistId, itemId: item.id })}
-						ondragover={(event) => { event.preventDefault(); dragOverItemId = item.id; }}
-						ondragleave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) dragOverItemId = null; }}
-						ondrop={() => {
-							if (!dragItem) return;
-							void reorderChecklistItems(weekChecklistId, dragItem.itemId, item.id);
-							dragItem = null;
-							dragOverItemId = null;
-						}}
-						ondragend={() => { dragItem = null; dragOverItemId = null; }}
-					>
-						<div class="wp-check-row-main">
-							<button type="button" class="wp-check-toggle" onclick={() => void toggleChecklistItem(weekChecklistId, item.id, !item.checked)} aria-label="Toggle">
-								<span class="wp-check-circle" class:checked={item.checked}>{item.checked ? '✓' : ''}</span>
-							</button>
-							{#if editingItem?.itemId === item.id}
-								<div class="wp-edit-shell">
-									<input
-										bind:this={editInput}
-										bind:value={editingItem.text}
-										class="wp-input wp-edit-input"
-										onblur={handleEditBlur}
-										onkeydown={handleEditKeydown}
-									/>
-									<button
-										type="button"
-										class="btn-icon-danger"
-										onmousedown={() => (skipEditBlur = true)}
-										onclick={() => void deleteChecklistItem(weekChecklistId, item.id)}
-										aria-label="Slett punkt"
-									>
-										×
-									</button>
+				{#each groupChecklistItems(weekChecklistState.items) as group}
+					{#if group.type === 'group'}
+						<li class="wp-check-row">
+							<div class="wp-check-row-main">
+								<span class="wp-check-text wp-check-group-label">{activityEmoji(group.label) ? activityEmoji(group.label) + " " : ""}{group.label}</span>
+								<div class="wp-slot-row" aria-label="Progresjon">
+									{#each group.items as item}
+										<button
+											type="button"
+											class="wp-slot wp-slot-btn"
+											class:checked={item.checked}
+											onclick={() => void toggleChecklistItem(weekChecklistId, item.id, !item.checked)}
+											aria-label={item.checked ? 'Marker som ikke gjort' : 'Marker som gjort'}
+										>{item.checked ? '✓' : ''}</button>
+									{/each}
 								</div>
-							{:else}
-								<button type="button" class="wp-item-text-btn" onclick={() => void startEditing(weekChecklistId, item)}>
-									<span class="wp-check-text" class:checked={item.checked}>{item.text}</span>
+							</div>
+						</li>
+					{:else}
+						<li
+							class="wp-check-row"
+							class:is-dragging={dragItem?.itemId === group.item.id}
+							class:is-drag-over={dragOverItemId === group.item.id && dragItem?.itemId !== group.item.id}
+							data-item-id={group.item.id}
+							draggable={editingItem?.itemId !== group.item.id}
+							ondragstart={() => (dragItem = { checklistId: weekChecklistId, itemId: group.item.id })}
+							ondragover={(event) => { event.preventDefault(); dragOverItemId = group.item.id; }}
+							ondragleave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) dragOverItemId = null; }}
+							ondrop={() => {
+								if (!dragItem) return;
+								void reorderChecklistItems(weekChecklistId, dragItem.itemId, group.item.id);
+								dragItem = null;
+								dragOverItemId = null;
+							}}
+							ondragend={() => { dragItem = null; dragOverItemId = null; }}
+						>
+							<div class="wp-check-row-main">
+								{#if editingItem?.itemId === group.item.id}
+									<div class="wp-edit-shell">
+										<input
+											bind:this={editInput}
+											bind:value={editingItem.text}
+											class="wp-input wp-edit-input"
+											onblur={handleEditBlur}
+											onkeydown={handleEditKeydown}
+										/>
+										<button
+											type="button"
+											class="btn-icon-danger"
+											onmousedown={() => (skipEditBlur = true)}
+											onclick={() => void deleteChecklistItem(weekChecklistId, group.item.id)}
+											aria-label="Slett punkt"
+										>
+											×
+										</button>
+									</div>
+								{:else}
+									<button type="button" class="wp-item-text-btn" onclick={() => void startEditing(weekChecklistId, group.item)}>
+										<span class="wp-check-text" class:checked={group.item.checked}>{group.item.text}</span>
+									</button>
+								{/if}
+								<button type="button" class="wp-check-toggle" onclick={() => void toggleChecklistItem(weekChecklistId, group.item.id, !group.item.checked)} aria-label="Toggle">
+									<span class="wp-check-circle" class:checked={group.item.checked}>{group.item.checked ? '✓' : ''}</span>
 								</button>
-							{/if}
-							<span class="wp-drag-handle" aria-hidden="true" ontouchstart={(event) => startTouchDrag(event, weekChecklistId, item.id)}>⋮⋮</span>
-						</div>
-					</li>
+								<span class="wp-drag-handle" aria-hidden="true" ontouchstart={(event) => startTouchDrag(event, weekChecklistId, group.item.id)}>⋮⋮</span>
+							</div>
+						</li>
+					{/if}
 				{/each}
 			</ul>
 
@@ -1505,9 +1590,6 @@
 						ondragend={() => { dragItem = null; dragOverItemId = null; }}
 					>
 						<div class="wp-check-row-main">
-							<button type="button" class="wp-check-toggle" onclick={() => void toggleChecklistItem(selectedDayChecklist.id, item.id, !item.checked)} aria-label="Toggle">
-								<span class="wp-check-circle" class:checked={item.checked}>{item.checked ? '✓' : ''}</span>
-							</button>
 							{#if editingItem?.itemId === item.id}
 								<div class="wp-edit-shell">
 									<input
@@ -1540,6 +1622,9 @@
 								{/if}
 							</button>
 							{/if}
+							<button type="button" class="wp-check-toggle" onclick={() => void toggleChecklistItem(selectedDayChecklist.id, item.id, !item.checked)} aria-label="Toggle">
+								<span class="wp-check-circle" class:checked={item.checked}>{item.checked ? '✓' : ''}</span>
+							</button>
 							<span class="wp-drag-handle" aria-hidden="true" ontouchstart={(event) => startTouchDrag(event, selectedDayChecklist.id, item.id)}>⋮⋮</span>
 						</div>
 					</li>
@@ -2102,6 +2187,52 @@
 		color: #ccd8ff;
 	}
 
+	.wp-slot-btn {
+		cursor: pointer;
+		padding: 0;
+	}
+
+	.wp-slot-btn:hover:not(.checked) {
+		border-color: #4a5af0;
+		background: #1a1f35;
+	}
+
+	.wp-check-group-label {
+		flex: 1;
+		font-size: 0.95rem;
+	}
+
+	.wp-task-title-btn {
+		background: none;
+		border: none;
+		padding: 0;
+		margin: 0;
+		font: inherit;
+		font-size: 1rem;
+		font-weight: 600;
+		color: inherit;
+		text-align: left;
+		cursor: text;
+		width: 100%;
+		display: block;
+	}
+
+	.wp-task-title-btn.done {
+		text-decoration: line-through;
+		opacity: 0.5;
+	}
+
+	.wp-task-edit-input {
+		width: 100%;
+		padding: 4px 8px;
+		font-size: 0.95rem;
+		border-radius: 6px;
+		border: 1px solid #4a5af0;
+		background: #1a1f35;
+		color: inherit;
+		outline: none;
+	}
+
 	.wp-progress-track {
 		height: 8px;
 		border-radius: 999px;
@@ -2116,7 +2247,7 @@
 
 	.wp-check-row-main {
 		display: grid;
-		grid-template-columns: auto 1fr auto;
+		grid-template-columns: 1fr auto auto;
 		gap: 10px;
 		align-items: center;
 	}

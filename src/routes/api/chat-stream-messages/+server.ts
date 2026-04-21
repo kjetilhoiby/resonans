@@ -50,6 +50,7 @@ interface StreamRequest {
 	imageUrl?: string;
 	attachment?: unknown;
 	preferredModel?: string;
+	forceNewConversation?: boolean;
 	routing: any;
 	systemPrompt: string;
 	messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
@@ -78,7 +79,8 @@ export const POST: RequestHandler = async ({ request, locals, fetch, url }) => {
 			message = '',
 			imageUrl,
 			attachment,
-			preferredModel
+			preferredModel,
+			forceNewConversation
 		} = body;
 
 		const encoder = new TextEncoder();

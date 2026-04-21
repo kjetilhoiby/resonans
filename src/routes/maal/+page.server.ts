@@ -1,10 +1,10 @@
 import { db } from '$lib/db';
-import { goals, trackingSeries } from '$lib/db/schema';
+import { goals, themes, trackingSeries } from '$lib/db/schema';
 import { eq } from 'drizzle-orm';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals }) => {
-	const [userGoals, allSeries] = await Promise.all([
+	const [userGoals, allSeries, userThemes] = await Promise.all([
 		db.query.goals.findMany({
 			where: eq(goals.userId, locals.userId),
 			with: {
@@ -25,8 +25,13 @@ export const load: PageServerLoad = async ({ locals }) => {
 			where: eq(trackingSeries.userId, locals.userId),
 			with: { recordType: true },
 			orderBy: (s, { desc }) => [desc(s.updatedAt)]
+		}),
+		db.query.themes.findMany({
+			where: eq(themes.userId, locals.userId),
+			columns: { id: true, name: true, emoji: true },
+			orderBy: (t, { asc }) => [asc(t.name)]
 		})
 	]);
 
-	return { goals: userGoals, allSeries };
+	return { goals: userGoals, allSeries, themes: userThemes };
 };

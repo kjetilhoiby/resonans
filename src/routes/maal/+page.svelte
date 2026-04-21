@@ -13,6 +13,7 @@
 	let expandedId = $state<string | null>(null);
 	let linkingTaskId = $state<string | null>(null);
 	let savingLink = $state<string | null>(null);
+	let assigningThemeGoalId = $state<string | null>(null);
 
 	const active = $derived(goalsLocal.filter((g) => g.status === 'active'));
 	const other = $derived(goalsLocal.filter((g) => g.status !== 'active'));
@@ -56,6 +57,31 @@
 		} finally {
 			savingLink = null;
 			linkingTaskId = null;
+		}
+	}
+
+	async function assignTheme(goalId: string, themeId: string) {
+		if (!themeId || assigningThemeGoalId) return;
+		assigningThemeGoalId = goalId;
+		try {
+			const res = await fetch(`/api/goals/${goalId}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ themeId })
+			});
+			if (!res.ok) return;
+			const selectedTheme = data.themes.find((t) => t.id === themeId);
+			if (!selectedTheme) return;
+			goalsLocal = goalsLocal.map((g) =>
+				g.id === goalId
+					? {
+						...g,
+						theme: { name: selectedTheme.name, emoji: selectedTheme.emoji }
+					}
+					: g
+			);
+		} finally {
+			assigningThemeGoalId = null;
 		}
 	}
 
@@ -109,6 +135,7 @@
 										{:else if goal.category}
 											{@const category = goal.category as { name: string }}
 											<span class="goal-meta">{category.name}</span>
+											<span class="goal-meta-warning">Ikke koblet til tema</span>
 										{/if}
 									</button>
 									<button
@@ -125,6 +152,22 @@
 									<div class="goal-detail">
 										{#if goal.description}
 											<p class="goal-desc">{goal.description}</p>
+										{/if}
+
+										{#if !goal.theme}
+											<div class="theme-assign-row">
+												<span class="tasks-label">Koble mål til tema</span>
+												<select
+													class="series-select"
+													disabled={assigningThemeGoalId === goal.id}
+													onchange={(e) => assignTheme(goal.id, (e.currentTarget as HTMLSelectElement).value)}
+												>
+													<option value="">Velg tema…</option>
+													{#each data.themes as themeOption}
+														<option value={themeOption.id}>{themeOption.emoji ?? ''} {themeOption.name}</option>
+													{/each}
+												</select>
+											</div>
 										{/if}
 
 										{#if weeklyTasks.length > 0}
@@ -293,6 +336,11 @@
 		color: #555;
 	}
 
+	.goal-meta-warning {
+		font-size: 0.7rem;
+		color: #b57943;
+	}
+
 	.delete-btn {
 		flex-shrink: 0;
 		width: 32px;
@@ -338,6 +386,13 @@
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
+		margin-top: 8px;
+	}
+
+	.theme-assign-row {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
 		margin-top: 8px;
 	}
 

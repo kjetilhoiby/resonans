@@ -46,9 +46,10 @@ export function parseListRepeatCount(raw: string, requestedCount = 1, maxCount =
 		const prefixCount = Number.parseInt(prefixMatch[1], 10);
 		const fromText = clampCount(prefixCount, maxCount);
 		const fromRequest = clampCount(requestedCount, maxCount);
+		const rawLabel = prefixMatch[2].trim();
 		return {
 			repeatCount: Math.max(fromText, fromRequest),
-			label: prefixMatch[2].trim()
+			label: rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1)
 		};
 	}
 
@@ -61,6 +62,7 @@ export function parseListRepeatCount(raw: string, requestedCount = 1, maxCount =
 		let label = text.replace(freqPattern, ' ').replace(/\s{2,}/g, ' ').trim();
 		label = label.replace(/^[-:;,\s]+|[-:;,\s]+$/g, '');
 		if (!label) label = text;
+		label = label.charAt(0).toUpperCase() + label.slice(1);
 		return {
 			repeatCount: Math.max(fromText, fromRequest),
 			label
@@ -70,13 +72,28 @@ export function parseListRepeatCount(raw: string, requestedCount = 1, maxCount =
 	if (/\bhver\s+dag\b/i.test(text) || /\bdaglig\b/i.test(text)) {
 		return {
 			repeatCount: Math.max(1, clampCount(requestedCount, maxCount)),
-			label: text
+			label: text.charAt(0).toUpperCase() + text.slice(1)
 		};
 	}
 
+	// Suffix match: "[label] tre arbeidsdager" / "[label] 5 ganger" / "[label] to dager"
+	const suffixPattern = /^(.+?)\s+(\d{1,2}|en|ett|to|tre|fire|fem|seks|syv|sju|atte|ni|ti)\s+(ganger|dager|arbeidsdager|uker|ukedager|helger)\s*$/i;
+	const suffixMatch = text.match(suffixPattern);
+	if (suffixMatch) {
+		const parsedCount = parseCountToken(suffixMatch[2]) ?? 1;
+		const fromText = clampCount(parsedCount, maxCount);
+		const fromRequest = clampCount(requestedCount, maxCount);
+		const rawLabel = suffixMatch[1].trim();
+		return {
+			repeatCount: Math.max(fromText, fromRequest),
+			label: rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1)
+		};
+	}
+
+	const capitalizedText = text.charAt(0).toUpperCase() + text.slice(1);
 	return {
 		repeatCount: clampCount(requestedCount, maxCount),
-		label: text
+		label: capitalizedText
 	};
 }
 

@@ -37,8 +37,37 @@ export interface TaskCreationParams {
 	unit?: string;
 }
 
+function normalizeGoalText(title: string, description: string): string {
+	return `${title} ${description}`.toLowerCase();
+}
+
+function isRunningGoalText(text: string): boolean {
+	return /\b(løp(e|ing)?|jogg(e|ing)?|run(ning)?|løpetur(er)?)\b/.test(text);
+}
+
+function isLikelyNonRunningActivityGoalText(text: string): boolean {
+	return /\b(yoga|mikroyoga|styrke(trening)?|sykl(e|ing)?|svøm(me|ming)?|gåtur(er)?|walk(ing)?)\b/.test(text);
+}
+
+function sanitizeMetricId(params: GoalCreationParams): MetricId | null {
+	const requestedMetric = params.metricId ? resolveMetricId(params.metricId) : null;
+	const text = normalizeGoalText(params.title, params.description);
+
+	if (!requestedMetric) {
+		// Conservative fallback: only auto-map to running metric when text clearly indicates running.
+		return isRunningGoalText(text) ? 'running_distance' : null;
+	}
+
+	if (requestedMetric === 'running_distance') {
+		if (isRunningGoalText(text)) return requestedMetric;
+		if (isLikelyNonRunningActivityGoalText(text)) return null;
+	}
+
+	return requestedMetric;
+}
+
 export async function createGoal(params: GoalCreationParams) {
-	const resolvedMetricId = params.metricId ? resolveMetricId(params.metricId) : null;
+	const resolvedMetricId = sanitizeMetricId(params);
 	const numericTargetValue =
 		typeof params.targetValue === 'number' && Number.isFinite(params.targetValue)
 			? params.targetValue

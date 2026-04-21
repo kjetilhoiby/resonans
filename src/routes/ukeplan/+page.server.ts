@@ -635,6 +635,43 @@ export const actions = {
 		return { success: true };
 	},
 
+	updateTask: async ({ request, locals }) => {
+		const userId = locals.userId;
+		const data = await request.formData();
+		const taskId = String(data.get('taskId') || '');
+		const title = String(data.get('title') || '').trim();
+		if (!taskId || !title) return fail(400, { error: 'Mangler taskId eller tittel.' });
+
+		const task = await db.query.tasks.findFirst({
+			where: eq(tasks.id, taskId),
+			with: { goal: { columns: { userId: true } } }
+		});
+		if (!task || (task as any).goal?.userId !== userId) {
+			return fail(404, { error: 'Fant ikke oppgaven.' });
+		}
+
+		await db.update(tasks).set({ title }).where(eq(tasks.id, taskId));
+		return { success: true };
+	},
+
+	deleteTask: async ({ request, locals }) => {
+		const userId = locals.userId;
+		const data = await request.formData();
+		const taskId = String(data.get('taskId') || '');
+		if (!taskId) return fail(400, { error: 'Mangler taskId.' });
+
+		const task = await db.query.tasks.findFirst({
+			where: eq(tasks.id, taskId),
+			with: { goal: { columns: { userId: true } } }
+		});
+		if (!task || (task as any).goal?.userId !== userId) {
+			return fail(404, { error: 'Fant ikke oppgaven.' });
+		}
+
+		await db.delete(tasks).where(and(eq(tasks.id, taskId)));
+		return { success: true };
+	},
+
 	saveNotes: async ({ request, locals }) => {
 		const userId = locals.userId;
 		const data = await request.formData();

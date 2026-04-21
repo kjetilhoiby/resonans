@@ -22,6 +22,10 @@ export type ChecklistItemIntent = {
 	activityType?: ActivityType;
 	durationMinutes?: number;
 	distanceKm?: number;
+	/** Target wake-up hour in local time (0–23), e.g. 6 for "stå opp kl. 6" */
+	wakeTargetHour?: number;
+	/** Target wake-up minute (0–59), defaults to 0 */
+	wakeTargetMinute?: number;
 	/** The raw text that was parsed */
 	sourceText: string;
 };
@@ -39,9 +43,24 @@ export type LinkedTask = {
 
 /**
  * Parse intent from a checklist item's text.
- * Returns a simplified intent (activity + duration/distance if present).
+ * Returns a simplified intent (activity + duration/distance if present,
+ * or a wake-time target if "stå opp kl. X" is detected).
  */
 export function parseChecklistItemIntent(text: string): ChecklistItemIntent {
+	const lower = text.toLowerCase();
+
+	// Wake-time: "stå opp kl. 6", "stå opp klokka 6:30", "stå opp 06:00"
+	const wakeMatch =
+		lower.match(/\bstå\s+opp\b.*?\bkl\.?\s*(\d{1,2})(?:[.:](\d{2}))?/) ??
+		lower.match(/\bstå\s+opp\s+(\d{1,2}):(\d{2})\b/);
+	if (wakeMatch) {
+		const hour = Number.parseInt(wakeMatch[1], 10);
+		const minute = Number.parseInt(wakeMatch[2] ?? '0', 10);
+		if (hour >= 0 && hour <= 12) {
+			return { matched: true, wakeTargetHour: hour, wakeTargetMinute: minute, sourceText: text };
+		}
+	}
+
 	const result = parseTaskIntent(text);
 	if (!result.matched || !result.intent) {
 		return { matched: false, sourceText: text };

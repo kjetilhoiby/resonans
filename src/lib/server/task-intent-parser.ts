@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { db } from '$lib/db';
 import { goals, tasks } from '$lib/db/schema';
-import { openai } from '$lib/server/openai';
+import { parseTaskIntentWithLlmFallback } from '$lib/server/intent-llm-fallback';
 
 export type ActivityType =
 	| 'running'
@@ -31,6 +31,7 @@ export type TaskIntent = {
 export type ParsedTaskIntent = {
 	matched: boolean;
 	reason?: string;
+	parser?: 'rule' | 'llm';
 	intent?: TaskIntent;
 };
 
@@ -70,15 +71,15 @@ const NUMBER_WORDS: Record<string, number> = {
 
 // Maps Norwegian activity keywords to canonical ActivityType
 const ACTIVITY_KEYWORDS: Array<[RegExp, ActivityType]> = [
-	[/\b(løp(e|er|ing)?|sprin(te?|ting)?|jogge?|jogging)\b/, 'running'],
-	[/\b(sykl(e|er|ing)?|sykkel|bike|biking)\b/, 'cycling'],
-	[/\b(gå(tur)?|turgå(er|ing)?|walking|walk)\b/, 'walking'],
+	[/\b(løp(e|er|ing|etur(?:er)?)?|sprin(te?|ting)?|jogge?|jogging|joggetur(?:er)?)\b/, 'running'],
+	[/\b(sykl(e|er|ing)?|sykkel|sykkeltur(?:er)?|bike|biking)\b/, 'cycling'],
+	[/\b(gå(tur(?:er)?)?|turgå(er|ing)?|walking|walk)\b/, 'walking'],
 	[/\b(styrke(trening)?|vektløft(ing)?|gym|trene?\s+styrke)\b/, 'strength'],
 	[/\b(svøm(me|ming|mer)?|swim(ming)?)\b/, 'swimming'],
-	[/\b(yoga)\b/, 'yoga'],
+	[/\b(yoga|yogaøkt(?:er)?)\b/, 'yoga'],
 	[/\b(hiit|intervall(trening)?)\b/, 'hiit'],
 	[/\b(ro(ing)?|roing|rowing)\b/, 'rowing'],
-	[/\b(ski(løp(ing)?|ing)?|langrenn|alpint)\b/, 'skiing'],
+	[/\b(ski(løp(ing)?|ing)?|langrenn|alpint|skitur(?:er)?)\b/, 'skiing'],
 ];
 
 function parseCountToken(token: string): number | null {
@@ -193,6 +194,7 @@ export function parseTaskIntent(rawText: string): ParsedTaskIntent {
 	if (/\bhver\s+dag\b/.test(lower) || /\bdaglig\b/.test(lower)) {
 		return {
 			matched: true,
+			parser: 'rule',
 			intent: {
 				frequency: 'daily',
 				targetValue: 1,
@@ -212,6 +214,7 @@ export function parseTaskIntent(rawText: string): ParsedTaskIntent {
 	if (activityType && (durationMinutes !== undefined || distanceKm !== undefined)) {
 		return {
 			matched: true,
+			parser: 'rule',
 			intent: {
 				frequency: 'once',
 				targetValue: durationMinutes ?? (distanceKm ? distanceKm * 10 : 1),
@@ -226,7 +229,7 @@ export function parseTaskIntent(rawText: string): ParsedTaskIntent {
 		};
 	}
 
-	return { matched: false, reason: 'unsupported_period_or_threshold' };
+	return { matched: false, reason: 'no_quantifiable_target' };
 }
 
 export async function processTaskIntentParseJob(params: {
@@ -253,13 +256,9 @@ export async function processTaskIntentParseJob(params: {
 
 	const sourceText = params.rawText?.trim() || task.title || '';
 
-	// Try LLM first, fall back to regex
-	let parsed: ReturnType<typeof parseTaskIntent>;
-	try {
-		parsed = await parseTaskIntentWithLLM(sourceText);
-	} catch (err) {
-		console.warn('[task-intent-parser] LLM parse failed, falling back to regex:', err);
-		parsed = parseTaskIntent(sourceText);
+	let parsed = parseTaskIntent(sourceText);
+	if (!parsed.matched && parsed.reason !== 'empty_text') {
+		parsed = await parseTaskIntentWithLlmFallback(sourceText);
 	}
 
 	const currentMetadata = (task.metadata ?? {}) as Record<string, unknown>;
@@ -275,6 +274,7 @@ export async function processTaskIntentParseJob(params: {
 					...currentMetadata,
 					intentStatus: 'parsed',
 					intentError: null,
+					intentParser: parsed.parser ?? 'rule',
 					parsedIntent: {
 						activityType: parsed.intent.activityType ?? null,
 						durationMinutes: parsed.intent.durationMinutes ?? null,
@@ -297,7 +297,8 @@ export async function processTaskIntentParseJob(params: {
 				metadata: {
 					...currentMetadata,
 					intentStatus: 'failed',
-					intentError: parsed.reason ?? 'unknown'
+					intentError: parsed.reason ?? 'unknown',
+					intentParser: parsed.parser ?? 'rule'
 				},
 				updatedAt: new Date()
 			})
@@ -310,84 +311,5 @@ export async function processTaskIntentParseJob(params: {
 		reason: parsed.reason ?? null,
 		parsedIntent: parsed.intent ?? null,
 		applied: Boolean(parsed.matched && parsed.intent)
-	};
-}
-
-/**
- * Use GPT-4o-mini to parse task intent from free-form Norwegian text.
- * Returns the same shape as `parseTaskIntent`.
- */
-async function parseTaskIntentWithLLM(text: string): Promise<ReturnType<typeof parseTaskIntent>> {
-	const response = await openai.chat.completions.create({
-		model: 'gpt-4o-mini',
-		temperature: 0,
-		response_format: { type: 'json_object' },
-		messages: [
-			{
-				role: 'system',
-				content: `Du er en strukturert dataparser. Gitt en norsk oppgavetekst, trekk ut strukturert intent.
-
-Returner alltid gyldig JSON med disse feltene:
-- matched: boolean — true hvis du kan trekke ut minst frequency + targetValue
-- frequency: "daily" | "weekly" | "monthly" | "once" | null
-- targetValue: number | null — antall repetisjoner, minutter, km, etc.
-- unit: string | null — f.eks. "ganger", "minutter", "km"
-- period: "day" | "week" | "month" | null
-- comparator: ">=" | null
-- activityType: "running"|"cycling"|"walking"|"strength"|"swimming"|"yoga"|"hiit"|"rowing"|"skiing"|"other" | null
-- durationMinutes: number | null
-- distanceKm: number | null
-- reason: string | null — kort forklaring hvis matched=false
-
-Eksempler:
-"Løpe 3 ganger denne uken" → {matched:true, frequency:"weekly", targetValue:3, unit:"ganger", period:"week", comparator:">=", activityType:"running", durationMinutes:null, distanceKm:null, reason:null}
-"Mikroyoga fem ganger i uka" → {matched:true, frequency:"weekly", targetValue:5, unit:"ganger", period:"week", comparator:">=", activityType:"yoga", durationMinutes:null, distanceKm:null, reason:null}
-"Løpe 150 km" → {matched:true, frequency:"once", targetValue:150, unit:"km", period:null, comparator:">=", activityType:"running", durationMinutes:null, distanceKm:150, reason:null}
-"Sykkel 45 minutter" → {matched:true, frequency:"once", targetValue:45, unit:"minutter", period:"day", comparator:">=", activityType:"cycling", durationMinutes:45, distanceKm:null, reason:null}
-"Les bok" → {matched:false, frequency:null, targetValue:null, unit:null, period:null, comparator:null, activityType:null, durationMinutes:null, distanceKm:null, reason:"no_quantifiable_target"}`
-			},
-			{
-				role: 'user',
-				content: text
-			}
-		]
-	});
-
-	const raw = response.choices[0]?.message?.content ?? '{}';
-	let data: Record<string, unknown>;
-	try {
-		data = JSON.parse(raw);
-	} catch {
-		return { matched: false, reason: 'llm_invalid_json' };
-	}
-
-	const matched = data.matched === true;
-	if (!matched) {
-		return { matched: false, reason: typeof data.reason === 'string' ? data.reason : 'llm_no_match' };
-	}
-
-	const frequency = typeof data.frequency === 'string' ? data.frequency as TaskIntent['frequency'] : 'once';
-	const targetValue = typeof data.targetValue === 'number' ? data.targetValue : 1;
-	const unit = typeof data.unit === 'string' ? data.unit : 'ganger';
-	const period = typeof data.period === 'string' ? data.period as TaskIntent['period'] : 'week';
-	const activityType = typeof data.activityType === 'string' && data.activityType !== 'null'
-		? data.activityType as ActivityType
-		: undefined;
-	const durationMinutes = typeof data.durationMinutes === 'number' ? data.durationMinutes : undefined;
-	const distanceKm = typeof data.distanceKm === 'number' ? data.distanceKm : undefined;
-
-	return {
-		matched: true,
-		intent: {
-			frequency,
-			targetValue,
-			unit,
-			period,
-			comparator: '>=',
-			...(activityType && { activityType }),
-			...(durationMinutes !== undefined && { durationMinutes }),
-			...(distanceKm !== undefined && { distanceKm }),
-			sourceText: text
-		}
 	};
 }

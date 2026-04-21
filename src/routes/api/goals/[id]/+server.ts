@@ -6,7 +6,7 @@ import type { RequestHandler } from './$types';
 
 export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 	const body = await request.json();
-	const { title, description, targetDate, status, metadata } = body;
+	const { title, description, targetDate, status, metadata, themeId } = body;
 
 	// Verify ownership
 	const existingGoal = await db.query.goals.findFirst({
@@ -24,6 +24,7 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 		targetDate?: Date | null;
 		status?: string;
 		metadata?: unknown;
+		themeId?: string | null;
 		updatedAt: Date;
 	} = {
 		updatedAt: new Date()
@@ -34,6 +35,7 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 	if (targetDate !== undefined) updateData.targetDate = targetDate ? new Date(targetDate) : null;
 	if (status !== undefined) updateData.status = status;
 	if (metadata !== undefined) updateData.metadata = metadata;
+	if (themeId !== undefined) updateData.themeId = typeof themeId === 'string' && themeId.length > 0 ? themeId : null;
 
 	const [updatedGoal] = await db
 		.update(goals)

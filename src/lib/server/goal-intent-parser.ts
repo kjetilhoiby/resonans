@@ -1,10 +1,12 @@
 import { and, eq } from 'drizzle-orm';
 import { db } from '$lib/db';
 import { goals } from '$lib/db/schema';
+import { parseGoalIntentWithLlmFallback } from '$lib/server/intent-llm-fallback';
 
 type ParsedGoalIntent = {
 	matched: boolean;
 	reason?: string;
+	parser?: 'rule' | 'llm';
 	intent?: {
 		signalType: string;
 		threshold: number;
@@ -75,6 +77,7 @@ export function parseGoalIntent(rawText: string): ParsedGoalIntent {
 	if (mentionsRunning) {
 		return {
 			matched: true,
+			parser: 'rule',
 			intent: {
 				signalType: 'activity_run_pr_week',
 				threshold,
@@ -99,6 +102,7 @@ export function parseGoalIntent(rawText: string): ParsedGoalIntent {
 
 	return {
 		matched: true,
+		parser: 'rule',
 		intent: {
 			signalType: 'tracking_series_activity_pr_week',
 			threshold,
@@ -124,7 +128,10 @@ export async function processGoalIntentParseJob(params: {
 	}
 
 	const sourceText = params.rawText?.trim() || goal.title || '';
-	const parsed = parseGoalIntent(sourceText);
+	let parsed = parseGoalIntent(sourceText);
+	if (!parsed.matched && parsed.reason !== 'empty_text') {
+		parsed = await parseGoalIntentWithLlmFallback(sourceText);
+	}
 	const existingMetadata = (goal.metadata ?? {}) as Record<string, unknown>;
 	const nowIso = new Date().toISOString();
 
@@ -138,10 +145,12 @@ export async function processGoalIntentParseJob(params: {
 		nextMetadata.intentStatus = 'parsed';
 		nextMetadata.parsedIntent = parsed.intent;
 		nextMetadata.intentError = null;
+		nextMetadata.intentParser = parsed.parser ?? 'rule';
 	} else {
 		nextMetadata.intentStatus = 'failed';
 		nextMetadata.parsedIntent = null;
 		nextMetadata.intentError = parsed.reason ?? 'unknown';
+		nextMetadata.intentParser = parsed.parser ?? 'rule';
 	}
 
 	await db

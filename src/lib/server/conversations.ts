@@ -1,6 +1,6 @@
 import { db, pgClient } from '$lib/db';
-import { conversations, messages, themes } from '$lib/db/schema';
-import { eq, desc, and, asc, sql, inArray } from 'drizzle-orm';
+import { conversations, messages, themes, books } from '$lib/db/schema';
+import { eq, desc, and, asc, sql, inArray, isNull } from 'drizzle-orm';
 import { ensureConversationThemeIdColumn } from '$lib/server/conversation-schema';
 
 export interface CreateConversationParams {
@@ -48,14 +48,27 @@ function generateConversationTitle(content: string) {
 		.join(' ');
 }
 
+export async function createConversation(userId: string) {
+	await ensureConversationThemeIdColumn();
+	const result = await db.insert(conversations).values({ userId, title: 'Ny samtale' }).returning();
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	return (result as any[])[0];
+}
+
 export async function getOrCreateConversation(userId: string) {
 	await ensureConversationThemeIdColumn();
 
-	// Finn den nyeste aktive samtalen for brukeren
-	const existingConversation = await db.query.conversations.findFirst({
-		where: eq(conversations.userId, userId),
-		orderBy: [desc(conversations.updatedAt)]
-	});
+	// Finn den nyeste aktive samtalen for brukeren — ekskluder boksamtaler
+	// (boksamtaler er linked fra books.conversation_id og skal aldri brukes som fallback-samtale)
+	const rows = await db
+		.select({ conversation: conversations })
+		.from(conversations)
+		.leftJoin(books, eq(books.conversationId, conversations.id))
+		.where(and(eq(conversations.userId, userId), isNull(books.id)))
+		.orderBy(desc(conversations.updatedAt))
+		.limit(1);
+
+	const existingConversation = rows[0]?.conversation ?? null;
 
 	if (existingConversation) {
 		return existingConversation;

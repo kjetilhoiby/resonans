@@ -1,6 +1,7 @@
 interface ProxyChatStreamOptions {
 	message: string;
 	conversationId?: string | null;
+	forceNewConversation?: boolean;
 	imageUrl?: string;
 	attachment?: unknown;
 	preferredModel?: string;
@@ -17,6 +18,7 @@ interface ProxyChatStreamOptions {
 export async function streamProxyChat({
 	message,
 	conversationId = null,
+	forceNewConversation = false,
 	imageUrl,
 	attachment,
 	preferredModel,
@@ -36,6 +38,7 @@ export async function streamProxyChat({
 			mode: 'proxy',
 			message,
 			conversationId,
+			forceNewConversation,
 			imageUrl,
 			attachment,
 			preferredModel,

@@ -1,4 +1,5 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
+import { env } from '$env/dynamic/private';
 import { db } from '$lib/db';
 import { users } from '$lib/db/schema';
 import { evaluateTasksForWeek } from '$lib/server/task-evaluation';
@@ -7,7 +8,12 @@ import { evaluateTasksForWeek } from '$lib/server/task-evaluation';
  * GET /api/cron/task-evaluation
  * Evaluate all active tasks for all users for the current ISO week
  */
-export const GET: RequestHandler = async () => {
+export const GET: RequestHandler = async ({ request }) => {
+	const authHeader = request.headers.get('authorization');
+	if (env.CRON_SECRET && authHeader !== `Bearer ${env.CRON_SECRET}`) {
+		return json({ error: 'Unauthorized' }, { status: 401 });
+	}
+
 	try {
 		// Get current ISO week boundaries
 		const now = new Date();

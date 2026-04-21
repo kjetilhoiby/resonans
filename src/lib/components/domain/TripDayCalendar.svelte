@@ -4,6 +4,7 @@
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { groupChecklistItems, activityEmoji } from '$lib/utils/checklist-group';
 
 	interface ChecklistItem {
 		id: string;
@@ -250,19 +251,37 @@
 								<p class="tdc-empty">Ingen gjøremål ennå</p>
 							{:else}
 								<ul class="tdc-items">
-									{#each day.checklist!.items as item (item.id)}
-										<li class="tdc-item" class:tdc-item-done={item.checked}>
+								{#each groupChecklistItems(day.checklist!.items) as group}
+									{#if group.type === 'group'}
+										<li class="tdc-group-item">
+											<span class="tdc-group-label">{activityEmoji(group.label) ? activityEmoji(group.label) + ' ' : ''}{group.label}</span>
+											<div class="tdc-slot-row">
+												{#each group.items as item (item.id)}
+													<button
+														type="button"
+														class="tdc-slot"
+														class:tdc-slot-done={item.checked}
+														onclick={() => toggleItem(day, item)}
+														disabled={!!toggleSaving[`${day.isoDate}:${item.id}`]}
+														aria-label={item.checked ? 'Marker som ikke gjort' : 'Marker som gjort'}
+													>{item.checked ? '✓' : ''}</button>
+												{/each}
+											</div>
+										</li>
+									{:else}
+										<li class="tdc-item" class:tdc-item-done={group.item.checked}>
 											<button
 												type="button"
 												class="tdc-check-btn"
-												onclick={() => toggleItem(day, item)}
-												disabled={!!toggleSaving[`${day.isoDate}:${item.id}`]}
-												aria-label={item.checked ? 'Marker som ikke gjort' : 'Marker som gjort'}
+												onclick={() => toggleItem(day, group.item)}
+												disabled={!!toggleSaving[`${day.isoDate}:${group.item.id}`]}
+												aria-label={group.item.checked ? 'Marker som ikke gjort' : 'Marker som gjort'}
 											>
-												{item.checked ? '✓' : '○'}
+												{group.item.checked ? '✓' : '○'}
 											</button>
-											<span class="tdc-item-text">{item.text}</span>
+											<span class="tdc-item-text">{group.item.text}</span>
 										</li>
+									{/if}
 									{/each}
 								</ul>
 							{/if}
@@ -414,6 +433,49 @@
 	.tdc-item-done .tdc-item-text {
 		text-decoration: line-through;
 		color: var(--tp-text-muted);
+	}
+
+	/* ── Grouped items ── */
+	.tdc-group-item {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		padding: 4px 0;
+	}
+
+	.tdc-group-label {
+		font-size: 0.84rem;
+		color: var(--tp-text-soft);
+		flex: 1;
+		min-width: 0;
+	}
+
+	.tdc-slot-row {
+		display: flex;
+		gap: 5px;
+		flex-shrink: 0;
+	}
+
+	.tdc-slot {
+		width: 24px;
+		height: 24px;
+		border-radius: 50%;
+		border: 1px solid var(--tp-border-strong);
+		background: none;
+		color: var(--tp-accent);
+		font-size: 0.7rem;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0;
+		transition: background 0.15s, border-color 0.15s;
+	}
+	.tdc-slot.tdc-slot-done {
+		background: var(--tp-accent-bg);
+		border-color: var(--tp-accent);
+		color: var(--tp-accent);
 	}
 
 	.tdc-check-btn {

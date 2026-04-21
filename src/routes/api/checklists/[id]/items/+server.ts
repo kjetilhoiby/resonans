@@ -47,6 +47,13 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 		const intent = parseChecklistItemIntent(parsed.label);
 
 		if (isWeekLevel && weekKeys) {
+			// Wake-time items: store target metadata, no linked task needed
+			if (intent.wakeTargetHour !== undefined) {
+				itemMetadata = {
+					wakeTargetHour: intent.wakeTargetHour,
+					wakeTargetMinute: intent.wakeTargetMinute ?? 0
+				};
+			} else {
 			// Week-level items: always create (or find) a task so progress can be tracked
 			const linkedTask = await findLinkedTask({
 				userId,
@@ -93,6 +100,7 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 					console.warn('[checklist items] Failed to create task for week item:', err);
 				}
 			}
+			} // end non-wake branch
 		} else if (intent.matched && weekKeys) {
 			// Day-level items: link to existing task (existing behaviour)
 			const linkedTask = await findLinkedTask({
@@ -121,13 +129,19 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 		}
 	}
 
+	// Wake-time items propagate metadata to all repeat slots
+	const slotMeta = (itemMetadata.wakeTargetHour !== undefined)
+		? itemMetadata
+		: null;
 	const createdItems = await db.insert(checklistItems).values(
 		Array.from({ length: repeatCount }, (_, index) => ({
 			checklistId: params.id,
 			userId,
 			text: repeatCount > 1 ? `${parsed.label} (${index + 1}/${repeatCount})` : parsed.label,
 			sortOrder: sortOrder + index,
-			...(repeatCount === 1 && Object.keys(itemMetadata).length > 0 && { metadata: itemMetadata })
+			...(slotMeta
+				? { metadata: slotMeta }
+				: repeatCount === 1 && Object.keys(itemMetadata).length > 0 ? { metadata: itemMetadata } : {})
 		}))
 	).returning();
 

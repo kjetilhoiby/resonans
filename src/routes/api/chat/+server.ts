@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types';
 import { buildModularSystemPrompt } from '$lib/server/prompts';
 import { openai } from '$lib/server/openai';
 import { createGoal, createTask, getUserActiveGoalsAndTasks, findSimilarGoals, findSimilarTasks } from '$lib/server/goals';
-import { getOrCreateConversation, addMessage, getConversationHistory, getConversationByIdForUser } from '$lib/server/conversations';
+import { getOrCreateConversation, createConversation, addMessage, getConversationHistory, getConversationByIdForUser } from '$lib/server/conversations';
 import { logActivity } from '$lib/server/activities';
 import { recordTrackingEvent } from '$lib/server/tracking-series';
 import { buildMemoryContext, createMemory } from '$lib/server/memories';
@@ -952,6 +952,7 @@ export interface _RunChatRequestParams {
 		imageUrl?: string;
 		conversationId?: string;
 		attachment?: unknown;
+		forceNewConversation?: boolean;
 	};
 	userId: string;
 	requestUrl: string;
@@ -1188,12 +1189,15 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			}
 		}
 
-		// Bruk oppgitt/detektert conversationId eller hent/opprett standard
+		// Bruk oppgitt/detektert conversationId eller hent/opprett standard.
+		// forceNewConversation=true brukes av flyt-sheets for å garantere en fersk samtale.
 		const conversation =
 			resolvedConversationId && typeof resolvedConversationId === 'string'
 				? ((await getConversationByIdForUser(resolvedConversationId, userId)) ??
 					(await getOrCreateConversation(userId)))
-				: await getOrCreateConversation(userId);
+				: body.forceNewConversation
+					? await createConversation(userId)
+					: await getOrCreateConversation(userId);
 
 		await emitProgress(onProgress, 'conversation_ready', 'Samtalen er klar.', {
 			conversationId: conversation.id
@@ -1475,7 +1479,8 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 					const args = JSON.parse(toolCall.function.arguments);
 					const goal = await createGoal({
 						userId,
-						...args
+						...args,
+						themeId: args.themeId || conversation.themeId || undefined
 					});
 					createdGoalId = goal.id;
 
