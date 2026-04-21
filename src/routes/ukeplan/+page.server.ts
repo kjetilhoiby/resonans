@@ -2,9 +2,9 @@ import { fail } from '@sveltejs/kit';
 import { and, eq, gte, inArray, isNull, lt, lte, or } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/db';
-import { checklistItems, checklists, goals, memories, progress, tasks, themes, sensorEvents, sensors } from '$lib/db/schema';
+import { checklistItems, checklists, goals, memories, progress, tasks, themes, sensorEvents, sensors, workoutDailyAggregates } from '$lib/db/schema';
 import { parseListRepeatCount } from '$lib/server/list-repeat-parser';
-import { buildUnifiedWorkoutActivities } from '$lib/server/activity-layer';
+import { refreshWorkoutProjectionsForRange } from '$lib/server/workout-projections';
 
 async function loadWeekTasks(userId: string, dashedKey: string, compactKey: string) {
 	const baseSelect = db
@@ -120,6 +120,7 @@ function resolveWeekFromFormData(formData: FormData) {
 async function upsertWeekNote(userId: string, source: string, content: string) {
 	const trimmed = content.trim();
 	const existing = await db.query.memories.findFirst({
+		columns: { id: true },
 		where: and(eq(memories.userId, userId), eq(memories.source, source))
 	});
 
@@ -186,12 +187,15 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			}
 		}),
 		db.query.memories.findFirst({
+			columns: { id: true, source: true, content: true },
 			where: and(eq(memories.userId, userId), eq(memories.source, `week-plan:${week.compactKey}:reflection`))
 		}),
 		db.query.memories.findFirst({
+			columns: { id: true, source: true, content: true },
 			where: and(eq(memories.userId, userId), eq(memories.source, `week-plan:${week.compactKey}:vision`))
 		}),
 		db.query.memories.findFirst({
+			columns: { id: true, source: true, content: true },
 			where: and(eq(memories.userId, userId), eq(memories.source, `week-plan:${week.compactKey}:note`))
 		}),
 		db.query.goals.findMany({
@@ -238,9 +242,11 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			orderBy: (c, { desc: orderDesc }) => [orderDesc(c.createdAt)]
 		}),
 		db.query.memories.findFirst({
+			columns: { id: true, source: true, content: true },
 			where: and(eq(memories.userId, userId), eq(memories.source, `week-plan:${previousWeek.compactKey}:note`))
 		}),
 		db.query.memories.findFirst({
+			columns: { id: true, source: true, content: true },
 			where: and(eq(memories.userId, userId), eq(memories.source, `week-plan:${previousWeek.compactKey}:reflection`))
 		}),
 		loadWeekTasks(userId, previousWeek.dashedKey, previousWeek.compactKey),
@@ -387,41 +393,81 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	}
 
 	// Calculate sensor progress for running goals
-	const RUNNING_SPORT_TYPES = new Set(['running', 'indoor_running', 'trail_running', 'løp', 'run']);
 	const sensorProgressMap: Record<string, { currentKm: number; expectedKm: number; targetKm: number; status: 'green' | 'yellow' | 'red' }> = {};
+	const runningGoals = longTermGoals
+		.map((goal) => {
+			const meta = goal.metadata as any;
+			if (meta?.metricId !== 'running_distance' || !meta?.startDate) return null;
+			const startDate = new Date(meta.startDate);
+			const endDate = meta?.endDate ? new Date(meta.endDate) : (goal.targetDate ? new Date(goal.targetDate) : new Date());
+			const targetKm: number = meta?.goalTrack?.targetValue ?? 0;
+			return { goal, startDate, endDate, targetKm };
+		})
+		.filter((g): g is { goal: typeof longTermGoals[number]; startDate: Date; endDate: Date; targetKm: number } => g !== null);
 
-	for (const goal of longTermGoals) {
-		const meta = goal.metadata as any;
-		if (meta?.metricId !== 'running_distance' || !meta?.startDate) continue;
+	if (runningGoals.length > 0) {
+		const tRun = performance.now();
+		const minStart = new Date(Math.min(...runningGoals.map((g) => g.startDate.getTime())));
+		const maxEnd = new Date(Math.max(...runningGoals.map((g) => g.endDate.getTime())));
+		const minStartDay = new Date(Date.UTC(minStart.getUTCFullYear(), minStart.getUTCMonth(), minStart.getUTCDate()));
+		const maxEndDay = new Date(Date.UTC(maxEnd.getUTCFullYear(), maxEnd.getUTCMonth(), maxEnd.getUTCDate()));
 
-		const startDate = new Date(meta.startDate);
-		const endDate = meta?.endDate ? new Date(meta.endDate) : (goal.targetDate ? new Date(goal.targetDate) : new Date());
-		const targetKm: number = meta?.goalTrack?.targetValue ?? 0;
+		let aggregateRows = await db
+			.select({ date: workoutDailyAggregates.date, distanceMetersSum: workoutDailyAggregates.distanceMetersSum })
+			.from(workoutDailyAggregates)
+			.where(
+				and(
+					eq(workoutDailyAggregates.userId, userId),
+					eq(workoutDailyAggregates.sportFamily, 'running'),
+					gte(workoutDailyAggregates.date, minStartDay),
+					lte(workoutDailyAggregates.date, maxEndDay)
+				)
+			)
+			.orderBy(workoutDailyAggregates.date);
 
-		// Bruk activity-laget som deduplicerer via 2-timers kluster + kilde-prioritet
-		const workouts = await buildUnifiedWorkoutActivities(userId, { since: startDate, limit: 500 });
-		let currentKm = 0;
-		for (const w of workouts) {
-			if (new Date(w.startTime) > endDate) continue;
-			const sport = (w.sportType || '').toLowerCase();
-			if (!RUNNING_SPORT_TYPES.has(sport)) continue;
-			currentKm += (w.distanceMeters ?? 0) / 1000;
+		if (aggregateRows.length === 0) {
+			await refreshWorkoutProjectionsForRange(userId, minStartDay, maxEndDay);
+			aggregateRows = await db
+				.select({ date: workoutDailyAggregates.date, distanceMetersSum: workoutDailyAggregates.distanceMetersSum })
+				.from(workoutDailyAggregates)
+				.where(
+					and(
+						eq(workoutDailyAggregates.userId, userId),
+						eq(workoutDailyAggregates.sportFamily, 'running'),
+						gte(workoutDailyAggregates.date, minStartDay),
+						lte(workoutDailyAggregates.date, maxEndDay)
+					)
+				)
+				.orderBy(workoutDailyAggregates.date);
 		}
-		currentKm = Math.round(currentKm * 10) / 10;
 
-		// Calculate expected progress (linear interpolation)
-		const now = new Date();
-		const totalDays = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
-		const elapsedDays = Math.min(totalDays, (now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-		const expectedKm = (elapsedDays / totalDays) * targetKm;
+		const dailyRows = aggregateRows.map((row) => ({
+			date: row.date,
+			km: Number(row.distanceMetersSum ?? 0) / 1000
+		}));
 
-		// Status: green (on track >= 95%), yellow (at risk >= 80%), red (behind < 80%)
-		const ratio = expectedKm > 0 ? currentKm / expectedKm : 1;
-		let status: 'green' | 'yellow' | 'red' = 'green';
-		if (ratio < 0.80) status = 'red';
-		else if (ratio < 0.95) status = 'yellow';
+		for (const { goal, startDate, endDate, targetKm } of runningGoals) {
+			let currentKm = 0;
+			for (const row of dailyRows) {
+				if (row.date < startDate || row.date > endDate) continue;
+				currentKm += row.km;
+			}
+			currentKm = Math.round(currentKm * 10) / 10;
 
-		sensorProgressMap[goal.id] = { currentKm, expectedKm: Math.round(expectedKm * 10) / 10, targetKm, status };
+			const now = new Date();
+			const totalDays = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
+			const elapsedDays = Math.min(totalDays, (now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+			const expectedKm = (elapsedDays / totalDays) * targetKm;
+
+			const ratio = expectedKm > 0 ? currentKm / expectedKm : 1;
+			let status: 'green' | 'yellow' | 'red' = 'green';
+			if (ratio < 0.80) status = 'red';
+			else if (ratio < 0.95) status = 'yellow';
+
+			sensorProgressMap[goal.id] = { currentKm, expectedKm: Math.round(expectedKm * 10) / 10, targetKm, status };
+		}
+
+		console.log(`[ukeplan/load] running progress via aggregates: ${(performance.now() - tRun).toFixed(0)}ms (${runningGoals.length} goals, ${aggregateRows.length} daily rows)`);
 	}
 
 	return {

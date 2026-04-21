@@ -1,6 +1,6 @@
 import { db } from '$lib/db';
 import { sensorEvents, sensors } from '$lib/db/schema';
-import { and, eq, gte } from 'drizzle-orm';
+import { and, eq, gte, inArray } from 'drizzle-orm';
 
 interface ActivityLayerOptions {
 	since?: Date;
@@ -231,10 +231,10 @@ export async function buildUnifiedWorkoutActivities(
 	const t1 = performance.now();
 	const sensorIds = [...new Set(workoutEvents.map((event) => event.sensorId))];
 	const sensorRows = await db.query.sensors.findMany({
-		where: and(eq(sensors.userId, userId)),
+		where: inArray(sensors.id, sensorIds),
 		columns: { id: true, provider: true, type: true }
 	});
-	console.log(`[activity-layer] sensors query: ${(performance.now() - t1).toFixed(0)}ms → ${sensorRows.length} sensors (${sensorIds.length} unique)`);
+	console.log(`[activity-layer] sensors query by id: ${(performance.now() - t1).toFixed(0)}ms → ${sensorRows.length} sensors (${sensorIds.length} requested)`);
 	const sensorMap = new Map(sensorRows.map((sensor) => [sensor.id, sensor]));
 
 	const normalizedEvents: WorkoutEvidenceEvent[] = workoutEvents.map((event) => {

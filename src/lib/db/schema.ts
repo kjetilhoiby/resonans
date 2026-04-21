@@ -536,6 +536,8 @@ export const usersRelations = relations(users, ({ many }) => ({
 	sensors: many(sensors),
 	sensorEvents: many(sensorEvents),
 	sensorAggregates: many(sensorAggregates),
+	canonicalWorkouts: many(canonicalWorkouts),
+	workoutDailyAggregates: many(workoutDailyAggregates),
 	checklists: many(checklists),
 	webPushSubscriptions: many(webPushSubscriptions),
 	backgroundJobs: many(backgroundJobs),
@@ -1023,6 +1025,55 @@ export const sensorAggregates = pgTable('sensor_aggregates', {
 	uniquePeriod: unique().on(table.userId, table.period, table.periodKey)
 }));
 
+// Canonical deduplicated workouts (materialized projection from sensor_events)
+export const canonicalWorkouts = pgTable('canonical_workouts', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id).notNull(),
+	startTime: timestamp('start_time').notNull(),
+	sportType: text('sport_type').notNull(),
+	sportFamily: text('sport_family').notNull(),
+	distanceMeters: decimal('distance_meters'),
+	durationSeconds: decimal('duration_seconds'),
+	avgHeartRate: decimal('avg_heart_rate'),
+	maxHeartRate: decimal('max_heart_rate'),
+	sourceCount: integer('source_count').notNull().default(1),
+	sourceProviders: text('source_providers').array().notNull().default(sql`ARRAY[]::text[]`),
+	evidence: jsonb('evidence').$type<
+		Array<{
+			eventId: string;
+			sensorId: string;
+			provider: string;
+			sensorType: string;
+			timestamp: string;
+		}>
+	>(),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	idxCanonicalWorkoutsUserStart: index('canonical_workouts_user_start_idx').on(table.userId, table.startTime),
+	idxCanonicalWorkoutsUserSportStart: index('canonical_workouts_user_sport_start_idx').on(table.userId, table.sportFamily, table.startTime),
+	uniqCanonicalWorkout: unique().on(table.userId, table.startTime, table.sportFamily)
+}));
+
+// Daily aggregates derived from canonical_workouts (fast sums/counts/averages)
+export const workoutDailyAggregates = pgTable('workout_daily_aggregates', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id).notNull(),
+	date: timestamp('date').notNull(),
+	sportFamily: text('sport_family').notNull(),
+	count: integer('count').notNull().default(0),
+	distanceMetersSum: decimal('distance_meters_sum').notNull().default('0'),
+	durationSecondsSum: decimal('duration_seconds_sum').notNull().default('0'),
+	avgHeartRateAvg: decimal('avg_heart_rate_avg'),
+	maxHeartRateMax: decimal('max_heart_rate_max'),
+	updatedAt: timestamp('updated_at').defaultNow().notNull(),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => ({
+	idxWorkoutDailyUserDate: index('workout_daily_aggregates_user_date_idx').on(table.userId, table.date),
+	idxWorkoutDailyUserSportDate: index('workout_daily_aggregates_user_sport_date_idx').on(table.userId, table.sportFamily, table.date),
+	uniqWorkoutDaily: unique().on(table.userId, table.date, table.sportFamily)
+}));
+
 // Sensor-connected goals (auto-updating progress)
 export const sensorGoals = pgTable('sensor_goals', {
 	id: uuid('id').primaryKey().defaultRandom(),
@@ -1185,6 +1236,20 @@ export const backgroundJobsRelations = relations(backgroundJobs, ({ one }) => ({
 export const sensorAggregatesRelations = relations(sensorAggregates, ({ one }) => ({
 	user: one(users, {
 		fields: [sensorAggregates.userId],
+		references: [users.id]
+	})
+}));
+
+export const canonicalWorkoutsRelations = relations(canonicalWorkouts, ({ one }) => ({
+	user: one(users, {
+		fields: [canonicalWorkouts.userId],
+		references: [users.id]
+	})
+}));
+
+export const workoutDailyAggregatesRelations = relations(workoutDailyAggregates, ({ one }) => ({
+	user: one(users, {
+		fields: [workoutDailyAggregates.userId],
 		references: [users.id]
 	})
 }));

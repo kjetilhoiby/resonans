@@ -1,11 +1,11 @@
 import { db } from '$lib/db';
-import { goals, sensorEvents } from '$lib/db/schema';
-import { and, desc, eq, gte } from 'drizzle-orm';
+import { goals, sensorEvents, workoutDailyAggregates } from '$lib/db/schema';
+import { and, desc, eq, gte, lte, sql } from 'drizzle-orm';
 import { buildUnifiedWorkoutActivities } from '$lib/server/activity-layer';
+import { refreshWorkoutProjectionsForRange } from '$lib/server/workout-projections';
 import type { PageServerLoad } from './$types';
 
 const RUNNING_SPORT_TYPES = new Set(['running', 'indoor_running', 'trail_running', 'løp', 'run']);
-
 type RunningSummary = {
 	currentKm: number;
 	startDate: string;
@@ -13,25 +13,64 @@ type RunningSummary = {
 	dailyKm: { date: string; km: number }[];
 };
 
+async function readRunningDailyAggregates(
+	userId: string,
+	startDate: Date,
+	endDate: Date
+): Promise<{ date: string; km: number }[]> {
+	const rows = await db
+		.select({
+			date: workoutDailyAggregates.date,
+			distanceMetersSum: workoutDailyAggregates.distanceMetersSum
+		})
+		.from(workoutDailyAggregates)
+		.where(
+			and(
+				eq(workoutDailyAggregates.userId, userId),
+				eq(workoutDailyAggregates.sportFamily, 'running'),
+				gte(workoutDailyAggregates.date, startDate),
+				lte(workoutDailyAggregates.date, endDate)
+			)
+		)
+		.orderBy(workoutDailyAggregates.date);
+
+	return rows.map((row) => ({
+		date: row.date.toISOString().slice(0, 10),
+		km: Math.round((Number(row.distanceMetersSum ?? 0) / 1000) * 10) / 10
+	}));
+}
+
 async function getRunningSummaryForRange(
 	userId: string,
 	startDate: Date,
 	endDate: Date
 ): Promise<RunningSummary> {
-	const workouts = await buildUnifiedWorkoutActivities(userId, { since: startDate, limit: 500 });
-	const dailyMap = new Map<string, number>();
-	for (const w of workouts) {
-		const wDate = new Date(w.startTime);
-		if (wDate > endDate) continue;
-		const sport = (w.sportType || '').toLowerCase();
-		if (!RUNNING_SPORT_TYPES.has(sport)) continue;
-		const km = (w.distanceMeters ?? 0) / 1000;
-		const dateKey = wDate.toISOString().slice(0, 10);
-		dailyMap.set(dateKey, Math.round(((dailyMap.get(dateKey) ?? 0) + km) * 10) / 10);
+	let dailyKm: { date: string; km: number }[] = [];
+	try {
+		dailyKm = await readRunningDailyAggregates(userId, startDate, endDate);
+		if (dailyKm.length === 0) {
+			await refreshWorkoutProjectionsForRange(userId, startDate, endDate);
+			dailyKm = await readRunningDailyAggregates(userId, startDate, endDate);
+		}
+	} catch (error) {
+		console.warn('[goals/load] aggregate path unavailable, falling back to deduplicated activity-layer:', error);
+		const workouts = await buildUnifiedWorkoutActivities(userId, { since: startDate, limit: 500 });
+		const dailyMap = new Map<string, number>();
+		for (const w of workouts) {
+			const t = new Date(w.startTime);
+			if (t > endDate) continue;
+			const sport = (w.sportType || '').toLowerCase();
+			if (!RUNNING_SPORT_TYPES.has(sport)) continue;
+			const km = (w.distanceMeters ?? 0) / 1000;
+			if (km <= 0) continue;
+			const key = t.toISOString().slice(0, 10);
+			dailyMap.set(key, Math.round(((dailyMap.get(key) ?? 0) + km) * 10) / 10);
+		}
+		dailyKm = Array.from(dailyMap.entries())
+			.sort(([a], [b]) => a.localeCompare(b))
+			.map(([date, km]) => ({ date, km }));
 	}
-	const dailyKm = Array.from(dailyMap.entries())
-		.sort(([a], [b]) => a.localeCompare(b))
-		.map(([date, km]) => ({ date, km }));
+
 	const currentKm = Math.round(dailyKm.reduce((s, d) => s + d.km, 0) * 10) / 10;
 	return {
 		currentKm,
