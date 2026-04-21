@@ -187,7 +187,7 @@ const tools = [
 		type: 'function' as const,
 		function: {
 			name: 'create_goal',
-			description: 'Opprett et nytt mål for brukeren. VIKTIG: Sjekk ALLTID med check_similar_goals først! Hvis målet er målbart, send også canonical metricId og goal track-feltene slik at dashboardene kan bruke målet direkte.',
+			description: 'Opprett et nytt mål for brukeren. VIKTIG: Sjekk ALLTID med check_similar_goals først! Hvis målet er målbart, send også canonical metricId og goal track-feltene slik at dashboardene kan bruke målet direkte. For tidsbegrensede mål (f.eks. "løpe 150 km før 15. juni"): sett startDate til dagens dato og endDate til fristen — dette aktiverer fremgangssporing over perioden. ALDRI opprett mål med titler som "Planlegging", "Plan" eller andre meta-titler som beskriver planleggingsprosessen — kun konkrete livsmål.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -211,6 +211,14 @@ const tools = [
 					targetDate: {
 						type: 'string',
 						description: 'Måldato i ISO format (YYYY-MM-DD), hvis brukeren har spesifisert en tidsfrist'
+					},
+					startDate: {
+						type: 'string',
+						description: 'Startdato for målet i ISO format (YYYY-MM-DD). Sett alltid til dagens dato for tidsbegrensede mål som har en eksplisitt frist eller sluttdato.'
+					},
+					endDate: {
+						type: 'string',
+						description: 'Sluttdato for målet i ISO format (YYYY-MM-DD). Bruk når brukeren har oppgitt en eksplisitt frist (f.eks. "før 15. juni"). Sett lik targetDate hvis begge angis.'
 					},
 					metricId: {
 						type: 'string',

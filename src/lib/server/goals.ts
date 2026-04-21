@@ -5,6 +5,7 @@ import { findSimilar } from './similarity';
 import { METRIC_CATALOG, resolveMetricId, type MetricId } from '$lib/domain/metric-catalog';
 import type { GoalTrack, GoalTrackKind, GoalWindow } from '$lib/domain/goal-tracks';
 import { upsertGoalTrack } from './goal-tracks';
+import { openai } from './openai';
 
 export interface GoalCreationParams {
 	userId: string;
@@ -49,25 +50,99 @@ function isLikelyNonRunningActivityGoalText(text: string): boolean {
 	return /\b(yoga|mikroyoga|styrke(trening)?|sykl(e|ing)?|svøm(me|ming)?|gåtur(er)?|walk(ing)?)\b/.test(text);
 }
 
-function sanitizeMetricId(params: GoalCreationParams): MetricId | null {
+const METRIC_LABELS_FOR_PROMPT = Object.values(METRIC_CATALOG)
+	.map((m) => `- ${m.id}: ${m.label} (enhet: ${m.defaultUnit})`)
+	.join('\n');
+
+async function classifyMetricFromGoalText(
+	title: string,
+	description: string
+): Promise<MetricId | null> {
+	try {
+		const response = await openai.chat.completions.create({
+			model: 'gpt-4o-mini',
+			temperature: 0,
+			response_format: { type: 'json_object' },
+			messages: [
+				{
+					role: 'system',
+					content: `Du er en metrikk-klassifiserer. Gitt et mål-tittel og beskrivelse, avgjør hvilken metrikk (om noen) som passer best.
+
+Gyldige metrikker:
+${METRIC_LABELS_FOR_PROMPT}
+
+Svar alltid med JSON:
+{
+  "metricId": "<id> eller null",
+  "confidence": <0.0–1.0>,
+  "reason": "<kort begrunnelse>"
+}
+
+Returner null for metricId hvis:
+- Ingen metrikk passer godt (confidence under 0.8)
+- Målet handler om aktivitet som ikke har en dedikert metrikk (yoga, styrketrening, sykling, gåtur osv.) — da er metricId null
+- Målet er generell vane eller atferd uten numerisk sporing
+
+Vær konservativ. Bruk kun metrikker som åpenbart matcher.`
+				},
+				{
+					role: 'user',
+					content: `Tittel: ${title}\nBeskrivelse: ${description}`
+				}
+			]
+		});
+
+		const raw = response.choices[0]?.message?.content;
+		if (!raw) return null;
+
+		const parsed = JSON.parse(raw) as { metricId: string | null; confidence: number; reason: string };
+
+		if (parsed.confidence < 0.8 || !parsed.metricId) {
+			console.log('[classifyMetricFromGoalText] Low confidence or null:', parsed);
+			return null;
+		}
+
+		const resolved = resolveMetricId(parsed.metricId);
+		if (!resolved) {
+			console.warn('[classifyMetricFromGoalText] Unknown metricId from LLM:', parsed.metricId);
+			return null;
+		}
+
+		console.log('[classifyMetricFromGoalText] Classified:', resolved, '| reason:', parsed.reason);
+		return resolved;
+	} catch (err) {
+		console.error('[classifyMetricFromGoalText] Error:', err);
+		return null;
+	}
+}
+
+async function sanitizeMetricId(params: GoalCreationParams): Promise<MetricId | null> {
 	const requestedMetric = params.metricId ? resolveMetricId(params.metricId) : null;
 	const text = normalizeGoalText(params.title, params.description);
 
+	// 1. Ingen metrikk oppgitt — prøv deterministisk + LLM
 	if (!requestedMetric) {
-		// Conservative fallback: only auto-map to running metric when text clearly indicates running.
-		return isRunningGoalText(text) ? 'running_distance' : null;
+		if (isRunningGoalText(text)) return 'running_distance';
+		return classifyMetricFromGoalText(params.title, params.description);
 	}
 
+	// 2. Oppgitt metrikk er running_distance men teksten tyder på noe annet
 	if (requestedMetric === 'running_distance') {
 		if (isRunningGoalText(text)) return requestedMetric;
-		if (isLikelyNonRunningActivityGoalText(text)) return null;
+		if (isLikelyNonRunningActivityGoalText(text)) {
+			// Aktivitets-ord uten løp — bruk LLM for å finne eventuell bedre metrikk
+			return classifyMetricFromGoalText(params.title, params.description);
+		}
+		// Usikker — la LLM avgjøre
+		return classifyMetricFromGoalText(params.title, params.description);
 	}
 
+	// 3. Oppgitt metrikk er noe annet — stol på den
 	return requestedMetric;
 }
 
 export async function createGoal(params: GoalCreationParams) {
-	const resolvedMetricId = sanitizeMetricId(params);
+	const resolvedMetricId = await sanitizeMetricId(params);
 	const numericTargetValue =
 		typeof params.targetValue === 'number' && Number.isFinite(params.targetValue)
 			? params.targetValue

@@ -198,7 +198,9 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			columns: {
 				id: true,
 				title: true,
-				targetDate: true
+				targetDate: true,
+				metadata: true,
+				createdAt: true
 			},
 			orderBy: (g, { asc: orderAsc }) => [orderAsc(g.targetDate), orderAsc(g.createdAt)],
 			limit: 5
@@ -381,6 +383,58 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			rsvp,
 			spondEventId: (e.metadata as any)?.spondEventId ?? null
 		});
+	}
+
+	// Calculate sensor progress for running goals
+	const RUNNING_SPORT_TYPES = new Set(['running', 'indoor_running', 'trail_running', 'løp', 'run']);
+	const sensorProgressMap: Record<string, { currentKm: number; expectedKm: number; targetKm: number; status: 'green' | 'yellow' | 'red' }> = {};
+
+	for (const goal of longTermGoals) {
+		const meta = goal.metadata as any;
+		if (meta?.metricId !== 'running_distance' || !meta?.startDate) continue;
+
+		const startDate = new Date(meta.startDate);
+		const endDate = meta?.endDate ? new Date(meta.endDate) : (goal.targetDate ? new Date(goal.targetDate) : new Date());
+		const targetKm: number = meta?.goalTrack?.targetValue ?? 0;
+
+		// Query running workouts for this goal period
+		const events = await db
+			.select({
+				distance: sensorEvents.data
+			})
+			.from(sensorEvents)
+			.where(
+				and(
+					eq(sensorEvents.userId, userId),
+					eq(sensorEvents.dataType, 'workout'),
+					gte(sensorEvents.timestamp, startDate),
+					lte(sensorEvents.timestamp, endDate)
+				)
+			);
+
+		let currentKm = 0;
+		for (const event of events) {
+			const data = event.distance as any;
+			const sportType = (data?.sportType || '').toLowerCase();
+			if (!RUNNING_SPORT_TYPES.has(sportType)) continue;
+			const distance = data?.distanceMeters ?? data?.distance;
+			if (distance) currentKm += distance > 80 ? distance / 1000 : distance;
+		}
+		currentKm = Math.round(currentKm * 10) / 10;
+
+		// Calculate expected progress (linear interpolation)
+		const now = new Date();
+		const totalDays = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
+		const elapsedDays = Math.min(totalDays, (now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+		const expectedKm = (elapsedDays / totalDays) * targetKm;
+
+		// Status: green (on track >= 95%), yellow (at risk >= 80%), red (behind < 80%)
+		const ratio = expectedKm > 0 ? currentKm / expectedKm : 1;
+		let status: 'green' | 'yellow' | 'red' = 'green';
+		if (ratio < 0.80) status = 'red';
+		else if (ratio < 0.95) status = 'yellow';
+
+		sensorProgressMap[goal.id] = { currentKm, expectedKm: Math.round(expectedKm * 10) / 10, targetKm, status };
 	}
 
 	return {

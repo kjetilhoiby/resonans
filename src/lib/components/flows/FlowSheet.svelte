@@ -576,7 +576,7 @@
 						class="fs-add-btn"
 						onclick={addCustomChecklistItem}
 						disabled={!checklistCustomInput.trim()}
-					>+</button>
+					><Icon name="plus" size={16} /></button>
 				</div>
 			{/if}
 
@@ -948,10 +948,9 @@
 	.fs-add-btn {
 		width: 36px; height: 36px;
 		background: #141414;
-		border: 1px solid #1e1e1e;
-		border-radius: 8px;
+		border: 1px solid #2a2a2a;
+		border-radius: 50%;
 		color: #666;
-		font-size: 1.1rem;
 		cursor: pointer;
 		display: flex; align-items: center; justify-content: center;
 		flex-shrink: 0;

@@ -17,6 +17,8 @@
 		targetDate: Date | null;
 		metadata: {
 			metricId?: string | null;
+			startDate?: string | null;
+			endDate?: string | null;
 			goalTrack?: GoalTrackMeta | null;
 			intentStatus?: 'pending' | 'parsed' | 'failed' | null;
 			intentError?: string | null;
@@ -70,6 +72,7 @@
 	interface Props {
 		data: {
 			goals: GoalItem[];
+			sensorProgressMap: Record<string, { currentKm: number; targetKm: number }>;
 		};
 	}
 
@@ -140,6 +143,20 @@
 		return reasonMap[reason] ?? `Tolking feilet (${reason}).`;
 	}
 
+	let expandedGoals = $state<Set<string>>(new Set());
+
+	function toggleGoal(id: string) {
+		const next = new Set(expandedGoals);
+		if (next.has(id)) next.delete(id);
+		else next.add(id);
+		expandedGoals = next;
+	}
+
+	function formatDate(iso: string | null | undefined): string | null {
+		if (!iso) return null;
+		return new Date(iso).toLocaleDateString('no-NO', { day: 'numeric', month: 'short', year: 'numeric' });
+	}
+
 	async function deleteGoal(goalId: string, goalTitle: string) {
 		const confirmed = confirm(`Er du sikker på at du vil slette målet "${goalTitle}"? Dette vil også slette alle oppgaver og fremgang knyttet til målet.`);
 		if (!confirmed) return;
@@ -152,7 +169,11 @@
 			if (!response.ok) {
 				throw new Error(result.error || 'Kunne ikke slette målet');
 			}
-			window.location.reload();
+			// Remove from local state instead of full reload
+			data.goals = data.goals.filter((g) => g.id !== goalId);
+			// Also update sensorProgressMap
+			const { [goalId]: _, ...rest } = data.sensorProgressMap;
+			data.sensorProgressMap = rest;
 		} catch (error) {
 			alert(`Feil ved sletting: ${error instanceof Error ? error.message : 'Ukjent feil'}`);
 		}
@@ -191,92 +212,132 @@
 					{@const intentBadge = getIntentBadge(goal)}
 					{@const intentEvaluationLabel = getIntentEvaluationLabel(goal)}
 					{@const intentFailureReason = getIntentFailureReasonLabel(goal)}
-					<div class="goal-card">
-						<div class="goal-header">
-							<div class="goal-title-row">
-								<h2>{goal.title}</h2>
-								<button
-									class="btn-icon-danger"
-									onclick={(event) => {
-										event.preventDefault();
-										deleteGoal(goal.id, goal.title);
-									}}
-									title="Slett"
-								>
-									×
-								</button>
-							</div>
-							{#if goal.category}
-								<div class="goal-category">{goal.category.icon || '📌'} {goal.category.name}</div>
-							{/if}
-							{#if goalTrackLabel}
-								<div class="goal-track-pill">{goalTrackLabel}</div>
-							{/if}
-							{#if intentBadge}
-								<div class={`goal-intent-pill goal-intent-${intentBadge.tone}`}>{intentBadge.label}</div>
-							{/if}
-							{#if intentEvaluationLabel}
-								<div class="goal-intent-evaluation">{intentEvaluationLabel}</div>
-							{/if}
-							{#if intentFailureReason}
-								<div class="goal-intent-failure-reason">{intentFailureReason}</div>
-							{/if}
-						</div>
-
-						{#if goal.tasks.length > 0}
-							<div class="progress-section">
-								<div class="progress-bar">
-									<div class="progress-fill" style={`width: ${goalProgress}%`}></div>
+					{@const isExpanded = expandedGoals.has(goal.id)}
+					{@const startDate = formatDate(goal.metadata?.startDate)}
+					{@const endDate = formatDate(goal.metadata?.endDate)}
+					{@const sensorProgress = data.sensorProgressMap[goal.id]}
+					<div class="goal-card" class:expanded={isExpanded}>
+						<!-- Alltid synlig: sammendrag -->
+						<button
+							class="goal-summary"
+							onclick={() => toggleGoal(goal.id)}
+							aria-expanded={isExpanded}
+						>
+							<div class="goal-summary-left">
+								<div class="goal-title-row">
+									<h2>{goal.title}</h2>
 								</div>
-								<div class="progress-text">{goalProgress}%</div>
-							</div>
-						{/if}
-
-						{#if goal.targetDate}
-							<div class="meta-info">
-								🗓️ {goal.targetDate.toLocaleDateString('no-NO', {
-									month: 'short',
-									day: 'numeric',
-									year: 'numeric'
-								})}
-							</div>
-						{/if}
-
-						{#if goal.tasks.length > 0}
-							<div class="tasks-section">
-								{#each goal.tasks as task}
-									{@const taskProgress = calculateTaskProgress(task)}
-									<div class="task-card">
-										<div class="task-header">
-											<div class="task-title">{task.title}</div>
-											{#if task.frequency}
-												<div class="task-frequency">{task.frequency}</div>
-											{/if}
+								{#if goal.category}
+									<div class="goal-category">{goal.category.icon || '📌'} {goal.category.name}</div>
+								{/if}
+								<div class="goal-pills">
+									{#if goalTrackLabel}
+										<div class="goal-track-pill">{goalTrackLabel}</div>
+									{/if}
+									{#if intentBadge}
+										<div class={`goal-intent-pill goal-intent-${intentBadge.tone}`}>{intentBadge.label}</div>
+									{/if}
+								</div>
+								{#if sensorProgress}
+									{@const pct = sensorProgress.targetKm > 0 ? Math.min(100, Math.round((sensorProgress.currentKm / sensorProgress.targetKm) * 100)) : 0}
+									<div class="sensor-progress">
+										<div class="sensor-progress-bar">
+											<div class="sensor-progress-fill" style={`width: ${pct}%`}></div>
 										</div>
-
-										{#if task.targetValue}
-											<div class="task-meta">Mål: {task.targetValue} {task.unit || ''}</div>
-										{/if}
-
-										{#if task.progress && task.progress.length > 0}
-											<div class="task-progress">
-												<div class="task-progress-bar">
-													<div class="task-progress-fill" style={`width: ${taskProgress}%`}></div>
-												</div>
-												<div class="task-progress-label">{taskProgress}%</div>
-											</div>
-
-											<div class="activity-summary">
-												<div class="activity-count">🔥 {task.progress.length}x</div>
-												<div class="recent-activities">
-													{#each task.progress.slice(0, 3) as entry}
-														<span class="activity-dot" title={entry.completedAt.toLocaleDateString('no-NO')}>•</span>
-													{/each}
-												</div>
-											</div>
-										{/if}
+										<div class="sensor-progress-label">
+											<span class="sensor-current">{sensorProgress.currentKm} km</span>
+											<span class="sensor-target">av {sensorProgress.targetKm} km</span>
+											<span class="sensor-pct">{pct}%</span>
+										</div>
 									</div>
-								{/each}
+								{:else if goal.tasks.length > 0}
+									<div class="progress-section">
+										<div class="progress-bar">
+											<div class="progress-fill" style={`width: ${goalProgress}%`}></div>
+										</div>
+										<div class="progress-text">{goalProgress}%</div>
+									</div>
+								{/if}
+							</div>
+							<div class="goal-summary-right">
+								<span class="chevron" class:open={isExpanded}>›</span>
+							</div>
+						</button>
+
+						<!-- Ekspandert innhold -->
+						{#if isExpanded}
+							<div class="goal-details">
+								{#if goal.description}
+									<p class="goal-description">{goal.description}</p>
+								{/if}
+
+								<div class="goal-meta-row">
+									{#if startDate && endDate}
+										<span class="meta-chip">📅 {startDate} → {endDate}</span>
+									{:else if startDate}
+										<span class="meta-chip">📅 Fra {startDate}</span>
+									{:else if goal.targetDate}
+										<span class="meta-chip">🗓️ Frist {goal.targetDate.toLocaleDateString('no-NO', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+									{/if}
+									{#if goal.tasks.length > 0}
+										<span class="meta-chip">📋 {goal.tasks.length} oppgave{goal.tasks.length !== 1 ? 'r' : ''}</span>
+									{/if}
+									<span class="meta-chip">🕐 {goal.createdAt.toLocaleDateString('no-NO', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+								</div>
+
+								{#if intentEvaluationLabel}
+									<div class="goal-intent-evaluation">{intentEvaluationLabel}</div>
+								{/if}
+								{#if intentFailureReason}
+									<div class="goal-intent-failure-reason">{intentFailureReason}</div>
+								{/if}
+
+								{#if goal.tasks.length > 0}
+									<div class="tasks-section">
+										{#each goal.tasks as task}
+											{@const taskProgress = calculateTaskProgress(task)}
+											<div class="task-card">
+												<div class="task-header">
+													<div class="task-title">{task.title}</div>
+													{#if task.frequency}
+														<div class="task-frequency">{task.frequency}</div>
+													{/if}
+												</div>
+
+												{#if task.targetValue}
+													<div class="task-meta">Mål: {task.targetValue} {task.unit || ''}</div>
+												{/if}
+
+												{#if task.progress && task.progress.length > 0}
+													<div class="task-progress">
+														<div class="task-progress-bar">
+															<div class="task-progress-fill" style={`width: ${taskProgress}%`}></div>
+														</div>
+														<div class="task-progress-label">{taskProgress}%</div>
+													</div>
+
+													<div class="activity-summary">
+														<div class="activity-count">🔥 {task.progress.length}x</div>
+														<div class="recent-activities">
+															{#each task.progress.slice(0, 3) as entry}
+																<span class="activity-dot" title={entry.completedAt.toLocaleDateString('no-NO')}>•</span>
+															{/each}
+														</div>
+													</div>
+												{/if}
+											</div>
+										{/each}
+									</div>
+								{/if}
+
+								<div class="goal-actions">
+									<button
+										class="btn-danger"
+										onclick={() => deleteGoal(goal.id, goal.title)}
+									>
+										Slett mål
+									</button>
+								</div>
 							</div>
 						{/if}
 					</div>
@@ -380,14 +441,117 @@
 		background: #141414;
 		border: 1px solid #242424;
 		border-radius: 16px;
-		padding: 1.5rem;
-		transition: all 0.2s;
+		overflow: hidden;
+		transition: border-color 0.2s;
 	}
 
 	.goal-card:hover {
 		border-color: #2e2e2e;
-		transform: translateY(-2px);
-		box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5);
+	}
+
+	.goal-card.expanded {
+		border-color: #333;
+	}
+
+	.goal-summary {
+		width: 100%;
+		background: none;
+		border: none;
+		padding: 1.25rem 1.5rem;
+		cursor: pointer;
+		display: flex;
+		align-items: flex-start;
+		gap: 1rem;
+		text-align: left;
+		color: inherit;
+	}
+
+	.goal-summary:hover {
+		background: rgba(255, 255, 255, 0.02);
+	}
+
+	.goal-summary-left {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.goal-summary-right {
+		display: flex;
+		align-items: center;
+		padding-top: 0.25rem;
+		flex-shrink: 0;
+	}
+
+	.chevron {
+		font-size: 1.4rem;
+		color: #444;
+		line-height: 1;
+		transition: transform 0.2s ease;
+		display: inline-block;
+		transform: rotate(0deg);
+	}
+
+	.chevron.open {
+		transform: rotate(90deg);
+		color: #7c8ef5;
+	}
+
+	.goal-details {
+		padding: 0 1.5rem 1.5rem;
+		border-top: 1px solid #1e1e1e;
+	}
+
+	.goal-description {
+		font-size: 0.9rem;
+		color: #999;
+		line-height: 1.6;
+		margin: 1rem 0 0.75rem;
+	}
+
+	.goal-meta-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		margin-bottom: 1rem;
+	}
+
+	.meta-chip {
+		display: inline-flex;
+		align-items: center;
+		padding: 0.3rem 0.65rem;
+		border-radius: 999px;
+		background: #1e1e1e;
+		border: 1px solid #2a2a2a;
+		font-size: 0.78rem;
+		color: #888;
+	}
+
+	.goal-pills {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+		margin-top: 0.45rem;
+	}
+
+	.goal-actions {
+		margin-top: 1.25rem;
+		display: flex;
+		justify-content: flex-end;
+	}
+
+	.btn-danger {
+		padding: 0.4rem 0.9rem;
+		border-radius: 8px;
+		border: 1px solid rgba(255, 100, 100, 0.3);
+		background: rgba(255, 100, 100, 0.08);
+		color: #ff9b9b;
+		font-size: 0.8rem;
+		cursor: pointer;
+		transition: background 0.15s;
+	}
+
+	.btn-danger:hover {
+		background: rgba(255, 100, 100, 0.15);
 	}
 
 	.goal-header {
@@ -403,7 +567,7 @@
 
 	.goal-card h2 {
 		margin: 0;
-		font-size: 1.25rem;
+		font-size: 1.1rem;
 		font-weight: 600;
 		color: #e8e8e8;
 		flex: 1;
@@ -465,6 +629,49 @@
 		margin-top: 0.4rem;
 		font-size: 0.76rem;
 		color: #ff9b9b;
+	}
+
+	.sensor-progress {
+		margin-top: 0.75rem;
+	}
+
+	.sensor-progress-bar {
+		height: 8px;
+		background: #1e1e1e;
+		border-radius: 4px;
+		overflow: hidden;
+		margin-bottom: 0.35rem;
+	}
+
+	.sensor-progress-fill {
+		height: 100%;
+		background: linear-gradient(90deg, #e05c5c 0%, #f0954a 100%);
+		border-radius: 4px;
+		transition: width 0.4s ease;
+	}
+
+	.sensor-progress-label {
+		display: flex;
+		align-items: baseline;
+		gap: 0.35rem;
+	}
+
+	.sensor-current {
+		font-size: 1rem;
+		font-weight: 700;
+		color: #f5a97f;
+	}
+
+	.sensor-target {
+		font-size: 0.8rem;
+		color: #666;
+	}
+
+	.sensor-pct {
+		margin-left: auto;
+		font-size: 0.85rem;
+		font-weight: 600;
+		color: #888;
 	}
 
 	.progress-section {

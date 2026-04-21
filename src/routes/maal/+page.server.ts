@@ -1,12 +1,12 @@
 import { db } from '$lib/db';
 import { goals, themes, trackingSeries } from '$lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const [userGoals, allSeries, userThemes] = await Promise.all([
 		db.query.goals.findMany({
-			where: eq(goals.userId, locals.userId),
+			where: and(eq(goals.userId, locals.userId), eq(goals.status, 'active')),
 			with: {
 				category: true,
 				theme: { columns: { name: true, emoji: true } },

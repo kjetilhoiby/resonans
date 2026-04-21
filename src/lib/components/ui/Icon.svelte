@@ -12,6 +12,7 @@
 		| 'search'
 		| 'refresh'
 		| 'close'
+		| 'plus'
 		| 'attach'
 		| 'check'
 		| 'calendar';
@@ -83,6 +84,9 @@
 	{:else if name === 'close'}
 		<path d="m7 7 10 10" />
 		<path d="m17 7-10 10" />
+	{:else if name === 'plus'}
+		<path d="M12 5v14" />
+		<path d="M5 12h14" />
 	{:else if name === 'attach'}
 		<path d="M8.5 12.5 15 6a3 3 0 1 1 4.2 4.2l-8.1 8.1a5 5 0 0 1-7.1-7.1l8.5-8.5" />
 	{:else if name === 'check'}

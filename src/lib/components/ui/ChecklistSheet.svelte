@@ -10,7 +10,11 @@
 <script lang="ts">
 	import { fly, fade, scale } from 'svelte/transition';
 	import { elasticOut, cubicOut } from 'svelte/easing';
+	import { onMount } from 'svelte';
 	import { groupChecklistItems, activityEmoji } from '$lib/utils/checklist-group';
+	import WeatherStrip, { type WeatherPeriod } from '$lib/components/ui/WeatherStrip.svelte';
+	import Icon from '$lib/components/ui/Icon.svelte';
+	import { readCacheEntry, isCacheStale, fetchRawTimeseries, buildPeriods, buildWeekPeriods } from '$lib/utils/weather';
 
 	export interface ChecklistItem {
 		id: string;
@@ -65,6 +69,76 @@
 		}
 
 		return '/ukeplan';
+	});
+
+	const displayTitle = $derived.by(() => {
+		const ctx = checklist.context;
+		if (!ctx) return checklist.title;
+		const todayIso = new Date().toLocaleDateString('sv', { timeZone: 'Europe/Oslo' });
+		const tomorrow = new Date();
+		tomorrow.setDate(tomorrow.getDate() + 1);
+		const tomorrowIso = tomorrow.toLocaleDateString('sv', { timeZone: 'Europe/Oslo' });
+		const dayMatch = ctx.match(/^week:(\d{4}-W\d{2}):day:(\d{4}-\d{2}-\d{2})$/);
+		if (dayMatch) {
+			if (dayMatch[2] === todayIso) return 'I dag';
+			if (dayMatch[2] === tomorrowIso) return 'I morgen';
+			return new Intl.DateTimeFormat('nb-NO', { weekday: 'long', day: 'numeric', month: 'long' })
+				.format(new Date(dayMatch[2] + 'T12:00:00'));
+		}
+		const weekMatch = ctx.match(/^week:(\d{4}-W\d{2})$/);
+		if (weekMatch) return 'Hele uka';
+		return checklist.title;
+	});
+
+	// Weather for day and week checklists
+	const dayContextDate = $derived.by(() => {
+		const ctx = checklist.context;
+		if (!ctx) return null;
+		const m = ctx.match(/^week:(?:\d{4}-W\d{2}):day:(\d{4}-\d{2}-\d{2})$/);
+		return m ? m[1] : null;
+	});
+	const weekContextKey = $derived.by(() => {
+		const ctx = checklist.context;
+		if (!ctx) return null;
+		const m = ctx.match(/^week:(\d{4}-W\d{2})$/);
+		return m ? m[1] : null;
+	});
+	let weatherPeriods = $state<WeatherPeriod[] | null>(null);
+
+	onMount(async () => {
+		const date = dayContextDate;
+		const weekKey = weekContextKey;
+		if (!date && !weekKey) return;
+
+		// Try geolocation first, fall back to Oslo
+		const getCoords = (): Promise<{ lat: number; lon: number }> =>
+			new Promise((resolve) => {
+				if (!navigator.geolocation) return resolve({ lat: 59.9139, lon: 10.7522 });
+				navigator.geolocation.getCurrentPosition(
+					(pos) => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+					() => resolve({ lat: 59.9139, lon: 10.7522 }),
+					{ timeout: 4000, maximumAge: 300_000 }
+				);
+			});
+		const { lat, lon } = await getCoords();
+
+		// 1. Show from cache immediately (stale-while-revalidate)
+		const cached = readCacheEntry(lat, lon);
+		if (cached) {
+			weatherPeriods = date
+				? buildPeriods(date, cached.timeseries)
+				: buildWeekPeriods(weekKey!, cached.timeseries);
+		}
+
+		// 2. Revalidate if cache is stale or missing
+		if (!cached || isCacheStale(cached)) {
+			const freshTs = await fetchRawTimeseries(lat, lon);
+			if (freshTs) {
+				weatherPeriods = date
+					? buildPeriods(date, freshTs)
+					: buildWeekPeriods(weekKey!, freshTs);
+			}
+		}
 	});
 
 	// Vis payoff-animasjon én gang når alt er fullført
@@ -162,11 +236,16 @@
 				<span class="cs-header-emoji">{checklist.emoji}</span>
 			{/if}
 			<div>
-				<h2 class="cs-title">{checklist.title}</h2>
+				<h2 class="cs-title">{displayTitle}</h2>
 				<p class="cs-subtitle">{done} av {total} fullført</p>
 			</div>
 		</div>
-		<button class="cs-close-btn" onclick={onclose} aria-label="Lukk">✕</button>
+		{#if weatherPeriods}
+			<div class="cs-header-weather">
+				<WeatherStrip periods={weatherPeriods} />
+			</div>
+		{/if}
+		<button class="cs-close-btn" onclick={onclose} aria-label="Lukk"><Icon name="close" size={14} /></button>
 	</div>
 
 	<!-- Progress bar -->
@@ -226,7 +305,7 @@
 			class="cs-add-btn"
 			onclick={addItem}
 			disabled={!newItemText.trim() || addingItem}
-		>＋</button>
+		><Icon name="plus" size={16} /></button>
 	</div>
 
 	<!-- Footer: delete -->
@@ -268,7 +347,7 @@
 			</div>
 
 			<h3 class="cs-payoff-title">Alt er klart!</h3>
-			<p class="cs-payoff-sub">{checklist.title}</p>
+			<p class="cs-payoff-sub">{displayTitle}</p>
 			<p class="cs-payoff-cta">Trykk hvor som helst for å lukke</p>
 		</div>
 	</div>
@@ -365,6 +444,15 @@
 		height: 100%;
 		border-radius: 999px;
 		transition: width 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+	}
+
+	/* ── Weather strip in header ── */
+	.cs-header-weather {
+		flex: 1;
+		display: flex;
+		justify-content: flex-end;
+		padding: 0 12px;
+		min-width: 0;
 	}
 
 	/* ── Items ── */
@@ -505,19 +593,21 @@
 	.cs-add-input::placeholder { color: #444; }
 
 	.cs-add-btn {
-		width: 38px;
-		height: 38px;
-		border-radius: 10px;
+		width: 36px;
+		height: 36px;
+		border-radius: 50%;
 		background: #4a5af0;
-		border: none;
+		border: 1px solid #5a6af8;
 		color: white;
-		font-size: 1.1rem;
 		cursor: pointer;
 		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 		transition: background 0.12s, opacity 0.12s;
 	}
 	.cs-add-btn:hover:not(:disabled) { background: #3a4adf; }
-	.cs-add-btn:disabled { opacity: 0.35; cursor: not-allowed; background: #2a2a2a; }
+	.cs-add-btn:disabled { opacity: 0.35; cursor: not-allowed; background: #2a2a2a; border-color: #2a2a2a; }
 
 	/* ── Footer ── */
 	.cs-footer {

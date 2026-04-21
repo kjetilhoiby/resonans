@@ -9,6 +9,7 @@
 	import { FLOWS } from '$lib/flows/registry';
 	import { finishNavMetric, startNavMetric } from '$lib/client/nav-metrics';
 	import { groupChecklistItems, activityEmoji, type GroupedChecklistEntry } from '$lib/utils/checklist-group';
+	import WeatherStrip, { type WeatherPeriod } from '$lib/components/ui/WeatherStrip.svelte';
 
 	type SaveState = 'idle' | 'saving' | 'saved';
 
@@ -167,6 +168,7 @@
 
 	let { data }: Props = $props();
 	const todayIso = toLocalIsoDate(new Date());
+	const tomorrowIso = (() => { const t = new Date(); t.setDate(t.getDate() + 1); return toLocalIsoDate(t); })();
 	const dayFromQuery = typeof window !== 'undefined'
 		? new URLSearchParams(window.location.search).get('day')
 		: null;
@@ -285,6 +287,10 @@
 	interface DayWeatherEntry { symbol: string; tempMax: number }
 	let tripDayWeather = $state<Record<string, DayWeatherEntry>>({});
 
+	// Home weather — fetched via geolocation for non-trip days
+	interface DayWeatherSummary { emoji: string; tempMax: number; periods: WeatherPeriod[] }
+	let homeDayWeather = $state<Record<string, DayWeatherSummary>>({});
+
 	// "worst weather" priority (higher = shown over better weather)
 	function weatherSeverity(symbol: string): number {
 		if (symbol.includes('thunder')) return 6;
@@ -309,6 +315,69 @@
 	}
 
 	import { onMount } from 'svelte';
+
+	function smartDayLabel(isoDate: string): string {
+		if (isoDate === todayIso) return 'I dag';
+		if (isoDate === tomorrowIso) return 'I morgen';
+		const raw = new Intl.DateTimeFormat('nb-NO', { weekday: 'short' }).format(new Date(isoDate + 'T12:00:00'));
+		const clean = raw.replace('.', '');
+		return clean.charAt(0).toUpperCase() + clean.slice(1);
+	}
+
+	function parseDayPeriods(
+		timeseries: Array<{
+			time: string;
+			data: {
+				instant: { details: { air_temperature: number } };
+				next_1_hours?: { summary?: { symbol_code?: string }; details?: { precipitation_amount?: number } };
+				next_6_hours?: { summary?: { symbol_code?: string } };
+			};
+		}>,
+		dateIso: string
+	): WeatherPeriod[] {
+		const PERIODS = [
+			{ key: 'natt',        label: 'Natt',        hourStart: 0,  representative: 2  },
+			{ key: 'morgen',      label: 'Morgen',      hourStart: 6,  representative: 8  },
+			{ key: 'ettermiddag', label: 'Ettermiddag', hourStart: 12, representative: 14 },
+			{ key: 'kveld',       label: 'Kveld',       hourStart: 18, representative: 20 },
+		];
+
+		// Map UTC time → local (Oslo) hour
+		const fmtHour = new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Oslo', hour: 'numeric', hour12: false });
+		const fmtDate = new Intl.DateTimeFormat('sv',    { timeZone: 'Europe/Oslo' });
+
+		const byHour: Record<number, typeof timeseries[0]> = {};
+		for (const entry of timeseries) {
+			if (fmtDate.format(new Date(entry.time)) !== dateIso) continue;
+			const h = parseInt(fmtHour.format(new Date(entry.time)), 10) % 24;
+			byHour[h] = entry;
+		}
+
+		const result: WeatherPeriod[] = [];
+
+		for (const { key, label, hourStart, representative } of PERIODS) {
+			// Gather 6 hours for this period
+			const entries = Array.from({ length: 6 }, (_, i) => byHour[hourStart + i]).filter(Boolean);
+			if (!entries.length) continue;
+
+			// Pick entry closest to representative hour
+			const repr = entries.reduce((best, e) => {
+				const hE = parseInt(fmtHour.format(new Date(e.time)), 10) % 24;
+				const hB = parseInt(fmtHour.format(new Date(best.time)), 10) % 24;
+				return Math.abs(hE - representative) < Math.abs(hB - representative) ? e : best;
+			});
+
+			const temp = Math.round(repr.data.instant.details.air_temperature);
+			const symbol = repr.data.next_6_hours?.summary?.symbol_code
+				?? repr.data.next_1_hours?.summary?.symbol_code
+				?? 'cloudy';
+			const precip = entries.reduce((s, e) => s + (e.data.next_1_hours?.details?.precipitation_amount ?? 0), 0);
+
+			result.push({ key, label, emoji: metSymbolToEmoji(symbol), temp, precip: Math.round(precip * 10) / 10 });
+		}
+
+		return result;
+	}
 	onMount(async () => {
 		finishNavMetric('ukeplan');
 		const weekDates = new Set(data.week.days.map((d) => d.isoDate));
@@ -382,6 +451,33 @@
 			} catch {
 				// best-effort; silently skip
 			}
+		}
+
+		// Hent hjemvær via geolocation for ikke-tur-dager
+		try {
+			const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
+				navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 })
+			);
+			const { latitude: lat, longitude: lng } = pos.coords;
+			const wxRes = await fetch(
+				`https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${lat.toFixed(4)}&lon=${lng.toFixed(4)}`,
+				{ headers: { 'User-Agent': 'resonans/1.0 https://github.com/kjetilhoiby/resonans' } }
+			);
+			if (wxRes.ok) {
+				const wxData = await wxRes.json();
+				const ts = wxData.properties.timeseries;
+				const newHome: Record<string, DayWeatherSummary> = {};
+				for (const day of data.week.days) {
+					const periods = parseDayPeriods(ts, day.isoDate);
+					if (!periods.length) continue;
+					const midday = periods.find(p => p.key === 'ettermiddag') ?? periods.find(p => p.key === 'morgen') ?? periods[0];
+					const tempMax = Math.max(...periods.map(p => p.temp));
+					newHome[day.isoDate] = { emoji: midday.emoji, tempMax, periods };
+				}
+				homeDayWeather = newHome;
+			}
+		} catch {
+			// Geolocation nektet eller utilgjengelig — vær er valgfritt
 		}
 	});
 
@@ -1268,14 +1364,14 @@
 			<button class="wp-flow-btn wp-flow-btn--day" type="button" onclick={() => void openDayPlanSheet()} disabled={dayPlanSheetBusy}>
 				<span class="wp-flow-btn-icon">{dayPlanSheetBusy ? '⏳' : '📋'}</span>
 				<span class="wp-flow-btn-label">{dayPlanSheetBusy ? 'Henter …' : 'Planlegg dag'}</span>
-				<span class="wp-flow-btn-sub">{selectedDay.label}</span>
+				<span class="wp-flow-btn-sub">{smartDayLabel(selectedDayIso)}</span>
 			</button>
 		{/if}
 		{#if showCloseDay}
 			<button class="wp-flow-btn wp-flow-btn--day wp-flow-btn--close" type="button" onclick={openDayCloseFlow} disabled={dayCloseBusy}>
 				<span class="wp-flow-btn-icon">{dayCloseBusy ? '⏳' : '✅'}</span>
 				<span class="wp-flow-btn-label">{dayCloseBusy ? 'Jobber …' : 'Avslutt dag'}</span>
-				<span class="wp-flow-btn-sub">{selectedDay.label}</span>
+				<span class="wp-flow-btn-sub">{smartDayLabel(selectedDayIso)}</span>
 			</button>
 		{/if}
 		{#if showCloseWeek}
@@ -1347,7 +1443,7 @@
 											onmousedown={() => (skipEditTask = true)}
 											onclick={() => void deleteTask(task.id)}
 											aria-label="Slett oppgave"
-										>×</button>
+										><Icon name="close" size={13} /></button>
 									</div>
 								{:else}
 									<button
@@ -1442,9 +1538,7 @@
 											onmousedown={() => (skipEditBlur = true)}
 											onclick={() => void deleteChecklistItem(weekChecklistId, group.item.id)}
 											aria-label="Slett punkt"
-										>
-											×
-										</button>
+										><Icon name="close" size={13} /></button>
 									</div>
 								{:else}
 									<button type="button" class="wp-item-text-btn" onclick={() => void startEditing(weekChecklistId, group.item)}>
@@ -1491,6 +1585,7 @@
 			{#each data.week.days as day}
 				{@const tripEmoji = tripDayEmoji[day.isoDate]}
 				{@const wx = tripDayWeather[day.isoDate]}
+				{@const homeWx = homeDayWeather[day.isoDate]}
 				<button
 					type="button"
 					class="wp-day-btn"
@@ -1506,12 +1601,22 @@
 						<span class="wp-day-wx" aria-label="Vær">
 							<span class="wp-day-wx-sym">{metSymbolToEmoji(wx.symbol)}</span><span class="wp-day-wx-temp">{wx.tempMax}°</span>
 						</span>
+					{:else if homeWx}
+						<span class="wp-day-wx" aria-label="Vær">
+							<span class="wp-day-wx-sym">{homeWx.emoji}</span><span class="wp-day-wx-temp">{homeWx.tempMax}°</span>
+						</span>
 					{/if}
-					<span class="wp-day-label">{day.label}</span>
+					<span class="wp-day-label">{smartDayLabel(day.isoDate)}</span>
 					<span class="wp-day-number">{day.day}</span>
 				</button>
 			{/each}
 		</div>
+
+		{#if homeDayWeather[selectedDayIso]?.periods.length}
+			<div class="wp-weather-strip">
+				<WeatherStrip periods={homeDayWeather[selectedDayIso].periods} />
+			</div>
+		{/if}
 
 		<div class="wp-notes-form">
 			{#if selectedDaySpondEvents.length > 0}
@@ -1549,7 +1654,7 @@
 				<textarea
 					class="wp-textarea"
 					rows="2"
-					placeholder={`Liten plan for ${selectedDay.label}...`}
+					placeholder={`Liten plan for ${smartDayLabel(selectedDayIso)}...`}
 					value={selectedDayNote}
 					oninput={(event) => {
 						const target = event.currentTarget as HTMLTextAreaElement;
@@ -1605,9 +1710,7 @@
 										onmousedown={() => (skipEditBlur = true)}
 										onclick={() => void deleteChecklistItem(selectedDayChecklist.id, item.id)}
 										aria-label="Slett punkt"
-									>
-										×
-									</button>
+									><Icon name="close" size={13} /></button>
 								</div>
 							{:else}
 								<button type="button" class="wp-item-text-btn" onclick={() => void startEditing(selectedDayChecklist.id, item)}>
@@ -1639,7 +1742,7 @@
 					bind:value={dayComposerText}
 					class="wp-input"
 					type="text"
-					placeholder={`Skriv dagsmål for ${selectedDay.label} og trykk Enter`}
+					placeholder={`Skriv dagsmål for ${smartDayLabel(selectedDayIso)} og trykk Enter`}
 					onkeydown={(event) => handleComposerKeydown(event, 'day')}
 				/>
 				<span class="wp-save-dot" class:is-saving={saveStates.dayItems === 'saving'} class:is-saved={saveStates.dayItems === 'saved'} aria-hidden="true"></span>
@@ -1675,7 +1778,7 @@
 	<FlowSheet
 		flow={FLOWS['day_close']}
 		context={{
-			dayLabel: selectedDay.label,
+			dayLabel: smartDayLabel(selectedDayIso),
 			openItems: (selectedDayChecklist?.items ?? [])
 				.filter((i) => !i.checked)
 				.map((i) => ({ id: i.id, text: i.text }))
@@ -1721,7 +1824,7 @@
 		flow={FLOWS['day_plan']}
 		context={{
 			dayIso: selectedDayIso,
-			dayLabel: selectedDay.label,
+			dayLabel: smartDayLabel(selectedDayIso),
 			weekDashedKey: data.week.dashedKey,
 			carryovers: dayPlanSheetCarryovers,
 			weekTasks: dayPlanSheetWeekTasks,
@@ -1857,7 +1960,12 @@
 	.wp-day-label {
 		font-size: 0.72rem;
 		color: #888;
-		text-transform: capitalize;
+	}
+
+	.wp-weather-strip {
+		display: flex;
+		justify-content: center;
+		padding: 4px 0 2px;
 	}
 
 	.wp-day-number {

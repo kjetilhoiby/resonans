@@ -145,6 +145,27 @@
 	let activeChecklists = $state<Checklist[]>([]);
 	let openChecklist = $state<Checklist | null>(null);
 
+	// -- Hjemstedsvær for dag-kontekst-sjekklister --
+	let homeWeatherByDate = $state<Record<string, { emoji: string; temp: number }>>({});
+
+	function _metSymbolToEmoji(symbol: string): string {
+		if (symbol.startsWith('clearsky')) return '☀️';
+		if (symbol.startsWith('fair')) return '🌤️';
+		if (symbol.startsWith('partlycloudy')) return '⛅';
+		if (symbol.startsWith('cloudy')) return '☁️';
+		if (symbol.startsWith('fog')) return '🌫️';
+		if (symbol.includes('thunder')) return '⛈️';
+		if (symbol.includes('snow') || symbol.includes('sleet')) return '❄️';
+		if (symbol.includes('rain') || symbol.includes('shower')) return '🌧️';
+		return '🌡️';
+	}
+
+	function getDateFromChecklistContext(context: string | null): string | null {
+		if (!context) return null;
+		const m = context.match(/^week:\d{4}-W\d{2}:day:(\d{4}-\d{2}-\d{2})$/);
+		return m?.[1] ?? null;
+	}
+
 	const HOME_SENSOR_CACHE_KEY = 'resonans:home:sensor-summary:v1';
 	const HOME_PINNED_WIDGETS_CACHE_KEY = 'resonans:home:pinned-widgets:v1';
 	const HOME_SENSOR_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
@@ -338,6 +359,38 @@
 			}
 
 			await checklistPromise;
+
+			// Hent hjemstedsvær for dag-kontekst-sjekklister via geolocation
+			const dayDates = new Set(activeChecklists.map(cl => getDateFromChecklistContext(cl.context)).filter((d): d is string => d !== null));
+			if (dayDates.size > 0) {
+				try {
+					const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
+						navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 })
+					);
+					const { latitude: lat, longitude: lng } = pos.coords;
+					const wxRes = await fetch(
+						`https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${lat.toFixed(4)}&lon=${lng.toFixed(4)}`,
+						{ headers: { 'User-Agent': 'resonans/1.0 https://github.com/kjetilhoiby/resonans' } }
+					);
+					if (wxRes.ok) {
+						const wxData = await wxRes.json();
+						const ts: Array<{ time: string; data: { instant: { details: { air_temperature: number } }; next_1_hours?: { summary?: { symbol_code?: string } }; next_6_hours?: { summary?: { symbol_code?: string } } } }> = wxData.properties.timeseries;
+						const newWx: Record<string, { emoji: string; temp: number }> = {};
+						for (const date of dayDates) {
+							// Bruk middagstimen (12:00 UTC) som representativ, ellers første tilgjengelige time
+							const entry = ts.find(e => e.time.startsWith(date + 'T12:')) ?? ts.find(e => e.time.startsWith(date + 'T'));
+							if (!entry) continue;
+							const temp = Math.round(entry.data.instant.details.air_temperature);
+							const symbol = entry.data.next_6_hours?.summary?.symbol_code ?? entry.data.next_1_hours?.summary?.symbol_code ?? 'cloudy';
+							newWx[date] = { emoji: _metSymbolToEmoji(symbol), temp };
+						}
+						homeWeatherByDate = newWx;
+					}
+				} catch {
+					// Geolocation nektet eller utilgjengelig
+				}
+			}
+
 			cleanupPrefetch = scheduleDashboardPrefetch();
 
 			// Warm up theme route code and server data so first navigation feels snappier.
@@ -1501,8 +1554,10 @@
 			{#if activeChecklists.length > 0}
 				<div class="widget-row widget-row-checklists">
 			{#each activeChecklists as cl (cl.id)}
+				{@const dateCtx = getDateFromChecklistContext(cl.context)}
 				<ChecklistWidget
 					checklist={cl}
+					weather={dateCtx ? homeWeatherByDate[dateCtx] : undefined}
 					onclick={() => (openChecklist = cl)}
 					onremove={async () => {
 						await fetch(`/api/checklists/${cl.id}`, { method: 'DELETE' });

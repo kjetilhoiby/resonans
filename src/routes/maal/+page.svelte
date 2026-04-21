@@ -16,7 +16,6 @@
 	let assigningThemeGoalId = $state<string | null>(null);
 
 	const active = $derived(goalsLocal.filter((g) => g.status === 'active'));
-	const other = $derived(goalsLocal.filter((g) => g.status !== 'active'));
 
 	async function deleteGoal(goalId: string) {
 		if (deletingId) return;
@@ -110,10 +109,10 @@
 		<h1>Mål</h1>
 	</header>
 
-	{#if active.length === 0 && other.length === 0}
+	{#if active.length === 0}
 		<p class="empty">Ingen mål ennå. Start en samtale for å opprette ett.</p>
 	{:else}
-		{#each [{ label: 'Aktive', list: active }, { label: 'Tidligere', list: other }] as section}
+		{#each [{ label: 'Aktive', list: active }] as section}
 			{#if section.list.length > 0}
 				<section class="goal-section">
 					<h2 class="section-label">{section.label}</h2>
