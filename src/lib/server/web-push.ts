@@ -1,5 +1,6 @@
 import webpush from 'web-push';
 import { env } from '$env/dynamic/private';
+import { createPrivateKey, createPublicKey } from 'node:crypto';
 
 let configured = false;
 const DEFAULT_PUSH_TIMEOUT_MS = 10000;
@@ -34,6 +35,40 @@ export function isWebPushConfigured(): boolean {
 
 export function getWebPushPublicKey(): string | null {
 	return env.VAPID_PUBLIC_KEY || null;
+}
+
+/**
+ * Derives the VAPID public key from the private key using EC P-256 math and
+ * compares it against the configured VAPID_PUBLIC_KEY.
+ * Returns { match: true } when the pair is consistent.
+ * Returns { match: false } when they don't match — this is the root cause of BadJwtToken.
+ * Returns { match: null, error } when keys are missing or malformed.
+ */
+export function checkVapidKeyPairMatch(): { match: boolean | null; error?: string } {
+	const publicKey = env.VAPID_PUBLIC_KEY;
+	const privateKey = env.VAPID_PRIVATE_KEY;
+	if (!publicKey || !privateKey) return { match: null, error: 'One or both keys not set' };
+	try {
+		const privBytes = Buffer.from(privateKey, 'base64url');
+		if (privBytes.length !== 32) {
+			return { match: false, error: `Private key is ${privBytes.length} bytes, expected 32` };
+		}
+		// SEC1 DER encoding for raw 32-byte P-256 private key (without embedded public key)
+		const der = Buffer.concat([
+			Buffer.from('3031020101' + '0420', 'hex'),
+			privBytes,
+			Buffer.from('a00a06082a8648ce3d030107', 'hex')
+		]);
+		const priv = createPrivateKey({ key: der, format: 'der', type: 'sec1' });
+		const pub = createPublicKey(priv);
+		const jwk = pub.export({ format: 'jwk' }) as { x: string; y: string };
+		const x = Buffer.from(jwk.x, 'base64url');
+		const y = Buffer.from(jwk.y, 'base64url');
+		const derivedPublicKey = Buffer.concat([Buffer.from([0x04]), x, y]).toString('base64url');
+		return { match: derivedPublicKey === publicKey };
+	} catch (e) {
+		return { match: null, error: e instanceof Error ? e.message : 'Unknown error' };
+	}
 }
 
 // Known Apple push error reasons that mean the subscription is permanently unusable

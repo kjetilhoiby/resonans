@@ -565,6 +565,15 @@
 								<div>🔑 VAPID public key: <strong>{debugInfo.vapid.publicKeyFingerprint ?? '(mangler)'}</strong> <span style="opacity:0.6">(lengde: {debugInfo.vapid.publicKeyLength})</span></div>
 								<div>📧 Subject: <strong>{debugInfo.vapid.subject}</strong></div>
 								<div>🔐 Private key satt: <strong>{debugInfo.vapid.privateKeySet ? 'Ja' : 'NEI – mangler!'}</strong></div>
+								<div style="margin-top:0.5rem; padding:0.4rem 0.6rem; border-radius:3px; background:{debugInfo.vapid.keyPairMatch === true ? '#1a3d1a' : debugInfo.vapid.keyPairMatch === false ? '#3d1a1a' : '#2a2a1a'}">
+									{#if debugInfo.vapid.keyPairMatch === true}
+										✅ <strong>Nøkkelpar matcher</strong> — private og public key tilhører samme par.
+									{:else if debugInfo.vapid.keyPairMatch === false}
+										❌ <strong>NØKKELPAR MATCHER IKKE!</strong> — dette er rotårsaken til BadJwtToken. VAPID_PUBLIC_KEY og VAPID_PRIVATE_KEY i prod tilhører ikke samme par. Generer et nytt par og oppdater begge i Vercel.{debugInfo.vapid.keyPairError ? ` (${debugInfo.vapid.keyPairError})` : ''}
+									{:else}
+										⚠️ Kunne ikke verifisere nøkkelpar: {debugInfo.vapid.keyPairError ?? 'ukjent feil'}
+									{/if}
+								</div>
 							</div>
 						{/if}
 						<div>👤 Din userId: <strong>{debugInfo.currentUserId}</strong></div>

@@ -124,6 +124,16 @@ export async function listRecentBackgroundJobs(limit = 50) {
 			};
 		}
 
+		if (job.type === 'workout_projection_refresh') {
+			resultSummary = {
+				reason: result.reason ?? 'unknown',
+				canonicalCount: result.canonicalCount ?? 0,
+				dailyCount: result.dailyCount ?? 0,
+				fromIso: result.fromIso ?? null,
+				toIso: result.toIso ?? null
+			};
+		}
+
 		return {
 			...job,
 			resultSummary
