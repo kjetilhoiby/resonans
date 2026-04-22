@@ -249,7 +249,7 @@
 				success: data.sent > 0,
 				message: data.sent > 0
 					? `✅ Sendte test-push til ${data.sent}/${data.total} aktive abonnement(er).${data.removed > 0 ? ` (Fjernet ${data.removed} utdaterte)` : ''}`
-					: `❌ Sendte 0/${data.total}. ${data.removed > 0 ? `Fjernet ${data.removed} utdaterte abonnement. Prøv å deaktivere og aktivere Push på nytt.` : `Feil: ${Array.isArray(data.errors) && data.errors.length > 0 ? data.errors.join(', ') : 'Ukjent'}`}`
+					: `❌ Sendte 0/${data.total}. ${data.removed > 0 ? `Fjernet ${data.removed} utdaterte abonnement. Prøv å deaktivere og aktivere Push på nytt.` : `Feil: ${Array.isArray(data.errors) && data.errors.length > 0 ? data.errors.join(', ') : 'Ukjent'}`}${Array.isArray(data.hints) && data.hints.length > 0 ? ` Tips: ${data.hints.join(' ')}` : ''}`
 			};
 			
 			// Refresh status and debug info after test

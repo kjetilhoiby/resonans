@@ -10,7 +10,10 @@ import {
 	trackingSeriesExamples
 } from '$lib/db/schema';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
-import { TaskExecutionService } from '$lib/server/services/task-execution-service';
+import {
+	TASK_PROGRESS_SKIP_REASON_PERIOD_TARGET,
+	TaskExecutionService
+} from '$lib/server/services/task-execution-service';
 import { and, desc, eq, gte, lte } from 'drizzle-orm';
 
 export interface TrackingMeasurementInput {
@@ -338,7 +341,7 @@ export async function recordTrackingEvent(params: RecordTrackingEventInput) {
 
 			if (result.skippedByPeriod) {
 				console.log(
-					`[tracking-series] user=${params.userId} skipped task=${series.taskId} event=${saved.id} reason=target_reached`
+					`[tracking-series] user=${params.userId} skipped task=${series.taskId} event=${saved.id} reason=${result.skipReason ?? TASK_PROGRESS_SKIP_REASON_PERIOD_TARGET}`
 				);
 			}
 		}

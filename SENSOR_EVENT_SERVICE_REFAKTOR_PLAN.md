@@ -238,6 +238,8 @@ Oppdatert 2026-04-22:
 - `TaskExecutionService` har nå opt-in periodetarget-validering (dag/uke/måned + periodId-vinduer) aktivert for automatiske progress-paths.
 - Periodevalidering er utvidet til `tracking-series` og `sensor-goal-automation`, med eksplisitt skip-observability (`skippedByPeriod`) i jobblogg.
 - Auto-progress i `tracking-series` og `sensor-goal-automation` går nå via `ensureTaskProgress` med dedupe-nøkler, slik at flytene er idempotente ved retries/replays.
+- `TaskExecutionService.ensureTaskProgress` returnerer nå standardisert `skipReason` (`duplicate` / `period_target_reached`) for mer konsistent observability.
+- `/api/cron/withings-sync` eksponerer nå aggregerte automation-tall (`registered`, `skippedByPeriod`, `skippedDuplicate`) i responsen.
 
 ### 1) WorkoutProjectionService (høy)
 

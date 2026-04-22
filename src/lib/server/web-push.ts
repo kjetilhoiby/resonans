@@ -39,11 +39,26 @@ export function getWebPushPublicKey(): string | null {
 export async function sendWebPush(
 	subscription: webpush.PushSubscription,
 	payload: Record<string, unknown>
-): Promise<{ ok: boolean; statusCode?: number; error?: string }> {
+): Promise<{
+	ok: boolean;
+	statusCode?: number;
+	error?: string;
+	errorBody?: string;
+	endpointHost?: string;
+	isTimeout?: boolean;
+}> {
 	ensureConfigured();
 	if (!configured) {
 		return { ok: false, error: 'Web push is not configured (missing VAPID keys).' };
 	}
+
+	const endpointHost = (() => {
+		try {
+			return new URL(subscription.endpoint).host;
+		} catch {
+			return undefined;
+		}
+	})();
 
 	try {
 		const timeoutMs = getPushTimeoutMs();
@@ -51,13 +66,26 @@ export async function sendWebPush(
 			TTL: 60,
 			timeout: timeoutMs
 		});
-		return { ok: true };
+		return { ok: true, endpointHost };
 	} catch (error) {
-		const statusCode = (error as { statusCode?: number }).statusCode;
+		const err = error as {
+			statusCode?: number;
+			body?: string;
+			code?: string;
+			message?: string;
+		};
+		const statusCode = err.statusCode;
+		const body = typeof err.body === 'string' && err.body.trim().length > 0 ? err.body.trim() : undefined;
+		const message = error instanceof Error ? error.message : err.message || 'Unknown push error';
+		const isTimeout = err.code === 'ETIMEDOUT' || /timed?\s*out|socket timeout/i.test(message);
+
 		return {
 			ok: false,
 			statusCode,
-			error: error instanceof Error ? error.message : 'Unknown push error'
+			error: message,
+			errorBody: body,
+			endpointHost,
+			isTimeout
 		};
 	}
 }

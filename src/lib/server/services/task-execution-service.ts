@@ -26,6 +26,22 @@ export interface LogProgressParams {
 	completedAt?: Date;
 }
 
+export const TASK_PROGRESS_SKIP_REASON_DUPLICATE = 'duplicate' as const;
+export const TASK_PROGRESS_SKIP_REASON_PERIOD_TARGET = 'period_target_reached' as const;
+
+export type TaskProgressSkipReason =
+	| typeof TASK_PROGRESS_SKIP_REASON_DUPLICATE
+	| typeof TASK_PROGRESS_SKIP_REASON_PERIOD_TARGET;
+
+export type EnsureTaskProgressResult = {
+	record: { id: string; completedAt: Date } | null;
+	created: boolean;
+	skippedDuplicate: boolean;
+	skippedByPeriod: boolean;
+	skipReason: TaskProgressSkipReason | null;
+	periodCheck?: Awaited<ReturnType<typeof TaskExecutionService.canRecordTaskProgress>>;
+};
+
 type TaskPeriodWindow = {
 	start: Date;
 	endExclusive: Date;
@@ -204,7 +220,7 @@ export class TaskExecutionService {
 		return record;
 	}
 
-	static async ensureTaskProgress(params: EnsureTaskProgressParams) {
+	static async ensureTaskProgress(params: EnsureTaskProgressParams): Promise<EnsureTaskProgressResult> {
 		const existing = await db.query.progress.findFirst({
 			where: and(
 				eq(progress.taskId, params.taskId),
@@ -215,7 +231,13 @@ export class TaskExecutionService {
 		});
 
 		if (existing) {
-			return { record: existing, created: false, skippedDuplicate: true, skippedByPeriod: false };
+			return {
+				record: existing,
+				created: false,
+				skippedDuplicate: true,
+				skippedByPeriod: false,
+				skipReason: TASK_PROGRESS_SKIP_REASON_DUPLICATE
+			};
 		}
 
 		if (params.enforcePeriodTarget) {
@@ -227,7 +249,14 @@ export class TaskExecutionService {
 			});
 
 			if (!periodCheck.allowed) {
-				return { record: null, created: false, skippedByPeriod: true, periodCheck };
+				return {
+					record: null,
+					created: false,
+					skippedDuplicate: false,
+					skippedByPeriod: true,
+					skipReason: TASK_PROGRESS_SKIP_REASON_PERIOD_TARGET,
+					periodCheck
+				};
 			}
 		}
 
@@ -239,7 +268,13 @@ export class TaskExecutionService {
 			completedAt: params.completedAt
 		});
 
-		return { record, created: true, skippedDuplicate: false, skippedByPeriod: false };
+		return {
+			record,
+			created: true,
+			skippedDuplicate: false,
+			skippedByPeriod: false,
+			skipReason: null
+		};
 	}
 
 	static async deleteProgressRecord(progressId: string) {

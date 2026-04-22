@@ -22,6 +22,9 @@ export const POST: RequestHandler = async ({ locals }) => {
 	let sent = 0;
 	let removed = 0;
 	const errors: string[] = [];
+	const failuresByHost: Record<string, number> = {};
+	let forbiddenCount = 0;
+	let timeoutCount = 0;
 
 	for (const sub of subscriptions) {
 		const result = await sendWebPush(
@@ -40,7 +43,9 @@ export const POST: RequestHandler = async ({ locals }) => {
 			}
 		);
 
-		console.log(`[Push Test] sub=${sub.endpoint.substring(0, 50)}... ok=${result.ok} status=${result.statusCode} error=${result.error}`);
+		console.log(
+			`[Push Test] sub=${sub.endpoint.substring(0, 50)}... host=${result.endpointHost ?? 'unknown'} ok=${result.ok} status=${result.statusCode} timeout=${result.isTimeout ? 'yes' : 'no'} error=${result.error} body=${result.errorBody ?? ''}`
+		);
 
 		if (result.ok) {
 			sent += 1;
@@ -51,7 +56,16 @@ export const POST: RequestHandler = async ({ locals }) => {
 			continue;
 		}
 
-		errors.push(`[${result.statusCode ?? 'no-status'}] ${result.error ?? 'unknown'}`);
+		if (result.endpointHost) {
+			failuresByHost[result.endpointHost] = (failuresByHost[result.endpointHost] ?? 0) + 1;
+		}
+
+		if (result.statusCode === 403) forbiddenCount += 1;
+		if (result.isTimeout) timeoutCount += 1;
+
+		const bodySuffix = result.errorBody ? ` | body=${result.errorBody}` : '';
+		const hostPrefix = result.endpointHost ? `${result.endpointHost} ` : '';
+		errors.push(`[${result.statusCode ?? 'no-status'}] ${hostPrefix}${result.error ?? 'unknown'}${bodySuffix}`);
 
 		// 400, 404, 410 = subscription is invalid/expired, remove it
 		const gone = result.statusCode === 400 || result.statusCode === 404 || result.statusCode === 410;
@@ -66,5 +80,31 @@ export const POST: RequestHandler = async ({ locals }) => {
 		}
 	}
 
-	return json({ success: true, sent, removed, total: subscriptions.length, errors });
+	const hints: string[] = [];
+	if (forbiddenCount > 0) {
+		hints.push(
+			'403 fra push-provider tyder ofte på VAPID-problem (feil/rotert nøkkel eller ugyldig VAPID_SUBJECT) eller subscriptions laget med gammel nøkkel.'
+		);
+	}
+	if (timeoutCount > 0) {
+		hints.push('Minst ett push-kall fikk socket-timeout. Dette kan skyldes midlertidig nettverksproblem eller treg push-provider.');
+	}
+
+	if (forbiddenCount === subscriptions.length && subscriptions.length > 0) {
+		hints.push('Alle aktive subscriptions feilet med 403. Verifiser at produksjon bruker riktig VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY-par, og re-aktiver Push i PWA.');
+	}
+
+	return json({
+		success: true,
+		sent,
+		removed,
+		total: subscriptions.length,
+		errors,
+		failuresByHost,
+		hints,
+		stats: {
+			forbidden: forbiddenCount,
+			timeouts: timeoutCount
+		}
+	});
 };

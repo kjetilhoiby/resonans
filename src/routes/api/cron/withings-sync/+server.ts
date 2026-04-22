@@ -69,6 +69,18 @@ export const GET: RequestHandler = async ({ request }) => {
 
 	const succeeded = results.filter((r) => r.success).length;
 	const failed = results.filter((r) => !r.success).length;
+	const automationTotals = results.reduce(
+		(acc, row) => {
+			const automation = row.success ? (row.automation as Record<string, unknown> | undefined) : undefined;
+			acc.registered += typeof automation?.registered === 'number' ? automation.registered : 0;
+			acc.skippedByPeriod +=
+				typeof automation?.skippedByPeriod === 'number' ? automation.skippedByPeriod : 0;
+			acc.skippedDuplicate +=
+				typeof automation?.skippedDuplicate === 'number' ? automation.skippedDuplicate : 0;
+			return acc;
+		},
+		{ registered: 0, skippedByPeriod: 0, skippedDuplicate: 0 }
+	);
 
-	return json({ success: true, users: userIds.length, succeeded, failed, results });
+	return json({ success: true, users: userIds.length, succeeded, failed, automationTotals, results });
 };

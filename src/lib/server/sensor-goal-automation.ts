@@ -1,6 +1,9 @@
 import { db } from '$lib/db';
 import { sensorGoals, sensorEvents } from '$lib/db/schema';
-import { TaskExecutionService } from '$lib/server/services/task-execution-service';
+import {
+	TASK_PROGRESS_SKIP_REASON_PERIOD_TARGET,
+	TaskExecutionService
+} from '$lib/server/services/task-execution-service';
 import { getSensorGoalMetricTypesForSportType } from '$lib/server/workout-taxonomy';
 import { eq, and, gte } from 'drizzle-orm';
 
@@ -117,7 +120,7 @@ export async function registerWorkoutsAsProgress(userId: string, syncStartTime: 
 						if (result.skippedByPeriod) {
 							skippedByPeriod++;
 							console.log(
-								`[sensor-automation] user=${userId} skipped task=${targetTask.id} workout=${sensorEvent.id} reason=target_reached`
+								`[sensor-automation] user=${userId} skipped task=${targetTask.id} workout=${sensorEvent.id} reason=${result.skipReason ?? TASK_PROGRESS_SKIP_REASON_PERIOD_TARGET}`
 							);
 						} else {
 							skippedDuplicate++;
