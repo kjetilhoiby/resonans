@@ -2,6 +2,13 @@ import webpush from 'web-push';
 import { env } from '$env/dynamic/private';
 
 let configured = false;
+const DEFAULT_PUSH_TIMEOUT_MS = 10000;
+
+function getPushTimeoutMs(): number {
+	const fromEnv = Number(env.WEB_PUSH_TIMEOUT_MS);
+	if (Number.isFinite(fromEnv) && fromEnv >= 1000) return Math.floor(fromEnv);
+	return DEFAULT_PUSH_TIMEOUT_MS;
+}
 
 export function getMissingWebPushEnvVars(): string[] {
 	const missing: string[] = [];
@@ -39,7 +46,11 @@ export async function sendWebPush(
 	}
 
 	try {
-		await webpush.sendNotification(subscription, JSON.stringify(payload));
+		const timeoutMs = getPushTimeoutMs();
+		await webpush.sendNotification(subscription, JSON.stringify(payload), {
+			TTL: 60,
+			timeout: timeoutMs
+		});
 		return { ok: true };
 	} catch (error) {
 		const statusCode = (error as { statusCode?: number }).statusCode;

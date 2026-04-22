@@ -87,6 +87,16 @@
 		return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
 	}
 
+	async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = 15000) {
+		const controller = new AbortController();
+		const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+		try {
+			return await fetch(input, { ...init, signal: controller.signal });
+		} finally {
+			window.clearTimeout(timeoutId);
+		}
+	}
+
 	async function ensureServiceWorkerReady(timeoutMs = 8000): Promise<ServiceWorkerRegistration> {
 		if (!('serviceWorker' in navigator)) {
 			throw new Error('Service worker støttes ikke i denne nettleseren.');
@@ -230,7 +240,7 @@
 		pushLoading = true;
 		pushResult = null;
 		try {
-			const response = await fetch('/api/push/test', { method: 'POST' });
+			const response = await fetchWithTimeout('/api/push/test', { method: 'POST' }, 18000);
 			const data = await response.json();
 			if (!response.ok) {
 				throw new Error(data.error || 'Kunne ikke sende test push');
@@ -249,9 +259,12 @@
 				await fetchDebugInfo();
 			}
 		} catch (error) {
+			const isTimeout = error instanceof DOMException && error.name === 'AbortError';
 			pushResult = {
 				success: false,
-				message: `Kunne ikke sende test-push: ${error instanceof Error ? error.message : 'Ukjent feil'}`
+				message: isTimeout
+					? 'Test-push brukte for lang tid og ble avbrutt. Dette tyder ofte på tregt/sviktende push-endepunkt. Prøv igjen om litt.'
+					: `Kunne ikke sende test-push: ${error instanceof Error ? error.message : 'Ukjent feil'}`
 			};
 		} finally {
 			pushLoading = false;
