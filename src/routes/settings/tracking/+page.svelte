@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { AppPage, PageHeader } from '$lib/components/ui';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -118,12 +119,15 @@
 	const activeCount = $derived(seriesList.filter((s) => s.status === 'active').length);
 </script>
 
-<div class="page">
-	<header class="header">
-		<a href="/settings" class="btn-nav" aria-label="Tilbake til innstillinger">←</a>
-		<h1>Tracking-serier</h1>
-		<p>{activeCount} aktiv{activeCount === 1 ? '' : 'e'} serie{activeCount === 1 ? '' : 'r'}</p>
-	</header>
+<AppPage width="full" theme="dark" className="tracking-page">
+	<PageHeader
+		title="Tracking-serier"
+		subtitle={`${activeCount} aktiv${activeCount === 1 ? '' : 'e'} serie${activeCount === 1 ? '' : 'r'}`}
+		titleHref="/settings"
+		titleLabel="Gå til innstillinger"
+	/>
+
+	<div class="tracking-content">
 
 	{#if seriesList.length === 0}
 		<section class="card empty-card">
@@ -255,23 +259,26 @@
 			<li><strong>Prompt-hint</strong>: Hjelper AI matche bilder til riktig serie.</li>
 		</ul>
 	</section>
-</div>
+	</div>
+</AppPage>
 
 <style>
-	.page { max-width: 840px; margin: 0 auto; padding: 1rem; color: var(--text-secondary); }
-	.header { margin-bottom: 1rem; }
-	.header h1 { margin: 0.4rem 0 0.2rem; color: var(--text-primary); }
-	.header p { margin: 0; color: var(--text-tertiary); }
-	.card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 1rem; margin-bottom: 1rem; }
+	:global(.tracking-page) { color: var(--text-secondary); }
+	.tracking-content { display: flex; flex-direction: column; gap: 1rem; }
+	.card {
+		background: #171717;
+		border: none;
+		border-radius: 12px;
+		padding: 1rem;
+	}
 	.card.is-archived { opacity: 0.55; }
-	.btn-nav { color: var(--text-primary); text-decoration: none; }
 	.btn-primary, .btn-secondary, .btn-danger { font-size: 0.875rem; }
 	.row { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.7rem; }
 	.field { margin-bottom: 0.85rem; }
 	.field-label { display: block; margin-bottom: 0.35rem; font-size: 0.83rem; color: var(--text-tertiary); }
 	.check-field { display: flex; align-items: center; gap: 0.55rem; }
 	.check-field label { margin: 0; font-size: 0.9rem; color: var(--text-secondary); cursor: pointer; }
-	.input { width: 100%; padding: 0.6rem; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-primary); color: var(--text-primary); box-sizing: border-box; }
+	.input { width: 100%; padding: 0.6rem; border: 1px solid #2a2a2a; border-radius: 8px; background: #111; color: var(--text-primary); box-sizing: border-box; }
 	.hints-input { resize: vertical; min-height: 64px; font-family: inherit; }
 	.ok { color: #4ade80; margin: 0.5rem 0 0; }
 	.err { color: #f87171; margin: 0.5rem 0 0; }
@@ -323,7 +330,7 @@
 	.empty-text { color: var(--text-tertiary); margin: 0; }
 	.event-list { display: flex; flex-direction: column; gap: 0.85rem; }
 	.event-row { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; padding-top: 0.2rem; }
-	.event-row + .event-row { border-top: 1px solid var(--border-color); padding-top: 0.95rem; }
+	.event-row + .event-row { border-top: 1px solid color-mix(in srgb, var(--border-color) 50%, transparent); padding-top: 0.95rem; }
 	.event-copy { min-width: 0; }
 	.event-title { margin: 0 0 0.2rem; color: var(--text-primary); font-size: 0.95rem; }
 	.event-meta { margin: 0 0 0.2rem; color: var(--text-tertiary); font-size: 0.8rem; }

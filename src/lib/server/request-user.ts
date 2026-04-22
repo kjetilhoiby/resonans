@@ -3,6 +3,7 @@ import { dev } from '$app/environment';
 import { error } from '@sveltejs/kit';
 import { DEFAULT_USER_ID, ensureUser } from '$lib/server/users';
 import { isGoogleAuthConfigured } from '$lib/server/auth-config';
+import { resolveApiSecretAuthFromRequest } from '$lib/server/api-secrets';
 
 export const USER_ID_HEADER_NAME = 'x-resonans-user-id';
 export const USER_ID_QUERY_PARAM = 'userId';
@@ -24,6 +25,14 @@ function sanitizeUserId(value: string | null | undefined): string | null {
 }
 
 export async function resolveRequestUserId(event: RequestEvent): Promise<string> {
+	if (event.url.pathname.startsWith('/api/')) {
+		const apiSecretAuth = event.locals.apiSecretAuth ?? await resolveApiSecretAuthFromRequest(event.request);
+		if (apiSecretAuth?.userId) {
+			event.locals.apiSecretAuth = apiSecretAuth;
+			return apiSecretAuth.userId;
+		}
+	}
+
 	if (typeof event.locals.auth === 'function') {
 		const session = await event.locals.auth();
 		const authenticatedUserId = sanitizeUserId(session?.user?.id);

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { AppPage, PageHeader } from '$lib/components/ui';
 	import { onMount } from 'svelte';
 	import { CATEGORIES, SUBCATEGORIES } from '$lib/integrations/transaction-categories-client';
 	import type { CategoryId } from '$lib/integrations/transaction-categories-client';
@@ -311,17 +312,12 @@
 	});
 </script>
 
-<div class="merchants-page">
-	<header class="page-header">
-		<div class="header-top">
-			<a href="/settings/classification" class="back-btn" aria-label="Tilbake">
-				<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-					<polyline points="15 18 9 12 15 6"></polyline>
-				</svg>
-			</a>
-			<h1>AI Merchant Taxonomy</h1>
-		</div>
-	</header>
+<AppPage width="full" theme="dark" className="merchants-page">
+	<PageHeader
+		title="AI Merchant Taxonomy"
+		titleHref="/settings/classification"
+		titleLabel="Gå til klassifisering"
+	/>
 
 	<main class="content">
 		<section class="info-box">
@@ -571,7 +567,7 @@
 			</section>
 		{/if}
 	</main>
-</div>
+</AppPage>
 
 {#if showOverrideModal && selectedMapping}
 	<div
@@ -693,52 +689,7 @@
 {/if}
 
 <style>
-	.merchants-page {
-		min-height: 100vh;
-		background: #0f0f0f;
-		color: #aaa;
-	}
-
-	.page-header {
-		background: #111;
-		border-bottom: 1px solid #2a2a2a;
-		padding: 1rem;
-		position: sticky;
-		top: 0;
-		z-index: 10;
-	}
-
-	.header-top {
-		max-width: 1200px;
-		margin: 0 auto;
-		display: flex;
-		align-items: center;
-		gap: 1rem;
-	}
-
-	.back-btn {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 36px;
-		height: 36px;
-		background: #1a1a1a;
-		border: 1px solid #2a2a2a;
-		border-radius: 10px;
-		color: #ccc;
-		text-decoration: none;
-	}
-
-	.back-btn:hover {
-		background: #222;
-	}
-
-	h1 {
-		margin: 0;
-		font-size: 1.5rem;
-		font-weight: 700;
-		color: #eee;
-	}
+	:global(.merchants-page) { color: #aaa; }
 
 	.content {
 		max-width: 1200px;

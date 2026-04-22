@@ -1,12 +1,14 @@
 // See https://svelte.dev/docs/kit/types#app.d.ts
 // for information about these interfaces
 import type { DefaultSession } from '@auth/sveltekit';
+import type { ApiSecretAuthContext } from '$lib/server/api-secrets';
 
 declare global {
 	namespace App {
 		// interface Error {}
 		interface Locals {
 			userId: string;
+			apiSecretAuth?: ApiSecretAuthContext;
 		}
 		// interface PageData {}
 		// interface PageState {}

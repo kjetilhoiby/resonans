@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { AppPage, PageHeader } from '$lib/components/ui';
 	import { onMount } from 'svelte';
 	import { CATEGORIES } from '$lib/integrations/transaction-categories-client';
 
@@ -97,17 +98,12 @@
 	}
 </script>
 
-<div class="classification-page">
-	<header class="page-header">
-		<div class="header-top">
-			<a href="/settings" class="back-btn" aria-label="Tilbake">
-				<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-					<polyline points="15 18 9 12 15 6"></polyline>
-				</svg>
-			</a>
-			<h1>Klassifisering</h1>
-		</div>
-	</header>
+<AppPage width="full" theme="dark" className="classification-page">
+	<PageHeader
+		title="Klassifisering"
+		titleHref="/settings"
+		titleLabel="Gå til innstillinger"
+	/>
 
 	<main class="content">
 		<section class="info-box">
@@ -263,65 +259,18 @@
 			</section>
 		{/if}
 	</main>
-</div>
+</AppPage>
 
 <style>
-	.classification-page {
-		min-height: 100vh;
-		background: #0f0f0f;
-		color: #aaa;
-	}
-
-	.page-header {
-		background: #111;
-		border-bottom: 1px solid #2a2a2a;
-		padding: 1rem;
-		position: sticky;
-		top: 0;
-		z-index: 10;
-	}
-
-	.header-top {
-		max-width: 900px;
-		margin: 0 auto;
-		display: flex;
-		align-items: center;
-		gap: 1rem;
-	}
-
-	.back-btn {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 36px;
-		height: 36px;
-		background: #1a1a1a;
-		border: 1px solid #2a2a2a;
-		border-radius: 10px;
-		color: #ccc;
-		text-decoration: none;
-	}
-
-	.back-btn:hover {
-		background: #222;
-	}
-
-	h1 {
-		margin: 0;
-		font-size: 1.5rem;
-		font-weight: 700;
-		color: #eee;
-	}
+	:global(.classification-page) { color: #aaa; }
 
 	.content {
-		max-width: 900px;
-		margin: 0 auto;
 		padding: 1.5rem 1rem;
 	}
 
 	.info-box {
-		background: #1a1a1a;
-		border: 1px solid #2a2a2a;
+		background: #171717;
+		border: none;
 		border-radius: 12px;
 		padding: 1.25rem;
 		margin-bottom: 1.5rem;
@@ -359,23 +308,23 @@
 	}
 
 	.hierarchy-item {
-		background: #1a1a1a;
-		border: 1px solid #2a2a2a;
+		background: #171717;
+		border: none;
 		border-radius: 12px;
 		padding: 1.25rem;
 		margin-bottom: 1rem;
 	}
 
 	.hierarchy-item.priority-1 {
-		border-left: 3px solid #ba68ff;
+		box-shadow: inset 3px 0 0 #34d399;
 	}
 
 	.hierarchy-item.priority-2 {
-		border-left: 3px solid #4a5af0;
+		box-shadow: inset 3px 0 0 #4a5af0;
 	}
 
 	.hierarchy-item.priority-3 {
-		border-left: 3px solid #888;
+		box-shadow: inset 3px 0 0 #78808d;
 	}
 
 	.hierarchy-header {
@@ -424,7 +373,7 @@
 	}
 
 	.hierarchy-link:hover {
-		color: #6a7aff;
+		color: #7c8ef5;
 	}
 
 	.hierarchy-links {
@@ -463,30 +412,9 @@
 		margin-bottom: 2rem;
 	}
 
-	.btn-primary {
-		background: #4a5af0;
-		border: none;
-		border-radius: 10px;
-		padding: 0.75rem 1.25rem;
-		color: white;
-		font: inherit;
-		font-weight: 600;
-		cursor: pointer;
-		transition: background 0.15s;
-	}
-
-	.btn-primary:hover:not(:disabled) {
-		background: #3a4adf;
-	}
-
-	.btn-primary:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
-
 	.btn-ghost {
 		background: transparent;
-		border: 1px solid #2a2a2a;
+		border: none;
 		border-radius: 8px;
 		padding: 0.5rem 1rem;
 		color: #aaa;
@@ -497,7 +425,6 @@
 
 	.btn-ghost:hover {
 		background: #1a1a1a;
-		border-color: #3a3a3a;
 	}
 
 	.loading {

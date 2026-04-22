@@ -12,6 +12,16 @@ export const users = pgTable('users', {
 	partnerConfirmedAt: timestamp('partner_confirmed_at'),
 	googleChatWebhook: text('google_chat_webhook'),
 	notificationSettings: jsonb('notification_settings').$type<{
+		notificationChannels?: {
+			googleChat?: Array<{ id: string; name: string; webhook: string; enabled?: boolean }>;
+			routing?: {
+				dailyCheckIn?: string[];
+				dayPlanning?: string[];
+				dayClose?: string[];
+				relationshipCheckinMorning?: string[];
+				digestDay?: string[];
+			};
+		};
 		dailyCheckIn?: { enabled: boolean; time: string }; // format: "09:00"
 		dayPlanning?: { enabled: boolean; time: string }; // default "07:00"
 		dayClose?: { enabled: boolean; time: string }; // default "21:00"
@@ -48,6 +58,21 @@ export const authAccounts = pgTable('auth_accounts', {
 }, (table) => ({
 	uniqueProviderAccount: unique().on(table.provider, table.providerAccountId),
 	uniqueUserProvider: unique().on(table.userId, table.provider)
+}));
+
+export const userApiSecrets = pgTable('user_api_secrets', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	label: text('label').notNull(),
+	secretPrefix: text('secret_prefix').notNull(),
+	secretHash: text('secret_hash').notNull().unique(),
+	lastUsedAt: timestamp('last_used_at'),
+	expiresAt: timestamp('expires_at'),
+	revokedAt: timestamp('revoked_at'),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => ({
+	idxUserActiveSecrets: index('user_api_secrets_user_active_idx').on(table.userId, table.revokedAt, table.createdAt),
+	idxUserLastUsed: index('user_api_secrets_user_last_used_idx').on(table.userId, table.lastUsedAt)
 }));
 
 export const allowedEmails = pgTable('allowed_emails', {
@@ -545,12 +570,20 @@ export const usersRelations = relations(users, ({ many }) => ({
 	themeFiles: many(themeFiles),
 	trackingSeries: many(trackingSeries),
 	trackingSeriesExamples: many(trackingSeriesExamples),
-	nudgeEvents: many(nudgeEvents)
+	nudgeEvents: many(nudgeEvents),
+	apiSecrets: many(userApiSecrets)
 }));
 
 export const authAccountsRelations = relations(authAccounts, ({ one }) => ({
 	user: one(users, {
 		fields: [authAccounts.userId],
+		references: [users.id]
+	})
+}));
+
+export const userApiSecretsRelations = relations(userApiSecrets, ({ one }) => ({
+	user: one(users, {
+		fields: [userApiSecrets.userId],
 		references: [users.id]
 	})
 }));

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { AppPage, PageHeader } from '$lib/components/ui';
 	import { onMount } from 'svelte';
 	import type { PageData } from './$types';
 
@@ -50,14 +51,6 @@
 	let googleSheetsStatus = $state<any>(null);
 	let loadingGoogleSheets = $state(false);
 
-	let dropboxStatus = $state<any>(null);
-	let loadingDropbox = $state(false);
-	let syncingDropbox = $state(false);
-	let loadingDropboxFolders = $state(false);
-	let dropboxResult = $state<{ success: boolean; message: string } | null>(null);
-	let dropboxFolders = $state<Array<{ id: string; name: string; path: string }>>([]);
-	let selectedDropboxFolder = $state('');
-
 	let spondStatus = $state<any>(null);
 	let loadingSpond = $state(false);
 	let syncingSpond = $state(false);
@@ -80,7 +73,6 @@
 	const connectedCount = $derived(
 		(withingsStatus?.connected ? 1 : 0) +
 		(sparebank1Status?.connected ? 1 : 0) +
-		(dropboxStatus?.connected ? 1 : 0) +
 		(googleSheetsStatus?.connected ? 1 : 0) +
 		(spondStatus?.connected ? 1 : 0) +
 		(webhook.trim().length > 0 ? 1 : 0)
@@ -90,7 +82,6 @@
 		await Promise.all([
 			loadWithingsStatus(),
 			loadSparebank1Status(),
-			loadDropboxStatus(),
 			loadGoogleSheetsStatus(),
 			loadSpondStatus(),
 			loadAnchorAccounts()
@@ -334,93 +325,17 @@
 		await loadGoogleSheetsStatus();
 	}
 
-	async function loadDropboxStatus() {
-		loadingDropbox = true;
-		try {
-			const res = await fetch('/api/sensors/dropbox/status');
-			if (res.ok) {
-				dropboxStatus = await res.json();
-				selectedDropboxFolder = dropboxStatus?.sensor?.dropboxFolderPath || '';
-			}
-		} finally {
-			loadingDropbox = false;
-		}
-	}
-
-	async function loadDropboxFolders(path = '') {
-		loadingDropboxFolders = true;
-		dropboxResult = null;
-		try {
-			const res = await fetch(`/api/sensors/dropbox/folders?path=${encodeURIComponent(path)}`);
-			const payload = await res.json();
-			if (!res.ok) throw new Error(payload.error || 'Kunne ikke hente mapper');
-			dropboxFolders = payload.folders || [];
-		} catch (error) {
-			dropboxResult = {
-				success: false,
-				message: error instanceof Error ? error.message : 'Kunne ikke hente mapper'
-			};
-		} finally {
-			loadingDropboxFolders = false;
-		}
-	}
-
-	async function saveDropboxWatchFolder() {
-		dropboxResult = null;
-		try {
-			const res = await fetch('/api/sensors/dropbox/watch-folder', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ path: selectedDropboxFolder })
-			});
-			const payload = await res.json();
-			if (!res.ok) throw new Error(payload.error || 'Kunne ikke lagre mappevalg');
-			dropboxResult = { success: true, message: payload.message || 'Mappe lagret' };
-			await loadDropboxStatus();
-		} catch (error) {
-			dropboxResult = {
-				success: false,
-				message: error instanceof Error ? error.message : 'Ukjent feil'
-			};
-		}
-	}
-
-	async function syncDropbox(fullRescan = false) {
-		syncingDropbox = true;
-		dropboxResult = null;
-		try {
-			const suffix = fullRescan ? '?fullRescan=true' : '';
-			const res = await fetch(`/api/sensors/dropbox/sync${suffix}`, { method: 'POST' });
-			const payload = await res.json();
-			if (!res.ok) throw new Error(payload.error || 'Dropbox sync feilet');
-			dropboxResult = { success: true, message: payload.message || 'Dropbox synkronisert' };
-			await loadDropboxStatus();
-		} catch (error) {
-			dropboxResult = {
-				success: false,
-				message: error instanceof Error ? error.message : 'Ukjent feil'
-			};
-		} finally {
-			syncingDropbox = false;
-		}
-	}
-
-	async function disconnectDropbox() {
-		if (!confirm('Koble fra Dropbox?')) return;
-		await fetch('/api/sensors/dropbox/disconnect', { method: 'POST' });
-		dropboxFolders = [];
-		selectedDropboxFolder = '';
-		await loadDropboxStatus();
-	}
 </script>
 
-<div class="page">
-	<header class="header">
-		<a href="/settings" class="btn-nav" aria-label="Tilbake til innstillinger">←</a>
-		<h1>Kilder</h1>
-		<p>{connectedCount}/5 tilkoblet</p>
-	</header>
+<AppPage width="full" theme="dark" className="sources-page">
+	<PageHeader
+		title="Kilder"
+		subtitle={`${connectedCount}/4 tilkoblet`}
+		titleHref="/settings"
+		titleLabel="Gå til innstillinger"
+	/>
 
+	<div class="sources-content">
 	<section class="card">
 		<h2>Google Chat og tidssone</h2>
 		<div class="field">
@@ -658,39 +573,6 @@
 	</section>
 
 	<section class="card">
-		<h2>Dropbox (TCX/GPX)</h2>
-		{#if loadingDropbox}
-			<p>Laster...</p>
-		{:else if dropboxStatus?.connected}
-			<p class="ok">Tilkoblet</p>
-			<div class="field">
-				<label for="dropbox-folder">Mappe som overvåkes</label>
-				<select id="dropbox-folder" class="input" bind:value={selectedDropboxFolder}>
-					<option value="">Velg mappe...</option>
-					{#each dropboxFolders as folder}
-						<option value={folder.path}>{folder.path}</option>
-					{/each}
-				</select>
-			</div>
-			<div class="row">
-				<button class="btn-secondary" onclick={() => loadDropboxFolders('')} disabled={loadingDropboxFolders}>
-					{loadingDropboxFolders ? 'Henter mapper...' : 'Hent mapper'}
-				</button>
-				<button class="btn-secondary" onclick={saveDropboxWatchFolder} disabled={!selectedDropboxFolder}>Lagre mappe</button>
-				<button class="btn-secondary" onclick={() => syncDropbox(false)} disabled={syncingDropbox}>{syncingDropbox ? 'Synker...' : 'Synk nå'}</button>
-				<button class="btn-secondary" onclick={() => syncDropbox(true)} disabled={syncingDropbox}>Rescan</button>
-				<button class="btn-ghost" onclick={disconnectDropbox}>Koble fra</button>
-			</div>
-			{#if dropboxStatus?.sensor?.dropboxFolderPath}
-				<p>Aktiv mappe: {dropboxStatus.sensor.dropboxFolderPath}</p>
-			{/if}
-		{:else}
-			<a href="/api/sensors/dropbox/connect" class="btn-primary">Koble til Dropbox</a>
-		{/if}
-		{#if dropboxResult}<p class={dropboxResult.success ? 'ok' : 'err'}>{dropboxResult.message}</p>{/if}
-	</section>
-
-	<section class="card">
 		<h2>Kontoutskrifter – SpareBank 1 (PDF)</h2>
 		<p>Last opp en ZIP-fil med SpareBank 1 PDF-kontoutskrifter for å importere historiske transaksjoner og saldo-ankre.</p>
 		<label class="upload-label">
@@ -749,42 +631,78 @@
 			<a href="/api/sensors/google-sheets/connect" class="btn-primary">Koble til Google Regneark</a>
 		{/if}
 	</section>
-</div>
+	</div>
+</AppPage>
 
 <style>
-	.page { max-width: 840px; margin: 0 auto; padding: 1rem; color: var(--text-secondary); }
-	.header { margin-bottom: 1rem; }
-	.header h1 { margin: 0.4rem 0 0.2rem; color: var(--text-primary); }
-	.header p { margin: 0; color: var(--text-tertiary); }
-	.card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 1rem; margin-bottom: 1rem; }
-	.card h2 { margin-top: 0; color: var(--text-primary); }
+	:global(.sources-page) {
+		color: var(--text-secondary);
+		--surface: #171717;
+		--surface-soft: #1c1c1c;
+		--surface-strong: #202020;
+		--line: #2a2a2a;
+		--accent: #4a5af0;
+	}
+
+	.sources-content {
+		display: flex;
+		flex-direction: column;
+		gap: 0.95rem;
+	}
+
+	.card {
+		background: var(--surface);
+		border: none;
+		border-radius: 18px;
+		padding: 1rem 1rem 1.05rem;
+		box-shadow: none;
+	}
+	.card h2 {
+		margin: 0 0 0.55rem;
+		color: #e4e4e4;
+		font-size: 1rem;
+		font-weight: 620;
+	}
 	.field { margin-bottom: 0.9rem; }
-	.field label { display: block; margin-bottom: 0.4rem; color: var(--text-primary); }
-	.field-title { margin: 0 0 0.4rem; color: var(--text-primary); }
-	.input { width: 100%; padding: 0.65rem; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-primary); color: var(--text-primary); }
+	.field label { display: block; margin-bottom: 0.4rem; color: #bdbdbd; font-size: 0.82rem; }
+	.field-title { margin: 0 0 0.4rem; color: #c8c8c8; font-size: 0.82rem; }
+	.input {
+		width: 100%;
+		padding: 0.65rem;
+		border: 1px solid var(--line);
+		border-radius: 10px;
+		background: #111;
+		color: #f0f0f0;
+	}
+	.input:focus {
+		outline: none;
+		border-color: var(--accent);
+		box-shadow: 0 0 0 2px rgba(74, 90, 240, 0.18);
+	}
 	.row { display: flex; gap: 0.6rem; flex-wrap: wrap; }
 	.ok { color: #4ade80; margin: 0.6rem 0 0; }
 	.err { color: #f87171; margin: 0.6rem 0 0; }
-	.meta { color: var(--text-tertiary); font-size: 0.85rem; margin: 0.2rem 0 0.6rem; }
-	.field-desc { color: var(--text-secondary); font-size: 0.88rem; margin: 0 0 0.8rem; }
-	.btn-nav { color: var(--text-primary); text-decoration: none; }
+	.meta { color: #7f7f7f; font-size: 0.82rem; margin: 0.2rem 0 0.6rem; }
+	.field-desc { color: #9b9b9b; font-size: 0.84rem; margin: 0 0 0.8rem; }
 	.btn-primary, .btn-secondary, .btn-ghost { text-decoration: none; }
+	button.btn-primary { background: var(--accent); }
+	button.btn-primary:hover:not(:disabled) { background: #3f4de0; }
 	.upload-label { display: inline-flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; }
 	.anchor-table { width: 100%; border-collapse: collapse; margin-top: 0.75rem; font-size: 0.82rem; color: var(--text-secondary); }
-	.anchor-table th, .anchor-table td { padding: 0.4rem 0.6rem; text-align: left; border-bottom: 1px solid var(--border-color); }
-	.anchor-table th { color: var(--text-tertiary); font-weight: 500; }
+	.anchor-table th, .anchor-table td { padding: 0.4rem 0.6rem; text-align: left; border-bottom: 1px solid #252525; }
+	.anchor-table th { color: #7c7c7c; font-weight: 500; }
 	.details-wrap { margin-top: 0.65rem; }
 	.debug-panel {
 		margin-top: 0.6rem;
 		padding: 0.7rem;
-		border: 1px solid var(--border-color);
+		border: 1px solid #262626;
 		border-radius: 10px;
-		background: color-mix(in oklab, var(--bg-card) 90%, var(--bg-primary) 10%);
+		background: #121212;
 	}
 	.debug-summary, .debug-since { margin: 0 0 0.5rem; font-size: 0.85rem; color: var(--text-secondary); }
 	.debug-table-wrap { overflow-x: auto; }
 	.debug-table { width: 100%; border-collapse: collapse; font-size: 0.79rem; color: var(--text-secondary); }
-	.debug-table th, .debug-table td { padding: 0.34rem 0.45rem; text-align: left; border-bottom: 1px solid var(--border-color); white-space: nowrap; }
+	.debug-table th, .debug-table td { padding: 0.34rem 0.45rem; text-align: left; border-bottom: 1px solid #252525; white-space: nowrap; }
 	.debug-table th { color: var(--text-tertiary); font-weight: 500; }
 	.import-mode-row { align-items: center; gap: 0.5rem; }
 	.option-pill {
@@ -792,9 +710,15 @@
 		align-items: center;
 		gap: 0.45rem;
 		padding: 0.4rem 0.55rem;
-		border: 1px solid var(--border-color);
+		border: 1px solid #292929;
 		border-radius: 10px;
-		background: var(--bg-primary);
+		background: #121212;
 	}
 	.days-input { width: 6rem; padding: 0.35rem 0.45rem; }
+
+	@media (max-width: 720px) {
+		.sources-content {
+			gap: 0.8rem;
+		}
+	}
 </style>

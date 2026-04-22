@@ -27,8 +27,8 @@ const JOBS: CronJob[] = [
 	},
 	{
 		path: '/api/cron/daily-checkin',
-		schedule: '0 9 * * *',
-		description: 'Daglig check-in melding via Google Chat'
+		schedule: '*/5 * * * *',
+		description: 'Daglig check-in melding via Google Chat (lokal tid per bruker, 5-min vindu)'
 	},
 	{
 		path: '/api/cron/day-planning-nudges',

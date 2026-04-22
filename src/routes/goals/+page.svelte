@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { AppPage, PageHeader } from '$lib/components/ui';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import MetricCard from '$lib/components/visualizations/MetricCard.svelte';
 	import TrajectoryChart from '$lib/components/visualizations/TrajectoryChart.svelte';
@@ -227,22 +228,22 @@
 	}
 </script>
 
-<div class="goals-page">
-	<header class="page-header">
-		<div class="header-top">
-			<h1>Mål</h1>
+<AppPage width="full" theme="dark" className="goals-page">
+	<PageHeader title="Mål" titleHref="/" titleLabel="Gå til forsiden">
+		{#snippet actions()}
 			<div class="header-actions">
 				<a href="/" class="btn-icon" title="Chat"><Icon name="chat" size={20} /></a>
 				<a href="/settings" class="btn-icon" title="Innstillinger"><Icon name="settings" size={20} /></a>
 			</div>
+		{/snippet}
+	</PageHeader>
+
+	<div class="header-stats">
+		<div class="stat-card">
+			<div class="stat-value">{data.goals.filter((goal) => goal.status === 'active').length}</div>
+			<div class="stat-label">Aktive mål</div>
 		</div>
-		<div class="header-stats">
-			<div class="stat-card">
-				<div class="stat-value">{data.goals.filter((goal) => goal.status === 'active').length}</div>
-				<div class="stat-label">Aktive mål</div>
-			</div>
-		</div>
-	</header>
+	</div>
 
 	<main class="content">
 		{#if data.goals.length === 0}
@@ -459,34 +460,12 @@
 			</div>
 		{/if}
 	</main>
-</div>
+</AppPage>
 
 <style>
-	.goals-page {
-		min-height: 100vh;
-		background: #0f0f0f;
+	:global(.goals-page) {
 		color: #ccc;
 		font-family: 'Inter', system-ui, sans-serif;
-	}
-
-	.page-header {
-		padding: 1.5rem;
-		background: #111;
-		border-bottom: 1px solid #1e1e1e;
-	}
-
-	.header-top {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: 1.5rem;
-	}
-
-	.page-header h1 {
-		font-size: 2rem;
-		font-weight: 700;
-		margin: 0;
-		color: #e8e8e8;
 	}
 
 	.header-actions {

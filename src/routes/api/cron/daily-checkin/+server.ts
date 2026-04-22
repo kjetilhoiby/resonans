@@ -1,10 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
-import { db } from '$lib/db';
-import { users } from '$lib/db/schema';
-import { getUserActiveGoalsAndTasks } from '$lib/server/goals';
-import { sendGoogleChatMessage, buildDailyCheckInMessage } from '$lib/server/google-chat';
+import { NudgeOrchestrationService } from '$lib/server/services/nudge-orchestration-service';
 
 /**
  * Vercel Cron endpoint for daglige check-ins
@@ -20,102 +17,15 @@ export const GET: RequestHandler = async ({ request, url }) => {
 	}
 
 	try {
-		// Get all users with Google Chat webhook configured and daily check-in enabled
-		const allUsers = await db.query.users.findMany();
-
-		const results: Array<{
-			userId: string;
-			userName: string | null;
-			success: boolean;
-			goalCount?: number;
-			taskCount?: number;
-			error?: string;
-		}> = [];
-		
-		for (const user of allUsers) {
-			// Skip if no webhook configured
-			if (!user.googleChatWebhook) {
-				continue;
-			}
-
-			// Check notification settings
-			const settings = user.notificationSettings as any;
-			if (settings?.dailyCheckIn?.enabled === false) {
-				continue;
-			}
-
-			try {
-				// Get user's active goals and tasks
-				const activeGoals = await getUserActiveGoalsAndTasks(user.id);
-
-				// Calculate progress for each goal
-				const goalsSummary = activeGoals.map((goal) => {
-					let totalProgress = 0;
-					if (goal.tasks.length > 0) {
-						totalProgress = Math.round(
-							goal.tasks.reduce((sum, task) => {
-								const taskProgress = task.progress?.reduce((taskSum: number, p: { value: number | null }) => taskSum + (p.value || 0), 0) || 0;
-								const taskTarget = task.targetValue || 100;
-								return sum + Math.min((taskProgress / taskTarget) * 100, 100);
-							}, 0) / goal.tasks.length
-						);
-					}
-
-					return {
-						title: goal.title,
-						progress: totalProgress,
-						status: goal.status
-					};
-				});
-
-				// Find tasks due today (daily or weekly tasks)
-				const tasksDueToday = activeGoals.flatMap((goal) =>
-					goal.tasks
-						.filter(
-							(task) =>
-								task.frequency === 'daily' ||
-								task.frequency === 'weekly' ||
-								(task.frequency === 'once' && task.status === 'active')
-						)
-						.map((task) => ({
-							title: task.title,
-							goalTitle: goal.title
-						}))
-				);
-
-				// Build and send message
-				const message = buildDailyCheckInMessage({
-					appUrl: url.origin,
-					userName: user.name,
-					goalsSummary: goalsSummary.filter((g) => g.status === 'active'),
-					tasksDueToday
-				});
-
-				const success = await sendGoogleChatMessage(user.googleChatWebhook, message);
-
-				results.push({
-					userId: user.id,
-					userName: user.name,
-					success,
-					goalCount: goalsSummary.length,
-					taskCount: tasksDueToday.length
-				});
-			} catch (error) {
-				console.error(`Failed to send check-in for user ${user.id}:`, error);
-				results.push({
-					userId: user.id,
-					userName: user.name,
-					success: false,
-					error: error instanceof Error ? error.message : 'Unknown error'
-				});
-			}
-		}
+		const result = await NudgeOrchestrationService.runDailyCheckInNudges({
+			appUrl: url.origin,
+			requireRecentTimeWindow: true,
+			windowMinutes: 5
+		});
 
 		return json({
-			success: true,
-			timestamp: new Date().toISOString(),
-			userCount: results.length,
-			results
+			...result,
+			note: 'Kun brukere hvor lokal tid er innenfor siste 5 minutter av dailyCheckIn.time blir sendt i denne kjøringen.'
 		});
 	} catch (error) {
 		console.error('Cron job failed:', error);

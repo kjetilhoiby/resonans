@@ -10,8 +10,8 @@ import {
 	buildWorkoutChatPrompt,
 	type WorkoutContextSummary
 } from '$lib/server/workout-context';
-import { sendWebPush, isWebPushConfigured } from '$lib/server/web-push';
-import { and, eq } from 'drizzle-orm';
+import { PushDeliveryService } from '$lib/server/services/push-delivery-service';
+import { eq } from 'drizzle-orm';
 
 function buildWorkoutChatUrl(appUrl: string, themeId: string, workout: WorkoutContextSummary) {
 	const url = new URL(`/tema/${themeId}`, appUrl);
@@ -58,23 +58,32 @@ export async function notifyUserAboutImportedWorkouts(args: {
 		description: 'Helse, trening, søvn og restitusjon samlet i ett tema.'
 	});
 
-	// Hent web push-abonnementer
-	const pushSubs = isWebPushConfigured()
-		? await db.query.webPushSubscriptions.findMany({
-				where: and(
-					eq(webPushSubscriptions.userId, userId),
-					eq(webPushSubscriptions.disabled, false)
-				)
-			})
-		: [];
-
 	let sent = 0;
 
 	for (const workout of workouts) {
 		const activityUrl = new URL(`/aktivitet/${workout.id}`, appUrl).toString();
+		const workoutChatUrl = buildWorkoutChatUrl(appUrl, healthTheme.id, workout);
+		let pushDelivered = false;
 
-		// Google Chat
-		if (user?.googleChatWebhook) {
+		// Web push (primary channel)
+		const distanceText = workout.distanceKm != null ? ` · ${workout.distanceKm.toFixed(2)} km` : '';
+		const durationText = workout.durationSeconds != null
+			? ` · ${Math.round(workout.durationSeconds / 60)} min`
+			: '';
+		const delivery = await PushDeliveryService.deliverToUser({
+			userId,
+			payload: {
+				title: `${workout.title} importert`,
+				body: `${distanceText}${durationText}`.replace(/^ · /, ''),
+				url: workoutChatUrl,
+				tag: `workout-${workout.id}`
+			},
+			onGone: 'disable'
+		});
+		pushDelivered = delivery.sent > 0;
+
+		// Google Chat fallback (legacy/pre-PWA channel)
+		if (!pushDelivered && user?.googleChatWebhook) {
 			const message: WorkoutImportedMessageData = {
 				appUrl,
 				workoutTitle: workout.title,
@@ -96,34 +105,7 @@ export async function notifyUserAboutImportedWorkouts(args: {
 			if (delivered) sent += 1;
 		}
 
-		// Web push
-		if (pushSubs.length > 0) {
-			const distanceText = workout.distanceKm != null ? ` · ${workout.distanceKm.toFixed(2)} km` : '';
-			const durationText = workout.durationSeconds != null
-				? ` · ${Math.round(workout.durationSeconds / 60)} min`
-				: '';
-
-			for (const sub of pushSubs) {
-				const result = await sendWebPush(
-					{ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-					{
-						title: `${workout.title} importert`,
-						body: `${distanceText}${durationText}`.replace(/^ · /, ''),
-						url: activityUrl,
-						tag: `workout-${workout.id}`
-					}
-				);
-
-				if (!result.ok) {
-					const gone = result.statusCode === 400 || result.statusCode === 404 || result.statusCode === 410;
-					if (gone) {
-						await db.update(webPushSubscriptions)
-							.set({ disabled: true, updatedAt: new Date() })
-							.where(eq(webPushSubscriptions.id, sub.id));
-					}
-				}
-			}
-		}
+		if (pushDelivered) sent += 1;
 	}
 
 	return { attempted: workouts.length, sent };

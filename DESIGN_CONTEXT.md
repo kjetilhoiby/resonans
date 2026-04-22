@@ -4,6 +4,7 @@ Denne filen er ment som kontekst til nye samtaler. Den oppsummerer designprinsip
 
 Relaterte dokumenter:
 - `PWA_DATA_LOADING_PLAN.md` — plan for raskere navigasjon, dashboard-cache, bakgrunnsprefetch og PWA-retning
+- `DESIGN_SYSTEM_MIGRATION_PLAN.md` — full migrasjonsplan fra ad hoc-UI til komponentbasert designsystem
 
 ---
 

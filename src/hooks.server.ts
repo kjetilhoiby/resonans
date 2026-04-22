@@ -1,15 +1,19 @@
 import { sequence } from '@sveltejs/kit/hooks';
 import { redirect, type Handle } from '@sveltejs/kit';
+import { env } from '$env/dynamic/private';
 import { handle as authenticationHandle } from './auth';
 import { isGoogleAuthConfigured } from '$lib/server/auth-config';
 import { startScheduler } from '$lib/server/scheduler';
 import { resolveRequestUserId } from '$lib/server/request-user';
+import { resolveApiSecretAuthFromRequest } from '$lib/server/api-secrets';
 import { db } from '$lib/db';
 import { memories } from '$lib/db/schema';
 import { markNudgeOpened } from '$lib/server/nudge-events';
 
 // Start scheduler when server starts
-startScheduler();
+if (env.ENABLE_IN_APP_SCHEDULER === 'true') {
+	startScheduler();
+}
 
 const PUBLIC_PATH_PREFIXES = ['/auth', '/_app', '/design', '/partner-invite'];
 const PUBLIC_API_PREFIXES = ['/api/cron', '/api/scheduler/trigger', '/api/workouts/email-inbound'];
@@ -33,6 +37,14 @@ function isPublicPath(pathname: string) {
 const authorizationHandle: Handle = async ({ event, resolve }) => {
 	if (!isGoogleAuthConfigured() || isPublicPath(event.url.pathname)) {
 		return resolve(event);
+	}
+
+	if (event.url.pathname.startsWith('/api/')) {
+		const apiSecretAuth = await resolveApiSecretAuthFromRequest(event.request);
+		if (apiSecretAuth) {
+			event.locals.apiSecretAuth = apiSecretAuth;
+			return resolve(event);
+		}
 	}
 
 	// Allow requests that carry an explicit user-id header (e.g. curl / cron jobs)

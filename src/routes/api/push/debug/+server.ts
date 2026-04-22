@@ -16,15 +16,16 @@ function vapidPublicKeyFingerprint(): string | null {
 }
 
 export const GET: RequestHandler = async ({ locals }) => {
+	if (env.PUSH_DEBUG_ENABLED !== 'true') {
+		return json({ error: 'Not found' }, { status: 404 });
+	}
+
 	const userId = locals.userId;
 
 	// Get all subscriptions for this user
 	const forThisUser = await db.query.webPushSubscriptions.findMany({
 		where: eq(webPushSubscriptions.userId, userId)
 	});
-
-	// Get ALL subscriptions (debugging)
-	const all = await db.query.webPushSubscriptions.findMany();
 
 	const fingerprint = vapidPublicKeyFingerprint();
 	const subject = env.VAPID_SUBJECT || '(not set — defaults to mailto:hello@resonans.app)';
@@ -47,13 +48,6 @@ export const GET: RequestHandler = async ({ locals }) => {
 			disabled: sub.disabled,
 			createdAt: sub.createdAt,
 			updatedAt: sub.updatedAt
-		})),
-		totalInDatabase: all.length,
-		allSubscriptions: all.map((sub) => ({
-			id: sub.id,
-			userId: sub.userId,
-			endpoint: sub.endpoint?.substring(0, 50) + '...',
-			disabled: sub.disabled
 		}))
 	});
 };

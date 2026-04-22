@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { AppPage, PageHeader } from '$lib/components/ui';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -90,14 +91,20 @@
 	const doneJobs = $derived(jobs.filter((j) => !['queued', 'running', 'retry'].includes(j.status)));
 </script>
 
-<div class="jobs-page">
-	<header class="jobs-header">
-		<a href="/settings" class="back-link">← Innstillinger</a>
-		<h1 class="jobs-title">Bakgrunnsjobber</h1>
-		<button class="refresh-btn" onclick={refresh} disabled={loading}>
-			{loading ? '…' : '↺ Oppdater'}
-		</button>
-	</header>
+<AppPage width="full" theme="dark" className="jobs-page">
+	<PageHeader
+		title="Bakgrunnsjobber"
+		titleHref="/settings"
+		titleLabel="Gå til innstillinger"
+	>
+		{#snippet actions()}
+			<button class="refresh-btn" onclick={refresh} disabled={loading}>
+				{loading ? '…' : '↺ Oppdater'}
+			</button>
+		{/snippet}
+	</PageHeader>
+
+	<div class="jobs-content">
 
 	{#if activeJobs.length > 0}
 		<section class="jobs-section">
@@ -166,36 +173,18 @@
 			</div>
 		</section>
 	{/if}
-</div>
+	</div>
+</AppPage>
 
 <style>
-	.jobs-page {
-		max-width: 760px;
-		margin: 0 auto;
-		padding: 24px 16px;
+	:global(.jobs-page) {
+		color: var(--text-secondary);
+	}
+
+	.jobs-content {
 		display: flex;
 		flex-direction: column;
 		gap: 24px;
-	}
-
-	.jobs-header {
-		display: flex;
-		align-items: center;
-		gap: 12px;
-	}
-
-	.back-link {
-		color: #666;
-		font-size: 0.85rem;
-		text-decoration: none;
-	}
-	.back-link:hover { color: #aaa; }
-
-	.jobs-title {
-		font-size: 1.2rem;
-		font-weight: 600;
-		margin: 0;
-		flex: 1;
 	}
 
 	.refresh-btn {
@@ -232,8 +221,8 @@
 		display: flex;
 		align-items: flex-start;
 		gap: 10px;
-		background: #0f0f10;
-		border: 1px solid #1e1e1e;
+		background: #171717;
+		border: none;
 		border-radius: 10px;
 		padding: 10px 12px;
 		transition: opacity 0.15s;
@@ -293,13 +282,13 @@
 	.job-btn:hover:not(:disabled) { background: #222; }
 	.job-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-	.job-btn-retry { color: #7ec8a8; border-color: #1e3a2e; }
+	.job-btn-retry { color: #7ec8a8; }
 	.job-btn-retry:hover:not(:disabled) { background: #0e2019; }
 
-	.job-btn-cancel { color: #f0b96b; border-color: #3a2a10; }
+	.job-btn-cancel { color: #f0b96b; }
 	.job-btn-cancel:hover:not(:disabled) { background: #1f1608; }
 
-	.job-btn-delete { color: #c05050; border-color: #3a1010; }
+	.job-btn-delete { color: #c05050; }
 	.job-btn-delete:hover:not(:disabled) { background: #1f0808; }
 
 	.jobs-empty {

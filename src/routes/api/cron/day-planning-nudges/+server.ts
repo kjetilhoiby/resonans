@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
-import { runDayPlanningAndCloseNudges } from '$lib/server/day-planning-nudges';
+import { NudgeOrchestrationService } from '$lib/server/services/nudge-orchestration-service';
 
 // Hourly cron endpoint: sends local-time nudges for planning day and closing day.
 export const GET: RequestHandler = async ({ request, url }) => {
@@ -11,7 +11,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 	}
 
 	try {
-		const result = await runDayPlanningAndCloseNudges(url.origin);
+		const result = await NudgeOrchestrationService.runScheduledNudges(url.origin);
 		return json({ success: true, ...result });
 	} catch (error) {
 		console.error('Day planning nudges failed:', error);

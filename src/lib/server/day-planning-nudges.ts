@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, ilike, or, sql } from 'drizzle-orm';
 import { db } from '$lib/db';
-import { checklists, conversations, memories, messages, sensorEvents, users } from '$lib/db/schema';
+import { checklists, conversations, memories, messages, sensorEvents, users, webPushSubscriptions } from '$lib/db/schema';
 import {
 	buildDayCloseNudgeMessage,
 	buildDayPlanningNudgeMessage,
@@ -9,6 +9,12 @@ import {
 	sendGoogleChatMessage
 } from '$lib/server/google-chat';
 import { createNudgeEvent, markNudgeSent } from '$lib/server/nudge-events';
+import { PushDeliveryService } from '$lib/server/services/push-delivery-service';
+import {
+	getGoogleChatWebhooksForRoutes,
+	resolveRoutesForNotification,
+	routeTargetsPwa
+} from '$lib/server/notification-channels';
 
 interface NotificationSettings {
 	dayPlanning?: { enabled?: boolean; time?: string };
@@ -99,6 +105,34 @@ function isTimeInWindow(hm: string, start: string, end: string) {
 	if (start === end) return true;
 	if (start < end) return hm >= start && hm < end;
 	return hm >= start || hm < end;
+}
+
+function withNudgeTracking(appUrl: string, path: string, nudgeTrack: string, nudgeEventId: string | null) {
+	const url = new URL(path, appUrl);
+	url.searchParams.set('nudgeTrack', nudgeTrack);
+	if (nudgeEventId) url.searchParams.set('nudgeEventId', nudgeEventId);
+	return url.toString();
+}
+
+async function sendNativeNudgeToUser(args: {
+	userId: string;
+	title: string;
+	body: string;
+	url: string;
+	tag: string;
+}) {
+	const delivery = await PushDeliveryService.deliverToUser({
+		userId: args.userId,
+		payload: {
+			title: args.title,
+			body: args.body,
+			url: args.url,
+			tag: args.tag
+		},
+		onGone: 'disable'
+	});
+
+	return delivery.sent > 0;
 }
 
 async function getNudgeTriage(userId: string) {
@@ -204,13 +238,23 @@ export async function runDayPlanningAndCloseNudges(appUrl: string, now: Date = n
 	}> = [];
 
 	for (const user of allUsers) {
-		if (!user.googleChatWebhook) {
+		const dayPlanningRoutes = resolveRoutesForNotification(user, 'dayPlanning');
+		const dayCloseRoutes = resolveRoutesForNotification(user, 'dayClose');
+		const digestRoutes = resolveRoutesForNotification(user, 'digestDay');
+		const relationshipRoutes = resolveRoutesForNotification(user, 'relationshipCheckinMorning');
+		const hasAnyRoute =
+			dayPlanningRoutes.length > 0 ||
+			dayCloseRoutes.length > 0 ||
+			digestRoutes.length > 0 ||
+			relationshipRoutes.length > 0;
+
+		if (!hasAnyRoute) {
 			results.push({
 				userId: user.id,
 				planningSent: false,
 				closeSent: false,
 				relationshipMorningSent: false,
-				skippedReason: 'no-webhook'
+				skippedReason: 'no-channel'
 			});
 			continue;
 		}
@@ -231,7 +275,7 @@ export async function runDayPlanningAndCloseNudges(appUrl: string, now: Date = n
 		const profile = settings.nudgeProfile;
 		const digestTime = isWeekend(todayIso)
 			? (profile?.digestTimeWeekend ?? '10:00')
-			: (profile?.digestTimeWeekday ?? '12:00');
+			: (profile?.digestTimeWeekday ?? '09:00');
 
 		const planningTime = settings.dayPlanning?.time || '07:00';
 		const closeTime = settings.dayClose?.time || '21:00';
@@ -263,14 +307,33 @@ export async function runDayPlanningAndCloseNudges(appUrl: string, now: Date = n
 						mode,
 						context: { dayIso: todayIso, carryoverCount, trigger: 'schedule' }
 					});
-					const message = buildDayPlanningNudgeMessage({
-						appUrl,
-						userName: user.name,
-						dayIso: todayIso,
-						carryoverCount,
-						nudgeEventId: eventId ?? undefined
-					});
-					planningSent = await sendGoogleChatMessage(user.googleChatWebhook, message);
+					const pushUrl = withNudgeTracking(appUrl, '/ukeplan', 'plan_day', eventId);
+					if (routeTargetsPwa(dayPlanningRoutes)) {
+						planningSent = await sendNativeNudgeToUser({
+							userId: user.id,
+							title: 'Planlegg dagen',
+							body: carryoverCount > 0
+								? `Du har ${carryoverCount} åpne punkter fra i går.`
+								: 'Lag en enkel plan for dagen din.',
+							url: pushUrl,
+							tag: `nudge-plan-${todayIso}`
+						});
+					}
+
+					const dayPlanningWebhooks = getGoogleChatWebhooksForRoutes(user, dayPlanningRoutes);
+					if (dayPlanningWebhooks.length > 0) {
+						const message = buildDayPlanningNudgeMessage({
+							appUrl,
+							userName: user.name,
+							dayIso: todayIso,
+							carryoverCount,
+							nudgeEventId: eventId ?? undefined
+						});
+						for (const webhook of dayPlanningWebhooks) {
+							const ok = await sendGoogleChatMessage(webhook, message);
+							planningSent = planningSent || ok;
+						}
+					}
 					if (planningSent && eventId) await markNudgeSent(eventId);
 				}
 			}
@@ -288,14 +351,31 @@ export async function runDayPlanningAndCloseNudges(appUrl: string, now: Date = n
 						mode,
 						context: { dayIso: todayIso, openItems, trigger: 'schedule' }
 					});
-					const message = buildDayCloseNudgeMessage({
-						appUrl,
-						userName: user.name,
-						dayIso: todayIso,
-						openItems,
-						nudgeEventId: eventId ?? undefined
-					});
-					closeSent = await sendGoogleChatMessage(user.googleChatWebhook, message);
+					const pushUrl = withNudgeTracking(appUrl, '/ukeplan', 'close_day', eventId);
+					if (routeTargetsPwa(dayCloseRoutes)) {
+						closeSent = await sendNativeNudgeToUser({
+							userId: user.id,
+							title: 'Avslutt dagen',
+							body: `Du har ${openItems} åpne punkt igjen i dag.`,
+							url: pushUrl,
+							tag: `nudge-close-${todayIso}`
+						});
+					}
+
+					const dayCloseWebhooks = getGoogleChatWebhooksForRoutes(user, dayCloseRoutes);
+					if (dayCloseWebhooks.length > 0) {
+						const message = buildDayCloseNudgeMessage({
+							appUrl,
+							userName: user.name,
+							dayIso: todayIso,
+							openItems,
+							nudgeEventId: eventId ?? undefined
+						});
+						for (const webhook of dayCloseWebhooks) {
+							const ok = await sendGoogleChatMessage(webhook, message);
+							closeSent = closeSent || ok;
+						}
+					}
 					if (closeSent && eventId) await markNudgeSent(eventId);
 				}
 			}
@@ -328,15 +408,32 @@ export async function runDayPlanningAndCloseNudges(appUrl: string, now: Date = n
 						mode,
 						context: { dayIso: todayIso, plannedItems, openItems, carryoverCount, reason, trigger: 'schedule' }
 					});
-					const message = buildNudgeDigestMessage({
-						userName: user.name,
-						dayIso: todayIso,
-						plannedItems,
-						openItems,
-						carryoverCount,
-						reason
-					});
-					planningSent = await sendGoogleChatMessage(user.googleChatWebhook, message);
+					const pushUrl = withNudgeTracking(appUrl, '/ukeplan', 'digest_day', eventId);
+					if (routeTargetsPwa(digestRoutes)) {
+						planningSent = await sendNativeNudgeToUser({
+							userId: user.id,
+							title: 'Daglig oversikt',
+							body: `Planlagt: ${plannedItems} · Åpne: ${openItems} · Overliggere: ${carryoverCount}`,
+							url: pushUrl,
+							tag: `nudge-digest-${todayIso}`
+						});
+					}
+
+					const digestWebhooks = getGoogleChatWebhooksForRoutes(user, digestRoutes);
+					if (digestWebhooks.length > 0) {
+						const message = buildNudgeDigestMessage({
+							userName: user.name,
+							dayIso: todayIso,
+							plannedItems,
+							openItems,
+							carryoverCount,
+							reason
+						});
+						for (const webhook of digestWebhooks) {
+							const ok = await sendGoogleChatMessage(webhook, message);
+							planningSent = planningSent || ok;
+						}
+					}
 					if (planningSent && eventId) await markNudgeSent(eventId);
 				}
 			}
@@ -353,13 +450,30 @@ export async function runDayPlanningAndCloseNudges(appUrl: string, now: Date = n
 						mode,
 						context: { dayIso: todayIso, trigger: 'schedule' }
 					});
-					const message = buildRelationshipCheckinMorningNudgeMessage({
-						appUrl,
-						userName: user.name,
-						dayIso: todayIso,
-						nudgeEventId: eventId ?? undefined
-					});
-					relationshipMorningSent = await sendGoogleChatMessage(user.googleChatWebhook, message);
+					const pushUrl = withNudgeTracking(appUrl, '/ukeplan', 'relationship_checkin_morning', eventId);
+					if (routeTargetsPwa(relationshipRoutes)) {
+						relationshipMorningSent = await sendNativeNudgeToUser({
+							userId: user.id,
+							title: 'Morgensjekk i forholdet',
+							body: 'Ta en kort innsjekk for dagen.',
+							url: pushUrl,
+							tag: `nudge-relationship-${todayIso}`
+						});
+					}
+
+					const relationshipWebhooks = getGoogleChatWebhooksForRoutes(user, relationshipRoutes);
+					if (relationshipWebhooks.length > 0) {
+						const message = buildRelationshipCheckinMorningNudgeMessage({
+							appUrl,
+							userName: user.name,
+							dayIso: todayIso,
+							nudgeEventId: eventId ?? undefined
+						});
+						for (const webhook of relationshipWebhooks) {
+							const ok = await sendGoogleChatMessage(webhook, message);
+							relationshipMorningSent = relationshipMorningSent || ok;
+						}
+					}
 					if (relationshipMorningSent && eventId) await markNudgeSent(eventId);
 				}
 			}

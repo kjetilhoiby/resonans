@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { AppPage, PageHeader } from '$lib/components/ui';
 	import type { PageData, ActionData } from './$types';
 	import { onMount } from 'svelte';
 
@@ -16,8 +17,6 @@
 	let sparebank1SyncResult: any = $state(null);
 	let googleSheetsStatus = $state<any>(null);
 	let loadingGoogleSheets = $state(false);
-	let dropboxStatus = $state<any>(null);
-	let loadingDropbox = $state(false);
 	let copyInviteMessage = $state('');
 
 
@@ -29,7 +28,6 @@
 	const connectedSources = $derived(
 		(withingsStatus?.connected ? 1 : 0) +
 		(sparebank1Status?.connected ? 1 : 0) +
-		(dropboxStatus?.connected ? 1 : 0) +
 		(googleSheetsStatus?.connected ? 1 : 0) +
 		(user?.googleChatWebhook ? 1 : 0)
 	);
@@ -43,7 +41,6 @@
 	const hasSourceWarning = $derived(
 		Boolean(withingsStatus?.sensor?.isExpired) ||
 		Boolean(sparebank1Status?.sensor?.isExpired) ||
-		Boolean(dropboxStatus?.sensor?.isExpired) ||
 		Boolean(googleSheetsStatus?.sensor?.isExpired)
 	);
 	const hasProfileWarning = $derived(!user?.name || !user?.email);
@@ -52,7 +49,6 @@
 	onMount(async () => {
 		await loadWithingsStatus();
 		await loadSparebank1Status();
-		await loadDropboxStatus();
 		await loadGoogleSheetsStatus();
 	});
 
@@ -70,20 +66,6 @@
 		setTimeout(() => {
 			copyInviteMessage = '';
 		}, 2500);
-	}
-
-	async function loadDropboxStatus() {
-		loadingDropbox = true;
-		try {
-			const res = await fetch('/api/sensors/dropbox/status');
-			if (res.ok) {
-				dropboxStatus = await res.json();
-			}
-		} catch (err) {
-			console.error('Failed to load Dropbox status:', err);
-		} finally {
-			loadingDropbox = false;
-		}
 	}
 
 	async function loadWithingsStatus() {
@@ -275,17 +257,12 @@
 
 </script>
 
-<div class="settings-page">
-	<header class="page-header">
-		<div class="header-top">
-			<a href="/" class="btn-nav" aria-label="Tilbake til forsiden">
-				<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-					<path d="M12.5 15L7.5 10L12.5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-				</svg>
-			</a>
-			<h1>Innstillinger</h1>
-		</div>
-	</header>
+<AppPage width="full" theme="dark" className="settings-page">
+	<PageHeader
+		title="Innstillinger"
+		titleHref="/"
+		titleLabel="Gå til forsiden"
+	/>
 
 	<main class="content">
 		{#if form?.success}
@@ -510,7 +487,7 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 					<span class="status-dot {hasSourceWarning ? 'warn' : connectedSources > 0 ? 'ok' : 'off'}"></span>
 					<h2>Kilder</h2>
 				</div>
-				<p>{connectedSources}/5 tilkoblet{hasSourceWarning ? ' · én eller flere trenger ny innlogging' : ''}</p>
+				<p>{connectedSources}/4 tilkoblet{hasSourceWarning ? ' · én eller flere trenger ny innlogging' : ''}</p>
 				<a href="/settings/sources" class="overview-link">Åpne kilder</a>
 			</article>
 			<article class="overview-card" id="notifications-overview">
@@ -519,7 +496,7 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 					<h2>Varslinger</h2>
 				</div>
 				<p>{enabledNotifications}/5 varslingstyper aktiv</p>
-				<a href="/notifications" class="overview-link">Åpne varslinger</a>
+				<a href="/settings/notifications" class="overview-link">Åpne varslinger</a>
 			</article>
 			<article class="overview-card" id="classification-overview">
 				<div class="overview-head">
@@ -537,6 +514,14 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 				<p>Vaner, aktiviteter og målinger</p>
 				<a href="/settings/tracking" class="overview-link">Åpne tracking</a>
 			</article>
+			<article class="overview-card" id="external-apps-overview">
+				<div class="overview-head">
+					<span class="status-dot ok"></span>
+					<h2>Eksterne apper</h2>
+				</div>
+				<p>API-secrets for Scriptable og andre klienter</p>
+				<a href="/settings/external-apps" class="overview-link">Åpne eksterne apper</a>
+			</article>
 			<article class="overview-card" id="jobs-overview">
 				<div class="overview-head">
 					<span class="status-dot ok"></span>
@@ -553,74 +538,14 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 			</button>
 		</div>
 	</main>
-</div>
+</AppPage>
 
 <style>
-	.settings-page {
-		min-height: 100vh;
-		background: var(--bg-primary);
+	:global(.settings-page) {
 		color: var(--text-secondary);
-
-		/* Tving mørkt tema — synker med /design og HomeScreen */
-		--bg-primary: #0f0f0f;
-		--bg-secondary: #111;
-		--bg-card: #1a1a1a;
-		--bg-header: #111;
-		--bg-input: #1a1a1a;
-		--bg-hover: #222;
-
-		--text-primary: #eee;
-		--text-secondary: #aaa;
-		--text-tertiary: #555;
-
-		--border-color: #2a2a2a;
-		--border-subtle: #1e1e1e;
-
-		--accent-primary: #4a5af0;
-		--accent-hover: #3a4adf;
-
-		--success-bg: rgba(74, 222, 128, 0.08);
-		--success-text: #4ade80;
-		--success-border: rgba(74, 222, 128, 0.2);
-
-		--error-bg: rgba(224, 112, 112, 0.08);
-		--error-text: #e07070;
-		--error-border: #6a2a2a;
-
-		--info-bg: rgba(74, 90, 240, 0.12);
-		--info-border: rgba(74, 90, 240, 0.3);
-
-		--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-		--shadow-md: 0 4px 6px rgba(0, 0, 0, 0.6);
-	}
-
-	.page-header {
-		background: var(--bg-header);
-		border-bottom: 1px solid var(--border-color);
-		padding: 1rem;
-		position: sticky;
-		top: 0;
-		z-index: 10;
-	}
-
-	.header-top {
-		max-width: 800px;
-		margin: 0 auto;
-		display: flex;
-		align-items: center;
-		gap: 1rem;
-	}
-
-	h1 {
-		margin: 0;
-		font-size: 1.5rem;
-		font-weight: 700;
-		color: var(--text-primary);
 	}
 
 	.content {
-		max-width: 800px;
-		margin: 0 auto;
 		padding: 1.5rem 1rem;
 	}
 
@@ -632,8 +557,8 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 	}
 
 	.overview-card {
-		background: var(--bg-card);
-		border: 1px solid var(--border-color);
+		background: #171717;
+		border: none;
 		border-radius: 12px;
 		padding: 1rem;
 	}
@@ -676,10 +601,10 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 	}
 
 	.settings-group {
-		border: 1px solid var(--border-color);
+		border: none;
 		border-radius: 12px;
 		margin-bottom: 1.5rem;
-		background: color-mix(in srgb, var(--bg-card) 40%, transparent);
+		background: #171717;
 	}
 
 	.settings-group > summary {
@@ -760,8 +685,8 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 	}
 
 	.settings-card {
-		background: var(--bg-card);
-		border: 1px solid var(--border-color);
+		background: #171717;
+		border: none;
 		border-radius: 12px;
 		padding: 1.5rem;
 		margin-bottom: 1.5rem;
@@ -832,8 +757,8 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 		justify-content: space-between;
 		align-items: center;
 		padding: 1rem;
-		background: var(--bg-header);
-		border: 1px solid var(--border-color);
+		background: #111;
+		border: none;
 		border-radius: 8px;
 		margin-bottom: 1rem;
 	}
@@ -862,9 +787,11 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 		margin-top: 1rem;
 		padding: 1rem;
 		border-radius: 10px;
-		border: 1px solid var(--border-color);
-		background: var(--bg-header);
+		border: none;
+		background: #111;
 	}
+
+
 
 	.checkin-card h3 {
 		margin: 0 0 0.45rem;

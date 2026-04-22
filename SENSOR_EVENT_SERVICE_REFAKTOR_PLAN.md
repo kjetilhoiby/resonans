@@ -248,6 +248,8 @@ Oppdatert 2026-04-22:
 - `listRecentBackgroundJobs` har nå også `resultSummary` for `workout_projection_refresh` (reason + canonical/daily counts + tidsvindu).
 - `listRecentBackgroundJobs` eksponerer nå også `resultSummary` for `sparebank1_historical_sync` (fromDate + balanceEvents/transactionEvents/accounts) og `book_context_collect` (bookId + hasContext).
 - Compat-wrappers `progress.ts`, `domain-signals.ts` og `workout-projections.ts` er slettet — alle callsites bruker nå service-klassene direkte.
+- `PushDeliveryService` er introdusert som felles leveringslag for web-push, og push-loop med subscription-state-oppdatering er konsolidert dit (`day-planning-nudges`, `workout-notifications`, `/api/push/test`).
+- `NudgeOrchestrationService` er introdusert som orkestreringslag for nudges, og `daily_checkin` kjøres nå som egen nudge-type via service (`runDailyCheckInNudges`) i cron/scheduler/manual-endepunkter.
 
 ### 1) WorkoutProjectionService (høy)
 
