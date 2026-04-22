@@ -134,6 +134,24 @@ export async function listRecentBackgroundJobs(limit = 50) {
 			};
 		}
 
+		if (job.type === 'sparebank1_historical_sync') {
+			const synced = (result.synced ?? {}) as Record<string, unknown>;
+			resultSummary = {
+				fromDate: result.fromDate ?? null,
+				balanceEvents: synced.balanceEvents ?? 0,
+				transactionEvents: synced.transactionEvents ?? 0,
+				accounts: synced.accounts ?? 0
+			};
+		}
+
+		if (job.type === 'book_context_collect') {
+			const contextPack = (result.contextPack ?? {}) as Record<string, unknown>;
+			resultSummary = {
+				bookId: result.bookId ?? null,
+				hasContext: contextPack != null && Object.keys(contextPack).length > 0
+			};
+		}
+
 		return {
 			...job,
 			resultSummary

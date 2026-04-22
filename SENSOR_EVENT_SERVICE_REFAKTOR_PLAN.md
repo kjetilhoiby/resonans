@@ -246,6 +246,8 @@ Oppdatert 2026-04-22:
 - `listRecentBackgroundJobs` eksponerer nå `resultSummary` for auto-progress jobtyper, slik at admin-jobblisten viser nøkkeltall uten full payload.
 - `sensor-progress-sync` logger nå standardisert oppsummering per kjøring (`created/skipped/skippedByPeriod/skippedDuplicate`).
 - `listRecentBackgroundJobs` har nå også `resultSummary` for `workout_projection_refresh` (reason + canonical/daily counts + tidsvindu).
+- `listRecentBackgroundJobs` eksponerer nå også `resultSummary` for `sparebank1_historical_sync` (fromDate + balanceEvents/transactionEvents/accounts) og `book_context_collect` (bookId + hasContext).
+- Compat-wrappers `progress.ts`, `domain-signals.ts` og `workout-projections.ts` er slettet — alle callsites bruker nå service-klassene direkte.
 
 ### 1) WorkoutProjectionService (høy)
 

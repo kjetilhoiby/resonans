@@ -169,6 +169,23 @@
 				keyBytes.byteOffset,
 				keyBytes.byteOffset + keyBytes.byteLength
 			) as ArrayBuffer;
+
+			// iOS/Safari can keep an old subscription tied to a previous VAPID key.
+			// Remove local/server copy first to avoid "applicationServerKey does not match".
+			const existingSubscription = await registration.pushManager.getSubscription();
+			if (existingSubscription) {
+				await fetch('/api/push/unsubscribe', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ endpoint: existingSubscription.endpoint })
+				}).catch(() => {
+					// best effort cleanup
+				});
+				await existingSubscription.unsubscribe().catch(() => {
+					// best effort cleanup
+				});
+			}
+
 			const subscription = await registration.pushManager.subscribe({
 				userVisibleOnly: true,
 				applicationServerKey: appServerKey
