@@ -326,25 +326,20 @@ export async function recordTrackingEvent(params: RecordTrackingEventInput) {
 
 		// Write a progress row if series is linked to a task — this drives the ukeplan slot UI
 		if (series.taskId) {
-			const periodCheck = await TaskExecutionService.canRecordTaskProgress({
-				userId: params.userId,
-				taskId: series.taskId,
-				increment: 1,
-				completedAt: when
-			});
-
-			if (!periodCheck.allowed) {
-				console.log(
-					`[tracking-series] user=${params.userId} skipped task=${series.taskId} event=${saved.id} reason=${periodCheck.reason} current=${periodCheck.currentValue} target=${periodCheck.targetValue}`
-				);
-			} else {
-			await TaskExecutionService.recordTaskProgress({
+			const result = await TaskExecutionService.ensureTaskProgress({
 				taskId: series.taskId,
 				userId: params.userId,
 				value: 1,
+				dedupeNote: `tracking_event:${saved.id}:task:${series.taskId}`,
+				enforcePeriodTarget: true,
 				note: params.note ?? null,
 				completedAt: when
 			});
+
+			if (result.skippedByPeriod) {
+				console.log(
+					`[tracking-series] user=${params.userId} skipped task=${series.taskId} event=${saved.id} reason=target_reached`
+				);
 			}
 		}
 	}

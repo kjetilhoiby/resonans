@@ -938,6 +938,25 @@
 		scrollbar-width: none;
 	}
 
+	@media (max-width: 760px) {
+		.ed-subtabs {
+			mask-image: linear-gradient(
+				to right,
+				transparent 0,
+				black 14px,
+				black calc(100% - 14px),
+				transparent 100%
+			);
+			-webkit-mask-image: linear-gradient(
+				to right,
+				transparent 0,
+				black 14px,
+				black calc(100% - 14px),
+				transparent 100%
+			);
+		}
+	}
+
 	.ed-subtabs::-webkit-scrollbar {
 		display: none;
 	}

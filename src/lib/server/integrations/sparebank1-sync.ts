@@ -38,6 +38,15 @@ function encodeCredentials(credentials: BankCredentials): string {
 	return btoa(JSON.stringify(credentials));
 }
 
+function normalizeTxDescription(value: unknown): string {
+	const raw = typeof value === 'string' ? value : '';
+	return raw
+		.normalize('NFKC')
+		.replace(/\s+/g, ' ')
+		.trim()
+		.toUpperCase();
+}
+
 export type Sparebank1TransactionDebugDecision =
 	| 'queued_for_insert'
 	| 'skipped_existing_in_db'
@@ -264,7 +273,7 @@ export async function syncAllSparebank1Data(
 		for (const event of transactionEvents) {
 			const date = event.timestamp.toISOString().split('T')[0];
 			const amount = Math.round((event.data.amount ?? 0) * 100);
-			const semanticKey = `${event.data.accountId}:${date}:${event.data.description}:${amount}`;
+			const semanticKey = `${event.data.accountId}:${date}:${normalizeTxDescription(event.data.description)}:${amount}`;
 			if (includeDebug) {
 				const row: Sparebank1TransactionDebugRow = {
 					accountId: event.data.accountId ?? '',
@@ -292,7 +301,7 @@ export async function syncAllSparebank1Data(
 		const makeSemanticKey = (e: any): string => {
 			const date = e.timestamp.toISOString().split('T')[0];
 			const amount = Math.round((e.data.amount ?? 0) * 100);
-			return `${e.data.accountId}:${date}:${e.data.description}:${amount}`;
+			return `${e.data.accountId}:${date}:${normalizeTxDescription(e.data.description)}:${amount}`;
 		};
 		const batchMap = new Map<string, any>();
 		for (const e of transactionEvents) {
@@ -339,14 +348,14 @@ export async function syncAllSparebank1Data(
 		const existingRows = await pgClient.unsafe<{
 			account_id: string;
 			date: string;
-			description: string;
+			description_key: string;
 			amount: string;
 			booking_status: string;
 		}[]>(`
 			SELECT
 				data->>'accountId'                          AS account_id,
 				timestamp::date                             AS date,
-				data->>'description'                        AS description,
+				UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')) AS description_key,
 				ROUND((data->>'amount')::numeric, 2)        AS amount,
 				data->>'bookingStatus'                      AS booking_status
 			FROM sensor_events
@@ -358,7 +367,7 @@ export async function syncAllSparebank1Data(
 		// Build a Set of existing semantic signatures
 		const existingSemanticKeys = new Set(
 			existingRows.map((r: any) =>
-				`${r.account_id}:${String(r.date).split('T')[0]}:${r.description}:${Math.round(Number(r.amount) * 100)}`
+				`${r.account_id}:${String(r.date).split('T')[0]}:${r.description_key}:${Math.round(Number(r.amount) * 100)}`
 			)
 		);
 		// Also track which existing entries are PENDING so we can upgrade them to BOOKED
@@ -366,7 +375,7 @@ export async function syncAllSparebank1Data(
 			existingRows
 				.filter((r: any) => r.booking_status === 'PENDING')
 				.map((r: any) =>
-					`${r.account_id}:${String(r.date).split('T')[0]}:${r.description}:${Math.round(Number(r.amount) * 100)}`
+					`${r.account_id}:${String(r.date).split('T')[0]}:${r.description_key}:${Math.round(Number(r.amount) * 100)}`
 				)
 		);
 
@@ -379,13 +388,14 @@ export async function syncAllSparebank1Data(
 				replacedPendingKeys.add(key);
 				const date = event.timestamp.toISOString().split('T')[0];
 				const amount = Math.round((event.data.amount ?? 0) * 100) / 100;
+				const descriptionKey = normalizeTxDescription(event.data.description);
 				await db.execute(sql`
 					DELETE FROM sensor_events
 					WHERE sensor_id = ${sensor.id}
 					  AND data_type = 'bank_transaction'
 					  AND data->>'bookingStatus' = 'PENDING'
 					  AND data->>'accountId' = ${event.data.accountId ?? ''}
-					  AND data->>'description' = ${event.data.description ?? ''}
+					  AND UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')) = ${descriptionKey}
 					  AND ROUND((data->>'amount')::numeric, 2) = ${amount}
 					  AND timestamp::date = ${date}::date
 				`);
@@ -423,6 +433,32 @@ export async function syncAllSparebank1Data(
 				});
 			}
 		}
+
+		// Safety net: remove semantic duplicates in the recent sync window.
+		// This heals already-accumulated duplicates and protects charts/lists from inflated totals.
+		await db.execute(sql`
+			WITH ranked AS (
+				SELECT
+					id,
+					ROW_NUMBER() OVER (
+						PARTITION BY
+							data->>'accountId',
+							timestamp::date,
+							UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')),
+							ROUND((data->>'amount')::numeric, 2)
+						ORDER BY
+							CASE WHEN data->>'bookingStatus' = 'BOOKED' THEN 0 ELSE 1 END,
+							timestamp ASC,
+							id ASC
+					) AS rn
+				FROM sensor_events
+				WHERE sensor_id = ${sensor.id}
+				  AND data_type = 'bank_transaction'
+				  AND timestamp >= ${earliestDate.toISOString()}
+			)
+			DELETE FROM sensor_events
+			WHERE id IN (SELECT id FROM ranked WHERE rn > 1)
+		`);
 
 		transactionEvents = newEvents; // return actual inserted count
 	}

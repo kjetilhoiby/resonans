@@ -236,6 +236,8 @@ Oppdatert 2026-04-22:
 - `progress.ts` er nå i praksis et kompatibilitetslag som delegerer read/write/evaluation til `TaskExecutionService`.
 - `SignalService` eier nå den faktiske signal-implementasjonen; `domain-signals.ts` er redusert til kompatibilitetslag.
 - `TaskExecutionService` har nå opt-in periodetarget-validering (dag/uke/måned + periodId-vinduer) aktivert for automatiske progress-paths.
+- Periodevalidering er utvidet til `tracking-series` og `sensor-goal-automation`, med eksplisitt skip-observability (`skippedByPeriod`) i jobblogg.
+- Auto-progress i `tracking-series` og `sensor-goal-automation` går nå via `ensureTaskProgress` med dedupe-nøkler, slik at flytene er idempotente ved retries/replays.
 
 ### 1) WorkoutProjectionService (høy)
 

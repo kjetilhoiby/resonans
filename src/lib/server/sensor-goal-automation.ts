@@ -36,6 +36,7 @@ export async function registerWorkoutsAsProgress(userId: string, syncStartTime: 
 	const errors: string[] = [];
 	let registered = 0;
 	let skippedByPeriod = 0;
+	let skippedDuplicate = 0;
 
 	// Find all sensor goals for this user with autoUpdate enabled
 	const userSensorGoals = await db.query.sensorGoals.findMany({
@@ -101,29 +102,28 @@ export async function registerWorkoutsAsProgress(userId: string, syncStartTime: 
 						continue;
 					}
 
-					const periodCheck = await TaskExecutionService.canRecordTaskProgress({
-						userId,
-						taskId: targetTask.id,
-						increment: 1,
-						completedAt: sensorEvent.timestamp
-					});
-
-					if (!periodCheck.allowed) {
-						skippedByPeriod++;
-						console.log(
-							`[sensor-automation] user=${userId} skipped task=${targetTask.id} workout=${sensorEvent.id} reason=${periodCheck.reason} current=${periodCheck.currentValue} target=${periodCheck.targetValue}`
-						);
-						continue;
-					}
-
-					// Create a progress record with value=1 (one workout completed)
-					await TaskExecutionService.recordTaskProgress({
+					const dedupeNote = `sensor:${sensorEvent.id}:goal:${sensorGoal.id}:task:${targetTask.id}`;
+					const result = await TaskExecutionService.ensureTaskProgress({
 						taskId: targetTask.id,
 						userId,
 						value: 1,
+						dedupeNote,
+						enforcePeriodTarget: true,
 						note: getProgressNote(sensorEvent),
 						completedAt: sensorEvent.timestamp
 					});
+
+					if (!result.created) {
+						if (result.skippedByPeriod) {
+							skippedByPeriod++;
+							console.log(
+								`[sensor-automation] user=${userId} skipped task=${targetTask.id} workout=${sensorEvent.id} reason=target_reached`
+							);
+						} else {
+							skippedDuplicate++;
+						}
+						continue;
+					}
 
 					console.log(
 						`[sensor-automation] user=${userId} created progress for task=${targetTask.id} from workout=${sensorEvent.id}`
@@ -143,9 +143,9 @@ export async function registerWorkoutsAsProgress(userId: string, syncStartTime: 
 	}
 
 	console.log(
-		`[sensor-automation] complete: ${registered} progress records created, ${skippedByPeriod} skipped by period, ${errors.length} errors`
+		`[sensor-automation] complete: ${registered} progress records created, ${skippedByPeriod} skipped by period, ${skippedDuplicate} skipped duplicate, ${errors.length} errors`
 	);
-	return { registered, skippedByPeriod, errors };
+	return { registered, skippedByPeriod, skippedDuplicate, errors };
 }
 
 

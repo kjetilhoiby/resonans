@@ -215,7 +215,7 @@ export class TaskExecutionService {
 		});
 
 		if (existing) {
-			return { record: existing, created: false };
+			return { record: existing, created: false, skippedDuplicate: true, skippedByPeriod: false };
 		}
 
 		if (params.enforcePeriodTarget) {
@@ -235,11 +235,11 @@ export class TaskExecutionService {
 			userId: params.userId,
 			taskId: params.taskId,
 			value: params.value,
-			note: params.dedupeNote,
+			note: params.note ?? params.dedupeNote,
 			completedAt: params.completedAt
 		});
 
-		return { record, created: true, skippedByPeriod: false };
+		return { record, created: true, skippedDuplicate: false, skippedByPeriod: false };
 	}
 
 	static async deleteProgressRecord(progressId: string) {
