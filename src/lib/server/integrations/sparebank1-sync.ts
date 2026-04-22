@@ -1,6 +1,7 @@
 import { db, pgClient } from '$lib/db';
 import { sensorEvents, sensors } from '$lib/db/schema';
 import { and, eq, sql } from 'drizzle-orm';
+import { SensorEventService } from '$lib/server/services/sensor-event-service';
 import {
 	fetchSparebank1Accounts,
 	fetchSparebank1HelloWorld,
@@ -176,7 +177,8 @@ export async function syncAllSparebank1Data(
 				provider: 'sparebank1',
 				source: 'api',
 				accountKey: account.key || null
-			}
+			},
+			source: 'sparebank1_api'
 		};
 	});
 
@@ -203,7 +205,9 @@ export async function syncAllSparebank1Data(
 		});
 
 		if (newBalanceEvents.length > 0) {
-			await db.insert(sensorEvents).values(newBalanceEvents).onConflictDoNothing();
+			await SensorEventService.writeMany(newBalanceEvents, {
+				conflictMode: 'ignore'
+			});
 		}
 	}
 
@@ -246,7 +250,8 @@ export async function syncAllSparebank1Data(
 							provider: 'sparebank1',
 							source: 'api',
 							transactionId: transaction.id || transaction.transactionId
-						}
+						},
+						source: 'sparebank1_api'
 					};
 				});
 			})
@@ -413,7 +418,9 @@ export async function syncAllSparebank1Data(
 		if (newEvents.length > 0) {
 			const batchSize = 200;
 			for (let index = 0; index < newEvents.length; index += batchSize) {
-				await db.insert(sensorEvents).values(newEvents.slice(index, index + batchSize)).onConflictDoNothing();
+				await SensorEventService.writeMany(newEvents.slice(index, index + batchSize), {
+					conflictMode: 'ignore'
+				});
 			}
 		}
 

@@ -138,8 +138,8 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 					const existingWidgets = await findSimilarWidget(
 						userId,
 						{
-							metricType: 'spending_category',
-							range: '30_days',
+							metricType: 'amount',
+							range: 'last30',
 							filterCategory: null
 						},
 						{ pinnedOnly: false }

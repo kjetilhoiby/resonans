@@ -1,7 +1,35 @@
 # SensorEventService refaktorplan
 
 Dato: 2026-04-21
-Status: Planlagt (Fase 1 neste)
+Status: Fullført (Fase 1A-1D)
+
+## Fremdrift (oppdatert 2026-04-21)
+
+### Fullført
+
+1. `SensorEventService` er etablert med `write`/`writeMany`.
+2. Konfliktstrategier er på plass (`error`, `ignore`, `upsert_sensor_datatype_timestamp`).
+3. On-write enqueue for `workout_projection_refresh` er implementert med debounce/coalesce.
+4. Job-handler for `workout_projection_refresh` er koblet i bakgrunnsjobber.
+5. Kritiske write-paths er migrert til service-laget:
+  - withings
+  - dropbox
+  - spond
+  - activities
+  - tracking-series
+  - email-inbound workouts
+  - sparebank1
+  - admin pdf import
+  - ai-records
+  - relationship-checkin (create-path)
+6. Goals/Ukeplan kjører aggregate-first read-path med dedup-bevisst fallback.
+
+### Fullført i Fase 1 (siste milepæler)
+
+1. Soft/hard stale-policy håndheves i read-path for goals/ukeplan via freshness-sjekk.
+2. Cron-sweeper for stale brukere er aktivert (15 min) via cron + scheduler.
+3. Telemetry i `SensorEventService` rapporterer inserted/upserted/ignored per source.
+4. Målrettet smoke-endepunkt er lagt til for freshness + on-write enqueue-verifisering.
 
 ## Bakgrunn
 
@@ -126,6 +154,8 @@ Mål: ferske data uten at hver pageload blir tung.
 3. Legg til job-handler for `workout_projection_refresh`
 4. Legg til enkel freshness state (per user/workout)
 
+Status: Fullført (med freshness-state delvis gjennom projection/job-state).
+
 ### Fase 1B: Kritiske write-paths
 
 Migrer disse først:
@@ -135,17 +165,23 @@ Migrer disse først:
 3. `src/lib/server/integrations/spond-sync.ts`
 4. `src/lib/server/activities.ts`
 
+Status: Fullført (og utvidet med flere write-paths enn opprinnelig scope).
+
 ### Fase 1C: Read policy
 
 1. Goals/ukeplan bruker aggregate-read først
 2. Soft/hard stale-regel aktiveres
 3. Fallback beholdes midlertidig
 
+Status: Fullført.
+
 ### Fase 1D: Safety net
 
 1. Cron-sweeper hvert 10-15 min
 2. Finn brukere med stale projections
 3. Enqueue kun for de brukerne
+
+Status: Fullført.
 
 ## Observability
 
@@ -187,6 +223,19 @@ Nøkkelmetrikker:
 ## Kandidater for videre refaktorering
 
 Når Fase 1 er stabil, anbefales følgende tjenestelag i prioritert rekkefølge.
+
+Oppdatert 2026-04-22:
+
+- `WorkoutProjectionService` er startet som eget service-fasadelag.
+- Første kallesteder er flyttet fra direkte modul-funksjoner til service-API.
+- Running aggregate-read i goals/ukeplan går nå via `WorkoutProjectionService` i stedet for direkte tabelltilgang.
+- Underliggende implementasjon ligger fortsatt i `workout-projections.ts` inntil neste steg flytter intern logikk inn i service-laget.
+- `SignalService` er startet som nytt inngangspunkt for signal-produksjon og observability.
+- `TaskExecutionService` er startet som felles write-lag for progress/task execution, og sentrale progress-write-paths er migrert dit.
+- `TaskExecutionService` håndterer nå også sentrale progress-delete-paths, slik at progress-mutasjoner er samlet i service-laget.
+- `progress.ts` er nå i praksis et kompatibilitetslag som delegerer read/write/evaluation til `TaskExecutionService`.
+- `SignalService` eier nå den faktiske signal-implementasjonen; `domain-signals.ts` er redusert til kompatibilitetslag.
+- `TaskExecutionService` har nå opt-in periodetarget-validering (dag/uke/måned + periodId-vinduer) aktivert for automatiske progress-paths.
 
 ### 1) WorkoutProjectionService (høy)
 

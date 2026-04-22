@@ -1,6 +1,7 @@
 import { db } from '$lib/db';
 import { sensorEvents, sensors, users } from '$lib/db/schema';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { SensorEventService } from '$lib/server/services/sensor-event-service';
 
 export class RelationshipCheckinError extends Error {}
 
@@ -157,16 +158,14 @@ export async function submitRelationshipCheckin(params: {
 			})
 			.where(eq(sensorEvents.id, existing[0].id));
 	} else {
-		await db.insert(sensorEvents).values({
+		await SensorEventService.write({
 			userId: params.userId,
 			sensorId: sensor.id,
 			eventType: 'measurement',
 			dataType: 'relationship_checkin',
 			timestamp: new Date(),
 			data: payload,
-			metadata: {
-				source: 'relationship_checkin_ui'
-			}
+			source: 'relationship_checkin_ui'
 		});
 	}
 

@@ -1,15 +1,40 @@
-<script>
+<script lang="ts">
 	import { getContext } from 'svelte';
 
-	const { data, xGet, yGet, zGet, width, height, xScale, yScale } = getContext('LayerCake');
+	type DataPoint = {
+		x: number;
+		y: number;
+		series: string;
+	};
+
+	type TooltipState = {
+		dayOfYear: number;
+		currentYear: { year: number; distance: number; hasData: boolean };
+		lastYear: { year: number; distance: number; hasData: boolean };
+		difference?: number;
+		percentDifference?: number;
+	};
+
+	type ReadableStore<T> = {
+		subscribe(run: (value: T) => void): () => void;
+	};
+
+	type LayerCakeContext = {
+		data: ReadableStore<DataPoint[]>;
+		zGet: ReadableStore<(point: DataPoint) => string>;
+		width: ReadableStore<number>;
+		xScale: ReadableStore<{ invert(value: number): number }>;
+	};
+
+	const { data, zGet, width, xScale } = getContext<LayerCakeContext>('LayerCake');
 
 	let mouseX = 0;
 	let mouseY = 0;
 	let showTooltip = false;
-	let tooltipData = null;
+	let tooltipData: TooltipState | null = null;
 
 	// Group data by series for easy lookup
-	$: groupedData = $data.reduce((acc, d) => {
+	$: groupedData = $data.reduce((acc: Record<string, DataPoint[]>, d: DataPoint) => {
 		const series = $zGet(d);
 		if (!acc[series]) acc[series] = [];
 		acc[series].push(d);
@@ -17,13 +42,15 @@
 	}, {});
 
 	// Sort data by x value for each series
-	$: sortedData = Object.keys(groupedData).reduce((acc, series) => {
-		acc[series] = groupedData[series].sort((a, b) => a.x - b.x);
+	$: sortedData = Object.keys(groupedData).reduce((acc: Record<string, DataPoint[]>, series) => {
+		acc[series] = groupedData[series].sort((a: DataPoint, b: DataPoint) => a.x - b.x);
 		return acc;
 	}, {});
 
-	function handleMouseMove(event) {
-		const rect = event.currentTarget.getBoundingClientRect();
+	function handleMouseMove(event: MouseEvent) {
+		const target = event.currentTarget as HTMLDivElement | null;
+		if (!target) return;
+		const rect = target.getBoundingClientRect();
 		const mouseXRelative = event.clientX - rect.left;
 		const mouseYRelative = event.clientY - rect.top;
 
@@ -38,9 +65,9 @@
 		const lastYearData = sortedData[lastYear.toString()] || [];
 
 		// Find closest points by day-of-year
-		const findClosest = (data, targetX) => {
+		const findClosest = (data: DataPoint[], targetX: number): DataPoint | null => {
 			if (!data.length) return null;
-			return data.reduce((closest, point) => {
+			return data.reduce((closest: DataPoint, point: DataPoint) => {
 				return Math.abs(point.x - targetX) < Math.abs(closest.x - targetX) ? point : closest;
 			});
 		};
@@ -85,7 +112,7 @@
 	}
 
 	// Convert day of year to readable date
-	function dayOfYearToDate(dayOfYear, year = 2024) {
+	function dayOfYearToDate(dayOfYear: number, year = 2024) {
 		const date = new Date(year, 0, dayOfYear);
 		return date.toLocaleDateString('no-NO', { day: 'numeric', month: 'short' });
 	}
@@ -148,7 +175,7 @@
 				<span class="diff-label">Forskjell:</span>
 				<span class="diff-value">
 					{tooltipData.difference >= 0 ? '+' : ''}{tooltipData.difference.toFixed(1)} km
-					({tooltipData.percentDifference >= 0 ? '+' : ''}{tooltipData.percentDifference.toFixed(1)}%)
+					({(tooltipData.percentDifference ?? 0) >= 0 ? '+' : ''}{(tooltipData.percentDifference ?? 0).toFixed(1)}%)
 				</span>
 			</div>
 		{/if}

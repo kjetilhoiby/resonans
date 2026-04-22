@@ -1,8 +1,9 @@
 import { db } from '$lib/db';
 import { sensors, sensorEvents, sensorAggregates } from '$lib/db/schema';
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { refreshAccessToken, fetchAllWithingsData, fetchWithingsSleep } from './withings';
 import { enqueueBackgroundJob } from '$lib/server/background-jobs';
+import { SensorEventService } from '$lib/server/services/sensor-event-service';
 
 /**
  * Get active Withings sensor for user
@@ -303,17 +304,19 @@ export async function syncWeightData(
 	const batchSize = 100;
 	for (let i = 0; i < parsed.length; i += batchSize) {
 		const batch = parsed.slice(i, i + batchSize);
-		await db.insert(sensorEvents).values(
-			batch.map(event => ({
+		await SensorEventService.writeMany(
+			batch.map((event) => ({
 				userId,
 				sensorId,
-				eventType: 'measurement' as const,
-				dataType: 'weight' as const,
+				eventType: 'measurement',
+				dataType: 'weight',
 				timestamp: event.timestamp,
 				data: event.data,
-				metadata: event.metadata
-			}))
-		).onConflictDoNothing();
+				metadata: event.metadata,
+				source: 'withings_sync_weight'
+			})),
+			{ conflictMode: 'ignore' }
+		);
 		if (i % 500 === 0 && i > 0) {
 			console.log(`      Stored ${i}/${parsed.length} weight events...`);
 		}
@@ -361,28 +364,20 @@ export async function syncActivityData(
 	const batchSize = 100;
 	for (let i = 0; i < parsed.length; i += batchSize) {
 		const batch = parsed.slice(i, i + batchSize);
-		
-		for (const event of batch) {
-			await db
-				.insert(sensorEvents)
-				.values({
-					userId,
-					sensorId,
-					eventType: 'activity' as const,
-					dataType: 'activity' as const,
-					timestamp: event.timestamp,
-					data: event.data,
-					metadata: event.metadata
-				})
-				.onConflictDoUpdate({
-					target: [sensorEvents.sensorId, sensorEvents.dataType, sensorEvents.timestamp],
-					targetWhere: sql`data_type NOT IN ('bank_balance', 'bank_transaction')`,
-					set: {
-						data: event.data,
-						metadata: event.metadata
-					}
-				});
-		}
+
+		await SensorEventService.writeMany(
+			batch.map((event) => ({
+				userId,
+				sensorId,
+				eventType: 'activity',
+				dataType: 'activity',
+				timestamp: event.timestamp,
+				data: event.data,
+				metadata: event.metadata,
+				source: 'withings_sync_activity'
+			})),
+			{ conflictMode: 'upsert_sensor_datatype_timestamp' }
+		);
 		
 		if (i % 500 === 0 && i > 0) {
 			console.log(`      Stored ${i}/${parsed.length} activity events...`);
@@ -447,17 +442,19 @@ export async function syncSleepData(
 	const batchSize = 100;
 	for (let i = 0; i < parsed.length; i += batchSize) {
 		const batch = parsed.slice(i, i + batchSize);
-		await db.insert(sensorEvents).values(
-			batch.map(event => ({
+		await SensorEventService.writeMany(
+			batch.map((event) => ({
 				userId,
 				sensorId,
-				eventType: 'measurement' as const,
-				dataType: 'sleep' as const,
+				eventType: 'measurement',
+				dataType: 'sleep',
 				timestamp: event.timestamp,
 				data: event.data,
-				metadata: event.metadata
-			}))
-		).onConflictDoNothing();
+				metadata: event.metadata,
+				source: 'withings_sync_sleep'
+			})),
+			{ conflictMode: 'ignore' }
+		);
 		if (i % 500 === 0 && i > 0) {
 			console.log(`      Stored ${i}/${parsed.length} sleep events...`);
 		}
@@ -503,28 +500,20 @@ export async function syncWorkoutData(
 	const batchSize = 100;
 	for (let i = 0; i < parsed.length; i += batchSize) {
 		const batch = parsed.slice(i, i + batchSize);
-		
-		for (const event of batch) {
-			await db
-				.insert(sensorEvents)
-				.values({
-					userId,
-					sensorId,
-					eventType: 'activity' as const,
-					dataType: 'workout' as const,
-					timestamp: event.timestamp,
-					data: event.data,
-					metadata: event.metadata
-				})
-				.onConflictDoUpdate({
-					target: [sensorEvents.sensorId, sensorEvents.dataType, sensorEvents.timestamp],
-					targetWhere: sql`data_type NOT IN ('bank_balance', 'bank_transaction')`,
-					set: {
-						data: event.data,
-						metadata: event.metadata
-					}
-				});
-		}
+
+		await SensorEventService.writeMany(
+			batch.map((event) => ({
+				userId,
+				sensorId,
+				eventType: 'activity',
+				dataType: 'workout',
+				timestamp: event.timestamp,
+				data: event.data,
+				metadata: event.metadata,
+				source: 'withings_sync_workout'
+			})),
+			{ conflictMode: 'upsert_sensor_datatype_timestamp' }
+		);
 		
 		if (i % 500 === 0 && i > 0) {
 			console.log(`      Stored ${i}/${parsed.length} workout events...`);

@@ -1,6 +1,8 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
-	import RunningBurnupChart from './RunningBurnupChart.svelte';
+	import MetricCard from '$lib/components/visualizations/MetricCard.svelte';
+	import TrajectoryChart from '$lib/components/visualizations/TrajectoryChart.svelte';
 
 	type GoalTrackMeta = {
 		kind?: string | null;
@@ -71,9 +73,12 @@
 	};
 
 	type WeightProgress = {
+		startDate: string;
+		endDate: string;
 		currentWeight: number;
 		startWeight: number;
 		targetWeight: number;
+		points: { date: string; weight: number }[];
 		pct: number;
 	};
 
@@ -154,6 +159,17 @@
 
 	let expandedGoals = $state<Set<string>>(new Set());
 
+	onMount(() => {
+		const params = new URLSearchParams(window.location.search);
+		const goalId = params.get('goal');
+		if (!goalId) return;
+
+		expandedGoals = new Set([goalId]);
+		requestAnimationFrame(() => {
+			document.getElementById(`goal-${goalId}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+		});
+	});
+
 	function toggleGoal(id: string) {
 		const next = new Set(expandedGoals);
 		if (next.has(id)) next.delete(id);
@@ -164,6 +180,26 @@
 	function formatDate(iso: string | null | undefined): string | null {
 		if (!iso) return null;
 		return new Date(iso).toLocaleDateString('no-NO', { day: 'numeric', month: 'short', year: 'numeric' });
+	}
+
+	function clampPct(value: number): number {
+		if (!Number.isFinite(value)) return 0;
+		return Math.max(0, Math.min(100, Math.round(value)));
+	}
+
+
+	function getRunningRequiredLegend(sensorProgress: NonNullable<Props['data']['sensorProgressMap'][string]>): string | null {
+		const endMs = new Date(`${sensorProgress.endDate}T12:00:00Z`).getTime();
+		const nowMs = new Date(new Date().toISOString().slice(0, 10) + 'T12:00:00Z').getTime();
+		const daysLeft = Math.ceil((endMs - nowMs) / 86400000);
+		const kmLeft = Math.max(0, sensorProgress.targetKm - sensorProgress.currentKm);
+		if (daysLeft <= 0) return null;
+		const requiredPerDay = Math.round((kmLeft / daysLeft) * 10) / 10;
+		return `··· Nødvendig snitt: ${requiredPerDay} km/dag (${daysLeft} dager igjen)`;
+	}
+
+	function formatMetricValue(value: number): string {
+		return `${Math.round(value * 10) / 10}`;
 	}
 
 	async function deleteGoal(goalId: string, goalTitle: string) {
@@ -228,7 +264,8 @@
 					{@const endDate = formatDate(goal.metadata?.endDate)}
 					{@const sensorProgress = data.sensorProgressMap[goal.id]}
 					{@const weightProgress = data.weightProgressMap[goal.id]}
-					<div class="goal-card" class:expanded={isExpanded}>
+					{@const runningRequiredLegend = sensorProgress ? getRunningRequiredLegend(sensorProgress) : null}
+					<div id={`goal-${goal.id}`} class="goal-card" class:expanded={isExpanded}>
 						<!-- Alltid synlig: sammendrag -->
 						<button
 							class="goal-summary"
@@ -253,9 +290,11 @@
 								{#if sensorProgress}
 									{@const pct = sensorProgress.targetKm > 0 ? Math.min(100, Math.round((sensorProgress.currentKm / sensorProgress.targetKm) * 100)) : 0}
 									<div class="sensor-progress">
-										<div class="sensor-progress-bar">
-											<div class="sensor-progress-fill" style={`width: ${pct}%`}></div>
-										</div>
+										<MetricCard
+											metricId="running_distance"
+											size="M"
+											data={{ current: sensorProgress.currentKm, target: sensorProgress.targetKm, startDate: sensorProgress.startDate, endDate: sensorProgress.endDate }}
+										/>
 										<div class="sensor-progress-label">
 											<span class="sensor-current">{sensorProgress.currentKm} km</span>
 											<span class="sensor-target">av {sensorProgress.targetKm} km</span>
@@ -264,12 +303,15 @@
 									</div>
 								{:else if weightProgress}
 									<div class="sensor-progress">
-										<div class="sensor-progress-bar">
-											<div class="sensor-progress-fill" style={`width: ${weightProgress.pct}%`}></div>
-										</div>
+										<MetricCard
+											metricId="weight_change"
+											size="M"
+											data={{ current: weightProgress.currentWeight, target: weightProgress.targetWeight, startDate: weightProgress.startDate, endDate: weightProgress.endDate, startValue: weightProgress.startWeight }}
+											formatValue={(v) => `${Math.round(v * 10) / 10} kg`}
+										/>
 										<div class="sensor-progress-label">
 											<span class="sensor-current">{weightProgress.currentWeight} kg</span>
-											<span class="sensor-target">→ {weightProgress.targetWeight} kg</span>
+											<span class="sensor-target">mål {weightProgress.targetWeight} kg</span>
 											<span class="sensor-pct">{weightProgress.pct}%</span>
 										</div>
 									</div>
@@ -295,12 +337,51 @@
 								{/if}
 
 								{#if sensorProgress && sensorProgress.dailyKm}
-									<RunningBurnupChart
-										dailyKm={sensorProgress.dailyKm}
-										targetKm={sensorProgress.targetKm}
+									<TrajectoryChart
+										points={sensorProgress.dailyKm.map((point) => ({ date: point.date, value: point.km }))}
 										startDate={sensorProgress.startDate}
 										endDate={sensorProgress.endDate}
-										currentKm={sensorProgress.currentKm}
+										startValue={0}
+										targetValue={sensorProgress.targetKm}
+										currentValue={sensorProgress.currentKm}
+										seriesMode="incremental"
+										showArea={true}
+										paddingMode="none"
+										minValue={0}
+										maxValue={sensorProgress.targetKm}
+										gridValues={[sensorProgress.targetKm, Math.round(sensorProgress.targetKm / 2), 0]}
+										valueFormatter={formatMetricValue}
+										actualStroke="#f0954a"
+										actualFill="rgba(240, 149, 74, 0.15)"
+										planStroke="#3a3a3a"
+										requiredStroke="#6ea8fe"
+										actualLegend="— Faktisk"
+										planLegend="- - Plan"
+										requiredLegend={runningRequiredLegend}
+									/>
+								{:else if weightProgress}
+									<TrajectoryChart
+										points={weightProgress.points.map((point) => ({ date: point.date, value: point.weight }))}
+										startDate={weightProgress.startDate}
+										endDate={weightProgress.endDate}
+										startValue={weightProgress.startWeight}
+										targetValue={weightProgress.targetWeight}
+										currentValue={weightProgress.currentWeight}
+										seriesMode="absolute"
+										showArea={false}
+										paddingMode="auto"
+										gridValues={[
+											Math.round(weightProgress.startWeight * 10) / 10,
+											Math.round(((weightProgress.startWeight + weightProgress.targetWeight) / 2) * 10) / 10,
+											Math.round(weightProgress.targetWeight * 10) / 10
+										]}
+										valueFormatter={formatMetricValue}
+										actualStroke="#8adf79"
+										planStroke="#3a3a3a"
+										requiredStroke="#6ea8fe"
+										actualLegend="— Faktisk vekt"
+										planLegend="- - Plan"
+										requiredLegend="··· Nødvendig bane"
 									/>
 								{/if}
 
@@ -668,19 +749,9 @@
 		margin-top: 0.75rem;
 	}
 
-	.sensor-progress-bar {
-		height: 8px;
-		background: #1e1e1e;
-		border-radius: 4px;
-		overflow: hidden;
+	.sensor-progress :global(.viz-progress-track),
+	.sensor-progress :global(.viz-marker-track) {
 		margin-bottom: 0.35rem;
-	}
-
-	.sensor-progress-fill {
-		height: 100%;
-		background: linear-gradient(90deg, #e05c5c 0%, #f0954a 100%);
-		border-radius: 4px;
-		transition: width 0.4s ease;
 	}
 
 	.sensor-progress-label {

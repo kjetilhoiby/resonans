@@ -1,6 +1,7 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { db } from '$lib/db';
-import { progress, sensorEvents, trackingSeries, recordTypeDefinitions } from '$lib/db/schema';
+import { sensorEvents, trackingSeries, recordTypeDefinitions } from '$lib/db/schema';
+import { TaskExecutionService } from '$lib/server/services/task-execution-service';
 import { and, eq } from 'drizzle-orm';
 import { ensureUser } from '$lib/server/users';
 
@@ -83,15 +84,7 @@ export const DELETE: RequestHandler = async ({ locals, request }) => {
 			});
 
 			if (linkedSeries?.taskId) {
-				await db
-					.delete(progress)
-					.where(
-						and(
-							eq(progress.userId, userId),
-							eq(progress.taskId, linkedSeries.taskId),
-							eq(progress.completedAt, existingEvent.timestamp)
-						)
-					);
+				await TaskExecutionService.deleteTaskProgressAtTimestamp(userId, linkedSeries.taskId, existingEvent.timestamp);
 			}
 		}
 

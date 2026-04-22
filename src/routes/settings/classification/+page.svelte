@@ -341,27 +341,6 @@
 		color: #999;
 	}
 
-	.admin-link-section {
-		margin-bottom: 1.5rem;
-	}
-
-	.admin-link-btn {
-		display: inline-block;
-		background: #1a1a1a;
-		border: 1px solid #2a2a2a;
-		border-radius: 10px;
-		padding: 0.75rem 1.25rem;
-		color: #ddd;
-		text-decoration: none;
-		font-weight: 600;
-		transition: all 0.15s;
-	}
-
-	.admin-link-btn:hover {
-		background: #222;
-		border-color: #3a3a3a;
-	}
-
 	.hint {
 		margin-top: 0.5rem;
 		font-size: 0.8rem;

@@ -12,6 +12,7 @@
 	import GoalRing from '../ui/GoalRing.svelte';
 	import PeriodPills from '../ui/PeriodPills.svelte';
 	import GpxMapSvg from '../charts/GpxMapSvg.svelte';
+	import MetricCard from '$lib/components/visualizations/MetricCard.svelte';
 
 	type WindowMode = '7d' | '30d' | '365d' | 'week' | 'month' | 'year';
 
@@ -736,6 +737,31 @@
 
 	const avgStepsPerDay = $derived(computeAvgStepsPerDay(selectedWindow, filteredEvents, lastMetrics, selectedDays));
 
+	const stepsComparisonPoints = $derived.by(() => {
+		const points = periodData
+			.map((period, index) => {
+				const current = period.metrics?.steps?.avg;
+				if (typeof current !== 'number') return null;
+				const label = period.periodKey || String(index + 1);
+				return { label, current };
+			})
+			.filter((point): point is { label: string; current: number } => point != null)
+			.slice(-8);
+
+		if (points.length === 0) return [];
+		const reference = points.reduce((sum, point) => sum + point.current, 0) / points.length;
+		return points.map((point) => ({
+			label: point.label,
+			current: point.current,
+			reference
+		}));
+	});
+
+	const stepsReferenceAvg = $derived.by(() => {
+		if (stepsComparisonPoints.length === 0) return undefined;
+		return stepsComparisonPoints.reduce((sum, point) => sum + point.reference, 0) / stepsComparisonPoints.length;
+	});
+
 	const avgActiveMinutesPerDay = $derived(
 		computeAvgActiveMinutesPerDay(selectedWindow, filteredEvents, lastMetrics, selectedDays)
 	);
@@ -759,6 +785,7 @@
 
 	const metricCards = $derived([
 		{
+			id: 'running_distance',
 			label: 'Løping',
 			value: runningKm > 0 ? `${runningKm.toFixed(1)} km` : '–',
 			subvalue: runningKm > 0
@@ -770,6 +797,8 @@
 			pct: runningPct
 		},
 		{
+			id: 'sleep_avg_night',
+			metricId: 'sleep_avg_night' as const,
 			label: 'Søvn per natt',
 			value: sleepHoursAvg != null ? `${formatMetric(sleepHoursAvg)} t` : '–',
 			subvalue:
@@ -777,9 +806,14 @@
 					? `${windowCopy}: snitt timer søvn per natt (mål 7.5 t)`
 					: `${windowCopy}: ingen søvndata registrert`,
 			color: '#5fa0a0',
-			pct: pctHigherBetter(sleepHoursAvg, 7.5)
+			pct: pctHigherBetter(sleepHoursAvg, 7.5),
+			vizData: {
+				current: sleepHoursAvg ?? null,
+				target: 7.5
+			}
 		},
 		{
+			id: 'sleep_lag',
 			label: 'Søvnavvik',
 			value: sleepLagComposite != null ? `${formatMetric(sleepLagComposite, 1)} t` : '–',
 			subvalue:
@@ -790,6 +824,8 @@
 			pct: pctLowerBetter(sleepLagComposite, 8)
 		},
 		{
+			id: 'steps_avg_day',
+			metricId: 'steps_avg_day' as const,
 			label: 'Skritt per dag',
 			value: avgStepsPerDay != null ? `${formatMetric(avgStepsPerDay, 0)}` : '–',
 			subvalue:
@@ -797,9 +833,15 @@
 					? `${windowCopy}: dagssnitt (mål 8 000)`
 					: `${windowCopy}: ingen aktivitetsdata registrert`,
 			color: '#82c882',
-			pct: pctHigherBetter(avgStepsPerDay, 8000)
+			pct: pctHigherBetter(avgStepsPerDay, 8000),
+			vizData: {
+				current: avgStepsPerDay ?? null,
+				expectedByNow: stepsReferenceAvg,
+				comparisonSeries: stepsComparisonPoints
+			}
 		},
 		{
+			id: 'active_minutes_avg_day',
 			label: 'Aktive minutter per dag',
 			value: avgActiveMinutesPerDay != null ? `${formatMetric(avgActiveMinutesPerDay, 0)} min` : '–',
 			subvalue:
@@ -810,6 +852,7 @@
 			pct: pctHigherBetter(avgActiveMinutesPerDay, 30)
 		},
 		{
+			id: 'weight_change',
 			label: 'Vektendring',
 			value: formatSigned(weightDelta, 'kg', 2),
 			subvalue: weightTrackMatch
@@ -1020,10 +1063,35 @@
 					<div class="hd-card-copy">
 						<p class="hd-card-label">{card.label}</p>
 						<p class="hd-card-sub">{card.subvalue}</p>
+						{#if card.metricId === 'sleep_avg_night' && card.vizData}
+							<div class="hd-card-viz">
+								<MetricCard
+									metricId="sleep_avg_night"
+									size="M"
+									data={card.vizData}
+									height={6}
+								/>
+							</div>
+						{/if}
 					</div>
 				</div>
 			{/each}
 		</div>
+
+		{#if stepsComparisonPoints.length > 1}
+			<div class="hd-table-card hd-steps-trend-card">
+				<div class="hd-table-head">
+					<h2 class="hd-table-title">Skritttrend: nå vs snitt</h2>
+					<p class="hd-table-copy">Sammenligner siste perioder med referansesnitt for valgt vindu.</p>
+				</div>
+				<MetricCard
+					metricId="steps_avg_day"
+					size="L"
+					data={{ current: avgStepsPerDay ?? null, expectedByNow: stepsReferenceAvg, comparisonSeries: stepsComparisonPoints }}
+					formatValue={(v) => `${formatMetric(v, 0)}`}
+				/>
+			</div>
+		{/if}
 
 		<div class="hd-weight-panels">
 			<div class="hd-weight-card">
@@ -1549,6 +1617,15 @@
 		margin: 0;
 		font-size: 0.74rem;
 		color: #777;
+	}
+
+	.hd-card-viz {
+		margin-top: 8px;
+		width: 100%;
+	}
+
+	.hd-steps-trend-card {
+		margin-top: 12px;
 	}
 
 	.hd-table-card {

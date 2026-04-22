@@ -1,7 +1,35 @@
-<script>
+<script lang="ts">
 	import { getContext } from 'svelte';
 
-	const { data, xGet, yGet, zGet, xScale, yScale, height } = getContext('LayerCake');
+	type DataPoint = {
+		x: number;
+		y: number;
+		series: string;
+	};
+
+	type ReadableStore<T> = {
+		subscribe(run: (value: T) => void): () => void;
+	};
+
+	type LayerCakeContext = {
+		data: ReadableStore<DataPoint[]>;
+		xGet: ReadableStore<(point: DataPoint) => number>;
+		yGet: ReadableStore<(point: DataPoint) => number>;
+		zGet: ReadableStore<(point: DataPoint) => string>;
+		xScale: ReadableStore<(value: number) => number>;
+		yScale: ReadableStore<(value: number) => number>;
+		height: ReadableStore<number>;
+	};
+
+	type ProjectionData = {
+		startX: number;
+		startY: number;
+		endX: number;
+		endY: number;
+		projectedTotal: number;
+	};
+
+	const { data, xScale, yScale, height } = getContext<LayerCakeContext>('LayerCake');
 
 	// Calculate current day of year
 	const today = new Date();
@@ -12,13 +40,13 @@
 
 	// Find current year data and latest measurement
 	$: currentYearData = $data
-		.filter(d => d.series === today.getFullYear().toString())
-		.sort((a, b) => a.x - b.x);
+		.filter((d: DataPoint) => d.series === today.getFullYear().toString())
+		.sort((a: DataPoint, b: DataPoint) => a.x - b.x);
 	
 	$: latestMeasurement = currentYearData.length > 0 ? currentYearData[currentYearData.length - 1] : null;
 	
 	// Calculate projection to end of year with realistic trend
-	$: projectionData = (() => {
+	$: projectionData = (() : ProjectionData | null => {
 		if (!latestMeasurement || currentYearData.length < 2) return null;
 		
 		// Calculate average weekly progress from recent data
@@ -69,7 +97,7 @@
 </g>
 
 <!-- Projection line from last measurement to end of year -->
-{#if projectionData && latestMeasurement.x < 365}
+{#if projectionData && latestMeasurement && latestMeasurement.x < 365}
 	<g class="projection">
 		<line
 			x1={projectionData.startX}

@@ -81,7 +81,7 @@ Vær presis og kortfattet. Maks 400 ord.`
 
 async function extractAudio(buffer: Buffer, filename: string, mimeType: string): Promise<string> {
 	const isVideo = mimeType.startsWith('video/');
-	const file = new File([buffer], filename, {
+	const file = new File([new Uint8Array(buffer)], filename, {
 		type: mimeType || (isVideo ? 'video/mp4' : 'audio/mpeg')
 	});
 	const transcription = await openai.audio.transcriptions.create({
@@ -117,7 +117,7 @@ export async function transcribeAudioWithWords(
 	mimeType: string
 ): Promise<AudioTranscriptionResult> {
 	const isVideo = mimeType.startsWith('video/');
-	const file = new File([buffer], filename, {
+	const file = new File([new Uint8Array(buffer)], filename, {
 		type: mimeType || (isVideo ? 'video/mp4' : 'audio/mpeg')
 	});
 	const transcription = await openai.audio.transcriptions.create({

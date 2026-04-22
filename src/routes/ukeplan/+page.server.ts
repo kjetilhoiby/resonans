@@ -1,10 +1,10 @@
 import { fail } from '@sveltejs/kit';
-import { and, eq, gte, inArray, isNull, lt, lte, or } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, or } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/db';
-import { checklistItems, checklists, goals, memories, progress, tasks, themes, sensorEvents, sensors, workoutDailyAggregates } from '$lib/db/schema';
+import { checklistItems, checklists, goals, memories, progress, tasks, themes, sensorEvents, sensors } from '$lib/db/schema';
 import { parseListRepeatCount } from '$lib/server/list-repeat-parser';
-import { refreshWorkoutProjectionsForRange } from '$lib/server/workout-projections';
+import { WorkoutProjectionService } from '$lib/server/services/workout-projection-service';
 
 async function loadWeekTasks(userId: string, dashedKey: string, compactKey: string) {
 	const baseSelect = db
@@ -358,6 +358,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		groupName: string | null;
 		location: { name: string | null; address: string | null } | null;
 		rsvp: 'accepted' | 'declined' | 'unanswered' | 'unknown';
+		spondEventId: string | null;
 	}>> = {};
 
 	for (const e of rawSpondEvents) {
@@ -392,8 +393,30 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		});
 	}
 
+	type RunningGoalProgress = {
+		kind: 'running_distance';
+		currentKm: number;
+		expectedKm: number;
+		targetKm: number;
+		status: 'green' | 'yellow' | 'red';
+	};
+
+	type WeightGoalProgress = {
+		kind: 'weight_change';
+		startDate: string;
+		endDate: string;
+		startWeight: number;
+		currentWeight: number;
+		expectedWeight: number;
+		targetWeight: number;
+		status: 'green' | 'yellow' | 'red';
+		points: { date: string; weight: number }[];
+	};
+
+	type GoalProgress = RunningGoalProgress | WeightGoalProgress;
+
 	// Calculate sensor progress for running goals
-	const sensorProgressMap: Record<string, { currentKm: number; expectedKm: number; targetKm: number; status: 'green' | 'yellow' | 'red' }> = {};
+	const sensorProgressMap: Record<string, GoalProgress> = {};
 	const runningGoals = longTermGoals
 		.map((goal) => {
 			const meta = goal.metadata as any;
@@ -412,39 +435,18 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		const minStartDay = new Date(Date.UTC(minStart.getUTCFullYear(), minStart.getUTCMonth(), minStart.getUTCDate()));
 		const maxEndDay = new Date(Date.UTC(maxEnd.getUTCFullYear(), maxEnd.getUTCMonth(), maxEnd.getUTCDate()));
 
-		let aggregateRows = await db
-			.select({ date: workoutDailyAggregates.date, distanceMetersSum: workoutDailyAggregates.distanceMetersSum })
-			.from(workoutDailyAggregates)
-			.where(
-				and(
-					eq(workoutDailyAggregates.userId, userId),
-					eq(workoutDailyAggregates.sportFamily, 'running'),
-					gte(workoutDailyAggregates.date, minStartDay),
-					lte(workoutDailyAggregates.date, maxEndDay)
-				)
-			)
-			.orderBy(workoutDailyAggregates.date);
+		const freshness = await WorkoutProjectionService.ensureFreshnessForRange(
+			userId,
+			minStartDay,
+			maxEndDay,
+			WorkoutProjectionService.SOFT_STALE_MS,
+			WorkoutProjectionService.HARD_STALE_MS
+		);
+		console.log(
+			`[ukeplan/load] workout freshness state=${freshness.state} ageMs=${freshness.ageMs ?? 'n/a'} rows=${freshness.rowCount}`
+		);
 
-		if (aggregateRows.length === 0) {
-			await refreshWorkoutProjectionsForRange(userId, minStartDay, maxEndDay);
-			aggregateRows = await db
-				.select({ date: workoutDailyAggregates.date, distanceMetersSum: workoutDailyAggregates.distanceMetersSum })
-				.from(workoutDailyAggregates)
-				.where(
-					and(
-						eq(workoutDailyAggregates.userId, userId),
-						eq(workoutDailyAggregates.sportFamily, 'running'),
-						gte(workoutDailyAggregates.date, minStartDay),
-						lte(workoutDailyAggregates.date, maxEndDay)
-					)
-				)
-				.orderBy(workoutDailyAggregates.date);
-		}
-
-		const dailyRows = aggregateRows.map((row) => ({
-			date: row.date,
-			km: Number(row.distanceMetersSum ?? 0) / 1000
-		}));
+		const dailyRows = await WorkoutProjectionService.readRunningDailyKmRowsForRange(userId, minStartDay, maxEndDay);
 
 		for (const { goal, startDate, endDate, targetKm } of runningGoals) {
 			let currentKm = 0;
@@ -464,10 +466,103 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			if (ratio < 0.80) status = 'red';
 			else if (ratio < 0.95) status = 'yellow';
 
-			sensorProgressMap[goal.id] = { currentKm, expectedKm: Math.round(expectedKm * 10) / 10, targetKm, status };
+			sensorProgressMap[goal.id] = {
+				kind: 'running_distance',
+				currentKm,
+				expectedKm: Math.round(expectedKm * 10) / 10,
+				targetKm,
+				status
+			};
 		}
 
-		console.log(`[ukeplan/load] running progress via aggregates: ${(performance.now() - tRun).toFixed(0)}ms (${runningGoals.length} goals, ${aggregateRows.length} daily rows)`);
+		console.log(`[ukeplan/load] running progress via aggregates: ${(performance.now() - tRun).toFixed(0)}ms (${runningGoals.length} goals, ${dailyRows.length} daily rows)`);
+	}
+
+	const weightGoals = longTermGoals
+		.map((goal) => {
+			const meta = goal.metadata as any;
+			if (meta?.metricId !== 'weight_change' || typeof meta?.startValue !== 'number') return null;
+			const startDate = meta?.startDate ? new Date(meta.startDate) : new Date(goal.createdAt);
+			const endDate = meta?.endDate ? new Date(meta.endDate) : (goal.targetDate ? new Date(goal.targetDate) : null);
+			if (!endDate) return null;
+			const targetDelta = Number(meta?.goalTrack?.targetValue ?? 0);
+			return {
+				goal,
+				startDate,
+				endDate,
+				startWeight: Number(meta.startValue),
+				targetWeight: Math.round((Number(meta.startValue) + targetDelta) * 10) / 10
+			};
+		})
+		.filter(
+			(g): g is { goal: typeof longTermGoals[number]; startDate: Date; endDate: Date; startWeight: number; targetWeight: number } =>
+				g !== null
+		);
+
+	if (weightGoals.length > 0) {
+		const minStart = new Date(Math.min(...weightGoals.map((g) => g.startDate.getTime())));
+		const maxEnd = new Date(Math.max(...weightGoals.map((g) => g.endDate.getTime())));
+
+		const weightRows = await db
+			.select({
+				timestamp: sensorEvents.timestamp,
+				weight: sensorEvents.data
+			})
+			.from(sensorEvents)
+			.where(
+				and(
+					eq(sensorEvents.userId, userId),
+					eq(sensorEvents.dataType, 'weight'),
+					gte(sensorEvents.timestamp, minStart),
+					lte(sensorEvents.timestamp, maxEnd)
+				)
+			)
+			.orderBy(asc(sensorEvents.timestamp));
+
+		const normalizedWeightRows = weightRows
+			.map((row) => ({
+				date: row.timestamp.toISOString().slice(0, 10),
+				weight: Number((row.weight as { weight?: number } | null)?.weight)
+			}))
+			.filter((row) => Number.isFinite(row.weight));
+
+		for (const { goal, startDate, endDate, startWeight, targetWeight } of weightGoals) {
+			const points = normalizedWeightRows.filter((row) => {
+				const rowDate = new Date(`${row.date}T12:00:00Z`);
+				return rowDate >= startDate && rowDate <= endDate;
+			});
+
+			const latestPoint = [...points].sort((a, b) => b.date.localeCompare(a.date))[0] ?? null;
+			const currentWeight = latestPoint ? Math.round(latestPoint.weight * 10) / 10 : startWeight;
+
+			const now = new Date();
+			const totalDays = Math.max(1, (endDate.getTime() - startDate.getTime()) / 86400000);
+			const elapsedDays = Math.max(0, Math.min(totalDays, (now.getTime() - startDate.getTime()) / 86400000));
+			const expectedWeight = startWeight + ((targetWeight - startWeight) * elapsedDays) / totalDays;
+
+			const expectedDelta = Math.abs(expectedWeight - startWeight);
+			const actualDelta = Math.abs(currentWeight - startWeight);
+			const ratio = expectedDelta > 0 ? actualDelta / expectedDelta : 1;
+
+			let status: 'green' | 'yellow' | 'red' = 'green';
+			if (ratio < 0.8) status = 'red';
+			else if (ratio < 0.95) status = 'yellow';
+
+			sensorProgressMap[goal.id] = {
+				kind: 'weight_change',
+				startDate: startDate.toISOString().slice(0, 10),
+				endDate: endDate.toISOString().slice(0, 10),
+				startWeight,
+				currentWeight,
+				expectedWeight: Math.round(expectedWeight * 10) / 10,
+				targetWeight,
+				status,
+				points: [
+					{ date: startDate.toISOString().slice(0, 10), weight: startWeight },
+					...points.filter((point) => point.date !== startDate.toISOString().slice(0, 10))
+				]
+			};
+		}
 	}
 
 	return {

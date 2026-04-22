@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { sensorEvents, sensors } from '$lib/db/schema';
 import { eq, and } from 'drizzle-orm';
+import { SensorEventService } from '$lib/server/services/sensor-event-service';
 
 /**
  * API for AI-genererte registreringer
@@ -97,17 +98,19 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		}
 
 		// Lagre til database
-		const [newEvent] = await db
-			.insert(sensorEvents)
-			.values({
-				userId,
-				sensorId: aiSensor.id,
-				eventType: 'measurement',
-				dataType: type,
-				timestamp,
-				data: eventData
-			})
-			.returning();
+		const { event: newEvent } = await SensorEventService.write({
+			userId,
+			sensorId: aiSensor.id,
+			eventType: 'measurement',
+			dataType: type,
+			timestamp,
+			data: eventData,
+			source: 'ai_chat_record'
+		});
+
+		if (!newEvent) {
+			return json({ error: 'Failed to create record' }, { status: 500 });
+		}
 
 		return json({
 			success: true,

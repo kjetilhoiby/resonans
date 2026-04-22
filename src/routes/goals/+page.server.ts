@@ -1,8 +1,8 @@
 import { db } from '$lib/db';
-import { goals, sensorEvents, workoutDailyAggregates } from '$lib/db/schema';
+import { goals, sensorEvents } from '$lib/db/schema';
 import { and, desc, eq, gte, lte, sql } from 'drizzle-orm';
 import { buildUnifiedWorkoutActivities } from '$lib/server/activity-layer';
-import { refreshWorkoutProjectionsForRange } from '$lib/server/workout-projections';
+import { WorkoutProjectionService } from '$lib/server/services/workout-projection-service';
 import type { PageServerLoad } from './$types';
 
 const RUNNING_SPORT_TYPES = new Set(['running', 'indoor_running', 'trail_running', 'løp', 'run']);
@@ -18,25 +18,11 @@ async function readRunningDailyAggregates(
 	startDate: Date,
 	endDate: Date
 ): Promise<{ date: string; km: number }[]> {
-	const rows = await db
-		.select({
-			date: workoutDailyAggregates.date,
-			distanceMetersSum: workoutDailyAggregates.distanceMetersSum
-		})
-		.from(workoutDailyAggregates)
-		.where(
-			and(
-				eq(workoutDailyAggregates.userId, userId),
-				eq(workoutDailyAggregates.sportFamily, 'running'),
-				gte(workoutDailyAggregates.date, startDate),
-				lte(workoutDailyAggregates.date, endDate)
-			)
-		)
-		.orderBy(workoutDailyAggregates.date);
+	const rows = await WorkoutProjectionService.readRunningDailyKmRowsForRange(userId, startDate, endDate);
 
 	return rows.map((row) => ({
 		date: row.date.toISOString().slice(0, 10),
-		km: Math.round((Number(row.distanceMetersSum ?? 0) / 1000) * 10) / 10
+		km: Math.round(row.km * 10) / 10
 	}));
 }
 
@@ -47,11 +33,18 @@ async function getRunningSummaryForRange(
 ): Promise<RunningSummary> {
 	let dailyKm: { date: string; km: number }[] = [];
 	try {
+		const freshness = await WorkoutProjectionService.ensureFreshnessForRange(
+			userId,
+			startDate,
+			endDate,
+			WorkoutProjectionService.SOFT_STALE_MS,
+			WorkoutProjectionService.HARD_STALE_MS
+		);
+		console.log(
+			`[goals/load] workout freshness state=${freshness.state} ageMs=${freshness.ageMs ?? 'n/a'} rows=${freshness.rowCount}`
+		);
+
 		dailyKm = await readRunningDailyAggregates(userId, startDate, endDate);
-		if (dailyKm.length === 0) {
-			await refreshWorkoutProjectionsForRange(userId, startDate, endDate);
-			dailyKm = await readRunningDailyAggregates(userId, startDate, endDate);
-		}
 	} catch (error) {
 		console.warn('[goals/load] aggregate path unavailable, falling back to deduplicated activity-layer:', error);
 		const workouts = await buildUnifiedWorkoutActivities(userId, { since: startDate, limit: 500 });
@@ -128,9 +121,12 @@ export const load: PageServerLoad = async ({ locals }) => {
 	});
 
 	type WeightProgress = {
+		startDate: string;
+		endDate: string;
 		currentWeight: number;
 		startWeight: number;
 		targetWeight: number;
+		points: { date: string; weight: number }[];
 		pct: number;
 	};
 	let weightProgressMap: Record<string, WeightProgress> = {};
@@ -138,35 +134,56 @@ export const load: PageServerLoad = async ({ locals }) => {
 	for (const goal of weightGoals) {
 		const meta = goal.metadata as any;
 		const startDate = meta?.startDate ? new Date(meta.startDate) : new Date(goal.createdAt);
+		const endDate = meta?.endDate ? new Date(meta.endDate) : (goal.targetDate ? new Date(goal.targetDate) : new Date());
 		const startWeight: number = meta.startValue;
 		const targetDelta: number = meta?.goalTrack?.targetValue ?? 0;
 		const targetWeight = startWeight + targetDelta;
 
 		const tW = performance.now();
-		const [latest] = await db
-			.select({ weight: sensorEvents.data })
+		const rows = await db
+			.select({ timestamp: sensorEvents.timestamp, data: sensorEvents.data })
 			.from(sensorEvents)
 			.where(
 				and(
 					eq(sensorEvents.userId, locals.userId),
 					eq(sensorEvents.dataType, 'weight'),
-					gte(sensorEvents.timestamp, startDate)
+					gte(sensorEvents.timestamp, startDate),
+					lte(sensorEvents.timestamp, endDate)
 				)
 			)
-			.orderBy(desc(sensorEvents.timestamp))
-			.limit(1);
+			.orderBy(sensorEvents.timestamp);
 		console.log(`[goals/load] weight query "${goal.title}": ${(performance.now() - tW).toFixed(0)}ms`);
 
-		if (!latest?.weight?.weight) continue;
+		const points = rows
+			.map((row) => {
+				const weight = Number((row.data as { weight?: number } | null)?.weight);
+				if (!Number.isFinite(weight)) return null;
+				return {
+					date: row.timestamp.toISOString().slice(0, 10),
+					weight: Math.round(weight * 10) / 10
+				};
+			})
+			.filter((point): point is { date: string; weight: number } => point !== null);
 
-		const currentWeight = latest.weight.weight;
+		const latestPoint = points.length > 0 ? points[points.length - 1] : null;
+		if (!latestPoint) continue;
+
+		const currentWeight = latestPoint.weight;
 		const totalDelta = targetWeight - startWeight;
 		const achievedDelta = currentWeight - startWeight;
 		const pct = totalDelta !== 0
 			? Math.max(0, Math.min(100, Math.round((achievedDelta / totalDelta) * 100)))
 			: 0;
 
-		weightProgressMap[goal.id] = { currentWeight, startWeight, targetWeight, pct };
+		weightProgressMap[goal.id] = {
+			startDate: startDate.toISOString().slice(0, 10),
+			endDate: endDate.toISOString().slice(0, 10),
+			currentWeight,
+			startWeight,
+			targetWeight,
+			points,
+			pct
+		};
 	}
 
 	console.log(`[goals/load] TOTAL: ${(performance.now() - t0).toFixed(0)}ms`);

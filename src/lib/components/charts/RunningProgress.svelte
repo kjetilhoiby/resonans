@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { LayerCake, Svg, Html } from 'layercake';
 	import { scaleTime, scaleLinear } from 'd3-scale';
-	import { line, area, curveMonotoneX } from 'd3-shape';
+	import { line as d3Line, area, curveMonotoneX } from 'd3-shape';
 	import { onMount } from 'svelte';
 
 	interface Workout {
@@ -21,6 +21,11 @@
 	let data2024: DataPoint[] = [];
 	let data2025: DataPoint[] = [];
 	let loading = true;
+	let svgWidth = 860;
+	const svgHeight = 400;
+	const padding = { top: 20, right: 24, bottom: 40, left: 60 };
+	$: chartWidth = Math.max(0, svgWidth - padding.left - padding.right);
+	$: chartHeight = Math.max(0, svgHeight - padding.top - padding.bottom);
 
 	onMount(async () => {
 		await fetchCumulativeRunningData();
@@ -299,62 +304,4 @@
 		color: #6b7280;
 	}
 
-	.y-axis {
-		position: absolute;
-		left: 0;
-		top: 0;
-		bottom: 40px;
-		width: 60px;
-	}
-
-	.y-label {
-		position: absolute;
-		right: 10px;
-		transform: translateY(-50%);
-		font-size: 0.75rem;
-		color: #6b7280;
-		text-align: right;
-	}
-
-	.x-axis {
-		position: absolute;
-		bottom: 0;
-		left: 60px;
-		right: 20px;
-		height: 40px;
-		display: flex;
-		justify-content: space-between;
-	}
-
-	.x-label {
-		font-size: 0.75rem;
-		color: #6b7280;
-		transform: translateX(-50%);
-	}
-
-	.legend {
-		position: absolute;
-		top: 10px;
-		right: 30px;
-		display: flex;
-		gap: 1rem;
-		background: white;
-		padding: 0.5rem;
-		border-radius: 6px;
-		border: 1px solid #e5e7eb;
-	}
-
-	.legend-item {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		font-size: 0.875rem;
-		color: #6b7280;
-	}
-
-	.legend-line {
-		width: 24px;
-		height: 3px;
-		border-radius: 2px;
-	}
 </style>

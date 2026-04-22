@@ -24,12 +24,11 @@
 
 	interface Props {
 		checklist: Checklist;
-		weather?: { emoji: string; temp: number };
 		onclick?: () => void;
 		onremove?: () => void;
 	}
 
-	let { checklist, weather, onclick, onremove }: Props = $props();
+	let { checklist, onclick, onremove }: Props = $props();
 
 	const total = $derived(checklist.items.length);
 	const done = $derived(checklist.items.filter((i) => i.checked).length);
@@ -130,9 +129,6 @@
 
 	<!-- Label -->
 	<p class="cl-label" class:complete={isComplete}>{contextLabel.primary}</p>
-	{#if weather}
-		<p class="cl-wx">{weather.emoji}<span class="cl-wx-temp">{weather.temp}°</span></p>
-	{/if}
 	{#if contextLabel.secondary}
 		<p class="cl-subtitle">{contextLabel.secondary}</p>
 	{/if}
@@ -215,22 +211,6 @@
 
 	.cl-label.complete {
 		color: #7bb38f;
-	}
-
-	.cl-wx {
-		display: flex;
-		align-items: center;
-		gap: 2px;
-		margin: 0;
-		font-size: 0.7rem;
-		line-height: 1;
-	}
-
-	.cl-wx-temp {
-		font-size: 0.56rem;
-		font-weight: 700;
-		color: #8090aa;
-		font-variant-numeric: tabular-nums;
 	}
 
 	.cl-subtitle {

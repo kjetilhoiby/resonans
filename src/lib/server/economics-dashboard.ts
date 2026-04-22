@@ -1,6 +1,6 @@
 import { db } from '$lib/db';
 import { categorizedEvents, sensorEvents } from '$lib/db/schema';
-import { and, eq, desc, sql } from 'drizzle-orm';
+import { and, asc, eq, desc, sql } from 'drizzle-orm';
 import {
 	detectRecurring,
 	CATEGORIES
@@ -28,6 +28,7 @@ export type EconomicsRecentTx = {
 	date: string;
 	description: string;
 	amount: number;
+	category: string;
 	emoji: string;
 	label: string;
 };
@@ -50,6 +51,8 @@ export type PaydaySpend = {
 	grocerySpendPerDay: number;
 	prevSpendPerDay: number | null;
 	prevGrocerySpendPerDay: number | null;
+	comparisonPeriodsUsed: number;
+	averageComparisonPoints: Array<{ day: number; total: number; grocery: number }>;
 	transactions: EconomicsTx[];
 	groceryTransactions: EconomicsTx[];
 };
@@ -102,7 +105,7 @@ export async function loadEconomicsDashboardData(userId: string): Promise<Econom
 
 	const totalBalance = accounts.reduce((sum, a) => sum + a.balance, 0);
 
-	// ── 2. Transactions — 70 days for payday comparison ────────────────────
+	// ── 2. Transactions — enough history for current + four previous salary periods ──
 	const now = new Date();
 	const currentMonth = now.toISOString().slice(0, 7); // "2026-03"
 	const monthStart = new Date(`${currentMonth}-01T00:00:00Z`);
@@ -197,25 +200,72 @@ export async function loadEconomicsDashboardData(userId: string): Promise<Econom
 			date: tx.timestamp.toISOString(),
 			description: tx.description,
 			amount: tx.amount,
+			category: tx.category ?? 'ukategorisert',
 			emoji: tx.emoji ?? catDef.emoji,
 			label: tx.label ?? catDef.label
 		};
 	});
 
 	// ── 5. Payday spend — spending per day since last salary ─────────────────
-	// Detect payday: most recent income tx > 15 000 kr (salary threshold)
-	const SALARY_THRESHOLD = 15000;
-	const incomeTxsSorted = allTxs
-		.filter((t) => t.amount >= SALARY_THRESHOLD)
-		.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+	// Detect payday from raw sensorEvents — robust against lower salary amounts and varied descriptions.
+	const SALARY_THRESHOLD = 8000;
+	const INCOME_MIN_THRESHOLD = 4000;
+	const PAYDAY_DEDUP_DAYS = 20;
+	const historyFrom = new Date(now.getTime() - 220 * 24 * 60 * 60 * 1000);
+	const SALARY_KEYWORDS = ['LONN', 'L\u00d8NN', 'SALARY', 'ARBEIDSGIVER', 'NAV', 'FOLKETRYGD'];
 
-	const currentPayday = incomeTxsSorted[0] ?? null;
-	// Previous payday: large income at least 10 days before the current one
-	const prevPayday = incomeTxsSorted.find(
-		(t) =>
-			currentPayday &&
-			currentPayday.timestamp.getTime() - t.timestamp.getTime() > 10 * 24 * 60 * 60 * 1000
-	) ?? null;
+	const rawSalaryRows = await db
+		.select({
+			timestamp: sensorEvents.timestamp,
+			amount: sql<number>`(data->>'amount')::numeric`,
+			description: sql<string>`COALESCE(data->>'description', '')`
+		})
+		.from(sensorEvents)
+		.where(and(
+			eq(sensorEvents.userId, userId),
+			eq(sensorEvents.dataType, 'bank_transaction'),
+			sql`(data->>'amount')::numeric >= ${INCOME_MIN_THRESHOLD}`,
+			sql`${sensorEvents.timestamp} >= ${historyFrom.toISOString()}`
+		))
+		.orderBy(desc(sensorEvents.timestamp));
+
+	// Raw spending for comparison periods (no category resolution needed)
+	const rawSpendRows = await db
+		.select({
+			timestamp: sensorEvents.timestamp,
+			amount: sql<number>`(data->>'amount')::numeric`,
+			description: sql<string>`data->>'description'`,
+		})
+		.from(sensorEvents)
+		.where(and(
+			eq(sensorEvents.userId, userId),
+			eq(sensorEvents.dataType, 'bank_transaction'),
+			sql`(data->>'amount')::numeric < 0`,
+			sql`${sensorEvents.timestamp} >= ${historyFrom.toISOString()}`
+		))
+		.orderBy(asc(sensorEvents.timestamp));
+
+	const GROCERY_KEYWORDS = ['KIWI', 'REMA', 'ODA ', 'MENY', 'SPAR', 'COOP', 'EXTRA', 'JOKER', 'BUNNPRIS', 'NÆRBUTIKK', 'BAMA'];
+	const isGroceryTx = (d: string) => { const u = d.toUpperCase(); return GROCERY_KEYWORDS.some((k) => u.includes(k)); };
+
+	const isLikelySalaryTx = (amount: number, description: string): boolean => {
+		if (amount >= SALARY_THRESHOLD) return true;
+		const upper = description.toUpperCase();
+		return SALARY_KEYWORDS.some((keyword) => upper.includes(keyword));
+	};
+
+	const paydayCandidates = rawSalaryRows
+		.filter((tx) => isLikelySalaryTx(Number(tx.amount) || 0, tx.description ?? ''))
+		.reduce<Array<{ timestamp: Date }>>((acc, tx) => {
+		const last = acc[acc.length - 1];
+		if (!last || last.timestamp.getTime() - tx.timestamp.getTime() > PAYDAY_DEDUP_DAYS * 24 * 60 * 60 * 1000) {
+			acc.push({ timestamp: tx.timestamp });
+		}
+		return acc;
+	}, []);
+
+	const currentPayday = paydayCandidates[0] ?? null;
+	const prevPayday = paydayCandidates[1] ?? null;
 
 	const paydayDate = currentPayday ? currentPayday.timestamp.toISOString() : null;
 	const paydayStart = currentPayday
@@ -270,8 +320,8 @@ export async function loadEconomicsDashboardData(userId: string): Promise<Econom
 		const prevStart = new Date(new Date(prevPayday.timestamp).setHours(0, 0, 0, 0));
 		const prevEnd = new Date(prevStart.getTime() + daysSincePayday * msPerDay);
 
-		const prevTxs = allTxs.filter(
-			(t) => t.timestamp >= prevStart && t.timestamp < prevEnd && t.amount < 0
+		const prevTxs = rawSpendRows.filter(
+			(t) => t.timestamp >= prevStart && t.timestamp < prevEnd
 		);
 
 		let prevTotal = 0;
@@ -279,12 +329,63 @@ export async function loadEconomicsDashboardData(userId: string): Promise<Econom
 		for (const tx of prevTxs) {
 			const absAmt = Math.abs(tx.amount);
 			prevTotal += absAmt;
-			if (tx.category === 'dagligvarer') prevGrocery += absAmt;
+			if (isGroceryTx(tx.description ?? '')) prevGrocery += absAmt;
 		}
 
 		const prevDays = Math.max(1, Math.round((prevEnd.getTime() - prevStart.getTime()) / msPerDay));
 		prevSpendPerDay = prevTotal / prevDays;
 		prevGrocerySpendPerDay = prevGrocery / prevDays;
+	}
+
+	const averageComparisonPoints: Array<{ day: number; total: number; grocery: number }> = [];
+	const previousPeriods = paydayCandidates.slice(1, 5);
+
+	if (previousPeriods.length > 0) {
+		const perPeriodSeries = previousPeriods.flatMap((periodStartTx, index) => {
+			const newerBoundary = paydayCandidates[index];
+			if (!newerBoundary) return [];
+
+			const periodStart = new Date(new Date(periodStartTx.timestamp).setHours(0, 0, 0, 0));
+			const periodEnd = new Date(new Date(newerBoundary.timestamp).setHours(0, 0, 0, 0));
+			const periodLengthDays = Math.max(1, Math.round((periodEnd.getTime() - periodStart.getTime()) / msPerDay));
+			const maxDays = Math.min(daysSincePayday, periodLengthDays);
+
+			const totalsByDay = new Map<number, { total: number; grocery: number }>();
+			for (const tx of rawSpendRows) {
+				if (tx.timestamp < periodStart || tx.timestamp >= periodEnd) continue;
+				const dayIndex = Math.floor((tx.timestamp.getTime() - periodStart.getTime()) / msPerDay) + 1;
+				if (dayIndex < 1 || dayIndex > maxDays) continue;
+				const prev = totalsByDay.get(dayIndex) ?? { total: 0, grocery: 0 };
+				prev.total += Math.abs(tx.amount);
+				if (isGroceryTx(tx.description ?? '')) prev.grocery += Math.abs(tx.amount);
+				totalsByDay.set(dayIndex, prev);
+			}
+
+			let cumulativeTotal = 0;
+			let cumulativeGrocery = 0;
+			const series: Array<{ day: number; total: number; grocery: number }> = [];
+			for (let day = 1; day <= maxDays; day += 1) {
+				const dayTotals = totalsByDay.get(day);
+				cumulativeTotal += dayTotals?.total ?? 0;
+				cumulativeGrocery += dayTotals?.grocery ?? 0;
+				series.push({ day, total: cumulativeTotal, grocery: cumulativeGrocery });
+			}
+			return [series];
+		});
+
+		for (let day = 1; day <= daysSincePayday; day += 1) {
+			const pointsForDay = perPeriodSeries
+				.map((series) => series.find((point) => point.day === day) ?? null)
+				.filter((point): point is { day: number; total: number; grocery: number } => point !== null);
+
+			if (pointsForDay.length === 0) continue;
+
+			averageComparisonPoints.push({
+				day,
+				total: pointsForDay.reduce((sum, point) => sum + point.total, 0) / pointsForDay.length,
+				grocery: pointsForDay.reduce((sum, point) => sum + point.grocery, 0) / pointsForDay.length
+			});
+		}
 	}
 
 	const paydaySpend: PaydaySpend = {
@@ -296,6 +397,8 @@ export async function loadEconomicsDashboardData(userId: string): Promise<Econom
 		grocerySpendPerDay,
 		prevSpendPerDay,
 		prevGrocerySpendPerDay,
+		comparisonPeriodsUsed: previousPeriods.length,
+		averageComparisonPoints,
 		transactions: paydayTxList,
 		groceryTransactions: groceryTxList
 	};

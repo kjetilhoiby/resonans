@@ -1,7 +1,8 @@
 import { db } from '$lib/db';
-import { sensors, sensorEvents } from '$lib/db/schema';
-import { eq, and, sql } from 'drizzle-orm';
+import { sensors } from '$lib/db/schema';
+import { eq, and } from 'drizzle-orm';
 import { spondLogin, spondGetGroups, spondGetEvents, spondGetProfile, type SpondEvent, type SpondGroup } from './spond';
+import { SensorEventService } from '$lib/server/services/sensor-event-service';
 
 /**
  * Retrieve the active Spond sensor row for a user.
@@ -75,7 +76,8 @@ function parseSpondEvent(
 			spondEventId: event.id,
 			endTimestamp: event.endTimestamp,
 			type: event.type ?? null
-		}
+		},
+		source: 'spond_sync'
 	};
 }
 
@@ -147,16 +149,9 @@ export async function syncSpondData(userId: string): Promise<{ events: number; g
 
 		const rows = events.map((e) => parseSpondEvent(e, userId, sensor.id, group.name));
 
-		await db
-			.insert(sensorEvents)
-			.values(rows)
-			.onConflictDoUpdate({
-				target: [sensorEvents.sensorId, sensorEvents.dataType, sensorEvents.timestamp],
-				set: {
-					data: sql`excluded.data`,
-					metadata: sql`excluded.metadata`
-				}
-			});
+		await SensorEventService.writeMany(rows, {
+			conflictMode: 'upsert_sensor_datatype_timestamp'
+		});
 
 		totalEvents += events.length;
 	}

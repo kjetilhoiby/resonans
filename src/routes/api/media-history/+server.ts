@@ -2,7 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { messages } from '$lib/db/schema';
-import { and, eq, desc, limit } from 'drizzle-orm';
+import { desc } from 'drizzle-orm';
 
 type AttachmentKind = 'image' | 'audio' | 'document' | 'other';
 
@@ -31,19 +31,6 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	}
 
 	try {
-		// Hent meldinger med attachments av denne typen, sortert fra nyeste først
-		const result = await db
-			.select()
-			.from(messages)
-			.where(
-				and(
-					// Filter by user (via conversation)
-					// We need to do this by joining with conversations table
-				)
-			)
-			.orderBy(desc(messages.createdAt))
-			.limit(maxResults);
-
 		// Nu må vi filter manuelt siden vi ikke har direkte access til userId via messages
 		// Vi må join med conversations
 		const { conversations } = await import('$lib/db/schema');

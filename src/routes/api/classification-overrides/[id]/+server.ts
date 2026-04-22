@@ -6,9 +6,9 @@ import type { RequestHandler } from './$types';
 
 export const DELETE: RequestHandler = async ({ params, locals }) => {
 	const userId = locals.userId;
-	const id = parseInt(params.id, 10);
+	const id = params.id;
 
-	if (!id || isNaN(id)) {
+	if (!id) {
 		return json({ error: 'Invalid id' }, { status: 400 });
 	}
 

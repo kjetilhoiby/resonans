@@ -4,7 +4,8 @@ import { db } from '$lib/db';
 import { getUserActiveGoalsAndTasks } from '$lib/server/goals';
 import { sendGoogleChatMessage, buildDailyCheckInMessage } from '$lib/server/google-chat';
 import { runDayPlanningAndCloseNudges } from '$lib/server/day-planning-nudges';
-import { runDomainSignalProducers } from '$lib/server/domain-signals';
+import { enqueueStaleWorkoutProjectionRefreshSweep } from '$lib/server/background-jobs';
+import { SignalService } from '$lib/server/services/signal-service';
 
 /**
  * In-app cron scheduler using node-cron
@@ -47,9 +48,25 @@ export function startScheduler() {
 				console.error('❌ runDayPlanningAndCloseNudges failed:', err);
 			}
 			try {
-				await runDomainSignalProducers();
+				await SignalService.runProducers();
 			} catch (err) {
 				console.error('❌ runDomainSignalProducers failed:', err);
+			}
+		},
+		{
+			timezone: 'UTC'
+		}
+	);
+
+	// Stale-sweeper for workout projections every 15 minutes.
+	cron.schedule(
+		'*/15 * * * *',
+		async () => {
+			console.log('⏰ Running workout projection stale sweeper at', new Date().toISOString());
+			try {
+				await enqueueStaleWorkoutProjectionRefreshSweep({ maxAgeMs: 15 * 60 * 1000, limit: 200 });
+			} catch (err) {
+				console.error('❌ enqueueStaleWorkoutProjectionRefreshSweep failed:', err);
 			}
 		},
 		{
@@ -64,6 +81,7 @@ export function startScheduler() {
 	console.log('✅ Scheduler started:');
 	console.log('   - Daily check-in at 09:00 Europe/Oslo');
 	console.log('   - Local nudges + domain signals every hour (UTC scheduler, local-time aware nudges)');
+	console.log('   - Workout projection stale sweeper every 15 minutes (UTC)');
 }
 
 async function sendDailyCheckIns() {
@@ -100,7 +118,7 @@ async function sendDailyCheckIns() {
 						totalProgress = Math.round(
 							goal.tasks.reduce((sum, task) => {
 								const taskProgress =
-									task.progress?.reduce((taskSum, p) => taskSum + (p.value || 0), 0) || 0;
+									task.progress?.reduce((taskSum: number, p: { value: number | null }) => taskSum + (p.value || 0), 0) || 0;
 								const taskTarget = task.targetValue || 100;
 								return sum + Math.min((taskProgress / taskTarget) * 100, 100);
 							}, 0) / goal.tasks.length

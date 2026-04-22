@@ -16,6 +16,7 @@ export interface MetricDefinition {
 	defaultUnit: string;
 	direction: MetricDirection;
 	widgetMetricType?: string;
+	visualizationFamily?: 'trajectory' | 'target_zone' | 'comparison';
 	supportedWindows: Array<'7d' | '30d' | '365d' | 'week' | 'month' | 'quarter' | 'year'>;
 }
 
@@ -27,6 +28,7 @@ export const METRIC_CATALOG: Record<MetricId, MetricDefinition> = {
 		defaultUnit: 'km',
 		direction: 'higher_is_better',
 		widgetMetricType: 'distance',
+		visualizationFamily: 'trajectory',
 		supportedWindows: ['7d', '30d', '365d', 'week', 'month', 'quarter', 'year']
 	},
 	sleep_avg_night: {
@@ -36,6 +38,7 @@ export const METRIC_CATALOG: Record<MetricId, MetricDefinition> = {
 		defaultUnit: 't',
 		direction: 'higher_is_better',
 		widgetMetricType: 'sleepDuration',
+		visualizationFamily: 'target_zone',
 		supportedWindows: ['7d', '30d', '365d', 'week', 'month', 'quarter', 'year']
 	},
 	sleep_lag: {
@@ -44,6 +47,7 @@ export const METRIC_CATALOG: Record<MetricId, MetricDefinition> = {
 		aliases: ['sleep_lag', 'sleepLag', 'earlyWake', 'søvnlag'],
 		defaultUnit: 'indeks',
 		direction: 'lower_is_better',
+		visualizationFamily: 'target_zone',
 		supportedWindows: ['7d', '30d', '365d', 'week', 'month', 'quarter', 'year']
 	},
 	steps_avg_day: {
@@ -53,6 +57,7 @@ export const METRIC_CATALOG: Record<MetricId, MetricDefinition> = {
 		defaultUnit: 'skritt',
 		direction: 'higher_is_better',
 		widgetMetricType: 'steps',
+		visualizationFamily: 'comparison',
 		supportedWindows: ['7d', '30d', '365d', 'week', 'month', 'quarter', 'year']
 	},
 	active_minutes_avg_day: {
@@ -61,6 +66,7 @@ export const METRIC_CATALOG: Record<MetricId, MetricDefinition> = {
 		aliases: ['active_minutes_avg_day', 'intenseMinutes', 'activeMinutes', 'aktive minutter'],
 		defaultUnit: 'min',
 		direction: 'higher_is_better',
+		visualizationFamily: 'comparison',
 		supportedWindows: ['7d', '30d', '365d', 'week', 'month', 'quarter', 'year']
 	},
 	weight_change: {
@@ -70,6 +76,7 @@ export const METRIC_CATALOG: Record<MetricId, MetricDefinition> = {
 		defaultUnit: 'kg',
 		direction: 'towards_target',
 		widgetMetricType: 'weight',
+		visualizationFamily: 'trajectory',
 		supportedWindows: ['7d', '30d', '365d', 'week', 'month', 'quarter', 'year']
 	},
 	grocery_spend: {
@@ -79,6 +86,7 @@ export const METRIC_CATALOG: Record<MetricId, MetricDefinition> = {
 		defaultUnit: 'kr',
 		direction: 'lower_is_better',
 		widgetMetricType: 'amount',
+		visualizationFamily: 'trajectory',
 		supportedWindows: ['7d', '30d', '365d', 'week', 'month', 'quarter', 'year']
 	}
 };

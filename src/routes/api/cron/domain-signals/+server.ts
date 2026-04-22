@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
-import { getDomainSignalObservability, runDomainSignalProducers } from '$lib/server/domain-signals';
+import { SignalService } from '$lib/server/services/signal-service';
 
 export const config = { maxDuration: 120 };
 
@@ -18,9 +18,9 @@ export const GET: RequestHandler = async ({ request }) => {
 		const hours = Number.isFinite(hoursRaw) ? hoursRaw : 168;
 
 		const [result, taskCompletionWeekly, activityRunWeekly] = await Promise.all([
-			runDomainSignalProducers(),
-			getDomainSignalObservability('task_completion_weekly', hours),
-			getDomainSignalObservability('activity_run_pr_week', hours)
+			SignalService.runProducers(),
+			SignalService.getObservability('task_completion_weekly', hours),
+			SignalService.getObservability('activity_run_pr_week', hours)
 		]);
 
 		return json({

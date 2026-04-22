@@ -54,7 +54,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 					if (goal.tasks.length > 0) {
 						totalProgress = Math.round(
 							goal.tasks.reduce((sum, task) => {
-								const taskProgress = task.progress?.reduce((taskSum, p) => taskSum + (p.value || 0), 0) || 0;
+								const taskProgress = task.progress?.reduce((taskSum: number, p: { value: number | null }) => taskSum + (p.value || 0), 0) || 0;
 								const taskTarget = task.targetValue || 100;
 								return sum + Math.min((taskProgress / taskTarget) * 100, 100);
 							}, 0) / goal.tasks.length

@@ -10,6 +10,7 @@ import {
 } from '$lib/server/integrations/dropbox';
 import { getWorkoutContextForUser, type WorkoutContextSummary } from '$lib/server/workout-context';
 import { notifyUserAboutImportedWorkouts } from '$lib/server/workout-notifications';
+import { SensorEventService } from '$lib/server/services/sensor-event-service';
 
 interface DropboxCredentials {
 	access_token: string;
@@ -374,7 +375,7 @@ export async function syncDropboxWorkoutsForUser(
 				time: p.time
 			}));
 
-			const [insertedWorkout] = await db.insert(sensorEvents).values({
+			const { event: insertedWorkout } = await SensorEventService.write({
 				userId,
 				sensorId: sensor.id,
 				eventType: 'activity',
@@ -392,7 +393,6 @@ export async function syncDropboxWorkoutsForUser(
 					trackPoints: sampledTrack
 				},
 				metadata: {
-					source: 'dropbox',
 					sourcePath,
 					sourceName: file.name,
 					sourceRev: file.rev,
@@ -400,8 +400,9 @@ export async function syncDropboxWorkoutsForUser(
 					totalTrackPoints: parsed.trackPoints.length,
 					serverModified: file.server_modified,
 					clientModified: file.client_modified
-				}
-			}).returning({ id: sensorEvents.id });
+				},
+				source: 'dropbox_sync'
+			});
 
 			imported += 1;
 			if (insertedWorkout?.id) importedWorkoutIds.push(insertedWorkout.id);

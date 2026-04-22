@@ -237,6 +237,7 @@
 
 		<div
 			style="position: relative;"
+			role="presentation"
 			on:mousedown={svgMouseDown}
 			on:mousemove={svgMouseMove}
 			on:mouseup={svgMouseUp}

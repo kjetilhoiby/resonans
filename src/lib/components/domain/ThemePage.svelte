@@ -301,8 +301,12 @@
 			totalBalance: economicsDashboard.totalBalance,
 			currentMonth: economicsDashboard.currentMonth,
 			monthSpending: economicsDashboard.monthSpending,
-			recentTransactions: economicsDashboard.recentTransactions,
-			paydaySpend: economicsDashboard.paydaySpend
+			recentTransactions: economicsDashboard.recentTransactions.map((tx) => ({
+				...tx,
+				category: (tx as { category?: string }).category ?? 'ukategorisert'
+			})),
+			paydaySpend: economicsDashboard.paydaySpend,
+			generatedAt: dashboardCachedAt
 		};
 	});
 
@@ -310,12 +314,23 @@
 		finishNavMetric('tema');
 		void preloadCode('/');
 
-		if (get(page).url.searchParams.get('handoff') !== '1') return;
-		handoffPhase = 'intro';
-		const timer = setTimeout(() => {
-			handoffPhase = 'content';
-		}, 950);
-		return () => clearTimeout(timer);
+		document.documentElement.classList.add('tp-theme-bg');
+		document.body.classList.add('tp-theme-bg');
+
+		let timer: ReturnType<typeof setTimeout> | null = null;
+
+		if (get(page).url.searchParams.get('handoff') === '1') {
+			handoffPhase = 'intro';
+			timer = setTimeout(() => {
+				handoffPhase = 'content';
+			}, 950);
+		}
+
+		return () => {
+			if (timer) clearTimeout(timer);
+			document.documentElement.classList.remove('tp-theme-bg');
+			document.body.classList.remove('tp-theme-bg');
+		};
 	});
 
 	function dashboardKind() {
@@ -2019,6 +2034,13 @@ Eksempel:
 {/if}
 
 <style>
+	:global(html.tp-theme-bg),
+	:global(body.tp-theme-bg) {
+		background:
+			radial-gradient(120% 90% at 50% -10%, hsl(228 72% 60% / 0.12), transparent 52%),
+			linear-gradient(180deg, hsl(228 20% 10%) 0%, hsl(228 22% 8%) 100%);
+	}
+
 	.theme-page {
 		--theme-hue: 228;
 		--tp-bg-0: hsl(var(--theme-hue) 22% 8%);
@@ -2214,9 +2236,37 @@ Eksempel:
 		border-bottom: 1px solid var(--tp-border);
 		padding: 0 12px;
 		gap: 4px;
+		overflow-x: auto;
+		overflow-y: hidden;
+		-webkit-overflow-scrolling: touch;
+		scrollbar-width: none;
+	}
+
+	@media (max-width: 760px) {
+		.tp-tabs {
+			mask-image: linear-gradient(
+				to right,
+				transparent 0,
+				black 14px,
+				black calc(100% - 14px),
+				transparent 100%
+			);
+			-webkit-mask-image: linear-gradient(
+				to right,
+				transparent 0,
+				black 14px,
+				black calc(100% - 14px),
+				transparent 100%
+			);
+		}
+	}
+
+	.tp-tabs::-webkit-scrollbar {
+		display: none;
 	}
 
 	.tp-tab {
+		flex: 0 0 auto;
 		background: none;
 		border: none;
 		border-bottom: 2px solid transparent;

@@ -574,8 +574,21 @@
 </div>
 
 {#if showOverrideModal && selectedMapping}
-	<div class="modal-overlay" onclick={() => showOverrideModal = false}>
-		<div class="modal" onclick={(e) => e.stopPropagation()}>
+	<div
+		class="modal-overlay"
+		onclick={() => showOverrideModal = false}
+		onkeydown={(e) => (e.key === 'Escape' || e.key === 'Enter') && (showOverrideModal = false)}
+		role="button"
+		tabindex="0"
+	>
+		<div
+			class="modal"
+			onclick={(e) => e.stopPropagation()}
+			onkeydown={(e) => e.stopPropagation()}
+			role="dialog"
+			aria-modal="true"
+			tabindex="-1"
+		>
 			<h3>Override kategori for {selectedMapping.label}</h3>
 			<p class="modal-hint">
 				AI foreslår: {getCategoryLabel(selectedMapping.category)}
@@ -616,8 +629,21 @@
 {/if}
 
 {#if showBulkOverrideModal}
-	<div class="modal-overlay" onclick={() => showBulkOverrideModal = false}>
-		<div class="modal" onclick={(e) => e.stopPropagation()}>
+	<div
+		class="modal-overlay"
+		onclick={() => showBulkOverrideModal = false}
+		onkeydown={(e) => (e.key === 'Escape' || e.key === 'Enter') && (showBulkOverrideModal = false)}
+		role="button"
+		tabindex="0"
+	>
+		<div
+			class="modal"
+			onclick={(e) => e.stopPropagation()}
+			onkeydown={(e) => e.stopPropagation()}
+			role="dialog"
+			aria-modal="true"
+			tabindex="-1"
+		>
 			<h3>Bulk Override</h3>
 			<p class="modal-hint">
 				Overstyr alle merchants i én kategori til en annen kategori.

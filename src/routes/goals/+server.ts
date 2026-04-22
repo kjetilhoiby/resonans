@@ -1,6 +1,7 @@
 import { json, type RequestEvent } from '@sveltejs/kit';
 import { db } from '$lib/db';
-import { goals, tasks, progress } from '$lib/db/schema';
+import { goals, tasks } from '$lib/db/schema';
+import { TaskExecutionService } from '$lib/server/services/task-execution-service';
 import { eq } from 'drizzle-orm';
 
 export const DELETE = async ({ url, locals }: RequestEvent) => {
@@ -31,7 +32,7 @@ export const DELETE = async ({ url, locals }: RequestEvent) => {
 
 		// Slett all progress for tasks
 		for (const task of goalTasks) {
-			await db.delete(progress).where(eq(progress.taskId, task.id));
+			await TaskExecutionService.deleteTaskProgress(task.id);
 		}
 
 		// Slett alle tasks

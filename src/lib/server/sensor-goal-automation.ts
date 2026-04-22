@@ -1,8 +1,8 @@
 import { db } from '$lib/db';
-import { progress, sensorGoals, sensorEvents } from '$lib/db/schema';
+import { sensorGoals, sensorEvents } from '$lib/db/schema';
+import { TaskExecutionService } from '$lib/server/services/task-execution-service';
 import { getSensorGoalMetricTypesForSportType } from '$lib/server/workout-taxonomy';
 import { eq, and, gte } from 'drizzle-orm';
-import { randomUUID } from 'crypto';
 
 /**
  * After Withings sync completes, this function:
@@ -35,6 +35,7 @@ export async function registerWorkoutsAsProgress(userId: string, syncStartTime: 
 
 	const errors: string[] = [];
 	let registered = 0;
+	let skippedByPeriod = 0;
 
 	// Find all sensor goals for this user with autoUpdate enabled
 	const userSensorGoals = await db.query.sensorGoals.findMany({
@@ -49,7 +50,10 @@ export async function registerWorkoutsAsProgress(userId: string, syncStartTime: 
 	});
 
 	// Filter to only goals for this user
-	const applicableSensorGoals = userSensorGoals.filter((sg) => sg.goal.userId === userId);
+	const applicableSensorGoals = userSensorGoals.filter((sg) => {
+		const goal = Array.isArray(sg.goal) ? sg.goal[0] : sg.goal;
+		return goal?.userId === userId;
+	});
 
 	if (!applicableSensorGoals.length) {
 		console.log(`[sensor-automation] user=${userId} has no auto-update sensor goals`);
@@ -84,8 +88,11 @@ export async function registerWorkoutsAsProgress(userId: string, syncStartTime: 
 			// For each matching sensor goal, create a progress record on the associated task
 			for (const sensorGoal of matchingSensorGoals) {
 				try {
+					const goal = Array.isArray(sensorGoal.goal) ? sensorGoal.goal[0] : sensorGoal.goal;
+					if (!goal) continue;
+
 					// Find the first active task in this goal to link the progress to
-					const targetTask = sensorGoal.goal.tasks.find((t) => t.status === 'active');
+					const targetTask = goal.tasks.find((t: { status: string }) => t.status === 'active');
 
 					if (!targetTask) {
 						console.log(
@@ -94,16 +101,28 @@ export async function registerWorkoutsAsProgress(userId: string, syncStartTime: 
 						continue;
 					}
 
+					const periodCheck = await TaskExecutionService.canRecordTaskProgress({
+						userId,
+						taskId: targetTask.id,
+						increment: 1,
+						completedAt: sensorEvent.timestamp
+					});
+
+					if (!periodCheck.allowed) {
+						skippedByPeriod++;
+						console.log(
+							`[sensor-automation] user=${userId} skipped task=${targetTask.id} workout=${sensorEvent.id} reason=${periodCheck.reason} current=${periodCheck.currentValue} target=${periodCheck.targetValue}`
+						);
+						continue;
+					}
+
 					// Create a progress record with value=1 (one workout completed)
-					const progressId = randomUUID();
-					await db.insert(progress).values({
-						id: progressId,
+					await TaskExecutionService.recordTaskProgress({
 						taskId: targetTask.id,
 						userId,
 						value: 1,
 						note: getProgressNote(sensorEvent),
-						completedAt: sensorEvent.timestamp,
-						createdAt: new Date()
+						completedAt: sensorEvent.timestamp
 					});
 
 					console.log(
@@ -124,9 +143,9 @@ export async function registerWorkoutsAsProgress(userId: string, syncStartTime: 
 	}
 
 	console.log(
-		`[sensor-automation] complete: ${registered} progress records created, ${errors.length} errors`
+		`[sensor-automation] complete: ${registered} progress records created, ${skippedByPeriod} skipped by period, ${errors.length} errors`
 	);
-	return { registered, errors };
+	return { registered, skippedByPeriod, errors };
 }
 
 

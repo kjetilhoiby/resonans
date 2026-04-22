@@ -12,10 +12,10 @@ import type { RequestHandler } from './$types';
 
 // Categories excluded from this view
 const EXCLUDED_CATEGORIES: CategoryId[] = [
-	'dagligvare',
-	'overføring',
-	'lønn',
-	'lån',
+	'dagligvarer',
+	'diverse',
+	'innskudd',
+	'annet_lan_og_gjeld',
 	'sparing',
 ];
 

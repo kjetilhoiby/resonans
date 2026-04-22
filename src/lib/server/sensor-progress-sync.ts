@@ -12,7 +12,7 @@
 import { and, eq } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { db } from '$lib/db';
-import { progress } from '$lib/db/schema';
+import { TaskExecutionService } from '$lib/server/services/task-execution-service';
 
 /** Maps our activity type strings to Withings sportType substrings (lowercase). */
 const ACTIVITY_TO_SPORT_PATTERNS: Record<string, string[]> = {
@@ -104,27 +104,19 @@ export async function syncSensorProgressForTasks(params: {
 			const sensorRef = `sensor:${workout.id}`;
 
 			// Idempotency: skip if this sensor event already generated a progress record
-			const existing = await db.query.progress.findFirst({
-				where: and(
-					eq(progress.taskId, task.id),
-					eq(progress.userId, userId),
-					eq(progress.note, sensorRef)
-				),
-				columns: { id: true }
-			});
-
-			if (existing) {
-				skipped++;
-				continue;
-			}
-
-			await db.insert(progress).values({
+			const ensured = await TaskExecutionService.ensureTaskProgress({
 				taskId: task.id,
 				userId,
 				value: 1,
-				note: sensorRef,
+				dedupeNote: sensorRef,
+				enforcePeriodTarget: true,
 				completedAt: new Date(workout.timestamp)
 			});
+
+			if (!ensured.created) {
+				skipped++;
+				continue;
+			}
 			created++;
 		}
 	}

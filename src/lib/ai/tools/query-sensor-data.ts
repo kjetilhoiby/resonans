@@ -356,7 +356,10 @@ async function loadRawEventsFallback(args: {
 		limit: args.limit ?? 200
 	});
 
-	return events;
+	return events.filter(
+		(event): event is typeof event & { dataType: string; data: Record<string, unknown> } =>
+			typeof event.dataType === 'string' && event.data !== null
+	);
 }
 
 export const querySensorDataTool = {
@@ -510,7 +513,7 @@ The tool returns actual data from Withings sensors that the user can trust.`,
 							};
 						}
 					} else {
-						const metricMap = {
+						const metricMap: Partial<Record<SensorMetric, unknown>> = {
 							weight: allMetrics.weight,
 							steps: allMetrics.steps,
 							sleep: allMetrics.sleep,
@@ -572,7 +575,7 @@ The tool returns actual data from Withings sensors that the user can trust.`,
 				}
 
 				const candidateKeys = normalizePeriodKey(period, periodKey);
-				let aggregate = null as Awaited<ReturnType<typeof db.query.sensorAggregates.findFirst>>;
+				let aggregate: Awaited<ReturnType<typeof db.query.sensorAggregates.findFirst>> | null = null;
 
 				for (const key of candidateKeys) {
 					aggregate = await db.query.sensorAggregates.findFirst({
@@ -685,7 +688,7 @@ The tool returns actual data from Withings sensors that the user can trust.`,
 							.filter((e) => typeof e.data?.weight === 'number')
 							.map((e) => ({
 								timestamp: e.timestamp,
-								weight: e.data.weight as number
+								weight: e.data!.weight as number
 							}))
 							.reverse();
 

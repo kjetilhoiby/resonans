@@ -4,9 +4,9 @@
 
 	let { data }: { data: PageData } = $props();
 
-	type Series = (typeof data.allSeries)[number];
-	type Task = (typeof data.goals)[number]['tasks'][number];
-	type Goal = (typeof data.goals)[number];
+	type Series = any;
+	type Task = any;
+	type Goal = any;
 
 	let goalsLocal = $state<Goal[]>([...data.goals]);
 	let deletingId = $state<string | null>(null);
@@ -44,7 +44,7 @@
 				const matched = seriesId ? data.allSeries.find((s) => s.id === seriesId) : null;
 				goalsLocal = goalsLocal.map((g) => ({
 					...g,
-					tasks: g.tasks.map((t) => {
+					tasks: g.tasks.map((t: any) => {
 						if (t.id !== task.id) return t;
 						return {
 							...t,
@@ -85,7 +85,7 @@
 	}
 
 	function getWeeklyTasks(goal: Goal): Task[] {
-		return goal.tasks.filter((t) => t.frequency === 'weekly' || t.frequency === 'daily');
+		return goal.tasks.filter((t: any) => t.frequency === 'weekly' || t.frequency === 'daily');
 	}
 
 	function seriesLabel(series: Series) {

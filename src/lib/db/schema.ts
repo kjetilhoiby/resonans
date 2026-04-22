@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, integer, boolean, jsonb, decimal, unique, index, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, timestamp, integer, boolean, jsonb, decimal, unique, index, uniqueIndex, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 
 
@@ -87,7 +87,7 @@ export const themes = pgTable('themes', {
 	emoji: text('emoji'), // 🤝, 🏃‍♂️, 👶
 	parentTheme: text('parent_theme'), // "Samliv", "Helse", "Foreldreliv" - kan være null
 	aiSuggested: boolean('ai_suggested').default(false).notNull(), // AI foreslo vs bruker opprettet
-	conversationId: uuid('conversation_id').references(() => conversations.id), // Egen chat per tema
+	conversationId: uuid('conversation_id').references((): AnyPgColumn => conversations.id), // Egen chat per tema
 	description: text('description'), // AI-generert eller bruker-definert
 	archived: boolean('archived').default(false).notNull(), // For cleanup uten å slette
 	tripProfile: jsonb('trip_profile').$type<{
@@ -231,7 +231,7 @@ export const activityMetrics = pgTable('activity_metrics', {
 export const conversations = pgTable('conversations', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	userId: text('user_id').references(() => users.id).notNull(),
-	themeId: uuid('theme_id').references(() => themes.id, { onDelete: 'set null' }),
+	themeId: uuid('theme_id').references((): AnyPgColumn => themes.id, { onDelete: 'set null' }),
 	title: text('title'),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()

@@ -19,7 +19,8 @@
 
 import { and, eq, gte, lt, sql } from 'drizzle-orm';
 import { db } from '$lib/db';
-import { checklistItems, checklists } from '$lib/db/schema';
+import { checklistItems, checklists, progress } from '$lib/db/schema';
+import { TaskExecutionService } from '$lib/server/services/task-execution-service';
 import type { ActivityType } from './task-intent-parser';
 
 const THRESHOLD = 0.8; // 80% of target duration is sufficient
@@ -166,30 +167,15 @@ export async function autocheckChecklistItemsForDay(params: {
 		// Log progress for linked task using sensor event id as dedup key
 		if (linkedTaskId && !meta.progressRecordId) {
 			const sensorRef = `sensor:${matchingWorkout.id}`;
-			// Check if progress for this sensor event was already written (e.g. by sensor-progress-sync)
-			const existingProg = await db.query.progress.findFirst({
-				where: and(
-					eq(progress.taskId, linkedTaskId),
-					eq(progress.userId, userId),
-					eq(progress.note, sensorRef)
-				),
-				columns: { id: true }
+			const progressResult = await TaskExecutionService.ensureTaskProgress({
+				taskId: linkedTaskId,
+				userId,
+				value: 1,
+				dedupeNote: sensorRef,
+				enforcePeriodTarget: true,
+				completedAt: now
 			});
-			if (!existingProg) {
-				const [prog] = await db
-					.insert(progress)
-					.values({
-						taskId: linkedTaskId,
-						userId,
-						value: 1,
-						note: sensorRef,
-						completedAt: now
-					})
-					.returning({ id: progress.id });
-				progressRecordId = prog?.id;
-			} else {
-				progressRecordId = existingProg.id;
-			}
+			progressRecordId = progressResult.record?.id;
 		}
 
 		const newMeta = {

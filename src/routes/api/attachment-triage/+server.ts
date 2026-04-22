@@ -237,7 +237,7 @@ async function extractTextContent(file: File, buffer: Buffer, kind: AttachmentKi
 	if (kind === 'audio') {
 		try {
 			const transcription = await openai.audio.transcriptions.create({
-				file: new File([buffer], file.name, { type: file.type || (isVideoSource ? 'video/mp4' : 'audio/mpeg') }),
+				file: new File([new Uint8Array(buffer)], file.name, { type: file.type || (isVideoSource ? 'video/mp4' : 'audio/mpeg') }),
 				model: 'gpt-4o-mini-transcribe'
 			});
 			const transcript = cleanExtractedText(transcription.text ?? '');

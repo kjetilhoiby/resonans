@@ -9,7 +9,7 @@
 
 	const paydaySourceAccount = $derived(
 		data.paydaySourceAccountId && data.paydaySourceAccountId !== data.account.accountId
-			? (data.accounts.find((a) => a.accountId === data.paydaySourceAccountId) ?? null)
+			? (data.accounts.find((a: { accountId: string }) => a.accountId === data.paydaySourceAccountId) ?? null)
 			: null
 	);
 </script>

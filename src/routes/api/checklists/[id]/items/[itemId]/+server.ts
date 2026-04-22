@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { checklistItems, checklists, progress } from '$lib/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
+import { TaskExecutionService } from '$lib/server/services/task-execution-service';
 
 async function syncChecklistCompletion(checklistId: string) {
 	const remaining = await db.query.checklistItems.findMany({
@@ -56,16 +57,13 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 		const linkedTaskId = typeof meta.linkedTaskId === 'string' ? meta.linkedTaskId : null;
 
 		if (linkedTaskId && !meta.progressRecordId) {
-			const [progressRecord] = await db
-				.insert(progress)
-				.values({
-					taskId: linkedTaskId,
-					userId,
-					value: 1,
-					note: `Auto-loggert fra dagsjekkliste: "${updated.text}"`,
-					completedAt: updated.checkedAt ?? new Date()
-				})
-				.returning({ id: progress.id });
+			const progressRecord = await TaskExecutionService.recordTaskProgress({
+				taskId: linkedTaskId,
+				userId,
+				value: 1,
+				note: `Auto-loggert fra dagsjekkliste: "${updated.text}"`,
+				completedAt: updated.checkedAt ?? new Date()
+			});
 
 			if (progressRecord) {
 				// Store the progress record ID in metadata so we don't double-log
@@ -85,7 +83,7 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 		const progressRecordId = typeof meta.progressRecordId === 'string' ? meta.progressRecordId : null;
 
 		if (progressRecordId) {
-			await db.delete(progress).where(eq(progress.id, progressRecordId));
+			await TaskExecutionService.deleteProgressRecord(progressRecordId);
 
 			const newMeta = { ...meta };
 			delete newMeta.progressRecordId;

@@ -2,12 +2,29 @@
 	import { getContext } from 'svelte';
 	import { line, curveMonotoneX } from 'd3-shape';
 
-	const { data, xGet, yGet, zGet } = getContext('LayerCake');
+	type DataPoint = {
+		x: number;
+		y: number;
+		series: string;
+	};
+
+	type ReadableStore<T> = {
+		subscribe(run: (value: T) => void): () => void;
+	};
+
+	type LayerCakeContext = {
+		data: ReadableStore<DataPoint[]>;
+		xGet: ReadableStore<(point: DataPoint) => number>;
+		yGet: ReadableStore<(point: DataPoint) => number>;
+		zGet: ReadableStore<(point: DataPoint) => string>;
+	};
+
+	const { data, xGet, yGet, zGet } = getContext<LayerCakeContext>('LayerCake');
 	
 	export let mode: 'comparison' | 'historical' = 'comparison';
 
 	// Group data by series
-	$: groupedData = $data.reduce((acc, d) => {
+	$: groupedData = $data.reduce((acc: Record<string, DataPoint[]>, d: DataPoint) => {
 		const series = $zGet(d);
 		if (!acc[series]) acc[series] = [];
 		acc[series].push(d);
@@ -15,16 +32,15 @@
 	}, {});
 
 	// Create line generator
-	const lineGenerator = line()
-		.x(d => $xGet(d))
-		.y(d => $yGet(d))
+	const lineGenerator = line<DataPoint>()
+		.x((d) => $xGet(d))
+		.y((d) => $yGet(d))
 		.curve(curveMonotoneX);
 
 	// Dynamic color mapping for series
 	$: currentYear = new Date().getFullYear().toString();
 	
 	function getSeriesColor(series: string): string {
-		const years = Object.keys(groupedData).map(Number).sort();
 		const currentYear = new Date().getFullYear();
 		const lastYear = currentYear - 1;
 

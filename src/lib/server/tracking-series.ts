@@ -9,6 +9,8 @@ import {
 	trackingSeries,
 	trackingSeriesExamples
 } from '$lib/db/schema';
+import { SensorEventService } from '$lib/server/services/sensor-event-service';
+import { TaskExecutionService } from '$lib/server/services/task-execution-service';
 import { and, desc, eq, gte, lte } from 'drizzle-orm';
 
 export interface TrackingMeasurementInput {
@@ -146,14 +148,18 @@ export async function recordTrackingEvent(params: RecordTrackingEventInput) {
 			where: eq(tasks.status, 'active'),
 			with: {
 				goal: {
-					where: and(eq(goals.userId, params.userId), eq(goals.status, 'active')),
-					columns: { id: true }
+					columns: { id: true, userId: true, status: true }
 				}
 			},
 			columns: { id: true, title: true }
 		});
 
-		const matchedTask = candidateTasks.find((task) => normalizeTaskTitle(task.title) === normalizedTarget);
+		const matchedTask = candidateTasks.find(
+			(task) =>
+				normalizeTaskTitle(task.title) === normalizedTarget &&
+				task.goal?.userId === params.userId &&
+				task.goal?.status === 'active'
+		);
 		if (matchedTask) {
 			resolvedTaskId = matchedTask.id;
 			resolvedTask = { id: matchedTask.id, title: matchedTask.title };
@@ -278,23 +284,20 @@ export async function recordTrackingEvent(params: RecordTrackingEventInput) {
 		sourceImageUrl: params.sourceImageUrl || undefined
 	};
 
-	const [saved] = await db
-		.insert(sensorEvents)
-		.values({
-			userId: params.userId,
-			sensorId: sensor.id,
-			eventType: recordType.defaultEventType || (recordType.kind === 'measurement' ? 'measurement' : 'activity'),
-			dataType: recordType.defaultDataType,
-			timestamp: when,
-			data: eventData,
-			metadata: {
-				source: 'tracking_event_tool',
-				recordTypeKey: recordType.key,
-				trackingSeriesId: series?.id || null,
-				...params.metadata
-			}
-		})
-		.returning();
+	const { event: saved } = await SensorEventService.write({
+		userId: params.userId,
+		sensorId: sensor.id,
+		eventType: recordType.defaultEventType || (recordType.kind === 'measurement' ? 'measurement' : 'activity'),
+		dataType: recordType.defaultDataType,
+		timestamp: when,
+		data: eventData,
+		metadata: {
+			recordTypeKey: recordType.key,
+			trackingSeriesId: series?.id || null,
+			...params.metadata
+		},
+		source: 'tracking_event_tool'
+	});
 
 	if (series) {
 		await db
@@ -323,13 +326,26 @@ export async function recordTrackingEvent(params: RecordTrackingEventInput) {
 
 		// Write a progress row if series is linked to a task — this drives the ukeplan slot UI
 		if (series.taskId) {
-			await db.insert(progress).values({
+			const periodCheck = await TaskExecutionService.canRecordTaskProgress({
+				userId: params.userId,
+				taskId: series.taskId,
+				increment: 1,
+				completedAt: when
+			});
+
+			if (!periodCheck.allowed) {
+				console.log(
+					`[tracking-series] user=${params.userId} skipped task=${series.taskId} event=${saved.id} reason=${periodCheck.reason} current=${periodCheck.currentValue} target=${periodCheck.targetValue}`
+				);
+			} else {
+			await TaskExecutionService.recordTaskProgress({
 				taskId: series.taskId,
 				userId: params.userId,
 				value: 1,
 				note: params.note ?? null,
 				completedAt: when
 			});
+			}
 		}
 	}
 

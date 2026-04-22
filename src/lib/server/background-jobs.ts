@@ -7,6 +7,7 @@ import { processTaskIntentParseJob } from '$lib/server/task-intent-parser';
 import { processBookContextCollectJob } from '$lib/server/book-context-collector';
 import { autocheckChecklistItemsForDay } from '$lib/server/checklist-autocheck';
 import { syncSensorProgressForTasks } from '$lib/server/sensor-progress-sync';
+import { WorkoutProjectionService } from '$lib/server/services/workout-projection-service';
 
 export type BackgroundJobStatus = 'queued' | 'running' | 'retry' | 'completed' | 'failed' | 'canceled';
 
@@ -193,6 +194,22 @@ export async function getGoalIntentParseObservability(hours = 24 * 7) {
 
 export async function getTaskIntentParseObservability(hours = 24 * 7) {
 	return getIntentParseObservability('task_intent_parse', hours);
+}
+
+export async function enqueueStaleWorkoutProjectionRefreshSweep(opts?: { maxAgeMs?: number; limit?: number }) {
+	const maxAgeMs = Math.max(60 * 1000, opts?.maxAgeMs ?? 15 * 60 * 1000);
+	const limit = Math.max(1, Math.min(opts?.limit ?? 100, 1000));
+
+	const result = await WorkoutProjectionService.enqueueRefreshForStaleUsers(maxAgeMs, limit);
+
+	console.log(
+		`[background-jobs] workout sweeper scanned=${result.scanned} stale=${result.staleUsers.length} enqueued=${result.enqueued} maxAgeMs=${maxAgeMs}`
+	);
+
+	return {
+		maxAgeMs,
+		...result
+	};
 }
 
 async function getIntentParseObservability(jobType: 'goal_intent_parse' | 'task_intent_parse', hours = 24 * 7) {
@@ -438,6 +455,25 @@ async function executeJob(job: any): Promise<Record<string, unknown>> {
 				weekEnd: new Date(payload.weekEnd)
 			});
 			return { weekStart: payload.weekStart, weekEnd: payload.weekEnd, ...result };
+		}
+		case 'workout_projection_refresh': {
+			if (!job.user_id) throw new Error('workout_projection_refresh requires user_id');
+			const payload = (job.payload ?? {}) as { fromIso?: string; toIso?: string; reason?: string };
+			if (!payload.fromIso || !payload.toIso) {
+				throw new Error('workout_projection_refresh requires payload.fromIso and payload.toIso');
+			}
+			const fromDate = new Date(payload.fromIso);
+			const toDate = new Date(payload.toIso);
+			if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+				throw new Error('workout_projection_refresh payload dates must be valid ISO strings');
+			}
+			const refreshed = await WorkoutProjectionService.refreshForRange(job.user_id, fromDate, toDate);
+			return {
+				fromIso: payload.fromIso,
+				toIso: payload.toIso,
+				reason: payload.reason ?? 'unknown',
+				...refreshed
+			};
 		}
 		default:
 			throw new Error(`Unknown background job type: ${job.type}`);

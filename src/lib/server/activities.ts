@@ -8,6 +8,8 @@ import {
 	loadTaskClassificationRules,
 	type TaskClassificationRule
 } from '$lib/server/classification-overrides';
+import { SensorEventService } from '$lib/server/services/sensor-event-service';
+import { TaskExecutionService } from '$lib/server/services/task-execution-service';
 import { eq, and } from 'drizzle-orm';
 
 export interface ActivityMetric {
@@ -138,18 +140,20 @@ export async function logActivity(params: LogActivityParams) {
 	const sensor = await getOrCreateAiSensor(userId);
 
 	// 1. Skriv til sensorEvents (unified kilde for all aktivitetsdata)
-	const [event] = await db
-		.insert(sensorEvents)
-		.values({
-			userId,
-			sensorId: sensor.id,
-			eventType: 'activity',
-			dataType: normalizedActivity.dataType,
-			timestamp: completedAt,
-			data: normalizedActivity.data,
-			metadata: { source: 'log_activity_tool' }
-		})
-		.returning();
+	const { event } = await SensorEventService.write({
+		userId,
+		sensorId: sensor.id,
+		eventType: 'activity',
+		dataType: normalizedActivity.dataType,
+		timestamp: completedAt,
+		data: normalizedActivity.data,
+		metadata: {},
+		source: 'log_activity_tool'
+	});
+
+	if (!event) {
+		throw new Error('Failed to create activity event');
+	}
 
 	// 2. Finn relevante tasks (eller bruk spesifiserte)
 	let relevantTasks;
@@ -167,16 +171,13 @@ export async function logActivity(params: LogActivityParams) {
 	const progressEntries = [];
 	for (const task of relevantTasks) {
 		const value = calculateProgressValue(task, metrics);
-		const [progressEntry] = await db
-			.insert(progress)
-			.values({
-				taskId: task.id,
-				userId,
-				value,
-				note,
-				completedAt
-			})
-			.returning();
+		const progressEntry = await TaskExecutionService.recordTaskProgress({
+			taskId: task.id,
+			userId,
+			value,
+			note,
+			completedAt
+		});
 		progressEntries.push({ ...progressEntry, task });
 	}
 
@@ -228,11 +229,11 @@ async function findMatchingTasks(
 			task,
 			score: scoreTaskForActivity(task, effectiveCategory, metrics, classificationRules)
 		}))
-		.filter((candidate) => candidate.score > 0)
-		.sort((a, b) => b.score - a.score);
+		.filter((candidate: { task: any; score: number }) => candidate.score > 0)
+		.sort((a: { task: any; score: number }, b: { task: any; score: number }) => b.score - a.score);
 
 	// NOTE: Neste steg kan være LLM/tool-fallback når scoredMatches er tom.
-	return scoredMatches.map((candidate) => candidate.task);
+	return scoredMatches.map((candidate: { task: any; score: number }) => candidate.task);
 }
 
 /**

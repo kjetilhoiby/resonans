@@ -8,6 +8,7 @@
 	import FlowSheet from '$lib/components/flows/FlowSheet.svelte';
 	import { FLOWS } from '$lib/flows/registry';
 	import { finishNavMetric, startNavMetric } from '$lib/client/nav-metrics';
+	import MetricCard from '$lib/components/visualizations/MetricCard.svelte';
 	import { groupChecklistItems, activityEmoji, type GroupedChecklistEntry } from '$lib/utils/checklist-group';
 	import WeatherStrip, { type WeatherPeriod } from '$lib/components/ui/WeatherStrip.svelte';
 
@@ -68,12 +69,26 @@
 		title: string;
 		targetDate: string | null;
 		metadata: any;
-		sensorProgress: {
-			currentKm: number;
-			expectedKm: number;
-			targetKm: number;
-			status: 'green' | 'yellow' | 'red';
-		} | null;
+		sensorProgress:
+			| {
+					kind: 'running_distance';
+					currentKm: number;
+					expectedKm: number;
+					targetKm: number;
+					status: 'green' | 'yellow' | 'red';
+			  }
+			| {
+					kind: 'weight_change';
+					startDate: string;
+					endDate: string;
+					startWeight: number;
+					currentWeight: number;
+					expectedWeight: number;
+					targetWeight: number;
+					status: 'green' | 'yellow' | 'red';
+					points: { date: string; weight: number }[];
+			  }
+			| null;
 	}
 
 	interface DayChecklist {
@@ -1194,6 +1209,29 @@
 			: `Planlegg uke ${data.week.week} — ingen data fra forrige uke`;
 	}
 
+	function clampPct(value: number): number {
+		if (!Number.isFinite(value)) return 0;
+		return Math.max(0, Math.min(100, Math.round(value)));
+	}
+
+	function toWeightGoalVisual(progress: GoalReminder['sensorProgress']) {
+		if (!progress || progress.kind !== 'weight_change') return null;
+
+		const totalDelta = Math.abs(progress.targetWeight - progress.startWeight);
+		const achievedDelta = Math.abs(progress.currentWeight - progress.startWeight);
+		const expectedDelta = Math.abs(progress.expectedWeight - progress.startWeight);
+		const metricPct = totalDelta > 0 ? (achievedDelta / totalDelta) * 100 : 0;
+		const timePct = totalDelta > 0 ? (expectedDelta / totalDelta) * 100 : 0;
+
+		return {
+			timePct: clampPct(timePct),
+			metricPct: clampPct(metricPct),
+			status: progress.status,
+			leftLabel: `${progress.currentWeight} kg`,
+			rightLabel: `mål ${progress.targetWeight} kg`
+		};
+	}
+
 	function buildWeekReviewSystemPrompt() {
 		const weekGoals = data.weekTasks.map((t) => t.title);
 		const completedDayItems = Object.values(dayChecklistsState)
@@ -1619,12 +1657,6 @@
 			{/each}
 		</div>
 
-		{#if homeDayWeather[selectedDayIso]?.periods.length}
-			<div class="wp-weather-strip">
-				<WeatherStrip periods={homeDayWeather[selectedDayIso].periods} />
-			</div>
-		{/if}
-
 		<div class="wp-notes-form">
 			{#if selectedDaySpondEvents.length > 0}
 				<ul class="wp-spond-list">
@@ -1771,41 +1803,45 @@
 			<ul class="wp-reminder-list">
 				{#each data.longTermGoals as goal}
 					{@const progress = goal.sensorProgress}
+					{@const weightVisual = toWeightGoalVisual(progress)}
 					<li class="wp-reminder-row" class:has-sensor-progress={!!progress}>
-						<div class="wp-reminder-main">
-							<span class="wp-reminder-title">{goal.title}</span>
-							<span class="wp-reminder-date">{formatDate(goal.targetDate)}</span>
-						</div>
-						{#if progress}
-							<div class="wp-sensor-progress">
-								<div class="wp-progress-bar">
-									<div 
-										class="wp-progress-fill"
-										class:green={progress.status === 'green'}
-										class:yellow={progress.status === 'yellow'}
-										class:red={progress.status === 'red'}
-										style={`width: ${Math.min(100, (progress.currentKm / progress.targetKm) * 100)}%`}
-									></div>
-								</div>
-								<div class="wp-progress-meta">
-									<span class="wp-progress-km">{progress.currentKm} km</span>
-									<span 
-										class="wp-progress-status"
-										class:status-green={progress.status === 'green'}
-										class:status-yellow={progress.status === 'yellow'}
-										class:status-red={progress.status === 'red'}
-									>
-										{#if progress.status === 'green'}
-											✓
-										{:else if progress.status === 'yellow'}
-											⚠
-										{:else}
-											✕
-										{/if}
-									</span>
-								</div>
+						<a class="wp-reminder-link" href={`/goals?goal=${goal.id}`}>
+							<div class="wp-reminder-main">
+								<span class="wp-reminder-title">{goal.title}</span>
+								<span class="wp-reminder-date">{formatDate(goal.targetDate)}</span>
 							</div>
-						{/if}
+							{#if progress?.kind === 'running_distance'}
+								{@const runPct = progress.targetKm > 0 ? clampPct((progress.currentKm / progress.targetKm) * 100) : 0}
+								<div class="wp-sensor-progress">
+									<MetricCard
+										metricId="running_distance"
+										size="M"
+										data={{ current: progress.currentKm, target: progress.targetKm, expectedByNow: progress.expectedKm }}
+										height={6}
+										trackColor="#1a202c"
+									/>
+									<div class="wp-progress-meta">
+										<span class="wp-progress-km">{progress.currentKm} km</span>
+										<span class="wp-progress-km">av {progress.targetKm} km · {runPct}%</span>
+									</div>
+								</div>
+							{:else if progress && weightVisual}
+								<div class="wp-sensor-progress">
+									<MetricCard
+										metricId="weight_change"
+										size="M"
+										data={{ current: progress.currentWeight, target: progress.targetWeight, startDate: progress.startDate, endDate: progress.endDate, startValue: progress.startWeight, expectedByNow: progress.expectedWeight }}
+										height={6}
+										trackColor="#1a202c"
+										formatValue={(v) => `${Math.round(v * 10) / 10} kg`}
+									/>
+									<div class="wp-progress-meta">
+										<span class="wp-progress-km">{weightVisual.leftLabel}</span>
+										<span class="wp-progress-km">{weightVisual.rightLabel}</span>
+									</div>
+								</div>
+							{/if}
+						</a>
 					</li>
 				{/each}
 			</ul>
@@ -2608,10 +2644,25 @@
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
-		padding: 10px;
+		padding: 0;
 		border-radius: 9px;
 		background: #0f131c;
 		border: none;
+	}
+
+	.wp-reminder-link {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		padding: 10px;
+		text-decoration: none;
+		color: inherit;
+		border-radius: 9px;
+		outline: none;
+	}
+
+	.wp-reminder-link:focus-visible {
+		box-shadow: inset 0 0 0 1px rgba(124, 142, 245, 0.65);
 	}
 
 	.wp-reminder-row.has-sensor-progress {
@@ -2643,29 +2694,9 @@
 		gap: 6px;
 	}
 
-	.wp-progress-bar {
-		height: 6px;
-		background: #1a202c;
-		border-radius: 3px;
-		overflow: hidden;
-	}
-
-	.wp-progress-fill {
-		height: 100%;
-		transition: width 0.3s ease, background-color 0.3s ease;
-		border-radius: 3px;
-	}
-
-	.wp-progress-fill.green {
-		background: linear-gradient(90deg, #4ade80, #22c55e);
-	}
-
-	.wp-progress-fill.yellow {
-		background: linear-gradient(90deg, #facc15, #eab308);
-	}
-
-	.wp-progress-fill.red {
-		background: linear-gradient(90deg, #ef4444, #dc2626);
+	.wp-sensor-progress :global(.viz-progress-track),
+	.wp-sensor-progress :global(.viz-marker-track) {
+		margin-bottom: 0;
 	}
 
 	.wp-progress-meta {
@@ -2677,23 +2708,6 @@
 
 	.wp-progress-km {
 		color: #9ca3af;
-	}
-
-	.wp-progress-status {
-		font-size: 1rem;
-		font-weight: bold;
-	}
-
-	.wp-progress-status.status-green {
-		color: #4ade80;
-	}
-
-	.wp-progress-status.status-yellow {
-		color: #facc15;
-	}
-
-	.wp-progress-status.status-red {
-		color: #ef4444;
 	}
 
 	.wp-vision-text {

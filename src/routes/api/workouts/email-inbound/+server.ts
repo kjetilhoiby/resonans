@@ -2,11 +2,12 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
 import { db } from '$lib/db';
-import { sensors, sensorEvents, users } from '$lib/db/schema';
-import { and, eq, sql } from 'drizzle-orm';
+import { sensors, users } from '$lib/db/schema';
+import { and, eq } from 'drizzle-orm';
 import { parseWorkoutFile, type ParsedWorkout } from '$lib/server/integrations/dropbox-sync';
 import { getWorkoutContextForUser } from '$lib/server/workout-context';
 import { notifyUserAboutImportedWorkouts } from '$lib/server/workout-notifications';
+import { SensorEventService } from '$lib/server/services/sensor-event-service';
 
 // Postmark inbound webhook payload (simplified)
 interface PostmarkAttachment {
@@ -219,22 +220,18 @@ export const POST: RequestHandler = async ({ request, url }) => {
 
 			const { data, metadata } = buildWorkoutData(parsed);
 
-			const [inserted] = await db.insert(sensorEvents).values({
+			const { event: inserted } = await SensorEventService.write({
 				userId: user.id,
 				sensorId: sensor.id,
 				eventType: 'activity',
 				dataType: 'workout',
 				timestamp: parsed.startTime,
 				data,
-				metadata: { ...metadata, sourceName: attachment.Name }
-			}).onConflictDoUpdate({
-				target: [sensorEvents.sensorId, sensorEvents.dataType, sensorEvents.timestamp],
-				targetWhere: sql`data_type NOT IN ('bank_balance', 'bank_transaction')`,
-				set: {
-					data: sql`excluded.data`,
-					metadata: sql`excluded.metadata`
-				}
-			}).returning({ id: sensorEvents.id });
+				metadata: { ...metadata, sourceName: attachment.Name },
+				source: 'email_inbound'
+			}, {
+				conflictMode: 'upsert_sensor_datatype_timestamp'
+			});
 
 			if (inserted?.id) importedWorkoutIds.push(inserted.id);
 			imported += 1;

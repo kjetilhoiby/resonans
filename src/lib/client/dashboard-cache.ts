@@ -42,7 +42,7 @@ export interface EconomicsDashboardData {
 		totalIncome: number;
 		categories: Array<{ category: string; label: string; emoji: string; amount: number; count: number; isFixed: boolean }>;
 	};
-	recentTransactions: Array<{ date: string; description: string; amount: number; emoji: string; label: string }>;
+	recentTransactions: Array<{ date: string; description: string; amount: number; category: string; emoji: string; label: string }>;
 	paydaySpend: {
 		paydayDate: string | null;
 		daysSincePayday: number;
@@ -52,6 +52,8 @@ export interface EconomicsDashboardData {
 		grocerySpendPerDay: number;
 		prevSpendPerDay: number | null;
 		prevGrocerySpendPerDay: number | null;
+		comparisonPeriodsUsed: number;
+		averageComparisonPoints: Array<{ day: number; total: number; grocery: number }>;
 		transactions: Array<{ date: string; description: string; amount: number; category: string; emoji: string; label: string }>;
 		groceryTransactions: Array<{ date: string; description: string; amount: number; category: string; emoji: string; label: string }>;
 	};

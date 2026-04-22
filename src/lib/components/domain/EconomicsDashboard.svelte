@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import CompactRecordList from '../ui/CompactRecordList.svelte';
-	import GoalRing from '../ui/GoalRing.svelte';
 	import Section from '../ui/Section.svelte';
 	import TransactionList from '../ui/TransactionList.svelte';
 	import TransactionExplorer from '../ui/TransactionExplorer.svelte';
@@ -31,6 +31,7 @@
 		date: string;
 		description: string;
 		amount: number;
+		category: string;
 		emoji: string;
 		label: string;
 	}
@@ -53,6 +54,8 @@
 		grocerySpendPerDay: number;
 		prevSpendPerDay: number | null;
 		prevGrocerySpendPerDay: number | null;
+		comparisonPeriodsUsed: number;
+		averageComparisonPoints: Array<{ day: number; total: number; grocery: number }>;
 		transactions: TxItem[];
 		groceryTransactions: TxItem[];
 	}
@@ -70,6 +73,7 @@
 		};
 		recentTransactions: RecentTx[];
 		paydaySpend: PaydaySpend;
+		generatedAt?: string | null;
 		embedded?: boolean;
 	}
 
@@ -80,6 +84,7 @@
 		monthSpending,
 		recentTransactions,
 		paydaySpend,
+		generatedAt = null,
 		embedded = false
 	}: Props = $props();
 
@@ -115,8 +120,38 @@
 	let loadingCumCats = $state<CategoryId[]>([]);
 
 	// Transaction overlay state
-	let txOverlay = $state<null | 'all' | 'grocery'>(null);
+	let txOverlay = $state<null | 'all' | 'grocery' | 'recent'>(null);
 	let showExplorer = $state(false);
+	let showAccountSettings = $state(false);
+	let favoriteAccountIds = $state<string[]>([]);
+	let showAllRecent = $state(false);
+
+	const FAVORITE_ACCOUNTS_KEY = 'resonans:economics:favorites:v1';
+
+	onMount(() => {
+		try {
+			const raw = window.localStorage.getItem(FAVORITE_ACCOUNTS_KEY);
+			if (!raw) return;
+			const parsed = JSON.parse(raw);
+			if (!Array.isArray(parsed)) return;
+			favoriteAccountIds = parsed.filter((id): id is string => typeof id === 'string');
+		} catch {
+			favoriteAccountIds = [];
+		}
+	});
+
+	$effect(() => {
+		if (typeof window === 'undefined') return;
+		window.localStorage.setItem(FAVORITE_ACCOUNTS_KEY, JSON.stringify(favoriteAccountIds));
+	});
+
+	$effect(() => {
+		if (typeof document === 'undefined') return;
+		document.body.style.overflow = showAccountSettings ? 'hidden' : '';
+		return () => {
+			document.body.style.overflow = '';
+		};
+	});
 
 	function formatNOK(amount: number): string {
 		return new Intl.NumberFormat('nb-NO', {
@@ -151,15 +186,6 @@
 		return map[type.toLowerCase()] ?? type;
 	}
 
-	// Payday ring logic
-	// Ring fill = current per-day vs prev month per-day (50% = same, <50% = spending less, >50% = more)
-	function paydayRingPct(current: number, prev: number | null): number {
-		if (!prev || prev === 0) return 50;
-		const ratio = current / prev; // 1.0 = same
-		// Map 0.5×..2×  → 0..100 pct, with 1.0 → 50
-		return Math.min(100, Math.max(4, Math.round(ratio * 50)));
-	}
-
 	function paydayRingColor(current: number, prev: number | null): string {
 		if (!prev || prev === 0) return '#7c8ef5';
 		const ratio = current / prev;
@@ -168,9 +194,7 @@
 		return '#e07070';                    // spending more — red
 	}
 
-	const totalRingPct = $derived(paydayRingPct(paydaySpend.spendPerDay, paydaySpend.prevSpendPerDay));
 	const totalRingColor = $derived(paydayRingColor(paydaySpend.spendPerDay, paydaySpend.prevSpendPerDay));
-	const groceryRingPct = $derived(paydayRingPct(paydaySpend.grocerySpendPerDay, paydaySpend.prevGrocerySpendPerDay));
 	const groceryRingColor = $derived(paydayRingColor(paydaySpend.grocerySpendPerDay, paydaySpend.prevGrocerySpendPerDay));
 
 	function formatPerDay(kr: number): string {
@@ -182,8 +206,91 @@
 		return new Intl.DateTimeFormat('nb-NO', { day: 'numeric', month: 'short' }).format(new Date(iso));
 	}
 
+	function resolvePaydayStartDate(): Date {
+		if (paydaySpend.paydayDate) {
+			return new Date(paydaySpend.paydayDate);
+		}
+		const firstTx = paydaySpend.transactions[paydaySpend.transactions.length - 1]?.date;
+		if (firstTx) return new Date(firstTx);
+		return new Date(`${currentMonth}-01T12:00:00Z`);
+	}
+
+	type BurnupPoint = { day: number; total: number };
+
+	function buildBurnupPoints(transactions: TxItem[]): BurnupPoint[] {
+		const startDate = resolvePaydayStartDate();
+		const startDay = new Date(startDate);
+		startDay.setHours(0, 0, 0, 0);
+		const today = new Date();
+		today.setHours(0, 0, 0, 0);
+
+		const totalsByDay = new Map<string, number>();
+		for (const tx of transactions) {
+			const dayKey = new Date(tx.date).toISOString().slice(0, 10);
+			totalsByDay.set(dayKey, (totalsByDay.get(dayKey) ?? 0) + Math.abs(tx.amount));
+		}
+
+		const points: BurnupPoint[] = [];
+		let cumulative = 0;
+		let cursor = new Date(startDay);
+		let day = 1;
+
+		while (cursor <= today) {
+			const key = cursor.toISOString().slice(0, 10);
+			cumulative += totalsByDay.get(key) ?? 0;
+			points.push({ day, total: cumulative });
+			cursor.setDate(cursor.getDate() + 1);
+			day += 1;
+		}
+
+		return points.length > 0 ? points : [{ day: 1, total: 0 }];
+	}
+
+	function burnupPath(points: BurnupPoint[], width = 220, height = 74, maxTotalOverride?: number, maxDayOverride?: number): string {
+		if (points.length === 0) return '';
+		const maxTotal = Math.max(maxTotalOverride ?? Math.max(...points.map((point) => point.total), 1), 1);
+		const maxDay = Math.max(maxDayOverride ?? Math.max(...points.map((point) => point.day), 1), 1);
+		return points
+			.map((point, index) => {
+				const x = (point.day - 1) / Math.max(maxDay - 1, 1) * width;
+				const y = height - (point.total / maxTotal) * height;
+				return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`;
+			})
+			.join(' ');
+	}
+
+	function burnupAreaPath(points: BurnupPoint[], width = 220, height = 74, maxTotalOverride?: number, maxDayOverride?: number): string {
+		const line = burnupPath(points, width, height, maxTotalOverride, maxDayOverride);
+		if (!line) return '';
+		return `${line} L ${width} ${height} L 0 ${height} Z`;
+	}
+
+	const totalBurnupPoints = $derived(buildBurnupPoints(paydaySpend.transactions));
+	const groceryBurnupPoints = $derived(buildBurnupPoints(paydaySpend.groceryTransactions));
+	const totalComparisonBurnupPoints = $derived(
+		paydaySpend.averageComparisonPoints.map((point) => ({ day: point.day, total: point.total }))
+	);
+	const groceryComparisonBurnupPoints = $derived(
+		paydaySpend.averageComparisonPoints.map((point) => ({ day: point.day, total: point.grocery }))
+	);
+	const totalBurnupMax = $derived(
+		Math.max(1, ...totalBurnupPoints.map((point) => point.total), ...totalComparisonBurnupPoints.map((point) => point.total))
+	);
+	const groceryBurnupMax = $derived(
+		Math.max(1, ...groceryBurnupPoints.map((point) => point.total), ...groceryComparisonBurnupPoints.map((point) => point.total))
+	);
+	const paydayStartLabel = $derived(formatPaydayDate(resolvePaydayStartDate().toISOString()));
+
+	const favoriteAccountSet = $derived(new Set(favoriteAccountIds));
+
+	const visibleAccounts = $derived.by(() => {
+		if (favoriteAccountSet.size === 0) return accounts;
+		const favorites = accounts.filter((a) => favoriteAccountSet.has(a.accountId));
+		return favorites.length > 0 ? favorites : accounts;
+	});
+
 	const accountItems = $derived(
-		accounts.map((a) => ({
+		visibleAccounts.map((a) => ({
 			id: a.accountId,
 			title: a.accountName ?? a.accountId,
 			subtitle: accountTypeLabel(a.accountType),
@@ -202,6 +309,36 @@
 			amountTone: (tx.amount < 0 ? 'negative' : 'positive') as 'positive' | 'negative'
 		}))
 	);
+
+	const visibleTxItems = $derived(showAllRecent ? txItems : txItems.slice(0, 5));
+	const hasHiddenRecentItems = $derived(txItems.length > 5);
+
+	const recentOverlayTransactions = $derived(
+		recentTransactions.map((tx) => ({
+			date: tx.date,
+			description: tx.description,
+			amount: tx.amount,
+			category: tx.category || 'ukategorisert',
+			emoji: tx.emoji,
+			label: tx.label
+		}))
+	);
+
+	const accountListCaption = $derived.by(() => {
+		if (favoriteAccountSet.size === 0) return 'Viser alle kontoer';
+		return `Viser ${visibleAccounts.length} favoritt${visibleAccounts.length === 1 ? '' : 'er'}`;
+	});
+
+	const recentTxCaption = $derived.by(() => {
+		if (!generatedAt) return 'Siste oppdaterte dashboard';
+		const stamp = new Intl.DateTimeFormat('nb-NO', {
+			day: '2-digit',
+			month: '2-digit',
+			hour: '2-digit',
+			minute: '2-digit'
+		}).format(new Date(generatedAt));
+		return `Oppdatert ${stamp}`;
+	});
 
 	// Top categories — max 6
 	const topCategories = $derived(monthSpending.categories.slice(0, 6));
@@ -268,6 +405,26 @@
 			}
 		}
 	}
+
+	function toggleFavoriteAccount(accountId: string) {
+		if (favoriteAccountIds.includes(accountId)) {
+			favoriteAccountIds = favoriteAccountIds.filter((id) => id !== accountId);
+		} else {
+			favoriteAccountIds = [...favoriteAccountIds, accountId];
+		}
+	}
+
+	function openAccountTransactions(accountId: string) {
+		goto(`/economics/${encodeURIComponent(accountId)}/transaksjoner`);
+	}
+
+	function toggleAccountSettings() {
+		showAccountSettings = !showAccountSettings;
+	}
+
+	function closeAccountSettings() {
+		showAccountSettings = false;
+	}
 </script>
 
 <div class:ed-embedded={embedded} class="economics-dashboard">
@@ -287,22 +444,28 @@
 	{/if}
 
 	<!-- Payday spend widgets -->
+	<p class="ed-widget-context">
+		Forbruk per dag siden lønn — nåværende periode er {paydaySpend.daysSincePayday} dager.{#if paydaySpend.comparisonPeriodsUsed > 0} Stiplet linje viser snitt av {paydaySpend.comparisonPeriodsUsed} foregående {paydaySpend.comparisonPeriodsUsed === 1 ? 'periode' : 'perioder'}.{/if}
+	</p>
 	<div class="ed-grid">
 		<!-- Widget 1: Total forbruk per dag siden lønn -->
 		<button class="ed-card ed-card-btn" type="button" onclick={() => (txOverlay = 'all')}>
-			<div class="ed-card-ring">
-				<GoalRing pct={totalRingPct} color={totalRingColor} size={88} strokeWidth={6}>
-					{#snippet children()}
-						<text x="44" y="38" text-anchor="middle" fill={totalRingColor} font-size="9" font-weight="700">
-							{new Intl.NumberFormat('nb-NO', { maximumFractionDigits: 0 }).format(paydaySpend.spendPerDay)}
-						</text>
-						<text x="44" y="50" text-anchor="middle" fill={totalRingColor} font-size="7.5" opacity="0.8">kr/dag</text>
-					{/snippet}
-				</GoalRing>
+			<div class="ed-burnup-head">
+				<p class="ed-burnup-value">{formatPerDay(paydaySpend.spendPerDay)}</p>
+				<p class="ed-burnup-total">{formatNOK(paydaySpend.totalSpend)} totalt</p>
+			</div>
+			<div class="ed-burnup-chart" aria-hidden="true">
+				<svg viewBox="0 0 220 74" preserveAspectRatio="none">
+					<path d={burnupAreaPath(totalBurnupPoints, 220, 74, totalBurnupMax, paydaySpend.daysSincePayday)} class="ed-burnup-area" style:color={totalRingColor}></path>
+					{#if paydaySpend.comparisonPeriodsUsed > 0}
+						<path d={burnupPath(totalComparisonBurnupPoints, 220, 74, totalBurnupMax, paydaySpend.daysSincePayday)} class="ed-burnup-compare"></path>
+					{/if}
+					<path d={burnupPath(totalBurnupPoints, 220, 74, totalBurnupMax, paydaySpend.daysSincePayday)} class="ed-burnup-line" style:color={totalRingColor}></path>
+				</svg>
 			</div>
 			<div class="ed-card-copy">
 				<p class="ed-card-label">Forbruk / dag</p>
-				<p class="ed-card-sub">siden lønn {formatPaydayDate(paydaySpend.paydayDate)}</p>
+				<p class="ed-card-sub">fra {paydayStartLabel} til i dag</p>
 				{#if paydaySpend.prevSpendPerDay}
 					<p class="ed-card-compare" style:color={totalRingColor}>
 						{paydaySpend.spendPerDay <= paydaySpend.prevSpendPerDay ? '↓' : '↑'}
@@ -314,19 +477,22 @@
 
 		<!-- Widget 2: Dagligvare per dag siden lønn -->
 		<button class="ed-card ed-card-btn" type="button" onclick={() => (txOverlay = 'grocery')}>
-			<div class="ed-card-ring">
-				<GoalRing pct={groceryRingPct} color={groceryRingColor} size={88} strokeWidth={6}>
-					{#snippet children()}
-						<text x="44" y="38" text-anchor="middle" fill={groceryRingColor} font-size="9" font-weight="700">
-							{new Intl.NumberFormat('nb-NO', { maximumFractionDigits: 0 }).format(paydaySpend.grocerySpendPerDay)}
-						</text>
-						<text x="44" y="50" text-anchor="middle" fill={groceryRingColor} font-size="7.5" opacity="0.8">kr/dag</text>
-					{/snippet}
-				</GoalRing>
+			<div class="ed-burnup-head">
+				<p class="ed-burnup-value">{formatPerDay(paydaySpend.grocerySpendPerDay)}</p>
+				<p class="ed-burnup-total">{formatNOK(paydaySpend.grocerySpend)} totalt</p>
+			</div>
+			<div class="ed-burnup-chart" aria-hidden="true">
+				<svg viewBox="0 0 220 74" preserveAspectRatio="none">
+					<path d={burnupAreaPath(groceryBurnupPoints, 220, 74, groceryBurnupMax, paydaySpend.daysSincePayday)} class="ed-burnup-area" style:color={groceryRingColor}></path>
+					{#if paydaySpend.comparisonPeriodsUsed > 0}
+						<path d={burnupPath(groceryComparisonBurnupPoints, 220, 74, groceryBurnupMax, paydaySpend.daysSincePayday)} class="ed-burnup-compare"></path>
+					{/if}
+					<path d={burnupPath(groceryBurnupPoints, 220, 74, groceryBurnupMax, paydaySpend.daysSincePayday)} class="ed-burnup-line" style:color={groceryRingColor}></path>
+				</svg>
 			</div>
 			<div class="ed-card-copy">
 				<p class="ed-card-label">Dagligvare / dag</p>
-				<p class="ed-card-sub">siden lønn {formatPaydayDate(paydaySpend.paydayDate)}</p>
+				<p class="ed-card-sub">fra {paydayStartLabel} til i dag</p>
 				{#if paydaySpend.prevGrocerySpendPerDay}
 					<p class="ed-card-compare" style:color={groceryRingColor}>
 						{paydaySpend.grocerySpendPerDay <= paydaySpend.prevGrocerySpendPerDay ? '↓' : '↑'}
@@ -337,53 +503,31 @@
 		</button>
 	</div>
 
-	<!-- Spending by category -->
-	{#if topCategories.length > 0}
-		<Section title="Kategorier {formatMonthLabel(currentMonth)}" meta="Akkumulert per dag">
-			<div class="ed-cumulative-compact">
-				{#each topCategories.slice(0, 5) as cat}
-					{@const catId = cat.category as CategoryId}
-					{@const cumData = cumulativeByCategory[catId]}
-					{@const isLoading = loadingCumCats.includes(catId)}
-					{#if isLoading}
-						<div class="ed-loading-inline">Laster {cat.label}…</div>
-					{:else if cumData && cumData.periods.length > 0}
-						<div class="ed-cum-compact-chart">
-							<CumulativeSpending
-								category={catId}
-								periods={cumData.periods}
-								detectedPaydayDom={cumData.detectedPaydayDom}
-							/>
-						</div>
-					{:else if cumData}
-						<div class="ed-loading-inline">Ingen data for {cat.label}</div>
-					{/if}
-				{/each}
-			</div>
-		</Section>
-	{/if}
-
 	<!-- Accounts + recent transactions -->
 	<div class="ed-list-grid">
 		<CompactRecordList
 			title="Kontoer"
+			caption={accountListCaption}
 			items={accountItems}
+			onItemClick={openAccountTransactions}
+			actionLabel={showAccountSettings ? 'Lukk innstillinger' : 'Kontoinnstillinger'}
+			onAction={toggleAccountSettings}
 			emptyText="Ingen kontoer funnet. Koble til SpareBank1 for å se saldo."
 		/>
 		<CompactRecordList
 			title="Siste transaksjoner"
-			items={txItems}
+			caption={recentTxCaption}
+			items={visibleTxItems}
+			onItemClick={() => (txOverlay = 'recent')}
+			actionLabel="Utforsk"
+			onAction={() => (showExplorer = true)}
 			emptyText="Ingen transaksjoner denne måneden ennå."
 		/>
 	</div>
 
-	{#if accounts.length > 0}
-		<button class="ed-explore-btn" type="button" onclick={() => (showExplorer = true)}>
-			<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-				<circle cx="11" cy="11" r="8"></circle>
-				<line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-			</svg>
-			Utforsk alle transaksjoner
+	{#if hasHiddenRecentItems}
+		<button class="ed-expand-btn" type="button" onclick={() => (showAllRecent = !showAllRecent)}>
+			{showAllRecent ? 'Vis færre transaksjoner' : `Vis alle (${txItems.length})`}
 		</button>
 	{/if}
 
@@ -443,6 +587,35 @@
 	{/if}
 </div>
 
+<!-- Account settings bottom-sheet -->
+{#if showAccountSettings}
+	<button class="ed-sheet-backdrop" type="button" aria-label="Lukk kontoinnstillinger" onclick={closeAccountSettings}></button>
+	<div class="ed-sheet" role="dialog" aria-modal="true" aria-label="Kontoinnstillinger">
+		<div class="ed-sheet-handle"></div>
+		<div class="ed-sheet-head">
+			<div>
+				<h3>Kontoinnstillinger</h3>
+				<p>Velg kontoene du vil se i oversikten.</p>
+			</div>
+			<button class="ed-sheet-close" type="button" onclick={closeAccountSettings} aria-label="Lukk">✕</button>
+		</div>
+		<div class="ed-sheet-body">
+			<div class="ed-account-settings">
+				{#each accounts as account}
+					<label class="ed-account-setting-row">
+						<input
+							type="checkbox"
+							checked={favoriteAccountIds.includes(account.accountId)}
+							onchange={() => toggleFavoriteAccount(account.accountId)}
+						/>
+						<span>{account.accountName ?? account.accountId}</span>
+					</label>
+				{/each}
+			</div>
+		</div>
+	</div>
+{/if}
+
 <!-- Transaction explorer overlay -->
 {#if showExplorer}
 	<TransactionExplorer onclose={() => (showExplorer = false)} />
@@ -459,6 +632,12 @@
 	<TransactionList
 		transactions={paydaySpend.groceryTransactions}
 		title="Dagligvarer siden lønn"
+		onclose={() => (txOverlay = null)}
+	/>
+{:else if txOverlay === 'recent'}
+	<TransactionList
+		transactions={recentOverlayTransactions}
+		title="Siste transaksjoner"
 		onclose={() => (txOverlay = null)}
 	/>
 {/if}
@@ -496,27 +675,28 @@
 		color: #777;
 	}
 
-	.ed-explore-btn {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		gap: 8px;
-		width: 100%;
-		padding: 12px 16px;
-		background: #141414;
-		border: 1px solid #2a2a2a;
-		border-radius: 14px;
-		color: #888;
-		font: inherit;
-		font-size: 0.85rem;
-		cursor: pointer;
-		transition: border-color 0.15s, color 0.15s, background 0.15s;
+	.ed-widget-context {
+		margin: 0;
+		font-size: 0.75rem;
+		line-height: 1.45;
+		color: #6d6d6d;
 	}
 
-	.ed-explore-btn:active {
-		background: #1a1a2a;
+	.ed-expand-btn {
+		align-self: flex-start;
+		background: #141414;
+		border: 1px solid #2a2a2a;
+		border-radius: 999px;
+		padding: 6px 12px;
+		font: inherit;
+		font-size: 0.76rem;
+		color: #9a9a9a;
+		cursor: pointer;
+	}
+
+	.ed-expand-btn:active {
 		border-color: #3a4a85;
-		color: #a8b4f8;
+		color: #b8c4ff;
 	}
 
 	.ed-grid {
@@ -529,12 +709,12 @@
 		background: #141414;
 		border: 1px solid #232323;
 		border-radius: 18px;
-		padding: 14px 12px;
+		padding: 14px 12px 12px;
 		display: flex;
 		flex-direction: column;
-		align-items: center;
+		align-items: stretch;
 		gap: 10px;
-		text-align: center;
+		text-align: left;
 	}
 
 	.ed-card-btn {
@@ -544,25 +724,76 @@
 		transition: border-color 0.15s;
 	}
 
-	.ed-card-btn:active {
-		border-color: #3a4a85;
-		background: #181820;
-	}
-
-	.ed-card-compare {
-		margin: 0;
-		font-size: 0.7rem;
-		opacity: 0.85;
-	}
-
-	.ed-card-ring {
-		flex-shrink: 0;
-	}
-
 	.ed-card-copy {
 		display: flex;
 		flex-direction: column;
 		gap: 2px;
+		align-items: flex-start;
+	}
+
+	.ed-burnup-head {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 10px;
+	}
+
+	.ed-burnup-value {
+		margin: 0;
+		font-size: 1.05rem;
+		font-weight: 700;
+		letter-spacing: -0.02em;
+		color: #f2f3ff;
+	}
+
+	.ed-burnup-total {
+		margin: 0;
+		font-size: 0.72rem;
+		color: #7f8092;
+		text-align: right;
+	}
+
+	.ed-burnup-chart {
+		height: 74px;
+		border-radius: 12px;
+		overflow: hidden;
+		background:
+			linear-gradient(to top, rgba(255,255,255,0.02), rgba(255,255,255,0)),
+			repeating-linear-gradient(
+				to top,
+				transparent 0,
+				transparent 17px,
+				rgba(255,255,255,0.04) 17px,
+				rgba(255,255,255,0.04) 18px
+			);
+	}
+
+	.ed-burnup-chart svg {
+		display: block;
+		width: 100%;
+		height: 100%;
+	}
+
+	.ed-burnup-line {
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 2.5;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+
+	.ed-burnup-compare {
+		fill: none;
+		stroke: rgba(226, 228, 255, 0.72);
+		stroke-width: 1.8;
+		stroke-dasharray: 5 4;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+
+	.ed-burnup-area {
+		fill: currentColor;
+		opacity: 0.12;
 	}
 
 	.ed-card-label {
@@ -578,27 +809,6 @@
 		margin: 0;
 		font-size: 0.75rem;
 		color: #666;
-	}
-
-	/* Cumulative compact view */
-	.ed-cumulative-compact {
-		display: flex;
-		flex-direction: column;
-		gap: 20px;
-	}
-
-	.ed-cum-compact-chart {
-		width: 100%;
-	}
-
-	.ed-loading-inline {
-		padding: 12px;
-		text-align: center;
-		font-size: 0.8rem;
-		color: #888;
-		background: #141414;
-		border: 1px solid #232323;
-		border-radius: 12px;
 	}
 
 	/* List grid */
@@ -623,16 +833,118 @@
 		color: #aaa;
 	}
 
+	.ed-sheet-backdrop {
+		position: fixed;
+		inset: 0;
+		border: none;
+		background: rgba(0, 0, 0, 0.55);
+		z-index: 70;
+	}
+
+	.ed-sheet {
+		position: fixed;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		z-index: 71;
+		background: #101013;
+		border-top: 1px solid #2a2a35;
+		border-top-left-radius: 18px;
+		border-top-right-radius: 18px;
+		padding: 8px 14px calc(16px + env(safe-area-inset-bottom));
+		max-height: min(72vh, 640px);
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		animation: sheet-up 180ms ease-out;
+	}
+
+	@keyframes sheet-up {
+		from { transform: translateY(20px); opacity: 0; }
+		to { transform: translateY(0); opacity: 1; }
+	}
+
+	.ed-sheet-handle {
+		width: 46px;
+		height: 4px;
+		border-radius: 999px;
+		background: #3a3a45;
+		margin: 2px auto 0;
+	}
+
+	.ed-sheet-head {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 10px;
+	}
+
+	.ed-sheet-head h3 {
+		margin: 0;
+		font-size: 0.96rem;
+		color: #ececf5;
+	}
+
+	.ed-sheet-head p {
+		margin: 2px 0 0;
+		font-size: 0.76rem;
+		color: #8f909f;
+	}
+
+	.ed-sheet-close {
+		background: #17171d;
+		border: 1px solid #2a2a35;
+		border-radius: 10px;
+		width: 32px;
+		height: 32px;
+		font: inherit;
+		color: #b6b8cb;
+		cursor: pointer;
+		flex-shrink: 0;
+	}
+
+	.ed-sheet-body {
+		overflow-y: auto;
+		padding-right: 2px;
+	}
+
+	.ed-account-settings {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+		gap: 8px;
+	}
+
+	.ed-account-setting-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 10px;
+		border-radius: 10px;
+		background: #141414;
+		border: 1px solid #232323;
+		font-size: 0.82rem;
+		color: #bbb;
+	}
+
 	/* ── Subtabs ── */
 	.ed-subtabs {
 		display: flex;
-		gap: 4px;
+		gap: 6px;
 		border-bottom: 1px solid #1e1e1e;
 		padding-bottom: 12px;
+		overflow-x: auto;
+		overflow-y: hidden;
+		-webkit-overflow-scrolling: touch;
+		scrollbar-width: none;
+	}
+
+	.ed-subtabs::-webkit-scrollbar {
+		display: none;
 	}
 
 	.ed-subtab {
-		flex: 1;
+		flex: 0 0 auto;
+		min-width: 108px;
 		background: transparent;
 		border: 1px solid #1e1e1e;
 		border-radius: 8px;

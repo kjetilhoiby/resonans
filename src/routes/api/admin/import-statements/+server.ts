@@ -4,6 +4,7 @@ import { sensorEvents, sensors } from '$lib/db/schema';
 import { and, eq, sql, inArray } from 'drizzle-orm';
 import { requireAdmin } from '$lib/server/admin-auth';
 import { parseSparebank1Pdf, normaliseAccountNumber } from '$lib/server/integrations/sparebank1-pdf-parser';
+import { SensorEventService } from '$lib/server/services/sensor-event-service';
 import type { RequestHandler } from './$types';
 
 // Vercel: allow up to 60 s for a ZIP with many PDFs
@@ -214,23 +215,23 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			}
 
 			for (const snap of statement.balanceSnapshots) {
-				await db
-					.insert(sensorEvents)
-					.values({
-						userId,
-						sensorId,
-						eventType: 'measurement',
-						dataType: 'bank_balance',
-						timestamp: snap.date,
-						data: {
-							accountId,
-							accountNumber: statement.accountNumber,
-							balance: snap.balance,
-							currency: 'NOK'
-						},
-						metadata: { source: 'pdf_import', file: name }
-					})
-					.onConflictDoNothing();
+				await SensorEventService.write({
+					userId,
+					sensorId,
+					eventType: 'measurement',
+					dataType: 'bank_balance',
+					timestamp: snap.date,
+					data: {
+						accountId,
+						accountNumber: statement.accountNumber,
+						balance: snap.balance,
+						currency: 'NOK'
+					},
+					metadata: { source: 'pdf_import', file: name },
+					source: 'pdf_import'
+				}, {
+					conflictMode: 'ignore'
+				});
 				totalBalanceAnchors++;
 			}
 
@@ -265,14 +266,17 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 						source: 'pdf_import',
 						sourceHash: hash,
 						file: name
-					}
+					},
+					source: 'pdf_import'
 				});
 			}
 
 			if (newTxEvents.length > 0) {
 				const batchSize = 200;
 				for (let i = 0; i < newTxEvents.length; i += batchSize) {
-					await db.insert(sensorEvents).values(newTxEvents.slice(i, i + batchSize)).onConflictDoNothing();
+					await SensorEventService.writeMany(newTxEvents.slice(i, i + batchSize), {
+						conflictMode: 'ignore'
+					});
 				}
 			}
 
