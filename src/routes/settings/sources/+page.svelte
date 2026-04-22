@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, PageHeader } from '$lib/components/ui';
+	import { AppPage, PageHeader, Select } from '$lib/components/ui';
 	import { onMount } from 'svelte';
 	import type { PageData } from './$types';
 
@@ -344,12 +344,12 @@
 		</div>
 		<div class="field">
 			<label for="timezone">Tidssone</label>
-			<select id="timezone" class="input" bind:value={timezone}>
+			<Select id="timezone" className="input" bind:value={timezone}>
 				<option value="Europe/Oslo">Europe/Oslo</option>
 				<option value="Europe/Copenhagen">Europe/Copenhagen</option>
 				<option value="Europe/Stockholm">Europe/Stockholm</option>
 				<option value="UTC">UTC</option>
-			</select>
+			</Select>
 		</div>
 		<button class="btn-primary" onclick={saveSourceConfig} disabled={savingSourceConfig}>
 			{savingSourceConfig ? 'Lagrer...' : 'Lagre'}

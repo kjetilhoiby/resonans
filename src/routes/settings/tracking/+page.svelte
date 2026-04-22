@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, PageHeader } from '$lib/components/ui';
+	import { AppPage, Checkbox, PageHeader, Select } from '$lib/components/ui';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -153,28 +153,24 @@
 
 						<div class="field">
 							<label class="field-label" for="edit-status-{series.id}">Status</label>
-							<select id="edit-status-{series.id}" class="input" bind:value={draftStatus}>
+							<Select id="edit-status-{series.id}" className="input" bind:value={draftStatus}>
 								<option value="active">Aktiv</option>
 								<option value="paused">Pauset</option>
 								<option value="archived">Arkivert</option>
-							</select>
+							</Select>
 						</div>
 
 						<div class="field">
 							<label class="field-label" for="edit-policy-{series.id}">Bekreftelsespolicy</label>
-							<select id="edit-policy-{series.id}" class="input" bind:value={draftConfirmationPolicy}>
+							<Select id="edit-policy-{series.id}" className="input" bind:value={draftConfirmationPolicy}>
 								<option value="always">Alltid bekreft manuelt</option>
 								<option value="low_confidence_only">Bekreft kun ved lav tillit</option>
 								<option value="never">Aldri bekreft (alltid auto)</option>
-							</select>
+							</Select>
 						</div>
 
 						<div class="field check-field">
-							<input
-								type="checkbox"
-								id="edit-auto-{series.id}"
-								bind:checked={draftAutoRegister}
-							/>
+							<Checkbox id="edit-auto-{series.id}" bind:checked={draftAutoRegister} />
 							<label for="edit-auto-{series.id}">Auto-registrer ved høy tillit (fra bilde-triage)</label>
 						</div>
 

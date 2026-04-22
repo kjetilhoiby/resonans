@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { AppPage, Button, PageHeader, SectionCard, Select, TabButton } from '$lib/components/ui';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -301,17 +302,8 @@
 	<title>Økonomi – Resonans</title>
 </svelte:head>
 
-<div class="container">
-	<div class="header">
-		<div class="header-top">
-			<a href="/" class="btn-nav" aria-label="Tilbake">
-				<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-					<path d="M12.5 15L7.5 10L12.5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-				</svg>
-			</a>
-			<h1>💰 Økonomi</h1>
-		</div>
-	</div>
+<AppPage width="full" theme="dark" className="economics-page">
+	<PageHeader title="💰 Økonomi" titleHref="/" titleLabel="Tilbake til forsiden" />
 
 	{#if loadingAccounts}
 		<div class="loading">Laster kontoer…</div>
@@ -324,41 +316,42 @@
 		<!-- Account selector -->
 		<div class="account-list">
 			{#each accounts as account}
-				<button
-					class="account-card"
-					class:selected={selectedAccountId === account.accountId}
-					onclick={() => (selectedAccountId = account.accountId)}
+				<Button
+					variant="ghost"
+					className={`account-card ${selectedAccountId === account.accountId ? 'selected' : ''}`}
+					onClick={() => (selectedAccountId = account.accountId)}
 				>
 					<div class="account-name">{account.accountName ?? account.accountId}</div>
 					<div class="account-type">{account.accountType ?? ''}</div>
 					<div class="account-balance">{formatNOK(account.balance, account.currency ?? 'NOK')}</div>
-				</button>
+				</Button>
 			{/each}
 		</div>
 
 		<!-- Tabs -->
 		<div class="tabs">
-			<button class="tab" class:active={activeTab === 'saldo'} onclick={() => (activeTab = 'saldo')}>📈 Saldo</button>
-			<button class="tab" class:active={activeTab === 'utgifter'} onclick={() => (activeTab = 'utgifter')}>📊 Utgifter</button>
-			<button class="tab" class:active={activeTab === 'innsikt'} onclick={() => (activeTab = 'innsikt')}>🔍 Innsikt</button>
-			<button class="tab" class:active={activeTab === 'pengestrøm'} onclick={() => (activeTab = 'pengestrøm')}>💸 Pengestrøm</button>
-			<button class="tab" class:active={activeTab === 'variabelt'} onclick={() => (activeTab = 'variabelt')}>📦 Variabelt</button>
-			<button class="tab" class:active={activeTab === 'akkumulert'} onclick={() => (activeTab = 'akkumulert')}>📈 Akkumulert</button>
-			<a
+			<TabButton active={activeTab === 'saldo'} onClick={() => (activeTab = 'saldo')}>📈 Saldo</TabButton>
+			<TabButton active={activeTab === 'utgifter'} onClick={() => (activeTab = 'utgifter')}>📊 Utgifter</TabButton>
+			<TabButton active={activeTab === 'innsikt'} onClick={() => (activeTab = 'innsikt')}>🔍 Innsikt</TabButton>
+			<TabButton active={activeTab === 'pengestrøm'} onClick={() => (activeTab = 'pengestrøm')}>💸 Pengestrøm</TabButton>
+			<TabButton active={activeTab === 'variabelt'} onClick={() => (activeTab = 'variabelt')}>📦 Variabelt</TabButton>
+			<TabButton active={activeTab === 'akkumulert'} onClick={() => (activeTab = 'akkumulert')}>📈 Akkumulert</TabButton>
+			<TabButton
 				href={selectedAccountId ? `/economics/${encodeURIComponent(selectedAccountId)}/salary-month` : '#'}
-				class="tab tab-link"
-			>📅 Lønnsmåned</a>
+			>
+				📅 Lønnsmåned
+			</TabButton>
 		</div>
 
 		<!-- Spending analysis -->
 		<div class="analyze-bar">
-			<button class="analyze-btn" onclick={runAnalysis} disabled={analyzing}>
+			<Button variant="primary" className="analyze-btn" onClick={runAnalysis} disabled={analyzing}>
 				{#if analyzing}
 					<span class="spinner"></span> Analyserer transaksjoner…
 				{:else}
 					🤖 Analyser forbruk
 				{/if}
-			</button>
+			</Button>
 			<span class="analyze-hint">Bruker AI til å lage din personlige kategoritaksonomi</span>
 		</div>
 
@@ -367,7 +360,7 @@
 		{/if}
 
 		{#if analysisResult}
-			<div class="analysis-result">
+			<SectionCard tone="subtle" className="analysis-result">
 				<div class="analysis-header">
 					<strong>✅ Analyse fullført</strong>
 					<span class="analysis-stats">
@@ -376,7 +369,7 @@
 						{analysisResult.updatedMappings} oppdatert •
 						{analysisResult.skippedRecent} nylig analysert
 					</span>
-					<button class="btn-ghost close-analysis" onclick={() => (analysisResult = null)} aria-label="Lukk">✕</button>
+					<Button variant="ghost" className="close-analysis" onClick={() => (analysisResult = null)} ariaLabel="Lukk">✕</Button>
 				</div>
 				{#if analysisResult.insights.length > 0}
 					<ul class="insights">
@@ -402,7 +395,7 @@
 						</table>
 					</details>
 				{/if}
-			</div>
+			</SectionCard>
 		{/if}
 
 		{#if selectedAccount}
@@ -417,12 +410,12 @@
 						</div>
 						<div class="interval-selector">
 							<label for="balance-interval">Periode:</label>
-							<select id="balance-interval" bind:value={balanceInterval}>
+							<Select id="balance-interval" bind:value={balanceInterval}>
 								<option value="2025">Siden jan 2025</option>
 								<option value="12m">Siste 12 mnd</option>
 								<option value="24m">Siste 24 mnd</option>
 								<option value="all">Alt</option>
-							</select>
+							</Select>
 						</div>
 					</div>
 					{#if loadingHistory}
@@ -504,26 +497,9 @@
 			</div>
 		{/if}
 	{/if}
-</div>
+</AppPage>
 
 <style>
-	.container {
-		max-width: 1100px;
-		margin: 0 auto;
-		padding: 2rem;
-	}
-
-	.header {
-		margin-bottom: 2rem;
-	}
-
-	.header-top {
-		display: flex;
-		align-items: center;
-		gap: 1rem;
-	}
-
-	h1 { margin: 0; font-size: 2rem; }
 	h2 { margin: 0 0 0.25rem; font-size: 1.25rem; }
 
 	.loading {
@@ -545,7 +521,7 @@
 		margin-bottom: 2rem;
 	}
 
-	.account-card {
+	:global(.account-card) {
 		background: var(--surface-color);
 		border: 2px solid var(--border-color);
 		border-radius: 12px;
@@ -555,11 +531,11 @@
 		transition: border-color 0.15s, box-shadow 0.15s;
 	}
 
-	.account-card:hover {
+	:global(.account-card:hover) {
 		border-color: #10b981;
 	}
 
-	.account-card.selected {
+	:global(.account-card.selected) {
 		border-color: #10b981;
 		box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
 	}
@@ -637,34 +613,6 @@
 		border-bottom: 2px solid var(--border-color);
 	}
 
-	.tab {
-		padding: 0.6rem 1.25rem;
-		background: none;
-		border: none;
-		border-bottom: 2px solid transparent;
-		margin-bottom: -2px;
-		font-size: 0.95rem;
-		font-weight: 500;
-		color: var(--text-secondary);
-		cursor: pointer;
-		transition: color 0.15s, border-color 0.15s;
-		border-radius: 0;
-	}
-
-	.tab:hover { color: var(--text-primary); }
-
-	.tab.active {
-		color: var(--text-primary);
-		border-bottom-color: #10b981;
-		font-weight: 600;
-	}
-
-	.tab-link {
-		text-decoration: none;
-		display: inline-flex;
-		align-items: center;
-	}
-
 	.analyze-bar {
 		display: flex;
 		align-items: center;
@@ -673,7 +621,7 @@
 		flex-wrap: wrap;
 	}
 
-	.analyze-btn {
+	:global(.analyze-btn) {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
@@ -689,7 +637,7 @@
 		white-space: nowrap;
 	}
 
-	.analyze-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+	:global(.analyze-btn:disabled) { opacity: 0.6; cursor: not-allowed; }
 	.analyze-hint { font-size: 0.8rem; color: var(--text-secondary); }
 
 	@keyframes spin { to { transform: rotate(360deg); } }
@@ -713,7 +661,7 @@
 		font-size: 0.9rem;
 	}
 
-	.analysis-result {
+	:global(.analysis-result) {
 		background: var(--surface-color);
 		border: 1px solid var(--border-color);
 		border-radius: 12px;
@@ -735,7 +683,7 @@
 		flex: 1;
 	}
 
-	.close-analysis {
+	:global(.close-analysis) {
 		margin-left: auto;
 		padding: 0.1rem 0.3rem;
 	}
@@ -823,7 +771,7 @@
 		color: var(--text-secondary);
 	}
 
-	.interval-selector select {
+	.interval-selector :global(.ds-select) {
 		padding: 0.4rem 0.7rem;
 		border: 1px solid var(--border-color);
 		border-radius: 6px;
@@ -834,11 +782,11 @@
 		transition: border-color 0.2s;
 	}
 
-	.interval-selector select:hover {
+	.interval-selector :global(.ds-select:hover) {
 		border-color: var(--primary-color);
 	}
 
-	.interval-selector select:focus {
+	.interval-selector :global(.ds-select:focus) {
 		outline: none;
 		border-color: var(--primary-color);
 		box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);

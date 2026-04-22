@@ -11,6 +11,8 @@
 		href?: string;
 		fullWidth?: boolean;
 		ariaLabel?: string;
+		className?: string;
+		onClick?: () => void;
 	}
 
 	let {
@@ -20,15 +22,18 @@
 		disabled = false,
 		href,
 		fullWidth = false,
-		ariaLabel
+		ariaLabel,
+		className = '',
+		onClick
 	}: Props = $props();
 </script>
 
 {#if href}
 	<a
 		href={href}
-		class={`ds-button btn-${variant} ${fullWidth ? 'is-full-width' : ''}`}
+		class={`ds-button btn-${variant} ${fullWidth ? 'is-full-width' : ''} ${className}`.trim()}
 		aria-label={ariaLabel}
+		onclick={onClick}
 	>
 		{@render children()}
 	</a>
@@ -36,8 +41,9 @@
 	<button
 		type={type}
 		disabled={disabled}
-		class={`ds-button btn-${variant} ${fullWidth ? 'is-full-width' : ''}`}
+		class={`ds-button btn-${variant} ${fullWidth ? 'is-full-width' : ''} ${className}`.trim()}
 		aria-label={ariaLabel}
+		onclick={onClick}
 	>
 		{@render children()}
 	</button>

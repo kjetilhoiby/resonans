@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { AppPage, Button, Checkbox, Input, PageHeader, SectionCard, Select } from '$lib/components/ui';
 	import { goto } from '$app/navigation';
 	import AccountPicker from '$lib/components/economics/AccountPicker.svelte';
 	import EconomicsTabs from '$lib/components/economics/EconomicsTabs.svelte';
@@ -445,17 +446,8 @@
 	<title>Økonomi – Resonans</title>
 </svelte:head>
 
-<div class="container">
-	<div class="header">
-		<div class="header-top">
-			<a href="/" class="back-button" aria-label="Tilbake">
-				<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-					<path d="M12.5 15L7.5 10L12.5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-				</svg>
-			</a>
-			<h1>💰 Økonomi</h1>
-		</div>
-	</div>
+<AppPage width="full" theme="dark" className="economics-tab-page">
+	<PageHeader title="💰 Økonomi" titleHref="/" titleLabel="Tilbake til forsiden" />
 
 	{#if loadingAccounts}
 		<div class="loading">Laster kontoer…</div>
@@ -495,29 +487,30 @@
 			{:else}
 				<span class="refresh-time">Synkroniseres automatisk fra SpareBank 1 daglig kl. 06:00</span>
 			{/if}
-			<button
-				class="refresh-btn"
-				onclick={() => { refreshing = true; forceRefresh(); setTimeout(() => (refreshing = false), 1500); }}
+			<Button
+				variant="secondary"
+				className="refresh-btn"
+				onClick={() => { refreshing = true; forceRefresh(); setTimeout(() => (refreshing = false), 1500); }}
 				disabled={refreshing}
-				aria-label="Oppdater nå"
+				ariaLabel="Oppdater nå"
 			>
 				<svg class="refresh-icon" class:spinning={refreshing} width="14" height="14" viewBox="0 0 14 14" fill="none">
 					<path d="M12.5 2.5A6 6 0 1 1 7 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
 					<path d="M7 1l2 2-2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
 				</svg>
 				{refreshing ? 'Oppdaterer…' : 'Oppdater nå'}
-			</button>
+			</Button>
 		</div>
 
 		<!-- Spending analysis -->
 		<div class="analyze-bar">
-			<button class="analyze-btn" onclick={runAnalysis} disabled={analyzing}>
+			<Button variant="primary" className="analyze-btn" onClick={runAnalysis} disabled={analyzing}>
 				{#if analyzing}
 					<span class="spinner"></span> Analyserer transaksjoner…
 				{:else}
 					🤖 Analyser forbruk
 				{/if}
-			</button>
+			</Button>
 			<span class="analyze-hint">Bruker AI til å lage din personlige kategoritaksonomi</span>
 		</div>
 
@@ -526,7 +519,7 @@
 		{/if}
 
 		{#if analysisResult}
-			<div class="analysis-result">
+			<SectionCard tone="subtle" className="analysis-result">
 				<div class="analysis-header">
 					<strong>✅ Analyse fullført</strong>
 					<span class="analysis-stats">
@@ -535,7 +528,7 @@
 						{analysisResult.updatedMappings} oppdatert •
 						{analysisResult.skippedRecent} nylig analysert
 					</span>
-					<button class="close-analysis" onclick={() => (analysisResult = null)} aria-label="Lukk">✕</button>
+					<Button variant="ghost" className="close-analysis" onClick={() => (analysisResult = null)} ariaLabel="Lukk">✕</Button>
 				</div>
 				{#if analysisResult.insights.length > 0}
 					<ul class="insights">
@@ -561,7 +554,7 @@
 						</table>
 					</details>
 				{/if}
-			</div>
+			</SectionCard>
 		{/if}
 
 		{#if selectedAccount}
@@ -654,21 +647,21 @@
 							}}
 						/>
 					</div>
-					<div class="tx-explorer-filters">
+					<SectionCard tone="subtle" className="tx-explorer-filters">
 						<div class="tx-filter-row">
 							<label>
 								Fra dato
-								<input type="date" bind:value={transactionFromDate} />
+								<Input type="date" bind:value={transactionFromDate} />
 							</label>
 							<label>
 								Til dato
-								<input type="date" bind:value={transactionToDate} />
+								<Input type="date" bind:value={transactionToDate} />
 							</label>
 							<label>
 								Kategori
-								<select
+								<Select
 									bind:value={transactionCategoryFilter}
-									onchange={() => {
+									onChange={() => {
 										transactionSubcategoryFilter = '';
 										loadedTransactionsKey = null;
 									}}
@@ -677,42 +670,45 @@
 									{#each transactionCategoryOptions as option}
 										<option value={option.id}>{option.label}</option>
 									{/each}
-								</select>
+								</Select>
 							</label>
 							<label>
 								Subkategori
-								<select bind:value={transactionSubcategoryFilter} disabled={!transactionCategoryFilter}>
+								<Select bind:value={transactionSubcategoryFilter} disabled={!transactionCategoryFilter}>
 									<option value="">Alle subkategorier</option>
 									{#each transactionSubcategoryOptions() as option}
 										<option value={option.key}>{option.label}</option>
 									{/each}
-								</select>
+								</Select>
 							</label>
 						</div>
 						<div class="tx-filter-row tx-accounts-row">
 							<span class="tx-filter-label">Kontoer</span>
-							<button class="tx-mini-btn" type="button" onclick={selectAllTransactionAccounts}>Velg alle</button>
-							<button class="tx-mini-btn" type="button" onclick={resetTransactionFilters}>Nullstill</button>
+							<Button variant="ghost" className="tx-mini-btn" onClick={selectAllTransactionAccounts}>Velg alle</Button>
+							<Button variant="ghost" className="tx-mini-btn" onClick={resetTransactionFilters}>Nullstill</Button>
 						</div>
 						<div class="tx-account-list">
 							{#each accounts as account}
 								<label class="tx-account-chip">
-									<input
-										type="checkbox"
+									<Checkbox
 										checked={selectedTransactionAccountIds.includes(account.accountId)}
-										onchange={() => toggleTransactionAccount(account.accountId)}
+										onChange={() => toggleTransactionAccount(account.accountId)}
 									/>
 									<span>{account.accountName ?? account.accountId}</span>
 								</label>
 							{/each}
 						</div>
 						<div class="tx-filter-actions">
-							<button class="refresh-button" type="button" onclick={() => { loadedTransactionsKey = null; loadTransactions(); }}>
+							<Button
+								variant="secondary"
+								className="refresh-button"
+								onClick={() => { loadedTransactionsKey = null; loadTransactions(); }}
+							>
 								Oppdater treff
-							</button>
+							</Button>
 							<span class="tx-match-count">{transactions.length} treff</span>
 						</div>
-					</div>
+					</SectionCard>
 					{#if loadingTransactions}
 						<div class="loading">Laster transaksjoner…</div>
 					{:else}
@@ -748,38 +744,9 @@
 			</div>
 		{/if}
 	{/if}
-</div>
+</AppPage>
 
 <style>
-	.container {
-		max-width: 1100px;
-		margin: 0 auto;
-		padding: 2rem;
-	}
-
-	.header { margin-bottom: 2rem; }
-
-	.header-top {
-		display: flex;
-		align-items: center;
-		gap: 1rem;
-	}
-
-	.back-button {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 36px;
-		height: 36px;
-		border-radius: 50%;
-		background: var(--surface-color);
-		border: 1px solid var(--border-color);
-		color: var(--text-primary);
-		text-decoration: none;
-		flex-shrink: 0;
-	}
-
-	h1 { margin: 0; font-size: 2rem; }
 	h2 { margin: 0 0 0.25rem; font-size: 1.25rem; }
 
 	.loading {
@@ -857,7 +824,7 @@
 		margin-bottom: 10px;
 	}
 
-	.tx-explorer-filters {
+	:global(.tx-explorer-filters) {
 		background: var(--surface-color);
 		border: 1px solid var(--border-color);
 		border-radius: 12px;
@@ -881,8 +848,8 @@
 		color: var(--text-secondary);
 	}
 
-	.tx-filter-row input,
-	.tx-filter-row select {
+	.tx-filter-row :global(input),
+	.tx-filter-row :global(.ds-select) {
 		border: 1px solid var(--border-color);
 		border-radius: 8px;
 		padding: 0.5rem 0.6rem;
@@ -919,7 +886,7 @@
 		color: var(--text-secondary);
 	}
 
-	.tx-mini-btn {
+	:global(.tx-mini-btn) {
 		border: 1px solid var(--border-color);
 		background: var(--bg-color);
 		color: var(--text-secondary);
@@ -985,7 +952,7 @@
 		color: var(--text-secondary);
 	}
 
-	.refresh-btn {
+	:global(.refresh-btn) {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.35rem;
@@ -999,8 +966,8 @@
 		cursor: pointer;
 		transition: color 0.15s, border-color 0.15s;
 	}
-	.refresh-btn:hover:not(:disabled) { color: var(--text-primary); border-color: #10b981; }
-	.refresh-btn:disabled { opacity: 0.55; cursor: default; }
+	:global(.refresh-btn:hover:not(:disabled)) { color: var(--text-primary); border-color: #10b981; }
+	:global(.refresh-btn:disabled) { opacity: 0.55; cursor: default; }
 
 	@keyframes spin-refresh { to { transform: rotate(360deg); } }
 	.refresh-icon { flex-shrink: 0; }
@@ -1014,7 +981,7 @@
 		flex-wrap: wrap;
 	}
 
-	.analyze-btn {
+	:global(.analyze-btn) {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
@@ -1030,7 +997,7 @@
 		white-space: nowrap;
 	}
 
-	.analyze-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+	:global(.analyze-btn:disabled) { opacity: 0.6; cursor: not-allowed; }
 	.analyze-hint { font-size: 0.8rem; color: var(--text-secondary); }
 
 	@keyframes spin { to { transform: rotate(360deg); } }
@@ -1054,7 +1021,7 @@
 		font-size: 0.9rem;
 	}
 
-	.analysis-result {
+	:global(.analysis-result) {
 		background: var(--surface-color);
 		border: 1px solid var(--border-color);
 		border-radius: 12px;
@@ -1072,7 +1039,7 @@
 
 	.analysis-stats { font-size: 0.82rem; color: var(--text-secondary); flex: 1; }
 
-	.close-analysis {
+	:global(.close-analysis) {
 		background: none;
 		border: none;
 		color: var(--text-secondary);
@@ -1136,14 +1103,6 @@
 	}
 
 	@media (max-width: 760px) {
-		.container {
-			padding: 1rem;
-		}
-
-		h1 {
-			font-size: 1.45rem;
-		}
-
 		h2 {
 			font-size: 1.06rem;
 		}

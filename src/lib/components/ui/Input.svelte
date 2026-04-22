@@ -13,20 +13,24 @@
 		max?: string | number;
 		step?: string | number;
 		autocomplete?: HTMLInputAttributes['autocomplete'];
+		className?: string;
+		onChange?: (event: Event) => void;
 	}
 
 	let {
 		id,
 		name,
 		type = 'text',
-		value,
 		placeholder,
 		required = false,
 		disabled = false,
 		min,
 		max,
 		step,
-		autocomplete
+		autocomplete,
+		className = '',
+		onChange,
+		value = $bindable()
 	}: Props = $props();
 </script>
 
@@ -34,7 +38,6 @@
 	{id}
 	{name}
 	{type}
-	{value}
 	{placeholder}
 	{required}
 	{disabled}
@@ -42,5 +45,7 @@
 	{max}
 	{step}
 	{autocomplete}
-	class="ds-input"
+	bind:value
+	onchange={onChange}
+	class={`ds-input ${className}`.trim()}
 />

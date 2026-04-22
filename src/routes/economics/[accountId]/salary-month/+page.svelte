@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { AppPage, PageHeader } from '$lib/components/ui';
 	import { goto } from '$app/navigation';
 	import SalaryMonth from '$lib/components/charts/SalaryMonth.svelte';
 	import AccountPicker from '$lib/components/economics/AccountPicker.svelte';
@@ -18,15 +19,8 @@
 	<title>Lønnsmåned – {data.account.accountName ?? data.account.accountId} – Resonans</title>
 </svelte:head>
 
-<div class="container">
-	<div class="header-top">
-		<a href="/" class="back-button" aria-label="Tilbake">
-			<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-				<path d="M12.5 15L7.5 10L12.5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-			</svg>
-		</a>
-		<h1>💰 Økonomi</h1>
-	</div>
+<AppPage width="full" theme="dark" className="economics-salary-month-page">
+	<PageHeader title="💰 Økonomi" titleHref="/" titleLabel="Tilbake til forsiden" />
 
 	<AccountPicker
 		accounts={data.accounts}
@@ -50,40 +44,9 @@
 			accountName={data.account.accountName ?? data.account.accountId}
 		/>
 	</div>
-</div>
+</AppPage>
 
 <style>
-	.container {
-		max-width: 1100px;
-		margin: 0 auto;
-		padding: 2rem;
-	}
-
-	.header-top {
-		display: flex;
-		align-items: center;
-		gap: 1rem;
-		margin-bottom: 1.5rem;
-	}
-
-	.back-button {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 36px;
-		height: 36px;
-		border-radius: 50%;
-		background: var(--surface-color, #f1f5f9);
-		border: 1px solid var(--border-color, #e2e8f0);
-		color: var(--text-primary, #0f172a);
-		text-decoration: none;
-		flex-shrink: 0;
-		transition: opacity 0.15s;
-	}
-	.back-button:hover { opacity: 0.75; }
-
-	h1 { margin: 0; font-size: 2rem; }
-
 	.chart-card {
 		background: var(--surface-color, #fff);
 		border-radius: 16px;

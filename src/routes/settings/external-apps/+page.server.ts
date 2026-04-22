@@ -8,7 +8,7 @@ import {
 } from '$lib/server/api-secrets';
 import type { Actions, PageServerLoad } from './$types';
 
-function parseExpiresAt(daysRaw: FormDataEntryValue | null): Date | null {
+function parseDays(daysRaw: FormDataEntryValue | null): number | null {
 	if (typeof daysRaw !== 'string' || !daysRaw.trim()) {
 		return null;
 	}
@@ -18,10 +18,46 @@ function parseExpiresAt(daysRaw: FormDataEntryValue | null): Date | null {
 		return null;
 	}
 
-	const safeDays = Math.min(Math.floor(days), 3650);
+	return Math.min(Math.floor(days), 3650);
+}
+
+function parseExpiresAt(formData: FormData): { expiresAt: Date | null; error?: string } {
+	const presetRaw = formData.get('expiresPreset');
+	const preset = typeof presetRaw === 'string' ? presetRaw.trim() : '';
+
+	if (preset === 'never' || preset === '') {
+		// Backward-compatible fallback in case the page posts the old field.
+		const legacyDays = parseDays(formData.get('expiresInDays'));
+		if (legacyDays === null) {
+			return { expiresAt: null };
+		}
+		const expiresAt = new Date();
+		expiresAt.setDate(expiresAt.getDate() + legacyDays);
+		return { expiresAt };
+	}
+
+	let days: number | null = null;
+	if (preset === 'custom') {
+		days = parseDays(formData.get('expiresCustomDays'));
+		if (days === null) {
+			return {
+				expiresAt: null,
+				error: 'Velg antall dager for egendefinert utløp.'
+			};
+		}
+	} else {
+		days = parseDays(preset);
+		if (days === null) {
+			return {
+				expiresAt: null,
+				error: 'Ugyldig utløpsvalg.'
+			};
+		}
+	}
+
 	const expiresAt = new Date();
-	expiresAt.setDate(expiresAt.getDate() + safeDays);
-	return expiresAt;
+	expiresAt.setDate(expiresAt.getDate() + days);
+	return { expiresAt };
 }
 
 export const load: PageServerLoad = async ({ locals, url }) => {
@@ -50,7 +86,13 @@ export const actions = {
 		const formData = await request.formData();
 		const labelRaw = formData.get('label');
 		const label = typeof labelRaw === 'string' ? labelRaw.trim() : '';
-		const expiresAt = parseExpiresAt(formData.get('expiresInDays'));
+		if (!label) {
+			return fail(400, { error: 'Navn er påkrevd.' });
+		}
+		const { expiresAt, error } = parseExpiresAt(formData);
+		if (error) {
+			return fail(400, { error });
+		}
 
 		let created: Awaited<ReturnType<typeof createUserApiSecret>>;
 		try {

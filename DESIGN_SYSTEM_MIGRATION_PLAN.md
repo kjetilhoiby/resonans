@@ -687,9 +687,25 @@ Bruk denne seksjonen til å oppdatere faktisk progresjon under arbeidet.
 - Migrert page shell og header på `src/routes/settings/jobs/+page.svelte` til `AppPage` og `PageHeader`
 - Migrert page shell og header på klassifiseringssider: `settings/classification`, `settings/classification/rules`, `settings/classification/transaction-rules`, `settings/classification/merchants`
 - Migrert page shell og header på `src/routes/goals/+page.svelte` til `AppPage` og `PageHeader`
+- Migrert page shell og header på `src/routes/economics/+page.svelte` til `AppPage` og `PageHeader`
+- Migrert page shell og header på `src/routes/economics/[accountId]/salary-month/+page.svelte` til `AppPage` og `PageHeader`
+- Migrert page shell og header på `src/routes/economics/[accountId]/[tab]/+page.svelte` til `AppPage` og `PageHeader`
+- Startet content-level migrering i økonomi-tabben ved å flytte sentrale actions over til `Button`-primitiven
+- Utvidet `Button` med `className` og `onClick` for trygg migrering av eksisterende interaktive knapper uten logikkendring
+- Utvidet `Input` med bindbar `value` og tatt den i bruk for datofelter i transaksjonsutforskeren på økonomi-tabben
+- Migrert analyse-resultat og transaksjonsfilter-surface på økonomi-tabben til `SectionCard`
+- Opprettet `Select`-primitive og migrert kategori-/subkategori-felter i økonomi-tabben til denne
+- Migrert analyse-action og analyse-resultat på `src/routes/economics/+page.svelte` til `Button` og `SectionCard`
+- Migrert tabs og periodevelger på `src/routes/economics/+page.svelte` til `Button` og `Select`
+- Migrert saldo-periodevelger (`balance-interval`) på økonomi-hovedsiden til `Select`-primitiven
+- Migrert konto-velgerkort på økonomi-hovedsiden fra rå `<button>` til `Button`-primitiven
+- Opprettet `Checkbox`-primitive og migrert konto-filter-checkboxer i `src/routes/economics/[accountId]/[tab]/+page.svelte`
+- Opprettet `TabButton`-primitive og tatt den i bruk i `src/routes/economics/+page.svelte` og `src/lib/components/economics/EconomicsTabs.svelte`
+- Migrert redigeringsfelter i `src/routes/settings/tracking/+page.svelte` fra rå `select`/checkbox til `Select`/`Checkbox`
+- Migrert tidssone-feltet i `src/routes/settings/sources/+page.svelte` fra rå `select` til `Select`
 
 ### Neste oppdatering
 
-- Validere første primitive-sett mot flere settings-sider
-- Migrere neste representative route-side med høy drift og lav risiko
-- Stramme inn `AppPage` og `PageHeader` etter erfaring fra første migrering
+- Migrere økonomi undersider (`[accountId]/[tab]`, `salary-month`) til samme shell/header-standard
+- Starte målrettet content-level migrering på allerede shell-migrerte sider (Button/Input/SectionCard)
+- Stramme inn `AppPage` og `PageHeader` etter erfaring fra økonomi-familien

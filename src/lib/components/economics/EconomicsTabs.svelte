@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { TabButton } from '$lib/components/ui';
+
 	export type EconomicsTabSlug = 'saldo' | 'utgifter' | 'innsikt' | 'pengestrom' | 'variabelt' | 'akkumulert' | 'transaksjoner' | 'salary-month';
 
 	let {
@@ -23,11 +25,7 @@
 
 <div class="tabs">
 	{#each TABS as t}
-		{#if t.slug === activeTab}
-			<span class="tab active">{t.label}</span>
-		{:else}
-			<a class="tab" href={t.href(accountId)}>{t.label}</a>
-		{/if}
+		<TabButton href={t.href(accountId)} active={t.slug === activeTab}>{t.label}</TabButton>
 	{/each}
 </div>
 
@@ -41,28 +39,4 @@
 		scrollbar-width: none;
 	}
 	.tabs::-webkit-scrollbar { display: none; }
-
-	.tab {
-		padding: 0.6rem 1.25rem;
-		background: none;
-		border: none;
-		border-bottom: 2px solid transparent;
-		margin-bottom: -2px;
-		font-size: 0.95rem;
-		font-weight: 500;
-		color: var(--text-secondary, #64748b);
-		cursor: pointer;
-		text-decoration: none;
-		white-space: nowrap;
-		transition: color 0.15s, border-color 0.15s;
-		display: inline-flex;
-		align-items: center;
-	}
-	.tab:hover { color: var(--text-primary, #0f172a); }
-
-	.tab.active {
-		color: var(--text-primary, #0f172a);
-		border-bottom-color: #10b981;
-		font-weight: 600;
-	}
 </style>

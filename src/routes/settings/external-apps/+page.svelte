@@ -3,12 +3,15 @@
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
+	let expiresPreset = $state('90');
+	let copiedSecret = $state(false);
 
 	const secrets = $derived(data.secrets ?? []);
 	const tableReady = $derived(data.tableReady !== false);
 	const createdSecret = $derived((form as ActionData & { createdSecret?: string })?.createdSecret ?? null);
 	const actionMessage = $derived((form as ActionData & { message?: string })?.message ?? null);
 	const actionError = $derived((form as ActionData & { error?: string })?.error ?? null);
+	const showCustomExpires = $derived(expiresPreset === 'custom');
 
 	function fmt(iso: string | Date | null) {
 		if (!iso) return 'Aldri';
@@ -19,6 +22,19 @@
 			hour: '2-digit',
 			minute: '2-digit'
 		}).format(new Date(iso));
+	}
+
+	async function copySecret() {
+		if (!createdSecret) return;
+		try {
+			await navigator.clipboard.writeText(createdSecret);
+			copiedSecret = true;
+			setTimeout(() => {
+				copiedSecret = false;
+			}, 1800);
+		} catch {
+			copiedSecret = false;
+		}
 	}
 </script>
 
@@ -45,6 +61,9 @@
 	{#if createdSecret}
 		<SectionCard title="Nytt secret (vises kun en gang)" className="secret-once-card">
 			<p>Lagre dette i passordhvelv eller i Scriptable Keychain. Etter side-reload kan det ikke hentes igjen.</p>
+			<div class="secret-copy-row">
+				<Button type="button" variant="secondary" onClick={copySecret}>{copiedSecret ? 'Kopiert' : 'Kopier secret'}</Button>
+			</div>
 			<pre>{createdSecret}</pre>
 		</SectionCard>
 	{/if}
@@ -54,8 +73,22 @@
 			<label for="label">Navn</label>
 			<Input id="label" name="label" type="text" placeholder="F.eks. Scriptable iPhone" required disabled={!tableReady} />
 
-			<label for="expiresInDays">Utløper om (dager, valgfritt)</label>
-			<Input id="expiresInDays" name="expiresInDays" type="number" min="1" max="3650" placeholder="Tom = uten utløp" disabled={!tableReady} />
+			<label for="expiresPreset">Utløp</label>
+			<select id="expiresPreset" name="expiresPreset" bind:value={expiresPreset} disabled={!tableReady}>
+				<option value="never">Ingen utløp</option>
+				<option value="7">7 dager</option>
+				<option value="30">30 dager</option>
+				<option value="90">90 dager (anbefalt)</option>
+				<option value="180">180 dager</option>
+				<option value="365">365 dager</option>
+				<option value="730">730 dager</option>
+				<option value="custom">Egendefinert</option>
+			</select>
+
+			{#if showCustomExpires}
+				<label for="expiresCustomDays">Egendefinert antall dager</label>
+				<Input id="expiresCustomDays" name="expiresCustomDays" type="number" min="1" max="3650" placeholder="f.eks. 45" disabled={!tableReady} />
+			{/if}
 
 			<Button type="submit" disabled={!tableReady}>Opprett secret</Button>
 		</form>
@@ -96,6 +129,15 @@ req.headers = {
 const payload = await req.loadJSON()
 console.log(payload)`}</pre>
 	</SectionCard>
+
+	<SectionCard title="Anbefalt praksis">
+		<ul>
+			<li>Lag ett secret per klient/enhet (f.eks. iPhone-widget, Mac-script).</li>
+			<li>Bruk utløp der det er praktisk, og roter secret jevnlig.</li>
+			<li>Deaktiver secret umiddelbart hvis du mistenker lekkasje.</li>
+			<li>Sjekk "Sist brukt" for å oppdage uventet aktivitet.</li>
+		</ul>
+	</SectionCard>
 </AppPage>
 
 <style>
@@ -110,6 +152,25 @@ console.log(payload)`}</pre>
 
 	label {
 		color: var(--text-primary);
+	}
+
+	select {
+		width: 100%;
+		border-radius: 8px;
+		border: 1px solid var(--border-color);
+		background: #111216;
+		color: var(--text-primary);
+		padding: 0.55rem 0.6rem;
+	}
+
+	select:disabled {
+		opacity: 0.65;
+	}
+
+	.secret-copy-row {
+		display: flex;
+		justify-content: flex-start;
+		margin-bottom: 0.65rem;
 	}
 
 	.secret-list {
@@ -169,6 +230,12 @@ console.log(payload)`}</pre>
 	.muted {
 		color: var(--text-secondary);
 		margin: 0;
+	}
+
+	ul {
+		margin: 0;
+		padding-left: 1rem;
+		line-height: 1.6;
 	}
 
 	@media (max-width: 720px) {
