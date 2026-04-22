@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { webPushSubscriptions } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
-import { sendWebPush, isWebPushConfigured } from '$lib/server/web-push';
+import { sendWebPush, isWebPushConfigured, isSubscriptionGone } from '$lib/server/web-push';
 
 export const POST: RequestHandler = async ({ locals }) => {
 	if (!isWebPushConfigured()) {
@@ -67,8 +67,9 @@ export const POST: RequestHandler = async ({ locals }) => {
 		const hostPrefix = result.endpointHost ? `${result.endpointHost} ` : '';
 		errors.push(`[${result.statusCode ?? 'no-status'}] ${hostPrefix}${result.error ?? 'unknown'}${bodySuffix}`);
 
-		// 400, 404, 410 = subscription is invalid/expired, remove it
-		const gone = result.statusCode === 400 || result.statusCode === 404 || result.statusCode === 410;
+		// Remove subscription if the provider says it's permanently gone
+		// (standard 404/410, Apple 403 BadJwtToken/ExpiredJwtToken/Unregistered, etc.)
+		const gone = result.statusCode === 400 || isSubscriptionGone(result);
 		if (gone) {
 			removed += 1;
 			await db.delete(webPushSubscriptions).where(eq(webPushSubscriptions.id, sub.id));

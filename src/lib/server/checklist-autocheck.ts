@@ -20,7 +20,7 @@
 import { and, eq, gte, lt, sql } from 'drizzle-orm';
 import { db } from '$lib/db';
 import { checklistItems, checklists, progress } from '$lib/db/schema';
-import { TaskExecutionService } from '$lib/server/services/task-execution-service';
+import { TaskExecutionService, type TaskProgressSkipReason } from '$lib/server/services/task-execution-service';
 import type { ActivityType } from './task-intent-parser';
 
 const THRESHOLD = 0.8; // 80% of target duration is sufficient
@@ -51,6 +51,8 @@ export type AutoCheckResult = {
 	autoChecked: boolean;
 	reason: 'matched' | 'no_workout' | 'duration_too_short' | 'already_checked' | 'no_intent';
 	progressRecordId?: string;
+	progressStatus?: 'not_linked_task' | 'created' | 'duplicate' | 'period_target_reached';
+	progressSkipReason?: TaskProgressSkipReason;
 };
 
 /**
@@ -163,6 +165,10 @@ export async function autocheckChecklistItemsForDay(params: {
 		// Auto-check the item
 		const now = new Date();
 		let progressRecordId: string | undefined;
+		let progressStatus: AutoCheckResult['progressStatus'] = linkedTaskId
+			? (meta.progressRecordId ? 'duplicate' : 'created')
+			: 'not_linked_task';
+		let progressSkipReason: TaskProgressSkipReason | undefined;
 
 		// Log progress for linked task using sensor event id as dedup key
 		if (linkedTaskId && !meta.progressRecordId) {
@@ -176,6 +182,14 @@ export async function autocheckChecklistItemsForDay(params: {
 				completedAt: now
 			});
 			progressRecordId = progressResult.record?.id;
+			if (!progressResult.created) {
+				if (progressResult.skipReason === 'period_target_reached') {
+					progressStatus = 'period_target_reached';
+				} else if (progressResult.skipReason === 'duplicate') {
+					progressStatus = 'duplicate';
+				}
+				progressSkipReason = progressResult.skipReason ?? undefined;
+			}
 		}
 
 		const newMeta = {
@@ -199,7 +213,9 @@ export async function autocheckChecklistItemsForDay(params: {
 			itemText: item.text,
 			autoChecked: true,
 			reason: 'matched',
-			...(progressRecordId && { progressRecordId })
+			...(progressRecordId && { progressRecordId }),
+			progressStatus,
+			...(progressSkipReason && { progressSkipReason })
 		});
 	}
 

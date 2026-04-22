@@ -240,6 +240,11 @@ Oppdatert 2026-04-22:
 - Auto-progress i `tracking-series` og `sensor-goal-automation` går nå via `ensureTaskProgress` med dedupe-nøkler, slik at flytene er idempotente ved retries/replays.
 - `TaskExecutionService.ensureTaskProgress` returnerer nå standardisert `skipReason` (`duplicate` / `period_target_reached`) for mer konsistent observability.
 - `/api/cron/withings-sync` eksponerer nå aggregerte automation-tall (`registered`, `skippedByPeriod`, `skippedDuplicate`) i responsen.
+- `syncSensorProgressForTasks` rapporterer nå reason-split skip-tall (`skippedByPeriod`, `skippedDuplicate`) i tillegg til total `skipped`.
+- `checklist_autocheck` returnerer nå `summary` med progress-observability (`progressCreated`, `progressSkippedByPeriod`, `progressSkippedDuplicate`).
+- `processDueBackgroundJobs` aggregerer nå automation-metrikker på tvers av kjørte jobs, og `/api/cron/background-jobs` eksponerer disse via `automation` i responsen.
+- `listRecentBackgroundJobs` eksponerer nå `resultSummary` for auto-progress jobtyper, slik at admin-jobblisten viser nøkkeltall uten full payload.
+- `sensor-progress-sync` logger nå standardisert oppsummering per kjøring (`created/skipped/skippedByPeriod/skippedDuplicate`).
 
 ### 1) WorkoutProjectionService (høy)
 

@@ -80,7 +80,7 @@ export async function deleteBackgroundJob(jobId: string) {
 }
 
 export async function listRecentBackgroundJobs(limit = 50) {
-	return db
+	const jobs = await db
 		.select({
 			id: backgroundJobs.id,
 			userId: backgroundJobs.userId,
@@ -93,11 +93,42 @@ export async function listRecentBackgroundJobs(limit = 50) {
 			updatedAt: backgroundJobs.updatedAt,
 			startedAt: backgroundJobs.startedAt,
 			finishedAt: backgroundJobs.finishedAt,
-			error: backgroundJobs.error
+			error: backgroundJobs.error,
+			result: backgroundJobs.result
 		})
 		.from(backgroundJobs)
 		.orderBy(desc(backgroundJobs.createdAt))
 		.limit(Math.max(1, Math.min(limit, 200)));
+
+	return jobs.map((job) => {
+		const result = (job.result ?? {}) as Record<string, unknown>;
+		let resultSummary: Record<string, unknown> | null = null;
+
+		if (job.type === 'sync_sensor_to_task_progress') {
+			resultSummary = {
+				created: result.created ?? 0,
+				skipped: result.skipped ?? 0,
+				skippedByPeriod: result.skippedByPeriod ?? 0,
+				skippedDuplicate: result.skippedDuplicate ?? 0
+			};
+		}
+
+		if (job.type === 'checklist_autocheck') {
+			const summary = (result.summary ?? {}) as Record<string, unknown>;
+			resultSummary = {
+				total: summary.total ?? 0,
+				autoChecked: summary.autoChecked ?? 0,
+				progressCreated: summary.progressCreated ?? 0,
+				progressSkippedByPeriod: summary.progressSkippedByPeriod ?? 0,
+				progressSkippedDuplicate: summary.progressSkippedDuplicate ?? 0
+			};
+		}
+
+		return {
+			...job,
+			resultSummary
+		};
+	});
 }
 
 export async function listRecentGoalIntentParseJobsForUser(userId: string, limit = 20) {
@@ -441,7 +472,14 @@ async function executeJob(job: any): Promise<Record<string, unknown>> {
 				throw new Error('checklist_autocheck requires payload.date (ISO string)');
 			}
 			const results = await autocheckChecklistItemsForDay({ userId: job.user_id, date: payload.date });
-			return { date: payload.date, results };
+			const summary = {
+				total: results.length,
+				autoChecked: results.filter((r) => r.autoChecked).length,
+				progressCreated: results.filter((r) => r.progressStatus === 'created').length,
+				progressSkippedByPeriod: results.filter((r) => r.progressStatus === 'period_target_reached').length,
+				progressSkippedDuplicate: results.filter((r) => r.progressStatus === 'duplicate').length
+			};
+			return { date: payload.date, summary, results };
 		}
 		case 'sync_sensor_to_task_progress': {
 			if (!job.user_id) throw new Error('sync_sensor_to_task_progress requires user_id');
@@ -488,6 +526,21 @@ export async function processDueBackgroundJobs(opts?: { limit?: number; workerId
 	let completed = 0;
 	let failed = 0;
 	let retried = 0;
+	const automation = {
+		sensorProgress: {
+			created: 0,
+			skipped: 0,
+			skippedByPeriod: 0,
+			skippedDuplicate: 0
+		},
+		checklistAutocheck: {
+			total: 0,
+			autoChecked: 0,
+			progressCreated: 0,
+			progressSkippedByPeriod: 0,
+			progressSkippedDuplicate: 0
+		}
+	};
 
 	for (let i = 0; i < limit; i++) {
 		const job = await claimNextDueJob(workerId);
@@ -497,6 +550,36 @@ export async function processDueBackgroundJobs(opts?: { limit?: number; workerId
 
 		try {
 			const result = await executeJob(job);
+
+			if (job.type === 'sync_sensor_to_task_progress') {
+				const typedResult = result as {
+					created?: number;
+					skipped?: number;
+					skippedByPeriod?: number;
+					skippedDuplicate?: number;
+				};
+				automation.sensorProgress.created += typedResult.created ?? 0;
+				automation.sensorProgress.skipped += typedResult.skipped ?? 0;
+				automation.sensorProgress.skippedByPeriod += typedResult.skippedByPeriod ?? 0;
+				automation.sensorProgress.skippedDuplicate += typedResult.skippedDuplicate ?? 0;
+			}
+
+			if (job.type === 'checklist_autocheck') {
+				const typedResult = result as {
+					summary?: {
+						total?: number;
+						autoChecked?: number;
+						progressCreated?: number;
+						progressSkippedByPeriod?: number;
+						progressSkippedDuplicate?: number;
+					};
+				};
+				automation.checklistAutocheck.total += typedResult.summary?.total ?? 0;
+				automation.checklistAutocheck.autoChecked += typedResult.summary?.autoChecked ?? 0;
+				automation.checklistAutocheck.progressCreated += typedResult.summary?.progressCreated ?? 0;
+				automation.checklistAutocheck.progressSkippedByPeriod += typedResult.summary?.progressSkippedByPeriod ?? 0;
+				automation.checklistAutocheck.progressSkippedDuplicate += typedResult.summary?.progressSkippedDuplicate ?? 0;
+			}
 
 			await db
 				.update(backgroundJobs)
@@ -556,6 +639,7 @@ export async function processDueBackgroundJobs(opts?: { limit?: number; workerId
 		completed,
 		failed,
 		retried,
+		automation,
 		queue: {
 			queued: Number(queueStats.queued ?? 0),
 			running: Number(queueStats.running ?? 0),

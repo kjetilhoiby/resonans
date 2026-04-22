@@ -36,6 +36,43 @@ export function getWebPushPublicKey(): string | null {
 	return env.VAPID_PUBLIC_KEY || null;
 }
 
+// Known Apple push error reasons that mean the subscription is permanently unusable
+const APPLE_GONE_REASONS = new Set([
+	'BadJwtToken',
+	'ExpiredJwtToken',
+	'InvalidProviderToken',
+	'MissingProviderToken',
+	'ExpiredProviderToken',
+	'BadDeviceToken',
+	'Unregistered'
+]);
+
+/**
+ * Returns true when a failed push result means the subscription should be
+ * permanently removed (regardless of HTTP status code).
+ */
+export function isSubscriptionGone(result: {
+	ok: boolean;
+	statusCode?: number;
+	errorBody?: string;
+	endpointHost?: string;
+}): boolean {
+	if (result.ok) return false;
+	const { statusCode, errorBody, endpointHost } = result;
+	// Standard gone codes
+	if (statusCode === 410 || statusCode === 404) return true;
+	// Apple-specific: 403 with a known terminal reason
+	if (statusCode === 403 && endpointHost?.includes('web.push.apple.com')) {
+		try {
+			const parsed = JSON.parse(errorBody ?? '{}') as { reason?: string };
+			if (parsed.reason && APPLE_GONE_REASONS.has(parsed.reason)) return true;
+		} catch {
+			// unable to parse — fall through
+		}
+	}
+	return false;
+}
+
 export async function sendWebPush(
 	subscription: webpush.PushSubscription,
 	payload: Record<string, unknown>

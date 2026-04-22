@@ -283,6 +283,24 @@
 		}
 	}
 
+	async function purgePushSubscriptions() {
+		if (!confirm('Sletter ALLE push-subscriptions for din bruker. Du må aktivere Push på nytt etterpå. Fortsette?')) return;
+		pushLoading = true;
+		pushResult = null;
+		try {
+			const response = await fetchWithTimeout('/api/push/purge', { method: 'POST' }, 10000);
+			const data = await response.json();
+			pushSubscribed = false;
+			debugInfo = null;
+			pushResult = { success: true, message: `Fjernet ${data.removed} subscription(s). Aktiver Push på nytt.` };
+			await refreshPushStatus();
+		} catch (error) {
+			pushResult = { success: false, message: `Feil ved sletting: ${error instanceof Error ? error.message : 'ukjent'}` };
+		} finally {
+			pushLoading = false;
+		}
+	}
+
 	async function sendCheckIn() {
 		sending = true;
 		result = null;
@@ -521,17 +539,34 @@
 			{/if}
 
 			<div style="margin-top: 2rem; padding-top: 2rem; border-top: 1px solid var(--color-surface-3);">
-				<button 
-					onclick={fetchDebugInfo} 
-					disabled={debugLoading}
-					class="btn-tertiary"
-					style="font-size: 0.85rem; padding: 0.5rem 1rem;"
-				>
-					{debugLoading ? 'Laster debug-info...' : '🔧 Vis database debug'}
-				</button>
+				<div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+					<button 
+						onclick={fetchDebugInfo} 
+						disabled={debugLoading}
+						class="btn-tertiary"
+						style="font-size: 0.85rem; padding: 0.5rem 1rem;"
+					>
+						{debugLoading ? 'Laster debug-info...' : '🔧 Vis debug-info'}
+					</button>
+					<button
+						onclick={purgePushSubscriptions}
+						disabled={pushLoading}
+						class="btn-tertiary"
+						style="font-size: 0.85rem; padding: 0.5rem 1rem; color: var(--color-danger, #c0392b);"
+					>
+						🗑 Nullstill alle subscriptions
+					</button>
+				</div>
 				
 				{#if debugInfo}
 					<div style="margin-top: 1rem; padding: 1rem; background: var(--color-surface-2); border-radius: 4px; font-family: monospace; font-size: 0.85rem; overflow-x: auto;">
+						{#if debugInfo.vapid}
+							<div style="margin-bottom:0.75rem; padding-bottom:0.75rem; border-bottom: 1px solid var(--color-surface-3);">
+								<div>🔑 VAPID public key: <strong>{debugInfo.vapid.publicKeyFingerprint ?? '(mangler)'}</strong> <span style="opacity:0.6">(lengde: {debugInfo.vapid.publicKeyLength})</span></div>
+								<div>📧 Subject: <strong>{debugInfo.vapid.subject}</strong></div>
+								<div>🔐 Private key satt: <strong>{debugInfo.vapid.privateKeySet ? 'Ja' : 'NEI – mangler!'}</strong></div>
+							</div>
+						{/if}
 						<div>👤 Din userId: <strong>{debugInfo.currentUserId}</strong></div>
 						<div>📊 Abonnement for deg: <strong>{debugInfo.forCurrentUser?.length || 0}</strong></div>
 						<div>📈 Totalt i database: <strong>{debugInfo.totalInDatabase}</strong></div>

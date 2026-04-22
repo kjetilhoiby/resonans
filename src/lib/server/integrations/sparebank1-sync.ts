@@ -389,16 +389,16 @@ export async function syncAllSparebank1Data(
 				const date = event.timestamp.toISOString().split('T')[0];
 				const amount = Math.round((event.data.amount ?? 0) * 100) / 100;
 				const descriptionKey = normalizeTxDescription(event.data.description);
-				await db.execute(sql`
+				await pgClient.unsafe(`
 					DELETE FROM sensor_events
-					WHERE sensor_id = ${sensor.id}
+					WHERE sensor_id = $1
 					  AND data_type = 'bank_transaction'
 					  AND data->>'bookingStatus' = 'PENDING'
-					  AND data->>'accountId' = ${event.data.accountId ?? ''}
-					  AND UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')) = ${descriptionKey}
-					  AND ROUND((data->>'amount')::numeric, 2) = ${amount}
-					  AND timestamp::date = ${date}::date
-				`);
+					  AND data->>'accountId' = $2
+					  AND UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')) = $3
+					  AND ROUND((data->>'amount')::numeric, 2) = $4
+					  AND timestamp::date = $5::date
+				`, [sensor.id, event.data.accountId ?? '', descriptionKey, amount, date]);
 				existingSemanticKeys.delete(key); // allow BOOKED to be inserted
 			}
 		}
@@ -436,7 +436,7 @@ export async function syncAllSparebank1Data(
 
 		// Safety net: remove semantic duplicates in the recent sync window.
 		// This heals already-accumulated duplicates and protects charts/lists from inflated totals.
-		await db.execute(sql`
+		await pgClient.unsafe(`
 			WITH ranked AS (
 				SELECT
 					id,
@@ -452,13 +452,13 @@ export async function syncAllSparebank1Data(
 							id ASC
 					) AS rn
 				FROM sensor_events
-				WHERE sensor_id = ${sensor.id}
+				WHERE sensor_id = $1
 				  AND data_type = 'bank_transaction'
-				  AND timestamp >= ${earliestDate.toISOString()}
+				  AND timestamp >= $2::timestamptz
 			)
 			DELETE FROM sensor_events
 			WHERE id IN (SELECT id FROM ranked WHERE rn > 1)
-		`);
+		`, [sensor.id, earliestDate.toISOString()]);
 
 		transactionEvents = newEvents; // return actual inserted count
 	}

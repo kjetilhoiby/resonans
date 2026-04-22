@@ -12,7 +12,11 @@
 import { and, eq } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { db } from '$lib/db';
-import { TaskExecutionService } from '$lib/server/services/task-execution-service';
+import {
+	TASK_PROGRESS_SKIP_REASON_DUPLICATE,
+	TASK_PROGRESS_SKIP_REASON_PERIOD_TARGET,
+	TaskExecutionService
+} from '$lib/server/services/task-execution-service';
 
 /** Maps our activity type strings to Withings sportType substrings (lowercase). */
 const ACTIVITY_TO_SPORT_PATTERNS: Record<string, string[]> = {
@@ -37,6 +41,8 @@ function activityMatchesSportType(activityType: string, sportType: string): bool
 export type SensorProgressSyncResult = {
 	created: number;
 	skipped: number;
+	skippedByPeriod: number;
+	skippedDuplicate: number;
 };
 
 /**
@@ -74,7 +80,7 @@ export async function syncSensorProgressForTasks(params: {
 		  )
 	`) as unknown as Array<{ id: string; target_value: number | null; activity_type: string }>;
 
-	if (taskRows.length === 0) return { created: 0, skipped: 0 };
+	if (taskRows.length === 0) return { created: 0, skipped: 0, skippedByPeriod: 0, skippedDuplicate: 0 };
 
 	// Workouts in the week window
 	const workoutRows = await db.execute(sql`
@@ -89,10 +95,12 @@ export async function syncSensorProgressForTasks(params: {
 		  AND timestamp < ${weekEnd}
 	`) as unknown as Array<{ id: string; timestamp: string; sport_type: string | null }>;
 
-	if (workoutRows.length === 0) return { created: 0, skipped: 0 };
+	if (workoutRows.length === 0) return { created: 0, skipped: 0, skippedByPeriod: 0, skippedDuplicate: 0 };
 
 	let created = 0;
 	let skipped = 0;
+	let skippedByPeriod = 0;
+	let skippedDuplicate = 0;
 
 	for (const task of taskRows) {
 		if (!task.activity_type) continue;
@@ -115,11 +123,17 @@ export async function syncSensorProgressForTasks(params: {
 
 			if (!ensured.created) {
 				skipped++;
+				if (ensured.skipReason === TASK_PROGRESS_SKIP_REASON_PERIOD_TARGET) skippedByPeriod++;
+				if (ensured.skipReason === TASK_PROGRESS_SKIP_REASON_DUPLICATE) skippedDuplicate++;
 				continue;
 			}
 			created++;
 		}
 	}
 
-	return { created, skipped };
+	console.log(
+		`[sensor-progress-sync] user=${userId} created=${created} skipped=${skipped} skippedByPeriod=${skippedByPeriod} skippedDuplicate=${skippedDuplicate} tasks=${taskRows.length} workouts=${workoutRows.length}`
+	);
+
+	return { created, skipped, skippedByPeriod, skippedDuplicate };
 }
