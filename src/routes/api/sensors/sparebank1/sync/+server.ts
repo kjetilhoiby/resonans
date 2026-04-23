@@ -1,6 +1,10 @@
 import { json } from '@sveltejs/kit';
 import { syncAllSparebank1Data } from '$lib/server/integrations/sparebank1-sync';
+import { enqueueBackgroundJob } from '$lib/server/background-jobs';
 import type { RequestHandler } from './$types';
+
+// Allow longer runtime for non-historical manual sync requests.
+export const config = { maxDuration: 120 };
 
 /**
  * POST /api/sensors/sparebank1/sync
@@ -23,6 +27,25 @@ export const POST: RequestHandler = async ({ url, locals }) => {
 		if (from2020) {
 			fromDate = new Date('2020-01-01T00:00:00.000Z');
 			modeLabel = 'Fra 2020';
+
+			const job = await enqueueBackgroundJob({
+				userId,
+				type: 'sparebank1_historical_sync',
+				payload: { fromDate: '2020-01-01' },
+				priority: 10,
+				maxAttempts: 3
+			});
+
+			return json(
+				{
+					success: true,
+					queued: true,
+					job,
+					from2020: true,
+					message: `${modeLabel}: Historisk synk er satt i kø og kjøres i bakgrunnen.`
+				},
+				{ status: 202 }
+			);
 		} else if (daysParam !== null) {
 			const days = Number.parseInt(daysParam, 10);
 			if (!Number.isFinite(days) || days < 1 || days > 365) {
