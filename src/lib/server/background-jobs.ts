@@ -136,11 +136,13 @@ export async function listRecentBackgroundJobs(limit = 50) {
 
 		if (job.type === 'sparebank1_historical_sync') {
 			const synced = (result.synced ?? {}) as Record<string, unknown>;
+			const metrics = (result.metrics ?? {}) as Record<string, unknown>;
 			resultSummary = {
 				fromDate: result.fromDate ?? null,
 				balanceEvents: synced.balanceEvents ?? 0,
 				transactionEvents: synced.transactionEvents ?? 0,
-				accounts: synced.accounts ?? 0
+				accounts: synced.accounts ?? 0,
+				syncDurationMs: metrics.syncDurationMs ?? null
 			};
 		}
 
@@ -379,6 +381,43 @@ function calculateRetryDelaySeconds(attempt: number): number {
 	return Math.min(3600, Math.pow(2, Math.max(0, attempt - 1)) * 60);
 }
 
+function toDate(input: Date | string | number | null | undefined): Date | null {
+	if (!input) return null;
+	const d = input instanceof Date ? input : new Date(input);
+	return Number.isNaN(d.getTime()) ? null : d;
+}
+
+async function recoverStaleRunningJobs(staleAfterMinutes = 15) {
+	const minutes = Math.max(1, Math.min(staleAfterMinutes, 120));
+	const rows = await pgClient.unsafe<{ id: string; status: string }[]>(`
+		WITH stale AS (
+			SELECT id, attempts, max_attempts
+			FROM background_jobs
+			WHERE status = 'running'
+			  AND locked_at IS NOT NULL
+			  AND locked_at < NOW() - make_interval(mins => ${minutes})
+			FOR UPDATE SKIP LOCKED
+		)
+		UPDATE background_jobs AS bj
+		SET
+			status = CASE WHEN stale.attempts < stale.max_attempts THEN 'retry' ELSE 'failed' END,
+			error = CASE
+				WHEN stale.attempts < stale.max_attempts THEN COALESCE(NULLIF(bj.error, ''), 'Worker lease expired; requeued')
+				ELSE COALESCE(NULLIF(bj.error, ''), 'Worker lease expired; marked failed')
+			END,
+			run_at = CASE WHEN stale.attempts < stale.max_attempts THEN NOW() ELSE bj.run_at END,
+			finished_at = CASE WHEN stale.attempts < stale.max_attempts THEN NULL ELSE NOW() END,
+			locked_at = NULL,
+			locked_by = NULL,
+			updated_at = NOW()
+		FROM stale
+		WHERE bj.id = stale.id
+		RETURNING bj.id, bj.status
+	`);
+
+	return rows.length;
+}
+
 async function claimNextDueJob(workerId: string) {
 	const rows = await pgClient.unsafe<{
 		id: string;
@@ -428,10 +467,15 @@ async function executeJob(job: any): Promise<Record<string, unknown>> {
 				throw new Error(`Invalid fromDate in payload: ${String(payload.fromDate)}`);
 			}
 
+			const syncStartedAt = Date.now();
 			const synced = await syncAllSparebank1Data(job.user_id, { fromDate });
+			const syncDurationMs = Date.now() - syncStartedAt;
 			return {
 				fromDate: fromDate.toISOString().slice(0, 10),
-				synced
+				synced,
+				metrics: {
+					syncDurationMs
+				}
 			};
 		}
 		case 'goal_intent_parse': {
@@ -547,8 +591,36 @@ async function executeJob(job: any): Promise<Record<string, unknown>> {
 }
 
 export async function processDueBackgroundJobs(opts?: { limit?: number; workerId?: string }) {
+	const processStartedAt = Date.now();
 	const limit = Math.max(1, Math.min(opts?.limit ?? 5, 50));
 	const workerId = opts?.workerId ?? `worker-${Date.now()}`;
+	const recoveredStale = await recoverStaleRunningJobs();
+	const metricsByType: Record<string, {
+		processed: number;
+		completed: number;
+		failed: number;
+		retried: number;
+		totalDurationMs: number;
+		totalExecuteMs: number;
+		totalQueueLagMs: number;
+		maxDurationMs: number;
+	}> = {};
+
+	const ensureTypeMetrics = (type: string) => {
+		if (!metricsByType[type]) {
+			metricsByType[type] = {
+				processed: 0,
+				completed: 0,
+				failed: 0,
+				retried: 0,
+				totalDurationMs: 0,
+				totalExecuteMs: 0,
+				totalQueueLagMs: 0,
+				maxDurationMs: 0
+			};
+		}
+		return metricsByType[type];
+	};
 
 	let processed = 0;
 	let completed = 0;
@@ -574,10 +646,19 @@ export async function processDueBackgroundJobs(opts?: { limit?: number; workerId
 		const job = await claimNextDueJob(workerId);
 		if (!job) break;
 
+		const jobStartedAt = Date.now();
+		const jobRunAt = toDate(job.run_at);
+		const queueLagMs = jobRunAt ? Math.max(0, jobStartedAt - jobRunAt.getTime()) : 0;
+		const typeMetrics = ensureTypeMetrics(String(job.type));
+
 		processed += 1;
+		typeMetrics.processed += 1;
+		typeMetrics.totalQueueLagMs += queueLagMs;
 
 		try {
+			const executeStartedAt = Date.now();
 			const result = await executeJob(job);
+			const executeDurationMs = Date.now() - executeStartedAt;
 
 			if (job.type === 'sync_sensor_to_task_progress') {
 				const typedResult = result as {
@@ -622,6 +703,22 @@ export async function processDueBackgroundJobs(opts?: { limit?: number; workerId
 				})
 				.where(eq(backgroundJobs.id, String(job.id)));
 
+			const totalDurationMs = Date.now() - jobStartedAt;
+			typeMetrics.completed += 1;
+			typeMetrics.totalExecuteMs += executeDurationMs;
+			typeMetrics.totalDurationMs += totalDurationMs;
+			typeMetrics.maxDurationMs = Math.max(typeMetrics.maxDurationMs, totalDurationMs);
+
+			console.log('[background-jobs] job completed', {
+				jobId: String(job.id),
+				type: String(job.type),
+				attempt: Number(job.attempts ?? 0),
+				queueLagMs,
+				executeDurationMs,
+				totalDurationMs,
+				workerId
+			});
+
 			completed += 1;
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
@@ -643,14 +740,33 @@ export async function processDueBackgroundJobs(opts?: { limit?: number; workerId
 				})
 				.where(eq(backgroundJobs.id, String(job.id)));
 
+			const totalDurationMs = Date.now() - jobStartedAt;
+			typeMetrics.totalDurationMs += totalDurationMs;
+			typeMetrics.maxDurationMs = Math.max(typeMetrics.maxDurationMs, totalDurationMs);
+
 			if (shouldRetry) {
 				retried += 1;
+				typeMetrics.retried += 1;
 			} else {
 				failed += 1;
+				typeMetrics.failed += 1;
 			}
+
+			console.warn('[background-jobs] job failed', {
+				jobId: String(job.id),
+				type: String(job.type),
+				attempt: attempts,
+				maxAttempts,
+				queueLagMs,
+				totalDurationMs,
+				willRetry: shouldRetry,
+				error: message,
+				workerId
+			});
 		}
 	}
 
+	const queueStatsStartedAt = Date.now();
 	const queueStatsRows = await db
 		.select({
 			queued: sql<number>`COUNT(*) FILTER (WHERE ${backgroundJobs.status} IN ('queued','retry'))`,
@@ -659,14 +775,60 @@ export async function processDueBackgroundJobs(opts?: { limit?: number; workerId
 		})
 		.from(backgroundJobs)
 		.where(and(gte(backgroundJobs.createdAt, new Date(Date.now() - 30 * 24 * 60 * 60 * 1000))));
+	const queueStatsDurationMs = Date.now() - queueStatsStartedAt;
 
 	const queueStats = queueStatsRows[0] ?? { queued: 0, running: 0, failed: 0 };
+	const durationMs = Date.now() - processStartedAt;
+
+	console.log('[background-jobs] batch summary', {
+		workerId,
+		limit,
+		durationMs,
+		processed,
+		completed,
+		failed,
+		retried,
+		recoveredStale,
+		queueStatsDurationMs,
+		byType: Object.fromEntries(
+			Object.entries(metricsByType).map(([type, stats]) => [
+				type,
+				{
+					...stats,
+					avgDurationMs: stats.processed > 0 ? Math.round(stats.totalDurationMs / stats.processed) : 0,
+					avgExecuteMs: stats.completed > 0 ? Math.round(stats.totalExecuteMs / stats.completed) : 0,
+					avgQueueLagMs: stats.processed > 0 ? Math.round(stats.totalQueueLagMs / stats.processed) : 0
+				}
+			])
+		),
+		queue: {
+			queued: Number(queueStats.queued ?? 0),
+			running: Number(queueStats.running ?? 0),
+			failed: Number(queueStats.failed ?? 0)
+		}
+	});
 
 	return {
 		processed,
 		completed,
 		failed,
 		retried,
+		recoveredStale,
+		metrics: {
+			durationMs,
+			queueStatsDurationMs,
+			byType: Object.fromEntries(
+				Object.entries(metricsByType).map(([type, stats]) => [
+					type,
+					{
+						...stats,
+						avgDurationMs: stats.processed > 0 ? Math.round(stats.totalDurationMs / stats.processed) : 0,
+						avgExecuteMs: stats.completed > 0 ? Math.round(stats.totalExecuteMs / stats.completed) : 0,
+						avgQueueLagMs: stats.processed > 0 ? Math.round(stats.totalQueueLagMs / stats.processed) : 0
+					}
+				])
+			)
+		},
 		automation,
 		queue: {
 			queued: Number(queueStats.queued ?? 0),

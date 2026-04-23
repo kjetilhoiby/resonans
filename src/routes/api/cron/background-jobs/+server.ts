@@ -8,7 +8,7 @@ import {
 	processDueBackgroundJobs
 } from '$lib/server/background-jobs';
 
-export const config = { maxDuration: 120 };
+export const config = { maxDuration: 300 };
 
 /**
  * GET /api/cron/background-jobs

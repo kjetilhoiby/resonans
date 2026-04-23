@@ -63,7 +63,7 @@ const JOBS: CronJob[] = [
 		path: '/api/cron/background-jobs',
 		schedule: '*/5 * * * *', // hvert 5. minutt
 		description: 'Prosesserer intern databasedrevet jobbkø',
-		maxDurationSeconds: 120
+		maxDurationSeconds: 300
 	}
 ];
 
