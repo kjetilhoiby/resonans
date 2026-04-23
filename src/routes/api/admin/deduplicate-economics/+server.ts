@@ -60,10 +60,15 @@ export const POST: RequestHandler = async ({ locals }) => {
 				FROM sensor_events
 				WHERE data_type = 'bank_transaction'
 				AND user_id = ${locals.userId}
+			), to_delete AS (
+				SELECT id FROM ranked WHERE rn > 1
+			), deleted_categorized AS (
+				DELETE FROM categorized_events
+				WHERE sensor_event_id IN (SELECT id FROM to_delete)
 			)
 			DELETE FROM sensor_events
 			WHERE id IN (
-				SELECT id FROM ranked WHERE rn > 1
+				SELECT id FROM to_delete
 			)
 			RETURNING id
 		`);

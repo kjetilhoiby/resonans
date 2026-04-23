@@ -589,22 +589,30 @@ export async function syncAllSparebank1Data(
 				const amount = Math.round((event.data.amount ?? 0) * 100) / 100;
 				const descriptionKey = normalizeTxDescription(event.data.description);
 				await pgClient.unsafe(`
+					WITH to_delete AS (
+						SELECT id
+						FROM sensor_events
+						WHERE sensor_id = $1
+						  AND data_type = 'bank_transaction'
+						  AND data->>'bookingStatus' = 'PENDING'
+						  AND data->>'accountId' = $2
+						  AND CASE
+								WHEN UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')) LIKE 'COOP MEGA %' THEN TRIM(CONCAT_WS(' ', split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 1), split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 2), split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 3)))
+								WHEN UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')) LIKE 'COOP EXTRA %' THEN TRIM(CONCAT_WS(' ', split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 1), split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 2), split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 3)))
+								WHEN UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')) LIKE 'KIWI %' THEN TRIM(CONCAT_WS(' ', split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 1), split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 2)))
+								WHEN UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')) LIKE 'REMA %' THEN TRIM(CONCAT_WS(' ', split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 1), split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 2)))
+								WHEN UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')) LIKE 'ODA.COM%' THEN 'ODA.COM'
+								WHEN UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')) LIKE 'ODA %' THEN 'ODA'
+								ELSE UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g'))
+							  END = $3
+						  AND ROUND((data->>'amount')::numeric, 2) = $4
+						  AND timestamp::date = $5::date
+					), deleted_categorized AS (
+						DELETE FROM categorized_events
+						WHERE sensor_event_id IN (SELECT id FROM to_delete)
+					)
 					DELETE FROM sensor_events
-					WHERE sensor_id = $1
-					  AND data_type = 'bank_transaction'
-					  AND data->>'bookingStatus' = 'PENDING'
-					  AND data->>'accountId' = $2
-					  AND CASE
-							WHEN UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')) LIKE 'COOP MEGA %' THEN TRIM(CONCAT_WS(' ', split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 1), split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 2), split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 3)))
-							WHEN UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')) LIKE 'COOP EXTRA %' THEN TRIM(CONCAT_WS(' ', split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 1), split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 2), split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 3)))
-							WHEN UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')) LIKE 'KIWI %' THEN TRIM(CONCAT_WS(' ', split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 1), split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 2)))
-							WHEN UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')) LIKE 'REMA %' THEN TRIM(CONCAT_WS(' ', split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 1), split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 2)))
-							WHEN UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')) LIKE 'ODA.COM%' THEN 'ODA.COM'
-							WHEN UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')) LIKE 'ODA %' THEN 'ODA'
-							ELSE UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g'))
-						  END = $3
-					  AND ROUND((data->>'amount')::numeric, 2) = $4
-					  AND timestamp::date = $5::date
+					WHERE id IN (SELECT id FROM to_delete)
 				`, [sensor.id, event.data.accountId ?? '', descriptionKey, amount, date]);
 				existingSemanticKeys.delete(key); // allow BOOKED to be inserted
 			}
@@ -670,9 +678,14 @@ export async function syncAllSparebank1Data(
 				WHERE sensor_id = $1
 				  AND data_type = 'bank_transaction'
 				  AND timestamp >= $2::timestamptz
+			), to_delete AS (
+				SELECT id FROM ranked WHERE rn > 1
+			), deleted_categorized AS (
+				DELETE FROM categorized_events
+				WHERE sensor_event_id IN (SELECT id FROM to_delete)
 			)
 			DELETE FROM sensor_events
-			WHERE id IN (SELECT id FROM ranked WHERE rn > 1)
+			WHERE id IN (SELECT id FROM to_delete)
 		`, [sensor.id, earliestDate.toISOString()]);
 
 		transactionEvents = newEvents; // return actual inserted count
