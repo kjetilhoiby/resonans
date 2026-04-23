@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { AppPage, Input, PageHeader, Radio, Select } from '$lib/components/ui';
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -43,10 +43,31 @@
 		transactions: Sparebank1DebugTransaction[];
 	};
 
-	let sparebank1Result = $state<{ success: boolean; message: string; debug?: Sparebank1SyncDebug } | null>(null);
+	type BackgroundJobStatus = 'queued' | 'running' | 'retry' | 'completed' | 'failed' | 'canceled';
+	type Sparebank1QueuedJob = {
+		id: string;
+		status: BackgroundJobStatus;
+		createdAt?: string;
+		updatedAt?: string;
+		startedAt?: string | null;
+		finishedAt?: string | null;
+		error?: string | null;
+		result?: Record<string, unknown> | null;
+	};
+
+	let sparebank1Result = $state<{
+		success: boolean;
+		message: string;
+		debug?: Sparebank1SyncDebug;
+		queued?: boolean;
+		job?: Sparebank1QueuedJob;
+	} | null>(null);
 	let showSparebank1Details = $state(false);
 	let sparebank1ImportMode = $state<'days' | 'from2020'>('days');
 	let sparebank1ImportDays = $state(30);
+	let sparebank1JobPollError = $state<string | null>(null);
+	let sparebank1Polling = $state(false);
+	let sparebank1PollTimer: ReturnType<typeof setInterval> | null = null;
 
 	let googleSheetsStatus = $state<any>(null);
 	let loadingGoogleSheets = $state(false);
@@ -87,6 +108,70 @@
 			loadAnchorAccounts()
 		]);
 	});
+
+	onDestroy(() => {
+		if (sparebank1PollTimer) clearInterval(sparebank1PollTimer);
+	});
+
+	function clearSparebank1Polling() {
+		if (sparebank1PollTimer) {
+			clearInterval(sparebank1PollTimer);
+			sparebank1PollTimer = null;
+		}
+		sparebank1Polling = false;
+	}
+
+	function isTerminalJobStatus(status?: string): boolean {
+		return status === 'completed' || status === 'failed' || status === 'canceled';
+	}
+
+	function formatJobStatus(status?: string): string {
+		switch (status) {
+			case 'queued': return 'Køet';
+			case 'running': return 'Kjører';
+			case 'retry': return 'Forsøker igjen';
+			case 'completed': return 'Fullført';
+			case 'failed': return 'Feilet';
+			case 'canceled': return 'Avbrutt';
+			default: return status || 'Ukjent';
+		}
+	}
+
+	async function pollSparebank1Job(jobId: string) {
+		try {
+			const res = await fetch(`/api/admin/jobs/${jobId}`);
+			const payload = await res.json().catch(() => ({}));
+			if (!res.ok) {
+				throw new Error(payload?.error || 'Kunne ikke hente jobbstatus');
+			}
+			const job = payload?.job as Sparebank1QueuedJob | undefined;
+			if (!job) throw new Error('Mangler jobbdata i responsen');
+
+			if (sparebank1Result?.success) {
+				sparebank1Result = {
+					...sparebank1Result,
+					job
+				};
+			}
+
+			if (isTerminalJobStatus(job.status)) {
+				clearSparebank1Polling();
+				await loadSparebank1Status();
+			}
+			sparebank1JobPollError = null;
+		} catch (error) {
+			sparebank1JobPollError = error instanceof Error ? error.message : 'Polling feilet';
+		}
+	}
+
+	function startSparebank1JobPolling(jobId: string) {
+		clearSparebank1Polling();
+		sparebank1Polling = true;
+		void pollSparebank1Job(jobId);
+		sparebank1PollTimer = setInterval(() => {
+			void pollSparebank1Job(jobId);
+		}, 5000);
+	}
 
 	async function loadAnchorAccounts() {
 		try {
@@ -256,6 +341,7 @@
 	async function syncSparebank1(mode: 'default' | 'days' | 'from2020' = 'default') {
 		syncingSparebank1 = true;
 		sparebank1Result = null;
+		sparebank1JobPollError = null;
 		showSparebank1Details = false;
 		try {
 			let url = '/api/sensors/sparebank1/sync';
@@ -269,13 +355,33 @@
 			const res = await fetch(url, { method: 'POST' });
 			const payload = await res.json();
 			if (!res.ok) throw new Error(payload.error || 'Sync feilet');
+			const queuedJob: Sparebank1QueuedJob | undefined = payload?.job
+				? {
+					id: payload.job.id,
+					status: payload.job.status,
+					createdAt: payload.job.createdAt,
+					updatedAt: payload.job.updatedAt,
+					startedAt: payload.job.startedAt ?? null,
+					finishedAt: payload.job.finishedAt ?? null,
+					error: payload.job.error ?? null,
+					result: payload.job.result ?? null
+				}
+				: undefined;
 			sparebank1Result = {
 				success: true,
 				message: payload.message || 'SpareBank 1 synkronisert.',
-				debug: payload?.synced?.debug
+				debug: payload?.synced?.debug,
+				queued: payload?.queued === true,
+				job: queuedJob
 			};
+			if (payload?.queued === true && queuedJob?.id) {
+				startSparebank1JobPolling(queuedJob.id);
+			} else {
+				clearSparebank1Polling();
+			}
 			await loadSparebank1Status();
 		} catch (error) {
+			clearSparebank1Polling();
 			sparebank1Result = { success: false, message: error instanceof Error ? error.message : 'Ukjent feil' };
 		} finally {
 			syncingSparebank1 = false;
@@ -490,6 +596,25 @@
 		{/if}
 		{#if sparebank1Result}
 			<p class={sparebank1Result.success ? 'ok' : 'err'}>{sparebank1Result.message}</p>
+			{#if sparebank1Result.success && sparebank1Result.queued && sparebank1Result.job}
+				<div class="job-status-panel">
+					<p><strong>Bakgrunnsjobb:</strong> {sparebank1Result.job.id}</p>
+					<p><strong>Opprettet:</strong> {sparebank1Result.job.createdAt ? formatDateTime(sparebank1Result.job.createdAt) : '-'}</p>
+					<p><strong>Status:</strong> {formatJobStatus(sparebank1Result.job.status)}{#if sparebank1Polling} (oppdateres automatisk){/if}</p>
+					{#if sparebank1Result.job.startedAt}
+						<p><strong>Startet:</strong> {formatDateTime(sparebank1Result.job.startedAt)}</p>
+					{/if}
+					{#if sparebank1Result.job.finishedAt}
+						<p><strong>Ferdig:</strong> {formatDateTime(sparebank1Result.job.finishedAt)}</p>
+					{/if}
+					{#if sparebank1Result.job.error}
+						<p class="err"><strong>Feil:</strong> {sparebank1Result.job.error}</p>
+					{/if}
+					{#if sparebank1JobPollError}
+						<p class="err"><strong>Polling-feil:</strong> {sparebank1JobPollError}</p>
+					{/if}
+				</div>
+			{/if}
 			{#if sparebank1Result.success && sparebank1Result.debug}
 				<div class="details-wrap">
 					<button
@@ -691,6 +816,14 @@
 		background: #121212;
 	}
 	.days-input { width: 6rem; padding: 0.35rem 0.45rem; }
+	.job-status-panel {
+		margin-top: 0.6rem;
+		padding: 0.65rem 0.75rem;
+		border: 1px solid #2f3b56;
+		border-radius: 10px;
+		background: #111827;
+	}
+	.job-status-panel p { margin: 0.2rem 0; }
 
 	@media (max-width: 720px) {
 		.sources-content {
