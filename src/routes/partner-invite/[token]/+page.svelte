@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { AppPage } from '$lib/components/ui';
 	import { onMount } from 'svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -41,7 +42,8 @@
 	<meta name="twitter:image:alt" content={meta.description} />
 </svelte:head>
 
-<div class="invite-page">
+<AppPage width="full" padding="none" gap="sm" surface="transparent">
+	<div class="invite-page">
 	<section class="invite-card">
 		<p class="eyebrow">Partnerinvitasjon</p>
 		{#if invite}
@@ -99,10 +101,11 @@
 			<p class="lede">Lenken er ugyldig eller invitasjonen er trukket tilbake.</p>
 		{/if}
 	</section>
-</div>
+	</div>
+</AppPage>
 
 <style>
-	.invite-page {
+	:global(.invite-page) {
 		min-height: 100vh;
 		padding: clamp(1.5rem, 4vw, 3rem);
 		display: grid;
@@ -112,7 +115,7 @@
 			linear-gradient(150deg, #fcf7ef 0%, #e6efe8 46%, #d8e5f0 100%);
 	}
 
-	.invite-card {
+	:global(.invite-card) {
 		width: min(100%, 44rem);
 		padding: clamp(1.5rem, 4vw, 3rem);
 		border-radius: 2rem;
@@ -121,7 +124,7 @@
 		box-shadow: 0 26px 80px rgba(15, 23, 42, 0.14);
 	}
 
-	.eyebrow {
+	:global(.eyebrow) {
 		margin: 0 0 0.75rem;
 		text-transform: uppercase;
 		letter-spacing: 0.14em;
@@ -129,35 +132,35 @@
 		color: #6b7280;
 	}
 
-	h1 {
+	:global(h1) {
 		margin: 0;
 		font-size: clamp(2.1rem, 5vw, 3.4rem);
 		line-height: 0.98;
 		color: #0f172a;
 	}
 
-	.lede {
+	:global(.lede) {
 		margin: 1rem 0 0;
 		font-size: 1.05rem;
 		line-height: 1.65;
 		color: #334155;
 	}
 
-	.invite-panel {
+	:global(.invite-panel) {
 		margin: 1.5rem 0;
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
 		gap: 0.9rem;
 	}
 
-	.invite-panel > div {
+	:global(.invite-panel > div) {
 		padding: 1rem;
 		border-radius: 1.1rem;
 		background: #f8fafc;
 		border: 1px solid rgba(148, 163, 184, 0.25);
 	}
 
-	.label {
+	:global(.label) {
 		display: block;
 		margin-bottom: 0.35rem;
 		font-size: 0.8rem;
@@ -166,30 +169,30 @@
 		color: #64748b;
 	}
 
-	strong {
+	:global(strong) {
 		display: block;
 		font-size: 1rem;
 		color: #0f172a;
 	}
 
-	p {
+	:global(p) {
 		margin: 0.3rem 0 0;
 		color: #475569;
 	}
 
-	.cta-group {
+	:global(.cta-group) {
 		margin-top: 1.5rem;
 		display: grid;
 		gap: 0.9rem;
 	}
 
-	.cta-row {
+	:global(.cta-row) {
 		grid-template-columns: repeat(auto-fit, minmax(12rem, max-content));
 		align-items: center;
 	}
 
-	.btn-primary,
-	.btn-secondary {
+	:global(.btn-primary),
+	:global(.btn-secondary) {
 		display: inline-flex;
 		justify-content: center;
 		align-items: center;
@@ -201,36 +204,36 @@
 		cursor: pointer;
 	}
 
-	.btn-primary {
+	:global(.btn-primary) {
 		border: 0;
 		background: #0f172a;
 		color: #fff;
 	}
 
-	.btn-secondary {
+	:global(.btn-secondary) {
 		border: 1px solid rgba(15, 23, 42, 0.14);
 		background: #fff;
 		color: #0f172a;
 	}
 
-	.error,
-	.info,
-	.hint {
+	:global(.error),
+	:global(.info),
+	:global(.hint) {
 		padding: 0.95rem 1rem;
 		border-radius: 1rem;
 	}
 
-	.error {
+	:global(.error) {
 		background: #fee2e2;
 		color: #991b1b;
 	}
 
-	.info {
+	:global(.info) {
 		background: #eff6ff;
 		color: #1d4ed8;
 	}
 
-	.hint {
+	:global(.hint) {
 		background: #f8fafc;
 		color: #475569;
 	}

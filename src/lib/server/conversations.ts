@@ -197,12 +197,19 @@ export async function getConversationsByTheme(userId: string, themeId: string) {
 	);
 }
 
-export async function getUserConversationList(userId: string) {
+export async function getUserConversationList(userId: string, options?: { limit?: number }) {
 	await ensureConversationThemeIdColumn();
+
+	const requestedLimit = options?.limit;
+	const normalizedLimit =
+		typeof requestedLimit === 'number' && Number.isFinite(requestedLimit) && requestedLimit > 0
+			? Math.floor(requestedLimit)
+			: undefined;
 
 	const userConversations = await db.query.conversations.findMany({
 		where: eq(conversations.userId, userId),
-		orderBy: [desc(conversations.updatedAt)]
+		orderBy: [desc(conversations.updatedAt)],
+		...(normalizedLimit ? { limit: normalizedLimit } : {})
 	});
 
 	if (userConversations.length === 0) return [];

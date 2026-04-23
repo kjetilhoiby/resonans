@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, integer, boolean, jsonb, decimal, unique, index, uniqueIndex, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, timestamp, integer, boolean, jsonb, decimal, unique, index, uniqueIndex, date, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 
 
@@ -864,6 +864,84 @@ export const sensorEvents = pgTable('sensor_events', {
 	// Partial unique index for bank_balance events — includes accountId so multiple
 	// accounts can share the same sensor + timestamp without violating uniqueness
 	uniqBankBalance: uniqueIndex('sensor_events_bank_balance_unique').on(table.sensorId, table.dataType, table.timestamp, sql`(data->>'accountId')`).where(sql`data_type = 'bank_balance'`)
+}));
+
+// Raw observed bank-transaction versions from providers (append-only evidence stream).
+export const rawBankTransactionVersions = pgTable('raw_bank_transaction_versions', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id).notNull(),
+	sensorId: uuid('sensor_id').references(() => sensors.id).notNull(),
+	accountId: text('account_id').notNull(),
+	externalTransactionId: text('external_transaction_id'),
+	bookingStatus: text('booking_status'),
+	statusRank: integer('status_rank').notNull().default(0),
+	transactionDate: date('transaction_date').notNull(),
+	postedAt: timestamp('posted_at').notNull(),
+	amount: decimal('amount').notNull(),
+	currency: text('currency').notNull().default('NOK'),
+	descriptionRaw: text('description_raw'),
+	descriptionNormalized: text('description_normalized').notNull(),
+	merchantKey: text('merchant_key').notNull(),
+	typeText: text('type_text'),
+	payload: jsonb('payload').$type<Record<string, unknown>>().notNull().default({}),
+	rawFingerprint: text('raw_fingerprint').notNull(),
+	firstSeenAt: timestamp('first_seen_at').defaultNow().notNull(),
+	lastSeenAt: timestamp('last_seen_at').defaultNow().notNull(),
+	seenCount: integer('seen_count').notNull().default(1),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	uniqRawFingerprint: uniqueIndex('raw_bank_tx_versions_fingerprint_unique').on(table.rawFingerprint),
+	idxRawUserDate: index('raw_bank_tx_versions_user_date_idx').on(table.userId, table.transactionDate),
+	idxRawSensorExternalId: index('raw_bank_tx_versions_sensor_external_id_idx').on(table.sensorId, table.externalTransactionId)
+}));
+
+// Canonical current view: one logical transaction row used by product queries.
+export const canonicalBankTransactions = pgTable('canonical_bank_transactions', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id).notNull(),
+	sensorId: uuid('sensor_id').references(() => sensors.id).notNull(),
+	accountId: text('account_id').notNull(),
+	canonicalDate: date('canonical_date').notNull(),
+	amount: decimal('amount').notNull(),
+	currency: text('currency').notNull().default('NOK'),
+	merchantKey: text('merchant_key').notNull(),
+	descriptionDisplay: text('description_display'),
+	latestBookingStatus: text('latest_booking_status'),
+	statusRank: integer('status_rank').notNull().default(0),
+	latestPostedAt: timestamp('latest_posted_at').notNull(),
+	firstSeenAt: timestamp('first_seen_at').defaultNow().notNull(),
+	lastSeenAt: timestamp('last_seen_at').defaultNow().notNull(),
+	evidenceCount: integer('evidence_count').notNull().default(1),
+	isActive: boolean('is_active').notNull().default(true),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	uniqCanonicalLogical: uniqueIndex('canonical_bank_tx_logical_unique').on(
+		table.sensorId,
+		table.accountId,
+		table.canonicalDate,
+		table.amount,
+		table.merchantKey
+	),
+	idxCanonicalUserDate: index('canonical_bank_tx_user_date_idx').on(table.userId, table.canonicalDate),
+	idxCanonicalUserStatusDate: index('canonical_bank_tx_user_status_date_idx').on(table.userId, table.latestBookingStatus, table.canonicalDate)
+}));
+
+// Alias map from provider transaction id to canonical row.
+export const canonicalBankTransactionAliases = pgTable('canonical_bank_transaction_aliases', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	canonicalId: uuid('canonical_id').references(() => canonicalBankTransactions.id, { onDelete: 'cascade' }).notNull(),
+	sensorId: uuid('sensor_id').references(() => sensors.id).notNull(),
+	externalTransactionId: text('external_transaction_id').notNull(),
+	firstSeenAt: timestamp('first_seen_at').defaultNow().notNull(),
+	lastSeenAt: timestamp('last_seen_at').defaultNow().notNull(),
+	seenCount: integer('seen_count').notNull().default(1),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	uniqCanonicalAlias: uniqueIndex('canonical_bank_tx_alias_sensor_external_unique').on(table.sensorId, table.externalTransactionId),
+	idxCanonicalAliasCanonical: index('canonical_bank_tx_alias_canonical_idx').on(table.canonicalId)
 }));
 
 // Materialized transaction projection used by chat/widgets/dashboard queries.

@@ -194,9 +194,6 @@
 		return '#e07070';                    // spending more — red
 	}
 
-	const totalRingColor = $derived(paydayRingColor(paydaySpend.spendPerDay, paydaySpend.prevSpendPerDay));
-	const groceryRingColor = $derived(paydayRingColor(paydaySpend.grocerySpendPerDay, paydaySpend.prevGrocerySpendPerDay));
-
 	function formatPerDay(kr: number): string {
 		return `${new Intl.NumberFormat('nb-NO', { maximumFractionDigits: 0 }).format(kr)} kr/dag`;
 	}
@@ -204,6 +201,40 @@
 	function formatPaydayDate(iso: string | null): string {
 		if (!iso) return 'ukjent dato';
 		return new Intl.DateTimeFormat('nb-NO', { day: 'numeric', month: 'short' }).format(new Date(iso));
+	}
+
+	function makeTxDedupKey(tx: TxItem): string {
+		const day = new Date(tx.date).toISOString().slice(0, 10);
+		const normalized = tx.description.normalize('NFKC').replace(/\s+/g, ' ').trim().toUpperCase();
+		const words = normalized.split(' ').filter(Boolean);
+		const first = (count: number) => words.slice(0, Math.min(count, words.length)).join(' ');
+		let description = normalized;
+		if (normalized.startsWith('COOP MEGA ')) description = first(3);
+		else if (normalized.startsWith('COOP EXTRA ')) description = first(3);
+		else if (normalized.startsWith('KIWI ')) description = first(2);
+		else if (normalized.startsWith('REMA ')) description = first(2);
+		else if (normalized.startsWith('MENY ')) description = first(2);
+		else if (normalized.startsWith('SPAR ')) description = first(2);
+		else if (normalized.startsWith('BUNNPRIS ')) description = first(2);
+		else if (normalized.startsWith('EXTRA ')) description = first(2);
+		else if (normalized.startsWith('JOKER ')) description = first(2);
+		else if (normalized.startsWith('NARVESEN ')) description = first(2);
+		else if (normalized.startsWith('ODA.COM')) description = 'ODA.COM';
+		else if (normalized.startsWith('ODA ')) description = 'ODA';
+		const amount = Math.round(Math.abs(tx.amount) * 100);
+		return `${day}:${description}:${amount}:${tx.category}`;
+	}
+
+	function dedupeTransactions(transactions: TxItem[]): TxItem[] {
+		const seen = new Set<string>();
+		const result: TxItem[] = [];
+		for (const tx of transactions) {
+			const key = makeTxDedupKey(tx);
+			if (seen.has(key)) continue;
+			seen.add(key);
+			result.push(tx);
+		}
+		return result;
 	}
 
 	function resolvePaydayStartDate(): Date {
@@ -265,8 +296,15 @@
 		return `${line} L ${width} ${height} L 0 ${height} Z`;
 	}
 
-	const totalBurnupPoints = $derived(buildBurnupPoints(paydaySpend.transactions));
-	const groceryBurnupPoints = $derived(buildBurnupPoints(paydaySpend.groceryTransactions));
+	const paydayTransactionsDeduped = $derived(dedupeTransactions(paydaySpend.transactions));
+	const groceryTransactionsDeduped = $derived(dedupeTransactions(paydaySpend.groceryTransactions));
+	const totalSpendDeduped = $derived(paydayTransactionsDeduped.reduce((sum, tx) => sum + Math.abs(tx.amount), 0));
+	const grocerySpendDeduped = $derived(groceryTransactionsDeduped.reduce((sum, tx) => sum + Math.abs(tx.amount), 0));
+	const spendPerDayDeduped = $derived(totalSpendDeduped / Math.max(1, paydaySpend.daysSincePayday));
+	const grocerySpendPerDayDeduped = $derived(grocerySpendDeduped / Math.max(1, paydaySpend.daysSincePayday));
+
+	const totalBurnupPoints = $derived(buildBurnupPoints(paydayTransactionsDeduped));
+	const groceryBurnupPoints = $derived(buildBurnupPoints(groceryTransactionsDeduped));
 	const totalComparisonBurnupPoints = $derived(
 		paydaySpend.averageComparisonPoints.map((point) => ({ day: point.day, total: point.total }))
 	);
@@ -279,6 +317,8 @@
 	const groceryBurnupMax = $derived(
 		Math.max(1, ...groceryBurnupPoints.map((point) => point.total), ...groceryComparisonBurnupPoints.map((point) => point.total))
 	);
+	const totalRingColor = $derived(paydayRingColor(spendPerDayDeduped, paydaySpend.prevSpendPerDay));
+	const groceryRingColor = $derived(paydayRingColor(grocerySpendPerDayDeduped, paydaySpend.prevGrocerySpendPerDay));
 	const paydayStartLabel = $derived(formatPaydayDate(resolvePaydayStartDate().toISOString()));
 
 	const favoriteAccountSet = $derived(new Set(favoriteAccountIds));
@@ -451,8 +491,8 @@
 		<!-- Widget 1: Total forbruk per dag siden lønn -->
 		<button class="ed-card ed-card-btn" type="button" onclick={() => (txOverlay = 'all')}>
 			<div class="ed-burnup-head">
-				<p class="ed-burnup-value">{formatPerDay(paydaySpend.spendPerDay)}</p>
-				<p class="ed-burnup-total">{formatNOK(paydaySpend.totalSpend)} totalt</p>
+				<p class="ed-burnup-value">{formatPerDay(spendPerDayDeduped)}</p>
+				<p class="ed-burnup-total">{formatNOK(totalSpendDeduped)} totalt</p>
 			</div>
 			<div class="ed-burnup-chart" aria-hidden="true">
 				<svg viewBox="0 0 220 74" preserveAspectRatio="none">
@@ -468,7 +508,7 @@
 				<p class="ed-card-sub">fra {paydayStartLabel} til i dag</p>
 				{#if paydaySpend.prevSpendPerDay}
 					<p class="ed-card-compare" style:color={totalRingColor}>
-						{paydaySpend.spendPerDay <= paydaySpend.prevSpendPerDay ? '↓' : '↑'}
+						{spendPerDayDeduped <= paydaySpend.prevSpendPerDay ? '↓' : '↑'}
 						{formatPerDay(paydaySpend.prevSpendPerDay)} forrige
 					</p>
 				{/if}
@@ -478,8 +518,8 @@
 		<!-- Widget 2: Dagligvare per dag siden lønn -->
 		<button class="ed-card ed-card-btn" type="button" onclick={() => (txOverlay = 'grocery')}>
 			<div class="ed-burnup-head">
-				<p class="ed-burnup-value">{formatPerDay(paydaySpend.grocerySpendPerDay)}</p>
-				<p class="ed-burnup-total">{formatNOK(paydaySpend.grocerySpend)} totalt</p>
+				<p class="ed-burnup-value">{formatPerDay(grocerySpendPerDayDeduped)}</p>
+				<p class="ed-burnup-total">{formatNOK(grocerySpendDeduped)} totalt</p>
 			</div>
 			<div class="ed-burnup-chart" aria-hidden="true">
 				<svg viewBox="0 0 220 74" preserveAspectRatio="none">
@@ -495,7 +535,7 @@
 				<p class="ed-card-sub">fra {paydayStartLabel} til i dag</p>
 				{#if paydaySpend.prevGrocerySpendPerDay}
 					<p class="ed-card-compare" style:color={groceryRingColor}>
-						{paydaySpend.grocerySpendPerDay <= paydaySpend.prevGrocerySpendPerDay ? '↓' : '↑'}
+						{grocerySpendPerDayDeduped <= paydaySpend.prevGrocerySpendPerDay ? '↓' : '↑'}
 						{formatPerDay(paydaySpend.prevGrocerySpendPerDay)} forrige
 					</p>
 				{/if}
@@ -624,13 +664,13 @@
 <!-- Transaction list overlay -->
 {#if txOverlay === 'all'}
 	<TransactionList
-		transactions={paydaySpend.transactions}
+		transactions={paydayTransactionsDeduped}
 		title="Forbruk siden lønn"
 		onclose={() => (txOverlay = null)}
 	/>
 {:else if txOverlay === 'grocery'}
 	<TransactionList
-		transactions={paydaySpend.groceryTransactions}
+		transactions={groceryTransactionsDeduped}
 		title="Dagligvarer siden lønn"
 		onclose={() => (txOverlay = null)}
 	/>

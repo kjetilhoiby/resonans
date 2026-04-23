@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { AppPage, PageHeader } from '$lib/components/ui';
+	import { AppPage, Checkbox, PageHeader, Select } from '$lib/components/ui';
 
 	let { data, form }: {
 		data: {
@@ -432,19 +432,19 @@
 
 			<form method="POST" action="?/updateNudges" class="nudge-form">
 				<label class="nudge-row">
-					<input type="checkbox" name="dailyCheckInEnabled" checked={data.settings.dailyCheckIn.enabled} />
+					<Checkbox name="dailyCheckInEnabled" checked={data.settings.dailyCheckIn.enabled} />
 					<span>Daglig check-in</span>
 					<input type="time" name="dailyCheckInTime" value={data.settings.dailyCheckIn.time} />
 				</label>
 
 				<label class="nudge-row">
-					<input type="checkbox" name="dayPlanningEnabled" checked={data.settings.dayPlanning.enabled} />
+					<Checkbox name="dayPlanningEnabled" checked={data.settings.dayPlanning.enabled} />
 					<span>Planlegg dag (hvis ikke planlagt)</span>
 					<input type="time" name="dayPlanningTime" value={data.settings.dayPlanning.time} />
 				</label>
 
 				<label class="nudge-row">
-					<input type="checkbox" name="dayCloseEnabled" checked={data.settings.dayClose.enabled} />
+					<Checkbox name="dayCloseEnabled" checked={data.settings.dayClose.enabled} />
 					<span>Avslutt dag (hvis åpne punkter)</span>
 					<input type="time" name="dayCloseTime" value={data.settings.dayClose.time} />
 				</label>
@@ -453,22 +453,22 @@
 
 				<label class="nudge-row nudge-row-select">
 					<span>Hverdag</span>
-					<select name="nudgeWeekdayMode">
+					<Select name="nudgeWeekdayMode" value={data.settings.nudgeProfile.weekdayMode}>
 						<option value="interactive" selected={data.settings.nudgeProfile.weekdayMode === 'interactive'}>Interaktiv (med CTA)</option>
 						<option value="digest" selected={data.settings.nudgeProfile.weekdayMode === 'digest'}>Digest (uten CTA)</option>
-					</select>
+					</Select>
 				</label>
 
 				<label class="nudge-row nudge-row-select">
 					<span>Helg</span>
-					<select name="nudgeWeekendMode">
+					<Select name="nudgeWeekendMode" value={data.settings.nudgeProfile.weekendMode}>
 						<option value="interactive" selected={data.settings.nudgeProfile.weekendMode === 'interactive'}>Interaktiv (med CTA)</option>
 						<option value="digest" selected={data.settings.nudgeProfile.weekendMode === 'digest'}>Digest (uten CTA)</option>
-					</select>
+					</Select>
 				</label>
 
 				<label class="nudge-row">
-					<input type="checkbox" name="nudgeQuietEnabled" checked={data.settings.nudgeProfile.quietHours.enabled} />
+					<Checkbox name="nudgeQuietEnabled" checked={data.settings.nudgeProfile.quietHours.enabled} />
 					<span>Stillevindu (triage til digest)</span>
 					<div class="nudge-time-range">
 						<input type="time" name="nudgeQuietStart" value={data.settings.nudgeProfile.quietHours.start} />
@@ -570,10 +570,10 @@
 					<div class="route-label">Daglig check-in</div>
 					<div class="route-options">
 						{#if pwaChannelSupported}
-							<label><input type="checkbox" name="route_dailyCheckIn" value="pwa" bind:group={routesDailyCheckIn} /> PWA</label>
+							<label><Checkbox name="route_dailyCheckIn" value="pwa" bind:group={routesDailyCheckIn} /> PWA</label>
 						{/if}
 						{#each googleChatChannels as channel (channel.id)}
-							<label><input type="checkbox" name="route_dailyCheckIn" value={`chat:${channel.id}`} bind:group={routesDailyCheckIn} /> {channel.name || 'Chat'}</label>
+							<label><Checkbox name="route_dailyCheckIn" value={`chat:${channel.id}`} bind:group={routesDailyCheckIn} /> {channel.name || 'Chat'}</label>
 						{/each}
 					</div>
 				</div>
@@ -582,10 +582,10 @@
 					<div class="route-label">Planlegg dag</div>
 					<div class="route-options">
 						{#if pwaChannelSupported}
-							<label><input type="checkbox" name="route_dayPlanning" value="pwa" bind:group={routesDayPlanning} /> PWA</label>
+							<label><Checkbox name="route_dayPlanning" value="pwa" bind:group={routesDayPlanning} /> PWA</label>
 						{/if}
 						{#each googleChatChannels as channel (channel.id)}
-							<label><input type="checkbox" name="route_dayPlanning" value={`chat:${channel.id}`} bind:group={routesDayPlanning} /> {channel.name || 'Chat'}</label>
+							<label><Checkbox name="route_dayPlanning" value={`chat:${channel.id}`} bind:group={routesDayPlanning} /> {channel.name || 'Chat'}</label>
 						{/each}
 					</div>
 				</div>
@@ -594,10 +594,10 @@
 					<div class="route-label">Avslutt dag</div>
 					<div class="route-options">
 						{#if pwaChannelSupported}
-							<label><input type="checkbox" name="route_dayClose" value="pwa" bind:group={routesDayClose} /> PWA</label>
+							<label><Checkbox name="route_dayClose" value="pwa" bind:group={routesDayClose} /> PWA</label>
 						{/if}
 						{#each googleChatChannels as channel (channel.id)}
-							<label><input type="checkbox" name="route_dayClose" value={`chat:${channel.id}`} bind:group={routesDayClose} /> {channel.name || 'Chat'}</label>
+							<label><Checkbox name="route_dayClose" value={`chat:${channel.id}`} bind:group={routesDayClose} /> {channel.name || 'Chat'}</label>
 						{/each}
 					</div>
 				</div>
@@ -606,10 +606,10 @@
 					<div class="route-label">Digest</div>
 					<div class="route-options">
 						{#if pwaChannelSupported}
-							<label><input type="checkbox" name="route_digestDay" value="pwa" bind:group={routesDigestDay} /> PWA</label>
+							<label><Checkbox name="route_digestDay" value="pwa" bind:group={routesDigestDay} /> PWA</label>
 						{/if}
 						{#each googleChatChannels as channel (channel.id)}
-							<label><input type="checkbox" name="route_digestDay" value={`chat:${channel.id}`} bind:group={routesDigestDay} /> {channel.name || 'Chat'}</label>
+							<label><Checkbox name="route_digestDay" value={`chat:${channel.id}`} bind:group={routesDigestDay} /> {channel.name || 'Chat'}</label>
 						{/each}
 					</div>
 				</div>
@@ -618,10 +618,10 @@
 					<div class="route-label">Relasjonssjekk morgen</div>
 					<div class="route-options">
 						{#if pwaChannelSupported}
-							<label><input type="checkbox" name="route_relationshipCheckinMorning" value="pwa" bind:group={routesRelationshipCheckinMorning} /> PWA</label>
+							<label><Checkbox name="route_relationshipCheckinMorning" value="pwa" bind:group={routesRelationshipCheckinMorning} /> PWA</label>
 						{/if}
 						{#each googleChatChannels as channel (channel.id)}
-							<label><input type="checkbox" name="route_relationshipCheckinMorning" value={`chat:${channel.id}`} bind:group={routesRelationshipCheckinMorning} /> {channel.name || 'Chat'}</label>
+							<label><Checkbox name="route_relationshipCheckinMorning" value={`chat:${channel.id}`} bind:group={routesRelationshipCheckinMorning} /> {channel.name || 'Chat'}</label>
 						{/each}
 					</div>
 				</div>
@@ -821,7 +821,7 @@
 		grid-template-columns: 1fr auto;
 	}
 
-	.nudge-row select {
+	.nudge-row :global(.ds-select) {
 		background: var(--bg-primary);
 		color: var(--text-primary);
 		border: 1px solid var(--border-color);

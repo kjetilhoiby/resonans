@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { PageData } from './$types';
+	import { AppPage } from '$lib/components/ui';
 	import GpxMapSvg from '$lib/components/charts/GpxMapSvg.svelte';
 	import ChatInput from '$lib/components/ui/ChatInput.svelte';
 	import TriageCard from '$lib/components/composed/TriageCard.svelte';
@@ -193,9 +194,10 @@
 	<title>{workout.title} – Resonans</title>
 </svelte:head>
 
-<div class="backdrop" role="button" tabindex="-1" aria-label="Lukk" onclick={() => history.back()} onkeydown={(e) => e.key === 'Escape' && history.back()}></div>
+<AppPage width="full" padding="none" gap="sm" surface="default">
+	<div class="backdrop" role="button" tabindex="-1" aria-label="Lukk" onclick={() => history.back()} onkeydown={(e) => e.key === 'Escape' && history.back()}></div>
 
-<div class="sheet" role="dialog" aria-modal="true" aria-label={workout.title}>
+	<div class="sheet" role="dialog" aria-modal="true" aria-label={workout.title}>
 	<div class="handle"></div>
 
 	<header class="sheet-header">
@@ -336,9 +338,10 @@
 		/>
 	</div>
 </div>
+</AppPage>
 
 <style>
-	.backdrop {
+	:global(.backdrop) {
 		position: fixed;
 		inset: 0;
 		background: rgba(0, 0, 0, 0.6);
@@ -346,7 +349,7 @@
 		cursor: pointer;
 	}
 
-	.sheet {
+	:global(.sheet) {
 		position: fixed;
 		bottom: 0;
 		left: 0;
@@ -366,7 +369,7 @@
 		to   { transform: translateY(0); }
 	}
 
-	.handle {
+	:global(.handle) {
 		width: 36px;
 		height: 4px;
 		background: #333;
@@ -376,7 +379,7 @@
 	}
 
 	/* Header */
-	.sheet-header {
+	:global(.sheet-header) {
 		display: flex;
 		align-items: center;
 		gap: 0.75rem;
@@ -384,7 +387,7 @@
 		flex-shrink: 0;
 	}
 
-	.back-btn {
+	:global(.back-btn) {
 		background: none;
 		border: none;
 		color: #888;
@@ -394,14 +397,14 @@
 		line-height: 0;
 	}
 
-	.header-text h1 {
+	:global(.header-text) h1 {
 		margin: 0;
 		font-size: 1.1rem;
 		font-weight: 600;
 		line-height: 1.2;
 	}
 
-	.header-text time {
+	:global(.header-text) time {
 		font-size: 0.8rem;
 		color: #666;
 		text-transform: capitalize;

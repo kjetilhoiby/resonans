@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, PageHeader } from '$lib/components/ui';
+	import { AppPage, PageHeader, Radio, Textarea } from '$lib/components/ui';
 	import type { PageData, ActionData } from './$types';
 	import { onMount } from 'svelte';
 
@@ -426,12 +426,11 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 								<legend>Hvordan kjennes dagen i dag?</legend>
 								{#each [1, 2, 3, 4, 5, 6, 7] as score}
 									<label class="score-option">
-										<input
-											type="radio"
+										<Radio
 											name="score"
-											value={score}
+											value={String(score)}
+											group={relationshipCheckin.myScore ? String(relationshipCheckin.myScore) : undefined}
 											required
-											checked={relationshipCheckin.myScore === score}
 										/>
 										<span>{score}</span>
 									</label>
@@ -440,13 +439,14 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 
 							<div class="form-group" style="margin-bottom:1rem;">
 								<label for="relationshipCheckinNote">Kort notat (valgfritt)</label>
-								<textarea
+								<Textarea
 									id="relationshipCheckinNote"
 									name="note"
-									rows="3"
-									class="input"
+									rows={3}
+									className="input"
 									placeholder="Hva var bra eller krevende i dag?"
-								>{relationshipCheckin.myNote || ''}</textarea>
+									value={relationshipCheckin.myNote || ''}
+								></Textarea>
 							</div>
 
 							<button type="submit" class="btn-primary">Lagre parsjekk</button>
@@ -740,11 +740,6 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 		box-shadow: 0 0 0 3px var(--info-bg);
 	}
 
-	textarea.input {
-		resize: vertical;
-		min-height: 88px;
-	}
-
 	.hint {
 		display: block;
 		margin-top: 0.5rem;
@@ -793,7 +788,7 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 
 
 
-	.checkin-card h3 {
+	:global(textarea.input) {
 		margin: 0 0 0.45rem;
 		font-size: 1rem;
 		color: var(--text-primary);
@@ -837,7 +832,7 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 		cursor: pointer;
 	}
 
-	.score-option input {
+	.score-option :global(.ds-radio) {
 		margin-right: 0.25rem;
 	}
 

@@ -1,11 +1,13 @@
 import { db } from '$lib/db';
-import { categorizedEvents, sensorEvents } from '$lib/db/schema';
+import { canonicalBankTransactions, sensorEvents } from '$lib/db/schema';
 import { and, asc, eq, desc, sql } from 'drizzle-orm';
 import {
+	categorizeTransaction,
 	detectRecurring,
 	CATEGORIES
 } from '$lib/server/integrations/transaction-categories';
-import { ensureCategorizedEventsForRange } from '$lib/server/integrations/categorized-events';
+import { loadMerchantMappings } from '$lib/server/integrations/spending-analyzer';
+import { loadClassificationOverrides, loadTransactionMatchingRules } from '$lib/server/classification-overrides';
 
 export type EconomicsAccount = {
 	accountId: string;
@@ -72,6 +74,17 @@ export type EconomicsDashboardData = {
 	paydaySpend: PaydaySpend;
 };
 
+function canonicalDateToUtcDate(value: string | Date): Date {
+	if (value instanceof Date) {
+		return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate(), 12, 0, 0, 0));
+	}
+	if (value.includes('T')) {
+		const parsed = new Date(value);
+		return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate(), 12, 0, 0, 0));
+	}
+	return new Date(`${value}T12:00:00Z`);
+}
+
 export async function loadEconomicsDashboardData(userId: string): Promise<EconomicsDashboardData> {
 	// ── 1. Accounts ─────────────────────────────────────────────────────────
 	const balanceRows = await db
@@ -110,35 +123,41 @@ export async function loadEconomicsDashboardData(userId: string): Promise<Econom
 	const currentMonth = now.toISOString().slice(0, 7); // "2026-03"
 	const monthStart = new Date(`${currentMonth}-01T00:00:00Z`);
 	const queryFrom = new Date(now.getTime() - 70 * 24 * 60 * 60 * 1000);
-	await ensureCategorizedEventsForRange({ userId, from: queryFrom, to: new Date(now.getTime() + 1) });
+	const [merchantMappings, overrides, rules] = await Promise.all([
+		loadMerchantMappings(userId),
+		loadClassificationOverrides(userId, 'transaction'),
+		loadTransactionMatchingRules()
+	]);
 
 	const txRows = await db
 		.select({
-			timestamp: categorizedEvents.timestamp,
-			amount: categorizedEvents.amount,
-			description: categorizedEvents.description,
-			resolvedCategory: categorizedEvents.resolvedCategory,
-			resolvedLabel: categorizedEvents.resolvedLabel,
-			resolvedEmoji: categorizedEvents.resolvedEmoji,
-			isFixed: categorizedEvents.isFixed
+			date: canonicalBankTransactions.canonicalDate,
+			amount: canonicalBankTransactions.amount,
+			description: canonicalBankTransactions.descriptionDisplay,
+			merchantKey: canonicalBankTransactions.merchantKey
 		})
-		.from(categorizedEvents)
+		.from(canonicalBankTransactions)
 		.where(
 			and(
-				eq(categorizedEvents.userId, userId),
-				sql`${categorizedEvents.timestamp} >= ${queryFrom.toISOString()}`
+				eq(canonicalBankTransactions.userId, userId),
+				eq(canonicalBankTransactions.isActive, true),
+				sql`${canonicalBankTransactions.canonicalDate} >= ${queryFrom.toISOString().slice(0, 10)}::date`
 			)
 		)
-		.orderBy(desc(categorizedEvents.timestamp));
+		.orderBy(desc(canonicalBankTransactions.canonicalDate));
 
 	const allTxs = txRows.map((r) => ({
-		timestamp: r.timestamp,
+		timestamp: canonicalDateToUtcDate(r.date),
 		amount: Number(r.amount) || 0,
-		description: r.description ?? '',
-		category: r.resolvedCategory,
-		label: r.resolvedLabel,
-		emoji: r.resolvedEmoji,
-		isFixed: r.isFixed
+		description: (r.description ?? r.merchantKey ?? '').trim(),
+		...categorizeTransaction(
+			r.description ?? r.merchantKey ?? '',
+			null,
+			Number(r.amount) || 0,
+			merchantMappings,
+			overrides,
+			rules
+		)
 	}));
 
 	// Current-month slice for monthly spending stats
@@ -207,7 +226,7 @@ export async function loadEconomicsDashboardData(userId: string): Promise<Econom
 	});
 
 	// ── 5. Payday spend — spending per day since last salary ─────────────────
-	// Detect payday from raw sensorEvents — robust against lower salary amounts and varied descriptions.
+	// Detect payday from canonical transactions — robust against lower salary amounts and varied descriptions.
 	const SALARY_THRESHOLD = 8000;
 	const INCOME_MIN_THRESHOLD = 4000;
 	const PAYDAY_DEDUP_DAYS = 20;
@@ -216,34 +235,46 @@ export async function loadEconomicsDashboardData(userId: string): Promise<Econom
 
 	const rawSalaryRows = await db
 		.select({
-			timestamp: sensorEvents.timestamp,
-			amount: sql<number>`(data->>'amount')::numeric`,
-			description: sql<string>`COALESCE(data->>'description', '')`
+			date: canonicalBankTransactions.canonicalDate,
+			amount: canonicalBankTransactions.amount,
+			description: sql<string>`COALESCE(${canonicalBankTransactions.descriptionDisplay}, ${canonicalBankTransactions.merchantKey}, '')`
 		})
-		.from(sensorEvents)
+		.from(canonicalBankTransactions)
 		.where(and(
-			eq(sensorEvents.userId, userId),
-			eq(sensorEvents.dataType, 'bank_transaction'),
-			sql`(data->>'amount')::numeric >= ${INCOME_MIN_THRESHOLD}`,
-			sql`${sensorEvents.timestamp} >= ${historyFrom.toISOString()}`
+			eq(canonicalBankTransactions.userId, userId),
+			eq(canonicalBankTransactions.isActive, true),
+			sql`${canonicalBankTransactions.amount} >= ${INCOME_MIN_THRESHOLD}`,
+			sql`${canonicalBankTransactions.canonicalDate} >= ${historyFrom.toISOString().slice(0, 10)}::date`
 		))
-		.orderBy(desc(sensorEvents.timestamp));
+		.orderBy(desc(canonicalBankTransactions.canonicalDate));
 
 	// Raw spending for comparison periods (no category resolution needed)
 	const rawSpendRows = await db
 		.select({
-			timestamp: sensorEvents.timestamp,
-			amount: sql<number>`(data->>'amount')::numeric`,
-			description: sql<string>`data->>'description'`,
+			timestamp: canonicalBankTransactions.canonicalDate,
+			amount: canonicalBankTransactions.amount,
+			description: sql<string>`COALESCE(${canonicalBankTransactions.descriptionDisplay}, ${canonicalBankTransactions.merchantKey}, '')`,
 		})
-		.from(sensorEvents)
+		.from(canonicalBankTransactions)
 		.where(and(
-			eq(sensorEvents.userId, userId),
-			eq(sensorEvents.dataType, 'bank_transaction'),
-			sql`(data->>'amount')::numeric < 0`,
-			sql`${sensorEvents.timestamp} >= ${historyFrom.toISOString()}`
+			eq(canonicalBankTransactions.userId, userId),
+			eq(canonicalBankTransactions.isActive, true),
+			sql`${canonicalBankTransactions.amount} < 0`,
+			sql`${canonicalBankTransactions.canonicalDate} >= ${historyFrom.toISOString().slice(0, 10)}::date`
 		))
-		.orderBy(asc(sensorEvents.timestamp));
+		.orderBy(asc(canonicalBankTransactions.canonicalDate));
+
+	const normalizedRawSalaryRows = rawSalaryRows.map((tx) => ({
+		timestamp: canonicalDateToUtcDate(tx.date),
+		amount: Number(tx.amount) || 0,
+		description: tx.description ?? ''
+	}));
+
+	const normalizedRawSpendRows = rawSpendRows.map((tx) => ({
+		timestamp: canonicalDateToUtcDate(tx.timestamp),
+		amount: Number(tx.amount) || 0,
+		description: tx.description ?? ''
+	}));
 
 	const GROCERY_KEYWORDS = ['KIWI', 'REMA', 'ODA ', 'MENY', 'SPAR', 'COOP', 'EXTRA', 'JOKER', 'BUNNPRIS', 'NÆRBUTIKK', 'BAMA'];
 	const isGroceryTx = (d: string) => { const u = d.toUpperCase(); return GROCERY_KEYWORDS.some((k) => u.includes(k)); };
@@ -254,8 +285,8 @@ export async function loadEconomicsDashboardData(userId: string): Promise<Econom
 		return SALARY_KEYWORDS.some((keyword) => upper.includes(keyword));
 	};
 
-	const paydayCandidates = rawSalaryRows
-		.filter((tx) => isLikelySalaryTx(Number(tx.amount) || 0, tx.description ?? ''))
+	const paydayCandidates = normalizedRawSalaryRows
+		.filter((tx) => isLikelySalaryTx(tx.amount, tx.description ?? ''))
 		.reduce<Array<{ timestamp: Date }>>((acc, tx) => {
 		const last = acc[acc.length - 1];
 		if (!last || last.timestamp.getTime() - tx.timestamp.getTime() > PAYDAY_DEDUP_DAYS * 24 * 60 * 60 * 1000) {
@@ -320,7 +351,7 @@ export async function loadEconomicsDashboardData(userId: string): Promise<Econom
 		const prevStart = new Date(new Date(prevPayday.timestamp).setHours(0, 0, 0, 0));
 		const prevEnd = new Date(prevStart.getTime() + daysSincePayday * msPerDay);
 
-		const prevTxs = rawSpendRows.filter(
+		const prevTxs = normalizedRawSpendRows.filter(
 			(t) => t.timestamp >= prevStart && t.timestamp < prevEnd
 		);
 
@@ -351,7 +382,7 @@ export async function loadEconomicsDashboardData(userId: string): Promise<Econom
 			const maxDays = Math.min(daysSincePayday, periodLengthDays);
 
 			const totalsByDay = new Map<number, { total: number; grocery: number }>();
-			for (const tx of rawSpendRows) {
+			for (const tx of normalizedRawSpendRows) {
 				if (tx.timestamp < periodStart || tx.timestamp >= periodEnd) continue;
 				const dayIndex = Math.floor((tx.timestamp.getTime() - periodStart.getTime()) / msPerDay) + 1;
 				if (dayIndex < 1 || dayIndex > maxDays) continue;

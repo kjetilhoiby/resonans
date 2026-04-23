@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { AppPage, PageHeader } from '$lib/components/ui';
 	import ChatInput from '$lib/components/ui/ChatInput.svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import TriageCard from '$lib/components/composed/TriageCard.svelte';
@@ -250,16 +251,16 @@
 
 {#if isListView}
 	<!-- ══ LISTE-VIEW ══════════════════════════════════════════════════════════ -->
-	<div class="list-page">
-		<header class="lp-header">
-			<div class="lp-header-left">
-				<button class="lp-back" onclick={() => goto('/')} aria-label="Tilbake"><Icon name="back" size={18} /></button>
-				<h1 class="lp-title">Samtaler</h1>
-			</div>
-			<button class="lp-new-btn" onclick={createConversation} disabled={creatingConversation}>
-				{creatingConversation ? 'Lager…' : '+ Ny'}
-			</button>
-		</header>
+	<AppPage width="full" padding="none" gap="sm" theme="dark" className="list-page">
+		<div class="lp-header">
+			<PageHeader title="Samtaler" backHref="/">
+				{#snippet actions()}
+					<button class="lp-new-btn" onclick={createConversation} disabled={creatingConversation}>
+						{creatingConversation ? 'Lager…' : '+ Ny'}
+					</button>
+				{/snippet}
+			</PageHeader>
+		</div>
 
 		<div class="lp-list">
 			{#if data.conversations.length === 0}
@@ -281,24 +282,23 @@
 				{/each}
 			{/if}
 		</div>
-	</div>
+	</AppPage>
 
 {:else}
 	<!-- ══ CHAT-VIEW ═══════════════════════════════════════════════════════════ -->
-	<div class="chat-page">
-		<header class="cp-header">
-			<button class="cp-back" onclick={() => goto('/samtaler')} aria-label="Tilbake til liste"><Icon name="back" size={18} /></button>
-			<div class="cp-heading-wrap">
-				<p class="cp-title">{conversation?.title ?? ''}</p>
-				<p class="cp-subtitle">{formattedDate}</p>
-			</div>
-			{#if conversation?.linkedTheme}
-				{@const t = conversation.linkedTheme}
-				<button class="cp-theme-btn" style={getThemeHueStyle(t.name)} onclick={() => goto(`/tema/${t.id}`)}>
-					{#if t.emoji}{t.emoji}{:else}<Icon name="goals" size={14} />{/if} {t.name}
-				</button>
-			{/if}
-		</header>
+	<AppPage width="full" padding="none" gap="sm" theme="dark" className="chat-page">
+		<div class="cp-header">
+			<PageHeader title={conversation?.title ?? 'Samtale'} subtitle={formattedDate} backHref="/samtaler">
+				{#snippet actions()}
+					{#if conversation?.linkedTheme}
+						{@const t = conversation.linkedTheme}
+						<button class="cp-theme-btn" style={getThemeHueStyle(t.name)} onclick={() => goto(`/tema/${t.id}`)}>
+							{#if t.emoji}{t.emoji}{:else}<Icon name="goals" size={14} />{/if} {t.name}
+						</button>
+					{/if}
+				{/snippet}
+			</PageHeader>
+		</div>
 
 		<div class="cp-messages">
 			{#if chatMessages.length === 0}
@@ -373,7 +373,7 @@
 				<ChatInput placeholder="Skriv videre i samtalen…" disabled={chatLoading} initialValue={inputDraft} onsubmit={sendMessage} />
 			{/key}
 		</div>
-	</div>
+	</AppPage>
 {/if}
 
 <style>
@@ -381,7 +381,7 @@
 	:global(body) { background: #0f0f0f; }
 
 	/* ══ Liste-view ══════════════════════════════════════════════════════════ */
-	.list-page {
+	:global(.list-page) {
 		min-height: 100dvh;
 		background: #0f0f0f;
 		color: #d0d0d0;
@@ -395,32 +395,6 @@
 		align-items: center;
 		justify-content: space-between;
 		padding: 52px 20px 16px;
-	}
-
-	.lp-header-left {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-	}
-
-	.lp-back {
-		background: none;
-		border: none;
-		color: #666;
-		font: inherit;
-		font-size: 1.1rem;
-		cursor: pointer;
-		padding: 4px 8px 4px 0;
-		transition: color 0.12s;
-	}
-	.lp-back:hover { color: #ccc; }
-
-	.lp-title {
-		margin: 0;
-		font-size: 1.35rem;
-		font-weight: 700;
-		letter-spacing: -0.03em;
-		color: #f0f0f0;
 	}
 
 	.lp-new-btn {
@@ -508,7 +482,7 @@
 	}
 
 	/* ══ Chat-view ═══════════════════════════════════════════════════════════ */
-	.chat-page {
+	:global(.chat-page) {
 		height: 100dvh;
 		background: #0f0f0f;
 		color: #d0d0d0;
@@ -525,44 +499,6 @@
 		padding: 52px 16px 14px;
 		border-bottom: 1px solid #1a1a1a;
 		flex-shrink: 0;
-	}
-
-	.cp-back {
-		background: none;
-		border: none;
-		color: #666;
-		font: inherit;
-		font-size: 1.1rem;
-		cursor: pointer;
-		padding: 4px 8px 4px 0;
-		transition: color 0.12s;
-		flex-shrink: 0;
-	}
-	.cp-back:hover { color: #ccc; }
-
-	.cp-heading-wrap {
-		flex: 1;
-		min-width: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-	}
-
-	.cp-title {
-		margin: 0;
-		font-size: 0.95rem;
-		font-weight: 700;
-		color: #f0f0f0;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		letter-spacing: -0.01em;
-	}
-
-	.cp-subtitle {
-		margin: 0;
-		font-size: 0.7rem;
-		color: #555;
 	}
 
 	.cp-theme-btn {

@@ -6,6 +6,8 @@
 		className?: string;
 		onChange?: (event: Event) => void;
 		checked?: boolean;
+		value?: string;
+		group?: string[];
 	}
 
 	let {
@@ -14,19 +16,34 @@
 		disabled = false,
 		className = '',
 		onChange,
-		checked = $bindable(false)
+		checked = $bindable(false),
+		value,
+		group = $bindable()
 	}: Props = $props();
 </script>
 
-<input
-	type="checkbox"
-	{id}
-	{name}
-	{disabled}
-	bind:checked
-	onchange={onChange}
-	class={`ds-checkbox ${className}`.trim()}
-/>
+{#if group !== undefined}
+	<input
+		type="checkbox"
+		{id}
+		{name}
+		{disabled}
+		{value}
+		bind:group
+		onchange={onChange}
+		class={`ds-checkbox ${className}`.trim()}
+	/>
+{:else}
+	<input
+		type="checkbox"
+		{id}
+		{name}
+		{disabled}
+		bind:checked
+		onchange={onChange}
+		class={`ds-checkbox ${className}`.trim()}
+	/>
+{/if}
 
 <style>
 	.ds-checkbox {

@@ -99,7 +99,7 @@ export interface DashboardCacheEntry<K extends DashboardKind = DashboardKind> {
 	cachedAt: string;
 }
 
-const CACHE_PREFIX = 'resonans:dashboard:';
+const CACHE_PREFIX = 'resonans:dashboard:v2:';
 const memoryCache = new Map<string, DashboardCacheEntry>();
 const inflightRequests = new Map<string, Promise<DashboardCacheEntry>>();
 

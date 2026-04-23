@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, PageHeader } from '$lib/components/ui';
+	import { AppPage, PageHeader, Select } from '$lib/components/ui';
 	import { onMount } from 'svelte';
 	import { CATEGORIES, SUBCATEGORIES } from '$lib/integrations/transaction-categories-client';
 	import type { CategoryId } from '$lib/integrations/transaction-categories-client';
@@ -446,18 +446,18 @@
 				placeholder="Søk etter merchant..."
 				class="search-input"
 			/>
-			<select bind:value={filterCategory} class="filter-select">
+			<Select bind:value={filterCategory} className="filter-select">
 				<option value="all">Alle kategorier</option>
 				{#each categoryOptions as cat}
 					<option value={cat.id}>{cat.emoji} {cat.label}</option>
 				{/each}
-			</select>
-			<select bind:value={filterSource} class="filter-select">
+			</Select>
+			<Select bind:value={filterSource} className="filter-select">
 				<option value="all">Alle kilder</option>
 				<option value="ai">AI-generert</option>
 				<option value="rule">Regel-basert</option>
 				<option value="manual">Manuell</option>
-			</select>
+			</Select>
 		</section>
 
 		{#if topOverridden.length > 0}
@@ -595,21 +595,21 @@
 			</p>
 			<div class="form-group">
 				<label for="override-category">Velg kategori</label>
-				<select id="override-category" bind:value={overrideCategory} onchange={() => overrideSubcategory = ''} class="input">
+				<Select id="override-category" bind:value={overrideCategory} onChange={() => overrideSubcategory = ''} className="input">
 					{#each categoryOptions as cat}
 						<option value={cat.id}>{cat.emoji} {cat.label}</option>
 					{/each}
-				</select>
+				</Select>
 			</div>
 			{#if overrideCategory && SUBCATEGORIES[overrideCategory as CategoryId]?.length}
 				<div class="form-group">
 					<label for="override-subcategory">Velg underkategori (valgfritt)</label>
-					<select id="override-subcategory" bind:value={overrideSubcategory} class="input">
+					<Select id="override-subcategory" bind:value={overrideSubcategory} className="input">
 						<option value="">— Ingen underkategori —</option>
 						{#each SUBCATEGORIES[overrideCategory as CategoryId]! as sub}
 							<option value={sub.key}>{sub.label}</option>
 						{/each}
-					</select>
+					</Select>
 				</div>
 			{/if}
 			<div class="modal-actions">
@@ -646,21 +646,21 @@
 			</p>
 			<div class="form-group">
 				<label for="bulk-from-category">Fra kategori</label>
-				<select id="bulk-from-category" bind:value={bulkFromCategory} class="input">
+				<Select id="bulk-from-category" bind:value={bulkFromCategory} className="input">
 					<option value="">Velg kategori...</option>
 					{#each categoryOptions as cat}
 						<option value={cat.id}>{cat.emoji} {cat.label}</option>
 					{/each}
-				</select>
+				</Select>
 			</div>
 			<div class="form-group">
 				<label for="bulk-to-category">Til kategori</label>
-				<select id="bulk-to-category" bind:value={bulkToCategory} class="input">
+				<Select id="bulk-to-category" bind:value={bulkToCategory} className="input">
 					<option value="">Velg kategori...</option>
 					{#each categoryOptions as cat}
 						<option value={cat.id}>{cat.emoji} {cat.label}</option>
 					{/each}
-				</select>
+				</Select>
 			</div>
 			{#if bulkFromCategory && bulkToCategory}
 				{@const count = mappings.filter(m => {
@@ -774,7 +774,7 @@
 		border-color: #4a5af0;
 	}
 
-	.filter-select {
+	:global(.filter-select) {
 		flex: 1;
 		min-width: 150px;
 		background: #1a1a1a;
@@ -786,7 +786,7 @@
 		font-size: 0.9rem;
 	}
 
-	.filter-select:focus {
+	:global(.filter-select:focus) {
 		outline: none;
 		border-color: #4a5af0;
 	}
@@ -1105,7 +1105,7 @@
 		color: #bbb;
 	}
 
-	.input {
+	:global(select.input) {
 		width: 100%;
 		box-sizing: border-box;
 		background: #0f0f0f;
@@ -1117,7 +1117,7 @@
 		font-size: 0.9rem;
 	}
 
-	.input:focus {
+	:global(select.input:focus) {
 		outline: none;
 		border-color: #4a5af0;
 	}

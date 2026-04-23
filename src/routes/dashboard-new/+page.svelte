@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { fly, slide } from 'svelte/transition';
+	import { AppPage } from '$lib/components/ui';
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
 	import { streamProxyChat } from '$lib/client/proxy-chat-stream';
 
@@ -123,7 +124,7 @@
 	}
 </script>
 
-<div class="dashboard-container" class:chat-expanded={chatExpanded}>
+<AppPage width="full" padding="none" gap="sm" surface="default" className={chatExpanded ? 'chat-expanded' : ''}>
 	<!-- Status Overview - Øverste tredjedel -->
 	{#if !chatExpanded && dashboardData}
 		<section class="status-overview" transition:slide={{ duration: 200 }}>
@@ -236,10 +237,10 @@
 			{/if}
 		</div>
 	</section>
-</div>
+</AppPage>
 
 <style>
-	.dashboard-container {
+	:global(.dashboard-container) {
 		min-height: 100vh;
 		background: var(--bg-primary);
 		color: var(--text-secondary);
@@ -248,7 +249,7 @@
 		overflow: hidden;
 	}
 
-	.dashboard-container.chat-expanded {
+	:global(.dashboard-container.chat-expanded) {
 		overflow-y: auto;
 	}
 

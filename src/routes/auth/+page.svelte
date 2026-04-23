@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { AppPage } from '$lib/components/ui';
+
 	let { data } = $props();
 </script>
 
@@ -6,8 +8,9 @@
 	<title>Logg inn | Resonans</title>
 </svelte:head>
 
-<div class="auth-shell">
-	<div class="auth-card">
+<AppPage width="full" padding="none" gap="sm" surface="transparent">
+	<div class="auth-shell">
+		<div class="auth-card">
 		<p class="eyebrow">Invite-only</p>
 		<h1>Logg inn i Resonans</h1>
 		<p>
@@ -22,11 +25,12 @@
 			<input type="hidden" name="callbackUrl" value={data.next} />
 			<button class="auth-submit" type="submit">Fortsett med Google</button>
 		</form>
+		</div>
 	</div>
-</div>
+</AppPage>
 
 <style>
-	.auth-shell {
+	:global(.auth-shell) {
 		min-height: 100vh;
 		display: grid;
 		place-items: center;
@@ -34,7 +38,7 @@
 		background: linear-gradient(160deg, #f7f3eb 0%, #dfe7e2 100%);
 	}
 
-	.auth-card {
+	:global(.auth-card) {
 		width: min(100%, 28rem);
 		padding: 2rem;
 		border-radius: 1.5rem;
@@ -42,7 +46,7 @@
 		box-shadow: 0 24px 80px rgba(15, 23, 42, 0.12);
 	}
 
-	.eyebrow {
+	:global(.eyebrow) {
 		margin: 0 0 0.5rem;
 		text-transform: uppercase;
 		letter-spacing: 0.12em;
@@ -60,14 +64,14 @@
 		line-height: 1.5;
 	}
 
-	.auth-error {
+	:global(.auth-error) {
 		padding: 0.85rem 1rem;
 		border-radius: 0.85rem;
 		background: #fee2e2;
 		color: #991b1b;
 	}
 
-	.auth-submit {
+	:global(.auth-submit) {
 		margin-top: 1rem;
 		width: 100%;
 		border: 0;

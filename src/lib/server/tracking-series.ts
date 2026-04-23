@@ -302,6 +302,16 @@ export async function recordTrackingEvent(params: RecordTrackingEventInput) {
 		source: 'tracking_event_tool'
 	});
 
+	if (!saved) {
+		return {
+			success: false,
+			error: 'Failed to persist tracking event',
+			series,
+			recordType,
+			linkedTask: resolvedTask
+		};
+	}
+
 	if (series) {
 		await db
 			.update(trackingSeries)

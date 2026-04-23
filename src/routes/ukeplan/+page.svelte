@@ -3,6 +3,7 @@
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import { tick } from 'svelte';
 	import { goto, invalidateAll } from '$app/navigation';
+	import { AppPage } from '$lib/components/ui';
 	import ScreenTitle from '$lib/components/ui/ScreenTitle.svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import FlowSheet from '$lib/components/flows/FlowSheet.svelte';
@@ -1357,7 +1358,7 @@
 	<title>Ukeplan</title>
 </svelte:head>
 
-<div class="week-plan-page">
+<AppPage width="full" padding="none" gap="sm" surface="default" className="week-plan-page">
 	<header class="wp-header">
 		<ScreenTitle
 			title={`Uke ${data.week.week}`}
@@ -1848,7 +1849,7 @@
 		{/if}
 	</section>
 	{/if}
-</div>
+</AppPage>
 
 {#if dayCloseFlowOpen}
 	<FlowSheet
@@ -1922,7 +1923,7 @@
 {/if}
 
 <style>
-	.week-plan-page {
+	:global(.week-plan-page) {
 		min-height: 100vh;
 		width: 100%;
 		padding: var(--screen-title-top-pad, 34px) 20px 110px;

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { AppPage } from '$lib/components/ui';
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
@@ -432,7 +433,8 @@
 	}
 </script>
 
-<div class="chat-container">
+<AppPage width="full" padding="none" gap="sm" surface="default">
+	<div class="chat-container">
 	<header class="chat-header">
 		<div class="header-left">
 			<h1>🎯 Resonans</h1>
@@ -568,10 +570,11 @@
 			</button>
 		</div>
 	</form>
-</div>
+	</div>
+</AppPage>
 
 <style>
-	.chat-container {
+	:global(.chat-container) {
 		display: flex;
 		flex-direction: column;
 		height: 100vh;
@@ -580,7 +583,7 @@
 		background: white;
 	}
 
-	.chat-header {
+	:global(.chat-header) {
 		padding: 1.5rem;
 		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 		color: white;
@@ -591,28 +594,28 @@
 		align-items: center;
 	}
 
-	.header-left {
+	:global(.header-left) {
 		text-align: left;
 	}
 
-	.header-actions {
+	:global(.header-actions) {
 		display: flex;
 		gap: 0.75rem;
 	}
 
-	.chat-header h1 {
+	:global(.chat-header h1) {
 		margin: 0;
 		font-size: 1.75rem;
 		font-weight: 700;
 	}
 
-	.chat-header p {
+	:global(.chat-header p) {
 		margin: 0.25rem 0 0;
 		opacity: 0.9;
 		font-size: 0.9rem;
 	}
 
-	.header-button {
+	:global(.header-button) {
 		display: inline-block;
 		padding: 0.5rem 1rem;
 		background: rgba(255,255,255,0.2);
@@ -627,19 +630,19 @@
 		white-space: nowrap;
 	}
 
-	.header-button:hover {
+	:global(.header-button:hover) {
 		background: rgba(255,255,255,0.3);
 	}
 
-	.new-chat {
+	:global(.new-chat) {
 		font-weight: 600;
 	}
 
-	.search-toggle {
+	:global(.search-toggle) {
 		font-size: 1.1rem;
 	}
 
-	.search-bar {
+	:global(.search-bar) {
 		background: white;
 		border-bottom: 1px solid #e0e0e0;
 		padding: 0.75rem 1rem;
@@ -650,7 +653,7 @@
 		box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 	}
 
-	.search-input {
+	:global(.search-input) {
 		flex: 1;
 		padding: 0.5rem 0.75rem;
 		border: 1px solid #ddd;
@@ -659,24 +662,24 @@
 		font-family: inherit;
 	}
 
-	.search-input:focus {
+	:global(.search-input:focus) {
 		outline: none;
 		border-color: #667eea;
 	}
 
-	.search-navigation {
+	:global(.search-navigation) {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
 	}
 
-	.search-count {
+	:global(.search-count) {
 		font-size: 0.875rem;
 		color: #666;
 		white-space: nowrap;
 	}
 
-	.search-nav-btn {
+	:global(.search-nav-btn) {
 		padding: 0.35rem 0.65rem;
 		background: #667eea;
 		color: white;
@@ -689,11 +692,11 @@
 		min-width: 32px;
 	}
 
-	.search-nav-btn:hover {
+	:global(.search-nav-btn:hover) {
 		background: #5568d3;
 	}
 
-	.search-close {
+	:global(.search-close) {
 		background: #f5f5f5;
 		border: 1px solid #ddd;
 		color: #666;
@@ -706,12 +709,12 @@
 		font-weight: bold;
 	}
 
-	.search-close:hover {
+	:global(.search-close:hover) {
 		background: #e0e0e0;
 		color: #333;
 	}
 
-	.error-banner {
+	:global(.error-banner) {
 		background: #ffebee;
 		color: #c62828;
 		padding: 1rem;
@@ -726,7 +729,7 @@
 		position: relative;
 	}
 
-	.info-banner {
+	:global(.info-banner) {
 		background: #e3f2fd;
 		color: #1565c0;
 		padding: 1rem;
@@ -741,7 +744,7 @@
 		position: relative;
 	}
 
-	.info-close {
+	:global(.info-close) {
 		background: transparent;
 		border: none;
 		color: #1565c0;
@@ -753,17 +756,17 @@
 		border-radius: 0.25rem;
 	}
 
-	.info-close:hover {
+	:global(.info-close:hover) {
 		background: rgba(21, 101, 192, 0.1);
 	}
 
-	.error-actions {
+	:global(.error-actions) {
 		display: flex;
 		gap: 0.5rem;
 		align-items: center;
 	}
 
-	.retry-button {
+	:global(.retry-button) {
 		background: #c62828;
 		color: white;
 		border: none;
@@ -776,16 +779,16 @@
 		white-space: nowrap;
 	}
 
-	.retry-button:hover {
+	:global(.retry-button:hover) {
 		background: #b71c1c;
 		transform: translateY(-1px);
 	}
 
-	.retry-button:active {
+	:global(.retry-button:active) {
 		transform: translateY(0);
 	}
 
-	.error-close {
+	:global(.error-close) {
 		background: transparent;
 		border: none;
 		color: #c62828;
@@ -796,7 +799,7 @@
 		transition: opacity 0.2s;
 	}
 
-	.error-close:hover {
+	:global(.error-close:hover) {
 		opacity: 0.7;
 	}
 
@@ -807,11 +810,11 @@
 			padding: 0.75rem;
 		}
 
-		.error-banner span {
+		:global(.error-banner span) {
 			text-align: center;
 		}
 
-		.retry-button {
+		:global(.retry-button) {
 			width: 100%;
 		}
 	}
@@ -827,7 +830,7 @@
 		}
 	}
 
-	.messages {
+	:global(.messages) {
 		flex: 1;
 		overflow-y: auto;
 		padding: 1.5rem;
@@ -836,7 +839,7 @@
 		flex-direction: column;
 	}
 
-	.loading-more {
+	:global(.loading-more) {
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -847,7 +850,7 @@
 		animation: fadeIn 0.3s ease-in;
 	}
 
-	.loading-more-spinner {
+	:global(.loading-more-spinner) {
 		width: 16px;
 		height: 16px;
 		border: 2px solid #e0e0e0;
@@ -881,7 +884,7 @@
 		transition: all 0.3s ease;
 	}
 
-	.typing-indicator {
+	:global(.typing-indicator) {
 		background: linear-gradient(135deg, #f5f5f5 0%, #e8e8e8 100%);
 		padding: 1rem 1.25rem;
 		min-width: 60px;
@@ -890,13 +893,13 @@
 		justify-content: center;
 	}
 
-	.typing-dots {
+	:global(.typing-dots) {
 		display: flex;
 		gap: 0.375rem;
 		align-items: center;
 	}
 
-	.typing-dots span {
+	:global(.typing-dots span) {
 		width: 8px;
 		height: 8px;
 		background: #999;
@@ -904,15 +907,15 @@
 		animation: typingBounce 1.4s infinite ease-in-out;
 	}
 
-	.typing-dots span:nth-child(1) {
+	:global(.typing-dots span:nth-child(1)) {
 		animation-delay: 0s;
 	}
 
-	.typing-dots span:nth-child(2) {
+	:global(.typing-dots span:nth-child(2)) {
 		animation-delay: 0.2s;
 	}
 
-	.typing-dots span:nth-child(3) {
+	:global(.typing-dots span:nth-child(3)) {
 		animation-delay: 0.4s;
 	}
 
@@ -927,19 +930,19 @@
 		}
 	}
 
-	.input-area {
+	:global(.input-area) {
 		padding: 1rem;
 		background: white;
 		border-top: 1px solid #e0e0e0;
 		box-shadow: 0 -2px 8px rgba(0,0,0,0.05);
 	}
 
-	.input-controls {
+	:global(.input-controls) {
 		display: flex;
 		gap: 1rem;
 	}
 
-	.image-preview {
+	:global(.image-preview) {
 		position: relative;
 		padding: 0.5rem;
 		margin-bottom: 0.5rem;
@@ -948,14 +951,14 @@
 		background: white;
 	}
 
-	.image-preview img {
+	:global(.image-preview img) {
 		max-width: 200px;
 		max-height: 200px;
 		border-radius: 0.375rem;
 		display: block;
 	}
 
-	.remove-image {
+	:global(.remove-image) {
 		position: absolute;
 		top: 0.25rem;
 		right: 0.25rem;
@@ -974,11 +977,11 @@
 		transition: background 0.2s;
 	}
 
-	.remove-image:hover {
+	:global(.remove-image:hover) {
 		background: rgba(0,0,0,0.9);
 	}
 
-	.upload-button {
+	:global(.upload-button) {
 		padding: 0.75rem 1rem;
 		background: #f0f0f0;
 		color: #333;
@@ -990,17 +993,17 @@
 		flex-shrink: 0;
 	}
 
-	.upload-button:hover:not(:disabled) {
+	:global(.upload-button:hover:not(:disabled)) {
 		background: #e0e0e0;
 		transform: translateY(-1px);
 	}
 
-	.upload-button:disabled {
+	:global(.upload-button:disabled) {
 		opacity: 0.5;
 		cursor: not-allowed;
 	}
 
-	.upload-progress {
+	:global(.upload-progress) {
 		padding: 1rem;
 		background: #e3f2fd;
 		border-radius: 0.5rem;
@@ -1008,7 +1011,7 @@
 		animation: slideDown 0.3s ease-out;
 	}
 
-	.progress-bar {
+	:global(.progress-bar) {
 		width: 100%;
 		height: 6px;
 		background: #bbdefb;
@@ -1017,13 +1020,13 @@
 		margin-bottom: 0.5rem;
 	}
 
-	.progress-fill {
+	:global(.progress-fill) {
 		height: 100%;
 		background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
 		animation: progress 1.5s ease-in-out infinite;
 	}
 
-	.progress-text {
+	:global(.progress-text) {
 		display: block;
 		color: #1976d2;
 		font-size: 0.875rem;

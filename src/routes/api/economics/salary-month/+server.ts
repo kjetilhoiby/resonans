@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import { db } from '$lib/db';
-import { sensorEvents } from '$lib/db/schema';
+import { canonicalBankTransactions } from '$lib/db/schema';
 import { and, eq, asc, sql } from 'drizzle-orm';
 import { detectGlobalPayday } from '$lib/server/integrations/payday-detector';
 import { buildDailyBalances } from '$lib/server/integrations/balance-reconstructor';
@@ -59,23 +59,33 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 
 		const transactions = await db
 			.select({
-				amount:      sql<number>`(data->>'amount')::numeric`,
-				description: sql<string>`data->>'description'`,
-				typeText:    sql<string>`data->>'category'`,
-				timestamp:   sensorEvents.timestamp
+				amount: canonicalBankTransactions.amount,
+				description: sql<string>`COALESCE(${canonicalBankTransactions.descriptionDisplay}, ${canonicalBankTransactions.merchantKey}, '')`,
+				typeText: sql<string>`''`,
+				timestamp: sql<string>`${canonicalBankTransactions.canonicalDate}::text`
 			})
-			.from(sensorEvents)
+			.from(canonicalBankTransactions)
 			.where(
 				and(
-					eq(sensorEvents.userId, userId),
-					eq(sensorEvents.dataType, 'bank_transaction'),
-					sql`data->>'accountId' = ${accountId}`
+					eq(canonicalBankTransactions.userId, userId),
+					eq(canonicalBankTransactions.isActive, true),
+					eq(canonicalBankTransactions.accountId, accountId)
 				)
 			)
-			.orderBy(asc(sensorEvents.timestamp));
+			.orderBy(asc(canonicalBankTransactions.canonicalDate));
 
-		const salaryTxs = transactions.filter((t) => {
-			const amount = Number(t.amount);
+		const normalizedTransactions = transactions.map((tx) => {
+			const timestamp = new Date(`${tx.timestamp.slice(0, 10)}T12:00:00Z`);
+			return {
+				amount: Number(tx.amount) || 0,
+				description: tx.description ?? '',
+				typeText: tx.typeText ?? '',
+				timestamp
+			};
+		});
+
+		const salaryTxs = normalizedTransactions.filter((t) => {
+			const amount = t.amount;
 			if (amount < SALARY_MIN_AMOUNT) return false;
 			const text = ((t.description ?? '') + ' ' + (t.typeText ?? '')).toLowerCase();
 			return SALARY_KEYWORDS.some((kw) => text.includes(kw));
@@ -91,8 +101,8 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 			paydayDates = [...perMonth.values()].sort();
 		} else {
 			const monthInflows = new Map<string, { date: string; amount: number }>();
-			for (const tx of transactions) {
-				const amount = Number(tx.amount);
+			for (const tx of normalizedTransactions) {
+				const amount = tx.amount;
 				if (amount < SALARY_MIN_AMOUNT) continue;
 				const d = tx.timestamp.toISOString().split('T')[0];
 				const m = d.slice(0, 7);

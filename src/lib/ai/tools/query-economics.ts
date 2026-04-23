@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { db } from '$lib/db';
-import { categorizedEvents, sensorEvents } from '$lib/db/schema';
+import { canonicalBankTransactions, categorizedEvents, sensorEvents } from '$lib/db/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { detectGlobalPayday } from '$lib/server/integrations/payday-detector';
 import { ensureCategorizedEventsForRange, queryCategorizedEvents } from '$lib/server/integrations/categorized-events';
@@ -461,29 +461,31 @@ The tool returns actual data from your bank that you can trust.`,
 				to = new Date(year, mo, 1);
 			}
 
+			const fromDate = from.toISOString().slice(0, 10);
+			const toDate = to.toISOString().slice(0, 10);
 			const where = accountId
 				? and(
-						eq(sensorEvents.userId, userId),
-						eq(sensorEvents.dataType, 'bank_transaction'),
-						sql`data->>'accountId' = ${accountId}`,
-						sql`timestamp >= ${from.toISOString()}`,
-						sql`timestamp < ${to.toISOString()}`
+						eq(canonicalBankTransactions.userId, userId),
+						eq(canonicalBankTransactions.isActive, true),
+						eq(canonicalBankTransactions.accountId, accountId),
+						sql`${canonicalBankTransactions.canonicalDate} >= ${fromDate}::date`,
+						sql`${canonicalBankTransactions.canonicalDate} < ${toDate}::date`
 					)
 				: and(
-						eq(sensorEvents.userId, userId),
-						eq(sensorEvents.dataType, 'bank_transaction'),
-						sql`timestamp >= ${from.toISOString()}`,
-						sql`timestamp < ${to.toISOString()}`
+						eq(canonicalBankTransactions.userId, userId),
+						eq(canonicalBankTransactions.isActive, true),
+						sql`${canonicalBankTransactions.canonicalDate} >= ${fromDate}::date`,
+						sql`${canonicalBankTransactions.canonicalDate} < ${toDate}::date`
 					);
 
 			const allTxs = await db
 				.select({
-					timestamp: sensorEvents.timestamp,
-					amount: sql<number>`(data->>'amount')::numeric`,
-					description: sql<string>`data->>'description'`,
-					typeText: sql<string>`COALESCE(data->>'typeText', data->>'category')`,
+					timestamp: sql<string>`${canonicalBankTransactions.canonicalDate}::text`,
+					amount: canonicalBankTransactions.amount,
+					description: sql<string>`COALESCE(${canonicalBankTransactions.descriptionDisplay}, ${canonicalBankTransactions.merchantKey}, '')`,
+					typeText: sql<string>`''`,
 				})
-				.from(sensorEvents)
+				.from(canonicalBankTransactions)
 				.where(where);
 
 			const spendingTxs = allTxs.filter((tx) => (Number(tx.amount) || 0) < 0);
@@ -501,7 +503,7 @@ The tool returns actual data from your bank that you can trust.`,
 			for (const tx of spendingTxs) {
 				const classified = categorizeTransaction(tx.description, tx.typeText, Number(tx.amount), merchantMappingCache, transactionOverrideCache, transactionRules);
 				if (normalizeCategoryId(classified.category) !== wantedCategory) continue;
-				const monthKey = tx.timestamp.toISOString().slice(0, 7); // YYYY-MM
+				const monthKey = tx.timestamp.slice(0, 7); // YYYY-MM
 				byMonth.set(monthKey, (byMonth.get(monthKey) ?? 0) + Math.abs(Number(tx.amount)));
 			}
 

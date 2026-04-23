@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, PageHeader } from '$lib/components/ui';
+	import { AppPage, Checkbox, PageHeader, Select } from '$lib/components/ui';
 	import { onMount } from 'svelte';
 	import { CATEGORIES } from '$lib/integrations/transaction-categories-client';
 	import type { CategoryId } from '$lib/integrations/transaction-categories-client';
@@ -164,16 +164,16 @@
 				<h3>Opprett ny regel</h3>
 				<div class="form-group">
 					<label for="category">Kategori</label>
-					<select
+					<Select
 						id="category"
 						bind:value={newRule.category}
-						class="input"
+						className="input"
 					>
 						<option value="">Velg kategori...</option>
 						{#each categoryOptions as cat}
 							<option value={cat.id}>{cat.emoji} {cat.label}</option>
 						{/each}
-					</select>
+					</Select>
 				</div>
 				<div class="form-group">
 					<label for="keywords">Keywords (kommaseparert)</label>
@@ -188,10 +188,7 @@
 				</div>
 				<div class="form-group">
 					<label class="checkbox-label">
-						<input
-							type="checkbox"
-							bind:checked={newRule.fixed}
-						/>
+						<Checkbox bind:checked={newRule.fixed} />
 						<span>Fast utgift (månedlig/periodisk)</span>
 					</label>
 					<small class="hint">Marker som fast utgift hvis dette er en periodisk betaling</small>
@@ -364,13 +361,13 @@
 		cursor: pointer;
 	}
 
-	.checkbox-label input[type="checkbox"] {
+	.checkbox-label :global(.ds-checkbox) {
 		width: 18px;
 		height: 18px;
 		cursor: pointer;
 	}
 
-	.input, select.input {
+	.input, :global(select.input) {
 		width: 100%;
 		box-sizing: border-box;
 		background: #111;
@@ -382,7 +379,7 @@
 		font-size: 0.9rem;
 	}
 
-	.input:focus, select.input:focus {
+	.input:focus, :global(select.input:focus) {
 		outline: none;
 		border-color: #4a5af0;
 	}

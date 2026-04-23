@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, PageHeader, Select } from '$lib/components/ui';
+	import { AppPage, Input, PageHeader, Radio, Select } from '$lib/components/ui';
 	import { onMount } from 'svelte';
 	import type { PageData } from './$types';
 
@@ -340,7 +340,7 @@
 		<h2>Google Chat og tidssone</h2>
 		<div class="field">
 			<label for="webhook">Webhook URL</label>
-			<input id="webhook" class="input" type="url" bind:value={webhook} placeholder="https://chat.googleapis.com/v1/spaces/..." />
+			<Input id="webhook" className="input" type="url" bind:value={webhook} placeholder="https://chat.googleapis.com/v1/spaces/..." />
 		</div>
 		<div class="field">
 			<label for="timezone">Tidssone</label>
@@ -369,13 +369,7 @@
 				<p class="field-title">Importperiode</p>
 				<div class="row import-mode-row">
 					<label class="option-pill">
-						<input
-							type="radio"
-							name="withings-import-mode"
-							value="days"
-							checked={withingsImportMode === 'days'}
-							onchange={() => (withingsImportMode = 'days')}
-						/>
+						<Radio name="withings-import-mode" value="days" bind:group={withingsImportMode} />
 						<span>Siste</span>
 						<input
 							type="number"
@@ -388,13 +382,7 @@
 						<span>dager</span>
 					</label>
 					<label class="option-pill">
-						<input
-							type="radio"
-							name="withings-import-mode"
-							value="from2017"
-							checked={withingsImportMode === 'from2017'}
-							onchange={() => (withingsImportMode = 'from2017')}
-						/>
+						<Radio name="withings-import-mode" value="from2017" bind:group={withingsImportMode} />
 						<span>Fra 2017 (uten begrensning)</span>
 					</label>
 				</div>
@@ -431,10 +419,10 @@
 		{:else}
 			<div class="field">
 				<label for="spond-email">E-post</label>
-				<input
+				<Input
 					id="spond-email"
 					type="email"
-					class="input"
+					className="input"
 					bind:value={spondEmail}
 					placeholder="din@epost.no"
 					autocomplete="username"
@@ -442,10 +430,10 @@
 			</div>
 			<div class="field">
 				<label for="spond-password">Passord</label>
-				<input
+				<Input
 					id="spond-password"
 					type="password"
-					class="input"
+					className="input"
 					bind:value={spondPassword}
 					autocomplete="current-password"
 				/>
@@ -471,13 +459,7 @@
 				<p class="field-title">Importperiode</p>
 				<div class="row import-mode-row">
 					<label class="option-pill">
-						<input
-							type="radio"
-							name="sparebank1-import-mode"
-							value="days"
-							checked={sparebank1ImportMode === 'days'}
-							onchange={() => (sparebank1ImportMode = 'days')}
-						/>
+						<Radio name="sparebank1-import-mode" value="days" bind:group={sparebank1ImportMode} />
 						<span>Siste</span>
 						<input
 							type="number"
@@ -491,13 +473,7 @@
 					</label>
 
 					<label class="option-pill">
-						<input
-							type="radio"
-							name="sparebank1-import-mode"
-							value="from2020"
-							checked={sparebank1ImportMode === 'from2020'}
-							onchange={() => (sparebank1ImportMode = 'from2020')}
-						/>
+						<Radio name="sparebank1-import-mode" value="from2020" bind:group={sparebank1ImportMode} />
 						<span>Fra 2020 (uten begrensning)</span>
 					</label>
 				</div>

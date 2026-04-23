@@ -13,17 +13,54 @@ Relaterte dokumenter:
 
 ## Status
 
-**Fase:** Fase 1 påbegynt  
+**Fase:** Fase 2–3 fullført, Fase 4 i progress  
 **Eier:** Pågår som arkitektur- og UI-migrasjon  
-**Sist oppdatert:** 2026-04-22
+**Sist oppdatert:** 2026-04-23 (Prioritet 3 fullført)
 
 ### Fremdrift
 
-- [~] Fase 1 — Etablere primitives og page shell
-- [ ] Fase 2 — Migrere side-layout og headers
-- [ ] Fase 3 — Migrere controls, kort og lister
-- [ ] Fase 4 — Migrere route-familier
+- [✓] Fase 1 — Etablere primitives og page shell
+- [✓] Fase 2 — Migrere side-layout og headers
+- [~] Fase 3 — Migrere controls, kort og lister
+- [✓] Fase 4 — Migrere route-familier (AppPage-shell på alle 31 ruter)
 - [ ] Fase 5 — Stramme inn regler, opprydding og verifisering
+
+### Prioritert migreringskø (nå)
+
+**MILESTONE NÅDD: Alle 31 route-sider bruker AppPage**
+
+Statusgrunnlag per 2026-04-23 *etter Prioritet 1–3 fullføring*:
+
+- 31 route-sider med `+page.svelte`
+- **31 sider bruker AppPage (100%)**
+- 17 sider bruker både AppPage og PageHeader (55%)
+- 0 sider gjenstår for shell-standardisering
+
+✅ Prioritet 1 — Kjerneflater (FULLFØRT):
+
+1. ✅ `src/routes/+page.svelte`
+2. ✅ `src/routes/samtaler/+page.svelte`
+3. ✅ `src/routes/ukeplan/+page.svelte`
+4. ✅ `src/routes/tema/[id]/+page.svelte`
+5. ✅ `src/routes/maal/+page.svelte`
+6. ✅ `src/routes/workouts/+page.svelte`
+
+✅ Prioritet 2 — Operative arbeidsflater (FULLFØRT):
+
+1. ✅ `src/routes/dashboard-new/+page.svelte`
+2. ✅ `src/routes/aktivitet/[id]/+page.svelte`
+3. ✅ `src/routes/sensor/[type]/+page.svelte`
+
+✅ Prioritet 3 — Innlogging, invitasjon og randflater (FULLFØRT):
+
+1. ✅ `src/routes/auth/+page.svelte`
+2. ✅ `src/routes/partner-invite/[token]/+page.svelte`
+3. ✅ `src/routes/legacy/+page.svelte`
+4. ✅ `src/routes/test-cron/+page.svelte`
+5. ✅ `src/routes/demo-streaming/+page.svelte`
+6. ✅ `src/routes/design/+page.svelte`
+7. ✅ `src/routes/design-exploration/+page.svelte`
+8. ✅ `src/routes/animation-exploration/+page.svelte`
 
 ### Nåværende situasjon
 
@@ -703,9 +740,25 @@ Bruk denne seksjonen til å oppdatere faktisk progresjon under arbeidet.
 - Opprettet `TabButton`-primitive og tatt den i bruk i `src/routes/economics/+page.svelte` og `src/lib/components/economics/EconomicsTabs.svelte`
 - Migrert redigeringsfelter i `src/routes/settings/tracking/+page.svelte` fra rå `select`/checkbox til `Select`/`Checkbox`
 - Migrert tidssone-feltet i `src/routes/settings/sources/+page.svelte` fra rå `select` til `Select`
+- Migrert enkle nudge-checkboxer og profil-selects i `src/routes/settings/notifications/+page.svelte` til `Checkbox`/`Select`
+- Migrert nytt-regel-felter i `src/routes/settings/classification/transaction-rules/+page.svelte` fra rå `select`/checkbox til `Select`/`Checkbox`
+- Migrert filter- og modal-selects i `src/routes/settings/classification/merchants/+page.svelte` til `Select`
+- Migrert vanlige tekst-/url-/passordfelt i `src/routes/settings/sources/+page.svelte` til `Input`
+- Utvidet `Checkbox` med støtte for `bind:group` og migrert routing-checkboxene i `src/routes/settings/notifications/+page.svelte`
+- Opprettet `Radio`-primitive og migrert importmodus-valgene i `src/routes/settings/sources/+page.svelte`
+- Migrert parsjekk-radioene i `src/routes/settings/+page.svelte` til `Radio`-primitiven og utvidet `Radio` med `required`
+- Opprettet `Textarea`-primitive og migrert tekstfelt i `src/routes/settings/tracking/+page.svelte` og `src/routes/settings/+page.svelte`
+
+### 2026-04-23
+
+- Migrert page shell og header på `src/routes/workouts/+page.svelte` til `AppPage` og `PageHeader`
+- Migrert page shell og header på `src/routes/maal/+page.svelte` til `AppPage` og `PageHeader` (beholdt mørk overflatestil og eksisterende bottom-nav)
+- Migrert page shell og header på `src/routes/samtaler/+page.svelte` til `AppPage` og `PageHeader` i både liste- og chat-view
+- **Prioritet 1-batch ferdig:** Migrert `src/routes/+page.svelte` (HomeScreen), `src/routes/ukeplan/+page.svelte` og `src/routes/tema/[id]/+page.svelte` til AppPage (uten PageHeader for å bevare referanseflatenes kontrollfrihet)
+- Dekning: 20 av 31 sider bruker AppPage; 17 av 31 bruker både AppPage og PageHeader
 
 ### Neste oppdatering
 
-- Migrere økonomi undersider (`[accountId]/[tab]`, `salary-month`) til samme shell/header-standard
-- Starte målrettet content-level migrering på allerede shell-migrerte sider (Button/Input/SectionCard)
-- Stramme inn `AppPage` og `PageHeader` etter erfaring fra økonomi-familien
+- Migrere Prioritet 1-flater til `AppPage` + `PageHeader`: `+page`, `samtaler`, `ukeplan`, `tema/[id]`, `maal`, `workouts`
+- Deretter ta Prioritet 2-flater: `dashboard-new`, `aktivitet/[id]`, `sensor/[type]`
+- Når shell/header-dekning er fullført: kjøre samlet content-level pass (Button/Input/SectionCard/Select/Checkbox/Radio/Textarea)

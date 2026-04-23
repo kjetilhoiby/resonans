@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { AppPage } from '$lib/components/ui';
 	import { fly, fade, scale } from 'svelte/transition';
 	import { tweened, spring } from 'svelte/motion';
 	import { cubicOut, quintOut, elasticOut } from 'svelte/easing';
@@ -459,7 +460,8 @@
 	<title>Animation Exploration</title>
 </svelte:head>
 
-<div class="page-wrap">
+<AppPage width="full" padding="none" gap="sm" surface="default">
+	<div class="page-wrap">
 
 	<div class="phone-shell" style="--hue:{globalHueValue}" bind:this={phoneShellRef}>
 
@@ -768,8 +770,8 @@
 			</div>
 		</div>
 	</aside>
-
 </div>
+</AppPage>
 
 <style>
 	:global(body) { background: #0a0a0f; }

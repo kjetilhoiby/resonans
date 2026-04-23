@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { AppPage } from '$lib/components/ui';
 	import { fade, fly, slide, scale } from 'svelte/transition';
 	import { cubicOut, elasticOut } from 'svelte/easing';
 
@@ -636,6 +637,8 @@
 <svelte:head>
 	<title>Resonans – Design System</title>
 </svelte:head>
+
+<AppPage width="full" padding="default" gap="sm" surface="default">
 
 <!-- Force theme on html element -->
 <svelte:element this={'div'}
@@ -3544,6 +3547,8 @@
 </div>
 
 </svelte:element>
+
+</AppPage>
 
 <style>
 /* ── THEME SUPPORT ─────────────────────────────────────────────────────────── */

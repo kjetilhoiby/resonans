@@ -3,6 +3,8 @@ export { default as AppPage } from './AppPage.svelte';
 export { default as Button } from './Button.svelte';
 export { default as IconButton } from './IconButton.svelte';
 export { default as Input } from './Input.svelte';
+export { default as Textarea } from './Textarea.svelte';
+export { default as Radio } from './Radio.svelte';
 export { default as Select } from './Select.svelte';
 export { default as TabButton } from './TabButton.svelte';
 export { default as PageHeader } from './PageHeader.svelte';

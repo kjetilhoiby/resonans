@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, Checkbox, PageHeader, Select } from '$lib/components/ui';
+	import { AppPage, Checkbox, PageHeader, Select, Textarea } from '$lib/components/ui';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -176,12 +176,12 @@
 
 						<div class="field">
 							<label class="field-label" for="edit-hints-{series.id}">Prompt-hint for AI</label>
-							<textarea
+							<Textarea
 								id="edit-hints-{series.id}"
-								class="input hints-input"
+								className="input hints-input"
 								bind:value={draftPromptHints}
 								placeholder="Valgfri beskrivelse som hjelper AI med matching, f.eks. 'morgenrutine på Strava-skjerm'"
-							></textarea>
+							></Textarea>
 						</div>
 
 						<div class="row">

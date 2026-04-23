@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { AppPage } from '$lib/components/ui';
 	import { streamingChat } from '$lib/client/streaming-chat';
 
 	interface ProgressEvent {
@@ -92,7 +93,8 @@
 	}
 </script>
 
-<div class="streaming-chat-demo">
+<AppPage width="full" padding="default" gap="sm" surface="default">
+	<div class="streaming-chat-demo">
 	<!-- Header -->
 	<div class="header">
 		<h1>⚡ Streaming Chat Demo</h1>
@@ -158,9 +160,8 @@
 				</span>
 			</div>
 		</div>
-	</div>
 
-	<!-- Chat Message Display -->
+		<!-- Chat Message Display -->
 	{#if displayMessage}
 		<div class="message-section">
 			<h3>💬 Assistant Response</h3>
@@ -186,10 +187,12 @@
 			{isStreaming ? '⚡ Streaming...' : '📤 Send'}
 		</button>
 	</div>
-</div>
+	</div>
+	</div>
+</AppPage>
 
 <style>
-	.streaming-chat-demo {
+	:global(.streaming-chat-demo) {
 		display: flex;
 		flex-direction: column;
 		gap: 1.5rem;
@@ -199,23 +202,23 @@
 		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 	}
 
-	.header {
+	:global(.header) {
 		border-bottom: 2px solid #e5e7eb;
 		padding-bottom: 1rem;
 	}
 
-	.header h1 {
+	:global(.header h1) {
 		margin: 0 0 0.5rem 0;
 		font-size: 1.875rem;
 	}
 
-	.header p {
+	:global(.header p) {
 		margin: 0.25rem 0;
 		color: #666;
 		font-size: 0.95rem;
 	}
 
-	.conversation-id {
+	:global(.conversation-id) {
 		margin-top: 0.75rem;
 		padding: 0.5rem;
 		background: #f3f4f6;
@@ -223,28 +226,28 @@
 		font-size: 0.85rem;
 	}
 
-	.conversation-id code {
+	:global(.conversation-id code) {
 		font-family: 'Monaco', monospace;
 		background: #e5e7eb;
 		padding: 0.25rem 0.5rem;
 		border-radius: 2px;
 	}
 
-	.progress-section h3,
-	.status-section h3,
-	.message-section h3 {
+	:global(.progress-section h3),
+	:global(.status-section h3),
+	:global(.message-section h3) {
 		margin: 0 0 1rem 0;
 		font-size: 1.125rem;
 		color: #111;
 	}
 
-	.progress-list {
+	:global(.progress-list) {
 		display: flex;
 		flex-direction: column;
 		gap: 0.75rem;
 	}
 
-	.progress-item {
+	:global(.progress-item) {
 		padding: 1rem;
 		border-left: 3px solid #d1d5db;
 		background: #f9fafb;
@@ -252,70 +255,70 @@
 		transition: all 0.2s ease;
 	}
 
-	.progress-item.current {
+	:global(.progress-item.current) {
 		border-left-color: #3b82f6;
 		background: #eff6ff;
 		box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 	}
 
-	.progress-header {
+	:global(.progress-header) {
 		display: flex;
 		justify-content: space-between;
 		margin-bottom: 0.5rem;
 		font-weight: 600;
 	}
 
-	.stage-name {
+	:global(.stage-name) {
 		color: #1f2937;
 	}
 
-	.timestamp {
+	:global(.timestamp) {
 		font-size: 0.8rem;
 		color: #9ca3af;
 		font-family: 'Monaco', monospace;
 	}
 
-	.progress-data {
+	:global(.progress-data) {
 		display: flex;
 		flex-direction: column;
 		gap: 0.25rem;
 		font-size: 0.875rem;
 	}
 
-	.data-item {
+	:global(.data-item) {
 		display: flex;
 		gap: 0.5rem;
 	}
 
-	.key {
+	:global(.key) {
 		color: #6366f1;
 		font-weight: 500;
 	}
 
-	.value {
+	:global(.value) {
 		color: #4b5563;
 		word-break: break-word;
 	}
 
-	.status-section {
+	:global(.status-section) {
 		background: #f0fdf4;
 		border: 1px solid #dcfce7;
 		padding: 1rem;
 		border-radius: 6px;
 	}
 
-	.status {
+	:global(.status) {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
 		gap: 1rem;
 	}
 
-	.status-item {
+	:global(.status-item) {
 		display: flex;
 		flex-direction: column;
 	}
 
-	.status-item .label {
+	:global(.status-item .label) {
 		font-size: 0.8rem;
 		font-weight: 600;
 		color: #666;
@@ -323,30 +326,30 @@
 		letter-spacing: 0.5px;
 	}
 
-	.status-item .value {
+	:global(.status-item .value) {
 		font-size: 1.1rem;
 		color: #1f2937;
 		margin-top: 0.25rem;
 	}
 
-	.status-item .value.streaming {
+	:global(.status-item .value.streaming) {
 		color: #f59e0b;
 		font-weight: 600;
 	}
 
-	.status-item .value.complete {
+	:global(.status-item .value.complete) {
 		color: #10b981;
 		font-weight: 600;
 	}
 
-	.message-section {
+	:global(.message-section) {
 		background: #f8f9fa;
 		border: 1px solid #e5e7eb;
 		padding: 1.5rem;
 		border-radius: 6px;
 	}
 
-	.chat-message {
+	:global(.chat-message) {
 		line-height: 1.6;
 		color: #1f2937;
 		font-size: 1rem;
@@ -354,7 +357,7 @@
 		word-wrap: break-word;
 	}
 
-	.cursor {
+	:global(.cursor) {
 		animation: blink 1s infinite;
 		margin-left: 2px;
 	}
@@ -370,12 +373,12 @@
 		}
 	}
 
-	.input-section {
+	:global(.input-section) {
 		display: flex;
 		gap: 1rem;
 	}
 
-	textarea {
+	:global(textarea) {
 		flex: 1;
 		padding: 1rem;
 		border: 1px solid #e5e7eb;
@@ -386,19 +389,19 @@
 		transition: border-color 0.2s;
 	}
 
-	textarea:focus {
+	:global(textarea:focus) {
 		outline: none;
 		border-color: #3b82f6;
 		box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 	}
 
-	textarea:disabled {
+	:global(textarea:disabled) {
 		background: #f3f4f6;
 		color: #9ca3af;
 		cursor: not-allowed;
 	}
 
-	button {
+	:global(button) {
 		padding: 1rem 1.5rem;
 		background: #3b82f6;
 		color: white;
@@ -410,11 +413,11 @@
 		white-space: nowrap;
 	}
 
-	button:hover:not(:disabled) {
+	:global(button:hover:not(:disabled)) {
 		background: #2563eb;
 	}
 
-	button:disabled {
+	:global(button:disabled) {
 		background: #d1d5db;
 		cursor: not-allowed;
 	}

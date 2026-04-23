@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/stores';
+	import { AppPage, PageHeader } from '$lib/components/ui';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -103,148 +104,149 @@
 		return null;
 	}
 </script>
+<AppPage width="full" padding="none" gap="sm" theme="dark" surface="default">
+	<div class="maal-page">
+		<div class="maal-header">
+			<PageHeader title="Mål" />
+		</div>
 
-<div class="maal-page">
-	<header class="maal-header">
-		<h1>Mål</h1>
-	</header>
-
-	{#if active.length === 0}
-		<p class="empty">Ingen mål ennå. Start en samtale for å opprette ett.</p>
-	{:else}
-		{#each [{ label: 'Aktive', list: active }] as section}
-			{#if section.list.length > 0}
-				<section class="goal-section">
-					<h2 class="section-label">{section.label}</h2>
-					<ul class="goal-list" role="list">
-						{#each section.list as goal}
-							{@const isExpanded = expandedId === goal.id}
-							{@const weeklyTasks = getWeeklyTasks(goal)}
-							<li class="goal-item" class:expanded={isExpanded}>
-								<div class="goal-row">
-									<button
-										class="goal-toggle"
-										onclick={() => (expandedId = isExpanded ? null : goal.id)}
-										aria-expanded={isExpanded}
-									>
-										<span class="goal-title">{goal.title}</span>
-										{#if goal.theme}
-											{@const theme = goal.theme as { emoji: string | null; name: string }}
-											<span class="goal-meta">{theme.emoji ?? ''} {theme.name}</span>
-										{:else if goal.category}
-											{@const category = goal.category as { name: string }}
-											<span class="goal-meta">{category.name}</span>
-											<span class="goal-meta-warning">Ikke koblet til tema</span>
-										{/if}
-									</button>
-									<button
-										class="delete-btn"
-										onclick={() => deleteGoal(goal.id)}
-										disabled={deletingId === goal.id}
-										aria-label="Slett mål"
-									>
-										{deletingId === goal.id ? '…' : '✕'}
-									</button>
-								</div>
-
-								{#if isExpanded}
-									<div class="goal-detail">
-										{#if goal.description}
-											<p class="goal-desc">{goal.description}</p>
-										{/if}
-
-										{#if !goal.theme}
-											<div class="theme-assign-row">
-												<span class="tasks-label">Koble mål til tema</span>
-												<select
-													class="series-select"
-													disabled={assigningThemeGoalId === goal.id}
-													onchange={(e) => assignTheme(goal.id, (e.currentTarget as HTMLSelectElement).value)}
-												>
-													<option value="">Velg tema…</option>
-													{#each data.themes as themeOption}
-														<option value={themeOption.id}>{themeOption.emoji ?? ''} {themeOption.name}</option>
-													{/each}
-												</select>
-											</div>
-										{/if}
-
-										{#if weeklyTasks.length > 0}
-											<div class="tasks-section">
-												<span class="tasks-label">Sporbare oppgaver</span>
-												{#each weeklyTasks as task}
-													{@const linked = task.trackingSeries?.[0] ?? null}
-													{@const badge = intentBadge(task)}
-													<div class="task-row">
-														<span class="task-title">{task.title}</span>
-														{#if badge}
-															<span class="intent-badge" class:parsed={badge.startsWith('✓')} class:failed={badge.startsWith('⚠')}>{badge}</span>
-														{/if}
-
-														{#if linkingTaskId === task.id}
-															<div class="series-picker">
-																<select
-																	class="series-select"
-																	disabled={savingLink === task.id}
-																	onchange={(e) => linkSeries(task, (e.currentTarget as HTMLSelectElement).value || null)}
-																>
-																	<option value="">— ingen kobling —</option>
-																	{#each data.allSeries as s}
-																		<option value={s.id} selected={linked?.id === s.id}>
-																			{seriesLabel(s)}
-																		</option>
-																	{/each}
-																</select>
-																<button class="cancel-link" onclick={() => (linkingTaskId = null)}>Avbryt</button>
-															</div>
-														{:else}
-															<div class="series-row">
-																{#if linked}
-																	<span class="series-chip">{seriesLabel(linked)}</span>
-																{:else}
-																	<span class="no-series">Ingen metrikk</span>
-																{/if}
-																<button
-																	class="edit-link"
-																	onclick={() => (linkingTaskId = task.id)}
-																>
-																	{linked ? 'Bytt' : 'Koble'}
-																</button>
-															</div>
-														{/if}
-													</div>
-												{/each}
-											</div>
-										{/if}
+		{#if active.length === 0}
+			<p class="empty">Ingen mål ennå. Start en samtale for å opprette ett.</p>
+		{:else}
+			{#each [{ label: 'Aktive', list: active }] as section}
+				{#if section.list.length > 0}
+					<section class="goal-section">
+						<h2 class="section-label">{section.label}</h2>
+						<ul class="goal-list" role="list">
+							{#each section.list as goal}
+								{@const isExpanded = expandedId === goal.id}
+								{@const weeklyTasks = getWeeklyTasks(goal)}
+								<li class="goal-item" class:expanded={isExpanded}>
+									<div class="goal-row">
+										<button
+											class="goal-toggle"
+											onclick={() => (expandedId = isExpanded ? null : goal.id)}
+											aria-expanded={isExpanded}
+										>
+											<span class="goal-title">{goal.title}</span>
+											{#if goal.theme}
+												{@const theme = goal.theme as { emoji: string | null; name: string }}
+												<span class="goal-meta">{theme.emoji ?? ''} {theme.name}</span>
+											{:else if goal.category}
+												{@const category = goal.category as { name: string }}
+												<span class="goal-meta">{category.name}</span>
+												<span class="goal-meta-warning">Ikke koblet til tema</span>
+											{/if}
+										</button>
+										<button
+											class="delete-btn"
+											onclick={() => deleteGoal(goal.id)}
+											disabled={deletingId === goal.id}
+											aria-label="Slett mål"
+										>
+											{deletingId === goal.id ? '…' : '✕'}
+										</button>
 									</div>
-								{/if}
-							</li>
-						{/each}
-					</ul>
-				</section>
-			{/if}
-		{/each}
-	{/if}
-</div>
 
-<nav class="bottom-nav" aria-label="Navigasjon">
-	<a href="/" class="nav-item" class:active={$page.url.pathname === '/'}>
-		<span class="nav-icon">⬡</span>
-		<span class="nav-label">Hjem</span>
-	</a>
-	<a href="/maal" class="nav-item" class:active={$page.url.pathname === '/maal'} aria-current="page">
-		<span class="nav-icon">◎</span>
-		<span class="nav-label">Mål</span>
-	</a>
-	<a href="/economics" class="nav-item" class:active={$page.url.pathname.startsWith('/economics')}>
-		<span class="nav-icon">◈</span>
-		<span class="nav-label">Økonomi</span>
-	</a>
-	<a href="/settings" class="nav-item" class:active={$page.url.pathname === '/settings'}>
-		<span class="nav-icon">⚙</span>
-		<span class="nav-label">Innstillinger</span>
-	</a>
-</nav>
+									{#if isExpanded}
+										<div class="goal-detail">
+											{#if goal.description}
+												<p class="goal-desc">{goal.description}</p>
+											{/if}
+
+											{#if !goal.theme}
+												<div class="theme-assign-row">
+													<span class="tasks-label">Koble mål til tema</span>
+													<select
+														class="series-select"
+														disabled={assigningThemeGoalId === goal.id}
+														onchange={(e) => assignTheme(goal.id, (e.currentTarget as HTMLSelectElement).value)}
+													>
+														<option value="">Velg tema…</option>
+														{#each data.themes as themeOption}
+															<option value={themeOption.id}>{themeOption.emoji ?? ''} {themeOption.name}</option>
+														{/each}
+													</select>
+												</div>
+											{/if}
+
+											{#if weeklyTasks.length > 0}
+												<div class="tasks-section">
+													<span class="tasks-label">Sporbare oppgaver</span>
+													{#each weeklyTasks as task}
+														{@const linked = task.trackingSeries?.[0] ?? null}
+														{@const badge = intentBadge(task)}
+														<div class="task-row">
+															<span class="task-title">{task.title}</span>
+															{#if badge}
+																<span class="intent-badge" class:parsed={badge.startsWith('✓')} class:failed={badge.startsWith('⚠')}>{badge}</span>
+															{/if}
+
+															{#if linkingTaskId === task.id}
+																<div class="series-picker">
+																	<select
+																		class="series-select"
+																		disabled={savingLink === task.id}
+																		onchange={(e) => linkSeries(task, (e.currentTarget as HTMLSelectElement).value || null)}
+																	>
+																		<option value="">— ingen kobling —</option>
+																		{#each data.allSeries as s}
+																			<option value={s.id} selected={linked?.id === s.id}>
+																				{seriesLabel(s)}
+																			</option>
+																		{/each}
+																	</select>
+																	<button class="cancel-link" onclick={() => (linkingTaskId = null)}>Avbryt</button>
+																</div>
+															{:else}
+																<div class="series-row">
+																	{#if linked}
+																		<span class="series-chip">{seriesLabel(linked)}</span>
+																	{:else}
+																		<span class="no-series">Ingen metrikk</span>
+																	{/if}
+																	<button
+																		class="edit-link"
+																		onclick={() => (linkingTaskId = task.id)}
+																	>
+																		{linked ? 'Bytt' : 'Koble'}
+																	</button>
+																</div>
+															{/if}
+														</div>
+													{/each}
+												</div>
+											{/if}
+										</div>
+									{/if}
+								</li>
+							{/each}
+						</ul>
+					</section>
+				{/if}
+			{/each}
+		{/if}
+	</div>
+
+	<nav class="bottom-nav" aria-label="Navigasjon">
+		<a href="/" class="nav-item" class:active={$page.url.pathname === '/'}>
+			<span class="nav-icon">⬡</span>
+			<span class="nav-label">Hjem</span>
+		</a>
+		<a href="/maal" class="nav-item" class:active={$page.url.pathname === '/maal'} aria-current="page">
+			<span class="nav-icon">◎</span>
+			<span class="nav-label">Mål</span>
+		</a>
+		<a href="/economics" class="nav-item" class:active={$page.url.pathname.startsWith('/economics')}>
+			<span class="nav-icon">◈</span>
+			<span class="nav-label">Økonomi</span>
+		</a>
+		<a href="/settings" class="nav-item" class:active={$page.url.pathname === '/settings'}>
+			<span class="nav-icon">⚙</span>
+			<span class="nav-label">Innstillinger</span>
+		</a>
+	</nav>
+</AppPage>
 
 <style>
 	.maal-page {
@@ -263,13 +265,6 @@
 		top: 0;
 		background: #0f0f0f;
 		z-index: 10;
-	}
-
-	h1 {
-		font-size: 1.3rem;
-		font-weight: 700;
-		color: #eee;
-		margin: 0;
 	}
 
 	.goal-section {

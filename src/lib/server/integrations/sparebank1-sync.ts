@@ -2,6 +2,7 @@ import { db, pgClient } from '$lib/db';
 import { sensorEvents, sensors } from '$lib/db/schema';
 import { and, eq, sql } from 'drizzle-orm';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
+import { createHash } from 'node:crypto';
 import {
 	fetchSparebank1Accounts,
 	fetchSparebank1HelloWorld,
@@ -40,11 +41,179 @@ function encodeCredentials(credentials: BankCredentials): string {
 
 function normalizeTxDescription(value: unknown): string {
 	const raw = typeof value === 'string' ? value : '';
-	return raw
+	const normalized = raw
 		.normalize('NFKC')
 		.replace(/\s+/g, ' ')
 		.trim()
 		.toUpperCase();
+
+	if (!normalized) return '';
+
+	const compact = normalized.replace(/\s+-\s+[A-Z0-9]{4,}$/g, '').trim();
+	const words = compact.split(' ').filter(Boolean);
+	const first = (count: number) => words.slice(0, Math.min(count, words.length)).join(' ');
+
+	if (compact.startsWith('COOP MEGA ')) return first(3);
+	if (compact.startsWith('COOP EXTRA ')) return first(3);
+	if (compact.startsWith('COOP PRIX ')) return first(3);
+	if (compact.startsWith('COOP OBS ')) return first(3);
+	if (compact.startsWith('KIWI ')) return first(2);
+	if (compact.startsWith('REMA ')) return first(2);
+	if (compact.startsWith('MENY ')) return first(2);
+	if (compact.startsWith('SPAR ')) return first(2);
+	if (compact.startsWith('BUNNPRIS ')) return first(2);
+	if (compact.startsWith('EXTRA ')) return first(2);
+	if (compact.startsWith('JOKER ')) return first(2);
+	if (compact.startsWith('NARVESEN ')) return first(2);
+	if (compact.startsWith('ODA.COM')) return 'ODA.COM';
+	if (compact.startsWith('ODA ')) return 'ODA';
+
+	return compact;
+}
+
+function bookingStatusRank(value: unknown): number {
+	const status = typeof value === 'string' ? value.toUpperCase() : '';
+	if (status === 'BOOKED') return 20;
+	if (status === 'PENDING') return 10;
+	return 0;
+}
+
+function rawFingerprintForEvent(event: any): string {
+	const txDate = event.timestamp.toISOString().split('T')[0];
+	const amount = Math.round((Number(event.data.amount ?? 0) || 0) * 100) / 100;
+	const descriptionRaw = String(event.data.description ?? '');
+	const descriptionNorm = normalizeTxDescription(event.data.description);
+	const externalId = String(event.metadata?.transactionId ?? '');
+	const booking = String(event.data.bookingStatus ?? '');
+	const accountId = String(event.data.accountId ?? '');
+	const sensorId = String(event.sensorId ?? '');
+	const payload = `${sensorId}|${accountId}|${txDate}|${amount}|${descriptionNorm}|${descriptionRaw}|${externalId}|${booking}`;
+	return createHash('sha256').update(payload).digest('hex');
+}
+
+async function writeRawAndCanonicalTransactions(events: any[], userId: string, sensorId: string): Promise<void> {
+	for (const event of events) {
+		const txDate = event.timestamp.toISOString().split('T')[0];
+		const amount = Math.round((Number(event.data.amount ?? 0) || 0) * 100) / 100;
+		const descriptionRaw = String(event.data.description ?? '');
+		const descriptionNorm = normalizeTxDescription(event.data.description);
+		const merchantKey = descriptionNorm;
+		const bookingStatus = String(event.data.bookingStatus ?? '').toUpperCase() || null;
+		const statusRank = bookingStatusRank(bookingStatus);
+		const externalId = String(event.metadata?.transactionId ?? '');
+		const currency = String(event.data.currency ?? 'NOK');
+		const typeText = String(event.data.category ?? '');
+		const fingerprint = rawFingerprintForEvent(event);
+
+		await pgClient.unsafe(
+			`INSERT INTO raw_bank_transaction_versions (
+				user_id, sensor_id, account_id, external_transaction_id, booking_status, status_rank,
+				transaction_date, posted_at, amount, currency, description_raw, description_normalized,
+				merchant_key, type_text, payload, raw_fingerprint, first_seen_at, last_seen_at, seen_count,
+				created_at, updated_at
+			) VALUES (
+				$1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), $6,
+				$7::date, $8::timestamp, $9, $10, $11, $12,
+				$13, NULLIF($14, ''), $15::jsonb, $16, NOW(), NOW(), 1,
+				NOW(), NOW()
+			)
+			ON CONFLICT (raw_fingerprint)
+			DO UPDATE SET
+				last_seen_at = NOW(),
+				seen_count = raw_bank_transaction_versions.seen_count + 1,
+				booking_status = EXCLUDED.booking_status,
+				status_rank = GREATEST(raw_bank_transaction_versions.status_rank, EXCLUDED.status_rank),
+				description_raw = EXCLUDED.description_raw,
+				description_normalized = EXCLUDED.description_normalized,
+				merchant_key = EXCLUDED.merchant_key,
+				updated_at = NOW()`,
+			[
+				userId,
+				sensorId,
+				String(event.data.accountId ?? ''),
+				externalId,
+				bookingStatus ?? '',
+				statusRank,
+				txDate,
+				event.timestamp.toISOString(),
+				amount,
+				currency,
+				descriptionRaw,
+				descriptionNorm,
+				merchantKey,
+				typeText,
+				JSON.stringify(event.data ?? {}),
+				fingerprint
+			]
+		);
+
+		const upserted = await pgClient.unsafe<{ id: string }[]>(
+			`INSERT INTO canonical_bank_transactions (
+				user_id, sensor_id, account_id, canonical_date, amount, currency, merchant_key,
+				description_display, latest_booking_status, status_rank, latest_posted_at,
+				first_seen_at, last_seen_at, evidence_count, is_active, created_at, updated_at
+			) VALUES (
+				$1, $2, $3, $4::date, $5, $6, $7,
+				$8, NULLIF($9, ''), $10, $11::timestamp,
+				NOW(), NOW(), 1, TRUE, NOW(), NOW()
+			)
+			ON CONFLICT (sensor_id, account_id, canonical_date, amount, merchant_key)
+			DO UPDATE SET
+				currency = EXCLUDED.currency,
+				description_display = CASE
+					WHEN EXCLUDED.status_rank > canonical_bank_transactions.status_rank THEN EXCLUDED.description_display
+					WHEN EXCLUDED.status_rank = canonical_bank_transactions.status_rank
+						AND LENGTH(COALESCE(EXCLUDED.description_display, '')) > LENGTH(COALESCE(canonical_bank_transactions.description_display, ''))
+						THEN EXCLUDED.description_display
+					ELSE canonical_bank_transactions.description_display
+				END,
+				latest_booking_status = CASE
+					WHEN EXCLUDED.status_rank >= canonical_bank_transactions.status_rank THEN EXCLUDED.latest_booking_status
+					ELSE canonical_bank_transactions.latest_booking_status
+				END,
+				status_rank = GREATEST(canonical_bank_transactions.status_rank, EXCLUDED.status_rank),
+				latest_posted_at = CASE
+					WHEN EXCLUDED.latest_posted_at > canonical_bank_transactions.latest_posted_at THEN EXCLUDED.latest_posted_at
+					ELSE canonical_bank_transactions.latest_posted_at
+				END,
+				last_seen_at = NOW(),
+				evidence_count = canonical_bank_transactions.evidence_count + 1,
+				is_active = TRUE,
+				updated_at = NOW()
+			RETURNING id`,
+			[
+				userId,
+				sensorId,
+				String(event.data.accountId ?? ''),
+				txDate,
+				amount,
+				currency,
+				merchantKey,
+				descriptionRaw || null,
+				bookingStatus ?? '',
+				statusRank,
+				event.timestamp.toISOString()
+			]
+		);
+
+		if (externalId && upserted[0]?.id) {
+			await pgClient.unsafe(
+				`INSERT INTO canonical_bank_transaction_aliases (
+					canonical_id, sensor_id, external_transaction_id,
+					first_seen_at, last_seen_at, seen_count, created_at, updated_at
+				) VALUES (
+					$1, $2, $3, NOW(), NOW(), 1, NOW(), NOW()
+				)
+				ON CONFLICT (sensor_id, external_transaction_id)
+				DO UPDATE SET
+					canonical_id = EXCLUDED.canonical_id,
+					last_seen_at = NOW(),
+					seen_count = canonical_bank_transaction_aliases.seen_count + 1,
+					updated_at = NOW()`,
+				[upserted[0].id, sensorId, externalId]
+			);
+		}
+	}
 }
 
 export type Sparebank1TransactionDebugDecision =
@@ -335,6 +504,12 @@ export async function syncAllSparebank1Data(
 		const uniqueNewEvents = [...batchMap.values()];
 		uniqueTransactionCount = uniqueNewEvents.length;
 
+		try {
+			await writeRawAndCanonicalTransactions(uniqueNewEvents, userId, sensor.id);
+		} catch (error) {
+			console.warn('[sparebank1-sync] raw+canonical ingest write skipped:', error);
+		}
+
 		console.log(`Filtered ${transactionEvents.length} -> ${uniqueNewEvents.length} unique transactions in batch`);
 
 		// Step 2: Fetch existing semantic keys from DB; skip anything already stored.
@@ -353,15 +528,39 @@ export async function syncAllSparebank1Data(
 			booking_status: string;
 		}[]>(`
 			SELECT
-				data->>'accountId'                          AS account_id,
-				timestamp::date                             AS date,
-				UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')) AS description_key,
-				ROUND((data->>'amount')::numeric, 2)        AS amount,
-				data->>'bookingStatus'                      AS booking_status
-			FROM sensor_events
-			WHERE sensor_id = $1
-			  AND data_type = 'bank_transaction'
-			  AND timestamp >= $2::timestamptz
+				account_id,
+				date,
+				CASE
+					WHEN description_raw LIKE 'COOP MEGA %' THEN TRIM(CONCAT_WS(' ', split_part(description_raw, ' ', 1), split_part(description_raw, ' ', 2), split_part(description_raw, ' ', 3)))
+					WHEN description_raw LIKE 'COOP EXTRA %' THEN TRIM(CONCAT_WS(' ', split_part(description_raw, ' ', 1), split_part(description_raw, ' ', 2), split_part(description_raw, ' ', 3)))
+					WHEN description_raw LIKE 'COOP PRIX %' THEN TRIM(CONCAT_WS(' ', split_part(description_raw, ' ', 1), split_part(description_raw, ' ', 2), split_part(description_raw, ' ', 3)))
+					WHEN description_raw LIKE 'COOP OBS %' THEN TRIM(CONCAT_WS(' ', split_part(description_raw, ' ', 1), split_part(description_raw, ' ', 2), split_part(description_raw, ' ', 3)))
+					WHEN description_raw LIKE 'KIWI %' THEN TRIM(CONCAT_WS(' ', split_part(description_raw, ' ', 1), split_part(description_raw, ' ', 2)))
+					WHEN description_raw LIKE 'REMA %' THEN TRIM(CONCAT_WS(' ', split_part(description_raw, ' ', 1), split_part(description_raw, ' ', 2)))
+					WHEN description_raw LIKE 'MENY %' THEN TRIM(CONCAT_WS(' ', split_part(description_raw, ' ', 1), split_part(description_raw, ' ', 2)))
+					WHEN description_raw LIKE 'SPAR %' THEN TRIM(CONCAT_WS(' ', split_part(description_raw, ' ', 1), split_part(description_raw, ' ', 2)))
+					WHEN description_raw LIKE 'BUNNPRIS %' THEN TRIM(CONCAT_WS(' ', split_part(description_raw, ' ', 1), split_part(description_raw, ' ', 2)))
+					WHEN description_raw LIKE 'EXTRA %' THEN TRIM(CONCAT_WS(' ', split_part(description_raw, ' ', 1), split_part(description_raw, ' ', 2)))
+					WHEN description_raw LIKE 'JOKER %' THEN TRIM(CONCAT_WS(' ', split_part(description_raw, ' ', 1), split_part(description_raw, ' ', 2)))
+					WHEN description_raw LIKE 'NARVESEN %' THEN TRIM(CONCAT_WS(' ', split_part(description_raw, ' ', 1), split_part(description_raw, ' ', 2)))
+					WHEN description_raw LIKE 'ODA.COM%' THEN 'ODA.COM'
+					WHEN description_raw LIKE 'ODA %' THEN 'ODA'
+					ELSE description_raw
+				END AS description_key,
+				amount,
+				booking_status
+			FROM (
+				SELECT
+					data->>'accountId' AS account_id,
+					timestamp::date AS date,
+					UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')) AS description_raw,
+					ROUND((data->>'amount')::numeric, 2) AS amount,
+					data->>'bookingStatus' AS booking_status
+				FROM sensor_events
+				WHERE sensor_id = $1
+				  AND data_type = 'bank_transaction'
+				  AND timestamp >= $2::timestamptz
+			) base
 		`, [sensor.id, earliestDate.toISOString()]);
 
 		// Build a Set of existing semantic signatures
@@ -395,7 +594,15 @@ export async function syncAllSparebank1Data(
 					  AND data_type = 'bank_transaction'
 					  AND data->>'bookingStatus' = 'PENDING'
 					  AND data->>'accountId' = $2
-					  AND UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')) = $3
+					  AND CASE
+							WHEN UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')) LIKE 'COOP MEGA %' THEN TRIM(CONCAT_WS(' ', split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 1), split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 2), split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 3)))
+							WHEN UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')) LIKE 'COOP EXTRA %' THEN TRIM(CONCAT_WS(' ', split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 1), split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 2), split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 3)))
+							WHEN UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')) LIKE 'KIWI %' THEN TRIM(CONCAT_WS(' ', split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 1), split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 2)))
+							WHEN UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')) LIKE 'REMA %' THEN TRIM(CONCAT_WS(' ', split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 1), split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 2)))
+							WHEN UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')) LIKE 'ODA.COM%' THEN 'ODA.COM'
+							WHEN UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')) LIKE 'ODA %' THEN 'ODA'
+							ELSE UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g'))
+						  END = $3
 					  AND ROUND((data->>'amount')::numeric, 2) = $4
 					  AND timestamp::date = $5::date
 				`, [sensor.id, event.data.accountId ?? '', descriptionKey, amount, date]);
@@ -444,7 +651,15 @@ export async function syncAllSparebank1Data(
 						PARTITION BY
 							data->>'accountId',
 							timestamp::date,
-							UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')),
+							CASE
+								WHEN UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')) LIKE 'COOP MEGA %' THEN TRIM(CONCAT_WS(' ', split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 1), split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 2), split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 3)))
+								WHEN UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')) LIKE 'COOP EXTRA %' THEN TRIM(CONCAT_WS(' ', split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 1), split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 2), split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 3)))
+								WHEN UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')) LIKE 'KIWI %' THEN TRIM(CONCAT_WS(' ', split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 1), split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 2)))
+								WHEN UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')) LIKE 'REMA %' THEN TRIM(CONCAT_WS(' ', split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 1), split_part(UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')), ' ', 2)))
+								WHEN UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')) LIKE 'ODA.COM%' THEN 'ODA.COM'
+								WHEN UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g')) LIKE 'ODA %' THEN 'ODA'
+								ELSE UPPER(REGEXP_REPLACE(TRIM(COALESCE(data->>'description', '')), '\\s+', ' ', 'g'))
+							END,
 							ROUND((data->>'amount')::numeric, 2)
 						ORDER BY
 							CASE WHEN data->>'bookingStatus' = 'BOOKED' THEN 0 ELSE 1 END,

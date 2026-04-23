@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { AppPage } from '$lib/components/ui';
 	import HomeScreen from '$lib/components/domain/HomeScreen.svelte';
 
 	interface Theme {
@@ -22,4 +23,6 @@
 	let { data }: Props = $props();
 </script>
 
-<HomeScreen themes={data.themes} recentConversations={data.recentConversations} />
+<AppPage width="full" padding="none" gap="sm" surface="transparent">
+	<HomeScreen themes={data.themes} recentConversations={data.recentConversations} />
+</AppPage>

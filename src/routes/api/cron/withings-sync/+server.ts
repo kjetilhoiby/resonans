@@ -8,6 +8,22 @@ import { syncAllWithingsData } from '$lib/server/integrations/withings-sync';
 import { registerWorkoutsAsProgress } from '$lib/server/sensor-goal-automation';
 import { autocheckWakeTimeForDate } from '$lib/server/checklist-autocheck';
 
+type WithingsSyncSuccessResult = {
+	userId: string;
+	success: true;
+	synced: { weight: number; activity: number; sleep: number; workouts: number };
+	automation?: Record<string, unknown>;
+	wakeCheck?: Record<string, unknown>;
+};
+
+type WithingsSyncFailureResult = {
+	userId: string;
+	success: false;
+	error: string;
+};
+
+type WithingsSyncResult = WithingsSyncSuccessResult | WithingsSyncFailureResult;
+
 // Allow up to 120 seconds — syncs multiple users sequentially
 export const config = { maxDuration: 120 };
 
@@ -31,7 +47,7 @@ export const GET: RequestHandler = async ({ request }) => {
 	const userIds = [...new Set(withingsSensors.map((s) => s.userId))];
 	console.log(`[withings-sync cron] ${userIds.length} user(s) to sync`);
 
-	const results: Array<Record<string, unknown>> = [];
+	const results: WithingsSyncResult[] = [];
 
 	for (const userId of userIds) {
 		try {
@@ -70,8 +86,8 @@ export const GET: RequestHandler = async ({ request }) => {
 	const succeeded = results.filter((r) => r.success).length;
 	const failed = results.filter((r) => !r.success).length;
 	const automationTotals = results.reduce(
-		(acc, row) => {
-			const automation = row.success ? (row.automation as Record<string, unknown> | undefined) : undefined;
+		(acc: { registered: number; skippedByPeriod: number; skippedDuplicate: number }, row) => {
+			const automation = row.success ? row.automation : undefined;
 			acc.registered += typeof automation?.registered === 'number' ? automation.registered : 0;
 			acc.skippedByPeriod +=
 				typeof automation?.skippedByPeriod === 'number' ? automation.skippedByPeriod : 0;

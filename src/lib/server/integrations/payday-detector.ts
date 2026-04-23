@@ -1,5 +1,5 @@
 import { db } from '$lib/db';
-import { sensorEvents } from '$lib/db/schema';
+import { canonicalBankTransactions } from '$lib/db/schema';
 import { and, eq, asc, sql } from 'drizzle-orm';
 
 const SALARY_KEYWORDS = ['lønn', 'lonn', 'salary', 'arbeidsgiver', 'folktrygd', 'nav '];
@@ -20,26 +20,37 @@ export async function detectGlobalPayday(userId: string): Promise<GlobalPayday |
 	// Fetch all income-sized transactions from all accounts
 	const transactions = await db
 		.select({
-			accountId: sql<string>`data->>'accountId'`,
-			amount:    sql<number>`(data->>'amount')::numeric`,
-			description: sql<string>`data->>'description'`,
-			typeText:  sql<string>`data->>'category'`,
-			timestamp: sensorEvents.timestamp
+			accountId: canonicalBankTransactions.accountId,
+			amount: canonicalBankTransactions.amount,
+			description: sql<string>`COALESCE(${canonicalBankTransactions.descriptionDisplay}, ${canonicalBankTransactions.merchantKey}, '')`,
+			typeText: sql<string>`''`,
+			timestamp: sql<string>`${canonicalBankTransactions.canonicalDate}::text`
 		})
-		.from(sensorEvents)
+		.from(canonicalBankTransactions)
 		.where(
 			and(
-				eq(sensorEvents.userId, userId),
-				eq(sensorEvents.dataType, 'bank_transaction'),
-				sql`(data->>'amount')::numeric >= ${SALARY_MIN_AMOUNT}`
+				eq(canonicalBankTransactions.userId, userId),
+				eq(canonicalBankTransactions.isActive, true),
+				sql`${canonicalBankTransactions.amount} >= ${SALARY_MIN_AMOUNT}`
 			)
 		)
-		.orderBy(asc(sensorEvents.timestamp));
+		.orderBy(asc(canonicalBankTransactions.canonicalDate));
 
-	if (transactions.length === 0) return null;
+	const normalizedTransactions = transactions.map((tx) => {
+		const timestamp = new Date(`${tx.timestamp.slice(0, 10)}T12:00:00Z`);
+		return {
+			accountId: tx.accountId,
+			amount: Number(tx.amount) || 0,
+			description: tx.description ?? '',
+			typeText: tx.typeText ?? '',
+			timestamp
+		};
+	});
+
+	if (normalizedTransactions.length === 0) return null;
 
 	// ── Step 1: prefer keyword-matched salary transactions ───────────────────
-	const salaryTxs = transactions.filter((t) => {
+	const salaryTxs = normalizedTransactions.filter((t) => {
 		const text = ((t.description ?? '') + ' ' + (t.typeText ?? '')).toLowerCase();
 		return SALARY_KEYWORDS.some((kw) => text.includes(kw));
 	});
@@ -67,7 +78,7 @@ export async function detectGlobalPayday(userId: string): Promise<GlobalPayday |
 		// Fallback: find account with the largest single monthly inflow
 		// (one per month, highest amount)
 		const monthBest = new Map<string, { accountId: string; date: string; amount: number }>();
-		for (const tx of transactions) {
+		for (const tx of normalizedTransactions) {
 			const amount = Number(tx.amount);
 			const month = tx.timestamp.toISOString().slice(0, 7);
 			const cur = monthBest.get(month);
