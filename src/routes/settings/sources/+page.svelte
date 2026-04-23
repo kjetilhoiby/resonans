@@ -137,6 +137,16 @@
 		}
 	}
 
+	async function kickJobProcessor() {
+		try {
+			await fetch('/api/admin/jobs/process', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ limit: 1 })
+			});
+		} catch { /* best-effort */ }
+	}
+
 	async function pollSparebank1Job(jobId: string) {
 		try {
 			const res = await fetch(`/api/admin/jobs/${jobId}`);
@@ -154,7 +164,9 @@
 				};
 			}
 
-			if (isTerminalJobStatus(job.status)) {
+			if (job.status === 'queued') {
+				void kickJobProcessor();
+			} else if (isTerminalJobStatus(job.status)) {
 				clearSparebank1Polling();
 				await loadSparebank1Status();
 			}

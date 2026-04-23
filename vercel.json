@@ -1,5 +1,11 @@
 {
   "buildCommand": "npm run build",
   "framework": "sveltekit",
-  "installCommand": "npm install --force"
+  "installCommand": "npm install --force",
+  "crons": [
+    {
+      "path": "/api/cron/background-jobs",
+      "schedule": "*/5 * * * *"
+    }
+  ]
 }
