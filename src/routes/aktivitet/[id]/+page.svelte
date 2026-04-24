@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { PageData } from './$types';
 	import { AppPage } from '$lib/components/ui';
-	import GpxMapSvg from '$lib/components/charts/GpxMapSvg.svelte';
+	import GpxMap from '$lib/components/charts/GpxMap.svelte';
 	import ChatInput from '$lib/components/ui/ChatInput.svelte';
 	import TriageCard from '$lib/components/composed/TriageCard.svelte';
 	import { tick } from 'svelte';
@@ -250,7 +250,7 @@
 		{:else if tab === 'kart'}
 			{#if trackPoints.length >= 2}
 				<div class="map-wrap">
-					<GpxMapSvg points={trackPoints} width={600} height={340} />
+					<GpxMap points={trackPoints} height={340} />
 				</div>
 			{:else}
 				<p class="no-data">Ingen GPS-data for denne økten.</p>
@@ -509,12 +509,6 @@
 	.map-wrap {
 		border-radius: 12px;
 		overflow: hidden;
-	}
-
-	.map-wrap :global(svg) {
-		width: 100%;
-		height: auto;
-		display: block;
 	}
 
 	/* Charts */
