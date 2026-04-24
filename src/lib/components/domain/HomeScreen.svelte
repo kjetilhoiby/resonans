@@ -1459,6 +1459,21 @@
 		</button>
 
 		<div class="widget-stack">
+			{#if activeChecklists.length > 0}
+				<div class="widget-row widget-row-checklists">
+			{#each activeChecklists as cl (cl.id)}
+				<ChecklistWidget
+					checklist={cl}
+					onclick={() => (openChecklist = cl)}
+					onremove={async () => {
+						await fetch(`/api/checklists/${cl.id}`, { method: 'DELETE' });
+						activeChecklists = activeChecklists.filter((c) => c.id !== cl.id);
+					}}
+				/>
+			{/each}
+				</div>
+			{/if}
+
 		<div class="widget-row widget-row-metrics">
 			{#if widgetsLoading}
 			{#each { length: 3 } as _, i}
@@ -1506,21 +1521,6 @@
 			{/if}
 		{/if}
 		</div>
-
-			{#if activeChecklists.length > 0}
-				<div class="widget-row widget-row-checklists">
-			{#each activeChecklists as cl (cl.id)}
-				<ChecklistWidget
-					checklist={cl}
-					onclick={() => (openChecklist = cl)}
-					onremove={async () => {
-						await fetch(`/api/checklists/${cl.id}`, { method: 'DELETE' });
-						activeChecklists = activeChecklists.filter((c) => c.id !== cl.id);
-					}}
-				/>
-			{/each}
-				</div>
-			{/if}
 		</div>
 
 		</section>
