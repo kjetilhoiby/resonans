@@ -402,11 +402,12 @@
 		font-size: 1.1rem;
 		font-weight: 600;
 		line-height: 1.2;
+		color: #eee;
 	}
 
 	:global(.header-text) time {
 		font-size: 0.8rem;
-		color: #666;
+		color: #888;
 		text-transform: capitalize;
 	}
 
@@ -422,7 +423,7 @@
 	.tabs button {
 		background: none;
 		border: none;
-		color: #555;
+		color: #666;
 		font-size: 0.85rem;
 		font-weight: 500;
 		padding: 0.6rem 1rem;
@@ -475,7 +476,7 @@
 
 	.label {
 		font-size: 0.7rem;
-		color: #555;
+		color: #888;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
 	}
@@ -483,6 +484,7 @@
 	.value {
 		font-size: 1.1rem;
 		font-weight: 600;
+		color: #eee;
 	}
 
 	.assessment {
@@ -493,7 +495,7 @@
 
 	.assessment-label {
 		font-size: 0.7rem;
-		color: #555;
+		color: #888;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 		margin: 0 0 0.5rem;
@@ -557,14 +559,14 @@
 		position: absolute;
 		right: 0;
 		font-size: 0.65rem;
-		color: #444;
+		color: #666;
 	}
 
 	.chart-label-top { top: 0; }
 	.chart-label-bot { bottom: 0; }
 
 	.no-data {
-		color: #444;
+		color: #666;
 		font-size: 0.85rem;
 		text-align: center;
 		padding: 2rem 0;
