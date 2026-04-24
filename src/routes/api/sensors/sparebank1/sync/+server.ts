@@ -31,7 +31,7 @@ export const POST: RequestHandler = async ({ url, locals }) => {
 			const job = await enqueueBackgroundJob({
 				userId,
 				type: 'sparebank1_historical_sync',
-				payload: { fromDate: '2020-01-01' },
+				payload: { fromDate: '2020-01-01', replaceAll: true },
 				priority: 10,
 				maxAttempts: 3
 			});

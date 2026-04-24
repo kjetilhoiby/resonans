@@ -253,6 +253,71 @@ export type Sparebank1SyncResult = {
 	debug?: Sparebank1SyncDebug;
 };
 
+export async function wipeSparebank1EconomicsData(userId: string, sensorId: string): Promise<{
+	categorizedEvents: number;
+	canonicalAliases: number;
+	rawBankTransactionVersions: number;
+	canonicalBankTransactions: number;
+	sensorEvents: number;
+}> {
+	const rows = await pgClient.unsafe<{
+		categorized_count: number;
+		alias_count: number;
+		raw_count: number;
+		canonical_count: number;
+		sensor_count: number;
+	}[]>(`
+		WITH deleted_categorized AS (
+			DELETE FROM categorized_events ce
+			USING sensor_events se
+			WHERE ce.sensor_event_id = se.id
+			  AND se.sensor_id = $1
+			  AND se.user_id = $2
+			RETURNING ce.id
+		), deleted_aliases AS (
+			DELETE FROM canonical_bank_transaction_aliases
+			WHERE sensor_id = $1
+			RETURNING id
+		), deleted_raw AS (
+			DELETE FROM raw_bank_transaction_versions
+			WHERE sensor_id = $1
+			RETURNING id
+		), deleted_canonical AS (
+			DELETE FROM canonical_bank_transactions
+			WHERE sensor_id = $1
+			RETURNING id
+		), deleted_sensor AS (
+			DELETE FROM sensor_events
+			WHERE sensor_id = $1
+			  AND user_id = $2
+			  AND data_type IN ('bank_balance', 'bank_transaction')
+			RETURNING id
+		)
+		SELECT
+			(SELECT COUNT(*)::int FROM deleted_categorized) AS categorized_count,
+			(SELECT COUNT(*)::int FROM deleted_aliases) AS alias_count,
+			(SELECT COUNT(*)::int FROM deleted_raw) AS raw_count,
+			(SELECT COUNT(*)::int FROM deleted_canonical) AS canonical_count,
+			(SELECT COUNT(*)::int FROM deleted_sensor) AS sensor_count
+	`, [sensorId, userId]);
+
+	const row = rows[0] ?? {
+		categorized_count: 0,
+		alias_count: 0,
+		raw_count: 0,
+		canonical_count: 0,
+		sensor_count: 0
+	};
+
+	return {
+		categorizedEvents: Number(row.categorized_count ?? 0),
+		canonicalAliases: Number(row.alias_count ?? 0),
+		rawBankTransactionVersions: Number(row.raw_count ?? 0),
+		canonicalBankTransactions: Number(row.canonical_count ?? 0),
+		sensorEvents: Number(row.sensor_count ?? 0)
+	};
+}
+
 export async function getSparebank1Sensor(userId: string) {
 	return db.query.sensors.findFirst({
 		where: and(
@@ -311,7 +376,7 @@ export async function getValidSparebank1AccessToken(sensor: any): Promise<string
 
 export async function syncAllSparebank1Data(
 	userId: string,
-	options: { fromDate?: Date; includeDebug?: boolean } = {}
+	options: { fromDate?: Date; includeDebug?: boolean; resetBeforeImport?: boolean; skipExistingDedup?: boolean } = {}
 ): Promise<Sparebank1SyncResult> {
 	const sensor = await getSparebank1Sensor(userId);
 
@@ -322,11 +387,18 @@ export async function syncAllSparebank1Data(
 	const accessToken = await getValidSparebank1AccessToken(sensor);
 	const since = options.fromDate ?? sensor.lastSync ?? undefined;
 	const includeDebug = options.includeDebug === true;
+	const resetBeforeImport = options.resetBeforeImport === true;
+	const skipExistingDedup = options.skipExistingDedup === true;
 	const txDebugByEvent = new WeakMap<object, Sparebank1TransactionDebugRow>();
 	const txDebugRows: Sparebank1TransactionDebugRow[] = [];
 	const replacedPendingKeys = new Set<string>();
 	let rawTransactionCount = 0;
 	let uniqueTransactionCount = 0;
+
+	if (resetBeforeImport) {
+		const wiped = await wipeSparebank1EconomicsData(userId, sensor.id);
+		console.log('[sparebank1-sync] replace-mode wipe completed', { userId, sensorId: sensor.id, wiped });
+	}
 
 	await fetchSparebank1HelloWorld(accessToken);
 
@@ -362,25 +434,28 @@ export async function syncAllSparebank1Data(
 
 	// Dedup balance events: Only insert if not already present for same account + date
 	if (balanceEvents.length > 0) {
-		const existingBalanceRows = await db
-			.select({ 
-				accountId: sql<string>`data->>'accountId'`,
-				date: sql<string>`timestamp::date`
-			})
-			.from(sensorEvents)
-			.where(and(
-				eq(sensorEvents.sensorId, sensor.id), 
-				eq(sensorEvents.dataType, 'bank_balance')
-			));
-		
-		const existingBalanceKeys = new Set(
-			existingBalanceRows.map((r) => `${r.accountId}:${r.date}`)
-		);
+		let newBalanceEvents = balanceEvents;
+		if (!skipExistingDedup) {
+			const existingBalanceRows = await db
+				.select({
+					accountId: sql<string>`data->>'accountId'`,
+					date: sql<string>`timestamp::date`
+				})
+				.from(sensorEvents)
+				.where(and(
+					eq(sensorEvents.sensorId, sensor.id),
+					eq(sensorEvents.dataType, 'bank_balance')
+				));
 
-		const newBalanceEvents = balanceEvents.filter((e) => {
-			const key = `${e.data.accountId}:${e.timestamp.toISOString().split('T')[0]}`;
-			return !existingBalanceKeys.has(key);
-		});
+			const existingBalanceKeys = new Set(
+				existingBalanceRows.map((r) => `${r.accountId}:${r.date}`)
+			);
+
+			newBalanceEvents = balanceEvents.filter((e) => {
+				const key = `${e.data.accountId}:${e.timestamp.toISOString().split('T')[0]}`;
+				return !existingBalanceKeys.has(key);
+			});
+		}
 
 		if (newBalanceEvents.length > 0) {
 			await SensorEventService.writeMany(newBalanceEvents, {
@@ -520,13 +595,15 @@ export async function syncAllSparebank1Data(
 			? new Date(Math.min(...batchDates.map((d) => d.getTime())))
 			: new Date();
 
-		const existingRows = await pgClient.unsafe<{
-			account_id: string;
-			date: string;
-			description_key: string;
-			amount: string;
-			booking_status: string;
-		}[]>(`
+		let newEvents = uniqueNewEvents;
+		if (!skipExistingDedup) {
+			const existingRows = await pgClient.unsafe<{
+				account_id: string;
+				date: string;
+				description_key: string;
+				amount: string;
+				booking_status: string;
+			}[]>(`
 			SELECT
 				account_id,
 				date,
@@ -561,34 +638,34 @@ export async function syncAllSparebank1Data(
 				  AND data_type = 'bank_transaction'
 				  AND timestamp >= $2::timestamptz
 			) base
-		`, [sensor.id, earliestDate.toISOString()]);
+			`, [sensor.id, earliestDate.toISOString()]);
 
-		// Build a Set of existing semantic signatures
-		const existingSemanticKeys = new Set(
-			existingRows.map((r: any) =>
-				`${r.account_id}:${String(r.date).split('T')[0]}:${r.description_key}:${Math.round(Number(r.amount) * 100)}`
-			)
-		);
-		// Also track which existing entries are PENDING so we can upgrade them to BOOKED
-		const existingPendingKeys = new Set(
-			existingRows
-				.filter((r: any) => r.booking_status === 'PENDING')
-				.map((r: any) =>
+			// Build a Set of existing semantic signatures
+			const existingSemanticKeys = new Set(
+				existingRows.map((r: any) =>
 					`${r.account_id}:${String(r.date).split('T')[0]}:${r.description_key}:${Math.round(Number(r.amount) * 100)}`
 				)
-		);
+			);
+			// Also track which existing entries are PENDING so we can upgrade them to BOOKED
+			const existingPendingKeys = new Set(
+				existingRows
+					.filter((r: any) => r.booking_status === 'PENDING')
+					.map((r: any) =>
+						`${r.account_id}:${String(r.date).split('T')[0]}:${r.description_key}:${Math.round(Number(r.amount) * 100)}`
+					)
+			);
 
-		// For incoming BOOKED transactions that match an existing PENDING record,
-		// delete the PENDING rows so the BOOKED version can be inserted cleanly.
-		const incomingBooked = uniqueNewEvents.filter((e) => e.data.bookingStatus === 'BOOKED');
-		for (const event of incomingBooked) {
-			const key = makeSemanticKey(event);
-			if (existingPendingKeys.has(key)) {
-				replacedPendingKeys.add(key);
-				const date = event.timestamp.toISOString().split('T')[0];
-				const amount = Math.round((event.data.amount ?? 0) * 100) / 100;
-				const descriptionKey = normalizeTxDescription(event.data.description);
-				await pgClient.unsafe(`
+			// For incoming BOOKED transactions that match an existing PENDING record,
+			// delete the PENDING rows so the BOOKED version can be inserted cleanly.
+			const incomingBooked = uniqueNewEvents.filter((e) => e.data.bookingStatus === 'BOOKED');
+			for (const event of incomingBooked) {
+				const key = makeSemanticKey(event);
+				if (existingPendingKeys.has(key)) {
+					replacedPendingKeys.add(key);
+					const date = event.timestamp.toISOString().split('T')[0];
+					const amount = Math.round((event.data.amount ?? 0) * 100) / 100;
+					const descriptionKey = normalizeTxDescription(event.data.description);
+					await pgClient.unsafe(`
 					WITH to_delete AS (
 						SELECT id
 						FROM sensor_events
@@ -613,30 +690,30 @@ export async function syncAllSparebank1Data(
 					)
 					DELETE FROM sensor_events
 					WHERE id IN (SELECT id FROM to_delete)
-				`, [sensor.id, event.data.accountId ?? '', descriptionKey, amount, date]);
-				existingSemanticKeys.delete(key); // allow BOOKED to be inserted
-			}
-		}
-
-		const newEvents = uniqueNewEvents.filter((e) => !existingSemanticKeys.has(makeSemanticKey(e)));
-
-		if (includeDebug) {
-			for (const event of uniqueNewEvents) {
-				const key = makeSemanticKey(event);
-				const debug = txDebugByEvent.get(event);
-				if (!debug) continue;
-
-				if (existingSemanticKeys.has(key)) {
-					debug.decision = 'skipped_existing_in_db';
-					debug.reason = 'Already exists in sensor_events by semantic key';
-				} else {
-					debug.decision = 'queued_for_insert';
-					debug.reason = replacedPendingKeys.has(key)
-						? 'BOOKED transaction replaces existing PENDING row'
-						: 'Unique in batch and not found in DB';
+					`, [sensor.id, event.data.accountId ?? '', descriptionKey, amount, date]);
+					existingSemanticKeys.delete(key); // allow BOOKED to be inserted
 				}
 			}
-		}
+
+			newEvents = uniqueNewEvents.filter((e) => !existingSemanticKeys.has(makeSemanticKey(e)));
+
+			if (includeDebug) {
+				for (const event of uniqueNewEvents) {
+					const key = makeSemanticKey(event);
+					const debug = txDebugByEvent.get(event);
+					if (!debug) continue;
+
+					if (existingSemanticKeys.has(key)) {
+						debug.decision = 'skipped_existing_in_db';
+						debug.reason = 'Already exists in sensor_events by semantic key';
+					} else {
+						debug.decision = 'queued_for_insert';
+						debug.reason = replacedPendingKeys.has(key)
+							? 'BOOKED transaction replaces existing PENDING row'
+							: 'Unique in batch and not found in DB';
+					}
+				}
+			}
 
 		console.log(`Filtered ${uniqueNewEvents.length} -> ${newEvents.length} new transactions (not in DB)`);
 
@@ -651,7 +728,8 @@ export async function syncAllSparebank1Data(
 
 		// Safety net: remove semantic duplicates in the recent sync window.
 		// This heals already-accumulated duplicates and protects charts/lists from inflated totals.
-		await pgClient.unsafe(`
+		if (!skipExistingDedup) {
+			await pgClient.unsafe(`
 			WITH ranked AS (
 				SELECT
 					id,
@@ -686,7 +764,8 @@ export async function syncAllSparebank1Data(
 			)
 			DELETE FROM sensor_events
 			WHERE id IN (SELECT id FROM to_delete)
-		`, [sensor.id, earliestDate.toISOString()]);
+			`, [sensor.id, earliestDate.toISOString()]);
+		}
 
 		transactionEvents = newEvents; // return actual inserted count
 	}

@@ -68,6 +68,8 @@
 	let sparebank1JobPollError = $state<string | null>(null);
 	let sparebank1Polling = $state(false);
 	let sparebank1PollTimer: ReturnType<typeof setInterval> | null = null;
+	let resettingEconomics = $state(false);
+	let resetEconomicsResult = $state<{ success: boolean; message: string } | null>(null);
 
 	let googleSheetsStatus = $state<any>(null);
 	let loadingGoogleSheets = $state(false);
@@ -427,6 +429,38 @@
 		await loadSparebank1Status();
 	}
 
+	async function resetEconomicsData() {
+		const ok = confirm('Dette sletter ALL økonomidata (transaksjoner, saldo, canonical, kategorisering). Fortsette?');
+		if (!ok) return;
+		const confirmAgain = confirm('Er du helt sikker? Dette kan ikke angres.');
+		if (!confirmAgain) return;
+
+		resettingEconomics = true;
+		resetEconomicsResult = null;
+		clearSparebank1Polling();
+
+		try {
+			const res = await fetch('/api/admin/reset-economics', { method: 'DELETE' });
+			const payload = await res.json().catch(() => ({}));
+			if (!res.ok) throw new Error(payload?.error || 'Kunne ikke tømme økonomidata');
+
+			const deletedCount = Number(payload?.deletedCount ?? 0);
+			resetEconomicsResult = {
+				success: true,
+				message: payload?.message || `Slettet ${deletedCount} rader med økonomidata.`
+			};
+			sparebank1Result = null;
+			await loadSparebank1Status();
+		} catch (error) {
+			resetEconomicsResult = {
+				success: false,
+				message: error instanceof Error ? error.message : 'Ukjent feil under tømming av økonomidata'
+			};
+		} finally {
+			resettingEconomics = false;
+		}
+	}
+
 	async function loadGoogleSheetsStatus() {
 		loadingGoogleSheets = true;
 		try {
@@ -601,8 +635,14 @@
 				<button class="btn-secondary" onclick={() => syncSparebank1(sparebank1ImportMode)} disabled={syncingSparebank1}>
 					Importer valgt periode
 				</button>
+				<button class="btn-danger" onclick={resetEconomicsData} disabled={resettingEconomics || syncingSparebank1}>
+					{resettingEconomics ? 'Tømmer...' : 'Tøm all økonomidata'}
+				</button>
 				<button class="btn-ghost" onclick={disconnectSparebank1}>Koble fra</button>
 			</div>
+			{#if resetEconomicsResult}
+				<p class={resetEconomicsResult.success ? 'ok' : 'err'}>{resetEconomicsResult.message}</p>
+			{/if}
 		{:else}
 			<a href="/api/sensors/sparebank1/connect" class="btn-primary">Koble til SpareBank 1</a>
 		{/if}
@@ -800,6 +840,14 @@
 	.btn-primary, .btn-secondary, .btn-ghost { text-decoration: none; }
 	button.btn-primary { background: var(--accent); }
 	button.btn-primary:hover:not(:disabled) { background: #3f4de0; }
+	button.btn-danger {
+		background: #7f1d1d;
+		border-color: #991b1b;
+		color: #fee2e2;
+	}
+	button.btn-danger:hover:not(:disabled) {
+		background: #991b1b;
+	}
 	.upload-label { display: inline-flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; }
 	.anchor-table { width: 100%; border-collapse: collapse; margin-top: 0.75rem; font-size: 0.82rem; color: var(--text-secondary); }
 	.anchor-table th, .anchor-table td { padding: 0.4rem 0.6rem; text-align: left; border-bottom: 1px solid #252525; }

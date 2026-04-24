@@ -15,6 +15,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		await requireAdmin(locals.userId);
 		const body = await request.json().catch(() => ({}));
 		const fromDateStr: string = body.fromDate ?? '2025-01-01';
+		const replaceAll = body.replaceAll !== false;
 		const fromDate = new Date(fromDateStr);
 
 		if (isNaN(fromDate.getTime())) {
@@ -25,7 +26,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		const job = await enqueueBackgroundJob({
 			userId,
 			type: 'sparebank1_historical_sync',
-			payload: { fromDate: fromDateStr },
+			payload: { fromDate: fromDateStr, replaceAll },
 			priority: 10,
 			maxAttempts: 3
 		});
@@ -35,7 +36,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				success: true,
 				queued: true,
 				job,
-				message: `Historisk synk er lagt i kø fra ${fromDateStr}.`
+				message: `Historisk synk er lagt i kø fra ${fromDateStr}${replaceAll ? ' (erstatter eksisterende data)' : ''}.`
 			},
 			{ status: 202 }
 		);

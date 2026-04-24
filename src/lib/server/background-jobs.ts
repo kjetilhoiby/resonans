@@ -461,17 +461,23 @@ async function executeJob(job: any): Promise<Record<string, unknown>> {
 				throw new Error('sparebank1_historical_sync requires user_id');
 			}
 
-			const payload = (job.payload ?? {}) as { fromDate?: string };
+			const payload = (job.payload ?? {}) as { fromDate?: string; replaceAll?: boolean };
 			const fromDate = payload.fromDate ? new Date(payload.fromDate) : new Date('2025-01-01');
+			const replaceAll = payload.replaceAll !== false;
 			if (Number.isNaN(fromDate.getTime())) {
 				throw new Error(`Invalid fromDate in payload: ${String(payload.fromDate)}`);
 			}
 
 			const syncStartedAt = Date.now();
-			const synced = await syncAllSparebank1Data(job.user_id, { fromDate });
+			const synced = await syncAllSparebank1Data(job.user_id, {
+				fromDate,
+				resetBeforeImport: replaceAll,
+				skipExistingDedup: replaceAll
+			});
 			const syncDurationMs = Date.now() - syncStartedAt;
 			return {
 				fromDate: fromDate.toISOString().slice(0, 10),
+				replaceAll,
 				synced,
 				metrics: {
 					syncDurationMs
