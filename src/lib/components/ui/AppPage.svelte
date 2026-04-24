@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { browser } from '$app/environment';
 	import type { Snippet } from 'svelte';
 
 	type AppPageWidth = 'full' | 'content' | 'narrow';
@@ -35,12 +35,12 @@
 	};
 
 	$effect(() => {
+		if (!browser) return;
 		const color = theme === 'dark' ? darkBg[surface] : '';
 		document.documentElement.style.background = color;
-	});
-
-	onDestroy(() => {
-		document.documentElement.style.background = '';
+		return () => {
+			document.documentElement.style.background = '';
+		};
 	});
 </script>
 
