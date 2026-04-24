@@ -253,7 +253,7 @@ export type Sparebank1SyncResult = {
 	debug?: Sparebank1SyncDebug;
 };
 
-export async function wipeSparebank1EconomicsData(userId: string, sensorId: string): Promise<{
+export async function wipeSparebank1EconomicsData(userId: string): Promise<{
 	categorizedEvents: number;
 	canonicalAliases: number;
 	rawBankTransactionVersions: number;
@@ -268,28 +268,26 @@ export async function wipeSparebank1EconomicsData(userId: string, sensorId: stri
 		sensor_count: number;
 	}[]>(`
 		WITH deleted_categorized AS (
-			DELETE FROM categorized_events ce
-			USING sensor_events se
-			WHERE ce.sensor_event_id = se.id
-			  AND se.sensor_id = $1
-			  AND se.user_id = $2
-			RETURNING ce.id
-		), deleted_aliases AS (
-			DELETE FROM canonical_bank_transaction_aliases
-			WHERE sensor_id = $1
+			DELETE FROM categorized_events
+			WHERE user_id = $1
 			RETURNING id
+		), deleted_aliases AS (
+			DELETE FROM canonical_bank_transaction_aliases a
+			USING canonical_bank_transactions c
+			WHERE a.canonical_id = c.id
+			  AND c.user_id = $1
+			RETURNING a.id
 		), deleted_raw AS (
 			DELETE FROM raw_bank_transaction_versions
-			WHERE sensor_id = $1
+			WHERE user_id = $1
 			RETURNING id
 		), deleted_canonical AS (
 			DELETE FROM canonical_bank_transactions
-			WHERE sensor_id = $1
+			WHERE user_id = $1
 			RETURNING id
 		), deleted_sensor AS (
 			DELETE FROM sensor_events
-			WHERE sensor_id = $1
-			  AND user_id = $2
+			WHERE user_id = $1
 			  AND data_type IN ('bank_balance', 'bank_transaction')
 			RETURNING id
 		)
@@ -299,7 +297,7 @@ export async function wipeSparebank1EconomicsData(userId: string, sensorId: stri
 			(SELECT COUNT(*)::int FROM deleted_raw) AS raw_count,
 			(SELECT COUNT(*)::int FROM deleted_canonical) AS canonical_count,
 			(SELECT COUNT(*)::int FROM deleted_sensor) AS sensor_count
-	`, [sensorId, userId]);
+	`, [userId]);
 
 	const row = rows[0] ?? {
 		categorized_count: 0,
@@ -396,7 +394,7 @@ export async function syncAllSparebank1Data(
 	let uniqueTransactionCount = 0;
 
 	if (resetBeforeImport) {
-		const wiped = await wipeSparebank1EconomicsData(userId, sensor.id);
+		const wiped = await wipeSparebank1EconomicsData(userId);
 		console.log('[sparebank1-sync] replace-mode wipe completed', { userId, sensorId: sensor.id, wiped });
 	}
 

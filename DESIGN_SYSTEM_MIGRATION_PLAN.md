@@ -15,7 +15,7 @@ Relaterte dokumenter:
 
 **Fase:** Fase 2–3 fullført, Fase 4 i progress  
 **Eier:** Pågår som arkitektur- og UI-migrasjon  
-**Sist oppdatert:** 2026-04-23 (Prioritet 3 fullført)
+**Sist oppdatert:** 2026-04-24 (shell fullført, control-pass pågår)
 
 ### Fremdrift
 
@@ -757,8 +757,16 @@ Bruk denne seksjonen til å oppdatere faktisk progresjon under arbeidet.
 - **Prioritet 1-batch ferdig:** Migrert `src/routes/+page.svelte` (HomeScreen), `src/routes/ukeplan/+page.svelte` og `src/routes/tema/[id]/+page.svelte` til AppPage (uten PageHeader for å bevare referanseflatenes kontrollfrihet)
 - Dekning: 20 av 31 sider bruker AppPage; 17 av 31 bruker både AppPage og PageHeader
 
+### 2026-04-24
+
+- Opprettet `TimeInput`-primitive i `src/lib/components/ui/TimeInput.svelte` og eksportert den i `src/lib/components/ui/index.ts`
+- Migrert alle tidsfelt i `src/routes/settings/notifications/+page.svelte` fra rå `<input type="time">` til `TimeInput`
+- Migrert knapper i `src/routes/settings/notifications/+page.svelte` fra rå `<button class="btn-*">` til `Button`
+- Migrert kanal-feltene i `src/routes/settings/notifications/+page.svelte` fra rå `<input>` til `Input`
+- Verifisert at det nå ikke finnes rå `type="time"` i noen `+page.svelte`-ruter
+
 ### Neste oppdatering
 
-- Migrere Prioritet 1-flater til `AppPage` + `PageHeader`: `+page`, `samtaler`, `ukeplan`, `tema/[id]`, `maal`, `workouts`
-- Deretter ta Prioritet 2-flater: `dashboard-new`, `aktivitet/[id]`, `sensor/[type]`
-- Når shell/header-dekning er fullført: kjøre samlet content-level pass (Button/Input/SectionCard/Select/Checkbox/Radio/Textarea)
+- Migrere settings-klassifisering (`classification`, `transaction-rules`, `rules`, `merchants`) fra rå `btn-*`-knapper til `Button`
+- Migrere `src/routes/settings/sources/+page.svelte` fra rå handlingsknapper/lenkeknapper til `Button`
+- Ta ny scan etter hver batch for å redusere rå `<button|input|select|textarea>` i route-filer

@@ -42,13 +42,38 @@
 	const innerW = $derived(w - PAD.left - PAD.right);
 	const svgH = PAD.top + CHART_H + PAD.bottom;
 
+	function sameDateNextMonth(from: Date): Date {
+		const next = new Date(from);
+		const wantedDay = from.getDate();
+		next.setDate(1);
+		next.setMonth(next.getMonth() + 1);
+		const lastDay = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+		next.setDate(Math.min(wantedDay, lastDay));
+		return next;
+	}
+
+	function daysBetween(start: Date, end: Date): number {
+		const msPerDay = 24 * 60 * 60 * 1000;
+		return Math.max(0, Math.floor((end.getTime() - start.getTime()) / msPerDay));
+	}
+
 	// Scales
-	const maxDay = $derived(
-		Math.max(
+	const maxDay = $derived.by(() => {
+		const dataMax = Math.max(
 			...periods.map((p) => p.days[p.days.length - 1]?.day ?? 0),
 			30
-		)
-	);
+		);
+
+		const current = periods.find((p) => p.isCurrent);
+		if (!current?.paydayDate) return dataMax;
+
+		const payday = new Date(current.paydayDate);
+		if (Number.isNaN(payday.getTime())) return dataMax;
+
+		const horizon = sameDateNextMonth(new Date());
+		const horizonDay = daysBetween(payday, horizon);
+		return Math.max(dataMax, horizonDay);
+	});
 
 	const allCumulativeValues = $derived(
 		periods.flatMap((p) => p.days.map((d) => d.cumulative))

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { AppPage, Checkbox, PageHeader, Select } from '$lib/components/ui';
+	import { AppPage, Button, Checkbox, Input, PageHeader, Select, TimeInput } from '$lib/components/ui';
 
 	let { data, form }: {
 		data: {
@@ -434,19 +434,19 @@
 				<label class="nudge-row">
 					<Checkbox name="dailyCheckInEnabled" checked={data.settings.dailyCheckIn.enabled} />
 					<span>Daglig check-in</span>
-					<input type="time" name="dailyCheckInTime" value={data.settings.dailyCheckIn.time} />
+					<TimeInput name="dailyCheckInTime" value={data.settings.dailyCheckIn.time} />
 				</label>
 
 				<label class="nudge-row">
 					<Checkbox name="dayPlanningEnabled" checked={data.settings.dayPlanning.enabled} />
 					<span>Planlegg dag (hvis ikke planlagt)</span>
-					<input type="time" name="dayPlanningTime" value={data.settings.dayPlanning.time} />
+					<TimeInput name="dayPlanningTime" value={data.settings.dayPlanning.time} />
 				</label>
 
 				<label class="nudge-row">
 					<Checkbox name="dayCloseEnabled" checked={data.settings.dayClose.enabled} />
 					<span>Avslutt dag (hvis åpne punkter)</span>
-					<input type="time" name="dayCloseTime" value={data.settings.dayClose.time} />
+					<TimeInput name="dayCloseTime" value={data.settings.dayClose.time} />
 				</label>
 
 				<div class="nudge-subhead">Nudgeprofil og triage</div>
@@ -471,22 +471,22 @@
 					<Checkbox name="nudgeQuietEnabled" checked={data.settings.nudgeProfile.quietHours.enabled} />
 					<span>Stillevindu (triage til digest)</span>
 					<div class="nudge-time-range">
-						<input type="time" name="nudgeQuietStart" value={data.settings.nudgeProfile.quietHours.start} />
-						<input type="time" name="nudgeQuietEnd" value={data.settings.nudgeProfile.quietHours.end} />
+						<TimeInput name="nudgeQuietStart" value={data.settings.nudgeProfile.quietHours.start} />
+						<TimeInput name="nudgeQuietEnd" value={data.settings.nudgeProfile.quietHours.end} />
 					</div>
 				</label>
 
 				<label class="nudge-row">
 					<span>Digest-tid hverdag</span>
-					<input type="time" name="digestTimeWeekday" value={data.settings.nudgeProfile.digestTimeWeekday} />
+					<TimeInput name="digestTimeWeekday" value={data.settings.nudgeProfile.digestTimeWeekday} />
 				</label>
 
 				<label class="nudge-row">
 					<span>Digest-tid helg</span>
-					<input type="time" name="digestTimeWeekend" value={data.settings.nudgeProfile.digestTimeWeekend} />
+					<TimeInput name="digestTimeWeekend" value={data.settings.nudgeProfile.digestTimeWeekend} />
 				</label>
 
-				<button type="submit" class="btn-primary" style="margin-top:0.75rem; width:100%">Lagre nudge-tider</button>
+				<Button type="submit" fullWidth className="nudge-submit">Lagre nudge-tider</Button>
 			</form>
 
 			<div class="info-box" style="margin-top:1rem;">
@@ -543,26 +543,31 @@
 				{#each googleChatChannels as channel, index (channel.id)}
 					<div class="channel-row">
 						<input type="hidden" name="googleChatChannelId" value={channel.id} />
-						<input
+						<Input
 							type="text"
 							name="googleChatChannelName"
-							class="input"
+							className="input"
 							placeholder="Navn (f.eks. Familien)"
 							bind:value={channel.name}
 						/>
-						<input
+						<Input
 							type="url"
 							name="googleChatChannelWebhook"
-							class="input"
+							className="input"
 							placeholder="https://chat.googleapis.com/v1/spaces/..."
 							bind:value={channel.webhook}
 						/>
-						<button type="button" class="btn-ghost" onclick={() => removeGoogleChatChannel(channel.id)} disabled={googleChatChannels.length <= 1 && index === 0}>
+						<Button
+							type="button"
+							variant="ghost"
+							onClick={() => removeGoogleChatChannel(channel.id)}
+							disabled={googleChatChannels.length <= 1 && index === 0}
+						>
 							Fjern
-						</button>
+						</Button>
 					</div>
 				{/each}
-				<button type="button" class="btn-secondary" onclick={addGoogleChatChannel}>Legg til kanal</button>
+				<Button type="button" variant="secondary" onClick={addGoogleChatChannel}>Legg til kanal</Button>
 
 				<div class="nudge-subhead">Routing per varseltype</div>
 
@@ -626,7 +631,7 @@
 					</div>
 				</div>
 
-				<button type="submit" class="btn-primary" style="margin-top:0.75rem; width:100%">Lagre kanaler</button>
+				<Button type="submit" fullWidth className="nudge-submit">Lagre kanaler</Button>
 			</form>
 
 			{#if pwaChannelSupported}
@@ -646,15 +651,15 @@
 				</div>
 
 				<div class="push-actions">
-					<button onclick={enablePush} type="button" disabled={pushLoading || pushSubscribed || !pushConfigured} class="btn-primary">
+					<Button type="button" onClick={enablePush} disabled={pushLoading || pushSubscribed || !pushConfigured}>
 						{pushLoading ? 'Jobber...' : pushSubscribed ? 'Push aktivert' : 'Aktiver Push'}
-					</button>
-					<button onclick={disablePush} type="button" disabled={pushLoading || !pushSubscribed} class="btn-secondary">
+					</Button>
+					<Button type="button" variant="secondary" onClick={disablePush} disabled={pushLoading || !pushSubscribed}>
 						Deaktiver Push
-					</button>
-					<button onclick={sendTestPush} type="button" disabled={pushLoading || !pushSubscribed} class="btn-secondary">
+					</Button>
+					<Button type="button" variant="secondary" onClick={sendTestPush} disabled={pushLoading || !pushSubscribed}>
 						Send Test Push
-					</button>
+					</Button>
 				</div>
 
 				{#if pushResult}
@@ -670,9 +675,9 @@
 			<h2>Test utsendelse</h2>
 			<p>Sender en check-in nå via kanalene valgt for «Daglig check-in».</p>
 
-			<button onclick={sendCheckIn} disabled={sending} class="btn-primary" style="margin-top:1rem; width:100%">
+			<Button type="button" onClick={sendCheckIn} disabled={sending} fullWidth className="checkin-submit">
 				{sending ? 'Sender...' : 'Send Check-in Nå'}
-			</button>
+			</Button>
 
 			{#if result}
 				<div class="result {result.success ? 'success' : 'error'}">
@@ -807,7 +812,15 @@
 		overflow-wrap: anywhere;
 	}
 
-	.nudge-row input[type='time'] {
+	:global(.nudge-submit) {
+		margin-top: 0.75rem;
+	}
+
+	:global(.checkin-submit) {
+		margin-top: 1rem;
+	}
+
+	.nudge-row :global(.ds-time-input) {
 		background: var(--bg-primary);
 		color: var(--text-primary);
 		border: 1px solid var(--border-color);
@@ -846,7 +859,7 @@
 		align-items: center;
 	}
 
-	.input {
+	:global(.input) {
 		background: var(--bg-primary);
 		color: var(--text-primary);
 		border: 1px solid var(--border-color);

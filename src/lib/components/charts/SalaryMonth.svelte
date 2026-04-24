@@ -39,14 +39,39 @@
 
 	const innerW = $derived(svgW - ML - MR);
 
+	function sameDateNextMonth(from: Date): Date {
+		const next = new Date(from);
+		const wantedDay = from.getDate();
+		next.setDate(1);
+		next.setMonth(next.getMonth() + 1);
+		const lastDay = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+		next.setDate(Math.min(wantedDay, lastDay));
+		return next;
+	}
+
+	function daysBetween(start: Date, end: Date): number {
+		const msPerDay = 24 * 60 * 60 * 1000;
+		return Math.max(0, Math.floor((end.getTime() - start.getTime()) / msPerDay));
+	}
+
 	// ── Scales ─────────────────────────────────────────────────────────────────
-	const maxDay = $derived(
-		Math.max(
+	const maxDay = $derived.by(() => {
+		const dataMax = Math.max(
 			...periods.map((p) => p.days[p.days.length - 1]?.day ?? 0),
 			medianCurve[medianCurve.length - 1]?.day ?? 30,
 			30
-		)
-	);
+		);
+
+		const current = periods.find((p) => p.isCurrent);
+		if (!current?.paydayDate) return dataMax;
+
+		const payday = new Date(current.paydayDate);
+		if (Number.isNaN(payday.getTime())) return dataMax;
+
+		const horizon = sameDateNextMonth(new Date());
+		const horizonDay = daysBetween(payday, horizon);
+		return Math.max(dataMax, horizonDay);
+	});
 
 	// Use absolute balance for all period lines.
 	// Median is anchored to the current period's payday balance.
