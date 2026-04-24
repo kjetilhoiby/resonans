@@ -327,12 +327,22 @@
 	const groceryComparisonBurnupPoints = $derived(
 		paydaySpend.averageComparisonPoints.map((point) => ({ day: point.day, total: point.grocery }))
 	);
-	const totalBurnupMax = $derived(
-		Math.max(1, ...totalBurnupPoints.map((point) => point.total), ...totalComparisonBurnupPoints.map((point) => point.total))
-	);
-	const groceryBurnupMax = $derived(
-		Math.max(1, ...groceryBurnupPoints.map((point) => point.total), ...groceryComparisonBurnupPoints.map((point) => point.total))
-	);
+	const totalBurnupMax = $derived.by(() => {
+		const maxSeries = Math.max(
+			1,
+			...totalBurnupPoints.map((point) => point.total),
+			...totalComparisonBurnupPoints.map((point) => point.total)
+		);
+		return maxSeries * 1.12;
+	});
+	const groceryBurnupMax = $derived.by(() => {
+		const maxSeries = Math.max(
+			1,
+			...groceryBurnupPoints.map((point) => point.total),
+			...groceryComparisonBurnupPoints.map((point) => point.total)
+		);
+		return maxSeries * 1.12;
+	});
 	const totalRingColor = $derived(paydayRingColor(spendPerDayDeduped, paydaySpend.prevSpendPerDay));
 	const groceryRingColor = $derived(paydayRingColor(grocerySpendPerDayDeduped, paydaySpend.prevGrocerySpendPerDay));
 	const paydayStartLabel = $derived(formatPaydayDate(resolvePaydayStartDate().toISOString()));

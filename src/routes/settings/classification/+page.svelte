@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, PageHeader } from '$lib/components/ui';
+	import { AppPage, Button, PageHeader } from '$lib/components/ui';
 	import { onMount } from 'svelte';
 	import { CATEGORIES } from '$lib/integrations/transaction-categories-client';
 
@@ -177,19 +177,18 @@
 			<div class="result-box success">
 				<strong>✓ Rekalkulering fullført</strong>
 				<p>Behandlet {recalculateResult.processed} transaksjoner, oppdaterte {recalculateResult.updated} kategorier.</p>
-				<button type="button" onclick={() => recalculateResult = null} class="btn-ghost">Lukk</button>
+				<Button variant="ghost" type="button" onClick={() => recalculateResult = null}>Lukk</Button>
 			</div>
 		{/if}
 
 		<section class="actions-section">
-			<button 
-				type="button" 
-				onclick={recalculateTransactions}
+			<Button
+				type="button"
+				onClick={recalculateTransactions}
 				disabled={recalculating || loading}
-				class="btn-primary"
 			>
 				{recalculating ? '🔄 Rekalkulerer...' : '🔄 Rekalkuler alle transaksjoner'}
-			</button>
+			</Button>
 			<p class="hint">
 				Kjører alle transaksjoner gjennom dagens regler og oppdaterer kategorier der det er endringer.
 			</p>
@@ -410,21 +409,6 @@
 
 	.actions-section {
 		margin-bottom: 2rem;
-	}
-
-	.btn-ghost {
-		background: transparent;
-		border: none;
-		border-radius: 8px;
-		padding: 0.5rem 1rem;
-		color: #aaa;
-		font: inherit;
-		cursor: pointer;
-		transition: all 0.15s;
-	}
-
-	.btn-ghost:hover {
-		background: #1a1a1a;
 	}
 
 	.loading {

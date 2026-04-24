@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, PageHeader } from '$lib/components/ui';
+	import { AppPage, Button, Input, PageHeader } from '$lib/components/ui';
 	import { onMount } from 'svelte';
 
 	interface TaskRule {
@@ -141,13 +141,12 @@
 		</section>
 
 		<section class="actions-section">
-			<button 
-				type="button" 
-				onclick={() => showNewRuleForm = !showNewRuleForm}
-				class="btn-primary"
+			<Button
+				type="button"
+				onClick={() => showNewRuleForm = !showNewRuleForm}
 			>
 				{showNewRuleForm ? '✕ Avbryt' : '➕ Ny regel'}
-			</button>
+			</Button>
 		</section>
 
 		{#if showNewRuleForm}
@@ -155,53 +154,46 @@
 				<h3>Opprett ny regel</h3>
 				<div class="form-group">
 					<label for="category">Kategori</label>
-					<input
+					<Input
 						id="category"
-						type="text"
 						bind:value={newRule.category}
 						placeholder="workout, relationship, mental..."
-						class="input"
 					/>
 				</div>
 				<div class="form-group">
 					<label for="keywords">Keywords (kommaseparert)</label>
-					<input
+					<Input
 						id="keywords"
-						type="text"
 						bind:value={newRule.keywords}
 						placeholder="trening, løp, km, workout"
-						class="input"
 					/>
 					<small class="hint">Skriv inn keywords separert med komma</small>
 				</div>
 				<div class="form-group">
 					<label for="priority">Poeng per keyword-match</label>
-					<input
+					<Input
 						id="priority"
 						type="number"
 						bind:value={newRule.priority}
 						min="1"
 						max="10"
-						class="input"
 					/>
 				</div>
 				<div class="form-group">
 					<label for="description">Beskrivelse (valgfri)</label>
-					<input
+					<Input
 						id="description"
-						type="text"
 						bind:value={newRule.description}
 						placeholder="For eksempel: Matches workout and exercise activities"
-						class="input"
 					/>
 				</div>
 				<div class="form-actions">
-					<button type="button" onclick={saveRule} disabled={saving} class="btn-primary">
+					<Button type="button" onClick={saveRule} disabled={saving}>
 						{saving ? 'Lagrer...' : 'Lagre regel'}
-					</button>
-					<button type="button" onclick={() => showNewRuleForm = false} class="btn-ghost">
+					</Button>
+					<Button variant="ghost" type="button" onClick={() => showNewRuleForm = false}>
 						Avbryt
-					</button>
+					</Button>
 				</div>
 			</section>
 		{/if}
@@ -293,22 +285,6 @@
 		margin-bottom: 1.5rem;
 	}
 
-	.btn-ghost {
-		background: transparent;
-		border: none;
-		border-radius: 8px;
-		padding: 0.5rem 1rem;
-		color: #aaa;
-		font: inherit;
-		cursor: pointer;
-		transition: all 0.15s;
-	}
-
-	.btn-ghost:hover {
-		background: #1a1a1a;
-		border-color: #3a3a3a;
-	}
-
 	.new-rule-form {
 		background: #171717;
 		border: none;
@@ -334,23 +310,6 @@
 		font-size: 0.9rem;
 		font-weight: 600;
 		color: #bbb;
-	}
-
-	.input {
-		width: 100%;
-		box-sizing: border-box;
-		background: #111;
-		border: 1px solid #2a2a2a;
-		border-radius: 8px;
-		padding: 0.75rem;
-		color: #ddd;
-		font: inherit;
-		font-size: 0.9rem;
-	}
-
-	.input:focus {
-		outline: none;
-		border-color: #4a5af0;
 	}
 
 	.hint {

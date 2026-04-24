@@ -9,6 +9,7 @@
 		placeholder?: string;
 		required?: boolean;
 		disabled?: boolean;
+		readonly?: boolean;
 		min?: string | number;
 		max?: string | number;
 		step?: string | number;
@@ -24,6 +25,7 @@
 		placeholder,
 		required = false,
 		disabled = false,
+		readonly = false,
 		min,
 		max,
 		step,
@@ -41,6 +43,7 @@
 	{placeholder}
 	{required}
 	{disabled}
+	readonly={readonly || undefined}
 	{min}
 	{max}
 	{step}

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, Button, Input, PageHeader, SectionCard } from '$lib/components/ui';
+	import { AppPage, Button, Input, PageHeader, SectionCard, Select } from '$lib/components/ui';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -74,7 +74,7 @@
 			<Input id="label" name="label" type="text" placeholder="F.eks. Scriptable iPhone" required disabled={!tableReady} />
 
 			<label for="expiresPreset">Utløp</label>
-			<select id="expiresPreset" name="expiresPreset" bind:value={expiresPreset} disabled={!tableReady}>
+			<Select id="expiresPreset" name="expiresPreset" bind:value={expiresPreset} disabled={!tableReady}>
 				<option value="never">Ingen utløp</option>
 				<option value="7">7 dager</option>
 				<option value="30">30 dager</option>
@@ -83,7 +83,7 @@
 				<option value="365">365 dager</option>
 				<option value="730">730 dager</option>
 				<option value="custom">Egendefinert</option>
-			</select>
+			</Select>
 
 			{#if showCustomExpires}
 				<label for="expiresCustomDays">Egendefinert antall dager</label>

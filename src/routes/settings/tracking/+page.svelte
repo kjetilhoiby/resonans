@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, Checkbox, PageHeader, Select, Textarea } from '$lib/components/ui';
+	import { AppPage, Button, Checkbox, Input, PageHeader, Select, Textarea } from '$lib/components/ui';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -142,12 +142,8 @@
 					<div class="edit-form">
 						<div class="field">
 							<label class="field-label" for="edit-title-{series.id}">Tittel</label>
-							<input
-								id="edit-title-{series.id}"
-								class="input"
-								type="text"
-								bind:value={draftTitle}
-								placeholder="Seriebeskrivelse"
+						<Input
+							id="edit-title-{series.id}"
 							/>
 						</div>
 
@@ -185,11 +181,10 @@
 						</div>
 
 						<div class="row">
-							<button class="btn-primary" type="button" onclick={() => void saveSeries()} disabled={saving}>
-								{saving ? 'Lagrer ...' : 'Lagre'}
-							</button>
-							<button class="btn-secondary" type="button" onclick={cancelEdit} disabled={saving}>Avbryt</button>
-						</div>
+						<Button type="button" onClick={() => void saveSeries()} disabled={saving}>
+							{saving ? 'Lagrer ...' : 'Lagre'}
+						</Button>
+						<Button variant="secondary" type="button" onClick={cancelEdit} disabled={saving}>Avbryt</Button>
 
 						{#if resultMsg?.id === series.id}
 							<p class={resultMsg?.ok ? 'ok' : 'err'}>{resultMsg?.text}</p>
@@ -216,8 +211,8 @@
 						{/if}
 					</div>
 					<div class="row">
-						<button class="btn-secondary" type="button" onclick={() => startEdit(series)}>Rediger</button>
-						<button class="btn-danger" type="button" onclick={() => void deleteSeries(series.id, series.title)}>Slett</button>
+						<Button variant="secondary" type="button" onClick={() => startEdit(series)}>Rediger</Button>
+						<Button variant="danger" type="button" onClick={() => void deleteSeries(series.id, series.title)}>Slett</Button>
 					</div>
 				{/if}
 			</section>
@@ -239,7 +234,7 @@
 								<p class="event-note">{event.note}</p>
 							{/if}
 						</div>
-						<button class="btn-danger" type="button" onclick={() => void deleteEvent(event)}>Slett</button>
+						<Button variant="danger" type="button" onClick={() => void deleteEvent(event)}>Slett</Button>
 					</div>
 				{/each}
 			</div>
