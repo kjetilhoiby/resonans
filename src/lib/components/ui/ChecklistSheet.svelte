@@ -585,7 +585,7 @@
 		color: #ccc;
 		padding: 9px 12px;
 		font: inherit;
-		font-size: 0.85rem;
+		font-size: max(0.85rem, 16px);
 		outline: none;
 		transition: border-color 0.12s;
 	}
