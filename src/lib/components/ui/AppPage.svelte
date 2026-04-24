@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onDestroy } from 'svelte';
 	import type { Snippet } from 'svelte';
 
 	type AppPageWidth = 'full' | 'content' | 'narrow';
@@ -26,6 +27,21 @@
 		className = '',
 		children
 	}: Props = $props();
+
+	const darkBg: Record<AppPageSurface, string> = {
+		default: '#0f0f0f',
+		subtle: '#111',
+		transparent: '#0f0f0f'
+	};
+
+	$effect(() => {
+		const color = theme === 'dark' ? darkBg[surface] : '';
+		document.documentElement.style.background = color;
+	});
+
+	onDestroy(() => {
+		document.documentElement.style.background = '';
+	});
 </script>
 
 <main class={`app-page width-${width} pad-${padding} gap-${gap} surface-${surface} theme-${theme} ${className}`.trim()}>
