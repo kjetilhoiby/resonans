@@ -714,6 +714,7 @@ export async function syncAllSparebank1Data(
 					}
 				}
 			}
+		}
 
 		console.log(`Filtered ${uniqueNewEvents.length} -> ${newEvents.length} new transactions (not in DB)`);
 
