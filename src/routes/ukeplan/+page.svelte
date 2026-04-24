@@ -1358,7 +1358,8 @@
 	<title>Ukeplan</title>
 </svelte:head>
 
-<AppPage width="full" padding="none" gap="sm" surface="default" className="week-plan-page">
+<AppPage width="full" padding="none" gap="sm" theme="dark" surface="default">
+	<div class="week-plan-page">
 	<header class="wp-header">
 		<ScreenTitle
 			title={`Uke ${data.week.week}`}
@@ -1849,6 +1850,7 @@
 		{/if}
 	</section>
 	{/if}
+	</div>
 </AppPage>
 
 {#if dayCloseFlowOpen}
@@ -1923,7 +1925,7 @@
 {/if}
 
 <style>
-	:global(.week-plan-page) {
+	.week-plan-page {
 		min-height: 100vh;
 		width: 100%;
 		padding: var(--screen-title-top-pad, 34px) 20px 110px;

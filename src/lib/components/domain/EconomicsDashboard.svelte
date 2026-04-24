@@ -327,21 +327,15 @@
 	const groceryComparisonBurnupPoints = $derived(
 		paydaySpend.averageComparisonPoints.map((point) => ({ day: point.day, total: point.grocery }))
 	);
-	const totalBurnupMax = $derived.by(() => {
+	const sharedBurnupMax = $derived.by(() => {
 		const maxSeries = Math.max(
 			1,
 			...totalBurnupPoints.map((point) => point.total),
-			...totalComparisonBurnupPoints.map((point) => point.total)
-		);
-		return maxSeries * 1.12;
-	});
-	const groceryBurnupMax = $derived.by(() => {
-		const maxSeries = Math.max(
-			1,
+			...totalComparisonBurnupPoints.map((point) => point.total),
 			...groceryBurnupPoints.map((point) => point.total),
 			...groceryComparisonBurnupPoints.map((point) => point.total)
 		);
-		return maxSeries * 1.12;
+		return maxSeries;
 	});
 	const totalRingColor = $derived(paydayRingColor(spendPerDayDeduped, paydaySpend.prevSpendPerDay));
 	const groceryRingColor = $derived(paydayRingColor(grocerySpendPerDayDeduped, paydaySpend.prevGrocerySpendPerDay));
@@ -349,7 +343,7 @@
 	const burnupHorizonDay = $derived.by(() => {
 		const start = resolvePaydayStartDate();
 		start.setHours(0, 0, 0, 0);
-		const horizon = sameDateNextMonth(new Date());
+		const horizon = sameDateNextMonth(start);
 		return Math.max(paydaySpend.daysSincePayday, daysBetween(start, horizon) + 1, 1);
 	});
 
@@ -528,11 +522,11 @@
 			</div>
 			<div class="ed-burnup-chart" aria-hidden="true">
 				<svg viewBox="0 0 220 74" preserveAspectRatio="none">
-					<path d={burnupAreaPath(totalBurnupPoints, 220, 74, totalBurnupMax, burnupHorizonDay)} class="ed-burnup-area" style:color={totalRingColor}></path>
+					<path d={burnupAreaPath(totalBurnupPoints, 220, 74, sharedBurnupMax, burnupHorizonDay)} class="ed-burnup-area" style:color={totalRingColor}></path>
 					{#if paydaySpend.comparisonPeriodsUsed > 0}
-						<path d={burnupPath(totalComparisonBurnupPoints, 220, 74, totalBurnupMax, burnupHorizonDay)} class="ed-burnup-compare"></path>
+						<path d={burnupPath(totalComparisonBurnupPoints, 220, 74, sharedBurnupMax, burnupHorizonDay)} class="ed-burnup-compare"></path>
 					{/if}
-					<path d={burnupPath(totalBurnupPoints, 220, 74, totalBurnupMax, burnupHorizonDay)} class="ed-burnup-line" style:color={totalRingColor}></path>
+					<path d={burnupPath(totalBurnupPoints, 220, 74, sharedBurnupMax, burnupHorizonDay)} class="ed-burnup-line" style:color={totalRingColor}></path>
 				</svg>
 			</div>
 			<div class="ed-card-copy">
@@ -555,11 +549,11 @@
 			</div>
 			<div class="ed-burnup-chart" aria-hidden="true">
 				<svg viewBox="0 0 220 74" preserveAspectRatio="none">
-					<path d={burnupAreaPath(groceryBurnupPoints, 220, 74, groceryBurnupMax, burnupHorizonDay)} class="ed-burnup-area" style:color={groceryRingColor}></path>
+					<path d={burnupAreaPath(groceryBurnupPoints, 220, 74, sharedBurnupMax, burnupHorizonDay)} class="ed-burnup-area" style:color={groceryRingColor}></path>
 					{#if paydaySpend.comparisonPeriodsUsed > 0}
-						<path d={burnupPath(groceryComparisonBurnupPoints, 220, 74, groceryBurnupMax, burnupHorizonDay)} class="ed-burnup-compare"></path>
+						<path d={burnupPath(groceryComparisonBurnupPoints, 220, 74, sharedBurnupMax, burnupHorizonDay)} class="ed-burnup-compare"></path>
 					{/if}
-					<path d={burnupPath(groceryBurnupPoints, 220, 74, groceryBurnupMax, burnupHorizonDay)} class="ed-burnup-line" style:color={groceryRingColor}></path>
+					<path d={burnupPath(groceryBurnupPoints, 220, 74, sharedBurnupMax, burnupHorizonDay)} class="ed-burnup-line" style:color={groceryRingColor}></path>
 				</svg>
 			</div>
 			<div class="ed-card-copy">

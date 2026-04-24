@@ -379,7 +379,7 @@ export async function loadEconomicsDashboardData(userId: string): Promise<Econom
 			const periodStart = new Date(new Date(periodStartTx.timestamp).setHours(0, 0, 0, 0));
 			const periodEnd = new Date(new Date(newerBoundary.timestamp).setHours(0, 0, 0, 0));
 			const periodLengthDays = Math.max(1, Math.round((periodEnd.getTime() - periodStart.getTime()) / msPerDay));
-			const maxDays = Math.min(daysSincePayday, periodLengthDays);
+			const maxDays = periodLengthDays;
 
 			const totalsByDay = new Map<number, { total: number; grocery: number }>();
 			for (const tx of normalizedRawSpendRows) {
@@ -404,7 +404,8 @@ export async function loadEconomicsDashboardData(userId: string): Promise<Econom
 			return [series];
 		});
 
-		for (let day = 1; day <= daysSincePayday; day += 1) {
+		const maxComparisonDays = perPeriodSeries.length > 0 ? Math.max(...perPeriodSeries.map((s) => s.length)) : 0;
+		for (let day = 1; day <= maxComparisonDays; day += 1) {
 			const pointsForDay = perPeriodSeries
 				.map((series) => series.find((point) => point.day === day) ?? null)
 				.filter((point): point is { day: number; total: number; grocery: number } => point !== null);
