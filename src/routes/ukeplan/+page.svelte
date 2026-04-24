@@ -1372,6 +1372,12 @@
 					{trip.emoji ?? '🗺️'}
 				</a>
 			{/each}
+			<a
+				class="wp-calendar-btn wp-month-btn"
+				href={`/maanedsplan?month=${data.week.days[0].isoDate.slice(0, 7)}`}
+				aria-label="Til månedsplan"
+				title="Månedsplan"
+			>Mnd</a>
 			<div class="wp-calendar-wrap">
 				<button
 					class="wp-calendar-btn"
@@ -1971,6 +1977,15 @@
 		text-decoration: none;
 		font-size: 1.1rem;
 	}
+
+	.wp-month-btn {
+		font-size: 0.72rem;
+		font-weight: 700;
+		letter-spacing: 0.02em;
+		border: 1px solid #1e2030;
+		color: #8a99c4;
+	}
+	.wp-month-btn:hover { color: #bac6f9; background: #12162a; border-color: #2e3660; }
 
 	.wp-week-picker-input {
 		position: absolute;
