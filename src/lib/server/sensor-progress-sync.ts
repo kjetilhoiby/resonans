@@ -1,12 +1,16 @@
 /**
  * sensor-progress-sync.ts
  *
- * Writes `progress` records for weekly tasks when matching workout sensor events
- * exist in the current week. This makes sensor data (e.g. Withings workouts) count
- * towards task progress alongside manual check-offs.
+ * Writes `progress` records for daily and weekly tasks when matching workout
+ * sensor events exist in the current week. This makes sensor data (e.g. Withings
+ * workouts) count towards task progress alongside manual check-offs.
  *
- * Deduplication: each record uses `note = 'sensor:<sensorEventId>'` so the function
- * is safe to run multiple times — it never double-counts the same workout.
+ * Deduplication is keyed differently per frequency:
+ * - daily tasks:  `sensor:<sensorEventId>` (each workout = at most one progress
+ *   record; daily target enforcement caps at one per day)
+ * - weekly tasks: `sensor:day:<YYYY-MM-DD>:<activityType>` (only the first
+ *   workout of a given day counts, so a "fem dager"-task counts distinct days
+ *   rather than sessions)
  */
 
 import { and, eq } from 'drizzle-orm';
@@ -46,9 +50,14 @@ export type SensorProgressSyncResult = {
 };
 
 /**
- * For every active weekly task belonging to `userId` that has a parsed `activityType`,
- * check workout sensor_events in [weekStart, weekEnd) and insert a `progress` record
- * for each matching workout that doesn't already have one.
+ * For every active daily/weekly task belonging to `userId` that has (or can be
+ * inferred to have) an `activityType`, check workout sensor_events in
+ * [weekStart, weekEnd) and insert a `progress` record for each matching workout
+ * that doesn't already have one.
+ *
+ * Activity-type resolution falls back to title heuristics so existing tasks
+ * created before the intent parser recognized them still get auto-linked
+ * (e.g. a task simply titled "mikroyoga").
  *
  * Also re-evaluates `intentEvaluation` on each matched task so the ukeplan badge
  * reflects the updated count immediately.
@@ -60,25 +69,33 @@ export async function syncSensorProgressForTasks(params: {
 }): Promise<SensorProgressSyncResult> {
 	const { userId, weekStart, weekEnd } = params;
 
-	// Active weekly tasks that have an activityType (direct metadata OR parsedIntent)
+	// Active daily/weekly tasks that have or imply an activityType
 	const taskRows = await db.execute(sql`
 		SELECT
 			t.id,
 			t.target_value,
+			t.frequency,
 			COALESCE(
 				t.metadata->'parsedIntent'->>'activityType',
-				t.metadata->>'activityType'
+				t.metadata->>'activityType',
+				CASE WHEN t.title ILIKE '%yoga%' THEN 'yoga' END
 			) AS activity_type
 		FROM tasks t
 		JOIN goals g ON g.id = t.goal_id
 		WHERE g.user_id = ${userId}
 		  AND t.status = 'active'
-		  AND t.frequency = 'weekly'
+		  AND t.frequency IN ('daily', 'weekly')
 		  AND (
 		      t.metadata->'parsedIntent'->>'activityType' IS NOT NULL
 		      OR t.metadata->>'activityType' IS NOT NULL
+		      OR t.title ILIKE '%yoga%'
 		  )
-	`) as unknown as Array<{ id: string; target_value: number | null; activity_type: string }>;
+	`) as unknown as Array<{
+		id: string;
+		target_value: number | null;
+		frequency: string;
+		activity_type: string;
+	}>;
 
 	if (taskRows.length === 0) return { created: 0, skipped: 0, skippedByPeriod: 0, skippedDuplicate: 0 };
 
@@ -109,14 +126,17 @@ export async function syncSensorProgressForTasks(params: {
 			if (!workout.sport_type) continue;
 			if (!activityMatchesSportType(task.activity_type, workout.sport_type)) continue;
 
-			const sensorRef = `sensor:${workout.id}`;
+			// Per-day dedupe for weekly tasks so "fem dager" counts distinct days,
+			// per-event dedupe for daily tasks (target enforcement caps at 1/day).
+			const dedupeNote = task.frequency === 'weekly'
+				? `sensor:day:${new Date(workout.timestamp).toISOString().split('T')[0]}:${task.activity_type}`
+				: `sensor:${workout.id}`;
 
-			// Idempotency: skip if this sensor event already generated a progress record
 			const ensured = await TaskExecutionService.ensureTaskProgress({
 				taskId: task.id,
 				userId,
 				value: 1,
-				dedupeNote: sensorRef,
+				dedupeNote,
 				enforcePeriodTarget: true,
 				completedAt: new Date(workout.timestamp)
 			});
