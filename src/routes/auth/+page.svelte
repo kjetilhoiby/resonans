@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { AppPage } from '$lib/components/ui';
 
-	let { data } = $props();
+	let { data, form } = $props();
 </script>
 
 <svelte:head>
@@ -25,6 +25,30 @@
 			<input type="hidden" name="callbackUrl" value={data.next} />
 			<button class="auth-submit" type="submit">Fortsett med Google</button>
 		</form>
+
+		{#if data.isPreview}
+			<div class="auth-divider"><span>eller</span></div>
+
+			<form method="POST" action="?/previewLogin">
+				<input type="hidden" name="next" value={data.next} />
+				<p class="eyebrow">Preview-tilgang</p>
+
+				{#if form?.previewError}
+					<p class="auth-error">{form.previewError}</p>
+				{/if}
+
+				<input
+					class="auth-password-input"
+					type="password"
+					name="password"
+					placeholder="Passord"
+					autocomplete="current-password"
+				/>
+				<button class="auth-submit auth-submit--preview" type="submit">
+					Logg inn med passord
+				</button>
+			</form>
+		{/if}
 		</div>
 	</div>
 </AppPage>
@@ -69,6 +93,7 @@
 		border-radius: 0.85rem;
 		background: #fee2e2;
 		color: #991b1b;
+		margin: 0.5rem 0;
 	}
 
 	:global(.auth-submit) {
@@ -82,5 +107,43 @@
 		font: inherit;
 		font-weight: 600;
 		cursor: pointer;
+	}
+
+	:global(.auth-submit--preview) {
+		background: #374151;
+		margin-top: 0.5rem;
+	}
+
+	:global(.auth-divider) {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		margin: 1.25rem 0 1rem;
+		color: #9ca3af;
+		font-size: 0.8rem;
+	}
+	:global(.auth-divider)::before,
+	:global(.auth-divider)::after {
+		content: '';
+		flex: 1;
+		height: 1px;
+		background: #e5e7eb;
+	}
+
+	:global(.auth-password-input) {
+		display: block;
+		width: 100%;
+		border: 1px solid #d1d5db;
+		border-radius: 0.75rem;
+		padding: 0.75rem 1rem;
+		font: inherit;
+		font-size: max(1rem, 16px);
+		color: #111827;
+		box-sizing: border-box;
+		outline: none;
+		transition: border-color 0.15s;
+	}
+	:global(.auth-password-input):focus {
+		border-color: #6b7280;
 	}
 </style>
