@@ -315,6 +315,17 @@
 		return value.toFixed(decimals);
 	}
 
+	function formatWeightChange(change: number | undefined): string {
+		if (change == null) return '–';
+		const sign = change > 0 ? '+' : '';
+		return `${sign}${change.toFixed(1)}`;
+	}
+
+	function daysInPeriod(p: { startDate: string | Date; endDate: string | Date }): number {
+		const ms = new Date(p.endDate).getTime() - new Date(p.startDate).getTime();
+		return Math.max(1, Math.round(ms / 86400000) + 1);
+	}
+
 	function formatDate(value: string): string {
 		return new Intl.DateTimeFormat('nb-NO', {
 			day: '2-digit',
@@ -1261,22 +1272,24 @@
 					<thead>
 						<tr>
 							<th>Periode</th>
-							<th>Vekt</th>
-							<th>Løp</th>
-							<th>Aktive min</th>
-							<th>Søvn</th>
-							<th>Events</th>
+							<th title="Vektendring i perioden">⚖️</th>
+							<th title="Løpeøkter">🏃</th>
+							<th title="Aktive minutter (snitt per dag)">⚡</th>
+							<th title="Søvn (snitt per natt)">🌙</th>
+							<th title="Hvilepuls (snitt)">💓</th>
 						</tr>
 					</thead>
 					<tbody>
 						{#each periodData as period}
+							{@const days = daysInPeriod(period)}
+							{@const activeSum = period.metrics?.intenseMinutes?.sum}
 							<tr>
 								<td>{formatPeriodKey(period.periodKey, period.period)}</td>
-								<td>{formatMetric(period.metrics?.weight?.avg)} kg</td>
-								<td>{period.metrics?.workouts?.types?.running ?? 0}</td>
-								<td>{formatMetric(period.metrics?.intenseMinutes?.sum, 0)}</td>
-								<td>{formatMetric(period.metrics?.sleep?.avg)} t</td>
-								<td>{period.eventCount}</td>
+								<td>{formatWeightChange(period.metrics?.weight?.change)}</td>
+								<td>{period.metrics?.workouts?.types?.running ?? '–'}</td>
+								<td>{activeSum != null ? Math.round(activeSum / days) : '–'}/d</td>
+								<td>{formatMetric(period.metrics?.sleep?.avg)}t</td>
+								<td>{formatMetric(period.metrics?.heartRate?.avg, 0)}</td>
 							</tr>
 						{/each}
 					</tbody>
@@ -1648,13 +1661,12 @@
 	.hd-table {
 		width: 100%;
 		border-collapse: collapse;
-		min-width: 620px;
 	}
 
 	.hd-table th,
 	.hd-table td {
 		text-align: left;
-		padding: 12px 10px;
+		padding: 8px 6px;
 		border-top: 1px solid #202020;
 		font-size: 0.8rem;
 	}
@@ -1662,13 +1674,18 @@
 	.hd-table th {
 		border-top: none;
 		color: #666;
-		font-size: 0.72rem;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
+		font-size: 0.9rem;
 	}
 
 	.hd-table td {
 		color: #ccc;
+		white-space: nowrap;
+	}
+
+	.hd-table td:first-child {
+		color: #888;
+		font-size: 0.75rem;
+		padding-right: 12px;
 	}
 
 	.hd-weight-panels {
