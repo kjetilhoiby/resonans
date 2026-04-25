@@ -11,7 +11,9 @@ export const load: PageServerLoad = async ({ locals }) => {
 				category: true,
 				theme: { columns: { name: true, emoji: true } },
 				tasks: {
+					where: (t, { isNull }) => isNull(t.parentTaskId),
 					with: {
+						children: { columns: { id: true, status: true } },
 						trackingSeries: {
 							with: { recordType: true },
 							where: (s, { eq: eqS }) => eqS(s.status, 'active')

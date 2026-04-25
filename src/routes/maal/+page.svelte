@@ -89,6 +89,17 @@
 		return goal.tasks.filter((t: any) => t.frequency === 'weekly' || t.frequency === 'daily');
 	}
 
+	function getProjectTasks(goal: Goal): Task[] {
+		return goal.tasks.filter((t: any) => Array.isArray(t.children) && t.children.length > 0);
+	}
+
+	function projectProgress(task: Task): { done: number; total: number } {
+		const children = (task.children as Array<{ status: string }>) ?? [];
+		const total = children.length;
+		const done = children.filter((c) => c.status === 'done' || c.status === 'completed').length;
+		return { done, total };
+	}
+
 	function seriesLabel(series: Series) {
 		const rt = series.recordType as { label?: string; key?: string } | null | undefined;
 		return series.title || rt?.label || rt?.key || series.id;
@@ -149,9 +160,26 @@
 									</div>
 
 									{#if isExpanded}
+										{@const projectTasks = getProjectTasks(goal)}
 										<div class="goal-detail">
 											{#if goal.description}
 												<p class="goal-desc">{goal.description}</p>
+											{/if}
+
+											{#if projectTasks.length > 0}
+												<div class="tasks-section">
+													<span class="tasks-label">Prosjekter</span>
+													{#each projectTasks as project}
+														{@const prog = projectProgress(project)}
+														<a class="project-row" href="/oppgaver/{project.id}">
+															<span class="task-title">{project.title}</span>
+															<span class="project-progress">{prog.done}/{prog.total}</span>
+															{#if project.dueDate}
+																<span class="project-due">📅 {new Date(project.dueDate).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' })}</span>
+															{/if}
+														</a>
+													{/each}
+												</div>
 											{/if}
 
 											{#if !goal.theme}
@@ -177,7 +205,7 @@
 														{@const linked = task.trackingSeries?.[0] ?? null}
 														{@const badge = intentBadge(task)}
 														<div class="task-row">
-															<span class="task-title">{task.title}</span>
+															<a class="task-title task-link" href="/oppgaver/{task.id}">{task.title}</a>
 															{#if badge}
 																<span class="intent-badge" class:parsed={badge.startsWith('✓')} class:failed={badge.startsWith('⚠')}>{badge}</span>
 															{/if}
@@ -410,6 +438,41 @@
 	.task-title {
 		font-size: 0.85rem;
 		color: #ccc;
+	}
+
+	.task-link {
+		text-decoration: none;
+	}
+	.task-link:hover {
+		color: #fff;
+		text-decoration: underline;
+	}
+
+	.project-row {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		background: #141414;
+		border: 1px solid #272727;
+		border-radius: 8px;
+		padding: 10px 12px;
+		text-decoration: none;
+		color: #ccc;
+	}
+	.project-row:hover {
+		border-color: #4a7;
+	}
+	.project-progress {
+		font-size: 0.78rem;
+		color: #82c882;
+		padding: 2px 8px;
+		background: #1e1e1e;
+		border-radius: 6px;
+	}
+	.project-due {
+		font-size: 0.78rem;
+		color: #888;
+		margin-left: auto;
 	}
 
 	.intent-badge {

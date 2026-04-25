@@ -1,8 +1,9 @@
 import { db } from '$lib/db';
-import { memories } from '$lib/db/schema';
-import { and, eq, desc, like, not } from 'drizzle-orm';
+import { memories, taskFiles } from '$lib/db/schema';
+import { and, eq, desc, like, not, inArray } from 'drizzle-orm';
 
 export const THEME_FILE_MEMORY_SOURCE_PREFIX = 'theme_file:';
+export const TASK_FILE_MEMORY_SOURCE_PREFIX = 'task_file:';
 
 export interface CreateMemoryParams {
 	userId: string;
@@ -72,6 +73,34 @@ export async function deleteMemory(memoryId: string) {
  */
 export async function deleteMemoryBySource(source: string) {
 	await db.delete(memories).where(eq(memories.source, source));
+}
+
+/**
+ * Bygg kontekst-streng for filer knyttet til en task (prosjekt). Brukes når
+ * en samtale er bundet til en task — gir LLM tilgang til opplastet innhold.
+ */
+export async function buildTaskFileContext(userId: string, taskId: string): Promise<string> {
+	const files = await db
+		.select({ id: taskFiles.id, name: taskFiles.name })
+		.from(taskFiles)
+		.where(and(eq(taskFiles.taskId, taskId), eq(taskFiles.userId, userId)));
+
+	if (files.length === 0) return '';
+
+	const sources = files.map((f) => `${TASK_FILE_MEMORY_SOURCE_PREFIX}${f.id}`);
+	const fileMemories = await db.query.memories.findMany({
+		where: and(eq(memories.userId, userId), inArray(memories.source, sources)),
+		orderBy: [desc(memories.updatedAt)]
+	});
+
+	if (fileMemories.length === 0) return '';
+
+	let context = '\n--- FILER I PROSJEKTET (opplastet innhold) ---\n';
+	for (const mem of fileMemories) {
+		context += `\n${mem.content}\n`;
+	}
+	context += '--- SLUTT PÅ PROSJEKT-FILER ---\n';
+	return context;
 }
 
 /**

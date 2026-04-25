@@ -179,6 +179,21 @@ export const themeFiles = pgTable('theme_files', {
 	idxThemeId: index('theme_files_theme_id_idx').on(table.themeId)
 }));
 
+// Filer/vedlegg knyttet til en task (prosjekt). Mirror av theme_files.
+export const taskFiles = pgTable('task_files', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	taskId: uuid('task_id').references((): AnyPgColumn => tasks.id, { onDelete: 'cascade' }).notNull(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	name: text('name').notNull(),
+	url: text('url').notNull(),
+	fileType: text('file_type'),
+	mimeType: text('mime_type'),
+	sizeBytes: integer('size_bytes'),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => ({
+	idxTaskId: index('task_files_task_id_idx').on(table.taskId)
+}));
+
 // Mål (overordnede målsetninger)
 export const goals = pgTable('goals', {
 	id: uuid('id').primaryKey().defaultRandom(),
@@ -196,10 +211,14 @@ export const goals = pgTable('goals', {
 	idxUserId: index('goals_user_id_idx').on(table.userId)
 }));
 
-// Konkrete oppgaver knyttet til mål
+// Konkrete oppgaver knyttet til mål. En task kan være et "prosjekt" med egne
+// del-tasks (parentTaskId peker tilbake hit). Maks ett nivå nesting håndheves
+// i applikasjonslaget — barn kan ikke selv ha barn.
 export const tasks = pgTable('tasks', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	goalId: uuid('goal_id').references(() => goals.id).notNull(),
+	parentTaskId: uuid('parent_task_id').references((): AnyPgColumn => tasks.id, { onDelete: 'cascade' }),
+	conversationId: uuid('conversation_id').references((): AnyPgColumn => conversations.id, { onDelete: 'set null' }),
 	title: text('title').notNull(),
 	description: text('description'),
 	frequency: text('frequency'), // daily, weekly, monthly, once
@@ -207,11 +226,16 @@ export const tasks = pgTable('tasks', {
 	periodId: text('period_id'),   // '2026-W14' | '2026-04' | '2026' | null
 	targetValue: integer('target_value'), // f.eks. antall repetisjoner
 	unit: text('unit'), // f.eks. "ganger per uke", "minutter"
+	startDate: timestamp('start_date'),
+	dueDate: timestamp('due_date'),
+	sortOrder: integer('sort_order'),
 	metadata: jsonb('metadata').default({}).notNull(), // fleksibel JSON for ekstra data (intentStatus, intentError, etc)
 	status: text('status').notNull().default('active'),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
-});
+}, (table) => ({
+	idxParentTaskId: index('tasks_parent_task_id_idx').on(table.parentTaskId)
+}));
 
 // Fremdriftsregistreringer
 export const progress = pgTable('progress', {
@@ -568,6 +592,7 @@ export const usersRelations = relations(users, ({ many }) => ({
 	backgroundJobs: many(backgroundJobs),
 	themeLists: many(themeLists),
 	themeFiles: many(themeFiles),
+	taskFiles: many(taskFiles),
 	trackingSeries: many(trackingSeries),
 	trackingSeriesExamples: many(trackingSeriesExamples),
 	nudgeEvents: many(nudgeEvents),
@@ -648,6 +673,17 @@ export const tasksRelations = relations(tasks, ({ one, many }) => ({
 		fields: [tasks.goalId],
 		references: [goals.id]
 	}),
+	parent: one(tasks, {
+		fields: [tasks.parentTaskId],
+		references: [tasks.id],
+		relationName: 'task_parent'
+	}),
+	children: many(tasks, { relationName: 'task_parent' }),
+	conversation: one(conversations, {
+		fields: [tasks.conversationId],
+		references: [conversations.id]
+	}),
+	files: many(taskFiles),
 	progress: many(progress),
 	trackingSeries: many(trackingSeries)
 }));
@@ -1462,6 +1498,17 @@ export const themeFilesRelations = relations(themeFiles, ({ one }) => ({
 	}),
 	user: one(users, {
 		fields: [themeFiles.userId],
+		references: [users.id]
+	})
+}));
+
+export const taskFilesRelations = relations(taskFiles, ({ one }) => ({
+	task: one(tasks, {
+		fields: [taskFiles.taskId],
+		references: [tasks.id]
+	}),
+	user: one(users, {
+		fields: [taskFiles.userId],
 		references: [users.id]
 	})
 }));

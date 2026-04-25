@@ -6,7 +6,7 @@ import { createGoal, createTask, getUserActiveGoalsAndTasks, findSimilarGoals, f
 import { getOrCreateConversation, createConversation, addMessage, getConversationHistory, getConversationByIdForUser } from '$lib/server/conversations';
 import { logActivity } from '$lib/server/activities';
 import { recordTrackingEvent } from '$lib/server/tracking-series';
-import { buildMemoryContext, createMemory } from '$lib/server/memories';
+import { buildMemoryContext, buildTaskFileContext, createMemory } from '$lib/server/memories';
 import { isFutureVisionText, seedThemeInstructionFromFutureVision } from '$lib/server/theme-instructions';
 import { queryEconomicsTool } from '$lib/ai/tools/query-economics';
 import {
@@ -22,7 +22,7 @@ import {
 import { routeChatRequest, aiRouteChatRequest } from '$lib/server/chat-router';
 import { enqueueBackgroundJob } from '$lib/server/background-jobs';
 import { db } from '$lib/db';
-import { checklists, checklistItems, memories, users } from '$lib/db/schema';
+import { checklists, checklistItems, memories, users, tasks as tasksSchema } from '$lib/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 
@@ -1228,6 +1228,31 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		// Bygg memory context (viktig informasjon om brukeren)
                 // Sender med themeId slik at fil-innhold for aktivt tema vises i konteksten
                 const memoryContext = await buildMemoryContext(userId, conversation.themeId ?? null);
+
+		// Hvis samtalen er bundet til en task (prosjekt-chat), legg til prosjekt-kontekst
+		const projectTask = await db.query.tasks.findFirst({
+			where: eq(tasksSchema.conversationId, conversation.id),
+			with: {
+				children: { columns: { id: true, title: true, status: true } }
+			}
+		});
+		let projectContext = '';
+		if (projectTask) {
+			projectContext = `\n--- PROSJEKT-KONTEKST ---\n`;
+			projectContext += `Denne samtalen tilhører prosjektet "${projectTask.title}" (ID: ${projectTask.id}).\n`;
+			if (projectTask.description) projectContext += `Beskrivelse: ${projectTask.description}\n`;
+			if (projectTask.startDate) projectContext += `Start: ${projectTask.startDate.toISOString().split('T')[0]}\n`;
+			if (projectTask.dueDate) projectContext += `Frist: ${projectTask.dueDate.toISOString().split('T')[0]}\n`;
+			if (projectTask.children.length > 0) {
+				projectContext += `Steg:\n`;
+				for (const step of projectTask.children) {
+					const mark = step.status === 'done' || step.status === 'completed' ? '✓' : '○';
+					projectContext += `  ${mark} ${step.title}\n`;
+				}
+			}
+			projectContext += `--- SLUTT PÅ PROSJEKT-KONTEKST ---\n`;
+			projectContext += await buildTaskFileContext(userId, projectTask.id);
+		}
 		// Hent brukerens aktive mål og oppgaver for kontekst
 		const activeGoals = await getUserActiveGoalsAndTasks(userId);
 		
@@ -1252,6 +1277,14 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 						}
 						if (task.frequency) {
 							goalsContext += `    Frekvens: ${task.frequency}\n`;
+						}
+						const children = (task as unknown as { children?: Array<{ title: string; status: string }> }).children;
+						if (children && children.length > 0) {
+							goalsContext += `    Prosjekt-steg:\n`;
+							for (const step of children) {
+								const mark = step.status === 'done' || step.status === 'completed' ? '✓' : '○';
+								goalsContext += `      ${mark} ${step.title}\n`;
+							}
 						}
 					}
 				} else {
@@ -1281,7 +1314,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		});
 
 		const messages: ChatCompletionMessageParam[] = [
-			{ role: 'system', content: promptPrefix + systemPrompt + memoryContext + goalsContext + dateContext }
+			{ role: 'system', content: promptPrefix + systemPrompt + memoryContext + projectContext + goalsContext + dateContext }
 		];
 
 		// Legg til historikk (unntatt den siste brukermeldingen som allerede er der)

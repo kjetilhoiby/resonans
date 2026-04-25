@@ -1,6 +1,6 @@
 import { db } from '$lib/db';
-import { goals, tasks, categories, sensorGoals } from '$lib/db/schema';
-import { and, eq, sql } from 'drizzle-orm';
+import { goals, tasks, categories, sensorGoals, taskFiles, conversations } from '$lib/db/schema';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { findSimilar } from './similarity';
 import { METRIC_CATALOG, resolveMetricId, type MetricId } from '$lib/domain/metric-catalog';
 import type { GoalTrack, GoalTrackKind, GoalWindow } from '$lib/domain/goal-tracks';
@@ -267,7 +267,9 @@ export async function createTask(params: TaskCreationParams) {
 }
 
 /**
- * Hent brukerens aktive mål og oppgaver
+ * Hent brukerens aktive mål og oppgaver. Subtasks (steg) ekskluderes fra
+ * top-level og inkluderes i stedet under parent-task som `children`, slik
+ * at LLM-konteksten viser prosjekt-strukturen uten dobbel-listing.
  */
 export async function getUserActiveGoalsAndTasks(userId: string) {
 	const userGoals = await db.query.goals.findMany({
@@ -275,9 +277,10 @@ export async function getUserActiveGoalsAndTasks(userId: string) {
 		with: {
 			category: true,
 			tasks: {
-				where: eq(tasks.status, 'active'),
+				where: and(eq(tasks.status, 'active'), isNull(tasks.parentTaskId)),
 				with: {
-					progress: true
+					progress: true,
+					children: { columns: { id: true, title: true, status: true } }
 				}
 			}
 		}
@@ -295,10 +298,11 @@ export async function getUserGoals(userId: string) {
 	});
 }
 
-export async function getGoalTasks(goalId: string) {
-	return await db.query.tasks.findMany({
-		where: eq(tasks.goalId, goalId)
-	});
+export async function getGoalTasks(goalId: string, options?: { includeSubtasks?: boolean }) {
+	const where = options?.includeSubtasks
+		? eq(tasks.goalId, goalId)
+		: and(eq(tasks.goalId, goalId), isNull(tasks.parentTaskId));
+	return await db.query.tasks.findMany({ where });
 }
 
 /**
@@ -425,4 +429,123 @@ export async function getOrCreatePlanningGoal(userId: string): Promise<string> {
 	}).returning({ id: goals.id });
 
 	return goal!.id;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Prosjekt-utvidelse: en task kan brytes ned i del-tasks ("steg") og fungere
+// som et prosjekt med start/deadline, egen chat og filer.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface SubtaskCreationParams {
+	parentTaskId: string;
+	userId: string;
+	title: string;
+	description?: string;
+	sortOrder?: number;
+}
+
+async function ownerTask(taskId: string, userId: string) {
+	const row = await db
+		.select({
+			id: tasks.id,
+			goalId: tasks.goalId,
+			parentTaskId: tasks.parentTaskId,
+			conversationId: tasks.conversationId
+		})
+		.from(tasks)
+		.innerJoin(goals, eq(goals.id, tasks.goalId))
+		.where(and(eq(tasks.id, taskId), eq(goals.userId, userId)))
+		.limit(1);
+	return row[0] ?? null;
+}
+
+export async function createSubtask(params: SubtaskCreationParams) {
+	const parent = await ownerTask(params.parentTaskId, params.userId);
+	if (!parent) throw new Error('Parent task not found for user');
+	if (parent.parentTaskId) throw new Error('Cannot nest subtasks deeper than one level');
+
+	const [task] = await db
+		.insert(tasks)
+		.values({
+			goalId: parent.goalId,
+			parentTaskId: parent.id,
+			title: params.title,
+			description: params.description || null,
+			sortOrder: typeof params.sortOrder === 'number' ? params.sortOrder : null,
+			status: 'active'
+		})
+		.returning();
+
+	return task;
+}
+
+export async function getProjectTree(taskId: string, userId: string) {
+	const owner = await ownerTask(taskId, userId);
+	if (!owner) return null;
+
+	const task = await db.query.tasks.findFirst({
+		where: eq(tasks.id, taskId),
+		with: {
+			children: {
+				with: { progress: true },
+				orderBy: [asc(tasks.sortOrder), asc(tasks.createdAt)]
+			},
+			files: { orderBy: [asc(taskFiles.createdAt)] },
+			conversation: true,
+			progress: true
+		}
+	});
+
+	return task ?? null;
+}
+
+export interface TaskScheduleUpdate {
+	startDate?: Date | null;
+	dueDate?: Date | null;
+	sortOrder?: number | null;
+}
+
+export async function setTaskSchedule(taskId: string, userId: string, update: TaskScheduleUpdate) {
+	const owner = await ownerTask(taskId, userId);
+	if (!owner) throw new Error('Task not found for user');
+
+	if (update.startDate && update.dueDate && update.dueDate < update.startDate) {
+		throw new Error('dueDate cannot be earlier than startDate');
+	}
+
+	const patch: Record<string, unknown> = { updatedAt: new Date() };
+	if (update.startDate !== undefined) patch.startDate = update.startDate;
+	if (update.dueDate !== undefined) patch.dueDate = update.dueDate;
+	if (update.sortOrder !== undefined) patch.sortOrder = update.sortOrder;
+
+	const [updated] = await db.update(tasks).set(patch).where(eq(tasks.id, taskId)).returning();
+	return updated;
+}
+
+export async function getProjectProgress(taskId: string) {
+	const rows = await db
+		.select({ status: tasks.status })
+		.from(tasks)
+		.where(eq(tasks.parentTaskId, taskId));
+	const total = rows.length;
+	const done = rows.filter((r) => r.status === 'done' || r.status === 'completed').length;
+	return { total, done };
+}
+
+export async function attachConversationToTask(taskId: string, userId: string, conversationId: string) {
+	const owner = await ownerTask(taskId, userId);
+	if (!owner) throw new Error('Task not found for user');
+
+	const conversation = await db.query.conversations.findFirst({
+		where: and(eq(conversations.id, conversationId), eq(conversations.userId, userId)),
+		columns: { id: true }
+	});
+	if (!conversation) throw new Error('Conversation not found for user');
+
+	const [updated] = await db
+		.update(tasks)
+		.set({ conversationId, updatedAt: new Date() })
+		.where(eq(tasks.id, taskId))
+		.returning();
+	return updated;
 }
