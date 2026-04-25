@@ -21,18 +21,46 @@ const ECONOMIC_METRIC_IDS: MetricId[] = ['grocery_spend'];
 export const GET: RequestHandler = async ({ locals }) => {
 	const userId = locals.userId;
 
-	// 1. Detect payday dates
+	// 1. Detect payday dates — accept 1 date, fall back to raw lookup if detector returns null
+	let currentSalaryDate: string;
+	let prevSalaryDate: string | null = null;
+	let sourceAccountId: string | null = null;
+
 	const payDay = await detectGlobalPayday(userId);
-	if (!payDay || payDay.paydayDates.length < 2) {
-		return json({ error: 'No salary data detected' }, { status: 404 });
+
+	if (payDay && payDay.paydayDates.length >= 2) {
+		currentSalaryDate = payDay.paydayDates[payDay.paydayDates.length - 1];
+		prevSalaryDate = payDay.paydayDates[payDay.paydayDates.length - 2];
+		sourceAccountId = payDay.sourceAccountId;
+	} else if (payDay && payDay.paydayDates.length === 1) {
+		currentSalaryDate = payDay.paydayDates[0];
+		sourceAccountId = payDay.sourceAccountId;
+	} else {
+		// Raw fallback: most recent transaction >= 10 000 kr
+		const [fallback] = await db
+			.select({
+				date: canonicalBankTransactions.canonicalDate,
+				accountId: canonicalBankTransactions.accountId
+			})
+			.from(canonicalBankTransactions)
+			.where(
+				and(
+					eq(canonicalBankTransactions.userId, userId),
+					eq(canonicalBankTransactions.isActive, true),
+					sql`${canonicalBankTransactions.amount} >= 10000`
+				)
+			)
+			.orderBy(desc(canonicalBankTransactions.canonicalDate))
+			.limit(1);
+		if (!fallback) {
+			return json({ error: 'No salary data detected' }, { status: 404 });
+		}
+		currentSalaryDate = String(fallback.date);
+		sourceAccountId = fallback.accountId;
 	}
 
-	const currentSalaryDate = payDay.paydayDates[payDay.paydayDates.length - 1];
-	const prevSalaryDate = payDay.paydayDates[payDay.paydayDates.length - 2];
-	const sourceAccountId = payDay.sourceAccountId;
-
 	const currentFrom = new Date(`${currentSalaryDate}T00:00:00.000Z`);
-	const prevFrom = new Date(`${prevSalaryDate}T00:00:00.000Z`);
+	const prevFrom = prevSalaryDate ? new Date(`${prevSalaryDate}T00:00:00.000Z`) : currentFrom;
 	const today = new Date();
 
 	// 2. Ensure categorized events are up to date
@@ -80,17 +108,21 @@ export const GET: RequestHandler = async ({ locals }) => {
 
 	const totalSpending = totalFixed + totalVariable;
 
-	// 4. Fetch previous period spending for trend
-	const prevTxRows = await queryCategorizedEvents({
-		userId,
-		from: prevFrom,
-		to: currentFrom,
-		spendingOnly: true
-	});
-	const previousMonthSpending = prevTxRows.reduce((sum, row) => sum + Math.abs(row.amount), 0);
-	const spendingTrend = previousMonthSpending > 0
-		? ((totalSpending - previousMonthSpending) / previousMonthSpending) * 100
-		: 0;
+	// 4. Fetch previous period spending for trend (only if we have a prev date)
+	let previousMonthSpending = 0;
+	let spendingTrend = 0;
+	if (prevSalaryDate) {
+		const prevTxRows = await queryCategorizedEvents({
+			userId,
+			from: prevFrom,
+			to: currentFrom,
+			spendingOnly: true
+		});
+		previousMonthSpending = prevTxRows.reduce((sum, row) => sum + Math.abs(row.amount), 0);
+		if (previousMonthSpending > 0) {
+			spendingTrend = ((totalSpending - previousMonthSpending) / previousMonthSpending) * 100;
+		}
+	}
 
 	// 5. Fetch salary transaction amount
 	let salaryAmount = 0;
@@ -293,7 +325,7 @@ function fmtDateNO(iso: string) {
 
 function generateInsights(data: {
 	currentSalaryDate: string;
-	prevSalaryDate: string;
+	prevSalaryDate: string | null;
 	salaryAmount: number;
 	totalSpending: number;
 	totalFixed: number;
@@ -306,18 +338,25 @@ function generateInsights(data: {
 }): SalaryInsight[] {
 	const insights: SalaryInsight[] = [];
 	const period = `${fmtDateNO(data.currentSalaryDate)} – i dag`;
-	const baseCtx = `Lønnsperioden: ${period}. Lønn: ${fmtNOK(data.salaryAmount)}. Totalt forbruk: ${fmtNOK(data.totalSpending)} (${pctLabel(data.spendingTrend)} vs forrige periode på ${fmtNOK(data.previousMonthSpending)}).`;
+	const hasTrend = data.previousMonthSpending > 0;
+	const trendCtx = hasTrend
+		? ` (${pctLabel(data.spendingTrend)} vs forrige periode på ${fmtNOK(data.previousMonthSpending)})`
+		: '';
+	const baseCtx = `Lønnsperioden: ${period}. Lønn: ${fmtNOK(data.salaryAmount)}. Totalt forbruk: ${fmtNOK(data.totalSpending)}${trendCtx}.`;
 
 	// 1. Total spending
-	const trendDir = data.spendingTrend <= 0 ? 'ned' : 'opp';
 	const trendEmoji = data.spendingTrend <= 0 ? '📉' : '📈';
 	insights.push({
 		id: 'total_spending',
-		title: `Totalt forbruk gikk ${trendDir} i denne perioden`,
+		title: 'Totalt forbruk denne perioden',
 		emoji: trendEmoji,
-		summary: `${fmtNOK(data.totalSpending)} — ${pctLabel(data.spendingTrend)} vs forrige periode`,
+		summary: hasTrend
+			? `${fmtNOK(data.totalSpending)} — ${pctLabel(data.spendingTrend)} vs forrige periode`
+			: `${fmtNOK(data.totalSpending)} siden lønning`,
 		systemPrompt: `${baseCtx} Du hjelper brukeren med å reflektere over totalforbruket og eventuelt justere eller opprette mål. Svar kort, konkret og på norsk. Foreslå gjerne et konkret mål om de ikke har ett.`,
-		seedMessage: `Totalt brukte du ${fmtNOK(data.totalSpending)} i lønnsperioden fra ${fmtDateNO(data.currentSalaryDate)} — det er ${pctLabel(data.spendingTrend)} sammenliknet med forrige periode (${fmtNOK(data.previousMonthSpending)}). ${trendEmoji}\n\nHva tenker du om dette? Har du et mål for totalforbruk, eller vil du sette et?`
+		seedMessage: hasTrend
+			? `Totalt brukte du ${fmtNOK(data.totalSpending)} i lønnsperioden fra ${fmtDateNO(data.currentSalaryDate)} — det er ${pctLabel(data.spendingTrend)} sammenliknet med forrige periode (${fmtNOK(data.previousMonthSpending)}). ${trendEmoji}\n\nHva tenker du om dette? Har du et mål for totalforbruk, eller vil du sette et?`
+			: `Totalt brukte du ${fmtNOK(data.totalSpending)} siden lønning (${fmtDateNO(data.currentSalaryDate)}). ${trendEmoji}\n\nHva tenker du om dette? Har du et mål for totalforbruk, eller vil du sette et?`
 	});
 
 	// 2. Top spending categories (up to 3, skip tiny ones)

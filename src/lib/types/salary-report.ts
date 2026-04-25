@@ -30,7 +30,7 @@ export interface SalaryInsight {
 
 export interface SalaryMonthReport {
 	currentSalaryDate: string;
-	prevSalaryDate: string;
+	prevSalaryDate: string | null;
 	salaryAmount: number;
 	totalSpending: number;
 	totalFixed: number;
