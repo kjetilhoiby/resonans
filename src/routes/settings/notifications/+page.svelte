@@ -342,6 +342,26 @@
 		}
 	}
 
+	let salaryNudgeSending = $state(false);
+	let salaryNudgeResult = $state<{ success: boolean; message: string } | null>(null);
+
+	async function sendSalaryNudge() {
+		salaryNudgeSending = true;
+		salaryNudgeResult = null;
+		try {
+			const res = await fetch('/api/economics/salary-nudge', { method: 'POST' });
+			const data = await res.json();
+			salaryNudgeResult = {
+				success: data.sent === true,
+				message: data.sent ? '✅ Lønnsrapport-nudge sendt' : `— ${data.reason ?? 'Ingen data'}`
+			};
+		} catch (error) {
+			salaryNudgeResult = { success: false, message: `❌ Nettverksfeil: ${error instanceof Error ? error.message : 'Ukjent'}` };
+		} finally {
+			salaryNudgeSending = false;
+		}
+	}
+
 	async function sendCheckIn() {
 		sending = true;
 		result = null;
@@ -684,6 +704,20 @@
 					{result.message}
 				</div>
 			{/if}
+
+			<div class="test-divider"></div>
+
+			<p>Sender lønnsrapport-nudge manuelt (omgår dedup og tidsvindu).</p>
+
+			<Button type="button" onClick={sendSalaryNudge} disabled={salaryNudgeSending} fullWidth className="checkin-submit">
+				{salaryNudgeSending ? 'Sender...' : '💰 Send Lønnsrapport-nudge Nå'}
+			</Button>
+
+			{#if salaryNudgeResult}
+				<div class="result {salaryNudgeResult.success ? 'success' : 'error'}">
+					{salaryNudgeResult.message}
+				</div>
+			{/if}
 		</section>
 
 	</main>
@@ -696,6 +730,12 @@
 
 	.content {
 		color: var(--text-secondary);
+	}
+
+	.test-divider {
+		height: 1px;
+		background: var(--border-color);
+		margin: 1.25rem 0;
 	}
 
 	.notification-card {
