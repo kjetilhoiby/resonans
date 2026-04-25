@@ -120,6 +120,12 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 			return st.includes('run');
 		}).length;
 
+		// Sleep-specific heart rate (separate from general/activity HR)
+		const sleepHeartRates = events
+			.filter(e => e.dataType === 'sleep')
+			.map(e => e.data?.hr_average)
+			.filter((v): v is number => v !== undefined);
+
 		// Calculate metrics
 		const metrics: any = {};
 
@@ -180,6 +186,14 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 				min: min(heartRates),
 				max: max(heartRates),
 				values: heartRates
+			};
+		}
+
+		if (sleepHeartRates.length > 0) {
+			metrics.sleepHeartRate = {
+				avg: avg(sleepHeartRates),
+				min: min(sleepHeartRates),
+				max: max(sleepHeartRates)
 			};
 		}
 
@@ -268,7 +282,15 @@ export async function aggregateMonthlyData(userId: string, months?: MonthPeriod[
 			const st = ((e.data?.sportType as string | undefined) ?? '').toLowerCase();
 			return st.includes('run');
 		}).length;
+
+		// Heart rate (all sources)
 		const heartRates = events.map((e) => e.data?.hr_average).filter((v): v is number => v !== undefined);
+
+		// Sleep-specific heart rate
+		const sleepHeartRates = events
+			.filter(e => e.dataType === 'sleep')
+			.map(e => e.data?.hr_average)
+			.filter((v): v is number => v !== undefined);
 
 		const metrics: any = {};
 
@@ -325,6 +347,14 @@ export async function aggregateMonthlyData(userId: string, months?: MonthPeriod[
 				avg: avg(heartRates),
 				min: min(heartRates),
 				max: max(heartRates)
+			};
+		}
+
+		if (sleepHeartRates.length > 0) {
+			metrics.sleepHeartRate = {
+				avg: avg(sleepHeartRates),
+				min: min(sleepHeartRates),
+				max: max(sleepHeartRates)
 			};
 		}
 
@@ -404,7 +434,15 @@ export async function aggregateYearlyData(userId: string, years?: YearPeriod[]) 
 			const st = ((e.data?.sportType as string | undefined) ?? '').toLowerCase();
 			return st.includes('run');
 		}).length;
+
+		// Heart rate (all sources)
 		const heartRates = events.map((e) => e.data?.hr_average).filter((v): v is number => v !== undefined);
+
+		// Sleep-specific heart rate
+		const sleepHeartRates = events
+			.filter(e => e.dataType === 'sleep')
+			.map(e => e.data?.hr_average)
+			.filter((v): v is number => v !== undefined);
 
 		const metrics: any = {};
 
@@ -461,6 +499,14 @@ export async function aggregateYearlyData(userId: string, years?: YearPeriod[]) 
 				avg: avg(heartRates),
 				min: min(heartRates),
 				max: max(heartRates)
+			};
+		}
+
+		if (sleepHeartRates.length > 0) {
+			metrics.sleepHeartRate = {
+				avg: avg(sleepHeartRates),
+				min: min(sleepHeartRates),
+				max: max(sleepHeartRates)
 			};
 		}
 
