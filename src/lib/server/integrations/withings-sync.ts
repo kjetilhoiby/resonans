@@ -153,7 +153,7 @@ function parseSleepData(series: any[]): any[] {
 /**
  * Map Withings workout category codes to readable sport types
  */
-function getSportType(category: number): string {
+export function getSportType(category: number): string {
 	const sportMap: Record<number, string> = {
 		1: 'walking',
 		2: 'running',
@@ -203,9 +203,15 @@ function getSportType(category: number): string {
 		187: 'indoor_walking',
 		188: 'indoor_running',
 		191: 'indoor_cycling',
-		272: 'e_bike'
+		272: 'e_bike',
+		552: 'yoga' // Withings 'stretching' — treated as yoga (mikroyoga)
 	};
-	return sportMap[category] || 'unknown';
+	const mapped = sportMap[category];
+	if (!mapped) {
+		console.warn(`[Withings] Unmapped workout category code: ${category}`);
+		return 'unknown';
+	}
+	return mapped;
 }
 
 /**
