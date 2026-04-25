@@ -113,8 +113,12 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 			.map((e) => ((e.data?.intense || 0) + (e.data?.moderate || 0)) / 60) // Withings returns seconds
 			.filter((v) => v > 0);
 
-		// Count workouts (activity events with distance > 0)
-		const workoutEvents = activityEvents.filter(e => e.data?.distance && e.data.distance > 0);
+		// Count workouts by dataType, with running breakdown by sportType
+		const workoutEvents = events.filter(e => e.dataType === 'workout');
+		const runningCount = workoutEvents.filter(e => {
+			const st = ((e.data?.sportType as string | undefined) ?? '').toLowerCase();
+			return st.includes('run');
+		}).length;
 
 		// Calculate metrics
 		const metrics: any = {};
@@ -126,7 +130,7 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 				max: max(weights),
 				latest: latest(weights),
 				change: weights.length > 1 ? (latest(weights)! - weights[0]) : 0,
-				values: weights // All individual weight values for the period
+				values: weights
 			};
 		}
 
@@ -135,7 +139,7 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 				sum: sum(steps),
 				avg: avg(steps),
 				max: max(steps),
-				values: steps // All individual step counts
+				values: steps
 			};
 		}
 
@@ -175,13 +179,14 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 				avg: avg(heartRates),
 				min: min(heartRates),
 				max: max(heartRates),
-				values: heartRates // All individual resting heart rates
+				values: heartRates
 			};
 		}
 
 		if (workoutEvents.length > 0) {
 			metrics.workouts = {
-				count: workoutEvents.length
+				count: workoutEvents.length,
+				types: { running: runningCount }
 			};
 		}
 
@@ -257,8 +262,13 @@ export async function aggregateMonthlyData(userId: string, months?: MonthPeriod[
 			.map((e) => ((e.data?.intense || 0) + (e.data?.moderate || 0)) / 60) // Withings returns seconds
 			.filter((v) => v > 0);
 
-		// Count workouts (activity events with distance > 0)
-		const workoutEvents = activityEvents.filter(e => e.data?.distance && e.data.distance > 0);
+		// Count workouts by dataType, with running breakdown by sportType
+		const workoutEvents = events.filter(e => e.dataType === 'workout');
+		const runningCount = workoutEvents.filter(e => {
+			const st = ((e.data?.sportType as string | undefined) ?? '').toLowerCase();
+			return st.includes('run');
+		}).length;
+		const heartRates = events.map((e) => e.data?.hr_average).filter((v): v is number => v !== undefined);
 
 		const metrics: any = {};
 
@@ -310,9 +320,18 @@ export async function aggregateMonthlyData(userId: string, months?: MonthPeriod[
 			};
 		}
 
+		if (heartRates.length > 0) {
+			metrics.heartRate = {
+				avg: avg(heartRates),
+				min: min(heartRates),
+				max: max(heartRates)
+			};
+		}
+
 		if (workoutEvents.length > 0) {
 			metrics.workouts = {
-				count: workoutEvents.length
+				count: workoutEvents.length,
+				types: { running: runningCount }
 			};
 		}
 
@@ -379,8 +398,13 @@ export async function aggregateYearlyData(userId: string, years?: YearPeriod[]) 
 			.map((e) => ((e.data?.intense || 0) + (e.data?.moderate || 0)) / 60) // Withings returns seconds
 			.filter((v) => v > 0);
 
-		// Count workouts (activity events with distance > 0)
-		const workoutEvents = activityEvents.filter(e => e.data?.distance && e.data.distance > 0);
+		// Count workouts by dataType, with running breakdown by sportType
+		const workoutEvents = events.filter(e => e.dataType === 'workout');
+		const runningCount = workoutEvents.filter(e => {
+			const st = ((e.data?.sportType as string | undefined) ?? '').toLowerCase();
+			return st.includes('run');
+		}).length;
+		const heartRates = events.map((e) => e.data?.hr_average).filter((v): v is number => v !== undefined);
 
 		const metrics: any = {};
 
@@ -432,9 +456,18 @@ export async function aggregateYearlyData(userId: string, years?: YearPeriod[]) 
 			};
 		}
 
+		if (heartRates.length > 0) {
+			metrics.heartRate = {
+				avg: avg(heartRates),
+				min: min(heartRates),
+				max: max(heartRates)
+			};
+		}
+
 		if (workoutEvents.length > 0) {
 			metrics.workouts = {
-				count: workoutEvents.length
+				count: workoutEvents.length,
+				types: { running: runningCount }
 			};
 		}
 
