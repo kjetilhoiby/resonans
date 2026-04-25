@@ -680,3 +680,82 @@ export function buildWorkoutImportedMessage(data: WorkoutImportedMessageData): G
 		]
 	};
 }
+
+export function buildSalaryNudgeMessage(data: {
+	appUrl: string;
+	userName?: string | null;
+	salaryAmount: number;
+	totalSpending: number;
+	savingsChange: number;
+	spendingTrend: number;
+	salaryMonth: string;
+	nudgeEventId?: string | null;
+}): GoogleChatMessage {
+	const { appUrl, userName, salaryAmount, totalSpending, savingsChange, spendingTrend, salaryMonth, nudgeEventId } = data;
+	const greeting = userName ? `Hei ${userName}!` : 'Hei!';
+
+	const monthLabel = new Date(`${salaryMonth}-01`).toLocaleDateString('nb-NO', { month: 'long', year: 'numeric' });
+	const fmt = (n: number) => Math.round(Math.abs(n)).toLocaleString('nb-NO');
+	const trendSign = spendingTrend >= 0 ? '▲' : '▼';
+	const savingsSign = savingsChange >= 0 ? '+' : '-';
+
+	const reportUrl = nudgeEventId
+		? `${appUrl}/economics/lonnsmaned?nudgeTrack=salary_received&nudgeEventId=${nudgeEventId}`
+		: `${appUrl}/economics/lonnsmaned`;
+
+	return {
+		cards: [
+			{
+				header: {
+					title: '💰 Lønn mottatt',
+					subtitle: monthLabel
+				},
+				sections: [
+					{
+						widgets: [
+							{
+								textParagraph: {
+									text: `<b>${greeting}</b><br>Lønn er registrert for ${monthLabel}.`
+								}
+							},
+							{
+								keyValue: {
+									topLabel: 'Lønn inn',
+									content: `kr ${fmt(salaryAmount)}`
+								}
+							},
+							{
+								keyValue: {
+									topLabel: 'Forbruk hittil denne perioden',
+									content: `kr ${fmt(totalSpending)}`
+								}
+							},
+							{
+								keyValue: {
+									topLabel: 'Sparekonto-endring',
+									content: `${savingsSign} kr ${fmt(savingsChange)}`
+								}
+							},
+							{
+								keyValue: {
+									topLabel: 'Trend vs. forrige periode',
+									content: `${trendSign} ${Math.abs(Math.round(spendingTrend))}%`
+								}
+							},
+							{
+								buttons: [
+									{
+										textButton: {
+											text: 'Se lønnsrapport',
+											onClick: { openLink: { url: reportUrl } }
+										}
+									}
+								]
+							}
+						]
+					}
+				]
+			}
+		]
+	};
+}

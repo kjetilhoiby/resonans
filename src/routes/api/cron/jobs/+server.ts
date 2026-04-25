@@ -64,6 +64,12 @@ const JOBS: CronJob[] = [
 		schedule: '*/5 * * * *', // hvert 5. minutt
 		description: 'Prosesserer intern databasedrevet jobbkø',
 		maxDurationSeconds: 300
+	},
+	{
+		path: '/api/cron/salary-nudge',
+		schedule: '30 */6 * * *', // 30 min etter sparebank1-sync
+		description: 'Sender lønn-mottatt-nudge for brukere med ny lønnsinngang siste 3 dager',
+		maxDurationSeconds: 120
 	}
 ];
 
