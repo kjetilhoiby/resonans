@@ -106,7 +106,11 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 		const calories = events.map((e) => e.data?.calories).filter((v): v is number => v !== undefined);
 		const distances = events.map((e) => e.data?.distance).filter((v): v is number => v !== undefined);
 		const heartRates = events.map((e) => e.data?.hr_average).filter((v): v is number => v !== undefined);
-		
+		const sleepHeartRates = events
+			.filter(e => e.dataType === 'sleep')
+			.map(e => e.data?.hr_average)
+			.filter((v): v is number => v !== undefined);
+
 		// Only get intense minutes from activity events
 		const activityEvents = events.filter(e => e.eventType === 'activity');
 		const intenseMinutes = activityEvents
@@ -180,6 +184,14 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 				min: min(heartRates),
 				max: max(heartRates),
 				values: heartRates
+			};
+		}
+
+		if (sleepHeartRates.length > 0) {
+			metrics.sleepHeartRate = {
+				avg: avg(sleepHeartRates),
+				min: min(sleepHeartRates),
+				max: max(sleepHeartRates)
 			};
 		}
 
@@ -269,6 +281,10 @@ export async function aggregateMonthlyData(userId: string, months?: MonthPeriod[
 			return st.includes('run');
 		}).length;
 		const heartRates = events.map((e) => e.data?.hr_average).filter((v): v is number => v !== undefined);
+		const sleepHeartRates = events
+			.filter(e => e.dataType === 'sleep')
+			.map(e => e.data?.hr_average)
+			.filter((v): v is number => v !== undefined);
 
 		const metrics: any = {};
 
@@ -325,6 +341,14 @@ export async function aggregateMonthlyData(userId: string, months?: MonthPeriod[
 				avg: avg(heartRates),
 				min: min(heartRates),
 				max: max(heartRates)
+			};
+		}
+
+		if (sleepHeartRates.length > 0) {
+			metrics.sleepHeartRate = {
+				avg: avg(sleepHeartRates),
+				min: min(sleepHeartRates),
+				max: max(sleepHeartRates)
 			};
 		}
 
@@ -405,6 +429,10 @@ export async function aggregateYearlyData(userId: string, years?: YearPeriod[]) 
 			return st.includes('run');
 		}).length;
 		const heartRates = events.map((e) => e.data?.hr_average).filter((v): v is number => v !== undefined);
+		const sleepHeartRates = events
+			.filter(e => e.dataType === 'sleep')
+			.map(e => e.data?.hr_average)
+			.filter((v): v is number => v !== undefined);
 
 		const metrics: any = {};
 
@@ -461,6 +489,14 @@ export async function aggregateYearlyData(userId: string, years?: YearPeriod[]) 
 				avg: avg(heartRates),
 				min: min(heartRates),
 				max: max(heartRates)
+			};
+		}
+
+		if (sleepHeartRates.length > 0) {
+			metrics.sleepHeartRate = {
+				avg: avg(sleepHeartRates),
+				min: min(sleepHeartRates),
+				max: max(sleepHeartRates)
 			};
 		}
 

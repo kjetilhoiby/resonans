@@ -14,7 +14,7 @@
 	import GpxMapSvg from '../charts/GpxMapSvg.svelte';
 	import MetricCard from '$lib/components/visualizations/MetricCard.svelte';
 
-	type WindowMode = '7d' | '30d' | '365d' | 'week' | 'month' | 'year';
+	type WindowMode = '7d' | '30d' | '365d' | 'week' | 'month' | 'quarter' | 'year';
 
 	interface PeriodMetrics {
 		weight?: { avg?: number; min?: number; max?: number; change?: number };
@@ -22,6 +22,8 @@
 		sleep?: { avg?: number; min?: number; max?: number };
 		workouts?: { count?: number; totalDuration?: number; types?: Record<string, number> };
 		intenseMinutes?: { sum?: number; avg?: number };
+		heartRate?: { avg?: number; min?: number; max?: number };
+		sleepHeartRate?: { avg?: number; min?: number; max?: number };
 		sleepLag?: number;
 		earlyWake?: number;
 	}
@@ -30,6 +32,8 @@
 		period: string;
 		periodKey: string;
 		eventCount: number;
+		startDate?: string | Date;
+		endDate?: string | Date;
 		metrics?: PeriodMetrics | null;
 	}
 
@@ -178,11 +182,56 @@
 		mapLoading = false;
 	}
 
-	const aggregatePeriod = $derived<'week' | 'month' | 'year'>(
-		selectedWindow === 'month' ? 'month' : selectedWindow === 'year' ? 'year' : 'week'
+	const quarterData = $derived.by((): AggregatePeriod[] => {
+		const groups = new Map<string, AggregatePeriod[]>();
+		for (const m of monthly) {
+			const [year, monthStr] = m.periodKey.split('M');
+			const q = Math.ceil(parseInt(monthStr) / 3);
+			const key = `${year}Q${q}`;
+			if (!groups.has(key)) groups.set(key, []);
+			groups.get(key)!.push(m);
+		}
+		const avgOf = (arr: number[]) => arr.reduce((a, b) => a + b, 0) / arr.length;
+		return Array.from(groups.entries())
+			.map(([key, months]) => {
+				const sorted = [...months].sort((a, b) => a.periodKey.localeCompare(b.periodKey));
+				const collect = (fn: (m: AggregatePeriod) => number | undefined): number[] =>
+					sorted.map(fn).filter((v): v is number => v != null);
+
+				const sleepHRs = collect(m => m.metrics?.sleepHeartRate?.avg);
+				const activeMin = collect(m => m.metrics?.intenseMinutes?.sum);
+				const weightChanges = collect(m => m.metrics?.weight?.change);
+				const sleepAvgs = collect(m => m.metrics?.sleep?.avg);
+				const runs = collect(m => m.metrics?.workouts?.types?.running);
+
+				return {
+					periodKey: key,
+					period: 'quarter',
+					eventCount: sorted.reduce((s, m) => s + m.eventCount, 0),
+					startDate: sorted[0].startDate,
+					endDate: sorted[sorted.length - 1].endDate,
+					metrics: {
+						sleepHeartRate: sleepHRs.length ? { avg: avgOf(sleepHRs) } : undefined,
+						intenseMinutes: activeMin.length ? { sum: activeMin.reduce((a, b) => a + b, 0) } : undefined,
+						weight: weightChanges.length ? { change: weightChanges.reduce((a, b) => a + b, 0) } : undefined,
+						sleep: sleepAvgs.length ? { avg: avgOf(sleepAvgs) } : undefined,
+						workouts: runs.length ? { types: { running: runs.reduce((a, b) => a + b, 0) } } : undefined,
+					}
+				};
+			})
+			.sort((a, b) => b.periodKey.localeCompare(a.periodKey));
+	});
+
+	const aggregatePeriod = $derived<'week' | 'month' | 'quarter' | 'year'>(
+		selectedWindow === 'month' ? 'month' :
+		selectedWindow === 'quarter' ? 'quarter' :
+		selectedWindow === 'year' ? 'year' : 'week'
 	);
 	const periodData = $derived(
-		aggregatePeriod === 'week' ? weekly : aggregatePeriod === 'month' ? monthly : yearly
+		aggregatePeriod === 'week' ? weekly :
+		aggregatePeriod === 'month' ? monthly :
+		aggregatePeriod === 'quarter' ? quarterData :
+		yearly
 	);
 	const lastPeriod = $derived(periodData.length ? periodData[periodData.length - 1] : null);
 	const lastMetrics = $derived(lastPeriod?.metrics ?? null);
@@ -306,6 +355,10 @@
 			const [year, month] = key.split('M');
 			const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Des'];
 			return `${monthNames[parseInt(month) - 1] ?? month} ${year}`;
+		}
+		if (period === 'quarter') {
+			const [year, q] = key.split('Q');
+			return `Q${q} ${year}`;
 		}
 		return key;
 	}
@@ -1030,8 +1083,8 @@
 
 	<div class="hd-pills" role="tablist" aria-label="Helseperioder">
 		<PeriodPills
-			options={['7d', '30d', '365d', 'Uke', 'Måned', 'År']}
-			value={selectedWindow === '7d' ? '7d' : selectedWindow === '30d' ? '30d' : selectedWindow === '365d' ? '365d' : selectedWindow === 'week' ? 'Uke' : selectedWindow === 'month' ? 'Måned' : 'År'}
+			options={['7d', '30d', '365d', 'Uke', 'Måned', 'Kvartal', 'År']}
+			value={selectedWindow === '7d' ? '7d' : selectedWindow === '30d' ? '30d' : selectedWindow === '365d' ? '365d' : selectedWindow === 'week' ? 'Uke' : selectedWindow === 'month' ? 'Måned' : selectedWindow === 'quarter' ? 'Kvartal' : 'År'}
 			onchange={(value) => {
 				selectedWindow =
 					value === '7d' ? '7d' :
@@ -1039,6 +1092,7 @@
 					value === '365d' ? '365d' :
 					value === 'Uke' ? 'week' :
 					value === 'Måned' ? 'month' :
+					value === 'Kvartal' ? 'quarter' :
 					'year';
 			}}
 		/>
@@ -1289,7 +1343,7 @@
 								<td>{period.metrics?.workouts?.types?.running ?? '–'}</td>
 								<td>{activeSum != null ? Math.round(activeSum / days) : '–'}/d</td>
 								<td>{formatMetric(period.metrics?.sleep?.avg)}t</td>
-								<td>{formatMetric(period.metrics?.heartRate?.avg, 0)}</td>
+								<td>{formatMetric(period.metrics?.sleepHeartRate?.avg, 0)}</td>
 							</tr>
 						{/each}
 					</tbody>
