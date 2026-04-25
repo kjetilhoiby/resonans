@@ -29,14 +29,45 @@ export async function sendSalaryReceivedNudge(
 	now: Date,
 	opts: { force?: boolean } = {}
 ): Promise<{ sent: boolean; reason: string }> {
-	// 1. Detect payday dates
+	// 1. Detect payday — resolve mostRecentPayday regardless of history depth in force mode
+	let mostRecentPayday: string;
+	let prevPaydayDate: string | null = null;
+	let sourceAccountId: string | null = null;
+
 	const payDay = await detectGlobalPayday(userId);
-	if (!payDay || payDay.paydayDates.length < 2) {
+
+	if (payDay && payDay.paydayDates.length >= 2) {
+		mostRecentPayday = payDay.paydayDates[payDay.paydayDates.length - 1];
+		prevPaydayDate = payDay.paydayDates[payDay.paydayDates.length - 2];
+		sourceAccountId = payDay.sourceAccountId;
+	} else if (opts.force && payDay && payDay.paydayDates.length >= 1) {
+		mostRecentPayday = payDay.paydayDates[payDay.paydayDates.length - 1];
+		sourceAccountId = payDay.sourceAccountId;
+	} else if (opts.force) {
+		// Raw fallback: most recent transaction >= 10 000 kr
+		const [fallback] = await db
+			.select({
+				date: canonicalBankTransactions.canonicalDate,
+				accountId: canonicalBankTransactions.accountId
+			})
+			.from(canonicalBankTransactions)
+			.where(
+				and(
+					eq(canonicalBankTransactions.userId, userId),
+					eq(canonicalBankTransactions.isActive, true),
+					sql`${canonicalBankTransactions.amount} >= 10000`
+				)
+			)
+			.orderBy(desc(canonicalBankTransactions.canonicalDate))
+			.limit(1);
+		if (!fallback) return { sent: false, reason: 'no-large-transactions-found' };
+		mostRecentPayday = String(fallback.date);
+		sourceAccountId = fallback.accountId;
+	} else {
 		return { sent: false, reason: 'no-payday-detected' };
 	}
 
 	// 2. Check if the most recent payday is within the detection window
-	const mostRecentPayday = payDay.paydayDates[payDay.paydayDates.length - 1];
 	const paydayDate = new Date(`${mostRecentPayday}T00:00:00.000Z`);
 	const diffMs = now.getTime() - paydayDate.getTime();
 	const diffDays = diffMs / (1000 * 60 * 60 * 24);
@@ -104,9 +135,9 @@ export async function sendSalaryReceivedNudge(
 
 	// 6. Compute savings account balance change
 	let savingsChange = 0;
-	if (payDay.sourceAccountId) {
+	if (sourceAccountId) {
 		try {
-			const dailyBalances = await buildDailyBalances(userId, payDay.sourceAccountId);
+			const dailyBalances = await buildDailyBalances(userId, sourceAccountId);
 			const startRow = dailyBalances.find((r) => r.date >= mostRecentPayday);
 			const endRow = dailyBalances[dailyBalances.length - 1];
 			if (startRow && endRow) {
@@ -119,18 +150,19 @@ export async function sendSalaryReceivedNudge(
 
 	// 7. Compute spending trend vs. previous period
 	let spendingTrend = 0;
-	try {
-		const prevPayday = payDay.paydayDates[payDay.paydayDates.length - 2];
-		const prevFrom = new Date(`${prevPayday}T00:00:00.000Z`);
-		const prevTo = paydayDate;
-		await ensureCategorizedEventsForRange({ userId, from: prevFrom, to: prevTo });
-		const prevTxRows = await queryCategorizedEvents({ userId, from: prevFrom, to: prevTo, spendingOnly: true });
-		const prevSpending = prevTxRows.reduce((sum, row) => sum + Math.abs(Number(row.amount)), 0);
-		if (prevSpending > 0) {
-			spendingTrend = ((totalSpending - prevSpending) / prevSpending) * 100;
+	if (prevPaydayDate) {
+		try {
+			const prevFrom = new Date(`${prevPaydayDate}T00:00:00.000Z`);
+			const prevTo = paydayDate;
+			await ensureCategorizedEventsForRange({ userId, from: prevFrom, to: prevTo });
+			const prevTxRows = await queryCategorizedEvents({ userId, from: prevFrom, to: prevTo, spendingOnly: true });
+			const prevSpending = prevTxRows.reduce((sum, row) => sum + Math.abs(Number(row.amount)), 0);
+			if (prevSpending > 0) {
+				spendingTrend = ((totalSpending - prevSpending) / prevSpending) * 100;
+			}
+		} catch {
+			// Non-fatal
 		}
-	} catch {
-		// Non-fatal
 	}
 
 	// 8. Create nudge event
