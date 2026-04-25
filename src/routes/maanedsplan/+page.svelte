@@ -5,6 +5,7 @@
 	import ScreenTitle from '$lib/components/ui/ScreenTitle.svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import { startNavMetric } from '$lib/client/nav-metrics';
+	import { groupChecklistItems, activityEmoji } from '$lib/utils/checklist-group';
 
 	type SaveState = 'idle' | 'saving' | 'saved';
 
@@ -499,11 +500,24 @@
 
 				{#if selectedWeekChecklist && selectedWeekChecklist.items.length > 0}
 					<ul class="mp-week-items">
-						{#each selectedWeekChecklist.items as item (item.id)}
-							<li class="mp-week-item" class:checked={item.checked}>
-								<span class="mp-week-item-dot" class:checked={item.checked}>{item.checked ? '✓' : ''}</span>
-								<span class="mp-week-item-text">{item.text}</span>
-							</li>
+						{#each groupChecklistItems(selectedWeekChecklist.items) as group}
+							{#if group.type === 'group'}
+								<li class="mp-week-item mp-week-item--group">
+									<span class="mp-week-item-label">
+										{activityEmoji(group.label) ? activityEmoji(group.label) + ' ' : ''}{group.label}
+									</span>
+									<div class="mp-week-slots">
+										{#each group.items as slot}
+											<span class="mp-week-slot" class:checked={slot.checked}>{slot.checked ? '✓' : ''}</span>
+										{/each}
+									</div>
+								</li>
+							{:else}
+								<li class="mp-week-item" class:checked={group.item.checked}>
+									<span class="mp-week-item-dot" class:checked={group.item.checked}>{group.item.checked ? '✓' : ''}</span>
+									<span class="mp-week-item-text">{group.item.text}</span>
+								</li>
+							{/if}
 						{/each}
 					</ul>
 				{:else}
@@ -956,6 +970,37 @@
 		color: #3c4055;
 		text-decoration: line-through;
 	}
+
+	.mp-week-item--group {
+		justify-content: space-between;
+	}
+
+	.mp-week-item-label {
+		font-size: 0.85rem;
+		color: #aaa;
+		line-height: 1.4;
+	}
+
+	.mp-week-slots {
+		display: flex;
+		gap: 5px;
+		flex-shrink: 0;
+	}
+
+	.mp-week-slot {
+		width: 18px;
+		height: 18px;
+		border-radius: 50%;
+		border: 1.5px solid #2a2e3f;
+		font-size: 0.55rem;
+		font-weight: 700;
+		color: white;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		transition: border-color 0.12s, background 0.12s;
+	}
+	.mp-week-slot.checked { border-color: #7c8ef5; background: #7c8ef5; }
 
 	.mp-week-empty {
 		font-size: 0.82rem;
