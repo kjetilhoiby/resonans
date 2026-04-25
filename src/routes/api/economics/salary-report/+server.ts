@@ -10,7 +10,7 @@ import {
 } from '$lib/server/integrations/categorized-events';
 import { METRIC_CATALOG, type MetricId } from '$lib/domain/metric-catalog';
 import type { GoalTrack } from '$lib/domain/goal-tracks';
-import type { SalaryMonthReport, GoalProgressItem } from '$lib/types/salary-report';
+import type { SalaryMonthReport, GoalProgressItem, SalaryInsight } from '$lib/types/salary-report';
 import type { RequestHandler } from './$types';
 
 const SALARY_KEYWORDS = ['lønn', 'lonn', 'salary', 'arbeidsgiver', 'folktrygd', 'nav '];
@@ -243,7 +243,8 @@ export const GET: RequestHandler = async ({ locals }) => {
 		// Non-fatal
 	}
 
-	const report: SalaryMonthReport = {
+	// 9. Generate insights
+	const insights = generateInsights({
 		currentSalaryDate,
 		prevSalaryDate,
 		salaryAmount,
@@ -255,7 +256,129 @@ export const GET: RequestHandler = async ({ locals }) => {
 		goalProgress,
 		previousMonthSpending,
 		spendingTrend
+	});
+
+	const report: SalaryMonthReport = {
+		currentSalaryDate,
+		prevSalaryDate,
+		salaryAmount,
+		totalSpending,
+		totalFixed,
+		totalVariable,
+		categories,
+		savingsChanges,
+		goalProgress,
+		previousMonthSpending,
+		spendingTrend,
+		insights
 	};
 
 	return json(report);
 };
+
+// ── Insight generation ─────────────────────────────────────────────────────
+
+function fmtNOK(n: number) {
+	return `kr ${Math.round(Math.abs(n)).toLocaleString('nb-NO')}`;
+}
+
+function pctLabel(pct: number) {
+	const abs = Math.abs(Math.round(pct));
+	return pct <= 0 ? `ned ${abs}%` : `opp ${abs}%`;
+}
+
+function fmtDateNO(iso: string) {
+	return new Date(iso).toLocaleDateString('nb-NO', { day: 'numeric', month: 'long' });
+}
+
+function generateInsights(data: {
+	currentSalaryDate: string;
+	prevSalaryDate: string;
+	salaryAmount: number;
+	totalSpending: number;
+	totalFixed: number;
+	totalVariable: number;
+	categories: SalaryMonthReport['categories'];
+	savingsChanges: SalaryMonthReport['savingsChanges'];
+	goalProgress: GoalProgressItem[];
+	previousMonthSpending: number;
+	spendingTrend: number;
+}): SalaryInsight[] {
+	const insights: SalaryInsight[] = [];
+	const period = `${fmtDateNO(data.currentSalaryDate)} – i dag`;
+	const baseCtx = `Lønnsperioden: ${period}. Lønn: ${fmtNOK(data.salaryAmount)}. Totalt forbruk: ${fmtNOK(data.totalSpending)} (${pctLabel(data.spendingTrend)} vs forrige periode på ${fmtNOK(data.previousMonthSpending)}).`;
+
+	// 1. Total spending
+	const trendDir = data.spendingTrend <= 0 ? 'ned' : 'opp';
+	const trendEmoji = data.spendingTrend <= 0 ? '📉' : '📈';
+	insights.push({
+		id: 'total_spending',
+		title: `Totalt forbruk gikk ${trendDir} i denne perioden`,
+		emoji: trendEmoji,
+		summary: `${fmtNOK(data.totalSpending)} — ${pctLabel(data.spendingTrend)} vs forrige periode`,
+		systemPrompt: `${baseCtx} Du hjelper brukeren med å reflektere over totalforbruket og eventuelt justere eller opprette mål. Svar kort, konkret og på norsk. Foreslå gjerne et konkret mål om de ikke har ett.`,
+		seedMessage: `Totalt brukte du ${fmtNOK(data.totalSpending)} i lønnsperioden fra ${fmtDateNO(data.currentSalaryDate)} — det er ${pctLabel(data.spendingTrend)} sammenliknet med forrige periode (${fmtNOK(data.previousMonthSpending)}). ${trendEmoji}\n\nHva tenker du om dette? Har du et mål for totalforbruk, eller vil du sette et?`
+	});
+
+	// 2. Top spending categories (up to 3, skip tiny ones)
+	const topCats = data.categories
+		.filter((c) => c.category !== 'innskudd' && c.category !== 'ukategorisert' && c.amount > 200)
+		.slice(0, 4);
+
+	for (const cat of topCats) {
+		const catPct = data.previousMonthSpending > 0
+			? ((cat.amount / data.totalSpending) * 100)
+			: 0;
+		insights.push({
+			id: `category_${cat.category}`,
+			title: `${cat.emoji} ${cat.label}`,
+			emoji: cat.emoji,
+			summary: `${fmtNOK(cat.amount)} — ${Math.round(catPct)}% av totalforbruket`,
+			category: cat.category,
+			systemPrompt: `${baseCtx} Kategori: ${cat.label} (${fmtNOK(cat.amount)}, ${Math.round(catPct)}% av totalt). Du hjelper brukeren med å reflektere over dette og eventuelt justere eller opprette mål for kategorien. Svar kort og på norsk.`,
+			seedMessage: `Du brukte ${fmtNOK(cat.amount)} på ${cat.label} denne perioden — det tilsvarer ${Math.round(catPct)}% av totalforbruket ditt. ${cat.emoji}\n\nHar du noen tanker om dette? Vil du sette et mål for ${cat.label.toLowerCase()}-budsjettet?`
+		});
+	}
+
+	// 3. Goal track insights
+	for (const g of data.goalProgress.filter((g) => g.type === 'track')) {
+		const resultEmoji = g.achieved ? '✅' : '⚠️';
+		const resultText = g.achieved ? 'nådde du målet' : 'nådde du ikke målet';
+		insights.push({
+			id: `goal_${g.metricId ?? g.label}`,
+			title: `Mål: ${g.label}`,
+			emoji: resultEmoji,
+			summary: `${fmtNOK(g.actualValue)} av ${fmtNOK(g.targetValue)} ${g.unit} — ${g.achieved ? 'nådd ✅' : 'ikke nådd ⚠️'}`,
+			systemPrompt: `${baseCtx} Mål: ${g.label}. Faktisk: ${fmtNOK(g.actualValue)}, mål: ${fmtNOK(g.targetValue)} ${g.unit}. Resultatet: ${resultText}. Hjelp brukeren med å reflektere og evt. justere målet. Svar kort og på norsk.`,
+			seedMessage: `For målet om «${g.label}» ${resultText} denne perioden: ${fmtNOK(g.actualValue)} brukt av ${fmtNOK(g.targetValue)} ${g.unit}. ${resultEmoji}\n\nVil du justere målet, eller har du tanker om hva som påvirket resultatet?`
+		});
+	}
+
+	// 4. Savings insight
+	for (const s of data.savingsChanges) {
+		const dir = s.change >= 0 ? 'vokste' : 'sank';
+		const savEmoji = s.change >= 0 ? '💰' : '📊';
+		insights.push({
+			id: `savings_${s.accountId}`,
+			title: `${s.accountName} ${dir} siden lønning`,
+			emoji: savEmoji,
+			summary: `${s.change >= 0 ? '+' : ''}${fmtNOK(s.change)} — fra ${fmtNOK(s.startBalance)} til ${fmtNOK(s.endBalance)}`,
+			systemPrompt: `${baseCtx} Sparekonto «${s.accountName}»: startsaldo ${fmtNOK(s.startBalance)}, sluttsaldo ${fmtNOK(s.endBalance)}, endring ${s.change >= 0 ? '+' : ''}${fmtNOK(s.change)}. Hjelp brukeren med å reflektere og evt. sette sparemål. Svar kort og på norsk.`,
+			seedMessage: `${s.accountName} ${dir} med ${fmtNOK(s.change)} siden lønning (fra ${fmtNOK(s.startBalance)} til ${fmtNOK(s.endBalance)}). ${savEmoji}\n\nHar du et sparemål? Vil du justere eller sette et mål for månedlig sparing?`
+		});
+	}
+
+	// 5. Final free reflection (always last)
+	const monthLabel = new Date(data.currentSalaryDate).toLocaleDateString('nb-NO', { month: 'long', year: 'numeric' });
+	insights.push({
+		id: 'free_reflection',
+		title: `Andre refleksjoner om ${monthLabel}?`,
+		emoji: '💬',
+		summary: 'Fritt rom for tanker om økonomi og mål fremover',
+		systemPrompt: `${baseCtx} Dette er en fri refleksjon om lønnsmåneden. Brukeren kan dele tanker, stille spørsmål, eller snakke om mål fremover. Vær åpen, vennlig og hjelp med det de trenger. Svar på norsk.`,
+		seedMessage: `Har du andre refleksjoner om økonomien i ${monthLabel}? 💬\n\nDet kan være noe du vil endre, mål du vil sette, eller bare en tanke du vil si høyt.`,
+		isFreeReflection: true
+	});
+
+	return insights;
+}
