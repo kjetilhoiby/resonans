@@ -203,7 +203,8 @@ export function getSportType(category: number): string {
 		187: 'indoor_walking',
 		188: 'indoor_running',
 		191: 'indoor_cycling',
-		272: 'e_bike'
+		272: 'e_bike',
+		552: 'yoga' // Withings 'stretching' — treated as yoga (mikroyoga)
 	};
 	const mapped = sportMap[category];
 	if (!mapped) {
