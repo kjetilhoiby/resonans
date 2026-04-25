@@ -26,7 +26,8 @@ export async function sendSalaryReceivedNudge(
 	userId: string,
 	user: (typeof users.$inferSelect),
 	appUrl: string,
-	now: Date
+	now: Date,
+	opts: { force?: boolean } = {}
 ): Promise<{ sent: boolean; reason: string }> {
 	// 1. Detect payday dates
 	const payDay = await detectGlobalPayday(userId);
@@ -39,7 +40,7 @@ export async function sendSalaryReceivedNudge(
 	const paydayDate = new Date(`${mostRecentPayday}T00:00:00.000Z`);
 	const diffMs = now.getTime() - paydayDate.getTime();
 	const diffDays = diffMs / (1000 * 60 * 60 * 24);
-	if (diffDays < 0 || diffDays > SALARY_DETECTION_WINDOW_DAYS) {
+	if (!opts.force && (diffDays < 0 || diffDays > SALARY_DETECTION_WINDOW_DAYS)) {
 		return { sent: false, reason: 'payday-not-recent' };
 	}
 
@@ -54,7 +55,7 @@ export async function sendSalaryReceivedNudge(
 		),
 		columns: { id: true, sentAt: true }
 	});
-	if (existing?.sentAt) {
+	if (!opts.force && existing?.sentAt) {
 		return { sent: false, reason: 'already-sent-this-month' };
 	}
 

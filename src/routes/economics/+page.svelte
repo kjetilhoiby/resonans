@@ -264,6 +264,22 @@
 	} | null>(null);
 	let analysisError = $state<string | null>(null);
 
+	let nudgeSending = $state(false);
+	let nudgeResult = $state<{ sent: boolean; reason: string } | null>(null);
+
+	async function sendSalaryNudge() {
+		nudgeSending = true;
+		nudgeResult = null;
+		try {
+			const res = await fetch('/api/economics/salary-nudge', { method: 'POST' });
+			nudgeResult = await res.json();
+		} catch {
+			nudgeResult = { sent: false, reason: 'Nettverksfeil' };
+		} finally {
+			nudgeSending = false;
+		}
+	}
+
 	async function runAnalysis() {
 		analyzing = true;
 		analysisError = null;
@@ -353,6 +369,24 @@
 				{/if}
 			</Button>
 			<span class="analyze-hint">Bruker AI til å lage din personlige kategoritaksonomi</span>
+		</div>
+
+		<!-- Salary nudge -->
+		<div class="analyze-bar">
+			<Button variant="ghost" className="nudge-btn" onClick={sendSalaryNudge} disabled={nudgeSending}>
+				{#if nudgeSending}
+					<span class="spinner"></span> Sender…
+				{:else}
+					💰 Send lønnsrapport-nudge
+				{/if}
+			</Button>
+			{#if nudgeResult}
+				<span class="nudge-result" class:nudge-ok={nudgeResult.sent} class:nudge-fail={!nudgeResult.sent}>
+					{nudgeResult.sent ? '✓ Sendt' : `— ${nudgeResult.reason}`}
+				</span>
+			{:else}
+				<span class="analyze-hint">Send varsling og åpne lønnsrapporten manuelt</span>
+			{/if}
 		</div>
 
 		{#if analysisError}
@@ -639,6 +673,27 @@
 
 	:global(.analyze-btn:disabled) { opacity: 0.6; cursor: not-allowed; }
 	.analyze-hint { font-size: 0.8rem; color: var(--text-secondary); }
+
+	:global(.nudge-btn) {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.55rem 1.1rem;
+		background: transparent;
+		border: 1px solid hsl(228 20% 26%);
+		border-radius: 8px;
+		color: hsl(228 30% 68%);
+		font-size: 0.9rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: border-color 0.15s, color 0.15s;
+		white-space: nowrap;
+	}
+	:global(.nudge-btn:hover:not(:disabled)) { border-color: hsl(228 50% 50%); color: hsl(228 60% 80%); }
+	:global(.nudge-btn:disabled) { opacity: 0.5; cursor: not-allowed; }
+	.nudge-result { font-size: 0.82rem; font-weight: 500; }
+	.nudge-ok { color: #4ade80; }
+	.nudge-fail { color: hsl(228 20% 50%); }
 
 	@keyframes spin { to { transform: rotate(360deg); } }
 	.spinner {
