@@ -76,7 +76,7 @@ const ACTIVITY_KEYWORDS: Array<[RegExp, ActivityType]> = [
 	[/\b(gå(tur(?:er)?)?|turgå(er|ing)?|walking|walk)\b/, 'walking'],
 	[/\b(styrke(trening)?|vektløft(ing)?|gym|trene?\s+styrke)\b/, 'strength'],
 	[/\b(svøm(me|ming|mer)?|swim(ming)?)\b/, 'swimming'],
-	[/\b(yoga|yogaøkt(?:er)?)\b/, 'yoga'],
+	[/\b(yoga|yogaøkt(?:er)?|mikroyoga)\b/, 'yoga'],
 	[/\b(hiit|intervall(trening)?)\b/, 'hiit'],
 	[/\b(ro(ing)?|roing|rowing)\b/, 'rowing'],
 	[/\b(ski(løp(ing)?|ing)?|langrenn|alpint|skitur(?:er)?)\b/, 'skiing'],
