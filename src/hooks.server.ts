@@ -9,6 +9,7 @@ import { resolveApiSecretAuthFromRequest } from '$lib/server/api-secrets';
 import { db } from '$lib/db';
 import { memories } from '$lib/db/schema';
 import { markNudgeOpened } from '$lib/server/nudge-events';
+import { isPreviewEnv, PREVIEW_AUTH_COOKIE, verifyPreviewToken } from '$lib/server/preview-auth';
 
 // Start scheduler when server starts
 if (env.ENABLE_IN_APP_SCHEDULER === 'true') {
@@ -55,6 +56,13 @@ const authorizationHandle: Handle = async ({ event, resolve }) => {
 	const session = await event.locals.auth();
 	if (session?.user?.id) {
 		return resolve(event);
+	}
+
+	if (isPreviewEnv()) {
+		const token = event.cookies.get(PREVIEW_AUTH_COOKIE);
+		if (token && verifyPreviewToken(token, env.AUTH_SECRET)) {
+			return resolve(event);
+		}
 	}
 
 	if (event.url.pathname.startsWith('/api/')) {
