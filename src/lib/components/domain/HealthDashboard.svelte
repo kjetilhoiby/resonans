@@ -14,7 +14,7 @@
 	import GpxMapSvg from '../charts/GpxMapSvg.svelte';
 	import MetricCard from '$lib/components/visualizations/MetricCard.svelte';
 
-	type WindowMode = '7d' | '30d' | '365d' | 'week' | 'month' | 'year';
+	type WindowMode = '7d' | '30d' | '365d' | 'week' | 'month' | 'year' | 'quarter';
 
 	interface PeriodMetrics {
 		weight?: { avg?: number; min?: number; max?: number; change?: number };
@@ -22,6 +22,8 @@
 		sleep?: { avg?: number; min?: number; max?: number };
 		workouts?: { count?: number; totalDuration?: number; types?: Record<string, number> };
 		intenseMinutes?: { sum?: number; avg?: number };
+		heartRate?: { avg?: number; min?: number; max?: number };
+		sleepHeartRate?: { avg?: number; min?: number; max?: number };
 		sleepLag?: number;
 		earlyWake?: number;
 	}
@@ -30,6 +32,8 @@
 		period: string;
 		periodKey: string;
 		eventCount: number;
+		startDate?: string | Date;
+		endDate?: string | Date;
 		metrics?: PeriodMetrics | null;
 	}
 
@@ -179,9 +183,50 @@
 	}
 
 	const aggregatePeriod = $derived<'week' | 'month' | 'year'>(
-		selectedWindow === 'month' ? 'month' : selectedWindow === 'year' ? 'year' : 'week'
+		selectedWindow === 'month' || selectedWindow === 'quarter' ? 'month' : selectedWindow === 'year' ? 'year' : 'week'
 	);
+
+	const quarterData = $derived.by<AggregatePeriod[]>(() => {
+		const quarters: AggregatePeriod[] = [];
+		const byQuarter = new Map<string, AggregatePeriod[]>();
+		for (const m of monthly) {
+			const [year, monthStr] = m.periodKey.split('M');
+			const q = Math.ceil(parseInt(monthStr) / 3);
+			const key = `${year}Q${q}`;
+			if (!byQuarter.has(key)) byQuarter.set(key, []);
+			byQuarter.get(key)!.push(m);
+		}
+		for (const [key, months] of byQuarter) {
+			const sleepHRs = months.flatMap(m => {
+				const v = m.metrics?.sleepHeartRate?.avg;
+				return v !== undefined ? [v] : [];
+			});
+			const intenseSum = months.reduce((s, m) => s + (m.metrics?.intenseMinutes?.sum ?? 0), 0);
+			const runSum = months.reduce((s, m) => s + (m.metrics?.workouts?.types?.running ?? 0), 0);
+			const weightChanges = months.flatMap(m => {
+				const v = m.metrics?.weight?.change;
+				return v !== undefined ? [v] : [];
+			});
+			const sleepAvgs = months.flatMap(m => {
+				const v = m.metrics?.sleep?.avg;
+				return v !== undefined ? [v] : [];
+			});
+			const qMetrics: PeriodMetrics = {
+				intenseMinutes: intenseSum > 0 ? { sum: intenseSum } : undefined,
+				workouts: runSum > 0 ? { types: { running: runSum } } : undefined,
+				weight: weightChanges.length > 0 ? { change: weightChanges.reduce((a, b) => a + b, 0) } : undefined,
+				sleep: sleepAvgs.length > 0 ? { avg: sleepAvgs.reduce((a, b) => a + b, 0) / sleepAvgs.length } : undefined,
+				sleepHeartRate: sleepHRs.length > 0 ? { avg: sleepHRs.reduce((a, b) => a + b, 0) / sleepHRs.length } : undefined
+			};
+			const start = months[months.length - 1]?.startDate;
+			const end = months[0]?.endDate;
+			quarters.push({ period: 'quarter', periodKey: key, eventCount: months.reduce((s, m) => s + m.eventCount, 0), startDate: start, endDate: end, metrics: qMetrics });
+		}
+		return quarters.sort((a, b) => a.periodKey.localeCompare(b.periodKey));
+	});
+
 	const periodData = $derived(
+		selectedWindow === 'quarter' ? quarterData :
 		aggregatePeriod === 'week' ? weekly : aggregatePeriod === 'month' ? monthly : yearly
 	);
 	const lastPeriod = $derived(periodData.length ? periodData[periodData.length - 1] : null);
@@ -307,6 +352,10 @@
 			const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Des'];
 			return `${monthNames[parseInt(month) - 1] ?? month} ${year}`;
 		}
+		if (period === 'quarter') {
+			const [year, q] = key.split('Q');
+			return `Q${q} ${year}`;
+		}
 		return key;
 	}
 
@@ -321,7 +370,8 @@
 		return `${sign}${change.toFixed(1)}`;
 	}
 
-	function daysInPeriod(p: { startDate: string | Date; endDate: string | Date }): number {
+	function daysInPeriod(p: { startDate?: string | Date; endDate?: string | Date }): number {
+		if (!p.startDate || !p.endDate) return 1;
 		const ms = new Date(p.endDate).getTime() - new Date(p.startDate).getTime();
 		return Math.max(1, Math.round(ms / 86400000) + 1);
 	}
@@ -1030,8 +1080,8 @@
 
 	<div class="hd-pills" role="tablist" aria-label="Helseperioder">
 		<PeriodPills
-			options={['7d', '30d', '365d', 'Uke', 'Måned', 'År']}
-			value={selectedWindow === '7d' ? '7d' : selectedWindow === '30d' ? '30d' : selectedWindow === '365d' ? '365d' : selectedWindow === 'week' ? 'Uke' : selectedWindow === 'month' ? 'Måned' : 'År'}
+			options={['7d', '30d', '365d', 'Uke', 'Måned', 'Kvartal', 'År']}
+			value={selectedWindow === '7d' ? '7d' : selectedWindow === '30d' ? '30d' : selectedWindow === '365d' ? '365d' : selectedWindow === 'week' ? 'Uke' : selectedWindow === 'month' ? 'Måned' : selectedWindow === 'quarter' ? 'Kvartal' : 'År'}
 			onchange={(value) => {
 				selectedWindow =
 					value === '7d' ? '7d' :
@@ -1039,6 +1089,7 @@
 					value === '365d' ? '365d' :
 					value === 'Uke' ? 'week' :
 					value === 'Måned' ? 'month' :
+					value === 'Kvartal' ? 'quarter' :
 					'year';
 			}}
 		/>
@@ -1273,10 +1324,10 @@
 						<tr>
 							<th>Periode</th>
 							<th title="Vektendring i perioden">⚖️</th>
-							<th title="Løpeøkter">🏃</th>
+							<th title="Treningsøkter (løp)">🏃</th>
 							<th title="Aktive minutter (snitt per dag)">⚡</th>
 							<th title="Søvn (snitt per natt)">🌙</th>
-							<th title="Hvilepuls (snitt)">💓</th>
+							<th title="Sovepuls (snitt)">💓</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -1289,7 +1340,7 @@
 								<td>{period.metrics?.workouts?.types?.running ?? '–'}</td>
 								<td>{activeSum != null ? Math.round(activeSum / days) : '–'}/d</td>
 								<td>{formatMetric(period.metrics?.sleep?.avg)}t</td>
-								<td>{formatMetric(period.metrics?.heartRate?.avg, 0)}</td>
+								<td>{formatMetric(period.metrics?.sleepHeartRate?.avg, 0)}</td>
 							</tr>
 						{/each}
 					</tbody>
@@ -1669,6 +1720,11 @@
 		padding: 8px 6px;
 		border-top: 1px solid #202020;
 		font-size: 0.8rem;
+	}
+
+	.hd-table td:first-child {
+		width: 30%;
+		white-space: nowrap;
 	}
 
 	.hd-table th {
