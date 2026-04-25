@@ -5,7 +5,8 @@ export type NotificationRouteKey =
 	| 'dayPlanning'
 	| 'dayClose'
 	| 'relationshipCheckinMorning'
-	| 'digestDay';
+	| 'digestDay'
+	| 'salaryReceived';
 
 export type GoogleChatChannel = {
 	id: string;
