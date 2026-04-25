@@ -17,6 +17,32 @@
 	let withingsImportMode = $state<'days' | 'from2017'>('days');
 	let withingsImportDays = $state(30);
 
+	type WithingsDebugWorkout = {
+		category: number;
+		sportType: string;
+		mapped: boolean;
+		startdate: number;
+		enddate: number;
+		durationSeconds: number;
+		distance?: number;
+		calories?: number;
+		steps?: number;
+		modified?: number;
+		deviceid?: string;
+		model?: string;
+	};
+	let showWithingsDebug = $state(false);
+	let loadingWithingsDebug = $state(false);
+	let withingsDebug = $state<{
+		windowDays: number;
+		totalFetched: number;
+		returned: number;
+		workouts: WithingsDebugWorkout[];
+	} | null>(null);
+	let withingsDebugError = $state<string | null>(null);
+	let withingsDebugDays = $state(30);
+	let withingsDebugLimit = $state(10);
+
 	let sparebank1Status = $state<any>(null);
 	let loadingSparebank1 = $state(false);
 	let syncingSparebank1 = $state(false);
@@ -288,6 +314,36 @@
 		await loadWithingsStatus();
 	}
 
+	async function loadWithingsDebug() {
+		loadingWithingsDebug = true;
+		withingsDebugError = null;
+		try {
+			const days = Math.max(1, Math.min(365, Math.floor(Number(withingsDebugDays) || 30)));
+			const limit = Math.max(1, Math.min(100, Math.floor(Number(withingsDebugLimit) || 10)));
+			withingsDebugDays = days;
+			withingsDebugLimit = limit;
+			const res = await fetch(
+				`/api/sensors/withings/debug/recent-workouts?days=${days}&limit=${limit}`
+			);
+			const payload = await res.json();
+			if (!res.ok) throw new Error(payload.error || 'Klarte ikke hente aktiviteter');
+			withingsDebug = payload;
+		} catch (error) {
+			withingsDebugError = error instanceof Error ? error.message : 'Ukjent feil';
+			withingsDebug = null;
+		} finally {
+			loadingWithingsDebug = false;
+		}
+	}
+
+	function formatDuration(seconds: number): string {
+		const m = Math.floor(seconds / 60);
+		const s = seconds % 60;
+		const h = Math.floor(m / 60);
+		if (h > 0) return `${h}t ${m % 60}m ${s}s`;
+		return `${m}m ${s}s`;
+	}
+
 	async function loadSpondStatus() {
 		loadingSpond = true;
 		try {
@@ -550,6 +606,91 @@
 			<a href="/api/sensors/withings/connect" class="btn-primary">Koble til Withings</a>
 		{/if}
 		{#if withingsResult}<p class={withingsResult.success ? 'ok' : 'err'}>{withingsResult.message}</p>{/if}
+
+		{#if withingsStatus?.connected}
+			<div class="details-wrap">
+				<button
+					type="button"
+					class="btn-ghost"
+					onclick={() => (showWithingsDebug = !showWithingsDebug)}
+				>
+					{showWithingsDebug ? 'Skjul debug' : 'Vis debug (rå aktiviteter fra Withings)'}
+				</button>
+
+				{#if showWithingsDebug}
+					<div class="debug-panel">
+						<div class="row debug-controls">
+							<label class="option-pill">
+								<span>Siste</span>
+								<input
+									type="number"
+									min="1"
+									max="365"
+									class="input days-input"
+									bind:value={withingsDebugDays}
+								/>
+								<span>dager</span>
+							</label>
+							<label class="option-pill">
+								<span>Maks</span>
+								<input
+									type="number"
+									min="1"
+									max="100"
+									class="input days-input"
+									bind:value={withingsDebugLimit}
+								/>
+								<span>treff</span>
+							</label>
+							<button
+								type="button"
+								class="btn-secondary"
+								onclick={loadWithingsDebug}
+								disabled={loadingWithingsDebug}
+							>
+								{loadingWithingsDebug ? 'Henter...' : 'Hent'}
+							</button>
+						</div>
+
+						{#if withingsDebugError}
+							<p class="err">{withingsDebugError}</p>
+						{/if}
+
+						{#if withingsDebug}
+							<p class="debug-summary">
+								Vindu: {withingsDebug.windowDays} dager · Hentet: {withingsDebug.totalFetched} · Viser: {withingsDebug.returned}
+							</p>
+							<div class="debug-table-wrap">
+								<table class="debug-table">
+									<thead>
+										<tr>
+											<th>Start</th>
+											<th>Kategori</th>
+											<th>Sport</th>
+											<th>Varighet</th>
+											<th>Distanse</th>
+											<th>Kalorier</th>
+										</tr>
+									</thead>
+									<tbody>
+										{#each withingsDebug.workouts as w}
+											<tr class={w.mapped ? '' : 'unmapped-row'}>
+												<td>{new Date(w.startdate * 1000).toLocaleString('nb-NO')}</td>
+												<td>{w.category}</td>
+												<td>{w.sportType}{w.mapped ? '' : ' (umappet)'}</td>
+												<td>{formatDuration(w.durationSeconds)}</td>
+												<td>{w.distance != null ? `${Math.round(w.distance)} m` : '-'}</td>
+												<td>{w.calories != null ? Math.round(w.calories) : '-'}</td>
+											</tr>
+										{/each}
+									</tbody>
+								</table>
+							</div>
+						{/if}
+					</div>
+				{/if}
+			</div>
+		{/if}
 	</section>
 
 	<section class="card">
@@ -866,6 +1007,8 @@
 	.debug-table th, .debug-table td { padding: 0.34rem 0.45rem; text-align: left; border-bottom: 1px solid #252525; white-space: nowrap; }
 	.debug-table th { color: var(--text-tertiary); font-weight: 500; }
 	.import-mode-row { align-items: center; gap: 0.5rem; }
+	.debug-controls { align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.6rem; }
+	.unmapped-row { background: rgba(255, 180, 0, 0.07); }
 	.option-pill {
 		display: inline-flex;
 		align-items: center;
