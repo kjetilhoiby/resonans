@@ -10,7 +10,7 @@
 	import { FLOWS } from '$lib/flows/registry';
 	import { finishNavMetric, startNavMetric } from '$lib/client/nav-metrics';
 	import MetricCard from '$lib/components/visualizations/MetricCard.svelte';
-	import { groupChecklistItems, activityEmoji, type GroupedChecklistEntry } from '$lib/utils/checklist-group';
+	import { groupChecklistItems, activityEmoji, sortByTime, formatItemTime, type GroupedChecklistEntry } from '$lib/utils/checklist-group';
 	import WeatherStrip, { type WeatherPeriod } from '$lib/components/ui/WeatherStrip.svelte';
 
 	type SaveState = 'idle' | 'saving' | 'saved';
@@ -41,7 +41,9 @@
 			durationMinutes?: number;
 			distanceKm?: number;
 			autoChecked?: boolean;
-		};
+			timeHour?: number;
+			timeMinute?: number;
+		} | null;
 	}
 
 	interface WeekChecklist {
@@ -247,6 +249,7 @@
 	});
 
 	const selectedDayChecklist = $derived(dayChecklistsState[selectedDayIso] ?? null);
+	const sortedDayItems = $derived(selectedDayChecklist ? sortByTime(selectedDayChecklist.items) : []);
 	const selectedDay = $derived(data.week.days.find((day) => day.isoDate === selectedDayIso) ?? data.week.days[0]);
 	const selectedDayNote = $derived(dayNotesState[selectedDayIso] ?? '');
 	const selectedDayHeadline = $derived(dayHeadlinesState[selectedDayIso] ?? '');
@@ -1723,7 +1726,7 @@
 
 		{#if selectedDayChecklist}
 			<ul class="wp-checklist">
-				{#each selectedDayChecklist.items as item}
+				{#each sortedDayItems as item}
 					<li
 						class="wp-check-row"
 						class:is-dragging={dragItem?.itemId === item.id}
@@ -1761,6 +1764,9 @@
 								</div>
 							{:else}
 								<button type="button" class="wp-item-text-btn" onclick={() => void startEditing(selectedDayChecklist.id, item)}>
+									{#if item.metadata?.timeHour !== undefined}
+										<span class="wp-time-badge">{formatItemTime(item.metadata.timeHour, item.metadata.timeMinute ?? 0)}</span>
+									{/if}
 									<span class="wp-check-text" class:checked={item.checked}>{item.text}</span>
 									{#if item.metadata?.linkedTaskId}
 										<span class="wp-intent-badge" title="Koblet til ukesmål: {item.metadata.linkedTaskTitle ?? ''}">
@@ -1769,8 +1775,8 @@
 												? item.metadata.linkedTaskTitle.slice(0, 24) + (item.metadata.linkedTaskTitle.length > 24 ? '…' : '')
 												: 'Ukesmål'}
 										</span>
-								{/if}
-							</button>
+									{/if}
+								</button>
 							{/if}
 							<button type="button" class="wp-check-toggle" onclick={() => void toggleChecklistItem(selectedDayChecklist.id, item.id, !item.checked)} aria-label="Toggle">
 								<span class="wp-check-circle" class:checked={item.checked}>{item.checked ? '✓' : ''}</span>
@@ -2495,6 +2501,21 @@
 	.wp-check-text.checked {
 		color: #737d95;
 		text-decoration: line-through;
+	}
+
+	.wp-time-badge {
+		display: inline-block;
+		font-size: 0.7rem;
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+		color: #7c8ef5;
+		background: rgba(124, 142, 245, 0.1);
+		border: 1px solid rgba(124, 142, 245, 0.25);
+		border-radius: 5px;
+		padding: 1px 5px;
+		margin-right: 6px;
+		vertical-align: middle;
+		white-space: nowrap;
 	}
 
 	.wp-intent-badge {
