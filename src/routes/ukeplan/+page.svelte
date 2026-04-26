@@ -1260,6 +1260,13 @@
 		return `Avslutt uke ${data.week.week}`;
 	}
 
+	async function navigateToPlanningGoal() {
+		const res = await fetch('/api/goals/planning');
+		if (!res.ok) return;
+		const { id } = await res.json() as { id: string };
+		await goto(`/goals?goal=${id}`);
+	}
+
 	async function ensureWeekChecklist() {
 		if (weekChecklistState) return weekChecklistState;
 
@@ -1895,6 +1902,7 @@
 		oncomplete={async () => {
 			weekPlanChatOpen = false;
 			await invalidateAll();
+			await navigateToPlanningGoal();
 		}}
 	/>
 {/if}
@@ -1907,6 +1915,10 @@
 			prompts: { chat: buildWeekReviewPrefill() }
 		}}
 		onclose={() => (weekReviewChatOpen = false)}
+		oncomplete={async () => {
+			weekReviewChatOpen = false;
+			await navigateToPlanningGoal();
+		}}
 	/>
 {/if}
 
