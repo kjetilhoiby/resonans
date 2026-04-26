@@ -4,7 +4,7 @@ import { db } from '$lib/db';
 import { checklistItems, checklists } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { parseListRepeatCount } from '$lib/server/list-repeat-parser';
-import { parseChecklistItemIntent, findLinkedTask } from '$lib/server/checklist-intent-linker';
+import { parseChecklistItemIntent, findLinkedTask, stripTimeFromText } from '$lib/server/checklist-intent-linker';
 import { getOrCreatePlanningGoal, createTask } from '$lib/server/goals';
 import { enqueueBackgroundJob } from '$lib/server/background-jobs';
 
@@ -144,11 +144,12 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 	const slotMeta = (itemMetadata.wakeTargetHour !== undefined)
 		? itemMetadata
 		: null;
+	const baseLabel = itemMetadata.timeHour !== undefined ? stripTimeFromText(parsed.label) : parsed.label;
 	const createdItems = await db.insert(checklistItems).values(
 		Array.from({ length: repeatCount }, (_, index) => ({
 			checklistId: params.id,
 			userId,
-			text: repeatCount > 1 ? `${parsed.label} (${index + 1}/${repeatCount})` : parsed.label,
+			text: repeatCount > 1 ? `${baseLabel} (${index + 1}/${repeatCount})` : baseLabel,
 			sortOrder: sortOrder + index,
 			...(slotMeta
 				? { metadata: slotMeta }

@@ -58,6 +58,15 @@ function parseItemTime(text: string): { hour: number; minute: number } | null {
 	return null;
 }
 
+/** Strip time expressions from item text so the label is clean when a time chip is shown separately. */
+export function stripTimeFromText(text: string): string {
+	const result = text
+		.replace(/\s*kl(?:okka)?\.?\s*\d{1,2}(?:[.:]\d{2})?\s*/gi, ' ')
+		.replace(/\s*\b([01]?\d|2[0-3])[.:]([0-5]\d)\b\s*/g, ' ')
+		.trim();
+	return result || text;
+}
+
 export type LinkedTask = {
 	taskId: string;
 	taskTitle: string;

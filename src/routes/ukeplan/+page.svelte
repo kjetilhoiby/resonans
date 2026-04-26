@@ -10,7 +10,7 @@
 	import { FLOWS } from '$lib/flows/registry';
 	import { finishNavMetric, startNavMetric } from '$lib/client/nav-metrics';
 	import MetricCard from '$lib/components/visualizations/MetricCard.svelte';
-	import { groupChecklistItems, activityEmoji, sortByTime, formatItemTime, type GroupedChecklistEntry } from '$lib/utils/checklist-group';
+	import { groupChecklistItems, activityEmoji, sortByTime, formatItemTime, stripTimeFromText, type GroupedChecklistEntry } from '$lib/utils/checklist-group';
 	import WeatherStrip, { type WeatherPeriod } from '$lib/components/ui/WeatherStrip.svelte';
 
 	type SaveState = 'idle' | 'saving' | 'saved';
@@ -1767,7 +1767,7 @@
 									{#if item.metadata?.timeHour !== undefined}
 										<span class="wp-time-badge">{formatItemTime(item.metadata.timeHour, item.metadata.timeMinute ?? 0)}</span>
 									{/if}
-									<span class="wp-check-text" class:checked={item.checked}>{item.text}</span>
+									<span class="wp-check-text" class:checked={item.checked}>{item.metadata?.timeHour !== undefined ? stripTimeFromText(item.text) : item.text}</span>
 									{#if item.metadata?.linkedTaskId}
 										<span class="wp-intent-badge" title="Koblet til ukesmål: {item.metadata.linkedTaskTitle ?? ''}">
 											{item.metadata.autoChecked ? '⚡' : '🔗'}
