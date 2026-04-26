@@ -54,3 +54,21 @@ export function activityEmoji(label: string): string {
 	}
 	return '';
 }
+
+type WithTime = { metadata?: { timeHour?: number; timeMinute?: number } | null };
+
+/** Sort items with a scheduled time to the top, then chronologically. Untimed items keep original order. */
+export function sortByTime<T extends WithTime>(items: T[]): T[] {
+	const timed = items.filter((i) => i.metadata?.timeHour !== undefined);
+	const untimed = items.filter((i) => i.metadata?.timeHour === undefined);
+	timed.sort((a, b) => {
+		const aMin = (a.metadata!.timeHour! * 60) + (a.metadata?.timeMinute ?? 0);
+		const bMin = (b.metadata!.timeHour! * 60) + (b.metadata?.timeMinute ?? 0);
+		return aMin - bMin;
+	});
+	return [...timed, ...untimed];
+}
+
+export function formatItemTime(hour: number, minute: number): string {
+	return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}

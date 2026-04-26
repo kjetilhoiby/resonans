@@ -101,30 +101,41 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 				}
 			}
 			} // end non-wake branch
-		} else if (intent.matched && weekKeys) {
-			// Day-level items: link to existing task (existing behaviour)
-			const linkedTask = await findLinkedTask({
-				userId,
-				itemText: parsed.label,
-				weekDashedKey: weekKeys.dashedKey,
-				weekCompactKey: weekKeys.compactKey
-			});
+		} else if (weekKeys) {
+			// Day-level items: parse time + optionally link to existing task
+			const timeFields = intent.timeHour !== undefined
+				? { timeHour: intent.timeHour, timeMinute: intent.timeMinute ?? 0 }
+				: {};
 
-			if (linkedTask) {
-				itemMetadata = {
-					linkedTaskId: linkedTask.taskId,
-					linkedTaskTitle: linkedTask.taskTitle,
-					activityType: intent.activityType,
-					...(intent.durationMinutes !== undefined && { durationMinutes: intent.durationMinutes }),
-					...(intent.distanceKm !== undefined && { distanceKm: intent.distanceKm })
-				};
-			} else if (intent.activityType) {
-				// No matching week task, but we still store intent for future matching
-				itemMetadata = {
-					activityType: intent.activityType,
-					...(intent.durationMinutes !== undefined && { durationMinutes: intent.durationMinutes }),
-					...(intent.distanceKm !== undefined && { distanceKm: intent.distanceKm })
-				};
+			if (intent.matched) {
+				const linkedTask = await findLinkedTask({
+					userId,
+					itemText: parsed.label,
+					weekDashedKey: weekKeys.dashedKey,
+					weekCompactKey: weekKeys.compactKey
+				});
+
+				if (linkedTask) {
+					itemMetadata = {
+						...timeFields,
+						linkedTaskId: linkedTask.taskId,
+						linkedTaskTitle: linkedTask.taskTitle,
+						activityType: intent.activityType,
+						...(intent.durationMinutes !== undefined && { durationMinutes: intent.durationMinutes }),
+						...(intent.distanceKm !== undefined && { distanceKm: intent.distanceKm })
+					};
+				} else if (intent.activityType) {
+					itemMetadata = {
+						...timeFields,
+						activityType: intent.activityType,
+						...(intent.durationMinutes !== undefined && { durationMinutes: intent.durationMinutes }),
+						...(intent.distanceKm !== undefined && { distanceKm: intent.distanceKm })
+					};
+				} else {
+					itemMetadata = { ...timeFields };
+				}
+			} else if (Object.keys(timeFields).length > 0) {
+				itemMetadata = { ...timeFields };
 			}
 		}
 	}

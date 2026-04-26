@@ -85,7 +85,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			const itemsToInsert = await Promise.all(
 				toAdd.map(async (text, i) => {
 					const intent = parseChecklistItemIntent(text);
-					let metadata: Record<string, unknown> = {};
+					const timeFields = intent.timeHour !== undefined
+						? { timeHour: intent.timeHour, timeMinute: intent.timeMinute ?? 0 }
+						: {};
+					let metadata: Record<string, unknown> = { ...timeFields };
 					if (intent.matched) {
 						const linkedTask = await findLinkedTask({
 							userId,
@@ -95,6 +98,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 						});
 						if (linkedTask) {
 							metadata = {
+								...timeFields,
 								linkedTaskId: linkedTask.taskId,
 								linkedTaskTitle: linkedTask.taskTitle,
 								activityType: intent.activityType,
@@ -103,6 +107,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 							};
 						} else if (intent.activityType) {
 							metadata = {
+								...timeFields,
 								activityType: intent.activityType,
 								...(intent.durationMinutes !== undefined && { durationMinutes: intent.durationMinutes }),
 								...(intent.distanceKm !== undefined && { distanceKm: intent.distanceKm })

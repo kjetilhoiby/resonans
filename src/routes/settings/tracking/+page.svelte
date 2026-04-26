@@ -142,8 +142,9 @@
 					<div class="edit-form">
 						<div class="field">
 							<label class="field-label" for="edit-title-{series.id}">Tittel</label>
-						<Input
-							id="edit-title-{series.id}"
+							<Input
+								id="edit-title-{series.id}"
+								bind:value={draftTitle}
 							/>
 						</div>
 

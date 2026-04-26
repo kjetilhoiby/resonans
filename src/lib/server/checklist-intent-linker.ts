@@ -26,9 +26,37 @@ export type ChecklistItemIntent = {
 	wakeTargetHour?: number;
 	/** Target wake-up minute (0–59), defaults to 0 */
 	wakeTargetMinute?: number;
+	/** Scheduled time hour (0–23), e.g. 14 for "møte kl. 14:15" */
+	timeHour?: number;
+	/** Scheduled time minute (0–59) */
+	timeMinute?: number;
 	/** The raw text that was parsed */
 	sourceText: string;
 };
+
+/** Extract a scheduled time from item text (e.g. "middag kl. 16" → { hour: 16, minute: 0 }) */
+function parseItemTime(text: string): { hour: number; minute: number } | null {
+	const lower = text.toLowerCase();
+	// "kl. 16", "kl. 14:15", "kl. 14.15", "klokka 14:30"
+	const klMatch = lower.match(/kl(?:okka)?\.?\s*(\d{1,2})(?:[.:](\d{2}))?/i);
+	if (klMatch) {
+		const hour = parseInt(klMatch[1], 10);
+		const minute = parseInt(klMatch[2] ?? '0', 10);
+		if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) {
+			return { hour, minute };
+		}
+	}
+	// Bare "HH.MM" or "HH:MM" — require minutes to avoid false positives
+	const bareMatch = lower.match(/\b([01]?\d|2[0-3])[.:]([0-5]\d)\b/);
+	if (bareMatch) {
+		const hour = parseInt(bareMatch[1], 10);
+		const minute = parseInt(bareMatch[2], 10);
+		if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) {
+			return { hour, minute };
+		}
+	}
+	return null;
+}
 
 export type LinkedTask = {
 	taskId: string;
@@ -48,6 +76,10 @@ export type LinkedTask = {
  */
 export function parseChecklistItemIntent(text: string): ChecklistItemIntent {
 	const lower = text.toLowerCase();
+	const parsedTime = parseItemTime(text);
+	const timeFields = parsedTime
+		? { timeHour: parsedTime.hour, timeMinute: parsedTime.minute }
+		: {};
 
 	// Wake-time: "stå opp kl. 6", "stå opp klokka 6:30", "stå opp 06:00"
 	const wakeMatch =
@@ -57,19 +89,20 @@ export function parseChecklistItemIntent(text: string): ChecklistItemIntent {
 		const hour = Number.parseInt(wakeMatch[1], 10);
 		const minute = Number.parseInt(wakeMatch[2] ?? '0', 10);
 		if (hour >= 0 && hour <= 12) {
-			return { matched: true, wakeTargetHour: hour, wakeTargetMinute: minute, sourceText: text };
+			return { matched: true, wakeTargetHour: hour, wakeTargetMinute: minute, ...timeFields, sourceText: text };
 		}
 	}
 
 	const result = parseTaskIntent(text);
 	if (!result.matched || !result.intent) {
-		return { matched: false, sourceText: text };
+		return { matched: parsedTime !== null, ...timeFields, sourceText: text };
 	}
 	return {
 		matched: true,
 		activityType: result.intent.activityType,
 		durationMinutes: result.intent.durationMinutes,
 		distanceKm: result.intent.distanceKm,
+		...timeFields,
 		sourceText: text
 	};
 }
