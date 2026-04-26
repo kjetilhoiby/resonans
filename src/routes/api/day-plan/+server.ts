@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { checklists, checklistItems, memories } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
-import { parseChecklistItemIntent, findLinkedTask } from '$lib/server/checklist-intent-linker';
+import { parseChecklistItemIntent, findLinkedTask, stripTimeFromText } from '$lib/server/checklist-intent-linker';
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const userId = locals.userId;
@@ -114,10 +114,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 							};
 						}
 					}
+					const storedText = intent.timeHour !== undefined ? stripTimeFromText(text) : text;
 					return {
 						checklistId: dayChecklist!.id,
 						userId,
-						text,
+						text: storedText,
 						sortOrder: nextOrder + i,
 						...(Object.keys(metadata).length > 0 && { metadata })
 					};
