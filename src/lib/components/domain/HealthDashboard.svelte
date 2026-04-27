@@ -167,6 +167,16 @@
 	let mapPoints = $state<TrackPoint[]>([]);
 	let mapLoading = $state(false);
 
+	// Activity card expand state
+	let expandedActivityIds = $state<Set<string>>(new Set());
+
+	function toggleActivity(activityId: string) {
+		const next = new Set(expandedActivityIds);
+		if (next.has(activityId)) next.delete(activityId);
+		else next.add(activityId);
+		expandedActivityIds = next;
+	}
+
 	async function openMap(eventId: string) {
 		if (mapEventId === eventId) { mapEventId = null; mapPoints = []; return; }
 		mapEventId = eventId;
@@ -1421,53 +1431,69 @@
 					{#each activities.slice(0, 20) as act}
 						{@const trackEventId = act.evidence.find(e => e.hasTrackPoints)?.eventId ?? null}
 						{@const discrepancies = sourceDiscrepancies(act.evidence)}
-						<a class="hd-activity-row" href="/aktivitet/{act.activityId}">
-							<div class="hd-activity-icon">{sportIcon(act.sportType)}</div>
-							<div class="hd-activity-info">
-								<span class="hd-activity-label">{sportLabel(act.sportType)}</span>
-								<span class="hd-activity-meta">
-									{formatActivityDate(act.startTime)}
-									{#if act.distanceMeters}· {(act.distanceMeters / 1000).toFixed(1)} km{/if}
-									{#if act.durationSeconds}· {formatDuration(act.durationSeconds)}{/if}
-									{#if act.avgHeartRate}· ♥ {act.avgHeartRate} bpm{/if}
-									{#if act.paceSecondsPerKm && act.sportType === 'running'}· {formatPace(act.paceSecondsPerKm)}{/if}
-								</span>
-								{#if act.evidence.length > 0}
-									<span class="hd-activity-sources">
-										{#each act.evidence as ev}
-											<span class="hd-source-chip" class:hd-source-chip-track={ev.hasTrackPoints}>
-												{providerLabel(ev.provider, ev.sensorType)}
-												{#if ev.distanceMeters !== null}{(ev.distanceMeters / 1000).toFixed(1)} km{/if}
-												{#if ev.durationSeconds !== null}· {formatDuration(ev.durationSeconds)}{/if}
-												{#if ev.avgHeartRate !== null}· ♥ {ev.avgHeartRate}{/if}
-											</span>
-										{/each}
-									</span>
-								{/if}
-								{#if discrepancies.length > 0}
-									<span class="hd-activity-discrepancy">⚠ {discrepancies.join(' | ')}</span>
-								{/if}
-							</div>
-							{#if trackEventId}
-								<button
-									class="hd-map-btn"
-									class:hd-map-btn-active={mapEventId === trackEventId}
-									onclick={(e) => { e.preventDefault(); openMap(trackEventId); }}
-									title="Vis kart"
-								>
-									{mapLoading && mapEventId === trackEventId ? '…' : '🗺️'}
-								</button>
+						{@const isExpanded = expandedActivityIds.has(act.activityId)}
+						<div class="hd-activity-card" class:hd-activity-card-expanded={isExpanded}>
+							<button
+								class="hd-activity-row"
+								onclick={() => toggleActivity(act.activityId)}
+								aria-expanded={isExpanded}
+							>
+								<div class="hd-activity-icon">{sportIcon(act.sportType)}</div>
+								<div class="hd-activity-info">
+									<span class="hd-activity-label">{sportLabel(act.sportType)}</span>
+									<span class="hd-activity-time">{formatActivityDate(act.startTime)}</span>
+								</div>
+								<span class="hd-activity-chevron" class:hd-activity-chevron-open={isExpanded}>›</span>
+							</button>
+
+							{#if isExpanded}
+								<div class="hd-activity-details">
+									<div class="hd-activity-meta">
+										{#if act.distanceMeters}{(act.distanceMeters / 1000).toFixed(1)} km{/if}
+										{#if act.durationSeconds}· {formatDuration(act.durationSeconds)}{/if}
+										{#if act.avgHeartRate}· ♥ {act.avgHeartRate} bpm{/if}
+										{#if act.paceSecondsPerKm && act.sportType === 'running'}· {formatPace(act.paceSecondsPerKm)}{/if}
+									</div>
+									{#if act.evidence.length > 0}
+										<span class="hd-activity-sources">
+											{#each act.evidence as ev}
+												<span class="hd-source-chip" class:hd-source-chip-track={ev.hasTrackPoints}>
+													{providerLabel(ev.provider, ev.sensorType)}
+													{#if ev.distanceMeters !== null}{(ev.distanceMeters / 1000).toFixed(1)} km{/if}
+													{#if ev.durationSeconds !== null}· {formatDuration(ev.durationSeconds)}{/if}
+													{#if ev.avgHeartRate !== null}· ♥ {ev.avgHeartRate}{/if}
+												</span>
+											{/each}
+										</span>
+									{/if}
+									{#if discrepancies.length > 0}
+										<span class="hd-activity-discrepancy">⚠ {discrepancies.join(' | ')}</span>
+									{/if}
+									<div class="hd-activity-actions">
+										{#if trackEventId}
+											<button
+												class="hd-map-btn"
+												class:hd-map-btn-active={mapEventId === trackEventId}
+												onclick={() => openMap(trackEventId)}
+												title="Vis kart"
+											>
+												{mapLoading && mapEventId === trackEventId ? '…' : '🗺️'} Kart
+											</button>
+										{/if}
+										<a class="hd-detail-link" href="/aktivitet/{act.activityId}">Detaljer →</a>
+									</div>
+									{#if mapEventId === trackEventId}
+										<div class="hd-map-panel">
+											{#if mapLoading}
+												<div class="hd-map-loading">Laster kart…</div>
+											{:else}
+												<GpxMapSvg points={mapPoints} />
+											{/if}
+										</div>
+									{/if}
+								</div>
 							{/if}
-						</a>
-						{#if mapEventId === trackEventId}
-							<div class="hd-map-panel">
-								{#if mapLoading}
-									<div class="hd-map-loading">Laster kart…</div>
-								{:else}
-									<GpxMapSvg points={mapPoints} />
-								{/if}
-							</div>
-						{/if}
+						</div>
 					{/each}
 				</div>
 			</div>
@@ -1919,16 +1945,30 @@
 		gap: 2px;
 	}
 
+	.hd-activity-card {
+		border-radius: 10px;
+		overflow: hidden;
+		border: 1px solid transparent;
+		transition: border-color 0.15s;
+	}
+
+	.hd-activity-card-expanded {
+		border-color: #252525;
+	}
+
 	.hd-activity-row {
 		display: flex;
 		align-items: center;
 		gap: 12px;
 		padding: 10px 8px;
+		width: 100%;
+		background: none;
+		border: none;
+		cursor: pointer;
+		color: inherit;
+		text-align: left;
 		border-radius: 10px;
 		transition: background 0.12s;
-		text-decoration: none;
-		color: inherit;
-		cursor: pointer;
 	}
 
 	.hd-activity-row:hover {
@@ -1956,8 +1996,34 @@
 		color: #ddd;
 	}
 
-	.hd-activity-meta {
+	.hd-activity-time {
 		font-size: 0.78rem;
+		color: #666;
+	}
+
+	.hd-activity-chevron {
+		font-size: 1.2rem;
+		color: #444;
+		line-height: 1;
+		transition: transform 0.2s ease;
+		display: inline-block;
+		flex-shrink: 0;
+	}
+
+	.hd-activity-chevron-open {
+		transform: rotate(90deg);
+		color: #7c8ef5;
+	}
+
+	.hd-activity-details {
+		padding: 2px 8px 10px 52px;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.hd-activity-meta {
+		font-size: 0.82rem;
 		color: #888;
 	}
 
@@ -1965,7 +2031,6 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 4px;
-		margin-top: 3px;
 	}
 
 	.hd-source-chip {
@@ -1986,18 +2051,26 @@
 	.hd-activity-discrepancy {
 		font-size: 0.7rem;
 		color: #c8a84b;
-		margin-top: 2px;
 		display: block;
 	}
 
+	.hd-activity-actions {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-top: 2px;
+	}
+
 	.hd-map-btn {
-		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		gap: 4px;
 		background: #1e1e1e;
 		border: 1px solid #2a2a2a;
 		border-radius: 8px;
-		padding: 6px 10px;
+		padding: 5px 10px;
 		cursor: pointer;
-		font-size: 1rem;
+		font-size: 0.78rem;
 		line-height: 1;
 		transition: all 0.12s;
 		color: #bbb;
@@ -2013,8 +2086,19 @@
 		border-color: #4a9eff;
 	}
 
+	.hd-detail-link {
+		font-size: 0.78rem;
+		color: #555;
+		text-decoration: none;
+		transition: color 0.12s;
+	}
+
+	.hd-detail-link:hover {
+		color: #888;
+	}
+
 	.hd-map-panel {
-		margin: 4px 0 8px 44px;
+		margin-top: 4px;
 		border-radius: 10px;
 		overflow: hidden;
 	}

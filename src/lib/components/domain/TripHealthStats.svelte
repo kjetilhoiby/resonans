@@ -92,6 +92,10 @@
 			return;
 		}
 		expandedIds = new Set([...expandedIds, w.id]);
+		await loadTrack(w);
+	}
+
+	async function loadTrack(w: Workout) {
 		if (!trackCache.has(w.id) && w.trackEventId) {
 			trackLoading = new Set([...trackLoading, w.id]);
 			try {
@@ -249,72 +253,74 @@
 				</div>
 				<div class="ths-workout-list">
 					{#each data.workouts.list.filter(w => !dismissedIds.has(w.id)) as workout}
-						<div class="ths-workout-item" class:expanded={expandedIds.has(workout.id)}>
-							<!-- Header -->
-							<div class="ths-workout-row">
+						{@const isExpanded = expandedIds.has(workout.id)}
+						<div class="ths-workout-item" class:expanded={isExpanded}>
+							<!-- Kompakt: alltid synlig -->
+							<button class="ths-workout-row" onclick={() => toggleExpand(workout)} aria-expanded={isExpanded}>
 								<div class="ths-workout-type">{formatSportType(workout.sportType)}</div>
+								<div class="ths-workout-compact-meta">
+									<span class="ths-workout-date">{fmtDate(workout.timestamp)}</span>
+								</div>
 								<div class="ths-workout-actions">
-									{#if workout.hasTrackPoints}
-										<button class="ths-map-btn" class:active={expandedIds.has(workout.id)} onclick={() => toggleExpand(workout)} title="Vis kart">
-											<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7l6-3 6 3 6-3v13l-6 3-6-3-6 3V7z"/><path d="M9 4v13M15 7v13"/></svg>
-										</button>
-									{/if}
-									<button class="ths-dismiss-btn" onclick={() => dismissWorkout(workout.id)} title="Skjul denne økten">×</button>
+									<button class="ths-dismiss-btn" onclick={(e) => { e.stopPropagation(); dismissWorkout(workout.id); }} title="Skjul denne økten">×</button>
+									<span class="ths-chevron" class:ths-chevron-open={isExpanded}>›</span>
 								</div>
-							</div>
-							<!-- Stats row -->
-							<div class="ths-workout-details">
-								<span class="ths-workout-date">{fmtDate(workout.timestamp)}</span>
-								{#if workout.distanceKm}
-									<span class="ths-workout-stat">{workout.distanceKm} km</span>
-								{/if}
-								{#if workout.durationMin}
-									<span class="ths-workout-stat">{workout.durationMin} min</span>
-								{/if}
-								{#if workout.paceSecPerKm}
-									<span class="ths-workout-stat">{fmtPace(workout.paceSecPerKm)}</span>
-								{/if}
-								{#if workout.elevationMeters}
-									<span class="ths-workout-stat">↑{workout.elevationMeters} m</span>
-								{/if}
-							</div>
-							<!-- HR badges -->
-							{#if workout.avgHeartRate || workout.maxHeartRate}
-								<div class="ths-hr-row">
-									{#if workout.avgHeartRate}
-										<span class="ths-hr-badge">♥ {workout.avgHeartRate} bpm snitt</span>
-									{/if}
-									{#if workout.maxHeartRate}
-										<span class="ths-hr-badge max">♥ {workout.maxHeartRate} maks</span>
-									{/if}
-								</div>
-							{/if}
-							<!-- Mini-map (ekspandert) -->
-							{#if expandedIds.has(workout.id)}
-								<div class="ths-mini-map">
-									{#if trackLoading.has(workout.id)}
-										<div class="ths-map-placeholder">Laster kart...</div>
-									{:else if (trackCache.get(workout.id) ?? []).length >= 2}
-										<GpxMapSvg points={trackCache.get(workout.id)!} width={320} height={180} />
-										{#if (trackCache.get(workout.id) ?? []).some(p => p.hr)}
-											{@const pts = trackCache.get(workout.id)!}
-											{@const hrPts = pts.filter(p => p.hr != null)}
-											{@const minHr = Math.min(...hrPts.map(p => p.hr!))}
-											{@const maxHr = Math.max(...hrPts.map(p => p.hr!))}
-											{@const W = 320}
-											{@const H = 48}
-											{@const poly = hrPts.map((p, i) => `${(i / (hrPts.length - 1)) * W},${H - ((p.hr! - minHr) / (maxHr - minHr || 1)) * (H - 6)}`).join(' ')}
-											<div class="ths-hr-chart">
-												<svg viewBox="0 0 {W} {H}" width="100%" height="{H}" aria-hidden="true">
-													<polyline points={poly} fill="none" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-												</svg>
-												<div class="ths-hr-labels">
-													<span>{minHr}</span><span>{maxHr} bpm</span>
-												</div>
-											</div>
+							</button>
+
+							<!-- Utvidet: detaljer -->
+							{#if isExpanded}
+								<div class="ths-workout-details-panel">
+									<div class="ths-workout-details">
+										{#if workout.distanceKm}
+											<span class="ths-workout-stat">{workout.distanceKm} km</span>
 										{/if}
-									{:else}
-										<div class="ths-map-placeholder">Ingen kartdata</div>
+										{#if workout.durationMin}
+											<span class="ths-workout-stat">{workout.durationMin} min</span>
+										{/if}
+										{#if workout.paceSecPerKm}
+											<span class="ths-workout-stat">{fmtPace(workout.paceSecPerKm)}</span>
+										{/if}
+										{#if workout.elevationMeters}
+											<span class="ths-workout-stat">↑{workout.elevationMeters} m</span>
+										{/if}
+									</div>
+									{#if workout.avgHeartRate || workout.maxHeartRate}
+										<div class="ths-hr-row">
+											{#if workout.avgHeartRate}
+												<span class="ths-hr-badge">♥ {workout.avgHeartRate} bpm snitt</span>
+											{/if}
+											{#if workout.maxHeartRate}
+												<span class="ths-hr-badge max">♥ {workout.maxHeartRate} maks</span>
+											{/if}
+										</div>
+									{/if}
+									{#if workout.hasTrackPoints}
+										<div class="ths-mini-map">
+											{#if trackLoading.has(workout.id)}
+												<div class="ths-map-placeholder">Laster kart...</div>
+											{:else if (trackCache.get(workout.id) ?? []).length >= 2}
+												<GpxMapSvg points={trackCache.get(workout.id)!} width={320} height={180} />
+												{#if (trackCache.get(workout.id) ?? []).some(p => p.hr)}
+													{@const pts = trackCache.get(workout.id)!}
+													{@const hrPts = pts.filter(p => p.hr != null)}
+													{@const minHr = Math.min(...hrPts.map(p => p.hr!))}
+													{@const maxHr = Math.max(...hrPts.map(p => p.hr!))}
+													{@const W = 320}
+													{@const H = 48}
+													{@const poly = hrPts.map((p, i) => `${(i / (hrPts.length - 1)) * W},${H - ((p.hr! - minHr) / (maxHr - minHr || 1)) * (H - 6)}`).join(' ')}
+													<div class="ths-hr-chart">
+														<svg viewBox="0 0 {W} {H}" width="100%" height="{H}" aria-hidden="true">
+															<polyline points={poly} fill="none" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+														</svg>
+														<div class="ths-hr-labels">
+															<span>{minHr}</span><span>{maxHr} bpm</span>
+														</div>
+													</div>
+												{/if}
+											{:else}
+												<div class="ths-map-placeholder">Ingen kartdata</div>
+											{/if}
+										</div>
 									{/if}
 								</div>
 							{/if}
@@ -484,7 +490,7 @@
 		background: #0f1419;
 		border: 1px solid #1a1f2e;
 		border-radius: 8px;
-		padding: 10px 12px;
+		overflow: hidden;
 		transition: border-color 0.15s;
 	}
 
@@ -496,7 +502,25 @@
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		margin-bottom: 4px;
+		padding: 10px 12px;
+		width: 100%;
+		background: none;
+		border: none;
+		cursor: pointer;
+		color: inherit;
+		text-align: left;
+		gap: 8px;
+		transition: background 0.12s;
+	}
+
+	.ths-workout-row:hover {
+		background: rgba(255, 255, 255, 0.02);
+	}
+
+	.ths-workout-compact-meta {
+		flex: 1;
+		display: flex;
+		justify-content: flex-end;
 	}
 
 	.ths-workout-actions {
@@ -505,21 +529,17 @@
 		align-items: center;
 	}
 
-	.ths-map-btn {
-		background: none;
-		border: 1px solid #2d3748;
-		border-radius: 4px;
-		color: #64748b;
-		cursor: pointer;
-		padding: 3px 5px;
-		line-height: 0;
-		transition: color 0.15s, border-color 0.15s;
+	.ths-chevron {
+		font-size: 1.1rem;
+		color: #444;
+		line-height: 1;
+		transition: transform 0.2s ease;
+		display: inline-block;
 	}
 
-	.ths-map-btn:hover,
-	.ths-map-btn.active {
-		color: #60a5fa;
-		border-color: #60a5fa;
+	.ths-chevron-open {
+		transform: rotate(90deg);
+		color: #7c8ef5;
 	}
 
 	.ths-dismiss-btn {
@@ -543,17 +563,24 @@
 		color: #cbd5e1;
 	}
 
+	.ths-workout-details-panel {
+		padding: 0 12px 10px;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
 	.ths-workout-details {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 8px;
 		font-size: 0.75rem;
 		color: #94a3b8;
-		margin-bottom: 6px;
 	}
 
 	.ths-workout-date {
 		color: #64748b;
+		font-size: 0.75rem;
 	}
 
 	.ths-workout-stat {
