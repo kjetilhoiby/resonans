@@ -11,6 +11,7 @@
 		href?: string;
 		fullWidth?: boolean;
 		ariaLabel?: string;
+		title?: string;
 		className?: string;
 		onClick?: () => void;
 	}
@@ -23,6 +24,7 @@
 		href,
 		fullWidth = false,
 		ariaLabel,
+		title,
 		className = '',
 		onClick
 	}: Props = $props();
@@ -33,6 +35,7 @@
 		href={href}
 		class={`ds-button btn-${variant} ${fullWidth ? 'is-full-width' : ''} ${className}`.trim()}
 		aria-label={ariaLabel}
+		title={title}
 		onclick={onClick}
 	>
 		{@render children()}
@@ -43,6 +46,7 @@
 		disabled={disabled}
 		class={`ds-button btn-${variant} ${fullWidth ? 'is-full-width' : ''} ${className}`.trim()}
 		aria-label={ariaLabel}
+		title={title}
 		onclick={onClick}
 	>
 		{@render children()}

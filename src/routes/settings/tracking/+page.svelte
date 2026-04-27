@@ -192,7 +192,6 @@
 							<p class={resultMsg?.ok ? 'ok' : 'err'}>{resultMsg?.text}</p>
 						{/if}
 					</div>
-				</div>
 				{:else}
 					<div class="series-head">
 						<div class="series-meta">

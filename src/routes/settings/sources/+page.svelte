@@ -609,47 +609,47 @@
 
 		{#if withingsStatus?.connected}
 			<div class="details-wrap">
-				<button
+				<Button
 					type="button"
-					class="btn-ghost"
-					onclick={() => (showWithingsDebug = !showWithingsDebug)}
+					variant="ghost"
+					onClick={() => (showWithingsDebug = !showWithingsDebug)}
 				>
 					{showWithingsDebug ? 'Skjul debug' : 'Vis debug (rå aktiviteter fra Withings)'}
-				</button>
+				</Button>
 
 				{#if showWithingsDebug}
 					<div class="debug-panel">
 						<div class="row debug-controls">
 							<label class="option-pill">
 								<span>Siste</span>
-								<input
+								<Input
 									type="number"
 									min="1"
 									max="365"
-									class="input days-input"
+									className="input days-input"
 									bind:value={withingsDebugDays}
 								/>
 								<span>dager</span>
 							</label>
 							<label class="option-pill">
 								<span>Maks</span>
-								<input
+								<Input
 									type="number"
 									min="1"
 									max="100"
-									class="input days-input"
+									className="input days-input"
 									bind:value={withingsDebugLimit}
 								/>
 								<span>treff</span>
 							</label>
-							<button
+							<Button
 								type="button"
-								class="btn-secondary"
-								onclick={loadWithingsDebug}
+								variant="secondary"
+								onClick={loadWithingsDebug}
 								disabled={loadingWithingsDebug}
 							>
 								{loadingWithingsDebug ? 'Henter...' : 'Hent'}
-							</button>
+							</Button>
 						</div>
 
 						{#if withingsDebugError}
@@ -876,7 +876,7 @@
 				disabled={importingStatements}
 				style="display:none"
 			/>
-			<span class="btn-secondary" style="cursor:pointer;">
+			<span class="upload-trigger">
 				{importingStatements ? 'Importerer...' : 'Last opp ZIP'}
 			</span>
 		</label>
@@ -979,6 +979,25 @@
 	.field-desc { color: #9b9b9b; font-size: 0.84rem; margin: 0 0 0.8rem; }
 	:global(.btn-primary), :global(.btn-secondary), :global(.btn-ghost) { text-decoration: none; }
 	.upload-label { display: inline-flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; }
+	.upload-trigger {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 8px 18px;
+		border-radius: 8px;
+		border: 1px solid var(--border-color);
+		background: var(--bg-card);
+		color: var(--text-secondary);
+		font: inherit;
+		font-size: 0.82rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: border-color 0.12s, color 0.12s;
+	}
+	.upload-trigger:hover {
+		border-color: var(--text-tertiary);
+		color: var(--text-primary);
+	}
 	.anchor-table { width: 100%; border-collapse: collapse; margin-top: 0.75rem; font-size: 0.82rem; color: var(--text-secondary); }
 	.anchor-table th, .anchor-table td { padding: 0.4rem 0.6rem; text-align: left; border-bottom: 1px solid #252525; }
 	.anchor-table th { color: #7c7c7c; font-weight: 500; }

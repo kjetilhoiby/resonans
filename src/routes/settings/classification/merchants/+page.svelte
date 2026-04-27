@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, PageHeader, Select } from '$lib/components/ui';
+	import { AppPage, Button, Input, PageHeader, Select } from '$lib/components/ui';
 	import { onMount } from 'svelte';
 	import { CATEGORIES, SUBCATEGORIES } from '$lib/integrations/transaction-categories-client';
 	import type { CategoryId } from '$lib/integrations/transaction-categories-client';
@@ -331,9 +331,9 @@
 
 		<section class="analysis-section">
 			<div class="analysis-buttons">
-				<button 
-					class="analysis-btn test" 
-					onclick={() => runAnalysis(true)}
+				<Button
+					className="analysis-btn test"
+					onClick={() => runAnalysis(true)}
 					disabled={analyzing}
 					title="Rask test: analyserer ~10 merchants fra siste måned"
 				>
@@ -343,10 +343,10 @@
 					{:else}
 						🧪 Test (rask)
 					{/if}
-				</button>
-				<button 
-					class="analysis-btn full" 
-					onclick={() => runAnalysis(false)}
+				</Button>
+				<Button
+					className="analysis-btn full"
+					onClick={() => runAnalysis(false)}
 					disabled={analyzing}
 					title="Full analyse: analyserer alle merchants fra siste 13 måneder"
 				>
@@ -356,10 +356,10 @@
 					{:else}
 						🤖 Kjør full analyse
 					{/if}
-				</button>
-				<button 
-					class="analysis-btn insights" 
-					onclick={regenerateInsights}
+				</Button>
+				<Button
+					className="analysis-btn insights"
+					onClick={regenerateInsights}
 					disabled={analyzing || stats.aiGenerated === 0}
 				>
 					{#if analyzing}
@@ -368,10 +368,10 @@
 					{:else}
 						💡 Generer insights
 					{/if}
-				</button>
-				<button 
-					class="analysis-btn clear" 
-					onclick={clearAllMappings}
+				</Button>
+				<Button
+					className="analysis-btn clear"
+					onClick={clearAllMappings}
 					disabled={analyzing || stats.aiGenerated === 0}
 				>
 					{#if analyzing}
@@ -380,7 +380,7 @@
 					{:else}
 						🗑️ Slett alle ({stats.aiGenerated})
 					{/if}
-				</button>
+				</Button>
 			</div>
 
 			{#if analysisResult}
@@ -440,11 +440,10 @@
 		</section>
 
 		<section class="filters">
-			<input
-				type="text"
+			<Input
 				bind:value={searchQuery}
 				placeholder="Søk etter merchant..."
-				class="search-input"
+				className="search-input"
 			/>
 			<Select bind:value={filterCategory} className="filter-select">
 				<option value="all">Alle kategorier</option>
@@ -464,14 +463,14 @@
 			<section class="override-analytics">
 				<div class="analytics-header">
 					<h2>📊 Merchants du har overstyrt ({stats.withOverrides} totalt)</h2>
-					<button 
-						type="button" 
-						onclick={() => showBulkOverrideModal = true} 
-						class="btn-secondary"
+					<Button
+						type="button"
+						variant="secondary"
+						onClick={() => showBulkOverrideModal = true}
 						title="Overstyr mange merchants samtidig"
 					>
 						⚡ Bulk override
-					</button>
+					</Button>
 				</div>
 				<p class="analytics-hint">
 					Viser merchants hvor du manuelt har endret AI-kategoriseringen. Dette er nyttig for å identifisere hvor AI-modellen systematisk gjør feil.
@@ -541,24 +540,26 @@
 									<div class="merchant-timestamp">Analysert: {formatDate(mapping.analyzedAt)}</div>
 								</div>
 								<div class="merchant-actions">
-									<button
+									<Button
 										type="button"
-										class="override-btn"
-										onclick={() => openOverrideModal(mapping)}
+										variant="ghost"
+										className="override-btn"
+										onClick={() => openOverrideModal(mapping)}
 										title={mapping.hasOverride ? 'Endre override' : 'Opprett override'}
 									>
 										{mapping.hasOverride ? '✏️' : '🔒'}
-									</button>
-									<button
+									</Button>
+									<Button
 										type="button"
-										class="delete-btn"
+										variant="danger"
+										className="delete-btn"
 										disabled={deleting === mapping.id}
-										onclick={() => deleteMapping(mapping.id)}
-										aria-label="Slett mapping"
+										onClick={() => deleteMapping(mapping.id)}
+										ariaLabel="Slett mapping"
 										title="Slett mapping (regenereres ved neste analyse)"
 									>
 										{deleting === mapping.id ? '...' : '🗑'}
-									</button>
+									</Button>
 								</div>
 							</li>
 						{/each}
@@ -613,12 +614,12 @@
 				</div>
 			{/if}
 			<div class="modal-actions">
-				<button type="button" onclick={createOverride} class="btn-primary">
+				<Button type="button" onClick={createOverride}>
 					{selectedMapping.hasOverride ? 'Oppdater override' : 'Opprett override'}
-				</button>
-				<button type="button" onclick={() => showOverrideModal = false} class="btn-ghost">
+				</Button>
+				<Button type="button" variant="ghost" onClick={() => showOverrideModal = false}>
 					Avbryt
-				</button>
+				</Button>
 			</div>
 		</div>
 	</div>
@@ -672,17 +673,16 @@
 				</p>
 			{/if}
 			<div class="modal-actions">
-				<button 
-					type="button" 
-					onclick={bulkOverride} 
-					class="btn-primary"
+				<Button
+					type="button"
+					onClick={bulkOverride}
 					disabled={!bulkFromCategory || !bulkToCategory || analyzing}
 				>
 					{analyzing ? 'Behandler...' : 'Utfør bulk override'}
-				</button>
-				<button type="button" onclick={() => showBulkOverrideModal = false} class="btn-ghost">
+				</Button>
+				<Button type="button" variant="ghost" onClick={() => showBulkOverrideModal = false}>
 					Avbryt
-				</button>
+				</Button>
 			</div>
 		</div>
 	</div>
@@ -757,7 +757,7 @@
 		flex-wrap: wrap;
 	}
 
-	.search-input {
+	:global(.search-input) {
 		flex: 2;
 		min-width: 200px;
 		background: #1a1a1a;
@@ -769,7 +769,7 @@
 		font-size: 0.9rem;
 	}
 
-	.search-input:focus {
+	:global(.search-input:focus) {
 		outline: none;
 		border-color: #4a5af0;
 	}
@@ -1012,7 +1012,7 @@
 		gap: 0.5rem;
 	}
 
-	.override-btn {
+	:global(.override-btn) {
 		background: transparent;
 		border: 1px solid #3a2a5a;
 		border-radius: 8px;
@@ -1023,12 +1023,12 @@
 		transition: all 0.15s;
 	}
 
-	.override-btn:hover {
+	:global(.override-btn:hover) {
 		background: rgba(138, 43, 226, 0.08);
 		border-color: #5a3a7a;
 	}
 
-	.delete-btn {
+	:global(.delete-btn) {
 		background: transparent;
 		border: 1px solid #3a2a2a;
 		border-radius: 8px;
@@ -1040,12 +1040,12 @@
 		flex-shrink: 0;
 	}
 
-	.delete-btn:hover:not(:disabled) {
+	:global(.delete-btn:hover:not(:disabled)) {
 		background: rgba(224, 112, 112, 0.08);
 		border-color: #6a2a2a;
 	}
 
-	.delete-btn:disabled {
+	:global(.delete-btn:disabled) {
 		opacity: 0.5;
 		cursor: not-allowed;
 	}
@@ -1127,38 +1127,6 @@
 		gap: 0.75rem;
 	}
 
-	.btn-primary {
-		background: #4a5af0;
-		border: none;
-		border-radius: 10px;
-		padding: 0.75rem 1.25rem;
-		color: white;
-		font: inherit;
-		font-weight: 600;
-		cursor: pointer;
-		transition: background 0.15s;
-	}
-
-	.btn-primary:hover {
-		background: #3a4adf;
-	}
-
-	.btn-ghost {
-		background: transparent;
-		border: 1px solid #2a2a2a;
-		border-radius: 8px;
-		padding: 0.5rem 1rem;
-		color: #aaa;
-		font: inherit;
-		cursor: pointer;
-		transition: all 0.15s;
-	}
-
-	.btn-ghost:hover {
-		background: #1a1a1a;
-		border-color: #3a3a3a;
-	}
-
 	/* Analysis Section */
 	.analysis-section {
 		background: #1a1a1a;
@@ -1173,7 +1141,7 @@
 		gap: 0.75rem;
 	}
 
-	.analysis-btn {
+	:global(.analysis-btn) {
 		border: none;
 		border-radius: 10px;
 		padding: 0.875rem 1.5rem;
@@ -1190,43 +1158,43 @@
 		justify-content: center;
 	}
 
-	.analysis-btn.test {
+	:global(.analysis-btn.test) {
 		background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
 	}
 
-	.analysis-btn.test:hover:not(:disabled) {
+	:global(.analysis-btn.test:hover:not(:disabled)) {
 		transform: translateY(-1px);
 		box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
 	}
 
-	.analysis-btn.full {
+	:global(.analysis-btn.full) {
 		background: linear-gradient(135deg, #4a5af0 0%, #6a7af0 100%);
 	}
 
-	.analysis-btn.full:hover:not(:disabled) {
+	:global(.analysis-btn.full:hover:not(:disabled)) {
 		transform: translateY(-1px);
 		box-shadow: 0 4px 12px rgba(74, 90, 240, 0.3);
 	}
 
-	.analysis-btn.insights {
+	:global(.analysis-btn.insights) {
 		background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
 	}
 
-	.analysis-btn.insights:hover:not(:disabled) {
+	:global(.analysis-btn.insights:hover:not(:disabled)) {
 		transform: translateY(-1px);
 		box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
 	}
 
-	.analysis-btn.clear {
+	:global(.analysis-btn.clear) {
 		background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
 	}
 
-	.analysis-btn.clear:hover:not(:disabled) {
+	:global(.analysis-btn.clear:hover:not(:disabled)) {
 		transform: translateY(-1px);
 		box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
 	}
 
-	.analysis-btn:disabled {
+	:global(.analysis-btn:disabled) {
 		opacity: 0.7;
 		cursor: not-allowed;
 	}

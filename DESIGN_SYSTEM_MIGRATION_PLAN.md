@@ -13,17 +13,30 @@ Relaterte dokumenter:
 
 ## Status
 
-**Fase:** Fase 2–3 fullført, Fase 4 i progress  
+**Fase:** Fase 2–4 fullført, Fase 5 i progress  
 **Eier:** Pågår som arkitektur- og UI-migrasjon  
-**Sist oppdatert:** 2026-04-24 (shell fullført, control-pass pågår)
+**Sist oppdatert:** 2026-04-27 (settings control-pass fullført, opprydding/verifisering pågår)
 
 ### Fremdrift
 
 - [✓] Fase 1 — Etablere primitives og page shell
 - [✓] Fase 2 — Migrere side-layout og headers
-- [~] Fase 3 — Migrere controls, kort og lister
+- [✓] Fase 3 — Migrere controls, kort og lister (settings-pass ferdig)
 - [✓] Fase 4 — Migrere route-familier (AppPage-shell på alle 31 ruter)
-- [ ] Fase 5 — Stramme inn regler, opprydding og verifisering
+- [~] Fase 5 — Stramme inn regler, opprydding og verifisering
+
+### Oppdatering 2026-04-27
+
+- Ferdigstilt control-migrering i settings-ruter til primitives (`Button`, `Input`, `Select`, `TimeInput`)
+- Migrert gjenstående rå kontroller i:
+   - `src/routes/settings/classification/merchants/+page.svelte`
+   - `src/routes/settings/classification/rules/+page.svelte`
+   - `src/routes/settings/classification/transaction-rules/+page.svelte`
+   - `src/routes/settings/tracking/+page.svelte`
+   - `src/routes/settings/sources/+page.svelte`
+   - `src/routes/settings/+page.svelte`
+   - `src/routes/settings/external-apps/+page.svelte`
+- Full sweep i `src/routes/settings/**/+page.svelte` (etter filtrering av hidden/file/custom job-knapper): ingen rester av rå `button`/`text|email|number`-`input`/`select`-mønstre
 
 ### Prioritert migreringskø (nå)
 
