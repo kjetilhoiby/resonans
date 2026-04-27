@@ -2,13 +2,14 @@
 	import type { PageData } from './$types';
 	import { AppPage } from '$lib/components/ui';
 	import GpxMap from '$lib/components/charts/GpxMap.svelte';
+	import WorkoutCharts from '$lib/components/charts/WorkoutCharts.svelte';
 	import ChatInput from '$lib/components/ui/ChatInput.svelte';
 	import TriageCard from '$lib/components/composed/TriageCard.svelte';
 	import { tick } from 'svelte';
 	import { streamProxyChat } from '$lib/client/proxy-chat-stream';
 
 	let { data }: { data: PageData } = $props();
-	const { workout, trackPoints, assessment, healthThemeId } = data;
+	const { workout, trackPoints, splits, crossSourceHr, assessment, healthThemeId } = data;
 	const healthGoals: Array<{ title: string; description: string | null }> = (data as any).healthGoals ?? [];
 
 	type Tab = 'detaljer' | 'kart' | 'graf';
@@ -23,7 +24,7 @@
 	let streamingStatus = $state('');
 	let messagesEl = $state<HTMLElement | null>(null);
 
-	// Build workout context note injected on the first chat message
+	// Chat context — enriched with splits and cross-source HR
 	const workoutContextNote = $derived.by(() => {
 		const lines: string[] = [
 			`Treningsøkt: ${workout.title}`,
@@ -36,9 +37,25 @@
 			const s = String(Math.round(workout.paceSecondsPerKm % 60)).padStart(2, '0');
 			lines.push(`Tempo: ${m}:${s} /km`);
 		}
-		if (workout.avgHeartRate != null) lines.push(`Snitt puls: ${Math.round(workout.avgHeartRate)} bpm`);
-		if (workout.maxHeartRate != null) lines.push(`Maks puls: ${Math.round(workout.maxHeartRate)} bpm`);
+		if (workout.avgHeartRate != null) {
+			lines.push(`Snitt puls: ${Math.round(workout.avgHeartRate)} bpm`);
+			if (workout.maxHeartRate != null) lines.push(`Maks puls: ${Math.round(workout.maxHeartRate)} bpm`);
+		} else if (crossSourceHr?.avgHr != null) {
+			lines.push(`Puls (fra ${crossSourceHr.sourceName}): snitt ${crossSourceHr.avgHr} bpm${crossSourceHr.maxHr ? `, maks ${crossSourceHr.maxHr}` : ''}`);
+			lines.push(`(GPS-filen mangler pulsmåling – pulsdata lånt fra ${crossSourceHr.sourceName})`);
+		}
 		if (workout.elevationMeters != null) lines.push(`Høydemeter: ${Math.round(workout.elevationMeters)} m`);
+		if (splits && splits.length > 0) {
+			lines.push('\nKilometer-splits:');
+			for (const s of splits) {
+				const pace = s.paceSecPerKm != null
+					? `${Math.floor(s.paceSecPerKm / 60)}:${String(Math.round(s.paceSecPerKm % 60)).padStart(2, '0')} /km`
+					: '–';
+				const hr = s.avgHr != null ? ` @ ${s.avgHr} bpm` : '';
+				const ele = (s.eleGain > 2 || s.eleLoss > 2) ? ` (${s.eleGain > 2 ? `+${s.eleGain}m` : ''}${s.eleLoss > 2 ? `/-${s.eleLoss}m` : ''})` : '';
+				lines.push(`  km ${s.km}: ${pace}${hr}${ele}`);
+			}
+		}
 		if (assessment) lines.push(`\nVurdering: ${assessment}`);
 		if (healthGoals.length > 0) {
 			lines.push('\nAktive helsemål:');
@@ -116,78 +133,6 @@
 		}).format(new Date(iso));
 	}
 
-	// Chart helpers
-	function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
-		const R = 6371000;
-		const dLat = ((lat2 - lat1) * Math.PI) / 180;
-		const dLon = ((lon2 - lon1) * Math.PI) / 180;
-		const a =
-			Math.sin(dLat / 2) ** 2 +
-			Math.cos((lat1 * Math.PI) / 180) *
-				Math.cos((lat2 * Math.PI) / 180) *
-				Math.sin(dLon / 2) ** 2;
-		return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-	}
-
-	interface ChartPoint { x: number; y: number; }
-
-	const chartData = $derived.by(() => {
-		if (trackPoints.length < 2) return { hr: [], ele: [], speed: [] };
-
-		// Compute cumulative distances and timestamps
-		const cumDist: number[] = [0];
-		const times: (number | null)[] = [trackPoints[0].time ? new Date(trackPoints[0].time).getTime() : null];
-		for (let i = 1; i < trackPoints.length; i++) {
-			const prev = trackPoints[i - 1];
-			const cur = trackPoints[i];
-			cumDist.push(cumDist[i - 1] + haversine(prev.lat, prev.lon, cur.lat, cur.lon));
-			times.push(cur.time ? new Date(cur.time).getTime() : null);
-		}
-		const totalDist = cumDist[cumDist.length - 1] || 1;
-
-		// HR series
-		const hrPts = trackPoints
-			.map((p, i) => p.hr != null ? { x: cumDist[i] / totalDist, y: p.hr } : null)
-			.filter(Boolean) as ChartPoint[];
-
-		// Elevation series
-		const elePts = trackPoints
-			.map((p, i) => p.ele != null ? { x: cumDist[i] / totalDist, y: p.ele } : null)
-			.filter(Boolean) as ChartPoint[];
-
-		// Speed series (m/s → km/h), between consecutive points
-		const speedPts: ChartPoint[] = [];
-		for (let i = 1; i < trackPoints.length; i++) {
-			const dt = times[i] != null && times[i - 1] != null ? (times[i]! - times[i - 1]!) / 1000 : null;
-			const d = cumDist[i] - cumDist[i - 1];
-			if (dt && dt > 0 && d >= 0) {
-				speedPts.push({ x: cumDist[i] / totalDist, y: (d / dt) * 3.6 });
-			}
-		}
-
-		return { hr: hrPts, ele: elePts, speed: speedPts };
-	});
-
-	function polyline(pts: ChartPoint[], W: number, H: number, pad = 6): string {
-		if (pts.length < 2) return '';
-		const ys = pts.map(p => p.y);
-		const minY = Math.min(...ys), maxY = Math.max(...ys);
-		const rangeY = maxY - minY || 1;
-		return pts
-			.map(p => {
-				const x = pad + p.x * (W - pad * 2);
-				const y = pad + (1 - (p.y - minY) / rangeY) * (H - pad * 2);
-				return `${x.toFixed(1)},${y.toFixed(1)}`;
-			})
-			.join(' ');
-	}
-
-	function yLabel(pts: ChartPoint[], top: boolean): string {
-		if (!pts.length) return '';
-		const ys = pts.map(p => p.y);
-		const v = top ? Math.max(...ys) : Math.min(...ys);
-		return Math.round(v).toString();
-	}
 </script>
 
 <svelte:head>
@@ -257,54 +202,15 @@
 			{/if}
 
 		{:else if tab === 'graf'}
-			{@const W = 560}
-			{@const H = 120}
-			{#if chartData.hr.length >= 2}
-				<div class="chart-block">
-					<div class="chart-meta">
-						<span class="chart-title">Puls</span>
-						<span class="chart-unit">bpm</span>
-					</div>
-					<div class="chart-wrap">
-						<svg viewBox="0 0 {W} {H}" class="chart-svg" aria-hidden="true">
-							<polyline points={polyline(chartData.hr, W, H)} fill="none" stroke="#ef4444" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" />
-						</svg>
-						<span class="chart-label-top">{yLabel(chartData.hr, true)}</span>
-						<span class="chart-label-bot">{yLabel(chartData.hr, false)}</span>
-					</div>
-				</div>
-			{/if}
-			{#if chartData.ele.length >= 2}
-				<div class="chart-block">
-					<div class="chart-meta">
-						<span class="chart-title">Høyde</span>
-						<span class="chart-unit">moh</span>
-					</div>
-					<div class="chart-wrap">
-						<svg viewBox="0 0 {W} {H}" class="chart-svg" aria-hidden="true">
-							<polyline points={polyline(chartData.ele, W, H)} fill="none" stroke="#34d399" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" />
-						</svg>
-						<span class="chart-label-top">{yLabel(chartData.ele, true)}</span>
-						<span class="chart-label-bot">{yLabel(chartData.ele, false)}</span>
-					</div>
-				</div>
-			{/if}
-			{#if chartData.speed.length >= 2}
-				<div class="chart-block">
-					<div class="chart-meta">
-						<span class="chart-title">Fart</span>
-						<span class="chart-unit">km/t</span>
-					</div>
-					<div class="chart-wrap">
-						<svg viewBox="0 0 {W} {H}" class="chart-svg" aria-hidden="true">
-							<polyline points={polyline(chartData.speed, W, H)} fill="none" stroke="#60a5fa" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" />
-						</svg>
-						<span class="chart-label-top">{yLabel(chartData.speed, true)}</span>
-						<span class="chart-label-bot">{yLabel(chartData.speed, false)}</span>
-					</div>
-				</div>
-			{/if}
-			{#if chartData.hr.length < 2 && chartData.ele.length < 2 && chartData.speed.length < 2}
+			{#if trackPoints.length >= 2}
+				<WorkoutCharts
+					{trackPoints}
+					fallbackAvgHr={crossSourceHr?.avgHr ?? null}
+					fallbackMaxHr={crossSourceHr?.maxHr ?? null}
+					fallbackMinHr={crossSourceHr?.minHr ?? null}
+					fallbackSource={crossSourceHr?.sourceName ?? null}
+				/>
+			{:else}
 				<p class="no-data">Ingen graf-data for denne økten.</p>
 			{/if}
 		{/if}
@@ -512,52 +418,6 @@
 		border-radius: 12px;
 		overflow: hidden;
 	}
-
-	/* Charts */
-	.chart-block {
-		display: flex;
-		flex-direction: column;
-		gap: 0.4rem;
-	}
-
-	.chart-meta {
-		display: flex;
-		align-items: baseline;
-		gap: 0.4rem;
-	}
-
-	.chart-title {
-		font-size: 0.8rem;
-		font-weight: 600;
-		color: #aaa;
-	}
-
-	.chart-unit {
-		font-size: 0.72rem;
-		color: #555;
-	}
-
-	.chart-wrap {
-		position: relative;
-	}
-
-	.chart-svg {
-		width: 100%;
-		height: 80px;
-		display: block;
-		overflow: visible;
-	}
-
-	.chart-label-top,
-	.chart-label-bot {
-		position: absolute;
-		right: 0;
-		font-size: 0.65rem;
-		color: #666;
-	}
-
-	.chart-label-top { top: 0; }
-	.chart-label-bot { bottom: 0; }
 
 	.no-data {
 		color: #666;

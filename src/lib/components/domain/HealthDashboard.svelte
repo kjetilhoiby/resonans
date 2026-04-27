@@ -12,6 +12,7 @@
 	import GoalRing from '../ui/GoalRing.svelte';
 	import PeriodPills from '../ui/PeriodPills.svelte';
 	import GpxMapSvg from '../charts/GpxMapSvg.svelte';
+	import WorkoutCharts from '../charts/WorkoutCharts.svelte';
 	import MetricCard from '$lib/components/visualizations/MetricCard.svelte';
 
 	type WindowMode = '7d' | '30d' | '365d' | 'week' | 'month' | 'year' | 'quarter';
@@ -1505,6 +1506,18 @@
 											{/if}
 										</div>
 									{/if}
+									{#if mapEventId === trackEventId && mapPoints.length > 0}
+										{@const trackHasHr = mapPoints.some((p) => p.hr != null)}
+										{@const hrEvidence = !trackHasHr ? act.evidence.find((e) => e.avgHeartRate != null) : null}
+										<div class="hd-charts-panel">
+											<WorkoutCharts
+												trackPoints={mapPoints}
+												fallbackAvgHr={hrEvidence?.avgHeartRate ?? null}
+												fallbackMaxHr={hrEvidence?.avgHeartRate != null ? act.maxHeartRate : null}
+												fallbackSource={hrEvidence ? providerLabel(hrEvidence.provider, hrEvidence.sensorType) : null}
+											/>
+										</div>
+									{/if}
 									<a class="hd-detail-link" href="/aktivitet/{act.activityId}">Åpne fullstendig →</a>
 								</div>
 							{/if}
@@ -2124,6 +2137,10 @@
 		margin-top: 4px;
 		border-radius: 10px;
 		overflow: hidden;
+	}
+
+	.hd-charts-panel {
+		margin-top: 8px;
 	}
 
 	.hd-map-loading {

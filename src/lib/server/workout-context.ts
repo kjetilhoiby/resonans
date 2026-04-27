@@ -21,6 +21,21 @@ export interface WorkoutContextSummary {
 	chatPrompt: string;
 }
 
+export interface WorkoutSplitForContext {
+	km: number;
+	paceSecPerKm: number | null;
+	avgHr: number | null;
+	eleGain: number;
+	eleLoss: number;
+}
+
+export interface CrossSourceHr {
+	sourceName: string;
+	avgHr: number | null;
+	maxHr: number | null;
+	minHr: number | null;
+}
+
 function normalizeDistanceMeters(distance: unknown): number | null {
 	if (typeof distance !== 'number' || !Number.isFinite(distance) || distance <= 0) return null;
 	return distance > 80 ? distance : distance * 1000;
@@ -69,7 +84,11 @@ function formatWorkoutDate(timestampIso: string): string {
 	}).format(new Date(timestampIso));
 }
 
-export function buildWorkoutChatPrompt(workout: Omit<WorkoutContextSummary, 'chatPrompt'>): string {
+export function buildWorkoutChatPrompt(
+	workout: Omit<WorkoutContextSummary, 'chatPrompt'>,
+	splits?: WorkoutSplitForContext[],
+	crossSourceHr?: CrossSourceHr
+): string {
 	const parts = [
 		`Jeg vil analysere denne økten i detalj under Helse-temaet.`,
 		`Økt: ${workout.title}.`,
@@ -86,6 +105,24 @@ export function buildWorkoutChatPrompt(workout: Omit<WorkoutContextSummary, 'cha
 	if (workout.avgHeartRate != null) {
 		const maxText = workout.maxHeartRate != null ? `, maks ${Math.round(workout.maxHeartRate)}` : '';
 		parts.push(`Puls: snitt ${Math.round(workout.avgHeartRate)}${maxText}.`);
+	} else if (crossSourceHr?.avgHr != null) {
+		const maxText = crossSourceHr.maxHr != null ? `, maks ${crossSourceHr.maxHr}` : '';
+		const minText = crossSourceHr.minHr != null ? `, min ${crossSourceHr.minHr}` : '';
+		parts.push(`Puls (fra ${crossSourceHr.sourceName}): snitt ${crossSourceHr.avgHr}${maxText}${minText} bpm. GPS-filen mangler pulsmåling.`);
+	}
+
+	if (splits && splits.length > 0) {
+		const splitLines = splits
+			.map((s) => {
+				const pace = s.paceSecPerKm != null ? formatPace(s.paceSecPerKm) : '–';
+				const hr = s.avgHr != null ? ` @ ${s.avgHr} bpm` : '';
+				const ele = s.eleGain > 2 || s.eleLoss > 2
+					? ` (${s.eleGain > 2 ? `+${s.eleGain}m` : ''}${s.eleLoss > 2 ? `/-${s.eleLoss}m` : ''})`
+					: '';
+				return `km ${s.km}: ${pace}${hr}${ele}`;
+			})
+			.join(', ');
+		parts.push(`Kilometer-splits: ${splitLines}.`);
 	}
 
 	if (workout.sourceName) {
