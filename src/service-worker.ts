@@ -39,6 +39,10 @@ self.addEventListener('fetch', (event) => {
 	const url = new URL(request.url);
 	if (url.origin !== self.location.origin) return;
 
+	// Let browser/network handle SvelteKit module graph assets.
+	// Cache-first here can serve mixed app/chunk versions after deploy and break hydration.
+	if (url.pathname.startsWith('/_app/immutable/')) return;
+
 	if (isDashboardRequest(url)) {
 		event.respondWith(staleWhileRevalidateDashboard(request));
 		return;

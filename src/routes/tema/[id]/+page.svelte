@@ -7,6 +7,7 @@
 </script>
 
 <AppPage width="full" padding="none" gap="sm" surface="transparent">
+	{#if data.theme}
 	<ThemePage
 		theme={data.theme}
 		initialMessages={data.messages}
@@ -19,4 +20,5 @@
 		tripLists={data.tripLists}
 		selectedWorkout={data.selectedWorkout}
 	/>
+	{/if}
 </AppPage>

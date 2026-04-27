@@ -128,8 +128,8 @@
 
 	/* ── Subtab-tilstand ────────────────────────────────── */
 	type Tab = 'chat' | 'data' | 'mål' | 'flyter' | 'filer' | 'lister';
-	const activeDashboardKind = resolveThemeDashboardKind(theme.name);
-	const activeDashboard = getThemeDashboardDefinition(theme.name);
+	const activeDashboardKind = resolveThemeDashboardKind(theme?.name);
+	const activeDashboard = getThemeDashboardDefinition(theme?.name);
 	const hasThemeDashboard = activeDashboardKind !== null;
 	const isTravel = activeDashboardKind === 'travel';
 	const isBooks = activeDashboardKind === 'books';
@@ -997,7 +997,7 @@
 
 	/* ── Flyter-tab: flow discovery ─────────── */
 	let selectedFlow = $state<Flow | null>(null);
-	const availableFlows = $derived(getFlowsByTheme(theme.name, theme.parentTheme));
+	const availableFlows = $derived(getFlowsByTheme(theme?.name ?? '', theme?.parentTheme));
 
 	async function handleFlowComplete(flowId: string, data: Record<string, any>) {
 		// Handle flow completion based on flow ID
