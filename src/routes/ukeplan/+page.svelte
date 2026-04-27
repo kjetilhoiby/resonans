@@ -220,6 +220,20 @@
 	let dayCloseBusy = $state(false);
 	let dayCloseMessage = $state('');
 	let dayPlanSheetOpen = $state(false);
+	let headlinePressTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function handleHeadlinePointerDown() {
+		headlinePressTimer = setTimeout(() => {
+			headlinePressTimer = null;
+			dayPlanSheetOpen = true;
+		}, 700);
+	}
+	function handleHeadlinePointerUp() {
+		if (headlinePressTimer) { clearTimeout(headlinePressTimer); headlinePressTimer = null; }
+	}
+	function handleHeadlinePointerCancel() {
+		if (headlinePressTimer) { clearTimeout(headlinePressTimer); headlinePressTimer = null; }
+	}
 	let dayPlanSheetBusy = $state(false);
 	let dayPlanSheetCarryovers = $state<string[]>([]);
 	let dayPlanSheetWeekTasks = $state<string[]>([]);
@@ -1697,7 +1711,15 @@
 			{/if}
 
 			{#if selectedDayHeadline}
-				<p class="wp-helper">{selectedDayHeadline}</p>
+				<button
+					type="button"
+					class="wp-headline-btn"
+					onpointerdown={handleHeadlinePointerDown}
+					onpointerup={handleHeadlinePointerUp}
+					onpointerleave={handleHeadlinePointerCancel}
+					oncontextmenu={(e) => e.preventDefault()}
+					aria-label="Hold inne for å legge til oppgaver for dagen"
+				>{selectedDayHeadline}</button>
 			{/if}
 
 			<div class="wp-field-shell">
@@ -2764,6 +2786,23 @@
 		margin: 2px 0 0;
 		font-size: 0.82rem;
 		color: #76809c;
+	}
+
+	.wp-headline-btn {
+		display: block;
+		width: 100%;
+		text-align: left;
+		background: none;
+		border: none;
+		padding: 0;
+		margin: 2px 0 0;
+		cursor: default;
+		font: inherit;
+		font-size: 0.82rem;
+		color: #76809c;
+		user-select: none;
+		-webkit-user-select: none;
+		touch-action: none;
 	}
 
 	.wp-empty {
