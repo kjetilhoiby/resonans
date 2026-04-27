@@ -4,6 +4,8 @@ import { eq, and } from 'drizzle-orm';
 import { refreshAccessToken, fetchAllWithingsData, fetchWithingsSleep } from './withings';
 import { enqueueBackgroundJob } from '$lib/server/background-jobs';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
+import { autocheckChecklistItemsForDay } from '$lib/server/checklist-autocheck';
+import { syncSensorProgressForTasks } from '$lib/server/sensor-progress-sync';
 
 /**
  * Get active Withings sensor for user
@@ -204,6 +206,7 @@ export function getSportType(category: number): string {
 		188: 'indoor_running',
 		191: 'indoor_cycling',
 		272: 'e_bike',
+		525: 'e_bike',
 		552: 'yoga' // Withings 'stretching' — treated as yoga (mikroyoga)
 	};
 	const mapped = sportMap[category];
@@ -575,25 +578,38 @@ export async function syncAllWithingsData(userId: string, fullSync = false, over
 	const workouts = await syncWorkoutData(userId, accessToken, sensor.id, lastSync, fullSync);
 	console.log(`   ✓ Synced ${workouts} workouts`);
 
-	// After workout sync, enqueue auto-check for today's checklist items
-	// and sync sensor events → task progress for the whole week
+	// After workout sync, run immediate auto-updates so the UI reflects new workouts quickly.
+	// We still enqueue background jobs as resilience fallback.
 	if (workouts > 0) {
-		const today = new Date().toISOString().slice(0, 10);
-		await enqueueBackgroundJob({
-			userId,
-			type: 'checklist_autocheck',
-			payload: { date: today },
-			priority: 1
-		});
-
-		// ISO week bounds for the current week
 		const now = new Date();
+		const todayOslo = now.toLocaleDateString('sv', { timeZone: 'Europe/Oslo' });
 		const dayOfWeek = now.getUTCDay() || 7; // Mon=1 … Sun=7
 		const weekStart = new Date(now);
 		weekStart.setUTCDate(now.getUTCDate() - dayOfWeek + 1);
 		weekStart.setUTCHours(0, 0, 0, 0);
 		const weekEnd = new Date(weekStart);
 		weekEnd.setUTCDate(weekStart.getUTCDate() + 7);
+
+		try {
+			await autocheckChecklistItemsForDay({ userId, date: todayOslo });
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			console.error(`[withings-sync] immediate checklist autocheck failed user=${userId}: ${msg}`);
+		}
+
+		await enqueueBackgroundJob({
+			userId,
+			type: 'checklist_autocheck',
+			payload: { date: todayOslo },
+			priority: 1
+		});
+
+		try {
+			await syncSensorProgressForTasks({ userId, weekStart, weekEnd });
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			console.error(`[withings-sync] immediate sensor progress sync failed user=${userId}: ${msg}`);
+		}
 
 		await enqueueBackgroundJob({
 			userId,

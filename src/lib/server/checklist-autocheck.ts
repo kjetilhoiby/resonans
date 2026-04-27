@@ -28,7 +28,7 @@ const THRESHOLD = 0.8; // 80% of target duration is sufficient
 /** Maps our ActivityType to Withings sportType substrings */
 const ACTIVITY_TO_SPORT_PATTERNS: Record<ActivityType, string[]> = {
 	running: ['running'],
-	cycling: ['cycling'],
+	cycling: ['cycling', 'e_bike'],
 	walking: ['walking'],
 	strength: ['lift_weights', 'calisthenics'],
 	swimming: ['swimming'],

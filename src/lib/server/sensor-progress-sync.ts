@@ -25,7 +25,7 @@ import {
 /** Maps our activity type strings to Withings sportType substrings (lowercase). */
 const ACTIVITY_TO_SPORT_PATTERNS: Record<string, string[]> = {
 	running: ['running'],
-	cycling: ['cycling'],
+	cycling: ['cycling', 'e_bike'],
 	walking: ['walking'],
 	strength: ['lift_weights', 'calisthenics', 'strength'],
 	swimming: ['swimming'],
@@ -73,6 +73,7 @@ export async function syncSensorProgressForTasks(params: {
 	const taskRows = await db.execute(sql`
 		SELECT
 			t.id,
+			t.title,
 			t.target_value,
 			t.frequency,
 			COALESCE(
@@ -92,6 +93,7 @@ export async function syncSensorProgressForTasks(params: {
 		  )
 	`) as unknown as Array<{
 		id: string;
+		title: string;
 		target_value: number | null;
 		frequency: string;
 		activity_type: string;
@@ -126,9 +128,12 @@ export async function syncSensorProgressForTasks(params: {
 			if (!workout.sport_type) continue;
 			if (!activityMatchesSportType(task.activity_type, workout.sport_type)) continue;
 
-			// Per-day dedupe for weekly tasks so "fem dager" counts distinct days,
-			// per-event dedupe for daily tasks (target enforcement caps at 1/day).
-			const dedupeNote = task.frequency === 'weekly'
+			const titleLower = (task.title ?? '').toLowerCase();
+			const weeklyCountsDistinctDays = task.frequency === 'weekly' && /\bdag(er)?\b/.test(titleLower);
+
+			// Weekly tasks that mention "dager" count distinct days. Session-based
+			// tasks like "5 økter" can count multiple workouts on the same day.
+			const dedupeNote = weeklyCountsDistinctDays
 				? `sensor:day:${new Date(workout.timestamp).toISOString().split('T')[0]}:${task.activity_type}`
 				: `sensor:${workout.id}`;
 
