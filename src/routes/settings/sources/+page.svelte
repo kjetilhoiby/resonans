@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, Input, PageHeader, Radio, Select } from '$lib/components/ui';
+	import { AppPage, Button, Input, PageHeader, Radio, Select } from '$lib/components/ui';
 	import { onDestroy, onMount } from 'svelte';
 	import type { PageData } from './$types';
 
@@ -559,9 +559,9 @@
 				<option value="UTC">UTC</option>
 			</Select>
 		</div>
-		<button class="btn-primary" onclick={saveSourceConfig} disabled={savingSourceConfig}>
+		<Button onClick={saveSourceConfig} disabled={savingSourceConfig}>
 			{savingSourceConfig ? 'Lagrer...' : 'Lagre'}
-		</button>
+		</Button>
 		{#if sourceConfigResult}
 			<p class={sourceConfigResult.success ? 'ok' : 'err'}>{sourceConfigResult.message}</p>
 		{/if}
@@ -579,11 +579,11 @@
 					<label class="option-pill">
 						<Radio name="withings-import-mode" value="days" bind:group={withingsImportMode} />
 						<span>Siste</span>
-						<input
+						<Input
 							type="number"
 							min="1"
 							max="365"
-							class="input days-input"
+							className="input days-input"
 							bind:value={withingsImportDays}
 							disabled={withingsImportMode !== 'days'}
 						/>
@@ -596,14 +596,14 @@
 				</div>
 			</div>
 			<div class="row">
-				<button class="btn-secondary" onclick={() => syncWithings('default')} disabled={syncingWithings}>{syncingWithings ? 'Synker...' : 'Synk nå'}</button>
-				<button class="btn-secondary" onclick={() => syncWithings(withingsImportMode)} disabled={syncingWithings}>
+				<Button variant="secondary" onClick={() => syncWithings('default')} disabled={syncingWithings}>{syncingWithings ? 'Synker...' : 'Synk nå'}</Button>
+				<Button variant="secondary" onClick={() => syncWithings(withingsImportMode)} disabled={syncingWithings}>
 					Importer valgt periode
-				</button>
-				<button class="btn-ghost" onclick={disconnectWithings}>Koble fra</button>
+				</Button>
+				<Button variant="ghost" onClick={disconnectWithings}>Koble fra</Button>
 			</div>
 		{:else}
-			<a href="/api/sensors/withings/connect" class="btn-primary">Koble til Withings</a>
+			<Button href="/api/sensors/withings/connect">Koble til Withings</Button>
 		{/if}
 		{#if withingsResult}<p class={withingsResult.success ? 'ok' : 'err'}>{withingsResult.message}</p>{/if}
 
@@ -704,10 +704,10 @@
 				<p class="meta">Siste synk: {new Date(spondStatus.sensor.lastSync).toLocaleString('nb-NO')}</p>
 			{/if}
 			<div class="row">
-				<button class="btn-secondary" onclick={syncSpond} disabled={syncingSpond}>
+				<Button variant="secondary" onClick={syncSpond} disabled={syncingSpond}>
 					{syncingSpond ? 'Synker...' : 'Synk nå'}
-				</button>
-				<button class="btn-ghost" onclick={disconnectSpond}>Koble fra</button>
+				</Button>
+				<Button variant="ghost" onClick={disconnectSpond}>Koble fra</Button>
 			</div>
 		{:else}
 			<div class="field">
@@ -731,13 +731,12 @@
 					autocomplete="current-password"
 				/>
 			</div>
-			<button
-				class="btn-primary"
-				onclick={connectSpond}
+			<Button
+				onClick={connectSpond}
 				disabled={connectingSpond || !spondEmail || !spondPassword}
 			>
 				{connectingSpond ? 'Kobler til...' : 'Koble til Spond'}
-			</button>
+			</Button>
 		{/if}
 		{#if spondResult}<p class={spondResult.success ? 'ok' : 'err'}>{spondResult.message}</p>{/if}
 	</section>
@@ -754,11 +753,11 @@
 					<label class="option-pill">
 						<Radio name="sparebank1-import-mode" value="days" bind:group={sparebank1ImportMode} />
 						<span>Siste</span>
-						<input
+						<Input
 							type="number"
 							min="1"
 							max="365"
-							class="input days-input"
+							className="input days-input"
 							bind:value={sparebank1ImportDays}
 							disabled={sparebank1ImportMode !== 'days'}
 						/>
@@ -772,20 +771,20 @@
 				</div>
 			</div>
 			<div class="row">
-				<button class="btn-secondary" onclick={() => syncSparebank1('default')} disabled={syncingSparebank1}>Synk nå</button>
-				<button class="btn-secondary" onclick={() => syncSparebank1(sparebank1ImportMode)} disabled={syncingSparebank1}>
+				<Button variant="secondary" onClick={() => syncSparebank1('default')} disabled={syncingSparebank1}>Synk nå</Button>
+				<Button variant="secondary" onClick={() => syncSparebank1(sparebank1ImportMode)} disabled={syncingSparebank1}>
 					Importer valgt periode
-				</button>
-				<button class="btn-danger" onclick={resetEconomicsData} disabled={resettingEconomics || syncingSparebank1}>
+				</Button>
+				<Button variant="danger" onClick={resetEconomicsData} disabled={resettingEconomics || syncingSparebank1}>
 					{resettingEconomics ? 'Tømmer...' : 'Tøm all økonomidata'}
-				</button>
-				<button class="btn-ghost" onclick={disconnectSparebank1}>Koble fra</button>
+				</Button>
+				<Button variant="ghost" onClick={disconnectSparebank1}>Koble fra</Button>
 			</div>
 			{#if resetEconomicsResult}
 				<p class={resetEconomicsResult.success ? 'ok' : 'err'}>{resetEconomicsResult.message}</p>
 			{/if}
 		{:else}
-			<a href="/api/sensors/sparebank1/connect" class="btn-primary">Koble til SpareBank 1</a>
+			<Button href="/api/sensors/sparebank1/connect">Koble til SpareBank 1</Button>
 		{/if}
 		{#if sparebank1Result}
 			<p class={sparebank1Result.success ? 'ok' : 'err'}>{sparebank1Result.message}</p>
@@ -810,13 +809,13 @@
 			{/if}
 			{#if sparebank1Result.success && sparebank1Result.debug}
 				<div class="details-wrap">
-					<button
+					<Button
 						type="button"
-						class="btn-ghost"
-						onclick={() => (showSparebank1Details = !showSparebank1Details)}
+						variant="ghost"
+						onClick={() => (showSparebank1Details = !showSparebank1Details)}
 					>
 						{showSparebank1Details ? 'Skjul detaljer' : 'Vis detaljer'}
-					</button>
+					</Button>
 
 					{#if showSparebank1Details}
 						<div class="debug-panel">
@@ -918,11 +917,11 @@
 		{:else if googleSheetsStatus?.connected}
 			<p class="ok">Tilkoblet</p>
 			<div class="row">
-				<button class="btn-ghost" onclick={disconnectGoogleSheets}>Koble fra</button>
-				<a href="/api/sensors/google-sheets/connect" class="btn-secondary">Koble til på nytt</a>
+				<Button variant="ghost" onClick={disconnectGoogleSheets}>Koble fra</Button>
+				<Button variant="secondary" href="/api/sensors/google-sheets/connect">Koble til på nytt</Button>
 			</div>
 		{:else}
-			<a href="/api/sensors/google-sheets/connect" class="btn-primary">Koble til Google Regneark</a>
+			<Button href="/api/sensors/google-sheets/connect">Koble til Google Regneark</Button>
 		{/if}
 	</section>
 	</div>
@@ -960,7 +959,7 @@
 	.field { margin-bottom: 0.9rem; }
 	.field label { display: block; margin-bottom: 0.4rem; color: #bdbdbd; font-size: 0.82rem; }
 	.field-title { margin: 0 0 0.4rem; color: #c8c8c8; font-size: 0.82rem; }
-	.input {
+	:global(.input) {
 		width: 100%;
 		padding: 0.65rem;
 		border: 1px solid var(--line);
@@ -968,7 +967,7 @@
 		background: #111;
 		color: #f0f0f0;
 	}
-	.input:focus {
+	:global(.input:focus) {
 		outline: none;
 		border-color: var(--accent);
 		box-shadow: 0 0 0 2px rgba(74, 90, 240, 0.18);
@@ -978,17 +977,7 @@
 	.err { color: #f87171; margin: 0.6rem 0 0; }
 	.meta { color: #7f7f7f; font-size: 0.82rem; margin: 0.2rem 0 0.6rem; }
 	.field-desc { color: #9b9b9b; font-size: 0.84rem; margin: 0 0 0.8rem; }
-	.btn-primary, .btn-secondary, .btn-ghost { text-decoration: none; }
-	button.btn-primary { background: var(--accent); }
-	button.btn-primary:hover:not(:disabled) { background: #3f4de0; }
-	button.btn-danger {
-		background: #7f1d1d;
-		border-color: #991b1b;
-		color: #fee2e2;
-	}
-	button.btn-danger:hover:not(:disabled) {
-		background: #991b1b;
-	}
+	:global(.btn-primary), :global(.btn-secondary), :global(.btn-ghost) { text-decoration: none; }
 	.upload-label { display: inline-flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; }
 	.anchor-table { width: 100%; border-collapse: collapse; margin-top: 0.75rem; font-size: 0.82rem; color: var(--text-secondary); }
 	.anchor-table th, .anchor-table td { padding: 0.4rem 0.6rem; text-align: left; border-bottom: 1px solid #252525; }
@@ -1018,7 +1007,7 @@
 		border-radius: 10px;
 		background: #121212;
 	}
-	.days-input { width: 6rem; padding: 0.35rem 0.45rem; }
+	:global(.days-input) { width: 6rem; padding: 0.35rem 0.45rem; }
 	.job-status-panel {
 		margin-top: 0.6rem;
 		padding: 0.65rem 0.75rem;

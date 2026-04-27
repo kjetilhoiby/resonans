@@ -212,15 +212,16 @@
 										Vekt: {override.weight} · Oppdatert: {formatDate(override.updatedAt)} · {override.source}
 									</div>
 								</div>
-								<button
+								<Button
 									type="button"
-									class="delete-btn"
+									variant="danger"
+									className="delete-btn"
 									disabled={deleting === override.id}
-									onclick={() => deleteOverride(override.id)}
-									aria-label="Slett regel"
+									onClick={() => deleteOverride(override.id)}
+									ariaLabel="Slett regel"
 								>
 									{deleting === override.id ? '...' : '🗑'}
-								</button>
+								</Button>
 							</li>
 						{/each}
 					</ul>
@@ -242,15 +243,16 @@
 										Vekt: {override.weight} · Oppdatert: {formatDate(override.updatedAt)} · {override.source}
 									</div>
 								</div>
-								<button
+								<Button
 									type="button"
-									class="delete-btn"
+									variant="danger"
+									className="delete-btn"
 									disabled={deleting === override.id}
-									onclick={() => deleteOverride(override.id)}
-									aria-label="Slett regel"
+									onClick={() => deleteOverride(override.id)}
+									ariaLabel="Slett regel"
 								>
 									{deleting === override.id ? '...' : '🗑'}
-								</button>
+								</Button>
 							</li>
 						{/each}
 					</ul>
@@ -478,7 +480,7 @@
 		color: #666;
 	}
 
-	.delete-btn {
+	:global(.delete-btn) {
 		background: transparent;
 		border: 1px solid #3a2a2a;
 		border-radius: 8px;
@@ -490,12 +492,12 @@
 		flex-shrink: 0;
 	}
 
-	.delete-btn:hover:not(:disabled) {
+	:global(.delete-btn:hover:not(:disabled)) {
 		background: rgba(224, 112, 112, 0.08);
 		border-color: #6a2a2a;
 	}
 
-	.delete-btn:disabled {
+	:global(.delete-btn:disabled) {
 		opacity: 0.5;
 		cursor: not-allowed;
 	}

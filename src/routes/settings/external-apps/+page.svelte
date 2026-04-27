@@ -154,7 +154,7 @@ console.log(payload)`}</pre>
 		color: var(--text-primary);
 	}
 
-	select {
+	:global(select) {
 		width: 100%;
 		border-radius: 8px;
 		border: 1px solid var(--border-color);
@@ -163,7 +163,7 @@ console.log(payload)`}</pre>
 		padding: 0.55rem 0.6rem;
 	}
 
-	select:disabled {
+	:global(select:disabled) {
 		opacity: 0.65;
 	}
 

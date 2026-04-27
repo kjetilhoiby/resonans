@@ -224,24 +224,25 @@
 									{/if}
 								</div>
 								<div class="rule-actions">
-									<button
+									<Button
 										type="button"
-										class="toggle-btn"
-										onclick={() => toggleRuleActive(rule)}
-										aria-label={rule.active ? 'Deaktiver' : 'Aktiver'}
-										title={rule.active ? 'Deaktiver regel' : 'Aktiver regel'}
+										variant="ghost"
+										className="toggle-btn"
+										onClick={() => toggleRuleActive(rule)}
+										ariaLabel={rule.active ? 'Deaktiver' : 'Aktiver'}
 									>
 										{rule.active ? '✓' : '◯'}
-									</button>
-									<button
+									</Button>
+									<Button
 										type="button"
-										class="delete-btn"
+										variant="danger"
+										className="delete-btn"
 										disabled={deleting === rule.id}
-										onclick={() => deleteRule(rule.id)}
-										aria-label="Slett regel"
+										onClick={() => deleteRule(rule.id)}
+										ariaLabel="Slett regel"
 									>
 										{deleting === rule.id ? '...' : '🗑'}
-									</button>
+									</Button>
 								</div>
 							</li>
 						{/each}
@@ -422,7 +423,7 @@
 		gap: 0.5rem;
 	}
 
-	.toggle-btn {
+	:global(.toggle-btn) {
 		background: transparent;
 		border: none;
 		border-radius: 8px;
@@ -433,12 +434,12 @@
 		transition: all 0.15s;
 	}
 
-	.toggle-btn:hover {
+	:global(.toggle-btn:hover) {
 		background: rgba(74, 222, 128, 0.08);
 		border-color: rgba(74, 222, 128, 0.2);
 	}
 
-	.delete-btn {
+	:global(.delete-btn) {
 		background: transparent;
 		border: none;
 		border-radius: 8px;
@@ -450,12 +451,12 @@
 		flex-shrink: 0;
 	}
 
-	.delete-btn:hover:not(:disabled) {
+	:global(.delete-btn:hover:not(:disabled)) {
 		background: rgba(224, 112, 112, 0.08);
 		border-color: #6a2a2a;
 	}
 
-	.delete-btn:disabled {
+	:global(.delete-btn:disabled) {
 		opacity: 0.5;
 		cursor: not-allowed;
 	}

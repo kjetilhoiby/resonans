@@ -182,10 +182,11 @@
 						</div>
 
 						<div class="row">
-						<Button type="button" onClick={() => void saveSeries()} disabled={saving}>
-							{saving ? 'Lagrer ...' : 'Lagre'}
-						</Button>
-						<Button variant="secondary" type="button" onClick={cancelEdit} disabled={saving}>Avbryt</Button>
+							<Button type="button" onClick={() => void saveSeries()} disabled={saving}>
+								{saving ? 'Lagrer ...' : 'Lagre'}
+							</Button>
+							<Button variant="secondary" type="button" onClick={cancelEdit} disabled={saving}>Avbryt</Button>
+						</div>
 
 						{#if resultMsg?.id === series.id}
 							<p class={resultMsg?.ok ? 'ok' : 'err'}>{resultMsg?.text}</p>
@@ -265,14 +266,12 @@
 		padding: 1rem;
 	}
 	.card.is-archived { opacity: 0.55; }
-	.btn-primary, .btn-secondary, .btn-danger { font-size: 0.875rem; }
 	.row { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.7rem; }
 	.field { margin-bottom: 0.85rem; }
 	.field-label { display: block; margin-bottom: 0.35rem; font-size: 0.83rem; color: var(--text-tertiary); }
 	.check-field { display: flex; align-items: center; gap: 0.55rem; }
 	.check-field label { margin: 0; font-size: 0.9rem; color: var(--text-secondary); cursor: pointer; }
-	.input { width: 100%; padding: 0.6rem; border: 1px solid #2a2a2a; border-radius: 8px; background: #111; color: var(--text-primary); box-sizing: border-box; }
-	.hints-input { resize: vertical; min-height: 64px; font-family: inherit; }
+	:global(.hints-input) { resize: vertical; min-height: 64px; font-family: inherit; }
 	.ok { color: #4ade80; margin: 0.5rem 0 0; }
 	.err { color: #f87171; margin: 0.5rem 0 0; }
 
@@ -307,17 +306,6 @@
 		color: #7c8ef5;
 		border: 1px solid color-mix(in oklab, #7c8ef5 30%, transparent);
 	}
-
-	.btn-danger {
-		padding: 0.4rem 0.7rem;
-		border-radius: 8px;
-		background: color-mix(in oklab, #ef4444 10%, transparent);
-		border: 1px solid color-mix(in oklab, #ef4444 30%, transparent);
-		color: #f87171;
-		cursor: pointer;
-		font-size: 0.875rem;
-	}
-	.btn-danger:hover { background: color-mix(in oklab, #ef4444 20%, transparent); }
 
 	.empty-card { text-align: center; padding: 2rem 1rem; }
 	.empty-text { color: var(--text-tertiary); margin: 0; }

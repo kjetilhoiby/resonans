@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, PageHeader, Radio, Textarea } from '$lib/components/ui';
+	import { AppPage, Button, Input, PageHeader, Radio, Textarea } from '$lib/components/ui';
 	import type { PageData, ActionData } from './$types';
 	import { onMount } from 'svelte';
 
@@ -351,11 +351,11 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 							<div style="display:flex; gap:0.75rem; flex-wrap:wrap; margin-top:0.75rem;">
 								<form method="POST" action="?/acceptMarriageInvite">
 									<input type="hidden" name="inviteId" value={relationship.incomingInvite.id} />
-									<button type="submit" class="btn-primary">💞 Godta</button>
+									<Button type="submit">💞 Godta</Button>
 								</form>
 								<form method="POST" action="?/declineMarriageInvite">
 									<input type="hidden" name="inviteId" value={relationship.incomingInvite.id} />
-									<button type="submit" class="btn-secondary">Nei takk</button>
+									<Button type="submit" variant="secondary">Nei takk</Button>
 								</form>
 							</div>
 						</div>
@@ -372,14 +372,13 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 									<div style="margin-top:0.75rem; display:grid; gap:0.5rem;">
 										<label for="partnerInviteShareUrl">Delingslenke</label>
 										<div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
-											<input
+											<Input
 												id="partnerInviteShareUrl"
-												class="input"
+												className="input partner-invite-share"
 												value={partnerInviteShareUrl}
 												readonly
-												style="flex:1 1 20rem;"
 											/>
-											<button type="button" class="btn-secondary" onclick={copyPartnerInviteLink}>Kopier lenke</button>
+											<Button type="button" variant="secondary" onClick={copyPartnerInviteLink}>Kopier lenke</Button>
 										</div>
 										{#if copyInviteMessage}
 											<small class="hint">{copyInviteMessage}</small>
@@ -389,26 +388,26 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 							</div>
 							<form method="POST" action="?/cancelMarriageInvite" style="margin-top:0.75rem;">
 								<input type="hidden" name="inviteId" value={relationship.outgoingInvite.id} />
-								<button type="submit" class="btn-secondary">Trekk tilbake invitasjonen</button>
+								<Button type="submit" variant="secondary">Trekk tilbake invitasjonen</Button>
 							</form>
 						</div>
 					{:else}
 						<form method="POST" action="?/invitePartner">
 							<div class="form-group">
 								<label for="inviteeEmail">Partnerens e-postadresse</label>
-								<input
+								<Input
 									type="email"
 									id="inviteeEmail"
 									name="inviteeEmail"
 									placeholder="partner@example.com"
-									class="input"
+									className="input"
 									required
 								/>
 								<small class="hint">
 									Når invitasjonen er sendt, blir e-posten også lagt til i invite-only-listen.
 								</small>
 							</div>
-							<button type="submit" class="btn-primary">💌 Send partnerinvitasjon</button>
+							<Button type="submit">💌 Send partnerinvitasjon</Button>
 						</form>
 					{/if}
 				{/if}
@@ -449,7 +448,7 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 								></Textarea>
 							</div>
 
-							<button type="submit" class="btn-primary">Lagre parsjekk</button>
+							<Button type="submit">Lagre parsjekk</Button>
 						</form>
 
 						{#if relationshipCheckin.submitted && !relationshipCheckin.revealed}
@@ -533,9 +532,9 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 		</section>
 
 		<div class="actions">
-			<button type="button" onclick={() => showDebug = !showDebug} class="btn-ghost">
+			<Button type="button" variant="ghost" onClick={() => showDebug = !showDebug}>
 				{showDebug ? '🐛 Skjul Debug' : '🐛 Vis Debug'}
-			</button>
+			</Button>
 		</div>
 	</main>
 </AppPage>
@@ -723,7 +722,7 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 		font-size: 0.9rem;
 	}
 
-	.input {
+	:global(.input) {
 		width: 100%;
 		padding: 0.75rem;
 		border: 1px solid var(--border-color);
@@ -734,7 +733,7 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 		color: var(--text-primary);
 	}
 
-	.input:focus {
+	:global(.input:focus) {
 		outline: none;
 		border-color: var(--accent-primary);
 		box-shadow: 0 0 0 3px var(--info-bg);
@@ -792,6 +791,10 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 		margin: 0 0 0.45rem;
 		font-size: 1rem;
 		color: var(--text-primary);
+	}
+
+	:global(.partner-invite-share) {
+		flex: 1 1 20rem;
 	}
 
 	.checkin-help {
