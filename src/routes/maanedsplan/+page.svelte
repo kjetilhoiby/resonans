@@ -13,6 +13,7 @@
 		id: string;
 		text: string;
 		checked: boolean;
+		parentId?: string | null;
 	}
 
 	interface MonthChecklist {
@@ -117,6 +118,7 @@
 	let editingText = $state('');
 	let editInput = $state<HTMLInputElement | null>(null);
 	let selectedWeekKey = $state<string | null>(null);
+	let expandedWeekParentIds = $state<Set<string>>(new Set());
 	let saveStates = $state<Record<string, SaveState>>({
 		monthNote: 'idle',
 		items: 'idle',
@@ -137,6 +139,13 @@
 			selectedWeekKey = currentWeek?.dashedKey ?? data.weeksInMonth[0].dashedKey;
 		}
 	});
+
+	function toggleWeekParentExpansion(parentId: string) {
+		const next = new Set(expandedWeekParentIds);
+		if (next.has(parentId)) next.delete(parentId);
+		else next.add(parentId);
+		expandedWeekParentIds = next;
+	}
 
 	const selectedWeek = $derived(data.weeksInMonth.find((w) => w.dashedKey === selectedWeekKey) ?? null);
 	const selectedWeekChecklist = $derived(
@@ -795,7 +804,7 @@
 
 				{#if selectedWeekChecklist && selectedWeekChecklist.items.length > 0}
 					<ul class="mp-week-items">
-						{#each groupChecklistItems(selectedWeekChecklist.items) as group}
+						{#each groupChecklistItems(selectedWeekChecklist.items.filter(i => !i.parentId)) as group}
 							{#if group.type === 'group'}
 								<li class="mp-week-item mp-week-item--group">
 									<span class="mp-week-item-label">
@@ -808,10 +817,49 @@
 									</div>
 								</li>
 							{:else}
-								<li class="mp-week-item" class:checked={group.item.checked}>
-									<span class="mp-week-item-dot" class:checked={group.item.checked}>{group.item.checked ? '✓' : ''}</span>
+								{@const mpChildren = selectedWeekChecklist.items.filter(c => c.parentId === group.item.id)}
+								{@const hasMpChildren = mpChildren.length > 0}
+								{@const completedMpChildren = mpChildren.filter(c => c.checked).length}
+								{@const isMpExpanded = expandedWeekParentIds.has(group.item.id)}
+								{@const mR = 7}
+								{@const mC = 2 * Math.PI * mR}
+								{@const mPct = mpChildren.length > 0 ? completedMpChildren / mpChildren.length : 0}
+								<li class="mp-week-item" class:checked={group.item.checked} class:mp-week-item--parent={hasMpChildren}>
+									{#if hasMpChildren}
+										<svg class="mp-parent-circle" viewBox="0 0 18 18" width="18" height="18" aria-hidden="true">
+											<circle cx="9" cy="9" r={mR} fill="none" stroke="#2a2a2a" stroke-width="2"/>
+											<circle cx="9" cy="9" r={mR} fill="none"
+												stroke={completedMpChildren === mpChildren.length ? '#5fa080' : '#7c8ef5'}
+												stroke-width="2"
+												stroke-dasharray="{mPct * mC} {mC}"
+												stroke-linecap="round"
+												transform="rotate(-90 9 9)"
+											/>
+										</svg>
+									{:else}
+										<span class="mp-week-item-dot" class:checked={group.item.checked}>{group.item.checked ? '✓' : ''}</span>
+									{/if}
 									<span class="mp-week-item-text">{group.item.text}</span>
+									{#if hasMpChildren}
+										<button
+											type="button"
+											class="mp-parent-caret"
+											class:expanded={isMpExpanded}
+											onclick={() => toggleWeekParentExpansion(group.item.id)}
+											aria-label={isMpExpanded ? 'Lukk subitems' : 'Utvid subitems'}
+										>▸</button>
+									{/if}
 								</li>
+								{#if hasMpChildren && isMpExpanded}
+									<li class="mp-week-children">
+										{#each mpChildren as child}
+											<div class="mp-week-child-row" class:checked={child.checked}>
+												<span class="mp-week-item-dot" class:checked={child.checked}>{child.checked ? '✓' : ''}</span>
+												<span class="mp-week-item-text">{child.text}</span>
+											</div>
+										{/each}
+									</li>
+								{/if}
 							{/if}
 						{/each}
 					</ul>
@@ -1296,6 +1344,57 @@
 		transition: border-color 0.12s, background 0.12s;
 	}
 	.mp-week-slot.checked { border-color: #7c8ef5; background: #7c8ef5; }
+
+	.mp-week-item--parent {
+		align-items: center;
+	}
+
+	.mp-parent-circle {
+		flex-shrink: 0;
+		display: block;
+	}
+
+	.mp-parent-caret {
+		margin-left: auto;
+		width: 18px;
+		height: 18px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		border: none;
+		background: transparent;
+		color: #7c8ef5;
+		font-size: 0.75rem;
+		line-height: 1;
+		cursor: pointer;
+		padding: 0;
+		flex-shrink: 0;
+		transition: transform 0.18s ease;
+	}
+	.mp-parent-caret.expanded {
+		transform: rotate(90deg);
+	}
+
+	.mp-week-children {
+		list-style: none;
+		margin: 0;
+		padding: 0 0 0 26px;
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		border-left: 1px solid #1e2235;
+	}
+
+	.mp-week-child-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 2px 0;
+	}
+	.mp-week-child-row.checked .mp-week-item-text {
+		color: #3c4055;
+		text-decoration: line-through;
+	}
 
 	.mp-week-empty {
 		font-size: 0.82rem;
