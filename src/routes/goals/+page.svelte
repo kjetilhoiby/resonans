@@ -4,7 +4,6 @@
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import MetricCard from '$lib/components/visualizations/MetricCard.svelte';
 	import TrajectoryChart from '$lib/components/visualizations/TrajectoryChart.svelte';
-
 	type GoalTrackMeta = {
 		kind?: string | null;
 		window?: string | null;
