@@ -422,11 +422,13 @@
 	const SPORT_ICONS: Record<string, string> = {
 		running: '🏃',
 		cycling: '🚴',
+		e_bike: '🚴',
 		walking: '🚶',
 		hiking: '🥾',
 		swimming: '🏊',
 		trail: '🏔️',
 		trail_running: '🏔️',
+		yoga: '🧘‍♂️',
 		tennis: '🎾',
 		volleyball: '🏐',
 		badminton: '🏸',
@@ -441,14 +443,19 @@
 		const labels: Record<string, string> = {
 			running: 'Løping',
 			cycling: 'Sykling',
+			e_bike: 'Elsykkel',
 			walking: 'Gåtur',
 			hiking: 'Turgåing',
 			swimming: 'Svømming',
 			trail: 'Terrengløp',
-			trail_running: 'Terrengløp'
+			trail_running: 'Terrengløp',
+			yoga: 'Yoga'
 		};
 		return labels[sportType.toLowerCase()] ?? sportType.charAt(0).toUpperCase() + sportType.slice(1);
 	}
+
+	// Treningstyper der distanse ikke er meningsfull
+	const DISTANCE_LESS_SPORTS = new Set(['yoga', 'strength_training', 'pilates']);
 
 	function providerLabel(provider: string, sensorType: string): string {
 		if (provider === 'dropbox' || sensorType === 'workout_files') return 'Dropbox (GPX/TCX)';
@@ -1447,9 +1454,10 @@
 							</button>
 
 							{#if isExpanded}
+								{@const noDistance = DISTANCE_LESS_SPORTS.has(act.sportType.toLowerCase())}
 								<div class="hd-activity-details">
 									<div class="hd-activity-meta">
-										{#if act.distanceMeters}{(act.distanceMeters / 1000).toFixed(1)} km{/if}
+										{#if act.distanceMeters && !noDistance}{(act.distanceMeters / 1000).toFixed(1)} km{/if}
 										{#if act.durationSeconds}· {formatDuration(act.durationSeconds)}{/if}
 										{#if act.avgHeartRate}· ♥ {act.avgHeartRate} bpm{/if}
 										{#if act.paceSecondsPerKm && act.sportType === 'running'}· {formatPace(act.paceSecondsPerKm)}{/if}
@@ -1459,7 +1467,7 @@
 											{#each act.evidence as ev}
 												<span class="hd-source-chip" class:hd-source-chip-track={ev.hasTrackPoints}>
 													{providerLabel(ev.provider, ev.sensorType)}
-													{#if ev.distanceMeters !== null}{(ev.distanceMeters / 1000).toFixed(1)} km{/if}
+													{#if ev.distanceMeters !== null && !noDistance}{(ev.distanceMeters / 1000).toFixed(1)} km{/if}
 													{#if ev.durationSeconds !== null}· {formatDuration(ev.durationSeconds)}{/if}
 													{#if ev.avgHeartRate !== null}· ♥ {ev.avgHeartRate}{/if}
 												</span>
