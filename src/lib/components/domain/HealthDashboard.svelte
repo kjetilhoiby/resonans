@@ -170,15 +170,21 @@
 	// Activity card expand state
 	let expandedActivityIds = $state<Set<string>>(new Set());
 
-	function toggleActivity(activityId: string) {
+	async function toggleActivity(activityId: string, trackEventId: string | null = null) {
 		const next = new Set(expandedActivityIds);
-		if (next.has(activityId)) next.delete(activityId);
-		else next.add(activityId);
+		if (next.has(activityId)) {
+			next.delete(activityId);
+			expandedActivityIds = next;
+			return;
+		}
+		next.add(activityId);
 		expandedActivityIds = next;
+		if (trackEventId && mapEventId !== trackEventId) {
+			await openMap(trackEventId);
+		}
 	}
 
 	async function openMap(eventId: string) {
-		if (mapEventId === eventId) { mapEventId = null; mapPoints = []; return; }
 		mapEventId = eventId;
 		mapPoints = [];
 		mapLoading = true;
@@ -396,11 +402,15 @@
 	}
 
 	function formatActivityDate(value: string): string {
-		return new Intl.DateTimeFormat('nb-NO', {
-			weekday: 'short',
-			day: 'numeric',
-			month: 'short'
-		}).format(new Date(value));
+		const date = new Date(value);
+		const now = new Date();
+		const diffMs = now.getTime() - date.getTime();
+		const diffH = Math.floor(diffMs / 3600000);
+		const diffD = Math.floor(diffMs / 86400000);
+		if (diffH < 1) return 'akkurat nå';
+		if (diffH < 24) return `${diffH} t siden`;
+		if (diffD === 1) return 'i går';
+		return new Intl.DateTimeFormat('nb-NO', { weekday: 'short', day: 'numeric', month: 'short' }).format(date);
 	}
 
 	function formatDuration(seconds: number | null): string {
@@ -1439,22 +1449,31 @@
 						{@const trackEventId = act.evidence.find(e => e.hasTrackPoints)?.eventId ?? null}
 						{@const discrepancies = sourceDiscrepancies(act.evidence)}
 						{@const isExpanded = expandedActivityIds.has(act.activityId)}
+						{@const noDistance = DISTANCE_LESS_SPORTS.has(act.sportType.toLowerCase())}
+						{@const compactSuffix = (() => {
+							const parts: string[] = [];
+							if (act.distanceMeters && !noDistance) parts.push(`${(act.distanceMeters / 1000).toFixed(1)} km`);
+							if (act.durationSeconds) parts.push(formatDuration(act.durationSeconds));
+							return parts.join(' · ');
+						})()}
 						<div class="hd-activity-card" class:hd-activity-card-expanded={isExpanded}>
 							<button
 								class="hd-activity-row"
-								onclick={() => toggleActivity(act.activityId)}
+								onclick={() => toggleActivity(act.activityId, trackEventId)}
 								aria-expanded={isExpanded}
 							>
 								<div class="hd-activity-icon">{sportIcon(act.sportType)}</div>
 								<div class="hd-activity-info">
-									<span class="hd-activity-label">{sportLabel(act.sportType)}</span>
-									<span class="hd-activity-time">{formatActivityDate(act.startTime)}</span>
+									<span class="hd-activity-label">
+										{sportLabel(act.sportType)}
+										<span class="hd-activity-time">· {formatActivityDate(act.startTime)}</span>
+										{#if compactSuffix}<span class="hd-activity-compact-suffix">· {compactSuffix}</span>{/if}
+									</span>
 								</div>
 								<span class="hd-activity-chevron" class:hd-activity-chevron-open={isExpanded}>›</span>
 							</button>
 
 							{#if isExpanded}
-								{@const noDistance = DISTANCE_LESS_SPORTS.has(act.sportType.toLowerCase())}
 								<div class="hd-activity-details">
 									<div class="hd-activity-meta">
 										{#if act.distanceMeters && !noDistance}{(act.distanceMeters / 1000).toFixed(1)} km{/if}
@@ -1477,28 +1496,16 @@
 									{#if discrepancies.length > 0}
 										<span class="hd-activity-discrepancy">⚠ {discrepancies.join(' | ')}</span>
 									{/if}
-									<div class="hd-activity-actions">
-										{#if trackEventId}
-											<button
-												class="hd-map-btn"
-												class:hd-map-btn-active={mapEventId === trackEventId}
-												onclick={() => openMap(trackEventId)}
-												title="Vis kart"
-											>
-												{mapLoading && mapEventId === trackEventId ? '…' : '🗺️'} Kart
-											</button>
-										{/if}
-										<a class="hd-detail-link" href="/aktivitet/{act.activityId}">Detaljer →</a>
-									</div>
-									{#if mapEventId === trackEventId}
+									{#if trackEventId}
 										<div class="hd-map-panel">
-											{#if mapLoading}
+											{#if mapLoading && mapEventId === trackEventId}
 												<div class="hd-map-loading">Laster kart…</div>
-											{:else}
+											{:else if mapEventId === trackEventId && mapPoints.length > 0}
 												<GpxMapSvg points={mapPoints} />
 											{/if}
 										</div>
 									{/if}
+									<a class="hd-detail-link" href="/aktivitet/{act.activityId}">Åpne fullstendig →</a>
 								</div>
 							{/if}
 						</div>
@@ -1999,14 +2006,22 @@
 	}
 
 	.hd-activity-label {
-		font-size: 0.9rem;
-		font-weight: 600;
+		font-size: 0.88rem;
+		font-weight: 500;
 		color: #ddd;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.hd-activity-time {
-		font-size: 0.78rem;
+		font-weight: 400;
 		color: #666;
+	}
+
+	.hd-activity-compact-suffix {
+		font-weight: 400;
+		color: #555;
 	}
 
 	.hd-activity-chevron {
