@@ -1260,13 +1260,6 @@
 		return `Avslutt uke ${data.week.week}`;
 	}
 
-	async function navigateToPlanningGoal() {
-		const res = await fetch('/api/goals/planning');
-		if (!res.ok) return;
-		const { id } = await res.json() as { id: string };
-		await goto(`/goals?goal=${id}`);
-	}
-
 	async function ensureWeekChecklist() {
 		if (weekChecklistState) return weekChecklistState;
 
@@ -1899,10 +1892,17 @@
 			prompts: { chat: buildWeekPlanPrefill() }
 		}}
 		onclose={() => (weekPlanChatOpen = false)}
-		oncomplete={async () => {
+		oncomplete={async (flowData) => {
 			weekPlanChatOpen = false;
+			const weekNote = flowData['weekNote'] as string | undefined;
+			if (weekNote?.trim()) {
+				weekNoteValue = weekNote;
+				const form = new FormData();
+				form.set('weekKey', data.week.dashedKey);
+				form.set('weekNote', weekNote);
+				await fetch('?/saveWeekNote', { method: 'POST', body: form });
+			}
 			await invalidateAll();
-			await navigateToPlanningGoal();
 		}}
 	/>
 {/if}
@@ -1915,9 +1915,18 @@
 			prompts: { chat: buildWeekReviewPrefill() }
 		}}
 		onclose={() => (weekReviewChatOpen = false)}
-		oncomplete={async () => {
+		oncomplete={async (flowData) => {
 			weekReviewChatOpen = false;
-			await navigateToPlanningGoal();
+			const reflection = flowData['reflection'] as string | undefined;
+			if (reflection?.trim()) {
+				reflectionValue = reflection;
+				const form = new FormData();
+				form.set('weekKey', data.week.dashedKey);
+				form.set('reflection', reflection);
+				form.set('vision', visionValue ?? '');
+				await fetch('?/saveNotes', { method: 'POST', body: form });
+			}
+			await invalidateAll();
 		}}
 	/>
 {/if}

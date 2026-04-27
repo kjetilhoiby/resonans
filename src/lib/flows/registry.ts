@@ -300,6 +300,19 @@ export const FLOWS: Record<FlowId, Flow> = {
 				title: 'Planlegg uka',
 				prompt: 'Planlegg uke',
 				autoSend: true
+			},
+			{
+				id: 'planlegging',
+				type: 'form',
+				title: 'Planlegging',
+				fields: [
+					{
+						id: 'weekNote',
+						type: 'textarea',
+						label: 'Uka på 1-3 setninger',
+						placeholder: 'Beskriv hva uka handler om'
+					}
+				]
 			}
 		]
 	},
@@ -319,6 +332,19 @@ export const FLOWS: Record<FlowId, Flow> = {
 				title: 'Avslutt uka',
 				prompt: 'Avslutt uke',
 				autoSend: true
+			},
+			{
+				id: 'planlegging',
+				type: 'form',
+				title: 'Planlegging',
+				fields: [
+					{
+						id: 'reflection',
+						type: 'textarea',
+						label: 'Refleksjonsnotat for uka',
+						placeholder: 'Hva gikk bra? Hva lærte du?'
+					}
+				]
 			}
 		]
 	},
