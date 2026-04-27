@@ -256,16 +256,14 @@
 						{@const isExpanded = expandedIds.has(workout.id)}
 						<div class="ths-workout-item" class:expanded={isExpanded}>
 							<!-- Kompakt: alltid synlig -->
-							<button class="ths-workout-row" onclick={() => toggleExpand(workout)} aria-expanded={isExpanded}>
-								<div class="ths-workout-type">{formatSportType(workout.sportType)}</div>
-								<div class="ths-workout-compact-meta">
+							<div class="ths-workout-row">
+								<button class="ths-workout-toggle" onclick={() => toggleExpand(workout)} aria-expanded={isExpanded}>
+									<div class="ths-workout-type">{formatSportType(workout.sportType)}</div>
 									<span class="ths-workout-date">{fmtDate(workout.timestamp)}</span>
-								</div>
-								<div class="ths-workout-actions">
-									<button class="ths-dismiss-btn" onclick={(e) => { e.stopPropagation(); dismissWorkout(workout.id); }} title="Skjul denne økten">×</button>
 									<span class="ths-chevron" class:ths-chevron-open={isExpanded}>›</span>
-								</div>
-							</button>
+								</button>
+								<button class="ths-dismiss-btn" onclick={() => dismissWorkout(workout.id)} title="Skjul denne økten">×</button>
+							</div>
 
 							<!-- Utvidet: detaljer -->
 							{#if isExpanded}
@@ -500,33 +498,28 @@
 
 	.ths-workout-row {
 		display: flex;
-		justify-content: space-between;
 		align-items: center;
-		padding: 10px 12px;
-		width: 100%;
+		gap: 4px;
+		padding: 2px 6px 2px 0;
+	}
+
+	.ths-workout-toggle {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex: 1;
+		padding: 8px 12px;
 		background: none;
 		border: none;
 		cursor: pointer;
 		color: inherit;
 		text-align: left;
-		gap: 8px;
 		transition: background 0.12s;
+		border-radius: 6px;
 	}
 
-	.ths-workout-row:hover {
+	.ths-workout-toggle:hover {
 		background: rgba(255, 255, 255, 0.02);
-	}
-
-	.ths-workout-compact-meta {
-		flex: 1;
-		display: flex;
-		justify-content: flex-end;
-	}
-
-	.ths-workout-actions {
-		display: flex;
-		gap: 6px;
-		align-items: center;
 	}
 
 	.ths-chevron {
@@ -535,6 +528,7 @@
 		line-height: 1;
 		transition: transform 0.2s ease;
 		display: inline-block;
+		margin-left: auto;
 	}
 
 	.ths-chevron-open {
