@@ -34,6 +34,9 @@
 		id: string;
 		text: string;
 		checked: boolean;
+		parentId?: string | null;
+		startDate?: string | null;
+		endDate?: string | null;
 		metadata?: {
 			linkedTaskId?: string;
 			linkedTaskTitle?: string;
@@ -240,6 +243,11 @@
 	let dayComposerInput = $state<HTMLInputElement | null>(null);
 	let editInput = $state<HTMLInputElement | null>(null);
 	let weekPickerInput = $state<HTMLInputElement | null>(null);
+	let expandedDayParentIds = $state<Set<string>>(new Set());
+	let expandedWeekParentIds = $state<Set<string>>(new Set());
+	let editLongPressTimer = $state<ReturnType<typeof setTimeout> | null>(null);
+	let editLongPressTriggered = $state(false);
+	const EDIT_LONG_PRESS_MS = 650;
 	let saveStates = $state<Record<string, SaveState>>({
 		weekNote: 'idle',
 		weekItems: 'idle',
@@ -249,7 +257,7 @@
 	});
 
 	const selectedDayChecklist = $derived(dayChecklistsState[selectedDayIso] ?? null);
-	const sortedDayItems = $derived(selectedDayChecklist ? sortByTime(selectedDayChecklist.items) : []);
+	const sortedDayItems = $derived(selectedDayChecklist ? sortByTime(selectedDayChecklist.items.filter((item) => !item.parentId)) : []);
 	const selectedDay = $derived(data.week.days.find((day) => day.isoDate === selectedDayIso) ?? data.week.days[0]);
 	const selectedDayNote = $derived(dayNotesState[selectedDayIso] ?? '');
 	const selectedDayHeadline = $derived(dayHeadlinesState[selectedDayIso] ?? '');
@@ -838,6 +846,20 @@
 		dayPlanSheetOpen = true;
 	}
 
+	function toggleDayParentExpansion(parentId: string) {
+		const next = new Set(expandedDayParentIds);
+		if (next.has(parentId)) next.delete(parentId);
+		else next.add(parentId);
+		expandedDayParentIds = next;
+	}
+
+	function toggleWeekParentExpansion(parentId: string) {
+		const next = new Set(expandedWeekParentIds);
+		if (next.has(parentId)) next.delete(parentId);
+		else next.add(parentId);
+		expandedWeekParentIds = next;
+	}
+
 	async function toggleChecklistItem(checklistId: string, itemId: string, checked: boolean) {
 		const key = saveKeyForChecklist(checklistId);
 		updateChecklistById(checklistId, (current) => ({
@@ -973,6 +995,30 @@
 		await tick();
 		editInput?.focus();
 		editInput?.select();
+	}
+
+	function beginEditLongPress(checklistId: string, item: ChecklistItem) {
+		if (editLongPressTimer) clearTimeout(editLongPressTimer);
+		editLongPressTriggered = false;
+		editLongPressTimer = setTimeout(() => {
+			editLongPressTriggered = true;
+			void startEditing(checklistId, item);
+			editLongPressTimer = null;
+		}, EDIT_LONG_PRESS_MS);
+	}
+
+	function cancelEditLongPress() {
+		if (!editLongPressTimer) return;
+		clearTimeout(editLongPressTimer);
+		editLongPressTimer = null;
+	}
+
+	function handleEditPress(checklistId: string, item: ChecklistItem) {
+		if (editLongPressTriggered) {
+			editLongPressTriggered = false;
+			return;
+		}
+		void startEditing(checklistId, item);
 	}
 
 	function startTouchDrag(event: TouchEvent, checklistId: string, itemId: string) {
@@ -1542,7 +1588,7 @@
 			</div>
 
 			<ul class="wp-checklist">
-				{#each groupChecklistItems(weekChecklistState.items) as group}
+				{#each groupChecklistItems(weekChecklistState.items.filter(i => !i.parentId)) as group}
 					{#if group.type === 'group'}
 						<li class="wp-check-row">
 							<div class="wp-check-row-main">
@@ -1561,53 +1607,114 @@
 							</div>
 						</li>
 					{:else}
-						<li
-							class="wp-check-row"
-							class:is-dragging={dragItem?.itemId === group.item.id}
-							class:is-drag-over={dragOverItemId === group.item.id && dragItem?.itemId !== group.item.id}
-							data-item-id={group.item.id}
-							draggable={editingItem?.itemId !== group.item.id}
-							ondragstart={() => (dragItem = { checklistId: weekChecklistId, itemId: group.item.id })}
-							ondragover={(event) => { event.preventDefault(); dragOverItemId = group.item.id; }}
-							ondragleave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) dragOverItemId = null; }}
-							ondrop={() => {
-								if (!dragItem) return;
-								void reorderChecklistItems(weekChecklistId, dragItem.itemId, group.item.id);
-								dragItem = null;
-								dragOverItemId = null;
-							}}
-							ondragend={() => { dragItem = null; dragOverItemId = null; }}
-						>
-							<div class="wp-check-row-main">
-								{#if editingItem?.itemId === group.item.id}
-									<div class="wp-edit-shell">
-										<input
-											bind:this={editInput}
-											bind:value={editingItem.text}
-											class="wp-input wp-edit-input"
-											onblur={handleEditBlur}
-											onkeydown={handleEditKeydown}
-										/>
-										<button
-											type="button"
-											class="btn-icon-danger"
-											onmousedown={() => (skipEditBlur = true)}
-											onclick={() => void deleteChecklistItem(weekChecklistId, group.item.id)}
-											aria-label="Slett punkt"
-										><Icon name="close" size={13} /></button>
-									</div>
-								{:else}
-									<button type="button" class="wp-item-text-btn" onclick={() => void startEditing(weekChecklistId, group.item)}>
-										<span class="wp-check-text" class:checked={group.item.checked}>{group.item.text}</span>
-									</button>
-								{/if}
+					{@const weekChildren = weekChecklistState.items.filter(c => c.parentId === group.item.id)}
+					{@const hasWeekChildren = weekChildren.length > 0}
+					{@const completedWeekChildren = weekChildren.filter(c => c.checked).length}
+					{@const isWeekExpanded = expandedWeekParentIds.has(group.item.id)}
+					{@const wR = 8}
+					{@const wC = 2 * Math.PI * wR}
+					{@const wPct = weekChildren.length > 0 ? completedWeekChildren / weekChildren.length : 0}
+					<li
+						class="wp-check-row"
+						class:wp-check-row-parent={hasWeekChildren}
+						class:is-dragging={dragItem?.itemId === group.item.id}
+						class:is-drag-over={dragOverItemId === group.item.id && dragItem?.itemId !== group.item.id}
+						data-item-id={group.item.id}
+						draggable={editingItem?.itemId !== group.item.id}
+						ondragstart={() => (dragItem = { checklistId: weekChecklistId, itemId: group.item.id })}
+						ondragover={(event) => { event.preventDefault(); dragOverItemId = group.item.id; }}
+						ondragleave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) dragOverItemId = null; }}
+						ondrop={() => {
+							if (!dragItem) return;
+							void reorderChecklistItems(weekChecklistId, dragItem.itemId, group.item.id);
+							dragItem = null;
+							dragOverItemId = null;
+						}}
+						ondragend={() => { dragItem = null; dragOverItemId = null; }}
+					>
+						<div class="wp-check-row-main">
+							{#if editingItem?.itemId === group.item.id}
+								<div class="wp-edit-shell">
+									<input
+										bind:this={editInput}
+										bind:value={editingItem.text}
+										class="wp-input wp-edit-input"
+										onblur={handleEditBlur}
+										onkeydown={handleEditKeydown}
+									/>
+									<button
+										type="button"
+										class="btn-icon-danger"
+										onmousedown={() => (skipEditBlur = true)}
+										onclick={() => void deleteChecklistItem(weekChecklistId, group.item.id)}
+										aria-label="Slett punkt"
+									><Icon name="close" size={13} /></button>
+								</div>
+							{:else}
+								<button type="button" class="wp-item-text-btn" onclick={() => void startEditing(weekChecklistId, group.item)}>
+									<span class="wp-check-text" class:checked={group.item.checked}>{group.item.text}</span>
+								</button>
+							{/if}
+							{#if hasWeekChildren}
+								<svg class="wp-week-parent-circle" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
+									<circle cx="10" cy="10" r={wR} fill="none" stroke="#2a2a2a" stroke-width="2.5"/>
+									<circle cx="10" cy="10" r={wR} fill="none"
+										stroke={completedWeekChildren === weekChildren.length ? '#5fa080' : '#7c8ef5'}
+										stroke-width="2.5"
+										stroke-dasharray="{wPct * wC} {wC}"
+										stroke-linecap="round"
+										transform="rotate(-90 10 10)"
+									/>
+								</svg>
+								<button
+									type="button"
+									class="wp-parent-caret"
+									class:expanded={isWeekExpanded}
+									onclick={() => toggleWeekParentExpansion(group.item.id)}
+									aria-label={isWeekExpanded ? 'Lukk subitems' : 'Utvid subitems'}
+								>▸</button>
+							{:else}
 								<button type="button" class="wp-check-toggle" onclick={() => void toggleChecklistItem(weekChecklistId, group.item.id, !group.item.checked)} aria-label="Toggle">
 									<span class="wp-check-circle" class:checked={group.item.checked}>{group.item.checked ? '✓' : ''}</span>
 								</button>
-								<span class="wp-drag-handle" aria-hidden="true" ontouchstart={(event) => startTouchDrag(event, weekChecklistId, group.item.id)}>⋮⋮</span>
+							{/if}
+							<span class="wp-drag-handle" aria-hidden="true" ontouchstart={(event) => startTouchDrag(event, weekChecklistId, group.item.id)}>⋮⋮</span>
+						</div>
+						{#if hasWeekChildren && isWeekExpanded}
+							<div class="wp-day-children">
+								{#each weekChildren as child}
+									<div class="wp-day-child-row">
+										{#if editingItem?.itemId === child.id}
+											<div class="wp-edit-shell">
+												<input
+													bind:this={editInput}
+													bind:value={editingItem.text}
+													class="wp-input wp-edit-input"
+													onblur={handleEditBlur}
+													onkeydown={handleEditKeydown}
+												/>
+												<button
+													type="button"
+													class="btn-icon-danger"
+													onmousedown={() => (skipEditBlur = true)}
+													onclick={() => void deleteChecklistItem(weekChecklistId, child.id)}
+													aria-label="Slett subpunkt"
+												><Icon name="close" size={13} /></button>
+											</div>
+										{:else}
+											<button type="button" class="wp-item-text-btn" onclick={() => void startEditing(weekChecklistId, child)}>
+												<span class="wp-check-text" class:checked={child.checked}>{child.text}</span>
+											</button>
+											<button type="button" class="wp-check-toggle" onclick={() => void toggleChecklistItem(weekChecklistId, child.id, !child.checked)} aria-label="Toggle">
+												<span class="wp-check-circle" class:checked={child.checked}>{child.checked ? '✓' : ''}</span>
+											</button>
+										{/if}
+									</div>
+								{/each}
 							</div>
-						</li>
-					{/if}
+						{/if}
+					</li>
+				{/if}
 				{/each}
 			</ul>
 
@@ -1727,8 +1834,13 @@
 		{#if selectedDayChecklist}
 			<ul class="wp-checklist">
 				{#each sortedDayItems as item}
+					{@const dayChildren = sortByTime(selectedDayChecklist.items.filter((child) => child.parentId === item.id))}
+					{@const hasChildren = dayChildren.length > 0}
+					{@const isExpanded = expandedDayParentIds.has(item.id)}
+					{@const completedChildren = dayChildren.filter((child) => child.checked).length}
 					<li
 						class="wp-check-row"
+						class:wp-check-row-parent={hasChildren}
 						class:is-dragging={dragItem?.itemId === item.id}
 						class:is-drag-over={dragOverItemId === item.id && dragItem?.itemId !== item.id}
 						data-item-id={item.id}
@@ -1763,7 +1875,20 @@
 									><Icon name="close" size={13} /></button>
 								</div>
 							{:else}
-								<button type="button" class="wp-item-text-btn" onclick={() => void startEditing(selectedDayChecklist.id, item)}>
+								<button
+									type="button"
+									class="wp-item-text-btn"
+									onmousedown={() => beginEditLongPress(selectedDayChecklist.id, item)}
+									onmouseup={cancelEditLongPress}
+									onmouseleave={cancelEditLongPress}
+									ontouchstart={() => beginEditLongPress(selectedDayChecklist.id, item)}
+									ontouchend={cancelEditLongPress}
+									ontouchcancel={cancelEditLongPress}
+									onclick={() => handleEditPress(selectedDayChecklist.id, item)}
+								>
+									{#if hasChildren}
+										<span class="wp-parent-progress">{completedChildren}/{dayChildren.length}</span>
+									{/if}
 									{#if item.metadata?.timeHour !== undefined}
 										<span class="wp-time-badge">{formatItemTime(item.metadata.timeHour, item.metadata.timeMinute ?? 0)}</span>
 									{/if}
@@ -1778,11 +1903,69 @@
 									{/if}
 								</button>
 							{/if}
-							<button type="button" class="wp-check-toggle" onclick={() => void toggleChecklistItem(selectedDayChecklist.id, item.id, !item.checked)} aria-label="Toggle">
-								<span class="wp-check-circle" class:checked={item.checked}>{item.checked ? '✓' : ''}</span>
-							</button>
+							{#if hasChildren}
+								<button
+									type="button"
+									class="wp-parent-caret"
+									class:expanded={isExpanded}
+									onclick={() => toggleDayParentExpansion(item.id)}
+									aria-label={isExpanded ? 'Lukk subitems' : 'Utvid subitems'}
+								>
+									▸
+								</button>
+							{:else}
+								<button type="button" class="wp-check-toggle" onclick={() => void toggleChecklistItem(selectedDayChecklist.id, item.id, !item.checked)} aria-label="Toggle">
+									<span class="wp-check-circle" class:checked={item.checked}>{item.checked ? '✓' : ''}</span>
+								</button>
+							{/if}
 							<span class="wp-drag-handle" aria-hidden="true" ontouchstart={(event) => startTouchDrag(event, selectedDayChecklist.id, item.id)}>⋮⋮</span>
 						</div>
+						{#if hasChildren && isExpanded}
+							<div class="wp-day-children">
+								{#each dayChildren as child}
+									<div class="wp-day-child-row">
+										{#if editingItem?.itemId === child.id}
+											<div class="wp-edit-shell">
+												<input
+													bind:this={editInput}
+													bind:value={editingItem.text}
+													class="wp-input wp-edit-input"
+													onblur={handleEditBlur}
+													onkeydown={handleEditKeydown}
+												/>
+												<button
+													type="button"
+													class="btn-icon-danger"
+													onmousedown={() => (skipEditBlur = true)}
+													onclick={() => void deleteChecklistItem(selectedDayChecklist.id, child.id)}
+													aria-label="Slett subpunkt"
+												><Icon name="close" size={13} /></button>
+											</div>
+										{:else}
+											<button
+												type="button"
+												class="wp-item-text-btn"
+												onmousedown={() => beginEditLongPress(selectedDayChecklist.id, child)}
+												onmouseup={cancelEditLongPress}
+												onmouseleave={cancelEditLongPress}
+												ontouchstart={() => beginEditLongPress(selectedDayChecklist.id, child)}
+												ontouchend={cancelEditLongPress}
+												ontouchcancel={cancelEditLongPress}
+												onclick={() => handleEditPress(selectedDayChecklist.id, child)}
+											>
+												{#if child.metadata?.timeHour !== undefined}
+													<span class="wp-time-badge">{formatItemTime(child.metadata.timeHour, child.metadata.timeMinute ?? 0)}</span>
+												{/if}
+												<span class="wp-check-text" class:checked={child.checked}>{child.metadata?.timeHour !== undefined ? stripTimeFromText(child.text) : child.text}</span>
+											</button>
+											<button type="button" class="wp-check-toggle" onclick={() => void toggleChecklistItem(selectedDayChecklist.id, child.id, !child.checked)} aria-label="Toggle">
+												<span class="wp-check-circle" class:checked={child.checked}>{child.checked ? '✓' : ''}</span>
+											</button>
+										{/if}
+									</div>
+								{/each}
+							</div>
+						{/if}
 					</li>
 				{/each}
 			</ul>
@@ -2301,6 +2484,10 @@
 		padding: 10px;
 	}
 
+	.wp-check-row-parent {
+		padding-bottom: 6px;
+	}
+
 	.wp-task-main {
 		display: flex;
 		justify-content: space-between;
@@ -2501,6 +2688,70 @@
 	.wp-check-text.checked {
 		color: #737d95;
 		text-decoration: line-through;
+	}
+
+	.wp-parent-progress {
+		display: inline-flex;
+		align-items: center;
+		font-size: 0.68rem;
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+		color: #8d96af;
+		background: rgba(100, 112, 146, 0.16);
+		border: 1px solid rgba(100, 112, 146, 0.35);
+		border-radius: 999px;
+		padding: 2px 7px;
+		margin-right: 8px;
+		vertical-align: middle;
+	}
+
+	.wp-parent-caret {
+		width: 20px;
+		height: 20px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		border: none;
+		background: transparent;
+		color: #7c8ef5;
+		font-size: 0.9rem;
+		line-height: 1;
+		cursor: pointer;
+		padding: 0;
+		transition: transform 0.18s ease, color 0.12s ease;
+	}
+
+	.wp-parent-caret:hover {
+		color: #a9b5ff;
+	}
+
+	.wp-parent-caret.expanded {
+		transform: rotate(90deg);
+	}
+
+	.wp-week-parent-circle {
+		flex-shrink: 0;
+		display: block;
+	}
+
+	.wp-day-children {
+		margin-top: 8px;
+		margin-left: 8px;
+		padding-left: 12px;
+		border-left: 1px solid #242a3a;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.wp-day-child-row {
+		display: grid;
+		grid-template-columns: 1fr auto;
+		gap: 10px;
+		align-items: center;
+		background: #0b0f18;
+		border-radius: 8px;
+		padding: 8px;
 	}
 
 	.wp-time-badge {

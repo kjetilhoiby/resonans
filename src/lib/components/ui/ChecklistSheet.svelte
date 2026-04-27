@@ -9,7 +9,7 @@
   - Langtrykk (700ms) for nedbrytning av oppgaver
 -->
 <script lang="ts">
-	import { fly, fade, scale } from 'svelte/transition';
+	import { fly, fade, scale, slide } from 'svelte/transition';
 	import { elasticOut, cubicOut } from 'svelte/easing';
 	import { onMount } from 'svelte';
 	import { groupChecklistItems, activityEmoji } from '$lib/utils/checklist-group';
@@ -18,7 +18,7 @@
 	import BreakdownModal from '$lib/components/ui/BreakdownModal.svelte';
 	import { readCacheEntry, isCacheStale, fetchRawTimeseries, buildPeriods, buildWeekPeriods } from '$lib/utils/weather';
 
-	export interface ChecklistItem {
+	interface ChecklistItem {
 		id: string;
 		text: string;
 		checked: boolean;
@@ -27,7 +27,7 @@
 		children?: ChecklistItem[];
 	}
 
-	export interface Checklist {
+	interface Checklist {
 		id: string;
 		title: string;
 		emoji: string;
@@ -52,6 +52,8 @@
 	let addingItem = $state(false);
 	let breakdownItem = $state<ChecklistItem | null>(null);
 	let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+	let expandedParentIds = $state<Set<string>>(new Set());
+	let newSubItemTexts = $state<Record<string, string>>({});
 
 	const done = $derived(items.filter((i) => i.checked).length);
 	const total = $derived(items.length);
@@ -246,6 +248,33 @@
 		}
 	}
 
+	function toggleParentExpansion(parentId: string) {
+		const next = new Set(expandedParentIds);
+		if (next.has(parentId)) next.delete(parentId);
+		else next.add(parentId);
+		expandedParentIds = next;
+	}
+
+	async function addSubItem(parentId: string) {
+		const text = (newSubItemTexts[parentId] ?? '').trim();
+		if (!text) return;
+		newSubItemTexts = { ...newSubItemTexts, [parentId]: '' };
+		try {
+			const res = await fetch(`/api/checklists/${checklist.id}/items`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ text, sortOrder: items.length, parentId })
+			});
+			if (res.ok) {
+				const created = await res.json() as ChecklistItem[];
+				items = [...items, ...created];
+				onChanged?.();
+			}
+		} catch (err) {
+			console.error('Error adding subitem:', err);
+		}
+	}
+
 	function handleAddKey(e: KeyboardEvent) {
 		if (e.key === 'Enter') addItem();
 	}
@@ -341,27 +370,67 @@
 				</div>
 			{:else}
 				{@const hasChildren = items.some(i => i.parentId === group.item.id)}
-				<div class="cs-item-wrapper">
-					<button
-						class="cs-item"
-						class:cs-item-checked={group.item.checked}
-						class:cs-item-parent={hasChildren}
-						onmousedown={() => handleItemMouseDown(group.item)}
-						onmouseup={handleItemMouseUp}
-						onmouseleave={handleItemMouseUp}
-						onclick={() => toggleItem(group.item)}
-						title={hasChildren ? 'Langtrykk for å redigere substeps' : 'Langtrykk for å dele opp'}
-					>
-						<span class="cs-item-text">{group.item.text}</span>
-						<div class="cs-checkbox" class:cs-checkbox-checked={group.item.checked}>
-							{#if group.item.checked}
-								<span class="cs-tick" transition:scale={{ duration: 200, easing: elasticOut }}>✓</span>
-							{/if}
-						</div>
-					</button>
+				{@const childrenItems = items.filter(i => i.parentId === group.item.id)}
+				{@const completedChildren = childrenItems.filter((c) => c.checked).length}
+				{@const isExpanded = expandedParentIds.has(group.item.id)}
+				{@const cR = 8}
+				{@const cC = 2 * Math.PI * cR}
+				{@const cPct = childrenItems.length > 0 ? completedChildren / childrenItems.length : 0}
+				<div class="cs-item-wrapper" class:cs-item-wrapper-parent={hasChildren}>
 					{#if hasChildren}
-						<div class="cs-children">
-							{#each items.filter(i => i.parentId === group.item.id) as child (child.id)}
+						<div class="cs-parent-row">
+							<button
+								type="button"
+								class="cs-parent-caret"
+								class:cs-caret-expanded={isExpanded}
+								onclick={() => toggleParentExpansion(group.item.id)}
+								aria-label={isExpanded ? 'Lukk substeps' : 'Utvid substeps'}
+							>
+								▸
+							</button>
+							<button
+								class="cs-item"
+								class:cs-item-checked={group.item.checked}
+								onmousedown={() => handleItemMouseDown(group.item)}
+								onmouseup={handleItemMouseUp}
+								onmouseleave={handleItemMouseUp}
+								onclick={() => toggleItem(group.item)}
+								title="Langtrykk for å redigere substeps"
+							>
+								<span class="cs-item-text">{group.item.text}</span>
+								<svg class="cs-parent-circle" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
+									<circle cx="10" cy="10" r={cR} fill="none" stroke="#2a2a2a" stroke-width="2.5"/>
+									<circle cx="10" cy="10" r={cR} fill="none"
+										stroke={completedChildren === childrenItems.length ? '#5fa080' : '#7c8ef5'}
+										stroke-width="2.5"
+										stroke-dasharray="{cPct * cC} {cC}"
+										stroke-linecap="round"
+										transform="rotate(-90 10 10)"
+									/>
+								</svg>
+							</button>
+						</div>
+					{:else}
+						<button
+							class="cs-item"
+							class:cs-item-checked={group.item.checked}
+							onmousedown={() => handleItemMouseDown(group.item)}
+							onmouseup={handleItemMouseUp}
+							onmouseleave={handleItemMouseUp}
+							onclick={() => toggleItem(group.item)}
+							title="Langtrykk for å dele opp"
+						>
+							<span class="cs-item-text">{group.item.text}</span>
+							<div class="cs-checkbox" class:cs-checkbox-checked={group.item.checked}>
+								{#if group.item.checked}
+									<span class="cs-tick" transition:scale={{ duration: 200, easing: elasticOut }}>✓</span>
+								{/if}
+							</div>
+						</button>
+					{/if}
+					{#if hasChildren && isExpanded}
+						<div class="cs-children" transition:slide>
+							{#each childrenItems as child (child.id)}
 								<button
 									class="cs-child-item"
 									class:cs-child-checked={child.checked}
@@ -369,7 +438,6 @@
 									onmouseleave={handleItemMouseUp}
 									onclick={() => toggleItem(child)}
 								>
-									<span class="cs-child-indent">↳</span>
 									<span class="cs-child-text">{child.text}</span>
 									<div class="cs-checkbox cs-checkbox-small" class:cs-checkbox-checked={child.checked}>
 										{#if child.checked}
@@ -378,6 +446,16 @@
 									</div>
 								</button>
 							{/each}
+							<div class="cs-subitem-add-row">
+								<input
+									class="cs-subitem-add-input"
+									type="text"
+									placeholder="Legg til deloppgave…"
+									value={newSubItemTexts[group.item.id] ?? ''}
+									oninput={(e) => newSubItemTexts = { ...newSubItemTexts, [group.item.id]: (e.target as HTMLInputElement).value }}
+									onkeydown={(e) => { if (e.key === 'Enter') addSubItem(group.item.id); }}
+								/>
+							</div>
 						</div>
 					{/if}
 				</div>
@@ -846,11 +924,6 @@
 		gap: 0;
 	}
 
-	.cs-item-parent {
-		border-bottom-left-radius: 0;
-		border-bottom-right-radius: 0;
-	}
-
 	.cs-children {
 		display: flex;
 		flex-direction: column;
@@ -882,12 +955,6 @@
 
 	.cs-child-item:hover {
 		opacity: 0.8;
-	}
-
-	.cs-child-indent {
-		font-size: 0.7rem;
-		color: #444;
-		flex-shrink: 0;
 	}
 
 	.cs-child-text {
@@ -926,4 +993,76 @@
 	.cs-slot-parent.cs-slot-checked .cs-slot-indicator {
 		color: #5fa080;
 	}
+
+	/* Parent UI */
+	.cs-item-wrapper-parent {
+		border-radius: 0;
+	}
+
+	.cs-parent-row {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 0 0 0 2px;
+	}
+
+	.cs-parent-row .cs-item {
+		flex: 1;
+	}
+
+	.cs-parent-caret {
+		width: 20px;
+		height: 20px;
+		border: none;
+		background: transparent;
+		color: #7c8ef5;
+		font-size: 0.9rem;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+		transition: transform 0.2s;
+		padding: 0;
+		line-height: 1;
+	}
+
+	.cs-parent-caret:hover {
+		color: #9cb0ff;
+	}
+
+	.cs-parent-caret.cs-caret-expanded {
+		transform: rotate(90deg);
+	}
+
+	.cs-parent-circle {
+		flex-shrink: 0;
+		display: block;
+	}
+
+	.cs-subitem-add-row {
+		padding: 6px 0 8px;
+		border-top: 1px solid #1e1e1e;
+	}
+
+	.cs-subitem-add-input {
+		width: 100%;
+		background: transparent;
+		border: none;
+		border-bottom: 1px solid #2a2a2a;
+		color: #888;
+		padding: 4px 0;
+		font: inherit;
+		font-size: 0.75rem;
+		outline: none;
+		transition: border-color 0.12s, color 0.12s;
+	}
+	.cs-subitem-add-input:focus {
+		border-color: #4a5af0;
+		color: #ccc;
+	}
+	.cs-subitem-add-input::placeholder {
+		color: #3a3a3a;
+	}
+
 </style>

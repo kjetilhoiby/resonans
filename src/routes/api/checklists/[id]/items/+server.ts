@@ -7,6 +7,7 @@ import { parseListRepeatCount } from '$lib/server/list-repeat-parser';
 import { parseChecklistItemIntent, findLinkedTask, stripTimeFromText } from '$lib/server/checklist-intent-linker';
 import { getOrCreatePlanningGoal, createTask } from '$lib/server/goals';
 import { enqueueBackgroundJob } from '$lib/server/background-jobs';
+import { parseTaskDateTime } from '$lib/server/date-time-parser';
 
 /** Extract week keys from a checklist context string like "week:2026-W16:day:2026-04-13" */
 function extractWeekKeys(context: string | null): { dashedKey: string; compactKey: string } | null {
@@ -39,6 +40,7 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 
 	const parsed = parseListRepeatCount(text, count || 1, 12);
 	const repeatCount = parsed.repeatCount;
+	const parsedSubtaskDate = repeatCount === 1 && !!parentId ? parseTaskDateTime(parsed.label) : null;
 
 	// --- Intent parsing + task linking (only for single items, not repeat patterns) ---
 	let itemMetadata: Record<string, unknown> = {};
@@ -146,17 +148,25 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 	const slotMeta = (itemMetadata.wakeTargetHour !== undefined)
 		? itemMetadata
 		: null;
-	const baseLabel = itemMetadata.timeHour !== undefined ? stripTimeFromText(parsed.label) : parsed.label;
+	const subtaskTimeMeta = parsedSubtaskDate
+		? {
+			...(parsedSubtaskDate.hour !== undefined ? { timeHour: parsedSubtaskDate.hour } : {}),
+			...(parsedSubtaskDate.minute !== undefined ? { timeMinute: parsedSubtaskDate.minute } : {})
+		}
+		: {};
+	const combinedMeta = { ...itemMetadata, ...subtaskTimeMeta };
+	const baseLabel = parsedSubtaskDate?.text || (itemMetadata.timeHour !== undefined ? stripTimeFromText(parsed.label) : parsed.label);
 	const createdItems = await db.insert(checklistItems).values(
 		Array.from({ length: repeatCount }, (_, index) => ({
 			checklistId: params.id,
 			userId,
 			parentId: parentId || null, // Support subtasks
 			text: repeatCount > 1 ? `${baseLabel} (${index + 1}/${repeatCount})` : baseLabel,
+			startDate: parsedSubtaskDate?.startDate ?? null,
 			sortOrder: sortOrder + index,
 			...(slotMeta
 				? { metadata: slotMeta }
-				: repeatCount === 1 && Object.keys(itemMetadata).length > 0 ? { metadata: itemMetadata } : {})
+				: repeatCount === 1 && Object.keys(combinedMeta).length > 0 ? { metadata: combinedMeta } : {})
 		}))
 	).returning();
 

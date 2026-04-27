@@ -4,6 +4,7 @@ import { db } from '$lib/db';
 import { checklistItems, checklists, progress } from '$lib/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
 import { TaskExecutionService } from '$lib/server/services/task-execution-service';
+import { parseTaskDateTime } from '$lib/server/date-time-parser';
 
 async function syncChecklistCompletion(checklistId: string) {
 	const remaining = await db.query.checklistItems.findMany({
@@ -32,8 +33,27 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 	const userId = locals.userId;
 	const body = await request.json() as { checked?: boolean; text?: string; sortOrder?: number };
 
+	const existingItem = await db.query.checklistItems.findFirst({
+		where: and(eq(checklistItems.id, params.itemId), eq(checklistItems.userId, userId))
+	});
+
+	if (!existingItem) return json({ error: 'Ikke funnet' }, { status: 404 });
+
 	const updates: Record<string, unknown> = {};
-	if (body.text !== undefined) updates.text = body.text;
+	if (body.text !== undefined) {
+		const parsed = parseTaskDateTime(body.text);
+		updates.text = parsed.text || body.text.trim();
+		updates.startDate = parsed.startDate ?? null;
+
+		const nextMetadata: Record<string, unknown> = {
+			...((existingItem.metadata ?? {}) as Record<string, unknown>)
+		};
+		delete nextMetadata.timeHour;
+		delete nextMetadata.timeMinute;
+		if (parsed.hour !== undefined) nextMetadata.timeHour = parsed.hour;
+		if (parsed.minute !== undefined) nextMetadata.timeMinute = parsed.minute;
+		updates.metadata = nextMetadata;
+	}
 	if (body.sortOrder !== undefined) updates.sortOrder = body.sortOrder;
 	if (body.checked !== undefined) {
 		updates.checked = body.checked;
@@ -48,8 +68,6 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 			eq(checklistItems.userId, userId)
 		))
 		.returning();
-
-	if (!updated) return json({ error: 'Ikke funnet' }, { status: 404 });
 
 	// When an item is checked and it has a linked task, log a progress record
 	if (body.checked === true) {
@@ -113,7 +131,8 @@ export const DELETE: RequestHandler = async ({ locals, params }) => {
 		))
 		.returning();
 
-	if (!deleted.length) return json({ error: 'Ikke funnet' }, { status: 404 });
+	const deletedArray = Array.isArray(deleted) ? deleted : [];
+	if (!deletedArray.length) return json({ error: 'Ikke funnet' }, { status: 404 });
 
 	await syncChecklistCompletion(params.id);
 

@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { checklistItems } from '$lib/db/schema';
 import { eq } from 'drizzle-orm';
+import { parseTaskDateTime } from '$lib/server/date-time-parser';
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const userId = locals.userId;
@@ -34,17 +35,23 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		const createdSubtasks = await db
 			.insert(checklistItems)
 			.values(
-				subtasks.map((text, index) => ({
-					checklistId: parentItem.checklistId,
-					userId,
-					parentId: parentItemId,
-					text: text.trim(),
-					sortOrder: index,
-					metadata: {
-						breakdownPrompt: breakdownPrompt || undefined,
-						breakdownModel: 'gpt-4o-mini'
-					}
-				}))
+				subtasks.map((text, index) => {
+					const parsed = parseTaskDateTime(text);
+					return {
+						checklistId: parentItem.checklistId,
+						userId,
+						parentId: parentItemId,
+						text: parsed.text || text.trim(),
+						startDate: parsed.startDate ?? null,
+						sortOrder: index,
+						metadata: {
+							breakdownPrompt: breakdownPrompt || undefined,
+							breakdownModel: 'gpt-4o-mini',
+							...(parsed.hour !== undefined ? { timeHour: parsed.hour } : {}),
+							...(parsed.minute !== undefined ? { timeMinute: parsed.minute } : {})
+						}
+					};
+				})
 			)
 			.returning();
 
@@ -60,7 +67,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			})
 			.where(eq(checklistItems.id, parentItemId));
 
-		return json({ success: true, subtaskCount: createdSubtasks.length, subtasks: createdSubtasks });
+		const subtasksArray = Array.isArray(createdSubtasks) ? createdSubtasks : [];
+		return json({ success: true, subtaskCount: subtasksArray.length, subtasks: subtasksArray });
 	} catch (err) {
 		console.error('[breakdown/save] Error:', err);
 		return json({ error: 'Failed to save breakdown' }, { status: 500 });

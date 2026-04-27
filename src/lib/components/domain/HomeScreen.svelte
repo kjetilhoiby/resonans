@@ -203,6 +203,12 @@
 		return `${year}-${month}-${day}`;
 	}
 
+	function toLocalYearMonth(date: Date) {
+		const year = date.getFullYear();
+		const month = String(date.getMonth() + 1).padStart(2, '0');
+		return `${year}-${month}`;
+	}
+
 	function getLocalIsoWeekDashed(now: Date = new Date()) {
 		const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
 		const dayNum = d.getUTCDay() || 7;
@@ -214,27 +220,27 @@
 		return `${year}-W${week}`;
 	}
 
-	function checklistPriority(checklist: Checklist) {
-		const context = checklist.context ?? '';
-		const weekKey = getLocalIsoWeekDashed();
-		const todayIso = toLocalIsoDate(new Date());
-		const tomorrowDate = new Date();
-		tomorrowDate.setDate(tomorrowDate.getDate() + 1);
-		const tomorrowIso = toLocalIsoDate(tomorrowDate);
-
-		if (context === `week:${weekKey}`) return 0;
-		if (context === `week:${weekKey}:day:${todayIso}`) return 1;
-		if (context === `week:${weekKey}:day:${tomorrowIso}`) return 2;
-		return 10;
-	}
-
 	function sortActiveChecklists(rows: Checklist[]) {
-		return [...rows].sort((a, b) => {
-			const aPriority = checklistPriority(a);
-			const bPriority = checklistPriority(b);
-			if (aPriority !== bPriority) return aPriority - bPriority;
-			return a.title.localeCompare(b.title, 'nb-NO');
-		});
+		const currentMonthContext = `month:${toLocalYearMonth(new Date())}`;
+		const currentWeekContext = `week:${getLocalIsoWeekDashed()}`;
+		const currentDayContext = `week:${getLocalIsoWeekDashed()}:day:${toLocalIsoDate(new Date())}`;
+		const priority = new Map<string, number>([
+			[currentMonthContext, 0],
+			[currentWeekContext, 1],
+			[currentDayContext, 2]
+		]);
+
+		return [...rows]
+			.filter((checklist) => {
+				const context = checklist.context ?? '';
+				return priority.has(context);
+			})
+			.sort((a, b) => {
+				const aPriority = priority.get(a.context ?? '') ?? 99;
+				const bPriority = priority.get(b.context ?? '') ?? 99;
+				if (aPriority !== bPriority) return aPriority - bPriority;
+				return a.title.localeCompare(b.title, 'nb-NO');
+			});
 	}
 
 	async function fetchChecklists() {
@@ -436,6 +442,94 @@
 				: 72,
 		},
 	]);
+
+	interface HomeWidgetEntry {
+		id: string;
+		kind: 'checklist' | 'dynamic' | 'skeleton' | 'fallback' | 'partner';
+		checklist?: Checklist;
+		widget?: UserWidget;
+		fallback?: (typeof WIDGETS)[number];
+		skeletonIndex?: number;
+	}
+
+	const metricWidgetEntries = $derived.by<HomeWidgetEntry[]>(() => {
+		if (widgetsLoading) {
+			return Array.from({ length: 3 }, (_, i) => ({
+				id: `skeleton:${i}`,
+				kind: 'skeleton',
+				skeletonIndex: i
+			}));
+		}
+
+		if (pinnedWidgets.length > 0) {
+			return pinnedWidgets.map((widget) => ({
+				id: `dynamic:${widget.id}`,
+				kind: 'dynamic',
+				widget
+			}));
+		}
+
+		if (relationshipOnboardingActive) {
+			return [{ id: 'partner-onboarding', kind: 'partner' }];
+		}
+
+		return WIDGETS.map((fallbackWidget, i) => ({
+			id: `fallback:${fallbackWidget.sensorType}:${i}`,
+			kind: 'fallback',
+			fallback: fallbackWidget
+		}));
+	});
+
+	const homeWidgetEntries = $derived.by<HomeWidgetEntry[]>(() => [
+		...activeChecklists.map((checklist) => ({
+			id: `checklist:${checklist.id}`,
+			kind: 'checklist' as const,
+			checklist
+		})),
+		...metricWidgetEntries
+	]);
+
+	function chunkWidgets<T>(rows: T[], size: number): T[][] {
+		if (rows.length === 0) return [[]];
+		const chunks: T[][] = [];
+		for (let i = 0; i < rows.length; i += size) {
+			chunks.push(rows.slice(i, i + size));
+		}
+		return chunks;
+	}
+
+	const WIDGETS_PER_PAGE = 6;
+	const homeWidgetPages = $derived(chunkWidgets(homeWidgetEntries, WIDGETS_PER_PAGE));
+	let widgetPagerEl = $state<HTMLElement | null>(null);
+	let currentWidgetPage = $state(0);
+
+	$effect(() => {
+		const total = homeWidgetPages.length;
+		if (total === 0) {
+			currentWidgetPage = 0;
+			return;
+		}
+		if (currentWidgetPage > total - 1) {
+			currentWidgetPage = total - 1;
+		}
+	});
+
+	function handleWidgetPagerScroll() {
+		if (!widgetPagerEl) return;
+		const width = widgetPagerEl.clientWidth;
+		if (width <= 0) return;
+		currentWidgetPage = Math.round(widgetPagerEl.scrollLeft / width);
+	}
+
+	function goToWidgetPage(index: number) {
+		if (!widgetPagerEl) return;
+		const clamped = Math.max(0, Math.min(index, homeWidgetPages.length - 1));
+		widgetPagerEl.scrollTo({
+			left: clamped * widgetPagerEl.clientWidth,
+			behavior: 'smooth'
+		});
+		currentWidgetPage = clamped;
+	}
 
 	// -- Chat-sone --
 	let chatOpen = $state(false);
@@ -1458,70 +1552,85 @@
 			+
 		</button>
 
-		<div class="widget-stack">
-			{#if activeChecklists.length > 0}
-				<div class="widget-row widget-row-checklists">
-			{#each activeChecklists as cl (cl.id)}
-				<ChecklistWidget
-					checklist={cl}
-					onclick={() => (openChecklist = cl)}
-					onremove={async () => {
-						await fetch(`/api/checklists/${cl.id}`, { method: 'DELETE' });
-						activeChecklists = activeChecklists.filter((c) => c.id !== cl.id);
-					}}
-				/>
-			{/each}
-				</div>
-			{/if}
+		<div class="widget-pager" bind:this={widgetPagerEl} onscroll={handleWidgetPagerScroll}>
+			{#each homeWidgetPages as page, pageIndex (`page:${pageIndex}`)}
+				<div class="widget-page" role="group" aria-label={`Widget-side ${pageIndex + 1} av ${homeWidgetPages.length}`}>
+					<div class="widget-page-grid">
+						{#each page as item, itemIndex (item.id)}
+							{@const insertDivider =
+								itemIndex > 0 &&
+								page[itemIndex - 1]?.kind === 'checklist' &&
+								item.kind !== 'checklist'}
+							{#if insertDivider}
+								<div class="widget-page-divider" aria-hidden="true"></div>
+							{/if}
 
-		<div class="widget-row widget-row-metrics">
-			{#if widgetsLoading}
-			{#each { length: 3 } as _, i}
-				<div class="widget-skeleton" style:animation-delay="{i * 120}ms"></div>
-			{/each}
-		{:else if pinnedWidgets.length > 0}
-			{#each pinnedWidgets as w}
-				<DynamicWidget
-					widgetId={w.id}
-					title={w.title}
-					unit={w.unit}
-					color={w.color}
-					pinned={w.pinned}
-					onpress={() => navigateForWidget(w)}
-					onchat={(summary) => openChat(summary)}
-					onunpin={() => unpinWidget(w.id)}
-						onconfig={() => openWidgetConfigSheet(w)}
-				/>
-			{/each}
-		{:else}
-			{#if relationshipOnboardingActive}
-				<div class="partner-onboarding-card">
-					<p class="partner-onboarding-kicker">Partnermodus aktivert</p>
-					<h3>Kom i gang sammen i stedet for tomme widgets</h3>
-					<p>
-						Start med en felles oppstartsplan for parforhold og samliv, så bygger vi widgets etter det som faktisk er viktig for dere.
-					</p>
-					<div class="partner-onboarding-actions">
-						<button class="partner-onboarding-btn primary" onclick={openPartnerOnboardingChat}>Start partner-onboarding</button>
-						<button class="partner-onboarding-btn" onclick={() => goto('/ukeplan')}>Åpne ukeplan sammen</button>
+							{#if item.kind === 'checklist' && item.checklist}
+								<ChecklistWidget
+									checklist={item.checklist}
+									onclick={() => (openChecklist = item.checklist!)}
+									onremove={async () => {
+										if (!item.checklist) return;
+										await fetch(`/api/checklists/${item.checklist.id}`, { method: 'DELETE' });
+										activeChecklists = activeChecklists.filter((c) => c.id !== item.checklist?.id);
+									}}
+								/>
+							{:else if item.kind === 'skeleton'}
+								<div class="widget-skeleton" style:animation-delay="{(item.skeletonIndex ?? 0) * 120}ms"></div>
+							{:else if item.kind === 'dynamic' && item.widget}
+								<DynamicWidget
+									widgetId={item.widget.id}
+									title={item.widget.title}
+									unit={item.widget.unit}
+									color={item.widget.color}
+									pinned={item.widget.pinned}
+									onpress={() => navigateForWidget(item.widget!)}
+									onchat={(summary) => openChat(summary)}
+									onunpin={() => unpinWidget(item.widget!.id)}
+									onconfig={() => openWidgetConfigSheet(item.widget!)}
+								/>
+							{:else if item.kind === 'partner'}
+								<div class="partner-onboarding-card widget-item-full">
+									<p class="partner-onboarding-kicker">Partnermodus aktivert</p>
+									<h3>Kom i gang sammen i stedet for tomme widgets</h3>
+									<p>
+										Start med en felles oppstartsplan for parforhold og samliv, så bygger vi widgets etter det som faktisk er viktig for dere.
+									</p>
+									<div class="partner-onboarding-actions">
+										<button class="partner-onboarding-btn primary" onclick={openPartnerOnboardingChat}>Start partner-onboarding</button>
+										<button class="partner-onboarding-btn" onclick={() => goto('/ukeplan')}>Åpne ukeplan sammen</button>
+									</div>
+								</div>
+							{:else if item.kind === 'fallback' && item.fallback}
+								<WidgetCircle
+									label={item.fallback.label}
+									val={item.fallback.val}
+									unit={item.fallback.unit}
+									color={item.fallback.color}
+									active={false}
+									onpress={() => goto(item.fallback?.sensorType === 'spending' ? '/economics' : `/sensor/${item.fallback?.sensorType}`)}
+									onchat={() => openChat(`Spør om ${item.fallback?.label.toLowerCase()}`)}
+								/>
+							{/if}
+						{/each}
 					</div>
 				</div>
-			{:else}
-				{#each WIDGETS as w}
-					<WidgetCircle
-						label={w.label}
-						val={w.val}
-						unit={w.unit}
-						color={w.color}
-						active={false}
-						onpress={() => goto(w.sensorType === 'spending' ? '/economics' : `/sensor/${w.sensorType}`)}
-						onchat={() => openChat(`Spør om ${w.label.toLowerCase()}`)}
-					/>
+			{/each}
+		</div>
+
+		{#if homeWidgetPages.length > 1}
+			<div class="widget-pager-dots" aria-label="Widget-sider">
+				{#each homeWidgetPages as _, i (`dot:${i}`)}
+					<button
+						class="widget-pager-dot"
+						class:is-active={i === currentWidgetPage}
+						onclick={() => goToWidgetPage(i)}
+						aria-label={`Gå til widget-side ${i + 1}`}
+						aria-current={i === currentWidgetPage ? 'true' : undefined}
+					></button>
 				{/each}
-			{/if}
+			</div>
 		{/if}
-		</div>
-		</div>
 
 		</section>
 	{/if}
@@ -2173,23 +2282,72 @@
 		margin: 0 0 6px;
 	}
 
-	/* ── Widget-rader ── */
-	.widget-stack {
+	/* ── Widget-pager ── */
+	.widget-pager {
 		display: flex;
-		flex-direction: column;
-		gap: 14px;
+		overflow-x: auto;
+		overflow-y: hidden;
+		scroll-snap-type: x mandatory;
+		scrollbar-width: none;
+		-webkit-overflow-scrolling: touch;
+		height: 100%;
 	}
 
-	.widget-row {
+	.widget-pager::-webkit-scrollbar {
+		display: none;
+	}
+
+	.widget-page {
+		flex: 0 0 100%;
+		scroll-snap-align: start;
+		min-width: 100%;
+		padding-top: 10px;
+	}
+
+	.widget-page-grid {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 16px;
 		justify-content: center;
+		align-content: flex-start;
+		min-height: 100%;
+		padding: 0 34px 30px 0;
+		box-sizing: border-box;
 	}
 
-	.widget-row-checklists {
-		padding-top: 10px;
-		border-top: 1px solid #202020;
+	.widget-page-divider {
+		flex: 0 0 100%;
+		height: 1px;
+		background: #202020;
+		margin: -2px 6px 2px;
+	}
+
+	.widget-item-full {
+		flex: 0 0 100%;
+	}
+
+	.widget-pager-dots {
+		position: absolute;
+		left: 50%;
+		bottom: 12px;
+		transform: translateX(-50%);
+		display: flex;
+		gap: 6px;
+		z-index: 3;
+	}
+
+	.widget-pager-dot {
+		width: 7px;
+		height: 7px;
+		border-radius: 999px;
+		border: none;
+		background: #353535;
+		cursor: pointer;
+		padding: 0;
+	}
+
+	.widget-pager-dot.is-active {
+		background: #7c8ef5;
 	}
 
 	.widget-panel-fab {

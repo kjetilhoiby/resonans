@@ -23,6 +23,28 @@
 		items: ChecklistItem[];
 	}
 
+	interface MonthGoal {
+		id: string;
+		title: string;
+		goalType:
+			| 'running_distance'
+			| 'yoga_sessions'
+			| 'weight_kg'
+			| 'reading_books'
+			| 'spending_nok'
+			| 'manual_counter';
+		trackingMetric:
+			| 'running_distance'
+			| 'yoga_sessions'
+			| 'weight_kg'
+			| 'reading_books'
+			| 'spending_nok'
+			| 'manual_counter';
+		target: { value: number; unit: string };
+		currentValue: number;
+		baselineValue: number | null;
+	}
+
 	interface WeekInMonth {
 		year: number;
 		week: string;
@@ -64,6 +86,7 @@
 			weeksInMonth: WeekInMonth[];
 			weekChecklists: Record<string, WeekChecklist>;
 			longTermGoals: Array<{ id: string; title: string; targetDate: string | null }>;
+					monthGoals: MonthGoal[];
 			previousMonthSummary: {
 				monthKey: string;
 				monthName: string;
@@ -81,6 +104,13 @@
 	let monthNoteValue = $state(data.monthNote);
 	let reflectionValue = $state(data.reflection);
 	let visionValue = $state(data.vision);
+	let monthGoalsState = $state<MonthGoal[]>(structuredClone(data.monthGoals));
+	let showAddGoalForm = $state(false);
+	let newGoalType = $state<MonthGoal['goalType']>('running_distance');
+	let newGoalTitle = $state('');
+	let newGoalTarget = $state('');
+	let newGoalUnit = $state('');
+	let addGoalTitleInput = $state<HTMLInputElement | null>(null);
 	let composerText = $state('');
 	let composerInput = $state<HTMLInputElement | null>(null);
 	let editingItemId = $state<string | null>(null);
@@ -91,6 +121,10 @@
 		monthNote: 'idle',
 		items: 'idle',
 		review: 'idle'
+	});
+
+	$effect(() => {
+		monthGoalsState = structuredClone(data.monthGoals);
 	});
 
 	// Auto-select the current week if it's in this month
@@ -136,6 +170,179 @@
 		return new Intl.DateTimeFormat('nb-NO', { month: 'short', year: 'numeric' }).format(d);
 	}
 
+	const GOAL_TYPE_CONFIG: Record<MonthGoal['goalType'], {
+		emoji: string;
+		label: string;
+		placeholder: string;
+		unitPlaceholder: string;
+		tracked: boolean;
+	}> = {
+		running_distance: {
+			emoji: '🏃',
+			label: 'Løping',
+			placeholder: 'Løpemål i måneden',
+			unitPlaceholder: 'km',
+			tracked: true
+		},
+		yoga_sessions: {
+			emoji: '🧘',
+			label: 'Yoga',
+			placeholder: 'Yogamål i måneden',
+			unitPlaceholder: 'økter',
+			tracked: true
+		},
+		weight_kg: {
+			emoji: '⚖️',
+			label: 'Vekt',
+			placeholder: 'Målvekt ved månedsslutt',
+			unitPlaceholder: 'kg',
+			tracked: true
+		},
+		reading_books: {
+			emoji: '📚',
+			label: 'Boklesing',
+			placeholder: 'Bøker i måneden',
+			unitPlaceholder: 'bøker',
+			tracked: false
+		},
+		spending_nok: {
+			emoji: '💰',
+			label: 'Forbruk',
+			placeholder: 'Månedlig forbrukstak',
+			unitPlaceholder: 'kr',
+			tracked: false
+		},
+		manual_counter: {
+			emoji: '✏️',
+			label: 'Annet',
+			placeholder: 'Mål du teller manuelt',
+			unitPlaceholder: 'ganger',
+			tracked: false
+		}
+	} as const;
+
+	function goalTypeEmoji(type: MonthGoal['goalType'] | MonthGoal['trackingMetric']) {
+		return GOAL_TYPE_CONFIG[type]?.emoji ?? '🎯';
+	}
+
+	function isAutoTracked(goal: MonthGoal) {
+		return GOAL_TYPE_CONFIG[goal.trackingMetric]?.tracked ?? false;
+	}
+
+	function goalReached(goal: MonthGoal) {
+		if (goal.target.value <= 0) return false;
+		if (goal.trackingMetric === 'weight_kg') return goal.currentValue <= goal.target.value;
+		return goal.currentValue >= goal.target.value;
+	}
+
+	function formatGoalProgress(goal: MonthGoal) {
+		if (goal.trackingMetric === 'weight_kg') {
+			const current = Number.isFinite(goal.currentValue) ? goal.currentValue.toFixed(1) : '-';
+			const target = Number.isFinite(goal.target.value) ? goal.target.value.toFixed(1) : '-';
+			return `${current} / ${target} ${goal.target.unit || 'kg'}`;
+		}
+		if (goal.target.value > 0) {
+			return `${goal.currentValue} / ${goal.target.value} ${goal.target.unit}`;
+		}
+		return `${goal.currentValue} ${goal.target.unit}`;
+	}
+
+	function goalTrackingLabel(goal: MonthGoal) {
+		if (goal.trackingMetric === 'running_distance') return 'Oppdateres automatisk fra løpeøkter';
+		if (goal.trackingMetric === 'yoga_sessions') return 'Oppdateres automatisk fra yogaøkter';
+		if (goal.trackingMetric === 'weight_kg') return 'Oppdateres automatisk fra vektregistreringer';
+		if (goal.trackingMetric === 'spending_nok') return 'Klar for kobling til økonomiregistrering';
+		if (goal.trackingMetric === 'reading_books') return 'Klar for kobling til leseregistrering';
+		return 'Manuell teller';
+	}
+
+	async function openAddGoalForm() {
+		showAddGoalForm = true;
+		newGoalTitle = '';
+		newGoalTarget = '';
+		newGoalUnit = GOAL_TYPE_CONFIG[newGoalType].unitPlaceholder;
+		await tick();
+		addGoalTitleInput?.focus();
+	}
+
+	function selectGoalType(type: MonthGoal['goalType']) {
+		newGoalType = type;
+		newGoalUnit = GOAL_TYPE_CONFIG[type].unitPlaceholder;
+		if (type === 'weight_kg') newGoalTarget = '';
+	}
+
+	async function submitAddGoal() {
+		const title = newGoalTitle.trim();
+		if (!title) return;
+
+		const tempId = crypto.randomUUID();
+		const targetVal = Number(newGoalTarget);
+		if (!Number.isFinite(targetVal) || targetVal <= 0) return;
+		const unit = newGoalUnit.trim();
+
+		// Optimistic add
+		const optimistic: MonthGoal = {
+			id: tempId,
+			title,
+			goalType: newGoalType,
+			trackingMetric: newGoalType,
+			target: { value: targetVal, unit },
+			currentValue: 0,
+			baselineValue: null
+		};
+		monthGoalsState = [...monthGoalsState, optimistic];
+		showAddGoalForm = false;
+		newGoalTitle = '';
+		newGoalTarget = '';
+
+		const form = new FormData();
+		form.set('monthKey', data.month.dashedKey);
+		form.set('title', title);
+		form.set('goalType', newGoalType);
+		form.set('trackingMetric', newGoalType);
+		form.set('targetValue', String(targetVal));
+		form.set('unit', unit);
+		const res = await fetch('?/addMonthGoal', { method: 'POST', body: form });
+		if (!res.ok) {
+			monthGoalsState = monthGoalsState.filter((g) => g.id !== tempId);
+			return;
+		}
+		// Reload to get real ID
+		await invalidateAll();
+	}
+
+	async function updateGoalProgress(goalId: string, delta: number) {
+		const goal = monthGoalsState.find((g) => g.id === goalId);
+		if (!goal || isAutoTracked(goal)) return;
+		// Optimistic update
+		monthGoalsState = monthGoalsState.map((g) =>
+			g.id === goalId ? { ...g, currentValue: Math.max(0, g.currentValue + delta) } : g
+		);
+		const form = new FormData();
+		form.set('goalId', goalId);
+		form.set('delta', String(delta));
+		const res = await fetch('?/updateMonthGoalProgress', { method: 'POST', body: form });
+		if (!res.ok) {
+			// Revert
+			monthGoalsState = monthGoalsState.map((g) =>
+				g.id === goalId ? { ...g, currentValue: Math.max(0, g.currentValue - delta) } : g
+			);
+		}
+	}
+
+	async function deleteMonthGoal(goalId: string) {
+		const prev = monthGoalsState;
+		monthGoalsState = monthGoalsState.filter((g) => g.id !== goalId);
+		const form = new FormData();
+		form.set('goalId', goalId);
+		const res = await fetch('?/deleteMonthGoal', { method: 'POST', body: form });
+		if (!res.ok) monthGoalsState = prev;
+	}
+
+	function handleAddGoalKeydown(e: KeyboardEvent) {
+		if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void submitAddGoal(); }
+		if (e.key === 'Escape') { showAddGoalForm = false; }
+	}
 	function formatWeekRange(week: WeekInMonth): string {
 		const start = new Date(`${week.startDate}T12:00:00Z`);
 		const end = new Date(`${week.endDate}T12:00:00Z`);
@@ -393,7 +600,7 @@
 	<!-- Monthly goals checklist -->
 	<section class="mp-card">
 		<div class="mp-card-head">
-			<h2>Månedsmål</h2>
+			<h2>Gjøremål</h2>
 			{#if monthChecklistState}
 				{@const done = monthChecklistState.items.filter((i) => i.checked).length}
 				{@const total = monthChecklistState.items.length}
@@ -453,13 +660,101 @@
 					bind:value={composerText}
 					class="mp-input"
 					type="text"
-					placeholder="Legg til månedsmål og trykk Enter"
+					placeholder="Legg til gjøremål og trykk Enter"
 					onkeydown={handleComposerKeydown}
 				/>
 			</div>
 		</div>
 	</section>
 
+	<!-- Monthly quantified goals -->
+	<section class="mp-card mp-goals-month-card">
+		<div class="mp-card-head">
+			<h2>Månedsmål</h2>
+			<button type="button" class="mp-goal-add-btn" onclick={() => void openAddGoalForm()} aria-label="Legg til mål">
+				<span>+</span> Legg til mål
+			</button>
+		</div>
+
+		{#if monthGoalsState.length > 0}
+			<ul class="mp-month-goals-list">
+				{#each monthGoalsState as goal (goal.id)}
+					<li class="mp-month-goal-row">
+						<span class="mp-month-goal-emoji">{goalTypeEmoji(goal.trackingMetric)}</span>
+						<div class="mp-month-goal-main">
+							<span class="mp-month-goal-title">{goal.title}</span>
+							<span class="mp-month-goal-sub">{goalTrackingLabel(goal)}</span>
+						</div>
+						<div class="mp-month-goal-progress">
+							<span class="mp-month-goal-count" class:reached={goalReached(goal)}>
+								{formatGoalProgress(goal)}
+							</span>
+							{#if !isAutoTracked(goal)}
+								<button type="button" class="mp-goal-stepper" onclick={() => void updateGoalProgress(goal.id, -1)} aria-label="Minus">−</button>
+								<button type="button" class="mp-goal-stepper mp-goal-stepper--plus" onclick={() => void updateGoalProgress(goal.id, 1)} aria-label="Pluss">+</button>
+							{/if}
+						</div>
+						<button type="button" class="mp-goal-delete" onclick={() => void deleteMonthGoal(goal.id)} aria-label="Slett mål">×</button>
+					</li>
+				{/each}
+			</ul>
+		{/if}
+
+		{#if showAddGoalForm}
+			<div class="mp-add-goal-form">
+				<p class="mp-goal-flow-hint">Velg måltype. Løping, yoga og vekt blir koblet til registreringer automatisk.</p>
+				<div class="mp-goal-type-pills">
+					{#each Object.entries(GOAL_TYPE_CONFIG) as [type, cfg]}
+						<button
+							type="button"
+							class="mp-type-pill"
+							class:active={newGoalType === type}
+							onclick={() => selectGoalType(type as MonthGoal['goalType'])}
+						>{cfg.emoji} {cfg.label}</button>
+					{/each}
+				</div>
+				<div class="mp-add-goal-fields">
+					<input
+						bind:this={addGoalTitleInput}
+						bind:value={newGoalTitle}
+						class="mp-input"
+						type="text"
+						placeholder={GOAL_TYPE_CONFIG[newGoalType].placeholder}
+						onkeydown={handleAddGoalKeydown}
+					/>
+					<div class="mp-goal-target-row">
+						<input
+							bind:value={newGoalTarget}
+							class="mp-input mp-input--narrow"
+							type="number"
+							min="0.1"
+							step={newGoalType === 'weight_kg' || newGoalType === 'running_distance' ? '0.1' : '1'}
+							placeholder={newGoalType === 'weight_kg' ? 'Målvekt' : 'Målverdi'}
+							onkeydown={handleAddGoalKeydown}
+						/>
+						<input
+							bind:value={newGoalUnit}
+							class="mp-input"
+							type="text"
+							placeholder={GOAL_TYPE_CONFIG[newGoalType].unitPlaceholder}
+							onkeydown={handleAddGoalKeydown}
+						/>
+					</div>
+					{#if GOAL_TYPE_CONFIG[newGoalType].tracked}
+						<p class="mp-goal-hint">Progresjon beregnes automatisk fra registreringene dine.</p>
+					{:else}
+						<p class="mp-goal-hint">Dette målet kan du telle manuelt inntil vi kobler registreringstype.</p>
+					{/if}
+					<div class="mp-add-goal-actions">
+						<button type="button" class="mp-btn-primary" onclick={() => void submitAddGoal()}>Legg til</button>
+						<button type="button" class="mp-btn-ghost" onclick={() => (showAddGoalForm = false)}>Avbryt</button>
+					</div>
+				</div>
+			</div>
+		{:else if monthGoalsState.length === 0}
+			<p class="mp-goals-empty">Ingen månedsmål ennå. Legg til et mål med knappen over.</p>
+		{/if}
+	</section>
 	<!-- Weeks in month -->
 	<section class="mp-card">
 		<div class="mp-card-head">
@@ -1047,5 +1342,226 @@
 		font-size: 0.72rem;
 		color: #555;
 		flex-shrink: 0;
+	}
+
+	/* ── Monthly quantified goals ── */
+	.mp-goal-add-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		height: 28px;
+		padding: 0 10px;
+		border-radius: 8px;
+		border: 1px solid #252840;
+		background: #0e1022;
+		color: #7c8ef5;
+		font-size: 0.78rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: background 0.12s, border-color 0.12s;
+	}
+	.mp-goal-add-btn:hover { background: #141830; border-color: #3a4adf; }
+
+	.mp-month-goals-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.mp-month-goal-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 6px 4px;
+		border-radius: 8px;
+		transition: background 0.1s;
+	}
+	.mp-month-goal-row:hover { background: #0b0d18; }
+
+	.mp-month-goal-emoji {
+		font-size: 1rem;
+		flex-shrink: 0;
+		width: 22px;
+		text-align: center;
+	}
+
+	.mp-month-goal-title {
+		font-size: 0.9rem;
+		color: #c8cfe8;
+		line-height: 1.3;
+	}
+
+	.mp-month-goal-main {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		min-width: 0;
+	}
+
+	.mp-month-goal-sub {
+		font-size: 0.7rem;
+		color: #565f7a;
+		line-height: 1.25;
+	}
+
+	.mp-month-goal-progress {
+		display: flex;
+		align-items: center;
+		gap: 5px;
+		flex-shrink: 0;
+	}
+
+	.mp-month-goal-count {
+		font-size: 0.78rem;
+		color: #60687e;
+		min-width: 60px;
+		text-align: right;
+		transition: color 0.2s;
+	}
+	.mp-month-goal-count.reached { color: #5fa080; }
+
+	.mp-goal-stepper {
+		width: 26px;
+		height: 26px;
+		border-radius: 50%;
+		border: 1px solid #1e2030;
+		background: #0c0e18;
+		color: #70788f;
+		font-size: 1rem;
+		line-height: 1;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+		transition: background 0.1s, color 0.1s, border-color 0.1s;
+	}
+	.mp-goal-stepper:hover { background: #12162a; color: #bac6f9; border-color: #3a4adf; }
+	.mp-goal-stepper--plus { color: #7c8ef5; }
+	.mp-goal-stepper--plus:hover { color: #fff; }
+
+	.mp-goal-delete {
+		background: none;
+		border: none;
+		color: #333;
+		font-size: 1.1rem;
+		cursor: pointer;
+		padding: 2px 4px;
+		border-radius: 4px;
+		line-height: 1;
+		flex-shrink: 0;
+		transition: color 0.12s;
+	}
+	.mp-goal-delete:hover { color: #e07070; }
+
+	.mp-add-goal-form {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		padding: 2px 0;
+	}
+
+	.mp-goal-flow-hint {
+		margin: 0;
+		font-size: 0.76rem;
+		color: #70788f;
+		line-height: 1.35;
+	}
+
+	.mp-goal-type-pills {
+		display: flex;
+		gap: 6px;
+		flex-wrap: wrap;
+	}
+
+	.mp-type-pill {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		height: 28px;
+		padding: 0 10px;
+		border-radius: 999px;
+		border: 1px solid #1e2030;
+		background: #0c0e18;
+		color: #70788f;
+		font-size: 0.78rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: background 0.12s, color 0.12s, border-color 0.12s;
+	}
+	.mp-type-pill:hover { background: #101326; color: #bac6f9; }
+	.mp-type-pill.active {
+		background: #141830;
+		border-color: #7c8ef5;
+		color: #bac6f9;
+	}
+
+	.mp-add-goal-fields {
+		display: flex;
+		flex-direction: column;
+		gap: 7px;
+	}
+
+	.mp-goal-target-row {
+		display: flex;
+		gap: 7px;
+	}
+
+	.mp-input--narrow {
+		width: 80px;
+		flex-shrink: 0;
+	}
+
+	.mp-add-goal-actions {
+		display: flex;
+		gap: 8px;
+		align-items: center;
+	}
+
+	.mp-goal-hint {
+		margin: 0;
+		font-size: 0.74rem;
+		line-height: 1.35;
+		color: #5c6684;
+	}
+
+	.mp-btn-primary {
+		height: 34px;
+		padding: 0 16px;
+		border-radius: 9px;
+		border: none;
+		background: #3a4adf;
+		color: #fff;
+		font: inherit;
+		font-size: 0.85rem;
+		font-weight: 650;
+		cursor: pointer;
+		transition: background 0.12s;
+	}
+	.mp-btn-primary:hover { background: #4d5ef0; }
+
+	.mp-btn-ghost {
+		height: 34px;
+		padding: 0 14px;
+		border-radius: 9px;
+		border: 1px solid #1e2030;
+		background: transparent;
+		color: #70788f;
+		font: inherit;
+		font-size: 0.85rem;
+		cursor: pointer;
+		transition: color 0.12s, border-color 0.12s;
+	}
+	.mp-btn-ghost:hover { color: #bac6f9; border-color: #3a4adf; }
+
+	.mp-goals-empty {
+		font-size: 0.82rem;
+		color: #3a3f52;
+		margin: 0;
+		padding: 4px 2px;
 	}
 </style>

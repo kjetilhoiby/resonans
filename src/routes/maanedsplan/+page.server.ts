@@ -1,8 +1,8 @@
 import { fail } from '@sveltejs/kit';
-import { and, asc, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/db';
-import { checklistItems, checklists, goals, memories, themes } from '$lib/db/schema';
+import { checklistItems, checklists, goals, memories, sensorEvents, themes, workoutDailyAggregates } from '$lib/db/schema';
 import { parseListRepeatCount } from '$lib/server/list-repeat-parser';
 
 // ── Month helpers ────────────────────────────────────────────────────────────
@@ -147,6 +147,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	const nextMonth = shiftMonth(month, 1);
 	const weeksInMonth = getWeeksInMonth(month);
 	const weekContextKeys = weeksInMonth.map((w) => w.contextKey);
+	const monthStart = new Date(`${month.startDate}T00:00:00.000Z`);
+	const monthEnd = new Date(`${month.endDate}T23:59:59.999Z`);
 
 	const [
 		monthChecklist,
@@ -154,6 +156,9 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		reflectionNote,
 		visionNote,
 		longTermGoals,
+		monthGoals,
+		workoutRows,
+		weightRows,
 		weekChecklists,
 		prevMonthNote,
 		prevMonthReflection
@@ -180,11 +185,53 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			where: and(eq(memories.userId, userId), eq(memories.source, `month-plan:${month.compactKey}:vision`))
 		}),
 		db.query.goals.findMany({
-			where: and(eq(goals.userId, userId), eq(goals.status, 'active')),
+			where: and(
+				eq(goals.userId, userId),
+				eq(goals.status, 'active'),
+				sql`(${goals.metadata}->>'monthKey') IS NULL`
+			),
 			columns: { id: true, title: true, targetDate: true, createdAt: true },
 			orderBy: (g, { asc: a }) => [a(g.targetDate), a(g.createdAt)],
 			limit: 6
 		}),
+		db.query.goals.findMany({
+			where: and(
+				eq(goals.userId, userId),
+				eq(goals.status, 'active'),
+				sql`${goals.metadata}->>'monthKey' = ${month.dashedKey}`
+			),
+			columns: { id: true, title: true, metadata: true, createdAt: true },
+			orderBy: (g, { asc: a }) => [a(g.createdAt)]
+		}),
+		db
+			.select({
+				sportFamily: workoutDailyAggregates.sportFamily,
+				count: workoutDailyAggregates.count,
+				distanceMetersSum: workoutDailyAggregates.distanceMetersSum
+			})
+			.from(workoutDailyAggregates)
+			.where(
+				and(
+					eq(workoutDailyAggregates.userId, userId),
+					inArray(workoutDailyAggregates.sportFamily, ['running', 'yoga']),
+					gte(workoutDailyAggregates.date, monthStart),
+					lte(workoutDailyAggregates.date, monthEnd)
+				)
+			),
+		db
+			.select({
+				timestamp: sensorEvents.timestamp,
+				data: sensorEvents.data
+			})
+			.from(sensorEvents)
+			.where(
+				and(
+					eq(sensorEvents.userId, userId),
+					eq(sensorEvents.dataType, 'weight'),
+					lte(sensorEvents.timestamp, monthEnd)
+				)
+			)
+			.orderBy(asc(sensorEvents.timestamp)),
 		weekContextKeys.length > 0
 			? db.query.checklists.findMany({
 					where: and(eq(checklists.userId, userId), inArray(checklists.context, weekContextKeys)),
@@ -230,6 +277,22 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		})
 	);
 
+	const runningKmThisMonth = Math.round(
+		workoutRows
+			.filter((r) => r.sportFamily === 'running')
+			.reduce((sum, r) => sum + Number(r.distanceMetersSum ?? 0) / 1000, 0) * 10
+	) / 10;
+	const yogaSessionsThisMonth = workoutRows
+		.filter((r) => r.sportFamily === 'yoga')
+		.reduce((sum, r) => sum + Number(r.count ?? 0), 0);
+
+	const normalizedWeightRows = weightRows
+		.map((row) => ({
+			timestamp: row.timestamp,
+			weight: Number((row.data as { weight?: number } | null)?.weight)
+		}))
+		.filter((row) => Number.isFinite(row.weight));
+
 	return {
 		month,
 		monthNav: {
@@ -260,6 +323,48 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			title: g.title,
 			targetDate: g.targetDate?.toISOString() ?? null
 		})),
+		monthGoals: monthGoals.map((g) => {
+			const meta = (g.metadata ?? {}) as Record<string, any>;
+			const tracking = (meta.tracking ?? {}) as { source?: string; metric?: string };
+			const target = (meta.target as { value: number; unit: string } | undefined) ?? {
+				value: 0,
+				unit: ''
+			};
+
+			let currentValue = Number(meta.currentValue ?? 0);
+			let baselineValue: number | null =
+				typeof meta.baselineValue === 'number' ? Number(meta.baselineValue) : null;
+
+			if (tracking.metric === 'running_distance') {
+				currentValue = runningKmThisMonth;
+			}
+
+			if (tracking.metric === 'yoga_sessions') {
+				currentValue = yogaSessionsThisMonth;
+			}
+
+			if (tracking.metric === 'weight_kg') {
+				const latest = normalizedWeightRows[normalizedWeightRows.length - 1] ?? null;
+				if (latest) currentValue = Math.round(latest.weight * 10) / 10;
+
+				if (baselineValue === null) {
+					const beforeGoal = normalizedWeightRows
+						.filter((row) => row.timestamp <= g.createdAt)
+						.at(-1);
+					if (beforeGoal) baselineValue = Math.round(beforeGoal.weight * 10) / 10;
+				}
+			}
+
+			return {
+				id: g.id,
+				title: g.title,
+				goalType: (meta.goalType as string) ?? 'manual_counter',
+				trackingMetric: tracking.metric ?? 'manual_counter',
+				target,
+				currentValue,
+				baselineValue
+			};
+		}),
 		previousMonthSummary: {
 			monthKey: previousMonth.dashedKey,
 			monthName: previousMonth.monthName,
@@ -405,6 +510,110 @@ export const actions = {
 		if (!item) return fail(404, { error: 'Fant ikke punktet.' });
 
 		await db.delete(checklistItems).where(eq(checklistItems.id, itemId));
+		return { success: true };
+	},
+
+	addMonthGoal: async ({ request, locals }) => {
+		const userId = locals.userId;
+		const data = await request.formData();
+		const month = resolveMonthFromFormData(data);
+		const title = String(data.get('title') || '').trim();
+		const goalType = String(data.get('goalType') || 'manual_counter');
+		const trackingMetric = String(data.get('trackingMetric') || goalType);
+		const targetValue = parseInt(String(data.get('targetValue') || '0'), 10) || 0;
+		const unit = String(data.get('unit') || '').trim();
+
+		if (!title) return fail(400, { error: 'Mangler tittel.' });
+
+		let baselineValue: number | null = null;
+		if (trackingMetric === 'weight_kg') {
+			const latestWeight = await db
+				.select({ data: sensorEvents.data })
+				.from(sensorEvents)
+				.where(
+					and(
+						eq(sensorEvents.userId, userId),
+						eq(sensorEvents.dataType, 'weight'),
+						lte(sensorEvents.timestamp, new Date(`${month.endDate}T23:59:59.999Z`))
+					)
+				)
+				.orderBy(desc(sensorEvents.timestamp))
+				.limit(1);
+
+			const weight = Number((latestWeight[0]?.data as { weight?: number } | null)?.weight);
+			if (Number.isFinite(weight)) baselineValue = Math.round(weight * 10) / 10;
+		}
+
+		await db.insert(goals).values({
+			userId,
+			title,
+			status: 'active',
+			targetDate: new Date(month.endDate),
+			metadata: {
+				monthKey: month.dashedKey,
+				goalType,
+				tracking: {
+					source:
+						trackingMetric === 'weight_kg'
+							? 'sensor_event'
+							: trackingMetric === 'running_distance' || trackingMetric === 'yoga_sessions'
+								? 'workout_aggregate'
+								: 'manual',
+					metric: trackingMetric
+				},
+				target: { value: targetValue, unit },
+				baselineValue,
+				currentValue: 0
+			}
+		});
+
+		return { success: true };
+	},
+
+	updateMonthGoalProgress: async ({ request, locals }) => {
+		const userId = locals.userId;
+		const data = await request.formData();
+		const goalId = String(data.get('goalId') || '');
+		const delta = parseInt(String(data.get('delta') || '0'), 10);
+
+		if (!goalId) return fail(400, { error: 'Mangler goalId.' });
+
+		const goal = await db.query.goals.findFirst({
+			where: and(eq(goals.id, goalId), eq(goals.userId, userId))
+		});
+		if (!goal) return fail(404, { error: 'Fant ikke målet.' });
+
+		const meta = (goal.metadata ?? {}) as Record<string, any>;
+		const trackingMetric = String((meta.tracking as { metric?: string } | undefined)?.metric ?? 'manual_counter');
+		if (trackingMetric !== 'manual_counter') {
+			return fail(400, { error: 'Automatiske mål kan ikke oppdateres manuelt.' });
+		}
+		const newValue = Math.max(0, (meta.currentValue ?? 0) + delta);
+
+		await db
+			.update(goals)
+			.set({
+				metadata: { ...meta, currentValue: newValue },
+				updatedAt: new Date()
+			})
+			.where(eq(goals.id, goalId));
+
+		return { success: true };
+	},
+
+	deleteMonthGoal: async ({ request, locals }) => {
+		const userId = locals.userId;
+		const data = await request.formData();
+		const goalId = String(data.get('goalId') || '');
+
+		if (!goalId) return fail(400, { error: 'Mangler goalId.' });
+
+		const goal = await db.query.goals.findFirst({
+			where: and(eq(goals.id, goalId), eq(goals.userId, userId))
+		});
+		if (!goal) return fail(404, { error: 'Fant ikke målet.' });
+
+		await db.delete(goals).where(eq(goals.id, goalId));
 		return { success: true };
 	}
 } satisfies Actions;

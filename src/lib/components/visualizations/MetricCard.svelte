@@ -58,6 +58,32 @@
 	const component = $derived(spec.contexts[size].component);
 	const useDeltaArrowM = $derived(size === 'M' && spec.thresholdMode === 'trajectory');
 
+	// -------------------------------------------------------------------------
+	// timeline_marker: time elapsed vs. metric progress
+	// -------------------------------------------------------------------------
+
+	const now = Date.now();
+
+	const timelinePct = $derived.by((): number => {
+		if (!data.startDate || !data.endDate) return 0;
+		const start = new Date(data.startDate).getTime();
+		const end = new Date(data.endDate).getTime();
+		return Math.max(0, Math.min(100, ((now - start) / (end - start)) * 100));
+	});
+
+	const effectiveTimelinePct = $derived.by((): number => {
+		if (timelinePct > 0) return timelinePct;
+		if (
+			spec.timeModel === 'accumulated' &&
+			data.expectedByNow !== undefined &&
+			data.target !== undefined &&
+			data.target > 0
+		) {
+			return Math.max(0, Math.min(100, (data.expectedByNow / data.target) * 100));
+		}
+		return timelinePct;
+	});
+
 	// Auto-compute expectedByNow when not provided but dates + target are available
 	const effectiveExpectedByNow = $derived.by((): number | undefined => {
 		if (data.expectedByNow !== undefined) return data.expectedByNow;
@@ -101,32 +127,6 @@
 		if (spec.semantic === 'higher') return Math.min(100, (c / data.target) * 100);
 		if (spec.semantic === 'lower') return Math.min(100, (c / data.target) * 100);
 		return 0;
-	});
-
-	// -------------------------------------------------------------------------
-	// timeline_marker: time elapsed vs. metric progress
-	// -------------------------------------------------------------------------
-
-	const now = Date.now();
-
-	const timelinePct = $derived.by((): number => {
-		if (!data.startDate || !data.endDate) return 0;
-		const start = new Date(data.startDate).getTime();
-		const end = new Date(data.endDate).getTime();
-		return Math.max(0, Math.min(100, ((now - start) / (end - start)) * 100));
-	});
-
-	const effectiveTimelinePct = $derived.by((): number => {
-		if (timelinePct > 0) return timelinePct;
-		if (
-			spec.timeModel === 'accumulated' &&
-			data.expectedByNow !== undefined &&
-			data.target !== undefined &&
-			data.target > 0
-		) {
-			return Math.max(0, Math.min(100, (data.expectedByNow / data.target) * 100));
-		}
-		return timelinePct;
 	});
 
 	const markerPct = $derived.by((): number => {
