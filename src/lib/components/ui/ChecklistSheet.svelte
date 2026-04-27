@@ -6,6 +6,7 @@
   - Scrollbar liste med checkboxer
   - "Legg til punkt" input
   - Payoff-animasjon når alle punkter er avkrysset
+  - Langtrykk (700ms) for nedbrytning av oppgaver
 -->
 <script lang="ts">
 	import { fly, fade, scale } from 'svelte/transition';
@@ -14,6 +15,7 @@
 	import { groupChecklistItems, activityEmoji } from '$lib/utils/checklist-group';
 	import WeatherStrip, { type WeatherPeriod } from '$lib/components/ui/WeatherStrip.svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
+	import BreakdownModal from '$lib/components/ui/BreakdownModal.svelte';
 	import { readCacheEntry, isCacheStale, fetchRawTimeseries, buildPeriods, buildWeekPeriods } from '$lib/utils/weather';
 
 	export interface ChecklistItem {
@@ -21,6 +23,8 @@
 		text: string;
 		checked: boolean;
 		sortOrder: number;
+		parentId?: string;
+		children?: ChecklistItem[];
 	}
 
 	export interface Checklist {
@@ -46,6 +50,8 @@
 	let showPayoff = $state(false);
 	let payoffDismissed = $state(false);
 	let addingItem = $state(false);
+	let breakdownItem = $state<ChecklistItem | null>(null);
+	let longPressTimer: ReturnType<typeof setTimeout> | null = null;
 
 	const done = $derived(items.filter((i) => i.checked).length);
 	const total = $derived(items.length);
@@ -148,7 +154,27 @@
 		}
 	});
 
+	// Langtrykk-handler (700ms)
+	function handleItemMouseDown(item: ChecklistItem) {
+		longPressTimer = setTimeout(() => {
+			breakdownItem = item;
+			longPressTimer = null;
+		}, 700);
+	}
+
+	function handleItemMouseUp() {
+		if (longPressTimer) {
+			clearTimeout(longPressTimer);
+			longPressTimer = null;
+		}
+	}
+
 	async function toggleItem(item: ChecklistItem) {
+		if (longPressTimer) {
+			clearTimeout(longPressTimer);
+			longPressTimer = null;
+		}
+
 		const newChecked = !item.checked;
 		// Optimistisk oppdatering
 		const previousItems = items;
@@ -189,6 +215,34 @@
 			}
 		} finally {
 			addingItem = false;
+		}
+	}
+
+	async function handleBreakdownSave(subtasks: string[]) {
+		if (!breakdownItem) return;
+
+		try {
+			const res = await fetch('/api/breakdown/save', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					parentItemId: breakdownItem.id,
+					subtasks,
+					breakdownPrompt: breakdownItem.text
+				})
+			});
+
+			if (!res.ok) throw new Error('Failed to save breakdown');
+			const data = (await res.json()) as { success: boolean; subtasks: ChecklistItem[] };
+
+			// Add subtasks to items
+			if (data.success) {
+				items = [...items, ...data.subtasks];
+				breakdownItem = null;
+				onChanged?.();
+			}
+		} catch (err) {
+			console.error('Error saving breakdown:', err);
 		}
 	}
 
@@ -258,35 +312,75 @@
 
 	<!-- Items list -->
 	<div class="cs-items">
-		{#each groupChecklistItems(items) as group}
+		{#each groupChecklistItems(items.filter(i => !i.parentId)) as group}
 			{#if group.type === 'group'}
 				<div class="cs-group-row">
 					<span class="cs-group-label">{activityEmoji(group.label) ? activityEmoji(group.label) + ' ' : ''}{group.label}</span>
 					<div class="cs-slot-row">
 						{#each group.items as item (item.id)}
+							{@const hasChildren = items.some(i => i.parentId === item.id)}
 							<button
 								type="button"
 								class="cs-slot"
 								class:cs-slot-checked={item.checked}
+								class:cs-slot-parent={hasChildren}
+								onmousedown={() => handleItemMouseDown(item)}
+								onmouseup={handleItemMouseUp}
+								onmouseleave={handleItemMouseUp}
 								onclick={() => toggleItem(item)}
+								title={hasChildren ? 'Langtrykk for å redigere substeps' : 'Langtrykk for å dele opp'}
 								aria-label={item.checked ? 'Marker som ikke gjort' : 'Marker som gjort'}
-							>{item.checked ? '✓' : ''}</button>
+							>
+								{item.checked ? '✓' : ''}
+								{#if hasChildren}
+									<span class="cs-slot-indicator">✕</span>
+								{/if}
+							</button>
 						{/each}
 					</div>
 				</div>
 			{:else}
-				<button
-					class="cs-item"
-					class:cs-item-checked={group.item.checked}
-					onclick={() => toggleItem(group.item)}
-				>
-					<span class="cs-item-text">{group.item.text}</span>
-					<div class="cs-checkbox" class:cs-checkbox-checked={group.item.checked}>
-						{#if group.item.checked}
-							<span class="cs-tick" transition:scale={{ duration: 200, easing: elasticOut }}>✓</span>
-						{/if}
-					</div>
-				</button>
+				{@const hasChildren = items.some(i => i.parentId === group.item.id)}
+				<div class="cs-item-wrapper">
+					<button
+						class="cs-item"
+						class:cs-item-checked={group.item.checked}
+						class:cs-item-parent={hasChildren}
+						onmousedown={() => handleItemMouseDown(group.item)}
+						onmouseup={handleItemMouseUp}
+						onmouseleave={handleItemMouseUp}
+						onclick={() => toggleItem(group.item)}
+						title={hasChildren ? 'Langtrykk for å redigere substeps' : 'Langtrykk for å dele opp'}
+					>
+						<span class="cs-item-text">{group.item.text}</span>
+						<div class="cs-checkbox" class:cs-checkbox-checked={group.item.checked}>
+							{#if group.item.checked}
+								<span class="cs-tick" transition:scale={{ duration: 200, easing: elasticOut }}>✓</span>
+							{/if}
+						</div>
+					</button>
+					{#if hasChildren}
+						<div class="cs-children">
+							{#each items.filter(i => i.parentId === group.item.id) as child (child.id)}
+								<button
+									class="cs-child-item"
+									class:cs-child-checked={child.checked}
+									onmouseup={handleItemMouseUp}
+									onmouseleave={handleItemMouseUp}
+									onclick={() => toggleItem(child)}
+								>
+									<span class="cs-child-indent">↳</span>
+									<span class="cs-child-text">{child.text}</span>
+									<div class="cs-checkbox cs-checkbox-small" class:cs-checkbox-checked={child.checked}>
+										{#if child.checked}
+											<span class="cs-tick" transition:scale={{ duration: 200, easing: elasticOut }}>✓</span>
+										{/if}
+									</div>
+								</button>
+							{/each}
+						</div>
+					{/if}
+				</div>
 			{/if}
 		{/each}
 	</div>
@@ -351,6 +445,15 @@
 			<p class="cs-payoff-cta">Trykk hvor som helst for å lukke</p>
 		</div>
 	</div>
+{/if}
+
+<!-- Breakdown modal -->
+{#if breakdownItem}
+	<BreakdownModal
+		itemTitle={breakdownItem.text}
+		onClose={() => (breakdownItem = null)}
+		onSave={handleBreakdownSave}
+	/>
 {/if}
 
 <style>
@@ -734,5 +837,93 @@
 	@keyframes payoffFadeUp {
 		from { opacity: 0; transform: translateY(12px); }
 		to { opacity: 1; transform: translateY(0); }
+	}
+
+	/* ── Item wrapper and children ── */
+	.cs-item-wrapper {
+		display: flex;
+		flex-direction: column;
+		gap: 0;
+	}
+
+	.cs-item-parent {
+		border-bottom-left-radius: 0;
+		border-bottom-right-radius: 0;
+	}
+
+	.cs-children {
+		display: flex;
+		flex-direction: column;
+		gap: 0;
+		padding: 0 12px 0 32px;
+		background: #0a0a0a;
+		border-radius: 0 0 10px 10px;
+		margin-bottom: 4px;
+	}
+
+	.cs-child-item {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 8px 0;
+		border: none;
+		background: transparent;
+		color: inherit;
+		cursor: pointer;
+		text-align: left;
+		font: inherit;
+		transition: opacity 0.1s;
+		border-bottom: 1px solid #1a1a1a;
+	}
+
+	.cs-child-item:last-child {
+		border-bottom: none;
+	}
+
+	.cs-child-item:hover {
+		opacity: 0.8;
+	}
+
+	.cs-child-indent {
+		font-size: 0.7rem;
+		color: #444;
+		flex-shrink: 0;
+	}
+
+	.cs-child-text {
+		font-size: 0.75rem;
+		color: #aaa;
+		line-height: 1.3;
+		flex: 1;
+		transition: color 0.1s, text-decoration 0.1s;
+	}
+
+	.cs-child-checked .cs-child-text {
+		color: #555;
+		text-decoration: line-through;
+	}
+
+	.cs-checkbox-small {
+		width: 18px;
+		height: 18px;
+		border-width: 1.5px;
+	}
+
+	/* Parent indicator on slot buttons */
+	.cs-slot-parent {
+		position: relative;
+	}
+
+	.cs-slot-indicator {
+		position: absolute;
+		font-size: 0.55rem;
+		color: #7c8ef5;
+		right: -4px;
+		top: -6px;
+		line-height: 1;
+	}
+
+	.cs-slot-parent.cs-slot-checked .cs-slot-indicator {
+		color: #5fa080;
 	}
 </style>

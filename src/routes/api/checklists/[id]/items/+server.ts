@@ -21,10 +21,11 @@ function extractWeekKeys(context: string | null): { dashedKey: string; compactKe
 // POST /api/checklists/[id]/items — legg til et nytt punkt
 export const POST: RequestHandler = async ({ locals, params, request }) => {
 	const userId = locals.userId;
-	const { text, sortOrder = 9999, count = 1 } = await request.json() as {
+	const { text, sortOrder = 9999, count = 1, parentId } = await request.json() as {
 		text: string;
 		sortOrder?: number;
 		count?: number;
+		parentId?: string;
 	};
 
 	if (!text) return json({ error: 'text er påkrevd' }, { status: 400 });
@@ -41,7 +42,8 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 
 	// --- Intent parsing + task linking (only for single items, not repeat patterns) ---
 	let itemMetadata: Record<string, unknown> = {};
-	if (repeatCount === 1) {
+	if (repeatCount === 1 && !parentId) {
+		// Only parse intent for non-subtask items
 		const weekKeys = extractWeekKeys(checklist.context);
 		const isWeekLevel = weekKeys !== null && !checklist.context!.includes(':day:');
 		const intent = parseChecklistItemIntent(parsed.label);
@@ -149,6 +151,7 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 		Array.from({ length: repeatCount }, (_, index) => ({
 			checklistId: params.id,
 			userId,
+			parentId: parentId || null, // Support subtasks
 			text: repeatCount > 1 ? `${baseLabel} (${index + 1}/${repeatCount})` : baseLabel,
 			sortOrder: sortOrder + index,
 			...(slotMeta

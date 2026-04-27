@@ -402,10 +402,13 @@ export const checklistItems = pgTable('checklist_items', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	checklistId: uuid('checklist_id').references(() => checklists.id, { onDelete: 'cascade' }).notNull(),
 	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	parentId: uuid('parent_id').references(() => checklistItems.id, { onDelete: 'cascade' }), // For subtasks/hierarchical structure
 	text: text('text').notNull(),
 	checked: boolean('checked').notNull().default(false),
 	sortOrder: integer('sort_order').notNull().default(0),
 	checkedAt: timestamp('checked_at'),
+	startDate: date('start_date'), // When the task should start (optional)
+	endDate: date('end_date'), // When the task should be completed by (optional)
 	metadata: jsonb('metadata').default({}).notNull().$type<{
 		// Intent linking
 		linkedTaskId?: string;
@@ -422,6 +425,9 @@ export const checklistItems = pgTable('checklist_items', {
 		progressRecordId?: string;
 		wakeHour?: number;
 		wakeMinute?: number;
+		// Breakdown metadata
+		breakdownPrompt?: string; // The prompt used to generate breakdown
+		breakdownModel?: string; // The model used for breakdown
 	}>(),
 	createdAt: timestamp('created_at').defaultNow().notNull()
 });
@@ -1420,7 +1426,7 @@ export const checklistsRelations = relations(checklists, ({ one, many }) => ({
 	items: many(checklistItems)
 }));
 
-export const checklistItemsRelations = relations(checklistItems, ({ one }) => ({
+export const checklistItemsRelations = relations(checklistItems, ({ one, many }) => ({
 	checklist: one(checklists, {
 		fields: [checklistItems.checklistId],
 		references: [checklists.id]
@@ -1428,7 +1434,12 @@ export const checklistItemsRelations = relations(checklistItems, ({ one }) => ({
 	user: one(users, {
 		fields: [checklistItems.userId],
 		references: [users.id]
-	})
+	}),
+	parent: one(checklistItems, {
+		fields: [checklistItems.parentId],
+		references: [checklistItems.id]
+	}),
+	children: many(checklistItems)
 }));
 
 // ThemeList relations
