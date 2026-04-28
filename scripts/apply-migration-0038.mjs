@@ -1,5 +1,5 @@
 /**
- * Applies migration 0037_food_domain directly.
+ * Applies migration 0038_food_domain directly.
  * Creates recipes, meal_plans and pantry_items tables for the food domain.
  */
 import postgres from 'postgres';
@@ -29,18 +29,18 @@ if (!process.env.DATABASE_URL) {
 const sql = postgres(process.env.DATABASE_URL, { max: 1, ssl: 'require' });
 
 try {
-	const applied = await sql`SELECT 1 FROM drizzle.__drizzle_migrations WHERE hash = '0037_food_domain'`;
+	const applied = await sql`SELECT 1 FROM drizzle.__drizzle_migrations WHERE hash = '0038_food_domain'`;
 	if (applied.length > 0) {
-		console.log('Migration 0037 already applied, skipping.');
+		console.log('Migration 0038 already applied, skipping.');
 		process.exit(0);
 	}
 
-	const migrationSql = readFileSync(resolve(__dirname, '../drizzle/0037_food_domain.sql'), 'utf8');
+	const migrationSql = readFileSync(resolve(__dirname, '../drizzle/0038_food_domain.sql'), 'utf8');
 	await sql.unsafe(migrationSql);
 
 	await sql`
 		INSERT INTO drizzle.__drizzle_migrations (hash, created_at)
-		VALUES ('0037_food_domain', ${Date.now()})
+		VALUES ('0038_food_domain', ${Date.now()})
 	`;
 
 	const tables = await sql`
@@ -48,7 +48,7 @@ try {
 		       to_regclass('public.meal_plans') AS meal_plans,
 		       to_regclass('public.pantry_items') AS pantry_items
 	`;
-	console.log('Migration 0037 applied and registered.');
+	console.log('Migration 0038 applied and registered.');
 	console.log('tables:', tables[0]);
 } finally {
 	await sql.end();
