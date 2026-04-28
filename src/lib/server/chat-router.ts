@@ -2,7 +2,7 @@ import { detectPromptFocusModules } from '$lib/server/openai';
 import { openai } from '$lib/server/openai';
 import { DOMAIN_METADATA } from '$lib/domains';
 
-export type ChatDomain = 'health' | 'economics' | 'planning' | 'themes' | 'general';
+export type ChatDomain = 'health' | 'economics' | 'food' | 'planning' | 'themes' | 'general';
 export type ChatSkill = 'widget_creation' | 'checklist_planning' | 'goal_planning' | 'theme_management' | 'general_chat';
 export type ChatMode = 'tool' | 'conversation' | 'domain';
 
@@ -42,6 +42,10 @@ export function routeChatRequest(input: string): ChatRoutingDecision {
 		domains.add('economics');
 		domainHints.push(DOMAIN_METADATA.economics.systemPromptHint);
 	}
+	if (focusModules.includes('food') || /mat|middag|frokost|lunsj|matpakke|oppskrift|recipe|pantry|fryser|kjøleskap|kjoleskap|skap|handleliste|kjokken|kjøkken|måltid|maltid|ukemeny|meny/.test(text)) {
+		domains.add('food');
+		domainHints.push(DOMAIN_METADATA.food.systemPromptHint);
+	}
 	if (focusModules.includes('themes')) domains.add('themes');
 	if (focusModules.includes('planning')) domains.add('planning');
 
@@ -73,7 +77,7 @@ export function routeChatRequest(input: string): ChatRoutingDecision {
 	// Fallback mode: infer from skills
 	const mode: ChatMode = skills.has('widget_creation') || skills.has('checklist_planning') || skills.has('goal_planning')
 		? 'tool'
-		: (domains.has('health') || domains.has('economics'))
+		: (domains.has('health') || domains.has('economics') || domains.has('food'))
 			? 'domain'
 			: 'conversation';
 
@@ -95,7 +99,7 @@ Bestem routing basert på meldingen:
   "domain"       — spørsmål om data: helse-statistikk, økonomi/forbruk, planer, temaer
   "conversation" — snakke, reflektere, utforske, få råd, diskutere (bruk sterkere modell)
   "book"         — brukeren vil gå til, snakke om eller fortsette en bestemt bok (kun hvis du er sikker)
-- domains: relevante domener, array av: "health", "economics", "planning", "themes", "general"
+- domains: relevante domener, array av: "health", "economics", "food", "planning", "themes", "general"
 - modelSuggestion: inkluder kun "gpt-5.4" hvis samtalen er dyp, refleksiv eller kreativ, ellers utelat feltet
 - hints: maks 2 korte hints (én setning hver) til hoved-assistenten, eller tom array
 - bookId: kun sett dette hvis mode="book" og du kan identifisere boken fra konteksten
@@ -144,7 +148,7 @@ export async function aiRouteChatRequest(
 			: regexFallback.mode;
 
 		const domains = (parsed.domains ?? [])
-			.filter((d): d is ChatDomain => ['health', 'economics', 'planning', 'themes', 'general'].includes(d));
+			.filter((d): d is ChatDomain => ['health', 'economics', 'food', 'planning', 'themes', 'general'].includes(d));
 
 		// Resolve routedBook if router identified a specific book
 		let routedBook: ChatRoutingDecision['routedBook'];

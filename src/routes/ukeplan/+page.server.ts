@@ -5,6 +5,12 @@ import { db } from '$lib/db';
 import { checklistItems, checklists, goals, memories, progress, tasks, themes, sensorEvents, sensors } from '$lib/db/schema';
 import { parseListRepeatCount } from '$lib/server/list-repeat-parser';
 import { WorkoutProjectionService } from '$lib/server/services/workout-projection-service';
+import { resolveDomainFromInput, type DomainType } from '$lib/domains';
+
+function detectItemDomain(text: string | null | undefined): DomainType | null {
+	if (!text) return null;
+	return resolveDomainFromInput(text);
+}
 
 async function loadWeekTasks(userId: string, dashedKey: string, compactKey: string) {
 	const baseSelect = db
@@ -290,7 +296,10 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			{
 				id: cl.id,
 				title: cl.title,
-				items: cl.items,
+				items: cl.items.map((item) => ({
+					...item,
+					domain: detectItemDomain(item.text)
+				})),
 				completedAt: cl.completedAt?.toISOString() ?? null
 			}
 		];
@@ -578,7 +587,10 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 				title: weekChecklist.title,
 				emoji: weekChecklist.emoji,
 				completedAt: weekChecklist.completedAt?.toISOString() ?? null,
-				items: weekChecklist.items
+				items: weekChecklist.items.map((item) => ({
+					...item,
+					domain: detectItemDomain(item.text)
+				}))
 			}
 			: null,
 		weekTasks: weekTasks.map((task) => ({

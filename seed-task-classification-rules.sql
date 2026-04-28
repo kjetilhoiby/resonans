@@ -29,5 +29,14 @@ VALUES
     'Matches mental health and mood tracking',
     NOW(),
     NOW()
+  ),
+  (
+    'food',
+    ARRAY['middag', 'frokost', 'lunsj', 'matpakke', 'fisk', 'kjøtt', 'pasta', 'suppe', 'salat', 'oppskrift', 'meny', 'måltid', 'grøt', 'pizza', 'taco', 'risotto', 'lasagne', 'gryte', 'wok', 'kylling', 'laks'],
+    3,
+    true,
+    'Matches food and meal planning activities',
+    NOW(),
+    NOW()
   )
 ON CONFLICT DO NOTHING;

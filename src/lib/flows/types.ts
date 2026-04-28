@@ -12,10 +12,11 @@ export type FlowId =
 	| 'planning_week_plan'
 	| 'planning_week_review'
 	| 'planning_goal_setup'
+	| 'food_meal_chat'
 	| 'day_plan'
 	| 'day_close';
 
-export type FlowDomain = 'health' | 'economics' | 'planning' | 'general';
+export type FlowDomain = 'health' | 'economics' | 'food' | 'planning' | 'general';
 
 export type FlowTrigger = 'manual' | 'auto_suggest' | 'onboarding';
 

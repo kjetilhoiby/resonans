@@ -38,6 +38,26 @@ For «forbruk dagligvare», «matkostnader», «transport» osv.: bruk ALLTID fi
 - "Matkostnader per dag" → metricType: 'amount', filterCategory: 'kafe_og_restaurant', aggregation: 'avg'
 Gyldige kategorier: innskudd, dagligvarer, kafe_og_restaurant, faste_boutgifter, annet_lan_og_gjeld, bil_og_transport, helse_og_velvaere, medier_og_underholdning, hobby_og_fritid, hjem_og_hage, klaer_og_utstyr, barn, barnehage_og_sfo, forsikring, bilforsikring_og_billan, sparing, reise, diverse, ukategorisert`,
 
+	food: `**MAT - VERKTØY OG FLYT:**
+Domenet dekker oppskrifter, ukemeny, pantry/fryser/kjøleskap, handlelister og bilder/næringsestimater.
+
+**Verktøy:**
+- query_food: les eksisterende oppskrifter, ukemeny, pantry-innhold, eller varer som snart går ut
+- manage_recipe: opprett/oppdater/slett oppskrift med ingredienser, instruksjoner, tilberedningstid og porsjoner
+- manage_meal_plan: legg til/oppdater/fjern oppføring i ukemeny — koble til oppskrift via recipeId, eller bruk customTitle for fritekst ("frossenpizza", "rester")
+- manage_pantry: oppdater pantry/fryser/kjøleskap — add (krever name+location), update, remove, use (kan dekrementere quantity)
+- generate_shopping_list: bygg handleliste fra ukemenyens oppskrifter minus pantry-innhold (returnerer items klare for sjekkliste)
+- analyze_meal_image: send Cloudinary-URL og få tilbake anslag av rett, ingredienser og næringsinnhold (grovt estimat)
+
+**Typiske flyter:**
+- "Hva har jeg i fryseren?" → query_food queryType='pantry', location='freezer'
+- "Lag middagsplan for uka basert på det jeg har" → query_food (pantry) → forslag → manage_meal_plan (én per dag) → tilby generate_shopping_list
+- "fisk til middag på torsdag" → manage_meal_plan create med customTitle eller foreslå oppskrift først
+- "Jeg vil lage [restaurantmat] hjemme" → forslag oppskrift → manage_recipe create hvis bruker vil lagre
+- Bruker laster opp matbilde → analyze_meal_image → vis estimat → tilby å lagre på ny oppskrift
+
+**Når bruker skriver kort plan ("fisk til middag"):** Foreslå konkret oppskrift, sjekk pantry, bygg handleliste i samme svar.`,
+
 	widgets: `**WIDGETS - SVÆRT VIKTIG:**
 Flow-regel:
 1. propose_widget for forslag/draft

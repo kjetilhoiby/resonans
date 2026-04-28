@@ -1,4 +1,4 @@
-export type DashboardKind = 'health' | 'economics' | 'travel' | 'books';
+export type DashboardKind = 'health' | 'economics' | 'food' | 'travel' | 'books';
 
 export interface ThemeDashboardDefinition {
 	kind: DashboardKind;
@@ -45,6 +45,26 @@ const THEME_DASHBOARD_MATCHERS: Array<{ kind: DashboardKind; terms: string[] }> 
 			'budget',
 			'spending',
 			'savings'
+		]
+	},
+	{
+		kind: 'food',
+		terms: [
+			'mat',
+			'middag',
+			'meny',
+			'ukemeny',
+			'oppskrift',
+			'kjøkken',
+			'kjokken',
+			'måltid',
+			'maltid',
+			'matplan',
+			'food',
+			'cooking',
+			'recipe',
+			'meal',
+			'pantry'
 		]
 	},
 	{
@@ -99,6 +119,11 @@ const DASHBOARD_DEFINITIONS: Record<DashboardKind, ThemeDashboardDefinition> = {
 		kind: 'economics',
 		label: 'Økonomi',
 		icon: '💰'
+	},
+	food: {
+		kind: 'food',
+		label: 'Mat',
+		icon: '🍽️'
 	},
 	travel: {
 		kind: 'travel',

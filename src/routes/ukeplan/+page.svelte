@@ -37,6 +37,7 @@
 		parentId?: string | null;
 		startDate?: string | null;
 		endDate?: string | null;
+		domain?: 'health' | 'economics' | 'food' | null;
 		metadata?: {
 			linkedTaskId?: string;
 			linkedTaskTitle?: string;
@@ -232,6 +233,13 @@
 	let dayCloseDecisions = $state<Record<string, 'carryover' | 'unsolved'>>({});
 	let weekReviewChatOpen = $state(false);
 	let weekPlanChatOpen = $state(false);
+	let foodChatOpen = $state(false);
+	let foodChatItemText = $state('');
+
+	function openFoodChatForItem(text: string) {
+		foodChatItemText = text;
+		foodChatOpen = true;
+	}
 	let editingItem = $state<EditingItem | null>(null);
 	let editingTask = $state<EditingTask | null>(null);
 	let editTaskInput = $state<HTMLInputElement | null>(null);
@@ -1654,6 +1662,15 @@
 								<button type="button" class="wp-item-text-btn" onclick={() => void startEditing(weekChecklistId, group.item)}>
 									<span class="wp-check-text" class:checked={group.item.checked}>{group.item.text}</span>
 								</button>
+								{#if group.item.domain === 'food'}
+									<button
+										type="button"
+										class="wp-food-affordance"
+										onclick={() => openFoodChatForItem(group.item.text)}
+										aria-label="Planlegg måltid"
+										title="Planlegg måltid"
+									>🍽️</button>
+								{/if}
 							{/if}
 							{#if hasWeekChildren}
 								<svg class="wp-week-parent-circle" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
@@ -2090,6 +2107,21 @@
 			prompts: { chat: buildWeekReviewPrefill() }
 		}}
 		onclose={() => (weekReviewChatOpen = false)}
+	/>
+{/if}
+
+{#if foodChatOpen}
+	<FlowSheet
+		flow={FLOWS['food_meal_chat']}
+		context={{
+			systemPrompts: { chat: 'Brukeren vil planlegge et måltid fra ukeplanen. Bruk query_food, manage_meal_plan, manage_pantry og generate_shopping_list etter behov. Foreslå konkret oppskrift og handleliste.' },
+			prompts: { chat: `Hjelp meg planlegge "${foodChatItemText}". Foreslå oppskrift, sjekk hva jeg har i skapet/fryseren og bygg handleliste.` }
+		}}
+		onclose={() => (foodChatOpen = false)}
+		oncomplete={async () => {
+			foodChatOpen = false;
+			await invalidateAll();
+		}}
 	/>
 {/if}
 
@@ -2659,6 +2691,21 @@
 
 	.wp-item-text-btn {
 		width: 100%;
+	}
+
+	.wp-food-affordance {
+		border: none;
+		background: transparent;
+		padding: 0 4px;
+		font-size: 14px;
+		line-height: 1;
+		cursor: pointer;
+		opacity: 0.7;
+		transition: opacity 120ms ease;
+	}
+
+	.wp-food-affordance:hover {
+		opacity: 1;
 	}
 
 	.wp-check-circle {
