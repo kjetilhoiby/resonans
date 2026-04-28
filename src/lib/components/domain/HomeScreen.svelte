@@ -261,7 +261,9 @@
 		const prefetchTargets = themes
 			.slice(0, 2)
 			.map((theme) => ({ themeId: theme.id, kind: getDashboardKindForTheme(theme) }))
-			.filter((item): item is { themeId: string; kind: DashboardKind } => item.kind !== null);
+			.filter((item): item is { themeId: string; kind: DashboardKind } => item.kind !== null)
+			// Health dashboard still pulls activity-layer data; avoid warming that path on home.
+			.filter((item) => item.kind !== 'health');
 
 		if (prefetchTargets.length === 0 || typeof window === 'undefined') return () => {};
 		const browserWindow = window;
