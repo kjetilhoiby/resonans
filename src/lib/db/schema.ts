@@ -432,6 +432,75 @@ export const checklistItems = pgTable('checklist_items', {
 	createdAt: timestamp('created_at').defaultNow().notNull()
 });
 
+// ─── Food Domain ───────────────────────────────────────────────
+// Oppskrifter — gjenbrukbare matretter med ingredienser, instruksjoner og valgfri næringsestimat
+export const recipes = pgTable('recipes', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	title: text('title').notNull(),
+	description: text('description'),
+	ingredients: jsonb('ingredients').$type<Array<{
+		name: string;
+		quantity?: number | null;
+		unit?: string | null;
+		optional?: boolean;
+	}>>().notNull().default([]),
+	instructions: text('instructions').array().notNull().default(sql`ARRAY[]::text[]`),
+	prepTimeMin: integer('prep_time_min'),
+	cookTimeMin: integer('cook_time_min'),
+	servings: integer('servings').default(2).notNull(),
+	tags: text('tags').array().notNull().default(sql`ARRAY[]::text[]`),
+	imageUrl: text('image_url'), // Cloudinary-URL fra felles bilde-pipeline
+	sourceUrl: text('source_url'),
+	nutritionEstimate: jsonb('nutrition_estimate').$type<{
+		kcal?: number;
+		proteinG?: number;
+		carbsG?: number;
+		fatG?: number;
+		confidence?: number; // 0-1
+		source: 'vision' | 'manual' | 'recipe-derived';
+	} | null>(),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	idxRecipesUser: index('recipes_user_idx').on(table.userId, table.createdAt)
+}));
+
+// Måltidsplaner — koblingen mellom dato/måltidstype og oppskrift eller fri tekst
+export const mealPlans = pgTable('meal_plans', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	weekContext: text('week_context').notNull(), // f.eks. '2026-W17'
+	date: date('date').notNull(),
+	mealType: text('meal_type').notNull(), // 'breakfast' | 'lunch' | 'dinner' | 'snack'
+	recipeId: uuid('recipe_id').references((): AnyPgColumn => recipes.id, { onDelete: 'set null' }),
+	customTitle: text('custom_title'),
+	notes: text('notes'),
+	servings: integer('servings').default(2).notNull(),
+	photoUrl: text('photo_url'), // Cloudinary-URL for "what we ate"
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => ({
+	idxMealPlansUserWeek: index('meal_plans_user_week_idx').on(table.userId, table.weekContext),
+	idxMealPlansUserDate: index('meal_plans_user_date_idx').on(table.userId, table.date)
+}));
+
+// Pantry-items — lett oversikt over innhold i skap, kjøleskap og fryser
+export const pantryItems = pgTable('pantry_items', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	name: text('name').notNull(),
+	location: text('location').notNull(), // 'pantry' | 'fridge' | 'freezer'
+	quantity: decimal('quantity'),
+	unit: text('unit'),
+	expiresAt: date('expires_at'),
+	addedAt: timestamp('added_at').defaultNow().notNull(),
+	lastUsedAt: timestamp('last_used_at'),
+	notes: text('notes')
+}, (table) => ({
+	idxPantryUserLocation: index('pantry_items_user_location_idx').on(table.userId, table.location),
+	idxPantryUserExpires: index('pantry_items_user_expires_idx').on(table.userId, table.expiresAt)
+}));
+
 // Memories - Viktig informasjon om brukeren som AI husker
 export const memories = pgTable('memories', {
 	id: uuid('id').primaryKey().defaultRandom(),

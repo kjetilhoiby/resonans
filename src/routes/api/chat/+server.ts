@@ -9,6 +9,12 @@ import { recordTrackingEvent } from '$lib/server/tracking-series';
 import { buildMemoryContext, createMemory } from '$lib/server/memories';
 import { isFutureVisionText, seedThemeInstructionFromFutureVision } from '$lib/server/theme-instructions';
 import { queryEconomicsTool } from '$lib/ai/tools/query-economics';
+import { queryFoodTool } from '$lib/ai/tools/query-food';
+import { manageRecipeTool } from '$lib/ai/tools/manage-recipe';
+import { manageMealPlanTool } from '$lib/ai/tools/manage-meal-plan';
+import { managePantryTool } from '$lib/ai/tools/manage-pantry';
+import { generateShoppingListTool } from '$lib/ai/tools/generate-shopping-list';
+import { analyzeMealImageTool } from '$lib/ai/tools/analyze-meal-image';
 import {
 	createUserWidget,
 	findSimilarWidget,
@@ -611,6 +617,136 @@ const tools = [
 			{
 				type: 'function' as const,
 				function: {
+					name: 'query_food',
+					description: 'Hent mat-data: oppskrifter, ukemeny, pantry/fryserinnhold. queryType: recipes (oppskriftliste), meal_plan (krever weekContext "YYYY-W##"), pantry (kan filtreres på location), expiring_soon (varer som går ut, krever days).',
+					parameters: {
+						type: 'object',
+						properties: {
+							queryType: { type: 'string', enum: ['recipes', 'meal_plan', 'pantry', 'expiring_soon'] },
+							weekContext: { type: 'string', description: 'ISO-uke, f.eks. "2026-W17"' },
+							location: { type: 'string', enum: ['pantry', 'fridge', 'freezer'] },
+							days: { type: 'number' },
+							limit: { type: 'number' }
+						},
+						required: ['queryType']
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
+					name: 'manage_recipe',
+					description: 'Opprett, oppdater eller slett en oppskrift. action=create krever title og ingredients. action=update/delete krever id.',
+					parameters: {
+						type: 'object',
+						properties: {
+							action: { type: 'string', enum: ['create', 'update', 'delete'] },
+							id: { type: 'string' },
+							title: { type: 'string' },
+							description: { type: 'string' },
+							ingredients: {
+								type: 'array',
+								items: {
+									type: 'object',
+									properties: {
+										name: { type: 'string' },
+										quantity: { type: 'number' },
+										unit: { type: 'string' },
+										optional: { type: 'boolean' }
+									},
+									required: ['name']
+								}
+							},
+							instructions: { type: 'array', items: { type: 'string' } },
+							prepTimeMin: { type: 'number' },
+							cookTimeMin: { type: 'number' },
+							servings: { type: 'number' },
+							tags: { type: 'array', items: { type: 'string' } },
+							imageUrl: { type: 'string' },
+							sourceUrl: { type: 'string' }
+						},
+						required: ['action']
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
+					name: 'manage_meal_plan',
+					description: 'Legg til, oppdater eller fjern en oppføring i ukemenyen. Knytt til en oppskrift via recipeId, eller bruk customTitle for fritekst (f.eks. "frossenpizza", "rester").',
+					parameters: {
+						type: 'object',
+						properties: {
+							action: { type: 'string', enum: ['create', 'update', 'delete'] },
+							id: { type: 'string' },
+							weekContext: { type: 'string', description: 'ISO-uke, f.eks. "2026-W17"' },
+							date: { type: 'string', description: 'YYYY-MM-DD' },
+							mealType: { type: 'string', enum: ['breakfast', 'lunch', 'dinner', 'snack'] },
+							recipeId: { type: 'string' },
+							customTitle: { type: 'string' },
+							notes: { type: 'string' },
+							servings: { type: 'number' },
+							photoUrl: { type: 'string' }
+						},
+						required: ['action']
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
+					name: 'manage_pantry',
+					description: 'Oppdater pantry/fryser/kjøleskap. action: add (krever name+location), update (krever id), remove (krever id), use (krever id, kan oppgi consumeQuantity).',
+					parameters: {
+						type: 'object',
+						properties: {
+							action: { type: 'string', enum: ['add', 'update', 'remove', 'use'] },
+							id: { type: 'string' },
+							name: { type: 'string' },
+							location: { type: 'string', enum: ['pantry', 'fridge', 'freezer'] },
+							quantity: { type: 'number' },
+							unit: { type: 'string' },
+							expiresAt: { type: 'string', description: 'YYYY-MM-DD' },
+							notes: { type: 'string' },
+							consumeQuantity: { type: 'number' }
+						},
+						required: ['action']
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
+					name: 'generate_shopping_list',
+					description: 'Bygg handleliste fra ukemenyens oppskrifter, minus ingredienser som finnes i pantry. Returnerer dedupliserte items klare for å bli lagt inn i en sjekkliste.',
+					parameters: {
+						type: 'object',
+						properties: {
+							weekContext: { type: 'string', description: 'ISO-uke, f.eks. "2026-W17"' },
+							includeOptional: { type: 'boolean' }
+						},
+						required: ['weekContext']
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
+					name: 'analyze_meal_image',
+					description: 'Analyser et matbilde (Cloudinary-URL) med GPT-4o vision og returner anslag av rett, ingredienser og næringsinnhold per porsjon. Resultatet er et grovt estimat.',
+					parameters: {
+						type: 'object',
+						properties: {
+							imageUrl: { type: 'string' },
+							servings: { type: 'number' }
+						},
+						required: ['imageUrl']
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
 					name: 'weather_forecast',
 					description: 'Hent værprognose fra MET.no basert på koordinater. Brukes når bruker spør om vær, eller når du vil berike svar med lokalt vær nå og neste time.',
 					parameters: {
@@ -981,6 +1117,12 @@ function getToolProgressMessage(toolName: string) {
 		manage_theme: 'Oppdaterer tema...',
 		query_sensor_data: 'Henter sensordata...',
 		query_economics: 'Henter økonomidata...',
+		query_food: 'Henter mat-data...',
+		manage_recipe: 'Oppdaterer oppskrift...',
+		manage_meal_plan: 'Oppdaterer ukemeny...',
+		manage_pantry: 'Oppdaterer pantry...',
+		generate_shopping_list: 'Lager handleliste...',
+		analyze_meal_image: 'Analyserer matbilde...',
 		record_tracking_event: 'Registrerer tracking-hendelse...',
 		web_search: 'Søker på nettet...',
 		weather_forecast: 'Henter værdata...',
@@ -1685,6 +1827,36 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 						content: JSON.stringify(result),
 						tool_call_id: toolCall.id
 					});
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'query_food') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  🍽️ Querying food:', args);
+					const result = await queryFoodTool.execute({ userId, ...args });
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'manage_recipe') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  🍽️ Manage recipe:', args.action);
+					const result = await manageRecipeTool.execute({ userId, ...args });
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'manage_meal_plan') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  🍽️ Manage meal plan:', args.action);
+					const result = await manageMealPlanTool.execute({ userId, ...args });
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'manage_pantry') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  🍽️ Manage pantry:', args.action);
+					const result = await managePantryTool.execute({ userId, ...args });
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'generate_shopping_list') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  🍽️ Generate shopping list:', args.weekContext);
+					const result = await generateShoppingListTool.execute({ userId, ...args });
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'analyze_meal_image') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  🍽️ Analyze meal image');
+					const result = await analyzeMealImageTool.execute(args);
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'record_tracking_event') {
 					const args = JSON.parse(toolCall.function.arguments);
 					console.log('  🧩 Recording tracking event:', args);

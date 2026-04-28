@@ -323,6 +323,25 @@ export const FLOWS: Record<FlowId, Flow> = {
 		]
 	},
 
+	food_meal_chat: {
+		id: 'food_meal_chat',
+		name: 'Planlegg måltid',
+		description: 'Få hjelp til å planlegge et måltid: oppskrift, handleliste og bruk av det du har i skapet.',
+		icon: '🍽️',
+		domain: 'food',
+		trigger: 'manual',
+		estimatedMinutes: 4,
+		steps: [
+			{
+				id: 'chat',
+				type: 'chat',
+				title: 'Planlegg måltid',
+				prompt: 'Hjelp meg planlegge dette måltidet.',
+				autoSend: true
+			}
+		]
+	},
+
 	planning_goal_setup: {
 		id: 'planning_goal_setup',
 		name: 'Nytt mål',
