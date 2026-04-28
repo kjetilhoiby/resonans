@@ -9,6 +9,19 @@ import {
 import { loadMerchantMappings } from '$lib/server/integrations/spending-analyzer';
 import { loadClassificationOverrides, loadTransactionMatchingRules } from '$lib/server/classification-overrides';
 
+async function measureStep<T>(label: string, userId: string, op: () => Promise<T>): Promise<T> {
+	const t0 = performance.now();
+	try {
+		const result = await op();
+		const count = Array.isArray(result) ? result.length : result ? 1 : 0;
+		console.log(`[perf][economics-dashboard] user=${userId} step=${label} ms=${(performance.now() - t0).toFixed(0)} count=${count}`);
+		return result;
+	} catch (error) {
+		console.error(`[perf][economics-dashboard] user=${userId} step=${label} failed ms=${(performance.now() - t0).toFixed(0)}`);
+		throw error;
+	}
+}
+
 export type EconomicsAccount = {
 	accountId: string;
 	accountName: string | null;
@@ -86,19 +99,22 @@ function canonicalDateToUtcDate(value: string | Date): Date {
 }
 
 export async function loadEconomicsDashboardData(userId: string): Promise<EconomicsDashboardData> {
+	const tTotal = performance.now();
 	// ── 1. Accounts ─────────────────────────────────────────────────────────
-	const balanceRows = await db
-		.select({
-			accountId: sql<string>`data->>'accountId'`,
-			accountName: sql<string>`data->>'accountName'`,
-			accountType: sql<string>`data->>'accountType'`,
-			balance: sql<number>`(data->>'balance')::numeric`,
-			currency: sql<string>`data->>'currency'`,
-			ts: sensorEvents.timestamp
-		})
-		.from(sensorEvents)
-		.where(and(eq(sensorEvents.userId, userId), eq(sensorEvents.dataType, 'bank_balance')))
-		.orderBy(desc(sensorEvents.timestamp));
+	const balanceRows = await measureStep('bank_balance_rows', userId, () =>
+		db
+			.select({
+				accountId: sql<string>`data->>'accountId'`,
+				accountName: sql<string>`data->>'accountName'`,
+				accountType: sql<string>`data->>'accountType'`,
+				balance: sql<number>`(data->>'balance')::numeric`,
+				currency: sql<string>`data->>'currency'`,
+				ts: sensorEvents.timestamp
+			})
+			.from(sensorEvents)
+			.where(and(eq(sensorEvents.userId, userId), eq(sensorEvents.dataType, 'bank_balance')))
+			.orderBy(desc(sensorEvents.timestamp))
+	);
 
 	const seenAccounts = new Set<string>();
 	const accounts: EconomicsAccount[] = balanceRows
@@ -124,27 +140,29 @@ export async function loadEconomicsDashboardData(userId: string): Promise<Econom
 	const monthStart = new Date(`${currentMonth}-01T00:00:00Z`);
 	const queryFrom = new Date(now.getTime() - 70 * 24 * 60 * 60 * 1000);
 	const [merchantMappings, overrides, rules] = await Promise.all([
-		loadMerchantMappings(userId),
-		loadClassificationOverrides(userId, 'transaction'),
-		loadTransactionMatchingRules()
+		measureStep('merchant_mappings', userId, () => loadMerchantMappings(userId)),
+		measureStep('classification_overrides', userId, () => loadClassificationOverrides(userId, 'transaction')),
+		measureStep('transaction_rules', userId, () => loadTransactionMatchingRules())
 	]);
 
-	const txRows = await db
-		.select({
-			date: canonicalBankTransactions.canonicalDate,
-			amount: canonicalBankTransactions.amount,
-			description: canonicalBankTransactions.descriptionDisplay,
-			merchantKey: canonicalBankTransactions.merchantKey
-		})
-		.from(canonicalBankTransactions)
-		.where(
-			and(
-				eq(canonicalBankTransactions.userId, userId),
-				eq(canonicalBankTransactions.isActive, true),
-				sql`${canonicalBankTransactions.canonicalDate} >= ${queryFrom.toISOString().slice(0, 10)}::date`
+	const txRows = await measureStep('canonical_transactions', userId, () =>
+		db
+			.select({
+				date: canonicalBankTransactions.canonicalDate,
+				amount: canonicalBankTransactions.amount,
+				description: canonicalBankTransactions.descriptionDisplay,
+				merchantKey: canonicalBankTransactions.merchantKey
+			})
+			.from(canonicalBankTransactions)
+			.where(
+				and(
+					eq(canonicalBankTransactions.userId, userId),
+					eq(canonicalBankTransactions.isActive, true),
+					sql`${canonicalBankTransactions.canonicalDate} >= ${queryFrom.toISOString().slice(0, 10)}::date`
+				)
 			)
-		)
-		.orderBy(desc(canonicalBankTransactions.canonicalDate));
+			.orderBy(desc(canonicalBankTransactions.canonicalDate))
+	);
 
 	const allTxs = txRows.map((r) => ({
 		timestamp: canonicalDateToUtcDate(r.date),
@@ -233,36 +251,40 @@ export async function loadEconomicsDashboardData(userId: string): Promise<Econom
 	const historyFrom = new Date(now.getTime() - 220 * 24 * 60 * 60 * 1000);
 	const SALARY_KEYWORDS = ['LONN', 'L\u00d8NN', 'SALARY', 'ARBEIDSGIVER', 'NAV', 'FOLKETRYGD'];
 
-	const rawSalaryRows = await db
-		.select({
-			date: canonicalBankTransactions.canonicalDate,
-			amount: canonicalBankTransactions.amount,
-			description: sql<string>`COALESCE(${canonicalBankTransactions.descriptionDisplay}, ${canonicalBankTransactions.merchantKey}, '')`
-		})
-		.from(canonicalBankTransactions)
-		.where(and(
-			eq(canonicalBankTransactions.userId, userId),
-			eq(canonicalBankTransactions.isActive, true),
-			sql`${canonicalBankTransactions.amount} >= ${INCOME_MIN_THRESHOLD}`,
-			sql`${canonicalBankTransactions.canonicalDate} >= ${historyFrom.toISOString().slice(0, 10)}::date`
-		))
-		.orderBy(desc(canonicalBankTransactions.canonicalDate));
+	const rawSalaryRows = await measureStep('salary_candidates', userId, () =>
+		db
+			.select({
+				date: canonicalBankTransactions.canonicalDate,
+				amount: canonicalBankTransactions.amount,
+				description: sql<string>`COALESCE(${canonicalBankTransactions.descriptionDisplay}, ${canonicalBankTransactions.merchantKey}, '')`
+			})
+			.from(canonicalBankTransactions)
+			.where(and(
+				eq(canonicalBankTransactions.userId, userId),
+				eq(canonicalBankTransactions.isActive, true),
+				sql`${canonicalBankTransactions.amount} >= ${INCOME_MIN_THRESHOLD}`,
+				sql`${canonicalBankTransactions.canonicalDate} >= ${historyFrom.toISOString().slice(0, 10)}::date`
+			))
+			.orderBy(desc(canonicalBankTransactions.canonicalDate))
+	);
 
 	// Raw spending for comparison periods (no category resolution needed)
-	const rawSpendRows = await db
-		.select({
-			timestamp: canonicalBankTransactions.canonicalDate,
-			amount: canonicalBankTransactions.amount,
-			description: sql<string>`COALESCE(${canonicalBankTransactions.descriptionDisplay}, ${canonicalBankTransactions.merchantKey}, '')`,
-		})
-		.from(canonicalBankTransactions)
-		.where(and(
-			eq(canonicalBankTransactions.userId, userId),
-			eq(canonicalBankTransactions.isActive, true),
-			sql`${canonicalBankTransactions.amount} < 0`,
-			sql`${canonicalBankTransactions.canonicalDate} >= ${historyFrom.toISOString().slice(0, 10)}::date`
-		))
-		.orderBy(asc(canonicalBankTransactions.canonicalDate));
+	const rawSpendRows = await measureStep('spend_rows_for_payday', userId, () =>
+		db
+			.select({
+				timestamp: canonicalBankTransactions.canonicalDate,
+				amount: canonicalBankTransactions.amount,
+				description: sql<string>`COALESCE(${canonicalBankTransactions.descriptionDisplay}, ${canonicalBankTransactions.merchantKey}, '')`,
+			})
+			.from(canonicalBankTransactions)
+			.where(and(
+				eq(canonicalBankTransactions.userId, userId),
+				eq(canonicalBankTransactions.isActive, true),
+				sql`${canonicalBankTransactions.amount} < 0`,
+				sql`${canonicalBankTransactions.canonicalDate} >= ${historyFrom.toISOString().slice(0, 10)}::date`
+			))
+			.orderBy(asc(canonicalBankTransactions.canonicalDate))
+	);
 
 	const normalizedRawSalaryRows = rawSalaryRows.map((tx) => ({
 		timestamp: canonicalDateToUtcDate(tx.date),
@@ -434,6 +456,8 @@ export async function loadEconomicsDashboardData(userId: string): Promise<Econom
 		transactions: paydayTxList,
 		groceryTransactions: groceryTxList
 	};
+
+	console.log(`[perf][economics-dashboard] user=${userId} step=total ms=${(performance.now() - tTotal).toFixed(0)}`);
 
 	return {
 		accounts,

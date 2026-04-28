@@ -21,6 +21,12 @@ export type WorkoutProjectionFreshness = {
 	rowCount: number;
 };
 
+export type WorkoutProjectionSyncPolicy = 'block' | 'enqueue_only';
+
+export type EnsureWorkoutFreshnessOptions = {
+	syncPolicy?: WorkoutProjectionSyncPolicy;
+};
+
 export type RunningDailyProjectionRow = {
 	date: Date;
 	km: number;
@@ -88,11 +94,27 @@ export class WorkoutProjectionService {
 		startDate: Date,
 		endDate: Date,
 		softStaleMs = WORKOUT_SOFT_STALE_MS,
-		hardStaleMs = WORKOUT_HARD_STALE_MS
+		hardStaleMs = WORKOUT_HARD_STALE_MS,
+		options: EnsureWorkoutFreshnessOptions = {}
 	): Promise<WorkoutProjectionFreshness> {
+		const syncPolicy = options.syncPolicy ?? 'block';
 		const freshness = await this.getFreshnessForRange(userId, startDate, endDate, softStaleMs, hardStaleMs);
 
 		if (freshness.state === 'missing' || freshness.state === 'hard_stale') {
+			if (syncPolicy === 'enqueue_only') {
+				const reason = freshness.state === 'missing' ? 'missing' : 'hard_stale';
+				await enqueueWorkoutProjectionRefresh({
+					userId,
+					fromDate: new Date(startDate.getTime() - 2 * 60 * 60 * 1000),
+					toDate: new Date(),
+					reason,
+					priority: 4,
+					maxAttempts: 3,
+					debounceMs: 60 * 1000
+				});
+				return freshness;
+			}
+
 			await this.refreshForRange(userId, startDate, endDate);
 			return this.getFreshnessForRange(userId, startDate, endDate, softStaleMs, hardStaleMs);
 		}

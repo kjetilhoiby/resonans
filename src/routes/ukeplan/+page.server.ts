@@ -53,6 +53,30 @@ async function loadWeekTasks(userId: string, dashedKey: string, compactKey: stri
 	}
 }
 
+async function loadTravelThemes(userId: string) {
+	try {
+		return await db.query.themes.findMany({
+			where: and(eq(themes.userId, userId), eq(themes.archived, false)),
+			columns: { id: true, name: true, emoji: true, tripProfile: true }
+		});
+	} catch (error) {
+		const cause = (error as any)?.cause;
+		const causeMessage = cause instanceof Error ? cause.message : String(cause ?? '');
+
+		// Backward compatibility for databases where trip_profile is not migrated yet.
+		if (!/trip_profile/i.test(causeMessage)) {
+			throw error;
+		}
+
+		const fallbackThemes = await db.query.themes.findMany({
+			where: and(eq(themes.userId, userId), eq(themes.archived, false)),
+			columns: { id: true, name: true, emoji: true }
+		});
+
+		return fallbackThemes.map((theme) => ({ ...theme, tripProfile: null }));
+	}
+}
+
 function getIsoWeekInfo(now: Date = new Date()) {
 	const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
 	const dayNum = d.getUTCDay() || 7;
@@ -149,6 +173,7 @@ async function upsertWeekNote(userId: string, source: string, content: string) {
 }
 
 export const load: PageServerLoad = async ({ locals, url }) => {
+	const tLoad = performance.now();
 	const userId = locals.userId;
 	const requestedWeek = url.searchParams.get('week');
 	const week = requestedWeek ? (getIsoWeekInfoFromKey(requestedWeek) ?? getIsoWeekInfo()) : getIsoWeekInfo();
@@ -165,10 +190,13 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	const previousWeekEndExclusive = new Date(previousWeekStart);
 	previousWeekEndExclusive.setUTCDate(previousWeekEndExclusive.getUTCDate() + 7);
 
+	const tSpondSensor = performance.now();
 	const spondSensor = await db.query.sensors.findFirst({
 		where: and(eq(sensors.userId, userId), eq(sensors.provider, 'spond'), eq(sensors.isActive, true))
 	});
+	console.log(`[perf][ukeplan/load] user=${userId} step=spond_sensor_lookup ms=${(performance.now() - tSpondSensor).toFixed(0)} found=${spondSensor ? 1 : 0}`);
 
+	const tPrefetch = performance.now();
 	const [weekChecklist, weekTasks, weekProgressRows, reflectionNote, visionNote, weekNote, longTermGoals, dayChecklists, dayNotes, dayHeadlines, previousWeekChecklist, previousWeekNote, previousWeekReflection, previousWeekTasks, previousWeekProgressRows, travelThemes, rawSpondEvents] = await Promise.all([
 		db.query.checklists.findFirst({
 			where: and(eq(checklists.userId, userId), eq(checklists.context, week.contextKey)),
@@ -260,10 +288,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 				taskId: true
 			}
 		}),
-		db.query.themes.findMany({
-			where: and(eq(themes.userId, userId), eq(themes.archived, false)),
-			columns: { id: true, name: true, emoji: true, tripProfile: true }
-		}),
+		loadTravelThemes(userId),
 		spondSensor
 			? db.query.sensorEvents.findMany({
 					where: and(
@@ -276,6 +301,9 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			  })
 			: Promise.resolve([] as Array<{ id: string; timestamp: Date; data: unknown; metadata: unknown }>)
 	]);
+	console.log(
+		`[perf][ukeplan/load] user=${userId} step=prefetch_bundle ms=${(performance.now() - tPrefetch).toFixed(0)} weekTasks=${weekTasks.length} weekProgress=${weekProgressRows.length} longTermGoals=${longTermGoals.length} dayChecklists=${dayChecklists.length} dayNotes=${dayNotes.length} dayHeadlines=${dayHeadlines.length} prevWeekTasks=${previousWeekTasks.length} prevWeekProgress=${previousWeekProgressRows.length} spondEvents=${rawSpondEvents.length}`
+	);
 
 	const progressCounts = weekProgressRows.reduce((acc, row) => {
 		if (!row.taskId) return acc;
@@ -440,7 +468,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			minStartDay,
 			maxEndDay,
 			WorkoutProjectionService.SOFT_STALE_MS,
-			WorkoutProjectionService.HARD_STALE_MS
+			WorkoutProjectionService.HARD_STALE_MS,
+			{ syncPolicy: 'enqueue_only' }
 		);
 		console.log(
 			`[ukeplan/load] workout freshness state=${freshness.state} ageMs=${freshness.ageMs ?? 'n/a'} rows=${freshness.rowCount}`
@@ -500,6 +529,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		);
 
 	if (weightGoals.length > 0) {
+		const tWeight = performance.now();
 		const minStart = new Date(Math.min(...weightGoals.map((g) => g.startDate.getTime())));
 		const maxEnd = new Date(Math.max(...weightGoals.map((g) => g.endDate.getTime())));
 
@@ -518,6 +548,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 				)
 			)
 			.orderBy(asc(sensorEvents.timestamp));
+
+		console.log(`[perf][ukeplan/load] user=${userId} step=weight_rows_query ms=${(performance.now() - tWeight).toFixed(0)} count=${weightRows.length}`);
 
 		const normalizedWeightRows = weightRows
 			.map((row) => ({
@@ -564,6 +596,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			};
 		}
 	}
+
+	console.log(`[perf][ukeplan/load] user=${userId} step=total ms=${(performance.now() - tLoad).toFixed(0)}`);
 
 	return {
 		week,

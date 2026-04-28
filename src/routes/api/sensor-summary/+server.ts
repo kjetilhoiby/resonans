@@ -18,9 +18,25 @@ import { sensorAggregates, sensorEvents, users } from '$lib/db/schema';
 import { and, eq, desc, gte, inArray, sql } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
 
+async function measureStep<T>(label: string, userId: string, op: () => Promise<T>): Promise<T> {
+	const t0 = performance.now();
+	try {
+		const result = await op();
+		const count = Array.isArray(result) ? result.length : result ? 1 : 0;
+		console.log(`[perf][sensor-summary] user=${userId} step=${label} ms=${(performance.now() - t0).toFixed(0)} count=${count}`);
+		return result;
+	} catch (error) {
+		console.error(`[perf][sensor-summary] user=${userId} step=${label} failed ms=${(performance.now() - t0).toFixed(0)}`);
+		throw error;
+	}
+}
+
 export const GET: RequestHandler = async ({ locals }) => {
+	const tTotal = performance.now();
 	const userId = locals.userId;
-	const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
+	const user = await measureStep('user_lookup', userId, () =>
+		db.query.users.findFirst({ where: eq(users.id, userId) })
+	);
 	const partnerUserId = user?.partnerUserId || null;
 
 	const sevenWeeksAgo = new Date();
@@ -36,59 +52,67 @@ export const GET: RequestHandler = async ({ locals }) => {
 
 	// Alle tre queries parallelt
 	const [weeklyAggs, runEvents, txRows, relationshipRows] = await Promise.all([
-		db
-			.select({ periodKey: sensorAggregates.periodKey, metrics: sensorAggregates.metrics })
-			.from(sensorAggregates)
-			.where(and(eq(sensorAggregates.userId, userId), eq(sensorAggregates.period, 'week')))
-			.orderBy(desc(sensorAggregates.periodKey))
-			.limit(8),
-		db
-			.select({
-				timestamp: sensorEvents.timestamp,
-				distance: sql<number>`(data->>'distance')::numeric`
-			})
-			.from(sensorEvents)
-			.where(
-				and(
-					eq(sensorEvents.userId, userId),
-					eq(sensorEvents.dataType, 'workout'),
-					sql`data->>'sportType' IN ('running', 'indoor_running')`,
-					sql`(data->>'distance')::numeric > 0`,
-					gte(sensorEvents.timestamp, sevenWeeksAgo)
-				)
-			)
-			.orderBy(desc(sensorEvents.timestamp)),
-		db
-			.select({
-				timestamp: sensorEvents.timestamp,
-				amount: sql<number>`(data->>'amount')::numeric`
-			})
-			.from(sensorEvents)
-			.where(
-				and(
-					eq(sensorEvents.userId, userId),
-					eq(sensorEvents.dataType, 'bank_transaction'),
-					gte(sensorEvents.timestamp, sevenMonthsAgo),
-					sql`(data->>'amount')::numeric < 0`
-				)
-			),
-		partnerUserId
-			? db
+		measureStep('weekly_aggregates', userId, () =>
+			db
+				.select({ periodKey: sensorAggregates.periodKey, metrics: sensorAggregates.metrics })
+				.from(sensorAggregates)
+				.where(and(eq(sensorAggregates.userId, userId), eq(sensorAggregates.period, 'week')))
+				.orderBy(desc(sensorAggregates.periodKey))
+				.limit(8)
+		),
+		measureStep('running_events', userId, () =>
+			db
 				.select({
-					userId: sensorEvents.userId,
 					timestamp: sensorEvents.timestamp,
-					day: sql<string>`${sensorEvents.data}->>'day'`,
-					score: sql<number>`(data->>'score')::int`
+					distance: sql<number>`(data->>'distance')::numeric`
 				})
 				.from(sensorEvents)
 				.where(
 					and(
-						eq(sensorEvents.dataType, 'relationship_checkin'),
-						inArray(sensorEvents.userId, [userId, partnerUserId]),
-						gte(sensorEvents.timestamp, relationshipSince)
+						eq(sensorEvents.userId, userId),
+						eq(sensorEvents.dataType, 'workout'),
+						sql`data->>'sportType' IN ('running', 'indoor_running')`,
+						sql`(data->>'distance')::numeric > 0`,
+						gte(sensorEvents.timestamp, sevenWeeksAgo)
 					)
 				)
 				.orderBy(desc(sensorEvents.timestamp))
+		),
+		measureStep('transaction_events', userId, () =>
+			db
+				.select({
+					timestamp: sensorEvents.timestamp,
+					amount: sql<number>`(data->>'amount')::numeric`
+				})
+				.from(sensorEvents)
+				.where(
+					and(
+						eq(sensorEvents.userId, userId),
+						eq(sensorEvents.dataType, 'bank_transaction'),
+						gte(sensorEvents.timestamp, sevenMonthsAgo),
+						sql`(data->>'amount')::numeric < 0`
+					)
+				)
+		),
+		partnerUserId
+			? measureStep('relationship_events', userId, () =>
+				db
+					.select({
+						userId: sensorEvents.userId,
+						timestamp: sensorEvents.timestamp,
+						day: sql<string>`${sensorEvents.data}->>'day'`,
+						score: sql<number>`(data->>'score')::int`
+					})
+					.from(sensorEvents)
+					.where(
+						and(
+							eq(sensorEvents.dataType, 'relationship_checkin'),
+							inArray(sensorEvents.userId, [userId, partnerUserId]),
+							gte(sensorEvents.timestamp, relationshipSince)
+						)
+					)
+					.orderBy(desc(sensorEvents.timestamp))
+			)
 			: Promise.resolve([]),
 	]);
 
@@ -209,6 +233,8 @@ export const GET: RequestHandler = async ({ locals }) => {
 		if (Math.abs(day.mine - day.partner) >= 2) mismatchDays14++;
 		if (day.mine <= 3 && day.partner <= 3) bothNegativeDays14++;
 	}
+
+	console.log(`[perf][sensor-summary] user=${userId} step=total ms=${(performance.now() - tTotal).toFixed(0)}`);
 
 	return json({
 		weight: {

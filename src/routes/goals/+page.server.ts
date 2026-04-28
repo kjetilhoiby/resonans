@@ -38,7 +38,8 @@ async function getRunningSummaryForRange(
 			startDate,
 			endDate,
 			WorkoutProjectionService.SOFT_STALE_MS,
-			WorkoutProjectionService.HARD_STALE_MS
+			WorkoutProjectionService.HARD_STALE_MS,
+			{ syncPolicy: 'enqueue_only' }
 		);
 		console.log(
 			`[goals/load] workout freshness state=${freshness.state} ageMs=${freshness.ageMs ?? 'n/a'} rows=${freshness.rowCount}`
@@ -75,9 +76,10 @@ async function getRunningSummaryForRange(
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const t0 = performance.now();
+	const userId = locals.userId;
 
 	const userGoals = await db.query.goals.findMany({
-		where: eq(goals.userId, locals.userId),
+		where: eq(goals.userId, userId),
 		with: {
 			category: true,
 			tasks: {
@@ -91,7 +93,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 		},
 		orderBy: (goals, { desc }) => [desc(goals.createdAt)]
 	});
-	console.log(`[goals/load] goals query: ${(performance.now() - t0).toFixed(0)}ms (${userGoals.length} goals)`);
+	console.log(`[perf][goals/load] user=${userId} step=goals_query ms=${(performance.now() - t0).toFixed(0)} count=${userGoals.length}`);
 
 	// For goals with running_distance metric and dates, fetch accumulated km
 	const runningGoals = userGoals.filter((g) => {
@@ -109,8 +111,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 		const targetKm: number = meta?.goalTrack?.targetValue ?? 0;
 
 		const tRun = performance.now();
-		const summary = await getRunningSummaryForRange(locals.userId, startDate, endDate);
-		console.log(`[goals/load] running summary "${goal.title}": ${(performance.now() - tRun).toFixed(0)}ms → ${summary.currentKm} km (${summary.dailyKm.length} days with runs)`);
+		const summary = await getRunningSummaryForRange(userId, startDate, endDate);
+		console.log(`[perf][goals/load] user=${userId} step=running_summary ms=${(performance.now() - tRun).toFixed(0)} goal=${goal.id} days=${summary.dailyKm.length}`);
 		sensorProgressMap[goal.id] = { ...summary, targetKm };
 	}
 
@@ -145,14 +147,14 @@ export const load: PageServerLoad = async ({ locals }) => {
 			.from(sensorEvents)
 			.where(
 				and(
-					eq(sensorEvents.userId, locals.userId),
+					eq(sensorEvents.userId, userId),
 					eq(sensorEvents.dataType, 'weight'),
 					gte(sensorEvents.timestamp, startDate),
 					lte(sensorEvents.timestamp, endDate)
 				)
 			)
 			.orderBy(sensorEvents.timestamp);
-		console.log(`[goals/load] weight query "${goal.title}": ${(performance.now() - tW).toFixed(0)}ms`);
+		console.log(`[perf][goals/load] user=${userId} step=weight_query ms=${(performance.now() - tW).toFixed(0)} goal=${goal.id} count=${rows.length}`);
 
 		const points = rows
 			.map((row) => {
@@ -186,7 +188,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 		};
 	}
 
-	console.log(`[goals/load] TOTAL: ${(performance.now() - t0).toFixed(0)}ms`);
+	console.log(`[perf][goals/load] user=${userId} step=total ms=${(performance.now() - t0).toFixed(0)} goals=${userGoals.length}`);
 
 	return {
 		goals: userGoals,
