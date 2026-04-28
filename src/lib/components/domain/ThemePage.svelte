@@ -16,6 +16,7 @@
 	import ChatInput from '../ui/ChatInput.svelte';
 	import HealthDashboard from './HealthDashboard.svelte';
 	import EconomicsDashboard from './EconomicsDashboard.svelte';
+	import FoodDashboard from './FoodDashboard.svelte';
 	import TripDashboard from './TripDashboard.svelte';
 	import TripListsPanel from './TripListsPanel.svelte';
 	import BookDashboard from './BookDashboard.svelte';
@@ -24,7 +25,7 @@
 	import TriageCard from '../composed/TriageCard.svelte';
 	import GoalRing from '../ui/GoalRing.svelte';
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
-	import { fetchDashboard, getCachedDashboard, type EconomicsDashboardData, type HealthDashboardData, type TravelDashboardData } from '$lib/client/dashboard-cache';
+	import { fetchDashboard, getCachedDashboard, type EconomicsDashboardData, type HealthDashboardData, type TravelDashboardData, type FoodDashboardData } from '$lib/client/dashboard-cache';
 	import { getThemeDashboardDefinition, resolveThemeDashboardKind } from '$lib/domain/theme-dashboard-registry';
 	import { finishNavMetric, startNavMetric } from '$lib/client/nav-metrics';
 	import { streamProxyChat } from '$lib/client/proxy-chat-stream';
@@ -162,6 +163,7 @@
 	let healthDashboard = $state<HealthDashboardData | null>(null);
 	let economicsDashboard = $state<EconomicsDashboardData | null>(null);
 	let travelDashboard = $state<TravelDashboardData | null>(null);
+	let foodDashboard = $state<FoodDashboardData | null>(null);
 	let dashboardLoading = $state(false);
 	let dashboardLoaded = $state(false);
 	let dashboardError = $state('');
@@ -310,6 +312,16 @@
 		};
 	});
 
+	const foodDashboardProps = $derived.by(() => {
+		if (activeDashboardKind !== 'food' || !foodDashboard) return null;
+		return {
+			weekContext: foodDashboard.weekContext,
+			mealPlans: foodDashboard.mealPlans,
+			pantry: foodDashboard.pantry,
+			expiringSoon: foodDashboard.expiringSoon
+		};
+	});
+
 	onMount(() => {
 		finishNavMetric('tema');
 		void preloadCode('/');
@@ -352,6 +364,8 @@
 			economicsDashboard = cached.data as EconomicsDashboardData;
 		} else if (kind === 'travel') {
 			travelDashboard = cached.data as TravelDashboardData;
+		} else if (kind === 'food') {
+			foodDashboard = cached.data as FoodDashboardData;
 		}
 
 		return cached;
@@ -386,6 +400,8 @@
 				economicsDashboard = result.data as EconomicsDashboardData;
 			} else if (kind === 'travel') {
 				travelDashboard = result.data as TravelDashboardData;
+			} else if (kind === 'food') {
+				foodDashboard = result.data as FoodDashboardData;
 			}
 			dashboardLoaded = true;
 		} catch {
@@ -1438,6 +1454,12 @@
 					<EconomicsDashboard
 						{...economicsDashboardProps}
 						embedded={true}
+					/>
+				{/if}
+
+				{#if foodDashboardProps}
+					<FoodDashboard
+						{...foodDashboardProps}
 					/>
 				{/if}
 

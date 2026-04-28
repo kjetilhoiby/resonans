@@ -85,9 +85,41 @@ export interface BooksDashboardData {
 	}>;
 }
 
+export interface FoodDashboardData {
+	weekContext: string;
+	mealPlans: Array<{
+		id: string;
+		date: string;
+		mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+		recipeId: string | null;
+		customTitle: string | null;
+		notes: string | null;
+		servings: number;
+		photoUrl: string | null;
+		recipeTitle?: string | null;
+	}>;
+	pantry: Array<{
+		id: string;
+		name: string;
+		location: 'pantry' | 'fridge' | 'freezer';
+		quantity: string | null;
+		unit: string | null;
+		expiresAt: string | null;
+	}>;
+	expiringSoon: Array<{
+		id: string;
+		name: string;
+		location: 'pantry' | 'fridge' | 'freezer';
+		quantity: string | null;
+		unit: string | null;
+		expiresAt: string | null;
+	}>;
+}
+
 type DashboardPayloadMap = {
 	health: HealthDashboardData;
 	economics: EconomicsDashboardData;
+	food: FoodDashboardData;
 	travel: TravelDashboardData;
 	books: BooksDashboardData;
 };
