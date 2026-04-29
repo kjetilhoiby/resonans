@@ -581,7 +581,11 @@
 			}
 			if (sleepBackfillProgress?.done && !sleepBackfillProgress?.error) {
 				sleepBackfillReaggregating = true;
-				await fetch('/api/sensors/aggregate', { method: 'POST' });
+				await fetch('/api/sensors/aggregate', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ fromDate: sleepBackfillFromDate })
+				});
 				sleepBackfillReaggregating = false;
 			}
 		} finally {

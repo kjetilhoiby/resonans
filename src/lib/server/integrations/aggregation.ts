@@ -1,6 +1,6 @@
 import { db } from '$lib/db';
 import { sensorEvents, sensorAggregates } from '$lib/db/schema';
-import { eq, and, gte, lte } from 'drizzle-orm';
+import { eq, and, gte, lte, sql } from 'drizzle-orm';
 import { generateWeeks, generateMonths, generateYears, getCurrentWeek, getCurrentMonth, getCurrentYear, getWeeksSince, getMonthsSince, getYearsSince } from './time-periods';
 import type { WeekPeriod, MonthPeriod, YearPeriod } from './time-periods';
 
@@ -89,149 +89,59 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 	
 	console.log(`   Processing ${periodsToAggregate.length} weeks with ${allEvents.length} total events...`);
 
+	const rows: typeof sensorAggregates.$inferInsert[] = [];
+
 	for (const week of periodsToAggregate) {
-		// Filter events for this week
-		const events = allEvents.filter(e => 
+		const events = allEvents.filter(e =>
 			e.timestamp >= week.startTime && e.timestamp <= week.endTime
 		);
 
-		if (events.length === 0) continue; // Skip empty weeks
+		if (events.length === 0) continue;
 
-		// Extract values for aggregation
 		const weights = events.map((e) => e.data?.weight).filter((v): v is number => v !== undefined);
 		const steps = events.map((e) => e.data?.steps).filter((v): v is number => v !== undefined);
-		const sleepDurations = events
-			.map((e) => e.data?.sleepDuration)
-			.filter((v): v is number => v !== undefined);
+		const sleepDurations = events.map((e) => e.data?.sleepDuration).filter((v): v is number => v !== undefined);
 		const calories = events.map((e) => e.data?.calories).filter((v): v is number => v !== undefined);
 		const distances = events.map((e) => e.data?.distance).filter((v): v is number => v !== undefined);
 		const heartRates = events.map((e) => e.data?.hr_average).filter((v): v is number => v !== undefined);
-		
-		// Only get intense minutes from activity events
 		const activityEvents = events.filter(e => e.eventType === 'activity');
 		const intenseMinutes = activityEvents
-			.map((e) => ((e.data?.intense || 0) + (e.data?.moderate || 0)) / 60) // Withings returns seconds
+			.map((e) => ((e.data?.intense || 0) + (e.data?.moderate || 0)) / 60)
 			.filter((v) => v > 0);
-
-		// Count workouts by dataType, with running breakdown by sportType
 		const workoutEvents = events.filter(e => e.dataType === 'workout');
-		const runningCount = workoutEvents.filter(e => {
-			const st = ((e.data?.sportType as string | undefined) ?? '').toLowerCase();
-			return st.includes('run');
-		}).length;
-
-		// Sleep-specific heart rate (separate from general/activity HR)
+		const runningCount = workoutEvents.filter(e =>
+			((e.data?.sportType as string | undefined) ?? '').toLowerCase().includes('run')
+		).length;
 		const sleepHeartRates = events
 			.filter(e => e.dataType === 'sleep')
 			.map(e => e.data?.hr_average)
 			.filter((v): v is number => v !== undefined);
 
-		// Calculate metrics
 		const metrics: any = {};
 
-		if (weights.length > 0) {
-			metrics.weight = {
-				avg: avg(weights),
-				min: min(weights),
-				max: max(weights),
-				latest: latest(weights),
-				change: weights.length > 1 ? (latest(weights)! - weights[0]) : 0,
-				values: weights
-			};
-		}
+		if (weights.length > 0) metrics.weight = { avg: avg(weights), min: min(weights), max: max(weights), latest: latest(weights), change: weights.length > 1 ? (latest(weights)! - weights[0]) : 0, values: weights };
+		if (steps.length > 0) metrics.steps = { sum: sum(steps), avg: avg(steps), max: max(steps), values: steps };
+		if (sleepDurations.length > 0) { const h = sleepDurations.map(s => s / 3600); metrics.sleep = { avg: avg(h), min: min(h), max: max(h) }; }
+		if (calories.length > 0) metrics.calories = { sum: sum(calories), avg: avg(calories) };
+		if (distances.length > 0) metrics.distance = { sum: sum(distances), avg: avg(distances) };
+		if (intenseMinutes.length > 0) metrics.intenseMinutes = { sum: sum(intenseMinutes), avg: avg(intenseMinutes) };
+		if (heartRates.length > 0) metrics.heartRate = { avg: avg(heartRates), min: min(heartRates), max: max(heartRates), values: heartRates };
+		if (sleepHeartRates.length > 0) metrics.sleepHeartRate = { avg: avg(sleepHeartRates), min: min(sleepHeartRates), max: max(sleepHeartRates) };
+		if (workoutEvents.length > 0) metrics.workouts = { count: workoutEvents.length, types: { running: runningCount } };
 
-		if (steps.length > 0) {
-			metrics.steps = {
-				sum: sum(steps),
-				avg: avg(steps),
-				max: max(steps),
-				values: steps
-			};
-		}
-
-		if (sleepDurations.length > 0) {
-			// Convert seconds to hours
-			const sleepHours = sleepDurations.map((s) => s / 3600);
-			metrics.sleep = {
-				avg: avg(sleepHours),
-				min: min(sleepHours),
-				max: max(sleepHours)
-			};
-		}
-
-		if (calories.length > 0) {
-			metrics.calories = {
-				sum: sum(calories),
-				avg: avg(calories)
-			};
-		}
-
-		if (distances.length > 0) {
-			metrics.distance = {
-				sum: sum(distances),
-				avg: avg(distances)
-			};
-		}
-
-		if (intenseMinutes.length > 0) {
-			metrics.intenseMinutes = {
-				sum: sum(intenseMinutes),
-				avg: avg(intenseMinutes)
-			};
-		}
-
-		if (heartRates.length > 0) {
-			metrics.heartRate = {
-				avg: avg(heartRates),
-				min: min(heartRates),
-				max: max(heartRates),
-				values: heartRates
-			};
-		}
-
-		if (sleepHeartRates.length > 0) {
-			metrics.sleepHeartRate = {
-				avg: avg(sleepHeartRates),
-				min: min(sleepHeartRates),
-				max: max(sleepHeartRates)
-			};
-		}
-
-		if (workoutEvents.length > 0) {
-			metrics.workouts = {
-				count: workoutEvents.length,
-				types: { running: runningCount }
-			};
-		}
-
-		// Custom metrics
 		const sleepLag = calculateSleepLag(events);
 		if (sleepLag !== undefined) metrics.sleepLag = sleepLag;
-
 		const earlyWake = calculateEarlyWake(events);
 		if (earlyWake !== undefined) metrics.earlyWake = earlyWake;
 
-		// Upsert aggregate
-		await db
-			.insert(sensorAggregates)
-			.values({
-				userId,
-				period: 'week',
-				periodKey: week.yearweek,
-				year: week.year,
-				startDate: week.startTime,
-				endDate: week.endTime,
-				metrics,
-				eventCount: events.length
-			})
-			.onConflictDoUpdate({
-				target: [sensorAggregates.userId, sensorAggregates.period, sensorAggregates.periodKey],
-				set: {
-					metrics,
-					eventCount: events.length,
-					updatedAt: new Date()
-				}
-			});
+		rows.push({ userId, period: 'week', periodKey: week.yearweek, year: week.year, startDate: week.startTime, endDate: week.endTime, metrics, eventCount: events.length });
+	}
+
+	if (rows.length > 0) {
+		await db.insert(sensorAggregates).values(rows).onConflictDoUpdate({
+			target: [sensorAggregates.userId, sensorAggregates.period, sensorAggregates.periodKey],
+			set: { metrics: sql`excluded.metrics`, eventCount: sql`excluded.event_count`, updatedAt: new Date() }
+		});
 	}
 }
 
@@ -253,40 +163,29 @@ export async function aggregateMonthlyData(userId: string, months?: MonthPeriod[
 	
 	console.log(`      Processing ${periodsToAggregate.length} months with ${allEvents.length} total events...`);
 
+	const rows: typeof sensorAggregates.$inferInsert[] = [];
+
 	for (const month of periodsToAggregate) {
-		// Filter events for this month
-		const events = allEvents.filter(e => 
+		const events = allEvents.filter(e =>
 			e.timestamp >= month.startTime && e.timestamp <= month.endTime
 		);
 
-		if (events.length === 0) continue; // Skip empty months
+		if (events.length === 0) continue;
 
-		// Same aggregation logic as weekly
 		const weights = events.map((e) => e.data?.weight).filter((v): v is number => v !== undefined);
 		const steps = events.map((e) => e.data?.steps).filter((v): v is number => v !== undefined);
-		const sleepDurations = events
-			.map((e) => e.data?.sleepDuration)
-			.filter((v): v is number => v !== undefined);
+		const sleepDurations = events.map((e) => e.data?.sleepDuration).filter((v): v is number => v !== undefined);
 		const calories = events.map((e) => e.data?.calories).filter((v): v is number => v !== undefined);
 		const distances = events.map((e) => e.data?.distance).filter((v): v is number => v !== undefined);
-		
-		// Only get intense minutes from activity events
+		const heartRates = events.map((e) => e.data?.hr_average).filter((v): v is number => v !== undefined);
 		const activityEvents = events.filter(e => e.eventType === 'activity');
 		const intenseMinutes = activityEvents
-			.map((e) => ((e.data?.intense || 0) + (e.data?.moderate || 0)) / 60) // Withings returns seconds
+			.map((e) => ((e.data?.intense || 0) + (e.data?.moderate || 0)) / 60)
 			.filter((v) => v > 0);
-
-		// Count workouts by dataType, with running breakdown by sportType
 		const workoutEvents = events.filter(e => e.dataType === 'workout');
-		const runningCount = workoutEvents.filter(e => {
-			const st = ((e.data?.sportType as string | undefined) ?? '').toLowerCase();
-			return st.includes('run');
-		}).length;
-
-		// Heart rate (all sources)
-		const heartRates = events.map((e) => e.data?.hr_average).filter((v): v is number => v !== undefined);
-
-		// Sleep-specific heart rate
+		const runningCount = workoutEvents.filter(e =>
+			((e.data?.sportType as string | undefined) ?? '').toLowerCase().includes('run')
+		).length;
 		const sleepHeartRates = events
 			.filter(e => e.dataType === 'sleep')
 			.map(e => e.data?.hr_average)
@@ -294,97 +193,24 @@ export async function aggregateMonthlyData(userId: string, months?: MonthPeriod[
 
 		const metrics: any = {};
 
-		if (weights.length > 0) {
-			metrics.weight = {
-				avg: avg(weights),
-				min: min(weights),
-				max: max(weights),
-				latest: latest(weights),
-				change: weights.length > 1 ? (latest(weights)! - weights[0]) : 0
-			};
-		}
+		if (weights.length > 0) metrics.weight = { avg: avg(weights), min: min(weights), max: max(weights), latest: latest(weights), change: weights.length > 1 ? (latest(weights)! - weights[0]) : 0 };
+		if (steps.length > 0) metrics.steps = { sum: sum(steps), avg: avg(steps), max: max(steps) };
+		if (sleepDurations.length > 0) { const h = sleepDurations.map(s => s / 3600); metrics.sleep = { avg: avg(h), min: min(h), max: max(h) }; }
+		if (calories.length > 0) metrics.calories = { sum: sum(calories), avg: avg(calories) };
+		if (distances.length > 0) metrics.distance = { sum: sum(distances), avg: avg(distances) };
+		if (intenseMinutes.length > 0) metrics.intenseMinutes = { sum: sum(intenseMinutes), avg: avg(intenseMinutes) };
+		if (heartRates.length > 0) metrics.heartRate = { avg: avg(heartRates), min: min(heartRates), max: max(heartRates) };
+		if (sleepHeartRates.length > 0) metrics.sleepHeartRate = { avg: avg(sleepHeartRates), min: min(sleepHeartRates), max: max(sleepHeartRates) };
+		if (workoutEvents.length > 0) metrics.workouts = { count: workoutEvents.length, types: { running: runningCount } };
 
-		if (steps.length > 0) {
-			metrics.steps = {
-				sum: sum(steps),
-				avg: avg(steps),
-				max: max(steps)
-			};
-		}
+		rows.push({ userId, period: 'month', periodKey: month.yearmonth, year: month.year, startDate: month.startTime, endDate: month.endTime, metrics, eventCount: events.length });
+	}
 
-		if (sleepDurations.length > 0) {
-			const sleepHours = sleepDurations.map((s) => s / 3600);
-			metrics.sleep = {
-				avg: avg(sleepHours),
-				min: min(sleepHours),
-				max: max(sleepHours)
-			};
-		}
-
-		if (calories.length > 0) {
-			metrics.calories = {
-				sum: sum(calories),
-				avg: avg(calories)
-			};
-		}
-
-		if (distances.length > 0) {
-			metrics.distance = {
-				sum: sum(distances),
-				avg: avg(distances)
-			};
-		}
-
-		if (intenseMinutes.length > 0) {
-			metrics.intenseMinutes = {
-				sum: sum(intenseMinutes),
-				avg: avg(intenseMinutes)
-			};
-		}
-
-		if (heartRates.length > 0) {
-			metrics.heartRate = {
-				avg: avg(heartRates),
-				min: min(heartRates),
-				max: max(heartRates)
-			};
-		}
-
-		if (sleepHeartRates.length > 0) {
-			metrics.sleepHeartRate = {
-				avg: avg(sleepHeartRates),
-				min: min(sleepHeartRates),
-				max: max(sleepHeartRates)
-			};
-		}
-
-		if (workoutEvents.length > 0) {
-			metrics.workouts = {
-				count: workoutEvents.length,
-				types: { running: runningCount }
-			};
-		}
-
-		await db
-			.insert(sensorAggregates)
-			.values({
-				userId,
-				period: 'month',
-				periodKey: month.yearmonth,
-				year: month.year,
-				startDate: month.startTime,
-				endDate: month.endTime,
-				metrics,
-				eventCount: events.length
-			})
-			.onConflictDoUpdate({
-				target: [sensorAggregates.userId, sensorAggregates.period, sensorAggregates.periodKey],
-				set: {
-					metrics,
-					eventCount: events.length,
-					updatedAt: new Date()
-				}
-			});
+	if (rows.length > 0) {
+		await db.insert(sensorAggregates).values(rows).onConflictDoUpdate({
+			target: [sensorAggregates.userId, sensorAggregates.period, sensorAggregates.periodKey],
+			set: { metrics: sql`excluded.metrics`, eventCount: sql`excluded.event_count`, updatedAt: new Date() }
+		});
 	}
 }
 
@@ -406,9 +232,10 @@ export async function aggregateYearlyData(userId: string, years?: YearPeriod[]) 
 	
 	console.log(`         Processing ${periodsToAggregate.length} years with ${allEvents.length} total events...`);
 
+	const rows: typeof sensorAggregates.$inferInsert[] = [];
+
 	for (const year of periodsToAggregate) {
-		// Filter events for this year
-		const events = allEvents.filter(e => 
+		const events = allEvents.filter(e =>
 			e.timestamp >= year.startTime && e.timestamp <= year.endTime
 		);
 
@@ -416,29 +243,18 @@ export async function aggregateYearlyData(userId: string, years?: YearPeriod[]) 
 
 		const weights = events.map((e) => e.data?.weight).filter((v): v is number => v !== undefined);
 		const steps = events.map((e) => e.data?.steps).filter((v): v is number => v !== undefined);
-		const sleepDurations = events
-			.map((e) => e.data?.sleepDuration)
-			.filter((v): v is number => v !== undefined);
+		const sleepDurations = events.map((e) => e.data?.sleepDuration).filter((v): v is number => v !== undefined);
 		const calories = events.map((e) => e.data?.calories).filter((v): v is number => v !== undefined);
 		const distances = events.map((e) => e.data?.distance).filter((v): v is number => v !== undefined);
-		
-		// Only get intense minutes from activity events
+		const heartRates = events.map((e) => e.data?.hr_average).filter((v): v is number => v !== undefined);
 		const activityEvents = events.filter(e => e.eventType === 'activity');
 		const intenseMinutes = activityEvents
-			.map((e) => ((e.data?.intense || 0) + (e.data?.moderate || 0)) / 60) // Withings returns seconds
+			.map((e) => ((e.data?.intense || 0) + (e.data?.moderate || 0)) / 60)
 			.filter((v) => v > 0);
-
-		// Count workouts by dataType, with running breakdown by sportType
 		const workoutEvents = events.filter(e => e.dataType === 'workout');
-		const runningCount = workoutEvents.filter(e => {
-			const st = ((e.data?.sportType as string | undefined) ?? '').toLowerCase();
-			return st.includes('run');
-		}).length;
-
-		// Heart rate (all sources)
-		const heartRates = events.map((e) => e.data?.hr_average).filter((v): v is number => v !== undefined);
-
-		// Sleep-specific heart rate
+		const runningCount = workoutEvents.filter(e =>
+			((e.data?.sportType as string | undefined) ?? '').toLowerCase().includes('run')
+		).length;
 		const sleepHeartRates = events
 			.filter(e => e.dataType === 'sleep')
 			.map(e => e.data?.hr_average)
@@ -446,97 +262,24 @@ export async function aggregateYearlyData(userId: string, years?: YearPeriod[]) 
 
 		const metrics: any = {};
 
-		if (weights.length > 0) {
-			metrics.weight = {
-				avg: avg(weights),
-				min: min(weights),
-				max: max(weights),
-				latest: latest(weights),
-				change: weights.length > 1 ? (latest(weights)! - weights[0]) : 0
-			};
-		}
+		if (weights.length > 0) metrics.weight = { avg: avg(weights), min: min(weights), max: max(weights), latest: latest(weights), change: weights.length > 1 ? (latest(weights)! - weights[0]) : 0 };
+		if (steps.length > 0) metrics.steps = { sum: sum(steps), avg: avg(steps), max: max(steps) };
+		if (sleepDurations.length > 0) { const h = sleepDurations.map(s => s / 3600); metrics.sleep = { avg: avg(h), min: min(h), max: max(h) }; }
+		if (calories.length > 0) metrics.calories = { sum: sum(calories), avg: avg(calories) };
+		if (distances.length > 0) metrics.distance = { sum: sum(distances), avg: avg(distances) };
+		if (intenseMinutes.length > 0) metrics.intenseMinutes = { sum: sum(intenseMinutes), avg: avg(intenseMinutes) };
+		if (heartRates.length > 0) metrics.heartRate = { avg: avg(heartRates), min: min(heartRates), max: max(heartRates) };
+		if (sleepHeartRates.length > 0) metrics.sleepHeartRate = { avg: avg(sleepHeartRates), min: min(sleepHeartRates), max: max(sleepHeartRates) };
+		if (workoutEvents.length > 0) metrics.workouts = { count: workoutEvents.length, types: { running: runningCount } };
 
-		if (steps.length > 0) {
-			metrics.steps = {
-				sum: sum(steps),
-				avg: avg(steps),
-				max: max(steps)
-			};
-		}
+		rows.push({ userId, period: 'year', periodKey: year.year.toString(), year: year.year, startDate: year.startTime, endDate: year.endTime, metrics, eventCount: events.length });
+	}
 
-		if (sleepDurations.length > 0) {
-			const sleepHours = sleepDurations.map((s) => s / 3600);
-			metrics.sleep = {
-				avg: avg(sleepHours),
-				min: min(sleepHours),
-				max: max(sleepHours)
-			};
-		}
-
-		if (calories.length > 0) {
-			metrics.calories = {
-				sum: sum(calories),
-				avg: avg(calories)
-			};
-		}
-
-		if (distances.length > 0) {
-			metrics.distance = {
-				sum: sum(distances),
-				avg: avg(distances)
-			};
-		}
-
-		if (intenseMinutes.length > 0) {
-			metrics.intenseMinutes = {
-				sum: sum(intenseMinutes),
-				avg: avg(intenseMinutes)
-			};
-		}
-
-		if (heartRates.length > 0) {
-			metrics.heartRate = {
-				avg: avg(heartRates),
-				min: min(heartRates),
-				max: max(heartRates)
-			};
-		}
-
-		if (sleepHeartRates.length > 0) {
-			metrics.sleepHeartRate = {
-				avg: avg(sleepHeartRates),
-				min: min(sleepHeartRates),
-				max: max(sleepHeartRates)
-			};
-		}
-
-		if (workoutEvents.length > 0) {
-			metrics.workouts = {
-				count: workoutEvents.length,
-				types: { running: runningCount }
-			};
-		}
-
-		await db
-			.insert(sensorAggregates)
-			.values({
-				userId,
-				period: 'year',
-				periodKey: year.year.toString(),
-				year: year.year,
-				startDate: year.startTime,
-				endDate: year.endTime,
-				metrics,
-				eventCount: events.length
-			})
-			.onConflictDoUpdate({
-				target: [sensorAggregates.userId, sensorAggregates.period, sensorAggregates.periodKey],
-				set: {
-					metrics,
-					eventCount: events.length,
-					updatedAt: new Date()
-				}
-			});
+	if (rows.length > 0) {
+		await db.insert(sensorAggregates).values(rows).onConflictDoUpdate({
+			target: [sensorAggregates.userId, sensorAggregates.period, sensorAggregates.periodKey],
+			set: { metrics: sql`excluded.metrics`, eventCount: sql`excluded.event_count`, updatedAt: new Date() }
+		});
 	}
 }
 
