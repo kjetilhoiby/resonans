@@ -39,8 +39,9 @@ export const GET: RequestHandler = async ({ request }) => {
 		try {
 			console.log(`[SB1 cron sync] user=${userId} from=${fromDateStr}…`);
 			const synced = await syncAllSparebank1Data(userId, { fromDate });
+			const accountList = synced.accountNames.join(', ') || '(ingen)';
 			console.log(
-				`[SB1 cron sync] user=${userId} done: ${synced.accounts} kontoer, ` +
+				`[SB1 cron sync] user=${userId} done: ${synced.accounts} kontoer (${accountList}), ` +
 					`${synced.balanceEvents} saldo-events, ${synced.transactionEvents} transaksjoner`
 			);
 			results.push({ userId, success: true, synced });

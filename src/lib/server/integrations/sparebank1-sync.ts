@@ -301,6 +301,7 @@ export type Sparebank1SyncResult = {
 	balanceEvents: number;
 	transactionEvents: number;
 	accounts: number;
+	accountNames: string[];
 	debug?: Sparebank1SyncDebug;
 };
 
@@ -516,49 +517,57 @@ export async function syncAllSparebank1Data(
 
 	let transactionEvents: any[] = [];
 
+	const syncedAccountNames: string[] = [];
+
 	if (accounts.length > 0) {
-		// Fetch all accounts in parallel
-		const results = await Promise.all(
-			accounts.map(async (account) => {
-				const accountKey = String(account.key || account.accountKey || account.id || account.accountId || account.number || '');
-				if (!accountKey) return [];
+		// Fetch accounts sequentially to avoid hitting rate limits
+		const results: any[][] = [];
+		for (const account of accounts) {
+			const accountKey = String(account.key || account.accountKey || account.id || account.accountId || account.number || '');
+			if (!accountKey) {
+				results.push([]);
+				continue;
+			}
 
-				const transactions = await fetchSparebank1Transactions(accessToken, accountKey, since, toDate);
-				return transactions.map((transaction) => {
-					const timestamp =
-						typeof transaction.date === 'number'
-							? new Date(transaction.date)
-							: new Date(transaction.bookingDate || transaction.transactionDate || transaction.valueDate || Date.now());
+			const accountName = String(account.name || account.accountName || accountKey);
+			syncedAccountNames.push(accountName);
+			console.log(`[sparebank1-sync] syncing account ${accountName} (${accountKey})`);
+			const transactions = await fetchSparebank1Transactions(accessToken, accountKey, since, toDate);
+			console.log(`[sparebank1-sync] fetched ${transactions.length} transactions for ${accountName}`);
+			results.push(transactions.map((transaction) => {
+				const timestamp =
+					typeof transaction.date === 'number'
+						? new Date(transaction.date)
+						: new Date(transaction.bookingDate || transaction.transactionDate || transaction.valueDate || Date.now());
 
-					const amount = parseNumber(transaction.amount ?? transaction.bookedAmount ?? transaction.amountDetails);
+				const amount = parseNumber(transaction.amount ?? transaction.bookedAmount ?? transaction.amountDetails);
 
-					return {
-						userId,
-						sensorId: sensor.id,
-						eventType: 'activity' as const,
-						dataType: 'bank_transaction',
-						timestamp,
-						data: {
-							accountId: transaction.accountKey || accountKey,
-							amount,
-							currency: transaction.currencyCode || transaction.currency || account.currencyCode || 'NOK',
-							description: transaction.cleanedDescription || transaction.description || transaction.text || null,
-							merchant: transaction.cleanedDescription || transaction.description || null,
-							category: transaction.typeText || transaction.category || null,
-							bookingStatus: transaction.bookingStatus || null,
-							typeCode: transaction.typeCode || null,
-							isFixedExpense: false
-						},
-						metadata: {
-							provider: 'sparebank1',
-							source: 'api',
-							transactionId: transaction.id || transaction.transactionId
-						},
-						source: 'sparebank1_api'
-					};
-				});
-			})
-		);
+				return {
+					userId,
+					sensorId: sensor.id,
+					eventType: 'activity' as const,
+					dataType: 'bank_transaction',
+					timestamp,
+					data: {
+						accountId: transaction.accountKey || accountKey,
+						amount,
+						currency: transaction.currencyCode || transaction.currency || account.currencyCode || 'NOK',
+						description: transaction.cleanedDescription || transaction.description || transaction.text || null,
+						merchant: transaction.cleanedDescription || transaction.description || null,
+						category: transaction.typeText || transaction.category || null,
+						bookingStatus: transaction.bookingStatus || null,
+						typeCode: transaction.typeCode || null,
+						isFixedExpense: false
+					},
+					metadata: {
+						provider: 'sparebank1',
+						source: 'api',
+						transactionId: transaction.id || transaction.transactionId
+					},
+					source: 'sparebank1_api'
+				};
+			}));
+		}
 		transactionEvents = results.flat();
 	}
 
@@ -879,6 +888,7 @@ export async function syncAllSparebank1Data(
 		balanceEvents: balanceEvents.length,
 		transactionEvents: transactionEvents.length,
 		accounts: accounts.length,
+		accountNames: syncedAccountNames,
 		...(includeDebug
 			? {
 					debug: {
