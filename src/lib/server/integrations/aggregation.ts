@@ -109,9 +109,10 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 			.map((e) => ((e.data?.intense || 0) + (e.data?.moderate || 0)) / 60)
 			.filter((v) => v > 0);
 		const workoutEvents = events.filter(e => e.dataType === 'workout');
-		const runningCount = workoutEvents.filter(e =>
+		const runningEvents = workoutEvents.filter(e =>
 			((e.data?.sportType as string | undefined) ?? '').toLowerCase().includes('run')
-		).length;
+		);
+		const runningKm = runningEvents.reduce((s, e) => s + ((e.data?.distance as number | undefined) ?? 0), 0) / 1000;
 		const sleepHeartRates = events
 			.filter(e => e.dataType === 'sleep')
 			.map(e => e.data?.hr_average)
@@ -127,7 +128,7 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 		if (intenseMinutes.length > 0) metrics.intenseMinutes = { sum: sum(intenseMinutes), avg: avg(intenseMinutes) };
 		if (heartRates.length > 0) metrics.heartRate = { avg: avg(heartRates), min: min(heartRates), max: max(heartRates), values: heartRates };
 		if (sleepHeartRates.length > 0) metrics.sleepHeartRate = { avg: avg(sleepHeartRates), min: min(sleepHeartRates), max: max(sleepHeartRates) };
-		if (workoutEvents.length > 0) metrics.workouts = { count: workoutEvents.length, types: { running: runningCount } };
+		if (workoutEvents.length > 0) metrics.workouts = { count: workoutEvents.length, types: { running: runningKm } };
 
 		const sleepLag = calculateSleepLag(events);
 		if (sleepLag !== undefined) metrics.sleepLag = sleepLag;
@@ -183,9 +184,10 @@ export async function aggregateMonthlyData(userId: string, months?: MonthPeriod[
 			.map((e) => ((e.data?.intense || 0) + (e.data?.moderate || 0)) / 60)
 			.filter((v) => v > 0);
 		const workoutEvents = events.filter(e => e.dataType === 'workout');
-		const runningCount = workoutEvents.filter(e =>
+		const runningEvents = workoutEvents.filter(e =>
 			((e.data?.sportType as string | undefined) ?? '').toLowerCase().includes('run')
-		).length;
+		);
+		const runningKm = runningEvents.reduce((s, e) => s + ((e.data?.distance as number | undefined) ?? 0), 0) / 1000;
 		const sleepHeartRates = events
 			.filter(e => e.dataType === 'sleep')
 			.map(e => e.data?.hr_average)
@@ -201,7 +203,7 @@ export async function aggregateMonthlyData(userId: string, months?: MonthPeriod[
 		if (intenseMinutes.length > 0) metrics.intenseMinutes = { sum: sum(intenseMinutes), avg: avg(intenseMinutes) };
 		if (heartRates.length > 0) metrics.heartRate = { avg: avg(heartRates), min: min(heartRates), max: max(heartRates) };
 		if (sleepHeartRates.length > 0) metrics.sleepHeartRate = { avg: avg(sleepHeartRates), min: min(sleepHeartRates), max: max(sleepHeartRates) };
-		if (workoutEvents.length > 0) metrics.workouts = { count: workoutEvents.length, types: { running: runningCount } };
+		if (workoutEvents.length > 0) metrics.workouts = { count: workoutEvents.length, types: { running: runningKm } };
 
 		rows.push({ userId, period: 'month', periodKey: month.yearmonth, year: month.year, startDate: month.startTime, endDate: month.endTime, metrics, eventCount: events.length });
 	}
@@ -252,9 +254,10 @@ export async function aggregateYearlyData(userId: string, years?: YearPeriod[]) 
 			.map((e) => ((e.data?.intense || 0) + (e.data?.moderate || 0)) / 60)
 			.filter((v) => v > 0);
 		const workoutEvents = events.filter(e => e.dataType === 'workout');
-		const runningCount = workoutEvents.filter(e =>
+		const runningEvents = workoutEvents.filter(e =>
 			((e.data?.sportType as string | undefined) ?? '').toLowerCase().includes('run')
-		).length;
+		);
+		const runningKm = runningEvents.reduce((s, e) => s + ((e.data?.distance as number | undefined) ?? 0), 0) / 1000;
 		const sleepHeartRates = events
 			.filter(e => e.dataType === 'sleep')
 			.map(e => e.data?.hr_average)
@@ -270,7 +273,7 @@ export async function aggregateYearlyData(userId: string, years?: YearPeriod[]) 
 		if (intenseMinutes.length > 0) metrics.intenseMinutes = { sum: sum(intenseMinutes), avg: avg(intenseMinutes) };
 		if (heartRates.length > 0) metrics.heartRate = { avg: avg(heartRates), min: min(heartRates), max: max(heartRates) };
 		if (sleepHeartRates.length > 0) metrics.sleepHeartRate = { avg: avg(sleepHeartRates), min: min(sleepHeartRates), max: max(sleepHeartRates) };
-		if (workoutEvents.length > 0) metrics.workouts = { count: workoutEvents.length, types: { running: runningCount } };
+		if (workoutEvents.length > 0) metrics.workouts = { count: workoutEvents.length, types: { running: runningKm } };
 
 		rows.push({ userId, period: 'year', periodKey: year.year.toString(), year: year.year, startDate: year.startTime, endDate: year.endTime, metrics, eventCount: events.length });
 	}

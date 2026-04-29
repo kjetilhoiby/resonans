@@ -220,6 +220,17 @@ export async function fetchDashboard<K extends DashboardKind>(themeId: string, k
 	}
 }
 
+export function invalidateDashboardKind(kind: DashboardKind): void {
+	for (const [key] of memoryCache) {
+		if (key.endsWith(`:${kind}`)) memoryCache.delete(key);
+	}
+	if (!isBrowser()) return;
+	for (let i = localStorage.length - 1; i >= 0; i--) {
+		const k = localStorage.key(i);
+		if (k?.startsWith(CACHE_PREFIX) && k.endsWith(`:${kind}`)) localStorage.removeItem(k);
+	}
+}
+
 export function prefetchDashboard<K extends DashboardKind>(themeId: string, kind: K): Promise<DashboardCacheEntry<K>> {
 	const cached = getCachedDashboard(themeId, kind);
 	if (cached) {

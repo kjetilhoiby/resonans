@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { AppPage, Button, Input, PageHeader, Radio, Select } from '$lib/components/ui';
+	import { invalidateDashboardKind } from '$lib/client/dashboard-cache';
 	import { onDestroy, onMount } from 'svelte';
 	import type { PageData } from './$types';
 
@@ -586,6 +587,7 @@
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ fromDate: sleepBackfillFromDate })
 				});
+				invalidateDashboardKind('health');
 				sleepBackfillReaggregating = false;
 			}
 		} finally {

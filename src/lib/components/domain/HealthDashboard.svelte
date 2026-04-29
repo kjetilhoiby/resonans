@@ -1351,7 +1351,7 @@
 						<tr>
 							<th>Periode</th>
 							<th title="Vektendring i perioden">⚖️</th>
-							<th title="Treningsøkter (løp)">🏃</th>
+							<th title="Kilometer løpt">🏃</th>
 							<th title="Aktive minutter (snitt per dag)">⚡</th>
 							<th title="Søvn (snitt per natt)">🌙</th>
 							<th title="Sovepuls (snitt)">💓</th>
@@ -1364,7 +1364,7 @@
 							<tr>
 								<td>{formatPeriodKey(period.periodKey, period.period)}</td>
 								<td>{formatWeightChange(period.metrics?.weight?.change)}</td>
-								<td>{period.metrics?.workouts?.types?.running ?? '–'}</td>
+								<td>{(period.metrics?.workouts?.types?.running ?? 0) > 0 ? (period.metrics!.workouts!.types!.running as number).toFixed(1) + 'km' : '–'}</td>
 								<td>{activeSum != null ? Math.round(activeSum / days) : '–'}/d</td>
 								<td>{formatMetric(period.metrics?.sleep?.avg)}t</td>
 								<td>{formatMetric(period.metrics?.sleepHeartRate?.avg, 0)}</td>
