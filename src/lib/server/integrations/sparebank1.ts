@@ -136,10 +136,43 @@ export async function refreshSparebank1AccessToken(
 	return body;
 }
 
-async function fetchWithRetry(url: string, options: RequestInit, label: string): Promise<Response> {
+const RATE_LIMIT_HEADERS = [
+	'Retry-After',
+	'X-RateLimit-Limit',
+	'X-RateLimit-Remaining',
+	'X-RateLimit-Reset',
+	'X-Rate-Limit-Limit',
+	'X-Rate-Limit-Remaining',
+	'X-Rate-Limit-Reset',
+	'RateLimit-Limit',
+	'RateLimit-Remaining',
+	'RateLimit-Reset',
+];
+
+export type RateLimitSnapshot = Record<string, string>;
+
+function collectRateLimitHeaders(response: Response, label: string, collector?: RateLimitSnapshot): void {
+	const found: Record<string, string> = {};
+	for (const header of RATE_LIMIT_HEADERS) {
+		const value = response.headers.get(header);
+		if (value !== null) found[header] = value;
+	}
+	if (Object.keys(found).length > 0) {
+		console.log(`[sparebank1] ${label} rate-limit headers:`, found);
+		if (collector) Object.assign(collector, found);
+	}
+}
+
+async function fetchWithRetry(
+	url: string,
+	options: RequestInit,
+	label: string,
+	collector?: RateLimitSnapshot
+): Promise<Response> {
 	const maxRetries = 3;
 	for (let attempt = 0; attempt < maxRetries; attempt++) {
 		const response = await fetch(url, options);
+		collectRateLimitHeaders(response, label, collector);
 		if (response.status === 429) {
 			if (attempt === maxRetries - 1) {
 				throw new Error(`${label} failed: ${response.status}`);
@@ -154,13 +187,17 @@ async function fetchWithRetry(url: string, options: RequestInit, label: string):
 	throw new Error(`${label} failed: max retries exceeded`);
 }
 
-export async function fetchSparebank1HelloWorld(accessToken: string): Promise<any> {
+export async function fetchSparebank1HelloWorld(
+	accessToken: string,
+	collector?: RateLimitSnapshot
+): Promise<any> {
 	const helloEndpoint = getUrl(env.SPAREBANK1_HELLOWORLD_ENDPOINT || '/common/helloworld');
 
 	const response = await fetchWithRetry(
 		helloEndpoint,
 		{ headers: { Authorization: `Bearer ${accessToken}`, Accept: DEFAULT_ACCEPT_HEADER } },
-		'SpareBank1 hello world'
+		'SpareBank1 hello world',
+		collector
 	);
 
 	if (!response.ok) {
@@ -170,13 +207,17 @@ export async function fetchSparebank1HelloWorld(accessToken: string): Promise<an
 	return response.json();
 }
 
-export async function fetchSparebank1Accounts(accessToken: string): Promise<any[]> {
+export async function fetchSparebank1Accounts(
+	accessToken: string,
+	collector?: RateLimitSnapshot
+): Promise<any[]> {
 	const endpoint = env.SPAREBANK1_ACCOUNTS_ENDPOINT || '/personal/banking/accounts';
 
 	const response = await fetchWithRetry(
 		getUrl(endpoint),
 		{ headers: { Authorization: `Bearer ${accessToken}`, Accept: DEFAULT_ACCEPT_HEADER } },
-		'SpareBank1 accounts fetch'
+		'SpareBank1 accounts fetch',
+		collector
 	);
 
 	if (!response.ok) {
@@ -190,7 +231,8 @@ export async function fetchSparebank1Transactions(
 	accessToken: string,
 	accountKey?: string,
 	since?: Date,
-	toDate?: Date
+	toDate?: Date,
+	collector?: RateLimitSnapshot
 ): Promise<any[]> {
 	const endpoint = env.SPAREBANK1_TRANSACTIONS_ENDPOINT || '/personal/banking/transactions';
 
@@ -208,7 +250,8 @@ export async function fetchSparebank1Transactions(
 	const response = await fetchWithRetry(
 		url.toString(),
 		{ headers: { Authorization: `Bearer ${accessToken}`, Accept: DEFAULT_ACCEPT_HEADER } },
-		'SpareBank1 transactions fetch'
+		'SpareBank1 transactions fetch',
+		collector
 	);
 
 	if (!response.ok) {

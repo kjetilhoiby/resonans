@@ -578,6 +578,11 @@
 				sleepBackfillProgress = progress;
 				if (progress.done || progress.error) break;
 			}
+			if (sleepBackfillProgress?.done && !sleepBackfillProgress?.error) {
+				sleepBackfillProgress = { ...sleepBackfillProgress, _aggregating: true } as typeof sleepBackfillProgress;
+				await fetch('/api/sensors/aggregate', { method: 'POST' });
+				sleepBackfillProgress = { ...sleepBackfillProgress, _aggregating: false } as typeof sleepBackfillProgress;
+			}
 		} finally {
 			sleepBackfillRunning = false;
 		}

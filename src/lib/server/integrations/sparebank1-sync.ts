@@ -13,7 +13,8 @@ import {
 	fetchSparebank1Accounts,
 	fetchSparebank1HelloWorld,
 	fetchSparebank1Transactions,
-	refreshSparebank1AccessToken
+	refreshSparebank1AccessToken,
+	type RateLimitSnapshot
 } from './sparebank1';
 
 type BankCredentials = {
@@ -302,6 +303,7 @@ export type Sparebank1SyncResult = {
 	transactionEvents: number;
 	accounts: number;
 	accountNames: string[];
+	rateLimitHeaders: RateLimitSnapshot;
 	debug?: Sparebank1SyncDebug;
 };
 
@@ -451,9 +453,11 @@ export async function syncAllSparebank1Data(
 		console.log('[sparebank1-sync] replace-mode wipe completed', { userId, sensorId: sensor.id, wiped });
 	}
 
-	await fetchSparebank1HelloWorld(accessToken);
+	const rateLimitHeaders: RateLimitSnapshot = {};
 
-	const accounts = await fetchSparebank1Accounts(accessToken);
+	await fetchSparebank1HelloWorld(accessToken, rateLimitHeaders);
+
+	const accounts = await fetchSparebank1Accounts(accessToken, rateLimitHeaders);
 
 	const balanceEvents = accounts.map((account) => {
 		const timestamp =
@@ -532,7 +536,7 @@ export async function syncAllSparebank1Data(
 			const accountName = String(account.name || account.accountName || accountKey);
 			syncedAccountNames.push(accountName);
 			console.log(`[sparebank1-sync] syncing account ${accountName} (${accountKey})`);
-			const transactions = await fetchSparebank1Transactions(accessToken, accountKey, since, toDate);
+			const transactions = await fetchSparebank1Transactions(accessToken, accountKey, since, toDate, rateLimitHeaders);
 			console.log(`[sparebank1-sync] fetched ${transactions.length} transactions for ${accountName}`);
 			results.push(transactions.map((transaction) => {
 				const timestamp =
@@ -889,6 +893,7 @@ export async function syncAllSparebank1Data(
 		transactionEvents: transactionEvents.length,
 		accounts: accounts.length,
 		accountNames: syncedAccountNames,
+		rateLimitHeaders,
 		...(includeDebug
 			? {
 					debug: {
