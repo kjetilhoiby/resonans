@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import { db } from '$lib/db';
-import { canonicalBankTransactions, categorizedEvents, sensorEvents } from '$lib/db/schema';
+import { canonicalBankTransactions, sensorEvents } from '$lib/db/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { detectGlobalPayday } from '$lib/server/integrations/payday-detector';
-import { ensureCategorizedEventsForRange, queryCategorizedEvents } from '$lib/server/integrations/categorized-events';
+import { queryCanonicalTransactions } from '$lib/server/integrations/categorized-events';
 import { categorizeTransaction } from '$lib/server/integrations/transaction-categories';
 import { loadMerchantMappings } from '$lib/server/integrations/spending-analyzer';
 import { loadClassificationOverrides, loadTransactionMatchingRules } from '$lib/server/classification-overrides';
@@ -265,9 +265,7 @@ The tool returns actual data from your bank that you can trust.`,
 					};
 				}
 
-				await ensureCategorizedEventsForRange({ userId, from, to });
-
-				const transactions = await queryCategorizedEvents({
+				const transactions = await queryCanonicalTransactions({
 					userId,
 					from,
 					to,
@@ -291,26 +289,8 @@ The tool returns actual data from your bank that you can trust.`,
 					};
 				}
 
-				const totals = await db
-					.select({
-						totalSpent: sql<number>`COALESCE(SUM(CASE WHEN ${categorizedEvents.amount} < 0 THEN ${categorizedEvents.amount} ELSE 0 END), 0)`,
-						totalIncome: sql<number>`COALESCE(SUM(CASE WHEN ${categorizedEvents.amount} > 0 THEN ${categorizedEvents.amount} ELSE 0 END), 0)`,
-						totalCount: sql<number>`COUNT(*)`
-					})
-					.from(categorizedEvents)
-					.where(
-						and(
-							eq(categorizedEvents.userId, userId),
-							sql`${categorizedEvents.timestamp} >= ${from.toISOString()}`,
-							sql`${categorizedEvents.timestamp} < ${to.toISOString()}`,
-							...(accountId ? [eq(categorizedEvents.accountId, accountId)] : []),
-							...(normalizedCategory ? [eq(categorizedEvents.resolvedCategory, normalizedCategory)] : [])
-						)
-					);
-
-				const totalSpent = Number(totals[0]?.totalSpent ?? 0);
-				const totalIncome = Number(totals[0]?.totalIncome ?? 0);
-				const totalCount = Number(totals[0]?.totalCount ?? transactions.length);
+				const totalSpent = transactions.reduce((s, t) => t.amount < 0 ? s + t.amount : s, 0);
+				const totalIncome = transactions.reduce((s, t) => t.amount > 0 ? s + t.amount : s, 0);
 
 				return {
 					success: true,
@@ -321,7 +301,7 @@ The tool returns actual data from your bank that you can trust.`,
 							amount: t.amount,
 							category: t.resolvedCategory
 						})),
-						count: totalCount,
+						count: transactions.length,
 						returnedCount: transactions.length,
 						period: txPeriodLabel,
 						filterCategory: normalizedCategory,
@@ -329,7 +309,7 @@ The tool returns actual data from your bank that you can trust.`,
 						totalIncome,
 						net: totalSpent + totalIncome
 					},
-					message: `Found ${totalCount} transactions (${transactions.length} returned). Income: ${totalIncome.toLocaleString('nb-NO')} kr, Spent: ${Math.abs(totalSpent).toLocaleString('nb-NO')} kr`
+					message: `Found ${transactions.length} transactions. Income: ${totalIncome.toLocaleString('nb-NO')} kr, Spent: ${Math.abs(totalSpent).toLocaleString('nb-NO')} kr`
 				};
 			}
 
@@ -363,9 +343,7 @@ The tool returns actual data from your bank that you can trust.`,
 					};
 				}
 
-				await ensureCategorizedEventsForRange({ userId, from, to });
-
-				const periodSpending = await queryCategorizedEvents({
+				const periodSpending = await queryCanonicalTransactions({
 					userId,
 					from,
 					to,

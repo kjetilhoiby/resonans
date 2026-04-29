@@ -1,23 +1,23 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
-import { categorizedEvents, sensorEvents } from '$lib/db/schema';
-import { eq, and, desc, asc, ilike, or, sql } from 'drizzle-orm';
-import { ensureCategorizedEventsForRange } from '$lib/server/integrations/categorized-events';
+import { canonicalBankTransactions } from '$lib/db/schema';
+import { eq, and, desc, asc, sql } from 'drizzle-orm';
+import { categorizeTransaction } from '$lib/server/integrations/transaction-categories';
+import { loadMerchantMappings } from '$lib/server/integrations/spending-analyzer';
+import { loadClassificationOverrides, loadTransactionMatchingRules } from '$lib/server/classification-overrides';
 
 /**
- * Unified transaction API - the sole endpoint for querying transactions.
- * 
- * Always reads from categorized_events (materialized view) for consistency.
- * Auto-syncs the view if needed before querying.
+ * Unified transaction API - reads from canonical_bank_transactions (properly deduplicated).
+ * Categorisation is applied in-memory after fetching, same as economics-dashboard.ts.
  *
  * Query params:
  *   from         YYYY-MM-DD  (required)
  *   to           YYYY-MM-DD  (required)
  *   accountIds   comma-separated account IDs (optional, defaults to all)
- *   category     category filter (optional)
- *   subcategory  subcategory filter (optional)
- *   search       free-text search on description/typeText/label (optional)
+ *   category     category filter (optional, applied in-memory)
+ *   subcategory  subcategory filter (optional, applied in-memory)
+ *   search       free-text search on description (optional, applied in-memory)
  *   spendingOnly boolean - only negative amounts (optional)
  *   limit        max results (default 500, max 1000)
  *   sortBy       'date' or 'amount' (default 'date')
@@ -33,9 +33,6 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		return json({ error: 'Missing from/to parameters' }, { status: 400 });
 	}
 
-	const from = new Date(fromParam + 'T00:00:00Z');
-	const to = new Date(toParam + 'T23:59:59Z');
-
 	// Parse optional filters
 	const accountIdsParam = url.searchParams.get('accountIds');
 	const accountIds = accountIdsParam
@@ -43,7 +40,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		: [];
 	const category = url.searchParams.get('category')?.trim() || null;
 	const subcategory = url.searchParams.get('subcategory')?.trim() || null;
-	const search = url.searchParams.get('search')?.trim() || null;
+	const search = url.searchParams.get('search')?.trim()?.toLowerCase() || null;
 	const spendingOnly = url.searchParams.get('spendingOnly') === 'true';
 	const limit = Math.min(
 		parseInt(url.searchParams.get('limit') ?? '500', 10),
@@ -52,89 +49,99 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	const sortBy = url.searchParams.get('sortBy') === 'amount' ? 'amount' : 'date';
 	const sortOrder = url.searchParams.get('sortOrder') === 'asc' ? 'asc' : 'desc';
 
-	// Ensure categorized events exist for this range
-	await ensureCategorizedEventsForRange({ userId, from, to });
+	// Load classification caches in parallel
+	const [merchantMappings, overrides, rules] = await Promise.all([
+		loadMerchantMappings(userId),
+		loadClassificationOverrides(userId, 'transaction'),
+		loadTransactionMatchingRules()
+	]);
 
-	// Build WHERE conditions
+	// Build SQL WHERE conditions
 	const conditions = [
-		eq(categorizedEvents.userId, userId),
-		sql`${categorizedEvents.timestamp} >= ${from.toISOString()}`,
-		sql`${categorizedEvents.timestamp} <= ${to.toISOString()}`
+		eq(canonicalBankTransactions.userId, userId),
+		eq(canonicalBankTransactions.isActive, true),
+		sql`${canonicalBankTransactions.canonicalDate} >= ${fromParam}::date`,
+		sql`${canonicalBankTransactions.canonicalDate} <= ${toParam}::date`
 	];
 
 	if (accountIds.length > 0) {
 		conditions.push(
-			sql`${categorizedEvents.accountId} IN (${sql.join(
+			sql`${canonicalBankTransactions.accountId} IN (${sql.join(
 				accountIds.map((id) => sql`${id}`),
 				sql`, `
 			)})`
 		);
 	}
 
-	if (category) {
-		conditions.push(eq(categorizedEvents.resolvedCategory, category));
-	}
-
-	if (subcategory) {
-		conditions.push(eq(categorizedEvents.resolvedSubcategory, subcategory));
-	}
-
-	if (search) {
-		conditions.push(
-			or(
-				ilike(categorizedEvents.description, `%${search}%`),
-				ilike(categorizedEvents.typeText, `%${search}%`),
-				ilike(categorizedEvents.resolvedLabel, `%${search}%`)
-			)!
-		);
-	}
-
 	if (spendingOnly) {
-		conditions.push(sql`${categorizedEvents.amount}::numeric < 0`);
+		conditions.push(sql`${canonicalBankTransactions.amount}::numeric < 0`);
 	}
 
-	// Query transactions
 	const orderByClause =
 		sortBy === 'amount'
 			? sortOrder === 'asc'
-				? asc(categorizedEvents.amount)
-				: desc(categorizedEvents.amount)
+				? asc(canonicalBankTransactions.amount)
+				: desc(canonicalBankTransactions.amount)
 			: sortOrder === 'asc'
-				? asc(categorizedEvents.timestamp)
-				: desc(categorizedEvents.timestamp);
+				? asc(canonicalBankTransactions.canonicalDate)
+				: desc(canonicalBankTransactions.canonicalDate);
 
 	const rows = await db
 		.select({
-			id: categorizedEvents.sensorEventId,
-			timestamp: categorizedEvents.timestamp,
-			accountId: categorizedEvents.accountId,
-			amount: categorizedEvents.amount,
-			description: categorizedEvents.description,
-			typeText: categorizedEvents.typeText,
-			category: categorizedEvents.resolvedCategory,
-			subcategory: categorizedEvents.resolvedSubcategory,
-			label: categorizedEvents.resolvedLabel,
-			emoji: categorizedEvents.resolvedEmoji,
-			isFixed: categorizedEvents.isFixed
+			id: canonicalBankTransactions.id,
+			date: canonicalBankTransactions.canonicalDate,
+			accountId: canonicalBankTransactions.accountId,
+			amount: canonicalBankTransactions.amount,
+			description: canonicalBankTransactions.descriptionDisplay,
+			merchantKey: canonicalBankTransactions.merchantKey,
+			latestBookingStatus: canonicalBankTransactions.latestBookingStatus
 		})
-		.from(categorizedEvents)
+		.from(canonicalBankTransactions)
 		.where(and(...conditions))
 		.orderBy(orderByClause)
-		.limit(limit);
+		.limit(spendingOnly || (!category && !subcategory && !search) ? limit : limit * 3);
 
-	const transactions = rows.map((r) => ({
-		id: r.id,
-		date: (r.timestamp as Date).toISOString().slice(0, 10),
-		accountId: r.accountId,
-		amount: Number(r.amount) || 0,
-		description: r.description ?? r.typeText ?? '',
-		typeText: r.typeText,
-		category: r.category,
-		subcategory: r.subcategory,
-		label: r.label,
-		emoji: r.emoji,
-		isFixed: r.isFixed
-	}));
+	// Apply categorisation and in-memory filters
+	let transactions = rows.map((r) => {
+		const description = (r.description ?? r.merchantKey ?? '').trim();
+		const amount = Number(r.amount) || 0;
+		const classified = categorizeTransaction(
+			description,
+			null,
+			amount,
+			merchantMappings,
+			overrides,
+			rules
+		);
+		return {
+			id: r.id,
+			date: r.date as string,
+			accountId: r.accountId,
+			amount,
+			description,
+			typeText: null as string | null,
+			category: classified.category,
+			subcategory: classified.subcategory ?? null,
+			label: classified.label,
+			emoji: classified.emoji,
+			isFixed: classified.isFixed
+		};
+	});
+
+	if (category) {
+		transactions = transactions.filter((t) => t.category === category);
+	}
+	if (subcategory) {
+		transactions = transactions.filter((t) => t.subcategory === subcategory);
+	}
+	if (search) {
+		transactions = transactions.filter(
+			(t) => t.description.toLowerCase().includes(search) || t.label.toLowerCase().includes(search)
+		);
+	}
+
+	// Apply final limit after in-memory filters
+	transactions = transactions.slice(0, limit);
 
 	const totalSpent = transactions
 		.filter((t) => t.amount < 0)
@@ -142,3 +149,4 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 
 	return json({ transactions, totalSpent });
 };
+

@@ -74,6 +74,32 @@ function normalizeTxDescription(value: unknown): string {
 	if (compact.startsWith('ODA.COM')) return 'ODA.COM';
 	if (compact.startsWith('ODA ')) return 'ODA';
 
+	// Normalize SB1 multi-text patterns: "Fra: X Betalt:" → "X", "Fra: X" → "X"
+	// SpareBank1 returns the same transaction with multiple description variants.
+	if (compact.startsWith('FRA: ')) {
+		const withoutPrefix = compact.slice(5).trim();
+		if (withoutPrefix.endsWith(' BETALT:')) {
+			return withoutPrefix.slice(0, -8).trim() || 'BETALING';
+		}
+		return withoutPrefix || 'BETALING';
+	}
+
+	// "Nettgiro til: X Betalt:" → "X", "Nettgiro fra: X Betalt:" → "X"
+	if (compact.startsWith('NETTGIRO TIL: ') || compact.startsWith('NETTGIRO FRA: ')) {
+		const withoutPrefix = compact.slice(14).trim();
+		if (withoutPrefix.endsWith(' BETALT:')) {
+			const name = withoutPrefix.slice(0, -8).trim();
+			return name || 'NETTGIRO';
+		}
+		return withoutPrefix || 'NETTGIRO';
+	}
+
+	// "Til: Betalt:" (truncated, no name) → generic key
+	if (compact === 'TIL: BETALT:') return 'OVERØRSEL';
+
+	// "Overørsel mellom egne konti..." → generic key, same as standalone "Overørsel"
+	if (compact.includes('MELLOM EGNE KONTI')) return 'OVERØRSEL';
+
 	return compact;
 }
 
@@ -780,6 +806,45 @@ export async function syncAllSparebank1Data(
 						ORDER BY
 							CASE WHEN data->>'bookingStatus' = 'BOOKED' THEN 0 ELSE 1 END,
 							timestamp ASC,
+							id ASC
+					) AS rn
+				FROM sensor_events
+				WHERE sensor_id = $1
+				  AND data_type = 'bank_transaction'
+				  AND timestamp >= $2::timestamptz
+			), to_delete AS (
+				SELECT id FROM ranked WHERE rn > 1
+			), deleted_categorized AS (
+				DELETE FROM categorized_events
+				WHERE sensor_event_id IN (SELECT id FROM to_delete)
+			)
+			DELETE FROM sensor_events
+			WHERE id IN (SELECT id FROM to_delete)
+			`, [sensor.id, earliestDate.toISOString()]);
+
+			// Second pass: remove SB1 multi-text duplicates (same account+date+amount, different description).
+			// SB1 returns 2-3 description variants for the same transaction (e.g. "Lønn" + employer name +
+			// "Fra: employer Betalt:"). Keep the most informative one.
+			await pgClient.unsafe(`
+			WITH ranked AS (
+				SELECT
+					id,
+					ROW_NUMBER() OVER (
+						PARTITION BY
+							data->>'accountId',
+							timestamp::date,
+							ROUND((data->>'amount')::numeric, 2)
+						ORDER BY
+							CASE WHEN data->>'bookingStatus' = 'BOOKED' THEN 0 ELSE 1 END,
+							CASE
+								WHEN UPPER(TRIM(data->>'description')) LIKE '%MELLOM EGNE KONTI%' THEN 100
+								WHEN UPPER(TRIM(data->>'description')) IN (
+									'AVTALE', 'LØNN', 'NETTGIRO', 'OVERØRSEL', 'OVERFØRING',
+									'REGNINGER', 'SMÅSPARING', 'TIL: BETALT:', 'NETTGIRO TIL: BETALT:'
+								) THEN 90
+								ELSE 1
+							END ASC,
+							LENGTH(COALESCE(data->>'description', '')) DESC,
 							id ASC
 					) AS rn
 				FROM sensor_events

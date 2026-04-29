@@ -1,5 +1,5 @@
 import { db } from '$lib/db';
-import { categorizedEvents, sensorEvents } from '$lib/db/schema';
+import { canonicalBankTransactions, categorizedEvents, sensorEvents } from '$lib/db/schema';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { loadClassificationOverrides, loadTransactionMatchingRules } from '$lib/server/classification-overrides';
 import { loadMerchantMappings } from '$lib/server/integrations/spending-analyzer';
@@ -252,4 +252,88 @@ export async function queryCategorizedEvents({
 		...row,
 		amount: Number(row.amount) || 0
 	}));
+}
+
+type QueryCanonicalArgs = {
+	userId: string;
+	from: Date;
+	to: Date;
+	accountId?: string;
+	category?: string;
+	spendingOnly?: boolean;
+	limit?: number;
+	sortBy?: 'date' | 'amount';
+};
+
+/**
+ * Query transactions from canonical_bank_transactions with in-memory categorisation.
+ * Preferred over queryCategorizedEvents — the canonical table is properly deduplicated.
+ */
+export async function queryCanonicalTransactions({
+	userId,
+	from,
+	to,
+	accountId,
+	category,
+	spendingOnly = false,
+	limit,
+	sortBy = 'date'
+}: QueryCanonicalArgs): Promise<CategorizedEventRow[]> {
+	const normalizedCategory = category ? normalizeCategoryId(category) : undefined;
+
+	const [merchantMappings, overrides, rules] = await Promise.all([
+		loadMerchantMappings(userId),
+		loadClassificationOverrides(userId, 'transaction'),
+		loadTransactionMatchingRules()
+	]);
+
+	const conditions = [
+		eq(canonicalBankTransactions.userId, userId),
+		eq(canonicalBankTransactions.isActive, true),
+		sql`${canonicalBankTransactions.canonicalDate} >= ${from.toISOString().slice(0, 10)}::date`,
+		sql`${canonicalBankTransactions.canonicalDate} < ${to.toISOString().slice(0, 10)}::date`,
+		...(accountId ? [eq(canonicalBankTransactions.accountId, accountId)] : []),
+		...(spendingOnly ? [sql`${canonicalBankTransactions.amount}::numeric < 0`] : [])
+	];
+
+	const orderClause =
+		sortBy === 'amount'
+			? desc(canonicalBankTransactions.amount)
+			: desc(canonicalBankTransactions.canonicalDate);
+
+	const rawRows = await db
+		.select({
+			id: canonicalBankTransactions.id,
+			date: canonicalBankTransactions.canonicalDate,
+			accountId: canonicalBankTransactions.accountId,
+			amount: canonicalBankTransactions.amount,
+			description: canonicalBankTransactions.descriptionDisplay,
+			merchantKey: canonicalBankTransactions.merchantKey
+		})
+		.from(canonicalBankTransactions)
+		.where(and(...conditions))
+		.orderBy(orderClause)
+		.limit(normalizedCategory ? (limit ? limit * 4 : 2000) : (limit ?? 2000));
+
+	const rows: CategorizedEventRow[] = rawRows
+		.map((r) => {
+			const description = (r.description ?? r.merchantKey ?? '').trim();
+			const amount = Number(r.amount) || 0;
+			const classified = categorizeTransaction(description, null, amount, merchantMappings, overrides, rules);
+			return {
+				sensorEventId: r.id,
+				timestamp: new Date((r.date as string) + 'T00:00:00Z'),
+				accountId: r.accountId,
+				amount,
+				description,
+				typeText: null,
+				resolvedCategory: classified.category,
+				resolvedLabel: classified.label,
+				resolvedEmoji: classified.emoji,
+				isFixed: classified.isFixed
+			};
+		})
+		.filter((r) => !normalizedCategory || r.resolvedCategory === normalizedCategory);
+
+	return limit ? rows.slice(0, limit) : rows;
 }
