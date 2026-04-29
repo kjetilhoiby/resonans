@@ -349,4 +349,162 @@ Opprett egen service når domenet har minst tre av disse:
 4. samme regel implementert i flere routes/jobs
 5. behov for egen telemetry/SLO
 
+## Ny ferdigtilstand
+
+Denne planen er ikke lenger bare en SensorEventService-plan. Neste ferdigtilstand bør være at alle domener med egne regler, projections eller freshness-krav er flyttet til tydelige service-eiere, og at read-paths bruker projections eller stabile service-API-er i stedet for rå tabellspørringer der ytelse er sensitiv.
+
+Ferdigtilstanden anses som nådd når følgende er sant:
+
+1. Hver sentral datamodell med domeneadferd har én tydelig service-eier for writes, derived state og observability.
+2. Nye writes til `sensor_events`, `progress`, `domain_signals`, push-delivery og sentrale projections går via service-laget, ikke via ad hoc route/integration-kode.
+3. Read-paths for goals, ukeplan, health-dashboard og økonomivisninger bruker enten eksplisitte projection-tabeller/canonical-tabeller eller dedikerte read-API-er i service-laget.
+4. Aggregater/projections som er ytelseskritiske oppdateres inkrementelt eller via kontrollerte bakgrunnsjobber, med definert freshness-policy.
+5. Hver projection-pipeline har målbar observability: write-rate, refresh-rate, kødybde, retry-rate, stale-rate og p50/p95 for kritiske reads.
+6. Eksisterende fallback-paths fra projection til rådata er eksplisitte, målte og kan fjernes eller begrenses per domene når stabilitet er dokumentert.
+7. Eldre kompatibilitetslag og duplisert domenelogikk er fjernet eller redusert til tynne adapters uten egen forretningslogikk.
+
+Konkret betyr dette i dagens kodebase:
+
+- `WorkoutProjectionService` eier workouts end-to-end, inkludert refresh, freshness og read-paths for goals/ukeplan/dashboard.
+- `TaskExecutionService` eier alle sentrale progress-mutasjoner og perioderegler.
+- `SignalService` eier produksjon og observability for `domain_signals`.
+- økonomi får et tilsvarende eksplisitt service-lag rundt canonical/read-paths, i stedet for at sentral logikk bor i synk-moduler og routes.
+- generiske `sensor_aggregates` enten kapsles i et tydelig `AggregateService` med definerte SLO-er, eller brytes opp i domenespesifikke projections der det gir bedre kontroll.
+
+## Fremdriftsplan Fra Dagens Status
+
+Utgangspunkt april 2026:
+
+- workout-sporet er i praksis implementert for write, refresh, stale-sweeper og aggregate-first reads
+- `TaskExecutionService`, `SignalService`, `PushDeliveryService` og `NudgeOrchestrationService` er etablert og i bruk
+- `sensor_aggregates` lever fortsatt i eldre aggregasjonsløp
+- økonomi bruker canonical-tabeller i read-path, men mangler fortsatt et like tydelig service-lag
+
+Anbefalt videre plan:
+
+### Etappe 1: Fastslå dagens baseline
+
+1. Mål nåværende p50/p95 for goals, ukeplan, health-dashboard, sensor-summary og sentrale økonomi-endepunkter.
+2. Mål hvor ofte fallback-paths faktisk brukes i workout/goals/ukeplan.
+3. Mål volum og latens i bakgrunnsjobber for `workout_projection_refresh` og andre tunge jobtyper.
+4. Dokumenter hvilke read-paths som fortsatt går direkte mot `sensor_events`, `sensor_aggregates` eller integrasjonsmoduler.
+
+Leveranse:
+
+- én enkel baseline-tabell i dette dokumentet eller i egen målelogg
+- én prioritert liste over de tregeste og mest trafikkerte read-paths
+
+### Etappe 2: Fullføre workout som referanseimplementasjon
+
+1. Avklar om health-dashboard og eventuelle workout-relaterte visninger også skal lese via `WorkoutProjectionService`.
+2. Mål og reduser andel fallback til raw/activity-layer.
+3. Etabler eksplisitt SLO for workout-read og freshness.
+4. Vurder om smoke-endepunktet skal utvides med enkel latency/freshness-rapport.
+
+Leveranse:
+
+- workout-domene er referanse for hvordan service + projection + observability skal se ut
+
+### Etappe 3: Konsolidere aggregater
+
+1. Bestem om `sensor_aggregates` skal leve videre som generisk aggregatlag eller splittes i flere domenespesifikke projections.
+2. Hvis det beholdes: flytt ansvar fra `integrations/aggregation.ts` til `AggregateService`.
+3. Hvis det splittes: migrer først de read-paths som er mest ytelsessensitive eller mest komplekse å vedlikeholde.
+4. Fjern direkte domenelogikk fra routes som i dag kombinerer råevents og aggregater lokalt.
+
+Leveranse:
+
+- tydelig eierskap for health/sensor-aggregater
+- mindre kobling mellom cron-endepunkt og konkret aggregasjonsimplementasjon
+
+### Etappe 4: Service-fisere økonomi
+
+1. Etabler eget service-lag for canonical bank transactions, projection refresh og read-modeller for dashboard/salary views.
+2. Flytt logikk som i dag ligger i `sparebank1-sync.ts` og økonomiroutes til service-API-er.
+3. Definer hvilke visninger som skal lese canonical-tabeller direkte, og hvilke som skal få egne projections/materialiserte sammendrag.
+4. Legg til observability for import, canonicalisering og read-latens.
+
+Leveranse:
+
+- økonomi følger samme strukturelle mønster som workout-sporet
+
+### Etappe 5: Stramme inn read-paths og rydde gjenværende direkte tabellbruk
+
+1. Gå gjennom routes og cron-jobber som fortsatt leser eller skriver direkte mot tabeller der service-eier allerede finnes.
+2. Flytt gjenværende kallesteder til service-API-er.
+3. Fjern eller merk eksplisitt tillatte unntak.
+4. Vurder enkel grep-basert kontroll eller CI-sjekk for å unngå ny spredning.
+
+Leveranse:
+
+- service-laget blir faktisk default, ikke bare anbefalt mønster
+
+## Baseline-Målinger Før Neste Etappe
+
+Ja, vi bør gjøre baseline-målinger nå. Uten det blir neste runde fort arkitekturarbeid uten verifiserbar effekt.
+
+Første målepakke bør være liten og beslutningsrelevant:
+
+### 1) Side- og API-latens
+
+Mål p50, p95 og max for disse pathene i et realistisk datasett:
+
+1. `/goals`
+2. `/ukeplan`
+3. `/api/sensor-summary`
+4. health-dashboard-loader/API
+5. sentrale økonomi-endepunkter som salary-report, salary-month og economics-dashboard
+
+Logg i tillegg:
+
+- total varighet
+- DB-tid hvis lett tilgjengelig
+- om projection-path eller fallback-path ble brukt
+
+### 2) Projection-freshness og job-latens
+
+Mål for `workout_projection_refresh`:
+
+1. antall jobber per døgn
+2. p50/p95 kjøretid
+3. andel retries/feil
+4. køalder ved start
+5. tid fra workout-write til projection oppdatert
+
+### 3) Fallback-rate
+
+For goals og ukeplan:
+
+1. hvor ofte `WorkoutProjectionService.ensureFreshnessForRange(...)` ender i sync refresh
+2. hvor ofte read-path faller helt tilbake til raw/activity-layer
+3. hvilke brukere/datasett som oftest havner der
+
+### 4) Datavolum som forklaringsvariabel
+
+For et lite utvalg brukere:
+
+1. antall `sensor_events`
+2. antall `canonical_workouts`
+3. antall `workout_daily_aggregates`
+4. antall `canonical_bank_transactions`
+
+Dette gjør det mulig å skille mellom treg kode og bare store datasett.
+
+## Forslag Til Praktisk Måleoppsett
+
+Start enkelt, uten full observability-stack:
+
+1. Bruk eksisterende serverlogger og legg på standardisert logging i kritiske loads/routes hvis noe mangler.
+2. Kjør manuelle målinger mot et lite sett representative brukere: liten, middels og stor datamengde.
+3. Lagre resultatene i en enkel markdown-tabell med dato, path, brukerprofil, p50, p95 og notater om fallback.
+4. Når vi ser hvilke paths som faktisk er problemet, kan vi avgjøre om vi trenger mer permanent telemetry eller bare målrettede forbedringer.
+
+## Foreslåtte Suksesskriterier For Neste Fase
+
+1. Vi har dokumentert baseline for de 5-8 viktigste read-paths før ny migrering.
+2. Vi kan peke på de 2-3 tregeste eller mest ustabile pathene med faktiske tall.
+3. Vi har valgt én retning for `sensor_aggregates`: service-fisere eller fase ut per domene.
+4. Økonomi har fått definert target service owner og første migreringsslice.
+5. Etter neste etappe kan vi vise målbar forbedring i minst ett kritisk read-path eller i fallback-rate.
+
 Dette dokumentet er første styringsdokument for refaktoren. Endringer i scope/status føres her fortløpende.

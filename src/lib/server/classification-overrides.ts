@@ -2,6 +2,9 @@ import { db } from '$lib/db';
 import { classificationOverrides, taskClassificationRules, transactionMatchingRules } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 
+const OVERRIDES_CACHE_TTL_MS = 60 * 1000;
+const RULES_CACHE_TTL_MS = 5 * 60 * 1000;
+
 export type ClassificationDomain = 'transaction' | 'task';
 
 export type ClassificationOverride = {
@@ -23,6 +26,17 @@ export type TransactionMatchingRule = {
 	keywords: string[];
 	fixed: boolean | null;
 };
+
+const overridesCache = new Map<
+	string,
+	{
+		cachedAt: number;
+		data: ClassificationOverrideCache;
+	}
+>();
+
+let taskRulesCache: { cachedAt: number; data: TaskClassificationRule[] } | null = null;
+let transactionRulesCache: { cachedAt: number; data: TransactionMatchingRule[] } | null = null;
 
 function normalizeText(value: string | null | undefined): string {
 	return (value ?? '').trim().toLowerCase();
@@ -53,6 +67,12 @@ export async function loadClassificationOverrides(
 	userId: string,
 	domain: ClassificationDomain
 ): Promise<ClassificationOverrideCache> {
+	const cacheKey = `${userId}:${domain}`;
+	const cached = overridesCache.get(cacheKey);
+	if (cached && Date.now() - cached.cachedAt < OVERRIDES_CACHE_TTL_MS) {
+		return new Map(cached.data);
+	}
+
 	const rows = await db.query.classificationOverrides.findMany({
 		where: and(eq(classificationOverrides.userId, userId), eq(classificationOverrides.domain, domain)),
 		columns: {
@@ -63,9 +83,16 @@ export async function loadClassificationOverrides(
 		}
 	});
 
-	return new Map(
+	const mapped = new Map(
 		rows.map((row) => [row.fingerprint, { correctedCategory: row.correctedCategory, correctedSubcategory: row.correctedSubcategory ?? null, weight: row.weight }])
 	);
+
+	overridesCache.set(cacheKey, {
+		cachedAt: Date.now(),
+		data: mapped
+	});
+
+	return new Map(mapped);
 }
 
 export function getOverrideCategory(
@@ -113,6 +140,7 @@ export async function upsertClassificationOverride(params: {
 			})
 			.where(eq(classificationOverrides.id, existing.id))
 			.returning();
+		overridesCache.delete(`${params.userId}:${params.domain}`);
 		return updated;
 	}
 
@@ -128,6 +156,8 @@ export async function upsertClassificationOverride(params: {
 		})
 		.returning();
 
+	overridesCache.delete(`${params.userId}:${params.domain}`);
+
 	return created;
 }
 
@@ -135,6 +165,10 @@ export async function upsertClassificationOverride(params: {
  * Load active task classification rules from database
  */
 export async function loadTaskClassificationRules(): Promise<TaskClassificationRule[]> {
+	if (taskRulesCache && Date.now() - taskRulesCache.cachedAt < RULES_CACHE_TTL_MS) {
+		return taskRulesCache.data;
+	}
+
 	const rows = await db.query.taskClassificationRules.findMany({
 		where: eq(taskClassificationRules.active, true),
 		columns: {
@@ -144,17 +178,28 @@ export async function loadTaskClassificationRules(): Promise<TaskClassificationR
 		}
 	});
 
-	return rows.map((row) => ({
+	const mapped = rows.map((row) => ({
 		category: row.category,
 		keywords: row.keywords || [],
 		priority: row.priority
 	}));
+
+	taskRulesCache = {
+		cachedAt: Date.now(),
+		data: mapped
+	};
+
+	return mapped;
 }
 
 /**
  * Load active transaction matching rules from database
  */
 export async function loadTransactionMatchingRules(): Promise<TransactionMatchingRule[]> {
+	if (transactionRulesCache && Date.now() - transactionRulesCache.cachedAt < RULES_CACHE_TTL_MS) {
+		return transactionRulesCache.data;
+	}
+
 	const rows = await db.query.transactionMatchingRules.findMany({
 		where: eq(transactionMatchingRules.active, true),
 		columns: {
@@ -165,9 +210,16 @@ export async function loadTransactionMatchingRules(): Promise<TransactionMatchin
 		orderBy: (table, { asc }) => [asc(table.displayOrder)]
 	});
 
-	return rows.map((row) => ({
+	const mapped = rows.map((row) => ({
 		category: row.category,
 		keywords: row.keywords || [],
 		fixed: row.fixed
 	}));
+
+	transactionRulesCache = {
+		cachedAt: Date.now(),
+		data: mapped
+	};
+
+	return mapped;
 }

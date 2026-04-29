@@ -4,6 +4,12 @@ import { and, eq, sql } from 'drizzle-orm';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
 import { createHash } from 'node:crypto';
 import {
+	loadSalaryProfile,
+	buildSalaryProfile,
+	isPaycheck,
+	type SalaryProfile
+} from './salary-profile';
+import {
 	fetchSparebank1Accounts,
 	fetchSparebank1HelloWorld,
 	fetchSparebank1Transactions,
@@ -91,7 +97,12 @@ function rawFingerprintForEvent(event: any): string {
 	return createHash('sha256').update(payload).digest('hex');
 }
 
-async function writeRawAndCanonicalTransactions(events: any[], userId: string, sensorId: string): Promise<void> {
+async function writeRawAndCanonicalTransactions(
+	events: any[],
+	userId: string,
+	sensorId: string,
+	salaryProfile: SalaryProfile | null
+): Promise<void> {
 	for (const event of events) {
 		const txDate = event.timestamp.toISOString().split('T')[0];
 		const amount = Math.round((Number(event.data.amount ?? 0) || 0) * 100) / 100;
@@ -195,6 +206,20 @@ async function writeRawAndCanonicalTransactions(events: any[], userId: string, s
 				event.timestamp.toISOString()
 			]
 		);
+
+		// Tag as paycheck if profile is available
+		if (salaryProfile && upserted[0]?.id) {
+			const paycheckType = isPaycheck(
+				{ amount, description: descriptionRaw, date: txDate },
+				salaryProfile
+			);
+			if (paycheckType) {
+				await pgClient.unsafe(
+					`UPDATE canonical_bank_transactions SET paycheck_type = $1, updated_at = NOW() WHERE id = $2`,
+					[paycheckType, upserted[0].id]
+				);
+			}
+		}
 
 		if (externalId && upserted[0]?.id) {
 			await pgClient.unsafe(
@@ -577,8 +602,14 @@ export async function syncAllSparebank1Data(
 		const uniqueNewEvents = [...batchMap.values()];
 		uniqueTransactionCount = uniqueNewEvents.length;
 
+		// Load salary profile once per sync; build it if missing
+		let salaryProfile = await loadSalaryProfile(userId);
+		if (!salaryProfile) {
+			salaryProfile = await buildSalaryProfile(userId).catch(() => null);
+		}
+
 		try {
-			await writeRawAndCanonicalTransactions(uniqueNewEvents, userId, sensor.id);
+			await writeRawAndCanonicalTransactions(uniqueNewEvents, userId, sensor.id, salaryProfile);
 		} catch (error) {
 			console.warn('[sparebank1-sync] raw+canonical ingest write skipped:', error);
 		}

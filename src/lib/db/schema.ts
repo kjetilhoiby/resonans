@@ -989,6 +989,7 @@ export const canonicalBankTransactions = pgTable('canonical_bank_transactions', 
 	lastSeenAt: timestamp('last_seen_at').defaultNow().notNull(),
 	evidenceCount: integer('evidence_count').notNull().default(1),
 	isActive: boolean('is_active').notNull().default(true),
+	paycheckType: text('paycheck_type').$type<'main' | 'supplementary'>(),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
 }, (table) => ({
@@ -1001,6 +1002,26 @@ export const canonicalBankTransactions = pgTable('canonical_bank_transactions', 
 	),
 	idxCanonicalUserDate: index('canonical_bank_tx_user_date_idx').on(table.userId, table.canonicalDate),
 	idxCanonicalUserStatusDate: index('canonical_bank_tx_user_status_date_idx').on(table.userId, table.latestBookingStatus, table.canonicalDate)
+}));
+
+// Salary profile derived from historical paycheck detection.
+// One active row per user; deactivated (active=false) when employer changes.
+export const userSalaryProfiles = pgTable('user_salary_profiles', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id).notNull(),
+	sourceAccountId: text('source_account_id').notNull(),
+	// Normalised payer text (first 3 significant words, digits stripped)
+	descriptionFingerprint: text('description_fingerprint').notNull(),
+	amountMin: decimal('amount_min').notNull(),
+	amountMax: decimal('amount_max').notNull(),
+	typicalDom: integer('typical_dom').notNull(),
+	typicalDow: integer('typical_dow').notNull(),
+	active: boolean('active').notNull().default(true),
+	derivedAt: timestamp('derived_at').defaultNow().notNull(),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	idxSalaryProfilesUser: index('idx_salary_profiles_user').on(table.userId, table.active)
 }));
 
 // Alias map from provider transaction id to canonical row.

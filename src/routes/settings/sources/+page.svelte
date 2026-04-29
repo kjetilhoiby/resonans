@@ -43,6 +43,41 @@
 	let withingsDebugDays = $state(30);
 	let withingsDebugLimit = $state(10);
 
+	// ── Salary profile ──────────────────────────────────────────────────────────
+	type SalaryProfileData = {
+		userId: string;
+		sourceAccountId: string;
+		descriptionFingerprint: string;
+		amountMin: number;
+		amountMax: number;
+		typicalDom: number;
+		typicalDow: number;
+	};
+	type PaycheckRow = {
+		id: string;
+		canonicalDate: string;
+		amount: string;
+		description: string | null;
+		paycheckType: string;
+	};
+
+	let salaryProfile = $state<SalaryProfileData | null>(null);
+	let salaryProfileNextPayday = $state<string | null>(null);
+	let salaryProfilePaychecks = $state<PaycheckRow[]>([]);
+	let loadingSalaryProfile = $state(false);
+	let showSalaryProfile = $state(false);
+	let rebuildingProfile = $state(false);
+	let rebuildProfileResult = $state<{ success: boolean; message: string } | null>(null);
+	let backfillingPaychecks = $state(false);
+	let backfillResult = $state<{ success: boolean; message: string } | null>(null);
+	let editingProfile = $state(false);
+	let profileEditFingerprint = $state('');
+	let profileEditAmountMin = $state(0);
+	let profileEditAmountMax = $state(0);
+	let profileEditDom = $state(0);
+	let savingProfileEdit = $state(false);
+	let profileEditResult = $state<{ success: boolean; message: string } | null>(null);
+
 	let sparebank1Status = $state<any>(null);
 	let loadingSparebank1 = $state(false);
 	let syncingSparebank1 = $state(false);
@@ -133,7 +168,8 @@
 			loadSparebank1Status(),
 			loadGoogleSheetsStatus(),
 			loadSpondStatus(),
-			loadAnchorAccounts()
+			loadAnchorAccounts(),
+			loadSalaryProfileData()
 		]);
 	});
 
@@ -396,6 +432,104 @@
 		if (!confirm('Koble fra Spond? Dette sletter alle importerte hendelser.')) return;
 		await fetch('/api/sensors/spond/disconnect', { method: 'POST' });
 		await loadSpondStatus();
+	}
+
+	async function loadSalaryProfileData() {
+		loadingSalaryProfile = true;
+		try {
+			const res = await fetch('/api/admin/salary-profile');
+			if (res.ok) {
+				const payload = await res.json();
+				salaryProfile = payload.profile ?? null;
+				salaryProfileNextPayday = payload.predictedNextPayday ?? null;
+				salaryProfilePaychecks = payload.paychecks ?? [];
+			}
+		} finally {
+			loadingSalaryProfile = false;
+		}
+	}
+
+	async function rebuildSalaryProfile() {
+		rebuildingProfile = true;
+		rebuildProfileResult = null;
+		try {
+			const res = await fetch('/api/admin/salary-profile/rebuild', { method: 'POST' });
+			const payload = await res.json().catch(() => ({}));
+			if (!res.ok) throw new Error(payload?.error || 'Bygging feilet');
+			rebuildProfileResult = { success: true, message: 'Lønnsprofile bygget.' };
+			await loadSalaryProfileData();
+		} catch (err) {
+			rebuildProfileResult = { success: false, message: err instanceof Error ? err.message : 'Ukjent feil' };
+		} finally {
+			rebuildingProfile = false;
+		}
+	}
+
+	async function backfillPaychecks(dryRun: boolean) {
+		backfillingPaychecks = true;
+		backfillResult = null;
+		try {
+			const url = `/api/admin/salary-profile/backfill${dryRun ? '?dryRun=true' : ''}`;
+			const res = await fetch(url, { method: 'POST' });
+			const payload = await res.json().catch(() => ({}));
+			if (!res.ok) throw new Error(payload?.error || 'Backfill feilet');
+			if (dryRun) {
+				const { wouldTag, wouldClear } = payload;
+				backfillResult = {
+					success: true,
+					message: `Tørrtest: ville tagget ${wouldTag?.main ?? 0} hoved + ${wouldTag?.supplementary ?? 0} tillegg, fjernet ${wouldClear ?? 0} foreldede tagger`
+				};
+			} else {
+				const { tagged, cleared } = payload;
+				backfillResult = {
+					success: true,
+					message: `Tagget ${tagged?.main ?? 0} hoved + ${tagged?.supplementary ?? 0} tillegg, fjernet ${cleared ?? 0} foreldede tagger`
+				};
+				await loadSalaryProfileData();
+			}
+		} catch (err) {
+			backfillResult = { success: false, message: err instanceof Error ? err.message : 'Ukjent feil' };
+		} finally {
+			backfillingPaychecks = false;
+		}
+	}
+
+	function startEditProfile() {
+		if (!salaryProfile) return;
+		profileEditFingerprint = salaryProfile.descriptionFingerprint;
+		profileEditAmountMin = salaryProfile.amountMin;
+		profileEditAmountMax = salaryProfile.amountMax;
+		profileEditDom = salaryProfile.typicalDom;
+		editingProfile = true;
+		profileEditResult = null;
+	}
+
+	async function saveProfileEdit() {
+		savingProfileEdit = true;
+		profileEditResult = null;
+		try {
+			const safeDom = Math.max(1, Math.min(31, Math.floor(Number(profileEditDom) || 25)));
+			profileEditDom = safeDom;
+			const res = await fetch('/api/admin/salary-profile', {
+				method: 'PATCH',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({
+					descriptionFingerprint: profileEditFingerprint.trim().toUpperCase(),
+					amountMin: Number(profileEditAmountMin),
+					amountMax: Number(profileEditAmountMax),
+					typicalDom: safeDom
+				})
+			});
+			const payload = await res.json().catch(() => ({}));
+			if (!res.ok) throw new Error(payload?.error || 'Lagring feilet');
+			profileEditResult = { success: true, message: 'Lønnsprofile oppdatert.' };
+			salaryProfile = payload.profile ?? salaryProfile;
+			editingProfile = false;
+		} catch (err) {
+			profileEditResult = { success: false, message: err instanceof Error ? err.message : 'Ukjent feil' };
+		} finally {
+			savingProfileEdit = false;
+		}
 	}
 
 	async function loadSparebank1Status() {
@@ -783,6 +917,141 @@
 			{#if resetEconomicsResult}
 				<p class={resetEconomicsResult.success ? 'ok' : 'err'}>{resetEconomicsResult.message}</p>
 			{/if}
+
+			<!-- ── Lønnsdeteksjon ──────────────────────────────────────────────── -->
+			<div class="salary-section">
+				<div class="salary-header">
+					<h3>Lønnsdeteksjon</h3>
+					<Button
+						type="button"
+						variant="ghost"
+						onClick={() => (showSalaryProfile = !showSalaryProfile)}
+					>
+						{showSalaryProfile ? 'Skjul' : 'Vis detaljer'}
+					</Button>
+				</div>
+
+				{#if loadingSalaryProfile}
+					<p class="meta">Laster lønnsprofile...</p>
+				{:else if salaryProfile}
+					<p class="meta">
+						Neste lønning: <strong>{salaryProfileNextPayday ?? '–'}</strong>
+						· Dag i mnd: <strong>{salaryProfile.typicalDom}</strong>
+						· Beløpsintervall: <strong>{Math.round(salaryProfile.amountMin).toLocaleString('nb-NO')} – {Math.round(salaryProfile.amountMax).toLocaleString('nb-NO')} kr</strong>
+					</p>
+				{:else}
+					<p class="meta">Ingen aktiv lønnsprofile. Bygg profil basert på historikk.</p>
+				{/if}
+
+				{#if showSalaryProfile}
+					<div class="salary-detail">
+						{#if salaryProfile}
+							<div class="profile-grid">
+								<span class="profile-label">Fingeravtrykk</span>
+								<span class="profile-value mono">{salaryProfile.descriptionFingerprint || '–'}</span>
+								<span class="profile-label">Kildekonto</span>
+								<span class="profile-value mono">{salaryProfile.sourceAccountId}</span>
+								<span class="profile-label">Typisk ukedag</span>
+								<span class="profile-value">{['', 'Man', 'Tir', 'Ons', 'Tor', 'Fre'][salaryProfile.typicalDow] ?? '–'}</span>
+							</div>
+						{/if}
+
+						<!-- Edit profile -->
+						{#if editingProfile}
+							<div class="profile-edit-form">
+								<div class="field">
+									<label for="profile-fingerprint">Fingeravtrykk (3 ord, store bokstaver)</label>
+									<Input id="profile-fingerprint" className="input" bind:value={profileEditFingerprint} placeholder="EKS ARBEIDSGIVER AS" />
+								</div>
+								<div class="field row">
+									<div>
+										<label for="profile-amount-min">Min beløp (kr)</label>
+										<Input id="profile-amount-min" className="input" type="number" min="0" bind:value={profileEditAmountMin} />
+									</div>
+									<div>
+										<label for="profile-amount-max">Maks beløp (kr)</label>
+										<Input id="profile-amount-max" className="input" type="number" min="0" bind:value={profileEditAmountMax} />
+									</div>
+									<div>
+										<label for="profile-dom">Dag i mnd</label>
+										<Input id="profile-dom" className="input" type="number" min="1" max="31" bind:value={profileEditDom} />
+									</div>
+								</div>
+								<div class="row">
+									<Button onClick={saveProfileEdit} disabled={savingProfileEdit}>
+										{savingProfileEdit ? 'Lagrer...' : 'Lagre endringer'}
+									</Button>
+									<Button variant="ghost" onClick={() => { editingProfile = false; profileEditResult = null; }}>Avbryt</Button>
+								</div>
+								{#if profileEditResult}
+									<p class={profileEditResult.success ? 'ok' : 'err'}>{profileEditResult.message}</p>
+								{/if}
+							</div>
+						{/if}
+
+						<!-- Action buttons -->
+						<div class="row salary-actions">
+							<Button variant="secondary" onClick={rebuildSalaryProfile} disabled={rebuildingProfile}>
+								{rebuildingProfile ? 'Bygger...' : 'Bygg ny profil fra historikk'}
+							</Button>
+							{#if salaryProfile && !editingProfile}
+								<Button variant="secondary" onClick={startEditProfile}>Korriger manuelt</Button>
+							{/if}
+						</div>
+						{#if rebuildProfileResult}
+							<p class={rebuildProfileResult.success ? 'ok' : 'err'}>{rebuildProfileResult.message}</p>
+						{/if}
+
+						<!-- Backfill -->
+						{#if salaryProfile}
+							<div class="backfill-section">
+								<p class="field-desc">Tagg eksisterende transaksjoner med lønnsstatus basert på aktiv profil.</p>
+								<div class="row">
+									<Button variant="secondary" onClick={() => backfillPaychecks(true)} disabled={backfillingPaychecks}>
+										Tørrtest
+									</Button>
+									<Button variant="secondary" onClick={() => backfillPaychecks(false)} disabled={backfillingPaychecks}>
+										{backfillingPaychecks ? 'Kjører...' : 'Kjør backfill'}
+									</Button>
+								</div>
+								{#if backfillResult}
+									<p class={backfillResult.success ? 'ok' : 'err'}>{backfillResult.message}</p>
+								{/if}
+							</div>
+						{/if}
+
+						<!-- Recent paychecks -->
+						{#if salaryProfilePaychecks.length > 0}
+							<div class="paycheck-list">
+								<p class="field-title">Siste lønnsinnbetalinger (siste 12 mnd)</p>
+								<table class="debug-table">
+									<thead>
+										<tr>
+											<th>Dato</th>
+											<th>Beløp</th>
+											<th>Beskrivelse</th>
+											<th>Type</th>
+										</tr>
+									</thead>
+									<tbody>
+										{#each salaryProfilePaychecks as pc}
+											<tr>
+												<td>{pc.canonicalDate}</td>
+												<td>{Number(pc.amount).toLocaleString('nb-NO', { minimumFractionDigits: 2 })} kr</td>
+												<td>{pc.description || '–'}</td>
+												<td>{pc.paycheckType === 'main' ? 'Hoved' : 'Tillegg'}</td>
+											</tr>
+										{/each}
+									</tbody>
+								</table>
+							</div>
+						{:else if salaryProfile}
+							<p class="meta">Ingen taggede lønnsinnbetalinger funnet siste 12 måneder.</p>
+						{/if}
+					</div>
+				{/if}
+			</div>
+			<!-- ── /Lønnsdeteksjon ─────────────────────────────────────────────── -->
 		{:else}
 			<Button href="/api/sensors/sparebank1/connect">Koble til SpareBank 1</Button>
 		{/if}
@@ -1035,6 +1304,61 @@
 		background: #111827;
 	}
 	.job-status-panel p { margin: 0.2rem 0; }
+
+	/* ── Salary profile ──────────────────────────────────────────────────────── */
+	.salary-section {
+		margin-top: 1.25rem;
+		padding-top: 1rem;
+		border-top: 1px solid #252525;
+	}
+	.salary-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 0.4rem;
+	}
+	.salary-header h3 {
+		margin: 0;
+		font-size: 0.92rem;
+		font-weight: 600;
+		color: var(--text-primary);
+	}
+	.salary-detail {
+		margin-top: 0.75rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+	.profile-grid {
+		display: grid;
+		grid-template-columns: max-content 1fr;
+		gap: 0.25rem 0.75rem;
+		font-size: 0.84rem;
+	}
+	.profile-label { color: var(--text-tertiary); }
+	.profile-value { color: var(--text-secondary); }
+	.profile-value.mono { font-family: monospace; font-size: 0.82rem; }
+	.salary-actions { flex-wrap: wrap; gap: 0.5rem; }
+	.profile-edit-form {
+		padding: 0.75rem;
+		border: 1px solid #262626;
+		border-radius: 10px;
+		background: #121212;
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
+	}
+	.backfill-section {
+		padding: 0.65rem 0.75rem;
+		border: 1px solid #262626;
+		border-radius: 10px;
+		background: #121212;
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+	.paycheck-list { margin-top: 0.25rem; }
+	.field-title { margin: 0 0 0.4rem; font-size: 0.84rem; font-weight: 500; color: var(--text-secondary); }
 
 	@media (max-width: 720px) {
 		.sources-content {

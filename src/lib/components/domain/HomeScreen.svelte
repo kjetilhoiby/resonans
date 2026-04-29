@@ -27,7 +27,6 @@
 	import { prefetchWidgetData } from '$lib/client/widget-data-cache';
 	import { finishNavMetric, startNavMetric, timeAsync } from '$lib/client/nav-metrics';
 	import { streamProxyChat } from '$lib/client/proxy-chat-stream';
-	import { resolveThemeDashboardKind, type DashboardKind } from '$lib/domain/theme-dashboard-registry';
 	import type { WeatherStatusWidget } from '$lib/ai/tools/weather-forecast';
 
 	interface Theme {
@@ -253,36 +252,6 @@
 		} catch { /* stille */ }
 	}
 
-	function getDashboardKindForTheme(theme: Theme): DashboardKind | null {
-		return resolveThemeDashboardKind(theme.name);
-	}
-
-	function scheduleDashboardPrefetch() {
-		const prefetchTargets = themes
-			.slice(0, 2)
-			.map((theme) => ({ themeId: theme.id, kind: getDashboardKindForTheme(theme) }))
-			.filter((item): item is { themeId: string; kind: DashboardKind } => item.kind !== null)
-			// Health dashboard still pulls activity-layer data; avoid warming that path on home.
-			.filter((item) => item.kind !== 'health');
-
-		if (prefetchTargets.length === 0 || typeof window === 'undefined') return () => {};
-		const browserWindow = window;
-
-		const runPrefetch = () => {
-			for (const target of prefetchTargets) {
-				void prefetchDashboard(target.themeId, target.kind);
-			}
-		};
-
-		if ('requestIdleCallback' in browserWindow) {
-			const idleId = browserWindow.requestIdleCallback(runPrefetch, { timeout: 1800 });
-			return () => browserWindow.cancelIdleCallback(idleId);
-		}
-
-		const timeoutId = globalThis.setTimeout(runPrefetch, 1200);
-		return () => globalThis.clearTimeout(timeoutId);
-	}
-
 	function scheduleWidgetDataPrefetch(widgets: UserWidget[]) {
 		if (widgets.length === 0 || typeof window === 'undefined') return;
 		const connection = (navigator as { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
@@ -301,8 +270,6 @@
 	}
 
 	onMount(() => {
-		let cleanupPrefetch = () => {};
-
 		void (async () => {
 			finishNavMetric('home');
 
@@ -355,8 +322,6 @@
 
 			await checklistPromise;
 
-			cleanupPrefetch = scheduleDashboardPrefetch();
-
 			// Warm up theme route code and server data so first navigation feels snappier.
 			if (typeof window !== 'undefined') {
 				const runPreload = () => {
@@ -378,10 +343,6 @@
 				openChat();
 			}
 		})();
-
-		return () => {
-			cleanupPrefetch();
-		};
 	});
 
 	// -- Widgets (live eller mock) --

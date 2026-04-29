@@ -1,9 +1,12 @@
 import { db } from '$lib/db';
 import { sensorAggregates, sensorEvents, sensors, goals as goalsTable, themes } from '$lib/db/schema';
 import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
-import { buildCanonicalActivityFeed, buildUnifiedWorkoutActivities } from '$lib/server/activity-layer';
+import { buildUnifiedWorkoutActivities } from '$lib/server/activity-layer';
+
+const HEALTH_DASHBOARD_WORKOUT_LOOKBACK_DAYS = 60;
 
 export async function loadHealthDashboardData(userId: string) {
+	const t0 = performance.now();
 	const healthSensors = await db.query.sensors.findMany({
 		where: and(
 			eq(sensors.userId, userId),
@@ -55,12 +58,8 @@ export async function loadHealthDashboardData(userId: string) {
 	]);
 
 	const unifiedActivities = await buildUnifiedWorkoutActivities(userId, {
-		since: new Date(Date.now() - 1000 * 60 * 60 * 24 * 90),
+		since: new Date(Date.now() - 1000 * 60 * 60 * 24 * HEALTH_DASHBOARD_WORKOUT_LOOKBACK_DAYS),
 		limit: 1200
-	});
-	const canonicalFeed = await buildCanonicalActivityFeed(userId, {
-		since: new Date(Date.now() - 1000 * 60 * 60 * 24 * 90),
-		limit: 250
 	});
 
 	const [weightEventCountRow, weightAggregateCountRow] = await Promise.all([
@@ -76,6 +75,10 @@ export async function loadHealthDashboardData(userId: string) {
 
 	const weightEventCount = weightEventCountRow[0]?.count ?? 0;
 	const weightAggregateCount = weightAggregateCountRow[0]?.count ?? 0;
+
+	console.log(
+		`[perf][health-dashboard] user=${userId} step=total ms=${(performance.now() - t0).toFixed(0)} workouts=${unifiedActivities.length} recentEvents=${recentHealthEvents.length} goals=${healthGoals.length}`
+	);
 
 	return {
 		weekly: weeklyData.reverse(),
@@ -96,7 +99,6 @@ export async function loadHealthDashboardData(userId: string) {
 		})),
 		activityLayer: {
 			version: 1,
-			feed: canonicalFeed,
 			workouts: unifiedActivities
 		},
 		tooling: {

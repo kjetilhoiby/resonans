@@ -71,6 +71,19 @@ const BATCH_SIZE = 50;
 const MAX_PARALLEL = 3;
 /** Re-analyze a merchant if its mapping is older than this many days */
 const RECLASSIFY_AFTER_DAYS = 30;
+const MERCHANT_MAPPINGS_CACHE_TTL_MS = 60 * 1000;
+
+const merchantMappingsCache = new Map<
+	string,
+	{
+		cachedAt: number;
+		data: Map<string, { category: string; subcategory: string | null; label: string; emoji: string | null; isFixed: boolean }>;
+	}
+>();
+
+export function invalidateMerchantMappingsCache(userId: string) {
+	merchantMappingsCache.delete(userId);
+}
 
 // ─── Main entry points ────────────────────────────────────────────────────────
 
@@ -228,6 +241,7 @@ export async function analyzeSpending(
 		if (isUpdate) updatedMappings++;
 		else newMappings++;
 	}
+	invalidateMerchantMappingsCache(userId);
 	console.log(`[analyzeSpending] DB upsert: ${Date.now() - t2}ms | Total: ${Date.now() - t0}ms`);
 
 	return {
@@ -325,6 +339,11 @@ export async function generateSpendingInsights(
 export async function loadMerchantMappings(
 	userId: string
 ): Promise<Map<string, { category: string; subcategory: string | null; label: string; emoji: string | null; isFixed: boolean }>> {
+	const cached = merchantMappingsCache.get(userId);
+	if (cached && Date.now() - cached.cachedAt < MERCHANT_MAPPINGS_CACHE_TTL_MS) {
+		return new Map(cached.data);
+	}
+
 	const rows = await db
 		.select({
 			merchantKey: merchantMappings.merchantKey,
@@ -337,7 +356,13 @@ export async function loadMerchantMappings(
 		.from(merchantMappings)
 		.where(eq(merchantMappings.userId, userId));
 
-	return new Map(rows.map((r) => [r.merchantKey, r]));
+	const mapped = new Map(rows.map((r) => [r.merchantKey, r]));
+	merchantMappingsCache.set(userId, {
+		cachedAt: Date.now(),
+		data: mapped
+	});
+
+	return new Map(mapped);
 }
 
 // ─── Merchant key resolution via prefix-grouping + LLM ───────────────────────
