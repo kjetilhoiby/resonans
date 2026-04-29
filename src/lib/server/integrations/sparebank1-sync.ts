@@ -428,7 +428,14 @@ export async function getValidSparebank1AccessToken(sensor: any): Promise<string
 
 export async function syncAllSparebank1Data(
 	userId: string,
-	options: { fromDate?: Date; toDate?: Date; includeDebug?: boolean; resetBeforeImport?: boolean; skipExistingDedup?: boolean } = {}
+	options: {
+		fromDate?: Date;
+		toDate?: Date;
+		includeDebug?: boolean;
+		resetBeforeImport?: boolean;
+		skipExistingDedup?: boolean;
+		prefetchedAccounts?: { accounts: any[]; accessToken: string; rateLimitHeaders: RateLimitSnapshot };
+	} = {}
 ): Promise<Sparebank1SyncResult> {
 	const sensor = await getSparebank1Sensor(userId);
 
@@ -436,7 +443,6 @@ export async function syncAllSparebank1Data(
 		throw new Error('No active SpareBank1 sensor found');
 	}
 
-	const accessToken = await getValidSparebank1AccessToken(sensor);
 	const since = options.fromDate ?? sensor.lastSync ?? undefined;
 	const toDate = options.toDate;
 	const includeDebug = options.includeDebug === true;
@@ -453,11 +459,18 @@ export async function syncAllSparebank1Data(
 		console.log('[sparebank1-sync] replace-mode wipe completed', { userId, sensorId: sensor.id, wiped });
 	}
 
+	let accessToken: string;
+	let accounts: any[];
 	const rateLimitHeaders: RateLimitSnapshot = {};
 
-	await fetchSparebank1HelloWorld(accessToken, rateLimitHeaders);
-
-	const accounts = await fetchSparebank1Accounts(accessToken, rateLimitHeaders);
+	if (options.prefetchedAccounts) {
+		({ accounts, accessToken } = options.prefetchedAccounts);
+		Object.assign(rateLimitHeaders, options.prefetchedAccounts.rateLimitHeaders);
+	} else {
+		accessToken = await getValidSparebank1AccessToken(sensor);
+		await fetchSparebank1HelloWorld(accessToken, rateLimitHeaders);
+		accounts = await fetchSparebank1Accounts(accessToken, rateLimitHeaders);
+	}
 
 	const balanceEvents = accounts.map((account) => {
 		const timestamp =
