@@ -113,6 +113,7 @@
 	} | null>(null);
 	let sleepBackfillFromDate = $state('2020-01-01');
 	let sleepBackfillToDate = $state(new Date().toISOString().split('T')[0]);
+	let sleepBackfillReaggregating = $state(false);
 
 	// ── Salary profile ──────────────────────────────────────────────────────────
 	type SalaryProfileData = {
@@ -579,9 +580,9 @@
 				if (progress.done || progress.error) break;
 			}
 			if (sleepBackfillProgress?.done && !sleepBackfillProgress?.error) {
-				sleepBackfillProgress = { ...sleepBackfillProgress, _aggregating: true } as typeof sleepBackfillProgress;
+				sleepBackfillReaggregating = true;
 				await fetch('/api/sensors/aggregate', { method: 'POST' });
-				sleepBackfillProgress = { ...sleepBackfillProgress, _aggregating: false } as typeof sleepBackfillProgress;
+				sleepBackfillReaggregating = false;
 			}
 		} finally {
 			sleepBackfillRunning = false;
@@ -1373,7 +1374,8 @@
 							{sleepBackfillProgress.processedDays} / {sleepBackfillProgress.totalDays} dager
 							({sleepBackfillProgress.progressPct}%)
 							{#if sleepBackfillProgress.nextDate && !sleepBackfillProgress.done}· behandler {sleepBackfillProgress.nextDate}{/if}
-							{#if sleepBackfillProgress.done && !sleepBackfillProgress.error}· ferdig ✓{/if}
+							{#if sleepBackfillProgress.done && !sleepBackfillProgress.error && !sleepBackfillReaggregating}· ferdig ✓{/if}
+							{#if sleepBackfillReaggregating}· oppdaterer periodetabell…{/if}
 						</p>
 						{#if sleepBackfillProgress.stats}
 							<p class="debug-summary">
