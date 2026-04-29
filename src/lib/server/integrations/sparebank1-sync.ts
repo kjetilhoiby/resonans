@@ -425,7 +425,7 @@ export async function getValidSparebank1AccessToken(sensor: any): Promise<string
 
 export async function syncAllSparebank1Data(
 	userId: string,
-	options: { fromDate?: Date; includeDebug?: boolean; resetBeforeImport?: boolean; skipExistingDedup?: boolean } = {}
+	options: { fromDate?: Date; toDate?: Date; includeDebug?: boolean; resetBeforeImport?: boolean; skipExistingDedup?: boolean } = {}
 ): Promise<Sparebank1SyncResult> {
 	const sensor = await getSparebank1Sensor(userId);
 
@@ -435,6 +435,7 @@ export async function syncAllSparebank1Data(
 
 	const accessToken = await getValidSparebank1AccessToken(sensor);
 	const since = options.fromDate ?? sensor.lastSync ?? undefined;
+	const toDate = options.toDate;
 	const includeDebug = options.includeDebug === true;
 	const resetBeforeImport = options.resetBeforeImport === true;
 	const skipExistingDedup = options.skipExistingDedup === true;
@@ -522,7 +523,7 @@ export async function syncAllSparebank1Data(
 				const accountKey = String(account.key || account.accountKey || account.id || account.accountId || account.number || '');
 				if (!accountKey) return [];
 
-				const transactions = await fetchSparebank1Transactions(accessToken, accountKey, since);
+				const transactions = await fetchSparebank1Transactions(accessToken, accountKey, since, toDate);
 				return transactions.map((transaction) => {
 					const timestamp =
 						typeof transaction.date === 'number'

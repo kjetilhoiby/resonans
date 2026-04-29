@@ -43,6 +43,77 @@
 	let withingsDebugDays = $state(30);
 	let withingsDebugLimit = $state(10);
 
+	type SleepDebugEvent = {
+		id: string;
+		timestamp: string;
+		hr_average: number | null;
+		duration: number | null;
+		dataKeys: string[];
+	};
+	type SleepSummaryNight = {
+		date: string;
+		hr_average: number | null;
+		hr_min: number | null;
+		hr_max: number | null;
+		rr_average: number | null;
+		duration: number | null;
+		dataKeys: string[];
+	};
+	type SleepDetailNight = {
+		date: string;
+		segments: number;
+		hrSamples: number;
+		rrSamples: number;
+		snoringSegments: number;
+		sampleKeys: string[];
+	};
+	type SleepSampleSegment = {
+		startdate: string;
+		state: number;
+		hr: number | null;
+		rr: number | null;
+		snoring: number | null;
+		allKeys: string[];
+	};
+	let showSleepDebug = $state(false);
+	let loadingSleepDebug = $state(false);
+	let sleepDebug = $state<{
+		db: { totalEvents: number; eventsWithHr: number; events: SleepDebugEvent[] };
+		summary: { status: number; totalNights: number; nightsWithHr: number; nights: SleepSummaryNight[] };
+		detail: { status: number; totalSegments: number; nights: SleepDetailNight[]; sampleSegments: SleepSampleSegment[] };
+	} | null>(null);
+	let sleepDebugError = $state<string | null>(null);
+
+	// ── Withings batch backfill ──────────────────────────────────────────────────
+	type WithingsBatchStats = { weight: number; activity: number; sleep: number; workouts: number; total: number };
+	let withingsBatchJobId = $state<string | null>(null);
+	let withingsBatchRunning = $state(false);
+	let withingsBatchProgress = $state<{
+		done: boolean;
+		processedDays: number;
+		totalDays: number;
+		progressPct: number;
+		nextDate: string | null;
+		stats: WithingsBatchStats;
+		error: string | null;
+	} | null>(null);
+
+	// ── Sleep HR backfill ────────────────────────────────────────────────────────
+	type BatchStats = { found: number; updated: number; daysWithHr: number };
+	let sleepBackfillJobId = $state<string | null>(null);
+	let sleepBackfillRunning = $state(false);
+	let sleepBackfillProgress = $state<{
+		done: boolean;
+		processedDays: number;
+		totalDays: number;
+		progressPct: number;
+		nextDate: string | null;
+		stats: BatchStats;
+		error: string | null;
+	} | null>(null);
+	let sleepBackfillFromDate = $state('2020-01-01');
+	let sleepBackfillToDate = $state(new Date().toISOString().split('T')[0]);
+
 	// ── Salary profile ──────────────────────────────────────────────────────────
 	type SalaryProfileData = {
 		userId: string;
@@ -75,8 +146,37 @@
 	let profileEditAmountMin = $state(0);
 	let profileEditAmountMax = $state(0);
 	let profileEditDom = $state(0);
+
+	// Diagnostics
+	type DiagAccountRow = { accountId: string; txCount: number; incomeCount: number; minDate: string; maxDate: string };
+	type DiagInflowRow = {
+		id: string; accountId: string; date: string; amount: number;
+		merchantKey: string | null; descriptionDisplay: string | null;
+		paycheckType: string | null; latestBookingStatus: string | null;
+		paycheckResult: string | null; score: number | null;
+		scoreComponents: {
+			fingerprintMatch: boolean; hasKeyword: boolean; inAmountRange: boolean;
+			isWorkday: boolean; domOnTime: boolean; domCloseness: number;
+			descNorm: string; profileFingerprint: string;
+			profileAmountMin: number; profileAmountMax: number; profileTypicalDom: number;
+		} | null;
+	};
+	type DiagData = { accountSummary: DiagAccountRow[]; bigInflows: DiagInflowRow[] };
+	let loadingDiag = $state(false);
+	let diagData = $state<DiagData | null>(null);
 	let savingProfileEdit = $state(false);
 	let profileEditResult = $state<{ success: boolean; message: string } | null>(null);
+
+	// Manual salary setup: account + transaction picker
+	type AccountRow = { accountId: string; accountName: string | null; accountType: string | null };
+	type IncomeTx = { id: string; canonicalDate: string; amount: string; description: string };
+	let salaryAccounts = $state<AccountRow[]>([]);
+	let manualAccountId = $state('');
+	let accountTransactions = $state<IncomeTx[]>([]);
+	let loadingAccountTxs = $state(false);
+	let selectedTxId = $state('');
+	let buildingFromTx = $state(false);
+	let buildFromTxResult = $state<{ success: boolean; message: string } | null>(null);
 
 	let sparebank1Status = $state<any>(null);
 	let loadingSparebank1 = $state(false);
@@ -131,6 +231,20 @@
 	let sparebank1PollTimer: ReturnType<typeof setInterval> | null = null;
 	let resettingEconomics = $state(false);
 	let resetEconomicsResult = $state<{ success: boolean; message: string } | null>(null);
+
+	// ── SpareBank1 batch backfill ────────────────────────────────────────────
+	type Sparebank1BatchStats = { transactionsInserted: number; daysWithTransactions: number };
+	let sparebank1BatchJobId = $state<string | null>(null);
+	let sparebank1BatchRunning = $state(false);
+	let sparebank1BatchProgress = $state<{
+		done: boolean;
+		processedDays: number;
+		totalDays: number;
+		progressPct: number;
+		nextDate: string | null;
+		stats: Sparebank1BatchStats;
+		error: string | null;
+	} | null>(null);
 
 	let googleSheetsStatus = $state<any>(null);
 	let loadingGoogleSheets = $state(false);
@@ -344,10 +458,129 @@
 		}
 	}
 
+	async function importWithingsBatch() {
+		const today = new Date().toISOString().split('T')[0];
+		let fromDate: string;
+
+		if (withingsImportMode === 'from2017') {
+			fromDate = '2017-09-01';
+		} else {
+			const safeDays = Math.max(1, Math.min(365, Math.floor(Number(withingsImportDays) || 30)));
+			withingsImportDays = safeDays;
+			const d = new Date();
+			d.setDate(d.getDate() - safeDays);
+			fromDate = d.toISOString().split('T')[0];
+		}
+
+		withingsBatchRunning = true;
+		withingsBatchProgress = null;
+		withingsBatchJobId = null;
+		withingsResult = null;
+
+		try {
+			const res = await fetch('/api/admin/batch/start', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ type: 'withings_backfill', fromDate, toDate: today })
+			});
+			const payload = await res.json();
+			if (!res.ok) throw new Error(payload.error || 'Klarte ikke starte import');
+			withingsBatchJobId = payload.jobId;
+			await runWithingsBatchLoop();
+		} catch (error) {
+			withingsBatchProgress = {
+				done: true, processedDays: 0, totalDays: 0, progressPct: 0,
+				nextDate: null, stats: { weight: 0, activity: 0, sleep: 0, workouts: 0, total: 0 },
+				error: error instanceof Error ? error.message : 'Ukjent feil'
+			};
+			withingsBatchRunning = false;
+		}
+	}
+
+	async function runWithingsBatchLoop() {
+		if (!withingsBatchJobId) return;
+		try {
+			while (true) {
+				const res = await fetch('/api/admin/batch/step', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ jobId: withingsBatchJobId })
+				});
+				const progress = await res.json();
+				withingsBatchProgress = progress;
+				if (progress.done || progress.error) break;
+			}
+		} finally {
+			withingsBatchRunning = false;
+		}
+	}
+
 	async function disconnectWithings() {
 		if (!confirm('Koble fra Withings?')) return;
 		await fetch('/api/sensors/withings/disconnect', { method: 'POST' });
 		await loadWithingsStatus();
+	}
+
+	async function loadSleepDebug() {
+		loadingSleepDebug = true;
+		sleepDebugError = null;
+		try {
+			const res = await fetch('/api/admin/debug-sleep');
+			const payload = await res.json();
+			if (!res.ok) throw new Error(payload.error || 'Klarte ikke hente søvndata');
+			sleepDebug = payload;
+		} catch (error) {
+			sleepDebugError = error instanceof Error ? error.message : 'Ukjent feil';
+			sleepDebug = null;
+		} finally {
+			loadingSleepDebug = false;
+		}
+	}
+
+	async function startSleepBackfill() {
+		sleepBackfillRunning = true;
+		sleepBackfillProgress = null;
+		sleepBackfillJobId = null;
+		try {
+			const res = await fetch('/api/admin/batch/start', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					type: 'withings_sleep_hr',
+					fromDate: sleepBackfillFromDate,
+					toDate: sleepBackfillToDate
+				})
+			});
+			const payload = await res.json();
+			if (!res.ok) throw new Error(payload.error || 'Klarte ikke starte backfill');
+			sleepBackfillJobId = payload.jobId;
+			await runSleepBackfillLoop();
+		} catch (error) {
+			sleepBackfillProgress = {
+				done: true, processedDays: 0, totalDays: 0, progressPct: 0,
+				nextDate: null, stats: { found: 0, updated: 0, daysWithHr: 0 },
+				error: error instanceof Error ? error.message : 'Ukjent feil'
+			};
+			sleepBackfillRunning = false;
+		}
+	}
+
+	async function runSleepBackfillLoop() {
+		if (!sleepBackfillJobId) return;
+		try {
+			while (true) {
+				const res = await fetch('/api/admin/batch/step', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ jobId: sleepBackfillJobId })
+				});
+				const progress = await res.json();
+				sleepBackfillProgress = progress;
+				if (progress.done || progress.error) break;
+			}
+		} finally {
+			sleepBackfillRunning = false;
+		}
 	}
 
 	async function loadWithingsDebug() {
@@ -446,6 +679,62 @@
 			}
 		} finally {
 			loadingSalaryProfile = false;
+		}
+	}
+
+	async function loadSalaryAccounts() {
+		if (salaryAccounts.length > 0) return;
+		try {
+			const res = await fetch('/api/economics/accounts');
+			if (res.ok) salaryAccounts = await res.json();
+		} catch {
+			// non-critical
+		}
+	}
+
+	async function loadAccountTransactions() {
+		if (!manualAccountId) { accountTransactions = []; return; }
+		loadingAccountTxs = true;
+		accountTransactions = [];
+		selectedTxId = '';
+		buildFromTxResult = null;
+		try {
+			const res = await fetch(`/api/admin/salary-profile/account-transactions?accountId=${encodeURIComponent(manualAccountId)}`);
+			if (res.ok) accountTransactions = await res.json();
+		} finally {
+			loadingAccountTxs = false;
+		}
+	}
+
+	async function buildProfileFromTransaction() {
+		if (!selectedTxId) return;
+		buildingFromTx = true;
+		buildFromTxResult = null;
+		try {
+			const res = await fetch('/api/admin/salary-profile/from-transaction', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ transactionId: selectedTxId })
+			});
+			const payload = await res.json().catch(() => ({}));
+			if (!res.ok) throw new Error(payload?.error || 'Bygging feilet');
+			buildFromTxResult = { success: true, message: 'Profil bygget fra valgt transaksjon.' };
+			await loadSalaryProfileData();
+		} catch (err) {
+			buildFromTxResult = { success: false, message: err instanceof Error ? err.message : 'Ukjent feil' };
+		} finally {
+			buildingFromTx = false;
+		}
+	}
+
+	async function loadDiagnostics() {
+		loadingDiag = true;
+		diagData = null;
+		try {
+			const res = await fetch('/api/admin/salary-profile/diagnostics');
+			if (res.ok) diagData = await res.json();
+		} finally {
+			loadingDiag = false;
 		}
 	}
 
@@ -592,6 +881,63 @@
 		}
 	}
 
+	async function importSparebank1Batch() {
+		const today = new Date().toISOString().split('T')[0];
+		let fromDate: string;
+
+		if (sparebank1ImportMode === 'from2020') {
+			fromDate = '2020-01-01';
+		} else {
+			const safeDays = Math.max(1, Math.min(365, Math.floor(Number(sparebank1ImportDays) || 30)));
+			sparebank1ImportDays = safeDays;
+			const d = new Date();
+			d.setDate(d.getDate() - safeDays);
+			fromDate = d.toISOString().split('T')[0];
+		}
+
+		sparebank1BatchRunning = true;
+		sparebank1BatchProgress = null;
+		sparebank1BatchJobId = null;
+		sparebank1Result = null;
+
+		try {
+			const res = await fetch('/api/admin/batch/start', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ type: 'sparebank1_backfill', fromDate, toDate: today })
+			});
+			const payload = await res.json();
+			if (!res.ok) throw new Error(payload.error || 'Klarte ikke starte import');
+			sparebank1BatchJobId = payload.jobId;
+			await runSparebank1BatchLoop();
+		} catch (error) {
+			sparebank1BatchProgress = {
+				done: true, processedDays: 0, totalDays: 0, progressPct: 0,
+				nextDate: null, stats: { transactionsInserted: 0, daysWithTransactions: 0 },
+				error: error instanceof Error ? error.message : 'Ukjent feil'
+			};
+			sparebank1BatchRunning = false;
+		}
+	}
+
+	async function runSparebank1BatchLoop() {
+		if (!sparebank1BatchJobId) return;
+		try {
+			while (true) {
+				const res = await fetch('/api/admin/batch/step', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ jobId: sparebank1BatchJobId })
+				});
+				const progress = await res.json();
+				sparebank1BatchProgress = progress;
+				if (progress.done || progress.error) break;
+			}
+		} finally {
+			sparebank1BatchRunning = false;
+		}
+	}
+
 	function formatDateTime(iso: string) {
 		const date = new Date(iso);
 		if (Number.isNaN(date.getTime())) return iso;
@@ -730,12 +1076,33 @@
 				</div>
 			</div>
 			<div class="row">
-				<Button variant="secondary" onClick={() => syncWithings('default')} disabled={syncingWithings}>{syncingWithings ? 'Synker...' : 'Synk nå'}</Button>
-				<Button variant="secondary" onClick={() => syncWithings(withingsImportMode)} disabled={syncingWithings}>
-					Importer valgt periode
+				<Button variant="secondary" onClick={() => syncWithings('default')} disabled={syncingWithings || withingsBatchRunning}>{syncingWithings ? 'Synker...' : 'Synk nå'}</Button>
+				<Button variant="secondary" onClick={importWithingsBatch} disabled={syncingWithings || withingsBatchRunning}>
+					{withingsBatchRunning ? 'Importerer…' : 'Importer valgt periode'}
 				</Button>
 				<Button variant="ghost" onClick={disconnectWithings}>Koble fra</Button>
 			</div>
+			{#if withingsBatchProgress}
+				<div class="batch-progress">
+					<div class="batch-progress-bar">
+						<div class="batch-progress-fill" style="width: {withingsBatchProgress.progressPct}%"></div>
+					</div>
+					<p class="debug-summary">
+						{withingsBatchProgress.processedDays} / {withingsBatchProgress.totalDays} dager
+						({withingsBatchProgress.progressPct}%)
+						{#if withingsBatchProgress.nextDate && !withingsBatchProgress.done}· behandler {withingsBatchProgress.nextDate}{/if}
+						{#if withingsBatchProgress.done && !withingsBatchProgress.error}· ferdig ✓{/if}
+					</p>
+					{#if withingsBatchProgress.stats}
+						<p class="debug-summary">
+							Vekt: {withingsBatchProgress.stats.weight} · Aktivitet: {withingsBatchProgress.stats.activity} · Søvn: {withingsBatchProgress.stats.sleep} · Treninger: {withingsBatchProgress.stats.workouts}
+						</p>
+					{/if}
+					{#if withingsBatchProgress.error}
+						<p class="err">Feil: {withingsBatchProgress.error}</p>
+					{/if}
+				</div>
+			{/if}
 		{:else}
 			<Button href="/api/sensors/withings/connect">Koble til Withings</Button>
 		{/if}
@@ -824,6 +1191,196 @@
 					</div>
 				{/if}
 			</div>
+
+			<div class="details-wrap">
+				<Button
+					type="button"
+					variant="ghost"
+					onClick={() => (showSleepDebug = !showSleepDebug)}
+				>
+					{showSleepDebug ? 'Skjul søvn-debug' : 'Vis søvn-debug (puls fra Withings)'}
+				</Button>
+
+				{#if showSleepDebug}
+					<div class="debug-panel">
+						<Button
+							type="button"
+							variant="secondary"
+							onClick={loadSleepDebug}
+							disabled={loadingSleepDebug}
+						>
+							{loadingSleepDebug ? 'Henter...' : 'Hent'}
+						</Button>
+
+						{#if sleepDebugError}
+							<p class="err">{sleepDebugError}</p>
+						{/if}
+
+						{#if sleepDebug}
+							<p class="debug-summary">
+								DB: {sleepDebug.db.totalEvents} sleep-events · {sleepDebug.db.eventsWithHr} med HR
+							</p>
+							{#if sleepDebug.db.events.length > 0}
+								<div class="debug-table-wrap">
+									<table class="debug-table">
+										<thead>
+											<tr>
+												<th>Tidspunkt</th>
+												<th>HR snitt</th>
+												<th>Varighet</th>
+												<th>Felter</th>
+											</tr>
+										</thead>
+										<tbody>
+											{#each sleepDebug.db.events as e}
+												<tr class={e.hr_average !== null ? '' : 'unmapped-row'}>
+													<td>{new Date(e.timestamp).toLocaleString('nb-NO')}</td>
+													<td>{e.hr_average ?? '–'}</td>
+													<td>{e.duration != null ? Math.round(e.duration / 60) + ' min' : '–'}</td>
+													<td class="small">{e.dataKeys.join(', ')}</td>
+												</tr>
+											{/each}
+										</tbody>
+									</table>
+								</div>
+							{/if}
+
+							<p class="debug-summary" style="margin-top:0.75rem">
+								Sammendrag (getsummary): {sleepDebug.summary.totalNights} netter · {sleepDebug.summary.nightsWithHr} med HR
+							</p>
+							{#if sleepDebug.summary.nights?.length > 0}
+								<div class="debug-table-wrap">
+									<table class="debug-table">
+										<thead>
+											<tr>
+												<th>Dato</th>
+												<th>HR snitt</th>
+												<th>HR min</th>
+												<th>HR maks</th>
+												<th>ÅF snitt</th>
+												<th>Varighet</th>
+												<th>Felter</th>
+											</tr>
+										</thead>
+										<tbody>
+											{#each sleepDebug.summary.nights as s}
+												<tr class={s.hr_average !== null ? '' : 'unmapped-row'}>
+													<td>{s.date}</td>
+													<td>{s.hr_average ?? '–'}</td>
+													<td>{s.hr_min ?? '–'}</td>
+													<td>{s.hr_max ?? '–'}</td>
+													<td>{s.rr_average ?? '–'}</td>
+													<td>{s.duration != null ? Math.round(s.duration / 60) + ' min' : '–'}</td>
+													<td class="small">{s.dataKeys.join(', ')}</td>
+												</tr>
+											{/each}
+										</tbody>
+									</table>
+								</div>
+							{/if}
+
+							<p class="debug-summary" style="margin-top:0.75rem">
+								Rå datapunkter (get): {sleepDebug.detail.totalSegments} segmenter siste 14 dager
+								{#if (sleepDebug.detail as any).error}· Feil: {(sleepDebug.detail as any).error}{/if}
+								{#if (sleepDebug.detail as any).rawBodyKeys?.length}· Body-nøkler: {(sleepDebug.detail as any).rawBodyKeys.join(', ')}{/if}
+							</p>
+							{#if sleepDebug.detail.nights?.length > 0}
+								<div class="debug-table-wrap">
+									<table class="debug-table">
+										<thead>
+											<tr>
+												<th>Natt</th>
+												<th>Segmenter</th>
+												<th>HR-prøver</th>
+												<th>ÅF-prøver</th>
+												<th>Snorking</th>
+												<th>Felter</th>
+											</tr>
+										</thead>
+										<tbody>
+											{#each sleepDebug.detail.nights as n}
+												<tr class={n.hrSamples > 0 ? '' : 'unmapped-row'}>
+													<td>{n.date}</td>
+													<td>{n.segments}</td>
+													<td>{n.hrSamples}</td>
+													<td>{n.rrSamples}</td>
+													<td>{n.snoringSegments}</td>
+													<td class="small">{n.sampleKeys.join(', ')}</td>
+												</tr>
+											{/each}
+										</tbody>
+									</table>
+								</div>
+							{/if}
+							{#if sleepDebug.detail.sampleSegments?.length > 0}
+								<p class="debug-summary" style="margin-top:0.5rem">Eksempelsegmenter siste natt:</p>
+								<div class="debug-table-wrap">
+									<table class="debug-table">
+										<thead>
+											<tr><th>Tidspunkt</th><th>Fase</th><th>HR</th><th>ÅF</th><th>Snorking</th></tr>
+										</thead>
+										<tbody>
+											{#each sleepDebug.detail.sampleSegments as seg}
+												<tr>
+													<td>{new Date(seg.startdate).toLocaleString('nb-NO')}</td>
+													<td>{['Våken','Lett','Dyp','REM'][seg.state] ?? seg.state}</td>
+													<td>{seg.hr ?? '–'}</td>
+													<td>{seg.rr ?? '–'}</td>
+													<td>{seg.snoring ?? '–'}</td>
+												</tr>
+											{/each}
+										</tbody>
+									</table>
+								</div>
+							{/if}
+						{/if}
+					</div>
+				{/if}
+			</div>
+
+			<div class="details-wrap">
+				<p class="field-desc" style="margin-bottom:0.5rem">Backfill søvn-HR — henter puls fra Withings (get) og lagrer i eksisterende sleep-events.</p>
+				<div class="row debug-controls">
+					<label class="option-pill">
+						<span>Fra</span>
+						<Input type="date" className="input days-input" bind:value={sleepBackfillFromDate} />
+					</label>
+					<label class="option-pill">
+						<span>Til</span>
+						<Input type="date" className="input days-input" bind:value={sleepBackfillToDate} />
+					</label>
+					<Button
+						type="button"
+						variant="secondary"
+						onClick={startSleepBackfill}
+						disabled={sleepBackfillRunning}
+					>
+						{sleepBackfillRunning ? 'Kjører…' : 'Start backfill'}
+					</Button>
+				</div>
+
+				{#if sleepBackfillProgress}
+					<div class="batch-progress">
+						<div class="batch-progress-bar">
+							<div class="batch-progress-fill" style="width: {sleepBackfillProgress.progressPct}%"></div>
+						</div>
+						<p class="debug-summary">
+							{sleepBackfillProgress.processedDays} / {sleepBackfillProgress.totalDays} dager
+							({sleepBackfillProgress.progressPct}%)
+							{#if sleepBackfillProgress.nextDate && !sleepBackfillProgress.done}· behandler {sleepBackfillProgress.nextDate}{/if}
+							{#if sleepBackfillProgress.done && !sleepBackfillProgress.error}· ferdig ✓{/if}
+						</p>
+						{#if sleepBackfillProgress.stats}
+							<p class="debug-summary">
+								Oppdatert: {sleepBackfillProgress.stats.updated} events · Dager med HR: {sleepBackfillProgress.stats.daysWithHr}
+							</p>
+						{/if}
+						{#if sleepBackfillProgress.error}
+							<p class="err">Feil: {sleepBackfillProgress.error}</p>
+						{/if}
+					</div>
+				{/if}
+			</div>
 		{/if}
 	</section>
 
@@ -905,15 +1462,36 @@
 				</div>
 			</div>
 			<div class="row">
-				<Button variant="secondary" onClick={() => syncSparebank1('default')} disabled={syncingSparebank1}>Synk nå</Button>
-				<Button variant="secondary" onClick={() => syncSparebank1(sparebank1ImportMode)} disabled={syncingSparebank1}>
-					Importer valgt periode
+				<Button variant="secondary" onClick={() => syncSparebank1('default')} disabled={syncingSparebank1 || sparebank1BatchRunning}>Synk nå</Button>
+				<Button variant="secondary" onClick={importSparebank1Batch} disabled={syncingSparebank1 || sparebank1BatchRunning}>
+					{sparebank1BatchRunning ? 'Importerer…' : 'Importer valgt periode'}
 				</Button>
-				<Button variant="danger" onClick={resetEconomicsData} disabled={resettingEconomics || syncingSparebank1}>
+				<Button variant="danger" onClick={resetEconomicsData} disabled={resettingEconomics || syncingSparebank1 || sparebank1BatchRunning}>
 					{resettingEconomics ? 'Tømmer...' : 'Tøm all økonomidata'}
 				</Button>
 				<Button variant="ghost" onClick={disconnectSparebank1}>Koble fra</Button>
 			</div>
+			{#if sparebank1BatchProgress}
+				<div class="batch-progress">
+					<div class="batch-progress-bar">
+						<div class="batch-progress-fill" style="width: {sparebank1BatchProgress.progressPct}%"></div>
+					</div>
+					<p class="debug-summary">
+						{sparebank1BatchProgress.processedDays} / {sparebank1BatchProgress.totalDays} dager
+						({sparebank1BatchProgress.progressPct}%)
+						{#if sparebank1BatchProgress.nextDate && !sparebank1BatchProgress.done}· behandler {sparebank1BatchProgress.nextDate}{/if}
+						{#if sparebank1BatchProgress.done && !sparebank1BatchProgress.error}· ferdig ✓{/if}
+					</p>
+					{#if sparebank1BatchProgress.stats}
+						<p class="debug-summary">
+							Transaksjoner hentet: {sparebank1BatchProgress.stats.transactionsInserted} · Dager med data: {sparebank1BatchProgress.stats.daysWithTransactions}
+						</p>
+					{/if}
+					{#if sparebank1BatchProgress.error}
+						<p class="err">Feil: {sparebank1BatchProgress.error}</p>
+					{/if}
+				</div>
+			{/if}
 			{#if resetEconomicsResult}
 				<p class={resetEconomicsResult.success ? 'ok' : 'err'}>{resetEconomicsResult.message}</p>
 			{/if}
@@ -925,7 +1503,7 @@
 					<Button
 						type="button"
 						variant="ghost"
-						onClick={() => (showSalaryProfile = !showSalaryProfile)}
+						onClick={() => { showSalaryProfile = !showSalaryProfile; if (showSalaryProfile) loadSalaryAccounts(); }}
 					>
 						{showSalaryProfile ? 'Skjul' : 'Vis detaljer'}
 					</Button>
@@ -1002,6 +1580,54 @@
 							<p class={rebuildProfileResult.success ? 'ok' : 'err'}>{rebuildProfileResult.message}</p>
 						{/if}
 
+						<!-- Manual setup: pick account + transaction -->
+						<div class="manual-setup-section">
+							<h4>Manuelt oppsett (velg lønnskonto og transaksjon)</h4>
+							<p class="field-desc">Bruk dette om automatikken plukker feil lønningsdag. Velg kontoen lønnen treffer og klikk på riktig lønnstransaksjon.</p>
+							<div class="field">
+								<label for="salary-account-select">Lønnskonto</label>
+								<Select
+									id="salary-account-select"
+									className="input"
+									bind:value={manualAccountId}
+									onChange={loadAccountTransactions}
+								>
+									<option value="">Velg konto...</option>
+									{#each salaryAccounts as acc}
+										<option value={acc.accountId}>{acc.accountName ?? acc.accountId}{acc.accountType ? ` (${acc.accountType})` : ''}</option>
+									{/each}
+								</Select>
+							</div>
+
+							{#if loadingAccountTxs}
+								<p class="meta">Laster transaksjoner...</p>
+							{:else if accountTransactions.length > 0}
+								<div class="field">
+									<p class="field-title">Velg en representativ lønnstransaksjon</p>
+									<div class="tx-picker">
+										{#each accountTransactions as tx}
+											<label class="tx-option" class:tx-selected={selectedTxId === tx.id}>
+												<input type="radio" name="salary-tx-pick" value={tx.id} bind:group={selectedTxId} />
+												<span class="tx-date">{tx.canonicalDate}</span>
+												<span class="tx-amount">{Number(tx.amount).toLocaleString('nb-NO', { minimumFractionDigits: 2 })} kr</span>
+												<span class="tx-desc">{tx.description || '–'}</span>
+											</label>
+										{/each}
+									</div>
+								</div>
+								<div class="row">
+									<Button onClick={buildProfileFromTransaction} disabled={!selectedTxId || buildingFromTx}>
+										{buildingFromTx ? 'Bygger...' : 'Bygg profil fra valgt transaksjon'}
+									</Button>
+								</div>
+								{#if buildFromTxResult}
+									<p class={buildFromTxResult.success ? 'ok' : 'err'}>{buildFromTxResult.message}</p>
+								{/if}
+							{:else if manualAccountId}
+								<p class="meta">Ingen store inntektstransaksjoner (≥ 10 000 kr) funnet på denne kontoen.</p>
+							{/if}
+						</div>
+
 						<!-- Backfill -->
 						{#if salaryProfile}
 							<div class="backfill-section">
@@ -1048,6 +1674,72 @@
 						{:else if salaryProfile}
 							<p class="meta">Ingen taggede lønnsinnbetalinger funnet siste 12 måneder.</p>
 						{/if}
+
+						<!-- Diagnostics -->
+						<div class="diag-section">
+							<div class="row">
+								<Button variant="ghost" onClick={loadDiagnostics} disabled={loadingDiag}>
+									{loadingDiag ? 'Laster...' : '🔍 Diagnostikk: vis hva som er i databasen'}
+								</Button>
+							</div>
+							{#if diagData}
+								<div class="diag-content">
+									<p class="field-title">Konto-oversikt (canonical_bank_transactions)</p>
+									<table class="debug-table">
+										<thead><tr><th>Konto-ID</th><th>Totalt</th><th>Innskudd ≥10k</th><th>Tidligste</th><th>Siste</th></tr></thead>
+										<tbody>
+											{#each diagData.accountSummary as acc}
+												<tr>
+													<td class="mono">{acc.accountId}</td>
+													<td>{acc.txCount}</td>
+													<td>{acc.incomeCount}</td>
+													<td>{acc.minDate ?? '–'}</td>
+													<td>{acc.maxDate ?? '–'}</td>
+												</tr>
+											{/each}
+										</tbody>
+									</table>
+
+									{#if diagData.bigInflows.length > 0}
+										<p class="field-title" style="margin-top:0.75rem">Store innbetalinger (≥10k) — siste 36</p>
+										<table class="debug-table diag-inflow-table">
+											<thead>
+												<tr>
+													<th>Dato</th>
+													<th>Konto</th>
+													<th>Beløp</th>
+													<th>Beskrivelse</th>
+													<th>Nøkkel</th>
+													<th>Norm</th>
+													<th>FP-treff</th>
+													<th>Beløp-treff</th>
+													<th>Score</th>
+													<th>Resultat</th>
+												</tr>
+											</thead>
+											<tbody>
+												{#each diagData.bigInflows as row}
+													<tr class:diag-tagged={!!row.paycheckType} class:diag-mismatch={!row.paycheckResult && !row.paycheckType}>
+														<td>{row.date}</td>
+														<td class="mono" style="font-size:0.72rem">{row.accountId.slice(0,12)}…</td>
+														<td>{row.amount.toLocaleString('nb-NO')} kr</td>
+														<td>{row.descriptionDisplay ?? '–'}</td>
+														<td class="mono">{row.merchantKey ?? '–'}</td>
+														<td class="mono">{row.scoreComponents?.descNorm ?? '–'}</td>
+														<td>{row.scoreComponents?.fingerprintMatch ? '✓' : '✗'}</td>
+														<td>{row.scoreComponents?.inAmountRange ? '✓' : '✗'}</td>
+														<td class:diag-score-ok={row.score !== null && row.score >= 80}>{row.score ?? '–'}</td>
+														<td>{row.paycheckResult ?? row.paycheckType ?? '–'}</td>
+													</tr>
+												{/each}
+											</tbody>
+										</table>
+									{:else}
+										<p class="meta">Ingen innbetalinger ≥ 10 000 kr funnet i canonical_bank_transactions.</p>
+									{/if}
+								</div>
+							{/if}
+						</div>
 					</div>
 				{/if}
 			</div>
@@ -1286,6 +1978,20 @@
 	.import-mode-row { align-items: center; gap: 0.5rem; }
 	.debug-controls { align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.6rem; }
 	.unmapped-row { background: rgba(255, 180, 0, 0.07); }
+	.batch-progress { margin-top: 0.75rem; }
+	.batch-progress-bar {
+		height: 6px;
+		background: var(--color-border, #e0e0e0);
+		border-radius: 3px;
+		overflow: hidden;
+		margin-bottom: 0.4rem;
+	}
+	.batch-progress-fill {
+		height: 100%;
+		background: var(--color-primary, #4f46e5);
+		border-radius: 3px;
+		transition: width 0.2s ease;
+	}
 	.option-pill {
 		display: inline-flex;
 		align-items: center;
@@ -1359,6 +2065,71 @@
 	}
 	.paycheck-list { margin-top: 0.25rem; }
 	.field-title { margin: 0 0 0.4rem; font-size: 0.84rem; font-weight: 500; color: var(--text-secondary); }
+	.manual-setup-section {
+		padding: 0.75rem;
+		border: 1px solid #262626;
+		border-radius: 10px;
+		background: #121212;
+		display: flex;
+		flex-direction: column;
+		gap: 0.65rem;
+	}
+	.manual-setup-section h4 {
+		margin: 0;
+		font-size: 0.88rem;
+		font-weight: 600;
+		color: var(--text-secondary);
+	}
+	.tx-picker {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		max-height: 16rem;
+		overflow-y: auto;
+		border: 1px solid #262626;
+		border-radius: 8px;
+		padding: 0.25rem;
+	}
+	.tx-option {
+		display: grid;
+		grid-template-columns: 1fr max-content 2fr;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.4rem 0.6rem;
+		border-radius: 6px;
+		cursor: pointer;
+		font-size: 0.84rem;
+		color: var(--text-secondary);
+		border: 1px solid transparent;
+	}
+	.tx-option input[type="radio"] { display: none; }
+	.tx-option:hover { background: #1e1e1e; }
+	.tx-option.tx-selected { background: #1a2a1a; border-color: #2d5a2d; color: var(--text-primary); }
+	.tx-date { color: var(--text-tertiary); font-size: 0.8rem; white-space: nowrap; }
+	.tx-amount { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+	.tx-desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+	/* ── Diagnostics ─────────────────────────────────────────────────────────── */
+	.diag-section {
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
+		padding: 0.75rem;
+		border: 1px solid #262626;
+		border-radius: 10px;
+		background: #0d0d0d;
+	}
+	.diag-content {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		overflow-x: auto;
+	}
+	.diag-inflow-table { font-size: 0.78rem; min-width: 820px; }
+	tr.diag-tagged td { color: #6ee76e; }
+	tr.diag-mismatch td { color: #aaa; }
+	td.diag-score-ok { color: #6ee76e; font-weight: 600; }
+	td.mono { font-family: monospace; font-size: 0.78rem; }
 
 	@media (max-width: 720px) {
 		.sources-content {

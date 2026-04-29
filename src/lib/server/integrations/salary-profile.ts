@@ -329,3 +329,71 @@ export async function loadSalaryProfile(userId: string): Promise<SalaryProfile |
 	profileCache.set(userId, { cachedAt: Date.now(), profile });
 	return profile;
 }
+
+// ─── buildSalaryProfileFromTransaction ───────────────────────────────────────
+
+/**
+ * Builds a salary profile anchored to a single hand-picked transaction.
+ * Use this when automated detection fails: the user selects the account and
+ * picks a representative salary transaction from the list.
+ *
+ * The fingerprint, amount range, typicalDom and typicalDow are all derived
+ * from the selected transaction.  The result overwrites any existing profile.
+ */
+export async function buildSalaryProfileFromTransaction(
+	userId: string,
+	transactionId: string
+): Promise<SalaryProfile | null> {
+	const { canonicalBankTransactions: txTable } = await import('$lib/db/schema');
+	const { eq: dbEq, and: dbAnd, sql: drizzleSql } = await import('drizzle-orm');
+
+	const rows = await db
+		.select({
+			accountId: txTable.accountId,
+			amount: txTable.amount,
+			description: drizzleSql<string>`COALESCE(${txTable.descriptionDisplay}, ${txTable.merchantKey}, '')`,
+			canonicalDate: txTable.canonicalDate
+		})
+		.from(txTable)
+		.where(dbAnd(dbEq(txTable.id, transactionId), dbEq(txTable.userId, userId)))
+		.limit(1);
+
+	const tx = rows[0];
+	if (!tx) return null;
+
+	const amount = Number(tx.amount);
+	const fingerprint = normalizeFingerprint(tx.description ?? '');
+	const txDate = new Date(`${String(tx.canonicalDate).slice(0, 10)}T12:00:00Z`);
+	const wd = prevWorkingDay(txDate);
+	const dow = wd.getUTCDay() === 0 ? 7 : wd.getUTCDay();
+
+	const profile: SalaryProfile = {
+		userId,
+		sourceAccountId: tx.accountId,
+		descriptionFingerprint: fingerprint,
+		amountMin: amount * 0.8,
+		amountMax: amount * 1.3,
+		typicalDom: txDate.getUTCDate(),
+		typicalDow: dow
+	};
+
+	await db
+		.update(userSalaryProfiles)
+		.set({ active: false, updatedAt: new Date() })
+		.where(and(eq(userSalaryProfiles.userId, userId), eq(userSalaryProfiles.active, true)));
+
+	await db.insert(userSalaryProfiles).values({
+		userId,
+		sourceAccountId: profile.sourceAccountId,
+		descriptionFingerprint: profile.descriptionFingerprint,
+		amountMin: String(profile.amountMin),
+		amountMax: String(profile.amountMax),
+		typicalDom: profile.typicalDom,
+		typicalDow: profile.typicalDow,
+		active: true,
+		derivedAt: new Date()
+	});
+
+	invalidateSalaryProfileCache(userId);
+	return profile;
+}

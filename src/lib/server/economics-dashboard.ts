@@ -1,6 +1,7 @@
 import { db } from '$lib/db';
 import { canonicalBankTransactions, sensorEvents } from '$lib/db/schema';
 import { and, asc, eq, desc, sql } from 'drizzle-orm';
+import { detectGlobalPayday } from './integrations/payday-detector';
 import {
 	categorizeTransaction,
 	detectRecurring,
@@ -244,53 +245,27 @@ export async function loadEconomicsDashboardData(userId: string): Promise<Econom
 	});
 
 	// ── 5. Payday spend — spending per day since last salary ─────────────────
-	// Detect payday from canonical transactions — robust against lower salary amounts and varied descriptions.
-	const SALARY_THRESHOLD = 8000;
-	const INCOME_MIN_THRESHOLD = 4000;
-	const PAYDAY_DEDUP_DAYS = 20;
 	const historyFrom = new Date(now.getTime() - 220 * 24 * 60 * 60 * 1000);
-	const SALARY_KEYWORDS = ['LONN', 'L\u00d8NN', 'SALARY', 'ARBEIDSGIVER', 'NAV', 'FOLKETRYGD'];
 
-	const rawSalaryRows = await measureStep('salary_candidates', userId, () =>
-		db
-			.select({
-				date: canonicalBankTransactions.canonicalDate,
-				amount: canonicalBankTransactions.amount,
-				description: sql<string>`COALESCE(${canonicalBankTransactions.descriptionDisplay}, ${canonicalBankTransactions.merchantKey}, '')`
-			})
-			.from(canonicalBankTransactions)
-			.where(and(
-				eq(canonicalBankTransactions.userId, userId),
-				eq(canonicalBankTransactions.isActive, true),
-				sql`${canonicalBankTransactions.amount} >= ${INCOME_MIN_THRESHOLD}`,
-				sql`${canonicalBankTransactions.canonicalDate} >= ${historyFrom.toISOString().slice(0, 10)}::date`
-			))
-			.orderBy(desc(canonicalBankTransactions.canonicalDate))
-	);
-
-	// Raw spending for comparison periods (no category resolution needed)
-	const rawSpendRows = await measureStep('spend_rows_for_payday', userId, () =>
-		db
-			.select({
-				timestamp: canonicalBankTransactions.canonicalDate,
-				amount: canonicalBankTransactions.amount,
-				description: sql<string>`COALESCE(${canonicalBankTransactions.descriptionDisplay}, ${canonicalBankTransactions.merchantKey}, '')`,
-			})
-			.from(canonicalBankTransactions)
-			.where(and(
-				eq(canonicalBankTransactions.userId, userId),
-				eq(canonicalBankTransactions.isActive, true),
-				sql`${canonicalBankTransactions.amount} < 0`,
-				sql`${canonicalBankTransactions.canonicalDate} >= ${historyFrom.toISOString().slice(0, 10)}::date`
-			))
-			.orderBy(asc(canonicalBankTransactions.canonicalDate))
-	);
-
-	const normalizedRawSalaryRows = rawSalaryRows.map((tx) => ({
-		timestamp: canonicalDateToUtcDate(tx.date),
-		amount: Number(tx.amount) || 0,
-		description: tx.description ?? ''
-	}));
+	const [globalPayday, rawSpendRows] = await Promise.all([
+		measureStep('detect_payday', userId, () => detectGlobalPayday(userId)),
+		measureStep('spend_rows_for_payday', userId, () =>
+			db
+				.select({
+					timestamp: canonicalBankTransactions.canonicalDate,
+					amount: canonicalBankTransactions.amount,
+					description: sql<string>`COALESCE(${canonicalBankTransactions.descriptionDisplay}, ${canonicalBankTransactions.merchantKey}, '')`,
+				})
+				.from(canonicalBankTransactions)
+				.where(and(
+					eq(canonicalBankTransactions.userId, userId),
+					eq(canonicalBankTransactions.isActive, true),
+					sql`${canonicalBankTransactions.amount} < 0`,
+					sql`${canonicalBankTransactions.canonicalDate} >= ${historyFrom.toISOString().slice(0, 10)}::date`
+				))
+				.orderBy(asc(canonicalBankTransactions.canonicalDate))
+		)
+	]);
 
 	const normalizedRawSpendRows = rawSpendRows.map((tx) => ({
 		timestamp: canonicalDateToUtcDate(tx.timestamp),
@@ -301,21 +276,12 @@ export async function loadEconomicsDashboardData(userId: string): Promise<Econom
 	const GROCERY_KEYWORDS = ['KIWI', 'REMA', 'ODA ', 'MENY', 'SPAR', 'COOP', 'EXTRA', 'JOKER', 'BUNNPRIS', 'NÆRBUTIKK', 'BAMA'];
 	const isGroceryTx = (d: string) => { const u = d.toUpperCase(); return GROCERY_KEYWORDS.some((k) => u.includes(k)); };
 
-	const isLikelySalaryTx = (amount: number, description: string): boolean => {
-		if (amount >= SALARY_THRESHOLD) return true;
-		const upper = description.toUpperCase();
-		return SALARY_KEYWORDS.some((keyword) => upper.includes(keyword));
-	};
-
-	const paydayCandidates = normalizedRawSalaryRows
-		.filter((tx) => isLikelySalaryTx(tx.amount, tx.description ?? ''))
-		.reduce<Array<{ timestamp: Date }>>((acc, tx) => {
-		const last = acc[acc.length - 1];
-		if (!last || last.timestamp.getTime() - tx.timestamp.getTime() > PAYDAY_DEDUP_DAYS * 24 * 60 * 60 * 1000) {
-			acc.push({ timestamp: tx.timestamp });
-		}
-		return acc;
-	}, []);
+	// Use payday dates from detectGlobalPayday (most recent first, filtered to ≤ today)
+	const todayStr = now.toISOString().slice(0, 10);
+	const paydayCandidates: Array<{ timestamp: Date }> = (globalPayday?.paydayDates ?? [])
+		.filter((d) => d <= todayStr)
+		.reverse()
+		.map((d) => ({ timestamp: new Date(`${d}T12:00:00Z`) }));
 
 	const currentPayday = paydayCandidates[0] ?? null;
 	const prevPayday = paydayCandidates[1] ?? null;

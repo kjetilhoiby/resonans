@@ -1,6 +1,6 @@
 import { db } from '$lib/db';
 import { sensors, sensorEvents, sensorAggregates } from '$lib/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, isNull, gte, lt } from 'drizzle-orm';
 import { refreshAccessToken, fetchAllWithingsData, fetchWithingsSleep } from './withings';
 import { enqueueBackgroundJob } from '$lib/server/background-jobs';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
@@ -288,21 +288,24 @@ export async function syncWeightData(
 	accessToken: string,
 	sensorId: string,
 	lastSync?: Date,
-	fullSync = false
+	fullSync = false,
+	toDate?: Date
 ) {
 	// Full sync starts from September 1, 2017
-	const startdate = fullSync 
+	const startdate = fullSync
 		? Math.floor(new Date('2017-09-01').getTime() / 1000)
-		: lastSync 
-			? Math.floor(lastSync.getTime() / 1000) 
+		: lastSync
+			? Math.floor(lastSync.getTime() / 1000)
 			: undefined;
+	const enddate = toDate ? Math.floor(toDate.getTime() / 1000) : undefined;
 
 	console.log(`   Fetching weight data${startdate ? ` from ${new Date(startdate * 1000).toISOString().split('T')[0]}` : ''}...`);
 	const data = await fetchAllWithingsData(accessToken, {
 		action: 'getmeas',
 		meastype: 1, // Weight
 		category: 1, // Real measurements
-		startdate
+		startdate,
+		enddate
 	});
 
 	console.log(`   Parsing ${data.length} weight measurements...`);
@@ -345,7 +348,8 @@ export async function syncActivityData(
 	accessToken: string,
 	sensorId: string,
 	lastSync?: Date,
-	fullSync = false
+	fullSync = false,
+	toDate?: Date
 ) {
 	// Full sync starts from September 1, 2017
 	// Incremental sync: always fetch last 7 days to catch retroactive updates
@@ -356,12 +360,13 @@ export async function syncActivityData(
 			overlapDate.setDate(overlapDate.getDate() - 7); // 7-day overlap window
 			return overlapDate.toISOString().split('T')[0];
 		})();
+	const enddateymd = toDate ? toDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
 
 	console.log(`   Fetching activity data from ${startdateymd}...`);
 	const data = await fetchAllWithingsData(accessToken, {
 		action: 'getactivity',
 		startdateymd,
-		enddateymd: new Date().toISOString().split('T')[0]
+		enddateymd
 	});
 
 	console.log(`   Parsing ${data.length} activity records...`);
@@ -405,7 +410,8 @@ export async function syncSleepData(
 	accessToken: string,
 	sensorId: string,
 	lastSync?: Date,
-	fullSync = false
+	fullSync = false,
+	toDate?: Date
 ) {
 	// Full sync starts from September 1, 2017
 	const startdateymd = fullSync
@@ -413,6 +419,7 @@ export async function syncSleepData(
 		: lastSync
 			? lastSync.toISOString().split('T')[0]
 			: undefined;
+	const enddateymd = toDate ? toDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
 
 	console.log(`   Fetching sleep data${startdateymd ? ` from ${startdateymd}` : ''}...`);
 	// Use fetchWithingsSleep directly since sleep API is different
@@ -427,7 +434,7 @@ export async function syncSleepData(
 		const response = await fetchWithingsSleep(accessToken, {
 			action: 'getsummary',
 			startdateymd,
-			enddateymd: new Date().toISOString().split('T')[0],
+			enddateymd,
 			offset
 		});
 
@@ -482,7 +489,8 @@ export async function syncWorkoutData(
 	accessToken: string,
 	sensorId: string,
 	lastSync?: Date,
-	fullSync = false
+	fullSync = false,
+	toDate?: Date
 ) {
 	// Full sync starts from September 1, 2017
 	// Incremental sync: always fetch last 7 days to catch retroactive updates
@@ -493,12 +501,13 @@ export async function syncWorkoutData(
 			overlapDate.setDate(overlapDate.getDate() - 7); // 7-day overlap window
 			return overlapDate.toISOString().split('T')[0];
 		})();
+	const enddateymd = toDate ? toDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
 
 	console.log(`   Fetching workout data from ${startdateymd}...`);
 	const data = await fetchAllWithingsData(accessToken, {
 		action: 'getworkouts',
 		startdateymd,
-		enddateymd: new Date().toISOString().split('T')[0]
+		enddateymd
 	});
 
 	console.log(`   Parsing ${data.length} workouts...`);
@@ -535,7 +544,7 @@ export async function syncWorkoutData(
 /**
  * Full sync of all Withings data
  */
-export async function syncAllWithingsData(userId: string, fullSync = false, overrideLastSync?: Date): Promise<{
+export async function syncAllWithingsData(userId: string, fullSync = false, overrideLastSync?: Date, overrideToDate?: Date): Promise<{
 	weight: number;
 	activity: number;
 	sleep: number;
@@ -563,19 +572,19 @@ export async function syncAllWithingsData(userId: string, fullSync = false, over
 
 	// Sync all data types
 	console.log('📊 Syncing weight data...');
-	const weight = await syncWeightData(userId, accessToken, sensor.id, lastSync, fullSync);
+	const weight = await syncWeightData(userId, accessToken, sensor.id, lastSync, fullSync, overrideToDate);
 	console.log(`   ✓ Synced ${weight} weight measurements`);
-	
+
 	console.log('🏃 Syncing activity data...');
-	const activity = await syncActivityData(userId, accessToken, sensor.id, lastSync, fullSync);
+	const activity = await syncActivityData(userId, accessToken, sensor.id, lastSync, fullSync, overrideToDate);
 	console.log(`   ✓ Synced ${activity} activity records`);
-	
+
 	console.log('😴 Syncing sleep data...');
-	const sleep = await syncSleepData(userId, accessToken, sensor.id, lastSync, fullSync);
+	const sleep = await syncSleepData(userId, accessToken, sensor.id, lastSync, fullSync, overrideToDate);
 	console.log(`   ✓ Synced ${sleep} sleep sessions`);
-	
+
 	console.log('💪 Syncing workout data...');
-	const workouts = await syncWorkoutData(userId, accessToken, sensor.id, lastSync, fullSync);
+	const workouts = await syncWorkoutData(userId, accessToken, sensor.id, lastSync, fullSync, overrideToDate);
 	console.log(`   ✓ Synced ${workouts} workouts`);
 
 	// After workout sync, run immediate auto-updates so the UI reflects new workouts quickly.
@@ -632,4 +641,84 @@ export async function syncAllWithingsData(userId: string, fullSync = false, over
 		.where(eq(sensors.id, sensor.id));
 
 	return { weight, activity, sleep, workouts };
+}
+
+/**
+ * Compute hr_average for one calendar date by calling Withings get endpoint,
+ * then patch matching sleep events in the DB that are missing hr_average.
+ * Returns { found, updated, hrAverage } for that date.
+ */
+export async function backfillSleepHrForDate(
+	userId: string,
+	accessToken: string,
+	date: string // 'YYYY-MM-DD'
+): Promise<{ found: number; updated: number; hrAverage: number | null }> {
+	const dayStart = Math.floor(new Date(`${date}T00:00:00Z`).getTime() / 1000);
+	const dayEnd = Math.floor(new Date(`${date}T23:59:59Z`).getTime() / 1000);
+
+	const response = await fetchWithingsSleep(accessToken, {
+		action: 'get',
+		startdate: dayStart,
+		enddate: dayEnd,
+		data_fields: 'hr,sdnn_1'
+	} as any);
+
+	if (response?.status !== 0) {
+		throw new Error(`Withings get error for ${date}: ${response?.error ?? response?.status}`);
+	}
+
+	const segments: any[] = response?.body?.series ?? [];
+
+	// hr per segment is { "unixTimestamp": bpmValue } — collect all values
+	const allBpm: number[] = [];
+	for (const seg of segments) {
+		if (seg.hr && typeof seg.hr === 'object') {
+			for (const bpm of Object.values(seg.hr)) {
+				if (typeof bpm === 'number' && bpm > 0) allBpm.push(bpm);
+			}
+		}
+	}
+
+	const hrAverage = allBpm.length > 0
+		? Math.round(allBpm.reduce((a, b) => a + b, 0) / allBpm.length)
+		: null;
+
+	if (hrAverage === null) {
+		return { found: 0, updated: 0, hrAverage: null };
+	}
+
+	// Find sleep events for this UTC day missing hr_average
+	const windowStart = new Date(`${date}T00:00:00Z`);
+	const windowEnd = new Date(`${date}T23:59:59Z`);
+
+	const events = await db
+		.select({ id: sensorEvents.id })
+		.from(sensorEvents)
+		.where(
+			and(
+				eq(sensorEvents.userId, userId),
+				eq(sensorEvents.dataType, 'sleep'),
+				gte(sensorEvents.timestamp, windowStart),
+				lt(sensorEvents.timestamp, windowEnd)
+			)
+		);
+
+	if (events.length === 0) {
+		return { found: 0, updated: 0, hrAverage };
+	}
+
+	// Merge hr_average into existing JSONB without overwriting other fields
+	const { pgClient } = await import('$lib/db');
+	let updated = 0;
+	for (const event of events) {
+		await pgClient`
+			UPDATE sensor_events
+			SET data = data || jsonb_build_object('hr_average', ${hrAverage}::int)
+			WHERE id = ${event.id}
+			  AND (data->>'hr_average') IS NULL
+		`;
+		updated++;
+	}
+
+	return { found: events.length, updated, hrAverage };
 }

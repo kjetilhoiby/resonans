@@ -65,10 +65,13 @@ export const PATCH: RequestHandler = async ({ locals, request }) => {
 	await requireAdmin(locals.userId);
 
 	const body = await request.json().catch(() => ({}));
-	const { descriptionFingerprint, amountMin, amountMax, typicalDom, typicalDow } = body as Record<string, unknown>;
+	const { descriptionFingerprint, amountMin, amountMax, typicalDom, typicalDow, sourceAccountId } = body as Record<string, unknown>;
 
 	const updates: Record<string, unknown> = { updatedAt: new Date() };
 
+	if (typeof sourceAccountId === 'string' && sourceAccountId.trim()) {
+		updates.sourceAccountId = sourceAccountId.trim();
+	}
 	if (typeof descriptionFingerprint === 'string') {
 		updates.descriptionFingerprint = descriptionFingerprint.toUpperCase().trim();
 	}

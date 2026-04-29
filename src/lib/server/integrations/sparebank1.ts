@@ -173,7 +173,8 @@ export async function fetchSparebank1Accounts(accessToken: string): Promise<any[
 export async function fetchSparebank1Transactions(
 	accessToken: string,
 	accountKey?: string,
-	since?: Date
+	since?: Date,
+	toDate?: Date
 ): Promise<any[]> {
 	const endpoint = env.SPAREBANK1_TRANSACTIONS_ENDPOINT || '/personal/banking/transactions';
 
@@ -183,6 +184,9 @@ export async function fetchSparebank1Transactions(
 	}
 	if (since) {
 		url.searchParams.set('fromDate', since.toISOString().split('T')[0]);
+	}
+	if (toDate) {
+		url.searchParams.set('toDate', toDate.toISOString().split('T')[0]);
 	}
 
 	const response = await fetch(url.toString(), {
