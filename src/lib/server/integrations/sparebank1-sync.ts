@@ -435,6 +435,8 @@ export async function syncAllSparebank1Data(
 		resetBeforeImport?: boolean;
 		skipExistingDedup?: boolean;
 		prefetchedAccounts?: { accounts: any[]; accessToken: string; rateLimitHeaders: RateLimitSnapshot };
+		/** Pre-fetched transactions keyed by accountKey. Skips fetchSparebank1Transactions for matching accounts. */
+		prefetchedTransactions?: Record<string, any[]>;
 	} = {}
 ): Promise<Sparebank1SyncResult> {
 	const sensor = await getSparebank1Sensor(userId);
@@ -549,7 +551,8 @@ export async function syncAllSparebank1Data(
 			const accountName = String(account.name || account.accountName || accountKey);
 			syncedAccountNames.push(accountName);
 			console.log(`[sparebank1-sync] syncing account ${accountName} (${accountKey})`);
-			const transactions = await fetchSparebank1Transactions(accessToken, accountKey, since, toDate, rateLimitHeaders);
+			const transactions = options.prefetchedTransactions?.[accountKey]
+				?? await fetchSparebank1Transactions(accessToken, accountKey, since, toDate, rateLimitHeaders);
 			console.log(`[sparebank1-sync] fetched ${transactions.length} transactions for ${accountName}`);
 			results.push(transactions.map((transaction) => {
 				const timestamp =

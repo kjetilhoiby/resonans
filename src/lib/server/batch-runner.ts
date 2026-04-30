@@ -37,6 +37,13 @@ export interface BatchHandler<TStats extends Record<string, unknown> = Record<st
 
 	mergeStats(accumulated: TStats, step: TStats): TStats;
 	initialStats(): TStats;
+
+	/**
+	 * Optional early-completion check. If defined and returns true after any step,
+	 * the job is marked completed regardless of whether the date range is exhausted.
+	 * Useful for frontier-based strategies that don't rely on date stepping.
+	 */
+	isDone?(stats: TStats): boolean;
 }
 
 const registry = new Map<string, BatchHandler<any>>();
@@ -196,7 +203,7 @@ export async function stepBatchJob(jobId: string): Promise<BatchProgress> {
 	}
 
 	const afterDate = addDays(nextDate, stepSize);
-	const done = stepToDate >= payload.toDate;
+	const done = (handler.isDone?.(accStats as any) ?? false) || stepToDate >= payload.toDate;
 
 	await db
 		.update(backgroundJobs)
