@@ -69,6 +69,21 @@
 		evidence: WorkoutEvidence[];
 	}
 
+	interface MetricThreshold {
+		goal?: number;
+		thresholdWarn?: number;
+		thresholdSuccess?: number;
+	}
+
+	interface MetricSettingsMap {
+		distance?: MetricThreshold;
+		sleep?: MetricThreshold;
+		sleepLag?: MetricThreshold;
+		steps?: MetricThreshold;
+		activeMinutes?: MetricThreshold;
+		weight?: MetricThreshold;
+	}
+
 	interface Props {
 		weekly: AggregatePeriod[];
 		monthly: AggregatePeriod[];
@@ -85,9 +100,10 @@
 		embedded?: boolean;
 		goals?: Goal[];
 		activities?: WorkoutActivity[];
+		metricSettings?: MetricSettingsMap;
 	}
 
-	let { weekly, monthly, yearly, sources = [], recentEvents = [], tooling, embedded = false, goals = [], activities = [] }: Props = $props();
+	let { weekly, monthly, yearly, sources = [], recentEvents = [], tooling, embedded = false, goals = [], activities = [], metricSettings = {} }: Props = $props();
 
 	let selectedWindow = $state<WindowMode>('30d');
 	let periodTableFilter = $state<'siste5' | 'i_ar' | 'siste_ar' | 'alt'>('siste5');
@@ -841,6 +857,11 @@
 
 	const windowCopy = $derived(describeWindow(selectedWindow));
 
+	const sleepGoal = $derived(metricSettings.sleep?.goal ?? 7.5);
+	const sleepLagMax = $derived(metricSettings.sleepLag?.goal ?? 8);
+	const stepsGoal = $derived(metricSettings.steps?.goal ?? 8000);
+	const activeMinutesGoal = $derived(metricSettings.activeMinutes?.goal ?? 30);
+
 	const metricCards = $derived([
 		{
 			id: 'running_distance',
@@ -861,13 +882,13 @@
 			value: sleepHoursAvg != null ? `${formatMetric(sleepHoursAvg)} t` : '–',
 			subvalue:
 				sleepHoursAvg != null
-					? `${windowCopy}: snitt timer søvn per natt (mål 7.5 t)`
+					? `${windowCopy}: snitt timer søvn per natt (mål ${sleepGoal} t)`
 					: `${windowCopy}: ingen søvndata registrert`,
 			color: '#5fa0a0',
-			pct: pctHigherBetter(sleepHoursAvg, 7.5),
+			pct: pctHigherBetter(sleepHoursAvg, sleepGoal),
 			vizData: {
 				current: sleepHoursAvg ?? null,
-				target: 7.5
+				target: sleepGoal
 			}
 		},
 		{
@@ -879,7 +900,7 @@
 					? `${windowCopy}: avvik i døgnrytme (lavere er bedre)`
 					: `${windowCopy}: ikke nok data til avviksberegning`,
 			color: '#7b9aa8',
-			pct: pctLowerBetter(sleepLagComposite, 8)
+			pct: pctLowerBetter(sleepLagComposite, sleepLagMax)
 		},
 		{
 			id: 'steps_avg_day',
@@ -888,10 +909,10 @@
 			value: avgStepsPerDay != null ? `${formatMetric(avgStepsPerDay, 0)}` : '–',
 			subvalue:
 				avgStepsPerDay != null
-					? `${windowCopy}: dagssnitt (mål 8 000)`
+					? `${windowCopy}: dagssnitt (mål ${formatMetric(stepsGoal, 0)})`
 					: `${windowCopy}: ingen aktivitetsdata registrert`,
 			color: '#82c882',
-			pct: pctHigherBetter(avgStepsPerDay, 8000),
+			pct: pctHigherBetter(avgStepsPerDay, stepsGoal),
 			vizData: {
 				current: avgStepsPerDay ?? null,
 				expectedByNow: stepsReferenceAvg,
@@ -904,10 +925,10 @@
 			value: avgActiveMinutesPerDay != null ? `${formatMetric(avgActiveMinutesPerDay, 0)} min` : '–',
 			subvalue:
 				avgActiveMinutesPerDay != null
-					? `${windowCopy}: dagssnitt (mål 30 min)`
+					? `${windowCopy}: dagssnitt (mål ${activeMinutesGoal} min)`
 					: `${windowCopy}: ingen trenings-/aktivitetstid registrert`,
 			color: '#f0b429',
-			pct: pctHigherBetter(avgActiveMinutesPerDay, 30)
+			pct: pctHigherBetter(avgActiveMinutesPerDay, activeMinutesGoal)
 		},
 		{
 			id: 'weight_change',

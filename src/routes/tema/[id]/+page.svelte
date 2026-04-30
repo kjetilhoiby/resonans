@@ -19,6 +19,7 @@
 		tripProfile={data.tripProfile}
 		tripLists={data.tripLists}
 		selectedWorkout={data.selectedWorkout}
+		metricSettings={data.metricSettings}
 	/>
 	{/if}
 </AppPage>

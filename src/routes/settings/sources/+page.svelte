@@ -511,6 +511,7 @@
 				const progress = await res.json();
 				withingsBatchProgress = progress;
 				if (progress.done || progress.error) break;
+				if (progress.waitMs > 0) await new Promise(r => setTimeout(r, progress.waitMs));
 			}
 		} finally {
 			withingsBatchRunning = false;
@@ -579,6 +580,7 @@
 				const progress = await res.json();
 				sleepBackfillProgress = progress;
 				if (progress.done || progress.error) break;
+				if (progress.waitMs > 0) await new Promise(r => setTimeout(r, progress.waitMs));
 			}
 			if (sleepBackfillProgress?.done && !sleepBackfillProgress?.error) {
 				sleepBackfillReaggregating = true;
@@ -944,6 +946,7 @@
 				const progress = await res.json();
 				sparebank1BatchProgress = progress;
 				if (progress.done || progress.error) break;
+				if (progress.waitMs > 0) await new Promise(r => setTimeout(r, progress.waitMs));
 			}
 		} finally {
 			sparebank1BatchRunning = false;

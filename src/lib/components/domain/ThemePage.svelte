@@ -33,6 +33,8 @@
 	import FlowSheet from '../flows/FlowSheet.svelte';
 	import { getFlowsByTheme } from '$lib/flows/registry';
 	import type { Flow } from '$lib/flows/types';
+	import ThemeMetricSettingsSheet from './ThemeMetricSettingsSheet.svelte';
+	import type { MetricSettingsMap } from './ThemeMetricSettingsSheet.svelte';
 
 	/* ── Types ──────────────────────────────────────────── */
 	interface Theme {
@@ -95,6 +97,7 @@
 		tripProfile?: Record<string, unknown> | null;
 		tripLists?: import('./TripListsPanel.svelte').ThemeList[];
 		themeFiles?: ThemeFile[];
+		metricSettings?: MetricSettingsMap;
 	}
 
 	interface ThemeFile {
@@ -125,7 +128,10 @@
 		} | null;
 	}
 
-	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '', selectedWorkout = null, tripProfile = null, tripLists = [], themeFiles: initialThemeFiles = [] }: Props = $props();
+	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '', selectedWorkout = null, tripProfile = null, tripLists = [], themeFiles: initialThemeFiles = [], metricSettings: initialMetricSettings = {} }: Props = $props();
+
+	let currentMetricSettings = $state<MetricSettingsMap>(initialMetricSettings);
+	let metricSettingsSheetOpen = $state(false);
 
 	/* ── Subtab-tilstand ────────────────────────────────── */
 	type Tab = 'chat' | 'data' | 'mål' | 'flyter' | 'filer' | 'lister';
@@ -1444,11 +1450,28 @@
 				{/if}
 
 				{#if healthDashboardProps}
-					<HealthDashboard
-						{...healthDashboardProps}
-						embedded={true}
-					/>
+					<div class="health-dashboard-wrap">
+						<button
+							class="metric-settings-btn"
+							onclick={() => metricSettingsSheetOpen = true}
+							type="button"
+							title="Konfigurer terskelverdier"
+						>⚙</button>
+						<HealthDashboard
+							{...healthDashboardProps}
+							embedded={true}
+							metricSettings={currentMetricSettings}
+						/>
+					</div>
 				{/if}
+
+				<ThemeMetricSettingsSheet
+					open={metricSettingsSheetOpen}
+					settings={currentMetricSettings}
+					themeId={theme.id}
+					onclose={() => metricSettingsSheetOpen = false}
+					onsave={(updated) => { currentMetricSettings = updated; metricSettingsSheetOpen = false; }}
+				/>
 
 				{#if economicsDashboardProps}
 					<EconomicsDashboard
@@ -2459,6 +2482,28 @@ Eksempel:
 		padding: 8px 16px;
 		border-radius: 99px;
 		cursor: pointer;
+	}
+
+	.health-dashboard-wrap {
+		position: relative;
+	}
+
+	.metric-settings-btn {
+		position: absolute;
+		top: 4px;
+		right: 4px;
+		z-index: 10;
+		background: transparent;
+		border: none;
+		color: #555;
+		font-size: 1rem;
+		cursor: pointer;
+		padding: 4px 6px;
+		line-height: 1;
+	}
+
+	.metric-settings-btn:hover {
+		color: #999;
 	}
 
 	.signal-collapsed-wrap {

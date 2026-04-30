@@ -104,6 +104,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 			emoji: theme.emoji,
 			description: theme.description
 		},
+		metricSettings: theme.metricSettings ?? {},
 		themeConversations: themeConversations.map((c) => ({
 			...c,
 			updatedAt: c.updatedAt.toISOString(),

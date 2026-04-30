@@ -643,6 +643,132 @@ export async function syncAllWithingsData(userId: string, fullSync = false, over
 	return { weight, activity, sleep, workouts };
 }
 
+// ─── Prefetch support ────────────────────────────────────────────────────────
+
+export type WithingsParsedEvent = {
+	timestamp: Date | string;
+	data: Record<string, unknown>;
+	metadata: Record<string, unknown>;
+};
+
+export type WithingsPrefetchedDay = {
+	weight: WithingsParsedEvent[];
+	activity: WithingsParsedEvent[];
+	sleep: WithingsParsedEvent[];
+	workouts: WithingsParsedEvent[];
+};
+
+function groupEventsByDay(events: WithingsParsedEvent[]): Record<string, WithingsParsedEvent[]> {
+	const byDay: Record<string, WithingsParsedEvent[]> = {};
+	for (const event of events) {
+		const day = new Date(event.timestamp as string).toISOString().slice(0, 10);
+		(byDay[day] ??= []).push(event);
+	}
+	return byDay;
+}
+
+/**
+ * Fetches all Withings data for the given date range in one shot (4 API calls total),
+ * groups events by calendar day, and returns the result for embedding in the batch job payload.
+ * Each subsequent processDay step can then write events without any external API calls.
+ */
+export async function prefetchWithingsEventsForRange(
+	userId: string,
+	fromDate: string,
+	toDate: string
+): Promise<{ sensorId: string; byDay: Record<string, WithingsPrefetchedDay> }> {
+	const sensor = await getWithingsSensor(userId);
+	if (!sensor) throw new Error('Ingen Withings-sensor funnet');
+	const accessToken = await getValidAccessToken(sensor);
+
+	const fromUnix = Math.floor(new Date(`${fromDate}T00:00:00Z`).getTime() / 1000);
+	const toUnix = Math.floor(new Date(`${toDate}T23:59:59Z`).getTime() / 1000);
+
+	const [rawWeight, rawActivity, rawWorkouts] = await Promise.all([
+		fetchAllWithingsData(accessToken, { action: 'getmeas', meastype: 1, category: 1, startdate: fromUnix, enddate: toUnix }),
+		fetchAllWithingsData(accessToken, { action: 'getactivity', startdateymd: fromDate, enddateymd: toDate }),
+		fetchAllWithingsData(accessToken, { action: 'getworkouts', startdateymd: fromDate, enddateymd: toDate })
+	]);
+
+	const rawSleep: any[] = [];
+	let offset = 0;
+	let hasMore = true;
+	let page = 0;
+	while (hasMore && page < 100) {
+		page++;
+		const response = await fetchWithingsSleep(accessToken, { action: 'getsummary', startdateymd: fromDate, enddateymd: toDate, offset });
+		if (response.status !== 0) throw new Error(`Withings sleep API error: ${response.error || 'Unknown'}`);
+		rawSleep.push(...(response.body.series || []));
+		hasMore = response.body.more || false;
+		offset = response.body.offset || 0;
+	}
+
+	const weightByDay = groupEventsByDay(parseWeightData(rawWeight));
+	const activityByDay = groupEventsByDay(parseActivityData(rawActivity));
+	const sleepByDay = groupEventsByDay(parseSleepData(rawSleep));
+	const workoutsByDay = groupEventsByDay(parseWorkoutData(rawWorkouts));
+
+	const allDays = new Set([...Object.keys(weightByDay), ...Object.keys(activityByDay), ...Object.keys(sleepByDay), ...Object.keys(workoutsByDay)]);
+
+	const byDay: Record<string, WithingsPrefetchedDay> = {};
+	for (const day of allDays) {
+		byDay[day] = {
+			weight: weightByDay[day] ?? [],
+			activity: activityByDay[day] ?? [],
+			sleep: sleepByDay[day] ?? [],
+			workouts: workoutsByDay[day] ?? []
+		};
+	}
+
+	return { sensorId: sensor.id, byDay };
+}
+
+/**
+ * Writes pre-fetched Withings events for one day to the database.
+ * No external API calls — all data comes from the prefetched payload.
+ */
+export async function writeWithingsDayFromPrefetch(
+	userId: string,
+	sensorId: string,
+	dayData: WithingsPrefetchedDay
+): Promise<{ weight: number; activity: number; sleep: number; workouts: number; total: number }> {
+	const batchSize = 100;
+
+	async function writeBatch(
+		events: WithingsParsedEvent[],
+		eventType: string,
+		dataType: string,
+		source: string,
+		conflictMode: 'ignore' | 'upsert_sensor_datatype_timestamp'
+	) {
+		for (let i = 0; i < events.length; i += batchSize) {
+			await SensorEventService.writeMany(
+				events.slice(i, i + batchSize).map((event) => ({
+					userId,
+					sensorId,
+					eventType,
+					dataType,
+					timestamp: new Date(event.timestamp as string),
+					data: event.data,
+					metadata: event.metadata,
+					source
+				})),
+				{ conflictMode }
+			);
+		}
+		return events.length;
+	}
+
+	const weight = await writeBatch(dayData.weight, 'measurement', 'weight', 'withings_backfill_weight', 'ignore');
+	const activity = await writeBatch(dayData.activity, 'activity', 'activity', 'withings_backfill_activity', 'upsert_sensor_datatype_timestamp');
+	const sleep = await writeBatch(dayData.sleep, 'measurement', 'sleep', 'withings_backfill_sleep', 'ignore');
+	const workouts = await writeBatch(dayData.workouts, 'activity', 'workout', 'withings_backfill_workout', 'upsert_sensor_datatype_timestamp');
+
+	return { weight, activity, sleep, workouts, total: weight + activity + sleep + workouts };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * Compute hr_average for one calendar date by calling Withings get endpoint,
  * then patch matching sleep events in the DB that are missing hr_average.

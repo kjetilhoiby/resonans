@@ -134,6 +134,14 @@ export const themes = pgTable('themes', {
 			notes?: string;
 		}>;
 	}>(),
+	metricSettings: jsonb('metric_settings').$type<{
+		distance?: { goal?: number; thresholdWarn?: number; thresholdSuccess?: number };
+		sleep?: { goal?: number; thresholdWarn?: number; thresholdSuccess?: number };
+		sleepLag?: { goal?: number; thresholdWarn?: number; thresholdSuccess?: number };
+		steps?: { goal?: number; thresholdWarn?: number; thresholdSuccess?: number };
+		activeMinutes?: { goal?: number; thresholdWarn?: number; thresholdSuccess?: number };
+		weight?: { goal?: number; thresholdWarn?: number; thresholdSuccess?: number };
+	}>(),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
 });
