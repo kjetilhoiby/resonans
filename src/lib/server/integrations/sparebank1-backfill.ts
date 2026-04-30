@@ -94,13 +94,12 @@ registerBatchHandler('sparebank1_backfill', {
 		// Mark empty accounts as done immediately without a DB write
 		if (allTxns.length === 0) {
 			accountOffsets[accountKey] = 0;
-			const chunksWritten = ((currentStats.chunksWritten as number) ?? 0) + 1;
 			console.log(`[sparebank1-backfill] ${accountName}: 0 transaksjoner, hopper over`);
 			return {
 				stats: {
-					transactionsInserted: (currentStats.transactionsInserted as number) ?? 0,
+					transactionsInserted: 0, // delta
 					accountOffsets,
-					chunksWritten,
+					chunksWritten: 1,        // delta
 					totalChunks
 				}
 			};
@@ -126,18 +125,16 @@ registerBatchHandler('sparebank1_backfill', {
 		});
 
 		accountOffsets[accountKey] = chunkEnd;
-		const chunksWritten = ((currentStats.chunksWritten as number) ?? 0) + 1;
 
 		console.log(
-			`[sparebank1-backfill] chunk ferdig: ${result.transactionEvents} nye transaksjoner, ` +
-			`${chunksWritten}/${totalChunks} chunks totalt`
+			`[sparebank1-backfill] chunk ferdig: ${result.transactionEvents} nye transaksjoner`
 		);
 
 		return {
 			stats: {
-				transactionsInserted: ((currentStats.transactionsInserted as number) ?? 0) + result.transactionEvents,
+				transactionsInserted: result.transactionEvents, // delta only — mergeStats accumulates
 				accountOffsets,
-				chunksWritten,
+				chunksWritten: 1,                              // delta: 1 chunk this step
 				totalChunks
 			}
 		};
@@ -154,7 +151,7 @@ registerBatchHandler('sparebank1_backfill', {
 				...((acc.accountOffsets as Record<string, number> | undefined) ?? {}),
 				...((step.accountOffsets as Record<string, number> | undefined) ?? {})
 			},
-			chunksWritten: (step.chunksWritten as number | undefined) ?? (acc.chunksWritten as number | undefined) ?? 0,
+			chunksWritten: ((acc.chunksWritten as number) ?? 0) + ((step.chunksWritten as number) ?? 0),
 			totalChunks: (step.totalChunks as number | undefined) ?? (acc.totalChunks as number | undefined) ?? 0,
 			rateLimitRemaining: step.rateLimitRemaining ?? acc.rateLimitRemaining ?? null
 		};
