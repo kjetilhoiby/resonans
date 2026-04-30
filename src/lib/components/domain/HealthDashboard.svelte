@@ -90,6 +90,7 @@
 	let { weekly, monthly, yearly, sources = [], recentEvents = [], tooling, embedded = false, goals = [], activities = [] }: Props = $props();
 
 	let selectedWindow = $state<WindowMode>('30d');
+	let periodTableFilter = $state<'siste5' | 'i_ar' | 'siste_ar' | 'alt'>('siste5');
 	let runningGoalWeekInput = $state('20');
 	let runningGoalQuarterInput = $state('150');
 	let runningGoalYearInput = $state('1000');
@@ -183,6 +184,20 @@
 	);
 	const lastPeriod = $derived(periodData.length ? periodData[periodData.length - 1] : null);
 	const lastMetrics = $derived(lastPeriod?.metrics ?? null);
+
+	function periodYear(periodKey: string): number {
+		return parseInt(periodKey.split(/[WMQY]/)[0]);
+	}
+
+	const visiblePeriods = $derived.by(() => {
+		const reversed = [...periodData].reverse();
+		const now = new Date();
+		const thisYear = now.getFullYear();
+		if (periodTableFilter === 'siste5') return reversed.slice(0, 5);
+		if (periodTableFilter === 'i_ar') return reversed.filter(p => periodYear(p.periodKey) === thisYear);
+		if (periodTableFilter === 'siste_ar') return reversed.filter(p => periodYear(p.periodKey) === thisYear - 1);
+		return reversed;
+	});
 
 	const GOAL_COLORS: Record<string, string> = {
 		active: '#7c8ef5',
@@ -1009,7 +1024,15 @@
 		<div class="hd-table-card">
 			<div class="hd-table-head">
 				<h2 class="hd-table-title">Perioder</h2>
-				<p class="hd-table-copy">Aggregatoversikt per periode (grunnlag for raske kort og tabeller).</p>
+				<div class="hd-period-filters">
+					{#each [['siste5', 'Siste 5'], ['i_ar', 'I år'], ['siste_ar', 'Siste år'], ['alt', 'Alt']] as [val, label]}
+						<button
+							class="hd-period-filter-btn"
+							class:hd-period-filter-btn--active={periodTableFilter === val}
+							onclick={() => { periodTableFilter = val as typeof periodTableFilter; }}
+						>{label}</button>
+					{/each}
+				</div>
 			</div>
 			<div class="hd-table-wrap">
 				<table class="hd-table">
@@ -1024,7 +1047,7 @@
 						</tr>
 					</thead>
 					<tbody>
-						{#each periodData as period}
+						{#each visiblePeriods as period}
 							{@const days = daysInPeriod(period)}
 							{@const activeSum = period.metrics?.intenseMinutes?.sum}
 							<tr>
@@ -1405,7 +1428,36 @@
 	.hd-table-head {
 		display: flex;
 		flex-direction: column;
-		gap: 4px;
+		gap: 8px;
+	}
+
+	.hd-period-filters {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+
+	.hd-period-filter-btn {
+		padding: 4px 12px;
+		font-size: 0.76rem;
+		font-weight: 500;
+		border-radius: 8px;
+		border: 1px solid #2a2a2a;
+		background: #1a1a1a;
+		color: #888;
+		cursor: pointer;
+		transition: all 0.12s;
+	}
+
+	.hd-period-filter-btn:hover {
+		background: #222;
+		color: #ccc;
+	}
+
+	.hd-period-filter-btn--active {
+		background: #1e2040;
+		border-color: #3a4080;
+		color: #aab4f5;
 	}
 
 	.hd-table-wrap {
