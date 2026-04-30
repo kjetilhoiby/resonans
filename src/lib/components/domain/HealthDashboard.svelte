@@ -106,6 +106,8 @@
 
 	// Activity card expand state
 	let expandedActivityIds = $state<Set<string>>(new Set());
+	let activitySportFilter = $state<string | null>(null);
+	let activityVisibleCount = $state(10);
 
 	async function toggleActivity(activityId: string, trackEventId: string | null = null) {
 		const next = new Set(expandedActivityIds);
@@ -134,6 +136,23 @@
 		} catch { /* stille feil */ }
 		mapLoading = false;
 	}
+
+	const availableSportTypes = $derived.by(() => {
+		const counts = new Map<string, number>();
+		for (const act of activities) {
+			const t = act.sportType.toLowerCase();
+			counts.set(t, (counts.get(t) ?? 0) + 1);
+		}
+		return [...counts.entries()]
+			.sort((a, b) => b[1] - a[1])
+			.map(([type]) => type);
+	});
+
+	const filteredActivities = $derived(
+		activitySportFilter
+			? activities.filter(a => a.sportType.toLowerCase() === activitySportFilter)
+			: activities
+	);
 
 	const aggregatePeriod = $derived<'week' | 'month' | 'year'>(
 		selectedWindow === 'month' || selectedWindow === 'quarter' ? 'month' : selectedWindow === 'year' ? 'year' : 'week'
@@ -1132,9 +1151,27 @@
 		<!-- Aktivitetsliste -->
 		{#if activities.length > 0}
 			<div class="hd-activities-section">
-				<h2 class="hd-section-title">Treningsøkter</h2>
+				<div class="hd-activities-header">
+					<h2 class="hd-section-title">Treningsøkter</h2>
+					{#if availableSportTypes.length > 1}
+						<div class="hd-sport-filters">
+							<button
+								class="hd-sport-chip"
+								class:hd-sport-chip--active={activitySportFilter === null}
+								onclick={() => { activitySportFilter = null; activityVisibleCount = 10; }}
+							>Alle</button>
+							{#each availableSportTypes as type}
+								<button
+									class="hd-sport-chip"
+									class:hd-sport-chip--active={activitySportFilter === type}
+									onclick={() => { activitySportFilter = type; activityVisibleCount = 10; }}
+								>{sportIcon(type)} {sportLabel(type)}</button>
+							{/each}
+						</div>
+					{/if}
+				</div>
 				<div class="hd-activity-list">
-					{#each activities.slice(0, 20) as act}
+					{#each filteredActivities.slice(0, activityVisibleCount) as act}
 						{@const trackEventId = act.evidence.find(e => e.hasTrackPoints)?.eventId ?? null}
 						{@const discrepancies = sourceDiscrepancies(act.evidence)}
 						{@const isExpanded = expandedActivityIds.has(act.activityId)}
@@ -1200,6 +1237,12 @@
 						</div>
 					{/each}
 				</div>
+				{#if filteredActivities.length > activityVisibleCount}
+					<button
+						class="hd-show-more-btn"
+						onclick={() => { activityVisibleCount += 25; }}
+					>Vis flere ({filteredActivities.length - activityVisibleCount} gjenstår)</button>
+				{/if}
 			</div>
 		{/if}
 
@@ -1577,6 +1620,60 @@
 		padding: 16px;
 		background: #141414;
 		border-radius: 18px;
+	}
+
+	.hd-activities-header {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+
+	.hd-sport-filters {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+
+	.hd-sport-chip {
+		padding: 4px 10px;
+		font-size: 0.76rem;
+		font-weight: 500;
+		border-radius: 8px;
+		border: 1px solid #2a2a2a;
+		background: #1a1a1a;
+		color: #888;
+		cursor: pointer;
+		transition: all 0.12s;
+	}
+
+	.hd-sport-chip:hover {
+		background: #222;
+		color: #ccc;
+	}
+
+	.hd-sport-chip--active {
+		background: #1e2040;
+		border-color: #3a4080;
+		color: #aab4f5;
+	}
+
+	.hd-show-more-btn {
+		align-self: center;
+		padding: 7px 20px;
+		font-size: 0.8rem;
+		font-weight: 500;
+		border-radius: 10px;
+		border: 1px solid #2a2a2a;
+		background: #1a1a1a;
+		color: #888;
+		cursor: pointer;
+		transition: all 0.12s;
+	}
+
+	.hd-show-more-btn:hover {
+		background: #222;
+		color: #ccc;
+		border-color: #3a3a3a;
 	}
 
 	.hd-activity-list {
