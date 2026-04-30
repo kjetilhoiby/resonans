@@ -90,76 +90,13 @@
 	let { weekly, monthly, yearly, sources = [], recentEvents = [], tooling, embedded = false, goals = [], activities = [] }: Props = $props();
 
 	let selectedWindow = $state<WindowMode>('30d');
+	let periodTableFilter = $state<'siste5' | 'i_ar' | 'siste_ar' | 'alt'>('siste5');
 	let runningGoalWeekInput = $state('20');
 	let runningGoalQuarterInput = $state('150');
 	let runningGoalYearInput = $state('1000');
 	let weightGoalShortInput = $state('-3');
 	let weightGoalLongInput = $state('-20');
 	let showEventDetails = $state(false);
-	let weightChartLoading = $state(false);
-	let weightChartError = $state<string | null>(null);
-	let rangeStartDate = $state(new Date(Date.now() - 1000 * 60 * 60 * 24 * 90).toISOString().slice(0, 10));
-	let rangeEndDate = $state(new Date().toISOString().slice(0, 10));
-	let comparisonWindow = $state<WindowMode>('30d');
-	let goalStartDate = $state(new Date(Date.now() - 1000 * 60 * 60 * 24 * 30).toISOString().slice(0, 10));
-	let goalEndDate = $state(new Date(Date.now() + 1000 * 60 * 60 * 24 * 90).toISOString().slice(0, 10));
-	let goalTargetWeightInput = $state('78.0');
-	let goalStartWeightInput = $state('');
-
-	interface SeriesPoint {
-		x: number;
-		weight: number;
-		timestamp?: string;
-	}
-
-	interface WeightRangePayload {
-		mode: 'range';
-		x: { min: number; max: number };
-		y: { min: number; max: number };
-		points: SeriesPoint[];
-		range: { start: string; end: string; label: string };
-		diagnostics: { source: string; eventCount: number };
-	}
-
-	interface WeightComparisonSeries {
-		label: string;
-		isCurrent: boolean;
-		start: string;
-		end: string;
-		points: SeriesPoint[];
-	}
-
-	interface WeightGoalOverlay {
-		startDate: string;
-		endDate: string;
-		startWeight: number;
-		targetWeight: number;
-		latestWeight: number | null;
-		targetDeltaKg: number;
-		desired: SeriesPoint[];
-		forecast: {
-			paceKgPerDay: number | null;
-			projectedEndWeight: number | null;
-			points: SeriesPoint[];
-		};
-	}
-
-	interface WeightComparisonPayload {
-		mode: 'comparison';
-		window: WindowMode;
-		x: { min: number; max: number };
-		y: { min: number; max: number };
-		series: WeightComparisonSeries[];
-		goal: WeightGoalOverlay | null;
-		diagnostics: {
-			source: string;
-			totalPoints: number;
-			periods: Array<{ label: string; points: number }>;
-		};
-	}
-
-	let weightRangeData = $state<WeightRangePayload | null>(null);
-	let weightComparisonData = $state<WeightComparisonPayload | null>(null);
 
 	// Activity map state
 	interface TrackPoint { lat: number; lon: number; ele?: number | null; hr?: number | null; time?: string | null; }
@@ -169,6 +106,8 @@
 
 	// Activity card expand state
 	let expandedActivityIds = $state<Set<string>>(new Set());
+	let activitySportFilter = $state<string | null>(null);
+	let activityVisibleCount = $state(10);
 
 	async function toggleActivity(activityId: string, trackEventId: string | null = null) {
 		const next = new Set(expandedActivityIds);
@@ -197,6 +136,23 @@
 		} catch { /* stille feil */ }
 		mapLoading = false;
 	}
+
+	const availableSportTypes = $derived.by(() => {
+		const counts = new Map<string, number>();
+		for (const act of activities) {
+			const t = act.sportType.toLowerCase();
+			counts.set(t, (counts.get(t) ?? 0) + 1);
+		}
+		return [...counts.entries()]
+			.sort((a, b) => b[1] - a[1])
+			.map(([type]) => type);
+	});
+
+	const filteredActivities = $derived(
+		activitySportFilter
+			? activities.filter(a => a.sportType.toLowerCase() === activitySportFilter)
+			: activities
+	);
 
 	const aggregatePeriod = $derived<'week' | 'month' | 'year'>(
 		selectedWindow === 'month' || selectedWindow === 'quarter' ? 'month' : selectedWindow === 'year' ? 'year' : 'week'
@@ -247,6 +203,20 @@
 	);
 	const lastPeriod = $derived(periodData.length ? periodData[periodData.length - 1] : null);
 	const lastMetrics = $derived(lastPeriod?.metrics ?? null);
+
+	function periodYear(periodKey: string): number {
+		return parseInt(periodKey.split(/[WMQY]/)[0]);
+	}
+
+	const visiblePeriods = $derived.by(() => {
+		const reversed = [...periodData].reverse();
+		const now = new Date();
+		const thisYear = now.getFullYear();
+		if (periodTableFilter === 'siste5') return reversed.slice(0, 5);
+		if (periodTableFilter === 'i_ar') return reversed.filter(p => periodYear(p.periodKey) === thisYear);
+		if (periodTableFilter === 'siste_ar') return reversed.filter(p => periodYear(p.periodKey) === thisYear - 1);
+		return reversed;
+	});
 
 	const GOAL_COLORS: Record<string, string> = {
 		active: '#7c8ef5',
@@ -964,105 +934,8 @@
 
 	const eventItems = $derived(recentEvents.slice(0, 24).map((item) => formatEvent(item)));
 
-	function mapWeightY(weight: number, yMin: number, yMax: number, height: number): number {
-		if (yMax <= yMin) return height / 2;
-		const normalized = (weight - yMin) / (yMax - yMin);
-		return Math.max(0, Math.min(height, height - normalized * height));
-	}
-
-	function buildLinePath(
-		points: SeriesPoint[],
-		xMax: number,
-		yMin: number,
-		yMax: number,
-		width: number,
-		height: number
-	): string {
-		if (points.length === 0) return '';
-		const safeXMax = Math.max(1, xMax);
-		return points
-			.map((point, index) => {
-				const x = (point.x / safeXMax) * width;
-				const y = mapWeightY(point.weight, yMin, yMax, height);
-				return `${index === 0 ? 'M' : 'L'}${x.toFixed(2)},${y.toFixed(2)}`;
-			})
-			.join(' ');
-	}
-
-	function labelForWindow(window: WindowMode): string {
-		if (window === '7d') return 'Siste 7 dager';
-		if (window === '30d') return 'Siste 30 dager';
-		if (window === '365d') return 'Siste 365 dager';
-		if (window === 'week') return 'Inneværende uke';
-		if (window === 'month') return 'Inneværende måned';
-		return 'Inneværende år';
-	}
-
-	async function fetchWeightRange() {
-		weightChartLoading = true;
-		weightChartError = null;
-		try {
-			const params = new URLSearchParams({
-				mode: 'range',
-				startDate: rangeStartDate,
-				endDate: rangeEndDate
-			});
-
-			const response = await fetch(`/api/health/weight-series?${params.toString()}`);
-			if (!response.ok) throw new Error('Kunne ikke hente range-data');
-			const payload = (await response.json()) as WeightRangePayload;
-			weightRangeData = payload;
-		} catch (error) {
-			weightChartError = error instanceof Error ? error.message : 'Ukjent feil';
-		} finally {
-			weightChartLoading = false;
-		}
-	}
-
-	async function fetchWeightComparison() {
-		weightChartLoading = true;
-		weightChartError = null;
-
-		try {
-			const params = new URLSearchParams({
-				mode: 'comparison',
-				window: comparisonWindow,
-				comparisonPeriods: '4',
-				goalStartDate,
-				goalEndDate,
-				targetWeight: goalTargetWeightInput
-			});
-
-			if (goalStartWeightInput.trim().length) {
-				params.set('startWeight', goalStartWeightInput);
-			}
-
-			const activeWeightGoal = goals.find((goal) => {
-				const metadata = goal.metadata as Record<string, unknown> | undefined;
-				return metadata?.metricId === 'weight_change' && goal.status === 'active';
-			});
-			if (activeWeightGoal) {
-				params.set('goalId', activeWeightGoal.id);
-			}
-
-			const response = await fetch(`/api/health/weight-series?${params.toString()}`);
-			if (!response.ok) throw new Error('Kunne ikke hente sammenlikningsdata');
-			const payload = (await response.json()) as WeightComparisonPayload;
-			weightComparisonData = payload;
-
-			if (!goalStartWeightInput.trim().length && payload.goal?.startWeight != null) {
-				goalStartWeightInput = payload.goal.startWeight.toFixed(1);
-			}
-		} catch (error) {
-			weightChartError = error instanceof Error ? error.message : 'Ukjent feil';
-		} finally {
-			weightChartLoading = false;
-		}
-	}
-
 	onMount(() => {
 		void loadGoalTracks();
-		void fetchWeightComparison();
 	});
 
 	async function loadGoalTracks() {
@@ -1167,183 +1040,18 @@
 			{/each}
 		</div>
 
-		{#if stepsComparisonPoints.length > 1}
-			<div class="hd-table-card hd-steps-trend-card">
-				<div class="hd-table-head">
-					<h2 class="hd-table-title">Skritttrend: nå vs snitt</h2>
-					<p class="hd-table-copy">Sammenligner siste perioder med referansesnitt for valgt vindu.</p>
-				</div>
-				<MetricCard
-					metricId="steps_avg_day"
-					size="L"
-					data={{ current: avgStepsPerDay ?? null, expectedByNow: stepsReferenceAvg, comparisonSeries: stepsComparisonPoints }}
-					formatValue={(v) => `${formatMetric(v, 0)}`}
-				/>
-			</div>
-		{/if}
-
-		<div class="hd-weight-panels">
-			<div class="hd-weight-card">
-				<div class="hd-table-head">
-					<h2 class="hd-table-title">Vektgraf fra dato til dato</h2>
-					<p class="hd-table-copy">Velg start og slutt, se utvikling med kuttet y-akse.</p>
-				</div>
-				<div class="hd-range-controls">
-					<label class="hd-field">
-						<span>Start</span>
-						<input type="date" bind:value={rangeStartDate} />
-					</label>
-					<label class="hd-field">
-						<span>Slutt</span>
-						<input type="date" bind:value={rangeEndDate} />
-					</label>
-					<button class="btn-secondary" type="button" onclick={() => void fetchWeightRange()}>
-						Oppdater graf
-					</button>
-				</div>
-
-				{#if weightRangeData}
-					{@const width = 960}
-					{@const height = 260}
-					{@const path = buildLinePath(
-						weightRangeData.points,
-						weightRangeData.x.max,
-						weightRangeData.y.min,
-						weightRangeData.y.max,
-						width,
-						height
-					)}
-					<div class="hd-chart-shell">
-						<svg viewBox={`0 0 ${width} ${height}`} class="hd-chart" role="img" aria-label="Vektgraf for valgt datointervall">
-							<rect x="0" y="0" width={width} height={height} fill="#0f0f0f" rx="12" />
-							{#if path}
-								<path d={path} stroke="#7c8ef5" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round" />
-							{/if}
-						</svg>
-					</div>
-					<p class="hd-chart-meta">
-						{weightRangeData.range.label} · {weightRangeData.points.length} målinger · y-akse {weightRangeData.y.min.toFixed(1)} til {weightRangeData.y.max.toFixed(1)} kg
-					</p>
-				{/if}
-			</div>
-
-			<div class="hd-weight-card">
-				<div class="hd-table-head">
-					<h2 class="hd-table-title">Periodesammenlikning + mål + prognose</h2>
-					<p class="hd-table-copy">Inneværende periode utheves, eldre perioder er grået ut.</p>
-				</div>
-
-				<div class="hd-range-controls hd-range-controls--dense">
-					<label class="hd-field">
-						<span>Periode</span>
-						<select bind:value={comparisonWindow}>
-							<option value="7d">Siste 7 dager</option>
-							<option value="30d">Siste 30 dager</option>
-							<option value="365d">Siste 365 dager</option>
-							<option value="week">Inneværende uke</option>
-							<option value="month">Inneværende måned</option>
-							<option value="year">Inneværende år</option>
-						</select>
-					</label>
-					<label class="hd-field">
-						<span>Mål start</span>
-						<input type="date" bind:value={goalStartDate} />
-					</label>
-					<label class="hd-field">
-						<span>Mål slutt</span>
-						<input type="date" bind:value={goalEndDate} />
-					</label>
-					<label class="hd-field">
-						<span>Startvekt</span>
-						<input type="text" bind:value={goalStartWeightInput} placeholder="f.eks 85.2" />
-					</label>
-					<label class="hd-field">
-						<span>Målvekt</span>
-						<input type="text" bind:value={goalTargetWeightInput} placeholder="f.eks 78.0" />
-					</label>
-					<button class="btn-secondary" type="button" onclick={() => void fetchWeightComparison()}>
-						Beregn
-					</button>
-				</div>
-
-				{#if weightComparisonData}
-					{@const width = 960}
-					{@const height = 280}
-					<div class="hd-chart-shell">
-						<svg viewBox={`0 0 ${width} ${height}`} class="hd-chart" role="img" aria-label="Sammenlikning av vektperioder med mål og prognose">
-							<rect x="0" y="0" width={width} height={height} fill="#0f0f0f" rx="12" />
-							{#each weightComparisonData.series as series}
-								{@const seriesPath = buildLinePath(
-									series.points,
-									weightComparisonData.x.max,
-									weightComparisonData.y.min,
-									weightComparisonData.y.max,
-									width,
-									height
-								)}
-								{#if seriesPath}
-									<path
-										d={seriesPath}
-										stroke={series.isCurrent ? '#89a0ff' : '#555'}
-										stroke-width={series.isCurrent ? 3 : 2}
-										stroke-opacity={series.isCurrent ? 1 : 0.55}
-										fill="none"
-										stroke-linecap="round"
-										stroke-linejoin="round"
-									/>
-								{/if}
-							{/each}
-
-							{#if weightComparisonData.goal?.desired?.length}
-								{@const desiredPath = buildLinePath(
-									weightComparisonData.goal.desired,
-									weightComparisonData.x.max,
-									weightComparisonData.y.min,
-									weightComparisonData.y.max,
-									width,
-									height
-								)}
-								<path d={desiredPath} stroke="#77d39a" stroke-width="2" stroke-dasharray="7 6" fill="none" />
-							{/if}
-
-							{#if weightComparisonData.goal?.forecast?.points?.length}
-								{@const forecastPath = buildLinePath(
-									weightComparisonData.goal.forecast.points,
-									weightComparisonData.x.max,
-									weightComparisonData.y.min,
-									weightComparisonData.y.max,
-									width,
-									height
-								)}
-								<path d={forecastPath} stroke="#f0b429" stroke-width="2" stroke-dasharray="4 5" fill="none" />
-							{/if}
-						</svg>
-					</div>
-					<p class="hd-chart-meta">
-						{labelForWindow(weightComparisonData.window)} · x-akse 0-{weightComparisonData.x.max} · y-akse {weightComparisonData.y.min.toFixed(1)} til {weightComparisonData.y.max.toFixed(1)} kg
-					</p>
-					{#if weightComparisonData.goal}
-						<p class="hd-chart-meta hd-chart-meta--goal">
-							Målbane: {weightComparisonData.goal.startWeight.toFixed(1)} → {weightComparisonData.goal.targetWeight.toFixed(1)} kg. 
-							Prognose ved nåværende fart: {weightComparisonData.goal.forecast.projectedEndWeight != null ? `${weightComparisonData.goal.forecast.projectedEndWeight.toFixed(1)} kg` : 'for lite data'}.
-						</p>
-					{/if}
-				{/if}
-			</div>
-
-		</div>
-
-		{#if weightChartLoading}
-			<p class="hd-inline-status">Laster vektgrafer…</p>
-		{/if}
-		{#if weightChartError}
-			<p class="hd-inline-error">{weightChartError}</p>
-		{/if}
-
 		<div class="hd-table-card">
 			<div class="hd-table-head">
 				<h2 class="hd-table-title">Perioder</h2>
-				<p class="hd-table-copy">Aggregatoversikt per periode (grunnlag for raske kort og tabeller).</p>
+				<div class="hd-period-filters">
+					{#each [['siste5', 'Siste 5'], ['i_ar', 'I år'], ['siste_ar', 'Siste år'], ['alt', 'Alt']] as [val, label]}
+						<button
+							class="hd-period-filter-btn"
+							class:hd-period-filter-btn--active={periodTableFilter === val}
+							onclick={() => { periodTableFilter = val as typeof periodTableFilter; }}
+						>{label}</button>
+					{/each}
+				</div>
 			</div>
 			<div class="hd-table-wrap">
 				<table class="hd-table">
@@ -1358,7 +1066,7 @@
 						</tr>
 					</thead>
 					<tbody>
-						{#each periodData as period}
+						{#each visiblePeriods as period}
 							{@const days = daysInPeriod(period)}
 							{@const activeSum = period.metrics?.intenseMinutes?.sum}
 							<tr>
@@ -1443,9 +1151,27 @@
 		<!-- Aktivitetsliste -->
 		{#if activities.length > 0}
 			<div class="hd-activities-section">
-				<h2 class="hd-section-title">Treningsøkter</h2>
+				<div class="hd-activities-header">
+					<h2 class="hd-section-title">Treningsøkter</h2>
+					{#if availableSportTypes.length > 1}
+						<div class="hd-sport-filters">
+							<button
+								class="hd-sport-chip"
+								class:hd-sport-chip--active={activitySportFilter === null}
+								onclick={() => { activitySportFilter = null; activityVisibleCount = 10; }}
+							>Alle</button>
+							{#each availableSportTypes as type}
+								<button
+									class="hd-sport-chip"
+									class:hd-sport-chip--active={activitySportFilter === type}
+									onclick={() => { activitySportFilter = type; activityVisibleCount = 10; }}
+								>{sportIcon(type)} {sportLabel(type)}</button>
+							{/each}
+						</div>
+					{/if}
+				</div>
 				<div class="hd-activity-list">
-					{#each activities.slice(0, 20) as act}
+					{#each filteredActivities.slice(0, activityVisibleCount) as act}
 						{@const trackEventId = act.evidence.find(e => e.hasTrackPoints)?.eventId ?? null}
 						{@const discrepancies = sourceDiscrepancies(act.evidence)}
 						{@const isExpanded = expandedActivityIds.has(act.activityId)}
@@ -1511,6 +1237,20 @@
 						</div>
 					{/each}
 				</div>
+				{#if filteredActivities.length > activityVisibleCount}
+					<button
+						class="hd-show-more-btn"
+						onclick={() => { activityVisibleCount += 25; }}
+					>Vis flere ({filteredActivities.length - activityVisibleCount} gjenstår)</button>
+				{/if}
+				{#if activityVisibleCount > 10}
+					<div class="hd-show-less-sticky">
+						<button
+							class="hd-show-less-btn"
+							onclick={() => { activityVisibleCount = 10; }}
+						>Vis færre ↑</button>
+					</div>
+				{/if}
 			</div>
 		{/if}
 
@@ -1729,10 +1469,6 @@
 		width: 100%;
 	}
 
-	.hd-steps-trend-card {
-		margin-top: 12px;
-	}
-
 	.hd-table-card {
 		padding: 16px;
 		display: flex;
@@ -1743,7 +1479,36 @@
 	.hd-table-head {
 		display: flex;
 		flex-direction: column;
-		gap: 4px;
+		gap: 8px;
+	}
+
+	.hd-period-filters {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+
+	.hd-period-filter-btn {
+		padding: 4px 12px;
+		font-size: 0.76rem;
+		font-weight: 500;
+		border-radius: 8px;
+		border: 1px solid #2a2a2a;
+		background: #1a1a1a;
+		color: #888;
+		cursor: pointer;
+		transition: all 0.12s;
+	}
+
+	.hd-period-filter-btn:hover {
+		background: #222;
+		color: #ccc;
+	}
+
+	.hd-period-filter-btn--active {
+		background: #1e2040;
+		border-color: #3a4080;
+		color: #aab4f5;
 	}
 
 	.hd-table-wrap {
@@ -1785,98 +1550,9 @@
 		padding-right: 12px;
 	}
 
-	.hd-weight-panels {
-		display: grid;
-		gap: 12px;
-	}
-
-	.hd-weight-card {
-		background: #141414;
-		border-radius: 18px;
-		padding: 16px;
-		display: flex;
-		flex-direction: column;
-		gap: 12px;
-	}
-
-	.hd-range-controls {
-		display: grid;
-		gap: 10px;
-		grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-		align-items: end;
-	}
-
-	.hd-range-controls--dense {
-		grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-	}
-
-	.hd-field {
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
-		font-size: 0.78rem;
-		color: #8d8d8d;
-	}
-
-	.hd-field input,
-	.hd-field select {
-		height: 36px;
-		border-radius: 10px;
-		border: 1px solid #2a2a2a;
-		background: #101010;
-		color: #e5e5e5;
-		padding: 0 10px;
-	}
-
-	.hd-chart-shell {
-		width: 100%;
-		overflow: hidden;
-		border-radius: 12px;
-		border: 1px solid #222;
-	}
-
-	.hd-chart {
-		display: block;
-		width: 100%;
-		height: auto;
-		background: #0f0f0f;
-	}
-
-	.hd-chart-meta {
-		margin: 0;
-		font-size: 0.78rem;
-		line-height: 1.45;
-		color: #8a8a8a;
-	}
-
-	.hd-chart-meta--goal {
-		color: #b4b4b4;
-	}
-
-
-	.hd-inline-status,
-	.hd-inline-error {
-		margin: 0;
-		font-size: 0.8rem;
-		line-height: 1.4;
-	}
-
-	.hd-inline-status {
-		color: #8d8d8d;
-	}
-
-	.hd-inline-error {
-		color: #d88e8e;
-	}
-
 	@media (max-width: 640px) {
 		.hd-grid {
 			grid-template-columns: repeat(2, minmax(0, 1fr));
-		}
-
-		.hd-range-controls,
-		.hd-range-controls--dense {
-			grid-template-columns: 1fr;
 		}
 
 		.hd-title {
@@ -1952,6 +1628,87 @@
 		padding: 16px;
 		background: #141414;
 		border-radius: 18px;
+	}
+
+	.hd-activities-header {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+
+	.hd-sport-filters {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+
+	.hd-sport-chip {
+		padding: 4px 10px;
+		font-size: 0.76rem;
+		font-weight: 500;
+		border-radius: 8px;
+		border: 1px solid #2a2a2a;
+		background: #1a1a1a;
+		color: #888;
+		cursor: pointer;
+		transition: all 0.12s;
+	}
+
+	.hd-sport-chip:hover {
+		background: #222;
+		color: #ccc;
+	}
+
+	.hd-sport-chip--active {
+		background: #1e2040;
+		border-color: #3a4080;
+		color: #aab4f5;
+	}
+
+	.hd-show-more-btn {
+		align-self: center;
+		padding: 7px 20px;
+		font-size: 0.8rem;
+		font-weight: 500;
+		border-radius: 10px;
+		border: 1px solid #2a2a2a;
+		background: #1a1a1a;
+		color: #888;
+		cursor: pointer;
+		transition: all 0.12s;
+	}
+
+	.hd-show-more-btn:hover {
+		background: #222;
+		color: #ccc;
+		border-color: #3a3a3a;
+	}
+
+	.hd-show-less-sticky {
+		position: sticky;
+		bottom: 1rem;
+		align-self: center;
+		pointer-events: none;
+	}
+
+	.hd-show-less-btn {
+		pointer-events: auto;
+		padding: 7px 20px;
+		font-size: 0.8rem;
+		font-weight: 500;
+		border-radius: 10px;
+		border: 1px solid #3a3a3a;
+		background: #111;
+		color: #999;
+		cursor: pointer;
+		transition: all 0.12s;
+		box-shadow: 0 2px 12px #000a;
+	}
+
+	.hd-show-less-btn:hover {
+		background: #1a1a1a;
+		color: #ccc;
+		border-color: #505050;
 	}
 
 	.hd-activity-list {
@@ -2075,38 +1832,6 @@
 		font-size: 0.7rem;
 		color: #c8a84b;
 		display: block;
-	}
-
-	.hd-activity-actions {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		margin-top: 2px;
-	}
-
-	.hd-map-btn {
-		display: flex;
-		align-items: center;
-		gap: 4px;
-		background: #1e1e1e;
-		border: 1px solid #2a2a2a;
-		border-radius: 8px;
-		padding: 5px 10px;
-		cursor: pointer;
-		font-size: 0.78rem;
-		line-height: 1;
-		transition: all 0.12s;
-		color: #bbb;
-	}
-
-	.hd-map-btn:hover {
-		background: #282828;
-		border-color: #3a3a3a;
-	}
-
-	.hd-map-btn-active {
-		background: #1a2040;
-		border-color: #4a9eff;
 	}
 
 	.hd-detail-link {
