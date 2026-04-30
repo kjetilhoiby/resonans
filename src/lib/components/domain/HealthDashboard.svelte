@@ -1243,6 +1243,14 @@
 						onclick={() => { activityVisibleCount += 25; }}
 					>Vis flere ({filteredActivities.length - activityVisibleCount} gjenstår)</button>
 				{/if}
+				{#if activityVisibleCount > 10}
+					<div class="hd-show-less-sticky">
+						<button
+							class="hd-show-less-btn"
+							onclick={() => { activityVisibleCount = 10; }}
+						>Vis færre ↑</button>
+					</div>
+				{/if}
 			</div>
 		{/if}
 
@@ -1674,6 +1682,33 @@
 		background: #222;
 		color: #ccc;
 		border-color: #3a3a3a;
+	}
+
+	.hd-show-less-sticky {
+		position: sticky;
+		bottom: 1rem;
+		align-self: center;
+		pointer-events: none;
+	}
+
+	.hd-show-less-btn {
+		pointer-events: auto;
+		padding: 7px 20px;
+		font-size: 0.8rem;
+		font-weight: 500;
+		border-radius: 10px;
+		border: 1px solid #3a3a3a;
+		background: #111;
+		color: #999;
+		cursor: pointer;
+		transition: all 0.12s;
+		box-shadow: 0 2px 12px #000a;
+	}
+
+	.hd-show-less-btn:hover {
+		background: #1a1a1a;
+		color: #ccc;
+		border-color: #505050;
 	}
 
 	.hd-activity-list {
