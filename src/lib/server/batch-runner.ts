@@ -20,7 +20,17 @@ export interface BatchHandler<TStats extends Record<string, unknown> = Record<st
 	 * Process a date range in one step. If defined, used instead of processDay.
 	 * Return waitMs > 0 to signal the UI to pause before the next step (rate limiting).
 	 */
-	processStep?(userId: string, fromDate: string, toDate: string, prefetchedData?: Record<string, unknown>): Promise<{ stats: TStats; waitMs?: number }>;
+	processStep?(
+		userId: string,
+		stepFromDate: string,
+		stepToDate: string,
+		context: {
+			prefetchedData?: Record<string, unknown>;
+			currentStats: Record<string, unknown>;
+			jobFromDate: string;
+			jobToDate: string;
+		}
+	): Promise<{ stats: TStats; waitMs?: number }>;
 
 	/** Process one calendar day. Used when processStep is not defined. */
 	processDay(userId: string, date: string, prefetchedData?: Record<string, unknown>): Promise<TStats>;
@@ -162,7 +172,12 @@ export async function stepBatchJob(jobId: string): Promise<BatchProgress> {
 		let stepStats: Record<string, unknown>;
 
 		if (handler.processStep) {
-			const stepResult = await handler.processStep(job.userId!, nextDate, stepToDate, payload.prefetchedData);
+			const stepResult = await handler.processStep(job.userId!, nextDate, stepToDate, {
+				prefetchedData: payload.prefetchedData,
+				currentStats: accStats,
+				jobFromDate: payload.fromDate,
+				jobToDate: payload.toDate
+			});
 			stepStats = stepResult.stats;
 			waitMs = stepResult.waitMs;
 		} else {
