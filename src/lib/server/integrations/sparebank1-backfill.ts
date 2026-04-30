@@ -7,131 +7,139 @@ import {
 	type RateLimitSnapshot
 } from './sparebank1';
 
-// SpareBank1 allows 60 calls/hour = 1/min refill. A step needs ~2 + N_accounts calls.
-const CALLS_PER_STEP = 15;
-const REFILL_RATE_MS = 60_000;
-const LOW_REMAINING_THRESHOLD = 15;
+// Max transactions per step. Each transaction costs 3 sequential DB queries in
+// writeRawAndCanonicalTransactions, so 500 × 3 = 1500 queries per step.
+const CHUNK_SIZE = 500;
 
 function getAccountKey(account: any): string {
 	return String(account.key || account.accountKey || account.id || account.accountId || account.number || '');
 }
 
-function getTransactionDate(t: any): string | null {
-	const raw = t.bookingDate || t.transactionDate || t.valueDate || t.date;
-	if (!raw) return null;
-	if (typeof raw === 'number') return new Date(raw).toISOString().split('T')[0];
-	return String(raw).split('T')[0];
-}
-
-function dayBefore(dateStr: string): string {
-	const d = new Date(`${dateStr}T00:00:00Z`);
-	d.setUTCDate(d.getUTCDate() - 1);
-	return d.toISOString().split('T')[0];
-}
-
-function computeWaitMs(headers: RateLimitSnapshot): number {
-	const remaining = parseInt(
-		headers['X-RateLimit-Remaining'] ?? headers['X-Rate-Limit-Remaining'] ?? headers['RateLimit-Remaining'] ?? '999',
-		10
-	);
-	if (isNaN(remaining) || remaining >= LOW_REMAINING_THRESHOLD) return 0;
-
-	const reset = parseInt(
-		headers['X-RateLimit-Reset'] ?? headers['X-Rate-Limit-Reset'] ?? headers['RateLimit-Reset'] ?? '0',
-		10
-	);
-	if (!isNaN(reset) && reset > 0) {
-		return Math.max(0, reset * 1000 - Date.now() + 1000);
-	}
-	const callsNeeded = Math.max(0, CALLS_PER_STEP - remaining);
-	return callsNeeded * REFILL_RATE_MS;
-}
-
 registerBatchHandler('sparebank1_backfill', {
-	// stepSizeDays is large so progress is tracked per-step rather than per-day.
-	// Actual completion is determined by isDone (all account frontiers reached).
-	stepSizeDays: 9999,
+	stepSizeDays: 1,
 
-	isDone(stats) {
-		const frontiers = stats.accountFrontiers as Record<string, string | null> | undefined;
-		if (!frontiers || Object.keys(frontiers).length === 0) return false;
-		return Object.values(frontiers).every((f) => f === null);
-	},
-
-	async processStep(userId, _stepFromDate, _stepToDate, { currentStats, jobFromDate, jobToDate }) {
+	// Runs once at job creation: fetches all accounts + all transactions (11 API calls total).
+	// Everything is stored in payload.prefetchedData — no external calls in processStep.
+	async prefetch(userId) {
 		const sensor = await getSparebank1Sensor(userId);
 		if (!sensor) throw new Error('Ingen SpareBank1-sensor funnet');
 
 		const accessToken = await getValidSparebank1AccessToken(sensor);
 		const rateLimitHeaders: RateLimitSnapshot = {};
 		await fetchSparebank1HelloWorld(accessToken, rateLimitHeaders);
-		const allAccounts = await fetchSparebank1Accounts(accessToken, rateLimitHeaders);
+		const accounts = await fetchSparebank1Accounts(accessToken, rateLimitHeaders);
 
-		const frontiers: Record<string, string | null> = {
-			...((currentStats.accountFrontiers as Record<string, string | null>) ?? {})
-		};
+		console.log(`[sparebank1-backfill] prefetch: ${accounts.length} kontoer`);
 
-		// Pre-fetch transactions per account using adaptive windows.
-		// frontier[key] = oldest date we still need to reach (null = complete).
-		// Each call fetches jobFromDate → frontier, then updates frontier to just before
-		// the oldest returned transaction. When oldest ≤ jobFromDate, the account is done.
-		const prefetchedTransactions: Record<string, any[]> = {};
-
-		for (const account of allAccounts) {
+		const transactionsByAccount: Record<string, any[]> = {};
+		for (const account of accounts) {
 			const key = getAccountKey(account);
 			if (!key) continue;
-			if (frontiers[key] === null) continue; // already complete
-
-			const toDate = frontiers[key] ?? jobToDate;
-
-			const txns = await fetchSparebank1Transactions(
-				accessToken,
-				key,
-				new Date(`${jobFromDate}T00:00:00Z`),
-				new Date(`${toDate}T23:59:59Z`),
-				rateLimitHeaders
-			);
-
-			prefetchedTransactions[key] = txns;
-
-			const dates = txns
-				.map(getTransactionDate)
-				.filter((d): d is string => d !== null)
-				.sort();
-			const oldestDate = dates[0] ?? null;
-
-			if (!oldestDate || oldestDate <= jobFromDate) {
-				frontiers[key] = null; // reached the beginning — complete
-			} else {
-				frontiers[key] = dayBefore(oldestDate); // walk backwards next step
-			}
+			const name = String(account.name || account.accountName || key);
+			const txns = await fetchSparebank1Transactions(accessToken, key, undefined, undefined, rateLimitHeaders);
+			console.log(`[sparebank1-backfill] prefetch: ${name} → ${txns.length} transaksjoner`);
+			transactionsByAccount[key] = txns;
 		}
 
-		// Write everything to DB; skip the external fetches since we already have the data.
-		const result = await syncAllSparebank1Data(userId, {
-			fromDate: new Date(`${jobFromDate}T00:00:00Z`),
-			toDate: new Date(`${jobToDate}T23:59:59Z`),
-			skipExistingDedup: true,
-			prefetchedAccounts: { accounts: allAccounts, accessToken, rateLimitHeaders },
-			prefetchedTransactions
+		const total = Object.values(transactionsByAccount).reduce((s, t) => s + t.length, 0);
+		const totalChunks = Object.values(transactionsByAccount).reduce(
+			(s, t) => s + Math.max(1, Math.ceil(t.length / CHUNK_SIZE)),
+			0
+		);
+		console.log(`[sparebank1-backfill] prefetch ferdig: ${total} transaksjoner, ${totalChunks} steps`);
+
+		return { accounts, transactionsByAccount, totalChunks };
+	},
+
+	isDone(stats) {
+		const chunksWritten = (stats.chunksWritten as number | undefined) ?? 0;
+		const totalChunks = (stats.totalChunks as number | undefined) ?? 0;
+		return totalChunks > 0 && chunksWritten >= totalChunks;
+	},
+
+	// Each step: write one 500-transaction chunk for one account. No API calls.
+	async processStep(userId, _stepFromDate, _stepToDate, { prefetchedData, currentStats }) {
+		const allAccounts = (prefetchedData?.accounts ?? []) as any[];
+		const transactionsByAccount = (prefetchedData?.transactionsByAccount ?? {}) as Record<string, any[]>;
+		const totalChunks = (prefetchedData?.totalChunks as number | undefined) ?? 0;
+
+		// accountOffsets tracks how many transactions have been written per account
+		const accountOffsets: Record<string, number> = {
+			...((currentStats.accountOffsets as Record<string, number> | undefined) ?? {})
+		};
+
+		// Find the next account with remaining transactions
+		const account = allAccounts.find((a) => {
+			const key = getAccountKey(a);
+			if (!key) return false;
+			const offset = accountOffsets[key] ?? 0;
+			const total = transactionsByAccount[key]?.length ?? 0;
+			return offset < total || (total === 0 && !(key in accountOffsets));
 		});
 
-		const completedAccounts = Object.values(frontiers).filter((f) => f === null).length;
-		const totalAccounts = Object.keys(frontiers).length;
+		if (!account) {
+			return {
+				stats: {
+					...(currentStats as Record<string, unknown>),
+					totalChunks
+				}
+			};
+		}
+
+		const accountKey = getAccountKey(account);
+		const accountName = String(account.name || account.accountName || accountKey);
+		const allTxns = transactionsByAccount[accountKey] ?? [];
+		const offset = accountOffsets[accountKey] ?? 0;
+
+		// Mark empty accounts as done immediately without a DB write
+		if (allTxns.length === 0) {
+			accountOffsets[accountKey] = 0;
+			const chunksWritten = ((currentStats.chunksWritten as number) ?? 0) + 1;
+			console.log(`[sparebank1-backfill] ${accountName}: 0 transaksjoner, hopper over`);
+			return {
+				stats: {
+					transactionsInserted: (currentStats.transactionsInserted as number) ?? 0,
+					accountOffsets,
+					chunksWritten,
+					totalChunks
+				}
+			};
+		}
+
+		const chunk = allTxns.slice(offset, offset + CHUNK_SIZE);
+		const chunkEnd = offset + chunk.length;
+		const isLastChunk = chunkEnd >= allTxns.length;
+
 		console.log(
-			`[sparebank1-backfill] frontiers: ${completedAccounts}/${totalAccounts} accounts complete`,
-			Object.entries(frontiers)
-				.filter(([, f]) => f !== null)
-				.map(([k, f]) => `${k}→${f}`)
+			`[sparebank1-backfill] ${accountName}: chunk ${offset}–${chunkEnd - 1} av ${allTxns.length}` +
+			(isLastChunk ? ' (siste)' : '')
+		);
+
+		const sensor = await getSparebank1Sensor(userId);
+		if (!sensor) throw new Error('Ingen SpareBank1-sensor funnet');
+		const accessToken = await getValidSparebank1AccessToken(sensor);
+
+		const result = await syncAllSparebank1Data(userId, {
+			skipExistingDedup: true,
+			prefetchedAccounts: { accounts: [account], accessToken, rateLimitHeaders: {} },
+			prefetchedTransactions: { [accountKey]: chunk }
+		});
+
+		accountOffsets[accountKey] = chunkEnd;
+		const chunksWritten = ((currentStats.chunksWritten as number) ?? 0) + 1;
+
+		console.log(
+			`[sparebank1-backfill] chunk ferdig: ${result.transactionEvents} nye transaksjoner, ` +
+			`${chunksWritten}/${totalChunks} chunks totalt`
 		);
 
 		return {
 			stats: {
 				transactionsInserted: ((currentStats.transactionsInserted as number) ?? 0) + result.transactionEvents,
-				accountFrontiers: frontiers,
-				rateLimitRemaining: rateLimitHeaders['X-RateLimit-Remaining'] ?? rateLimitHeaders['RateLimit-Remaining'] ?? null
-			},
-			waitMs: computeWaitMs(rateLimitHeaders) || undefined
+				accountOffsets,
+				chunksWritten,
+				totalChunks
+			}
 		};
 	},
 
@@ -140,16 +148,19 @@ registerBatchHandler('sparebank1_backfill', {
 	},
 
 	mergeStats(acc, step) {
-		const accFrontiers = (acc.accountFrontiers ?? {}) as Record<string, string | null>;
-		const stepFrontiers = (step.accountFrontiers ?? {}) as Record<string, string | null>;
 		return {
 			transactionsInserted: ((acc.transactionsInserted as number) ?? 0) + ((step.transactionsInserted as number) ?? 0),
-			accountFrontiers: { ...accFrontiers, ...stepFrontiers },
+			accountOffsets: {
+				...((acc.accountOffsets as Record<string, number> | undefined) ?? {}),
+				...((step.accountOffsets as Record<string, number> | undefined) ?? {})
+			},
+			chunksWritten: (step.chunksWritten as number | undefined) ?? (acc.chunksWritten as number | undefined) ?? 0,
+			totalChunks: (step.totalChunks as number | undefined) ?? (acc.totalChunks as number | undefined) ?? 0,
 			rateLimitRemaining: step.rateLimitRemaining ?? acc.rateLimitRemaining ?? null
 		};
 	},
 
 	initialStats() {
-		return { transactionsInserted: 0, accountFrontiers: {}, rateLimitRemaining: null };
+		return { transactionsInserted: 0, accountOffsets: {}, chunksWritten: 0, totalChunks: 0, rateLimitRemaining: null };
 	}
 });
