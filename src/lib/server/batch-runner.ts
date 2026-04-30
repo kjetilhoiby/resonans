@@ -196,7 +196,7 @@ export async function stepBatchJob(jobId: string): Promise<BatchProgress> {
 	}
 
 	const afterDate = addDays(nextDate, stepSize);
-	const done = nextDate >= payload.toDate;
+	const done = stepToDate >= payload.toDate;
 
 	await db
 		.update(backgroundJobs)
