@@ -9,7 +9,7 @@ import {
 
 // Max transactions per step. Each transaction costs 3 sequential DB queries in
 // writeRawAndCanonicalTransactions, so 500 × 3 = 1500 queries per step.
-const CHUNK_SIZE = 500;
+const CHUNK_SIZE = 100;
 
 function getAccountKey(account: any): string {
 	return String(account.key || account.accountKey || account.id || account.accountId || account.number || '');
@@ -20,7 +20,7 @@ registerBatchHandler('sparebank1_backfill', {
 
 	// Runs once at job creation: fetches all accounts + all transactions (11 API calls total).
 	// Everything is stored in payload.prefetchedData — no external calls in processStep.
-	async prefetch(userId) {
+	async prefetch(userId, fromDate, toDate) {
 		const sensor = await getSparebank1Sensor(userId);
 		if (!sensor) throw new Error('Ingen SpareBank1-sensor funnet');
 
@@ -29,14 +29,17 @@ registerBatchHandler('sparebank1_backfill', {
 		await fetchSparebank1HelloWorld(accessToken, rateLimitHeaders);
 		const accounts = await fetchSparebank1Accounts(accessToken, rateLimitHeaders);
 
-		console.log(`[sparebank1-backfill] prefetch: ${accounts.length} kontoer`);
+		console.log(`[sparebank1-backfill] prefetch: ${accounts.length} kontoer, periode ${fromDate} → ${toDate}`);
+
+		const since = fromDate ? new Date(`${fromDate}T00:00:00Z`) : undefined;
+		const until = toDate ? new Date(`${toDate}T23:59:59Z`) : undefined;
 
 		const transactionsByAccount: Record<string, any[]> = {};
 		for (const account of accounts) {
 			const key = getAccountKey(account);
 			if (!key) continue;
 			const name = String(account.name || account.accountName || key);
-			const txns = await fetchSparebank1Transactions(accessToken, key, undefined, undefined, rateLimitHeaders);
+			const txns = await fetchSparebank1Transactions(accessToken, key, since, until, rateLimitHeaders);
 			console.log(`[sparebank1-backfill] prefetch: ${name} → ${txns.length} transaksjoner`);
 			transactionsByAccount[key] = txns;
 		}

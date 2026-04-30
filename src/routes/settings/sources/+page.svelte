@@ -235,7 +235,13 @@
 	let resetEconomicsResult = $state<{ success: boolean; message: string } | null>(null);
 
 	// ── SpareBank1 batch backfill ────────────────────────────────────────────
-	type Sparebank1BatchStats = { transactionsInserted: number; daysWithTransactions: number };
+	type Sparebank1BatchStats = {
+		transactionsInserted: number;
+		chunksWritten: number;
+		totalChunks: number;
+		accountOffsets?: Record<string, number>;
+		rateLimitRemaining?: string | null;
+	};
 	let sparebank1BatchJobId = $state<string | null>(null);
 	let sparebank1BatchRunning = $state(false);
 	let sparebank1BatchProgress = $state<{
@@ -927,7 +933,7 @@
 		} catch (error) {
 			sparebank1BatchProgress = {
 				done: true, processedDays: 0, totalDays: 0, progressPct: 0,
-				nextDate: null, stats: { transactionsInserted: 0, daysWithTransactions: 0 },
+				nextDate: null, stats: { transactionsInserted: 0, chunksWritten: 0, totalChunks: 0 },
 				error: error instanceof Error ? error.message : 'Ukjent feil'
 			};
 			sparebank1BatchRunning = false;
@@ -1488,19 +1494,20 @@
 				<Button variant="ghost" onClick={disconnectSparebank1}>Koble fra</Button>
 			</div>
 			{#if sparebank1BatchProgress}
+				{@const chunksDone = sparebank1BatchProgress.stats?.chunksWritten ?? 0}
+				{@const chunksTotal = sparebank1BatchProgress.stats?.totalChunks ?? 0}
+				{@const chunkPct = chunksTotal > 0 ? Math.round((chunksDone / chunksTotal) * 100) : sparebank1BatchProgress.progressPct}
 				<div class="batch-progress">
 					<div class="batch-progress-bar">
-						<div class="batch-progress-fill" style="width: {sparebank1BatchProgress.progressPct}%"></div>
+						<div class="batch-progress-fill" style="width: {chunkPct}%"></div>
 					</div>
 					<p class="debug-summary">
-						{sparebank1BatchProgress.processedDays} / {sparebank1BatchProgress.totalDays} dager
-						({sparebank1BatchProgress.progressPct}%)
-						{#if sparebank1BatchProgress.nextDate && !sparebank1BatchProgress.done}· behandler {sparebank1BatchProgress.nextDate}{/if}
+						{chunksDone} / {chunksTotal || '?'} chunks ({chunkPct}%)
 						{#if sparebank1BatchProgress.done && !sparebank1BatchProgress.error}· ferdig ✓{/if}
 					</p>
 					{#if sparebank1BatchProgress.stats}
 						<p class="debug-summary">
-							Transaksjoner hentet: {sparebank1BatchProgress.stats.transactionsInserted} · Dager med data: {sparebank1BatchProgress.stats.daysWithTransactions}
+							Transaksjoner hentet: {sparebank1BatchProgress.stats.transactionsInserted}
 						</p>
 					{/if}
 					{#if sparebank1BatchProgress.error}
