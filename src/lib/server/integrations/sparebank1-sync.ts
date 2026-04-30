@@ -130,142 +130,167 @@ async function writeRawAndCanonicalTransactions(
 	sensorId: string,
 	salaryProfile: SalaryProfile | null
 ): Promise<void> {
-	for (const event of events) {
+	if (events.length === 0) return;
+
+	// Pre-compute all derived values in JS — no DB roundtrips here.
+	const rows = events.map((event) => {
 		const txDate = event.timestamp.toISOString().split('T')[0];
 		const amount = Math.round((Number(event.data.amount ?? 0) || 0) * 100) / 100;
 		const descriptionRaw = String(event.data.description ?? '');
 		const descriptionNorm = normalizeTxDescription(event.data.description);
-		const merchantKey = descriptionNorm;
-		const bookingStatus = String(event.data.bookingStatus ?? '').toUpperCase() || null;
-		const statusRank = bookingStatusRank(bookingStatus);
+		const bookingStatus = String(event.data.bookingStatus ?? '').toUpperCase() || '';
+		const statusRank = bookingStatusRank(bookingStatus || null);
 		const externalId = String(event.metadata?.transactionId ?? '');
 		const currency = String(event.data.currency ?? 'NOK');
 		const typeText = String(event.data.category ?? '');
 		const fingerprint = rawFingerprintForEvent(event);
+		const accountId = String(event.data.accountId ?? '');
+		const paycheckType = salaryProfile
+			? (isPaycheck({ amount, description: descriptionRaw, date: txDate }, salaryProfile) ?? null)
+			: null;
+		return {
+			userId, sensorId, accountId, externalId, bookingStatus, statusRank,
+			txDate, postedAt: event.timestamp.toISOString(), amount, currency,
+			descriptionRaw, descriptionNorm, typeText,
+			payload: JSON.stringify(event.data ?? {}),
+			fingerprint, paycheckType
+		};
+	});
 
+	// 1. Batch INSERT raw_bank_transaction_versions — one query for all rows.
+	await pgClient.unsafe(
+		`INSERT INTO raw_bank_transaction_versions (
+			user_id, sensor_id, account_id, external_transaction_id, booking_status, status_rank,
+			transaction_date, posted_at, amount, currency, description_raw, description_normalized,
+			merchant_key, type_text, payload, raw_fingerprint, first_seen_at, last_seen_at, seen_count,
+			created_at, updated_at
+		)
+		SELECT
+			u, s, a, NULLIF(e, ''), NULLIF(bs, ''), sr,
+			td::date, pa::timestamp, amt, cur, dr, dn,
+			dn, NULLIF(tt, ''), p::jsonb, fp, NOW(), NOW(), 1,
+			NOW(), NOW()
+		FROM UNNEST(
+			$1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::int[],
+			$7::text[], $8::text[], $9::numeric[], $10::text[], $11::text[], $12::text[],
+			$13::text[], $14::text[]
+		) AS t(u, s, a, e, bs, sr, td, pa, amt, cur, dr, dn, tt, fp)
+		ON CONFLICT (raw_fingerprint) DO UPDATE SET
+			last_seen_at = NOW(),
+			seen_count = raw_bank_transaction_versions.seen_count + 1,
+			booking_status = EXCLUDED.booking_status,
+			status_rank = GREATEST(raw_bank_transaction_versions.status_rank, EXCLUDED.status_rank),
+			description_raw = EXCLUDED.description_raw,
+			description_normalized = EXCLUDED.description_normalized,
+			merchant_key = EXCLUDED.merchant_key,
+			updated_at = NOW()`,
+		[
+			rows.map((r) => r.userId),
+			rows.map((r) => r.sensorId),
+			rows.map((r) => r.accountId),
+			rows.map((r) => r.externalId),
+			rows.map((r) => r.bookingStatus),
+			rows.map((r) => r.statusRank),
+			rows.map((r) => r.txDate),
+			rows.map((r) => r.postedAt),
+			rows.map((r) => r.amount),
+			rows.map((r) => r.currency),
+			rows.map((r) => r.descriptionRaw),
+			rows.map((r) => r.descriptionNorm),
+			rows.map((r) => r.typeText),
+			rows.map((r) => r.fingerprint)
+		]
+	);
+
+	// 2. Batch UPSERT canonical_bank_transactions — one query for all rows.
+	//    paycheck_type is computed in JS and included here to avoid a separate UPDATE pass.
+	await pgClient.unsafe(
+		`INSERT INTO canonical_bank_transactions (
+			user_id, sensor_id, account_id, canonical_date, amount, currency, merchant_key,
+			description_display, latest_booking_status, status_rank, latest_posted_at,
+			first_seen_at, last_seen_at, evidence_count, is_active, paycheck_type, created_at, updated_at
+		)
+		SELECT
+			u, s, a, td::date, amt, cur, mk,
+			dr, NULLIF(bs, ''), sr, pa::timestamp,
+			NOW(), NOW(), 1, TRUE, NULLIF(pt, ''), NOW(), NOW()
+		FROM UNNEST(
+			$1::text[], $2::text[], $3::text[], $4::text[], $5::numeric[], $6::text[], $7::text[],
+			$8::text[], $9::text[], $10::int[], $11::text[], $12::text[]
+		) AS t(u, s, a, td, amt, cur, mk, dr, bs, sr, pa, pt)
+		ON CONFLICT (sensor_id, account_id, canonical_date, amount, merchant_key) DO UPDATE SET
+			currency = EXCLUDED.currency,
+			description_display = CASE
+				WHEN EXCLUDED.status_rank > canonical_bank_transactions.status_rank THEN EXCLUDED.description_display
+				WHEN EXCLUDED.status_rank = canonical_bank_transactions.status_rank
+					AND LENGTH(COALESCE(EXCLUDED.description_display, '')) > LENGTH(COALESCE(canonical_bank_transactions.description_display, ''))
+					THEN EXCLUDED.description_display
+				ELSE canonical_bank_transactions.description_display
+			END,
+			latest_booking_status = CASE
+				WHEN EXCLUDED.status_rank >= canonical_bank_transactions.status_rank THEN EXCLUDED.latest_booking_status
+				ELSE canonical_bank_transactions.latest_booking_status
+			END,
+			status_rank = GREATEST(canonical_bank_transactions.status_rank, EXCLUDED.status_rank),
+			latest_posted_at = CASE
+				WHEN EXCLUDED.latest_posted_at > canonical_bank_transactions.latest_posted_at THEN EXCLUDED.latest_posted_at
+				ELSE canonical_bank_transactions.latest_posted_at
+			END,
+			last_seen_at = NOW(),
+			evidence_count = canonical_bank_transactions.evidence_count + 1,
+			is_active = TRUE,
+			paycheck_type = COALESCE(EXCLUDED.paycheck_type, canonical_bank_transactions.paycheck_type),
+			updated_at = NOW()`,
+		[
+			rows.map((r) => r.userId),
+			rows.map((r) => r.sensorId),
+			rows.map((r) => r.accountId),
+			rows.map((r) => r.txDate),
+			rows.map((r) => r.amount),
+			rows.map((r) => r.currency),
+			rows.map((r) => r.descriptionNorm), // merchant_key
+			rows.map((r) => r.descriptionRaw),  // description_display
+			rows.map((r) => r.bookingStatus),
+			rows.map((r) => r.statusRank),
+			rows.map((r) => r.postedAt),
+			rows.map((r) => r.paycheckType ?? '')
+		]
+	);
+
+	// 3. Batch INSERT aliases — join back to canonical to find canonical_id by unique key.
+	const aliasRows = rows.filter((r) => r.externalId);
+	if (aliasRows.length > 0) {
 		await pgClient.unsafe(
-			`INSERT INTO raw_bank_transaction_versions (
-				user_id, sensor_id, account_id, external_transaction_id, booking_status, status_rank,
-				transaction_date, posted_at, amount, currency, description_raw, description_normalized,
-				merchant_key, type_text, payload, raw_fingerprint, first_seen_at, last_seen_at, seen_count,
-				created_at, updated_at
-			) VALUES (
-				$1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), $6,
-				$7::date, $8::timestamp, $9, $10, $11, $12,
-				$13, NULLIF($14, ''), $15::jsonb, $16, NOW(), NOW(), 1,
-				NOW(), NOW()
+			`INSERT INTO canonical_bank_transaction_aliases (
+				canonical_id, sensor_id, external_transaction_id,
+				first_seen_at, last_seen_at, seen_count, created_at, updated_at
 			)
-			ON CONFLICT (raw_fingerprint)
-			DO UPDATE SET
+			SELECT c.id, $1, t.external_id, NOW(), NOW(), 1, NOW(), NOW()
+			FROM UNNEST($2::text[], $3::text[], $4::numeric[], $5::text[], $6::text[])
+				AS t(account_id, canonical_date, amount, merchant_key, external_id)
+			JOIN canonical_bank_transactions c ON (
+				c.sensor_id = $1
+				AND c.account_id = t.account_id
+				AND c.canonical_date = t.canonical_date::date
+				AND c.amount = t.amount
+				AND c.merchant_key = t.merchant_key
+			)
+			ON CONFLICT (sensor_id, external_transaction_id) DO UPDATE SET
+				canonical_id = EXCLUDED.canonical_id,
 				last_seen_at = NOW(),
-				seen_count = raw_bank_transaction_versions.seen_count + 1,
-				booking_status = EXCLUDED.booking_status,
-				status_rank = GREATEST(raw_bank_transaction_versions.status_rank, EXCLUDED.status_rank),
-				description_raw = EXCLUDED.description_raw,
-				description_normalized = EXCLUDED.description_normalized,
-				merchant_key = EXCLUDED.merchant_key,
+				seen_count = canonical_bank_transaction_aliases.seen_count + 1,
 				updated_at = NOW()`,
 			[
-				userId,
 				sensorId,
-				String(event.data.accountId ?? ''),
-				externalId,
-				bookingStatus ?? '',
-				statusRank,
-				txDate,
-				event.timestamp.toISOString(),
-				amount,
-				currency,
-				descriptionRaw,
-				descriptionNorm,
-				merchantKey,
-				typeText,
-				JSON.stringify(event.data ?? {}),
-				fingerprint
+				aliasRows.map((r) => r.accountId),
+				aliasRows.map((r) => r.txDate),
+				aliasRows.map((r) => r.amount),
+				aliasRows.map((r) => r.descriptionNorm),
+				aliasRows.map((r) => r.externalId)
 			]
 		);
-
-		const upserted = await pgClient.unsafe<{ id: string }[]>(
-			`INSERT INTO canonical_bank_transactions (
-				user_id, sensor_id, account_id, canonical_date, amount, currency, merchant_key,
-				description_display, latest_booking_status, status_rank, latest_posted_at,
-				first_seen_at, last_seen_at, evidence_count, is_active, created_at, updated_at
-			) VALUES (
-				$1, $2, $3, $4::date, $5, $6, $7,
-				$8, NULLIF($9, ''), $10, $11::timestamp,
-				NOW(), NOW(), 1, TRUE, NOW(), NOW()
-			)
-			ON CONFLICT (sensor_id, account_id, canonical_date, amount, merchant_key)
-			DO UPDATE SET
-				currency = EXCLUDED.currency,
-				description_display = CASE
-					WHEN EXCLUDED.status_rank > canonical_bank_transactions.status_rank THEN EXCLUDED.description_display
-					WHEN EXCLUDED.status_rank = canonical_bank_transactions.status_rank
-						AND LENGTH(COALESCE(EXCLUDED.description_display, '')) > LENGTH(COALESCE(canonical_bank_transactions.description_display, ''))
-						THEN EXCLUDED.description_display
-					ELSE canonical_bank_transactions.description_display
-				END,
-				latest_booking_status = CASE
-					WHEN EXCLUDED.status_rank >= canonical_bank_transactions.status_rank THEN EXCLUDED.latest_booking_status
-					ELSE canonical_bank_transactions.latest_booking_status
-				END,
-				status_rank = GREATEST(canonical_bank_transactions.status_rank, EXCLUDED.status_rank),
-				latest_posted_at = CASE
-					WHEN EXCLUDED.latest_posted_at > canonical_bank_transactions.latest_posted_at THEN EXCLUDED.latest_posted_at
-					ELSE canonical_bank_transactions.latest_posted_at
-				END,
-				last_seen_at = NOW(),
-				evidence_count = canonical_bank_transactions.evidence_count + 1,
-				is_active = TRUE,
-				updated_at = NOW()
-			RETURNING id`,
-			[
-				userId,
-				sensorId,
-				String(event.data.accountId ?? ''),
-				txDate,
-				amount,
-				currency,
-				merchantKey,
-				descriptionRaw || null,
-				bookingStatus ?? '',
-				statusRank,
-				event.timestamp.toISOString()
-			]
-		);
-
-		// Tag as paycheck if profile is available
-		if (salaryProfile && upserted[0]?.id) {
-			const paycheckType = isPaycheck(
-				{ amount, description: descriptionRaw, date: txDate },
-				salaryProfile
-			);
-			if (paycheckType) {
-				await pgClient.unsafe(
-					`UPDATE canonical_bank_transactions SET paycheck_type = $1, updated_at = NOW() WHERE id = $2`,
-					[paycheckType, upserted[0].id]
-				);
-			}
-		}
-
-		if (externalId && upserted[0]?.id) {
-			await pgClient.unsafe(
-				`INSERT INTO canonical_bank_transaction_aliases (
-					canonical_id, sensor_id, external_transaction_id,
-					first_seen_at, last_seen_at, seen_count, created_at, updated_at
-				) VALUES (
-					$1, $2, $3, NOW(), NOW(), 1, NOW(), NOW()
-				)
-				ON CONFLICT (sensor_id, external_transaction_id)
-				DO UPDATE SET
-					canonical_id = EXCLUDED.canonical_id,
-					last_seen_at = NOW(),
-					seen_count = canonical_bank_transaction_aliases.seen_count + 1,
-					updated_at = NOW()`,
-				[upserted[0].id, sensorId, externalId]
-			);
-		}
 	}
+
 }
 
 export type Sparebank1TransactionDebugDecision =
