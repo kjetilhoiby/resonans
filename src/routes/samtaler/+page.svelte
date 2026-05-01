@@ -252,15 +252,13 @@
 {#if isListView}
 	<!-- ══ LISTE-VIEW ══════════════════════════════════════════════════════════ -->
 	<AppPage width="full" padding="none" gap="sm" theme="dark" className="list-page">
-		<div class="lp-header">
-			<PageHeader title="Samtaler" backHref="/">
-				{#snippet actions()}
-					<button class="lp-new-btn" onclick={createConversation} disabled={creatingConversation}>
-						{creatingConversation ? 'Lager…' : '+ Ny'}
-					</button>
-				{/snippet}
-			</PageHeader>
-		</div>
+		<PageHeader title="Samtaler" titleHref="/">
+			{#snippet actions()}
+				<button class="lp-new-btn" onclick={createConversation} disabled={creatingConversation}>
+					{creatingConversation ? 'Lager…' : '+ Ny'}
+				</button>
+			{/snippet}
+		</PageHeader>
 
 		<div class="lp-list">
 			{#if data.conversations.length === 0}
@@ -287,18 +285,16 @@
 {:else}
 	<!-- ══ CHAT-VIEW ═══════════════════════════════════════════════════════════ -->
 	<AppPage width="full" padding="none" gap="sm" theme="dark" className="chat-page">
-		<div class="cp-header">
-			<PageHeader title={conversation?.title ?? 'Samtale'} subtitle={formattedDate} backHref="/samtaler">
-				{#snippet actions()}
-					{#if conversation?.linkedTheme}
-						{@const t = conversation.linkedTheme}
-						<button class="cp-theme-btn" style={getThemeHueStyle(t.name)} onclick={() => goto(`/tema/${t.id}`)}>
-							{#if t.emoji}{t.emoji}{:else}<Icon name="goals" size={14} />{/if} {t.name}
-						</button>
-					{/if}
-				{/snippet}
-			</PageHeader>
-		</div>
+		<PageHeader title={conversation?.title ?? 'Samtale'} subtitle={formattedDate} titleHref="/samtaler">
+			{#snippet actions()}
+				{#if conversation?.linkedTheme}
+					{@const t = conversation.linkedTheme}
+					<button class="cp-theme-btn" style={getThemeHueStyle(t.name)} onclick={() => goto(`/tema/${t.id}`)}>
+						{#if t.emoji}{t.emoji}{:else}<Icon name="goals" size={14} />{/if} {t.name}
+					</button>
+				{/if}
+			{/snippet}
+		</PageHeader>
 
 		<div class="cp-messages">
 			{#if chatMessages.length === 0}
@@ -390,10 +386,7 @@
 		flex-direction: column;
 	}
 
-	.lp-header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
+	:global(.list-page .page-header) {
 		padding: 52px 20px 16px;
 	}
 
@@ -492,10 +485,7 @@
 		overflow: hidden;
 	}
 
-	.cp-header {
-		display: flex;
-		align-items: center;
-		gap: 10px;
+	:global(.chat-page .page-header) {
 		padding: 52px 16px 14px;
 		border-bottom: 1px solid #1a1a1a;
 		flex-shrink: 0;

@@ -1662,7 +1662,9 @@
 								<button type="button" class="wp-item-text-btn" onclick={() => void startEditing(weekChecklistId, group.item)}>
 									<span class="wp-check-text" class:checked={group.item.checked}>{group.item.text}</span>
 								</button>
-								{#if group.item.domain === 'food'}
+							{/if}
+							<div class="wp-check-row-right">
+								{#if group.item.domain === 'food' && editingItem?.itemId !== group.item.id}
 									<button
 										type="button"
 										class="wp-food-affordance"
@@ -1671,31 +1673,35 @@
 										title="Planlegg måltid"
 									>🍽️</button>
 								{/if}
-							{/if}
-							{#if hasWeekChildren}
-								<svg class="wp-week-parent-circle" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
-									<circle cx="10" cy="10" r={wR} fill="none" stroke="#2a2a2a" stroke-width="2.5"/>
-									<circle cx="10" cy="10" r={wR} fill="none"
-										stroke={completedWeekChildren === weekChildren.length ? '#5fa080' : '#7c8ef5'}
-										stroke-width="2.5"
-										stroke-dasharray="{wPct * wC} {wC}"
-										stroke-linecap="round"
-										transform="rotate(-90 10 10)"
-									/>
-								</svg>
-								<button
-									type="button"
-									class="wp-parent-caret"
-									class:expanded={isWeekExpanded}
-									onclick={() => toggleWeekParentExpansion(group.item.id)}
-									aria-label={isWeekExpanded ? 'Lukk subitems' : 'Utvid subitems'}
-								>▸</button>
-							{:else}
-								<button type="button" class="wp-check-toggle" onclick={() => void toggleChecklistItem(weekChecklistId, group.item.id, !group.item.checked)} aria-label="Toggle">
-									<span class="wp-check-circle" class:checked={group.item.checked}>{group.item.checked ? '✓' : ''}</span>
-								</button>
-							{/if}
-							<span class="wp-drag-handle" aria-hidden="true" ontouchstart={(event) => startTouchDrag(event, weekChecklistId, group.item.id)}>⋮⋮</span>
+								{#if hasWeekChildren}
+									{#if completedWeekChildren === weekChildren.length}
+										<span class="wp-check-circle checked">✓</span>
+									{:else}
+										<svg class="wp-week-parent-circle" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
+											<circle cx="10" cy="10" r={wR} fill="none" stroke="#353c50" stroke-width="2"/>
+											<circle cx="10" cy="10" r={wR} fill="none"
+												stroke="#7c8ef5"
+												stroke-width="2"
+												stroke-dasharray="{wPct * wC} {wC}"
+												stroke-linecap="round"
+												transform="rotate(-90 10 10)"
+											/>
+										</svg>
+									{/if}
+									<button
+										type="button"
+										class="wp-parent-caret"
+										class:expanded={isWeekExpanded}
+										onclick={() => toggleWeekParentExpansion(group.item.id)}
+										aria-label={isWeekExpanded ? 'Lukk subitems' : 'Utvid subitems'}
+									>▸</button>
+								{:else}
+									<button type="button" class="wp-check-toggle" onclick={() => void toggleChecklistItem(weekChecklistId, group.item.id, !group.item.checked)} aria-label="Toggle">
+										<span class="wp-check-circle" class:checked={group.item.checked}>{group.item.checked ? '✓' : ''}</span>
+									</button>
+								{/if}
+								<span class="wp-drag-handle" aria-hidden="true" ontouchstart={(event) => startTouchDrag(event, weekChecklistId, group.item.id)}>⋮⋮</span>
+							</div>
 						</div>
 						{#if hasWeekChildren && isWeekExpanded}
 							<div class="wp-day-children">
@@ -1920,22 +1926,22 @@
 									{/if}
 								</button>
 							{/if}
-							{#if hasChildren}
-								<button
-									type="button"
-									class="wp-parent-caret"
-									class:expanded={isExpanded}
-									onclick={() => toggleDayParentExpansion(item.id)}
-									aria-label={isExpanded ? 'Lukk subitems' : 'Utvid subitems'}
-								>
-									▸
-								</button>
-							{:else}
-								<button type="button" class="wp-check-toggle" onclick={() => void toggleChecklistItem(selectedDayChecklist.id, item.id, !item.checked)} aria-label="Toggle">
-									<span class="wp-check-circle" class:checked={item.checked}>{item.checked ? '✓' : ''}</span>
-								</button>
-							{/if}
-							<span class="wp-drag-handle" aria-hidden="true" ontouchstart={(event) => startTouchDrag(event, selectedDayChecklist.id, item.id)}>⋮⋮</span>
+							<div class="wp-check-row-right">
+								{#if hasChildren}
+									<button
+										type="button"
+										class="wp-parent-caret"
+										class:expanded={isExpanded}
+										onclick={() => toggleDayParentExpansion(item.id)}
+										aria-label={isExpanded ? 'Lukk subitems' : 'Utvid subitems'}
+									>▸</button>
+								{:else}
+									<button type="button" class="wp-check-toggle" onclick={() => void toggleChecklistItem(selectedDayChecklist.id, item.id, !item.checked)} aria-label="Toggle">
+										<span class="wp-check-circle" class:checked={item.checked}>{item.checked ? '✓' : ''}</span>
+									</button>
+								{/if}
+								<span class="wp-drag-handle" aria-hidden="true" ontouchstart={(event) => startTouchDrag(event, selectedDayChecklist.id, item.id)}>⋮⋮</span>
+							</div>
 						</div>
 						{#if hasChildren && isExpanded}
 							<div class="wp-day-children">
@@ -1995,7 +2001,7 @@
 					bind:value={dayComposerText}
 					class="wp-input"
 					type="text"
-					placeholder={`Skriv dagsmål for ${smartDayLabel(selectedDayIso)} og trykk Enter`}
+					placeholder={`Ny oppgave`}
 					onkeydown={(event) => handleComposerKeydown(event, 'day')}
 				/>
 				<span class="wp-save-dot" class:is-saving={saveStates.dayItems === 'saving'} class:is-saved={saveStates.dayItems === 'saved'} aria-hidden="true"></span>
@@ -2674,9 +2680,16 @@
 
 	.wp-check-row-main {
 		display: grid;
-		grid-template-columns: 1fr auto auto;
+		grid-template-columns: 1fr auto;
 		gap: 10px;
 		align-items: center;
+	}
+
+	.wp-check-row-right {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		flex-shrink: 0;
 	}
 
 	.wp-check-toggle,
@@ -2723,8 +2736,9 @@
 	}
 
 	.wp-check-circle.checked {
-		border-color: #5b6fca;
-		background: #1a2556;
+		border-color: #5fa080;
+		background: rgba(95, 160, 128, 0.15);
+		color: #5fa080;
 	}
 
 	.wp-check-text {

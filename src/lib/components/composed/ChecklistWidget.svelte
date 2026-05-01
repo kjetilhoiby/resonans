@@ -1,11 +1,10 @@
 <!--
   ChecklistWidget — compact ring-widget for sjekklister på hjemskjermen.
-
-  Viser: emoji, prosentring, X/Y-teller, tittel.
-  Tap → åpner ChecklistSheet.
-  Langt trykk / høyreklikk → contextmenu med fjern-valg.
+  Bruker samme visuelle stil som DynamicWidget (GoalRing, luftig layout).
 -->
 <script lang="ts">
+	import GoalRing from '../ui/GoalRing.svelte';
+
 	export interface ChecklistItem {
 		id: string;
 		text: string;
@@ -32,7 +31,7 @@
 
 	const total = $derived(checklist.items.length);
 	const done = $derived(checklist.items.filter((i) => i.checked).length);
-	const pct = $derived(total > 0 ? done / total : 0);
+	const pct = $derived(total > 0 ? (done / total) * 100 : 0);
 	const isComplete = $derived(done === total && total > 0);
 	const ringText = $derived(`${done}/${total}`);
 
@@ -40,8 +39,8 @@
 		return d.toLocaleDateString('sv', { timeZone: 'Europe/Oslo' });
 	}
 
-	function getContextLabel(context: string | null): { primary: string; secondary: string | null } {
-		if (!context) return { primary: checklist.title, secondary: null };
+	function getContextLabel(context: string | null): string {
+		if (!context) return checklist.title;
 
 		const todayIso = toLocalIsoDate(new Date());
 		const tomorrow = new Date();
@@ -51,22 +50,29 @@
 		const dayMatch = context.match(/^week:(\d{4}-W\d{2}):day:(\d{4}-\d{2}-\d{2})$/);
 		if (dayMatch) {
 			const iso = dayMatch[2];
-			if (iso === todayIso) return { primary: 'I dag', secondary: null };
-			if (iso === tomorrowIso) return { primary: 'I morgen', secondary: null };
+			if (iso === todayIso) return 'I dag';
+			if (iso === tomorrowIso) return 'I morgen';
 			const weekday = new Intl.DateTimeFormat('nb-NO', { weekday: 'short' }).format(new Date(iso + 'T12:00:00'));
 			const cap = weekday.replace('.', '');
-			return { primary: cap.charAt(0).toUpperCase() + cap.slice(1), secondary: null };
+			return cap.charAt(0).toUpperCase() + cap.slice(1);
 		}
 
 		const weekMatch = context.match(/^week:(\d{4}-W(\d{2}))$/);
 		if (weekMatch) {
 			const currentWeek = toLocalIsoDate(new Date()).slice(0, 4) + '-W' +
 				String(getIsoWeekNumber(new Date())).padStart(2, '0');
-			if (`week:${currentWeek}` === context) return { primary: 'Hele uka', secondary: null };
-			return { primary: `Uke ${Number.parseInt(weekMatch[2], 10)}`, secondary: null };
+			if (`week:${currentWeek}` === context) return 'Hele uka';
+			return `Uke ${Number.parseInt(weekMatch[2], 10)}`;
 		}
 
-		return { primary: checklist.title, secondary: null };
+		const monthMatch = context.match(/^month:(\d{4}-(\d{2}))$/);
+		if (monthMatch) {
+			const label = new Intl.DateTimeFormat('nb-NO', { month: 'long' })
+				.format(new Date(`${monthMatch[1]}-01T12:00:00`));
+			return label.charAt(0).toUpperCase() + label.slice(1);
+		}
+
+		return checklist.title;
 	}
 
 	function getIsoWeekNumber(d: Date): number {
@@ -76,197 +82,180 @@
 		return Math.ceil(((date.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
 	}
 
-	const contextLabel = $derived.by(() => getContextLabel(checklist.context));
-
-	// SVG ring (samme radius som GoalRing)
-	const R = 32;
-	const C = 2 * Math.PI * R; // ~201
-	const dash = $derived(Math.min(pct, 1) * C);
-
-	// Farge: grønn ved fullført, blå ellers
+	const label = $derived(getContextLabel(checklist.context));
 	const ringColor = $derived(isComplete ? '#5fa080' : '#7c8ef5');
 
+	// Long-press for remove menu
+	let pressTimer: ReturnType<typeof setTimeout> | null = null;
 	let showMenu = $state(false);
+	let popupStyle = $state('');
+	let elRef: HTMLDivElement | null = null;
 
-	function handleContextMenu(e: MouseEvent) {
-		e.preventDefault();
-		showMenu = true;
+	function handlePressStart() {
+		pressTimer = setTimeout(() => {
+			if (elRef) {
+				const r = elRef.getBoundingClientRect();
+				const popupW = 150;
+				const popupH = 80;
+				const margin = 8;
+				let left = r.left + r.width / 2 - popupW / 2;
+				left = Math.max(margin, Math.min(left, window.innerWidth - popupW - margin));
+				const spaceAbove = r.top;
+				if (spaceAbove >= popupH + margin) {
+					const bottom = window.innerHeight - r.top + 6;
+					popupStyle = `position:fixed; left:${left}px; bottom:${bottom}px; width:${popupW}px;`;
+				} else {
+					const top = r.bottom + 6;
+					popupStyle = `position:fixed; left:${left}px; top:${top}px; width:${popupW}px;`;
+				}
+			}
+			showMenu = true;
+		}, 600);
 	}
 
-	function handleClickOutside() {
-		showMenu = false;
+	function handlePressEnd(e: PointerEvent) {
+		if (pressTimer) {
+			clearTimeout(pressTimer);
+			pressTimer = null;
+		}
+		if (showMenu) e.preventDefault();
+	}
+
+	function handleClick() {
+		if (showMenu) return;
+		onclick?.();
 	}
 </script>
 
-<button
-	class="cl-widget"
-	class:cl-complete={isComplete}
-	{onclick}
-	oncontextmenu={handleContextMenu}
+<div
+	bind:this={elRef}
+	class="dw"
+	role="button"
+	tabindex="0"
+	onpointerdown={handlePressStart}
+	onpointerup={handlePressEnd}
+	onpointerleave={handlePressEnd}
+	onclick={handleClick}
+	onkeydown={(e) => e.key === 'Enter' && handleClick()}
 	title={checklist.title}
+	style:--c={ringColor}
 >
-	<!-- SVG ring -->
-	<div class="cl-ring-wrap">
-		<svg class="cl-ring-svg" viewBox="0 0 80 80">
-			<!-- Track -->
-			<circle cx="40" cy="40" r={R} fill="none" stroke="#222" stroke-width="7"/>
-			<!-- Progress -->
-			<circle
-				cx="40" cy="40" r={R}
-				fill="none"
-				stroke={ringColor}
-				stroke-width="7"
-				stroke-dasharray="{dash} {C}"
-				stroke-linecap="round"
-				transform="rotate(-90 40 40)"
-				style="transition: stroke-dasharray 0.4s cubic-bezier(0.34,1.56,0.64,1)"
-			/>
-		</svg>
-		<div class="cl-ring-inner">
-			<span class="cl-ring-count" class:complete={isComplete}>{ringText}</span>
+	<div class="dw-ring">
+		<GoalRing pct={isComplete ? 100 : pct} size={70} strokeWidth={4} color={ringColor}>
+			<span class="dw-val" class:complete={isComplete}>{ringText}</span>
+		</GoalRing>
+	</div>
+
+	<div class="dw-label" style:color={ringColor}>{label}</div>
+
+	{#if showMenu}
+		<div
+			class="dw-overlay"
+			role="presentation"
+			onpointerdown={(e) => { e.stopPropagation(); showMenu = false; }}
+		></div>
+		<div class="dw-popup" role="dialog" aria-label="Liste-alternativer" style={popupStyle}>
+			<button
+				class="dw-popup-btn dw-popup-danger"
+				onpointerdown={(e) => e.stopPropagation()}
+				onclick={(e) => { e.stopPropagation(); showMenu = false; onremove?.(); }}
+			>
+				Fjern liste
+			</button>
+			<button
+				class="dw-popup-cancel"
+				onpointerdown={(e) => e.stopPropagation()}
+				onclick={(e) => { e.stopPropagation(); showMenu = false; }}
+			>
+				Avbryt
+			</button>
 		</div>
-	</div>
-
-	<!-- Label -->
-	<p class="cl-label" class:complete={isComplete}>{contextLabel.primary}</p>
-	{#if contextLabel.secondary}
-		<p class="cl-subtitle">{contextLabel.secondary}</p>
 	{/if}
-
-	{#if isComplete}
-		<p class="cl-complete-label">Ferdig!</p>
-	{/if}
-</button>
-
-<!-- Context menu -->
-{#if showMenu}
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="cl-backdrop" onclick={handleClickOutside}></div>
-	<div class="cl-menu">
-		<button class="cl-menu-item cl-menu-danger" onclick={() => { showMenu = false; onremove?.(); }}>
-			Fjern liste
-		</button>
-		<button class="cl-menu-item" onclick={() => showMenu = false}>Avbryt</button>
-	</div>
-{/if}
+</div>
 
 <style>
-	.cl-widget {
+	.dw {
 		position: relative;
+		width: 90px;
+		min-height: 106px;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
 		gap: 4px;
-		background: transparent;
-		border: none;
 		cursor: pointer;
-		padding: 4px;
-		border-radius: 12px;
-		min-width: 72px;
-		transition: opacity 0.15s;
+		-webkit-tap-highlight-color: transparent;
+		user-select: none;
 	}
-	.cl-widget:hover { opacity: 0.85; }
-	.cl-widget:active { opacity: 0.7; transform: scale(0.96); }
 
-	.cl-ring-wrap {
+	.dw-ring {
 		position: relative;
-		width: 64px;
-		height: 64px;
+		width: 70px;
+		height: 70px;
 	}
 
-	.cl-ring-svg {
-		width: 100%;
-		height: 100%;
-		display: block;
-	}
-
-	.cl-ring-inner {
-		position: absolute;
-		inset: 0;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.cl-ring-count {
+	.dw-val {
 		font-size: 1rem;
-		line-height: 1;
-		color: #d9dcff;
 		font-weight: 700;
+		color: #eee;
+		line-height: 1;
 		font-variant-numeric: tabular-nums;
 	}
 
-	.cl-ring-count.complete {
+	.dw-val.complete {
 		color: #9fd1b3;
 	}
 
-	.cl-label {
-		font-size: 0.66rem;
-		font-weight: 700;
-		color: #9aa0c9;
-		margin: 0;
-		letter-spacing: 0.03em;
-	}
-
-	.cl-label.complete {
-		color: #7bb38f;
-	}
-
-	.cl-subtitle {
-		font-size: 0.56rem;
-		color: #666a78;
-		margin: 0;
-		text-align: center;
-		max-width: 72px;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		line-height: 1.2;
-	}
-
-	.cl-complete-label {
-		font-size: 0.58rem;
-		font-weight: 600;
-		color: #5fa080;
-		margin: 0;
-		letter-spacing: 0.04em;
+	.dw-label {
+		font-size: 0.65rem;
 		text-transform: uppercase;
+		letter-spacing: 0.07em;
+		text-align: center;
+		opacity: 0.8;
 	}
 
-	/* Context menu */
-	.cl-backdrop {
+	.dw-overlay {
 		position: fixed;
 		inset: 0;
-		z-index: 100;
+		z-index: 199;
 	}
 
-	.cl-menu {
-		position: absolute;
-		bottom: calc(100% + 8px);
-		left: 50%;
-		transform: translateX(-50%);
-		background: #1a1a1a;
-		border: 1px solid #2a2a2a;
+	.dw-popup {
+		background: #1e1e1e;
+		border: 1px solid #333;
 		border-radius: 10px;
-		overflow: hidden;
-		z-index: 101;
-		min-width: 140px;
-		box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+		padding: 6px;
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		z-index: 200;
+		box-shadow: 0 4px 20px rgba(0,0,0,0.6);
 	}
 
-	.cl-menu-item {
-		display: block;
-		width: 100%;
-		padding: 10px 16px;
-		background: transparent;
+	.dw-popup-btn {
+		background: none;
 		border: none;
-		color: #ccc;
 		font-size: 0.8rem;
-		text-align: left;
+		padding: 6px 10px;
+		border-radius: 6px;
 		cursor: pointer;
-		transition: background 0.1s;
+		text-align: center;
 	}
-	.cl-menu-item:hover { background: #222; }
-	.cl-menu-danger { color: #e07070; }
+
+	.dw-popup-danger {
+		color: #e07070;
+		border-bottom: 1px solid #2a2a2a;
+		border-radius: 6px 6px 0 0;
+	}
+	.dw-popup-danger:hover { background: #2a1a1a; }
+
+	.dw-popup-cancel {
+		background: none;
+		border: none;
+		color: #555;
+		font-size: 0.75rem;
+		padding: 4px 10px;
+		cursor: pointer;
+		text-align: center;
+	}
+	.dw-popup-cancel:hover { color: #888; }
 </style>

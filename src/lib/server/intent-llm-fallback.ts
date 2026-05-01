@@ -158,7 +158,7 @@ Returner kun JSON:
   "threshold": number,
   "period": "week",
   "activityType": "running|snake_case",
-  "reason": "kort_kode_ved_ikke_match"
+  "reason": "no_quantifiable_target" | "unsupported_activity" | "unsupported_period_or_threshold" | "unknown"
 }`;
 
 	try {
@@ -204,7 +204,7 @@ Returner kun JSON:
   "matched": true|false,
   "targetValue": number,
   "period": "day" | "week" | "month",
-  "reason": "kort_kode_ved_ikke_match"
+  "reason": "no_quantifiable_target" | "unsupported_period_or_threshold" | "unknown"
 }`;
 
 	try {

@@ -134,6 +134,7 @@ export const themes = pgTable('themes', {
 			notes?: string;
 		}>;
 	}>(),
+	sortOrder: integer('sort_order').default(0).notNull(),
 	metricSettings: jsonb('metric_settings').$type<{
 		distance?: { goal?: number; thresholdWarn?: number; thresholdSuccess?: number };
 		sleep?: { goal?: number; thresholdWarn?: number; thresholdSuccess?: number };

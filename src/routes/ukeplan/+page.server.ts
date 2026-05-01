@@ -898,7 +898,8 @@ export const actions = {
 			return fail(404, { error: 'Fant ikke oppgaven.' });
 		}
 
-		await db.delete(tasks).where(and(eq(tasks.id, taskId)));
+		await db.delete(progress).where(eq(progress.taskId, taskId));
+		await db.delete(tasks).where(eq(tasks.id, taskId));
 		return { success: true };
 	},
 

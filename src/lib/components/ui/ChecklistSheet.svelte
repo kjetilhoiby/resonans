@@ -468,7 +468,7 @@
 		<input
 			class="cs-add-input"
 			type="text"
-			placeholder="Legg til punkt…"
+			placeholder="Ny oppgave"
 			bind:value={newItemText}
 			onkeydown={handleAddKey}
 			disabled={addingItem}

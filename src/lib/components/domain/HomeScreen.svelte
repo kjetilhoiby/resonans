@@ -15,13 +15,14 @@
 	import WidgetCircle from '../ui/WidgetCircle.svelte';
 	import DynamicWidget from '../composed/DynamicWidget.svelte';
 	import WidgetConfigSheet from '../ui/WidgetConfigSheet.svelte';
-	import ScreenTitle from '../ui/ScreenTitle.svelte';
+	import MorphTitle from '../ui/MorphTitle.svelte';
 	import Icon from '../ui/Icon.svelte';
 	import ChatInput from '../ui/ChatInput.svelte';
 	import TriageCard from '../composed/TriageCard.svelte';
 	import ChatStatusWidget from './ChatStatusWidget.svelte';
 	import ChecklistWidget, { type Checklist } from '../composed/ChecklistWidget.svelte';
 	import ChecklistSheet from '../ui/ChecklistSheet.svelte';
+	import PageHeader from '../ui/PageHeader.svelte';
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
 	import { prefetchDashboard } from '$lib/client/dashboard-cache';
 	import { prefetchWidgetData } from '$lib/client/widget-data-cache';
@@ -93,7 +94,40 @@
 		statusWidget?: WeatherStatusWidget | null;
 	}
 
-	let { themes, recentConversations }: Props = $props();
+	let { themes: initialThemes, recentConversations }: Props = $props();
+
+	let themes = $state(initialThemes);
+	$effect(() => { themes = initialThemes; });
+
+	let dragThemeId = $state<string | null>(null);
+	let dragOverThemeId = $state<string | null>(null);
+
+	function handleThemeDragStart(id: string) {
+		dragThemeId = id;
+	}
+
+	function handleThemeDragOver(e: DragEvent, id: string) {
+		e.preventDefault();
+		dragOverThemeId = id;
+	}
+
+	function handleThemeDrop(targetId: string) {
+		if (!dragThemeId || dragThemeId === targetId) { dragThemeId = null; dragOverThemeId = null; return; }
+		const from = themes.findIndex((t) => t.id === dragThemeId);
+		const to = themes.findIndex((t) => t.id === targetId);
+		if (from === -1 || to === -1) return;
+		const reordered = [...themes];
+		const [moved] = reordered.splice(from, 1);
+		reordered.splice(to, 0, moved);
+		themes = reordered;
+		dragThemeId = null;
+		dragOverThemeId = null;
+		void fetch('/api/tema/reorder', {
+			method: 'PATCH',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify(reordered.map((t, i) => ({ id: t.id, sortOrder: i })))
+		});
+	}
 
 	function normalizeThemeName(value: string) {
 		return value
@@ -139,6 +173,7 @@
 	let widgetsLoading = $state(true);
 	let configWidget = $state<UserWidget | null>(null);
 	let widgetPanelOpen = $state(false);
+	let themePanelOpen = $state(false);
 
 	// -- Sjekklister --
 	let activeChecklists = $state<Checklist[]>([]);
@@ -607,7 +642,7 @@
 			label: 'Samtale',
 			icon: 'chat',
 			description: 'Start med en fri tanke, et spørsmål eller et behov for retning.',
-			placeholder: 'Hva vil du tenke høyt om akkurat nå?',
+			placeholder: 'Hva tenker du på?',
 			helper: 'Fin start når du bare vil tømme hodet eller få hjelp til å sortere noe.'
 		},
 		{
@@ -1442,7 +1477,7 @@
 	}
 
 	const dateLabel = $derived(
-		new Intl.DateTimeFormat('nb-NO', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date())
+		new Intl.DateTimeFormat('nb-NO', { day: 'numeric', month: 'long' }).format(new Date())
 	);
 
 	// Load media history when flows open
@@ -1494,7 +1529,12 @@
 	{#if !inputExpanded}
 		<section class="zone zone-title" out:fly={{ y: -24, duration: 750 }} in:fly={{ y: -14, duration: 600 }}>
 			<div class="title-row">
-				<ScreenTitle title="Resonans" subtitle={dateLabel} onpress={() => { startNavMetric('home', 'ukeplan'); void goto('/ukeplan'); }} ariaLabel="Åpne ukeplan" />
+				<MorphTitle
+					from="Resonans"
+					to={dateLabel}
+					onpress={() => { startNavMetric('home', 'ukeplan'); void goto('/ukeplan'); }}
+					ariaLabel="Åpne ukeplan"
+				/>
 				<div class="title-right">
 					<a href="/goals" class="icon-link" aria-label="Mål"><Icon name="goals" size={20} /></a>
 					<a href="/settings" class="icon-link" aria-label="Innstillinger"><Icon name="settings" size={18} /></a>
@@ -1602,6 +1642,14 @@
 	{#if !inputExpanded}
 		<section class="zone zone-tema" aria-label="Temaer" out:fly={{ y: -34, duration: 750 }} in:fly={{ y: -22, duration: 600 }}>
 		<p class="zone-label">Temaer</p>
+		{#if themes.length > 0}
+			<button
+				class="tema-panel-fab"
+				onclick={() => (themePanelOpen = !themePanelOpen)}
+				aria-label="Alle temaer"
+				title="Alle temaer"
+			>≡</button>
+		{/if}
 		{#if relationshipOnboardingActive}
 			<div class="partner-onboarding-card partner-onboarding-card-theme">
 				<p class="partner-onboarding-kicker">Felles start</p>
@@ -1641,17 +1689,13 @@
 	<!-- ── SONE 4: Chat ── -->
 	<section class="zone zone-input" class:zone-chat-open={inputExpanded} aria-label="Chat" bind:this={chatSection}>
 		{#if chatOpen}
-			<div class="chat-header">
-				<div class="chat-heading-wrap">
-					<span class="chat-heading">{hasPersistedConversation ? 'Samtale' : activeQuickAction.label}</span>
-					{#if hasPersistedConversation}
-						<span class="chat-subheading chat-subheading-title">{chatConversationTitle}</span>
-						<button class="chat-list-link" onclick={() => goto('/samtaler')} aria-label="Gå til alle samtaler">
-							← Alle samtaler
-						</button>
-					{/if}
-				</div>
-				<div class="chat-header-actions">
+			<PageHeader
+				title={hasPersistedConversation ? 'Samtale' : activeQuickAction.label}
+				subtitle={hasPersistedConversation ? chatConversationTitle : ''}
+				backHref={hasPersistedConversation ? '/samtaler' : undefined}
+				backLabel="Alle samtaler"
+			>
+				{#snippet actions()}
 					{#if hasPersistedConversation}
 						<button class="chat-link" onclick={() => goto(`/samtaler?conversation=${currentConversationId}`)} aria-label="Åpne denne samtalen">Åpne</button>
 					{/if}
@@ -1659,15 +1703,14 @@
 						class="model-pill"
 						onclick={() => {
 							const opts = ['auto', 'gpt-4o-mini', 'gpt-4.1', 'gpt-5.4'];
-							const labels: Record<string, string> = { 'auto': 'Auto', 'gpt-4o-mini': 'Mini', 'gpt-4.1': '4.1', 'gpt-5.4': '5.4' };
 							selectedChatModel = opts[(opts.indexOf(selectedChatModel) + 1) % opts.length];
 							if (typeof localStorage !== 'undefined') localStorage.setItem('chat-model', selectedChatModel);
 						}}
 						title="Modell — klikk for å bytte"
 					>{{ 'auto': 'Auto', 'gpt-4o-mini': 'Mini', 'gpt-4.1': '4.1', 'gpt-5.4': '5.4' }[selectedChatModel] ?? selectedChatModel}</button>
 					<button class="chat-close" onclick={closeChat} aria-label="Lukk samtale"><Icon name="close" size={15} /></button>
-				</div>
-			</div>
+				{/snippet}
+			</PageHeader>
 			<div class="chat-messages" aria-live="polite">
 				{#if chatMessages.length === 0 && !chatLoading}
 					{#if followUpConversations.length > 0}
@@ -2138,6 +2181,45 @@
 	</section>
 {/if}
 
+<!-- ── TEMA PANEL ── -->
+{#if themePanelOpen}
+	<div class="widget-sheet-backdrop" onclick={() => (themePanelOpen = false)} aria-hidden="true"></div>
+	<section class="widget-panel" aria-label="Temaer">
+		<div class="widget-panel-handle" aria-hidden="true"></div>
+		<div class="widget-panel-head">
+			<p>Temaer</p>
+			<button class="widget-panel-close theme-panel-close" onclick={() => (themePanelOpen = false)} aria-label="Lukk"><Icon name="close" size={14} /></button>
+		</div>
+		<div class="widget-panel-content">
+			<div class="widget-panel-section">
+				{#each themes as theme (theme.id)}
+					<div
+						class="tema-panel-row"
+						class:tema-panel-row-dragover={dragOverThemeId === theme.id}
+						style={getThemeHueStyle(theme.name)}
+						draggable="true"
+						role="listitem"
+						ondragstart={() => handleThemeDragStart(theme.id)}
+						ondragover={(e) => handleThemeDragOver(e, theme.id)}
+						ondrop={() => handleThemeDrop(theme.id)}
+						ondragend={() => { dragThemeId = null; dragOverThemeId = null; }}
+					>
+						<span class="tema-panel-row-handle" aria-hidden="true">⠿</span>
+						<button
+							class="tema-panel-row-btn"
+							onclick={() => { themePanelOpen = false; startNavMetric('home', 'tema'); void goto(`/tema/${theme.id}`); }}
+						>
+							<span class="tema-panel-row-icon">{theme.emoji}</span>
+							<span class="tema-panel-row-name">{theme.name}</span>
+							<span class="tema-panel-row-arrow">→</span>
+						</button>
+					</div>
+				{/each}
+			</div>
+		</div>
+	</section>
+{/if}
+
 <!-- ── WIDGET CONFIG SHEET ── -->
 {#if configWidget}
 	<WidgetConfigSheet
@@ -2234,6 +2316,7 @@
 		flex: 24 0 0;
 		min-height: 0;
 		padding: 8px 20px 6px;
+		position: relative;
 	}
 
 	/* ── Zone-label ── */
@@ -2243,6 +2326,27 @@
 		letter-spacing: 0.1em;
 		color: #444;
 		margin: 0 0 6px;
+	}
+
+	.tema-panel-fab {
+		position: absolute;
+		right: 10px;
+		bottom: 10px;
+		z-index: 4;
+		width: 32px;
+		height: 32px;
+		border-radius: 999px;
+		border: 1px solid #3a3a3a;
+		background: #101010;
+		color: #d8d8d8;
+		font-size: 1.2rem;
+		line-height: 1;
+		cursor: pointer;
+	}
+
+	.tema-panel-fab:hover {
+		border-color: #4a5af0;
+		color: #ffffff;
 	}
 
 	/* ── Widget-pager ── */
@@ -2401,6 +2505,16 @@
 	.widget-panel-close:hover {
 		border-color: #4a5af0;
 		color: #fff;
+	}
+
+	.theme-panel-close {
+		width: 32px;
+		height: 32px;
+		padding: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
 	}
 
 	.widget-panel-section {
@@ -2598,6 +2712,70 @@
 		color: #555;
 	}
 
+	/* ── Tema-panel: full liste ── */
+	.tema-panel-row {
+		--theme-hue: 228;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		border-radius: 12px;
+		margin-bottom: 6px;
+		background: linear-gradient(90deg, hsl(var(--theme-hue) 20% 11%) 0%, hsl(var(--theme-hue) 18% 9%) 100%);
+		transition: background 0.12s, opacity 0.12s;
+		cursor: grab;
+	}
+
+	.tema-panel-row:active { cursor: grabbing; }
+
+	.tema-panel-row-dragover {
+		opacity: 0.5;
+	}
+
+	.tema-panel-row-handle {
+		padding: 0 4px 0 10px;
+		color: #333;
+		font-size: 1rem;
+		flex-shrink: 0;
+		line-height: 1;
+		cursor: grab;
+	}
+
+	.tema-panel-row-btn {
+		flex: 1;
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		background: none;
+		border: none;
+		padding: 11px 14px 11px 0;
+		cursor: pointer;
+		font: inherit;
+		color: #ddd;
+		text-align: left;
+	}
+
+	.tema-panel-row:hover {
+		background: linear-gradient(90deg, hsl(var(--theme-hue) 24% 14%) 0%, hsl(var(--theme-hue) 20% 11%) 100%);
+	}
+
+	.tema-panel-row-icon {
+		font-size: 1.2rem;
+		line-height: 1;
+		flex-shrink: 0;
+	}
+
+	.tema-panel-row-name {
+		flex: 1;
+		font-size: 0.9rem;
+		font-weight: 600;
+		color: hsl(var(--theme-hue) 22% 80%);
+	}
+
+	.tema-panel-row-arrow {
+		color: #444;
+		font-size: 0.85rem;
+	}
+
 	/* ── Tema v3: 3-kolonne grid med kompakte knapper ── */
 	.tema-v3-grid {
 		display: grid;
@@ -2611,7 +2789,7 @@
 		flex-direction: column;
 		align-items: center;
 		gap: 6px;
-		background: linear-gradient(180deg, hsl(var(--theme-hue) 20% 12%) 0%, hsl(var(--theme-hue) 18% 10%) 100%);
+		background: hsl(var(--theme-hue) 19% 11%);
 		border: none;
 		border-radius: 16px;
 		padding: 10px 8px;
@@ -2622,7 +2800,7 @@
 	}
 
 	.tema-btn-v3:hover {
-		background: linear-gradient(180deg, hsl(var(--theme-hue) 24% 15%) 0%, hsl(var(--theme-hue) 20% 12%) 100%);
+		background: hsl(var(--theme-hue) 22% 14%);
 		box-shadow: 0 8px 20px hsl(var(--theme-hue) 55% 18% / 0.2);
 		transform: translateY(-1px);
 	}
@@ -2634,9 +2812,12 @@
 	}
 
 	.tema-btn-v3-label {
-		font-size: 0.75rem;
-		font-weight: 600;
+		font-size: 0.65rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.07em;
 		color: hsl(var(--theme-hue) 22% 80%);
+		opacity: 0.8;
 	}
 
 	/* ── Input-sone (28 %) — kort med avrundede hjørner ── */
@@ -3143,19 +3324,24 @@
 		color: #9093a9;
 	}
 
-	.chat-header {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		padding: env(safe-area-inset-top, 12px) 16px 12px;
+	:global(.zone-input .page-header) {
+		padding: var(--screen-title-top-pad, 34px) 20px 12px;
 		border-bottom: 1px solid #1a1a1a;
 		flex-shrink: 0;
+		flex-direction: row !important;
+		align-items: center !important;
+		--text-primary: #eee;
+		--text-secondary: #aaa;
 	}
 
-	.chat-header-actions {
-		display: inline-flex;
-		align-items: center;
-		gap: 8px;
+	:global(.zone-input .page-header h1) {
+		font-size: 1.4rem;
+		font-weight: 700;
+		letter-spacing: -0.03em;
+	}
+
+	:global(.zone-input .page-header-actions) {
+		width: auto !important;
 	}
 
 	.model-pill {
@@ -3195,50 +3381,6 @@
 	.chat-close:hover {
 		border-color: #3a3a3a;
 		color: #d8d8d8;
-	}
-
-	.chat-heading {
-		font-size: 1.05rem;
-		font-weight: 700;
-		color: #ebebeb;
-		letter-spacing: -0.025em;
-		line-height: 1.2;
-	}
-
-	.chat-heading-wrap {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-		flex: 1;
-	}
-
-	.chat-subheading {
-		font-size: 0.74rem;
-		color: #5d5d5d;
-	}
-
-	.chat-subheading-title {
-		color: #9398b6;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		max-width: 100%;
-	}
-
-	.chat-list-link {
-		margin-top: 1px;
-		align-self: flex-start;
-		padding: 0;
-		border: none;
-		background: none;
-		color: #7683bf;
-		font: inherit;
-		font-size: 0.72rem;
-		cursor: pointer;
-	}
-
-	.chat-list-link:hover {
-		color: #aab4ea;
 	}
 
 	.chat-link {

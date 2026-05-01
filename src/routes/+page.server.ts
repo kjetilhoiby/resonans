@@ -1,6 +1,6 @@
 import { db } from '$lib/db';
 import { themes } from '$lib/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, asc } from 'drizzle-orm';
 import { getUserConversationList } from '$lib/server/conversations';
 import type { PageServerLoad } from './$types';
 
@@ -14,9 +14,11 @@ export const load: PageServerLoad = async ({ locals }) => {
 				id: themes.id,
 				name: themes.name,
 				emoji: themes.emoji,
+				sortOrder: themes.sortOrder,
 			})
 			.from(themes)
-			.where(and(eq(themes.userId, locals.userId), eq(themes.archived, false))),
+			.where(and(eq(themes.userId, locals.userId), eq(themes.archived, false)))
+			.orderBy(asc(themes.sortOrder), asc(themes.createdAt)),
 		getUserConversationList(locals.userId, { limit: 6 })
 	]);
 
