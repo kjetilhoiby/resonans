@@ -245,11 +245,16 @@
 						].filter(Boolean).join('\n'),
 						maal: [
 							`Du hjelper brukeren å sette månedsmål for ${ctx.currentMonthName}.`,
-							goalLines ? `\nForrige måneds mål (${ctx.prevMonthName}):\n${goalLines}` : '\nIngen mål fra forrige måned.',
-							'\nGå kort gjennom hvert mål og foreslå om det bør videreføres, justeres opp eller ned.',
-							'Avslutt alltid med en komplett målliste i dette eksakte formatet (ikke noe tekst etter):',
-							'MÅNEDSMÅL:',
-							'- [tittel]: [verdi] [enhet]'
+							goalLines ? `\nForrige måneds mål og fremgang (${ctx.prevMonthName}):\n${goalLines}` : '\nIngen mål fra forrige måned.',
+							'\nSkille mellom mål og oppgaver:',
+							'- MÅNEDSMÅL: kun for ting med målbar fremdrift mot et tall (løping i km, vekt i kg, frekvente treningsøkter per uke). Hold listen kort.',
+							'- MÅNEDSOPPGAVER: ting du gjør 1–8 ganger denne måneden (utenatt, utebad, sykling til jobb, planleggingsprat hjemme osv.)',
+							'\nGå gjennom forrige måneds mål. Foreslå om hvert bør videreføres eller justeres. Kom gjerne med nye oppgaver basert på refleksjonen.',
+							'\nAvslutt alltid med begge listene (utelat seksjoner som ikke passer):',
+							'\nMÅNEDSMÅL:',
+							'- [tittel]: [verdi] [enhet]',
+							'\nMÅNEDSOPPGAVER:',
+							'- [tittel]: [antall] [enhet]'
 						].filter(Boolean).join('\n'),
 						maanedshistorie: [
 							`Du hjelper brukeren å skrive en kort månedsbeskrivelse for ${ctx.currentMonthName}.`,

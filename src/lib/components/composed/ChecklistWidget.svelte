@@ -4,12 +4,14 @@
 -->
 <script lang="ts">
 	import GoalRing from '../ui/GoalRing.svelte';
+	import DayWheelChart, { type DayData } from '../visualizations/DayWheelChart.svelte';
 
 	export interface ChecklistItem {
 		id: string;
 		text: string;
 		checked: boolean;
 		sortOrder: number;
+		parentId?: string | null;
 	}
 
 	export interface Checklist {
@@ -30,8 +32,15 @@
 
 	let { checklist, onclick, onremove, onplan }: Props = $props();
 
-	const total = $derived(checklist.items.length);
-	const done = $derived(checklist.items.filter((i) => i.checked).length);
+	// For items with children, count the children (not the group header) for accurate progress
+	const effectiveItems = $derived(
+		checklist.items.filter((i) => {
+			if (i.parentId) return true; // child item → count it
+			return !checklist.items.some((c) => c.parentId === i.id); // solo item (no children) → count it
+		})
+	);
+	const total = $derived(effectiveItems.length);
+	const done = $derived(effectiveItems.filter((i) => i.checked).length);
 	const pct = $derived(total > 0 ? (done / total) * 100 : 0);
 	const isComplete = $derived(done === total && total > 0);
 	const ringText = $derived(`${done}/${total}`);
@@ -85,6 +94,36 @@
 
 	const label = $derived(getContextLabel(checklist.context));
 	const ringColor = $derived(isComplete ? '#5fa080' : '#7c8ef5');
+
+	// Måneds-widget: bytt ut GoalRing med DayWheelChart
+	const monthMatch = $derived(checklist.context?.match(/^month:(\d{4})-(\d{2})$/));
+	const isMonthWidget = $derived(!!monthMatch);
+
+	const dayWheelData = $derived.by((): { year: number; month: number; days: DayData[] } | null => {
+		if (!monthMatch) return null;
+		const year = Number(monthMatch[1]);
+		const month = Number(monthMatch[2]);
+		const daysInMonth = new Date(year, month, 0).getDate();
+		const now = new Date();
+		const todayDay = now.getFullYear() === year && now.getMonth() + 1 === month
+			? now.getDate()
+			: now < new Date(year, month - 1, 1) ? 0 : daysInMonth;
+		// Oppgavegrad 0–1, samme verdi for alle passerte dager
+		const completionFraction = total > 0 ? done / total : 0;
+		const days: DayData[] = Array.from({ length: daysInMonth }, (_, i) => {
+			const dayNum = i + 1;
+			const isPast = dayNum < todayDay;
+			const isToday = dayNum === todayDay;
+			if (!isPast && !isToday) return { planned: 0, completed: 0, isPast: false, isToday: false };
+			return {
+				planned: 1,
+				completed: completionFraction,
+				isPast,
+				isToday,
+			};
+		});
+		return { year, month, days };
+	});
 
 	// Long-press for remove menu
 	let pressTimer: ReturnType<typeof setTimeout> | null = null;
@@ -151,6 +190,16 @@
 		</div>
 		<div class="dw-label dw-label--empty">{label}</div>
 		<span class="dw-plan-hint">Planlegg</span>
+	{:else if isMonthWidget && dayWheelData}
+		<div class="dw-ring">
+			<DayWheelChart
+				year={dayWheelData.year}
+				month={dayWheelData.month}
+				days={dayWheelData.days}
+				size={70}
+			/>
+		</div>
+		<div class="dw-label" style:color={ringColor}>{label}</div>
 	{:else}
 		<div class="dw-ring">
 			<GoalRing pct={isComplete ? 100 : pct} size={70} strokeWidth={4} color={ringColor}>

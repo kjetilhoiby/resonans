@@ -509,6 +509,7 @@ export const FLOWS: Record<FlowId, Flow> = {
 			const selectedTasks = (data['selectedTasks'] as string[]) ?? [];
 			const goalUpdatesText = (data['maal_lastMessage'] as string) ?? '';
 			const narrative = (data['maanedshistorie_lastMessage'] as string) ?? '';
+			const refleksjonText = (data['refleksjon_lastMessage'] as string) ?? '';
 			const prevMonthGoals = context.prevMonthData?.monthGoals ?? [];
 
 			await fetch('/api/month-plan/complete', {
@@ -520,7 +521,8 @@ export const FLOWS: Record<FlowId, Flow> = {
 					selectedTasks,
 					goalUpdatesText,
 					prevMonthGoals,
-					narrative
+					narrative,
+					refleksjonText
 				})
 			});
 		}

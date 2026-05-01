@@ -166,11 +166,16 @@
 
 			const maalPrompt = [
 				`Du hjelper brukeren å sette månedsmål for ${ctx.currentMonthName}.`,
-				goalLines ? `\nForrige måneds mål (${ctx.prevMonthName}):\n${goalLines}` : '\nIngen mål fra forrige måned.',
-				'\nGå kort gjennom hvert mål og foreslå om det bør videreføres, justeres opp eller ned basert på progresjon.',
-				'Avslutt alltid med en komplett målliste i dette eksakte formatet (ikke noe tekst etter):',
-				'MÅNEDSMÅL:',
-				'- [tittel]: [verdi] [enhet]'
+				goalLines ? `\nForrige måneds mål og fremgang (${ctx.prevMonthName}):\n${goalLines}` : '\nIngen mål fra forrige måned.',
+				'\nSkille mellom mål og oppgaver:',
+				'- MÅNEDSMÅL: kun for ting med målbar fremdrift mot et tall (løping i km, vekt i kg, frekvente treningsøkter per uke). Hold listen kort.',
+				'- MÅNEDSOPPGAVER: ting du gjør 1–8 ganger denne måneden (utenatt, utebad, sykling til jobb, planleggingsprat hjemme osv.)',
+				'\nGå gjennom forrige måneds mål. Foreslå om hvert bør videreføres eller justeres. Kom gjerne med nye oppgaver basert på refleksjonen.',
+				'\nAvslutt alltid med begge listene (utelat seksjoner som ikke passer):',
+				'\nMÅNEDSMÅL:',
+				'- [tittel]: [verdi] [enhet]',
+				'\nMÅNEDSOPPGAVER:',
+				'- [tittel]: [antall] [enhet]'
 			].filter(Boolean).join('\n');
 
 			const maanedshistoriePrompt = [
@@ -205,18 +210,26 @@
 	}
 
 	$effect(() => {
+		monthChecklistState = data.monthChecklist ? structuredClone(data.monthChecklist) : null;
+	});
+
+	$effect(() => {
 		monthGoalsState = structuredClone(data.monthGoals);
 	});
 
-	// Auto-select the current week if it's in this month
 	$effect(() => {
-		if (selectedWeekKey === null && data.weeksInMonth.length > 0) {
-			const today = new Date().toISOString().slice(0, 10);
-			const currentWeek = data.weeksInMonth.find(
-				(w) => today >= w.startDate && today <= w.endDate
-			);
-			selectedWeekKey = currentWeek?.dashedKey ?? data.weeksInMonth[0].dashedKey;
-		}
+		monthNoteValue = data.monthNote;
+		reflectionValue = data.reflection;
+		visionValue = data.vision;
+	});
+
+	// Auto-select current week when month changes
+	$effect(() => {
+		const today = new Date().toISOString().slice(0, 10);
+		const currentWeek = data.weeksInMonth.find(
+			(w) => today >= w.startDate && today <= w.endDate
+		);
+		selectedWeekKey = currentWeek?.dashedKey ?? data.weeksInMonth[0]?.dashedKey ?? null;
 	});
 
 	function toggleWeekParentExpansion(parentId: string) {
@@ -682,13 +695,13 @@
 	<!-- Month note -->
 	<section class="mp-card">
 		<div class="mp-card-head">
-			<h2>Månedsnotat</h2>
+			<h2>Månedshistorie</h2>
 			<span class="mp-save-dot" class:is-saving={saveStates.monthNote === 'saving'} class:is-saved={saveStates.monthNote === 'saved'} aria-hidden="true"></span>
 		</div>
 		<textarea
 			class="mp-textarea"
 			rows="2"
-			placeholder={`Hva handler ${data.month.monthName} om?`}
+			placeholder={`Hva handler ${data.month.monthName} om for deg?`}
 			bind:value={monthNoteValue}
 			onfocus={markInitialValue}
 			onblur={async (e) => { submitOnBlurIfChanged(e); await saveMonthNote(); }}
@@ -709,8 +722,10 @@
 
 		{#if monthChecklistState && monthChecklistState.items.length > 0}
 			<ul class="mp-checklist">
-				{#each monthChecklistState.items as item (item.id)}
-					<li class="mp-check-row">
+				{#each monthChecklistState.items.filter((i) => !i.parentId) as item (item.id)}
+					{@const children = monthChecklistState.items.filter((c) => c.parentId === item.id)}
+					{@const doneChildren = children.filter((c) => c.checked).length}
+					<li class="mp-check-row" class:mp-check-row--group={children.length > 0}>
 						{#if editingItemId === item.id}
 							<div class="mp-edit-shell">
 								<input
@@ -733,19 +748,34 @@
 							<button
 								type="button"
 								class="mp-item-text-btn"
-								onclick={() => void startEditing(item)}
+								onclick={() => children.length === 0 && void startEditing(item)}
+								disabled={children.length > 0}
 							>
-								<span class="mp-check-text" class:checked={item.checked}>{item.text}</span>
+								<span class="mp-check-text" class:checked={children.length > 0 ? doneChildren === children.length : item.checked}>{item.text}</span>
 							</button>
 						{/if}
-						<button
-							type="button"
-							class="mp-check-toggle"
-							onclick={() => void toggleItem(item.id, !item.checked)}
-							aria-label={item.checked ? 'Marker som ikke gjort' : 'Marker som gjort'}
-						>
-							<span class="mp-check-circle" class:checked={item.checked}>{item.checked ? '✓' : ''}</span>
-						</button>
+						{#if children.length > 0}
+							<div class="mp-child-slots">
+								{#each children as child (child.id)}
+									<button
+										type="button"
+										class="mp-child-slot"
+										class:checked={child.checked}
+										onclick={() => void toggleItem(child.id, !child.checked)}
+										aria-label={child.checked ? 'Marker som ikke gjort' : 'Marker som gjort'}
+									>{child.checked ? '✓' : ''}</button>
+								{/each}
+							</div>
+						{:else}
+							<button
+								type="button"
+								class="mp-check-toggle"
+								onclick={() => void toggleItem(item.id, !item.checked)}
+								aria-label={item.checked ? 'Marker som ikke gjort' : 'Marker som gjort'}
+							>
+								<span class="mp-check-circle" class:checked={item.checked}>{item.checked ? '✓' : ''}</span>
+							</button>
+						{/if}
 					</li>
 				{/each}
 			</ul>
@@ -1264,6 +1294,41 @@
 
 	.mp-edit-input {
 		border-color: #3a4adf;
+	}
+
+	.mp-check-row--group .mp-item-text-btn {
+		cursor: default;
+	}
+
+	.mp-child-slots {
+		display: flex;
+		gap: 5px;
+		flex-shrink: 0;
+		align-items: center;
+	}
+
+	.mp-child-slot {
+		width: 22px;
+		height: 22px;
+		border-radius: 50%;
+		border: 2px solid #2a2e3f;
+		background: none;
+		color: white;
+		font-size: 0.65rem;
+		font-weight: 700;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+		transition: border-color 0.15s, background 0.15s;
+	}
+	.mp-child-slot.checked {
+		border-color: #5fa080;
+		background: #5fa080;
+	}
+	.mp-child-slot:hover:not(.checked) {
+		border-color: #4a5a70;
 	}
 
 	.mp-btn-danger {

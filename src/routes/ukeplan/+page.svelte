@@ -1431,7 +1431,7 @@
 			{/each}
 			<a
 				class="wp-calendar-btn wp-month-btn"
-				href={`/maanedsplan?month=${data.week.days[0].isoDate.slice(0, 7)}`}
+				href={`/maanedsplan?month=${selectedDayIso.slice(0, 7)}`}
 				aria-label="Til månedsplan"
 				title="Månedsplan"
 			>Mnd</a>

@@ -50,15 +50,6 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	const prevStart = new Date(`${prevMonth.startDate}T00:00:00.000Z`);
 	const prevEnd = new Date(`${prevMonth.endDate}T23:59:59.999Z`);
 
-	// Months 2 and 3 back for recurring task detection
-	const prev2Month = shiftMonth(currentMonth, -2);
-	const prev3Month = shiftMonth(currentMonth, -3);
-	const recurringContextKeys = [
-		prevMonth.contextKey,
-		prev2Month.contextKey,
-		prev3Month.contextKey
-	];
-
 	const [
 		prevNote,
 		prevReflection,
@@ -66,7 +57,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		prevGoals,
 		workoutRows,
 		weightRows,
-		recurringChecklists
+		weekChecklists
 	] = await Promise.all([
 		db.query.memories.findFirst({
 			columns: { content: true },
@@ -116,11 +107,18 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 				)
 			)
 			.orderBy(asc(sensorEvents.timestamp)),
+		// Week and day checklists within the previous month only
 		db.query.checklists.findMany({
-			where: and(eq(checklists.userId, userId), inArray(checklists.context, recurringContextKeys)),
+			where: and(
+				eq(checklists.userId, userId),
+				sql`${checklists.context} LIKE 'week:%'`,
+				gte(checklists.createdAt, prevStart),
+				lte(checklists.createdAt, prevEnd)
+			),
+			columns: { id: true, context: true },
 			with: {
 				items: {
-					orderBy: (items, { asc: a }) => [a(items.sortOrder), a(items.createdAt)]
+					columns: { text: true, parentId: true }
 				}
 			}
 		})
@@ -131,32 +129,50 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		.filter((i) => !i.checked && !i.parentId)
 		.map((i) => ({ id: i.id, text: i.text }));
 
-	// Recurring tasks: items appearing in ≥2 of the 3 previous months
-	const textFrequency = new Map<string, number>();
-	for (const cl of recurringChecklists) {
-		const seenInThisMonth = new Set<string>();
+	const canonicalText = new Map<string, string>();
+	function recordCanonical(text: string) {
+		const key = text.trim().toLowerCase();
+		if (key && !canonicalText.has(key)) canonicalText.set(key, text.trim());
+	}
+
+	// ── Month checklist items from previous month (explicitly planned) ────────
+	const prevMonthKeys = new Set<string>();
+	for (const item of prevChecklist?.items ?? []) {
+		if (item.parentId) continue;
+		const key = item.text.trim().toLowerCase();
+		if (key) { prevMonthKeys.add(key); recordCanonical(item.text); }
+	}
+
+	// ── Week/day checklists: items in ≥2 distinct ISO weeks last month ────────
+	function weekGroup(context: string | null): string {
+		if (!context) return '';
+		const m = context.match(/^(week:\d{4}-W\d{2})/);
+		return m?.[1] ?? context;
+	}
+
+	const weekFrequency = new Map<string, Set<string>>();
+	for (const cl of weekChecklists) {
+		const group = weekGroup(cl.context);
+		if (!group) continue;
+		const seenHere = new Set<string>();
 		for (const item of cl.items) {
 			if (item.parentId) continue;
 			const key = item.text.trim().toLowerCase();
-			if (key && !seenInThisMonth.has(key)) {
-				seenInThisMonth.add(key);
-				textFrequency.set(key, (textFrequency.get(key) ?? 0) + 1);
-			}
+			if (!key || seenHere.has(key)) continue;
+			seenHere.add(key);
+			if (!weekFrequency.has(key)) weekFrequency.set(key, new Set());
+			weekFrequency.get(key)!.add(group);
+			recordCanonical(item.text);
 		}
 	}
-	// Get original casing from the most recent checklist that has it
-	const canonicalText = new Map<string, string>();
-	for (const cl of [...recurringChecklists].reverse()) {
-		for (const item of cl.items) {
-			if (!item.parentId) {
-				const key = item.text.trim().toLowerCase();
-				if (!canonicalText.has(key)) canonicalText.set(key, item.text.trim());
-			}
-		}
-	}
-	const recurringTasks = [...textFrequency.entries()]
-		.filter(([, count]) => count >= 2)
-		.map(([key]) => canonicalText.get(key) ?? key);
+
+	// Recurring = appeared in prev month checklist OR in ≥2 distinct weeks last month
+	const recurringKeys = new Set<string>([
+		...prevMonthKeys,
+		...[...weekFrequency.entries()].filter(([, weeks]) => weeks.size >= 2).map(([k]) => k)
+	]);
+
+	const recurringTasks = [...recurringKeys].map((key) => canonicalText.get(key) ?? key);
 
 	// Compute previous month goal progress
 	const runningKm = Math.round(

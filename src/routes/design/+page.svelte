@@ -11,6 +11,8 @@
 	import ScreenTitle from '$lib/components/ui/ScreenTitle.svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import { THEME_HUES, getThemeHueStyle, type ThemeHueKey } from '$lib/domain/theme-hues';
+	import DayWheelChart, { type DayData } from '$lib/components/visualizations/DayWheelChart.svelte';
+	import DomainWheelChart, { type DomainStatus } from '$lib/components/visualizations/DomainWheelChart.svelte';
 
 	const sections = [
 		'Designprinsipper',
@@ -25,6 +27,7 @@
 		'Interaksjonsflyter',
 		'Ukeplan',
 		'Sjekkliste-flyt',
+		'Radiale visualiseringer',
 	] as const;
 
 	// ── Interaksjonsflyt-state ──────────────────────────────────────────────────
@@ -129,6 +132,24 @@
 		[false, false],
 		[false, false, false],
 	]);
+
+	// ── Radiale visualiseringer ─────────────────────────────────────────────────
+	// planned/completed per dag — variasjon for å vise normalisering
+	const DEMO_PLANNED =  [5, 3, 6, 4, 7, 2, 5, 4, 6, 3, 5, 7, 4, 6, 3, 5, 4, 6, 7, 5];
+	const DEMO_DONE    =  [5, 2, 4, 4, 5, 2, 3, 4, 6, 1, 4, 5, 3, 4, 3, 5, 2, 5, 4, 3];
+
+	const demoMonthDays: DayData[] = Array.from({ length: 31 }, (_, i) => {
+		const day = i + 1;
+		if (day < 21) return { planned: DEMO_PLANNED[i], completed: DEMO_DONE[i], isPast: true, isToday: false };
+		if (day === 21) return { planned: 4, completed: 1, isPast: false, isToday: true };
+		return { planned: 0, completed: 0, isPast: false, isToday: false };
+	});
+
+	const demoDomains: DomainStatus[] = [
+		{ id: 'health',    label: 'Helse',   color: '#5fa0a0', monthPct: 0.72, trend: 'up' },
+		{ id: 'economics', label: 'Økonomi', color: '#f0b429', monthPct: 0.58, trend: 'flat' },
+		{ id: 'food',      label: 'Mat',     color: '#d4829a', monthPct: 0.40, trend: 'down' },
+	];
 </script>
 
 <svelte:head>
@@ -1639,6 +1660,122 @@
 				<div class="cl-flow-step" style="border-color:#5fa080"><span class="cl-flow-icon">🎉</span><span>Alle krysset av → completedAt settes → Payoff-animasjon</span></div>
 			</div>
 
+		</section>
+
+		<!-- ── Radiale visualiseringer ── -->
+		<section id="Radiale visualiseringer" class="section">
+			<h2 class="section-heading">Radiale visualiseringer</h2>
+			<p class="section-desc">
+				Felles base-komponent <code>RadialSectorChart</code> med to profiler.
+				Tre visuelle dimensjoner per sektor: <strong>radius</strong> (hvor mye),
+				<strong>farge</strong> (hva/domene), <strong>opasitet</strong> (trend/kvalitet).
+			</p>
+
+			<h3 class="subsection">DayWheelChart — dagsprofil</h3>
+			<p class="section-desc">
+				31 sektorer, én per dag. Grått segment = planlagte oppgaver, grønt segment = løste oppgaver.
+				Begge normalisert mot høyeste antall planlagte oppgaver i måneden.
+			</p>
+			<div class="radial-row">
+				<div class="radial-card">
+					<DayWheelChart year={2026} month={5} days={demoMonthDays} size={220} />
+					<p class="radial-caption">Demo: 20 dager bak oss, dag 21 = i dag</p>
+				</div>
+				<div class="radial-legend">
+					<div class="radial-legend-item">
+						<span class="radial-dot" style="background:rgba(255,255,255,0.18)"></span> Planlagte oppgaver
+					</div>
+					<div class="radial-legend-item">
+						<span class="radial-dot" style="background:#5fa080"></span> Løste oppgaver
+					</div>
+					<hr class="radial-hr" />
+					<div class="radial-dim"><strong>Radius</strong> = antall / maks planlagt i mnd.</div>
+					<div class="radial-dim"><strong>Grå</strong> = planlagt</div>
+					<div class="radial-dim"><strong>Grønn</strong> = løst</div>
+					<div class="radial-dim"><strong>Fremtid</strong> = ingen sektor</div>
+				</div>
+			</div>
+
+			<h3 class="subsection">DomainWheelChart — domeneprofil</h3>
+			<p class="section-desc">
+				N sektorer, én per domene. Radius = andel av månedsmål nådd,
+				opasitet = trend siste 7 dager (up → 1.0, flat → 0.7, down → 0.45).
+				Sentertekst viser snitt-% på tvers av domener.
+			</p>
+			<div class="radial-row">
+				<div class="radial-card">
+					<DomainWheelChart domains={demoDomains} size={220} />
+					<p class="radial-caption">Helse ↑, Økonomi →, Mat ↓</p>
+				</div>
+				<div class="radial-legend">
+					{#each demoDomains as d}
+						<div class="radial-legend-item">
+							<span class="radial-dot" style="background:{d.color}"></span>
+							{d.label} — {Math.round(d.monthPct * 100)}% · {d.trend === 'up' ? '↑' : d.trend === 'down' ? '↓' : '→'}
+						</div>
+					{/each}
+					<hr class="radial-hr" />
+					<div class="radial-dim"><strong>Radius</strong> = % av månedsmål nådd</div>
+					<div class="radial-dim"><strong>Farge</strong> = domenefarge</div>
+					<div class="radial-dim"><strong>Opasitet</strong> = trend (up/flat/down)</div>
+				</div>
+			</div>
+
+			<h3 class="subsection">Side om side</h3>
+			<p class="section-desc">Begge profiler, samme størrelse.</p>
+			<div class="radial-pair">
+				<div class="radial-pair-item">
+					<DayWheelChart year={2026} month={5} days={demoMonthDays} size={180} />
+					<span class="radial-pair-label">Dagshjul</span>
+				</div>
+				<div class="radial-pair-item">
+					<DomainWheelChart domains={demoDomains} size={180} />
+					<span class="radial-pair-label">Domenehjul</span>
+				</div>
+			</div>
+
+			<h3 class="subsection">Widget-størrelse</h3>
+			<p class="section-desc">
+				Samme dimensjoner som en widget på hjemskjermen (90 × 106 px, ring 70 px).
+				Ingen labels — bare farger og senterverdi.
+			</p>
+			<div class="radial-pair">
+				<div class="widget-mock">
+					<div class="widget-mock-ring">
+						<DayWheelChart year={2026} month={5} days={demoMonthDays} size={70} />
+					</div>
+					<span class="widget-mock-label">Mai</span>
+				</div>
+				<div class="widget-mock">
+					<div class="widget-mock-ring">
+						<DomainWheelChart
+							domains={demoDomains}
+							size={70}
+							showLabels={false}
+							centerLabel="62%"
+							centerSublabel=""
+						/>
+					</div>
+					<span class="widget-mock-label">Balanse</span>
+				</div>
+				<div class="widget-mock">
+					<div class="widget-mock-ring">
+						<DomainWheelChart
+							domains={[
+								{ id: 'jobb',      label: 'Jobb',      color: '#7c8ef5', monthPct: 0.5,  trend: 'flat' },
+								{ id: 'familie',   label: 'Familie',   color: '#5fa0a0', monthPct: 0.8,  trend: 'up'   },
+								{ id: 'hjem',      label: 'Hjem',      color: '#f0b429', monthPct: 0.3,  trend: 'down' },
+								{ id: 'parforhold',label: 'Parforhold',color: '#d4829a', monthPct: 0.75, trend: 'up'   },
+								{ id: 'venner',    label: 'Venner',    color: '#4ade80', monthPct: 0.4,  trend: 'flat' },
+								{ id: 'selv',      label: 'Selv',      color: '#e07070', monthPct: 0.6,  trend: 'up'   },
+							]}
+							size={70}
+							showLabels={false}
+						/>
+					</div>
+					<span class="widget-mock-label">Livshjul</span>
+				</div>
+			</div>
 		</section>
 
 	</main>
@@ -3536,6 +3673,113 @@
 
 	.icon-btn-v4:active {
 		transform: scale(0.95);
+	}
+
+	/* Radiale visualiseringer */
+	.radial-row {
+		display: flex;
+		align-items: flex-start;
+		gap: 32px;
+		flex-wrap: wrap;
+		margin: 16px 0 32px;
+	}
+
+	.radial-card {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 8px;
+		background: #111;
+		border: 1px solid #222;
+		border-radius: 16px;
+		padding: 20px;
+	}
+
+	.radial-caption {
+		font-size: 0.72rem;
+		color: #555;
+		margin: 0;
+		text-align: center;
+	}
+
+	.radial-legend {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		padding-top: 4px;
+	}
+
+	.radial-legend-item {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		font-size: 0.8rem;
+		color: #aaa;
+	}
+
+	.radial-dot {
+		width: 10px;
+		height: 10px;
+		border-radius: 50%;
+		flex-shrink: 0;
+	}
+
+	.radial-hr {
+		border: none;
+		border-top: 1px solid #222;
+		margin: 4px 0;
+	}
+
+	.radial-dim {
+		font-size: 0.75rem;
+		color: #555;
+	}
+
+	.radial-pair {
+		display: flex;
+		gap: 24px;
+		flex-wrap: wrap;
+		margin-top: 16px;
+	}
+
+	.radial-pair-item {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 8px;
+		background: #111;
+		border: 1px solid #222;
+		border-radius: 16px;
+		padding: 16px;
+	}
+
+	.radial-pair-label {
+		font-size: 0.75rem;
+		color: #555;
+	}
+
+	/* Widget-mock (nøyaktig ChecklistWidget-dimensjoner) */
+	.widget-mock {
+		width: 90px;
+		min-height: 106px;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 4px;
+	}
+
+	.widget-mock-ring {
+		width: 70px;
+		height: 70px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.widget-mock-label {
+		font-size: 0.65rem;
+		color: #888;
+		text-align: center;
 	}
 
 </style>

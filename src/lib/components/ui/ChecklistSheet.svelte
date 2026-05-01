@@ -23,7 +23,7 @@
 		text: string;
 		checked: boolean;
 		sortOrder: number;
-		parentId?: string;
+		parentId?: string | null;
 		children?: ChecklistItem[];
 	}
 

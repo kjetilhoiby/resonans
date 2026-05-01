@@ -45,11 +45,14 @@ async function upsertMemory(userId: string, source: string, content: string) {
 	}
 }
 
-/** Parse "MÅNEDSMÅL:\n- Løping: 50 km\n- Yoga: 20 ganger" from AI output */
-function parseGoalUpdates(text: string): Array<{ title: string; value: number; unit: string }> {
-	const marker = text.indexOf('MÅNEDSMÅL:');
-	if (marker === -1) return [];
-	const section = text.slice(marker + 'MÅNEDSMÅL:'.length);
+function parseSection(text: string, marker: string): Array<{ title: string; value: number; unit: string }> {
+	const idx = text.indexOf(marker);
+	if (idx === -1) return [];
+	// Stop at the next known section marker
+	const nextSection = text.indexOf('MÅNEDSMÅL:', idx + marker.length);
+	const nextSection2 = text.indexOf('MÅNEDSOPPGAVER:', idx + marker.length);
+	const end = [nextSection, nextSection2].filter((n) => n > idx).reduce((a, b) => Math.min(a, b), text.length);
+	const section = text.slice(idx + marker.length, end);
 	const results: Array<{ title: string; value: number; unit: string }> = [];
 	for (const line of section.split('\n')) {
 		const match = line.match(/^-\s+(.+?):\s*(\d+(?:[.,]\d+)?)\s+(.+?)\s*$/);
@@ -63,6 +66,9 @@ function parseGoalUpdates(text: string): Array<{ title: string; value: number; u
 	}
 	return results;
 }
+
+function parseGoalUpdates(text: string) { return parseSection(text, 'MÅNEDSMÅL:'); }
+function parseTaskUpdates(text: string) { return parseSection(text, 'MÅNEDSOPPGAVER:'); }
 
 const METRIC_MAP: Record<string, string> = {
 	km: 'running_distance',
@@ -93,16 +99,20 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		goalUpdatesText: string;
 		prevMonthGoals: Array<{ title: string; currentValue: number; target: { value: number; unit: string }; trackingMetric: string }>;
 		narrative: string;
+		refleksjonText?: string;
 	};
 
-	const { monthKey, carryoverTexts, selectedTasks, goalUpdatesText, prevMonthGoals, narrative } = body;
+	const { monthKey, carryoverTexts, selectedTasks, goalUpdatesText, prevMonthGoals, narrative, refleksjonText } = body;
 
 	const month = getMonthInfoFromKey(monthKey);
 	if (!month) return json({ error: 'Ugyldig månedsnøkkel' }, { status: 400 });
 
 	// ── 1. Ensure month checklist exists and add tasks ───────────────────────
-	const allTaskTexts = [...new Set([...carryoverTexts, ...selectedTasks])].filter(Boolean);
-	if (allTaskTexts.length > 0) {
+	const parsedTasks = parseTaskUpdates(goalUpdatesText);
+	const simpleTaskTexts = [...new Set([...carryoverTexts, ...selectedTasks])].filter(Boolean);
+	const needsChecklist = simpleTaskTexts.length > 0 || parsedTasks.length > 0;
+
+	if (needsChecklist) {
 		let checklist = await db.query.checklists.findFirst({
 			where: and(eq(checklists.userId, userId), eq(checklists.context, month.contextKey)),
 			columns: { id: true }
@@ -118,15 +128,15 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			checklist = created;
 		}
 
-		// Get existing items to avoid duplicates
 		const existingItems = await db.query.checklistItems.findMany({
 			where: eq(checklistItems.checklistId, checklist.id),
 			columns: { id: true, text: true, sortOrder: true }
 		});
 		const existingTexts = new Set(existingItems.map((i) => i.text.trim().toLowerCase()));
-		const nextSortOrder = existingItems.length;
+		let nextSortOrder = existingItems.length;
 
-		const toInsert = allTaskTexts
+		// Insert simple carryover/recurring tasks
+		const simpleToInsert = simpleTaskTexts
 			.filter((t) => !existingTexts.has(t.trim().toLowerCase()))
 			.map((text, i) => ({
 				checklistId: checklist!.id,
@@ -134,9 +144,42 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				text: text.trim(),
 				sortOrder: nextSortOrder + i
 			}));
+		if (simpleToInsert.length > 0) {
+			await db.insert(checklistItems).values(simpleToInsert);
+			nextSortOrder += simpleToInsert.length;
+		}
 
-		if (toInsert.length > 0) {
-			await db.insert(checklistItems).values(toInsert);
+		// Insert MÅNEDSOPPGAVER: N=1 → single item, N>1 → parent + N children
+		for (const task of parsedTasks) {
+			const parentLabel = task.value > 1
+				? `${task.title} (${task.value} ${task.unit})`
+				: task.title;
+			if (existingTexts.has(parentLabel.trim().toLowerCase())) continue;
+
+			if (task.value <= 1) {
+				await db.insert(checklistItems).values({
+					checklistId: checklist.id,
+					userId,
+					text: parentLabel.trim(),
+					sortOrder: nextSortOrder++
+				});
+			} else {
+				const [parent] = await db.insert(checklistItems).values({
+					checklistId: checklist.id,
+					userId,
+					text: parentLabel.trim(),
+					sortOrder: nextSortOrder++
+				}).returning({ id: checklistItems.id });
+
+				const children = Array.from({ length: task.value }, (_, i) => ({
+					checklistId: checklist!.id,
+					userId,
+					text: task.title.trim(),
+					parentId: parent.id,
+					sortOrder: i
+				}));
+				await db.insert(checklistItems).values(children);
+			}
 		}
 	}
 
@@ -186,12 +229,19 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			if (Number.isFinite(w)) baselineValue = Math.round(w * 10) / 10;
 		}
 
+		// Build metadata that satisfies both the maanedsplan page (tracking.metric, target)
+		// and the goals page (metricId, startDate, endDate, goalTrack, startValue)
+		const weightDelta = goal.trackingMetric === 'weight_kg' && baselineValue !== null
+			? Math.round((goal.value - baselineValue) * 10) / 10
+			: null;
+
 		await db.insert(goals).values({
 			userId,
 			title: goal.title,
 			status: 'active',
 			targetDate: new Date(month.endDate),
 			metadata: {
+				// maanedsplan format
 				monthKey: month.dashedKey,
 				goalType: goal.trackingMetric,
 				tracking: {
@@ -204,7 +254,20 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				},
 				target: { value: goal.value, unit: goal.unit },
 				baselineValue,
-				currentValue: 0
+				currentValue: 0,
+				// goals page format
+				...(goal.trackingMetric === 'running_distance' ? {
+					metricId: 'running_distance',
+					startDate: month.startDate,
+					endDate: month.endDate,
+					goalTrack: { targetValue: goal.value }
+				} : goal.trackingMetric === 'weight_kg' && baselineValue !== null ? {
+					metricId: 'weight_change',
+					startDate: month.startDate,
+					endDate: month.endDate,
+					startValue: baselineValue,
+					goalTrack: { targetValue: weightDelta }
+				} : {})
 			}
 		});
 	}
@@ -212,6 +275,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	// ── 3. Save narrative as month note ──────────────────────────────────────
 	if (narrative.trim()) {
 		await upsertMemory(userId, `month-plan:${month.compactKey}:note`, narrative);
+	}
+
+	// ── 4. Save refleksjon chat as reflection memory ──────────────────────────
+	if (refleksjonText?.trim()) {
+		await upsertMemory(userId, `month-plan:${month.compactKey}:reflection`, refleksjonText);
 	}
 
 	return json({ success: true });
