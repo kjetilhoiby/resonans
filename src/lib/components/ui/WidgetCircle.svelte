@@ -80,8 +80,8 @@
 
 <style>
 	.widget-circ {
-		width: 90px;
-		height: 90px;
+		width: 78px;
+		height: 78px;
 		border-radius: 50%;
 		border: 1.5px solid color-mix(in srgb, var(--c) 35%, #2a2a2a);
 		background: radial-gradient(

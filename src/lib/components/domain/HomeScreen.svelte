@@ -2459,7 +2459,7 @@
 	.zone-widgets {
 		flex: 28 0 0;
 		min-height: 0;
-		padding: 14px 16px 10px;
+		padding: 10px 14px 8px;
 		background: #171717;
 		border-radius: 18px;
 		margin: 0 12px;
@@ -2470,7 +2470,7 @@
 	.zone-tema {
 		flex: 24 0 0;
 		min-height: 0;
-		padding: 8px 20px 6px;
+		padding: 6px 16px 4px;
 		position: relative;
 	}
 
@@ -2523,17 +2523,17 @@
 		flex: 0 0 100%;
 		scroll-snap-align: start;
 		min-width: 100%;
-		padding-top: 10px;
+		padding-top: 6px;
 	}
 
 	.widget-page-grid {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 16px;
+		gap: 10px;
 		justify-content: center;
 		align-content: flex-start;
 		min-height: 100%;
-		padding: 0 34px 30px 0;
+		padding: 0 28px 16px 0;
 		box-sizing: border-box;
 	}
 
@@ -2935,7 +2935,7 @@
 	.tema-v3-grid {
 		display: grid;
 		grid-template-columns: repeat(3, 1fr);
-		gap: 10px;
+		gap: 8px;
 	}
 
 	.tema-btn-v3 {
@@ -2943,11 +2943,11 @@
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 6px;
+		gap: 4px;
 		background: hsl(var(--theme-hue) 19% 11%);
 		border: none;
-		border-radius: 16px;
-		padding: 10px 8px;
+		border-radius: 14px;
+		padding: 8px 6px;
 		cursor: pointer;
 		transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
 		font: inherit;
@@ -2961,7 +2961,7 @@
 	}
 
 	.tema-btn-v3-icon {
-		font-size: 1.3rem;
+		font-size: 1.15rem;
 		line-height: 1;
 		filter: drop-shadow(0 2px 8px hsl(var(--theme-hue) 70% 18% / 0.25));
 	}

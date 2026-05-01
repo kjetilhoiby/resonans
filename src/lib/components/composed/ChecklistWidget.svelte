@@ -196,13 +196,13 @@
 				year={dayWheelData.year}
 				month={dayWheelData.month}
 				days={dayWheelData.days}
-				size={70}
+				size={60}
 			/>
 		</div>
 		<div class="dw-label" style:color={ringColor}>{label}</div>
 	{:else}
 		<div class="dw-ring">
-			<GoalRing pct={isComplete ? 100 : pct} size={70} strokeWidth={4} color={ringColor}>
+			<GoalRing pct={isComplete ? 100 : pct} size={60} strokeWidth={4} color={ringColor}>
 				<span class="dw-val" class:complete={isComplete}>{ringText}</span>
 			</GoalRing>
 		</div>
@@ -237,8 +237,8 @@
 <style>
 	.dw {
 		position: relative;
-		width: 90px;
-		min-height: 106px;
+		width: 78px;
+		min-height: 90px;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
@@ -250,13 +250,13 @@
 
 	.dw-ring {
 		position: relative;
-		width: 70px;
-		height: 70px;
+		width: 60px;
+		height: 60px;
 	}
 
 	.dw-empty-ring {
-		width: 70px;
-		height: 70px;
+		width: 60px;
+		height: 60px;
 		border-radius: 50%;
 		border: 2px dashed #2a2e3f;
 		display: flex;
