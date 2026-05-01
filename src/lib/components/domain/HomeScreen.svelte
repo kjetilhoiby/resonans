@@ -22,6 +22,8 @@
 	import ChatStatusWidget from './ChatStatusWidget.svelte';
 	import ChecklistWidget, { type Checklist } from '../composed/ChecklistWidget.svelte';
 	import ChecklistSheet from '../ui/ChecklistSheet.svelte';
+	import FlowSheet from '../flows/FlowSheet.svelte';
+	import { FLOWS } from '$lib/flows/registry';
 	import PageHeader from '../ui/PageHeader.svelte';
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
 	import { prefetchDashboard } from '$lib/client/dashboard-cache';
@@ -178,6 +180,91 @@
 	// -- Sjekklister --
 	let activeChecklists = $state<Checklist[]>([]);
 	let openChecklist = $state<Checklist | null>(null);
+
+	// -- Planleggingsflyt fra tom sjekkliste --
+	let homeDayPlanOpen = $state(false);
+	let homeDayPlanIso = $state('');
+	let homeDayPlanWeekKey = $state('');
+	let homeWeekPlanOpen = $state(false);
+	let homeMonthPlanOpen = $state(false);
+	let homeMonthPlanContext = $state<import('$lib/flows/types').FlowContext>({});
+
+	async function handleChecklistPlan(context: string | null) {
+		if (!context) return;
+		const dayMatch = context.match(/^week:(\d{4}-W\d{2}):day:(\d{4}-\d{2}-\d{2})$/);
+		if (dayMatch) {
+			homeDayPlanWeekKey = dayMatch[1];
+			homeDayPlanIso = dayMatch[2];
+			homeDayPlanOpen = true;
+			return;
+		}
+		if (/^week:\d{4}-W\d{2}$/.test(context)) {
+			homeWeekPlanOpen = true;
+			return;
+		}
+		if (/^month:/.test(context)) {
+			const monthKey = context.replace('month:', '');
+			try {
+				const res = await fetch(`/api/month-plan/context?month=${encodeURIComponent(monthKey)}`);
+				if (!res.ok) { void goto('/maanedsplan'); return; }
+				const ctx = await res.json() as {
+					currentMonthKey: string;
+					currentMonthName: string;
+					prevMonthKey: string;
+					prevMonthName: string;
+					note: string;
+					reflection: string;
+					uncheckedItems: Array<{ id: string; text: string }>;
+					monthGoals: Array<{ title: string; currentValue: number; target: { value: number; unit: string }; trackingMetric: string }>;
+					recurringTasks: string[];
+				};
+				const goalLines = ctx.monthGoals.map((g) => {
+					const pct = g.target.value > 0 ? Math.round((g.currentValue / g.target.value) * 100) : null;
+					return `- ${g.title}: ${g.currentValue} av ${g.target.value} ${g.target.unit}${pct !== null ? ` (${pct}%)` : ''}`;
+				}).join('\n');
+				homeMonthPlanContext = {
+					monthKey: ctx.currentMonthKey,
+					openItems: ctx.uncheckedItems,
+					weekTasks: ctx.recurringTasks,
+					prevMonthData: {
+						monthName: ctx.prevMonthName,
+						note: ctx.note,
+						reflection: ctx.reflection,
+						uncheckedItems: ctx.uncheckedItems,
+						monthGoals: ctx.monthGoals,
+						recurringTasks: ctx.recurringTasks
+					},
+					systemPrompts: {
+						refleksjon: [
+							`Det er nå ${ctx.currentMonthName} og brukeren er klar for månedsplanlegging.`,
+							ctx.prevMonthName ? `\nForrige måned (${ctx.prevMonthName}):` : '',
+							ctx.note ? `Månedsnotat: "${ctx.note}"` : '',
+							ctx.reflection ? `Refleksjon: "${ctx.reflection}"` : '',
+							goalLines ? `\nMål:\n${goalLines}` : '',
+							'\nGi en kort, varm oppsummering av forrige måned (2-3 setninger). Avslutt med ett åpent spørsmål om hva som gikk bra og hva som var utfordrende.'
+						].filter(Boolean).join('\n'),
+						maal: [
+							`Du hjelper brukeren å sette månedsmål for ${ctx.currentMonthName}.`,
+							goalLines ? `\nForrige måneds mål (${ctx.prevMonthName}):\n${goalLines}` : '\nIngen mål fra forrige måned.',
+							'\nGå kort gjennom hvert mål og foreslå om det bør videreføres, justeres opp eller ned.',
+							'Avslutt alltid med en komplett målliste i dette eksakte formatet (ikke noe tekst etter):',
+							'MÅNEDSMÅL:',
+							'- [tittel]: [verdi] [enhet]'
+						].filter(Boolean).join('\n'),
+						maanedshistorie: [
+							`Du hjelper brukeren å skrive en kort månedsbeskrivelse for ${ctx.currentMonthName}.`,
+							`Spør: "Hva handler ${ctx.currentMonthName} om for deg?"`,
+							'Basert på svaret, skriv et utkast på 1-2 avsnitt. Vær personlig og konkret.',
+							'La brukeren justere utkastet via chat. Avslutt med det endelige notatet.'
+						].join('\n')
+					}
+				};
+				homeMonthPlanOpen = true;
+			} catch {
+				void goto('/maanedsplan');
+			}
+		}
+	}
 
 	// -- Hjemstedsvær fjernet (vises nå bare i ChecklistSheet og ukeplan-dagsvelger) --
 
@@ -478,14 +565,39 @@
 		}));
 	});
 
-	const homeWidgetEntries = $derived.by<HomeWidgetEntry[]>(() => [
-		...activeChecklists.map((checklist) => ({
+	const homeWidgetEntries = $derived.by<HomeWidgetEntry[]>(() => {
+		const checklistEntries = activeChecklists.map((checklist) => ({
 			id: `checklist:${checklist.id}`,
 			kind: 'checklist' as const,
 			checklist
-		})),
-		...metricWidgetEntries
-	]);
+		}));
+
+		// Legg til syntetiske plassholdere for perioder uten sjekkliste
+		const now = new Date();
+		const monthCtx = `month:${toLocalYearMonth(now)}`;
+		const weekCtx = `week:${getLocalIsoWeekDashed(now)}`;
+		const dayCtx = `week:${getLocalIsoWeekDashed(now)}:day:${toLocalIsoDate(now)}`;
+
+		const syntheticEntries: HomeWidgetEntry[] = [];
+		for (const ctx of [monthCtx, weekCtx, dayCtx]) {
+			if (!activeChecklists.some((c) => c.context === ctx)) {
+				syntheticEntries.push({
+					id: `synthetic:${ctx}`,
+					kind: 'checklist',
+					checklist: {
+						id: `synthetic:${ctx}`,
+						title: '',
+						emoji: '📅',
+						context: ctx,
+						completedAt: null,
+						items: []
+					}
+				});
+			}
+		}
+
+		return [...syntheticEntries, ...checklistEntries, ...metricWidgetEntries];
+	});
 
 	function chunkWidgets<T>(rows: T[], size: number): T[][] {
 		if (rows.length === 0) return [[]];
@@ -1569,10 +1681,12 @@
 							{/if}
 
 							{#if item.kind === 'checklist' && item.checklist}
+								{@const isSynthetic = item.checklist.id.startsWith('synthetic:')}
 								<ChecklistWidget
 									checklist={item.checklist}
-									onclick={() => (openChecklist = item.checklist!)}
-									onremove={async () => {
+									onclick={isSynthetic ? undefined : () => (openChecklist = item.checklist!)}
+									onplan={() => handleChecklistPlan(item.checklist?.context ?? null)}
+									onremove={isSynthetic ? undefined : async () => {
 										if (!item.checklist) return;
 										await fetch(`/api/checklists/${item.checklist.id}`, { method: 'DELETE' });
 										activeChecklists = activeChecklists.filter((c) => c.id !== item.checklist?.id);
@@ -2241,6 +2355,42 @@
 		onDeleted={() => {
 			activeChecklists = activeChecklists.filter((c) => c.id !== openChecklist?.id);
 			openChecklist = null;
+		}}
+	/>
+{/if}
+
+<!-- ── PLANLEGGINGSFLYTER FRA TOM SJEKKLISTE ── -->
+{#if homeDayPlanOpen}
+	<FlowSheet
+		flow={FLOWS['day_plan']}
+		context={{ dayIso: homeDayPlanIso, weekDashedKey: homeDayPlanWeekKey }}
+		onclose={() => (homeDayPlanOpen = false)}
+		oncomplete={async () => {
+			homeDayPlanOpen = false;
+			await fetchChecklists();
+		}}
+	/>
+{/if}
+
+{#if homeWeekPlanOpen}
+	<FlowSheet
+		flow={FLOWS['planning_week_plan']}
+		onclose={() => (homeWeekPlanOpen = false)}
+		oncomplete={async () => {
+			homeWeekPlanOpen = false;
+			await fetchChecklists();
+		}}
+	/>
+{/if}
+
+{#if homeMonthPlanOpen}
+	<FlowSheet
+		flow={FLOWS['planning_month_plan']}
+		context={homeMonthPlanContext}
+		onclose={() => (homeMonthPlanOpen = false)}
+		oncomplete={async () => {
+			homeMonthPlanOpen = false;
+			await fetchChecklists();
 		}}
 	/>
 {/if}

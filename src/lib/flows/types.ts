@@ -12,6 +12,7 @@ export type FlowId =
 	| 'planning_week_plan'
 	| 'planning_week_review'
 	| 'planning_goal_setup'
+	| 'planning_month_plan'
 	| 'food_meal_chat'
 	| 'day_plan'
 	| 'day_close';
@@ -75,6 +76,17 @@ export interface FlowContext {
 	systemPrompts?: Record<string, string>;
 	/** Per-step initial prompt/prefill keyed by step id — overrides FlowStep.prompt */
 	prompts?: Record<string, string>;
+	/** Target month being planned, e.g. "2026-05" */
+	monthKey?: string;
+	/** Previous month's data injected server-side for AI context building */
+	prevMonthData?: {
+		monthName: string;
+		note: string;
+		reflection: string;
+		uncheckedItems: Array<{ id: string; text: string }>;
+		monthGoals: Array<{ title: string; currentValue: number; target: { value: number; unit: string }; trackingMetric: string }>;
+		recurringTasks: string[];
+	};
 }
 
 export interface Flow {

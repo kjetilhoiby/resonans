@@ -11,9 +11,18 @@ if (!connectionString) {
 }
 
 // Neon HTTP-driver: bruker HTTPS fetch i stedet for TCP, ingen cold-start overhead
-const sql = neon(connectionString);
-export const db = drizzle(sql, { schema });
+const neonSql = neon(connectionString);
+export const db = drizzle(neonSql, { schema });
 
-// For migrations og raw SQL (conversation-schema, widget-data, etc.)
+/**
+ * Raw parameterisert SQL via Neon HTTP-driver.
+ * Ingen persistent TCP-tilkobling — trygt mot Neon serverless idle-disconnect.
+ * API: sql(queryString, paramsArray) → Row[]
+ */
+export function sql(query: string, params?: unknown[]): Promise<Record<string, unknown>[]> {
+	return neonSql.query(query, params) as Promise<Record<string, unknown>[]>;
+}
+
+// For migrations som krever persistent tilkobling
 export const migrationClient = postgres(connectionString, { max: 1 });
 export const pgClient = migrationClient;

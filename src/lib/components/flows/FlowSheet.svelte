@@ -305,6 +305,12 @@
 
 		validationError = null;
 
+		// Capture last assistant message for chat steps so onComplete can use it
+		if (currentStep.type === 'chat') {
+			const lastAssistant = [...chatMessages].reverse().find((m) => m.role === 'assistant');
+			if (lastAssistant) flowData = { ...flowData, [`${currentStep.id}_lastMessage`]: lastAssistant.text };
+		}
+
 		if (isLastStep) {
 			await handleComplete();
 		} else {

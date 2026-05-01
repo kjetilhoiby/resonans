@@ -25,9 +25,10 @@
 		checklist: Checklist;
 		onclick?: () => void;
 		onremove?: () => void;
+		onplan?: () => void;
 	}
 
-	let { checklist, onclick, onremove }: Props = $props();
+	let { checklist, onclick, onremove, onplan }: Props = $props();
 
 	const total = $derived(checklist.items.length);
 	const done = $derived(checklist.items.filter((i) => i.checked).length);
@@ -123,6 +124,10 @@
 
 	function handleClick() {
 		if (showMenu) return;
+		if (total === 0 && onplan) {
+			onplan();
+			return;
+		}
 		onclick?.();
 	}
 </script>
@@ -140,13 +145,20 @@
 	title={checklist.title}
 	style:--c={ringColor}
 >
-	<div class="dw-ring">
-		<GoalRing pct={isComplete ? 100 : pct} size={70} strokeWidth={4} color={ringColor}>
-			<span class="dw-val" class:complete={isComplete}>{ringText}</span>
-		</GoalRing>
-	</div>
-
-	<div class="dw-label" style:color={ringColor}>{label}</div>
+	{#if total === 0 && onplan}
+		<div class="dw-empty-ring">
+			<span class="dw-empty-plus">+</span>
+		</div>
+		<div class="dw-label dw-label--empty">{label}</div>
+		<span class="dw-plan-hint">Planlegg</span>
+	{:else}
+		<div class="dw-ring">
+			<GoalRing pct={isComplete ? 100 : pct} size={70} strokeWidth={4} color={ringColor}>
+				<span class="dw-val" class:complete={isComplete}>{ringText}</span>
+			</GoalRing>
+		</div>
+		<div class="dw-label" style:color={ringColor}>{label}</div>
+	{/if}
 
 	{#if showMenu}
 		<div
@@ -191,6 +203,50 @@
 		position: relative;
 		width: 70px;
 		height: 70px;
+	}
+
+	.dw-empty-ring {
+		width: 70px;
+		height: 70px;
+		border-radius: 50%;
+		border: 2px dashed #2a2e3f;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		transition: border-color 0.15s;
+	}
+	.dw:hover .dw-empty-ring {
+		border-color: #7c8ef5;
+	}
+
+	.dw-empty-plus {
+		font-size: 1.4rem;
+		font-weight: 300;
+		color: #3a3f52;
+		line-height: 1;
+		transition: color 0.15s;
+	}
+	.dw:hover .dw-empty-plus {
+		color: #7c8ef5;
+	}
+
+	.dw-label--empty {
+		color: #3a3f52 !important;
+		transition: color 0.15s;
+	}
+	.dw:hover .dw-label--empty {
+		color: #7c8ef5 !important;
+	}
+
+	.dw-plan-hint {
+		font-size: 0.6rem;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: #2e3347;
+		transition: color 0.15s;
+	}
+	.dw:hover .dw-plan-hint {
+		color: #7c8ef5;
 	}
 
 	.dw-val {

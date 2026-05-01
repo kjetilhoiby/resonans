@@ -12,7 +12,7 @@
  * }
  */
 import { json, error } from '@sveltejs/kit';
-import { db, pgClient } from '$lib/db';
+import { db, sql } from '$lib/db';
 import { userWidgets } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { ensureCategorizedEventsForRange } from '$lib/server/integrations/categorized-events';
@@ -166,7 +166,7 @@ async function fetchKeywordFilteredAmountRows(
 	const categoryFilter = buildCategoryFilter('bank_transaction', filterCategory, loadedRules);
 	if (!categoryFilter) return [];
 
-	const rows = await pgClient.unsafe(
+	const rows = await sql(
 		`
 		SELECT
 			timestamp,
@@ -200,7 +200,7 @@ async function fetchCategorizedAmountRows(
 	const wantedCategory = normalizeCategoryId(filterCategory);
 	if (!wantedCategory) return [];
 
-	const rows = await pgClient.unsafe(
+	const rows = await sql(
 		`
 		SELECT
 			timestamp,
@@ -239,7 +239,7 @@ async function collectAmountFilterDebug(
 
 	const wantedCategory = normalizeCategoryId(filterCategory);
 
-	const rows = await pgClient.unsafe(
+	const rows = await sql(
 		`
 		SELECT
 			resolved_category AS category,
@@ -266,7 +266,7 @@ async function collectAmountFilterDebug(
 		count: Number(row.count || 0)
 	}));
 
-	const sampleRows = await pgClient.unsafe(
+	const sampleRows = await sql(
 		`
 		SELECT
 			timestamp,
@@ -381,7 +381,7 @@ async function fetchTimeSeries(
 		ORDER BY 1 ASC
 	`;
 
-	const rows = await pgClient.unsafe(query, [userId, metricConf.dataType, from.toISOString(), to.toISOString()]);
+	const rows = await sql(query, [userId, metricConf.dataType, from.toISOString(), to.toISOString()]);
 	return (rows as unknown as { bucket: string; value: string }[]).map((r) => ({
 		bucket: r.bucket,
 		value: parseFloat(r.value) || 0,
@@ -443,9 +443,9 @@ async function fetchSingleValue(
 		`;
 	}
 
-	const rows = await pgClient.unsafe(query, [userId, metricConf.dataType, from.toISOString(), to.toISOString()]);
+	const rows = await sql(query, [userId, metricConf.dataType, from.toISOString(), to.toISOString()]);
 	const val = rows[0]?.value;
-	return val !== null && val !== undefined ? parseFloat(val) : null;
+	return val !== null && val !== undefined ? parseFloat(String(val)) : null;
 }
 
 function roundVal(v: number | null, metric: string): number | null {

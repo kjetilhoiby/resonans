@@ -6,6 +6,9 @@
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import { startNavMetric } from '$lib/client/nav-metrics';
 	import { groupChecklistItems, activityEmoji } from '$lib/utils/checklist-group';
+	import FlowSheet from '$lib/components/flows/FlowSheet.svelte';
+	import { FLOWS } from '$lib/flows/registry';
+	import type { FlowContext } from '$lib/flows/types';
 
 	type SaveState = 'idle' | 'saving' | 'saved';
 
@@ -124,6 +127,82 @@
 		items: 'idle',
 		review: 'idle'
 	});
+
+	let monthPlanFlowOpen = $state(false);
+	let monthPlanFlowContext = $state<FlowContext>({});
+	let openingMonthPlanFlow = $state(false);
+
+	async function openMonthPlanFlow() {
+		openingMonthPlanFlow = true;
+		try {
+			const res = await fetch(`/api/month-plan/context?month=${encodeURIComponent(data.month.dashedKey)}`);
+			if (!res.ok) return;
+			const ctx = await res.json() as {
+				currentMonthKey: string;
+				currentMonthName: string;
+				prevMonthKey: string;
+				prevMonthName: string;
+				note: string;
+				reflection: string;
+				uncheckedItems: Array<{ id: string; text: string }>;
+				monthGoals: Array<{ title: string; currentValue: number; target: { value: number; unit: string }; trackingMetric: string }>;
+				recurringTasks: string[];
+			};
+
+			const goalLines = ctx.monthGoals.map((g) => {
+				const pct = g.target.value > 0 ? Math.round((g.currentValue / g.target.value) * 100) : null;
+				const pctStr = pct !== null ? ` (${pct}%)` : '';
+				return `- ${g.title}: ${g.currentValue} av ${g.target.value} ${g.target.unit}${pctStr}`;
+			}).join('\n');
+
+			const refleksjonPrompt = [
+				`Det er nå ${ctx.currentMonthName} og brukeren er klar for månedsplanlegging.`,
+				ctx.prevMonthName ? `\nForrige måned (${ctx.prevMonthName}):` : '',
+				ctx.note ? `Månedsnotat: "${ctx.note}"` : '',
+				ctx.reflection ? `Refleksjon: "${ctx.reflection}"` : '',
+				goalLines ? `\nMål:\n${goalLines}` : '',
+				'\nGi en kort, varm oppsummering av forrige måned (2-3 setninger). Avslutt med ett åpent spørsmål om hva som gikk bra og hva som var utfordrende.'
+			].filter(Boolean).join('\n');
+
+			const maalPrompt = [
+				`Du hjelper brukeren å sette månedsmål for ${ctx.currentMonthName}.`,
+				goalLines ? `\nForrige måneds mål (${ctx.prevMonthName}):\n${goalLines}` : '\nIngen mål fra forrige måned.',
+				'\nGå kort gjennom hvert mål og foreslå om det bør videreføres, justeres opp eller ned basert på progresjon.',
+				'Avslutt alltid med en komplett målliste i dette eksakte formatet (ikke noe tekst etter):',
+				'MÅNEDSMÅL:',
+				'- [tittel]: [verdi] [enhet]'
+			].filter(Boolean).join('\n');
+
+			const maanedshistoriePrompt = [
+				`Du hjelper brukeren å skrive en kort månedsbeskrivelse for ${ctx.currentMonthName}.`,
+				'Spør: "Hva handler ' + ctx.currentMonthName + ' om for deg?"',
+				'Basert på svaret, skriv et utkast på 1-2 avsnitt. Vær personlig og konkret.',
+				'La brukeren justere utkastet via chat. Avslutt med det endelige notatet.'
+			].join('\n');
+
+			monthPlanFlowContext = {
+				monthKey: ctx.currentMonthKey,
+				openItems: ctx.uncheckedItems,
+				weekTasks: ctx.recurringTasks,
+				prevMonthData: {
+					monthName: ctx.prevMonthName,
+					note: ctx.note,
+					reflection: ctx.reflection,
+					uncheckedItems: ctx.uncheckedItems,
+					monthGoals: ctx.monthGoals,
+					recurringTasks: ctx.recurringTasks
+				},
+				systemPrompts: {
+					refleksjon: refleksjonPrompt,
+					maal: maalPrompt,
+					maanedshistorie: maanedshistoriePrompt
+				}
+			};
+			monthPlanFlowOpen = true;
+		} finally {
+			openingMonthPlanFlow = false;
+		}
+	}
 
 	$effect(() => {
 		monthGoalsState = structuredClone(data.monthGoals);
@@ -578,15 +657,25 @@
 		</div>
 	</header>
 
-	<!-- Previous month context -->
-	{#if hasPrevContext && !monthIsPlanned}
+	<!-- Previous month context + planning trigger -->
+	{#if !monthIsPlanned}
 		<section class="mp-card mp-prev-context">
-			<p class="mp-subhead">Fra {data.previousMonthSummary.monthName}</p>
-			{#if data.previousMonthSummary.reflection}
-				<p class="mp-prev-text">"{data.previousMonthSummary.reflection}"</p>
-			{:else if data.previousMonthSummary.note}
-				<p class="mp-prev-text">"{data.previousMonthSummary.note}"</p>
+			{#if hasPrevContext}
+				<p class="mp-subhead">Fra {data.previousMonthSummary.monthName}</p>
+				{#if data.previousMonthSummary.reflection}
+					<p class="mp-prev-text">"{data.previousMonthSummary.reflection}"</p>
+				{:else if data.previousMonthSummary.note}
+					<p class="mp-prev-text">"{data.previousMonthSummary.note}"</p>
+				{/if}
 			{/if}
+			<button
+				type="button"
+				class="mp-plan-btn"
+				onclick={() => void openMonthPlanFlow()}
+				disabled={openingMonthPlanFlow}
+			>
+				{openingMonthPlanFlow ? 'Laster…' : `Planlegg ${data.month.monthName} →`}
+			</button>
 		</section>
 	{/if}
 
@@ -936,6 +1025,13 @@
 
 	</div>
 </AppPage>
+
+<FlowSheet
+	flow={monthPlanFlowOpen ? FLOWS.planning_month_plan : null}
+	context={monthPlanFlowContext}
+	onclose={() => (monthPlanFlowOpen = false)}
+	oncomplete={async () => { monthPlanFlowOpen = false; await invalidateAll(); }}
+/>
 
 <style>
 	.mp-page {
@@ -1663,4 +1759,21 @@
 		margin: 0;
 		padding: 4px 2px;
 	}
+
+	.mp-plan-btn {
+		align-self: flex-start;
+		height: 36px;
+		padding: 0 18px;
+		border-radius: 10px;
+		border: none;
+		background: #3a4adf;
+		color: #fff;
+		font: inherit;
+		font-size: 0.88rem;
+		font-weight: 650;
+		cursor: pointer;
+		transition: background 0.12s, opacity 0.12s;
+	}
+	.mp-plan-btn:hover:not(:disabled) { background: #4d5ef0; }
+	.mp-plan-btn:disabled { opacity: 0.55; cursor: default; }
 </style>

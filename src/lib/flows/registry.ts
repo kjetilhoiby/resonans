@@ -456,6 +456,74 @@ export const FLOWS: Record<FlowId, Flow> = {
 				openItemsKey: 'openItems'
 			}
 		]
+	},
+
+	planning_month_plan: {
+		id: 'planning_month_plan',
+		name: 'Planlegg måneden',
+		description: 'Reflekter over forrige måned og legg planen for neste',
+		icon: '🗓️',
+		domain: 'planning',
+		trigger: 'manual',
+		estimatedMinutes: 15,
+		steps: [
+			{
+				id: 'refleksjon',
+				type: 'chat',
+				title: 'Refleksjon over forrige måned',
+				autoSend: true,
+				prompt: 'Oppsummer forrige måned og inviter til refleksjon.'
+			},
+			{
+				id: 'uloste_oppgaver',
+				type: 'decision-list',
+				title: 'Uløste oppgaver – hva tar du med videre?',
+				openItemsKey: 'openItems'
+			},
+			{
+				id: 'gjentakende_oppgaver',
+				type: 'checklist',
+				title: 'Gjentakende oppgaver',
+				extraItemsKey: 'weekTasks'
+			},
+			{
+				id: 'maal',
+				type: 'chat',
+				title: 'Månedsmål',
+				autoSend: true,
+				prompt: 'Gjennomgå målene fra forrige måned og hjelp med å sette mål for neste måned.'
+			},
+			{
+				id: 'maanedshistorie',
+				type: 'chat',
+				title: 'Månedshistorie',
+				autoSend: true,
+				prompt: 'Hjelp brukeren å skrive en kort månedsbeskrivelse.'
+			}
+		],
+		onComplete: async (data, context) => {
+			const carryoverTexts = (context.openItems ?? [])
+				.filter((item) => (data['carryoverIds'] as string[] ?? []).includes(item.id))
+				.map((item) => item.text);
+
+			const selectedTasks = (data['selectedTasks'] as string[]) ?? [];
+			const goalUpdatesText = (data['maal_lastMessage'] as string) ?? '';
+			const narrative = (data['maanedshistorie_lastMessage'] as string) ?? '';
+			const prevMonthGoals = context.prevMonthData?.monthGoals ?? [];
+
+			await fetch('/api/month-plan/complete', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					monthKey: context.monthKey,
+					carryoverTexts,
+					selectedTasks,
+					goalUpdatesText,
+					prevMonthGoals,
+					narrative
+				})
+			});
+		}
 	}
 };
 
