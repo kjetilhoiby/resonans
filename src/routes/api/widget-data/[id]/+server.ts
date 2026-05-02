@@ -153,6 +153,7 @@ type AmountFilterDebug = {
 	projectionCoveragePct: number;
 	topClassifiedCategories: Array<{ category: string; count: number }>;
 	sampleMatches: Array<{ date: string; description: string; amount: number }>;
+	sensorEventsTxCount: number;
 };
 
 async function fetchKeywordFilteredAmountRows(
@@ -304,6 +305,15 @@ async function collectAmountFilterDebug(
 			amount: Math.abs(Number(tx.amount) || 0),
 		}));
 
+	const sensorCountRows = await sql(
+		`SELECT COUNT(*)::int AS count FROM sensor_events
+		 WHERE user_id = $1 AND data_type = 'bank_transaction'
+		 AND timestamp >= $2 AND timestamp <= $3
+		 AND (data->>'amount')::numeric < 0`,
+		[userId, from.toISOString(), to.toISOString()]
+	) as unknown as Array<{ count: number }>;
+	const sensorEventsTxCount = Number(sensorCountRows[0]?.count || 0);
+
 	return {
 		filterCategory,
 		filterCategoryNormalized: wantedCategory,
@@ -315,6 +325,7 @@ async function collectAmountFilterDebug(
 			: Math.round((totalSpendTxCountInRange / Math.max(totalSpendTxCountInRange, keywordRows.length)) * 100),
 		topClassifiedCategories,
 		sampleMatches,
+		sensorEventsTxCount,
 	};
 }
 
@@ -520,6 +531,8 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 	const prev = getPreviousRange(widget.range);
 	let effectiveRange = widget.range;
 	let usedRangeFallback = false;
+	let effectiveFrom = from;
+	let effectiveTo = to;
 
 	// Hent tidsserie (for sparkline), periodeaggregat (for current) og forrige periode (for delta) i parallell
 	const filterCategory = filterCategoryOverride !== null
@@ -586,6 +599,8 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 			prevValue = fallbackPrevValue;
 			effectiveRange = 'last30';
 			usedRangeFallback = true;
+			effectiveFrom = fallbackFromTo.from;
+			effectiveTo = fallbackFromTo.to;
 		}
 	}
 
@@ -612,9 +627,14 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 		}
 	}
 
+	const debugRangeOverride = debugEnabled ? url.searchParams.get('range') : null;
+	const { from: debugFrom, to: debugTo } = debugRangeOverride
+		? getRangeDate(debugRangeOverride)
+		: { from: effectiveFrom, to: effectiveTo };
+
 	const amountFilterDebug =
 		debugEnabled && widget.metricType === 'amount' && filterCategory
-			? await collectAmountFilterDebug(userId, from, to, filterCategory, filterSubcategory)
+			? await collectAmountFilterDebug(userId, debugFrom, debugTo, filterCategory, filterSubcategory)
 			: null;
 
 	return json({
@@ -637,6 +657,8 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 					usedRangeFallback,
 					from: from.toISOString(),
 					to: to.toISOString(),
+					debugFrom: debugFrom.toISOString(),
+					debugTo: debugTo.toISOString(),
 					seriesBuckets: series.length,
 					amountFilter: amountFilterDebug,
 				}

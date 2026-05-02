@@ -46,6 +46,7 @@ export interface UpdateWidgetInput {
 	thresholdSuccess?: number | null;
 	color?: string;
 	unit?: string;
+	range?: WidgetRange;
 	filterCategory?: string | null;
 	filterSubcategory?: string | null;
 }
@@ -164,6 +165,7 @@ export async function updateUserWidget(userId: string, widgetId: string, updates
 	if (updates.thresholdSuccess === null) payload.thresholdSuccess = null;
 	if (typeof updates.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(updates.color)) payload.color = updates.color;
 	if (typeof updates.unit === 'string' && updates.unit.trim()) payload.unit = updates.unit.trim().slice(0, 20);
+	if (typeof updates.range === 'string' && (VALID_WIDGET_RANGES as readonly string[]).includes(updates.range)) payload.range = updates.range;
 	if (typeof updates.filterCategory === 'string' && updates.filterCategory.trim()) payload.filterCategory = updates.filterCategory.trim();
 	if (updates.filterCategory === null) payload.filterCategory = null;
 	if (typeof updates.filterSubcategory === 'string' && updates.filterSubcategory.trim()) payload.filterSubcategory = updates.filterSubcategory.trim();
