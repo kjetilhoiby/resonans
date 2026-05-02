@@ -1,15 +1,25 @@
 <script lang="ts">
+	import { CATEGORIES } from '$lib/integrations/transaction-categories-client';
+
 	interface WidgetConfig {
 		id: string;
 		title: string;
 		metricType: string;
+		aggregation?: string;
+		period?: string;
+		range?: string;
+		sortOrder?: number;
+		createdAt?: string;
 		unit: string;
 		color: string;
+		pinned?: boolean;
 		goal: number | null;
 		thresholdWarn: number | null;
 		thresholdSuccess: number | null;
 		filterCategory?: string | null;
 	}
+
+	let debugOpen = $state(false);
 
 	interface Props {
 		widget: WidgetConfig;
@@ -63,6 +73,10 @@
 		'diverse',
 		'ukategorisert',
 	] as const;
+
+	function categoryLabel(id: string): string {
+		return CATEGORIES[id as keyof typeof CATEGORIES]?.label ?? id;
+	}
 
 	const UNIT_OPTIONS: Record<string, string[]> = {
 		weight: ['kg', 'lb'],
@@ -237,7 +251,7 @@
 						<select class="field-input" bind:value={filterCategory}>
 							<option value="">Alle kategorier</option>
 							{#each FILTER_CATEGORIES as category}
-								<option value={category}>{category}</option>
+								<option value={category}>{categoryLabel(category)}</option>
 							{/each}
 						</select>
 					</label>
@@ -366,6 +380,21 @@
 			</div>
 			</section>
 		</div>
+
+		<!-- Debug-seksjon -->
+		<section class="config-section debug-section">
+			<button
+				class="debug-toggle"
+				type="button"
+				onclick={() => debugOpen = !debugOpen}
+			>
+				<span class="config-section-title">Debug: widget-konfig</span>
+				<span class="debug-chevron" class:open={debugOpen}>›</span>
+			</button>
+			{#if debugOpen}
+				<pre class="debug-json">{JSON.stringify(widget, null, 2)}</pre>
+			{/if}
+		</section>
 
 		<!-- Handlinger -->
 		<div class="sheet-actions">
@@ -649,5 +678,44 @@
 	}
 	.btn-save:active {
 		opacity: 0.85;
+	}
+
+	.debug-section {
+		padding: 8px 10px;
+	}
+
+	.debug-toggle {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		width: 100%;
+		background: none;
+		border: none;
+		padding: 0;
+		cursor: pointer;
+		color: inherit;
+	}
+
+	.debug-chevron {
+		font-size: 1rem;
+		color: #555;
+		transform: rotate(0deg);
+		transition: transform 0.15s;
+		display: inline-block;
+	}
+	.debug-chevron.open {
+		transform: rotate(90deg);
+	}
+
+	.debug-json {
+		margin: 8px 0 0;
+		padding: 8px;
+		background: #0a0a0a;
+		border-radius: 6px;
+		font-size: 0.65rem;
+		color: #5a8a5a;
+		overflow-x: auto;
+		white-space: pre;
+		line-height: 1.5;
 	}
 </style>

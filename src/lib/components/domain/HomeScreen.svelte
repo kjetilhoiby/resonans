@@ -165,6 +165,11 @@
 		color: string;
 		pinned: boolean;
 		metricType: string;
+		aggregation: string;
+		period: string;
+		range: string;
+		sortOrder: number;
+		createdAt: string;
 		goal: number | null;
 		thresholdWarn: number | null;
 		thresholdSuccess: number | null;
