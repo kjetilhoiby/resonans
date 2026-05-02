@@ -176,6 +176,21 @@
 	let configWidget = $state<UserWidget | null>(null);
 	let widgetPanelOpen = $state(false);
 	let themePanelOpen = $state(false);
+	let temaPressTimer: ReturnType<typeof setTimeout> | null = null;
+	let temaPressBlocked = false;
+
+	function handleTemaPressStart(e: PointerEvent) {
+		if (e.button !== 0 && e.pointerType === 'mouse') return;
+		temaPressTimer = setTimeout(() => {
+			temaPressBlocked = true;
+			themePanelOpen = true;
+		}, 500);
+	}
+
+	function handleTemaPressEnd() {
+		if (temaPressTimer) { clearTimeout(temaPressTimer); temaPressTimer = null; }
+		if (temaPressBlocked) { setTimeout(() => { temaPressBlocked = false; }, 50); }
+	}
 
 	// -- Sjekklister --
 	let activeChecklists = $state<Checklist[]>([]);
@@ -1759,16 +1774,17 @@
 
 	<!-- ── SONE 3: Tema ── -->
 	{#if !inputExpanded}
-		<section class="zone zone-tema" aria-label="Temaer" out:fly={{ y: -34, duration: 750 }} in:fly={{ y: -22, duration: 600 }}>
+		<section
+			class="zone zone-tema"
+			aria-label="Temaer"
+			out:fly={{ y: -34, duration: 750 }}
+			in:fly={{ y: -22, duration: 600 }}
+			onpointerdown={handleTemaPressStart}
+			onpointerup={handleTemaPressEnd}
+			onpointerleave={handleTemaPressEnd}
+			onpointercancel={handleTemaPressEnd}
+		>
 		<p class="zone-label">Temaer</p>
-		{#if themes.length > 0}
-			<button
-				class="tema-panel-fab"
-				onclick={() => (themePanelOpen = !themePanelOpen)}
-				aria-label="Alle temaer"
-				title="Alle temaer"
-			>≡</button>
-		{/if}
 		{#if relationshipOnboardingActive}
 			<div class="partner-onboarding-card partner-onboarding-card-theme">
 				<p class="partner-onboarding-kicker">Felles start</p>
@@ -1789,7 +1805,7 @@
 		{#if themes.length}
 			<div class="tema-v3-grid">
 				{#each themes.slice(0, 6) as theme}
-					<button class="tema-btn-v3" style={getThemeHueStyle(theme.name)} onclick={() => { startNavMetric('home', 'tema'); void goto(`/tema/${theme.id}`); }}>
+					<button class="tema-btn-v3" style={getThemeHueStyle(theme.name)} onclick={() => { if (temaPressBlocked) return; startNavMetric('home', 'tema'); void goto(`/tema/${theme.id}`); }}>
 						<span class="tema-btn-v3-icon">{theme.emoji}</span>
 						<span class="tema-btn-v3-label">{theme.name}</span>
 					</button>
@@ -2483,26 +2499,6 @@
 		margin: 0 0 6px;
 	}
 
-	.tema-panel-fab {
-		position: absolute;
-		right: 10px;
-		bottom: 10px;
-		z-index: 4;
-		width: 32px;
-		height: 32px;
-		border-radius: 999px;
-		border: 1px solid #3a3a3a;
-		background: #101010;
-		color: #d8d8d8;
-		font-size: 1.2rem;
-		line-height: 1;
-		cursor: pointer;
-	}
-
-	.tema-panel-fab:hover {
-		border-color: #4a5af0;
-		color: #ffffff;
-	}
 
 	/* ── Widget-pager ── */
 	.widget-pager {
