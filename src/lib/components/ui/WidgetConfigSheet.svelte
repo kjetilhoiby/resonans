@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { CATEGORIES } from '$lib/integrations/transaction-categories-client';
+	import { CATEGORIES, SUBCATEGORIES } from '$lib/integrations/transaction-categories-client';
 
 	interface WidgetConfig {
 		id: string;
@@ -17,6 +17,7 @@
 		thresholdWarn: number | null;
 		thresholdSuccess: number | null;
 		filterCategory?: string | null;
+		filterSubcategory?: string | null;
 	}
 
 	let debugOpen = $state(false);
@@ -78,6 +79,10 @@
 		return CATEGORIES[id as keyof typeof CATEGORIES]?.label ?? id;
 	}
 
+	function subcategoriesFor(catId: string): Array<{ key: string; label: string }> {
+		return SUBCATEGORIES[catId as keyof typeof SUBCATEGORIES] ?? [];
+	}
+
 	const UNIT_OPTIONS: Record<string, string[]> = {
 		weight: ['kg', 'lb'],
 		sleepDuration: ['timer', 'h', 'min'],
@@ -98,6 +103,7 @@
 	let color = $state(widget.color);
 	let unit = $state(widget.unit);
 	let filterCategory = $state(widget.filterCategory ?? '');
+	let filterSubcategory = $state(widget.filterSubcategory ?? '');
 
 	type FilterPreview = {
 		totalSpendTxCountInRange: number;
@@ -127,6 +133,7 @@
 		color = widget.color;
 		unit = widget.unit;
 		filterCategory = widget.filterCategory ?? '';
+		filterSubcategory = widget.filterSubcategory ?? '';
 		higherIsBetter = detectDirection();
 	});
 
@@ -149,6 +156,7 @@
 		previewError = '';
 
 		const params = new URLSearchParams({ debug: '1', filterCategory });
+		if (filterSubcategory) params.set('filterSubcategory', filterSubcategory);
 		void fetch(`/api/widget-data/${widget.id}?${params.toString()}`)
 			.then(async (res) => {
 				if (!res.ok) throw new Error('Klarte ikke hente treff-preview');
@@ -184,6 +192,7 @@
 			title: title.trim() || widget.title,
 			unit: unit.trim() || widget.unit,
 			filterCategory: filterCategory || null,
+			filterSubcategory: filterSubcategory || null,
 			goal: numOrNull(goalStr),
 			thresholdWarn: numOrNull(warnStr),
 			thresholdSuccess: numOrNull(successStr),
@@ -248,13 +257,25 @@
 				{#if widget.metricType === 'amount'}
 					<label class="field">
 						<span class="field-label">Kategori-filter</span>
-						<select class="field-input" bind:value={filterCategory}>
+						<select class="field-input" bind:value={filterCategory} onchange={() => filterSubcategory = ''}>
 							<option value="">Alle kategorier</option>
 							{#each FILTER_CATEGORIES as category}
 								<option value={category}>{categoryLabel(category)}</option>
 							{/each}
 						</select>
 					</label>
+
+					{#if filterCategory && subcategoriesFor(filterCategory).length > 0}
+						<label class="field">
+							<span class="field-label">Underkategori</span>
+							<select class="field-input" bind:value={filterSubcategory}>
+								<option value="">Alle underkategorier</option>
+								{#each subcategoriesFor(filterCategory) as sub}
+									<option value={sub.key}>{sub.label}</option>
+								{/each}
+							</select>
+						</label>
+					{/if}
 
 					<div class="filter-preview">
 						<div class="filter-preview-head">

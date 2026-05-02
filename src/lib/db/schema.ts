@@ -388,6 +388,7 @@ export const userWidgets = pgTable('user_widgets', {
 	thresholdSuccess: decimal('threshold_success'),         // Verdi over/under hvilken widgeten viser suksess
 	unit: text('unit').notNull(),                           // 'kg'|'h'|'km'|'kr'|'skritt'|'slag/min' etc.
 	filterCategory: text('filter_category'),                // Valgfri kategorifilter for amount-metrikk (f.eks. 'dagligvarer', 'kafe_og_restaurant', 'bil_og_transport')
+	filterSubcategory: text('filter_subcategory'),          // Valgfri subkategorifilter (f.eks. 'fastfood', 'kafe' under kafe_og_restaurant)
 	color: text('color').notNull().default('#7c8ef5'),      // Hex-farge for widget
 	pinned: boolean('pinned').default(false).notNull(),     // Vises på hjemmeskjerm
 	sortOrder: integer('sort_order').default(0).notNull(),  // Rekkefølge på hjemmeskjerm

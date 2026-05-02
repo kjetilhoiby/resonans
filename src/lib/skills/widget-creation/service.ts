@@ -30,6 +30,7 @@ export interface CreateWidgetInput {
 	period: WidgetPeriod;
 	range: WidgetRange;
 	filterCategory?: string | null;
+	filterSubcategory?: string | null;
 	goal?: number | null;
 	unit: string;
 	color?: string | null;
@@ -46,6 +47,7 @@ export interface UpdateWidgetInput {
 	color?: string;
 	unit?: string;
 	filterCategory?: string | null;
+	filterSubcategory?: string | null;
 }
 
 function parseDecimal(value: string | null): number | null {
@@ -116,6 +118,7 @@ export async function createUserWidget(userId: string, input: CreateWidgetInput)
 			range: input.range,
 			goal: input.goal != null ? String(input.goal) : null,
 			filterCategory: input.filterCategory ?? null,
+			filterSubcategory: input.filterSubcategory ?? null,
 			unit: input.unit.slice(0, 20),
 			color: input.color || '#7c8ef5',
 			pinned: input.pinned ?? false,
@@ -163,6 +166,8 @@ export async function updateUserWidget(userId: string, widgetId: string, updates
 	if (typeof updates.unit === 'string' && updates.unit.trim()) payload.unit = updates.unit.trim().slice(0, 20);
 	if (typeof updates.filterCategory === 'string' && updates.filterCategory.trim()) payload.filterCategory = updates.filterCategory.trim();
 	if (updates.filterCategory === null) payload.filterCategory = null;
+	if (typeof updates.filterSubcategory === 'string' && updates.filterSubcategory.trim()) payload.filterSubcategory = updates.filterSubcategory.trim();
+	if (updates.filterSubcategory === null) payload.filterSubcategory = null;
 
 	const [updated] = await db
 		.update(userWidgets)

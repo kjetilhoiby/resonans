@@ -174,6 +174,7 @@
 		thresholdWarn: number | null;
 		thresholdSuccess: number | null;
 		filterCategory: string | null;
+		filterSubcategory: string | null;
 	}
 	let pinnedWidgets = $state<UserWidget[]>([]);
 	let hiddenWidgets = $state<UserWidget[]>([]);
