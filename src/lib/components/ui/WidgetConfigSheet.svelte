@@ -1,15 +1,26 @@
 <script lang="ts">
+	import { CATEGORIES, SUBCATEGORIES } from '$lib/integrations/transaction-categories-client';
+
 	interface WidgetConfig {
 		id: string;
 		title: string;
 		metricType: string;
+		aggregation?: string;
+		period?: string;
+		range?: string;
+		sortOrder?: number;
+		createdAt?: string;
 		unit: string;
 		color: string;
+		pinned?: boolean;
 		goal: number | null;
 		thresholdWarn: number | null;
 		thresholdSuccess: number | null;
 		filterCategory?: string | null;
+		filterSubcategory?: string | null;
 	}
+
+	let debugOpen = $state(false);
 
 	interface Props {
 		widget: WidgetConfig;
@@ -64,6 +75,14 @@
 		'ukategorisert',
 	] as const;
 
+	function categoryLabel(id: string): string {
+		return CATEGORIES[id as keyof typeof CATEGORIES]?.label ?? id;
+	}
+
+	function subcategoriesFor(catId: string): Array<{ key: string; label: string }> {
+		return SUBCATEGORIES[catId as keyof typeof SUBCATEGORIES] ?? [];
+	}
+
 	const UNIT_OPTIONS: Record<string, string[]> = {
 		weight: ['kg', 'lb'],
 		sleepDuration: ['timer', 'h', 'min'],
@@ -84,6 +103,7 @@
 	let color = $state(widget.color);
 	let unit = $state(widget.unit);
 	let filterCategory = $state(widget.filterCategory ?? '');
+	let filterSubcategory = $state(widget.filterSubcategory ?? '');
 
 	type FilterPreview = {
 		totalSpendTxCountInRange: number;
@@ -113,6 +133,7 @@
 		color = widget.color;
 		unit = widget.unit;
 		filterCategory = widget.filterCategory ?? '';
+		filterSubcategory = widget.filterSubcategory ?? '';
 		higherIsBetter = detectDirection();
 	});
 
@@ -135,6 +156,7 @@
 		previewError = '';
 
 		const params = new URLSearchParams({ debug: '1', filterCategory });
+		if (filterSubcategory) params.set('filterSubcategory', filterSubcategory);
 		void fetch(`/api/widget-data/${widget.id}?${params.toString()}`)
 			.then(async (res) => {
 				if (!res.ok) throw new Error('Klarte ikke hente treff-preview');
@@ -170,6 +192,7 @@
 			title: title.trim() || widget.title,
 			unit: unit.trim() || widget.unit,
 			filterCategory: filterCategory || null,
+			filterSubcategory: filterSubcategory || null,
 			goal: numOrNull(goalStr),
 			thresholdWarn: numOrNull(warnStr),
 			thresholdSuccess: numOrNull(successStr),
@@ -234,13 +257,25 @@
 				{#if widget.metricType === 'amount'}
 					<label class="field">
 						<span class="field-label">Kategori-filter</span>
-						<select class="field-input" bind:value={filterCategory}>
+						<select class="field-input" bind:value={filterCategory} onchange={() => filterSubcategory = ''}>
 							<option value="">Alle kategorier</option>
 							{#each FILTER_CATEGORIES as category}
-								<option value={category}>{category}</option>
+								<option value={category}>{categoryLabel(category)}</option>
 							{/each}
 						</select>
 					</label>
+
+					{#if filterCategory && subcategoriesFor(filterCategory).length > 0}
+						<label class="field">
+							<span class="field-label">Underkategori</span>
+							<select class="field-input" bind:value={filterSubcategory}>
+								<option value="">Alle underkategorier</option>
+								{#each subcategoriesFor(filterCategory) as sub}
+									<option value={sub.key}>{sub.label}</option>
+								{/each}
+							</select>
+						</label>
+					{/if}
 
 					<div class="filter-preview">
 						<div class="filter-preview-head">
@@ -366,6 +401,21 @@
 			</div>
 			</section>
 		</div>
+
+		<!-- Debug-seksjon -->
+		<section class="config-section debug-section">
+			<button
+				class="debug-toggle"
+				type="button"
+				onclick={() => debugOpen = !debugOpen}
+			>
+				<span class="config-section-title">Debug: widget-konfig</span>
+				<span class="debug-chevron" class:open={debugOpen}>›</span>
+			</button>
+			{#if debugOpen}
+				<pre class="debug-json">{JSON.stringify(widget, null, 2)}</pre>
+			{/if}
+		</section>
 
 		<!-- Handlinger -->
 		<div class="sheet-actions">
@@ -649,5 +699,44 @@
 	}
 	.btn-save:active {
 		opacity: 0.85;
+	}
+
+	.debug-section {
+		padding: 8px 10px;
+	}
+
+	.debug-toggle {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		width: 100%;
+		background: none;
+		border: none;
+		padding: 0;
+		cursor: pointer;
+		color: inherit;
+	}
+
+	.debug-chevron {
+		font-size: 1rem;
+		color: #555;
+		transform: rotate(0deg);
+		transition: transform 0.15s;
+		display: inline-block;
+	}
+	.debug-chevron.open {
+		transform: rotate(90deg);
+	}
+
+	.debug-json {
+		margin: 8px 0 0;
+		padding: 8px;
+		background: #0a0a0a;
+		border-radius: 6px;
+		font-size: 0.65rem;
+		color: #5a8a5a;
+		overflow-x: auto;
+		white-space: pre;
+		line-height: 1.5;
 	}
 </style>

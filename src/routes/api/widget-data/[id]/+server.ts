@@ -194,11 +194,16 @@ async function fetchCategorizedAmountRows(
 	from: Date,
 	to: Date,
 	filterCategory: string,
+	filterSubcategory?: string | null,
 ): Promise<Array<{ timestamp: Date; value: number }>> {
 	await ensureCategorizedEventsForRange({ userId, from, to: new Date(to.getTime() + 1) });
 
 	const wantedCategory = normalizeCategoryId(filterCategory);
 	if (!wantedCategory) return [];
+
+	const subcatClause = filterSubcategory ? `AND resolved_subcategory = $5` : '';
+	const params: unknown[] = [userId, from.toISOString(), to.toISOString(), wantedCategory];
+	if (filterSubcategory) params.push(filterSubcategory);
 
 	const rows = await sql(
 		`
@@ -211,9 +216,10 @@ async function fetchCategorizedAmountRows(
 		  AND timestamp >= $2
 		  AND timestamp <= $3
 		  AND amount::numeric < 0
+		  ${subcatClause}
 		ORDER BY timestamp ASC
 		`,
-		[userId, from.toISOString(), to.toISOString(), wantedCategory]
+		params
 	) as unknown as Array<{ timestamp: Date; value: string | number }>;
 
 	const categorizedRows = rows.map((tx) => ({
@@ -234,6 +240,7 @@ async function collectAmountFilterDebug(
 	from: Date,
 	to: Date,
 	filterCategory: string,
+	filterSubcategory?: string | null,
 ): Promise<AmountFilterDebug> {
 	await ensureCategorizedEventsForRange({ userId, from, to: new Date(to.getTime() + 1) });
 
@@ -266,6 +273,10 @@ async function collectAmountFilterDebug(
 		count: Number(row.count || 0)
 	}));
 
+	const sampleSubcatClause = filterSubcategory ? `AND resolved_subcategory = $5` : '';
+	const sampleParams: unknown[] = [userId, from.toISOString(), to.toISOString(), wantedCategory];
+	if (filterSubcategory) sampleParams.push(filterSubcategory);
+
 	const sampleRows = await sql(
 		`
 		SELECT
@@ -278,10 +289,11 @@ async function collectAmountFilterDebug(
 		  AND timestamp <= $3
 		  AND amount::numeric < 0
 		  AND resolved_category = $4
+		  ${sampleSubcatClause}
 		ORDER BY timestamp DESC
 		LIMIT 6
 		`,
-		[userId, from.toISOString(), to.toISOString(), wantedCategory]
+		sampleParams
 	) as unknown as Array<{ timestamp: Date; description: string | null; amount: string | number }>;
 
 	const sampleMatches = sampleRows
@@ -338,9 +350,10 @@ async function fetchTimeSeries(
 	from: Date,
 	to: Date,
 	filterCategory?: string | null,
+	filterSubcategory?: string | null,
 ): Promise<{ bucket: string; value: number }[]> {
 	if (metricConf.dataType === 'bank_transaction' && filterCategory) {
-		const rows = await fetchCategorizedAmountRows(userId, from, to, filterCategory);
+		const rows = await fetchCategorizedAmountRows(userId, from, to, filterCategory, filterSubcategory);
 		const byBucket = new Map<string, number[]>();
 
 		for (const row of rows) {
@@ -396,9 +409,10 @@ async function fetchSingleValue(
 	from: Date,
 	to: Date,
 	filterCategory?: string | null,
+	filterSubcategory?: string | null,
 ): Promise<number | null> {
 	if (metricConf.dataType === 'bank_transaction' && filterCategory) {
-		const rows = await fetchCategorizedAmountRows(userId, from, to, filterCategory);
+		const rows = await fetchCategorizedAmountRows(userId, from, to, filterCategory, filterSubcategory);
 		if (rows.length === 0) return null;
 		return aggregateValues(rows.map((row) => row.value), aggregation);
 	}
@@ -511,14 +525,18 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 	const filterCategory = filterCategoryOverride !== null
 		? (filterCategoryOverride.trim() || null)
 		: (widget.filterCategory ?? null);
+	const filterSubcategoryOverride = url.searchParams.get('filterSubcategory');
+	const filterSubcategory = filterSubcategoryOverride !== null
+		? (filterSubcategoryOverride.trim() || null)
+		: (widget.filterSubcategory ?? null);
 	let [series, currentValue, prevValue] = await Promise.all([
-		fetchTimeSeries(userId, metricConf, widget.aggregation, widget.period, from, to, filterCategory),
+		fetchTimeSeries(userId, metricConf, widget.aggregation, widget.period, from, to, filterCategory, filterSubcategory),
 		// For avg/sum: bruk periodeaggregat som current (mer representativt enn kun siste dag)
 		// For latest: siste bøtteverdi er riktigst (peker på nyeste måling)
 		widget.aggregation !== 'latest'
-			? fetchSingleValue(userId, metricConf, widget.aggregation, from, to, filterCategory)
+			? fetchSingleValue(userId, metricConf, widget.aggregation, from, to, filterCategory, filterSubcategory)
 			: Promise.resolve(null),
-		fetchSingleValue(userId, metricConf, widget.aggregation, prev.from, prev.to, filterCategory),
+		fetchSingleValue(userId, metricConf, widget.aggregation, prev.from, prev.to, filterCategory, filterSubcategory),
 	]);
 
 	if (
@@ -537,7 +555,8 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 				widget.period,
 				fallbackFromTo.from,
 				fallbackFromTo.to,
-				filterCategory
+				filterCategory,
+				filterSubcategory
 			),
 			widget.aggregation !== 'latest'
 				? fetchSingleValue(
@@ -546,7 +565,8 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 					widget.aggregation,
 					fallbackFromTo.from,
 					fallbackFromTo.to,
-					filterCategory
+					filterCategory,
+					filterSubcategory
 				)
 				: Promise.resolve(null),
 			fetchSingleValue(
@@ -555,7 +575,8 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 				widget.aggregation,
 				fallbackPrev.from,
 				fallbackPrev.to,
-				filterCategory
+				filterCategory,
+				filterSubcategory
 			)
 		]);
 
@@ -593,7 +614,7 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 
 	const amountFilterDebug =
 		debugEnabled && widget.metricType === 'amount' && filterCategory
-			? await collectAmountFilterDebug(userId, from, to, filterCategory)
+			? await collectAmountFilterDebug(userId, from, to, filterCategory, filterSubcategory)
 			: null;
 
 	return json({
