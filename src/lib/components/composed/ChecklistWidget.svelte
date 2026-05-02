@@ -60,7 +60,7 @@
 		const dayMatch = context.match(/^week:(\d{4}-W\d{2}):day:(\d{4}-\d{2}-\d{2})$/);
 		if (dayMatch) {
 			const iso = dayMatch[2];
-			if (iso === todayIso) return 'I dag';
+			if (iso === todayIso) return 'Dagen';
 			if (iso === tomorrowIso) return 'I morgen';
 			const weekday = new Intl.DateTimeFormat('nb-NO', { weekday: 'short' }).format(new Date(iso + 'T12:00:00'));
 			const cap = weekday.replace('.', '');
@@ -71,15 +71,13 @@
 		if (weekMatch) {
 			const currentWeek = toLocalIsoDate(new Date()).slice(0, 4) + '-W' +
 				String(getIsoWeekNumber(new Date())).padStart(2, '0');
-			if (`week:${currentWeek}` === context) return 'Hele uka';
+			if (`week:${currentWeek}` === context) return 'Uka';
 			return `Uke ${Number.parseInt(weekMatch[2], 10)}`;
 		}
 
 		const monthMatch = context.match(/^month:(\d{4}-(\d{2}))$/);
 		if (monthMatch) {
-			const label = new Intl.DateTimeFormat('nb-NO', { month: 'long' })
-				.format(new Date(`${monthMatch[1]}-01T12:00:00`));
-			return label.charAt(0).toUpperCase() + label.slice(1);
+			return 'Måneden';
 		}
 
 		return checklist.title;
@@ -196,13 +194,13 @@
 				year={dayWheelData.year}
 				month={dayWheelData.month}
 				days={dayWheelData.days}
-				size={70}
+				size={60}
 			/>
 		</div>
 		<div class="dw-label" style:color={ringColor}>{label}</div>
 	{:else}
 		<div class="dw-ring">
-			<GoalRing pct={isComplete ? 100 : pct} size={70} strokeWidth={4} color={ringColor}>
+			<GoalRing pct={isComplete ? 100 : pct} size={60} strokeWidth={4} color={ringColor}>
 				<span class="dw-val" class:complete={isComplete}>{ringText}</span>
 			</GoalRing>
 		</div>
@@ -237,8 +235,8 @@
 <style>
 	.dw {
 		position: relative;
-		width: 90px;
-		min-height: 106px;
+		width: 78px;
+		min-height: 90px;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
@@ -250,13 +248,13 @@
 
 	.dw-ring {
 		position: relative;
-		width: 70px;
-		height: 70px;
+		width: 60px;
+		height: 60px;
 	}
 
 	.dw-empty-ring {
-		width: 70px;
-		height: 70px;
+		width: 60px;
+		height: 60px;
 		border-radius: 50%;
 		border: 2px dashed #2a2e3f;
 		display: flex;
