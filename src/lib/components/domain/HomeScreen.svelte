@@ -12,7 +12,6 @@
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { fly } from 'svelte/transition';
-	import WidgetCircle from '../ui/WidgetCircle.svelte';
 	import DynamicWidget from '../composed/DynamicWidget.svelte';
 	import WidgetConfigSheet from '../ui/WidgetConfigSheet.svelte';
 	import MorphTitle from '../ui/MorphTitle.svelte';
@@ -493,73 +492,11 @@
 		})();
 	});
 
-	// -- Widgets (live eller mock) --
-	const WIDGETS = $derived([
-		{
-			label: 'Vekt',
-			sensorType: 'weight' as const,
-			val: sensorSummary?.weight.current != null
-				? String(sensorSummary.weight.current)
-				: '–',
-			unit: 'kg',
-			color: '#e07070',
-			delta: sensorSummary?.weight.delta
-				? `${sensorSummary.weight.delta > 0 ? '+' : ''}${sensorSummary.weight.delta} kg`
-				: '',
-			pct: sensorSummary?.weight.current != null
-				? Math.max(0, Math.min(100, Math.round((1 - (sensorSummary.weight.current - 88) / 88) * 100)))
-				: 68,
-		},
-		{
-			label: 'Søvn',
-			sensorType: 'sleep' as const,
-			val: sensorSummary?.sleep.current != null
-				? String(sensorSummary.sleep.current)
-				: '–',
-			unit: 'h',
-			color: '#5fa0a0',
-			delta: '',
-			pct: sensorSummary?.sleep.current != null
-				? Math.min(100, Math.round((sensorSummary.sleep.current / 7.5) * 100))
-				: 84,
-		},
-		{
-			label: 'Løping',
-			sensorType: 'running' as const,
-			val: sensorSummary
-				? String(sensorSummary.running.weekKm)
-				: '–',
-			unit: 'km',
-			color: '#7c8ef5',
-			delta: '',
-			pct: sensorSummary
-				? Math.min(100, Math.round((sensorSummary.running.weekKm / 30) * 100))
-				: 55,
-			isRelation: false,
-		},
-		{
-			label: 'Økonomi',
-			sensorType: 'spending' as const,
-			val: sensorSummary?.spending.current
-				? `${Math.round(sensorSummary.spending.current / 1000)}k`
-				: '–',
-			unit: 'kr',
-			color: '#f0b429',
-			delta: sensorSummary?.spending.delta
-				? `${sensorSummary.spending.delta > 0 ? '+' : ''}${Math.round(sensorSummary.spending.delta / 1000)}k`
-				: '',
-			pct: sensorSummary?.spending.current
-				? Math.max(0, Math.min(100, Math.round((1 - sensorSummary.spending.current / 25000) * 100)))
-				: 72,
-		},
-	]);
-
 	interface HomeWidgetEntry {
 		id: string;
-		kind: 'checklist' | 'dynamic' | 'skeleton' | 'fallback' | 'partner';
+		kind: 'checklist' | 'dynamic' | 'skeleton' | 'partner';
 		checklist?: Checklist;
 		widget?: UserWidget;
-		fallback?: (typeof WIDGETS)[number];
 		skeletonIndex?: number;
 	}
 
@@ -584,11 +521,7 @@
 			return [{ id: 'partner-onboarding', kind: 'partner' }];
 		}
 
-		return WIDGETS.map((fallbackWidget, i) => ({
-			id: `fallback:${fallbackWidget.sensorType}:${i}`,
-			kind: 'fallback',
-			fallback: fallbackWidget
-		}));
+		return [];
 	});
 
 	const homeWidgetEntries = $derived.by<HomeWidgetEntry[]>(() => {
@@ -1744,16 +1677,6 @@
 										<button class="partner-onboarding-btn" onclick={() => goto('/ukeplan')}>Åpne ukeplan sammen</button>
 									</div>
 								</div>
-							{:else if item.kind === 'fallback' && item.fallback}
-								<WidgetCircle
-									label={item.fallback.label}
-									val={item.fallback.val}
-									unit={item.fallback.unit}
-									color={item.fallback.color}
-									active={false}
-									onpress={() => goto(item.fallback?.sensorType === 'spending' ? '/economics' : `/sensor/${item.fallback?.sensorType}`)}
-									onchat={() => openChat(`Spør om ${item.fallback?.label.toLowerCase()}`)}
-								/>
 							{/if}
 						{/each}
 					</div>
