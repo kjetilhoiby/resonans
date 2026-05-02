@@ -60,7 +60,7 @@
 		const dayMatch = context.match(/^week:(\d{4}-W\d{2}):day:(\d{4}-\d{2}-\d{2})$/);
 		if (dayMatch) {
 			const iso = dayMatch[2];
-			if (iso === todayIso) return 'I dag';
+			if (iso === todayIso) return 'Dagen';
 			if (iso === tomorrowIso) return 'I morgen';
 			const weekday = new Intl.DateTimeFormat('nb-NO', { weekday: 'short' }).format(new Date(iso + 'T12:00:00'));
 			const cap = weekday.replace('.', '');
@@ -71,15 +71,13 @@
 		if (weekMatch) {
 			const currentWeek = toLocalIsoDate(new Date()).slice(0, 4) + '-W' +
 				String(getIsoWeekNumber(new Date())).padStart(2, '0');
-			if (`week:${currentWeek}` === context) return 'Hele uka';
+			if (`week:${currentWeek}` === context) return 'Uka';
 			return `Uke ${Number.parseInt(weekMatch[2], 10)}`;
 		}
 
 		const monthMatch = context.match(/^month:(\d{4}-(\d{2}))$/);
 		if (monthMatch) {
-			const label = new Intl.DateTimeFormat('nb-NO', { month: 'long' })
-				.format(new Date(`${monthMatch[1]}-01T12:00:00`));
-			return label.charAt(0).toUpperCase() + label.slice(1);
+			return 'Måneden';
 		}
 
 		return checklist.title;
