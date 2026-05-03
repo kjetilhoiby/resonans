@@ -525,37 +525,30 @@
 	});
 
 	const homeWidgetEntries = $derived.by<HomeWidgetEntry[]>(() => {
-		const checklistEntries = activeChecklists.map((checklist) => ({
-			id: `checklist:${checklist.id}`,
-			kind: 'checklist' as const,
-			checklist
-		}));
-
-		// Legg til syntetiske plassholdere for perioder uten sjekkliste
 		const now = new Date();
 		const monthCtx = `month:${toLocalYearMonth(now)}`;
 		const weekCtx = `week:${getLocalIsoWeekDashed(now)}`;
 		const dayCtx = `week:${getLocalIsoWeekDashed(now)}:day:${toLocalIsoDate(now)}`;
 
-		const syntheticEntries: HomeWidgetEntry[] = [];
-		for (const ctx of [monthCtx, weekCtx, dayCtx]) {
-			if (!activeChecklists.some((c) => c.context === ctx)) {
-				syntheticEntries.push({
-					id: `synthetic:${ctx}`,
-					kind: 'checklist',
-					checklist: {
-						id: `synthetic:${ctx}`,
-						title: '',
-						emoji: '📅',
-						context: ctx,
-						completedAt: null,
-						items: []
-					}
-				});
-			}
-		}
+		// Fast rekkefølge: måned → uke → dag
+		const orderedChecklists: HomeWidgetEntry[] = [monthCtx, weekCtx, dayCtx].map((ctx) => {
+			const existing = activeChecklists.find((c) => c.context === ctx);
+			const checklist = existing ?? {
+				id: `synthetic:${ctx}`,
+				title: '',
+				emoji: '📅',
+				context: ctx,
+				completedAt: null,
+				items: []
+			};
+			return {
+				id: existing ? `checklist:${existing.id}` : `synthetic:${ctx}`,
+				kind: 'checklist' as const,
+				checklist
+			};
+		});
 
-		return [...syntheticEntries, ...checklistEntries, ...metricWidgetEntries];
+		return [...orderedChecklists, ...metricWidgetEntries];
 	});
 
 	function chunkWidgets<T>(rows: T[], size: number): T[][] {

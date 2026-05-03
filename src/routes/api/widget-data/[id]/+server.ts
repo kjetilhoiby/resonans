@@ -392,20 +392,50 @@ async function fetchTimeSeries(
 	const nullCheck = metricConf.countStar ? '' : `AND (${metricConf.field})::numeric IS NOT NULL`;
 	const amountFilter = metricConf.dataType === 'bank_transaction' ? `AND (data->>'amount')::numeric < 0` : '';
 	const categoryFilter = buildCategoryFilter(metricConf.dataType, filterCategory);
+	const sportTypeFilter = metricConf.dataType === 'workout' && filterSubcategory
+		? `AND data->>'sportType' = '${filterSubcategory.replace(/'/g, "''")}'`
+		: '';
 
-	const query = `
-		SELECT date_trunc('${pgTrunc}', timestamp)::text AS bucket, ${valueExpr} AS value
-		FROM sensor_events
-		WHERE user_id = $1
-		  AND data_type = $2
-		  AND timestamp >= $3
-		  AND timestamp <= $4
-		  ${nullCheck}
-		  ${amountFilter}
-		  ${categoryFilter}
-		GROUP BY 1
-		ORDER BY 1 ASC
-	`;
+	// Workout-data kan lagres fra flere sensorer (Withings + e-post/GPX) med litt ulike tidsstempler.
+	// Grupper events innen 5 minutter av hverandre og ta MAX(distance) per cluster for å unngå dobbelttelling.
+	const isWorkout = metricConf.dataType === 'workout';
+	let query: string;
+	if (isWorkout) {
+		query = `
+			SELECT date_trunc('${pgTrunc}', timestamp)::text AS bucket, ${aggFn}(best_val) AS value
+			FROM (
+				SELECT
+					date_trunc('hour', timestamp) + INTERVAL '5 minutes' * FLOOR(EXTRACT(EPOCH FROM (timestamp - date_trunc('hour', timestamp))) / 300) AS cluster,
+					MAX((${metricConf.field})::numeric) AS best_val,
+					MIN(timestamp) AS timestamp
+				FROM sensor_events
+				WHERE user_id = $1
+				  AND data_type = $2
+				  AND timestamp >= $3
+				  AND timestamp <= $4
+				  ${nullCheck}
+				  ${sportTypeFilter}
+				GROUP BY cluster
+			) deduped
+			GROUP BY 1
+			ORDER BY 1 ASC
+		`;
+	} else {
+		query = `
+			SELECT date_trunc('${pgTrunc}', timestamp)::text AS bucket, ${valueExpr} AS value
+			FROM sensor_events
+			WHERE user_id = $1
+			  AND data_type = $2
+			  AND timestamp >= $3
+			  AND timestamp <= $4
+			  ${nullCheck}
+			  ${amountFilter}
+			  ${categoryFilter}
+			  ${sportTypeFilter}
+			GROUP BY 1
+			ORDER BY 1 ASC
+		`;
+	}
 
 	const rows = await sql(query, [userId, metricConf.dataType, from.toISOString(), to.toISOString()]);
 	return (rows as unknown as { bucket: string; value: string }[]).map((r) => ({
@@ -434,9 +464,31 @@ async function fetchSingleValue(
 	const nullCheck = metricConf.countStar ? '' : `AND (${metricConf.field})::numeric IS NOT NULL`;
 	const amountFilter = metricConf.dataType === 'bank_transaction' ? `AND (data->>'amount')::numeric < 0` : '';
 	const categoryFilter = buildCategoryFilter(metricConf.dataType, filterCategory);
+	const sportTypeFilter = metricConf.dataType === 'workout' && filterSubcategory
+		? `AND data->>'sportType' = '${filterSubcategory.replace(/'/g, "''")}'`
+		: '';
 
+	const isWorkout = metricConf.dataType === 'workout';
 	let query: string;
-	if (metricConf.bucketAggregation && !metricConf.countStar) {
+	if (isWorkout) {
+		// Workout-data kan lagres fra flere sensorer (Withings + e-post/GPX) med litt ulike tidsstempler.
+		// Grupper events innen 5 minutter og ta MAX(distance) per cluster for å unngå dobbelttelling.
+		const valueExpr = metricConf.countStar ? 'COUNT(*)' : `${userAggFn}(best_val)`;
+		query = `
+			SELECT ${valueExpr} AS value
+			FROM (
+				SELECT MAX((${metricConf.field})::numeric) AS best_val
+				FROM sensor_events
+				WHERE user_id = $1
+				  AND data_type = $2
+				  AND timestamp >= $3
+				  AND timestamp <= $4
+				  ${nullCheck}
+				  ${sportTypeFilter}
+				GROUP BY date_trunc('hour', timestamp) + INTERVAL '5 minutes' * FLOOR(EXTRACT(EPOCH FROM (timestamp - date_trunc('hour', timestamp))) / 300)
+			) deduped
+		`;
+	} else if (metricConf.bucketAggregation && !metricConf.countStar) {
 		// For metrics med bucketAggregation (f.eks. steps): aggreger per dag først, deretter over dagene
 		// outerAggregation overstyrer widget.aggregation (steps skal alltid vises som daglig snitt, ikke sum)
 		const outerAggFn = metricConf.outerAggregation ?? userAggFn;
@@ -452,6 +504,7 @@ async function fetchSingleValue(
 				  ${nullCheck}
 				  ${amountFilter}
 				  ${categoryFilter}
+				  ${sportTypeFilter}
 				GROUP BY date_trunc('day', timestamp)
 			) t
 		`;
@@ -467,6 +520,7 @@ async function fetchSingleValue(
 			  ${nullCheck}
 			  ${amountFilter}
 			  ${categoryFilter}
+			  ${sportTypeFilter}
 		`;
 	}
 
@@ -792,6 +846,7 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 					period: widget.period,
 					range: widget.range,
 					filterCategory,
+					filterSubcategory,
 					effectiveRange,
 					usedRangeFallback,
 					from: from.toISOString(),

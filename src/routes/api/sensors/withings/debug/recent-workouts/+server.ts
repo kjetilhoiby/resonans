@@ -66,6 +66,6 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		windowDays: days,
 		totalFetched: raw.length,
 		returned: workouts.length,
-		workouts
+		workouts,
 	});
 };
