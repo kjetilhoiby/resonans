@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import { syncAllSparebank1Data } from '$lib/server/integrations/sparebank1-sync';
 import { enqueueBackgroundJob } from '$lib/server/background-jobs';
+import { invalidateSpendingCache, aggregateSpendingMetrics } from '$lib/server/integrations/aggregation';
 import type { RequestHandler } from './$types';
 
 // Allow longer runtime for non-historical manual sync requests.
@@ -63,6 +64,12 @@ export const POST: RequestHandler = async ({ url, locals }) => {
 		};
 
 		const synced = await syncAllSparebank1Data(userId, options);
+
+		// Invalider og re-aggreger spending-cache fra og med synk-startdato (asynkront)
+		const cacheFromDate = fromDate ?? new Date(Date.now() - 35 * 24 * 60 * 60 * 1000);
+		invalidateSpendingCache(userId, cacheFromDate)
+			.then(() => aggregateSpendingMetrics(userId, cacheFromDate))
+			.catch((err) => console.error('[sparebank1 sync] spending cache update failed:', err));
 
 		return json({
 			success: true,

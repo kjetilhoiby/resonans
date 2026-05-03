@@ -22,11 +22,13 @@ Aldri opprett widget direkte uten at bruker har sett og bekreftet forslaget.`,
 		period: string;
 		range: string;
 		filterCategory?: string | null;
+		filterSubcategory?: string | null;
+		metricKey?: string | null;
 		unit: string;
 		goal?: number | null;
 		color?: string | null;
 	}) => {
-		const { userId, title, metricType, aggregation, period, range, filterCategory, unit, goal, color } = args;
+		const { userId, title, metricType, aggregation, period, range, filterCategory, filterSubcategory, metricKey, unit, goal, color } = args;
 
 		// Sjekk om det finnes en tilsvarende widget allerede
 		const existing = await findSimilarWidget(
@@ -46,6 +48,8 @@ Aldri opprett widget direkte uten at bruker har sett og bekreftet forslaget.`,
 			period: period as WidgetDraft['period'],
 			range: range as WidgetDraft['range'],
 			filterCategory: filterCategory ?? null,
+			filterSubcategory: filterSubcategory ?? null,
+			metricKey: metricKey ?? null,
 			unit: unit.slice(0, 20),
 			goal: goal ?? null,
 			color: color && /^#[0-9a-fA-F]{6}$/.test(color) ? color : '#7c8ef5',

@@ -31,6 +31,7 @@ export interface CreateWidgetInput {
 	range: WidgetRange;
 	filterCategory?: string | null;
 	filterSubcategory?: string | null;
+	metricKey?: string | null;
 	goal?: number | null;
 	unit: string;
 	color?: string | null;
@@ -120,6 +121,7 @@ export async function createUserWidget(userId: string, input: CreateWidgetInput)
 			goal: input.goal != null ? String(input.goal) : null,
 			filterCategory: input.filterCategory ?? null,
 			filterSubcategory: input.filterSubcategory ?? null,
+			metricKey: input.metricKey ?? null,
 			unit: input.unit.slice(0, 20),
 			color: input.color || '#7c8ef5',
 			pinned: input.pinned ?? false,
