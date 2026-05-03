@@ -13,10 +13,12 @@
  */
 import { json, error } from '@sveltejs/kit';
 import { db, sql } from '$lib/db';
-import { userWidgets } from '$lib/db/schema';
+import { userWidgets, metricAggregateCache } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { ensureCategorizedEventsForRange } from '$lib/server/integrations/categorized-events';
 import { loadTransactionMatchingRules } from '$lib/server/classification-overrides';
+import { getMetricByKey, deriveMetricKey } from '$lib/server/services/metric-definition-service';
+import { aggregateSingleMetric } from '$lib/server/integrations/aggregation';
 import type { RequestHandler } from './$types';
 
 // Støttede metrikk-typer og hvilken dataType/felt de henter fra
@@ -153,6 +155,7 @@ type AmountFilterDebug = {
 	projectionCoveragePct: number;
 	topClassifiedCategories: Array<{ category: string; count: number }>;
 	sampleMatches: Array<{ date: string; description: string; amount: number }>;
+	sensorEventsTxCount: number;
 };
 
 async function fetchKeywordFilteredAmountRows(
@@ -304,6 +307,15 @@ async function collectAmountFilterDebug(
 			amount: Math.abs(Number(tx.amount) || 0),
 		}));
 
+	const sensorCountRows = await sql(
+		`SELECT COUNT(*)::int AS count FROM sensor_events
+		 WHERE user_id = $1 AND data_type = 'bank_transaction'
+		 AND timestamp >= $2 AND timestamp <= $3
+		 AND (data->>'amount')::numeric < 0`,
+		[userId, from.toISOString(), to.toISOString()]
+	) as unknown as Array<{ count: number }>;
+	const sensorEventsTxCount = Number(sensorCountRows[0]?.count || 0);
+
 	return {
 		filterCategory,
 		filterCategoryNormalized: wantedCategory,
@@ -315,6 +327,7 @@ async function collectAmountFilterDebug(
 			: Math.round((totalSpendTxCountInRange / Math.max(totalSpendTxCountInRange, keywordRows.length)) * 100),
 		topClassifiedCategories,
 		sampleMatches,
+		sensorEventsTxCount,
 	};
 }
 
@@ -498,6 +511,108 @@ function computeState(
 	return 'normal';
 }
 
+// ─── Cache-helpers ────────────────────────────────────────────────────────────
+
+/** Konverter widget.range til (period, periodKey) for cache-oppslag. Returnerer null for rullende vinduer. */
+function rangeToCachePeriod(range: string): { period: string; periodKey: string } | null {
+	const now = new Date();
+	if (range === 'current_month') {
+		const y = now.getFullYear();
+		const m = now.getMonth() + 1;
+		return { period: 'month', periodKey: `${y}M${String(m).padStart(2, '0')}` };
+	}
+	if (range === 'current_year') {
+		return { period: 'year', periodKey: String(now.getFullYear()) };
+	}
+	if (range === 'current_week') {
+		// ISO uke
+		const d = new Date(now);
+		d.setHours(0, 0, 0, 0);
+		d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+		const week1 = new Date(d.getFullYear(), 0, 4);
+		const weekNum = Math.round(((d.getTime() - week1.getTime()) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7) + 1;
+		return { period: 'week', periodKey: `${d.getFullYear()}W${String(weekNum).padStart(2, '0')}` };
+	}
+	// last7/last14/last30 → rullende, ingen cache
+	return null;
+}
+
+interface CacheResult {
+	current: number | null;
+	sparkline: number[];
+	prevCurrent: number | null;
+}
+
+/** Forsøk å hente data fra metric_aggregate_cache. Returnerer null ved cache-miss. */
+async function tryReadFromCache(
+	userId: string,
+	metricKey: string,
+	range: string,
+	aggregation: string,
+): Promise<CacheResult | null> {
+	const cachePeriod = rangeToCachePeriod(range);
+	if (!cachePeriod) return null;
+
+	const row = await db.query.metricAggregateCache.findFirst({
+		where: and(
+			eq(metricAggregateCache.userId, userId),
+			eq(metricAggregateCache.metricKey, metricKey),
+			eq(metricAggregateCache.period, cachePeriod.period),
+			eq(metricAggregateCache.periodKey, cachePeriod.periodKey),
+		),
+	});
+
+	if (!row) return null;
+
+	const current =
+		aggregation === 'sum' ? parseFloat(String(row.valueSum ?? '0')) :
+		aggregation === 'avg' ? parseFloat(String(row.valueAvg ?? '0')) :
+		aggregation === 'count' ? (row.valueCount ?? 0) :
+		parseFloat(String(row.valueLatest ?? '0'));
+
+	const sparkline = (row.dailyBuckets ?? []).map((b) => b.value);
+
+	// Forrige periode: enkel heuristikk — finn periodKey for forrige periode
+	const prevPeriodKey = getPrevPeriodKey(cachePeriod.period, cachePeriod.periodKey);
+	let prevCurrent: number | null = null;
+	if (prevPeriodKey) {
+		const prevRow = await db.query.metricAggregateCache.findFirst({
+			where: and(
+				eq(metricAggregateCache.userId, userId),
+				eq(metricAggregateCache.metricKey, metricKey),
+				eq(metricAggregateCache.period, cachePeriod.period),
+				eq(metricAggregateCache.periodKey, prevPeriodKey),
+			),
+		});
+		if (prevRow) {
+			prevCurrent =
+				aggregation === 'sum' ? parseFloat(String(prevRow.valueSum ?? '0')) :
+				aggregation === 'avg' ? parseFloat(String(prevRow.valueAvg ?? '0')) :
+				aggregation === 'count' ? (prevRow.valueCount ?? 0) :
+				parseFloat(String(prevRow.valueLatest ?? '0'));
+		}
+	}
+
+	return { current, sparkline, prevCurrent };
+}
+
+function getPrevPeriodKey(period: string, periodKey: string): string | null {
+	if (period === 'month') {
+		const y = parseInt(periodKey.slice(0, 4));
+		const m = parseInt(periodKey.slice(5));
+		if (m === 1) return `${y - 1}M12`;
+		return `${y}M${String(m - 1).padStart(2, '0')}`;
+	}
+	if (period === 'year') {
+		return String(parseInt(periodKey) - 1);
+	}
+	if (period === 'week') {
+		// Enklest: retur null, la delta-beregning falle tilbake til 0
+		return null;
+	}
+	return null;
+}
+
 export const GET: RequestHandler = async ({ params, locals, url }) => {
 	const widgetId = params.id;
 	const userId = locals.userId;
@@ -513,6 +628,41 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 
 	if (!widget) throw error(404, 'Widget ikke funnet');
 
+	// ─── Cache-first path for metricKey-baserte widgets ───────────────────────
+	const effectiveMetricKey = widget.metricKey
+		?? (widget.metricType === 'amount' || widget.filterCategory
+			? deriveMetricKey(widget.metricType, widget.filterCategory, widget.filterSubcategory)
+			: null);
+
+	if (widget.metricKey && !debugEnabled) {
+		const cached = await tryReadFromCache(userId, widget.metricKey, widget.range, widget.aggregation);
+		if (cached) {
+			const goalNum = widget.goal ? parseFloat(String(widget.goal)) : null;
+			const warnNum = widget.thresholdWarn ? parseFloat(String(widget.thresholdWarn)) : null;
+			const successNum = widget.thresholdSuccess ? parseFloat(String(widget.thresholdSuccess)) : null;
+			const current = cached.current !== null ? Math.round(cached.current * 10) / 10 : null;
+			const prev_ = cached.prevCurrent !== null ? Math.round(cached.prevCurrent * 10) / 10 : null;
+			const delta = current !== null && prev_ !== null ? Math.round((current - prev_) * 10) / 10 : 0;
+			let pct: number | null = null;
+			if (current !== null && goalNum !== null && goalNum > 0) {
+				pct = Math.max(0, Math.min(100, Math.round((current / goalNum) * 100)));
+			}
+			return json({
+				current,
+				sparkline: cached.sparkline.map((v) => Math.round(v * 10) / 10),
+				unit: widget.unit,
+				delta,
+				pct,
+				state: computeState(current, warnNum, successNum),
+				_source: 'cache',
+			});
+		}
+
+		// Cache-miss: aggreger i bakgrunnen og fortsett med live-query
+		void aggregateSingleMetric(userId, widget.metricKey).catch(() => { /* ignorer feil */ });
+	}
+	// ─────────────────────────────────────────────────────────────────────────
+
 	const metricConf = METRIC_CONFIG[widget.metricType];
 	if (!metricConf) throw error(400, `Ukjent metrikk-type: ${widget.metricType}`);
 
@@ -520,6 +670,8 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 	const prev = getPreviousRange(widget.range);
 	let effectiveRange = widget.range;
 	let usedRangeFallback = false;
+	let effectiveFrom = from;
+	let effectiveTo = to;
 
 	// Hent tidsserie (for sparkline), periodeaggregat (for current) og forrige periode (for delta) i parallell
 	const filterCategory = filterCategoryOverride !== null
@@ -586,6 +738,8 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 			prevValue = fallbackPrevValue;
 			effectiveRange = 'last30';
 			usedRangeFallback = true;
+			effectiveFrom = fallbackFromTo.from;
+			effectiveTo = fallbackFromTo.to;
 		}
 	}
 
@@ -612,9 +766,14 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 		}
 	}
 
+	const debugRangeOverride = debugEnabled ? url.searchParams.get('range') : null;
+	const { from: debugFrom, to: debugTo } = debugRangeOverride
+		? getRangeDate(debugRangeOverride)
+		: { from: effectiveFrom, to: effectiveTo };
+
 	const amountFilterDebug =
 		debugEnabled && widget.metricType === 'amount' && filterCategory
-			? await collectAmountFilterDebug(userId, from, to, filterCategory, filterSubcategory)
+			? await collectAmountFilterDebug(userId, debugFrom, debugTo, filterCategory, filterSubcategory)
 			: null;
 
 	return json({
@@ -637,6 +796,8 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 					usedRangeFallback,
 					from: from.toISOString(),
 					to: to.toISOString(),
+					debugFrom: debugFrom.toISOString(),
+					debugTo: debugTo.toISOString(),
 					seriesBuckets: series.length,
 					amountFilter: amountFilterDebug,
 				}

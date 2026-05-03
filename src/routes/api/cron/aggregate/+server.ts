@@ -2,7 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
 import { db } from '$lib/db';
-import { aggregateAllPeriods } from '$lib/server/integrations/aggregation';
+import { aggregateAllPeriods, aggregateSpendingMetrics } from '$lib/server/integrations/aggregation';
 
 // Aggregation can take a while for many users — allow up to 300 seconds
 export const config = { maxDuration: 300 };
@@ -26,6 +26,7 @@ export const GET: RequestHandler = async ({ request }) => {
 	for (const user of users) {
 		try {
 			await aggregateAllPeriods(user.id);
+			await aggregateSpendingMetrics(user.id);
 			console.log(`[aggregate cron] user=${user.id} done`);
 			results.push({ userId: user.id, success: true });
 		} catch (err) {

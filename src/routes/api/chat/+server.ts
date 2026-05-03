@@ -21,6 +21,9 @@ import {
 	listWidgetsForChat,
 	updateUserWidget
 } from '$lib/skills/widget-creation/service';
+import { executeSearchMetrics } from '$lib/ai/tools/search-metrics';
+import { getMetricByKey } from '$lib/server/services/metric-definition-service';
+import { aggregateSingleMetric } from '$lib/server/integrations/aggregation';
 import {
 	markWidgetFlowCreated,
 	type WidgetCreationFlow
@@ -817,8 +820,41 @@ const tools = [
 			{
 				type: 'function' as const,
 				function: {
+					name: 'search_metrics',
+					description: `Søk i metrikkregisteret for å finne riktig metricKey til widgets.
+Bruk ALLTID dette FØR propose_widget når brukeren ber om widget for:
+- Økonomi/forbruk (transport, mat, elbil, strøm, osv.)
+- En kategori du ikke er sikker på nøkkelnavnet til
+- Helse-metrikker der du er usikker
+
+Returnerer en liste med key, label, defaultAggregation, defaultUnit og filterCategory.
+Bruk key-feltet direkte som metricKey i propose_widget.`,
+					parameters: {
+						type: 'object',
+						properties: {
+							query: {
+								type: 'string',
+								description: 'Fritekst søk, f.eks. "elbil lading transport", "dagligvarer mat", "søvn", "trening"'
+							},
+							domain: {
+								type: 'string',
+								enum: ['health', 'spending', 'income', 'all'],
+								description: 'Begrens til domene. Utelat eller bruk "all" for å søke i alt.'
+							},
+							limit: {
+								type: 'number',
+								description: 'Maks antall resultater (standard: 8)'
+							}
+						},
+						required: ['query']
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
 					name: 'propose_widget',
-					description: 'Foreslå en widget til brukeren UTEN å opprette den i databasen. Bruk ALLTID DETTE FØR create_widget. Returnerer et widget-draft som brukeren ser i et forslagskort der de kan bekrefte, konfigurere eller forkaste. Bruk når bruker vil ha en ny widget ("lag widget for dagligvare", "vis søvn siste 30 dager", "widget for løpedistanse"). ALDRI opprett widget direkte uten forslag og bekreftelse.',
+					description: 'Foreslå en widget til brukeren UTEN å opprette den i databasen. Bruk ALLTID DETTE FØR create_widget. Returnerer et widget-draft som brukeren ser i et forslagskort der de kan bekrefte, konfigurere eller forkaste. Bruk når bruker vil ha en ny widget ("lag widget for dagligvare", "vis søvn siste 30 dager", "widget for løpedistanse"). ALDRI opprett widget direkte uten forslag og bekreftelse. For økonomi/forbruk: bruk search_metrics først for å finne riktig metricKey.',
 					parameters: {
 						type: 'object',
 						properties: {
@@ -826,9 +862,13 @@ const tools = [
 								type: 'string',
 								description: 'Kort, beskrivende tittel på widgeten (maks 40 tegn), f.eks. "Søvn / dag", "Ukentlig løping"'
 							},
+							metricKey: {
+								type: 'string',
+								description: 'Metrikkens nøkkel fra search_metrics, f.eks. "spending_bil_og_transport_drivstoff". Bruk dette fremfor metricType+filterCategory for økonomi-widgets. Sett metricType til "amount" når metricKey er oppgitt.'
+							},
 							metricType: {
 								type: 'string',
-								description: 'Hvilken metrikk widgeten viser',
+								description: 'Hvilken metrikk widgeten viser. Bruk "amount" for alle økonomi-metrikker (kombinert med metricKey for presisjon).',
 								enum: ['weight', 'sleepDuration', 'steps', 'distance', 'workoutCount', 'heartrate', 'mood', 'screenTime', 'amount']
 							},
 							aggregation: {
@@ -848,8 +888,12 @@ const tools = [
 							},
 							filterCategory: {
 								type: 'string',
-								description: 'Valgfri kategorifilter for amount-metrikk',
+								description: 'Valgfri kategorifilter for amount-metrikk (settes automatisk fra metricKey hvis oppgitt)',
 								enum: ['innskudd', 'dagligvarer', 'kafe_og_restaurant', 'faste_boutgifter', 'annet_lan_og_gjeld', 'bil_og_transport', 'helse_og_velvaere', 'medier_og_underholdning', 'hobby_og_fritid', 'hjem_og_hage', 'klaer_og_utstyr', 'barn', 'barnehage_og_sfo', 'forsikring', 'bilforsikring_og_billan', 'sparing', 'reise', 'diverse', 'ukategorisert']
+							},
+							filterSubcategory: {
+								type: 'string',
+								description: 'Valgfri underkategorifilter, f.eks. "drivstoff", "kollektivtransport". Settes automatisk fra metricKey hvis oppgitt.'
 							},
 							unit: {
 								type: 'string',
@@ -881,9 +925,13 @@ const tools = [
 						type: 'string',
 						description: 'Kort, beskrivende tittel på widgeten (maks 40 tegn), f.eks. "Søvn / dag", "Ukentlig løping"'
 					},
+					metricKey: {
+						type: 'string',
+						description: 'Metrikkens nøkkel fra search_metrics, f.eks. "spending_bil_og_transport_drivstoff". Bruk dette fremfor metricType+filterCategory for økonomi-widgets.'
+					},
 					metricType: {
 						type: 'string',
-						description: 'Hvilken metrikk widgeten viser',
+						description: 'Hvilken metrikk widgeten viser. Bruk "amount" for alle økonomi-metrikker (kombinert med metricKey for presisjon).',
 						enum: ['weight', 'sleepDuration', 'steps', 'distance', 'workoutCount', 'heartrate', 'mood', 'screenTime', 'amount']
 					},
 					aggregation: {
@@ -903,8 +951,12 @@ const tools = [
 					},
 					filterCategory: {
 						type: 'string',
-						description: 'Valgfri kategorifilter for amount-metrikk. Bruk dette for å vise kun utgifter i en bestemt kategori. Gyldige verdier: innskudd (inntekter), dagligvarer, kafe_og_restaurant, faste_boutgifter, annet_lan_og_gjeld, bil_og_transport, helse_og_velvaere, medier_og_underholdning, hobby_og_fritid, hjem_og_hage, klaer_og_utstyr, barn, barnehage_og_sfo, forsikring, bilforsikring_og_billan, sparing, reise, diverse, ukategorisert',
+						description: 'Valgfri kategorifilter for amount-metrikk (settes automatisk fra metricKey hvis oppgitt). Gyldige verdier: innskudd (inntekter), dagligvarer, kafe_og_restaurant, faste_boutgifter, annet_lan_og_gjeld, bil_og_transport, helse_og_velvaere, medier_og_underholdning, hobby_og_fritid, hjem_og_hage, klaer_og_utstyr, barn, barnehage_og_sfo, forsikring, bilforsikring_og_billan, sparing, reise, diverse, ukategorisert',
 						enum: ['innskudd', 'dagligvarer', 'kafe_og_restaurant', 'faste_boutgifter', 'annet_lan_og_gjeld', 'bil_og_transport', 'helse_og_velvaere', 'medier_og_underholdning', 'hobby_og_fritid', 'hjem_og_hage', 'klaer_og_utstyr', 'barn', 'barnehage_og_sfo', 'forsikring', 'bilforsikring_og_billan', 'sparing', 'reise', 'diverse', 'ukategorisert']
+					},
+					filterSubcategory: {
+						type: 'string',
+						description: 'Valgfri underkategorifilter, f.eks. "drivstoff", "kollektivtransport". Settes automatisk fra metricKey hvis oppgitt.'
 					},
 					unit: {
 						type: 'string',
@@ -2014,6 +2066,24 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 							tool_call_id: toolCall.id
 						});
 					}
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'search_metrics') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  🔍 Searching metrics:', args);
+					try {
+						const result = await executeSearchMetrics(args);
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify(result),
+							tool_call_id: toolCall.id
+						});
+					} catch (e) {
+						console.error('  🔍 Metric search failed:', e);
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify({ success: false, error: 'Klarte ikke søke i metrikkregister' }),
+							tool_call_id: toolCall.id
+						});
+					}
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'propose_widget') {
 					const args = JSON.parse(toolCall.function.arguments);
 					console.log('  📊 Proposing widget:', args);
@@ -2042,12 +2112,23 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 					console.log('  📊 Creating widget:', args);
 
 					try {
+						// Resolve filterCategory/filterSubcategory from metricKey if provided
+						let resolvedCategory = args.filterCategory ?? null;
+						let resolvedSubcategory = args.filterSubcategory ?? null;
+						if (args.metricKey) {
+							const metricDef = getMetricByKey(args.metricKey);
+							if (metricDef) {
+								resolvedCategory = metricDef.filterCategory ?? resolvedCategory;
+								resolvedSubcategory = metricDef.filterSubcategory ?? resolvedSubcategory;
+							}
+						}
+
 						const existing = await findSimilarWidget(
 							userId,
 							{
 								metricType: args.metricType,
 								range: args.range,
-								filterCategory: args.filterCategory ?? null
+								filterCategory: resolvedCategory
 							},
 							{ pinnedOnly: true }
 						);
@@ -2068,13 +2149,22 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 								period: args.period,
 								range: args.range,
 								goal: args.goal ?? null,
-								filterCategory: args.filterCategory ?? null,
+								filterCategory: resolvedCategory,
+								filterSubcategory: resolvedSubcategory,
+								metricKey: args.metricKey ?? null,
 								unit: args.unit || '',
 								color: args.color || '#7c8ef5',
 								pinned: args.pinned !== false
 							});
 
 							widgetFlow = markWidgetFlowCreated(widgetFlow, widget.id);
+
+							// Varm opp aggregat-cache i bakgrunnen for denne metrikken
+							if (args.metricKey) {
+								const fromDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+								aggregateSingleMetric(userId, args.metricKey, fromDate)
+									.catch((err) => console.error('  📊 Background aggregation failed:', err));
+							}
 
 							console.log('  📊 Widget created:', widget.id);
 							messages.push({

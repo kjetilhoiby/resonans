@@ -1,6 +1,7 @@
-import { db } from '$lib/db';
-import { sensorEvents, sensorAggregates } from '$lib/db/schema';
+import { db, sql as rawSql } from '$lib/db';
+import { sensorEvents, sensorAggregates, metricAggregateCache } from '$lib/db/schema';
 import { eq, and, gte, lte, sql } from 'drizzle-orm';
+import { getAllMetrics } from '$lib/server/services/metric-definition-service';
 import { generateWeeks, generateMonths, generateYears, getCurrentWeek, getCurrentMonth, getCurrentYear, getWeeksSince, getMonthsSince, getYearsSince } from './time-periods';
 import type { WeekPeriod, MonthPeriod, YearPeriod } from './time-periods';
 
@@ -339,4 +340,193 @@ export async function aggregateAllPeriods(userId: string) {
 	console.log(`   ✓ Yearly aggregation completed in ${((Date.now() - yearStart) / 1000).toFixed(1)}s`);
 	
 	console.log(`✅ All aggregations completed in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+}
+
+// ─── Spending metric aggregation ──────────────────────────────────────────────
+
+type PeriodType = 'week' | 'month' | 'year';
+
+interface PeriodWindow {
+	period: PeriodType;
+	periodKey: string;
+	startDate: string;
+	endDate: string;
+}
+
+function buildPeriodWindows(fromDate: Date): PeriodWindow[] {
+	const windows: PeriodWindow[] = [];
+	const now = new Date();
+
+	// Måneder (og dermed uker) siden fromDate
+	const fromYear = fromDate.getFullYear();
+	const toYear = now.getFullYear();
+
+	for (let y = fromYear; y <= toYear; y++) {
+		const startM = y === fromYear ? fromDate.getMonth() : 0;
+		const endM = y === toYear ? now.getMonth() : 11;
+		for (let m = startM; m <= endM; m++) {
+			const start = new Date(y, m, 1);
+			const end = new Date(y, m + 1, 0); // siste dag i måneden
+			windows.push({
+				period: 'month',
+				periodKey: `${y}M${String(m + 1).padStart(2, '0')}`,
+				startDate: start.toISOString().slice(0, 10),
+				endDate: end.toISOString().slice(0, 10),
+			});
+		}
+		windows.push({
+			period: 'year',
+			periodKey: String(y),
+			startDate: `${y}-01-01`,
+			endDate: `${y}-12-31`,
+		});
+	}
+
+	return windows;
+}
+
+/**
+ * Aggreger én spending-metrikk for gitte periodevindu.
+ * Lagrer sum/avg/min/max/count + dailyBuckets i metric_aggregate_cache.
+ */
+async function aggregateOneSpendingMetric(
+	userId: string,
+	metricKey: string,
+	filterCategory: string | undefined,
+	filterSubcategory: string | undefined,
+	isIncome: boolean,
+	windows: PeriodWindow[],
+): Promise<void> {
+	for (const w of windows) {
+		const catClause = filterCategory ? `AND resolved_category = '${filterCategory.replace(/'/g, "''")}'` : '';
+		const subcatClause = filterSubcategory ? `AND resolved_subcategory = '${filterSubcategory.replace(/'/g, "''")}'` : '';
+		const amountDirection = isIncome ? '> 0' : '< 0';
+		const absFn = isIncome ? '' : 'ABS';
+
+		// Daglige bucketer innenfor periodevinduet
+		const bucketRows = await rawSql(
+			`SELECT
+				(timestamp AT TIME ZONE 'Europe/Oslo')::date::text AS day,
+				SUM(${absFn ? `ABS(amount::numeric)` : `amount::numeric`}) AS day_sum,
+				COUNT(*) AS day_count
+			FROM categorized_events
+			WHERE user_id = $1
+			  AND amount::numeric ${amountDirection}
+			  AND timestamp >= $2
+			  AND timestamp < $3
+			  ${catClause}
+			  ${subcatClause}
+			GROUP BY 1
+			ORDER BY 1`,
+			[userId, `${w.startDate}T00:00:00Z`, `${w.endDate}T23:59:59.999Z`],
+		) as Array<{ day: string; day_sum: string; day_count: string }>;
+
+		if (bucketRows.length === 0) continue;
+
+		const values = bucketRows.map((r) => parseFloat(r.day_sum) || 0);
+		const counts = bucketRows.map((r) => parseInt(r.day_count) || 0);
+		const totalSum = values.reduce((a, b) => a + b, 0);
+		const totalCount = counts.reduce((a, b) => a + b, 0);
+		const valueAvg = totalCount > 0 ? totalSum / values.length : 0;
+		const valueMin = Math.min(...values);
+		const valueMax = Math.max(...values);
+		const valueLatest = values[values.length - 1] ?? 0;
+		const dailyBuckets = bucketRows.map((r) => ({ date: r.day, value: parseFloat(r.day_sum) || 0 }));
+
+		await db
+			.insert(metricAggregateCache)
+			.values({
+				userId,
+				metricKey,
+				period: w.period,
+				periodKey: w.periodKey,
+				startDate: w.startDate,
+				endDate: w.endDate,
+				valueSum: String(Math.round(totalSum * 100) / 100),
+				valueAvg: String(Math.round(valueAvg * 100) / 100),
+				valueMin: String(Math.round(valueMin * 100) / 100),
+				valueMax: String(Math.round(valueMax * 100) / 100),
+				valueCount: totalCount,
+				valueLatest: String(Math.round(valueLatest * 100) / 100),
+				dailyBuckets,
+				computedAt: new Date(),
+			})
+			.onConflictDoUpdate({
+				target: [metricAggregateCache.userId, metricAggregateCache.metricKey, metricAggregateCache.period, metricAggregateCache.periodKey],
+				set: {
+					valueSum: sql`excluded.value_sum`,
+					valueAvg: sql`excluded.value_avg`,
+					valueMin: sql`excluded.value_min`,
+					valueMax: sql`excluded.value_max`,
+					valueCount: sql`excluded.value_count`,
+					valueLatest: sql`excluded.value_latest`,
+					dailyBuckets: sql`excluded.daily_buckets`,
+					computedAt: sql`excluded.computed_at`,
+					updatedAt: new Date(),
+				},
+			});
+	}
+}
+
+/**
+ * Aggreger alle aktive spending-metrikker for én bruker.
+ * Kalles fra nattlig cron og etter SpareBank1-sync.
+ */
+export async function aggregateSpendingMetrics(userId: string, fromDate?: Date): Promise<void> {
+	const from = fromDate ?? new Date(new Date().getFullYear() - 2, 0, 1); // 2 år tilbake som default
+	const windows = buildPeriodWindows(from);
+	if (windows.length === 0) return;
+
+	const spendingMetrics = getAllMetrics().filter(
+		(m) => m.domain === 'spending' || m.domain === 'income',
+	);
+
+	for (const def of spendingMetrics) {
+		const isIncome = def.domain === 'income';
+		await aggregateOneSpendingMetric(
+			userId,
+			def.key,
+			def.filterCategory,
+			def.filterSubcategory,
+			isIncome,
+			windows,
+		);
+	}
+}
+
+/**
+ * Aggreger kun én spesifikk metrikk for én bruker (brukes ved widget-opprettelse).
+ */
+export async function aggregateSingleMetric(
+	userId: string,
+	metricKey: string,
+	fromDate?: Date,
+): Promise<void> {
+	const metrics = getAllMetrics();
+	const def = metrics.find((m) => m.key === metricKey);
+	if (!def || (def.domain !== 'spending' && def.domain !== 'income')) return;
+
+	const from = fromDate ?? new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+	const windows = buildPeriodWindows(from);
+	await aggregateOneSpendingMetric(
+		userId,
+		def.key,
+		def.filterCategory,
+		def.filterSubcategory,
+		def.domain === 'income',
+		windows,
+	);
+}
+
+/**
+ * Invalider cache-poster for en bruker der perioden overlapper med fromDate.
+ * Kalles etter SpareBank1-sync for å tvinge re-beregning.
+ */
+export async function invalidateSpendingCache(userId: string, fromDate: Date): Promise<void> {
+	await rawSql(
+		`DELETE FROM metric_aggregate_cache
+		 WHERE user_id = $1
+		   AND end_date::date >= $2::date`,
+		[userId, fromDate.toISOString().slice(0, 10)],
+	);
 }

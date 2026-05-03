@@ -44,6 +44,15 @@
 		heartrate: false,
 	};
 
+	const RANGE_OPTIONS = [
+		{ value: 'current_week', label: 'Denne uken' },
+		{ value: 'current_month', label: 'Denne måneden' },
+		{ value: 'current_year', label: 'Dette året' },
+		{ value: 'last7', label: 'Siste 7 dager' },
+		{ value: 'last14', label: 'Siste 14 dager' },
+		{ value: 'last30', label: 'Siste 30 dager' },
+	];
+
 	const COLORS = [
 		{ hex: '#7c8ef5', name: 'Indigo' },
 		{ hex: '#82c882', name: 'Grønn' },
@@ -102,6 +111,7 @@
 	let successStr = $state(widget.thresholdSuccess != null ? String(widget.thresholdSuccess) : '');
 	let color = $state(widget.color);
 	let unit = $state(widget.unit);
+	let range = $state(widget.range ?? 'current_month');
 	let filterCategory = $state(widget.filterCategory ?? '');
 	let filterSubcategory = $state(widget.filterSubcategory ?? '');
 
@@ -110,6 +120,7 @@
 		categorizedMatchCount: number;
 		keywordMatchCount: number;
 		sampleMatches: Array<{ date: string; description: string; amount: number }>;
+		sensorEventsTxCount: number;
 	};
 	let previewLoading = $state(false);
 	let previewError = $state('');
@@ -132,6 +143,7 @@
 		successStr = widget.thresholdSuccess != null ? String(widget.thresholdSuccess) : '';
 		color = widget.color;
 		unit = widget.unit;
+		range = widget.range ?? 'current_month';
 		filterCategory = widget.filterCategory ?? '';
 		filterSubcategory = widget.filterSubcategory ?? '';
 		higherIsBetter = detectDirection();
@@ -155,7 +167,7 @@
 		previewLoading = true;
 		previewError = '';
 
-		const params = new URLSearchParams({ debug: '1', filterCategory });
+		const params = new URLSearchParams({ debug: '1', filterCategory, range });
 		if (filterSubcategory) params.set('filterSubcategory', filterSubcategory);
 		void fetch(`/api/widget-data/${widget.id}?${params.toString()}`)
 			.then(async (res) => {
@@ -171,6 +183,7 @@
 					categorizedMatchCount: amountFilter.categorizedMatchCount ?? 0,
 					keywordMatchCount: amountFilter.keywordMatchCount ?? 0,
 					sampleMatches: Array.isArray(amountFilter.sampleMatches) ? amountFilter.sampleMatches : [],
+					sensorEventsTxCount: amountFilter.sensorEventsTxCount ?? 0,
 				};
 			})
 			.catch((e) => {
@@ -191,6 +204,7 @@
 		onsave({
 			title: title.trim() || widget.title,
 			unit: unit.trim() || widget.unit,
+			range,
 			filterCategory: filterCategory || null,
 			filterSubcategory: filterSubcategory || null,
 			goal: numOrNull(goalStr),
@@ -241,6 +255,15 @@
 				</label>
 
 				<label class="field">
+					<span class="field-label">Periode</span>
+					<select class="field-input" bind:value={range}>
+						{#each RANGE_OPTIONS as opt}
+							<option value={opt.value}>{opt.label}</option>
+						{/each}
+					</select>
+				</label>
+
+				<label class="field">
 					<span class="field-label">Mål <span class="field-unit">({unit})</span></span>
 					<input
 						class="field-input"
@@ -282,6 +305,7 @@
 							<span class="field-label">Treff-preview</span>
 							{#if previewLoading}<span class="filter-preview-muted">Laster…</span>{/if}
 						</div>
+						<p class="filter-preview-muted filter-preview-source">Datakilde: alle tilkoblede bankkontoer</p>
 						{#if previewError}
 							<p class="filter-preview-error">{previewError}</p>
 						{:else if !filterCategory}
@@ -293,6 +317,11 @@
 									 · fallback-keywords: {preview.keywordMatchCount}
 								{/if}
 							</p>
+							{#if preview.totalSpendTxCountInRange === 0 && preview.sensorEventsTxCount > 0}
+								<p class="filter-preview-muted">{preview.sensorEventsTxCount} transaksjoner ikke kategorisert ennå – prøv å synkronisere banken.</p>
+							{:else if preview.totalSpendTxCountInRange === 0 && preview.sensorEventsTxCount === 0}
+								<p class="filter-preview-muted">Ingen banktransaksjoner funnet for perioden.</p>
+							{/if}
 							{#if preview.sampleMatches.length > 0}
 								<ul class="filter-match-list">
 									{#each preview.sampleMatches as row}
@@ -623,6 +652,10 @@
 
 	.filter-preview-muted {
 		color: #777;
+	}
+
+	.filter-preview-source {
+		font-size: 0.65rem;
 	}
 
 	.filter-preview-error {

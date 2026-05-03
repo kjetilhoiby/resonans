@@ -20,6 +20,8 @@ export type WidgetDraft = {
 	period: WidgetPeriod;
 	range: WidgetRange;
 	filterCategory: string | null;
+	filterSubcategory?: string | null;
+	metricKey?: string | null;
 	unit: string;
 	goal: number | null;
 	color: string;

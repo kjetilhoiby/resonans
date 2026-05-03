@@ -389,6 +389,7 @@ export const userWidgets = pgTable('user_widgets', {
 	unit: text('unit').notNull(),                           // 'kg'|'h'|'km'|'kr'|'skritt'|'slag/min' etc.
 	filterCategory: text('filter_category'),                // Valgfri kategorifilter for amount-metrikk (f.eks. 'dagligvarer', 'kafe_og_restaurant', 'bil_og_transport')
 	filterSubcategory: text('filter_subcategory'),          // Valgfri subkategorifilter (f.eks. 'fastfood', 'kafe' under kafe_og_restaurant)
+	metricKey: text('metric_key'),                          // Dynamisk metrikkregisternøkkel (f.eks. 'spending_bil_og_transport_drivstoff'). Overstyrer METRIC_CONFIG-path i widget-API.
 	color: text('color').notNull().default('#7c8ef5'),      // Hex-farge for widget
 	pinned: boolean('pinned').default(false).notNull(),     // Vises på hjemmeskjerm
 	sortOrder: integer('sort_order').default(0).notNull(),  // Rekkefølge på hjemmeskjerm
@@ -1575,4 +1576,60 @@ export const themeFilesRelations = relations(themeFiles, ({ one }) => ({
 		fields: [themeFiles.userId],
 		references: [users.id]
 	})
+}));
+
+// Dynamisk metrikkregister — innebygde metrikker er code-first (se MetricDefinitionService).
+// Tabellen brukes kun for bruker-definerte overstyringer og fremtidige tillegg.
+export const metricDefinitions = pgTable('metric_definitions', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	key: text('key').notNull().unique(),           // 'spending_bil_og_transport_drivstoff'
+	domain: text('domain').notNull(),              // 'health' | 'spending' | 'income'
+	label: text('label').notNull(),                // 'Drivstoff og elbil-lading'
+	description: text('description'),
+	filterCategory: text('filter_category'),       // 'bil_og_transport'
+	filterSubcategory: text('filter_subcategory'), // 'drivstoff'
+	dataType: text('data_type').notNull(),          // 'bank_transaction' | 'weight' | ...
+	defaultAggregation: text('default_aggregation').notNull(), // 'sum' | 'avg' | 'count' | 'latest'
+	defaultUnit: text('default_unit').notNull(),   // 'kr' | 'kg' | 'timer'
+	defaultColor: text('default_color'),
+	direction: text('direction').notNull().default('lower_is_better'),
+	searchAliases: text('search_aliases').array().notNull().default(sql`ARRAY[]::text[]`),
+	tags: text('tags').array().notNull().default(sql`ARRAY[]::text[]`),
+	isBuiltin: boolean('is_builtin').notNull().default(false),
+	isActive: boolean('is_active').notNull().default(true),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+	idxDomain: index('metric_definitions_domain_idx').on(table.domain, table.isActive),
+	idxUserDomain: index('metric_definitions_user_domain_idx').on(table.userId, table.domain),
+}));
+
+// Cache for pre-beregnede aggregerte metrikkverdier (uke/måned/år).
+// Brukes av widget-API-et for å unngå live re-beregning fra rådata.
+export const metricAggregateCache = pgTable('metric_aggregate_cache', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	metricKey: text('metric_key').notNull(),        // ref til metric_definitions.key (built-in eller DB)
+	period: text('period').notNull(),               // 'week' | 'month' | 'year'
+	periodKey: text('period_key').notNull(),        // '2026W18' | '2026M05' | '2026'
+	startDate: date('start_date').notNull(),
+	endDate: date('end_date').notNull(),
+	valueSum: decimal('value_sum'),
+	valueAvg: decimal('value_avg'),
+	valueMin: decimal('value_min'),
+	valueMax: decimal('value_max'),
+	valueCount: integer('value_count').notNull().default(0),
+	valueLatest: decimal('value_latest'),
+	// Forhåndsberegnet sparkline: [{date:'2026-05-01', value:450}, ...]
+	dailyBuckets: jsonb('daily_buckets').$type<Array<{ date: string; value: number }>>(),
+	// MD5-hash for staleness-sjekk: COUNT(*) || '|' || MAX(updated_at) fra kildedata
+	dataHash: text('data_hash'),
+	computedAt: timestamp('computed_at').defaultNow().notNull(),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+	uniqUserMetricPeriod: unique('metric_cache_unique').on(table.userId, table.metricKey, table.period, table.periodKey),
+	idxUserMetricKey: index('metric_cache_user_metric_idx').on(table.userId, table.metricKey),
+	idxUserPeriod: index('metric_cache_user_period_idx').on(table.userId, table.period, table.periodKey),
 }));
