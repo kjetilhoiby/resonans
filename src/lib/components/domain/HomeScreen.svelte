@@ -24,6 +24,8 @@
 	import FlowSheet from '../flows/FlowSheet.svelte';
 	import { FLOWS } from '$lib/flows/registry';
 	import PageHeader from '../ui/PageHeader.svelte';
+	import CollapsibleSection from '../ui/CollapsibleSection.svelte';
+	import ConversationContextMenu from '../ui/ConversationContextMenu.svelte';
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
 	import { prefetchDashboard } from '$lib/client/dashboard-cache';
 	import { prefetchWidgetData } from '$lib/client/widget-data-cache';
@@ -43,6 +45,9 @@
 			id: string;
 			title: string;
 			preview: string;
+			starred: boolean;
+			archived: boolean;
+			linkedTheme: { id: string; name: string; emoji: string | null } | null;
 			updatedAt: string;
 		}[];
 	}
@@ -821,12 +826,78 @@
 		const base = firstUserMessage?.text?.trim() || 'Ny samtale';
 		return base.length > 42 ? `${base.slice(0, 42).trimEnd()}…` : base;
 	});
+
+	let homeConversationList = $state(recentConversations);
+	let homeEditingConversationId = $state<string | null>(null);
+	let homeEditingTitle = $state('');
+
+	$effect(() => {
+		homeConversationList = recentConversations;
+	});
+
 	const followUpConversations = $derived.by(() => {
 		const activeId = currentConversationId || latestClosedConversationId;
-		return recentConversations
+		return homeConversationList
 			.filter((c) => c.id !== activeId)
-			.slice(0, 3);
+			.slice(0, 6);
 	});
+
+	const followUpStarred = $derived(followUpConversations.filter((c) => c.starred && !c.archived));
+	const followUpRegular = $derived(followUpConversations.filter((c) => !c.starred && !c.archived));
+
+	function setHomeConversationStarred(id: string, starred: boolean) {
+		homeConversationList = homeConversationList.map((c) => (c.id === id ? { ...c, starred } : c));
+	}
+
+	function setHomeConversationArchived(id: string, archived: boolean) {
+		homeConversationList = homeConversationList.map((c) => (c.id === id ? { ...c, archived } : c));
+	}
+
+	function removeHomeConversation(id: string) {
+		homeConversationList = homeConversationList.filter((c) => c.id !== id);
+	}
+
+	function moveHomeConversationTheme(id: string, themeId: string | null) {
+		const nextTheme = themeId ? themes.find((t) => t.id === themeId) ?? null : null;
+		homeConversationList = homeConversationList.map((c) =>
+			c.id === id
+				? {
+						...c,
+						linkedTheme: nextTheme
+							? { id: nextTheme.id, name: nextTheme.name, emoji: nextTheme.emoji ?? null }
+							: null
+					}
+				: c
+		);
+	}
+
+	function startHomeConversationRename(id: string, currentTitle: string) {
+		homeEditingConversationId = id;
+		homeEditingTitle = currentTitle;
+	}
+
+	function cancelHomeConversationRename() {
+		homeEditingConversationId = null;
+		homeEditingTitle = '';
+	}
+
+	async function commitHomeConversationRename(id: string) {
+		const title = homeEditingTitle.trim();
+		if (!title) {
+			cancelHomeConversationRename();
+			return;
+		}
+
+		homeConversationList = homeConversationList.map((c) => (c.id === id ? { ...c, title } : c));
+		homeEditingConversationId = null;
+
+		await fetch(`/api/conversations/${id}`, {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ title })
+		});
+	}
+
 	const inputExpanded = $derived(chatOpen || cameraOpen || voiceOpen || moodOpen || fileFlowOpen);
 	let chatSection: HTMLElement | null = $state(null);
 
@@ -1859,7 +1930,7 @@
 	<section class="zone zone-input" class:zone-chat-open={inputExpanded} aria-label="Chat" bind:this={chatSection}>
 		{#if chatOpen}
 			<PageHeader
-				title={hasPersistedConversation ? 'Samtale' : activeQuickAction.label}
+				title={hasPersistedConversation ? 'Samtale' : 'Samtaler'}
 				subtitle={hasPersistedConversation ? chatConversationTitle : ''}
 				backHref={hasPersistedConversation ? '/samtaler' : undefined}
 				backLabel="Alle samtaler"
@@ -1884,15 +1955,60 @@
 				{#if chatMessages.length === 0 && !chatLoading}
 					{#if followUpConversations.length > 0}
 						<div class="followup-list" aria-label="Nylige samtaler å følge opp">
-							{#each followUpConversations as convo}
-								<button class="followup-item" onclick={() => goto(`/samtaler?conversation=${convo.id}`)}>
-									<span class="followup-title">{convo.title}</span>
-									<span class="followup-date">{formatFollowUpDate(convo.updatedAt)}</span>
-									{#if convo.preview}
-										<span class="followup-preview">{convo.preview}</span>
+							{#snippet followupItem(convo)}
+								<div class="followup-item-wrap" style={convo.linkedTheme ? getThemeHueStyle(convo.linkedTheme.name) : undefined}>
+									{#if homeEditingConversationId === convo.id}
+										<input
+											class="followup-rename-input"
+											bind:value={homeEditingTitle}
+											onkeydown={(e) => {
+												if (e.key === 'Enter') commitHomeConversationRename(convo.id);
+												if (e.key === 'Escape') cancelHomeConversationRename();
+											}}
+											onblur={() => commitHomeConversationRename(convo.id)}
+											autofocus
+										/>
+									{:else}
+										<button class="followup-item" onclick={() => goto(`/samtaler?conversation=${convo.id}`)}>
+											<span class="followup-title">{convo.title}</span>
+											<span class="followup-date">{formatFollowUpDate(convo.updatedAt)}</span>
+											{#if convo.preview}
+												<span class="followup-preview">{convo.preview}</span>
+											{/if}
+										</button>
 									{/if}
-								</button>
-							{/each}
+									<ConversationContextMenu
+										conversationId={convo.id}
+										starred={convo.starred}
+										archived={convo.archived}
+										currentThemeId={convo.linkedTheme?.id ?? null}
+										themes={themes}
+										onStarred={setHomeConversationStarred}
+										onArchived={setHomeConversationArchived}
+										onDeleted={removeHomeConversation}
+										onMovedToTheme={moveHomeConversationTheme}
+										onStartRename={() => startHomeConversationRename(convo.id, convo.title)}
+									/>
+								</div>
+							{/snippet}
+
+							{#if followUpStarred.length > 0}
+								<CollapsibleSection title="Stjernemerkede" count={followUpStarred.length} defaultOpen={true}>
+									{#each followUpStarred as convo (convo.id)}
+										{@render followupItem(convo)}
+									{/each}
+								</CollapsibleSection>
+							{/if}
+
+							<CollapsibleSection title="Samtaler" count={followUpRegular.length} defaultOpen={true}>
+								{#if followUpRegular.length === 0}
+									<p class="followup-empty">Ingen umerkede samtaler.</p>
+								{:else}
+									{#each followUpRegular as convo (convo.id)}
+										{@render followupItem(convo)}
+									{/each}
+								{/if}
+							</CollapsibleSection>
 						</div>
 					{/if}
 				{/if}
@@ -3657,6 +3773,19 @@
 		margin-top: 2px;
 	}
 
+	.followup-item-wrap {
+		display: flex;
+		align-items: stretch;
+		border: 1px solid #1a1a1a;
+		border-radius: 10px;
+		overflow: hidden;
+		transition: border-color 0.15s ease, color 0.15s ease;
+	}
+
+	.followup-item-wrap:hover {
+		border-color: #2b2b2b;
+	}
+
 	.followup-item {
 		text-align: left;
 		display: grid;
@@ -3667,17 +3796,41 @@
 		gap: 3px 10px;
 		padding: 9px 10px;
 		background: transparent;
-		border: 1px solid #1a1a1a;
-		border-radius: 10px;
+		border: none;
+		border-radius: 0;
 		color: #7a7a7a;
 		cursor: pointer;
-		transition: opacity 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+		transition: opacity 0.15s ease, color 0.15s ease;
+		flex: 1;
+		min-width: 0;
 	}
 
 	.followup-item:hover {
 		opacity: 0.9;
-		border-color: #2b2b2b;
 		color: #9a9a9a;
+	}
+
+	.followup-rename-input {
+		flex: 1;
+		min-width: 0;
+		background: #131313;
+		border: 1px solid #2a2a2a;
+		border-radius: 8px;
+		padding: 9px 10px;
+		margin: 4px;
+		color: #d2d2d2;
+		font: inherit;
+		font-size: 0.79rem;
+		font-weight: 600;
+		outline: none;
+	}
+
+	.followup-empty {
+		margin: 0;
+		padding: 8px 10px;
+		font-size: 0.72rem;
+		color: #646464;
+		font-style: italic;
 	}
 
 	.followup-title {

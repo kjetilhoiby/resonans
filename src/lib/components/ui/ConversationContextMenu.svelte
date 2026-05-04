@@ -151,12 +151,12 @@
 	}
 
 	.ctx-trigger {
-		background: none;
-		border: none;
+		background: transparent;
+		border: 1px solid transparent;
 		cursor: pointer;
 		padding: 0.25rem 0.5rem;
 		border-radius: 6px;
-		color: var(--color-text-secondary, #888);
+		color: var(--color-text-secondary, #6f6f6f);
 		font-size: 0.75rem;
 		letter-spacing: 0.1em;
 		line-height: 1;
@@ -166,18 +166,19 @@
 	}
 
 	.ctx-trigger:hover {
-		background: var(--color-surface-2, #eee);
-		color: var(--color-text-primary, #333);
+		background: #171717;
+		border-color: #262626;
+		color: #cfcfcf;
 	}
 
 	.ctx-menu {
 		position: absolute;
 		right: 0;
 		top: calc(100% + 4px);
-		background: var(--color-surface-1, #fff);
-		border: 1px solid var(--color-border, #e0e0e0);
+		background: #141414;
+		border: 1px solid #252525;
 		border-radius: 10px;
-		box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+		box-shadow: 0 10px 32px rgba(0, 0, 0, 0.42);
 		min-width: 180px;
 		z-index: 100;
 		overflow: hidden;
@@ -195,27 +196,31 @@
 		cursor: pointer;
 		text-align: left;
 		font-size: 0.875rem;
-		color: var(--color-text-primary, #333);
+		color: #d6d6d6;
 		border-radius: 6px;
 		white-space: nowrap;
 	}
 
 	.ctx-item:hover {
-		background: var(--color-surface-2, #f0f0f0);
+		background: #202020;
 	}
 
 	.ctx-item--danger {
-		color: var(--color-error, #d32f2f);
+		color: #e06b6b;
+	}
+
+	.ctx-item--danger:hover {
+		background: #2a1616;
 	}
 
 	.ctx-item--back {
-		color: var(--color-text-secondary, #888);
+		color: #8e8e8e;
 		font-size: 0.8rem;
 	}
 
 	.ctx-divider {
 		height: 1px;
-		background: var(--color-border, #e0e0e0);
+		background: #262626;
 		margin: 4px 0;
 	}
 </style>

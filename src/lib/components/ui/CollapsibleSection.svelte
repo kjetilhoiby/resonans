@@ -45,7 +45,7 @@
 		cursor: pointer;
 		text-align: left;
 		width: 100%;
-		color: var(--color-text-secondary, #888);
+		color: #6f6f6f;
 		font-size: 0.75rem;
 		font-weight: 600;
 		letter-spacing: 0.05em;
@@ -53,7 +53,7 @@
 	}
 
 	.collapsible-header:hover {
-		color: var(--color-text-primary, #333);
+		color: #b8b8b8;
 	}
 
 	.collapsible-title {
@@ -61,10 +61,11 @@
 	}
 
 	.collapsible-count {
-		background: var(--color-surface-2, #e8e8e8);
-		color: var(--color-text-secondary, #888);
+		background: #202020;
+		color: #9a9a9a;
+		border: 1px solid #2a2a2a;
 		border-radius: 999px;
-		padding: 0 0.4rem;
+		padding: 0.05rem 0.45rem;
 		font-size: 0.7rem;
 		font-weight: 600;
 		min-width: 1.2rem;

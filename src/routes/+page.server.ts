@@ -28,6 +28,9 @@ export const load: PageServerLoad = async ({ locals }) => {
 		id: c.id,
 		title: c.title,
 		preview: c.preview,
+		starred: c.starred,
+		archived: c.archived,
+		linkedTheme: c.linkedTheme,
 		updatedAt: c.updatedAt.toISOString()
 	}));
 
