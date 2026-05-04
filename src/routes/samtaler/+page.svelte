@@ -89,6 +89,7 @@
 	let stoppedText = $state('');
 	let lastUserText = $state('');
 	let lastUserMsgId = $state('');
+	let pendingMessage = $state<string | null>(null);
 	let inputDraft = $state('');
 	let inputKey = $state(0);
 	let abortController: AbortController | null = null;
@@ -125,6 +126,10 @@
 
 	async function sendMessage(text: string) {
 		if (!conversation) return;
+		if (chatLoading) {
+			pendingMessage = text;
+			return;
+		}
 		const msgId = crypto.randomUUID();
 		chatMessages = [...chatMessages, { id: msgId, role: 'user', text, starred: false, imageUrl: null }];
 		chatLoading = true;
@@ -230,6 +235,11 @@
 		} finally {
 			abortController = null;
 			chatLoading = false;
+			if (pendingMessage) {
+				const next = pendingMessage;
+				pendingMessage = null;
+				sendMessage(next);
+			}
 		}
 	}
 
@@ -422,13 +432,8 @@
 		</div>
 
 		<div class="cp-input">
-			{#if chatLoading}
-				<div class="cp-stop-row">
-					<button class="cp-stop-btn" onclick={stopChat}>■ Stopp</button>
-				</div>
-			{/if}
 			{#key inputKey}
-				<ChatInput placeholder="Skriv videre i samtalen…" disabled={chatLoading} initialValue={inputDraft} onsubmit={sendMessage} />
+				<ChatInput placeholder="Skriv videre i samtalen…" streaming={chatLoading} onStop={stopChat} initialValue={inputDraft} onsubmit={sendMessage} />
 			{/key}
 		</div>
 	</AppPage>
@@ -683,26 +688,6 @@
 		flex-direction: column;
 		gap: 6px;
 	}
-
-	.cp-stop-row {
-		display: flex;
-		justify-content: center;
-	}
-
-	.cp-stop-btn {
-		background: none;
-		border: 1px solid #2a2a2a;
-		border-radius: 999px;
-		padding: 5px 14px;
-		color: #666;
-		font: inherit;
-		font-size: 0.75rem;
-		font-weight: 500;
-		letter-spacing: 0.04em;
-		cursor: pointer;
-		transition: border-color 0.12s, color 0.12s;
-	}
-	.cp-stop-btn:hover { border-color: #555; color: #aaa; }
 
 	.cp-error-row {
 		display: flex;

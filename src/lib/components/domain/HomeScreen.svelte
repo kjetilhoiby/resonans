@@ -599,7 +599,13 @@
 	let chatMessages = $state<ChatMessage[]>([]);
 	let chatLoading = $state(false);
 	let chatStreamingText = $state('');
-	let chatStreamingStatus = $state('');
+	let chatStreamingSteps = $state<string[]>([]);
+	let chatStopped = $state(false);
+	let chatStoppedText = $state('');
+	let chatLastUserText = $state('');
+	let chatError = $state('');
+	let chatPendingMessage = $state<string | null>(null);
+	let chatAbortController: AbortController | null = null;
 	let currentConversationId = $state<string | null>(null);
 	let latestClosedConversationId = $state<string | null>(null);
 	let createdThemeLink = $state<{ id: string; name: string; emoji?: string | null } | null>(null);
@@ -1357,15 +1363,28 @@
 		await goto(`/tema/${themeId}?handoff=1`);
 	}
 
+	function stopChat() {
+		chatAbortController?.abort();
+	}
+
 	async function sendChat(text: string, imageUrl?: string, attachment?: AttachmentRef) {
 		const displayText = text || (imageUrl ? '📷 [Bilde]' : '');
+		if (chatLoading && !imageUrl && !attachment) {
+			chatPendingMessage = displayText;
+			return;
+		}
 		chatMessages = [...chatMessages, { role: 'user', text: displayText, imageUrl, attachment }];
 		chatLoading = true;
 		chatStreamingText = '';
-		chatStreamingStatus = 'Starter...';
+		chatStreamingSteps = [];
+		chatStopped = false;
+		chatStoppedText = '';
+		chatError = '';
+		chatLastUserText = displayText;
 		suggestedTheme = null;
 		routedToTheme = null;
-		
+		chatAbortController = new AbortController();
+
 		try {
 			if (!currentConversationId) {
 				try {
@@ -1386,11 +1405,11 @@
 				imageUrl,
 				attachment,
 				preferredModel: selectedChatModel !== 'auto' ? selectedChatModel : undefined,
+				signal: chatAbortController.signal,
 				onStatus: (status) => {
-					chatStreamingStatus = status;
+					chatStreamingSteps = [...chatStreamingSteps, status];
 				},
 				onToken: (token) => {
-					chatStreamingStatus = '';
 					chatStreamingText += token;
 				},
 				onThemeRouted: (theme) => {
@@ -1404,7 +1423,7 @@
 					bookWasRouted = true;
 					chatLoading = false;
 					chatStreamingText = '';
-					chatStreamingStatus = '';
+					chatStreamingSteps = [];
 					closeChat();
 					goto(`/tema/${book.themeId}?tab=data&book=${book.bookId}`);
 				}
@@ -1427,12 +1446,23 @@
 				}
 			];
 			if (data.checklistChanged) await fetchChecklists();
-		} catch {
-			chatMessages = [...chatMessages, { role: 'assistant', text: 'Noe gikk galt. Prøv igjen.' }];
+		} catch (e) {
+			if (e instanceof Error && e.name === 'AbortError') {
+				chatStopped = true;
+				chatStoppedText = chatStreamingText;
+			} else {
+				chatError = 'Noe gikk galt. Prøv igjen.';
+			}
 		} finally {
+			chatAbortController = null;
 			chatStreamingText = '';
-			chatStreamingStatus = '';
+			chatStreamingSteps = [];
 			chatLoading = false;
+			if (chatPendingMessage) {
+				const next = chatPendingMessage;
+				chatPendingMessage = null;
+				sendChat(next);
+			}
 		}
 	}
 
@@ -1814,8 +1844,17 @@
 					{#if chatStreamingText}
 						<TriageCard text={chatStreamingText} streaming={true} />
 					{:else}
-						<TriageCard loading={true} status={chatStreamingStatus} />
+						<TriageCard loading={true} steps={chatStreamingSteps} />
 					{/if}
+				{/if}
+				{#if chatStopped && chatStoppedText}
+					<TriageCard text={chatStoppedText} stopped={true} />
+				{/if}
+				{#if chatError}
+					<div class="chat-error-row">
+						<p class="chat-error">{chatError}</p>
+						<button class="chat-retry-btn" onclick={() => { chatError = ''; sendChat(chatLastUserText); }}>↺ Prøv på nytt</button>
+					</div>
 				{/if}
 			</div>
 			<div class="chat-input-area">
@@ -1861,7 +1900,8 @@
 						initialValue={chatPrefill}
 						autoFocus={chatInputAutoFocus}
 						showActionRig={true}
-						disabled={chatLoading}
+						streaming={chatLoading}
+						onStop={stopChat}
 						onAttachment={(kind, draft) => startHomeAttachment(kind, draft, { preserveConversation: true })}
 						onMood={(draft) => startMoodFlow(true, draft)}
 						onTextChange={(text) => (chatPrefill = text)}
@@ -3562,6 +3602,34 @@
 		word-break: break-word;
 		color: #ccc;
 	}
+
+	.chat-error-row {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 0 2px;
+	}
+
+	.chat-error {
+		font-size: 0.8rem;
+		color: #e07070;
+		margin: 0;
+		flex: 1;
+	}
+
+	.chat-retry-btn {
+		background: none;
+		border: 1px solid #3a2a2a;
+		border-radius: 999px;
+		padding: 4px 12px;
+		color: #a06060;
+		font: inherit;
+		font-size: 0.75rem;
+		cursor: pointer;
+		white-space: nowrap;
+		transition: border-color 0.12s, color 0.12s;
+	}
+	.chat-retry-btn:hover { border-color: #7a4040; color: #d08080; }
 
 	.chat-input-area {
 		position: sticky;

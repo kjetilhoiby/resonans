@@ -360,7 +360,6 @@
 
 	function smartDayLabel(isoDate: string): string {
 		if (isoDate === todayIso) return 'I dag';
-		if (isoDate === tomorrowIso) return 'I morgen';
 		const raw = new Intl.DateTimeFormat('nb-NO', { weekday: 'short' }).format(new Date(isoDate + 'T12:00:00'));
 		const clean = raw.replace('.', '');
 		return clean.charAt(0).toUpperCase() + clean.slice(1);

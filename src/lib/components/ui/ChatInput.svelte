@@ -16,6 +16,8 @@
 	interface Props {
 		placeholder?: string;
 		disabled?: boolean;
+		streaming?: boolean;
+		onStop?: () => void;
 		initialValue?: string;
 		autoFocus?: boolean;
 		showActionRig?: boolean;
@@ -31,6 +33,8 @@
 	let {
 		placeholder = 'Skriv en melding…',
 		disabled = false,
+		streaming = false,
+		onStop,
 		initialValue = '',
 		autoFocus = false,
 		showActionRig = false,
@@ -62,6 +66,8 @@
 		onsubmit(trimmed);
 		text = '';
 		onTextChange?.('');
+		// reset height
+		if (textareaEl) { textareaEl.style.height = 'auto'; }
 	}
 
 	function autoResize(e: Event) {
@@ -145,7 +151,7 @@
 		bind:this={textareaEl}
 		bind:value={text}
 		{placeholder}
-		{disabled}
+		disabled={disabled && !streaming}
 		rows="1"
 		autocapitalize="sentences"
 		onfocus={openFromInput}
@@ -158,7 +164,9 @@
 
 	{#if showActionRig}
 		<div class="ci-actions-rig" aria-label="Input-handlinger">
-			{#if hasDraft}
+			{#if streaming}
+				<button class="ci-icon-btn ci-stop-btn" type="button" title="Stopp" onmousedown={(e) => e.preventDefault()} onclick={onStop}>■</button>
+			{:else if hasDraft}
 				<button class="ci-icon-btn" type="button" title="Send" onmousedown={(e) => e.preventDefault()} onclick={submit} disabled={disabled}>
 					<Icon name="forward" size={18} />
 				</button>
@@ -186,6 +194,8 @@
 				</button>
 			{/if}
 		</div>
+	{:else if streaming}
+		<button class="ci-send" type="button" onclick={onStop} aria-label="Stopp">■</button>
 	{:else}
 		<button
 			class="ci-send"
@@ -293,6 +303,13 @@
 	.ci-send:not(:disabled):hover {
 		background: #8f9ff7;
 	}
+
+	.ci-stop-btn {
+		font-size: 0.7rem;
+		color: #888;
+		border-color: #2a2a2a;
+	}
+	.ci-stop-btn:hover { color: #ccc; border-color: #555; }
 
 	/* Spinner when loading */
 	.ci-spinner {
