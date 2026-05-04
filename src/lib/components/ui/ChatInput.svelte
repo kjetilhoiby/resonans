@@ -46,6 +46,11 @@
 	let text = $state(initialValue);
 	let textareaEl = $state<HTMLTextAreaElement | null>(null);
 	const hasDraft = $derived(text.trim().length > 0);
+	let isTouchDevice = $state(false);
+
+	$effect(() => {
+		isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
+	});
 
 	$effect(() => {
 		text = initialValue;
@@ -75,6 +80,7 @@
 		}
 
 		if (e.key === 'Enter' && !e.shiftKey) {
+			if (isTouchDevice) return; // mobil: Enter = linjeskift, send-knapp sender
 			e.preventDefault();
 			submit();
 		}
