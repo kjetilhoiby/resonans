@@ -28,7 +28,8 @@
 	import { fetchDashboard, getCachedDashboard, type EconomicsDashboardData, type HealthDashboardData, type TravelDashboardData, type FoodDashboardData } from '$lib/client/dashboard-cache';
 	import { getThemeDashboardDefinition, resolveThemeDashboardKind } from '$lib/domain/theme-dashboard-registry';
 	import { finishNavMetric, startNavMetric } from '$lib/client/nav-metrics';
-	import { streamProxyChat } from '$lib/client/proxy-chat-stream';
+	import { ChatState } from '$lib/client/chat-state.svelte';
+	import type { ChatMessage } from '$lib/client/chat-state.svelte';
 	import FlowCard from '../flows/FlowCard.svelte';
 	import FlowSheet from '../flows/FlowSheet.svelte';
 	import { getFlowsByTheme } from '$lib/flows/registry';
@@ -438,28 +439,37 @@
 	});
 
 	/* ── Chat-tilstand ──────────────────────────────────── */
-	interface ChatMsg {
-		role: 'user' | 'assistant';
-		text: string;
-		imageUrl?: string;
+	function toMsg(m: { role: string; content: string }): ChatMessage {
+		return { id: crypto.randomUUID(), role: m.role as 'user' | 'assistant', text: m.content, starred: false };
 	}
 
-	let chatMessages = $state<ChatMsg[]>(
-		initialMessages
-			.filter((m) => m.role !== 'system')
-			.map((m) => ({ role: m.role as 'user' | 'assistant', text: m.content }))
-	);
-	let chatLoading = $state(false);
-	let chatError = $state('');
-	let chatStreamingText = $state('');
-	let chatStreamingStatus = $state('');
+	const canonChat = new ChatState({
+		conversationId,
+		onPayload: async (data) => {
+			if (data.themeArchived && (data.archivedTheme as any)?.id === theme.id) {
+				archiveRedirect = {
+					name: (data.archivedTheme as any).name,
+					emoji: (data.archivedTheme as any).emoji ?? theme.emoji
+				};
+				setTimeout(() => void goto('/?archivedTheme=1'), 1050);
+			}
+		}
+	});
+	canonChat.messages = initialMessages
+		.filter((m) => m.role !== 'system')
+		.map(toMsg);
+
+	const extraChat = new ChatState({});
+
 	let archiveRedirect = $state<{ name: string; emoji?: string | null } | null>(null);
 
 	/* ── Samtaler-liste tilstand ────────────────────────── */
 	let selectedConvId = $state<string | null>(isHandoff || hasLinkedWorkout || requestedPrompt ? conversationId : null);
-	let selectedConvMessages = $state<ChatMsg[]>([]);
+
+	const activeChat = $derived(selectedConvId === conversationId ? canonChat : extraChat);
 	let convLoadingMessages = $state(false);
 	let convCreating = $state(false);
+	let navError = $state(''); // feil ved lasting / oppretting av samtale (ikke chat-feil)
 	let chatDraft = $state(requestedPrompt || selectedWorkout?.chatPrompt || '');
 
 	/* ── Samtaler-liste tilstand ─── omdøping / lokale oppdateringer ──────── */
@@ -527,7 +537,7 @@
 			chatImageUrl = url;
 			chatImagePreview = URL.createObjectURL(file);
 		} catch {
-			chatError = 'Bilde-opplasting feilet. Prøv igjen.';
+			navError = 'Bilde-opplasting feilet. Prøv igjen.';
 			chatImagePreview = null;
 			chatImageUrl = null;
 		} finally {
@@ -535,9 +545,7 @@
 		}
 	}
 
-	const activeConversationMessages = $derived(
-		selectedConvId === conversationId ? chatMessages : selectedConvMessages
-	);
+	const activeConversationMessages = $derived(activeChat.messages);
 
 	function fmtDay(iso: string): string {
 		const d = new Date(iso);
@@ -593,13 +601,11 @@
 			const res = await fetch(`/api/conversations/${convId}/messages`);
 			if (!res.ok) throw new Error('Lasting feilet');
 			const data: Array<{ role: string; content: string }> = await res.json();
-			selectedConvMessages = data.map((m) => ({
-				role: m.role as 'user' | 'assistant',
-				text: m.content
-			}));
+			extraChat.setConversationId(convId);
+			extraChat.messages = data.map(toMsg);
 			selectedConvId = convId;
 		} catch {
-			chatError = 'Kunne ikke laste samtalen.';
+			navError = 'Kunne ikke laste samtalen.';
 		} finally {
 			convLoadingMessages = false;
 		}
@@ -611,10 +617,11 @@
 			const res = await fetch(`/api/tema/${theme.id}/conversations`, { method: 'POST' });
 			if (!res.ok) throw new Error('Oppretting feilet');
 			const data: { conversationId: string } = await res.json();
-			selectedConvMessages = [];
+			extraChat.setConversationId(data.conversationId);
+			extraChat.messages = [];
 			selectedConvId = data.conversationId;
 		} catch {
-			chatError = 'Kunne ikke opprette samtale.';
+			navError = 'Kunne ikke opprette samtale.';
 		} finally {
 			convCreating = false;
 		}
@@ -622,54 +629,7 @@
 
 	async function sendMessage(text: string, imageUrl?: string) {
 		if (selectedConvId === null) return;
-		const isCanon = selectedConvId === conversationId;
-		if (isCanon) {
-			chatMessages.push({ role: 'user', text: text || '📷', imageUrl: imageUrl || undefined });
-		} else {
-			selectedConvMessages.push({ role: 'user', text: text || '📷', imageUrl: imageUrl || undefined });
-		}
-		chatLoading = true;
-		chatError = '';
-		chatStreamingText = '';
-		chatStreamingStatus = 'Starter...';
-
-		try {
-			const data = await streamProxyChat({
-				message: text || 'Analyser dette bildet og lagr relevante data.',
-				imageUrl: imageUrl || undefined,
-				conversationId: selectedConvId,
-				onStatus: (status) => {
-					chatStreamingStatus = status;
-				},
-				onToken: (token) => {
-					chatStreamingStatus = '';
-					chatStreamingText += token;
-				}
-			});
-
-			if (isCanon && data.themeArchived && data.archivedTheme?.id === theme.id) {
-				archiveRedirect = {
-					name: data.archivedTheme.name,
-					emoji: data.archivedTheme.emoji ?? theme.emoji
-				};
-				setTimeout(() => {
-					void goto('/?archivedTheme=1');
-				}, 1050);
-				return;
-			}
-
-			if (isCanon) {
-				chatMessages.push({ role: 'assistant', text: data.message });
-			} else {
-				selectedConvMessages.push({ role: 'assistant', text: data.message });
-			}
-		} catch (err) {
-			chatError = 'Noe gikk galt. Prøv igjen.';
-		} finally {
-			chatStreamingText = '';
-			chatStreamingStatus = '';
-			chatLoading = false;
-		}
+		await activeChat.send(text, imageUrl);
 	}
 
 	/* ── Data-tab hjelpefunksjoner ──────────────────────── */
@@ -1419,8 +1379,8 @@
 						</div>
 					{/if}
 
-					{#if chatError}
-						<p class="chat-error" style="padding: 0 16px;">{chatError}</p>
+					{#if navError}
+						<p class="chat-error" style="padding: 0 16px;">{navError}</p>
 					{/if}
 				</div>
 			{:else}
@@ -1429,7 +1389,7 @@
 					<div class="conv-back-bar">
 						<button
 							class="conv-back-btn"
-							onclick={() => { selectedConvId = null; chatError = ''; }}
+							onclick={() => { selectedConvId = null; navError = ''; }}
 							aria-label="Tilbake til samtaler"
 						>
 							<Icon name="back" size={16} /> Samtaler
@@ -1476,16 +1436,16 @@
 							{/if}
 						{/each}
 
-						{#if chatLoading}
-							{#if chatStreamingText}
-								<TriageCard text={chatStreamingText} streaming={true} />
+						{#if activeChat.loading}
+							{#if activeChat.streamingText}
+								<TriageCard text={activeChat.streamingText} streaming={true} />
 							{:else}
-								<TriageCard loading={true} status={chatStreamingStatus} />
+								<TriageCard loading={true} steps={activeChat.streamingSteps} />
 							{/if}
 						{/if}
 
-						{#if chatError}
-							<p class="chat-error">{chatError}</p>
+						{#if activeChat.error}
+							<p class="chat-error">{activeChat.error}</p>
 						{/if}
 					</div>
 
@@ -1498,7 +1458,7 @@
 						{/if}
 						<ChatInput
 							placeholder="Spør om {theme.name.toLowerCase()}…"
-							disabled={chatLoading || chatImageUploading}
+							disabled={activeChat.loading || chatImageUploading}
 							initialValue={chatDraft}
 							onsubmit={(message) => {
 								chatDraft = '';

@@ -4,7 +4,7 @@
 	import TriageCard from '$lib/components/composed/TriageCard.svelte';
 	import ChatStatusWidget from '$lib/components/domain/ChatStatusWidget.svelte';
 	import ChatInput from '$lib/components/ui/ChatInput.svelte';
-	import { streamProxyChat } from '$lib/client/proxy-chat-stream';
+	import { ChatState } from '$lib/client/chat-state.svelte';
 	import type { WeatherStatusWidget } from '$lib/ai/tools/weather-forecast';
 	import { onMount, tick, untrack } from 'svelte';
 	import { fly, fade } from 'svelte/transition';
@@ -57,11 +57,22 @@
 		confirmAction?: string;
 	}
 	let chatMessages = $state<RichChatMsg[]>([]);
-	let flowConversationId = $state<string | null>(null);
-	let chatLoading = $state(false);
-	let chatStreamingText = $state('');
-	let chatStreamingStatus = $state('');
 	let chatMessagesEl = $state<HTMLDivElement | null>(null);
+
+	// ChatState leverer streaming-tilstand; chatMessages styres lokalt for å støtte confirmAction
+	const flowChat = new ChatState({
+		systemPrompt: () => context.systemPrompts?.[currentStep?.id ?? ''] ?? currentStep?.systemPrompt ?? undefined,
+		onAssistantMessage: (msg, _data) => {
+			const parsed = parseChatMessage(msg.text);
+			chatMessages = [...chatMessages, {
+				role: 'assistant' as const,
+				text: parsed.text,
+				confirmAction: parsed.confirmAction,
+				statusWidget: msg.statusWidget
+			}];
+			return false; // FlowSheet styrer chatMessages selv
+		}
+	});
 
 	// ── Checklist state ──────────────────────────────────────────────
 	let checklistItems = $state<ChecklistItem[]>([]);
@@ -85,8 +96,7 @@
 
 	const canProceed = $derived.by(() => {
 		if (!currentStep) return false;
-	if (currentStep?.type === 'chat') return chatMessages.some((m) => m.role === 'assistant');
-		if (currentStep.type === 'checklist') return true; // always, even 0 selected
+	if (currentStep?.type === 'chat') return chatMessages.some((m) => m.role === 'assistant');		if (currentStep.type === 'checklist') return true; // always, even 0 selected
 		if (currentStep.type === 'decision-list') return true;
 		const fields = currentStep.fields ?? [];
 		return fields.every((field) => {
@@ -259,32 +269,11 @@
 
 	/** userMessage=undefined means AI-initiated (autoSend prompt) */
 	async function sendChatMessage(text: string, isAutoSend = false) {
-		if (chatLoading) return;
+		if (flowChat.loading) return;
 		if (!isAutoSend) chatMessages = [...chatMessages, { role: 'user', text }];
-		chatLoading = true;
-		chatStreamingText = '';
-		chatStreamingStatus = 'Starter...';
 		await scrollChatToBottom();
-		try {
-			const data = await streamProxyChat({
-				message: text,
-				conversationId: flowConversationId,
-				forceNewConversation: !flowConversationId,
-				systemPrompt: context.systemPrompts?.[currentStep?.id ?? ''] ?? currentStep?.systemPrompt,
-				onStatus: async (status) => { chatStreamingStatus = status; await scrollChatToBottom(); },
-				onToken: async (token) => { chatStreamingStatus = ''; chatStreamingText += token; await scrollChatToBottom(); }
-			});
-			if (data.conversationId && !flowConversationId) flowConversationId = data.conversationId;
-			const parsed = parseChatMessage(String(data.message ?? ''));
-			chatMessages = [...chatMessages, { role: 'assistant', ...parsed, statusWidget: data.statusWidget ?? data.metadata?.statusWidget ?? null }];
-		} catch {
-			chatMessages = [...chatMessages, { role: 'assistant', text: 'Beklager, noe gikk galt.' }];
-		} finally {
-			chatStreamingText = '';
-			chatStreamingStatus = '';
-			chatLoading = false;
-			await scrollChatToBottom();
-		}
+		await flowChat.send(text);
+		await scrollChatToBottom();
 	}
 
 	function handlePrevious() {
@@ -323,7 +312,7 @@
 		completionError = '';
 		try {
 			await flow?.onComplete?.(flowData, context);
-			await oncomplete?.(flowData);
+			await oncomplete?.({ ...flowData, conversationId: flowChat.conversationId ?? undefined });
 			onclose?.();
 		} catch {
 			completionError = 'Noe gikk galt. Prøv igjen.';
@@ -400,7 +389,7 @@
 			{#if currentStep.type === 'chat'}
 				<div class="fs-chat-area">
 					<div class="fs-chat-messages" bind:this={chatMessagesEl} aria-live="polite">
-						{#if chatMessages.length === 0 && !chatLoading}
+						{#if chatMessages.length === 0 && !flowChat.loading}
 							<p class="fs-chat-empty">{currentStep.autoSend ? 'Starter…' : 'Si hva du tenker på…'}</p>
 						{/if}
 						{#each chatMessages as msg, i (i)}
@@ -411,7 +400,7 @@
 								{#if msg.statusWidget}
 									<ChatStatusWidget widget={msg.statusWidget} />
 								{/if}
-								{#if msg.confirmAction && i === chatMessages.length - 1 && !chatLoading}
+								{#if msg.confirmAction && i === chatMessages.length - 1 && !flowChat.loading}
 									<button
 										type="button"
 										class="fs-chat-confirm"
@@ -420,17 +409,17 @@
 								{/if}
 							{/if}
 						{/each}
-						{#if chatLoading}
-							{#if chatStreamingText}
-								<TriageCard text={chatStreamingText} streaming={true} />
+						{#if flowChat.loading}
+							{#if flowChat.streamingText}
+								<TriageCard text={flowChat.streamingText} streaming={true} />
 							{:else}
-								<TriageCard loading={true} status={chatStreamingStatus} />
+								<TriageCard loading={true} steps={flowChat.streamingSteps} />
 							{/if}
 						{/if}
 					</div>
 					<ChatInput
 						placeholder="Skriv svar…"
-						disabled={chatLoading}
+						disabled={flowChat.loading}
 						onsubmit={(text) => void sendChatMessage(text)}
 					/>
 				</div>

@@ -55,6 +55,7 @@
 		title: string;
 		emoji: string;
 		completedAt: string | null;
+		planConversationId?: string | null;
 		items: ChecklistItem[];
 	}
 
@@ -233,6 +234,7 @@
 	let dayCloseDecisions = $state<Record<string, 'carryover' | 'unsolved'>>({});
 	let weekReviewChatOpen = $state(false);
 	let weekPlanChatOpen = $state(false);
+	let weekPlanJustCompleted = $state(false);
 	let foodChatOpen = $state(false);
 	let foodChatItemText = $state('');
 
@@ -1516,7 +1518,7 @@
 		</form>
 	</section>
 
-	<section class="wp-card">
+	<section class="wp-card" id="ukeplan-checklist">
 		<div class="wp-card-head">
 			<h2>Ukas oppgaver</h2>
 			{#if weekChecklistState}
@@ -1758,6 +1760,18 @@
 				<input type="hidden" name="weekKey" value={data.week.dashedKey} />
 				<button class="btn-secondary" type="submit">Opprett ukeliste</button>
 			</form>
+		{/if}
+		{#if data.weekChecklist?.planConversationId}
+			<a href="/samtaler?conversation={data.weekChecklist.planConversationId}" class="wp-plan-conv-link">Åpne planleggingssamtalen →</a>
+		{/if}
+		{#if weekPlanJustCompleted}
+			<div class="wp-completion-banner">
+				<span>Ukeplanen er klar! 🎉</span>
+				<div class="wp-completion-banner-actions">
+					<a href="#ukeplan-checklist" class="wp-completion-banner-btn" onclick={() => weekPlanJustCompleted = false}>Åpne ukeplanen</a>
+					<button type="button" class="wp-completion-banner-btn" onclick={() => weekPlanJustCompleted = false}>Lukk</button>
+				</div>
+			</div>
 		{/if}
 	</section>
 
@@ -2097,8 +2111,16 @@
 			prompts: { chat: buildWeekPlanPrefill() }
 		}}
 		onclose={() => (weekPlanChatOpen = false)}
-		oncomplete={async () => {
+		oncomplete={async (fd) => {
 			weekPlanChatOpen = false;
+			weekPlanJustCompleted = true;
+			if (fd.conversationId && weekChecklistState?.id) {
+				await fetch(`/api/checklists/${weekChecklistState.id}`, {
+					method: 'PATCH',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ planConversationId: fd.conversationId })
+				});
+			}
 			await invalidateAll();
 		}}
 	/>
@@ -2671,6 +2693,47 @@
 		background: #151925;
 		overflow: hidden;
 	}
+
+	.wp-plan-conv-link {
+		display: inline-block;
+		margin-top: 12px;
+		font-size: 0.8rem;
+		color: #7c8ef5;
+		text-decoration: none;
+	}
+	.wp-plan-conv-link:hover {
+		text-decoration: underline;
+	}
+
+	.wp-completion-banner {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-top: 12px;
+		padding: 10px 14px;
+		border-radius: 10px;
+		background: #1a2040;
+		font-size: 0.85rem;
+		color: #c8d0f0;
+	}
+
+	.wp-completion-banner-actions {
+		display: flex;
+		gap: 8px;
+	}
+
+	.wp-completion-banner-btn {
+		background: none;
+		border: none;
+		color: #7c8ef5;
+		cursor: pointer;
+		font-size: 0.8rem;
+		padding: 2px 6px;
+	}
+	.wp-completion-banner-btn:hover {
+		text-decoration: underline;
+	}
+
 
 	.wp-progress-fill {
 		height: 100%;
