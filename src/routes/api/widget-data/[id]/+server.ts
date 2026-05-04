@@ -352,6 +352,7 @@ function aggregateValues(values: number[], aggregation: string): number {
 	if (values.length === 0) return 0;
 	if (aggregation === 'count') return values.length;
 	if (aggregation === 'latest') return values[values.length - 1] ?? 0;
+	if (aggregation === 'delta') return (values[values.length - 1] ?? 0) - (values[0] ?? 0);
 	if (aggregation === 'avg') return values.reduce((sum, v) => sum + v, 0) / values.length;
 	return values.reduce((sum, v) => sum + v, 0);
 }
@@ -460,6 +461,27 @@ async function fetchSingleValue(
 		const rows = await fetchCategorizedAmountRows(userId, from, to, filterCategory, filterSubcategory);
 		if (rows.length === 0) return null;
 		return aggregateValues(rows.map((row) => row.value), aggregation);
+	}
+
+	if (aggregation === 'delta' && !metricConf.countStar) {
+		// Endring i perioden: siste måling minus første måling
+		const nullCheck = `AND (${metricConf.field})::numeric IS NOT NULL`;
+		const query = `
+			SELECT (
+				SELECT (${metricConf.field})::numeric
+				FROM sensor_events
+				WHERE user_id = $1 AND data_type = $2 AND timestamp >= $3 AND timestamp <= $4 ${nullCheck}
+				ORDER BY timestamp DESC LIMIT 1
+			) - (
+				SELECT (${metricConf.field})::numeric
+				FROM sensor_events
+				WHERE user_id = $1 AND data_type = $2 AND timestamp >= $3 AND timestamp <= $4 ${nullCheck}
+				ORDER BY timestamp ASC LIMIT 1
+			) AS value
+		`;
+		const rows = await sql(query, [userId, metricConf.dataType, from.toISOString(), to.toISOString()]);
+		const val = rows[0]?.value;
+		return val !== null && val !== undefined ? parseFloat(String(val)) : null;
 	}
 
 	const userAggFn = aggregation === 'sum' ? 'SUM' : aggregation === 'count' ? 'COUNT' : aggregation === 'latest' ? 'MAX' : 'AVG';
@@ -606,6 +628,7 @@ async function tryReadFromCache(
 	range: string,
 	aggregation: string,
 ): Promise<CacheResult | null> {
+	if (aggregation === 'delta') return null; // cache har ikke valueDelta-kolonne
 	const cachePeriod = rangeToCachePeriod(range);
 	if (!cachePeriod) return null;
 

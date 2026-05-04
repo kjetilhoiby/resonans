@@ -15,7 +15,7 @@ export const VALID_WIDGET_METRICS = [
 	'amount'
 ] as const;
 
-export const VALID_WIDGET_AGGS = ['avg', 'sum', 'count', 'latest'] as const;
+export const VALID_WIDGET_AGGS = ['avg', 'sum', 'count', 'latest', 'delta'] as const;
 export const VALID_WIDGET_PERIODS = ['day', 'week', 'month'] as const;
 export const VALID_WIDGET_RANGES = ['last7', 'last14', 'last30', 'current_week', 'current_month', 'current_year'] as const;
 
