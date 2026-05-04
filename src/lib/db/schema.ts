@@ -197,7 +197,7 @@ export const goals = pgTable('goals', {
 	title: text('title').notNull(),
 	description: text('description'),
 	targetDate: timestamp('target_date'),
-	status: text('status').notNull().default('active'), // active, completed, paused, abandoned
+	status: text('status').notNull().default('active'), // active, completed, paused, abandoned, archived
 	metadata: jsonb('metadata'), // fleksibel JSON for ekstra data
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()

@@ -214,9 +214,7 @@
 			if (!response.ok) {
 				throw new Error(result.error || 'Kunne ikke slette målet');
 			}
-			// Remove from local state instead of full reload
 			data.goals = data.goals.filter((g) => g.id !== goalId);
-			// Also update sensorProgressMap and weightProgressMap
 			const { [goalId]: _s, ...restSensor } = data.sensorProgressMap;
 			data.sensorProgressMap = restSensor;
 			const { [goalId]: _w, ...restWeight } = data.weightProgressMap;
@@ -225,6 +223,46 @@
 			alert(`Feil ved sletting: ${error instanceof Error ? error.message : 'Ukjent feil'}`);
 		}
 	}
+
+	async function archiveGoal(goalId: string) {
+		try {
+			const response = await fetch(`/api/goals/${goalId}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ status: 'archived' })
+			});
+			const result = await response.json();
+			if (!response.ok) {
+				throw new Error(result.error || 'Kunne ikke arkivere målet');
+			}
+			data.goals = data.goals.map((g) => g.id === goalId ? { ...g, status: 'archived' } : g);
+			expandedGoals = new Set([...expandedGoals].filter((id) => id !== goalId));
+		} catch (error) {
+			alert(`Feil ved arkivering: ${error instanceof Error ? error.message : 'Ukjent feil'}`);
+		}
+	}
+
+	async function unarchiveGoal(goalId: string) {
+		try {
+			const response = await fetch(`/api/goals/${goalId}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ status: 'active' })
+			});
+			const result = await response.json();
+			if (!response.ok) {
+				throw new Error(result.error || 'Kunne ikke gjenopprette målet');
+			}
+			data.goals = data.goals.map((g) => g.id === goalId ? { ...g, status: 'active' } : g);
+		} catch (error) {
+			alert(`Feil ved gjenoppretting: ${error instanceof Error ? error.message : 'Ukjent feil'}`);
+		}
+	}
+
+	let archivedExpanded = $state(false);
+
+	const activeGoals = $derived(data.goals.filter((g) => g.status !== 'archived'));
+	const archivedGoals = $derived(data.goals.filter((g) => g.status === 'archived'));
 </script>
 
 <AppPage width="full" theme="dark" className="goals-page">
@@ -239,13 +277,13 @@
 
 	<div class="header-stats">
 		<div class="stat-card">
-			<div class="stat-value">{data.goals.filter((goal) => goal.status === 'active').length}</div>
+			<div class="stat-value">{activeGoals.filter((goal) => goal.status === 'active').length}</div>
 			<div class="stat-label">Aktive mål</div>
 		</div>
 	</div>
 
 	<main class="content">
-		{#if data.goals.length === 0}
+		{#if activeGoals.length === 0 && archivedGoals.length === 0}
 			<div class="empty-state">
 				<div class="empty-icon"><Icon name="goals" size={48} /></div>
 				<p>Ingen mål ennå</p>
@@ -253,7 +291,7 @@
 			</div>
 		{:else}
 			<div class="goals-list">
-				{#each data.goals as goal}
+				{#each activeGoals as goal}
 					{@const goalProgress = calculateGoalProgress(goal)}
 					{@const goalTrackLabel = formatGoalTrack(goal)}
 					{@const intentBadge = getIntentBadge(goal)}
@@ -446,6 +484,12 @@
 
 								<div class="goal-actions">
 									<button
+										class="btn-archive"
+										onclick={() => archiveGoal(goal.id)}
+									>
+										Arkiver
+									</button>
+									<button
 										class="btn-danger"
 										onclick={() => deleteGoal(goal.id, goal.title)}
 									>
@@ -457,6 +501,56 @@
 					</div>
 				{/each}
 			</div>
+
+			{#if archivedGoals.length > 0}
+				<div class="archived-section">
+					<button class="archived-toggle" onclick={() => (archivedExpanded = !archivedExpanded)}>
+						<span class="archived-toggle-label">Arkiverte mål ({archivedGoals.length})</span>
+						<span class="chevron" class:open={archivedExpanded}>›</span>
+					</button>
+					{#if archivedExpanded}
+						<div class="goals-list archived-list">
+							{#each archivedGoals as goal}
+								{@const isExpanded = expandedGoals.has(goal.id)}
+								<div id={`goal-${goal.id}`} class="goal-card goal-card-archived" class:expanded={isExpanded}>
+									<button
+										class="goal-summary"
+										onclick={() => toggleGoal(goal.id)}
+										aria-expanded={isExpanded}
+									>
+										<div class="goal-summary-left">
+											<div class="goal-title-row">
+												<h2 class="archived-title">{goal.title}</h2>
+											</div>
+											{#if goal.category}
+												<div class="goal-category">{goal.category.icon || '📌'} {goal.category.name}</div>
+											{/if}
+										</div>
+										<div class="goal-summary-right">
+											<span class="chevron" class:open={isExpanded}>›</span>
+										</div>
+									</button>
+									{#if isExpanded}
+										<div class="goal-details">
+											{#if goal.description}
+												<p class="goal-description">{goal.description}</p>
+											{/if}
+											<div class="goal-actions">
+												<button class="btn-restore" onclick={() => unarchiveGoal(goal.id)}>
+													Gjenopprett
+												</button>
+												<button class="btn-danger" onclick={() => deleteGoal(goal.id, goal.title)}>
+													Slett mål
+												</button>
+											</div>
+										</div>
+									{/if}
+								</div>
+							{/each}
+						</div>
+					{/if}
+				</div>
+			{/if}
 		{/if}
 	</main>
 </AppPage>
@@ -886,5 +980,80 @@
 		background: #7c8ef5;
 		border-radius: 50%;
 		display: inline-block;
+	}
+
+	.btn-archive {
+		padding: 0.4rem 0.9rem;
+		border-radius: 8px;
+		border: 1px solid rgba(150, 150, 150, 0.25);
+		background: rgba(150, 150, 150, 0.07);
+		color: #999;
+		font-size: 0.8rem;
+		cursor: pointer;
+		transition: background 0.15s;
+	}
+
+	.btn-archive:hover {
+		background: rgba(150, 150, 150, 0.14);
+	}
+
+	.btn-restore {
+		padding: 0.4rem 0.9rem;
+		border-radius: 8px;
+		border: 1px solid rgba(124, 142, 245, 0.3);
+		background: rgba(124, 142, 245, 0.08);
+		color: #b9c3ff;
+		font-size: 0.8rem;
+		cursor: pointer;
+		transition: background 0.15s;
+	}
+
+	.btn-restore:hover {
+		background: rgba(124, 142, 245, 0.15);
+	}
+
+	.archived-section {
+		margin-top: 2rem;
+	}
+
+	.archived-toggle {
+		width: 100%;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 0.75rem 0;
+		background: none;
+		border: none;
+		border-top: 1px solid #222;
+		cursor: pointer;
+		color: inherit;
+		text-align: left;
+	}
+
+	.archived-toggle-label {
+		font-size: 0.85rem;
+		color: #555;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+	}
+
+	.archived-toggle .chevron {
+		color: #444;
+	}
+
+	.archived-list {
+		margin-top: 0.75rem;
+	}
+
+	.goal-card-archived {
+		opacity: 0.65;
+	}
+
+	.goal-card-archived:hover {
+		opacity: 0.85;
+	}
+
+	.archived-title {
+		color: #888 !important;
 	}
 </style>
