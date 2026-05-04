@@ -267,6 +267,7 @@ export const conversations = pgTable('conversations', {
 	userId: text('user_id').references(() => users.id).notNull(),
 	themeId: uuid('theme_id').references((): AnyPgColumn => themes.id, { onDelete: 'set null' }),
 	title: text('title'),
+	starred: boolean('starred').default(false).notNull(),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
 });
@@ -279,6 +280,7 @@ export const messages = pgTable('messages', {
 	content: text('content').notNull(),
 	imageUrl: text('image_url'), // Cloudinary URL for bilder
 	metadata: jsonb('metadata'), // for ekstra data som tool_calls, etc.
+	starred: boolean('starred').default(false).notNull(),
 	createdAt: timestamp('created_at').defaultNow().notNull()
 }, (table) => ({
 	idxConversationId: index('messages_conversation_id_idx').on(table.conversationId)

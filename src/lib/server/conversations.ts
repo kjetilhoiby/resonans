@@ -244,6 +244,7 @@ export async function getUserConversationList(userId: string, options?: { limit?
 		return {
 			id: conversation.id,
 			title: conversation.title || 'Ny samtale',
+			starred: conversation.starred,
 			updatedAt: conversation.updatedAt,
 			createdAt: conversation.createdAt,
 			preview,

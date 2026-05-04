@@ -32,6 +32,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			id: m.id,
 			role: m.role as 'user' | 'assistant' | 'system',
 			content: m.content,
+			starred: m.starred,
 			timestamp: m.createdAt.toISOString(),
 			imageUrl: m.imageUrl,
 			widgetProposal: (m.metadata as { widgetProposal?: unknown } | null)?.widgetProposal ?? null,

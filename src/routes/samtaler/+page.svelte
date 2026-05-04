@@ -16,6 +16,7 @@
 		id: string;
 		title: string;
 		preview: string;
+		starred: boolean;
 		updatedAt: string;
 		createdAt: string;
 		linkedTheme: { id: string; name: string; emoji: string | null } | null;
@@ -25,6 +26,7 @@
 		id: string;
 		role: 'user' | 'assistant' | 'system';
 		content: string;
+		starred: boolean;
 		timestamp: string;
 		imageUrl?: string | null;
 		widgetProposal?: import('$lib/artifacts/widget-draft').WidgetDraft | null;
@@ -53,6 +55,7 @@
 				id: m.id,
 				role: m.role as 'user' | 'assistant',
 				text: m.content,
+				starred: m.starred,
 				imageUrl: m.imageUrl ?? null,
 				widgetProposal: m.widgetProposal ?? null,
 				widgetFlow: m.widgetFlow ?? null,
@@ -66,6 +69,7 @@
 		id: string;
 		role: 'user' | 'assistant';
 		text: string;
+		starred: boolean;
 		imageUrl: string | null;
 		widgetProposal?: import('$lib/artifacts/widget-draft').WidgetDraft | null;
 		widgetFlow?: WidgetCreationFlow | null;
@@ -122,7 +126,7 @@
 	async function sendMessage(text: string) {
 		if (!conversation) return;
 		const msgId = crypto.randomUUID();
-		chatMessages = [...chatMessages, { id: msgId, role: 'user', text, imageUrl: null }];
+		chatMessages = [...chatMessages, { id: msgId, role: 'user', text, starred: false, imageUrl: null }];
 		chatLoading = true;
 		chatStopped = false;
 		chatError = '';
@@ -200,6 +204,7 @@
 					id: crypto.randomUUID(),
 					role: 'assistant',
 					text: finalPayload.message ?? finalPayload.fullMessage ?? streamingText,
+					starred: false,
 					imageUrl: null,
 					widgetProposal: finalPayload.widgetProposal ?? finalPayload.metadata?.widgetProposal ?? null,
 					widgetFlow: finalPayload.widgetFlow ?? finalPayload.metadata?.widgetFlow ?? null,
@@ -245,6 +250,35 @@
 		inputDraft = lastUserText;
 		inputKey++;
 	}
+
+	let convStarred = $state<Map<string, boolean>>(
+		new Map(data.conversations.map((c) => [c.id, c.starred]))
+	);
+
+	async function toggleConversationStar(e: MouseEvent, convId: string) {
+		e.stopPropagation();
+		const current = convStarred.get(convId) ?? false;
+		convStarred.set(convId, !current);
+		convStarred = new Map(convStarred);
+		await fetch(`/api/conversations/${convId}`, {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ starred: !current })
+		});
+	}
+
+	async function toggleMessageStar(msgId: string) {
+		if (!conversation) return;
+		const idx = chatMessages.findIndex((m) => m.id === msgId);
+		if (idx === -1) return;
+		const current = chatMessages[idx].starred;
+		chatMessages[idx] = { ...chatMessages[idx], starred: !current };
+		await fetch(`/api/conversations/${conversation.id}/messages/${msgId}`, {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ starred: !current })
+		});
+	}
 </script>
 
 <svelte:head><title>Samtaler</title></svelte:head>
@@ -264,19 +298,29 @@
 			{#if data.conversations.length === 0}
 				<p class="lp-empty">Ingen samtaler ennå. Start en ny fra forsiden.</p>
 			{:else}
-				{#each data.conversations as c}
-					<button class="lp-item" style={c.linkedTheme ? getThemeHueStyle(c.linkedTheme.name) : undefined} onclick={() => goto(`/samtaler?conversation=${c.id}`)}>
-						<div class="lp-item-main">
-							<span class="lp-item-title">{c.title}</span>
-							{#if c.linkedTheme}
-								<span class="lp-theme-dot">{#if c.linkedTheme.emoji}{c.linkedTheme.emoji}{:else}<Icon name="goals" size={14} />{/if}</span>
+				{#each data.conversations.toSorted((a, b) => (convStarred.get(b.id) ? 1 : 0) - (convStarred.get(a.id) ? 1 : 0)) as c}
+					<div class="lp-item-wrap" style={c.linkedTheme ? getThemeHueStyle(c.linkedTheme.name) : undefined}>
+						<button class="lp-item" onclick={() => goto(`/samtaler?conversation=${c.id}`)}>
+							<div class="lp-item-main">
+								<span class="lp-item-title">{c.title}</span>
+								{#if c.linkedTheme}
+									<span class="lp-theme-dot">{#if c.linkedTheme.emoji}{c.linkedTheme.emoji}{:else}<Icon name="goals" size={14} />{/if}</span>
+								{/if}
+								<span class="lp-item-date">{fmtDay(c.updatedAt)}</span>
+							</div>
+							{#if c.preview}
+								<p class="lp-item-preview">{c.preview}</p>
 							{/if}
-							<span class="lp-item-date">{fmtDay(c.updatedAt)}</span>
-						</div>
-						{#if c.preview}
-							<p class="lp-item-preview">{c.preview}</p>
-						{/if}
-					</button>
+						</button>
+						<button
+							class="lp-star-btn"
+							class:lp-star-active={convStarred.get(c.id)}
+							onclick={(e) => toggleConversationStar(e, c.id)}
+							title={convStarred.get(c.id) ? 'Fjern stjerne' : 'Stjernemerk'}
+						>
+							{convStarred.get(c.id) ? '★' : '☆'}
+						</button>
+					</div>
 				{/each}
 			{/if}
 		</div>
@@ -302,43 +346,61 @@
 			{/if}
 			{#each chatMessages as msg}
 				{#if msg.role === 'user'}
-					{#if chatStopped && msg.id === lastUserMsgId}
+					<div class="cp-msg-row cp-msg-row-user">
+						{#if chatStopped && msg.id === lastUserMsgId}
+							<button
+								class="cp-bubble-user cp-bubble-stoppable"
+								onclick={editStoppedMessage}
+							>
+								{#if msg.imageUrl}
+									<img class="cp-bubble-img" src={msg.imageUrl} alt="Vedlagt bilde" />
+								{/if}
+								{#if msg.text && msg.text !== '📷 [Bilde]'}
+									<span>{msg.text}</span>
+								{/if}
+								<span class="cp-edit-hint">Trykk for å redigere</span>
+							</button>
+						{:else}
+							<div class="cp-bubble-user">
+								{#if msg.imageUrl}
+									<img class="cp-bubble-img" src={msg.imageUrl} alt="Vedlagt bilde" />
+								{/if}
+								{#if msg.text && msg.text !== '📷 [Bilde]'}
+									<span>{msg.text}</span>
+								{/if}
+							</div>
+						{/if}
 						<button
-							class="cp-bubble-user cp-bubble-stoppable"
-							onclick={editStoppedMessage}
-						>
-							{#if msg.imageUrl}
-								<img class="cp-bubble-img" src={msg.imageUrl} alt="Vedlagt bilde" />
+							class="cp-msg-star"
+							class:cp-msg-star-active={msg.starred}
+							onclick={() => toggleMessageStar(msg.id)}
+							title={msg.starred ? 'Fjern stjerne' : 'Stjernemerk melding'}
+						>{msg.starred ? '★' : '☆'}</button>
+					</div>
+				{:else}
+					<div class="cp-msg-row cp-msg-row-bot">
+						<div class="cp-bot-content">
+							<TriageCard text={msg.text} />
+							{#if msg.widgetProposal}
+								<WidgetProposalCard
+									draft={msg.widgetProposal}
+									ondiscard={() => { msg.widgetProposal = null; }}
+								/>
 							{/if}
-							{#if msg.text && msg.text !== '📷 [Bilde]'}
-								<span>{msg.text}</span>
+							{#if msg.statusWidget}
+								<ChatStatusWidget widget={msg.statusWidget} />
 							{/if}
-							<span class="cp-edit-hint">Trykk for å redigere</span>
-						</button>
-					{:else}
-						<div class="cp-bubble-user">
-							{#if msg.imageUrl}
-								<img class="cp-bubble-img" src={msg.imageUrl} alt="Vedlagt bilde" />
-							{/if}
-							{#if msg.text && msg.text !== '📷 [Bilde]'}
-								<span>{msg.text}</span>
+							{#if msg.photoAnnotation && msg.photoAnnotationImageUrl}
+								<AnnotatedImageCard imageUrl={msg.photoAnnotationImageUrl} annotation={msg.photoAnnotation} />
 							{/if}
 						</div>
-					{/if}
-				{:else}
-					<TriageCard text={msg.text} />
-					{#if msg.widgetProposal}
-						<WidgetProposalCard
-							draft={msg.widgetProposal}
-							ondiscard={() => { msg.widgetProposal = null; }}
-						/>
-					{/if}
-					{#if msg.statusWidget}
-						<ChatStatusWidget widget={msg.statusWidget} />
-					{/if}
-					{#if msg.photoAnnotation && msg.photoAnnotationImageUrl}
-						<AnnotatedImageCard imageUrl={msg.photoAnnotationImageUrl} annotation={msg.photoAnnotation} />
-					{/if}
+						<button
+							class="cp-msg-star"
+							class:cp-msg-star-active={msg.starred}
+							onclick={() => toggleMessageStar(msg.id)}
+							title={msg.starred ? 'Fjern stjerne' : 'Stjernemerk melding'}
+						>{msg.starred ? '★' : '☆'}</button>
+					</div>
 				{/if}
 			{/each}
 			{#if chatLoading}
@@ -420,6 +482,15 @@
 		text-align: center;
 	}
 
+	.lp-item-wrap {
+		display: flex;
+		align-items: stretch;
+		border-radius: 12px;
+		transition: background 0.1s;
+	}
+	.lp-item-wrap:hover { background: #141414; }
+	.lp-item-wrap:hover .lp-star-btn { opacity: 1; }
+
 	.lp-item {
 		display: flex;
 		flex-direction: column;
@@ -430,10 +501,24 @@
 		border: none;
 		text-align: left;
 		cursor: pointer;
-		transition: background 0.1s;
-		width: 100%;
+		flex: 1;
+		min-width: 0;
 	}
-	.lp-item:hover { background: #141414; }
+
+	.lp-star-btn {
+		background: none;
+		border: none;
+		padding: 0 14px 0 4px;
+		font-size: 1rem;
+		color: #444;
+		cursor: pointer;
+		flex-shrink: 0;
+		opacity: 0;
+		transition: color 0.12s, opacity 0.12s;
+		line-height: 1;
+	}
+	.lp-star-btn:hover { color: #b8860b; }
+	.lp-star-btn.lp-star-active { color: #e6b800; opacity: 1; }
 
 	.lp-item-main {
 		display: flex;
@@ -515,6 +600,39 @@
 		scrollbar-width: thin;
 		scrollbar-color: #1e1e1e transparent;
 	}
+
+	.cp-msg-row {
+		display: flex;
+		align-items: flex-end;
+		gap: 6px;
+	}
+	.cp-msg-row-user { justify-content: flex-end; }
+	.cp-msg-row-bot { align-items: flex-start; }
+	.cp-msg-row:hover .cp-msg-star { opacity: 1; }
+
+	.cp-bot-content {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		flex: 1;
+		min-width: 0;
+	}
+
+	.cp-msg-star {
+		background: none;
+		border: none;
+		font-size: 0.9rem;
+		color: #3a3a3a;
+		cursor: pointer;
+		padding: 4px;
+		flex-shrink: 0;
+		opacity: 0;
+		transition: color 0.12s, opacity 0.12s;
+		line-height: 1;
+		align-self: center;
+	}
+	.cp-msg-star:hover { color: #b8860b; }
+	.cp-msg-star.cp-msg-star-active { color: #e6b800; opacity: 1; }
 
 	.cp-bubble-user {
 		align-self: flex-end;
