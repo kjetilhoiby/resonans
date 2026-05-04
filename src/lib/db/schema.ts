@@ -268,6 +268,7 @@ export const conversations = pgTable('conversations', {
 	themeId: uuid('theme_id').references((): AnyPgColumn => themes.id, { onDelete: 'set null' }),
 	title: text('title'),
 	starred: boolean('starred').default(false).notNull(),
+	archived: boolean('archived').default(false).notNull(),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
 });

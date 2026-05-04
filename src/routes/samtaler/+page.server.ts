@@ -1,10 +1,19 @@
 import { redirect } from '@sveltejs/kit';
 import { getConversationByIdForUser, getConversationMessages, getUserConversationList } from '$lib/server/conversations';
+import { db } from '$lib/db';
+import { themes } from '$lib/db/schema';
+import { eq } from 'drizzle-orm';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	const conversationId = url.searchParams.get('conversation');
-	const conversationList = await getUserConversationList(locals.userId);
+	const [conversationList, userThemes] = await Promise.all([
+		getUserConversationList(locals.userId),
+		db.query.themes.findMany({
+			where: eq(themes.userId, locals.userId),
+			columns: { id: true, name: true, emoji: true }
+		})
+	]);
 
 	const conversations = conversationList.map((c) => ({
 		...c,
@@ -14,7 +23,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 
 	// Uten conversation-param: vis kun liste
 	if (!conversationId) {
-		return { conversations, selectedConversation: null, messages: [] };
+		return { conversations, userThemes, selectedConversation: null, messages: [] };
 	}
 
 	const verifiedConversation = await getConversationByIdForUser(conversationId, locals.userId);
@@ -27,6 +36,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 
 	return {
 		conversations,
+		userThemes,
 		selectedConversation,
 		messages: msgs.map((m) => ({
 			id: m.id,

@@ -7,6 +7,8 @@
 	import WidgetProposalCard from '$lib/components/domain/WidgetProposalCard.svelte';
 	import ChatStatusWidget from '$lib/components/domain/ChatStatusWidget.svelte';
 	import AnnotatedImageCard from '$lib/components/domain/AnnotatedImageCard.svelte';
+	import CollapsibleSection from '$lib/components/ui/CollapsibleSection.svelte';
+	import ConversationContextMenu from '$lib/components/ui/ConversationContextMenu.svelte';
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
 	import type { WidgetCreationFlow } from '$lib/flows/widget-creation/flow';
 	import type { WeatherStatusWidget } from '$lib/ai/tools/weather-forecast';
@@ -17,9 +19,16 @@
 		title: string;
 		preview: string;
 		starred: boolean;
+		archived: boolean;
 		updatedAt: string;
 		createdAt: string;
 		linkedTheme: { id: string; name: string; emoji: string | null } | null;
+	}
+
+	interface UserTheme {
+		id: string;
+		name: string;
+		emoji: string | null;
 	}
 
 	interface ConversationMessage {
@@ -39,6 +48,7 @@
 	interface Props {
 		data: {
 			conversations: ConversationSummary[];
+			userThemes: UserTheme[];
 			selectedConversation: ConversationSummary | null;
 			messages: ConversationMessage[];
 		};
@@ -261,20 +271,67 @@
 		inputKey++;
 	}
 
-	let convStarred = $state<Map<string, boolean>>(
-		new Map(data.conversations.map((c) => [c.id, c.starred]))
-	);
+	// ── Samtaleliste-tilstand ────────────────────────────────────────────────
+	let convList = $state<ConversationSummary[]>(data.conversations);
+	let editingId = $state<string | null>(null);
+	let editingTitle = $state('');
 
-	async function toggleConversationStar(e: MouseEvent, convId: string) {
-		e.stopPropagation();
-		const current = convStarred.get(convId) ?? false;
-		convStarred.set(convId, !current);
-		convStarred = new Map(convStarred);
-		await fetch(`/api/conversations/${convId}`, {
+	const starredConvs = $derived(convList.filter((c) => c.starred && !c.archived));
+	const unstarredConvs = $derived(convList.filter((c) => !c.starred && !c.archived));
+	const archivedConvs = $derived(convList.filter((c) => c.archived));
+
+	$effect(() => {
+		convList = data.conversations;
+	});
+
+	function handleConvStarred(id: string, starred: boolean) {
+		convList = convList.map((c) => (c.id === id ? { ...c, starred } : c));
+	}
+
+	function handleConvArchived(id: string, archived: boolean) {
+		convList = convList.map((c) => (c.id === id ? { ...c, archived } : c));
+	}
+
+	function handleConvDeleted(id: string) {
+		convList = convList.filter((c) => c.id !== id);
+	}
+
+	function handleConvMovedToTheme(id: string, themeId: string | null) {
+		// Rebuild linkedTheme from userThemes list
+		const theme = themeId ? data.userThemes.find((t) => t.id === themeId) ?? null : null;
+		convList = convList.map((c) =>
+			c.id === id
+				? {
+						...c,
+						linkedTheme: theme ? { id: theme.id, name: theme.name, emoji: theme.emoji } : null
+					}
+				: c
+		);
+	}
+
+	function startRename(id: string, currentTitle: string) {
+		editingId = id;
+		editingTitle = currentTitle;
+	}
+
+	async function commitRename(id: string) {
+		const title = editingTitle.trim();
+		if (!title) {
+			editingId = null;
+			return;
+		}
+		convList = convList.map((c) => (c.id === id ? { ...c, title } : c));
+		editingId = null;
+		await fetch(`/api/conversations/${id}`, {
 			method: 'PATCH',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ starred: !current })
+			body: JSON.stringify({ title })
 		});
+	}
+
+	function cancelRename() {
+		editingId = null;
+		editingTitle = '';
 	}
 
 	async function toggleMessageStar(msgId: string) {
@@ -305,33 +362,81 @@
 		</PageHeader>
 
 		<div class="lp-list">
-			{#if data.conversations.length === 0}
+			{#if convList.length === 0}
 				<p class="lp-empty">Ingen samtaler ennå. Start en ny fra forsiden.</p>
 			{:else}
-				{#each data.conversations.toSorted((a, b) => (convStarred.get(b.id) ? 1 : 0) - (convStarred.get(a.id) ? 1 : 0)) as c}
+
+				{#snippet convItem(c: ConversationSummary)}
 					<div class="lp-item-wrap" style={c.linkedTheme ? getThemeHueStyle(c.linkedTheme.name) : undefined}>
-						<button class="lp-item" onclick={() => goto(`/samtaler?conversation=${c.id}`)}>
-							<div class="lp-item-main">
-								<span class="lp-item-title">{c.title}</span>
-								{#if c.linkedTheme}
-									<span class="lp-theme-dot">{#if c.linkedTheme.emoji}{c.linkedTheme.emoji}{:else}<Icon name="goals" size={14} />{/if}</span>
+						{#if editingId === c.id}
+							<!-- Inline omdøping -->
+							<input
+								class="lp-rename-input"
+								bind:value={editingTitle}
+								onkeydown={(e) => {
+									if (e.key === 'Enter') commitRename(c.id);
+									if (e.key === 'Escape') cancelRename();
+								}}
+								onblur={() => commitRename(c.id)}
+								autofocus
+							/>
+						{:else}
+							<button class="lp-item" onclick={() => goto(`/samtaler?conversation=${c.id}`)}>
+								<div class="lp-item-main">
+									<span class="lp-item-title">{c.title}</span>
+									{#if c.linkedTheme}
+										<span class="lp-theme-dot">{#if c.linkedTheme.emoji}{c.linkedTheme.emoji}{:else}<Icon name="goals" size={14} />{/if}</span>
+									{/if}
+									<span class="lp-item-date">{fmtDay(c.updatedAt)}</span>
+								</div>
+								{#if c.preview}
+									<p class="lp-item-preview">{c.preview}</p>
 								{/if}
-								<span class="lp-item-date">{fmtDay(c.updatedAt)}</span>
-							</div>
-							{#if c.preview}
-								<p class="lp-item-preview">{c.preview}</p>
-							{/if}
-						</button>
-						<button
-							class="lp-star-btn"
-							class:lp-star-active={convStarred.get(c.id)}
-							onclick={(e) => toggleConversationStar(e, c.id)}
-							title={convStarred.get(c.id) ? 'Fjern stjerne' : 'Stjernemerk'}
-						>
-							{convStarred.get(c.id) ? '★' : '☆'}
-						</button>
+							</button>
+						{/if}
+						<ConversationContextMenu
+							conversationId={c.id}
+							starred={c.starred}
+							archived={c.archived}
+							currentThemeId={c.linkedTheme?.id ?? null}
+							themes={data.userThemes}
+							onStarred={handleConvStarred}
+							onArchived={handleConvArchived}
+							onDeleted={handleConvDeleted}
+							onMovedToTheme={handleConvMovedToTheme}
+							onStartRename={() => startRename(c.id, c.title)}
+						/>
 					</div>
-				{/each}
+				{/snippet}
+
+				<!-- ── Stjernemerkede ──────────────────────────────────────── -->
+				{#if starredConvs.length > 0}
+					<CollapsibleSection title="Stjernemerkede" count={starredConvs.length} defaultOpen={true}>
+						{#each starredConvs as c (c.id)}
+							{@render convItem(c)}
+						{/each}
+					</CollapsibleSection>
+				{/if}
+
+				<!-- ── Umerkede ────────────────────────────────────────────── -->
+				<CollapsibleSection title="Samtaler" count={unstarredConvs.length} defaultOpen={true}>
+					{#if unstarredConvs.length === 0}
+						<p class="lp-section-empty">Ingen umerkede samtaler.</p>
+					{:else}
+						{#each unstarredConvs as c (c.id)}
+							{@render convItem(c)}
+						{/each}
+					{/if}
+				</CollapsibleSection>
+
+				<!-- ── Arkiverte ───────────────────────────────────────────── -->
+				{#if archivedConvs.length > 0}
+					<CollapsibleSection title="Arkiverte" count={archivedConvs.length} defaultOpen={false}>
+						{#each archivedConvs as c (c.id)}
+							{@render convItem(c)}
+						{/each}
+					</CollapsibleSection>
+				{/if}
 			{/if}
 		</div>
 	</AppPage>
@@ -494,13 +599,34 @@
 		transition: background 0.1s;
 	}
 	.lp-item-wrap:hover { background: #141414; }
-	.lp-item-wrap:hover .lp-star-btn { opacity: 1; }
+
+	.lp-rename-input {
+		flex: 1;
+		background: #161616;
+		border: 1px solid #2a2a5a;
+		border-radius: 8px;
+		padding: 10px 14px;
+		color: #e8e8e8;
+		font: inherit;
+		font-size: 0.9rem;
+		font-weight: 600;
+		outline: none;
+		margin: 4px 4px 4px 0;
+	}
+
+	.lp-section-empty {
+		padding: 8px 14px;
+		font-size: 0.78rem;
+		color: #444;
+		font-style: italic;
+		margin: 0;
+	}
 
 	.lp-item {
 		display: flex;
 		flex-direction: column;
 		gap: 3px;
-		padding: 13px 14px;
+		padding: 13px 4px 13px 14px;
 		border-radius: 12px;
 		background: transparent;
 		border: none;
@@ -509,21 +635,6 @@
 		flex: 1;
 		min-width: 0;
 	}
-
-	.lp-star-btn {
-		background: none;
-		border: none;
-		padding: 0 14px 0 4px;
-		font-size: 1rem;
-		color: #444;
-		cursor: pointer;
-		flex-shrink: 0;
-		opacity: 0;
-		transition: color 0.12s, opacity 0.12s;
-		line-height: 1;
-	}
-	.lp-star-btn:hover { color: #b8860b; }
-	.lp-star-btn.lp-star-active { color: #e6b800; opacity: 1; }
 
 	.lp-item-main {
 		display: flex;

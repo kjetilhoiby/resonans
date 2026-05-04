@@ -189,6 +189,8 @@ export async function getConversationsByTheme(userId: string, themeId: string) {
 			return {
 				id: conversation.id,
 				title: conversation.title || 'Ny samtale',
+				starred: conversation.starred,
+				archived: conversation.archived,
 				updatedAt: conversation.updatedAt,
 				createdAt: conversation.createdAt,
 				preview
@@ -245,6 +247,7 @@ export async function getUserConversationList(userId: string, options?: { limit?
 			id: conversation.id,
 			title: conversation.title || 'Ny samtale',
 			starred: conversation.starred,
+			archived: conversation.archived,
 			updatedAt: conversation.updatedAt,
 			createdAt: conversation.createdAt,
 			preview,

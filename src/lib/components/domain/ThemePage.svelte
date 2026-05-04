@@ -35,6 +35,8 @@
 	import type { Flow } from '$lib/flows/types';
 	import ThemeMetricSettingsSheet from './ThemeMetricSettingsSheet.svelte';
 	import type { MetricSettingsMap } from './ThemeMetricSettingsSheet.svelte';
+	import CollapsibleSection from '../ui/CollapsibleSection.svelte';
+	import ConversationContextMenu from '../ui/ConversationContextMenu.svelte';
 
 	/* ── Types ──────────────────────────────────────────── */
 	interface Theme {
@@ -64,6 +66,8 @@
 		id: string;
 		title: string;
 		preview: string | null;
+		starred: boolean;
+		archived: boolean;
 		updatedAt: string;
 		createdAt: string;
 	}
@@ -457,6 +461,54 @@
 	let convLoadingMessages = $state(false);
 	let convCreating = $state(false);
 	let chatDraft = $state(requestedPrompt || selectedWorkout?.chatPrompt || '');
+
+	/* ── Samtaler-liste tilstand ─── omdøping / lokale oppdateringer ──────── */
+	let localConvList = $state<ThemeConversation[]>(themeConversations);
+	let convEditingId = $state<string | null>(null);
+	let convEditingTitle = $state('');
+
+	const starredThemeConvs = $derived(localConvList.filter((c) => c.starred && !c.archived));
+	const unstarredThemeConvs = $derived(localConvList.filter((c) => !c.starred && !c.archived));
+	const archivedThemeConvs = $derived(localConvList.filter((c) => c.archived));
+
+	$effect(() => {
+		localConvList = themeConversations;
+	});
+
+	function handleThemeConvStarred(id: string, starred: boolean) {
+		localConvList = localConvList.map((c) => (c.id === id ? { ...c, starred } : c));
+	}
+	function handleThemeConvArchived(id: string, archived: boolean) {
+		localConvList = localConvList.map((c) => (c.id === id ? { ...c, archived } : c));
+	}
+	function handleThemeConvDeleted(id: string) {
+		localConvList = localConvList.filter((c) => c.id !== id);
+	}
+	function handleThemeConvMoved(id: string, _themeId: string | null) {
+		// Remove from this theme's list when moved to another theme (or no theme)
+		if (_themeId !== theme.id) {
+			localConvList = localConvList.filter((c) => c.id !== id);
+		}
+	}
+	function startThemeConvRename(id: string, currentTitle: string) {
+		convEditingId = id;
+		convEditingTitle = currentTitle;
+	}
+	async function commitThemeConvRename(id: string) {
+		const title = convEditingTitle.trim();
+		if (!title) { convEditingId = null; return; }
+		localConvList = localConvList.map((c) => (c.id === id ? { ...c, title } : c));
+		convEditingId = null;
+		await fetch(`/api/conversations/${id}`, {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ title })
+		});
+	}
+	function cancelThemeConvRename() {
+		convEditingId = null;
+		convEditingTitle = '';
+	}
 
 	/* ── Bilde-opplasting til chat ─────────────────────── */
 	let chatImageUploading = $state(false);
@@ -1277,7 +1329,7 @@
 		<!-- CHAT -->
 		{#if tab === 'chat'}
 			{#if selectedConvId === null}
-				<!-- Samtale-liste -->
+			<!-- Samtale-liste -->
 				<div class="conv-list-panel">
 					<div class="conv-list-actions">
 						<button
@@ -1291,26 +1343,79 @@
 
 					{#if convLoadingMessages}
 						<p class="conv-list-loading">Laster…</p>
-					{:else if themeConversations.length === 0}
+					{:else if localConvList.length === 0}
 						<div class="conv-list-empty">
 							<p>Ingen samtaler ennå.</p>
 						</div>
 					{:else}
+						{#snippet themeConvItem(conv: ThemeConversation)}
+							<div class="conv-item-wrap">
+								{#if convEditingId === conv.id}
+									<input
+										class="conv-rename-input"
+										bind:value={convEditingTitle}
+										onkeydown={(e) => {
+											if (e.key === 'Enter') commitThemeConvRename(conv.id);
+											if (e.key === 'Escape') cancelThemeConvRename();
+										}}
+										onblur={() => commitThemeConvRename(conv.id)}
+										autofocus
+									/>
+								{:else}
+									<button
+										class="conv-item"
+										onclick={() => openConversation(conv.id)}
+									>
+										<div class="conv-item-main">
+											<span class="conv-item-title">{conv.title}</span>
+											<span class="conv-item-date">{fmtDay(conv.updatedAt)}</span>
+										</div>
+										{#if conv.preview}
+											<p class="conv-item-preview">{conv.preview}</p>
+										{/if}
+									</button>
+								{/if}
+								<ConversationContextMenu
+									conversationId={conv.id}
+									starred={conv.starred}
+									archived={conv.archived}
+									currentThemeId={theme.id}
+									themes={[]}
+									onStarred={handleThemeConvStarred}
+									onArchived={handleThemeConvArchived}
+									onDeleted={handleThemeConvDeleted}
+									onMovedToTheme={handleThemeConvMoved}
+									onStartRename={() => startThemeConvRename(conv.id, conv.title)}
+								/>
+							</div>
+						{/snippet}
+
 						<div class="conv-list">
-							{#each themeConversations as conv}
-								<button
-									class="conv-item"
-									onclick={() => openConversation(conv.id)}
-								>
-									<div class="conv-item-main">
-										<span class="conv-item-title">{conv.title}</span>
-										<span class="conv-item-date">{fmtDay(conv.updatedAt)}</span>
-									</div>
-									{#if conv.preview}
-										<p class="conv-item-preview">{conv.preview}</p>
-									{/if}
-								</button>
-							{/each}
+							{#if starredThemeConvs.length > 0}
+								<CollapsibleSection title="Stjernemerkede" count={starredThemeConvs.length} defaultOpen={true}>
+									{#each starredThemeConvs as conv (conv.id)}
+										{@render themeConvItem(conv)}
+									{/each}
+								</CollapsibleSection>
+							{/if}
+
+							<CollapsibleSection title="Samtaler" count={unstarredThemeConvs.length} defaultOpen={true}>
+								{#if unstarredThemeConvs.length === 0}
+									<p class="conv-section-empty">Ingen umerkede samtaler.</p>
+								{:else}
+									{#each unstarredThemeConvs as conv (conv.id)}
+										{@render themeConvItem(conv)}
+									{/each}
+								{/if}
+							</CollapsibleSection>
+
+							{#if archivedThemeConvs.length > 0}
+								<CollapsibleSection title="Arkiverte" count={archivedThemeConvs.length} defaultOpen={false}>
+									{#each archivedThemeConvs as conv (conv.id)}
+										{@render themeConvItem(conv)}
+									{/each}
+								</CollapsibleSection>
+							{/if}
 						</div>
 					{/if}
 
@@ -3273,7 +3378,7 @@ Eksempel:
 		display: flex;
 		flex-direction: column;
 		gap: 3px;
-		padding: 12px 16px;
+		padding: 12px 4px 12px 16px;
 		background: none;
 		border: none;
 		border-bottom: 1px solid #1a1a1a;
@@ -3282,10 +3387,46 @@ Eksempel:
 		text-align: left;
 		cursor: pointer;
 		transition: background 0.1s;
+		flex: 1;
+		min-width: 0;
 	}
 
 	.conv-item:hover {
 		background: #161616;
+	}
+
+	.conv-item-wrap {
+		display: flex;
+		align-items: stretch;
+		border-bottom: 1px solid #1a1a1a;
+	}
+	.conv-item-wrap:hover {
+		background: #161616;
+	}
+	.conv-item-wrap .conv-item {
+		border-bottom: none;
+	}
+
+	.conv-rename-input {
+		flex: 1;
+		background: #161616;
+		border: 1px solid #2a2a5a;
+		border-radius: 8px;
+		padding: 10px 14px;
+		color: #e8e8e8;
+		font: inherit;
+		font-size: 0.88rem;
+		font-weight: 600;
+		outline: none;
+		margin: 4px 4px 4px 0;
+	}
+
+	.conv-section-empty {
+		padding: 8px 16px;
+		font-size: 0.78rem;
+		color: #444;
+		font-style: italic;
+		margin: 0;
 	}
 
 	.conv-item-main {

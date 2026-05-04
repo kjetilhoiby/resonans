@@ -8,7 +8,7 @@
     themes    aktive temaer fra DB (for tema-grid)
 -->
 <script lang="ts">
-	import { goto, preloadCode, preloadData } from '$app/navigation';
+	import { goto, invalidateAll, preloadCode, preloadData } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { fly } from 'svelte/transition';
@@ -200,6 +200,67 @@
 	// -- Sjekklister --
 	let activeChecklists = $state<Checklist[]>([]);
 	let openChecklist = $state<Checklist | null>(null);
+
+	// -- Pull to refresh (mobil) --
+	const PULL_REFRESH_TRIGGER_PX = 72;
+	const PULL_REFRESH_MAX_PX = 120;
+	let pullStartY = $state<number | null>(null);
+	let pullDistance = $state(0);
+	let pullRefreshing = $state(false);
+
+	function shouldHandlePullStart(event: TouchEvent) {
+		if (inputExpanded) return false;
+		if (chatOpen || widgetPanelOpen || themePanelOpen) return false;
+		if (typeof window !== 'undefined' && window.scrollY > 0) return false;
+		const touch = event.touches[0];
+		if (!touch || touch.clientY > 120) return false;
+		const target = event.target as Element | null;
+		if (!target) return false;
+		if (target.closest('.widget-pager, .zone-tema, .zone-input, .zone-chat-open')) return false;
+		return true;
+	}
+
+	function handlePullTouchStart(event: TouchEvent) {
+		if (!shouldHandlePullStart(event)) {
+			pullStartY = null;
+			pullDistance = 0;
+			return;
+		}
+		pullStartY = event.touches[0]?.clientY ?? null;
+	}
+
+	function handlePullTouchMove(event: TouchEvent) {
+		if (pullStartY === null || pullRefreshing) return;
+		const touchY = event.touches[0]?.clientY ?? pullStartY;
+		const delta = Math.max(0, touchY - pullStartY);
+		pullDistance = Math.min(PULL_REFRESH_MAX_PX, delta * 0.5);
+	}
+
+	function resetPullState() {
+		pullStartY = null;
+		pullDistance = 0;
+	}
+
+	async function refreshHomeData() {
+		if (pullRefreshing) return;
+		pullRefreshing = true;
+		try {
+			await Promise.allSettled([
+				fetchChecklists(),
+				fetchSensorAndWidgets({ useCache: false }),
+				invalidateAll()
+			]);
+		} finally {
+			pullRefreshing = false;
+		}
+	}
+
+	function handlePullTouchEnd() {
+		if (pullDistance >= PULL_REFRESH_TRIGGER_PX && !pullRefreshing) {
+			void refreshHomeData();
+		}
+		resetPullState();
+	}
 
 	// -- Planleggingsflyt fra tom sjekkliste --
 	let homeDayPlanOpen = $state(false);
@@ -416,10 +477,8 @@
 		}
 	}
 
-	onMount(() => {
-		void (async () => {
-			finishNavMetric('home');
-
+	async function fetchSensorAndWidgets({ useCache }: { useCache: boolean }) {
+		if (useCache) {
 			const cachedSummary = readCachedPayload<SensorSummary>(HOME_SENSOR_CACHE_KEY, HOME_SENSOR_CACHE_MAX_AGE_MS);
 			if (cachedSummary) {
 				sensorSummary = cachedSummary;
@@ -432,41 +491,44 @@
 			);
 			if (cachedPinnedWidgets && cachedPinnedWidgets.length > 0) {
 				pinnedWidgets = cachedPinnedWidgets;
-							// Start widget-data-henting umiddelbart for cachede IDs, så DynamicWidget
-							// finner in-memory treff allerede før/under sin egen onMount-fetch.
-							if (cachedPinnedWidgets && cachedPinnedWidgets.length > 0) {
-								scheduleWidgetDataPrefetch(cachedPinnedWidgets);
-							}
-
+				// Start widget-data-henting umiddelbart for cachede IDs, så DynamicWidget
+				// finner in-memory treff allerede før/under sin egen onMount-fetch.
+				scheduleWidgetDataPrefetch(cachedPinnedWidgets);
 				widgetsLoading = false;
 			}
+		}
+
+		try {
+			const [summaryRes, widgetsRes] = await timeAsync('sensor+widgets parallel', () =>
+				Promise.all([
+					fetch('/api/sensor-summary'),
+					fetch('/api/user-widgets')
+				])
+			);
+			if (summaryRes.ok) {
+				sensorSummary = await summaryRes.json();
+				writeCachedPayload(HOME_SENSOR_CACHE_KEY, sensorSummary);
+			}
+			if (widgetsRes.ok) {
+				const allWidgets = await widgetsRes.json();
+				pinnedWidgets = allWidgets.filter((w: UserWidget) => w.pinned);
+				hiddenWidgets = allWidgets.filter((w: UserWidget) => !w.pinned);
+				writeCachedPayload(HOME_PINNED_WIDGETS_CACHE_KEY, pinnedWidgets);
+			}
+		} catch {
+			// Stille feil — fallback til cache/mock-data
+		} finally {
+			widgetsLoading = false;
+		}
+	}
+
+	onMount(() => {
+		void (async () => {
+			finishNavMetric('home');
 
 			// Start checklists concurrently — ingen datavhengighet til sensor/widget
 			const checklistPromise = timeAsync('checklists', () => fetchChecklists());
-
-			try {
-				const [summaryRes, widgetsRes] = await timeAsync('sensor+widgets parallel', () =>
-					Promise.all([
-						fetch('/api/sensor-summary'),
-						fetch('/api/user-widgets')
-					])
-				);
-				if (summaryRes.ok) {
-					sensorSummary = await summaryRes.json();
-					writeCachedPayload(HOME_SENSOR_CACHE_KEY, sensorSummary);
-				}
-				if (widgetsRes.ok) {
-					const allWidgets = await widgetsRes.json();
-					pinnedWidgets = allWidgets.filter((w: UserWidget) => w.pinned);
-					hiddenWidgets = allWidgets.filter((w: UserWidget) => !w.pinned);
-					writeCachedPayload(HOME_PINNED_WIDGETS_CACHE_KEY, pinnedWidgets);
-				}
-			} catch {
-				// Stille feil — fallback til mock-data
-			} finally {
-				widgetsLoading = false;
-			}
-
+			await fetchSensorAndWidgets({ useCache: true });
 			await checklistPromise;
 
 			// Warm up theme route code and server data so first navigation feels snappier.
@@ -1617,7 +1679,27 @@
 	});
 </script>
 
-<div class="home-screen" class:home-screen-chat-open={chatOpen}>
+<div
+	class="home-screen"
+	class:home-screen-chat-open={chatOpen}
+	ontouchstart={handlePullTouchStart}
+	ontouchmove={handlePullTouchMove}
+	ontouchend={handlePullTouchEnd}
+	ontouchcancel={resetPullState}
+>
+	<div
+		class="pull-refresh-indicator"
+		class:is-visible={pullRefreshing || pullDistance > 0}
+		class:is-armed={pullDistance >= PULL_REFRESH_TRIGGER_PX}
+	>
+		{#if pullRefreshing}
+			Oppdaterer ...
+		{:else if pullDistance >= PULL_REFRESH_TRIGGER_PX}
+			Slipp for å oppdatere
+		{:else}
+			Dra ned for å oppdatere
+		{/if}
+	</div>
 
 	<!-- ── SONE 1: Tittel ── -->
 	{#if !inputExpanded}
@@ -2382,12 +2464,41 @@
 	/* ── Grunnlayout ── */
 	.home-screen {
 		height: 100dvh;
+		position: relative;
 		background: #0f0f0f;
 		color: #ccc;
 		font-family: 'Inter', system-ui, sans-serif;
 		display: flex;
 		flex-direction: column;
 		overflow: hidden;
+	}
+
+	.pull-refresh-indicator {
+		position: absolute;
+		top: calc(max(8px, env(safe-area-inset-top, 0px)));
+		left: 50%;
+		transform: translateX(-50%);
+		font-size: 0.72rem;
+		font-weight: 600;
+		letter-spacing: 0.01em;
+		color: #9ba0b8;
+		background: #1a1a1a;
+		border: 1px solid #282828;
+		border-radius: 999px;
+		padding: 6px 10px;
+		opacity: 0;
+		pointer-events: none;
+		z-index: 30;
+		transition: opacity 120ms ease;
+	}
+
+	.pull-refresh-indicator.is-visible {
+		opacity: 1;
+	}
+
+	.pull-refresh-indicator.is-armed {
+		color: #cfd3e9;
+		border-color: #343954;
 	}
 
 	/* ── Soner ── */
@@ -2403,7 +2514,11 @@
 		min-height: 0;
 		display: flex;
 		align-items: flex-start;
-		padding: var(--screen-title-top-pad, 34px) 20px 0;
+		padding:
+			var(--screen-title-top-pad, 34px)
+			max(16px, env(safe-area-inset-right, 0px))
+			0
+			max(16px, env(safe-area-inset-left, 0px));
 	}
 
 	.title-row {
@@ -2411,11 +2526,25 @@
 		align-items: center;
 		justify-content: space-between;
 		width: 100%;
+		min-width: 0;
+		gap: 8px;
+	}
+
+	.title-row :global(.morph-title) {
+		min-width: 0;
+		flex: 1 1 auto;
+	}
+
+	.title-row :global(.morph-title-text) {
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.title-right {
 		display: flex;
 		gap: 4px;
+		flex-shrink: 0;
 	}
 
 	.icon-link {
