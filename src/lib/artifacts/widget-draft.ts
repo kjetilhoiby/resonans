@@ -2,6 +2,7 @@ export type WidgetMetricType =
 	| 'weight'
 	| 'sleepDuration'
 	| 'steps'
+	| 'activeMinutes'
 	| 'distance'
 	| 'workoutCount'
 	| 'heartrate'

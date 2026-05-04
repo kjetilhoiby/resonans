@@ -52,6 +52,7 @@ Widget-valg etter forespørsel:
 - "søvn per dag siste 30 dager" → metricType:'sleepDuration', aggregation:'avg', period:'day', range:'last30', unit:'timer'
 - "vekt siste uke" → metricType:'weight', aggregation:'avg', period:'day', range:'last7', unit:'kg'
 - "steg denne måneden" → metricType:'steps', aggregation:'sum', period:'day', range:'current_month', unit:'steg'
+- "aktive minutter / dag siste 30 dager" → metricType:'activeMinutes', aggregation:'avg', period:'day', range:'last30', unit:'min'
 - "løpedistanse per uke" → metricType:'distance', aggregation:'sum', period:'week', range:'last30', unit:'km'
 - "treningsøkter" → metricType:'workoutCount', aggregation:'count', period:'week', range:'last30', unit:'økter'
 - "forbruk per måned" → metricType:'amount', aggregation:'sum', period:'month', range:'current_year', unit:'kr'

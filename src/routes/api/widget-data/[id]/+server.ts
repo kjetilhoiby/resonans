@@ -29,6 +29,8 @@ const METRIC_CONFIG: Record<string, { dataType: string; field: string; countStar
 	sleepDuration: { dataType: 'sleep',             field: "(data->>'sleepDuration')::numeric / 60" },  // minutter → timer
 	// Withings sender kumulative dagstotaler + duplikater ved re-sync → MAX per dag, AVG over dager = riktig snitt
 	steps:         { dataType: 'activity',          field: "data->>'steps'", bucketAggregation: 'MAX', outerAggregation: 'AVG' },
+	// intense + moderate er i sekunder fra Withings → divider på 60 for minutter
+	activeMinutes: { dataType: 'activity',          field: "(COALESCE((data->>'intense')::numeric, 0) + COALESCE((data->>'moderate')::numeric, 0)) / 60", bucketAggregation: 'MAX', outerAggregation: 'AVG' },
 	distance:      { dataType: 'workout',           field: "data->>'distance'" },
 	workoutCount:  { dataType: 'workout',           field: '1', countStar: true },
 	heartrate:     { dataType: 'heart_rate',        field: "data->>'hr_average'" },

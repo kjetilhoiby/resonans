@@ -6,6 +6,7 @@ export const VALID_WIDGET_METRICS = [
 	'weight',
 	'sleepDuration',
 	'steps',
+	'activeMinutes',
 	'distance',
 	'workoutCount',
 	'heartrate',
