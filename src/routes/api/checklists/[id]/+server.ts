@@ -11,6 +11,7 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 		title?: string;
 		emoji?: string;
 		completedAt?: string | null;
+		planConversationId?: string | null;
 	};
 
 	const updates: Record<string, unknown> = {};
@@ -19,6 +20,7 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 	if ('completedAt' in body) {
 		updates.completedAt = body.completedAt ? new Date(body.completedAt) : null;
 	}
+	if ('planConversationId' in body) updates.planConversationId = body.planConversationId ?? null;
 
 	const [updated] = await db
 		.update(checklists)

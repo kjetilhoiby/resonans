@@ -2,14 +2,13 @@
 	import { goto } from '$app/navigation';
 	import { AppPage, PageHeader } from '$lib/components/ui';
 	import ChatInput from '$lib/components/ui/ChatInput.svelte';
+	import ChatMessages from '$lib/components/ui/ChatMessages.svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
-	import TriageCard from '$lib/components/composed/TriageCard.svelte';
-	import WidgetProposalCard from '$lib/components/domain/WidgetProposalCard.svelte';
-	import ChatStatusWidget from '$lib/components/domain/ChatStatusWidget.svelte';
-	import AnnotatedImageCard from '$lib/components/domain/AnnotatedImageCard.svelte';
 	import CollapsibleSection from '$lib/components/ui/CollapsibleSection.svelte';
 	import ConversationContextMenu from '$lib/components/ui/ConversationContextMenu.svelte';
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
+	import { ChatState } from '$lib/client/chat-state.svelte';
+	import type { ChatMessage } from '$lib/client/chat-state.svelte';
 	import type { WidgetCreationFlow } from '$lib/flows/widget-creation/flow';
 	import type { WeatherStatusWidget } from '$lib/ai/tools/weather-forecast';
 	import type { PhotoAnnotationResult } from '$lib/ai/tools/annotate-photo';
@@ -58,7 +57,7 @@
 
 	const isListView = $derived(data.selectedConversation === null);
 
-	function toChatMessages(messages: ConversationMessage[]) {
+	function toChatMessages(messages: ConversationMessage[]): ChatMessage[] {
 		return messages
 			.filter((m) => m.role !== 'system')
 			.map((m) => ({
@@ -75,41 +74,26 @@
 			}));
 	}
 
-	type ChatMsg = {
-		id: string;
-		role: 'user' | 'assistant';
-		text: string;
-		starred: boolean;
-		imageUrl: string | null;
-		widgetProposal?: import('$lib/artifacts/widget-draft').WidgetDraft | null;
-		widgetFlow?: WidgetCreationFlow | null;
-		statusWidget?: WeatherStatusWidget | null;
-		photoAnnotation?: PhotoAnnotationResult | null;
-		photoAnnotationImageUrl?: string | null;
-	};
+	const conversation = $derived(data.selectedConversation);
 
-	let chatMessages = $state<ChatMsg[]>(toChatMessages(data.messages));
-	let chatLoading = $state(false);
-	let chatError = $state('');
-	let creatingConversation = $state(false);
-	let streamingText = $state('');
-	let streamingStatus = $state('');
-	let streamingSteps = $state<string[]>([]);
-	let chatStopped = $state(false);
-	let stoppedText = $state('');
-	let lastUserText = $state('');
-	let lastUserMsgId = $state('');
-	let pendingMessage = $state<string | null>(null);
-	let inputDraft = $state('');
-	let inputKey = $state(0);
-	let abortController: AbortController | null = null;
-
-	$effect(() => {
-		chatMessages = toChatMessages(data.messages);
-		chatError = '';
+	const chat = new ChatState({
+		conversationId: data.selectedConversation?.id ?? null
 	});
 
-	const conversation = $derived(data.selectedConversation);
+	let creatingConversation = $state(false);
+	let inputDraft = $state('');
+	let inputKey = $state(0);
+
+	// Last inn meldinger fra server og synkroniser med ChatState
+	$effect(() => {
+		chat.messages = toChatMessages(data.messages);
+		chat.error = '';
+	});
+
+	// Oppdater conversationId i ChatState når valgt samtale endres
+	$effect(() => {
+		chat.setConversationId(data.selectedConversation?.id ?? null);
+	});
 
 	const formattedDate = $derived(
 		conversation
@@ -134,141 +118,27 @@
 		}
 	}
 
-	async function sendMessage(text: string) {
-		if (!conversation) return;
-		if (chatLoading) {
-			pendingMessage = text;
-			return;
-		}
-		const msgId = crypto.randomUUID();
-		chatMessages = [...chatMessages, { id: msgId, role: 'user', text, starred: false, imageUrl: null }];
-		chatLoading = true;
-		chatStopped = false;
-		chatError = '';
-		stoppedText = '';
-		streamingText = '';
-		streamingStatus = '';
-		streamingSteps = [];
-		lastUserText = text;
-		lastUserMsgId = msgId;
-		abortController = new AbortController();
-
-		try {
-			const res = await fetch('/api/chat-stream-messages', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					mode: 'proxy',
-					message: text,
-					conversationId: conversation.id,
-					routing: {},
-					systemPrompt: '',
-					messages: []
-				}),
-				signal: abortController.signal
-			});
-			if (!res.ok || !res.body) throw new Error('Kunne ikke starte streaming');
-
-			const reader = res.body.getReader();
-			const decoder = new TextDecoder();
-			let buffer = '';
-			let finalPayload: any = null;
-
-			while (true) {
-				const { done, value } = await reader.read();
-				if (done) break;
-
-				buffer += decoder.decode(value, { stream: true });
-				const lines = buffer.split('\n');
-
-				for (let i = 0; i < lines.length - 1; i++) {
-					const line = lines[i].trim();
-					if (!line.startsWith('data: ')) continue;
-
-					const event = JSON.parse(line.slice(6));
-					if (event.type === 'status') {
-						const msg = event.data?.message ?? 'Resonans tenker...';
-						streamingSteps = [...streamingSteps, msg];
-						streamingStatus = msg;
-					} else if (event.type === 'token') {
-						streamingStatus = '';
-						streamingText += event.data?.token ?? '';
-					} else if (event.type === 'complete') {
-						finalPayload = event.data;
-					}
-				}
-
-				buffer = lines[lines.length - 1];
-			}
-
-			const finalLine = buffer.trim();
-			if (finalLine.startsWith('data: ')) {
-				const event = JSON.parse(finalLine.slice(6));
-				if (event.type === 'complete') {
-					finalPayload = event.data;
-				}
-			}
-
-			if (!finalPayload) {
-				throw new Error('Mangler avsluttende stream-payload');
-			}
-
-			chatMessages = [
-				...chatMessages,
-				{
-					id: crypto.randomUUID(),
-					role: 'assistant',
-					text: finalPayload.message ?? finalPayload.fullMessage ?? streamingText,
-					starred: false,
-					imageUrl: null,
-					widgetProposal: finalPayload.widgetProposal ?? finalPayload.metadata?.widgetProposal ?? null,
-					widgetFlow: finalPayload.widgetFlow ?? finalPayload.metadata?.widgetFlow ?? null,
-					statusWidget: finalPayload.statusWidget ?? finalPayload.metadata?.statusWidget ?? null,
-					photoAnnotation: finalPayload.photoAnnotation ?? finalPayload.metadata?.photoAnnotation ?? null,
-					photoAnnotationImageUrl: finalPayload.photoAnnotationImageUrl ?? finalPayload.metadata?.photoAnnotationImageUrl ?? null
-				}
-			];
-
-			streamingText = '';
-			streamingStatus = '';
-			streamingSteps = [];
-		} catch (e) {
-			if (e instanceof Error && e.name === 'AbortError') {
-				chatStopped = true;
-				stoppedText = streamingText;
-			} else {
-				chatError = 'Noe gikk galt. Prøv igjen.';
-			}
-			streamingText = '';
-			streamingStatus = '';
-			streamingSteps = [];
-		} finally {
-			abortController = null;
-			chatLoading = false;
-			if (pendingMessage) {
-				const next = pendingMessage;
-				pendingMessage = null;
-				sendMessage(next);
-			}
-		}
-	}
-
 	function stopChat() {
-		abortController?.abort();
-	}
-
-	function retryMessage() {
-		chatError = '';
-		chatMessages = chatMessages.filter((m) => m.id !== lastUserMsgId);
-		sendMessage(lastUserText);
+		chat.stop();
 	}
 
 	function editStoppedMessage() {
-		chatStopped = false;
-		stoppedText = '';
-		chatMessages = chatMessages.filter((m) => m.id !== lastUserMsgId);
-		inputDraft = lastUserText;
+		const text = chat.editStopped();
+		inputDraft = text;
 		inputKey++;
+	}
+
+	async function toggleMessageStar(msgId: string) {
+		if (!conversation) return;
+		const idx = chat.messages.findIndex((m) => m.id === msgId);
+		if (idx === -1) return;
+		const current = chat.messages[idx].starred;
+		chat.messages[idx] = { ...chat.messages[idx], starred: !current };
+		await fetch(`/api/conversations/${conversation.id}/messages/${msgId}`, {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ starred: !current })
+		});
 	}
 
 	// ── Samtaleliste-tilstand ────────────────────────────────────────────────
@@ -332,19 +202,6 @@
 	function cancelRename() {
 		editingId = null;
 		editingTitle = '';
-	}
-
-	async function toggleMessageStar(msgId: string) {
-		if (!conversation) return;
-		const idx = chatMessages.findIndex((m) => m.id === msgId);
-		if (idx === -1) return;
-		const current = chatMessages[idx].starred;
-		chatMessages[idx] = { ...chatMessages[idx], starred: !current };
-		await fetch(`/api/conversations/${conversation.id}/messages/${msgId}`, {
-			method: 'PATCH',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ starred: !current })
-		});
 	}
 </script>
 
@@ -456,89 +313,27 @@
 		</PageHeader>
 
 		<div class="cp-messages">
-			{#if chatMessages.length === 0}
+			{#if chat.messages.length === 0}
 				<p class="cp-empty">Ingen meldinger ennå.</p>
 			{/if}
-			{#each chatMessages as msg}
-				{#if msg.role === 'user'}
-					<div class="cp-msg-row cp-msg-row-user">
-						{#if chatStopped && msg.id === lastUserMsgId}
-							<button
-								class="cp-bubble-user cp-bubble-stoppable"
-								onclick={editStoppedMessage}
-							>
-								{#if msg.imageUrl}
-									<img class="cp-bubble-img" src={msg.imageUrl} alt="Vedlagt bilde" />
-								{/if}
-								{#if msg.text && msg.text !== '📷 [Bilde]'}
-									<span>{msg.text}</span>
-								{/if}
-								<span class="cp-edit-hint">Trykk for å redigere</span>
-							</button>
-						{:else}
-							<div class="cp-bubble-user">
-								{#if msg.imageUrl}
-									<img class="cp-bubble-img" src={msg.imageUrl} alt="Vedlagt bilde" />
-								{/if}
-								{#if msg.text && msg.text !== '📷 [Bilde]'}
-									<span>{msg.text}</span>
-								{/if}
-							</div>
-						{/if}
-						<button
-							class="cp-msg-star"
-							class:cp-msg-star-active={msg.starred}
-							onclick={() => toggleMessageStar(msg.id)}
-							title={msg.starred ? 'Fjern stjerne' : 'Stjernemerk melding'}
-						>{msg.starred ? '★' : '☆'}</button>
-					</div>
-				{:else}
-					<div class="cp-msg-row cp-msg-row-bot">
-						<div class="cp-bot-content">
-							<TriageCard text={msg.text} />
-							{#if msg.widgetProposal}
-								<WidgetProposalCard
-									draft={msg.widgetProposal}
-									ondiscard={() => { msg.widgetProposal = null; }}
-								/>
-							{/if}
-							{#if msg.statusWidget}
-								<ChatStatusWidget widget={msg.statusWidget} />
-							{/if}
-							{#if msg.photoAnnotation && msg.photoAnnotationImageUrl}
-								<AnnotatedImageCard imageUrl={msg.photoAnnotationImageUrl} annotation={msg.photoAnnotation} />
-							{/if}
-						</div>
-						<button
-							class="cp-msg-star"
-							class:cp-msg-star-active={msg.starred}
-							onclick={() => toggleMessageStar(msg.id)}
-							title={msg.starred ? 'Fjern stjerne' : 'Stjernemerk melding'}
-						>{msg.starred ? '★' : '☆'}</button>
-					</div>
-				{/if}
-			{/each}
-			{#if chatLoading}
-				{#if streamingText}
-					<TriageCard text={streamingText} streaming={true} />
-				{:else}
-					<TriageCard loading={true} steps={streamingSteps} />
-				{/if}
-			{/if}
-			{#if chatStopped && stoppedText}
-				<TriageCard text={stoppedText} stopped={true} />
-			{/if}
-			{#if chatError}
-				<div class="cp-error-row">
-					<p class="cp-error">{chatError}</p>
-					<button class="cp-retry-btn" onclick={retryMessage}>↺ Prøv på nytt</button>
-				</div>
-			{/if}
+			<ChatMessages
+				messages={chat.messages}
+				streamingText={chat.streamingText}
+				streamingSteps={chat.streamingSteps}
+				loading={chat.loading}
+				stopped={chat.stopped}
+				stoppedText={chat.stoppedText}
+				error={chat.error}
+				lastUserMsgId={chat.lastUserMsgId}
+				onRetry={() => chat.retry()}
+				onStarMessage={toggleMessageStar}
+				onEditStopped={editStoppedMessage}
+			/>
 		</div>
 
 		<div class="cp-input">
 			{#key inputKey}
-				<ChatInput placeholder="Skriv videre i samtalen…" streaming={chatLoading} onStop={stopChat} initialValue={inputDraft} onsubmit={sendMessage} />
+				<ChatInput placeholder="Skriv videre i samtalen…" streaming={chat.loading} onStop={stopChat} initialValue={inputDraft} onsubmit={(t) => chat.send(t)} />
 			{/key}
 		</div>
 	</AppPage>

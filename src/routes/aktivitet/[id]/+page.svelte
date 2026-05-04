@@ -5,7 +5,7 @@
 	import ChatInput from '$lib/components/ui/ChatInput.svelte';
 	import TriageCard from '$lib/components/composed/TriageCard.svelte';
 	import { tick } from 'svelte';
-	import { streamProxyChat } from '$lib/client/proxy-chat-stream';
+	import { ChatState } from '$lib/client/chat-state.svelte';
 
 	let { data }: { data: PageData } = $props();
 	const { workout, trackPoints, assessment, healthThemeId } = data;
@@ -14,13 +14,6 @@
 	type Tab = 'detaljer' | 'kart' | 'graf';
 	let tab = $state<Tab>('detaljer');
 
-	// Chat
-	let conversationId = $state<string | null>(null);
-	let isFirstMessage = $state(true);
-	let chatMessages = $state<Array<{ role: 'user' | 'assistant'; text: string }>>([]);
-	let chatLoading = $state(false);
-	let streamingText = $state('');
-	let streamingStatus = $state('');
 	let messagesEl = $state<HTMLElement | null>(null);
 
 	// Build workout context note injected on the first chat message
@@ -49,45 +42,19 @@
 		return lines.join('\n');
 	});
 
+	const chat = new ChatState({
+		getOrCreateConversationId: async () => null, // samtale opprettes lazy av API
+		initialAttachment: { url: 'resonans://workout-context', kind: 'other' as const, contentText: workoutContextNote, note: 'Treningsøkt-kontekst' }
+	});
+
 	async function scrollToBottom() {
 		await tick();
 		if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
 	}
 
 	async function sendMessage(text: string) {
-		chatMessages = [...chatMessages, { role: 'user', text }];
-		chatLoading = true;
-		streamingText = '';
-		streamingStatus = 'Starter...';
+		await chat.send(text);
 		await scrollToBottom();
-
-		// Inject workout + goals context as a structured attachment on the first message.
-		// It gets persisted in conversation history so all follow-up messages have context.
-		const attachment = isFirstMessage
-			? { url: 'resonans://workout-context', kind: 'other' as const, contentText: workoutContextNote, note: 'Treningsøkt-kontekst' }
-			: undefined;
-		isFirstMessage = false;
-
-		try {
-			const result = await streamProxyChat({
-				message: text,
-				conversationId,
-				attachment,
-				onStatus: (s) => { streamingStatus = s; },
-				onToken: (t) => { streamingStatus = ''; streamingText += t; scrollToBottom(); }
-			});
-			conversationId = result.conversationId ?? result.metadata?.conversationId ?? conversationId;
-			chatMessages = [
-				...chatMessages,
-				{ role: 'assistant', text: result.message ?? result.fullMessage ?? streamingText }
-			];
-			streamingText = '';
-		} catch {
-			chatMessages = [...chatMessages, { role: 'assistant', text: 'Noe gikk galt.' }];
-		} finally {
-			chatLoading = false;
-			await scrollToBottom();
-		}
 	}
 
 	// Formatters
@@ -313,27 +280,27 @@
 	<div class="chat-section">
 		<p class="chat-label">Chat</p>
 		<div class="chat-messages" bind:this={messagesEl} aria-live="polite">
-			{#if chatMessages.length === 0 && !chatLoading}
+			{#if chat.messages.length === 0 && !chat.loading}
 				<p class="chat-empty">Spør om denne økten…</p>
 			{/if}
-			{#each chatMessages as msg}
+			{#each chat.messages as msg (msg.id)}
 				{#if msg.role === 'user'}
 					<div class="bubble-user">{msg.text}</div>
 				{:else}
 					<TriageCard text={msg.text} />
 				{/if}
 			{/each}
-			{#if chatLoading}
-				{#if streamingText}
-					<TriageCard text={streamingText} streaming={true} />
+			{#if chat.loading}
+				{#if chat.streamingText}
+					<TriageCard text={chat.streamingText} streaming={true} />
 				{:else}
-					<TriageCard loading={true} status={streamingStatus} />
+					<TriageCard loading={true} steps={chat.streamingSteps} />
 				{/if}
 			{/if}
 		</div>
 		<ChatInput
 			placeholder="Spør om denne økten…"
-			disabled={chatLoading}
+			disabled={chat.loading}
 			onsubmit={sendMessage}
 		/>
 	</div>

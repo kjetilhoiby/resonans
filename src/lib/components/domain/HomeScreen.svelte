@@ -17,10 +17,7 @@
 	import MorphTitle from '../ui/MorphTitle.svelte';
 	import Icon from '../ui/Icon.svelte';
 	import ChatInput from '../ui/ChatInput.svelte';
-	import TriageCard from '../composed/TriageCard.svelte';
-	import ChatStatusWidget from './ChatStatusWidget.svelte';
-	import WidgetProposalCard from './WidgetProposalCard.svelte';
-	import AnnotatedImageCard from './AnnotatedImageCard.svelte';
+	import ChatMessages from '../ui/ChatMessages.svelte';
 	import ChecklistWidget, { type Checklist } from '../composed/ChecklistWidget.svelte';
 	import ChecklistSheet from '../ui/ChecklistSheet.svelte';
 	import FlowSheet from '../flows/FlowSheet.svelte';
@@ -32,10 +29,7 @@
 	import { prefetchDashboard } from '$lib/client/dashboard-cache';
 	import { prefetchWidgetData } from '$lib/client/widget-data-cache';
 	import { finishNavMetric, startNavMetric, timeAsync } from '$lib/client/nav-metrics';
-	import { streamProxyChat } from '$lib/client/proxy-chat-stream';
-	import type { WeatherStatusWidget } from '$lib/ai/tools/weather-forecast';
-	import type { PhotoAnnotationResult } from '$lib/ai/tools/annotate-photo';
-	import type { WidgetCreationFlow } from '$lib/flows/widget-creation/flow';
+	import { ChatState } from '$lib/client/chat-state.svelte';
 
 	interface Theme {
 		id: string;
@@ -88,24 +82,6 @@
 		id: string;
 		label: string;
 		prompt: string;
-	}
-
-	interface ChatAction {
-		label: string;
-		onclick: () => void;
-	}
-
-	interface ChatMessage {
-		role: 'user' | 'assistant';
-		text: string;
-		imageUrl?: string;
-		attachment?: AttachmentRef;
-		actions?: ChatAction[];
-		statusWidget?: WeatherStatusWidget | null;
-		widgetProposal?: import('$lib/artifacts/widget-draft').WidgetDraft | null;
-		widgetFlow?: WidgetCreationFlow | null;
-		photoAnnotation?: PhotoAnnotationResult | null;
-		photoAnnotationImageUrl?: string | null;
 	}
 
 	let { themes: initialThemes, recentConversations }: Props = $props();
@@ -671,17 +647,6 @@
 	// -- Chat-sone --
 	let chatOpen = $state(false);
 	let chatPrefill = $state('');
-	let chatMessages = $state<ChatMessage[]>([]);
-	let chatLoading = $state(false);
-	let chatStreamingText = $state('');
-	let chatStreamingSteps = $state<string[]>([]);
-	let chatStopped = $state(false);
-	let chatStoppedText = $state('');
-	let chatLastUserText = $state('');
-	let chatError = $state('');
-	let chatPendingMessage = $state<string | null>(null);
-	let chatAbortController: AbortController | null = null;
-	let currentConversationId = $state<string | null>(null);
 	let latestClosedConversationId = $state<string | null>(null);
 	let createdThemeLink = $state<{ id: string; name: string; emoji?: string | null } | null>(null);
 	let launchingThemeId = $state<string | null>(null);
@@ -694,6 +659,33 @@
 	// Tema-routing state
 	let suggestedTheme = $state<{ themeId: string; themeName: string; confidence: string; reasoning?: string } | null>(null);
 	let routedToTheme = $state<{ themeId: string; themeName: string } | null>(null);
+
+	const homeChat = new ChatState({
+		getOrCreateConversationId: async () => {
+			const res = await fetch('/api/conversations/new', { method: 'POST' });
+			if (!res.ok) return null;
+			const json = await res.json();
+			return json.conversationId ?? null;
+		},
+		preferredModel: () => selectedChatModel !== 'auto' ? selectedChatModel : undefined,
+		onPayload: (data) => {
+			const theme = data.themeCreated && data.theme && typeof data.theme === 'object' ? data.theme as { id?: string; name?: string; emoji?: string | null } : null;
+			if (theme?.id) {
+				createdThemeLink = { id: theme.id, name: theme.name ?? '', emoji: theme.emoji ?? null };
+			}
+		},
+		onThemeRouted: (theme) => {
+			routedToTheme = theme;
+		},
+		onThemeSuggested: (theme) => {
+			suggestedTheme = theme;
+		},
+		onBookRouted: (book) => {
+			closeChat();
+			goto(`/tema/${book.themeId}?tab=books&bookId=${book.bookId}`);
+		},
+		onChecklistChanged: fetchChecklists,
+	});
 
 	// ── Media history types ───────────────────────────────────────────────────
 	interface MediaHistoryItem {
@@ -827,10 +819,10 @@
 	const activeQuickAction = $derived(
 		QUICK_ACTIONS.find((action) => action.id === selectedQuickAction) ?? QUICK_ACTIONS[0]
 	);
-	const hasPersistedConversation = $derived(Boolean(currentConversationId));
+	const hasPersistedConversation = $derived(Boolean(homeChat.conversationId));
 	const chatConversationTitle = $derived.by(() => {
 		if (!hasPersistedConversation) return '';
-		const firstUserMessage = chatMessages.find((msg) => msg.role === 'user' && msg.text && msg.text !== '📷 [Bilde]');
+		const firstUserMessage = homeChat.messages.find((msg) => msg.role === 'user' && msg.text && msg.text !== '📷 [Bilde]');
 		const base = firstUserMessage?.text?.trim() || 'Ny samtale';
 		return base.length > 42 ? `${base.slice(0, 42).trimEnd()}…` : base;
 	});
@@ -844,7 +836,7 @@
 	});
 
 	const followUpConversations = $derived.by(() => {
-		const activeId = currentConversationId || latestClosedConversationId;
+		const activeId = homeChat.conversationId || latestClosedConversationId;
 		return homeConversationList
 			.filter((c) => c.id !== activeId)
 			.slice(0, 6);
@@ -930,10 +922,10 @@
 	}
 
 	function startQuickAction(action: QuickAction) {
-		chatMessages = [];
+		homeChat.reset();
+		homeChat.conversationId = null;
 		chatPrefill = '';
 		createdThemeLink = null;
-		currentConversationId = null;
 		if (action.id === 'chat') {
 			openChat('', 'chat');
 		} else if (action.id === 'camera') {
@@ -1043,15 +1035,23 @@
 			.join('\n');
 	}
 
+	// Handlers for action buttons in triage messages (keyed by action id)
+	let pendingActionHandlers: Record<string, () => void> = {};
+
 	function presentAttachmentTriage(result: AttachmentTriageResponse) {
 		const attachment = result.attachment;
 		const triageText = buildAttachmentTriageText(result.triage);
-		const actions: ChatAction[] = result.triage.suggestedActions.map((action) => ({
-			label: action.label,
-			onclick: () => {
+
+		// Build action list with stable ids and register handlers
+		const chatStateActions: { id: string; label: string }[] = [];
+
+		result.triage.suggestedActions.forEach((action) => {
+			const id = action.id || `triage-${action.label}`;
+			chatStateActions.push({ id, label: action.label });
+			pendingActionHandlers[id] = () => {
 				void sendChat(action.prompt, attachment.kind === 'image' ? attachment.url : undefined, attachment);
-			}
-		}));
+			};
+		});
 
 		let trackingText: string | null = null;
 		if (result.tracking?.matched) {
@@ -1061,14 +1061,13 @@
 				trackingText = `Tracking-match: ${label} (${conf}). Registrering lagret automatisk.`;
 			} else if (result.tracking.action === 'confirm') {
 				trackingText = `Tracking-match: ${label} (${conf}). Klar for bekreftet registrering.`;
-				actions.unshift({
-					label: 'Registrer i serie',
-					onclick: () => {
-						if (!result.tracking) return;
-						const prompt = buildTrackingPrompt(result.tracking);
-						void sendChat(prompt, attachment.kind === 'image' ? attachment.url : undefined, attachment);
-					}
-				});
+				const trackingId = 'tracking-register';
+				chatStateActions.unshift({ id: trackingId, label: 'Registrer i serie' });
+				pendingActionHandlers[trackingId] = () => {
+					if (!result.tracking) return;
+					const prompt = buildTrackingPrompt(result.tracking);
+					void sendChat(prompt, attachment.kind === 'image' ? attachment.url : undefined, attachment);
+				};
 			}
 		}
 
@@ -1078,18 +1077,22 @@
 		chatOpen = true;
 		returnToChatAfterFlow = false;
 		chatPrefill = '';
-		chatMessages = [
-			...chatMessages,
+		homeChat.messages = [
+			...homeChat.messages,
 			{
-				role: 'user',
+				id: crypto.randomUUID(),
+				role: 'user' as const,
 				text: attachment.note,
-				imageUrl: attachment.kind === 'image' ? attachment.url : undefined,
-				attachment
+				starred: false,
+				imageUrl: attachment.kind === 'image' ? attachment.url : null,
+				attachment: attachment as import('$lib/client/chat-state.svelte').ChatMessage['attachment']
 			},
 			{
-				role: 'assistant',
+				id: crypto.randomUUID(),
+				role: 'assistant' as const,
 				text: assistantText,
-				actions
+				starred: false,
+				actions: chatStateActions
 			}
 		];
 	}
@@ -1358,9 +1361,9 @@
 	) {
 		const draft = (draftOverride ?? chatPrefill).trim();
 		if (!options?.preserveConversation) {
-			chatMessages = [];
+			homeChat.reset();
+			homeChat.conversationId = null;
 			createdThemeLink = null;
-			currentConversationId = null;
 		}
 		returnToChatAfterFlow = Boolean(options?.preserveConversation);
 		chatOpen = false;
@@ -1382,9 +1385,9 @@
 
 	function startMoodFlow(preserveConversation: boolean, draftOverride?: string) {
 		if (!preserveConversation) {
-			chatMessages = [];
+			homeChat.reset();
+			homeChat.conversationId = null;
 			createdThemeLink = null;
-			currentConversationId = null;
 		}
 		moodNote = (draftOverride ?? '').trim();
 		returnToChatAfterFlow = preserveConversation;
@@ -1394,15 +1397,15 @@
 	}
 
 	function closeChat() {
-		if (currentConversationId && chatMessages.length > 0) {
-			latestClosedConversationId = currentConversationId;
+		if (homeChat.conversationId && homeChat.messages.length > 0) {
+			latestClosedConversationId = homeChat.conversationId;
 		}
-		chatMessages = [];
+		homeChat.reset();
+		homeChat.conversationId = null;
 		chatPrefill = '';
 		chatInputAutoFocus = false;
 		createdThemeLink = null;
 		launchingThemeId = null;
-		currentConversationId = null;
 		chatOpen = false;
 		returnToChatAfterFlow = false;
 	}
@@ -1505,110 +1508,13 @@
 	}
 
 	function stopChat() {
-		chatAbortController?.abort();
+		homeChat.stop();
 	}
 
 	async function sendChat(text: string, imageUrl?: string, attachment?: AttachmentRef) {
-		const displayText = text || (imageUrl ? '📷 [Bilde]' : '');
-		if (chatLoading && !imageUrl && !attachment) {
-			chatPendingMessage = displayText;
-			return;
-		}
-		chatMessages = [...chatMessages, { role: 'user', text: displayText, imageUrl, attachment }];
-		chatLoading = true;
-		chatStreamingText = '';
-		chatStreamingSteps = [];
-		chatStopped = false;
-		chatStoppedText = '';
-		chatError = '';
-		chatLastUserText = displayText;
 		suggestedTheme = null;
 		routedToTheme = null;
-		chatAbortController = new AbortController();
-
-		try {
-			if (!currentConversationId) {
-				try {
-					const newConversationRes = await fetch('/api/conversations/new', { method: 'POST' });
-					if (newConversationRes.ok) {
-						const newConversationData = await newConversationRes.json();
-						currentConversationId = newConversationData.conversationId ?? null;
-					}
-				} catch {
-					// Lar API-et håndtere fallback hvis ny samtale ikke kan opprettes her.
-				}
-			}
-
-			let bookWasRouted = false;
-			const data = await streamProxyChat({
-				message: displayText,
-				conversationId: currentConversationId,
-				imageUrl,
-				attachment,
-				preferredModel: selectedChatModel !== 'auto' ? selectedChatModel : undefined,
-				signal: chatAbortController.signal,
-				onStatus: (status) => {
-					chatStreamingSteps = [...chatStreamingSteps, status];
-				},
-				onToken: (token) => {
-					chatStreamingText += token;
-				},
-				onThemeRouted: (theme) => {
-					routedToTheme = theme;
-					currentConversationId = null;
-				},
-				onThemeSuggested: (theme) => {
-					suggestedTheme = theme;
-				},
-				onBookRouted: (book) => {
-					bookWasRouted = true;
-					chatLoading = false;
-					chatStreamingText = '';
-					chatStreamingSteps = [];
-					closeChat();
-					goto(`/tema/${book.themeId}?tab=data&book=${book.bookId}`);
-				}
-			});
-			if (bookWasRouted) return;
-			currentConversationId = data.conversationId ?? currentConversationId;
-			if (data.themeCreated && data.theme?.id) {
-				createdThemeLink = {
-					id: data.theme.id,
-					name: data.theme.name,
-					emoji: data.theme.emoji ?? null
-				};
-			}
-			chatMessages = [
-				...chatMessages,
-				{
-					role: 'assistant',
-					text: data.message,
-					statusWidget: data.statusWidget ?? data.metadata?.statusWidget ?? null,
-					widgetProposal: data.widgetProposal ?? data.metadata?.widgetProposal ?? null,
-					widgetFlow: data.widgetFlow ?? data.metadata?.widgetFlow ?? null,
-					photoAnnotation: data.photoAnnotation ?? data.metadata?.photoAnnotation ?? null,
-					photoAnnotationImageUrl: data.photoAnnotationImageUrl ?? data.metadata?.photoAnnotationImageUrl ?? null
-				}
-			];
-			if (data.checklistChanged) await fetchChecklists();
-		} catch (e) {
-			if (e instanceof Error && e.name === 'AbortError') {
-				chatStopped = true;
-				chatStoppedText = chatStreamingText;
-			} else {
-				chatError = 'Noe gikk galt. Prøv igjen.';
-			}
-		} finally {
-			chatAbortController = null;
-			chatStreamingText = '';
-			chatStreamingSteps = [];
-			chatLoading = false;
-			if (chatPendingMessage) {
-				const next = chatPendingMessage;
-				chatPendingMessage = null;
-				sendChat(next);
-			}
-		}
+		await homeChat.send(text, imageUrl, attachment as Parameters<typeof homeChat.send>[2]);
 	}
 
 	async function unpinWidget(id: string) {
@@ -1949,7 +1855,7 @@
 			>
 				{#snippet actions()}
 					{#if hasPersistedConversation}
-						<button class="chat-link" onclick={() => goto(`/samtaler?conversation=${currentConversationId}`)} aria-label="Åpne denne samtalen">Åpne</button>
+						<button class="chat-link" onclick={() => goto(`/samtaler?conversation=${homeChat.conversationId}`)} aria-label="Åpne denne samtalen">Åpne</button>
 					{/if}
 					<button
 						class="model-pill"
@@ -1964,10 +1870,10 @@
 				{/snippet}
 			</PageHeader>
 			<div class="chat-messages" aria-live="polite">
-				{#if chatMessages.length === 0 && !chatLoading}
+				{#if homeChat.messages.length === 0 && !homeChat.loading}
 					{#if followUpConversations.length > 0}
 						<div class="followup-list" aria-label="Nylige samtaler å følge opp">
-							{#snippet followupItem(convo)}
+							{#snippet followupItem(convo: typeof followUpConversations[0])}
 								<div class="followup-item-wrap" style={convo.linkedTheme ? getThemeHueStyle(convo.linkedTheme.name) : undefined}>
 									{#if homeEditingConversationId === convo.id}
 										<input
@@ -2024,57 +1930,18 @@
 						</div>
 					{/if}
 				{/if}
-				{#each chatMessages as msg}
-					{#if msg.role === 'user'}
-						<div class="bubble-user">
-							{#if msg.imageUrl}
-								<img class="bubble-img" src={msg.imageUrl} alt="Bilde" />
-							{/if}
-							{#if msg.attachment && !msg.imageUrl}
-								<div class="bubble-attachment">
-									<span class="bubble-attachment-icon">
-										{#if msg.attachment.kind === 'audio'}🎙️{:else if msg.attachment.kind === 'document'}📄{:else}📎{/if}
-									</span>
-									<div class="bubble-attachment-copy">
-										<span class="bubble-attachment-name">{msg.attachment.name}</span>
-										<span class="bubble-attachment-meta">{msg.attachment.mimeType || 'vedlegg'}</span>
-									</div>
-								</div>
-							{/if}
-							{#if msg.text && msg.text !== '📷 [Bilde]'}<span>{msg.text}</span>{/if}
-						</div>
-					{:else}
-						<TriageCard text={msg.text} actions={msg.actions} />
-						{#if msg.widgetProposal}
-							<WidgetProposalCard
-								draft={msg.widgetProposal}
-								ondiscard={() => { msg.widgetProposal = null; }}
-							/>
-						{/if}
-						{#if msg.statusWidget}
-							<ChatStatusWidget widget={msg.statusWidget} />
-						{/if}
-						{#if msg.photoAnnotation && msg.photoAnnotationImageUrl}
-							<AnnotatedImageCard imageUrl={msg.photoAnnotationImageUrl} annotation={msg.photoAnnotation} />
-						{/if}
-					{/if}
-				{/each}
-				{#if chatLoading}
-					{#if chatStreamingText}
-						<TriageCard text={chatStreamingText} streaming={true} />
-					{:else}
-						<TriageCard loading={true} steps={chatStreamingSteps} />
-					{/if}
-				{/if}
-				{#if chatStopped && chatStoppedText}
-					<TriageCard text={chatStoppedText} stopped={true} />
-				{/if}
-				{#if chatError}
-					<div class="chat-error-row">
-						<p class="chat-error">{chatError}</p>
-						<button class="chat-retry-btn" onclick={() => { chatError = ''; sendChat(chatLastUserText); }}>↺ Prøv på nytt</button>
-					</div>
-				{/if}
+				<ChatMessages
+					messages={homeChat.messages}
+					streamingText={homeChat.streamingText}
+					streamingSteps={homeChat.streamingSteps}
+					loading={homeChat.loading}
+					stopped={homeChat.stopped}
+					stoppedText={homeChat.stoppedText}
+					error={homeChat.error}
+					lastUserMsgId={homeChat.lastUserMsgId}
+					onRetry={() => homeChat.retry()}
+					onAction={(id) => pendingActionHandlers[id]?.()}
+				/>
 			</div>
 			<div class="chat-input-area">
 				{#if routedToTheme}
@@ -2119,7 +1986,7 @@
 						initialValue={chatPrefill}
 						autoFocus={chatInputAutoFocus}
 						showActionRig={true}
-						streaming={chatLoading}
+						streaming={homeChat.loading}
 						onStop={stopChat}
 						onAttachment={(kind, draft) => startHomeAttachment(kind, draft, { preserveConversation: true })}
 						onMood={(draft) => startMoodFlow(true, draft)}
@@ -3658,51 +3525,6 @@
 	}
 	.ci-factor-btn.is-active .ci-factor-label { color: #c5cdf8; }
 
-	/* Bubble image */
-	.bubble-img {
-		display: block;
-		max-width: 100%;
-		border-radius: 10px;
-		margin-bottom: 6px;
-	}
-
-	.bubble-attachment {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		padding: 10px 12px;
-		border-radius: 10px;
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.06);
-		margin-bottom: 6px;
-	}
-
-	.bubble-attachment-icon {
-		font-size: 1rem;
-		line-height: 1;
-	}
-
-	.bubble-attachment-copy {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-		min-width: 0;
-	}
-
-	.bubble-attachment-name {
-		font-size: 0.82rem;
-		font-weight: 600;
-		color: #ececff;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-
-	.bubble-attachment-meta {
-		font-size: 0.7rem;
-		color: #9093a9;
-	}
-
 	:global(.zone-input .page-header) {
 		padding: var(--screen-title-top-pad, 34px) 20px 12px;
 		border-bottom: 1px solid #1a1a1a;
@@ -3799,7 +3621,7 @@
 		align-items: stretch;
 		border: 1px solid #1a1a1a;
 		border-radius: 10px;
-		overflow: hidden;
+		overflow: visible;
 		transition: border-color 0.15s ease, color 0.15s ease;
 	}
 
@@ -3818,7 +3640,7 @@
 		padding: 9px 10px;
 		background: transparent;
 		border: none;
-		border-radius: 0;
+		border-radius: 10px 0 0 10px;
 		color: #7a7a7a;
 		cursor: pointer;
 		transition: opacity 0.15s ease, color 0.15s ease;
@@ -3891,48 +3713,6 @@
 		scrollbar-width: thin;
 		scrollbar-color: #222 transparent;
 	}
-
-	.bubble-user {
-		align-self: flex-end;
-		background: #1a1a2e;
-		border: 1px solid #2a2a4a;
-		border-radius: 14px 14px 4px 14px;
-		padding: 9px 14px;
-		font-size: 0.88rem;
-		line-height: 1.5;
-		max-width: 80%;
-		white-space: pre-wrap;
-		word-break: break-word;
-		color: #ccc;
-	}
-
-	.chat-error-row {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		padding: 0 2px;
-	}
-
-	.chat-error {
-		font-size: 0.8rem;
-		color: #e07070;
-		margin: 0;
-		flex: 1;
-	}
-
-	.chat-retry-btn {
-		background: none;
-		border: 1px solid #3a2a2a;
-		border-radius: 999px;
-		padding: 4px 12px;
-		color: #a06060;
-		font: inherit;
-		font-size: 0.75rem;
-		cursor: pointer;
-		white-space: nowrap;
-		transition: border-color 0.12s, color 0.12s;
-	}
-	.chat-retry-btn:hover { border-color: #7a4040; color: #d08080; }
 
 	.chat-input-area {
 		position: sticky;

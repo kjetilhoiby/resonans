@@ -408,6 +408,7 @@ export const checklists = pgTable('checklists', {
 	emoji: text('emoji').notNull().default('✅'),     // "✈️", "🎒", "🚗"
 	context: text('context'),                         // 'tur', 'pakkeliste', 'event', etc.
 	completedAt: timestamp('completed_at'),           // satt når alle punkter er avkrysset
+	planConversationId: uuid('plan_conversation_id').references((): AnyPgColumn => conversations.id, { onDelete: 'set null' }),
 	createdAt: timestamp('created_at').defaultNow().notNull()
 });
 
