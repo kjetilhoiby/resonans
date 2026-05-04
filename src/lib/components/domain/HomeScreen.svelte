@@ -19,6 +19,8 @@
 	import ChatInput from '../ui/ChatInput.svelte';
 	import TriageCard from '../composed/TriageCard.svelte';
 	import ChatStatusWidget from './ChatStatusWidget.svelte';
+	import WidgetProposalCard from './WidgetProposalCard.svelte';
+	import AnnotatedImageCard from './AnnotatedImageCard.svelte';
 	import ChecklistWidget, { type Checklist } from '../composed/ChecklistWidget.svelte';
 	import ChecklistSheet from '../ui/ChecklistSheet.svelte';
 	import FlowSheet from '../flows/FlowSheet.svelte';
@@ -32,6 +34,8 @@
 	import { finishNavMetric, startNavMetric, timeAsync } from '$lib/client/nav-metrics';
 	import { streamProxyChat } from '$lib/client/proxy-chat-stream';
 	import type { WeatherStatusWidget } from '$lib/ai/tools/weather-forecast';
+	import type { PhotoAnnotationResult } from '$lib/ai/tools/annotate-photo';
+	import type { WidgetCreationFlow } from '$lib/flows/widget-creation/flow';
 
 	interface Theme {
 		id: string;
@@ -98,6 +102,10 @@
 		attachment?: AttachmentRef;
 		actions?: ChatAction[];
 		statusWidget?: WeatherStatusWidget | null;
+		widgetProposal?: import('$lib/artifacts/widget-draft').WidgetDraft | null;
+		widgetFlow?: WidgetCreationFlow | null;
+		photoAnnotation?: PhotoAnnotationResult | null;
+		photoAnnotationImageUrl?: string | null;
 	}
 
 	let { themes: initialThemes, recentConversations }: Props = $props();
@@ -1575,7 +1583,11 @@
 				{
 					role: 'assistant',
 					text: data.message,
-					statusWidget: data.statusWidget ?? data.metadata?.statusWidget ?? null
+					statusWidget: data.statusWidget ?? data.metadata?.statusWidget ?? null,
+					widgetProposal: data.widgetProposal ?? data.metadata?.widgetProposal ?? null,
+					widgetFlow: data.widgetFlow ?? data.metadata?.widgetFlow ?? null,
+					photoAnnotation: data.photoAnnotation ?? data.metadata?.photoAnnotation ?? null,
+					photoAnnotationImageUrl: data.photoAnnotationImageUrl ?? data.metadata?.photoAnnotationImageUrl ?? null
 				}
 			];
 			if (data.checklistChanged) await fetchChecklists();
@@ -2033,8 +2045,17 @@
 						</div>
 					{:else}
 						<TriageCard text={msg.text} actions={msg.actions} />
+						{#if msg.widgetProposal}
+							<WidgetProposalCard
+								draft={msg.widgetProposal}
+								ondiscard={() => { msg.widgetProposal = null; }}
+							/>
+						{/if}
 						{#if msg.statusWidget}
 							<ChatStatusWidget widget={msg.statusWidget} />
+						{/if}
+						{#if msg.photoAnnotation && msg.photoAnnotationImageUrl}
+							<AnnotatedImageCard imageUrl={msg.photoAnnotationImageUrl} annotation={msg.photoAnnotation} />
 						{/if}
 					{/if}
 				{/each}
