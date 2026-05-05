@@ -1852,11 +1852,10 @@
 				subtitle={hasPersistedConversation ? chatConversationTitle : ''}
 				backHref={hasPersistedConversation ? '/samtaler' : undefined}
 				backLabel="Alle samtaler"
+				onTitleClick={closeChat}
+				titleLabel="Lukk samtale"
 			>
 				{#snippet actions()}
-					{#if hasPersistedConversation}
-						<button class="chat-link" onclick={() => goto(`/samtaler?conversation=${homeChat.conversationId}`)} aria-label="Åpne denne samtalen">Åpne</button>
-					{/if}
 					<button
 						class="model-pill"
 						onclick={() => {
@@ -1866,7 +1865,6 @@
 						}}
 						title="Modell — klikk for å bytte"
 					>{{ 'auto': 'Auto', 'gpt-4o-mini': 'Mini', 'gpt-4.1': '4.1', 'gpt-5.4': '5.4' }[selectedChatModel] ?? selectedChatModel}</button>
-					<button class="chat-close" onclick={closeChat} aria-label="Lukk samtale"><Icon name="close" size={15} /></button>
 				{/snippet}
 			</PageHeader>
 			<div class="chat-messages" aria-live="polite">
@@ -3564,42 +3562,6 @@
 		color: #999;
 	}
 
-	.chat-close {
-		width: 30px;
-		height: 30px;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		border-radius: 999px;
-		border: 1px solid #2a2a2a;
-		background: #111;
-		color: #8f8f8f;
-		cursor: pointer;
-		flex-shrink: 0;
-		transition: border-color 0.12s, color 0.12s;
-	}
-
-	.chat-close:hover {
-		border-color: #3a3a3a;
-		color: #d8d8d8;
-	}
-
-	.chat-link {
-		border: 1px solid #292929;
-		background: #111;
-		color: #8f8f8f;
-		border-radius: 999px;
-		padding: 7px 11px;
-		font: inherit;
-		font-size: 0.74rem;
-		cursor: pointer;
-		white-space: nowrap;
-	}
-
-	.chat-link:hover {
-		border-color: #3c4f9f;
-		color: #d4daf6;
-	}
 
 	@media (prefers-reduced-motion: reduce) {
 		.zone-input {

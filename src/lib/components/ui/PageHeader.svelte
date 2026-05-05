@@ -9,6 +9,7 @@
 		backLabel?: string;
 		titleHref?: string;
 		titleLabel?: string;
+		onTitleClick?: () => void;
 		actions?: Snippet;
 	}
 
@@ -19,6 +20,7 @@
 		backLabel = 'Tilbake',
 		titleHref,
 		titleLabel = title,
+		onTitleClick,
 		actions
 	}: Props = $props();
 </script>
@@ -33,6 +35,10 @@
 				<a href={titleHref} class="page-header-title-link" aria-label={titleLabel}>
 					<h1>{title}</h1>
 				</a>
+			{:else if onTitleClick}
+				<button class="page-header-title-link" onclick={onTitleClick} aria-label={titleLabel}>
+					<h1>{title}</h1>
+				</button>
 			{:else}
 				<h1>{title}</h1>
 			{/if}
@@ -75,6 +81,12 @@
 		color: inherit;
 		text-decoration: none;
 		width: fit-content;
+		background: none;
+		border: none;
+		padding: 0;
+		cursor: pointer;
+		font: inherit;
+		text-align: left;
 	}
 
 	.page-header-title-link:hover h1 {

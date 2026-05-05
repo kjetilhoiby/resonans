@@ -219,8 +219,7 @@
 	let visionValue = $state(data.vision);
 	let weekComposerText = $state('');
 	let dayComposerText = $state('');
-	let dayNotesState = $state<Record<string, string>>(structuredClone(data.dayNotes));
-	let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayHeadlines));
+let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayHeadlines));
 	let planningImportBusy = $state(false);
 	let dayCloseBusy = $state(false);
 	let dayCloseMessage = $state('');
@@ -269,7 +268,6 @@
 	const selectedDayChecklist = $derived(dayChecklistsState[selectedDayIso] ?? null);
 	const sortedDayItems = $derived(selectedDayChecklist ? sortByTime(selectedDayChecklist.items.filter((item) => !item.parentId)) : []);
 	const selectedDay = $derived(data.week.days.find((day) => day.isoDate === selectedDayIso) ?? data.week.days[0]);
-	const selectedDayNote = $derived(dayNotesState[selectedDayIso] ?? '');
 	const selectedDayHeadline = $derived(dayHeadlinesState[selectedDayIso] ?? '');
 	const selectedDaySpondEvents = $derived(data.spondEventsByDay?.[selectedDayIso] ?? []);
 	const hasOpenDayItems = $derived(selectedDayChecklist ? selectedDayChecklist.items.some((i) => !i.checked) : false);
@@ -1361,17 +1359,17 @@
 		planningImportBusy = false;
 	}
 
-	async function saveDayNote() {
+	async function saveDayHeadline() {
 		const dayIso = selectedDayIso;
-		const note = dayNotesState[dayIso] ?? '';
+		const headline = dayHeadlinesState[dayIso] ?? '';
 		setSaveState('dayNote', 'saving');
 
 		const form = new FormData();
 		form.set('weekKey', data.week.dashedKey);
 		form.set('dayIso', dayIso);
-		form.set('dayNote', note);
+		form.set('headline', headline);
 
-		const response = await fetch('?/saveDayNote', {
+		const response = await fetch('?/saveDayHeadline', {
 			method: 'POST',
 			body: form
 		});
@@ -1839,24 +1837,20 @@
 				</ul>
 			{/if}
 
-			{#if selectedDayHeadline}
-				<p class="wp-helper">{selectedDayHeadline}</p>
-			{/if}
-
 			<div class="wp-field-shell">
 				<textarea
 					class="wp-textarea"
 					rows="2"
 					placeholder={`Liten plan for ${smartDayLabel(selectedDayIso)}...`}
-					value={selectedDayNote}
+					value={selectedDayHeadline}
 					oninput={(event) => {
 						const target = event.currentTarget as HTMLTextAreaElement;
-						dayNotesState = { ...dayNotesState, [selectedDayIso]: target.value };
+						dayHeadlinesState = { ...dayHeadlinesState, [selectedDayIso]: target.value };
 					}}
 					onfocus={markInitialValue}
 					onblur={async (event) => {
 						submitOnBlurIfChanged(event);
-						await saveDayNote();
+						await saveDayHeadline();
 					}}
 				></textarea>
 				<span class="wp-save-dot" class:is-saving={saveStates.dayNote === 'saving'} class:is-saved={saveStates.dayNote === 'saved'} aria-hidden="true"></span>
