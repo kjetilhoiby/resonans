@@ -1,31 +1,17 @@
 import { db } from '$lib/db';
-import { users, webPushSubscriptions } from '$lib/db/schema';
+import { users } from '$lib/db/schema';
 import {
 	buildWorkoutImportedMessage,
 	sendGoogleChatMessage,
 	type WorkoutImportedMessageData
 } from '$lib/server/google-chat';
-import { ensureThemeForUser } from '$lib/server/themes';
-import {
-	buildWorkoutChatPrompt,
-	type WorkoutContextSummary
-} from '$lib/server/workout-context';
+import { type WorkoutContextSummary } from '$lib/server/workout-context';
+import { computeWorkoutNugget } from '$lib/server/workout-nuggets';
 import { PushDeliveryService } from '$lib/server/services/push-delivery-service';
 import { eq } from 'drizzle-orm';
 
-function buildWorkoutChatUrl(appUrl: string, themeId: string, workout: WorkoutContextSummary) {
-	const url = new URL(`/tema/${themeId}`, appUrl);
-	url.searchParams.set('tab', 'chat');
-	url.searchParams.set('workout', workout.id);
-	url.searchParams.set('prompt', buildWorkoutChatPrompt(workout));
-	return url.toString();
-}
-
-function buildWorkoutHealthUrl(appUrl: string, themeId: string, workout: WorkoutContextSummary) {
-	const url = new URL(`/tema/${themeId}`, appUrl);
-	url.searchParams.set('tab', 'data');
-	url.searchParams.set('workout', workout.id);
-	return url.toString();
+function buildActivityUrl(appUrl: string, workoutId: string) {
+	return new URL(`/aktivitet/${workoutId}`, appUrl).toString();
 }
 
 export async function notifyUserAboutImportedWorkouts(args: {
@@ -51,31 +37,29 @@ export async function notifyUserAboutImportedWorkouts(args: {
 		return { attempted: 0, sent: 0 };
 	}
 
-	const { theme: healthTheme } = await ensureThemeForUser({
-		userId,
-		name: 'Helse',
-		emoji: '💪',
-		description: 'Helse, trening, søvn og restitusjon samlet i ett tema.'
-	});
-
 	let sent = 0;
 
 	for (const workout of workouts) {
-		const activityUrl = new URL(`/aktivitet/${workout.id}`, appUrl).toString();
-		const workoutChatUrl = buildWorkoutChatUrl(appUrl, healthTheme.id, workout);
+		const activityUrl = buildActivityUrl(appUrl, workout.id);
 		let pushDelivered = false;
 
-		// Web push (primary channel)
-		const distanceText = workout.distanceKm != null ? ` · ${workout.distanceKm.toFixed(2)} km` : '';
+		const nugget = await computeWorkoutNugget(userId, workout).catch(() => null);
+		const title = nugget?.headline ?? `${workout.title} importert`;
+
+		const distanceText = workout.distanceKm != null ? `${workout.distanceKm.toFixed(2)} km` : '';
 		const durationText = workout.durationSeconds != null
-			? ` · ${Math.round(workout.durationSeconds / 60)} min`
+			? `${Math.round(workout.durationSeconds / 60)} min`
 			: '';
+		const stats = [distanceText, durationText].filter(Boolean).join(' · ');
+		const fallbackTitle = nugget ? `${workout.title} importert` : '';
+		const body = [stats, fallbackTitle].filter(Boolean).join(' — ') || 'Treningsøkt importert';
+
 		const delivery = await PushDeliveryService.deliverToUser({
 			userId,
 			payload: {
-				title: `${workout.title} importert`,
-				body: `${distanceText}${durationText}`.replace(/^ · /, ''),
-				url: workoutChatUrl,
+				title,
+				body,
+				url: activityUrl,
 				tag: `workout-${workout.id}`
 			},
 			onGone: 'disable'
@@ -95,7 +79,7 @@ export async function notifyUserAboutImportedWorkouts(args: {
 				avgHeartRate: workout.avgHeartRate,
 				maxHeartRate: workout.maxHeartRate,
 				sourceName: workout.sourceName,
-				healthChatUrl: buildWorkoutChatUrl(appUrl, healthTheme.id, workout),
+				healthChatUrl: activityUrl,
 				healthDataUrl: activityUrl
 			};
 			const delivered = await sendGoogleChatMessage(
