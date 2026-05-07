@@ -11,8 +11,17 @@
 	import CompactRecordList from '../ui/CompactRecordList.svelte';
 	import GoalRing from '../ui/GoalRing.svelte';
 	import PeriodPills from '../ui/PeriodPills.svelte';
-	import GpxMapSvg from '../charts/GpxMapSvg.svelte';
+	import GpxMap from '../charts/GpxMap.svelte';
+	import TrackProfileChart from '../charts/TrackProfileChart.svelte';
+	import KmSplitsTable from '../charts/KmSplitsTable.svelte';
+	import HrDistributionBar from '../charts/HrDistributionBar.svelte';
 	import MetricCard from '$lib/components/visualizations/MetricCard.svelte';
+	import { hasElevation, hasHeartRate } from '$lib/utils/track-stats';
+	import {
+		buildPaceBaseline,
+		compareActivityToBaseline,
+		formatPaceDelta
+	} from '$lib/utils/activity-history';
 
 	type WindowMode = '7d' | '30d' | '365d' | 'week' | 'month' | 'year' | 'quarter';
 
@@ -1221,38 +1230,102 @@
 							</button>
 
 							{#if isExpanded}
+								{@const baseline = act.paceSecondsPerKm
+									? buildPaceBaseline(activities, act.sportType, act.activityId)
+									: null}
+								{@const comparison = baseline
+									? compareActivityToBaseline(act.paceSecondsPerKm, baseline)
+									: null}
+								{@const showMapData = mapEventId === trackEventId && mapPoints.length > 0}
 								<div class="hd-activity-details">
-									<div class="hd-activity-meta">
-										{#if act.distanceMeters && !noDistance}{(act.distanceMeters / 1000).toFixed(1)} km{/if}
-										{#if act.durationSeconds}· {formatDuration(act.durationSeconds)}{/if}
-										{#if act.avgHeartRate}· ♥ {act.avgHeartRate} bpm{/if}
-										{#if act.paceSecondsPerKm && act.sportType === 'running'}· {formatPace(act.paceSecondsPerKm)}{/if}
+									<div class="hd-stats">
+										{#if act.distanceMeters && !noDistance}
+											<div class="hd-stat">
+												<span class="hd-stat-label">Distanse</span>
+												<span class="hd-stat-value">{(act.distanceMeters / 1000).toFixed(2)} km</span>
+											</div>
+										{/if}
+										{#if act.durationSeconds}
+											<div class="hd-stat">
+												<span class="hd-stat-label">Varighet</span>
+												<span class="hd-stat-value">{formatDuration(act.durationSeconds)}</span>
+											</div>
+										{/if}
+										{#if act.paceSecondsPerKm && !noDistance}
+											<div class="hd-stat">
+												<span class="hd-stat-label">Tempo</span>
+												<span class="hd-stat-value">{formatPace(act.paceSecondsPerKm)}</span>
+											</div>
+										{/if}
+										{#if act.avgHeartRate}
+											<div class="hd-stat">
+												<span class="hd-stat-label">♥ snitt</span>
+												<span class="hd-stat-value">{Math.round(act.avgHeartRate)}<span class="hd-stat-unit"> bpm</span></span>
+											</div>
+										{/if}
+										{#if act.elevationMeters && act.elevationMeters > 0}
+											<div class="hd-stat">
+												<span class="hd-stat-label">Stigning</span>
+												<span class="hd-stat-value">{Math.round(act.elevationMeters)}<span class="hd-stat-unit"> m</span></span>
+											</div>
+										{/if}
 									</div>
-									{#if act.evidence.length > 0}
-										<span class="hd-activity-sources">
-											{#each act.evidence as ev}
-												<span class="hd-source-chip" class:hd-source-chip-track={ev.hasTrackPoints}>
-													{providerLabel(ev.provider, ev.sensorType)}
-													{#if ev.distanceMeters !== null && !noDistance}{(ev.distanceMeters / 1000).toFixed(1)} km{/if}
-													{#if ev.durationSeconds !== null}· {formatDuration(ev.durationSeconds)}{/if}
-													{#if ev.avgHeartRate !== null}· ♥ {ev.avgHeartRate}{/if}
-												</span>
-											{/each}
-										</span>
+
+									{#if comparison && baseline}
+										<div class="hd-comparison" class:hd-comparison-faster={comparison.isFaster}>
+											<span class="hd-comparison-icon">{comparison.isFaster ? '▼' : '▲'}</span>
+											<span class="hd-comparison-text">
+												{formatPaceDelta(comparison.deltaSecondsPerKm)}/km vs snitt siste {baseline.weeksBack} uker
+											</span>
+											<span class="hd-comparison-meta">n={baseline.sampleCount}</span>
+										</div>
 									{/if}
-									{#if discrepancies.length > 0}
-										<span class="hd-activity-discrepancy">⚠ {discrepancies.join(' | ')}</span>
-									{/if}
+
 									{#if trackEventId}
 										<div class="hd-map-panel">
 											{#if mapLoading && mapEventId === trackEventId}
 												<div class="hd-map-loading">Laster kart…</div>
-											{:else if mapEventId === trackEventId && mapPoints.length > 0}
-												<GpxMapSvg points={mapPoints} />
+											{:else if showMapData}
+												<GpxMap points={mapPoints} height={220} />
 											{/if}
 										</div>
+
+										{#if showMapData}
+											<TrackProfileChart points={mapPoints} kind="speed" height={90} />
+											{#if hasElevation(mapPoints)}
+												<TrackProfileChart points={mapPoints} kind="elevation" height={70} />
+											{/if}
+											<KmSplitsTable points={mapPoints} />
+											{#if hasHeartRate(mapPoints)}
+												<HrDistributionBar points={mapPoints} />
+											{/if}
+										{/if}
 									{/if}
+
 									<a class="hd-detail-link" href="/aktivitet/{act.activityId}">Åpne fullstendig →</a>
+
+									{#if act.evidence.length > 0 || discrepancies.length > 0}
+										<details class="hd-sources-detail">
+											<summary>Kilder og avvik</summary>
+											<div class="hd-sources-content">
+												{#if act.evidence.length > 0}
+													<div class="hd-activity-sources">
+														{#each act.evidence as ev}
+															<span class="hd-source-chip" class:hd-source-chip-track={ev.hasTrackPoints}>
+																{providerLabel(ev.provider, ev.sensorType)}
+																{#if ev.distanceMeters !== null && !noDistance}{(ev.distanceMeters / 1000).toFixed(1)} km{/if}
+																{#if ev.durationSeconds !== null}· {formatDuration(ev.durationSeconds)}{/if}
+																{#if ev.avgHeartRate !== null}· ♥ {ev.avgHeartRate}{/if}
+															</span>
+														{/each}
+													</div>
+												{/if}
+												{#if discrepancies.length > 0}
+													<span class="hd-activity-discrepancy">⚠ {discrepancies.join(' | ')}</span>
+												{/if}
+											</div>
+										</details>
+									{/if}
 								</div>
 							{/if}
 						</div>
@@ -1817,15 +1890,80 @@
 	}
 
 	.hd-activity-details {
-		padding: 2px 8px 10px 52px;
+		padding: 6px 8px 12px 52px;
 		display: flex;
 		flex-direction: column;
-		gap: 6px;
+		gap: 14px;
 	}
 
-	.hd-activity-meta {
-		font-size: 0.82rem;
+	.hd-stats {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(85px, 1fr));
+		gap: 8px;
+	}
+
+	.hd-stat {
+		background: #161922;
+		border-radius: 8px;
+		padding: 8px 10px;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.hd-stat-label {
+		font-size: 0.62rem;
+		color: #777;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+
+	.hd-stat-value {
+		font-size: 0.95rem;
+		font-weight: 600;
+		color: #e8e8e8;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.hd-stat-unit {
+		font-size: 0.7rem;
+		font-weight: 400;
 		color: #888;
+	}
+
+	.hd-comparison {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		align-self: flex-start;
+		font-size: 0.75rem;
+		padding: 4px 10px;
+		border-radius: 999px;
+		background: rgba(251, 146, 60, 0.1);
+		color: #fb923c;
+		border: 1px solid rgba(251, 146, 60, 0.25);
+	}
+
+	.hd-comparison-faster {
+		background: rgba(52, 211, 153, 0.1);
+		color: #34d399;
+		border-color: rgba(52, 211, 153, 0.25);
+	}
+
+	.hd-comparison-icon {
+		font-size: 0.65rem;
+		line-height: 1;
+	}
+
+	.hd-comparison-text {
+		font-variant-numeric: tabular-nums;
+		font-weight: 500;
+	}
+
+	.hd-comparison-meta {
+		font-size: 0.65rem;
+		opacity: 0.7;
+		font-variant-numeric: tabular-nums;
 	}
 
 	.hd-activity-sources {
@@ -1857,18 +1995,18 @@
 
 	.hd-detail-link {
 		font-size: 0.78rem;
-		color: #555;
+		color: #6a8eed;
 		text-decoration: none;
 		transition: color 0.12s;
+		align-self: flex-start;
 	}
 
 	.hd-detail-link:hover {
-		color: #888;
+		color: #8aa8ff;
 	}
 
 	.hd-map-panel {
-		margin-top: 4px;
-		border-radius: 10px;
+		border-radius: 12px;
 		overflow: hidden;
 	}
 
@@ -1876,10 +2014,39 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		height: 120px;
+		height: 220px;
 		color: #555;
 		font-size: 0.85rem;
 		background: #0d1117;
-		border-radius: 10px;
+		border-radius: 12px;
+	}
+
+	.hd-sources-detail {
+		font-size: 0.75rem;
+		color: #666;
+		border-top: 1px solid #1a1f2a;
+		padding-top: 8px;
+	}
+
+	.hd-sources-detail summary {
+		cursor: pointer;
+		color: #555;
+		user-select: none;
+		padding: 2px 0;
+	}
+
+	.hd-sources-detail summary:hover {
+		color: #888;
+	}
+
+	.hd-sources-detail[open] summary {
+		color: #888;
+		margin-bottom: 6px;
+	}
+
+	.hd-sources-content {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
 	}
 </style>

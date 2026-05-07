@@ -2,10 +2,18 @@
 	import type { PageData } from './$types';
 	import { AppPage } from '$lib/components/ui';
 	import GpxMap from '$lib/components/charts/GpxMap.svelte';
+	import TrackProfileChart from '$lib/components/charts/TrackProfileChart.svelte';
+	import KmSplitsTable from '$lib/components/charts/KmSplitsTable.svelte';
+	import HrDistributionBar from '$lib/components/charts/HrDistributionBar.svelte';
 	import ChatInput from '$lib/components/ui/ChatInput.svelte';
 	import TriageCard from '$lib/components/composed/TriageCard.svelte';
 	import { tick } from 'svelte';
 	import { ChatState } from '$lib/client/chat-state.svelte';
+	import {
+		cumulativeDistanceMeters,
+		hasElevation,
+		hasHeartRate
+	} from '$lib/utils/track-stats';
 
 	let { data }: { data: PageData } = $props();
 	const { workout, trackPoints, assessment, healthThemeId } = data;
@@ -83,56 +91,24 @@
 		}).format(new Date(iso));
 	}
 
-	// Chart helpers
-	function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
-		const R = 6371000;
-		const dLat = ((lat2 - lat1) * Math.PI) / 180;
-		const dLon = ((lon2 - lon1) * Math.PI) / 180;
-		const a =
-			Math.sin(dLat / 2) ** 2 +
-			Math.cos((lat1 * Math.PI) / 180) *
-				Math.cos((lat2 * Math.PI) / 180) *
-				Math.sin(dLon / 2) ** 2;
-		return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-	}
-
 	interface ChartPoint { x: number; y: number; }
 
-	const chartData = $derived.by(() => {
-		if (trackPoints.length < 2) return { hr: [], ele: [], speed: [] };
+	const totalKm = $derived.by(() => {
+		if (trackPoints.length < 2) return 0;
+		const cum = cumulativeDistanceMeters(trackPoints);
+		return cum[cum.length - 1] / 1000;
+	});
 
-		// Compute cumulative distances and timestamps
-		const cumDist: number[] = [0];
-		const times: (number | null)[] = [trackPoints[0].time ? new Date(trackPoints[0].time).getTime() : null];
-		for (let i = 1; i < trackPoints.length; i++) {
-			const prev = trackPoints[i - 1];
-			const cur = trackPoints[i];
-			cumDist.push(cumDist[i - 1] + haversine(prev.lat, prev.lon, cur.lat, cur.lon));
-			times.push(cur.time ? new Date(cur.time).getTime() : null);
+	const hrSeries = $derived.by(() => {
+		if (trackPoints.length < 2 || !hasHeartRate(trackPoints)) return [] as ChartPoint[];
+		const cum = cumulativeDistanceMeters(trackPoints);
+		const total = cum[cum.length - 1] || 1;
+		const out: ChartPoint[] = [];
+		for (let i = 0; i < trackPoints.length; i++) {
+			const hr = trackPoints[i].hr;
+			if (typeof hr === 'number') out.push({ x: cum[i] / total, y: hr });
 		}
-		const totalDist = cumDist[cumDist.length - 1] || 1;
-
-		// HR series
-		const hrPts = trackPoints
-			.map((p, i) => p.hr != null ? { x: cumDist[i] / totalDist, y: p.hr } : null)
-			.filter(Boolean) as ChartPoint[];
-
-		// Elevation series
-		const elePts = trackPoints
-			.map((p, i) => p.ele != null ? { x: cumDist[i] / totalDist, y: p.ele } : null)
-			.filter(Boolean) as ChartPoint[];
-
-		// Speed series (m/s → km/h), between consecutive points
-		const speedPts: ChartPoint[] = [];
-		for (let i = 1; i < trackPoints.length; i++) {
-			const dt = times[i] != null && times[i - 1] != null ? (times[i]! - times[i - 1]!) / 1000 : null;
-			const d = cumDist[i] - cumDist[i - 1];
-			if (dt && dt > 0 && d >= 0) {
-				speedPts.push({ x: cumDist[i] / totalDist, y: (d / dt) * 3.6 });
-			}
-		}
-
-		return { hr: hrPts, ele: elePts, speed: speedPts };
+		return out;
 	});
 
 	function polyline(pts: ChartPoint[], W: number, H: number, pad = 6): string {
@@ -154,6 +130,11 @@
 		const ys = pts.map(p => p.y);
 		const v = top ? Math.max(...ys) : Math.min(...ys);
 		return Math.round(v).toString();
+	}
+
+	function formatKm(km: number): string {
+		if (km >= 10) return `${km.toFixed(0)} km`;
+		return `${km.toFixed(1)} km`;
 	}
 </script>
 
@@ -224,55 +205,41 @@
 			{/if}
 
 		{:else if tab === 'graf'}
-			{@const W = 560}
-			{@const H = 120}
-			{#if chartData.hr.length >= 2}
-				<div class="chart-block">
-					<div class="chart-meta">
-						<span class="chart-title">Puls</span>
-						<span class="chart-unit">bpm</span>
-					</div>
-					<div class="chart-wrap">
-						<svg viewBox="0 0 {W} {H}" class="chart-svg" aria-hidden="true">
-							<polyline points={polyline(chartData.hr, W, H)} fill="none" stroke="#ef4444" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" />
-						</svg>
-						<span class="chart-label-top">{yLabel(chartData.hr, true)}</span>
-						<span class="chart-label-bot">{yLabel(chartData.hr, false)}</span>
-					</div>
-				</div>
-			{/if}
-			{#if chartData.ele.length >= 2}
-				<div class="chart-block">
-					<div class="chart-meta">
-						<span class="chart-title">Høyde</span>
-						<span class="chart-unit">moh</span>
-					</div>
-					<div class="chart-wrap">
-						<svg viewBox="0 0 {W} {H}" class="chart-svg" aria-hidden="true">
-							<polyline points={polyline(chartData.ele, W, H)} fill="none" stroke="#34d399" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" />
-						</svg>
-						<span class="chart-label-top">{yLabel(chartData.ele, true)}</span>
-						<span class="chart-label-bot">{yLabel(chartData.ele, false)}</span>
-					</div>
-				</div>
-			{/if}
-			{#if chartData.speed.length >= 2}
-				<div class="chart-block">
-					<div class="chart-meta">
-						<span class="chart-title">Fart</span>
-						<span class="chart-unit">km/t</span>
-					</div>
-					<div class="chart-wrap">
-						<svg viewBox="0 0 {W} {H}" class="chart-svg" aria-hidden="true">
-							<polyline points={polyline(chartData.speed, W, H)} fill="none" stroke="#60a5fa" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" />
-						</svg>
-						<span class="chart-label-top">{yLabel(chartData.speed, true)}</span>
-						<span class="chart-label-bot">{yLabel(chartData.speed, false)}</span>
-					</div>
-				</div>
-			{/if}
-			{#if chartData.hr.length < 2 && chartData.ele.length < 2 && chartData.speed.length < 2}
+			{#if trackPoints.length < 2}
 				<p class="no-data">Ingen graf-data for denne økten.</p>
+			{:else}
+				<TrackProfileChart points={trackPoints} kind="speed" height={120} showAxes={true} />
+				{#if hasElevation(trackPoints)}
+					<TrackProfileChart points={trackPoints} kind="elevation" height={100} showAxes={true} />
+				{/if}
+				{#if hrSeries.length >= 2}
+					{@const W = 560}
+					{@const H = 120}
+					<div class="chart-block">
+						<div class="chart-meta">
+							<span class="chart-title">Puls</span>
+							<span class="chart-unit">bpm</span>
+						</div>
+						<div class="chart-wrap">
+							<svg viewBox="0 0 {W} {H}" class="chart-svg" aria-hidden="true">
+								<polyline points={polyline(hrSeries, W, H)} fill="none" stroke="#ef4444" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" />
+							</svg>
+							<span class="chart-label-top">{yLabel(hrSeries, true)}</span>
+							<span class="chart-label-bot">{yLabel(hrSeries, false)}</span>
+						</div>
+						{#if totalKm > 0}
+							<div class="chart-x-axis">
+								<span>0</span>
+								<span>{formatKm(totalKm / 2)}</span>
+								<span>{formatKm(totalKm)}</span>
+							</div>
+						{/if}
+					</div>
+				{/if}
+				<KmSplitsTable points={trackPoints} />
+				{#if hasHeartRate(trackPoints)}
+					<HrDistributionBar points={trackPoints} />
+				{/if}
 			{/if}
 		{/if}
 	</div>
@@ -525,6 +492,15 @@
 
 	.chart-label-top { top: 0; }
 	.chart-label-bot { bottom: 0; }
+
+	.chart-x-axis {
+		display: flex;
+		justify-content: space-between;
+		font-size: 0.62rem;
+		color: #666;
+		padding: 0 0.2rem;
+		margin-top: 0.3rem;
+	}
 
 	.no-data {
 		color: #666;
