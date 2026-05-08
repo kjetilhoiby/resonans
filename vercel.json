@@ -1,8 +1,5 @@
 {
   "buildCommand": "npm run build",
   "framework": "sveltekit",
-  "installCommand": "npm install --force",
-  "crons": [
-    { "path": "/api/notifications/egenfrekvens-checkin", "schedule": "*/5 * * * *" }
-  ]
+  "installCommand": "npm install --force"
 }
