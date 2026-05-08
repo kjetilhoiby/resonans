@@ -11,6 +11,90 @@
 	let savingSourceConfig = $state(false);
 	let sourceConfigResult = $state<{ success: boolean; message: string } | null>(null);
 
+	// ── E-post som kilde ────────────────────────────────────────────────────────
+	let emailScriptCopied = $state(false);
+	let emailEndpointCopied = $state(false);
+	let emailTestRunning = $state(false);
+	let emailTestResult = $state<{ ok: boolean; message: string } | null>(null);
+	let emailGuideOpen = $state(false);
+
+	async function copyToClipboard(text: string): Promise<boolean> {
+		try {
+			await navigator.clipboard.writeText(text);
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	async function copyAppsScript() {
+		if (!data.emailAppsScriptSource) return;
+		const ok = await copyToClipboard(data.emailAppsScriptSource);
+		if (ok) {
+			emailScriptCopied = true;
+			setTimeout(() => (emailScriptCopied = false), 2000);
+		}
+	}
+
+	async function copyEmailEndpoint() {
+		const ok = await copyToClipboard(data.emailEndpoint);
+		if (ok) {
+			emailEndpointCopied = true;
+			setTimeout(() => (emailEndpointCopied = false), 2000);
+		}
+	}
+
+	async function runEmailTest() {
+		if (!data.user?.email) {
+			emailTestResult = { ok: false, message: 'Mangler bruker-e-post.' };
+			return;
+		}
+		emailTestRunning = true;
+		emailTestResult = null;
+		try {
+			const dueDate = new Date();
+			dueDate.setDate(dueDate.getDate() + 7);
+			const dd = String(dueDate.getDate()).padStart(2, '0');
+			const mm = String(dueDate.getMonth() + 1).padStart(2, '0');
+			const yyyy = dueDate.getFullYear();
+
+			const res = await fetch('/api/settings/email-test', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({
+					gmailMessageId: `test-${Date.now()}`,
+					gmailThreadId: `test-thread-${Date.now()}`,
+					internalDate: Date.now(),
+					from: 'no-reply@bibliotek.no',
+					to: data.user.email,
+					subject: 'Lånefrist nærmer seg',
+					bodyText: `Hei!\n\nDu må levere boken "Resonans testbok" innen ${dd}.${mm}.${yyyy}.\n\nVennlig hilsen,\nBiblioteket`,
+					label: 'Resonans/Bibliotek',
+					attachments: []
+				})
+			});
+			const body = await res.json();
+			if (res.ok) {
+				emailTestResult = {
+					ok: true,
+					message: `Test-respons: ${JSON.stringify(body)}`
+				};
+			} else {
+				emailTestResult = {
+					ok: false,
+					message: `Status ${res.status}: ${JSON.stringify(body)}`
+				};
+			}
+		} catch (err) {
+			emailTestResult = {
+				ok: false,
+				message: err instanceof Error ? err.message : String(err)
+			};
+		} finally {
+			emailTestRunning = false;
+		}
+	}
+
 	let withingsStatus = $state<any>(null);
 	let loadingWithings = $state(false);
 	let syncingWithings = $state(false);
@@ -1908,6 +1992,116 @@
 			<Button href="/api/sensors/google-sheets/connect">Koble til Google Regneark</Button>
 		{/if}
 	</section>
+
+	<section class="card">
+		<h2>E-post (Gmail via Apps Script)</h2>
+		<p class="muted">
+			Send merkede Gmail-meldinger til Resonans. Kun e-poster med en av de
+			konfigurerte labelene forlater Gmail — alt annet ignoreres.
+		</p>
+
+		{#if !data.emailWebhookConfigured}
+			<p class="err">
+				<code>EMAIL_WEBHOOK_SECRET</code> er ikke satt på serveren. Be admin
+				generere en hemmelighet og deploye på nytt.
+			</p>
+		{:else}
+			<div class="email-stats">
+				<span class="ok">Aktiv</span>
+				<span class="muted">·</span>
+				<span>{data.emailImports.last7Days} e-poster siste 7 dager</span>
+				{#if data.emailImports.last7Days > 0}
+					<span class="muted">
+						({data.emailImports.workouts} treninger, {data.emailImports.libraryItems} bibliotek)
+					</span>
+				{/if}
+			</div>
+
+			<div class="field">
+				<p class="field-title">Endepunkt</p>
+				<div class="row">
+					<code class="endpoint-code">{data.emailEndpoint}</code>
+					<Button variant="secondary" onClick={copyEmailEndpoint}>
+						{emailEndpointCopied ? 'Kopiert ✓' : 'Kopier'}
+					</Button>
+				</div>
+			</div>
+
+			<div class="field">
+				<p class="field-title">Støttede labels</p>
+				<ul class="label-list">
+					{#each data.emailLabels as entry (entry.label)}
+						<li>
+							<code>{entry.label}</code>
+							<span class="muted"> — {entry.description}</span>
+						</li>
+					{/each}
+				</ul>
+			</div>
+
+			<div class="field">
+				<p class="field-title">Apps Script-kildekode</p>
+				<p class="muted">
+					Lim inn dette i <a href="https://script.google.com" target="_blank" rel="noopener">script.google.com</a>
+					→ nytt prosjekt → <code>Code.gs</code>. Endepunkt og token er
+					pre-utfylt. Sett en tidsutløser som kjører <code>syncResonans</code>
+					hvert 5. minutt.
+				</p>
+				<div class="row">
+					<Button variant="secondary" onClick={copyAppsScript}>
+						{emailScriptCopied ? 'Kopiert ✓' : 'Kopier kildekode'}
+					</Button>
+					<Button variant="secondary" onClick={runEmailTest} disabled={emailTestRunning}>
+						{emailTestRunning ? 'Tester…' : 'Send test-bibliotek-mail'}
+					</Button>
+				</div>
+				{#if emailTestResult}
+					<p class={emailTestResult.ok ? 'ok' : 'err'}>{emailTestResult.message}</p>
+				{/if}
+
+				{#if data.emailAppsScriptSource}
+					<details bind:open={emailGuideOpen} class="apps-script-details">
+						<summary>Vis kildekode</summary>
+						<pre class="apps-script-code"><code>{data.emailAppsScriptSource}</code></pre>
+					</details>
+				{/if}
+			</div>
+
+			<details class="email-guide">
+				<summary>Trinnvis oppsett-guide</summary>
+				<ol class="email-guide-list">
+					<li>
+						Opprett labels i Gmail som matcher tabellen over (f.eks.
+						<code>Resonans/Workout</code>, <code>Resonans/Bibliotek</code>).
+						Bruk skråstrek for å lage hierarki.
+					</li>
+					<li>
+						Sett opp filtre i Gmail for å auto-merke relevante e-poster.
+						(Innstillinger → Filtre og blokkerte adresser → Opprett filter →
+						Bruk label.)
+					</li>
+					<li>
+						Åpne <a href="https://script.google.com" target="_blank" rel="noopener">script.google.com</a>,
+						opprett et nytt prosjekt, lim inn kildekoden over i <code>Code.gs</code>.
+					</li>
+					<li>
+						Klikk <em>Run</em> én gang for å autorisere scriptet (Google ber om
+						tilgang til Gmail).
+					</li>
+					<li>
+						Sett en tidsutløser: klokke-ikonet → <em>Add Trigger</em> →
+						funksjon <code>syncResonans</code>, type <em>Time-driven</em>,
+						intervall <em>Every 5 minutes</em>.
+					</li>
+					<li>
+						Test ved å merke en e-post med en støttet label og vente
+						5 minutter — eller kjør <em>Send test-bibliotek-mail</em>-knappen
+						over for å verifisere at endepunktet og handler-en virker.
+					</li>
+				</ol>
+			</details>
+		{/if}
+	</section>
 	</div>
 </AppPage>
 
@@ -2158,5 +2352,81 @@
 		.sources-content {
 			gap: 0.8rem;
 		}
+	}
+
+	/* ── E-post-kilde ─────────────────────────────────────────────────────────── */
+	.email-stats {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+		align-items: center;
+		font-size: 0.88rem;
+		margin: 0 0 0.5rem;
+	}
+	.endpoint-code {
+		flex: 1;
+		min-width: 0;
+		overflow-x: auto;
+		white-space: nowrap;
+		font-family: monospace;
+		font-size: 0.82rem;
+		padding: 0.4rem 0.6rem;
+		border: 1px solid #262626;
+		border-radius: 6px;
+		background: #121212;
+		color: var(--text-secondary);
+	}
+	.label-list {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		font-size: 0.86rem;
+	}
+	.label-list code {
+		font-family: monospace;
+		font-size: 0.8rem;
+		padding: 0.1rem 0.35rem;
+		border-radius: 4px;
+		background: #1c1c1c;
+		color: var(--text-primary);
+	}
+	.apps-script-details summary,
+	.email-guide summary {
+		cursor: pointer;
+		font-size: 0.86rem;
+		color: var(--text-secondary);
+		padding: 0.3rem 0;
+	}
+	.apps-script-code {
+		max-height: 22rem;
+		overflow: auto;
+		padding: 0.75rem;
+		border: 1px solid #262626;
+		border-radius: 8px;
+		background: #0d0d0d;
+		font-family: monospace;
+		font-size: 0.78rem;
+		line-height: 1.45;
+		color: var(--text-secondary);
+		margin: 0.5rem 0 0;
+	}
+	.email-guide-list {
+		margin: 0.5rem 0 0;
+		padding-left: 1.2rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.45rem;
+		font-size: 0.86rem;
+		color: var(--text-secondary);
+	}
+	.email-guide-list code {
+		font-family: monospace;
+		font-size: 0.8rem;
+		padding: 0.05rem 0.3rem;
+		border-radius: 4px;
+		background: #1c1c1c;
 	}
 </style>
