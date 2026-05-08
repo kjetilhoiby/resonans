@@ -18,6 +18,7 @@
 	import EconomicsDashboard from './EconomicsDashboard.svelte';
 	import FoodDashboard from './FoodDashboard.svelte';
 	import TripDashboard from './TripDashboard.svelte';
+	import EgenfrekvensDashboard from './EgenfrekvensDashboard.svelte';
 	import TripListsPanel from './TripListsPanel.svelte';
 	import BookDashboard from './BookDashboard.svelte';
 	import ScreenTitle from '../ui/ScreenTitle.svelte';
@@ -25,14 +26,14 @@
 	import TriageCard from '../composed/TriageCard.svelte';
 	import GoalRing from '../ui/GoalRing.svelte';
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
-	import { fetchDashboard, getCachedDashboard, type EconomicsDashboardData, type HealthDashboardData, type TravelDashboardData, type FoodDashboardData } from '$lib/client/dashboard-cache';
+	import { fetchDashboard, getCachedDashboard, type EconomicsDashboardData, type HealthDashboardData, type TravelDashboardData, type FoodDashboardData, type EgenfrekvensDashboardData } from '$lib/client/dashboard-cache';
 	import { getThemeDashboardDefinition, resolveThemeDashboardKind } from '$lib/domain/theme-dashboard-registry';
 	import { finishNavMetric, startNavMetric } from '$lib/client/nav-metrics';
 	import { ChatState } from '$lib/client/chat-state.svelte';
 	import type { ChatMessage } from '$lib/client/chat-state.svelte';
 	import FlowCard from '../flows/FlowCard.svelte';
 	import FlowSheet from '../flows/FlowSheet.svelte';
-	import { getFlowsByTheme } from '$lib/flows/registry';
+	import { FLOWS, getFlowsByTheme } from '$lib/flows/registry';
 	import type { Flow } from '$lib/flows/types';
 	import ThemeMetricSettingsSheet from './ThemeMetricSettingsSheet.svelte';
 	import type { MetricSettingsMap } from './ThemeMetricSettingsSheet.svelte';
@@ -175,6 +176,8 @@
 	let economicsDashboard = $state<EconomicsDashboardData | null>(null);
 	let travelDashboard = $state<TravelDashboardData | null>(null);
 	let foodDashboard = $state<FoodDashboardData | null>(null);
+	let egenfrekvensDashboard = $state<EgenfrekvensDashboardData | null>(null);
+	let egenfrekvensFlowOpen = $state(false);
 	let dashboardLoading = $state(false);
 	let dashboardLoaded = $state(false);
 	let dashboardError = $state('');
@@ -378,6 +381,8 @@
 			travelDashboard = cached.data as TravelDashboardData;
 		} else if (kind === 'food') {
 			foodDashboard = cached.data as FoodDashboardData;
+		} else if (kind === 'egenfrekvens') {
+			egenfrekvensDashboard = cached.data as EgenfrekvensDashboardData;
 		}
 
 		return cached;
@@ -414,6 +419,8 @@
 				travelDashboard = result.data as TravelDashboardData;
 			} else if (kind === 'food') {
 				foodDashboard = result.data as FoodDashboardData;
+			} else if (kind === 'egenfrekvens') {
+				egenfrekvensDashboard = result.data as EgenfrekvensDashboardData;
 			}
 			dashboardLoaded = true;
 		} catch {
@@ -1552,6 +1559,13 @@
 					/>
 				{/if}
 
+				{#if egenfrekvensDashboard}
+					<EgenfrekvensDashboard
+						data={egenfrekvensDashboard}
+						onstartCheckin={() => (egenfrekvensFlowOpen = true)}
+					/>
+				{/if}
+
 				{#if hasThemeDashboard && dashboardLoading && dashboardLoaded}
 					<p class="data-refreshing">Oppdaterer dashboard…</p>
 				{/if}
@@ -2140,6 +2154,17 @@ Eksempel:
 		oncomplete={(data) => {
 			handleFlowComplete(flow.id, data);
 			closeFlow();
+		}}
+	/>
+{/if}
+
+{#if egenfrekvensFlowOpen}
+	<FlowSheet
+		flow={FLOWS['egenfrekvens_checkin']}
+		onclose={() => (egenfrekvensFlowOpen = false)}
+		oncomplete={async () => {
+			egenfrekvensFlowOpen = false;
+			await ensureDashboardLoaded(true);
 		}}
 	/>
 {/if}
