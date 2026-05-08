@@ -116,12 +116,77 @@ export interface FoodDashboardData {
 	}>;
 }
 
+export interface FamilyDashboardData {
+	tree: {
+		self: { id: 'self'; label: string };
+		nodes: Array<{
+			id: string;
+			name: string;
+			kind: string;
+			avatarEmoji: string | null;
+			birthDate: string | null;
+			archived: boolean;
+		}>;
+		edges: Array<{
+			id: string;
+			fromPersonId: string | null;
+			toPersonId: string;
+			relationType: 'family' | 'friend' | 'work';
+			subType: string | null;
+			closeness: number | null;
+		}>;
+		byKind: Record<string, Array<{ id: string; name: string; avatarEmoji: string | null; birthDate: string | null; archived: boolean; kind: string }>>;
+		byRelationType: Record<'family' | 'friend' | 'work', Array<{ id: string; name: string; avatarEmoji: string | null; birthDate: string | null; archived: boolean; kind: string }>>;
+	};
+	persons: Array<{
+		id: string;
+		name: string;
+		kind: string;
+		avatarEmoji: string | null;
+		birthDate: string | null;
+		archived: boolean;
+	}>;
+	relations: Array<{
+		id: string;
+		fromPersonId: string | null;
+		toPersonId: string;
+		relationType: 'family' | 'friend' | 'work';
+		subType: string | null;
+		closeness: number | null;
+	}>;
+	recentMemoriesByPerson: Record<string, Array<{
+		id: string;
+		content: string;
+		category: string;
+		importance: string;
+		createdAt: string;
+	}>>;
+	openGoalsByPerson: Record<string, Array<{
+		id: string;
+		title: string;
+		description: string | null;
+		targetDate: string | null;
+	}>>;
+	upcomingEventsByPerson: Record<string, Array<{
+		id: string;
+		title: string;
+		startTimestamp: string | null;
+		groupName: string | null;
+	}>>;
+	conversationsByPerson: Record<string, Array<{
+		id: string;
+		title: string | null;
+		updatedAt: string;
+	}>>;
+}
+
 type DashboardPayloadMap = {
 	health: HealthDashboardData;
 	economics: EconomicsDashboardData;
 	food: FoodDashboardData;
 	travel: TravelDashboardData;
 	books: BooksDashboardData;
+	family: FamilyDashboardData;
 };
 
 export interface DashboardCacheEntry<K extends DashboardKind = DashboardKind> {

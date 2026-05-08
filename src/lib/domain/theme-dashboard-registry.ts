@@ -1,4 +1,4 @@
-export type DashboardKind = 'health' | 'economics' | 'food' | 'travel' | 'books';
+export type DashboardKind = 'health' | 'economics' | 'food' | 'family' | 'travel' | 'books';
 
 export interface ThemeDashboardDefinition {
 	kind: DashboardKind;
@@ -68,6 +68,23 @@ const THEME_DASHBOARD_MATCHERS: Array<{ kind: DashboardKind; terms: string[] }> 
 		]
 	},
 	{
+		kind: 'family',
+		terms: [
+			'familie',
+			'family',
+			'barna',
+			'barn',
+			'foreldre',
+			'foreldreliv',
+			'familieliv',
+			'samliv',
+			'parents',
+			'kids',
+			'children',
+			'household'
+		]
+	},
+	{
 		kind: 'travel',
 		terms: [
 			'tur',
@@ -124,6 +141,11 @@ const DASHBOARD_DEFINITIONS: Record<DashboardKind, ThemeDashboardDefinition> = {
 		kind: 'food',
 		label: 'Mat',
 		icon: '🍽️'
+	},
+	family: {
+		kind: 'family',
+		label: 'Familie',
+		icon: '👨‍👩‍👧'
 	},
 	travel: {
 		kind: 'travel',

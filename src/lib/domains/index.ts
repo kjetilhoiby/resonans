@@ -3,8 +3,12 @@
 export * from './health/index';
 export * from './economics/index';
 export * from './food/index';
+export * from './family/index';
+export * from './family/family-tree';
 
-export type DomainType = 'health' | 'economics' | 'food';
+import { FAMILY_DOMAIN_TRIGGER } from './family/index';
+
+export type DomainType = 'health' | 'economics' | 'food' | 'family';
 
 export interface DomainMetadata {
   type: DomainType;
@@ -31,11 +35,21 @@ export const DOMAIN_METADATA: Record<DomainType, DomainMetadata> = {
     label: 'Mat',
     description: 'Middagsplaner, oppskrifter, handlelister og oversikt over skap/fryser',
     systemPromptHint: 'Brukeren fokuser på mat: ukemeny, oppskrifter, pantry. Bruk query_food, manage_meal_plan, manage_pantry, generate_shopping_list. Foreslå konkret oppskrift og handleliste.'
+  },
+  family: {
+    type: 'family',
+    label: 'Familie',
+    description: 'Familie og nære relasjoner — barn, partner, foreldre, svigerfamilie og venner',
+    systemPromptHint: 'Brukeren fokuser på familie/relasjoner. Bruk query_family og manage_person. Lagre observasjoner som memory med personId. Foreslå mål og oppgaver knyttet til en person.'
   }
 };
 
 export function resolveDomainFromInput(input: string): DomainType | null {
   const text = input.toLowerCase();
+
+  if (FAMILY_DOMAIN_TRIGGER.test(text)) {
+    return 'family';
+  }
 
   if (/sovn|søvn|vekt|steg|trening|workout|withings|helse|gym|fitness|puls|mood|humør|screen.?time|skjermtid/.test(text)) {
     return 'health';

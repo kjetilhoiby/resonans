@@ -3,6 +3,7 @@ import { sensors } from '$lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { spondLogin, spondGetGroups, spondGetEvents, spondGetProfile, type SpondEvent, type SpondGroup } from './spond';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
+import { SpondPersonMappingService } from '$lib/server/services/spond-person-mapping-service';
 
 /**
  * Retrieve the active Spond sensor row for a user.
@@ -169,6 +170,13 @@ export async function syncSpondData(userId: string): Promise<{ events: number; g
 			}
 		})
 		.where(eq(sensors.id, sensor.id));
+
+	// Tag events to family persons via spondGroupIds-mapping (best-effort)
+	try {
+		await SpondPersonMappingService.tagUserSpondEvents(userId);
+	} catch (err) {
+		console.warn('Spond person-tagging failed:', err);
+	}
 
 	return { events: totalEvents, groups: groups.length };
 }

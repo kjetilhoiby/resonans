@@ -6,7 +6,7 @@ type Severity = 'info' | 'low' | 'medium' | 'high';
 
 type UpsertDomainSignalInput = {
 	signalType: string;
-	ownerDomain: 'health' | 'economics' | 'home' | 'relationship';
+	ownerDomain: 'health' | 'economics' | 'home' | 'relationship' | 'family';
 	userId: string;
 	relatedUserId?: string | null;
 	valueNumber?: number | null;
@@ -703,6 +703,145 @@ async function produceTrackingSeriesActivityPrWeekSignal(userId: string, now: Da
 	return produced > 0 ? { produced } : null;
 }
 
+// ─── Family signal producers ─────────────────────────────────────
+
+async function produceFamilyBirthdayUpcoming7d(userId: string, now: Date) {
+	const rows = await db.execute(sql`
+		SELECT id, name, birth_date, kind
+		FROM persons
+		WHERE user_id = ${userId}
+		  AND archived = false
+		  AND birth_date IS NOT NULL
+	`);
+	const persons = rows as unknown as Array<{ id: string; name: string; birth_date: string; kind: string }>;
+
+	for (const p of persons) {
+		const bd = new Date(p.birth_date);
+		if (Number.isNaN(bd.getTime())) continue;
+		const next = new Date(now.getFullYear(), bd.getMonth(), bd.getDate());
+		if (next < now) next.setFullYear(now.getFullYear() + 1);
+		const days = Math.floor((next.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+		if (days < 0 || days > 7) continue;
+
+		const severity: Severity = days <= 1 ? 'high' : days <= 3 ? 'medium' : 'low';
+		await upsertDomainSignal({
+			signalType: 'family_birthday_upcoming_7d',
+			ownerDomain: 'family',
+			userId,
+			valueNumber: days,
+			valueText: p.name,
+			severity,
+			confidence: 1,
+			windowStart: now,
+			windowEnd: next,
+			observedAt: now,
+			context: {
+				personId: p.id,
+				name: p.name,
+				kind: p.kind,
+				daysUntil: days
+			}
+		});
+	}
+}
+
+async function produceFamilyRelationNeglect30d(userId: string, now: Date) {
+	const rows = await db.execute(sql`
+		SELECT
+			p.id,
+			p.name,
+			p.kind,
+			GREATEST(
+				COALESCE((SELECT MAX(created_at) FROM memories WHERE person_id = p.id AND user_id = ${userId}), '1970-01-01'::timestamp),
+				COALESCE((SELECT MAX(timestamp) FROM sensor_events WHERE person_id = p.id AND user_id = ${userId}), '1970-01-01'::timestamp)
+			) AS last_touch
+		FROM persons p
+		WHERE p.user_id = ${userId}
+		  AND p.archived = false
+		  AND p.kind IN ('parent', 'in_law', 'extended_family', 'sibling', 'friend')
+	`);
+
+	const items = rows as unknown as Array<{ id: string; name: string; kind: string; last_touch: string }>;
+	const windowStart = daysAgo(now, 30);
+
+	for (const it of items) {
+		const last = new Date(it.last_touch);
+		const daysSince = Math.floor((now.getTime() - last.getTime()) / (1000 * 60 * 60 * 24));
+		const severity: Severity = daysSince > 90 ? 'high' : daysSince > 60 ? 'medium' : daysSince > 30 ? 'low' : 'info';
+		if (severity === 'info') continue;
+		await upsertDomainSignal({
+			signalType: 'family_relation_neglect_30d',
+			ownerDomain: 'family',
+			userId,
+			valueNumber: daysSince,
+			valueText: it.name,
+			severity,
+			confidence: 0.6,
+			windowStart,
+			windowEnd: now,
+			observedAt: now,
+			context: {
+				personId: it.id,
+				name: it.name,
+				kind: it.kind,
+				daysSince
+			}
+		});
+	}
+}
+
+async function produceFamilyParentTimeLow7d(userId: string, now: Date) {
+	const windowStart = daysAgo(now, 7);
+	const rows = await db.execute(sql`
+		SELECT
+			ts.id AS series_id,
+			ts.title,
+			ts.theme_id,
+			ts.task_id,
+			COALESCE((
+				SELECT SUM(COALESCE((data->>'value')::numeric, (data->>'duration')::numeric, 1))
+				FROM sensor_events
+				WHERE user_id = ${userId}
+				  AND data->>'recordTypeKey' = 'parent_time'
+				  AND data->>'trackingSeriesId' = ts.id::text
+				  AND timestamp >= ${windowStart}
+				  AND timestamp <= ${now}
+			), 0) AS total_value
+		FROM tracking_series ts
+		WHERE ts.user_id = ${userId}
+		  AND ts.status = 'active'
+		  AND ts.title ILIKE 'foreldretid%'
+	`);
+	const seriesRows = rows as unknown as Array<{
+		series_id: string;
+		title: string;
+		theme_id: string | null;
+		task_id: string | null;
+		total_value: string | number;
+	}>;
+	for (const r of seriesRows) {
+		const total = toNumber(r.total_value);
+		const severity: Severity = total < 1 ? 'high' : total < 2 ? 'medium' : total < 4 ? 'low' : 'info';
+		if (severity === 'info') continue;
+		await upsertDomainSignal({
+			signalType: 'family_parent_time_low_7d',
+			ownerDomain: 'family',
+			userId,
+			valueNumber: total,
+			valueText: r.title,
+			severity,
+			confidence: 0.7,
+			windowStart,
+			windowEnd: now,
+			observedAt: now,
+			context: {
+				trackingSeriesId: r.series_id,
+				totalValue: total
+			}
+		});
+	}
+}
+
 export async function runDomainSignalProducers(now: Date = new Date()) {
 	const allUsers = await db.select({ id: users.id, partnerUserId: users.partnerUserId }).from(users);
 
@@ -717,7 +856,10 @@ export async function runDomainSignalProducers(now: Date = new Date()) {
 		homeOverdueSharedTasks7d: 0,
 		homePlanningReliability14d: 0,
 		relationshipCoordinationReadinessToday: 0,
-		relationshipLogisticsStressIndex14d: 0
+		relationshipLogisticsStressIndex14d: 0,
+		familyBirthdayUpcoming7d: 0,
+		familyRelationNeglect30d: 0,
+		familyParentTimeLow7d: 0
 	};
 	const errors: Array<{ userId: string; error: string }> = [];
 
@@ -765,6 +907,18 @@ export async function runDomainSignalProducers(now: Date = new Date()) {
 				});
 				produced += 1;
 				producerBreakdown.relationshipLogisticsStressIndex14d += 1;
+			}
+
+			try {
+				await produceFamilyBirthdayUpcoming7d(user.id, now);
+				producerBreakdown.familyBirthdayUpcoming7d += 1;
+				await produceFamilyRelationNeglect30d(user.id, now);
+				producerBreakdown.familyRelationNeglect30d += 1;
+				await produceFamilyParentTimeLow7d(user.id, now);
+				producerBreakdown.familyParentTimeLow7d += 1;
+				produced += 3;
+			} catch (familyErr) {
+				console.warn('family signal producer failed:', familyErr);
 			}
 		} catch (error) {
 			failed += 1;

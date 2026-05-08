@@ -526,6 +526,139 @@ export const FLOWS: Record<FlowId, Flow> = {
 				})
 			});
 		}
+	},
+
+	family_onboarding: {
+		id: 'family_onboarding',
+		name: 'Bli kjent med familien',
+		description: 'Registrer hvem som bor i hjemmet, partner, barn, foreldre og svigerfamilie. Gir Resonans grunnlaget for å huske og koble familieobservasjoner til riktig person.',
+		icon: '👨‍👩‍👧‍👦',
+		domain: 'family',
+		trigger: 'manual',
+		estimatedMinutes: 8,
+		theme: 'Familie',
+		parentTheme: 'Samliv',
+		steps: [
+			{
+				id: 'partner',
+				type: 'chat',
+				title: 'Partner / samboer',
+				autoSend: true,
+				prompt: 'Hvem er partneren din (om noen)? Navn, fødselsdato hvis du vil dele, og noen ord om hvor langt dere har vært sammen.',
+				systemPrompt:
+					'Bruk manage_person.suggest_create + create for å registrere partner. Lag en relasjon via manage_relation (relationType=family, subType=partnered_with eller married_to). Hold tonen lett.'
+			},
+			{
+				id: 'barn',
+				type: 'chat',
+				title: 'Barn',
+				autoSend: true,
+				prompt:
+					'Hvilke barn har dere? Skriv navn, fødselsdato/alder. Hvis de er på Spond, kan du dele gruppene de er i (lag, kor, korps).',
+				systemPrompt:
+					'For hvert barn: manage_person.create med kind=child og birthDate. Spør om Spond-grupper og lagre dem som spondGroupIds. Lag relasjon parent_of fra self.'
+			},
+			{
+				id: 'foreldre',
+				type: 'chat',
+				title: 'Foreldre',
+				autoSend: true,
+				prompt: 'Hvem er foreldrene dine? Hvor bor de, og hvor ofte snakker dere?',
+				systemPrompt:
+					'Opprett person med kind=parent. Foreslå å registrere hvor nære dere står (closeness 1-5).'
+			},
+			{
+				id: 'sviger',
+				type: 'chat',
+				title: 'Svigerfamilie',
+				autoSend: true,
+				prompt:
+					'Vil du registrere svigerfamilien? Du kan også fortelle litt om relasjonen — den kan være noe du vil jobbe med.',
+				systemPrompt:
+					'Opprett personer med kind=in_law. Hvis bruker beskriver utfordringer, foreslå et mål for relasjonsarbeid (men opprett kun etter bekreftelse).'
+			},
+			{
+				id: 'foreldretid',
+				type: 'chat',
+				title: 'Foreldretid',
+				autoSend: true,
+				prompt:
+					'Skal vi sette opp tracking av 1-til-1-tid med hvert barn? Foreslå et ukentlig mål per barn (f.eks. 2 timer alenetid).',
+				systemPrompt:
+					'Opprett en tracking_series per barn for foreldretid (recordTypeKey=parent_time_<navn>, kind=activity). Foreslå mål per uke.'
+			}
+		]
+	},
+
+	family_summer_planning: {
+		id: 'family_summer_planning',
+		name: 'Sommerferieplanlegging',
+		description: 'Strukturer sommerferien: hvem reiser med hvem, viktige datoer og logistikk per familiemedlem.',
+		icon: '🏖️',
+		domain: 'family',
+		trigger: 'manual',
+		estimatedMinutes: 10,
+		theme: 'Familie',
+		parentTheme: 'Samliv',
+		steps: [
+			{
+				id: 'overview',
+				type: 'chat',
+				title: 'Hovedlinjer',
+				autoSend: true,
+				prompt: 'Hva er de viktigste planene for sommeren? Når starter ferien, og når er familien samlet?',
+				systemPrompt: 'Bruk query_family persons for å hente alle familiemedlemmer. Sett opp en grov tidslinje for sommeren.'
+			},
+			{
+				id: 'per-barn',
+				type: 'chat',
+				title: 'Per barn',
+				autoSend: true,
+				prompt: 'Gå gjennom hvert barn: er det aktiviteter, leirer, besøk hos slekt, idretts-arrangementer (Spond) i ferien?',
+				systemPrompt:
+					'For hvert barn, kall query_family person_detail og se på upcoming events. Foreslå tasks med personId for ting som må bookes.'
+			},
+			{
+				id: 'logistikk',
+				type: 'chat',
+				title: 'Logistikk',
+				autoSend: true,
+				prompt: 'Hvilke konkrete ting må bestilles eller forberedes? Reise, aktiviteter, klær, helse.',
+				systemPrompt:
+					'Foreslå en checklist via create_checklist med items knyttet til personId der relevant. Vurder å foreslå en reise-tema hvis ferien er stor.'
+			}
+		]
+	},
+
+	family_relation_check_in: {
+		id: 'family_relation_check_in',
+		name: 'Relasjons-check-in',
+		description: 'Reflekter over relasjoner du har lyst til å pleie — svigerfamilie, foreldre eller venner du ikke har snakket med på en stund.',
+		icon: '💞',
+		domain: 'family',
+		trigger: 'manual',
+		estimatedMinutes: 5,
+		theme: 'Familie',
+		parentTheme: 'Samliv',
+		steps: [
+			{
+				id: 'pulsen',
+				type: 'chat',
+				title: 'Hvem skal du pleie?',
+				autoSend: true,
+				prompt: 'Hvilken relasjon vil du fokusere på akkurat nå? Hvordan står det til, og hva ønsker du?',
+				systemPrompt:
+					'Identifiser personen via query_family.find_by_name. Hent person_detail for kontekst. Speil følelser før du foreslår tiltak.'
+			},
+			{
+				id: 'tiltak',
+				type: 'chat',
+				title: 'Konkret tiltak',
+				autoSend: true,
+				prompt: 'Hva er en konkret ting du kan gjøre denne uka for denne relasjonen?',
+				systemPrompt: 'Foreslå et task med personId og frequency=weekly. Spør før du oppretter.'
+			}
+		]
 	}
 };
 
