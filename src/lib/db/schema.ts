@@ -376,11 +376,13 @@ export const themeSignalLinks = pgTable('theme_signal_links', {
 	idxThemeSignalLinksUser: index('theme_signal_links_user_idx').on(table.userId, table.signalType)
 }));
 
-// Brukerdefinerbare widgets til hjemmeskjerm
+// Brukerdefinerbare widgets til hjemmeskjerm og temasider
 // Hvert widget er en dynamisk dataspørring: metrikk × aggregering × periode × range
+// themeId er null for hjemmeskjerm-widgets, satt for tema-widgets
 export const userWidgets = pgTable('user_widgets', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	userId: text('user_id').references(() => users.id).notNull(),
+	themeId: uuid('theme_id').references(() => themes.id, { onDelete: 'cascade' }), // null = hjemmeskjerm, uuid = tema-widget
 	title: text('title').notNull(),                         // "Snitt søvn siste 7 dager"
 	metricType: text('metric_type').notNull(),              // 'weight'|'sleepDuration'|'steps'|'distance'|'amount'|'workoutCount'|'heartrate'|'mood'
 	aggregation: text('aggregation').notNull(),             // 'avg'|'sum'|'count'|'latest'
@@ -394,8 +396,8 @@ export const userWidgets = pgTable('user_widgets', {
 	filterSubcategory: text('filter_subcategory'),          // Valgfri subkategorifilter (f.eks. 'fastfood', 'kafe' under kafe_og_restaurant)
 	metricKey: text('metric_key'),                          // Dynamisk metrikkregisternøkkel (f.eks. 'spending_bil_og_transport_drivstoff'). Overstyrer METRIC_CONFIG-path i widget-API.
 	color: text('color').notNull().default('#7c8ef5'),      // Hex-farge for widget
-	pinned: boolean('pinned').default(false).notNull(),     // Vises på hjemmeskjerm
-	sortOrder: integer('sort_order').default(0).notNull(),  // Rekkefølge på hjemmeskjerm
+	pinned: boolean('pinned').default(false).notNull(),     // Vises på hjemmeskjerm (kun relevant når themeId IS NULL)
+	sortOrder: integer('sort_order').default(0).notNull(),  // Rekkefølge innenfor surface (hjemmeskjerm eller tema)
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
 });
