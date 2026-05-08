@@ -3,6 +3,7 @@ import { db } from '$lib/db';
 import { themes, goals, conversations } from '$lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { ensureConversationThemeIdColumn } from '$lib/server/conversation-schema';
+import { maybeActivateEgenfrekvensCheckin } from '$lib/server/egenfrekvens-checkin';
 
 const UUID_REGEX =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -181,6 +182,8 @@ Be conversational and explain why a theme makes sense.`,
 					archived: false,
 					...(tripProfile ? { tripProfile } : {})
 				}).returning()) as any[])[0];
+
+				await maybeActivateEgenfrekvensCheckin(userId, { name, parentTheme });
 
 				return {
 					success: true,

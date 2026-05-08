@@ -4,41 +4,9 @@ import { getUserActiveGoalsAndTasks } from '$lib/server/goals';
 import { buildDailyCheckInMessage } from '$lib/server/google-chat';
 import { resolveRoutesForNotification, sendGoogleChatToRoutes } from '$lib/server/notification-channels';
 import { runDayPlanningAndCloseNudges } from '$lib/server/day-planning-nudges';
+import { runEgenfrekvensCheckInNudges, type EgenfrekvensCheckInNudgeResult } from '$lib/server/egenfrekvens-nudges';
+import { localHm, isWithinRecentMinutesWindow } from '$lib/server/nudge-time';
 import { eq } from 'drizzle-orm';
-
-function toHmFromParts(parts: Intl.DateTimeFormatPart[]) {
-	const hour = parts.find((p) => p.type === 'hour')?.value ?? '00';
-	const minute = parts.find((p) => p.type === 'minute')?.value ?? '00';
-	return `${hour}:${minute}`;
-}
-
-function localHm(timeZone: string, now: Date) {
-	const formatter = new Intl.DateTimeFormat('en-CA', {
-		timeZone,
-		hour: '2-digit',
-		minute: '2-digit',
-		hour12: false
-	});
-	return toHmFromParts(formatter.formatToParts(now));
-}
-
-function hmToMinutes(hm: string) {
-	const [hRaw, mRaw] = hm.split(':');
-	const h = Number.parseInt(hRaw ?? '', 10);
-	const m = Number.parseInt(mRaw ?? '', 10);
-	if (!Number.isFinite(h) || !Number.isFinite(m) || h < 0 || h > 23 || m < 0 || m > 59) {
-		return null;
-	}
-	return h * 60 + m;
-}
-
-function isWithinRecentMinutesWindow(nowHm: string, targetHm: string, windowMinutes: number) {
-	const nowMin = hmToMinutes(nowHm);
-	const targetMin = hmToMinutes(targetHm);
-	if (nowMin === null || targetMin === null) return false;
-	const delta = (nowMin - targetMin + 1440) % 1440;
-	return delta >= 0 && delta < windowMinutes;
-}
 
 export type DailyCheckInNudgeResult = {
 	nudgeType: 'daily_checkin';
@@ -168,4 +136,16 @@ export class NudgeOrchestrationService {
 			results
 		};
 	}
+
+	static async runEgenfrekvensCheckInNudges(args: {
+		appUrl: string;
+		now?: Date;
+		windowMinutes?: number;
+		requireRecentTimeWindow?: boolean;
+		userId?: string;
+	}) {
+		return runEgenfrekvensCheckInNudges(args);
+	}
 }
+
+export type { EgenfrekvensCheckInNudgeResult };

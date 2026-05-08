@@ -20,12 +20,14 @@ export const users = pgTable('users', {
 				dayClose?: string[];
 				relationshipCheckinMorning?: string[];
 				digestDay?: string[];
+				egenfrekvensCheckin?: string[];
 			};
 		};
 		dailyCheckIn?: { enabled: boolean; time: string }; // format: "09:00"
 		dayPlanning?: { enabled: boolean; time: string }; // default "07:00"
 		dayClose?: { enabled: boolean; time: string }; // default "21:00"
 		relationshipCheckinMorning?: { enabled: boolean; time: string }; // default "08:30"
+		egenfrekvensCheckin?: { enabled: boolean; time: string }; // default "09:00"
 		nudgeProfile?: {
 			weekdayMode?: 'interactive' | 'digest';
 			weekendMode?: 'interactive' | 'digest';

@@ -273,7 +273,7 @@ Senere:
 Bruker: "Jeg løp 3 km i dag på 18 minutter!"
 Du: [REGISTRER FREMGANG] "Wow, fantastisk! 3 km på 18 minutter er solid! Hvordan føltes det?"`;
 
-type PromptFocusModule = 'health' | 'economics' | 'food' | 'widgets' | 'themes' | 'planning';
+type PromptFocusModule = 'health' | 'economics' | 'food' | 'egenfrekvens' | 'widgets' | 'themes' | 'planning';
 
 export function detectPromptFocusModules(input: string): PromptFocusModule[] {
    const text = input.toLowerCase();
@@ -282,6 +282,7 @@ export function detectPromptFocusModules(input: string): PromptFocusModule[] {
    if (/sovn|søvn|vekt|steg|trening|workout|withings|helse|skjermtid|skjermbilde|screen.?time/.test(text)) modules.add('health');
    if (/okonomi|økonomi|forbruk|saldo|bank|transaksjon|lonn|lønn|sparebank/.test(text)) modules.add('economics');
    if (/mat|middag|frokost|lunsj|matpakke|oppskrift|recipe|pantry|fryser|kjøleskap|kjoleskap|handleliste|kjokken|kjøkken|måltid|maltid|ukemeny|meny/.test(text)) modules.add('food');
+   if (/egenfrekvens|psykisk\s*helse|mental\s*helse|stress|overskudd|underskudd|innsjekk|sjekkin|reflek|humør|følelser?|tanker/.test(text)) modules.add('egenfrekvens');
    if (/widget|hjemskjerm|oversikt|vis meg|snitt|per dag|per uke|per mnd/.test(text)) modules.add('widgets');
    if (/tema|samliv|helse|foreld|karriere|personlig utvikling/.test(text)) modules.add('themes');
    if (/plan|uke|todo|sjekkliste|oppgave|maal|mål/.test(text)) modules.add('planning');
