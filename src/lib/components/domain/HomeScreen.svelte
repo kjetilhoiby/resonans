@@ -545,6 +545,7 @@
 			// URL-trigget egenfrekvens-flow (fra push-nudge eller dyp-lenke)
 			if ($page.url.searchParams.get('flow') === 'egenfrekvens_checkin') {
 				egenfrekvensFlowOpen = true;
+				void loadEgenfrekvensReflectionPrompt();
 				const nudgeId = $page.url.searchParams.get('nudgeEventId');
 				if (nudgeId) {
 					void fetch(`/api/nudges/events/${nudgeId}/stage`, {
@@ -555,7 +556,7 @@
 				}
 			}
 
-			// App-open prompt: vis banner hvis dagens sjekkin ikke er gjort, settings tillater og ikke avvist i dag
+			// App-open prompt: vis banner hvis dagens sjekkin venter, settings tillater og ikke avvist i dag
 			void (async () => {
 				try {
 					const isoDay = new Date().toISOString().slice(0, 10);
@@ -563,18 +564,21 @@
 					if (!res.ok) return;
 					const status = await res.json();
 					if (!status.settings || status.settings.enabled === false) return;
-					if (status.submitted) return;
 					if (typeof localStorage !== 'undefined') {
 						const dismissed = localStorage.getItem(`egenfrekvens-prompt-dismissed-${status.day}`);
 						if (dismissed) return;
 					}
-					const targetHm = status.settings.time ?? '09:00';
+					const morning = status.settings.morningTime ?? '06:30';
+					const evening = status.settings.eveningTime ?? '21:00';
+					const count = typeof status.count === 'number' ? status.count : status.submitted ? 1 : 0;
 					const nowHm = new Intl.DateTimeFormat('en-GB', {
 						hour: '2-digit',
 						minute: '2-digit',
 						hour12: false
 					}).format(new Date());
-					if (nowHm < targetHm) return;
+					const showMorning = nowHm >= morning && count === 0;
+					const showEvening = nowHm >= evening && count < 2;
+					if (!showMorning && !showEvening) return;
 					egenfrekvensPromptDay = status.day;
 					egenfrekvensPromptOpen = true;
 				} catch {
@@ -766,6 +770,19 @@
 	let egenfrekvensPromptOpen = $state(false);
 	let egenfrekvensPromptDay = $state('');
 	let egenfrekvensInitialNote = $state('');
+	let egenfrekvensReflectionPrompt = $state<string | null>(null);
+
+	async function loadEgenfrekvensReflectionPrompt() {
+		try {
+			const isoDay = new Date().toISOString().slice(0, 10);
+			const res = await fetch(`/api/egenfrekvens/reflection-context?day=${isoDay}`);
+			if (!res.ok) return;
+			const ctx = (await res.json()) as { systemPrompt?: string };
+			egenfrekvensReflectionPrompt = typeof ctx.systemPrompt === 'string' ? ctx.systemPrompt : null;
+		} catch {
+			egenfrekvensReflectionPrompt = null;
+		}
+	}
 
 	function openEgenfrekvensFlow(initialNote = '', preserveConversation = false) {
 		egenfrekvensInitialNote = initialNote.trim();
@@ -775,6 +792,7 @@
 		}
 		chatInputAutoFocus = false;
 		egenfrekvensFlowOpen = true;
+		void loadEgenfrekvensReflectionPrompt();
 	}
 
 	// ── Fil-flyt ───────────────────────────────────────────────────────────────
@@ -2389,10 +2407,14 @@
 {#if egenfrekvensFlowOpen}
 	<FlowSheet
 		flow={FLOWS['egenfrekvens_checkin']}
-		context={egenfrekvensInitialNote ? { initialData: { note: egenfrekvensInitialNote } } : {}}
+		context={{
+			...(egenfrekvensInitialNote ? { initialData: { note: egenfrekvensInitialNote } } : {}),
+			...(egenfrekvensReflectionPrompt ? { systemPrompts: { reflection: egenfrekvensReflectionPrompt } } : {})
+		}}
 		onclose={() => {
 			egenfrekvensFlowOpen = false;
 			egenfrekvensInitialNote = '';
+			egenfrekvensReflectionPrompt = null;
 			if (returnToChatAfterFlow) {
 				chatOpen = true;
 				chatInputAutoFocus = true;
@@ -2403,6 +2425,7 @@
 			egenfrekvensFlowOpen = false;
 			egenfrekvensPromptOpen = false;
 			egenfrekvensInitialNote = '';
+			egenfrekvensReflectionPrompt = null;
 			if (returnToChatAfterFlow) {
 				chatOpen = true;
 				chatInputAutoFocus = true;

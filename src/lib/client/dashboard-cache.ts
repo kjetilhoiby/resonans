@@ -87,6 +87,7 @@ export interface BooksDashboardData {
 
 export interface EgenfrekvensCheckinPointData {
 	day: string;
+	count: number;
 	balance: number | null;
 	thoughts: number | null;
 	feelings: number | null;

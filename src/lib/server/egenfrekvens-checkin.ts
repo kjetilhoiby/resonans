@@ -57,6 +57,7 @@ async function getOrCreateMoodSensor(userId: string) {
 export interface EgenfrekvensCheckinStatus {
 	day: string;
 	submitted: boolean;
+	count: number;
 	balance: number | null;
 	thoughts: number | null;
 	feelings: number | null;
@@ -64,6 +65,21 @@ export interface EgenfrekvensCheckinStatus {
 	note: string | null;
 	reflection: string | null;
 	extreme: boolean;
+}
+
+/** Antall egenfrekvens-sjekkins for gitt dag (i UTC ISO). */
+export async function countEgenfrekvensCheckinsForDay(userId: string, day: string): Promise<number> {
+	const rows = await db
+		.select({ id: sensorEvents.id })
+		.from(sensorEvents)
+		.where(
+			and(
+				eq(sensorEvents.userId, userId),
+				eq(sensorEvents.dataType, 'egenfrekvens_checkin'),
+				sql`${sensorEvents.data}->>'day' = ${day}`
+			)
+		);
+	return rows.length;
 }
 
 export async function getEgenfrekvensCheckinStatus(
@@ -80,8 +96,7 @@ export async function getEgenfrekvensCheckinStatus(
 				sql`${sensorEvents.data}->>'day' = ${day}`
 			)
 		)
-		.orderBy(desc(sensorEvents.timestamp))
-		.limit(1);
+		.orderBy(desc(sensorEvents.timestamp));
 
 	const row = rows[0];
 	const data = (row?.data ?? null) as Record<string, unknown> | null;
@@ -91,7 +106,8 @@ export async function getEgenfrekvensCheckinStatus(
 
 	return {
 		day,
-		submitted: Boolean(row),
+		submitted: rows.length > 0,
+		count: rows.length,
 		balance: num(data?.balance),
 		thoughts: num(data?.thoughts),
 		feelings: num(data?.feelings),
@@ -140,39 +156,16 @@ export async function submitEgenfrekvensCheckin(params: {
 		extreme
 	};
 
-	const existing = await db
-		.select({ id: sensorEvents.id })
-		.from(sensorEvents)
-		.where(
-			and(
-				eq(sensorEvents.userId, params.userId),
-				eq(sensorEvents.dataType, 'egenfrekvens_checkin'),
-				sql`${sensorEvents.data}->>'day' = ${day}`
-			)
-		)
-		.orderBy(desc(sensorEvents.timestamp))
-		.limit(1);
-
-	if (existing[0]) {
-		await db
-			.update(sensorEvents)
-			.set({
-				timestamp: new Date(),
-				data: payload,
-				metadata: { source: 'egenfrekvens_ui', updated: true }
-			})
-			.where(eq(sensorEvents.id, existing[0].id));
-	} else {
-		await SensorEventService.write({
-			userId: params.userId,
-			sensorId: sensor.id,
-			eventType: 'measurement',
-			dataType: 'egenfrekvens_checkin',
-			timestamp: new Date(),
-			data: payload,
-			source: 'egenfrekvens_ui'
-		});
-	}
+	// Always insert — flere sjekkins per dag er støttet (morgen + kveld + ad-hoc).
+	await SensorEventService.write({
+		userId: params.userId,
+		sensorId: sensor.id,
+		eventType: 'measurement',
+		dataType: 'egenfrekvens_checkin',
+		timestamp: new Date(),
+		data: payload,
+		source: 'egenfrekvens_ui'
+	});
 
 	// Mirror balance to mood (0..10) so existing mood widgets keep working.
 	await SensorEventService.write(
@@ -210,7 +203,7 @@ export async function maybeActivateEgenfrekvensCheckin(
 
 	const next = {
 		...settings,
-		egenfrekvensCheckin: { enabled: true, time: '09:00' }
+		egenfrekvensCheckin: { enabled: true, morningTime: '06:30', eveningTime: '21:00' }
 	};
 	await db
 		.update(users)

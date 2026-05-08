@@ -3,15 +3,19 @@ import { sensorEvents } from '$lib/db/schema';
 import { and, eq, gte } from 'drizzle-orm';
 
 /**
- * Datapunkt per dag — én sjekkin (det finnes maks én per dag pga upsert i submitEgenfrekvensCheckin).
+ * Datapunkt per dag — aggregat over alle sjekkins for dagen (snitt for metrics,
+ * OR for extreme, samlet liste over notes/reflections, og siste verdier).
  */
 export interface EgenfrekvensCheckinPoint {
 	day: string;
+	count: number;
 	balance: number | null;
 	thoughts: number | null;
 	feelings: number | null;
 	actions: number | null;
+	/** Siste registrerte note for dagen (eller null). */
 	note: string | null;
+	/** Siste registrerte refleksjon for dagen (eller null). */
 	reflection: string | null;
 	extreme: boolean;
 }
@@ -85,25 +89,65 @@ export async function loadEgenfrekvensDashboardData(
 		)
 		.orderBy(sensorEvents.timestamp);
 
-	// Group by day, latest wins (sorted ascending → take last per day).
-	const byDay = new Map<string, EgenfrekvensCheckinPoint>();
+	// Aggregate per day across multiple checkins.
+	type Bucket = {
+		day: string;
+		balances: number[];
+		thoughts: number[];
+		feelings: number[];
+		actions: number[];
+		extreme: boolean;
+		lastNote: string | null;
+		lastReflection: string | null;
+	};
+	const byDay = new Map<string, Bucket>();
+	// rows is sorted ascending by timestamp → "last" fields are naturally the most recent.
 	for (const row of rows) {
 		const data = (row.data ?? {}) as Record<string, unknown>;
 		const day = str(data.day);
 		if (!day) continue;
-		byDay.set(day, {
-			day,
-			balance: num(data.balance),
-			thoughts: num(data.thoughts),
-			feelings: num(data.feelings),
-			actions: num(data.actions),
-			note: str(data.note),
-			reflection: str(data.reflection),
-			extreme: Boolean(data.extreme)
-		});
+		let bucket = byDay.get(day);
+		if (!bucket) {
+			bucket = {
+				day,
+				balances: [],
+				thoughts: [],
+				feelings: [],
+				actions: [],
+				extreme: false,
+				lastNote: null,
+				lastReflection: null
+			};
+			byDay.set(day, bucket);
+		}
+		const b = num(data.balance);
+		const t = num(data.thoughts);
+		const f = num(data.feelings);
+		const a = num(data.actions);
+		if (b !== null) bucket.balances.push(b);
+		if (t !== null) bucket.thoughts.push(t);
+		if (f !== null) bucket.feelings.push(f);
+		if (a !== null) bucket.actions.push(a);
+		bucket.extreme = bucket.extreme || Boolean(data.extreme);
+		const note = str(data.note);
+		if (note) bucket.lastNote = note;
+		const reflection = str(data.reflection);
+		if (reflection) bucket.lastReflection = reflection;
 	}
 
-	const points = Array.from(byDay.values()).sort((a, b) => (a.day < b.day ? 1 : -1));
+	const points: EgenfrekvensCheckinPoint[] = Array.from(byDay.values())
+		.map((b) => ({
+			day: b.day,
+			count: Math.max(b.balances.length, b.thoughts.length, b.feelings.length, b.actions.length, 1),
+			balance: avg(b.balances),
+			thoughts: avg(b.thoughts),
+			feelings: avg(b.feelings),
+			actions: avg(b.actions),
+			note: b.lastNote,
+			reflection: b.lastReflection,
+			extreme: b.extreme
+		}))
+		.sort((a, b) => (a.day < b.day ? 1 : -1));
 
 	const stats: EgenfrekvensTrendStats = {
 		count: points.length,

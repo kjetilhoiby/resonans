@@ -178,6 +178,20 @@
 	let foodDashboard = $state<FoodDashboardData | null>(null);
 	let egenfrekvensDashboard = $state<EgenfrekvensDashboardData | null>(null);
 	let egenfrekvensFlowOpen = $state(false);
+	let egenfrekvensReflectionPrompt = $state<string | null>(null);
+
+	async function openEgenfrekvensCheckinFlow() {
+		egenfrekvensFlowOpen = true;
+		try {
+			const isoDay = new Date().toISOString().slice(0, 10);
+			const res = await fetch(`/api/egenfrekvens/reflection-context?day=${isoDay}`);
+			if (!res.ok) return;
+			const ctx = (await res.json()) as { systemPrompt?: string };
+			egenfrekvensReflectionPrompt = typeof ctx.systemPrompt === 'string' ? ctx.systemPrompt : null;
+		} catch {
+			egenfrekvensReflectionPrompt = null;
+		}
+	}
 	let dashboardLoading = $state(false);
 	let dashboardLoaded = $state(false);
 	let dashboardError = $state('');
@@ -1562,7 +1576,7 @@
 				{#if egenfrekvensDashboard}
 					<EgenfrekvensDashboard
 						data={egenfrekvensDashboard}
-						onstartCheckin={() => (egenfrekvensFlowOpen = true)}
+						onstartCheckin={() => void openEgenfrekvensCheckinFlow()}
 					/>
 				{/if}
 
@@ -2161,9 +2175,14 @@ Eksempel:
 {#if egenfrekvensFlowOpen}
 	<FlowSheet
 		flow={FLOWS['egenfrekvens_checkin']}
-		onclose={() => (egenfrekvensFlowOpen = false)}
+		context={egenfrekvensReflectionPrompt ? { systemPrompts: { reflection: egenfrekvensReflectionPrompt } } : {}}
+		onclose={() => {
+			egenfrekvensFlowOpen = false;
+			egenfrekvensReflectionPrompt = null;
+		}}
 		oncomplete={async () => {
 			egenfrekvensFlowOpen = false;
+			egenfrekvensReflectionPrompt = null;
 			await ensureDashboardLoaded(true);
 		}}
 	/>

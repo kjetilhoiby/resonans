@@ -20,6 +20,12 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 
 	return json({
 		...status,
-		settings: settings ? { enabled: settings.enabled !== false, time: settings.time ?? '09:00' } : null
+		settings: settings
+			? {
+					enabled: settings.enabled !== false,
+					morningTime: settings.morningTime ?? settings.time ?? '06:30',
+					eveningTime: settings.eveningTime ?? '21:00'
+				}
+			: null
 	});
 };

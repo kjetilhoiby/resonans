@@ -27,7 +27,15 @@ export const users = pgTable('users', {
 		dayPlanning?: { enabled: boolean; time: string }; // default "07:00"
 		dayClose?: { enabled: boolean; time: string }; // default "21:00"
 		relationshipCheckinMorning?: { enabled: boolean; time: string }; // default "08:30"
-		egenfrekvensCheckin?: { enabled: boolean; time: string }; // default "09:00"
+		egenfrekvensCheckin?: {
+			enabled: boolean;
+			/** Default morning check time, e.g. "06:30". Falls back to legacy `time` if missing. */
+			morningTime?: string;
+			/** Default evening check time, e.g. "21:00". */
+			eveningTime?: string;
+			/** Legacy single-time field — treated as morningTime when morningTime is absent. */
+			time?: string;
+		};
 		nudgeProfile?: {
 			weekdayMode?: 'interactive' | 'digest';
 			weekendMode?: 'interactive' | 'digest';
