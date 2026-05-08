@@ -3,8 +3,9 @@
 export * from './health/index';
 export * from './economics/index';
 export * from './food/index';
+export * from './egenfrekvens/index';
 
-export type DomainType = 'health' | 'economics' | 'food';
+export type DomainType = 'health' | 'economics' | 'food' | 'egenfrekvens';
 
 export interface DomainMetadata {
   type: DomainType;
@@ -31,6 +32,12 @@ export const DOMAIN_METADATA: Record<DomainType, DomainMetadata> = {
     label: 'Mat',
     description: 'Middagsplaner, oppskrifter, handlelister og oversikt over skap/fryser',
     systemPromptHint: 'Brukeren fokuser på mat: ukemeny, oppskrifter, pantry. Bruk query_food, manage_meal_plan, manage_pantry, generate_shopping_list. Foreslå konkret oppskrift og handleliste.'
+  },
+  egenfrekvens: {
+    type: 'egenfrekvens',
+    label: 'Egenfrekvens',
+    description: 'Selvinnsikt: humør, tanker, følelser, handlinger, refleksjon og overskudd/underskudd',
+    systemPromptHint: 'Brukeren utforsker egenfrekvens (humør, tanker, følelser, handlinger). Tilby kort sjekkin-flyt og refleksjon. Bruk varm, ikke-klinisk tone.'
   }
 };
 
@@ -47,6 +54,10 @@ export function resolveDomainFromInput(input: string): DomainType | null {
 
   if (/mat|middag|frokost|lunsj|matpakke|oppskrift|recipe|pantry|fryser|kjøleskap|kjoleskap|skap|handleliste|kjokken|kjøkken|måltid|maltid|ukemeny|meny/.test(text)) {
     return 'food';
+  }
+
+  if (/egenfrekvens|psykisk\s*helse|mental\s*helse|stress|overskudd|underskudd|innsjekk|sjekkin|reflek/.test(text)) {
+    return 'egenfrekvens';
   }
 
   return null;
