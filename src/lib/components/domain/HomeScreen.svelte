@@ -1852,10 +1852,12 @@
 				subtitle={hasPersistedConversation ? chatConversationTitle : ''}
 				backHref={hasPersistedConversation ? '/samtaler' : undefined}
 				backLabel="Alle samtaler"
-				onTitleClick={closeChat}
-				titleLabel="Lukk samtale"
+				onTitleClick={!hasPersistedConversation ? closeChat : undefined}
 			>
 				{#snippet actions()}
+					{#if hasPersistedConversation}
+						<button class="chat-link" onclick={() => goto(`/samtaler?conversation=${homeChat.conversationId}`)} aria-label="Åpne denne samtalen">Åpne</button>
+					{/if}
 					<button
 						class="model-pill"
 						onclick={() => {
@@ -3562,6 +3564,22 @@
 		color: #999;
 	}
 
+	.chat-link {
+		border: 1px solid #292929;
+		background: #111;
+		color: #8f8f8f;
+		border-radius: 999px;
+		padding: 7px 11px;
+		font: inherit;
+		font-size: 0.74rem;
+		cursor: pointer;
+		white-space: nowrap;
+	}
+
+	.chat-link:hover {
+		border-color: #3c4f9f;
+		color: #d4daf6;
+	}
 
 	@media (prefers-reduced-motion: reduce) {
 		.zone-input {

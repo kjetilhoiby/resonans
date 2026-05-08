@@ -30,13 +30,14 @@ Aldri opprett widget direkte uten at bruker har sett og bekreftet forslaget.`,
 	}) => {
 		const { userId, title, metricType, aggregation, period, range, filterCategory, filterSubcategory, metricKey, unit, goal, color } = args;
 
-		// Sjekk om det finnes en tilsvarende widget allerede
+		// Sjekk om det finnes en tilsvarende widget på hjemmeskjermen allerede (themeId: null)
 		const existing = await findSimilarWidget(
 			userId,
 			{
 				metricType: metricType as WidgetDraft['metricType'],
 				range: range as WidgetDraft['range'],
-				filterCategory: filterCategory ?? null
+				filterCategory: filterCategory ?? null,
+				themeId: null
 			},
 			{ pinnedOnly: false }
 		);
