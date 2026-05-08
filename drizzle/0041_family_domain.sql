@@ -75,3 +75,17 @@ CREATE INDEX "message_person_mentions_user_created_idx" ON "message_person_menti
 
 CREATE UNIQUE INDEX "task_person_mentions_task_person_unique" ON "task_person_mentions" USING btree ("task_id","person_id");
 CREATE INDEX "task_person_mentions_person_created_idx" ON "task_person_mentions" USING btree ("person_id","created_at");
+
+-- person_id kolonne på eksisterende tabeller
+ALTER TABLE "conversations" ADD COLUMN "person_id" uuid REFERENCES "public"."persons"("id") ON DELETE set null;
+ALTER TABLE "goals" ADD COLUMN "person_id" uuid REFERENCES "public"."persons"("id") ON DELETE set null;
+ALTER TABLE "tasks" ADD COLUMN "person_id" uuid REFERENCES "public"."persons"("id") ON DELETE set null;
+ALTER TABLE "memories" ADD COLUMN "person_id" uuid REFERENCES "public"."persons"("id") ON DELETE set null;
+ALTER TABLE "nudge_events" ADD COLUMN "person_id" uuid REFERENCES "public"."persons"("id") ON DELETE set null;
+ALTER TABLE "sensor_events" ADD COLUMN "person_id" uuid REFERENCES "public"."persons"("id") ON DELETE set null;
+
+CREATE INDEX "conversations_person_idx" ON "conversations" USING btree ("person_id");
+CREATE INDEX "goals_person_idx" ON "goals" USING btree ("person_id");
+CREATE INDEX "tasks_person_idx" ON "tasks" USING btree ("person_id");
+CREATE INDEX "memories_person_idx" ON "memories" USING btree ("person_id");
+CREATE INDEX "sensor_events_person_timestamp_idx" ON "sensor_events" USING btree ("person_id","timestamp");
