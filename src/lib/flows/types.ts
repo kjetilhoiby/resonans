@@ -81,6 +81,8 @@ export interface FlowContext {
 	systemPrompts?: Record<string, string>;
 	/** Per-step initial prompt/prefill keyed by step id — overrides FlowStep.prompt */
 	prompts?: Record<string, string>;
+	/** Initial form data — seeds flowData on mount (e.g. pre-fill the note field with chat-draft) */
+	initialData?: Record<string, any>;
 	/** Target month being planned, e.g. "2026-05" */
 	monthKey?: string;
 	/** Previous month's data injected server-side for AI context building */

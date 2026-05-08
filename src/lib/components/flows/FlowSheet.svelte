@@ -45,7 +45,7 @@
 
 	// ── Core state ───────────────────────────────────────────────────
 	let currentStepIndex = $state(0);
-	let flowData = $state<Record<string, any>>({});
+	let flowData = $state<Record<string, any>>({ ...(context.initialData ?? {}) });
 	let completing = $state(false);
 	let completionError = $state('');
 
