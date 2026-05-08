@@ -1,6 +1,6 @@
 import { db } from '$lib/db';
 import { userWidgets } from '$lib/db/schema';
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 
 export const VALID_WIDGET_METRICS = [
 	'weight',
@@ -37,6 +37,8 @@ export interface CreateWidgetInput {
 	unit: string;
 	color?: string | null;
 	pinned?: boolean;
+	themeId?: string | null;
+	sortOrder?: number;
 }
 
 export interface UpdateWidgetInput {
@@ -68,15 +70,24 @@ function toClientWidget<T extends { goal: string | null; thresholdWarn: string |
 	};
 }
 
-export async function listUserWidgets(userId: string, pinnedOnly = false) {
-	const where = pinnedOnly
-		? and(eq(userWidgets.userId, userId), eq(userWidgets.pinned, true))
-		: eq(userWidgets.userId, userId);
+export interface ListWidgetsOptions {
+	pinnedOnly?: boolean;
+	// undefined = no surface filter (returns all)
+	// null      = home screen widgets only (theme_id IS NULL)
+	// string    = widgets belonging to that theme
+	themeId?: string | null;
+}
+
+export async function listUserWidgets(userId: string, options: ListWidgetsOptions = {}) {
+	const filters = [eq(userWidgets.userId, userId)];
+	if (options.pinnedOnly) filters.push(eq(userWidgets.pinned, true));
+	if (options.themeId === null) filters.push(isNull(userWidgets.themeId));
+	else if (typeof options.themeId === 'string') filters.push(eq(userWidgets.themeId, options.themeId));
 
 	const widgets = await db
 		.select()
 		.from(userWidgets)
-		.where(where)
+		.where(and(...filters))
 		.orderBy(asc(userWidgets.sortOrder), asc(userWidgets.createdAt));
 
 	return widgets.map(toClientWidget);
@@ -84,7 +95,7 @@ export async function listUserWidgets(userId: string, pinnedOnly = false) {
 
 export async function findSimilarWidget(
 	userId: string,
-	params: { metricType: WidgetMetric; range: WidgetRange; filterCategory?: string | null },
+	params: { metricType: WidgetMetric; range: WidgetRange; filterCategory?: string | null; themeId?: string | null },
 	options?: { pinnedOnly?: boolean }
 ) {
 	const filters = [
@@ -95,6 +106,9 @@ export async function findSimilarWidget(
 			? eq(userWidgets.filterCategory, params.filterCategory)
 			: sql`filter_category IS NULL`
 	];
+
+	if (params.themeId === null) filters.push(isNull(userWidgets.themeId));
+	else if (typeof params.themeId === 'string') filters.push(eq(userWidgets.themeId, params.themeId));
 
 	if (options?.pinnedOnly) {
 		filters.push(eq(userWidgets.pinned, true));
@@ -114,6 +128,7 @@ export async function createUserWidget(userId: string, input: CreateWidgetInput)
 		.insert(userWidgets)
 		.values({
 			userId,
+			themeId: input.themeId ?? null,
 			title: input.title.trim().slice(0, 80),
 			metricType: input.metricType,
 			aggregation: input.aggregation,
@@ -126,7 +141,7 @@ export async function createUserWidget(userId: string, input: CreateWidgetInput)
 			unit: input.unit.slice(0, 20),
 			color: input.color || '#7c8ef5',
 			pinned: input.pinned ?? false,
-			sortOrder: 0
+			sortOrder: input.sortOrder ?? 0
 		})
 		.returning();
 

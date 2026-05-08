@@ -15,7 +15,7 @@
 	import TrackProfileChart from '../charts/TrackProfileChart.svelte';
 	import KmSplitsTable from '../charts/KmSplitsTable.svelte';
 	import HrDistributionBar from '../charts/HrDistributionBar.svelte';
-	import MetricCard from '$lib/components/visualizations/MetricCard.svelte';
+	import DynamicWidget from '../composed/DynamicWidget.svelte';
 	import { hasElevation, hasHeartRate } from '$lib/utils/track-stats';
 	import {
 		buildPaceBaseline,
@@ -93,6 +93,19 @@
 		weight?: MetricThreshold;
 	}
 
+	interface ThemeWidget {
+		id: string;
+		title: string;
+		unit: string;
+		color: string;
+		pinned: boolean;
+		metricType: string;
+		aggregation: string;
+		period: string;
+		range: string;
+		sortOrder: number;
+	}
+
 	interface Props {
 		weekly: AggregatePeriod[];
 		monthly: AggregatePeriod[];
@@ -110,9 +123,13 @@
 		goals?: Goal[];
 		activities?: WorkoutActivity[];
 		metricSettings?: MetricSettingsMap;
+		themeId?: string;
 	}
 
-	let { weekly, monthly, yearly, sources = [], recentEvents = [], tooling, embedded = false, goals = [], activities = [], metricSettings = {} }: Props = $props();
+	let { weekly, monthly, yearly, sources = [], recentEvents = [], tooling, embedded = false, goals = [], activities = [], metricSettings = {}, themeId }: Props = $props();
+
+	let themeWidgets = $state<ThemeWidget[]>([]);
+	let themeWidgetsLoading = $state(true);
 
 	let selectedWindow = $state<WindowMode>('30d');
 	let periodTableFilter = $state<'siste5' | 'i_ar' | 'siste_ar' | 'alt'>('siste5');
@@ -966,7 +983,38 @@
 
 	onMount(() => {
 		void loadGoalTracks();
+		void loadThemeWidgets();
 	});
+
+	async function loadThemeWidgets() {
+		if (!themeId) {
+			themeWidgetsLoading = false;
+			return;
+		}
+		try {
+			const res = await fetch(`/api/tema/${themeId}/widgets`);
+			if (res.ok) {
+				themeWidgets = await res.json();
+			}
+		} catch {
+			// stille feil
+		} finally {
+			themeWidgetsLoading = false;
+		}
+	}
+
+	async function removeThemeWidget(id: string) {
+		const previous = themeWidgets;
+		themeWidgets = themeWidgets.filter((w) => w.id !== id);
+		try {
+			const res = await fetch(`/api/user-widgets/${id}`, { method: 'DELETE' });
+			if (!res.ok && res.status !== 204) {
+				themeWidgets = previous;
+			}
+		} catch {
+			themeWidgets = previous;
+		}
+	}
 
 	async function loadGoalTracks() {
 		try {
@@ -1036,40 +1084,33 @@
 		</div>
 	{/if}
 
+	{#if themeId}
+		<div class="hd-widget-grid">
+			{#if themeWidgetsLoading && themeWidgets.length === 0}
+				{#each Array.from({ length: 4 }) as _}
+					<div class="hd-widget-skeleton" aria-hidden="true"></div>
+				{/each}
+			{:else}
+				{#each themeWidgets as widget (widget.id)}
+					<DynamicWidget
+						widgetId={widget.id}
+						title={widget.title}
+						unit={widget.unit}
+						color={widget.color}
+						pinned={widget.pinned}
+						onunpin={() => removeThemeWidget(widget.id)}
+					/>
+				{/each}
+			{/if}
+		</div>
+	{/if}
+
 	{#if periodData.length === 0}
 		<div class="hd-empty">
 			<p>Ingen data tilgjengelig ennå.</p>
 			<p class="hd-empty-sub">Koble til eller synkroniser Withings for å fylle Helse-dashbordet.</p>
 		</div>
 	{:else}
-		<div class="hd-grid">
-			{#each metricCards as card}
-				<div class="hd-card">
-					<div class="hd-card-ring">
-						<GoalRing pct={card.pct} color={card.color} size={88} strokeWidth={6}>
-							{#snippet children()}
-								<text x="44" y="42" text-anchor="middle" fill={card.color} font-size="15" font-weight="700">{card.value}</text>
-							{/snippet}
-						</GoalRing>
-					</div>
-					<div class="hd-card-copy">
-						<p class="hd-card-label">{card.label}</p>
-						<p class="hd-card-sub">{card.subvalue}</p>
-						{#if card.metricId === 'sleep_avg_night' && card.vizData}
-							<div class="hd-card-viz">
-								<MetricCard
-									metricId="sleep_avg_night"
-									size="M"
-									data={card.vizData}
-									height={6}
-								/>
-							</div>
-						{/if}
-					</div>
-				</div>
-			{/each}
-		</div>
-
 		<div class="hd-table-card">
 			<div class="hd-table-head">
 				<h2 class="hd-table-title">Perioder</h2>
@@ -1507,7 +1548,6 @@
 
 	.hd-empty,
 	.hd-table-card,
-	.hd-card,
 	.hd-tooling-card {
 		background: #141414;
 		border-radius: 18px;
@@ -1523,44 +1563,33 @@
 		color: #aaa;
 	}
 
-	.hd-grid {
+	.hd-widget-grid {
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+		grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
 		gap: 12px;
+		justify-items: center;
+		padding: 4px 0 8px;
 	}
 
-	.hd-card {
-		padding: 14px 12px;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 10px;
-		text-align: center;
+	.hd-widget-skeleton {
+		width: 90px;
+		height: 106px;
+		border-radius: 14px;
+		background: linear-gradient(120deg, #1c1c1c 0%, #232323 50%, #1c1c1c 100%);
+		background-size: 200% 100%;
+		animation: hd-skeleton-shimmer 1.4s ease-in-out infinite;
 	}
 
-	.hd-card-copy {
-		display: flex;
-		flex-direction: column;
-		gap: 3px;
+	@keyframes hd-skeleton-shimmer {
+		0% { background-position: 200% 0; }
+		100% { background-position: -200% 0; }
 	}
 
-	.hd-card-label,
 	.hd-table-title {
 		margin: 0;
 		font-size: 0.88rem;
 		font-weight: 700;
 		color: #e7e7e7;
-	}
-
-	.hd-card-sub {
-		margin: 0;
-		font-size: 0.74rem;
-		color: #777;
-	}
-
-	.hd-card-viz {
-		margin-top: 8px;
-		width: 100%;
 	}
 
 	.hd-table-card {
@@ -1645,20 +1674,14 @@
 	}
 
 	@media (max-width: 640px) {
-		.hd-grid {
-			grid-template-columns: repeat(2, minmax(0, 1fr));
-		}
-
 		.hd-title {
 			font-size: 1.32rem;
 		}
 
-		.hd-card-label,
 		.hd-table-title {
 			font-size: 0.94rem;
 		}
 
-		.hd-card-sub,
 		.hd-copy,
 		.hd-table-copy,
 		.hd-empty-sub {

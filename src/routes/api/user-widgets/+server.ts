@@ -1,6 +1,7 @@
 /**
- * GET  /api/user-widgets          — liste alle widgets (query: ?pinned=true)
- * POST /api/user-widgets          — opprett nytt widget
+ * GET  /api/user-widgets          — liste widgets (default: hjemmeskjerm, themeId IS NULL)
+ *                                    Query: ?pinned=true | ?themeId=<uuid> | ?scope=all
+ * POST /api/user-widgets          — opprett nytt widget (body kan inkludere themeId)
  */
 import { json, error } from '@sveltejs/kit';
 import {
@@ -16,14 +17,22 @@ import type { RequestHandler } from './$types';
 export const GET: RequestHandler = async ({ url, locals }) => {
 	const userId = locals.userId;
 	const pinnedOnly = url.searchParams.get('pinned') === 'true';
-	return json(await listUserWidgets(userId, pinnedOnly));
+	const themeIdParam = url.searchParams.get('themeId');
+	const scope = url.searchParams.get('scope');
+
+	let themeId: string | null | undefined;
+	if (scope === 'all') themeId = undefined;
+	else if (themeIdParam) themeId = themeIdParam;
+	else themeId = null;
+
+	return json(await listUserWidgets(userId, { pinnedOnly, themeId }));
 };
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const userId = locals.userId;
 	const body = await request.json();
 
-	const { title, metricType, aggregation, period, range, filterCategory, goal, unit, color, pinned } = body;
+	const { title, metricType, aggregation, period, range, filterCategory, goal, unit, color, pinned, themeId } = body;
 
 	if (!title || typeof title !== 'string' || title.trim().length === 0) {
 		throw error(400, 'title er påkrevd');
@@ -47,6 +56,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		throw error(400, 'color må være en hex-farge (#rrggbb)');
 	}
 
+	if (themeId != null && (typeof themeId !== 'string' || !/^[0-9a-f-]{36}$/i.test(themeId))) {
+		throw error(400, 'themeId må være en gyldig uuid');
+	}
+
 	const widget = await createUserWidget(userId, {
 		title,
 		metricType,
@@ -57,7 +70,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		goal: goal ?? null,
 		unit,
 		color: color ?? null,
-		pinned: Boolean(pinned)
+		pinned: Boolean(pinned),
+		themeId: typeof themeId === 'string' ? themeId : null
 	});
 
 	return json(widget, { status: 201 });
