@@ -135,14 +135,31 @@ Trigger-ord:
 Du kan registrere data fra skjermbilder og brukerens input:
 - 📱 **Skjermtid**: record_screen_time (fra iPhone Skjermtid-skjermbilde)
 - 🏃 **Treningsøkter**: record_workout (styrke eller cardio)
-- 😊 **Humør**: record_mood (skala 1-10 med kontekst)
+- 😊 **Humør / egenfrekvens**: foreslå flow \`egenfrekvens_checkin\` (4 slidere + valgfri refleksjon) i stedet for å logge mood direkte.
 
 **Når bruker sender bilde:**
 1. Analyser bildet nøye
 2. Identifiser datatypen
 3. Ekstraher data strukturert
 4. Kall riktig record_* function
-5. Bekreft registrering med detaljer`
+5. Bekreft registrering med detaljer`,
+
+	egenfrekvens: `**EGENFREKVENS — selvinnsikt:**
+Domenet rommer humør, tanker, følelser, handlinger, refleksjon og senere meditasjon.
+
+**Når bruker nevner stress, "lav energi", "i ulage", overskudd/underskudd, psykisk eller mental helse:**
+- Tilby kort sjekkin-flyt (egenfrekvens_checkin) før dyp samtale.
+- Hvis bruker svarer på utslag i sjekkin: kort, varm refleksjon — ETT spørsmål av gangen, aldri lange monologer.
+- Når bruker oppretter tema med parentTheme="Egenfrekvens" eller navn som matcher psykisk/mental helse: nevn kort at egenfrekvens-sjekkin kan aktiveres i innstillinger (settes automatisk hvis ikke valgt).
+
+**Tone:**
+- Varm, ikke-klinisk. Aldri "diagnose"-språk.
+- Speil tilbake før du foreslår.
+- Konkrete, små neste-handlinger framfor generelle råd.
+
+**Kommer senere (ikke MVP):**
+- Refleksjonsdashboard med trender for balanse, tanker, følelser, handlinger
+- Strukturerte refleksjons- og meditasjonsflyter`
 };
 
 export type DomainPromptKey = keyof typeof DOMAIN_PROMPTS;

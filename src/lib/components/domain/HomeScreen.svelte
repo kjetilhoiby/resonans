@@ -21,6 +21,7 @@
 	import ChecklistWidget, { type Checklist } from '../composed/ChecklistWidget.svelte';
 	import ChecklistSheet from '../ui/ChecklistSheet.svelte';
 	import FlowSheet from '../flows/FlowSheet.svelte';
+	import EgenfrekvensPrompt from './EgenfrekvensPrompt.svelte';
 	import { FLOWS } from '$lib/flows/registry';
 	import PageHeader from '../ui/PageHeader.svelte';
 	import CollapsibleSection from '../ui/CollapsibleSection.svelte';
@@ -540,6 +541,46 @@
 			if ($page.url.searchParams.get('chat') === '1') {
 				openChat();
 			}
+
+			// URL-trigget egenfrekvens-flow (fra push-nudge eller dyp-lenke)
+			if ($page.url.searchParams.get('flow') === 'egenfrekvens_checkin') {
+				egenfrekvensFlowOpen = true;
+				const nudgeId = $page.url.searchParams.get('nudgeEventId');
+				if (nudgeId) {
+					void fetch(`/api/nudges/events/${nudgeId}/stage`, {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({ stage: 'flow_started' })
+					}).catch(() => {});
+				}
+			}
+
+			// App-open prompt: vis banner hvis dagens sjekkin ikke er gjort, settings tillater og ikke avvist i dag
+			void (async () => {
+				try {
+					const isoDay = new Date().toISOString().slice(0, 10);
+					const res = await fetch(`/api/egenfrekvens/status?day=${isoDay}`);
+					if (!res.ok) return;
+					const status = await res.json();
+					if (!status.settings || status.settings.enabled === false) return;
+					if (status.submitted) return;
+					if (typeof localStorage !== 'undefined') {
+						const dismissed = localStorage.getItem(`egenfrekvens-prompt-dismissed-${status.day}`);
+						if (dismissed) return;
+					}
+					const targetHm = status.settings.time ?? '09:00';
+					const nowHm = new Intl.DateTimeFormat('en-GB', {
+						hour: '2-digit',
+						minute: '2-digit',
+						hour12: false
+					}).format(new Date());
+					if (nowHm < targetHm) return;
+					egenfrekvensPromptDay = status.day;
+					egenfrekvensPromptOpen = true;
+				} catch {
+					// best-effort UI hint, ignore failures
+				}
+			})();
 		})();
 	});
 
@@ -725,6 +766,11 @@
 	let moodSlider = $state(50);
 	let moodFactors = $state<string[]>([]);
 	let moodNote = $state('');
+
+	// ── Egenfrekvens-sjekkin ──────────────────────────────────────────────────
+	let egenfrekvensFlowOpen = $state(false);
+	let egenfrekvensPromptOpen = $state(false);
+	let egenfrekvensPromptDay = $state('');
 	const MOOD_FACTORS = [
 		{ id: 'søvn',       label: 'Søvn',      icon: '💤' },
 		{ id: 'trening',    label: 'Trening',   icon: '🏃' },
@@ -802,9 +848,9 @@
 			id: 'mood',
 			label: 'Sjekkin',
 			icon: 'checkin',
-			description: 'Registrer dagsform, energi eller følelsen du står i akkurat nå.',
+			description: 'Egenfrekvens: balanse, tanker, følelser og handlinger på 30 sekunder.',
 			placeholder: 'Hvordan har du det akkurat nå, og hva tror du påvirker det?',
-			helper: 'Fint for korte emosjonelle snapshots som senere kan kobles til tema eller mønster.'
+			helper: 'Korte snapshots som senere kan kobles til tema eller mønster.'
 		},
 		{
 			id: 'file',
@@ -933,7 +979,7 @@
 		} else if (action.id === 'voice') {
 			voiceOpen = true;
 		} else if (action.id === 'mood') {
-			moodOpen = true;
+			egenfrekvensFlowOpen = true;
 		} else if (action.id === 'file') {
 			fileFlowOpen = true;
 		}
@@ -1705,6 +1751,20 @@
 					<a href="/settings" class="icon-link" aria-label="Innstillinger"><Icon name="settings" size={18} /></a>
 				</div>
 			</div>
+			{#if egenfrekvensPromptOpen}
+				<EgenfrekvensPrompt
+					onstart={() => {
+						egenfrekvensPromptOpen = false;
+						egenfrekvensFlowOpen = true;
+					}}
+					ondismiss={() => {
+						if (typeof localStorage !== 'undefined' && egenfrekvensPromptDay) {
+							localStorage.setItem(`egenfrekvens-prompt-dismissed-${egenfrekvensPromptDay}`, '1');
+						}
+						egenfrekvensPromptOpen = false;
+					}}
+				/>
+			{/if}
 		</section>
 	{/if}
 
@@ -2458,6 +2518,17 @@
 		oncomplete={async () => {
 			homeMonthPlanOpen = false;
 			await fetchChecklists();
+		}}
+	/>
+{/if}
+
+{#if egenfrekvensFlowOpen}
+	<FlowSheet
+		flow={FLOWS['egenfrekvens_checkin']}
+		onclose={() => (egenfrekvensFlowOpen = false)}
+		oncomplete={() => {
+			egenfrekvensFlowOpen = false;
+			egenfrekvensPromptOpen = false;
 		}}
 	/>
 {/if}

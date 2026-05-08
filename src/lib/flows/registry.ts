@@ -3,6 +3,10 @@
  */
 
 import type { Flow, FlowId, FlowDomain } from './types';
+import {
+	ACTION_PYRAMID_LABELS,
+	EGENFREKVENS_THRESHOLDS
+} from '$lib/domains/egenfrekvens';
 
 export const FLOWS: Record<FlowId, Flow> = {
 	health_weight_onboarding: {
@@ -523,6 +527,107 @@ export const FLOWS: Record<FlowId, Flow> = {
 					prevMonthGoals,
 					narrative,
 					refleksjonText
+				})
+			});
+		}
+	},
+
+	egenfrekvens_checkin: {
+		id: 'egenfrekvens_checkin',
+		name: 'Egenfrekvens-sjekkin',
+		description: 'Ta tempen på tanker, følelser og handlinger',
+		icon: '🎚️',
+		domain: 'egenfrekvens',
+		trigger: 'manual',
+		estimatedMinutes: 2,
+		parentTheme: 'Egenfrekvens',
+		steps: [
+			{
+				id: 'sliders',
+				type: 'form',
+				title: 'Hvor er du nå?',
+				prompt: 'Fire raske skalaer. Bruk magefølelsen — det første tallet som kjennes riktig.',
+				fields: [
+					{
+						id: 'balance',
+						type: 'slider',
+						label: 'Balanse — overskudd/underskudd',
+						min: -5,
+						max: 5,
+						step: 1,
+						defaultValue: 0
+					},
+					{
+						id: 'thoughts',
+						type: 'slider',
+						label: 'Tanker (tunge ↔ klare)',
+						min: 0,
+						max: 5,
+						step: 1,
+						defaultValue: 3
+					},
+					{
+						id: 'feelings',
+						type: 'slider',
+						label: 'Følelser (overveldet ↔ rolig)',
+						min: 0,
+						max: 5,
+						step: 1,
+						defaultValue: 3
+					},
+					{
+						id: 'actions',
+						type: 'slider',
+						label: 'Handlinger (passiv ↔ aktivt krevende)',
+						min: 0,
+						max: 5,
+						step: 1,
+						defaultValue: 3,
+						helperLabels: ACTION_PYRAMID_LABELS
+					},
+					{
+						id: 'note',
+						type: 'textarea',
+						label: 'Kontekst (valgfritt)',
+						placeholder: 'Hva farger dette akkurat nå?',
+						required: false
+					}
+				],
+				validation: (d) =>
+					Number.isInteger(d.balance) &&
+					Number.isInteger(d.thoughts) &&
+					Number.isInteger(d.feelings) &&
+					Number.isInteger(d.actions)
+			},
+			{
+				id: 'reflection',
+				type: 'chat',
+				title: 'Liten refleksjon',
+				autoSend: true,
+				systemPrompt:
+					'Du er en varm, kort samtalepartner. Brukeren har akkurat fylt ut en egenfrekvens-sjekkin med utslag. Speil tilbake i én setning, still ETT åpent spørsmål, og foreslå én liten neste-handling. Aldri lange monologer. Ikke-klinisk tone, ingen diagnoser.',
+				prompt:
+					'Det jeg leser nå: noen verdier ligger utenfor det rolige midten. Vil du dele litt om hva som ligger bak?',
+				skipIf: (d) =>
+					!EGENFREKVENS_THRESHOLDS.reflectIf({
+						balance: Number(d.balance),
+						thoughts: Number(d.thoughts),
+						feelings: Number(d.feelings),
+						actions: Number(d.actions)
+					})
+			}
+		],
+		onComplete: async (data) => {
+			await fetch('/api/egenfrekvens/checkin', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					balance: Number(data.balance),
+					thoughts: Number(data.thoughts),
+					feelings: Number(data.feelings),
+					actions: Number(data.actions),
+					note: data.note ?? null,
+					reflection: data['reflection_lastMessage'] ?? null
 				})
 			});
 		}

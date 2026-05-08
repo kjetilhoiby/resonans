@@ -59,6 +59,26 @@ export function startScheduler() {
 		}
 	);
 
+	// Egenfrekvens-sjekkin: kjører hvert 5. minutt og treffer brukere innenfor sitt valgte tidspunkt.
+	cron.schedule(
+		'*/5 * * * *',
+		async () => {
+			const appUrl = env.ORIGIN || 'https://resonans.vercel.app';
+			try {
+				await NudgeOrchestrationService.runEgenfrekvensCheckInNudges({
+					appUrl,
+					windowMinutes: 5,
+					requireRecentTimeWindow: true
+				});
+			} catch (err) {
+				console.error('❌ runEgenfrekvensCheckInNudges failed:', err);
+			}
+		},
+		{
+			timezone: 'UTC'
+		}
+	);
+
 	// Stale-sweeper for workout projections every 15 minutes.
 	cron.schedule(
 		'*/15 * * * *',
@@ -82,6 +102,7 @@ export function startScheduler() {
 	console.log('✅ Scheduler started:');
 	console.log('   - Daily check-in at 09:00 Europe/Oslo');
 	console.log('   - Local nudges + domain signals every hour (UTC scheduler, local-time aware nudges)');
+	console.log('   - Egenfrekvens-sjekkin every 5 minutes (UTC scheduler, per-user local time window)');
 	console.log('   - Workout projection stale sweeper every 15 minutes (UTC)');
 }
 
