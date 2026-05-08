@@ -7,6 +7,7 @@ import { getOrCreateConversation, createConversation, addMessage, getConversatio
 import { logActivity } from '$lib/server/activities';
 import { recordTrackingEvent } from '$lib/server/tracking-series';
 import { buildMemoryContext, createMemory } from '$lib/server/memories';
+import { buildPersonContext } from '$lib/server/person-context';
 import { isFutureVisionText, seedThemeInstructionFromFutureVision } from '$lib/server/theme-instructions';
 import { queryEconomicsTool } from '$lib/ai/tools/query-economics';
 import { queryFoodTool } from '$lib/ai/tools/query-food';
@@ -1489,6 +1490,16 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		// Bygg memory context (viktig informasjon om brukeren)
                 // Sender med themeId slik at fil-innhold for aktivt tema vises i konteksten
                 const memoryContext = await buildMemoryContext(userId, conversation.themeId ?? null);
+
+                // Hvis samtalen er scoped til en person, hent dedikert person-kontekst
+                let personContext = '';
+                if (conversation.personId) {
+                        try {
+                                personContext = await buildPersonContext(userId, conversation.personId);
+                        } catch (err) {
+                                console.warn('buildPersonContext failed:', err);
+                        }
+                }
 		// Hent brukerens aktive mål og oppgaver for kontekst
 		const activeGoals = await getUserActiveGoalsAndTasks(userId);
 		
@@ -1542,7 +1553,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		});
 
 		const messages: ChatCompletionMessageParam[] = [
-			{ role: 'system', content: promptPrefix + systemPrompt + memoryContext + goalsContext + dateContext }
+			{ role: 'system', content: promptPrefix + systemPrompt + memoryContext + personContext + goalsContext + dateContext }
 		];
 
 		// Legg til historikk (unntatt den siste brukermeldingen som allerede er der)
