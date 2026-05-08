@@ -92,7 +92,31 @@
 	// ── Derived ──────────────────────────────────────────────────────
 	const currentStep = $derived(flow?.steps?.[currentStepIndex]);
 	const isFirstStep = $derived(currentStepIndex === 0);
-	const isLastStep = $derived(flow?.steps ? currentStepIndex === flow.steps.length - 1 : true);
+	function findNextStepIndex(from: number, data: Record<string, any>): number {
+		const steps = flow?.steps;
+		if (!steps) return from + 1;
+		let i = from + 1;
+		while (i < steps.length) {
+			const s = steps[i];
+			if (s.skipIf && s.skipIf(data)) i++;
+			else return i;
+		}
+		return steps.length; // means "no further step exists"
+	}
+	function findPreviousStepIndex(from: number, data: Record<string, any>): number {
+		const steps = flow?.steps;
+		if (!steps) return from - 1;
+		let i = from - 1;
+		while (i >= 0) {
+			const s = steps[i];
+			if (s.skipIf && s.skipIf(data)) i--;
+			else return i;
+		}
+		return -1;
+	}
+	const isLastStep = $derived(
+		flow?.steps ? findNextStepIndex(currentStepIndex, flowData) >= flow.steps.length : true
+	);
 
 	const canProceed = $derived.by(() => {
 		if (!currentStep) return false;
@@ -277,8 +301,9 @@
 	}
 
 	function handlePrevious() {
-		if (currentStepIndex > 0) {
-			currentStepIndex--;
+		const prev = findPreviousStepIndex(currentStepIndex, flowData);
+		if (prev >= 0) {
+			currentStepIndex = prev;
 			chatMessages = [];
 		}
 	}
@@ -303,7 +328,7 @@
 		if (isLastStep) {
 			await handleComplete();
 		} else {
-			currentStepIndex++;
+			currentStepIndex = findNextStepIndex(currentStepIndex, flowData);
 		}
 	}
 
@@ -484,6 +509,7 @@
 										{/each}
 									</select>
 								{:else if field.type === 'slider'}
+									{@const sliderVal = flowData[field.id] ?? field.defaultValue ?? field.min ?? 0}
 									<div class="fs-slider-wrap">
 										<input
 											type="range"
@@ -491,11 +517,14 @@
 											min={field.min ?? 0}
 											max={field.max ?? 100}
 											step={field.step ?? 1}
-											value={flowData[field.id] ?? field.defaultValue ?? field.min ?? 0}
+											value={sliderVal}
 											oninput={(e) => handleFieldChange(field.id, parseFloat(e.currentTarget.value))}
 										/>
-										<span class="fs-slider-val">{flowData[field.id] ?? field.defaultValue ?? field.min ?? 0}</span>
+										<span class="fs-slider-val">{sliderVal}</span>
 									</div>
+									{#if field.helperLabels && field.helperLabels[sliderVal] !== undefined}
+										<p class="fs-slider-helper">{field.helperLabels[sliderVal]}</p>
+									{/if}
 								{:else if field.type === 'multiselect'}
 									<div class="fs-multiselect">
 										{#each field.options ?? [] as opt (opt.value)}
@@ -843,6 +872,7 @@
 		cursor: pointer;
 	}
 	.fs-slider-val { font-size: 0.9rem; font-weight: 600; color: #8ba0f5; min-width: 36px; text-align: right; }
+	.fs-slider-helper { margin: 4px 0 8px; font-size: 0.85rem; color: #94a3b8; font-style: italic; }
 	.fs-multiselect { display: flex; flex-wrap: wrap; gap: 7px; }
 	.fs-ms-opt {
 		background: #141414;

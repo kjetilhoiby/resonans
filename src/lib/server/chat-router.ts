@@ -2,7 +2,7 @@ import { detectPromptFocusModules } from '$lib/server/openai';
 import { openai } from '$lib/server/openai';
 import { DOMAIN_METADATA, FAMILY_DOMAIN_TRIGGER } from '$lib/domains';
 
-export type ChatDomain = 'health' | 'economics' | 'food' | 'family' | 'planning' | 'themes' | 'general';
+export type ChatDomain = 'health' | 'economics' | 'food' | 'family' | 'egenfrekvens' | 'planning' | 'themes' | 'general';
 export type ChatSkill = 'widget_creation' | 'checklist_planning' | 'goal_planning' | 'theme_management' | 'general_chat';
 export type ChatMode = 'tool' | 'conversation' | 'domain';
 
@@ -49,6 +49,10 @@ export function routeChatRequest(input: string): ChatRoutingDecision {
 	if (focusModules.includes('family') || FAMILY_DOMAIN_TRIGGER.test(text)) {
 		domains.add('family');
 		domainHints.push(DOMAIN_METADATA.family.systemPromptHint);
+	}
+	if (focusModules.includes('egenfrekvens')) {
+		domains.add('egenfrekvens');
+		domainHints.push(DOMAIN_METADATA.egenfrekvens.systemPromptHint);
 	}
 	if (focusModules.includes('themes')) domains.add('themes');
 	if (focusModules.includes('planning')) domains.add('planning');
@@ -103,7 +107,7 @@ Bestem routing basert på meldingen:
   "domain"       — spørsmål om data: helse-statistikk, økonomi/forbruk, planer, temaer
   "conversation" — snakke, reflektere, utforske, få råd, diskutere (bruk sterkere modell)
   "book"         — brukeren vil gå til, snakke om eller fortsette en bestemt bok (kun hvis du er sikker)
-- domains: relevante domener, array av: "health", "economics", "food", "family", "planning", "themes", "general"
+- domains: relevante domener, array av: "health", "economics", "food", "family", "egenfrekvens", "planning", "themes", "general"
 - modelSuggestion: inkluder kun "gpt-5.4" hvis samtalen er dyp, refleksiv eller kreativ, ellers utelat feltet
 - hints: maks 2 korte hints (én setning hver) til hoved-assistenten, eller tom array
 - bookId: kun sett dette hvis mode="book" og du kan identifisere boken fra konteksten
@@ -152,7 +156,7 @@ export async function aiRouteChatRequest(
 			: regexFallback.mode;
 
 		const domains = (parsed.domains ?? [])
-			.filter((d): d is ChatDomain => ['health', 'economics', 'food', 'family', 'planning', 'themes', 'general'].includes(d));
+			.filter((d): d is ChatDomain => ['health', 'economics', 'food', 'family', 'egenfrekvens', 'planning', 'themes', 'general'].includes(d));
 
 		// Resolve routedBook if router identified a specific book
 		let routedBook: ChatRoutingDecision['routedBook'];

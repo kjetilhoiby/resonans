@@ -4,7 +4,13 @@ import { nudgeEvents } from '$lib/db/schema';
 
 export async function createNudgeEvent(params: {
 	userId: string;
-	nudgeType: 'plan_day' | 'close_day' | 'digest_day' | 'relationship_checkin_morning' | 'salary_received';
+	nudgeType:
+		| 'plan_day'
+		| 'close_day'
+		| 'digest_day'
+		| 'relationship_checkin_morning'
+		| 'salary_received'
+		| 'egenfrekvens_checkin';
 	mode: 'interactive' | 'digest';
 	channel?: string;
 	context?: Record<string, unknown>;
