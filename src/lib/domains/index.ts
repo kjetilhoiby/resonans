@@ -6,10 +6,12 @@ export * from './food/index';
 export * from './family/index';
 export * from './family/family-tree';
 export * from './egenfrekvens/index';
+export * from './home/index';
 
 import { FAMILY_DOMAIN_TRIGGER } from './family/index';
+import { HOME_DOMAIN_TRIGGER } from './home/index';
 
-export type DomainType = 'health' | 'economics' | 'food' | 'family' | 'egenfrekvens';
+export type DomainType = 'health' | 'economics' | 'food' | 'family' | 'egenfrekvens' | 'home';
 
 export interface DomainMetadata {
   type: DomainType;
@@ -48,6 +50,12 @@ export const DOMAIN_METADATA: Record<DomainType, DomainMetadata> = {
     label: 'Egenfrekvens',
     description: 'Selvinnsikt: humør, tanker, følelser, handlinger, refleksjon og overskudd/underskudd',
     systemPromptHint: 'Brukeren utforsker egenfrekvens (humør, tanker, følelser, handlinger). Tilby kort sjekkin-flyt og refleksjon. Bruk varm, ikke-klinisk tone.'
+  },
+  home: {
+    type: 'home',
+    label: 'Hus og hjem',
+    description: 'Hus-prosjekter, husarbeids-rutiner, sesong-oppgaver og hjem-apparater',
+    systemPromptHint: 'Brukeren fokuserer på hjem og bolig. Bruk query_home og manage_project (domain=home). Foreslå sjekkliste for sesong-oppgaver eller rutiner. Bruk apparat-sensor-data ved spørsmål om vask/oppvask.'
   }
 };
 
@@ -56,6 +64,10 @@ export function resolveDomainFromInput(input: string): DomainType | null {
 
   if (FAMILY_DOMAIN_TRIGGER.test(text)) {
     return 'family';
+  }
+
+  if (HOME_DOMAIN_TRIGGER.test(text)) {
+    return 'home';
   }
 
   if (/sovn|søvn|vekt|steg|trening|workout|withings|helse|gym|fitness|puls|mood|humør|screen.?time|skjermtid/.test(text)) {

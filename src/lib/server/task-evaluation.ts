@@ -36,14 +36,16 @@ export async function evaluateTaskForWeek(params: {
 		throw new Error(`Task not found: ${taskId}`);
 	}
 
-	// Verify ownership through goal
-	const ownerGoal = await db.query.goals.findFirst({
-		where: and(eq(goals.id, task.goalId), eq(goals.userId, userId)),
-		columns: { id: true }
-	});
+	// Verify ownership through goal (skip for tasks without a goal, e.g. seasonal home tasks)
+	if (task.goalId) {
+		const ownerGoal = await db.query.goals.findFirst({
+			where: and(eq(goals.id, task.goalId), eq(goals.userId, userId)),
+			columns: { id: true }
+		});
 
-	if (!ownerGoal) {
-		throw new Error(`Task not owned by user: ${taskId}`);
+		if (!ownerGoal) {
+			throw new Error(`Task not owned by user: ${taskId}`);
+		}
 	}
 
 	// Only evaluate if task has a weekly frequency and targetValue
@@ -126,7 +128,7 @@ export async function evaluateTasksForWeek(params: {
 
 	// Filter to only those belonging to this user's goals
 	const userGoalIds = new Set(userGoals.map((g) => g.id));
-	const userTasks = userTasksRaw.filter((t) => userGoalIds.has(t.goalId));
+	const userTasks = userTasksRaw.filter((t) => t.goalId !== null && userGoalIds.has(t.goalId));
 
 	const results: { taskId: string; evaluation: TaskEvaluation | null }[] = [];
 

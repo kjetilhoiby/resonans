@@ -690,6 +690,98 @@ const tools = [
 			{
 				type: 'function' as const,
 				function: {
+					name: 'query_home',
+					description: 'Hent hus/hjem-data: aktive hus-prosjekter med burn-up + budsjett, sesong-oppgaver, husarbeids-rutiner og siste apparat-events. queryType: overview | projects | seasonal_tasks | routines | appliance_events.',
+					parameters: {
+						type: 'object',
+						properties: {
+							queryType: { type: 'string', enum: ['overview', 'projects', 'seasonal_tasks', 'routines', 'appliance_events'] },
+							seasonOnly: { type: 'boolean' },
+							limit: { type: 'number' }
+						},
+						required: ['queryType']
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
+					name: 'manage_project',
+					description: "Opprett, oppdater, fullfør eller avbryt et prosjekt (domen-agnostisk). For hus-prosjekter, sett domain='home' og type='renovation'|'maintenance'|'repair'|'organize'. Legg rom og andre detaljer i metadata. Eksempel: { action:'create', domain:'home', type:'renovation', title:'Pusse opp baderom', budgetNok:80000, metadata:{ room:'bathroom' } }.",
+					parameters: {
+						type: 'object',
+						properties: {
+							action: { type: 'string', enum: ['create', 'update', 'complete', 'cancel'] },
+							projectId: { type: 'string' },
+							domain: { type: 'string' },
+							themeId: { type: 'string' },
+							title: { type: 'string' },
+							description: { type: 'string' },
+							type: { type: 'string' },
+							status: { type: 'string', enum: ['planning', 'active', 'paused', 'done', 'cancelled'] },
+							budgetNok: { type: 'number' },
+							startedAt: { type: 'string', description: 'ISO date' },
+							targetCompletionAt: { type: 'string', description: 'ISO date' },
+							metadata: { type: 'object' }
+						},
+						required: ['action']
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
+					name: 'query_projects',
+					description: 'List prosjekter med burn-up + kost-vs-budsjett. Filter på domain, status, themeId, eller søk i tittel. Bruk dette for å finne projectId før manage_project.update/complete eller link_to_project.',
+					parameters: {
+						type: 'object',
+						properties: {
+							domain: { type: 'string' },
+							status: { type: 'string', enum: ['planning', 'active', 'paused', 'done', 'cancelled'] },
+							themeId: { type: 'string' },
+							searchTitle: { type: 'string' },
+							projectId: { type: 'string' }
+						}
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
+					name: 'link_to_project',
+					description: 'Koble eksisterende oppgaver, sjekklist-items eller transaksjoner til et prosjekt (action=attach), eller fjern koblingen (action=detach). Linkede items teller mot burn-up; linkede transaksjoner teller mot kost-vs-budsjett. Bekreft med bruker før du kobler transaksjoner.',
+					parameters: {
+						type: 'object',
+						properties: {
+							action: { type: 'string', enum: ['attach', 'detach'] },
+							entity: { type: 'string', enum: ['task', 'checklist_item', 'transaction'] },
+							entityIds: { type: 'array', items: { type: 'string' } },
+							projectId: { type: 'string' }
+						},
+						required: ['action', 'entity', 'entityIds']
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
+					name: 'manage_home_routine',
+					description: "Opprett en hus-rutine — checklist med context='home_routine'. Eksempler: ukentlig vaskerutine, sesong-oppgaver, klesvask-rotasjon. Knytt til prosjekt via projectId hvis relevant.",
+					parameters: {
+						type: 'object',
+						properties: {
+							title: { type: 'string' },
+							emoji: { type: 'string' },
+							items: { type: 'array', items: { type: 'string' } },
+							projectId: { type: 'string' }
+						},
+						required: ['title', 'items']
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
 					name: 'query_food',
 					description: 'Hent mat-data: oppskrifter, ukemeny, pantry/fryserinnhold. queryType: recipes (oppskriftliste), meal_plan (krever weekContext "YYYY-W##"), pantry (kan filtreres på location), expiring_soon (varer som går ut, krever days).',
 					parameters: {
@@ -2003,6 +2095,36 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 					const args = JSON.parse(toolCall.function.arguments);
 					console.log('  👨‍👩‍👧 Manage relation:', args.action);
 					const result = await manageRelationTool.execute({ userId, ...args });
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'query_home') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  🏠 Query home:', args.queryType);
+					const { queryHomeTool } = await import('$lib/ai/tools/query-home');
+					const result = await queryHomeTool.execute({ userId, ...args });
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'manage_project') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  📋 Manage project:', args.action);
+					const { manageProjectTool } = await import('$lib/ai/tools/manage-project');
+					const result = await manageProjectTool.execute({ userId, ...args });
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'query_projects') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  📋 Query projects:', args.domain ?? 'all');
+					const { queryProjectsTool } = await import('$lib/ai/tools/query-projects');
+					const result = await queryProjectsTool.execute({ userId, ...args });
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'link_to_project') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  🔗 Link to project:', args.action, args.entity);
+					const { linkToProjectTool } = await import('$lib/ai/tools/link-to-project');
+					const result = await linkToProjectTool.execute({ userId, ...args });
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'manage_home_routine') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  🏠 Manage home routine:', args.title);
+					const { manageHomeRoutineTool } = await import('$lib/ai/tools/manage-home-routine');
+					const result = await manageHomeRoutineTool.execute({ userId, ...args });
 					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'record_tracking_event') {
 					const args = JSON.parse(toolCall.function.arguments);
