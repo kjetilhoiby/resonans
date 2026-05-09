@@ -1,5 +1,5 @@
 import { db } from '$lib/db';
-import { contextBriefs, goals, sensorEvents } from '$lib/db/schema';
+import { dreams, goals, sensorEvents } from '$lib/db/schema';
 import { and, desc, eq, gte, isNull, lte, or, sql } from 'drizzle-orm';
 import { openai } from '$lib/server/openai';
 import { getRecentReflections } from '$lib/server/reflections';
@@ -41,9 +41,9 @@ export class DreamService {
 		scopeStart.setDate(scopeStart.getDate() - scopeDays);
 
 		const inputs = await this.collectInputs(userId, scopeStart, now);
-		const previousBrief = await db.query.contextBriefs.findFirst({
-			where: and(eq(contextBriefs.userId, userId), eq(contextBriefs.kind, 'daily_dream')),
-			orderBy: [desc(contextBriefs.createdAt)]
+		const previousBrief = await db.query.dreams.findFirst({
+			where: and(eq(dreams.userId, userId), eq(dreams.kind, 'daily_dream')),
+			orderBy: [desc(dreams.createdAt)]
 		});
 
 		const payload = await this.synthesize({
@@ -54,7 +54,7 @@ export class DreamService {
 		}, opts.model);
 
 		const [created] = await db
-			.insert(contextBriefs)
+			.insert(dreams)
 			.values({
 				userId,
 				kind: 'daily_dream',
@@ -77,9 +77,9 @@ export class DreamService {
 
 		if (previousBrief && created) {
 			await db
-				.update(contextBriefs)
+				.update(dreams)
 				.set({ supersededBy: created.id })
-				.where(eq(contextBriefs.id, previousBrief.id));
+				.where(eq(dreams.id, previousBrief.id));
 		}
 
 		return created;
@@ -118,7 +118,7 @@ export class DreamService {
 			scopeStart: Date;
 			scopeEnd: Date;
 			inputs: Awaited<ReturnType<typeof DreamService.collectInputs>>;
-			previousBrief: typeof contextBriefs.$inferSelect | undefined;
+			previousBrief: typeof dreams.$inferSelect | undefined;
 		},
 		model = 'gpt-4o-mini'
 	): Promise<DreamPayload> {
@@ -195,14 +195,14 @@ export class DreamService {
 	 * Hent gjeldende drøm for chat-bruk. Velger den nyeste som ikke er utløpt.
 	 */
 	static async getActiveDream(userId: string, now = new Date()) {
-		return db.query.contextBriefs.findFirst({
+		return db.query.dreams.findFirst({
 			where: and(
-				eq(contextBriefs.userId, userId),
-				eq(contextBriefs.kind, 'daily_dream'),
-				or(isNull(contextBriefs.relevanceUntil), gte(contextBriefs.relevanceUntil, now)),
-				isNull(contextBriefs.supersededBy)
+				eq(dreams.userId, userId),
+				eq(dreams.kind, 'daily_dream'),
+				or(isNull(dreams.relevanceUntil), gte(dreams.relevanceUntil, now)),
+				isNull(dreams.supersededBy)
 			),
-			orderBy: [desc(contextBriefs.createdAt)]
+			orderBy: [desc(dreams.createdAt)]
 		});
 	}
 }

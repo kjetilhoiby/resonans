@@ -18,7 +18,7 @@ export interface CreateMemoryParams {
 
 /**
  * Opprett et nytt minne. Kun for stabile, kuraterte fakta — bruk reflections,
- * plan_artifacts, context_briefs, goal_tracks, eller themes.instructions /
+ * plan_artifacts, dreams, goal_tracks, eller themes.instructions /
  * theme_files.parsed_content for henholdsvis tidsstemplede observasjoner,
  * planlegging, LLM-synteser, mål-spor, tema-instruksjoner og fil-innhold.
  */
@@ -85,7 +85,7 @@ export async function deleteMemory(memoryId: string) {
  * - Stabile memories (langtidsfakta)
  * - Aktive plan-artefakter (dag/uke/måned)
  * - Siste refleksjoner
- * - (Senere: aktive context_briefs / drømmer)
+ * - Aktive dreams (LLM-syntese)
  *
  * Hvis themeId oppgis, vises tema-spesifikt fil-innhold ("FILER I TEMAET") først.
  */

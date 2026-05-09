@@ -79,7 +79,7 @@ const DDL_STATEMENTS = [
 	)`,
 	`CREATE UNIQUE INDEX IF NOT EXISTS "plan_artifacts_user_kind_period_uq" ON "plan_artifacts"("user_id","kind","period_key")`,
 	`CREATE INDEX IF NOT EXISTS "plan_artifacts_user_parent_idx" ON "plan_artifacts"("user_id","parent_period_key")`,
-	`CREATE TABLE IF NOT EXISTS "context_briefs" (
+	`CREATE TABLE IF NOT EXISTS "dreams" (
 		"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 		"user_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
 		"kind" text NOT NULL,
@@ -96,8 +96,8 @@ const DDL_STATEMENTS = [
 		"superseded_by" uuid,
 		"created_at" timestamp DEFAULT now() NOT NULL
 	)`,
-	`CREATE INDEX IF NOT EXISTS "context_briefs_user_kind_created_idx" ON "context_briefs"("user_id","kind","created_at")`,
-	`CREATE INDEX IF NOT EXISTS "context_briefs_user_relevance_idx" ON "context_briefs"("user_id","relevance_until")`,
+	`CREATE INDEX IF NOT EXISTS "dreams_user_kind_created_idx" ON "dreams"("user_id","kind","created_at")`,
+	`CREATE INDEX IF NOT EXISTS "dreams_user_relevance_idx" ON "dreams"("user_id","relevance_until")`,
 	`CREATE TABLE IF NOT EXISTS "goal_tracks" (
 		"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 		"user_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,

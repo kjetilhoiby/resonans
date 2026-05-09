@@ -534,7 +534,7 @@ export const pantryItems = pgTable('pantry_items', {
 // Memories - Stabile, kuraterte fakta om brukeren som AI husker.
 // MERK: Denne tabellen er for langtidsfakta (preferanser, verdier, relasjoner, helsebakgrunn).
 // Tidsstemplede refleksjoner -> reflections, planartefakter -> plan_artifacts,
-// LLM-synteser -> context_briefs, goal-tracks -> goal_tracks, theme-instruksjoner -> themes.instructions,
+// LLM-synteser -> dreams, goal-tracks -> goal_tracks, theme-instruksjoner -> themes.instructions,
 // parsed fil-innhold -> theme_files.parsed_content.
 export const memories = pgTable('memories', {
 	id: uuid('id').primaryKey().defaultRandom(),
@@ -602,9 +602,13 @@ export const planArtifacts = pgTable('plan_artifacts', {
 	idxPlanArtifactsParent: index('plan_artifacts_user_parent_idx').on(table.userId, table.parentPeriodKey)
 }));
 
-// Context briefs ("drømmer") - LLM-synteser av siste tids data og refleksjoner.
-// Lagres som ferdig-komprimert kontekst som chat kan plukke direkte.
-export const contextBriefs = pgTable('context_briefs', {
+// Dreams - LLM-syntetisert kontekst som chat plukker ferdig-komprimert.
+// Bærer den doble betydningen: tilbakeblikk ("natt-drøm") og retning ("våken drøm").
+//   kind = '{daily|weekly|monthly|yearly}_dream'  → tilbakeblikk på en periode
+//   kind = 'vision_{5year|yearly|quarterly|themed}' → langsiktig retning / ønske
+// inputs.previousBriefId kjeder synteser; supersededBy peker til ny versjon når
+// en drøm regenereres (f.eks. fordi en sen refleksjon kom inn).
+export const dreams = pgTable('dreams', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
 	kind: text('kind').notNull(), // 'daily_dream' | 'weekly_synthesis' | 'goal_synthesis' | 'theme_synthesis'
@@ -636,8 +640,8 @@ export const contextBriefs = pgTable('context_briefs', {
 	supersededBy: uuid('superseded_by'),
 	createdAt: timestamp('created_at').defaultNow().notNull()
 }, (table) => ({
-	idxContextBriefsUserKindCreated: index('context_briefs_user_kind_created_idx').on(table.userId, table.kind, table.createdAt),
-	idxContextBriefsUserRelevance: index('context_briefs_user_relevance_idx').on(table.userId, table.relevanceUntil)
+	idxDreamsUserKindCreated: index('dreams_user_kind_created_idx').on(table.userId, table.kind, table.createdAt),
+	idxDreamsUserRelevance: index('dreams_user_relevance_idx').on(table.userId, table.relevanceUntil)
 }));
 
 // Goal tracks - Per-metric-konfigurasjon av mål-spor (erstatter goal_tracks_v1 i memories).
@@ -835,7 +839,7 @@ export const usersRelations = relations(users, ({ many }) => ({
 	memories: many(memories),
 	reflections: many(reflections),
 	planArtifacts: many(planArtifacts),
-	contextBriefs: many(contextBriefs),
+	dreams: many(dreams),
 	goalTracks: many(goalTracks),
 	userWidgets: many(userWidgets),
 	themes: many(themes),
@@ -1033,8 +1037,8 @@ export const planArtifactsRelations = relations(planArtifacts, ({ one }) => ({
 	theme: one(themes, { fields: [planArtifacts.themeId], references: [themes.id] })
 }));
 
-export const contextBriefsRelations = relations(contextBriefs, ({ one }) => ({
-	user: one(users, { fields: [contextBriefs.userId], references: [users.id] })
+export const dreamsRelations = relations(dreams, ({ one }) => ({
+	user: one(users, { fields: [dreams.userId], references: [users.id] })
 }));
 
 export const goalTracksRelations = relations(goalTracks, ({ one }) => ({
