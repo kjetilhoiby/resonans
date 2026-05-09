@@ -6,6 +6,7 @@ import { METRIC_CATALOG, resolveMetricId, type MetricId } from '$lib/domain/metr
 import type { GoalTrack, GoalTrackKind, GoalWindow } from '$lib/domain/goal-tracks';
 import { upsertGoalTrack } from './goal-tracks';
 import { openai } from './openai';
+import { PersonMentionService } from './services/person-mention-service';
 
 export interface GoalCreationParams {
 	userId: string;
@@ -36,6 +37,7 @@ export interface TaskCreationParams {
 	periodId?: string;
 	targetValue?: number;
 	unit?: string;
+	personId?: string | null;
 }
 
 function normalizeGoalText(title: string, description: string): string {
@@ -260,8 +262,19 @@ export async function createTask(params: TaskCreationParams) {
 		periodId: params.periodId || null,
 		targetValue: params.targetValue || null,
 		unit: params.unit || null,
+		personId: params.personId ?? null,
 		status: 'active'
 	}).returning();
+
+	if (params.userId) {
+		PersonMentionService.indexTask(
+			params.userId,
+			task.id,
+			params.title,
+			params.description ?? null,
+			params.personId ? [params.personId] : []
+		).catch((err) => console.warn('person-mention task indexing failed:', err));
+	}
 
 	return task;
 }

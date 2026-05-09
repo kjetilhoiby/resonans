@@ -2,6 +2,7 @@ import { db, pgClient } from '$lib/db';
 import { conversations, messages, themes, books } from '$lib/db/schema';
 import { eq, desc, and, asc, sql, inArray, isNull } from 'drizzle-orm';
 import { ensureConversationThemeIdColumn } from '$lib/server/conversation-schema';
+import { PersonMentionService } from '$lib/server/services/person-mention-service';
 
 export interface CreateConversationParams {
 	userId: string;
@@ -124,6 +125,13 @@ export async function addMessage(params: AddMessageParams) {
 	await db.update(conversations)
 		.set(updates)
 		.where(eq(conversations.id, params.conversationId));
+
+	// Indekser personer som er nevnt i meldingen — fire-and-forget
+	if (conversation && (params.role === 'user' || params.role === 'assistant')) {
+		PersonMentionService.indexMessage(conversation.userId, message.id, params.content).catch((err) => {
+			console.warn('person-mention indexing failed:', err);
+		});
+	}
 
 	return message;
 }

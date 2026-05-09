@@ -7,6 +7,7 @@ export const THEME_FILE_MEMORY_SOURCE_PREFIX = 'theme_file:';
 export interface CreateMemoryParams {
 	userId: string;
 	themeId?: string | null;
+	personId?: string | null;
 	category: 'personal' | 'relationship' | 'fitness' | 'mental_health' | 'preferences' | 'other';
 	content: string;
 	importance?: 'high' | 'medium' | 'low';
@@ -14,16 +15,17 @@ export interface CreateMemoryParams {
 }
 
 /**
- * Opprett et nytt minne (kan være generelt eller tema-spesifikt)
+ * Opprett et nytt minne (kan være generelt, tema-spesifikt eller person-spesifikt)
  */
 export async function createMemory(params: CreateMemoryParams) {
-	const { userId, themeId, category, content, importance = 'medium', source } = params;
+	const { userId, themeId, personId, category, content, importance = 'medium', source } = params;
 
 	const [memory] = await db
 		.insert(memories)
 		.values({
 			userId,
 			themeId: themeId || null,
+			personId: personId || null,
 			category,
 			content,
 			importance,
@@ -32,6 +34,17 @@ export async function createMemory(params: CreateMemoryParams) {
 		.returning();
 
 	return memory;
+}
+
+/**
+ * Hent memories knyttet til en bestemt person
+ */
+export async function getMemoriesForPerson(userId: string, personId: string, limit = 20) {
+	return db.query.memories.findMany({
+		where: and(eq(memories.userId, userId), eq(memories.personId, personId)),
+		orderBy: [desc(memories.importance), desc(memories.createdAt)],
+		limit
+	});
 }
 
 /**

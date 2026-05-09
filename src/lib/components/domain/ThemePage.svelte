@@ -17,6 +17,7 @@
 	import HealthDashboard from './HealthDashboard.svelte';
 	import EconomicsDashboard from './EconomicsDashboard.svelte';
 	import FoodDashboard from './FoodDashboard.svelte';
+	import FamilyDashboard from './FamilyDashboard.svelte';
 	import TripDashboard from './TripDashboard.svelte';
 	import TripListsPanel from './TripListsPanel.svelte';
 	import BookDashboard from './BookDashboard.svelte';
@@ -25,7 +26,7 @@
 	import TriageCard from '../composed/TriageCard.svelte';
 	import GoalRing from '../ui/GoalRing.svelte';
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
-	import { fetchDashboard, getCachedDashboard, type EconomicsDashboardData, type HealthDashboardData, type TravelDashboardData, type FoodDashboardData } from '$lib/client/dashboard-cache';
+	import { fetchDashboard, getCachedDashboard, type EconomicsDashboardData, type HealthDashboardData, type TravelDashboardData, type FoodDashboardData, type FamilyDashboardData } from '$lib/client/dashboard-cache';
 	import { getThemeDashboardDefinition, resolveThemeDashboardKind } from '$lib/domain/theme-dashboard-registry';
 	import { finishNavMetric, startNavMetric } from '$lib/client/nav-metrics';
 	import { ChatState } from '$lib/client/chat-state.svelte';
@@ -175,6 +176,7 @@
 	let economicsDashboard = $state<EconomicsDashboardData | null>(null);
 	let travelDashboard = $state<TravelDashboardData | null>(null);
 	let foodDashboard = $state<FoodDashboardData | null>(null);
+	let familyDashboard = $state<FamilyDashboardData | null>(null);
 	let dashboardLoading = $state(false);
 	let dashboardLoaded = $state(false);
 	let dashboardError = $state('');
@@ -333,6 +335,11 @@
 		};
 	});
 
+	const familyDashboardProps = $derived.by(() => {
+		if (activeDashboardKind !== 'family' || !familyDashboard) return null;
+		return { data: familyDashboard };
+	});
+
 	onMount(() => {
 		finishNavMetric('tema');
 		void preloadCode('/');
@@ -377,6 +384,8 @@
 			travelDashboard = cached.data as TravelDashboardData;
 		} else if (kind === 'food') {
 			foodDashboard = cached.data as FoodDashboardData;
+		} else if (kind === 'family') {
+			familyDashboard = cached.data as FamilyDashboardData;
 		}
 
 		return cached;
@@ -413,6 +422,8 @@
 				travelDashboard = result.data as TravelDashboardData;
 			} else if (kind === 'food') {
 				foodDashboard = result.data as FoodDashboardData;
+			} else if (kind === 'family') {
+				familyDashboard = result.data as FamilyDashboardData;
 			}
 			dashboardLoaded = true;
 		} catch {
@@ -1548,6 +1559,12 @@
 				{#if foodDashboardProps}
 					<FoodDashboard
 						{...foodDashboardProps}
+					/>
+				{/if}
+
+				{#if familyDashboardProps}
+					<FamilyDashboard
+						{...familyDashboardProps}
 					/>
 				{/if}
 

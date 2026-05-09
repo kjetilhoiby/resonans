@@ -21,10 +21,32 @@
 	}
 
 	let { role, text, branch, actions }: Props = $props();
+
+	// Tokeniserer teksten i [tekst, mention, tekst, mention, …] slik at
+	// `@PersonName` kan vises som en stylet pille.
+	type Segment = { kind: 'text'; value: string } | { kind: 'mention'; value: string };
+
+	const segments = $derived.by<Segment[]>(() => {
+		const out: Segment[] = [];
+		const re = /@([\p{L}][\p{L}\p{N}_-]{1,40})/gu;
+		let last = 0;
+		let m: RegExpExecArray | null;
+		while ((m = re.exec(text)) !== null) {
+			if (m.index > last) out.push({ kind: 'text', value: text.slice(last, m.index) });
+			out.push({ kind: 'mention', value: m[1] });
+			last = m.index + m[0].length;
+		}
+		if (last < text.length) out.push({ kind: 'text', value: text.slice(last) });
+		return out.length ? out : [{ kind: 'text', value: text }];
+	});
 </script>
 
 <div class="row row-{role}">
-	<div class="bubble bubble-{role}">{text}</div>
+	<div class="bubble bubble-{role}">
+		{#each segments as seg}
+			{#if seg.kind === 'mention'}<span class="mention">@{seg.value}</span>{:else}{seg.value}{/if}
+		{/each}
+	</div>
 	{#if branch}
 		<div class="branch-tag">→ {branch}</div>
 	{/if}
@@ -104,5 +126,15 @@
 		border-color: #555;
 		color: #ccc;
 		background: #1a1a1a;
+	}
+
+	.mention {
+		display: inline;
+		padding: 1px 6px;
+		margin: 0 1px;
+		border-radius: 6px;
+		background: rgba(124, 142, 245, 0.18);
+		color: #b9c2ff;
+		font-weight: 500;
 	}
 </style>

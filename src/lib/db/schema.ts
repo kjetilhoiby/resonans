@@ -196,6 +196,7 @@ export const goals = pgTable('goals', {
 	userId: text('user_id').references(() => users.id).notNull(),
 	categoryId: uuid('category_id').references(() => categories.id),
 	themeId: uuid('theme_id').references(() => themes.id), // Ny: kobling til tema (nullable for bakoverkompatibilitet)
+	personId: uuid('person_id').references((): AnyPgColumn => persons.id, { onDelete: 'set null' }), // Mål knyttet til en bestemt person
 	title: text('title').notNull(),
 	description: text('description'),
 	targetDate: timestamp('target_date'),
@@ -204,13 +205,15 @@ export const goals = pgTable('goals', {
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
 }, (table) => ({
-	idxUserId: index('goals_user_id_idx').on(table.userId)
+	idxUserId: index('goals_user_id_idx').on(table.userId),
+	idxPerson: index('goals_person_idx').on(table.personId)
 }));
 
 // Konkrete oppgaver knyttet til mål
 export const tasks = pgTable('tasks', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	goalId: uuid('goal_id').references(() => goals.id).notNull(),
+	personId: uuid('person_id').references((): AnyPgColumn => persons.id, { onDelete: 'set null' }), // Oppgave knyttet til en bestemt person
 	title: text('title').notNull(),
 	description: text('description'),
 	frequency: text('frequency'), // daily, weekly, monthly, once
@@ -222,7 +225,9 @@ export const tasks = pgTable('tasks', {
 	status: text('status').notNull().default('active'),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
-});
+}, (table) => ({
+	idxPerson: index('tasks_person_idx').on(table.personId)
+}));
 
 // Fremdriftsregistreringer
 export const progress = pgTable('progress', {
@@ -268,12 +273,15 @@ export const conversations = pgTable('conversations', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	userId: text('user_id').references(() => users.id).notNull(),
 	themeId: uuid('theme_id').references((): AnyPgColumn => themes.id, { onDelete: 'set null' }),
+	personId: uuid('person_id').references((): AnyPgColumn => persons.id, { onDelete: 'set null' }), // Samtale dedikert til en relasjon (kan kombineres med themeId)
 	title: text('title'),
 	starred: boolean('starred').default(false).notNull(),
 	archived: boolean('archived').default(false).notNull(),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
-});
+}, (table) => ({
+	idxPerson: index('conversations_person_idx').on(table.personId)
+}));
 
 // Meldinger i samtaler
 export const messages = pgTable('messages', {
@@ -308,8 +316,9 @@ export const nudgeEvents = pgTable('nudge_events', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
 	channel: text('channel').notNull().default('google_chat'),
-	nudgeType: text('nudge_type').notNull(), // 'plan_day' | 'close_day' | 'digest_day' | 'relationship_checkin_morning'
+	nudgeType: text('nudge_type').notNull(), // 'plan_day' | 'close_day' | 'digest_day' | 'relationship_checkin_morning' | 'family_parent_time_low' | 'family_relation_neglect' | 'family_birthday'
 	mode: text('mode'), // 'interactive' | 'digest'
+	personId: uuid('person_id').references((): AnyPgColumn => persons.id, { onDelete: 'set null' }), // Hvilken person nudgen handler om
 	context: jsonb('context').$type<Record<string, unknown>>(),
 	sentAt: timestamp('sent_at'),
 	openedAt: timestamp('opened_at'),
@@ -525,6 +534,7 @@ export const memories = pgTable('memories', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	userId: text('user_id').references(() => users.id).notNull(),
 	themeId: uuid('theme_id').references(() => themes.id), // Ny: memories kan være tema-spesifikke
+	personId: uuid('person_id').references((): AnyPgColumn => persons.id, { onDelete: 'set null' }), // Memory om en bestemt person (familie/venn/kollega)
 	category: text('category').notNull(), // 'personal', 'relationship', 'fitness', 'mental_health', 'preferences'
 	content: text('content').notNull(),
 	importance: text('importance').notNull().default('medium'), // 'high', 'medium', 'low'
@@ -533,7 +543,78 @@ export const memories = pgTable('memories', {
 	updatedAt: timestamp('updated_at').defaultNow().notNull(),
 	lastAccessedAt: timestamp('last_accessed_at').defaultNow().notNull()
 }, (table) => ({
-	idxUserId: index('memories_user_id_idx').on(table.userId)
+	idxUserId: index('memories_user_id_idx').on(table.userId),
+	idxPerson: index('memories_person_idx').on(table.personId)
+}));
+
+// ─── Family / Network Domain ────────────────────────────────────
+// Personer i brukerens nettverk: barn, partner, foreldre, svigerfamilie, venner, kolleger.
+export const persons = pgTable('persons', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	name: text('name').notNull(),                                // visningsnavn ("Nils")
+	fullName: text('full_name'),                                  // valgfritt fullt navn
+	nickname: text('nickname'),
+	birthDate: date('birth_date'),
+	kind: text('kind').notNull().default('other'),                // 'child' | 'partner' | 'parent' | 'sibling' | 'in_law' | 'extended_family' | 'friend' | 'colleague' | 'self' | 'other'
+	avatarEmoji: text('avatar_emoji'),
+	notes: text('notes'),
+	spondGroupIds: text('spond_group_ids').array().notNull().default(sql`ARRAY[]::text[]`),
+	emailAddresses: text('email_addresses').array().notNull().default(sql`ARRAY[]::text[]`),
+	aliases: text('aliases').array().notNull().default(sql`ARRAY[]::text[]`), // ekstra navn/varianter for navne-match
+	archived: boolean('archived').notNull().default(false),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	idxUserKind: index('persons_user_kind_idx').on(table.userId, table.kind),
+	idxUserActive: index('persons_user_active_idx').on(table.userId, table.archived)
+}));
+
+// Relasjoner mellom personer (eller mellom self og person når fromPersonId er null).
+// NB: kalles `personRelations` i koden for å ikke kollidere med drizzle-orm sin `relations()`-helper.
+export const personRelations = pgTable('person_relations', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	fromPersonId: uuid('from_person_id').references((): AnyPgColumn => persons.id, { onDelete: 'cascade' }), // null = self
+	toPersonId: uuid('to_person_id').references((): AnyPgColumn => persons.id, { onDelete: 'cascade' }).notNull(),
+	relationType: text('relation_type').notNull(),               // 'family' | 'friend' | 'work'
+	subType: text('sub_type'),                                    // 'parent_of' | 'child_of' | 'married_to' | 'sibling_of' | 'in_law_of' | 'friend_of' | 'colleague_of'
+	closeness: integer('closeness'),                              // 1-5 (subjektiv nærhet)
+	notes: text('notes'),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	uniqRelation: uniqueIndex('person_relations_user_from_to_subtype_unique').on(table.userId, table.fromPersonId, table.toPersonId, table.subType),
+	idxFrom: index('person_relations_from_idx').on(table.fromPersonId),
+	idxTo: index('person_relations_to_idx').on(table.toPersonId),
+	idxUserType: index('person_relations_user_type_idx').on(table.userId, table.relationType)
+}));
+
+// Indeks over hvilke personer som er nevnt i en gitt melding (eksplisitt eller utledet).
+export const messagePersonMentions = pgTable('message_person_mentions', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	messageId: uuid('message_id').references(() => messages.id, { onDelete: 'cascade' }).notNull(),
+	personId: uuid('person_id').references((): AnyPgColumn => persons.id, { onDelete: 'cascade' }).notNull(),
+	confidence: text('confidence').notNull().default('inferred'), // 'explicit' | 'inferred'
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => ({
+	uniqMention: uniqueIndex('message_person_mentions_msg_person_unique').on(table.messageId, table.personId),
+	idxPersonCreated: index('message_person_mentions_person_created_idx').on(table.personId, table.createdAt),
+	idxUserCreated: index('message_person_mentions_user_created_idx').on(table.userId, table.createdAt)
+}));
+
+// Indeks over hvilke personer som er nevnt i en task.
+export const taskPersonMentions = pgTable('task_person_mentions', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	taskId: uuid('task_id').references(() => tasks.id, { onDelete: 'cascade' }).notNull(),
+	personId: uuid('person_id').references((): AnyPgColumn => persons.id, { onDelete: 'cascade' }).notNull(),
+	confidence: text('confidence').notNull().default('inferred'), // 'explicit' | 'inferred'
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => ({
+	uniqMention: uniqueIndex('task_person_mentions_task_person_unique').on(table.taskId, table.personId),
+	idxPersonCreated: index('task_person_mentions_person_created_idx').on(table.personId, table.createdAt)
 }));
 
 // Web push subscriptions for PWA notifications
@@ -665,7 +746,11 @@ export const usersRelations = relations(users, ({ many }) => ({
 	trackingSeries: many(trackingSeries),
 	trackingSeriesExamples: many(trackingSeriesExamples),
 	nudgeEvents: many(nudgeEvents),
-	apiSecrets: many(userApiSecrets)
+	apiSecrets: many(userApiSecrets),
+	persons: many(persons),
+	personRelations: many(personRelations),
+	messagePersonMentions: many(messagePersonMentions),
+	taskPersonMentions: many(taskPersonMentions)
 }));
 
 export const authAccountsRelations = relations(authAccounts, ({ one }) => ({
@@ -734,6 +819,10 @@ export const goalsRelations = relations(goals, ({ one, many }) => ({
 		fields: [goals.themeId],
 		references: [themes.id]
 	}),
+	person: one(persons, {
+		fields: [goals.personId],
+		references: [persons.id]
+	}),
 	tasks: many(tasks)
 }));
 
@@ -742,8 +831,13 @@ export const tasksRelations = relations(tasks, ({ one, many }) => ({
 		fields: [tasks.goalId],
 		references: [goals.id]
 	}),
+	person: one(persons, {
+		fields: [tasks.personId],
+		references: [persons.id]
+	}),
 	progress: many(progress),
-	trackingSeries: many(trackingSeries)
+	trackingSeries: many(trackingSeries),
+	personMentions: many(taskPersonMentions)
 }));
 
 export const progressRelations = relations(progress, ({ one }) => ({
@@ -786,15 +880,20 @@ export const conversationsRelations = relations(conversations, ({ one, many }) =
 		fields: [conversations.themeId],
 		references: [themes.id]
 	}),
+	person: one(persons, {
+		fields: [conversations.personId],
+		references: [persons.id]
+	}),
 	messages: many(messages),
 	trackingSeries: many(trackingSeries)
 }));
 
-export const messagesRelations = relations(messages, ({ one }) => ({
+export const messagesRelations = relations(messages, ({ one, many }) => ({
 	conversation: one(conversations, {
 		fields: [messages.conversationId],
 		references: [conversations.id]
-	})
+	}),
+	personMentions: many(messagePersonMentions)
 }));
 
 export const memoriesRelations = relations(memories, ({ one }) => ({
@@ -805,6 +904,74 @@ export const memoriesRelations = relations(memories, ({ one }) => ({
 	theme: one(themes, {
 		fields: [memories.themeId],
 		references: [themes.id]
+	}),
+	person: one(persons, {
+		fields: [memories.personId],
+		references: [persons.id]
+	})
+}));
+
+// Persons + relations + mention relations
+export const personsRelations = relations(persons, ({ one, many }) => ({
+	user: one(users, {
+		fields: [persons.userId],
+		references: [users.id]
+	}),
+	memories: many(memories),
+	goals: many(goals),
+	tasks: many(tasks),
+	conversations: many(conversations),
+	sensorEvents: many(sensorEvents),
+	outgoingRelations: many(personRelations, { relationName: 'person_relations_from' }),
+	incomingRelations: many(personRelations, { relationName: 'person_relations_to' }),
+	messageMentions: many(messagePersonMentions),
+	taskMentions: many(taskPersonMentions)
+}));
+
+export const personRelationsRelations = relations(personRelations, ({ one }) => ({
+	user: one(users, {
+		fields: [personRelations.userId],
+		references: [users.id]
+	}),
+	fromPerson: one(persons, {
+		fields: [personRelations.fromPersonId],
+		references: [persons.id],
+		relationName: 'person_relations_from'
+	}),
+	toPerson: one(persons, {
+		fields: [personRelations.toPersonId],
+		references: [persons.id],
+		relationName: 'person_relations_to'
+	})
+}));
+
+export const messagePersonMentionsRelations = relations(messagePersonMentions, ({ one }) => ({
+	user: one(users, {
+		fields: [messagePersonMentions.userId],
+		references: [users.id]
+	}),
+	message: one(messages, {
+		fields: [messagePersonMentions.messageId],
+		references: [messages.id]
+	}),
+	person: one(persons, {
+		fields: [messagePersonMentions.personId],
+		references: [persons.id]
+	})
+}));
+
+export const taskPersonMentionsRelations = relations(taskPersonMentions, ({ one }) => ({
+	user: one(users, {
+		fields: [taskPersonMentions.userId],
+		references: [users.id]
+	}),
+	task: one(tasks, {
+		fields: [taskPersonMentions.taskId],
+		references: [tasks.id]
+	}),
+	person: one(persons, {
+		fields: [taskPersonMentions.personId],
+		references: [persons.id]
 	})
 }));
 
@@ -819,6 +986,10 @@ export const nudgeEventsRelations = relations(nudgeEvents, ({ one }) => ({
 	user: one(users, {
 		fields: [nudgeEvents.userId],
 		references: [users.id]
+	}),
+	person: one(persons, {
+		fields: [nudgeEvents.personId],
+		references: [persons.id]
 	})
 }));
 
@@ -897,6 +1068,7 @@ export const sensorEvents = pgTable('sensor_events', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	userId: text('user_id').references(() => users.id).notNull(),
 	sensorId: uuid('sensor_id').references(() => sensors.id).notNull(),
+	personId: uuid('person_id').references((): AnyPgColumn => persons.id, { onDelete: 'set null' }), // Event tagget med person (f.eks. Spond-event for et bestemt barn)
 	eventType: text('event_type').notNull(), // 'measurement', 'activity', 'state_change'
 	dataType: text('data_type'), // 'weight', 'sleep', 'activity', 'workout', 'heartrate', etc. (for easier filtering)
 	timestamp: timestamp('timestamp').notNull(), // When the event happened (sensor time)
@@ -952,6 +1124,7 @@ export const sensorEvents = pgTable('sensor_events', {
 	createdAt: timestamp('created_at').defaultNow().notNull() // When we received it
 }, (table) => ({
 	idxUserDataTypeTimestamp: index('sensor_events_user_data_type_timestamp_idx').on(table.userId, table.dataType, table.timestamp),
+	idxPersonTimestamp: index('sensor_events_person_timestamp_idx').on(table.personId, table.timestamp),
 	// Partial unique index for non-bank events (excludes bank_balance and bank_transaction)
 	// Bank transactions use semantic deduplication (accountId+date+desc+amount) instead
 	uniqSensorDatatypeTimestamp: uniqueIndex('sensor_events_sensor_datatype_timestamp_unique').on(table.sensorId, table.dataType, table.timestamp).where(sql`data_type NOT IN ('bank_balance', 'bank_transaction')`),
@@ -1438,6 +1611,10 @@ export const sensorEventsRelations = relations(sensorEvents, ({ one }) => ({
 	sensor: one(sensors, {
 		fields: [sensorEvents.sensorId],
 		references: [sensors.id]
+	}),
+	person: one(persons, {
+		fields: [sensorEvents.personId],
+		references: [persons.id]
 	})
 }));
 

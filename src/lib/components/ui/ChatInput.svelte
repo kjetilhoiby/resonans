@@ -10,6 +10,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import Icon from './Icon.svelte';
+	import MentionAutocomplete from './MentionAutocomplete.svelte';
 
 	type AttachmentAction = 'camera' | 'voice' | 'file';
 
@@ -22,6 +23,7 @@
 		autoFocus?: boolean;
 		showActionRig?: boolean;
 		interceptOpen?: boolean;
+		enableMentions?: boolean;
 		onAttachment?: (kind: AttachmentAction, draft: string) => void;
 		onMood?: (draft: string) => void;
 		onOpen?: () => void;
@@ -39,6 +41,7 @@
 		autoFocus = false,
 		showActionRig = false,
 		interceptOpen = false,
+		enableMentions = true,
 		onAttachment,
 		onMood,
 		onOpen,
@@ -161,6 +164,22 @@
 		onkeydown={onKeyDown}
 		aria-label="Melding"
 	></textarea>
+
+	{#if enableMentions}
+		<MentionAutocomplete
+			textareaEl={textareaEl}
+			value={text}
+			onValueChange={(t) => {
+				text = t;
+				onTextChange?.(t);
+				if (textareaEl) {
+					textareaEl.style.height = 'auto';
+					textareaEl.style.height = Math.min(textareaEl.scrollHeight, 120) + 'px';
+				}
+			}}
+			disabled={disabled}
+		/>
+	{/if}
 
 	{#if showActionRig}
 		<div class="ci-actions-rig" aria-label="Input-handlinger">

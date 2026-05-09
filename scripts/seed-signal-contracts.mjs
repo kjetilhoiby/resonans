@@ -98,6 +98,24 @@ const contracts = [
 		ownerDomain: 'relationship',
 		allowedConsumerDomains: ['home'],
 		description: 'Composite practical stress index over 14 days.'
+	},
+	{
+		signalType: 'family_parent_time_low_7d',
+		ownerDomain: 'family',
+		allowedConsumerDomains: ['family', 'relationship'],
+		description: 'Per-child weekly parent-time below configured target.'
+	},
+	{
+		signalType: 'family_relation_neglect_30d',
+		ownerDomain: 'family',
+		allowedConsumerDomains: ['family', 'relationship'],
+		description: 'Per-person relation has had no memory or event for 30+ days (often parents/in-laws).'
+	},
+	{
+		signalType: 'family_birthday_upcoming_7d',
+		ownerDomain: 'family',
+		allowedConsumerDomains: ['family', 'relationship'],
+		description: 'A family member or close friend has a birthday within 7 days.'
 	}
 ];
 

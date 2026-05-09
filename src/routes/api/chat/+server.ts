@@ -7,10 +7,14 @@ import { getOrCreateConversation, createConversation, addMessage, getConversatio
 import { logActivity } from '$lib/server/activities';
 import { recordTrackingEvent } from '$lib/server/tracking-series';
 import { buildMemoryContext, createMemory } from '$lib/server/memories';
+import { buildPersonContext } from '$lib/server/person-context';
 import { isFutureVisionText, seedThemeInstructionFromFutureVision } from '$lib/server/theme-instructions';
 import { queryEconomicsTool } from '$lib/ai/tools/query-economics';
 import { queryFoodTool } from '$lib/ai/tools/query-food';
 import { manageRecipeTool } from '$lib/ai/tools/manage-recipe';
+import { queryFamilyTool } from '$lib/ai/tools/query-family';
+import { managePersonTool } from '$lib/ai/tools/manage-person';
+import { manageRelationTool } from '$lib/ai/tools/manage-relation';
 import { manageMealPlanTool } from '$lib/ai/tools/manage-meal-plan';
 import { managePantryTool } from '$lib/ai/tools/manage-pantry';
 import { generateShoppingListTool } from '$lib/ai/tools/generate-shopping-list';
@@ -614,6 +618,70 @@ const tools = [
 							}
 						},
 						required: ['queryType']
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
+					name: 'query_family',
+					description: 'Hent familie-/relasjonsdata: alle personer, relasjoner, eller detaljert info om én person (memories, åpne mål, kommende events, mentions). queryType: persons | relations | person_detail (krever personId) | find_by_name (krever name).',
+					parameters: {
+						type: 'object',
+						properties: {
+							queryType: { type: 'string', enum: ['persons', 'relations', 'person_detail', 'find_by_name'] },
+							personId: { type: 'string' },
+							name: { type: 'string' },
+							kind: { type: 'string' },
+							limit: { type: 'number' }
+						},
+						required: ['queryType']
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
+					name: 'manage_person',
+					description: 'Opprett, oppdater eller arkiver en person. Bruk suggest_create FØR create når personen kun er nevnt i samtale. action=create krever name. action=update/archive krever personId.',
+					parameters: {
+						type: 'object',
+						properties: {
+							action: { type: 'string', enum: ['suggest_create', 'create', 'update', 'archive'] },
+							personId: { type: 'string' },
+							name: { type: 'string' },
+							fullName: { type: 'string' },
+							nickname: { type: 'string' },
+							birthDate: { type: 'string', description: 'YYYY-MM-DD' },
+							kind: { type: 'string', enum: ['child', 'partner', 'parent', 'sibling', 'in_law', 'extended_family', 'friend', 'colleague', 'self', 'other'] },
+							avatarEmoji: { type: 'string' },
+							notes: { type: 'string' },
+							spondGroupIds: { type: 'array', items: { type: 'string' } },
+							emailAddresses: { type: 'array', items: { type: 'string' } },
+							aliases: { type: 'array', items: { type: 'string' } }
+						},
+						required: ['action']
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
+					name: 'manage_relation',
+					description: 'Opprett eller slett relasjon mellom to personer. relationType: family|friend|work. fromPersonId=null betyr selv (brukeren).',
+					parameters: {
+						type: 'object',
+						properties: {
+							action: { type: 'string', enum: ['create', 'delete'] },
+							relationId: { type: 'string' },
+							fromPersonId: { type: 'string' },
+							toPersonId: { type: 'string' },
+							relationType: { type: 'string', enum: ['family', 'friend', 'work'] },
+							subType: { type: 'string', enum: ['parent_of', 'child_of', 'married_to', 'partnered_with', 'sibling_of', 'in_law_of', 'friend_of', 'colleague_of'] },
+							closeness: { type: 'number', minimum: 1, maximum: 5 },
+							notes: { type: 'string' }
+						},
+						required: ['action']
 					}
 				}
 			},
@@ -1422,6 +1490,16 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		// Bygg memory context (viktig informasjon om brukeren)
                 // Sender med themeId slik at fil-innhold for aktivt tema vises i konteksten
                 const memoryContext = await buildMemoryContext(userId, conversation.themeId ?? null);
+
+                // Hvis samtalen er scoped til en person, hent dedikert person-kontekst
+                let personContext = '';
+                if (conversation.personId) {
+                        try {
+                                personContext = await buildPersonContext(userId, conversation.personId);
+                        } catch (err) {
+                                console.warn('buildPersonContext failed:', err);
+                        }
+                }
 		// Hent brukerens aktive mål og oppgaver for kontekst
 		const activeGoals = await getUserActiveGoalsAndTasks(userId);
 		
@@ -1475,7 +1553,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		});
 
 		const messages: ChatCompletionMessageParam[] = [
-			{ role: 'system', content: promptPrefix + systemPrompt + memoryContext + goalsContext + dateContext }
+			{ role: 'system', content: promptPrefix + systemPrompt + memoryContext + personContext + goalsContext + dateContext }
 		];
 
 		// Legg til historikk (unntatt den siste brukermeldingen som allerede er der)
@@ -1908,6 +1986,21 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 					const args = JSON.parse(toolCall.function.arguments);
 					console.log('  🍽️ Analyze meal image');
 					const result = await analyzeMealImageTool.execute(args);
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'query_family') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  👨‍👩‍👧 Query family:', args.queryType);
+					const result = await queryFamilyTool.execute({ userId, ...args });
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'manage_person') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  👨‍👩‍👧 Manage person:', args.action);
+					const result = await managePersonTool.execute({ userId, ...args });
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'manage_relation') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  👨‍👩‍👧 Manage relation:', args.action);
+					const result = await manageRelationTool.execute({ userId, ...args });
 					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'record_tracking_event') {
 					const args = JSON.parse(toolCall.function.arguments);

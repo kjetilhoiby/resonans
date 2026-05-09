@@ -14,11 +14,14 @@ export type FlowId =
 	| 'planning_goal_setup'
 	| 'planning_month_plan'
 	| 'food_meal_chat'
+	| 'family_onboarding'
+	| 'family_summer_planning'
+	| 'family_relation_check_in'
 	| 'day_plan'
 	| 'day_close'
 	| 'egenfrekvens_checkin';
 
-export type FlowDomain = 'health' | 'economics' | 'food' | 'planning' | 'general' | 'egenfrekvens';
+export type FlowDomain = 'health' | 'economics' | 'food' | 'family' | 'planning' | 'general' | 'egenfrekvens';
 
 export type FlowTrigger = 'manual' | 'auto_suggest' | 'onboarding';
 

@@ -22,7 +22,8 @@ import type { RequestHandler } from './$types';
 import { USER_ID_HEADER_NAME } from '$lib/server/request-user';
 import { buildModularSystemPrompt } from '$lib/server/prompts';
 import { routeChatRequest } from '$lib/server/chat-router';
-import { getOrCreateConversation, addMessage, getConversationHistory } from '$lib/server/conversations';
+import { getOrCreateConversation, addMessage, getConversationHistory, getConversationByIdForUser } from '$lib/server/conversations';
+import { buildPersonContext } from '$lib/server/person-context';
 import { findSimilarWidget } from '$lib/skills/widget-creation/service';
 import type { WidgetDraft } from '$lib/artifacts/widget-draft';
 
@@ -73,7 +74,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 
 				// Get or create conversation
 				const conversation = conversationId
-					? { id: conversationId }
+					? (await getConversationByIdForUser(conversationId, userId)) ?? { id: conversationId, personId: null, themeId: null }
 					: await getOrCreateConversation(userId);
 
 				controller.enqueue(
@@ -174,7 +175,17 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 					)
 				);
 
-				const systemPrompt = buildModularSystemPrompt(routing);
+				let systemPrompt = buildModularSystemPrompt(routing);
+
+				// Hvis samtalen er scoped til en person, injiser person-kontekst
+				if (conversation.personId) {
+					try {
+						const personContext = await buildPersonContext(userId, conversation.personId);
+						if (personContext) systemPrompt += '\n' + personContext;
+					} catch (err) {
+						console.warn('buildPersonContext failed:', err);
+					}
+				}
 
 				controller.enqueue(
 					sendEvent(
