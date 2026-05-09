@@ -38,7 +38,6 @@
 			.filter((p): p is TreePerson => p !== null);
 	}
 
-	// Self: partner via null-origin edge, children from byKind.child
 	const selfPartner = $derived((() => {
 		const edge = tree.edges.find(
 			(e) =>
@@ -50,8 +49,7 @@
 
 	const selfChildren = $derived(tree.byKind['child'] ?? []);
 	const parents = $derived(tree.byKind['parent'] ?? []);
-
-	// Build sibling units; avoid including persons already used as self-partner
+	const friends = $derived(tree.byKind['friend'] ?? []);
 	const selfPartnerId = $derived(selfPartner?.id ?? null);
 
 	const siblingUnits = $derived((() => {
@@ -78,53 +76,55 @@
 		return units;
 	})());
 
-	// Extended family not already shown as a sibling child
 	const linkedIds = $derived(
 		new Set(siblingUnits.flatMap((u) => u.children.map((c) => c.id)))
 	);
 	const standaloneExtended = $derived(
-		(tree.byKind['extended_family'] ?? []).filter((p) => !linkedIds.has(p.id))
+		[
+			...(tree.byKind['extended_family'] ?? []).filter((p) => !linkedIds.has(p.id)),
+			...friends
+		]
 	);
 </script>
 
 <div class="family-tree">
-	<!-- Generation 0: parents -->
+	<!-- Foreldre -->
 	{#if parents.length}
 		<div class="gen parents-row">
-			{#each parents as p (p.id)}
+			{#each parents as p, i (p.id)}
+				{#if i > 0}<span class="couple-bar"></span>{/if}
 				<button class="node parent" onclick={() => onSelectPerson?.(p.id)}>
-					<span class="avatar">{p.avatarEmoji ?? '👵'}</span>
+					<span class="emoji">{p.avatarEmoji ?? '👵'}</span>
 					<span class="name">{p.name}</span>
 				</button>
 			{/each}
 		</div>
-		<div class="connector-row">
-			<div class="line-v"></div>
-		</div>
+		<div class="v-line"></div>
 	{/if}
 
-	<!-- Generation 1: self + sibling branches side by side -->
+	<!-- Grener: søskenenheter + Meg -->
 	<div class="gen branches-row">
-		<!-- Self branch -->
+		<!-- Meg-grenen -->
 		<div class="branch">
 			<div class="couple-row">
 				<div class="node self">
-					<span class="avatar">🙂</span>
+					<span class="emoji">🙂</span>
 					<span class="name">Meg</span>
 				</div>
 				{#if selfPartner}
-					<span class="heart">♥</span>
+					<span class="couple-bar"></span>
 					<button class="node partner" onclick={() => onSelectPerson?.(selfPartner.id)}>
-						<span class="avatar">{selfPartner.avatarEmoji ?? '💞'}</span>
+						<span class="emoji">{selfPartner.avatarEmoji ?? '💞'}</span>
 						<span class="name">{selfPartner.name}</span>
 					</button>
 				{/if}
 			</div>
 			{#if selfChildren.length}
+				<div class="v-line"></div>
 				<div class="branch-children">
 					{#each selfChildren as c (c.id)}
 						<button class="node child" onclick={() => onSelectPerson?.(c.id)}>
-							<span class="avatar">{c.avatarEmoji ?? '🧒'}</span>
+							<span class="emoji">{c.avatarEmoji ?? '🧒'}</span>
 							<span class="name">{c.name}</span>
 						</button>
 					{/each}
@@ -132,27 +132,28 @@
 			{/if}
 		</div>
 
-		<!-- Sibling branches -->
+		<!-- Søskengrener -->
 		{#each siblingUnits as unit (unit.primary.id)}
 			<div class="branch">
 				<div class="couple-row">
 					<button class="node sibling" onclick={() => onSelectPerson?.(unit.primary.id)}>
-						<span class="avatar">{unit.primary.avatarEmoji ?? '👥'}</span>
+						<span class="emoji">{unit.primary.avatarEmoji ?? '👥'}</span>
 						<span class="name">{unit.primary.name}</span>
 					</button>
 					{#if unit.partner}
-						<span class="heart">♥</span>
+						<span class="couple-bar"></span>
 						<button class="node in-law" onclick={() => onSelectPerson?.(unit.partner.id)}>
-							<span class="avatar">{unit.partner.avatarEmoji ?? '👤'}</span>
+							<span class="emoji">{unit.partner.avatarEmoji ?? '👤'}</span>
 							<span class="name">{unit.partner.name}</span>
 						</button>
 					{/if}
 				</div>
 				{#if unit.children.length}
+					<div class="v-line"></div>
 					<div class="branch-children">
 						{#each unit.children as c (c.id)}
 							<button class="node extended" onclick={() => onSelectPerson?.(c.id)}>
-								<span class="avatar">{c.avatarEmoji ?? '🌳'}</span>
+								<span class="emoji">{c.avatarEmoji ?? '🌳'}</span>
 								<span class="name">{c.name}</span>
 							</button>
 						{/each}
@@ -162,12 +163,12 @@
 		{/each}
 	</div>
 
-	<!-- Standalone extended family not attached to any branch -->
+	<!-- Utvidet familie og venner -->
 	{#if standaloneExtended.length}
 		<div class="gen extended-row">
 			{#each standaloneExtended as p (p.id)}
-				<button class="node extended" onclick={() => onSelectPerson?.(p.id)}>
-					<span class="avatar">{p.avatarEmoji ?? '🌳'}</span>
+				<button class="node {p.kind}" onclick={() => onSelectPerson?.(p.id)}>
+					<span class="emoji">{p.avatarEmoji ?? '🌳'}</span>
 					<span class="name">{p.name}</span>
 				</button>
 			{/each}
@@ -182,36 +183,38 @@
 		align-items: center;
 		gap: 0;
 		padding: 1.25rem 1rem 1rem;
-		background: #141414;
+		background: #0f0f18;
 		border-radius: 14px;
-		color: #d0d0d0;
+		color: #dde1f0;
 	}
 
 	.gen {
 		display: flex;
 		justify-content: center;
-		gap: 0.75rem;
+		gap: 0.5rem;
 		width: 100%;
 	}
 
-	.parents-row {
-		flex-wrap: wrap;
+	.parents-row { flex-wrap: wrap; align-items: center; }
+
+	.v-line {
+		width: 2px;
+		height: 1.5rem;
+		background: #3a3a5c;
+		flex-shrink: 0;
 	}
 
-	.connector-row {
-		display: flex;
-		justify-content: center;
-		height: 20px;
-	}
-	.line-v {
-		width: 1px;
-		height: 100%;
-		background: #333;
+	.couple-bar {
+		display: block;
+		width: 1.1rem;
+		height: 2px;
+		background: #3a3a5c;
+		flex-shrink: 0;
+		align-self: center;
 	}
 
-	/* Side-by-side branches */
 	.branches-row {
-		gap: 1.25rem;
+		gap: 1.5rem;
 		align-items: flex-start;
 		flex-wrap: wrap;
 	}
@@ -220,71 +223,68 @@
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 0.5rem;
-		min-width: 0;
+		gap: 0;
 	}
 
 	.couple-row {
 		display: flex;
 		align-items: center;
-		gap: 0.4rem;
-	}
-
-	.heart {
-		font-size: 0.75rem;
-		color: #f5a3c5;
-		line-height: 1;
+		gap: 0.35rem;
 	}
 
 	.branch-children {
 		display: flex;
 		flex-wrap: wrap;
 		justify-content: center;
-		gap: 0.5rem;
+		gap: 0.4rem;
 	}
 
 	.extended-row {
-		margin-top: 0.75rem;
 		flex-wrap: wrap;
+		margin-top: 1rem;
+		padding-top: 0.75rem;
+		border-top: 1px dashed #2a2a44;
+		gap: 0.5rem;
 	}
 
-	/* Nodes */
+	/* Noder */
 	.node {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.35rem;
 		padding: 0.35rem 0.65rem;
 		border-radius: 999px;
-		border: 1px solid #2e2e2e;
-		background: #1e1e1e;
-		color: #c8c8c8;
+		border: 1.5px solid #2c2c4a;
+		background: #16162a;
+		color: #dde1f0;
 		font: inherit;
-		font-size: 0.85rem;
+		font-size: 0.83rem;
 		cursor: pointer;
-		transition: background 0.1s, border-color 0.1s;
+		transition: transform 0.1s, box-shadow 0.1s;
 		white-space: nowrap;
 	}
 
 	.node:hover {
-		background: #272727;
-		border-color: #444;
-		color: #fff;
+		transform: translateY(-2px);
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
 	}
 
 	.node.self {
-		background: linear-gradient(135deg, #5a6de8, #4a5ad4);
+		background: linear-gradient(135deg, #7c8ef5, #5f6fe0);
 		border-color: transparent;
 		color: #fff;
 		cursor: default;
+		font-weight: 600;
 	}
 
-	.node.partner  { border-color: #7a3f55; }
-	.node.child    { border-color: #7a6030; }
-	.node.parent   { border-color: #3a5070; }
-	.node.sibling  { border-color: #2e5040; }
-	.node.in-law   { border-color: #5a3a7a; }
-	.node.extended { border-color: #2e3a4a; }
+	.node.partner  { border-color: #a0405f; }
+	.node.child    { border-color: #9a6520; }
+	.node.parent   { border-color: #335f99; }
+	.node.sibling  { border-color: #236b4a; }
+	.node.in-law   { border-color: #5f3a99; }
+	.node.extended { border-color: #3a3a5c; }
+	.node.friend   { border-color: #2a6a7a; }
 
-	.avatar { font-size: 1rem; line-height: 1; }
-	.name   { font-size: 0.82rem; }
+	.emoji { font-size: 1rem; line-height: 1; }
+	.name  { font-size: 0.82rem; }
 </style>

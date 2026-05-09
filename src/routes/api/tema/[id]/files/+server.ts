@@ -6,7 +6,6 @@ import { eq, and, asc } from 'drizzle-orm';
 import { v2 as cloudinary } from 'cloudinary';
 import { env } from '$env/dynamic/private';
 import { extractFileContent } from '$lib/server/file-extraction';
-import { createMemory, deleteMemoryBySource, THEME_FILE_MEMORY_SOURCE_PREFIX } from '$lib/server/memories';
 
 // @ts-ignore
 const BufferGlobal = Buffer;
@@ -88,19 +87,15 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		})
 		.returning();
 
-	// Parse content and store as memory (fire-and-forget — does not block response)
+	// Parse content and store on the file row (fire-and-forget — does not block response)
 	void extractFileContent(buffer, file.type, file.name, result.secure_url)
 		.then(async ({ text, kind }) => {
 			if (!text.trim() || kind === 'unsupported') return;
 			const label = kind === 'image_vision' ? '🖼 Bilde' : kind === 'audio_transcript' ? '🎤 Lydopptak' : kind === 'pdf_text' ? '📍 PDF' : '📄 Fil';
-			await createMemory({
-				userId: locals.userId,
-				themeId: params.id,
-				category: 'other',
-				importance: 'high',
-				source: `${THEME_FILE_MEMORY_SOURCE_PREFIX}${saved.id}`,
-				content: `${label}: ${file.name}\n${text}`
-			});
+			await db
+				.update(themeFiles)
+				.set({ parsedContent: `${label}: ${file.name}\n${text}` })
+				.where(eq(themeFiles.id, saved.id));
 		})
 		.catch((err) => console.error('[upload] Parsing feilet for', file.name, err));
 

@@ -1,9 +1,10 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
-import { checklists, checklistItems, memories } from '$lib/db/schema';
+import { checklists, checklistItems } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { parseChecklistItemIntent, findLinkedTask, stripTimeFromText } from '$lib/server/checklist-intent-linker';
+import { upsertPlanArtifactField } from '$lib/server/plan-artifacts';
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const userId = locals.userId;
@@ -23,31 +24,15 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	}
 
 	const compactKey = weekDashedKey.replace('-W', 'W');
-	const headlineSource = `week-plan:${compactKey}:day:${dayIso}:headline`;
 
-	// Save headline to memories
-	const existingHeadline = await db.query.memories.findFirst({
-		where: and(eq(memories.userId, userId), eq(memories.source, headlineSource))
+	await upsertPlanArtifactField({
+		userId,
+		kind: 'day',
+		periodKey: dayIso,
+		parentPeriodKey: compactKey,
+		field: 'headline',
+		content: headline ?? ''
 	});
-
-	if (headline?.trim()) {
-		if (existingHeadline) {
-			await db
-				.update(memories)
-				.set({ content: headline.trim(), updatedAt: new Date(), lastAccessedAt: new Date() })
-				.where(eq(memories.id, existingHeadline.id));
-		} else {
-			await db.insert(memories).values({
-				userId,
-				category: 'other',
-				content: headline.trim(),
-				importance: 'medium',
-				source: headlineSource
-			});
-		}
-	} else if (existingHeadline) {
-		await db.delete(memories).where(eq(memories.id, existingHeadline.id));
-	}
 
 	// Save tasks to day checklist
 	if (tasks?.length) {

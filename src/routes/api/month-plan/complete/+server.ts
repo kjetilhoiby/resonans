@@ -1,8 +1,10 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
-import { checklistItems, checklists, goals, memories, sensorEvents } from '$lib/db/schema';
+import { checklistItems, checklists, goals, sensorEvents } from '$lib/db/schema';
 import { and, desc, eq, lte, sql } from 'drizzle-orm';
+import { upsertPlanArtifactField } from '$lib/server/plan-artifacts';
+import { createReflection } from '$lib/server/reflections';
 
 function getMonthInfoFromKey(key: string) {
 	const match = key.match(/^(\d{4})-(\d{2})$/);
@@ -24,25 +26,6 @@ function getMonthInfoFromKey(key: string) {
 		endDate: `${year}-${monthStr}-${endDay}`,
 		monthName
 	};
-}
-
-async function upsertMemory(userId: string, source: string, content: string) {
-	const trimmed = content.trim();
-	const existing = await db.query.memories.findFirst({
-		columns: { id: true },
-		where: and(eq(memories.userId, userId), eq(memories.source, source))
-	});
-	if (!trimmed) {
-		if (existing) await db.delete(memories).where(eq(memories.id, existing.id));
-		return;
-	}
-	if (existing) {
-		await db.update(memories)
-			.set({ content: trimmed, updatedAt: new Date(), lastAccessedAt: new Date() })
-			.where(eq(memories.id, existing.id));
-	} else {
-		await db.insert(memories).values({ userId, category: 'other', content: trimmed, importance: 'medium', source });
-	}
 }
 
 function parseSection(text: string, marker: string): Array<{ title: string; value: number; unit: string }> {
@@ -274,12 +257,30 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	// ── 3. Save narrative as month note ──────────────────────────────────────
 	if (narrative.trim()) {
-		await upsertMemory(userId, `month-plan:${month.compactKey}:note`, narrative);
+		await upsertPlanArtifactField({
+			userId,
+			kind: 'month',
+			periodKey: month.compactKey,
+			field: 'note',
+			content: narrative
+		});
 	}
 
-	// ── 4. Save refleksjon chat as reflection memory ──────────────────────────
+	// ── 4. Save refleksjon both as plan-artefact reflection and as a tracked reflection ──
 	if (refleksjonText?.trim()) {
-		await upsertMemory(userId, `month-plan:${month.compactKey}:reflection`, refleksjonText);
+		await upsertPlanArtifactField({
+			userId,
+			kind: 'month',
+			periodKey: month.compactKey,
+			field: 'reflection',
+			content: refleksjonText
+		});
+		await createReflection({
+			userId,
+			kind: 'month_review',
+			periodKey: month.compactKey,
+			content: refleksjonText
+		});
 	}
 
 	return json({ success: true });

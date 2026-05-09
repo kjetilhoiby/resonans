@@ -89,7 +89,7 @@
 		}
 
 		if (e.key === 'Enter' && !e.shiftKey) {
-			if (isTouchDevice) return; // mobil: Enter = linjeskift, send-knapp sender
+			if (isTouchDevice) return;
 			e.preventDefault();
 			submit();
 		}

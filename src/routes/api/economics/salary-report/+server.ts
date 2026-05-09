@@ -1,7 +1,8 @@
 import { json } from '@sveltejs/kit';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { db } from '$lib/db';
-import { canonicalBankTransactions, goals, memories, sensorEvents } from '$lib/db/schema';
+import { canonicalBankTransactions, goals, sensorEvents } from '$lib/db/schema';
+import { getAllGoalTracksByUser } from '$lib/server/goal-tracks';
 import { detectGlobalPayday } from '$lib/server/integrations/payday-detector';
 import { buildDailyBalances } from '$lib/server/integrations/balance-reconstructor';
 import {
@@ -193,17 +194,13 @@ export const GET: RequestHandler = async ({ locals }) => {
 		}
 	}
 
-	// 7. Fetch goal tracks from memories store
+	// 7. Fetch goal tracks from goal_tracks table
 	const goalProgress: GoalProgressItem[] = [];
 
 	try {
-		const storeMemory = await db.query.memories.findFirst({
-			where: and(eq(memories.userId, userId), eq(memories.source, 'goal_tracks_v1')),
-			columns: { content: true }
-		});
+		const store = await getAllGoalTracksByUser(userId);
 
-		if (storeMemory?.content) {
-			const store = JSON.parse(storeMemory.content) as Partial<Record<MetricId, GoalTrack[]>>;
+		{
 
 			for (const metricId of ECONOMIC_METRIC_IDS) {
 				const tracks = store[metricId] ?? [];

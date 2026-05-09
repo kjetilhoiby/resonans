@@ -13,6 +13,8 @@ export type FlowId =
 	| 'planning_week_review'
 	| 'planning_goal_setup'
 	| 'planning_month_plan'
+	| 'planning_quarter_plan'
+	| 'planning_year_plan'
 	| 'food_meal_chat'
 	| 'family_onboarding'
 	| 'family_summer_planning'
