@@ -6,11 +6,15 @@ import {
 	type RelationSubType
 } from '$lib/domains/family';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export const manageRelationTool = {
 	name: 'manage_relation',
-	description: `Create or delete a relation between two persons (or between self and a person, with fromPersonId=null).
-relationType is the broad category: 'family' | 'friend' | 'work'.
-subType is more specific: 'parent_of' | 'child_of' | 'married_to' | 'partnered_with' | 'sibling_of' | 'in_law_of' | 'friend_of' | 'colleague_of'.`,
+	description: `Create or delete a relation between two persons.
+fromPersonId: UUID of the source person, or omit/null when the relation is from the user themselves.
+toPersonId: UUID of the target person — must be a UUID from manage_person or query_family, never a name.
+relationType: 'family' | 'friend' | 'work'.
+subType: 'parent_of' | 'child_of' | 'married_to' | 'partnered_with' | 'sibling_of' | 'in_law_of' | 'friend_of' | 'colleague_of'.`,
 	parameters: z.object({
 		userId: z.string(),
 		action: z.enum(['create', 'delete']),
@@ -39,12 +43,17 @@ subType is more specific: 'parent_of' | 'child_of' | 'married_to' | 'partnered_w
 			return { relation: removed };
 		}
 		if (!args.toPersonId) return { error: 'toPersonId is required' };
+		if (!UUID_RE.test(args.toPersonId)) {
+			return { error: `toPersonId must be a UUID, got "${args.toPersonId}". Use query_family or manage_person to get the person's UUID first.` };
+		}
 		if (!args.relationType || !isValidRelationType(args.relationType)) {
 			return { error: 'relationType must be family|friend|work' };
 		}
+		const fromPersonId =
+			args.fromPersonId && UUID_RE.test(args.fromPersonId) ? args.fromPersonId : null;
 		const created = await PersonService.createRelation({
 			userId: args.userId,
-			fromPersonId: args.fromPersonId ?? null,
+			fromPersonId,
 			toPersonId: args.toPersonId,
 			relationType: args.relationType as RelationType,
 			subType: (args.subType as RelationSubType | null | undefined) ?? null,

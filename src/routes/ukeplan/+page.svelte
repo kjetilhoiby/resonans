@@ -12,6 +12,8 @@
 	import MetricCard from '$lib/components/visualizations/MetricCard.svelte';
 	import { groupChecklistItems, activityEmoji, sortByTime, formatItemTime, stripTimeFromText, type GroupedChecklistEntry } from '$lib/utils/checklist-group';
 	import WeatherStrip, { type WeatherPeriod } from '$lib/components/ui/WeatherStrip.svelte';
+	import MentionPicker from '$lib/components/ui/MentionPicker.svelte';
+	import { createMentionState } from '$lib/utils/mention-input.svelte';
 
 	type SaveState = 'idle' | 'saving' | 'saved';
 
@@ -245,6 +247,8 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 	let editingTask = $state<EditingTask | null>(null);
 	let editTaskInput = $state<HTMLInputElement | null>(null);
 	let skipEditTask = false;
+	const taskMention = createMentionState();
+	let taskMentionPickerEl = $state<ReturnType<typeof MentionPicker> | null>(null);
 	let dragItem = $state<{ checklistId: string; itemId: string } | null>(null);
 	let dragOverItemId = $state<string | null>(null);
 	let skipEditBlur = false;
@@ -1538,12 +1542,37 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 							<div>
 								{#if editingTask?.taskId === task.id}
 									<div class="wp-edit-shell">
+										<MentionPicker
+											bind:this={taskMentionPickerEl}
+											visible={taskMention.visible}
+											persons={taskMention.filtered}
+											anchorEl={editTaskInput}
+											onSelect={(p) => {
+												if (!editTaskInput || !editingTask) return;
+												taskMention.insert(
+													p.name,
+													() => editTaskInput!.value,
+													() => editTaskInput!.selectionStart ?? editTaskInput!.value.length,
+													(v) => { editingTask!.title = v; },
+													(pos) => tick().then(() => editTaskInput?.setSelectionRange(pos, pos))
+												);
+											}}
+											onClose={() => taskMention.close()}
+										/>
 										<input
 											bind:this={editTaskInput}
 											class="wp-task-edit-input"
 											type="text"
 											bind:value={editingTask.title}
-											onkeydown={(e) => { if (e.key === 'Enter') void saveEditTask(); if (e.key === 'Escape') editingTask = null; }}
+											oninput={(e) => {
+												const el = e.currentTarget as HTMLInputElement;
+												taskMention.scan(el.value, el.selectionStart ?? el.value.length);
+											}}
+											onkeydown={(e) => {
+												if (taskMention.visible && taskMentionPickerEl?.handleKeydown(e)) return;
+												if (e.key === 'Enter') void saveEditTask();
+												if (e.key === 'Escape') editingTask = null;
+											}}
 											onblur={() => void saveEditTask()}
 										/>
 										<button

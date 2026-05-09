@@ -10,6 +10,8 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import Icon from './Icon.svelte';
+	import MentionPicker from './MentionPicker.svelte';
+	import { createMentionState } from '$lib/utils/mention-input.svelte';
 
 	type AttachmentAction = 'camera' | 'voice' | 'file';
 
@@ -52,6 +54,9 @@
 	const hasDraft = $derived(text.trim().length > 0);
 	let isTouchDevice = $state(false);
 
+	const mention = createMentionState();
+	let mentionPickerEl = $state<ReturnType<typeof MentionPicker> | null>(null);
+
 	$effect(() => {
 		isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
 	});
@@ -75,9 +80,13 @@
 		el.style.height = 'auto';
 		el.style.height = Math.min(el.scrollHeight, 120) + 'px';
 		onTextChange?.(el.value);
+		mention.scan(el.value, el.selectionStart ?? el.value.length);
 	}
 
 	function onKeyDown(e: KeyboardEvent) {
+		// La MentionPicker håndtere piltaster/enter/escape når synlig
+		if (mention.visible && mentionPickerEl?.handleKeydown(e)) return;
+
 		const currentValue = textareaEl?.value ?? '';
 		if (e.key === 'Backspace' && currentValue.length === 0) {
 			e.preventDefault();
@@ -86,10 +95,22 @@
 		}
 
 		if (e.key === 'Enter' && !e.shiftKey) {
-			if (isTouchDevice) return; // mobil: Enter = linjeskift, send-knapp sender
+			if (isTouchDevice) return;
 			e.preventDefault();
 			submit();
 		}
+	}
+
+	function insertMention(person: { name: string }) {
+		if (!textareaEl) return;
+		const el = textareaEl;
+		mention.insert(
+			person.name,
+			() => el.value,
+			() => el.selectionStart ?? el.value.length,
+			(v) => { text = v; },
+			(pos) => { tick().then(() => { el.setSelectionRange(pos, pos); el.focus(); }); }
+		);
 	}
 
 	function openFromInput() {
@@ -137,6 +158,15 @@
 		};
 	});
 </script>
+
+<MentionPicker
+	bind:this={mentionPickerEl}
+	visible={mention.visible}
+	persons={mention.filtered}
+	anchorEl={textareaEl}
+	onSelect={insertMention}
+	onClose={() => mention.close()}
+/>
 
 <form
 	class="ci-form"
