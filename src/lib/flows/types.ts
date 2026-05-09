@@ -18,9 +18,10 @@ export type FlowId =
 	| 'family_summer_planning'
 	| 'family_relation_check_in'
 	| 'day_plan'
-	| 'day_close';
+	| 'day_close'
+	| 'egenfrekvens_checkin';
 
-export type FlowDomain = 'health' | 'economics' | 'food' | 'family' | 'planning' | 'general';
+export type FlowDomain = 'health' | 'economics' | 'food' | 'family' | 'planning' | 'general' | 'egenfrekvens';
 
 export type FlowTrigger = 'manual' | 'auto_suggest' | 'onboarding';
 
@@ -44,6 +45,8 @@ export interface FlowStep {
 	/** For decision-list: which contextData key holds the open items */
 	openItemsKey?: string;
 	validation?: (data: Record<string, any>) => boolean | string;
+	/** Skip this step entirely if predicate returns true. Evaluated against current flow data. */
+	skipIf?: (data: Record<string, any>) => boolean;
 }
 
 export interface FlowFormField {
@@ -57,6 +60,8 @@ export interface FlowFormField {
 	step?: number;
 	options?: Array<{ value: string; label: string }>;
 	defaultValue?: any;
+	/** For slider: anchor labels keyed by integer value, rendered as helper text under the slider. */
+	helperLabels?: Record<number, string>;
 }
 
 /** Dynamic runtime data passed to FlowSheet per invocation */

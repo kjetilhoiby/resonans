@@ -3,6 +3,7 @@ import { conversations, themes } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { ensureConversationThemeIdColumn } from '$lib/server/conversation-schema';
 import { openai } from '$lib/server/openai';
+import { maybeActivateEgenfrekvensCheckin } from '$lib/server/egenfrekvens-checkin';
 
 interface EnsureThemeInput {
 	userId: string;
@@ -81,6 +82,8 @@ export async function ensureThemeForUser({
 		archived: false,
 		aiSuggested: false
 	}).returning()) as any[])[0];
+
+	await maybeActivateEgenfrekvensCheckin(userId, { name, parentTheme });
 
 	return {
 		theme,

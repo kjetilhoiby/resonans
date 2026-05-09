@@ -5,10 +5,11 @@ export * from './economics/index';
 export * from './food/index';
 export * from './family/index';
 export * from './family/family-tree';
+export * from './egenfrekvens/index';
 
 import { FAMILY_DOMAIN_TRIGGER } from './family/index';
 
-export type DomainType = 'health' | 'economics' | 'food' | 'family';
+export type DomainType = 'health' | 'economics' | 'food' | 'family' | 'egenfrekvens';
 
 export interface DomainMetadata {
   type: DomainType;
@@ -41,6 +42,12 @@ export const DOMAIN_METADATA: Record<DomainType, DomainMetadata> = {
     label: 'Familie',
     description: 'Familie og nære relasjoner — barn, partner, foreldre, svigerfamilie og venner',
     systemPromptHint: 'Brukeren fokuser på familie/relasjoner. Bruk query_family og manage_person. Lagre observasjoner som memory med personId. Foreslå mål og oppgaver knyttet til en person.'
+  },
+  egenfrekvens: {
+    type: 'egenfrekvens',
+    label: 'Egenfrekvens',
+    description: 'Selvinnsikt: humør, tanker, følelser, handlinger, refleksjon og overskudd/underskudd',
+    systemPromptHint: 'Brukeren utforsker egenfrekvens (humør, tanker, følelser, handlinger). Tilby kort sjekkin-flyt og refleksjon. Bruk varm, ikke-klinisk tone.'
   }
 };
 
@@ -61,6 +68,10 @@ export function resolveDomainFromInput(input: string): DomainType | null {
 
   if (/mat|middag|frokost|lunsj|matpakke|oppskrift|recipe|pantry|fryser|kjøleskap|kjoleskap|skap|handleliste|kjokken|kjøkken|måltid|maltid|ukemeny|meny/.test(text)) {
     return 'food';
+  }
+
+  if (/egenfrekvens|psykisk\s*helse|mental\s*helse|stress|overskudd|underskudd|innsjekk|sjekkin|reflek/.test(text)) {
+    return 'egenfrekvens';
   }
 
   return null;

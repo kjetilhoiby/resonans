@@ -70,6 +70,12 @@ const JOBS: CronJob[] = [
 		schedule: '30 */6 * * *', // 30 min etter sparebank1-sync
 		description: 'Sender lønn-mottatt-nudge for brukere med ny lønnsinngang siste 3 dager',
 		maxDurationSeconds: 120
+	},
+	{
+		path: '/api/notifications/egenfrekvens-checkin',
+		schedule: '*/5 * * * *',
+		description: 'Egenfrekvens daglig sjekkin-nudge (lokal tid per bruker, 5-min vindu)',
+		maxDurationSeconds: 60
 	}
 ];
 
