@@ -1,8 +1,9 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
-import { checklistItems, checklists, goals, memories, sensorEvents, workoutDailyAggregates } from '$lib/db/schema';
+import { checklistItems, checklists, goals, sensorEvents, workoutDailyAggregates } from '$lib/db/schema';
 import { and, asc, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
+import { getPlanArtifact } from '$lib/server/plan-artifacts';
 
 function getMonthInfo(now: Date = new Date()) {
 	const year = now.getFullYear();
@@ -51,22 +52,14 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	const prevEnd = new Date(`${prevMonth.endDate}T23:59:59.999Z`);
 
 	const [
-		prevNote,
-		prevReflection,
+		prevArtifact,
 		prevChecklist,
 		prevGoals,
 		workoutRows,
 		weightRows,
 		weekChecklists
 	] = await Promise.all([
-		db.query.memories.findFirst({
-			columns: { content: true },
-			where: and(eq(memories.userId, userId), eq(memories.source, `month-plan:${prevMonth.compactKey}:note`))
-		}),
-		db.query.memories.findFirst({
-			columns: { content: true },
-			where: and(eq(memories.userId, userId), eq(memories.source, `month-plan:${prevMonth.compactKey}:reflection`))
-		}),
+		getPlanArtifact(userId, 'month', prevMonth.compactKey),
 		db.query.checklists.findFirst({
 			where: and(eq(checklists.userId, userId), eq(checklists.context, prevMonth.contextKey)),
 			with: {
@@ -205,8 +198,8 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		currentMonthName: currentMonth.monthName,
 		prevMonthKey: prevMonth.dashedKey,
 		prevMonthName: prevMonth.monthName,
-		note: prevNote?.content ?? '',
-		reflection: prevReflection?.content ?? '',
+		note: prevArtifact?.note ?? '',
+		reflection: prevArtifact?.reflection ?? '',
 		uncheckedItems,
 		monthGoals,
 		recurringTasks

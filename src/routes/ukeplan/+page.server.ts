@@ -2,8 +2,9 @@ import { fail } from '@sveltejs/kit';
 import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, or } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/db';
-import { checklistItems, checklists, goals, memories, progress, tasks, themes, sensorEvents, sensors } from '$lib/db/schema';
+import { checklistItems, checklists, goals, progress, tasks, themes, sensorEvents, sensors } from '$lib/db/schema';
 import { parseListRepeatCount } from '$lib/server/list-repeat-parser';
+import { getPlanArtifact, getPlanArtifactsByParent, upsertPlanArtifactField } from '$lib/server/plan-artifacts';
 import { WorkoutProjectionService } from '$lib/server/services/workout-projection-service';
 import { resolveDomainFromInput, type DomainType } from '$lib/domains';
 
@@ -147,34 +148,29 @@ function resolveWeekFromFormData(formData: FormData) {
 	return getIsoWeekInfoFromKey(weekKey) ?? getIsoWeekInfo();
 }
 
-async function upsertWeekNote(userId: string, source: string, content: string) {
-	const trimmed = content.trim();
-	const existing = await db.query.memories.findFirst({
-		columns: { id: true },
-		where: and(eq(memories.userId, userId), eq(memories.source, source))
-	});
+async function upsertWeekField(
+	userId: string,
+	weekCompactKey: string,
+	field: 'note' | 'reflection' | 'vision',
+	content: string
+) {
+	await upsertPlanArtifactField({ userId, kind: 'week', periodKey: weekCompactKey, field, content });
+}
 
-	if (!trimmed) {
-		if (existing) {
-			await db.delete(memories).where(eq(memories.id, existing.id));
-		}
-		return;
-	}
-
-	if (existing) {
-		await db
-			.update(memories)
-			.set({ content: trimmed, updatedAt: new Date(), lastAccessedAt: new Date() })
-			.where(eq(memories.id, existing.id));
-		return;
-	}
-
-	await db.insert(memories).values({
+async function upsertDayField(
+	userId: string,
+	dayIso: string,
+	parentWeekKey: string,
+	field: 'note' | 'headline',
+	content: string
+) {
+	await upsertPlanArtifactField({
 		userId,
-		category: 'other',
-		content: trimmed,
-		importance: 'medium',
-		source
+		kind: 'day',
+		periodKey: dayIso,
+		parentPeriodKey: parentWeekKey,
+		field,
+		content
 	});
 }
 
@@ -189,8 +185,6 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	const weekEndExclusive = new Date(weekStart);
 	weekEndExclusive.setUTCDate(weekEndExclusive.getUTCDate() + 7);
 	const dayContexts = week.days.map((d) => `week:${week.dashedKey}:day:${d.isoDate}`);
-	const dayNoteSources = week.days.map((d) => `week-plan:${week.compactKey}:day:${d.isoDate}:note`);
-	const dayHeadlineSources = week.days.map((d) => `week-plan:${week.compactKey}:day:${d.isoDate}:headline`);
 
 	const previousWeekStart = new Date(`${previousWeek.days[0].isoDate}T00:00:00.000Z`);
 	const previousWeekEndExclusive = new Date(previousWeekStart);
@@ -203,7 +197,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	console.log(`[perf][ukeplan/load] user=${userId} step=spond_sensor_lookup ms=${(performance.now() - tSpondSensor).toFixed(0)} found=${spondSensor ? 1 : 0}`);
 
 	const tPrefetch = performance.now();
-	const [weekChecklist, weekTasks, weekProgressRows, reflectionNote, visionNote, weekNote, longTermGoals, dayChecklists, dayNotes, dayHeadlines, previousWeekChecklist, previousWeekNote, previousWeekReflection, previousWeekTasks, previousWeekProgressRows, travelThemes, rawSpondEvents] = await Promise.all([
+	const [weekChecklist, weekTasks, weekProgressRows, weekArtifact, longTermGoals, dayChecklists, dayArtifacts, previousWeekChecklist, previousWeekArtifact, previousWeekTasks, previousWeekProgressRows, travelThemes, rawSpondEvents] = await Promise.all([
 		db.query.checklists.findFirst({
 			where: and(eq(checklists.userId, userId), eq(checklists.context, week.contextKey)),
 			with: {
@@ -220,18 +214,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 				taskId: true
 			}
 		}),
-		db.query.memories.findFirst({
-			columns: { id: true, source: true, content: true },
-			where: and(eq(memories.userId, userId), eq(memories.source, `week-plan:${week.compactKey}:reflection`))
-		}),
-		db.query.memories.findFirst({
-			columns: { id: true, source: true, content: true },
-			where: and(eq(memories.userId, userId), eq(memories.source, `week-plan:${week.compactKey}:vision`))
-		}),
-		db.query.memories.findFirst({
-			columns: { id: true, source: true, content: true },
-			where: and(eq(memories.userId, userId), eq(memories.source, `week-plan:${week.compactKey}:note`))
-		}),
+		getPlanArtifact(userId, 'week', week.compactKey),
 		db.query.goals.findMany({
 			where: and(eq(goals.userId, userId), eq(goals.status, 'active')),
 			columns: {
@@ -252,20 +235,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 				}
 			}
 		}),
-		db.query.memories.findMany({
-			where: and(eq(memories.userId, userId), inArray(memories.source, dayNoteSources)),
-			columns: {
-				source: true,
-				content: true
-			}
-		}),
-		db.query.memories.findMany({
-			where: and(eq(memories.userId, userId), inArray(memories.source, dayHeadlineSources)),
-			columns: {
-				source: true,
-				content: true
-			}
-		}),
+		getPlanArtifactsByParent(userId, week.compactKey),
 		db.query.checklists.findFirst({
 			where: and(eq(checklists.userId, userId), eq(checklists.context, previousWeek.contextKey)),
 			with: {
@@ -275,14 +245,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			},
 			orderBy: (c, { desc: orderDesc }) => [orderDesc(c.createdAt)]
 		}),
-		db.query.memories.findFirst({
-			columns: { id: true, source: true, content: true },
-			where: and(eq(memories.userId, userId), eq(memories.source, `week-plan:${previousWeek.compactKey}:note`))
-		}),
-		db.query.memories.findFirst({
-			columns: { id: true, source: true, content: true },
-			where: and(eq(memories.userId, userId), eq(memories.source, `week-plan:${previousWeek.compactKey}:reflection`))
-		}),
+		getPlanArtifact(userId, 'week', previousWeek.compactKey),
 		loadWeekTasks(userId, previousWeek.dashedKey, previousWeek.compactKey),
 		db.query.progress.findMany({
 			where: and(
@@ -308,7 +271,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			: Promise.resolve([] as Array<{ id: string; timestamp: Date; data: unknown; metadata: unknown }>)
 	]);
 	console.log(
-		`[perf][ukeplan/load] user=${userId} step=prefetch_bundle ms=${(performance.now() - tPrefetch).toFixed(0)} weekTasks=${weekTasks.length} weekProgress=${weekProgressRows.length} longTermGoals=${longTermGoals.length} dayChecklists=${dayChecklists.length} dayNotes=${dayNotes.length} dayHeadlines=${dayHeadlines.length} prevWeekTasks=${previousWeekTasks.length} prevWeekProgress=${previousWeekProgressRows.length} spondEvents=${rawSpondEvents.length}`
+		`[perf][ukeplan/load] user=${userId} step=prefetch_bundle ms=${(performance.now() - tPrefetch).toFixed(0)} weekTasks=${weekTasks.length} weekProgress=${weekProgressRows.length} longTermGoals=${longTermGoals.length} dayChecklists=${dayChecklists.length} dayArtifacts=${dayArtifacts.length} prevWeekTasks=${previousWeekTasks.length} prevWeekProgress=${previousWeekProgressRows.length} spondEvents=${rawSpondEvents.length}`
 	);
 
 	const progressCounts = weekProgressRows.reduce((acc, row) => {
@@ -333,15 +296,12 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		];
 	}));
 
-	const dayNoteMap = Object.fromEntries(dayNotes.map((note) => {
-		const dayKey = note.source?.match(/:day:(\d{4}-\d{2}-\d{2}):note$/)?.[1] ?? note.source;
-		return [dayKey, note.content];
-	}));
-
-	const dayHeadlineMap = Object.fromEntries(dayHeadlines.map((note) => {
-		const dayKey = note.source?.match(/:day:(\d{4}-\d{2}-\d{2}):headline$/)?.[1] ?? note.source;
-		return [dayKey, note.content];
-	}));
+	const dayNoteMap = Object.fromEntries(
+		dayArtifacts.filter((a) => a.note).map((a) => [a.periodKey, a.note as string])
+	);
+	const dayHeadlineMap = Object.fromEntries(
+		dayArtifacts.filter((a) => a.headline).map((a) => [a.periodKey, a.headline as string])
+	);
 
 	const previousProgressCounts = previousWeekProgressRows.reduce((acc, row) => {
 		if (!row.taskId) return acc;
@@ -642,9 +602,9 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			goalTitle: task.goalTitle ?? null,
 			themeName: task.themeName ?? null
 		})),
-		weekNote: weekNote?.content ?? '',
-		reflection: reflectionNote?.content ?? '',
-		vision: visionNote?.content ?? '',
+		weekNote: weekArtifact?.note ?? '',
+		reflection: weekArtifact?.reflection ?? '',
+		vision: weekArtifact?.vision ?? '',
 		longTermGoals: longTermGoals.map((goal) => ({
 			id: goal.id,
 			title: goal.title,
@@ -659,8 +619,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		spondEventsByDay,
 		previousWeekSummary: {
 			weekKey: previousWeek.dashedKey,
-			note: previousWeekNote?.content ?? '',
-			reflection: previousWeekReflection?.content ?? '',
+			note: previousWeekArtifact?.note ?? '',
+			reflection: previousWeekArtifact?.reflection ?? '',
 			carryoverItems,
 			incompleteTasks: previousIncompleteTasks
 		}
@@ -831,7 +791,7 @@ export const actions = {
 		const week = resolveWeekFromFormData(data);
 		const weekNote = String(data.get('weekNote') || '');
 
-		await upsertWeekNote(userId, `week-plan:${week.compactKey}:note`, weekNote);
+		await upsertWeekField(userId, week.compactKey, 'note', weekNote);
 		return { success: true };
 	},
 
@@ -846,7 +806,7 @@ export const actions = {
 			return fail(400, { error: 'Mangler dag.' });
 		}
 
-		await upsertWeekNote(userId, `week-plan:${week.compactKey}:day:${dayIso}:note`, note);
+		await upsertDayField(userId, dayIso, week.compactKey, 'note', note);
 		return { success: true };
 	},
 
@@ -861,7 +821,7 @@ export const actions = {
 			return fail(400, { error: 'Mangler dag.' });
 		}
 
-		await upsertWeekNote(userId, `week-plan:${week.compactKey}:day:${dayIso}:headline`, headline);
+		await upsertDayField(userId, dayIso, week.compactKey, 'headline', headline);
 		return { success: true };
 	},
 
@@ -911,8 +871,8 @@ export const actions = {
 		const vision = String(data.get('vision') || '');
 
 		await Promise.all([
-			upsertWeekNote(userId, `week-plan:${week.compactKey}:reflection`, reflection),
-			upsertWeekNote(userId, `week-plan:${week.compactKey}:vision`, vision)
+			upsertWeekField(userId, week.compactKey, 'reflection', reflection),
+			upsertWeekField(userId, week.compactKey, 'vision', vision)
 		]);
 
 		return { success: true };

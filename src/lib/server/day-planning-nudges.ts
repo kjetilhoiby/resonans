@@ -1,6 +1,6 @@
-import { and, desc, eq, gte, ilike, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, ilike, isNotNull, or, sql } from 'drizzle-orm';
 import { db } from '$lib/db';
-import { checklists, conversations, memories, messages, sensorEvents, users, webPushSubscriptions } from '$lib/db/schema';
+import { checklists, conversations, memories, messages, nudgeEvents, sensorEvents, users, webPushSubscriptions } from '$lib/db/schema';
 import {
 	buildDayCloseNudgeMessage,
 	buildDayPlanningNudgeMessage,
@@ -140,8 +140,8 @@ async function getNudgeTriage(userId: string) {
 	since.setDate(since.getDate() - 7);
 
 	const [clickRows, userMsgCountRows, prefRows] = await Promise.all([
-		db.query.memories.findMany({
-			where: and(eq(memories.userId, userId), ilike(memories.source, 'nudge:click:%'), gte(memories.createdAt, since)),
+		db.query.nudgeEvents.findMany({
+			where: and(eq(nudgeEvents.userId, userId), isNotNull(nudgeEvents.openedAt), gte(nudgeEvents.openedAt, since)),
 			columns: { id: true },
 			limit: 20
 		}),

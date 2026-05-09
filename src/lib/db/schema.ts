@@ -145,6 +145,7 @@ export const themes = pgTable('themes', {
 		activeMinutes?: { goal?: number; thresholdWarn?: number; thresholdSuccess?: number };
 		weight?: { goal?: number; thresholdWarn?: number; thresholdSuccess?: number };
 	}>(),
+	instructions: text('instructions'),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
 });
@@ -185,6 +186,7 @@ export const themeFiles = pgTable('theme_files', {
 	fileType: text('file_type'), // 'image'|'pdf'|'document'
 	mimeType: text('mime_type'),
 	sizeBytes: integer('size_bytes'),
+	parsedContent: text('parsed_content'),
 	createdAt: timestamp('created_at').defaultNow().notNull()
 }, (table) => ({
 	idxThemeId: index('theme_files_theme_id_idx').on(table.themeId)
@@ -529,22 +531,125 @@ export const pantryItems = pgTable('pantry_items', {
 	idxPantryUserExpires: index('pantry_items_user_expires_idx').on(table.userId, table.expiresAt)
 }));
 
-// Memories - Viktig informasjon om brukeren som AI husker
+// Memories - Stabile, kuraterte fakta om brukeren som AI husker.
+// MERK: Denne tabellen er for langtidsfakta (preferanser, verdier, relasjoner, helsebakgrunn).
+// Tidsstemplede refleksjoner -> reflections, planartefakter -> plan_artifacts,
+// LLM-synteser -> context_briefs, goal-tracks -> goal_tracks, theme-instruksjoner -> themes.instructions,
+// parsed fil-innhold -> theme_files.parsed_content.
 export const memories = pgTable('memories', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	userId: text('user_id').references(() => users.id).notNull(),
-	themeId: uuid('theme_id').references(() => themes.id), // Ny: memories kan være tema-spesifikke
-	personId: uuid('person_id').references((): AnyPgColumn => persons.id, { onDelete: 'set null' }), // Memory om en bestemt person (familie/venn/kollega)
-	category: text('category').notNull(), // 'personal', 'relationship', 'fitness', 'mental_health', 'preferences'
+	themeId: uuid('theme_id').references(() => themes.id),
+	personId: uuid('person_id').references((): AnyPgColumn => persons.id, { onDelete: 'set null' }),
+	category: text('category').notNull(), // 'personal' | 'relationship' | 'fitness' | 'mental_health' | 'preferences' | 'values' | 'health_baseline' | 'other'
 	content: text('content').notNull(),
-	importance: text('importance').notNull().default('medium'), // 'high', 'medium', 'low'
+	importance: text('importance').notNull().default('medium'), // 'high' | 'medium' | 'low'
+	confidence: text('confidence').notNull().default('user_confirmed'), // 'user_confirmed' | 'llm_inferred' | 'imported'
 	source: text('source'),
+	sourceRef: jsonb('source_ref').$type<{ kind: string; id?: string }>(), // Strukturert sporbarhet, f.eks. { kind: 'reflection', id: '…' }
+	supersededBy: uuid('superseded_by'),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull(),
 	lastAccessedAt: timestamp('last_accessed_at').defaultNow().notNull()
 }, (table) => ({
 	idxUserId: index('memories_user_id_idx').on(table.userId),
 	idxPerson: index('memories_person_idx').on(table.personId)
+}));
+
+// Reflections - Tidsstemplede refleksjoner (egenfrekvens-snapshot, day_close, salary_report,
+// uke-/månedsrefleksjon o.l.). Skal være lett å hente i tidsserie for DreamService.
+export const reflections = pgTable('reflections', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	themeId: uuid('theme_id').references(() => themes.id, { onDelete: 'set null' }),
+	personId: uuid('person_id').references((): AnyPgColumn => persons.id, { onDelete: 'set null' }),
+	kind: text('kind').notNull(), // 'day_close' | 'week_review' | 'month_review' | 'salary_report' | 'goal_check' | 'ad_hoc'
+	periodKey: text('period_key'), // '2026-05-09' | '2026-W19' | '2026-05' | null for ad-hoc
+	content: text('content').notNull(),
+	scores: jsonb('scores').$type<{
+		mood?: number;
+		energy?: number;
+		focus?: number;
+		[key: string]: unknown;
+	}>(),
+	flowRunId: text('flow_run_id'),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => ({
+	idxReflectionsUserCreated: index('reflections_user_created_idx').on(table.userId, table.createdAt),
+	idxReflectionsUserKindPeriod: index('reflections_user_kind_period_idx').on(table.userId, table.kind, table.periodKey)
+}));
+
+// Plan artifacts - Strukturerte planer fra dag/uke/måned-ritualer.
+// Én rad per (userId, kind, periodKey) med valgfrie tekstfelter.
+export const planArtifacts = pgTable('plan_artifacts', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	themeId: uuid('theme_id').references(() => themes.id, { onDelete: 'set null' }),
+	kind: text('kind').notNull(), // 'day' | 'week' | 'month'
+	periodKey: text('period_key').notNull(), // '2026-05-09' | '2026-W19' | '2026-05'
+	parentPeriodKey: text('parent_period_key'), // For 'day': '2026-W19' (uke); for 'week': '2026-05' (måned)
+	headline: text('headline'),
+	note: text('note'),
+	reflection: text('reflection'),
+	vision: text('vision'),
+	goalRefs: jsonb('goal_refs').$type<string[]>(),
+	status: text('status').notNull().default('active'), // 'active' | 'closed' | 'archived'
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull(),
+	closedAt: timestamp('closed_at')
+}, (table) => ({
+	uqPlanArtifactPeriod: uniqueIndex('plan_artifacts_user_kind_period_uq').on(table.userId, table.kind, table.periodKey),
+	idxPlanArtifactsParent: index('plan_artifacts_user_parent_idx').on(table.userId, table.parentPeriodKey)
+}));
+
+// Context briefs ("drømmer") - LLM-synteser av siste tids data og refleksjoner.
+// Lagres som ferdig-komprimert kontekst som chat kan plukke direkte.
+export const contextBriefs = pgTable('context_briefs', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	kind: text('kind').notNull(), // 'daily_dream' | 'weekly_synthesis' | 'goal_synthesis' | 'theme_synthesis'
+	scopeStart: timestamp('scope_start').notNull(),
+	scopeEnd: timestamp('scope_end').notNull(),
+	summary: text('summary').notNull(),
+	highlights: jsonb('highlights').$type<{
+		mode?: 'least_effort' | 'steady' | 'push';
+		rationale?: string;
+		wins?: string[];
+		frictions?: string[];
+		signals?: Array<{ type: string; value: unknown; note?: string }>;
+		[key: string]: unknown;
+	}>(),
+	inputs: jsonb('inputs').$type<{
+		reflectionIds?: string[];
+		planArtifactIds?: string[];
+		signalIds?: string[];
+		aggregateIds?: string[];
+		goalIds?: string[];
+		themeIds?: string[];
+		previousBriefId?: string;
+	}>(),
+	goalIds: uuid('goal_ids').array(),
+	themeIds: uuid('theme_ids').array(),
+	model: text('model'),
+	promptVersion: text('prompt_version'),
+	relevanceUntil: timestamp('relevance_until'),
+	supersededBy: uuid('superseded_by'),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => ({
+	idxContextBriefsUserKindCreated: index('context_briefs_user_kind_created_idx').on(table.userId, table.kind, table.createdAt),
+	idxContextBriefsUserRelevance: index('context_briefs_user_relevance_idx').on(table.userId, table.relevanceUntil)
+}));
+
+// Goal tracks - Per-metric-konfigurasjon av mål-spor (erstatter goal_tracks_v1 i memories).
+export const goalTracks = pgTable('goal_tracks', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	metricId: text('metric_id').notNull(),
+	tracks: jsonb('tracks').notNull().default(sql`'[]'::jsonb`),
+	updatedAt: timestamp('updated_at').defaultNow().notNull(),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => ({
+	uqGoalTracksUserMetric: uniqueIndex('goal_tracks_user_metric_uq').on(table.userId, table.metricId)
 }));
 
 // ─── Family / Network Domain ────────────────────────────────────
@@ -728,6 +833,10 @@ export const usersRelations = relations(users, ({ many }) => ({
 	conversations: many(conversations),
 	activities: many(activities),
 	memories: many(memories),
+	reflections: many(reflections),
+	planArtifacts: many(planArtifacts),
+	contextBriefs: many(contextBriefs),
+	goalTracks: many(goalTracks),
 	userWidgets: many(userWidgets),
 	themes: many(themes),
 	authAccounts: many(authAccounts),
@@ -800,6 +909,8 @@ export const themesRelations = relations(themes, ({ one, many }) => ({
 	}),
 	goals: many(goals),
 	memories: many(memories),
+	reflections: many(reflections),
+	planArtifacts: many(planArtifacts),
 	lists: many(themeLists),
 	files: many(themeFiles),
 	trackingSeries: many(trackingSeries),
@@ -911,6 +1022,25 @@ export const memoriesRelations = relations(memories, ({ one }) => ({
 	})
 }));
 
+export const reflectionsRelations = relations(reflections, ({ one }) => ({
+	user: one(users, { fields: [reflections.userId], references: [users.id] }),
+	theme: one(themes, { fields: [reflections.themeId], references: [themes.id] }),
+	person: one(persons, { fields: [reflections.personId], references: [persons.id] })
+}));
+
+export const planArtifactsRelations = relations(planArtifacts, ({ one }) => ({
+	user: one(users, { fields: [planArtifacts.userId], references: [users.id] }),
+	theme: one(themes, { fields: [planArtifacts.themeId], references: [themes.id] })
+}));
+
+export const contextBriefsRelations = relations(contextBriefs, ({ one }) => ({
+	user: one(users, { fields: [contextBriefs.userId], references: [users.id] })
+}));
+
+export const goalTracksRelations = relations(goalTracks, ({ one }) => ({
+	user: one(users, { fields: [goalTracks.userId], references: [users.id] })
+}));
+
 // Persons + relations + mention relations
 export const personsRelations = relations(persons, ({ one, many }) => ({
 	user: one(users, {
@@ -918,6 +1048,7 @@ export const personsRelations = relations(persons, ({ one, many }) => ({
 		references: [users.id]
 	}),
 	memories: many(memories),
+	reflections: many(reflections),
 	goals: many(goals),
 	tasks: many(tasks),
 	conversations: many(conversations),
