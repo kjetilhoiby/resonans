@@ -6,7 +6,8 @@ import { createGoal, createTask, getUserActiveGoalsAndTasks, findSimilarGoals, f
 import { getOrCreateConversation, createConversation, addMessage, getConversationHistory, getConversationByIdForUser } from '$lib/server/conversations';
 import { logActivity } from '$lib/server/activities';
 import { recordTrackingEvent } from '$lib/server/tracking-series';
-import { buildMemoryContext, createMemory } from '$lib/server/memories';
+import { createMemory } from '$lib/server/memories';
+import { ContextService } from '$lib/server/services/context-service';
 import { upsertPlanArtifactField } from '$lib/server/plan-artifacts';
 import { buildPersonContext } from '$lib/server/person-context';
 import { isFutureVisionText, seedThemeInstructionFromFutureVision } from '$lib/server/theme-instructions';
@@ -1490,7 +1491,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 
 		// Bygg memory context (viktig informasjon om brukeren)
                 // Sender med themeId slik at fil-innhold for aktivt tema vises i konteksten
-                const memoryContext = await buildMemoryContext(userId, conversation.themeId ?? null);
+                const memoryContext = await ContextService.buildForChat({ userId, themeId: conversation.themeId ?? null });
 
                 // Hvis samtalen er scoped til en person, hent dedikert person-kontekst
                 let personContext = '';

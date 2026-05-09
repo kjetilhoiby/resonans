@@ -2,7 +2,7 @@ import { db } from '$lib/db';
 import { planArtifacts } from '$lib/db/schema';
 import { and, eq, gte, lte, desc, sql } from 'drizzle-orm';
 
-export type PlanArtifactKind = 'day' | 'week' | 'month';
+export type PlanArtifactKind = 'day' | 'week' | 'month' | 'quarter' | 'year';
 export type PlanArtifactField = 'headline' | 'note' | 'reflection' | 'vision';
 
 interface UpsertParams {

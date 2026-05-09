@@ -199,6 +199,8 @@ export const goals = pgTable('goals', {
 	categoryId: uuid('category_id').references(() => categories.id),
 	themeId: uuid('theme_id').references(() => themes.id), // Ny: kobling til tema (nullable for bakoverkompatibilitet)
 	personId: uuid('person_id').references((): AnyPgColumn => persons.id, { onDelete: 'set null' }), // Mål knyttet til en bestemt person
+	parentGoalId: uuid('parent_goal_id').references((): AnyPgColumn => goals.id, { onDelete: 'set null' }),
+	periodKey: text('period_key'), // '2026' | '2026-Q1' | '2026-04' | null (løpende)
 	title: text('title').notNull(),
 	description: text('description'),
 	targetDate: timestamp('target_date'),
@@ -208,7 +210,9 @@ export const goals = pgTable('goals', {
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
 }, (table) => ({
 	idxUserId: index('goals_user_id_idx').on(table.userId),
-	idxPerson: index('goals_person_idx').on(table.personId)
+	idxPerson: index('goals_person_idx').on(table.personId),
+	idxParent: index('goals_parent_idx').on(table.parentGoalId),
+	idxPeriod: index('goals_user_period_idx').on(table.userId, table.periodKey)
 }));
 
 // Konkrete oppgaver knyttet til mål
@@ -608,10 +612,12 @@ export const planArtifacts = pgTable('plan_artifacts', {
 //   kind = 'vision_{5year|yearly|quarterly|themed}' → langsiktig retning / ønske
 // inputs.previousBriefId kjeder synteser; supersededBy peker til ny versjon når
 // en drøm regenereres (f.eks. fordi en sen refleksjon kom inn).
+// originKind forteller hvordan drømmen ble til; confidence styrer hvor mye
+// chat-promptet skal stole på den.
 export const dreams = pgTable('dreams', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-	kind: text('kind').notNull(), // 'daily_dream' | 'weekly_synthesis' | 'goal_synthesis' | 'theme_synthesis'
+	kind: text('kind').notNull(),
 	scopeStart: timestamp('scope_start').notNull(),
 	scopeEnd: timestamp('scope_end').notNull(),
 	summary: text('summary').notNull(),
@@ -621,6 +627,7 @@ export const dreams = pgTable('dreams', {
 		wins?: string[];
 		frictions?: string[];
 		signals?: Array<{ type: string; value: unknown; note?: string }>;
+		alignment?: { yearGoal?: string; quarterGoal?: string; monthGoal?: string };
 		[key: string]: unknown;
 	}>(),
 	inputs: jsonb('inputs').$type<{
@@ -631,6 +638,8 @@ export const dreams = pgTable('dreams', {
 		goalIds?: string[];
 		themeIds?: string[];
 		previousBriefId?: string;
+		childBriefIds?: string[];
+		memoryIds?: string[];
 	}>(),
 	goalIds: uuid('goal_ids').array(),
 	themeIds: uuid('theme_ids').array(),
@@ -638,6 +647,8 @@ export const dreams = pgTable('dreams', {
 	promptVersion: text('prompt_version'),
 	relevanceUntil: timestamp('relevance_until'),
 	supersededBy: uuid('superseded_by'),
+	confidence: text('confidence').notNull().default('user_confirmed'),
+	originKind: text('origin_kind'),
 	createdAt: timestamp('created_at').defaultNow().notNull()
 }, (table) => ({
 	idxDreamsUserKindCreated: index('dreams_user_kind_created_idx').on(table.userId, table.kind, table.createdAt),
@@ -938,6 +949,12 @@ export const goalsRelations = relations(goals, ({ one, many }) => ({
 		fields: [goals.personId],
 		references: [persons.id]
 	}),
+	parentGoal: one(goals, {
+		fields: [goals.parentGoalId],
+		references: [goals.id],
+		relationName: 'goal_hierarchy'
+	}),
+	childGoals: many(goals, { relationName: 'goal_hierarchy' }),
 	tasks: many(tasks)
 }));
 
