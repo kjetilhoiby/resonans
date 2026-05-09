@@ -10,7 +10,8 @@
 	import { FLOWS } from '$lib/flows/registry';
 	import { finishNavMetric, startNavMetric } from '$lib/client/nav-metrics';
 	import MetricCard from '$lib/components/visualizations/MetricCard.svelte';
-	import { groupChecklistItems, activityEmoji, sortByTime, formatItemTime, stripTimeFromText, type GroupedChecklistEntry } from '$lib/utils/checklist-group';
+	import { groupChecklistItems, activityEmoji, sortByTime, sortByStatus, formatItemTime, stripTimeFromText, type GroupedChecklistEntry } from '$lib/utils/checklist-group';
+	import TaskContextMenu from '$lib/components/ui/TaskContextMenu.svelte';
 	import WeatherStrip, { type WeatherPeriod } from '$lib/components/ui/WeatherStrip.svelte';
 	import MentionPicker from '$lib/components/ui/MentionPicker.svelte';
 	import { createMentionState } from '$lib/utils/mention-input.svelte';
@@ -39,6 +40,8 @@
 		parentId?: string | null;
 		startDate?: string | null;
 		endDate?: string | null;
+		skippedAt?: string | null;
+		snoozedToDate?: string | null;
 		domain?: 'health' | 'economics' | 'food' | null;
 		metadata?: {
 			linkedTaskId?: string;
@@ -258,9 +261,12 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 	let weekPickerInput = $state<HTMLInputElement | null>(null);
 	let expandedDayParentIds = $state<Set<string>>(new Set());
 	let expandedWeekParentIds = $state<Set<string>>(new Set());
-	let editLongPressTimer = $state<ReturnType<typeof setTimeout> | null>(null);
-	let editLongPressTriggered = $state(false);
-	const EDIT_LONG_PRESS_MS = 650;
+	// Kontekstmeny ved langtrykk
+	let contextMenuItem = $state<{ checklistId: string; item: ChecklistItem } | null>(null);
+	let contextMenuRect = $state<DOMRect | null>(null);
+	let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+	let longPressTriggered = $state(false);
+	const LONG_PRESS_MS = 600;
 	let saveStates = $state<Record<string, SaveState>>({
 		weekNote: 'idle',
 		weekItems: 'idle',
@@ -270,7 +276,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 	});
 
 	const selectedDayChecklist = $derived(dayChecklistsState[selectedDayIso] ?? null);
-	const sortedDayItems = $derived(selectedDayChecklist ? sortByTime(selectedDayChecklist.items.filter((item) => !item.parentId)) : []);
+	const sortedDayItems = $derived(selectedDayChecklist ? sortByStatus(sortByTime(selectedDayChecklist.items.filter((item) => !item.parentId))) : []);
 	const selectedDay = $derived(data.week.days.find((day) => day.isoDate === selectedDayIso) ?? data.week.days[0]);
 	const selectedDayHeadline = $derived(dayHeadlinesState[selectedDayIso] ?? '');
 	const selectedDaySpondEvents = $derived(data.spondEventsByDay?.[selectedDayIso] ?? []);
@@ -1008,28 +1014,83 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 		editInput?.select();
 	}
 
-	function beginEditLongPress(checklistId: string, item: ChecklistItem) {
-		if (editLongPressTimer) clearTimeout(editLongPressTimer);
-		editLongPressTriggered = false;
-		editLongPressTimer = setTimeout(() => {
-			editLongPressTriggered = true;
-			void startEditing(checklistId, item);
-			editLongPressTimer = null;
-		}, EDIT_LONG_PRESS_MS);
-	}
-
-	function cancelEditLongPress() {
-		if (!editLongPressTimer) return;
-		clearTimeout(editLongPressTimer);
-		editLongPressTimer = null;
-	}
-
 	function handleEditPress(checklistId: string, item: ChecklistItem) {
-		if (editLongPressTriggered) {
-			editLongPressTriggered = false;
+		// Når langtrykk åpner kontekstmenyen skal vanlig klikk ikke også starte redigering.
+		if (longPressTriggered) {
+			longPressTriggered = false;
 			return;
 		}
 		void startEditing(checklistId, item);
+	}
+
+	function handleContextPressStart(event: PointerEvent, checklistId: string, item: ChecklistItem) {
+		const target = event.currentTarget as HTMLElement;
+		const rect = target.getBoundingClientRect();
+		longPressTriggered = false;
+		if (longPressTimer) clearTimeout(longPressTimer);
+		longPressTimer = setTimeout(() => {
+			longPressTriggered = true;
+			contextMenuItem = { checklistId, item };
+			contextMenuRect = rect;
+			longPressTimer = null;
+		}, LONG_PRESS_MS);
+	}
+
+	function handleContextPressEnd() {
+		if (longPressTimer) {
+			clearTimeout(longPressTimer);
+			longPressTimer = null;
+		}
+	}
+
+	async function setItemSkipped(checklistId: string, itemId: string, skipped: boolean) {
+		updateChecklistById(checklistId, (current) => ({
+			...current,
+			items: current.items.map((i) =>
+				i.id === itemId
+					? { ...i, skippedAt: skipped ? new Date().toISOString() : null, snoozedToDate: skipped ? i.snoozedToDate : null, checked: skipped ? false : i.checked }
+					: i
+			)
+		}));
+		const key = saveKeyForChecklist(checklistId);
+		setSaveState(key, 'saving');
+		const res = await fetch(`/api/checklists/${checklistId}/items/${itemId}`, {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ skipped })
+		});
+		if (!res.ok) {
+			setSaveState(key, 'idle');
+			await invalidateAll();
+			return;
+		}
+		flashSaved(key);
+	}
+
+	async function snoozeItem(checklistId: string, itemId: string, targetDate: string) {
+		updateChecklistById(checklistId, (current) => ({
+			...current,
+			items: current.items.map((i) =>
+				i.id === itemId
+					? { ...i, skippedAt: new Date().toISOString(), snoozedToDate: targetDate, checked: false }
+					: i
+			)
+		}));
+		const key = saveKeyForChecklist(checklistId);
+		setSaveState(key, 'saving');
+		const res = await fetch(`/api/checklists/${checklistId}/items/${itemId}/snooze`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ targetDate })
+		});
+		if (!res.ok) {
+			setSaveState(key, 'idle');
+			await invalidateAll();
+			return;
+		}
+		flashSaved(key);
+		// Be om reload slik at ny kopi vises på riktig dag (kan være neste uke).
+		await invalidateAll();
 	}
 
 	function startTouchDrag(event: TouchEvent, checklistId: string, itemId: string) {
@@ -1624,7 +1685,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 			</div>
 
 			<ul class="wp-checklist">
-				{#each groupChecklistItems(weekChecklistState.items.filter(i => !i.parentId)) as group}
+				{#each groupChecklistItems(sortByStatus(weekChecklistState.items.filter(i => !i.parentId))) as group}
 					{#if group.type === 'group'}
 						<li class="wp-check-row">
 							<div class="wp-check-row-main">
@@ -1643,7 +1704,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 							</div>
 						</li>
 					{:else}
-					{@const weekChildren = weekChecklistState.items.filter(c => c.parentId === group.item.id)}
+					{@const weekChildren = sortByStatus(weekChecklistState.items.filter(c => c.parentId === group.item.id))}
 					{@const hasWeekChildren = weekChildren.length > 0}
 					{@const completedWeekChildren = weekChildren.filter(c => c.checked).length}
 					{@const isWeekExpanded = expandedWeekParentIds.has(group.item.id)}
@@ -1687,8 +1748,17 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 									><Icon name="close" size={13} /></button>
 								</div>
 							{:else}
-								<button type="button" class="wp-item-text-btn" onclick={() => void startEditing(weekChecklistId, group.item)}>
-									<span class="wp-check-text" class:checked={group.item.checked}>{group.item.text}</span>
+								<button
+									type="button"
+									class="wp-item-text-btn"
+									class:is-skipped={!!group.item.skippedAt}
+									onpointerdown={(e) => handleContextPressStart(e, weekChecklistId, group.item)}
+									onpointerup={handleContextPressEnd}
+									onpointercancel={handleContextPressEnd}
+									onpointerleave={handleContextPressEnd}
+									onclick={() => handleEditPress(weekChecklistId, group.item)}
+								>
+									<span class="wp-check-text" class:checked={group.item.checked} class:skipped={!!group.item.skippedAt}>{group.item.text}</span>
 								</button>
 							{/if}
 							<div class="wp-check-row-right">
@@ -1725,7 +1795,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 									>▸</button>
 								{:else}
 									<button type="button" class="wp-check-toggle" onclick={() => void toggleChecklistItem(weekChecklistId, group.item.id, !group.item.checked)} aria-label="Toggle">
-										<span class="wp-check-circle" class:checked={group.item.checked}>{group.item.checked ? '✓' : ''}</span>
+										<span class="wp-check-circle" class:checked={group.item.checked} class:skipped={!!group.item.skippedAt}>{group.item.skippedAt ? '✕' : group.item.checked ? '✓' : ''}</span>
 									</button>
 								{/if}
 								<span class="wp-drag-handle" aria-hidden="true" ontouchstart={(event) => startTouchDrag(event, weekChecklistId, group.item.id)}>⋮⋮</span>
@@ -1753,11 +1823,20 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 												><Icon name="close" size={13} /></button>
 											</div>
 										{:else}
-											<button type="button" class="wp-item-text-btn" onclick={() => void startEditing(weekChecklistId, child)}>
-												<span class="wp-check-text" class:checked={child.checked}>{child.text}</span>
+											<button
+												type="button"
+												class="wp-item-text-btn"
+												class:is-skipped={!!child.skippedAt}
+												onpointerdown={(e) => handleContextPressStart(e, weekChecklistId, child)}
+												onpointerup={handleContextPressEnd}
+												onpointercancel={handleContextPressEnd}
+												onpointerleave={handleContextPressEnd}
+												onclick={() => handleEditPress(weekChecklistId, child)}
+											>
+												<span class="wp-check-text" class:checked={child.checked} class:skipped={!!child.skippedAt}>{child.text}</span>
 											</button>
 											<button type="button" class="wp-check-toggle" onclick={() => void toggleChecklistItem(weekChecklistId, child.id, !child.checked)} aria-label="Toggle">
-												<span class="wp-check-circle" class:checked={child.checked}>{child.checked ? '✓' : ''}</span>
+												<span class="wp-check-circle" class:checked={child.checked} class:skipped={!!child.skippedAt}>{child.skippedAt ? '✕' : child.checked ? '✓' : ''}</span>
 											</button>
 										{/if}
 									</div>
@@ -1893,7 +1972,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 		{#if selectedDayChecklist}
 			<ul class="wp-checklist">
 				{#each sortedDayItems as item}
-					{@const dayChildren = sortByTime(selectedDayChecklist.items.filter((child) => child.parentId === item.id))}
+					{@const dayChildren = sortByStatus(sortByTime(selectedDayChecklist.items.filter((child) => child.parentId === item.id)))}
 					{@const hasChildren = dayChildren.length > 0}
 					{@const isExpanded = expandedDayParentIds.has(item.id)}
 					{@const completedChildren = dayChildren.filter((child) => child.checked).length}
@@ -1937,12 +2016,11 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 								<button
 									type="button"
 									class="wp-item-text-btn"
-									onmousedown={() => beginEditLongPress(selectedDayChecklist.id, item)}
-									onmouseup={cancelEditLongPress}
-									onmouseleave={cancelEditLongPress}
-									ontouchstart={() => beginEditLongPress(selectedDayChecklist.id, item)}
-									ontouchend={cancelEditLongPress}
-									ontouchcancel={cancelEditLongPress}
+									class:is-skipped={!!item.skippedAt}
+									onpointerdown={(e) => handleContextPressStart(e, selectedDayChecklist.id, item)}
+									onpointerup={handleContextPressEnd}
+									onpointercancel={handleContextPressEnd}
+									onpointerleave={handleContextPressEnd}
 									onclick={() => handleEditPress(selectedDayChecklist.id, item)}
 								>
 									{#if hasChildren}
@@ -1951,7 +2029,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 									{#if item.metadata?.timeHour !== undefined}
 										<span class="wp-time-badge">{formatItemTime(item.metadata.timeHour, item.metadata.timeMinute ?? 0)}</span>
 									{/if}
-									<span class="wp-check-text" class:checked={item.checked}>{item.metadata?.timeHour !== undefined ? stripTimeFromText(item.text) : item.text}</span>
+									<span class="wp-check-text" class:checked={item.checked} class:skipped={!!item.skippedAt}>{item.metadata?.timeHour !== undefined ? stripTimeFromText(item.text) : item.text}</span>
 									{#if item.metadata?.linkedTaskId}
 										<span class="wp-intent-badge" title="Koblet til ukesmål: {item.metadata.linkedTaskTitle ?? ''}">
 											{item.metadata.autoChecked ? '⚡' : '🔗'}
@@ -1973,7 +2051,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 									>▸</button>
 								{:else}
 									<button type="button" class="wp-check-toggle" onclick={() => void toggleChecklistItem(selectedDayChecklist.id, item.id, !item.checked)} aria-label="Toggle">
-										<span class="wp-check-circle" class:checked={item.checked}>{item.checked ? '✓' : ''}</span>
+										<span class="wp-check-circle" class:checked={item.checked} class:skipped={!!item.skippedAt}>{item.skippedAt ? '✕' : item.checked ? '✓' : ''}</span>
 									</button>
 								{/if}
 								<span class="wp-drag-handle" aria-hidden="true" ontouchstart={(event) => startTouchDrag(event, selectedDayChecklist.id, item.id)}>⋮⋮</span>
@@ -2004,21 +2082,20 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 											<button
 												type="button"
 												class="wp-item-text-btn"
-												onmousedown={() => beginEditLongPress(selectedDayChecklist.id, child)}
-												onmouseup={cancelEditLongPress}
-												onmouseleave={cancelEditLongPress}
-												ontouchstart={() => beginEditLongPress(selectedDayChecklist.id, child)}
-												ontouchend={cancelEditLongPress}
-												ontouchcancel={cancelEditLongPress}
+												class:is-skipped={!!child.skippedAt}
+												onpointerdown={(e) => handleContextPressStart(e, selectedDayChecklist.id, child)}
+												onpointerup={handleContextPressEnd}
+												onpointercancel={handleContextPressEnd}
+												onpointerleave={handleContextPressEnd}
 												onclick={() => handleEditPress(selectedDayChecklist.id, child)}
 											>
 												{#if child.metadata?.timeHour !== undefined}
 													<span class="wp-time-badge">{formatItemTime(child.metadata.timeHour, child.metadata.timeMinute ?? 0)}</span>
 												{/if}
-												<span class="wp-check-text" class:checked={child.checked}>{child.metadata?.timeHour !== undefined ? stripTimeFromText(child.text) : child.text}</span>
+												<span class="wp-check-text" class:checked={child.checked} class:skipped={!!child.skippedAt}>{child.metadata?.timeHour !== undefined ? stripTimeFromText(child.text) : child.text}</span>
 											</button>
 											<button type="button" class="wp-check-toggle" onclick={() => void toggleChecklistItem(selectedDayChecklist.id, child.id, !child.checked)} aria-label="Toggle">
-												<span class="wp-check-circle" class:checked={child.checked}>{child.checked ? '✓' : ''}</span>
+												<span class="wp-check-circle" class:checked={child.checked} class:skipped={!!child.skippedAt}>{child.skippedAt ? '✕' : child.checked ? '✓' : ''}</span>
 											</button>
 										{/if}
 									</div>
@@ -2200,6 +2277,31 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 		}}
 	/>
 {/if}
+
+<TaskContextMenu
+	open={contextMenuItem !== null}
+	anchor={contextMenuRect}
+	itemText={contextMenuItem?.item.text ?? ''}
+	hasChildren={contextMenuItem
+		? (selectedDayChecklist?.items.some((i) => i.parentId === contextMenuItem!.item.id) ?? false)
+			|| (weekChecklistState?.items.some((i) => i.parentId === contextMenuItem!.item.id) ?? false)
+		: false}
+	isSkipped={!!contextMenuItem?.item.skippedAt}
+	isChecked={!!contextMenuItem?.item.checked}
+	onClose={() => { contextMenuItem = null; contextMenuRect = null; }}
+	onEdit={() => {
+		if (contextMenuItem) void startEditing(contextMenuItem.checklistId, contextMenuItem.item);
+	}}
+	onSnooze={(targetDate) => {
+		if (contextMenuItem) void snoozeItem(contextMenuItem.checklistId, contextMenuItem.item.id, targetDate);
+	}}
+	onSkip={() => {
+		if (contextMenuItem) void setItemSkipped(contextMenuItem.checklistId, contextMenuItem.item.id, true);
+	}}
+	onUnskip={() => {
+		if (contextMenuItem) void setItemSkipped(contextMenuItem.checklistId, contextMenuItem.item.id, false);
+	}}
+/>
 
 <style>
 	.week-plan-page {
@@ -2826,6 +2928,12 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 		color: #5fa080;
 	}
 
+	.wp-check-circle.skipped {
+		border-color: #774444;
+		background: rgba(160, 80, 80, 0.18);
+		color: #e07070;
+	}
+
 	.wp-check-text {
 		font-size: 0.95rem;
 		color: #ccc;
@@ -2834,6 +2942,12 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 	.wp-check-text.checked {
 		color: #737d95;
 		text-decoration: line-through;
+	}
+
+	.wp-check-text.skipped {
+		color: #8a6868;
+		text-decoration: line-through;
+		text-decoration-color: #774444;
 	}
 
 	.wp-parent-progress {

@@ -12,10 +12,11 @@
 	import { fly, fade, scale, slide } from 'svelte/transition';
 	import { elasticOut, cubicOut } from 'svelte/easing';
 	import { onMount } from 'svelte';
-	import { groupChecklistItems, activityEmoji } from '$lib/utils/checklist-group';
+	import { groupChecklistItems, activityEmoji, sortByStatus } from '$lib/utils/checklist-group';
 	import WeatherStrip, { type WeatherPeriod } from '$lib/components/ui/WeatherStrip.svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import BreakdownModal from '$lib/components/ui/BreakdownModal.svelte';
+	import TaskContextMenu from '$lib/components/ui/TaskContextMenu.svelte';
 	import MentionAutocomplete from '$lib/components/ui/MentionAutocomplete.svelte';
 	import { readCacheEntry, isCacheStale, fetchRawTimeseries, buildPeriods, buildWeekPeriods } from '$lib/utils/weather';
 
@@ -26,6 +27,8 @@
 		sortOrder: number;
 		parentId?: string | null;
 		children?: ChecklistItem[];
+		skippedAt?: string | null;
+		snoozedToDate?: string | null;
 	}
 
 	interface Checklist {
@@ -54,10 +57,14 @@
 	let addingItem = $state(false);
 	let breakdownItem = $state<ChecklistItem | null>(null);
 	let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+	let longPressTriggered = $state(false);
+	let contextMenuItem = $state<ChecklistItem | null>(null);
+	let contextMenuRect = $state<DOMRect | null>(null);
 	let expandedParentIds = $state<Set<string>>(new Set());
 	let newSubItemTexts = $state<Record<string, string>>({});
 
-	const done = $derived(items.filter((i) => i.checked).length);
+	// "Done" = avkrysset eller strøket — strøkne er bevisst ikke-gjort, ikke uløste.
+	const done = $derived(items.filter((i) => i.checked || i.skippedAt).length);
 	const total = $derived(items.length);
 	const allDone = $derived(total > 0 && done === total);
 	const pct = $derived(total > 0 ? done / total : 0);
@@ -158,15 +165,20 @@
 		}
 	});
 
-	// Langtrykk-handler (700ms)
-	function handleItemMouseDown(item: ChecklistItem) {
+	// Langtrykk åpner kontekstmeny (600ms, samme som widgets).
+	function handleItemPressStart(event: PointerEvent, item: ChecklistItem) {
+		const target = event.currentTarget as HTMLElement;
+		const rect = target.getBoundingClientRect();
+		longPressTriggered = false;
 		longPressTimer = setTimeout(() => {
-			breakdownItem = item;
+			longPressTriggered = true;
+			contextMenuItem = item;
+			contextMenuRect = rect;
 			longPressTimer = null;
-		}, 700);
+		}, 600);
 	}
 
-	function handleItemMouseUp() {
+	function handleItemPressEnd() {
 		if (longPressTimer) {
 			clearTimeout(longPressTimer);
 			longPressTimer = null;
@@ -177,6 +189,11 @@
 		if (longPressTimer) {
 			clearTimeout(longPressTimer);
 			longPressTimer = null;
+		}
+		// Hvis kontekstmenyen ble åpnet via langtrykk, ikke kryss av samtidig.
+		if (longPressTriggered) {
+			longPressTriggered = false;
+			return;
 		}
 
 		const newChecked = !item.checked;
@@ -220,6 +237,45 @@
 		} finally {
 			addingItem = false;
 		}
+	}
+
+	async function setItemSkipped(itemId: string, skipped: boolean) {
+		const previousItems = items;
+		items = items.map((i) =>
+			i.id === itemId
+				? { ...i, skippedAt: skipped ? new Date().toISOString() : null, snoozedToDate: skipped ? i.snoozedToDate : null, checked: skipped ? false : i.checked }
+				: i
+		);
+		const res = await fetch(`/api/checklists/${checklist.id}/items/${itemId}`, {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ skipped })
+		});
+		if (!res.ok) {
+			items = previousItems;
+			return;
+		}
+		onChanged?.();
+	}
+
+	async function snoozeItem(itemId: string, targetDate: string) {
+		// Optimistisk markér originalen som skipped + snoozed; kopien lever på et annet sjekkliste
+		const previousItems = items;
+		items = items.map((i) =>
+			i.id === itemId
+				? { ...i, skippedAt: new Date().toISOString(), snoozedToDate: targetDate, checked: false }
+				: i
+		);
+		const res = await fetch(`/api/checklists/${checklist.id}/items/${itemId}/snooze`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ targetDate })
+		});
+		if (!res.ok) {
+			items = previousItems;
+			return;
+		}
+		onChanged?.();
 	}
 
 	async function handleBreakdownSave(subtasks: string[]) {
@@ -343,27 +399,30 @@
 
 	<!-- Items list -->
 	<div class="cs-items">
-		{#each groupChecklistItems(items.filter(i => !i.parentId)) as group}
+		{#each groupChecklistItems(sortByStatus(items.filter(i => !i.parentId))) as group}
 			{#if group.type === 'group'}
 				<div class="cs-group-row">
 					<span class="cs-group-label">{activityEmoji(group.label) ? activityEmoji(group.label) + ' ' : ''}{group.label}</span>
 					<div class="cs-slot-row">
 						{#each group.items as item (item.id)}
 							{@const hasChildren = items.some(i => i.parentId === item.id)}
+							{@const itemSkipped = !!item.skippedAt}
 							<button
 								type="button"
 								class="cs-slot"
 								class:cs-slot-checked={item.checked}
+								class:cs-slot-skipped={itemSkipped}
 								class:cs-slot-parent={hasChildren}
-								onmousedown={() => handleItemMouseDown(item)}
-								onmouseup={handleItemMouseUp}
-								onmouseleave={handleItemMouseUp}
+								onpointerdown={(e) => handleItemPressStart(e, item)}
+								onpointerup={handleItemPressEnd}
+								onpointercancel={handleItemPressEnd}
+								onpointerleave={handleItemPressEnd}
 								onclick={() => toggleItem(item)}
-								title={hasChildren ? 'Langtrykk for å redigere substeps' : 'Langtrykk for å dele opp'}
+								title="Langtrykk for valg"
 								aria-label={item.checked ? 'Marker som ikke gjort' : 'Marker som gjort'}
 							>
-								{item.checked ? '✓' : ''}
-								{#if hasChildren}
+								{itemSkipped ? '✕' : item.checked ? '✓' : ''}
+								{#if hasChildren && !itemSkipped}
 									<span class="cs-slot-indicator">✕</span>
 								{/if}
 							</button>
@@ -393,11 +452,13 @@
 							<button
 								class="cs-item"
 								class:cs-item-checked={group.item.checked}
-								onmousedown={() => handleItemMouseDown(group.item)}
-								onmouseup={handleItemMouseUp}
-								onmouseleave={handleItemMouseUp}
+								class:cs-item-skipped={!!group.item.skippedAt}
+								onpointerdown={(e) => handleItemPressStart(e, group.item)}
+								onpointerup={handleItemPressEnd}
+								onpointercancel={handleItemPressEnd}
+								onpointerleave={handleItemPressEnd}
 								onclick={() => toggleItem(group.item)}
-								title="Langtrykk for å redigere substeps"
+								title="Langtrykk for valg"
 							>
 								<span class="cs-item-text">{group.item.text}</span>
 								<svg class="cs-parent-circle" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
@@ -413,18 +474,27 @@
 							</button>
 						</div>
 					{:else}
+						{@const itemSkipped = !!group.item.skippedAt}
 						<button
 							class="cs-item"
 							class:cs-item-checked={group.item.checked}
-							onmousedown={() => handleItemMouseDown(group.item)}
-							onmouseup={handleItemMouseUp}
-							onmouseleave={handleItemMouseUp}
+							class:cs-item-skipped={itemSkipped}
+							onpointerdown={(e) => handleItemPressStart(e, group.item)}
+							onpointerup={handleItemPressEnd}
+							onpointercancel={handleItemPressEnd}
+							onpointerleave={handleItemPressEnd}
 							onclick={() => toggleItem(group.item)}
-							title="Langtrykk for å dele opp"
+							title="Langtrykk for valg"
 						>
 							<span class="cs-item-text">{group.item.text}</span>
-							<div class="cs-checkbox" class:cs-checkbox-checked={group.item.checked}>
-								{#if group.item.checked}
+							<div
+								class="cs-checkbox"
+								class:cs-checkbox-checked={group.item.checked && !itemSkipped}
+								class:cs-checkbox-skipped={itemSkipped}
+							>
+								{#if itemSkipped}
+									<span class="cs-tick cs-tick-skipped" transition:scale={{ duration: 200, easing: elasticOut }}>✕</span>
+								{:else if group.item.checked}
 									<span class="cs-tick" transition:scale={{ duration: 200, easing: elasticOut }}>✓</span>
 								{/if}
 							</div>
@@ -432,17 +502,27 @@
 					{/if}
 					{#if hasChildren && isExpanded}
 						<div class="cs-children" transition:slide>
-							{#each childrenItems as child (child.id)}
+							{#each sortByStatus(childrenItems) as child (child.id)}
+								{@const childSkipped = !!child.skippedAt}
 								<button
 									class="cs-child-item"
 									class:cs-child-checked={child.checked}
-									onmouseup={handleItemMouseUp}
-									onmouseleave={handleItemMouseUp}
+									class:cs-child-skipped={childSkipped}
+									onpointerdown={(e) => handleItemPressStart(e, child)}
+									onpointerup={handleItemPressEnd}
+									onpointercancel={handleItemPressEnd}
+									onpointerleave={handleItemPressEnd}
 									onclick={() => toggleItem(child)}
 								>
 									<span class="cs-child-text">{child.text}</span>
-									<div class="cs-checkbox cs-checkbox-small" class:cs-checkbox-checked={child.checked}>
-										{#if child.checked}
+									<div
+										class="cs-checkbox cs-checkbox-small"
+										class:cs-checkbox-checked={child.checked && !childSkipped}
+										class:cs-checkbox-skipped={childSkipped}
+									>
+										{#if childSkipped}
+											<span class="cs-tick cs-tick-skipped" transition:scale={{ duration: 200, easing: elasticOut }}>✕</span>
+										{:else if child.checked}
 											<span class="cs-tick" transition:scale={{ duration: 200, easing: elasticOut }}>✓</span>
 										{/if}
 									</div>
@@ -533,6 +613,21 @@
 		</div>
 	</div>
 {/if}
+
+<!-- Kontekstmeny ved langtrykk -->
+<TaskContextMenu
+	open={contextMenuItem !== null}
+	anchor={contextMenuRect}
+	itemText={contextMenuItem?.text ?? ''}
+	hasChildren={contextMenuItem ? items.some((i) => i.parentId === contextMenuItem!.id) : false}
+	isSkipped={!!contextMenuItem?.skippedAt}
+	isChecked={!!contextMenuItem?.checked}
+	onClose={() => { contextMenuItem = null; contextMenuRect = null; }}
+	onBreakdown={() => { if (contextMenuItem) breakdownItem = contextMenuItem; }}
+	onSnooze={(targetDate) => { if (contextMenuItem) void snoozeItem(contextMenuItem.id, targetDate); }}
+	onSkip={() => { if (contextMenuItem) void setItemSkipped(contextMenuItem.id, true); }}
+	onUnskip={() => { if (contextMenuItem) void setItemSkipped(contextMenuItem.id, false); }}
+/>
 
 <!-- Breakdown modal -->
 {#if breakdownItem}
@@ -712,6 +807,33 @@
 	.cs-item-checked .cs-item-text {
 		color: #444;
 		text-decoration: line-through;
+	}
+
+	.cs-item-skipped .cs-item-text {
+		color: #5a4040;
+		text-decoration: line-through;
+		text-decoration-color: #774444;
+	}
+
+	.cs-checkbox-skipped {
+		border-color: #774444;
+		background: #2a1818;
+	}
+
+	.cs-tick-skipped {
+		color: #e07070;
+	}
+
+	.cs-slot-skipped {
+		border-color: #774444;
+		background: #2a1818;
+		color: #e07070;
+	}
+
+	.cs-child-skipped .cs-child-text {
+		color: #5a4040;
+		text-decoration: line-through;
+		text-decoration-color: #774444;
 	}
 
 	/* ── Grouped repeated items ── */

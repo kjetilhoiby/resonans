@@ -7,15 +7,14 @@ import { TaskExecutionService } from '$lib/server/services/task-execution-servic
 import { parseTaskDateTime } from '$lib/server/date-time-parser';
 
 async function syncChecklistCompletion(checklistId: string) {
-	const remaining = await db.query.checklistItems.findMany({
-		where: and(eq(checklistItems.checklistId, checklistId), eq(checklistItems.checked, false)),
-		columns: { id: true }
-	});
-
+	// Et item regnes som "behandlet" hvis det er enten avkrysset eller skipped.
+	// Skipped items skal ikke blokkere fullføring av sjekklisten.
 	const allItems = await db.query.checklistItems.findMany({
 		where: eq(checklistItems.checklistId, checklistId),
-		columns: { id: true }
+		columns: { id: true, checked: true, skippedAt: true }
 	});
+
+	const remaining = allItems.filter((i) => !i.checked && !i.skippedAt);
 
 	if (allItems.length > 0 && remaining.length === 0) {
 		await db
@@ -31,7 +30,7 @@ async function syncChecklistCompletion(checklistId: string) {
 // PATCH /api/checklists/[id]/items/[itemId] — toggle checked / endre tekst
 export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 	const userId = locals.userId;
-	const body = await request.json() as { checked?: boolean; text?: string; sortOrder?: number };
+	const body = await request.json() as { checked?: boolean; text?: string; sortOrder?: number; skipped?: boolean };
 
 	const existingItem = await db.query.checklistItems.findFirst({
 		where: and(eq(checklistItems.id, params.itemId), eq(checklistItems.userId, userId))
@@ -58,6 +57,21 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 	if (body.checked !== undefined) {
 		updates.checked = body.checked;
 		updates.checkedAt = body.checked ? new Date() : null;
+		// Krysse av et item rydder opp skipped-status så det ikke ser ut som begge.
+		if (body.checked) {
+			updates.skippedAt = null;
+			updates.snoozedToDate = null;
+		}
+	}
+	if (body.skipped !== undefined) {
+		updates.skippedAt = body.skipped ? new Date() : null;
+		// Når man fjerner skipped manuelt nullstilles også snooze-koblingen.
+		if (!body.skipped) updates.snoozedToDate = null;
+		// Skipped + checked er ikke lov — skipped vinner siden brukeren eksplisitt valgte det.
+		if (body.skipped) {
+			updates.checked = false;
+			updates.checkedAt = null;
+		}
 	}
 
 	const [updated] = await db
