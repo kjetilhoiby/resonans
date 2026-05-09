@@ -6,8 +6,6 @@ import { isGoogleAuthConfigured } from '$lib/server/auth-config';
 import { startScheduler } from '$lib/server/scheduler';
 import { resolveRequestUserId } from '$lib/server/request-user';
 import { resolveApiSecretAuthFromRequest } from '$lib/server/api-secrets';
-import { db } from '$lib/db';
-import { memories } from '$lib/db/schema';
 import { markNudgeOpened } from '$lib/server/nudge-events';
 import { isPreviewEnv, PREVIEW_AUTH_COOKIE, verifyPreviewToken } from '$lib/server/preview-auth';
 
@@ -83,21 +81,9 @@ const requestUserHandle: Handle = async ({ event, resolve }) => {
 	}
 	event.locals.userId = await resolveRequestUserId(event);
 
-	const nudgeTrack = event.url.searchParams.get('nudgeTrack');
 	const nudgeEventId = event.url.searchParams.get('nudgeEventId');
 	if (nudgeEventId) {
 		await markNudgeOpened(nudgeEventId, event.locals.userId);
-	}
-	if (nudgeTrack) {
-		const source = `nudge:click:${nudgeTrack}`;
-		const content = `Nudge-click registrert: ${nudgeTrack} (${event.url.pathname})`;
-		await db.insert(memories).values({
-			userId: event.locals.userId,
-			category: 'preferences',
-			content,
-			importance: 'low',
-			source
-		});
 	}
 
 	return resolve(event);

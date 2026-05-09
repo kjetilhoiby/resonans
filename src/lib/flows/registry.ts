@@ -532,6 +532,72 @@ export const FLOWS: Record<FlowId, Flow> = {
 		}
 	},
 
+	planning_quarter_plan: {
+		id: 'planning_quarter_plan',
+		name: 'Planlegg kvartalet',
+		description: 'Bryt års-visjonen ned til 3-måneders mål og milepæler',
+		icon: '🎢',
+		domain: 'planning',
+		trigger: 'manual',
+		estimatedMinutes: 12,
+		steps: [
+			{
+				id: 'reflection',
+				type: 'chat',
+				title: 'Refleksjon over forrige kvartal',
+				autoSend: true,
+				prompt: 'Oppsummer forrige kvartal og hva vi lærte.'
+			},
+			{
+				id: 'goals',
+				type: 'chat',
+				title: 'Kvartalsmål',
+				autoSend: true,
+				prompt: 'Foreslå 2-3 kvartalsmål som tar oss nærmere års-visjonen, brutt ned i månedsmål.'
+			},
+			{
+				id: 'vision',
+				type: 'chat',
+				title: 'Hvor vil vi være om 3 måneder?',
+				autoSend: true,
+				prompt: 'Hjelp brukeren skrive en kort kvartalsvisjon.'
+			}
+		]
+	},
+
+	planning_year_plan: {
+		id: 'planning_year_plan',
+		name: 'Planlegg året',
+		description: 'Sett retning for 12 måneder fremover, koblet til 5-års drømmen',
+		icon: '🧭',
+		domain: 'planning',
+		trigger: 'manual',
+		estimatedMinutes: 20,
+		steps: [
+			{
+				id: 'review',
+				type: 'chat',
+				title: 'Tilbakeblikk på året som gikk',
+				autoSend: true,
+				prompt: 'Oppsummer fjoråret med fokus på fremdrift mot 5-års drømmen.'
+			},
+			{
+				id: 'vision',
+				type: 'chat',
+				title: 'Års-visjon',
+				autoSend: true,
+				prompt: 'Hjelp brukeren skrive en realistisk og motiverende års-visjon.'
+			},
+			{
+				id: 'goals',
+				type: 'chat',
+				title: 'Års-mål',
+				autoSend: true,
+				prompt: 'Foreslå 3-5 års-mål som operasjonaliserer visjonen, fordel dem på kvartaler.'
+			}
+		]
+	},
+
 	family_onboarding: {
 		id: 'family_onboarding',
 		name: 'Bli kjent med familien',

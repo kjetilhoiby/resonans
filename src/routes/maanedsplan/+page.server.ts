@@ -2,8 +2,9 @@ import { fail } from '@sveltejs/kit';
 import { and, asc, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/db';
-import { checklistItems, checklists, goals, memories, sensorEvents, themes, workoutDailyAggregates } from '$lib/db/schema';
+import { checklistItems, checklists, goals, planArtifacts, sensorEvents, themes, workoutDailyAggregates } from '$lib/db/schema';
 import { parseListRepeatCount } from '$lib/server/list-repeat-parser';
+import { upsertPlanArtifactField, getPlanArtifact } from '$lib/server/plan-artifacts';
 
 // ── Month helpers ────────────────────────────────────────────────────────────
 
@@ -108,33 +109,13 @@ function getWeeksInMonth(month: MonthInfo): WeekInMonth[] {
 	return Array.from(seen.values()).sort((a, b) => a.dashedKey.localeCompare(b.dashedKey));
 }
 
-async function upsertMonthNote(userId: string, source: string, content: string) {
-	const trimmed = content.trim();
-	const existing = await db.query.memories.findFirst({
-		columns: { id: true },
-		where: and(eq(memories.userId, userId), eq(memories.source, source))
-	});
-
-	if (!trimmed) {
-		if (existing) await db.delete(memories).where(eq(memories.id, existing.id));
-		return;
-	}
-
-	if (existing) {
-		await db
-			.update(memories)
-			.set({ content: trimmed, updatedAt: new Date(), lastAccessedAt: new Date() })
-			.where(eq(memories.id, existing.id));
-		return;
-	}
-
-	await db.insert(memories).values({
-		userId,
-		category: 'other',
-		content: trimmed,
-		importance: 'medium',
-		source
-	});
+async function upsertMonthField(
+	userId: string,
+	periodKey: string,
+	field: 'note' | 'reflection' | 'vision',
+	content: string
+) {
+	await upsertPlanArtifactField({ userId, kind: 'month', periodKey, field, content });
 }
 
 // ── Load ─────────────────────────────────────────────────────────────────────
@@ -152,16 +133,13 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 
 	const [
 		monthChecklist,
-		monthNote,
-		reflectionNote,
-		visionNote,
+		monthArtifact,
 		longTermGoals,
 		monthGoals,
 		workoutRows,
 		weightRows,
 		weekChecklists,
-		prevMonthNote,
-		prevMonthReflection
+		prevMonthArtifact
 	] = await Promise.all([
 		db.query.checklists.findFirst({
 			where: and(eq(checklists.userId, userId), eq(checklists.context, month.contextKey)),
@@ -172,18 +150,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			},
 			orderBy: (c, { desc: d }) => [d(c.createdAt)]
 		}),
-		db.query.memories.findFirst({
-			columns: { content: true },
-			where: and(eq(memories.userId, userId), eq(memories.source, `month-plan:${month.compactKey}:note`))
-		}),
-		db.query.memories.findFirst({
-			columns: { content: true },
-			where: and(eq(memories.userId, userId), eq(memories.source, `month-plan:${month.compactKey}:reflection`))
-		}),
-		db.query.memories.findFirst({
-			columns: { content: true },
-			where: and(eq(memories.userId, userId), eq(memories.source, `month-plan:${month.compactKey}:vision`))
-		}),
+		getPlanArtifact(userId, 'month', month.compactKey),
 		db.query.goals.findMany({
 			where: and(
 				eq(goals.userId, userId),
@@ -242,20 +209,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 					}
 			  })
 			: Promise.resolve([]),
-		db.query.memories.findFirst({
-			columns: { content: true },
-			where: and(
-				eq(memories.userId, userId),
-				eq(memories.source, `month-plan:${previousMonth.compactKey}:note`)
-			)
-		}),
-		db.query.memories.findFirst({
-			columns: { content: true },
-			where: and(
-				eq(memories.userId, userId),
-				eq(memories.source, `month-plan:${previousMonth.compactKey}:reflection`)
-			)
-		})
+		getPlanArtifact(userId, 'month', previousMonth.compactKey)
 	]);
 
 	const weekChecklistMap = Object.fromEntries(
@@ -313,9 +267,9 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 					}))
 			  }
 			: null,
-		monthNote: monthNote?.content ?? '',
-		reflection: reflectionNote?.content ?? '',
-		vision: visionNote?.content ?? '',
+		monthNote: monthArtifact?.note ?? '',
+		reflection: monthArtifact?.reflection ?? '',
+		vision: monthArtifact?.vision ?? '',
 		weeksInMonth,
 		weekChecklists: weekChecklistMap,
 		longTermGoals: longTermGoals.map((g) => ({
@@ -368,8 +322,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		previousMonthSummary: {
 			monthKey: previousMonth.dashedKey,
 			monthName: previousMonth.monthName,
-			note: prevMonthNote?.content ?? '',
-			reflection: prevMonthReflection?.content ?? ''
+			note: prevMonthArtifact?.note ?? '',
+			reflection: prevMonthArtifact?.reflection ?? ''
 		}
 	};
 };
@@ -479,7 +433,7 @@ export const actions = {
 		const data = await request.formData();
 		const month = resolveMonthFromFormData(data);
 		const note = String(data.get('monthNote') || '');
-		await upsertMonthNote(userId, `month-plan:${month.compactKey}:note`, note);
+		await upsertMonthField(userId, month.compactKey, 'note', note);
 		return { success: true };
 	},
 
@@ -491,8 +445,8 @@ export const actions = {
 		const vision = String(data.get('vision') || '');
 
 		await Promise.all([
-			upsertMonthNote(userId, `month-plan:${month.compactKey}:reflection`, reflection),
-			upsertMonthNote(userId, `month-plan:${month.compactKey}:vision`, vision)
+			upsertMonthField(userId, month.compactKey, 'reflection', reflection),
+			upsertMonthField(userId, month.compactKey, 'vision', vision)
 		]);
 
 		return { success: true };

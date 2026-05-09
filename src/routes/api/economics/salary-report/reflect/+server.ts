@@ -1,8 +1,6 @@
 import { json } from '@sveltejs/kit';
-import { and, eq } from 'drizzle-orm';
-import { db } from '$lib/db';
-import { memories } from '$lib/db/schema';
 import type { RequestHandler } from './$types';
+import { upsertReflectionForPeriod } from '$lib/server/reflections';
 
 interface StepReflection {
 	insightId: string;
@@ -23,8 +21,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		return json({ error: 'Invalid payload' }, { status: 400 });
 	}
 
-	const source = `salary_reflection_${salaryMonth}`;
-
 	const lines: string[] = [`Lønnsrefleksjon for ${salaryMonth}:`];
 	for (const step of reflection) {
 		const userMsgs = step.messages.filter((m) => m.role === 'user');
@@ -36,25 +32,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	}
 	const content = lines.join('\n');
 
-	const existing = await db.query.memories.findFirst({
-		where: and(eq(memories.userId, userId), eq(memories.source, source)),
-		columns: { id: true }
+	await upsertReflectionForPeriod({
+		userId,
+		kind: 'salary_report',
+		periodKey: salaryMonth,
+		content
 	});
-
-	if (existing) {
-		await db
-			.update(memories)
-			.set({ content, updatedAt: new Date(), lastAccessedAt: new Date() })
-			.where(eq(memories.id, existing.id));
-	} else {
-		await db.insert(memories).values({
-			userId,
-			category: 'economics',
-			content,
-			importance: 'medium',
-			source
-		});
-	}
 
 	return json({ ok: true });
 };

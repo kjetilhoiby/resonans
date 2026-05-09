@@ -6,7 +6,9 @@ import { createGoal, createTask, getUserActiveGoalsAndTasks, findSimilarGoals, f
 import { getOrCreateConversation, createConversation, addMessage, getConversationHistory, getConversationByIdForUser } from '$lib/server/conversations';
 import { logActivity } from '$lib/server/activities';
 import { recordTrackingEvent } from '$lib/server/tracking-series';
-import { buildMemoryContext, createMemory } from '$lib/server/memories';
+import { createMemory } from '$lib/server/memories';
+import { ContextService } from '$lib/server/services/context-service';
+import { upsertPlanArtifactField } from '$lib/server/plan-artifacts';
 import { buildPersonContext } from '$lib/server/person-context';
 import { isFutureVisionText, seedThemeInstructionFromFutureVision } from '$lib/server/theme-instructions';
 import { queryEconomicsTool } from '$lib/ai/tools/query-economics';
@@ -35,7 +37,7 @@ import {
 import { routeChatRequest, aiRouteChatRequest } from '$lib/server/chat-router';
 import { enqueueBackgroundJob } from '$lib/server/background-jobs';
 import { db } from '$lib/db';
-import { checklists, checklistItems, memories, users } from '$lib/db/schema';
+import { checklists, checklistItems, users } from '$lib/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 
@@ -1489,7 +1491,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 
 		// Bygg memory context (viktig informasjon om brukeren)
                 // Sender med themeId slik at fil-innhold for aktivt tema vises i konteksten
-                const memoryContext = await buildMemoryContext(userId, conversation.themeId ?? null);
+                const memoryContext = await ContextService.buildForChat({ userId, themeId: conversation.themeId ?? null });
 
                 // Hvis samtalen er scoped til en person, hent dedikert person-kontekst
                 let personContext = '';
@@ -2505,27 +2507,16 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 
 					try {
 						const compactKey = args.weekDashedKey.replace('-W', 'W');
-						const headlineSource = `week-plan:${compactKey}:day:${args.dayIso}:headline`;
-
-						const existingHeadline = await db.query.memories.findFirst({
-							where: and(eq(memories.userId, userId), eq(memories.source, headlineSource))
-						});
 
 						if (args.headline.trim()) {
-							if (existingHeadline) {
-								await db
-									.update(memories)
-									.set({ content: args.headline.trim(), updatedAt: new Date(), lastAccessedAt: new Date() })
-									.where(eq(memories.id, existingHeadline.id));
-							} else {
-								await db.insert(memories).values({
-									userId,
-									category: 'other',
-									content: args.headline.trim(),
-									importance: 'medium',
-									source: headlineSource
-								});
-							}
+							await upsertPlanArtifactField({
+								userId,
+								kind: 'day',
+								periodKey: args.dayIso,
+								parentPeriodKey: compactKey,
+								field: 'headline',
+								content: args.headline
+							});
 						}
 
 						const dayContext = `week:${args.weekDashedKey}:day:${args.dayIso}`;
