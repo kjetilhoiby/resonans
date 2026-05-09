@@ -7,7 +7,13 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	const userId = locals.userId;
 	const includeArchived = url.searchParams.get('includeArchived') === 'true';
 	const list = await PersonService.listForUser(userId, { includeArchived });
-	return json({ persons: list });
+	const roleMap = PersonService.computeRoleTokens(list);
+	const persons = list.map((p) => ({
+		...p,
+		// Merge computed role tokens into aliases so MentionAutocomplete can match "kona", "eldste", etc.
+		aliases: [...p.aliases, ...(roleMap.get(p.id) ?? [])]
+	}));
+	return json({ persons });
 };
 
 export const POST: RequestHandler = async ({ locals, request }) => {

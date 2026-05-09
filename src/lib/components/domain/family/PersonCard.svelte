@@ -60,18 +60,18 @@
 		gap: 0.5rem;
 		padding: 0.75rem;
 		border-radius: 12px;
-		border: 1px solid var(--border, #e0e0e3);
-		background: var(--surface-1, #fff);
+		border: 1px solid var(--border, #2a2a2a);
+		background: var(--surface-1, #1c1c1c);
+		color: var(--text, #d0d0d0);
 		text-align: left;
 		cursor: pointer;
 		font: inherit;
-		color: inherit;
-		transition: transform 0.1s ease, box-shadow 0.1s ease;
+		transition: background 0.1s ease, border-color 0.1s ease;
 		min-width: 0;
 	}
 	.person-card:hover {
-		transform: translateY(-1px);
-		box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+		background: var(--surface-hover, #242424);
+		border-color: var(--border-hover, #3a3a3a);
 	}
 	.head {
 		display: flex;
