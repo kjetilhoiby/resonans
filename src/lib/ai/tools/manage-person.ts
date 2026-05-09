@@ -79,6 +79,10 @@ Use 'archive' to soft-delete (sets archived=true).`,
 			}
 			case 'update': {
 				if (!args.personId) return { error: 'personId is required' };
+				const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+				if (!UUID_RE.test(args.personId)) {
+					return { error: `personId must be a UUID, got "${args.personId}". Use query_family to look up the person's UUID first.` };
+				}
 				const updated = await PersonService.update(args.personId, args.userId, {
 					name: args.name,
 					fullName: args.fullName,
@@ -95,6 +99,10 @@ Use 'archive' to soft-delete (sets archived=true).`,
 			}
 			case 'archive': {
 				if (!args.personId) return { error: 'personId is required' };
+				const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+				if (!UUID_RE.test(args.personId)) {
+					return { error: `personId must be a UUID, got "${args.personId}". Use query_family to look up the person's UUID first.` };
+				}
 				const archived = await PersonService.archive(args.personId, args.userId);
 				return { person: archived };
 			}

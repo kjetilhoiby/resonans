@@ -3,7 +3,7 @@ import { openai } from '$lib/server/openai';
 import { DOMAIN_METADATA, FAMILY_DOMAIN_TRIGGER } from '$lib/domains';
 
 export type ChatDomain = 'health' | 'economics' | 'food' | 'family' | 'egenfrekvens' | 'planning' | 'themes' | 'general';
-export type ChatSkill = 'widget_creation' | 'checklist_planning' | 'goal_planning' | 'theme_management' | 'general_chat';
+export type ChatSkill = 'widget_creation' | 'checklist_planning' | 'goal_planning' | 'theme_management' | 'person_management' | 'general_chat';
 export type ChatMode = 'tool' | 'conversation' | 'domain';
 
 export interface UserBookContext {
@@ -71,6 +71,11 @@ export function routeChatRequest(input: string): ChatRoutingDecision {
 		skills.add('goal_planning');
 	}
 
+	if (domains.has('family') && /legg til|opprett|endre|oppdater|slett|fjern|rydd|flytt|registrer|korriger|fiks|gi dem|de er|er egentlig|tilhører|hører til/.test(text)) {
+		skills.add('person_management');
+		hints.push('VIKTIG: Bruk manage_person og manage_relation for å faktisk endre data — ikke bare beskriv endringene.');
+	}
+
 	if (/tema|samliv|helse|okonomi|økonomi|karriere|foreld/.test(text)) {
 		skills.add('theme_management');
 	}
@@ -83,7 +88,7 @@ export function routeChatRequest(input: string): ChatRoutingDecision {
 	if (skills.size === 0) skills.add('general_chat');
 
 	// Fallback mode: infer from skills
-	const mode: ChatMode = skills.has('widget_creation') || skills.has('checklist_planning') || skills.has('goal_planning')
+	const mode: ChatMode = skills.has('widget_creation') || skills.has('checklist_planning') || skills.has('goal_planning') || skills.has('person_management')
 		? 'tool'
 		: (domains.has('health') || domains.has('economics') || domains.has('food') || domains.has('family'))
 			? 'domain'
@@ -103,7 +108,7 @@ const ROUTER_SYSTEM_PROMPT = `Du er en ruter for en personlig AI-assistent. Svar
 
 Bestem routing basert på meldingen:
 - mode:
-  "tool"         — brukeren vil gjøre noe konkret: opprette mål/oppgave, logge aktivitet, lage widget, sjekkliste
+  "tool"         — brukeren vil gjøre noe konkret: opprette mål/oppgave, logge aktivitet, lage widget, sjekkliste, eller endre/rydde/oppdatere persondata (familie, relasjoner)
   "domain"       — spørsmål om data: helse-statistikk, økonomi/forbruk, planer, temaer
   "conversation" — snakke, reflektere, utforske, få råd, diskutere (bruk sterkere modell)
   "book"         — brukeren vil gå til, snakke om eller fortsette en bestemt bok (kun hvis du er sikker)

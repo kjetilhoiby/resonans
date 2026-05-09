@@ -3,7 +3,7 @@ import { users, sensorEvents, checklistItems } from '$lib/db/schema';
 import { and, eq, gte, sql } from 'drizzle-orm';
 import { env } from '$env/dynamic/private';
 import { ensureUser } from '$lib/server/users';
-import { listLabels, EMAIL_LABELS } from '$lib/server/email/router';
+import { EMAIL_LABELS } from '$lib/server/email/router';
 import { buildAppsScript } from '$lib/server/email/apps-script-template';
 import type { PageServerLoad } from './$types';
 
@@ -17,10 +17,9 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	const origin = env.ORIGIN ?? url.origin;
 	const endpoint = `${origin.replace(/\/$/, '')}/api/email-inbound`;
 	const token = env.EMAIL_WEBHOOK_SECRET ?? '';
-	const labels = listLabels();
 
 	const appsScriptSource = token
-		? buildAppsScript({ endpoint, token, labels })
+		? buildAppsScript({ endpoint, token })
 		: null;
 
 	const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);

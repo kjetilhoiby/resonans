@@ -48,20 +48,6 @@ export class PersonService {
 		return rows[0] ?? null;
 	}
 
-	static async findByName(userId: string, name: string) {
-		const normalized = name.trim().toLowerCase();
-		if (!normalized) return null;
-		const all = await this.listForUser(userId);
-		return (
-			all.find((p) => {
-				if (p.name.toLowerCase() === normalized) return true;
-				if (p.fullName?.toLowerCase() === normalized) return true;
-				if (p.nickname?.toLowerCase() === normalized) return true;
-				return p.aliases.some((a) => a.toLowerCase() === normalized);
-			}) ?? null
-		);
-	}
-
 	static async findBySpondGroupId(userId: string, groupId: string) {
 		const all = await this.listForUser(userId);
 		return all.find((p) => p.spondGroupIds.includes(groupId)) ?? null;
@@ -164,14 +150,82 @@ export class PersonService {
 	}
 
 	// Returnerer alle navn/aliaser for en bruker som kan brukes til mention-matching.
+	/**
+	 * Returns role-based tokens for each person derived from kind + birth-date ordering.
+	 * E.g. the oldest child gets ["eldste","eldstemann"], partner gets ["kona","mann","samboer"].
+	 */
+	static computeRoleTokens(persons: { id: string; kind: string; birthDate: string | null }[]): Map<string, string[]> {
+		const map = new Map<string, string[]>();
+		const add = (id: string, tokens: string[]) => map.set(id, [...(map.get(id) ?? []), ...tokens]);
+
+		for (const p of persons) {
+			if (p.kind === 'partner') {
+				add(p.id, ['kona', 'mann', 'samboer', 'kjæreste', 'partner', 'mannen', 'kona mi', 'mannen min', 'partneren min']);
+			}
+			if (p.kind === 'parent') {
+				add(p.id, ['pappa', 'far', 'mamma', 'mor', 'forelderen', 'foreldre']);
+			}
+			if (p.kind === 'sibling') {
+				add(p.id, ['søster', 'bror', 'søsken', 'broren', 'søsteren']);
+			}
+		}
+
+		const children = persons
+			.filter((p) => p.kind === 'child')
+			.sort((a, b) => {
+				if (!a.birthDate && !b.birthDate) return 0;
+				if (!a.birthDate) return 1;
+				if (!b.birthDate) return -1;
+				return a.birthDate.localeCompare(b.birthDate);
+			});
+
+		if (children.length >= 1) {
+			add(children[0].id, ['eldste', 'eldstemann', 'eldstedatter', 'storebror', 'storesøster', 'eldstebarnet']);
+		}
+		if (children.length >= 2) {
+			add(children[children.length - 1].id, ['minste', 'minstemann', 'yngste', 'lillebror', 'lillesøster', 'yngstebarnet']);
+		}
+		if (children.length === 3) {
+			add(children[1].id, ['mellomste', 'midterste', 'midtbarnet']);
+		}
+
+		return map;
+	}
+
+	static async findByName(userId: string, name: string) {
+		const normalized = name.trim().toLowerCase();
+		if (!normalized) return null;
+		const all = await this.listForUser(userId);
+
+		// 1. Exact name / alias / nickname match
+		const byName = all.find((p) => {
+			if (p.name.toLowerCase() === normalized) return true;
+			if (p.fullName?.toLowerCase() === normalized) return true;
+			if (p.nickname?.toLowerCase() === normalized) return true;
+			return p.aliases.some((a) => a.toLowerCase() === normalized);
+		});
+		if (byName) return byName;
+
+		// 2. Role token fallback ("kona" → partner, "eldste" → oldest child, etc.)
+		const roleMap = this.computeRoleTokens(all);
+		for (const [personId, tokens] of roleMap) {
+			if (tokens.some((t) => t.toLowerCase() === normalized)) {
+				return all.find((p) => p.id === personId) ?? null;
+			}
+		}
+		return null;
+	}
+
 	static async getMentionLexicon(userId: string): Promise<Array<{ personId: string; tokens: string[] }>> {
 		const all = await this.listForUser(userId);
+		const roleMap = this.computeRoleTokens(all);
 		return all.map((p) => {
 			const tokens = new Set<string>();
 			if (p.name) tokens.add(p.name);
 			if (p.fullName) tokens.add(p.fullName);
 			if (p.nickname) tokens.add(p.nickname);
 			for (const a of p.aliases) tokens.add(a);
+			for (const t of roleMap.get(p.id) ?? []) tokens.add(t);
 			return {
 				personId: p.id,
 				tokens: Array.from(tokens)

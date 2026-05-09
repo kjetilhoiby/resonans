@@ -72,7 +72,7 @@
 		</div>
 		<div class="actions">
 			<button class="primary" onclick={() => onStartChat?.(person.id)}>
-				Start chat om relasjonen
+				Samtale
 			</button>
 			<button class="ghost" onclick={() => void startEdit()}>Rediger</button>
 			<button class="ghost" onclick={() => onClose?.()}>Lukk</button>
@@ -190,7 +190,8 @@
 		flex-direction: column;
 		gap: 1rem;
 		padding: 1rem;
-		background: var(--surface-1, #fff);
+		background: var(--surface-1, #1a1a1a);
+		color: var(--text, #d0d0d0);
 		border-radius: 16px;
 		max-height: 80vh;
 		overflow: auto;
@@ -203,51 +204,58 @@
 		flex-wrap: wrap;
 	}
 	.title { display: flex; align-items: center; gap: 0.5rem; }
-	.title h2 { margin: 0; font-size: 1.25rem; }
+	.title h2 { margin: 0; font-size: 1.25rem; color: #f0f0f0; }
 	.emoji { font-size: 1.6rem; }
 	.actions { display: flex; gap: 0.5rem; }
 	button {
 		padding: 0.45rem 0.9rem;
 		border-radius: 8px;
-		border: 1px solid var(--border, #e0e0e3);
-		background: var(--surface-2, #f5f5f7);
+		border: 1px solid #333;
+		background: #252525;
+		color: #c8c8c8;
 		font: inherit;
 		cursor: pointer;
+		transition: background 0.1s, border-color 0.1s;
 	}
+	button:hover { background: #2e2e2e; border-color: #444; color: #e8e8e8; }
 	button.primary {
-		background: linear-gradient(135deg, #7c8ef5, #6072e6);
-		color: white;
-		border: none;
+		background: #252525;
+		color: #a0acf8;
+		border-color: #3a4060;
 	}
-	button.ghost { background: transparent; }
+	button.primary:hover { background: #2a2f4a; border-color: #5060a0; color: #c0caff; }
+	button.ghost { background: transparent; border-color: transparent; }
+	button.ghost:hover { background: #252525; border-color: #333; }
 	.tabs {
 		display: flex;
 		gap: 0.25rem;
 		flex-wrap: wrap;
-		border-bottom: 1px solid var(--border, #e0e0e3);
+		border-bottom: 1px solid #2a2a2a;
 		padding-bottom: 0.5rem;
 	}
 	.tabs button {
 		border: none;
 		background: transparent;
-		opacity: 0.6;
+		color: #888;
 		padding: 0.4rem 0.7rem;
 	}
-	.tabs button.active { opacity: 1; font-weight: 600; }
+	.tabs button:hover { background: transparent; border-color: transparent; color: #bbb; }
+	.tabs button.active { color: #e8e8e8; font-weight: 600; }
 	.content section { margin-bottom: 1rem; }
-	.content h3 { margin: 0 0 0.4rem; font-size: 0.95rem; }
+	.content h3 { margin: 0 0 0.4rem; font-size: 0.95rem; color: #e0e0e0; font-weight: 600; }
 	.list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.4rem; }
 	.list li {
 		padding: 0.6rem 0.75rem;
 		border-radius: 8px;
-		background: var(--surface-2, #f5f5f7);
+		background: #222;
+		border: 1px solid #2a2a2a;
 		display: flex;
 		flex-direction: column;
 		gap: 0.2rem;
 	}
-	.list .title { font-weight: 500; }
-	.list .meta { font-size: 0.75rem; opacity: 0.6; }
+	.list .title { font-weight: 500; color: #d8d8d8; }
+	.list .meta { font-size: 0.75rem; color: #777; }
 	.list a { color: inherit; text-decoration: none; display: flex; flex-direction: column; gap: 0.2rem; }
-	.empty { opacity: 0.6; font-style: italic; }
-	.memory p { margin: 0; }
+	.empty { color: #666; font-style: italic; }
+	.memory p { margin: 0; color: #bbb; }
 </style>

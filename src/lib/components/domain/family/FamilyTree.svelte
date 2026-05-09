@@ -1,6 +1,8 @@
 <script lang="ts">
 	import type { FamilyDashboardData } from '$lib/client/dashboard-cache';
 
+	type TreePerson = FamilyDashboardData['tree']['nodes'][number];
+
 	interface Props {
 		tree: FamilyDashboardData['tree'];
 		onSelectPerson?: (personId: string) => void;
@@ -8,135 +10,166 @@
 
 	let { tree, onSelectPerson }: Props = $props();
 
-	function group(kind: string) {
-		return tree.byKind[kind] ?? [];
+	interface FamilyUnit {
+		primary: TreePerson;
+		partner: TreePerson | null;
+		children: TreePerson[];
 	}
 
-	const partner   = $derived(group('partner'));
-	const children  = $derived(group('child'));
-	const parents   = $derived(group('parent'));
-	const inLaws    = $derived(group('in_law'));
-	const siblings  = $derived(group('sibling'));
-	const extended  = $derived(group('extended_family'));
-	const friends   = $derived(group('friend'));
+	function findPerson(id: string): TreePerson | null {
+		return tree.nodes.find((p) => p.id === id) ?? null;
+	}
 
-	const hasSiblings = $derived(siblings.length > 0);
-	const hasChildren = $derived(children.length > 0);
-	const hasParents  = $derived(parents.length > 0);
-	const hasExtended = $derived(inLaws.length > 0 || extended.length > 0 || friends.length > 0);
+	function findPartnerOf(personId: string): TreePerson | null {
+		const edge = tree.edges.find(
+			(e) =>
+				(e.subType === 'married_to' || e.subType === 'partnered_with') &&
+				(e.fromPersonId === personId || e.toPersonId === personId)
+		);
+		if (!edge) return null;
+		const otherId = edge.fromPersonId === personId ? edge.toPersonId : (edge.fromPersonId ?? null);
+		return otherId ? findPerson(otherId) : null;
+	}
+
+	function findChildrenOf(personId: string): TreePerson[] {
+		return tree.edges
+			.filter((e) => e.subType === 'parent_of' && e.fromPersonId === personId)
+			.map((e) => findPerson(e.toPersonId))
+			.filter((p): p is TreePerson => p !== null);
+	}
+
+	const selfPartner = $derived((() => {
+		const edge = tree.edges.find(
+			(e) =>
+				e.fromPersonId === null &&
+				(e.subType === 'married_to' || e.subType === 'partnered_with')
+		);
+		return edge ? findPerson(edge.toPersonId) : (tree.byKind['partner']?.[0] ?? null);
+	})());
+
+	const selfChildren = $derived(tree.byKind['child'] ?? []);
+	const parents = $derived(tree.byKind['parent'] ?? []);
+	const friends = $derived(tree.byKind['friend'] ?? []);
+	const selfPartnerId = $derived(selfPartner?.id ?? null);
+
+	const siblingUnits = $derived((() => {
+		const allCandidates = [
+			...(tree.byKind['sibling'] ?? []),
+			...(tree.byKind['in_law'] ?? [])
+		];
+
+		const units: FamilyUnit[] = [];
+		const claimed = new Set<string>(selfPartnerId ? [selfPartnerId] : []);
+
+		for (const person of allCandidates) {
+			if (claimed.has(person.id)) continue;
+			const partner = findPartnerOf(person.id);
+			if (partner) claimed.add(partner.id);
+
+			const childrenA = findChildrenOf(person.id);
+			const childrenB = partner ? findChildrenOf(partner.id) : [];
+			const seen = new Set(childrenA.map((c) => c.id));
+			const children = [...childrenA, ...childrenB.filter((c) => !seen.has(c.id))];
+
+			units.push({ primary: person, partner, children });
+		}
+		return units;
+	})());
+
+	const linkedIds = $derived(
+		new Set(siblingUnits.flatMap((u) => u.children.map((c) => c.id)))
+	);
+	const standaloneExtended = $derived(
+		[
+			...(tree.byKind['extended_family'] ?? []).filter((p) => !linkedIds.has(p.id)),
+			...friends
+		]
+	);
 </script>
 
-<div class="tree">
-
-	<!-- Gen 1: Foreldre -->
-	{#if hasParents}
+<div class="family-tree">
+	<!-- Foreldre -->
+	{#if parents.length}
 		<div class="gen parents-row">
-			<div class="couple">
-				{#each parents as person, i (person.id)}
-					{#if i > 0}<span class="couple-bar"></span>{/if}
-					<button class="node parent" onclick={() => onSelectPerson?.(person.id)}>
-						<span class="emoji">{person.avatarEmoji ?? '👴'}</span>
-						<span class="name">{person.name}</span>
-					</button>
-				{/each}
-			</div>
+			{#each parents as p, i (p.id)}
+				{#if i > 0}<span class="couple-bar"></span>{/if}
+				<button class="node parent" onclick={() => onSelectPerson?.(p.id)}>
+					<span class="emoji">{p.avatarEmoji ?? '👵'}</span>
+					<span class="name">{p.name}</span>
+				</button>
+			{/each}
 		</div>
 		<div class="v-line"></div>
 	{/if}
 
-	<!-- Gen 2: Søsken-gren + Meg + Partner -->
-	{#if hasSiblings}
-		<div class="gen2-split">
-			<!-- Venstre gren: søsken -->
-			<div class="split-branch left-branch">
-				<div class="branch-nodes">
-					{#each siblings as person (person.id)}
-						<button class="node sibling" onclick={() => onSelectPerson?.(person.id)}>
-							<span class="emoji">{person.avatarEmoji ?? '👥'}</span>
-							<span class="name">{person.name}</span>
-						</button>
-					{/each}
+	<!-- Grener: søskenenheter + Meg -->
+	<div class="gen branches-row">
+		<!-- Meg-grenen -->
+		<div class="branch">
+			<div class="couple-row">
+				<div class="node self">
+					<span class="emoji">🙂</span>
+					<span class="name">Meg</span>
 				</div>
+				{#if selfPartner}
+					<span class="couple-bar"></span>
+					<button class="node partner" onclick={() => onSelectPerson?.(selfPartner.id)}>
+						<span class="emoji">{selfPartner.avatarEmoji ?? '💞'}</span>
+						<span class="name">{selfPartner.name}</span>
+					</button>
+				{/if}
 			</div>
-
-			<!-- Høyre gren: Meg + partner + barn -->
-			<div class="split-branch right-branch">
-				<div class="self-couple">
-					<div class="node self">
-						<span class="emoji">🙂</span>
-						<span class="name">Meg</span>
-					</div>
-					{#each partner as person (person.id)}
-						<span class="couple-bar"></span>
-						<button class="node partner" onclick={() => onSelectPerson?.(person.id)}>
-							<span class="emoji">{person.avatarEmoji ?? '💞'}</span>
-							<span class="name">{person.name}</span>
+			{#if selfChildren.length}
+				<div class="v-line"></div>
+				<div class="branch-children">
+					{#each selfChildren as c (c.id)}
+						<button class="node child" onclick={() => onSelectPerson?.(c.id)}>
+							<span class="emoji">{c.avatarEmoji ?? '🧒'}</span>
+							<span class="name">{c.name}</span>
 						</button>
 					{/each}
 				</div>
-				{#if hasChildren}
+			{/if}
+		</div>
+
+		<!-- Søskengrener -->
+		{#each siblingUnits as unit (unit.primary.id)}
+			<div class="branch">
+				<div class="couple-row">
+					<button class="node sibling" onclick={() => onSelectPerson?.(unit.primary.id)}>
+						<span class="emoji">{unit.primary.avatarEmoji ?? '👥'}</span>
+						<span class="name">{unit.primary.name}</span>
+					</button>
+					{#if unit.partner}
+						<span class="couple-bar"></span>
+						<button class="node in-law" onclick={() => onSelectPerson?.(unit.partner.id)}>
+							<span class="emoji">{unit.partner.avatarEmoji ?? '👤'}</span>
+							<span class="name">{unit.partner.name}</span>
+						</button>
+					{/if}
+				</div>
+				{#if unit.children.length}
 					<div class="v-line"></div>
-					<div class="children-row">
-						{#each children as person (person.id)}
-							<button class="node child" onclick={() => onSelectPerson?.(person.id)}>
-								<span class="emoji">{person.avatarEmoji ?? '🧒'}</span>
-								<span class="name">{person.name}</span>
+					<div class="branch-children">
+						{#each unit.children as c (c.id)}
+							<button class="node extended" onclick={() => onSelectPerson?.(c.id)}>
+								<span class="emoji">{c.avatarEmoji ?? '🌳'}</span>
+								<span class="name">{c.name}</span>
 							</button>
 						{/each}
 					</div>
 				{/if}
 			</div>
-		</div>
-	{:else}
-		<!-- Ingen søsken: Meg + partner sentrert -->
-		<div class="gen self-row">
-			<div class="couple">
-				<div class="node self">
-					<span class="emoji">🙂</span>
-					<span class="name">Meg</span>
-				</div>
-				{#each partner as person (person.id)}
-					<span class="couple-bar"></span>
-					<button class="node partner" onclick={() => onSelectPerson?.(person.id)}>
-						<span class="emoji">{person.avatarEmoji ?? '💞'}</span>
-						<span class="name">{person.name}</span>
-					</button>
-				{/each}
-			</div>
-		</div>
-		{#if hasChildren}
-			<div class="v-line"></div>
-			<div class="gen children-row">
-				{#each children as person (person.id)}
-					<button class="node child" onclick={() => onSelectPerson?.(person.id)}>
-						<span class="emoji">{person.avatarEmoji ?? '🧒'}</span>
-						<span class="name">{person.name}</span>
-					</button>
-				{/each}
-			</div>
-		{/if}
-	{/if}
+		{/each}
+	</div>
 
-	<!-- Svigerfamilie, venner og øvrige -->
-	{#if hasExtended}
-		<div class="extended-row">
-			{#each inLaws as person (person.id)}
-				<button class="node in-law" onclick={() => onSelectPerson?.(person.id)}>
-					<span class="emoji">{person.avatarEmoji ?? '👨‍👩‍👧‍👦'}</span>
-					<span class="name">{person.name}</span>
-					<span class="kind-tag">sviger</span>
-				</button>
-			{/each}
-			{#each extended as person (person.id)}
-				<button class="node extended" onclick={() => onSelectPerson?.(person.id)}>
-					<span class="emoji">{person.avatarEmoji ?? '🌳'}</span>
-					<span class="name">{person.name}</span>
-				</button>
-			{/each}
-			{#each friends as person (person.id)}
-				<button class="node friend" onclick={() => onSelectPerson?.(person.id)}>
-					<span class="emoji">{person.avatarEmoji ?? '👫'}</span>
-					<span class="name">{person.name}</span>
+	<!-- Utvidet familie og venner -->
+	{#if standaloneExtended.length}
+		<div class="gen extended-row">
+			{#each standaloneExtended as p (p.id)}
+				<button class="node {p.kind}" onclick={() => onSelectPerson?.(p.id)}>
+					<span class="emoji">{p.avatarEmoji ?? '🌳'}</span>
+					<span class="name">{p.name}</span>
 				</button>
 			{/each}
 		</div>
@@ -144,116 +177,90 @@
 </div>
 
 <style>
-	:root {
-		--tree-line: #3a3a5c;
-		--tree-bg: #0d0d1a;
-		--node-bg: #16162a;
-		--node-text: #dde1f0;
-	}
-
-	.tree {
+	.family-tree {
 		display: flex;
 		flex-direction: column;
 		align-items: center;
 		gap: 0;
-		padding: 1.5rem 1.25rem 1.25rem;
-		background: var(--tree-bg);
+		padding: 1.25rem 1rem 1rem;
+		background: #0f0f18;
 		border-radius: 14px;
-		color: var(--node-text);
-		min-width: 0;
+		color: #dde1f0;
 	}
 
-	/* ---- Koblingslinjer ---- */
+	.gen {
+		display: flex;
+		justify-content: center;
+		gap: 0.5rem;
+		width: 100%;
+	}
+
+	.parents-row { flex-wrap: wrap; align-items: center; }
+
 	.v-line {
 		width: 2px;
-		height: 1.75rem;
-		background: var(--tree-line);
+		height: 1.5rem;
+		background: #3a3a5c;
 		flex-shrink: 0;
 	}
 
 	.couple-bar {
 		display: block;
-		width: 1.25rem;
+		width: 1.1rem;
 		height: 2px;
-		background: var(--tree-line);
+		background: #3a3a5c;
 		flex-shrink: 0;
+		align-self: center;
 	}
 
-	/* ---- Generasjonsrader ---- */
-	.gen {
-		display: flex;
-		flex-wrap: wrap;
-		justify-content: center;
-		gap: 0.5rem;
-	}
-
-	.couple {
-		display: flex;
-		align-items: center;
-		gap: 0.4rem;
-	}
-
-	/* ---- Todelt rad for søsken-gren + Meg-gren ---- */
-	.gen2-split {
-		display: flex;
+	.branches-row {
+		gap: 1.5rem;
 		align-items: flex-start;
-		justify-content: center;
+		flex-wrap: wrap;
 	}
 
-	/* Venstre gren (søsken): top-border + right-border → høyre halvdel av U-buen */
-	.left-branch {
-		border-top: 2px solid var(--tree-line);
-		border-right: 2px solid var(--tree-line);
-		padding: 1.5rem 1.75rem 0 0.75rem;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-	}
-
-	/* Høyre gren (Meg): top-border + left-border → venstre halvdel av U-buen */
-	.right-branch {
-		border-top: 2px solid var(--tree-line);
-		border-left: 2px solid var(--tree-line);
-		padding: 1.5rem 0.75rem 0 1.75rem;
+	.branch {
 		display: flex;
 		flex-direction: column;
 		align-items: center;
 		gap: 0;
 	}
 
-	.branch-nodes {
+	.couple-row {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+	}
+
+	.branch-children {
 		display: flex;
 		flex-wrap: wrap;
 		justify-content: center;
-		gap: 0.5rem;
-	}
-
-	.self-couple {
-		display: flex;
-		align-items: center;
 		gap: 0.4rem;
 	}
 
-	.children-row {
-		display: flex;
+	.extended-row {
 		flex-wrap: wrap;
-		justify-content: center;
+		margin-top: 1rem;
+		padding-top: 0.75rem;
+		border-top: 1px dashed #2a2a44;
 		gap: 0.5rem;
 	}
 
-	/* ---- Noder ---- */
+	/* Noder */
 	.node {
-		display: flex;
+		display: inline-flex;
 		align-items: center;
-		gap: 0.4rem;
-		padding: 0.4rem 0.8rem;
+		gap: 0.35rem;
+		padding: 0.35rem 0.65rem;
 		border-radius: 999px;
-		background: var(--node-bg);
 		border: 1.5px solid #2c2c4a;
-		cursor: pointer;
+		background: #16162a;
+		color: #dde1f0;
 		font: inherit;
-		color: var(--node-text);
-		transition: transform 0.12s ease, box-shadow 0.12s ease;
+		font-size: 0.83rem;
+		cursor: pointer;
+		transition: transform 0.1s, box-shadow 0.1s;
 		white-space: nowrap;
 	}
 
@@ -264,8 +271,8 @@
 
 	.node.self {
 		background: linear-gradient(135deg, #7c8ef5, #5f6fe0);
+		border-color: transparent;
 		color: #fff;
-		border: none;
 		cursor: default;
 		font-weight: 600;
 	}
@@ -273,28 +280,11 @@
 	.node.partner  { border-color: #a0405f; }
 	.node.child    { border-color: #9a6520; }
 	.node.parent   { border-color: #335f99; }
-	.node.in-law   { border-color: #5f3a99; }
 	.node.sibling  { border-color: #236b4a; }
-	.node.friend   { border-color: #2a6a7a; }
+	.node.in-law   { border-color: #5f3a99; }
 	.node.extended { border-color: #3a3a5c; }
+	.node.friend   { border-color: #2a6a7a; }
 
-	.emoji { font-size: 1.05rem; }
-
-	.kind-tag {
-		font-size: 0.68rem;
-		opacity: 0.45;
-		margin-left: 0.15rem;
-	}
-
-	/* ---- Nedre rad: svigerfamilie/venner ---- */
-	.extended-row {
-		display: flex;
-		flex-wrap: wrap;
-		justify-content: center;
-		gap: 0.5rem;
-		margin-top: 1.25rem;
-		padding-top: 1rem;
-		border-top: 1px dashed #2a2a44;
-		width: 100%;
-	}
+	.emoji { font-size: 1rem; line-height: 1; }
+	.name  { font-size: 0.82rem; }
 </style>

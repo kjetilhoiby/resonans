@@ -217,11 +217,11 @@
 		z-index: 2000;
 		min-width: 220px;
 		max-width: 320px;
-		background: #fff;
-		color: #222;
+		background: #1e1e1e;
+		color: #d0d0d0;
 		border-radius: 12px;
-		border: 1px solid #e0e0e3;
-		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+		border: 1px solid #333;
+		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
 		list-style: none;
 		padding: 0.25rem;
 		margin: 0;

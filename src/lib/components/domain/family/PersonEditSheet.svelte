@@ -161,7 +161,8 @@
 		flex-direction: column;
 		gap: 1rem;
 		padding: 1rem;
-		background: var(--surface-1, #fff);
+		background: var(--surface-1, #1a1a1a);
+		color: var(--text, #d0d0d0);
 		border-radius: 16px;
 		max-height: 85vh;
 		overflow: auto;
@@ -187,13 +188,14 @@
 	input, select, textarea {
 		padding: 0.45rem 0.55rem;
 		border-radius: 8px;
-		border: 1px solid var(--border, #e0e0e3);
+		border: 1px solid var(--border, #2a2a2a);
+		color: var(--text, #d0d0d0);
 		font: inherit;
-		background: var(--surface-1, #fff);
+		background: var(--surface-input, #111);
 	}
 	textarea { resize: vertical; }
 	fieldset {
-		border: 1px solid var(--border, #e0e0e3);
+		border: 1px solid var(--border, #2a2a2a);
 		border-radius: 10px;
 		padding: 0.75rem;
 		display: flex;
@@ -206,8 +208,8 @@
 	button {
 		padding: 0.5rem 1rem;
 		border-radius: 8px;
-		border: 1px solid var(--border, #e0e0e3);
-		background: var(--surface-2, #f5f5f7);
+		border: 1px solid var(--border, #2a2a2a);
+		background: var(--surface-2, #242424);
 		font: inherit;
 		cursor: pointer;
 	}

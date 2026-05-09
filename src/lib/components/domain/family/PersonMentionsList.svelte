@@ -90,12 +90,12 @@
 		gap: 0.2rem;
 		padding: 0.6rem 0.75rem;
 		border-radius: 8px;
-		background: var(--surface-1, #fff);
-		border: 1px solid var(--border, #e0e0e3);
+		background: var(--surface-1, #1c1c1c);
+		border: 1px solid var(--border, #2a2a2a);
 		text-decoration: none;
 		color: inherit;
 	}
-	a:hover { background: var(--surface-2, #f5f5f7); }
+	a:hover { background: var(--surface-2, #242424); }
 	.title, .snippet { font-weight: 500; font-size: 0.9rem; }
 	.snippet {
 		display: -webkit-box;

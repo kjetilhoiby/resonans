@@ -1,25 +1,33 @@
 interface AppsScriptOptions {
 	endpoint: string;
 	token: string;
-	labels: string[];
 }
 
-export function buildAppsScript({ endpoint, token, labels }: AppsScriptOptions): string {
-	const labelsJson = JSON.stringify(labels, null, 2).replace(/^/gm, '  ');
-
+export function buildAppsScript({ endpoint, token }: AppsScriptOptions): string {
 	return `// Auto-generert av Resonans. Lim inn i script.google.com → Project → Code.gs.
 // Sett opp en tidsutløser som kjører syncResonans() hvert 5. minutt.
 
-const ENDPOINT = ${JSON.stringify(endpoint)};
-const TOKEN    = ${JSON.stringify(token)};
-const LABELS   =\n${labelsJson};
+const ENDPOINT     = ${JSON.stringify(endpoint)};
+const TOKEN        = ${JSON.stringify(token)};
+const LABEL_PREFIX = 'Resonans/';
+
+function getResonansLabels() {
+  return GmailApp.getUserLabels().filter(function(l) {
+    return l.getName().indexOf(LABEL_PREFIX) === 0;
+  });
+}
 
 function syncResonans() {
-  for (const labelName of LABELS) {
-    const label = GmailApp.getUserLabelByName(labelName);
-    if (!label) continue;
+  const labels = getResonansLabels();
+  if (labels.length === 0) {
+    console.log('Ingen Gmail-labels funnet med prefiks "' + LABEL_PREFIX + '"');
+    return;
+  }
 
+  for (const label of labels) {
+    const labelName = label.getName();
     const threads = label.getThreads(0, 25);
+
     for (const thread of threads) {
       const messages = thread.getMessages();
       let allOk = true;
