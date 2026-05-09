@@ -1,11 +1,21 @@
 import { db } from '$lib/db';
-import { dreams, goals, memories, sensorEvents, themes } from '$lib/db/schema';
+import { dreams, goals, memories, sensorEvents, themes, users } from '$lib/db/schema';
 import { and, desc, eq, gte, isNull, lte, or } from 'drizzle-orm';
 import { openai } from '$lib/server/openai';
 import { getRecentReflections } from '$lib/server/reflections';
 import { getRecentPlanArtifacts, getPlanArtifact } from '$lib/server/plan-artifacts';
 
 const DREAM_PROMPT_VERSION = 'pyramid-v1';
+
+function isoWeekKeyFor(date: Date): string {
+	// ISO-uke iht. ISO 8601: torsdagen i uka bestemmer årstallet.
+	const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+	const day = d.getUTCDay() || 7;
+	d.setUTCDate(d.getUTCDate() + 4 - day);
+	const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+	const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+	return `${d.getUTCFullYear()}W${String(weekNo).padStart(2, '0')}`;
+}
 
 export type DreamMode = 'least_effort' | 'steady' | 'push';
 
@@ -317,6 +327,59 @@ export class DreamService {
 	/** Bakoverkompatibel snarvei brukt av flere kallere. */
 	static async getActiveDream(userId: string, now = new Date()) {
 		return this.getActive(userId, 'daily_dream', now);
+	}
+
+	// ── Sched-helpers (kjøres fra scheduler.ts) ──────────────────────────────
+
+	static async runDailyForAllUsers(opts: SynthRunOptions = {}) {
+		const allUsers = await db.query.users.findMany({ columns: { id: true } });
+		for (const user of allUsers) {
+			try {
+				await this.runDaily(user.id, opts);
+			} catch (err) {
+				console.error(`[DreamService] runDaily failed for user ${user.id}:`, err);
+			}
+		}
+	}
+
+	static async runWeeklyForAllUsers(opts: SynthRunOptions = {}) {
+		const weekKey = isoWeekKeyFor(opts.now ?? new Date());
+		const allUsers = await db.query.users.findMany({ columns: { id: true } });
+		for (const user of allUsers) {
+			try {
+				await this.runWeekly(user.id, weekKey, opts);
+			} catch (err) {
+				console.error(`[DreamService] runWeekly failed for user ${user.id}:`, err);
+			}
+		}
+	}
+
+	static async runMonthlyForAllUsers(opts: SynthRunOptions = {}) {
+		const now = opts.now ?? new Date();
+		const prev = new Date(now);
+		prev.setMonth(prev.getMonth() - 1);
+		const monthKey = `${prev.getFullYear()}M${String(prev.getMonth() + 1).padStart(2, '0')}`;
+		const allUsers = await db.query.users.findMany({ columns: { id: true } });
+		for (const user of allUsers) {
+			try {
+				await this.runMonthly(user.id, monthKey, opts);
+			} catch (err) {
+				console.error(`[DreamService] runMonthly failed for user ${user.id}:`, err);
+			}
+		}
+	}
+
+	static async runYearlyForAllUsers(opts: SynthRunOptions = {}) {
+		const now = opts.now ?? new Date();
+		const year = String(now.getFullYear() - 1);
+		const allUsers = await db.query.users.findMany({ columns: { id: true } });
+		for (const user of allUsers) {
+			try {
+				await this.runYearly(user.id, year, opts);
+			} catch (err) {
+				console.error(`[DreamService] runYearly failed for user ${user.id}:`, err);
+			}
+		}
 	}
 
 	private static async getLatest(userId: string, kind: DreamKind) {
