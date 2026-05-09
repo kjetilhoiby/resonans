@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { FamilyDashboardData } from '$lib/client/dashboard-cache';
 	import PersonMentionsList from './PersonMentionsList.svelte';
+	import PersonEditSheet from './PersonEditSheet.svelte';
 
 	interface Props {
 		person: FamilyDashboardData['persons'][number];
@@ -10,6 +11,7 @@
 		conversations: FamilyDashboardData['conversationsByPerson'][string];
 		onClose?: () => void;
 		onStartChat?: (personId: string) => void;
+		onPersonUpdated?: (personId: string) => void;
 	}
 
 	let {
@@ -19,11 +21,23 @@
 		events = [],
 		conversations = [],
 		onClose,
-		onStartChat
+		onStartChat,
+		onPersonUpdated
 	}: Props = $props();
 
 	type Tab = 'overview' | 'chats' | 'memories' | 'goals' | 'events' | 'mentions';
 	let activeTab = $state<Tab>('overview');
+	let editing = $state(false);
+	let fullPerson = $state<any | null>(null);
+
+	async function startEdit() {
+		const res = await fetch(`/api/persons/${person.id}`);
+		if (res.ok) {
+			const body = await res.json();
+			fullPerson = body.person;
+			editing = true;
+		}
+	}
 
 	let mentions = $state<{ messages: any[]; tasks: any[] } | null>(null);
 	let mentionsLoading = $state(false);
@@ -60,9 +74,22 @@
 			<button class="primary" onclick={() => onStartChat?.(person.id)}>
 				Start chat om relasjonen
 			</button>
+			<button class="ghost" onclick={() => void startEdit()}>Rediger</button>
 			<button class="ghost" onclick={() => onClose?.()}>Lukk</button>
 		</div>
 	</header>
+
+	{#if editing && fullPerson}
+		<PersonEditSheet
+			person={fullPerson}
+			onClose={() => (editing = false)}
+			onSaved={(updated) => {
+				editing = false;
+				fullPerson = updated;
+				onPersonUpdated?.(updated.id);
+			}}
+		/>
+	{/if}
 
 	<div class="tabs" role="tablist">
 		<button class:active={activeTab === 'overview'} onclick={() => (activeTab = 'overview')}>Oversikt</button>

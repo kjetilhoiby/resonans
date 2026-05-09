@@ -3,6 +3,7 @@ import { env } from '$env/dynamic/private';
 import { enqueueStaleWorkoutProjectionRefreshSweep } from '$lib/server/background-jobs';
 import { SignalService } from '$lib/server/services/signal-service';
 import { NudgeOrchestrationService } from '$lib/server/services/nudge-orchestration-service';
+import { DreamService } from '$lib/server/services/dream-service';
 
 /**
  * In-app cron scheduler using node-cron
@@ -98,11 +99,69 @@ export function startScheduler() {
 	// Withings-synk og nattlig aggregering håndteres av GitHub Actions cron
 	// via /api/cron/withings-sync og /api/cron/aggregate (se /api/cron/jobs).
 
+	// Drøm-pyramide: hvert nivå leser nivået under, så rekkefølgen av tidspunkter
+	// betyr noe (daglig før uke før måned før år).
+	cron.schedule(
+		'0 3 * * *',
+		async () => {
+			console.log('🌙 Running daily dream synthesis at', new Date().toISOString());
+			try {
+				await DreamService.runDailyForAllUsers();
+			} catch (err) {
+				console.error('❌ runDailyForAllUsers failed:', err);
+			}
+		},
+		{ timezone: 'Europe/Oslo' }
+	);
+
+	cron.schedule(
+		'0 22 * * 0',
+		async () => {
+			console.log('🌙 Running weekly dream synthesis at', new Date().toISOString());
+			try {
+				await DreamService.runWeeklyForAllUsers();
+			} catch (err) {
+				console.error('❌ runWeeklyForAllUsers failed:', err);
+			}
+		},
+		{ timezone: 'Europe/Oslo' }
+	);
+
+	cron.schedule(
+		'0 4 1 * *',
+		async () => {
+			console.log('🌙 Running monthly dream synthesis at', new Date().toISOString());
+			try {
+				await DreamService.runMonthlyForAllUsers();
+			} catch (err) {
+				console.error('❌ runMonthlyForAllUsers failed:', err);
+			}
+		},
+		{ timezone: 'Europe/Oslo' }
+	);
+
+	cron.schedule(
+		'0 5 1 1 *',
+		async () => {
+			console.log('🌙 Running yearly dream synthesis at', new Date().toISOString());
+			try {
+				await DreamService.runYearlyForAllUsers();
+			} catch (err) {
+				console.error('❌ runYearlyForAllUsers failed:', err);
+			}
+		},
+		{ timezone: 'Europe/Oslo' }
+	);
+
 	isSchedulerRunning = true;
 	console.log('✅ Scheduler started:');
 	console.log('   - Daily check-in at 09:00 Europe/Oslo');
 	console.log('   - Local nudges + domain signals every hour (UTC scheduler, local-time aware nudges)');
 	console.log('   - Egenfrekvens-sjekkin every 5 minutes (UTC scheduler, per-user local time window)');
 	console.log('   - Workout projection stale sweeper every 15 minutes (UTC)');
+	console.log('   - Daily dream synthesis at 03:00 Europe/Oslo');
+	console.log('   - Weekly dream synthesis Sundays at 22:00 Europe/Oslo');
+	console.log('   - Monthly dream synthesis 1st of month at 04:00 Europe/Oslo');
+	console.log('   - Yearly dream synthesis Jan 1st at 05:00 Europe/Oslo');
 }
 

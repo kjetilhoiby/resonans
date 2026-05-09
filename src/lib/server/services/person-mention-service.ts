@@ -32,23 +32,32 @@ export async function detectPersonMentions(
 	const matches = new Map<string, DetectedMention>();
 	const normalized = text.toLowerCase();
 
+	function record(personId: string, confidence: 'explicit' | 'inferred') {
+		const existing = matches.get(personId);
+		// 'explicit' overstyrer 'inferred'
+		if (!existing || (existing.confidence === 'inferred' && confidence === 'explicit')) {
+			matches.set(personId, { personId, confidence });
+		}
+	}
+
 	for (const { personId, tokens } of lexicon) {
 		for (const token of tokens) {
 			if (!token || token.length < 2) continue;
 			const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-			// Hele-ord match — krever ord-grense rundt token, case-insensitive
-			const re = new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}([^\\p{L}\\p{N}]|$)`, 'iu');
-			if (re.test(text)) {
-				if (!matches.has(personId)) {
-					matches.set(personId, { personId, confidence: 'inferred' });
-				}
-				break; // bare én match per person trengs
+			// Eksplisitt: @-prefiks rett før hele tokenet (matcher @-mention fra autocomplete)
+			const explicitRe = new RegExp(`(^|\\s)@${escaped}([^\\p{L}\\p{N}]|$)`, 'iu');
+			if (explicitRe.test(text)) {
+				record(personId, 'explicit');
+				break;
 			}
-			// Også matche enkel substring for korte aliaser (eks. emoji eller diminutiver)
+			// Inferred: hele-ord match uten @-prefiks
+			const re = new RegExp(`(^|[^\\p{L}\\p{N}@])${escaped}([^\\p{L}\\p{N}]|$)`, 'iu');
+			if (re.test(text)) {
+				record(personId, 'inferred');
+				break;
+			}
 			if (token.length >= 4 && normalized.includes(token.toLowerCase())) {
-				if (!matches.has(personId)) {
-					matches.set(personId, { personId, confidence: 'inferred' });
-				}
+				record(personId, 'inferred');
 				break;
 			}
 		}

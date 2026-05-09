@@ -16,6 +16,7 @@
 	import WeatherStrip, { type WeatherPeriod } from '$lib/components/ui/WeatherStrip.svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import BreakdownModal from '$lib/components/ui/BreakdownModal.svelte';
+	import MentionAutocomplete from '$lib/components/ui/MentionAutocomplete.svelte';
 	import { readCacheEntry, isCacheStale, fetchRawTimeseries, buildPeriods, buildWeekPeriods } from '$lib/utils/weather';
 
 	interface ChecklistItem {
@@ -47,6 +48,7 @@
 
 	let items = $state<ChecklistItem[]>([...checklist.items]);
 	let newItemText = $state('');
+	let newItemInputEl = $state<HTMLInputElement | null>(null);
 	let showPayoff = $state(false);
 	let payoffDismissed = $state(false);
 	let addingItem = $state(false);
@@ -468,9 +470,16 @@
 		<input
 			class="cs-add-input"
 			type="text"
-			placeholder="Ny oppgave"
+			placeholder="Ny oppgave (skriv @ for å nevne en person)"
+			bind:this={newItemInputEl}
 			bind:value={newItemText}
 			onkeydown={handleAddKey}
+			disabled={addingItem}
+		/>
+		<MentionAutocomplete
+			textareaEl={newItemInputEl}
+			value={newItemText}
+			onValueChange={(t) => (newItemText = t)}
 			disabled={addingItem}
 		/>
 		<button

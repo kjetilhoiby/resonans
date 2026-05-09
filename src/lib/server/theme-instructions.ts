@@ -1,69 +1,33 @@
 import { db } from '$lib/db';
-import { memories, themes } from '$lib/db/schema';
-import { and, desc, eq } from 'drizzle-orm';
-
-const THEME_INSTRUCTION_SOURCE = 'theme_instruction';
+import { themes } from '$lib/db/schema';
+import { and, eq } from 'drizzle-orm';
 
 export async function getThemeInstruction(userId: string, themeId: string): Promise<string> {
-	const memory = await db.query.memories.findFirst({
-		where: and(
-			eq(memories.userId, userId),
-			eq(memories.themeId, themeId),
-			eq(memories.source, THEME_INSTRUCTION_SOURCE)
-		),
-		orderBy: [desc(memories.updatedAt)]
+	const theme = await db.query.themes.findFirst({
+		where: and(eq(themes.id, themeId), eq(themes.userId, userId)),
+		columns: { instructions: true }
 	});
-
-	return memory?.content ?? '';
+	return theme?.instructions ?? '';
 }
 
 export async function saveThemeInstruction(userId: string, themeId: string, content: string) {
 	const theme = await db.query.themes.findFirst({
-		where: and(eq(themes.id, themeId), eq(themes.userId, userId))
+		where: and(eq(themes.id, themeId), eq(themes.userId, userId)),
+		columns: { id: true }
 	});
 
 	if (!theme) {
 		throw new Error('Theme not found');
 	}
 
-	const existing = await db.query.memories.findFirst({
-		where: and(
-			eq(memories.userId, userId),
-			eq(memories.themeId, themeId),
-			eq(memories.source, THEME_INSTRUCTION_SOURCE)
-		),
-		orderBy: [desc(memories.updatedAt)]
-	});
-
 	const normalized = content.trim();
 
-	if (existing) {
-		const [updated] = await db
-			.update(memories)
-			.set({
-				content: normalized,
-				importance: normalized ? 'high' : 'medium',
-				updatedAt: new Date(),
-				lastAccessedAt: new Date()
-			})
-			.where(eq(memories.id, existing.id))
-			.returning();
-		return updated;
-	}
-
-	const [created] = await db
-		.insert(memories)
-		.values({
-			userId,
-			themeId,
-			category: 'preferences',
-			content: normalized,
-			importance: normalized ? 'high' : 'medium',
-			source: THEME_INSTRUCTION_SOURCE
-		})
+	const [updated] = await db
+		.update(themes)
+		.set({ instructions: normalized.length > 0 ? normalized : null, updatedAt: new Date() })
+		.where(eq(themes.id, themeId))
 		.returning();
-
-	return created;
+	return updated;
 }
 
 export async function seedThemeInstructionFromFutureVision(userId: string, themeId: string, visionText: string) {

@@ -10,8 +10,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import Icon from './Icon.svelte';
-	import MentionPicker from './MentionPicker.svelte';
-	import { createMentionState } from '$lib/utils/mention-input.svelte';
+	import MentionAutocomplete from './MentionAutocomplete.svelte';
 
 	type AttachmentAction = 'camera' | 'voice' | 'file';
 
@@ -24,6 +23,7 @@
 		autoFocus?: boolean;
 		showActionRig?: boolean;
 		interceptOpen?: boolean;
+		enableMentions?: boolean;
 		onAttachment?: (kind: AttachmentAction, draft: string) => void;
 		onMood?: (draft: string) => void;
 		onOpen?: () => void;
@@ -41,6 +41,7 @@
 		autoFocus = false,
 		showActionRig = false,
 		interceptOpen = false,
+		enableMentions = true,
 		onAttachment,
 		onMood,
 		onOpen,
@@ -53,9 +54,6 @@
 	let textareaEl = $state<HTMLTextAreaElement | null>(null);
 	const hasDraft = $derived(text.trim().length > 0);
 	let isTouchDevice = $state(false);
-
-	const mention = createMentionState();
-	let mentionPickerEl = $state<ReturnType<typeof MentionPicker> | null>(null);
 
 	$effect(() => {
 		isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
@@ -80,13 +78,9 @@
 		el.style.height = 'auto';
 		el.style.height = Math.min(el.scrollHeight, 120) + 'px';
 		onTextChange?.(el.value);
-		mention.scan(el.value, el.selectionStart ?? el.value.length);
 	}
 
 	function onKeyDown(e: KeyboardEvent) {
-		// La MentionPicker håndtere piltaster/enter/escape når synlig
-		if (mention.visible && mentionPickerEl?.handleKeydown(e)) return;
-
 		const currentValue = textareaEl?.value ?? '';
 		if (e.key === 'Backspace' && currentValue.length === 0) {
 			e.preventDefault();
@@ -99,18 +93,6 @@
 			e.preventDefault();
 			submit();
 		}
-	}
-
-	function insertMention(person: { name: string }) {
-		if (!textareaEl) return;
-		const el = textareaEl;
-		mention.insert(
-			person.name,
-			() => el.value,
-			() => el.selectionStart ?? el.value.length,
-			(v) => { text = v; },
-			(pos) => { tick().then(() => { el.setSelectionRange(pos, pos); el.focus(); }); }
-		);
 	}
 
 	function openFromInput() {
@@ -159,15 +141,6 @@
 	});
 </script>
 
-<MentionPicker
-	bind:this={mentionPickerEl}
-	visible={mention.visible}
-	persons={mention.filtered}
-	anchorEl={textareaEl}
-	onSelect={insertMention}
-	onClose={() => mention.close()}
-/>
-
 <form
 	class="ci-form"
 	onsubmit={(e) => {
@@ -191,6 +164,22 @@
 		onkeydown={onKeyDown}
 		aria-label="Melding"
 	></textarea>
+
+	{#if enableMentions}
+		<MentionAutocomplete
+			textareaEl={textareaEl}
+			value={text}
+			onValueChange={(t) => {
+				text = t;
+				onTextChange?.(t);
+				if (textareaEl) {
+					textareaEl.style.height = 'auto';
+					textareaEl.style.height = Math.min(textareaEl.scrollHeight, 120) + 'px';
+				}
+			}}
+			disabled={disabled}
+		/>
+	{/if}
 
 	{#if showActionRig}
 		<div class="ci-actions-rig" aria-label="Input-handlinger">

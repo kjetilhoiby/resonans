@@ -8,9 +8,10 @@
 		data: FamilyDashboardData;
 		onOpenChat?: (prefill: string) => void;
 		onOpenConversation?: (conversationId: string) => void;
+		onPersonUpdated?: (personId: string) => void;
 	}
 
-	let { data, onOpenChat, onOpenConversation }: Props = $props();
+	let { data, onOpenChat, onOpenConversation, onPersonUpdated }: Props = $props();
 
 	let selectedPersonId = $state<string | null>(null);
 
@@ -90,6 +91,7 @@
 					conversations={data.conversationsByPerson[selectedPerson.id] ?? []}
 					onClose={closeSheet}
 					onStartChat={startRelationChat}
+					onPersonUpdated={onPersonUpdated}
 				/>
 			</div>
 		</div>
