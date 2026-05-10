@@ -89,6 +89,7 @@
 					goals={data.openGoalsByPerson[selectedPerson.id] ?? []}
 					events={data.upcomingEventsByPerson[selectedPerson.id] ?? []}
 					conversations={data.conversationsByPerson[selectedPerson.id] ?? []}
+					tasks={data.tasksByPerson[selectedPerson.id] ?? []}
 					onClose={closeSheet}
 					onStartChat={startRelationChat}
 					onPersonUpdated={onPersonUpdated}

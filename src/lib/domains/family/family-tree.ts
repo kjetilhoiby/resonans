@@ -8,6 +8,7 @@ export interface PersonNode {
 	name: string;
 	kind: PersonKind;
 	avatarEmoji: string | null;
+	photoUrl: string | null;
 	birthDate: string | null;
 	archived: boolean;
 }

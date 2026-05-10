@@ -5,7 +5,8 @@ import {
 	memories,
 	goals,
 	sensorEvents,
-	conversations
+	conversations,
+	tasks
 } from '$lib/db/schema';
 import { and, desc, eq, gte, isNotNull } from 'drizzle-orm';
 import { PersonService } from './services/person-service';
@@ -33,6 +34,7 @@ export interface FamilyDashboardData {
 		title: string;
 		description: string | null;
 		targetDate: Date | null;
+		createdAt: Date;
 	}>>;
 	upcomingEventsByPerson: Record<string, Array<{
 		id: string;
@@ -44,6 +46,13 @@ export interface FamilyDashboardData {
 		id: string;
 		title: string | null;
 		updatedAt: Date;
+	}>>;
+	tasksByPerson: Record<string, Array<{
+		id: string;
+		title: string;
+		status: string;
+		frequency: string | null;
+		createdAt: Date;
 	}>>;
 }
 
@@ -104,7 +113,8 @@ export async function loadFamilyDashboardData(userId: string): Promise<FamilyDas
 			id: g.id,
 			title: g.title,
 			description: g.description,
-			targetDate: g.targetDate
+			targetDate: g.targetDate,
+			createdAt: g.createdAt
 		});
 	}
 
@@ -162,11 +172,40 @@ export async function loadFamilyDashboardData(userId: string): Promise<FamilyDas
 		});
 	}
 
+	// Aktive oppgaver direkte koblet til person via tasks.personId.
+	// tasks har ikke userId direkte — vi joiner via goals.userId.
+	const directTaskRows = personIds.length
+		? await db
+				.select({ task: tasks })
+				.from(tasks)
+				.innerJoin(goals, eq(tasks.goalId, goals.id))
+				.where(
+					and(
+						eq(goals.userId, userId),
+						eq(tasks.status, 'active'),
+						isNotNull(tasks.personId)
+					)
+				)
+				.orderBy(desc(tasks.createdAt))
+		: [];
+	const tasksByPerson: FamilyDashboardData['tasksByPerson'] = {};
+	for (const { task: t } of directTaskRows) {
+		const pid = t.personId as string;
+		(tasksByPerson[pid] ??= []).push({
+			id: t.id,
+			title: t.title,
+			status: t.status,
+			frequency: t.frequency,
+			createdAt: t.createdAt
+		});
+	}
+
 	const personNodes: PersonNode[] = allPersons.map((p) => ({
 		id: p.id,
 		name: p.name,
 		kind: p.kind as PersonKind,
 		avatarEmoji: p.avatarEmoji,
+		photoUrl: p.photoUrl,
 		birthDate: p.birthDate,
 		archived: p.archived
 	}));
@@ -189,6 +228,7 @@ export async function loadFamilyDashboardData(userId: string): Promise<FamilyDas
 		recentMemoriesByPerson,
 		openGoalsByPerson,
 		upcomingEventsByPerson,
-		conversationsByPerson
+		conversationsByPerson,
+		tasksByPerson
 	};
 }

@@ -682,6 +682,7 @@ export const persons = pgTable('persons', {
 	birthDate: date('birth_date'),
 	kind: text('kind').notNull().default('other'),                // 'child' | 'partner' | 'parent' | 'sibling' | 'in_law' | 'extended_family' | 'friend' | 'colleague' | 'self' | 'other'
 	avatarEmoji: text('avatar_emoji'),
+	photoUrl: text('photo_url'),                                  // Cloudinary-URL — vises i stedet for emoji når satt
 	notes: text('notes'),
 	spondGroupIds: text('spond_group_ids').array().notNull().default(sql`ARRAY[]::text[]`),
 	emailAddresses: text('email_addresses').array().notNull().default(sql`ARRAY[]::text[]`),
