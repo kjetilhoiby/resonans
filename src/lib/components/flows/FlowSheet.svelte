@@ -79,6 +79,9 @@
 	let checklistCustomInput = $state('');
 	let checklistCustomInputEl = $state<HTMLInputElement | null>(null);
 	let loadingAiSuggestions = $state(false);
+	let refinementInput = $state('');
+	let refinementInputEl = $state<HTMLInputElement | null>(null);
+	let refinementHistory = $state<string[]>([]);
 
 	// ── Decision-list state ──────────────────────────────────────────
 	let decisions = $state<Record<string, 'carryover' | 'unsolved'>>({});
@@ -166,6 +169,8 @@
 
 		if (step.type === 'checklist') {
 			untrack(() => {
+				refinementInput = '';
+				refinementHistory = [];
 				initChecklistStep(step.itemsKey, step.extraItemsKey);
 				if (step.aiSuggestionsFromField) {
 					const fieldValue = flowData[step.aiSuggestionsFromField!];
@@ -224,8 +229,8 @@
 		checklistCustomInputEl?.focus();
 	}
 
-	async function fetchAiSuggestions(headline: string | undefined) {
-		if (!headline?.trim()) return;
+	async function fetchAiSuggestions(headline: string | undefined, refinementPrompt?: string) {
+		if (!headline?.trim() && !refinementPrompt?.trim()) return;
 		loadingAiSuggestions = true;
 		try {
 			const alreadyHave = checklistItems.map((i) => i.text);
@@ -233,10 +238,11 @@
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					headline: headline.trim(),
+					headline: headline?.trim() ?? '',
 					dayLabel: context.dayLabel ?? '',
 					carryovers: context.carryovers ?? [],
-					weekTasks: context.weekTasks ?? []
+					weekTasks: context.weekTasks ?? [],
+					...(refinementPrompt ? { refinementPrompt } : {})
 				})
 			});
 			if (!res.ok) return;
@@ -259,6 +265,17 @@
 		} finally {
 			loadingAiSuggestions = false;
 		}
+	}
+
+	async function sendRefinementPrompt() {
+		const prompt = refinementInput.trim();
+		if (!prompt || loadingAiSuggestions) return;
+		refinementHistory = [...refinementHistory, prompt];
+		refinementInput = '';
+		const fieldValue = currentStep?.aiSuggestionsFromField ? flowData[currentStep.aiSuggestionsFromField] : undefined;
+		await fetchAiSuggestions(fieldValue, prompt);
+		await tick();
+		refinementInputEl?.focus();
 	}
 
 	// ── Decision-list helpers ────────────────────────────────────────
@@ -586,6 +603,34 @@
 					</div>
 				{/if}
 
+				{#if currentStep.enableAiRefinement && currentStep.aiSuggestionsFromField}
+					{#if refinementHistory.length > 0}
+						<div class="fs-refinement-history" aria-live="polite">
+							{#each refinementHistory as prompt (prompt)}
+								<span class="fs-refinement-chip">✦ {prompt}</span>
+							{/each}
+						</div>
+					{/if}
+					<div class="fs-refinement-row">
+						<input
+							bind:this={refinementInputEl}
+							bind:value={refinementInput}
+							type="text"
+							class="fs-refinement-input"
+							placeholder="Be om flere forslag… f.eks. «mer om hvile»"
+							disabled={loadingAiSuggestions}
+							onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void sendRefinementPrompt(); } }}
+						/>
+						<button
+							type="button"
+							class="fs-refinement-btn"
+							onclick={() => void sendRefinementPrompt()}
+							disabled={!refinementInput.trim() || loadingAiSuggestions}
+							aria-label="Hent forslag"
+						>↑</button>
+					</div>
+				{/if}
+
 				<div class="fs-add-row">
 					<input
 						bind:this={checklistCustomInputEl}
@@ -651,7 +696,10 @@
 			onclick={() => void handleNext()}
 			disabled={!canProceed || completing}
 		>
-			{completing ? 'Lagrer…' : isLastStep ? 'Fullfør' : 'Neste →'}
+			{#if completing}Lagrer…
+		{:else if currentStep?.type === 'checklist' && currentStep.enableAiRefinement}Ferdig →
+		{:else if isLastStep}Fullfør
+		{:else}Neste →{/if}
 		</button>
 	</div>
 </div>
@@ -983,6 +1031,60 @@
 	}
 	.fs-add-btn:not(:disabled):hover { background: #1a1a1a; color: #ccc; }
 	.fs-add-btn:disabled { opacity: 0.3; cursor: default; }
+
+	/* Refinement */
+	.fs-refinement-history {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		padding: 4px 0 2px;
+	}
+	.fs-refinement-chip {
+		font-size: 0.7rem;
+		color: #6070c0;
+		background: #0e1020;
+		border: 1px solid #1e2240;
+		border-radius: 999px;
+		padding: 2px 10px;
+	}
+	.fs-refinement-row {
+		display: flex;
+		gap: 8px;
+		align-items: center;
+		border: 1px solid #1e2240;
+		border-radius: 10px;
+		padding: 4px 4px 4px 12px;
+		background: #0a0a14;
+	}
+	.fs-refinement-input {
+		flex: 1;
+		background: none;
+		border: none;
+		color: #aaa;
+		font: inherit;
+		font-size: 0.82rem;
+		outline: none;
+		min-width: 0;
+	}
+	.fs-refinement-input::placeholder { color: #3a3a5a; }
+	.fs-refinement-input:disabled { opacity: 0.5; }
+	.fs-refinement-btn {
+		width: 28px;
+		height: 28px;
+		border-radius: 8px;
+		border: none;
+		background: #2a3080;
+		color: #aab0ff;
+		font-size: 1rem;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+		transition: background 0.12s;
+	}
+	.fs-refinement-btn:not(:disabled):hover { background: #3a40a0; }
+	.fs-refinement-btn:disabled { opacity: 0.3; cursor: default; }
 
 	/* Decision list */
 	.fs-decision-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }

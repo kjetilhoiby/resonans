@@ -11,11 +11,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		carryovers?: string[];
 		weekTasks?: string[];
 		weatherSummary?: string;
+		refinementPrompt?: string;
 	};
 
-	const { headline, dayLabel, carryovers = [], weekTasks = [], weatherSummary } = body;
+	const { headline, dayLabel, carryovers = [], weekTasks = [], weatherSummary, refinementPrompt } = body;
 
-	if (!headline?.trim()) {
+	if (!headline?.trim() && !refinementPrompt?.trim()) {
 		return json({ suggestions: [] });
 	}
 
@@ -38,7 +39,13 @@ Regler:
 
 Eksempel: ["Ring tannlegen og avtal time", "Kjøp inn middag på vei hjem", "Svar på epost fra Ole"]`;
 
-	const userPrompt = `Dag: ${dayLabel}
+	const userPrompt = refinementPrompt?.trim()
+		? `Dag: ${dayLabel}
+Enlinjer: ${headline}${existingContext}${weatherContext}
+
+Brukeren presiserer: "${refinementPrompt}"
+Foreslå nye oppgaver som tilfredsstiller dette (ikke gjenta de som allerede er lagt til):`
+		: `Dag: ${dayLabel}
 Enlinjer: ${headline}${existingContext}${weatherContext}
 
 Foreslå oppgaver:`;
