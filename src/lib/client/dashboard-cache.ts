@@ -124,6 +124,7 @@ export interface FamilyDashboardData {
 			name: string;
 			kind: string;
 			avatarEmoji: string | null;
+			photoUrl: string | null;
 			birthDate: string | null;
 			archived: boolean;
 		}>;
@@ -135,14 +136,15 @@ export interface FamilyDashboardData {
 			subType: string | null;
 			closeness: number | null;
 		}>;
-		byKind: Record<string, Array<{ id: string; name: string; avatarEmoji: string | null; birthDate: string | null; archived: boolean; kind: string }>>;
-		byRelationType: Record<'family' | 'friend' | 'work', Array<{ id: string; name: string; avatarEmoji: string | null; birthDate: string | null; archived: boolean; kind: string }>>;
+		byKind: Record<string, Array<{ id: string; name: string; avatarEmoji: string | null; photoUrl: string | null; birthDate: string | null; archived: boolean; kind: string }>>;
+		byRelationType: Record<'family' | 'friend' | 'work', Array<{ id: string; name: string; avatarEmoji: string | null; photoUrl: string | null; birthDate: string | null; archived: boolean; kind: string }>>;
 	};
 	persons: Array<{
 		id: string;
 		name: string;
 		kind: string;
 		avatarEmoji: string | null;
+		photoUrl: string | null;
 		birthDate: string | null;
 		archived: boolean;
 	}>;
@@ -166,6 +168,7 @@ export interface FamilyDashboardData {
 		title: string;
 		description: string | null;
 		targetDate: string | null;
+		createdAt: string;
 	}>>;
 	upcomingEventsByPerson: Record<string, Array<{
 		id: string;
@@ -177,6 +180,13 @@ export interface FamilyDashboardData {
 		id: string;
 		title: string | null;
 		updatedAt: string;
+	}>>;
+	tasksByPerson: Record<string, Array<{
+		id: string;
+		title: string;
+		status: string;
+		frequency: string | null;
+		createdAt: string;
 	}>>;
 }
 

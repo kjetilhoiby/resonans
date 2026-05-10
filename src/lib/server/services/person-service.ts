@@ -11,6 +11,7 @@ export type CreatePersonInput = {
 	birthDate?: string | null; // ISO date 'YYYY-MM-DD'
 	kind?: PersonKind;
 	avatarEmoji?: string | null;
+	photoUrl?: string | null;
 	notes?: string | null;
 	spondGroupIds?: string[];
 	emailAddresses?: string[];
@@ -73,6 +74,7 @@ export class PersonService {
 				birthDate: input.birthDate ?? null,
 				kind: input.kind ?? 'other',
 				avatarEmoji: input.avatarEmoji ?? null,
+				photoUrl: input.photoUrl ?? null,
 				notes: input.notes ?? null,
 				spondGroupIds: input.spondGroupIds ?? [],
 				emailAddresses: input.emailAddresses ?? [],
@@ -90,6 +92,7 @@ export class PersonService {
 		if (patch.birthDate !== undefined) set.birthDate = patch.birthDate;
 		if (patch.kind !== undefined) set.kind = patch.kind;
 		if (patch.avatarEmoji !== undefined) set.avatarEmoji = patch.avatarEmoji;
+		if (patch.photoUrl !== undefined) set.photoUrl = patch.photoUrl;
 		if (patch.notes !== undefined) set.notes = patch.notes;
 		if (patch.spondGroupIds !== undefined) set.spondGroupIds = patch.spondGroupIds;
 		if (patch.emailAddresses !== undefined) set.emailAddresses = patch.emailAddresses;

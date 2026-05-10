@@ -87,6 +87,14 @@
 	);
 </script>
 
+{#snippet avatar(p: TreePerson | { avatarEmoji: string | null; photoUrl?: string | null; name: string }, fallback: string)}
+	{#if p.photoUrl}
+		<img class="avatar-photo" src={p.photoUrl} alt={p.name} />
+	{:else}
+		<span class="emoji">{p.avatarEmoji ?? fallback}</span>
+	{/if}
+{/snippet}
+
 <div class="family-tree">
 	<!-- Foreldre -->
 	{#if parents.length}
@@ -94,7 +102,7 @@
 			{#each parents as p, i (p.id)}
 				{#if i > 0}<span class="couple-bar"></span>{/if}
 				<button class="node parent" onclick={() => onSelectPerson?.(p.id)}>
-					<span class="emoji">{p.avatarEmoji ?? '👵'}</span>
+					{@render avatar(p, '👵')}
 					<span class="name">{p.name}</span>
 				</button>
 			{/each}
@@ -114,7 +122,7 @@
 				{#if selfPartner}
 					<span class="couple-bar"></span>
 					<button class="node partner" onclick={() => onSelectPerson?.(selfPartner.id)}>
-						<span class="emoji">{selfPartner.avatarEmoji ?? '💞'}</span>
+						{@render avatar(selfPartner, '💞')}
 						<span class="name">{selfPartner.name}</span>
 					</button>
 				{/if}
@@ -124,7 +132,7 @@
 				<div class="branch-children">
 					{#each selfChildren as c (c.id)}
 						<button class="node child" onclick={() => onSelectPerson?.(c.id)}>
-							<span class="emoji">{c.avatarEmoji ?? '🧒'}</span>
+							{@render avatar(c, '🧒')}
 							<span class="name">{c.name}</span>
 						</button>
 					{/each}
@@ -137,14 +145,15 @@
 			<div class="branch">
 				<div class="couple-row">
 					<button class="node sibling" onclick={() => onSelectPerson?.(unit.primary.id)}>
-						<span class="emoji">{unit.primary.avatarEmoji ?? '👥'}</span>
+						{@render avatar(unit.primary, '👥')}
 						<span class="name">{unit.primary.name}</span>
 					</button>
 					{#if unit.partner}
+						{@const partner = unit.partner}
 						<span class="couple-bar"></span>
-						<button class="node in-law" onclick={() => onSelectPerson?.(unit.partner.id)}>
-							<span class="emoji">{unit.partner.avatarEmoji ?? '👤'}</span>
-							<span class="name">{unit.partner.name}</span>
+						<button class="node in-law" onclick={() => onSelectPerson?.(partner.id)}>
+							{@render avatar(partner, '👤')}
+							<span class="name">{partner.name}</span>
 						</button>
 					{/if}
 				</div>
@@ -153,7 +162,7 @@
 					<div class="branch-children">
 						{#each unit.children as c (c.id)}
 							<button class="node extended" onclick={() => onSelectPerson?.(c.id)}>
-								<span class="emoji">{c.avatarEmoji ?? '🌳'}</span>
+								{@render avatar(c, '🌳')}
 								<span class="name">{c.name}</span>
 							</button>
 						{/each}
@@ -168,7 +177,7 @@
 		<div class="gen extended-row">
 			{#each standaloneExtended as p (p.id)}
 				<button class="node {p.kind}" onclick={() => onSelectPerson?.(p.id)}>
-					<span class="emoji">{p.avatarEmoji ?? '🌳'}</span>
+					{@render avatar(p, '🌳')}
 					<span class="name">{p.name}</span>
 				</button>
 			{/each}
@@ -286,5 +295,11 @@
 	.node.friend   { border-color: #2a6a7a; }
 
 	.emoji { font-size: 1rem; line-height: 1; }
+	.avatar-photo {
+		width: 1.2rem;
+		height: 1.2rem;
+		border-radius: 50%;
+		object-fit: cover;
+	}
 	.name  { font-size: 0.82rem; }
 </style>

@@ -33,7 +33,11 @@
 
 <button class="person-card" onclick={() => onClick?.(person.id)}>
 	<div class="head">
-		<span class="emoji">{person.avatarEmoji ?? '👤'}</span>
+		{#if person.photoUrl}
+			<img class="photo" src={person.photoUrl} alt={person.name} />
+		{:else}
+			<span class="emoji">{person.avatarEmoji ?? '👤'}</span>
+		{/if}
 		<div class="name-block">
 			<span class="name">{person.name}</span>
 			{#if age !== null}<span class="age">{age} år</span>{/if}
@@ -80,6 +84,13 @@
 	}
 	.emoji {
 		font-size: 1.6rem;
+	}
+	.photo {
+		width: 1.8rem;
+		height: 1.8rem;
+		border-radius: 50%;
+		object-fit: cover;
+		flex-shrink: 0;
 	}
 	.name-block {
 		display: flex;

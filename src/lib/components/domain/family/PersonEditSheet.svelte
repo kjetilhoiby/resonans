@@ -10,6 +10,7 @@
 		birthDate: string | null;
 		kind: string;
 		avatarEmoji: string | null;
+		photoUrl: string | null;
 		notes: string | null;
 		spondGroupIds: string[];
 		emailAddresses: string[];
@@ -32,6 +33,9 @@
 	let kind = $state<PersonKind>('other');
 	let birthDate = $state('');
 	let avatarEmoji = $state('');
+	let photoUrl = $state<string | null>(null);
+	let uploading = $state(false);
+	let uploadError = $state<string | null>(null);
 	let notes = $state('');
 	let aliases = $state('');
 	let spondGroupIds = $state<string[]>([]);
@@ -42,6 +46,7 @@
 		kind = initial.kind as PersonKind;
 		birthDate = initial.birthDate ?? '';
 		avatarEmoji = initial.avatarEmoji ?? '';
+		photoUrl = initial.photoUrl ?? null;
 		notes = initial.notes ?? '';
 		aliases = (initial.aliases ?? []).join(', ');
 		spondGroupIds = initial.spondGroupIds ?? [];
@@ -64,6 +69,7 @@
 					kind,
 					birthDate: birthDate || null,
 					avatarEmoji: avatarEmoji.trim() || null,
+					photoUrl: photoUrl,
 					notes: notes.trim() || null,
 					aliases: aliases.split(',').map((s) => s.trim()).filter(Boolean),
 					spondGroupIds
@@ -83,6 +89,36 @@
 		} finally {
 			saving = false;
 		}
+	}
+
+	async function uploadPhoto(file: File) {
+		uploadError = null;
+		uploading = true;
+		try {
+			const fd = new FormData();
+			fd.append('image', file);
+			const res = await fetch('/api/upload-image', { method: 'POST', body: fd });
+			const body = await res.json().catch(() => ({}));
+			if (!res.ok || !body.success) {
+				throw new Error(body.error ?? 'Opplasting feilet');
+			}
+			photoUrl = body.url as string;
+		} catch (err) {
+			uploadError = err instanceof Error ? err.message : 'Opplasting feilet';
+		} finally {
+			uploading = false;
+		}
+	}
+
+	function onPhotoSelected(e: Event) {
+		const input = e.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (file) void uploadPhoto(file);
+		input.value = '';
+	}
+
+	function clearPhoto() {
+		photoUrl = null;
 	}
 </script>
 
@@ -117,8 +153,28 @@
 			<input type="date" bind:value={birthDate} />
 		</label>
 
+		<div class="photo-row">
+			<div class="photo-preview">
+				{#if photoUrl}
+					<img src={photoUrl} alt="Profilbilde" />
+				{:else}
+					<span class="emoji-fallback">{avatarEmoji || '👤'}</span>
+				{/if}
+			</div>
+			<div class="photo-actions">
+				<label class="upload-btn">
+					{uploading ? 'Laster opp…' : photoUrl ? 'Bytt bilde' : 'Last opp bilde'}
+					<input type="file" accept="image/*" onchange={onPhotoSelected} disabled={uploading} hidden />
+				</label>
+				{#if photoUrl}
+					<button type="button" class="ghost" onclick={clearPhoto}>Fjern bilde</button>
+				{/if}
+				{#if uploadError}<span class="error">{uploadError}</span>{/if}
+			</div>
+		</div>
+
 		<label>
-			<span>Avatar (emoji)</span>
+			<span>Emoji-avatar (vises hvis bilde mangler)</span>
 			<input type="text" bind:value={avatarEmoji} maxlength="4" placeholder="🧒" />
 		</label>
 
@@ -221,4 +277,47 @@
 	button.ghost { background: transparent; }
 	.error { color: #c0392b; margin: 0; font-size: 0.85rem; }
 	.info { color: #2a6f3a; margin: 0; font-size: 0.85rem; }
+
+	.photo-row {
+		display: flex;
+		gap: 1rem;
+		align-items: center;
+		padding: 0.5rem 0;
+	}
+	.photo-preview {
+		width: 72px;
+		height: 72px;
+		border-radius: 50%;
+		overflow: hidden;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: var(--surface-input, #111);
+		border: 1px solid var(--border, #2a2a2a);
+		flex-shrink: 0;
+	}
+	.photo-preview img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+	}
+	.photo-preview .emoji-fallback {
+		font-size: 2.2rem;
+	}
+	.photo-actions {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+		align-items: flex-start;
+	}
+	.upload-btn {
+		display: inline-block;
+		padding: 0.4rem 0.8rem;
+		border-radius: 8px;
+		border: 1px solid var(--border, #2a2a2a);
+		background: var(--surface-2, #242424);
+		font-size: 0.85rem;
+		cursor: pointer;
+	}
+	.upload-btn:hover { background: var(--surface-hover, #2e2e2e); }
 </style>

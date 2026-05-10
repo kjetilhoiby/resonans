@@ -31,6 +31,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		birthDate: body.birthDate ?? null,
 		kind,
 		avatarEmoji: body.avatarEmoji ?? null,
+		photoUrl: body.photoUrl ?? null,
 		notes: body.notes ?? null,
 		spondGroupIds: Array.isArray(body.spondGroupIds) ? body.spondGroupIds : [],
 		emailAddresses: Array.isArray(body.emailAddresses) ? body.emailAddresses : [],
