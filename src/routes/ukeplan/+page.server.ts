@@ -320,7 +320,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		.map((task) => task.title);
 
 	const carryoverItems = (previousWeekChecklist?.items ?? [])
-		.filter((item) => !item.checked)
+		.filter((item) => !item.checked && !item.skippedAt)
 		.map((item) => item.text);
 
 	// Find trips that overlap this week

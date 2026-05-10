@@ -4,6 +4,7 @@ import { db } from '$lib/db';
 import { checklistItems } from '$lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { parseTaskDateTime } from '$lib/server/date-time-parser';
+import { parseChecklistItemIntent } from '$lib/server/checklist-intent-linker';
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const userId = locals.userId;
@@ -37,6 +38,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			.values(
 				subtasks.map((text, index) => {
 					const parsed = parseTaskDateTime(text);
+					const intent = parseChecklistItemIntent(text);
 					return {
 						checklistId: parentItem.checklistId,
 						userId,
@@ -47,8 +49,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 						metadata: {
 							breakdownPrompt: breakdownPrompt || undefined,
 							breakdownModel: 'gpt-4o-mini',
-							...(parsed.hour !== undefined ? { timeHour: parsed.hour } : {}),
-							...(parsed.minute !== undefined ? { timeMinute: parsed.minute } : {})
+							...(parsed.hour !== undefined ? { timeHour: parsed.hour } : intent.timeHour !== undefined ? { timeHour: intent.timeHour } : {}),
+							...(parsed.minute !== undefined ? { timeMinute: parsed.minute } : intent.timeMinute !== undefined ? { timeMinute: intent.timeMinute } : {}),
+							...(intent.activityType ? { activityType: intent.activityType } : {}),
+							...(intent.durationMinutes !== undefined ? { durationMinutes: intent.durationMinutes } : {}),
+							...(intent.distanceKm !== undefined ? { distanceKm: intent.distanceKm } : {})
 						}
 					};
 				})

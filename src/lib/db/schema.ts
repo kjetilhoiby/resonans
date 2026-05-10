@@ -441,6 +441,8 @@ export const checklistItems = pgTable('checklist_items', {
 	checked: boolean('checked').notNull().default(false),
 	sortOrder: integer('sort_order').notNull().default(0),
 	checkedAt: timestamp('checked_at'),
+	skippedAt: timestamp('skipped_at'),
+	snoozedToDate: date('snoozed_to_date'),
 	startDate: date('start_date'), // When the task should start (optional)
 	endDate: date('end_date'), // When the task should be completed by (optional)
 	metadata: jsonb('metadata').default({}).notNull().$type<{
@@ -462,6 +464,8 @@ export const checklistItems = pgTable('checklist_items', {
 		// Breakdown metadata
 		breakdownPrompt?: string; // The prompt used to generate breakdown
 		breakdownModel?: string; // The model used for breakdown
+		// Snooze tracking — id of the copy created when user snoozed this item
+		snoozedToItemId?: string;
 	}>(),
 	createdAt: timestamp('created_at').defaultNow().notNull()
 });

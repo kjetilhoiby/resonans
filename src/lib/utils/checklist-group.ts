@@ -73,6 +73,23 @@ export function formatItemTime(hour: number, minute: number): string {
 	return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 }
 
+/**
+ * Sort items so åpne kommer øverst, deretter avkryssede, deretter strøkne.
+ * Innen hver bøtte beholdes opprinnelig rekkefølge (sortOrder/createdAt).
+ */
+type WithStatus = { checked: boolean; skippedAt?: string | Date | null };
+export function sortByStatus<T extends WithStatus>(items: T[]): T[] {
+	const open: T[] = [];
+	const checked: T[] = [];
+	const skipped: T[] = [];
+	for (const item of items) {
+		if (item.skippedAt) skipped.push(item);
+		else if (item.checked) checked.push(item);
+		else open.push(item);
+	}
+	return [...open, ...checked, ...skipped];
+}
+
 /** Strip time expressions from item text for display when a chip already shows the time. */
 export function stripTimeFromText(text: string): string {
 	let result = text
