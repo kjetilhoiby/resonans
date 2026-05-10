@@ -473,6 +473,8 @@ export const checklistItems = pgTable('checklist_items', {
 	checked: boolean('checked').notNull().default(false),
 	sortOrder: integer('sort_order').notNull().default(0),
 	checkedAt: timestamp('checked_at'),
+	skippedAt: timestamp('skipped_at'),
+	snoozedToDate: date('snoozed_to_date'),
 	startDate: date('start_date'), // When the task should start (optional)
 	endDate: date('end_date'), // When the task should be completed by (optional)
 	metadata: jsonb('metadata').default({}).notNull().$type<{
