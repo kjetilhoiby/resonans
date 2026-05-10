@@ -253,7 +253,7 @@
 	.tcm-overlay {
 		position: fixed;
 		inset: 0;
-		z-index: 199;
+		z-index: 300;
 	}
 
 	.tcm-popup {
@@ -264,7 +264,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 2px;
-		z-index: 200;
+		z-index: 301;
 		box-shadow: 0 8px 28px rgba(0,0,0,0.6);
 	}
 
