@@ -62,6 +62,16 @@
 	let contextMenuRect = $state<DOMRect | null>(null);
 	let expandedParentIds = $state<Set<string>>(new Set());
 	let newSubItemTexts = $state<Record<string, string>>({});
+	let editingItemId = $state<string | null>(null);
+	let editingText = $state('');
+	let editInputEl = $state<HTMLInputElement | null>(null);
+
+	$effect(() => {
+		if (editingItemId && editInputEl) {
+			editInputEl.focus();
+			editInputEl.select();
+		}
+	});
 
 	// "Done" = avkrysset eller strøket — strøkne er bevisst ikke-gjort, ikke uløste.
 	const done = $derived(items.filter((i) => i.checked || i.skippedAt).length);
@@ -337,6 +347,32 @@
 		if (e.key === 'Enter') addItem();
 	}
 
+	function startEditing(item: ChecklistItem) {
+		editingItemId = item.id;
+		editingText = item.text;
+	}
+
+	function cancelEdit() {
+		editingItemId = null;
+		editingText = '';
+	}
+
+	async function commitEdit() {
+		if (!editingItemId) return;
+		const itemId = editingItemId;
+		const text = editingText.trim();
+		editingItemId = null;
+		editingText = '';
+		if (!text) return;
+		items = items.map(i => i.id === itemId ? { ...i, text } : i);
+		await fetch(`/api/checklists/${checklist.id}/items/${itemId}`, {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ text })
+		});
+		onChanged?.();
+	}
+
 	function dismissPayoff() {
 		showPayoff = false;
 		payoffDismissed = true;
@@ -453,14 +489,26 @@
 								class="cs-item"
 								class:cs-item-checked={group.item.checked}
 								class:cs-item-skipped={!!group.item.skippedAt}
-								onpointerdown={(e) => handleItemPressStart(e, group.item)}
+								onpointerdown={(e) => { if (editingItemId === group.item.id) return; handleItemPressStart(e, group.item); }}
 								onpointerup={handleItemPressEnd}
 								onpointercancel={handleItemPressEnd}
 								onpointerleave={handleItemPressEnd}
-								onclick={() => toggleItem(group.item)}
+								onclick={() => { if (editingItemId === group.item.id) return; toggleItem(group.item); }}
 								title="Langtrykk for valg"
 							>
-								<span class="cs-item-text">{group.item.text}</span>
+								{#if editingItemId === group.item.id}
+									<input
+										class="cs-item-edit-input"
+										bind:this={editInputEl}
+										bind:value={editingText}
+										onkeydown={(e) => { if (e.key === 'Enter') { void commitEdit(); } else if (e.key === 'Escape') cancelEdit(); }}
+										onblur={() => void commitEdit()}
+										onclick={(e) => e.stopPropagation()}
+										onpointerdown={(e) => e.stopPropagation()}
+									/>
+								{:else}
+									<span class="cs-item-text">{group.item.text}</span>
+								{/if}
 								<svg class="cs-parent-circle" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
 									<circle cx="10" cy="10" r={cR} fill="none" stroke="#2a2a2a" stroke-width="2.5"/>
 									<circle cx="10" cy="10" r={cR} fill="none"
@@ -479,14 +527,26 @@
 							class="cs-item"
 							class:cs-item-checked={group.item.checked}
 							class:cs-item-skipped={itemSkipped}
-							onpointerdown={(e) => handleItemPressStart(e, group.item)}
+							onpointerdown={(e) => { if (editingItemId === group.item.id) return; handleItemPressStart(e, group.item); }}
 							onpointerup={handleItemPressEnd}
 							onpointercancel={handleItemPressEnd}
 							onpointerleave={handleItemPressEnd}
-							onclick={() => toggleItem(group.item)}
+							onclick={() => { if (editingItemId === group.item.id) return; toggleItem(group.item); }}
 							title="Langtrykk for valg"
 						>
-							<span class="cs-item-text">{group.item.text}</span>
+							{#if editingItemId === group.item.id}
+								<input
+									class="cs-item-edit-input"
+									bind:this={editInputEl}
+									bind:value={editingText}
+									onkeydown={(e) => { if (e.key === 'Enter') { void commitEdit(); } else if (e.key === 'Escape') cancelEdit(); }}
+									onblur={() => void commitEdit()}
+									onclick={(e) => e.stopPropagation()}
+									onpointerdown={(e) => e.stopPropagation()}
+								/>
+							{:else}
+								<span class="cs-item-text">{group.item.text}</span>
+							{/if}
 							<div
 								class="cs-checkbox"
 								class:cs-checkbox-checked={group.item.checked && !itemSkipped}
@@ -623,6 +683,7 @@
 	isSkipped={!!contextMenuItem?.skippedAt}
 	isChecked={!!contextMenuItem?.checked}
 	onClose={() => { contextMenuItem = null; contextMenuRect = null; }}
+	onEdit={() => { if (contextMenuItem) startEditing(contextMenuItem); }}
 	onBreakdown={() => { if (contextMenuItem) breakdownItem = contextMenuItem; }}
 	onSnooze={(targetDate) => { if (contextMenuItem) void snoozeItem(contextMenuItem.id, targetDate); }}
 	onSkip={() => { if (contextMenuItem) void setItemSkipped(contextMenuItem.id, true); }}
@@ -795,6 +856,19 @@
 		font-size: 0.7rem;
 		font-weight: 700;
 		line-height: 1;
+	}
+
+	.cs-item-edit-input {
+		flex: 1;
+		background: none;
+		border: none;
+		border-bottom: 1px solid #4a5af0;
+		color: #ccc;
+		font: inherit;
+		font-size: 0.88rem;
+		outline: none;
+		padding: 0;
+		min-width: 0;
 	}
 
 	.cs-item-text {

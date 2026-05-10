@@ -128,9 +128,9 @@
 				<button
 					class="tcm-btn"
 					onpointerdown={(e) => e.stopPropagation()}
-					onclick={(e) => { e.stopPropagation(); onClose(); onEdit?.(); }}
+					onclick={(e) => { e.stopPropagation(); onEdit?.(); onClose(); }}
 				>
-					<span class="tcm-icon">✏️</span> Rediger tittel
+					<span class="tcm-icon">✏️</span> Rediger oppgave
 				</button>
 			{/if}
 
@@ -138,7 +138,7 @@
 				<button
 					class="tcm-btn"
 					onpointerdown={(e) => e.stopPropagation()}
-					onclick={(e) => { e.stopPropagation(); onClose(); onBreakdown?.(); }}
+					onclick={(e) => { e.stopPropagation(); onBreakdown?.(); onClose(); }}
 				>
 					<span class="tcm-icon">🪜</span> {hasChildren ? 'Endre deloppgaver' : 'Bryt ned i deloppgaver'}
 				</button>
@@ -158,7 +158,7 @@
 				<button
 					class="tcm-btn tcm-btn-primary"
 					onpointerdown={(e) => e.stopPropagation()}
-					onclick={(e) => { e.stopPropagation(); onClose(); onUnskip?.(); }}
+					onclick={(e) => { e.stopPropagation(); onUnskip?.(); onClose(); }}
 				>
 					<span class="tcm-icon">↩︎</span> Gjør den likevel
 				</button>
@@ -166,7 +166,7 @@
 				<button
 					class="tcm-btn tcm-btn-danger"
 					onpointerdown={(e) => e.stopPropagation()}
-					onclick={(e) => { e.stopPropagation(); onClose(); onSkip?.(); }}
+					onclick={(e) => { e.stopPropagation(); onSkip?.(); onClose(); }}
 				>
 					<span class="tcm-icon">✕</span> Hopp over
 				</button>

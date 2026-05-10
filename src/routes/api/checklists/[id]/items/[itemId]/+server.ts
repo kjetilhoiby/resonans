@@ -5,6 +5,15 @@ import { checklistItems, checklists, progress } from '$lib/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
 import { TaskExecutionService } from '$lib/server/services/task-execution-service';
 import { parseTaskDateTime } from '$lib/server/date-time-parser';
+import { parseChecklistItemIntent, findLinkedTask } from '$lib/server/checklist-intent-linker';
+
+function extractWeekKeys(context: string | null): { dashedKey: string; compactKey: string } | null {
+	if (!context) return null;
+	const m = context.match(/week:(\d{4}-W\d{2})/);
+	if (!m) return null;
+	const dashedKey = m[1];
+	return { dashedKey, compactKey: dashedKey.replace('-', '') };
+}
 
 async function syncChecklistCompletion(checklistId: string) {
 	// Et item regnes som "behandlet" hvis det er enten avkrysset eller skipped.
@@ -41,16 +50,47 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 	const updates: Record<string, unknown> = {};
 	if (body.text !== undefined) {
 		const parsed = parseTaskDateTime(body.text);
+		const intent = parseChecklistItemIntent(body.text);
+
 		updates.text = parsed.text || body.text.trim();
 		updates.startDate = parsed.startDate ?? null;
 
 		const nextMetadata: Record<string, unknown> = {
 			...((existingItem.metadata ?? {}) as Record<string, unknown>)
 		};
-		delete nextMetadata.timeHour;
-		delete nextMetadata.timeMinute;
+		for (const k of ['timeHour', 'timeMinute', 'activityType', 'durationMinutes', 'distanceKm', 'linkedTaskId', 'linkedTaskTitle']) {
+			delete nextMetadata[k];
+		}
+
 		if (parsed.hour !== undefined) nextMetadata.timeHour = parsed.hour;
+		else if (intent.timeHour !== undefined) nextMetadata.timeHour = intent.timeHour;
 		if (parsed.minute !== undefined) nextMetadata.timeMinute = parsed.minute;
+		else if (intent.timeMinute !== undefined) nextMetadata.timeMinute = intent.timeMinute;
+
+		if (intent.activityType) nextMetadata.activityType = intent.activityType;
+		if (intent.durationMinutes !== undefined) nextMetadata.durationMinutes = intent.durationMinutes;
+		if (intent.distanceKm !== undefined) nextMetadata.distanceKm = intent.distanceKm;
+
+		if (!existingItem.parentId) {
+			const checklist = await db.query.checklists.findFirst({
+				where: eq(checklists.id, existingItem.checklistId),
+				columns: { context: true }
+			});
+			const weekKeys = extractWeekKeys(checklist?.context ?? null);
+			if (weekKeys) {
+				const linkedTask = await findLinkedTask({
+					userId,
+					itemText: body.text,
+					weekDashedKey: weekKeys.dashedKey,
+					weekCompactKey: weekKeys.compactKey
+				});
+				if (linkedTask) {
+					nextMetadata.linkedTaskId = linkedTask.taskId;
+					nextMetadata.linkedTaskTitle = linkedTask.taskTitle;
+				}
+			}
+		}
+
 		updates.metadata = nextMetadata;
 	}
 	if (body.sortOrder !== undefined) updates.sortOrder = body.sortOrder;
