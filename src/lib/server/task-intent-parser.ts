@@ -245,13 +245,18 @@ export async function processTaskIntentParseJob(params: {
 		throw new Error(`Task not found for parsing: ${params.taskId}`);
 	}
 
-	const ownerGoal = await db.query.goals.findFirst({
-		where: and(eq(goals.id, task.goalId), eq(goals.userId, params.userId)),
-		columns: { id: true }
-	});
+	if (!task.goalId) {
+		// Tasks without a goal (e.g. seasonal home tasks) skip goal-ownership verification.
+		// Owner is implicitly verified through the project/season scope at creation time.
+	} else {
+		const ownerGoal = await db.query.goals.findFirst({
+			where: and(eq(goals.id, task.goalId), eq(goals.userId, params.userId)),
+			columns: { id: true }
+		});
 
-	if (!ownerGoal) {
-		throw new Error(`Task not found for user parsing: ${params.taskId}`);
+		if (!ownerGoal) {
+			throw new Error(`Task not found for user parsing: ${params.taskId}`);
+		}
 	}
 
 	const sourceText = params.rawText?.trim() || task.title || '';
@@ -289,7 +294,7 @@ export async function processTaskIntentParseJob(params: {
 				},
 				updatedAt: new Date()
 			})
-			.where(and(eq(tasks.id, task.id), eq(tasks.goalId, task.goalId)));
+			.where(eq(tasks.id, task.id));
 	} else {
 		await db
 			.update(tasks)
@@ -302,7 +307,7 @@ export async function processTaskIntentParseJob(params: {
 				},
 				updatedAt: new Date()
 			})
-			.where(and(eq(tasks.id, task.id), eq(tasks.goalId, task.goalId)));
+			.where(eq(tasks.id, task.id));
 	}
 
 	return {

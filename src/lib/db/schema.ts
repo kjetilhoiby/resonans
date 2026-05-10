@@ -216,9 +216,36 @@ export const goals = pgTable('goals', {
 }));
 
 // Konkrete oppgaver knyttet til mål
+// Generell prosjekttabell — domen-agnostisk primitiv. Brukes av hus-domenet
+// (oppussing/vedlikehold/reparasjon) og kan gjenbrukes av reise/event/jobb m.m.
+// Hvert prosjekt eier 0..n tasks, checklistItems og categorizedEvents via projectId.
+export const projects = pgTable('projects', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id).notNull(),
+	domain: text('domain'), // DomainType | null
+	themeId: uuid('theme_id').references(() => themes.id, { onDelete: 'set null' }),
+	title: text('title').notNull(),
+	description: text('description'),
+	type: text('type'), // f.eks. 'renovation' | 'maintenance' | 'repair' | 'organize' | 'trip' | 'event'
+	status: text('status').notNull().default('planning'), // planning | active | paused | done | cancelled
+	budgetNok: integer('budget_nok'),
+	startedAt: timestamp('started_at'),
+	targetCompletionAt: timestamp('target_completion_at'),
+	completedAt: timestamp('completed_at'),
+	metadata: jsonb('metadata').default({}).notNull(), // f.eks. { room?: HomeRoom, contractor?: string, phases?: string[] }
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (t) => ({
+	idxUser: index('projects_user_idx').on(t.userId),
+	idxDomain: index('projects_domain_idx').on(t.userId, t.domain),
+	idxStatus: index('projects_status_idx').on(t.status),
+	idxTheme: index('projects_theme_idx').on(t.themeId)
+}));
+
 export const tasks = pgTable('tasks', {
 	id: uuid('id').primaryKey().defaultRandom(),
-	goalId: uuid('goal_id').references(() => goals.id).notNull(),
+	goalId: uuid('goal_id').references(() => goals.id), // valgfri — sesong-/prosjekt-tasks trenger ikke mål
+	projectId: uuid('project_id').references(() => projects.id, { onDelete: 'set null' }),
 	personId: uuid('person_id').references((): AnyPgColumn => persons.id, { onDelete: 'set null' }), // Oppgave knyttet til en bestemt person
 	title: text('title').notNull(),
 	description: text('description'),
@@ -227,12 +254,16 @@ export const tasks = pgTable('tasks', {
 	periodId: text('period_id'),   // '2026-W14' | '2026-04' | '2026' | null
 	targetValue: integer('target_value'), // f.eks. antall repetisjoner
 	unit: text('unit'), // f.eks. "ganger per uke", "minutter"
+	season: text('season'), // 'spring' | 'summer' | 'autumn' | 'winter' | null — sesong-bundne oppgaver
+	recurrenceYearly: boolean('recurrence_yearly').default(false).notNull(),
 	metadata: jsonb('metadata').default({}).notNull(), // fleksibel JSON for ekstra data (intentStatus, intentError, etc)
 	status: text('status').notNull().default('active'),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
 }, (table) => ({
-	idxPerson: index('tasks_person_idx').on(table.personId)
+	idxPerson: index('tasks_person_idx').on(table.personId),
+	idxProject: index('tasks_project_idx').on(table.projectId),
+	idxSeason: index('tasks_season_idx').on(table.season)
 }));
 
 // Fremdriftsregistreringer
@@ -436,7 +467,8 @@ export const checklistItems = pgTable('checklist_items', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	checklistId: uuid('checklist_id').references(() => checklists.id, { onDelete: 'cascade' }).notNull(),
 	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-	parentId: uuid('parent_id').references(() => checklistItems.id, { onDelete: 'cascade' }), // For subtasks/hierarchical structure
+	projectId: uuid('project_id').references(() => projects.id, { onDelete: 'set null' }), // Knytt item til prosjekt for burn-up
+	parentId: uuid('parent_id').references((): AnyPgColumn => checklistItems.id, { onDelete: 'cascade' }), // For subtasks/hierarchical structure
 	text: text('text').notNull(),
 	checked: boolean('checked').notNull().default(false),
 	sortOrder: integer('sort_order').notNull().default(0),
@@ -468,7 +500,9 @@ export const checklistItems = pgTable('checklist_items', {
 		snoozedToItemId?: string;
 	}>(),
 	createdAt: timestamp('created_at').defaultNow().notNull()
-});
+}, (table) => ({
+	idxProject: index('checklist_items_project_idx').on(table.projectId)
+}));
 
 // ─── Food Domain ───────────────────────────────────────────────
 // Oppskrifter — gjenbrukbare matretter med ingredienser, instruksjoner og valgfri næringsestimat
@@ -968,6 +1002,10 @@ export const tasksRelations = relations(tasks, ({ one, many }) => ({
 		fields: [tasks.goalId],
 		references: [goals.id]
 	}),
+	project: one(projects, {
+		fields: [tasks.projectId],
+		references: [projects.id]
+	}),
 	person: one(persons, {
 		fields: [tasks.personId],
 		references: [persons.id]
@@ -975,6 +1013,20 @@ export const tasksRelations = relations(tasks, ({ one, many }) => ({
 	progress: many(progress),
 	trackingSeries: many(trackingSeries),
 	personMentions: many(taskPersonMentions)
+}));
+
+export const projectsRelations = relations(projects, ({ one, many }) => ({
+	user: one(users, {
+		fields: [projects.userId],
+		references: [users.id]
+	}),
+	theme: one(themes, {
+		fields: [projects.themeId],
+		references: [themes.id]
+	}),
+	tasks: many(tasks),
+	checklistItems: many(checklistItems),
+	categorizedEvents: many(categorizedEvents)
 }));
 
 export const progressRelations = relations(progress, ({ one }) => ({
@@ -1394,6 +1446,7 @@ export const categorizedEvents = pgTable('categorized_events', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	userId: text('user_id').references(() => users.id).notNull(),
 	sensorEventId: uuid('sensor_event_id').references(() => sensorEvents.id).notNull(),
+	projectId: uuid('project_id').references(() => projects.id, { onDelete: 'set null' }), // Knytt transaksjon til prosjekt for kost-vs-budsjett
 	timestamp: timestamp('timestamp').notNull(),
 	accountId: text('account_id'),
 	amount: decimal('amount').notNull(),
@@ -1413,7 +1466,8 @@ export const categorizedEvents = pgTable('categorized_events', {
 	uniqueSensorEvent: unique().on(table.sensorEventId),
 	idxUserTimestamp: index('categorized_events_user_timestamp_idx').on(table.userId, table.timestamp),
 	idxUserCategoryTimestamp: index('categorized_events_user_category_timestamp_idx').on(table.userId, table.resolvedCategory, table.timestamp),
-	idxUserAccountTimestamp: index('categorized_events_user_account_timestamp_idx').on(table.userId, table.accountId, table.timestamp)
+	idxUserAccountTimestamp: index('categorized_events_user_account_timestamp_idx').on(table.userId, table.accountId, table.timestamp),
+	idxUserProjectTimestamp: index('categorized_events_user_project_timestamp_idx').on(table.userId, table.projectId, table.timestamp)
 }));
 
 // Bøker knyttet til et litteratur-tema
@@ -1783,6 +1837,10 @@ export const categorizedEventsRelations = relations(categorizedEvents, ({ one })
 	sensorEvent: one(sensorEvents, {
 		fields: [categorizedEvents.sensorEventId],
 		references: [sensorEvents.id]
+	}),
+	project: one(projects, {
+		fields: [categorizedEvents.projectId],
+		references: [projects.id]
 	})
 }));
 
@@ -1877,6 +1935,10 @@ export const checklistItemsRelations = relations(checklistItems, ({ one, many })
 	user: one(users, {
 		fields: [checklistItems.userId],
 		references: [users.id]
+	}),
+	project: one(projects, {
+		fields: [checklistItems.projectId],
+		references: [projects.id]
 	}),
 	parent: one(checklistItems, {
 		fields: [checklistItems.parentId],
