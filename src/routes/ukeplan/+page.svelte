@@ -12,6 +12,7 @@
 	import MetricCard from '$lib/components/visualizations/MetricCard.svelte';
 	import { groupChecklistItems, activityEmoji, sortByTime, sortByStatus, formatItemTime, stripTimeFromText, type GroupedChecklistEntry } from '$lib/utils/checklist-group';
 	import TaskContextMenu from '$lib/components/ui/TaskContextMenu.svelte';
+	import BreakdownModal from '$lib/components/ui/BreakdownModal.svelte';
 	import WeatherStrip, { type WeatherPeriod } from '$lib/components/ui/WeatherStrip.svelte';
 	import MentionPicker from '$lib/components/ui/MentionPicker.svelte';
 	import { createMentionState } from '$lib/utils/mention-input.svelte';
@@ -247,6 +248,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 		foodChatOpen = true;
 	}
 	let editingItem = $state<EditingItem | null>(null);
+	let breakdownTarget = $state<{ checklistId: string; item: ChecklistItem } | null>(null);
 	let editingTask = $state<EditingTask | null>(null);
 	let editTaskInput = $state<HTMLInputElement | null>(null);
 	let skipEditTask = false;
@@ -810,6 +812,32 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 		}
 
 		return created;
+	}
+
+	async function handleBreakdownSave(subtasks: string[]) {
+		if (!breakdownTarget) return;
+		const { checklistId, item } = breakdownTarget;
+		try {
+			const res = await fetch('/api/breakdown/save', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ parentItemId: item.id, subtasks, breakdownPrompt: item.text })
+			});
+			if (!res.ok) throw new Error('Failed to save breakdown');
+			const result = await res.json() as { subtasks: ChecklistItem[] };
+			updateChecklistById(checklistId, (current) => ({
+				...current,
+				items: [
+					...current.items.map((i) => i.id === item.id
+						? { ...i, metadata: { ...(i.metadata as Record<string, unknown> ?? {}), hasBreakdown: true } }
+						: i),
+					...(result.subtasks ?? [])
+				]
+			}));
+			breakdownTarget = null;
+		} catch (err) {
+			console.error('Error saving breakdown:', err);
+		}
 	}
 
 	async function setChecklistCompleted(checklistId: string, completed: boolean) {
@@ -2292,6 +2320,9 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 	onEdit={() => {
 		if (contextMenuItem) void startEditing(contextMenuItem.checklistId, contextMenuItem.item);
 	}}
+	onBreakdown={() => {
+		if (contextMenuItem) breakdownTarget = contextMenuItem;
+	}}
 	onSnooze={(targetDate) => {
 		if (contextMenuItem) void snoozeItem(contextMenuItem.checklistId, contextMenuItem.item.id, targetDate);
 	}}
@@ -2302,6 +2333,14 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 		if (contextMenuItem) void setItemSkipped(contextMenuItem.checklistId, contextMenuItem.item.id, false);
 	}}
 />
+
+{#if breakdownTarget}
+	<BreakdownModal
+		itemTitle={breakdownTarget.item.text}
+		onClose={() => (breakdownTarget = null)}
+		onSave={handleBreakdownSave}
+	/>
+{/if}
 
 <style>
 	.week-plan-page {

@@ -427,7 +427,8 @@ export const FLOWS: Record<FlowId, Flow> = {
 				title: 'Velg dagsoppgaver',
 				itemsKey: 'carryovers',
 				extraItemsKey: 'weekTasks',
-				aiSuggestionsFromField: 'headline'
+				aiSuggestionsFromField: 'headline',
+				enableAiRefinement: true
 			}
 		],
 		onComplete: async (data, context) => {

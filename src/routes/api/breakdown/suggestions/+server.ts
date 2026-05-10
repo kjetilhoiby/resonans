@@ -9,9 +9,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		taskTitle: string;
 		taskDescription?: string;
 		context?: string;
+		existingSubtasks?: string[];
+		refinementPrompt?: string;
 	};
 
-	const { taskTitle, taskDescription = '', context = '' } = body;
+	const { taskTitle, taskDescription = '', context = '', existingSubtasks = [], refinementPrompt } = body;
 
 	if (!taskTitle?.trim()) {
 		return json({ suggestions: [] });
@@ -22,6 +24,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			? `\nKontekst: ${[taskDescription, context].filter(Boolean).join('. ')}`
 			: '';
 
+	const existingInfo = existingSubtasks.length > 0
+		? `\nAllerede lagt til: ${existingSubtasks.map((t) => `"${t}"`).join(', ')}`
+		: '';
+
 	const systemPrompt = `Du er en hjelpsom oppgaveplanleggingsassistent. Brukeren ønsker å dele opp en større oppgave i mindre, konkrete subnivåer.
 
 Generer 3–10 konkrete, handlingsorienterte substeg på norsk for å fullføre denne oppgaven.
@@ -31,11 +37,17 @@ Regler:
 - Maks 5–8 ord per substeg
 - Substegene skal være i logisk rekkefølge
 - Gjør oppgaven gjennomførbar for en gjennomsnittlig person
+- Ikke gjenta substeg som allerede er lagt til
 - Svar KUN med et JSON-array av strenger, ingen annen tekst
 
 Eksempel: ["Samle nødvendige verktøy", "Planlegg layout på veggen", "Markere monteringspunkter", "Montere beslag", "Sette opp hylle", "Justere og stramme"]`;
 
-	const userPrompt = `Oppgave: ${taskTitle}${contextInfo}`;
+	const userPrompt = refinementPrompt?.trim()
+		? `Oppgave: ${taskTitle}${contextInfo}${existingInfo}
+
+Brukeren presiserer: "${refinementPrompt}"
+Foreslå nye substeg som tilfredsstiller dette:`
+		: `Oppgave: ${taskTitle}${contextInfo}${existingInfo}`;
 
 	try {
 		const completion = await openai.chat.completions.create({

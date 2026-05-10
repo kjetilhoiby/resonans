@@ -44,6 +44,8 @@ export interface FlowStep {
 	extraItemsKey?: string;
 	/** For checklist: whether to fetch AI suggestions based on a headline field id */
 	aiSuggestionsFromField?: string;
+	/** For checklist: show an inline refinement prompt so the user can ask for more/different suggestions */
+	enableAiRefinement?: boolean;
 	/** For decision-list: which contextData key holds the open items */
 	openItemsKey?: string;
 	validation?: (data: Record<string, any>) => boolean | string;
