@@ -479,9 +479,36 @@ export async function syncSleepData(
 	return parsed.length;
 }
 
+// Withings' /v2/measure?action=getworkouts only populates `data.*` fields that
+// are explicitly requested via `data_fields`. Without this, distance/calories/HR
+// fall back to (or get omitted as) tiny placeholder values — e.g. a 9.18 km
+// e-bike trip surfaced as ~80 m.
+const WITHINGS_WORKOUT_DATA_FIELDS = [
+	'calories',
+	'intensity',
+	'manual_distance',
+	'manual_calories',
+	'hr_average',
+	'hr_min',
+	'hr_max',
+	'hr_zone_0',
+	'hr_zone_1',
+	'hr_zone_2',
+	'hr_zone_3',
+	'pause_duration',
+	'algo_pause_duration',
+	'spo2_average',
+	'steps',
+	'distance',
+	'elevation',
+	'pool_laps',
+	'strokes',
+	'pool_length'
+].join(',');
+
 /**
  * Sync workout data from Withings
- * 
+ *
  * Note: Uses 7-day overlap window to catch retroactive updates.
  */
 export async function syncWorkoutData(
@@ -507,7 +534,8 @@ export async function syncWorkoutData(
 	const data = await fetchAllWithingsData(accessToken, {
 		action: 'getworkouts',
 		startdateymd,
-		enddateymd
+		enddateymd,
+		data_fields: WITHINGS_WORKOUT_DATA_FIELDS
 	});
 
 	console.log(`   Parsing ${data.length} workouts...`);
@@ -687,7 +715,7 @@ export async function prefetchWithingsEventsForRange(
 	const [rawWeight, rawActivity, rawWorkouts] = await Promise.all([
 		fetchAllWithingsData(accessToken, { action: 'getmeas', meastype: 1, category: 1, startdate: fromUnix, enddate: toUnix }),
 		fetchAllWithingsData(accessToken, { action: 'getactivity', startdateymd: fromDate, enddateymd: toDate }),
-		fetchAllWithingsData(accessToken, { action: 'getworkouts', startdateymd: fromDate, enddateymd: toDate })
+		fetchAllWithingsData(accessToken, { action: 'getworkouts', startdateymd: fromDate, enddateymd: toDate, data_fields: WITHINGS_WORKOUT_DATA_FIELDS })
 	]);
 
 	const rawSleep: any[] = [];
