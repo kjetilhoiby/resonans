@@ -3,6 +3,7 @@ import { canonicalWorkouts, workoutDailyAggregates } from '$lib/db/schema';
 import { and, eq, gte, lte, max, sql } from 'drizzle-orm';
 import { buildUnifiedWorkoutActivities } from '$lib/server/activity-layer';
 import { enqueueWorkoutProjectionRefresh } from '$lib/server/workout-projection-refresh-queue';
+import { computeWorkoutEffort, getEffortBaseline } from '$lib/server/services/effort-service';
 
 export type WorkoutProjectionRefreshResult = {
 	canonicalCount: number;
@@ -143,26 +144,42 @@ export class WorkoutProjectionService {
 		const unified = await buildUnifiedWorkoutActivities(userId, { since: startDate, limit: 2000 });
 		const inRange = unified.filter((workout) => new Date(workout.startTime) <= endDate);
 
-		const canonicalRows = inRange.map((workout) => ({
-			userId,
-			startTime: new Date(workout.startTime),
-			sportType: workout.sportType,
-			sportFamily: sportFamily(workout.sportType),
-			distanceMeters: workout.distanceMeters !== null ? String(workout.distanceMeters) : null,
-			durationSeconds: workout.durationSeconds !== null ? String(workout.durationSeconds) : null,
-			avgHeartRate: workout.avgHeartRate !== null ? String(workout.avgHeartRate) : null,
-			maxHeartRate: workout.maxHeartRate !== null ? String(workout.maxHeartRate) : null,
-			sourceCount: workout.evidenceCount,
-			sourceProviders: workout.sources,
-			evidence: workout.evidence.map((evidence) => ({
-				eventId: evidence.eventId,
-				sensorId: evidence.sensorId,
-				provider: evidence.provider,
-				sensorType: evidence.sensorType,
-				timestamp: evidence.timestamp
-			})),
-			updatedAt: new Date()
-		}));
+		const baseline = await getEffortBaseline(userId);
+
+		const canonicalRows = inRange.map((workout) => {
+			const family = sportFamily(workout.sportType);
+			const effort = computeWorkoutEffort(
+				{
+					sportType: workout.sportType,
+					sportFamily: family,
+					durationSeconds: workout.durationSeconds,
+					avgHeartRate: workout.avgHeartRate
+				},
+				baseline
+			);
+			return {
+				userId,
+				startTime: new Date(workout.startTime),
+				sportType: workout.sportType,
+				sportFamily: family,
+				distanceMeters: workout.distanceMeters !== null ? String(workout.distanceMeters) : null,
+				durationSeconds: workout.durationSeconds !== null ? String(workout.durationSeconds) : null,
+				avgHeartRate: workout.avgHeartRate !== null ? String(workout.avgHeartRate) : null,
+				maxHeartRate: workout.maxHeartRate !== null ? String(workout.maxHeartRate) : null,
+				effortScore: effort ? String(effort.score) : null,
+				effortMethod: effort?.method ?? null,
+				sourceCount: workout.evidenceCount,
+				sourceProviders: workout.sources,
+				evidence: workout.evidence.map((evidence) => ({
+					eventId: evidence.eventId,
+					sensorId: evidence.sensorId,
+					provider: evidence.provider,
+					sensorType: evidence.sensorType,
+					timestamp: evidence.timestamp
+				})),
+				updatedAt: new Date()
+			};
+		});
 
 		const dailyMap = new Map<string, {
 			date: Date;

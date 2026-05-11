@@ -1,9 +1,12 @@
 import { db, sql as rawSql } from '$lib/db';
-import { sensorEvents, sensorAggregates, metricAggregateCache } from '$lib/db/schema';
-import { eq, and, gte, lte, sql } from 'drizzle-orm';
+import { sensorEvents, sensorAggregates, metricAggregateCache, canonicalWorkouts } from '$lib/db/schema';
+import { eq, and, gte, lte, sql, desc } from 'drizzle-orm';
 import { getAllMetrics } from '$lib/server/services/metric-definition-service';
 import { generateWeeks, generateMonths, generateYears, getCurrentWeek, getCurrentMonth, getCurrentYear, getWeeksSince, getMonthsSince, getYearsSince } from './time-periods';
 import type { WeekPeriod, MonthPeriod, YearPeriod } from './time-periods';
+import { classifyEffortFamily, type EffortFamily } from '$lib/server/services/effort-service';
+
+type WeeklyEffortMetric = NonNullable<NonNullable<typeof sensorAggregates.$inferSelect.metrics>['weeklyEffort']>;
 
 /**
  * Calculate average, excluding nulls
@@ -73,6 +76,85 @@ function calculateEarlyWake(events: any[]): number | undefined {
 }
 
 /**
+ * Hent kanoniske økter for et tidsvindu og bucket effort per family og per dag.
+ * Returnerer null hvis ingen økter telles (varighet for kort, ingen effort).
+ */
+async function computeWeeklyEffort(
+	userId: string,
+	weekStart: Date,
+	weekEnd: Date
+): Promise<WeeklyEffortMetric | null> {
+	const rows = await db.query.canonicalWorkouts.findMany({
+		where: and(
+			eq(canonicalWorkouts.userId, userId),
+			gte(canonicalWorkouts.startTime, weekStart),
+			lte(canonicalWorkouts.startTime, weekEnd)
+		)
+	});
+
+	if (rows.length === 0) return null;
+
+	const byFamily: Partial<Record<EffortFamily, number>> = {};
+	const byDay = [0, 0, 0, 0, 0, 0, 0]; // Mon..Sun (Oslo lokaltid)
+	let total = 0;
+	let trimpSum = 0;
+	let workoutCount = 0;
+
+	for (const row of rows) {
+		const score = row.effortScore !== null && row.effortScore !== undefined ? Number(row.effortScore) : null;
+		if (score === null || !Number.isFinite(score) || score <= 0) continue;
+
+		const family = classifyEffortFamily(row.sportType, row.sportFamily);
+		byFamily[family] = (byFamily[family] ?? 0) + score;
+		total += score;
+		workoutCount += 1;
+		if (row.effortMethod === 'trimp') trimpSum += score;
+
+		const dayIndex = isoWeekdayIndex(row.startTime);
+		byDay[dayIndex] += score;
+	}
+
+	if (workoutCount === 0) return null;
+
+	const roundedByFamily: WeeklyEffortMetric['byFamily'] = {};
+	for (const [family, value] of Object.entries(byFamily)) {
+		roundedByFamily[family as EffortFamily] = Math.round((value as number) * 10) / 10;
+	}
+
+	return {
+		total: Math.round(total * 10) / 10,
+		byFamily: roundedByFamily,
+		byDay: byDay.map((v) => Math.round(v * 10) / 10),
+		hrCoveragePct: total > 0 ? Math.round((trimpSum / total) * 100) : 0,
+		workoutCount
+	};
+}
+
+/** Hent total weekly effort for de 4 ukene umiddelbart før gitt dato fra allerede lagrede aggregater. */
+async function fetchPriorWeeklyEffortTotals(userId: string, beforeStart: Date): Promise<number[]> {
+	const rows = await db.query.sensorAggregates.findMany({
+		where: and(
+			eq(sensorAggregates.userId, userId),
+			eq(sensorAggregates.period, 'week'),
+			lte(sensorAggregates.startDate, new Date(beforeStart.getTime() - 1))
+		),
+		orderBy: [desc(sensorAggregates.startDate)],
+		limit: 4
+	});
+	return rows
+		.map((row) => (row.metrics as { weeklyEffort?: { total?: number } } | null)?.weeklyEffort?.total)
+		.filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+}
+
+/** ISO weekday → 0=Mon..6=Sun. Bruker Europe/Oslo for å treffe brukerens uke. */
+function isoWeekdayIndex(date: Date): number {
+	// JS getDay(): 0=Sun..6=Sat. Konverter til 0=Mon..6=Sun.
+	const oslo = new Date(date.toLocaleString('en-US', { timeZone: 'Europe/Oslo' }));
+	const jsDay = oslo.getDay();
+	return (jsDay + 6) % 7;
+}
+
+/**
  * Aggregate weekly data for a user
  */
 export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) {
@@ -130,6 +212,19 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 		if (heartRates.length > 0) metrics.heartRate = { avg: avg(heartRates), min: min(heartRates), max: max(heartRates), values: heartRates };
 		if (sleepHeartRates.length > 0) metrics.sleepHeartRate = { avg: avg(sleepHeartRates), min: min(sleepHeartRates), max: max(sleepHeartRates) };
 		if (workoutEvents.length > 0) metrics.workouts = { count: workoutEvents.length, types: { running: runningKm } };
+
+		const weeklyEffort = await computeWeeklyEffort(userId, week.startTime, week.endTime);
+		if (weeklyEffort) {
+			const priorTotals = await fetchPriorWeeklyEffortTotals(userId, week.startTime);
+			if (priorTotals.length > 0) {
+				const p4wAvg = priorTotals.reduce((sum, value) => sum + value, 0) / priorTotals.length;
+				weeklyEffort.baseline = {
+					p4wAvg: Math.round(p4wAvg * 10) / 10,
+					delta: Math.round((weeklyEffort.total - p4wAvg) * 10) / 10
+				};
+			}
+			metrics.weeklyEffort = weeklyEffort;
+		}
 
 		const sleepLag = calculateSleepLag(events);
 		if (sleepLag !== undefined) metrics.sleepLag = sleepLag;

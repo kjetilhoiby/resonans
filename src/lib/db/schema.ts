@@ -1617,6 +1617,14 @@ export const sensorAggregates = pgTable('sensor_aggregates', {
 		// Activity metrics
 		workouts?: { count?: number; totalDuration?: number; types?: Record<string, number> };
 		intenseMinutes?: { sum?: number; avg?: number };
+		weeklyEffort?: {
+			total: number;
+			byFamily: Partial<Record<'running' | 'cycling' | 'ebike' | 'strength' | 'yoga' | 'walking' | 'hiking' | 'swimming' | 'other', number>>;
+			byDay: number[]; // length 7, Mon..Sun
+			hrCoveragePct: number; // 0..100, andel av effort fra TRIMP vs MET
+			workoutCount: number;
+			baseline?: { p4wAvg: number; delta: number };
+		};
 		// Household metrics
 		laundry?: { count?: number; avgDuration?: number };
 		dishes?: { count?: number };
@@ -1646,6 +1654,8 @@ export const canonicalWorkouts = pgTable('canonical_workouts', {
 	durationSeconds: decimal('duration_seconds'),
 	avgHeartRate: decimal('avg_heart_rate'),
 	maxHeartRate: decimal('max_heart_rate'),
+	effortScore: decimal('effort_score'),
+	effortMethod: text('effort_method'), // 'trimp' | 'met' | null
 	sourceCount: integer('source_count').notNull().default(1),
 	sourceProviders: text('source_providers').array().notNull().default(sql`ARRAY[]::text[]`),
 	evidence: jsonb('evidence').$type<

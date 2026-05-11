@@ -16,6 +16,7 @@
 	import KmSplitsTable from '../charts/KmSplitsTable.svelte';
 	import HrDistributionBar from '../charts/HrDistributionBar.svelte';
 	import DynamicWidget from '../composed/DynamicWidget.svelte';
+	import WeeklyEffortCard from '../composed/WeeklyEffortCard.svelte';
 	import { hasElevation, hasHeartRate } from '$lib/utils/track-stats';
 	import {
 		buildPaceBaseline,
@@ -24,6 +25,26 @@
 	} from '$lib/utils/activity-history';
 
 	type WindowMode = '7d' | '30d' | '365d' | 'week' | 'month' | 'year' | 'quarter';
+
+	type EffortFamily =
+		| 'running'
+		| 'cycling'
+		| 'ebike'
+		| 'strength'
+		| 'yoga'
+		| 'walking'
+		| 'hiking'
+		| 'swimming'
+		| 'other';
+
+	interface WeeklyEffortMetric {
+		total: number;
+		byFamily: Partial<Record<EffortFamily, number>>;
+		byDay: number[];
+		hrCoveragePct: number;
+		workoutCount: number;
+		baseline?: { p4wAvg: number; delta: number };
+	}
 
 	interface PeriodMetrics {
 		weight?: { avg?: number; min?: number; max?: number; change?: number };
@@ -35,6 +56,7 @@
 		sleepHeartRate?: { avg?: number; min?: number; max?: number };
 		sleepLag?: number;
 		earlyWake?: number;
+		weeklyEffort?: WeeklyEffortMetric;
 	}
 
 	interface AggregatePeriod {
@@ -245,6 +267,19 @@
 	);
 	const lastPeriod = $derived(periodData.length ? periodData[periodData.length - 1] : null);
 	const lastMetrics = $derived(lastPeriod?.metrics ?? null);
+
+	const latestWeekWithEffort = $derived(
+		[...weekly].reverse().find((w) => w.metrics?.weeklyEffort) ?? null
+	);
+	const latestWeeklyEffort = $derived(latestWeekWithEffort?.metrics?.weeklyEffort ?? null);
+	const latestWeekLabel = $derived.by(() => {
+		if (!latestWeekWithEffort) return undefined;
+		const start = latestWeekWithEffort.startDate ? new Date(latestWeekWithEffort.startDate) : null;
+		const end = latestWeekWithEffort.endDate ? new Date(latestWeekWithEffort.endDate) : null;
+		if (!start || !end) return latestWeekWithEffort.periodKey;
+		const fmt = new Intl.DateTimeFormat('nb-NO', { day: 'numeric', month: 'short' });
+		return `${fmt.format(start)}–${fmt.format(end)}`;
+	});
 
 	function periodYear(periodKey: string): number {
 		return parseInt(periodKey.split(/[WMQY]/)[0]);
@@ -1072,6 +1107,20 @@
 			}}
 		/>
 	</div>
+
+	{#if latestWeeklyEffort}
+		<div class="hd-effort">
+			<WeeklyEffortCard
+				total={latestWeeklyEffort.total}
+				byFamily={latestWeeklyEffort.byFamily}
+				byDay={latestWeeklyEffort.byDay}
+				hrCoveragePct={latestWeeklyEffort.hrCoveragePct}
+				workoutCount={latestWeeklyEffort.workoutCount}
+				baseline={latestWeeklyEffort.baseline}
+				weekLabel={latestWeekLabel}
+			/>
+		</div>
+	{/if}
 
 	{#if tooling}
 		<div class="hd-tooling-card">
