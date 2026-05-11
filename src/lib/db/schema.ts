@@ -498,6 +498,12 @@ export const checklistItems = pgTable('checklist_items', {
 		breakdownModel?: string; // The model used for breakdown
 		// Snooze tracking — id of the copy created when user snoozed this item
 		snoozedToItemId?: string;
+		// Email import metadata
+		source?: string;
+		label?: string;
+		gmailMessageId?: string;
+		gmailThreadId?: string;
+		from?: string;
 	}>(),
 	createdAt: timestamp('created_at').defaultNow().notNull()
 }, (table) => ({
@@ -2046,4 +2052,35 @@ export const metricAggregateCache = pgTable('metric_aggregate_cache', {
 	uniqUserMetricPeriod: unique('metric_cache_unique').on(table.userId, table.metricKey, table.period, table.periodKey),
 	idxUserMetricKey: index('metric_cache_user_metric_idx').on(table.userId, table.metricKey),
 	idxUserPeriod: index('metric_cache_user_period_idx').on(table.userId, table.period, table.periodKey),
+}));
+
+// ============================================
+// EMAIL RULES - Configurable email processing
+// ============================================
+
+export const emailRules = pgTable('email_rules', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	name: text('name').notNull(),
+	labelPattern: text('label_pattern'), // exact or glob match on Gmail label e.g. 'resonans/oda', 'resonans/*'
+	senderPattern: text('sender_pattern'), // glob pattern e.g. '*@oda.com', 'noreply@spond.com'
+	subjectPattern: text('subject_pattern'), // substring match e.g. 'Ordrebekreftelse', 'Ukeplan'
+	processingType: text('processing_type').notNull(), // 'workout_files', 'ai_extraction', 'raw_store', 'library'
+	extractionPrompt: text('extraction_prompt'), // custom prompt for AI extraction (optional)
+	eventType: text('event_type').notNull().default('email_content'), // sensor event type to create
+	dataType: text('data_type').notNull().default('email'), // sensor event data type
+	isActive: boolean('is_active').default(true).notNull(),
+	lastMatchedAt: timestamp('last_matched_at'),
+	matchCount: integer('match_count').default(0).notNull(),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+	idxUserActive: index('email_rules_user_active_idx').on(table.userId, table.isActive),
+}));
+
+export const emailRulesRelations = relations(emailRules, ({ one }) => ({
+	user: one(users, {
+		fields: [emailRules.userId],
+		references: [users.id]
+	})
 }));

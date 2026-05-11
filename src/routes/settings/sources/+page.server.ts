@@ -15,7 +15,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	});
 
 	const origin = env.ORIGIN ?? url.origin;
-	const endpoint = `${origin.replace(/\/$/, '')}/api/email-inbound`;
+	const endpoint = `${origin.replace(/\/$/, '')}/api/email/inbound`;
 	const token = env.EMAIL_WEBHOOK_SECRET ?? '';
 
 	const appsScriptSource = token

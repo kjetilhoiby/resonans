@@ -7,6 +7,7 @@ import { and, eq } from 'drizzle-orm';
 import { syncAllWithingsData } from '$lib/server/integrations/withings-sync';
 import { registerWorkoutsAsProgress } from '$lib/server/sensor-goal-automation';
 import { autocheckWakeTimeForDate } from '$lib/server/checklist-autocheck';
+import { notifyWithingsSyncResults } from '$lib/server/withings-sync-notifications';
 
 type WithingsSyncSuccessResult = {
 	userId: string;
@@ -33,7 +34,7 @@ export const config = { maxDuration: 120 };
  * Triggered by GitHub Actions (see /api/cron/jobs for schedule).
  * Runs sequentially per user to avoid hammering the Withings API.
  */
-export const GET: RequestHandler = async ({ request }) => {
+export const GET: RequestHandler = async ({ request, url }) => {
 	const authHeader = request.headers.get('authorization');
 	if (env.CRON_SECRET && authHeader !== `Bearer ${env.CRON_SECRET}`) {
 		return json({ error: 'Unauthorized' }, { status: 401 });
@@ -73,6 +74,19 @@ export const GET: RequestHandler = async ({ request }) => {
 			} catch (err) {
 				const msg = err instanceof Error ? err.message : String(err);
 				console.error(`[withings-sync cron] wake autocheck failed for user=${userId}: ${msg}`);
+			}
+
+			// Push notifications for new yoga workouts and weight measurements
+			try {
+				await notifyWithingsSyncResults({
+					userId,
+					appUrl: url.origin,
+					syncStartTime,
+					synced
+				});
+			} catch (err) {
+				const msg = err instanceof Error ? err.message : String(err);
+				console.error(`[withings-sync cron] notifications failed for user=${userId}: ${msg}`);
 			}
 
 			results.push({ userId, success: true, synced, automation, wakeCheck });
