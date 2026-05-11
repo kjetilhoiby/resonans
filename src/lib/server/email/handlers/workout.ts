@@ -31,7 +31,7 @@ async function findOrCreateWorkoutSensor(userId: string) {
 
 type RawPoint = { lat: number; lon: number; ele?: number | null; hr?: number | null; time?: string | null };
 
-function decimateTrack(pts: RawPoint[], maxPoints: number): RawPoint[] {
+export function decimateTrack(pts: RawPoint[], maxPoints: number): RawPoint[] {
 	if (pts.length <= maxPoints) return pts;
 
 	function dist(a: RawPoint, b: RawPoint): number {
@@ -88,7 +88,7 @@ function decimateTrack(pts: RawPoint[], maxPoints: number): RawPoint[] {
 	return pts.filter((_, i) => kept.has(i));
 }
 
-function buildWorkoutData(parsed: ParsedWorkout) {
+export function buildWorkoutData(parsed: ParsedWorkout) {
 	const paceSecondsPerKm = parsed.distance > 0
 		? parsed.duration / (parsed.distance / 1000)
 		: undefined;

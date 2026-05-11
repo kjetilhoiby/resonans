@@ -360,6 +360,121 @@
 		sources: string[];
 	}[]>([]);
 
+	// ── E-postregler ────────────────────────────────────────────────────────
+	type EmailRule = {
+		id: string;
+		name: string;
+		labelPattern: string | null;
+		senderPattern: string | null;
+		subjectPattern: string | null;
+		processingType: string;
+		extractionPrompt: string | null;
+		eventType: string;
+		dataType: string;
+		isActive: boolean;
+		lastMatchedAt: string | null;
+		matchCount: number;
+	};
+	let emailRulesData = $state<EmailRule[]>([]);
+	let loadingEmailRules = $state(false);
+	let showEmailRuleForm = $state(false);
+	let editingRuleId = $state<string | null>(null);
+	let ruleForm = $state({
+		name: '',
+		labelPattern: '',
+		senderPattern: '',
+		subjectPattern: '',
+		processingType: 'ai_extraction' as string,
+		extractionPrompt: '',
+		eventType: 'email_content',
+		dataType: 'email',
+	});
+	let savingRule = $state(false);
+	let ruleResult = $state<{ success: boolean; message: string } | null>(null);
+
+	async function loadEmailRules() {
+		loadingEmailRules = true;
+		try {
+			const res = await fetch('/api/settings/email-rules');
+			if (res.ok) emailRulesData = await res.json();
+		} finally {
+			loadingEmailRules = false;
+		}
+	}
+
+	function resetRuleForm() {
+		ruleForm = {
+			name: '', labelPattern: '', senderPattern: '', subjectPattern: '',
+			processingType: 'ai_extraction', extractionPrompt: '',
+			eventType: 'email_content', dataType: 'email',
+		};
+		editingRuleId = null;
+		showEmailRuleForm = false;
+		ruleResult = null;
+	}
+
+	function editRule(rule: EmailRule) {
+		ruleForm = {
+			name: rule.name,
+			labelPattern: rule.labelPattern ?? '',
+			senderPattern: rule.senderPattern ?? '',
+			subjectPattern: rule.subjectPattern ?? '',
+			processingType: rule.processingType,
+			extractionPrompt: rule.extractionPrompt ?? '',
+			eventType: rule.eventType,
+			dataType: rule.dataType,
+		};
+		editingRuleId = rule.id;
+		showEmailRuleForm = true;
+		ruleResult = null;
+	}
+
+	async function saveEmailRule() {
+		savingRule = true;
+		ruleResult = null;
+		try {
+			const method = editingRuleId ? 'PATCH' : 'POST';
+			const body = editingRuleId
+				? { id: editingRuleId, ...ruleForm }
+				: ruleForm;
+			const res = await fetch('/api/settings/email-rules', {
+				method,
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify(body)
+			});
+			if (!res.ok) {
+				const err = await res.json();
+				throw new Error(err.error || 'Kunne ikke lagre regel');
+			}
+			ruleResult = { success: true, message: editingRuleId ? 'Regel oppdatert' : 'Regel opprettet' };
+			resetRuleForm();
+			await loadEmailRules();
+		} catch (error) {
+			ruleResult = { success: false, message: error instanceof Error ? error.message : 'Ukjent feil' };
+		} finally {
+			savingRule = false;
+		}
+	}
+
+	async function toggleRule(rule: EmailRule) {
+		await fetch('/api/settings/email-rules', {
+			method: 'PATCH',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ id: rule.id, isActive: !rule.isActive })
+		});
+		await loadEmailRules();
+	}
+
+	async function deleteRule(rule: EmailRule) {
+		if (!confirm(`Slett regelen "${rule.name}"?`)) return;
+		await fetch('/api/settings/email-rules', {
+			method: 'DELETE',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ id: rule.id })
+		});
+		await loadEmailRules();
+	}
+
 	const connectedCount = $derived(
 		(withingsStatus?.connected ? 1 : 0) +
 		(sparebank1Status?.connected ? 1 : 0) +
@@ -375,7 +490,8 @@
 			loadGoogleSheetsStatus(),
 			loadSpondStatus(),
 			loadAnchorAccounts(),
-			loadSalaryProfileData()
+			loadSalaryProfileData(),
+			loadEmailRules()
 		]);
 	});
 
@@ -1979,6 +2095,109 @@
 	</section>
 
 	<section class="card">
+		<h2>E-postregler</h2>
+		<p class="field-title">Konfigurer hvilke e-poster som skal importeres og hvordan de prosesseres.</p>
+
+		{#if loadingEmailRules}
+			<p>Laster...</p>
+		{:else}
+			{#if emailRulesData.length > 0}
+				<div class="email-rules-list">
+					{#each emailRulesData as rule}
+						<div class="email-rule-item" class:rule-inactive={!rule.isActive}>
+							<div class="email-rule-header">
+								<div class="email-rule-info">
+									<strong>{rule.name}</strong>
+									<span class="email-rule-type">{rule.processingType === 'ai_extraction' ? 'AI-ekstraksjon' : rule.processingType === 'workout_files' ? 'Treningsfiler' : rule.processingType === 'library' ? 'Bibliotek' : 'Rå lagring'}</span>
+								</div>
+								<div class="email-rule-actions">
+									<button class="rule-toggle" onclick={() => toggleRule(rule)} title={rule.isActive ? 'Deaktiver' : 'Aktiver'}>
+										{rule.isActive ? 'På' : 'Av'}
+									</button>
+									<button class="rule-edit" onclick={() => editRule(rule)}>Rediger</button>
+									<button class="rule-delete" onclick={() => deleteRule(rule)}>Slett</button>
+								</div>
+							</div>
+							<div class="email-rule-filters">
+								{#if rule.labelPattern}
+									<span class="filter-chip">Label: {rule.labelPattern}</span>
+								{/if}
+								{#if rule.senderPattern}
+									<span class="filter-chip">Avsender: {rule.senderPattern}</span>
+								{/if}
+								{#if rule.subjectPattern}
+									<span class="filter-chip">Emne: {rule.subjectPattern}</span>
+								{/if}
+								{#if !rule.labelPattern && !rule.senderPattern && !rule.subjectPattern}
+									<span class="filter-chip filter-warn">Ingen filter — matcher alle e-poster</span>
+								{/if}
+							</div>
+							{#if rule.matchCount > 0}
+								<p class="email-rule-stats">Treff: {rule.matchCount}{rule.lastMatchedAt ? ` · Sist: ${new Date(rule.lastMatchedAt).toLocaleDateString('nb-NO')}` : ''}</p>
+							{/if}
+						</div>
+					{/each}
+				</div>
+			{:else if !showEmailRuleForm}
+				<p style="color: var(--text-tertiary); font-size: 0.84rem;">Ingen regler ennå. Legg til en regel for å importere e-poster automatisk.</p>
+			{/if}
+
+			{#if showEmailRuleForm}
+				<div class="email-rule-form">
+					<h3>{editingRuleId ? 'Rediger regel' : 'Ny regel'}</h3>
+					<div class="field">
+						<label for="rule-name">Navn *</label>
+						<Input id="rule-name" className="input" bind:value={ruleForm.name} placeholder="f.eks. Oda-kvitteringer" />
+					</div>
+					<div class="field">
+						<label for="rule-label">Gmail-label</label>
+						<Input id="rule-label" className="input" bind:value={ruleForm.labelPattern} placeholder="f.eks. resonans/oda" />
+						<p class="field-hint">Matcher e-poster fra denne Gmail-labelen. Bruk * som wildcard.</p>
+					</div>
+					<div class="field">
+						<label for="rule-sender">Avsender-filter</label>
+						<Input id="rule-sender" className="input" bind:value={ruleForm.senderPattern} placeholder="f.eks. *@oda.com eller noreply@spond.com" />
+						<p class="field-hint">Bruk * som wildcard. La stå tom for å matche alle avsendere.</p>
+					</div>
+					<div class="field">
+						<label for="rule-subject">Emne-filter</label>
+						<Input id="rule-subject" className="input" bind:value={ruleForm.subjectPattern} placeholder="f.eks. Ordrebekreftelse" />
+						<p class="field-hint">Matcher om emnet inneholder teksten.</p>
+					</div>
+					<div class="field">
+						<label for="rule-type">Prosessering</label>
+						<Select id="rule-type" className="input" bind:value={ruleForm.processingType}>
+							<option value="ai_extraction">AI-ekstraksjon (GPT trekker ut data)</option>
+							<option value="raw_store">Rå lagring (lagre som tekst)</option>
+							<option value="workout_files">Treningsfiler (GPX/TCX)</option>
+							<option value="library">Bibliotek (lånefrist → sjekkliste)</option>
+						</Select>
+					</div>
+					{#if ruleForm.processingType === 'ai_extraction'}
+						<div class="field">
+							<label for="rule-prompt">Tilpasset AI-prompt (valgfritt)</label>
+							<textarea id="rule-prompt" class="input" bind:value={ruleForm.extractionPrompt} rows="4" placeholder="La stå tom for standard-ekstraksjon. Skriv en tilpasset prompt for spesifikke behov."></textarea>
+						</div>
+					{/if}
+					<div class="row">
+						<Button onClick={saveEmailRule} disabled={savingRule || !ruleForm.name.trim()}>
+							{savingRule ? 'Lagrer...' : editingRuleId ? 'Oppdater' : 'Opprett'}
+						</Button>
+						<Button variant="ghost" onClick={resetRuleForm}>Avbryt</Button>
+					</div>
+					{#if ruleResult}
+						<p class={ruleResult.success ? 'ok' : 'err'}>{ruleResult.message}</p>
+					{/if}
+				</div>
+			{:else}
+				<Button variant="secondary" onClick={() => { showEmailRuleForm = true; ruleResult = null; }}>
+					Legg til e-postregel
+				</Button>
+			{/if}
+		{/if}
+	</section>
+
+	<section class="card">
 		<h2>Google Regneark</h2>
 		{#if loadingGoogleSheets}
 			<p>Laster...</p>
@@ -2348,9 +2567,122 @@
 	td.diag-score-ok { color: #6ee76e; font-weight: 600; }
 	td.mono { font-family: monospace; font-size: 0.78rem; }
 
+	/* ── E-postregler ────────────────────────────────────────────────────── */
+	.email-rules-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		margin-bottom: 0.75rem;
+	}
+	.email-rule-item {
+		border: 1px solid #262626;
+		border-radius: 10px;
+		padding: 0.6rem 0.75rem;
+		background: #0d0d0d;
+	}
+	.email-rule-item.rule-inactive {
+		opacity: 0.5;
+	}
+	.email-rule-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 0.5rem;
+	}
+	.email-rule-info {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		min-width: 0;
+	}
+	.email-rule-info strong {
+		color: var(--text-primary);
+		font-size: 0.88rem;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.email-rule-type {
+		font-size: 0.72rem;
+		background: #1a2a3a;
+		color: #6ea8e7;
+		padding: 0.15rem 0.4rem;
+		border-radius: 4px;
+		white-space: nowrap;
+	}
+	.email-rule-actions {
+		display: flex;
+		gap: 0.3rem;
+		flex-shrink: 0;
+	}
+	.email-rule-actions button {
+		font-size: 0.76rem;
+		padding: 0.2rem 0.45rem;
+		border-radius: 5px;
+		border: 1px solid #333;
+		background: transparent;
+		color: var(--text-secondary);
+		cursor: pointer;
+	}
+	.email-rule-actions button:hover { background: #1e1e1e; }
+	.rule-delete:hover { color: #e74c4c !important; border-color: #e74c4c !important; }
+	.rule-toggle { min-width: 2rem; text-align: center; }
+	.email-rule-filters {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.3rem;
+		margin-top: 0.35rem;
+	}
+	.filter-chip {
+		font-size: 0.74rem;
+		background: #1a1a2a;
+		color: #9a9ac0;
+		padding: 0.12rem 0.4rem;
+		border-radius: 4px;
+	}
+	.filter-warn { background: #2a2a1a; color: #c0b060; }
+	.email-rule-stats {
+		font-size: 0.74rem;
+		color: var(--text-tertiary);
+		margin: 0.25rem 0 0;
+	}
+	.email-rule-form {
+		border: 1px solid #262626;
+		border-radius: 10px;
+		padding: 0.75rem;
+		background: #0d0d0d;
+		margin-top: 0.5rem;
+	}
+	.email-rule-form h3 {
+		margin: 0 0 0.5rem;
+		font-size: 0.9rem;
+		font-weight: 600;
+		color: var(--text-primary);
+	}
+	.field-hint {
+		font-size: 0.74rem;
+		color: var(--text-tertiary);
+		margin: 0.2rem 0 0;
+	}
+	.email-rule-form textarea.input {
+		width: 100%;
+		padding: 0.65rem;
+		border: 1px solid var(--line);
+		border-radius: 10px;
+		background: var(--surface-soft);
+		color: inherit;
+		font-family: inherit;
+		font-size: 0.84rem;
+		resize: vertical;
+	}
+
 	@media (max-width: 720px) {
 		.sources-content {
 			gap: 0.8rem;
+		}
+		.email-rule-header {
+			flex-direction: column;
+			align-items: flex-start;
 		}
 	}
 
