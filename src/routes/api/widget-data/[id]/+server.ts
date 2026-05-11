@@ -34,6 +34,7 @@ const METRIC_CONFIG: Record<string, { dataType: string; field: string; countStar
 	distance:      { dataType: 'workout',           field: "data->>'distance'" },
 	workoutCount:  { dataType: 'workout',           field: '1', countStar: true },
 	heartrate:     { dataType: 'heart_rate',        field: "data->>'hr_average'" },
+	sleepHeartRate:{ dataType: 'sleep',             field: "data->>'hr_average'" },
 	mood:          { dataType: 'mood',              field: "data->>'rating'" },
 	screenTime:    { dataType: 'screen_time',       field: "data->>'totalMinutes'" },
 	amount:        { dataType: 'bank_transaction',  field: "ABS((data->>'amount')::numeric)" },
