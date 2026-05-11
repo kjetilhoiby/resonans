@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { tweened } from 'svelte/motion';
+	import { cubicOut } from 'svelte/easing';
 	import GoalRing from '../ui/GoalRing.svelte';
 	import { getCachedWidgetData, fetchWidgetData } from '$lib/client/widget-data-cache';
 	import type { WidgetData } from '$lib/client/widget-data-cache';
@@ -10,18 +11,42 @@
 		unit: string;
 		color: string;
 		pinned: boolean;
+		/**
+		 * Valgfri overstyring av periodevinduet (f.eks. 'last7', 'last30', 'current_year').
+		 * Når den endres henter widgeten nye data og animerer overgangen før→nå.
+		 */
+		range?: string | null;
 		onpress?: () => void;
 		onchat?: (summary: string) => void;
 		onunpin?: () => void;
 		onconfig?: () => void;
 	}
 
-	let { widgetId, title, unit, color, pinned, onpress, onchat, onunpin, onconfig }: Props = $props();
+	let { widgetId, title, unit, color, pinned, range = null, onpress, onchat, onunpin, onconfig }: Props = $props();
 
 	let data = $state<WidgetData | null>(null);
 	let loading = $state(true);
 	let error = $state(false);
 	let refreshing = $state(false);
+	let valuePulse = $state(false);
+
+	// Tween numerisk verdi og pct mellom perioder. Første treff setter target med duration:0
+	// så vi unngår en "0 → verdi"-animasjon ved første render.
+	const tweenedValue = tweened<number | null>(null, { duration: 600, easing: cubicOut });
+	const tweenedPct = tweened<number | null>(null, { duration: 600, easing: cubicOut });
+	let tweenInitialized = false;
+	let pendingFetchId = 0;
+
+	function applyTweenTargets(d: WidgetData) {
+		if (!tweenInitialized) {
+			tweenedValue.set(d.current, { duration: 0 });
+			tweenedPct.set(d.pct, { duration: 0 });
+			tweenInitialized = true;
+		} else {
+			tweenedValue.set(d.current);
+			tweenedPct.set(d.pct);
+		}
+	}
 
 	// Long-press for unpin
 	let pressTimer: ReturnType<typeof setTimeout> | null = null;
@@ -68,41 +93,80 @@
 		onpress?.();
 	}
 
-	onMount(async () => {
-		const cached = getCachedWidgetData(widgetId);
+	$effect(() => {
+		// Avhengig av (widgetId, range) — refetch når noen av disse endres.
+		const currentWidgetId = widgetId;
+		const currentRange = range;
+		const fetchId = ++pendingFetchId;
+		let alive = true;
+
+		const cached = getCachedWidgetData(currentWidgetId, currentRange);
 		if (cached) {
 			data = cached;
+			applyTweenTargets(cached);
 			loading = false;
 			refreshing = true;
+			error = false;
+		} else {
+			// Ingen cache for denne perioden: behold gammel verdi synlig under fetch
+			// (tween-target oppdateres når data faktisk kommer), men marker som refreshing.
+			refreshing = true;
+			if (!data) loading = true;
 		}
 
-		try {
-			const fresh = await fetchWidgetData(widgetId);
-			if (fresh) {
-				const hasMeaningfulData = fresh.current !== null || fresh.sparkline.length > 0;
-				if (hasMeaningfulData || !cached) data = fresh;
-			} else {
-				error = !cached;
+		(async () => {
+			try {
+				const fresh = await fetchWidgetData(currentWidgetId, currentRange);
+				if (!alive || fetchId !== pendingFetchId) return;
+				if (fresh) {
+					const hasMeaningfulData = fresh.current !== null || fresh.sparkline.length > 0;
+					if (hasMeaningfulData || !cached) {
+						const prevCurrent = data?.current ?? null;
+						if (prevCurrent !== null && fresh.current !== null && prevCurrent !== fresh.current) {
+							valuePulse = true;
+							setTimeout(() => {
+								if (alive) valuePulse = false;
+							}, 600);
+						}
+						data = fresh;
+						applyTweenTargets(fresh);
+					}
+				} else {
+					error = !cached && !data;
+				}
+			} catch {
+				if (alive && fetchId === pendingFetchId) error = !cached && !data;
+			} finally {
+				if (alive && fetchId === pendingFetchId) {
+					loading = false;
+					refreshing = false;
+				}
 			}
-		} catch {
-			error = !cached;
-		} finally {
-			loading = false;
-			refreshing = false;
-		}
+		})();
+
+		return () => {
+			alive = false;
+		};
 	});
+
+	// Bestem formatering ut fra mål-verdien (data.current), ikke det aktuelle tween-tallet,
+	// for å unngå at formatet hopper mellom heltall og desimal under animasjon.
+	const targetIsInteger = $derived(
+		data?.current != null && Number.isInteger(data.current)
+	);
 
 	const displayVal = $derived.by(() => {
 		if (!data || data.current == null) return '–';
-		const v = data.current;
-		if (v >= 1000) return `${Math.round(v / 100) / 10}k`;
-		if (Number.isInteger(v)) return String(v);
+		const v = $tweenedValue;
+		if (v == null || !Number.isFinite(v)) return '–';
+		if (Math.abs(v) >= 1000) return `${Math.round(v / 100) / 10}k`;
+		if (targetIsInteger) return String(Math.round(v));
 		return v.toFixed(1);
 	});
 
 	const displayUnit = $derived(data?.unit ?? unit);
 
-	const pct = $derived(data?.pct ?? null);
+	const pct = $derived($tweenedPct);
 
 	// Fargestyring: state overstyrer standard widget-farge
 	const STATE_COLORS = { success: '#82c882', warn: '#f0b429', normal: null };
@@ -155,7 +219,7 @@
 			{:else}
 				<div class="dw-plain-circle" style:border-color={displayColor}></div>
 			{/if}
-			<div class="dw-val">{displayVal}</div>
+			<div class="dw-val" class:dw-val-pulse={valuePulse}>{displayVal}</div>
 		</div>
 
 		<!-- Label -->
@@ -286,6 +350,13 @@
 		font-weight: 700;
 		color: #eee;
 		line-height: 1;
+		font-variant-numeric: tabular-nums;
+		transition: color 0.6s ease, text-shadow 0.6s ease;
+	}
+
+	.dw-val-pulse {
+		color: #fff;
+		text-shadow: 0 0 8px var(--c);
 	}
 
 	.dw-label {

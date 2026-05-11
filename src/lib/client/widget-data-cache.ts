@@ -27,10 +27,15 @@ interface CacheEntry {
 const FRESH_MS = 60_000; // 60s — samme som dashboard-cache
 const STORAGE_MAX_AGE_MS = 30 * 60 * 1000; // 30 min for localStorage (same as DynamicWidget)
 const STORAGE_KEY_PREFIX = 'resonans:home:widget-data:';
-const STORAGE_KEY_VERSION = ':v1';
+const STORAGE_KEY_VERSION = ':v2'; // v2: range inkludert i key
 
-function storageKey(widgetId: string) {
-	return `${STORAGE_KEY_PREFIX}${widgetId}${STORAGE_KEY_VERSION}`;
+function cacheKey(widgetId: string, range?: string | null): string {
+	return range ? `${widgetId}::${range}` : widgetId;
+}
+
+function storageKey(widgetId: string, range?: string | null) {
+	const suffix = range ? `:${range}` : '';
+	return `${STORAGE_KEY_PREFIX}${widgetId}${suffix}${STORAGE_KEY_VERSION}`;
 }
 
 // --- In-memory store ---
@@ -38,10 +43,10 @@ const memCache = new Map<string, CacheEntry>();
 const inflight = new Map<string, Promise<WidgetData>>();
 
 // --- localStorage helpers ---
-function readFromStorage(widgetId: string): WidgetData | null {
+function readFromStorage(widgetId: string, range?: string | null): WidgetData | null {
 	if (typeof window === 'undefined') return null;
 	try {
-		const raw = window.localStorage.getItem(storageKey(widgetId));
+		const raw = window.localStorage.getItem(storageKey(widgetId, range));
 		if (!raw) return null;
 		const parsed = JSON.parse(raw) as { cachedAt: string; data: WidgetData };
 		if (!parsed?.cachedAt || !parsed?.data) return null;
@@ -53,11 +58,11 @@ function readFromStorage(widgetId: string): WidgetData | null {
 	}
 }
 
-function writeToStorage(widgetId: string, data: WidgetData) {
+function writeToStorage(widgetId: string, data: WidgetData, range?: string | null) {
 	if (typeof window === 'undefined') return;
 	try {
 		window.localStorage.setItem(
-			storageKey(widgetId),
+			storageKey(widgetId, range),
 			JSON.stringify({ cachedAt: new Date().toISOString(), data })
 		);
 	} catch {
@@ -69,38 +74,41 @@ function writeToStorage(widgetId: string, data: WidgetData) {
 
 /**
  * Henter cached widget-data uten å starte noen fetch.
- * Sjekker in-memory først, deretter localStorage.
+ * Sjekker in-memory først, deretter localStorage. Cache er per (widgetId, range).
  */
-export function getCachedWidgetData(widgetId: string): WidgetData | null {
-	const mem = memCache.get(widgetId);
+export function getCachedWidgetData(widgetId: string, range?: string | null): WidgetData | null {
+	const key = cacheKey(widgetId, range);
+	const mem = memCache.get(key);
 	if (mem) return mem.data;
-	const stored = readFromStorage(widgetId);
+	const stored = readFromStorage(widgetId, range);
 	if (stored) {
 		// Varm opp in-memory fra localStorage
-		memCache.set(widgetId, { data: stored, cachedAt: 0 }); // cachedAt=0 → alltid "stale" for neste fetch
+		memCache.set(key, { data: stored, cachedAt: 0 }); // cachedAt=0 → alltid "stale" for neste fetch
 	}
 	return stored;
 }
 
 /**
- * Henter fersk widget-data. Deduplicerer inflight-forespørsler.
+ * Henter fersk widget-data. Deduplicerer inflight-forespørsler per (widgetId, range).
  * Oppdaterer både in-memory og localStorage.
  */
-export async function fetchWidgetData(widgetId: string): Promise<WidgetData | null> {
-	const existing = inflight.get(widgetId);
+export async function fetchWidgetData(widgetId: string, range?: string | null): Promise<WidgetData | null> {
+	const key = cacheKey(widgetId, range);
+	const existing = inflight.get(key);
 	if (existing) return existing;
 
 	const promise = (async (): Promise<WidgetData> => {
-		const res = await fetch(`/api/widget-data/${widgetId}`);
+		const url = range ? `/api/widget-data/${widgetId}?range=${encodeURIComponent(range)}` : `/api/widget-data/${widgetId}`;
+		const res = await fetch(url);
 		if (!res.ok) throw new Error(`widget-data ${widgetId}: ${res.status}`);
 		const data = (await res.json()) as WidgetData;
-		memCache.set(widgetId, { data, cachedAt: performance.now() });
-		writeToStorage(widgetId, data);
+		memCache.set(key, { data, cachedAt: performance.now() });
+		writeToStorage(widgetId, data, range);
 		return data;
 	})();
 
-	inflight.set(widgetId, promise);
-	promise.finally(() => inflight.delete(widgetId));
+	inflight.set(key, promise);
+	promise.finally(() => inflight.delete(key));
 	return promise.catch(() => null);
 }
 
@@ -108,8 +116,8 @@ export async function fetchWidgetData(widgetId: string): Promise<WidgetData | nu
  * Returnerer cached data hvis fersk nok (<60s), ellers starter ny fetch.
  * Brukes av HomeScreen for idle-prefetch.
  */
-export async function prefetchWidgetData(widgetId: string): Promise<void> {
-	const mem = memCache.get(widgetId);
+export async function prefetchWidgetData(widgetId: string, range?: string | null): Promise<void> {
+	const mem = memCache.get(cacheKey(widgetId, range));
 	if (mem && performance.now() - mem.cachedAt < FRESH_MS) return; // fersk nok
-	await fetchWidgetData(widgetId);
+	await fetchWidgetData(widgetId, range);
 }

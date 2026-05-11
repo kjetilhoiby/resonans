@@ -39,6 +39,17 @@ const METRIC_CONFIG: Record<string, { dataType: string; field: string; countStar
 	amount:        { dataType: 'bank_transaction',  field: "ABS((data->>'amount')::numeric)" },
 };
 
+const SUPPORTED_RANGES = new Set([
+	'last7',
+	'last14',
+	'last30',
+	'last90',
+	'last365',
+	'current_week',
+	'current_month',
+	'current_year',
+]);
+
 function getRangeDate(range: string): { from: Date; to: Date } {
 	const now = new Date();
 	const to = new Date(now);
@@ -57,6 +68,16 @@ function getRangeDate(range: string): { from: Date; to: Date } {
 		case 'last30': {
 			const from = new Date(now);
 			from.setDate(from.getDate() - 30);
+			return { from, to };
+		}
+		case 'last90': {
+			const from = new Date(now);
+			from.setDate(from.getDate() - 90);
+			return { from, to };
+		}
+		case 'last365': {
+			const from = new Date(now);
+			from.setDate(from.getDate() - 365);
 			return { from, to };
 		}
 		case 'current_week': {
@@ -697,6 +718,9 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 	const userId = locals.userId;
 	const debugEnabled = url.searchParams.get('debug') === '1';
 	const filterCategoryOverride = url.searchParams.get('filterCategory');
+	const rangeOverrideParam = url.searchParams.get('range');
+	const rangeOverride =
+		rangeOverrideParam && SUPPORTED_RANGES.has(rangeOverrideParam) ? rangeOverrideParam : null;
 
 	const widget = await db.query.userWidgets.findFirst({
 		where: and(
@@ -707,6 +731,8 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 
 	if (!widget) throw error(404, 'Widget ikke funnet');
 
+	const activeRange = rangeOverride ?? widget.range;
+
 	// ─── Cache-first path for metricKey-baserte widgets ───────────────────────
 	const effectiveMetricKey = widget.metricKey
 		?? (widget.metricType === 'amount' || widget.filterCategory
@@ -714,7 +740,7 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 			: null);
 
 	if (widget.metricKey && !debugEnabled) {
-		const cached = await tryReadFromCache(userId, widget.metricKey, widget.range, widget.aggregation);
+		const cached = await tryReadFromCache(userId, widget.metricKey, activeRange, widget.aggregation);
 		if (cached) {
 			const goalNum = widget.goal ? parseFloat(String(widget.goal)) : null;
 			const warnNum = widget.thresholdWarn ? parseFloat(String(widget.thresholdWarn)) : null;
@@ -745,9 +771,9 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 	const metricConf = METRIC_CONFIG[widget.metricType];
 	if (!metricConf) throw error(400, `Ukjent metrikk-type: ${widget.metricType}`);
 
-	const { from, to } = getRangeDate(widget.range);
-	const prev = getPreviousRange(widget.range);
-	let effectiveRange = widget.range;
+	const { from, to } = getRangeDate(activeRange);
+	const prev = getPreviousRange(activeRange);
+	let effectiveRange = activeRange;
 	let usedRangeFallback = false;
 	let effectiveFrom = from;
 	let effectiveTo = to;
@@ -773,7 +799,7 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 	if (
 		widget.metricType === 'amount' &&
 		filterCategory &&
-		widget.range === 'current_month' &&
+		activeRange === 'current_month' &&
 		series.length === 0
 	) {
 		const fallbackFromTo = getRangeDate('last30');
@@ -869,7 +895,8 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 					metricType: widget.metricType,
 					aggregation: widget.aggregation,
 					period: widget.period,
-					range: widget.range,
+					range: activeRange,
+					storedRange: widget.range,
 					filterCategory,
 					filterSubcategory,
 					effectiveRange,
