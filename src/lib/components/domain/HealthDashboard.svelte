@@ -222,6 +222,18 @@
 		selectedWindow === 'month' || selectedWindow === 'quarter' ? 'month' : selectedWindow === 'year' ? 'year' : 'week'
 	);
 
+	// Mapping fra HealthDashboard-vinduet til widget-API'ets range-streng.
+	// Holder seg på rullende vinduer for korte perioder og kalender-vinduer for uke/måned/år.
+	const widgetRange = $derived<string>(
+		selectedWindow === '7d' ? 'last7'
+		: selectedWindow === '30d' ? 'last30'
+		: selectedWindow === '365d' ? 'last365'
+		: selectedWindow === 'week' ? 'current_week'
+		: selectedWindow === 'month' ? 'current_month'
+		: selectedWindow === 'quarter' ? 'last90'
+		: 'current_year'
+	);
+
 	const quarterData = $derived.by<AggregatePeriod[]>(() => {
 		const quarters: AggregatePeriod[] = [];
 		const byQuarter = new Map<string, AggregatePeriod[]>();
@@ -1147,6 +1159,7 @@
 						unit={widget.unit}
 						color={widget.color}
 						pinned={widget.pinned}
+						range={widgetRange}
 						onunpin={() => removeThemeWidget(widget.id)}
 					/>
 				{/each}
