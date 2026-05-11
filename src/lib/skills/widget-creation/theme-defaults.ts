@@ -5,9 +5,9 @@ import type { DashboardKind } from '$lib/domain/theme-dashboard-registry';
 // Order in the array becomes sortOrder.
 const HEALTH_DEFAULTS: CreateWidgetInput[] = [
 	{
-		title: 'Vekt',
+		title: 'Vektendring',
 		metricType: 'weight',
-		aggregation: 'latest',
+		aggregation: 'delta',
 		period: 'day',
 		range: 'last30',
 		unit: 'kg',
@@ -50,8 +50,8 @@ const HEALTH_DEFAULTS: CreateWidgetInput[] = [
 		color: '#82c882'
 	},
 	{
-		title: 'Hvilepuls',
-		metricType: 'heartrate',
+		title: 'Hvilepuls (søvn)',
+		metricType: 'sleepHeartRate',
 		aggregation: 'avg',
 		period: 'day',
 		range: 'last7',

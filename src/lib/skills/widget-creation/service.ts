@@ -10,6 +10,7 @@ export const VALID_WIDGET_METRICS = [
 	'distance',
 	'workoutCount',
 	'heartrate',
+	'sleepHeartRate',
 	'mood',
 	'screenTime',
 	'amount'
