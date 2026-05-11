@@ -305,7 +305,8 @@
 			yearly: healthDashboard.yearly as any,
 			sources: healthDashboard.sources ?? [],
 			recentEvents: healthDashboard.recentEvents ?? [],
-			activities: (healthDashboard.activityLayer?.workouts ?? []) as any
+			activities: (healthDashboard.activityLayer?.workouts ?? []) as any,
+			themeId: theme.id
 		};
 	});
 
