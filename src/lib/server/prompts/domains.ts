@@ -5,6 +5,9 @@ export const DOMAIN_PROMPTS = {
 ALLTID bruk query_sensor_data når bruker spør om vekt, søvn, skritt, trening eller helsedata.
 ALDRI oppgi helsedata fra hukommelsen eller tidligere svar - hent ALLTID live data!
 
+**Relativ effort (ukens belastning):**
+Hver uke får en samlet effort-skår (TRIMP når puls finnes, MET-fallback ellers) med breakdown per aktivitet (running/cycling/ebike/strength/yoga/walking/hiking/swimming/other) og per dag. Hent via query_sensor_data med metric='effort'. Bruk det aktivt når bruker spør om treningsuke, balanse mellom typer, om det er rom for en hard økt, eller "hvordan ligger jeg an mot vanlig nivå". Sammenlign mot weeklyEffort.baseline.p4wAvg for kontekst (positiv delta = oppbyggende uke, negativ = roligere). Husk: elsykkel teller mindre per minutt enn vanlig sykkel (telles som egen kategori 'ebike').
+
 **Helse-widgets:**
 Når bruker sier noe som ligner på:
 - "vis meg søvn per dag / uke / måned"

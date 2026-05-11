@@ -3,7 +3,7 @@ import { db } from '$lib/db';
 import { sensorEvents, sensorAggregates } from '$lib/db/schema';
 import { eq, and, gte, lte, desc } from 'drizzle-orm';
 
-type SensorMetric = 'weight' | 'steps' | 'sleep' | 'intense_minutes' | 'heartrate' | 'workouts' | 'relationship' | 'all';
+type SensorMetric = 'weight' | 'steps' | 'sleep' | 'intense_minutes' | 'heartrate' | 'workouts' | 'effort' | 'relationship' | 'all';
 
 function metricToDataType(metric?: SensorMetric): string | null {
 	if (!metric || metric === 'all') return null;
@@ -390,7 +390,7 @@ The tool returns actual data from Withings sensors that the user can trust.`,
 		),
 		period: z.enum(['week', 'month', 'year']).optional().describe('Time period for aggregates'),
 		periodKey: z.string().optional().describe('Specific period (e.g., "2025W43" or "2025-W43", "2025M10" or "2025-10", "2025")'),
-		metric: z.enum(['weight', 'steps', 'sleep', 'intense_minutes', 'heartrate', 'workouts', 'relationship', 'all']).optional().describe('Which metric to focus on'),
+		metric: z.enum(['weight', 'steps', 'sleep', 'intense_minutes', 'heartrate', 'workouts', 'effort', 'relationship', 'all']).optional().describe('Which metric to focus on. "effort" returns weekly relative effort (TRIMP+MET) with byFamily and byDay breakdown.'),
 		limit: z.number().optional().describe('Max number of results (for raw_events or trend)'),
 		startDate: z.string().optional().describe('Start date for raw events (ISO format)'),
 		endDate: z.string().optional().describe('End date for raw events (ISO format)')
@@ -491,6 +491,14 @@ The tool returns actual data from Withings sensors that the user can trust.`,
 					distance: metrics?.distance ? {
 						total: metrics.distance.sum,
 						avg: metrics.distance.avg
+					} : undefined,
+					weeklyEffort: metrics?.weeklyEffort ? {
+						total: metrics.weeklyEffort.total,
+						byFamily: metrics.weeklyEffort.byFamily,
+						byDay: metrics.weeklyEffort.byDay,
+						hrCoveragePct: metrics.weeklyEffort.hrCoveragePct,
+						workoutCount: metrics.weeklyEffort.workoutCount,
+						baseline: metrics.weeklyEffort.baseline
 					} : undefined
 				};
 
@@ -518,7 +526,8 @@ The tool returns actual data from Withings sensors that the user can trust.`,
 							steps: allMetrics.steps,
 							sleep: allMetrics.sleep,
 							intense_minutes: allMetrics.intenseMinutes,
-							heartrate: allMetrics.heartRate
+							heartrate: allMetrics.heartRate,
+							effort: allMetrics.weeklyEffort
 						} as const;
 
 						const selectedMetric = metricMap[metric];
