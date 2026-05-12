@@ -293,6 +293,89 @@
 		return `${fmt.format(start)}–${fmt.format(end)}`;
 	});
 
+	const effortPeriodMode = $derived<'daily' | 'weekly'>(
+		selectedWindow === '7d' || selectedWindow === 'week' ? 'daily' : 'weekly'
+	);
+
+	const effortPeriodRange = $derived.by(() => {
+		if (effortPeriodMode === 'daily') return null;
+		const now = new Date();
+		if (selectedWindow === '30d') {
+			const start = new Date(now);
+			start.setDate(start.getDate() - 30);
+			return { start, end: now, label: 'Siste 30 dager' };
+		}
+		if (selectedWindow === '365d') {
+			const start = new Date(now);
+			start.setDate(start.getDate() - 365);
+			return { start, end: now, label: 'Siste 365 dager' };
+		}
+		if (selectedWindow === 'month') {
+			const start = new Date(now.getFullYear(), now.getMonth(), 1);
+			const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+			const label = new Intl.DateTimeFormat('nb-NO', { month: 'long', year: 'numeric' }).format(now);
+			return { start, end, label };
+		}
+		if (selectedWindow === 'quarter') {
+			const q = Math.floor(now.getMonth() / 3);
+			const start = new Date(now.getFullYear(), q * 3, 1);
+			const end = new Date(now.getFullYear(), q * 3 + 3, 0, 23, 59, 59);
+			return { start, end, label: `Q${q + 1} ${now.getFullYear()}` };
+		}
+		if (selectedWindow === 'year') {
+			const start = new Date(now.getFullYear(), 0, 1);
+			const end = new Date(now.getFullYear(), 11, 31, 23, 59, 59);
+			return { start, end, label: `${now.getFullYear()}` };
+		}
+		return null;
+	});
+
+	const periodEffortAggregate = $derived.by(() => {
+		const range = effortPeriodRange;
+		if (!range) return null;
+		const weeksInRange = weekly.filter((w) => {
+			if (!w.metrics?.weeklyEffort) return false;
+			const wStart = w.startDate ? new Date(w.startDate) : null;
+			const wEnd = w.endDate ? new Date(w.endDate) : null;
+			if (!wStart || !wEnd) return false;
+			return wEnd >= range.start && wStart <= range.end;
+		});
+		if (weeksInRange.length === 0) return null;
+
+		let total = 0;
+		let workoutCount = 0;
+		let trimpWeighted = 0;
+		const byFamily: Partial<Record<EffortFamily, number>> = {};
+		const bars: { label: string; value: number }[] = [];
+
+		for (const w of weeksInRange) {
+			const eff = w.metrics!.weeklyEffort!;
+			total += eff.total ?? 0;
+			workoutCount += eff.workoutCount ?? 0;
+			trimpWeighted += (eff.total ?? 0) * ((eff.hrCoveragePct ?? 0) / 100);
+			for (const [family, value] of Object.entries(eff.byFamily ?? {})) {
+				const v = value ?? 0;
+				byFamily[family as EffortFamily] = (byFamily[family as EffortFamily] ?? 0) + v;
+			}
+			const weekNum = w.periodKey.split('W')[1] ?? '';
+			bars.push({
+				label: weekNum ? `U${parseInt(weekNum, 10)}` : '',
+				value: eff.total ?? 0
+			});
+		}
+
+		const hrCoveragePct = total > 0 ? Math.round((trimpWeighted / total) * 100) : 0;
+
+		return {
+			total: Math.round(total * 10) / 10,
+			byFamily,
+			bars,
+			hrCoveragePct,
+			workoutCount,
+			rangeLabel: range.label
+		};
+	});
+
 	function periodYear(periodKey: string): number {
 		return parseInt(periodKey.split(/[WMQY]/)[0]);
 	}
@@ -1120,7 +1203,7 @@
 		/>
 	</div>
 
-	{#if latestWeeklyEffort}
+	{#if effortPeriodMode === 'daily' && latestWeeklyEffort}
 		<div class="hd-effort">
 			<WeeklyEffortCard
 				total={latestWeeklyEffort.total}
@@ -1130,6 +1213,17 @@
 				workoutCount={latestWeeklyEffort.workoutCount}
 				baseline={latestWeeklyEffort.baseline}
 				weekLabel={latestWeekLabel}
+			/>
+		</div>
+	{:else if effortPeriodMode === 'weekly' && periodEffortAggregate}
+		<div class="hd-effort">
+			<WeeklyEffortCard
+				total={periodEffortAggregate.total}
+				byFamily={periodEffortAggregate.byFamily}
+				bars={periodEffortAggregate.bars}
+				hrCoveragePct={periodEffortAggregate.hrCoveragePct}
+				workoutCount={periodEffortAggregate.workoutCount}
+				weekLabel={periodEffortAggregate.rangeLabel}
 			/>
 		</div>
 	{/if}

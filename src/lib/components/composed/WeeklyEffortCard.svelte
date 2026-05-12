@@ -10,27 +10,44 @@
 		| 'swimming'
 		| 'other';
 
+	interface BarSpec {
+		label: string;
+		value: number;
+	}
+
 	interface Props {
 		total: number;
 		byFamily: Partial<Record<EffortFamily, number>>;
-		byDay: number[];
+		byDay?: number[];
+		bars?: BarSpec[];
 		hrCoveragePct?: number;
 		workoutCount?: number;
 		baseline?: { p4wAvg: number; delta: number };
 		weekLabel?: string;
+		title?: string;
 	}
 
 	let {
 		total,
 		byFamily,
 		byDay,
+		bars,
 		hrCoveragePct = 0,
 		workoutCount = 0,
 		baseline,
-		weekLabel
+		weekLabel,
+		title = 'Relativ effort'
 	}: Props = $props();
 
 	const dayLetters = ['M', 'T', 'O', 'T', 'F', 'L', 'S'];
+
+	const renderedBars = $derived<BarSpec[]>(
+		bars
+			? bars
+			: (byDay ?? []).map((value, i) => ({ label: dayLetters[i] ?? '', value }))
+	);
+
+	const isPeriodMode = $derived(bars !== undefined);
 
 	const familyLabels: Record<EffortFamily, string> = {
 		running: 'Løping',
@@ -57,6 +74,7 @@
 	};
 
 	const statusLabel = $derived.by(() => {
+		if (isPeriodMode) return null;
 		if (!baseline) return 'Ingen sammenligning ennå';
 		const ratio = baseline.p4wAvg > 0 ? total / baseline.p4wAvg : 1;
 		if (ratio >= 1.25) return 'Bygger opp';
@@ -66,6 +84,7 @@
 	});
 
 	const statusHint = $derived.by(() => {
+		if (isPeriodMode) return null;
 		if (!baseline) return 'Trenger et par uker med data for å vise trend.';
 		const ratio = baseline.p4wAvg > 0 ? total / baseline.p4wAvg : 1;
 		if (ratio >= 1.25) return 'Tydelig over 4-ukers snitt — pass på restitusjon.';
@@ -74,7 +93,7 @@
 		return 'Mye lavere enn vanlig — bevisst hvile eller har noe gått tapt?';
 	});
 
-	const maxDay = $derived(Math.max(1, ...byDay));
+	const maxBar = $derived(Math.max(1, ...renderedBars.map((b) => b.value)));
 
 	const families = $derived(
 		(Object.entries(byFamily) as [EffortFamily, number][])
@@ -88,23 +107,28 @@
 <section class="effort-card">
 	<header>
 		<div class="title-row">
-			<span class="title">Relativ effort</span>
+			<span class="title">{title}</span>
 			{#if weekLabel}<span class="week">{weekLabel}</span>{/if}
 		</div>
 		<div class="total-row">
 			<span class="total">{Math.round(total)}</span>
-			<span class="status">{statusLabel}</span>
+			{#if statusLabel}<span class="status">{statusLabel}</span>{/if}
 		</div>
-		<p class="hint">{statusHint}</p>
+		{#if statusHint}<p class="hint">{statusHint}</p>{/if}
 	</header>
 
-	<div class="spark" aria-label="Effort per dag">
-		{#each byDay as value, i}
+	<div
+		class="spark"
+		class:compact={renderedBars.length > 13}
+		style="--bar-count: {Math.max(1, renderedBars.length)}"
+		aria-label={isPeriodMode ? 'Effort per uke' : 'Effort per dag'}
+	>
+		{#each renderedBars as bar}
 			<div class="day">
 				<div class="bar-track">
-					<div class="bar" style="height: {(value / maxDay) * 100}%"></div>
+					<div class="bar" style="height: {(bar.value / maxBar) * 100}%"></div>
 				</div>
-				<span class="day-letter">{dayLetters[i]}</span>
+				<span class="day-letter">{bar.label}</span>
 			</div>
 		{/each}
 	</div>
@@ -210,9 +234,17 @@
 
 	.spark {
 		display: grid;
-		grid-template-columns: repeat(7, 1fr);
+		grid-template-columns: repeat(var(--bar-count, 7), 1fr);
 		gap: 0.4rem;
 		height: 64px;
+	}
+
+	.spark.compact {
+		gap: 0.15rem;
+	}
+
+	.spark.compact .day-letter {
+		font-size: 0.55rem;
 	}
 
 	.day {
