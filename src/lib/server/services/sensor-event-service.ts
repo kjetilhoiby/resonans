@@ -144,7 +144,7 @@ export class SensorEventService {
 			}
 		}
 
-		const rows = inputs.map((input) => ({
+		const toRow = (input: WriteSensorEventInput) => ({
 			userId: input.userId,
 			sensorId: input.sensorId,
 			eventType: input.eventType,
@@ -156,7 +156,28 @@ export class SensorEventService {
 				source: input.source,
 				dedupeKey: input.dedupeKey ?? null
 			}
-		}));
+		});
+		// Postgres rejects multi-row ON CONFLICT DO UPDATE when two rows share the same
+		// conflict target. The partial unique index is (sensor_id, data_type, timestamp)
+		// WHERE data_type NOT IN bank-types, so in upsert mode collapse non-bank inputs
+		// by that key (last write wins) and pass bank rows through untouched.
+		let rows: ReturnType<typeof toRow>[];
+		let dedupedDropped = 0;
+		if (conflictMode === 'upsert_sensor_datatype_timestamp') {
+			const dedupedByKey = new Map<string, ReturnType<typeof toRow>>();
+			const passthrough: ReturnType<typeof toRow>[] = [];
+			for (const input of inputs) {
+				if (input.dataType === 'bank_balance' || input.dataType === 'bank_transaction') {
+					passthrough.push(toRow(input));
+				} else {
+					dedupedByKey.set(eventKey(input.sensorId, input.dataType, input.timestamp), toRow(input));
+				}
+			}
+			rows = [...dedupedByKey.values(), ...passthrough];
+			dedupedDropped = inputs.length - rows.length;
+		} else {
+			rows = inputs.map(toRow);
+		}
 
 		const t0 = performance.now();
 		let events: Array<typeof sensorEvents.$inferSelect> = [];
@@ -212,7 +233,7 @@ export class SensorEventService {
 		}
 
 		console.log(
-			`[sensor-event-service] writeMany size=${inputs.length} mode=${conflictMode} inserted=${insertedCount} upserted=${upsertedCount} ignored=${ignoredCount} keyCount=${inputKeys.size} workouts=${workoutEvents.length} enqueue=${enqueuedProjectionRefresh ? 1 : 0} durationMs=${(performance.now() - t0).toFixed(0)}`
+			`[sensor-event-service] writeMany size=${inputs.length} mode=${conflictMode} inserted=${insertedCount} upserted=${upsertedCount} ignored=${ignoredCount} dedupedDropped=${dedupedDropped} keyCount=${inputKeys.size} workouts=${workoutEvents.length} enqueue=${enqueuedProjectionRefresh ? 1 : 0} durationMs=${(performance.now() - t0).toFixed(0)}`
 		);
 
 		return events.map((event) => ({
