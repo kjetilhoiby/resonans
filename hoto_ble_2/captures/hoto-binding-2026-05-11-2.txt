@@ -1,0 +1,323 @@
+May 11 19:38:51.133  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -52 dBm - Channel 37  
+May 11 19:38:51.133  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -52 dBm - HOTO-dced83842e9d - Channel 37  
+May 11 19:38:51.133  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Low Power - Public - DC:ED:83:84:2E:9D  -66 dBm - Channel 39  
+May 11 19:38:51.734  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -52 dBm - Channel 37  
+May 11 19:38:51.737  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -52 dBm - HOTO-dced83842e9d - Channel 37  
+May 11 19:38:51.737  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Low Power - Public - DC:ED:83:84:2E:9D  -65 dBm - Channel 39  
+May 11 19:38:52.655  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Low Power - Public - DC:ED:83:84:2E:9D  -54 dBm - Channel 38  
+May 11 19:38:52.956  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -55 dBm - Channel 37  
+May 11 19:38:52.956  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -54 dBm - HOTO-dced83842e9d - Channel 37  
+May 11 19:38:53.264  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -56 dBm - Channel 37  
+May 11 19:38:53.264  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -56 dBm - HOTO-dced83842e9d - Channel 37  
+May 11 19:38:53.564  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -55 dBm - Channel 38  
+May 11 19:38:53.566  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -55 dBm - HOTO-dced83842e9d - Channel 38  
+May 11 19:38:56.706  HCI Command      0x0000  DC:ED:83:84:2E:9D  LE Add Device To Filter Accept List - Public - DC:ED:83:84:2E:9D  
+May 11 19:38:56.931  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -52 dBm - Channel 39  
+May 11 19:38:56.933  HCI Event        0x0043  DC:ED:83:84:2E:9D  LE - Enhanced Connection Complete - Central - Public - DC:ED:83:84:2E:9D local - 00:00:00:00:00:00 peer - 00:00:00:00:00:00 - Conn Interval: 30 ms  
+May 11 19:38:56.934  HCI Command      0x0000  DC:ED:83:84:2E:9D  LE Remove Device From Filter Accept List - Public - DC:ED:83:84:2E:9D  
+May 11 19:38:56.944  HCI Command      0x0043  DC:ED:83:84:2E:9D  Read Remote Version Information - Connection Handle: 0x0043  
+May 11 19:38:56.980  HCI Event        0x0043  DC:ED:83:84:2E:9D  Read Remote Version Information Complete  
+May 11 19:38:56.980  HCI Command      0x0043  DC:ED:83:84:2E:9D  LE Read Remote Used Features - Connection Handle: 0x0043  
+May 11 19:38:56.985  HCI Event        0x0043  DC:ED:83:84:2E:9D  LE - Read Remote Used Features Complete - DPLE Supported  
+May 11 19:38:57.612  HCI Event        0x0043  DC:ED:83:84:2E:9D  LE - PHY Update Complete  
+May 11 19:38:57.672  HCI Event        0x0043  DC:ED:83:84:2E:9D  LE - Data Length Change  
+May 11 19:38:57.675  ATT Send         0x0043  DC:ED:83:84:2E:9D  Exchange MTU Request - MTU: 527  
+May 11 19:38:57.732  ATT Receive      0x0043  DC:ED:83:84:2E:9D  Exchange MTU Response - MTU: 247  
+May 11 19:38:57.732  ATT Send         0x0043  DC:ED:83:84:2E:9D  Read By Group Type Request - Start Handle: 0x0001 - End Handle: 0xFFFF - UUID: GATT Primary Service Declaration  
+May 11 19:38:57.792  ATT Receive      0x0043  DC:ED:83:84:2E:9D  Read By Group Type Response  
+May 11 19:38:57.792  ATT Send         0x0043  DC:ED:83:84:2E:9D  Read By Group Type Request - Start Handle: 0x001D - End Handle: 0xFFFF - UUID: GATT Primary Service Declaration  
+May 11 19:38:57.796  HCI Event        0x0043  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x0043 - Packets: 0x0001    
+May 11 19:38:57.852  ATT Receive      0x0043  DC:ED:83:84:2E:9D  Read By Group Type Response  
+May 11 19:38:57.853  ATT Send         0x0043  DC:ED:83:84:2E:9D  Read By Type Request - Start Handle: 0x0001 - End Handle: 0x0004 - UUID: GATT Characteristic Declaration  
+May 11 19:38:57.856  HCI Event        0x0043  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x0043 - Packets: 0x0001    
+May 11 19:38:57.912  ATT Receive      0x0043  DC:ED:83:84:2E:9D  Read By Type Response  
+May 11 19:38:57.912  ATT Send         0x0043  DC:ED:83:84:2E:9D  Find Information Request - Handle: 0x0004 - Service Changed  
+May 11 19:38:57.916  HCI Event        0x0043  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x0043 - Packets: 0x0001    
+May 11 19:38:57.973  ATT Receive      0x0043  DC:ED:83:84:2E:9D  Find Information Response  
+May 11 19:38:57.973  ATT Send         0x0043  DC:ED:83:84:2E:9D  Write Request - Handle: 0x0004 - Service Changed - Configuration - Indication  
+May 11 19:38:57.976  HCI Event        0x0043  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x0043 - Packets: 0x0001    
+May 11 19:38:58.032  ATT Receive      0x0043  DC:ED:83:84:2E:9D  Write Response  
+May 11 19:38:58.038  HCI Event        0x0043  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x0043 - Packets: 0x0001    
+May 11 19:38:58.041  ATT Send         0x0043  DC:ED:83:84:2E:9D  Read By Type Request - Start Handle: 0x000E - End Handle: 0x001C - UUID: GATT Characteristic Declaration  
+May 11 19:38:58.080  HCI Event        0x0043  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x0043 - Packets: 0x0001    
+May 11 19:38:58.093  ATT Receive      0x0043  DC:ED:83:84:2E:9D  Read By Type Response  
+May 11 19:38:58.100  ATT Send         0x0043  DC:ED:83:84:2E:9D  Find Information Request - Handle: 0x0016 - 0019  
+May 11 19:38:58.147  HCI Event        0x0043  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x0043 - Packets: 0x0001    
+May 11 19:38:58.154  ATT Receive      0x0043  DC:ED:83:84:2E:9D  Find Information Response  
+May 11 19:38:58.154  ATT Send         0x0043  DC:ED:83:84:2E:9D  Write Request - Handle: 0x0016 - 0019 - Configuration - Notification  
+May 11 19:38:58.212  ATT Receive      0x0043  DC:ED:83:84:2E:9D  Write Response  
+May 11 19:38:58.214  ATT Send         0x0043  DC:ED:83:84:2E:9D  Find Information Request - Handle: 0x0013 - 0010  
+May 11 19:38:58.218  HCI Event        0x0043  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x0043 - Packets: 0x0001    
+May 11 19:38:58.272  ATT Receive      0x0043  DC:ED:83:84:2E:9D  Find Information Response  
+May 11 19:38:58.272  ATT Send         0x0043  DC:ED:83:84:2E:9D  Write Request - Handle: 0x0013 - 0010 - Configuration - Notification  
+May 11 19:38:58.275  HCI Event        0x0043  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x0043 - Packets: 0x0001    
+May 11 19:38:58.294  HCI Event        0x0043  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x0043 - Packets: 0x0001    
+May 11 19:38:58.333  ATT Receive      0x0043  DC:ED:83:84:2E:9D  Write Response  
+May 11 19:38:58.337  ATT Send         0x0043  DC:ED:83:84:2E:9D  Write Command - Handle:0x0012 - 0010 - Value: A200 0000  
+May 11 19:38:58.415  HCI Event        0x0043  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x0043 - Packets: 0x0001    
+May 11 19:38:58.415  HCI Event        0x0043  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x0043 - Packets: 0x0001    
+May 11 19:38:59.772  ATT Send         0x0043  DC:ED:83:84:2E:9D  Read By Type Request - Start Handle: 0x0005 - End Handle: 0x000D - UUID: Device Name  
+May 11 19:38:59.899  HCI Event        0x0043  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x0043 - Packets: 0x0001    
+May 11 19:39:00.192  ATT Receive      0x0043  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0015 - 0019 - Value: 0000 0000 0200  
+May 11 19:39:00.221  ATT Receive      0x0043  DC:ED:83:84:2E:9D  Read By Type Response  
+May 11 19:39:00.221  ATT Send         0x0043  DC:ED:83:84:2E:9D  Write Command - Handle:0x0015 - 0019 - Value: 0000 0101  
+May 11 19:39:00.282  ATT Receive      0x0043  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0015 - 0019 - Value: 0100 0100 0000 0062 6C74 2E34 2E31 6833…  
+May 11 19:39:00.284  ATT Receive      0x0043  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0015 - 0019 - Value: 0200 7030 6767 3030  
+May 11 19:39:00.286  ATT Send         0x0043  DC:ED:83:84:2E:9D  Write Command - Handle:0x0015 - 0019 - Value: 0000 0100  
+May 11 19:39:00.287  ATT Send         0x0043  DC:ED:83:84:2E:9D  Write Command - Handle:0x0012 - 0010 - Value: 1500 0000  
+May 11 19:39:00.287  ATT Send         0x0043  DC:ED:83:84:2E:9D  Write Command - Handle:0x0015 - 0019 - Value: 0000 0003 0400  
+May 11 19:39:00.315  HCI Event        0x0043  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x0043 - Packets: 0x0001    
+May 11 19:39:00.315  HCI Event        0x0043  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x0043 - Packets: 0x0002    
+May 11 19:39:00.342  ATT Receive      0x0043  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0015 - 0019 - Value: 0000 0101  
+May 11 19:39:00.343  ATT Send         0x0043  DC:ED:83:84:2E:9D  Write Command - Handle:0x0015 - 0019 - Value: 0100 826E 9052 EB7F 16E2 DA4E 833A 2EEE…  
+May 11 19:39:00.344  ATT Send         0x0043  DC:ED:83:84:2E:9D  Write Command - Handle:0x0015 - 0019 - Value: 0200 E622 D9D7 30AF D2A0 49D0 B297 DE5A…  
+May 11 19:39:00.344  ATT Send         0x0043  DC:ED:83:84:2E:9D  Write Command - Handle:0x0015 - 0019 - Value: 0300 C2CA 6AEA C76D 9083 35EB DE8A F7E7…  
+May 11 19:39:00.344  ATT Send         0x0043  DC:ED:83:84:2E:9D  Write Command - Handle:0x0015 - 0019 - Value: 0400 874B CBE8 9200 006D A3AB  
+May 11 19:39:00.375  HCI Event        0x0043  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x0043 - Packets: 0x0001    
+May 11 19:39:00.375  HCI Event        0x0043  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x0043 - Packets: 0x0002    
+May 11 19:39:00.404  ATT Receive      0x0043  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0015 - 0019 - Value: 0000 0100  
+May 11 19:39:00.526  HCI Event        0x0043  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x0043 - Packets: 0x0002    
+May 11 19:39:00.735  ATT Receive      0x0043  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0015 - 0019 - Value: 0000 0003 0400  
+May 11 19:39:00.738  ATT Send         0x0043  DC:ED:83:84:2E:9D  Write Command - Handle:0x0015 - 0019 - Value: 0000 0101  
+May 11 19:39:00.793  ATT Receive      0x0043  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0015 - 0019 - Value: 0100 BFEA 2B97 97D6 094C E1C5 C21A BE53…  
+May 11 19:39:00.793  ATT Receive      0x0043  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0015 - 0019 - Value: 0200 7EB6 A644 F8C6 7F3B 4571 D9BC 1F6D…  
+May 11 19:39:00.795  ATT Receive      0x0043  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0015 - 0019 - Value: 0300 733A 84C8 03EC 857D AD17 F016 F5F0…  
+May 11 19:39:00.795  ATT Receive      0x0043  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0015 - 0019 - Value: 0400 608C D899 9C05 6969 57E5  
+May 11 19:39:00.797  ATT Send         0x0043  DC:ED:83:84:2E:9D  Write Command - Handle:0x0015 - 0019 - Value: 0000 0100  
+May 11 19:39:00.823  ATT Send         0x0043  DC:ED:83:84:2E:9D  Write Request - Handle: 0x0016 - 0019 - Configuration - Notification  
+May 11 19:39:00.828  HCI Event        0x0043  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x0043 - Packets: 0x0001    
+May 11 19:39:00.883  ATT Receive      0x0043  DC:ED:83:84:2E:9D  Write Response  
+May 11 19:39:00.884  ATT Send         0x0043  DC:ED:83:84:2E:9D  Write Request - Handle: 0x0013 - 0010 - Configuration - Notification  
+May 11 19:39:00.888  HCI Event        0x0043  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x0043 - Packets: 0x0002    
+May 11 19:39:00.972  ATT Receive      0x0043  DC:ED:83:84:2E:9D  Write Response  
+May 11 19:39:00.985  HCI Event        0x0043  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x0043 - Packets: 0x0001    
+May 11 19:39:01.037  ATT Send         0x0043  DC:ED:83:84:2E:9D  Write Command - Handle:0x0015 - 0019 - Value: 0000 0000 0200  
+May 11 19:39:01.091  ATT Receive      0x0043  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0015 - 0019 - Value: 0000 0101  
+May 11 19:39:01.092  ATT Send         0x0043  DC:ED:83:84:2E:9D  Write Command - Handle:0x0015 - 0019 - Value: 0100 64BB A61E BE43 70D3 3A02 C038 68AD…  
+May 11 19:39:01.093  ATT Send         0x0043  DC:ED:83:84:2E:9D  Write Command - Handle:0x0015 - 0019 - Value: 0200 01E4 1CDE 89BC  
+May 11 19:39:01.125  HCI Event        0x0043  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x0043 - Packets: 0x0001    
+May 11 19:39:01.125  HCI Event        0x0043  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x0043 - Packets: 0x0002    
+May 11 19:39:01.151  ATT Receive      0x0043  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0015 - 0019 - Value: 0000 0100  
+May 11 19:39:01.477  ATT Send         0x0043  DC:ED:83:84:2E:9D  Write Command - Handle:0x0012 - 0010 - Value: 1300 0000  
+May 11 19:39:01.511  ATT Receive      0x0043  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0012 - 0010 - Value: 1100 0000  
+May 11 19:39:01.513  ATT Send         0x0043  DC:ED:83:84:2E:9D  Read Request - Handle:0x0010 - 0004  
+May 11 19:39:01.571  ATT Receive      0x0043  DC:ED:83:84:2E:9D  Read Response - 0004 - Value: 312E 312E 335F 3030 3130 0000 0000 0000…  
+May 11 19:39:01.583  HCI Command      0x0043  DC:ED:83:84:2E:9D  Disconnect - Connection Handle: 0x0043 - Reason: Remote User Terminated Connection  
+May 11 19:39:01.586  HCI Event        0x0043  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x0043 - Packets: 0x0001    
+May 11 19:39:01.602  HCI Event        0x0043  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x0043 - Packets: 0x0001    
+May 11 19:39:01.602  HCI Event        0x0043  DC:ED:83:84:2E:9D  Disconnection Complete - Success  
+May 11 19:39:04.945  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -46 dBm - Channel 37  
+May 11 19:39:04.945  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -46 dBm - HOTO-dced83842e9d - Channel 37  
+May 11 19:39:05.553  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -46 dBm - Channel 39  
+May 11 19:39:05.556  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -46 dBm - HOTO-dced83842e9d - Channel 39  
+May 11 19:39:06.471  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -56 dBm - Channel 39  
+May 11 19:39:06.473  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -56 dBm - HOTO-dced83842e9d - Channel 39  
+May 11 19:39:06.782  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -57 dBm - Channel 39  
+May 11 19:39:06.782  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -57 dBm - HOTO-dced83842e9d - Channel 39  
+May 11 19:39:07.993  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -58 dBm - Channel 38  
+May 11 19:39:07.994  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -57 dBm - HOTO-dced83842e9d - Channel 38  
+May 11 19:39:08.304  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -51 dBm - Channel 38  
+May 11 19:39:08.304  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -51 dBm - HOTO-dced83842e9d - Channel 38  
+May 11 19:39:09.210  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -56 dBm - Channel 37  
+May 11 19:39:09.210  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -56 dBm - HOTO-dced83842e9d - Channel 37  
+May 11 19:39:09.515  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -61 dBm - Channel 39  
+May 11 19:39:09.515  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -61 dBm - HOTO-dced83842e9d - Channel 39  
+May 11 19:39:10.728  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -53 dBm - Channel 37  
+May 11 19:39:10.728  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -54 dBm - HOTO-dced83842e9d - Channel 37  
+May 11 19:39:11.952  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -54 dBm - Channel 37  
+May 11 19:39:11.952  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -54 dBm - HOTO-dced83842e9d - Channel 37  
+May 11 19:39:12.255  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -58 dBm - Channel 37  
+May 11 19:39:12.255  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -58 dBm - HOTO-dced83842e9d - Channel 37  
+May 11 19:39:12.561  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -57 dBm - Channel 37  
+May 11 19:39:12.563  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -57 dBm - HOTO-dced83842e9d - Channel 37  
+May 11 19:39:12.870  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -63 dBm - Channel 39  
+May 11 19:39:12.872  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -62 dBm - HOTO-dced83842e9d - Channel 39  
+May 11 19:39:14.392  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -62 dBm - Channel 38  
+May 11 19:39:14.392  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -62 dBm - HOTO-dced83842e9d - Channel 38  
+May 11 19:39:14.700  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -61 dBm - Channel 38  
+May 11 19:39:14.702  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -61 dBm - HOTO-dced83842e9d - Channel 38  
+May 11 19:39:15.304  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -56 dBm - Channel 37  
+May 11 19:39:15.305  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -56 dBm - HOTO-dced83842e9d - Channel 37  
+May 11 19:39:15.307  HCI Command      0x0000  DC:ED:83:84:2E:9D  LE Add Device To Filter Accept List - Public - DC:ED:83:84:2E:9D  
+May 11 19:39:15.910  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Low Power - Public - DC:ED:83:84:2E:9D  -61 dBm - Channel 38  
+May 11 19:39:16.212  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -60 dBm - Channel 38  
+May 11 19:39:16.212  HCI Event        0x004C  DC:ED:83:84:2E:9D  LE - Enhanced Connection Complete - Central - Public - DC:ED:83:84:2E:9D local - 00:00:00:00:00:00 peer - 00:00:00:00:00:00 - Conn Interval: 30 ms  
+May 11 19:39:16.215  HCI Command      0x0000  DC:ED:83:84:2E:9D  LE Remove Device From Filter Accept List - Public - DC:ED:83:84:2E:9D  
+May 11 19:39:16.222  HCI Command      0x004C  DC:ED:83:84:2E:9D  Read Remote Version Information - Connection Handle: 0x004C  
+May 11 19:39:16.267  HCI Event        0x004C  DC:ED:83:84:2E:9D  Read Remote Version Information Complete  
+May 11 19:39:16.268  HCI Command      0x004C  DC:ED:83:84:2E:9D  LE Read Remote Used Features - Connection Handle: 0x004C  
+May 11 19:39:16.271  HCI Event        0x004C  DC:ED:83:84:2E:9D  LE - Read Remote Used Features Complete - DPLE Supported  
+May 11 19:39:16.872  HCI Event        0x004C  DC:ED:83:84:2E:9D  LE - PHY Update Complete  
+May 11 19:39:16.931  HCI Event        0x004C  DC:ED:83:84:2E:9D  LE - Data Length Change  
+May 11 19:39:16.935  ATT Send         0x004C  DC:ED:83:84:2E:9D  Exchange MTU Request - MTU: 527  
+May 11 19:39:16.992  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Exchange MTU Response - MTU: 247  
+May 11 19:39:16.992  ATT Send         0x004C  DC:ED:83:84:2E:9D  Read By Group Type Request - Start Handle: 0x0001 - End Handle: 0xFFFF - UUID: GATT Primary Service Declaration  
+May 11 19:39:17.051  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Read By Group Type Response  
+May 11 19:39:17.051  ATT Send         0x004C  DC:ED:83:84:2E:9D  Read By Group Type Request - Start Handle: 0x001D - End Handle: 0xFFFF - UUID: GATT Primary Service Declaration  
+May 11 19:39:17.054  HCI Event        0x004C  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x004C - Packets: 0x0001    
+May 11 19:39:17.111  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Read By Group Type Response  
+May 11 19:39:17.111  ATT Send         0x004C  DC:ED:83:84:2E:9D  Read By Type Request - Start Handle: 0x0001 - End Handle: 0x0004 - UUID: GATT Characteristic Declaration  
+May 11 19:39:17.114  HCI Event        0x004C  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x004C - Packets: 0x0001    
+May 11 19:39:17.156  HCI Event        0x004C  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x004C - Packets: 0x0001    
+May 11 19:39:17.172  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Read By Type Response  
+May 11 19:39:17.173  ATT Send         0x004C  DC:ED:83:84:2E:9D  Find Information Request - Handle: 0x0004 - Service Changed  
+May 11 19:39:17.232  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Find Information Response  
+May 11 19:39:17.232  ATT Send         0x004C  DC:ED:83:84:2E:9D  Write Request - Handle: 0x0004 - Service Changed - Configuration - Indication  
+May 11 19:39:17.234  HCI Event        0x004C  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x004C - Packets: 0x0001    
+May 11 19:39:17.253  HCI Event        0x004C  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x004C - Packets: 0x0001    
+May 11 19:39:17.293  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Write Response  
+May 11 19:39:17.297  ATT Send         0x004C  DC:ED:83:84:2E:9D  Read By Type Request - Start Handle: 0x000E - End Handle: 0x001C - UUID: GATT Characteristic Declaration  
+May 11 19:39:17.335  HCI Event        0x004C  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x004C - Packets: 0x0001    
+May 11 19:39:17.352  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Read By Type Response  
+May 11 19:39:17.354  ATT Send         0x004C  DC:ED:83:84:2E:9D  Find Information Request - Handle: 0x0016 - 0019  
+May 11 19:39:17.374  HCI Event        0x004C  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x004C - Packets: 0x0001    
+May 11 19:39:17.412  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Find Information Response  
+May 11 19:39:17.412  ATT Send         0x004C  DC:ED:83:84:2E:9D  Write Request - Handle: 0x0016 - 0019 - Configuration - Notification  
+May 11 19:39:17.436  HCI Event        0x004C  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x004C - Packets: 0x0001    
+May 11 19:39:17.472  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Write Response  
+May 11 19:39:17.474  ATT Send         0x004C  DC:ED:83:84:2E:9D  Find Information Request - Handle: 0x0013 - 0010  
+May 11 19:39:17.517  HCI Event        0x004C  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x004C - Packets: 0x0001    
+May 11 19:39:17.532  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Find Information Response  
+May 11 19:39:17.532  ATT Send         0x004C  DC:ED:83:84:2E:9D  Write Request - Handle: 0x0013 - 0010 - Configuration - Notification  
+May 11 19:39:17.568  HCI Event        0x004C  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x004C - Packets: 0x0001    
+May 11 19:39:17.592  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Write Response  
+May 11 19:39:17.594  ATT Send         0x004C  DC:ED:83:84:2E:9D  Read Request - Handle:0x0010 - 0004  
+May 11 19:39:17.626  HCI Event        0x004C  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x004C - Packets: 0x0001    
+May 11 19:39:17.673  HCI Event        0x004C  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x004C - Packets: 0x0001    
+May 11 19:39:19.452  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Read Response - 0004 - Value: 312E 312E 335F 3030 3130 0000 0000 0000…  
+May 11 19:39:19.453  ATT Send         0x004C  DC:ED:83:84:2E:9D  Read By Type Request - Start Handle: 0x0005 - End Handle: 0x000D - UUID: Device Name  
+May 11 19:39:19.512  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Read By Type Response  
+May 11 19:39:19.512  ATT Send         0x004C  DC:ED:83:84:2E:9D  Write Command - Handle:0x0012 - 0010 - Value: 2400 0000  
+May 11 19:39:19.513  ATT Send         0x004C  DC:ED:83:84:2E:9D  Write Command - Handle:0x0015 - 0019 - Value: 0000 000B 0100  
+May 11 19:39:19.544  HCI Event        0x004C  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x004C - Packets: 0x0001    
+May 11 19:39:19.544  HCI Event        0x004C  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x004C - Packets: 0x0002    
+May 11 19:39:19.574  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0015 - 0019 - Value: 0000 0101  
+May 11 19:39:19.576  ATT Send         0x004C  DC:ED:83:84:2E:9D  Write Command - Handle:0x0015 - 0019 - Value: 0100 3A23 08D8 309D 4B1E 9091 E730 4F06…  
+May 11 19:39:19.664  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0015 - 0019 - Value: 0000 0100  
+May 11 19:39:19.664  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0015 - 0019 - Value: 0000 000D 0100  
+May 11 19:39:19.669  ATT Send         0x004C  DC:ED:83:84:2E:9D  Write Command - Handle:0x0015 - 0019 - Value: 0000 0101  
+May 11 19:39:19.671  HCI Event        0x004C  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x004C - Packets: 0x0001    
+May 11 19:39:19.724  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0015 - 0019 - Value: 0100 22B5 320E 098C BD3E EDB2 D948 F6FE…  
+May 11 19:39:19.726  ATT Send         0x004C  DC:ED:83:84:2E:9D  Write Command - Handle:0x0015 - 0019 - Value: 0000 0100  
+May 11 19:39:19.750  HCI Event        0x004C  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x004C - Packets: 0x0001    
+May 11 19:39:19.784  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0015 - 0019 - Value: 0000 000C 0200  
+May 11 19:39:19.786  ATT Send         0x004C  DC:ED:83:84:2E:9D  Write Command - Handle:0x0015 - 0019 - Value: 0000 0101  
+May 11 19:39:19.842  HCI Event        0x004C  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x004C - Packets: 0x0001    
+May 11 19:39:19.844  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0015 - 0019 - Value: 0100 9CE7 CEF0 8C48 0FC3 AE15 C457 2EB3…  
+May 11 19:39:19.844  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0015 - 0019 - Value: 0200 05DD B303 3673 11F9 634B ED53 E86C  
+May 11 19:39:19.848  ATT Send         0x004C  DC:ED:83:84:2E:9D  Write Command - Handle:0x0015 - 0019 - Value: 0000 0100  
+May 11 19:39:19.851  ATT Send         0x004C  DC:ED:83:84:2E:9D  Write Command - Handle:0x0015 - 0019 - Value: 0000 000A 0200  
+May 11 19:39:19.875  HCI Event        0x004C  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x004C - Packets: 0x0001    
+May 11 19:39:19.875  HCI Event        0x004C  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x004C - Packets: 0x0002    
+May 11 19:39:19.903  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0015 - 0019 - Value: 0000 0101  
+May 11 19:39:19.911  ATT Send         0x004C  DC:ED:83:84:2E:9D  Write Command - Handle:0x0015 - 0019 - Value: 0100 55FF C223 D467 EA6D 5A2F A6F6 9DD8…  
+May 11 19:39:19.912  ATT Send         0x004C  DC:ED:83:84:2E:9D  Write Command - Handle:0x0015 - 0019 - Value: 0200 1C31 18FB 691C 8ABA CFB1 733B 6FAE  
+May 11 19:39:19.941  HCI Event        0x004C  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x004C - Packets: 0x0002    
+May 11 19:39:19.964  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0015 - 0019 - Value: 0000 0100  
+May 11 19:39:19.964  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0012 - 0010 - Value: 2100 0000  
+May 11 19:39:20.004  ATT Send         0x004C  DC:ED:83:84:2E:9D  Read By Type Request - Start Handle: 0x001D - End Handle: 0xFFFF - UUID: GATT Characteristic Declaration  
+May 11 19:39:20.052  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Read By Type Response  
+May 11 19:39:20.052  ATT Send         0x004C  DC:ED:83:84:2E:9D  Read By Type Request - Start Handle: 0x0022 - End Handle: 0xFFFF - UUID: GATT Characteristic Declaration  
+May 11 19:39:20.074  HCI Event        0x004C  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x004C - Packets: 0x0001    
+May 11 19:39:20.111  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Error Response - Attribute Handle: 0x0022 - Error Code: Attribute Not Found (0x0A)  
+May 11 19:39:20.112  ATT Send         0x004C  DC:ED:83:84:2E:9D  Read Request - Handle:0x0010 - 0004  
+May 11 19:39:20.134  HCI Event        0x004C  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x004C - Packets: 0x0001    
+May 11 19:39:20.173  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Read Response - 0004 - Value: 312E 312E 335F 3030 3130 0000 0000 0000…  
+May 11 19:39:20.174  ATT Send         0x004C  DC:ED:83:84:2E:9D  Read Request - Handle:0x0010 - 0004  
+May 11 19:39:20.200  HCI Event        0x004C  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x004C - Packets: 0x0001    
+May 11 19:39:20.233  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Read Response - 0004 - Value: 312E 312E 335F 3030 3130 0000 0000 0000…  
+May 11 19:39:20.233  ATT Send         0x004C  DC:ED:83:84:2E:9D  Find Information Request - Start Handle: 0x0022 - End Handle: 0xFFFF  
+May 11 19:39:20.259  HCI Event        0x004C  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x004C - Packets: 0x0001    
+May 11 19:39:20.292  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Find Information Response  
+May 11 19:39:20.292  ATT Send         0x004C  DC:ED:83:84:2E:9D  Find Information Request - Start Handle: 0x0023 - End Handle: 0xFFFF  
+May 11 19:39:20.324  HCI Event        0x004C  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x004C - Packets: 0x0001    
+May 11 19:39:20.352  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Error Response - Attribute Handle: 0x0023 - Error Code: Attribute Not Found (0x0A)  
+May 11 19:39:20.352  ATT Send         0x004C  DC:ED:83:84:2E:9D  Write Request - Handle: 0x0022 - 00000102-0065-6C62-2E74-6F696D2E696D - Configuration - Notification  
+May 11 19:39:20.380  HCI Event        0x004C  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x004C - Packets: 0x0001    
+May 11 19:39:20.412  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Write Response  
+May 11 19:39:20.444  HCI Event        0x004C  DC:ED:83:84:2E:9D  Number Of Completed Packets - Handle: 0x004C - Packets: 0x0001    
+May 11 19:39:21.401  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 0100 A240 28CD ED76 ABAA F315 07  
+May 11 19:39:21.792  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 0200 682E 3ABA AA70 833F 5E1A 0F  
+May 11 19:39:22.934  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 0300 92E8 4070 9363 72FD 6232 C6  
+May 11 19:39:23.891  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 0400 D857 C785 A911 CCB7 EE24 33  
+May 11 19:39:24.553  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 0500 70C1 221F F8EE 5293 5766 2FE1 7574  
+May 11 19:39:24.555  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 0600 A01A 532D 1951 5725 8D23 BE0B 9C54  
+May 11 19:39:24.642  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 0700 306A E087 94C5 1150 9A79 E3FE BAAB  
+May 11 19:39:24.642  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 0800 0F62 4F2A F0EF EB19 333D 9C78 3ECB  
+May 11 19:39:24.762  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 0900 3A25 305E 30EA D2D4 374E D225 9C2E  
+May 11 19:39:24.762  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 0A00 02F3 DC75 931E D38B 93F1 E613 7D1F  
+May 11 19:39:24.852  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 0B00 3D7E 59B6 C15D 1037 69DF D014 72C4  
+May 11 19:39:24.854  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 0C00 BD12 EC79 2266 1FCB DDCD 6F3B B299  
+May 11 19:39:24.942  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 0D00 8519 B16D ABEA E76F 11F4 28  
+May 11 19:39:25.003  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 0E00 66D3 651E A650 7539 BC12 2D5B FA6E  
+May 11 19:39:25.003  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 0F00 DFEC EA07 645E B8BB 4A04 EA63 D386  
+May 11 19:39:25.903  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 1000 F6B9 872E 56A3 5DB2 C7B9 2F1F 9B26  
+May 11 19:39:25.903  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 1100 F271 D544 A40F 4C3E F84D 5EDF CCED  
+May 11 19:39:26.082  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 1200 1196 B065 A2B5 BFB0 0FBC 5A  
+May 11 19:39:27.222  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 1300 C112 4155 F25B 2DF8 CD2D A5  
+May 11 19:39:27.522  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 1400 0CB4 A3AA 5A1D 6ADC 73C6 7E9A 03C1  
+May 11 19:39:27.524  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 1500 CB67 DD2B 2DEB 46A7 6B16 3E80 0E6A  
+May 11 19:39:27.612  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 1600 77E5 3751 143C 6098 FF96 02C9 FA04  
+May 11 19:39:27.612  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 1700 7189 FD4C D58F 6BA3 50D9 542F F25B  
+May 11 19:39:27.702  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 1800 97E1 E27A 8B0A 6503 D36C 34BF CB80  
+May 11 19:39:27.702  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 1900 8648 1937 BEC0 C801 ACF2 8D60 8D6A  
+May 11 19:39:27.792  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 1A00 FC11 7159 AE01 E79C 827F 2206 5F60  
+May 11 19:39:27.792  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 1B00 3886 18E1 33F5 ABA8 744B 8A41 8553  
+May 11 19:39:28.092  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 1C00 A080 E35C FBAF DC8D 022A 1C31 8103  
+May 11 19:39:28.092  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 1D00 F6B0 11A1 7B43 9CA7 D130 1020 001D  
+May 11 19:39:28.182  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 1E00 8BF7 E92A 1597 811A A8E3 6A  
+May 11 19:39:28.212  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 1F00 5888 D75A 3692 5958 F4E6 A106 2EA9  
+May 11 19:39:28.212  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 2000 6296 7E6F AD8A 98E5 3C84 81A4 C3C2  
+May 11 19:39:28.272  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 2100 5CF1 8E20 1B61 4E24 7865 A88A 9B07  
+May 11 19:39:28.272  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 2200 717F 8B60 5821 8DAD AA9A 58CD 60E4  
+May 11 19:39:28.362  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 2300 706F 2E00 C8CC 0A30 7D88 5362 1430  
+May 11 19:39:28.363  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 2400 1CBE 4082 E38F D50D 31D2 7FBD 0E70  
+May 11 19:39:29.321  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 2500 368B 1B91 5EA5 416F BE89 EC  
+May 11 19:39:30.372  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 2600 F065 C4D6 3F11 077B 0292 81  
+May 11 19:39:30.402  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 2700 8034 C327 FB85 B975 C702 9F8E DEEA  
+May 11 19:39:30.402  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 2800 61D9 BE3F 6DB9 100D DFAD 12CB 7640  
+May 11 19:39:30.462  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 2900 D6AF BE89 5F12 DECE ABCE E446 5A46  
+May 11 19:39:30.463  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 2A00 AAD7 2E73 25DA 7786 6539 B711 9E6E  
+May 11 19:39:30.552  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 2B00 82F2 D55F 3F8F 4790 4BA0 F944 1834  
+May 11 19:39:30.552  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 2C00 FC51 8AEF D792 621A 2453 FF5E 7C67  
+May 11 19:39:30.642  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 2D00 4627 2461 863E DA58 EC44 69B1 1C53  
+May 11 19:39:30.642  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 2E00 476D 494D 350F 00BC BEC2 D3FC 17CF  
+May 11 19:39:30.731  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 2F00 3D96 0E13 8330 89E0 92AA A1A2 7A5C  
+May 11 19:39:30.761  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 3000 8E0E 0916 7215 EAEA 0BBF 683F 5F0C  
+May 11 19:39:31.302  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 3100 E1A2 773A 2677 CBB2 D430 F0  
+May 11 19:39:31.694  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 3200 5793 9E8E F2E2 8702 C4F9 4FA5 C268  
+May 11 19:39:31.694  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 3300 4BA4 C938 5189 11EB A9EA AA7A D3F8  
+May 11 19:39:32.442  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 3400 FB61 CCBD CE76 0C5A 827D BB  
+May 11 19:39:32.742  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 3500 DBF1 2FB5 CD78 294A 4352 40DA E601  
+May 11 19:39:32.744  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 3600 1FA8 D02B B385 CF5A 0051 86FE AA9D  
+May 11 19:39:32.833  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 3700 40DD C6D5 AE32 8634 EA8A 3C40 222E  
+May 11 19:39:32.833  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 3800 A3C1 1149 F18E 3077 A803 1032 1747  
+May 11 19:39:32.923  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 3900 98EB 1158 16D6 4DCA 0FDF C489 A682  
+May 11 19:39:32.923  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 3A00 F463 FB72 6E9F F2BC 4985 4B8D 48FA  
+May 11 19:39:33.043  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 3B00 5826 4C30 6943 264C 2094 3A8B 892C  
+May 11 19:39:33.043  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 3C00 AEE7 FE72 3E0A AAF9 58BC CD32 5A79  
+May 11 19:39:33.132  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 3D00 3099 9CA2 E420 ACE4 61E3 996E E424  
+May 11 19:39:33.132  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 3E00 0D43 F47D 4C74 ABF2 6D98 491B ABD5  
+May 11 19:39:33.223  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 3F00 7012 10DD B7E6 1BDA 07AF 3BA9 438F  
+May 11 19:39:33.223  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 4000 05C0 B8EF 9D93 B47B B111 7B10 9048  
+May 11 19:39:33.312  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 4100 20A2 4C60 CD4B 1A48 F03B 85D8 644F  
+May 11 19:39:33.312  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 4200 21F8 EA70 9954 1F11 EAAB BE98 892F  
+May 11 19:39:33.582  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 4300 49A2 EF3E 0455 159C A130 12  
+May 11 19:39:34.542  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 4400 3D67 6F9A 231C 777E 906C 91  
+May 11 19:39:35.682  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 4500 2089 04DF 59C8 3C31 04B9 8D  
+May 11 19:39:36.641  ATT Receive      0x004C  DC:ED:83:84:2E:9D  Handle Value Notification - Handle:0x0021 - 00000102-0065-6C62-2E74-6F696D2E696D - Value: 4600 3DDD A570 E6F0 A524 2F8F 33  
+May 11 19:39:37.379  HCI Command      0x004C  DC:ED:83:84:2E:9D  Disconnect - Connection Handle: 0x004C - Reason: Remote User Terminated Connection  
+May 11 19:39:37.392  HCI Event        0x004C  DC:ED:83:84:2E:9D  Disconnection Complete - Success  
+May 11 19:39:37.711  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -53 dBm - Channel 37  
+May 11 19:39:37.712  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -53 dBm - HOTO-dced83842e9d - Channel 37  
+May 11 19:39:39.227  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -49 dBm - Channel 37  
+May 11 19:39:39.227  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -50 dBm - HOTO-dced83842e9d - Channel 37  
+May 11 19:39:39.532  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -50 dBm - Channel 37  
+May 11 19:39:39.532  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -49 dBm - HOTO-dced83842e9d - Channel 37  
+May 11 19:39:39.836  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -49 dBm - Channel 37  
+May 11 19:39:39.838  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -49 dBm - HOTO-dced83842e9d - Channel 37  
+May 11 19:39:39.838  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Low Power - Public - DC:ED:83:84:2E:9D  -55 dBm - Channel 39  
+May 11 19:39:40.454  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -50 dBm - Channel 37  
+May 11 19:39:40.455  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -50 dBm - HOTO-dced83842e9d - Channel 37  
+May 11 19:39:40.763  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -58 dBm - Channel 37  
+May 11 19:39:40.763  HCI Event        0x0000  DC:ED:83:84:2E:9D  LE - Ext ADV - 1 Report - Normal - Public - DC:ED:83:84:2E:9D  -59 dBm - HOTO-dced83842e9d - Channel 37  

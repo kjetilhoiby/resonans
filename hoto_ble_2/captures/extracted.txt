@@ -1,0 +1,59 @@
+1778526908.186000  == CONNECT status=0 handle=0x005B
+1778526908.904000  →  Exchange MTU Request payload=0f02
+1778526908.953000  ←  Exchange MTU Response payload=f700
+1778526908.955000  →  Read By Group Type Request payload=0100ffff0028
+1778526909.012000  ←  Read By Group Type Response payload=0601000400011805000d0000180e001c0095fe
+1778526909.012000  →  Read By Group Type Request payload=1d00ffff0028
+1778526909.072000  ←  Read By Group Type Response payload=141d00ffff6d692e6d696f742e626c650000010000
+1778526909.073000  →  Read By Type Request payload=010004000328
+1778526909.132000  ←  Read By Type Response payload=070200200300052a
+1778526909.133000  →  Find Information Request payload=04000400
+1778526909.223000  ←  Find Information Response payload=0104000229
+1778526909.223000  →  Write Request handle=0x0004 value=0200 (2B)
+1778526909.282000  ←  Write Response payload=
+1778526909.287000  →  Read By Type Request payload=0e001c000328
+1778526909.373000  ←  Read By Type Response payload=070f0002100004001100141200100014001415001900170018180017001a00141b001800
+1778526909.385000  →  Find Information Request payload=16001600
+1778526909.434000  ←  Find Information Response payload=0116000229
+1778526909.434000  →  Write Request handle=0x0016 value=0100 (2B)
+1778526909.523000  ←  Write Response payload=
+1778526909.528000  →  Find Information Request payload=13001300
+1778526909.582000  ←  Find Information Response payload=0113000229
+1778526909.582000  →  Write Request handle=0x0013 value=0100 (2B)
+1778526909.642000  ←  Write Response payload=
+1778526909.643000  →  Write Command handle=0x0012 value=a2000000 (4B)
+1778526911.001000  →  Read By Type Request payload=05000d00002a
+1778526911.503000  ←  Handle Value Notification handle=0x0015 value=000000000200 (6B)
+1778526911.503000  ←  Read By Type Response payload=0d07007374616e642064656d6f00
+1778526911.505000  →  Write Command handle=0x0015 value=00000101 (4B)
+1778526911.563000  ←  Handle Value Notification handle=0x0015 value=01000100000000626c742e342e316833376f3968 (20B)
+1778526911.565000  ←  Handle Value Notification handle=0x0015 value=0200703067673030 (8B)
+1778526911.566000  →  Write Command handle=0x0015 value=00000100 (4B)
+1778526911.567000  →  Write Command handle=0x0012 value=15000000 (4B)
+1778526911.567000  →  Write Command handle=0x0015 value=000000030400 (6B)
+1778526911.622000  ←  Handle Value Notification handle=0x0015 value=00000101 (4B)
+1778526911.623000  →  Write Command handle=0x0015 value=0100971456b25e940f1e43c754ec6683e75b88fe (20B)
+1778526911.624000  →  Write Command handle=0x0015 value=0200499a5eb9d1c5bf61db8f94ff65687d38f499 (20B)
+1778526911.624000  →  Write Command handle=0x0015 value=03000ad76710abb2dd048b873000dce068a075d3 (20B)
+1778526911.624000  →  Write Command handle=0x0015 value=0400ca13798bebce48d9c1ea (12B)
+1778526911.683000  ←  Handle Value Notification handle=0x0015 value=00000100 (4B)
+1778526912.012000  ←  Handle Value Notification handle=0x0015 value=000000030400 (6B)
+1778526912.015000  →  Write Command handle=0x0015 value=00000101 (4B)
+1778526912.074000  ←  Handle Value Notification handle=0x0015 value=01002d99f6c494b64cc65fcbf76133c17b3c91d2 (20B)
+1778526912.074000  ←  Handle Value Notification handle=0x0015 value=0200a899985b2b9389a7947dfcf902809d561ce5 (20B)
+1778526912.076000  ←  Handle Value Notification handle=0x0015 value=0300cdbcdf9465ceda7bba4f1d62ae0981e71929 (20B)
+1778526912.076000  ←  Handle Value Notification handle=0x0015 value=0400064a6ae5e3f712d9a81f (12B)
+1778526912.077000  →  Write Command handle=0x0015 value=00000100 (4B)
+1778526912.114000  →  Write Request handle=0x0016 value=0100 (2B)
+1778526912.162000  ←  Write Response payload=
+1778526912.163000  →  Write Request handle=0x0013 value=0100 (2B)
+1778526912.222000  ←  Write Response payload=
+1778526912.285000  →  Write Command handle=0x0015 value=000000000200 (6B)
+1778526912.342000  ←  Handle Value Notification handle=0x0015 value=00000101 (4B)
+1778526912.343000  →  Write Command handle=0x0015 value=0100eda33bfef90ea86ffc091d65f47ee9fb9c99 (20B)
+1778526912.344000  →  Write Command handle=0x0015 value=0200744569332d19 (8B)
+1778526912.433000  ←  Handle Value Notification handle=0x0015 value=00000100 (4B)
+1778526912.659000  →  Write Command handle=0x0012 value=13000000 (4B)
+1778526912.702000  ←  Handle Value Notification handle=0x0012 value=11000000 (4B)
+1778526912.704000  →  Read Request handle=0x0010
+1778526912.762000  ←  Read Response value=312e312e335f3030313000000000000000000000 (20B)

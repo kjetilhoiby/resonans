@@ -1,5 +1,19 @@
 # Hoto Smart Kitchen Scale – BLE Reverse Engineering
 
+> ⚠️ **UTDATERT (2026-05-11).** Denne fila beskriver tidlige forsøk, inkludert
+> blindspor som ikke skal gjentas. Se `../hoto_ble_2/HOTO_BLE_REVERSE_2.md` for
+> den **gjeldende** protokollbeskrivelsen.
+>
+> Hovedrettelser:
+> - Auth-protokoll på char 0x0019 (handle 0x0015) bruker **SECP256R1 (P-256)**,
+>   ikke X25519 som "Auth-protokoll (LØST)"-seksjonen nedenfor påstår.
+>   Vårt `ble_auth2.py` brukte derfor feil kurve.
+> - Char 0x0017 brukes **ikke** av iOS i det hele tatt — glem den.
+> - Ingen BLE-bonding/pairing kreves — alt kjører på plain ATT.
+> - Vekta er ute av demo-modus. iOS-binding er fullført og fanget komplett.
+> - Den komplette protokollen (bind + auth + encrypted weight stream) er
+>   dokumentert i `../hoto_ble_2/HOTO_BLE_REVERSE_2.md`.
+
 ## Mål
 
 Lese vektdata direkte fra Hoto Smart Kitchen Scale (Xiaomi-økosystem) via BLE,
