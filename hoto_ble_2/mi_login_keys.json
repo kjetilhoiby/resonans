@@ -1,0 +1,10 @@
+{
+  "rand_key": "15d56edb3e976b07fa0fcbe99c9fa6d2",
+  "remote_key": "4b34bf47b508ac4c6b10260ba24a511b",
+  "remote_info": "3eb1ff3af58c0ea187f66f2612ec368144f3126bebe77379762a1af8d9b40040",
+  "derived": "b67f32ea7d2ee88dad04c562ac83309be5d73d9c85cad1312d2d66d295c4ad3701c1d46bc615b12f79eef978014f56fb1e0fa7ef1c2fd73242fae9757e3aa646",
+  "dev_key": "b67f32ea7d2ee88dad04c562ac83309b",
+  "app_key": "e5d73d9c85cad1312d2d66d295c4ad37",
+  "dev_iv": "01c1d46b",
+  "app_iv": "c615b12f"
+}
