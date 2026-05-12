@@ -106,15 +106,28 @@ export const POST: RequestHandler = async ({ request, url }) => {
 	};
 
 	const userEmail = extractRecipientEmail(payload.UserEmail);
-	if (!userEmail) {
-		return json({ error: 'Missing UserEmail' }, { status: 400 });
+
+	let user = userEmail
+		? await db.query.users.findFirst({ where: eq(users.email, userEmail) })
+		: null;
+
+	if (!user) {
+		const label = (payload.Label ?? '').toLowerCase().trim();
+		if (label) {
+			const rulesWithUser = await db
+				.select({ userId: emailRules.userId })
+				.from(emailRules)
+				.where(eq(emailRules.isActive, true))
+				.groupBy(emailRules.userId);
+			for (const { userId } of rulesWithUser) {
+				const u = await db.query.users.findFirst({ where: eq(users.id, userId) });
+				if (u) { user = u; break; }
+			}
+		}
 	}
 
-	const user = await db.query.users.findFirst({
-		where: eq(users.email, userEmail)
-	});
 	if (!user) {
-		return json({ skipped: true, reason: 'unknown_user' });
+		return json({ skipped: true, reason: 'unknown_user', hint: userEmail || 'no email in payload' });
 	}
 
 	const label = (payload.Label ?? '').toLowerCase().trim();
