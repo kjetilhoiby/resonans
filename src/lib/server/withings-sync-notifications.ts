@@ -79,12 +79,15 @@ export async function notifyWithingsSyncResults(args: {
 			const weight = data?.weight as number | undefined;
 			const body = weight ? `${weight.toFixed(1)} kg` : 'Ny veiing registrert';
 
+			const weightChatUrl = new URL('/samtaler', appUrl);
+			weightChatUrl.searchParams.set('context', 'weight');
+
 			const delivery = await PushDeliveryService.deliverToUser({
 				userId,
 				payload: {
 					title: 'Veiing registrert',
 					body,
-					url: healthDataUrl.toString(),
+					url: weightChatUrl.toString(),
 					tag: `weight-${newWeights[0].id}`
 				},
 				onGone: 'disable'

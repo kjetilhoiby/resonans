@@ -50,12 +50,13 @@
 			userThemes: UserTheme[];
 			selectedConversation: ConversationSummary | null;
 			messages: ConversationMessage[];
+			weightContext: string | null;
 		};
 	}
 
 	let { data }: Props = $props();
 
-	const isListView = $derived(data.selectedConversation === null);
+	const isListView = $derived(data.selectedConversation === null && !data.weightContext);
 
 	function toChatMessages(messages: ConversationMessage[]): ChatMessage[] {
 		return messages
@@ -76,13 +77,24 @@
 
 	const conversation = $derived(data.selectedConversation);
 
-	const chat = new ChatState({
-		conversationId: data.selectedConversation?.id ?? null
-	});
+	const chat = new ChatState(
+		data.weightContext
+			? {
+					getOrCreateConversationId: async () => {
+						const res = await fetch('/api/conversations/new', { method: 'POST' });
+						if (!res.ok) return null;
+						const { conversationId } = await res.json();
+						return conversationId ?? null;
+					},
+					systemPrompt: data.weightContext
+				}
+			: { conversationId: data.selectedConversation?.id ?? null }
+	);
 
 	let creatingConversation = $state(false);
 	let inputDraft = $state('');
 	let inputKey = $state(0);
+	let weightAutoSent = $state(false);
 
 	// Last inn meldinger fra server og synkroniser med ChatState
 	$effect(() => {
@@ -93,6 +105,13 @@
 	// Oppdater conversationId i ChatState når valgt samtale endres
 	$effect(() => {
 		chat.setConversationId(data.selectedConversation?.id ?? null);
+	});
+
+	$effect(() => {
+		if (data.weightContext && !weightAutoSent) {
+			weightAutoSent = true;
+			void chat.send('Jeg har nettopp veid meg. Hvordan ligger jeg an i forhold til målene mine?');
+		}
 	});
 
 	const formattedDate = $derived(
@@ -301,7 +320,7 @@
 {:else}
 	<!-- ══ CHAT-VIEW ═══════════════════════════════════════════════════════════ -->
 	<AppPage width="full" padding="none" gap="sm" theme="dark" className="chat-page">
-		<PageHeader title={conversation?.title ?? 'Samtale'} subtitle={formattedDate} titleHref="/samtaler">
+		<PageHeader title={conversation?.title ?? (data.weightContext ? 'Vektutvikling' : 'Samtale')} subtitle={formattedDate} titleHref="/samtaler">
 			{#snippet actions()}
 				{#if conversation?.linkedTheme}
 					{@const t = conversation.linkedTheme}
