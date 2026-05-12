@@ -244,6 +244,7 @@ export const projects = pgTable('projects', {
 
 export const tasks = pgTable('tasks', {
 	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id), // nullable for bakoverkompatibilitet — pool-tasks krever userId, gamle goal-knyttede tasks faller tilbake på goal.userId
 	goalId: uuid('goal_id').references(() => goals.id), // valgfri — sesong-/prosjekt-tasks trenger ikke mål
 	projectId: uuid('project_id').references(() => projects.id, { onDelete: 'set null' }),
 	personId: uuid('person_id').references((): AnyPgColumn => persons.id, { onDelete: 'set null' }), // Oppgave knyttet til en bestemt person
@@ -256,6 +257,17 @@ export const tasks = pgTable('tasks', {
 	unit: text('unit'), // f.eks. "ganger per uke", "minutter"
 	season: text('season'), // 'spring' | 'summer' | 'autumn' | 'winter' | null — sesong-bundne oppgaver
 	recurrenceYearly: boolean('recurrence_yearly').default(false).notNull(),
+	// Pool-felter (huskeliste). isPool=true betyr at oppgaven ikke er bundet til en uke/måned.
+	isPool: boolean('is_pool').default(false).notNull(),
+	dueDate: date('due_date'), // hard deadline
+	availableFrom: date('available_from'), // vindu-start (konkret dato)
+	availableTo: date('available_to'), // vindu-slutt (konkret dato)
+	yearlyWindow: text('yearly_window'), // 'MM-DD..MM-DD' f.eks. '05-13..05-17'
+	estimatedMinutes: integer('estimated_minutes'),
+	effort: text('effort'), // 'low' | 'medium' | 'high'
+	contextTags: text('context_tags').array(),
+	poolPriority: integer('pool_priority').default(0).notNull(),
+	lastSurfacedAt: timestamp('last_surfaced_at'),
 	metadata: jsonb('metadata').default({}).notNull(), // fleksibel JSON for ekstra data (intentStatus, intentError, etc)
 	status: text('status').notNull().default('active'),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -263,7 +275,10 @@ export const tasks = pgTable('tasks', {
 }, (table) => ({
 	idxPerson: index('tasks_person_idx').on(table.personId),
 	idxProject: index('tasks_project_idx').on(table.projectId),
-	idxSeason: index('tasks_season_idx').on(table.season)
+	idxSeason: index('tasks_season_idx').on(table.season),
+	idxUser: index('tasks_user_idx').on(table.userId),
+	idxPool: index('tasks_pool_idx').on(table.userId, table.isPool, table.status),
+	idxDue: index('tasks_due_idx').on(table.userId, table.dueDate)
 }));
 
 // Fremdriftsregistreringer
@@ -1004,6 +1019,10 @@ export const goalsRelations = relations(goals, ({ one, many }) => ({
 }));
 
 export const tasksRelations = relations(tasks, ({ one, many }) => ({
+	user: one(users, {
+		fields: [tasks.userId],
+		references: [users.id]
+	}),
 	goal: one(goals, {
 		fields: [tasks.goalId],
 		references: [goals.id]

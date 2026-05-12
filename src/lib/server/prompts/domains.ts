@@ -115,7 +115,34 @@ Eksempler:
 - "grønn når over 10000 skritt" → update_widget: thresholdSuccess=10000
 - "sett mål på 8 timer søvn, advar under 6 og gratulér over 8" → update_widget: goal=8, thresholdWarn=6, thresholdSuccess=8`,
 
-	planning: `**SJEKKLISTER / TODO-LISTER:**
+	planning: `**HUSKELISTE / POOL-TASKS — capture først, klargjøring etterpå:**
+
+Brukeren har en huskeliste (pool) for oppgaver uten fast uke/måned: "skulle gjort", "rydd klesskap", "bestill nye nøkler", små engangsærend og sjeldne husarbeider.
+
+**Capture-fasen (lav friksjon):**
+- Når brukeren dumper flere "skulle gjort"-elementer i samme melding (komma-, linje- eller "og"-separert, eller etter intro-fraser som "skulle gjort:", "huskeliste:", "todo:", "dump:"): batch til ett \`manage_pool_tasks\` med \`operation:'bulk_add'\`.
+- **Send KUN \`title\` for hvert element.** Ikke gjett estimat, frist eller effort. Inkluder \`yearlyWindow\`, \`dueDate\` eller \`projectId\` KUN hvis brukeren eksplisitt sa det inline ("stryk hvitskjorter 13.-17. mai hvert år", "rydd klesskap til mai", "balkong-prosjektet: ...").
+- \`isPool=true\` settes automatisk.
+
+**Klargjørings-loop (opt-in, rett etter dump):**
+- Etter \`bulk_add\` der minst én task har \`needsClarification=true\`: SPØR brukeren ÉN gang varmt og kort: *"Lagt til N oppgaver. Vil du klargjøre estimat og evt. frist nå, eller la dem ligge?"*
+- Hvis ja/gjerne/ok: gå gjennom hver stub i rekkefølge. For hver, spør minimalt: *"'<tittel>' — hvor lang tid tror du, og er det noen frist?"*
+- Brukeren kan svare "vet ikke" / "ingen" / "skip" → ikke kall clarify for det feltet.
+- Når brukeren svarer, parse estimat ("en halvtime", "15 min", "et kvarter") og frist ("til mai", "fredag", "13. mai") og kall \`manage_pool_tasks\` med \`operation:'clarify'\` og \`taskId\`.
+- Avslutt loopen når alle er klargjort eller hoppet over. Si "Da har du <N> nye på huskelista."
+- Hvis brukeren sier nei på opt-in: ikke press, bare bekreft "OK, de ligger på huskelista — vi kan klargjøre senere."
+
+**Forslag når brukeren har tid:**
+- "Jeg har 15 min, hva kan jeg gjøre?" / "har du noe på en halvtime?" → kall \`suggest_tasks_for_slot\` med \`availableMinutes\`.
+- Presenter 1-3 forslag kort med begrunnelse fra \`reason\`-feltet.
+
+**Spørsmål om listen:**
+- "Hva har jeg på huskelista?" / "hva må gjøres før mai?" / "hva er knyttet til balkong?" → kall \`query_pool_tasks\` med relevante filtre.
+
+**Eksplisitt periode i melding:**
+- Hvis brukeren sier "denne uka", "ukens X", konkret ukenavn eller dato som matcher periodisering: bruk vanlige task-verktøy (create_task med periodType/periodId), IKKE pool.
+
+**SJEKKLISTER / TODO-LISTER:**
 - Når bruker beskriver at de skal forberede, pakke, handle, planlegge: vurder sjekkliste aktivt
 - Hvis behovet er tydelig, kall create_checklist med 6-12 konkrete punkter
 - Hvis bruker sier "legg til", "også", "mangler" på eksisterende liste: kall get_active_checklists og bruk add_checklist_items

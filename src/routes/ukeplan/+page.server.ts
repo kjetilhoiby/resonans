@@ -2,11 +2,12 @@ import { fail } from '@sveltejs/kit';
 import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, or } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/db';
-import { checklistItems, checklists, goals, progress, tasks, themes, sensorEvents, sensors } from '$lib/db/schema';
+import { checklistItems, checklists, goals, progress, tasks, themes, sensorEvents, sensors, projects } from '$lib/db/schema';
 import { parseListRepeatCount } from '$lib/server/list-repeat-parser';
 import { getPlanArtifact, getPlanArtifactsByParent, upsertPlanArtifactField } from '$lib/server/plan-artifacts';
 import { WorkoutProjectionService } from '$lib/server/services/workout-projection-service';
 import { resolveDomainFromInput, type DomainType } from '$lib/domains';
+import { overlapsRange } from '$lib/server/pool/yearly-window';
 
 function detectItemDomain(text: string | null | undefined): DomainType | null {
 	if (!text) return null;
@@ -33,6 +34,7 @@ async function loadWeekTasks(userId: string, dashedKey: string, compactKey: stri
 		return await baseSelect.where(
 			and(
 				eq(tasks.status, 'active'),
+				eq(tasks.isPool, false),
 				eq(goals.userId, userId),
 				or(
 					// Period-specific weekly tasks (e.g. single-week task)
@@ -58,6 +60,32 @@ async function loadWeekTasks(userId: string, dashedKey: string, compactKey: stri
 
 		return await baseSelect.where(and(eq(tasks.status, 'active'), eq(goals.userId, userId)));
 	}
+}
+
+async function loadPoolCandidatesForWeek(userId: string, weekStart: Date, weekEndInclusive: Date) {
+	const weekEndIso = weekEndInclusive.toISOString().slice(0, 10);
+	const rows = await db
+		.select({
+			id: tasks.id,
+			title: tasks.title,
+			estimatedMinutes: tasks.estimatedMinutes,
+			effort: tasks.effort,
+			dueDate: tasks.dueDate,
+			yearlyWindow: tasks.yearlyWindow,
+			projectId: tasks.projectId,
+			projectTitle: projects.title
+		})
+		.from(tasks)
+		.leftJoin(projects, eq(tasks.projectId, projects.id))
+		.where(and(eq(tasks.userId, userId), eq(tasks.isPool, true), eq(tasks.status, 'active')));
+
+	return rows
+		.filter((r) => {
+			if (r.dueDate && r.dueDate <= weekEndIso) return true;
+			if (r.yearlyWindow && overlapsRange(r.yearlyWindow, weekStart, weekEndInclusive)) return true;
+			return false;
+		})
+		.slice(0, 12);
 }
 
 async function loadTravelThemes(userId: string) {
@@ -197,7 +225,10 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	console.log(`[perf][ukeplan/load] user=${userId} step=spond_sensor_lookup ms=${(performance.now() - tSpondSensor).toFixed(0)} found=${spondSensor ? 1 : 0}`);
 
 	const tPrefetch = performance.now();
-	const [weekChecklist, weekTasks, weekProgressRows, weekArtifact, longTermGoals, dayChecklists, dayArtifacts, previousWeekChecklist, previousWeekArtifact, previousWeekTasks, previousWeekProgressRows, travelThemes, rawSpondEvents] = await Promise.all([
+	const weekEndInclusive = new Date(weekEndExclusive);
+	weekEndInclusive.setUTCDate(weekEndInclusive.getUTCDate() - 1);
+
+	const [weekChecklist, weekTasks, weekProgressRows, weekArtifact, longTermGoals, dayChecklists, dayArtifacts, previousWeekChecklist, previousWeekArtifact, previousWeekTasks, previousWeekProgressRows, travelThemes, rawSpondEvents, poolCandidates] = await Promise.all([
 		db.query.checklists.findFirst({
 			where: and(eq(checklists.userId, userId), eq(checklists.context, week.contextKey)),
 			with: {
@@ -268,7 +299,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 					),
 					columns: { id: true, timestamp: true, data: true, metadata: true }
 			  })
-			: Promise.resolve([] as Array<{ id: string; timestamp: Date; data: unknown; metadata: unknown }>)
+			: Promise.resolve([] as Array<{ id: string; timestamp: Date; data: unknown; metadata: unknown }>),
+		loadPoolCandidatesForWeek(userId, weekStart, weekEndInclusive)
 	]);
 	console.log(
 		`[perf][ukeplan/load] user=${userId} step=prefetch_bundle ms=${(performance.now() - tPrefetch).toFixed(0)} weekTasks=${weekTasks.length} weekProgress=${weekProgressRows.length} longTermGoals=${longTermGoals.length} dayChecklists=${dayChecklists.length} dayArtifacts=${dayArtifacts.length} prevWeekTasks=${previousWeekTasks.length} prevWeekProgress=${previousWeekProgressRows.length} spondEvents=${rawSpondEvents.length}`
@@ -623,7 +655,17 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			reflection: previousWeekArtifact?.reflection ?? '',
 			carryoverItems,
 			incompleteTasks: previousIncompleteTasks
-		}
+		},
+		poolCandidates: poolCandidates.map((p) => ({
+			id: p.id,
+			title: p.title,
+			estimatedMinutes: p.estimatedMinutes,
+			effort: p.effort,
+			dueDate: p.dueDate,
+			yearlyWindow: p.yearlyWindow,
+			projectId: p.projectId,
+			projectTitle: p.projectTitle
+		}))
 	};
 };
 
@@ -875,6 +917,32 @@ export const actions = {
 			upsertWeekField(userId, week.compactKey, 'vision', vision)
 		]);
 
+		return { success: true };
+	},
+
+	promoteFromPool: async ({ request, locals }) => {
+		const userId = locals.userId;
+		const data = await request.formData();
+		const week = resolveWeekFromFormData(data);
+		const taskId = String(data.get('taskId') || '').trim();
+		if (!taskId) return fail(400, { error: 'Mangler taskId.' });
+
+		const existing = await db.query.tasks.findFirst({
+			where: and(eq(tasks.id, taskId), eq(tasks.userId, userId))
+		});
+		if (!existing) return fail(404, { error: 'Fant ikke oppgaven.' });
+
+		const metadata = { ...((existing.metadata as Record<string, unknown> | null) ?? {}), promotedFromPool: true };
+		await db
+			.update(tasks)
+			.set({
+				isPool: false,
+				periodType: 'week',
+				periodId: week.dashedKey,
+				metadata,
+				updatedAt: new Date()
+			})
+			.where(eq(tasks.id, taskId));
 		return { success: true };
 	}
 } satisfies Actions;

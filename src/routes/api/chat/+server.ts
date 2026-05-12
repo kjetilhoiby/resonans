@@ -782,6 +782,82 @@ const tools = [
 			{
 				type: 'function' as const,
 				function: {
+					name: 'manage_pool_tasks',
+					description: "Forvalt brukerens huskeliste (pool — tasks uten fast uke/måned). bulk_add tar items[] og er lav-friksjon (send kun title med mindre brukeren eksplisitt nevner mer). clarify oppdaterer estimat/frist på en eksisterende stub. complete/snooze/update for vanlige operasjoner. Returnerer needsClarification per opprettet stub.",
+					parameters: {
+						type: 'object',
+						properties: {
+							operation: { type: 'string', enum: ['bulk_add', 'clarify', 'complete', 'snooze', 'update'] },
+							items: {
+								type: 'array',
+								items: {
+									type: 'object',
+									properties: {
+										title: { type: 'string' },
+										description: { type: 'string' },
+										projectId: { type: 'string' },
+										estimatedMinutes: { type: 'number' },
+										effort: { type: 'string', enum: ['low', 'medium', 'high'] },
+										dueDate: { type: 'string', description: 'ISO YYYY-MM-DD' },
+										availableFrom: { type: 'string', description: 'ISO YYYY-MM-DD' },
+										availableTo: { type: 'string', description: 'ISO YYYY-MM-DD' },
+										yearlyWindow: { type: 'string', description: "Mønster 'MM-DD..MM-DD', f.eks. '05-13..05-17'" },
+										contextTags: { type: 'array', items: { type: 'string' } },
+										poolPriority: { type: 'number' }
+									},
+									required: ['title']
+								}
+							},
+							taskId: { type: 'string' },
+							estimatedMinutes: { type: 'number' },
+							effort: { type: 'string', enum: ['low', 'medium', 'high'] },
+							dueDate: { type: 'string', description: 'ISO YYYY-MM-DD' },
+							yearlyWindow: { type: 'string' },
+							projectId: { type: 'string' },
+							contextTags: { type: 'array', items: { type: 'string' } },
+							snoozeDays: { type: 'number' }
+						},
+						required: ['operation']
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
+					name: 'suggest_tasks_for_slot',
+					description: 'Foreslå 1-3 pool-tasks som passer en tilgjengelig tidsluke. Bruk når brukeren oppgir tid ("jeg har 15 min", "halvtime").',
+					parameters: {
+						type: 'object',
+						properties: {
+							availableMinutes: { type: 'number' },
+							effort: { type: 'string', enum: ['low', 'medium', 'high'] },
+							contextTags: { type: 'array', items: { type: 'string' } },
+							limit: { type: 'number' }
+						},
+						required: ['availableMinutes']
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
+					name: 'query_pool_tasks',
+					description: 'Hent oppgaver fra huskelista. Filtre: projectId, needsClarification (kun stubs uten estimat/frist), dueBefore (ISO-dato).',
+					parameters: {
+						type: 'object',
+						properties: {
+							projectId: { type: 'string' },
+							needsClarification: { type: 'boolean' },
+							dueBefore: { type: 'string', description: 'ISO YYYY-MM-DD' },
+							includeYearlyActive: { type: 'boolean' },
+							limit: { type: 'number' }
+						}
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
 					name: 'query_food',
 					description: 'Hent mat-data: oppskrifter, ukemeny, pantry/fryserinnhold. queryType: recipes (oppskriftliste), meal_plan (krever weekContext "YYYY-W##"), pantry (kan filtreres på location), expiring_soon (varer som går ut, krever days).',
 					parameters: {
@@ -2125,6 +2201,24 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 					console.log('  🏠 Manage home routine:', args.title);
 					const { manageHomeRoutineTool } = await import('$lib/ai/tools/manage-home-routine');
 					const result = await manageHomeRoutineTool.execute({ userId, ...args });
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'manage_pool_tasks') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  📝 Manage pool tasks:', args.operation, args.items?.length ?? '');
+					const { managePoolTasksTool } = await import('$lib/ai/tools/manage-pool-tasks');
+					const result = await managePoolTasksTool.execute({ userId, ...args });
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'suggest_tasks_for_slot') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  ⏱️ Suggest tasks for slot:', args.availableMinutes);
+					const { suggestTasksForSlotTool } = await import('$lib/ai/tools/suggest-tasks-for-slot');
+					const result = await suggestTasksForSlotTool.execute({ userId, ...args });
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'query_pool_tasks') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  📝 Query pool tasks');
+					const { queryPoolTasksTool } = await import('$lib/ai/tools/query-pool-tasks');
+					const result = await queryPoolTasksTool.execute({ userId, ...args });
 					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'record_tracking_event') {
 					const args = JSON.parse(toolCall.function.arguments);

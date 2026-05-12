@@ -167,6 +167,16 @@
 				carryoverItems: string[];
 				incompleteTasks: string[];
 			};
+			poolCandidates: Array<{
+				id: string;
+				title: string;
+				estimatedMinutes: number | null;
+				effort: string | null;
+				dueDate: string | null;
+				yearlyWindow: string | null;
+				projectId: string | null;
+				projectTitle: string | null;
+			}>;
 		};
 	}
 
@@ -2150,6 +2160,36 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 		</div>
 	</section>
 
+	{#if data.poolCandidates.length > 0}
+	<section class="wp-card">
+		<div class="wp-card-head">
+			<h2>Trekk fra huskelista</h2>
+			<span class="wp-pill">{data.poolCandidates.length} aktuelle</span>
+		</div>
+		<p class="pool-hint">Oppgaver fra huskelista som har frist eller årlig vindu denne uka.</p>
+		<ul class="pool-list">
+			{#each data.poolCandidates as p (p.id)}
+				<li class="pool-item">
+					<div class="pool-info">
+						<div class="pool-title">{p.title}</div>
+						<div class="pool-meta">
+							{#if p.estimatedMinutes}<span class="wp-pill">{p.estimatedMinutes} min</span>{/if}
+							{#if p.dueDate}<span class="wp-pill">Frist {p.dueDate}</span>{/if}
+							{#if p.yearlyWindow}<span class="wp-pill">Vindu {p.yearlyWindow}</span>{/if}
+							{#if p.projectTitle}<span class="wp-pill">{p.projectTitle}</span>{/if}
+						</div>
+					</div>
+					<form method="POST" action="?/promoteFromPool">
+						<input type="hidden" name="weekKey" value={data.week.dashedKey} />
+						<input type="hidden" name="taskId" value={p.id} />
+						<button type="submit" class="pool-promote">Legg til denne uka</button>
+					</form>
+				</li>
+			{/each}
+		</ul>
+	</section>
+	{/if}
+
 	{#if data.vision || data.longTermGoals.length > 0}
 	<section class="wp-card">
 		<div class="wp-card-head">
@@ -3227,6 +3267,52 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 		display: flex;
 		flex-direction: column;
 		gap: 7px;
+	}
+
+	.pool-hint {
+		margin: 0 0 8px;
+		color: var(--text-secondary, #777);
+		font-size: 13px;
+	}
+	.pool-list {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+	.pool-item {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 12px;
+		padding: 10px;
+		border-radius: 9px;
+		background: rgba(127, 127, 127, 0.06);
+	}
+	.pool-info {
+		flex: 1;
+		min-width: 0;
+	}
+	.pool-title {
+		font-weight: 500;
+	}
+	.pool-meta {
+		display: flex;
+		gap: 6px;
+		flex-wrap: wrap;
+		margin-top: 4px;
+	}
+	.pool-promote {
+		padding: 6px 10px;
+		border: 1px solid var(--border-color, #ddd);
+		background: var(--accent-primary, #4a5af0);
+		color: white;
+		border-radius: 8px;
+		font: inherit;
+		font-size: 13px;
+		cursor: pointer;
 	}
 
 	.wp-reminder-row {

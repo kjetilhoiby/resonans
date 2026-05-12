@@ -3,7 +3,7 @@ import { openai } from '$lib/server/openai';
 import { DOMAIN_METADATA, FAMILY_DOMAIN_TRIGGER, HOME_DOMAIN_TRIGGER } from '$lib/domains';
 
 export type ChatDomain = 'health' | 'economics' | 'food' | 'family' | 'egenfrekvens' | 'home' | 'planning' | 'themes' | 'general';
-export type ChatSkill = 'widget_creation' | 'checklist_planning' | 'goal_planning' | 'theme_management' | 'person_management' | 'general_chat';
+export type ChatSkill = 'widget_creation' | 'checklist_planning' | 'goal_planning' | 'theme_management' | 'person_management' | 'pool_management' | 'general_chat';
 export type ChatMode = 'tool' | 'conversation' | 'domain';
 
 export interface UserBookContext {
@@ -75,6 +75,15 @@ export function routeChatRequest(input: string): ChatRoutingDecision {
 		skills.add('goal_planning');
 	}
 
+	if (
+		/skulle ha?\s+gjort|huskelist[ea]|dump[e:]?|\btodo[:\s]|når jeg har tid|nar jeg har tid|ved anledning|ad hoc|skulle gjort/.test(text) ||
+		/har (jeg|du)\s*(et\s*)?(kvarter|\d+\s*min|halvtime|en time)|hva kan jeg gjøre n[åa]/.test(text)
+	) {
+		skills.add('pool_management');
+		domains.add('planning');
+		hints.push('Pool: capture-først, klargjøring etterpå. Bruk manage_pool_tasks bulk_add for dumps. Send kun title med mindre brukeren eksplisitt nevnte mer.');
+	}
+
 	if (domains.has('family') && /legg til|opprett|endre|oppdater|slett|fjern|rydd|flytt|registrer|korriger|fiks|gi dem|de er|er egentlig|tilhører|hører til/.test(text)) {
 		skills.add('person_management');
 		hints.push('VIKTIG: Bruk manage_person og manage_relation for å faktisk endre data — ikke bare beskriv endringene.');
@@ -92,7 +101,7 @@ export function routeChatRequest(input: string): ChatRoutingDecision {
 	if (skills.size === 0) skills.add('general_chat');
 
 	// Fallback mode: infer from skills
-	const mode: ChatMode = skills.has('widget_creation') || skills.has('checklist_planning') || skills.has('goal_planning') || skills.has('person_management')
+	const mode: ChatMode = skills.has('widget_creation') || skills.has('checklist_planning') || skills.has('goal_planning') || skills.has('person_management') || skills.has('pool_management')
 		? 'tool'
 		: (domains.has('health') || domains.has('economics') || domains.has('food') || domains.has('family') || domains.has('home'))
 			? 'domain'

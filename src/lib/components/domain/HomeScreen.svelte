@@ -19,6 +19,7 @@
 	import ChatInput from '../ui/ChatInput.svelte';
 	import ChatMessages from '../ui/ChatMessages.svelte';
 	import ChecklistWidget, { type Checklist } from '../composed/ChecklistWidget.svelte';
+	import HarDuTidNaWidget from '../composed/HarDuTidNaWidget.svelte';
 	import ChecklistSheet from '../ui/ChecklistSheet.svelte';
 	import FlowSheet from '../flows/FlowSheet.svelte';
 	import EgenfrekvensPrompt from './EgenfrekvensPrompt.svelte';
@@ -1855,6 +1856,18 @@
 		</section>
 	{/if}
 
+	<!-- ── SONE 2b: Har du tid nå? ── -->
+	{#if !inputExpanded}
+		<section
+			class="zone zone-pool"
+			aria-label="Har du tid nå?"
+			out:fly={{ y: -28, duration: 750 }}
+			in:fly={{ y: -16, duration: 600 }}
+		>
+			<HarDuTidNaWidget />
+		</section>
+	{/if}
+
 	<!-- ── SONE 3: Tema ── -->
 	{#if !inputExpanded}
 		<section
@@ -2646,6 +2659,13 @@
 		border-radius: 18px;
 		margin: 0 12px;
 		position: relative;
+	}
+
+	/* ── Pool/huskeliste-sone — vises mellom widgets og tema ── */
+	.zone-pool {
+		flex: 0 0 auto;
+		padding: 8px 14px;
+		margin: 0 12px;
 	}
 
 	/* ── Tema-sone (24 %) ── */
