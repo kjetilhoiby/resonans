@@ -384,7 +384,7 @@
 		labelPattern: '',
 		senderPattern: '',
 		subjectPattern: '',
-		processingType: 'ai_extraction' as string,
+		processingType: 'workout_files' as string,
 		extractionPrompt: '',
 		eventType: 'email_content',
 		dataType: 'email',
@@ -405,7 +405,7 @@
 	function resetRuleForm() {
 		ruleForm = {
 			name: '', labelPattern: '', senderPattern: '', subjectPattern: '',
-			processingType: 'ai_extraction', extractionPrompt: '',
+			processingType: 'workout_files', extractionPrompt: '',
 			eventType: 'email_content', dataType: 'email',
 		};
 		editingRuleId = null;
@@ -2095,9 +2095,28 @@
 	</section>
 
 	<section class="card">
-		<h2>E-postregler</h2>
-		<p class="field-title">Konfigurer hvilke e-poster som skal importeres og hvordan de prosesseres.</p>
+		<h2>E-post</h2>
+		<p class="field-title">Konfigurer hvilke e-poster som skal importeres fra Gmail og hvordan de prosesseres.</p>
 
+		{#if !data.emailWebhookConfigured}
+			<p class="err">
+				<code>EMAIL_WEBHOOK_SECRET</code> er ikke satt på serveren. Be admin
+				generere en hemmelighet og deploye på nytt.
+			</p>
+		{:else}
+			<div class="email-stats">
+				<span class="ok">Aktiv</span>
+				<span class="muted">·</span>
+				<span>{data.emailImports.last7Days} e-poster siste 7 dager</span>
+				{#if data.emailImports.last7Days > 0}
+					<span class="muted">
+						({data.emailImports.workouts} treninger, {data.emailImports.libraryItems} bibliotek)
+					</span>
+				{/if}
+			</div>
+		{/if}
+
+		<h3>Regler</h3>
 		{#if loadingEmailRules}
 			<p>Laster...</p>
 		{:else}
@@ -2139,7 +2158,7 @@
 					{/each}
 				</div>
 			{:else if !showEmailRuleForm}
-				<p style="color: var(--text-tertiary); font-size: 0.84rem;">Ingen regler ennå. Legg til en regel for å importere e-poster automatisk.</p>
+				<p style="color: var(--text-tertiary); font-size: 0.84rem;">Ingen regler ennå. Opprett en regel for å begynne å importere e-poster.</p>
 			{/if}
 
 			{#if showEmailRuleForm}
@@ -2147,12 +2166,12 @@
 					<h3>{editingRuleId ? 'Rediger regel' : 'Ny regel'}</h3>
 					<div class="field">
 						<label for="rule-name">Navn *</label>
-						<Input id="rule-name" className="input" bind:value={ruleForm.name} placeholder="f.eks. Oda-kvitteringer" />
+						<Input id="rule-name" className="input" bind:value={ruleForm.name} placeholder="f.eks. Treningsklokke" />
 					</div>
 					<div class="field">
 						<label for="rule-label">Gmail-label</label>
-						<Input id="rule-label" className="input" bind:value={ruleForm.labelPattern} placeholder="f.eks. resonans/oda" />
-						<p class="field-hint">Matcher e-poster fra denne Gmail-labelen. Bruk * som wildcard.</p>
+						<Input id="rule-label" className="input" bind:value={ruleForm.labelPattern} placeholder="f.eks. Resonans/Trening" />
+						<p class="field-hint">Matcher e-poster med denne Gmail-labelen. Apps Script sender kun e-poster med labels som starter med «Resonans/».</p>
 					</div>
 					<div class="field">
 						<label for="rule-sender">Avsender-filter</label>
@@ -2167,10 +2186,10 @@
 					<div class="field">
 						<label for="rule-type">Prosessering</label>
 						<Select id="rule-type" className="input" bind:value={ruleForm.processingType}>
+							<option value="workout_files">Treningsfiler (GPX/TCX-vedlegg)</option>
+							<option value="library">Bibliotek (lånefrist → sjekkliste)</option>
 							<option value="ai_extraction">AI-ekstraksjon (GPT trekker ut data)</option>
 							<option value="raw_store">Rå lagring (lagre som tekst)</option>
-							<option value="workout_files">Treningsfiler (GPX/TCX)</option>
-							<option value="library">Bibliotek (lånefrist → sjekkliste)</option>
 						</Select>
 					</div>
 					{#if ruleForm.processingType === 'ai_extraction'}
@@ -2191,50 +2210,18 @@
 				</div>
 			{:else}
 				<Button variant="secondary" onClick={() => { showEmailRuleForm = true; ruleResult = null; }}>
-					Legg til e-postregel
+					Legg til regel
 				</Button>
 			{/if}
 		{/if}
-	</section>
 
-	<section class="card">
-		<h2>Google Regneark</h2>
-		{#if loadingGoogleSheets}
-			<p>Laster...</p>
-		{:else if googleSheetsStatus?.connected}
-			<p class="ok">Tilkoblet</p>
-			<div class="row">
-				<Button variant="ghost" onClick={disconnectGoogleSheets}>Koble fra</Button>
-				<Button variant="secondary" href="/api/sensors/google-sheets/connect">Koble til på nytt</Button>
-			</div>
-		{:else}
-			<Button href="/api/sensors/google-sheets/connect">Koble til Google Regneark</Button>
-		{/if}
-	</section>
-
-	<section class="card">
-		<h2>E-post (Gmail via Apps Script)</h2>
-		<p class="muted">
-			Send merkede Gmail-meldinger til Resonans. Kun e-poster med en av de
-			konfigurerte labelene forlater Gmail — alt annet ignoreres.
-		</p>
-
-		{#if !data.emailWebhookConfigured}
-			<p class="err">
-				<code>EMAIL_WEBHOOK_SECRET</code> er ikke satt på serveren. Be admin
-				generere en hemmelighet og deploye på nytt.
+		{#if data.emailWebhookConfigured}
+			<hr class="section-divider" />
+			<h3>Gmail-tilkobling (Apps Script)</h3>
+			<p class="muted">
+				Et Apps Script i Google overvåker Gmail-labeler som starter med «Resonans/» og sender
+				matchende e-poster hit. Opprett reglene over først — de bestemmer hva som prosesseres.
 			</p>
-		{:else}
-			<div class="email-stats">
-				<span class="ok">Aktiv</span>
-				<span class="muted">·</span>
-				<span>{data.emailImports.last7Days} e-poster siste 7 dager</span>
-				{#if data.emailImports.last7Days > 0}
-					<span class="muted">
-						({data.emailImports.workouts} treninger, {data.emailImports.libraryItems} bibliotek)
-					</span>
-				{/if}
-			</div>
 
 			<div class="field">
 				<p class="field-title">Endepunkt</p>
@@ -2244,18 +2231,6 @@
 						{emailEndpointCopied ? 'Kopiert ✓' : 'Kopier'}
 					</Button>
 				</div>
-			</div>
-
-			<div class="field">
-				<p class="field-title">Støttede labels</p>
-				<ul class="label-list">
-					{#each data.emailLabels as entry (entry.label)}
-						<li>
-							<code>{entry.label}</code>
-							<span class="muted"> — {entry.description}</span>
-						</li>
-					{/each}
-				</ul>
 			</div>
 
 			<div class="field">
@@ -2270,13 +2245,7 @@
 					<Button variant="secondary" onClick={copyAppsScript}>
 						{emailScriptCopied ? 'Kopiert ✓' : 'Kopier kildekode'}
 					</Button>
-					<Button variant="secondary" onClick={runEmailTest} disabled={emailTestRunning}>
-						{emailTestRunning ? 'Tester…' : 'Send test-bibliotek-mail'}
-					</Button>
 				</div>
-				{#if emailTestResult}
-					<p class={emailTestResult.ok ? 'ok' : 'err'}>{emailTestResult.message}</p>
-				{/if}
 
 				{#if data.emailAppsScriptSource}
 					<details bind:open={emailGuideOpen} class="apps-script-details">
@@ -2290,9 +2259,8 @@
 				<summary>Trinnvis oppsett-guide</summary>
 				<ol class="email-guide-list">
 					<li>
-						Opprett labels i Gmail som matcher tabellen over (f.eks.
-						<code>Resonans/Workout</code>, <code>Resonans/Bibliotek</code>).
-						Bruk skråstrek for å lage hierarki.
+						Opprett Gmail-labels med prefiks <code>Resonans/</code> som matcher reglene du har laget over
+						(f.eks. <code>Resonans/Trening</code>).
 					</li>
 					<li>
 						Sett opp filtre i Gmail for å auto-merke relevante e-poster.
@@ -2313,12 +2281,26 @@
 						intervall <em>Every 5 minutes</em>.
 					</li>
 					<li>
-						Test ved å merke en e-post med en støttet label og vente
-						5 minutter — eller kjør <em>Send test-bibliotek-mail</em>-knappen
-						over for å verifisere at endepunktet og handler-en virker.
+						Test ved å merke en e-post med en Resonans-label og vente
+						5 minutter — regelen over bestemmer hva som skjer med e-posten.
 					</li>
 				</ol>
 			</details>
+		{/if}
+	</section>
+
+	<section class="card">
+		<h2>Google Regneark</h2>
+		{#if loadingGoogleSheets}
+			<p>Laster...</p>
+		{:else if googleSheetsStatus?.connected}
+			<p class="ok">Tilkoblet</p>
+			<div class="row">
+				<Button variant="ghost" onClick={disconnectGoogleSheets}>Koble fra</Button>
+				<Button variant="secondary" href="/api/sensors/google-sheets/connect">Koble til på nytt</Button>
+			</div>
+		{:else}
+			<Button href="/api/sensors/google-sheets/connect">Koble til Google Regneark</Button>
 		{/if}
 	</section>
 	</div>
@@ -2687,6 +2669,11 @@
 	}
 
 	/* ── E-post-kilde ─────────────────────────────────────────────────────────── */
+	.section-divider {
+		border: none;
+		border-top: 1px solid #262626;
+		margin: 1rem 0;
+	}
 	.email-stats {
 		display: flex;
 		flex-wrap: wrap;
@@ -2707,23 +2694,6 @@
 		border-radius: 6px;
 		background: #121212;
 		color: var(--text-secondary);
-	}
-	.label-list {
-		list-style: none;
-		padding: 0;
-		margin: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0.3rem;
-		font-size: 0.86rem;
-	}
-	.label-list code {
-		font-family: monospace;
-		font-size: 0.8rem;
-		padding: 0.1rem 0.35rem;
-		border-radius: 4px;
-		background: #1c1c1c;
-		color: var(--text-primary);
 	}
 	.apps-script-details summary,
 	.email-guide summary {

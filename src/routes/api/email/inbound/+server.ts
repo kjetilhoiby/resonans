@@ -21,6 +21,13 @@ function timingSafeEqual(a: string, b: string): boolean {
 	return mismatch === 0;
 }
 
+function extractRecipientEmail(raw: string): string {
+	const trimmed = raw.trim().toLowerCase();
+	const angle = trimmed.match(/<([^>]+)>/);
+	if (angle) return angle[1].trim();
+	return trimmed;
+}
+
 function matchesPattern(value: string, pattern: string): boolean {
 	if (!pattern) return true;
 	const lower = value.toLowerCase();
@@ -36,11 +43,6 @@ function matchesPattern(value: string, pattern: string): boolean {
 	}
 	return lower === p || lower.includes(p);
 }
-
-const BUILTIN_LABEL_DEFAULTS: Record<string, string> = {
-	'resonans/trening': 'workout_files',
-	'resonans/bibliotek': 'library',
-};
 
 type RuleMatch = typeof emailRules.$inferSelect;
 
@@ -79,14 +81,31 @@ export const POST: RequestHandler = async ({ request, url }) => {
 		return json({ error: 'Unauthorized' }, { status: 401 });
 	}
 
-	let payload: InboundEmailPayload;
+	let raw: Record<string, any>;
 	try {
-		payload = await request.json() as InboundEmailPayload;
+		raw = await request.json();
 	} catch {
 		return json({ error: 'Invalid JSON' }, { status: 400 });
 	}
 
-	const userEmail = (payload.UserEmail ?? '').toLowerCase().trim();
+	const payload: InboundEmailPayload = {
+		UserEmail: raw.UserEmail ?? raw.to ?? '',
+		From: raw.From ?? raw.from ?? '',
+		Subject: raw.Subject ?? raw.subject,
+		TextBody: raw.TextBody ?? raw.bodyText,
+		HtmlBody: raw.HtmlBody ?? raw.htmlBody,
+		Label: raw.Label ?? raw.label,
+		GmailMessageId: raw.GmailMessageId ?? raw.gmailMessageId,
+		GmailDate: raw.GmailDate ?? raw.gmailDate ?? (raw.internalDate ? String(raw.internalDate) : undefined),
+		Attachments: (raw.Attachments ?? raw.attachments ?? []).map((a: any) => ({
+			Name: a.Name ?? a.name ?? '',
+			Content: a.Content ?? a.base64 ?? '',
+			ContentType: a.ContentType ?? a.contentType ?? 'application/octet-stream',
+			ContentLength: a.ContentLength ?? a.size ?? 0,
+		})),
+	};
+
+	const userEmail = extractRecipientEmail(payload.UserEmail);
 	if (!userEmail) {
 		return json({ error: 'Missing UserEmail' }, { status: 400 });
 	}
@@ -142,20 +161,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
 		return json({ success: true, rulesMatched: results.length, results });
 	}
 
-	// 2) Built-in label defaults (fallback when no rules match)
-	const builtinType = label ? BUILTIN_LABEL_DEFAULTS[label] : undefined;
-	if (builtinType) {
-		try {
-			const pseudoRule = { processingType: builtinType } as RuleMatch;
-			const result = await executeRule(user.id, pseudoRule, payload);
-			return json({ success: true, label, handler: builtinType, ...result });
-		} catch (error) {
-			console.error(`[email-inbound] built-in handler "${builtinType}" failed:`, error);
-			return json({ error: 'Handler failed', label, handler: builtinType }, { status: 500 });
-		}
-	}
-
-	// 3) Last resort: workout attachments without label or rule
+	// 2) Last resort: workout attachments without label or rule
 	const hasWorkoutAttachments = (payload.Attachments ?? []).some(
 		a => a.Name?.toLowerCase().endsWith('.gpx') || a.Name?.toLowerCase().endsWith('.tcx')
 	);

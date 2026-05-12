@@ -3,7 +3,6 @@ import { users, sensorEvents, checklistItems } from '$lib/db/schema';
 import { and, eq, gte, sql } from 'drizzle-orm';
 import { env } from '$env/dynamic/private';
 import { ensureUser } from '$lib/server/users';
-import { EMAIL_LABELS } from '$lib/server/email/router';
 import { buildAppsScript } from '$lib/server/email/apps-script-template';
 import type { PageServerLoad } from './$types';
 
@@ -52,14 +51,11 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		libraryItems: libraryCountRow?.count ?? 0
 	};
 
-	const emailLabels = EMAIL_LABELS.map((l) => ({ label: l.label, description: l.description }));
-
 	return {
 		user: user || null,
 		emailEndpoint: endpoint,
 		emailWebhookConfigured: token.length > 0,
 		emailAppsScriptSource: appsScriptSource,
-		emailImports,
-		emailLabels
+		emailImports
 	};
 };
