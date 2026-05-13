@@ -17,6 +17,9 @@
 	import HrDistributionBar from '../charts/HrDistributionBar.svelte';
 	import DynamicWidget from '../composed/DynamicWidget.svelte';
 	import WeeklyEffortCard from '../composed/WeeklyEffortCard.svelte';
+	import FormCard from '../composed/FormCard.svelte';
+	import BalanceCard from '../composed/BalanceCard.svelte';
+	import { computeTrainingLoad } from '$lib/util/training-load';
 	import { hasElevation, hasHeartRate } from '$lib/utils/track-stats';
 	import {
 		buildPaceBaseline,
@@ -132,6 +135,7 @@
 		weekly: AggregatePeriod[];
 		monthly: AggregatePeriod[];
 		yearly: AggregatePeriod[];
+		dailyEffort?: Array<{ date: string; effort: number }>;
 		sources?: Array<{ id: string; name: string; provider: string; isActive: boolean; lastSync: string | null }>;
 		recentEvents?: Array<{ id: string; timestamp: string; dataType: string; data: Record<string, unknown> }>;
 		tooling?: {
@@ -148,7 +152,7 @@
 		themeId?: string;
 	}
 
-	let { weekly, monthly, yearly, sources = [], recentEvents = [], tooling, embedded = false, goals = [], activities = [], metricSettings = {}, themeId }: Props = $props();
+	let { weekly, monthly, yearly, dailyEffort = [], sources = [], recentEvents = [], tooling, embedded = false, goals = [], activities = [], metricSettings = {}, themeId }: Props = $props();
 
 	let themeWidgets = $state<ThemeWidget[]>([]);
 	let themeWidgetsLoading = $state(true);
@@ -219,7 +223,9 @@
 	);
 
 	const aggregatePeriod = $derived<'week' | 'month' | 'year'>(
-		selectedWindow === 'month' || selectedWindow === 'quarter' ? 'month' : selectedWindow === 'year' ? 'year' : 'week'
+		selectedWindow === '30d' || selectedWindow === 'month' || selectedWindow === 'quarter' ? 'month' :
+		selectedWindow === '365d' || selectedWindow === 'year' ? 'year' :
+		'week'
 	);
 
 	// Mapping fra HealthDashboard-vinduet til widget-API'ets range-streng.
@@ -279,6 +285,8 @@
 	);
 	const lastPeriod = $derived(periodData.length ? periodData[periodData.length - 1] : null);
 	const lastMetrics = $derived(lastPeriod?.metrics ?? null);
+
+	const trainingLoadSeries = $derived(computeTrainingLoad(dailyEffort));
 
 	const latestWeekWithEffort = $derived(
 		[...weekly].reverse().find((w) => w.metrics?.weeklyEffort) ?? null
@@ -365,16 +373,25 @@
 		}
 
 		const hrCoveragePct = total > 0 ? Math.round((trimpWeighted / total) * 100) : 0;
+		const rangeDays = Math.max(1, Math.round((range.end.getTime() - range.start.getTime()) / 86400000));
+		const rangeWeeks = Math.max(1, rangeDays / 7);
+
+		const ceilings: (number | null)[] = bars.map((_, i) =>
+			i === 0 ? null : bars[i - 1].value > 0 ? bars[i - 1].value * 1.1 : null
+		);
 
 		return {
 			total: Math.round(total * 10) / 10,
+			perWeekAvg: Math.round((total / rangeWeeks) * 10) / 10,
 			byFamily,
 			bars,
+			ceilings,
 			hrCoveragePct,
 			workoutCount,
 			rangeLabel: range.label
 		};
 	});
+
 
 	function periodYear(periodKey: string): number {
 		return parseInt(periodKey.split(/[WMQY]/)[0]);
@@ -388,6 +405,34 @@
 		if (periodTableFilter === 'i_ar') return reversed.filter(p => periodYear(p.periodKey) === thisYear);
 		if (periodTableFilter === 'siste_ar') return reversed.filter(p => periodYear(p.periodKey) === thisYear - 1);
 		return reversed;
+	});
+
+	const effortByPeriodKey = $derived.by(() => {
+		const map = new Map<string, number>();
+		for (const p of periodData) {
+			if (p.period === 'week') {
+				const t = p.metrics?.weeklyEffort?.total;
+				if (t != null) map.set(p.periodKey, t);
+				continue;
+			}
+			if (!p.startDate || !p.endDate) continue;
+			const pStart = new Date(p.startDate).getTime();
+			const pEnd = new Date(p.endDate).getTime();
+			let total = 0;
+			let found = false;
+			for (const w of weekly) {
+				const eff = w.metrics?.weeklyEffort?.total;
+				if (eff == null || !w.startDate || !w.endDate) continue;
+				const wStart = new Date(w.startDate).getTime();
+				const wEnd = new Date(w.endDate).getTime();
+				if (wEnd >= pStart && wStart <= pEnd) {
+					total += eff;
+					found = true;
+				}
+			}
+			if (found) map.set(p.periodKey, total);
+		}
+		return map;
 	});
 
 	const GOAL_COLORS: Record<string, string> = {
@@ -502,8 +547,8 @@
 
 	function formatPeriodKey(key: string, period: string): string {
 		if (period === 'week') {
-			const [year, week] = key.split('W');
-			return `Uke ${week}, ${year}`;
+			const [, week] = key.split('W');
+			return `Uke ${week}`;
 		}
 		if (period === 'month') {
 			const [year, month] = key.split('M');
@@ -532,6 +577,92 @@
 		if (!p.startDate || !p.endDate) return 1;
 		const ms = new Date(p.endDate).getTime() - new Date(p.startDate).getTime();
 		return Math.max(1, Math.round(ms / 86400000) + 1);
+	}
+
+	const METRIC_PALETTE = {
+		bad: [200, 110, 110] as const,
+		mid: [190, 155, 95] as const,
+		good: [120, 175, 130] as const,
+		none: [70, 70, 75] as const
+	};
+
+	type ColorStop = readonly [value: number, rgb: readonly [number, number, number]];
+
+	function interpolateStops(value: number, stops: readonly ColorStop[]): string {
+		if (value <= stops[0][0]) return rgb(stops[0][1]);
+		for (let i = 1; i < stops.length; i++) {
+			const [v1, c1] = stops[i - 1];
+			const [v2, c2] = stops[i];
+			if (value <= v2) {
+				const t = v2 === v1 ? 0 : (value - v1) / (v2 - v1);
+				return rgb([
+					Math.round(c1[0] + (c2[0] - c1[0]) * t),
+					Math.round(c1[1] + (c2[1] - c1[1]) * t),
+					Math.round(c1[2] + (c2[2] - c1[2]) * t)
+				]);
+			}
+		}
+		return rgb(stops[stops.length - 1][1]);
+	}
+
+	function rgb([r, g, b]: readonly [number, number, number]): string {
+		return `rgb(${r}, ${g}, ${b})`;
+	}
+
+	const NONE_COLOR = rgb(METRIC_PALETTE.none);
+
+	const WEIGHT_STOPS: readonly ColorStop[] = [
+		[-1.5, METRIC_PALETTE.good],
+		[-0.3, METRIC_PALETTE.good],
+		[0.1, METRIC_PALETTE.mid],
+		[0.8, METRIC_PALETTE.bad]
+	];
+	const RUNNING_STOPS: readonly ColorStop[] = [
+		[0, METRIC_PALETTE.bad],
+		[8, METRIC_PALETTE.mid],
+		[20, METRIC_PALETTE.good],
+		[35, METRIC_PALETTE.good]
+	];
+	const EFFORT_STOPS: readonly ColorStop[] = [
+		[0, METRIC_PALETTE.bad],
+		[80, METRIC_PALETTE.bad],
+		[200, METRIC_PALETTE.mid],
+		[450, METRIC_PALETTE.good],
+		[900, METRIC_PALETTE.good]
+	];
+	const SLEEP_LAG_STOPS: readonly ColorStop[] = [
+		[0, METRIC_PALETTE.good],
+		[20, METRIC_PALETTE.good],
+		[40, METRIC_PALETTE.mid],
+		[65, METRIC_PALETTE.bad]
+	];
+	const HR_STOPS: readonly ColorStop[] = [
+		[48, METRIC_PALETTE.good],
+		[58, METRIC_PALETTE.good],
+		[65, METRIC_PALETTE.mid],
+		[75, METRIC_PALETTE.bad]
+	];
+
+	function weightColor(change: number | undefined): string {
+		return change == null ? NONE_COLOR : interpolateStops(change, WEIGHT_STOPS);
+	}
+	function runningColor(km: number | undefined): string {
+		return km == null || km <= 0 ? NONE_COLOR : interpolateStops(km, RUNNING_STOPS);
+	}
+	function effortPerWeek(total: number | undefined, periodDays: number): number | undefined {
+		if (total == null) return undefined;
+		const weeks = Math.max(1, periodDays / 7);
+		return total / weeks;
+	}
+
+	function effortColor(perWeek: number | undefined): string {
+		return perWeek == null ? NONE_COLOR : interpolateStops(perWeek, EFFORT_STOPS);
+	}
+	function sleepLagColor(lag: number | undefined): string {
+		return lag == null ? NONE_COLOR : interpolateStops(lag, SLEEP_LAG_STOPS);
+	}
+	function heartRateColor(bpm: number | undefined): string {
+		return bpm == null ? NONE_COLOR : interpolateStops(bpm, HR_STOPS);
 	}
 
 	function formatDate(value: string): string {
@@ -1218,13 +1349,22 @@
 	{:else if effortPeriodMode === 'weekly' && periodEffortAggregate}
 		<div class="hd-effort">
 			<WeeklyEffortCard
-				total={periodEffortAggregate.total}
+				title="Relativ effort (snitt/uke)"
+				total={periodEffortAggregate.perWeekAvg}
 				byFamily={periodEffortAggregate.byFamily}
 				bars={periodEffortAggregate.bars}
+				ceilings={periodEffortAggregate.ceilings}
 				hrCoveragePct={periodEffortAggregate.hrCoveragePct}
 				workoutCount={periodEffortAggregate.workoutCount}
 				weekLabel={periodEffortAggregate.rangeLabel}
 			/>
+		</div>
+	{/if}
+
+	{#if trainingLoadSeries.length >= 14}
+		<div class="hd-training-load">
+			<FormCard series={trainingLoadSeries} />
+			<BalanceCard series={trainingLoadSeries} />
 		</div>
 	{/if}
 
@@ -1240,24 +1380,26 @@
 	{/if}
 
 	{#if themeId}
-		<div class="hd-widget-grid">
-			{#if themeWidgetsLoading && themeWidgets.length === 0}
-				{#each Array.from({ length: 4 }) as _}
-					<div class="hd-widget-skeleton" aria-hidden="true"></div>
-				{/each}
-			{:else}
-				{#each themeWidgets as widget (widget.id)}
-					<DynamicWidget
-						widgetId={widget.id}
-						title={widget.title}
-						unit={widget.unit}
-						color={widget.color}
-						pinned={widget.pinned}
-						range={widgetRange}
-						onunpin={() => removeThemeWidget(widget.id)}
-					/>
-				{/each}
-			{/if}
+		<div class="hd-widget-card">
+			<div class="hd-widget-grid">
+				{#if themeWidgetsLoading && themeWidgets.length === 0}
+					{#each Array.from({ length: 4 }) as _}
+						<div class="hd-widget-skeleton" aria-hidden="true"></div>
+					{/each}
+				{:else}
+					{#each themeWidgets as widget (widget.id)}
+						<DynamicWidget
+							widgetId={widget.id}
+							title={widget.title}
+							unit={widget.unit}
+							color={widget.color}
+							pinned={widget.pinned}
+							range={widgetRange}
+							onunpin={() => removeThemeWidget(widget.id)}
+						/>
+					{/each}
+				{/if}
+			</div>
 		</div>
 	{/if}
 
@@ -1287,22 +1429,26 @@
 							<th>Periode</th>
 							<th title="Vektendring i perioden">⚖️</th>
 							<th title="Kilometer løpt">🏃</th>
-							<th title="Aktive minutter (snitt per dag)">⚡</th>
-							<th title="Søvn (snitt per natt)">🌙</th>
+							<th title="Relativ effort (snitt per uke)">⚡</th>
+							<th title="Sleep lag (timing-indeks, lavere = bedre)">⏰</th>
 							<th title="Sovepuls (snitt)">💓</th>
 						</tr>
 					</thead>
 					<tbody>
 						{#each visiblePeriods as period}
 							{@const days = daysInPeriod(period)}
-							{@const activeSum = period.metrics?.intenseMinutes?.sum}
+							{@const weightChange = period.metrics?.weight?.change}
+							{@const runningKm = (period.metrics?.workouts?.types?.running ?? 0) > 0 ? (period.metrics!.workouts!.types!.running as number) : undefined}
+							{@const effortPw = effortPerWeek(effortByPeriodKey.get(period.periodKey), days)}
+							{@const sleepLag = period.metrics?.sleepLag}
+							{@const hr = period.metrics?.sleepHeartRate?.avg}
 							<tr>
 								<td>{formatPeriodKey(period.periodKey, period.period)}</td>
-								<td>{formatWeightChange(period.metrics?.weight?.change)}</td>
-								<td>{(period.metrics?.workouts?.types?.running ?? 0) > 0 ? (period.metrics!.workouts!.types!.running as number).toFixed(1) + 'km' : '–'}</td>
-								<td>{activeSum != null ? Math.round(activeSum / days) : '–'}/d</td>
-								<td>{formatMetric(period.metrics?.sleep?.avg)}t</td>
-								<td>{formatMetric(period.metrics?.sleepHeartRate?.avg, 0)}</td>
+								<td><span class="hd-metric-pill" style="--pill-color: {weightColor(weightChange)}">{formatWeightChange(weightChange)}</span></td>
+								<td><span class="hd-metric-pill" style="--pill-color: {runningColor(runningKm)}">{runningKm != null ? runningKm.toFixed(1) : '–'}</span></td>
+								<td><span class="hd-metric-pill" style="--pill-color: {effortColor(effortPw)}">{effortPw != null ? Math.round(effortPw) : '–'}</span></td>
+								<td><span class="hd-metric-pill" style="--pill-color: {sleepLagColor(sleepLag)}">{sleepLag != null ? Math.round(sleepLag) : '–'}</span></td>
+								<td><span class="hd-metric-pill" style="--pill-color: {heartRateColor(hr)}">{formatMetric(hr, 0)}</span></td>
 							</tr>
 						{/each}
 					</tbody>
@@ -1704,9 +1850,20 @@
 
 	.hd-empty,
 	.hd-table-card,
+	.hd-widget-card,
 	.hd-tooling-card {
 		background: #141414;
 		border-radius: 18px;
+	}
+
+	.hd-training-load {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+		gap: 12px;
+	}
+
+	.hd-widget-card {
+		padding: 16px 12px;
 	}
 
 	.hd-tooling-card {
@@ -1801,21 +1958,24 @@
 
 	.hd-table th,
 	.hd-table td {
-		text-align: left;
-		padding: 8px 6px;
+		text-align: center;
+		padding: 10px 4px;
 		border-top: 1px solid #202020;
 		font-size: 0.8rem;
 	}
 
+	.hd-table th:first-child,
 	.hd-table td:first-child {
-		width: 30%;
+		text-align: left;
 		white-space: nowrap;
+		padding-right: 8px;
 	}
 
 	.hd-table th {
 		border-top: none;
 		color: #666;
 		font-size: 0.9rem;
+		font-weight: 500;
 	}
 
 	.hd-table td {
@@ -1825,8 +1985,24 @@
 
 	.hd-table td:first-child {
 		color: #888;
-		font-size: 0.75rem;
-		padding-right: 12px;
+		font-size: 0.78rem;
+	}
+
+	.hd-metric-pill {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 44px;
+		height: 30px;
+		padding: 0 8px;
+		border-radius: 999px;
+		border: 1px solid color-mix(in srgb, var(--pill-color, #3a3a3a) 70%, transparent);
+		color: #d8d8d8;
+		font-size: 0.78rem;
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+		line-height: 1;
+		background: color-mix(in srgb, var(--pill-color, #3a3a3a) 10%, transparent);
 	}
 
 	@media (max-width: 640px) {

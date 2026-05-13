@@ -32,6 +32,15 @@ export interface YearPeriod {
 	endTime: Date;
 }
 
+export interface DayPeriod {
+	year: number;
+	periodKey: string; // '2025-10-20' (UTC kalenderdag)
+	startDate: string; // '2025-10-20'
+	endDate: string; // '2025-10-20'
+	startTime: Date; // UTC midnatt
+	endTime: Date; // UTC 23:59:59.999
+}
+
 /**
  * Get date of ISO week (Monday-based)
  * From your weekly.js
@@ -145,6 +154,29 @@ export function generateYears(startYear = 2017): YearPeriod[] {
 	}
 
 	return years.reverse(); // Most recent first
+}
+
+/**
+ * Generate the last N days (UTC kalenderdager), most recent first.
+ */
+export function generateDays(daysBack = 400): DayPeriod[] {
+	const days: DayPeriod[] = [];
+	const todayUtc = new Date();
+	const start = new Date(Date.UTC(todayUtc.getUTCFullYear(), todayUtc.getUTCMonth(), todayUtc.getUTCDate()));
+	for (let i = 0; i < daysBack; i++) {
+		const dayStart = new Date(start.getTime() - i * 86400000);
+		const dayEnd = new Date(dayStart.getTime() + 86400000 - 1);
+		const periodKey = dayStart.toISOString().split('T')[0];
+		days.push({
+			year: dayStart.getUTCFullYear(),
+			periodKey,
+			startDate: periodKey,
+			endDate: periodKey,
+			startTime: dayStart,
+			endTime: dayEnd
+		});
+	}
+	return days;
 }
 
 /**

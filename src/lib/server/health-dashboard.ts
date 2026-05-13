@@ -40,20 +40,23 @@ export async function loadHealthDashboardData(userId: string) {
 		)
 	}) : [];
 
-	const [weeklyData, monthlyData, yearlyData] = await Promise.all([
+	const [weeklyData, monthlyData, yearlyData, dailyData] = await Promise.all([
 		db.query.sensorAggregates.findMany({
 			where: and(eq(sensorAggregates.userId, userId), eq(sensorAggregates.period, 'week')),
-			orderBy: [desc(sensorAggregates.startDate)],
-			limit: 12
+			orderBy: [desc(sensorAggregates.startDate)]
 		}),
 		db.query.sensorAggregates.findMany({
 			where: and(eq(sensorAggregates.userId, userId), eq(sensorAggregates.period, 'month')),
-			orderBy: [desc(sensorAggregates.startDate)],
-			limit: 12
+			orderBy: [desc(sensorAggregates.startDate)]
 		}),
 		db.query.sensorAggregates.findMany({
 			where: and(eq(sensorAggregates.userId, userId), eq(sensorAggregates.period, 'year')),
 			orderBy: [desc(sensorAggregates.startDate)]
+		}),
+		db.query.sensorAggregates.findMany({
+			where: and(eq(sensorAggregates.userId, userId), eq(sensorAggregates.period, 'day')),
+			orderBy: [desc(sensorAggregates.startDate)],
+			limit: 400
 		})
 	]);
 
@@ -80,10 +83,19 @@ export async function loadHealthDashboardData(userId: string) {
 		`[perf][health-dashboard] user=${userId} step=total ms=${(performance.now() - t0).toFixed(0)} workouts=${unifiedActivities.length} recentEvents=${recentHealthEvents.length} goals=${healthGoals.length}`
 	);
 
+	const dailyEffortSeries = dailyData
+		.slice()
+		.reverse()
+		.map((row) => ({
+			date: row.periodKey,
+			effort: (row.metrics as { dailyEffort?: { total?: number } } | null)?.dailyEffort?.total ?? 0
+		}));
+
 	return {
 		weekly: weeklyData.reverse(),
 		monthly: monthlyData.reverse(),
 		yearly: yearlyData.reverse(),
+		dailyEffort: dailyEffortSeries,
 		sources: healthSensors.map((sensor) => ({
 			id: sensor.id,
 			name: sensor.name,
