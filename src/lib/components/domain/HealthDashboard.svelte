@@ -390,6 +390,34 @@
 		return reversed;
 	});
 
+	const effortByPeriodKey = $derived.by(() => {
+		const map = new Map<string, number>();
+		for (const p of periodData) {
+			if (p.period === 'week') {
+				const t = p.metrics?.weeklyEffort?.total;
+				if (t != null) map.set(p.periodKey, t);
+				continue;
+			}
+			if (!p.startDate || !p.endDate) continue;
+			const pStart = new Date(p.startDate).getTime();
+			const pEnd = new Date(p.endDate).getTime();
+			let total = 0;
+			let found = false;
+			for (const w of weekly) {
+				const eff = w.metrics?.weeklyEffort?.total;
+				if (eff == null || !w.startDate || !w.endDate) continue;
+				const wStart = new Date(w.startDate).getTime();
+				const wEnd = new Date(w.endDate).getTime();
+				if (wEnd >= pStart && wStart <= pEnd) {
+					total += eff;
+					found = true;
+				}
+			}
+			if (found) map.set(p.periodKey, total);
+		}
+		return map;
+	});
+
 	const GOAL_COLORS: Record<string, string> = {
 		active: '#7c8ef5',
 		paused: '#888',
@@ -604,8 +632,10 @@
 	function runningColor(km: number | undefined): string {
 		return km == null || km <= 0 ? NONE_COLOR : interpolateStops(km, RUNNING_STOPS);
 	}
-	function effortColor(total: number | undefined): string {
-		return total == null ? NONE_COLOR : interpolateStops(total, EFFORT_STOPS);
+	function effortColor(total: number | undefined, periodDays = 7): string {
+		if (total == null) return NONE_COLOR;
+		const weeks = Math.max(1, periodDays / 7);
+		return interpolateStops(total / weeks, EFFORT_STOPS);
 	}
 	function sleepLagColor(lag: number | undefined): string {
 		return lag == null ? NONE_COLOR : interpolateStops(lag, SLEEP_LAG_STOPS);
@@ -1376,16 +1406,17 @@
 					</thead>
 					<tbody>
 						{#each visiblePeriods as period}
+							{@const days = daysInPeriod(period)}
 							{@const weightChange = period.metrics?.weight?.change}
 							{@const runningKm = (period.metrics?.workouts?.types?.running ?? 0) > 0 ? (period.metrics!.workouts!.types!.running as number) : undefined}
-							{@const effortTotal = period.metrics?.weeklyEffort?.total}
+							{@const effortTotal = effortByPeriodKey.get(period.periodKey)}
 							{@const sleepLag = period.metrics?.sleepLag}
 							{@const hr = period.metrics?.sleepHeartRate?.avg}
 							<tr>
 								<td>{formatPeriodKey(period.periodKey, period.period)}</td>
 								<td><span class="hd-metric-pill" style="--pill-color: {weightColor(weightChange)}">{formatWeightChange(weightChange)}</span></td>
 								<td><span class="hd-metric-pill" style="--pill-color: {runningColor(runningKm)}">{runningKm != null ? runningKm.toFixed(1) : '–'}</span></td>
-								<td><span class="hd-metric-pill" style="--pill-color: {effortColor(effortTotal)}">{effortTotal != null ? Math.round(effortTotal) : '–'}</span></td>
+								<td><span class="hd-metric-pill" style="--pill-color: {effortColor(effortTotal, days)}">{effortTotal != null ? Math.round(effortTotal) : '–'}</span></td>
 								<td><span class="hd-metric-pill" style="--pill-color: {sleepLagColor(sleepLag)}">{sleepLag != null ? Math.round(sleepLag) : '–'}</span></td>
 								<td><span class="hd-metric-pill" style="--pill-color: {heartRateColor(hr)}">{formatMetric(hr, 0)}</span></td>
 							</tr>
