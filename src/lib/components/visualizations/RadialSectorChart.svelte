@@ -29,6 +29,12 @@
     showTrack?: boolean;
     centerLabel?: string;
     centerSublabel?: string;
+    /** Global skala 0–1 som ganges inn på alle radier (for spredning/sammentrekning) */
+    scale?: number;
+    /** Emoji som vises midt i ringen (typisk under hvile-fasen) */
+    centerEmoji?: string;
+    /** Opacity for senter-emojien (0–1) */
+    centerEmojiOpacity?: number;
   }
 
   let {
@@ -42,6 +48,9 @@
     showTrack = true,
     centerLabel,
     centerSublabel,
+    scale = 1,
+    centerEmoji,
+    centerEmojiOpacity = 1,
   }: Props = $props();
 
   function toRad(deg: number) {
@@ -93,15 +102,19 @@
       return buildArc(c, c, innerR, maxR, start, end);
     });
 
+    const s01 = Math.max(0, Math.min(1, scale));
+
     const arcs = sectors.map((s, i) => {
       const start = -90 + i * slotDeg;
       const end = start + slotDeg - gapDeg;
 
-      const bgOuterR = s.bgRadius != null
-        ? innerR + (maxR - innerR) * Math.max(0.05, Math.min(1, s.bgRadius))
+      const bgBase = s.bgRadius != null
+        ? Math.max(0.05, Math.min(1, s.bgRadius)) * s01
         : null;
+      const bgOuterR = bgBase != null ? innerR + (maxR - innerR) * bgBase : null;
 
-      const outerR = innerR + (maxR - innerR) * Math.max(0.05, Math.min(1, s.radius));
+      const rBase = s.radius > 0 ? Math.max(0.05, Math.min(1, s.radius)) * s01 : 0;
+      const outerR = innerR + (maxR - innerR) * rBase;
       const midDeg = start + (slotDeg - gapDeg) / 2;
       const labelR = (innerR + outerR) / 2;
 
@@ -175,6 +188,19 @@
       >{arc.label}</text>
     {/if}
   {/each}
+
+  <!-- Senter-emoji (vises typisk i hvile-fasen mellom datasett) -->
+  {#if centerEmoji && centerEmojiOpacity > 0}
+    <text
+      x={geom.c}
+      y={geom.c}
+      text-anchor="middle"
+      dominant-baseline="central"
+      font-size={size * 0.34}
+      opacity={centerEmojiOpacity}
+      pointer-events="none"
+    >{centerEmoji}</text>
+  {/if}
 
   <!-- Sentertekst — skalert relativt til size -->
   {#if centerLabel}
