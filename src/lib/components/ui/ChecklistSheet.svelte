@@ -73,9 +73,10 @@
 		}
 	});
 
-	// "Done" = avkrysset eller strøket — strøkne er bevisst ikke-gjort, ikke uløste.
-	const done = $derived(items.filter((i) => i.checked || i.skippedAt).length);
-	const total = $derived(items.length);
+	// Strøkne ("gjør ikke") teller hverken som planlagt eller løst.
+	const plannedItems = $derived(items.filter((i) => !i.skippedAt));
+	const done = $derived(plannedItems.filter((i) => i.checked).length);
+	const total = $derived(plannedItems.length);
 	const allDone = $derived(total > 0 && done === total);
 	const pct = $derived(total > 0 ? done / total : 0);
 	const calendarHref = $derived.by(() => {
@@ -247,6 +248,19 @@
 		} finally {
 			addingItem = false;
 		}
+	}
+
+	async function deleteItem(itemId: string) {
+		const previousItems = items;
+		items = items.filter((i) => i.id !== itemId && i.parentId !== itemId);
+		const res = await fetch(`/api/checklists/${checklist.id}/items/${itemId}`, {
+			method: 'DELETE'
+		});
+		if (!res.ok) {
+			items = previousItems;
+			return;
+		}
+		onChanged?.();
 	}
 
 	async function setItemSkipped(itemId: string, skipped: boolean) {
@@ -688,6 +702,7 @@
 	onSnooze={(targetDate) => { if (contextMenuItem) void snoozeItem(contextMenuItem.id, targetDate); }}
 	onSkip={() => { if (contextMenuItem) void setItemSkipped(contextMenuItem.id, true); }}
 	onUnskip={() => { if (contextMenuItem) void setItemSkipped(contextMenuItem.id, false); }}
+	onDelete={() => { if (contextMenuItem) void deleteItem(contextMenuItem.id); }}
 />
 
 <!-- Breakdown modal -->

@@ -29,6 +29,7 @@
 		onSnooze?: (targetDate: string) => void;
 		onSkip?: () => void;
 		onUnskip?: () => void;
+		onDelete?: () => void;
 	}
 
 	let {
@@ -43,10 +44,11 @@
 		onBreakdown,
 		onSnooze,
 		onSkip,
-		onUnskip
+		onUnskip,
+		onDelete
 	}: Props = $props();
 
-	type View = 'main' | 'snooze' | 'pickDate';
+	type View = 'main' | 'snooze' | 'pickDate' | 'confirmDelete';
 	let view = $state<View>('main');
 	let pickedDate = $state('');
 
@@ -88,7 +90,7 @@
 	const popupStyle = $derived.by(() => {
 		if (!open || !anchor) return '';
 		const popupW = 220;
-		const estH = view === 'pickDate' ? 170 : view === 'snooze' ? 220 : 230;
+		const estH = view === 'pickDate' ? 170 : view === 'snooze' ? 220 : view === 'confirmDelete' ? 150 : 270;
 		const margin = 8;
 		let left = anchor.left + anchor.width / 2 - popupW / 2;
 		left = Math.max(margin, Math.min(left, window.innerWidth - popupW - margin));
@@ -172,6 +174,16 @@
 				</button>
 			{/if}
 
+			{#if onDelete}
+				<button
+					class="tcm-btn tcm-btn-danger"
+					onpointerdown={(e) => e.stopPropagation()}
+					onclick={(e) => { e.stopPropagation(); view = 'confirmDelete'; }}
+				>
+					<span class="tcm-icon">🗑</span> Slett oppgave
+				</button>
+			{/if}
+
 			<button
 				class="tcm-cancel"
 				onpointerdown={(e) => e.stopPropagation()}
@@ -245,6 +257,21 @@
 				onpointerdown={(e) => e.stopPropagation()}
 				onclick={(e) => { e.stopPropagation(); view = 'snooze'; }}
 			>Tilbake</button>
+		{:else if view === 'confirmDelete'}
+			<div class="tcm-section-label">Slett oppgaven?</div>
+			<p class="tcm-confirm-text">Dette kan ikke angres.</p>
+			<button
+				class="tcm-btn tcm-btn-danger"
+				onpointerdown={(e) => e.stopPropagation()}
+				onclick={(e) => { e.stopPropagation(); onDelete?.(); onClose(); }}
+			>
+				<span class="tcm-icon">🗑</span> Slett
+			</button>
+			<button
+				class="tcm-cancel"
+				onpointerdown={(e) => e.stopPropagation()}
+				onclick={(e) => { e.stopPropagation(); view = 'main'; }}
+			>Avbryt</button>
 		{/if}
 	</div>
 {/if}
@@ -285,6 +312,14 @@
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
 		padding: 4px 10px;
+	}
+
+	.tcm-confirm-text {
+		font-size: 0.78rem;
+		color: #999;
+		padding: 0 10px 8px;
+		margin: 0;
+		line-height: 1.4;
 	}
 
 	.tcm-btn {

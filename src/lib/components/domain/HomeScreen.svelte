@@ -189,6 +189,7 @@
 
 	// -- Sjekklister --
 	let activeChecklists = $state<Checklist[]>([]);
+	let monthDayChecklists = $state<Checklist[]>([]);
 	let openChecklist = $state<Checklist | null>(null);
 
 	// -- Pull to refresh (mobil) --
@@ -440,12 +441,48 @@
 			});
 	}
 
+	function getMonthDayContexts(year: number, month: number): string[] {
+		const daysInMonth = new Date(year, month, 0).getDate();
+		const contexts: string[] = [];
+		for (let day = 1; day <= daysInMonth; day++) {
+			const date = new Date(year, month - 1, day);
+			const weekKey = getLocalIsoWeekDashed(date);
+			const isoDate = toLocalIsoDate(date);
+			contexts.push(`week:${weekKey}:day:${isoDate}`);
+		}
+		return contexts;
+	}
+
 	async function fetchChecklists() {
 		try {
-			const res = await fetch('/api/checklists?active=true');
-			if (res.ok) {
-				const rows = await res.json() as Checklist[];
-				activeChecklists = sortActiveChecklists(rows);
+			const now = new Date();
+			const [year, monthStr] = toLocalYearMonth(now).split('-');
+			const monthNum = Number(monthStr);
+			const dayContexts = getMonthDayContexts(Number(year), monthNum);
+			const monthContext = `month:${toLocalYearMonth(now)}`;
+			const weekContext = `week:${getLocalIsoWeekDashed(now)}`;
+
+			const activePromise = fetch('/api/checklists?active=true').then(async (res) => {
+				if (!res.ok) return null;
+				return (await res.json()) as Checklist[];
+			});
+
+			const allContexts = [monthContext, weekContext, ...dayContexts].join(',');
+			const monthDayPromise = fetch(
+				`/api/checklists?contexts=${encodeURIComponent(allContexts)}`
+			).then(async (res) => {
+				if (!res.ok) return null;
+				return (await res.json()) as Checklist[];
+			});
+
+			const [activeRows, contextRows] = await Promise.all([activePromise, monthDayPromise]);
+			if (activeRows) {
+				activeChecklists = sortActiveChecklists(activeRows);
+			}
+			if (contextRows) {
+				monthDayChecklists = contextRows.filter((c) =>
+					(c.context ?? '').startsWith(`week:`) && (c.context ?? '').includes(':day:')
+				);
 			}
 		} catch { /* stille */ }
 	}
@@ -614,6 +651,38 @@
 		}
 
 		return [];
+	});
+
+	const monthDayData = $derived.by(() => {
+		const now = new Date();
+		const year = now.getFullYear();
+		const month = now.getMonth() + 1;
+		const daysInMonth = new Date(year, month, 0).getDate();
+		const todayDay = now.getDate();
+		const byDate = new Map<string, Checklist>();
+		for (const c of monthDayChecklists) {
+			const m = (c.context ?? '').match(/:day:(\d{4}-\d{2}-\d{2})$/);
+			if (m) byDate.set(m[1], c);
+		}
+		return Array.from({ length: daysInMonth }, (_, i) => {
+			const dayNum = i + 1;
+			const isPast = dayNum < todayDay;
+			const isToday = dayNum === todayDay;
+			const iso = `${year}-${String(month).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+			const cl = byDate.get(iso);
+			if (!cl || !(isPast || isToday)) {
+				return { planned: 0, completed: 0, isPast, isToday };
+			}
+			// Tell ikke 'gjør ikke'-oppgaver og hopp over gruppe-headere.
+			const items = cl.items.filter((it) => {
+				if (it.skippedAt) return false;
+				if (it.parentId) return true;
+				return !cl.items.some((c2) => c2.parentId === it.id);
+			});
+			const planned = items.length;
+			const completed = items.filter((it) => it.checked).length;
+			return { planned, completed, isPast, isToday };
+		});
 	});
 
 	const homeWidgetEntries = $derived.by<HomeWidgetEntry[]>(() => {
@@ -1795,8 +1864,10 @@
 
 							{#if item.kind === 'checklist' && item.checklist}
 								{@const isSynthetic = item.checklist.id.startsWith('synthetic:')}
+								{@const isMonth = !!item.checklist.context?.startsWith('month:')}
 								<ChecklistWidget
 									checklist={item.checklist}
+									monthDayData={isMonth ? monthDayData : undefined}
 									onclick={isSynthetic ? undefined : () => (openChecklist = item.checklist!)}
 									onplan={() => handleChecklistPlan(item.checklist?.context ?? null)}
 									onremove={isSynthetic ? undefined : async () => {
