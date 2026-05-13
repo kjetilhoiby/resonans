@@ -10,6 +10,41 @@
 	let loading = $state(false);
 	let processingId = $state<string | null>(null);
 
+	let aggregating = $state<'30d' | 'all' | null>(null);
+	let aggregateResult = $state<{ ok: boolean; message: string } | null>(null);
+
+	async function runAggregation(mode: '30d' | 'all') {
+		aggregating = mode;
+		aggregateResult = null;
+		try {
+			const body =
+				mode === '30d'
+					? { fromDate: new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0] }
+					: {};
+			const res = await fetch('/api/sensors/aggregate', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(body)
+			});
+			if (res.ok) {
+				aggregateResult = {
+					ok: true,
+					message:
+						mode === '30d'
+							? 'Aggregering ferdig for siste 30 dager.'
+							: 'Aggregering ferdig for alle perioder (inkl. daglig effort tilbake til 400 dager).'
+				};
+			} else {
+				const text = await res.text();
+				aggregateResult = { ok: false, message: text || 'Aggregering feilet.' };
+			}
+		} catch (err) {
+			aggregateResult = { ok: false, message: String(err) };
+		} finally {
+			aggregating = null;
+		}
+	}
+
 	function fmtDate(iso: string | Date | null) {
 		if (!iso) return '—';
 		return new Intl.DateTimeFormat('nb-NO', {
@@ -105,6 +140,34 @@
 	</PageHeader>
 
 	<div class="jobs-content">
+
+	<section class="manual-section">
+		<h2 class="jobs-section-title">Manuelle kjøringer</h2>
+		<p class="manual-hint">
+			Triggrer aggregering av sensordata her og nå. Den nattlige cron-jobben gjør det samme automatisk kl. 00:00 UTC.
+		</p>
+		<div class="manual-row">
+			<button
+				class="manual-btn"
+				onclick={() => runAggregation('30d')}
+				disabled={aggregating !== null}
+			>
+				{aggregating === '30d' ? '⏳ Aggregerer siste 30 dager…' : '↺ Aggreger siste 30 dager'}
+			</button>
+			<button
+				class="manual-btn"
+				onclick={() => runAggregation('all')}
+				disabled={aggregating !== null}
+			>
+				{aggregating === 'all' ? '⏳ Aggregerer alt…' : '⟳ Aggreger alt (full backfill)'}
+			</button>
+		</div>
+		{#if aggregateResult}
+			<p class="manual-result" class:ok={aggregateResult.ok} class:err={!aggregateResult.ok}>
+				{aggregateResult.ok ? '✅' : '❌'} {aggregateResult.message}
+			</p>
+		{/if}
+	</section>
 
 	{#if activeJobs.length > 0}
 		<section class="jobs-section">
@@ -296,5 +359,60 @@
 		font-size: 0.88rem;
 		text-align: center;
 		padding: 32px 0;
+	}
+
+	.manual-section {
+		background: #171717;
+		border-radius: 12px;
+		padding: 14px 16px;
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+
+	.manual-hint {
+		margin: 0;
+		font-size: 0.82rem;
+		color: #888;
+		line-height: 1.4;
+	}
+
+	.manual-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+
+	.manual-btn {
+		background: #1e2040;
+		border: 1px solid #3a4080;
+		border-radius: 8px;
+		color: #aab4f5;
+		cursor: pointer;
+		font: inherit;
+		font-size: 0.85rem;
+		padding: 8px 14px;
+	}
+
+	.manual-btn:hover:not(:disabled) {
+		background: #2a2c55;
+	}
+
+	.manual-btn:disabled {
+		opacity: 0.55;
+		cursor: not-allowed;
+	}
+
+	.manual-result {
+		margin: 0;
+		font-size: 0.82rem;
+	}
+
+	.manual-result.ok {
+		color: #7ec8a8;
+	}
+
+	.manual-result.err {
+		color: #fb7185;
 	}
 </style>
