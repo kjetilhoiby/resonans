@@ -445,6 +445,13 @@
 		}
 	});
 
+	export async function refresh() {
+		await Promise.allSettled([
+			hasThemeDashboard ? ensureDashboardLoaded(true) : Promise.resolve(),
+			loadThemeSignals(true)
+		]);
+	}
+
 	$effect(() => {
 		if (tab === 'data') {
 			void loadThemeSignals();

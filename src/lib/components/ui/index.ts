@@ -25,6 +25,7 @@ export { default as CompactTrendChart } from './CompactTrendChart.svelte';
 export { default as ThemeRail } from './ThemeRail.svelte';
 export { default as TransactionList } from './TransactionList.svelte';
 export { default as Icon } from './Icon.svelte';
+export { default as PullToRefresh } from './PullToRefresh.svelte';
 
 // Sheets & Overlays
 export { default as ChecklistSheet } from './ChecklistSheet.svelte';
