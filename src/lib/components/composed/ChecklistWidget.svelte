@@ -169,7 +169,6 @@
 <div
 	bind:this={elRef}
 	class="dw"
-	class:dw--xl={isMonthWidget}
 	role="button"
 	tabindex="0"
 	onpointerdown={handlePressStart}
@@ -187,7 +186,7 @@
 		<div class="dw-label dw-label--empty">{label}</div>
 		<span class="dw-plan-hint">Planlegg</span>
 	{:else if isMonthWidget && dayWheelData}
-		<div class="dw-ring dw-ring--xl">
+		<div class="dw-ring dw-ring--overflow">
 			<DayWheelChart
 				year={dayWheelData.year}
 				month={dayWheelData.month}
@@ -250,12 +249,18 @@
 		height: 60px;
 	}
 
-	.dw--xl {
-		width: 140px;
+	.dw-ring--overflow {
+		overflow: visible;
 	}
-	.dw-ring--xl {
-		width: 120px;
+	.dw-ring--overflow :global(svg) {
+		position: absolute;
+		left: 50%;
+		top: 50%;
+		width: 120px !important;
+		max-width: 120px !important;
 		height: 120px;
+		transform: translate(-50%, -50%);
+		pointer-events: none;
 	}
 
 	.dw-empty-ring {

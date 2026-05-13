@@ -148,22 +148,22 @@
       if (stopped) return;
 
       while (!stopped) {
-        // Spredning: segmentene vokser ut, emojien fader ut
+        // Spredning: segmentene vokser ut, emojien blir værende synlig
+        await tween(0, 1, 850, easeOutCubic, (v) => (scale = v), isStopped);
+        if (stopped) return;
+
+        // Hvile på full spredning — segmenter og emoji vises sammen
+        await sleep(1800);
+        if (stopped) return;
+
+        // Sammentrekning + fade emoji ut (parallelt) før datasett-bytte
         await Promise.all([
-          tween(0, 1, 850, easeOutCubic, (v) => (scale = v), isStopped),
+          tween(1, 0, 500, easeInCubic, (v) => (scale = v), isStopped),
           tween(emojiOpacity, 0, 350, linear, (v) => (emojiOpacity = v), isStopped),
         ]);
         if (stopped) return;
 
-        // Hvile på full størrelse
-        await sleep(1800);
-        if (stopped) return;
-
-        // Sammentrekning
-        await tween(1, 0, 500, easeInCubic, (v) => (scale = v), isStopped);
-        if (stopped) return;
-
-        // Bytt datasett mens hjulet er sammentrukket og emojien fortsatt usynlig
+        // Bytt datasett mens både hjul og emoji er usynlig
         currentIdx = (currentIdx + 1) % datasets.length;
 
         // Liten pause, så fader nytt emoji inn
