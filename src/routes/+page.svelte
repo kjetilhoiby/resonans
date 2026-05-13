@@ -23,6 +23,6 @@
 	let { data }: Props = $props();
 </script>
 
-<AppPage width="full" padding="none" gap="sm" surface="transparent">
+<AppPage width="full" padding="none" gap="sm" surface="transparent" theme="dark">
 	<HomeScreen themes={data.themes} recentConversations={data.recentConversations} />
 </AppPage>

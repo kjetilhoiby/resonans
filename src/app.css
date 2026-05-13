@@ -80,6 +80,7 @@
 
 html {
 	background: var(--bg-primary);
+	overscroll-behavior: none;
 }
 
 body {
@@ -89,6 +90,7 @@ body {
 	color: var(--text-primary);
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
+	overscroll-behavior: none;
 }
 
 /* ─────────────────────────────────────────────────────────────────
