@@ -502,8 +502,8 @@
 
 	function formatPeriodKey(key: string, period: string): string {
 		if (period === 'week') {
-			const [year, week] = key.split('W');
-			return `Uke ${week}, ${year}`;
+			const [, week] = key.split('W');
+			return `Uke ${week}`;
 		}
 		if (period === 'month') {
 			const [year, month] = key.split('M');
@@ -532,6 +532,54 @@
 		if (!p.startDate || !p.endDate) return 1;
 		const ms = new Date(p.endDate).getTime() - new Date(p.startDate).getTime();
 		return Math.max(1, Math.round(ms / 86400000) + 1);
+	}
+
+	const METRIC_COLORS = {
+		good: '#48b581',
+		okay: '#7bb86f',
+		mid: '#d4a843',
+		bad: '#ee8c8c',
+		none: '#3a3a3a'
+	} as const;
+
+	function weightColor(change: number | undefined): string {
+		if (change == null) return METRIC_COLORS.none;
+		if (change <= -0.4) return METRIC_COLORS.good;
+		if (change <= 0.2) return METRIC_COLORS.okay;
+		if (change <= 0.6) return METRIC_COLORS.mid;
+		return METRIC_COLORS.bad;
+	}
+
+	function runningColor(km: number | undefined): string {
+		if (km == null || km <= 0) return METRIC_COLORS.none;
+		if (km >= 25) return METRIC_COLORS.good;
+		if (km >= 15) return METRIC_COLORS.okay;
+		if (km >= 5) return METRIC_COLORS.mid;
+		return METRIC_COLORS.bad;
+	}
+
+	function activeColor(perDay: number | undefined): string {
+		if (perDay == null) return METRIC_COLORS.none;
+		if (perDay >= 60) return METRIC_COLORS.good;
+		if (perDay >= 30) return METRIC_COLORS.okay;
+		if (perDay >= 15) return METRIC_COLORS.mid;
+		return METRIC_COLORS.bad;
+	}
+
+	function sleepColor(hours: number | undefined): string {
+		if (hours == null) return METRIC_COLORS.none;
+		if (hours >= 7 && hours <= 9) return METRIC_COLORS.good;
+		if (hours >= 6.5) return METRIC_COLORS.okay;
+		if (hours >= 5.5) return METRIC_COLORS.mid;
+		return METRIC_COLORS.bad;
+	}
+
+	function heartRateColor(bpm: number | undefined): string {
+		if (bpm == null) return METRIC_COLORS.none;
+		if (bpm < 55) return METRIC_COLORS.good;
+		if (bpm < 62) return METRIC_COLORS.okay;
+		if (bpm < 70) return METRIC_COLORS.mid;
+		return METRIC_COLORS.bad;
 	}
 
 	function formatDate(value: string): string {
@@ -1296,13 +1344,18 @@
 						{#each visiblePeriods as period}
 							{@const days = daysInPeriod(period)}
 							{@const activeSum = period.metrics?.intenseMinutes?.sum}
+							{@const weightChange = period.metrics?.weight?.change}
+							{@const runningKm = (period.metrics?.workouts?.types?.running ?? 0) > 0 ? (period.metrics!.workouts!.types!.running as number) : undefined}
+							{@const activePerDay = activeSum != null ? Math.round(activeSum / days) : undefined}
+							{@const sleepHours = period.metrics?.sleep?.avg}
+							{@const hr = period.metrics?.sleepHeartRate?.avg}
 							<tr>
 								<td>{formatPeriodKey(period.periodKey, period.period)}</td>
-								<td>{formatWeightChange(period.metrics?.weight?.change)}</td>
-								<td>{(period.metrics?.workouts?.types?.running ?? 0) > 0 ? (period.metrics!.workouts!.types!.running as number).toFixed(1) + 'km' : '–'}</td>
-								<td>{activeSum != null ? Math.round(activeSum / days) : '–'}/d</td>
-								<td>{formatMetric(period.metrics?.sleep?.avg)}t</td>
-								<td>{formatMetric(period.metrics?.sleepHeartRate?.avg, 0)}</td>
+								<td><span class="hd-metric-pill" style="--pill-color: {weightColor(weightChange)}">{formatWeightChange(weightChange)}</span></td>
+								<td><span class="hd-metric-pill" style="--pill-color: {runningColor(runningKm)}">{runningKm != null ? runningKm.toFixed(1) : '–'}</span></td>
+								<td><span class="hd-metric-pill" style="--pill-color: {activeColor(activePerDay)}">{activePerDay ?? '–'}</span></td>
+								<td><span class="hd-metric-pill" style="--pill-color: {sleepColor(sleepHours)}">{formatMetric(sleepHours)}</span></td>
+								<td><span class="hd-metric-pill" style="--pill-color: {heartRateColor(hr)}">{formatMetric(hr, 0)}</span></td>
 							</tr>
 						{/each}
 					</tbody>
@@ -1801,21 +1854,24 @@
 
 	.hd-table th,
 	.hd-table td {
-		text-align: left;
-		padding: 8px 6px;
+		text-align: center;
+		padding: 10px 4px;
 		border-top: 1px solid #202020;
 		font-size: 0.8rem;
 	}
 
+	.hd-table th:first-child,
 	.hd-table td:first-child {
-		width: 30%;
+		text-align: left;
 		white-space: nowrap;
+		padding-right: 8px;
 	}
 
 	.hd-table th {
 		border-top: none;
 		color: #666;
 		font-size: 0.9rem;
+		font-weight: 500;
 	}
 
 	.hd-table td {
@@ -1825,8 +1881,24 @@
 
 	.hd-table td:first-child {
 		color: #888;
-		font-size: 0.75rem;
-		padding-right: 12px;
+		font-size: 0.78rem;
+	}
+
+	.hd-metric-pill {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 44px;
+		height: 32px;
+		padding: 0 8px;
+		border-radius: 999px;
+		border: 1.5px solid var(--pill-color, #3a3a3a);
+		color: #ececec;
+		font-size: 0.78rem;
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+		line-height: 1;
+		background: color-mix(in srgb, var(--pill-color, #3a3a3a) 8%, transparent);
 	}
 
 	@media (max-width: 640px) {
