@@ -169,6 +169,7 @@
 <div
 	bind:this={elRef}
 	class="dw"
+	class:dw--xl={isMonthWidget}
 	role="button"
 	tabindex="0"
 	onpointerdown={handlePressStart}
@@ -186,12 +187,12 @@
 		<div class="dw-label dw-label--empty">{label}</div>
 		<span class="dw-plan-hint">Planlegg</span>
 	{:else if isMonthWidget && dayWheelData}
-		<div class="dw-ring">
+		<div class="dw-ring dw-ring--xl">
 			<DayWheelChart
 				year={dayWheelData.year}
 				month={dayWheelData.month}
 				days={dayWheelData.days}
-				size={60}
+				size={120}
 			/>
 		</div>
 		<div class="dw-label" style:color={ringColor}>{label}</div>
@@ -247,6 +248,14 @@
 		position: relative;
 		width: 60px;
 		height: 60px;
+	}
+
+	.dw--xl {
+		width: 140px;
+	}
+	.dw-ring--xl {
+		width: 120px;
+		height: 120px;
 	}
 
 	.dw-empty-ring {
