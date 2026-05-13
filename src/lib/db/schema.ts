@@ -1636,7 +1636,7 @@ export const sensorAggregates = pgTable('sensor_aggregates', {
 		dishes?: { count?: number };
 		vacuum?: { count?: number; totalDuration?: number };
 		// Custom metrics (from your ninthlife app)
-		sleepLag?: number; // (100 - % awake 22-00) or similar
+		sleepLag?: number; // 0-100, snitt av nattlig forskyvning fra leggetid 22-00 / våknetid 06-08
 		earlyWake?: number; // % asleep 06-08
 		// Generic
 		[key: string]: any;

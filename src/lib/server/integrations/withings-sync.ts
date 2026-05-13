@@ -6,6 +6,7 @@ import { enqueueBackgroundJob } from '$lib/server/background-jobs';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
 import { autocheckChecklistItemsForDay } from '$lib/server/checklist-autocheck';
 import { syncSensorProgressForTasks } from '$lib/server/sensor-progress-sync';
+import { computeSleepLag } from '$lib/server/services/sleep-lag';
 
 /**
  * Get active Withings sensor for user
@@ -132,24 +133,31 @@ function parseActivityData(activities: any[]): any[] {
  * Parse Withings sleep data
  */
 function parseSleepData(series: any[]): any[] {
-	return series.map((sleep) => ({
-		timestamp: new Date(sleep.startdate * 1000),
-		data: {
-			sleepDuration: sleep.data?.total_sleep_time,
-			sleepDeep: sleep.data?.deepsleepduration,
-			sleepLight: sleep.data?.lightsleepduration,
-			sleepRem: sleep.data?.remsleepduration,
-			wakeupDuration: sleep.data?.wakeupduration,
-			sleepScore: sleep.data?.sleep_score,
-			hr_average: sleep.data?.hr_average,
-			rr_average: sleep.data?.rr_average
-		},
-		metadata: {
-			enddate: sleep.enddate,
-			modified: sleep.modified,
-			model: sleep.model
-		}
-	}));
+	return series.map((sleep) => {
+		const sleepStart = new Date(sleep.startdate * 1000);
+		const sleepEnd = typeof sleep.enddate === 'number' ? new Date(sleep.enddate * 1000) : undefined;
+		const sleepLag = sleepEnd ? computeSleepLag(sleepStart, sleepEnd) : undefined;
+
+		return {
+			timestamp: sleepStart,
+			data: {
+				sleepDuration: sleep.data?.total_sleep_time,
+				sleepDeep: sleep.data?.deepsleepduration,
+				sleepLight: sleep.data?.lightsleepduration,
+				sleepRem: sleep.data?.remsleepduration,
+				wakeupDuration: sleep.data?.wakeupduration,
+				sleepScore: sleep.data?.sleep_score,
+				hr_average: sleep.data?.hr_average,
+				rr_average: sleep.data?.rr_average,
+				...(sleepLag !== undefined && { sleepLag })
+			},
+			metadata: {
+				enddate: sleep.enddate,
+				modified: sleep.modified,
+				model: sleep.model
+			}
+		};
+	});
 }
 
 /**

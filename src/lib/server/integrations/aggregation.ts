@@ -5,6 +5,7 @@ import { getAllMetrics } from '$lib/server/services/metric-definition-service';
 import { generateWeeks, generateMonths, generateYears, getCurrentWeek, getCurrentMonth, getCurrentYear, getWeeksSince, getMonthsSince, getYearsSince } from './time-periods';
 import type { WeekPeriod, MonthPeriod, YearPeriod } from './time-periods';
 import { classifyEffortFamily, type EffortFamily } from '$lib/server/services/effort-service';
+import { computeSleepLag } from '$lib/server/services/sleep-lag';
 
 type WeeklyEffortMetric = NonNullable<NonNullable<typeof sensorAggregates.$inferSelect.metrics>['weeklyEffort']>;
 
@@ -57,13 +58,27 @@ function latest(values: (number | undefined)[]): number | undefined {
 }
 
 /**
- * Calculate custom sleep lag metric
- * Your logic: 100 - (% awake time between 22:00 and 00:00)
+ * Snitt av nattlig sleep_lag-indeks for søvn-events i perioden.
+ * Per-natt-verdien lagres på sensor_events.data.sleepLag ved import (Withings).
+ * Faller tilbake til å beregne fra timestamp + metadata.enddate for eldre events.
  */
 function calculateSleepLag(events: any[]): number | undefined {
-	// TODO: Implement your specific sleep lag calculation
-	// This requires parsing sleep session times and calculating overlap
-	return undefined;
+	const values: number[] = [];
+	for (const e of events) {
+		if (e.dataType !== 'sleep') continue;
+		if (typeof e.data?.sleepLag === 'number') {
+			values.push(e.data.sleepLag);
+			continue;
+		}
+		const endSec = e.metadata?.enddate;
+		const start = e.timestamp instanceof Date ? e.timestamp : new Date(e.timestamp);
+		if (typeof endSec === 'number') {
+			const v = computeSleepLag(start, new Date(endSec * 1000));
+			if (v !== undefined) values.push(v);
+		}
+	}
+	if (values.length === 0) return undefined;
+	return Math.round(values.reduce((s, v) => s + v, 0) / values.length);
 }
 
 /**
@@ -300,6 +315,9 @@ export async function aggregateMonthlyData(userId: string, months?: MonthPeriod[
 		if (heartRates.length > 0) metrics.heartRate = { avg: avg(heartRates), min: min(heartRates), max: max(heartRates) };
 		if (sleepHeartRates.length > 0) metrics.sleepHeartRate = { avg: avg(sleepHeartRates), min: min(sleepHeartRates), max: max(sleepHeartRates) };
 		if (workoutEvents.length > 0) metrics.workouts = { count: workoutEvents.length, types: { running: runningKm } };
+
+		const sleepLag = calculateSleepLag(events);
+		if (sleepLag !== undefined) metrics.sleepLag = sleepLag;
 
 		rows.push({ userId, period: 'month', periodKey: month.yearmonth, year: month.year, startDate: month.startTime, endDate: month.endTime, metrics, eventCount: events.length });
 	}
