@@ -632,10 +632,14 @@
 	function runningColor(km: number | undefined): string {
 		return km == null || km <= 0 ? NONE_COLOR : interpolateStops(km, RUNNING_STOPS);
 	}
-	function effortColor(total: number | undefined, periodDays = 7): string {
-		if (total == null) return NONE_COLOR;
+	function effortPerWeek(total: number | undefined, periodDays: number): number | undefined {
+		if (total == null) return undefined;
 		const weeks = Math.max(1, periodDays / 7);
-		return interpolateStops(total / weeks, EFFORT_STOPS);
+		return total / weeks;
+	}
+
+	function effortColor(perWeek: number | undefined): string {
+		return perWeek == null ? NONE_COLOR : interpolateStops(perWeek, EFFORT_STOPS);
 	}
 	function sleepLagColor(lag: number | undefined): string {
 		return lag == null ? NONE_COLOR : interpolateStops(lag, SLEEP_LAG_STOPS);
@@ -1399,7 +1403,7 @@
 							<th>Periode</th>
 							<th title="Vektendring i perioden">⚖️</th>
 							<th title="Kilometer løpt">🏃</th>
-							<th title="Relativ effort (treningsbelastning)">⚡</th>
+							<th title="Relativ effort (snitt per uke)">⚡</th>
 							<th title="Sleep lag (timing-indeks, lavere = bedre)">⏰</th>
 							<th title="Sovepuls (snitt)">💓</th>
 						</tr>
@@ -1409,14 +1413,14 @@
 							{@const days = daysInPeriod(period)}
 							{@const weightChange = period.metrics?.weight?.change}
 							{@const runningKm = (period.metrics?.workouts?.types?.running ?? 0) > 0 ? (period.metrics!.workouts!.types!.running as number) : undefined}
-							{@const effortTotal = effortByPeriodKey.get(period.periodKey)}
+							{@const effortPw = effortPerWeek(effortByPeriodKey.get(period.periodKey), days)}
 							{@const sleepLag = period.metrics?.sleepLag}
 							{@const hr = period.metrics?.sleepHeartRate?.avg}
 							<tr>
 								<td>{formatPeriodKey(period.periodKey, period.period)}</td>
 								<td><span class="hd-metric-pill" style="--pill-color: {weightColor(weightChange)}">{formatWeightChange(weightChange)}</span></td>
 								<td><span class="hd-metric-pill" style="--pill-color: {runningColor(runningKm)}">{runningKm != null ? runningKm.toFixed(1) : '–'}</span></td>
-								<td><span class="hd-metric-pill" style="--pill-color: {effortColor(effortTotal, days)}">{effortTotal != null ? Math.round(effortTotal) : '–'}</span></td>
+								<td><span class="hd-metric-pill" style="--pill-color: {effortColor(effortPw)}">{effortPw != null ? Math.round(effortPw) : '–'}</span></td>
 								<td><span class="hd-metric-pill" style="--pill-color: {sleepLagColor(sleepLag)}">{sleepLag != null ? Math.round(sleepLag) : '–'}</span></td>
 								<td><span class="hd-metric-pill" style="--pill-color: {heartRateColor(hr)}">{formatMetric(hr, 0)}</span></td>
 							</tr>
