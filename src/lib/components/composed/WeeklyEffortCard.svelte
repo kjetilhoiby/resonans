@@ -20,6 +20,7 @@
 		byFamily: Partial<Record<EffortFamily, number>>;
 		byDay?: number[];
 		bars?: BarSpec[];
+		ceilings?: (number | null)[];
 		hrCoveragePct?: number;
 		workoutCount?: number;
 		baseline?: { p4wAvg: number; delta: number };
@@ -32,6 +33,7 @@
 		byFamily,
 		byDay,
 		bars,
+		ceilings,
 		hrCoveragePct = 0,
 		workoutCount = 0,
 		baseline,
@@ -93,7 +95,21 @@
 		return 'Mye lavere enn vanlig — bevisst hvile eller har noe gått tapt?';
 	});
 
-	const maxBar = $derived(Math.max(1, ...renderedBars.map((b) => b.value)));
+	const maxBar = $derived(
+		Math.max(
+			1,
+			...renderedBars.map((b) => b.value),
+			...(ceilings ?? []).map((c) => c ?? 0)
+		)
+	);
+
+	const ceilingHints = $derived<(number | null)[]>(
+		ceilings ?? renderedBars.map(() => null)
+	);
+
+	const anyOvershoot = $derived(
+		ceilingHints.some((c, i) => c != null && renderedBars[i] && renderedBars[i].value > c)
+	);
 
 	const families = $derived(
 		(Object.entries(byFamily) as [EffortFamily, number][])
@@ -123,15 +139,26 @@
 		style="--bar-count: {Math.max(1, renderedBars.length)}"
 		aria-label={isPeriodMode ? 'Effort per uke' : 'Effort per dag'}
 	>
-		{#each renderedBars as bar}
+		{#each renderedBars as bar, i}
+			{@const ceiling = ceilingHints[i]}
+			{@const overshoot = ceiling != null && bar.value > ceiling}
 			<div class="day">
 				<div class="bar-track">
-					<div class="bar" style="height: {(bar.value / maxBar) * 100}%"></div>
+					<div class="bar" class:over={overshoot} style="height: {(bar.value / maxBar) * 100}%"></div>
+					{#if ceiling != null}
+						<div class="ceiling" style="bottom: {(ceiling / maxBar) * 100}%" title="10% over forrige: {Math.round(ceiling)}"></div>
+					{/if}
 				</div>
 				<span class="day-letter">{bar.label}</span>
 			</div>
 		{/each}
 	</div>
+	{#if isPeriodMode && ceilings}
+		<p class="band-hint">
+			Stiplet linje = +10% fra forrige periode (byggesone-tak).
+			{#if anyOvershoot}<span class="over-flag">Du har gått over taket noen uker.</span>{/if}
+		</p>
+	{/if}
 
 	{#if families.length > 0}
 		<div class="families">
@@ -255,6 +282,7 @@
 	}
 
 	.bar-track {
+		position: relative;
 		flex: 1;
 		display: flex;
 		align-items: flex-end;
@@ -269,6 +297,31 @@
 		background: linear-gradient(180deg, #a855f7 0%, #6b21a8 100%);
 		border-radius: 4px 4px 0 0;
 		min-height: 2px;
+	}
+
+	.bar.over {
+		background: linear-gradient(180deg, #f97316 0%, #a855f7 50%, #6b21a8 100%);
+	}
+
+	.ceiling {
+		position: absolute;
+		left: 0;
+		right: 0;
+		height: 0;
+		border-top: 1px dashed rgba(249, 115, 22, 0.7);
+		pointer-events: none;
+	}
+
+	.band-hint {
+		font-size: 0.72rem;
+		color: #777;
+		margin: 0;
+		line-height: 1.4;
+	}
+
+	.band-hint .over-flag {
+		color: #f97316;
+		margin-left: 0.3rem;
 	}
 
 	.day-letter {

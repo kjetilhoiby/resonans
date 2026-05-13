@@ -368,16 +368,22 @@
 		const rangeDays = Math.max(1, Math.round((range.end.getTime() - range.start.getTime()) / 86400000));
 		const rangeWeeks = Math.max(1, rangeDays / 7);
 
+		const ceilings: (number | null)[] = bars.map((_, i) =>
+			i === 0 ? null : bars[i - 1].value > 0 ? bars[i - 1].value * 1.1 : null
+		);
+
 		return {
 			total: Math.round(total * 10) / 10,
 			perWeekAvg: Math.round((total / rangeWeeks) * 10) / 10,
 			byFamily,
 			bars,
+			ceilings,
 			hrCoveragePct,
 			workoutCount,
 			rangeLabel: range.label
 		};
 	});
+
 
 	function periodYear(periodKey: string): number {
 		return parseInt(periodKey.split(/[WMQY]/)[0]);
@@ -1339,6 +1345,7 @@
 				total={periodEffortAggregate.perWeekAvg}
 				byFamily={periodEffortAggregate.byFamily}
 				bars={periodEffortAggregate.bars}
+				ceilings={periodEffortAggregate.ceilings}
 				hrCoveragePct={periodEffortAggregate.hrCoveragePct}
 				workoutCount={periodEffortAggregate.workoutCount}
 				weekLabel={periodEffortAggregate.rangeLabel}
