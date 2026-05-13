@@ -12,6 +12,7 @@
 		checked: boolean;
 		sortOrder: number;
 		parentId?: string | null;
+		skippedAt?: string | null;
 	}
 
 	export interface Checklist {
@@ -25,18 +26,21 @@
 
 	interface Props {
 		checklist: Checklist;
+		monthDayData?: DayData[];
 		onclick?: () => void;
 		onremove?: () => void;
 		onplan?: () => void;
 	}
 
-	let { checklist, onclick, onremove, onplan }: Props = $props();
+	let { checklist, monthDayData, onclick, onremove, onplan }: Props = $props();
 
-	// For items with children, count the children (not the group header) for accurate progress
+	// Skipped items ("gjør ikke") teller verken som planlagt eller løst.
+	// For items with children, count the children (not the group header) for accurate progress.
 	const effectiveItems = $derived(
 		checklist.items.filter((i) => {
-			if (i.parentId) return true; // child item → count it
-			return !checklist.items.some((c) => c.parentId === i.id); // solo item (no children) → count it
+			if (i.skippedAt) return false;
+			if (i.parentId) return true;
+			return !checklist.items.some((c) => c.parentId === i.id);
 		})
 	);
 	const total = $derived(effectiveItems.length);
@@ -102,24 +106,17 @@
 		const year = Number(monthMatch[1]);
 		const month = Number(monthMatch[2]);
 		const daysInMonth = new Date(year, month, 0).getDate();
-		const now = new Date();
-		const todayDay = now.getFullYear() === year && now.getMonth() + 1 === month
-			? now.getDate()
-			: now < new Date(year, month - 1, 1) ? 0 : daysInMonth;
-		// Oppgavegrad 0–1, samme verdi for alle passerte dager
-		const completionFraction = total > 0 ? done / total : 0;
-		const days: DayData[] = Array.from({ length: daysInMonth }, (_, i) => {
-			const dayNum = i + 1;
-			const isPast = dayNum < todayDay;
-			const isToday = dayNum === todayDay;
-			if (!isPast && !isToday) return { planned: 0, completed: 0, isPast: false, isToday: false };
-			return {
-				planned: 1,
-				completed: completionFraction,
-				isPast,
-				isToday,
-			};
-		});
+		// Hvis foreldrekomponenten har gitt oss faktiske dagsdata, bruk dem.
+		if (monthDayData && monthDayData.length === daysInMonth) {
+			return { year, month, days: monthDayData };
+		}
+		// Fallback: ingen dagsdata tilgjengelig → vis tomme sektorer.
+		const days: DayData[] = Array.from({ length: daysInMonth }, () => ({
+			planned: 0,
+			completed: 0,
+			isPast: false,
+			isToday: false,
+		}));
 		return { year, month, days };
 	});
 
