@@ -534,52 +534,84 @@
 		return Math.max(1, Math.round(ms / 86400000) + 1);
 	}
 
-	const METRIC_COLORS = {
-		good: '#48b581',
-		okay: '#7bb86f',
-		mid: '#d4a843',
-		bad: '#ee8c8c',
-		none: '#3a3a3a'
-	} as const;
+	const METRIC_PALETTE = {
+		bad: [200, 110, 110] as const,
+		mid: [190, 155, 95] as const,
+		good: [120, 175, 130] as const,
+		none: [70, 70, 75] as const
+	};
+
+	type ColorStop = readonly [value: number, rgb: readonly [number, number, number]];
+
+	function interpolateStops(value: number, stops: readonly ColorStop[]): string {
+		if (value <= stops[0][0]) return rgb(stops[0][1]);
+		for (let i = 1; i < stops.length; i++) {
+			const [v1, c1] = stops[i - 1];
+			const [v2, c2] = stops[i];
+			if (value <= v2) {
+				const t = v2 === v1 ? 0 : (value - v1) / (v2 - v1);
+				return rgb([
+					Math.round(c1[0] + (c2[0] - c1[0]) * t),
+					Math.round(c1[1] + (c2[1] - c1[1]) * t),
+					Math.round(c1[2] + (c2[2] - c1[2]) * t)
+				]);
+			}
+		}
+		return rgb(stops[stops.length - 1][1]);
+	}
+
+	function rgb([r, g, b]: readonly [number, number, number]): string {
+		return `rgb(${r}, ${g}, ${b})`;
+	}
+
+	const NONE_COLOR = rgb(METRIC_PALETTE.none);
+
+	const WEIGHT_STOPS: readonly ColorStop[] = [
+		[-1.5, METRIC_PALETTE.good],
+		[-0.3, METRIC_PALETTE.good],
+		[0.1, METRIC_PALETTE.mid],
+		[0.8, METRIC_PALETTE.bad]
+	];
+	const RUNNING_STOPS: readonly ColorStop[] = [
+		[0, METRIC_PALETTE.bad],
+		[8, METRIC_PALETTE.mid],
+		[20, METRIC_PALETTE.good],
+		[35, METRIC_PALETTE.good]
+	];
+	const ACTIVE_STOPS: readonly ColorStop[] = [
+		[0, METRIC_PALETTE.bad],
+		[20, METRIC_PALETTE.mid],
+		[45, METRIC_PALETTE.good],
+		[75, METRIC_PALETTE.good]
+	];
+	const SLEEP_STOPS: readonly ColorStop[] = [
+		[4, METRIC_PALETTE.bad],
+		[6, METRIC_PALETTE.mid],
+		[7, METRIC_PALETTE.good],
+		[9, METRIC_PALETTE.good],
+		[10.5, METRIC_PALETTE.mid]
+	];
+	const HR_STOPS: readonly ColorStop[] = [
+		[48, METRIC_PALETTE.good],
+		[58, METRIC_PALETTE.good],
+		[65, METRIC_PALETTE.mid],
+		[75, METRIC_PALETTE.bad]
+	];
 
 	function weightColor(change: number | undefined): string {
-		if (change == null) return METRIC_COLORS.none;
-		if (change <= -0.4) return METRIC_COLORS.good;
-		if (change <= 0.2) return METRIC_COLORS.okay;
-		if (change <= 0.6) return METRIC_COLORS.mid;
-		return METRIC_COLORS.bad;
+		return change == null ? NONE_COLOR : interpolateStops(change, WEIGHT_STOPS);
 	}
-
 	function runningColor(km: number | undefined): string {
-		if (km == null || km <= 0) return METRIC_COLORS.none;
-		if (km >= 25) return METRIC_COLORS.good;
-		if (km >= 15) return METRIC_COLORS.okay;
-		if (km >= 5) return METRIC_COLORS.mid;
-		return METRIC_COLORS.bad;
+		return km == null || km <= 0 ? NONE_COLOR : interpolateStops(km, RUNNING_STOPS);
 	}
-
 	function activeColor(perDay: number | undefined): string {
-		if (perDay == null) return METRIC_COLORS.none;
-		if (perDay >= 60) return METRIC_COLORS.good;
-		if (perDay >= 30) return METRIC_COLORS.okay;
-		if (perDay >= 15) return METRIC_COLORS.mid;
-		return METRIC_COLORS.bad;
+		return perDay == null ? NONE_COLOR : interpolateStops(perDay, ACTIVE_STOPS);
 	}
-
 	function sleepColor(hours: number | undefined): string {
-		if (hours == null) return METRIC_COLORS.none;
-		if (hours >= 7 && hours <= 9) return METRIC_COLORS.good;
-		if (hours >= 6.5) return METRIC_COLORS.okay;
-		if (hours >= 5.5) return METRIC_COLORS.mid;
-		return METRIC_COLORS.bad;
+		return hours == null ? NONE_COLOR : interpolateStops(hours, SLEEP_STOPS);
 	}
-
 	function heartRateColor(bpm: number | undefined): string {
-		if (bpm == null) return METRIC_COLORS.none;
-		if (bpm < 55) return METRIC_COLORS.good;
-		if (bpm < 62) return METRIC_COLORS.okay;
-		if (bpm < 70) return METRIC_COLORS.mid;
-		return METRIC_COLORS.bad;
+		return bpm == null ? NONE_COLOR : interpolateStops(bpm, HR_STOPS);
 	}
 
 	function formatDate(value: string): string {
@@ -1288,24 +1320,26 @@
 	{/if}
 
 	{#if themeId}
-		<div class="hd-widget-grid">
-			{#if themeWidgetsLoading && themeWidgets.length === 0}
-				{#each Array.from({ length: 4 }) as _}
-					<div class="hd-widget-skeleton" aria-hidden="true"></div>
-				{/each}
-			{:else}
-				{#each themeWidgets as widget (widget.id)}
-					<DynamicWidget
-						widgetId={widget.id}
-						title={widget.title}
-						unit={widget.unit}
-						color={widget.color}
-						pinned={widget.pinned}
-						range={widgetRange}
-						onunpin={() => removeThemeWidget(widget.id)}
-					/>
-				{/each}
-			{/if}
+		<div class="hd-widget-card">
+			<div class="hd-widget-grid">
+				{#if themeWidgetsLoading && themeWidgets.length === 0}
+					{#each Array.from({ length: 4 }) as _}
+						<div class="hd-widget-skeleton" aria-hidden="true"></div>
+					{/each}
+				{:else}
+					{#each themeWidgets as widget (widget.id)}
+						<DynamicWidget
+							widgetId={widget.id}
+							title={widget.title}
+							unit={widget.unit}
+							color={widget.color}
+							pinned={widget.pinned}
+							range={widgetRange}
+							onunpin={() => removeThemeWidget(widget.id)}
+						/>
+					{/each}
+				{/if}
+			</div>
 		</div>
 	{/if}
 
@@ -1757,9 +1791,14 @@
 
 	.hd-empty,
 	.hd-table-card,
+	.hd-widget-card,
 	.hd-tooling-card {
 		background: #141414;
 		border-radius: 18px;
+	}
+
+	.hd-widget-card {
+		padding: 16px 12px;
 	}
 
 	.hd-tooling-card {
@@ -1889,16 +1928,16 @@
 		align-items: center;
 		justify-content: center;
 		min-width: 44px;
-		height: 32px;
+		height: 30px;
 		padding: 0 8px;
 		border-radius: 999px;
-		border: 1.5px solid var(--pill-color, #3a3a3a);
-		color: #ececec;
+		border: 1px solid color-mix(in srgb, var(--pill-color, #3a3a3a) 70%, transparent);
+		color: #d8d8d8;
 		font-size: 0.78rem;
 		font-weight: 600;
 		font-variant-numeric: tabular-nums;
 		line-height: 1;
-		background: color-mix(in srgb, var(--pill-color, #3a3a3a) 8%, transparent);
+		background: color-mix(in srgb, var(--pill-color, #3a3a3a) 10%, transparent);
 	}
 
 	@media (max-width: 640px) {
