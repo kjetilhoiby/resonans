@@ -8,7 +8,7 @@
     themes    aktive temaer fra DB (for tema-grid)
 -->
 <script lang="ts">
-	import { goto, invalidateAll, preloadCode, preloadData } from '$app/navigation';
+	import { goto, preloadCode, preloadData } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { fly } from 'svelte/transition';
@@ -22,6 +22,7 @@
 	import ChecklistSheet from '../ui/ChecklistSheet.svelte';
 	import FlowSheet from '../flows/FlowSheet.svelte';
 	import EgenfrekvensPrompt from './EgenfrekvensPrompt.svelte';
+	import PullToRefresh from '../ui/PullToRefresh.svelte';
 	import { FLOWS } from '$lib/flows/registry';
 	import PageHeader from '../ui/PageHeader.svelte';
 	import CollapsibleSection from '../ui/CollapsibleSection.svelte';
@@ -192,64 +193,11 @@
 	let openChecklist = $state<Checklist | null>(null);
 
 	// -- Pull to refresh (mobil) --
-	const PULL_REFRESH_TRIGGER_PX = 72;
-	const PULL_REFRESH_MAX_PX = 120;
-	let pullStartY = $state<number | null>(null);
-	let pullDistance = $state(0);
-	let pullRefreshing = $state(false);
-
-	function shouldHandlePullStart(event: TouchEvent) {
-		if (inputExpanded) return false;
-		if (chatOpen || widgetPanelOpen || themePanelOpen) return false;
-		if (typeof window !== 'undefined' && window.scrollY > 0) return false;
-		const touch = event.touches[0];
-		if (!touch || touch.clientY > 120) return false;
-		const target = event.target as Element | null;
-		if (!target) return false;
-		if (target.closest('.widget-pager, .zone-tema, .zone-input, .zone-chat-open')) return false;
-		return true;
-	}
-
-	function handlePullTouchStart(event: TouchEvent) {
-		if (!shouldHandlePullStart(event)) {
-			pullStartY = null;
-			pullDistance = 0;
-			return;
-		}
-		pullStartY = event.touches[0]?.clientY ?? null;
-	}
-
-	function handlePullTouchMove(event: TouchEvent) {
-		if (pullStartY === null || pullRefreshing) return;
-		const touchY = event.touches[0]?.clientY ?? pullStartY;
-		const delta = Math.max(0, touchY - pullStartY);
-		pullDistance = Math.min(PULL_REFRESH_MAX_PX, delta * 0.5);
-	}
-
-	function resetPullState() {
-		pullStartY = null;
-		pullDistance = 0;
-	}
-
 	async function refreshHomeData() {
-		if (pullRefreshing) return;
-		pullRefreshing = true;
-		try {
-			await Promise.allSettled([
-				fetchChecklists(),
-				fetchSensorAndWidgets({ useCache: false }),
-				invalidateAll()
-			]);
-		} finally {
-			pullRefreshing = false;
-		}
-	}
-
-	function handlePullTouchEnd() {
-		if (pullDistance >= PULL_REFRESH_TRIGGER_PX && !pullRefreshing) {
-			void refreshHomeData();
-		}
-		resetPullState();
+		await Promise.allSettled([
+			fetchChecklists(),
+			fetchSensorAndWidgets({ useCache: false })
+		]);
 	}
 
 	// -- Planleggingsflyt fra tom sjekkliste --
@@ -1714,28 +1662,15 @@
 	});
 </script>
 
+<PullToRefresh
+	onRefresh={refreshHomeData}
+	disabled={inputExpanded || chatOpen || widgetPanelOpen || themePanelOpen}
+	excludeSelectors=".widget-pager, .zone-tema, .zone-input, .zone-chat-open"
+>
 <div
 	class="home-screen"
 	class:home-screen-chat-open={chatOpen}
-	ontouchstart={handlePullTouchStart}
-	ontouchmove={handlePullTouchMove}
-	ontouchend={handlePullTouchEnd}
-	ontouchcancel={resetPullState}
 >
-	<div
-		class="pull-refresh-indicator"
-		class:is-visible={pullRefreshing || pullDistance > 0}
-		class:is-armed={pullDistance >= PULL_REFRESH_TRIGGER_PX}
-	>
-		{#if pullRefreshing}
-			Oppdaterer ...
-		{:else if pullDistance >= PULL_REFRESH_TRIGGER_PX}
-			Slipp for å oppdatere
-		{:else}
-			Dra ned for å oppdatere
-		{/if}
-	</div>
-
 	<!-- ── SONE 1: Tittel ── -->
 	{#if !inputExpanded}
 		<section class="zone zone-title" out:fly={{ y: -24, duration: 750 }} in:fly={{ y: -14, duration: 600 }}>
@@ -2372,6 +2307,7 @@
 	</section>
 
 </div>
+</PullToRefresh>
 
 {#if widgetPanelOpen}
 	<div class="widget-sheet-backdrop" onclick={() => (widgetPanelOpen = false)} aria-hidden="true"></div>
@@ -2546,34 +2482,6 @@
 		display: flex;
 		flex-direction: column;
 		overflow: hidden;
-	}
-
-	.pull-refresh-indicator {
-		position: absolute;
-		top: calc(max(8px, env(safe-area-inset-top, 0px)));
-		left: 50%;
-		transform: translateX(-50%);
-		font-size: 0.72rem;
-		font-weight: 600;
-		letter-spacing: 0.01em;
-		color: #9ba0b8;
-		background: #1a1a1a;
-		border: 1px solid #282828;
-		border-radius: 999px;
-		padding: 6px 10px;
-		opacity: 0;
-		pointer-events: none;
-		z-index: 30;
-		transition: opacity 120ms ease;
-	}
-
-	.pull-refresh-indicator.is-visible {
-		opacity: 1;
-	}
-
-	.pull-refresh-indicator.is-armed {
-		color: #cfd3e9;
-		border-color: #343954;
 	}
 
 	/* ── Soner ── */

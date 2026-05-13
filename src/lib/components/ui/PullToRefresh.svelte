@@ -18,12 +18,17 @@
 		children
 	}: Props = $props();
 
-	const TRIGGER_PX = 72;
-	const MAX_PX = 120;
+	const TRIGGER_PX = 64;
+	const MAX_PX = 110;
+	const HOLD_PX = 52;
 
 	let pullStartY = $state<number | null>(null);
 	let pullDistance = $state(0);
 	let refreshing = $state(false);
+
+	const dragging = $derived(pullStartY !== null && pullDistance > 0);
+	const armed = $derived(pullDistance >= TRIGGER_PX);
+	const offset = $derived(refreshing ? HOLD_PX : pullDistance);
 
 	function atDocumentTop() {
 		if (typeof window === 'undefined') return true;
@@ -55,7 +60,8 @@
 		if (pullStartY === null || refreshing) return;
 		const touchY = event.touches[0]?.clientY ?? pullStartY;
 		const delta = Math.max(0, touchY - pullStartY);
-		pullDistance = Math.min(MAX_PX, delta * 0.5);
+		// Resistance: nesten 1:1 i starten, tiltagende motstand mot MAX_PX.
+		pullDistance = MAX_PX * (1 - Math.exp(-delta / (MAX_PX * 1.4)));
 	}
 
 	function resetPull() {
@@ -85,58 +91,104 @@
 </script>
 
 <div
-	class="pull-refresh-wrap"
+	class="ptr-wrap"
+	class:is-dragging={dragging}
 	ontouchstart={handleTouchStart}
 	ontouchmove={handleTouchMove}
 	ontouchend={handleTouchEnd}
 	ontouchcancel={resetPull}
 >
-	<div
-		class="pull-refresh-indicator"
-		class:is-visible={refreshing || pullDistance > 0}
-		class:is-armed={pullDistance >= TRIGGER_PX}
-	>
-		{#if refreshing}
-			Oppdaterer ...
-		{:else if pullDistance >= TRIGGER_PX}
-			Slipp for å oppdatere
-		{:else}
-			Dra ned for å oppdatere
-		{/if}
+	<div class="ptr-backdrop" style:height={`${offset}px`} aria-hidden="true">
+		<div class="ptr-icon" class:is-armed={armed} class:is-refreshing={refreshing}>
+			{#if refreshing}
+				<div class="ptr-spinner"></div>
+			{:else}
+				<svg class="ptr-arrow" viewBox="0 0 24 24" width="20" height="20">
+					<path
+						d="M12 5v14m0 0l-6-6m6 6l6-6"
+						stroke="currentColor"
+						stroke-width="2"
+						fill="none"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					/>
+				</svg>
+			{/if}
+		</div>
 	</div>
-	{@render children()}
+	<div class="ptr-content" style:transform={`translate3d(0, ${offset}px, 0)`}>
+		{@render children()}
+	</div>
 </div>
 
 <style>
-	.pull-refresh-wrap {
-		display: contents;
+	.ptr-wrap {
+		position: relative;
+		width: 100%;
 	}
 
-	.pull-refresh-indicator {
+	.ptr-backdrop {
 		position: fixed;
-		top: calc(max(8px, env(safe-area-inset-top, 0px)));
-		left: 50%;
-		transform: translateX(-50%);
-		font-size: 0.72rem;
-		font-weight: 600;
-		letter-spacing: 0.01em;
-		color: #9ba0b8;
-		background: #1a1a1a;
-		border: 1px solid #282828;
-		border-radius: 999px;
-		padding: 6px 10px;
-		opacity: 0;
+		top: 0;
+		left: 0;
+		right: 0;
+		background: linear-gradient(180deg, #1d2240 0%, #141528 100%);
+		display: flex;
+		align-items: flex-end;
+		justify-content: center;
+		padding-bottom: 10px;
+		overflow: hidden;
 		pointer-events: none;
-		z-index: 30;
-		transition: opacity 120ms ease;
+		z-index: 25;
+		transition: height 320ms cubic-bezier(0.22, 1, 0.36, 1);
 	}
 
-	.pull-refresh-indicator.is-visible {
-		opacity: 1;
+	.ptr-wrap.is-dragging .ptr-backdrop {
+		transition: none;
 	}
 
-	.pull-refresh-indicator.is-armed {
-		color: #cfd3e9;
-		border-color: #343954;
+	.ptr-content {
+		width: 100%;
+		transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+		will-change: transform;
+	}
+
+	.ptr-wrap.is-dragging .ptr-content {
+		transition: none;
+	}
+
+	.ptr-icon {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: #a5b4fc;
+		transition: color 160ms ease;
+	}
+
+	.ptr-icon.is-armed {
+		color: #e0e7ff;
+	}
+
+	.ptr-arrow {
+		transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+	}
+
+	.ptr-icon.is-armed .ptr-arrow {
+		transform: rotate(180deg);
+	}
+
+	.ptr-spinner {
+		width: 18px;
+		height: 18px;
+		border: 2px solid currentColor;
+		border-top-color: transparent;
+		border-radius: 50%;
+		animation: ptr-spin 0.85s linear infinite;
+	}
+
+	@keyframes ptr-spin {
+		to {
+			transform: rotate(360deg);
+		}
 	}
 </style>
