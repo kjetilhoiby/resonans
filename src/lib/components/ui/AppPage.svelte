@@ -38,8 +38,10 @@
 		if (!browser) return;
 		const color = theme === 'dark' ? darkBg[surface] : '';
 		document.documentElement.style.background = color;
+		document.body.style.background = color;
 		return () => {
 			document.documentElement.style.background = '';
+			document.body.style.background = '';
 		};
 	});
 </script>

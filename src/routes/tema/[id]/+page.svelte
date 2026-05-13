@@ -6,7 +6,7 @@
 	let { data }: { data: PageData & { selectedWorkout?: unknown } } = $props();
 </script>
 
-<AppPage width="full" padding="none" gap="sm" surface="transparent">
+<AppPage width="full" padding="none" gap="sm" surface="transparent" theme="dark">
 	{#if data.theme}
 	<ThemePage
 		theme={data.theme}
