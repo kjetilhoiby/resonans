@@ -43,13 +43,11 @@ export async function loadHealthDashboardData(userId: string) {
 	const [weeklyData, monthlyData, yearlyData, dailyData] = await Promise.all([
 		db.query.sensorAggregates.findMany({
 			where: and(eq(sensorAggregates.userId, userId), eq(sensorAggregates.period, 'week')),
-			orderBy: [desc(sensorAggregates.startDate)],
-			limit: 12
+			orderBy: [desc(sensorAggregates.startDate)]
 		}),
 		db.query.sensorAggregates.findMany({
 			where: and(eq(sensorAggregates.userId, userId), eq(sensorAggregates.period, 'month')),
-			orderBy: [desc(sensorAggregates.startDate)],
-			limit: 12
+			orderBy: [desc(sensorAggregates.startDate)]
 		}),
 		db.query.sensorAggregates.findMany({
 			where: and(eq(sensorAggregates.userId, userId), eq(sensorAggregates.period, 'year')),

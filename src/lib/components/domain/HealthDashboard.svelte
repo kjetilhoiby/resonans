@@ -223,7 +223,9 @@
 	);
 
 	const aggregatePeriod = $derived<'week' | 'month' | 'year'>(
-		selectedWindow === 'month' || selectedWindow === 'quarter' ? 'month' : selectedWindow === 'year' ? 'year' : 'week'
+		selectedWindow === '30d' || selectedWindow === 'month' || selectedWindow === 'quarter' ? 'month' :
+		selectedWindow === '365d' || selectedWindow === 'year' ? 'year' :
+		'week'
 	);
 
 	// Mapping fra HealthDashboard-vinduet til widget-API'ets range-streng.
