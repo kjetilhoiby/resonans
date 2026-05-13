@@ -18,6 +18,8 @@
     animateOnMount?: boolean;
     /** Aktiver syklus gjennom flere datasett (oppgaver → effort → stemning …) */
     cycle?: boolean;
+    /** Etikett for det datasettet som vises akkurat nå (kan bindes til av forelder) */
+    currentLabel?: string;
   }
 
   let {
@@ -27,13 +29,14 @@
     size = 200,
     animateOnMount = true,
     cycle = true,
+    currentLabel = $bindable<string>('Gjort'),
   }: Props = $props();
 
   const daysInMonth = $derived(new Date(year, month, 0).getDate());
 
   interface Dataset {
     id: string;
-    emoji: string;
+    label: string;
     color: string;
     build: () => SectorDef[];
   }
@@ -82,26 +85,26 @@
   }
 
   const datasets = $derived<Dataset[]>([
-    { id: 'oppgaver', emoji: '🎯', color: '#5fa080', build: buildTasks },
-    { id: 'effort',   emoji: '💪', color: '#f59e0b', build: () => buildMock('#f59e0b', 1.7) },
-    { id: 'stemning', emoji: '😊', color: '#a78bfa', build: () => buildMock('#a78bfa', 3.1) },
+    { id: 'oppgaver', label: 'Gjort', color: '#5fa080', build: buildTasks },
+    { id: 'effort',   label: 'Trent', color: '#f59e0b', build: () => buildMock('#f59e0b', 1.7) },
+    { id: 'stemning', label: 'Følt',  color: '#a78bfa', build: () => buildMock('#a78bfa', 3.1) },
   ]);
 
   let currentIdx = $state(0);
   let scale = $state(0);
-  let emojiOpacity = $state(1);
 
   const currentDataset = $derived(datasets[currentIdx] ?? datasets[0]);
   const sectors = $derived(currentDataset.build());
+
+  $effect(() => {
+    currentLabel = currentDataset.label;
+  });
 
   function easeOutCubic(t: number): number {
     return 1 - Math.pow(1 - t, 3);
   }
   function easeInCubic(t: number): number {
     return t * t * t;
-  }
-  function linear(t: number): number {
-    return t;
   }
 
   function tween(
@@ -135,7 +138,6 @@
   onMount(() => {
     if (!cycle) {
       scale = 1;
-      emojiOpacity = 0;
       return;
     }
 
@@ -143,37 +145,27 @@
     const isStopped = () => stopped;
 
     async function loop() {
-      // Hold første emoji synlig et øyeblikk før første spredning
-      await sleep(animateOnMount ? 600 : 0);
+      await sleep(animateOnMount ? 400 : 0);
       if (stopped) return;
 
       while (!stopped) {
-        // Spredning: segmentene vokser ut, emojien blir værende synlig
+        // Spredning
         await tween(0, 1, 850, easeOutCubic, (v) => (scale = v), isStopped);
         if (stopped) return;
 
-        // Hvile på full spredning — segmenter og emoji vises sammen
+        // Hvile på full spredning
         await sleep(1800);
         if (stopped) return;
 
-        // Sammentrekning + fade emoji ut (parallelt) før datasett-bytte
-        await Promise.all([
-          tween(1, 0, 500, easeInCubic, (v) => (scale = v), isStopped),
-          tween(emojiOpacity, 0, 350, linear, (v) => (emojiOpacity = v), isStopped),
-        ]);
+        // Sammentrekning
+        await tween(1, 0, 500, easeInCubic, (v) => (scale = v), isStopped);
         if (stopped) return;
 
-        // Bytt datasett mens både hjul og emoji er usynlig
+        // Bytt datasett mens hjulet er sammentrukket — labelen oppdateres via $effect
         currentIdx = (currentIdx + 1) % datasets.length;
 
-        // Liten pause, så fader nytt emoji inn
-        await sleep(120);
-        if (stopped) return;
-        await tween(0, 1, 380, linear, (v) => (emojiOpacity = v), isStopped);
-        if (stopped) return;
-
-        // Hvile med emoji synlig før neste spredning
-        await sleep(700);
+        // Kort pause så ny label rekker å registreres før neste spredning
+        await sleep(550);
       }
     }
 
@@ -193,6 +185,4 @@
   innerRadiusFraction={0}
   showTrack={false}
   {scale}
-  centerEmoji={currentDataset.emoji}
-  centerEmojiOpacity={emojiOpacity}
 />

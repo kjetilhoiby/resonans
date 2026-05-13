@@ -31,10 +31,6 @@
     centerSublabel?: string;
     /** Global skala 0–1 som ganges inn på alle radier (for spredning/sammentrekning) */
     scale?: number;
-    /** Emoji som vises midt i ringen (typisk under hvile-fasen) */
-    centerEmoji?: string;
-    /** Opacity for senter-emojien (0–1) */
-    centerEmojiOpacity?: number;
   }
 
   let {
@@ -49,8 +45,6 @@
     centerLabel,
     centerSublabel,
     scale = 1,
-    centerEmoji,
-    centerEmojiOpacity = 1,
   }: Props = $props();
 
   function toRad(deg: number) {
@@ -188,19 +182,6 @@
       >{arc.label}</text>
     {/if}
   {/each}
-
-  <!-- Senter-emoji (vises typisk i hvile-fasen mellom datasett) -->
-  {#if centerEmoji && centerEmojiOpacity > 0}
-    <text
-      x={geom.c}
-      y={geom.c}
-      text-anchor="middle"
-      dominant-baseline="central"
-      font-size={size * 0.34}
-      opacity={centerEmojiOpacity}
-      pointer-events="none"
-    >{centerEmoji}</text>
-  {/if}
 
   <!-- Sentertekst — skalert relativt til size -->
   {#if centerLabel}

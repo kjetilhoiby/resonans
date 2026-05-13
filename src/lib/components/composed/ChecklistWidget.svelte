@@ -97,6 +97,9 @@
 	const label = $derived(getContextLabel(checklist.context));
 	const ringColor = $derived(isComplete ? '#5fa080' : '#7c8ef5');
 
+	// Måneds-widgeten sykler gjennom datasett — denne overstyrer labelen mens hjulet er aktivt.
+	let monthCycleLabel = $state<string>('Gjort');
+
 	// Måneds-widget: bytt ut GoalRing med DayWheelChart
 	const monthMatch = $derived(checklist.context?.match(/^month:(\d{4})-(\d{2})$/));
 	const isMonthWidget = $derived(!!monthMatch);
@@ -192,9 +195,10 @@
 				month={dayWheelData.month}
 				days={dayWheelData.days}
 				size={120}
+				bind:currentLabel={monthCycleLabel}
 			/>
 		</div>
-		<div class="dw-label" style:color={ringColor}>{label}</div>
+		<div class="dw-label" style:color={ringColor}>{monthCycleLabel}</div>
 	{:else}
 		<div class="dw-ring">
 			<GoalRing pct={isComplete ? 100 : pct} size={60} strokeWidth={4} color={ringColor}>
