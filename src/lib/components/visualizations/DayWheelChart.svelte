@@ -65,7 +65,6 @@
     });
   }
 
-  // Deterministisk pseudo-tilfeldig 0..1 basert på dag-indeks
   function noise(seed: number, salt: number): number {
     const x = Math.sin(seed * 12.9898 + salt * 78.233) * 43758.5453;
     return Math.abs(x - Math.floor(x));
@@ -91,45 +90,56 @@
   ]);
 
   let currentIdx = $state(0);
-  let scale = $state(0);
-
   const currentDataset = $derived(datasets[currentIdx] ?? datasets[0]);
-  const sectors = $derived(currentDataset.build());
+  const targetSectors = $derived(currentDataset.build());
 
   $effect(() => {
     currentLabel = currentDataset.label;
   });
 
+  // Spredning: en segment med radius=1 bruker SPREAD_T_MAX ms.
+  // Mindre segmenter stopper tidligere → "samme grunnfart, ulike stopp-punkter".
+  const SPREAD_T_MAX = 900;
+  const RETRACT_T_MAX = 550;
+
+  type Phase = 'pre' | 'spreading' | 'rest' | 'retracting' | 'collapsed';
+  let phase = $state<Phase>('pre');
+  let phaseStart = $state(0);
+  let now = $state(0);
+
   function easeOutCubic(t: number): number {
     return 1 - Math.pow(1 - t, 3);
   }
-  function easeInCubic(t: number): number {
-    return t * t * t;
-  }
 
-  function tween(
-    from: number,
-    to: number,
-    duration: number,
-    easing: (t: number) => number,
-    setter: (v: number) => void,
-    isStopped: () => boolean
-  ): Promise<void> {
-    return new Promise((resolve) => {
-      const start = performance.now();
-      function step(now: number) {
-        if (isStopped()) {
-          resolve();
-          return;
-        }
-        const t = Math.min(1, (now - start) / duration);
-        setter(from + (to - from) * easing(t));
-        if (t < 1) requestAnimationFrame(step);
-        else resolve();
+  const liveSectors = $derived.by<SectorDef[]>(() => {
+    return targetSectors.map((s) => {
+      const targetMax = Math.max(s.radius ?? 0, s.bgRadius ?? 0);
+      if (targetMax <= 0) return s;
+
+      let fill: number;
+      if (phase === 'pre' || phase === 'collapsed') {
+        fill = 0;
+      } else if (phase === 'rest') {
+        fill = 1;
+      } else if (phase === 'spreading') {
+        const duration = targetMax * SPREAD_T_MAX;
+        const elapsed = now - phaseStart;
+        const p = duration > 0 ? Math.min(1, elapsed / duration) : 1;
+        fill = easeOutCubic(p);
+      } else {
+        const duration = targetMax * RETRACT_T_MAX;
+        const elapsed = now - phaseStart;
+        const p = duration > 0 ? Math.min(1, elapsed / duration) : 1;
+        fill = 1 - easeOutCubic(p);
       }
-      requestAnimationFrame(step);
+
+      return {
+        ...s,
+        radius: (s.radius ?? 0) * fill,
+        bgRadius: s.bgRadius != null ? s.bgRadius * fill : undefined,
+      };
     });
-  }
+  });
 
   function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -137,52 +147,64 @@
 
   onMount(() => {
     if (!cycle) {
-      scale = 1;
+      phase = 'rest';
       return;
     }
 
     let stopped = false;
-    const isStopped = () => stopped;
+    let rafId: number | null = null;
+
+    function tick() {
+      if (stopped) return;
+      now = performance.now();
+      rafId = requestAnimationFrame(tick);
+    }
 
     async function loop() {
       await sleep(animateOnMount ? 400 : 0);
       if (stopped) return;
 
       while (!stopped) {
-        // Spredning
-        await tween(0, 1, 850, easeOutCubic, (v) => (scale = v), isStopped);
+        // Spredning — hvert segment bruker (target * SPREAD_T_MAX) ms
+        phaseStart = performance.now();
+        phase = 'spreading';
+        await sleep(SPREAD_T_MAX);
         if (stopped) return;
 
         // Hvile på full spredning
-        await sleep(1800);
+        phase = 'rest';
+        await sleep(1500);
         if (stopped) return;
 
-        // Sammentrekning
-        await tween(1, 0, 500, easeInCubic, (v) => (scale = v), isStopped);
+        // Sammentrekning — samme prinsipp, kortere tidsbudsjett
+        phaseStart = performance.now();
+        phase = 'retracting';
+        await sleep(RETRACT_T_MAX);
         if (stopped) return;
 
-        // Bytt datasett mens hjulet er sammentrukket — labelen oppdateres via $effect
+        // Bytte datasett mens hjulet er sammentrukket; labelen bytter via $effect
+        phase = 'collapsed';
         currentIdx = (currentIdx + 1) % datasets.length;
-
-        // Kort pause så ny label rekker å registreres før neste spredning
         await sleep(550);
       }
     }
 
+    rafId = requestAnimationFrame(tick);
     loop();
+
     return () => {
       stopped = true;
+      if (rafId != null) cancelAnimationFrame(rafId);
     };
   });
 </script>
 
 <RadialSectorChart
-  {sectors}
+  sectors={liveSectors}
   totalSlots={daysInMonth}
   {size}
   animateOnMount={false}
   gapDeg={1.5}
   innerRadiusFraction={0}
   showTrack={false}
-  {scale}
 />

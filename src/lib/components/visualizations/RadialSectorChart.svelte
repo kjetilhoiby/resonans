@@ -29,8 +29,6 @@
     showTrack?: boolean;
     centerLabel?: string;
     centerSublabel?: string;
-    /** Global skala 0–1 som ganges inn på alle radier (for spredning/sammentrekning) */
-    scale?: number;
   }
 
   let {
@@ -44,7 +42,6 @@
     showTrack = true,
     centerLabel,
     centerSublabel,
-    scale = 1,
   }: Props = $props();
 
   function toRad(deg: number) {
@@ -96,18 +93,16 @@
       return buildArc(c, c, innerR, maxR, start, end);
     });
 
-    const s01 = Math.max(0, Math.min(1, scale));
-
     const arcs = sectors.map((s, i) => {
       const start = -90 + i * slotDeg;
       const end = start + slotDeg - gapDeg;
 
       const bgBase = s.bgRadius != null
-        ? Math.max(0.05, Math.min(1, s.bgRadius)) * s01
+        ? Math.max(0, Math.min(1, s.bgRadius))
         : null;
       const bgOuterR = bgBase != null ? innerR + (maxR - innerR) * bgBase : null;
 
-      const rBase = s.radius > 0 ? Math.max(0.05, Math.min(1, s.radius)) * s01 : 0;
+      const rBase = Math.max(0, Math.min(1, s.radius));
       const outerR = innerR + (maxR - innerR) * rBase;
       const midDeg = start + (slotDeg - gapDeg) / 2;
       const labelR = (innerR + outerR) / 2;
