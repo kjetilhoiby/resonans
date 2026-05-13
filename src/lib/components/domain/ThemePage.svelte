@@ -303,6 +303,7 @@
 			weekly: healthDashboard.weekly as any,
 			monthly: healthDashboard.monthly as any,
 			yearly: healthDashboard.yearly as any,
+			dailyEffort: healthDashboard.dailyEffort ?? [],
 			sources: healthDashboard.sources ?? [],
 			recentEvents: healthDashboard.recentEvents ?? [],
 			activities: (healthDashboard.activityLayer?.workouts ?? []) as any,

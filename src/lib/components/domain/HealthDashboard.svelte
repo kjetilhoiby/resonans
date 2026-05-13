@@ -17,6 +17,9 @@
 	import HrDistributionBar from '../charts/HrDistributionBar.svelte';
 	import DynamicWidget from '../composed/DynamicWidget.svelte';
 	import WeeklyEffortCard from '../composed/WeeklyEffortCard.svelte';
+	import FormCard from '../composed/FormCard.svelte';
+	import BalanceCard from '../composed/BalanceCard.svelte';
+	import { computeTrainingLoad } from '$lib/util/training-load';
 	import { hasElevation, hasHeartRate } from '$lib/utils/track-stats';
 	import {
 		buildPaceBaseline,
@@ -132,6 +135,7 @@
 		weekly: AggregatePeriod[];
 		monthly: AggregatePeriod[];
 		yearly: AggregatePeriod[];
+		dailyEffort?: Array<{ date: string; effort: number }>;
 		sources?: Array<{ id: string; name: string; provider: string; isActive: boolean; lastSync: string | null }>;
 		recentEvents?: Array<{ id: string; timestamp: string; dataType: string; data: Record<string, unknown> }>;
 		tooling?: {
@@ -148,7 +152,7 @@
 		themeId?: string;
 	}
 
-	let { weekly, monthly, yearly, sources = [], recentEvents = [], tooling, embedded = false, goals = [], activities = [], metricSettings = {}, themeId }: Props = $props();
+	let { weekly, monthly, yearly, dailyEffort = [], sources = [], recentEvents = [], tooling, embedded = false, goals = [], activities = [], metricSettings = {}, themeId }: Props = $props();
 
 	let themeWidgets = $state<ThemeWidget[]>([]);
 	let themeWidgetsLoading = $state(true);
@@ -279,6 +283,8 @@
 	);
 	const lastPeriod = $derived(periodData.length ? periodData[periodData.length - 1] : null);
 	const lastMetrics = $derived(lastPeriod?.metrics ?? null);
+
+	const trainingLoadSeries = $derived(computeTrainingLoad(dailyEffort));
 
 	const latestWeekWithEffort = $derived(
 		[...weekly].reverse().find((w) => w.metrics?.weeklyEffort) ?? null
@@ -1353,6 +1359,13 @@
 		</div>
 	{/if}
 
+	{#if trainingLoadSeries.length >= 14}
+		<div class="hd-training-load">
+			<FormCard series={trainingLoadSeries} />
+			<BalanceCard series={trainingLoadSeries} />
+		</div>
+	{/if}
+
 	{#if tooling}
 		<div class="hd-tooling-card">
 			<div class="hd-table-head">
@@ -1839,6 +1852,12 @@
 	.hd-tooling-card {
 		background: #141414;
 		border-radius: 18px;
+	}
+
+	.hd-training-load {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+		gap: 12px;
 	}
 
 	.hd-widget-card {

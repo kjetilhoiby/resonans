@@ -2,8 +2,8 @@ import { db, sql as rawSql } from '$lib/db';
 import { sensorEvents, sensorAggregates, metricAggregateCache, canonicalWorkouts } from '$lib/db/schema';
 import { eq, and, gte, lte, sql, desc } from 'drizzle-orm';
 import { getAllMetrics } from '$lib/server/services/metric-definition-service';
-import { generateWeeks, generateMonths, generateYears, getCurrentWeek, getCurrentMonth, getCurrentYear, getWeeksSince, getMonthsSince, getYearsSince } from './time-periods';
-import type { WeekPeriod, MonthPeriod, YearPeriod } from './time-periods';
+import { generateWeeks, generateMonths, generateYears, generateDays, getCurrentWeek, getCurrentMonth, getCurrentYear, getWeeksSince, getMonthsSince, getYearsSince } from './time-periods';
+import type { WeekPeriod, MonthPeriod, YearPeriod, DayPeriod } from './time-periods';
 import { classifyEffortFamily, type EffortFamily } from '$lib/server/services/effort-service';
 import { computeSleepLag } from '$lib/server/services/sleep-lag';
 
@@ -401,6 +401,70 @@ export async function aggregateYearlyData(userId: string, years?: YearPeriod[]) 
 }
 
 /**
+ * Aggregate daily effort totals (kanoniske workouts pr. UTC-kalenderdag).
+ * Lagrer en rad i sensor_aggregates med period='day', periodKey='YYYY-MM-DD'.
+ * Brukes som input til CTL/ATL/TSB-modellen klient-side.
+ */
+export async function aggregateDailyEffort(userId: string, days?: DayPeriod[]) {
+	const periodsToAggregate = days || generateDays();
+	if (periodsToAggregate.length === 0) return;
+
+	const rangeStart = periodsToAggregate[periodsToAggregate.length - 1].startTime;
+	const rangeEnd = periodsToAggregate[0].endTime;
+
+	const workouts = await db.query.canonicalWorkouts.findMany({
+		where: and(
+			eq(canonicalWorkouts.userId, userId),
+			gte(canonicalWorkouts.startTime, rangeStart),
+			lte(canonicalWorkouts.startTime, rangeEnd)
+		)
+	});
+
+	const byDay = new Map<string, { total: number; trimp: number; count: number }>();
+	for (const w of workouts) {
+		const score = w.effortScore !== null && w.effortScore !== undefined ? Number(w.effortScore) : null;
+		if (score === null || !Number.isFinite(score) || score <= 0) continue;
+		const key = w.startTime.toISOString().split('T')[0];
+		const entry = byDay.get(key) ?? { total: 0, trimp: 0, count: 0 };
+		entry.total += score;
+		if (w.effortMethod === 'trimp') entry.trimp += score;
+		entry.count += 1;
+		byDay.set(key, entry);
+	}
+
+	const rows: typeof sensorAggregates.$inferInsert[] = [];
+	for (const day of periodsToAggregate) {
+		const entry = byDay.get(day.periodKey);
+		if (!entry) continue;
+		const total = Math.round(entry.total * 10) / 10;
+		const hrCoveragePct = total > 0 ? Math.round((entry.trimp / total) * 100) : 0;
+		rows.push({
+			userId,
+			period: 'day',
+			periodKey: day.periodKey,
+			year: day.year,
+			startDate: day.startTime,
+			endDate: day.endTime,
+			metrics: {
+				dailyEffort: {
+					total,
+					workoutCount: entry.count,
+					hrCoveragePct
+				}
+			},
+			eventCount: entry.count
+		});
+	}
+
+	if (rows.length > 0) {
+		await db.insert(sensorAggregates).values(rows).onConflictDoUpdate({
+			target: [sensorAggregates.userId, sensorAggregates.period, sensorAggregates.periodKey],
+			set: { metrics: sql`excluded.metrics`, eventCount: sql`excluded.event_count`, updatedAt: new Date() }
+		});
+	}
+}
+
+/**
  * Aggregate all periods that overlap with [fromDate, now] — for incremental imports spanning multiple weeks/months
  */
 export async function aggregatePeriodsFrom(userId: string, fromDate: Date) {
@@ -414,6 +478,8 @@ export async function aggregatePeriodsFrom(userId: string, fromDate: Date) {
 	await aggregateWeeklyData(userId, weeks);
 	await aggregateMonthlyData(userId, months);
 	await aggregateYearlyData(userId, years);
+	const daysSince = Math.max(1, Math.ceil((Date.now() - fromDate.getTime()) / 86400000) + 1);
+	await aggregateDailyEffort(userId, generateDays(daysSince));
 
 	console.log(`✅ Period aggregation completed in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
 }
@@ -428,6 +494,7 @@ export async function aggregateCurrentPeriods(userId: string) {
 	await aggregateWeeklyData(userId, [getCurrentWeek()]);
 	await aggregateMonthlyData(userId, [getCurrentMonth()]);
 	await aggregateYearlyData(userId, [getCurrentYear()]);
+	await aggregateDailyEffort(userId, generateDays(60));
 
 	console.log(`✅ Current period aggregation completed in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
 }
@@ -451,7 +518,12 @@ export async function aggregateAllPeriods(userId: string) {
 	console.log('� Aggregating yearly data...');
 	await aggregateYearlyData(userId);
 	console.log(`   ✓ Yearly aggregation completed in ${((Date.now() - yearStart) / 1000).toFixed(1)}s`);
-	
+
+	const dailyStart = Date.now();
+	console.log('� Aggregating daily effort (siste 400 dager)...');
+	await aggregateDailyEffort(userId, generateDays(400));
+	console.log(`   ✓ Daily effort aggregation completed in ${((Date.now() - dailyStart) / 1000).toFixed(1)}s`);
+
 	console.log(`✅ All aggregations completed in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
 }
 

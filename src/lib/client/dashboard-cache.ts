@@ -26,6 +26,7 @@ export interface HealthDashboardData {
 	weekly: unknown[];
 	monthly: unknown[];
 	yearly: unknown[];
+	dailyEffort?: Array<{ date: string; effort: number }>;
 	sources?: Array<{ id: string; name: string; provider: string; isActive: boolean; lastSync: string | null }>;
 	recentEvents?: Array<{ id: string; timestamp: string; dataType: string; data: Record<string, unknown> }>;
 	activityLayer?: { workouts: WorkoutActivity[] };

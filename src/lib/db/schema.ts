@@ -1631,6 +1631,11 @@ export const sensorAggregates = pgTable('sensor_aggregates', {
 			workoutCount: number;
 			baseline?: { p4wAvg: number; delta: number };
 		};
+		dailyEffort?: {
+			total: number; // sum av effortScore for økter den dagen
+			workoutCount: number;
+			hrCoveragePct: number;
+		};
 		// Household metrics
 		laundry?: { count?: number; avgDuration?: number };
 		dishes?: { count?: number };
