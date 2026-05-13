@@ -578,18 +578,18 @@
 		[20, METRIC_PALETTE.good],
 		[35, METRIC_PALETTE.good]
 	];
-	const ACTIVE_STOPS: readonly ColorStop[] = [
+	const EFFORT_STOPS: readonly ColorStop[] = [
 		[0, METRIC_PALETTE.bad],
-		[20, METRIC_PALETTE.mid],
-		[45, METRIC_PALETTE.good],
-		[75, METRIC_PALETTE.good]
+		[80, METRIC_PALETTE.bad],
+		[200, METRIC_PALETTE.mid],
+		[450, METRIC_PALETTE.good],
+		[900, METRIC_PALETTE.good]
 	];
-	const SLEEP_STOPS: readonly ColorStop[] = [
-		[4, METRIC_PALETTE.bad],
-		[6, METRIC_PALETTE.mid],
-		[7, METRIC_PALETTE.good],
-		[9, METRIC_PALETTE.good],
-		[10.5, METRIC_PALETTE.mid]
+	const SLEEP_LAG_STOPS: readonly ColorStop[] = [
+		[0, METRIC_PALETTE.good],
+		[20, METRIC_PALETTE.good],
+		[40, METRIC_PALETTE.mid],
+		[65, METRIC_PALETTE.bad]
 	];
 	const HR_STOPS: readonly ColorStop[] = [
 		[48, METRIC_PALETTE.good],
@@ -604,11 +604,11 @@
 	function runningColor(km: number | undefined): string {
 		return km == null || km <= 0 ? NONE_COLOR : interpolateStops(km, RUNNING_STOPS);
 	}
-	function activeColor(perDay: number | undefined): string {
-		return perDay == null ? NONE_COLOR : interpolateStops(perDay, ACTIVE_STOPS);
+	function effortColor(total: number | undefined): string {
+		return total == null ? NONE_COLOR : interpolateStops(total, EFFORT_STOPS);
 	}
-	function sleepColor(hours: number | undefined): string {
-		return hours == null ? NONE_COLOR : interpolateStops(hours, SLEEP_STOPS);
+	function sleepLagColor(lag: number | undefined): string {
+		return lag == null ? NONE_COLOR : interpolateStops(lag, SLEEP_LAG_STOPS);
 	}
 	function heartRateColor(bpm: number | undefined): string {
 		return bpm == null ? NONE_COLOR : interpolateStops(bpm, HR_STOPS);
@@ -1369,26 +1369,24 @@
 							<th>Periode</th>
 							<th title="Vektendring i perioden">⚖️</th>
 							<th title="Kilometer løpt">🏃</th>
-							<th title="Aktive minutter (snitt per dag)">⚡</th>
-							<th title="Søvn (snitt per natt)">🌙</th>
+							<th title="Relativ effort (treningsbelastning)">⚡</th>
+							<th title="Sleep lag (timing-indeks, lavere = bedre)">⏰</th>
 							<th title="Sovepuls (snitt)">💓</th>
 						</tr>
 					</thead>
 					<tbody>
 						{#each visiblePeriods as period}
-							{@const days = daysInPeriod(period)}
-							{@const activeSum = period.metrics?.intenseMinutes?.sum}
 							{@const weightChange = period.metrics?.weight?.change}
 							{@const runningKm = (period.metrics?.workouts?.types?.running ?? 0) > 0 ? (period.metrics!.workouts!.types!.running as number) : undefined}
-							{@const activePerDay = activeSum != null ? Math.round(activeSum / days) : undefined}
-							{@const sleepHours = period.metrics?.sleep?.avg}
+							{@const effortTotal = period.metrics?.weeklyEffort?.total}
+							{@const sleepLag = period.metrics?.sleepLag}
 							{@const hr = period.metrics?.sleepHeartRate?.avg}
 							<tr>
 								<td>{formatPeriodKey(period.periodKey, period.period)}</td>
 								<td><span class="hd-metric-pill" style="--pill-color: {weightColor(weightChange)}">{formatWeightChange(weightChange)}</span></td>
 								<td><span class="hd-metric-pill" style="--pill-color: {runningColor(runningKm)}">{runningKm != null ? runningKm.toFixed(1) : '–'}</span></td>
-								<td><span class="hd-metric-pill" style="--pill-color: {activeColor(activePerDay)}">{activePerDay ?? '–'}</span></td>
-								<td><span class="hd-metric-pill" style="--pill-color: {sleepColor(sleepHours)}">{formatMetric(sleepHours)}</span></td>
+								<td><span class="hd-metric-pill" style="--pill-color: {effortColor(effortTotal)}">{effortTotal != null ? Math.round(effortTotal) : '–'}</span></td>
+								<td><span class="hd-metric-pill" style="--pill-color: {sleepLagColor(sleepLag)}">{sleepLag != null ? Math.round(sleepLag) : '–'}</span></td>
 								<td><span class="hd-metric-pill" style="--pill-color: {heartRateColor(hr)}">{formatMetric(hr, 0)}</span></td>
 							</tr>
 						{/each}
