@@ -365,9 +365,12 @@
 		}
 
 		const hrCoveragePct = total > 0 ? Math.round((trimpWeighted / total) * 100) : 0;
+		const rangeDays = Math.max(1, Math.round((range.end.getTime() - range.start.getTime()) / 86400000));
+		const rangeWeeks = Math.max(1, rangeDays / 7);
 
 		return {
 			total: Math.round(total * 10) / 10,
+			perWeekAvg: Math.round((total / rangeWeeks) * 10) / 10,
 			byFamily,
 			bars,
 			hrCoveragePct,
@@ -1332,7 +1335,8 @@
 	{:else if effortPeriodMode === 'weekly' && periodEffortAggregate}
 		<div class="hd-effort">
 			<WeeklyEffortCard
-				total={periodEffortAggregate.total}
+				title="Relativ effort (snitt/uke)"
+				total={periodEffortAggregate.perWeekAvg}
 				byFamily={periodEffortAggregate.byFamily}
 				bars={periodEffortAggregate.bars}
 				hrCoveragePct={periodEffortAggregate.hrCoveragePct}
