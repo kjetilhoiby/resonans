@@ -157,6 +157,7 @@ export async function fetchWithingsSleep(
 		enddate?: number;
 		offset?: number;
 		lastupdate?: number;
+		data_fields?: string;
 	}
 ): Promise<WithingsMeasureResponse> {
 	const cleanParams = Object.fromEntries(

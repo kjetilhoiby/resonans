@@ -401,8 +401,22 @@ export async function syncActivityData(
 	return parsed.length;
 }
 
+// Withings' /v2/sleep?action=getsummary returns only the durations by default.
+// Optional fields like hr_average / sleep_score must be requested explicitly via
+// data_fields, otherwise they arrive as undefined and we end up depending on the
+// withings_sleep_hr backfill to patch them in later.
+const WITHINGS_SLEEP_DATA_FIELDS = [
+	'total_sleep_time',
+	'deepsleepduration',
+	'lightsleepduration',
+	'remsleepduration',
+	'wakeupduration',
+	'sleep_score',
+	'hr_average',
+	'rr_average'
+].join(',');
+
 /**
- * Sync sleep data from Withings
  * Sync sleep data from Withings
  */
 export async function syncSleepData(
@@ -435,7 +449,8 @@ export async function syncSleepData(
 			action: 'getsummary',
 			startdateymd,
 			enddateymd,
-			offset
+			offset,
+			data_fields: WITHINGS_SLEEP_DATA_FIELDS
 		});
 
 		if (response.status !== 0) {
@@ -815,7 +830,7 @@ export async function backfillSleepHrForDate(
 		startdate: dayStart,
 		enddate: dayEnd,
 		data_fields: 'hr,sdnn_1'
-	} as any);
+	});
 
 	if (response?.status !== 0) {
 		throw new Error(`Withings get error for ${date}: ${response?.error ?? response?.status}`);
