@@ -1,5 +1,6 @@
 import { db } from '$lib/db';
-import { users } from '$lib/db/schema';
+import { sensorEvents, users } from '$lib/db/schema';
+import { eq, sql } from 'drizzle-orm';
 import {
 	buildWorkoutImportedMessage,
 	sendGoogleChatMessage,
@@ -8,7 +9,6 @@ import {
 import { type WorkoutContextSummary } from '$lib/server/workout-context';
 import { computeWorkoutNugget } from '$lib/server/workout-nuggets';
 import { PushDeliveryService } from '$lib/server/services/push-delivery-service';
-import { eq } from 'drizzle-orm';
 
 function buildActivityUrl(appUrl: string, workoutId: string) {
 	return new URL(`/aktivitet/${workoutId}`, appUrl).toString();
@@ -90,6 +90,18 @@ export async function notifyUserAboutImportedWorkouts(args: {
 		}
 
 		if (pushDelivered) sent += 1;
+	}
+
+	// Mark workouts as notified to prevent duplicate notifications on re-sync
+	if (sent > 0) {
+		for (const workout of workouts) {
+			await db.update(sensorEvents)
+				.set({
+					metadata: sql`jsonb_set(coalesce(${sensorEvents.metadata}, '{}'::jsonb), '{workoutNotified}', 'true'::jsonb)`
+				})
+				.where(eq(sensorEvents.id, workout.id))
+				.catch(() => {});
+		}
 	}
 
 	return { attempted: workouts.length, sent };
