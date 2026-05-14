@@ -1,7 +1,7 @@
 import { db } from '$lib/db';
 import { sensors, sensorEvents, sensorAggregates } from '$lib/db/schema';
 import { eq, and, isNull, gte, lt } from 'drizzle-orm';
-import { refreshAccessToken, fetchAllWithingsData, fetchWithingsSleep } from './withings';
+import { refreshAccessToken, fetchAllWithingsData, fetchWithingsSleep, fetchIntradayActivity } from './withings';
 import { enqueueBackgroundJob } from '$lib/server/background-jobs';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
 import { autocheckChecklistItemsForDay } from '$lib/server/checklist-autocheck';
@@ -254,31 +254,39 @@ function parseWorkoutData(series: any[]): any[] {
 	
 	return filtered.map((workout) => {
 		const sportType = getSportType(workout.category);
-		const duration = workout.enddate - workout.startdate; // seconds
-			
-			return {
-				timestamp: new Date(workout.startdate * 1000),
-				data: {
-					sportType,
-					duration,
-					distance: workout.data?.distance, // meters
-					calories: workout.data?.calories,
-					avgHeartRate: workout.data?.hr_average,
-					maxHeartRate: workout.data?.hr_max,
-					minHeartRate: workout.data?.hr_min,
-					// Swimming specific
-					strokes: workout.data?.strokes,
-					poolLaps: workout.data?.pool_laps,
-					// Elevation
-					elevation: workout.data?.elevation,
-					elevationMax: workout.data?.elevation_max,
-					elevationMin: workout.data?.elevation_min,
-				// Speed/pace
+		const duration = workout.enddate - workout.startdate;
+
+		const rawDist = workout.data?.distance;
+		const manualDist = workout.data?.manual_distance;
+		const distance = (rawDist == null || rawDist < 200) && manualDist ? manualDist : rawDist;
+
+		return {
+			timestamp: new Date(workout.startdate * 1000),
+			data: {
+				sportType,
+				duration,
+				distance,
+				calories: workout.data?.calories,
+				avgHeartRate: workout.data?.hr_average,
+				maxHeartRate: workout.data?.hr_max,
+				minHeartRate: workout.data?.hr_min,
+				hrZones: workout.data?.hr_zone_0 != null ? [
+					workout.data.hr_zone_0,
+					workout.data.hr_zone_1,
+					workout.data.hr_zone_2,
+					workout.data.hr_zone_3
+				] : undefined,
+				pauseDuration: workout.data?.pause_duration || undefined,
+				strokes: workout.data?.strokes,
+				poolLaps: workout.data?.pool_laps,
+				elevation: workout.data?.elevation,
+				elevationMax: workout.data?.elevation_max,
+				elevationMin: workout.data?.elevation_min,
 				intensity: workout.data?.intensity,
-				// SPO2
 				spo2Average: workout.data?.spo2_average
 			},
 			metadata: {
+				startdate: workout.startdate,
 				enddate: workout.enddate,
 				modified: workout.modified,
 				deviceid: workout.deviceid,
@@ -286,6 +294,50 @@ function parseWorkoutData(series: any[]): any[] {
 			}
 		};
 	});
+}
+
+const HR_ENRICHMENT_SPORT_TYPES = new Set([
+	'running', 'indoor_running', 'cycling', 'indoor_cycling',
+	'e_bike', 'yoga', 'lift_weights', 'calisthenics', 'hiking'
+]);
+
+/**
+ * Enrich workouts with intraday HR curve from getintradayactivity.
+ * Only fetches for sport types where detailed HR is valuable.
+ */
+async function enrichWorkoutsWithIntradayHR(
+	accessToken: string,
+	parsed: Array<{ timestamp: Date; data: Record<string, any>; metadata: Record<string, any> }>
+): Promise<void> {
+	const eligible = parsed.filter(w => HR_ENRICHMENT_SPORT_TYPES.has(w.data.sportType));
+	if (eligible.length === 0) return;
+
+	console.log(`   Fetching intraday HR for ${eligible.length} workouts...`);
+
+	for (const workout of eligible) {
+		const startdate = workout.metadata.startdate as number;
+		const enddate = workout.metadata.enddate as number;
+		if (!startdate || !enddate) continue;
+
+		try {
+			const series = await fetchIntradayActivity(accessToken, startdate - 60, enddate + 60);
+			const hrReadings: Array<{ t: number; hr: number }> = [];
+
+			for (const [ts, entry] of Object.entries(series) as [string, any][]) {
+				if (entry.heart_rate) {
+					hrReadings.push({ t: parseInt(ts), hr: entry.heart_rate });
+				}
+			}
+
+			if (hrReadings.length > 0) {
+				hrReadings.sort((a, b) => a.t - b.t);
+				workout.data.hrCurve = hrReadings;
+			}
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			console.warn(`   Failed to fetch intraday HR for workout at ${workout.timestamp}: ${msg}`);
+		}
+	}
 }
 
 /**
@@ -564,7 +616,17 @@ export async function syncWorkoutData(
 	console.log(`   Parsing ${data.length} workouts...`);
 	const parsed = parseWorkoutData(data);
 
-	// Store events in batches for performance
+	await enrichWorkoutsWithIntradayHR(accessToken, parsed);
+
+	// Tag each workout with sourceData for multi-source merge support
+	for (const event of parsed) {
+		event.data = {
+			...event.data,
+			sourceData: { withings: { ...event.data } }
+		};
+	}
+
+	// Store events in batches
 	console.log(`   Storing ${parsed.length} workout events in database...`);
 	const batchSize = 100;
 	for (let i = 0; i < parsed.length; i += batchSize) {
@@ -583,7 +645,7 @@ export async function syncWorkoutData(
 			})),
 			{ conflictMode: 'upsert_sensor_datatype_timestamp' }
 		);
-		
+
 		if (i % 500 === 0 && i > 0) {
 			console.log(`      Stored ${i}/${parsed.length} workout events...`);
 		}

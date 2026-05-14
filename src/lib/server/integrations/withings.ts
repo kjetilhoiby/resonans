@@ -145,6 +145,38 @@ export async function fetchWithingsMeasurements(
 }
 
 /**
+ * Fetch intraday activity data (heart rate at ~30s intervals, per-minute steps/distance)
+ */
+export async function fetchIntradayActivity(
+	accessToken: string,
+	startdate: number,
+	enddate: number
+): Promise<Record<string, any>> {
+	const formData = new URLSearchParams({
+		action: 'getintradayactivity',
+		startdate: String(startdate),
+		enddate: String(enddate),
+		data_fields: 'heart_rate,steps,distance,elevation,calories,duration'
+	});
+
+	const response = await fetch('https://wbsapi.withings.net/v2/measure', {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${accessToken}`,
+			'Content-Type': 'application/x-www-form-urlencoded'
+		},
+		body: formData
+	});
+
+	const result = await response.json();
+	if (result.status !== 0) {
+		console.warn(`[Withings] getintradayactivity failed: status=${result.status}`);
+		return {};
+	}
+	return result.body?.series || {};
+}
+
+/**
  * Fetch sleep data from Withings API
  */
 export async function fetchWithingsSleep(

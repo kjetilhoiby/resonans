@@ -102,6 +102,54 @@
 	let withingsImportMode = $state<'days' | 'from2017'>('days');
 	let withingsImportDays = $state(30);
 
+	// ── Strava ──────────────────────────────────────────────────────────────────
+	let stravaStatus = $state<any>(null);
+	let loadingStrava = $state(false);
+	let syncingStrava = $state(false);
+	let stravaResult = $state<{ success: boolean; message: string } | null>(null);
+	let stravaImportDays = $state(30);
+
+	async function loadStravaStatus() {
+		loadingStrava = true;
+		try {
+			const res = await fetch('/api/sensors/strava/status');
+			if (res.ok) stravaStatus = await res.json();
+		} finally {
+			loadingStrava = false;
+		}
+	}
+
+	async function syncStrava(mode: 'default' | 'days' = 'default') {
+		syncingStrava = true;
+		stravaResult = null;
+		try {
+			let url = '/api/sensors/strava/sync';
+			if (mode === 'days') {
+				const safeDays = Math.max(1, Math.min(365, Math.floor(Number(stravaImportDays) || 30)));
+				stravaImportDays = safeDays;
+				url = `/api/sensors/strava/sync?days=${safeDays}`;
+			}
+			const res = await fetch(url, { method: 'POST' });
+			const payload = await res.json();
+			if (!res.ok) throw new Error(payload.error || 'Sync feilet');
+			stravaResult = {
+				success: true,
+				message: `Synkroniserte ${payload.synced?.activities || 0} aktiviteter fra Strava.`
+			};
+			await loadStravaStatus();
+		} catch (error) {
+			stravaResult = { success: false, message: error instanceof Error ? error.message : 'Ukjent feil' };
+		} finally {
+			syncingStrava = false;
+		}
+	}
+
+	async function disconnectStrava() {
+		if (!confirm('Koble fra Strava?')) return;
+		await fetch('/api/sensors/strava/disconnect', { method: 'POST' });
+		await loadStravaStatus();
+	}
+
 	type WithingsDebugWorkout = {
 		category: number;
 		sportType: string;
@@ -477,6 +525,7 @@
 
 	const connectedCount = $derived(
 		(withingsStatus?.connected ? 1 : 0) +
+		(stravaStatus?.connected ? 1 : 0) +
 		(sparebank1Status?.connected ? 1 : 0) +
 		(googleSheetsStatus?.connected ? 1 : 0) +
 		(spondStatus?.connected ? 1 : 0) +
@@ -486,6 +535,7 @@
 	onMount(async () => {
 		await Promise.all([
 			loadWithingsStatus(),
+			loadStravaStatus(),
 			loadSparebank1Status(),
 			loadGoogleSheetsStatus(),
 			loadSpondStatus(),
@@ -1604,6 +1654,43 @@
 				{/if}
 			</div>
 		{/if}
+	</section>
+
+	<section class="card">
+		<h2>Strava</h2>
+		<p class="field-desc">Importer sykkel-, løpe- og treningsdata med GPS-spor fra Strava.</p>
+		{#if loadingStrava}
+			<p>Laster...</p>
+		{:else if stravaStatus?.connected}
+			<p class="ok">Tilkoblet{stravaStatus.sensor?.athleteName ? ` (${stravaStatus.sensor.athleteName})` : ''}</p>
+			{#if stravaStatus.sensor?.lastSync}
+				<p class="meta">Siste synk: {new Date(stravaStatus.sensor.lastSync).toLocaleString('nb-NO')}</p>
+			{/if}
+			<div class="field">
+				<p class="field-title">Importperiode</p>
+				<div class="row import-mode-row">
+					<label class="option-pill">
+						<span>Siste</span>
+						<Input
+							type="number"
+							min="1"
+							max="365"
+							className="input days-input"
+							bind:value={stravaImportDays}
+						/>
+						<span>dager</span>
+					</label>
+				</div>
+			</div>
+			<div class="row">
+				<Button variant="secondary" onClick={() => syncStrava('default')} disabled={syncingStrava}>{syncingStrava ? 'Synker...' : 'Synk nå'}</Button>
+				<Button variant="secondary" onClick={() => syncStrava('days')} disabled={syncingStrava}>Importer valgt periode</Button>
+				<Button variant="ghost" onClick={disconnectStrava}>Koble fra</Button>
+			</div>
+		{:else}
+			<Button href="/api/sensors/strava/connect">Koble til Strava</Button>
+		{/if}
+		{#if stravaResult}<p class={stravaResult.success ? 'ok' : 'err'}>{stravaResult.message}</p>{/if}
 	</section>
 
 	<section class="card">
