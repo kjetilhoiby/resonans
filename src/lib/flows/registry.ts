@@ -4,8 +4,15 @@
 
 import type { Flow, FlowId, FlowDomain } from './types';
 import {
-	ACTION_PYRAMID_LABELS,
-	EGENFREKVENS_THRESHOLDS
+	ACTIONS_PYRAMID,
+	ACTIONS_SLIDER_LABELS,
+	FEELINGS_PYRAMID,
+	FEELINGS_SLIDER_LABELS,
+	THOUGHTS_PYRAMID,
+	THOUGHTS_SLIDER_LABELS,
+	BALANCE_LABELS,
+	EGENFREKVENS_THRESHOLDS,
+	getPyramidGroups
 } from '$lib/domains/egenfrekvens';
 
 export const FLOWS: Record<FlowId, Flow> = {
@@ -735,101 +742,234 @@ export const FLOWS: Record<FlowId, Flow> = {
 	egenfrekvens_checkin: {
 		id: 'egenfrekvens_checkin',
 		name: 'Egenfrekvens-sjekkin',
-		description: 'Ta tempen på tanker, følelser og handlinger',
+		description: 'Ta tempen på handlinger, følelser og tanker',
 		icon: '🎚️',
 		domain: 'egenfrekvens',
 		trigger: 'manual',
 		estimatedMinutes: 2,
+		focus: true,
 		parentTheme: 'Egenfrekvens',
 		steps: [
 			{
-				id: 'sliders',
+				id: 'step_actions',
 				type: 'form',
-				title: 'Hvor er du nå?',
-				prompt: 'Fire raske skalaer. Bruk magefølelsen — det første tallet som kjennes riktig.',
-				fields: [
-					{
-						id: 'balance',
-						type: 'slider',
-						label: 'Balanse — overskudd/underskudd',
-						min: -5,
-						max: 5,
-						step: 1,
-						defaultValue: 0
-					},
-					{
-						id: 'thoughts',
-						type: 'slider',
-						label: 'Tanker (tunge ↔ klare)',
-						min: 0,
-						max: 5,
-						step: 1,
-						defaultValue: 3
-					},
-					{
-						id: 'feelings',
-						type: 'slider',
-						label: 'Følelser (overveldet ↔ rolig)',
-						min: 0,
-						max: 5,
-						step: 1,
-						defaultValue: 3
-					},
-					{
-						id: 'actions',
-						type: 'slider',
-						label: 'Handlinger (passiv ↔ aktivt krevende)',
-						min: 0,
-						max: 5,
-						step: 1,
-						defaultValue: 3,
-						helperLabels: ACTION_PYRAMID_LABELS
-					},
-					{
-						id: 'note',
-						type: 'textarea',
-						label: 'Kontekst (valgfritt)',
-						placeholder: 'Hva farger dette akkurat nå?',
-						required: false
-					}
-				],
-				validation: (d) =>
-					Number.isInteger(d.balance) &&
-					Number.isInteger(d.thoughts) &&
-					Number.isInteger(d.feelings) &&
-					Number.isInteger(d.actions)
+				title: 'Handlinger',
+				prompt: 'Hva gjør du?',
+				autoAdvance: true,
+				fields: [{
+					id: 'actions',
+					type: 'slider',
+					label: 'Handlingsnivå',
+					min: 1, max: 5, step: 1,
+					defaultValue: 3,
+					helperLabels: ACTIONS_SLIDER_LABELS
+				}],
+				validation: (d) => Number.isInteger(d.actions)
+			},
+			{
+				id: 'step_actions_signals',
+				type: 'form',
+				title: 'Hva kjenner du igjen?',
+				fields: [{
+					id: 'actions_signals',
+					type: 'multiselect',
+					label: 'Velg det som treffer (valgfritt)',
+					required: false,
+					optionGroupsFn: (data) => getPyramidGroups(
+						ACTIONS_PYRAMID,
+						Number(data.actions ?? 3),
+						data._dreamReasons?.actions
+					)
+				}]
+			},
+			{
+				id: 'step_feelings',
+				type: 'form',
+				title: 'Følelser',
+				prompt: 'Hva kjenner du?',
+				autoAdvance: true,
+				fields: [{
+					id: 'feelings',
+					type: 'slider',
+					label: 'Følelsesnivå',
+					min: 1, max: 5, step: 1,
+					defaultValue: 3,
+					helperLabels: FEELINGS_SLIDER_LABELS
+				}],
+				validation: (d) => Number.isInteger(d.feelings)
+			},
+			{
+				id: 'step_feelings_signals',
+				type: 'form',
+				title: 'Hva passer nå?',
+				fields: [{
+					id: 'feelings_signals',
+					type: 'multiselect',
+					label: 'Velg det som treffer (valgfritt)',
+					required: false,
+					optionGroupsFn: (data) => getPyramidGroups(
+						FEELINGS_PYRAMID,
+						Number(data.feelings ?? 3),
+						data._dreamReasons?.feelings
+					)
+				}]
+			},
+			{
+				id: 'step_thoughts',
+				type: 'form',
+				title: 'Tanker',
+				prompt: 'Hva skjer i hodet?',
+				autoAdvance: true,
+				fields: [{
+					id: 'thoughts',
+					type: 'slider',
+					label: 'Tankenivå',
+					min: 1, max: 5, step: 1,
+					defaultValue: 3,
+					helperLabels: THOUGHTS_SLIDER_LABELS
+				}],
+				validation: (d) => Number.isInteger(d.thoughts)
+			},
+			{
+				id: 'step_thoughts_signals',
+				type: 'form',
+				title: 'Hva kjenner du igjen?',
+				fields: [{
+					id: 'thoughts_signals',
+					type: 'multiselect',
+					label: 'Velg det som treffer (valgfritt)',
+					required: false,
+					optionGroupsFn: (data) => getPyramidGroups(
+						THOUGHTS_PYRAMID,
+						Number(data.thoughts ?? 3),
+						data._dreamReasons?.thoughts
+					)
+				}]
+			},
+			{
+				id: 'step_balance',
+				type: 'form',
+				title: 'Balanse',
+				prompt: 'Alt tatt i betraktning — hvor ligger du?',
+				fields: [{
+					id: 'balance',
+					type: 'slider',
+					label: 'Samlet balanse',
+					min: -5, max: 5, step: 1,
+					defaultValue: 0,
+					helperLabels: BALANCE_LABELS
+				}],
+				validation: (d) => Number.isInteger(d.balance)
 			},
 			{
 				id: 'reflection',
 				type: 'chat',
-				title: 'Liten refleksjon',
+				title: 'Refleksjon',
 				autoSend: true,
-				systemPrompt:
-					'Du er en varm, kort samtalepartner. Brukeren har akkurat fylt ut en egenfrekvens-sjekkin med utslag. Speil tilbake i én setning, still ETT åpent spørsmål, og foreslå én liten neste-handling. Aldri lange monologer. Ikke-klinisk tone, ingen diagnoser.',
-				prompt:
-					'Det jeg leser nå: noen verdier ligger utenfor det rolige midten. Vil du dele litt om hva som ligger bak?',
-				skipIf: (d) =>
-					!EGENFREKVENS_THRESHOLDS.reflectIf({
-						balance: Number(d.balance),
-						thoughts: Number(d.thoughts),
-						feelings: Number(d.feelings),
-						actions: Number(d.actions)
-					})
+				buildPrompts: (data) => {
+					const a = Number(data.actions ?? 3);
+					const f = Number(data.feelings ?? 3);
+					const t = Number(data.thoughts ?? 3);
+					const b = Number(data.balance ?? 0);
+					const aSignals: string[] = data.actions_signals ?? [];
+					const fSignals: string[] = data.feelings_signals ?? [];
+					const tSignals: string[] = data.thoughts_signals ?? [];
+
+					const aLevel = ACTIONS_PYRAMID[a];
+					const fLevel = FEELINGS_PYRAMID[f];
+					const tLevel = THOUGHTS_PYRAMID[t];
+
+					const lines: string[] = [
+						'Du er en varm, kort samtalepartner. Brukeren har akkurat fylt ut en egenfrekvens-sjekkin.',
+						'Start med å speile tilstanden i én setning — vis at du ser helheten, ikke bare tallene.',
+						'Still ETT åpent spørsmål som inviterer til selvobservasjon.',
+						'Ikke vær løsningsorientert. Fokuser på hva som funker, eller ett enkelt grep for å snu noe negativt.',
+						'Ikke ramse opp data. Bruk signalene til å vise at du ser dem.',
+						'Viktig: dimensjonene kan avvike. H5/F1/T1 er ikke "middels" — det kan være overstyring eller maskering.',
+						'',
+						'SJEKKIN:',
+						`- Handlinger: ${a}/5 ${aLevel?.title ?? ''}${aSignals.length ? ` — ${aSignals.join(', ')}` : ''}`,
+						`- Følelser: ${f}/5 ${fLevel?.title ?? ''}${fSignals.length ? ` — ${fSignals.join(', ')}` : ''}`,
+						`- Tanker: ${t}/5 ${tLevel?.title ?? ''}${tSignals.length ? ` — ${tSignals.join(', ')}` : ''}`,
+						`- Balanse: ${b > 0 ? '+' : ''}${b} (${BALANCE_LABELS[b] ?? ''})`,
+					];
+
+					const extreme = EGENFREKVENS_THRESHOLDS.reflectIf({ balance: b, thoughts: t, feelings: f, actions: a });
+					const mismatch = Math.abs(a - f) >= 3 || Math.abs(a - t) >= 3;
+
+					let prompt: string;
+					if (mismatch) {
+						prompt = 'Det er et spenn mellom det du gjør og det du kjenner. Hva tror du det handler om?';
+					} else if (extreme) {
+						prompt = 'Noe skiller seg ut i dag. Hva ligger bak, tror du?';
+					} else if (b >= 3) {
+						prompt = 'Det ser ut som en god dag. Hva gir deg energi akkurat nå?';
+					} else {
+						prompt = 'Takk for sjekkinnen. Hva er det viktigste du tar med deg herfra?';
+					}
+
+					return { systemPrompt: lines.join('\n'), prompt };
+				}
 			}
 		],
 		onComplete: async (data) => {
-			await fetch('/api/egenfrekvens/checkin', {
+			const reasons: Record<string, string[]> = {};
+			if (Array.isArray(data.actions_signals) && data.actions_signals.length)
+				reasons.actions = data.actions_signals;
+			if (Array.isArray(data.feelings_signals) && data.feelings_signals.length)
+				reasons.feelings = data.feelings_signals;
+			if (Array.isArray(data.thoughts_signals) && data.thoughts_signals.length)
+				reasons.thoughts = data.thoughts_signals;
+
+			const a = Number(data.actions);
+			const f = Number(data.feelings);
+			const t = Number(data.thoughts);
+			const b = Number(data.balance);
+			const aLevel = ACTIONS_PYRAMID[a];
+			const fLevel = FEELINGS_PYRAMID[f];
+			const tLevel = THOUGHTS_PYRAMID[t];
+
+			const stateSummary = [
+				`H${a} ${aLevel?.title ?? ''}`,
+				`F${f} ${fLevel?.title ?? ''}`,
+				`T${t} ${tLevel?.title ?? ''}`,
+				`B${b > 0 ? '+' : ''}${b} ${BALANCE_LABELS[b] ?? ''}`
+			].join(' · ');
+
+			const thread: Array<{ role: string; text: string }> = data['reflection_thread'] ?? [];
+			const userMessages = thread.filter((m) => m.role === 'user').map((m) => m.text);
+			const aiMessages = thread.filter((m) => m.role === 'assistant').map((m) => m.text);
+
+			const reflectionParts = [stateSummary];
+			if (userMessages.length > 0) reflectionParts.push(userMessages.join(' | '));
+			if (aiMessages.length > 0) reflectionParts.push(aiMessages[aiMessages.length - 1]);
+			const reflection = reflectionParts.join('\n');
+
+			const res = await fetch('/api/egenfrekvens/checkin', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					balance: Number(data.balance),
-					thoughts: Number(data.thoughts),
-					feelings: Number(data.feelings),
-					actions: Number(data.actions),
-					note: data.note ?? null,
-					reflection: data['reflection_lastMessage'] ?? null
+					balance: b,
+					thoughts: t,
+					feelings: f,
+					actions: a,
+					note: null,
+					reflection,
+					reflectionThread: thread.length > 0 ? thread : undefined,
+					reasons: Object.keys(reasons).length > 0 ? reasons : undefined
 				})
 			});
+
+			if (res.ok && thread.length > 0) {
+				const result = await res.json();
+				if (result.eventId) {
+					fetch('/api/egenfrekvens/synthesize-reflection', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({ eventId: result.eventId })
+					}).catch(() => {});
+				}
+			}
 		}
 	}
 };

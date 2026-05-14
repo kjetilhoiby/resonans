@@ -1,4 +1,4 @@
-export type DashboardKind = 'health' | 'economics' | 'food' | 'family' | 'travel' | 'books';
+export type DashboardKind = 'health' | 'economics' | 'food' | 'family' | 'travel' | 'books' | 'egenfrekvens';
 
 export interface ThemeDashboardDefinition {
 	kind: DashboardKind;
@@ -123,6 +123,20 @@ const THEME_DASHBOARD_MATCHERS: Array<{ kind: DashboardKind; terms: string[] }> 
 			'bibliotek',
 			'library'
 		]
+	},
+	{
+		kind: 'egenfrekvens',
+		terms: [
+			'egenfrekvens',
+			'psykisk helse',
+			'mental helse',
+			'innsjekk',
+			'sjekkin',
+			'stemning',
+			'mood',
+			'wellbeing',
+			'velvære'
+		]
 	}
 ];
 
@@ -156,6 +170,11 @@ const DASHBOARD_DEFINITIONS: Record<DashboardKind, ThemeDashboardDefinition> = {
 		kind: 'books',
 		label: 'Bøker',
 		icon: '📚'
+	},
+	egenfrekvens: {
+		kind: 'egenfrekvens',
+		label: 'Egenfrekvens',
+		icon: '🧘'
 	}
 };
 

@@ -1,4 +1,7 @@
 import { json } from '@sveltejs/kit';
+import { db } from '$lib/db';
+import { sensorEvents } from '$lib/db/schema';
+import { and, eq } from 'drizzle-orm';
 import {
 	EgenfrekvensCheckinError,
 	getEgenfrekvensCheckinStatus,
@@ -14,6 +17,23 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	return json(status);
 };
 
+export const DELETE: RequestHandler = async ({ locals, url }) => {
+	const eventId = url.searchParams.get('id');
+	if (!eventId) return json({ error: 'Mangler id' }, { status: 400 });
+
+	const deleted = await db
+		.delete(sensorEvents)
+		.where(and(
+			eq(sensorEvents.id, eventId),
+			eq(sensorEvents.userId, locals.userId),
+			eq(sensorEvents.dataType, 'egenfrekvens_checkin')
+		))
+		.returning({ id: sensorEvents.id });
+
+	if (deleted.length === 0) return json({ error: 'Ikke funnet' }, { status: 404 });
+	return json({ ok: true });
+};
+
 export const POST: RequestHandler = async ({ locals, request }) => {
 	try {
 		const body = await request.json();
@@ -23,6 +43,8 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		const actions = Number(body?.actions);
 		const note = typeof body?.note === 'string' ? body.note : null;
 		const reflection = typeof body?.reflection === 'string' ? body.reflection : null;
+		const reasons = body?.reasons && typeof body.reasons === 'object' ? body.reasons : null;
+		const reflectionThread = Array.isArray(body?.reflectionThread) ? body.reflectionThread : null;
 		const day =
 			typeof body?.day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.day) ? body.day : toIsoDay();
 
@@ -34,6 +56,8 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			actions,
 			note,
 			reflection,
+			reflectionThread,
+			reasons,
 			day
 		});
 

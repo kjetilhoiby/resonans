@@ -117,6 +117,34 @@ export interface FoodDashboardData {
 	}>;
 }
 
+export interface EgenfrekvensCheckinPointData {
+	day: string;
+	count: number;
+	balance: number | null;
+	thoughts: number | null;
+	feelings: number | null;
+	actions: number | null;
+	note: string | null;
+	reflection: string | null;
+	extreme: boolean;
+	eventIds?: string[];
+}
+
+export interface EgenfrekvensDashboardData {
+	rangeDays: number;
+	latest: EgenfrekvensCheckinPointData | null;
+	points: EgenfrekvensCheckinPointData[];
+	stats: {
+		count: number;
+		avgBalance: number | null;
+		avgThoughts: number | null;
+		avgFeelings: number | null;
+		avgActions: number | null;
+		extremeDays: number;
+	};
+	streakDays: number;
+}
+
 export interface FamilyDashboardData {
 	tree: {
 		self: { id: 'self'; label: string };
@@ -198,6 +226,7 @@ type DashboardPayloadMap = {
 	travel: TravelDashboardData;
 	books: BooksDashboardData;
 	family: FamilyDashboardData;
+	egenfrekvens: EgenfrekvensDashboardData;
 };
 
 export interface DashboardCacheEntry<K extends DashboardKind = DashboardKind> {

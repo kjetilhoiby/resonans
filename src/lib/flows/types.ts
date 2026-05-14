@@ -35,6 +35,8 @@ export interface FlowStep {
 	prompt?: string;
 	/** For chat: system prompt sent with every message in this step */
 	systemPrompt?: string;
+	/** For chat: build prompt and systemPrompt dynamically from accumulated flowData */
+	buildPrompts?: (data: Record<string, any>) => { prompt?: string; systemPrompt?: string };
 	/** For chat: send `prompt` automatically on mount (no user input needed to trigger first response) */
 	autoSend?: boolean;
 	fields?: FlowFormField[];
@@ -51,6 +53,8 @@ export interface FlowStep {
 	validation?: (data: Record<string, any>) => boolean | string;
 	/** Skip this step entirely if predicate returns true. Evaluated against current flow data. */
 	skipIf?: (data: Record<string, any>) => boolean;
+	/** Auto-advance to next step after slider interaction (debounced). Form steps with a single slider. */
+	autoAdvance?: boolean | { delayMs: number };
 }
 
 export interface FlowFormField {
@@ -63,6 +67,14 @@ export interface FlowFormField {
 	max?: number;
 	step?: number;
 	options?: Array<{ value: string; label: string }>;
+	/** Dynamic options based on current flowData — overrides static options when present */
+	optionsFn?: (data: Record<string, any>) => Array<{ value: string; label: string }>;
+	/** Grouped options for pyramid-style signal grids. Active level shown, others behind toggle. */
+	optionGroupsFn?: (data: Record<string, any>) => Array<{
+		label: string;
+		isActive: boolean;
+		options: Array<{ value: string; label: string }>;
+	}>;
 	defaultValue?: any;
 	/** For slider: anchor labels keyed by integer value, rendered as helper text under the slider. */
 	helperLabels?: Record<number, string>;
@@ -88,6 +100,15 @@ export interface FlowContext {
 	systemPrompts?: Record<string, string>;
 	/** Per-step initial prompt/prefill keyed by step id — overrides FlowStep.prompt */
 	prompts?: Record<string, string>;
+	/** Initial form data — seeds flowData on mount (e.g. pre-fill the note field with chat-draft) */
+	initialData?: Record<string, any>;
+	/** Contextual dream-reasons per dimension, fetched at flow open time */
+	dreamReasons?: {
+		actions?: Array<{ value: string; label: string; source: string }>;
+		balance?: Array<{ value: string; label: string; source: string }>;
+		thoughts?: Array<{ value: string; label: string; source: string }>;
+		feelings?: Array<{ value: string; label: string; source: string }>;
+	};
 	/** Target month being planned, e.g. "2026-05" */
 	monthKey?: string;
 	/** Previous month's data injected server-side for AI context building */
@@ -109,6 +130,8 @@ export interface Flow {
 	domain: FlowDomain;
 	trigger: FlowTrigger;
 	estimatedMinutes?: number;
+	/** Focus mode: fullscreen immersive layout with centered content, large controls, progress dots */
+	focus?: boolean;
 	steps?: FlowStep[];
 	onComplete?: (data: Record<string, any>, context: FlowContext) => Promise<void>;
 	badge?: string;

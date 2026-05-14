@@ -45,9 +45,11 @@
 
 	// ── Core state ───────────────────────────────────────────────────
 	let currentStepIndex = $state(0);
-	let flowData = $state<Record<string, any>>({});
+	let flowData = $state<Record<string, any>>({ ...(context.initialData ?? {}) });
 	let completing = $state(false);
 	let completionError = $state('');
+	let autoAdvanceTimer = $state<ReturnType<typeof setTimeout> | null>(null);
+	let pyramidExpanded = $state(false);
 
 	// ── Chat state ───────────────────────────────────────────────────
 	interface RichChatMsg {
@@ -61,7 +63,14 @@
 
 	// ChatState leverer streaming-tilstand; chatMessages styres lokalt for å støtte confirmAction
 	const flowChat = new ChatState({
-		systemPrompt: () => context.systemPrompts?.[currentStep?.id ?? ''] ?? currentStep?.systemPrompt ?? undefined,
+		systemPrompt: () => {
+			const step = currentStep;
+			if (!step) return undefined;
+			if (context.systemPrompts?.[step.id]) return context.systemPrompts[step.id];
+			const built = step.buildPrompts?.(flowData);
+			if (built?.systemPrompt) return built.systemPrompt;
+			return step.systemPrompt ?? undefined;
+		},
 		onAssistantMessage: (msg, _data) => {
 			const parsed = parseChatMessage(msg.text);
 			chatMessages = [...chatMessages, {
@@ -93,6 +102,8 @@
 	let validationError = $state<string | null>(null);
 
 	// ── Derived ──────────────────────────────────────────────────────
+	const isFocus = $derived(flow?.focus === true);
+	const totalSteps = $derived(flow?.steps?.length ?? 1);
 	const currentStep = $derived(flow?.steps?.[currentStepIndex]);
 	const isFirstStep = $derived(currentStepIndex === 0);
 	function findNextStepIndex(from: number, data: Record<string, any>): number {
@@ -137,6 +148,7 @@
 	onMount(async () => {
 		// Seed initial flowData from context
 		if (context.existingHeadline) flowData['headline'] = context.existingHeadline;
+		if (context.dreamReasons) flowData['_dreamReasons'] = context.dreamReasons;
 
 		// Fetch weather if we have a day context
 		if (context.dayIso) {
@@ -154,9 +166,12 @@
 		if (!step) return;
 
 		validationError = null;
+		clearAutoAdvance();
+		pyramidExpanded = false;
 
 		if (step.type === 'chat') {
-			const prompt = context.prompts?.[step.id] ?? step.prompt;
+			const built = step.buildPrompts?.(flowData);
+			const prompt = context.prompts?.[step.id] ?? built?.prompt ?? step.prompt;
 			untrack(() => {
 				chatMessages = [];
 				if (step.autoSend && prompt) {
@@ -297,6 +312,25 @@
 		flowData['carryoverIds'] = openItems.filter((i) => decisions[i.id] === 'carryover').map((i) => i.id);
 	}
 
+	// ── Auto-advance ────────────────────────────────────────────────
+	function clearAutoAdvance() {
+		if (autoAdvanceTimer) {
+			clearTimeout(autoAdvanceTimer);
+			autoAdvanceTimer = null;
+		}
+	}
+
+	function startAutoAdvance() {
+		clearAutoAdvance();
+		const step = currentStep;
+		if (!step?.autoAdvance) return;
+		const delay = typeof step.autoAdvance === 'object' ? step.autoAdvance.delayMs : 600;
+		autoAdvanceTimer = setTimeout(() => {
+			autoAdvanceTimer = null;
+			void handleNext();
+		}, delay);
+	}
+
 	// ── Navigation ───────────────────────────────────────────────────
 	function handleFieldChange(fieldId: string, value: unknown) {
 		flowData[fieldId] = value;
@@ -336,10 +370,12 @@
 
 		validationError = null;
 
-		// Capture last assistant message for chat steps so onComplete can use it
 		if (currentStep.type === 'chat') {
 			const lastAssistant = [...chatMessages].reverse().find((m) => m.role === 'assistant');
 			if (lastAssistant) flowData = { ...flowData, [`${currentStep.id}_lastMessage`]: lastAssistant.text };
+			if (chatMessages.length > 0) {
+				flowData = { ...flowData, [`${currentStep.id}_thread`]: chatMessages.map((m) => ({ role: m.role, text: m.text })) };
+			}
 		}
 
 		if (isLastStep) {
@@ -378,53 +414,73 @@
 
 <!-- Backdrop -->
 {#if flow}
+{#if !isFocus}
 <div
 	class="fs-backdrop"
 	transition:fade={{ duration: 200 }}
 	onclick={handleClose}
 	role="presentation"
 ></div>
+{/if}
 
 <!-- Sheet -->
 <div
 	class="fs-sheet"
-	transition:fly={{ y: 60, duration: 380, easing: cubicOut }}
+	class:fs-focus={isFocus}
+	transition:fly={{ y: isFocus ? 0 : 60, duration: 380, easing: cubicOut }}
 	role="dialog"
 	aria-modal="true"
 	aria-label={flow.name}
 >
 	<!-- Header -->
-	<div class="fs-header">
-		<button class="fs-close" onclick={handleClose} aria-label="Lukk">
-			<Icon name="close" size={18} />
-		</button>
-		<div class="fs-title-group">
-			<span class="fs-icon">{flow.icon}</span>
-			<span class="fs-title">{flow.name}</span>
-			{#if weather?.slots?.length}
-				<span class="fs-weather" aria-hidden="true">
-					{#each weather.slots as slot (slot.hour)}{slot.emoji}{/each}
-				</span>
+	<div class="fs-header" class:fs-focus-header={isFocus}>
+		{#if isFocus}
+			<button class="fs-focus-close" onclick={handleClose} aria-label="Lukk">
+				<Icon name="close" size={20} />
+			</button>
+			{#if totalSteps > 1}
+				<div class="fs-dots">
+					{#each Array(totalSteps) as _, i}
+						<span class="fs-dot" class:fs-dot-active={i === currentStepIndex} class:fs-dot-done={i < currentStepIndex}></span>
+					{/each}
+				</div>
 			{/if}
-		</div>
-		<span class="fs-progress-label">{currentStepIndex + 1}/{flow.steps?.length ?? 1}</span>
+			<span class="fs-focus-counter">{currentStepIndex + 1}/{totalSteps}</span>
+		{:else}
+			<button class="fs-close" onclick={handleClose} aria-label="Lukk">
+				<Icon name="close" size={18} />
+			</button>
+			<div class="fs-title-group">
+				<span class="fs-icon">{flow.icon}</span>
+				<span class="fs-title">{flow.name}</span>
+				{#if weather?.slots?.length}
+					<span class="fs-weather" aria-hidden="true">
+						{#each weather.slots as slot (slot.hour)}{slot.emoji}{/each}
+					</span>
+				{/if}
+			</div>
+			<span class="fs-progress-label">{currentStepIndex + 1}/{totalSteps}</span>
+		{/if}
 	</div>
 
-	<!-- Progress bar -->
-	{#if (flow.steps?.length ?? 0) > 1}
+	<!-- Progress bar (non-focus only) -->
+	{#if !isFocus && totalSteps > 1}
 		<div class="fs-progress-bar">
 			<div
 				class="fs-progress-fill"
-				style:width="{((currentStepIndex + 1) / (flow.steps?.length ?? 1)) * 100}%"
+				style:width="{((currentStepIndex + 1) / totalSteps) * 100}%"
 			></div>
 		</div>
 	{/if}
 
 	<!-- Body -->
-	<div class="fs-body">
+	<div class="fs-body" class:fs-focus-body={isFocus}>
 		{#if currentStep}
 			{#if currentStep.title}
-				<h3 class="fs-step-title">{currentStep.title}</h3>
+				<h3 class="fs-step-title" class:fs-focus-title={isFocus}>{currentStep.title}</h3>
+			{/if}
+			{#if isFocus && currentStep.prompt && currentStep.type !== 'mixed'}
+				<p class="fs-focus-prompt">{currentStep.prompt}</p>
 			{/if}
 
 			<!-- ── CHAT ─────────────────────────────────────── -->
@@ -473,12 +529,14 @@
 					<p class="fs-step-prompt">{currentStep.prompt}</p>
 				{/if}
 				{#if currentStep.fields}
-					<div class="fs-form">
+					<div class="fs-form" class:fs-focus-form={isFocus}>
 						{#each currentStep.fields as field (field.id)}
-							<label class="fs-form-field">
+							<label class="fs-form-field" class:fs-focus-field={isFocus}>
+								{#if !isFocus}
 								<span class="fs-form-label">
 									{field.label}{#if field.required}<span class="fs-required">*</span>{/if}
 								</span>
+								{/if}
 
 								{#if field.type === 'text'}
 									<input
@@ -527,36 +585,114 @@
 									</select>
 								{:else if field.type === 'slider'}
 									{@const sliderVal = flowData[field.id] ?? field.defaultValue ?? field.min ?? 0}
+									{@const sliderMin = field.min ?? 0}
+									{@const sliderMax = field.max ?? 100}
+									{@const sliderPct = ((sliderVal - sliderMin) / (sliderMax - sliderMin)) * 100}
+									{#if isFocus}
+										<div class="fs-focus-slider-display">
+											{#if field.helperLabels && field.helperLabels[sliderVal] !== undefined}
+												<span class="fs-focus-slider-label">{field.helperLabels[sliderVal]}</span>
+											{/if}
+										</div>
+										<div class="fs-focus-slider-track">
+											<div class="fs-focus-slider-fill" style:width="{sliderPct}%"></div>
+											<input
+												type="range"
+												class="fs-focus-slider"
+												min={sliderMin}
+												max={sliderMax}
+												step={field.step ?? 1}
+												value={sliderVal}
+												oninput={(e) => { clearAutoAdvance(); handleFieldChange(field.id, parseFloat(e.currentTarget.value)); }}
+												onpointerup={startAutoAdvance}
+												ontouchend={startAutoAdvance}
+											/>
+										</div>
+									{:else}
 									<div class="fs-slider-wrap">
 										<input
 											type="range"
 											class="fs-slider"
-											min={field.min ?? 0}
-											max={field.max ?? 100}
+											min={sliderMin}
+											max={sliderMax}
 											step={field.step ?? 1}
 											value={sliderVal}
-											oninput={(e) => handleFieldChange(field.id, parseFloat(e.currentTarget.value))}
+											oninput={(e) => { clearAutoAdvance(); handleFieldChange(field.id, parseFloat(e.currentTarget.value)); }}
+											onpointerup={startAutoAdvance}
+											ontouchend={startAutoAdvance}
 										/>
 										<span class="fs-slider-val">{sliderVal}</span>
 									</div>
 									{#if field.helperLabels && field.helperLabels[sliderVal] !== undefined}
 										<p class="fs-slider-helper">{field.helperLabels[sliderVal]}</p>
 									{/if}
+									{/if}
 								{:else if field.type === 'multiselect'}
-									<div class="fs-multiselect">
-										{#each field.options ?? [] as opt (opt.value)}
-											{@const sel = Array.isArray(flowData[field.id]) && flowData[field.id].includes(opt.value)}
-											<button
-												type="button"
-												class="fs-ms-opt"
-												class:selected={sel}
-												onclick={() => {
-													const cur: string[] = Array.isArray(flowData[field.id]) ? flowData[field.id] : [];
-													handleFieldChange(field.id, sel ? cur.filter((v) => v !== opt.value) : [...cur, opt.value]);
-												}}
-											>{opt.label}</button>
+									{@const groups = field.optionGroupsFn ? field.optionGroupsFn(flowData) : null}
+									{#if groups}
+										{#each groups as group}
+											{#if group.isActive}
+												<p class="fs-pyramid-label fs-pyramid-active">{group.label}</p>
+												<div class="fs-multiselect" class:fs-focus-grid={isFocus}>
+													{#each group.options as opt (opt.value)}
+														{@const sel = Array.isArray(flowData[field.id]) && flowData[field.id].includes(opt.value)}
+														<button
+															type="button"
+															class="fs-ms-opt"
+															class:selected={sel}
+															class:fs-focus-card={isFocus}
+															onclick={() => {
+																const cur: string[] = Array.isArray(flowData[field.id]) ? flowData[field.id] : [];
+																handleFieldChange(field.id, sel ? cur.filter((v) => v !== opt.value) : [...cur, opt.value]);
+															}}
+														>{opt.label}</button>
+													{/each}
+												</div>
+											{/if}
 										{/each}
-									</div>
+										<button type="button" class="fs-pyramid-toggle" onclick={() => pyramidExpanded = !pyramidExpanded}>
+											{pyramidExpanded ? 'Skjul andre nivåer' : 'Vis andre nivåer'}
+										</button>
+										{#if pyramidExpanded}
+											{#each groups as group}
+												{#if !group.isActive}
+													<p class="fs-pyramid-label">{group.label}</p>
+													<div class="fs-multiselect" class:fs-focus-grid={isFocus}>
+														{#each group.options as opt (opt.value)}
+															{@const sel = Array.isArray(flowData[field.id]) && flowData[field.id].includes(opt.value)}
+															<button
+																type="button"
+																class="fs-ms-opt"
+																class:selected={sel}
+																class:fs-focus-card={isFocus}
+																onclick={() => {
+																	const cur: string[] = Array.isArray(flowData[field.id]) ? flowData[field.id] : [];
+																	handleFieldChange(field.id, sel ? cur.filter((v) => v !== opt.value) : [...cur, opt.value]);
+																}}
+															>{opt.label}</button>
+														{/each}
+													</div>
+												{/if}
+											{/each}
+										{/if}
+									{:else}
+										{@const msOptions = field.optionsFn ? field.optionsFn(flowData) : (field.options ?? [])}
+										<div class="fs-multiselect" class:fs-focus-grid={isFocus}>
+											{#each msOptions as opt (opt.value)}
+												{@const sel = Array.isArray(flowData[field.id]) && flowData[field.id].includes(opt.value)}
+												<button
+													type="button"
+													class="fs-ms-opt"
+													class:selected={sel}
+													class:fs-focus-card={isFocus}
+													onclick={() => {
+														const cur: string[] = Array.isArray(flowData[field.id]) ? flowData[field.id] : [];
+														handleFieldChange(field.id, sel ? cur.filter((v) => v !== opt.value) : [...cur, opt.value]);
+													}}
+												>{opt.label}</button>
+											{/each}
+										</div>
+									{/if}
 								{/if}
 							</label>
 						{/each}
@@ -687,20 +823,43 @@
 	</div>
 
 	<!-- Footer -->
-	<div class="fs-footer">
-		{#if !isFirstStep}
-			<button class="fs-btn fs-btn-ghost" onclick={handlePrevious} disabled={completing}>← Tilbake</button>
+	<div class="fs-footer" class:fs-focus-footer={isFocus}>
+		{#if isFocus}
+			{#if !isFirstStep}
+				<button class="fs-focus-back" onclick={handlePrevious} disabled={completing} aria-label="Tilbake">
+					<Icon name="back" size={20} />
+				</button>
+			{/if}
+			<div class="fs-focus-spacer"></div>
+			<button
+				class="fs-focus-next"
+				onclick={() => void handleNext()}
+				disabled={!canProceed || completing}
+				aria-label={isLastStep ? 'Fullfør' : 'Neste'}
+			>
+				{#if completing}
+					<span class="fs-focus-next-text">…</span>
+				{:else if isLastStep}
+					<span class="fs-focus-next-text">✓</span>
+				{:else}
+					<span class="fs-focus-next-arrow">›</span>
+				{/if}
+			</button>
+		{:else}
+			{#if !isFirstStep}
+				<button class="fs-btn fs-btn-ghost" onclick={handlePrevious} disabled={completing}>← Tilbake</button>
+			{/if}
+			<button
+				class="fs-btn fs-btn-primary"
+				onclick={() => void handleNext()}
+				disabled={!canProceed || completing}
+			>
+				{#if completing}Lagrer…
+			{:else if currentStep?.type === 'checklist' && currentStep.enableAiRefinement}Ferdig →
+			{:else if isLastStep}Fullfør
+			{:else}Neste →{/if}
+			</button>
 		{/if}
-		<button
-			class="fs-btn fs-btn-primary"
-			onclick={() => void handleNext()}
-			disabled={!canProceed || completing}
-		>
-			{#if completing}Lagrer…
-		{:else if currentStep?.type === 'checklist' && currentStep.enableAiRefinement}Ferdig →
-		{:else if isLastStep}Fullfør
-		{:else}Neste →{/if}
-		</button>
 	</div>
 </div>
 {/if}
@@ -1141,4 +1300,311 @@
 	.fs-btn-primary:hover:not(:disabled) { background: #3d5ee0; }
 	.fs-btn-ghost { background: transparent; border: 1px solid #2a2a2a; color: #555; }
 	.fs-btn-ghost:hover:not(:disabled) { border-color: #444; color: #aaa; }
+
+	/* ═══════════════════════════════════════════════════════════════
+	   FOCUS MODE — fullscreen immersive
+	   ═══════════════════════════════════════════════════════════════ */
+	.fs-sheet.fs-focus {
+		position: fixed;
+		inset: 0;
+		border-radius: 0;
+		border-top: none;
+		max-height: none;
+		max-width: none;
+		background: #0b0b0f;
+	}
+
+	/* Header: dots + counter */
+	.fs-focus-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: max(env(safe-area-inset-top, 16px), 16px) 20px 12px;
+		border-bottom: none;
+	}
+	.fs-focus-close {
+		background: rgba(255, 255, 255, 0.06);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		border-radius: 50%;
+		width: 40px;
+		height: 40px;
+		color: #888;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+		transition: color 0.15s, background 0.15s;
+	}
+	.fs-focus-close:hover { color: #ccc; background: rgba(255, 255, 255, 0.1); }
+
+	.fs-dots {
+		display: flex;
+		gap: 6px;
+		align-items: center;
+	}
+	.fs-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: rgba(255, 255, 255, 0.1);
+		transition: all 0.3s ease;
+	}
+	.fs-dot-active {
+		background: #8ba0f5;
+		width: 10px;
+		height: 10px;
+	}
+	.fs-dot-done {
+		background: rgba(139, 160, 245, 0.4);
+	}
+	.fs-focus-counter {
+		font-size: 0.75rem;
+		color: rgba(255, 255, 255, 0.2);
+		font-variant-numeric: tabular-nums;
+		min-width: 40px;
+		text-align: right;
+	}
+
+	/* Body: centered content */
+	.fs-focus-body {
+		justify-content: center;
+		align-items: center;
+		padding: 24px 28px;
+		text-align: center;
+		gap: 20px;
+	}
+
+	/* Title & prompt */
+	.fs-focus-title {
+		font-size: 1.6rem;
+		font-weight: 700;
+		color: #e8ecf4;
+		letter-spacing: -0.02em;
+		line-height: 1.25;
+	}
+	.fs-focus-prompt {
+		font-size: 1rem;
+		color: #64748b;
+		line-height: 1.5;
+		margin: 0;
+		max-width: 320px;
+	}
+
+	/* Form */
+	.fs-focus-form {
+		gap: 24px;
+		align-items: center;
+		width: 100%;
+		max-width: 360px;
+	}
+	.fs-focus-field {
+		align-items: center;
+		width: 100%;
+	}
+
+	/* Slider: big display + pill track */
+	.fs-focus-slider-display {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		min-height: 3rem;
+		margin-bottom: 20px;
+	}
+	.fs-focus-slider-label {
+		font-size: 1.5rem;
+		font-weight: 700;
+		color: #e8ecf4;
+		line-height: 1.2;
+		text-align: center;
+	}
+
+	.fs-focus-slider-track {
+		position: relative;
+		width: 100%;
+		height: 44px;
+		border-radius: 22px;
+		background: rgba(255, 255, 255, 0.06);
+		overflow: hidden;
+	}
+	.fs-focus-slider-fill {
+		position: absolute;
+		top: 0;
+		left: 0;
+		height: 100%;
+		background: linear-gradient(90deg, #1a1a2e, #4b6ef5);
+		border-radius: 22px;
+		transition: width 0.08s ease-out;
+		pointer-events: none;
+	}
+	.fs-focus-slider {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		-webkit-appearance: none;
+		appearance: none;
+		background: transparent;
+		cursor: pointer;
+		margin: 0;
+	}
+	.fs-focus-slider::-webkit-slider-thumb {
+		-webkit-appearance: none;
+		width: 32px;
+		height: 32px;
+		border-radius: 50%;
+		background: #fff;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+		cursor: grab;
+	}
+	.fs-focus-slider::-moz-range-thumb {
+		width: 32px;
+		height: 32px;
+		border-radius: 50%;
+		background: #fff;
+		border: none;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+		cursor: grab;
+	}
+	.fs-focus-slider-ends {
+		display: flex;
+		justify-content: space-between;
+		font-size: 0.75rem;
+		color: rgba(255, 255, 255, 0.2);
+		margin-top: 6px;
+		padding: 0 4px;
+	}
+
+	/* Multiselect: card grid */
+	.fs-focus-grid {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 10px;
+		width: 100%;
+	}
+	.fs-ms-opt.fs-focus-card {
+		background: rgba(255, 255, 255, 0.04);
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		border-radius: 14px;
+		padding: 16px 8px;
+		font-size: 0.85rem;
+		font-weight: 500;
+		color: #94a3b8;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		text-align: center;
+		min-height: 56px;
+		transition: all 0.15s ease;
+	}
+	.fs-ms-opt.fs-focus-card:hover {
+		background: rgba(255, 255, 255, 0.07);
+		border-color: rgba(255, 255, 255, 0.15);
+	}
+	.fs-ms-opt.fs-focus-card.selected {
+		background: rgba(75, 110, 245, 0.12);
+		border-color: rgba(75, 110, 245, 0.4);
+		color: #c8d4ef;
+	}
+
+	/* Footer: floating buttons */
+	.fs-focus-footer {
+		border-top: none;
+		padding: 16px 28px max(env(safe-area-inset-bottom, 28px), 28px);
+		justify-content: space-between;
+		align-items: center;
+	}
+	.fs-focus-spacer { flex: 1; }
+	.fs-focus-back {
+		width: 48px;
+		height: 48px;
+		border-radius: 50%;
+		background: rgba(255, 255, 255, 0.06);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		color: #888;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		transition: all 0.15s;
+	}
+	.fs-focus-back:hover:not(:disabled) { color: #ccc; background: rgba(255, 255, 255, 0.1); }
+	.fs-focus-back:disabled { opacity: 0.3; cursor: default; }
+
+	.fs-focus-next {
+		width: 56px;
+		height: 56px;
+		border-radius: 50%;
+		background: #e8ecf4;
+		border: none;
+		color: #0b0b0f;
+		font-size: 1.5rem;
+		font-weight: 700;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		transition: all 0.15s;
+		box-shadow: 0 4px 16px rgba(232, 236, 244, 0.15);
+	}
+	.fs-focus-next:hover:not(:disabled) { background: #fff; box-shadow: 0 4px 20px rgba(255, 255, 255, 0.2); }
+	.fs-focus-next:disabled { opacity: 0.25; cursor: default; }
+	.fs-focus-next-arrow { font-size: 1.8rem; line-height: 1; }
+	.fs-focus-next-text { font-size: 1.3rem; }
+
+	/* Focus-mode textarea */
+	.fs-focus-form .fs-form-textarea {
+		background: rgba(255, 255, 255, 0.04);
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		border-radius: 14px;
+		padding: 16px;
+		font-size: 1rem;
+		color: #ddd;
+		text-align: left;
+		width: 100%;
+		min-height: 120px;
+	}
+	.fs-focus-form .fs-form-textarea:focus {
+		border-color: rgba(75, 110, 245, 0.4);
+	}
+	.fs-focus-form .fs-form-textarea::placeholder {
+		color: #475569;
+	}
+
+	/* Focus-mode: chat step gets more space */
+	.fs-focus-body .fs-chat-area {
+		width: 100%;
+		max-width: 480px;
+		text-align: left;
+	}
+
+	/* Pyramid group labels */
+	.fs-pyramid-label {
+		font-size: 0.72rem;
+		font-weight: 600;
+		color: #475569;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		margin: 12px 0 6px;
+		text-align: left;
+		width: 100%;
+	}
+	.fs-pyramid-active {
+		color: #8ba0f5;
+	}
+	.fs-pyramid-toggle {
+		background: none;
+		border: none;
+		color: #475569;
+		font-size: 0.8rem;
+		cursor: pointer;
+		padding: 8px 0;
+		width: 100%;
+		text-align: center;
+		transition: color 0.15s;
+	}
+	.fs-pyramid-toggle:hover {
+		color: #8ba0f5;
+	}
 </style>

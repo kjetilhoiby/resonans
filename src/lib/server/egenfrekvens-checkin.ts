@@ -57,6 +57,7 @@ async function getOrCreateMoodSensor(userId: string) {
 export interface EgenfrekvensCheckinStatus {
 	day: string;
 	submitted: boolean;
+	count: number;
 	balance: number | null;
 	thoughts: number | null;
 	feelings: number | null;
@@ -64,6 +65,21 @@ export interface EgenfrekvensCheckinStatus {
 	note: string | null;
 	reflection: string | null;
 	extreme: boolean;
+	eventId?: string | null;
+}
+
+export async function countEgenfrekvensCheckinsForDay(userId: string, day: string): Promise<number> {
+	const rows = await db
+		.select({ id: sensorEvents.id })
+		.from(sensorEvents)
+		.where(
+			and(
+				eq(sensorEvents.userId, userId),
+				eq(sensorEvents.dataType, 'egenfrekvens_checkin'),
+				sql`${sensorEvents.data}->>'day' = ${day}`
+			)
+		);
+	return rows.length;
 }
 
 export async function getEgenfrekvensCheckinStatus(
@@ -80,8 +96,7 @@ export async function getEgenfrekvensCheckinStatus(
 				sql`${sensorEvents.data}->>'day' = ${day}`
 			)
 		)
-		.orderBy(desc(sensorEvents.timestamp))
-		.limit(1);
+		.orderBy(desc(sensorEvents.timestamp));
 
 	const row = rows[0];
 	const data = (row?.data ?? null) as Record<string, unknown> | null;
@@ -91,7 +106,8 @@ export async function getEgenfrekvensCheckinStatus(
 
 	return {
 		day,
-		submitted: Boolean(row),
+		submitted: rows.length > 0,
+		count: rows.length,
 		balance: num(data?.balance),
 		thoughts: num(data?.thoughts),
 		feelings: num(data?.feelings),
@@ -105,9 +121,9 @@ export async function getEgenfrekvensCheckinStatus(
 function validateValues(values: EgenfrekvensCheckinValues) {
 	const inRange = (n: number, lo: number, hi: number) => Number.isInteger(n) && n >= lo && n <= hi;
 	if (!inRange(values.balance, -5, 5)) throw new EgenfrekvensCheckinError('Balanse må være et heltall fra -5 til +5.');
-	if (!inRange(values.thoughts, 0, 5)) throw new EgenfrekvensCheckinError('Tanker må være et heltall fra 0 til 5.');
-	if (!inRange(values.feelings, 0, 5)) throw new EgenfrekvensCheckinError('Følelser må være et heltall fra 0 til 5.');
-	if (!inRange(values.actions, 0, 5)) throw new EgenfrekvensCheckinError('Handlinger må være et heltall fra 0 til 5.');
+	if (!inRange(values.thoughts, 1, 5)) throw new EgenfrekvensCheckinError('Tanker må være et heltall fra 1 til 5.');
+	if (!inRange(values.feelings, 1, 5)) throw new EgenfrekvensCheckinError('Følelser må være et heltall fra 1 til 5.');
+	if (!inRange(values.actions, 1, 5)) throw new EgenfrekvensCheckinError('Handlinger må være et heltall fra 1 til 5.');
 }
 
 export async function submitEgenfrekvensCheckin(params: {
@@ -118,6 +134,8 @@ export async function submitEgenfrekvensCheckin(params: {
 	actions: number;
 	note?: string | null;
 	reflection?: string | null;
+	reflectionThread?: Array<{ role: string; text: string }> | null;
+	reasons?: Record<string, string[]> | null;
 	day?: string;
 }): Promise<EgenfrekvensCheckinStatus> {
 	validateValues(params);
@@ -129,7 +147,7 @@ export async function submitEgenfrekvensCheckin(params: {
 	const sensor = await getOrCreateEgenfrekvensSensor(params.userId);
 	const moodSensor = await getOrCreateMoodSensor(params.userId);
 
-	const payload = {
+	const payload: Record<string, unknown> = {
 		day,
 		balance: params.balance,
 		thoughts: params.thoughts,
@@ -139,40 +157,22 @@ export async function submitEgenfrekvensCheckin(params: {
 		reflection: cleanReflection,
 		extreme
 	};
-
-	const existing = await db
-		.select({ id: sensorEvents.id })
-		.from(sensorEvents)
-		.where(
-			and(
-				eq(sensorEvents.userId, params.userId),
-				eq(sensorEvents.dataType, 'egenfrekvens_checkin'),
-				sql`${sensorEvents.data}->>'day' = ${day}`
-			)
-		)
-		.orderBy(desc(sensorEvents.timestamp))
-		.limit(1);
-
-	if (existing[0]) {
-		await db
-			.update(sensorEvents)
-			.set({
-				timestamp: new Date(),
-				data: payload,
-				metadata: { source: 'egenfrekvens_ui', updated: true }
-			})
-			.where(eq(sensorEvents.id, existing[0].id));
-	} else {
-		await SensorEventService.write({
-			userId: params.userId,
-			sensorId: sensor.id,
-			eventType: 'measurement',
-			dataType: 'egenfrekvens_checkin',
-			timestamp: new Date(),
-			data: payload,
-			source: 'egenfrekvens_ui'
-		});
+	if (params.reasons && Object.keys(params.reasons).length > 0) {
+		payload.reasons = params.reasons;
 	}
+	if (params.reflectionThread && params.reflectionThread.length > 0) {
+		payload.reflectionThread = params.reflectionThread;
+	}
+
+	const writeResult = await SensorEventService.write({
+		userId: params.userId,
+		sensorId: sensor.id,
+		eventType: 'measurement',
+		dataType: 'egenfrekvens_checkin',
+		timestamp: new Date(),
+		data: payload,
+		source: 'egenfrekvens_ui'
+	});
 
 	// Mirror balance to mood (0..10) so existing mood widgets keep working.
 	await SensorEventService.write(
@@ -188,7 +188,8 @@ export async function submitEgenfrekvensCheckin(params: {
 		{ conflictMode: 'ignore' }
 	);
 
-	return getEgenfrekvensCheckinStatus(params.userId, day);
+	const status = await getEgenfrekvensCheckinStatus(params.userId, day);
+	return { ...status, eventId: writeResult.event?.id ?? null };
 }
 
 /**
@@ -210,7 +211,7 @@ export async function maybeActivateEgenfrekvensCheckin(
 
 	const next = {
 		...settings,
-		egenfrekvensCheckin: { enabled: true, time: '09:00' }
+		egenfrekvensCheckin: { enabled: true, morningTime: '06:30', eveningTime: '21:00' }
 	};
 	await db
 		.update(users)

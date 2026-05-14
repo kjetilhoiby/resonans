@@ -21,12 +21,13 @@
 	import TripDashboard from './TripDashboard.svelte';
 	import TripListsPanel from './TripListsPanel.svelte';
 	import BookDashboard from './BookDashboard.svelte';
+	import EgenfrekvensDashboard from './EgenfrekvensDashboard.svelte';
 	import ScreenTitle from '../ui/ScreenTitle.svelte';
 	import Icon from '../ui/Icon.svelte';
 	import TriageCard from '../composed/TriageCard.svelte';
 	import GoalRing from '../ui/GoalRing.svelte';
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
-	import { fetchDashboard, getCachedDashboard, type EconomicsDashboardData, type HealthDashboardData, type TravelDashboardData, type FoodDashboardData, type FamilyDashboardData } from '$lib/client/dashboard-cache';
+	import { fetchDashboard, getCachedDashboard, type EconomicsDashboardData, type HealthDashboardData, type TravelDashboardData, type FoodDashboardData, type FamilyDashboardData, type EgenfrekvensDashboardData } from '$lib/client/dashboard-cache';
 	import { getThemeDashboardDefinition, resolveThemeDashboardKind } from '$lib/domain/theme-dashboard-registry';
 	import { finishNavMetric, startNavMetric } from '$lib/client/nav-metrics';
 	import { ChatState } from '$lib/client/chat-state.svelte';
@@ -39,6 +40,7 @@
 	import type { MetricSettingsMap } from './ThemeMetricSettingsSheet.svelte';
 	import CollapsibleSection from '../ui/CollapsibleSection.svelte';
 	import ConversationContextMenu from '../ui/ConversationContextMenu.svelte';
+	import ProjectCard from '../composed/ProjectCard.svelte';
 
 	/* ── Types ──────────────────────────────────────────── */
 	interface Theme {
@@ -92,6 +94,17 @@
 		chatPrompt: string;
 	}
 
+	interface ThemeProject {
+		id: string;
+		title: string;
+		description: string | null;
+		domain: string | null;
+		type: string | null;
+		status: string;
+		emoji: string | null;
+		progress: import('$lib/server/services/project-metrics-service').ProjectProgress | null;
+	}
+
 	interface Props {
 		theme: Theme;
 		initialMessages: Message[];
@@ -104,6 +117,7 @@
 		tripLists?: import('./TripListsPanel.svelte').ThemeList[];
 		themeFiles?: ThemeFile[];
 		metricSettings?: MetricSettingsMap;
+		projects?: ThemeProject[];
 	}
 
 	interface ThemeFile {
@@ -134,7 +148,7 @@
 		} | null;
 	}
 
-	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '', selectedWorkout = null, tripProfile = null, tripLists = [], themeFiles: initialThemeFiles = [], metricSettings: initialMetricSettings = {} }: Props = $props();
+	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '', selectedWorkout = null, tripProfile = null, tripLists = [], themeFiles: initialThemeFiles = [], metricSettings: initialMetricSettings = {}, projects = [] }: Props = $props();
 
 	let currentMetricSettings = $state<MetricSettingsMap>(initialMetricSettings);
 	let metricSettingsSheetOpen = $state(false);
@@ -156,7 +170,9 @@
 					? ['chat', 'data', 'lister', 'filer']
 					: activeDashboardKind === 'books'
 						? ['chat', 'data', 'filer']
-						: ['chat', 'data', 'mål', 'filer']
+						: activeDashboardKind === 'egenfrekvens'
+							? ['chat', 'data', 'mål', 'flyter', 'filer']
+							: ['chat', 'data', 'mål', 'filer']
 	);
 	const requestedPrompt = get(page).url.searchParams.get('prompt') ?? '';
 	const hasLinkedWorkout = Boolean(selectedWorkout);
@@ -177,6 +193,7 @@
 	let travelDashboard = $state<TravelDashboardData | null>(null);
 	let foodDashboard = $state<FoodDashboardData | null>(null);
 	let familyDashboard = $state<FamilyDashboardData | null>(null);
+	let egenfrekvensDashboard = $state<EgenfrekvensDashboardData | null>(null);
 	let dashboardLoading = $state(false);
 	let dashboardLoaded = $state(false);
 	let dashboardError = $state('');
@@ -342,6 +359,11 @@
 		return { data: familyDashboard };
 	});
 
+	const egenfrekvensDashboardProps = $derived.by(() => {
+		if (activeDashboardKind !== 'egenfrekvens' || !egenfrekvensDashboard) return null;
+		return { data: egenfrekvensDashboard };
+	});
+
 	onMount(() => {
 		finishNavMetric('tema');
 		void preloadCode('/');
@@ -388,6 +410,8 @@
 			foodDashboard = cached.data as FoodDashboardData;
 		} else if (kind === 'family') {
 			familyDashboard = cached.data as FamilyDashboardData;
+		} else if (kind === 'egenfrekvens') {
+			egenfrekvensDashboard = cached.data as EgenfrekvensDashboardData;
 		}
 
 		return cached;
@@ -426,6 +450,8 @@
 				foodDashboard = result.data as FoodDashboardData;
 			} else if (kind === 'family') {
 				familyDashboard = result.data as FamilyDashboardData;
+			} else if (kind === 'egenfrekvens') {
+				egenfrekvensDashboard = result.data as EgenfrekvensDashboardData;
 			}
 			dashboardLoaded = true;
 		} catch {
@@ -1568,6 +1594,39 @@
 					<FamilyDashboard
 						{...familyDashboardProps}
 					/>
+				{/if}
+
+				{#if egenfrekvensDashboardProps}
+					<EgenfrekvensDashboard
+						{...egenfrekvensDashboardProps}
+						ondelete={async (eventIds) => {
+							await Promise.all(eventIds.map((id) =>
+								fetch(`/api/egenfrekvens/checkin?id=${id}`, { method: 'DELETE' })
+							));
+							void ensureDashboardLoaded(true);
+						}}
+					/>
+				{/if}
+
+				{#if projects.length > 0}
+					<section class="theme-projects">
+						<h3 class="theme-projects-title">Prosjekter</h3>
+						<div class="theme-projects-grid">
+							{#each projects as project (project.id)}
+								<ProjectCard
+									id={project.id}
+									title={project.title}
+									description={project.description}
+									emoji={project.emoji}
+									domain={project.domain}
+									type={project.type}
+									status={project.status}
+									progress={project.progress}
+									onOpen={(id) => goto(`/prosjekt/${id}`)}
+								/>
+							{/each}
+						</div>
+					</section>
 				{/if}
 
 				{#if hasThemeDashboard && dashboardLoading && dashboardLoaded}
@@ -2715,6 +2774,23 @@ Eksempel:
 		font: inherit;
 		font-size: 0.74rem;
 		cursor: pointer;
+	}
+
+	.theme-projects {
+		margin-top: 8px;
+	}
+	.theme-projects-title {
+		margin: 0 0 10px;
+		font-size: 0.82rem;
+		font-weight: 600;
+		color: #94a3b8;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+	.theme-projects-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+		gap: 10px;
 	}
 
 	.goals-grid {

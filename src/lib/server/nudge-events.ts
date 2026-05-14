@@ -10,7 +10,9 @@ export async function createNudgeEvent(params: {
 		| 'digest_day'
 		| 'relationship_checkin_morning'
 		| 'salary_received'
-		| 'egenfrekvens_checkin';
+		| 'egenfrekvens_checkin'
+		| 'egenfrekvens_morning'
+		| 'egenfrekvens_evening';
 	mode: 'interactive' | 'digest';
 	channel?: string;
 	context?: Record<string, unknown>;

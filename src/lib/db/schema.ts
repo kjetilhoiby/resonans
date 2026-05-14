@@ -27,7 +27,7 @@ export const users = pgTable('users', {
 		dayPlanning?: { enabled: boolean; time: string }; // default "07:00"
 		dayClose?: { enabled: boolean; time: string }; // default "21:00"
 		relationshipCheckinMorning?: { enabled: boolean; time: string }; // default "08:30"
-		egenfrekvensCheckin?: { enabled: boolean; time: string }; // default "09:00"
+		egenfrekvensCheckin?: { enabled: boolean; time?: string; morningTime: string; eveningTime: string };
 		nudgeProfile?: {
 			weekdayMode?: 'interactive' | 'digest';
 			weekendMode?: 'interactive' | 'digest';

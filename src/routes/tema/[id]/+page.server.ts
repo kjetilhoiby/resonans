@@ -4,6 +4,7 @@ import { getThemeInstruction } from '$lib/server/theme-instructions';
 import { ensureConversationThemeIdColumn } from '$lib/server/conversation-schema';
 import { getConversationsByTheme } from '$lib/server/conversations';
 import { getWorkoutContextForUser } from '$lib/server/workout-context';
+import { ProjectMetricsService } from '$lib/server/services/project-metrics-service';
 import { eq, and, asc } from 'drizzle-orm';
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
@@ -58,7 +59,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	}
 
 	// Last alle uavhengige data parallelt
-	const [themeConversations, msgs, themeGoals, instruction, uploadedFiles, tripListsRaw, selectedWorkout] =
+	const [themeConversations, msgs, themeGoals, instruction, uploadedFiles, tripListsRaw, selectedWorkout, themeProjects] =
 		await Promise.all([
 			getConversationsByTheme(locals.userId, theme.id),
 			db
@@ -94,7 +95,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 			}),
 			selectedWorkoutId
 				? getWorkoutContextForUser(locals.userId, selectedWorkoutId)
-				: Promise.resolve(null)
+				: Promise.resolve(null),
+			ProjectMetricsService.listProjectsWithProgress(locals.userId, { themeId: theme.id })
 		]);
 
 	return {
@@ -127,6 +129,17 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 			mimeType: f.mimeType,
 			sizeBytes: f.sizeBytes,
 			createdAt: f.createdAt.toISOString()
+		})),
+		projects: themeProjects.map((p) => ({
+			id: p.id,
+			title: p.title,
+			description: p.description,
+			domain: p.domain,
+			type: p.type,
+			status: p.status,
+			budgetNok: p.budgetNok,
+			emoji: (p.metadata as Record<string, unknown>)?.emoji as string | null ?? null,
+			progress: p.progress
 		})),
 		tripProfile: theme.tripProfile ?? null,
 		tripLists: tripListsRaw.map((l) => ({

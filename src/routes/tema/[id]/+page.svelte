@@ -20,6 +20,7 @@
 		tripLists={data.tripLists}
 		selectedWorkout={data.selectedWorkout}
 		metricSettings={data.metricSettings}
+		projects={data.projects}
 	/>
 	{/if}
 </AppPage>

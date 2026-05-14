@@ -582,6 +582,7 @@
 			// URL-trigget egenfrekvens-flow (fra push-nudge eller dyp-lenke)
 			if ($page.url.searchParams.get('flow') === 'egenfrekvens_checkin') {
 				egenfrekvensFlowOpen = true;
+				void loadEgenfrekvensContext();
 				const nudgeId = $page.url.searchParams.get('nudgeEventId');
 				if (nudgeId) {
 					void fetch(`/api/nudges/events/${nudgeId}/stage`, {
@@ -592,7 +593,7 @@
 				}
 			}
 
-			// App-open prompt: vis banner hvis dagens sjekkin ikke er gjort, settings tillater og ikke avvist i dag
+			// App-open prompt: vis banner hvis dagens sjekkin venter, settings tillater og ikke avvist i dag
 			void (async () => {
 				try {
 					const isoDay = new Date().toISOString().slice(0, 10);
@@ -600,18 +601,21 @@
 					if (!res.ok) return;
 					const status = await res.json();
 					if (!status.settings || status.settings.enabled === false) return;
-					if (status.submitted) return;
 					if (typeof localStorage !== 'undefined') {
 						const dismissed = localStorage.getItem(`egenfrekvens-prompt-dismissed-${status.day}`);
 						if (dismissed) return;
 					}
-					const targetHm = status.settings.time ?? '09:00';
+					const morning = status.settings.morningTime ?? '06:30';
+					const evening = status.settings.eveningTime ?? '21:00';
+					const count = typeof status.count === 'number' ? status.count : status.submitted ? 1 : 0;
 					const nowHm = new Intl.DateTimeFormat('en-GB', {
 						hour: '2-digit',
 						minute: '2-digit',
 						hour12: false
 					}).format(new Date());
-					if (nowHm < targetHm) return;
+					const showMorning = nowHm >= morning && count === 0;
+					const showEvening = nowHm >= evening && count < 2;
+					if (!showMorning && !showEvening) return;
 					egenfrekvensPromptDay = status.day;
 					egenfrekvensPromptOpen = true;
 				} catch {
@@ -830,48 +834,40 @@
 	let voiceHistory = $state<MediaHistoryItem[]>([]);
 	let voiceHistoryLoading = $state(false);
 
-	// ── Sjekkin-flyt ──────────────────────────────────────────────────────────
-	let moodOpen = $state(false);
-	let moodSlider = $state(50);
-	let moodFactors = $state<string[]>([]);
-	let moodNote = $state('');
-
 	// ── Egenfrekvens-sjekkin ──────────────────────────────────────────────────
 	let egenfrekvensFlowOpen = $state(false);
 	let egenfrekvensPromptOpen = $state(false);
 	let egenfrekvensPromptDay = $state('');
-	const MOOD_FACTORS = [
-		{ id: 'søvn',       label: 'Søvn',      icon: '💤' },
-		{ id: 'trening',    label: 'Trening',   icon: '🏃' },
-		{ id: 'mat',        label: 'Mat',       icon: '🥗' },
-		{ id: 'jobb',       label: 'Jobb',      icon: '💼' },
-		{ id: 'familie',    label: 'Familie',   icon: '🧑‍👧' },
-		{ id: 'sosialt',    label: 'Sosialt',   icon: '👥' },
-		{ id: 'vær',        label: 'Vær',      icon: '☀️' },
-		{ id: 'økonomi',    label: 'Økonomi',  icon: '💸' },
-		{ id: 'helse',      label: 'Helse',     icon: '🩺' },
-		{ id: 'kreativitet', label: 'Kreativitet', icon: '🎨' },
-		{ id: 'tid-alene',  label: 'Tid alene', icon: '🧘' },
-		{ id: 'natur',      label: 'Natur',     icon: '🌿' },
-	];
-	const moodLabel = $derived(
-		moodSlider < 20  ? 'Veldig lav' :
-		moodSlider < 40  ? 'Lav' :
-		moodSlider < 60  ? 'OK' :
-		moodSlider < 80  ? 'Bra' : 'Strålende'
-	);
-	const moodEmoji = $derived(
-		moodSlider < 20  ? '😔' :
-		moodSlider < 40  ? '😐' :
-		moodSlider < 60  ? '🙂' :
-		moodSlider < 80  ? '😊' : '🤩'
-	);
-	const moodColor = $derived(
-		moodSlider < 20  ? '#e07070' :
-		moodSlider < 40  ? '#f0b429' :
-		moodSlider < 60  ? '#aaa' :
-		moodSlider < 80  ? '#82c882' : '#7c8ef5'
-	);
+	let egenfrekvensInitialNote = $state('');
+	let egenfrekvensReflectionPrompt = $state<string | null>(null);
+	let egenfrekvensDreamReasons = $state<Record<string, Array<{ value: string; label: string; source: string }>> | null>(null);
+
+	async function loadEgenfrekvensContext() {
+		const isoDay = new Date().toISOString().slice(0, 10);
+		await Promise.all([
+			fetch(`/api/egenfrekvens/reflection-context?day=${isoDay}`)
+				.then((r) => r.ok ? r.json() : null)
+				.then((ctx) => {
+					egenfrekvensReflectionPrompt = typeof ctx?.systemPrompt === 'string' ? ctx.systemPrompt : null;
+				})
+				.catch(() => { egenfrekvensReflectionPrompt = null; }),
+			fetch('/api/egenfrekvens/dream-reasons')
+				.then((r) => r.ok ? r.json() : null)
+				.then((reasons) => { egenfrekvensDreamReasons = reasons; })
+				.catch(() => { egenfrekvensDreamReasons = null; })
+		]);
+	}
+
+	function openEgenfrekvensFlow(initialNote = '', preserveConversation = false) {
+		egenfrekvensInitialNote = initialNote.trim();
+		returnToChatAfterFlow = preserveConversation;
+		if (!preserveConversation) {
+			chatOpen = false;
+		}
+		chatInputAutoFocus = false;
+		egenfrekvensFlowOpen = true;
+		void loadEgenfrekvensContext();
+	}
 
 	// ── Fil-flyt ───────────────────────────────────────────────────────────────
 	let fileFlowOpen = $state(false);
@@ -1013,7 +1009,7 @@
 		});
 	}
 
-	const inputExpanded = $derived(chatOpen || cameraOpen || voiceOpen || moodOpen || fileFlowOpen);
+	const inputExpanded = $derived(chatOpen || cameraOpen || voiceOpen || fileFlowOpen);
 	let chatSection: HTMLElement | null = $state(null);
 
 	function formatFollowUpDate(iso: string) {
@@ -1266,33 +1262,6 @@
 		}
 	}
 
-	// ── Sjekkin-flyt ─────────────────────────────────────────────────────────────
-
-	function toggleFactor(id: string) {
-		if (moodFactors.includes(id)) {
-			moodFactors = moodFactors.filter(f => f !== id);
-		} else {
-			moodFactors = [...moodFactors, id];
-		}
-	}
-
-	function submitMood() {
-		const factors = moodFactors
-			.map(id => MOOD_FACTORS.find(f => f.id === id))
-			.filter(Boolean)
-			.map(f => `${f!.icon} ${f!.label}`)
-			.join(', ');
-		const note = moodNote.trim();
-		const msg = [
-			`Sjekkin: ${moodEmoji} ${moodLabel} (${moodSlider}/100)`,
-			factors ? `Påvirket av: ${factors}` : null,
-			note || null,
-		].filter(Boolean).join('\n');
-		closeMoodFlow();
-		chatOpen = true;
-		void sendChat(msg);
-	}
-
 	// ── Fil-flyt ──────────────────────────────────────────────────────────────────
 	function closeFileFlow() {
 		fileFlowOpen = false;
@@ -1498,19 +1467,6 @@
 		fileFlowOpen = true;
 	}
 
-	function startMoodFlow(preserveConversation: boolean, draftOverride?: string) {
-		if (!preserveConversation) {
-			homeChat.reset();
-			homeChat.conversationId = null;
-			createdThemeLink = null;
-		}
-		moodNote = (draftOverride ?? '').trim();
-		returnToChatAfterFlow = preserveConversation;
-		chatOpen = false;
-		chatInputAutoFocus = false;
-		moodOpen = true;
-	}
-
 	function closeChat() {
 		if (homeChat.conversationId && homeChat.messages.length > 0) {
 			latestClosedConversationId = homeChat.conversationId;
@@ -1531,18 +1487,6 @@
 		cameraPreview = null;
 		cameraCaption = '';
 		cameraError = false;
-		if (returnToChatAfterFlow) {
-			chatOpen = true;
-			chatInputAutoFocus = true;
-		}
-		returnToChatAfterFlow = false;
-	}
-
-	function closeMoodFlow() {
-		moodOpen = false;
-		moodSlider = 50;
-		moodFactors = [];
-		moodNote = '';
 		if (returnToChatAfterFlow) {
 			chatOpen = true;
 			chatInputAutoFocus = true;
@@ -2120,7 +2064,7 @@
 						streaming={homeChat.loading}
 						onStop={stopChat}
 						onAttachment={(kind, draft) => startHomeAttachment(kind, draft, { preserveConversation: true })}
-						onMood={(draft) => startMoodFlow(true, draft)}
+						onMood={(draft) => openEgenfrekvensFlow(draft, true)}
 						onTextChange={(text) => (chatPrefill = text)}
 						onBackspaceEmpty={closeChat}
 						onsubmit={sendChat}
@@ -2265,63 +2209,6 @@
 					{/if}
 				</div>
 			</div>
-		{:else if moodOpen}
-			<!-- ── Stemning-flyt ── -->
-			<div class="flow-panel">
-				<div class="flow-header">
-					<button class="flow-back" onclick={closeMoodFlow} aria-label="Tilbake"><Icon name="back" size={18} /></button>
-					<span class="flow-title">Stemning</span>
-				</div>
-				<div class="flow-body">
-					<!-- Slider -->
-					<div class="ci-slider-wrap">
-						<div class="ci-slider-display" style:color={moodColor}>
-							<span class="ci-slider-emoji">{moodEmoji}</span>
-							<span class="ci-slider-label">{moodLabel}</span>
-							<span class="ci-slider-num">{moodSlider}</span>
-						</div>
-						<input
-							type="range"
-							class="ci-slider"
-							min="0" max="100" step="1"
-							bind:value={moodSlider}
-							style:--thumb-color={moodColor}
-							aria-label="Stemningsnivå"
-						/>
-						<div class="ci-slider-ends">
-							<span>😔</span>
-							<span>🤩</span>
-						</div>
-					</div>
-
-					<!-- Faktor-grid -->
-					<div class="ci-factors-label">Hva påvirker stemningen din mest?</div>
-					<div class="ci-factors-grid">
-						{#each MOOD_FACTORS as factor}
-							<button
-								class="ci-factor-btn"
-								class:is-active={moodFactors.includes(factor.id)}
-								onclick={() => toggleFactor(factor.id)}
-								aria-pressed={moodFactors.includes(factor.id)}
-							>
-								<span class="ci-factor-icon">{factor.icon}</span>
-								<span class="ci-factor-label">{factor.label}</span>
-							</button>
-						{/each}
-					</div>
-
-					<!-- Notat -->
-					<textarea
-						class="flow-textarea"
-						placeholder="Vil du legge til noe? (valgfritt)"
-						bind:value={moodNote}
-						rows="2"
-					></textarea>
-					<button class="flow-submit" onclick={submitMood}>
-						Send til chat →
-					</button>
-				</div>
-			</div>
 		{:else if fileFlowOpen}
 			<!-- ── Fil-flyt ── -->
 			<div class="flow-panel">
@@ -2435,7 +2322,7 @@
 				interceptOpen={true}
 				onOpen={() => openChat(chatPrefill, 'chat', { focusInput: true })}
 				onAttachment={(kind, draft) => startHomeAttachment(kind, draft)}
-				onMood={(draft) => startMoodFlow(false, draft)}
+				onMood={(draft) => openEgenfrekvensFlow(draft, false)}
 				onTextChange={(text) => (chatPrefill = text)}
 				onsubmit={(message) => startHomeChat(message)}
 			/>
@@ -2598,10 +2485,33 @@
 {#if egenfrekvensFlowOpen}
 	<FlowSheet
 		flow={FLOWS['egenfrekvens_checkin']}
-		onclose={() => (egenfrekvensFlowOpen = false)}
+		context={{
+			...(egenfrekvensInitialNote ? { initialData: { note: egenfrekvensInitialNote } } : {}),
+			...(egenfrekvensReflectionPrompt ? { systemPrompts: { reflection: egenfrekvensReflectionPrompt } } : {}),
+			...(egenfrekvensDreamReasons ? { dreamReasons: egenfrekvensDreamReasons } : {})
+		}}
+		onclose={() => {
+			egenfrekvensFlowOpen = false;
+			egenfrekvensInitialNote = '';
+			egenfrekvensReflectionPrompt = null;
+			egenfrekvensDreamReasons = null;
+			if (returnToChatAfterFlow) {
+				chatOpen = true;
+				chatInputAutoFocus = true;
+			}
+			returnToChatAfterFlow = false;
+		}}
 		oncomplete={() => {
 			egenfrekvensFlowOpen = false;
 			egenfrekvensPromptOpen = false;
+			egenfrekvensInitialNote = '';
+			egenfrekvensReflectionPrompt = null;
+			egenfrekvensDreamReasons = null;
+			if (returnToChatAfterFlow) {
+				chatOpen = true;
+				chatInputAutoFocus = true;
+			}
+			returnToChatAfterFlow = false;
 		}}
 	/>
 {/if}
@@ -3550,122 +3460,6 @@
 		background: #202020;
 		color: #d5d5d5;
 	}
-
-	/* ── Sjekkin-flyt ────────────────────────────────────────────────────────── */
-	.ci-slider-wrap {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-	}
-
-	.ci-slider-display {
-		display: flex;
-		align-items: baseline;
-		gap: 10px;
-		transition: color 0.2s;
-	}
-
-	.ci-slider-emoji {
-		font-size: 2rem;
-		line-height: 1;
-		transition: filter 0.2s;
-	}
-
-	.ci-slider-label {
-		font-size: 1.1rem;
-		font-weight: 700;
-		letter-spacing: -0.02em;
-	}
-
-	.ci-slider-num {
-		font-size: 0.75rem;
-		opacity: 0.5;
-		font-variant-numeric: tabular-nums;
-		margin-left: auto;
-	}
-
-	.ci-slider {
-		-webkit-appearance: none;
-		appearance: none;
-		width: 100%;
-		height: 6px;
-		border-radius: 999px;
-		background: #222;
-		outline: none;
-		cursor: pointer;
-	}
-	.ci-slider::-webkit-slider-thumb {
-		-webkit-appearance: none;
-		appearance: none;
-		width: 22px;
-		height: 22px;
-		border-radius: 50%;
-		background: var(--thumb-color, #4a5af0);
-		border: 3px solid #0f0f0f;
-		box-shadow: 0 0 0 1px var(--thumb-color, #4a5af0);
-		transition: background 0.2s, box-shadow 0.2s;
-		cursor: grab;
-	}
-	.ci-slider::-moz-range-thumb {
-		width: 22px;
-		height: 22px;
-		border-radius: 50%;
-		background: var(--thumb-color, #4a5af0);
-		border: 3px solid #0f0f0f;
-		cursor: grab;
-	}
-
-	.ci-slider-ends {
-		display: flex;
-		justify-content: space-between;
-		font-size: 0.9rem;
-		opacity: 0.4;
-	}
-
-	.ci-factors-label {
-		font-size: 0.72rem;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: #555;
-		margin-top: 4px;
-	}
-
-	.ci-factors-grid {
-		display: grid;
-		grid-template-columns: repeat(4, 1fr);
-		gap: 8px;
-	}
-
-	.ci-factor-btn {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 5px;
-		background: #141414;
-		border: 1.5px solid #252525;
-		border-radius: 14px;
-		padding: 10px 6px;
-		cursor: pointer;
-		font: inherit;
-		transition: border-color 0.12s, background 0.12s, transform 0.1s;
-	}
-	.ci-factor-btn:hover { border-color: #3c4f9f; background: #16191f; }
-	.ci-factor-btn.is-active {
-		border-color: #4a5af0;
-		background: #12152a;
-		transform: scale(1.04);
-	}
-
-	.ci-factor-icon { font-size: 1.3rem; line-height: 1; }
-	.ci-factor-label {
-		font-size: 0.62rem;
-		font-weight: 600;
-		color: #888;
-		text-align: center;
-		line-height: 1.2;
-	}
-	.ci-factor-btn.is-active .ci-factor-label { color: #c5cdf8; }
 
 	:global(.zone-input .page-header) {
 		padding: var(--screen-title-top-pad, 34px) 20px 12px;
