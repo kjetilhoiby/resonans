@@ -3,7 +3,7 @@
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import { tick } from 'svelte';
 	import { goto, invalidateAll } from '$app/navigation';
-	import { AppPage } from '$lib/components/ui';
+	import { AppPage, PullToRefresh } from '$lib/components/ui';
 	import ScreenTitle from '$lib/components/ui/ScreenTitle.svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import FlowSheet from '$lib/components/flows/FlowSheet.svelte';
@@ -1508,6 +1508,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 </svelte:head>
 
 <AppPage width="full" padding="none" gap="sm" theme="dark" surface="default">
+	<PullToRefresh excludeSelectors=".wp-header-actions, .wp-calendar-wrap">
 	<div class="week-plan-page">
 	<header class="wp-header">
 		<ScreenTitle
@@ -2210,6 +2211,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 	</section>
 	{/if}
 	</div>
+	</PullToRefresh>
 </AppPage>
 
 {#if dayCloseFlowOpen}

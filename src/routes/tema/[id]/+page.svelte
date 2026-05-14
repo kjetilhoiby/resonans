@@ -1,14 +1,22 @@
 <script lang="ts">
-	import { AppPage } from '$lib/components/ui';
+	import { AppPage, PullToRefresh } from '$lib/components/ui';
 	import ThemePage from '$lib/components/domain/ThemePage.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData & { selectedWorkout?: unknown } } = $props();
+
+	let themePage: { refresh: () => Promise<void> } | undefined = $state();
+
+	async function refreshTheme() {
+		await themePage?.refresh();
+	}
 </script>
 
-<AppPage width="full" padding="none" gap="sm" surface="transparent">
+<AppPage width="full" padding="none" gap="sm" surface="transparent" theme="dark">
+	<PullToRefresh onRefresh={refreshTheme}>
 	{#if data.theme}
 	<ThemePage
+		bind:this={themePage}
 		theme={data.theme}
 		initialMessages={data.messages}
 		goals={data.goals}
@@ -22,4 +30,5 @@
 		metricSettings={data.metricSettings}
 	/>
 	{/if}
+	</PullToRefresh>
 </AppPage>

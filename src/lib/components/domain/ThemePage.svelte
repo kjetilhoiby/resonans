@@ -445,6 +445,13 @@
 		}
 	});
 
+	export async function refresh() {
+		await Promise.allSettled([
+			hasThemeDashboard ? ensureDashboardLoaded(true) : Promise.resolve(),
+			loadThemeSignals(true)
+		]);
+	}
+
 	$effect(() => {
 		if (tab === 'data') {
 			void loadThemeSignals();
@@ -1147,72 +1154,9 @@
 		selectedFlow = null;
 	}
 
-	/* ── Navigasjon: klikk + swipe ─────────────────────── */
-	let touchStartX = 0;
-	let touchStartY = 0;
-	let touchActive = false;
-	let swipeUsed = false;
-	let pinchStartDistance = 0;
-	let pinchActive = false;
-
 	function goHome() {
 		startNavMetric('tema', 'home');
 		void goto('/');
-	}
-
-	function touchDistance(touches: TouchList): number {
-		if (touches.length < 2) return 0;
-		const dx = touches[0].clientX - touches[1].clientX;
-		const dy = touches[0].clientY - touches[1].clientY;
-		return Math.hypot(dx, dy);
-	}
-
-	function onTouchStart(event: TouchEvent) {
-		if (event.touches.length === 2) {
-			pinchStartDistance = touchDistance(event.touches);
-			pinchActive = pinchStartDistance > 0;
-			touchActive = false;
-			return;
-		}
-
-		if (event.touches.length !== 1) {
-			touchActive = false;
-			return;
-		}
-		const touch = event.touches[0];
-		touchStartX = touch.clientX;
-		touchStartY = touch.clientY;
-		touchActive = true;
-		swipeUsed = false;
-	}
-
-	function onTouchMove(event: TouchEvent) {
-		if (pinchActive && event.touches.length === 2) {
-			const currentDistance = touchDistance(event.touches);
-			// Pinch in (fingre nærmere hverandre) defokuserer temaet.
-			if (pinchStartDistance - currentDistance > 44) {
-				pinchActive = false;
-				goHome();
-			}
-			return;
-		}
-
-		if (!touchActive || swipeUsed || event.touches.length !== 1) return;
-		const touch = event.touches[0];
-		const deltaX = touch.clientX - touchStartX;
-		const deltaY = Math.abs(touch.clientY - touchStartY);
-
-		// Edge-swipe: start nær venstre kant og dra tydelig mot høyre.
-		if (touchStartX <= 38 && deltaX > 92 && deltaY < 70) {
-			swipeUsed = true;
-			touchActive = false;
-			goHome();
-		}
-	}
-
-	function onTouchEnd() {
-		touchActive = false;
-		pinchActive = false;
 	}
 
 	$effect(() => {
@@ -1245,7 +1189,7 @@
 	}
 </script>
 
-<div class="theme-page" style={getThemeHueStyle(theme.name)} ontouchstart={onTouchStart} ontouchmove={onTouchMove} ontouchend={onTouchEnd}>
+<div class="theme-page" style={getThemeHueStyle(theme.name)}>
 	{#if archiveRedirect}
 		<section class="tp-archived" aria-live="polite">
 			<div class="tp-archived-chip">
