@@ -518,7 +518,7 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 					<span class="status-dot ok"></span>
 					<h2>Eksterne apper</h2>
 				</div>
-				<p>API-secrets for Scriptable og andre klienter</p>
+				<p>Scriptable, Snarveier, Ekko og andre apper</p>
 				<a href="/settings/external-apps" class="overview-link">Åpne eksterne apper</a>
 			</article>
 			<article class="overview-card" id="jobs-overview">

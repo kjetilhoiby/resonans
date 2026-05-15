@@ -146,7 +146,7 @@ function normalizeHeartRate(value: unknown): number | null {
 
 function sourcePriority(provider: string, sensorType: string): number {
 	if (provider === 'ai_assistant' || sensorType === 'manual_log') return 5;
-	if (provider === 'dropbox' || sensorType === 'workout_files') return 4;
+	if (sensorType === 'gps_device' || provider === 'dropbox' || sensorType === 'workout_files') return 4;
 	if (provider === 'withings') return 3;
 	return 1;
 }

@@ -15,7 +15,7 @@ if (env.ENABLE_IN_APP_SCHEDULER === 'true') {
 }
 
 const PUBLIC_PATH_PREFIXES = ['/auth', '/_app', '/design', '/partner-invite'];
-const PUBLIC_API_PREFIXES = ['/api/cron', '/api/scheduler/trigger', '/api/workouts/email-inbound', '/api/email-inbound', '/api/email/inbound'];
+const PUBLIC_API_PREFIXES = ['/api/cron', '/api/scheduler/trigger', '/api/workouts/email-inbound', '/api/email-inbound', '/api/email/inbound', '/api/apps/authorize', '/api/apps/callback'];
 
 function isPublicPath(pathname: string) {
 	if (pathname === '/robots.txt' || pathname === '/favicon.ico') {

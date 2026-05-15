@@ -117,17 +117,86 @@
 		{/if}
 	</SectionCard>
 
-	<SectionCard title="Scriptable eksempel">
-		<p>Bytt ut SECRET og endpoint med ønsket API-rute. Bruk Bearer token eller x-resonans-api-secret.</p>
+	<SectionCard title="Autentisering">
+		<p>Alle API-kall krever secret som Bearer token:</p>
+		<pre>Authorization: Bearer rsn_ditt_secret_her</pre>
+		<p class="muted">Alternativt: <code>x-resonans-api-secret</code>-header.</p>
+	</SectionCard>
+
+	<SectionCard title="API-oversikt" className="api-ref">
+		<h4>Hent widget-data (Scriptable / Snarveier)</h4>
+		<pre>{`GET ${data.origin}/api/widget-data/{widgetId}`}</pre>
+		<p class="muted">Returnerer beregnet widget-data som JSON. Finn widget-ID på forsiden (lang-trykk → innstillinger).</p>
+
+		<h4>App-tilkobling (Ekko o.l.)</h4>
+		<p class="muted">Apper som kobler seg til via deep link. Åpne authorize-URL i en webview — brukeren logger inn, og appen mottar et secret via deep link tilbake.</p>
+		<pre>{`GET ${data.origin}/api/apps/authorize?app={appId}
+GET ${data.origin}/api/apps/status`}</pre>
+
+		<h4>Last opp fil</h4>
+		<p class="muted">Treningsfiler (GPX/TCX) parses automatisk. Bilder (JPG/PNG/HEIC) lagres i skyen og knyttes til en sensor-event.</p>
+		<pre>{`POST ${data.origin}/api/apps/upload
+Content-Type: multipart/form-data
+
+app       = {appId}          (påkrevd)
+file      = {fil}            (påkrevd)
+sessionId = {unikId}         (anbefalt, dedup)
+sportType = running|cycling   (valgfri, kun GPX)
+eventType = meal|observation  (valgfri, kun bilde)
+dataType  = food_photo        (valgfri, kun bilde)
+caption   = "Fritekst"        (valgfri, kun bilde)`}</pre>
+
+		<h4>Send hendelse (JSON)</h4>
+		<p class="muted">For enkle sensor-events uten fil — f.eks. IoT-enheter, automations, Snarveier.</p>
+		<pre>{`POST ${data.origin}/api/apps/event
+Content-Type: application/json
+
+{
+  "app": "{appId}",
+  "eventType": "appliance_cycle",
+  "dataType": "dishwasher",
+  "data": { "program": "eco" },
+  "timestamp": "2026-05-15T18:30:00Z",
+  "dedupeKey": "valgfri-unik-id"
+}`}</pre>
+		<p class="muted"><code>timestamp</code> og <code>dedupeKey</code> er valgfrie.</p>
+	</SectionCard>
+
+	<SectionCard title="Scriptable-eksempel">
+		<p>Widget-data i Scriptable:</p>
 		<pre>{`const secret = Keychain.get("resonans_api_secret")
-const req = new Request("${data.origin}/api/widget-data/PUTT_WIDGET_ID_HER")
-req.method = "GET"
+const req = new Request("${data.origin}/api/widget-data/WIDGET_ID")
+req.headers = {
+  "Authorization": ` + "`Bearer ${secret}`" + `
+}
+const data = await req.loadJSON()`}</pre>
+
+		<p>Send hendelse fra Scriptable:</p>
+		<pre>{`const secret = Keychain.get("resonans_api_secret")
+const req = new Request("${data.origin}/api/apps/event")
+req.method = "POST"
 req.headers = {
   "Authorization": ` + "`Bearer ${secret}`" + `,
-  "Accept": "application/json"
+  "Content-Type": "application/json"
 }
-const payload = await req.loadJSON()
-console.log(payload)`}</pre>
+req.body = JSON.stringify({
+  app: "scriptable",
+  eventType: "observation",
+  dataType: "mood",
+  data: { score: 8, note: "God dag" }
+})
+await req.loadJSON()`}</pre>
+	</SectionCard>
+
+	<SectionCard title="Snarveier-eksempel">
+		<p>Send data fra Snarveier-appen på iPhone:</p>
+		<ol>
+			<li>Legg til «Hent innhold fra URL»-handling</li>
+			<li>URL: <code>{data.origin}/api/apps/event</code></li>
+			<li>Metode: POST</li>
+			<li>Hode: <code>Authorization</code> → <code>Bearer ditt_secret</code></li>
+			<li>Brødtekst: JSON med <code>app</code>, <code>eventType</code>, <code>dataType</code>, <code>data</code></li>
+		</ol>
 	</SectionCard>
 
 	<SectionCard title="Anbefalt praksis">
@@ -135,7 +204,7 @@ console.log(payload)`}</pre>
 			<li>Lag ett secret per klient/enhet (f.eks. iPhone-widget, Mac-script).</li>
 			<li>Bruk utløp der det er praktisk, og roter secret jevnlig.</li>
 			<li>Deaktiver secret umiddelbart hvis du mistenker lekkasje.</li>
-			<li>Sjekk "Sist brukt" for å oppdage uventet aktivitet.</li>
+			<li>Sjekk «Sist brukt» for å oppdage uventet aktivitet.</li>
 		</ul>
 	</SectionCard>
 </AppPage>
@@ -225,6 +294,33 @@ console.log(payload)`}</pre>
 		overflow-x: auto;
 		font-size: 0.84rem;
 		line-height: 1.5;
+	}
+
+	:global(.api-ref) h4 {
+		margin: 1.2rem 0 0.35rem;
+		color: var(--text-primary);
+		font-size: 0.95rem;
+	}
+
+	:global(.api-ref) h4:first-child {
+		margin-top: 0;
+	}
+
+	:global(.api-ref) pre {
+		margin-bottom: 0.5rem;
+	}
+
+	code {
+		background: #191b22;
+		padding: 0.15rem 0.35rem;
+		border-radius: 4px;
+		font-size: 0.84rem;
+	}
+
+	ol {
+		margin: 0;
+		padding-left: 1.2rem;
+		line-height: 1.6;
 	}
 
 	.muted {
