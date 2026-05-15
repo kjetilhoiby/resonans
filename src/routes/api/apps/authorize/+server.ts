@@ -9,6 +9,6 @@ export const GET: RequestHandler = async ({ url }) => {
 	const app = getAppConfig(appId);
 	if (!app) throw error(404, `Unknown app: ${appId}`);
 
-	const callbackUrl = `${url.origin}/api/apps/callback?app=${encodeURIComponent(appId)}`;
-	throw redirect(303, `/auth?next=${encodeURIComponent(callbackUrl)}`);
+	const callbackPath = `/api/apps/callback?app=${encodeURIComponent(appId)}`;
+	throw redirect(303, `/auth?next=${encodeURIComponent(callbackPath)}`);
 };
