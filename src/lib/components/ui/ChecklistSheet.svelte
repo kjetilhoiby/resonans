@@ -45,9 +45,10 @@
 		onclose: () => void;
 		onDeleted?: () => void;
 		onChanged?: () => void;
+		onStartChat?: (itemText: string) => void;
 	}
 
-	let { checklist, onclose, onDeleted, onChanged }: Props = $props();
+	let { checklist, onclose, onDeleted, onChanged, onStartChat }: Props = $props();
 
 	let items = $state<ChecklistItem[]>([...checklist.items]);
 	let newItemText = $state('');
@@ -703,6 +704,7 @@
 	onSkip={() => { if (contextMenuItem) void setItemSkipped(contextMenuItem.id, true); }}
 	onUnskip={() => { if (contextMenuItem) void setItemSkipped(contextMenuItem.id, false); }}
 	onDelete={() => { if (contextMenuItem) void deleteItem(contextMenuItem.id); }}
+	onStartChat={onStartChat ? () => { if (contextMenuItem) onStartChat?.(contextMenuItem.text); } : undefined}
 />
 
 <!-- Breakdown modal -->

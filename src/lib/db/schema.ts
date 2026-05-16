@@ -2089,3 +2089,68 @@ export const emailRulesRelations = relations(emailRules, ({ one }) => ({
 		references: [users.id]
 	})
 }));
+
+// ============================================
+// PROCEDURES — Gjenbrukbare oppskrifter/fremgangsmåter
+// ============================================
+
+export const procedures = pgTable('procedures', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	title: text('title').notNull(),
+	summary: text('summary'),
+	domain: text('domain'),
+	themeId: uuid('theme_id').references(() => themes.id, { onDelete: 'set null' }),
+	conversationId: uuid('conversation_id').references(() => conversations.id, { onDelete: 'set null' }),
+	triggerKeywords: text('trigger_keywords').array().notNull().default(sql`ARRAY[]::text[]`),
+	shared: boolean('shared').default(false).notNull(),
+	version: integer('version').default(1).notNull(),
+	emoji: text('emoji'),
+	metadata: jsonb('metadata').default({}).notNull().$type<{
+		sourceConversationTitle?: string;
+		lastSuggestedUpdate?: string;
+		appliedCount?: number;
+	}>(),
+	archivedAt: timestamp('archived_at'),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	idxUser: index('procedures_user_idx').on(table.userId),
+	idxUserDomain: index('procedures_user_domain_idx').on(table.userId, table.domain),
+	idxTheme: index('procedures_theme_idx').on(table.themeId),
+	idxShared: index('procedures_shared_idx').on(table.shared)
+}));
+
+export const procedureSteps = pgTable('procedure_steps', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	procedureId: uuid('procedure_id').references(() => procedures.id, { onDelete: 'cascade' }).notNull(),
+	text: text('text').notNull(),
+	sortOrder: integer('sort_order').notNull().default(0),
+	isOptional: boolean('is_optional').default(false).notNull(),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => ({
+	idxProcedure: index('procedure_steps_procedure_idx').on(table.procedureId, table.sortOrder)
+}));
+
+export const proceduresRelations = relations(procedures, ({ one, many }) => ({
+	user: one(users, {
+		fields: [procedures.userId],
+		references: [users.id]
+	}),
+	theme: one(themes, {
+		fields: [procedures.themeId],
+		references: [themes.id]
+	}),
+	conversation: one(conversations, {
+		fields: [procedures.conversationId],
+		references: [conversations.id]
+	}),
+	steps: many(procedureSteps)
+}));
+
+export const procedureStepsRelations = relations(procedureSteps, ({ one }) => ({
+	procedure: one(procedures, {
+		fields: [procedureSteps.procedureId],
+		references: [procedures.id]
+	})
+}));

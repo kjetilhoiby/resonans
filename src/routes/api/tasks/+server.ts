@@ -58,6 +58,18 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			}
 		}
 
+		try {
+			await enqueueBackgroundJob({
+				userId,
+				type: 'procedure_match',
+				payload: { taskId: task.id, taskTitle: title },
+				priority: 5,
+				maxAttempts: 1
+			});
+		} catch (queueError) {
+			console.warn('Failed to enqueue procedure match job:', queueError);
+		}
+
 		return json({ task }, { status: 201 });
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);

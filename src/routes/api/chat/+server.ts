@@ -765,6 +765,30 @@ const tools = [
 			{
 				type: 'function' as const,
 				function: {
+					name: 'manage_procedure',
+					description: 'Opprett, oppdater eller slett en fremgangsmåte/oppskrift (prosedyre for hverdagsoppgaver, IKKE mat-oppskrifter). action=suggest_save for å foreslå lagring etter relevant samtale. action=create for å faktisk lagre. Bruk triggerKeywords for matching mot fremtidige oppgaver.',
+					parameters: {
+						type: 'object',
+						properties: {
+							action: { type: 'string', enum: ['create', 'update', 'delete', 'suggest_save'] },
+							id: { type: 'string' },
+							title: { type: 'string' },
+							summary: { type: 'string', description: 'Markdown-formatert fremgangsmåte/forklaring' },
+							steps: { type: 'array', items: { type: 'string' }, description: 'Sjekkliste-trinn i rekkefølge' },
+							domain: { type: 'string', enum: ['health', 'economics', 'food', 'family', 'egenfrekvens', 'home'] },
+							themeId: { type: 'string' },
+							conversationId: { type: 'string' },
+							triggerKeywords: { type: 'array', items: { type: 'string' }, description: 'Nøkkelord for å matche mot oppgaver, f.eks. ["stryke", "skjorte", "bøye"]' },
+							emoji: { type: 'string' },
+							shared: { type: 'boolean' }
+						},
+						required: ['action']
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
 					name: 'manage_home_routine',
 					description: "Opprett en hus-rutine — checklist med context='home_routine'. Eksempler: ukentlig vaskerutine, sesong-oppgaver, klesvask-rotasjon. Knytt til prosjekt via projectId hvis relevant.",
 					parameters: {
@@ -1332,6 +1356,7 @@ function getToolProgressMessage(toolName: string) {
 		query_sensor_data: 'Henter sensordata...',
 		query_economics: 'Henter økonomidata...',
 		query_food: 'Henter mat-data...',
+		manage_procedure: 'Lagrer fremgangsmåte...',
 		manage_recipe: 'Oppdaterer oppskrift...',
 		manage_meal_plan: 'Oppdaterer ukemeny...',
 		manage_pantry: 'Oppdaterer pantry...',
@@ -1627,6 +1652,29 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		}
 		goalsContext += '--- SLUTT PÅ MÅL OG OPPGAVER ---\n\n';
 
+		// Sjekk om samtalen har en koblet fremgangsmåte
+		let procedureContext = '';
+		try {
+			const { procedures, procedureSteps } = await import('$lib/db/schema');
+			const { isNull } = await import('drizzle-orm');
+			const linkedProcedure = await db.query.procedures.findFirst({
+				where: and(eq(procedures.conversationId, conversation.id), isNull(procedures.archivedAt)),
+				with: { steps: { orderBy: (s: any, { asc }: any) => [asc(s.sortOrder)] } }
+			});
+			if (linkedProcedure) {
+				procedureContext = `\n\n--- KOBLET FREMGANGSMÅTE ---\nDenne samtalen har en lagret fremgangsmåte: "${linkedProcedure.title}" (v${linkedProcedure.version})\n`;
+				if (linkedProcedure.summary) {
+					procedureContext += `Sammendrag: ${linkedProcedure.summary.slice(0, 500)}\n`;
+				}
+				if (linkedProcedure.steps.length > 0) {
+					procedureContext += `Trinn:\n${linkedProcedure.steps.map((s: any, i: number) => `  ${i + 1}. ${s.text}`).join('\n')}\n`;
+				}
+				procedureContext += `\nHvis samtalen avdekker forbedringer eller nye trinn, foreslå oppdatering med manage_procedure(action='update', id='${linkedProcedure.id}').\n--- SLUTT PÅ FREMGANGSMÅTE ---\n`;
+			}
+		} catch (err) {
+			console.warn('Failed to load procedure context:', err);
+		}
+
 		// Add current date context
 		const today = new Date();
 		const dateContext = `\n--- DAGENS DATO ---\nDagens dato er: ${today.toLocaleDateString('nb-NO', { 
@@ -1647,7 +1695,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		});
 
 		const messages: ChatCompletionMessageParam[] = [
-			{ role: 'system', content: promptPrefix + systemPrompt + memoryContext + personContext + goalsContext + dateContext }
+			{ role: 'system', content: promptPrefix + systemPrompt + memoryContext + personContext + goalsContext + procedureContext + dateContext }
 		];
 
 		// Legg til historikk (unntatt den siste brukermeldingen som allerede er der)
@@ -2119,6 +2167,12 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 					console.log('  🔗 Link to project:', args.action, args.entity);
 					const { linkToProjectTool } = await import('$lib/ai/tools/link-to-project');
 					const result = await linkToProjectTool.execute({ userId, ...args });
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'manage_procedure') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  📋 Manage procedure:', args.action);
+					const { manageProcedureTool } = await import('$lib/ai/tools/manage-procedure');
+					const result = await manageProcedureTool.execute({ userId, conversationId: conversation.id, ...args });
 					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'manage_home_routine') {
 					const args = JSON.parse(toolCall.function.arguments);

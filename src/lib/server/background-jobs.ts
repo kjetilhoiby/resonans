@@ -526,6 +526,69 @@ async function executeJob(job: any): Promise<Record<string, unknown>> {
 				parsed
 			};
 		}
+		case 'procedure_match': {
+			if (!job.user_id) throw new Error('procedure_match requires user_id');
+			const payload = (job.payload ?? {}) as { taskId?: string; taskTitle?: string };
+			if (!payload.taskId || !payload.taskTitle) {
+				throw new Error('procedure_match requires taskId and taskTitle');
+			}
+
+			const { procedures, tasks } = await import('$lib/db/schema');
+			const { findSimilar } = await import('$lib/server/similarity');
+			const { isNull } = await import('drizzle-orm');
+
+			const userProcedures = await db.query.procedures.findMany({
+				where: and(eq(procedures.userId, job.user_id), isNull(procedures.archivedAt)),
+				columns: { id: true, title: true, emoji: true, triggerKeywords: true }
+			});
+
+			if (userProcedures.length === 0) return { taskId: payload.taskId, matched: false };
+
+			const titleWords = payload.taskTitle.toLowerCase().split(/\s+/).filter((w: string) => w.length > 2);
+			let matchedId: string | null = null;
+			let matchedTitle: string | null = null;
+			let matchedEmoji: string | null = null;
+
+			for (const p of userProcedures) {
+				const overlap = p.triggerKeywords.filter((kw: string) =>
+					titleWords.some((w: string) => kw.toLowerCase().includes(w) || w.includes(kw.toLowerCase()))
+				);
+				if (overlap.length > 0) {
+					matchedId = p.id;
+					matchedTitle = p.title;
+					matchedEmoji = p.emoji;
+					break;
+				}
+			}
+
+			if (!matchedId) {
+				const titleMatches = findSimilar(payload.taskTitle, userProcedures, (p: any) => p.title, 55);
+				if (titleMatches.length > 0) {
+					matchedId = titleMatches[0].item.id;
+					matchedTitle = titleMatches[0].item.title;
+					matchedEmoji = titleMatches[0].item.emoji;
+				}
+			}
+
+			if (matchedId) {
+				const [task] = await db
+					.select({ metadata: tasks.metadata })
+					.from(tasks)
+					.where(eq(tasks.id, payload.taskId))
+					.limit(1);
+				const currentMeta = (task?.metadata ?? {}) as Record<string, unknown>;
+				await db.update(tasks).set({
+					metadata: {
+						...currentMeta,
+						matchedProcedureId: matchedId,
+						matchedProcedureTitle: matchedTitle,
+						matchedProcedureEmoji: matchedEmoji
+					}
+				}).where(eq(tasks.id, payload.taskId));
+			}
+
+			return { taskId: payload.taskId, matched: !!matchedId, matchedId };
+		}
 		case 'book_context_collect': {
 			const payload = (job.payload ?? {}) as { bookId?: string; title?: string; author?: string | null };
 			if (!payload.bookId || typeof payload.bookId !== 'string') {

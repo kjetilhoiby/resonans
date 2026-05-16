@@ -3,7 +3,7 @@ import { openai } from '$lib/server/openai';
 import { DOMAIN_METADATA, FAMILY_DOMAIN_TRIGGER, HOME_DOMAIN_TRIGGER } from '$lib/domains';
 
 export type ChatDomain = 'health' | 'economics' | 'food' | 'family' | 'egenfrekvens' | 'home' | 'planning' | 'themes' | 'general';
-export type ChatSkill = 'widget_creation' | 'checklist_planning' | 'goal_planning' | 'theme_management' | 'person_management' | 'general_chat';
+export type ChatSkill = 'widget_creation' | 'checklist_planning' | 'goal_planning' | 'theme_management' | 'person_management' | 'procedure_management' | 'general_chat';
 export type ChatMode = 'tool' | 'conversation' | 'domain';
 
 export interface UserBookContext {
@@ -71,6 +71,11 @@ export function routeChatRequest(input: string): ChatRoutingDecision {
 		hints.push('Vurder create_checklist/get_active_checklists/add_checklist_items.');
 	}
 
+	if (/lagre som oppskrift|lagre som fremgangsmåte|lagre prosedyre|gjør til oppskrift|lagre denne fremgangsmåten|fremgangsmåte|prosedyre/.test(text)) {
+		skills.add('procedure_management');
+		hints.push('Brukeren vil lagre en fremgangsmåte. Bruk manage_procedure med action=create eller suggest_save.');
+	}
+
 	if (/mal|mål|oppgave|plan|ukeplan/.test(text)) {
 		skills.add('goal_planning');
 	}
@@ -92,7 +97,7 @@ export function routeChatRequest(input: string): ChatRoutingDecision {
 	if (skills.size === 0) skills.add('general_chat');
 
 	// Fallback mode: infer from skills
-	const mode: ChatMode = skills.has('widget_creation') || skills.has('checklist_planning') || skills.has('goal_planning') || skills.has('person_management')
+	const mode: ChatMode = skills.has('widget_creation') || skills.has('checklist_planning') || skills.has('goal_planning') || skills.has('person_management') || skills.has('procedure_management')
 		? 'tool'
 		: (domains.has('health') || domains.has('economics') || domains.has('food') || domains.has('family') || domains.has('home'))
 			? 'domain'

@@ -2379,6 +2379,24 @@
 			activeChecklists = activeChecklists.filter((c) => c.id !== openChecklist?.id);
 			openChecklist = null;
 		}}
+		onStartChat={async (itemText) => {
+			openChecklist = null;
+			try {
+				const res = await fetch('/api/conversations/new', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ title: itemText })
+				});
+				if (res.ok) {
+					const { conversationId } = await res.json();
+					goto(`/samtaler?conversation=${conversationId}`);
+				} else {
+					goto('/samtaler');
+				}
+			} catch {
+				goto('/samtaler');
+			}
+		}}
 	/>
 {/if}
 

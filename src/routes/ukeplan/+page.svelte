@@ -13,6 +13,8 @@
 	import { groupChecklistItems, activityEmoji, sortByTime, sortByStatus, formatItemTime, stripTimeFromText, type GroupedChecklistEntry } from '$lib/utils/checklist-group';
 	import TaskContextMenu from '$lib/components/ui/TaskContextMenu.svelte';
 	import BreakdownModal from '$lib/components/ui/BreakdownModal.svelte';
+	import ProcedureBadge from '$lib/components/ui/ProcedureBadge.svelte';
+	import ProcedureSheet from '$lib/components/ui/ProcedureSheet.svelte';
 	import WeatherStrip, { type WeatherPeriod } from '$lib/components/ui/WeatherStrip.svelte';
 	import MentionPicker from '$lib/components/ui/MentionPicker.svelte';
 	import { createMentionState } from '$lib/utils/mention-input.svelte';
@@ -252,6 +254,99 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 	let editingTask = $state<EditingTask | null>(null);
 	let editTaskInput = $state<HTMLInputElement | null>(null);
 	let skipEditTask = false;
+
+	// Procedure matching state
+	interface ProcedureMatch {
+		procedureId: string;
+		title: string;
+		emoji: string | null;
+	}
+	let procedureMatches = $state<Map<string, ProcedureMatch>>(new Map());
+	let procedureSheetId = $state<string | null>(null);
+	let procedureSheetData = $state<any>(null);
+	let taskContextMenuItem = $state<WeekTask | null>(null);
+	let taskContextMenuRect = $state<DOMRect | null>(null);
+	let taskLongPressTimer: ReturnType<typeof setTimeout> | null = null;
+	let taskLongPressTriggered = $state(false);
+
+	async function loadProcedureMatches() {
+		if (data.weekTasks.length === 0) return;
+		const results = new Map<string, ProcedureMatch>();
+		for (const task of data.weekTasks) {
+			if (task.metadata?.matchedProcedureId) {
+				results.set(task.id, {
+					procedureId: task.metadata.matchedProcedureId,
+					title: task.metadata.matchedProcedureTitle ?? 'Oppskrift',
+					emoji: task.metadata.matchedProcedureEmoji ?? null
+				});
+				continue;
+			}
+			try {
+				const res = await fetch('/api/procedures/match', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ taskTitle: task.title })
+				});
+				const { matches } = await res.json();
+				if (matches?.length > 0) {
+					results.set(task.id, {
+						procedureId: matches[0].procedureId,
+						title: matches[0].title,
+						emoji: matches[0].emoji
+					});
+				}
+			} catch { /* ignore */ }
+		}
+		procedureMatches = results;
+	}
+
+	async function openProcedureSheet(procedureId: string) {
+		try {
+			const res = await fetch(`/api/procedures/${procedureId}`);
+			if (!res.ok) return;
+			procedureSheetData = await res.json();
+			procedureSheetId = procedureId;
+		} catch { /* ignore */ }
+	}
+
+	function handleTaskPressStart(e: PointerEvent, task: WeekTask) {
+		if (editingTask) return;
+		const target = e.currentTarget as HTMLElement;
+		const rect = target.getBoundingClientRect();
+		taskLongPressTriggered = false;
+		taskLongPressTimer = setTimeout(() => {
+			taskLongPressTriggered = true;
+			taskContextMenuItem = task;
+			taskContextMenuRect = rect;
+		}, LONG_PRESS_MS);
+	}
+
+	function handleTaskPressEnd() {
+		if (taskLongPressTimer) {
+			clearTimeout(taskLongPressTimer);
+			taskLongPressTimer = null;
+		}
+	}
+
+	async function handleTaskStartChat(task: WeekTask) {
+		try {
+			const res = await fetch('/api/conversations', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ title: `Oppgave: ${task.title}` })
+			});
+			if (!res.ok) {
+				goto('/samtaler');
+				return;
+			}
+			const { conversationId } = await res.json();
+			goto(`/samtaler?conversation=${conversationId}`);
+		} catch {
+			goto('/samtaler');
+		}
+	}
+
+	$effect(() => { loadProcedureMatches(); });
 	const taskMention = createMentionState();
 	let taskMentionPickerEl = $state<ReturnType<typeof MentionPicker> | null>(null);
 	let dragItem = $state<{ checklistId: string; itemId: string } | null>(null);
@@ -1627,7 +1722,13 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 					{@const intentBadge = getTaskIntentBadge(task)}
 					{@const intentFailureReason = getTaskIntentFailureReasonLabel(task)}
 					{@const evaluationLabel = getTaskEvaluationLabel(task)}
-					<li class="wp-task">
+					<li
+						class="wp-task"
+						onpointerdown={(e) => handleTaskPressStart(e, task)}
+						onpointerup={handleTaskPressEnd}
+						onpointercancel={handleTaskPressEnd}
+						onpointerleave={handleTaskPressEnd}
+					>
 						<div class="wp-task-main">
 							<div>
 								{#if editingTask?.taskId === task.id}
@@ -1674,12 +1775,22 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 										><Icon name="close" size={13} /></button>
 									</div>
 								{:else}
-									<button
-										type="button"
-										class="wp-task-title-btn"
-										class:done={doneTask(task)}
-										onclick={() => { editingTask = { taskId: task.id, title: task.title, originalTitle: task.title }; }}
-									>{task.title}</button>
+									<div class="wp-task-title-row">
+										<button
+											type="button"
+											class="wp-task-title-btn"
+											class:done={doneTask(task)}
+											onclick={() => { if (!taskLongPressTriggered) editingTask = { taskId: task.id, title: task.title, originalTitle: task.title }; }}
+										>{task.title}</button>
+										{#if procedureMatches.has(task.id)}
+											{@const match = procedureMatches.get(task.id)!}
+											<ProcedureBadge
+												emoji={match.emoji}
+												title={match.title}
+												onclick={() => openProcedureSheet(match.procedureId)}
+											/>
+										{/if}
+									</div>
 								{/if}
 								<p class="wp-task-meta">
 									{task.goalTitle ?? 'Uten mål'}
@@ -2334,6 +2445,27 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 	onUnskip={() => {
 		if (contextMenuItem) void setItemSkipped(contextMenuItem.checklistId, contextMenuItem.item.id, false);
 	}}
+	onStartChat={async () => {
+		if (!contextMenuItem) return;
+		const itemText = contextMenuItem.item.text;
+		contextMenuItem = null;
+		contextMenuRect = null;
+		try {
+			const res = await fetch('/api/conversations/new', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ title: itemText })
+			});
+			if (res.ok) {
+				const { conversationId } = await res.json();
+				goto(`/samtaler?conversation=${conversationId}`);
+			} else {
+				goto('/samtaler');
+			}
+		} catch {
+			goto('/samtaler');
+		}
+	}}
 />
 
 {#if breakdownTarget}
@@ -2341,6 +2473,45 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 		itemTitle={breakdownTarget.item.text}
 		onClose={() => (breakdownTarget = null)}
 		onSave={handleBreakdownSave}
+	/>
+{/if}
+
+<TaskContextMenu
+	open={taskContextMenuItem !== null}
+	anchor={taskContextMenuRect}
+	itemText={taskContextMenuItem?.title ?? ''}
+	onClose={() => { taskContextMenuItem = null; taskContextMenuRect = null; }}
+	onStartChat={() => { if (taskContextMenuItem) handleTaskStartChat(taskContextMenuItem); }}
+	onUseProcedure={taskContextMenuItem && procedureMatches.has(taskContextMenuItem.id)
+		? () => { if (taskContextMenuItem) { const m = procedureMatches.get(taskContextMenuItem.id); if (m) openProcedureSheet(m.procedureId); } }
+		: undefined}
+/>
+
+{#if procedureSheetData}
+	<ProcedureSheet
+		procedure={procedureSheetData}
+		onclose={() => { procedureSheetId = null; procedureSheetData = null; }}
+		onStartChat={(conversationId) => {
+			procedureSheetId = null;
+			procedureSheetData = null;
+			if (conversationId) {
+				goto(`/samtaler?id=${conversationId}`);
+			} else {
+				goto(`/samtaler?newChat=true&title=${encodeURIComponent(procedureSheetData?.title ?? '')}`);
+			}
+		}}
+		onApply={async (procedureId) => {
+			const dayChecklist = dayChecklistsState[selectedDayIso];
+			if (!dayChecklist) return;
+			await fetch(`/api/procedures/${procedureId}/apply`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ checklistId: dayChecklist.id })
+			});
+			procedureSheetId = null;
+			procedureSheetData = null;
+			await invalidateAll();
+		}}
 	/>
 {/if}
 
@@ -2822,6 +2993,12 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 		font-size: 0.95rem;
 	}
 
+	.wp-task-title-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
 	.wp-task-title-btn {
 		background: none;
 		border: none;
@@ -2833,7 +3010,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 		color: inherit;
 		text-align: left;
 		cursor: text;
-		width: 100%;
+		flex: 1;
 		display: block;
 	}
 

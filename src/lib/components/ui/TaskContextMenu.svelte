@@ -30,6 +30,8 @@
 		onSkip?: () => void;
 		onUnskip?: () => void;
 		onDelete?: () => void;
+		onUseProcedure?: () => void;
+		onStartChat?: () => void;
 	}
 
 	let {
@@ -45,7 +47,9 @@
 		onSnooze,
 		onSkip,
 		onUnskip,
-		onDelete
+		onDelete,
+		onUseProcedure,
+		onStartChat
 	}: Props = $props();
 
 	type View = 'main' | 'snooze' | 'pickDate' | 'confirmDelete';
@@ -126,6 +130,26 @@
 		<div class="tcm-title" title={itemText}>{itemText}</div>
 
 		{#if view === 'main'}
+			{#if onUseProcedure}
+				<button
+					class="tcm-btn tcm-btn-primary"
+					onpointerdown={(e) => e.stopPropagation()}
+					onclick={(e) => { e.stopPropagation(); onUseProcedure?.(); onClose(); }}
+				>
+					<span class="tcm-icon">📋</span> Bruk oppskrift
+				</button>
+			{/if}
+
+			{#if onStartChat}
+				<button
+					class="tcm-btn"
+					onpointerdown={(e) => e.stopPropagation()}
+					onclick={(e) => { e.stopPropagation(); onStartChat?.(); onClose(); }}
+				>
+					<span class="tcm-icon">💬</span> Start chat
+				</button>
+			{/if}
+
 			{#if onEdit}
 				<button
 					class="tcm-btn"
