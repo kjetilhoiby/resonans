@@ -314,6 +314,12 @@ export const conversations = pgTable('conversations', {
 	title: text('title'),
 	starred: boolean('starred').default(false).notNull(),
 	archived: boolean('archived').default(false).notNull(),
+	metadata: jsonb('metadata').$type<{
+		sourceTaskId?: string;
+		sourceChecklistId?: string;
+		sourceItemId?: string;
+		sourceItemText?: string;
+	}>(),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
 }, (table) => ({

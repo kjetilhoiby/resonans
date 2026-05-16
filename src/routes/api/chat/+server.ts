@@ -1675,6 +1675,29 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			console.warn('Failed to load procedure context:', err);
 		}
 
+		// Bygg source context fra samtale-metadata (kilde-oppgave/sjekkliste)
+		let sourceContextPrompt = '';
+		const convMeta = (conversation as any).metadata as { sourceTaskId?: string; sourceChecklistId?: string; sourceItemId?: string; sourceItemText?: string } | null;
+		if (convMeta && (convMeta.sourceTaskId || convMeta.sourceChecklistId || convMeta.sourceItemId)) {
+			sourceContextPrompt = '\n\n--- KILDE-OPPGAVE ---\n';
+			sourceContextPrompt += 'Denne samtalen ble startet fra en spesifikk oppgave. ';
+			if (convMeta.sourceItemText) {
+				sourceContextPrompt += `Oppgaven er: "${convMeta.sourceItemText}". `;
+			}
+			if (convMeta.sourceChecklistId) {
+				sourceContextPrompt += `Sjekkliste-ID: ${convMeta.sourceChecklistId}. `;
+			}
+			if (convMeta.sourceItemId) {
+				sourceContextPrompt += `Punkt-ID: ${convMeta.sourceItemId}. `;
+			}
+			if (convMeta.sourceTaskId) {
+				sourceContextPrompt += `Oppgave-ID: ${convMeta.sourceTaskId}. `;
+			}
+			sourceContextPrompt += '\nHvis du oppretter deloppgaver (breakdown), legg dem som barn under dette punktet. ';
+			sourceContextPrompt += 'Hvis du foreslår å lagre en fremgangsmåte (manage_procedure), sett conversationId til denne samtalens ID.\n';
+			sourceContextPrompt += '--- SLUTT PÅ KILDE-OPPGAVE ---\n';
+		}
+
 		// Add current date context
 		const today = new Date();
 		const dateContext = `\n--- DAGENS DATO ---\nDagens dato er: ${today.toLocaleDateString('nb-NO', { 
@@ -1695,7 +1718,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		});
 
 		const messages: ChatCompletionMessageParam[] = [
-			{ role: 'system', content: promptPrefix + systemPrompt + memoryContext + personContext + goalsContext + procedureContext + dateContext }
+			{ role: 'system', content: promptPrefix + systemPrompt + memoryContext + personContext + goalsContext + procedureContext + sourceContextPrompt + dateContext }
 		];
 
 		// Legg til historikk (unntatt den siste brukermeldingen som allerede er der)

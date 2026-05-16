@@ -2379,13 +2379,16 @@
 			activeChecklists = activeChecklists.filter((c) => c.id !== openChecklist?.id);
 			openChecklist = null;
 		}}
-		onStartChat={async (itemText) => {
+		onStartChat={async (itemText, checklistId, itemId) => {
 			openChecklist = null;
 			try {
 				const res = await fetch('/api/conversations/new', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ title: itemText })
+					body: JSON.stringify({
+						title: itemText,
+						sourceContext: { sourceChecklistId: checklistId, sourceItemId: itemId, sourceItemText: itemText }
+					})
 				});
 				if (res.ok) {
 					const { conversationId } = await res.json();

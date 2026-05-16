@@ -12,17 +12,32 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 
 		let requestedTitle: string | null = null;
 		let requestedKind: 'default' | 'book' = 'default';
+		let sourceContext: {
+			sourceTaskId?: string;
+			sourceChecklistId?: string;
+			sourceItemId?: string;
+			sourceItemText?: string;
+		} | null = null;
 
 		try {
-			// Optional payload allows clients to create book-specific conversation threads.
 			const body = await request.json();
 			if (body && typeof body === 'object') {
-				const payload = body as { title?: unknown; kind?: unknown };
+				const payload = body as { title?: unknown; kind?: unknown; sourceContext?: unknown };
 				if (typeof payload.title === 'string' && payload.title.trim().length > 0) {
 					requestedTitle = payload.title.trim();
 				}
 				if (payload.kind === 'book') {
 					requestedKind = 'book';
+				}
+				if (payload.sourceContext && typeof payload.sourceContext === 'object') {
+					const sc = payload.sourceContext as Record<string, unknown>;
+					sourceContext = {
+						...(typeof sc.sourceTaskId === 'string' ? { sourceTaskId: sc.sourceTaskId } : {}),
+						...(typeof sc.sourceChecklistId === 'string' ? { sourceChecklistId: sc.sourceChecklistId } : {}),
+						...(typeof sc.sourceItemId === 'string' ? { sourceItemId: sc.sourceItemId } : {}),
+						...(typeof sc.sourceItemText === 'string' ? { sourceItemText: sc.sourceItemText } : {})
+					};
+					if (Object.keys(sourceContext).length === 0) sourceContext = null;
 				}
 			}
 		} catch {
@@ -36,11 +51,11 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 				: requestedTitle
 			: defaultTitle;
 
-		// Opprett ny samtale
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const newConversation = ((await db.insert(conversations).values({
 			userId: locals.userId,
-			title
+			title,
+			...(sourceContext ? { metadata: sourceContext } : {})
 		}).returning()) as any[])[0];
 
 		return json({ 

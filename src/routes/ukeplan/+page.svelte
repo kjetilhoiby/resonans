@@ -330,10 +330,13 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 
 	async function handleTaskStartChat(task: WeekTask) {
 		try {
-			const res = await fetch('/api/conversations', {
+			const res = await fetch('/api/conversations/new', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ title: `Oppgave: ${task.title}` })
+				body: JSON.stringify({
+					title: `Oppgave: ${task.title}`,
+					sourceContext: { sourceTaskId: task.id, sourceItemText: task.title }
+				})
 			});
 			if (!res.ok) {
 				goto('/samtaler');
@@ -2448,13 +2451,18 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 	onStartChat={async () => {
 		if (!contextMenuItem) return;
 		const itemText = contextMenuItem.item.text;
+		const checklistId = contextMenuItem.checklistId;
+		const itemId = contextMenuItem.item.id;
 		contextMenuItem = null;
 		contextMenuRect = null;
 		try {
 			const res = await fetch('/api/conversations/new', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ title: itemText })
+				body: JSON.stringify({
+					title: itemText,
+					sourceContext: { sourceChecklistId: checklistId, sourceItemId: itemId, sourceItemText: itemText }
+				})
 			});
 			if (res.ok) {
 				const { conversationId } = await res.json();
