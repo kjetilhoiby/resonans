@@ -15,6 +15,14 @@ const APP_REGISTRY: Record<string, ExternalAppConfig> = {
 		sensorProvider: 'ekko',
 		sensorType: 'gps_device',
 		sensorSubtype: 'iphone'
+	},
+	ping: {
+		id: 'ping',
+		label: 'Ping',
+		deepLinkScheme: 'ping',
+		sensorProvider: 'ping',
+		sensorType: 'smart_plug',
+		sensorSubtype: 'appliance_monitor'
 	}
 };
 

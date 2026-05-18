@@ -21,6 +21,8 @@ export const users = pgTable('users', {
 				relationshipCheckinMorning?: string[];
 				digestDay?: string[];
 				egenfrekvensCheckin?: string[];
+				applianceCycleStart?: string[];
+				applianceCycleFinish?: string[];
 			};
 		};
 		dailyCheckIn?: { enabled: boolean; time: string }; // format: "09:00"
@@ -39,6 +41,7 @@ export const users = pgTable('users', {
 		milestones?: { enabled: boolean };
 		reminders?: { enabled: boolean };
 		workoutImports?: { enabled: boolean };
+		applianceCycles?: { enabled: boolean; notifyStart?: boolean; notifyFinish?: boolean };
 		inactivityAlerts?: { enabled: boolean; daysThreshold: number };
 	}>(),
 	timezone: text('timezone').default('Europe/Oslo'),

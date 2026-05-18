@@ -5,6 +5,7 @@ import { sensors } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { getAppConfig, type ExternalAppConfig } from '$lib/server/app-registry';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
+import { notifyPingEvent } from '$lib/server/ping-notifications';
 
 async function getOrCreateSensor(userId: string, app: ExternalAppConfig): Promise<string> {
 	const existing = await db.query.sensors.findFirst({
@@ -82,6 +83,15 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			},
 			{ conflictMode: 'upsert_sensor_datatype_timestamp' }
 		);
+
+		if (app.id === 'ping' && result.inserted) {
+			const appUrl = new URL(request.url).origin;
+			notifyPingEvent({
+				userId,
+				appUrl,
+				data: { event: eventType, ...((data ?? {}) as Record<string, unknown>) } as any
+			}).catch((err) => console.error('[ping-notify]', err));
+		}
 
 		return json({
 			ok: true,
