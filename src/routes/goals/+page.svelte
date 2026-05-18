@@ -188,16 +188,6 @@
 	}
 
 
-	function getRunningRequiredLegend(sensorProgress: NonNullable<Props['data']['sensorProgressMap'][string]>): string | null {
-		const endMs = new Date(`${sensorProgress.endDate}T12:00:00Z`).getTime();
-		const nowMs = new Date(new Date().toISOString().slice(0, 10) + 'T12:00:00Z').getTime();
-		const daysLeft = Math.ceil((endMs - nowMs) / 86400000);
-		const kmLeft = Math.max(0, sensorProgress.targetKm - sensorProgress.currentKm);
-		if (daysLeft <= 0) return null;
-		const requiredPerDay = Math.round((kmLeft / daysLeft) * 10) / 10;
-		return `··· Nødvendig snitt: ${requiredPerDay} km/dag (${daysLeft} dager igjen)`;
-	}
-
 	type PaceEstimate = {
 		diffLabel: string;
 		diffTone: 'ahead' | 'behind' | 'neutral';
@@ -367,7 +357,6 @@
 					{@const endDate = formatDate(goal.metadata?.endDate)}
 					{@const sensorProgress = data.sensorProgressMap[goal.id]}
 					{@const weightProgress = data.weightProgressMap[goal.id]}
-					{@const runningRequiredLegend = sensorProgress ? getRunningRequiredLegend(sensorProgress) : null}
 					{@const paceEstimate = sensorProgress
 						? computePaceEstimate({
 								startDate: sensorProgress.startDate,
@@ -478,11 +467,9 @@
 											valueFormatter={formatMetricValue}
 											actualStroke="#f0954a"
 											actualFill="rgba(240, 149, 74, 0.15)"
-											planStroke="#3a3a3a"
-											requiredStroke="#6ea8fe"
-											actualLegend="— Faktisk"
+											planStroke="#6b6b6b"
+											actualLegend="— Målt"
 											planLegend="- - Plan"
-											requiredLegend={runningRequiredLegend}
 											height={220}
 										/>
 									</div>
@@ -505,11 +492,9 @@
 											]}
 											valueFormatter={formatMetricValue}
 											actualStroke="#8adf79"
-											planStroke="#3a3a3a"
-											requiredStroke="#6ea8fe"
-											actualLegend="— Faktisk vekt"
+											planStroke="#6b6b6b"
+											actualLegend="— Målt vekt"
 											planLegend="- - Plan"
-											requiredLegend="··· Nødvendig bane"
 											height={220}
 										/>
 									</div>

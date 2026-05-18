@@ -26,10 +26,8 @@
 		actualStroke?: string;
 		actualFill?: string;
 		planStroke?: string;
-		requiredStroke?: string;
 		actualLegend?: string;
 		planLegend?: string;
-		requiredLegend?: string | null;
 		height?: number;
 		animateOnMount?: boolean;
 	}
@@ -50,11 +48,9 @@
 		valueFormatter = (value: number) => `${Math.round(value * 10) / 10}`,
 		actualStroke = '#f0954a',
 		actualFill = 'rgba(240, 149, 74, 0.15)',
-		planStroke = '#3a3a3a',
-		requiredStroke = '#6ea8fe',
-		actualLegend = '— Faktisk',
+		planStroke = '#6b6b6b',
+		actualLegend = '— Målt',
 		planLegend = '- - Plan',
-		requiredLegend = null,
 		height = 100,
 		animateOnMount = true
 	}: Props = $props();
@@ -149,11 +145,6 @@
 
 		const planPath = `M${padL} ${yAt(startValue).toFixed(1)} L${(padL + pw).toFixed(1)} ${yAt(targetValue).toFixed(1)}`;
 
-		let requiredPath = '';
-		if (today >= startDate && today < endDate) {
-			requiredPath = `M${xForDate(today).toFixed(1)} ${yAt(currentValue).toFixed(1)} L${(padL + pw).toFixed(1)} ${yAt(targetValue).toFixed(1)}`;
-		}
-
 		const todayX = today >= startDate && today <= endDate ? xForDate(today) : null;
 		const resolvedGridValues = gridValues.length > 0
 			? gridValues
@@ -166,7 +157,6 @@
 			actualPath,
 			areaPath,
 			planPath,
-			requiredPath,
 			todayX,
 			gridLines: resolvedGridValues.map((value) => ({ value, y: yAt(value), label: valueFormatter(value) })),
 			yBottom: padT + ph
@@ -181,18 +171,14 @@
 			<text x={padL - 4} y={grid.y + 4} text-anchor="end" class="axis-label">{grid.label}</text>
 		{/each}
 
-		<path class:ready d={chart.planPath} pathLength="1" class="trajectory-path plan-path" stroke={planStroke} stroke-width="1.5" stroke-dasharray="5 3" fill="none" />
-
-		{#if chart.requiredPath}
-			<path class:ready d={chart.requiredPath} pathLength="1" class="trajectory-path required-path" stroke={requiredStroke} stroke-width="1.5" stroke-dasharray="3 3" fill="none" />
-		{/if}
+		<path class:ready d={chart.planPath} pathLength="1" class="trajectory-path plan-path" stroke={planStroke} stroke-width="2" stroke-dasharray="6 4" fill="none" />
 
 		{#if chart.areaPath}
 			<path class:ready d={chart.areaPath} class="trajectory-area" fill={actualFill} />
 		{/if}
 
 		{#if chart.actualPath}
-			<path class:ready d={chart.actualPath} pathLength="1" class="trajectory-path actual-path" stroke={actualStroke} stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+			<path class:ready d={chart.actualPath} pathLength="1" class="trajectory-path actual-path" stroke={actualStroke} stroke-width="2.75" fill="none" stroke-linecap="round" stroke-linejoin="round" />
 		{/if}
 
 		{#if chart.todayX !== null}
@@ -206,9 +192,6 @@
 	<div class="chart-legend">
 		<span class="legend-item legend-actual" style={`color:${actualStroke};`}>{actualLegend}</span>
 		<span class="legend-item legend-plan" style={`color:${planStroke};`}>{planLegend}</span>
-		{#if requiredLegend && chart.requiredPath}
-			<span class="legend-item legend-required" style={`color:${requiredStroke};`}>{requiredLegend}</span>
-		{/if}
 	</div>
 </div>
 
@@ -252,9 +235,10 @@
 	.chart-legend {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.75rem;
-		margin-top: 0.35rem;
-		font-size: 0.68rem;
+		gap: 1rem;
+		margin-top: 0.5rem;
+		font-size: 0.8rem;
+		font-weight: 500;
 	}
 
 	.legend-item {
