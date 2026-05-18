@@ -60,9 +60,9 @@
 	}: Props = $props();
 
 	const W = 400;
-	const padL = 30;
-	const padR = 8;
-	const padT = 8;
+	const padL = 22;
+	const padR = 6;
+	const padT = 6;
 	const padB = 18;
 
 	let ready = $state(!animateOnMount);
@@ -214,8 +214,8 @@
 
 <style>
 	.trajectory-chart {
-		margin-top: 1rem;
-		margin-bottom: 0.5rem;
+		margin-top: 0.5rem;
+		margin-bottom: 0.25rem;
 	}
 
 	.trajectory-chart svg {

@@ -375,52 +375,58 @@
 								{/if}
 
 								{#if sensorProgress && sensorProgress.dailyKm}
-									<TrajectoryChart
-										points={sensorProgress.dailyKm.map((point) => ({ date: point.date, value: point.km }))}
-										startDate={sensorProgress.startDate}
-										endDate={sensorProgress.endDate}
-										startValue={0}
-										targetValue={sensorProgress.targetKm}
-										currentValue={sensorProgress.currentKm}
-										seriesMode="incremental"
-										showArea={true}
-										paddingMode="none"
-										minValue={0}
-										maxValue={sensorProgress.targetKm}
-										gridValues={[sensorProgress.targetKm, Math.round(sensorProgress.targetKm / 2), 0]}
-										valueFormatter={formatMetricValue}
-										actualStroke="#f0954a"
-										actualFill="rgba(240, 149, 74, 0.15)"
-										planStroke="#3a3a3a"
-										requiredStroke="#6ea8fe"
-										actualLegend="— Faktisk"
-										planLegend="- - Plan"
-										requiredLegend={runningRequiredLegend}
-									/>
+									<div class="goal-chart-bleed">
+										<TrajectoryChart
+											points={sensorProgress.dailyKm.map((point) => ({ date: point.date, value: point.km }))}
+											startDate={sensorProgress.startDate}
+											endDate={sensorProgress.endDate}
+											startValue={0}
+											targetValue={sensorProgress.targetKm}
+											currentValue={sensorProgress.currentKm}
+											seriesMode="incremental"
+											showArea={true}
+											paddingMode="none"
+											minValue={0}
+											maxValue={sensorProgress.targetKm}
+											gridValues={[sensorProgress.targetKm, Math.round(sensorProgress.targetKm / 2), 0]}
+											valueFormatter={formatMetricValue}
+											actualStroke="#f0954a"
+											actualFill="rgba(240, 149, 74, 0.15)"
+											planStroke="#3a3a3a"
+											requiredStroke="#6ea8fe"
+											actualLegend="— Faktisk"
+											planLegend="- - Plan"
+											requiredLegend={runningRequiredLegend}
+											height={220}
+										/>
+									</div>
 								{:else if weightProgress}
-									<TrajectoryChart
-										points={weightProgress.points.map((point) => ({ date: point.date, value: point.weight }))}
-										startDate={weightProgress.startDate}
-										endDate={weightProgress.endDate}
-										startValue={weightProgress.startWeight}
-										targetValue={weightProgress.targetWeight}
-										currentValue={weightProgress.currentWeight}
-										seriesMode="absolute"
-										showArea={false}
-										paddingMode="auto"
-										gridValues={[
-											Math.round(weightProgress.startWeight * 10) / 10,
-											Math.round(((weightProgress.startWeight + weightProgress.targetWeight) / 2) * 10) / 10,
-											Math.round(weightProgress.targetWeight * 10) / 10
-										]}
-										valueFormatter={formatMetricValue}
-										actualStroke="#8adf79"
-										planStroke="#3a3a3a"
-										requiredStroke="#6ea8fe"
-										actualLegend="— Faktisk vekt"
-										planLegend="- - Plan"
-										requiredLegend="··· Nødvendig bane"
-									/>
+									<div class="goal-chart-bleed">
+										<TrajectoryChart
+											points={weightProgress.points.map((point) => ({ date: point.date, value: point.weight }))}
+											startDate={weightProgress.startDate}
+											endDate={weightProgress.endDate}
+											startValue={weightProgress.startWeight}
+											targetValue={weightProgress.targetWeight}
+											currentValue={weightProgress.currentWeight}
+											seriesMode="absolute"
+											showArea={false}
+											paddingMode="auto"
+											gridValues={[
+												Math.round(weightProgress.startWeight * 10) / 10,
+												Math.round(((weightProgress.startWeight + weightProgress.targetWeight) / 2) * 10) / 10,
+												Math.round(weightProgress.targetWeight * 10) / 10
+											]}
+											valueFormatter={formatMetricValue}
+											actualStroke="#8adf79"
+											planStroke="#3a3a3a"
+											requiredStroke="#6ea8fe"
+											actualLegend="— Faktisk vekt"
+											planLegend="- - Plan"
+											requiredLegend="··· Nødvendig bane"
+											height={220}
+										/>
+									</div>
 								{/if}
 
 								<div class="goal-meta-row">
@@ -685,6 +691,10 @@
 	.goal-details {
 		padding: 0 1.5rem 1.5rem;
 		border-top: 1px solid #1e1e1e;
+	}
+
+	.goal-chart-bleed {
+		margin: 0.75rem -1.5rem 0.25rem;
 	}
 
 	.goal-description {
