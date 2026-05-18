@@ -219,6 +219,38 @@ export interface FamilyDashboardData {
 	}>>;
 }
 
+export interface HomeDashboardData {
+	projects: Array<{
+		id: string;
+		title: string;
+		description?: string | null;
+		domain: string | null;
+		type: string | null;
+		status: string;
+		metadata: Record<string, unknown>;
+		progress: import('$lib/server/services/project-metrics-service').ProjectProgress | null;
+	}>;
+	seasonalTasks: Array<{
+		id: string;
+		title: string;
+		season: string | null;
+		recurrenceYearly: boolean;
+		status: string;
+	}>;
+	routines: Array<{
+		id: string;
+		title: string;
+		emoji: string;
+		completedAt: Date | string | null;
+	}>;
+	applianceEvents: Array<{
+		id: string;
+		dataType: string;
+		timestamp: Date | string;
+		data: unknown;
+	}>;
+}
+
 type DashboardPayloadMap = {
 	health: HealthDashboardData;
 	economics: EconomicsDashboardData;
@@ -227,6 +259,7 @@ type DashboardPayloadMap = {
 	books: BooksDashboardData;
 	family: FamilyDashboardData;
 	egenfrekvens: EgenfrekvensDashboardData;
+	home: HomeDashboardData;
 };
 
 export interface DashboardCacheEntry<K extends DashboardKind = DashboardKind> {

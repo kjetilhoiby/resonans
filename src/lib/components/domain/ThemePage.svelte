@@ -22,12 +22,13 @@
 	import TripListsPanel from './TripListsPanel.svelte';
 	import BookDashboard from './BookDashboard.svelte';
 	import EgenfrekvensDashboard from './EgenfrekvensDashboard.svelte';
+	import HomeDashboard from './HomeDashboard.svelte';
 	import ScreenTitle from '../ui/ScreenTitle.svelte';
 	import Icon from '../ui/Icon.svelte';
 	import TriageCard from '../composed/TriageCard.svelte';
 	import GoalRing from '../ui/GoalRing.svelte';
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
-	import { fetchDashboard, getCachedDashboard, type EconomicsDashboardData, type HealthDashboardData, type TravelDashboardData, type FoodDashboardData, type FamilyDashboardData, type EgenfrekvensDashboardData } from '$lib/client/dashboard-cache';
+	import { fetchDashboard, getCachedDashboard, type EconomicsDashboardData, type HealthDashboardData, type TravelDashboardData, type FoodDashboardData, type FamilyDashboardData, type EgenfrekvensDashboardData, type HomeDashboardData } from '$lib/client/dashboard-cache';
 	import { getThemeDashboardDefinition, resolveThemeDashboardKind } from '$lib/domain/theme-dashboard-registry';
 	import { finishNavMetric, startNavMetric } from '$lib/client/nav-metrics';
 	import { ChatState } from '$lib/client/chat-state.svelte';
@@ -194,6 +195,7 @@
 	let foodDashboard = $state<FoodDashboardData | null>(null);
 	let familyDashboard = $state<FamilyDashboardData | null>(null);
 	let egenfrekvensDashboard = $state<EgenfrekvensDashboardData | null>(null);
+	let homeDashboard = $state<HomeDashboardData | null>(null);
 	let dashboardLoading = $state(false);
 	let dashboardLoaded = $state(false);
 	let dashboardError = $state('');
@@ -364,6 +366,11 @@
 		return { data: egenfrekvensDashboard };
 	});
 
+	const homeDashboardProps = $derived.by(() => {
+		if (activeDashboardKind !== 'home' || !homeDashboard) return null;
+		return homeDashboard;
+	});
+
 	onMount(() => {
 		finishNavMetric('tema');
 		void preloadCode('/');
@@ -412,6 +419,8 @@
 			familyDashboard = cached.data as FamilyDashboardData;
 		} else if (kind === 'egenfrekvens') {
 			egenfrekvensDashboard = cached.data as EgenfrekvensDashboardData;
+		} else if (kind === 'home') {
+			homeDashboard = cached.data as HomeDashboardData;
 		}
 
 		return cached;
@@ -452,6 +461,8 @@
 				familyDashboard = result.data as FamilyDashboardData;
 			} else if (kind === 'egenfrekvens') {
 				egenfrekvensDashboard = result.data as EgenfrekvensDashboardData;
+			} else if (kind === 'home') {
+				homeDashboard = result.data as HomeDashboardData;
 			}
 			dashboardLoaded = true;
 		} catch {
@@ -1549,6 +1560,13 @@
 							));
 							void ensureDashboardLoaded(true);
 						}}
+					/>
+				{/if}
+
+				{#if homeDashboardProps}
+					<HomeDashboard
+						{...homeDashboardProps}
+						onOpenProject={(id) => goto(`/prosjekt/${id}`)}
 					/>
 				{/if}
 
