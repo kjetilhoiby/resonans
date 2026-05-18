@@ -198,6 +198,71 @@
 		return `··· Nødvendig snitt: ${requiredPerDay} km/dag (${daysLeft} dager igjen)`;
 	}
 
+	type PaceEstimate = {
+		diffLabel: string;
+		diffTone: 'ahead' | 'behind' | 'neutral';
+		estimateLabel: string;
+		estimateTone: 'ahead' | 'behind' | 'neutral';
+	};
+
+	function computePaceEstimate(opts: {
+		startDate: string;
+		endDate: string;
+		startValue: number;
+		currentValue: number;
+		targetValue: number;
+		unit: string;
+		formatValue: (v: number) => string;
+	}): PaceEstimate | null {
+		const startMs = new Date(`${opts.startDate}T12:00:00Z`).getTime();
+		const endMs = new Date(`${opts.endDate}T12:00:00Z`).getTime();
+		const nowMs = new Date(new Date().toISOString().slice(0, 10) + 'T12:00:00Z').getTime();
+		const totalDays = Math.max(1, Math.round((endMs - startMs) / 86400000));
+		const daysElapsed = Math.max(0, Math.min(totalDays, Math.round((nowMs - startMs) / 86400000)));
+		if (daysElapsed <= 0) return null;
+
+		const totalChange = opts.targetValue - opts.startValue;
+		const direction = totalChange === 0 ? 1 : Math.sign(totalChange);
+
+		const expectedAtNow = opts.startValue + (daysElapsed / totalDays) * totalChange;
+		const signedDiff = (opts.currentValue - expectedAtNow) * direction;
+		const absDiff = Math.abs(signedDiff);
+
+		let diffTone: PaceEstimate['diffTone'];
+		let diffLabel: string;
+		if (absDiff < 0.5) {
+			diffTone = 'neutral';
+			diffLabel = 'På skjema';
+		} else if (signedDiff > 0) {
+			diffTone = 'ahead';
+			diffLabel = `${opts.formatValue(absDiff)} ${opts.unit} foran plan`;
+		} else {
+			diffTone = 'behind';
+			diffLabel = `${opts.formatValue(absDiff)} ${opts.unit} bak plan`;
+		}
+
+		const ratePerDay = (opts.currentValue - opts.startValue) / daysElapsed;
+		const projected = opts.startValue + ratePerDay * totalDays;
+		const projectedSignedDiff = (projected - opts.targetValue) * direction;
+		const projectedAbsDiff = Math.abs(projected - opts.targetValue);
+
+		let estimateTone: PaceEstimate['estimateTone'];
+		let estimateSuffix = '';
+		if (projectedAbsDiff < 0.5) {
+			estimateTone = 'neutral';
+		} else if (projectedSignedDiff > 0) {
+			estimateTone = 'ahead';
+			estimateSuffix = ` (${opts.formatValue(projectedAbsDiff)} ${opts.unit} over mål)`;
+		} else {
+			estimateTone = 'behind';
+			estimateSuffix = ` (${opts.formatValue(projectedAbsDiff)} ${opts.unit} under mål)`;
+		}
+
+		const estimateLabel = `Estimat ved dagens snitt: ~${opts.formatValue(projected)} ${opts.unit}${estimateSuffix}`;
+
+		return { diffLabel, diffTone, estimateLabel, estimateTone };
+	}
+
 	function formatMetricValue(value: number): string {
 		return `${Math.round(value * 10) / 10}`;
 	}
@@ -303,6 +368,27 @@
 					{@const sensorProgress = data.sensorProgressMap[goal.id]}
 					{@const weightProgress = data.weightProgressMap[goal.id]}
 					{@const runningRequiredLegend = sensorProgress ? getRunningRequiredLegend(sensorProgress) : null}
+					{@const paceEstimate = sensorProgress
+						? computePaceEstimate({
+								startDate: sensorProgress.startDate,
+								endDate: sensorProgress.endDate,
+								startValue: 0,
+								currentValue: sensorProgress.currentKm,
+								targetValue: sensorProgress.targetKm,
+								unit: 'km',
+								formatValue: formatMetricValue
+							})
+						: weightProgress
+							? computePaceEstimate({
+									startDate: weightProgress.startDate,
+									endDate: weightProgress.endDate,
+									startValue: weightProgress.startWeight,
+									currentValue: weightProgress.currentWeight,
+									targetValue: weightProgress.targetWeight,
+									unit: 'kg',
+									formatValue: formatMetricValue
+								})
+							: null}
 					<div id={`goal-${goal.id}`} class="goal-card" class:expanded={isExpanded}>
 						<!-- Alltid synlig: sammendrag -->
 						<button
@@ -426,6 +512,13 @@
 											requiredLegend="··· Nødvendig bane"
 											height={220}
 										/>
+									</div>
+								{/if}
+
+								{#if paceEstimate}
+									<div class="pace-row">
+										<span class={`pace-pill pace-${paceEstimate.diffTone}`}>{paceEstimate.diffLabel}</span>
+										<span class={`pace-pill pace-${paceEstimate.estimateTone}`}>{paceEstimate.estimateLabel}</span>
 									</div>
 								{/if}
 
@@ -695,6 +788,41 @@
 
 	.goal-chart-bleed {
 		margin: 0.75rem -1.5rem 0.25rem;
+	}
+
+	.pace-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		margin: 0.5rem 0 1rem;
+	}
+
+	.pace-pill {
+		display: inline-flex;
+		align-items: center;
+		padding: 0.35rem 0.7rem;
+		border-radius: 999px;
+		font-size: 0.78rem;
+		font-weight: 500;
+		border: 1px solid transparent;
+	}
+
+	.pace-ahead {
+		background: rgba(138, 223, 121, 0.1);
+		border-color: rgba(138, 223, 121, 0.25);
+		color: #8adf79;
+	}
+
+	.pace-behind {
+		background: rgba(240, 149, 74, 0.1);
+		border-color: rgba(240, 149, 74, 0.25);
+		color: #f0954a;
+	}
+
+	.pace-neutral {
+		background: #1e1e1e;
+		border-color: #2a2a2a;
+		color: #aaa;
 	}
 
 	.goal-description {
