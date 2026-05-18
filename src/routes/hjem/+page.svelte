@@ -23,7 +23,7 @@
 	projects={data.projects}
 	seasonalTasks={data.seasonalTasks}
 	routines={data.routines}
-	applianceEvents={data.applianceEvents}
+	appliances={data.appliances}
 	onOpenProject={openProject}
 	onOpenChat={openChat}
 />

@@ -1,7 +1,7 @@
 import { db } from '$lib/db';
 import { tasks, sensorEvents, sensors, checklists } from '$lib/db/schema';
 import { ProjectMetricsService } from '$lib/server/services/project-metrics-service';
-import { currentSeason, HOME_APPLIANCE_SUBTYPES } from '$lib/domains/home';
+import { currentSeason, HOME_APPLIANCE_SUBTYPES, HOME_APPLIANCE_LABELS, type HomeApplianceSubtype } from '$lib/domains/home';
 import { and, eq, desc, inArray } from 'drizzle-orm';
 import type { PageServerLoad } from './$types';
 
@@ -24,7 +24,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 			.orderBy(desc(checklists.createdAt))
 			.limit(10),
 		db
-			.select({ id: sensors.id })
+			.select({ id: sensors.id, subtype: sensors.subtype, name: sensors.name })
 			.from(sensors)
 			.where(
 				and(
@@ -34,12 +34,28 @@ export const load: PageServerLoad = async ({ locals }) => {
 			)
 	]);
 
-	let applianceEvents: Array<{ id: string; dataType: string | null; timestamp: Date; data: unknown }> = [];
+	const appliances: Array<{
+		sensorId: string;
+		subtype: string;
+		name: string;
+		label: string;
+		emoji: string;
+		recentEvents: Array<{
+			id: string;
+			eventType: string;
+			dataType: string;
+			timestamp: string;
+			data: Record<string, unknown>;
+		}>;
+	}> = [];
+
 	if (ownedSensors.length > 0) {
 		const sensorIds = ownedSensors.map((s) => s.id);
-		const rows = await db
+		const allEvents = await db
 			.select({
 				id: sensorEvents.id,
+				sensorId: sensorEvents.sensorId,
+				eventType: sensorEvents.eventType,
 				dataType: sensorEvents.dataType,
 				timestamp: sensorEvents.timestamp,
 				data: sensorEvents.data
@@ -47,8 +63,30 @@ export const load: PageServerLoad = async ({ locals }) => {
 			.from(sensorEvents)
 			.where(and(eq(sensorEvents.userId, userId), inArray(sensorEvents.sensorId, sensorIds)))
 			.orderBy(desc(sensorEvents.timestamp))
-			.limit(10);
-		applianceEvents = rows;
+			.limit(50);
+
+		for (const sensor of ownedSensors) {
+			const sub = (sensor.subtype ?? 'washer') as HomeApplianceSubtype;
+			const meta = HOME_APPLIANCE_LABELS[sub] ?? { label: sensor.name, emoji: '🔌' };
+			const events = allEvents
+				.filter((e) => e.sensorId === sensor.id)
+				.slice(0, 10);
+
+			appliances.push({
+				sensorId: sensor.id,
+				subtype: sub,
+				name: sensor.name,
+				label: meta.label,
+				emoji: meta.emoji,
+				recentEvents: events.map((e) => ({
+					id: e.id,
+					eventType: e.eventType,
+					dataType: e.dataType ?? '',
+					timestamp: (e.timestamp as Date).toISOString(),
+					data: (e.data ?? {}) as Record<string, unknown>
+				}))
+			});
+		}
 	}
 
 	return {
@@ -75,11 +113,6 @@ export const load: PageServerLoad = async ({ locals }) => {
 			emoji: r.emoji,
 			completedAt: r.completedAt
 		})),
-		applianceEvents: applianceEvents.map((e) => ({
-			id: e.id,
-			dataType: e.dataType ?? '',
-			timestamp: e.timestamp,
-			data: e.data
-		}))
+		appliances
 	};
 };

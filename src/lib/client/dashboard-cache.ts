@@ -243,11 +243,19 @@ export interface HomeDashboardData {
 		emoji: string;
 		completedAt: Date | string | null;
 	}>;
-	applianceEvents: Array<{
-		id: string;
-		dataType: string;
-		timestamp: Date | string;
-		data: unknown;
+	appliances: Array<{
+		sensorId: string;
+		subtype: string;
+		name: string;
+		label: string;
+		emoji: string;
+		recentEvents: Array<{
+			id: string;
+			eventType: string;
+			dataType: string;
+			timestamp: string;
+			data: Record<string, unknown>;
+		}>;
 	}>;
 }
 
