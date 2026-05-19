@@ -1,6 +1,14 @@
 <script lang="ts">
-	import { ACTION_PYRAMID_LABELS, BALANCE_LABELS } from '$lib/domains/egenfrekvens';
+	import { ACTION_PYRAMID_LABELS } from '$lib/domains/egenfrekvens';
 	import type { EgenfrekvensDashboardData, EgenfrekvensCheckinPointData } from '$lib/client/dashboard-cache';
+
+	const LEVEL_LABELS: Record<number, string> = {
+		1: 'Helt nede',
+		2: 'Tungt',
+		3: 'Midt på',
+		4: 'Greit',
+		5: 'God flyt'
+	};
 
 	interface Props {
 		data: EgenfrekvensDashboardData;
@@ -36,17 +44,31 @@
 		return '#ee8c8c';
 	}
 
+	function levelColor(v: number | null): string {
+		if (v === null) return '#475569';
+		if (v >= 4) return '#48b581';
+		if (v >= 3) return '#8ba0f5';
+		if (v >= 2) return '#f6c177';
+		return '#ee8c8c';
+	}
+
 	function actionLabel(v: number | null): string {
 		if (v === null) return 'Ingen registrering';
 		return ACTION_PYRAMID_LABELS[v] ?? '';
 	}
 
-	function balanceLabel(v: number | null): string {
+	function levelLabel(v: number | null): string {
 		if (v === null) return '';
-		const anchors = Object.keys(BALANCE_LABELS)
-			.map(Number)
-			.sort((a, b) => Math.abs(a - v) - Math.abs(b - v));
-		return BALANCE_LABELS[anchors[0]] ?? '';
+		return LEVEL_LABELS[Math.round(v)] ?? '';
+	}
+
+	// Foretrekk level fra siste registrering (quick eller full), fallback til mapping fra balance
+	function pointLevel(p: EgenfrekvensCheckinPointData | null): number | null {
+		if (!p) return null;
+		const explicit = p.evening?.level ?? p.morning?.level;
+		if (typeof explicit === 'number') return explicit;
+		if (typeof p.balance === 'number') return Math.max(1, Math.min(5, Math.round((p.balance + 5) / 2)));
+		return null;
 	}
 
 	const sparklineWidth = 280;
@@ -136,6 +158,7 @@
 		</div>
 	{:else}
 		{#if data.latest}
+			{@const latestLevel = pointLevel(data.latest)}
 			<section class="ef-card ef-latest">
 				<div class="ef-latest-head">
 					<span class="ef-latest-day">{fmtDayLabel(data.latest.day)}</span>
@@ -143,9 +166,9 @@
 						<span class="ef-streak">🔥 {data.streakDays} dager på rad</span>
 					{/if}
 				</div>
-				<div class="ef-balance" style:color={balanceColor(data.latest.balance)}>
-					<span class="ef-balance-num">{fmtSigned(data.latest.balance, 0)}</span>
-					<span class="ef-balance-lbl">{balanceLabel(data.latest.balance)}</span>
+				<div class="ef-balance" style:color={levelColor(latestLevel)}>
+					<span class="ef-balance-num">{latestLevel ?? '—'}<span class="ef-balance-suffix">/5</span></span>
+					<span class="ef-balance-lbl">{levelLabel(latestLevel)}</span>
 				</div>
 				<div class="ef-mini-grid">
 					<div class="ef-mini">
@@ -215,7 +238,7 @@
 					</div>
 				{/if}
 				<div class="ef-trend-stats">
-					<div class="ef-trend-stat"><span>Snitt balanse</span><strong>{fmtSigned(data.stats.avgBalance)}</strong></div>
+					<div class="ef-trend-stat"><span>Snitt nivå</span><strong>{fmt(data.stats.avgLevel)}<span class="ef-mini-suffix">/5</span></strong></div>
 					<div class="ef-trend-stat"><span>Snitt tanker</span><strong>{fmt(data.stats.avgThoughts)}<span class="ef-mini-suffix">/5</span></strong></div>
 					<div class="ef-trend-stat"><span>Snitt følelser</span><strong>{fmt(data.stats.avgFeelings)}<span class="ef-mini-suffix">/5</span></strong></div>
 					<div class="ef-trend-stat"><span>Snitt handlinger</span><strong>{fmt(data.stats.avgActions)}<span class="ef-mini-suffix">/5</span></strong></div>
@@ -230,9 +253,10 @@
 			<h3 class="ef-card-title">Siste sjekkins</h3>
 			<ul class="ef-recent">
 				{#each last7 as p (p.day)}
+					{@const lvl = pointLevel(p)}
 					<li class="ef-recent-row" class:ef-recent-extreme={p.extreme}>
 						<span class="ef-recent-day">{fmtDayLabel(p.day)}</span>
-						<span class="ef-recent-balance" style:color={balanceColor(p.balance)}>{fmtSigned(p.balance, 0)}</span>
+						<span class="ef-recent-balance" style:color={levelColor(lvl)}>{lvl ?? '—'}</span>
 						<span class="ef-recent-mini">T {fmt(p.thoughts, 0)}</span>
 						<span class="ef-recent-mini">F {fmt(p.feelings, 0)}</span>
 						<span class="ef-recent-mini">H {fmt(p.actions, 0)}</span>
@@ -377,6 +401,12 @@
 		font-size: 2.4rem;
 		font-weight: 700;
 		line-height: 1;
+	}
+	.ef-balance-suffix {
+		font-size: 1.1rem;
+		font-weight: 500;
+		color: #64748b;
+		margin-left: 2px;
 	}
 	.ef-balance-lbl {
 		font-size: 0.85rem;

@@ -47,8 +47,9 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		const day =
 			typeof body?.day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.day) ? body.day : toIsoDay();
 
-		// Kjapp-variant: bare level + slot kreves
-		if (body?.level !== undefined && body?.mode !== 'full') {
+		// Kjapp-variant: kun level + slot, ingen dimensjoner
+		const hasDimensions = body?.actions !== undefined || body?.feelings !== undefined || body?.thoughts !== undefined;
+		if (body?.level !== undefined && !hasDimensions) {
 			const level = Number(body.level);
 			const slot = parseSlot(body.slot);
 			if (!slot) {
@@ -65,8 +66,8 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			return json(status);
 		}
 
-		// Full-variant (eksisterende 4-dimensjons-flow)
-		const balance = Number(body?.balance);
+		// Dypdykk-variant (3 dimensjoner + level)
+		const level = Number(body?.level);
 		const thoughts = Number(body?.thoughts);
 		const feelings = Number(body?.feelings);
 		const actions = Number(body?.actions);
@@ -78,7 +79,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 
 		const status = await submitEgenfrekvensCheckin({
 			userId: locals.userId,
-			balance,
+			level,
 			thoughts,
 			feelings,
 			actions,

@@ -873,6 +873,7 @@
 	let egenfrekvensInitialNote = $state('');
 	let egenfrekvensReflectionPrompt = $state<string | null>(null);
 	let egenfrekvensDreamReasons = $state<Record<string, Array<{ value: string; label: string; source: string }>> | null>(null);
+	let egenfrekvensCarriedLevel = $state<number | null>(null);
 
 	function currentSlotFromTime(): 'morning' | 'evening' {
 		return new Date().getHours() < 14 ? 'morning' : 'evening';
@@ -2555,17 +2556,24 @@
 {/if}
 
 {#if egenfrekvensFlowOpen}
+	{@const carriedInitialData = (() => {
+		const init: Record<string, any> = {};
+		if (egenfrekvensInitialNote) init.note = egenfrekvensInitialNote;
+		if (egenfrekvensCarriedLevel !== null) init.level = egenfrekvensCarriedLevel;
+		return Object.keys(init).length > 0 ? init : undefined;
+	})()}
 	<FlowSheet
 		flow={FLOWS['egenfrekvens_checkin']}
 		context={{
 			slot: egenfrekvensActiveSlot,
-			...(egenfrekvensInitialNote ? { initialData: { note: egenfrekvensInitialNote } } : {}),
+			...(carriedInitialData ? { initialData: carriedInitialData } : {}),
 			...(egenfrekvensReflectionPrompt ? { systemPrompts: { reflection: egenfrekvensReflectionPrompt } } : {}),
 			...(egenfrekvensDreamReasons ? { dreamReasons: egenfrekvensDreamReasons } : {})
 		}}
 		onclose={() => {
 			egenfrekvensFlowOpen = false;
 			egenfrekvensInitialNote = '';
+			egenfrekvensCarriedLevel = null;
 			egenfrekvensReflectionPrompt = null;
 			egenfrekvensDreamReasons = null;
 			if (returnToChatAfterFlow) {
@@ -2578,8 +2586,10 @@
 			egenfrekvensFlowOpen = false;
 			egenfrekvensPromptOpen = false;
 			egenfrekvensInitialNote = '';
+			egenfrekvensCarriedLevel = null;
 			egenfrekvensReflectionPrompt = null;
 			egenfrekvensDreamReasons = null;
+			void loadEgenfrekvensRecent();
 			if (returnToChatAfterFlow) {
 				chatOpen = true;
 				chatInputAutoFocus = true;
@@ -2604,8 +2614,10 @@
 		onsecondaryaction={(action) => {
 			if (action.id === 'go-deeper') {
 				const carriedNote = typeof action.data?.note === 'string' ? action.data.note.trim() : '';
+				const carriedLevel = Number.isInteger(action.data?.level) ? action.data.level : null;
 				egenfrekvensQuickFlowOpen = false;
 				if (carriedNote) egenfrekvensInitialNote = carriedNote;
+				egenfrekvensCarriedLevel = carriedLevel;
 				egenfrekvensFlowOpen = true;
 				void loadEgenfrekvensContext();
 			}
