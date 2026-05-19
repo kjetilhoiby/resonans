@@ -2703,7 +2703,7 @@
 	.zone-widgets {
 		flex: 28 0 0;
 		min-height: 0;
-		padding: 8px 14px 4px;
+		padding: 10px 14px 8px;
 		background: #171717;
 		border-radius: 18px;
 		margin: 0 12px;
@@ -2720,7 +2720,7 @@
 
 	.zone-actions {
 		flex: 0 0 auto;
-		padding: 2px 0 4px;
+		padding: 4px 0 8px;
 	}
 
 	.action-carousel {
@@ -2750,7 +2750,7 @@
 		background: hsl(228 19% 11%);
 		border: 1px solid hsl(228 16% 18%);
 		border-radius: 999px;
-		padding: 6px 12px;
+		padding: 8px 14px;
 		cursor: pointer;
 		font: inherit;
 		color: hsl(228 22% 80%);
@@ -2823,7 +2823,7 @@
 		justify-content: center;
 		align-content: flex-start;
 		min-height: 100%;
-		padding: 0 28px 4px 0;
+		padding: 0 28px 16px 0;
 		box-sizing: border-box;
 	}
 
