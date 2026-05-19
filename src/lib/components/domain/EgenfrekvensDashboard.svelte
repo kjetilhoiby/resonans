@@ -5,10 +5,11 @@
 	interface Props {
 		data: EgenfrekvensDashboardData;
 		onstartCheckin?: () => void;
+		onstartQuick?: () => void;
 		ondelete?: (eventIds: string[]) => void;
 	}
 
-	let { data, onstartCheckin, ondelete }: Props = $props();
+	let { data, onstartCheckin, onstartQuick, ondelete }: Props = $props();
 
 	const oldestFirst = $derived([...data.points].sort((a, b) => (a.day < b.day ? -1 : 1)));
 
@@ -50,20 +51,59 @@
 
 	const sparklineWidth = 280;
 	const sparklineHeight = 60;
+
+	function balanceToY(b: number): number {
+		const norm = (b + 5) / 10;
+		return sparklineHeight - norm * sparklineHeight;
+	}
+
 	const sparklinePoints = $derived.by(() => {
 		const points = oldestFirst.filter((p) => typeof p.balance === 'number');
 		if (points.length < 2) return null;
 		const xs = points.map((_, i) => (i / (points.length - 1)) * sparklineWidth);
-		const ys = points.map((p) => {
-			const v = (p.balance as number);
-			const norm = (v + 5) / 10;
-			return sparklineHeight - norm * sparklineHeight;
-		});
+		const ys = points.map((p) => balanceToY(p.balance as number));
 		const path = points
 			.map((_, i) => `${i === 0 ? 'M' : 'L'}${xs[i].toFixed(1)},${ys[i].toFixed(1)}`)
 			.join(' ');
 		const areaPath = `${path} L${sparklineWidth},${sparklineHeight} L0,${sparklineHeight} Z`;
-		return { path, areaPath, points: points.map((p, i) => ({ x: xs[i], y: ys[i], val: p.balance, day: p.day, extreme: p.extreme })) };
+		return {
+			path,
+			areaPath,
+			points: points.map((p, i) => ({ x: xs[i], y: ys[i], val: p.balance, day: p.day, extreme: p.extreme }))
+		};
+	});
+
+	// Egne sparkline-spor for morgen/kveld når quick-data finnes
+	const slotSparklines = $derived.by(() => {
+		const total = oldestFirst.length;
+		if (total < 2) return null;
+		const xs = oldestFirst.map((_, i) => (i / (total - 1)) * sparklineWidth);
+
+		const morningDots: Array<{ x: number; y: number; day: string; val: number }> = [];
+		const eveningDots: Array<{ x: number; y: number; day: string; val: number }> = [];
+
+		oldestFirst.forEach((p, i) => {
+			if (p.morning && typeof p.morning.balance === 'number') {
+				morningDots.push({ x: xs[i], y: balanceToY(p.morning.balance), day: p.day, val: p.morning.level ?? Math.round((p.morning.balance + 5) / 2) });
+			}
+			if (p.evening && typeof p.evening.balance === 'number') {
+				eveningDots.push({ x: xs[i], y: balanceToY(p.evening.balance), day: p.day, val: p.evening.level ?? Math.round((p.evening.balance + 5) / 2) });
+			}
+		});
+
+		if (morningDots.length === 0 && eveningDots.length === 0) return null;
+
+		const lineFrom = (dots: Array<{ x: number; y: number }>) =>
+			dots.length >= 2
+				? dots.map((d, i) => `${i === 0 ? 'M' : 'L'}${d.x.toFixed(1)},${d.y.toFixed(1)}`).join(' ')
+				: null;
+
+		return {
+			morningPath: lineFrom(morningDots),
+			eveningPath: lineFrom(eveningDots),
+			morningDots,
+			eveningDots
+		};
 	});
 
 	const last7: EgenfrekvensCheckinPointData[] = $derived(data.points.slice(0, 7));
@@ -75,16 +115,23 @@
 			<h2>Egenfrekvens</h2>
 			<p class="ef-sub">Siste {data.rangeDays} dager · {data.stats.count} sjekkin{data.stats.count === 1 ? '' : 's'}</p>
 		</div>
-		{#if onstartCheckin}
-			<button class="ef-cta" onclick={onstartCheckin}>+ Sjekk in nå</button>
-		{/if}
+		<div class="ef-cta-row">
+			{#if onstartQuick}
+				<button class="ef-cta" onclick={onstartQuick}>+ Sjekk inn</button>
+			{/if}
+			{#if onstartCheckin}
+				<button class="ef-cta ef-cta-secondary" onclick={onstartCheckin}>Dypdykk</button>
+			{/if}
+		</div>
 	</header>
 
 	{#if data.points.length === 0}
 		<div class="ef-empty">
 			<p>Ingen sjekkins ennå. Start med en — det tar 30 sekunder.</p>
-			{#if onstartCheckin}
-				<button class="ef-cta ef-cta-large" onclick={onstartCheckin}>Sjekk in nå</button>
+			{#if onstartQuick}
+				<button class="ef-cta ef-cta-large" onclick={onstartQuick}>Sjekk inn nå</button>
+			{:else if onstartCheckin}
+				<button class="ef-cta ef-cta-large" onclick={onstartCheckin}>Sjekk inn nå</button>
 			{/if}
 		</div>
 	{:else}
@@ -134,14 +181,39 @@
 				<h3 class="ef-card-title">Balanse-trend</h3>
 				<svg class="ef-sparkline" viewBox="0 0 {sparklineWidth} {sparklineHeight}" preserveAspectRatio="none" aria-label="Balanse-trend">
 					<line x1="0" y1={sparklineHeight / 2} x2={sparklineWidth} y2={sparklineHeight / 2} stroke="rgba(255,255,255,0.08)" stroke-dasharray="4 4" />
-					<path d={sparklinePoints.areaPath} fill="rgba(139,160,245,0.18)" />
-					<path d={sparklinePoints.path} fill="none" stroke="#8ba0f5" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
-					{#each sparklinePoints.points as pt (pt.day)}
-						<circle cx={pt.x} cy={pt.y} r={pt.extreme ? 4 : 2.5} fill={pt.extreme ? '#ee8c8c' : '#8ba0f5'}>
-							<title>{fmtDayLabel(pt.day)}: {fmtSigned(pt.val, 0)}</title>
-						</circle>
-					{/each}
+					{#if slotSparklines}
+						{#if slotSparklines.morningPath}
+							<path d={slotSparklines.morningPath} fill="none" stroke="#f6c177" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" opacity="0.85" />
+						{/if}
+						{#if slotSparklines.eveningPath}
+							<path d={slotSparklines.eveningPath} fill="none" stroke="#8ba0f5" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" opacity="0.85" />
+						{/if}
+						{#each slotSparklines.morningDots as pt (`m-${pt.day}`)}
+							<circle cx={pt.x} cy={pt.y} r="2.5" fill="#f6c177">
+								<title>{fmtDayLabel(pt.day)} morgen: {pt.val}/5</title>
+							</circle>
+						{/each}
+						{#each slotSparklines.eveningDots as pt (`e-${pt.day}`)}
+							<circle cx={pt.x} cy={pt.y} r="2.5" fill="#8ba0f5">
+								<title>{fmtDayLabel(pt.day)} kveld: {pt.val}/5</title>
+							</circle>
+						{/each}
+					{:else}
+						<path d={sparklinePoints.areaPath} fill="rgba(139,160,245,0.18)" />
+						<path d={sparklinePoints.path} fill="none" stroke="#8ba0f5" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
+						{#each sparklinePoints.points as pt (pt.day)}
+							<circle cx={pt.x} cy={pt.y} r={pt.extreme ? 4 : 2.5} fill={pt.extreme ? '#ee8c8c' : '#8ba0f5'}>
+								<title>{fmtDayLabel(pt.day)}: {fmtSigned(pt.val, 0)}</title>
+							</circle>
+						{/each}
+					{/if}
 				</svg>
+				{#if slotSparklines}
+					<div class="ef-legend">
+						<span class="ef-legend-item"><span class="ef-legend-dot" style:background="#f6c177"></span>Morgen</span>
+						<span class="ef-legend-item"><span class="ef-legend-dot" style:background="#8ba0f5"></span>Kveld</span>
+					</div>
+				{/if}
 				<div class="ef-trend-stats">
 					<div class="ef-trend-stat"><span>Snitt balanse</span><strong>{fmtSigned(data.stats.avgBalance)}</strong></div>
 					<div class="ef-trend-stat"><span>Snitt tanker</span><strong>{fmt(data.stats.avgThoughts)}<span class="ef-mini-suffix">/5</span></strong></div>
@@ -221,6 +293,36 @@
 	.ef-cta-large {
 		padding: 10px 18px;
 		font-size: 0.9rem;
+	}
+	.ef-cta-row {
+		display: flex;
+		gap: 6px;
+		flex-shrink: 0;
+	}
+	.ef-cta-secondary {
+		background: rgba(255, 255, 255, 0.06);
+		color: #cbd5e1;
+		border: 1px solid rgba(255, 255, 255, 0.12);
+	}
+	.ef-cta-secondary:hover {
+		background: rgba(255, 255, 255, 0.1);
+	}
+	.ef-legend {
+		display: flex;
+		gap: 14px;
+		margin-top: 6px;
+		font-size: 0.75rem;
+		color: #94a3b8;
+	}
+	.ef-legend-item {
+		display: flex;
+		align-items: center;
+		gap: 5px;
+	}
+	.ef-legend-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
 	}
 	.ef-empty {
 		padding: 24px 16px;

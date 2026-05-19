@@ -6,7 +6,9 @@ import {
 	EgenfrekvensCheckinError,
 	getEgenfrekvensCheckinStatus,
 	submitEgenfrekvensCheckin,
-	toIsoDay
+	submitEgenfrekvensQuick,
+	toIsoDay,
+	type EgenfrekvensSlot
 } from '$lib/server/egenfrekvens-checkin';
 import type { RequestHandler } from './$types';
 
@@ -34,9 +36,36 @@ export const DELETE: RequestHandler = async ({ locals, url }) => {
 	return json({ ok: true });
 };
 
+function parseSlot(value: unknown): EgenfrekvensSlot | null {
+	if (value === 'morning' || value === 'evening') return value;
+	return null;
+}
+
 export const POST: RequestHandler = async ({ locals, request }) => {
 	try {
 		const body = await request.json();
+		const day =
+			typeof body?.day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.day) ? body.day : toIsoDay();
+
+		// Kjapp-variant: bare level + slot kreves
+		if (body?.level !== undefined && body?.mode !== 'full') {
+			const level = Number(body.level);
+			const slot = parseSlot(body.slot);
+			if (!slot) {
+				return json({ error: 'Slot må være "morning" eller "evening".' }, { status: 400 });
+			}
+			const note = typeof body.note === 'string' ? body.note : null;
+			const status = await submitEgenfrekvensQuick({
+				userId: locals.userId,
+				level,
+				slot,
+				note,
+				day
+			});
+			return json(status);
+		}
+
+		// Full-variant (eksisterende 4-dimensjons-flow)
 		const balance = Number(body?.balance);
 		const thoughts = Number(body?.thoughts);
 		const feelings = Number(body?.feelings);
@@ -45,8 +74,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		const reflection = typeof body?.reflection === 'string' ? body.reflection : null;
 		const reasons = body?.reasons && typeof body.reasons === 'object' ? body.reasons : null;
 		const reflectionThread = Array.isArray(body?.reflectionThread) ? body.reflectionThread : null;
-		const day =
-			typeof body?.day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.day) ? body.day : toIsoDay();
+		const slot = parseSlot(body?.slot);
 
 		const status = await submitEgenfrekvensCheckin({
 			userId: locals.userId,
@@ -54,6 +82,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			thoughts,
 			feelings,
 			actions,
+			slot,
 			note,
 			reflection,
 			reflectionThread,

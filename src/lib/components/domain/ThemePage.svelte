@@ -35,7 +35,7 @@
 	import type { ChatMessage } from '$lib/client/chat-state.svelte';
 	import FlowCard from '../flows/FlowCard.svelte';
 	import FlowSheet from '../flows/FlowSheet.svelte';
-	import { getFlowsByTheme } from '$lib/flows/registry';
+	import { FLOWS, getFlowsByTheme } from '$lib/flows/registry';
 	import type { Flow } from '$lib/flows/types';
 	import ThemeMetricSettingsSheet from './ThemeMetricSettingsSheet.svelte';
 	import type { MetricSettingsMap } from './ThemeMetricSettingsSheet.svelte';
@@ -1554,6 +1554,8 @@
 				{#if egenfrekvensDashboardProps}
 					<EgenfrekvensDashboard
 						{...egenfrekvensDashboardProps}
+						onstartCheckin={() => startFlow(FLOWS['egenfrekvens_checkin'])}
+						onstartQuick={() => startFlow(FLOWS['egenfrekvens_quick'])}
 						ondelete={async (eventIds) => {
 							await Promise.all(eventIds.map((id) =>
 								fetch(`/api/egenfrekvens/checkin?id=${id}`, { method: 'DELETE' })

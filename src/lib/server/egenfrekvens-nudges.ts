@@ -10,7 +10,9 @@ import { sendGoogleChatMessage } from '$lib/server/google-chat';
 import { PushDeliveryService } from '$lib/server/services/push-delivery-service';
 import { createNudgeEvent, markNudgeSent } from '$lib/server/nudge-events';
 import { isWithinRecentMinutesWindow, localHm, localIsoDay } from '$lib/server/nudge-time';
-import { countEgenfrekvensCheckinsForDay } from '$lib/server/egenfrekvens-checkin';
+import {
+	countEgenfrekvensCheckinsForDayAndSlot
+} from '$lib/server/egenfrekvens-checkin';
 
 export type EgenfrekvensSlot = 'morning' | 'evening';
 
@@ -37,23 +39,31 @@ interface SlotConfig {
 	pushBody: string;
 }
 
+function localTimestampShort(timeZone: string, now: Date): string {
+	return new Intl.DateTimeFormat('nb-NO', {
+		timeZone,
+		hour: '2-digit',
+		minute: '2-digit'
+	}).format(now);
+}
+
 const SLOTS: SlotConfig[] = [
 	{
 		slot: 'morning',
 		nudgeType: 'egenfrekvens_morning',
 		getTargetTime: (cfg) => cfg.morningTime || cfg.time || '06:30',
 		maxAllowedCount: 0,
-		greeting: (name) => `God morgen${name ? ' ' + name : ''}! Hvordan starter dagen?`,
-		pushTitle: 'Egenfrekvens — morgen',
-		pushBody: 'Ta 30 sekunder — hvor er du nå?'
+		greeting: (name) => `God morgen${name ? ' ' + name : ''}! Tid for sjekk inn — hvordan starter dagen?`,
+		pushTitle: 'Sjekk inn — morgen',
+		pushBody: 'Ta 30 sekunder — hvor er du nå (1-5)?'
 	},
 	{
 		slot: 'evening',
 		nudgeType: 'egenfrekvens_evening',
 		getTargetTime: (cfg) => cfg.eveningTime || '21:00',
 		maxAllowedCount: 1,
-		greeting: (name) => `Kveldssjekk${name ? ', ' + name : ''}: hvordan kjennes det nå?`,
-		pushTitle: 'Egenfrekvens — kveld',
+		greeting: (name) => `Kveldssjekk${name ? ', ' + name : ''}: hvordan kjennes det nå (1-5)?`,
+		pushTitle: 'Sjekk inn — kveld',
 		pushBody: 'Hvordan kjennes dagen i kroppen og hodet nå?'
 	}
 ];
@@ -89,8 +99,6 @@ export async function runEgenfrekvensCheckInNudges(args: {
 		const nowHm = localHm(tz, now);
 		const isoDay = localIsoDay(tz, now);
 
-		let todayCount: number | null = null;
-
 		for (const slotCfg of SLOTS) {
 			const baseResult: EgenfrekvensCheckInNudgeResult = {
 				nudgeType: slotCfg.nudgeType,
@@ -112,16 +120,18 @@ export async function runEgenfrekvensCheckInNudges(args: {
 					continue;
 				}
 
-				if (todayCount === null) {
-					todayCount = await countEgenfrekvensCheckinsForDay(user.id, isoDay);
-				}
+				const slotCount = await countEgenfrekvensCheckinsForDayAndSlot(
+					user.id,
+					isoDay,
+					slotCfg.slot
+				);
 
-				if (todayCount > slotCfg.maxAllowedCount) {
+				if (slotCount > slotCfg.maxAllowedCount) {
 					results.push({
 						...baseResult,
 						success: true,
 						skipped: true,
-						skipReason: `count_threshold_met (${todayCount}/${slotCfg.maxAllowedCount + 1})`
+						skipReason: `slot_already_logged (${slotCount})`
 					});
 					continue;
 				}
@@ -137,14 +147,20 @@ export async function runEgenfrekvensCheckInNudges(args: {
 					nudgeType: slotCfg.nudgeType,
 					mode: 'interactive',
 					channel: routeTargetsPwa(routes) ? 'pwa' : 'google_chat',
-					context: { dayIso: isoDay, slot: slotCfg.slot, trigger: 'schedule', priorCount: todayCount }
+					context: { dayIso: isoDay, slot: slotCfg.slot, trigger: 'schedule', slotCount }
 				});
 
-				const url = new URL('/', args.appUrl);
-				url.searchParams.set('flow', 'egenfrekvens_checkin');
-				url.searchParams.set('nudgeTrack', slotCfg.nudgeType);
-				url.searchParams.set('slot', slotCfg.slot);
-				if (eventId) url.searchParams.set('nudgeEventId', eventId);
+				const quickUrl = new URL('/', args.appUrl);
+				quickUrl.searchParams.set('flow', 'egenfrekvens_quick');
+				quickUrl.searchParams.set('nudgeTrack', slotCfg.nudgeType);
+				quickUrl.searchParams.set('slot', slotCfg.slot);
+				if (eventId) quickUrl.searchParams.set('nudgeEventId', eventId);
+
+				const fullUrl = new URL('/', args.appUrl);
+				fullUrl.searchParams.set('flow', 'egenfrekvens_checkin');
+				fullUrl.searchParams.set('nudgeTrack', slotCfg.nudgeType);
+				fullUrl.searchParams.set('slot', slotCfg.slot);
+				if (eventId) fullUrl.searchParams.set('nudgeEventId', eventId);
 
 				let pushSent = 0;
 				let chatSent = false;
@@ -155,7 +171,7 @@ export async function runEgenfrekvensCheckInNudges(args: {
 						payload: {
 							title: slotCfg.pushTitle,
 							body: slotCfg.pushBody,
-							url: url.toString(),
+							url: quickUrl.toString(),
 							tag: `nudge-egenfrekvens-${slotCfg.slot}-${isoDay}`
 						},
 						onGone: 'disable',
@@ -166,8 +182,15 @@ export async function runEgenfrekvensCheckInNudges(args: {
 
 				const webhooks = getGoogleChatWebhooksForRoutes(user, routes);
 				for (const webhook of webhooks) {
+					const stamp = localTimestampShort(tz, now);
+					const lines = [
+						slotCfg.greeting(user.name),
+						`Kjapp (1-5, 30 sek): ${quickUrl.toString()}`,
+						`Dypdykk (4 dimensjoner, ~5 min): ${fullUrl.toString()}`,
+						`— sendt ${stamp}`
+					];
 					const ok = await sendGoogleChatMessage(webhook, {
-						text: `${slotCfg.greeting(user.name)} — ${url.toString()}`
+						text: lines.join('\n')
 					});
 					chatSent = chatSent || ok;
 				}

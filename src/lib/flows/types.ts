@@ -21,7 +21,8 @@ export type FlowId =
 	| 'family_relation_check_in'
 	| 'day_plan'
 	| 'day_close'
-	| 'egenfrekvens_checkin';
+	| 'egenfrekvens_checkin'
+	| 'egenfrekvens_quick';
 
 export type FlowDomain = 'health' | 'economics' | 'food' | 'family' | 'planning' | 'general' | 'egenfrekvens';
 
@@ -96,6 +97,8 @@ export interface FlowContext {
 	openItems?: Array<{ id: string; text: string }>;
 	/** Passed through to AI suggestion fetching */
 	dayLabel?: string;
+	/** Egenfrekvens-sjekkin: morgen eller kveld (lest fra nudge-URL eller utledet fra klokkeslett) */
+	slot?: 'morning' | 'evening';
 	/** Per-step dynamic system prompts keyed by step id — overrides FlowStep.systemPrompt */
 	systemPrompts?: Record<string, string>;
 	/** Per-step initial prompt/prefill keyed by step id — overrides FlowStep.prompt */
