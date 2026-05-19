@@ -2817,7 +2817,7 @@
 	.widget-page-grid {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 6px;
+		gap: 10px;
 		justify-content: center;
 		align-content: flex-start;
 		min-height: 100%;
