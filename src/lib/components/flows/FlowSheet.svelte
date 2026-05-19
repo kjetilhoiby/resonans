@@ -39,9 +39,17 @@
 		context?: FlowContext;
 		onclose?: () => void;
 		oncomplete?: (data: Record<string, any>) => void | Promise<void>;
+		/** Trigget når brukeren tapper en steg-spesifikk secondaryAction-knapp i footeren */
+		onsecondaryaction?: (action: { id: string; data: Record<string, any> }) => void;
 	}
 
-	let { flow, context = {}, onclose, oncomplete }: Props = $props();
+	let { flow, context = {}, onclose, oncomplete, onsecondaryaction }: Props = $props();
+
+	function handleSecondaryAction() {
+		const action = currentStep?.secondaryAction;
+		if (!action) return;
+		onsecondaryaction?.({ id: action.id, data: { ...flowData } });
+	}
 
 	// ── Core state ───────────────────────────────────────────────────
 	let currentStepIndex = $state(0);
@@ -831,6 +839,16 @@
 				</button>
 			{/if}
 			<div class="fs-focus-spacer"></div>
+			{#if currentStep?.secondaryAction}
+				<button
+					class="fs-focus-secondary"
+					onclick={handleSecondaryAction}
+					disabled={completing}
+					aria-label={currentStep.secondaryAction.label ?? 'Tilleggshandling'}
+				>
+					<span class="fs-focus-secondary-icon">{currentStep.secondaryAction.icon}</span>
+				</button>
+			{/if}
 			<button
 				class="fs-focus-next"
 				onclick={() => void handleNext()}
@@ -848,6 +866,17 @@
 		{:else}
 			{#if !isFirstStep}
 				<button class="fs-btn fs-btn-ghost" onclick={handlePrevious} disabled={completing}>← Tilbake</button>
+			{/if}
+			{#if currentStep?.secondaryAction}
+				<button
+					class="fs-btn fs-btn-secondary"
+					onclick={handleSecondaryAction}
+					disabled={completing}
+					aria-label={currentStep.secondaryAction.label ?? 'Tilleggshandling'}
+				>
+					{currentStep.secondaryAction.icon}
+					{#if currentStep.secondaryAction.label}<span class="fs-btn-secondary-label">{currentStep.secondaryAction.label}</span>{/if}
+				</button>
 			{/if}
 			<button
 				class="fs-btn fs-btn-primary"
@@ -1552,6 +1581,44 @@
 	.fs-focus-next:disabled { opacity: 0.25; cursor: default; }
 	.fs-focus-next-arrow { font-size: 1.8rem; line-height: 1; }
 	.fs-focus-next-text { font-size: 1.3rem; }
+
+	.fs-focus-secondary {
+		width: 48px;
+		height: 48px;
+		border-radius: 50%;
+		background: rgba(255, 255, 255, 0.06);
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		color: #cbd5e1;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		transition: all 0.15s;
+		margin-right: 10px;
+	}
+	.fs-focus-secondary:hover:not(:disabled) {
+		background: rgba(255, 255, 255, 0.1);
+		border-color: rgba(255, 255, 255, 0.2);
+		color: #fff;
+	}
+	.fs-focus-secondary:disabled { opacity: 0.3; cursor: default; }
+	.fs-focus-secondary-icon { font-size: 1.5rem; line-height: 1; font-weight: 400; }
+
+	.fs-btn-secondary {
+		background: rgba(255, 255, 255, 0.06);
+		color: #cbd5e1;
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		padding: 8px 14px;
+		border-radius: 10px;
+		font-weight: 500;
+		cursor: pointer;
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+	}
+	.fs-btn-secondary:hover:not(:disabled) { background: rgba(255, 255, 255, 0.1); }
+	.fs-btn-secondary:disabled { opacity: 0.3; cursor: default; }
+	.fs-btn-secondary-label { font-size: 0.85rem; }
 
 	/* Focus-mode textarea */
 	.fs-focus-form .fs-form-textarea {

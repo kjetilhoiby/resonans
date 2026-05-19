@@ -10,7 +10,6 @@ import {
 	FEELINGS_SLIDER_LABELS,
 	THOUGHTS_PYRAMID,
 	THOUGHTS_SLIDER_LABELS,
-	BALANCE_LABELS,
 	EGENFREKVENS_THRESHOLDS,
 	getPyramidGroups
 } from '$lib/domains/egenfrekvens';
@@ -746,10 +745,33 @@ export const FLOWS: Record<FlowId, Flow> = {
 		icon: '🎚️',
 		domain: 'egenfrekvens',
 		trigger: 'manual',
-		estimatedMinutes: 2,
+		estimatedMinutes: 3,
 		focus: true,
 		parentTheme: 'Egenfrekvens',
 		steps: [
+			{
+				id: 'step_level',
+				type: 'form',
+				title: 'Hvordan har du det nå?',
+				prompt: '1 er lavt, 5 er god flyt.',
+				autoAdvance: true,
+				skipIf: (d) => Number.isInteger(d.level),
+				fields: [{
+					id: 'level',
+					type: 'slider',
+					label: 'Nivå',
+					min: 1, max: 5, step: 1,
+					defaultValue: 3,
+					helperLabels: {
+						1: 'Helt nede',
+						2: 'Tungt',
+						3: 'Midt på',
+						4: 'Greit',
+						5: 'God flyt'
+					}
+				}],
+				validation: (d) => Number.isInteger(d.level)
+			},
 			{
 				id: 'step_actions',
 				type: 'form',
@@ -847,21 +869,6 @@ export const FLOWS: Record<FlowId, Flow> = {
 				}]
 			},
 			{
-				id: 'step_balance',
-				type: 'form',
-				title: 'Balanse',
-				prompt: 'Alt tatt i betraktning — hvor ligger du?',
-				fields: [{
-					id: 'balance',
-					type: 'slider',
-					label: 'Samlet balanse',
-					min: -5, max: 5, step: 1,
-					defaultValue: 0,
-					helperLabels: BALANCE_LABELS
-				}],
-				validation: (d) => Number.isInteger(d.balance)
-			},
-			{
 				id: 'reflection',
 				type: 'chat',
 				title: 'Refleksjon',
@@ -870,7 +877,7 @@ export const FLOWS: Record<FlowId, Flow> = {
 					const a = Number(data.actions ?? 3);
 					const f = Number(data.feelings ?? 3);
 					const t = Number(data.thoughts ?? 3);
-					const b = Number(data.balance ?? 0);
+					const lvl = Number(data.level ?? 3);
 					const aSignals: string[] = data.actions_signals ?? [];
 					const fSignals: string[] = data.feelings_signals ?? [];
 					const tSignals: string[] = data.thoughts_signals ?? [];
@@ -888,13 +895,15 @@ export const FLOWS: Record<FlowId, Flow> = {
 						'Viktig: dimensjonene kan avvike. H5/F1/T1 er ikke "middels" — det kan være overstyring eller maskering.',
 						'',
 						'SJEKKIN:',
+						`- Nivå: ${lvl}/5`,
 						`- Handlinger: ${a}/5 ${aLevel?.title ?? ''}${aSignals.length ? ` — ${aSignals.join(', ')}` : ''}`,
 						`- Følelser: ${f}/5 ${fLevel?.title ?? ''}${fSignals.length ? ` — ${fSignals.join(', ')}` : ''}`,
 						`- Tanker: ${t}/5 ${tLevel?.title ?? ''}${tSignals.length ? ` — ${tSignals.join(', ')}` : ''}`,
-						`- Balanse: ${b > 0 ? '+' : ''}${b} (${BALANCE_LABELS[b] ?? ''})`,
 					];
 
-					const extreme = EGENFREKVENS_THRESHOLDS.reflectIf({ balance: b, thoughts: t, feelings: f, actions: a });
+					// Map level (1-5) til balance (-4..+4) for threshold-sjekken
+					const derivedBalance = (lvl - 3) * 2;
+					const extreme = EGENFREKVENS_THRESHOLDS.reflectIf({ balance: derivedBalance, thoughts: t, feelings: f, actions: a });
 					const mismatch = Math.abs(a - f) >= 3 || Math.abs(a - t) >= 3;
 
 					let prompt: string;
@@ -902,7 +911,7 @@ export const FLOWS: Record<FlowId, Flow> = {
 						prompt = 'Det er et spenn mellom det du gjør og det du kjenner. Hva tror du det handler om?';
 					} else if (extreme) {
 						prompt = 'Noe skiller seg ut i dag. Hva ligger bak, tror du?';
-					} else if (b >= 3) {
+					} else if (lvl >= 4) {
 						prompt = 'Det ser ut som en god dag. Hva gir deg energi akkurat nå?';
 					} else {
 						prompt = 'Takk for sjekkinnen. Hva er det viktigste du tar med deg herfra?';
@@ -924,16 +933,16 @@ export const FLOWS: Record<FlowId, Flow> = {
 			const a = Number(data.actions);
 			const f = Number(data.feelings);
 			const t = Number(data.thoughts);
-			const b = Number(data.balance);
+			const lvl = Number(data.level);
 			const aLevel = ACTIONS_PYRAMID[a];
 			const fLevel = FEELINGS_PYRAMID[f];
 			const tLevel = THOUGHTS_PYRAMID[t];
 
 			const stateSummary = [
+				`N${lvl}`,
 				`H${a} ${aLevel?.title ?? ''}`,
 				`F${f} ${fLevel?.title ?? ''}`,
-				`T${t} ${tLevel?.title ?? ''}`,
-				`B${b > 0 ? '+' : ''}${b} ${BALANCE_LABELS[b] ?? ''}`
+				`T${t} ${tLevel?.title ?? ''}`
 			].join(' · ');
 
 			const thread: Array<{ role: string; text: string }> = data['reflection_thread'] ?? [];
@@ -945,15 +954,24 @@ export const FLOWS: Record<FlowId, Flow> = {
 			if (aiMessages.length > 0) reflectionParts.push(aiMessages[aiMessages.length - 1]);
 			const reflection = reflectionParts.join('\n');
 
+			// Hent slot fra context (settes av HomeScreen ved manuell start eller fra nudge)
+			let slot: 'morning' | 'evening' | undefined;
+			if (typeof window !== 'undefined') {
+				const urlSlot = new URL(window.location.href).searchParams.get('slot');
+				if (urlSlot === 'morning' || urlSlot === 'evening') slot = urlSlot;
+			}
+			const note = typeof data.note === 'string' && data.note.trim() ? data.note.trim() : null;
+
 			const res = await fetch('/api/egenfrekvens/checkin', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					balance: b,
+					level: lvl,
 					thoughts: t,
 					feelings: f,
 					actions: a,
-					note: null,
+					slot,
+					note,
 					reflection,
 					reflectionThread: thread.length > 0 ? thread : undefined,
 					reasons: Object.keys(reasons).length > 0 ? reasons : undefined
@@ -1023,7 +1041,12 @@ export const FLOWS: Record<FlowId, Flow> = {
 						placeholder: 'F.eks. søvn, jobb, en hendelse …',
 						required: false
 					}
-				]
+				],
+				secondaryAction: {
+					id: 'go-deeper',
+					icon: '+',
+					label: 'Gå dypere'
+				}
 			}
 		],
 		onComplete: async (data, context) => {

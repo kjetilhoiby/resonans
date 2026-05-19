@@ -185,9 +185,9 @@ export async function getEgenfrekvensCheckinStatus(
 	};
 }
 
-function validateValues(values: EgenfrekvensCheckinValues) {
+function validateFullValues(values: { level: number; thoughts: number; feelings: number; actions: number }) {
 	const inRange = (n: number, lo: number, hi: number) => Number.isInteger(n) && n >= lo && n <= hi;
-	if (!inRange(values.balance, -5, 5)) throw new EgenfrekvensCheckinError('Balanse må være et heltall fra -5 til +5.');
+	if (!inRange(values.level, 1, 5)) throw new EgenfrekvensCheckinError('Nivå må være et heltall fra 1 til 5.');
 	if (!inRange(values.thoughts, 1, 5)) throw new EgenfrekvensCheckinError('Tanker må være et heltall fra 1 til 5.');
 	if (!inRange(values.feelings, 1, 5)) throw new EgenfrekvensCheckinError('Følelser må være et heltall fra 1 til 5.');
 	if (!inRange(values.actions, 1, 5)) throw new EgenfrekvensCheckinError('Handlinger må være et heltall fra 1 til 5.');
@@ -202,7 +202,7 @@ function validateSlot(slot: unknown): EgenfrekvensSlot {
 
 export async function submitEgenfrekvensCheckin(params: {
 	userId: string;
-	balance: number;
+	level: number;
 	thoughts: number;
 	feelings: number;
 	actions: number;
@@ -213,11 +213,17 @@ export async function submitEgenfrekvensCheckin(params: {
 	reasons?: Record<string, string[]> | null;
 	day?: string;
 }): Promise<EgenfrekvensCheckinStatus> {
-	validateValues(params);
+	validateFullValues(params);
 	const day = params.day || toIsoDay();
 	const cleanNote = params.note?.trim() || null;
 	const cleanReflection = params.reflection?.trim() || null;
-	const extreme = EGENFREKVENS_THRESHOLDS.reflectIf(params);
+	const balance = levelToBalance(params.level);
+	const extreme = EGENFREKVENS_THRESHOLDS.reflectIf({
+		balance,
+		thoughts: params.thoughts,
+		feelings: params.feelings,
+		actions: params.actions
+	});
 	const slot = params.slot ?? null;
 
 	const sensor = await getOrCreateEgenfrekvensSensor(params.userId);
@@ -226,7 +232,8 @@ export async function submitEgenfrekvensCheckin(params: {
 	const payload: Record<string, unknown> = {
 		day,
 		mode: 'full',
-		balance: params.balance,
+		level: params.level,
+		balance, // derivert fra level for kompatibilitet med eksisterende dashboard-data
 		thoughts: params.thoughts,
 		feelings: params.feelings,
 		actions: params.actions,
@@ -252,7 +259,7 @@ export async function submitEgenfrekvensCheckin(params: {
 		source: 'egenfrekvens_ui'
 	});
 
-	// Mirror balance to mood (0..10) so existing mood widgets keep working.
+	// Mirror level til mood (0..10) så eksisterende mood-widgets fortsetter å virke.
 	await SensorEventService.write(
 		{
 			userId: params.userId,
@@ -260,7 +267,7 @@ export async function submitEgenfrekvensCheckin(params: {
 			eventType: 'measurement',
 			dataType: 'mood',
 			timestamp: new Date(),
-			data: { day, rating: params.balance + 5, source: 'egenfrekvens', slot },
+			data: { day, rating: params.level * 2, source: 'egenfrekvens', slot },
 			source: 'egenfrekvens_ui'
 		},
 		{ conflictMode: 'ignore' }

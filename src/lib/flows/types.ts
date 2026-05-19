@@ -56,6 +56,16 @@ export interface FlowStep {
 	skipIf?: (data: Record<string, any>) => boolean;
 	/** Auto-advance to next step after slider interaction (debounced). Form steps with a single slider. */
 	autoAdvance?: boolean | { delayMs: number };
+	/** Valgfri ekstra handlingsknapp i footeren — f.eks. "gå dypere" som hopper til en annen flow.
+	 *  Parent-komponenten håndterer hva som skjer via FlowSheet sin `onsecondaryaction`-callback. */
+	secondaryAction?: {
+		/** Identifiserer handlingen for parent-handleren */
+		id: string;
+		/** Ikon/symbol vist i knappen (emoji eller kort tekst som '+') */
+		icon: string;
+		/** Valgfri aria-label */
+		label?: string;
+	};
 }
 
 export interface FlowFormField {

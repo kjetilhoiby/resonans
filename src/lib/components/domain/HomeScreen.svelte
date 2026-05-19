@@ -596,7 +596,7 @@
 
 	interface HomeWidgetEntry {
 		id: string;
-		kind: 'checklist' | 'dynamic' | 'skeleton' | 'partner' | 'egenfrekvens-quick';
+		kind: 'checklist' | 'dynamic' | 'skeleton' | 'partner';
 		checklist?: Checklist;
 		widget?: UserWidget;
 		skeletonIndex?: number;
@@ -607,6 +607,40 @@
 		points: EgenfrekvensRecentPoint[];
 		settings: { enabled: boolean; morningTime: string; eveningTime: string } | null;
 	} | null>(null);
+
+	// ── Handlingssone (foreslåtte handlinger) ───────────────────────────────
+	// Prioritert karusell. Foreløpig kun "sjekk inn", men strukturen er klar
+	// for flere kort skåret etter tid på døgnet/uka og bruksmønster.
+	interface ActionItem {
+		id: string;
+		icon: string;
+		label: string;
+		value?: string | number;
+		done: boolean;
+		priority: number;
+		onclick: () => void;
+	}
+
+	const actionItems = $derived.by<ActionItem[]>(() => {
+		const items: ActionItem[] = [];
+
+		if (egenfrekvensRecent && egenfrekvensRecent.settings?.enabled !== false) {
+			const slot = currentSlotFromTime();
+			const entry =
+				slot === 'morning' ? egenfrekvensRecent.today.morning : egenfrekvensRecent.today.evening;
+			items.push({
+				id: 'egenfrekvens-quick',
+				icon: '✨',
+				label: `Sjekk inn · ${slot === 'morning' ? 'morgen' : 'kveld'}`,
+				value: entry?.level ?? undefined,
+				done: entry !== null,
+				priority: entry === null ? 100 : 60,
+				onclick: () => openEgenfrekvensQuick(slot)
+			});
+		}
+
+		return items.sort((a, b) => b.priority - a.priority);
+	});
 
 	async function loadEgenfrekvensRecent() {
 		try {
@@ -638,27 +672,19 @@
 			}));
 		}
 
-		const entries: HomeWidgetEntry[] = [];
-
-		if (egenfrekvensRecent && egenfrekvensRecent.settings?.enabled !== false) {
-			entries.push({ id: 'egenfrekvens-quick', kind: 'egenfrekvens-quick' });
-		}
-
 		if (pinnedWidgets.length > 0) {
-			entries.push(
-				...pinnedWidgets.map((widget) => ({
-					id: `dynamic:${widget.id}`,
-					kind: 'dynamic' as const,
-					widget
-				}))
-			);
+			return pinnedWidgets.map((widget) => ({
+				id: `dynamic:${widget.id}`,
+				kind: 'dynamic' as const,
+				widget
+			}));
 		}
 
-		if (entries.length === 0 && relationshipOnboardingActive) {
+		if (relationshipOnboardingActive) {
 			return [{ id: 'partner-onboarding', kind: 'partner' }];
 		}
 
-		return entries;
+		return [];
 	});
 
 	const monthDayData = $derived.by(() => {
@@ -847,6 +873,7 @@
 	let egenfrekvensInitialNote = $state('');
 	let egenfrekvensReflectionPrompt = $state<string | null>(null);
 	let egenfrekvensDreamReasons = $state<Record<string, Array<{ value: string; label: string; source: string }>> | null>(null);
+	let egenfrekvensCarriedLevel = $state<number | null>(null);
 
 	function currentSlotFromTime(): 'morning' | 'evening' {
 		return new Date().getHours() < 14 ? 'morning' : 'evening';
@@ -1837,16 +1864,6 @@
 									onunpin={() => unpinWidget(item.widget!.id)}
 									onconfig={() => openWidgetConfigSheet(item.widget!)}
 								/>
-							{:else if item.kind === 'egenfrekvens-quick' && egenfrekvensRecent}
-								<div class="widget-item-full">
-									<EgenfrekvensQuickCard
-										todayMorning={egenfrekvensRecent.today.morning}
-										todayEvening={egenfrekvensRecent.today.evening}
-										recent={egenfrekvensRecent.points}
-										onOpenQuick={openEgenfrekvensQuick}
-										onOpenFull={openEgenfrekvensFull}
-									/>
-								</div>
 							{:else if item.kind === 'partner'}
 								<div class="partner-onboarding-card widget-item-full">
 									<p class="partner-onboarding-kicker">Partnermodus aktivert</p>
@@ -1929,6 +1946,27 @@
 			<span class="cta-arrow">→</span>
 		</button>
 		{/if}
+		</section>
+	{/if}
+
+	<!-- ── Handlingssone: prioriterte aktuelle handlinger (karusell) ── -->
+	{#if !inputExpanded && actionItems.length > 0}
+		<section class="zone-actions" aria-label="Foreslåtte handlinger">
+			<div class="action-carousel">
+				{#each actionItems as item (item.id)}
+					<button
+						class="action-pill"
+						class:is-done={item.done}
+						onclick={item.onclick}
+					>
+						<span class="action-pill-icon">{item.icon}</span>
+						<span class="action-pill-label">{item.label}</span>
+						{#if item.value !== undefined}
+							<span class="action-pill-val">{item.value}</span>
+						{/if}
+					</button>
+				{/each}
+			</div>
 		</section>
 	{/if}
 
@@ -2518,17 +2556,24 @@
 {/if}
 
 {#if egenfrekvensFlowOpen}
+	{@const carriedInitialData = (() => {
+		const init: Record<string, any> = {};
+		if (egenfrekvensInitialNote) init.note = egenfrekvensInitialNote;
+		if (egenfrekvensCarriedLevel !== null) init.level = egenfrekvensCarriedLevel;
+		return Object.keys(init).length > 0 ? init : undefined;
+	})()}
 	<FlowSheet
 		flow={FLOWS['egenfrekvens_checkin']}
 		context={{
 			slot: egenfrekvensActiveSlot,
-			...(egenfrekvensInitialNote ? { initialData: { note: egenfrekvensInitialNote } } : {}),
+			...(carriedInitialData ? { initialData: carriedInitialData } : {}),
 			...(egenfrekvensReflectionPrompt ? { systemPrompts: { reflection: egenfrekvensReflectionPrompt } } : {}),
 			...(egenfrekvensDreamReasons ? { dreamReasons: egenfrekvensDreamReasons } : {})
 		}}
 		onclose={() => {
 			egenfrekvensFlowOpen = false;
 			egenfrekvensInitialNote = '';
+			egenfrekvensCarriedLevel = null;
 			egenfrekvensReflectionPrompt = null;
 			egenfrekvensDreamReasons = null;
 			if (returnToChatAfterFlow) {
@@ -2541,8 +2586,10 @@
 			egenfrekvensFlowOpen = false;
 			egenfrekvensPromptOpen = false;
 			egenfrekvensInitialNote = '';
+			egenfrekvensCarriedLevel = null;
 			egenfrekvensReflectionPrompt = null;
 			egenfrekvensDreamReasons = null;
+			void loadEgenfrekvensRecent();
 			if (returnToChatAfterFlow) {
 				chatOpen = true;
 				chatInputAutoFocus = true;
@@ -2563,6 +2610,17 @@
 			egenfrekvensQuickFlowOpen = false;
 			egenfrekvensPromptOpen = false;
 			void loadEgenfrekvensRecent();
+		}}
+		onsecondaryaction={(action) => {
+			if (action.id === 'go-deeper') {
+				const carriedNote = typeof action.data?.note === 'string' ? action.data.note.trim() : '';
+				const carriedLevel = Number.isInteger(action.data?.level) ? action.data.level : null;
+				egenfrekvensQuickFlowOpen = false;
+				if (carriedNote) egenfrekvensInitialNote = carriedNote;
+				egenfrekvensCarriedLevel = carriedLevel;
+				egenfrekvensFlowOpen = true;
+				void loadEgenfrekvensContext();
+			}
 		}}
 	/>
 {/if}
@@ -2658,6 +2716,72 @@
 		min-height: 0;
 		padding: 6px 16px 4px;
 		position: relative;
+	}
+
+	.zone-actions {
+		flex: 0 0 auto;
+		padding: 4px 0 8px;
+	}
+
+	.action-carousel {
+		display: flex;
+		gap: 8px;
+		overflow-x: auto;
+		overflow-y: hidden;
+		scroll-snap-type: x proximity;
+		scrollbar-width: none;
+		-webkit-overflow-scrolling: touch;
+		padding: 0 16px;
+	}
+
+	.action-carousel::-webkit-scrollbar {
+		display: none;
+	}
+
+	.action-carousel > .action-pill {
+		flex: 0 0 auto;
+		scroll-snap-align: start;
+	}
+
+	.action-pill {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		background: hsl(228 19% 11%);
+		border: 1px solid hsl(228 16% 18%);
+		border-radius: 999px;
+		padding: 8px 14px;
+		cursor: pointer;
+		font: inherit;
+		color: hsl(228 22% 80%);
+		font-size: 0.75rem;
+		font-weight: 600;
+		letter-spacing: 0.02em;
+		transition: background 0.15s, border-color 0.15s, transform 0.15s;
+	}
+
+	.action-pill:hover {
+		background: hsl(228 22% 14%);
+		border-color: hsl(228 28% 34%);
+		transform: translateY(-1px);
+	}
+
+	.action-pill.is-done {
+		opacity: 0.7;
+	}
+
+	.action-pill-icon {
+		font-size: 0.95rem;
+		line-height: 1;
+	}
+
+	.action-pill-val {
+		margin-left: 6px;
+		padding: 2px 7px;
+		background: hsl(228 28% 22%);
+		border-radius: 999px;
+		color: #e2e8f0;
+		font-weight: 700;
 	}
 
 	/* ── Zone-label ── */
