@@ -2601,6 +2601,15 @@
 			egenfrekvensPromptOpen = false;
 			void loadEgenfrekvensRecent();
 		}}
+		onsecondaryaction={(action) => {
+			if (action.id === 'go-deeper') {
+				const carriedNote = typeof action.data?.note === 'string' ? action.data.note.trim() : '';
+				egenfrekvensQuickFlowOpen = false;
+				if (carriedNote) egenfrekvensInitialNote = carriedNote;
+				egenfrekvensFlowOpen = true;
+				void loadEgenfrekvensContext();
+			}
+		}}
 	/>
 {/if}
 

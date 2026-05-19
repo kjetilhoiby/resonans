@@ -1023,7 +1023,12 @@ export const FLOWS: Record<FlowId, Flow> = {
 						placeholder: 'F.eks. søvn, jobb, en hendelse …',
 						required: false
 					}
-				]
+				],
+				secondaryAction: {
+					id: 'go-deeper',
+					icon: '+',
+					label: 'Gå dypere'
+				}
 			}
 		],
 		onComplete: async (data, context) => {
