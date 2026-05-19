@@ -275,11 +275,11 @@
 	.dw {
 		position: relative;
 		width: 90px;
-		min-height: 106px;
+		min-height: 88px;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 4px;
+		gap: 2px;
 		cursor: pointer;
 		-webkit-tap-highlight-color: transparent;
 		user-select: none;
