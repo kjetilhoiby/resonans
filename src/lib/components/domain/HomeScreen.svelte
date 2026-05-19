@@ -1949,29 +1949,27 @@
 		</section>
 	{/if}
 
-	<!-- ── Handlingssone: prioriterte aktuelle handlinger (karusell) ── -->
-	{#if !inputExpanded && actionItems.length > 0}
-		<section class="zone-actions" aria-label="Foreslåtte handlinger">
-			<div class="action-carousel">
-				{#each actionItems as item (item.id)}
-					<button
-						class="action-pill"
-						class:is-done={item.done}
-						onclick={item.onclick}
-					>
-						<span class="action-pill-icon">{item.icon}</span>
-						<span class="action-pill-label">{item.label}</span>
-						{#if item.value !== undefined}
-							<span class="action-pill-val">{item.value}</span>
-						{/if}
-					</button>
-				{/each}
-			</div>
-		</section>
-	{/if}
-
-	<!-- ── SONE 4: Chat ── -->
+	<!-- ── SONE 4: Chat + handlinger ── -->
 	<section class="zone zone-input" class:zone-chat-open={inputExpanded} aria-label="Chat" bind:this={chatSection}>
+		{#if !inputExpanded && actionItems.length > 0}
+			<div class="zone-actions" aria-label="Foreslåtte handlinger">
+				<div class="action-carousel">
+					{#each actionItems as item (item.id)}
+						<button
+							class="action-pill"
+							class:is-done={item.done}
+							onclick={item.onclick}
+						>
+							<span class="action-pill-icon">{item.icon}</span>
+							<span class="action-pill-label">{item.label}</span>
+							{#if item.value !== undefined}
+								<span class="action-pill-val">{item.value}</span>
+							{/if}
+						</button>
+					{/each}
+				</div>
+			</div>
+		{/if}
 		{#if chatOpen}
 			<PageHeader
 				title={hasPersistedConversation ? 'Samtale' : 'Samtaler'}
@@ -2645,16 +2643,16 @@
 	}
 
 
-	/* ── Tittel-sone (auto — tar bare innholdshøyde) ── */
+	/* ── Tittel-sone (10 %) ── */
 	.zone-title {
-		flex: 0 0 auto;
+		flex: 10 0 0;
 		min-height: 0;
 		display: flex;
 		align-items: flex-start;
 		padding:
 			var(--screen-title-top-pad, 34px)
 			max(16px, env(safe-area-inset-right, 0px))
-			6px
+			0
 			max(16px, env(safe-area-inset-left, 0px));
 	}
 
@@ -2703,16 +2701,16 @@
 	.zone-widgets {
 		flex: 28 0 0;
 		min-height: 0;
-		padding: 10px 14px 8px;
+		padding: 8px 14px 4px;
 		background: #171717;
 		border-radius: 18px;
 		margin: 0 12px;
 		position: relative;
 	}
 
-	/* ── Tema-sone (auto — tar bare grid-innholdet) ── */
+	/* ── Tema-sone (24 %) ── */
 	.zone-tema {
-		flex: 0 0 auto;
+		flex: 24 0 0;
 		min-height: 0;
 		padding: 6px 16px 4px;
 		position: relative;
@@ -2720,7 +2718,7 @@
 
 	.zone-actions {
 		flex: 0 0 auto;
-		padding: 4px 0 8px;
+		padding: 0;
 	}
 
 	.action-carousel {
@@ -2731,7 +2729,7 @@
 		scroll-snap-type: x proximity;
 		scrollbar-width: none;
 		-webkit-overflow-scrolling: touch;
-		padding: 0 16px;
+		padding: 0;
 	}
 
 	.action-carousel::-webkit-scrollbar {
@@ -2823,7 +2821,7 @@
 		justify-content: center;
 		align-content: flex-start;
 		min-height: 100%;
-		padding: 0 28px 16px 0;
+		padding: 0 28px 4px 0;
 		box-sizing: border-box;
 	}
 
@@ -3265,18 +3263,19 @@
 		opacity: 0.8;
 	}
 
-	/* ── Input-sone (auto — chat-input bestemmer høyden) ── */
+	/* ── Input-sone (28 %) — nå uten card-chrome, inneholder handlingssonen + chat-input ── */
 	.zone-input {
-		flex: 0 0 auto;
+		flex: 28 0 0;
 		min-height: 0;
-		padding: 8px 14px;
+		padding: 0 14px;
 		padding-bottom: calc(8px + env(safe-area-inset-bottom, 8px));
-		background: #171717;
-		border-radius: 18px;
-		margin: 0 12px;
+		background: transparent;
+		border-radius: 0;
+		margin: 0;
 		display: flex;
 		flex-direction: column;
 		justify-content: flex-end;
+		gap: 10px;
 		box-sizing: border-box;
 		overflow: hidden;
 		transition: border-radius 300ms cubic-bezier(0.22, 1, 0.36, 1), margin 300ms cubic-bezier(0.22, 1, 0.36, 1), background 300ms cubic-bezier(0.22, 1, 0.36, 1);
