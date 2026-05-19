@@ -608,34 +608,6 @@
 		settings: { enabled: boolean; morningTime: string; eveningTime: string } | null;
 	} | null>(null);
 
-	// ── Handlingssone (foreslåtte handlinger) ───────────────────────────────
-	// Bygges som en prioritert liste. Foreløpig kun "sjekk inn", men strukturen
-	// er klar for flere kort som skåres etter tid på døgnet/uka og bruksmønster.
-	interface ActionItem {
-		id: string;
-		kind: 'egenfrekvens-quick';
-		priority: number; // høyere = vises først i karusellen
-	}
-
-	const actionItems = $derived.by<ActionItem[]>(() => {
-		const items: ActionItem[] = [];
-
-		if (egenfrekvensRecent && egenfrekvensRecent.settings?.enabled !== false) {
-			const today = egenfrekvensRecent.today;
-			const hour = new Date().getHours();
-			const isMorningSlot = hour < 14;
-			const slotEmpty = isMorningSlot ? today.morning === null : today.evening === null;
-			// Prioriter høyere når dagens slot er uregistrert
-			items.push({
-				id: 'egenfrekvens-quick',
-				kind: 'egenfrekvens-quick',
-				priority: slotEmpty ? 100 : 60
-			});
-		}
-
-		return items.sort((a, b) => b.priority - a.priority);
-	});
-
 	async function loadEgenfrekvensRecent() {
 		try {
 			const res = await fetch('/api/egenfrekvens/recent?days=7');
@@ -1942,24 +1914,22 @@
 		</section>
 	{/if}
 
-	<!-- ── Handlingssone: prioriterte aktuelle handlinger (karusell) ── -->
-	{#if !inputExpanded && actionItems.length > 0}
+	<!-- ── Handlingssone: aktuell handling (foreløpig kun sjekk inn) ── -->
+	{#if !inputExpanded && egenfrekvensRecent && egenfrekvensRecent.settings?.enabled !== false}
+		{@const slot = currentSlotFromTime()}
+		{@const slotEntry = slot === 'morning' ? egenfrekvensRecent.today.morning : egenfrekvensRecent.today.evening}
 		<section class="zone-actions" aria-label="Foreslåtte handlinger">
-			<div class="action-carousel">
-				{#each actionItems as item (item.id)}
-					<div class="action-card">
-						{#if item.kind === 'egenfrekvens-quick' && egenfrekvensRecent}
-							<EgenfrekvensQuickCard
-								todayMorning={egenfrekvensRecent.today.morning}
-								todayEvening={egenfrekvensRecent.today.evening}
-								recent={egenfrekvensRecent.points}
-								onOpenQuick={openEgenfrekvensQuick}
-								onOpenFull={openEgenfrekvensFull}
-							/>
-						{/if}
-					</div>
-				{/each}
-			</div>
+			<button
+				class="action-pill"
+				class:is-done={slotEntry !== null}
+				onclick={() => openEgenfrekvensQuick(slot)}
+			>
+				<span class="action-pill-icon">✨</span>
+				<span class="action-pill-label">
+					Sjekk inn · {slot === 'morning' ? 'morgen' : 'kveld'}
+					{#if slotEntry}<span class="action-pill-val">{slotEntry.level ?? '·'}</span>{/if}
+				</span>
+			</button>
 		</section>
 	{/if}
 
@@ -2693,28 +2663,51 @@
 
 	.zone-actions {
 		flex: 0 0 auto;
-		padding: 0 0 8px;
-	}
-
-	.action-carousel {
+		padding: 4px 16px 8px;
 		display: flex;
-		gap: 10px;
-		overflow-x: auto;
-		overflow-y: hidden;
-		scroll-snap-type: x mandatory;
-		scrollbar-width: none;
-		-webkit-overflow-scrolling: touch;
-		padding: 0 16px;
+		gap: 8px;
+		flex-wrap: wrap;
 	}
 
-	.action-carousel::-webkit-scrollbar {
-		display: none;
+	.action-pill {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		background: hsl(228 19% 11%);
+		border: 1px solid hsl(228 16% 18%);
+		border-radius: 999px;
+		padding: 8px 14px;
+		cursor: pointer;
+		font: inherit;
+		color: hsl(228 22% 80%);
+		font-size: 0.75rem;
+		font-weight: 600;
+		letter-spacing: 0.02em;
+		transition: background 0.15s, border-color 0.15s, transform 0.15s;
 	}
 
-	.action-card {
-		flex: 0 0 auto;
-		width: min(86vw, 320px);
-		scroll-snap-align: start;
+	.action-pill:hover {
+		background: hsl(228 22% 14%);
+		border-color: hsl(228 28% 34%);
+		transform: translateY(-1px);
+	}
+
+	.action-pill.is-done {
+		opacity: 0.7;
+	}
+
+	.action-pill-icon {
+		font-size: 0.95rem;
+		line-height: 1;
+	}
+
+	.action-pill-val {
+		margin-left: 6px;
+		padding: 2px 7px;
+		background: hsl(228 28% 22%);
+		border-radius: 999px;
+		color: #e2e8f0;
+		font-weight: 700;
 	}
 
 	/* ── Zone-label ── */
