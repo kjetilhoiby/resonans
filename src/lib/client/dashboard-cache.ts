@@ -117,9 +117,25 @@ export interface FoodDashboardData {
 	}>;
 }
 
+export interface EgenfrekvensSlotPointData {
+	eventId: string;
+	mode: 'quick' | 'full';
+	level: number | null;
+	balance: number | null;
+	thoughts: number | null;
+	feelings: number | null;
+	actions: number | null;
+	note: string | null;
+	reflection: string | null;
+	extreme: boolean;
+	timestamp: string;
+}
+
 export interface EgenfrekvensCheckinPointData {
 	day: string;
 	count: number;
+	morning: EgenfrekvensSlotPointData | null;
+	evening: EgenfrekvensSlotPointData | null;
 	balance: number | null;
 	thoughts: number | null;
 	feelings: number | null;
@@ -137,6 +153,7 @@ export interface EgenfrekvensDashboardData {
 	stats: {
 		count: number;
 		avgBalance: number | null;
+		avgLevel: number | null;
 		avgThoughts: number | null;
 		avgFeelings: number | null;
 		avgActions: number | null;

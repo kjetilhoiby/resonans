@@ -971,6 +971,84 @@ export const FLOWS: Record<FlowId, Flow> = {
 				}
 			}
 		}
+	},
+
+	egenfrekvens_quick: {
+		id: 'egenfrekvens_quick',
+		name: 'Sjekk inn',
+		description: 'En rask 1-5 på hvordan du har det',
+		icon: '✨',
+		domain: 'egenfrekvens',
+		trigger: 'manual',
+		estimatedMinutes: 1,
+		focus: true,
+		parentTheme: 'Egenfrekvens',
+		steps: [
+			{
+				id: 'step_level',
+				type: 'form',
+				title: 'Hvordan har du det nå?',
+				prompt: '1 er lavt, 5 er god flyt.',
+				autoAdvance: true,
+				fields: [
+					{
+						id: 'level',
+						type: 'slider',
+						label: 'Nivå',
+						min: 1,
+						max: 5,
+						step: 1,
+						defaultValue: 3,
+						helperLabels: {
+							1: 'Helt nede',
+							2: 'Tungt',
+							3: 'Midt på',
+							4: 'Greit',
+							5: 'God flyt'
+						}
+					}
+				],
+				validation: (d) => Number.isInteger(d.level)
+			},
+			{
+				id: 'step_note',
+				type: 'form',
+				title: 'Vil du si noe kort?',
+				prompt: 'Valgfritt — hopp over om det ikke trengs.',
+				fields: [
+					{
+						id: 'note',
+						type: 'textarea',
+						label: 'Notat',
+						placeholder: 'F.eks. søvn, jobb, en hendelse …',
+						required: false
+					}
+				]
+			}
+		],
+		onComplete: async (data, context) => {
+			const level = Number(data.level);
+			let slot = context?.slot;
+			if (slot !== 'morning' && slot !== 'evening') {
+				if (typeof window !== 'undefined') {
+					const urlSlot = new URL(window.location.href).searchParams.get('slot');
+					if (urlSlot === 'morning' || urlSlot === 'evening') {
+						slot = urlSlot;
+					}
+				}
+			}
+			if (slot !== 'morning' && slot !== 'evening') {
+				const hour = new Date().getHours();
+				slot = hour < 14 ? 'morning' : 'evening';
+			}
+			const note = typeof data.note === 'string' ? data.note : null;
+
+			await fetch('/api/egenfrekvens/checkin', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ level, slot, note })
+			});
+		}
 	}
 };
 

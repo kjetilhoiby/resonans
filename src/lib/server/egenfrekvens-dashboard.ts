@@ -2,9 +2,28 @@ import { db } from '$lib/db';
 import { sensorEvents } from '$lib/db/schema';
 import { and, eq, gte } from 'drizzle-orm';
 
+export type EgenfrekvensSlot = 'morning' | 'evening';
+
+export interface EgenfrekvensSlotPoint {
+	eventId: string;
+	mode: 'quick' | 'full';
+	level: number | null;
+	balance: number | null;
+	thoughts: number | null;
+	feelings: number | null;
+	actions: number | null;
+	note: string | null;
+	reflection: string | null;
+	extreme: boolean;
+	timestamp: string;
+}
+
 export interface EgenfrekvensCheckinPoint {
 	day: string;
 	count: number;
+	morning: EgenfrekvensSlotPoint | null;
+	evening: EgenfrekvensSlotPoint | null;
+	// Aggregert "samlet" for én-event-dager eller fallback til legacy (uten slot)
 	balance: number | null;
 	thoughts: number | null;
 	feelings: number | null;
@@ -18,6 +37,7 @@ export interface EgenfrekvensCheckinPoint {
 export interface EgenfrekvensTrendStats {
 	count: number;
 	avgBalance: number | null;
+	avgLevel: number | null;
 	avgThoughts: number | null;
 	avgFeelings: number | null;
 	avgActions: number | null;
@@ -61,6 +81,26 @@ function computeStreak(points: EgenfrekvensCheckinPoint[]): number {
 	return streak;
 }
 
+function rowToSlotPoint(
+	id: string,
+	data: Record<string, unknown>,
+	timestamp: Date
+): EgenfrekvensSlotPoint {
+	return {
+		eventId: id,
+		mode: data.mode === 'quick' ? 'quick' : 'full',
+		level: num(data.level),
+		balance: num(data.balance),
+		thoughts: num(data.thoughts),
+		feelings: num(data.feelings),
+		actions: num(data.actions),
+		note: str(data.note),
+		reflection: str(data.reflection),
+		extreme: Boolean(data.extreme),
+		timestamp: timestamp.toISOString()
+	};
+}
+
 export async function loadEgenfrekvensDashboardData(
 	userId: string,
 	rangeDays = 30
@@ -87,15 +127,16 @@ export async function loadEgenfrekvensDashboardData(
 	type Bucket = {
 		day: string;
 		ids: string[];
-		balances: number[];
-		thoughts: number[];
-		feelings: number[];
-		actions: number[];
+		morning: EgenfrekvensSlotPoint | null;
+		morningTs: number;
+		evening: EgenfrekvensSlotPoint | null;
+		eveningTs: number;
+		legacy: EgenfrekvensSlotPoint | null; // events uten slot
+		legacyTs: number;
 		extreme: boolean;
-		lastNote: string | null;
-		lastReflection: string | null;
 	};
 	const byDay = new Map<string, Bucket>();
+
 	for (const row of rows) {
 		const data = (row.data ?? {}) as Record<string, unknown>;
 		const day = str(data.day);
@@ -105,50 +146,89 @@ export async function loadEgenfrekvensDashboardData(
 			bucket = {
 				day,
 				ids: [],
-				balances: [],
-				thoughts: [],
-				feelings: [],
-				actions: [],
-				extreme: false,
-				lastNote: null,
-				lastReflection: null
+				morning: null,
+				morningTs: 0,
+				evening: null,
+				eveningTs: 0,
+				legacy: null,
+				legacyTs: 0,
+				extreme: false
 			};
 			byDay.set(day, bucket);
 		}
 		bucket.ids.push(row.id);
-		const b = num(data.balance);
-		const t = num(data.thoughts);
-		const f = num(data.feelings);
-		const a = num(data.actions);
-		if (b !== null) bucket.balances.push(b);
-		if (t !== null) bucket.thoughts.push(t);
-		if (f !== null) bucket.feelings.push(f);
-		if (a !== null) bucket.actions.push(a);
 		bucket.extreme = bucket.extreme || Boolean(data.extreme);
-		const note = str(data.note);
-		if (note) bucket.lastNote = note;
-		const reflection = str(data.reflection);
-		if (reflection) bucket.lastReflection = reflection;
+		const ts = row.timestamp.getTime();
+		const point = rowToSlotPoint(row.id, data, row.timestamp);
+		const slot = data.slot;
+		if (slot === 'morning') {
+			if (ts >= bucket.morningTs) {
+				bucket.morning = point;
+				bucket.morningTs = ts;
+			}
+		} else if (slot === 'evening') {
+			if (ts >= bucket.eveningTs) {
+				bucket.evening = point;
+				bucket.eveningTs = ts;
+			}
+		} else if (ts >= bucket.legacyTs) {
+			bucket.legacy = point;
+			bucket.legacyTs = ts;
+		}
 	}
 
 	const points: EgenfrekvensCheckinPoint[] = Array.from(byDay.values())
-		.map((b) => ({
-			day: b.day,
-			count: Math.max(b.balances.length, b.thoughts.length, b.feelings.length, b.actions.length, 1),
-			balance: avg(b.balances),
-			thoughts: avg(b.thoughts),
-			feelings: avg(b.feelings),
-			actions: avg(b.actions),
-			note: b.lastNote,
-			reflection: b.lastReflection,
-			extreme: b.extreme,
-			eventIds: b.ids
-		}))
+		.map((b) => {
+			// Velg "samlet" baseline for legacy-felt: snitt av tilgjengelige slot-balanser, ellers legacy.
+			const balances: number[] = [];
+			const thoughts: number[] = [];
+			const feelings: number[] = [];
+			const actions: number[] = [];
+			const collect = (p: EgenfrekvensSlotPoint | null) => {
+				if (!p) return;
+				if (p.balance !== null) balances.push(p.balance);
+				if (p.thoughts !== null) thoughts.push(p.thoughts);
+				if (p.feelings !== null) feelings.push(p.feelings);
+				if (p.actions !== null) actions.push(p.actions);
+			};
+			collect(b.morning);
+			collect(b.evening);
+			collect(b.legacy);
+
+			// Note/reflection: foretrekk legacy (full-flow) eller siste full event blant slotene
+			const fullSource =
+				b.legacy?.mode === 'full'
+					? b.legacy
+					: b.evening?.mode === 'full'
+						? b.evening
+						: b.morning?.mode === 'full'
+							? b.morning
+							: b.legacy ?? b.evening ?? b.morning;
+
+			return {
+				day: b.day,
+				count: b.ids.length,
+				morning: b.morning,
+				evening: b.evening,
+				balance: avg(balances),
+				thoughts: avg(thoughts),
+				feelings: avg(feelings),
+				actions: avg(actions),
+				note: fullSource?.note ?? null,
+				reflection: fullSource?.reflection ?? null,
+				extreme: b.extreme,
+				eventIds: b.ids
+			};
+		})
 		.sort((a, b) => (a.day < b.day ? 1 : -1));
 
+	const levels = points.flatMap((p) => [p.morning?.level, p.evening?.level].filter(
+		(v): v is number => typeof v === 'number'
+	));
 	const stats: EgenfrekvensTrendStats = {
 		count: points.length,
 		avgBalance: avg(points.map((p) => p.balance)),
+		avgLevel: levels.length > 0 ? levels.reduce((s, n) => s + n, 0) / levels.length : null,
 		avgThoughts: avg(points.map((p) => p.thoughts)),
 		avgFeelings: avg(points.map((p) => p.feelings)),
 		avgActions: avg(points.map((p) => p.actions)),

@@ -13,6 +13,7 @@
 	import { onMount } from 'svelte';
 	import { fly } from 'svelte/transition';
 	import DynamicWidget from '../composed/DynamicWidget.svelte';
+	import EgenfrekvensQuickCard from '../composed/EgenfrekvensQuickCard.svelte';
 	import WidgetConfigSheet from '../ui/WidgetConfigSheet.svelte';
 	import MorphTitle from '../ui/MorphTitle.svelte';
 	import Icon from '../ui/Icon.svelte';
@@ -527,10 +528,18 @@
 				openChat();
 			}
 
+			void loadEgenfrekvensRecent();
+
 			// URL-trigget egenfrekvens-flow (fra push-nudge eller dyp-lenke)
-			if ($page.url.searchParams.get('flow') === 'egenfrekvens_checkin') {
-				egenfrekvensFlowOpen = true;
-				void loadEgenfrekvensContext();
+			const flowParam = $page.url.searchParams.get('flow');
+			if (flowParam === 'egenfrekvens_checkin' || flowParam === 'egenfrekvens_quick') {
+				egenfrekvensActiveSlot = currentSlotFromUrl();
+				if (flowParam === 'egenfrekvens_checkin') {
+					egenfrekvensFlowOpen = true;
+					void loadEgenfrekvensContext();
+				} else {
+					egenfrekvensQuickFlowOpen = true;
+				}
 				const nudgeId = $page.url.searchParams.get('nudgeEventId');
 				if (nudgeId) {
 					void fetch(`/api/nudges/events/${nudgeId}/stage`, {
@@ -573,12 +582,51 @@
 		})();
 	});
 
+	interface EgenfrekvensSlotSummary {
+		level: number | null;
+		mode: 'quick' | 'full';
+		balance: number | null;
+	}
+
+	interface EgenfrekvensRecentPoint {
+		day: string;
+		morning: EgenfrekvensSlotSummary | null;
+		evening: EgenfrekvensSlotSummary | null;
+	}
+
 	interface HomeWidgetEntry {
 		id: string;
-		kind: 'checklist' | 'dynamic' | 'skeleton' | 'partner';
+		kind: 'checklist' | 'dynamic' | 'skeleton' | 'partner' | 'egenfrekvens-quick';
 		checklist?: Checklist;
 		widget?: UserWidget;
 		skeletonIndex?: number;
+	}
+
+	let egenfrekvensRecent = $state<{
+		today: { morning: EgenfrekvensSlotSummary | null; evening: EgenfrekvensSlotSummary | null };
+		points: EgenfrekvensRecentPoint[];
+		settings: { enabled: boolean; morningTime: string; eveningTime: string } | null;
+	} | null>(null);
+
+	async function loadEgenfrekvensRecent() {
+		try {
+			const res = await fetch('/api/egenfrekvens/recent?days=7');
+			if (!res.ok) return;
+			egenfrekvensRecent = await res.json();
+		} catch {
+			// best-effort, ignore
+		}
+	}
+
+	function openEgenfrekvensQuick(slot: 'morning' | 'evening') {
+		egenfrekvensActiveSlot = slot;
+		egenfrekvensQuickFlowOpen = true;
+	}
+
+	function openEgenfrekvensFull(slot: 'morning' | 'evening') {
+		egenfrekvensActiveSlot = slot;
+		egenfrekvensFlowOpen = true;
+		void loadEgenfrekvensContext();
 	}
 
 	const metricWidgetEntries = $derived.by<HomeWidgetEntry[]>(() => {
@@ -590,19 +638,27 @@
 			}));
 		}
 
-		if (pinnedWidgets.length > 0) {
-			return pinnedWidgets.map((widget) => ({
-				id: `dynamic:${widget.id}`,
-				kind: 'dynamic',
-				widget
-			}));
+		const entries: HomeWidgetEntry[] = [];
+
+		if (egenfrekvensRecent && egenfrekvensRecent.settings?.enabled !== false) {
+			entries.push({ id: 'egenfrekvens-quick', kind: 'egenfrekvens-quick' });
 		}
 
-		if (relationshipOnboardingActive) {
+		if (pinnedWidgets.length > 0) {
+			entries.push(
+				...pinnedWidgets.map((widget) => ({
+					id: `dynamic:${widget.id}`,
+					kind: 'dynamic' as const,
+					widget
+				}))
+			);
+		}
+
+		if (entries.length === 0 && relationshipOnboardingActive) {
 			return [{ id: 'partner-onboarding', kind: 'partner' }];
 		}
 
-		return [];
+		return entries;
 	});
 
 	const monthDayData = $derived.by(() => {
@@ -784,11 +840,23 @@
 
 	// ── Egenfrekvens-sjekkin ──────────────────────────────────────────────────
 	let egenfrekvensFlowOpen = $state(false);
+	let egenfrekvensQuickFlowOpen = $state(false);
+	let egenfrekvensActiveSlot = $state<'morning' | 'evening'>('morning');
 	let egenfrekvensPromptOpen = $state(false);
 	let egenfrekvensPromptDay = $state('');
 	let egenfrekvensInitialNote = $state('');
 	let egenfrekvensReflectionPrompt = $state<string | null>(null);
 	let egenfrekvensDreamReasons = $state<Record<string, Array<{ value: string; label: string; source: string }>> | null>(null);
+
+	function currentSlotFromTime(): 'morning' | 'evening' {
+		return new Date().getHours() < 14 ? 'morning' : 'evening';
+	}
+
+	function currentSlotFromUrl(): 'morning' | 'evening' {
+		const fromUrl = $page.url.searchParams.get('slot');
+		if (fromUrl === 'morning' || fromUrl === 'evening') return fromUrl;
+		return currentSlotFromTime();
+	}
 
 	async function loadEgenfrekvensContext() {
 		const isoDay = new Date().toISOString().slice(0, 10);
@@ -1769,6 +1837,16 @@
 									onunpin={() => unpinWidget(item.widget!.id)}
 									onconfig={() => openWidgetConfigSheet(item.widget!)}
 								/>
+							{:else if item.kind === 'egenfrekvens-quick' && egenfrekvensRecent}
+								<div class="widget-item-full">
+									<EgenfrekvensQuickCard
+										todayMorning={egenfrekvensRecent.today.morning}
+										todayEvening={egenfrekvensRecent.today.evening}
+										recent={egenfrekvensRecent.points}
+										onOpenQuick={openEgenfrekvensQuick}
+										onOpenFull={openEgenfrekvensFull}
+									/>
+								</div>
 							{:else if item.kind === 'partner'}
 								<div class="partner-onboarding-card widget-item-full">
 									<p class="partner-onboarding-kicker">Partnermodus aktivert</p>
@@ -2443,6 +2521,7 @@
 	<FlowSheet
 		flow={FLOWS['egenfrekvens_checkin']}
 		context={{
+			slot: egenfrekvensActiveSlot,
 			...(egenfrekvensInitialNote ? { initialData: { note: egenfrekvensInitialNote } } : {}),
 			...(egenfrekvensReflectionPrompt ? { systemPrompts: { reflection: egenfrekvensReflectionPrompt } } : {}),
 			...(egenfrekvensDreamReasons ? { dreamReasons: egenfrekvensDreamReasons } : {})
@@ -2469,6 +2548,21 @@
 				chatInputAutoFocus = true;
 			}
 			returnToChatAfterFlow = false;
+		}}
+	/>
+{/if}
+
+{#if egenfrekvensQuickFlowOpen}
+	<FlowSheet
+		flow={FLOWS['egenfrekvens_quick']}
+		context={{ slot: egenfrekvensActiveSlot }}
+		onclose={() => {
+			egenfrekvensQuickFlowOpen = false;
+		}}
+		oncomplete={() => {
+			egenfrekvensQuickFlowOpen = false;
+			egenfrekvensPromptOpen = false;
+			void loadEgenfrekvensRecent();
 		}}
 	/>
 {/if}
