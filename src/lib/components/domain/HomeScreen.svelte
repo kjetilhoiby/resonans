@@ -596,7 +596,7 @@
 
 	interface HomeWidgetEntry {
 		id: string;
-		kind: 'checklist' | 'dynamic' | 'skeleton' | 'partner' | 'egenfrekvens-quick';
+		kind: 'checklist' | 'dynamic' | 'skeleton' | 'partner';
 		checklist?: Checklist;
 		widget?: UserWidget;
 		skeletonIndex?: number;
@@ -607,6 +607,34 @@
 		points: EgenfrekvensRecentPoint[];
 		settings: { enabled: boolean; morningTime: string; eveningTime: string } | null;
 	} | null>(null);
+
+	// ── Handlingssone (foreslåtte handlinger) ───────────────────────────────
+	// Bygges som en prioritert liste. Foreløpig kun "sjekk inn", men strukturen
+	// er klar for flere kort som skåres etter tid på døgnet/uka og bruksmønster.
+	interface ActionItem {
+		id: string;
+		kind: 'egenfrekvens-quick';
+		priority: number; // høyere = vises først i karusellen
+	}
+
+	const actionItems = $derived.by<ActionItem[]>(() => {
+		const items: ActionItem[] = [];
+
+		if (egenfrekvensRecent && egenfrekvensRecent.settings?.enabled !== false) {
+			const today = egenfrekvensRecent.today;
+			const hour = new Date().getHours();
+			const isMorningSlot = hour < 14;
+			const slotEmpty = isMorningSlot ? today.morning === null : today.evening === null;
+			// Prioriter høyere når dagens slot er uregistrert
+			items.push({
+				id: 'egenfrekvens-quick',
+				kind: 'egenfrekvens-quick',
+				priority: slotEmpty ? 100 : 60
+			});
+		}
+
+		return items.sort((a, b) => b.priority - a.priority);
+	});
 
 	async function loadEgenfrekvensRecent() {
 		try {
@@ -638,27 +666,19 @@
 			}));
 		}
 
-		const entries: HomeWidgetEntry[] = [];
-
-		if (egenfrekvensRecent && egenfrekvensRecent.settings?.enabled !== false) {
-			entries.push({ id: 'egenfrekvens-quick', kind: 'egenfrekvens-quick' });
-		}
-
 		if (pinnedWidgets.length > 0) {
-			entries.push(
-				...pinnedWidgets.map((widget) => ({
-					id: `dynamic:${widget.id}`,
-					kind: 'dynamic' as const,
-					widget
-				}))
-			);
+			return pinnedWidgets.map((widget) => ({
+				id: `dynamic:${widget.id}`,
+				kind: 'dynamic' as const,
+				widget
+			}));
 		}
 
-		if (entries.length === 0 && relationshipOnboardingActive) {
+		if (relationshipOnboardingActive) {
 			return [{ id: 'partner-onboarding', kind: 'partner' }];
 		}
 
-		return entries;
+		return [];
 	});
 
 	const monthDayData = $derived.by(() => {
@@ -1837,16 +1857,6 @@
 									onunpin={() => unpinWidget(item.widget!.id)}
 									onconfig={() => openWidgetConfigSheet(item.widget!)}
 								/>
-							{:else if item.kind === 'egenfrekvens-quick' && egenfrekvensRecent}
-								<div class="widget-item-full">
-									<EgenfrekvensQuickCard
-										todayMorning={egenfrekvensRecent.today.morning}
-										todayEvening={egenfrekvensRecent.today.evening}
-										recent={egenfrekvensRecent.points}
-										onOpenQuick={openEgenfrekvensQuick}
-										onOpenFull={openEgenfrekvensFull}
-									/>
-								</div>
 							{:else if item.kind === 'partner'}
 								<div class="partner-onboarding-card widget-item-full">
 									<p class="partner-onboarding-kicker">Partnermodus aktivert</p>
@@ -1929,6 +1939,27 @@
 			<span class="cta-arrow">→</span>
 		</button>
 		{/if}
+		</section>
+	{/if}
+
+	<!-- ── Handlingssone: prioriterte aktuelle handlinger (karusell) ── -->
+	{#if !inputExpanded && actionItems.length > 0}
+		<section class="zone-actions" aria-label="Foreslåtte handlinger">
+			<div class="action-carousel">
+				{#each actionItems as item (item.id)}
+					<div class="action-card">
+						{#if item.kind === 'egenfrekvens-quick' && egenfrekvensRecent}
+							<EgenfrekvensQuickCard
+								todayMorning={egenfrekvensRecent.today.morning}
+								todayEvening={egenfrekvensRecent.today.evening}
+								recent={egenfrekvensRecent.points}
+								onOpenQuick={openEgenfrekvensQuick}
+								onOpenFull={openEgenfrekvensFull}
+							/>
+						{/if}
+					</div>
+				{/each}
+			</div>
 		</section>
 	{/if}
 
@@ -2658,6 +2689,32 @@
 		min-height: 0;
 		padding: 6px 16px 4px;
 		position: relative;
+	}
+
+	.zone-actions {
+		flex: 0 0 auto;
+		padding: 0 0 8px;
+	}
+
+	.action-carousel {
+		display: flex;
+		gap: 10px;
+		overflow-x: auto;
+		overflow-y: hidden;
+		scroll-snap-type: x mandatory;
+		scrollbar-width: none;
+		-webkit-overflow-scrolling: touch;
+		padding: 0 16px;
+	}
+
+	.action-carousel::-webkit-scrollbar {
+		display: none;
+	}
+
+	.action-card {
+		flex: 0 0 auto;
+		width: min(86vw, 320px);
+		scroll-snap-align: start;
 	}
 
 	/* ── Zone-label ── */
