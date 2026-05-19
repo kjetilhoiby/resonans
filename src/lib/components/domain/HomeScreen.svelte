@@ -2645,16 +2645,16 @@
 	}
 
 
-	/* ── Tittel-sone (10 %) ── */
+	/* ── Tittel-sone (auto — tar bare innholdshøyde) ── */
 	.zone-title {
-		flex: 10 0 0;
+		flex: 0 0 auto;
 		min-height: 0;
 		display: flex;
 		align-items: flex-start;
 		padding:
 			var(--screen-title-top-pad, 34px)
 			max(16px, env(safe-area-inset-right, 0px))
-			0
+			6px
 			max(16px, env(safe-area-inset-left, 0px));
 	}
 
@@ -2710,9 +2710,9 @@
 		position: relative;
 	}
 
-	/* ── Tema-sone (24 %) ── */
+	/* ── Tema-sone (auto — tar bare grid-innholdet) ── */
 	.zone-tema {
-		flex: 24 0 0;
+		flex: 0 0 auto;
 		min-height: 0;
 		padding: 6px 16px 4px;
 		position: relative;
@@ -3265,9 +3265,9 @@
 		opacity: 0.8;
 	}
 
-	/* ── Input-sone (krympet — chat-input sitter likevel i bunnen) ── */
+	/* ── Input-sone (auto — chat-input bestemmer høyden) ── */
 	.zone-input {
-		flex: 18 0 0;
+		flex: 0 0 auto;
 		min-height: 0;
 		padding: 8px 14px;
 		padding-bottom: calc(8px + env(safe-area-inset-bottom, 8px));
