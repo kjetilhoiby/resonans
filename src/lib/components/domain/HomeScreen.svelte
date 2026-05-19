@@ -608,6 +608,40 @@
 		settings: { enabled: boolean; morningTime: string; eveningTime: string } | null;
 	} | null>(null);
 
+	// ── Handlingssone (foreslåtte handlinger) ───────────────────────────────
+	// Prioritert karusell. Foreløpig kun "sjekk inn", men strukturen er klar
+	// for flere kort skåret etter tid på døgnet/uka og bruksmønster.
+	interface ActionItem {
+		id: string;
+		icon: string;
+		label: string;
+		value?: string | number;
+		done: boolean;
+		priority: number;
+		onclick: () => void;
+	}
+
+	const actionItems = $derived.by<ActionItem[]>(() => {
+		const items: ActionItem[] = [];
+
+		if (egenfrekvensRecent && egenfrekvensRecent.settings?.enabled !== false) {
+			const slot = currentSlotFromTime();
+			const entry =
+				slot === 'morning' ? egenfrekvensRecent.today.morning : egenfrekvensRecent.today.evening;
+			items.push({
+				id: 'egenfrekvens-quick',
+				icon: '✨',
+				label: `Sjekk inn · ${slot === 'morning' ? 'morgen' : 'kveld'}`,
+				value: entry?.level ?? undefined,
+				done: entry !== null,
+				priority: entry === null ? 100 : 60,
+				onclick: () => openEgenfrekvensQuick(slot)
+			});
+		}
+
+		return items.sort((a, b) => b.priority - a.priority);
+	});
+
 	async function loadEgenfrekvensRecent() {
 		try {
 			const res = await fetch('/api/egenfrekvens/recent?days=7');
@@ -1914,22 +1948,24 @@
 		</section>
 	{/if}
 
-	<!-- ── Handlingssone: aktuell handling (foreløpig kun sjekk inn) ── -->
-	{#if !inputExpanded && egenfrekvensRecent && egenfrekvensRecent.settings?.enabled !== false}
-		{@const slot = currentSlotFromTime()}
-		{@const slotEntry = slot === 'morning' ? egenfrekvensRecent.today.morning : egenfrekvensRecent.today.evening}
+	<!-- ── Handlingssone: prioriterte aktuelle handlinger (karusell) ── -->
+	{#if !inputExpanded && actionItems.length > 0}
 		<section class="zone-actions" aria-label="Foreslåtte handlinger">
-			<button
-				class="action-pill"
-				class:is-done={slotEntry !== null}
-				onclick={() => openEgenfrekvensQuick(slot)}
-			>
-				<span class="action-pill-icon">✨</span>
-				<span class="action-pill-label">
-					Sjekk inn · {slot === 'morning' ? 'morgen' : 'kveld'}
-					{#if slotEntry}<span class="action-pill-val">{slotEntry.level ?? '·'}</span>{/if}
-				</span>
-			</button>
+			<div class="action-carousel">
+				{#each actionItems as item (item.id)}
+					<button
+						class="action-pill"
+						class:is-done={item.done}
+						onclick={item.onclick}
+					>
+						<span class="action-pill-icon">{item.icon}</span>
+						<span class="action-pill-label">{item.label}</span>
+						{#if item.value !== undefined}
+							<span class="action-pill-val">{item.value}</span>
+						{/if}
+					</button>
+				{/each}
+			</div>
 		</section>
 	{/if}
 
@@ -2663,10 +2699,27 @@
 
 	.zone-actions {
 		flex: 0 0 auto;
-		padding: 4px 16px 8px;
+		padding: 4px 0 8px;
+	}
+
+	.action-carousel {
 		display: flex;
 		gap: 8px;
-		flex-wrap: wrap;
+		overflow-x: auto;
+		overflow-y: hidden;
+		scroll-snap-type: x proximity;
+		scrollbar-width: none;
+		-webkit-overflow-scrolling: touch;
+		padding: 0 16px;
+	}
+
+	.action-carousel::-webkit-scrollbar {
+		display: none;
+	}
+
+	.action-carousel > .action-pill {
+		flex: 0 0 auto;
+		scroll-snap-align: start;
 	}
 
 	.action-pill {
