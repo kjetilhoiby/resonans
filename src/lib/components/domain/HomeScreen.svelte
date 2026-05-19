@@ -3265,9 +3265,9 @@
 		opacity: 0.8;
 	}
 
-	/* ── Input-sone (28 %) — kort med avrundede hjørner ── */
+	/* ── Input-sone (krympet — chat-input sitter likevel i bunnen) ── */
 	.zone-input {
-		flex: 28 0 0;
+		flex: 18 0 0;
 		min-height: 0;
 		padding: 8px 14px;
 		padding-bottom: calc(8px + env(safe-area-inset-bottom, 8px));
