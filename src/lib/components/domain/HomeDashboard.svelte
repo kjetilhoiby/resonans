@@ -80,45 +80,62 @@
 		return `${days}d siden`;
 	}
 
-	function isStartEvent(ev: ApplianceEvent): boolean {
-		return ev.data.event === 'started' || ev.data.state === 'running' || ev.eventType === 'cycle_start';
+	type EventKind = 'started' | 'running' | 'finished' | 'unknown';
+
+	function eventKind(ev: ApplianceEvent): EventKind {
+		const e = ev.data.event as string | undefined;
+		if (e === 'started' || ev.data.state === 'running' || ev.eventType === 'cycle_start') return 'started';
+		if (e === 'running') return 'running';
+		if (e === 'finished' || ev.data.state === 'off' || ev.eventType === 'cycle_finish') return 'finished';
+		return 'unknown';
 	}
 
-	function isFinishEvent(ev: ApplianceEvent): boolean {
-		return ev.data.event === 'finished' || ev.data.state === 'off' || ev.eventType === 'cycle_finish';
+	function formatTime(iso: string): string {
+		return new Date(iso).toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
 	}
 
 	function eventLabel(ev: ApplianceEvent): string {
-		if (isStartEvent(ev)) return 'Startet';
-		if (isFinishEvent(ev)) return 'Ferdig';
-		if (ev.eventType === 'state_change' && ev.data.state) return String(ev.data.state);
-		if (ev.dataType) return ev.dataType.replace(/_/g, ' ');
-		return ev.eventType;
-	}
-
-	function eventDetail(ev: ApplianceEvent): string | null {
-		const parts: string[] = [];
-		if (ev.data.matched_program) parts.push(String(ev.data.matched_program));
-		if (ev.data.duration_minutes) {
-			const m = Number(ev.data.duration_minutes);
-			parts.push(m >= 60 ? `${Math.floor(m / 60)}t ${Math.round(m % 60)}min` : `${Math.round(m)} min`);
+		const kind = eventKind(ev);
+		if (kind === 'started') return `Startet ${formatTime(ev.timestamp)}`;
+		if (kind === 'running') {
+			const finish = ev.data.estimated_finish_at as string | undefined;
+			if (finish) return `Ferdig ca. ${formatTime(finish)}`;
+			return 'Kjører';
 		}
-		if (ev.data.total_kwh) parts.push(`${ev.data.total_kwh} kWh`);
-		return parts.length > 0 ? parts.join(' · ') : null;
+		if (kind === 'finished') {
+			const dur = ev.data.duration_minutes as number | undefined;
+			if (dur) {
+				const m = Math.round(dur);
+				return `Ferdig — ${m >= 60 ? `${Math.floor(m / 60)}t ${m % 60}min` : `${m} min`}`;
+			}
+			return `Ferdig ${formatTime(ev.timestamp)}`;
+		}
+		return ev.eventType;
 	}
 
 	function applianceStatus(a: Appliance): { label: string; detail: string | null; state: 'running' | 'done' | 'idle' } {
 		const latest = a.recentEvents[0];
 		if (!latest) return { label: 'Ingen data', detail: null, state: 'idle' };
-		if (isStartEvent(latest)) {
-			const est = latest.data.estimated_minutes_remaining
-				? `ca. ${Math.round(Number(latest.data.estimated_minutes_remaining))} min igjen`
+
+		const kind = eventKind(latest);
+
+		if (kind === 'started' || kind === 'running') {
+			const finish = latest.data.estimated_finish_at as string | undefined;
+			const label = finish
+				? `Ferdig ca. ${formatTime(finish)}`
+				: 'Kjører';
+			const program = latest.data.matched_program as string | undefined;
+			return { label, detail: program ?? null, state: 'running' };
+		}
+
+		if (kind === 'finished') {
+			const dur = latest.data.duration_minutes as number | undefined;
+			const detail = dur
+				? `${Math.round(dur)} min`
 				: null;
-			return { label: 'Kjører', detail: est, state: 'running' };
+			return { label: `Ferdig ${relativeTime(latest.timestamp)}`, detail, state: 'done' };
 		}
-		if (isFinishEvent(latest)) {
-			return { label: `Ferdig ${relativeTime(latest.timestamp)}`, detail: eventDetail(latest), state: 'done' };
-		}
+
 		return { label: relativeTime(latest.timestamp), detail: null, state: 'idle' };
 	}
 </script>
