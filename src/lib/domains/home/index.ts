@@ -66,7 +66,8 @@ export const HOME_APPLIANCE_SUBTYPES = [
 	'dishwasher',
 	'fridge',
 	'freezer',
-	'vacuum'
+	'vacuum',
+	'appliance_monitor'
 ] as const;
 export type HomeApplianceSubtype = (typeof HOME_APPLIANCE_SUBTYPES)[number];
 
@@ -76,8 +77,23 @@ export const HOME_APPLIANCE_LABELS: Record<HomeApplianceSubtype, { label: string
 	dishwasher: { label: 'Oppvaskmaskin', emoji: '🍽️' },
 	fridge: { label: 'Kjøleskap', emoji: '🧊' },
 	freezer: { label: 'Fryser', emoji: '❄️' },
-	vacuum: { label: 'Støvsuger', emoji: '🧹' }
+	vacuum: { label: 'Støvsuger', emoji: '🧹' },
+	appliance_monitor: { label: 'Apparat-monitor', emoji: '🔌' }
 };
+
+const PING_APPLIANCE_EMOJI: Record<string, string> = {
+	vaskemaskin: '🧺',
+	vaskemaskina: '🧺',
+	oppvaskmaskin: '🍽️',
+	oppvaskmaskina: '🍽️',
+	'tørketrommel': '👕',
+	tørketrommelen: '👕',
+};
+
+export function pingApplianceEmoji(name: string): string {
+	const key = name.toLowerCase().replace(/[^a-zæøå]/g, '');
+	return PING_APPLIANCE_EMOJI[key] ?? '🔌';
+}
 
 // Regex som peker mot home-domenet
 export const HOME_DOMAIN_TRIGGER =

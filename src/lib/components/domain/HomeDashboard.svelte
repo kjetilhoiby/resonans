@@ -80,26 +80,46 @@
 		return `${days}d siden`;
 	}
 
+	function isStartEvent(ev: ApplianceEvent): boolean {
+		return ev.data.event === 'started' || ev.data.state === 'running' || ev.eventType === 'cycle_start';
+	}
+
+	function isFinishEvent(ev: ApplianceEvent): boolean {
+		return ev.data.event === 'finished' || ev.data.state === 'off' || ev.eventType === 'cycle_finish';
+	}
+
 	function eventLabel(ev: ApplianceEvent): string {
-		const d = ev.data;
-		if (d.state === 'running' || ev.eventType === 'cycle_start') return 'Kjører';
-		if (d.state === 'off' || ev.eventType === 'cycle_finish') return 'Ferdig';
-		if (ev.eventType === 'state_change' && d.state) return String(d.state);
+		if (isStartEvent(ev)) return 'Startet';
+		if (isFinishEvent(ev)) return 'Ferdig';
+		if (ev.eventType === 'state_change' && ev.data.state) return String(ev.data.state);
 		if (ev.dataType) return ev.dataType.replace(/_/g, ' ');
 		return ev.eventType;
 	}
 
-	function applianceStatus(a: Appliance): { label: string; state: 'running' | 'done' | 'idle' } {
+	function eventDetail(ev: ApplianceEvent): string | null {
+		const parts: string[] = [];
+		if (ev.data.matched_program) parts.push(String(ev.data.matched_program));
+		if (ev.data.duration_minutes) {
+			const m = Number(ev.data.duration_minutes);
+			parts.push(m >= 60 ? `${Math.floor(m / 60)}t ${Math.round(m % 60)}min` : `${Math.round(m)} min`);
+		}
+		if (ev.data.total_kwh) parts.push(`${ev.data.total_kwh} kWh`);
+		return parts.length > 0 ? parts.join(' · ') : null;
+	}
+
+	function applianceStatus(a: Appliance): { label: string; detail: string | null; state: 'running' | 'done' | 'idle' } {
 		const latest = a.recentEvents[0];
-		if (!latest) return { label: 'Ingen data', state: 'idle' };
-		const d = latest.data;
-		if (d.state === 'running' || latest.eventType === 'cycle_start') {
-			return { label: 'Kjører', state: 'running' };
+		if (!latest) return { label: 'Ingen data', detail: null, state: 'idle' };
+		if (isStartEvent(latest)) {
+			const est = latest.data.estimated_minutes_remaining
+				? `ca. ${Math.round(Number(latest.data.estimated_minutes_remaining))} min igjen`
+				: null;
+			return { label: 'Kjører', detail: est, state: 'running' };
 		}
-		if (d.state === 'off' || latest.eventType === 'cycle_finish') {
-			return { label: `Ferdig ${relativeTime(latest.timestamp)}`, state: 'done' };
+		if (isFinishEvent(latest)) {
+			return { label: `Ferdig ${relativeTime(latest.timestamp)}`, detail: eventDetail(latest), state: 'done' };
 		}
-		return { label: relativeTime(latest.timestamp), state: 'idle' };
+		return { label: relativeTime(latest.timestamp), detail: null, state: 'idle' };
 	}
 </script>
 
@@ -130,6 +150,9 @@
 							{/if}
 							{status.label}
 						</div>
+						{#if status.detail}
+							<div class="appliance-detail">{status.detail}</div>
+						{/if}
 						{#if a.recentEvents.length > 1}
 							<ul class="appliance-history">
 								{#each a.recentEvents.slice(1, 4) as ev (ev.id)}
@@ -295,6 +318,10 @@
 	}
 	.appliance-status.status-done {
 		color: var(--success, #4caf50);
+	}
+	.appliance-detail {
+		font-size: 0.75rem;
+		color: var(--muted, #888);
 	}
 	.pulse {
 		width: 8px;

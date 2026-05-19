@@ -5,7 +5,7 @@ import { themes, tasks, sensorEvents, sensors, checklists } from '$lib/db/schema
 import { resolveThemeDashboardKind } from '$lib/domain/theme-dashboard-registry';
 import { and, eq, desc, inArray } from 'drizzle-orm';
 import { ProjectMetricsService } from '$lib/server/services/project-metrics-service';
-import { currentSeason, HOME_APPLIANCE_SUBTYPES, HOME_APPLIANCE_LABELS, type HomeApplianceSubtype } from '$lib/domains/home';
+import { currentSeason, HOME_APPLIANCE_SUBTYPES, HOME_APPLIANCE_LABELS, type HomeApplianceSubtype, pingApplianceEmoji } from '$lib/domains/home';
 
 export const GET: RequestHandler = async ({ locals, params }) => {
 	const userId = locals.userId;
@@ -73,29 +73,57 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 			.from(sensorEvents)
 			.where(and(eq(sensorEvents.userId, userId), inArray(sensorEvents.sensorId, sensorIds)))
 			.orderBy(desc(sensorEvents.timestamp))
-			.limit(50);
+			.limit(100);
+
+		function mapEvent(e: typeof allEvents[number]) {
+			return {
+				id: e.id,
+				eventType: e.eventType,
+				dataType: e.dataType ?? '',
+				timestamp: (e.timestamp as Date).toISOString(),
+				data: (e.data ?? {}) as Record<string, unknown>
+			};
+		}
 
 		for (const sensor of ownedSensors) {
 			const sub = (sensor.subtype ?? 'washer') as HomeApplianceSubtype;
-			const meta = HOME_APPLIANCE_LABELS[sub] ?? { label: sensor.name, emoji: '🔌' };
-			const events = allEvents
-				.filter((e) => e.sensorId === sensor.id)
-				.slice(0, 10);
 
-			appliances.push({
-				sensorId: sensor.id,
-				subtype: sub,
-				name: sensor.name,
-				label: meta.label,
-				emoji: meta.emoji,
-				recentEvents: events.map((e) => ({
-					id: e.id,
-					eventType: e.eventType,
-					dataType: e.dataType ?? '',
-					timestamp: (e.timestamp as Date).toISOString(),
-					data: (e.data ?? {}) as Record<string, unknown>
-				}))
-			});
+			if (sub === 'appliance_monitor') {
+				// Ping sensor: group events by data.appliance field
+				const sensorEvts = allEvents.filter((e) => e.sensorId === sensor.id);
+				const byAppliance = new Map<string, typeof allEvents>();
+				for (const ev of sensorEvts) {
+					const appName = (ev.data as Record<string, unknown>)?.appliance as string | undefined;
+					if (!appName) continue;
+					if (!byAppliance.has(appName)) byAppliance.set(appName, []);
+					byAppliance.get(appName)!.push(ev);
+				}
+
+				for (const [appName, evts] of byAppliance) {
+					appliances.push({
+						sensorId: sensor.id,
+						subtype: 'ping',
+						name: appName,
+						label: appName,
+						emoji: pingApplianceEmoji(appName),
+						recentEvents: evts.slice(0, 10).map(mapEvent)
+					});
+				}
+			} else {
+				const meta = HOME_APPLIANCE_LABELS[sub] ?? { label: sensor.name, emoji: '🔌' };
+				const events = allEvents
+					.filter((e) => e.sensorId === sensor.id)
+					.slice(0, 10);
+
+				appliances.push({
+					sensorId: sensor.id,
+					subtype: sub,
+					name: sensor.name,
+					label: meta.label,
+					emoji: meta.emoji,
+					recentEvents: events.map(mapEvent)
+				});
+			}
 		}
 	}
 
