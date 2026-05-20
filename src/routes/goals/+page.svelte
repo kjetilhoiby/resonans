@@ -108,14 +108,13 @@
 		return Math.round(avgProgress);
 	}
 
-	const METRIC_LABELS: Record<string, string> = {
-		running_distance: 'Løping',
-		weight_change: 'Vekt',
-		sleep_avg_night: 'Søvn',
-		sleep_lag: 'Søvnlag',
-		steps_avg_day: 'Skritt',
-		active_minutes_avg_day: 'Aktivitet',
-		grocery_spend: 'Dagligvarer'
+	const METRIC_DEFAULT_UNITS: Record<string, string> = {
+		running_distance: 'km',
+		weight_change: 'kg',
+		sleep_avg_night: 't',
+		steps_avg_day: 'skritt',
+		active_minutes_avg_day: 'min',
+		grocery_spend: 'kr'
 	};
 
 	const WINDOW_LABELS: Record<string, string> = {
@@ -128,24 +127,76 @@
 		'365d': 'i året'
 	};
 
+	function parseDateOnly(iso: string | null | undefined): Date | null {
+		if (!iso) return null;
+		const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+		if (!m) return null;
+		return new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
+	}
+
+	function isFirstDayOfMonth(date: Date): boolean {
+		return date.getDate() === 1;
+	}
+
+	function isLastDayOfMonth(date: Date): boolean {
+		const next = new Date(date);
+		next.setDate(next.getDate() + 1);
+		return next.getDate() === 1;
+	}
+
+	function formatShortDate(date: Date): string {
+		return date.toLocaleDateString('no-NO', { day: 'numeric', month: 'short' });
+	}
+
+	function derivePeriodLabel(opts: {
+		window: string | null | undefined;
+		durationDays: number | null | undefined;
+		startDate: string | null | undefined;
+		endDate: string | null | undefined;
+	}): string {
+		const start = parseDateOnly(opts.startDate);
+		const end = parseDateOnly(opts.endDate);
+
+		if (start && end) {
+			const sameYear = start.getFullYear() === end.getFullYear();
+
+			if (isFirstDayOfMonth(start) && isLastDayOfMonth(end) && sameYear) {
+				if (start.getMonth() === end.getMonth()) {
+					return `i ${start.toLocaleDateString('no-NO', { month: 'long' })}`;
+				}
+				if (start.getMonth() === 0 && end.getMonth() === 11) {
+					return `i ${start.getFullYear()}`;
+				}
+				const a = start.toLocaleDateString('no-NO', { month: 'long' });
+				const b = end.toLocaleDateString('no-NO', { month: 'long' });
+				return `${a}–${b} ${start.getFullYear()}`;
+			}
+
+			return `${formatShortDate(start)} – ${formatShortDate(end)}`;
+		}
+
+		if (opts.window === 'custom') {
+			return opts.durationDays ? `over ${opts.durationDays} dager` : '';
+		}
+		return opts.window ? WINDOW_LABELS[opts.window] ?? '' : '';
+	}
+
 	function formatGoalTrack(goal: GoalItem): string | null {
 		const track = goal.metadata?.goalTrack;
 		if (!track || typeof track.targetValue !== 'number') return null;
 
 		const metricId = goal.metadata?.metricId ?? '';
-		const metricLabel = METRIC_LABELS[metricId] ?? (metricId || 'Mål');
+		const unit = track.unit || METRIC_DEFAULT_UNITS[metricId] || '';
+		const valueStr = unit ? `${track.targetValue} ${unit}` : `${track.targetValue}`;
 
-		const unit = track.unit ? ` ${track.unit}` : '';
-		const valueStr = `${track.targetValue}${unit}`;
+		const periodStr = derivePeriodLabel({
+			window: track.window,
+			durationDays: track.durationDays,
+			startDate: goal.metadata?.startDate,
+			endDate: goal.metadata?.endDate
+		});
 
-		let windowStr = '';
-		if (track.window === 'custom') {
-			if (track.durationDays) windowStr = ` over ${track.durationDays} dager`;
-		} else if (track.window && WINDOW_LABELS[track.window]) {
-			windowStr = ` ${WINDOW_LABELS[track.window]}`;
-		}
-
-		return `${metricLabel} · ${valueStr}${windowStr}`;
+		return periodStr ? `${valueStr} ${periodStr}` : valueStr;
 	}
 
 	function getIntentBadge(goal: GoalItem):
@@ -802,6 +853,10 @@
 
 	.goal-chart-bleed {
 		margin: 0.75rem -1.5rem 0.25rem;
+	}
+
+	.goal-chart-bleed :global(.chart-legend) {
+		padding: 0 1.5rem;
 	}
 
 	.pace-row {
