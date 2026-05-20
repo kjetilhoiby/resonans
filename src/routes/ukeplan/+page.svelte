@@ -2886,6 +2886,10 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 		background: #0e1119;
 		border-radius: 10px;
 		padding: 10px;
+		touch-action: manipulation;
+		user-select: none;
+		-webkit-user-select: none;
+		-webkit-touch-callout: none;
 	}
 
 	.wp-check-row-parent {
@@ -3117,6 +3121,10 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 
 	.wp-item-text-btn {
 		width: 100%;
+		touch-action: manipulation;
+		user-select: none;
+		-webkit-user-select: none;
+		-webkit-touch-callout: none;
 	}
 
 	.wp-food-affordance {
