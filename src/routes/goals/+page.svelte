@@ -108,16 +108,44 @@
 		return Math.round(avgProgress);
 	}
 
+	const METRIC_LABELS: Record<string, string> = {
+		running_distance: 'Løping',
+		weight_change: 'Vekt',
+		sleep_avg_night: 'Søvn',
+		sleep_lag: 'Søvnlag',
+		steps_avg_day: 'Skritt',
+		active_minutes_avg_day: 'Aktivitet',
+		grocery_spend: 'Dagligvarer'
+	};
+
+	const WINDOW_LABELS: Record<string, string> = {
+		'7d': 'i uka',
+		week: 'i uka',
+		'30d': 'i måneden',
+		month: 'i måneden',
+		quarter: 'i kvartalet',
+		year: 'i året',
+		'365d': 'i året'
+	};
+
 	function formatGoalTrack(goal: GoalItem): string | null {
 		const track = goal.metadata?.goalTrack;
 		if (!track || typeof track.targetValue !== 'number') return null;
 
+		const metricId = goal.metadata?.metricId ?? '';
+		const metricLabel = METRIC_LABELS[metricId] ?? (metricId || 'Mål');
+
 		const unit = track.unit ? ` ${track.unit}` : '';
-		if (track.window === 'custom' && track.durationDays) {
-			return `${goal.metadata?.metricId || 'metric'} · ${track.targetValue}${unit} / ${track.durationDays} dager`;
+		const valueStr = `${track.targetValue}${unit}`;
+
+		let windowStr = '';
+		if (track.window === 'custom') {
+			if (track.durationDays) windowStr = ` over ${track.durationDays} dager`;
+		} else if (track.window && WINDOW_LABELS[track.window]) {
+			windowStr = ` ${WINDOW_LABELS[track.window]}`;
 		}
 
-		return `${goal.metadata?.metricId || 'metric'} · ${track.targetValue}${unit} / ${track.window || 'periode'}`;
+		return `${metricLabel} · ${valueStr}${windowStr}`;
 	}
 
 	function getIntentBadge(goal: GoalItem):
@@ -680,7 +708,8 @@
 	.content {
 		max-width: 800px;
 		margin: 0 auto;
-		padding: 1.5rem 0.5rem;
+		padding: 1.5rem 0;
+		width: 100%;
 	}
 
 	.empty-state {
