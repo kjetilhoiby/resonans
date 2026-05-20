@@ -63,6 +63,10 @@
 </script>
 
 <div class="viz-delta-track" title={title} style={`height:${height}px; background:${trackColor};`}>
+	<div
+		class="viz-delta-progress"
+		style={`width:${displayProgressPct}%;`}
+	></div>
 	{#if isNear}
 		<div
 			class={`viz-delta-dot ${mounted && animateOnMount ? 'mount-pop' : ''}`}
@@ -73,9 +77,9 @@
 			class={`viz-delta-arrow ${isBehind ? 'red' : 'green'} ${mounted && animateOnMount ? 'mount-glow' : ''}`}
 			style={`left:${fromPct}%; width:${arrowWidthPct}%;`}
 		>
-			{#if isBehind}
+			{#if isAhead}
 				<div class="viz-arrow-head right"></div>
-			{:else if isAhead}
+			{:else if isBehind}
 				<div class="viz-arrow-head left"></div>
 			{/if}
 		</div>
@@ -87,6 +91,15 @@
 		position: relative;
 		border-radius: 4px;
 		overflow: hidden;
+	}
+
+	.viz-delta-progress {
+		position: absolute;
+		top: 0;
+		left: 0;
+		height: 100%;
+		background: rgba(34, 197, 94, 0.32);
+		transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
 	}
 
 	.viz-delta-arrow {
@@ -111,20 +124,18 @@
 		width: 0;
 		height: 0;
 		transform: translateY(-50%);
-	}
-
-	.viz-arrow-head.right {
-		right: -1px;
 		border-top: 4px solid transparent;
 		border-bottom: 4px solid transparent;
-		border-left: 6px solid #ef4444;
 	}
 
-	.viz-delta-arrow.green .viz-arrow-head.left {
+	.viz-delta-arrow.red .viz-arrow-head.left {
 		left: -1px;
-		border-top: 4px solid transparent;
-		border-bottom: 4px solid transparent;
-		border-right: 6px solid #4ade80;
+		border-right: 6px solid #ef4444;
+	}
+
+	.viz-delta-arrow.green .viz-arrow-head.right {
+		right: -1px;
+		border-left: 6px solid #4ade80;
 	}
 
 	.viz-delta-dot {
