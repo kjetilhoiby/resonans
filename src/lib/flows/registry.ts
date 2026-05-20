@@ -881,6 +881,8 @@ export const FLOWS: Record<FlowId, Flow> = {
 					const aSignals: string[] = data.actions_signals ?? [];
 					const fSignals: string[] = data.feelings_signals ?? [];
 					const tSignals: string[] = data.thoughts_signals ?? [];
+					const slot: 'morning' | 'evening' | undefined =
+						data._slot === 'morning' || data._slot === 'evening' ? data._slot : undefined;
 
 					const aLevel = ACTIONS_PYRAMID[a];
 					const fLevel = FEELINGS_PYRAMID[f];
@@ -888,18 +890,35 @@ export const FLOWS: Record<FlowId, Flow> = {
 
 					const lines: string[] = [
 						'Du er en varm, kort samtalepartner. Brukeren har akkurat fylt ut en egenfrekvens-sjekkin.',
-						'Start med å speile tilstanden i én setning — vis at du ser helheten, ikke bare tallene.',
-						'Still ETT åpent spørsmål som inviterer til selvobservasjon.',
-						'Ikke vær løsningsorientert. Fokuser på hva som funker, eller ett enkelt grep for å snu noe negativt.',
-						'Ikke ramse opp data. Bruk signalene til å vise at du ser dem.',
-						'Viktig: dimensjonene kan avvike. H5/F1/T1 er ikke "middels" — det kan være overstyring eller maskering.',
+						'Din oppgave er REFLEKSJON, ikke handlingsplan.',
+						'',
+						'Slik svarer du:',
+						'1. Speil tilbake i én setning hva du har lest fra sjekkinnen — vis at du ser helheten, ikke bare tallene.',
+						'2. Still ETT åpent spørsmål som borer i det brukeren nettopp svarte (tanker, følelser eller handlinger). Vær nysgjerrig på hva som ligger bak signalene.',
+						'3. Aldri lange monologer. Hold svaret kort.',
+						'',
+						'Strenge regler:',
+						'- Ikke gi råd eller foreslå konkrete handlinger med mindre brukeren eksplisitt spør om det.',
+						'- Ikke ramse opp data. Bruk signalene til å vise at du ser dem.',
+						'- Viktig: dimensjonene kan avvike. H5/F1/T1 er ikke "middels" — det kan være overstyring eller maskering.'
+					];
+					if (slot === 'morning') {
+						lines.push(
+							'Det er morgen. Etter noen turer med speiling og åpne spørsmål — hvis det føles riktig — kan du invitere brukeren til å sette ord på det viktigste målet for dagen i dag.'
+						);
+					} else if (slot === 'evening') {
+						lines.push(
+							'Det er kveld. Etter noen turer med speiling og åpne spørsmål — hvis det føles riktig — kan du invitere brukeren til å nevne tre konkrete ting hen er fornøyd med fra dagen.'
+						);
+					}
+					lines.push(
 						'',
 						'SJEKKIN:',
 						`- Nivå: ${lvl}/5`,
 						`- Handlinger: ${a}/5 ${aLevel?.title ?? ''}${aSignals.length ? ` — ${aSignals.join(', ')}` : ''}`,
 						`- Følelser: ${f}/5 ${fLevel?.title ?? ''}${fSignals.length ? ` — ${fSignals.join(', ')}` : ''}`,
-						`- Tanker: ${t}/5 ${tLevel?.title ?? ''}${tSignals.length ? ` — ${tSignals.join(', ')}` : ''}`,
-					];
+						`- Tanker: ${t}/5 ${tLevel?.title ?? ''}${tSignals.length ? ` — ${tSignals.join(', ')}` : ''}`
+					);
 
 					// Map level (1-5) til balance (-4..+4) for threshold-sjekken
 					const derivedBalance = (lvl - 3) * 2;
@@ -911,6 +930,10 @@ export const FLOWS: Record<FlowId, Flow> = {
 						prompt = 'Det er et spenn mellom det du gjør og det du kjenner. Hva tror du det handler om?';
 					} else if (extreme) {
 						prompt = 'Noe skiller seg ut i dag. Hva ligger bak, tror du?';
+					} else if (slot === 'morning') {
+						prompt = 'God morgen. Hvordan kjennes det å starte dagen sånn — hva merker du mest av tanker, følelser eller handlinger akkurat nå?';
+					} else if (slot === 'evening') {
+						prompt = 'Takk for sjekkinnen. Når du tenker tilbake på dagen — hva sitter du igjen med?';
 					} else if (lvl >= 4) {
 						prompt = 'Det ser ut som en god dag. Hva gir deg energi akkurat nå?';
 					} else {

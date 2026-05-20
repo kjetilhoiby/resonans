@@ -9,7 +9,9 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	const recentLimit = Number.isFinite(recentLimitParam) && recentLimitParam > 0 && recentLimitParam <= 30
 		? recentLimitParam
 		: undefined;
+	const slotParam = url.searchParams.get('slot');
+	const slot = slotParam === 'morning' || slotParam === 'evening' ? slotParam : undefined;
 
-	const context = await buildEgenfrekvensReflectionContext(locals.userId, { day, recentLimit });
+	const context = await buildEgenfrekvensReflectionContext(locals.userId, { day, recentLimit, slot });
 	return json(context);
 };

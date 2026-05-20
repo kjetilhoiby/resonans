@@ -887,8 +887,9 @@
 
 	async function loadEgenfrekvensContext() {
 		const isoDay = new Date().toISOString().slice(0, 10);
+		const slotQuery = egenfrekvensActiveSlot ? `&slot=${egenfrekvensActiveSlot}` : '';
 		await Promise.all([
-			fetch(`/api/egenfrekvens/reflection-context?day=${isoDay}`)
+			fetch(`/api/egenfrekvens/reflection-context?day=${isoDay}${slotQuery}`)
 				.then((r) => r.ok ? r.json() : null)
 				.then((ctx) => {
 					egenfrekvensReflectionPrompt = typeof ctx?.systemPrompt === 'string' ? ctx.systemPrompt : null;

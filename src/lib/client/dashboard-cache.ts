@@ -117,6 +117,11 @@ export interface FoodDashboardData {
 	}>;
 }
 
+export interface EgenfrekvensReflectionMessageData {
+	role: 'user' | 'assistant';
+	text: string;
+}
+
 export interface EgenfrekvensSlotPointData {
 	eventId: string;
 	mode: 'quick' | 'full';
@@ -127,6 +132,8 @@ export interface EgenfrekvensSlotPointData {
 	actions: number | null;
 	note: string | null;
 	reflection: string | null;
+	reflectionThread?: EgenfrekvensReflectionMessageData[] | null;
+	reflectionSynthesis?: string | null;
 	extreme: boolean;
 	timestamp: string;
 }
@@ -142,6 +149,8 @@ export interface EgenfrekvensCheckinPointData {
 	actions: number | null;
 	note: string | null;
 	reflection: string | null;
+	reflectionThread?: EgenfrekvensReflectionMessageData[] | null;
+	reflectionSynthesis?: string | null;
 	extreme: boolean;
 	eventIds?: string[];
 }
