@@ -190,10 +190,26 @@
 				{#if data.latest.note}
 					<p class="ef-note">«{data.latest.note}»</p>
 				{/if}
-				{#if data.latest.reflection}
+				{#if data.latest.reflectionSynthesis || data.latest.reflection || data.latest.reflectionThread?.length}
 					<details class="ef-reflection">
 						<summary>Refleksjon</summary>
-						<p>{data.latest.reflection}</p>
+						{#if data.latest.reflectionSynthesis}
+							<p>{data.latest.reflection}</p>
+						{:else if data.latest.reflectionThread?.length}
+							{#if data.latest.reflection}
+								<p class="ef-reflection-state">{data.latest.reflection}</p>
+							{/if}
+							<ul class="ef-reflection-thread">
+								{#each data.latest.reflectionThread as msg, i (i)}
+									<li class="ef-reflection-msg ef-reflection-{msg.role}">
+										<span class="ef-reflection-role">{msg.role === 'user' ? 'Du' : 'AI'}</span>
+										<span class="ef-reflection-text">{msg.text}</span>
+									</li>
+								{/each}
+							</ul>
+						{:else if data.latest.reflection}
+							<p>{data.latest.reflection}</p>
+						{/if}
 					</details>
 				{/if}
 			</section>
@@ -470,6 +486,45 @@
 	}
 	.ef-reflection p {
 		margin: 8px 0 0;
+	}
+	.ef-reflection-state {
+		color: #8ba0f5;
+		font-size: 0.78rem;
+		letter-spacing: 0.02em;
+	}
+	.ef-reflection-thread {
+		list-style: none;
+		margin: 8px 0 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+	.ef-reflection-msg {
+		display: grid;
+		grid-template-columns: 32px 1fr;
+		gap: 8px;
+		align-items: start;
+		font-size: 0.85rem;
+		line-height: 1.45;
+	}
+	.ef-reflection-role {
+		color: #8ba0f5;
+		font-size: 0.7rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		padding-top: 2px;
+	}
+	.ef-reflection-msg.ef-reflection-user .ef-reflection-text {
+		color: #f1f5f9;
+		font-weight: 500;
+	}
+	.ef-reflection-msg.ef-reflection-assistant .ef-reflection-role {
+		color: #64748b;
+	}
+	.ef-reflection-msg.ef-reflection-assistant .ef-reflection-text {
+		color: #94a3b8;
 	}
 	.ef-sparkline {
 		width: 100%;

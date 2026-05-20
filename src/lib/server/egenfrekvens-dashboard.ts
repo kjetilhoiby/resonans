@@ -4,6 +4,11 @@ import { and, eq, gte } from 'drizzle-orm';
 
 export type EgenfrekvensSlot = 'morning' | 'evening';
 
+export interface EgenfrekvensReflectionMessage {
+	role: 'user' | 'assistant';
+	text: string;
+}
+
 export interface EgenfrekvensSlotPoint {
 	eventId: string;
 	mode: 'quick' | 'full';
@@ -14,6 +19,8 @@ export interface EgenfrekvensSlotPoint {
 	actions: number | null;
 	note: string | null;
 	reflection: string | null;
+	reflectionThread: EgenfrekvensReflectionMessage[] | null;
+	reflectionSynthesis: string | null;
 	extreme: boolean;
 	timestamp: string;
 }
@@ -30,6 +37,8 @@ export interface EgenfrekvensCheckinPoint {
 	actions: number | null;
 	note: string | null;
 	reflection: string | null;
+	reflectionThread: EgenfrekvensReflectionMessage[] | null;
+	reflectionSynthesis: string | null;
 	extreme: boolean;
 	eventIds: string[];
 }
@@ -81,6 +90,19 @@ function computeStreak(points: EgenfrekvensCheckinPoint[]): number {
 	return streak;
 }
 
+function normalizeThread(value: unknown): EgenfrekvensReflectionMessage[] | null {
+	if (!Array.isArray(value)) return null;
+	const out: EgenfrekvensReflectionMessage[] = [];
+	for (const raw of value) {
+		if (!raw || typeof raw !== 'object') continue;
+		const r = raw as Record<string, unknown>;
+		const role = r.role === 'user' || r.role === 'assistant' ? r.role : null;
+		const text = typeof r.text === 'string' ? r.text : null;
+		if (role && text) out.push({ role, text });
+	}
+	return out.length > 0 ? out : null;
+}
+
 function rowToSlotPoint(
 	id: string,
 	data: Record<string, unknown>,
@@ -96,6 +118,8 @@ function rowToSlotPoint(
 		actions: num(data.actions),
 		note: str(data.note),
 		reflection: str(data.reflection),
+		reflectionThread: normalizeThread(data.reflectionThread),
+		reflectionSynthesis: str(data.reflectionSynthesis),
 		extreme: Boolean(data.extreme),
 		timestamp: timestamp.toISOString()
 	};
@@ -216,6 +240,8 @@ export async function loadEgenfrekvensDashboardData(
 				actions: avg(actions),
 				note: fullSource?.note ?? null,
 				reflection: fullSource?.reflection ?? null,
+				reflectionThread: fullSource?.reflectionThread ?? null,
+				reflectionSynthesis: fullSource?.reflectionSynthesis ?? null,
 				extreme: b.extreme,
 				eventIds: b.ids
 			};

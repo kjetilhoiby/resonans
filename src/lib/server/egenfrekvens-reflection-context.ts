@@ -57,15 +57,49 @@ function fmt(n: number | null, digits = 0): string {
 	return n.toFixed(digits);
 }
 
-function buildSystemPrompt(ctx: Omit<EgenfrekvensReflectionContext, 'systemPrompt'>): string {
+function buildSystemPrompt(
+	ctx: Omit<EgenfrekvensReflectionContext, 'systemPrompt'>,
+	slot?: 'morning' | 'evening'
+): string {
 	const lines: string[] = [];
 	lines.push(
-		'Du er en varm, kort samtalepartner. Brukeren har akkurat fylt ut en egenfrekvens-sjekkin.'
+		'Du er en varm, kort samtalepartner. Brukeren har akkurat fylt ut en egenfrekvens-sjekkin med tall for tanker, følelser og handlinger.'
+	);
+	lines.push('Din oppgave er REFLEKSJON, ikke handlingsplan.');
+	lines.push('');
+	lines.push('Slik svarer du:');
+	lines.push(
+		'1. Speil tilbake i én setning hva du har lest fra sjekkinnen eller brukerens forrige svar — vis at du har sett helheten.'
 	);
 	lines.push(
-		'Speil tilbake i én setning, still ETT åpent spørsmål, og foreslå én liten neste-handling. Aldri lange monologer.'
+		'2. Still ETT åpent spørsmål som borer i det brukeren nettopp svarte. Vær nysgjerrig på hva som ligger bak tallene og signalene som ble valgt — tanker, følelser, handlinger.'
 	);
-	lines.push('Ikke-klinisk tone, ingen diagnoser. Bruk kontekst under varsomt — ikke ramses opp data.');
+	lines.push('3. Aldri lange monologer. Hold svaret kort.');
+	lines.push('');
+	lines.push('Strenge regler:');
+	lines.push(
+		'- Ikke gi råd eller foreslå konkrete handlinger med mindre brukeren eksplisitt spør om det ("hva bør jeg gjøre?", "har du forslag?").'
+	);
+	lines.push(
+		'- Ikke fix-it-modus. Brukerens jobb er å reflektere, ikke å motta løsninger.'
+	);
+	lines.push(
+		'- Ikke-klinisk tone, ingen diagnoser. Bruk historikken under varsomt som kontekst — ikke ramse opp data.'
+	);
+	lines.push(
+		'- Viktig: dimensjonene kan avvike. Høy handling + lave følelser er ikke "middels" — det kan være overstyring eller maskering.'
+	);
+	if (slot === 'morning') {
+		lines.push('');
+		lines.push(
+			'Det er morgen. Etter noen turer med speiling og åpne spørsmål — hvis det føles riktig — kan du invitere brukeren til å sette ord på det viktigste målet for dagen i dag.'
+		);
+	} else if (slot === 'evening') {
+		lines.push('');
+		lines.push(
+			'Det er kveld. Etter noen turer med speiling og åpne spørsmål — hvis det føles riktig — kan du invitere brukeren til å nevne tre konkrete ting hen er fornøyd med fra dagen.'
+		);
+	}
 
 	if (ctx.recentCheckins.length > 0) {
 		lines.push('');
@@ -108,10 +142,11 @@ function buildSystemPrompt(ctx: Omit<EgenfrekvensReflectionContext, 'systemPromp
 
 export async function buildEgenfrekvensReflectionContext(
 	userId: string,
-	options: { day?: string; recentLimit?: number } = {}
+	options: { day?: string; recentLimit?: number; slot?: 'morning' | 'evening' } = {}
 ): Promise<EgenfrekvensReflectionContext> {
 	const day = options.day || new Date().toISOString().slice(0, 10);
 	const recentLimit = options.recentLimit ?? DEFAULT_RECENT_LIMIT;
+	const slot = options.slot;
 
 	const recentRows = await db
 		.select({ data: sensorEvents.data, timestamp: sensorEvents.timestamp })
@@ -164,6 +199,6 @@ export async function buildEgenfrekvensReflectionContext(
 	const partial = { recentCheckins, dayPlan };
 	return {
 		...partial,
-		systemPrompt: buildSystemPrompt(partial)
+		systemPrompt: buildSystemPrompt(partial, slot)
 	};
 }

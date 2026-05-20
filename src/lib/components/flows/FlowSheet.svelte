@@ -157,6 +157,7 @@
 		// Seed initial flowData from context
 		if (context.existingHeadline) flowData['headline'] = context.existingHeadline;
 		if (context.dreamReasons) flowData['_dreamReasons'] = context.dreamReasons;
+		if (context.slot) flowData['_slot'] = context.slot;
 
 		// Fetch weather if we have a day context
 		if (context.dayIso) {
