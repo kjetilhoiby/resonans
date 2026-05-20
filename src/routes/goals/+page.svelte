@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { AppPage, PageHeader } from '$lib/components/ui';
+	import { AppPage, IconButton, PageHeader } from '$lib/components/ui';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import MetricCard from '$lib/components/visualizations/MetricCard.svelte';
 	import TrajectoryChart from '$lib/components/visualizations/TrajectoryChart.svelte';
@@ -158,17 +158,91 @@
 	}
 
 	let expandedGoals = $state<Set<string>>(new Set());
+	let assessment = $state<string | null>(null);
+	let assessmentLoading = $state(false);
 
 	onMount(() => {
 		const params = new URLSearchParams(window.location.search);
 		const goalId = params.get('goal');
-		if (!goalId) return;
+		if (goalId) {
+			expandedGoals = new Set([goalId]);
+			requestAnimationFrame(() => {
+				document.getElementById(`goal-${goalId}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+			});
+		}
 
-		expandedGoals = new Set([goalId]);
-		requestAnimationFrame(() => {
-			document.getElementById(`goal-${goalId}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
-		});
+		void loadAssessment();
 	});
+
+	async function loadAssessment() {
+		const goalsForAssessment = activeGoals
+			.filter((g) => g.status === 'active')
+			.map((goal) => buildGoalAssessmentInput(goal));
+		if (goalsForAssessment.length === 0) return;
+
+		assessmentLoading = true;
+		try {
+			const res = await fetch('/api/goals/progress-assessment', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ goals: goalsForAssessment })
+			});
+			if (!res.ok) return;
+			const result = await res.json();
+			assessment = typeof result?.assessment === 'string' ? result.assessment : null;
+		} catch (error) {
+			console.warn('[goals] kunne ikke hente fremdriftsvurdering:', error);
+		} finally {
+			assessmentLoading = false;
+		}
+	}
+
+	function buildGoalAssessmentInput(goal: GoalItem) {
+		const sensor = data.sensorProgressMap[goal.id];
+		const weight = data.weightProgressMap[goal.id];
+
+		let progress: string | undefined;
+		let pace: string | undefined;
+
+		if (sensor) {
+			const pct = sensor.targetKm > 0
+				? Math.min(100, Math.round((sensor.currentKm / sensor.targetKm) * 100))
+				: 0;
+			progress = `${sensor.currentKm} av ${sensor.targetKm} km (${pct}%)`;
+			const estimate = computePaceEstimate({
+				startDate: sensor.startDate,
+				endDate: sensor.endDate,
+				startValue: 0,
+				currentValue: sensor.currentKm,
+				targetValue: sensor.targetKm,
+				unit: 'km',
+				formatValue: formatMetricValue
+			});
+			if (estimate) pace = `${estimate.diffLabel}; ${estimate.estimateLabel}`;
+		} else if (weight) {
+			progress = `${weight.currentWeight} kg mot mål ${weight.targetWeight} kg (${weight.pct}%)`;
+			const estimate = computePaceEstimate({
+				startDate: weight.startDate,
+				endDate: weight.endDate,
+				startValue: weight.startWeight,
+				currentValue: weight.currentWeight,
+				targetValue: weight.targetWeight,
+				unit: 'kg',
+				formatValue: formatMetricValue
+			});
+			if (estimate) pace = `${estimate.diffLabel}; ${estimate.estimateLabel}`;
+		} else if (goal.tasks.length > 0) {
+			progress = `${calculateGoalProgress(goal)}% av oppgavene`;
+		} else if (goal.metadata?.intentEvaluation) {
+			const label = getIntentEvaluationLabel(goal);
+			if (label) progress = label;
+		}
+
+		const endIso = goal.metadata?.endDate
+			?? (goal.targetDate ? new Date(goal.targetDate).toISOString().slice(0, 10) : undefined);
+
+		return { title: goal.title, progress, deadline: endIso, pace };
+	}
 
 	function toggleGoal(id: string) {
 		const next = new Set(expandedGoals);
@@ -323,19 +397,16 @@
 <AppPage width="full" theme="dark" className="goals-page">
 	<PageHeader title="Mål" titleHref="/" titleLabel="Gå til forsiden">
 		{#snippet actions()}
-			<div class="header-actions">
-				<a href="/" class="btn-icon" title="Chat"><Icon name="chat" size={20} /></a>
-				<a href="/settings" class="btn-icon" title="Innstillinger"><Icon name="settings" size={20} /></a>
-			</div>
+			<IconButton href="/" icon="chat" ariaLabel="Chat" />
+			<IconButton href="/settings" icon="settings" ariaLabel="Innstillinger" />
 		{/snippet}
 	</PageHeader>
 
-	<div class="header-stats">
-		<div class="stat-card">
-			<div class="stat-value">{activeGoals.filter((goal) => goal.status === 'active').length}</div>
-			<div class="stat-label">Aktive mål</div>
-		</div>
-	</div>
+	{#if assessmentLoading || assessment}
+		<p class="progress-assessment" class:loading={assessmentLoading && !assessment}>
+			{assessment ?? 'Vurderer fremdriften…'}
+		</p>
+	{/if}
 
 	<main class="content">
 		{#if activeGoals.length === 0 && archivedGoals.length === 0}
@@ -645,36 +716,18 @@
 		font-family: 'Inter', system-ui, sans-serif;
 	}
 
-	.header-actions {
-		display: flex;
-		gap: 0.5rem;
+	.progress-assessment {
+		max-width: 800px;
+		margin: 0 auto;
+		padding: 0 0.5rem;
+		font-size: 0.95rem;
+		line-height: 1.55;
+		color: #d8d8d8;
 	}
 
-	.header-stats {
-		display: flex;
-		gap: 1rem;
-	}
-
-	.stat-card {
-		background: #1a1a1a;
-		padding: 1rem 1.5rem;
-		border-radius: 12px;
-		border: 1px solid #242424;
-	}
-
-	.stat-value {
-		display: block;
-		font-size: 2rem;
-		font-weight: 700;
-		color: #e8e8e8;
-		margin-bottom: 0.25rem;
-	}
-
-	.stat-label {
-		font-size: 0.85rem;
+	.progress-assessment.loading {
 		color: #666;
-		text-transform: uppercase;
-		letter-spacing: 0.5px;
+		font-style: italic;
 	}
 
 	.content {
