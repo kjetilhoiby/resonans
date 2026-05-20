@@ -62,22 +62,37 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		return json({ ok: true, synthesis: null, fallback: 'raw' });
 	}
 
-	// Bygg user-content som KUN inneholder ting brukeren selv har skrevet/valgt.
-	// AI-ens meldinger fra refleksjonschatten skal aldri være kilde til hva brukeren har uttrykt.
+	// Bygg strukturert user-content som inkluderer hele chatten med tydelige rolle-tags.
+	// Syntese-prompten skiller eksplisitt mellom det brukeren har sagt (kilde til "du gir
+	// uttrykk for...") og AI-ens meldinger (kontekst, men aldri tilskrevet brukeren).
 	const userContent: string[] = [];
+	userContent.push('# SJEKKIN');
 	userContent.push(`Tall: handlinger ${a}/5, følelser ${f}/5, tanker ${t}/5 (balanse ${b}).`);
 	if (reasons) {
 		for (const [dim, vals] of Object.entries(reasons)) {
-			if (vals.length) userContent.push(`Valgte signaler (${dim}): ${vals.join(', ')}`);
+			if (vals.length) userContent.push(`Brukerens valgte signaler (${dim}): ${vals.join(', ')}`);
 		}
 	}
-	if (noteText) userContent.push(`Innsats-sitat fra bruker: "${noteText}"`);
-	if (userMessages.length) {
+	if (noteText) {
 		userContent.push('');
+		userContent.push(`<BRUKERS_INNSATS_NOTAT>${noteText}</BRUKERS_INNSATS_NOTAT>`);
+	}
+
+	if (thread && thread.length > 0) {
+		userContent.push('');
+		userContent.push('# REFLEKSJONSCHAT');
 		userContent.push(
-			'Brukerens meldinger i refleksjonschatten (BRUK KUN DISSE som kilde til hva brukeren har uttrykt):'
+			'Hver melding er merket med <BRUKER> eller <AI>. KUN <BRUKER>-meldinger og <BRUKERS_INNSATS_NOTAT> over kan brukes som kilde til hva brukeren mener, har bestemt eller føler. <AI>-meldinger er kontekst — de er forslag og spørsmål, ikke brukerens posisjon.'
 		);
-		for (const msg of userMessages) userContent.push(`- "${msg}"`);
+		for (const msg of thread) {
+			const text = typeof msg.text === 'string' ? msg.text.trim() : '';
+			if (!text) continue;
+			if (msg.role === 'user') {
+				userContent.push(`<BRUKER>${text}</BRUKER>`);
+			} else if (msg.role === 'assistant') {
+				userContent.push(`<AI>${text}</AI>`);
+			}
+		}
 	}
 
 	const completion = await openai.chat.completions.create({
@@ -86,15 +101,17 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			{
 				role: 'system',
 				content: [
-					'Du oppsummerer hva BRUKEREN selv har uttrykt i en egenfrekvens-sjekkin.',
+					'Du oppsummerer en egenfrekvens-sjekkin og påfølgende refleksjonschat.',
 					'Skriv i andre person, varsom observerende stil: "Du gir uttrykk for...", "Du beskriver...", "Du peker på...".',
 					'Maks 2-3 setninger på norsk.',
 					'',
-					'STRENGE regler:',
-					'- Bruk KUN det brukeren selv har skrevet eller valgt. Du har IKKE tilgang til AI-ens meldinger eller spørsmål, og må aldri gjengi forslag, hypoteser eller tolkninger som om brukeren har bekreftet dem.',
-					'- Ikke dikt opp beslutninger, planer eller intensjoner brukeren ikke har sagt eksplisitt.',
-					'- Ikke gi råd. Ikke tolk videre enn ordene tilsier.',
-					'- Hvis brukeren har sagt lite, hold deg til tallene, signalene og note-sitatet.'
+					'KILDEREGLER (kritiske):',
+					'- Innholdet i <BRUKER>...</BRUKER> og <BRUKERS_INNSATS_NOTAT>...</BRUKERS_INNSATS_NOTAT>, samt tall og valgte signaler, er det ENESTE som kan tilskrives brukeren.',
+					'- Innholdet i <AI>...</AI> er IKKE brukerens posisjon. AI-ens forslag, hypoteser og spørsmål skal aldri gjengis som om brukeren har bestemt seg for dem eller mener dem — selv om de virker plausible.',
+					'- En idé fra AI teller som "brukerens" KUN hvis brukeren eksplisitt bekrefter den i en <BRUKER>-melding ("ja, det skal jeg", "det stemmer", "akkurat").',
+					'- Ikke dikt opp beslutninger, planer eller intensjoner.',
+					'- Ikke gi råd. Ikke tolk videre enn det brukeren faktisk har sagt.',
+					'- Hvis brukeren har sagt lite, hold deg til tallene, signalene og notatet.'
 				].join('\n')
 			},
 			{ role: 'user', content: userContent.join('\n') }
