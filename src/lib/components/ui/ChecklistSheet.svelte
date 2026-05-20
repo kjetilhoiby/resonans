@@ -842,6 +842,10 @@
 		text-align: left;
 		transition: background 0.1s;
 		font: inherit;
+		touch-action: manipulation;
+		user-select: none;
+		-webkit-user-select: none;
+		-webkit-touch-callout: none;
 	}
 	.cs-item:hover { background: #161616; }
 	.cs-item:active { background: #1a1a1a; }
@@ -963,6 +967,10 @@
 		align-items: center;
 		justify-content: center;
 		transition: border-color 0.15s, background 0.15s;
+		touch-action: manipulation;
+		user-select: none;
+		-webkit-user-select: none;
+		-webkit-touch-callout: none;
 	}
 	.cs-slot:hover { border-color: #555; }
 	.cs-slot.cs-slot-checked {
@@ -1169,6 +1177,10 @@
 		font: inherit;
 		transition: opacity 0.1s;
 		border-bottom: 1px solid #1a1a1a;
+		touch-action: manipulation;
+		user-select: none;
+		-webkit-user-select: none;
+		-webkit-touch-callout: none;
 	}
 
 	.cs-child-item:last-child {

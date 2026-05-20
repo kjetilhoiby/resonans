@@ -2714,6 +2714,10 @@
 		min-height: 0;
 		padding: 6px 16px 4px;
 		position: relative;
+		touch-action: manipulation;
+		user-select: none;
+		-webkit-user-select: none;
+		-webkit-touch-callout: none;
 	}
 
 	.zone-actions {
