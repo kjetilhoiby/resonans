@@ -1499,7 +1499,7 @@
 					</div>
 				{/if}
 
-				{#if hasThemeDashboard && dashboardError && !dashboardLoaded}
+				{#if hasThemeDashboard && dashboardError}
 					<div class="data-empty data-empty-tight">
 						<p>{dashboardError}</p>
 						<button class="data-new-btn" onclick={() => void ensureDashboardLoaded(true)}>

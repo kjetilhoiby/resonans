@@ -44,7 +44,7 @@
 				accessMode={data.accessMode}
 			/>
 		{:else if data.resource.kind === 'tripPosition'}
-			<SharedTripPositionView resource={data.resource} />
+			<SharedTripPositionView resource={data.resource} token={data.token} />
 		{/if}
 
 		{#if data.viewerIsOwner}

@@ -83,7 +83,7 @@
 	type EventKind = 'started' | 'running' | 'finished' | 'unknown';
 
 	function eventKind(ev: ApplianceEvent): EventKind {
-		const e = ev.data.event as string | undefined;
+		const e = (ev.data.event ?? ev.eventType) as string;
 		if (e === 'started' || ev.data.state === 'running' || ev.eventType === 'cycle_start') return 'started';
 		if (e === 'running') return 'running';
 		if (e === 'finished' || ev.data.state === 'off' || ev.eventType === 'cycle_finish') return 'finished';
@@ -141,15 +141,6 @@
 </script>
 
 <div class="home-dashboard">
-	<header class="head">
-		<h2>🏠 Hus og hjem</h2>
-		{#if onOpenChat}
-			<button class="cta" onclick={() => onOpenChat('Hjelp meg planlegge et hus-prosjekt.')}>
-				Nytt prosjekt
-			</button>
-		{/if}
-	</header>
-
 	{#if appliances.length > 0}
 		<section>
 			<h3>🔌 Apparater</h3>

@@ -17,6 +17,8 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 		return json({ error: 'Temaet har ikke hjem-dashboard.' }, { status: 400 });
 	}
 
+	try {
+
 	const season = currentSeason();
 
 	const [activeProjects, seasonalTasks, routines, ownedSensors] = await Promise.all([
@@ -153,4 +155,9 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 		})),
 		appliances
 	});
+
+	} catch (err) {
+		console.error('[home-dashboard]', err);
+		return json({ error: 'Kunne ikke laste hjem-dashboard.' }, { status: 500 });
+	}
 };
