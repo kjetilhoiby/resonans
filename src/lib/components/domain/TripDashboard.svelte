@@ -12,6 +12,7 @@
 	import TripBudget from './TripBudget.svelte';
 	import TripHealthStats from './TripHealthStats.svelte';
 	import Icon from '../ui/Icon.svelte';
+	import ShareSheet from './share/ShareSheet.svelte';
 	import type { Map as MapLibreMap } from 'maplibre-gl';
 
 	export interface OvernightStay {
@@ -44,6 +45,8 @@
 	}
 
 	let { themeId, themeEmoji = null, tripProfile = $bindable(null), onProfileSaved }: Props = $props();
+
+	let positionShareOpen = $state(false);
 
 	/* ── Profil-state ─────────────────────────────── */
 	let editMode = $state(false);
@@ -359,6 +362,9 @@
 						<p class="trip-duration">{tripDuration} {tripDuration === 1 ? 'dag' : 'dager'}</p>
 					{/if}
 				{/if}
+				<button class="trip-share-position-btn" onclick={() => (positionShareOpen = true)}>
+					↗ Del live posisjon
+				</button>
 			</div>
 			<div class="trip-hero-right">
 				{#if countdown !== null}
@@ -604,6 +610,14 @@
 		</div>
 	{/if}
 </div>
+
+<ShareSheet
+	resourceType="tripPosition"
+	resourceId={themeId}
+	resourceTitle={tripProfile?.destination ?? 'Live posisjon'}
+	open={positionShareOpen}
+	onClose={() => (positionShareOpen = false)}
+/>
 
 <style>
 	.trip-dash {
@@ -991,6 +1005,18 @@
 		cursor: pointer;
 	}
 	.trip-btn-primary:disabled { opacity: 0.55; cursor: default; }
+
+	.trip-share-position-btn {
+		margin-top: 12px;
+		background: transparent;
+		border: 1px solid #444;
+		color: #ccc;
+		padding: 6px 12px;
+		border-radius: 6px;
+		font-size: 13px;
+		cursor: pointer;
+	}
+	.trip-share-position-btn:hover { border-color: #7c8ef5; color: #fff; }
 	.trip-btn-secondary {
 		background: var(--tp-bg-2);
 		border: 1px solid var(--tp-border);

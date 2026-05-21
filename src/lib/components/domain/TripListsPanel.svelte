@@ -29,6 +29,16 @@
 
 	let { themeId, lists = $bindable([]) }: Props = $props();
 
+	import ShareSheet from '$lib/components/domain/share/ShareSheet.svelte';
+
+	let shareSheetListId = $state<string | null>(null);
+	let shareSheetListTitle = $state<string>('');
+
+	function openShareForList(list: ThemeList) {
+		shareSheetListId = list.id;
+		shareSheetListTitle = list.title;
+	}
+
 	const LIST_TYPES = [
 		{ value: 'general',    label: 'Huskeliste',       emoji: '📝' },
 		{ value: 'itinerary',  label: 'Dag-for-dag',      emoji: '🗓️' },
@@ -265,6 +275,7 @@
 					{/if}
 
 					<div class="tl-list-footer">
+						<button class="tl-share-list-btn" onclick={() => openShareForList(list)}>Del liste</button>
 						<button class="tl-delete-list-btn" onclick={() => deleteList(list.id)}>Slett liste</button>
 					</div>
 				</div>
@@ -307,6 +318,16 @@
 		<button class="tl-new-list-btn" onclick={startCreateList}>+ Ny liste</button>
 	{/if}
 </div>
+
+{#if shareSheetListId}
+	<ShareSheet
+		resourceType="themeList"
+		resourceId={shareSheetListId}
+		resourceTitle={shareSheetListTitle}
+		open={true}
+		onClose={() => (shareSheetListId = null)}
+	/>
+{/if}
 
 <style>
 	.tl-panel {
@@ -509,6 +530,17 @@
 		border-radius: 4px;
 	}
 	.tl-delete-list-btn:hover { color: #e07070; }
+	.tl-share-list-btn {
+		background: transparent;
+		border: 1px solid #444;
+		color: #ccc;
+		padding: 6px 12px;
+		border-radius: 6px;
+		font-size: 13px;
+		cursor: pointer;
+		margin-right: 8px;
+	}
+	.tl-share-list-btn:hover { border-color: #7c8ef5; color: #fff; }
 
 	/* Create form */
 	.tl-create-form {

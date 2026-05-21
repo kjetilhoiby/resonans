@@ -18,6 +18,7 @@
 	import BreakdownModal from '$lib/components/ui/BreakdownModal.svelte';
 	import TaskContextMenu from '$lib/components/ui/TaskContextMenu.svelte';
 	import MentionAutocomplete from '$lib/components/ui/MentionAutocomplete.svelte';
+	import ShareSheet from '$lib/components/domain/share/ShareSheet.svelte';
 	import { readCacheEntry, isCacheStale, fetchRawTimeseries, buildPeriods, buildWeekPeriods } from '$lib/utils/weather';
 
 	interface ChecklistItem {
@@ -66,6 +67,7 @@
 	let editingItemId = $state<string | null>(null);
 	let editingText = $state('');
 	let editInputEl = $state<HTMLInputElement | null>(null);
+	let shareSheetOpen = $state(false);
 
 	$effect(() => {
 		if (editingItemId && editInputEl) {
@@ -437,8 +439,19 @@
 				<WeatherStrip periods={weatherPeriods} />
 			</div>
 		{/if}
+		<button class="cs-share-btn" onclick={() => (shareSheetOpen = true)} aria-label="Del" title="Del">
+			↗
+		</button>
 		<button class="cs-close-btn" onclick={onclose} aria-label="Lukk"><Icon name="close" size={14} /></button>
 	</div>
+
+	<ShareSheet
+		resourceType="checklist"
+		resourceId={checklist.id}
+		resourceTitle={checklist.title}
+		open={shareSheetOpen}
+		onClose={() => (shareSheetOpen = false)}
+	/>
 
 	<!-- Progress bar -->
 	<div class="cs-progress-track">
@@ -792,6 +805,24 @@
 		transition: color 0.12s, border-color 0.12s;
 	}
 	.cs-close-btn:hover { color: #ccc; border-color: #555; }
+
+	.cs-share-btn {
+		width: 32px;
+		height: 32px;
+		background: #1e1e1e;
+		border: 1px solid #2a2a2a;
+		border-radius: 50%;
+		color: #888;
+		font-size: 1rem;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+		margin-right: 6px;
+		transition: color 0.12s, border-color 0.12s;
+	}
+	.cs-share-btn:hover { color: #ccc; border-color: #555; }
 
 	/* ── Progress bar ── */
 	.cs-progress-track {

@@ -100,6 +100,27 @@ export const marriageInvites = pgTable('marriage_invites', {
 	createdAt: timestamp('created_at').defaultNow().notNull()
 });
 
+// Delbare lenker — én token gir tilgang til én ressurs (sjekkliste, tema-liste, eller live posisjon).
+// Polymorf: resourceType + resourceId. Integritet håndteres i applaget.
+export const shareTokens = pgTable('share_tokens', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	ownerUserId: text('owner_user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	resourceType: text('resource_type').notNull(), // 'checklist' | 'themeList' | 'tripPosition'
+	resourceId: uuid('resource_id').notNull(),     // checklists.id | themeLists.id | themes.id (for tripPosition)
+	token: text('token').notNull().unique(),
+	accessMode: text('access_mode').notNull().default('read'), // 'read' | 'write'
+	allowedEmail: text('allowed_email'),           // null = åpen lenke
+	label: text('label'),                          // eier-vennlig etikett, f.eks. "Tante Kari"
+	expiresAt: timestamp('expires_at'),
+	revokedAt: timestamp('revoked_at'),
+	lastAccessedAt: timestamp('last_accessed_at'),
+	accessCount: integer('access_count').notNull().default(0),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => ({
+	idxOwner: index('share_tokens_owner_idx').on(table.ownerUserId, table.revokedAt),
+	idxResource: index('share_tokens_resource_idx').on(table.resourceType, table.resourceId)
+}));
+
 // Kategorier for mål (f.eks. parforhold, trening, mental helse)
 export const categories = pgTable('categories', {
 	id: uuid('id').primaryKey().defaultRandom(),
@@ -176,6 +197,7 @@ export const themeListItems = pgTable('theme_list_items', {
 	itemDate: text('item_date'), // ISO date for itinerary/datedagenda items
 	sortOrder: integer('sort_order').notNull().default(0),
 	checkedAt: timestamp('checked_at'),
+	checkedViaShareTokenId: uuid('checked_via_share_token_id'),
 	createdAt: timestamp('created_at').defaultNow().notNull()
 });
 
@@ -514,6 +536,7 @@ export const checklistItems = pgTable('checklist_items', {
 		gmailThreadId?: string;
 		from?: string;
 	}>(),
+	checkedViaShareTokenId: uuid('checked_via_share_token_id'),
 	createdAt: timestamp('created_at').defaultNow().notNull()
 }, (table) => ({
 	idxProject: index('checklist_items_project_idx').on(table.projectId)
@@ -959,6 +982,13 @@ export const marriageInvitesRelations = relations(marriageInvites, ({ one }) => 
 	}),
 	inviteeUser: one(users, {
 		fields: [marriageInvites.inviteeUserId],
+		references: [users.id]
+	})
+}));
+
+export const shareTokensRelations = relations(shareTokens, ({ one }) => ({
+	owner: one(users, {
+		fields: [shareTokens.ownerUserId],
 		references: [users.id]
 	})
 }));
