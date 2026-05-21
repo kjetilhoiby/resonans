@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, integer, boolean, jsonb, decimal, unique, index, uniqueIndex, date, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, timestamp, integer, boolean, jsonb, decimal, doublePrecision, unique, index, uniqueIndex, date, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 
 
@@ -99,6 +99,33 @@ export const marriageInvites = pgTable('marriage_invites', {
 	respondedAt: timestamp('responded_at'),
 	createdAt: timestamp('created_at').defaultNow().notNull()
 });
+
+export const liveSessions = pgTable('live_sessions', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	token: text('token').notNull().unique(),
+	sportType: text('sport_type').notNull(),
+	routeLabel: text('route_label'),
+	routeCoordinates: jsonb('route_coordinates'),
+	destLat: doublePrecision('dest_lat'),
+	destLon: doublePrecision('dest_lon'),
+	destLabel: text('dest_label'),
+	routeDistanceM: integer('route_distance_m'),
+	lastLat: doublePrecision('last_lat'),
+	lastLon: doublePrecision('last_lon'),
+	lastSpeedMps: doublePrecision('last_speed_mps'),
+	etaSeconds: integer('eta_seconds'),
+	distanceRemainingM: integer('distance_remaining_m'),
+	progressFraction: doublePrecision('progress_fraction'),
+	startedAt: timestamp('started_at').defaultNow().notNull(),
+	lastPingAt: timestamp('last_ping_at'),
+	endedAt: timestamp('ended_at'),
+	endedReason: text('ended_reason'),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => ({
+	tokenIdx: uniqueIndex('live_sessions_token_idx').on(table.token),
+	userActiveIdx: index('live_sessions_user_active_idx').on(table.userId, table.endedAt)
+}));
 
 // Delbare lenker — én token gir tilgang til én ressurs (sjekkliste, tema-liste, eller live posisjon).
 // Polymorf: resourceType + resourceId. Integritet håndteres i applaget.
