@@ -2001,6 +2001,7 @@
 							{#snippet followupItem(convo: typeof followUpConversations[0])}
 								<div class="followup-item-wrap" style={convo.linkedTheme ? getThemeHueStyle(convo.linkedTheme.name) : undefined}>
 									{#if homeEditingConversationId === convo.id}
+										<!-- svelte-ignore a11y_autofocus -->
 										<input
 											class="followup-rename-input"
 											bind:value={homeEditingTitle}

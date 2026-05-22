@@ -156,11 +156,11 @@
 
 	/* ── Subtab-tilstand ────────────────────────────────── */
 	type Tab = 'chat' | 'data' | 'mål' | 'flyter' | 'filer' | 'lister';
-	const activeDashboardKind = resolveThemeDashboardKind(theme?.name);
-	const activeDashboard = getThemeDashboardDefinition(theme?.name);
-	const hasThemeDashboard = activeDashboardKind !== null;
-	const isTravel = activeDashboardKind === 'travel';
-	const isBooks = activeDashboardKind === 'books';
+	const activeDashboardKind = $derived(resolveThemeDashboardKind(theme?.name));
+	const activeDashboard = $derived(getThemeDashboardDefinition(theme?.name));
+	const hasThemeDashboard = $derived(activeDashboardKind !== null);
+	const isTravel = $derived(activeDashboardKind === 'travel');
+	const isBooks = $derived(activeDashboardKind === 'books');
 	const requestedTab = get(page).url.searchParams.get('tab');
 	const availableTabs = $derived<Tab[]>(
 		activeDashboardKind === 'health'
@@ -176,7 +176,7 @@
 							: ['chat', 'data', 'mål', 'filer']
 	);
 	const requestedPrompt = get(page).url.searchParams.get('prompt') ?? '';
-	const hasLinkedWorkout = Boolean(selectedWorkout);
+	const hasLinkedWorkout = $derived(Boolean(selectedWorkout));
 	const isHandoff = get(page).url.searchParams.get('handoff') === '1';
 	const validTabs: Tab[] = ['chat', 'data', 'mål', 'flyter', 'filer', 'lister'];
 	let tab = $state<Tab>(
@@ -1305,6 +1305,7 @@
 						{#snippet themeConvItem(conv: ThemeConversation)}
 							<div class="conv-item-wrap">
 								{#if convEditingId === conv.id}
+									<!-- svelte-ignore a11y_autofocus -->
 									<input
 										class="conv-rename-input"
 										bind:value={convEditingTitle}

@@ -90,7 +90,7 @@
 							/>
 							<datalist id="suggestions-{cycle.appliance}">
 								{#each programSuggestions()[cycle.appliance] ?? [] as suggestion}
-									<option value={suggestion} />
+									<option value={suggestion}></option>
 								{/each}
 							</datalist>
 							<button

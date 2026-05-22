@@ -245,7 +245,7 @@
 				{#snippet convItem(c: ConversationSummary)}
 					<div class="lp-item-wrap" style={c.linkedTheme ? getThemeHueStyle(c.linkedTheme.name) : undefined}>
 						{#if editingId === c.id}
-							<!-- Inline omdøping -->
+							<!-- svelte-ignore a11y_autofocus -->
 							<input
 								class="lp-rename-input"
 								bind:value={editingTitle}

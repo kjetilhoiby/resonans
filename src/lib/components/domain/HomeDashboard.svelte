@@ -245,24 +245,7 @@
 		gap: 2rem;
 		padding: 1rem;
 	}
-	.head {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-	}
-	.head h2 {
-		margin: 0;
-	}
-	.cta {
-		padding: 0.5rem 0.85rem;
-		border-radius: 8px;
-		background: var(--accent, #4a90e2);
-		color: white;
-		border: 0;
-		cursor: pointer;
-		font: inherit;
-	}
-	section h3 {
+section h3 {
 		margin: 0 0 0.75rem;
 		font-size: 0.95rem;
 		font-weight: 600;

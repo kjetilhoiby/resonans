@@ -104,7 +104,6 @@
 		amount: ['kr', 'NOK'],
 	};
 
-	// Lokale skjema-felt
 	let title = $state(widget.title);
 	let goalStr = $state(widget.goal != null ? String(widget.goal) : '');
 	let warnStr = $state(widget.thresholdWarn != null ? String(widget.thresholdWarn) : '');

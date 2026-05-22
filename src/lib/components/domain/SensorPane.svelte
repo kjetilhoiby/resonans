@@ -72,7 +72,7 @@
 <div
 	class="sensor-pane"
 	style="transform: translateY({dragY}px)"
-	role="dialog"
+	role="dialog" tabindex="-1"
 	aria-modal="true"
 	aria-label="{sensor.label} dashboard"
 	ontouchstart={onTouchStart}

@@ -1497,15 +1497,6 @@
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 		cursor: grab;
 	}
-	.fs-focus-slider-ends {
-		display: flex;
-		justify-content: space-between;
-		font-size: 0.75rem;
-		color: rgba(255, 255, 255, 0.2);
-		margin-top: 6px;
-		padding: 0 4px;
-	}
-
 	/* Multiselect: card grid */
 	.fs-focus-grid {
 		display: grid;

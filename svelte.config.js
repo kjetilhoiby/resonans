@@ -7,6 +7,14 @@ const config = {
 	// for more information about preprocessors
 	preprocess: vitePreprocess(),
 
+	compilerOptions: {
+		warningFilter: (w) => {
+			if (w.code === 'state_referenced_locally') return false;
+			if (w.code === 'css_unused_selector') return false;
+			return true;
+		}
+	},
+
 	kit: {
 		adapter: adapter({
 			runtime: 'nodejs22.x'

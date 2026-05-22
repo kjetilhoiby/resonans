@@ -89,7 +89,8 @@
 		return days;
 	}
 
-	let days = $state<DayEntry[]>(generateDays(startDate, endDate));
+	let days = $state<DayEntry[]>([]);
+	$effect(() => { days = generateDays(startDate, endDate); });
 	let loading = $state(true);
 
 	// Per-day composer state
