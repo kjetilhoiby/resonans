@@ -395,6 +395,27 @@
 			relatedWorks?: string[];
 			conversationHints?: string[];
 			metadata?: { year?: number; genre?: string };
+			bibliographySequence?: {
+				authorName: string;
+				currentBook: { title: string; year?: number };
+				before: Array<{ title: string; year?: number; oneLiner?: string }>;
+				after: Array<{ title: string; year?: number; oneLiner?: string }>;
+			};
+			criticReviews?: Array<{
+				source: string;
+				url: string;
+				publishedAt?: string;
+				verdict?: 'positive' | 'mixed' | 'negative';
+				quote: string;
+				paraphrase?: string;
+			}>;
+			readerVoices?: Array<{ source: string; url: string; quote: string }>;
+			goodreads?: {
+				url: string;
+				averageRating?: number;
+				ratingsCount?: number;
+				topReviews?: Array<{ rating?: number; quote: string }>;
+			};
 		};
 
 		const isAudio = book.format === 'audio' || book.format === 'both';
@@ -440,12 +461,41 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		if (pack.themes?.length) parts.push(`Sentrale temaer i boken: ${pack.themes.join(', ')}.`);
 		if (pack.authorContext?.bio) parts.push(`Om forfatteren: ${pack.authorContext.bio}`);
 		if (pack.authorContext?.howBookFits) parts.push(`Hvordan boken passer inn i forfatterens verk: ${pack.authorContext.howBookFits}`);
+
+		if (pack.bibliographySequence) {
+			const fmt = (w: { title: string; year?: number; oneLiner?: string }) =>
+				`${w.title}${w.year ? ` (${w.year})` : ''}${w.oneLiner ? ` — ${w.oneLiner}` : ''}`;
+			const before = pack.bibliographySequence.before.map(fmt).join('; ') || '—';
+			const after = pack.bibliographySequence.after.map(fmt).join('; ') || '—';
+			parts.push(`Plassering i forfatterskapet: før denne kom ${before}. Etter denne kom ${after}. Bruk plasseringen når det er naturlig (f.eks. "dette kom rett etter X, hvor han …").`);
+		}
+
+		if (pack.criticReviews?.length) {
+			const lines = pack.criticReviews.slice(0, 5).map((r) =>
+				`- ${r.source}${r.verdict ? ` (${r.verdict})` : ''}: «${r.quote}» [${r.url}]`
+			).join('\n');
+			parts.push(`Reelle kritikersitater (siter ordrett ved behov, oppgi kilde, IKKE finn på flere):\n${lines}`);
+		}
+
+		if (pack.reception?.critics) parts.push(`Syntese av kritikermottakelse: ${pack.reception.critics}`);
 		if (pack.reception?.readers) parts.push(`Slik opplever lesere boken typisk: ${pack.reception.readers}`);
 		if (pack.reception?.patterns?.length) parts.push(`Gjengangere i lesernes reaksjoner: ${pack.reception.patterns.join(', ')}.`);
+
+		if (pack.readerVoices?.length) {
+			const lines = pack.readerVoices.slice(0, 3).map((v) => `- ${v.source}: «${v.quote}»`).join('\n');
+			parts.push(`Leserstemmer (eksempler, ikke statistikk):\n${lines}`);
+		}
+
+		if (pack.goodreads?.averageRating !== undefined) {
+			parts.push(`Goodreads: ${pack.goodreads.averageRating.toFixed(2)}/5${pack.goodreads.ratingsCount ? ` (${pack.goodreads.ratingsCount.toLocaleString('no-NO')} stemmer)` : ''}. Bruk som signal, ikke fasit.`);
+		}
+
 		if (pack.relatedWorks?.length) parts.push(`Beslektede verk du kan trekke på: ${pack.relatedWorks.join(', ')}.`);
 		if (pack.conversationHints?.length) {
 			parts.push(`Gode innganger til samtalen (bruk disse naturlig når det passer, ramse dem IKKE opp):\n${pack.conversationHints.map((h) => `- ${h}`).join('\n')}`);
 		}
+
+		parts.push(`Du kan KUN referere kritikere som er listet over. Ikke dikt opp flere anmeldelser. Hvis brukeren spør om noe som ikke ligger i denne konteksten, kall verktøyet book_research med en konkret query.`);
 
 		parts.push(`Svar alltid på norsk med mindre brukeren skriver på et annet språk.`);
 

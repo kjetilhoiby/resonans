@@ -1505,9 +1505,39 @@ export const books = pgTable('books', {
 		metadata?: { year?: number; genre?: string };
 		authorContext?: { bio?: string; themes?: string[]; howBookFits?: string };
 		themes?: string[];
+		bibliographySequence?: {
+			authorName: string;
+			currentBook: { title: string; year?: number };
+			before: Array<{ title: string; year?: number; oneLiner?: string }>;
+			after: Array<{ title: string; year?: number; oneLiner?: string }>;
+		};
+		criticReviews?: Array<{
+			source: string;
+			url: string;
+			publishedAt?: string;
+			verdict?: 'positive' | 'mixed' | 'negative';
+			quote: string;
+			paraphrase?: string;
+		}>;
 		reception?: { critics?: string; readers?: string; patterns?: string[] };
+		readerVoices?: Array<{ source: string; url: string; quote: string }>;
+		goodreads?: {
+			url: string;
+			averageRating?: number;
+			ratingsCount?: number;
+			topReviews?: Array<{ rating?: number; quote: string }>;
+		};
 		relatedWorks?: string[];
 		conversationHints?: string[];
+		sources?: {
+			collectedAt: string;
+			openLibrary: { ok: boolean; worksFound?: number };
+			criticDomainsHit: string[];
+			criticDomainsMissed: string[];
+			readerSourcesHit: string[];
+			goodreadsBlocked?: boolean;
+			extractorErrors?: Array<{ url: string; error: string }>;
+		};
 	} | null>(),
 	startedAt: timestamp('started_at'),
 	finishedAt: timestamp('finished_at'),

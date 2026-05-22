@@ -11,6 +11,7 @@ import { ContextService } from '$lib/server/services/context-service';
 import { upsertPlanArtifactField } from '$lib/server/plan-artifacts';
 import { buildPersonContext } from '$lib/server/person-context';
 import { isFutureVisionText, seedThemeInstructionFromFutureVision } from '$lib/server/theme-instructions';
+import { bookResearchToolDefinition, executeBookResearch } from '$lib/ai/tools/book-research';
 import { queryEconomicsTool } from '$lib/ai/tools/query-economics';
 import { queryFoodTool } from '$lib/ai/tools/query-food';
 import { manageRecipeTool } from '$lib/ai/tools/manage-recipe';
@@ -975,6 +976,7 @@ const tools = [
 					}
 				}
 			},
+			bookResearchToolDefinition,
 			{
 				type: 'function' as const,
 				function: {
@@ -1364,6 +1366,7 @@ function getToolProgressMessage(toolName: string) {
 		analyze_meal_image: 'Analyserer matbilde...',
 		record_tracking_event: 'Registrerer tracking-hendelse...',
 		web_search: 'Søker på nettet...',
+		book_research: 'Leser kilder om boken...',
 		weather_forecast: 'Henter værdata...',
 		annotate_photo_composition: 'Analyserer bilde...',
 		propose_widget: 'Lager widget-forslag...',
@@ -2286,6 +2289,48 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 								success: false,
 								query: searchQuery,
 								message: 'Web search feilet. Prøv igjen med en mer konkret formulering.'
+							}),
+							tool_call_id: toolCall.id
+						});
+					}
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'book_research') {
+					const args = JSON.parse(toolCall.function.arguments) as {
+						bookId?: string;
+						query?: string;
+						focus?: 'critics' | 'bibliography' | 'theme' | 'general';
+					};
+
+					if (!args.query || typeof args.query !== 'string') {
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify({
+								findings: '',
+								sources: [],
+								error: 'Mangler query for book_research.'
+							}),
+							tool_call_id: toolCall.id
+						});
+						continue;
+					}
+
+					try {
+						const result = await executeBookResearch(
+							{ bookId: args.bookId, query: args.query.trim(), focus: args.focus },
+							{ userId }
+						);
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify(result),
+							tool_call_id: toolCall.id
+						});
+					} catch (error) {
+						console.error('  📚 book_research failed:', error);
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify({
+								findings: '',
+								sources: [],
+								error: 'book_research feilet. Prøv igjen.'
 							}),
 							tool_call_id: toolCall.id
 						});
