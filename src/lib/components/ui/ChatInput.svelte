@@ -69,8 +69,10 @@
 		onsubmit(trimmed);
 		text = '';
 		onTextChange?.('');
-		// reset height
-		if (textareaEl) { textareaEl.style.height = 'auto'; }
+		if (textareaEl) {
+			textareaEl.style.height = 'auto';
+			textareaEl.blur();
+		}
 	}
 
 	function autoResize(e: Event) {

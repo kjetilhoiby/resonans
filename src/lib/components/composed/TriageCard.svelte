@@ -110,8 +110,7 @@
 
 <style>
 	.tc-card {
-		max-width: 80%;
-		align-self: flex-start;
+		align-self: stretch;
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
@@ -140,10 +139,7 @@
 		line-height: 1.55;
 		color: #c0c0c0;
 		word-break: break-word;
-		background: #111;
-		border: 1px solid #242424;
-		border-radius: 4px 14px 14px 14px;
-		padding: 10px 14px;
+		padding: 2px 0;
 		margin: 0;
 	}
 
@@ -263,6 +259,7 @@
 	}
 
 	.tc-card-loading {
+		align-self: flex-start;
 		max-width: 65%;
 	}
 

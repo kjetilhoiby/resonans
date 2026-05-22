@@ -192,6 +192,7 @@
 
 	// -- Sjekklister --
 	let activeChecklists = $state<Checklist[]>([]);
+	let allContextChecklists = $state<Checklist[]>([]);
 	let monthDayChecklists = $state<Checklist[]>([]);
 	let openChecklist = $state<Checklist | null>(null);
 
@@ -366,6 +367,7 @@
 				activeChecklists = sortActiveChecklists(activeRows);
 			}
 			if (contextRows) {
+				allContextChecklists = contextRows;
 				monthDayChecklists = contextRows.filter((c) =>
 					(c.context ?? '').startsWith(`week:`) && (c.context ?? '').includes(':day:')
 				);
@@ -811,8 +813,11 @@
 		const dayCtx = `week:${getLocalIsoWeekDashed(now)}:day:${toLocalIsoDate(now)}`;
 
 		// Fast rekkefølge: måned → uke → dag
+		// Fallback til context-hentede sjekklister (inkl. fullførte) slik at
+		// ferdigkryssede dager viser n/n i stedet for «Planlegg».
 		const orderedChecklists: HomeWidgetEntry[] = [monthCtx, weekCtx, dayCtx].map((ctx) => {
-			const existing = activeChecklists.find((c) => c.context === ctx);
+			const existing = activeChecklists.find((c) => c.context === ctx)
+				?? allContextChecklists.find((c) => c.context === ctx);
 			const checklist = existing ?? {
 				id: `synthetic:${ctx}`,
 				title: '',
