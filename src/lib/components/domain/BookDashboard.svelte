@@ -86,6 +86,18 @@
 	let booksError = $state('');
 	let booksLoaded = $state(false);
 
+	const groupedBooks = $derived.by(() => {
+		const reading: Book[] = [];
+		const shelf: Book[] = [];
+		const finished: Book[] = [];
+		for (const b of books) {
+			if (b.status === 'reading' || b.status === 'paused') reading.push(b);
+			else if (b.status === 'completed') finished.push(b);
+			else shelf.push(b);
+		}
+		return { reading, shelf, finished };
+	});
+
 	/* ── Views: library | book ─────────────────────────── */
 	type BookTab = 'chat' | 'klipp' | 'fakta' | 'kontekst';
 	let selectedBook = $state<Book | null>(null);
@@ -1794,30 +1806,54 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 				<p class="bk-empty-sub">Legg til en bok for å starte en samtale om den.</p>
 			</div>
 		{:else}
-			<div class="bk-grid">
-				{#each books as book}
-					{@const pct = progressPct(book)}
-					<button class="bk-card" onclick={() => openBook(book)}>
-						<div class="bk-card-top">
-							<div class="bk-card-info">
-								<span class="bk-card-title">{book.title}</span>
-								{#if book.author}<span class="bk-card-author">{book.author}</span>{/if}
-							</div>
-							<span class="bk-card-status-dot" class:reading={book.status === 'reading'} class:completed={book.status === 'completed'} title={statusLabel(book.status)}></span>
+			{#snippet bookCard(book: Book)}
+				<button class="bk-card" onclick={() => openBook(book)}>
+					<div class="bk-card-top">
+						<div class="bk-card-info">
+							<span class="bk-card-title">{book.title}</span>
+							{#if book.author}<span class="bk-card-author">{book.author}</span>{/if}
 						</div>
-						{#if book.format !== 'audio' && book.totalPages}
-							{@const pct = progressPct(book)}
-							<div class="bk-card-bar"><div class="bk-card-fill" style="width:{pct}%"></div></div>
-							<p class="bk-card-pct">{pct}% · {book.currentPage}/{book.totalPages} s.</p>
-						{:else if book.format !== 'print' && book.totalMinutes}
-							{@const pct = minutesPct(book)}
-							<div class="bk-card-bar"><div class="bk-card-fill" style="width:{pct}%"></div></div>
-							<p class="bk-card-pct">🎧 {pct}% · {formatMinutes(book.currentMinutes)}</p>
-						{:else}
-							<p class="bk-card-pct">{statusEmoji(book.status)} {statusLabel(book.status)}</p>
-						{/if}
-					</button>
-				{/each}
+						<span class="bk-card-status-dot" class:reading={book.status === 'reading'} class:completed={book.status === 'completed'} title={statusLabel(book.status)}></span>
+					</div>
+					{#if book.format !== 'audio' && book.totalPages}
+						{@const pct = progressPct(book)}
+						<div class="bk-card-bar"><div class="bk-card-fill" style="width:{pct}%"></div></div>
+						<p class="bk-card-pct">{pct}% · {book.currentPage}/{book.totalPages} s.</p>
+					{:else if book.format !== 'print' && book.totalMinutes}
+						{@const pct = minutesPct(book)}
+						<div class="bk-card-bar"><div class="bk-card-fill" style="width:{pct}%"></div></div>
+						<p class="bk-card-pct">🎧 {pct}% · {formatMinutes(book.currentMinutes)}</p>
+					{:else}
+						<p class="bk-card-pct">{statusEmoji(book.status)} {statusLabel(book.status)}</p>
+					{/if}
+				</button>
+			{/snippet}
+
+			<div class="bk-groups">
+				{#if groupedBooks.reading.length > 0}
+					<section class="bk-group">
+						<h2 class="bk-group-title">Leser <span class="bk-group-count">{groupedBooks.reading.length}</span></h2>
+						<div class="bk-grid">
+							{#each groupedBooks.reading as book}{@render bookCard(book)}{/each}
+						</div>
+					</section>
+				{/if}
+				{#if groupedBooks.shelf.length > 0}
+					<section class="bk-group">
+						<h2 class="bk-group-title">På hylla <span class="bk-group-count">{groupedBooks.shelf.length}</span></h2>
+						<div class="bk-grid">
+							{#each groupedBooks.shelf as book}{@render bookCard(book)}{/each}
+						</div>
+					</section>
+				{/if}
+				{#if groupedBooks.finished.length > 0}
+					<section class="bk-group">
+						<h2 class="bk-group-title">Ferdig <span class="bk-group-count">{groupedBooks.finished.length}</span></h2>
+						<div class="bk-grid">
+							{#each groupedBooks.finished as book}{@render bookCard(book)}{/each}
+						</div>
+					</section>
+				{/if}
 			</div>
 		{/if}
 	</div>
@@ -2592,6 +2628,37 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 
 	.bk-empty-icon { font-size: 2rem; margin: 0; }
 	.bk-empty-sub { font-size: 0.78rem; color: #444; }
+
+	.bk-groups {
+		display: flex;
+		flex-direction: column;
+		gap: 20px;
+	}
+
+	.bk-group {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+
+	.bk-group-title {
+		margin: 0;
+		font-size: 0.78rem;
+		font-weight: 600;
+		color: #888;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.bk-group-count {
+		color: #555;
+		font-size: 0.72rem;
+		font-weight: 500;
+		letter-spacing: 0;
+	}
 
 	.bk-grid {
 		display: flex;
