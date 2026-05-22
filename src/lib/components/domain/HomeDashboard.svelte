@@ -55,7 +55,7 @@
 		onOpenChat?: (prefill: string) => void;
 	}
 
-	let { projects, seasonalTasks, routines, appliances, onOpenProject, onOpenChat }: Props = $props();
+	let { projects = [], seasonalTasks = [], routines = [], appliances = [], onOpenProject, onOpenChat }: Props = $props();
 
 	const season = currentSeason();
 	const seasonLabel = SEASONS[season];
@@ -85,8 +85,8 @@
 	function eventKind(ev: ApplianceEvent): EventKind {
 		const e = (ev.data.event ?? ev.eventType) as string;
 		if (e === 'started' || ev.data.state === 'running' || ev.eventType === 'cycle_start') return 'started';
-		if (e === 'running') return 'running';
-		if (e === 'finished' || ev.data.state === 'off' || ev.eventType === 'cycle_finish') return 'finished';
+		if (e === 'running' || e === 'progress') return 'running';
+		if (e === 'finished' || e === 'cycle_summary' || ev.data.state === 'off' || ev.eventType === 'cycle_finish') return 'finished';
 		return 'unknown';
 	}
 
@@ -145,7 +145,7 @@
 		<section>
 			<h3>🔌 Apparater</h3>
 			<div class="appliance-grid">
-				{#each appliances as a (a.sensorId)}
+				{#each appliances as a (a.sensorId + ':' + a.name)}
 					{@const status = applianceStatus(a)}
 					<div class="appliance-card" class:running={status.state === 'running'} class:done={status.state === 'done'}>
 						<div class="appliance-header">

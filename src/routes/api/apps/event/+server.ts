@@ -5,7 +5,8 @@ import { sensors } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { getAppConfig, type ExternalAppConfig } from '$lib/server/app-registry';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
-import { notifyPingEvent } from '$lib/server/ping-notifications';
+import { notifyPingEvent, notifyPingMatch } from '$lib/server/ping-notifications';
+import { getProfiles, matchRunningCycle } from '$lib/server/services/appliance-profile-service';
 
 async function getOrCreateSensor(userId: string, app: ExternalAppConfig): Promise<string> {
 	const existing = await db.query.sensors.findFirst({
@@ -30,6 +31,34 @@ async function getOrCreateSensor(userId: string, app: ExternalAppConfig): Promis
 		.returning();
 
 	return created.id;
+}
+
+const matchNotified = new Set<string>();
+
+async function handleProgressMatching(
+	userId: string,
+	appUrl: string,
+	data: { appliance: string; cycle_id?: string; watt_buckets_1min_so_far: number[]; timestamp?: string }
+) {
+	const cycleId = data.cycle_id;
+	if (!cycleId || matchNotified.has(cycleId)) return;
+
+	const profiles = await getProfiles(userId, data.appliance);
+	if (profiles.length === 0) return;
+
+	const elapsedMinutes = data.watt_buckets_1min_so_far.length;
+	const match = matchRunningCycle(data.watt_buckets_1min_so_far, profiles, elapsedMinutes);
+	if (!match) return;
+
+	matchNotified.add(cycleId);
+
+	await notifyPingMatch({
+		userId,
+		appUrl,
+		appliance: data.appliance,
+		cycleId,
+		match
+	});
 }
 
 export const POST: RequestHandler = async ({ locals, request }) => {
@@ -86,11 +115,19 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 
 		if (app.id === 'ping' && result.inserted) {
 			const appUrl = new URL(request.url).origin;
+			const pingData = { event: eventType, ...((data ?? {}) as Record<string, unknown>) } as any;
+
 			notifyPingEvent({
 				userId,
 				appUrl,
-				data: { event: eventType, ...((data ?? {}) as Record<string, unknown>) } as any
+				data: pingData
 			}).catch((err) => console.error('[ping-notify]', err));
+
+			if (dataType === 'appliance_progress' && pingData.watt_buckets_1min_so_far?.length) {
+				handleProgressMatching(userId, appUrl, pingData).catch((err) =>
+					console.error('[ping-match]', err)
+				);
+			}
 		}
 
 		return json({
