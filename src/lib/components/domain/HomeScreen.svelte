@@ -23,6 +23,7 @@
 	import ChecklistSheet from '../ui/ChecklistSheet.svelte';
 	import FlowSheet from '../flows/FlowSheet.svelte';
 	import EgenfrekvensPrompt from './EgenfrekvensPrompt.svelte';
+	import FocusTimerPrompt from './FocusTimerPrompt.svelte';
 	import PullToRefresh from '../ui/PullToRefresh.svelte';
 	import { FLOWS } from '$lib/flows/registry';
 	import PageHeader from '../ui/PageHeader.svelte';
@@ -580,6 +581,19 @@
 				}
 			})();
 		})();
+
+		// Fokustimer: vis banner i arbeidstid hvis ikke avvist i dag
+		if (isWorkHours()) {
+			const isoDay = new Date().toISOString().slice(0, 10);
+			if (typeof localStorage !== 'undefined') {
+				const dismissed = localStorage.getItem(`focus-timer-dismissed-${isoDay}`);
+				if (!dismissed) {
+					focusTimerPromptOpen = true;
+				}
+			} else {
+				focusTimerPromptOpen = true;
+			}
+		}
 	});
 
 	interface EgenfrekvensSlotSummary {
@@ -911,6 +925,15 @@
 		chatInputAutoFocus = false;
 		egenfrekvensFlowOpen = true;
 		void loadEgenfrekvensContext();
+	}
+
+	// ── Fokustimer (jobb) ──────────────────────────────────────────────────────
+	let focusTimerPromptOpen = $state(false);
+	let focusTimerFlowOpen = $state(false);
+
+	function isWorkHours(): boolean {
+		const hour = new Date().getHours();
+		return hour >= 8 && hour < 17;
 	}
 
 	// ── Fil-flyt ───────────────────────────────────────────────────────────────
@@ -1809,6 +1832,21 @@
 					}}
 				/>
 			{/if}
+			{#if focusTimerPromptOpen && !egenfrekvensPromptOpen}
+				<FocusTimerPrompt
+					onstart={() => {
+						focusTimerPromptOpen = false;
+						focusTimerFlowOpen = true;
+					}}
+					ondismiss={() => {
+						const isoDay = new Date().toISOString().slice(0, 10);
+						if (typeof localStorage !== 'undefined') {
+							localStorage.setItem(`focus-timer-dismissed-${isoDay}`, '1');
+						}
+						focusTimerPromptOpen = false;
+					}}
+				/>
+			{/if}
 		</section>
 	{/if}
 
@@ -2622,6 +2660,14 @@
 				void loadEgenfrekvensContext();
 			}
 		}}
+	/>
+{/if}
+
+{#if focusTimerFlowOpen}
+	<FlowSheet
+		flow={FLOWS['jobb_focus_timer']}
+		onclose={() => { focusTimerFlowOpen = false; }}
+		oncomplete={() => { focusTimerFlowOpen = false; focusTimerPromptOpen = false; }}
 	/>
 {/if}
 

@@ -1,6 +1,7 @@
 import type { EmailHandler } from './types';
 import { workoutHandler } from './handlers/workout';
 import { libraryHandler } from './handlers/library';
+import { jobbHandler } from './handlers/jobb';
 
 export interface LabelDescriptor {
 	label: string;
@@ -18,6 +19,11 @@ export const EMAIL_LABELS: LabelDescriptor[] = [
 		label: libraryHandler.label,
 		description: 'Purring/lånefrist fra biblioteket. Lager et punkt i sjekklisten "Bibliotek-bøker" med innleveringsfrist.',
 		handler: libraryHandler
+	},
+	{
+		label: jobbHandler.label,
+		description: 'Jobb-e-post. Lagres som sensor-event og kan brukes til oppgaveoppretting og kontekst i AI-chatten.',
+		handler: jobbHandler
 	}
 ];
 

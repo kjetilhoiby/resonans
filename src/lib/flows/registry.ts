@@ -1095,6 +1095,58 @@ export const FLOWS: Record<FlowId, Flow> = {
 				body: JSON.stringify({ level, slot, note })
 			});
 		}
+	},
+
+	jobb_focus_timer: {
+		id: 'jobb_focus_timer',
+		name: 'Fokustimer',
+		description: 'Start en fokusøkt — velg hva du skal jobbe med og hvor lenge',
+		icon: '🎯',
+		domain: 'jobb',
+		trigger: 'manual',
+		focus: true,
+		estimatedMinutes: 2,
+		steps: [
+			{
+				id: 'task',
+				type: 'form',
+				title: 'Hva skal du fokusere på?',
+				fields: [
+					{
+						id: 'focus_task',
+						type: 'text',
+						label: 'Oppgave',
+						placeholder: 'F.eks. «Skrive ferdig rapporten»',
+						required: true
+					},
+					{
+						id: 'duration_minutes',
+						type: 'slider',
+						label: 'Varighet (minutter)',
+						min: 15,
+						max: 90,
+						step: 5,
+						defaultValue: 25,
+						helperLabels: {
+							15: '15 min',
+							25: '25 min (pomodoro)',
+							45: '45 min',
+							60: '1 time',
+							90: '1,5 time'
+						}
+					}
+				]
+			}
+		],
+		async onComplete(data) {
+			const task = typeof data.focus_task === 'string' ? data.focus_task : '';
+			const duration = typeof data.duration_minutes === 'number' ? data.duration_minutes : 25;
+			await fetch('/api/jobb/focus-session', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ task, durationMinutes: duration })
+			});
+		}
 	}
 };
 

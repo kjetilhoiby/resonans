@@ -7,11 +7,13 @@ export * from './family/index';
 export * from './family/family-tree';
 export * from './egenfrekvens/index';
 export * from './home/index';
+export * from './jobb/index';
 
 import { FAMILY_DOMAIN_TRIGGER } from './family/index';
 import { HOME_DOMAIN_TRIGGER } from './home/index';
+import { JOBB_DOMAIN_TRIGGER } from './jobb/index';
 
-export type DomainType = 'health' | 'economics' | 'food' | 'family' | 'egenfrekvens' | 'home';
+export type DomainType = 'health' | 'economics' | 'food' | 'family' | 'egenfrekvens' | 'home' | 'jobb';
 
 export interface DomainMetadata {
   type: DomainType;
@@ -56,6 +58,12 @@ export const DOMAIN_METADATA: Record<DomainType, DomainMetadata> = {
     label: 'Hus og hjem',
     description: 'Hus-prosjekter, husarbeids-rutiner, sesong-oppgaver og hjem-apparater',
     systemPromptHint: 'Brukeren fokuserer på hjem og bolig. Bruk query_home og manage_project (domain=home). Foreslå sjekkliste for sesong-oppgaver eller rutiner. Bruk apparat-sensor-data ved spørsmål om vask/oppvask.'
+  },
+  jobb: {
+    type: 'jobb',
+    label: 'Jobb & Karriere',
+    description: 'Prosjekter, oppgaver, prioritering, fokustimer og karriereutvikling',
+    systemPromptHint: 'Brukeren fokuserer på jobb og karriere. Bruk manage_project (domain=jobb) og create_task. Hjelp med å bryte ned og prioritere oppgaver. Foreslå fokustimer for konsentrert arbeid.'
   }
 };
 
@@ -68,6 +76,10 @@ export function resolveDomainFromInput(input: string): DomainType | null {
 
   if (HOME_DOMAIN_TRIGGER.test(text)) {
     return 'home';
+  }
+
+  if (JOBB_DOMAIN_TRIGGER.test(text)) {
+    return 'jobb';
   }
 
   if (/sovn|søvn|vekt|steg|trening|workout|withings|helse|gym|fitness|puls|mood|humør|screen.?time|skjermtid/.test(text)) {

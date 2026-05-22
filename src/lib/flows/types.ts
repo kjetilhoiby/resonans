@@ -22,9 +22,10 @@ export type FlowId =
 	| 'day_plan'
 	| 'day_close'
 	| 'egenfrekvens_checkin'
-	| 'egenfrekvens_quick';
+	| 'egenfrekvens_quick'
+	| 'jobb_focus_timer';
 
-export type FlowDomain = 'health' | 'economics' | 'food' | 'family' | 'planning' | 'general' | 'egenfrekvens';
+export type FlowDomain = 'health' | 'economics' | 'food' | 'family' | 'planning' | 'general' | 'egenfrekvens' | 'jobb';
 
 export type FlowTrigger = 'manual' | 'auto_suggest' | 'onboarding';
 

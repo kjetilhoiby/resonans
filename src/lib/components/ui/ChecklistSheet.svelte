@@ -633,6 +633,13 @@
 		{/each}
 	</div>
 
+	<!-- Mention autocomplete for inline editing -->
+	<MentionAutocomplete
+		textareaEl={editInputEl}
+		value={editingText}
+		onValueChange={(t) => (editingText = t)}
+	/>
+
 	<!-- Add item input -->
 	<div class="cs-add-row">
 		<input
