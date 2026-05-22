@@ -1320,25 +1320,15 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 			<div class="bk-fremdrift-panel">
 				{#if selectedBook.status === 'reading' || selectedBook.status === 'paused'}
 					<div class="bk-fremdrift-section">
-						<p class="bk-fremdrift-label">Leser nå</p>
 						<button
-							class="bk-toggle-btn"
+							class="bk-pause-btn"
 							class:paused={selectedBook.status === 'paused'}
 							onclick={() => setStatus(selectedBook!.status === 'reading' ? 'paused' : 'reading')}
+							aria-label={selectedBook.status === 'reading' ? 'Sett på pause' : 'Fortsett lesing'}
 						>
-							{selectedBook.status === 'reading' ? '⏸ Sett på pause' : '📖 Fortsett lesing'}
+							{selectedBook.status === 'reading' ? '⏸' : '▶'}
+							<span>{selectedBook.status === 'reading' ? 'Pause' : 'Fortsett'}</span>
 						</button>
-						<p class="bk-fremdrift-meta">«Ikke startet» og «Ferdig» settes automatisk fra posisjon.</p>
-					</div>
-				{:else}
-					<div class="bk-fremdrift-section">
-						<p class="bk-fremdrift-label">Status</p>
-						<p class="bk-status-readout">
-							<span class="bk-status-badge" class:completed={selectedBook.status === 'completed'}>
-								{statusEmoji(selectedBook.status)} {statusLabel(selectedBook.status)}
-							</span>
-						</p>
-						<p class="bk-fremdrift-meta">Endre posisjon fra fremdriftslinja øverst — status følger av posisjonen.</p>
 					</div>
 				{/if}
 
@@ -1348,11 +1338,12 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 						<dt>Forfatter</dt><dd>{selectedBook.author ?? '—'}</dd>
 						<dt>Format</dt>
 						<dd>
-							<div class="bk-format-btns bk-format-btns-inline">
-								{#each ([['print', '📖 Papir'], ['audio', '🎧 Lydbok'], ['both', '📖🎧 Begge']] as const) as [f, label]}
+							<div class="bk-format-toggle">
+								{#each ([['print', '📖', 'Papir'], ['audio', '🎧', 'Lyd']] as const) as [f, icon, label]}
 									<button
-										class="bk-status-btn"
-										class:active={selectedBook.format === f}
+										type="button"
+										class="bk-format-opt"
+										class:active={selectedBook.format === f || (selectedBook.format === 'both' && f === 'audio')}
 										onclick={async () => {
 											const res = await fetch(`/api/tema/${themeId}/books/${selectedBook!.id}`, {
 												method: 'PATCH', headers: { 'Content-Type': 'application/json' },
@@ -1360,7 +1351,7 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 											});
 											if (res.ok) { const u: Book = await res.json(); selectedBook = u; books = books.map(b => b.id === u.id ? u : b); }
 										}}
-									>{label}</button>
+									><span class="bk-format-icon">{icon}</span> {label}</button>
 								{/each}
 							</div>
 						</dd>
@@ -1438,7 +1429,6 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 						<div class="bk-chart-meta">
 							{#if progressChart.paceLabel}<span class="bk-chart-pace">⚡ {progressChart.paceLabel}</span>{/if}
 							{#if progressChart.etaDate}<span class="bk-chart-eta">📅 Est. ferdig: <strong>{fmtEta(progressChart.etaDate)}</strong></span>{/if}
-							{#if !progressChart.hasEnoughData}<span class="bk-chart-hint">Logg på flere dager for prediksjon.</span>{/if}
 						</div>
 					{/if}
 				</div>
@@ -1846,10 +1836,10 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 	}
 
 	.bk-header {
-		padding: 10px 16px;
+		padding: var(--screen-title-top-pad, 34px) 20px 16px;
 		display: flex;
 		flex-direction: column;
-		gap: 6px;
+		gap: 8px;
 		border-bottom: 1px solid #1e1e1e;
 		flex-shrink: 0;
 	}
@@ -1957,26 +1947,25 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 	}
 	.bk-pe-cancel:hover { color: #c0c0d0; border-color: #3a3a45; }
 
-	.bk-toggle-btn {
-		background: #14202c;
-		border: 1px solid #2a4a6a;
-		color: #88a8ff;
-		padding: 9px 18px;
-		border-radius: 8px;
-		font-size: 0.95rem;
-		font-weight: 500;
+	.bk-pause-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		background: transparent;
+		border: 1px solid #3b3e6a;
+		color: #7c8ef5;
+		padding: 4px 12px;
+		border-radius: 99px;
+		font-size: 0.82rem;
 		cursor: pointer;
-		transition: background 0.15s;
+		transition: background 0.15s, border-color 0.15s;
 	}
-	.bk-toggle-btn:hover { background: #1a2a3c; }
-	.bk-toggle-btn.paused {
-		background: #1e1a10;
-		border-color: #4a3a2a;
+	.bk-pause-btn:hover { background: #111a2a; }
+	.bk-pause-btn.paused {
+		border-color: #4a3a1a;
 		color: #e0a050;
 	}
-	.bk-toggle-btn.paused:hover { background: #2a2418; }
-
-	.bk-status-readout { margin: 0; }
+	.bk-pause-btn.paused:hover { background: #1e1a10; }
 
 	.bk-fact-dl {
 		display: grid;
@@ -1988,7 +1977,32 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 	.bk-fact-dl dt { color: #888; }
 	.bk-fact-dl dd { color: #d0d0e0; margin: 0; }
 
-	.bk-format-btns-inline { gap: 4px; }
+	.bk-format-toggle {
+		display: inline-flex;
+		background: #0d0d14;
+		border: 1px solid #2a2a35;
+		border-radius: 8px;
+		overflow: hidden;
+	}
+	.bk-format-opt {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		background: transparent;
+		border: none;
+		color: #888;
+		padding: 6px 12px;
+		font-size: 0.85rem;
+		cursor: pointer;
+		transition: background 0.15s, color 0.15s;
+	}
+	.bk-format-opt + .bk-format-opt { border-left: 1px solid #2a2a35; }
+	.bk-format-opt:hover { color: #c0c0d0; }
+	.bk-format-opt.active {
+		background: #111a2a;
+		color: #c8ccff;
+	}
+	.bk-format-icon { font-size: 0.95rem; }
 
 	/* Tabs */
 	.bk-tabs {
@@ -2384,12 +2398,6 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		pointer-events: none;
 	}
 
-	.bk-fremdrift-meta {
-		font-size: 0.82rem;
-		color: #888;
-		margin: 0.4rem 0 0;
-	}
-
 	.bk-link {
 		background: none;
 		border: none;
@@ -2728,7 +2736,6 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 	.bk-chart-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 6px 0 2px; font-size: 0.79rem; }
 	.bk-chart-pace { color: #a0a8ff; }
 	.bk-chart-eta { color: #c8d4ff; }
-	.bk-chart-hint { color: #555; font-size: 0.76rem; }
 
 	/* Kontekst-tab */
 	.bk-ctx-panel { padding: 0.5rem 0 2rem; display: flex; flex-direction: column; gap: 1.25rem; }
