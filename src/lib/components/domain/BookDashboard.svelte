@@ -192,7 +192,7 @@
 	let bookAudioInput = $state<HTMLInputElement | null>(null);
 
 	/* ── Add book format ─────────────────────────────────── */
-	let manualFormat = $state<'print' | 'audio' | 'both'>('print');
+	let manualFormat = $state<'print' | 'audio'>('print');
 	let manualTotalMinutes = $state('');
 
 	/* ── Init ───────────────────────────────────────────── */
@@ -557,7 +557,7 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 			// Pre-fill manual form and switch to it
 			manualTitle = data.title;
 			manualAuthor = data.author ?? '';
-			manualFormat = data.format ?? 'print';
+			manualFormat = data.format === 'audio' ? 'audio' : 'print';
 			if (data.totalMinutes) manualTotalMinutes = String(data.totalMinutes);
 			manualMode = true;
 			// Also kick off a background search to find cover etc.
@@ -1749,21 +1749,32 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 
 					{#if addError}<p class="bk-error">{addError}</p>{/if}
 
-					<button class="bk-manual-link" onclick={() => (manualMode = true)}>
-						Legg til manuelt
-					</button>
-					<button class="bk-manual-link" onclick={() => bookDiscoverInput?.click()} disabled={discoverLoading}>
-						{discoverLoading ? '⏳ Analyserer bilde…' : '📷 Oppdag bok fra bilde'}
-					</button>
+					<div class="bk-add-actions">
+						<button class="bk-add-action-btn" onclick={() => (manualMode = true)} disabled={discoverLoading}>
+							<span class="bk-add-action-icon">✏️</span>
+							<span>Legg til manuelt</span>
+						</button>
+						<button class="bk-add-action-btn" onclick={() => bookDiscoverInput?.click()} disabled={discoverLoading}>
+							{#if discoverLoading}
+								<span class="bk-spinner" aria-hidden="true"></span>
+								<span>Analyserer bilde…</span>
+							{:else}
+								<span class="bk-add-action-icon">📷</span>
+								<span>Oppdag bok fra bilde</span>
+							{/if}
+						</button>
+					</div>
 					{#if discoverError}<p class="bk-error">{discoverError}</p>{/if}
 					<input type="file" accept="image/*" style="display:none" bind:this={bookDiscoverInput} onchange={discoverBookFromImage} />
 				{:else}
 					<div class="bk-add-form">
 						<input class="bk-add-input" placeholder="Tittel *" bind:value={manualTitle} />
 						<input class="bk-add-input" placeholder="Forfatter (valgfritt)" bind:value={manualAuthor} />
-						<div class="bk-format-btns" style="margin-bottom:0.5rem">
-							{#each ([['print', '📖 Papir'], ['audio', '🎧 Lydbok'], ['both', '📖🎧 Begge']] as const) as [f, label]}
-								<button type="button" class="bk-status-btn" class:active={manualFormat === f} onclick={() => (manualFormat = f)}>{label}</button>
+						<div class="bk-format-toggle" style="margin-bottom:0.5rem">
+							{#each ([['print', '📖', 'Papir'], ['audio', '🎧', 'Lyd']] as const) as [f, icon, label]}
+								<button type="button" class="bk-format-opt" class:active={manualFormat === f} onclick={() => (manualFormat = f)}>
+									<span class="bk-format-icon">{icon}</span> {label}
+								</button>
 							{/each}
 						</div>
 						{#if manualFormat !== 'audio'}
@@ -1774,7 +1785,9 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 						{/if}
 						{#if addError}<p class="bk-error">{addError}</p>{/if}
 						<div class="bk-manual-actions">
-							<button class="bk-manual-link" onclick={() => (manualMode = false)}>← Tilbake til søk</button>
+							<button class="bk-add-action-btn" onclick={() => (manualMode = false)} disabled={addSaving}>
+								<span class="bk-add-action-icon">←</span> Tilbake til søk
+							</button>
 							<button
 								class="bk-save-btn"
 								onclick={() => addBook({
@@ -1787,6 +1800,7 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 								})}
 								disabled={addSaving || !manualTitle.trim()}
 							>
+								{#if addSaving}<span class="bk-spinner" aria-hidden="true"></span>{/if}
 								{addSaving ? 'Legger til…' : 'Legg til bok'}
 							</button>
 						</div>
@@ -1808,24 +1822,31 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		{:else}
 			{#snippet bookCard(book: Book)}
 				<button class="bk-card" onclick={() => openBook(book)}>
-					<div class="bk-card-top">
-						<div class="bk-card-info">
-							<span class="bk-card-title">{book.title}</span>
-							{#if book.author}<span class="bk-card-author">{book.author}</span>{/if}
-						</div>
-						<span class="bk-card-status-dot" class:reading={book.status === 'reading'} class:completed={book.status === 'completed'} title={statusLabel(book.status)}></span>
-					</div>
-					{#if book.format !== 'audio' && book.totalPages}
-						{@const pct = progressPct(book)}
-						<div class="bk-card-bar"><div class="bk-card-fill" style="width:{pct}%"></div></div>
-						<p class="bk-card-pct">{pct}% · {book.currentPage}/{book.totalPages} s.</p>
-					{:else if book.format !== 'print' && book.totalMinutes}
-						{@const pct = minutesPct(book)}
-						<div class="bk-card-bar"><div class="bk-card-fill" style="width:{pct}%"></div></div>
-						<p class="bk-card-pct">🎧 {pct}% · {formatMinutes(book.currentMinutes)}</p>
+					{#if book.coverUrl}
+						<img class="bk-card-cover" src={book.coverUrl} alt="" loading="lazy" />
 					{:else}
-						<p class="bk-card-pct">{statusEmoji(book.status)} {statusLabel(book.status)}</p>
+						<div class="bk-card-cover bk-card-cover-placeholder">📚</div>
 					{/if}
+					<div class="bk-card-body">
+						<div class="bk-card-top">
+							<div class="bk-card-info">
+								<span class="bk-card-title">{book.title}</span>
+								{#if book.author}<span class="bk-card-author">{book.author}</span>{/if}
+							</div>
+							<span class="bk-card-status-dot" class:reading={book.status === 'reading'} class:completed={book.status === 'completed'} title={statusLabel(book.status)}></span>
+						</div>
+						{#if book.format !== 'audio' && book.totalPages}
+							{@const pct = progressPct(book)}
+							<div class="bk-card-bar"><div class="bk-card-fill" style="width:{pct}%"></div></div>
+							<p class="bk-card-pct">{pct}% · {book.currentPage}/{book.totalPages} s.</p>
+						{:else if book.format !== 'print' && book.totalMinutes}
+							{@const pct = minutesPct(book)}
+							<div class="bk-card-bar"><div class="bk-card-fill" style="width:{pct}%"></div></div>
+							<p class="bk-card-pct">🎧 {pct}% · {formatMinutes(book.currentMinutes)}</p>
+						{:else}
+							<p class="bk-card-pct">{statusEmoji(book.status)} {statusLabel(book.status)}</p>
+						{/if}
+					</div>
 				</button>
 			{/snippet}
 
@@ -2355,23 +2376,6 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		letter-spacing: 0.04em;
 	}
 
-	.bk-status-btn {
-		font: inherit;
-		font-size: 0.78rem;
-		padding: 6px 12px;
-		border-radius: 8px;
-		border: 1px solid #2a2a2a;
-		background: #141414;
-		color: #888;
-		cursor: pointer;
-		transition: color 0.15s, border-color 0.15s;
-	}
-	.bk-status-btn.active {
-		color: #c8ccff;
-		border-color: #3b3e6a;
-		background: #111a2a;
-	}
-
 	.bk-time-slider {
 		width: 100%;
 		margin: 4px 0 10px;
@@ -2573,19 +2577,48 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		color: #555;
 	}
 
-	.bk-manual-link {
-		background: none;
-		border: none;
-		color: #555;
-		cursor: pointer;
-		font: inherit;
-		font-size: 0.8rem;
-		padding: 4px 0;
-		text-decoration: underline;
-		text-align: left;
-		width: fit-content;
+	.bk-add-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin-top: 4px;
 	}
-	.bk-manual-link:hover { color: #888; }
+	.bk-add-action-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		background: #14141c;
+		border: 1px solid #2a2a35;
+		color: #c0c0d0;
+		padding: 8px 14px;
+		border-radius: 8px;
+		font-size: 0.85rem;
+		cursor: pointer;
+		transition: background 0.15s, border-color 0.15s;
+	}
+	.bk-add-action-btn:hover:not(:disabled) {
+		background: #1a1a22;
+		border-color: #3a3a45;
+	}
+	.bk-add-action-btn:disabled {
+		opacity: 0.55;
+		cursor: default;
+	}
+	.bk-add-action-icon { font-size: 1rem; line-height: 1; }
+
+	.bk-spinner {
+		display: inline-block;
+		width: 12px;
+		height: 12px;
+		border: 2px solid rgba(160, 168, 255, 0.25);
+		border-top-color: #a0a8ff;
+		border-radius: 50%;
+		animation: bk-spin 0.7s linear infinite;
+		flex-shrink: 0;
+	}
+	@keyframes bk-spin {
+		to { transform: rotate(360deg); }
+	}
 
 	.bk-manual-actions {
 		display: flex;
@@ -2670,15 +2703,41 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		background: #0f0f10;
 		border: 1px solid #1e1e1e;
 		border-radius: 12px;
-		padding: 12px 14px;
+		padding: 10px;
 		text-align: left;
 		cursor: pointer;
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
+		display: grid;
+		grid-template-columns: 56px 1fr;
+		gap: 12px;
+		align-items: stretch;
 		transition: border-color 0.15s;
 	}
 	.bk-card:hover { border-color: #3b3e6a; }
+
+	.bk-card-cover {
+		width: 56px;
+		height: 84px;
+		object-fit: cover;
+		border-radius: 6px;
+		background: #1a1a22;
+		display: block;
+	}
+	.bk-card-cover-placeholder {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: #555;
+		font-size: 1.6rem;
+		border: 1px dashed #2a2a35;
+	}
+
+	.bk-card-body {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		min-width: 0;
+		justify-content: space-between;
+	}
 
 	.bk-card-top {
 		display: flex;
