@@ -1,7 +1,7 @@
 <script lang="ts">
 	import ChatInput from '../ui/ChatInput.svelte';
 	import TriageCard from '../composed/TriageCard.svelte';
-	import Icon from '../ui/Icon.svelte';
+	import PageHeader from '../ui/PageHeader.svelte';
 	import AudioKaraokePlayer from './AudioKaraokePlayer.svelte';
 	import { page } from '$app/stores';
 	import { get } from 'svelte/store';
@@ -87,10 +87,10 @@
 	let booksLoaded = $state(false);
 
 	/* ── Views: library | book ─────────────────────────── */
-	type BookTab = 'chat' | 'klipp' | 'fremdrift' | 'kontekst';
+	type BookTab = 'chat' | 'klipp' | 'fakta' | 'kontekst';
 	let selectedBook = $state<Book | null>(null);
 	let bookTab = $state<BookTab>('chat');
-	let headerCollapsed = $state(false);
+	let progressEditorOpen = $state(false);
 
 	/* ── Add book / search ──────────────────────────────── */
 	interface OLBook {
@@ -321,7 +321,7 @@
 	async function openBook(book: Book) {
 		selectedBook = book;
 		bookTab = 'chat';
-		headerCollapsed = false;
+		progressEditorOpen = false;
 		chatMessages = [];
 		chatMessagesLoaded = false;
 		clips = [];
@@ -719,7 +719,7 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 	});
 
 	$effect(() => {
-		if (bookTab === 'fremdrift' && selectedBook && !progressLogLoaded) {
+		if (bookTab === 'fakta' && selectedBook && !progressLogLoaded) {
 			void loadProgressLog();
 		}
 	});
@@ -765,12 +765,36 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		await fetch(`/api/tema/${themeId}/books/${selectedBook.id}/clips/${clipId}`, { method: 'DELETE' });
 	}
 
+	/** Avled status fra posisjon: 0 → not_started, max → completed, mellom → behold reading/paused (eller bytt fra not_started/completed til reading). */
+	function deriveStatusFromProgress(book: Book, nextPage: number, nextMins: number): Book['status'] | null {
+		const totalPages = book.totalPages ?? 0;
+		const totalMins = book.totalMinutes ?? 0;
+		const pageRelevant = book.format !== 'audio' && totalPages > 0;
+		const minsRelevant = book.format !== 'print' && totalMins > 0;
+		if (!pageRelevant && !minsRelevant) return null;
+
+		const pageAtStart = !pageRelevant || nextPage <= 0;
+		const minsAtStart = !minsRelevant || nextMins <= 0;
+		if (pageAtStart && minsAtStart) return 'not_started';
+
+		const pageAtEnd = pageRelevant && nextPage >= totalPages;
+		const minsAtEnd = minsRelevant && nextMins >= totalMins;
+		if (
+			(book.format === 'print' && pageAtEnd) ||
+			(book.format === 'audio' && minsAtEnd) ||
+			(book.format === 'both' && (pageAtEnd || minsAtEnd))
+		) return 'completed';
+
+		if (book.status === 'not_started' || book.status === 'completed') return 'reading';
+		return null;
+	}
+
 	async function saveProgress() {
 		if (!selectedBook) return;
 		progressSaving = true;
 		progressError = '';
 		try {
-			const updates: Record<string, number> = {};
+			const updates: Record<string, number | string> = {};
 
 			if (selectedBook.format !== 'audio' && progressPage.trim()) {
 				const page = parseInt(progressPage, 10);
@@ -787,6 +811,13 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 
 			if (Object.keys(updates).length === 0) { progressError = 'Ingen endringer.'; progressSaving = false; return; }
 
+			const nextPage = typeof updates.currentPage === 'number' ? updates.currentPage : selectedBook.currentPage;
+			const nextMins = typeof updates.currentMinutes === 'number' ? updates.currentMinutes : selectedBook.currentMinutes;
+			const derivedStatus = deriveStatusFromProgress(selectedBook, nextPage, nextMins);
+			if (derivedStatus && derivedStatus !== selectedBook.status) {
+				updates.status = derivedStatus;
+			}
+
 			const res = await fetch(`/api/tema/${themeId}/books/${selectedBook.id}`, {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
@@ -796,6 +827,7 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 			const updated: Book = await res.json();
 			selectedBook = updated;
 			books = books.map((b) => (b.id === updated.id ? updated : b));
+			progressEditorOpen = false;
 		} catch {
 			progressError = 'Lagring feilet.';
 		} finally {
@@ -983,49 +1015,105 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		{#if progressAutoSaved}
 			<div class="bk-autosave-toast">✅ Fremdrift oppdatert automatisk</div>
 		{/if}
-		<div class="bk-header" class:collapsed={headerCollapsed}>
-			<div class="bk-header-top">
-				<button class="bk-back" onclick={closeBook}>
-					<Icon name="back" size={16} /> Bibliotek
-				</button>
-				{#if headerCollapsed}
-					<span class="bk-title-inline">{selectedBook.title}</span>
-				{/if}
-				<button class="bk-collapse-toggle" onclick={() => (headerCollapsed = !headerCollapsed)} aria-label="{headerCollapsed ? 'Vis detaljer' : 'Skjul detaljer'}">
-					{headerCollapsed ? '▾' : '▴'}
-				</button>
-			</div>
-			{#if !headerCollapsed}
-				<div class="bk-meta">
-					<span class="bk-title">{selectedBook.title}</span>
-					{#if selectedBook.author}
-						<span class="bk-author">{selectedBook.author}</span>
-					{/if}
-				</div>
-				<div class="bk-status-row">
-					<span class="bk-status-badge" class:reading={selectedBook.status === 'reading'} class:completed={selectedBook.status === 'completed'} class:paused={selectedBook.status === 'paused'}>
-						{statusEmoji(selectedBook.status)} {statusLabel(selectedBook.status)}
+		<div class="bk-header">
+			<PageHeader
+				title={selectedBook.title}
+				subtitle={selectedBook.author || undefined}
+				onTitleClick={closeBook}
+				titleLabel="Tilbake til biblioteket"
+			>
+				{#snippet actions()}
+					{@const b = selectedBook!}
+					<span class="bk-status-badge" class:reading={b.status === 'reading'} class:completed={b.status === 'completed'} class:paused={b.status === 'paused'}>
+						{statusEmoji(b.status)} {statusLabel(b.status)}
 					</span>
-					{#if selectedBook.contextStatus === 'pending'}
-						<span class="bk-ctx-badge pending">⏳ Samler bokkontekst…</span>
-					{:else if selectedBook.contextStatus === 'ready'}
+					{#if b.contextStatus === 'pending'}
+						<span class="bk-ctx-badge pending">⏳ Samler kontekst…</span>
+					{:else if b.contextStatus === 'ready'}
 						<span class="bk-ctx-badge ready">✦ Kontekst klar</span>
 					{/if}
+				{/snippet}
+			</PageHeader>
+
+			{#if selectedBook.format !== 'audio' && selectedBook.totalPages}
+				{@const pct = progressPct(selectedBook)}
+				<button
+					type="button"
+					class="bk-progress-trigger"
+					onclick={() => (progressEditorOpen = !progressEditorOpen)}
+					aria-expanded={progressEditorOpen}
+					aria-label="Juster fremdrift"
+				>
+					<div class="bk-progress-bar"><div class="bk-progress-fill" style="width:{pct}%"></div></div>
+					<span class="bk-progress-label">{selectedBook.currentPage} / {selectedBook.totalPages} sider</span>
+				</button>
+			{/if}
+			{#if selectedBook.format !== 'print' && selectedBook.totalMinutes}
+				{@const pct = minutesPct(selectedBook)}
+				<button
+					type="button"
+					class="bk-progress-trigger"
+					onclick={() => (progressEditorOpen = !progressEditorOpen)}
+					aria-expanded={progressEditorOpen}
+					aria-label="Juster lydbok-posisjon"
+				>
+					<div class="bk-progress-bar"><div class="bk-progress-fill" style="width:{pct}%"></div></div>
+					<span class="bk-progress-label">🎧 {formatMinutes(selectedBook.currentMinutes)} / {formatMinutes(selectedBook.totalMinutes)}</span>
+				</button>
+			{/if}
+
+			{#if progressEditorOpen}
+				<div class="bk-progress-editor">
+					{#if selectedBook.format !== 'audio'}
+						<div class="bk-pe-row">
+							<label class="bk-pe-label" for="bk-pe-page">Side</label>
+							<input
+								id="bk-pe-page"
+								class="bk-pe-input"
+								type="number"
+								min="0"
+								bind:value={progressPage}
+							/>
+							{#if selectedBook.totalPages}
+								<span class="bk-pe-of">av {selectedBook.totalPages}</span>
+							{/if}
+						</div>
+					{/if}
+					{#if selectedBook.format !== 'print'}
+						{#if (totalDurHours || 0) * 60 + (totalDurMins || 0) > 0}
+							{@const sliderMax = (totalDurHours || 0) * 60 + (totalDurMins || 0)}
+							<input
+								type="range"
+								class="bk-time-slider"
+								min="0"
+								max={sliderMax}
+								value={(posHours || 0) * 60 + (posMins || 0)}
+								oninput={(e) => {
+									const v = parseInt((e.target as HTMLInputElement).value);
+									posHours = Math.floor(v / 60);
+									posMins = v % 60;
+								}}
+							/>
+						{/if}
+						<div class="bk-pe-row">
+							<label class="bk-pe-label" for="bk-pe-hours">Posisjon</label>
+							<input id="bk-pe-hours" type="number" class="bk-pe-input bk-pe-input-sm" min="0" bind:value={posHours} />
+							<span class="bk-pe-of">t</span>
+							<input type="number" class="bk-pe-input bk-pe-input-sm" min="0" max="59" bind:value={posMins} />
+							<span class="bk-pe-of">min</span>
+							{#if (totalDurHours || 0) * 60 + (totalDurMins || 0) > 0}
+								<span class="bk-pe-of">av {totalDurHours}t {totalDurMins < 10 ? '0' : ''}{totalDurMins}m</span>
+							{/if}
+						</div>
+					{/if}
+					<div class="bk-pe-actions">
+						<button class="bk-pe-cancel" onclick={() => (progressEditorOpen = false)}>Avbryt</button>
+						<button class="bk-save-btn bk-save-btn-sm" onclick={saveProgress} disabled={progressSaving}>
+							{progressSaving ? '…' : 'Lagre fremdrift'}
+						</button>
+					</div>
+					{#if progressError}<p class="bk-error">{progressError}</p>{/if}
 				</div>
-				{#if selectedBook.format !== 'audio' && selectedBook.totalPages}
-					{@const pct = progressPct(selectedBook)}
-					<div class="bk-progress-bar" title="{selectedBook.currentPage} av {selectedBook.totalPages} sider ({pct}%)">
-						<div class="bk-progress-fill" style="width:{pct}%"></div>
-					</div>
-					<p class="bk-progress-label">{selectedBook.currentPage} / {selectedBook.totalPages} sider</p>
-				{/if}
-				{#if selectedBook.format !== 'print' && selectedBook.totalMinutes}
-					{@const pct = minutesPct(selectedBook)}
-					<div class="bk-progress-bar" title="🎧 {formatMinutes(selectedBook.currentMinutes)} av {formatMinutes(selectedBook.totalMinutes)} ({pct}%)">
-						<div class="bk-progress-fill" style="width:{pct}%"></div>
-					</div>
-					<p class="bk-progress-label">🎧 {formatMinutes(selectedBook.currentMinutes)} / {formatMinutes(selectedBook.totalMinutes)}</p>
-				{/if}
 			{/if}
 		</div>
 
@@ -1033,7 +1121,7 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		<div class="bk-tabs">
 			<button class="bk-tab" class:active={bookTab === 'chat'} onclick={() => (bookTab = 'chat')}>💬 Chat</button>
 			<button class="bk-tab" class:active={bookTab === 'klipp'} onclick={() => (bookTab = 'klipp')}>🔖 Klipp</button>
-			<button class="bk-tab" class:active={bookTab === 'fremdrift'} onclick={() => (bookTab = 'fremdrift')}>📈 Fremdrift</button>
+			<button class="bk-tab" class:active={bookTab === 'fakta'} onclick={() => (bookTab = 'fakta')}>📊 Fakta</button>
 			<button class="bk-tab" class:active={bookTab === 'kontekst'} onclick={() => (bookTab = 'kontekst')}>📚 Kontekst</button>
 		</div>
 
@@ -1227,95 +1315,83 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 				{/if}
 			</div>
 
-		{:else if bookTab === 'fremdrift'}
-			<!-- ── Progress ── -->
+		{:else if bookTab === 'fakta'}
+			<!-- ── Fakta: status, bokinfo, fremdriftsgraf, lengde, slett ── -->
 			<div class="bk-fremdrift-panel">
-				<div class="bk-fremdrift-section">
-					<p class="bk-fremdrift-label">Status</p>
-					<div class="bk-status-btns">
-						{#each (['not_started', 'reading', 'paused', 'completed'] as const) as s}
-							<button
-								class="bk-status-btn"
-								class:active={selectedBook.status === s}
-								onclick={() => setStatus(s)}
-							>{statusEmoji(s)} {statusLabel(s)}</button>
-						{/each}
-					</div>
-				</div>
-
-				{#if selectedBook.format !== 'audio'}
+				{#if selectedBook.status === 'reading' || selectedBook.status === 'paused'}
 					<div class="bk-fremdrift-section">
-						<p class="bk-fremdrift-label">Sider lest</p>
-						<div class="bk-page-row">
-							<input
-								class="bk-page-input"
-								type="number"
-								min="0"
-								placeholder="Side"
-								bind:value={progressPage}
-							/>
-							{#if selectedBook.totalPages}
-								<span class="bk-page-of">av {selectedBook.totalPages}</span>
-							{/if}
-						</div>
+						<p class="bk-fremdrift-label">Leser nå</p>
+						<button
+							class="bk-toggle-btn"
+							class:paused={selectedBook.status === 'paused'}
+							onclick={() => setStatus(selectedBook!.status === 'reading' ? 'paused' : 'reading')}
+						>
+							{selectedBook.status === 'reading' ? '⏸ Sett på pause' : '📖 Fortsett lesing'}
+						</button>
+						<p class="bk-fremdrift-meta">«Ikke startet» og «Ferdig» settes automatisk fra posisjon.</p>
 					</div>
-				{/if}
-
-				{#if selectedBook.format !== 'print'}
+				{:else}
 					<div class="bk-fremdrift-section">
-						<p class="bk-fremdrift-label">Posisjon</p>
-						{#if (totalDurHours || 0) * 60 + (totalDurMins || 0) > 0}
-							{@const sliderMax = (totalDurHours || 0) * 60 + (totalDurMins || 0)}
-							<input
-								type="range"
-								class="bk-time-slider"
-								min="0"
-								max={sliderMax}
-								value={(posHours || 0) * 60 + (posMins || 0)}
-								oninput={(e) => {
-									const v = parseInt((e.target as HTMLInputElement).value);
-									posHours = Math.floor(v / 60);
-									posMins = v % 60;
-								}}
-							/>
-						{/if}
-						<div class="bk-hm-row">
-							<div class="bk-hm-field">
-								<input type="number" class="bk-hm-input" min="0" bind:value={posHours} />
-								<span class="bk-hm-label">t</span>
-							</div>
-							<div class="bk-hm-field">
-								<input type="number" class="bk-hm-input" min="0" max="59" bind:value={posMins} />
-								<span class="bk-hm-label">min</span>
-							</div>
-							{#if (totalDurHours || 0) * 60 + (totalDurMins || 0) > 0}
-								<span class="bk-hm-of">av {totalDurHours}t {totalDurMins < 10 ? '0' : ''}{totalDurMins}m</span>
-							{/if}
-						</div>
-
-						{#if !selectedBook.totalMinutes || totalDurExpanded}
-							<p class="bk-fremdrift-label" style="margin-top:0.75rem">Total varighet</p>
-							<div class="bk-hm-row">
-								<div class="bk-hm-field">
-									<input type="number" class="bk-hm-input" min="0" bind:value={totalDurHours} />
-									<span class="bk-hm-label">t</span>
-								</div>
-								<div class="bk-hm-field">
-									<input type="number" class="bk-hm-input" min="0" max="59" bind:value={totalDurMins} />
-									<span class="bk-hm-label">min</span>
-								</div>
-							</div>
-						{:else}
-							<p class="bk-fremdrift-meta">Varighet: {formatMinutes(selectedBook.totalMinutes)} <button class="bk-link" onclick={() => (totalDurExpanded = true)}>Endre</button></p>
-						{/if}
+						<p class="bk-fremdrift-label">Status</p>
+						<p class="bk-status-readout">
+							<span class="bk-status-badge" class:completed={selectedBook.status === 'completed'}>
+								{statusEmoji(selectedBook.status)} {statusLabel(selectedBook.status)}
+							</span>
+						</p>
+						<p class="bk-fremdrift-meta">Endre posisjon fra fremdriftslinja øverst — status følger av posisjonen.</p>
 					</div>
 				{/if}
 
 				<div class="bk-fremdrift-section">
-					<button class="bk-save-btn bk-save-btn-sm" onclick={saveProgress} disabled={progressSaving}>
-						{progressSaving ? '…' : 'Lagre fremdrift'}
-					</button>
-					{#if progressError}<p class="bk-error">{progressError}</p>{/if}
+					<p class="bk-fremdrift-label">Bokfakta</p>
+					<dl class="bk-fact-dl">
+						<dt>Forfatter</dt><dd>{selectedBook.author ?? '—'}</dd>
+						<dt>Format</dt>
+						<dd>
+							<div class="bk-format-btns bk-format-btns-inline">
+								{#each ([['print', '📖 Papir'], ['audio', '🎧 Lydbok'], ['both', '📖🎧 Begge']] as const) as [f, label]}
+									<button
+										class="bk-status-btn"
+										class:active={selectedBook.format === f}
+										onclick={async () => {
+											const res = await fetch(`/api/tema/${themeId}/books/${selectedBook!.id}`, {
+												method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+												body: JSON.stringify({ format: f })
+											});
+											if (res.ok) { const u: Book = await res.json(); selectedBook = u; books = books.map(b => b.id === u.id ? u : b); }
+										}}
+									>{label}</button>
+								{/each}
+							</div>
+						</dd>
+						{#if selectedBook.format !== 'audio'}
+							<dt>Sider</dt>
+							<dd>{selectedBook.totalPages ? `${selectedBook.currentPage} / ${selectedBook.totalPages}` : '—'}</dd>
+						{/if}
+						{#if selectedBook.format !== 'print'}
+							<dt>Lydlengde</dt>
+							<dd>
+								{#if selectedBook.totalMinutes && !totalDurExpanded}
+									{formatMinutes(selectedBook.totalMinutes)}
+									<button class="bk-link" onclick={() => (totalDurExpanded = true)}>Endre</button>
+								{:else}
+									<div class="bk-hm-row">
+										<div class="bk-hm-field">
+											<input type="number" class="bk-hm-input" min="0" bind:value={totalDurHours} />
+											<span class="bk-hm-label">t</span>
+										</div>
+										<div class="bk-hm-field">
+											<input type="number" class="bk-hm-input" min="0" max="59" bind:value={totalDurMins} />
+											<span class="bk-hm-label">min</span>
+										</div>
+										<button class="bk-link" onclick={saveProgress}>Lagre</button>
+									</div>
+								{/if}
+							</dd>
+						{/if}
+						{#if selectedBook.startedAt}<dt>Startet</dt><dd>{fmtDate(selectedBook.startedAt)}</dd>{/if}
+						{#if selectedBook.finishedAt}<dt>Ferdig</dt><dd>{fmtDate(selectedBook.finishedAt)}</dd>{/if}
+					</dl>
 				</div>
 
 				{#if selectedBook.format !== 'audio' && selectedBook.totalPages}
@@ -1332,32 +1408,6 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 						<div class="bk-big-fill" style="width:{pct}%"></div>
 						<span class="bk-big-pct">{pct}% lyd · {formatMinutes(selectedBook.currentMinutes)}</span>
 					</div>
-				{/if}
-
-				<div class="bk-fremdrift-section">
-					<p class="bk-fremdrift-label">Format</p>
-					<div class="bk-format-btns">
-						{#each ([['print', '📖 Papir'], ['audio', '🎧 Lydbok'], ['both', '📖🎧 Begge']] as const) as [f, label]}
-							<button
-								class="bk-status-btn"
-								class:active={selectedBook.format === f}
-								onclick={async () => {
-									const res = await fetch(`/api/tema/${themeId}/books/${selectedBook!.id}`, {
-										method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-										body: JSON.stringify({ format: f })
-									});
-									if (res.ok) { const u: Book = await res.json(); selectedBook = u; books = books.map(b => b.id === u.id ? u : b); }
-								}}
-							>{label}</button>
-						{/each}
-					</div>
-				</div>
-
-				{#if selectedBook.startedAt}
-					<p class="bk-fremdrift-info">Startet: {fmtDate(selectedBook.startedAt)}</p>
-				{/if}
-				{#if selectedBook.finishedAt}
-					<p class="bk-fremdrift-info">Ferdig: {fmtDate(selectedBook.finishedAt)}</p>
 				{/if}
 
 				<!-- Progress chart -->
@@ -1796,85 +1846,12 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 	}
 
 	.bk-header {
-		padding: 10px 16px 0;
+		padding: 10px 16px;
 		display: flex;
 		flex-direction: column;
-		gap: 4px;
-		border-bottom: 1px solid #1e1e1e;
-		padding-bottom: 10px;
-		flex-shrink: 0;
-	}
-	.bk-header.collapsed {
-		padding-bottom: 6px;
-	}
-
-	.bk-header-top {
-		display: flex;
-		align-items: center;
-	}
-
-	.bk-title-inline {
-		flex: 1;
-		font-size: 0.88rem;
-		font-weight: 600;
-		color: #d0d0e8;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		padding: 0 8px;
-	}
-
-	.bk-collapse-toggle {
-		margin-left: auto;
-		background: none;
-		border: none;
-		color: #555;
-		font-size: 0.85rem;
-		cursor: pointer;
-		padding: 2px 4px;
-		line-height: 1;
-		border-radius: 4px;
-		transition: color 0.15s;
-	}
-	.bk-collapse-toggle:hover { color: #aaa; }
-
-	.bk-back {
-		display: flex;
-		align-items: center;
 		gap: 6px;
-		background: none;
-		border: none;
-		color: #7c8ef5;
-		font-size: 0.82rem;
-		cursor: pointer;
-		padding: 0;
-	}
-
-	.bk-meta {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-		margin-top: 4px;
-	}
-
-	.bk-title {
-		font-size: 1rem;
-		font-weight: 700;
-		color: #f0f0f0;
-		line-height: 1.2;
-	}
-
-	.bk-author {
-		font-size: 0.8rem;
-		color: #8a8a8a;
-	}
-
-	.bk-status-row {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		flex-wrap: wrap;
-		margin-top: 4px;
+		border-bottom: 1px solid #1e1e1e;
+		flex-shrink: 0;
 	}
 
 	.bk-status-badge {
@@ -1901,7 +1878,6 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		background: #1e1e1e;
 		border-radius: 99px;
 		overflow: hidden;
-		margin-top: 6px;
 	}
 
 	.bk-progress-fill {
@@ -1916,6 +1892,103 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		color: #6a6a6a;
 		margin: 0;
 	}
+
+	.bk-progress-trigger {
+		all: unset;
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		margin-top: 8px;
+		padding: 4px 0;
+		cursor: pointer;
+		border-radius: 6px;
+		transition: background 0.15s;
+	}
+	.bk-progress-trigger:hover .bk-progress-bar { background: #25252e; }
+	.bk-progress-trigger:hover .bk-progress-label { color: #c0c0d0; }
+	.bk-progress-trigger:focus-visible { outline: 2px solid #4a5cff; outline-offset: 2px; }
+
+	.bk-progress-editor {
+		margin-top: 10px;
+		padding: 12px 14px;
+		background: #14141c;
+		border: 1px solid #22222e;
+		border-radius: 8px;
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+	.bk-pe-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex-wrap: wrap;
+	}
+	.bk-pe-label {
+		font-size: 0.78rem;
+		color: #888;
+		min-width: 4.5rem;
+	}
+	.bk-pe-input {
+		width: 100px;
+		background: #0d0d14;
+		border: 1px solid #2a2a35;
+		color: #e0e0ea;
+		padding: 6px 8px;
+		border-radius: 6px;
+		font-size: 0.92rem;
+	}
+	.bk-pe-input-sm { width: 60px; }
+	.bk-pe-of { color: #888; font-size: 0.82rem; }
+	.bk-pe-actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: 8px;
+		margin-top: 4px;
+	}
+	.bk-pe-cancel {
+		background: none;
+		border: 1px solid #2a2a35;
+		color: #888;
+		padding: 5px 12px;
+		border-radius: 6px;
+		font-size: 0.85rem;
+		cursor: pointer;
+	}
+	.bk-pe-cancel:hover { color: #c0c0d0; border-color: #3a3a45; }
+
+	.bk-toggle-btn {
+		background: #14202c;
+		border: 1px solid #2a4a6a;
+		color: #88a8ff;
+		padding: 9px 18px;
+		border-radius: 8px;
+		font-size: 0.95rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: background 0.15s;
+	}
+	.bk-toggle-btn:hover { background: #1a2a3c; }
+	.bk-toggle-btn.paused {
+		background: #1e1a10;
+		border-color: #4a3a2a;
+		color: #e0a050;
+	}
+	.bk-toggle-btn.paused:hover { background: #2a2418; }
+
+	.bk-status-readout { margin: 0; }
+
+	.bk-fact-dl {
+		display: grid;
+		grid-template-columns: max-content 1fr;
+		gap: 0.45rem 1rem;
+		margin: 0;
+		font-size: 0.9rem;
+	}
+	.bk-fact-dl dt { color: #888; }
+	.bk-fact-dl dd { color: #d0d0e0; margin: 0; }
+
+	.bk-format-btns-inline { gap: 4px; }
 
 	/* Tabs */
 	.bk-tabs {
@@ -2232,12 +2305,6 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		letter-spacing: 0.04em;
 	}
 
-	.bk-status-btns {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 6px;
-	}
-
 	.bk-status-btn {
 		font: inherit;
 		font-size: 0.78rem;
@@ -2253,28 +2320,6 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		color: #c8ccff;
 		border-color: #3b3e6a;
 		background: #111a2a;
-	}
-
-	.bk-page-row {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-	}
-
-	.bk-page-input {
-		width: 80px;
-		background: #141414;
-		border: 1px solid #2a2a2a;
-		border-radius: 8px;
-		color: #e8e8e8;
-		font: inherit;
-		font-size: 0.9rem;
-		padding: 8px 10px;
-	}
-
-	.bk-page-of {
-		font-size: 0.82rem;
-		color: #666;
 	}
 
 	.bk-time-slider {
@@ -2314,12 +2359,6 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		color: #888;
 	}
 
-	.bk-hm-of {
-		font-size: 0.82rem;
-		color: #555;
-		margin-left: 4px;
-	}
-
 	.bk-big-progress {
 		position: relative;
 		height: 24px;
@@ -2343,12 +2382,6 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		font-weight: 700;
 		color: #fff;
 		pointer-events: none;
-	}
-
-	.bk-fremdrift-info {
-		font-size: 0.78rem;
-		color: #666;
-		margin: 0;
 	}
 
 	.bk-fremdrift-meta {
