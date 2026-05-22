@@ -5,6 +5,28 @@ import { books, themes, conversations } from '$lib/db/schema';
 import { eq, and, asc } from 'drizzle-orm';
 import { enqueueBackgroundJob, processDueBackgroundJobs } from '$lib/server/background-jobs';
 
+/** Slå opp et bokomslag på OpenLibrary basert på tittel + forfatter. Returnerer null hvis ingenting matcher. */
+async function lookupCoverFromOpenLibrary(title: string, author: string | null): Promise<string | null> {
+	try {
+		const qParts = [`title=${encodeURIComponent(title)}`];
+		if (author) qParts.push(`author=${encodeURIComponent(author)}`);
+		const url = `https://openlibrary.org/search.json?${qParts.join('&')}&fields=cover_i,title&limit=3`;
+		const controller = new AbortController();
+		const timer = setTimeout(() => controller.abort(), 5000);
+		const res = await fetch(url, {
+			signal: controller.signal,
+			headers: { 'User-Agent': 'Resonans/1.0 (+https://resonans.app/contact)' }
+		});
+		clearTimeout(timer);
+		if (!res.ok) return null;
+		const data = (await res.json()) as { docs?: Array<{ cover_i?: number }> };
+		const hit = data.docs?.find((d) => typeof d.cover_i === 'number');
+		return hit?.cover_i ? `https://covers.openlibrary.org/b/id/${hit.cover_i}-M.jpg` : null;
+	} catch {
+		return null;
+	}
+}
+
 // GET — list all books for a theme
 export const GET: RequestHandler = async ({ params, locals }) => {
 	const theme = await db.query.themes.findFirst({
@@ -38,8 +60,13 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 	const format = (typeof body?.format === 'string' && ['print', 'audio', 'both'].includes(body.format))
 		? (body.format as 'print' | 'audio' | 'both')
 		: 'print';
+	let coverUrl: string | null = typeof body?.coverUrl === 'string' && body.coverUrl.length > 0 ? body.coverUrl : null;
 
 	if (!title) return json({ error: 'title required' }, { status: 400 });
+
+	if (!coverUrl) {
+		coverUrl = await lookupCoverFromOpenLibrary(title, author);
+	}
 
 	// Create a dedicated conversation for this book
 	const [conv] = await db
@@ -58,6 +85,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 			userId: locals.userId,
 			title,
 			author: author || null,
+			coverUrl,
 			totalPages: totalPages || null,
 			totalMinutes: totalMinutes || null,
 			format,
