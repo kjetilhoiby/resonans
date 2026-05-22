@@ -225,71 +225,7 @@
 			return;
 		}
 		if (/^month:/.test(context)) {
-			const monthKey = context.replace('month:', '');
-			try {
-				const res = await fetch(`/api/month-plan/context?month=${encodeURIComponent(monthKey)}`);
-				if (!res.ok) { void goto('/maanedsplan'); return; }
-				const ctx = await res.json() as {
-					currentMonthKey: string;
-					currentMonthName: string;
-					prevMonthKey: string;
-					prevMonthName: string;
-					note: string;
-					reflection: string;
-					uncheckedItems: Array<{ id: string; text: string }>;
-					monthGoals: Array<{ title: string; currentValue: number; target: { value: number; unit: string }; trackingMetric: string }>;
-					recurringTasks: string[];
-				};
-				const goalLines = ctx.monthGoals.map((g) => {
-					const pct = g.target.value > 0 ? Math.round((g.currentValue / g.target.value) * 100) : null;
-					return `- ${g.title}: ${g.currentValue} av ${g.target.value} ${g.target.unit}${pct !== null ? ` (${pct}%)` : ''}`;
-				}).join('\n');
-				homeMonthPlanContext = {
-					monthKey: ctx.currentMonthKey,
-					openItems: ctx.uncheckedItems,
-					weekTasks: ctx.recurringTasks,
-					prevMonthData: {
-						monthName: ctx.prevMonthName,
-						note: ctx.note,
-						reflection: ctx.reflection,
-						uncheckedItems: ctx.uncheckedItems,
-						monthGoals: ctx.monthGoals,
-						recurringTasks: ctx.recurringTasks
-					},
-					systemPrompts: {
-						refleksjon: [
-							`Det er nå ${ctx.currentMonthName} og brukeren er klar for månedsplanlegging.`,
-							ctx.prevMonthName ? `\nForrige måned (${ctx.prevMonthName}):` : '',
-							ctx.note ? `Månedsnotat: "${ctx.note}"` : '',
-							ctx.reflection ? `Refleksjon: "${ctx.reflection}"` : '',
-							goalLines ? `\nMål:\n${goalLines}` : '',
-							'\nGi en kort, varm oppsummering av forrige måned (2-3 setninger). Avslutt med ett åpent spørsmål om hva som gikk bra og hva som var utfordrende.'
-						].filter(Boolean).join('\n'),
-						maal: [
-							`Du hjelper brukeren å sette månedsmål for ${ctx.currentMonthName}.`,
-							goalLines ? `\nForrige måneds mål og fremgang (${ctx.prevMonthName}):\n${goalLines}` : '\nIngen mål fra forrige måned.',
-							'\nSkille mellom mål og oppgaver:',
-							'- MÅNEDSMÅL: kun for ting med målbar fremdrift mot et tall (løping i km, vekt i kg, frekvente treningsøkter per uke). Hold listen kort.',
-							'- MÅNEDSOPPGAVER: ting du gjør 1–8 ganger denne måneden (utenatt, utebad, sykling til jobb, planleggingsprat hjemme osv.)',
-							'\nGå gjennom forrige måneds mål. Foreslå om hvert bør videreføres eller justeres. Kom gjerne med nye oppgaver basert på refleksjonen.',
-							'\nAvslutt alltid med begge listene (utelat seksjoner som ikke passer):',
-							'\nMÅNEDSMÅL:',
-							'- [tittel]: [verdi] [enhet]',
-							'\nMÅNEDSOPPGAVER:',
-							'- [tittel]: [antall] [enhet]'
-						].filter(Boolean).join('\n'),
-						maanedshistorie: [
-							`Du hjelper brukeren å skrive en kort månedsbeskrivelse for ${ctx.currentMonthName}.`,
-							`Spør: "Hva handler ${ctx.currentMonthName} om for deg?"`,
-							'Basert på svaret, skriv et utkast på 1-2 avsnitt. Vær personlig og konkret.',
-							'La brukeren justere utkastet via chat. Avslutt med det endelige notatet.'
-						].join('\n')
-					}
-				};
-				homeMonthPlanOpen = true;
-			} catch {
-				void goto('/maanedsplan');
-			}
+			await openMonthPlan(context.replace('month:', ''));
 		}
 	}
 
@@ -637,24 +573,159 @@
 
 	const actionItems = $derived.by<ActionItem[]>(() => {
 		const items: ActionItem[] = [];
+		const now = new Date();
+		const hour = now.getHours();
 
+		// Sjekk inn — skjules helt når allerede gjennomført
 		if (egenfrekvensRecent && egenfrekvensRecent.settings?.enabled !== false) {
 			const slot = currentSlotFromTime();
 			const entry =
 				slot === 'morning' ? egenfrekvensRecent.today.morning : egenfrekvensRecent.today.evening;
-			items.push({
-				id: 'egenfrekvens-quick',
-				icon: '✨',
-				label: `Sjekk inn · ${slot === 'morning' ? 'morgen' : 'kveld'}`,
-				value: entry?.level ?? undefined,
-				done: entry !== null,
-				priority: entry === null ? 100 : 60,
-				onclick: () => openEgenfrekvensQuick(slot)
-			});
+			if (entry === null) {
+				items.push({
+					id: 'egenfrekvens-quick',
+					icon: '✨',
+					label: `Sjekk inn · ${slot === 'morning' ? 'morgen' : 'kveld'}`,
+					done: false,
+					priority: 100,
+					onclick: () => openEgenfrekvensQuick(slot)
+				});
+			}
+		}
+
+		// Planlegg i morgen — vises etter kl 17
+		if (hour >= 17) {
+			const tomorrow = new Date(now);
+			tomorrow.setDate(tomorrow.getDate() + 1);
+			const tomorrowIso = toLocalIsoDate(tomorrow);
+			const tomorrowWeekKey = getLocalIsoWeekDashed(tomorrow);
+			const tomorrowCtx = `week:${tomorrowWeekKey}:day:${tomorrowIso}`;
+			const planned = monthDayChecklists.some(c => c.context === tomorrowCtx && c.items.length > 0)
+				|| activeChecklists.some(c => c.context === tomorrowCtx && c.items.length > 0);
+			if (!planned) {
+				items.push({
+					id: 'plan-tomorrow',
+					icon: '📋',
+					label: 'Planlegg i morgen',
+					done: false,
+					priority: 90,
+					onclick: () => {
+						homeDayPlanIso = tomorrowIso;
+						homeDayPlanWeekKey = tomorrowWeekKey;
+						homeDayPlanOpen = true;
+					}
+				});
+			}
+		}
+
+		// Planlegg neste uke — vises torsdag–søndag
+		const dow = now.getDay(); // 0=søn, 4=tor, 5=fre, 6=lør
+		if (dow >= 4 || dow === 0) {
+			const nextMonday = new Date(now);
+			nextMonday.setDate(nextMonday.getDate() + (8 - (dow || 7)));
+			const nextWeekKey = getLocalIsoWeekDashed(nextMonday);
+			const nextWeekCtx = `week:${nextWeekKey}`;
+			const planned = activeChecklists.some(c => c.context === nextWeekCtx && c.items.length > 0);
+			if (!planned) {
+				items.push({
+					id: 'plan-next-week',
+					icon: '📅',
+					label: 'Planlegg neste uke',
+					done: false,
+					priority: 80,
+					onclick: () => { homeWeekPlanOpen = true; }
+				});
+			}
+		}
+
+		// Planlegg neste måned — vises siste 5 dager i måneden
+		const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+		if (now.getDate() >= daysInMonth - 4) {
+			const nextMonthDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+			const nextMonthKey = toLocalYearMonth(nextMonthDate);
+			const nextMonthCtx = `month:${nextMonthKey}`;
+			const planned = activeChecklists.some(c => c.context === nextMonthCtx && c.items.length > 0);
+			if (!planned) {
+				items.push({
+					id: 'plan-next-month',
+					icon: '🗓️',
+					label: 'Planlegg neste måned',
+					done: false,
+					priority: 70,
+					onclick: () => void openMonthPlan(nextMonthKey)
+				});
+			}
 		}
 
 		return items.sort((a, b) => b.priority - a.priority);
 	});
+
+	async function openMonthPlan(monthKey: string) {
+		try {
+			const res = await fetch(`/api/month-plan/context?month=${encodeURIComponent(monthKey)}`);
+			if (!res.ok) { void goto('/maanedsplan'); return; }
+			const ctx = await res.json() as {
+				currentMonthKey: string;
+				currentMonthName: string;
+				prevMonthKey: string;
+				prevMonthName: string;
+				note: string;
+				reflection: string;
+				uncheckedItems: Array<{ id: string; text: string }>;
+				monthGoals: Array<{ title: string; currentValue: number; target: { value: number; unit: string }; trackingMetric: string }>;
+				recurringTasks: string[];
+			};
+			const goalLines = ctx.monthGoals.map((g) => {
+				const pct = g.target.value > 0 ? Math.round((g.currentValue / g.target.value) * 100) : null;
+				return `- ${g.title}: ${g.currentValue} av ${g.target.value} ${g.target.unit}${pct !== null ? ` (${pct}%)` : ''}`;
+			}).join('\n');
+			homeMonthPlanContext = {
+				monthKey: ctx.currentMonthKey,
+				openItems: ctx.uncheckedItems,
+				weekTasks: ctx.recurringTasks,
+				prevMonthData: {
+					monthName: ctx.prevMonthName,
+					note: ctx.note,
+					reflection: ctx.reflection,
+					uncheckedItems: ctx.uncheckedItems,
+					monthGoals: ctx.monthGoals,
+					recurringTasks: ctx.recurringTasks
+				},
+				systemPrompts: {
+					refleksjon: [
+						`Det er nå ${ctx.currentMonthName} og brukeren er klar for månedsplanlegging.`,
+						ctx.prevMonthName ? `\nForrige måned (${ctx.prevMonthName}):` : '',
+						ctx.note ? `Månedsnotat: "${ctx.note}"` : '',
+						ctx.reflection ? `Refleksjon: "${ctx.reflection}"` : '',
+						goalLines ? `\nMål:\n${goalLines}` : '',
+						'\nGi en kort, varm oppsummering av forrige måned (2-3 setninger). Avslutt med ett åpent spørsmål om hva som gikk bra og hva som var utfordrende.'
+					].filter(Boolean).join('\n'),
+					maal: [
+						`Du hjelper brukeren å sette månedsmål for ${ctx.currentMonthName}.`,
+						goalLines ? `\nForrige måneds mål og fremgang (${ctx.prevMonthName}):\n${goalLines}` : '\nIngen mål fra forrige måned.',
+						'\nSkille mellom mål og oppgaver:',
+						'- MÅNEDSMÅL: kun for ting med målbar fremdrift mot et tall (løping i km, vekt i kg, frekvente treningsøkter per uke). Hold listen kort.',
+						'- MÅNEDSOPPGAVER: ting du gjør 1–8 ganger denne måneden (utenatt, utebad, sykling til jobb, planleggingsprat hjemme osv.)',
+						'\nGå gjennom forrige måneds mål. Foreslå om hvert bør videreføres eller justeres. Kom gjerne med nye oppgaver basert på refleksjonen.',
+						'\nAvslutt alltid med begge listene (utelat seksjoner som ikke passer):',
+						'\nMÅNEDSMÅL:',
+						'- [tittel]: [verdi] [enhet]',
+						'\nMÅNEDSOPPGAVER:',
+						'- [tittel]: [antall] [enhet]'
+					].filter(Boolean).join('\n'),
+					maanedshistorie: [
+						`Du hjelper brukeren å skrive en kort månedsbeskrivelse for ${ctx.currentMonthName}.`,
+						`Spør: "Hva handler ${ctx.currentMonthName} om for deg?"`,
+						'Basert på svaret, skriv et utkast på 1-2 avsnitt. Vær personlig og konkret.',
+						'La brukeren justere utkastet via chat. Avslutt med det endelige notatet.'
+					].join('\n')
+				}
+			};
+			homeMonthPlanOpen = true;
+		} catch {
+			void goto('/maanedsplan');
+		}
+	}
 
 	async function loadEgenfrekvensRecent() {
 		try {
