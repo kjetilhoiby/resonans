@@ -664,6 +664,62 @@
 		}
 	}
 
+	// ── Snooze-meny for action-chips ───────────────────────────────────────────
+	let snoozeMenuChipId = $state<string | null>(null);
+	let snoozeMenuLabel = $state('');
+	let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+	let longPressTriggered = false;
+	const LONG_PRESS_MS = 500;
+
+	function openSnoozeMenu(chipId: string, label: string) {
+		snoozeMenuChipId = chipId;
+		snoozeMenuLabel = label;
+		if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(20);
+	}
+
+	function closeSnoozeMenu() {
+		snoozeMenuChipId = null;
+	}
+
+	function startLongPress(chipId: string, label: string, _e: PointerEvent) {
+		longPressTriggered = false;
+		longPressTimer = setTimeout(() => {
+			longPressTriggered = true;
+			openSnoozeMenu(chipId, label);
+		}, LONG_PRESS_MS);
+	}
+
+	function cancelLongPress() {
+		if (longPressTimer !== null) {
+			clearTimeout(longPressTimer);
+			longPressTimer = null;
+		}
+	}
+
+	function handleChipClick(onclick: () => void) {
+		if (longPressTriggered) {
+			longPressTriggered = false;
+			return;
+		}
+		onclick();
+	}
+
+	async function snoozeChip(scope: 'today' | 'week' | 'forever') {
+		const chipId = snoozeMenuChipId;
+		closeSnoozeMenu();
+		if (!chipId) return;
+		try {
+			await fetch('/api/actions/snooze', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ chipId, scope })
+			});
+			await loadActionCandidates();
+		} catch {
+			// best-effort
+		}
+	}
+
 	function dispatchActionIntent(intent: ActionIntent): void {
 		switch (intent.kind) {
 			case 'open-flow':
@@ -2042,7 +2098,12 @@
 						<button
 							class="action-pill"
 							class:is-done={item.done}
-							onclick={item.onclick}
+							onclick={() => handleChipClick(item.onclick)}
+							onpointerdown={(e) => startLongPress(item.id, item.label, e)}
+							onpointerup={cancelLongPress}
+							onpointercancel={cancelLongPress}
+							onpointerleave={cancelLongPress}
+							oncontextmenu={(e) => e.preventDefault()}
 						>
 							<span class="action-pill-icon">{item.icon}</span>
 							<span class="action-pill-label">{item.label}</span>
@@ -2738,6 +2799,26 @@
 	/>
 {/if}
 
+{#if snoozeMenuChipId}
+	<button
+		class="snooze-backdrop"
+		aria-label="Lukk snooze-meny"
+		onclick={closeSnoozeMenu}
+	></button>
+	<div class="snooze-menu" role="menu" aria-label={`Snooze ${snoozeMenuLabel}`}>
+		<div class="snooze-menu-title">{snoozeMenuLabel}</div>
+		<button class="snooze-opt" onclick={() => snoozeChip('today')}>
+			<span>Til i morgen</span>
+		</button>
+		<button class="snooze-opt" onclick={() => snoozeChip('week')}>
+			<span>Til neste mandag</span>
+		</button>
+		<button class="snooze-opt snooze-opt-strong" onclick={() => snoozeChip('forever')}>
+			<span>Skjul permanent</span>
+		</button>
+	</div>
+{/if}
+
 <style>
 	/* ── Grunnlayout ── */
 	.home-screen {
@@ -2867,6 +2948,10 @@
 		background: hsl(228 19% 11%);
 		border: 1px solid hsl(228 16% 18%);
 		border-radius: 999px;
+		touch-action: manipulation;
+		user-select: none;
+		-webkit-user-select: none;
+		-webkit-touch-callout: none;
 		padding: 8px 14px;
 		cursor: pointer;
 		font: inherit;
@@ -4178,6 +4263,74 @@
 	.media-list-date {
 		font-size: 0.7rem;
 		color: #666;
+	}
+
+	/* ── Snooze-meny ────────────────────────────────────────────── */
+	.snooze-backdrop {
+		position: fixed;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.45);
+		border: 0;
+		padding: 0;
+		z-index: 1000;
+		animation: snooze-fade 120ms ease-out;
+	}
+
+	.snooze-menu {
+		position: fixed;
+		left: 50%;
+		bottom: max(120px, env(safe-area-inset-bottom, 0px) + 120px);
+		transform: translateX(-50%);
+		min-width: 240px;
+		max-width: 320px;
+		background: hsl(228 19% 11%);
+		border: 1px solid hsl(228 16% 22%);
+		border-radius: 16px;
+		padding: 8px;
+		z-index: 1001;
+		box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+		animation: snooze-pop 160ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
+	}
+
+	.snooze-menu-title {
+		padding: 10px 12px 6px;
+		font-size: 0.78rem;
+		color: hsl(228 10% 60%);
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+	}
+
+	.snooze-opt {
+		display: flex;
+		width: 100%;
+		padding: 12px 14px;
+		background: transparent;
+		border: 0;
+		border-radius: 10px;
+		color: #e2e8f0;
+		font-size: 0.95rem;
+		text-align: left;
+		cursor: pointer;
+		transition: background 80ms;
+	}
+
+	.snooze-opt:hover,
+	.snooze-opt:focus-visible {
+		background: hsl(228 19% 16%);
+	}
+
+	.snooze-opt-strong {
+		color: hsl(8 70% 70%);
+	}
+
+	@keyframes snooze-fade {
+		from { opacity: 0; }
+		to { opacity: 1; }
+	}
+
+	@keyframes snooze-pop {
+		from { opacity: 0; transform: translate(-50%, 12px); }
+		to { opacity: 1; transform: translate(-50%, 0); }
 	}
 </style>
 
