@@ -23,9 +23,9 @@
 	import ChecklistSheet from '../ui/ChecklistSheet.svelte';
 	import FlowSheet from '../flows/FlowSheet.svelte';
 	import EgenfrekvensPrompt from './EgenfrekvensPrompt.svelte';
-	import FocusTimerPrompt from './FocusTimerPrompt.svelte';
 	import PullToRefresh from '../ui/PullToRefresh.svelte';
 	import { FLOWS } from '$lib/flows/registry';
+	import type { ActionCandidate, ActionIntent } from '$lib/types/actions';
 	import PageHeader from '../ui/PageHeader.svelte';
 	import CollapsibleSection from '../ui/CollapsibleSection.svelte';
 	import ConversationContextMenu from '../ui/ConversationContextMenu.svelte';
@@ -468,6 +468,7 @@
 			}
 
 			void loadEgenfrekvensRecent();
+			void loadActionCandidates();
 
 			// URL-trigget egenfrekvens-flow (fra push-nudge eller dyp-lenke)
 			const flowParam = $page.url.searchParams.get('flow');
@@ -520,18 +521,6 @@
 			})();
 		})();
 
-		// Fokustimer: vis banner i arbeidstid hvis ikke avvist i dag
-		if (isWorkHours()) {
-			const isoDay = new Date().toISOString().slice(0, 10);
-			if (typeof localStorage !== 'undefined') {
-				const dismissed = localStorage.getItem(`focus-timer-dismissed-${isoDay}`);
-				if (!dismissed) {
-					focusTimerPromptOpen = true;
-				}
-			} else {
-				focusTimerPromptOpen = true;
-			}
-		}
 	});
 
 	interface EgenfrekvensSlotSummary {
@@ -574,92 +563,15 @@
 	}
 
 	const actionItems = $derived.by<ActionItem[]>(() => {
-		const items: ActionItem[] = [];
-		const now = new Date();
-		const hour = now.getHours();
-
-		// Sjekk inn — skjules helt når allerede gjennomført
-		if (egenfrekvensRecent && egenfrekvensRecent.settings?.enabled !== false) {
-			const slot = currentSlotFromTime();
-			const entry =
-				slot === 'morning' ? egenfrekvensRecent.today.morning : egenfrekvensRecent.today.evening;
-			if (entry === null) {
-				items.push({
-					id: 'egenfrekvens-quick',
-					icon: '✨',
-					label: `Sjekk inn · ${slot === 'morning' ? 'morgen' : 'kveld'}`,
-					done: false,
-					priority: 100,
-					onclick: () => openEgenfrekvensQuick(slot)
-				});
-			}
-		}
-
-		// Planlegg i morgen — vises etter kl 17
-		if (hour >= 17) {
-			const tomorrow = new Date(now);
-			tomorrow.setDate(tomorrow.getDate() + 1);
-			const tomorrowIso = toLocalIsoDate(tomorrow);
-			const tomorrowWeekKey = getLocalIsoWeekDashed(tomorrow);
-			const tomorrowCtx = `week:${tomorrowWeekKey}:day:${tomorrowIso}`;
-			const planned = monthDayChecklists.some(c => c.context === tomorrowCtx && c.items.length > 0)
-				|| activeChecklists.some(c => c.context === tomorrowCtx && c.items.length > 0);
-			if (!planned) {
-				items.push({
-					id: 'plan-tomorrow',
-					icon: '📋',
-					label: 'Planlegg i morgen',
-					done: false,
-					priority: 90,
-					onclick: () => {
-						homeDayPlanIso = tomorrowIso;
-						homeDayPlanWeekKey = tomorrowWeekKey;
-						homeDayPlanOpen = true;
-					}
-				});
-			}
-		}
-
-		// Planlegg neste uke — vises torsdag–søndag
-		const dow = now.getDay(); // 0=søn, 4=tor, 5=fre, 6=lør
-		if (dow >= 4 || dow === 0) {
-			const nextMonday = new Date(now);
-			nextMonday.setDate(nextMonday.getDate() + (8 - (dow || 7)));
-			const nextWeekKey = getLocalIsoWeekDashed(nextMonday);
-			const nextWeekCtx = `week:${nextWeekKey}`;
-			const planned = activeChecklists.some(c => c.context === nextWeekCtx && c.items.length > 0);
-			if (!planned) {
-				items.push({
-					id: 'plan-next-week',
-					icon: '📅',
-					label: 'Planlegg neste uke',
-					done: false,
-					priority: 80,
-					onclick: () => { homeWeekPlanOpen = true; }
-				});
-			}
-		}
-
-		// Planlegg neste måned — vises siste 5 dager i måneden
-		const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-		if (now.getDate() >= daysInMonth - 4) {
-			const nextMonthDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-			const nextMonthKey = toLocalYearMonth(nextMonthDate);
-			const nextMonthCtx = `month:${nextMonthKey}`;
-			const planned = activeChecklists.some(c => c.context === nextMonthCtx && c.items.length > 0);
-			if (!planned) {
-				items.push({
-					id: 'plan-next-month',
-					icon: '🗓️',
-					label: 'Planlegg neste måned',
-					done: false,
-					priority: 70,
-					onclick: () => void openMonthPlan(nextMonthKey)
-				});
-			}
-		}
-
-		return items.sort((a, b) => b.priority - a.priority);
+		return serverActionCandidates.map((c) => ({
+			id: c.id,
+			icon: c.icon,
+			label: c.label,
+			value: c.value,
+			done: false,
+			priority: c.priority,
+			onclick: () => dispatchActionIntent(c.intent)
+		}));
 	});
 
 	async function openMonthPlan(monthKey: string) {
@@ -736,6 +648,59 @@
 			egenfrekvensRecent = await res.json();
 		} catch {
 			// best-effort, ignore
+		}
+	}
+
+	let serverActionCandidates = $state<ActionCandidate[]>([]);
+
+	async function loadActionCandidates() {
+		try {
+			const res = await fetch('/api/home/actions');
+			if (!res.ok) return;
+			const body = (await res.json()) as { items?: ActionCandidate[] };
+			serverActionCandidates = body.items ?? [];
+		} catch {
+			// best-effort, ignore
+		}
+	}
+
+	function dispatchActionIntent(intent: ActionIntent): void {
+		switch (intent.kind) {
+			case 'open-flow':
+				if (intent.flowId === 'jobb_focus_timer') {
+					focusTimerFlowOpen = true;
+				} else if (intent.flowId === 'reflection_light') {
+					reflectionLightFlowOpen = true;
+				} else if (intent.flowId === 'quick_win') {
+					void openQuickWin();
+				} else if (intent.flowId === 'egenfrekvens_quick') {
+					egenfrekvensActiveSlot = currentSlotFromTime();
+					egenfrekvensQuickFlowOpen = true;
+				} else if (intent.flowId === 'egenfrekvens_checkin') {
+					egenfrekvensActiveSlot = currentSlotFromTime();
+					egenfrekvensFlowOpen = true;
+					void loadEgenfrekvensContext();
+				} else {
+					console.warn('[home] unhandled flow intent', intent.flowId);
+				}
+				break;
+			case 'open-egenfrekvens':
+				openEgenfrekvensQuick(intent.slot);
+				break;
+			case 'open-day-plan':
+				homeDayPlanIso = intent.iso;
+				homeDayPlanWeekKey = intent.weekKey;
+				homeDayPlanOpen = true;
+				break;
+			case 'open-week-plan':
+				homeWeekPlanOpen = true;
+				break;
+			case 'open-month-plan':
+				void openMonthPlan(intent.monthKey);
+				break;
+			case 'navigate':
+				void goto(intent.href);
+				break;
 		}
 	}
 
@@ -1004,12 +969,31 @@
 	}
 
 	// ── Fokustimer (jobb) ──────────────────────────────────────────────────────
-	let focusTimerPromptOpen = $state(false);
 	let focusTimerFlowOpen = $state(false);
 
-	function isWorkHours(): boolean {
-		const hour = new Date().getHours();
-		return hour >= 8 && hour < 17;
+	// ── Kort refleksjon ────────────────────────────────────────────────────────
+	let reflectionLightFlowOpen = $state(false);
+
+	// ── Quick win ──────────────────────────────────────────────────────────────
+	let quickWinFlowOpen = $state(false);
+	let quickWinOpenItems = $state<Array<{ id: string; text: string }>>([]);
+
+	async function openQuickWin() {
+		try {
+			const res = await fetch('/api/checklists/open-items?limit=20');
+			if (!res.ok) return;
+			const body = (await res.json()) as {
+				items?: Array<{ id: string; text: string; checklistTitle: string }>;
+			};
+			quickWinOpenItems = (body.items ?? []).map((i) => ({
+				id: i.id,
+				text: i.checklistTitle ? `${i.text}  ·  ${i.checklistTitle}` : i.text
+			}));
+			if (quickWinOpenItems.length === 0) return;
+			quickWinFlowOpen = true;
+		} catch {
+			// best-effort
+		}
 	}
 
 	// ── Fil-flyt ───────────────────────────────────────────────────────────────
@@ -1908,21 +1892,6 @@
 					}}
 				/>
 			{/if}
-			{#if focusTimerPromptOpen && !egenfrekvensPromptOpen}
-				<FocusTimerPrompt
-					onstart={() => {
-						focusTimerPromptOpen = false;
-						focusTimerFlowOpen = true;
-					}}
-					ondismiss={() => {
-						const isoDay = new Date().toISOString().slice(0, 10);
-						if (typeof localStorage !== 'undefined') {
-							localStorage.setItem(`focus-timer-dismissed-${isoDay}`, '1');
-						}
-						focusTimerPromptOpen = false;
-					}}
-				/>
-			{/if}
 		</section>
 	{/if}
 
@@ -2642,6 +2611,7 @@
 		oncomplete={async () => {
 			homeDayPlanOpen = false;
 			await fetchChecklists();
+			void loadActionCandidates();
 		}}
 	/>
 {/if}
@@ -2653,6 +2623,7 @@
 		oncomplete={async () => {
 			homeWeekPlanOpen = false;
 			await fetchChecklists();
+			void loadActionCandidates();
 		}}
 	/>
 {/if}
@@ -2665,6 +2636,7 @@
 		oncomplete={async () => {
 			homeMonthPlanOpen = false;
 			await fetchChecklists();
+			void loadActionCandidates();
 		}}
 	/>
 {/if}
@@ -2704,6 +2676,7 @@
 			egenfrekvensReflectionPrompt = null;
 			egenfrekvensDreamReasons = null;
 			void loadEgenfrekvensRecent();
+			void loadActionCandidates();
 			if (returnToChatAfterFlow) {
 				chatOpen = true;
 				chatInputAutoFocus = true;
@@ -2724,6 +2697,7 @@
 			egenfrekvensQuickFlowOpen = false;
 			egenfrekvensPromptOpen = false;
 			void loadEgenfrekvensRecent();
+			void loadActionCandidates();
 		}}
 		onsecondaryaction={(action) => {
 			if (action.id === 'go-deeper') {
@@ -2743,7 +2717,24 @@
 	<FlowSheet
 		flow={FLOWS['jobb_focus_timer']}
 		onclose={() => { focusTimerFlowOpen = false; }}
-		oncomplete={() => { focusTimerFlowOpen = false; focusTimerPromptOpen = false; }}
+		oncomplete={() => { focusTimerFlowOpen = false; void loadActionCandidates(); }}
+	/>
+{/if}
+
+{#if reflectionLightFlowOpen}
+	<FlowSheet
+		flow={FLOWS['reflection_light']}
+		onclose={() => { reflectionLightFlowOpen = false; }}
+		oncomplete={() => { reflectionLightFlowOpen = false; void loadActionCandidates(); }}
+	/>
+{/if}
+
+{#if quickWinFlowOpen}
+	<FlowSheet
+		flow={FLOWS['quick_win']}
+		context={{ openItems: quickWinOpenItems }}
+		onclose={() => { quickWinFlowOpen = false; }}
+		oncomplete={() => { quickWinFlowOpen = false; void loadActionCandidates(); }}
 	/>
 {/if}
 

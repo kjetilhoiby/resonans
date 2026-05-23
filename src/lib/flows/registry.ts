@@ -1097,6 +1097,108 @@ export const FLOWS: Record<FlowId, Flow> = {
 		}
 	},
 
+	reflection_light: {
+		id: 'reflection_light',
+		name: 'Kort refleksjon',
+		description: 'To korte spørsmål om dagen — én ting du lærte, og noe du gjorde bra',
+		icon: '💭',
+		domain: 'egenfrekvens',
+		trigger: 'auto_suggest',
+		estimatedMinutes: 2,
+		steps: [
+			{
+				id: 'learned',
+				type: 'form',
+				title: 'Hva lærte du i dag?',
+				fields: [
+					{
+						id: 'learned_today',
+						type: 'textarea',
+						label: 'Én ting — kan være liten',
+						placeholder: 'F.eks. «Jeg jobber bedre i 25-min-blokker»'
+					}
+				]
+			},
+			{
+				id: 'proud',
+				type: 'form',
+				title: 'Hva gjorde du bra i dag?',
+				fields: [
+					{
+						id: 'proud_of',
+						type: 'textarea',
+						label: 'Noe du er fornøyd med',
+						placeholder: 'F.eks. «Tok turen ut tross sliten kropp»'
+					}
+				]
+			}
+		],
+		async onComplete(data) {
+			const learned = typeof data.learned_today === 'string' ? data.learned_today.trim() : '';
+			const proud = typeof data.proud_of === 'string' ? data.proud_of.trim() : '';
+			if (!learned && !proud) return;
+			await fetch('/api/reflections/light', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ learned, proud })
+			});
+		}
+	},
+
+	quick_win: {
+		id: 'quick_win',
+		name: 'Quick win',
+		description: 'Plukk én oppgave fra lista og kjør den unna',
+		icon: '⚡',
+		domain: 'jobb',
+		trigger: 'auto_suggest',
+		estimatedMinutes: 6,
+		steps: [
+			{
+				id: 'pick',
+				type: 'form',
+				title: 'Hva tar du tak i nå?',
+				fields: [
+					{
+						id: 'item_id',
+						type: 'select',
+						label: 'Velg én ting fra lista',
+						required: true,
+						optionsFn: (_data, context) =>
+							(context?.openItems ?? []).map((i) => ({ value: i.id, label: i.text }))
+					},
+					{
+						id: 'duration_minutes',
+						type: 'slider',
+						label: 'Hvor lenge?',
+						min: 5,
+						max: 25,
+						step: 5,
+						defaultValue: 5,
+						helperLabels: {
+							5: '5 min',
+							10: '10 min',
+							15: '15 min',
+							20: '20 min',
+							25: '25 min'
+						}
+					}
+				],
+				validation: (data) => !!data.item_id || 'Velg en oppgave først'
+			}
+		],
+		async onComplete(data) {
+			const itemId = typeof data.item_id === 'string' ? data.item_id : '';
+			const duration = typeof data.duration_minutes === 'number' ? data.duration_minutes : 5;
+			if (!itemId) return;
+			await fetch('/api/jobb/quick-win', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ checklistItemId: itemId, durationMinutes: duration })
+			});
+		}
+	},
+
 	jobb_focus_timer: {
 		id: 'jobb_focus_timer',
 		name: 'Fokustimer',

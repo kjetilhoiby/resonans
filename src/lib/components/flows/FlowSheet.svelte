@@ -582,13 +582,14 @@
 										oninput={(e) => handleFieldChange(field.id, e.currentTarget.value)}
 									/>
 								{:else if field.type === 'select'}
+									{@const selOptions = field.optionsFn ? field.optionsFn(flowData, context) : (field.options ?? [])}
 									<select
 										class="fs-form-select"
 										value={flowData[field.id] ?? ''}
 										onchange={(e) => handleFieldChange(field.id, e.currentTarget.value)}
 									>
 										<option value="">Velg…</option>
-										{#each field.options ?? [] as opt (opt.value)}
+										{#each selOptions as opt (opt.value)}
 											<option value={opt.value}>{opt.label}</option>
 										{/each}
 									</select>
@@ -685,7 +686,7 @@
 											{/each}
 										{/if}
 									{:else}
-										{@const msOptions = field.optionsFn ? field.optionsFn(flowData) : (field.options ?? [])}
+										{@const msOptions = field.optionsFn ? field.optionsFn(flowData, context) : (field.options ?? [])}
 										<div class="fs-multiselect" class:fs-focus-grid={isFocus}>
 											{#each msOptions as opt (opt.value)}
 												{@const sel = Array.isArray(flowData[field.id]) && flowData[field.id].includes(opt.value)}
