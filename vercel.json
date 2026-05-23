@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run build",
+  "buildCommand": "node scripts/sync-db-schema.mjs && npm run build",
   "framework": "sveltekit",
   "installCommand": "npm install --force"
 }

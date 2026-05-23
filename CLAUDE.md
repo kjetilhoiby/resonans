@@ -128,14 +128,18 @@ Scheduling:
 ## Database Conventions
 
 - Schema is in a single file: `src/lib/db/schema.ts`
-- All new schema changes → `npm run db:generate` → commit migration file in `drizzle/`
-- For fast local iteration, `npm run db:push` skips migration files
-- Primary keys: `uuid` with `defaultRandom()` for most tables; `text` for `users.id` (supports `'default-user'`)
-- Timestamps: always `timestamp` columns named `created_at` / `updated_at` with `defaultNow()`
-- User isolation: every data table has a `userId text` FK to `users.id`
+- **Schema endringer auto-syncer på prod-deploy.** `scripts/sync-db-schema.mjs` kjører `drizzle-kit push --force` som del av Vercel buildCommand når `VERCEL_ENV=production`. Det betyr: rediger `schema.ts`, commit, push til `main` → DB følger automatisk med. Ingen manuell `npm run db:push` etter vibe-koding.
+- Sikkerhetsnett: scriptet hopper over preview/dev-deploys, og `SKIP_DB_SYNC=1` deaktiverer hele steget.
+- Migration-filer i `drizzle/` er valgfrie nå — kjør `npm run db:generate` hvis du vil ha en sjekka-inn audit trail for endringen (anbefalt for destruktive endringer), men det er ikke påkrevd for at deploy skal funke.
+- Lokalt: `npm run db:push` (eller `npm run db:sync` som bruker samme wrapper som deploy).
+- Primary keys: `uuid` with `defaultRandom()` for most tables; `text` for `users.id` (supports `'default-user'`).
+- Timestamps: always `timestamp` columns named `created_at` / `updated_at` with `defaultNow()`.
+- User isolation: every data table has a `userId text` FK to `users.id`.
 
 ## Deployment
 
 Deployed on Vercel with `@sveltejs/adapter-vercel` (Node.js 22.x runtime). Vercel Cron jobs are defined in `vercel.json`. The in-app scheduler (`ENABLE_IN_APP_SCHEDULER=true`) is an alternative for non-Vercel environments.
+
+`vercel.json` sin `buildCommand` kjører `node scripts/sync-db-schema.mjs && npm run build` — schema-sync skjer altså FØR build, slik at ny kode aldri går live mot en gammel DB.
 
 Files listed in `.vercelignore` are excluded from deployment (scripts, planning docs, seed files).
