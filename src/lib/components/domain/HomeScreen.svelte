@@ -25,6 +25,7 @@
 	import EgenfrekvensPrompt from './EgenfrekvensPrompt.svelte';
 	import PullToRefresh from '../ui/PullToRefresh.svelte';
 	import { FLOWS } from '$lib/flows/registry';
+	import type { ActionCandidate, ActionIntent } from '$lib/types/actions';
 	import PageHeader from '../ui/PageHeader.svelte';
 	import CollapsibleSection from '../ui/CollapsibleSection.svelte';
 	import ConversationContextMenu from '../ui/ConversationContextMenu.svelte';
@@ -467,6 +468,7 @@
 			}
 
 			void loadEgenfrekvensRecent();
+			void loadActionCandidates();
 
 			// URL-trigget egenfrekvens-flow (fra push-nudge eller dyp-lenke)
 			const flowParam = $page.url.searchParams.get('flow');
@@ -565,32 +567,16 @@
 		const now = new Date();
 		const hour = now.getHours();
 
-		// Sjekk inn — skjules helt når allerede gjennomført
-		if (egenfrekvensRecent && egenfrekvensRecent.settings?.enabled !== false) {
-			const slot = currentSlotFromTime();
-			const entry =
-				slot === 'morning' ? egenfrekvensRecent.today.morning : egenfrekvensRecent.today.evening;
-			if (entry === null) {
-				items.push({
-					id: 'egenfrekvens-quick',
-					icon: '✨',
-					label: `Sjekk inn · ${slot === 'morning' ? 'morgen' : 'kveld'}`,
-					done: false,
-					priority: 100,
-					onclick: () => openEgenfrekvensQuick(slot)
-				});
-			}
-		}
-
-		// Fokusøkt — vises i arbeidstid på hverdager
-		if (isWorkHours()) {
+		// Server-side foreslåtte handlinger (sjekk inn, fokusøkt, m.fl.)
+		for (const c of serverActionCandidates) {
 			items.push({
-				id: 'focus-timer',
-				icon: '🎯',
-				label: 'Klar for en fokusøkt?',
+				id: c.id,
+				icon: c.icon,
+				label: c.label,
+				value: c.value,
 				done: false,
-				priority: 95,
-				onclick: () => { focusTimerFlowOpen = true; }
+				priority: c.priority,
+				onclick: () => dispatchActionIntent(c.intent)
 			});
 		}
 
@@ -735,6 +721,55 @@
 			egenfrekvensRecent = await res.json();
 		} catch {
 			// best-effort, ignore
+		}
+	}
+
+	let serverActionCandidates = $state<ActionCandidate[]>([]);
+
+	async function loadActionCandidates() {
+		try {
+			const res = await fetch('/api/home/actions');
+			if (!res.ok) return;
+			const body = (await res.json()) as { items?: ActionCandidate[] };
+			serverActionCandidates = body.items ?? [];
+		} catch {
+			// best-effort, ignore
+		}
+	}
+
+	function dispatchActionIntent(intent: ActionIntent): void {
+		switch (intent.kind) {
+			case 'open-flow':
+				if (intent.flowId === 'jobb_focus_timer') {
+					focusTimerFlowOpen = true;
+				} else if (intent.flowId === 'egenfrekvens_quick') {
+					egenfrekvensActiveSlot = currentSlotFromTime();
+					egenfrekvensQuickFlowOpen = true;
+				} else if (intent.flowId === 'egenfrekvens_checkin') {
+					egenfrekvensActiveSlot = currentSlotFromTime();
+					egenfrekvensFlowOpen = true;
+					void loadEgenfrekvensContext();
+				} else {
+					console.warn('[home] unhandled flow intent', intent.flowId);
+				}
+				break;
+			case 'open-egenfrekvens':
+				openEgenfrekvensQuick(intent.slot);
+				break;
+			case 'open-day-plan':
+				homeDayPlanIso = intent.iso;
+				homeDayPlanWeekKey = intent.weekKey;
+				homeDayPlanOpen = true;
+				break;
+			case 'open-week-plan':
+				homeWeekPlanOpen = true;
+				break;
+			case 'open-month-plan':
+				void openMonthPlan(intent.monthKey);
+				break;
+			case 'navigate':
+				void goto(intent.href);
+				break;
 		}
 	}
 
@@ -1004,14 +1039,6 @@
 
 	// ── Fokustimer (jobb) ──────────────────────────────────────────────────────
 	let focusTimerFlowOpen = $state(false);
-
-	function isWorkHours(): boolean {
-		const now = new Date();
-		const dow = now.getDay(); // 0=søn, 6=lør
-		if (dow === 0 || dow === 6) return false;
-		const hour = now.getHours();
-		return hour >= 8 && hour < 17;
-	}
 
 	// ── Fil-flyt ───────────────────────────────────────────────────────────────
 	let fileFlowOpen = $state(false);
@@ -2690,6 +2717,7 @@
 			egenfrekvensReflectionPrompt = null;
 			egenfrekvensDreamReasons = null;
 			void loadEgenfrekvensRecent();
+			void loadActionCandidates();
 			if (returnToChatAfterFlow) {
 				chatOpen = true;
 				chatInputAutoFocus = true;
@@ -2710,6 +2738,7 @@
 			egenfrekvensQuickFlowOpen = false;
 			egenfrekvensPromptOpen = false;
 			void loadEgenfrekvensRecent();
+			void loadActionCandidates();
 		}}
 		onsecondaryaction={(action) => {
 			if (action.id === 'go-deeper') {
@@ -2729,7 +2758,7 @@
 	<FlowSheet
 		flow={FLOWS['jobb_focus_timer']}
 		onclose={() => { focusTimerFlowOpen = false; }}
-		oncomplete={() => { focusTimerFlowOpen = false; }}
+		oncomplete={() => { focusTimerFlowOpen = false; void loadActionCandidates(); }}
 	/>
 {/if}
 
