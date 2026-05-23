@@ -304,3 +304,29 @@ body {
 	box-shadow: 0 0 0 2px var(--accent-primary);
 	cursor: pointer;
 }
+
+/* ─────────────────────────────────────────────────────────────────
+   Hindre iOS Safari fra å zoome inn når tekstfelter får fokus.
+   iOS zoomer hvis font-size < 16px. Vi tvinger derfor 16px på alle
+   tekst-inputs/textarea/select på touch-enheter — uten å påvirke
+   sliders, checkboxes, radio eller fargevelgere som ikke trigger zoom.
+   ───────────────────────────────────────────────────────────────── */
+@media (hover: none) and (pointer: coarse) {
+	input[type='text'],
+	input[type='search'],
+	input[type='url'],
+	input[type='tel'],
+	input[type='email'],
+	input[type='password'],
+	input[type='number'],
+	input[type='date'],
+	input[type='datetime-local'],
+	input[type='time'],
+	input[type='month'],
+	input[type='week'],
+	input:not([type]),
+	textarea,
+	select {
+		font-size: max(16px, 1em) !important;
+	}
+}
