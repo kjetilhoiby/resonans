@@ -2279,3 +2279,17 @@ export const procedureStepsRelations = relations(procedureSteps, ({ one }) => ({
 		references: [procedures.id]
 	})
 }));
+
+// Action chip snoozes — per-bruker dempning av handlings-forslag (HomeScreen-chips).
+// `chipId` matcher ActionCandidate.id (f.eks. 'focus-timer', 'quick-win').
+// `until` er tidspunktet hvor snoozen utløper; for "permanent" brukes en svært langt fram dato.
+export const actionSnoozes = pgTable('action_snoozes', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	chipId: text('chip_id').notNull(),
+	until: timestamp('until', { withTimezone: true }).notNull(),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => ({
+	uniqueUserChip: unique('action_snoozes_user_chip_unique').on(table.userId, table.chipId),
+	idxUserUntil: index('action_snoozes_user_until_idx').on(table.userId, table.until)
+}));

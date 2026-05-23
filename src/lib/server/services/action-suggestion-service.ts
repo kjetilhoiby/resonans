@@ -9,6 +9,7 @@ import {
 } from '$lib/server/egenfrekvens-checkin';
 import { localIsoDay } from '$lib/server/nudge-time';
 import { countOpenChecklistItems } from '$lib/server/checklist-open-items';
+import { loadActiveSnoozedChipIds } from '$lib/server/action-snoozes';
 import { focusTimerProducer } from './action-producers/focus-timer';
 import { sjekkInnProducer } from './action-producers/sjekk-inn';
 import { planTomorrowProducer } from './action-producers/plan-tomorrow';
@@ -114,15 +115,21 @@ async function buildContext(userId: string): Promise<ProducerContext> {
 
 export async function produceActions(userId: string): Promise<ActionCandidate[]> {
 	const ctx = await buildContext(userId);
-	const results = await Promise.all(
-		PRODUCERS.map(async (p) => {
-			try {
-				return await p(ctx);
-			} catch (err) {
-				console.error('[action-suggestion-service] producer failed', err);
-				return [] as ActionCandidate[];
-			}
-		})
-	);
-	return results.flat().sort((a, b) => b.priority - a.priority);
+	const [results, snoozed] = await Promise.all([
+		Promise.all(
+			PRODUCERS.map(async (p) => {
+				try {
+					return await p(ctx);
+				} catch (err) {
+					console.error('[action-suggestion-service] producer failed', err);
+					return [] as ActionCandidate[];
+				}
+			})
+		),
+		loadActiveSnoozedChipIds(userId, ctx.now)
+	]);
+	return results
+		.flat()
+		.filter((c) => !snoozed.has(c.id))
+		.sort((a, b) => b.priority - a.priority);
 }

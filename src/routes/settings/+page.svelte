@@ -529,6 +529,14 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 				<p>Se og administrer aktive og feilede jobber</p>
 				<a href="/settings/jobs" class="overview-link">Åpne jobber</a>
 			</article>
+			<article class="overview-card" id="snoozes-overview">
+				<div class="overview-head">
+					<span class="status-dot ok"></span>
+					<h2>Skjulte forslag</h2>
+				</div>
+				<p>Handlings-chips du har holdt inne og snoozet</p>
+				<a href="/settings/snoozes" class="overview-link">Åpne skjulte forslag</a>
+			</article>
 		</section>
 
 		<div class="actions">
