@@ -1,6 +1,6 @@
 import { db } from '$lib/db';
-import { users } from '$lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { users, checklists } from '$lib/db/schema';
+import { eq, and, isNotNull } from 'drizzle-orm';
 import type { ActionCandidate } from '$lib/types/actions';
 import {
 	getEgenfrekvensCheckinStatus,
@@ -9,6 +9,9 @@ import {
 } from '$lib/server/egenfrekvens-checkin';
 import { focusTimerProducer } from './action-producers/focus-timer';
 import { sjekkInnProducer } from './action-producers/sjekk-inn';
+import { planTomorrowProducer } from './action-producers/plan-tomorrow';
+import { planWeekProducer } from './action-producers/plan-week';
+import { planMonthProducer } from './action-producers/plan-month';
 
 export interface EgenfrekvensContext {
 	today: {
@@ -22,23 +25,53 @@ export interface EgenfrekvensContext {
 	} | null;
 }
 
+export interface PlanContext {
+	activePlannedContexts: Set<string>;
+	anyPlannedContexts: Set<string>;
+}
+
 export interface ProducerContext {
 	userId: string;
 	now: Date;
 	tz: string;
 	egenfrekvens: EgenfrekvensContext | null;
+	plan: PlanContext;
 }
 
 export type ActionProducer = (
 	ctx: ProducerContext
 ) => Promise<ActionCandidate[]> | ActionCandidate[];
 
-const PRODUCERS: ActionProducer[] = [sjekkInnProducer, focusTimerProducer];
+const PRODUCERS: ActionProducer[] = [
+	sjekkInnProducer,
+	focusTimerProducer,
+	planTomorrowProducer,
+	planWeekProducer,
+	planMonthProducer
+];
+
+async function loadPlanContext(userId: string): Promise<PlanContext> {
+	const rows = await db.query.checklists.findMany({
+		where: and(eq(checklists.userId, userId), isNotNull(checklists.context)),
+		columns: { context: true, completedAt: true },
+		with: { items: { columns: { id: true }, limit: 1 } }
+	});
+
+	const active = new Set<string>();
+	const any = new Set<string>();
+	for (const row of rows) {
+		if (!row.context || row.items.length === 0) continue;
+		any.add(row.context);
+		if (row.completedAt === null) active.add(row.context);
+	}
+	return { activePlannedContexts: active, anyPlannedContexts: any };
+}
 
 async function buildContext(userId: string): Promise<ProducerContext> {
-	const [user, status] = await Promise.all([
+	const [user, status, plan] = await Promise.all([
 		db.query.users.findFirst({ where: eq(users.id, userId) }),
-		getEgenfrekvensCheckinStatus(userId, toIsoDay())
+		getEgenfrekvensCheckinStatus(userId, toIsoDay()),
+		loadPlanContext(userId)
 	]);
 
 	const tz = user?.timezone ?? 'Europe/Oslo';
@@ -60,7 +93,8 @@ async function buildContext(userId: string): Promise<ProducerContext> {
 		egenfrekvens: {
 			today: { morning: status.morning, evening: status.evening },
 			settings
-		}
+		},
+		plan
 	};
 }
 

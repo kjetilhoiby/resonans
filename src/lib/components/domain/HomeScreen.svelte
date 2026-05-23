@@ -563,88 +563,15 @@
 	}
 
 	const actionItems = $derived.by<ActionItem[]>(() => {
-		const items: ActionItem[] = [];
-		const now = new Date();
-		const hour = now.getHours();
-
-		// Server-side foreslåtte handlinger (sjekk inn, fokusøkt, m.fl.)
-		for (const c of serverActionCandidates) {
-			items.push({
-				id: c.id,
-				icon: c.icon,
-				label: c.label,
-				value: c.value,
-				done: false,
-				priority: c.priority,
-				onclick: () => dispatchActionIntent(c.intent)
-			});
-		}
-
-		// Planlegg i morgen — vises etter kl 17
-		if (hour >= 17) {
-			const tomorrow = new Date(now);
-			tomorrow.setDate(tomorrow.getDate() + 1);
-			const tomorrowIso = toLocalIsoDate(tomorrow);
-			const tomorrowWeekKey = getLocalIsoWeekDashed(tomorrow);
-			const tomorrowCtx = `week:${tomorrowWeekKey}:day:${tomorrowIso}`;
-			const planned = monthDayChecklists.some(c => c.context === tomorrowCtx && c.items.length > 0)
-				|| activeChecklists.some(c => c.context === tomorrowCtx && c.items.length > 0);
-			if (!planned) {
-				items.push({
-					id: 'plan-tomorrow',
-					icon: '📋',
-					label: 'Planlegg i morgen',
-					done: false,
-					priority: 90,
-					onclick: () => {
-						homeDayPlanIso = tomorrowIso;
-						homeDayPlanWeekKey = tomorrowWeekKey;
-						homeDayPlanOpen = true;
-					}
-				});
-			}
-		}
-
-		// Planlegg neste uke — vises torsdag–søndag
-		const dow = now.getDay(); // 0=søn, 4=tor, 5=fre, 6=lør
-		if (dow >= 4 || dow === 0) {
-			const nextMonday = new Date(now);
-			nextMonday.setDate(nextMonday.getDate() + (8 - (dow || 7)));
-			const nextWeekKey = getLocalIsoWeekDashed(nextMonday);
-			const nextWeekCtx = `week:${nextWeekKey}`;
-			const planned = activeChecklists.some(c => c.context === nextWeekCtx && c.items.length > 0);
-			if (!planned) {
-				items.push({
-					id: 'plan-next-week',
-					icon: '📅',
-					label: 'Planlegg neste uke',
-					done: false,
-					priority: 80,
-					onclick: () => { homeWeekPlanOpen = true; }
-				});
-			}
-		}
-
-		// Planlegg neste måned — vises siste 5 dager i måneden
-		const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-		if (now.getDate() >= daysInMonth - 4) {
-			const nextMonthDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-			const nextMonthKey = toLocalYearMonth(nextMonthDate);
-			const nextMonthCtx = `month:${nextMonthKey}`;
-			const planned = activeChecklists.some(c => c.context === nextMonthCtx && c.items.length > 0);
-			if (!planned) {
-				items.push({
-					id: 'plan-next-month',
-					icon: '🗓️',
-					label: 'Planlegg neste måned',
-					done: false,
-					priority: 70,
-					onclick: () => void openMonthPlan(nextMonthKey)
-				});
-			}
-		}
-
-		return items.sort((a, b) => b.priority - a.priority);
+		return serverActionCandidates.map((c) => ({
+			id: c.id,
+			icon: c.icon,
+			label: c.label,
+			value: c.value,
+			done: false,
+			priority: c.priority,
+			onclick: () => dispatchActionIntent(c.intent)
+		}));
 	});
 
 	async function openMonthPlan(monthKey: string) {
@@ -2655,6 +2582,7 @@
 		oncomplete={async () => {
 			homeDayPlanOpen = false;
 			await fetchChecklists();
+			void loadActionCandidates();
 		}}
 	/>
 {/if}
@@ -2666,6 +2594,7 @@
 		oncomplete={async () => {
 			homeWeekPlanOpen = false;
 			await fetchChecklists();
+			void loadActionCandidates();
 		}}
 	/>
 {/if}
@@ -2678,6 +2607,7 @@
 		oncomplete={async () => {
 			homeMonthPlanOpen = false;
 			await fetchChecklists();
+			void loadActionCandidates();
 		}}
 	/>
 {/if}
