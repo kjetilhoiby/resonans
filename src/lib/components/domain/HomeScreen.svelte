@@ -23,7 +23,6 @@
 	import ChecklistSheet from '../ui/ChecklistSheet.svelte';
 	import FlowSheet from '../flows/FlowSheet.svelte';
 	import EgenfrekvensPrompt from './EgenfrekvensPrompt.svelte';
-	import FocusTimerPrompt from './FocusTimerPrompt.svelte';
 	import PullToRefresh from '../ui/PullToRefresh.svelte';
 	import { FLOWS } from '$lib/flows/registry';
 	import PageHeader from '../ui/PageHeader.svelte';
@@ -520,18 +519,6 @@
 			})();
 		})();
 
-		// Fokustimer: vis banner i arbeidstid hvis ikke avvist i dag
-		if (isWorkHours()) {
-			const isoDay = new Date().toISOString().slice(0, 10);
-			if (typeof localStorage !== 'undefined') {
-				const dismissed = localStorage.getItem(`focus-timer-dismissed-${isoDay}`);
-				if (!dismissed) {
-					focusTimerPromptOpen = true;
-				}
-			} else {
-				focusTimerPromptOpen = true;
-			}
-		}
 	});
 
 	interface EgenfrekvensSlotSummary {
@@ -593,6 +580,18 @@
 					onclick: () => openEgenfrekvensQuick(slot)
 				});
 			}
+		}
+
+		// Fokusøkt — vises i arbeidstid på hverdager
+		if (isWorkHours()) {
+			items.push({
+				id: 'focus-timer',
+				icon: '🎯',
+				label: 'Klar for en fokusøkt?',
+				done: false,
+				priority: 95,
+				onclick: () => { focusTimerFlowOpen = true; }
+			});
 		}
 
 		// Planlegg i morgen — vises etter kl 17
@@ -1004,11 +1003,13 @@
 	}
 
 	// ── Fokustimer (jobb) ──────────────────────────────────────────────────────
-	let focusTimerPromptOpen = $state(false);
 	let focusTimerFlowOpen = $state(false);
 
 	function isWorkHours(): boolean {
-		const hour = new Date().getHours();
+		const now = new Date();
+		const dow = now.getDay(); // 0=søn, 6=lør
+		if (dow === 0 || dow === 6) return false;
+		const hour = now.getHours();
 		return hour >= 8 && hour < 17;
 	}
 
@@ -1908,21 +1909,6 @@
 					}}
 				/>
 			{/if}
-			{#if focusTimerPromptOpen && !egenfrekvensPromptOpen}
-				<FocusTimerPrompt
-					onstart={() => {
-						focusTimerPromptOpen = false;
-						focusTimerFlowOpen = true;
-					}}
-					ondismiss={() => {
-						const isoDay = new Date().toISOString().slice(0, 10);
-						if (typeof localStorage !== 'undefined') {
-							localStorage.setItem(`focus-timer-dismissed-${isoDay}`, '1');
-						}
-						focusTimerPromptOpen = false;
-					}}
-				/>
-			{/if}
 		</section>
 	{/if}
 
@@ -2743,7 +2729,7 @@
 	<FlowSheet
 		flow={FLOWS['jobb_focus_timer']}
 		onclose={() => { focusTimerFlowOpen = false; }}
-		oncomplete={() => { focusTimerFlowOpen = false; focusTimerPromptOpen = false; }}
+		oncomplete={() => { focusTimerFlowOpen = false; }}
 	/>
 {/if}
 
