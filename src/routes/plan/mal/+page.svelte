@@ -1,6 +1,4 @@
 <script lang="ts">
-	import { page } from '$app/stores';
-	import { AppPage, PageHeader } from '$lib/components/ui';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -104,13 +102,8 @@
 		return null;
 	}
 </script>
-<AppPage width="full" padding="none" gap="sm" theme="dark" surface="default">
-	<div class="maal-page">
-		<div class="maal-header">
-			<PageHeader title="Mål" />
-		</div>
-
-		{#if active.length === 0}
+<div class="maal-page">
+	{#if active.length === 0}
 			<p class="empty">Ingen mål ennå. Start en samtale for å opprette ett.</p>
 		{:else}
 			{#each [{ label: 'Aktive', list: active }] as section}
@@ -227,26 +220,6 @@
 			{/each}
 		{/if}
 	</div>
-
-	<nav class="bottom-nav" aria-label="Navigasjon">
-		<a href="/" class="nav-item" class:active={$page.url.pathname === '/'}>
-			<span class="nav-icon">⬡</span>
-			<span class="nav-label">Hjem</span>
-		</a>
-		<a href="/maal" class="nav-item" class:active={$page.url.pathname === '/maal'} aria-current="page">
-			<span class="nav-icon">◎</span>
-			<span class="nav-label">Mål</span>
-		</a>
-		<a href="/economics" class="nav-item" class:active={$page.url.pathname.startsWith('/economics')}>
-			<span class="nav-icon">◈</span>
-			<span class="nav-label">Økonomi</span>
-		</a>
-		<a href="/settings" class="nav-item" class:active={$page.url.pathname === '/settings'}>
-			<span class="nav-icon">⚙</span>
-			<span class="nav-label">Innstillinger</span>
-		</a>
-	</nav>
-</AppPage>
 
 <style>
 	.maal-page {
