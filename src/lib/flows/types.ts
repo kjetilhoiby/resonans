@@ -23,6 +23,7 @@ export type FlowId =
 	| 'day_close'
 	| 'egenfrekvens_checkin'
 	| 'egenfrekvens_quick'
+	| 'reflection_light'
 	| 'jobb_focus_timer';
 
 export type FlowDomain = 'health' | 'economics' | 'food' | 'family' | 'planning' | 'general' | 'egenfrekvens' | 'jobb';

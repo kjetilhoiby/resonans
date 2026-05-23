@@ -669,6 +669,8 @@
 			case 'open-flow':
 				if (intent.flowId === 'jobb_focus_timer') {
 					focusTimerFlowOpen = true;
+				} else if (intent.flowId === 'reflection_light') {
+					reflectionLightFlowOpen = true;
 				} else if (intent.flowId === 'egenfrekvens_quick') {
 					egenfrekvensActiveSlot = currentSlotFromTime();
 					egenfrekvensQuickFlowOpen = true;
@@ -966,6 +968,9 @@
 
 	// ── Fokustimer (jobb) ──────────────────────────────────────────────────────
 	let focusTimerFlowOpen = $state(false);
+
+	// ── Kort refleksjon ────────────────────────────────────────────────────────
+	let reflectionLightFlowOpen = $state(false);
 
 	// ── Fil-flyt ───────────────────────────────────────────────────────────────
 	let fileFlowOpen = $state(false);
@@ -2689,6 +2694,14 @@
 		flow={FLOWS['jobb_focus_timer']}
 		onclose={() => { focusTimerFlowOpen = false; }}
 		oncomplete={() => { focusTimerFlowOpen = false; void loadActionCandidates(); }}
+	/>
+{/if}
+
+{#if reflectionLightFlowOpen}
+	<FlowSheet
+		flow={FLOWS['reflection_light']}
+		onclose={() => { reflectionLightFlowOpen = false; }}
+		oncomplete={() => { reflectionLightFlowOpen = false; void loadActionCandidates(); }}
 	/>
 {/if}
 

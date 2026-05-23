@@ -12,6 +12,7 @@ import { sjekkInnProducer } from './action-producers/sjekk-inn';
 import { planTomorrowProducer } from './action-producers/plan-tomorrow';
 import { planWeekProducer } from './action-producers/plan-week';
 import { planMonthProducer } from './action-producers/plan-month';
+import { reflectionLightProducer } from './action-producers/reflection-light';
 
 export interface EgenfrekvensContext {
 	today: {
@@ -45,6 +46,7 @@ export type ActionProducer = (
 const PRODUCERS: ActionProducer[] = [
 	sjekkInnProducer,
 	focusTimerProducer,
+	reflectionLightProducer,
 	planTomorrowProducer,
 	planWeekProducer,
 	planMonthProducer

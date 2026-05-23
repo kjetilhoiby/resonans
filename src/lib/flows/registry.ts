@@ -1097,6 +1097,54 @@ export const FLOWS: Record<FlowId, Flow> = {
 		}
 	},
 
+	reflection_light: {
+		id: 'reflection_light',
+		name: 'Kort refleksjon',
+		description: 'To korte spørsmål om dagen — én ting du lærte, og noe du gjorde bra',
+		icon: '💭',
+		domain: 'egenfrekvens',
+		trigger: 'auto_suggest',
+		estimatedMinutes: 2,
+		steps: [
+			{
+				id: 'learned',
+				type: 'form',
+				title: 'Hva lærte du i dag?',
+				fields: [
+					{
+						id: 'learned_today',
+						type: 'textarea',
+						label: 'Én ting — kan være liten',
+						placeholder: 'F.eks. «Jeg jobber bedre i 25-min-blokker»'
+					}
+				]
+			},
+			{
+				id: 'proud',
+				type: 'form',
+				title: 'Hva gjorde du bra i dag?',
+				fields: [
+					{
+						id: 'proud_of',
+						type: 'textarea',
+						label: 'Noe du er fornøyd med',
+						placeholder: 'F.eks. «Tok turen ut tross sliten kropp»'
+					}
+				]
+			}
+		],
+		async onComplete(data) {
+			const learned = typeof data.learned_today === 'string' ? data.learned_today.trim() : '';
+			const proud = typeof data.proud_of === 'string' ? data.proud_of.trim() : '';
+			if (!learned && !proud) return;
+			await fetch('/api/reflections/light', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ learned, proud })
+			});
+		}
+	},
+
 	jobb_focus_timer: {
 		id: 'jobb_focus_timer',
 		name: 'Fokustimer',

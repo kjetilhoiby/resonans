@@ -8,6 +8,7 @@ export type ReflectionKind =
 	| 'month_review'
 	| 'salary_report'
 	| 'goal_check'
+	| 'reflection_light'
 	| 'ad_hoc';
 
 export interface ReflectionScores {
