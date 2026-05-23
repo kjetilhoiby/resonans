@@ -25,6 +25,7 @@ export type FlowId =
 	| 'egenfrekvens_quick'
 	| 'reflection_light'
 	| 'quick_win'
+	| 'inbox_note'
 	| 'jobb_focus_timer';
 
 export type FlowDomain = 'health' | 'economics' | 'food' | 'family' | 'planning' | 'general' | 'egenfrekvens' | 'jobb';

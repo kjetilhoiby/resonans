@@ -14,6 +14,18 @@ import {
 	getPyramidGroups
 } from '$lib/domains/egenfrekvens';
 
+/** Hent oppgaver fra assistentens siste melding ved å lese innholdet mellom <oppgaver>-markørene.
+ *  Returnerer tom liste hvis markørene mangler — bevisst strengt for å unngå at vi lagrer prosa. */
+export function parseInboxItems(message: string): string[] {
+	const match = message.match(/<oppgaver>([\s\S]*?)<\/oppgaver>/i);
+	if (!match) return [];
+	return match[1]
+		.split('\n')
+		.map((line) => line.trim())
+		.map((line) => line.replace(/^[-*•·]\s*/, '').replace(/^\d+[.)]\s*/, '').trim())
+		.filter((line) => line.length > 0 && line.length < 240);
+}
+
 export const FLOWS: Record<FlowId, Flow> = {
 	health_weight_onboarding: {
 		id: 'health_weight_onboarding',
@@ -1097,6 +1109,52 @@ export const FLOWS: Record<FlowId, Flow> = {
 		}
 	},
 
+	inbox_note: {
+		id: 'inbox_note',
+		name: 'Noter',
+		description: 'Snakk fritt — Resonans hjelper deg formulere oppgaver til innboksen',
+		icon: '📥',
+		domain: 'planning',
+		trigger: 'manual',
+		estimatedMinutes: 3,
+		steps: [
+			{
+				id: 'capture',
+				type: 'chat',
+				title: 'Hva tenker du på?',
+				prompt:
+					'Skriv ned det du har på hjertet — løse tanker, halvferdige idéer, ting du ikke vil glemme. Jeg foreslår konkrete oppgaver du kan legge i innboksen.',
+				systemPrompt: `Du hjelper brukeren formulere konkrete oppgaver til en innboks (en datofri to-do-liste).
+
+Arbeidsmåte:
+1. Lytt til hva brukeren forteller — det kan være rotete prosa, lister eller spørsmål.
+2. Foreslå hver oppgave som én linje, formulert som handling (verb først hvis naturlig). Hold dem korte og spesifikke.
+3. Spør om noe trenger oppklaring, foreslå oppdeling hvis noe er for stort. Iterer til brukeren er fornøyd.
+4. Etter HVER respons din, list det gjeldende settet med foreslåtte oppgaver mellom markørene <oppgaver> og </oppgaver>, én per linje, uten bullet-prefix:
+
+<oppgaver>
+Bytt filter i bilen
+Bestill nye sko
+</oppgaver>
+
+5. Hvis brukeren ber deg fjerne noe, hold det ute av neste liste. Hvis de godkjenner uten endringer, bare repeter samme liste.
+6. Når brukeren signaliserer at de er ferdig (sier «lagre», «ok», «sånn ja», «klar» eller lignende), avslutt med en kort bekreftelse og den endelige listen mellom markørene.
+
+Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenfor listen.`
+			}
+		],
+		async onComplete(data) {
+			const lastMessage = typeof data.capture_lastMessage === 'string' ? data.capture_lastMessage : '';
+			const items = parseInboxItems(lastMessage);
+			if (items.length === 0) return;
+			await fetch('/api/inbox/items', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ items })
+			});
+		}
+	},
+
 	reflection_light: {
 		id: 'reflection_light',
 		name: 'Kort refleksjon',
@@ -1147,8 +1205,8 @@ export const FLOWS: Record<FlowId, Flow> = {
 
 	quick_win: {
 		id: 'quick_win',
-		name: 'Quick win',
-		description: 'Plukk én oppgave fra lista og kjør den unna',
+		name: 'Gjør unna',
+		description: 'Plukk én oppgave fra innboks eller plan og kjør den unna',
 		icon: '⚡',
 		domain: 'jobb',
 		trigger: 'auto_suggest',

@@ -12,10 +12,26 @@
 
 	const PLAN_KLAR_MARKER = '[PLAN_KLAR]';
 	function parseChatMessage(raw: string): { text: string; confirmAction?: string } {
-		if (raw.includes(PLAN_KLAR_MARKER)) {
-			return { text: raw.replace(PLAN_KLAR_MARKER, '').trim(), confirmAction: 'Ja, lagre planen' };
+		let text = raw;
+		let confirmAction: string | undefined;
+
+		if (text.includes(PLAN_KLAR_MARKER)) {
+			text = text.replace(PLAN_KLAR_MARKER, '').trim();
+			confirmAction = 'Ja, lagre planen';
 		}
-		return { text: raw };
+
+		// Reformater <oppgaver>...</oppgaver>-blokker som bullet-liste for visning.
+		// Rå-teksten beholdes på meldingen så onComplete kan parse markørene direkte.
+		text = text.replace(/<oppgaver>\s*([\s\S]*?)\s*<\/oppgaver>/gi, (_match, block: string) => {
+			const items = block
+				.split('\n')
+				.map((l) => l.trim().replace(/^[-*•·]\s*/, '').replace(/^\d+[.)]\s*/, '').trim())
+				.filter((l) => l.length > 0);
+			if (items.length === 0) return '';
+			return items.map((i) => `- ${i}`).join('\n');
+		});
+
+		return { text, confirmAction };
 	}
 
 	// ── Checklist item ──────────────────────────────────────────────
@@ -63,6 +79,7 @@
 	interface RichChatMsg {
 		role: 'user' | 'assistant';
 		text: string;
+		rawText?: string;
 		statusWidget?: WeatherStatusWidget | null;
 		confirmAction?: string;
 	}
@@ -84,6 +101,7 @@
 			chatMessages = [...chatMessages, {
 				role: 'assistant' as const,
 				text: parsed.text,
+				rawText: msg.text,
 				confirmAction: parsed.confirmAction,
 				statusWidget: msg.statusWidget
 			}];
@@ -381,7 +399,12 @@
 
 		if (currentStep.type === 'chat') {
 			const lastAssistant = [...chatMessages].reverse().find((m) => m.role === 'assistant');
-			if (lastAssistant) flowData = { ...flowData, [`${currentStep.id}_lastMessage`]: lastAssistant.text };
+			if (lastAssistant) {
+				flowData = {
+					...flowData,
+					[`${currentStep.id}_lastMessage`]: lastAssistant.rawText ?? lastAssistant.text
+				};
+			}
 			if (chatMessages.length > 0) {
 				flowData = { ...flowData, [`${currentStep.id}_thread`]: chatMessages.map((m) => ({ role: m.role, text: m.text })) };
 			}
