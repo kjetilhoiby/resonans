@@ -12,6 +12,7 @@ export const CHIP_LABELS: Record<string, string> = {
 	'reflection-light': 'Kort refleksjon',
 	'quick-win': 'Gjør unna',
 	'inbox-note': 'Noter',
+	'sort-inbox': 'Sorter usortert',
 	'plan-tomorrow': 'Planlegg i morgen',
 	'plan-next-week': 'Planlegg neste uke',
 	'plan-next-month': 'Planlegg neste måned'

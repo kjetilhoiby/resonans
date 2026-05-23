@@ -535,6 +535,9 @@ export const checklistItems = pgTable('checklist_items', {
 	snoozedToDate: date('snoozed_to_date'),
 	startDate: date('start_date'), // When the task should start (optional)
 	endDate: date('end_date'), // When the task should be completed by (optional)
+	dueDate: date('due_date'), // Hard deadline / frist — separat fra endDate som er forventet ferdig
+	estimateMinutes: integer('estimate_minutes'), // Omfang: 15 = kvarter, 60 = time, 480 = halv dag, 2880 = flere dager
+	themeId: uuid('theme_id').references((): AnyPgColumn => themes.id, { onDelete: 'set null' }), // Tilknytning til tema
 	metadata: jsonb('metadata').default({}).notNull().$type<{
 		// Intent linking
 		linkedTaskId?: string;
