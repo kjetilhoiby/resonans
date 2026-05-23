@@ -671,6 +671,8 @@
 					focusTimerFlowOpen = true;
 				} else if (intent.flowId === 'reflection_light') {
 					reflectionLightFlowOpen = true;
+				} else if (intent.flowId === 'quick_win') {
+					void openQuickWin();
 				} else if (intent.flowId === 'egenfrekvens_quick') {
 					egenfrekvensActiveSlot = currentSlotFromTime();
 					egenfrekvensQuickFlowOpen = true;
@@ -971,6 +973,28 @@
 
 	// ── Kort refleksjon ────────────────────────────────────────────────────────
 	let reflectionLightFlowOpen = $state(false);
+
+	// ── Quick win ──────────────────────────────────────────────────────────────
+	let quickWinFlowOpen = $state(false);
+	let quickWinOpenItems = $state<Array<{ id: string; text: string }>>([]);
+
+	async function openQuickWin() {
+		try {
+			const res = await fetch('/api/checklists/open-items?limit=20');
+			if (!res.ok) return;
+			const body = (await res.json()) as {
+				items?: Array<{ id: string; text: string; checklistTitle: string }>;
+			};
+			quickWinOpenItems = (body.items ?? []).map((i) => ({
+				id: i.id,
+				text: i.checklistTitle ? `${i.text}  ·  ${i.checklistTitle}` : i.text
+			}));
+			if (quickWinOpenItems.length === 0) return;
+			quickWinFlowOpen = true;
+		} catch {
+			// best-effort
+		}
+	}
 
 	// ── Fil-flyt ───────────────────────────────────────────────────────────────
 	let fileFlowOpen = $state(false);
@@ -2702,6 +2726,15 @@
 		flow={FLOWS['reflection_light']}
 		onclose={() => { reflectionLightFlowOpen = false; }}
 		oncomplete={() => { reflectionLightFlowOpen = false; void loadActionCandidates(); }}
+	/>
+{/if}
+
+{#if quickWinFlowOpen}
+	<FlowSheet
+		flow={FLOWS['quick_win']}
+		context={{ openItems: quickWinOpenItems }}
+		onclose={() => { quickWinFlowOpen = false; }}
+		oncomplete={() => { quickWinFlowOpen = false; void loadActionCandidates(); }}
 	/>
 {/if}
 

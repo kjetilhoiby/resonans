@@ -7,12 +7,15 @@ import {
 	toIsoDay,
 	type EgenfrekvensSlotEntry
 } from '$lib/server/egenfrekvens-checkin';
+import { localIsoDay } from '$lib/server/nudge-time';
+import { countOpenChecklistItems } from '$lib/server/checklist-open-items';
 import { focusTimerProducer } from './action-producers/focus-timer';
 import { sjekkInnProducer } from './action-producers/sjekk-inn';
 import { planTomorrowProducer } from './action-producers/plan-tomorrow';
 import { planWeekProducer } from './action-producers/plan-week';
 import { planMonthProducer } from './action-producers/plan-month';
 import { reflectionLightProducer } from './action-producers/reflection-light';
+import { quickWinProducer } from './action-producers/quick-win';
 
 export interface EgenfrekvensContext {
 	today: {
@@ -29,6 +32,7 @@ export interface EgenfrekvensContext {
 export interface PlanContext {
 	activePlannedContexts: Set<string>;
 	anyPlannedContexts: Set<string>;
+	openItemCount: number;
 }
 
 export interface ProducerContext {
@@ -47,12 +51,13 @@ const PRODUCERS: ActionProducer[] = [
 	sjekkInnProducer,
 	focusTimerProducer,
 	reflectionLightProducer,
+	quickWinProducer,
 	planTomorrowProducer,
 	planWeekProducer,
 	planMonthProducer
 ];
 
-async function loadPlanContext(userId: string): Promise<PlanContext> {
+async function loadPlannedContexts(userId: string) {
 	const rows = await db.query.checklists.findMany({
 		where: and(eq(checklists.userId, userId), isNotNull(checklists.context)),
 		columns: { context: true, completedAt: true },
@@ -66,17 +71,20 @@ async function loadPlanContext(userId: string): Promise<PlanContext> {
 		any.add(row.context);
 		if (row.completedAt === null) active.add(row.context);
 	}
-	return { activePlannedContexts: active, anyPlannedContexts: any };
+	return { active, any };
 }
 
 async function buildContext(userId: string): Promise<ProducerContext> {
-	const [user, status, plan] = await Promise.all([
-		db.query.users.findFirst({ where: eq(users.id, userId) }),
+	const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
+	const tz = user?.timezone ?? 'Europe/Oslo';
+	const todayIso = localIsoDay(tz, new Date());
+
+	const [status, planned, openItemCount] = await Promise.all([
 		getEgenfrekvensCheckinStatus(userId, toIsoDay()),
-		loadPlanContext(userId)
+		loadPlannedContexts(userId),
+		countOpenChecklistItems(userId, todayIso)
 	]);
 
-	const tz = user?.timezone ?? 'Europe/Oslo';
 	const rawSettings =
 		(user?.notificationSettings as Record<string, any> | null | undefined)?.egenfrekvensCheckin ??
 		null;
@@ -96,7 +104,11 @@ async function buildContext(userId: string): Promise<ProducerContext> {
 			today: { morning: status.morning, evening: status.evening },
 			settings
 		},
-		plan
+		plan: {
+			activePlannedContexts: planned.active,
+			anyPlannedContexts: planned.any,
+			openItemCount
+		}
 	};
 }
 

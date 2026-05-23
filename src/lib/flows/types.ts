@@ -24,6 +24,7 @@ export type FlowId =
 	| 'egenfrekvens_checkin'
 	| 'egenfrekvens_quick'
 	| 'reflection_light'
+	| 'quick_win'
 	| 'jobb_focus_timer';
 
 export type FlowDomain = 'health' | 'economics' | 'food' | 'family' | 'planning' | 'general' | 'egenfrekvens' | 'jobb';
@@ -80,8 +81,8 @@ export interface FlowFormField {
 	max?: number;
 	step?: number;
 	options?: Array<{ value: string; label: string }>;
-	/** Dynamic options based on current flowData — overrides static options when present */
-	optionsFn?: (data: Record<string, any>) => Array<{ value: string; label: string }>;
+	/** Dynamic options based on current flowData and runtime context — overrides static options when present */
+	optionsFn?: (data: Record<string, any>, context?: FlowContext) => Array<{ value: string; label: string }>;
 	/** Grouped options for pyramid-style signal grids. Active level shown, others behind toggle. */
 	optionGroupsFn?: (data: Record<string, any>) => Array<{
 		label: string;
