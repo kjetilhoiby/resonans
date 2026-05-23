@@ -1,10 +1,24 @@
 import { db } from '$lib/db';
 import { actionSnoozes } from '$lib/db/schema';
-import { and, eq, gt, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, sql } from 'drizzle-orm';
 
 export type SnoozeScope = 'today' | 'week' | 'forever';
 
 const FAR_FUTURE = new Date('9999-12-31T00:00:00Z');
+
+export const CHIP_LABELS: Record<string, string> = {
+	'egenfrekvens-quick': 'Sjekk inn (egenfrekvens)',
+	'focus-timer': 'Fokustimer',
+	'reflection-light': 'Kort refleksjon',
+	'quick-win': 'Quick win',
+	'plan-tomorrow': 'Planlegg i morgen',
+	'plan-next-week': 'Planlegg neste uke',
+	'plan-next-month': 'Planlegg neste måned'
+};
+
+export function isForeverSnooze(until: Date): boolean {
+	return until.getUTCFullYear() >= 9000;
+}
 
 function tzOffsetMs(tz: string, at: Date): number {
 	const local = new Date(at.toLocaleString('en-US', { timeZone: tz }));
@@ -92,6 +106,39 @@ export async function loadActiveSnoozedChipIds(userId: string, now: Date): Promi
 		.from(actionSnoozes)
 		.where(and(eq(actionSnoozes.userId, userId), gt(actionSnoozes.until, now)));
 	return new Set(rows.map((r) => r.chipId));
+}
+
+export interface SnoozeListItem {
+	id: string;
+	chipId: string;
+	label: string;
+	until: Date;
+	createdAt: Date;
+	expired: boolean;
+	forever: boolean;
+}
+
+export async function listSnoozesForUser(userId: string, now: Date): Promise<SnoozeListItem[]> {
+	const rows = await db
+		.select({
+			id: actionSnoozes.id,
+			chipId: actionSnoozes.chipId,
+			until: actionSnoozes.until,
+			createdAt: actionSnoozes.createdAt
+		})
+		.from(actionSnoozes)
+		.where(eq(actionSnoozes.userId, userId))
+		.orderBy(desc(actionSnoozes.until));
+
+	return rows.map((r) => ({
+		id: r.id,
+		chipId: r.chipId,
+		label: CHIP_LABELS[r.chipId] ?? r.chipId,
+		until: r.until,
+		createdAt: r.createdAt,
+		expired: r.until <= now,
+		forever: isForeverSnooze(r.until)
+	}));
 }
 
 export async function purgeExpiredSnoozes(userId: string, now: Date): Promise<void> {
