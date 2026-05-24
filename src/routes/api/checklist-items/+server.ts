@@ -1,19 +1,15 @@
 import { json } from '@sveltejs/kit';
-import { listTasks, type TaskFilters, type TaskStatusFilter, type TaskTimeframeFilter } from '$lib/server/tasks';
+import { listTasks, type TaskBucket, type TaskFilters } from '$lib/server/tasks';
 import type { RequestHandler } from './$types';
 
-const STATUSES: TaskStatusFilter[] = ['open', 'done', 'all'];
-const TIMEFRAMES: TaskTimeframeFilter[] = ['overdue', 'today', 'this_week', 'next_week', 'dated', 'inbox', 'all'];
+const BUCKETS: TaskBucket[] = ['innboks', 'gjores', 'ugjort'];
 
 export const GET: RequestHandler = async ({ locals, url }) => {
 	const filters: TaskFilters = {};
-	const status = url.searchParams.get('status');
-	if (status && (STATUSES as string[]).includes(status)) filters.status = status as TaskStatusFilter;
-	const timeframe = url.searchParams.get('timeframe');
-	if (timeframe && (TIMEFRAMES as string[]).includes(timeframe)) filters.timeframe = timeframe as TaskTimeframeFilter;
+	const bucket = url.searchParams.get('bucket');
+	if (bucket && (BUCKETS as string[]).includes(bucket)) filters.bucket = bucket as TaskBucket;
 	const theme = url.searchParams.get('theme');
 	if (theme) filters.theme = theme;
-	if (url.searchParams.get('unsorted') === '1') filters.unsortedOnly = true;
 
 	const tasks = await listTasks(locals.userId, filters);
 	return json({
