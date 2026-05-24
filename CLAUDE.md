@@ -125,6 +125,44 @@ Scheduling:
 - `CRON_SECRET` — protects `/api/cron/*` endpoints when called externally
 - `ORIGIN` — app base URL (used by scheduler for nudge links)
 
+## UI-konvensjoner
+
+Appen er **alltid mørk**, ikke system-følgsom. Hver side skal være bygget rundt
+samme grunnstruktur — `AppPage` → `PageHeader` → eget innhold.
+
+### `AppPage`
+- Default `theme="dark"`. Ikke skriv `theme="dark"` eksplisitt — det er
+  default. Skriv kun `theme` hvis du faktisk vil ha lyst.
+- Setter `document.body.background` til mørk og eksponerer CSS-variabler
+  (`--bg-primary`, `--text-primary`, `--accent-primary` osv.) brukt over hele
+  appen. Bruk disse variablene i stedet for hardkodede farger.
+- App.css har lys default + `prefers-color-scheme: dark` som fallback. Dette
+  er kun et sikkerhetsnett — `AppPage theme="dark"` er den autoritative
+  kilden.
+
+### `PageHeader`
+- Tittel og `actions`-snippet rendres alltid på **samme linje**. Ingen mobile
+  breakpoint som dytter actions ned.
+- Bruk `actions`-snippet med `IconButton` for hjelpe-knapper (chat,
+  settings, søk osv.). Hold antallet lavt — det er en row, ikke en toolbar.
+- `titleHref="/"` peker tilbake til hjem som standard for hovedsider; bruk
+  `backHref` for under-sider med tilbake-knapp.
+
+### Layouts med faner
+- Bruk `+layout.svelte` for shell (`AppPage` + `PageHeader` + bottom-nav),
+  ikke per-fane. Hver fane (`+page.svelte`) leverer kun innhold.
+- Når innhold flyttes fra en standalone side inn under et layout: **strip
+  alltid `AppPage`/`PageHeader` fra den flyttede komponenten**, ikke bygg
+  parallelle wrappers.
+
+### Når du oppretter en ny side
+1. `<AppPage>` (ingen theme-prop nødvendig — default er dark).
+2. `<PageHeader title="..." titleHref="/" />` med eventuell actions-snippet.
+3. Eget innhold under, med variabler fra dark-tema.
+4. Ingen lokale `:global()`-overrides for å fikse layout — hvis du føler
+   trang til det, er det sannsynligvis en bug i felleskomponentene som
+   skal fikses der i stedet.
+
 ## Database Conventions
 
 - Schema is in a single file: `src/lib/db/schema.ts`
