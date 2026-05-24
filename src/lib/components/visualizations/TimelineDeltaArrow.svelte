@@ -51,15 +51,11 @@
 	});
 
 	const diffPct = $derived(displayProgressPct - displayTimelinePct);
-	const isNear = $derived(Math.abs(diffPct) <= deadZonePct);
-	const isBehind = $derived(diffPct < -deadZonePct);
-	const isAhead = $derived(diffPct > deadZonePct);
+	const isBehind = $derived(diffPct < -0.4);
+	const isFar = $derived(Math.abs(diffPct) > deadZonePct);
 
-	const fromPct = $derived(Math.min(displayProgressPct, displayTimelinePct));
-	const toPct = $derived(Math.max(displayProgressPct, displayTimelinePct));
-	const arrowWidthPct = $derived(Math.max(0, toPct - fromPct));
-
-	const dotPct = $derived((displayProgressPct + displayTimelinePct) / 2);
+	const gapWidthPct = $derived(Math.max(0, displayTimelinePct - displayProgressPct));
+	const tickTone = $derived(isBehind ? 'red' : 'green');
 </script>
 
 <div class="viz-delta-track" title={title} style={`height:${height}px; background:${trackColor};`}>
@@ -67,23 +63,16 @@
 		class="viz-delta-progress"
 		style={`width:${displayProgressPct}%;`}
 	></div>
-	{#if isNear}
+	{#if isBehind}
 		<div
-			class={`viz-delta-dot ${mounted && animateOnMount ? 'mount-pop' : ''}`}
-			style={`left: calc(${dotPct}% - 5px);`}
+			class={`viz-delta-gap ${isFar ? 'strong' : 'subtle'} ${mounted && animateOnMount ? 'mount-glow' : ''}`}
+			style={`left:${displayProgressPct}%; width:${gapWidthPct}%;`}
 		></div>
-	{:else}
-		<div
-			class={`viz-delta-arrow ${isBehind ? 'red' : 'green'} ${mounted && animateOnMount ? 'mount-glow' : ''}`}
-			style={`left:${fromPct}%; width:${arrowWidthPct}%;`}
-		>
-			{#if isAhead}
-				<div class="viz-arrow-head right"></div>
-			{:else if isBehind}
-				<div class="viz-arrow-head left"></div>
-			{/if}
-		</div>
 	{/if}
+	<div
+		class={`viz-delta-tick ${tickTone} ${isFar ? 'strong' : 'subtle'}`}
+		style={`left: calc(${displayTimelinePct}% - 1px);`}
+	></div>
 </div>
 
 <style>
@@ -102,60 +91,54 @@
 		transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
 	}
 
-	.viz-delta-arrow {
+	.viz-delta-gap {
 		position: absolute;
 		top: 50%;
 		height: 2px;
 		transform: translateY(-50%);
 		transition: left 0.6s cubic-bezier(0.22, 1, 0.36, 1), width 0.6s cubic-bezier(0.22, 1, 0.36, 1), filter 0.45s ease;
+		background-repeat: repeat-x;
+		background-position: left center;
+		background-size: 6px 2px;
+		background-image: linear-gradient(to right, #ef4444 0, #ef4444 3px, transparent 3px, transparent 6px);
 	}
 
-	.viz-delta-arrow.green {
+	.viz-delta-gap.subtle {
+		opacity: 0.55;
+	}
+
+	.viz-delta-gap.strong {
+		opacity: 1;
+	}
+
+	.viz-delta-tick {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		width: 2px;
+		border-radius: 1px;
+		transition: left 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+		pointer-events: none;
+	}
+
+	.viz-delta-tick.green {
 		background: #4ade80;
 	}
 
-	.viz-delta-arrow.red {
+	.viz-delta-tick.red {
 		background: #ef4444;
 	}
 
-	.viz-arrow-head {
-		position: absolute;
-		top: 50%;
-		width: 0;
-		height: 0;
-		transform: translateY(-50%);
-		border-top: 4px solid transparent;
-		border-bottom: 4px solid transparent;
+	.viz-delta-tick.subtle {
+		opacity: 0.6;
 	}
 
-	.viz-delta-arrow.red .viz-arrow-head.left {
-		left: -1px;
-		border-right: 6px solid #ef4444;
-	}
-
-	.viz-delta-arrow.green .viz-arrow-head.right {
-		right: -1px;
-		border-left: 6px solid #4ade80;
-	}
-
-	.viz-delta-dot {
-		position: absolute;
-		top: 50%;
-		width: 10px;
-		height: 10px;
-		border-radius: 999px;
-		transform: translateY(-50%);
-		background: #4ade80;
-		box-shadow: 0 0 0 1px rgba(15, 19, 28, 0.7);
-		transition: left 0.6s cubic-bezier(0.22, 1, 0.36, 1), transform 0.3s ease;
+	.viz-delta-tick.strong {
+		opacity: 1;
 	}
 
 	.mount-glow {
 		animation: viz-delta-glow 900ms ease-out;
-	}
-
-	.mount-pop {
-		animation: viz-delta-pop 700ms ease-out;
 	}
 
 	@keyframes viz-delta-glow {
@@ -164,18 +147,6 @@
 		}
 		100% {
 			filter: brightness(1) saturate(1);
-		}
-	}
-
-	@keyframes viz-delta-pop {
-		0% {
-			transform: translateY(-50%) scale(0.8);
-		}
-		60% {
-			transform: translateY(-50%) scale(1.08);
-		}
-		100% {
-			transform: translateY(-50%) scale(1);
 		}
 	}
 </style>
