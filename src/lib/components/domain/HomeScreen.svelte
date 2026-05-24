@@ -729,6 +729,8 @@
 					reflectionLightFlowOpen = true;
 				} else if (intent.flowId === 'quick_win') {
 					void openQuickWin();
+				} else if (intent.flowId === 'inbox_note') {
+					inboxNoteFlowOpen = true;
 				} else if (intent.flowId === 'egenfrekvens_quick') {
 					egenfrekvensActiveSlot = currentSlotFromTime();
 					egenfrekvensQuickFlowOpen = true;
@@ -1029,6 +1031,9 @@
 
 	// ── Kort refleksjon ────────────────────────────────────────────────────────
 	let reflectionLightFlowOpen = $state(false);
+
+	// ── Noter (inbox) ──────────────────────────────────────────────────────────
+	let inboxNoteFlowOpen = $state(false);
 
 	// ── Quick win ──────────────────────────────────────────────────────────────
 	let quickWinFlowOpen = $state(false);
@@ -1930,7 +1935,7 @@
 					ariaLabel="Åpne ukeplan"
 				/>
 				<div class="title-right">
-					<a href="/goals" class="icon-link" aria-label="Mål"><Icon name="goals" size={20} /></a>
+					<a href="/plan/mal" class="icon-link" aria-label="Mål"><Icon name="goals" size={20} /></a>
 					<a href="/settings" class="icon-link" aria-label="Innstillinger"><Icon name="settings" size={18} /></a>
 				</div>
 			</div>
@@ -2796,6 +2801,14 @@
 		context={{ openItems: quickWinOpenItems }}
 		onclose={() => { quickWinFlowOpen = false; }}
 		oncomplete={() => { quickWinFlowOpen = false; void loadActionCandidates(); }}
+	/>
+{/if}
+
+{#if inboxNoteFlowOpen}
+	<FlowSheet
+		flow={FLOWS['inbox_note']}
+		onclose={() => { inboxNoteFlowOpen = false; }}
+		oncomplete={() => { inboxNoteFlowOpen = false; void loadActionCandidates(); }}
 	/>
 {/if}
 

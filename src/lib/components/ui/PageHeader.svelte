@@ -112,16 +112,7 @@
 		display: flex;
 		align-items: center;
 		gap: 10px;
-		flex-wrap: wrap;
-	}
-
-	@media (max-width: 720px) {
-		.page-header {
-			flex-direction: column;
-		}
-
-		.page-header-actions {
-			width: 100%;
-		}
+		flex-wrap: nowrap;
+		flex-shrink: 0;
 	}
 </style>

@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { AppPage, IconButton, PageHeader } from '$lib/components/ui';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import MetricCard from '$lib/components/visualizations/MetricCard.svelte';
 	import TrajectoryChart from '$lib/components/visualizations/TrajectoryChart.svelte';
@@ -473,14 +472,7 @@
 	const archivedGoals = $derived(data.goals.filter((g) => g.status === 'archived'));
 </script>
 
-<AppPage width="full" theme="dark" className="goals-page">
-	<PageHeader title="Mål" titleHref="/" titleLabel="Gå til forsiden">
-		{#snippet actions()}
-			<IconButton href="/" icon="chat" ariaLabel="Chat" />
-			<IconButton href="/settings" icon="settings" ariaLabel="Innstillinger" />
-		{/snippet}
-	</PageHeader>
-
+<div class="goals-page-shell">
 	{#if assessmentLoading || assessment}
 		<p class="progress-assessment" class:loading={assessmentLoading && !assessment}>
 			{assessment ?? 'Vurderer fremdriften…'}
@@ -787,10 +779,10 @@
 			{/if}
 		{/if}
 	</main>
-</AppPage>
+</div>
 
 <style>
-	:global(.goals-page) {
+	.goals-page-shell {
 		color: #ccc;
 		font-family: 'Inter', system-ui, sans-serif;
 	}

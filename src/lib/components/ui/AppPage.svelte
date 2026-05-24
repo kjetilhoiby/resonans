@@ -23,7 +23,7 @@
 		padding = 'default',
 		gap = 'md',
 		surface = 'default',
-		theme = 'default',
+		theme = 'dark',
 		className = '',
 		children
 	}: Props = $props();

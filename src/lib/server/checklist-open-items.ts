@@ -8,7 +8,7 @@ export interface OpenChecklistItem {
 	checklistId: string;
 	checklistTitle: string;
 	checklistContext: string | null;
-	priorityBucket: 'today' | 'week' | 'month' | 'other';
+	priorityBucket: 'today' | 'inbox' | 'week' | 'month' | 'other';
 }
 
 export interface OpenItemsSummary {
@@ -17,6 +17,7 @@ export interface OpenItemsSummary {
 }
 
 function bucketForContext(context: string | null, todayIso: string): OpenChecklistItem['priorityBucket'] {
+	if (context === 'inbox') return 'inbox';
 	if (!context) return 'other';
 	if (context.endsWith(`:day:${todayIso}`)) return 'today';
 	if (context.startsWith('week:') && !context.includes(':day:')) return 'week';
@@ -26,9 +27,10 @@ function bucketForContext(context: string | null, todayIso: string): OpenCheckli
 
 const BUCKET_ORDER: Record<OpenChecklistItem['priorityBucket'], number> = {
 	today: 0,
-	week: 1,
-	month: 2,
-	other: 3
+	inbox: 1,
+	week: 2,
+	month: 3,
+	other: 4
 };
 
 export async function loadOpenChecklistItems(

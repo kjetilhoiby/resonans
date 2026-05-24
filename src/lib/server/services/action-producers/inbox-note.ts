@@ -1,22 +1,21 @@
 import type { ActionProducer } from '../action-suggestion-service';
 import { localDateParts } from '$lib/server/local-time';
 
-const WAKING_START_MIN = 8 * 60;
-const WAKING_END_MIN = 22 * 60;
+const WAKING_START_MIN = 7 * 60;
+const WAKING_END_MIN = 23 * 60;
 
-export const quickWinProducer: ActionProducer = (ctx) => {
+export const inboxNoteProducer: ActionProducer = (ctx) => {
 	const parts = localDateParts(ctx.tz, ctx.now);
 	if (parts.minutesOfDay < WAKING_START_MIN || parts.minutesOfDay >= WAKING_END_MIN) return [];
-	if (ctx.plan.openItemCount <= 0) return [];
 
 	return [
 		{
-			id: 'quick-win',
-			icon: '⚡',
-			label: 'Gjør unna',
-			priority: 65,
+			id: 'inbox-note',
+			icon: '📥',
+			label: 'Noter',
+			priority: 55,
 			source: 'system',
-			intent: { kind: 'open-flow', flowId: 'quick_win' }
+			intent: { kind: 'open-flow', flowId: 'inbox_note' }
 		}
 	];
 };

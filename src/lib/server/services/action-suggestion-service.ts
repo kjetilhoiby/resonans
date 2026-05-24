@@ -17,6 +17,8 @@ import { planWeekProducer } from './action-producers/plan-week';
 import { planMonthProducer } from './action-producers/plan-month';
 import { reflectionLightProducer } from './action-producers/reflection-light';
 import { quickWinProducer } from './action-producers/quick-win';
+import { inboxNoteProducer } from './action-producers/inbox-note';
+import { sortInboxProducer } from './action-producers/sort-inbox';
 
 export interface EgenfrekvensContext {
 	today: {
@@ -53,6 +55,8 @@ const PRODUCERS: ActionProducer[] = [
 	focusTimerProducer,
 	reflectionLightProducer,
 	quickWinProducer,
+	inboxNoteProducer,
+	sortInboxProducer,
 	planTomorrowProducer,
 	planWeekProducer,
 	planMonthProducer
