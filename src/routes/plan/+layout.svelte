@@ -10,7 +10,7 @@
 	];
 </script>
 
-<AppPage>
+<AppPage width="full" theme="dark" surface="default">
 	<div class="plan-shell">
 		<nav class="plan-tabs" aria-label="Plan-faner">
 			{#each tabs as tab (tab.href)}
