@@ -96,10 +96,14 @@
 		top: 0;
 		bottom: 0;
 		transition: left 0.6s cubic-bezier(0.22, 1, 0.36, 1), width 0.6s cubic-bezier(0.22, 1, 0.36, 1), filter 0.45s ease;
-		background-image:
-			repeating-linear-gradient(45deg, rgba(239, 68, 68, 0.55) 0, rgba(239, 68, 68, 0.55) 1.5px, transparent 1.5px, transparent 5px),
-			repeating-linear-gradient(-45deg, rgba(239, 68, 68, 0.55) 0, rgba(239, 68, 68, 0.55) 1.5px, transparent 1.5px, transparent 5px);
-		background-color: rgba(239, 68, 68, 0.08);
+		background-image: repeating-linear-gradient(
+			-45deg,
+			rgba(239, 68, 68, 0.75) 0,
+			rgba(239, 68, 68, 0.75) 2px,
+			transparent 2px,
+			transparent 7px
+		);
+		background-color: rgba(239, 68, 68, 0.16);
 	}
 
 	.viz-delta-gap.subtle {
