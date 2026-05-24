@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import { AppPage } from '$lib/components/ui';
+	import { AppPage, IconButton, PageHeader } from '$lib/components/ui';
 
 	let { children } = $props();
 
@@ -11,6 +11,13 @@
 </script>
 
 <AppPage width="full" theme="dark" surface="default">
+	<PageHeader title="Plan" titleHref="/" titleLabel="Gå til forsiden">
+		{#snippet actions()}
+			<IconButton href="/" icon="chat" ariaLabel="Chat" />
+			<IconButton href="/settings" icon="settings" ariaLabel="Innstillinger" />
+		{/snippet}
+	</PageHeader>
+
 	<div class="plan-shell">
 		<nav class="plan-tabs" aria-label="Plan-faner">
 			{#each tabs as tab (tab.href)}
@@ -53,7 +60,7 @@
 
 <style>
 	.plan-shell {
-		min-height: 100dvh;
+		flex: 1;
 		background: var(--bg-primary);
 		color: var(--text-primary);
 		display: flex;
@@ -63,7 +70,7 @@
 	.plan-tabs {
 		display: flex;
 		gap: 4px;
-		padding: var(--screen-title-top-pad, 28px) 1rem 0.5rem;
+		padding: 0.25rem 1rem 0;
 		border-bottom: 1px solid var(--border-color);
 		position: sticky;
 		top: 0;
