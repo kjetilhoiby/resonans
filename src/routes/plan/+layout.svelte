@@ -36,25 +36,6 @@
 		<div class="plan-content">
 			{@render children?.()}
 		</div>
-
-		<nav class="bottom-nav" aria-label="Navigasjon">
-			<a href="/" class="nav-item" class:active={$page.url.pathname === '/'}>
-				<span class="nav-icon">⬡</span>
-				<span class="nav-label">Hjem</span>
-			</a>
-			<a href="/plan/mal" class="nav-item" class:active={$page.url.pathname.startsWith('/plan')} aria-current="page">
-				<span class="nav-icon">◎</span>
-				<span class="nav-label">Plan</span>
-			</a>
-			<a href="/economics" class="nav-item" class:active={$page.url.pathname.startsWith('/economics')}>
-				<span class="nav-icon">◈</span>
-				<span class="nav-label">Økonomi</span>
-			</a>
-			<a href="/settings" class="nav-item" class:active={$page.url.pathname === '/settings'}>
-				<span class="nav-icon">⚙</span>
-				<span class="nav-label">Innstillinger</span>
-			</a>
-		</nav>
 	</div>
 </AppPage>
 
@@ -65,7 +46,6 @@
 		color: var(--text-primary);
 		display: flex;
 		flex-direction: column;
-		padding-bottom: 80px;
 	}
 	.plan-tabs {
 		display: flex;
@@ -109,33 +89,4 @@
 		margin: 0 auto;
 	}
 
-	.bottom-nav {
-		position: fixed;
-		bottom: 0;
-		left: 0;
-		right: 0;
-		display: flex;
-		justify-content: space-around;
-		align-items: center;
-		background: var(--bg-card);
-		border-top: 1px solid var(--border-color);
-		padding: 0.4rem 0 calc(0.4rem + env(safe-area-inset-bottom, 0px));
-		z-index: 10;
-	}
-	.nav-item {
-		display: inline-flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 2px;
-		color: var(--text-tertiary);
-		text-decoration: none;
-		padding: 6px 10px;
-		font-size: 0.7rem;
-	}
-	.nav-icon {
-		font-size: 1.3rem;
-	}
-	.nav-item.active {
-		color: var(--text-primary);
-	}
 </style>
