@@ -257,22 +257,22 @@
 		patchState(id, { breakdown: cur.breakdown.filter((_, i) => i !== idx), dirty: true });
 	}
 
-	function setFilter(key: 'status' | 'timeframe' | 'theme', value: string) {
-		const params = new URLSearchParams($page.url.searchParams);
-		if (value === '' || value === 'all') params.delete(key);
-		else params.set(key, value);
-		goto(`/plan/oppgaver?${params.toString()}`, { keepFocus: true });
+	async function setFilter(key: 'status' | 'timeframe' | 'theme', value: string) {
+		const url = new URL($page.url);
+		if (value === '' || value === 'all') url.searchParams.delete(key);
+		else url.searchParams.set(key, value);
+		await goto(url, { keepFocus: true, invalidateAll: true, noScroll: true });
 	}
 
-	function toggleUnsorted() {
-		const params = new URLSearchParams($page.url.searchParams);
-		if (params.get('usortert') === '1') params.delete('usortert');
-		else params.set('usortert', '1');
-		goto(`/plan/oppgaver?${params.toString()}`, { keepFocus: true });
+	async function toggleUnsorted() {
+		const url = new URL($page.url);
+		if (url.searchParams.get('usortert') === '1') url.searchParams.delete('usortert');
+		else url.searchParams.set('usortert', '1');
+		await goto(url, { keepFocus: true, invalidateAll: true, noScroll: true });
 	}
 
-	function clearFilters() {
-		goto('/plan/oppgaver', { keepFocus: true });
+	async function clearFilters() {
+		await goto('/plan/oppgaver', { keepFocus: true, invalidateAll: true, noScroll: true });
 	}
 
 	const activeFilterCount = $derived(
