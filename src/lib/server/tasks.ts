@@ -74,11 +74,14 @@ export async function listTasks(userId: string, filters: TaskFilters = {}): Prom
 	if (bucket === 'ugjort') {
 		conditions.push(ugjortSql);
 	} else if (bucket === 'innboks') {
-		conditions.push(isNull(checklistItems.estimateMinutes));
+		// Innboks er stedsbasert: items i checklist med context = 'inbox'.
+		// Items i andre lister (custom, week-plan, månedsplan osv.) tilhører Gjøres.
+		conditions.push(eq(checklists.context, 'inbox'));
 		conditions.push(sql`NOT ${ugjortSql}`);
-		conditions.push(sql`NOT (${futureDayContext})`);
 	} else if (bucket === 'gjores') {
-		conditions.push(isNotNull(checklistItems.estimateMinutes));
+		// Gjøres = items utenfor inbox, ikke forfalt og ikke i framtidig day-plan.
+		// `IS DISTINCT FROM` inkluderer NULL-context (sjekklister uten kontekst).
+		conditions.push(sql`${checklists.context} IS DISTINCT FROM 'inbox'`);
 		conditions.push(sql`NOT ${ugjortSql}`);
 		conditions.push(sql`NOT (${futureDayContext})`);
 	}
@@ -267,8 +270,8 @@ export async function countTasksByBucket(
 	const rows = await db
 		.select({
 			ugjort: sql<number>`count(*) filter (where ${ugjortSql})::int`,
-			innboks: sql<number>`count(*) filter (where NOT ${ugjortSql} AND NOT (${futureDayContext}) AND ${checklistItems.estimateMinutes} IS NULL)::int`,
-			gjores: sql<number>`count(*) filter (where NOT ${ugjortSql} AND NOT (${futureDayContext}) AND ${checklistItems.estimateMinutes} IS NOT NULL)::int`
+			innboks: sql<number>`count(*) filter (where NOT ${ugjortSql} AND ${checklists.context} = 'inbox')::int`,
+			gjores: sql<number>`count(*) filter (where NOT ${ugjortSql} AND ${checklists.context} IS DISTINCT FROM 'inbox' AND NOT (${futureDayContext}))::int`
 		})
 		.from(checklistItems)
 		.innerJoin(checklists, eq(checklistItems.checklistId, checklists.id))

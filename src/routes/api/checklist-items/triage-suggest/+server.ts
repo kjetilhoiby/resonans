@@ -20,7 +20,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	const allTasks = await listTasks(locals.userId, { bucket: 'innboks' });
 	const candidates = itemIdsFilter
 		? allTasks.filter((t) => itemIdsFilter.includes(t.id))
-		: allTasks;
+		: allTasks.filter((t) => t.isUnsorted);
 	if (candidates.length === 0) return json({ suggestions: [] });
 
 	const userThemes = await db.query.themes.findMany({

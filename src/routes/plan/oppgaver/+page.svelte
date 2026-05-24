@@ -300,20 +300,23 @@
 		{/if}
 	</p>
 
-	{#if data.bucket === 'innboks' && data.tasks.length > 0}
-		<div class="ai-row">
-			<button
-				class="ai-suggest"
-				type="button"
-				disabled={suggesting}
-				onclick={runSuggestForAll}
-			>
-				{suggesting ? 'Tenker…' : `✨ AI-foreslå for ${data.tasks.length} oppgave${data.tasks.length === 1 ? '' : 'r'}`}
-			</button>
-			{#if suggestError}
-				<span class="err">{suggestError}</span>
-			{/if}
-		</div>
+	{#if data.bucket === 'innboks'}
+		{@const unsortedInInbox = data.tasks.filter((t) => t.isUnsorted).length}
+		{#if unsortedInInbox > 0}
+			<div class="ai-row">
+				<button
+					class="ai-suggest"
+					type="button"
+					disabled={suggesting}
+					onclick={runSuggestForAll}
+				>
+					{suggesting ? 'Tenker…' : `✨ AI-foreslå for ${unsortedInInbox} usortert${unsortedInInbox === 1 ? '' : 'e'}`}
+				</button>
+				{#if suggestError}
+					<span class="err">{suggestError}</span>
+				{/if}
+			</div>
+		{/if}
 	{/if}
 
 	{#if data.tasks.length === 0}
