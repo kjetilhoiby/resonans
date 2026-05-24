@@ -11,12 +11,14 @@
 </script>
 
 <AppPage width="full" theme="dark" surface="default">
-	<PageHeader title="Plan" titleHref="/" titleLabel="Gå til forsiden">
-		{#snippet actions()}
-			<IconButton href="/" icon="chat" ariaLabel="Chat" />
-			<IconButton href="/settings" icon="settings" ariaLabel="Innstillinger" />
-		{/snippet}
-	</PageHeader>
+	<div class="plan-header-wrap">
+		<PageHeader title="Plan" titleHref="/" titleLabel="Gå til forsiden">
+			{#snippet actions()}
+				<IconButton href="/" icon="chat" ariaLabel="Chat" />
+				<IconButton href="/settings" icon="settings" ariaLabel="Innstillinger" />
+			{/snippet}
+		</PageHeader>
+	</div>
 
 	<div class="plan-shell">
 		<nav class="plan-tabs" aria-label="Plan-faner">
@@ -59,6 +61,15 @@
 </AppPage>
 
 <style>
+	.plan-header-wrap :global(.page-header) {
+		flex-direction: row;
+		align-items: center;
+	}
+	.plan-header-wrap :global(.page-header-actions) {
+		width: auto;
+		flex-wrap: nowrap;
+	}
+
 	.plan-shell {
 		flex: 1;
 		background: var(--bg-primary);
