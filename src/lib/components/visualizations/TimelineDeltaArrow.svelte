@@ -93,14 +93,13 @@
 
 	.viz-delta-gap {
 		position: absolute;
-		top: 50%;
-		height: 2px;
-		transform: translateY(-50%);
+		top: 0;
+		bottom: 0;
 		transition: left 0.6s cubic-bezier(0.22, 1, 0.36, 1), width 0.6s cubic-bezier(0.22, 1, 0.36, 1), filter 0.45s ease;
-		background-repeat: repeat-x;
-		background-position: left center;
-		background-size: 6px 2px;
-		background-image: linear-gradient(to right, #ef4444 0, #ef4444 3px, transparent 3px, transparent 6px);
+		background-image:
+			repeating-linear-gradient(45deg, rgba(239, 68, 68, 0.55) 0, rgba(239, 68, 68, 0.55) 1.5px, transparent 1.5px, transparent 5px),
+			repeating-linear-gradient(-45deg, rgba(239, 68, 68, 0.55) 0, rgba(239, 68, 68, 0.55) 1.5px, transparent 1.5px, transparent 5px);
+		background-color: rgba(239, 68, 68, 0.08);
 	}
 
 	.viz-delta-gap.subtle {
