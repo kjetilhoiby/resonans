@@ -3,7 +3,14 @@ import { checklists, checklistItems, themes } from '$lib/db/schema';
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, or, sql } from 'drizzle-orm';
 
 export type TaskStatusFilter = 'open' | 'done' | 'all';
-export type TaskTimeframeFilter = 'overdue' | 'today' | 'this_week' | 'next_week' | 'no_due' | 'all';
+export type TaskTimeframeFilter =
+	| 'overdue'
+	| 'today'
+	| 'this_week'
+	| 'next_week'
+	| 'dated'
+	| 'inbox'
+	| 'all';
 export type TaskThemeFilter = 'all' | 'none' | string;
 
 export interface TaskFilters {
@@ -100,8 +107,20 @@ export async function listTasks(userId: string, filters: TaskFilters = {}): Prom
 		conditions.push(isNotNull(checklistItems.dueDate));
 		conditions.push(gte(checklistItems.dueDate, nextMondayIso()));
 		conditions.push(lte(checklistItems.dueDate, endOfNextWeekIso()));
-	} else if (timeframe === 'no_due') {
-		conditions.push(isNull(checklistItems.dueDate));
+	} else if (timeframe === 'dated') {
+		// Har dato: dueDate satt ELLER hører til en tidsplassert sjekkliste
+		// (day-/week-/month-plan har kontekst-strenger som "week:..." eller "...:day:...").
+		conditions.push(
+			or(
+				isNotNull(checklistItems.dueDate),
+				sql`${checklists.context} LIKE 'week:%'`,
+				sql`${checklists.context} LIKE '%:day:%'`,
+				sql`${checklists.context} LIKE 'month:%'`
+			)!
+		);
+	} else if (timeframe === 'inbox') {
+		// I innboks: explicit inbox-context, ingen plan-tilknytning.
+		conditions.push(eq(checklists.context, 'inbox'));
 	}
 
 	if (theme === 'none') {

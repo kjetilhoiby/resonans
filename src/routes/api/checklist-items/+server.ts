@@ -3,7 +3,7 @@ import { listTasks, type TaskFilters, type TaskStatusFilter, type TaskTimeframeF
 import type { RequestHandler } from './$types';
 
 const STATUSES: TaskStatusFilter[] = ['open', 'done', 'all'];
-const TIMEFRAMES: TaskTimeframeFilter[] = ['overdue', 'today', 'this_week', 'next_week', 'no_due', 'all'];
+const TIMEFRAMES: TaskTimeframeFilter[] = ['overdue', 'today', 'this_week', 'next_week', 'dated', 'inbox', 'all'];
 
 export const GET: RequestHandler = async ({ locals, url }) => {
 	const filters: TaskFilters = {};

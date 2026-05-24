@@ -5,7 +5,7 @@ import { and, eq } from 'drizzle-orm';
 import type { PageServerLoad } from './$types';
 
 const STATUSES: TaskStatusFilter[] = ['open', 'done', 'all'];
-const TIMEFRAMES: TaskTimeframeFilter[] = ['overdue', 'today', 'this_week', 'next_week', 'no_due', 'all'];
+const TIMEFRAMES: TaskTimeframeFilter[] = ['overdue', 'today', 'this_week', 'next_week', 'dated', 'inbox', 'all'];
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	const filters: TaskFilters = {};

@@ -321,7 +321,8 @@
 				<option value="today">I dag</option>
 				<option value="this_week">Denne uka</option>
 				<option value="next_week">Neste uke</option>
-				<option value="no_due">Ingen frist</option>
+				<option value="dated">Har dato</option>
+				<option value="inbox">I innboks</option>
 			</select>
 		</label>
 
