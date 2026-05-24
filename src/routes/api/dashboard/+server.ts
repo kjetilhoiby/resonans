@@ -216,7 +216,7 @@ async function generateSuggestedActions({
 				sublabel: 'Ingen aktivitet på en stund',
 				action: {
 					type: 'navigate',
-					target: '/goals'
+					target: '/plan/mal'
 				}
 			});
 		}
@@ -231,7 +231,7 @@ async function generateSuggestedActions({
 			sublabel: `${activeGoals.length} aktive mål`,
 			action: {
 				type: 'navigate',
-				target: '/goals'
+				target: '/plan/mal'
 			}
 		});
 	}

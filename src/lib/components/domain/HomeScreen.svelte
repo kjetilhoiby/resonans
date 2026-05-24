@@ -1935,7 +1935,7 @@
 					ariaLabel="Åpne ukeplan"
 				/>
 				<div class="title-right">
-					<a href="/goals" class="icon-link" aria-label="Mål"><Icon name="goals" size={20} /></a>
+					<a href="/plan/mal" class="icon-link" aria-label="Mål"><Icon name="goals" size={20} /></a>
 					<a href="/settings" class="icon-link" aria-label="Innstillinger"><Icon name="settings" size={18} /></a>
 				</div>
 			</div>
