@@ -209,6 +209,7 @@
 	let homeDayPlanIso = $state('');
 	let homeDayPlanWeekKey = $state('');
 	let homeWeekPlanOpen = $state(false);
+	let homeWeekPlanContext = $state<import('$lib/flows/types').FlowContext>({});
 	let homeMonthPlanOpen = $state(false);
 	let homeMonthPlanContext = $state<import('$lib/flows/types').FlowContext>({});
 
@@ -221,8 +222,9 @@
 			homeDayPlanOpen = true;
 			return;
 		}
-		if (/^week:\d{4}-W\d{2}$/.test(context)) {
-			homeWeekPlanOpen = true;
+		const weekMatch = context.match(/^week:(\d{4}-W\d{2})$/);
+		if (weekMatch) {
+			await openWeekPlan(weekMatch[1]);
 			return;
 		}
 		if (/^month:/.test(context)) {
@@ -574,6 +576,73 @@
 		}));
 	});
 
+	async function openWeekPlan(weekKey: string) {
+		try {
+			const res = await fetch(`/api/week-plan/context?week=${encodeURIComponent(weekKey)}`);
+			if (!res.ok) { void goto('/ukeplan'); return; }
+			const ctx = await res.json() as {
+				currentWeekKey: string;
+				currentWeekNo: number;
+				prevWeekKey: string;
+				prevWeekNo: number;
+				note: string;
+				reflection: string;
+				uncheckedItems: Array<{ id: string; text: string }>;
+				weekGoals: Array<{ title: string; currentValue: number; target: { value: number; unit: string }; trackingMetric: string }>;
+				recurringTasks: string[];
+			};
+			const goalLines = ctx.weekGoals.map((g) => {
+				const pct = g.target.value > 0 ? Math.round((g.currentValue / g.target.value) * 100) : null;
+				return `- ${g.title}: ${g.currentValue} av ${g.target.value} ${g.target.unit}${pct !== null ? ` (${pct}%)` : ''}`;
+			}).join('\n');
+			homeWeekPlanContext = {
+				weekKey: ctx.currentWeekKey,
+				openItems: ctx.uncheckedItems,
+				weekTasks: ctx.recurringTasks,
+				prevWeekData: {
+					weekNo: ctx.prevWeekNo,
+					note: ctx.note,
+					reflection: ctx.reflection,
+					uncheckedItems: ctx.uncheckedItems,
+					weekGoals: ctx.weekGoals,
+					recurringTasks: ctx.recurringTasks
+				},
+				systemPrompts: {
+					refleksjon: [
+						`Brukeren er klar for å planlegge uke ${ctx.currentWeekNo}.`,
+						`\nForrige uke (uke ${ctx.prevWeekNo}):`,
+						ctx.note ? `Ukesnotat: "${ctx.note}"` : '',
+						ctx.reflection ? `Refleksjon: "${ctx.reflection}"` : '',
+						goalLines ? `\nMål:\n${goalLines}` : '',
+						'\nGi en kort, varm oppsummering av forrige uke (2-3 setninger). Avslutt med ett åpent spørsmål om hva som gikk bra og hva som var utfordrende.'
+					].filter(Boolean).join('\n'),
+					maal: [
+						`Du hjelper brukeren å sette ukesmål for uke ${ctx.currentWeekNo}.`,
+						goalLines ? `\nForrige ukes mål og fremgang (uke ${ctx.prevWeekNo}):\n${goalLines}` : '\nIngen mål fra forrige uke.',
+						'\nSkille mellom mål og oppgaver:',
+						'- UKESMÅL: kun for ting med målbar fremdrift mot et tall (f.eks. løping i km, antall treningsøkter, vekt i kg). Hold listen kort.',
+						'- UKESOPPGAVER: konkrete ting du gjør 1–7 ganger denne uka (handle, planleggingsprat, sjekke noe, møte osv.).',
+						'\nGå gjennom forrige ukes mål. Foreslå om hvert bør videreføres eller justeres. Kom gjerne med nye oppgaver basert på refleksjonen.',
+						'\nAvslutt alltid med begge listene (utelat seksjoner som ikke passer):',
+						'\nUKESMÅL:',
+						'- [tittel]: [verdi] [enhet]',
+						'\nUKESOPPGAVER:',
+						'- [tittel]: [antall] [enhet]'
+					].filter(Boolean).join('\n'),
+					ukeshistorie: [
+						`Du hjelper brukeren å skrive en kort ukesbeskrivelse for uke ${ctx.currentWeekNo}.`,
+						`Spør: "Hva handler uke ${ctx.currentWeekNo} om for deg?"`,
+						'Basert på svaret, skriv et kort utkast (1-2 setninger). Vær personlig og konkret.',
+						'La brukeren justere utkastet via chat. Avslutt med det endelige notatet.'
+					].join('\n')
+				}
+			};
+			homeWeekPlanOpen = true;
+		} catch {
+			void goto('/ukeplan');
+		}
+	}
+
 	async function openMonthPlan(monthKey: string) {
 		try {
 			const res = await fetch(`/api/month-plan/context?month=${encodeURIComponent(monthKey)}`);
@@ -751,7 +820,7 @@
 				homeDayPlanOpen = true;
 				break;
 			case 'open-week-plan':
-				homeWeekPlanOpen = true;
+				void openWeekPlan(intent.weekKey);
 				break;
 			case 'open-month-plan':
 				void openMonthPlan(intent.monthKey);
@@ -2685,6 +2754,7 @@
 {#if homeWeekPlanOpen}
 	<FlowSheet
 		flow={FLOWS['planning_week_plan']}
+		context={homeWeekPlanContext}
 		onclose={() => (homeWeekPlanOpen = false)}
 		oncomplete={async () => {
 			homeWeekPlanOpen = false;

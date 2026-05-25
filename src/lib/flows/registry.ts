@@ -310,39 +310,71 @@ export const FLOWS: Record<FlowId, Flow> = {
 	planning_week_plan: {
 		id: 'planning_week_plan',
 		name: 'Planlegg uka',
-		description: 'Sett mål og lag plan for kommende uke',
+		description: 'Reflekter over forrige uke og legg planen for neste',
 		icon: '🗓️',
 		domain: 'planning',
 		trigger: 'manual',
-		estimatedMinutes: 5,
+		estimatedMinutes: 8,
 		steps: [
 			{
-				id: 'chat',
+				id: 'refleksjon',
 				type: 'chat',
-				title: 'Planlegg uka',
-				prompt: 'Planlegg uke',
-				autoSend: true
+				title: 'Refleksjon over forrige uke',
+				autoSend: true,
+				prompt: 'Oppsummer forrige uke og inviter til refleksjon.'
+			},
+			{
+				id: 'uloste_oppgaver',
+				type: 'decision-list',
+				title: 'Uløste oppgaver – hva tar du med videre?',
+				openItemsKey: 'openItems'
+			},
+			{
+				id: 'gjentakende_oppgaver',
+				type: 'checklist',
+				title: 'Gjentakende oppgaver',
+				extraItemsKey: 'weekTasks'
+			},
+			{
+				id: 'maal',
+				type: 'chat',
+				title: 'Ukesmål',
+				autoSend: true,
+				prompt: 'Gjennomgå målene fra forrige uke og hjelp med å sette mål for kommende uke.'
+			},
+			{
+				id: 'ukeshistorie',
+				type: 'chat',
+				title: 'Ukeshistorie',
+				autoSend: true,
+				prompt: 'Hjelp brukeren å skrive en kort ukesbeskrivelse.'
 			}
-		]
-	},
+		],
+		onComplete: async (data, context) => {
+			const carryoverTexts = (context.openItems ?? [])
+				.filter((item) => (data['carryoverIds'] as string[] ?? []).includes(item.id))
+				.map((item) => item.text);
 
-	planning_week_review: {
-		id: 'planning_week_review',
-		name: 'Avslutt uka',
-		description: 'Reflekter over uka og ta med deg læring',
-		icon: '🪞',
-		domain: 'planning',
-		trigger: 'manual',
-		estimatedMinutes: 5,
-		steps: [
-			{
-				id: 'chat',
-				type: 'chat',
-				title: 'Avslutt uka',
-				prompt: 'Avslutt uke',
-				autoSend: true
-			}
-		]
+			const selectedTasks = (data['selectedTasks'] as string[]) ?? [];
+			const goalUpdatesText = (data['maal_lastMessage'] as string) ?? '';
+			const narrative = (data['ukeshistorie_lastMessage'] as string) ?? '';
+			const refleksjonText = (data['refleksjon_lastMessage'] as string) ?? '';
+			const prevWeekGoals = context.prevWeekData?.weekGoals ?? [];
+
+			await fetch('/api/week-plan/complete', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					weekKey: context.weekKey,
+					carryoverTexts,
+					selectedTasks,
+					goalUpdatesText,
+					prevWeekGoals,
+					narrative,
+					refleksjonText
+				})
+			});
+		}
 	},
 
 	food_meal_chat: {
