@@ -20,7 +20,7 @@ export const sortInboxProducer: ActionProducer = async (ctx) => {
 			label: `Sorter (${count})`,
 			priority: 58,
 			source: 'system',
-			intent: { kind: 'navigate', href: '/plan/oppgaver?usortert=1' }
+			intent: { kind: 'navigate', href: '/plan/oppgaver' }
 		}
 	];
 };

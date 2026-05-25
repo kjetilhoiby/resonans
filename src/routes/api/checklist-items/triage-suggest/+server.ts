@@ -17,7 +17,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	const body = await request.json().catch(() => ({}));
 	const itemIdsFilter: string[] | null = Array.isArray(body?.itemIds) ? body.itemIds : null;
 
-	const allTasks = await listTasks(locals.userId, { status: 'open' });
+	const allTasks = await listTasks(locals.userId, { bucket: 'innboks' });
 	const candidates = itemIdsFilter
 		? allTasks.filter((t) => itemIdsFilter.includes(t.id))
 		: allTasks.filter((t) => t.isUnsorted);

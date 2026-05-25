@@ -257,31 +257,18 @@
 		patchState(id, { breakdown: cur.breakdown.filter((_, i) => i !== idx), dirty: true });
 	}
 
-	function setFilter(key: 'status' | 'timeframe' | 'theme', value: string) {
-		const params = new URLSearchParams($page.url.searchParams);
-		if (value === '' || value === 'all') params.delete(key);
-		else params.set(key, value);
-		goto(`/plan/oppgaver?${params.toString()}`, { keepFocus: true });
+	async function selectBucket(bucket: 'innboks' | 'gjores' | 'ugjort') {
+		const url = new URL($page.url);
+		if (bucket === 'innboks') url.searchParams.delete('bucket');
+		else url.searchParams.set('bucket', bucket);
+		await goto(url, { keepFocus: true, invalidateAll: true, noScroll: true });
 	}
 
-	function toggleUnsorted() {
-		const params = new URLSearchParams($page.url.searchParams);
-		if (params.get('usortert') === '1') params.delete('usortert');
-		else params.set('usortert', '1');
-		goto(`/plan/oppgaver?${params.toString()}`, { keepFocus: true });
-	}
-
-	function clearFilters() {
-		goto('/plan/oppgaver', { keepFocus: true });
-	}
-
-	const activeFilterCount = $derived(
-		(data.filters.status !== 'open' ? 1 : 0) +
-		(data.filters.timeframe !== 'all' ? 1 : 0) +
-		(data.filters.theme !== 'all' ? 1 : 0) +
-		(data.filters.unsortedOnly ? 1 : 0)
-	);
-	const unsortedCount = $derived(data.tasks.filter((t) => t.isUnsorted).length);
+	const BUCKET_LABELS = {
+		innboks: 'Innboks',
+		gjores: 'Gjøres',
+		ugjort: 'Ugjort'
+	} as const;
 </script>
 
 <svelte:head>
@@ -289,80 +276,57 @@
 </svelte:head>
 
 <div class="oppgaver">
-	<header class="head">
-		<h1>Oppgaver</h1>
-		<span class="count">{data.tasks.length}</span>
-	</header>
-
-	<div class="filter-bar">
-		<button
-			type="button"
-			class="filter-chip"
-			class:active={data.filters.unsortedOnly}
-			onclick={toggleUnsorted}
-		>
-			Usortert ({unsortedCount})
-		</button>
-
-		<label class="filter-select">
-			Status
-			<select value={data.filters.status} onchange={(e) => setFilter('status', e.currentTarget.value)}>
-				<option value="open">Åpne</option>
-				<option value="done">Ferdige</option>
-				<option value="all">Alle</option>
-			</select>
-		</label>
-
-		<label class="filter-select">
-			Frist
-			<select value={data.filters.timeframe} onchange={(e) => setFilter('timeframe', e.currentTarget.value)}>
-				<option value="all">Alle</option>
-				<option value="overdue">Forfalt</option>
-				<option value="today">I dag</option>
-				<option value="this_week">Denne uka</option>
-				<option value="next_week">Neste uke</option>
-				<option value="no_due">Ingen frist</option>
-			</select>
-		</label>
-
-		<label class="filter-select">
-			Tema
-			<select value={data.filters.theme} onchange={(e) => setFilter('theme', e.currentTarget.value)}>
-				<option value="all">Alle</option>
-				<option value="none">Uten tema</option>
-				{#each data.themes as t (t.id)}
-					<option value={t.id}>{t.emoji ?? '·'} {t.name}</option>
-				{/each}
-			</select>
-		</label>
-
-		{#if activeFilterCount > 0}
-			<button type="button" class="clear-filter" onclick={clearFilters}>Nullstill</button>
-		{/if}
-	</div>
-
-	{#if unsortedCount > 0}
-		<div class="ai-row">
+	<nav class="bucket-tabs" aria-label="Oppgave-buckets">
+		{#each ['innboks', 'gjores', 'ugjort'] as const as b (b)}
 			<button
-				class="ai-suggest"
 				type="button"
-				disabled={suggesting}
-				onclick={runSuggestForAll}
+				class="bucket-tab"
+				class:active={data.bucket === b}
+				onclick={() => selectBucket(b)}
 			>
-				{suggesting ? 'Tenker…' : `✨ AI-foreslå for ${unsortedCount} usortert${unsortedCount === 1 ? '' : 'e'}`}
+				<span class="bucket-label">{BUCKET_LABELS[b]}</span>
+				<span class="bucket-count">{data.counts[b]}</span>
 			</button>
-			{#if suggestError}
-				<span class="err">{suggestError}</span>
-			{/if}
-		</div>
+		{/each}
+	</nav>
+
+	<p class="bucket-hint">
+		{#if data.bucket === 'innboks'}
+			Nye oppgaver havner her. Gi dem estimat og tema for å sende videre.
+		{:else if data.bucket === 'gjores'}
+			Klare oppgaver — kan hentes inn i en dagsplan eller tas som quick win.
+		{:else}
+			Oppgaver som passerte fristen uten å bli gjort. Vurder å omplanlegge eller slette.
+		{/if}
+	</p>
+
+	{#if data.bucket === 'innboks'}
+		{@const unsortedInInbox = data.tasks.filter((t) => t.isUnsorted).length}
+		{#if unsortedInInbox > 0}
+			<div class="ai-row">
+				<button
+					class="ai-suggest"
+					type="button"
+					disabled={suggesting}
+					onclick={runSuggestForAll}
+				>
+					{suggesting ? 'Tenker…' : `✨ AI-foreslå for ${unsortedInInbox} usortert${unsortedInInbox === 1 ? '' : 'e'}`}
+				</button>
+				{#if suggestError}
+					<span class="err">{suggestError}</span>
+				{/if}
+			</div>
+		{/if}
 	{/if}
 
 	{#if data.tasks.length === 0}
 		<p class="empty">
-			{#if activeFilterCount > 0}
-				Ingen oppgaver matcher filtrene. <button class="link" onclick={clearFilters}>Nullstill</button>.
+			{#if data.bucket === 'innboks'}
+				Innboksen er tom. Bruk «Noter»-chippen på hjem for å legge til nye.
+			{:else if data.bucket === 'gjores'}
+				Ingen ferdigsorterte oppgaver klare ennå. Behandle noen fra innboksen.
 			{:else}
-				Ingen åpne oppgaver. Bruk «Noter»-chippen på hjem for å legge til nye.
+				Ingen ugjorte oppgaver. Bra jobba!
 			{/if}
 		</p>
 	{:else}
@@ -563,66 +527,50 @@
 		flex-direction: column;
 		gap: 0.85rem;
 	}
-	.head {
+	.bucket-tabs {
 		display: flex;
-		align-items: baseline;
-		gap: 0.75rem;
+		gap: 4px;
+		border-bottom: 1px solid var(--border-color);
 	}
-	h1 {
-		font-size: 1.4rem;
-		margin: 0;
-	}
-	.count {
-		color: var(--text-tertiary);
-		font-size: 0.85rem;
-	}
-	.filter-bar {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.45rem;
-		align-items: center;
-		padding-bottom: 0.5rem;
-		border-bottom: 1px solid var(--border-subtle);
-	}
-	.filter-chip {
-		background: transparent;
-		border: 1px solid var(--border-color);
-		color: var(--text-secondary);
-		padding: 0.35rem 0.8rem;
-		border-radius: 999px;
-		font: inherit;
-		font-size: 0.8rem;
-		cursor: pointer;
-	}
-	.filter-chip.active {
-		background: var(--accent-primary);
-		border-color: var(--accent-primary);
-		color: white;
-	}
-	.filter-select {
+	.bucket-tab {
+		flex: 1;
 		display: inline-flex;
-		gap: 0.3rem;
+		flex-direction: column;
 		align-items: center;
-		font-size: 0.78rem;
-		color: var(--text-tertiary);
-	}
-	.filter-select select {
-		background: var(--bg-card);
-		border: 1px solid var(--border-color);
-		color: var(--text-primary);
-		padding: 0.3rem 0.5rem;
-		border-radius: 6px;
-		font: inherit;
-	}
-	.clear-filter {
+		gap: 2px;
+		padding: 0.6rem 0.5rem;
 		background: transparent;
-		color: var(--text-tertiary);
 		border: 0;
-		padding: 0.3rem 0.5rem;
-		font: inherit;
-		font-size: 0.78rem;
+		border-bottom: 2px solid transparent;
+		color: var(--text-tertiary);
 		cursor: pointer;
-		text-decoration: underline;
+		font: inherit;
+		transition: color 0.12s, border-color 0.12s;
+	}
+	.bucket-tab:hover {
+		color: var(--text-secondary);
+	}
+	.bucket-tab.active {
+		color: var(--text-primary);
+		border-bottom-color: var(--accent-primary);
+	}
+	.bucket-label {
+		font-size: 0.92rem;
+		font-weight: 600;
+	}
+	.bucket-count {
+		font-size: 0.74rem;
+		color: var(--text-tertiary);
+	}
+	.bucket-tab.active .bucket-count {
+		color: var(--accent-primary);
+	}
+	.bucket-hint {
+		margin: 0;
+		font-size: 0.82rem;
+		color: var(--text-secondary);
+		font-style: italic;
+		padding: 0.1rem 0.1rem 0;
 	}
 	.ai-row {
 		display: flex;

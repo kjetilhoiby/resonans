@@ -1,16 +1,13 @@
 import { db } from '$lib/db';
 import { checklists, checklistItems, themes } from '$lib/db/schema';
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 
-export type TaskStatusFilter = 'open' | 'done' | 'all';
-export type TaskTimeframeFilter = 'overdue' | 'today' | 'this_week' | 'next_week' | 'no_due' | 'all';
+export type TaskBucket = 'innboks' | 'gjores' | 'ugjort';
 export type TaskThemeFilter = 'all' | 'none' | string;
 
 export interface TaskFilters {
-	status?: TaskStatusFilter;
-	timeframe?: TaskTimeframeFilter;
+	bucket?: TaskBucket;
 	theme?: TaskThemeFilter;
-	unsortedOnly?: boolean;
 }
 
 export interface TaskSubItem {
@@ -43,77 +40,60 @@ function todayIsoLocal(): string {
 	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function isoOffset(days: number): string {
-	const d = new Date();
-	d.setDate(d.getDate() + days);
-	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function nextMondayIso(): string {
-	const d = new Date();
-	const dow = d.getDay();
-	const delta = (1 - dow + 7) % 7 || 7;
-	d.setDate(d.getDate() + delta);
-	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function endOfThisWeekIso(): string {
-	// Søndag denne uka
-	const d = new Date();
-	const dow = d.getDay();
-	const delta = dow === 0 ? 0 : 7 - dow;
-	d.setDate(d.getDate() + delta);
-	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function endOfNextWeekIso(): string {
-	return isoOffset(14 - new Date().getDay());
+/**
+ * SQL-fragment som er sant når items hører til en day-plan-sjekkliste
+ * vis context-format `week:YYYY-WNN:day:YYYY-MM-DD`, og dato-delen er
+ * sammenlignet med today.
+ */
+function dayContextDateCompare(op: '<' | '>=', today: string) {
+	// `right(context, 10)` plukker ut YYYY-MM-DD fra slutten.
+	if (op === '<') {
+		return sql`${checklists.context} LIKE 'week:%:day:%' AND right(${checklists.context}, 10) < ${today}`;
+	}
+	return sql`${checklists.context} LIKE 'week:%:day:%' AND right(${checklists.context}, 10) >= ${today}`;
 }
 
 export async function listTasks(userId: string, filters: TaskFilters = {}): Promise<UnifiedTask[]> {
-	const status = filters.status ?? 'open';
-	const timeframe = filters.timeframe ?? 'all';
+	const bucket = filters.bucket ?? 'innboks';
 	const theme = filters.theme ?? 'all';
-	const unsortedOnly = filters.unsortedOnly === true;
 
 	const conditions = [
 		eq(checklistItems.userId, userId),
 		isNull(checklistItems.parentId),
 		isNull(checklistItems.skippedAt),
-		isNull(checklists.completedAt)
+		isNull(checklists.completedAt),
+		eq(checklistItems.checked, false)
 	];
 
-	if (status === 'open') conditions.push(eq(checklistItems.checked, false));
-	if (status === 'done') conditions.push(eq(checklistItems.checked, true));
-
 	const today = todayIsoLocal();
-	if (timeframe === 'overdue') {
-		conditions.push(isNotNull(checklistItems.dueDate));
-		conditions.push(lt(checklistItems.dueDate, today));
-	} else if (timeframe === 'today') {
-		conditions.push(eq(checklistItems.dueDate, today));
-	} else if (timeframe === 'this_week') {
-		conditions.push(isNotNull(checklistItems.dueDate));
-		conditions.push(gte(checklistItems.dueDate, today));
-		conditions.push(lte(checklistItems.dueDate, endOfThisWeekIso()));
-	} else if (timeframe === 'next_week') {
-		conditions.push(isNotNull(checklistItems.dueDate));
-		conditions.push(gte(checklistItems.dueDate, nextMondayIso()));
-		conditions.push(lte(checklistItems.dueDate, endOfNextWeekIso()));
-	} else if (timeframe === 'no_due') {
-		conditions.push(isNull(checklistItems.dueDate));
+	const overdueSql = sql`(${checklistItems.dueDate} IS NOT NULL AND ${checklistItems.dueDate} < ${today})`;
+	const pastDayContext = dayContextDateCompare('<', today);
+	const futureDayContext = dayContextDateCompare('>=', today);
+	const ugjortSql = sql`(${overdueSql} OR ${pastDayContext})`;
+
+	if (bucket === 'ugjort') {
+		conditions.push(ugjortSql);
+	} else if (bucket === 'innboks') {
+		// Innboks = rå dump som ennå trenger behandling.
+		// Items er i inbox-sjekklisten OG mangler estimat (uberørt etter
+		// dump). Når brukeren gir estimat, flyttes item naturlig over til
+		// Gjøres-tabben selv om den fysisk fortsatt ligger i inbox.
+		conditions.push(eq(checklists.context, 'inbox'));
+		conditions.push(isNull(checklistItems.estimateMinutes));
+		conditions.push(sql`NOT ${ugjortSql}`);
+	} else if (bucket === 'gjores') {
+		// Gjøres = behandlede, uplasserte items. Har estimat, er ikke
+		// forfalt, og ligger ikke i en framtidig day-plan. Items i custom-
+		// lister uten estimat dukker ikke opp her — de har sin egen visning.
+		conditions.push(isNotNull(checklistItems.estimateMinutes));
+		conditions.push(sql`NOT ${ugjortSql}`);
+		conditions.push(sql`NOT (${futureDayContext})`);
 	}
 
 	if (theme === 'none') {
 		conditions.push(isNull(checklistItems.themeId));
 	} else if (theme !== 'all') {
 		conditions.push(eq(checklistItems.themeId, theme));
-	}
-
-	if (unsortedOnly) {
-		// «Usortert» = mangler estimat OG (mangler tema ELLER mangler frist).
-		// Brukes hovedsakelig for innboks-flowen.
-		conditions.push(isNull(checklistItems.estimateMinutes));
 	}
 
 	const rows = await db
@@ -278,9 +258,25 @@ export async function setTaskBreakdown(
 	return inserted;
 }
 
-export async function countUnsortedTasks(userId: string): Promise<number> {
+/**
+ * Teller items i hver av de tre buckets samtidig i én query.
+ * Buckets er gjensidig utelukkende, så et item kan kun være i én av dem.
+ */
+export async function countTasksByBucket(
+	userId: string
+): Promise<{ innboks: number; gjores: number; ugjort: number }> {
+	const today = todayIsoLocal();
+	const overdueSql = sql`(${checklistItems.dueDate} IS NOT NULL AND ${checklistItems.dueDate} < ${today})`;
+	const pastDayContext = sql`${checklists.context} LIKE 'week:%:day:%' AND right(${checklists.context}, 10) < ${today}`;
+	const futureDayContext = sql`${checklists.context} LIKE 'week:%:day:%' AND right(${checklists.context}, 10) >= ${today}`;
+	const ugjortSql = sql`(${overdueSql} OR ${pastDayContext})`;
+
 	const rows = await db
-		.select({ count: sql<number>`count(*)::int` })
+		.select({
+			ugjort: sql<number>`count(*) filter (where ${ugjortSql})::int`,
+			innboks: sql<number>`count(*) filter (where NOT ${ugjortSql} AND ${checklists.context} = 'inbox' AND ${checklistItems.estimateMinutes} IS NULL)::int`,
+			gjores: sql<number>`count(*) filter (where NOT ${ugjortSql} AND ${checklistItems.estimateMinutes} IS NOT NULL AND NOT (${futureDayContext}))::int`
+		})
 		.from(checklistItems)
 		.innerJoin(checklists, eq(checklistItems.checklistId, checklists.id))
 		.where(
@@ -289,10 +285,20 @@ export async function countUnsortedTasks(userId: string): Promise<number> {
 				eq(checklistItems.checked, false),
 				isNull(checklistItems.parentId),
 				isNull(checklistItems.skippedAt),
-				isNull(checklists.completedAt),
-				isNull(checklistItems.estimateMinutes),
-				or(eq(checklists.context, 'inbox'), isNull(checklistItems.themeId))
+				isNull(checklists.completedAt)
 			)
 		);
-	return rows[0]?.count ?? 0;
+
+	const r = rows[0];
+	return {
+		innboks: r?.innboks ?? 0,
+		gjores: r?.gjores ?? 0,
+		ugjort: r?.ugjort ?? 0
+	};
+}
+
+/** Bakover-kompatibel: returnerer kun innboks-count. Brukes av sort-inbox chip. */
+export async function countUnsortedTasks(userId: string): Promise<number> {
+	const counts = await countTasksByBucket(userId);
+	return counts.innboks;
 }

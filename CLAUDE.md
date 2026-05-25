@@ -162,6 +162,10 @@ samme grunnstruktur — `AppPage` → `PageHeader` → eget innhold.
 4. Ingen lokale `:global()`-overrides for å fikse layout — hvis du føler
    trang til det, er det sannsynligvis en bug i felleskomponentene som
    skal fikses der i stedet.
+5. **Ingen lokal bottom-nav/tab-bar.** Navigasjon til andre seksjoner
+   skjer via `PageHeader`-actions (chat, settings) og `titleHref="/"` for
+   tilbake til hjem. Appen har ikke en global tab-bar, og legger man til
+   en lokal blir det inkonsistent med resten av sidene.
 
 ## Database Conventions
 
