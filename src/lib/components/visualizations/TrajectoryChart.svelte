@@ -146,6 +146,17 @@
 		const planPath = `M${padL} ${yAt(startValue).toFixed(1)} L${(padL + pw).toFixed(1)} ${yAt(targetValue).toFixed(1)}`;
 
 		const todayX = today >= startDate && today <= endDate ? xForDate(today) : null;
+
+		// Stiplet horisontal forlengelse fra siste datapunkt til i dag.
+		// Synliggjør gap mot plan når det ikke har kommet inn nye verdier på en stund.
+		let gapPath = '';
+		if (actualSeries.length > 0 && todayX !== null) {
+			const lastPoint = actualSeries[actualSeries.length - 1];
+			if (todayX - lastPoint.x > 0.5) {
+				const lastY = yAt(lastPoint.yValue);
+				gapPath = `M${lastPoint.x.toFixed(1)} ${lastY.toFixed(1)} L${todayX.toFixed(1)} ${lastY.toFixed(1)}`;
+			}
+		}
 		const resolvedGridValues = gridValues.length > 0
 			? gridValues
 			: [Math.round(yMax * 10) / 10, Math.round(((yMin + yMax) / 2) * 10) / 10, Math.round(yMin * 10) / 10];
@@ -157,6 +168,7 @@
 			actualPath,
 			areaPath,
 			planPath,
+			gapPath,
 			todayX,
 			gridLines: resolvedGridValues.map((value) => ({ value, y: yAt(value), label: valueFormatter(value) })),
 			yBottom: padT + ph
@@ -179,6 +191,10 @@
 
 		{#if chart.actualPath}
 			<path class:ready d={chart.actualPath} pathLength="1" class="trajectory-path actual-path" stroke={actualStroke} stroke-width="2.75" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+		{/if}
+
+		{#if chart.gapPath}
+			<path d={chart.gapPath} class="actual-gap-path" stroke={actualStroke} stroke-width="2" fill="none" />
 		{/if}
 
 		{#if chart.todayX !== null}
@@ -221,6 +237,22 @@
 	.trajectory-path.ready {
 		stroke-dashoffset: 0;
 		opacity: 1;
+	}
+
+	.actual-gap-path {
+		stroke-dasharray: 4 3;
+		stroke-linecap: round;
+		opacity: 0.65;
+		animation: gap-fade-in 0.6s ease 0.4s both;
+	}
+
+	@keyframes gap-fade-in {
+		from {
+			opacity: 0;
+		}
+		to {
+			opacity: 0.65;
+		}
 	}
 
 	.trajectory-area {
