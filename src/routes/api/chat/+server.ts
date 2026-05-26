@@ -776,7 +776,7 @@ const tools = [
 							title: { type: 'string' },
 							summary: { type: 'string', description: 'Markdown-formatert fremgangsmåte/forklaring' },
 							steps: { type: 'array', items: { type: 'string' }, description: 'Sjekkliste-trinn i rekkefølge' },
-							domain: { type: 'string', enum: ['health', 'economics', 'food', 'family', 'egenfrekvens', 'home'] },
+							domain: { type: 'string', enum: ['health', 'economics', 'food', 'family', 'self', 'home'] },
 							themeId: { type: 'string' },
 							conversationId: { type: 'string' },
 							triggerKeywords: { type: 'array', items: { type: 'string' }, description: 'Nøkkelord for å matche mot oppgaver, f.eks. ["stryke", "skjorte", "bøye"]' },

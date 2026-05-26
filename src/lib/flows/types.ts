@@ -27,7 +27,7 @@ export type FlowId =
 	| 'inbox_note'
 	| 'jobb_focus_timer';
 
-export type FlowDomain = 'health' | 'economics' | 'food' | 'family' | 'planning' | 'general' | 'egenfrekvens' | 'jobb';
+export type FlowDomain = 'health' | 'economics' | 'food' | 'family' | 'planning' | 'general' | 'self' | 'jobb';
 
 export type FlowTrigger = 'manual' | 'auto_suggest' | 'onboarding';
 
