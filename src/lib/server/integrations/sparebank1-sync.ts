@@ -166,7 +166,7 @@ async function writeRawAndCanonicalTransactions(
 			created_at, updated_at
 		)
 		SELECT
-			u, s, a, NULLIF(e, ''), NULLIF(bs, ''), sr,
+			u, s::uuid, a, NULLIF(e, ''), NULLIF(bs, ''), sr,
 			td::date, pa::timestamp, amt, cur, dr, dn,
 			dn, NULLIF(tt, ''), p::jsonb, fp, NOW(), NOW(), 1,
 			NOW(), NOW()
@@ -212,7 +212,7 @@ async function writeRawAndCanonicalTransactions(
 			first_seen_at, last_seen_at, evidence_count, is_active, paycheck_type, created_at, updated_at
 		)
 		SELECT
-			u, s, a, td::date, amt, cur, mk,
+			u, s::uuid, a, td::date, amt, cur, mk,
 			dr, NULLIF(bs, ''), sr, pa::timestamp,
 			NOW(), NOW(), 1, TRUE, NULLIF(pt, ''), NOW(), NOW()
 		FROM UNNEST(
@@ -266,11 +266,11 @@ async function writeRawAndCanonicalTransactions(
 				canonical_id, sensor_id, external_transaction_id,
 				first_seen_at, last_seen_at, seen_count, created_at, updated_at
 			)
-			SELECT c.id, $1, t.external_id, NOW(), NOW(), 1, NOW(), NOW()
+			SELECT c.id, $1::uuid, t.external_id, NOW(), NOW(), 1, NOW(), NOW()
 			FROM UNNEST($2::text[], $3::text[], $4::numeric[], $5::text[], $6::text[])
 				AS t(account_id, canonical_date, amount, merchant_key, external_id)
 			JOIN canonical_bank_transactions c ON (
-				c.sensor_id = $1
+				c.sensor_id = $1::uuid
 				AND c.account_id = t.account_id
 				AND c.canonical_date = t.canonical_date::date
 				AND c.amount = t.amount
