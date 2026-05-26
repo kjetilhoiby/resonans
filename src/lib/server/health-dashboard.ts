@@ -7,75 +7,90 @@ const HEALTH_DASHBOARD_WORKOUT_LOOKBACK_DAYS = 60;
 
 export async function loadHealthDashboardData(userId: string) {
 	const t0 = performance.now();
-	const healthSensors = await db.query.sensors.findMany({
-		where: and(
-			eq(sensors.userId, userId),
-			or(eq(sensors.type, 'health_tracker'), eq(sensors.type, 'workout_files'))
-		),
-		orderBy: [desc(sensors.updatedAt)]
-	});
 
-	const healthSensorIds = healthSensors.map((sensor) => sensor.id);
-	const recentHealthEvents = healthSensorIds.length
-		? await db.query.sensorEvents.findMany({
+	const [
+		sensorChainResult,
+		goalsChainResult,
+		[weeklyData, monthlyData, yearlyData, dailyData],
+		unifiedActivities,
+		[weightEventCountRow, weightAggregateCountRow]
+	] = await Promise.all([
+		// Chain A: sensors → recentHealthEvents
+		(async () => {
+			const healthSensors = await db.query.sensors.findMany({
 				where: and(
-					eq(sensorEvents.userId, userId),
-					inArray(sensorEvents.sensorId, healthSensorIds)
+					eq(sensors.userId, userId),
+					or(eq(sensors.type, 'health_tracker'), eq(sensors.type, 'workout_files'))
 				),
-				orderBy: [desc(sensorEvents.timestamp)],
-				limit: 500
+				orderBy: [desc(sensors.updatedAt)]
+			});
+			const healthSensorIds = healthSensors.map((sensor) => sensor.id);
+			const recentHealthEvents = healthSensorIds.length
+				? await db.query.sensorEvents.findMany({
+						where: and(
+							eq(sensorEvents.userId, userId),
+							inArray(sensorEvents.sensorId, healthSensorIds)
+						),
+						orderBy: [desc(sensorEvents.timestamp)],
+						limit: 500
+					})
+				: [];
+			return { healthSensors, recentHealthEvents };
+		})(),
+		// Chain B: theme → goals
+		(async () => {
+			const healthTheme = await db.query.themes.findFirst({
+				where: and(eq(themes.userId, userId), eq(themes.name, 'Helse'))
+			});
+			const healthGoals = healthTheme ? await db.query.goals.findMany({
+				where: and(
+					eq(goalsTable.userId, userId),
+					eq(goalsTable.themeId, healthTheme.id),
+					inArray(goalsTable.status, ['active', 'paused'])
+				)
+			}) : [];
+			return { healthGoals };
+		})(),
+		// Group C: aggregates
+		Promise.all([
+			db.query.sensorAggregates.findMany({
+				where: and(eq(sensorAggregates.userId, userId), eq(sensorAggregates.period, 'week')),
+				orderBy: [desc(sensorAggregates.startDate)]
+			}),
+			db.query.sensorAggregates.findMany({
+				where: and(eq(sensorAggregates.userId, userId), eq(sensorAggregates.period, 'month')),
+				orderBy: [desc(sensorAggregates.startDate)]
+			}),
+			db.query.sensorAggregates.findMany({
+				where: and(eq(sensorAggregates.userId, userId), eq(sensorAggregates.period, 'year')),
+				orderBy: [desc(sensorAggregates.startDate)]
+			}),
+			db.query.sensorAggregates.findMany({
+				where: and(eq(sensorAggregates.userId, userId), eq(sensorAggregates.period, 'day')),
+				orderBy: [desc(sensorAggregates.startDate)],
+				limit: 400
 			})
-		: [];
-
-	// Last helsemål (mål koblet til Helse-temaet)
-	const healthTheme = await db.query.themes.findFirst({
-		where: and(eq(themes.userId, userId), eq(themes.name, 'Helse'))
-	});
-
-	const healthGoals = healthTheme ? await db.query.goals.findMany({
-		where: and(
-			eq(goalsTable.userId, userId),
-			eq(goalsTable.themeId, healthTheme.id),
-			inArray(goalsTable.status, ['active', 'paused'])
-		)
-	}) : [];
-
-	const [weeklyData, monthlyData, yearlyData, dailyData] = await Promise.all([
-		db.query.sensorAggregates.findMany({
-			where: and(eq(sensorAggregates.userId, userId), eq(sensorAggregates.period, 'week')),
-			orderBy: [desc(sensorAggregates.startDate)]
+		]),
+		// Group D: workout activities (the slowest query — runs in parallel now)
+		buildUnifiedWorkoutActivities(userId, {
+			since: new Date(Date.now() - 1000 * 60 * 60 * 24 * HEALTH_DASHBOARD_WORKOUT_LOOKBACK_DAYS),
+			limit: 1200
 		}),
-		db.query.sensorAggregates.findMany({
-			where: and(eq(sensorAggregates.userId, userId), eq(sensorAggregates.period, 'month')),
-			orderBy: [desc(sensorAggregates.startDate)]
-		}),
-		db.query.sensorAggregates.findMany({
-			where: and(eq(sensorAggregates.userId, userId), eq(sensorAggregates.period, 'year')),
-			orderBy: [desc(sensorAggregates.startDate)]
-		}),
-		db.query.sensorAggregates.findMany({
-			where: and(eq(sensorAggregates.userId, userId), eq(sensorAggregates.period, 'day')),
-			orderBy: [desc(sensorAggregates.startDate)],
-			limit: 400
-		})
+		// Group E: weight counts
+		Promise.all([
+			db
+				.select({ count: sql<number>`count(*)` })
+				.from(sensorEvents)
+				.where(and(eq(sensorEvents.userId, userId), eq(sensorEvents.dataType, 'weight'))),
+			db
+				.select({ count: sql<number>`count(*)` })
+				.from(sensorAggregates)
+				.where(and(eq(sensorAggregates.userId, userId), sql`metrics ? 'weight'`))
+		])
 	]);
 
-	const unifiedActivities = await buildUnifiedWorkoutActivities(userId, {
-		since: new Date(Date.now() - 1000 * 60 * 60 * 24 * HEALTH_DASHBOARD_WORKOUT_LOOKBACK_DAYS),
-		limit: 1200
-	});
-
-	const [weightEventCountRow, weightAggregateCountRow] = await Promise.all([
-		db
-			.select({ count: sql<number>`count(*)` })
-			.from(sensorEvents)
-			.where(and(eq(sensorEvents.userId, userId), eq(sensorEvents.dataType, 'weight'))),
-		db
-			.select({ count: sql<number>`count(*)` })
-			.from(sensorAggregates)
-			.where(and(eq(sensorAggregates.userId, userId), sql`metrics ? 'weight'`))
-	]);
-
+	const { healthSensors, recentHealthEvents } = sensorChainResult;
+	const { healthGoals } = goalsChainResult;
 	const weightEventCount = weightEventCountRow[0]?.count ?? 0;
 	const weightAggregateCount = weightAggregateCountRow[0]?.count ?? 0;
 

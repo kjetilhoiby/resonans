@@ -1,6 +1,6 @@
 import { db } from '$lib/db';
 import { sensorEvents, sensors } from '$lib/db/schema';
-import { and, eq, gte, inArray } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, sql } from 'drizzle-orm';
 
 interface ActivityLayerOptions {
 	since?: Date;
@@ -31,6 +31,7 @@ interface WorkoutEvidenceEvent {
 	provider: string;
 	sensorType: string;
 	priority: number;
+	hasTrackPoints: boolean;
 }
 
 export interface WorkoutEvidence {
@@ -167,9 +168,8 @@ function choosePreferredNumeric(
 }
 
 function buildEvidence(event: WorkoutEvidenceEvent): WorkoutEvidence {
-	const hasTrackPoints = Array.isArray(event.data.trackPoints)
-		? event.data.trackPoints.length > 0
-		: typeof event.metadata.totalTrackPoints === 'number' && event.metadata.totalTrackPoints > 0;
+	const hasTrackPoints = event.hasTrackPoints
+		|| (typeof event.metadata.totalTrackPoints === 'number' && event.metadata.totalTrackPoints > 0);
 	const imageUrl =
 		typeof event.data.sourceImageUrl === 'string'
 			? event.data.sourceImageUrl
@@ -219,11 +219,22 @@ export async function buildUnifiedWorkoutActivities(
 		conditions.push(gte(sensorEvents.timestamp, options.since));
 	}
 
-	const workoutEvents = await db.query.sensorEvents.findMany({
-		where: and(...conditions),
-		orderBy: (events, { asc }) => [asc(events.timestamp)],
-		limit: options.limit ?? 1000
-	});
+	const workoutEvents = await db
+		.select({
+			id: sensorEvents.id,
+			userId: sensorEvents.userId,
+			sensorId: sensorEvents.sensorId,
+			eventType: sensorEvents.eventType,
+			dataType: sensorEvents.dataType,
+			timestamp: sensorEvents.timestamp,
+			data: sql<Record<string, unknown>>`${sensorEvents.data} - 'trackPoints'`,
+			metadata: sql<Record<string, unknown>>`${sensorEvents.metadata} - 'rawResponse'`,
+			hasTrackPoints: sql<boolean>`jsonb_array_length(CASE WHEN jsonb_typeof(${sensorEvents.data}->'trackPoints') = 'array' THEN ${sensorEvents.data}->'trackPoints' ELSE '[]'::jsonb END) > 0`,
+		})
+		.from(sensorEvents)
+		.where(and(...conditions))
+		.orderBy(asc(sensorEvents.timestamp))
+		.limit(options.limit ?? 1000);
 	console.log(`[activity-layer] sensorEvents query: ${(performance.now() - t0).toFixed(0)}ms → ${workoutEvents.length} rows`);
 
 	if (workoutEvents.length === 0) return [];
@@ -249,7 +260,8 @@ export async function buildUnifiedWorkoutActivities(
 			metadata: (event.metadata ?? {}) as Record<string, unknown>,
 			provider,
 			sensorType,
-			priority: sourcePriority(provider, sensorType)
+			priority: sourcePriority(provider, sensorType),
+			hasTrackPoints: event.hasTrackPoints
 		};
 	});
 

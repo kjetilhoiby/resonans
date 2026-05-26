@@ -1413,6 +1413,7 @@ export const sensorEvents = pgTable('sensor_events', {
 	createdAt: timestamp('created_at').defaultNow().notNull() // When we received it
 }, (table) => ({
 	idxUserDataTypeTimestamp: index('sensor_events_user_data_type_timestamp_idx').on(table.userId, table.dataType, table.timestamp),
+	idxUserSensorTimestamp: index('sensor_events_user_sensor_timestamp_idx').on(table.userId, table.sensorId, table.timestamp),
 	idxPersonTimestamp: index('sensor_events_person_timestamp_idx').on(table.personId, table.timestamp),
 	// Partial unique index for non-bank events (excludes bank_balance and bank_transaction)
 	// Bank transactions use semantic deduplication (accountId+date+desc+amount) instead
