@@ -4,6 +4,7 @@ import { db } from '$lib/db';
 import { books, themes, conversations } from '$lib/db/schema';
 import { eq, and, asc } from 'drizzle-orm';
 import { enqueueBackgroundJob, processDueBackgroundJobs } from '$lib/server/background-jobs';
+import { runInBackground } from '$lib/server/run-in-background';
 
 /** Slå opp et bokomslag på OpenLibrary basert på tittel + forfatter. Returnerer null hvis ingenting matcher. */
 async function lookupCoverFromOpenLibrary(title: string, author: string | null): Promise<string | null> {
@@ -102,8 +103,9 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		priority: 1
 	});
 
-	// Fire-and-forget: process now without blocking the response
-	void processDueBackgroundJobs({ limit: 1, workerId: `book-create-${book.id}` });
+	// Kick off processing immediately and keep it running after the response
+	// is sent (waitUntil on Vercel, plain event-loop locally).
+	runInBackground(processDueBackgroundJobs({ limit: 1, workerId: `book-create-${book.id}` }));
 
 	return json(book, { status: 201 });
 };

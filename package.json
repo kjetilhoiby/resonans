@@ -45,6 +45,7 @@
 		"@types/pdf-parse": "^1.1.5",
 		"@types/web-push": "^3.6.4",
 		"@types/ws": "^8.18.1",
+		"@vercel/functions": "^3.6.0",
 		"cloudinary": "^2.8.0",
 		"d3-scale": "^4.0.2",
 		"d3-shape": "^3.2.0",
