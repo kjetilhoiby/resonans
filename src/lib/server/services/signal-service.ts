@@ -519,6 +519,65 @@ async function produceHomePlanningReliability14d(userId: string, now: Date) {
 	return reliability;
 }
 
+async function produceHomeRoutineAdherence7d(userId: string, now: Date) {
+	const windowStart = daysAgo(now, 7);
+
+	await ensureSignalContract({
+		signalType: 'home_routine_adherence_7d',
+		ownerDomain: 'home',
+		allowedConsumerDomains: ['home', 'health', 'relationship'],
+		description: 'Andel av items i routine-checklists siste 7 dager som er hakket av. Måler om faste rutiner faktisk gjennomføres — god indikator på overskudd/underskudd.'
+	});
+
+	const rows = await db.execute(sql`
+		SELECT
+			COUNT(ci.id)::int AS item_count,
+			COALESCE(SUM(CASE WHEN ci.checked = true THEN 1 ELSE 0 END), 0)::int AS checked_count,
+			COUNT(DISTINCT c.id)::int AS instance_count
+		FROM checklists c
+		LEFT JOIN checklist_items ci ON ci.checklist_id = c.id
+		WHERE c.user_id = ${userId}
+		  AND c.context LIKE 'routine:%'
+		  AND c.created_at >= ${windowStart}
+		  AND c.created_at < ${now}
+	`);
+
+	const typedRows = rows as unknown as Array<{ item_count: number; checked_count: number; instance_count: number }>;
+	const itemCount = toNumber(typedRows[0]?.item_count);
+	const checkedCount = toNumber(typedRows[0]?.checked_count);
+	const instanceCount = toNumber(typedRows[0]?.instance_count);
+
+	if (itemCount === 0) {
+		return null;
+	}
+
+	const adherence = (checkedCount / itemCount) * 100;
+	const severity: Severity = adherence >= 80 ? 'info' : adherence >= 60 ? 'low' : adherence >= 40 ? 'medium' : 'high';
+	const band = adherence >= 80 ? 'high' : adherence >= 60 ? 'medium' : adherence >= 40 ? 'low' : 'very_low';
+
+	await upsertDomainSignal({
+		signalType: 'home_routine_adherence_7d',
+		ownerDomain: 'home',
+		userId,
+		valueNumber: adherence,
+		valueText: band,
+		severity,
+		confidence: instanceCount >= 3 ? 0.85 : 0.55,
+		windowStart,
+		windowEnd: now,
+		observedAt: now,
+		context: {
+			adherence,
+			checkedCount,
+			itemCount,
+			instanceCount,
+			windowDays: 7
+		}
+	});
+
+	return adherence;
+}
+
 async function produceRelationshipCoordinationReadinessToday(userId: string, relatedUserId: string, now: Date) {
 	const day = isoDay(now);
 	const windowStart = new Date(`${day}T00:00:00.000Z`);
@@ -855,6 +914,7 @@ export async function runDomainSignalProducers(now: Date = new Date()) {
 		economicsBudgetPressure7d: 0,
 		homeOverdueSharedTasks7d: 0,
 		homePlanningReliability14d: 0,
+		homeRoutineAdherence7d: 0,
 		relationshipCoordinationReadinessToday: 0,
 		relationshipLogisticsStressIndex14d: 0,
 		familyBirthdayUpcoming7d: 0,
@@ -895,6 +955,12 @@ export async function runDomainSignalProducers(now: Date = new Date()) {
 			const planningReliability14d = await produceHomePlanningReliability14d(user.id, now);
 			produced += 1;
 			producerBreakdown.homePlanningReliability14d += 1;
+
+			const routineAdherence7d = await produceHomeRoutineAdherence7d(user.id, now);
+			if (routineAdherence7d !== null) {
+				produced += 1;
+				producerBreakdown.homeRoutineAdherence7d += 1;
+			}
 
 			if (user.partnerUserId) {
 				await produceRelationshipCoordinationReadinessToday(user.id, user.partnerUserId, now);

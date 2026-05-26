@@ -1,6 +1,7 @@
 import { db } from '$lib/db';
 import { tasks, sensorEvents, sensors, checklists } from '$lib/db/schema';
 import { ProjectMetricsService } from '$lib/server/services/project-metrics-service';
+import { materializeTodaysRoutines } from '$lib/server/services/routine-service';
 import { currentSeason, HOME_APPLIANCE_SUBTYPES, HOME_APPLIANCE_LABELS, type HomeApplianceSubtype, pingApplianceEmoji } from '$lib/domains/home';
 import { and, eq, desc, inArray } from 'drizzle-orm';
 import type { PageServerLoad } from './$types';
@@ -9,7 +10,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 	const userId = locals.userId;
 	const season = currentSeason();
 
-	const [activeProjects, seasonalTasks, routines, ownedSensors] = await Promise.all([
+	const [activeProjects, seasonalTasks, routines, todaysRoutines, ownedSensors] = await Promise.all([
 		ProjectMetricsService.listProjectsWithProgress(userId, { domain: 'home', status: 'active' }),
 		db
 			.select()
@@ -23,6 +24,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 			.where(and(eq(checklists.userId, userId), eq(checklists.context, 'home_routine')))
 			.orderBy(desc(checklists.createdAt))
 			.limit(10),
+		materializeTodaysRoutines(userId),
 		db
 			.select({ id: sensors.id, subtype: sensors.subtype, name: sensors.name })
 			.from(sensors)
@@ -139,6 +141,22 @@ export const load: PageServerLoad = async ({ locals }) => {
 			title: r.title,
 			emoji: r.emoji,
 			completedAt: r.completedAt
+		})),
+		todaysRoutines: todaysRoutines.map((r) => ({
+			definitionId: r.definition.id,
+			title: r.definition.title,
+			emoji: r.definition.emoji,
+			slot: r.definition.slot,
+			checklistId: r.checklistId,
+			date: r.date,
+			completedAt: r.completedAt ? r.completedAt.toISOString() : null,
+			items: r.items.map((it) => ({
+				id: it.id,
+				text: it.text,
+				checked: it.checked,
+				sortOrder: it.sortOrder,
+				estimateMinutes: it.estimateMinutes
+			}))
 		})),
 		appliances
 	};

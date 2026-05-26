@@ -807,6 +807,35 @@ const tools = [
 			{
 				type: 'function' as const,
 				function: {
+					name: 'manage_routine',
+					description: 'Administrer brukerens rutiner — faste, gjentakende grupper av små handlinger knyttet til ukedag og tidspunkt. Eksempler: "Lørdag morgen" (støvsuge, vaske bad), "Hverdagskveld" (matpakker, rydde kjøkken), "Morgen" (vann, yoga). Dagens rutiner materialiseres automatisk som checklists og vises på hjemskjermen. action=list/create/update/delete. slot styrer tidspunkt på dagen. daysOfWeek bruker 0=søndag..6=lørdag.',
+					parameters: {
+						type: 'object',
+						properties: {
+							action: { type: 'string', enum: ['list', 'create', 'update', 'delete'] },
+							id: { type: 'string' },
+							title: { type: 'string' },
+							emoji: { type: 'string' },
+							slot: { type: 'string', enum: ['morning', 'afternoon', 'evening', 'flex'] },
+							daysOfWeek: {
+								type: 'array',
+								items: { type: 'integer', minimum: 0, maximum: 6 },
+								description: '0=søndag, 1=mandag, ..., 6=lørdag. F.eks. [6] = lørdag, [1,2,3,4,5] = hverdager.'
+							},
+							items: {
+								type: 'array',
+								items: { type: 'string' },
+								description: 'Items i rekkefølgen de skal vises.'
+							},
+							active: { type: 'boolean' }
+						},
+						required: ['action']
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
 					name: 'query_food',
 					description: 'Hent mat-data: oppskrifter, ukemeny, pantry/fryserinnhold. queryType: recipes (oppskriftliste), meal_plan (krever weekContext "YYYY-W##"), pantry (kan filtreres på location), expiring_soon (varer som går ut, krever days).',
 					parameters: {
@@ -2205,6 +2234,12 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 					console.log('  🏠 Manage home routine:', args.title);
 					const { manageHomeRoutineTool } = await import('$lib/ai/tools/manage-home-routine');
 					const result = await manageHomeRoutineTool.execute({ userId, ...args });
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'manage_routine') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  🔁 Manage routine:', args.action, args.title ?? args.id ?? '');
+					const { manageRoutineTool } = await import('$lib/ai/tools/manage-routine');
+					const result = await manageRoutineTool.execute({ userId, ...args });
 					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'record_tracking_event') {
 					const args = JSON.parse(toolCall.function.arguments);

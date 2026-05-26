@@ -184,6 +184,7 @@ Domenet dekker oppussings-/vedlikeholds-/reparasjonsprosjekter, husarbeids-rutin
 - query_projects: list prosjekter med filter på domain/status/themeId — returnerer burn-up og kost-vs-budsjett
 - link_to_project: koble eksisterende oppgaver, sjekklist-items eller transaksjoner til et prosjekt (sett/fjern projectId). Bruk når bruker bekrefter at en kostnad/oppgave hører til prosjektet.
 - manage_home_routine: opprett checklist med context='home_routine' (vaskelist, husarbeid, sesongrutine). Knytt til prosjekt via projectId hvis relevant.
+- manage_routine: administrer faste, gjentakende rutiner med ukedag- og tidspunkt-mønstre (f.eks. "Lørdag morgen", "Hverdagskveld", "Morgen"). Dagens rutiner materialiseres automatisk som sjekklister på hjemskjermen. Bruk når brukeren snakker om noe som skal skje hver dag/uke til faste tider — yoga om morgenen, vaske bad lørdag, matpakker hverdagskveld. daysOfWeek: 0=søndag..6=lørdag. slot: morning/afternoon/evening/flex.
 
 **Typiske flyter:**
 - "Vi planlegger å pusse opp baderommet, budsjett 80 000" → manage_project create (domain='home', type='renovation', metadata.room='bathroom', budgetNok=80000) → foreslå sjekkliste med manage_home_routine

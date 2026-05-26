@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { invalidateAll } from '$app/navigation';
 	import ProjectCard from '../composed/ProjectCard.svelte';
 	import type { ProjectProgress } from '$lib/server/services/project-metrics-service';
 	import { SEASONS, currentSeason, HOME_PROJECT_TYPES, HOME_ROOMS } from '$lib/domains/home';
@@ -29,6 +30,27 @@
 		completedAt: Date | string | null;
 	}
 
+	type RoutineSlot = 'morning' | 'afternoon' | 'evening' | 'flex';
+
+	interface TodaysRoutineItem {
+		id: string;
+		text: string;
+		checked: boolean;
+		sortOrder: number;
+		estimateMinutes: number | null;
+	}
+
+	interface TodaysRoutine {
+		definitionId: string;
+		title: string;
+		emoji: string;
+		slot: RoutineSlot;
+		checklistId: string;
+		date: string;
+		completedAt: string | null;
+		items: TodaysRoutineItem[];
+	}
+
 	interface ApplianceEvent {
 		id: string;
 		eventType: string;
@@ -50,12 +72,82 @@
 		projects: ProjectRow[];
 		seasonalTasks: SeasonalTask[];
 		routines: RoutineRow[];
+		todaysRoutines?: TodaysRoutine[];
 		appliances: Appliance[];
 		onOpenProject?: (id: string) => void;
 		onOpenChat?: (prefill: string) => void;
 	}
 
-	let { projects = [], seasonalTasks = [], routines = [], appliances = [], onOpenProject, onOpenChat }: Props = $props();
+	let {
+		projects = [],
+		seasonalTasks = [],
+		routines = [],
+		todaysRoutines = [],
+		appliances = [],
+		onOpenProject,
+		onOpenChat
+	}: Props = $props();
+
+	const SLOT_LABEL: Record<RoutineSlot, string> = {
+		morning: 'Morgen',
+		afternoon: 'Ettermiddag',
+		evening: 'Kveld',
+		flex: 'Når som helst'
+	};
+	const SLOT_WINDOWS: Record<RoutineSlot, [number, number]> = {
+		morning: [4, 12],
+		afternoon: [12, 17],
+		evening: [17, 24],
+		flex: [0, 24]
+	};
+	const SLOT_ORDER: RoutineSlot[] = ['morning', 'afternoon', 'evening', 'flex'];
+
+	function currentHour(): number {
+		try {
+			const h = new Intl.DateTimeFormat('en-GB', {
+				timeZone: 'Europe/Oslo',
+				hour: '2-digit',
+				hour12: false
+			}).format(new Date());
+			return parseInt(h, 10);
+		} catch {
+			return new Date().getHours();
+		}
+	}
+
+	function isSlotActive(slot: RoutineSlot, hour: number): boolean {
+		const [start, end] = SLOT_WINDOWS[slot];
+		return hour >= start && hour < end;
+	}
+
+	const hour = $derived(currentHour());
+
+	const routineGroups = $derived.by(() => {
+		const groups: Record<RoutineSlot, TodaysRoutine[]> = { morning: [], afternoon: [], evening: [], flex: [] };
+		for (const r of todaysRoutines) groups[r.slot].push(r);
+		return groups;
+	});
+
+	let pendingItem = $state<string | null>(null);
+
+	async function toggleItem(routine: TodaysRoutine, item: TodaysRoutineItem) {
+		if (pendingItem === item.id) return;
+		pendingItem = item.id;
+		try {
+			const res = await fetch(`/api/checklists/${routine.checklistId}/items/${item.id}`, {
+				method: 'PATCH',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ checked: !item.checked })
+			});
+			if (!res.ok) {
+				console.error('Kunne ikke oppdatere item:', await res.text());
+				return;
+			}
+			await invalidateAll();
+		} finally {
+			pendingItem = null;
+		}
+	}
 
 	const season = currentSeason();
 	const seasonLabel = SEASONS[season];
@@ -141,6 +233,48 @@
 </script>
 
 <div class="home-dashboard">
+	{#if todaysRoutines.length > 0}
+		<section class="todays-routines">
+			<div class="section-head">
+				<h3>🔁 Dagens rutiner</h3>
+				<a class="manage-link" href="/rutiner">Administrer</a>
+			</div>
+			<div class="routine-slot-grid">
+				{#each SLOT_ORDER as slot (slot)}
+					{#if routineGroups[slot].length > 0}
+						<div class="slot-column" class:active={isSlotActive(slot, hour)}>
+							<h4>{SLOT_LABEL[slot]}</h4>
+							{#each routineGroups[slot] as routine (routine.definitionId)}
+								<article class="routine-card">
+									<header>
+										<span class="emoji">{routine.emoji}</span>
+										<span class="title">{routine.title}</span>
+									</header>
+									<ul class="checks">
+										{#each routine.items as item (item.id)}
+											<li class:checked={item.checked}>
+												<button
+													type="button"
+													class="check"
+													onclick={() => toggleItem(routine, item)}
+													disabled={pendingItem === item.id}
+													aria-label={item.checked ? `Avhak ${item.text}` : `Hak av ${item.text}`}
+												>
+													{item.checked ? '✓' : ''}
+												</button>
+												<span class="text">{item.text}</span>
+											</li>
+										{/each}
+									</ul>
+								</article>
+							{/each}
+						</div>
+					{/if}
+				{/each}
+			</div>
+		</section>
+	{/if}
+
 	{#if appliances.length > 0}
 		<section>
 			<h3>🔌 Apparater</h3>
@@ -389,5 +523,111 @@ section h3 {
 	}
 	.routine-list .title {
 		flex: 1;
+	}
+
+	/* Dagens rutiner */
+	.todays-routines .section-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 0.75rem;
+	}
+	.todays-routines .section-head h3 {
+		margin: 0;
+	}
+	.manage-link {
+		font-size: 0.8rem;
+		color: var(--accent-primary, #7c8ef5);
+		text-decoration: none;
+	}
+	.routine-slot-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+		gap: 0.75rem;
+	}
+	.slot-column {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		opacity: 0.65;
+		transition: opacity 0.2s;
+	}
+	.slot-column.active {
+		opacity: 1;
+	}
+	.slot-column h4 {
+		margin: 0;
+		font-size: 0.8rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--muted, #888);
+	}
+	.slot-column.active h4 {
+		color: var(--accent-primary, #7c8ef5);
+	}
+	.routine-card {
+		background: var(--surface, #1a1a1a);
+		border: 1px solid var(--border, #2a2a2a);
+		border-radius: 12px;
+		padding: 0.6rem 0.75rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+	}
+	.routine-card header {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+	.routine-card .emoji {
+		font-size: 1.1rem;
+	}
+	.routine-card .title {
+		font-weight: 600;
+		font-size: 0.9rem;
+	}
+	.checks {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+	.checks li {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-size: 0.85rem;
+	}
+	.checks li.checked .text {
+		text-decoration: line-through;
+		opacity: 0.55;
+	}
+	.check {
+		flex-shrink: 0;
+		width: 20px;
+		height: 20px;
+		border-radius: 5px;
+		border: 1.5px solid var(--border, #444);
+		background: transparent;
+		color: var(--accent-primary, #7c8ef5);
+		font-size: 0.75rem;
+		font-weight: 700;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+		padding: 0;
+	}
+	.check:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+	.checks li.checked .check {
+		background: var(--accent-primary, #7c8ef5);
+		color: #fff;
+		border-color: transparent;
 	}
 </style>
