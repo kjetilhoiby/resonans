@@ -399,6 +399,35 @@
 		}
 	}
 
+	let refreshingContext = $state(false);
+	let refreshContextError = $state('');
+
+	async function refreshContext(bookId: string) {
+		if (refreshingContext) return;
+		refreshingContext = true;
+		refreshContextError = '';
+		try {
+			const res = await fetch(`/api/tema/${themeId}/books/${bookId}/refresh-context`, {
+				method: 'POST'
+			});
+			if (!res.ok) {
+				const data = await res.json().catch(() => ({}));
+				refreshContextError = data?.error === 'already_pending'
+					? 'Kontekstinnsamling pågår allerede.'
+					: 'Klarte ikke å starte kontekstinnsamling.';
+				return;
+			}
+			const updated: Book = await res.json();
+			if (selectedBook?.id === bookId) selectedBook = updated;
+			books = books.map((b) => (b.id === bookId ? updated : b));
+			void pollContextStatus(bookId);
+		} catch {
+			refreshContextError = 'Nettverksfeil — prøv igjen.';
+		} finally {
+			refreshingContext = false;
+		}
+	}
+
 	function buildBookSystemPrompt(book: Book): string {
 		const pack = (book.contextPack ?? {}) as {
 			themes?: string[];
@@ -1494,7 +1523,20 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 				{#if selectedBook.contextStatus === 'pending'}
 					<div class="bk-ctx-empty">⏳ Henter kontekst fra eksterne kilder — vent litt og last siden på nytt.</div>
 				{:else if selectedBook.contextStatus === 'none'}
-					<div class="bk-ctx-empty">Ingen kontekst er hentet for denne boken ennå.</div>
+					<div class="bk-ctx-empty">
+						<p>Ingen kontekst er hentet for denne boken ennå.</p>
+						<button
+							type="button"
+							class="bk-ctx-refresh primary"
+							disabled={refreshingContext}
+							onclick={() => refreshContext(selectedBook!.id)}
+						>
+							{refreshingContext ? '⏳ Starter…' : '✨ Hent kontekst'}
+						</button>
+						{#if refreshContextError}
+							<p class="bk-ctx-error">{refreshContextError}</p>
+						{/if}
+					</div>
 				{:else}
 					{#if pack.sources}
 						<div class="bk-ctx-meta">
@@ -1502,7 +1544,19 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 								{selectedBook.contextStatus === 'ready' ? '✦ Klar' : '◐ Delvis'}
 							</span>
 							<span class="bk-ctx-collected">Samlet {new Date(pack.sources.collectedAt).toLocaleString('no-NO')}</span>
+							<button
+								type="button"
+								class="bk-ctx-refresh"
+								disabled={refreshingContext}
+								onclick={() => refreshContext(selectedBook!.id)}
+								title={selectedBook.contextStatus === 'partial' ? 'Prøv å hente manglende kilder på nytt' : 'Hent kontekst på nytt'}
+							>
+								{refreshingContext ? '⏳' : '↻'} Hent på nytt
+							</button>
 						</div>
+						{#if refreshContextError}
+							<p class="bk-ctx-error">{refreshContextError}</p>
+						{/if}
 					{/if}
 
 					{#if pack.metadata?.year || pack.metadata?.genre}
@@ -2903,4 +2957,29 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 	.bk-ctx-debug { opacity: 0.85; }
 	.bk-ctx-debug .bk-ctx-title { color: #888; }
 	.bk-ctx-muted { color: #666; font-size: 0.82rem; }
+	.bk-ctx-empty { display: flex; flex-direction: column; align-items: center; gap: 0.85rem; }
+	.bk-ctx-empty p { margin: 0; }
+	.bk-ctx-refresh {
+		background: #1a1a22;
+		color: #c0c0d0;
+		border: 1px solid #2a2a35;
+		padding: 5px 12px;
+		border-radius: 8px;
+		font-size: 0.8rem;
+		cursor: pointer;
+		margin-left: auto;
+		transition: background 0.15s, border-color 0.15s;
+	}
+	.bk-ctx-refresh:hover:not(:disabled) { background: #22222c; border-color: #3a3a48; }
+	.bk-ctx-refresh:disabled { opacity: 0.55; cursor: wait; }
+	.bk-ctx-refresh.primary {
+		background: #14202c;
+		color: #88a8ff;
+		border-color: #2a4a6a;
+		padding: 8px 16px;
+		font-size: 0.9rem;
+		margin-left: 0;
+	}
+	.bk-ctx-refresh.primary:hover:not(:disabled) { background: #18283a; border-color: #3a5a7a; }
+	.bk-ctx-error { color: #b56868; font-size: 0.82rem; margin: 0; }
 </style>
