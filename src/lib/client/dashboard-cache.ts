@@ -93,7 +93,6 @@ export interface FoodDashboardData {
 		date: string;
 		mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack';
 		mealId: string | null;
-		customTitle?: string | null;
 		notes: string | null;
 		servings: number;
 		photoUrl: string | null;

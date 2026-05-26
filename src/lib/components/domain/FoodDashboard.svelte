@@ -6,8 +6,6 @@
 		date: string;
 		mealType: MealType;
 		mealId: string | null;
-		// @deprecated — eldre rader kan ha customTitle satt; ny kode bruker mealId
-		customTitle?: string | null;
 		notes: string | null;
 		servings: number;
 		photoUrl: string | null;
@@ -85,7 +83,7 @@
 								<li class="meal">
 									<span class="emoji">{MEAL_TYPES[plan.mealType].emoji}</span>
 									<span class="title">
-										{plan.mealTitle ?? plan.customTitle ?? '—'}
+										{plan.mealTitle ?? '—'}
 									</span>
 									{#if plan.servings && plan.servings !== 2}
 										<span class="servings">×{plan.servings}</span>

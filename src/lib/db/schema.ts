@@ -607,9 +607,7 @@ export const routineDefinitions = pgTable('routine_definitions', {
 // Måltider — byggeklossen i mat-universet. Først og fremst et navn ("kjøttkaker"),
 // med valgfri oppskrift, bilde, tags og næringsestimat. Tasks, mealPlans og
 // (senere) Oda-kvitteringer peker hit.
-// MERK: Underliggende SQL-tabell heter fortsatt `recipes` for å unngå
-// destruktiv DB-rename. Schemaet aliaser bare i kode.
-export const meals = pgTable('recipes', {
+export const meals = pgTable('meals', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
 	title: text('title').notNull(),
@@ -638,7 +636,7 @@ export const meals = pgTable('recipes', {
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
 }, (table) => ({
-	idxRecipesUser: index('recipes_user_idx').on(table.userId, table.createdAt)
+	idxMealsUser: index('meals_user_idx').on(table.userId, table.createdAt)
 }));
 
 // Måltidsplaner — kobler dato/slot til et måltid (kanonisk pool). Tasks peker
@@ -649,10 +647,7 @@ export const mealPlans = pgTable('meal_plans', {
 	weekContext: text('week_context').notNull(), // f.eks. '2026-W17'
 	date: date('date').notNull(),
 	mealType: text('meal_type').notNull(), // 'breakfast' | 'lunch' | 'dinner' | 'snack'
-	mealId: uuid('recipe_id').references((): AnyPgColumn => meals.id, { onDelete: 'set null' }),
-	// @deprecated — Behold for back-compat med eksisterende data. Nytt kode
-	// auto-oppretter heller en meals-rad og setter mealId.
-	customTitle: text('custom_title'),
+	mealId: uuid('meal_id').references((): AnyPgColumn => meals.id, { onDelete: 'set null' }),
 	notes: text('notes'),
 	servings: integer('servings').default(2).notNull(),
 	photoUrl: text('photo_url'), // Cloudinary-URL for "what we ate"
