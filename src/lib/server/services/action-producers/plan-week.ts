@@ -22,7 +22,7 @@ export const planWeekProducer: ActionProducer = (ctx) => {
 			label: 'Planlegg neste uke',
 			priority: 70,
 			source: 'system',
-			intent: { kind: 'open-week-plan' }
+			intent: { kind: 'open-week-plan', weekKey: nextWeek }
 		}
 	];
 };

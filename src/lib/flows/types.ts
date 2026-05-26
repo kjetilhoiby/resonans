@@ -10,7 +10,6 @@ export type FlowId =
 	| 'economics_savings_goal'
 	| 'economics_category_budget'
 	| 'planning_week_plan'
-	| 'planning_week_review'
 	| 'planning_goal_setup'
 	| 'planning_month_plan'
 	| 'planning_quarter_plan'
@@ -135,6 +134,17 @@ export interface FlowContext {
 		reflection: string;
 		uncheckedItems: Array<{ id: string; text: string }>;
 		monthGoals: Array<{ title: string; currentValue: number; target: { value: number; unit: string }; trackingMetric: string }>;
+		recurringTasks: string[];
+	};
+	/** Target week being planned, e.g. "2026-W19" */
+	weekKey?: string;
+	/** Previous week's data injected server-side for AI context building */
+	prevWeekData?: {
+		weekNo: number;
+		note: string;
+		reflection: string;
+		uncheckedItems: Array<{ id: string; text: string }>;
+		weekGoals: Array<{ title: string; currentValue: number; target: { value: number; unit: string }; trackingMetric: string }>;
 		recurringTasks: string[];
 	};
 }

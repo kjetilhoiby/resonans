@@ -4,7 +4,7 @@ export type ActionIntent =
 	| { kind: 'open-flow'; flowId: FlowId; prefill?: Record<string, unknown> }
 	| { kind: 'open-egenfrekvens'; slot: 'morning' | 'evening' }
 	| { kind: 'open-day-plan'; iso: string; weekKey: string }
-	| { kind: 'open-week-plan' }
+	| { kind: 'open-week-plan'; weekKey: string }
 	| { kind: 'open-month-plan'; monthKey: string }
 	| { kind: 'navigate'; href: string };
 

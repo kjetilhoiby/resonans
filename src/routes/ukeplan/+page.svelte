@@ -8,6 +8,7 @@
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import FlowSheet from '$lib/components/flows/FlowSheet.svelte';
 	import { FLOWS } from '$lib/flows/registry';
+	import type { FlowContext } from '$lib/flows/types';
 	import { finishNavMetric, startNavMetric } from '$lib/client/nav-metrics';
 	import MetricCard from '$lib/components/visualizations/MetricCard.svelte';
 	import { groupChecklistItems, activityEmoji, sortByTime, sortByStatus, formatItemTime, stripTimeFromText, type GroupedChecklistEntry } from '$lib/utils/checklist-group';
@@ -239,8 +240,9 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 	let nudgeFlowCompleted = $state(false);
 	let dayCloseFlowOpen = $state(false);
 	let dayCloseDecisions = $state<Record<string, 'carryover' | 'unsolved'>>({});
-	let weekReviewChatOpen = $state(false);
-	let weekPlanChatOpen = $state(false);
+	let weekPlanFlowOpen = $state(false);
+	let weekPlanFlowContext = $state<FlowContext>({});
+	let openingWeekPlanFlow = $state(false);
 	let weekPlanJustCompleted = $state(false);
 	let foodChatOpen = $state(false);
 	let foodChatItemText = $state('');
@@ -385,17 +387,14 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 	const hasPreviousWeekContext = $derived(hasCarryovers || !!data.previousWeekSummary.note || !!data.previousWeekSummary.reflection);
 
 	const _now = new Date();
-	const _isSunday = _now.getDay() === 0;
 	const _isAfter18 = _now.getHours() >= 18;
 
 	const weekIsPlanned = $derived(!!data.weekNote || (weekChecklistState?.items.length ?? 0) > 0);
-	const weekIsClosed = $derived(!!data.reflection);
 	const dayIsPlanned = $derived(!!selectedDayHeadline);
 
 	const showPlanWeek = $derived(!weekIsPlanned); // TODO: restore condition: hasPreviousWeekContext && !weekIsPlanned
 	const showPlanDay = $derived(!dayIsPlanned);
 	const showCloseDay = $derived(_isAfter18 && hasOpenDayItems);
-	const showCloseWeek = $derived(_isSunday && !weekIsClosed);
 	const nudgeTrack = nudgeTrackFromQuery;
 	const nudgeEventId = nudgeEventIdFromQuery;
 
@@ -1427,34 +1426,87 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 		if (andPlanNext) await planNextDayFromClose();
 	}
 
-	function buildWeekPlanSystemPrompt() {
-		const parts: string[] = [
-			`Du er en planleggingsassistent som hjelper brukeren planlegge uke ${data.week.week}.`,
-			`Jobb-instruksjon: hjelp brukeren sette konkrete ukesmål forankret i de overordnede målene. Still ett spørsmål av gangen. Vær kort og direkte.`
-		];
-		if (data.longTermGoals.length > 0) {
-			const goalLines = data.longTermGoals.map((g) => {
-				const deadline = g.targetDate ? ` (frist: ${new Date(g.targetDate).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short', year: 'numeric' })})` : '';
-				return `"${g.title}" (ID: ${g.id})${deadline}`;
-			}).join('; ');
-			parts.push(`Overordnede mål: ${goalLines}.`);
-			parts.push(`INSTRUKSJON: For hvert ukesmål brukeren godkjenner, kall create_task med riktig goalId fra listen over. Kall check_similar_tasks først. Oppsummer til slutt hvilke oppgaver som ble opprettet.`);
-		} else {
-			parts.push(`INSTRUKSJON: Brukeren har ingen overordnede mål ennå. Hjelp dem sette konkrete ukesmål. For hvert mål de godkjenner, kall create_task (bruk getOrCreatePlanningGoal eller be dem opprette et mål først).`);
-		}
-		if (data.previousWeekSummary.note) parts.push(`Forrige ukes notat: "${data.previousWeekSummary.note}".`);
-		if (data.previousWeekSummary.reflection) parts.push(`Læring fra forrige uke: "${data.previousWeekSummary.reflection}".`);
-		const carryovers = [...data.previousWeekSummary.carryoverItems, ...data.previousWeekSummary.incompleteTasks];
-		if (carryovers.length > 0) parts.push(`Overliggere fra forrige uke: ${carryovers.join('; ')}.`);
-		if (data.weekTasks.length > 0) parts.push(`Allerede planlagte ukesmål: ${data.weekTasks.map((t) => t.title).join('; ')}.`);
-		return parts.join(' ');
-	}
+	async function openWeekPlanFlow() {
+		openingWeekPlanFlow = true;
+		try {
+			const res = await fetch(`/api/week-plan/context?week=${encodeURIComponent(data.week.dashedKey)}`);
+			if (!res.ok) return;
+			const ctx = await res.json() as {
+				currentWeekKey: string;
+				currentWeekNo: number;
+				prevWeekKey: string;
+				prevWeekNo: number;
+				note: string;
+				reflection: string;
+				uncheckedItems: Array<{ id: string; text: string }>;
+				weekGoals: Array<{ title: string; currentValue: number; target: { value: number; unit: string }; trackingMetric: string }>;
+				recurringTasks: string[];
+			};
 
-	function buildWeekPlanPrefill() {
-		const hasContext = data.previousWeekSummary.note || data.previousWeekSummary.carryoverItems.length > 0 || data.weekTasks.length > 0;
-		return hasContext
-			? `Planlegg uke ${data.week.week}`
-			: `Planlegg uke ${data.week.week} — ingen data fra forrige uke`;
+			const goalLines = ctx.weekGoals.map((g) => {
+				const pct = g.target.value > 0 ? Math.round((g.currentValue / g.target.value) * 100) : null;
+				const pctStr = pct !== null ? ` (${pct}%)` : '';
+				return `- ${g.title}: ${g.currentValue} av ${g.target.value} ${g.target.unit}${pctStr}`;
+			}).join('\n');
+
+			const longTermLines = data.longTermGoals.map((g) => {
+				const deadline = g.targetDate ? ` (frist: ${new Date(g.targetDate).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short', year: 'numeric' })})` : '';
+				return `- "${g.title}"${deadline}`;
+			}).join('\n');
+
+			const refleksjonPrompt = [
+				`Brukeren er klar for å planlegge uke ${ctx.currentWeekNo}.`,
+				`\nForrige uke (uke ${ctx.prevWeekNo}):`,
+				ctx.note ? `Ukesnotat: "${ctx.note}"` : '',
+				ctx.reflection ? `Refleksjon: "${ctx.reflection}"` : '',
+				goalLines ? `\nMål:\n${goalLines}` : '',
+				'\nGi en kort, varm oppsummering av forrige uke (2-3 setninger). Avslutt med ett åpent spørsmål om hva som gikk bra og hva som var utfordrende.'
+			].filter(Boolean).join('\n');
+
+			const maalPrompt = [
+				`Du hjelper brukeren å sette ukesmål for uke ${ctx.currentWeekNo}.`,
+				goalLines ? `\nForrige ukes mål og fremgang (uke ${ctx.prevWeekNo}):\n${goalLines}` : '\nIngen mål fra forrige uke.',
+				longTermLines ? `\nOverordnede mål å forankre i:\n${longTermLines}` : '',
+				'\nSkille mellom mål og oppgaver:',
+				'- UKESMÅL: kun for ting med målbar fremdrift mot et tall (f.eks. løping i km, antall treningsøkter, vekt i kg). Hold listen kort.',
+				'- UKESOPPGAVER: konkrete ting du gjør 1–7 ganger denne uka (handle, planleggingsprat, sjekke noe, møte osv.).',
+				'\nGå gjennom forrige ukes mål. Foreslå om hvert bør videreføres eller justeres. Kom gjerne med nye oppgaver basert på refleksjonen.',
+				'\nAvslutt alltid med begge listene (utelat seksjoner som ikke passer):',
+				'\nUKESMÅL:',
+				'- [tittel]: [verdi] [enhet]',
+				'\nUKESOPPGAVER:',
+				'- [tittel]: [antall] [enhet]'
+			].filter(Boolean).join('\n');
+
+			const ukeshistoriePrompt = [
+				`Du hjelper brukeren å skrive en kort ukesbeskrivelse for uke ${ctx.currentWeekNo}.`,
+				`Spør: "Hva handler uke ${ctx.currentWeekNo} om for deg?"`,
+				'Basert på svaret, skriv et kort utkast (1-2 setninger). Vær personlig og konkret.',
+				'La brukeren justere utkastet via chat. Avslutt med det endelige notatet.'
+			].join('\n');
+
+			weekPlanFlowContext = {
+				weekKey: ctx.currentWeekKey,
+				openItems: ctx.uncheckedItems,
+				weekTasks: ctx.recurringTasks,
+				prevWeekData: {
+					weekNo: ctx.prevWeekNo,
+					note: ctx.note,
+					reflection: ctx.reflection,
+					uncheckedItems: ctx.uncheckedItems,
+					weekGoals: ctx.weekGoals,
+					recurringTasks: ctx.recurringTasks
+				},
+				systemPrompts: {
+					refleksjon: refleksjonPrompt,
+					maal: maalPrompt,
+					ukeshistorie: ukeshistoriePrompt
+				}
+			};
+			weekPlanFlowOpen = true;
+		} finally {
+			openingWeekPlanFlow = false;
+		}
 	}
 
 	function clampPct(value: number): number {
@@ -1478,30 +1530,6 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 			leftLabel: `${progress.currentWeight} kg`,
 			rightLabel: `mål ${progress.targetWeight} kg`
 		};
-	}
-
-	function buildWeekReviewSystemPrompt() {
-		const weekGoals = data.weekTasks.map((t) => t.title);
-		const completedDayItems = Object.values(dayChecklistsState)
-			.flatMap((c) => c.items.filter((i) => i.checked).map((i) => i.text))
-			.slice(0, 15);
-		const openDayItems = Object.values(dayChecklistsState)
-			.flatMap((c) => c.items.filter((i) => !i.checked).map((i) => i.text))
-			.slice(0, 10);
-
-		const parts: string[] = [
-			`Du er en refleksjonsassistent som hjelper brukeren avslutte uke ${data.week.week}.`,
-			`Struktur: (1) feire det som gikk bra, (2) identifisere læring, (3) bestemme hva som tas med videre. Still ett spørsmål av gangen. Start med ukens høydepunkter.`
-		];
-		if (weekGoals.length > 0) parts.push(`Ukesmål: ${weekGoals.join('; ')}.`);
-		if (completedDayItems.length > 0) parts.push(`Fullførte dagspunkter: ${completedDayItems.join('; ')}.`);
-		if (openDayItems.length > 0) parts.push(`Åpne/uløste punkter: ${openDayItems.join('; ')}.`);
-		if (data.weekNote) parts.push(`Ukesnotat: "${data.weekNote}".`);
-		return parts.join(' ');
-	}
-
-	function buildWeekReviewPrefill() {
-		return `Avslutt uke ${data.week.week}`;
 	}
 
 	async function ensureWeekChecklist() {
@@ -1647,12 +1675,12 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 		</div>
 	</header>
 
-	{#if showPlanWeek || showPlanDay || showCloseDay || showCloseWeek || hasCarryovers}
+	{#if showPlanWeek || showPlanDay || showCloseDay || hasCarryovers}
 	<div class="wp-action-ribbon">
 		{#if showPlanWeek}
-			<button class="wp-flow-btn wp-flow-btn--week" type="button" onclick={() => (weekPlanChatOpen = true)}>
-				<span class="wp-flow-btn-icon">🗓️</span>
-				<span class="wp-flow-btn-label">Planlegg uka</span>
+			<button class="wp-flow-btn wp-flow-btn--week" type="button" onclick={() => void openWeekPlanFlow()} disabled={openingWeekPlanFlow}>
+				<span class="wp-flow-btn-icon">{openingWeekPlanFlow ? '⏳' : '🗓️'}</span>
+				<span class="wp-flow-btn-label">{openingWeekPlanFlow ? 'Henter …' : 'Planlegg uka'}</span>
 			</button>
 		{/if}
 		{#if hasCarryovers && !weekIsPlanned}
@@ -1673,12 +1701,6 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 				<span class="wp-flow-btn-icon">{dayCloseBusy ? '⏳' : '✅'}</span>
 				<span class="wp-flow-btn-label">{dayCloseBusy ? 'Jobber …' : 'Avslutt dag'}</span>
 				<span class="wp-flow-btn-sub">{smartDayLabel(selectedDayIso)}</span>
-			</button>
-		{/if}
-		{#if showCloseWeek}
-			<button class="wp-flow-btn wp-flow-btn--week wp-flow-btn--close" type="button" onclick={() => (weekReviewChatOpen = true)}>
-				<span class="wp-flow-btn-icon">🪞</span>
-				<span class="wp-flow-btn-label">Avslutt uka</span>
 			</button>
 		{/if}
 	</div>
@@ -2347,37 +2369,16 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 	/>
 {/if}
 
-{#if weekPlanChatOpen}
+{#if weekPlanFlowOpen}
 	<FlowSheet
 		flow={FLOWS['planning_week_plan']}
-		context={{
-			systemPrompts: { chat: buildWeekPlanSystemPrompt() },
-			prompts: { chat: buildWeekPlanPrefill() }
-		}}
-		onclose={() => (weekPlanChatOpen = false)}
-		oncomplete={async (fd) => {
-			weekPlanChatOpen = false;
+		context={weekPlanFlowContext}
+		onclose={() => (weekPlanFlowOpen = false)}
+		oncomplete={async () => {
+			weekPlanFlowOpen = false;
 			weekPlanJustCompleted = true;
-			if (fd.conversationId && weekChecklistState?.id) {
-				await fetch(`/api/checklists/${weekChecklistState.id}`, {
-					method: 'PATCH',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ planConversationId: fd.conversationId })
-				});
-			}
 			await invalidateAll();
 		}}
-	/>
-{/if}
-
-{#if weekReviewChatOpen}
-	<FlowSheet
-		flow={FLOWS['planning_week_review']}
-		context={{
-			systemPrompts: { chat: buildWeekReviewSystemPrompt() },
-			prompts: { chat: buildWeekReviewPrefill() }
-		}}
-		onclose={() => (weekReviewChatOpen = false)}
 	/>
 {/if}
 
