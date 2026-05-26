@@ -59,6 +59,14 @@
 			createdAt: string;
 			confidence: 'explicit' | 'inferred';
 		}>;
+		checklistItems: Array<{
+			itemId: string;
+			checklistId: string;
+			text: string;
+			checked: boolean;
+			createdAt: string;
+			confidence: 'explicit' | 'inferred';
+		}>;
 	}
 
 	let mentions = $state<MentionsPayload | null>(null);
@@ -88,7 +96,8 @@
 		| { kind: 'task'; id: string; ts: number; title: string; status: string; source: 'direct' | 'mention'; confidence?: 'explicit' | 'inferred' }
 		| { kind: 'conversation'; id: string; ts: number; title: string }
 		| { kind: 'event'; id: string; ts: number; title: string; groupName: string | null; future: boolean }
-		| { kind: 'message-mention'; id: string; ts: number; conversationId: string; snippet: string; role: string; confidence: 'explicit' | 'inferred' };
+		| { kind: 'message-mention'; id: string; ts: number; conversationId: string; snippet: string; role: string; confidence: 'explicit' | 'inferred' }
+		| { kind: 'checklist-mention'; id: string; ts: number; text: string; checked: boolean; confidence: 'explicit' | 'inferred' };
 
 	const feed = $derived.by<FeedItem[]>(() => {
 		const items: FeedItem[] = [];
@@ -172,6 +181,16 @@
 					confidence: msg.confidence
 				});
 			}
+			for (const ci of mentions.checklistItems) {
+				items.push({
+					kind: 'checklist-mention',
+					id: ci.itemId,
+					ts: new Date(ci.createdAt).getTime(),
+					text: ci.text,
+					checked: ci.checked,
+					confidence: ci.confidence
+				});
+			}
 		}
 
 		items.sort((a, b) => b.ts - a.ts);
@@ -190,10 +209,13 @@
 			mentions: ['message-mention']
 		};
 		const allowed = new Set(map[activeFilter]);
-		// "Nevnt" inkluderer også oppgave-omtaler (source=mention)
+		// "Nevnt" inkluderer også oppgave- og checklist-omtaler (source=mention)
 		if (activeFilter === 'mentions') {
 			return feed.filter(
-				(it) => it.kind === 'message-mention' || (it.kind === 'task' && it.source === 'mention')
+				(it) =>
+					it.kind === 'message-mention' ||
+					it.kind === 'checklist-mention' ||
+					(it.kind === 'task' && it.source === 'mention')
 			);
 		}
 		return feed.filter((it) => allowed.has(it.kind));
@@ -207,7 +229,10 @@
 		tasks: feed.filter((i) => i.kind === 'task').length,
 		events: feed.filter((i) => i.kind === 'event').length,
 		mentions: feed.filter(
-			(i) => i.kind === 'message-mention' || (i.kind === 'task' && i.source === 'mention')
+			(i) =>
+				i.kind === 'message-mention' ||
+				i.kind === 'checklist-mention' ||
+				(i.kind === 'task' && i.source === 'mention')
 		).length
 	});
 
@@ -309,6 +334,7 @@
 						{:else if item.kind === 'conversation'}💬
 						{:else if item.kind === 'event'}📅
 						{:else if item.kind === 'message-mention'}@
+						{:else if item.kind === 'checklist-mention'}@
 						{/if}
 					</div>
 					<div class="body">
@@ -340,6 +366,12 @@
 							<a href={`/samtaler/${item.conversationId}`} class="snippet-link">{item.snippet}</a>
 							<span class="meta">
 								Nevnt i chat · {item.role === 'user' ? 'du' : 'Resonans'} · {relativeDate(item.ts)}
+								{#if item.confidence === 'inferred'}<span class="badge">utledet</span>{/if}
+							</span>
+						{:else if item.kind === 'checklist-mention'}
+							<p class="text" class:checked={item.checked}><TaskTitle title={item.text} /></p>
+							<span class="meta">
+								Nevnt i dagsliste · {item.checked ? 'utført' : 'åpen'} · {relativeDate(item.ts)}
 								{#if item.confidence === 'inferred'}<span class="badge">utledet</span>{/if}
 							</span>
 						{/if}
@@ -452,6 +484,7 @@
 	}
 	.item .body { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
 	.item .text { margin: 0; color: #d8d8d8; line-height: 1.4; }
+	.item .text.checked { color: #777; text-decoration: line-through; }
 	.item .sub { margin: 0; color: #aaa; font-size: 0.85rem; }
 	.item .meta {
 		font-size: 0.72rem;
