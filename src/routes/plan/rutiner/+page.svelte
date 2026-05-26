@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Button, Input } from '$lib/components/ui';
+	import TaskTitle from '$lib/components/ui/TaskTitle.svelte';
 	import { invalidateAll } from '$app/navigation';
 	import type { PageData } from './$types';
 
@@ -301,7 +302,7 @@
 												>
 													{item.checked ? '✓' : ''}
 												</button>
-												<span class="text">{item.text}</span>
+												<span class="text"><TaskTitle title={item.text} /></span>
 											</li>
 										{/each}
 									</ul>

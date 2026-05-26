@@ -1924,7 +1924,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 									onpointerleave={handleContextPressEnd}
 									onclick={() => handleEditPress(weekChecklistId, group.item)}
 								>
-									<span class="wp-check-text" class:checked={group.item.checked} class:skipped={!!group.item.skippedAt}>{group.item.text}</span>
+									<span class="wp-check-text" class:checked={group.item.checked} class:skipped={!!group.item.skippedAt}><TaskTitle title={group.item.text} /></span>
 								</button>
 							{/if}
 							<div class="wp-check-row-right">
@@ -1999,7 +1999,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 												onpointerleave={handleContextPressEnd}
 												onclick={() => handleEditPress(weekChecklistId, child)}
 											>
-												<span class="wp-check-text" class:checked={child.checked} class:skipped={!!child.skippedAt}>{child.text}</span>
+												<span class="wp-check-text" class:checked={child.checked} class:skipped={!!child.skippedAt}><TaskTitle title={child.text} /></span>
 											</button>
 											<button type="button" class="wp-check-toggle" onclick={() => void toggleChecklistItem(weekChecklistId, child.id, !child.checked)} aria-label="Toggle">
 												<span class="wp-check-circle" class:checked={child.checked} class:skipped={!!child.skippedAt}>{child.skippedAt ? '✕' : child.checked ? '✓' : ''}</span>
@@ -2195,7 +2195,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 									{#if item.metadata?.timeHour !== undefined}
 										<span class="wp-time-badge">{formatItemTime(item.metadata.timeHour, item.metadata.timeMinute ?? 0)}</span>
 									{/if}
-									<span class="wp-check-text" class:checked={item.checked} class:skipped={!!item.skippedAt}>{item.metadata?.timeHour !== undefined ? stripTimeFromText(item.text) : item.text}</span>
+									<span class="wp-check-text" class:checked={item.checked} class:skipped={!!item.skippedAt}><TaskTitle title={item.metadata?.timeHour !== undefined ? stripTimeFromText(item.text) : item.text} /></span>
 									{#if item.metadata?.linkedTaskId}
 										<span class="wp-intent-badge" title="Koblet til ukesmål: {item.metadata.linkedTaskTitle ?? ''}">
 											{item.metadata.autoChecked ? '⚡' : '🔗'}
@@ -2258,7 +2258,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 												{#if child.metadata?.timeHour !== undefined}
 													<span class="wp-time-badge">{formatItemTime(child.metadata.timeHour, child.metadata.timeMinute ?? 0)}</span>
 												{/if}
-												<span class="wp-check-text" class:checked={child.checked} class:skipped={!!child.skippedAt}>{child.metadata?.timeHour !== undefined ? stripTimeFromText(child.text) : child.text}</span>
+												<span class="wp-check-text" class:checked={child.checked} class:skipped={!!child.skippedAt}><TaskTitle title={child.metadata?.timeHour !== undefined ? stripTimeFromText(child.text) : child.text} /></span>
 											</button>
 											<button type="button" class="wp-check-toggle" onclick={() => void toggleChecklistItem(selectedDayChecklist.id, child.id, !child.checked)} aria-label="Toggle">
 												<span class="wp-check-circle" class:checked={child.checked} class:skipped={!!child.skippedAt}>{child.skippedAt ? '✕' : child.checked ? '✓' : ''}</span>

@@ -545,6 +545,9 @@ export const checklistItems = pgTable('checklist_items', {
 		activityType?: string;
 		durationMinutes?: number;
 		distanceKm?: number;
+		// Meal linking — for "middag: kjøttkaker"-prefiks på dag-items
+		linkedMealId?: string;
+		mealType?: 'breakfast' | 'lunch' | 'dinner' | 'snack';
 		// Wake-time intent
 		wakeTargetHour?: number;
 		wakeTargetMinute?: number;

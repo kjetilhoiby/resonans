@@ -8,6 +8,8 @@ import { parseChecklistItemIntent, findLinkedTask, stripTimeFromText } from '$li
 import { getOrCreatePlanningGoal, createTask } from '$lib/server/goals';
 import { enqueueBackgroundJob } from '$lib/server/background-jobs';
 import { parseTaskDateTime } from '$lib/server/date-time-parser';
+import { detectMealPrefix } from '$lib/domains/food';
+import { findOrCreateMealId } from '$lib/server/task-intent-parser';
 
 /** Extract week keys from a checklist context string like "week:2026-W16:day:2026-04-13" */
 function extractWeekKeys(context: string | null): { dashedKey: string; compactKey: string } | null {
@@ -111,7 +113,18 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 				? { timeHour: intent.timeHour, timeMinute: intent.timeMinute ?? 0 }
 				: {};
 
-			if (intent.matched) {
+			// Meal-prefix på dag-item — peker rett inn i mat-universet. Lagrer
+			// mealType + linkedMealId i metadata (oppretter meals-rad ved første
+			// referanse). Tar presedens over aktivitets-/task-linking.
+			const meal = detectMealPrefix(parsed.label);
+			if (meal) {
+				const mealId = await findOrCreateMealId(userId, meal.cleanTitle);
+				itemMetadata = {
+					...timeFields,
+					mealType: meal.mealType,
+					...(mealId && { linkedMealId: mealId })
+				};
+			} else if (intent.matched) {
 				const linkedTask = await findLinkedTask({
 					userId,
 					itemText: parsed.label,
