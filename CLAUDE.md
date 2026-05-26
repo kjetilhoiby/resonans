@@ -173,6 +173,7 @@ samme grunnstruktur — `AppPage` → `PageHeader` → eget innhold.
 - **Schema endringer auto-syncer på prod-deploy.** `scripts/sync-db-schema.mjs` kjører `drizzle-kit push --force` som del av Vercel buildCommand når `VERCEL_ENV=production`. Det betyr: rediger `schema.ts`, commit, push til `main` → DB følger automatisk med. Ingen manuell `npm run db:push` etter vibe-koding.
 - Sikkerhetsnett: scriptet hopper over preview/dev-deploys, og `SKIP_DB_SYNC=1` deaktiverer hele steget.
 - Migration-filer i `drizzle/` er valgfrie nå — kjør `npm run db:generate` hvis du vil ha en sjekka-inn audit trail for endringen (anbefalt for destruktive endringer), men det er ikke påkrevd for at deploy skal funke.
+- **Data-migreringer som må følge kode-endringer** (f.eks. `UPDATE` for å rename enum-verdier) skal legges inn i `DATA_MIGRATIONS`-arrayen i `scripts/sync-db-schema.mjs` slik at de kjører automatisk etter schema-sync på prod-deploy. Hver statement må være idempotent (bruk `WHERE` eller `ON CONFLICT`). Ikke lag standalone `apply-migration-XXXX.mjs`-scripts som krever manuell kjøring.
 - Lokalt: `npm run db:push` (eller `npm run db:sync` som bruker samme wrapper som deploy).
 - Primary keys: `uuid` with `defaultRandom()` for most tables; `text` for `users.id` (supports `'default-user'`).
 - Timestamps: always `timestamp` columns named `created_at` / `updated_at` with `defaultNow()`.
