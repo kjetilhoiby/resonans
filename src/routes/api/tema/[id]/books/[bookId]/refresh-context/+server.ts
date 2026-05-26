@@ -4,6 +4,7 @@ import { db } from '$lib/db';
 import { books, themes } from '$lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { enqueueBackgroundJob, processDueBackgroundJobs } from '$lib/server/background-jobs';
+import { runInBackground } from '$lib/server/run-in-background';
 
 // POST — re-trigger context collection for an existing book
 export const POST: RequestHandler = async ({ params, locals }) => {
@@ -36,7 +37,7 @@ export const POST: RequestHandler = async ({ params, locals }) => {
 		priority: 1
 	});
 
-	void processDueBackgroundJobs({ limit: 1, workerId: `book-refresh-${book.id}` });
+	runInBackground(processDueBackgroundJobs({ limit: 1, workerId: `book-refresh-${book.id}` }));
 
 	return json(updated);
 };
