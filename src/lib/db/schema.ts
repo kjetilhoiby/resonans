@@ -576,6 +576,33 @@ export const checklistItems = pgTable('checklist_items', {
 	idxProject: index('checklist_items_project_idx').on(table.projectId)
 }));
 
+// Rutiner — templates for gjentakende grupper av små handlinger
+// (lørdag morgen-vask, hverdagskveld-prep, daglig morgenrutine, …)
+// Instansieres som checklists med context='routine:<id>:YYYY-MM-DD' når dagen kommer.
+export const routineDefinitions = pgTable('routine_definitions', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	title: text('title').notNull(),                  // "Lørdag morgen", "Hverdagskveld", "Morgen"
+	emoji: text('emoji').notNull().default('🔁'),
+	slot: text('slot').notNull(),                     // 'morning' | 'afternoon' | 'evening' | 'flex'
+	daysOfWeek: jsonb('days_of_week').$type<number[]>().notNull().default([]),  // [0..6], 0=søndag
+	items: jsonb('items').$type<Array<{
+		text: string;
+		estimateMinutes?: number;
+		sortOrder?: number;
+	}>>().notNull().default([]),
+	active: boolean('active').notNull().default(true),
+	sortOrder: integer('sort_order').notNull().default(0),
+	metadata: jsonb('metadata').$type<{
+		season?: 'spring' | 'summer' | 'autumn' | 'winter';
+		themeId?: string;
+	}>().default({}).notNull(),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	idxUser: index('routine_definitions_user_idx').on(table.userId, table.active)
+}));
+
 // ─── Food Domain ───────────────────────────────────────────────
 // Oppskrifter — gjenbrukbare matretter med ingredienser, instruksjoner og valgfri næringsestimat
 export const recipes = pgTable('recipes', {
