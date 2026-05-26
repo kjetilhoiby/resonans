@@ -837,11 +837,11 @@ const tools = [
 				type: 'function' as const,
 				function: {
 					name: 'query_food',
-					description: 'Hent mat-data: oppskrifter, ukemeny, pantry/fryserinnhold. queryType: recipes (oppskriftliste), meal_plan (krever weekContext "YYYY-W##"), pantry (kan filtreres på location), expiring_soon (varer som går ut, krever days).',
+					description: 'Hent mat-data: måltider, ukemeny, pantry/fryserinnhold. queryType: meals (måltidsliste), meal_plan (krever weekContext "YYYY-W##"), pantry (kan filtreres på location), expiring_soon (varer som går ut, krever days).',
 					parameters: {
 						type: 'object',
 						properties: {
-							queryType: { type: 'string', enum: ['recipes', 'meal_plan', 'pantry', 'expiring_soon'] },
+							queryType: { type: 'string', enum: ['meals', 'meal_plan', 'pantry', 'expiring_soon'] },
 							weekContext: { type: 'string', description: 'ISO-uke, f.eks. "2026-W17"' },
 							location: { type: 'string', enum: ['pantry', 'fridge', 'freezer'] },
 							days: { type: 'number' },
@@ -855,7 +855,7 @@ const tools = [
 				type: 'function' as const,
 				function: {
 					name: 'manage_recipe',
-					description: 'Opprett, oppdater eller slett en oppskrift. action=create krever title og ingredients. action=update/delete krever id.',
+					description: 'Opprett, oppdater eller slett et måltid (navn pluss valgfri oppskrift: ingredienser, instruksjoner, bilde). action=create krever title; ingredients er valgfritt. action=update/delete krever id.',
 					parameters: {
 						type: 'object',
 						properties: {
@@ -892,7 +892,7 @@ const tools = [
 				type: 'function' as const,
 				function: {
 					name: 'manage_meal_plan',
-					description: 'Legg til, oppdater eller fjern en oppføring i ukemenyen. Knytt til en oppskrift via recipeId, eller bruk customTitle for fritekst (f.eks. "frossenpizza", "rester").',
+					description: 'Legg til, oppdater eller fjern en oppføring i ukemenyen. Knytt til et lagret måltid via mealId, eller send mealName for å auto-opprette en måltidsrad (kun navn) som senere kan utvides med oppskrift via manage_recipe.',
 					parameters: {
 						type: 'object',
 						properties: {
@@ -901,8 +901,8 @@ const tools = [
 							weekContext: { type: 'string', description: 'ISO-uke, f.eks. "2026-W17"' },
 							date: { type: 'string', description: 'YYYY-MM-DD' },
 							mealType: { type: 'string', enum: ['breakfast', 'lunch', 'dinner', 'snack'] },
-							recipeId: { type: 'string' },
-							customTitle: { type: 'string' },
+							mealId: { type: 'string' },
+							mealName: { type: 'string', description: 'Navn på måltid; auto-opprettes hvis ikke mealId er gitt' },
 							notes: { type: 'string' },
 							servings: { type: 'number' },
 							photoUrl: { type: 'string' }
@@ -937,7 +937,7 @@ const tools = [
 				type: 'function' as const,
 				function: {
 					name: 'generate_shopping_list',
-					description: 'Bygg handleliste fra ukemenyens oppskrifter, minus ingredienser som finnes i pantry. Returnerer dedupliserte items klare for å bli lagt inn i en sjekkliste.',
+					description: 'Bygg handleliste fra ukemenyens måltider, minus ingredienser som finnes i pantry. Returnerer dedupliserte items klare for å bli lagt inn i en sjekkliste.',
 					parameters: {
 						type: 'object',
 						properties: {

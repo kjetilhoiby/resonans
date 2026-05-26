@@ -604,8 +604,12 @@ export const routineDefinitions = pgTable('routine_definitions', {
 }));
 
 // ─── Food Domain ───────────────────────────────────────────────
-// Oppskrifter — gjenbrukbare matretter med ingredienser, instruksjoner og valgfri næringsestimat
-export const recipes = pgTable('recipes', {
+// Måltider — byggeklossen i mat-universet. Først og fremst et navn ("kjøttkaker"),
+// med valgfri oppskrift, bilde, tags og næringsestimat. Tasks, mealPlans og
+// (senere) Oda-kvitteringer peker hit.
+// MERK: Underliggende SQL-tabell heter fortsatt `recipes` for å unngå
+// destruktiv DB-rename. Schemaet aliaser bare i kode.
+export const meals = pgTable('recipes', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
 	title: text('title').notNull(),
@@ -637,14 +641,17 @@ export const recipes = pgTable('recipes', {
 	idxRecipesUser: index('recipes_user_idx').on(table.userId, table.createdAt)
 }));
 
-// Måltidsplaner — koblingen mellom dato/måltidstype og oppskrift eller fri tekst
+// Måltidsplaner — kobler dato/slot til et måltid (kanonisk pool). Tasks peker
+// hit via metadata.linkedMealPlanId; "override per dag" oppdaterer raden.
 export const mealPlans = pgTable('meal_plans', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
 	weekContext: text('week_context').notNull(), // f.eks. '2026-W17'
 	date: date('date').notNull(),
 	mealType: text('meal_type').notNull(), // 'breakfast' | 'lunch' | 'dinner' | 'snack'
-	recipeId: uuid('recipe_id').references((): AnyPgColumn => recipes.id, { onDelete: 'set null' }),
+	mealId: uuid('recipe_id').references((): AnyPgColumn => meals.id, { onDelete: 'set null' }),
+	// @deprecated — Behold for back-compat med eksisterende data. Nytt kode
+	// auto-oppretter heller en meals-rad og setter mealId.
 	customTitle: text('custom_title'),
 	notes: text('notes'),
 	servings: integer('servings').default(2).notNull(),

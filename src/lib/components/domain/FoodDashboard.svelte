@@ -5,12 +5,13 @@
 		id: string;
 		date: string;
 		mealType: MealType;
-		recipeId: string | null;
-		customTitle: string | null;
+		mealId: string | null;
+		// @deprecated — eldre rader kan ha customTitle satt; ny kode bruker mealId
+		customTitle?: string | null;
 		notes: string | null;
 		servings: number;
 		photoUrl: string | null;
-		recipeTitle?: string | null;
+		mealTitle?: string | null;
 	}
 
 	interface PantryRow {
@@ -84,7 +85,7 @@
 								<li class="meal">
 									<span class="emoji">{MEAL_TYPES[plan.mealType].emoji}</span>
 									<span class="title">
-										{plan.recipeTitle ?? plan.customTitle ?? '—'}
+										{plan.mealTitle ?? plan.customTitle ?? '—'}
 									</span>
 									{#if plan.servings && plan.servings !== 2}
 										<span class="servings">×{plan.servings}</span>

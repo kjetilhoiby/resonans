@@ -92,12 +92,12 @@ export interface FoodDashboardData {
 		id: string;
 		date: string;
 		mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack';
-		recipeId: string | null;
-		customTitle: string | null;
+		mealId: string | null;
+		customTitle?: string | null;
 		notes: string | null;
 		servings: number;
 		photoUrl: string | null;
-		recipeTitle?: string | null;
+		mealTitle?: string | null;
 	}>;
 	pantry: Array<{
 		id: string;

@@ -1,17 +1,17 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
-import { recipes } from '$lib/db/schema';
+import { meals } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 
 export const GET: RequestHandler = async ({ params, locals }) => {
 	const userId = locals.userId;
 	const [row] = await db
 		.select()
-		.from(recipes)
-		.where(and(eq(recipes.id, params.id), eq(recipes.userId, userId)));
+		.from(meals)
+		.where(and(eq(meals.id, params.id), eq(meals.userId, userId)));
 	if (!row) return json({ error: 'Not found' }, { status: 404 });
-	return json({ recipe: row });
+	return json({ meal: row });
 };
 
 export const PATCH: RequestHandler = async ({ params, request, locals }) => {
@@ -36,21 +36,21 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 	}
 
 	const [updated] = await db
-		.update(recipes)
+		.update(meals)
 		.set(updates)
-		.where(and(eq(recipes.id, params.id), eq(recipes.userId, userId)))
+		.where(and(eq(meals.id, params.id), eq(meals.userId, userId)))
 		.returning();
 
 	if (!updated) return json({ error: 'Not found' }, { status: 404 });
-	return json({ recipe: updated });
+	return json({ meal: updated });
 };
 
 export const DELETE: RequestHandler = async ({ params, locals }) => {
 	const userId = locals.userId;
 	const deleted = await db
-		.delete(recipes)
-		.where(and(eq(recipes.id, params.id), eq(recipes.userId, userId)))
-		.returning({ id: recipes.id });
+		.delete(meals)
+		.where(and(eq(meals.id, params.id), eq(meals.userId, userId)))
+		.returning({ id: meals.id });
 	if (deleted.length === 0) return json({ error: 'Not found' }, { status: 404 });
 	return json({ deleted: true });
 };

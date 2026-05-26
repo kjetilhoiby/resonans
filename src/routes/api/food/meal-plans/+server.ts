@@ -35,8 +35,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			weekContext: body.weekContext,
 			date: body.date,
 			mealType: body.mealType,
-			recipeId: body.recipeId ?? null,
-			customTitle: body.customTitle ?? null,
+			mealId: body.mealId ?? null,
 			notes: body.notes ?? null,
 			servings: body.servings ?? 2,
 			photoUrl: body.photoUrl ?? null
@@ -53,7 +52,7 @@ export const PATCH: RequestHandler = async ({ request, locals }) => {
 	if (!body.id) return json({ error: 'id required' }, { status: 400 });
 
 	const updates: Record<string, unknown> = {};
-	for (const key of ['date', 'mealType', 'recipeId', 'customTitle', 'notes', 'servings', 'photoUrl']) {
+	for (const key of ['date', 'mealType', 'mealId', 'notes', 'servings', 'photoUrl']) {
 		if (key in body) updates[key] = body[key];
 	}
 
