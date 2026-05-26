@@ -1,6 +1,7 @@
 import { and, eq, ilike } from 'drizzle-orm';
 import { db } from '$lib/db';
 import { goals, recipes, tasks } from '$lib/db/schema';
+import { detectMealPrefix, type MealType } from '$lib/domains/food';
 import { parseTaskIntentWithLlmFallback } from '$lib/server/intent-llm-fallback';
 
 export type ActivityType =
@@ -15,7 +16,7 @@ export type ActivityType =
 	| 'skiing'
 	| 'other';
 
-export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
+export type { MealType };
 
 export type TaskIntent = {
 	frequency: 'daily' | 'weekly' | 'monthly' | 'once';
@@ -103,31 +104,6 @@ function parseActivityType(lower: string): ActivityType | undefined {
 	return undefined;
 }
 
-// Maps Norwegian meal prefix to canonical MealType. Used by parseMealIntent
-// to detect "middag: fiskegrateng"-style task titles.
-const MEAL_PREFIX_MAP: Record<string, MealType> = {
-	middag: 'dinner',
-	frokost: 'breakfast',
-	lunsj: 'lunch',
-	kveldsmat: 'snack',
-	mellommåltid: 'snack',
-	mellommaltid: 'snack',
-	snack: 'snack'
-};
-
-const MEAL_PREFIX_PATTERN = /^(middag|frokost|lunsj|kveldsmat|mellommåltid|mellommaltid|snack)\s*[:：]\s*(.+?)\s*$/i;
-
-function parseMealIntent(text: string): { mealType: MealType; mealTitle: string } | null {
-	const match = text.match(MEAL_PREFIX_PATTERN);
-	if (!match) return null;
-	const prefix = match[1].toLowerCase();
-	const title = match[2].trim();
-	if (!title) return null;
-	const mealType = MEAL_PREFIX_MAP[prefix];
-	if (!mealType) return null;
-	return { mealType, mealTitle: title };
-}
-
 function escapeLikePattern(value: string): string {
 	return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 }
@@ -202,8 +178,8 @@ export function parseTaskIntent(rawText: string): ParsedTaskIntent {
 	// --- Meal prefix: "middag: fiskegrateng" → pointer into food universe ---
 	// Runs first so activity/duration parsing below doesn't claim words like
 	// "20 minutter" out of a dish description.
-	const mealIntent = parseMealIntent(text);
-	if (mealIntent) {
+	const meal = detectMealPrefix(text);
+	if (meal) {
 		return {
 			matched: true,
 			parser: 'rule',
@@ -213,8 +189,8 @@ export function parseTaskIntent(rawText: string): ParsedTaskIntent {
 				unit: 'måltid',
 				period: 'day',
 				comparator: '>=',
-				mealType: mealIntent.mealType,
-				mealTitle: mealIntent.mealTitle,
+				mealType: meal.mealType,
+				mealTitle: meal.cleanTitle,
 				sourceText: text
 			}
 		};

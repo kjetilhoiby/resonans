@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { FamilyDashboardData } from '$lib/client/dashboard-cache';
 	import PersonEditSheet from './PersonEditSheet.svelte';
+	import TaskTitle from '$lib/components/ui/TaskTitle.svelte';
 
 	interface Props {
 		person: FamilyDashboardData['persons'][number];
@@ -319,7 +320,7 @@
 							{#if item.description}<p class="sub">{item.description}</p>{/if}
 							<span class="meta">Mål · {relativeDate(item.ts)}</span>
 						{:else if item.kind === 'task'}
-							<a href={`/oppgaver/${item.id}`} class="title-link">{item.title}</a>
+							<a href={`/oppgaver/${item.id}`} class="title-link"><TaskTitle title={item.title} /></a>
 							<span class="meta">
 								Oppgave · {item.status === 'active' ? 'aktiv' : item.status} · {relativeDate(item.ts)}
 								{#if item.source === 'mention'}

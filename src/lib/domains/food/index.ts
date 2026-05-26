@@ -78,6 +78,36 @@ export function detectMealType(input: string): MealType | null {
   return null;
 }
 
+// Norske måltids-prefiks brukt i task-titler, f.eks. "middag: fiskegrateng".
+// Holdes som single source of truth slik at både server-parser
+// (task-intent-parser) og UI-rendering (TaskTitle) ser samme prefiks.
+export const MEAL_PREFIX_MAP: Record<string, MealType> = {
+  middag: 'dinner',
+  frokost: 'breakfast',
+  lunsj: 'lunch',
+  kveldsmat: 'snack',
+  mellommåltid: 'snack',
+  mellommaltid: 'snack',
+  snack: 'snack'
+};
+
+export const MEAL_PREFIX_PATTERN = /^(middag|frokost|lunsj|kveldsmat|mellommåltid|mellommaltid|snack)\s*[:：]\s*(.+?)\s*$/i;
+
+export function detectMealPrefix(title: string): {
+  mealType: MealType;
+  emoji: string;
+  cleanTitle: string;
+} | null {
+  if (!title) return null;
+  const match = title.match(MEAL_PREFIX_PATTERN);
+  if (!match) return null;
+  const cleanTitle = match[2].trim();
+  if (!cleanTitle) return null;
+  const mealType = MEAL_PREFIX_MAP[match[1].toLowerCase()];
+  if (!mealType) return null;
+  return { mealType, emoji: MEAL_TYPES[mealType].emoji, cleanTitle };
+}
+
 export function detectFoodCategory(input: string): FoodCategory | null {
   for (const [category, pattern] of Object.entries(FOOD_CATEGORY_TRIGGERS)) {
     if (pattern.test(input)) {

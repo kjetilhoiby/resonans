@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { AppPage } from '$lib/components/ui';
 	import ProjectCard from '$lib/components/composed/ProjectCard.svelte';
+	import TaskTitle from '$lib/components/ui/TaskTitle.svelte';
 	import FlowSheet from '$lib/components/flows/FlowSheet.svelte';
 	import { FLOWS } from '$lib/flows/registry';
 	import type { PageData } from './$types';
@@ -203,7 +204,7 @@
 					<div class="task-item">
 						<div class="task-dot"></div>
 						<div class="task-body">
-							<div class="task-title">{task.title}</div>
+							<div class="task-title"><TaskTitle title={task.title} /></div>
 							{#if task.projectId}
 								{@const proj = data.projects.find((p) => p.id === task.projectId)}
 								{#if proj}
