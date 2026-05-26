@@ -421,26 +421,28 @@
 
 	let refreshingContext = $state(false);
 	let refreshContextError = $state('');
+	let lastRefreshAction = $state<'rekicked' | 'requeued' | null>(null);
 
 	async function refreshContext(bookId: string) {
 		if (refreshingContext) return;
 		refreshingContext = true;
 		refreshContextError = '';
+		lastRefreshAction = null;
 		try {
 			const res = await fetch(`/api/tema/${themeId}/books/${bookId}/refresh-context`, {
 				method: 'POST'
 			});
 			if (!res.ok) {
-				const data = await res.json().catch(() => ({}));
-				refreshContextError = data?.error === 'already_pending'
-					? 'Kontekstinnsamling pågår allerede.'
-					: 'Klarte ikke å starte kontekstinnsamling.';
+				refreshContextError = 'Klarte ikke å starte kontekstinnsamling.';
 				return;
 			}
-			const updated: Book = await res.json();
+			const updated: Book & { action?: 'rekicked' | 'requeued' } = await res.json();
+			lastRefreshAction = updated.action ?? null;
 			if (selectedBook?.id === bookId) selectedBook = updated;
 			books = books.map((b) => (b.id === bookId ? updated : b));
 			void pollContextStatus(bookId);
+			// auto-dismiss the action hint after 6s
+			setTimeout(() => { lastRefreshAction = null; }, 6000);
 		} catch {
 			refreshContextError = 'Nettverksfeil — prøv igjen.';
 		} finally {
@@ -1597,6 +1599,31 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 						{/if}
 						{#if env?.jobError}
 							<p class="bk-ctx-error">Feil: {env.jobError}</p>
+						{/if}
+						<div class="bk-ctx-progress-actions">
+							<button
+								type="button"
+								class="bk-ctx-refresh"
+								disabled={refreshingContext}
+								onclick={() => refreshContext(selectedBook!.id)}
+								title={env?.jobStatus === 'queued' ? 'Tving start (i tilfelle jobben sitter i kø)' : 'Kick worker / start på nytt'}
+							>
+								{#if refreshingContext}
+									⏳ Sender…
+								{:else if env?.jobStatus === 'queued'}
+									↻ Tving start
+								{:else}
+									↻ Hent på nytt
+								{/if}
+							</button>
+							{#if lastRefreshAction === 'rekicked'}
+								<span class="bk-ctx-refresh-hint">Worker kicket — venter på at den starter…</span>
+							{:else if lastRefreshAction === 'requeued'}
+								<span class="bk-ctx-refresh-hint">Ny jobb lagt i kø.</span>
+							{/if}
+						</div>
+						{#if refreshContextError}
+							<p class="bk-ctx-error">{refreshContextError}</p>
 						{/if}
 					</div>
 				{:else if selectedBook.contextStatus === 'none'}
@@ -3128,4 +3155,14 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 	.bk-ctx-progress-sources li.err .bk-ctx-src-icon { background: #2e1818; color: #b56868; }
 	.bk-ctx-src-name { color: inherit; }
 	.bk-ctx-src-stat { color: #666; font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+	.bk-ctx-progress-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		flex-wrap: wrap;
+		padding-top: 0.5rem;
+		border-top: 1px solid #1f1f28;
+	}
+	.bk-ctx-progress-actions .bk-ctx-refresh { margin-left: 0; }
+	.bk-ctx-refresh-hint { color: #888; font-size: 0.78rem; }
 </style>
