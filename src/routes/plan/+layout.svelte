@@ -6,7 +6,8 @@
 
 	const tabs = [
 		{ href: '/plan/mal', label: 'Mål', icon: '◎' },
-		{ href: '/plan/oppgaver', label: 'Oppgaver', icon: '🗂' }
+		{ href: '/plan/oppgaver', label: 'Oppgaver', icon: '🗂' },
+		{ href: '/plan/rutiner', label: 'Rutiner', icon: '🔁' }
 	];
 </script>
 

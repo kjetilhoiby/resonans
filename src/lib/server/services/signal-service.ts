@@ -519,14 +519,14 @@ async function produceHomePlanningReliability14d(userId: string, now: Date) {
 	return reliability;
 }
 
-async function produceHomeRoutineAdherence7d(userId: string, now: Date) {
+async function produceRoutineAdherence7d(userId: string, now: Date) {
 	const windowStart = daysAgo(now, 7);
 
 	await ensureSignalContract({
-		signalType: 'home_routine_adherence_7d',
+		signalType: 'routine_adherence_7d',
 		ownerDomain: 'home',
 		allowedConsumerDomains: ['home', 'health', 'relationship'],
-		description: 'Andel av items i routine-checklists siste 7 dager som er hakket av. Måler om faste rutiner faktisk gjennomføres — god indikator på overskudd/underskudd.'
+		description: 'Andel av items i routine-checklists siste 7 dager som er hakket av (på tvers av egenpleie, trening, hus, familie). God indikator på overskudd/underskudd. NB: lagt under ownerDomain=home av schema-begrensninger, ikke fordi rutiner er hus-spesifikke.'
 	});
 
 	const rows = await db.execute(sql`
@@ -556,7 +556,7 @@ async function produceHomeRoutineAdherence7d(userId: string, now: Date) {
 	const band = adherence >= 80 ? 'high' : adherence >= 60 ? 'medium' : adherence >= 40 ? 'low' : 'very_low';
 
 	await upsertDomainSignal({
-		signalType: 'home_routine_adherence_7d',
+		signalType: 'routine_adherence_7d',
 		ownerDomain: 'home',
 		userId,
 		valueNumber: adherence,
@@ -914,7 +914,7 @@ export async function runDomainSignalProducers(now: Date = new Date()) {
 		economicsBudgetPressure7d: 0,
 		homeOverdueSharedTasks7d: 0,
 		homePlanningReliability14d: 0,
-		homeRoutineAdherence7d: 0,
+		routineAdherence7d: 0,
 		relationshipCoordinationReadinessToday: 0,
 		relationshipLogisticsStressIndex14d: 0,
 		familyBirthdayUpcoming7d: 0,
@@ -956,10 +956,10 @@ export async function runDomainSignalProducers(now: Date = new Date()) {
 			produced += 1;
 			producerBreakdown.homePlanningReliability14d += 1;
 
-			const routineAdherence7d = await produceHomeRoutineAdherence7d(user.id, now);
+			const routineAdherence7d = await produceRoutineAdherence7d(user.id, now);
 			if (routineAdherence7d !== null) {
 				produced += 1;
-				producerBreakdown.homeRoutineAdherence7d += 1;
+				producerBreakdown.routineAdherence7d += 1;
 			}
 
 			if (user.partnerUserId) {

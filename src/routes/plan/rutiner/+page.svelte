@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, PageHeader, Button, Input } from '$lib/components/ui';
+	import { Button, Input } from '$lib/components/ui';
 	import { invalidateAll } from '$app/navigation';
 	import type { PageData } from './$types';
 
@@ -20,6 +20,25 @@
 		items: RoutineItem[];
 		active: boolean;
 		sortOrder: number;
+	}
+
+	interface TodaysItem {
+		id: string;
+		text: string;
+		checked: boolean;
+		sortOrder: number;
+		estimateMinutes: number | null;
+	}
+
+	interface TodaysRoutine {
+		definitionId: string;
+		title: string;
+		emoji: string;
+		slot: Slot;
+		checklistId: string;
+		date: string;
+		completedAt: string | null;
+		items: TodaysItem[];
 	}
 
 	let { data }: { data: PageData } = $props();
@@ -192,57 +211,150 @@
 		}
 		return groups;
 	});
+
+	const todaysBySlot = $derived.by(() => {
+		const groups: Record<Slot, TodaysRoutine[]> = { morning: [], afternoon: [], evening: [], flex: [] };
+		for (const r of (data.todaysRoutines ?? []) as TodaysRoutine[]) groups[r.slot].push(r);
+		return groups;
+	});
+
+	const SLOT_WINDOWS: Record<Slot, [number, number]> = {
+		morning: [4, 12],
+		afternoon: [12, 17],
+		evening: [17, 24],
+		flex: [0, 24]
+	};
+
+	function currentHour(): number {
+		try {
+			const h = new Intl.DateTimeFormat('en-GB', {
+				timeZone: 'Europe/Oslo',
+				hour: '2-digit',
+				hour12: false
+			}).format(new Date());
+			return parseInt(h, 10);
+		} catch {
+			return new Date().getHours();
+		}
+	}
+
+	function isSlotActive(slot: Slot, hour: number): boolean {
+		const [start, end] = SLOT_WINDOWS[slot];
+		return hour >= start && hour < end;
+	}
+
+	const hour = $derived(currentHour());
+
+	let pendingItem = $state<string | null>(null);
+
+	async function toggleItem(routine: TodaysRoutine, item: TodaysItem) {
+		if (pendingItem === item.id) return;
+		pendingItem = item.id;
+		try {
+			const res = await fetch(`/api/checklists/${routine.checklistId}/items/${item.id}`, {
+				method: 'PATCH',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ checked: !item.checked })
+			});
+			if (!res.ok) {
+				console.error('Kunne ikke oppdatere item:', await res.text());
+				return;
+			}
+			await invalidateAll();
+		} finally {
+			pendingItem = null;
+		}
+	}
 </script>
 
 <svelte:head>
 	<title>Rutiner · Resonans</title>
 </svelte:head>
 
-<AppPage>
-	<PageHeader title="🔁 Rutiner" titleHref="/" titleLabel="Tilbake til forsiden" />
-
-	<div class="intro">
-		<p>
-			Rutiner er faste, gjentakende grupper av små handlinger knyttet til ukedag og tidspunkt på døgnet.
-			Dagens rutiner materialiseres automatisk som sjekklister du kan hake av — direkte på hjemskjermen.
-		</p>
-		<Button onClick={() => newRoutineDraft('morning')}>Ny rutine</Button>
-	</div>
-
-	{#each SLOT_ORDER as slot (slot)}
-		<section class="slot-section">
-			<h2>{SLOT_LABEL[slot]}</h2>
-			{#if grouped[slot].length === 0}
-				<p class="empty">Ingen rutiner i denne luken.</p>
-			{:else}
-				<ul class="routine-list">
-					{#each grouped[slot] as r (r.id)}
-						<li class="routine-card">
-							<header>
-								<span class="emoji">{r.emoji}</span>
-								<div class="meta">
-									<h3>{r.title}</h3>
-									<p class="days">{formatDays(r.daysOfWeek)} · {r.items.length} punkt{r.items.length === 1 ? '' : 'er'}</p>
-								</div>
-								<div class="actions">
-									<Button variant="ghost" onClick={() => editRoutine(r)}>Rediger</Button>
-									<Button variant="ghost" onClick={() => remove(r.id)} disabled={deleting === r.id}>
-										{deleting === r.id ? '…' : 'Slett'}
-									</Button>
-								</div>
-							</header>
-							<ol class="items">
-								{#each r.items as it (it.text + it.sortOrder)}
-									<li>{it.text}</li>
-								{/each}
-							</ol>
-						</li>
-					{/each}
-				</ul>
-			{/if}
+<div class="rutiner">
+	{#if (data.todaysRoutines ?? []).length > 0}
+		<section class="today">
+			<header class="today-head">
+				<h2>I dag</h2>
+				<span class="today-date">{(data.todaysRoutines as TodaysRoutine[])[0].date}</span>
+			</header>
+			<div class="today-grid">
+				{#each SLOT_ORDER as slot (slot)}
+					{#if todaysBySlot[slot].length > 0}
+						<div class="today-column" class:active={isSlotActive(slot, hour)}>
+							<h3>{SLOT_LABEL[slot]}</h3>
+							{#each todaysBySlot[slot] as routine (routine.definitionId)}
+								<article class="today-card">
+									<header>
+										<span class="emoji">{routine.emoji}</span>
+										<span class="title">{routine.title}</span>
+									</header>
+									<ul class="checks">
+										{#each routine.items as item (item.id)}
+											<li class:checked={item.checked}>
+												<button
+													type="button"
+													class="check"
+													onclick={() => toggleItem(routine, item)}
+													disabled={pendingItem === item.id}
+													aria-label={item.checked ? `Avhak ${item.text}` : `Hak av ${item.text}`}
+												>
+													{item.checked ? '✓' : ''}
+												</button>
+												<span class="text">{item.text}</span>
+											</li>
+										{/each}
+									</ul>
+								</article>
+							{/each}
+						</div>
+					{/if}
+				{/each}
+			</div>
 		</section>
-	{/each}
-</AppPage>
+	{/if}
+
+	<section class="manage">
+		<header class="manage-head">
+			<h2>Mine rutiner</h2>
+			<Button onClick={() => newRoutineDraft('morning')}>Ny rutine</Button>
+		</header>
+
+		{#each SLOT_ORDER as slot (slot)}
+			<section class="slot-section">
+				<h3>{SLOT_LABEL[slot]}</h3>
+				{#if grouped[slot].length === 0}
+					<p class="empty">Ingen rutiner i denne luken.</p>
+				{:else}
+					<ul class="routine-list">
+						{#each grouped[slot] as r (r.id)}
+							<li class="routine-card">
+								<header>
+									<span class="emoji">{r.emoji}</span>
+									<div class="meta">
+										<h4>{r.title}</h4>
+										<p class="days">{formatDays(r.daysOfWeek)} · {r.items.length} punkt{r.items.length === 1 ? '' : 'er'}</p>
+									</div>
+									<div class="actions">
+										<Button variant="ghost" onClick={() => editRoutine(r)}>Rediger</Button>
+										<Button variant="ghost" onClick={() => remove(r.id)} disabled={deleting === r.id}>
+											{deleting === r.id ? '…' : 'Slett'}
+										</Button>
+									</div>
+								</header>
+								<ol class="items">
+									{#each r.items as it (it.text + it.sortOrder)}
+										<li>{it.text}</li>
+									{/each}
+								</ol>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</section>
+		{/each}
+	</section>
+</div>
 
 {#if editing}
 	<div class="modal-backdrop" role="dialog" aria-modal="true">
@@ -320,25 +432,149 @@
 {/if}
 
 <style>
-	.intro {
+	.rutiner {
 		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: 16px;
+		flex-direction: column;
+		gap: 28px;
+		padding: 16px 0 32px;
+	}
+
+	/* I dag */
+	.today {
 		padding: 0 16px;
 	}
-	.intro p {
+	.today-head {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		margin-bottom: 0.75rem;
+	}
+	.today-head h2 {
 		margin: 0;
-		max-width: 60ch;
-		color: var(--text-secondary, #aaa);
-		font-size: 0.95rem;
-		line-height: 1.5;
+		font-size: 1.1rem;
+		color: var(--text-primary, #fff);
+	}
+	.today-date {
+		font-size: 0.85rem;
+		color: var(--text-secondary, #888);
+	}
+	.today-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+		gap: 12px;
+	}
+	.today-column {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		opacity: 0.65;
+		transition: opacity 0.2s;
+	}
+	.today-column.active {
+		opacity: 1;
+	}
+	.today-column h3 {
+		margin: 0;
+		font-size: 0.78rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--text-secondary, #888);
+	}
+	.today-column.active h3 {
+		color: var(--accent-primary, #7c8ef5);
+	}
+	.today-card {
+		background: var(--bg-secondary, #1a1a1a);
+		border: 1px solid var(--border, #2a2a2a);
+		border-radius: 12px;
+		padding: 10px 12px;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+	.today-card > header {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.today-card .emoji {
+		font-size: 1.05rem;
+	}
+	.today-card .title {
+		font-weight: 600;
+		font-size: 0.92rem;
+		color: var(--text-primary, #fff);
+	}
+	.checks {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+	.checks li {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		font-size: 0.88rem;
+		color: var(--text-primary, #fff);
+	}
+	.checks li.checked .text {
+		text-decoration: line-through;
+		opacity: 0.55;
+	}
+	.check {
+		flex-shrink: 0;
+		width: 20px;
+		height: 20px;
+		border-radius: 5px;
+		border: 1.5px solid var(--border, #444);
+		background: transparent;
+		color: var(--accent-primary, #7c8ef5);
+		font-size: 0.75rem;
+		font-weight: 700;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+		padding: 0;
+	}
+	.check:disabled { opacity: 0.5; cursor: default; }
+	.checks li.checked .check {
+		background: var(--accent-primary, #7c8ef5);
+		color: #fff;
+		border-color: transparent;
+	}
+
+	/* Mine rutiner */
+	.manage-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 0 16px;
+		margin-bottom: 12px;
+	}
+	.manage-head h2 {
+		margin: 0;
+		font-size: 1.1rem;
+		color: var(--text-primary, #fff);
 	}
 	.slot-section {
 		padding: 0 16px;
+		margin-bottom: 20px;
 	}
-	.slot-section h2 {
-		margin: 0 0 0.6rem;
+	.slot-section h3 {
+		margin: 0 0 0.5rem;
+		font-size: 0.78rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--text-secondary, #888);
+	}
+	.meta h4 {
+		margin: 0;
 		font-size: 1rem;
 		color: var(--text-primary, #fff);
 	}
