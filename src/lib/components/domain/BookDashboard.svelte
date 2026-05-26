@@ -25,9 +25,31 @@
 		conversationId: string | null;
 		contextStatus: 'none' | 'pending' | 'partial' | 'ready';
 		contextPack: Record<string, unknown> | null;
+		contextProgress?: BookContextProgressEnvelope | null;
 		startedAt: string | null;
 		finishedAt: string | null;
 		createdAt: string;
+	}
+
+	interface BookContextProgressEnvelope {
+		jobStatus: 'queued' | 'running' | 'retry' | 'completed' | 'failed' | 'canceled';
+		jobError: string | null;
+		progress: BookContextProgress | null;
+	}
+
+	interface BookContextProgress {
+		stepIndex: number;
+		totalSteps: number;
+		label: string;
+		sourcesCompleted: number;
+		sourcesTotal: number;
+		sources: {
+			openLibrary?: { ok: boolean; worksFound?: number; error?: string };
+			criticReviews?: { ok: boolean; count?: number; error?: string };
+			readerSources?: { ok: boolean; count?: number; error?: string };
+			goodreads?: { ok: boolean; reviewCount?: number; error?: string };
+		};
+		updatedAt: string;
 	}
 
 	interface WordTimestamp {
@@ -382,20 +404,47 @@
 	}
 
 	async function pollContextStatus(bookId: string) {
-		const MAX_POLLS = 20;
+		const MAX_POLLS = 40;
 		for (let i = 0; i < MAX_POLLS; i++) {
-			await new Promise((r) => setTimeout(r, 3000));
+			await new Promise((r) => setTimeout(r, 2500));
 			if (!selectedBook || selectedBook.id !== bookId) return;
 			try {
 				const res = await fetch(`/api/tema/${themeId}/books/${bookId}`);
 				if (!res.ok) return;
 				const updated: Book = await res.json();
-				if (updated.contextStatus !== 'pending') {
-					selectedBook = updated;
-					books = books.map((b) => (b.id === bookId ? updated : b));
-					return;
-				}
+				selectedBook = updated;
+				books = books.map((b) => (b.id === bookId ? { ...b, ...updated } : b));
+				if (updated.contextStatus !== 'pending') return;
 			} catch { return; }
+		}
+	}
+
+	let refreshingContext = $state(false);
+	let refreshContextError = $state('');
+
+	async function refreshContext(bookId: string) {
+		if (refreshingContext) return;
+		refreshingContext = true;
+		refreshContextError = '';
+		try {
+			const res = await fetch(`/api/tema/${themeId}/books/${bookId}/refresh-context`, {
+				method: 'POST'
+			});
+			if (!res.ok) {
+				const data = await res.json().catch(() => ({}));
+				refreshContextError = data?.error === 'already_pending'
+					? 'Kontekstinnsamling pågår allerede.'
+					: 'Klarte ikke å starte kontekstinnsamling.';
+				return;
+			}
+			const updated: Book = await res.json();
+			if (selectedBook?.id === bookId) selectedBook = updated;
+			books = books.map((b) => (b.id === bookId ? updated : b));
+			void pollContextStatus(bookId);
+		} catch {
+			refreshContextError = 'Nettverksfeil — prøv igjen.';
+		} finally {
+			refreshingContext = false;
 		}
 	}
 
@@ -1040,7 +1089,10 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 						{statusEmoji(b.status)} {statusLabel(b.status)}
 					</span>
 					{#if b.contextStatus === 'pending'}
-						<span class="bk-ctx-badge pending">⏳ Samler kontekst…</span>
+						{@const p = b.contextProgress?.progress}
+						<span class="bk-ctx-badge pending" title={p?.label ?? 'Samler kontekst'}>
+							⏳ Samler kontekst{#if p}… {p.stepIndex}/{p.totalSteps}{:else}…{/if}
+						</span>
 					{:else if b.contextStatus === 'ready'}
 						<span class="bk-ctx-badge ready">✦ Kontekst klar</span>
 					{/if}
@@ -1492,9 +1544,76 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 			}}
 			<div class="bk-ctx-panel">
 				{#if selectedBook.contextStatus === 'pending'}
-					<div class="bk-ctx-empty">⏳ Henter kontekst fra eksterne kilder — vent litt og last siden på nytt.</div>
+					{@const env = selectedBook.contextProgress}
+					{@const p = env?.progress ?? null}
+					{@const pct = p ? Math.round((p.stepIndex / p.totalSteps) * 100) : (env?.jobStatus === 'queued' ? 5 : 10)}
+					<div class="bk-ctx-progress">
+						<div class="bk-ctx-progress-header">
+							<span class="bk-ctx-progress-label">
+								{#if env?.jobStatus === 'queued' && !p}
+									⏳ Venter i kø…
+								{:else if p}
+									⏳ {p.label}
+								{:else}
+									⏳ Starter kontekstinnsamling…
+								{/if}
+							</span>
+							<span class="bk-ctx-progress-pct">{pct}%</span>
+						</div>
+						<div class="bk-ctx-progress-bar">
+							<div class="bk-ctx-progress-fill" style="width: {pct}%"></div>
+						</div>
+						{#if p}
+							<ul class="bk-ctx-progress-sources">
+								<li class:done={p.sources.openLibrary} class:err={p.sources.openLibrary?.ok === false}>
+									<span class="bk-ctx-src-icon">{p.sources.openLibrary ? (p.sources.openLibrary.ok ? '✓' : '✗') : '◯'}</span>
+									<span class="bk-ctx-src-name">OpenLibrary</span>
+									{#if p.sources.openLibrary?.ok}
+										<span class="bk-ctx-src-stat">{p.sources.openLibrary.worksFound ?? 0} verk</span>
+									{/if}
+								</li>
+								<li class:done={p.sources.criticReviews} class:err={p.sources.criticReviews?.ok === false}>
+									<span class="bk-ctx-src-icon">{p.sources.criticReviews ? (p.sources.criticReviews.ok ? '✓' : '✗') : '◯'}</span>
+									<span class="bk-ctx-src-name">Norske anmeldelser</span>
+									{#if p.sources.criticReviews?.ok}
+										<span class="bk-ctx-src-stat">{p.sources.criticReviews.count ?? 0} treff</span>
+									{/if}
+								</li>
+								<li class:done={p.sources.readerSources} class:err={p.sources.readerSources?.ok === false}>
+									<span class="bk-ctx-src-icon">{p.sources.readerSources ? (p.sources.readerSources.ok ? '✓' : '✗') : '◯'}</span>
+									<span class="bk-ctx-src-name">Lesermottak</span>
+									{#if p.sources.readerSources?.ok}
+										<span class="bk-ctx-src-stat">{p.sources.readerSources.count ?? 0} treff</span>
+									{/if}
+								</li>
+								<li class:done={p.sources.goodreads} class:err={p.sources.goodreads?.ok === false}>
+									<span class="bk-ctx-src-icon">{p.sources.goodreads ? (p.sources.goodreads.ok ? '✓' : '✗') : '◯'}</span>
+									<span class="bk-ctx-src-name">Goodreads</span>
+									{#if p.sources.goodreads?.ok}
+										<span class="bk-ctx-src-stat">{p.sources.goodreads.reviewCount ?? 0} omtaler</span>
+									{/if}
+								</li>
+							</ul>
+						{/if}
+						{#if env?.jobError}
+							<p class="bk-ctx-error">Feil: {env.jobError}</p>
+						{/if}
+					</div>
 				{:else if selectedBook.contextStatus === 'none'}
-					<div class="bk-ctx-empty">Ingen kontekst er hentet for denne boken ennå.</div>
+					<div class="bk-ctx-empty">
+						<p>Ingen kontekst er hentet for denne boken ennå.</p>
+						<button
+							type="button"
+							class="bk-ctx-refresh primary"
+							disabled={refreshingContext}
+							onclick={() => refreshContext(selectedBook!.id)}
+						>
+							{refreshingContext ? '⏳ Starter…' : '✨ Hent kontekst'}
+						</button>
+						{#if refreshContextError}
+							<p class="bk-ctx-error">{refreshContextError}</p>
+						{/if}
+					</div>
 				{:else}
 					{#if pack.sources}
 						<div class="bk-ctx-meta">
@@ -1502,7 +1621,19 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 								{selectedBook.contextStatus === 'ready' ? '✦ Klar' : '◐ Delvis'}
 							</span>
 							<span class="bk-ctx-collected">Samlet {new Date(pack.sources.collectedAt).toLocaleString('no-NO')}</span>
+							<button
+								type="button"
+								class="bk-ctx-refresh"
+								disabled={refreshingContext}
+								onclick={() => refreshContext(selectedBook!.id)}
+								title={selectedBook.contextStatus === 'partial' ? 'Prøv å hente manglende kilder på nytt' : 'Hent kontekst på nytt'}
+							>
+								{refreshingContext ? '⏳' : '↻'} Hent på nytt
+							</button>
 						</div>
+						{#if refreshContextError}
+							<p class="bk-ctx-error">{refreshContextError}</p>
+						{/if}
 					{/if}
 
 					{#if pack.metadata?.year || pack.metadata?.genre}
@@ -2903,4 +3034,98 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 	.bk-ctx-debug { opacity: 0.85; }
 	.bk-ctx-debug .bk-ctx-title { color: #888; }
 	.bk-ctx-muted { color: #666; font-size: 0.82rem; }
+	.bk-ctx-empty { display: flex; flex-direction: column; align-items: center; gap: 0.85rem; }
+	.bk-ctx-empty p { margin: 0; }
+	.bk-ctx-refresh {
+		background: #1a1a22;
+		color: #c0c0d0;
+		border: 1px solid #2a2a35;
+		padding: 5px 12px;
+		border-radius: 8px;
+		font-size: 0.8rem;
+		cursor: pointer;
+		margin-left: auto;
+		transition: background 0.15s, border-color 0.15s;
+	}
+	.bk-ctx-refresh:hover:not(:disabled) { background: #22222c; border-color: #3a3a48; }
+	.bk-ctx-refresh:disabled { opacity: 0.55; cursor: wait; }
+	.bk-ctx-refresh.primary {
+		background: #14202c;
+		color: #88a8ff;
+		border-color: #2a4a6a;
+		padding: 8px 16px;
+		font-size: 0.9rem;
+		margin-left: 0;
+	}
+	.bk-ctx-refresh.primary:hover:not(:disabled) { background: #18283a; border-color: #3a5a7a; }
+	.bk-ctx-error { color: #b56868; font-size: 0.82rem; margin: 0; }
+
+	.bk-ctx-progress {
+		background: #14141c;
+		border: 1px solid #22222c;
+		border-radius: 10px;
+		padding: 1rem 1.1rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.85rem;
+	}
+	.bk-ctx-progress-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
+		gap: 0.75rem;
+	}
+	.bk-ctx-progress-label { color: #d0d0e0; font-size: 0.92rem; }
+	.bk-ctx-progress-pct {
+		color: #88a8ff;
+		font-size: 0.85rem;
+		font-variant-numeric: tabular-nums;
+		font-weight: 600;
+	}
+	.bk-ctx-progress-bar {
+		height: 6px;
+		background: #1f1f28;
+		border-radius: 3px;
+		overflow: hidden;
+	}
+	.bk-ctx-progress-fill {
+		height: 100%;
+		background: linear-gradient(90deg, #4a78d0, #88a8ff);
+		transition: width 0.4s ease-out;
+	}
+	.bk-ctx-progress-sources {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+		border-top: 1px solid #1f1f28;
+		padding-top: 0.85rem;
+	}
+	.bk-ctx-progress-sources li {
+		display: grid;
+		grid-template-columns: 1.5rem 1fr auto;
+		gap: 0.6rem;
+		align-items: center;
+		font-size: 0.86rem;
+		color: #888;
+	}
+	.bk-ctx-progress-sources li.done { color: #c0c0d0; }
+	.bk-ctx-progress-sources li.err { color: #b58c8c; }
+	.bk-ctx-src-icon {
+		display: inline-flex;
+		justify-content: center;
+		align-items: center;
+		width: 1.4rem;
+		height: 1.4rem;
+		border-radius: 50%;
+		font-size: 0.78rem;
+		background: #1f1f28;
+		color: #666;
+	}
+	.bk-ctx-progress-sources li.done .bk-ctx-src-icon { background: #14302a; color: #48b581; }
+	.bk-ctx-progress-sources li.err .bk-ctx-src-icon { background: #2e1818; color: #b56868; }
+	.bk-ctx-src-name { color: inherit; }
+	.bk-ctx-src-stat { color: #666; font-size: 0.78rem; font-variant-numeric: tabular-nums; }
 </style>

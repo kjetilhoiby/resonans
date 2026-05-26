@@ -601,7 +601,8 @@ async function executeJob(job: any): Promise<Record<string, unknown>> {
 			const contextPack = await processBookContextCollectJob({
 				bookId: payload.bookId,
 				title: payload.title,
-				author: typeof payload.author === 'string' ? payload.author : null
+				author: typeof payload.author === 'string' ? payload.author : null,
+				jobId: typeof job.id === 'string' ? job.id : undefined
 			});
 
 			return { bookId: payload.bookId, contextPack };

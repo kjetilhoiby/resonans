@@ -1,8 +1,8 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
-import { books, bookClips, themes, bookProgressLog } from '$lib/db/schema';
-import { eq, and, asc } from 'drizzle-orm';
+import { books, bookClips, themes, bookProgressLog, backgroundJobs } from '$lib/db/schema';
+import { eq, and, asc, desc, sql } from 'drizzle-orm';
 
 // GET — book detail + clips
 export const GET: RequestHandler = async ({ params, locals }) => {
@@ -18,7 +18,37 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 	});
 	if (!book) return json({ error: 'Not found' }, { status: 404 });
 
-	return json(book);
+	// If context collection is in flight, attach the latest job progress
+	let contextProgress: unknown = null;
+	if (book.contextStatus === 'pending') {
+		const [latestJob] = await db
+			.select({
+				status: backgroundJobs.status,
+				result: backgroundJobs.result,
+				error: backgroundJobs.error,
+				updatedAt: backgroundJobs.updatedAt
+			})
+			.from(backgroundJobs)
+			.where(
+				and(
+					eq(backgroundJobs.type, 'book_context_collect'),
+					sql`${backgroundJobs.payload}->>'bookId' = ${params.bookId}`
+				)
+			)
+			.orderBy(desc(backgroundJobs.createdAt))
+			.limit(1);
+
+		if (latestJob) {
+			const result = (latestJob.result ?? {}) as { progress?: unknown };
+			contextProgress = {
+				jobStatus: latestJob.status,
+				jobError: latestJob.error,
+				progress: result.progress ?? null
+			};
+		}
+	}
+
+	return json({ ...book, contextProgress });
 };
 
 // PATCH — update progress, status, or context pack
