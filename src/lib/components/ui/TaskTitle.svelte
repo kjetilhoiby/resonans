@@ -1,6 +1,7 @@
 <!--
-  TaskTitle — viser en task-tittel med eventuelt måltids-ikon foran.
-  Strippe "middag:/frokost:/lunsj:/kveldsmat:"-prefiks når detektert.
+  TaskTitle — viser en task-tittel med tallerken-ikon foran når tittelen
+  er en måltids-task (middag:/frokost:/lunsj:/kveldsmat: ...). Stripper
+  prefiks fra det som vises.
 -->
 <script lang="ts">
 	import { detectMealPrefix } from '$lib/domains/food';
@@ -10,7 +11,7 @@
 </script>
 
 {#if meal}
-	<span class="meal-icon" aria-hidden="true">{meal.emoji}</span><span>{meal.cleanTitle}</span>
+	<span class="meal-icon" aria-hidden="true">🍽️</span><span>{meal.cleanTitle}</span>
 {:else}
 	{title}
 {/if}
