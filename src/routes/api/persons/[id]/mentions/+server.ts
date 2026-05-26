@@ -10,9 +10,10 @@ export const GET: RequestHandler = async ({ locals, params, url }) => {
 
 	const limit = Math.min(Number(url.searchParams.get('limit') ?? '50'), 200);
 
-	const [messageRows, taskRows] = await Promise.all([
+	const [messageRows, taskRows, checklistItemRows] = await Promise.all([
 		PersonMentionService.listMessageMentionsForPerson(userId, params.id, { limit }),
-		PersonMentionService.listTaskMentionsForPerson(userId, params.id, { limit })
+		PersonMentionService.listTaskMentionsForPerson(userId, params.id, { limit }),
+		PersonMentionService.listChecklistItemMentionsForPerson(userId, params.id, { limit })
 	]);
 
 	function buildSnippet(content: string): string {
@@ -37,6 +38,14 @@ export const GET: RequestHandler = async ({ locals, params, url }) => {
 			status: r.task.status,
 			frequency: r.task.frequency,
 			createdAt: r.task.createdAt,
+			confidence: r.mention.confidence
+		})),
+		checklistItems: checklistItemRows.map((r) => ({
+			itemId: r.item.id,
+			checklistId: r.item.checklistId,
+			text: r.item.text,
+			checked: r.item.checked,
+			createdAt: r.item.createdAt,
 			confidence: r.mention.confidence
 		}))
 	});

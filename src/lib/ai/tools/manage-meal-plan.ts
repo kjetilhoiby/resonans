@@ -1,14 +1,34 @@
 import { z } from 'zod';
 import { db } from '$lib/db';
-import { mealPlans } from '$lib/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { meals, mealPlans } from '$lib/db/schema';
+import { eq, and, ilike } from 'drizzle-orm';
+
+async function findOrCreateMealId(userId: string, name: string): Promise<string | null> {
+	const trimmed = name.trim();
+	if (!trimmed) return null;
+	const safe = trimmed.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+
+	const exact = await db
+		.select({ id: meals.id })
+		.from(meals)
+		.where(and(eq(meals.userId, userId), ilike(meals.title, safe)))
+		.limit(2);
+	if (exact.length === 1) return exact[0].id;
+
+	const [created] = await db
+		.insert(meals)
+		.values({ userId, title: trimmed })
+		.returning({ id: meals.id });
+	return created?.id ?? null;
+}
 
 export const manageMealPlanTool = {
 	name: 'manage_meal_plan',
 	description: `Add, update or remove a meal plan entry for a specific date and meal type.
 
-Use this to build or edit the user's weekly menu. Either link to a saved recipe via recipeId,
-or set customTitle for free-text entries (e.g. "frossenpizza", "rester fra i går").`,
+Use this to build or edit the user's weekly menu. Either link to a saved meal via mealId,
+or pass mealName to auto-create a lightweight meal row (name only — recipe details can
+be filled in later via manage_recipe).`,
 
 	parameters: z.object({
 		userId: z.string(),
@@ -17,8 +37,8 @@ or set customTitle for free-text entries (e.g. "frossenpizza", "rester fra i gå
 		weekContext: z.string().optional().describe('ISO week, e.g. "2026-W17"'),
 		date: z.string().optional().describe('YYYY-MM-DD'),
 		mealType: z.enum(['breakfast', 'lunch', 'dinner', 'snack']).optional(),
-		recipeId: z.string().uuid().nullable().optional(),
-		customTitle: z.string().optional(),
+		mealId: z.string().uuid().nullable().optional().describe('Link to an existing meal row'),
+		mealName: z.string().optional().describe('Name of meal; auto-creates a meal row if no mealId is given'),
 		notes: z.string().optional(),
 		servings: z.number().optional(),
 		photoUrl: z.string().optional()
@@ -31,16 +51,23 @@ or set customTitle for free-text entries (e.g. "frossenpizza", "rester fra i gå
 		weekContext?: string;
 		date?: string;
 		mealType?: 'breakfast' | 'lunch' | 'dinner' | 'snack';
-		recipeId?: string | null;
-		customTitle?: string;
+		mealId?: string | null;
+		mealName?: string;
 		notes?: string;
 		servings?: number;
 		photoUrl?: string;
 	}) => {
+		const resolveMealId = async (): Promise<string | null | undefined> => {
+			if (args.mealId !== undefined) return args.mealId;
+			if (args.mealName) return findOrCreateMealId(args.userId, args.mealName);
+			return undefined;
+		};
+
 		if (args.action === 'create') {
 			if (!args.weekContext || !args.date || !args.mealType) {
 				return { error: 'weekContext, date and mealType required for create' };
 			}
+			const mealId = (await resolveMealId()) ?? null;
 			const [created] = await db
 				.insert(mealPlans)
 				.values({
@@ -48,8 +75,7 @@ or set customTitle for free-text entries (e.g. "frossenpizza", "rester fra i gå
 					weekContext: args.weekContext,
 					date: args.date,
 					mealType: args.mealType,
-					recipeId: args.recipeId ?? null,
-					customTitle: args.customTitle,
+					mealId,
 					notes: args.notes,
 					servings: args.servings ?? 2,
 					photoUrl: args.photoUrl
@@ -63,8 +89,8 @@ or set customTitle for free-text entries (e.g. "frossenpizza", "rester fra i gå
 			const updates: Record<string, unknown> = {};
 			if (args.date !== undefined) updates.date = args.date;
 			if (args.mealType !== undefined) updates.mealType = args.mealType;
-			if (args.recipeId !== undefined) updates.recipeId = args.recipeId;
-			if (args.customTitle !== undefined) updates.customTitle = args.customTitle;
+			const resolved = await resolveMealId();
+			if (resolved !== undefined) updates.mealId = resolved;
 			if (args.notes !== undefined) updates.notes = args.notes;
 			if (args.servings !== undefined) updates.servings = args.servings;
 			if (args.photoUrl !== undefined) updates.photoUrl = args.photoUrl;

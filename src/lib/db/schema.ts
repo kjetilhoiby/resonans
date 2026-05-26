@@ -545,6 +545,9 @@ export const checklistItems = pgTable('checklist_items', {
 		activityType?: string;
 		durationMinutes?: number;
 		distanceKm?: number;
+		// Meal linking — for "middag: kjøttkaker"-prefiks på dag-items
+		linkedMealId?: string;
+		mealType?: 'breakfast' | 'lunch' | 'dinner' | 'snack';
 		// Wake-time intent
 		wakeTargetHour?: number;
 		wakeTargetMinute?: number;
@@ -604,8 +607,10 @@ export const routineDefinitions = pgTable('routine_definitions', {
 }));
 
 // ─── Food Domain ───────────────────────────────────────────────
-// Oppskrifter — gjenbrukbare matretter med ingredienser, instruksjoner og valgfri næringsestimat
-export const recipes = pgTable('recipes', {
+// Måltider — byggeklossen i mat-universet. Først og fremst et navn ("kjøttkaker"),
+// med valgfri oppskrift, bilde, tags og næringsestimat. Tasks, mealPlans og
+// (senere) Oda-kvitteringer peker hit.
+export const meals = pgTable('meals', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
 	title: text('title').notNull(),
@@ -634,18 +639,18 @@ export const recipes = pgTable('recipes', {
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
 }, (table) => ({
-	idxRecipesUser: index('recipes_user_idx').on(table.userId, table.createdAt)
+	idxMealsUser: index('meals_user_idx').on(table.userId, table.createdAt)
 }));
 
-// Måltidsplaner — koblingen mellom dato/måltidstype og oppskrift eller fri tekst
+// Måltidsplaner — kobler dato/slot til et måltid (kanonisk pool). Tasks peker
+// hit via metadata.linkedMealPlanId; "override per dag" oppdaterer raden.
 export const mealPlans = pgTable('meal_plans', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
 	weekContext: text('week_context').notNull(), // f.eks. '2026-W17'
 	date: date('date').notNull(),
 	mealType: text('meal_type').notNull(), // 'breakfast' | 'lunch' | 'dinner' | 'snack'
-	recipeId: uuid('recipe_id').references((): AnyPgColumn => recipes.id, { onDelete: 'set null' }),
-	customTitle: text('custom_title'),
+	mealId: uuid('meal_id').references((): AnyPgColumn => meals.id, { onDelete: 'set null' }),
 	notes: text('notes'),
 	servings: integer('servings').default(2).notNull(),
 	photoUrl: text('photo_url'), // Cloudinary-URL for "what we ate"
@@ -873,6 +878,20 @@ export const taskPersonMentions = pgTable('task_person_mentions', {
 }, (table) => ({
 	uniqMention: uniqueIndex('task_person_mentions_task_person_unique').on(table.taskId, table.personId),
 	idxPersonCreated: index('task_person_mentions_person_created_idx').on(table.personId, table.createdAt)
+}));
+
+// Indeks over hvilke personer som er nevnt i et checklist-item (dag-task).
+// Speiler taskPersonMentions, men for items som ikke har sin egen task-rad.
+export const checklistItemPersonMentions = pgTable('checklist_item_person_mentions', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	checklistItemId: uuid('checklist_item_id').references(() => checklistItems.id, { onDelete: 'cascade' }).notNull(),
+	personId: uuid('person_id').references((): AnyPgColumn => persons.id, { onDelete: 'cascade' }).notNull(),
+	confidence: text('confidence').notNull().default('inferred'), // 'explicit' | 'inferred'
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => ({
+	uniqMention: uniqueIndex('checklist_item_person_mentions_unique').on(table.checklistItemId, table.personId),
+	idxPersonCreated: index('checklist_item_person_mentions_person_created_idx').on(table.personId, table.createdAt)
 }));
 
 // Web push subscriptions for PWA notifications

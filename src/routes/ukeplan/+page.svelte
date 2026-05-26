@@ -19,6 +19,7 @@
 	import TaskTitle from '$lib/components/ui/TaskTitle.svelte';
 	import WeatherStrip, { type WeatherPeriod } from '$lib/components/ui/WeatherStrip.svelte';
 	import MentionPicker from '$lib/components/ui/MentionPicker.svelte';
+	import MentionAutocomplete from '$lib/components/ui/MentionAutocomplete.svelte';
 	import { createMentionState } from '$lib/utils/mention-input.svelte';
 
 	type SaveState = 'idle' | 'saving' | 'saved';
@@ -1924,7 +1925,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 									onpointerleave={handleContextPressEnd}
 									onclick={() => handleEditPress(weekChecklistId, group.item)}
 								>
-									<span class="wp-check-text" class:checked={group.item.checked} class:skipped={!!group.item.skippedAt}>{group.item.text}</span>
+									<span class="wp-check-text" class:checked={group.item.checked} class:skipped={!!group.item.skippedAt}><TaskTitle title={group.item.text} /></span>
 								</button>
 							{/if}
 							<div class="wp-check-row-right">
@@ -1999,7 +2000,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 												onpointerleave={handleContextPressEnd}
 												onclick={() => handleEditPress(weekChecklistId, child)}
 											>
-												<span class="wp-check-text" class:checked={child.checked} class:skipped={!!child.skippedAt}>{child.text}</span>
+												<span class="wp-check-text" class:checked={child.checked} class:skipped={!!child.skippedAt}><TaskTitle title={child.text} /></span>
 											</button>
 											<button type="button" class="wp-check-toggle" onclick={() => void toggleChecklistItem(weekChecklistId, child.id, !child.checked)} aria-label="Toggle">
 												<span class="wp-check-circle" class:checked={child.checked} class:skipped={!!child.skippedAt}>{child.skippedAt ? '✕' : child.checked ? '✓' : ''}</span>
@@ -2021,8 +2022,13 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 						bind:value={weekComposerText}
 						class="wp-input"
 						type="text"
-						placeholder="Skriv punkt og trykk Enter"
+						placeholder="Skriv punkt og trykk Enter (skriv @ for å nevne en person)"
 						onkeydown={(event) => handleComposerKeydown(event, 'week')}
+					/>
+					<MentionAutocomplete
+						textareaEl={weekComposerInput}
+						value={weekComposerText}
+						onValueChange={(t) => (weekComposerText = t)}
 					/>
 					<span class="wp-save-dot" class:is-saving={saveStates.weekItems === 'saving'} class:is-saved={saveStates.weekItems === 'saved'} aria-hidden="true"></span>
 				</div>
@@ -2195,7 +2201,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 									{#if item.metadata?.timeHour !== undefined}
 										<span class="wp-time-badge">{formatItemTime(item.metadata.timeHour, item.metadata.timeMinute ?? 0)}</span>
 									{/if}
-									<span class="wp-check-text" class:checked={item.checked} class:skipped={!!item.skippedAt}>{item.metadata?.timeHour !== undefined ? stripTimeFromText(item.text) : item.text}</span>
+									<span class="wp-check-text" class:checked={item.checked} class:skipped={!!item.skippedAt}><TaskTitle title={item.metadata?.timeHour !== undefined ? stripTimeFromText(item.text) : item.text} /></span>
 									{#if item.metadata?.linkedTaskId}
 										<span class="wp-intent-badge" title="Koblet til ukesmål: {item.metadata.linkedTaskTitle ?? ''}">
 											{item.metadata.autoChecked ? '⚡' : '🔗'}
@@ -2258,7 +2264,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 												{#if child.metadata?.timeHour !== undefined}
 													<span class="wp-time-badge">{formatItemTime(child.metadata.timeHour, child.metadata.timeMinute ?? 0)}</span>
 												{/if}
-												<span class="wp-check-text" class:checked={child.checked} class:skipped={!!child.skippedAt}>{child.metadata?.timeHour !== undefined ? stripTimeFromText(child.text) : child.text}</span>
+												<span class="wp-check-text" class:checked={child.checked} class:skipped={!!child.skippedAt}><TaskTitle title={child.metadata?.timeHour !== undefined ? stripTimeFromText(child.text) : child.text} /></span>
 											</button>
 											<button type="button" class="wp-check-toggle" onclick={() => void toggleChecklistItem(selectedDayChecklist.id, child.id, !child.checked)} aria-label="Toggle">
 												<span class="wp-check-circle" class:checked={child.checked} class:skipped={!!child.skippedAt}>{child.skippedAt ? '✕' : child.checked ? '✓' : ''}</span>
@@ -2280,8 +2286,13 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 					bind:value={dayComposerText}
 					class="wp-input"
 					type="text"
-					placeholder={`Ny oppgave`}
+					placeholder="Ny oppgave (skriv @ for å nevne en person)"
 					onkeydown={(event) => handleComposerKeydown(event, 'day')}
+				/>
+				<MentionAutocomplete
+					textareaEl={dayComposerInput}
+					value={dayComposerText}
+					onValueChange={(t) => (dayComposerText = t)}
 				/>
 				<span class="wp-save-dot" class:is-saving={saveStates.dayItems === 'saving'} class:is-saved={saveStates.dayItems === 'saved'} aria-hidden="true"></span>
 			</div>

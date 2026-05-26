@@ -7,16 +7,29 @@
  * schema.ts blir applisert automatisk ved deploy — uten å måtte kjøre
  * `npm run db:push` eller standalone migration-scripts manuelt.
  *
+ * Deploy-flow:
+ *   1. apply-sql-migrations.mjs — eksplisitte SQL-migrasjoner
+ *      (table/column rename, drop column, typeendringer) som drizzle-kit
+ *      push ikke håndterer trygt. Tracked via `_sql_migrations`-tabellen.
+ *   2. drizzle-kit push --force — additive endringer (CREATE TABLE,
+ *      ADD COLUMN med default, ADD INDEX) som drizzle gjenkjenner trygt.
+ *   3. Idempotente data-migreringer (UPDATE/INSERT) som må følge kode.
+ *
  * Sikkerhetsnett:
  *   - Hopper over alt utenom VERCEL_ENV=production (preview-deploys får ikke
  *     trash prod-DB-en).
  *   - SKIP_DB_SYNC=1 lar deg deakt­ivere uten å fjerne hooken.
+ *   - SKIP_SQL_MIGRATIONS=1 hopper kun over SQL-runner-steget.
  *   - Krever DATABASE_URL (Vercel setter denne).
  *
  * Lokalt: bruk `npm run db:sync` (eller `npm run db:push`).
  */
 import { spawnSync } from 'node:child_process';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import postgres from 'postgres';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const vercelEnv = process.env.VERCEL_ENV;
 const isVercel = Boolean(process.env.VERCEL);
@@ -36,7 +49,18 @@ if (!process.env.DATABASE_URL) {
 	process.exit(1);
 }
 
-console.log('[db:sync] Kjører drizzle-kit push --force …');
+console.log('[db:sync] Steg 1/2 — kjører eksplisitte SQL-migrasjoner …');
+const migrationsResult = spawnSync('node', [join(__dirname, 'apply-sql-migrations.mjs')], {
+	stdio: 'inherit',
+	env: process.env
+});
+
+if (migrationsResult.status !== 0) {
+	console.error(`[db:sync] apply-sql-migrations.mjs feilet med exit-kode ${migrationsResult.status}.`);
+	process.exit(migrationsResult.status ?? 1);
+}
+
+console.log('[db:sync] Steg 2/2 — kjører drizzle-kit push --force …');
 const result = spawnSync('npx', ['drizzle-kit', 'push', '--force'], {
 	stdio: 'inherit',
 	env: process.env

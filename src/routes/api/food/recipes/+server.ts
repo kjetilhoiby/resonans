@@ -1,17 +1,17 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
-import { recipes } from '$lib/db/schema';
+import { meals } from '$lib/db/schema';
 import { eq, desc } from 'drizzle-orm';
 
 export const GET: RequestHandler = async ({ locals }) => {
 	const userId = locals.userId;
 	const rows = await db
 		.select()
-		.from(recipes)
-		.where(eq(recipes.userId, userId))
-		.orderBy(desc(recipes.createdAt));
-	return json({ recipes: rows });
+		.from(meals)
+		.where(eq(meals.userId, userId))
+		.orderBy(desc(meals.createdAt));
+	return json({ meals: rows });
 };
 
 export const POST: RequestHandler = async ({ request, locals }) => {
@@ -23,7 +23,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	}
 
 	const [created] = await db
-		.insert(recipes)
+		.insert(meals)
 		.values({
 			userId,
 			title: body.title,
@@ -40,5 +40,5 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		})
 		.returning();
 
-	return json({ recipe: created }, { status: 201 });
+	return json({ meal: created }, { status: 201 });
 };

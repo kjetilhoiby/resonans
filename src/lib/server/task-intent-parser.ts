@@ -1,6 +1,6 @@
 import { and, eq, ilike } from 'drizzle-orm';
 import { db } from '$lib/db';
-import { goals, recipes, tasks } from '$lib/db/schema';
+import { goals, meals, tasks } from '$lib/db/schema';
 import { detectMealPrefix, type MealType } from '$lib/domains/food';
 import { parseTaskIntentWithLlmFallback } from '$lib/server/intent-llm-fallback';
 
@@ -108,28 +108,36 @@ function escapeLikePattern(value: string): string {
 	return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 }
 
-// Finds the best matching recipeId for a given meal title belonging to the user.
-// Tries exact (case-insensitive) match first, then prefix, then substring. Returns
-// null when no recipe is found — the caller stores it as the "linkedRecipeId" pointer.
-export async function findMatchingRecipeId(userId: string, title: string): Promise<string | null> {
+// Finds an existing meal by title for the user; creates a bare meal row
+// (name-only, no recipe/instructions) if nothing matches. Returns the meal id.
+// Tries exact (case-insensitive) match first, then prefix, then substring —
+// only commits to a match when it's unambiguous.
+export async function findOrCreateMealId(userId: string, title: string): Promise<string | null> {
 	const trimmed = title.trim();
 	if (!trimmed) return null;
 	const safe = escapeLikePattern(trimmed);
 
 	const tryQuery = async (pattern: string) => {
 		const rows = await db
-			.select({ id: recipes.id })
-			.from(recipes)
-			.where(and(eq(recipes.userId, userId), ilike(recipes.title, pattern)))
+			.select({ id: meals.id })
+			.from(meals)
+			.where(and(eq(meals.userId, userId), ilike(meals.title, pattern)))
 			.limit(2);
 		return rows.length === 1 ? rows[0].id : null;
 	};
 
-	return (
+	const existing =
 		(await tryQuery(safe)) ??
 		(await tryQuery(`${safe}%`)) ??
-		(await tryQuery(`%${safe}%`))
-	);
+		(await tryQuery(`%${safe}%`));
+
+	if (existing) return existing;
+
+	const [created] = await db
+		.insert(meals)
+		.values({ userId, title: trimmed })
+		.returning({ id: meals.id });
+	return created?.id ?? null;
 }
 
 /**
@@ -324,8 +332,8 @@ export async function processTaskIntentParseJob(params: {
 	const currentMetadata = (task.metadata ?? {}) as Record<string, unknown>;
 
 	if (parsed.matched && parsed.intent) {
-		const linkedRecipeId = parsed.intent.mealType && parsed.intent.mealTitle
-			? await findMatchingRecipeId(params.userId, parsed.intent.mealTitle)
+		const linkedMealId = parsed.intent.mealType && parsed.intent.mealTitle
+			? await findOrCreateMealId(params.userId, parsed.intent.mealTitle)
 			: null;
 
 		await db
@@ -345,7 +353,7 @@ export async function processTaskIntentParseJob(params: {
 						distanceKm: parsed.intent.distanceKm ?? null,
 						mealType: parsed.intent.mealType ?? null,
 						mealTitle: parsed.intent.mealTitle ?? null,
-						linkedRecipeId,
+						linkedMealId,
 						frequency: parsed.intent.frequency,
 						targetValue: parsed.intent.targetValue,
 						unit: parsed.intent.unit,

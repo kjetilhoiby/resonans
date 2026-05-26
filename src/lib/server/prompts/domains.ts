@@ -44,24 +44,24 @@ For «forbruk dagligvare», «matkostnader», «transport» osv.: bruk ALLTID fi
 Gyldige kategorier: innskudd, dagligvarer, kafe_og_restaurant, faste_boutgifter, annet_lan_og_gjeld, bil_og_transport, helse_og_velvaere, medier_og_underholdning, hobby_og_fritid, hjem_og_hage, klaer_og_utstyr, barn, barnehage_og_sfo, forsikring, bilforsikring_og_billan, sparing, reise, diverse, ukategorisert`,
 
 	food: `**MAT - VERKTØY OG FLYT:**
-Domenet dekker oppskrifter, ukemeny, pantry/fryser/kjøleskap, handlelister og bilder/næringsestimater.
+Domenet dekker måltider, ukemeny, pantry/fryser/kjøleskap, handlelister og bilder/næringsestimater. Et **måltid** er byggeklossen — først og fremst et navn ("kjøttkaker"), med valgfri oppskrift, bilde og tags.
 
 **Verktøy:**
-- query_food: les eksisterende oppskrifter, ukemeny, pantry-innhold, eller varer som snart går ut
-- manage_recipe: opprett/oppdater/slett oppskrift med ingredienser, instruksjoner, tilberedningstid og porsjoner
-- manage_meal_plan: legg til/oppdater/fjern oppføring i ukemeny — koble til oppskrift via recipeId, eller bruk customTitle for fritekst ("frossenpizza", "rester")
+- query_food: les eksisterende måltider, ukemeny, pantry-innhold, eller varer som snart går ut
+- manage_recipe: opprett/oppdater/slett et måltid (navn pluss valgfri oppskrift: ingredienser, instruksjoner, tilberedningstid, porsjoner, bilde)
+- manage_meal_plan: legg til/oppdater/fjern oppføring i ukemeny — koble til et lagret måltid via mealId, eller send mealName for å auto-opprette en måltidsrad
 - manage_pantry: oppdater pantry/fryser/kjøleskap — add (krever name+location), update, remove, use (kan dekrementere quantity)
-- generate_shopping_list: bygg handleliste fra ukemenyens oppskrifter minus pantry-innhold (returnerer items klare for sjekkliste)
+- generate_shopping_list: bygg handleliste fra ukemenyens måltider minus pantry-innhold (returnerer items klare for sjekkliste)
 - analyze_meal_image: send Cloudinary-URL og få tilbake anslag av rett, ingredienser og næringsinnhold (grovt estimat)
 
 **Typiske flyter:**
 - "Hva har jeg i fryseren?" → query_food queryType='pantry', location='freezer'
 - "Lag middagsplan for uka basert på det jeg har" → query_food (pantry) → forslag → manage_meal_plan (én per dag) → tilby generate_shopping_list
-- "fisk til middag på torsdag" → manage_meal_plan create med customTitle eller foreslå oppskrift først
-- "Jeg vil lage [restaurantmat] hjemme" → forslag oppskrift → manage_recipe create hvis bruker vil lagre
-- Bruker laster opp matbilde → analyze_meal_image → vis estimat → tilby å lagre på ny oppskrift
+- "fisk til middag på torsdag" → manage_meal_plan create med mealName (auto-oppretter måltidsrad)
+- "Jeg vil lage [restaurantmat] hjemme" → forslag oppskrift → manage_recipe create hvis bruker vil lagre med ingredienser
+- Bruker laster opp matbilde → analyze_meal_image → vis estimat → tilby å lagre som måltid via manage_recipe
 
-**Når bruker skriver kort plan ("fisk til middag"):** Foreslå konkret oppskrift, sjekk pantry, bygg handleliste i samme svar.`,
+**Når bruker skriver kort plan ("fisk til middag"):** Foreslå konkret måltid, sjekk pantry, bygg handleliste i samme svar.`,
 
 	family: `**FAMILIE / RELASJONER:**
 Domenet dekker personer i brukerens nettverk: barn, partner, foreldre, svigerfamilie, venner og kolleger.

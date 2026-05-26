@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
-import { themes, mealPlans, recipes, pantryItems } from '$lib/db/schema';
+import { themes, mealPlans, meals, pantryItems } from '$lib/db/schema';
 import { resolveThemeDashboardKind } from '$lib/domain/theme-dashboard-registry';
 import { and, eq, gte, lte, asc, inArray } from 'drizzle-orm';
 
@@ -37,15 +37,15 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 		.where(and(eq(mealPlans.userId, userId), eq(mealPlans.weekContext, weekContext)))
 		.orderBy(asc(mealPlans.date), asc(mealPlans.mealType));
 
-	const recipeIds = plans.map((p) => p.recipeId).filter((id): id is string => !!id);
-	const linkedRecipes = recipeIds.length
-		? await db.select().from(recipes).where(and(eq(recipes.userId, userId), inArray(recipes.id, recipeIds)))
+	const mealIds = plans.map((p) => p.mealId).filter((id): id is string => !!id);
+	const linkedMeals = mealIds.length
+		? await db.select().from(meals).where(and(eq(meals.userId, userId), inArray(meals.id, mealIds)))
 		: [];
-	const recipesById = new Map(linkedRecipes.map((r) => [r.id, r]));
+	const mealsById = new Map(linkedMeals.map((m) => [m.id, m]));
 
 	const enrichedPlans = plans.map((p) => ({
 		...p,
-		recipeTitle: p.recipeId ? recipesById.get(p.recipeId)?.title ?? null : null
+		mealTitle: p.mealId ? mealsById.get(p.mealId)?.title ?? null : null
 	}));
 
 	const pantry = await db

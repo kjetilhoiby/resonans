@@ -27,7 +27,7 @@ export const MEAL_TYPE_TRIGGERS: Record<MealType, RegExp> = {
 };
 
 export const FOOD_CATEGORY_TRIGGERS: Record<FoodCategory, RegExp> = {
-  recipe: /oppskrift|recipe|matlaging|tilberede|stek|kok|bake/i,
+  recipe: /oppskrift|recipe|matlaging|tilberede|stek|kok|bake|måltid|maaltid/i,
   mealPlan: /ukemeny|middagsplan|meny|måltidsplan|matplan|ukens? meny/i,
   pantry: /pantry|skap|kjøleskap|kjoleskap|fryser|freezer|hva har jeg|i fryseren|i skapet/i,
   shoppingList: /handleliste|handle ?lis|innkjøp|innkjop|trenger å kjøpe|må handle/i

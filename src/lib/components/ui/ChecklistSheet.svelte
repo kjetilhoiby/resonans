@@ -17,6 +17,7 @@
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import BreakdownModal from '$lib/components/ui/BreakdownModal.svelte';
 	import TaskContextMenu from '$lib/components/ui/TaskContextMenu.svelte';
+	import TaskTitle from '$lib/components/ui/TaskTitle.svelte';
 	import MentionAutocomplete from '$lib/components/ui/MentionAutocomplete.svelte';
 	import ShareSheet from '$lib/components/domain/share/ShareSheet.svelte';
 	import { readCacheEntry, isCacheStale, fetchRawTimeseries, buildPeriods, buildWeekPeriods } from '$lib/utils/weather';
@@ -535,7 +536,7 @@
 										onpointerdown={(e) => e.stopPropagation()}
 									/>
 								{:else}
-									<span class="cs-item-text">{group.item.text}</span>
+									<span class="cs-item-text"><TaskTitle title={group.item.text} /></span>
 								{/if}
 								<svg class="cs-parent-circle" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
 									<circle cx="10" cy="10" r={cR} fill="none" stroke="#2a2a2a" stroke-width="2.5"/>
@@ -573,7 +574,7 @@
 									onpointerdown={(e) => e.stopPropagation()}
 								/>
 							{:else}
-								<span class="cs-item-text">{group.item.text}</span>
+								<span class="cs-item-text"><TaskTitle title={group.item.text} /></span>
 							{/if}
 							<div
 								class="cs-checkbox"
@@ -602,7 +603,7 @@
 									onpointerleave={handleItemPressEnd}
 									onclick={() => toggleItem(child)}
 								>
-									<span class="cs-child-text">{child.text}</span>
+									<span class="cs-child-text"><TaskTitle title={child.text} /></span>
 									<div
 										class="cs-checkbox cs-checkbox-small"
 										class:cs-checkbox-checked={child.checked && !childSkipped}

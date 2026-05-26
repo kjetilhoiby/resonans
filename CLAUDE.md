@@ -170,11 +170,16 @@ samme grunnstruktur — `AppPage` → `PageHeader` → eget innhold.
 ## Database Conventions
 
 - Schema is in a single file: `src/lib/db/schema.ts`
-- **Schema endringer auto-syncer på prod-deploy.** `scripts/sync-db-schema.mjs` kjører `drizzle-kit push --force` som del av Vercel buildCommand når `VERCEL_ENV=production`. Det betyr: rediger `schema.ts`, commit, push til `main` → DB følger automatisk med. Ingen manuell `npm run db:push` etter vibe-koding.
-- Sikkerhetsnett: scriptet hopper over preview/dev-deploys, og `SKIP_DB_SYNC=1` deaktiverer hele steget.
-- Migration-filer i `drizzle/` er valgfrie nå — kjør `npm run db:generate` hvis du vil ha en sjekka-inn audit trail for endringen (anbefalt for destruktive endringer), men det er ikke påkrevd for at deploy skal funke.
-- **Data-migreringer som må følge kode-endringer** (f.eks. `UPDATE` for å rename enum-verdier) skal legges inn i `DATA_MIGRATIONS`-arrayen i `scripts/sync-db-schema.mjs` slik at de kjører automatisk etter schema-sync på prod-deploy. Hver statement må være idempotent (bruk `WHERE` eller `ON CONFLICT`). Ikke lag standalone `apply-migration-XXXX.mjs`-scripts som krever manuell kjøring.
-- Lokalt: `npm run db:push` (eller `npm run db:sync` som bruker samme wrapper som deploy).
+- **Schema endringer auto-syncer på prod-deploy.** `scripts/sync-db-schema.mjs` kjører tre steg som del av Vercel buildCommand når `VERCEL_ENV=production`:
+  1. `scripts/apply-sql-migrations.mjs` — eksplisitte SQL-migrasjoner fra `scripts/db-migrations/*.sql`, applisert i alfabetisk rekkefølge og bokført i tabellen `_sql_migrations`.
+  2. `drizzle-kit push --force` — additive endringer fra `schema.ts` som drizzle gjenkjenner trygt.
+  3. `DATA_MIGRATIONS` — idempotente `UPDATE`/`INSERT`-statements i `sync-db-schema.mjs` som må følge kode-endringer (f.eks. rename av enum-verdier).
+- **Når trenger jeg en SQL-migration?** For alt som drizzle-kit push ikke håndterer trygt: table/column rename, drop column, typeendringer. Push --force tolker rename heuristisk og kan ende opp med drop+create (= datatap). Additive endringer (CREATE TABLE, ADD COLUMN med default, ADD INDEX) kan fortsatt bare gå via schema.ts.
+- **Rutine for destruktiv endring:** lag `scripts/db-migrations/NNNN_<beskrivelse>.sql` med idempotente `IF EXISTS`-grener, OG oppdater `schema.ts` til samme måltilstand. SQL-en kjører først (gjør endringen), drizzle push ser deretter matchende state og er en no-op.
+- **Data-migreringer som må følge kode-endringer** (f.eks. `UPDATE` for å rename enum-verdier) legges inn i `DATA_MIGRATIONS`-arrayen i `scripts/sync-db-schema.mjs`. Hver statement må være idempotent (bruk `WHERE` eller `ON CONFLICT`). Ikke lag standalone `apply-migration-XXXX.mjs`-scripts som krever manuell kjøring.
+- Sikkerhetsnett: scriptet hopper over preview/dev-deploys. `SKIP_DB_SYNC=1` deaktiverer hele steget; `SKIP_SQL_MIGRATIONS=1` hopper kun over SQL-runner-steget.
+- Migration-filer i `drizzle/` (fra `db:generate`) er valgfrie audit-trails — de kjøres ikke automatisk.
+- Lokalt: `npm run db:sync` (full deploy-pipeline), `npm run db:sql-migrate` (kun SQL-steget), `npm run db:push` (kun drizzle-steget).
 - Primary keys: `uuid` with `defaultRandom()` for most tables; `text` for `users.id` (supports `'default-user'`).
 - Timestamps: always `timestamp` columns named `created_at` / `updated_at` with `defaultNow()`.
 - User isolation: every data table has a `userId text` FK to `users.id`.
