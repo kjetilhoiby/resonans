@@ -690,11 +690,7 @@ export async function syncAllSparebank1Data(
 			salaryProfile = await buildSalaryProfile(userId).catch(() => null);
 		}
 
-		try {
-			await writeRawAndCanonicalTransactions(uniqueNewEvents, userId, sensor.id, salaryProfile);
-		} catch (error) {
-			console.warn('[sparebank1-sync] raw+canonical ingest write skipped:', error);
-		}
+		await writeRawAndCanonicalTransactions(uniqueNewEvents, userId, sensor.id, salaryProfile);
 
 		console.log(`Filtered ${transactionEvents.length} -> ${uniqueNewEvents.length} unique transactions in batch`);
 
