@@ -6,6 +6,8 @@
     onComplete     kalt med taskId ved tap
 -->
 <script lang="ts">
+	import TaskTitle from '$lib/components/ui/TaskTitle.svelte';
+
 	interface ProgressRecord {
 		id: string;
 		completedAt: string | Date;
@@ -44,7 +46,7 @@
 			>
 				<span class="dot" class:filled={done}></span>
 			</button>
-			<span class="task-label">{task.title}</span>
+			<span class="task-label"><TaskTitle title={task.title} /></span>
 			{#if task.frequency}
 				<span class="freq-badge">{task.frequency}</span>
 			{/if}

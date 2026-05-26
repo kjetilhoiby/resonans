@@ -1,4 +1,6 @@
 <script lang="ts">
+	import TaskTitle from '$lib/components/ui/TaskTitle.svelte';
+
 	interface MessageMention {
 		messageId: string;
 		conversationId: string;
@@ -42,7 +44,7 @@
 				{#each tasks as task (task.taskId)}
 					<li>
 						<a href={`/oppgaver/${task.taskId}`} class="task-link">
-							<span class="title">{task.title}</span>
+							<span class="title"><TaskTitle title={task.title} /></span>
 							<span class="meta">
 								{task.status === 'active' ? 'Aktiv' : task.status}
 								· {formatDate(task.createdAt)}

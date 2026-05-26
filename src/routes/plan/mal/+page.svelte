@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
+	import TaskTitle from '$lib/components/ui/TaskTitle.svelte';
 	import MetricCard from '$lib/components/visualizations/MetricCard.svelte';
 	import TrajectoryChart from '$lib/components/visualizations/TrajectoryChart.svelte';
 	type GoalTrackMeta = {
@@ -676,7 +677,7 @@
 											{@const taskProgress = calculateTaskProgress(task)}
 											<div class="task-card">
 												<div class="task-header">
-													<div class="task-title">{task.title}</div>
+													<div class="task-title"><TaskTitle title={task.title} /></div>
 													{#if task.frequency}
 														<div class="task-frequency">{task.frequency}</div>
 													{/if}

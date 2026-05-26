@@ -7,6 +7,7 @@
 -->
 <script lang="ts">
 	import GoalRing from '../ui/GoalRing.svelte';
+	import TaskTitle from '../ui/TaskTitle.svelte';
 
 	interface ProgressRecord {
 		id: string;
@@ -87,7 +88,7 @@
 							<span class="check-dot"></span>
 						{/if}
 					</button>
-					<span class="task-title">{task.title}</span>
+					<span class="task-title"><TaskTitle title={task.title} /></span>
 					{#if task.frequency}
 						<span class="task-freq">{task.frequency}</span>
 					{/if}

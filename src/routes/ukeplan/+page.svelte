@@ -16,6 +16,7 @@
 	import BreakdownModal from '$lib/components/ui/BreakdownModal.svelte';
 	import ProcedureBadge from '$lib/components/ui/ProcedureBadge.svelte';
 	import ProcedureSheet from '$lib/components/ui/ProcedureSheet.svelte';
+	import TaskTitle from '$lib/components/ui/TaskTitle.svelte';
 	import WeatherStrip, { type WeatherPeriod } from '$lib/components/ui/WeatherStrip.svelte';
 	import MentionPicker from '$lib/components/ui/MentionPicker.svelte';
 	import { createMentionState } from '$lib/utils/mention-input.svelte';
@@ -1806,7 +1807,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 											class="wp-task-title-btn"
 											class:done={doneTask(task)}
 											onclick={() => { if (!taskLongPressTriggered) editingTask = { taskId: task.id, title: task.title, originalTitle: task.title }; }}
-										>{task.title}</button>
+										><TaskTitle title={task.title} /></button>
 										{#if procedureMatches.has(task.id)}
 											{@const match = procedureMatches.get(task.id)!}
 											<ProcedureBadge
