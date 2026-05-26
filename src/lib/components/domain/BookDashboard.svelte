@@ -421,7 +421,7 @@
 
 	let refreshingContext = $state(false);
 	let refreshContextError = $state('');
-	let lastRefreshAction = $state<'rekicked' | 'requeued' | null>(null);
+	let lastRefreshAction = $state<'rekicked' | 'requeued' | 'already_running' | null>(null);
 
 	async function refreshContext(bookId: string) {
 		if (refreshingContext) return;
@@ -436,12 +436,11 @@
 				refreshContextError = 'Klarte ikke å starte kontekstinnsamling.';
 				return;
 			}
-			const updated: Book & { action?: 'rekicked' | 'requeued' } = await res.json();
+			const updated: Book & { action?: 'rekicked' | 'requeued' | 'already_running' } = await res.json();
 			lastRefreshAction = updated.action ?? null;
 			if (selectedBook?.id === bookId) selectedBook = updated;
 			books = books.map((b) => (b.id === bookId ? updated : b));
 			void pollContextStatus(bookId);
-			// auto-dismiss the action hint after 6s
 			setTimeout(() => { lastRefreshAction = null; }, 6000);
 		} catch {
 			refreshContextError = 'Nettverksfeil — prøv igjen.';
@@ -1617,9 +1616,11 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 								{/if}
 							</button>
 							{#if lastRefreshAction === 'rekicked'}
-								<span class="bk-ctx-refresh-hint">Worker kicket — venter på at den starter…</span>
+								<span class="bk-ctx-refresh-hint">Kjører jobben nå…</span>
 							{:else if lastRefreshAction === 'requeued'}
-								<span class="bk-ctx-refresh-hint">Ny jobb lagt i kø.</span>
+								<span class="bk-ctx-refresh-hint">Ny jobb startet.</span>
+							{:else if lastRefreshAction === 'already_running'}
+								<span class="bk-ctx-refresh-hint">Jobben kjører allerede — vent litt.</span>
 							{/if}
 						</div>
 						{#if refreshContextError}

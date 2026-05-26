@@ -454,6 +454,40 @@ async function claimNextDueJob(workerId: string) {
 	return (rows[0] ?? null);
 }
 
+async function claimSpecificJob(jobId: string, workerId: string) {
+	const rows = await pgClient.unsafe<{
+		id: string;
+		user_id: string | null;
+		type: string;
+		payload: Record<string, unknown> | null;
+		attempts: number;
+		max_attempts: number;
+		run_at: Date;
+	}[]>(`
+		WITH target AS (
+			SELECT id
+			FROM background_jobs
+			WHERE id = $1
+			  AND status IN ('queued', 'retry')
+			FOR UPDATE SKIP LOCKED
+		)
+		UPDATE background_jobs AS bj
+		SET
+			status = 'running',
+			attempts = bj.attempts + 1,
+			locked_at = NOW(),
+			locked_by = $2,
+			started_at = COALESCE(bj.started_at, NOW()),
+			updated_at = NOW(),
+			error = NULL
+		FROM target
+		WHERE bj.id = target.id
+		RETURNING bj.*
+	`, [jobId, workerId]);
+
+	return (rows[0] ?? null);
+}
+
 async function executeJob(job: any): Promise<Record<string, unknown>> {
 	switch (job.type) {
 		case 'sparebank1_historical_sync': {
@@ -657,6 +691,87 @@ async function executeJob(job: any): Promise<Record<string, unknown>> {
 		}
 		default:
 			throw new Error(`Unknown background job type: ${job.type}`);
+	}
+}
+
+export type ProcessBackgroundJobByIdResult =
+	| { claimed: false; reason: 'not_found' | 'not_claimable' }
+	| { claimed: true; completed: true; result: Record<string, unknown> }
+	| { claimed: true; completed: false; willRetry: boolean; error: string };
+
+/**
+ * Kjør én spesifikk jobb direkte — claim den, kjør executeJob, og marker
+ * completed/failed. Tar ansvar for kjøringen i stedet for å gå via queue-en
+ * (som velger neste due jobb basert på priority). Brukes når et endpoint
+ * vil eie utførelsen, f.eks. manuell "tving start"-knapp fra kontekst-tab.
+ *
+ * Returnerer { claimed: false, reason: 'not_claimable' } hvis jobben
+ * allerede kjører, er ferdig, eller er kansellert — caller kan vise
+ * riktig melding.
+ */
+export async function processBackgroundJobById(
+	jobId: string,
+	workerId: string
+): Promise<ProcessBackgroundJobByIdResult> {
+	const existing = await getBackgroundJobById(jobId);
+	if (!existing) return { claimed: false, reason: 'not_found' };
+
+	const job = await claimSpecificJob(jobId, workerId);
+	if (!job) return { claimed: false, reason: 'not_claimable' };
+
+	try {
+		const result = await executeJob(job);
+		await db
+			.update(backgroundJobs)
+			.set({
+				status: 'completed',
+				result,
+				finishedAt: new Date(),
+				lockedAt: null,
+				lockedBy: null,
+				updatedAt: new Date(),
+				error: null
+			})
+			.where(eq(backgroundJobs.id, String(job.id)));
+
+		console.log('[background-jobs] inline job completed', {
+			jobId: String(job.id),
+			type: String(job.type),
+			workerId
+		});
+
+		return { claimed: true, completed: true, result };
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		const attempts = Number(job.attempts ?? 1);
+		const maxAttempts = Number(job.max_attempts ?? 3);
+		const shouldRetry = attempts < maxAttempts;
+		const nextRunAt = new Date(Date.now() + calculateRetryDelaySeconds(attempts) * 1000);
+
+		await db
+			.update(backgroundJobs)
+			.set({
+				status: shouldRetry ? 'retry' : 'failed',
+				error: message,
+				runAt: shouldRetry ? nextRunAt : new Date(job.run_at),
+				finishedAt: shouldRetry ? null : new Date(),
+				lockedAt: null,
+				lockedBy: null,
+				updatedAt: new Date()
+			})
+			.where(eq(backgroundJobs.id, String(job.id)));
+
+		console.warn('[background-jobs] inline job failed', {
+			jobId: String(job.id),
+			type: String(job.type),
+			attempt: attempts,
+			maxAttempts,
+			willRetry: shouldRetry,
+			error: message,
+			workerId
+		});
+
+		return { claimed: true, completed: false, willRetry: shouldRetry, error: message };
 	}
 }
 

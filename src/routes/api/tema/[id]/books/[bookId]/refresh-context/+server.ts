@@ -3,13 +3,21 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { books, themes, backgroundJobs } from '$lib/db/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
-import { enqueueBackgroundJob, processDueBackgroundJobs } from '$lib/server/background-jobs';
+import {
+	enqueueBackgroundJob,
+	processBackgroundJobById
+} from '$lib/server/background-jobs';
 import { runInBackground } from '$lib/server/run-in-background';
 
 // POST — re-trigger context collection for an existing book.
-// Lov til å kalles selv om contextStatus === 'pending': da kicker vi
-// bare worker-en på nytt i tilfelle jobben sitter i kø. Hvis jobben
-// allerede kjører gjør vi ingenting destruktivt.
+//
+// Tar ansvar for kjøringen direkte: enten gjenbruker en aktiv jobb eller
+// lager en ny, og kaller `processBackgroundJobById` via `waitUntil` så
+// kjøringen skjer i denne request-en (ikke via queue-worker).
+//
+// Lov til å kalles selv om contextStatus === 'pending': hvis siste jobb
+// fortsatt er queued/retry, claimer vi den og kjører nå. Hvis den allerede
+// kjører returnerer vi action: 'already_running' (no-op).
 export const POST: RequestHandler = async ({ params, locals }) => {
 	const theme = await db.query.themes.findFirst({
 		where: and(eq(themes.id, params.id), eq(themes.userId, locals.userId)),
@@ -35,40 +43,40 @@ export const POST: RequestHandler = async ({ params, locals }) => {
 		.orderBy(desc(backgroundJobs.createdAt))
 		.limit(1);
 
-	const hasQueuedJob =
-		book.contextStatus === 'pending' &&
-		latestJob &&
-		(latestJob.status === 'queued' || latestJob.status === 'retry' || latestJob.status === 'running');
-
-	if (hasQueuedJob) {
-		// Eksisterende jobb finnes — bare kick worker-en, ikke lag duplikat.
-		runInBackground(
-			processDueBackgroundJobs({ limit: 1, workerId: `book-rekick-${book.id}` })
-		);
+	if (latestJob?.status === 'running') {
 		const [current] = await db
 			.select()
 			.from(books)
 			.where(eq(books.id, params.bookId));
-		return json({ ...current, action: 'rekicked' });
+		return json({ ...current, action: 'already_running' });
 	}
 
-	// Ingen kjørende jobb — sett pending og lag en ny.
+	let jobIdToRun: string;
+	let action: 'rekicked' | 'requeued';
+
+	if (latestJob && (latestJob.status === 'queued' || latestJob.status === 'retry')) {
+		jobIdToRun = latestJob.id;
+		action = 'rekicked';
+	} else {
+		const newJob = await enqueueBackgroundJob({
+			userId: locals.userId,
+			type: 'book_context_collect',
+			payload: { bookId: book.id, title: book.title, author: book.author },
+			priority: 1
+		});
+		jobIdToRun = newJob.id;
+		action = 'requeued';
+	}
+
 	const [updated] = await db
 		.update(books)
 		.set({ contextStatus: 'pending', updatedAt: new Date() })
 		.where(eq(books.id, params.bookId))
 		.returning();
 
-	await enqueueBackgroundJob({
-		userId: locals.userId,
-		type: 'book_context_collect',
-		payload: { bookId: book.id, title: book.title, author: book.author },
-		priority: 1
-	});
+	// Vi eier kjøringen: claim spesifikk jobb og kjør den nå. waitUntil
+	// holder funksjonen i live på Vercel til collectoren er ferdig.
+	runInBackground(processBackgroundJobById(jobIdToRun, `book-inline-${book.id}`));
 
-	runInBackground(
-		processDueBackgroundJobs({ limit: 1, workerId: `book-refresh-${book.id}` })
-	);
-
-	return json({ ...updated, action: 'requeued' });
+	return json({ ...updated, action });
 };
