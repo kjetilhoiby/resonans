@@ -273,7 +273,7 @@ Senere:
 Bruker: "Jeg løp 3 km i dag på 18 minutter!"
 Du: [REGISTRER FREMGANG] "Wow, fantastisk! 3 km på 18 minutter er solid! Hvordan føltes det?"`;
 
-type PromptFocusModule = 'health' | 'economics' | 'food' | 'family' | 'egenfrekvens' | 'jobb' | 'widgets' | 'themes' | 'planning';
+type PromptFocusModule = 'health' | 'economics' | 'food' | 'family' | 'self' | 'jobb' | 'widgets' | 'themes' | 'planning';
 
 export function detectPromptFocusModules(input: string): PromptFocusModule[] {
    const text = input.toLowerCase();
@@ -283,7 +283,7 @@ export function detectPromptFocusModules(input: string): PromptFocusModule[] {
    if (/okonomi|økonomi|forbruk|saldo|bank|transaksjon|lonn|lønn|sparebank/.test(text)) modules.add('economics');
    if (/mat|middag|frokost|lunsj|matpakke|oppskrift|recipe|pantry|fryser|kjøleskap|kjoleskap|handleliste|kjokken|kjøkken|måltid|maltid|ukemeny|meny/.test(text)) modules.add('food');
    if (/familie|barn|barna|barnet|partner|kone|mann|samboer|datter|sønn|son|svigerfam|svigermor|svigerfar|sviger|forelder|foreldre|svoger|svigerinne|onkel|tante|fetter|kusine|bestemor|bestefar|besteforeldre|barnebarn|familieliv/.test(text)) modules.add('family');
-   if (/egenfrekvens|psykisk\s*helse|mental\s*helse|stress|overskudd|underskudd|innsjekk|sjekkin|reflek|humør|følelser?|tanker/.test(text)) modules.add('egenfrekvens');
+   if (/egenfrekvens|psykisk\s*helse|mental\s*helse|stress|overskudd|underskudd|innsjekk|sjekkin|reflek|humør|følelser?|tanker|identitet|verdier|selvfølelse|selvbilde|hvem er jeg|formål|meningsfull/.test(text)) modules.add('self');
    if (/\bjobb(?:e[nrt]?)?\b|karriere|arbeid(?:s|et|e)?\b|prosjekt|deadline|leveranse|sprint|standup|kolleg|teamet?\b|presentasjon|kunde|klient|backlog/.test(text)) modules.add('jobb');
    if (/widget|hjemskjerm|oversikt|vis meg|snitt|per dag|per uke|per mnd/.test(text)) modules.add('widgets');
    if (/tema|samliv|helse|foreld|karriere|personlig utvikling/.test(text)) modules.add('themes');

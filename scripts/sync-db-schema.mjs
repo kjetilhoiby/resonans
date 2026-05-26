@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 /**
- * Synkroniserer Drizzle-skjemaet (src/lib/db/schema.ts) mot live-DB-en.
+ * Synkroniserer Drizzle-skjemaet (src/lib/db/schema.ts) mot live-DB-en, og
+ * kjører idempotente data-migreringer som må følge med kode-endringer.
  *
  * Kjøres som en del av Vercel build (se vercel.json) slik at endringer i
  * schema.ts blir applisert automatisk ved deploy — uten å måtte kjøre
- * `npm run db:push` manuelt fra en laptop.
+ * `npm run db:push` eller standalone migration-scripts manuelt.
  *
  * Sikkerhetsnett:
  *   - Hopper over alt utenom VERCEL_ENV=production (preview-deploys får ikke
@@ -15,6 +16,7 @@
  * Lokalt: bruk `npm run db:sync` (eller `npm run db:push`).
  */
 import { spawnSync } from 'node:child_process';
+import postgres from 'postgres';
 
 const vercelEnv = process.env.VERCEL_ENV;
 const isVercel = Boolean(process.env.VERCEL);
@@ -46,3 +48,34 @@ if (result.status !== 0) {
 }
 
 console.log('[db:sync] Skjema synkronisert.');
+
+// ────────────────────────────────────────────────────────────────────────
+// Post-sync data-migreringer
+//
+// Idempotente UPDATE/INSERT-statements som må følge kode-endringer. Hver
+// statement skal være trygg å kjøre flere ganger (bruk WHERE-klausuler eller
+// ON CONFLICT). Slettes når de er kjørt på prod og ikke lenger har effekt.
+// ────────────────────────────────────────────────────────────────────────
+
+const DATA_MIGRATIONS = [
+	// 2026-05: Omdøp domain 'egenfrekvens' → 'self' (paraply-domene)
+	`UPDATE "projects" SET "domain" = 'self' WHERE "domain" = 'egenfrekvens'`,
+	`UPDATE "procedures" SET "domain" = 'self' WHERE "domain" = 'egenfrekvens'`
+];
+
+if (DATA_MIGRATIONS.length > 0) {
+	console.log(`[db:sync] Kjører ${DATA_MIGRATIONS.length} data-migrering(er) …`);
+	const sql = postgres(process.env.DATABASE_URL, { max: 1, ssl: 'require' });
+	try {
+		for (const stmt of DATA_MIGRATIONS) {
+			const res = await sql.unsafe(stmt);
+			console.log(`  → ${stmt}  (${res.count} row(s))`);
+		}
+		console.log('[db:sync] Data-migreringer fullført.');
+	} catch (err) {
+		console.error('[db:sync] Data-migrering feilet:', err);
+		process.exit(1);
+	} finally {
+		await sql.end();
+	}
+}
