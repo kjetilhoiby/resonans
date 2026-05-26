@@ -1,6 +1,6 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, ilike } from 'drizzle-orm';
 import { db } from '$lib/db';
-import { goals, tasks } from '$lib/db/schema';
+import { goals, recipes, tasks } from '$lib/db/schema';
 import { parseTaskIntentWithLlmFallback } from '$lib/server/intent-llm-fallback';
 
 export type ActivityType =
@@ -15,6 +15,8 @@ export type ActivityType =
 	| 'skiing'
 	| 'other';
 
+export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
+
 export type TaskIntent = {
 	frequency: 'daily' | 'weekly' | 'monthly' | 'once';
 	targetValue: number;
@@ -25,6 +27,9 @@ export type TaskIntent = {
 	activityType?: ActivityType;
 	durationMinutes?: number;
 	distanceKm?: number;
+	// Meal-based intent (optional)
+	mealType?: MealType;
+	mealTitle?: string;
 	sourceText: string;
 };
 
@@ -98,6 +103,59 @@ function parseActivityType(lower: string): ActivityType | undefined {
 	return undefined;
 }
 
+// Maps Norwegian meal prefix to canonical MealType. Used by parseMealIntent
+// to detect "middag: fiskegrateng"-style task titles.
+const MEAL_PREFIX_MAP: Record<string, MealType> = {
+	middag: 'dinner',
+	frokost: 'breakfast',
+	lunsj: 'lunch',
+	kveldsmat: 'snack',
+	mellommåltid: 'snack',
+	mellommaltid: 'snack',
+	snack: 'snack'
+};
+
+const MEAL_PREFIX_PATTERN = /^(middag|frokost|lunsj|kveldsmat|mellommåltid|mellommaltid|snack)\s*[:：]\s*(.+?)\s*$/i;
+
+function parseMealIntent(text: string): { mealType: MealType; mealTitle: string } | null {
+	const match = text.match(MEAL_PREFIX_PATTERN);
+	if (!match) return null;
+	const prefix = match[1].toLowerCase();
+	const title = match[2].trim();
+	if (!title) return null;
+	const mealType = MEAL_PREFIX_MAP[prefix];
+	if (!mealType) return null;
+	return { mealType, mealTitle: title };
+}
+
+function escapeLikePattern(value: string): string {
+	return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
+// Finds the best matching recipeId for a given meal title belonging to the user.
+// Tries exact (case-insensitive) match first, then prefix, then substring. Returns
+// null when no recipe is found — the caller stores it as the "linkedRecipeId" pointer.
+export async function findMatchingRecipeId(userId: string, title: string): Promise<string | null> {
+	const trimmed = title.trim();
+	if (!trimmed) return null;
+	const safe = escapeLikePattern(trimmed);
+
+	const tryQuery = async (pattern: string) => {
+		const rows = await db
+			.select({ id: recipes.id })
+			.from(recipes)
+			.where(and(eq(recipes.userId, userId), ilike(recipes.title, pattern)))
+			.limit(2);
+		return rows.length === 1 ? rows[0].id : null;
+	};
+
+	return (
+		(await tryQuery(safe)) ??
+		(await tryQuery(`${safe}%`)) ??
+		(await tryQuery(`%${safe}%`))
+	);
+}
+
 /**
  * Parses a duration expression like "20 minutter", "tjue minutter", "en halvtime", "en time"
  * Returns minutes or null.
@@ -140,6 +198,27 @@ function parseDistanceKm(lower: string): number | null {
 export function parseTaskIntent(rawText: string): ParsedTaskIntent {
 	const text = rawText.trim();
 	if (!text) return { matched: false, reason: 'empty_text' };
+
+	// --- Meal prefix: "middag: fiskegrateng" → pointer into food universe ---
+	// Runs first so activity/duration parsing below doesn't claim words like
+	// "20 minutter" out of a dish description.
+	const mealIntent = parseMealIntent(text);
+	if (mealIntent) {
+		return {
+			matched: true,
+			parser: 'rule',
+			intent: {
+				frequency: 'once',
+				targetValue: 1,
+				unit: 'måltid',
+				period: 'day',
+				comparator: '>=',
+				mealType: mealIntent.mealType,
+				mealTitle: mealIntent.mealTitle,
+				sourceText: text
+			}
+		};
+	}
 
 	const lower = text.toLowerCase();
 
@@ -269,6 +348,10 @@ export async function processTaskIntentParseJob(params: {
 	const currentMetadata = (task.metadata ?? {}) as Record<string, unknown>;
 
 	if (parsed.matched && parsed.intent) {
+		const linkedRecipeId = parsed.intent.mealType && parsed.intent.mealTitle
+			? await findMatchingRecipeId(params.userId, parsed.intent.mealTitle)
+			: null;
+
 		await db
 			.update(tasks)
 			.set({
@@ -284,6 +367,9 @@ export async function processTaskIntentParseJob(params: {
 						activityType: parsed.intent.activityType ?? null,
 						durationMinutes: parsed.intent.durationMinutes ?? null,
 						distanceKm: parsed.intent.distanceKm ?? null,
+						mealType: parsed.intent.mealType ?? null,
+						mealTitle: parsed.intent.mealTitle ?? null,
+						linkedRecipeId,
 						frequency: parsed.intent.frequency,
 						targetValue: parsed.intent.targetValue,
 						unit: parsed.intent.unit,
