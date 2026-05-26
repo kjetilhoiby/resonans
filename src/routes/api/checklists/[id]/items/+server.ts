@@ -10,6 +10,7 @@ import { enqueueBackgroundJob } from '$lib/server/background-jobs';
 import { parseTaskDateTime } from '$lib/server/date-time-parser';
 import { detectMealPrefix } from '$lib/domains/food';
 import { findOrCreateMealId } from '$lib/server/task-intent-parser';
+import { PersonMentionService } from '$lib/server/services/person-mention-service';
 
 /** Extract week keys from a checklist context string like "week:2026-W16:day:2026-04-13" */
 function extractWeekKeys(context: string | null): { dashedKey: string; compactKey: string } | null {
@@ -182,6 +183,13 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 				: repeatCount === 1 && Object.keys(combinedMeta).length > 0 ? { metadata: combinedMeta } : {})
 		}))
 	).returning();
+
+	// Index @-mentions for hver opprettet item — fire-and-forget, ikke blokker svaret.
+	for (const item of createdItems) {
+		PersonMentionService.indexChecklistItem(userId, item.id, item.text).catch((err) =>
+			console.warn('person-mention checklist-item indexing failed:', err)
+		);
+	}
 
 	return json(createdItems, { status: 201 });
 };

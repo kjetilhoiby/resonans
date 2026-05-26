@@ -19,6 +19,7 @@
 	import TaskTitle from '$lib/components/ui/TaskTitle.svelte';
 	import WeatherStrip, { type WeatherPeriod } from '$lib/components/ui/WeatherStrip.svelte';
 	import MentionPicker from '$lib/components/ui/MentionPicker.svelte';
+	import MentionAutocomplete from '$lib/components/ui/MentionAutocomplete.svelte';
 	import { createMentionState } from '$lib/utils/mention-input.svelte';
 
 	type SaveState = 'idle' | 'saving' | 'saved';
@@ -2021,8 +2022,13 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 						bind:value={weekComposerText}
 						class="wp-input"
 						type="text"
-						placeholder="Skriv punkt og trykk Enter"
+						placeholder="Skriv punkt og trykk Enter (skriv @ for å nevne en person)"
 						onkeydown={(event) => handleComposerKeydown(event, 'week')}
+					/>
+					<MentionAutocomplete
+						textareaEl={weekComposerInput}
+						value={weekComposerText}
+						onValueChange={(t) => (weekComposerText = t)}
 					/>
 					<span class="wp-save-dot" class:is-saving={saveStates.weekItems === 'saving'} class:is-saved={saveStates.weekItems === 'saved'} aria-hidden="true"></span>
 				</div>
@@ -2280,8 +2286,13 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 					bind:value={dayComposerText}
 					class="wp-input"
 					type="text"
-					placeholder={`Ny oppgave`}
+					placeholder="Ny oppgave (skriv @ for å nevne en person)"
 					onkeydown={(event) => handleComposerKeydown(event, 'day')}
+				/>
+				<MentionAutocomplete
+					textareaEl={dayComposerInput}
+					value={dayComposerText}
+					onValueChange={(t) => (dayComposerText = t)}
 				/>
 				<span class="wp-save-dot" class:is-saving={saveStates.dayItems === 'saving'} class:is-saved={saveStates.dayItems === 'saved'} aria-hidden="true"></span>
 			</div>

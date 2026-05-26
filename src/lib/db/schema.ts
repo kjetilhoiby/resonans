@@ -880,6 +880,20 @@ export const taskPersonMentions = pgTable('task_person_mentions', {
 	idxPersonCreated: index('task_person_mentions_person_created_idx').on(table.personId, table.createdAt)
 }));
 
+// Indeks over hvilke personer som er nevnt i et checklist-item (dag-task).
+// Speiler taskPersonMentions, men for items som ikke har sin egen task-rad.
+export const checklistItemPersonMentions = pgTable('checklist_item_person_mentions', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	checklistItemId: uuid('checklist_item_id').references(() => checklistItems.id, { onDelete: 'cascade' }).notNull(),
+	personId: uuid('person_id').references((): AnyPgColumn => persons.id, { onDelete: 'cascade' }).notNull(),
+	confidence: text('confidence').notNull().default('inferred'), // 'explicit' | 'inferred'
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => ({
+	uniqMention: uniqueIndex('checklist_item_person_mentions_unique').on(table.checklistItemId, table.personId),
+	idxPersonCreated: index('checklist_item_person_mentions_person_created_idx').on(table.personId, table.createdAt)
+}));
+
 // Web push subscriptions for PWA notifications
 export const webPushSubscriptions = pgTable('web_push_subscriptions', {
 	id: uuid('id').primaryKey().defaultRandom(),

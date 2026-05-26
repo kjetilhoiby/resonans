@@ -2,8 +2,10 @@ import { db } from '$lib/db';
 import {
 	messagePersonMentions,
 	taskPersonMentions,
+	checklistItemPersonMentions,
 	messages,
 	tasks,
+	checklistItems,
 	persons
 } from '$lib/db/schema';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
@@ -135,6 +137,64 @@ export class PersonMentionService {
 			})
 			.returning({ id: taskPersonMentions.id });
 		return inserted.length;
+	}
+
+	/**
+	 * Skriv mentions for et checklist-item (dag-task) basert på teksten.
+	 */
+	static async indexChecklistItem(
+		userId: string,
+		checklistItemId: string,
+		text: string,
+		explicitPersonIds: string[] = []
+	): Promise<number> {
+		const detected = await detectPersonMentions(userId, text);
+		const merged = new Map<string, DetectedMention>();
+		for (const m of detected) merged.set(m.personId, m);
+		for (const id of explicitPersonIds) {
+			merged.set(id, { personId: id, confidence: 'explicit' });
+		}
+		if (merged.size === 0) return 0;
+		const rows = Array.from(merged.values()).map((m) => ({
+			userId,
+			checklistItemId,
+			personId: m.personId,
+			confidence: m.confidence
+		}));
+		const inserted = await db
+			.insert(checklistItemPersonMentions)
+			.values(rows)
+			.onConflictDoUpdate({
+				target: [checklistItemPersonMentions.checklistItemId, checklistItemPersonMentions.personId],
+				set: { confidence: sql`EXCLUDED.confidence` }
+			})
+			.returning({ id: checklistItemPersonMentions.id });
+		return inserted.length;
+	}
+
+	static async listChecklistItemMentionsForPerson(
+		userId: string,
+		personId: string,
+		opts?: { limit?: number; includeChecked?: boolean }
+	) {
+		const limit = opts?.limit ?? 50;
+		const rows = await db
+			.select({
+				mention: checklistItemPersonMentions,
+				item: checklistItems
+			})
+			.from(checklistItemPersonMentions)
+			.innerJoin(checklistItems, eq(checklistItemPersonMentions.checklistItemId, checklistItems.id))
+			.where(
+				and(
+					eq(checklistItemPersonMentions.userId, userId),
+					eq(checklistItemPersonMentions.personId, personId)
+				)
+			)
+			.orderBy(desc(checklistItems.createdAt))
+			.limit(limit * 2);
+		if (opts?.includeChecked) return rows.slice(0, limit);
+		return rows.filter((r) => !r.item.checked).slice(0, limit);
 	}
 
 	static async listMessageMentionsForPerson(
