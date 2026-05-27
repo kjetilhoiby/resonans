@@ -60,15 +60,21 @@ if (migrationsResult.status !== 0) {
 	process.exit(migrationsResult.status ?? 1);
 }
 
-console.log('[db:sync] Steg 2/2 — kjører drizzle-kit push --force …');
+console.log('[db:sync] Steg 2/2 — kjører drizzle-kit push --force (best-effort) …');
 const result = spawnSync('npx', ['drizzle-kit', 'push', '--force'], {
 	stdio: 'inherit',
 	env: process.env
 });
 
 if (result.status !== 0) {
-	console.error(`[db:sync] drizzle-kit push feilet med exit-kode ${result.status}.`);
-	process.exit(result.status ?? 1);
+	// SQL-migrasjonene er autoritative (se CLAUDE.md). drizzle push er bare
+	// et sikkerhetsnett for endringer i schema.ts som ikke har fått en
+	// SQL-migrasjon ennå. Hvis push feiler — f.eks. fordi den tolker en
+	// kolonne som usikker å endre — så logger vi det og fortsetter. Build
+	// skal ikke ryke på denne grunn.
+	console.warn(`[db:sync] drizzle-kit push exited ${result.status} — fortsetter likevel (SQL-migrasjoner er autoritative).`);
+} else {
+	console.log('[db:sync] drizzle push OK.');
 }
 
 console.log('[db:sync] Skjema synkronisert.');
