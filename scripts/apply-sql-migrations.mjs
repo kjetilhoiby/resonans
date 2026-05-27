@@ -33,7 +33,12 @@ if (!process.env.DATABASE_URL) {
 	process.exit(1);
 }
 
-const sql = postgres(process.env.DATABASE_URL, { max: 1 });
+const sql = postgres(process.env.DATABASE_URL, {
+	max: 1,
+	onnotice: (notice) => {
+		console.log(`[sql-migrations] PG-NOTICE: ${notice.message}`);
+	}
+});
 
 try {
 	await sql`
