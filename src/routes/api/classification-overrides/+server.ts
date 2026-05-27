@@ -8,6 +8,7 @@ import {
 	type ClassificationDomain
 } from '$lib/server/classification-overrides';
 import { syncAllCategorizedEvents } from '$lib/server/integrations/categorized-events';
+import { runInBackground } from '$lib/server/run-in-background';
 import { and, desc, eq } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
 
@@ -82,10 +83,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	// Resync categorized_events if this is a transaction override
 	// This ensures tema pages and other views see the updated category immediately
 	if (body.domain === 'transaction') {
-		// Run in background, don't block the response
-		syncAllCategorizedEvents(userId).catch((err) => {
-			console.error('Failed to sync categorized events after override:', err);
-		});
+		runInBackground(syncAllCategorizedEvents(userId));
 	}
 
 	return json({

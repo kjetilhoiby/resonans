@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { requireAdmin } from '$lib/server/admin-auth';
 import { getBackgroundJobById, cancelBackgroundJob, retryBackgroundJob, deleteBackgroundJob, processDueBackgroundJobs } from '$lib/server/background-jobs';
+import { runInBackground } from '$lib/server/run-in-background';
 
 /**
  * GET /api/admin/jobs/:id
@@ -34,8 +35,8 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 		if (action === 'retry') {
 			const job = await retryBackgroundJob(params.id);
 			if (!job) return json({ success: false, error: 'Job not found' }, { status: 404 });
-			// Kick off processing immediately
-			void processDueBackgroundJobs({ limit: 1, workerId: `admin-retry-${params.id}` });
+			// Kick off processing immediately — via waitUntil så den ikke dør med responsen
+			runInBackground(processDueBackgroundJobs({ limit: 1, workerId: `admin-retry-${params.id}` }));
 			return json({ success: true, job });
 		}
 

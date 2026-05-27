@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { merchantMappings, classificationOverrides } from '$lib/db/schema';
 import { syncAllCategorizedEvents } from '$lib/server/integrations/categorized-events';
+import { runInBackground } from '$lib/server/run-in-background';
 import { eq, and } from 'drizzle-orm';
 
 export const DELETE: RequestHandler = async ({ locals, params }) => {
@@ -81,9 +82,7 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 		}
 
 		// Resync categorized_events to reflect the new override
-		syncAllCategorizedEvents(userId).catch((err) => {
-			console.error('Failed to sync categorized events after merchant override:', err);
-		});
+		runInBackground(syncAllCategorizedEvents(userId));
 
 		return json({ success: true, overrideCreated: true });
 	}

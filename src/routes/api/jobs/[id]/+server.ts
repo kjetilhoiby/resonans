@@ -4,6 +4,7 @@ import { db } from '$lib/db';
 import { backgroundJobs } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { processDueBackgroundJobs } from '$lib/server/background-jobs';
+import { runInBackground } from '$lib/server/run-in-background';
 
 // Only allow operating on jobs owned by the current user
 async function getOwnedJob(jobId: string, userId: string) {
@@ -29,7 +30,7 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 			.where(and(eq(backgroundJobs.id, params.id), eq(backgroundJobs.userId, locals.userId)))
 			.returning({ id: backgroundJobs.id, status: backgroundJobs.status });
 
-		void processDueBackgroundJobs({ limit: 1, workerId: `user-retry-${params.id}` });
+		runInBackground(processDueBackgroundJobs({ limit: 1, workerId: `user-retry-${params.id}` }));
 		return json({ success: true, job });
 	}
 
