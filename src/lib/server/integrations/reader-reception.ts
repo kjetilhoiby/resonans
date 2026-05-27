@@ -1,9 +1,13 @@
 /**
  * Henter lesermottak fra bokelskere.no og åpne blogger/forum.
  *
- * Mer permissiv enn critic-reviews: bredere Tavily-søk uten domene-
- * allowlist (men ekskluderer rene salgs/katalog-sider og store
- * "anmeldelse"-domener som dekkes av critic-reviews).
+ * To-pass-strategi:
+ *   1. Eksplisitt Tavily-søk mot bokelskere.no (norsk Goodreads-
+ *      ekvivalent — vår beste kilde til norske leseranmeldelser).
+ *   2. Bredere Tavily-søk på blogger/forum, med ekskluderingsliste for
+ *      salgs/katalog-sider og store "anmeldelse"-domener som dekkes av
+ *      critic-reviews. Bokelskere ekskluderes i pass 2 for å unngå
+ *      dobbeltarbeid.
  */
 
 import { tavilySearch } from '$lib/server/web/tavily';
@@ -19,8 +23,11 @@ const EXCLUDED_FROM_READER_RECEPTION = [
 	'norli.no',
 	'haugenbok.no',
 	'adlibris.com',
-	'goodreads.com'
+	'goodreads.com',
+	'bokelskere.no'
 ];
+
+const MAX_SOURCES = 6;
 
 export interface ReaderSourceRaw {
 	domain: string;
@@ -49,22 +56,31 @@ export async function collectReaderReception(
 	author: string | null
 ): Promise<ReaderSourceRaw[]> {
 	const authorPart = author ? ` ${author}` : '';
-	const query = `"${title}"${authorPart} leseropplevelse anmeldelse blogg`;
 
-	const hits = await tavilySearch(query, {
-		maxResults: 10,
-		excludeDomains: EXCLUDED_FROM_READER_RECEPTION,
+	const bokelskereHits = await tavilySearch(`"${title}"${authorPart}`, {
+		maxResults: 5,
+		includeDomains: ['bokelskere.no'],
 		includeRawContent: true,
 		searchDepth: 'basic'
 	});
 
+	const openHits = await tavilySearch(
+		`"${title}"${authorPart} leseropplevelse anmeldelse blogg`,
+		{
+			maxResults: 10,
+			excludeDomains: EXCLUDED_FROM_READER_RECEPTION,
+			includeRawContent: true,
+			searchDepth: 'basic'
+		}
+	);
+
 	const sources: ReaderSourceRaw[] = [];
 	const seenDomains = new Set<string>();
 
-	for (const hit of hits) {
+	for (const hit of [...bokelskereHits, ...openHits]) {
 		const domain = extractDomain(hit.url);
 		if (!domain) continue;
-		if (seenDomains.size >= 5) break;
+		if (sources.length >= MAX_SOURCES) break;
 		if (seenDomains.has(domain)) continue;
 
 		let rawText = hit.rawContent ?? hit.content ?? '';

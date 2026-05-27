@@ -5,8 +5,8 @@
  * Pipeline (alle steg kjører parallelt):
  *   1. OpenLibrary  — kronologisk verkliste for forfatteren
  *   2. Tavily + ekstraksjon — norske kritikeranmeldelser
- *   3. Tavily + ekstraksjon — lesermottak (bokelskere/blogger)
- *   4. Goodreads-scrape  — rating + topp-anmeldelser
+ *   3. Tavily + ekstraksjon — lesermottak (bokelskere prioritert, så åpne blogger)
+ *   4. Tavily — Goodreads-rating + review-snippets
  *   5. gpt-4o syntese — strukturert pakke med ordrette sitater
  *
  * Lagrer i books.contextPack og setter contextStatus til 'ready' eller
