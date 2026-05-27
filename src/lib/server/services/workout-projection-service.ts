@@ -1,9 +1,10 @@
 import { db, pgClient } from '$lib/db';
-import { canonicalWorkouts, workoutDailyAggregates } from '$lib/db/schema';
-import { and, eq, gte, lte, max, sql } from 'drizzle-orm';
+import { canonicalWorkouts, sensorEvents, workoutDailyAggregates } from '$lib/db/schema';
+import { and, eq, gte, inArray, lte, max, sql } from 'drizzle-orm';
 import { buildUnifiedWorkoutActivities } from '$lib/server/activity-layer';
 import { enqueueWorkoutProjectionRefresh } from '$lib/server/workout-projection-refresh-queue';
 import { computeWorkoutEffort, getEffortBaseline } from '$lib/server/services/effort-service';
+import { analyzeWorkout, type TrackPoint, type WorkoutAnalyticsResult } from '$lib/server/workouts/workout-analytics';
 
 export type WorkoutProjectionRefreshResult = {
 	canonicalCount: number;
@@ -39,6 +40,74 @@ function sportFamily(value: string): string {
 	if (value.includes('walking') || value === 'hiking') return 'walking';
 	if (value.includes('swimming')) return 'swimming';
 	return value || 'workout';
+}
+
+type EvidenceRow = { eventId: string };
+type UnifiedRow = { sportType: string; evidence: EvidenceRow[] };
+
+/**
+ * Henter trackPoints fra sensorEvents for running-økter og kjører analytics.
+ * Caches resultatet per eventId — én sensorEvent kan ha trackPoints, mens
+ * andre i klyngen ikke har det.
+ */
+async function fetchAnalyticsForRunningWorkouts(
+	workouts: UnifiedRow[],
+	baseline: { restHr: number; maxHr: number }
+): Promise<Map<string, WorkoutAnalyticsResult>> {
+	const eventIds = new Set<string>();
+	for (const w of workouts) {
+		if (sportFamily(w.sportType) !== 'running') continue;
+		for (const e of w.evidence) eventIds.add(e.eventId);
+	}
+	if (eventIds.size === 0) return new Map();
+
+	const rows = await db
+		.select({
+			id: sensorEvents.id,
+			trackPoints: sql<TrackPoint[] | null>`${sensorEvents.data}->'trackPoints'`
+		})
+		.from(sensorEvents)
+		.where(inArray(sensorEvents.id, [...eventIds]));
+
+	const out = new Map<string, WorkoutAnalyticsResult>();
+	for (const row of rows) {
+		const points = Array.isArray(row.trackPoints) ? row.trackPoints : null;
+		if (!points || points.length < 2) continue;
+		const analytics = analyzeWorkout(points, {
+			restHr: baseline.restHr,
+			maxHr: baseline.maxHr
+		});
+		if (analytics.bestEfforts || analytics.gapSecPerKm != null || analytics.hrZoneDistribution) {
+			out.set(row.id, analytics);
+		}
+	}
+	return out;
+}
+
+/**
+ * En workout-cluster kan ha flere evidence-events (Garmin + Withings for samme tur).
+ * Foretrekk analytics fra event med flest tilgjengelige felter; fall tilbake til
+ * første event som har noe i det hele tatt.
+ */
+function mergeAnalyticsForCluster(
+	evidence: EvidenceRow[],
+	analyticsByEventId: Map<string, WorkoutAnalyticsResult>
+): WorkoutAnalyticsResult | null {
+	let best: WorkoutAnalyticsResult | null = null;
+	let bestScore = -1;
+	for (const e of evidence) {
+		const a = analyticsByEventId.get(e.eventId);
+		if (!a) continue;
+		const score =
+			(a.bestEfforts ? Object.keys(a.bestEfforts).length : 0) +
+			(a.gapSecPerKm != null ? 1 : 0) +
+			(a.hrZoneDistribution ? 1 : 0);
+		if (score > bestScore) {
+			bestScore = score;
+			best = a;
+		}
+	}
+	return best;
 }
 
 function utcDay(date: Date): Date {
@@ -146,6 +215,10 @@ export class WorkoutProjectionService {
 
 		const baseline = await getEffortBaseline(userId);
 
+		// For running workouts: fetch trackPoints fra sensorEvents og kjør analytics.
+		// Activity-layeren stripper trackPoints fra query-pathen, så vi henter dem her.
+		const analyticsByEventId = await fetchAnalyticsForRunningWorkouts(inRange, baseline);
+
 		const canonicalRows = inRange.map((workout) => {
 			const family = sportFamily(workout.sportType);
 			const effort = computeWorkoutEffort(
@@ -157,6 +230,8 @@ export class WorkoutProjectionService {
 				},
 				baseline
 			);
+			// Slå sammen analytics fra hvert evidence-event — typisk bare ett har trackPoints
+			const analytics = mergeAnalyticsForCluster(workout.evidence, analyticsByEventId);
 			return {
 				userId,
 				startTime: new Date(workout.startTime),
@@ -177,6 +252,10 @@ export class WorkoutProjectionService {
 					sensorType: evidence.sensorType,
 					timestamp: evidence.timestamp
 				})),
+				bestEfforts: analytics?.bestEfforts ?? null,
+				gapSecPerKm: analytics?.gapSecPerKm != null ? String(analytics.gapSecPerKm) : null,
+				hrZoneDistribution: analytics?.hrZoneDistribution ?? null,
+				analyticsComputedAt: analytics ? new Date() : null,
 				updatedAt: new Date()
 			};
 		});
