@@ -49,53 +49,90 @@ export async function buildAthleteSnapshot(userId: string): Promise<AthleteSnaps
 	const fourWeeksAgo = new Date(now.getTime() - FOUR_WEEKS_MS);
 	const ninetyDaysAgo = new Date(now.getTime() - NINETY_DAYS_MS);
 
-	// Recent running workouts for volume + bestEffort aggregation
-	const recentWorkouts = await db
-		.select({
-			startTime: canonicalWorkouts.startTime,
-			distanceMeters: canonicalWorkouts.distanceMeters,
-			durationSeconds: canonicalWorkouts.durationSeconds,
-			sportFamily: canonicalWorkouts.sportFamily,
-			bestEfforts: canonicalWorkouts.bestEfforts
-		})
-		.from(canonicalWorkouts)
-		.where(
-			and(
-				eq(canonicalWorkouts.userId, userId),
-				eq(canonicalWorkouts.sportFamily, 'running'),
-				gte(canonicalWorkouts.startTime, fourWeeksAgo)
-			)
-		)
-		.orderBy(desc(canonicalWorkouts.startTime));
+	// Recent running workouts for volume + bestEffort aggregation.
+	// Graceful fallback hvis tabellen mangler analytics-kolonnene (deploy
+	// uten schema-sync) — returnerer da bare et tomt snapshot.
+	let recentWorkouts: Array<{
+		startTime: Date;
+		distanceMeters: string | null;
+		durationSeconds: string | null;
+		sportFamily: string;
+		bestEfforts: Record<string, unknown> | null;
+	}> = [];
+	let ninetyDayWorkouts: Array<{
+		bestEfforts: Record<string, unknown> | null;
+		distanceMeters: string | null;
+		durationSeconds: string | null;
+	}> = [];
 
-	// All-time best efforts (siste 90 dager — eldre PR-er er ikke nødvendigvis representative)
-	const ninetyDayWorkouts = await db
-		.select({
-			bestEfforts: canonicalWorkouts.bestEfforts,
-			distanceMeters: canonicalWorkouts.distanceMeters,
-			durationSeconds: canonicalWorkouts.durationSeconds
-		})
-		.from(canonicalWorkouts)
-		.where(
-			and(
-				eq(canonicalWorkouts.userId, userId),
-				eq(canonicalWorkouts.sportFamily, 'running'),
-				gte(canonicalWorkouts.startTime, ninetyDaysAgo)
+	try {
+		recentWorkouts = (await db
+			.select({
+				startTime: canonicalWorkouts.startTime,
+				distanceMeters: canonicalWorkouts.distanceMeters,
+				durationSeconds: canonicalWorkouts.durationSeconds,
+				sportFamily: canonicalWorkouts.sportFamily,
+				bestEfforts: canonicalWorkouts.bestEfforts
+			})
+			.from(canonicalWorkouts)
+			.where(
+				and(
+					eq(canonicalWorkouts.userId, userId),
+					eq(canonicalWorkouts.sportFamily, 'running'),
+					gte(canonicalWorkouts.startTime, fourWeeksAgo)
+				)
 			)
-		);
+			.orderBy(desc(canonicalWorkouts.startTime))) as typeof recentWorkouts;
 
-	// Eksplisitte tester
-	const tests = await db
-		.select()
-		.from(programTestResults)
-		.where(
-			and(
-				eq(programTestResults.userId, userId),
-				gte(programTestResults.recordedAt, ninetyDaysAgo)
+		ninetyDayWorkouts = (await db
+			.select({
+				bestEfforts: canonicalWorkouts.bestEfforts,
+				distanceMeters: canonicalWorkouts.distanceMeters,
+				durationSeconds: canonicalWorkouts.durationSeconds
+			})
+			.from(canonicalWorkouts)
+			.where(
+				and(
+					eq(canonicalWorkouts.userId, userId),
+					eq(canonicalWorkouts.sportFamily, 'running'),
+					gte(canonicalWorkouts.startTime, ninetyDaysAgo)
+				)
+			)) as typeof ninetyDayWorkouts;
+	} catch (err) {
+		console.warn('[athlete-context] canonicalWorkouts query feilet — returnerer tomt snapshot', err);
+		return {
+			dataQuality: 'none',
+			recentVolumeKm: 0,
+			recentSessionsPerWeek: 0,
+			bestEfforts: {},
+			recentTests: [],
+			strengthBaseline: {},
+			recordedAt: now.toISOString()
+		};
+	}
+
+	// Eksplisitte tester — også med graceful fallback
+	let tests: Array<{
+		testType: string;
+		recordedAt: Date;
+		result: Record<string, any>;
+	}> = [];
+	try {
+		tests = (await db
+			.select()
+			.from(programTestResults)
+			.where(
+				and(
+					eq(programTestResults.userId, userId),
+					gte(programTestResults.recordedAt, ninetyDaysAgo)
+				)
 			)
-		)
-		.orderBy(desc(programTestResults.recordedAt))
-		.limit(20);
+			.orderBy(desc(programTestResults.recordedAt))
+			.limit(20)) as typeof tests;
+	} catch (err) {
+		console.warn('[athlete-context] programTestResults query feilet — fortsetter uten tester', err);
+		tests = [];
+	}
 
 	// Sum recent volume
 	let recentVolumeMeters = 0;
