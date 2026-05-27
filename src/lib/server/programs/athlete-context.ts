@@ -49,53 +49,70 @@ export async function buildAthleteSnapshot(userId: string): Promise<AthleteSnaps
 	const fourWeeksAgo = new Date(now.getTime() - FOUR_WEEKS_MS);
 	const ninetyDaysAgo = new Date(now.getTime() - NINETY_DAYS_MS);
 
-	// Recent running workouts for volume + bestEffort aggregation
-	const recentWorkouts = await db
-		.select({
-			startTime: canonicalWorkouts.startTime,
-			distanceMeters: canonicalWorkouts.distanceMeters,
-			durationSeconds: canonicalWorkouts.durationSeconds,
-			sportFamily: canonicalWorkouts.sportFamily,
-			bestEfforts: canonicalWorkouts.bestEfforts
-		})
-		.from(canonicalWorkouts)
-		.where(
-			and(
-				eq(canonicalWorkouts.userId, userId),
-				eq(canonicalWorkouts.sportFamily, 'running'),
-				gte(canonicalWorkouts.startTime, fourWeeksAgo)
-			)
-		)
-		.orderBy(desc(canonicalWorkouts.startTime));
+	// Recent running workouts for volume aggregation. Vi henter IKKE
+	// best_efforts her — det er en cache-kolonne som kanskje ikke eksisterer
+	// før schema-sync har kjørt. PR-data hentes fra eksplisitte tester
+	// (programTestResults) i stedet, som er en pålitelig kilde.
+	type RecentRow = {
+		startTime: Date;
+		distanceMeters: string | null;
+		durationSeconds: string | null;
+		sportFamily: string;
+	};
+	let recentWorkouts: RecentRow[] = [];
 
-	// All-time best efforts (siste 90 dager — eldre PR-er er ikke nødvendigvis representative)
-	const ninetyDayWorkouts = await db
-		.select({
-			bestEfforts: canonicalWorkouts.bestEfforts,
-			distanceMeters: canonicalWorkouts.distanceMeters,
-			durationSeconds: canonicalWorkouts.durationSeconds
-		})
-		.from(canonicalWorkouts)
-		.where(
-			and(
-				eq(canonicalWorkouts.userId, userId),
-				eq(canonicalWorkouts.sportFamily, 'running'),
-				gte(canonicalWorkouts.startTime, ninetyDaysAgo)
+	try {
+		recentWorkouts = await db
+			.select({
+				startTime: canonicalWorkouts.startTime,
+				distanceMeters: canonicalWorkouts.distanceMeters,
+				durationSeconds: canonicalWorkouts.durationSeconds,
+				sportFamily: canonicalWorkouts.sportFamily
+			})
+			.from(canonicalWorkouts)
+			.where(
+				and(
+					eq(canonicalWorkouts.userId, userId),
+					eq(canonicalWorkouts.sportFamily, 'running'),
+					gte(canonicalWorkouts.startTime, fourWeeksAgo)
+				)
 			)
-		);
+			.orderBy(desc(canonicalWorkouts.startTime));
+	} catch (err) {
+		console.warn('[athlete-context] canonicalWorkouts query feilet — returnerer tomt snapshot', err);
+		return {
+			dataQuality: 'none',
+			recentVolumeKm: 0,
+			recentSessionsPerWeek: 0,
+			bestEfforts: {},
+			recentTests: [],
+			strengthBaseline: {},
+			recordedAt: now.toISOString()
+		};
+	}
 
-	// Eksplisitte tester
-	const tests = await db
-		.select()
-		.from(programTestResults)
-		.where(
-			and(
-				eq(programTestResults.userId, userId),
-				gte(programTestResults.recordedAt, ninetyDaysAgo)
+	// Eksplisitte tester — også med graceful fallback
+	let tests: Array<{
+		testType: string;
+		recordedAt: Date;
+		result: Record<string, any>;
+	}> = [];
+	try {
+		tests = (await db
+			.select()
+			.from(programTestResults)
+			.where(
+				and(
+					eq(programTestResults.userId, userId),
+					gte(programTestResults.recordedAt, ninetyDaysAgo)
+				)
 			)
-		)
-		.orderBy(desc(programTestResults.recordedAt))
-		.limit(20);
+			.orderBy(desc(programTestResults.recordedAt))
+			.limit(20)) as typeof tests;
+	} catch (err) {
+		console.warn('[athlete-context] programTestResults query feilet — fortsetter uten tester', err);
+		tests = [];
+	}
 
 	// Sum recent volume
 	let recentVolumeMeters = 0;
@@ -106,12 +123,10 @@ export async function buildAthleteSnapshot(userId: string): Promise<AthleteSnaps
 	const recentVolumeKm = Math.round((recentVolumeMeters / 1000) * 10) / 10;
 	const recentSessionsPerWeek = Math.round((recentWorkouts.length / 4) * 10) / 10;
 
-	// Aggreger best efforts: ta minimum (raskeste) per distanse fra både analytics og test-resultater
+	// Aggreger best efforts fra eksplisitte tester (5k-test, Cooper, 10k tt).
+	// Cache-baserte PR-er fra canonical_workouts.bestEfforts kommer i v1.2
+	// når schema-sync er bekreftet stabilt.
 	const bestEfforts: AthleteSnapshot['bestEfforts'] = {};
-	for (const w of ninetyDayWorkouts) {
-		if (!w.bestEfforts) continue;
-		mergeBestEfforts(bestEfforts, w.bestEfforts);
-	}
 
 	// Tester kan også bidra til best efforts (eksplisitt 5k-test, Cooper → estimert distance)
 	for (const t of tests) {
