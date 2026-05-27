@@ -174,8 +174,12 @@ samme grunnstruktur — `AppPage` → `PageHeader` → eget innhold.
   1. `scripts/apply-sql-migrations.mjs` — eksplisitte SQL-migrasjoner fra `scripts/db-migrations/*.sql`, applisert i alfabetisk rekkefølge og bokført i tabellen `_sql_migrations`.
   2. `drizzle-kit push --force` — additive endringer fra `schema.ts` som drizzle gjenkjenner trygt.
   3. `DATA_MIGRATIONS` — idempotente `UPDATE`/`INSERT`-statements i `sync-db-schema.mjs` som må følge kode-endringer (f.eks. rename av enum-verdier).
-- **Når trenger jeg en SQL-migration?** For alt som drizzle-kit push ikke håndterer trygt: table/column rename, drop column, typeendringer. Push --force tolker rename heuristisk og kan ende opp med drop+create (= datatap). Additive endringer (CREATE TABLE, ADD COLUMN med default, ADD INDEX) kan fortsatt bare gå via schema.ts.
-- **Rutine for destruktiv endring:** lag `scripts/db-migrations/NNNN_<beskrivelse>.sql` med idempotente `IF EXISTS`-grener, OG oppdater `schema.ts` til samme måltilstand. SQL-en kjører først (gjør endringen), drizzle push ser deretter matchende state og er en no-op.
+- **Alle schema-endringer skal ha en eksplisitt SQL-migrasjon.** Også additive (ADD COLUMN, CREATE TABLE, ADD INDEX). `drizzle-kit push --force` har feilet stille på additive endringer i prod (se Ekko v1.1 / PR #89 — produserte 500-er i flere dager fordi `best_efforts`-kolonnen aldri ble lagt til). Vi stoler ikke lenger på drizzle push alene.
+- **Rutine for ALLE schema-endringer:**
+  1. Lag `scripts/db-migrations/NNNN_<beskrivelse>.sql` med idempotente `IF NOT EXISTS` / `IF EXISTS`-grener.
+  2. Oppdater `schema.ts` til samme måltilstand.
+  3. SQL-en kjører først (gjør endringen), drizzle push ser deretter matchende state og er en no-op.
+- **Hvorfor SQL alltid:** drizzle push er udeterministisk for nye kolonner (kan kreve interaktiv bekreftelse selv med --force, eller skippe endringer det vurderer som usikre). SQL-migrasjonen er den autoritative kilden — drizzle push er bare et sikkerhetsnett for ting vi måtte ha glemt.
 - **Data-migreringer som må følge kode-endringer** (f.eks. `UPDATE` for å rename enum-verdier) legges inn i `DATA_MIGRATIONS`-arrayen i `scripts/sync-db-schema.mjs`. Hver statement må være idempotent (bruk `WHERE` eller `ON CONFLICT`). Ikke lag standalone `apply-migration-XXXX.mjs`-scripts som krever manuell kjøring.
 - Sikkerhetsnett: scriptet hopper over preview/dev-deploys. `SKIP_DB_SYNC=1` deaktiverer hele steget; `SKIP_SQL_MIGRATIONS=1` hopper kun over SQL-runner-steget.
 - Migration-filer i `drizzle/` (fra `db:generate`) er valgfrie audit-trails — de kjøres ikke automatisk.
