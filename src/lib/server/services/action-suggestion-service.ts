@@ -19,6 +19,7 @@ import { reflectionLightProducer } from './action-producers/reflection-light';
 import { quickWinProducer } from './action-producers/quick-win';
 import { inboxNoteProducer } from './action-producers/inbox-note';
 import { sortInboxProducer } from './action-producers/sort-inbox';
+import { trainingProgramProducer } from './action-producers/training-program';
 
 export interface EgenfrekvensContext {
 	today: {
@@ -59,7 +60,8 @@ const PRODUCERS: ActionProducer[] = [
 	sortInboxProducer,
 	planTomorrowProducer,
 	planWeekProducer,
-	planMonthProducer
+	planMonthProducer,
+	trainingProgramProducer
 ];
 
 async function loadPlannedContexts(userId: string) {
