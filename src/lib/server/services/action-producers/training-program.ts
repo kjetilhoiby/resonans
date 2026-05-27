@@ -1,4 +1,5 @@
 import type { ActionProducer } from '../action-suggestion-service';
+import type { ActionCandidate } from '$lib/types/actions';
 import { db } from '$lib/db';
 import { trainingPrograms, programWeeks, programSessions, programSessionCompletions } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
@@ -14,6 +15,15 @@ import { and, eq } from 'drizzle-orm';
  * dukker ingen chip opp — vi vil ikke spamme.
  */
 export const trainingProgramProducer: ActionProducer = async (ctx) => {
+	try {
+		return await produceChips(ctx);
+	} catch (err) {
+		console.warn('[training-program-producer] feilet, ingen chip', err);
+		return [];
+	}
+};
+
+async function produceChips(ctx: Parameters<ActionProducer>[0]): Promise<ActionCandidate[]> {
 	const activePrograms = await db.query.trainingPrograms.findMany({
 		where: and(eq(trainingPrograms.userId, ctx.userId), eq(trainingPrograms.status, 'active')),
 		columns: { id: true, name: true, startDate: true, durationWeeks: true },

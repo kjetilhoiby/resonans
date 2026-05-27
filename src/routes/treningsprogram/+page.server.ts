@@ -6,9 +6,13 @@ export const load: PageServerLoad = async ({ locals }) => {
 	if (!locals.userId) {
 		return { programs: [], snapshot: null };
 	}
-	const [programs, snapshot] = await Promise.all([
-		getProgramSummaries(locals.userId),
-		buildAthleteSnapshot(locals.userId)
-	]);
+	const programs = await getProgramSummaries(locals.userId).catch((err) => {
+		console.error('[treningsprogram] getProgramSummaries feilet', err);
+		return [];
+	});
+	const snapshot = await buildAthleteSnapshot(locals.userId).catch((err) => {
+		console.error('[treningsprogram] buildAthleteSnapshot feilet', err);
+		return null;
+	});
 	return { programs, snapshot };
 };
