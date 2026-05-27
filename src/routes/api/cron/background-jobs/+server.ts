@@ -22,7 +22,7 @@ export const GET: RequestHandler = async ({ request }) => {
 
 	const [result, goalIntentParse, taskIntentParse, workoutSweeper] = await Promise.all([
 		processDueBackgroundJobs({
-			limit: 5,
+			limit: 50,
 			workerId: `cron-${new Date().toISOString()}`
 		}),
 		getGoalIntentParseObservability(24 * 7),
