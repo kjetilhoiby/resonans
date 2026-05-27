@@ -120,7 +120,24 @@ export async function saveGeneratedProgram(
 export async function getProgramSummaries(userId: string): Promise<ProgramSummaryDTO[]> {
 	const rows = await db.query.trainingPrograms.findMany({
 		where: eq(trainingPrograms.userId, userId),
-		orderBy: [desc(trainingPrograms.createdAt)]
+		orderBy: [desc(trainingPrograms.createdAt)],
+		// Eksplisitt column-spec: utelat 'baseline' så queryen ikke kaster
+		// dersom schema-sync ikke har lagt til kolonnen enda.
+		columns: {
+			id: true,
+			userId: true,
+			name: true,
+			goal: true,
+			durationWeeks: true,
+			sessionsPerWeek: true,
+			status: true,
+			includeStrength: true,
+			includeRunning: true,
+			startDate: true,
+			generatedWith: true,
+			createdAt: true,
+			updatedAt: true
+		}
 	});
 
 	if (rows.length === 0) return [];
