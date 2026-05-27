@@ -61,6 +61,9 @@ if (migrationsResult.status !== 0) {
 }
 
 console.log('[db:sync] Steg 2/2 — kjører drizzle-kit push --force (best-effort) …');
+// drizzle-kit push spør interaktivt om nye tabeller er rename av eksisterende,
+// selv med --force, og crasher på CI uten TTY (sett som "Error: Interactive
+// prompts require a TTY terminal"). Vi skipper det med exit-code non-fatal.
 const result = spawnSync('npx', ['drizzle-kit', 'push', '--force'], {
 	stdio: 'inherit',
 	env: process.env
