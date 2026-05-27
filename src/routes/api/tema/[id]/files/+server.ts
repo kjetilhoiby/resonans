@@ -6,6 +6,7 @@ import { eq, and, asc } from 'drizzle-orm';
 import { v2 as cloudinary } from 'cloudinary';
 import { env } from '$env/dynamic/private';
 import { extractFileContent } from '$lib/server/file-extraction';
+import { runInBackground } from '$lib/server/run-in-background';
 
 // @ts-ignore
 const BufferGlobal = Buffer;
@@ -87,9 +88,10 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		})
 		.returning();
 
-	// Parse content and store on the file row (fire-and-forget — does not block response)
-	void extractFileContent(buffer, file.type, file.name, result.secure_url)
-		.then(async ({ text, kind }) => {
+	// Parse content and store on the file row — kjører i bakgrunnen via waitUntil
+	// så den ikke kverkes når responsen sendes på Vercel.
+	runInBackground(
+		extractFileContent(buffer, file.type, file.name, result.secure_url).then(async ({ text, kind }) => {
 			if (!text.trim() || kind === 'unsupported') return;
 			const label = kind === 'image_vision' ? '🖼 Bilde' : kind === 'audio_transcript' ? '🎤 Lydopptak' : kind === 'pdf_text' ? '📍 PDF' : '📄 Fil';
 			await db
@@ -97,7 +99,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 				.set({ parsedContent: `${label}: ${file.name}\n${text}` })
 				.where(eq(themeFiles.id, saved.id));
 		})
-		.catch((err) => console.error('[upload] Parsing feilet for', file.name, err));
+	);
 
 	return json(saved);
 };

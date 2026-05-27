@@ -19,6 +19,7 @@ import { ensureCategorizedEventsForRange } from '$lib/server/integrations/catego
 import { loadTransactionMatchingRules } from '$lib/server/classification-overrides';
 import { getMetricByKey, deriveMetricKey } from '$lib/server/services/metric-definition-service';
 import { aggregateSingleMetric } from '$lib/server/integrations/aggregation';
+import { runInBackground } from '$lib/server/run-in-background';
 import type { RequestHandler } from './$types';
 
 // Støttede metrikk-typer og hvilken dataType/felt de henter fra
@@ -765,7 +766,7 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 		}
 
 		// Cache-miss: aggreger i bakgrunnen og fortsett med live-query
-		void aggregateSingleMetric(userId, widget.metricKey).catch(() => { /* ignorer feil */ });
+		runInBackground(aggregateSingleMetric(userId, widget.metricKey));
 	}
 	// ─────────────────────────────────────────────────────────────────────────
 

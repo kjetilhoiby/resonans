@@ -11,6 +11,7 @@ import { parseTaskDateTime } from '$lib/server/date-time-parser';
 import { detectMealPrefix } from '$lib/domains/food';
 import { findOrCreateMealId } from '$lib/server/task-intent-parser';
 import { PersonMentionService } from '$lib/server/services/person-mention-service';
+import { runInBackground } from '$lib/server/run-in-background';
 
 /** Extract week keys from a checklist context string like "week:2026-W16:day:2026-04-13" */
 function extractWeekKeys(context: string | null): { dashedKey: string; compactKey: string } | null {
@@ -184,11 +185,9 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 		}))
 	).returning();
 
-	// Index @-mentions for hver opprettet item — fire-and-forget, ikke blokker svaret.
+	// Index @-mentions for hver opprettet item — kjører i bakgrunnen via waitUntil.
 	for (const item of createdItems) {
-		PersonMentionService.indexChecklistItem(userId, item.id, item.text).catch((err) =>
-			console.warn('person-mention checklist-item indexing failed:', err)
-		);
+		runInBackground(PersonMentionService.indexChecklistItem(userId, item.id, item.text));
 	}
 
 	return json(createdItems, { status: 201 });

@@ -31,6 +31,7 @@ import {
 import { executeSearchMetrics } from '$lib/ai/tools/search-metrics';
 import { getMetricByKey } from '$lib/server/services/metric-definition-service';
 import { aggregateSingleMetric } from '$lib/server/integrations/aggregation';
+import { runInBackground } from '$lib/server/run-in-background';
 import {
 	markWidgetFlowCreated,
 	type WidgetCreationFlow
@@ -2536,8 +2537,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 							// Varm opp aggregat-cache i bakgrunnen for denne metrikken
 							if (args.metricKey) {
 								const fromDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
-								aggregateSingleMetric(userId, args.metricKey, fromDate)
-									.catch((err) => console.error('  📊 Background aggregation failed:', err));
+								runInBackground(aggregateSingleMetric(userId, args.metricKey, fromDate));
 							}
 
 							console.log('  📊 Widget created:', widget.id);

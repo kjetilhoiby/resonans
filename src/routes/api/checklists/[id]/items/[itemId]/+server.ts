@@ -7,6 +7,7 @@ import { TaskExecutionService } from '$lib/server/services/task-execution-servic
 import { parseTaskDateTime } from '$lib/server/date-time-parser';
 import { parseChecklistItemIntent, findLinkedTask } from '$lib/server/checklist-intent-linker';
 import { PersonMentionService } from '$lib/server/services/person-mention-service';
+import { runInBackground } from '$lib/server/run-in-background';
 
 function extractWeekKeys(context: string | null): { dashedKey: string; compactKey: string } | null {
 	if (!context) return null;
@@ -124,11 +125,9 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 		))
 		.returning();
 
-	// Re-index @-mentions hvis teksten ble endret — fire-and-forget.
+	// Re-index @-mentions hvis teksten ble endret — kjører i bakgrunnen via waitUntil.
 	if (body.text !== undefined && updated) {
-		PersonMentionService.indexChecklistItem(userId, updated.id, updated.text).catch((err) =>
-			console.warn('person-mention checklist-item reindex failed:', err)
-		);
+		runInBackground(PersonMentionService.indexChecklistItem(userId, updated.id, updated.text));
 	}
 
 	// When an item is checked and it has a linked task, log a progress record

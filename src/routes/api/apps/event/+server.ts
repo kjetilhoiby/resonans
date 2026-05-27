@@ -7,6 +7,7 @@ import { getAppConfig, type ExternalAppConfig } from '$lib/server/app-registry';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
 import { notifyPingEvent, notifyPingMatch } from '$lib/server/ping-notifications';
 import { getProfiles, matchRunningCycle } from '$lib/server/services/appliance-profile-service';
+import { runInBackground } from '$lib/server/run-in-background';
 
 async function getOrCreateSensor(userId: string, app: ExternalAppConfig): Promise<string> {
 	const existing = await db.query.sensors.findFirst({
@@ -117,16 +118,16 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			const appUrl = new URL(request.url).origin;
 			const pingData = { event: eventType, ...((data ?? {}) as Record<string, unknown>) } as any;
 
-			notifyPingEvent({
-				userId,
-				appUrl,
-				data: pingData
-			}).catch((err) => console.error('[ping-notify]', err));
+			runInBackground(
+				notifyPingEvent({
+					userId,
+					appUrl,
+					data: pingData
+				})
+			);
 
 			if (dataType === 'appliance_progress' && pingData.watt_buckets_1min_so_far?.length) {
-				handleProgressMatching(userId, appUrl, pingData).catch((err) =>
-					console.error('[ping-match]', err)
-				);
+				runInBackground(handleProgressMatching(userId, appUrl, pingData));
 			}
 		}
 
