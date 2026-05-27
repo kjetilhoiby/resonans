@@ -1829,6 +1829,25 @@ export const canonicalWorkouts = pgTable('canonical_workouts', {
 			timestamp: string;
 		}>
 	>(),
+	// Ekko v1.1 analytics — fylles av workout-analytics-modulen når en run/walk/hike workout
+	// har trackPoints. Manglende felt = trackPoints var ikke tilgjengelig (legacy/Withings-only).
+	bestEfforts: jsonb('best_efforts').$type<{
+		// Raskeste sammenhengende strekning på N meter, i sekunder
+		'1k'?: number;
+		'3k'?: number;
+		'5k'?: number;
+		'10k'?: number;
+	}>(),
+	gapSecPerKm: decimal('gap_sec_per_km'), // grade-adjusted pace
+	hrZoneDistribution: jsonb('hr_zone_distribution').$type<{
+		// Andel av total tid (0..1) tilbragt i hver sone
+		z1: number; z2: number; z3: number; z4: number; z5: number;
+		// Hvilken referanseramme zonene ble regnet ut fra
+		basis: 'hrr' | 'hrmax';
+		restHr: number;
+		maxHr: number;
+	}>(),
+	analyticsComputedAt: timestamp('analytics_computed_at'),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
 }, (table) => ({
@@ -2366,6 +2385,23 @@ export const trainingPrograms = pgTable('training_programs', {
 		generatedAt?: string;
 		inputs?: Record<string, unknown>;
 	}>(),
+	// Snapshot av athlete-baseline brukt ved generering — overskrives på rekalibrering.
+	baseline: jsonb('baseline').$type<{
+		// Tatt fra athlete-context.buildAthleteSnapshot
+		dataQuality: 'rich' | 'thin' | 'none';
+		recentVolumeKm?: number;
+		recentSessionsPerWeek?: number;
+		bestEfforts?: { '1k'?: number; '3k'?: number; '5k'?: number; '10k'?: number };
+		vdotEstimate?: number;
+		paceZones?: {
+			easySecPerKm?: number;
+			marathonSecPerKm?: number;
+			tempoSecPerKm?: number;
+			intervalSecPerKm?: number;
+		};
+		strengthBaseline?: Record<string, { reps?: number; durationSeconds?: number }>;
+		recordedAt: string;
+	}>(),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
 }, (table) => ({
@@ -2409,6 +2445,11 @@ export const programSessions = pgTable('program_sessions', {
 		hrZoneHint?: string; // f.eks. "Z2" eller "Z4-Z5"
 		notes?: string;
 	}>(),
+	// Test-økt markør (Ekko v1.1). Når satt, brukes økten til å oppdatere baseline
+	// og evt. rekalibrere resterende uker. Test-økter er fortsatt enten kind=strength
+	// eller kind=run avhengig av hva som måles.
+	isTest: boolean('is_test').notNull().default(false),
+	testType: text('test_type'), // 'cooper_12min' | 'time_5k' | 'amrap_utfall' | 'amrap_armhevinger' | 'amrap_taahevinger' | 'max_planke'
 	notes: text('notes'),
 	createdAt: timestamp('created_at').defaultNow().notNull()
 }, (table) => ({
@@ -2524,6 +2565,61 @@ export const programSessionCompletionsRelations = relations(programSessionComple
 	}),
 	sensorEvent: one(sensorEvents, {
 		fields: [programSessionCompletions.sensorEventId],
+		references: [sensorEvents.id]
+	})
+}));
+
+// Resultater fra eksplisitte tester (Cooper, 5k tt, AMRAP styrke, max planke).
+// Kan eksistere uavhengig av et program (manuell test), eller knyttes til en
+// test-økt i et program (sessionId satt) — i sistnevnte tilfelle vil
+// rekalibrering kunne trigges.
+export const programTestResults = pgTable('program_test_results', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	programId: uuid('program_id').references(() => trainingPrograms.id, { onDelete: 'set null' }),
+	sessionId: uuid('session_id').references(() => programSessions.id, { onDelete: 'set null' }),
+	sensorEventId: uuid('sensor_event_id').references(() => sensorEvents.id, { onDelete: 'set null' }),
+	testType: text('test_type').notNull(), // se ProgramTestType
+	recordedAt: timestamp('recorded_at').notNull(),
+	result: jsonb('result').$type<{
+		// Løps-tester
+		cooper12minMeters?: number;
+		time5kSeconds?: number;
+		time10kSeconds?: number;
+		// Styrke-tester (én max-utførelse)
+		amrapReps?: number;
+		holdSeconds?: number;
+		// Avledet
+		vdotEstimate?: number;
+		paceZones?: {
+			easySecPerKm?: number;
+			marathonSecPerKm?: number;
+			tempoSecPerKm?: number;
+			intervalSecPerKm?: number;
+		};
+		notes?: string;
+	}>().notNull(),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => ({
+	idxUserType: index('program_test_results_user_type_idx').on(table.userId, table.testType, table.recordedAt),
+	idxProgramType: index('program_test_results_program_type_idx').on(table.programId, table.testType, table.recordedAt)
+}));
+
+export const programTestResultsRelations = relations(programTestResults, ({ one }) => ({
+	user: one(users, {
+		fields: [programTestResults.userId],
+		references: [users.id]
+	}),
+	program: one(trainingPrograms, {
+		fields: [programTestResults.programId],
+		references: [trainingPrograms.id]
+	}),
+	session: one(programSessions, {
+		fields: [programTestResults.sessionId],
+		references: [programSessions.id]
+	}),
+	sensorEvent: one(sensorEvents, {
+		fields: [programTestResults.sensorEventId],
 		references: [sensorEvents.id]
 	})
 }));

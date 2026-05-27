@@ -35,6 +35,29 @@ export interface PlannedRunDTO {
 	notes?: string;
 }
 
+export type ProgramTestType =
+	| 'cooper_12min'
+	| 'time_5k'
+	| 'time_10k'
+	| 'amrap_utfall'
+	| 'amrap_armhevinger'
+	| 'amrap_taahevinger'
+	| 'max_planke';
+
+export const PROGRAM_TEST_TYPES: readonly ProgramTestType[] = [
+	'cooper_12min',
+	'time_5k',
+	'time_10k',
+	'amrap_utfall',
+	'amrap_armhevinger',
+	'amrap_taahevinger',
+	'max_planke'
+] as const;
+
+export function isProgramTestType(value: unknown): value is ProgramTestType {
+	return typeof value === 'string' && (PROGRAM_TEST_TYPES as readonly string[]).includes(value);
+}
+
 export interface ProgramSessionDTO {
 	id?: string;
 	weekNumber: number;
@@ -45,6 +68,8 @@ export interface ProgramSessionDTO {
 	plannedExercises?: PlannedExerciseDTO[];
 	plannedRun?: PlannedRunDTO;
 	notes?: string;
+	isTest?: boolean;
+	testType?: ProgramTestType;
 	completion?: SessionCompletionDTO | null;
 }
 
@@ -130,4 +155,27 @@ export interface GenerateProgramInput {
 	includeRunning?: boolean;
 	startDate?: string;
 	name?: string;
+	/** Hvis true, generator legger inn 1-2 test-økter i uke 1 (og deload-uker) */
+	includeBaselineTests?: boolean;
+	/** Forhåndsbygd athlete-snapshot — hentet via buildAthleteSnapshot eller fra forrige program */
+	athleteSnapshot?: AthleteSnapshotForGenerator;
+}
+
+/**
+ * Slank versjon brukt av prompten — bygges fra buildAthleteSnapshot.
+ * Eksponerer kun det modellen trenger for å sette realistiske targets.
+ */
+export interface AthleteSnapshotForGenerator {
+	dataQuality: 'rich' | 'thin' | 'none';
+	recentVolumeKm?: number;
+	recentSessionsPerWeek?: number;
+	bestEfforts?: { '1k'?: number; '3k'?: number; '5k'?: number; '10k'?: number };
+	vdotEstimate?: number;
+	paceZones?: {
+		easySecPerKm?: number;
+		marathonSecPerKm?: number;
+		tempoSecPerKm?: number;
+		intervalSecPerKm?: number;
+	};
+	strengthBaseline?: Record<string, { reps?: number; durationSeconds?: number }>;
 }

@@ -7,9 +7,9 @@ import {
 	STRENGTH_EXERCISE_NAMES
 } from './constants';
 import { validateAndNormalizeProgram } from './validator';
-import type { GenerateProgramInput, ProgramDTO } from './types';
+import type { AthleteSnapshotForGenerator, GenerateProgramInput, ProgramDTO } from './types';
 
-const PROMPT_VERSION = '2026-05-ekko-hybrid-v1';
+const PROMPT_VERSION = '2026-05-ekko-hybrid-v1.1';
 const DEFAULT_MODEL = 'gpt-4o';
 
 export class ProgramGenerationError extends Error {
@@ -44,7 +44,8 @@ export async function generateProgram(input: GenerateProgramInput): Promise<{
 		PROGRAM_LIMITS.maxSessionsPerWeek
 	);
 
-	const systemPrompt = buildSystemPrompt();
+	const includeBaselineTests = input.includeBaselineTests === true;
+	const systemPrompt = buildSystemPrompt(includeBaselineTests);
 	const userPrompt = buildUserPrompt({
 		goal: input.goal,
 		durationWeeks,
@@ -54,7 +55,9 @@ export async function generateProgram(input: GenerateProgramInput): Promise<{
 		includeStrength,
 		includeRunning,
 		startDate: input.startDate,
-		name: input.name
+		name: input.name,
+		includeBaselineTests,
+		athleteSnapshot: input.athleteSnapshot
 	});
 
 	let raw: string;
@@ -104,19 +107,51 @@ export async function generateProgram(input: GenerateProgramInput): Promise<{
 			runningKmPerWeek: input.runningKmPerWeek,
 			experience: input.experience,
 			includeStrength,
-			includeRunning
+			includeRunning,
+			includeBaselineTests,
+			athleteSnapshotDataQuality: input.athleteSnapshot?.dataQuality
 		}
 	};
 
 	return { program, model };
 }
 
-function buildSystemPrompt(): string {
+function buildSystemPrompt(includeBaselineTests: boolean): string {
 	const exerciseLines = STRENGTH_EXERCISES.map((e) => {
 		const modeStr = e.mode === 'reps' ? 'reps-basert' : 'tidsbasert (sekunder)';
 		const weight = e.allowsWeight ? ', kan ha weightHint' : ', vektløs';
 		return `- "${e.name}" — ${modeStr}${weight}`;
 	}).join('\n');
+
+	const testInstructions = includeBaselineTests
+		? `
+═══════════════════════════════════════════════════════════════════════════
+TEST-ØKTER (denne genereringen krever baseline-tester):
+═══════════════════════════════════════════════════════════════════════════
+
+I uke 1: legg inn nøyaktig én løps-test OG én styrke-test som separate økter.
+Disse skal IKKE telle mot ordinære økter (de er tilleggsøkter).
+Marker test-økter med:
+  "isTest": true,
+  "testType": <en av nedenstående>
+
+Tillatte testType-verdier:
+  Løp:    "cooper_12min" (12 min max-distanse, kind=run, plannedRun.runType="tempo")
+          "time_5k"      (5k tempo time-trial, kind=run, plannedRun.runType="tempo")
+          "time_10k"     (10k time-trial, kind=run, plannedRun.runType="long")
+  Styrke: "amrap_utfall"      (AMRAP Utfall, ett sett, repsTarget=1)
+          "amrap_armhevinger" (AMRAP Armhevinger, ett sett, repsTarget=1)
+          "amrap_taahevinger" (AMRAP Tåhevinger, ett sett, repsTarget=1)
+          "max_planke"        (Max hold Planke, ett sett, durationSecondsTarget=1)
+
+For test-økter: bruk repsTarget=1 / durationSecondsTarget=1 som signal til klienten
+om at "1" betyr "så mye du klarer" (AMRAP / max). IKKE bruk "Sakte senking
+fra pullup-stang" som test (skadefare).
+
+Hvis durationWeeks ≥ 8: legg også inn én test-økt i deload-uken (uke 4 eller 8)
+som retest av samme type som uke 1 — bruker da samme testType-verdi.
+`
+		: '';
 
 	return `Du er en treningsprogram-generator for hybride treningsprogrammer (styrke + løping).
 Du svarer ALLTID med et JSON-objekt som matcher schemaet nedenfor. Ingen prosa, ingen markdown.
@@ -204,7 +239,14 @@ REGLER FOR PROGRAMMET:
 10. paceHintSecPerKm og hrZoneHint er VALGFRIE — utelat dem hvis brukeren ikke har spesifisert nivå/erfaring.
 11. Hvis brukeren ikke har spesifisert volum, bruk fornuftige defaults (f.eks. easy ~5-8 km, long ~10-15 km, tempo 20-30 min).
 12. Bruk norske navn på øvelser og økter.
-
+13. Hvis en athlete-snapshot er gitt: bruk den til å sette REALISTISKE targets.
+    - rich data: bruk PR-er og paceZones direkte. Easy = paceZones.easySecPerKm,
+      tempo ≈ tempoSecPerKm, intervaller ≈ intervalSecPerKm. Volum start ≈ recentVolumeKm.
+    - thin data: vær konservativ. Volum start = 70% av recentVolumeKm.
+    - none: ingen paceHintSecPerKm i det hele tatt. Bruk hrZoneHint som veiledning.
+14. Styrke-baseline i snapshot: hvis brukerens AMRAP for en øvelse er kjent, sett
+    uke 1 repsTarget til ~70% av AMRAP. F.eks. AMRAP Armhevinger=15 → repsTarget=10.
+${testInstructions}
 Returner KUN JSON. Ikke wrap i \`\`\`json. Ikke kommenter.`;
 }
 
@@ -218,13 +260,15 @@ function buildUserPrompt(args: {
 	includeRunning: boolean;
 	startDate?: string;
 	name?: string;
+	includeBaselineTests: boolean;
+	athleteSnapshot?: AthleteSnapshotForGenerator;
 }): string {
 	const lines: string[] = [];
 	lines.push(`Brukerens mål: ${args.goal}`);
 	lines.push(`Varighet: ${args.durationWeeks} uker`);
 	lines.push(`Økter per uke: ${args.sessionsPerWeek}`);
 	if (args.runningKmPerWeek) {
-		lines.push(`Nåværende løpsvolum: ~${args.runningKmPerWeek} km/uke`);
+		lines.push(`Nåværende løpsvolum (oppgitt): ~${args.runningKmPerWeek} km/uke`);
 	}
 	if (args.experience) {
 		lines.push(`Erfaringsnivå: ${args.experience}`);
@@ -239,9 +283,65 @@ function buildUserPrompt(args: {
 	if (args.name) {
 		lines.push(`Foreslått navn: ${args.name}`);
 	}
+
+	if (args.athleteSnapshot) {
+		lines.push('');
+		lines.push('━━━ Athlete-snapshot (faktiske observerte data) ━━━');
+		lines.push(`Datakvalitet: ${args.athleteSnapshot.dataQuality}`);
+		if (args.athleteSnapshot.recentVolumeKm != null) {
+			lines.push(`Observert løpsvolum siste 4 uker: ${args.athleteSnapshot.recentVolumeKm} km/uke`);
+		}
+		if (args.athleteSnapshot.recentSessionsPerWeek != null) {
+			lines.push(`Observerte økter/uke siste 4 uker: ${args.athleteSnapshot.recentSessionsPerWeek}`);
+		}
+		const be = args.athleteSnapshot.bestEfforts;
+		if (be) {
+			const parts: string[] = [];
+			for (const key of ['1k', '3k', '5k', '10k'] as const) {
+				const v = be[key];
+				if (typeof v === 'number') parts.push(`${key}=${formatSeconds(v)}`);
+			}
+			if (parts.length) lines.push(`Beste tider siste 90 dager: ${parts.join(', ')}`);
+		}
+		if (args.athleteSnapshot.vdotEstimate) {
+			lines.push(`Estimert VDOT: ${args.athleteSnapshot.vdotEstimate}`);
+		}
+		if (args.athleteSnapshot.paceZones) {
+			const p = args.athleteSnapshot.paceZones;
+			const fmtP = (v?: number) => (v != null ? formatPace(v) : '–');
+			lines.push(
+				`Anbefalte tempo-soner (min/km): easy ${fmtP(p.easySecPerKm)}, marathon ${fmtP(p.marathonSecPerKm)}, tempo ${fmtP(p.tempoSecPerKm)}, interval ${fmtP(p.intervalSecPerKm)}`
+			);
+		}
+		if (args.athleteSnapshot.strengthBaseline) {
+			const sb = args.athleteSnapshot.strengthBaseline;
+			const parts: string[] = [];
+			for (const [name, v] of Object.entries(sb)) {
+				if (v.reps != null) parts.push(`${name} AMRAP=${v.reps}`);
+				if (v.durationSeconds != null) parts.push(`${name} max=${v.durationSeconds}s`);
+			}
+			if (parts.length) lines.push(`Styrke-baseline: ${parts.join(', ')}`);
+		}
+	}
+
+	if (args.includeBaselineTests) {
+		lines.push('');
+		lines.push('Legg inn baseline-tester i uke 1 (Cooper 12 min eller 5k-tt + minst én styrketest).');
+	}
+
 	lines.push('');
 	lines.push(`Generer programmet nå. Husk: kun de tillatte styrkeøvelsene (${STRENGTH_EXERCISE_NAMES.join(', ')}) og løpsøkt-typene (${RUN_TYPES.join(', ')}).`);
 	return lines.join('\n');
+}
+
+function formatSeconds(s: number): string {
+	const m = Math.floor(s / 60);
+	const r = Math.round(s - m * 60);
+	return `${m}:${r.toString().padStart(2, '0')}`;
+}
+
+function formatPace(secPerKm: number): string {
+	return formatSeconds(secPerKm);
 }
 
 function clamp(n: number, min: number, max: number): number {

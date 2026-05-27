@@ -1,12 +1,25 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+import { db } from '$lib/db';
+import { programSessions, programTestResults } from '$lib/db/schema';
+import { eq } from 'drizzle-orm';
 import { completePlannedSession } from '$lib/server/programs/repository';
 import { applyProgression } from '$lib/server/programs/progression';
+import { maybeRecalibrate } from '$lib/server/programs/recalibration';
+import { isProgramTestType, type ProgramTestType } from '$lib/server/programs/types';
 
 interface CompleteBody {
 	plannedSessionId?: unknown;
 	sensorEventId?: unknown;
 	completedAt?: unknown;
+	/** For test-økter: brukerens målte resultat. Kreves når session.isTest=true. */
+	testResult?: {
+		cooper12minMeters?: number;
+		time5kSeconds?: number;
+		time10kSeconds?: number;
+		amrapReps?: number;
+		holdSeconds?: number;
+	};
 }
 
 export const POST: RequestHandler = async ({ locals, params, request }) => {
@@ -42,11 +55,44 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 		return json({ error: 'Planned session not found', code: 'session_not_found' }, { status: 404 });
 	}
 
-	const progressionSummary = await applyProgression({
-		programId: params.id,
-		plannedSessionId,
-		completion: result.completion
+	// Sjekk om dette er en test-økt — i så fall: lagre testResult, kjør rekalibrering
+	const sessionRow = await db.query.programSessions.findFirst({
+		where: eq(programSessions.id, plannedSessionId),
+		columns: { isTest: true, testType: true }
 	});
+	const isTest = sessionRow?.isTest === true && isProgramTestType(sessionRow.testType);
+
+	let recalibration: { applied: boolean; deviation?: number; summary: string[] } | undefined;
+	if (isTest && body.testResult) {
+		const testType = sessionRow!.testType as ProgramTestType;
+		await db.insert(programTestResults).values({
+			userId,
+			programId: params.id,
+			sessionId: plannedSessionId,
+			sensorEventId,
+			testType,
+			recordedAt: completedAt ?? new Date(),
+			result: body.testResult
+		});
+		const outcome = await maybeRecalibrate({
+			programId: params.id,
+			plannedSessionId,
+			test: { testType, result: body.testResult }
+		});
+		recalibration = {
+			applied: outcome.applied,
+			deviation: outcome.deviation,
+			summary: outcome.summary
+		};
+	}
+
+	const progressionSummary = !isTest
+		? await applyProgression({
+				programId: params.id,
+				plannedSessionId,
+				completion: result.completion
+			})
+		: [];
 
 	return json({
 		ok: true,
@@ -55,6 +101,7 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 		progression: {
 			applied: progressionSummary.length > 0,
 			summary: progressionSummary
-		}
+		},
+		recalibration
 	});
 };

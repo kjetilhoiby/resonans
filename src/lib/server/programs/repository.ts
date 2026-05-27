@@ -15,9 +15,11 @@ import type {
 	ProgramDTO,
 	ProgramSessionDTO,
 	ProgramSummaryDTO,
+	ProgramTestType,
 	ProgramWeekDTO,
 	SessionCompletionDTO
 } from './types';
+import { isProgramTestType } from './types';
 import {
 	STRENGTH_EXERCISE_NAMES,
 	isProgramStatus,
@@ -45,7 +47,8 @@ export function sessionPlannedDate(programStartDate: string, weekNumber: number,
 
 export async function saveGeneratedProgram(
 	userId: string,
-	program: ProgramDTO
+	program: ProgramDTO,
+	baseline?: Record<string, unknown> | null
 ): Promise<string> {
 	const [createdProgram] = await db
 		.insert(trainingPrograms)
@@ -59,7 +62,8 @@ export async function saveGeneratedProgram(
 			includeStrength: program.includeStrength,
 			includeRunning: program.includeRunning,
 			startDate: program.startDate,
-			generatedWith: program.generatedWith ?? null
+			generatedWith: program.generatedWith ?? null,
+			baseline: (baseline ?? null) as any
 		})
 		.returning({ id: trainingPrograms.id });
 
@@ -87,7 +91,9 @@ export async function saveGeneratedProgram(
 					name: session.name,
 					restSeconds: session.restSeconds ?? null,
 					plannedRun: session.plannedRun ?? null,
-					notes: session.notes ?? null
+					notes: session.notes ?? null,
+					isTest: session.isTest === true,
+					testType: session.testType ?? null
 				})
 				.returning({ id: programSessions.id });
 
@@ -223,6 +229,8 @@ export async function getFullProgram(userId: string, programId: string): Promise
 			restSeconds: s.restSeconds ?? undefined,
 			plannedRun: (s.plannedRun as PlannedRunDTO) ?? undefined,
 			notes: s.notes ?? undefined,
+			isTest: s.isTest || undefined,
+			testType: isProgramTestType(s.testType) ? (s.testType as ProgramTestType) : undefined,
 			plannedExercises: exercisesBySession.get(s.id),
 			completion: completionsBySession.get(s.id) ?? null
 		};
@@ -321,6 +329,8 @@ export async function getTodaySession(
 			restSeconds: session.restSeconds ?? undefined,
 			plannedRun: (session.plannedRun as PlannedRunDTO) ?? undefined,
 			notes: session.notes ?? undefined,
+			isTest: session.isTest || undefined,
+			testType: isProgramTestType(session.testType) ? (session.testType as ProgramTestType) : undefined,
 			plannedExercises: exercises.map((e) => ({
 				id: e.id,
 				order: e.order,

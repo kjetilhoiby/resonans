@@ -4,6 +4,7 @@ import { generateProgram, ProgramGenerationError } from '$lib/server/programs/ge
 import { getFullProgram, saveGeneratedProgram } from '$lib/server/programs/repository';
 import { ProgramValidationError } from '$lib/server/programs/validator';
 import { PROGRAM_LIMITS } from '$lib/server/programs/constants';
+import { buildAthleteSnapshot, snapshotForPersistence } from '$lib/server/programs/athlete-context';
 
 interface GenerateBody {
 	goal?: unknown;
@@ -15,6 +16,8 @@ interface GenerateBody {
 	includeRunning?: unknown;
 	startDate?: unknown;
 	name?: unknown;
+	includeBaselineTests?: unknown;
+	useAthleteSnapshot?: unknown;
 }
 
 export const POST: RequestHandler = async ({ locals, request }) => {
@@ -56,6 +59,10 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		? body.startDate
 		: undefined;
 
+	const includeBaselineTests = body.includeBaselineTests === true;
+	const useSnapshot = body.useAthleteSnapshot !== false; // default true
+	const snapshot = useSnapshot ? await buildAthleteSnapshot(userId) : undefined;
+
 	try {
 		const { program, model } = await generateProgram({
 			goal,
@@ -66,13 +73,43 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			includeStrength,
 			includeRunning,
 			startDate,
-			name: typeof body.name === 'string' ? body.name.trim() || undefined : undefined
+			name: typeof body.name === 'string' ? body.name.trim() || undefined : undefined,
+			includeBaselineTests,
+			athleteSnapshot: snapshot
+				? {
+						dataQuality: snapshot.dataQuality,
+						recentVolumeKm: snapshot.recentVolumeKm,
+						recentSessionsPerWeek: snapshot.recentSessionsPerWeek,
+						bestEfforts: snapshot.bestEfforts,
+						vdotEstimate: snapshot.vdotEstimate,
+						paceZones: snapshot.paceZones,
+						strengthBaseline: Object.fromEntries(
+							Object.entries(snapshot.strengthBaseline).map(([k, v]) => [
+								k,
+								{ reps: v.reps, durationSeconds: v.durationSeconds }
+							])
+						)
+					}
+				: undefined
 		});
 
-		const programId = await saveGeneratedProgram(userId, program);
+		const persistedBaseline = snapshot ? snapshotForPersistence(snapshot) : null;
+		const programId = await saveGeneratedProgram(userId, program, persistedBaseline);
 		const full = await getFullProgram(userId, programId);
 
-		return json({ ok: true, programId, model, program: full });
+		return json({
+			ok: true,
+			programId,
+			model,
+			program: full,
+			snapshot: snapshot
+				? {
+						dataQuality: snapshot.dataQuality,
+						vdotEstimate: snapshot.vdotEstimate,
+						recentVolumeKm: snapshot.recentVolumeKm
+					}
+				: null
+		});
 	} catch (err) {
 		if (err instanceof ProgramValidationError) {
 			console.error('[programs/generate] validation failed', err.issues);

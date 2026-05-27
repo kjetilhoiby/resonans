@@ -4,7 +4,9 @@ Spec for integrasjon mellom Ekko-iOS-appen og Resonans-backenden for LLM-generer
 hybridprogrammer (styrke + løping). Komplementerer fase 1 (GPS-uploads) og fase 2
 (strength_workout-events).
 
-> **Status:** v1, mai 2026. Endepunkter under `/api/apps/programs/*` på Resonans.
+> **Status:** v1.1, mai 2026. Endepunkter under `/api/apps/programs/*` på Resonans.
+> v1.1 legger til athlete-aware generering (PR-er + VDOT-baserte tempo), test-økter
+> med rekalibrering, og workout-analytics (best efforts / GAP / HR zone distribution).
 
 ---
 
@@ -30,13 +32,16 @@ beholder samme token mellom kjøringer.
 
 | Metode | Path | Beskrivelse |
 |--------|------|-------------|
+| `GET` | `/api/apps/programs/context` | **v1.1** Athlete-snapshot — hva vi observerer om brukeren akkurat nå. |
 | `POST` | `/api/apps/programs/generate` | Generer + lagre nytt hybridprogram (synkront LLM-kall). |
 | `GET` | `/api/apps/programs` | Liste over brukerens programmer (kort sammendrag). |
 | `GET` | `/api/apps/programs/:id` | Fullt program med alle uker, økter og øvelser. |
 | `GET` | `/api/apps/programs/:id/today` | Dagens planlagte økt (eller null hvis ingen). |
 | `POST` | `/api/apps/programs/:id/complete-session` | Kobl en planlagt økt til et fullført `sensorEvent` og kjør progresjon. |
+| `POST` | `/api/apps/programs/:id/insert-test` | **v1.1** Sett inn en test-økt manuelt i en ledig dag. |
 | `POST` | `/api/apps/programs/:id/status` | Endre status (`active`/`paused`/`completed`/`archived`). |
 | `DELETE` | `/api/apps/programs/:id` | Slett program og alt tilhørende (cascade). |
+| `GET` | `/api/apps/workouts/:id/analysis` | **v1.1** Per-workout-analytics (bestEfforts/GAP/HR zones). |
 
 ---
 
@@ -601,3 +606,257 @@ Hvis vi senere utvider:
 
 For alle endringer i tillatte øvelser/typer: Ekko-klienten bør oppdatere
 sin defensive validering så den fanger backend-svar med eldre/nyere navn.
+
+---
+
+## 11. v1.1 — Athlete-aware programmer
+
+v1.1 lar generatoren bygge på det vi faktisk vet om brukerens form, og gir
+verktøy for å teste seg + rekalibrere underveis. Bakoverkompatibelt:
+en Ekko-klient som ikke vet om v1.1-felt vil fortsatt fungere — alle nye
+felter er valgfrie eller har trygge defaults.
+
+### 11.1 Workout-analytics
+
+Hver `workout`-sensorEvent med trackPoints (GPX-upload eller Email-import) får
+nå tre analytics-felter beregnet automatisk når workout-projeksjonen
+refreshes:
+
+```
+bestEfforts        { '1k'?, '3k'?, '5k'?, '10k'? }   // sekunder, raskeste sammenhengende strekk
+gapSecPerKm        int                                // grade-adjusted pace (Strava-aktig formel)
+hrZoneDistribution { z1..z5, basis, restHr, maxHr }  // andel av tid (0..1) i hver Karvonen-sone
+```
+
+Beregningen er O(N) per workout (N = antall trackPoints, sampled til ≤500).
+Manglende felt = trackPoints var ikke tilgjengelig (typisk Withings-only).
+
+#### `GET /api/apps/workouts/:id/analysis`
+
+ID-en er enten en `canonical_workout`-id eller en `sensor_event`-id.
+
+**Response:**
+```json
+{
+  "ok": true,
+  "source": "cached" | "computed",
+  "analyticsComputedAt": "2026-05-27T13:42:11.000Z",
+  "bestEfforts": { "1k": 245, "3k": 765, "5k": 1340 },
+  "gapSecPerKm": 322,
+  "hrZoneDistribution": {
+    "z1": 0.05, "z2": 0.7, "z3": 0.2, "z4": 0.04, "z5": 0.01,
+    "basis": "hrr", "restHr": 52, "maxHr": 191
+  }
+}
+```
+
+404 hvis verken cache eller trackPoints finnes.
+
+#### Backfill: `POST /api/sensors/workouts/reanalyze[?force=true]`
+
+Idempotent — beregner analytics for canonical_workouts som mangler det.
+`force=true` overskriver eksisterende cache.
+
+**Response:**
+```json
+{ "ok": true, "analyzed": 42, "skipped": 3, "candidates": 45 }
+```
+
+### 11.2 Athlete-snapshot
+
+#### `GET /api/apps/programs/context`
+
+Returnerer et konsolidert bilde av brukerens treningsbakgrunn —
+hentet fra siste 4 uker volum + best efforts (siste 90 dager) +
+manuelle tester. Brukes typisk FØR `/generate` for å vise brukeren
+hva vi vet og la dem korrigere.
+
+**Response:**
+```json
+{
+  "ok": true,
+  "snapshot": {
+    "dataQuality": "rich",
+    "recentVolumeKm": 32.4,
+    "recentSessionsPerWeek": 4.5,
+    "bestEfforts": { "1k": 245, "5k": 1340, "10k": 2810 },
+    "vdotEstimate": 48.2,
+    "vdotSource": "10k",
+    "paceZones": {
+      "easySecPerKm": 330,
+      "marathonSecPerKm": 290,
+      "tempoSecPerKm": 275,
+      "intervalSecPerKm": 250
+    },
+    "recentTests": [
+      { "testType": "amrap_armhevinger", "recordedAt": "2026-05-20T07:00:00Z",
+        "result": { "amrapReps": 22 } }
+    ],
+    "strengthBaseline": {
+      "Armhevinger": { "reps": 22, "recordedAt": "2026-05-20T07:00:00Z" }
+    },
+    "recordedAt": "2026-05-27T13:42:11.000Z"
+  }
+}
+```
+
+`dataQuality`-verdier:
+- `rich`: ≥ 4 økter siste 4 uker eller har bestEfforts/tester — generatoren bruker faktiske tall
+- `thin`: noen økter men ingen PR-er — generatoren bruker konservative defaults
+- `none`: ingen data — generatoren faller helt tilbake til skjema-input
+
+### 11.3 Generate med snapshot + test-økter
+
+`POST /api/apps/programs/generate` tar to nye valgfrie felt:
+
+```json
+{
+  "goal": "Halvmaraton om 12 uker",
+  "durationWeeks": 12,
+  "useAthleteSnapshot": true,
+  "includeBaselineTests": true
+}
+```
+
+| Felt | Default | Effekt |
+|------|---------|--------|
+| `useAthleteSnapshot` | `true` | Bygg snapshot på serveren og send den til LLM. Sett `false` hvis du eksplisitt vil ignorere historikk. |
+| `includeBaselineTests` | `false` | Legg inn én løps-test og én styrketest i uke 1, og retester i deload-uker. |
+
+Response-objektet har nå også et `snapshot`-felt:
+```json
+{
+  "ok": true,
+  "programId": "...",
+  "model": "gpt-4o",
+  "snapshot": { "dataQuality": "rich", "vdotEstimate": 48.2, "recentVolumeKm": 32.4 },
+  "program": { ... }
+}
+```
+
+Programmet i seg selv har nå også `baseline` på toppnivå — snapshot lagret
+ved generering, brukes som referanse for rekalibrering:
+```json
+{ "id": "...", "name": "...", "baseline": { "dataQuality": "rich", "vdotEstimate": 48.2, ... } }
+```
+
+### 11.4 Test-økter i programmer
+
+Test-økter er normale `programSessions` med `isTest: true` og en `testType`-verdi.
+De teller IKKE mot maks 3 styrkeøkter/uke.
+
+```
+ProgramSession (utvidet)
+  ...
+  isTest            bool         // default false
+  testType          enum?        // hvis isTest=true
+```
+
+**Tillatte testType-verdier:**
+
+| testType | kind | Hva måles |
+|----------|------|-----------|
+| `cooper_12min` | `run` | Distanse på 12 min max-innsats (meter) |
+| `time_5k` | `run` | Tid på 5k tempo time-trial (sekunder) |
+| `time_10k` | `run` | Tid på 10k tempo time-trial (sekunder) |
+| `amrap_utfall` | `strength` | AMRAP Utfall, ett sett til failure (reps) |
+| `amrap_armhevinger` | `strength` | AMRAP Armhevinger (reps) |
+| `amrap_taahevinger` | `strength` | AMRAP Tåhevinger (reps) |
+| `max_planke` | `strength` | Max hold Planke (sekunder) |
+
+> **NB:** "Sakte senking fra pullup-stang" har INGEN test (skadefare ved max-innsats).
+
+For strength-tester: `plannedExercises` har ett enkelt sett med
+`repsTarget=1` eller `durationSecondsTarget=1` som signal til klienten
+om at "1" betyr "så mye du klarer".
+
+### 11.5 Manuell innsetting av test
+
+#### `POST /api/apps/programs/:id/insert-test`
+
+Setter inn en test-økt i en ledig dag i en eksisterende uke.
+
+**Request:**
+```json
+{
+  "testType": "amrap_armhevinger",
+  "weekNumber": 6,
+  "dayNumber": 4
+}
+```
+
+**Response:**
+```json
+{ "ok": true, "sessionId": "...", "kind": "strength", "testType": "amrap_armhevinger" }
+```
+
+**Feilkoder:**
+- `400` ugyldig testType / weekNumber utenfor program
+- `404` program eller uke finnes ikke
+- `409` `Conflict` — dagen har allerede en planlagt økt
+
+### 11.6 Test-resultater og rekalibrering
+
+Når brukeren fullfører en test-økt via `complete-session`, send med `testResult`:
+
+```json
+POST /api/apps/programs/:id/complete-session
+{
+  "plannedSessionId": "...",
+  "sensorEventId": "...",
+  "testResult": {
+    "cooper12minMeters": 2750
+  }
+}
+```
+
+**Test-spesifikke felter i `testResult`:**
+
+| testType | Felt | Type |
+|----------|------|------|
+| `cooper_12min` | `cooper12minMeters` | int |
+| `time_5k` | `time5kSeconds` | int |
+| `time_10k` | `time10kSeconds` | int |
+| `amrap_*` | `amrapReps` | int |
+| `max_planke` | `holdSeconds` | int |
+
+For løps-tester: server vil ofte kunne hente tallet selv fra `sensorEvent.data`
+(GPS-distansen for Cooper, eller `paceSecondsPerKm`/distanse for 5k-tt) — men
+det er tryggere at Ekko sender det eksplisitt.
+
+**Response (utvidet med `recalibration`):**
+```json
+{
+  "ok": true,
+  "completion": { ... },
+  "plannedSession": { ... },
+  "progression": { "applied": false, "summary": [] },
+  "recalibration": {
+    "applied": true,
+    "deviation": 0.18,
+    "summary": [
+      "VDOT 48.2 → 56.9 (18.0% endring). Justerte pace på 12 løps-økt(er) i 6 uker."
+    ]
+  }
+}
+```
+
+**Rekalibreringsregler:**
+- Avvik < 10% fra forrige baseline: lagrer ny baseline, men rører IKKE planlagte økter (`applied: false`).
+- Avvik ≥ 10%: justerer alle ikke-deload-uker fremover:
+  - Løp: paceHintSecPerKm settes etter ny VDOT × runType
+  - Styrke: nye repsTarget/durationSecondsTarget = lineær progresjon fra 70% av ny max til 100% over gjenværende uker
+- Tester i deload-uker oppdaterer fortsatt baseline, men starter ikke rekalibrering automatisk (deload skal være rolig).
+
+Test-økter trigger IKKE den normale progresjonen (`progression.summary` er tomt).
+
+### 11.7 Datakvalitetsgrupperinger ved generering
+
+LLM-en får eksplisitte instruksjoner per dataQuality:
+
+- **rich**: bruk paceZones og PR-er direkte. `paceHintSecPerKm` settes til
+  faktiske beregnede verdier. Volum starter på `recentVolumeKm`.
+- **thin**: ignorer paceZones, sett bare `hrZoneHint`. Volum = 70% av
+  observert.
+- **none**: ingen pace-hints i det hele tatt, bare HR-veiledning.
+

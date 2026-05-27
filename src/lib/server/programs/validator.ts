@@ -12,6 +12,7 @@ import type {
 	ProgramSessionDTO,
 	ProgramWeekDTO
 } from './types';
+import { isProgramTestType } from './types';
 
 export class ProgramValidationError extends Error {
 	readonly issues: string[];
@@ -101,7 +102,9 @@ export function validateAndNormalizeProgram(
 				continue;
 			}
 
-			if (kind === 'strength') {
+			// Test-økter regnes som tilleggsøkter og teller ikke mot styrke-budsjettet
+			const isTestRaw = rs?.isTest === true;
+			if (kind === 'strength' && !isTestRaw) {
 				strengthCount++;
 				if (strengthCount > PROGRAM_LIMITS.maxStrengthSessionsPerWeek) {
 					issues.push(
@@ -124,13 +127,31 @@ export function validateAndNormalizeProgram(
 
 			const restSeconds = typeof rs?.restSeconds === 'number' ? clampInt(rs.restSeconds, 0, 600, 60) : undefined;
 
+			const isTest = rs?.isTest === true;
+			const testType = isProgramTestType(rs?.testType) ? rs.testType : undefined;
+			if (isTest && !testType) {
+				issues.push(`Test-økt uke ${weekNumber} dag ${dayNumber} mangler eller har ugyldig testType`);
+				continue;
+			}
+			// Type-konsistens: 'cooper_12min'/'time_5k'/'time_10k' er run-tester, resten er strength
+			if (testType) {
+				const runTests = ['cooper_12min', 'time_5k', 'time_10k'];
+				const expectedKind = runTests.includes(testType) ? 'run' : 'strength';
+				if (expectedKind !== kind) {
+					issues.push(`Test ${testType} må være kind=${expectedKind}, ikke ${kind}`);
+					continue;
+				}
+			}
+
 			const session: ProgramSessionDTO = {
 				weekNumber,
 				dayNumber,
 				kind,
 				name: sessionName,
 				restSeconds,
-				notes: typeof rs?.notes === 'string' ? rs.notes.trim() || undefined : undefined
+				notes: typeof rs?.notes === 'string' ? rs.notes.trim() || undefined : undefined,
+				isTest: isTest || undefined,
+				testType
 			};
 
 			if (kind === 'strength') {
