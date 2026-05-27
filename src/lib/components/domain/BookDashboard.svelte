@@ -3023,7 +3023,16 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 	.bk-chart-eta { color: #c8d4ff; }
 
 	/* Kontekst-tab */
-	.bk-ctx-panel { padding: 0.5rem 0 2rem; display: flex; flex-direction: column; gap: 1.25rem; }
+	.bk-ctx-panel {
+		flex: 1;
+		min-height: 0;
+		overflow-y: auto;
+		-webkit-overflow-scrolling: touch;
+		padding: 0.5rem 16px 2rem;
+		display: flex;
+		flex-direction: column;
+		gap: 1.25rem;
+	}
 	.bk-ctx-empty { color: #888; padding: 2rem 0; text-align: center; }
 	.bk-ctx-meta { display: flex; align-items: center; gap: 0.75rem; font-size: 0.78rem; color: #888; padding-bottom: 0.25rem; }
 	.bk-ctx-status { padding: 2px 8px; border-radius: 10px; background: #0f1e1a; color: #48b581; border: 1px solid #2a4a3a; font-size: 0.72rem; }
