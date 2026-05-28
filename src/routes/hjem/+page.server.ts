@@ -1,7 +1,8 @@
 import { db } from '$lib/db';
-import { tasks, sensorEvents, sensors, checklists } from '$lib/db/schema';
+import { tasks, sensorEvents, sensors, checklists, applianceProfiles } from '$lib/db/schema';
 import { ProjectMetricsService } from '$lib/server/services/project-metrics-service';
 import { currentSeason, HOME_APPLIANCE_SUBTYPES, HOME_APPLIANCE_LABELS, type HomeApplianceSubtype, pingApplianceEmoji } from '$lib/domains/home';
+import { buildApplianceCycle, type ApplianceCycle } from '$lib/server/services/appliance-cycle';
 import { and, eq, desc, inArray } from 'drizzle-orm';
 import type { PageServerLoad } from './$types';
 
@@ -47,23 +48,27 @@ export const load: PageServerLoad = async ({ locals }) => {
 			timestamp: string;
 			data: Record<string, unknown>;
 		}>;
+		cycle: ApplianceCycle | null;
 	}> = [];
 
 	if (ownedSensors.length > 0) {
 		const sensorIds = ownedSensors.map((s) => s.id);
-		const allEvents = await db
-			.select({
-				id: sensorEvents.id,
-				sensorId: sensorEvents.sensorId,
-				eventType: sensorEvents.eventType,
-				dataType: sensorEvents.dataType,
-				timestamp: sensorEvents.timestamp,
-				data: sensorEvents.data
-			})
-			.from(sensorEvents)
-			.where(and(eq(sensorEvents.userId, userId), inArray(sensorEvents.sensorId, sensorIds)))
-			.orderBy(desc(sensorEvents.timestamp))
-			.limit(100);
+		const [allEvents, allProfiles] = await Promise.all([
+			db
+				.select({
+					id: sensorEvents.id,
+					sensorId: sensorEvents.sensorId,
+					eventType: sensorEvents.eventType,
+					dataType: sensorEvents.dataType,
+					timestamp: sensorEvents.timestamp,
+					data: sensorEvents.data
+				})
+				.from(sensorEvents)
+				.where(and(eq(sensorEvents.userId, userId), inArray(sensorEvents.sensorId, sensorIds)))
+				.orderBy(desc(sensorEvents.timestamp))
+				.limit(100),
+			db.select().from(applianceProfiles).where(eq(applianceProfiles.userId, userId))
+		]);
 
 		function mapEvent(e: typeof allEvents[number]) {
 			return {
@@ -95,14 +100,14 @@ export const load: PageServerLoad = async ({ locals }) => {
 						name: appName,
 						label: appName,
 						emoji: pingApplianceEmoji(appName),
-						recentEvents: evts.slice(0, 10).map(mapEvent)
+						recentEvents: evts.slice(0, 10).map(mapEvent),
+						cycle: buildApplianceCycle(appName, evts, allProfiles)
 					});
 				}
 			} else {
 				const meta = HOME_APPLIANCE_LABELS[sub] ?? { label: sensor.name, emoji: '🔌' };
-				const events = allEvents
-					.filter((e) => e.sensorId === sensor.id)
-					.slice(0, 10);
+				const sensorEvts = allEvents.filter((e) => e.sensorId === sensor.id);
+				const events = sensorEvts.slice(0, 10);
 
 				appliances.push({
 					sensorId: sensor.id,
@@ -110,7 +115,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 					name: sensor.name,
 					label: meta.label,
 					emoji: meta.emoji,
-					recentEvents: events.map(mapEvent)
+					recentEvents: events.map(mapEvent),
+					cycle: buildApplianceCycle(sensor.name, sensorEvts, allProfiles)
 				});
 			}
 		}

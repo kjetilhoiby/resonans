@@ -1,5 +1,6 @@
 <script lang="ts">
 	import ProjectCard from '../composed/ProjectCard.svelte';
+	import ApplianceCycleChart from '../visualizations/ApplianceCycleChart.svelte';
 	import type { ProjectProgress } from '$lib/server/services/project-metrics-service';
 	import { SEASONS, currentSeason, HOME_PROJECT_TYPES, HOME_ROOMS } from '$lib/domains/home';
 
@@ -37,6 +38,17 @@
 		data: Record<string, unknown>;
 	}
 
+	interface ApplianceCycle {
+		curve: number[];
+		peakWatts: number;
+		elapsedMinutes: number;
+		totalMinutes: number;
+		remainingMinutes: number;
+		finishAt: string | null;
+		programName: string | null;
+		isRunning: boolean;
+	}
+
 	interface Appliance {
 		sensorId: string;
 		subtype: string;
@@ -44,6 +56,7 @@
 		label: string;
 		emoji: string;
 		recentEvents: ApplianceEvent[];
+		cycle: ApplianceCycle | null;
 	}
 
 	interface Props {
@@ -113,6 +126,15 @@
 		return ev.eventType;
 	}
 
+	function formatDuration(minutes: number): string {
+		const m = Math.round(minutes);
+		if (m <= 0) return '0 min';
+		if (m < 60) return `${m} min`;
+		const h = Math.floor(m / 60);
+		const rem = m % 60;
+		return rem === 0 ? `${h}t` : `${h}t ${rem}min`;
+	}
+
 	function applianceStatus(a: Appliance): { label: string; detail: string | null; state: 'running' | 'done' | 'idle' } {
 		const latest = a.recentEvents[0];
 		if (!latest) return { label: 'Ingen data', detail: null, state: 'idle' };
@@ -120,19 +142,18 @@
 		const kind = eventKind(latest);
 
 		if (kind === 'started' || kind === 'running') {
-			const finish = latest.data.estimated_finish_at as string | undefined;
+			const finishFromCycle = a.cycle?.isRunning ? a.cycle.finishAt : null;
+			const finish = finishFromCycle ?? (latest.data.estimated_finish_at as string | undefined) ?? null;
 			const label = finish
 				? `Ferdig ca. ${formatTime(finish)}`
 				: 'Kjører';
-			const program = latest.data.matched_program as string | undefined;
-			return { label, detail: program ?? null, state: 'running' };
+			const program = a.cycle?.programName ?? (latest.data.matched_program as string | undefined) ?? null;
+			return { label, detail: program, state: 'running' };
 		}
 
 		if (kind === 'finished') {
-			const dur = latest.data.duration_minutes as number | undefined;
-			const detail = dur
-				? `${Math.round(dur)} min`
-				: null;
+			const dur = (latest.data.duration_minutes as number | undefined) ?? a.cycle?.elapsedMinutes;
+			const detail = dur ? formatDuration(dur) : null;
 			return { label: `Ferdig ${relativeTime(latest.timestamp)}`, detail, state: 'done' };
 		}
 
@@ -158,10 +179,30 @@
 							{/if}
 							{status.label}
 						</div>
-						{#if status.detail}
+						{#if a.cycle && a.cycle.isRunning && a.cycle.remainingMinutes > 0}
+							<div class="cycle-estimate">
+								<span class="remaining">Gjenstår {formatDuration(a.cycle.remainingMinutes)}</span>
+								{#if a.cycle.programName}
+									<span class="program">· {a.cycle.programName}</span>
+								{/if}
+							</div>
+						{:else if status.detail}
 							<div class="appliance-detail">{status.detail}</div>
 						{/if}
-						{#if a.recentEvents.length > 1}
+						{#if a.cycle}
+							<ApplianceCycleChart
+								curve={a.cycle.curve}
+								totalMinutes={a.cycle.totalMinutes}
+								peakWatts={a.cycle.peakWatts}
+								isRunning={a.cycle.isRunning}
+							/>
+							{#if a.cycle.isRunning}
+								<div class="cycle-axis">
+									<span>{a.cycle.elapsedMinutes} min</span>
+									<span>{a.cycle.totalMinutes} min</span>
+								</div>
+							{/if}
+						{:else if a.recentEvents.length > 1}
 							<ul class="appliance-history">
 								{#each a.recentEvents.slice(1, 4) as ev (ev.id)}
 									<li>
@@ -312,6 +353,26 @@ section h3 {
 	}
 	.appliance-detail {
 		font-size: 0.75rem;
+		color: var(--muted, #888);
+	}
+	.cycle-estimate {
+		font-size: 0.8rem;
+		color: var(--text-primary, #ddd);
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.3rem;
+	}
+	.cycle-estimate .remaining {
+		font-weight: 500;
+	}
+	.cycle-estimate .program {
+		color: var(--muted, #888);
+		font-weight: 400;
+	}
+	.cycle-axis {
+		display: flex;
+		justify-content: space-between;
+		font-size: 0.7rem;
 		color: var(--muted, #888);
 	}
 	.pulse {
