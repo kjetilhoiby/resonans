@@ -5,6 +5,7 @@ import { buildDailyCheckInMessage } from '$lib/server/google-chat';
 import { resolveRoutesForNotification, sendGoogleChatToRoutes } from '$lib/server/notification-channels';
 import { runDayPlanningAndCloseNudges } from '$lib/server/day-planning-nudges';
 import { runEgenfrekvensCheckInNudges, type EgenfrekvensCheckInNudgeResult } from '$lib/server/egenfrekvens-nudges';
+import { runProgramReadinessNudges, type ProgramReadinessNudgeResult } from '$lib/server/programs/readiness-nudges';
 import { localHm, isWithinRecentMinutesWindow } from '$lib/server/nudge-time';
 import { eq } from 'drizzle-orm';
 
@@ -146,6 +147,16 @@ export class NudgeOrchestrationService {
 	}) {
 		return runEgenfrekvensCheckInNudges(args);
 	}
+
+	static async runProgramReadinessNudges(args: {
+		appUrl: string;
+		now?: Date;
+		windowMinutes?: number;
+		requireRecentTimeWindow?: boolean;
+		userId?: string;
+	}) {
+		return runProgramReadinessNudges(args);
+	}
 }
 
-export type { EgenfrekvensCheckInNudgeResult };
+export type { EgenfrekvensCheckInNudgeResult, ProgramReadinessNudgeResult };

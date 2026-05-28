@@ -15,8 +15,17 @@
 				id: string;
 				title: string;
 				preview: string;
+				starred: boolean;
+				archived: boolean;
+				linkedTheme: { id: string; name: string; emoji: string | null } | null;
 				updatedAt: string;
 			}[];
+			programReadiness?: {
+				programId: string;
+				programName: string;
+				state: 'klar' | 'lett' | 'easy' | 'rest';
+				alternativeName: string | null;
+			} | null;
 		};
 	}
 
@@ -24,5 +33,9 @@
 </script>
 
 <AppPage width="full" padding="none" gap="sm" surface="transparent" theme="dark">
-	<HomeScreen themes={data.themes} recentConversations={data.recentConversations} />
+	<HomeScreen
+		themes={data.themes}
+		recentConversations={data.recentConversations}
+		programReadiness={data.programReadiness}
+	/>
 </AppPage>
