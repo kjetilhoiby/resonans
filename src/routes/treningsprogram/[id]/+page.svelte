@@ -11,9 +11,11 @@
 	const today = new Date().toISOString().slice(0, 10);
 
 	function fmtDate(weekNumber: number, dayNumber: number): string {
+		// Ankre uke 1 mot mandagen i startuka, slik at dayNumber = ekte ukedag.
 		const start = new Date(program.startDate + 'T00:00:00Z');
+		const offsetToMonday = (start.getUTCDay() + 6) % 7;
 		const date = new Date(start);
-		date.setUTCDate(date.getUTCDate() + (weekNumber - 1) * 7 + (dayNumber - 1));
+		date.setUTCDate(date.getUTCDate() - offsetToMonday + (weekNumber - 1) * 7 + (dayNumber - 1));
 		return date.toISOString().slice(0, 10);
 	}
 

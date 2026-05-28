@@ -45,6 +45,13 @@ export async function generateProgram(input: GenerateProgramInput): Promise<{
 	);
 
 	const includeBaselineTests = input.includeBaselineTests === true;
+	// Bestem startdato deterministisk (default i dag) og hvilken ukedag den faller på,
+	// slik at uke 1 kan «fylle resten» av kalenderuka fra og med startdagen.
+	const startDate =
+		input.startDate && /^\d{4}-\d{2}-\d{2}$/.test(input.startDate)
+			? input.startDate
+			: new Date().toISOString().slice(0, 10);
+	const startDayNumber = ((new Date(startDate + 'T00:00:00Z').getUTCDay() + 6) % 7) + 1;
 	const systemPrompt = buildSystemPrompt(includeBaselineTests);
 	const userPrompt = buildUserPrompt({
 		goal: input.goal,
@@ -54,7 +61,8 @@ export async function generateProgram(input: GenerateProgramInput): Promise<{
 		experience: input.experience,
 		includeStrength,
 		includeRunning,
-		startDate: input.startDate,
+		startDate,
+		startDayNumber,
 		name: input.name,
 		includeBaselineTests,
 		athleteSnapshot: input.athleteSnapshot
@@ -90,7 +98,8 @@ export async function generateProgram(input: GenerateProgramInput): Promise<{
 		expectedDurationWeeks: durationWeeks,
 		expectedSessionsPerWeek: sessionsPerWeek,
 		includeStrength,
-		includeRunning
+		includeRunning,
+		startDate
 	});
 
 	if (input.name) {
@@ -229,7 +238,7 @@ REGLER FOR PROGRAMMET:
 3. Deload-uker: hvis durationWeeks > 4, sett deload=true for hver 4. uke (uke 4, 8, ...) med redusert volum.
 4. Maks ${PROGRAM_LIMITS.maxStrengthSessionsPerWeek} styrkeøkter per uke.
 5. Aldri styrke samme dag som hard løpsøkt (tempo/intervals). Easy/long kan kombineres hvis nødvendig, men foretrekk separate dager.
-6. dayNumber må være unik innenfor en uke (1-7, mandag-søndag).
+6. dayNumber må være unik innenfor en uke og angir EKTE ukedag: 1=mandag, 2=tirsdag, ..., 7=søndag. Plasser harde økter/langturer på dagene som faktisk passer (f.eks. langtur i helg = dayNumber 6/7). Uke 1 kan være en delvis uke hvis programmet starter midt i uka — se startdato-instruksen.
 7. Progresjon over uker:
    - Reps-baserte øvelser: øk reps med 1-2 per uke (innen grensene), eller behold og legg til vekt-hint hvis tillatt.
    - Tidsbaserte øvelser: øk durationSecondsTarget med 5-10 sekunder per uke.
@@ -274,6 +283,7 @@ function buildUserPrompt(args: {
 	includeStrength: boolean;
 	includeRunning: boolean;
 	startDate?: string;
+	startDayNumber?: number;
 	name?: string;
 	includeBaselineTests: boolean;
 	athleteSnapshot?: AthleteSnapshotForGenerator;
@@ -293,7 +303,21 @@ function buildUserPrompt(args: {
 	if (args.includeRunning) types.push('løping');
 	lines.push(`Inkluder: ${types.join(' + ')}`);
 	if (args.startDate) {
-		lines.push(`Startdato: ${args.startDate}`);
+		const dayNames = ['mandag', 'tirsdag', 'onsdag', 'torsdag', 'fredag', 'lørdag', 'søndag'];
+		const sd = args.startDayNumber;
+		if (sd && sd >= 1 && sd <= 7) {
+			lines.push(`Startdato: ${args.startDate} (${dayNames[sd - 1]}, dayNumber=${sd})`);
+			if (sd > 1) {
+				lines.push(
+					`VIKTIG — uke 1 er en DELVIS uke: programmet starter på ${dayNames[sd - 1]}, ` +
+						`så uke 1 skal KUN inneholde økter med dayNumber mellom ${sd} og 7 ` +
+						`(altså ${dayNames[sd - 1]}–søndag). Fordel et redusert antall økter på disse ` +
+						`gjenværende dagene. Fra og med uke 2 er det fulle uker (dayNumber 1–7, mandag–søndag).`
+				);
+			}
+		} else {
+			lines.push(`Startdato: ${args.startDate}`);
+		}
 	}
 	if (args.name) {
 		lines.push(`Foreslått navn: ${args.name}`);
