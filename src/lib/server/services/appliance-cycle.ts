@@ -15,6 +15,28 @@ interface ApplianceEventInput {
 	data: unknown;
 }
 
+function collectPastDurations(events: ApplianceEventInput[]): number[] {
+	const durations: number[] = [];
+	for (const ev of events) {
+		const d = (ev.data ?? {}) as Record<string, unknown>;
+		const isFinished =
+			Array.isArray(d.watt_buckets_1min) ||
+			d.event === 'finished' ||
+			d.event === 'cycle_summary';
+		if (!isFinished) continue;
+		const dur = d.duration_minutes;
+		if (typeof dur === 'number' && dur > 0) durations.push(dur);
+	}
+	return durations;
+}
+
+function medianOf(values: number[]): number {
+	const sorted = [...values].sort((a, b) => a - b);
+	const mid = Math.floor(sorted.length / 2);
+	if (sorted.length % 2 === 0) return (sorted[mid - 1] + sorted[mid]) / 2;
+	return sorted[mid];
+}
+
 interface ProfileInput {
 	appliance: string;
 	programName: string;
@@ -96,6 +118,17 @@ export function buildApplianceCycle(
 				remainingMinutes = match.estimatedRemainingMinutes;
 				finishAt = new Date(Date.now() + remainingMinutes * 60_000).toISOString();
 				totalMinutes = Math.max(elapsedMinutes, Math.round(match.estimatedDurationMinutes));
+			} else {
+				const pastDurations = collectPastDurations(events);
+				if (pastDurations.length > 0) {
+					const median = medianOf(pastDurations);
+					const projected = Math.max(elapsedMinutes, Math.round(median));
+					remainingMinutes = Math.max(0, projected - elapsedMinutes);
+					if (remainingMinutes > 0) {
+						finishAt = new Date(Date.now() + remainingMinutes * 60_000).toISOString();
+					}
+					totalMinutes = projected;
+				}
 			}
 		}
 		totalMinutes = Math.max(totalMinutes, elapsedMinutes + remainingMinutes);

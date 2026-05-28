@@ -107,25 +107,6 @@
 		return new Date(iso).toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
 	}
 
-	function eventLabel(ev: ApplianceEvent): string {
-		const kind = eventKind(ev);
-		if (kind === 'started') return `Startet ${formatTime(ev.timestamp)}`;
-		if (kind === 'running') {
-			const finish = ev.data.estimated_finish_at as string | undefined;
-			if (finish) return `Ferdig ca. ${formatTime(finish)}`;
-			return 'Kjører';
-		}
-		if (kind === 'finished') {
-			const dur = ev.data.duration_minutes as number | undefined;
-			if (dur) {
-				const m = Math.round(dur);
-				return `Ferdig — ${m >= 60 ? `${Math.floor(m / 60)}t ${m % 60}min` : `${m} min`}`;
-			}
-			return `Ferdig ${formatTime(ev.timestamp)}`;
-		}
-		return ev.eventType;
-	}
-
 	function formatDuration(minutes: number): string {
 		const m = Math.round(minutes);
 		if (m <= 0) return '0 min';
@@ -189,28 +170,17 @@
 						{:else if status.detail}
 							<div class="appliance-detail">{status.detail}</div>
 						{/if}
-						{#if a.cycle}
+						{#if a.cycle?.isRunning}
 							<ApplianceCycleChart
 								curve={a.cycle.curve}
 								totalMinutes={a.cycle.totalMinutes}
 								peakWatts={a.cycle.peakWatts}
 								isRunning={a.cycle.isRunning}
 							/>
-							{#if a.cycle.isRunning}
-								<div class="cycle-axis">
-									<span>{a.cycle.elapsedMinutes} min</span>
-									<span>{a.cycle.totalMinutes} min</span>
-								</div>
-							{/if}
-						{:else if a.recentEvents.length > 1}
-							<ul class="appliance-history">
-								{#each a.recentEvents.slice(1, 4) as ev (ev.id)}
-									<li>
-										<span class="ev-label">{eventLabel(ev)}</span>
-										<span class="ev-time">{relativeTime(ev.timestamp)}</span>
-									</li>
-								{/each}
-							</ul>
+							<div class="cycle-axis">
+								<span>{a.cycle.elapsedMinutes} min</span>
+								<span>{a.cycle.totalMinutes} min</span>
+							</div>
 						{/if}
 					</div>
 				{/each}
@@ -386,26 +356,6 @@ section h3 {
 		0%, 100% { opacity: 1; transform: scale(1); }
 		50% { opacity: 0.5; transform: scale(1.3); }
 	}
-	.appliance-history {
-		list-style: none;
-		padding: 0;
-		margin: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0.15rem;
-		border-top: 1px solid var(--border, #e6e6e6);
-		padding-top: 0.4rem;
-	}
-	.appliance-history li {
-		display: flex;
-		justify-content: space-between;
-		font-size: 0.75rem;
-		color: var(--muted, #888);
-	}
-	.ev-label {
-		text-transform: capitalize;
-	}
-
 	.task-list,
 	.routine-list {
 		list-style: none;
