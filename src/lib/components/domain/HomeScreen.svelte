@@ -52,6 +52,12 @@
 			linkedTheme: { id: string; name: string; emoji: string | null } | null;
 			updatedAt: string;
 		}[];
+		programReadiness?: {
+			programId: string;
+			programName: string;
+			state: 'klar' | 'lett' | 'easy' | 'rest';
+			alternativeName: string | null;
+		} | null;
 	}
 
 	type QuickActionId = 'chat' | 'camera' | 'voice' | 'mood' | 'file';
@@ -88,7 +94,7 @@
 		prompt: string;
 	}
 
-	let { themes: initialThemes, recentConversations }: Props = $props();
+	let { themes: initialThemes, recentConversations, programReadiness = null }: Props = $props();
 
 	let themes = $state(initialThemes);
 	$effect(() => { themes = initialThemes; });
@@ -2165,6 +2171,23 @@
 
 	<!-- ── SONE 4: Chat + handlinger ── -->
 	<section class="zone zone-input" class:zone-chat-open={inputExpanded} aria-label="Chat" bind:this={chatSection}>
+		{#if !inputExpanded && programReadiness}
+			<button
+				class="readiness-chip readiness-{programReadiness.state}"
+				onclick={() => goto(`/treningsprogram/${programReadiness?.programId}`)}
+				aria-label="Dagens treningstilstand"
+			>
+				<span class="readiness-dot">
+					{#if programReadiness.state === 'klar'}🟢{:else if programReadiness.state === 'lett'}🟡{:else if programReadiness.state === 'easy'}🟠{:else}🔴{/if}
+				</span>
+				<span class="readiness-label">
+					{#if programReadiness.state === 'klar'}I dag: Klar for {programReadiness.programName}
+					{:else if programReadiness.state === 'rest'}I dag: Hvile{programReadiness.alternativeName ? ` — ${programReadiness.alternativeName}` : ''}
+					{:else}I dag: {programReadiness.alternativeName ?? (programReadiness.state === 'lett' ? 'Lett på' : 'Easy-dag')}
+					{/if}
+				</span>
+			</button>
+		{/if}
 		{#if !inputExpanded && actionItems.length > 0}
 			<div class="zone-actions" aria-label="Foreslåtte handlinger">
 				<div class="action-carousel">
@@ -3002,6 +3025,46 @@
 	.zone-actions {
 		flex: 0 0 auto;
 		padding: 0;
+	}
+
+	.readiness-chip {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 8px 14px;
+		margin: 0 0 8px;
+		border-radius: 999px;
+		background: var(--bg-secondary);
+		border: 1px solid var(--border-subtle);
+		color: var(--text-primary);
+		font-size: 13px;
+		cursor: pointer;
+		max-width: 100%;
+		text-align: left;
+	}
+	.readiness-chip:hover {
+		border-color: var(--accent-primary);
+	}
+	.readiness-chip.readiness-klar {
+		border-left: 4px solid #34d399;
+	}
+	.readiness-chip.readiness-lett {
+		border-left: 4px solid #fbbf24;
+	}
+	.readiness-chip.readiness-easy {
+		border-left: 4px solid #fb923c;
+	}
+	.readiness-chip.readiness-rest {
+		border-left: 4px solid #f87171;
+	}
+	.readiness-dot {
+		font-size: 14px;
+		flex-shrink: 0;
+	}
+	.readiness-label {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.action-carousel {

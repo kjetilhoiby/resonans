@@ -74,6 +74,15 @@ export function startScheduler() {
 			} catch (err) {
 				console.error('❌ runEgenfrekvensCheckInNudges failed:', err);
 			}
+			try {
+				await NudgeOrchestrationService.runProgramReadinessNudges({
+					appUrl,
+					windowMinutes: 5,
+					requireRecentTimeWindow: true
+				});
+			} catch (err) {
+				console.error('❌ runProgramReadinessNudges failed:', err);
+			}
 		},
 		{
 			timezone: 'UTC'

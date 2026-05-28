@@ -200,6 +200,13 @@ function validateSlot(slot: unknown): EgenfrekvensSlot {
 	return slot;
 }
 
+function parseUntilDate(value: unknown): string | null {
+	if (value === null || value === undefined || value === '') return null;
+	if (typeof value !== 'string') return null;
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+	return value;
+}
+
 export async function submitEgenfrekvensCheckin(params: {
 	userId: string;
 	level: number;
@@ -212,6 +219,8 @@ export async function submitEgenfrekvensCheckin(params: {
 	reflectionThread?: Array<{ role: string; text: string }> | null;
 	reasons?: Record<string, string[]> | null;
 	day?: string;
+	sickUntil?: string | null;
+	crunchUntil?: string | null;
 }): Promise<EgenfrekvensCheckinStatus> {
 	validateFullValues(params);
 	const day = params.day || toIsoDay();
@@ -228,6 +237,9 @@ export async function submitEgenfrekvensCheckin(params: {
 
 	const sensor = await getOrCreateEgenfrekvensSensor(params.userId);
 	const moodSensor = await getOrCreateMoodSensor(params.userId);
+
+	const sickUntil = parseUntilDate(params.sickUntil);
+	const crunchUntil = parseUntilDate(params.crunchUntil);
 
 	const payload: Record<string, unknown> = {
 		day,
@@ -248,6 +260,13 @@ export async function submitEgenfrekvensCheckin(params: {
 	if (params.reflectionThread && params.reflectionThread.length > 0) {
 		payload.reflectionThread = params.reflectionThread;
 	}
+	// Tilstand-flagg: bare lagre hvis bruker satte en dato. Tom verdi
+	// betyr "ikke aktivt akkurat nå". Vi nullstiller eksplisitt med 'cleared'-marker
+	// slik at readiness-service kan skille "ikke rapportert" fra "rapportert som av".
+	if (params.sickUntil === '' || params.sickUntil === null) payload.sickUntil = null;
+	else if (sickUntil) payload.sickUntil = sickUntil;
+	if (params.crunchUntil === '' || params.crunchUntil === null) payload.crunchUntil = null;
+	else if (crunchUntil) payload.crunchUntil = crunchUntil;
 
 	const writeResult = await SensorEventService.write({
 		userId: params.userId,
@@ -283,6 +302,8 @@ export async function submitEgenfrekvensQuick(params: {
 	slot: EgenfrekvensSlot;
 	note?: string | null;
 	day?: string;
+	sickUntil?: string | null;
+	crunchUntil?: string | null;
 }): Promise<EgenfrekvensCheckinStatus> {
 	const level = Number(params.level);
 	if (!Number.isInteger(level) || level < 1 || level > 5) {
@@ -302,6 +323,9 @@ export async function submitEgenfrekvensQuick(params: {
 	const sensor = await getOrCreateEgenfrekvensSensor(params.userId);
 	const moodSensor = await getOrCreateMoodSensor(params.userId);
 
+	const sickUntilQuick = parseUntilDate(params.sickUntil);
+	const crunchUntilQuick = parseUntilDate(params.crunchUntil);
+
 	const payload: Record<string, unknown> = {
 		day,
 		mode: 'quick',
@@ -311,6 +335,10 @@ export async function submitEgenfrekvensQuick(params: {
 		note: cleanNote,
 		extreme
 	};
+	if (params.sickUntil === '' || params.sickUntil === null) payload.sickUntil = null;
+	else if (sickUntilQuick) payload.sickUntil = sickUntilQuick;
+	if (params.crunchUntil === '' || params.crunchUntil === null) payload.crunchUntil = null;
+	else if (crunchUntilQuick) payload.crunchUntil = crunchUntilQuick;
 
 	const writeResult = await SensorEventService.write({
 		userId: params.userId,
@@ -337,6 +365,88 @@ export async function submitEgenfrekvensQuick(params: {
 
 	const status = await getEgenfrekvensCheckinStatus(params.userId, day);
 	return { ...status, eventId: writeResult.event?.id ?? null };
+}
+
+export interface EgenfrekvensStateFlags {
+	sick: { active: boolean; until: string | null };
+	crunch: { active: boolean; until: string | null };
+	level: number | null;
+	balance: number | null;
+	loggedAt: string | null;
+}
+
+/**
+ * Henter aktive tilstand-flagg basert på siste egenfrekvens-checkin.
+ * Sick/crunch er aktive så lenge dagens ISO-dato ≤ sickUntil/crunchUntil.
+ * Hvis siste checkin har sickUntil=null betyr det at bruker eksplisitt klarerte
+ * status — flagget er av selv om det var satt før.
+ */
+export async function getActiveEgenfrekvensFlags(
+	userId: string,
+	today: string = toIsoDay()
+): Promise<EgenfrekvensStateFlags> {
+	const result: EgenfrekvensStateFlags = {
+		sick: { active: false, until: null },
+		crunch: { active: false, until: null },
+		level: null,
+		balance: null,
+		loggedAt: null
+	};
+
+	// Nyeste egenfrekvens-checkin gir level/balance (og kan inneholde sick/crunch
+	// som rapportert da check-in ble gjort).
+	const checkinRows = await db
+		.select({ data: sensorEvents.data, timestamp: sensorEvents.timestamp })
+		.from(sensorEvents)
+		.where(and(eq(sensorEvents.userId, userId), eq(sensorEvents.dataType, 'egenfrekvens_checkin')))
+		.orderBy(desc(sensorEvents.timestamp))
+		.limit(1);
+
+	if (checkinRows.length > 0) {
+		const row = checkinRows[0];
+		const data = (row.data ?? {}) as Record<string, unknown>;
+		const level = typeof data.level === 'number' ? data.level : null;
+		const balance = typeof data.balance === 'number' ? data.balance : null;
+		result.level = level;
+		result.balance = balance;
+		result.loggedAt = row.timestamp.toISOString();
+
+		const sickUntil = typeof data.sickUntil === 'string' ? data.sickUntil : null;
+		const crunchUntil = typeof data.crunchUntil === 'string' ? data.crunchUntil : null;
+		if (sickUntil && sickUntil >= today) {
+			result.sick = { active: true, until: sickUntil };
+		}
+		if (crunchUntil && crunchUntil >= today) {
+			result.crunch = { active: true, until: crunchUntil };
+		}
+	}
+
+	// Nyere dedikert tilstand_flag-events overstyrer (bruker oppdaterte uten å gjøre full check-in).
+	const flagRows = await db
+		.select({ data: sensorEvents.data, timestamp: sensorEvents.timestamp })
+		.from(sensorEvents)
+		.where(and(eq(sensorEvents.userId, userId), eq(sensorEvents.dataType, 'tilstand_flag')))
+		.orderBy(desc(sensorEvents.timestamp))
+		.limit(1);
+
+	if (flagRows.length > 0) {
+		const row = flagRows[0];
+		const flagTs = row.timestamp.toISOString();
+		// Bare overstyr hvis tilstand_flag er nyere enn nyeste egenfrekvens-checkin
+		if (!result.loggedAt || flagTs > result.loggedAt) {
+			const data = (row.data ?? {}) as Record<string, unknown>;
+			const sickUntil = typeof data.sickUntil === 'string' ? data.sickUntil : null;
+			const crunchUntil = typeof data.crunchUntil === 'string' ? data.crunchUntil : null;
+			result.sick = sickUntil && sickUntil >= today
+				? { active: true, until: sickUntil }
+				: { active: false, until: null };
+			result.crunch = crunchUntil && crunchUntil >= today
+				? { active: true, until: crunchUntil }
+				: { active: false, until: null };
+		}
+	}
+
+	return result;
 }
 
 /**

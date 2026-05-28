@@ -1,11 +1,13 @@
 <script lang="ts">
 	import { AppPage, PageHeader } from '$lib/components/ui';
+	import ReadinessStrip from '$lib/components/composed/ReadinessStrip.svelte';
 	import { goto, invalidateAll } from '$app/navigation';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
 	const program = $derived(data.program);
+	const readiness = $derived(data.readiness);
 	const today = new Date().toISOString().slice(0, 10);
 
 	function fmtDate(weekNumber: number, dayNumber: number): string {
@@ -141,6 +143,18 @@
 				{confirmDelete ? 'Trykk igjen for å bekrefte' : 'Slett'}
 			</button>
 		</div>
+	{/if}
+
+	{#if readiness && program.status === 'active' && program.id}
+		<ReadinessStrip
+			readinessState={readiness.state}
+			reasons={readiness.reasons}
+			signals={readiness.signals}
+			alternative={readiness.alternative}
+			hasPlannedSession={readiness.hasPlannedSession}
+			programId={program.id}
+			date={String(readiness.date ?? today)}
+		/>
 	{/if}
 
 	<div class="weeks">
