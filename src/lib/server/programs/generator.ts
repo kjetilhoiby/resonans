@@ -237,15 +237,30 @@ REGLER FOR PROGRAMMET:
 8. Hvis kun løp (includeStrength=false): bygg en rendyrket løpeplan med variasjon (easy/tempo/intervals/long).
 9. Hvis kun styrke (includeRunning=false): bygg styrkeplan med 2-3 økter/uke, varier øvelsesfokus.
 10. paceHintSecPerKm og hrZoneHint er VALGFRIE — utelat dem hvis brukeren ikke har spesifisert nivå/erfaring.
-11. Hvis brukeren ikke har spesifisert volum, bruk fornuftige defaults (f.eks. easy ~5-8 km, long ~10-15 km, tempo 20-30 min).
-12. Bruk norske navn på øvelser og økter.
-13. Hvis en athlete-snapshot er gitt: bruk den til å sette REALISTISKE targets.
+11. **Styrkeøkter skal ALLTID inneholde alle 5 tillatte styrkeøvelser.** Hver styrkeøkt
+    har samtlige 5 navn — variér kun reps/sets/tid mellom øktene og over uker,
+    ikke utvalget. Dette gir helhetlig progresjon på alle øvelser.
+12. **Løpsdistanser skal skaleres mot brukerens observerte volum:**
+    - Hvis recentVolumeKm er kjent, skal LONGEST run i uke 1 være ≤ 60% av
+      recentVolumeKm (en 13 km/uke-løper får maks ~8 km langtur).
+    - Vanlige easy/tempo-økter: 3–6 km. Intervall-økter: total volum 4–7 km.
+    - Volum-progresjon i løpet av programmet: maks +5–10% per uke,
+      capet ved 1.3× initial volum.
+    - Prioriter FARTSPROGRESJON (paceHintSecPerKm faller 2–5 sek/km per uke
+      på tempo/intervaller) fremfor distansevekst når brukeren har lavt volum
+      (< 20 km/uke).
+13. Hvis brukeren ikke har spesifisert volum, bruk fornuftige defaults
+    (easy ~4 km, tempo ~3 km, intervaller 4 × 800 m, long ~6–8 km).
+14. Bruk norske navn på øvelser og økter.
+15. Hvis en athlete-snapshot er gitt: bruk den til å sette REALISTISKE targets.
     - rich data: bruk PR-er og paceZones direkte. Easy = paceZones.easySecPerKm,
-      tempo ≈ tempoSecPerKm, intervaller ≈ intervalSecPerKm. Volum start ≈ recentVolumeKm.
+      tempo ≈ tempoSecPerKm, intervaller ≈ intervalSecPerKm.
     - thin data: vær konservativ. Volum start = 70% av recentVolumeKm.
     - none: ingen paceHintSecPerKm i det hele tatt. Bruk hrZoneHint som veiledning.
-14. Styrke-baseline i snapshot: hvis brukerens AMRAP for en øvelse er kjent, sett
+16. Styrke-baseline i snapshot: hvis brukerens AMRAP for en øvelse er kjent, sett
     uke 1 repsTarget til ~70% av AMRAP. F.eks. AMRAP Armhevinger=15 → repsTarget=10.
+    Hvis ikke kjent, bruk defaults: Utfall 3×10, Armhevinger 3×8, Planke 3×30s,
+    Tåhevinger 3×15, Sakte senking 3×8s. Øk reps/tid 1-2 per uke i ikke-deload.
 ${testInstructions}
 Returner KUN JSON. Ikke wrap i \`\`\`json. Ikke kommenter.`;
 }
