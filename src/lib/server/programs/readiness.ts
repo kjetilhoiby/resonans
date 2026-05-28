@@ -11,7 +11,7 @@ import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
 import { getActiveEgenfrekvensFlags } from '$lib/server/egenfrekvens-checkin';
 import { generateSessionAlternative } from './session-alternative';
-import { sessionPlannedDate } from './repository';
+import { sessionPlannedDate, mondayOf } from './repository';
 import type { ProgramSessionDTO } from './types';
 
 export type ReadinessState = 'klar' | 'lett' | 'easy' | 'rest';
@@ -257,14 +257,20 @@ async function fetchPlannedSessionForDate(
 			? program.startDate
 			: new Date(program.startDate as unknown as Date).toISOString().slice(0, 10);
 
-	const startMs = new Date(startDate + 'T00:00:00Z').getTime();
-	const todayMs = new Date(date + 'T00:00:00Z').getTime();
-	const dayOffset = Math.floor((todayMs - startMs) / (1000 * 60 * 60 * 24));
-	if (dayOffset < 0) return { session: null, weekNumber: null };
+	if (date < startDate) return { session: null, weekNumber: null };
 
-	const weekNumber = Math.floor(dayOffset / 7) + 1;
-	if (weekNumber > program.durationWeeks) return { session: null, weekNumber: null };
-	const dayNumber = (dayOffset % 7) + 1;
+	// Ankre mot mandagen i startuka, slik at dayNumber = ekte ukedag.
+	const week1Monday = mondayOf(startDate);
+	const weekOffset = Math.floor(
+		(new Date(mondayOf(date) + 'T00:00:00Z').getTime() -
+			new Date(week1Monday + 'T00:00:00Z').getTime()) /
+			(1000 * 60 * 60 * 24 * 7)
+	);
+	const weekNumber = weekOffset + 1;
+	if (weekNumber < 1 || weekNumber > program.durationWeeks)
+		return { session: null, weekNumber: null };
+	const dow = new Date(date + 'T00:00:00Z').getUTCDay();
+	const dayNumber = ((dow + 6) % 7) + 1;
 
 	const week = await db.query.programWeeks.findFirst({
 		where: and(eq(programWeeks.programId, programId), eq(programWeeks.weekNumber, weekNumber)),

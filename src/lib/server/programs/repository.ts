@@ -37,12 +37,33 @@ function addDays(iso: string, days: number): string {
 }
 
 /**
- * Returnerer ISO-dato for en planlagt økt (basert på programmets startDate).
- * Antar mandag som dag 1 i programmet, og uke 1 starter på startDate.
+ * ISO-dato for mandagen i kalenderuka som inneholder `iso`.
+ * Brukes til å ankre programmets ukestruktur mot ekte kalenderuker, slik at
+ * dayNumber (1=mandag .. 7=søndag) alltid lander på riktig ukedag.
+ */
+export function mondayOf(iso: string): string {
+	const d = new Date(iso + 'T00:00:00Z');
+	const offsetToMonday = (d.getUTCDay() + 6) % 7; // dager siden mandag (søn=6)
+	return addDays(iso, -offsetToMonday);
+}
+
+/** dayNumber (1=mandag .. 7=søndag) for en ISO-dato. */
+function dayNumberOf(iso: string): number {
+	const dow = new Date(iso + 'T00:00:00Z').getUTCDay(); // 0=søn .. 6=lør
+	return ((dow + 6) % 7) + 1;
+}
+
+/**
+ * Returnerer ISO-dato for en planlagt økt.
+ * Ukestrukturen ankres mot kalenderuker: uke 1 = kalenderuka som inneholder
+ * startDate, og dayNumber (1=mandag .. 7=søndag) lander på den faktiske
+ * ukedagen. Et program som starter midt i uka «fyller resten» av uke 1 på
+ * sine ekte ukedager, og teller fulle mandag–søndag-uker deretter.
  */
 export function sessionPlannedDate(programStartDate: string, weekNumber: number, dayNumber: number): string {
+	const week1Monday = mondayOf(programStartDate);
 	const offset = (weekNumber - 1) * 7 + (dayNumber - 1);
-	return addDays(programStartDate, offset);
+	return addDays(week1Monday, offset);
 }
 
 export async function saveGeneratedProgram(
@@ -303,14 +324,19 @@ export async function getTodaySession(
 		? program.startDate
 		: new Date(program.startDate as unknown as Date).toISOString().slice(0, 10);
 
-	const startMs = new Date(startDate + 'T00:00:00Z').getTime();
-	const todayMs = new Date(dateISO + 'T00:00:00Z').getTime();
-	const dayOffset = Math.floor((todayMs - startMs) / (1000 * 60 * 60 * 24));
-	if (dayOffset < 0) return null;
+	// Programmet har ikke startet ennå før startDate.
+	if (dateISO < startDate) return null;
 
-	const weekNumber = Math.floor(dayOffset / 7) + 1;
-	if (weekNumber > program.durationWeeks) return null;
-	const dayNumber = (dayOffset % 7) + 1;
+	// Ankre mot mandagen i startuka, slik at dayNumber = ekte ukedag.
+	const week1Monday = mondayOf(startDate);
+	const weekOffset = Math.floor(
+		(new Date(mondayOf(dateISO) + 'T00:00:00Z').getTime() -
+			new Date(week1Monday + 'T00:00:00Z').getTime()) /
+			(1000 * 60 * 60 * 24 * 7)
+	);
+	const weekNumber = weekOffset + 1;
+	if (weekNumber < 1 || weekNumber > program.durationWeeks) return null;
+	const dayNumber = dayNumberOf(dateISO);
 
 	const week = await db.query.programWeeks.findFirst({
 		where: and(eq(programWeeks.programId, programId), eq(programWeeks.weekNumber, weekNumber)),
