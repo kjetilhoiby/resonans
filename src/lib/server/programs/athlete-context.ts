@@ -49,35 +49,34 @@ export async function buildAthleteSnapshot(userId: string): Promise<AthleteSnaps
 	const fourWeeksAgo = new Date(now.getTime() - FOUR_WEEKS_MS);
 	const ninetyDaysAgo = new Date(now.getTime() - NINETY_DAYS_MS);
 
-	// Recent running workouts for volume aggregation. Vi henter IKKE
-	// best_efforts her — det er en cache-kolonne som kanskje ikke eksisterer
-	// før schema-sync har kjørt. PR-data hentes fra eksplisitte tester
-	// (programTestResults) i stedet, som er en pålitelig kilde.
+	// Recent running workouts for volume + best-effort aggregation.
 	type RecentRow = {
 		startTime: Date;
 		distanceMeters: string | null;
 		durationSeconds: string | null;
 		sportFamily: string;
+		bestEfforts: Record<string, number> | null;
 	};
 	let recentWorkouts: RecentRow[] = [];
 
 	try {
-		recentWorkouts = await db
+		recentWorkouts = (await db
 			.select({
 				startTime: canonicalWorkouts.startTime,
 				distanceMeters: canonicalWorkouts.distanceMeters,
 				durationSeconds: canonicalWorkouts.durationSeconds,
-				sportFamily: canonicalWorkouts.sportFamily
+				sportFamily: canonicalWorkouts.sportFamily,
+				bestEfforts: canonicalWorkouts.bestEfforts
 			})
 			.from(canonicalWorkouts)
 			.where(
 				and(
 					eq(canonicalWorkouts.userId, userId),
 					eq(canonicalWorkouts.sportFamily, 'running'),
-					gte(canonicalWorkouts.startTime, fourWeeksAgo)
+					gte(canonicalWorkouts.startTime, ninetyDaysAgo)
 				)
 			)
-			.orderBy(desc(canonicalWorkouts.startTime));
+			.orderBy(desc(canonicalWorkouts.startTime))) as RecentRow[];
 	} catch (err) {
 		console.warn('[athlete-context] canonicalWorkouts query feilet — returnerer tomt snapshot', err);
 		return {
@@ -89,6 +88,17 @@ export async function buildAthleteSnapshot(userId: string): Promise<AthleteSnaps
 			strengthBaseline: {},
 			recordedAt: now.toISOString()
 		};
+	}
+
+	// Trigge backfill av analytics hvis vi har løps-økter men ingen best_efforts
+	// er cached enda. Asynkron — vi returner snapshot uansett, neste request får
+	// fersk data. Forsøk er beste-innsats: feiler det, ignorer.
+	const needsBackfill = recentWorkouts.length > 0 && recentWorkouts.every((w) => w.bestEfforts == null);
+	if (needsBackfill) {
+		console.log(`[athlete-context] ${recentWorkouts.length} løp uten cached best_efforts — trigger backfill`);
+		void backfillAnalyticsForUser(userId).catch((err) => {
+			console.warn('[athlete-context] backfill feilet:', err);
+		});
 	}
 
 	// Eksplisitte tester — også med graceful fallback
@@ -114,19 +124,23 @@ export async function buildAthleteSnapshot(userId: string): Promise<AthleteSnaps
 		tests = [];
 	}
 
-	// Sum recent volume
+	// Volum/økter siste 4 uker: filtrer 90-dagers vindu ned til 4 uker.
+	const recentForVolume = recentWorkouts.filter((w) => w.startTime >= fourWeeksAgo);
 	let recentVolumeMeters = 0;
-	for (const w of recentWorkouts) {
+	for (const w of recentForVolume) {
 		const d = w.distanceMeters ? Number(w.distanceMeters) : 0;
 		if (Number.isFinite(d)) recentVolumeMeters += d;
 	}
-	const recentVolumeKm = Math.round((recentVolumeMeters / 1000) * 10) / 10;
-	const recentSessionsPerWeek = Math.round((recentWorkouts.length / 4) * 10) / 10;
+	const recentVolumeKm = Math.round((recentVolumeMeters / 1000 / 4) * 10) / 10;
+	const recentSessionsPerWeek = Math.round((recentForVolume.length / 4) * 10) / 10;
 
-	// Aggreger best efforts fra eksplisitte tester (5k-test, Cooper, 10k tt).
-	// Cache-baserte PR-er fra canonical_workouts.bestEfforts kommer i v1.2
-	// når schema-sync er bekreftet stabilt.
+	// Aggreger best efforts: ta raskeste per distanse fra både cached
+	// canonical_workouts.bestEfforts og eksplisitte tester.
 	const bestEfforts: AthleteSnapshot['bestEfforts'] = {};
+	for (const w of recentWorkouts) {
+		if (!w.bestEfforts) continue;
+		mergeBestEfforts(bestEfforts, w.bestEfforts);
+	}
 
 	// Tester kan også bidra til best efforts (eksplisitt 5k-test, Cooper → estimert distance)
 	for (const t of tests) {
@@ -265,4 +279,77 @@ export function snapshotForPersistence(snapshot: AthleteSnapshot) {
 		),
 		recordedAt: snapshot.recordedAt
 	};
+}
+
+/**
+ * Backfill workout-analytics for brukerens running canonical_workouts som
+ * mangler best_efforts. Kalles fire-and-forget fra buildAthleteSnapshot
+ * — første snapshot-request får tomme PR-er, neste request får ferskt.
+ */
+async function backfillAnalyticsForUser(userId: string): Promise<void> {
+	const { sensorEvents } = await import('$lib/db/schema');
+	const { sql, eq, and, isNull, inArray } = await import('drizzle-orm');
+	const { analyzeWorkout } = await import('$lib/server/workouts/workout-analytics');
+	const { getEffortBaseline } = await import('$lib/server/services/effort-service');
+
+	const candidates = await db
+		.select({
+			id: canonicalWorkouts.id,
+			evidence: canonicalWorkouts.evidence
+		})
+		.from(canonicalWorkouts)
+		.where(
+			and(
+				eq(canonicalWorkouts.userId, userId),
+				eq(canonicalWorkouts.sportFamily, 'running'),
+				isNull(canonicalWorkouts.bestEfforts)
+			)
+		);
+
+	if (candidates.length === 0) return;
+
+	const baseline = await getEffortBaseline(userId);
+	const eventIds = new Set<string>();
+	const eventToCanonical = new Map<string, string>();
+	for (const c of candidates) {
+		const evidence = (c.evidence ?? []) as Array<{ eventId?: string }>;
+		for (const e of evidence) {
+			if (e.eventId) {
+				eventIds.add(e.eventId);
+				if (!eventToCanonical.has(e.eventId)) eventToCanonical.set(e.eventId, c.id);
+			}
+		}
+	}
+	if (eventIds.size === 0) return;
+
+	const rows = await db
+		.select({
+			id: sensorEvents.id,
+			trackPoints: sql<unknown>`${sensorEvents.data}->'trackPoints'`
+		})
+		.from(sensorEvents)
+		.where(inArray(sensorEvents.id, [...eventIds]));
+
+	const now = new Date();
+	let updated = 0;
+	for (const row of rows) {
+		const pts = Array.isArray(row.trackPoints) ? (row.trackPoints as Array<{ lat?: number; lon?: number; ele?: number; hr?: number; time?: string }>) : null;
+		if (!pts || pts.length < 2) continue;
+		const canonicalId = eventToCanonical.get(row.id);
+		if (!canonicalId) continue;
+		const analytics = analyzeWorkout(pts, { restHr: baseline.restHr, maxHr: baseline.maxHr });
+		if (!analytics.bestEfforts && analytics.gapSecPerKm == null && !analytics.hrZoneDistribution) continue;
+		await db
+			.update(canonicalWorkouts)
+			.set({
+				bestEfforts: analytics.bestEfforts ?? null,
+				gapSecPerKm: analytics.gapSecPerKm != null ? String(analytics.gapSecPerKm) : null,
+				hrZoneDistribution: analytics.hrZoneDistribution ?? null,
+				analyticsComputedAt: now,
+				updatedAt: now
+			})
+			.where(eq(canonicalWorkouts.id, canonicalId));
+		updated += 1;
+	}
+	console.log(`[athlete-context] backfill: oppdaterte ${updated} canonical_workouts med analytics`);
 }
