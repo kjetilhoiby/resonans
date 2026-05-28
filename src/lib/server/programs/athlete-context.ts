@@ -114,13 +114,13 @@ export async function buildAthleteSnapshot(userId: string): Promise<AthleteSnaps
 		tests = [];
 	}
 
-	// Sum recent volume
+	// Sum recent volume — total meter delt på antall uker = snitt km/uke.
 	let recentVolumeMeters = 0;
 	for (const w of recentWorkouts) {
 		const d = w.distanceMeters ? Number(w.distanceMeters) : 0;
 		if (Number.isFinite(d)) recentVolumeMeters += d;
 	}
-	const recentVolumeKm = Math.round((recentVolumeMeters / 1000) * 10) / 10;
+	const recentVolumeKm = Math.round((recentVolumeMeters / 1000 / 4) * 10) / 10;
 	const recentSessionsPerWeek = Math.round((recentWorkouts.length / 4) * 10) / 10;
 
 	// Aggreger best efforts fra eksplisitte tester (5k-test, Cooper, 10k tt).
