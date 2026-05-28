@@ -281,6 +281,16 @@ export interface HomeDashboardData {
 			timestamp: string;
 			data: Record<string, unknown>;
 		}>;
+		cycle: {
+			curve: number[];
+			peakWatts: number;
+			elapsedMinutes: number;
+			totalMinutes: number;
+			remainingMinutes: number;
+			finishAt: string | null;
+			programName: string | null;
+			isRunning: boolean;
+		} | null;
 	}>;
 }
 
