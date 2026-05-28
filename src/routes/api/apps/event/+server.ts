@@ -38,6 +38,7 @@ const matchNotified = new Set<string>();
 
 async function handleProgressMatching(
 	userId: string,
+	sensorId: string,
 	appUrl: string,
 	data: { appliance: string; cycle_id?: string; watt_buckets_1min_so_far: number[]; timestamp?: string }
 ) {
@@ -52,6 +53,34 @@ async function handleProgressMatching(
 	if (!match) return;
 
 	matchNotified.add(cycleId);
+
+	const estimatedFinishAt = new Date(
+		Date.now() + match.estimatedRemainingMinutes * 60_000
+	).toISOString();
+
+	await SensorEventService.write(
+		{
+			userId,
+			sensorId,
+			eventType: 'state_change',
+			dataType: 'appliance_match',
+			timestamp: new Date(),
+			data: {
+				event: 'running',
+				cycle_id: cycleId,
+				appliance: data.appliance,
+				matched_program: match.programName,
+				match_confidence: match.confidence,
+				estimated_minutes_remaining: match.estimatedRemainingMinutes,
+				estimated_finish_at: estimatedFinishAt,
+				source: 'profile_match'
+			},
+			metadata: { sourceApp: 'ping' },
+			source: 'ping_match',
+			dedupeKey: `ping::match::${cycleId}`
+		},
+		{ conflictMode: 'upsert_sensor_datatype_timestamp' }
+	);
 
 	await notifyPingMatch({
 		userId,
@@ -127,7 +156,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			);
 
 			if (dataType === 'appliance_progress' && pingData.watt_buckets_1min_so_far?.length) {
-				runInBackground(handleProgressMatching(userId, appUrl, pingData));
+				runInBackground(handleProgressMatching(userId, sensorId, appUrl, pingData));
 			}
 		}
 
