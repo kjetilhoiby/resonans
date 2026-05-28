@@ -17,8 +17,12 @@
 		return date.toISOString().slice(0, 10);
 	}
 
-	function dayLabel(n: number): string {
-		return ['Man', 'Tir', 'Ons', 'Tor', 'Fre', 'Lør', 'Søn'][n - 1] ?? `Dag ${n}`;
+	function dayLabel(isoDate: string): string {
+		const raw = new Intl.DateTimeFormat('nb-NO', { weekday: 'short' }).format(
+			new Date(isoDate + 'T12:00:00')
+		);
+		const clean = raw.replace('.', '');
+		return clean.charAt(0).toUpperCase() + clean.slice(1);
 	}
 
 	function fmtSeconds(s?: number): string {
@@ -179,7 +183,7 @@
 						>
 							<div class="session-head">
 								<div>
-									<span class="day-pill">{dayLabel(session.dayNumber)} {sessionDate}</span>
+									<span class="day-pill">{dayLabel(sessionDate)} {sessionDate}</span>
 									<h3>
 										{session.name}
 										{#if session.isTest}
