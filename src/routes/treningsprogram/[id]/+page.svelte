@@ -19,6 +19,18 @@
 		return ['Man', 'Tir', 'Ons', 'Tor', 'Fre', 'Lør', 'Søn'][n - 1] ?? `Dag ${n}`;
 	}
 
+	function phaseLabel(phase: string): string {
+		return (
+			{
+				rutine: 'Rutine',
+				fart: 'Fart',
+				distanse: 'Distanse',
+				test: 'Test-uke',
+				deload: 'Deload'
+			}[phase] ?? phase
+		);
+	}
+
 	function fmtSeconds(s?: number): string {
 		if (s == null) return '–';
 		const m = Math.floor(s / 60);
@@ -148,7 +160,8 @@
 			<section class="week" class:deload={week.deload}>
 				<header class="week-head">
 					<h2>Uke {week.weekNumber}</h2>
-					{#if week.deload}<span class="deload-badge">Deload</span>{/if}
+					{#if week.phase}<span class="phase-badge phase-{week.phase}">{phaseLabel(week.phase)}</span>{/if}
+					{#if week.deload && week.phase !== 'deload'}<span class="deload-badge">Deload</span>{/if}
 				</header>
 				{#if week.notes}<p class="week-notes">{week.notes}</p>{/if}
 				<div class="sessions">
@@ -327,6 +340,34 @@
 		font-size: 11px;
 		padding: 3px 8px;
 		border-radius: 999px;
+		background: var(--bg-tertiary);
+		color: var(--text-secondary);
+	}
+	.phase-badge {
+		font-size: 11px;
+		padding: 3px 10px;
+		border-radius: 999px;
+		font-weight: 600;
+		letter-spacing: 0.03em;
+		text-transform: uppercase;
+	}
+	.phase-rutine {
+		background: color-mix(in oklab, #6ea8fe 18%, transparent);
+		color: #6ea8fe;
+	}
+	.phase-fart {
+		background: color-mix(in oklab, #f87171 18%, transparent);
+		color: #f87171;
+	}
+	.phase-distanse {
+		background: color-mix(in oklab, #34d399 18%, transparent);
+		color: #34d399;
+	}
+	.phase-test {
+		background: color-mix(in oklab, #fbbf24 22%, transparent);
+		color: #fbbf24;
+	}
+	.phase-deload {
 		background: var(--bg-tertiary);
 		color: var(--text-secondary);
 	}

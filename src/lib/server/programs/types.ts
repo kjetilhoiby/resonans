@@ -73,10 +73,25 @@ export interface ProgramSessionDTO {
 	completion?: SessionCompletionDTO | null;
 }
 
+export type ProgramPhase = 'rutine' | 'fart' | 'distanse' | 'test' | 'deload';
+
+export const PROGRAM_PHASES: readonly ProgramPhase[] = [
+	'rutine',
+	'fart',
+	'distanse',
+	'test',
+	'deload'
+] as const;
+
+export function isProgramPhase(value: unknown): value is ProgramPhase {
+	return typeof value === 'string' && (PROGRAM_PHASES as readonly string[]).includes(value);
+}
+
 export interface ProgramWeekDTO {
 	id?: string;
 	weekNumber: number;
 	deload: boolean;
+	phase?: ProgramPhase;
 	notes?: string;
 	sessions: ProgramSessionDTO[];
 }

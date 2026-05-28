@@ -19,7 +19,7 @@ import type {
 	ProgramWeekDTO,
 	SessionCompletionDTO
 } from './types';
-import { isProgramTestType } from './types';
+import { isProgramTestType, isProgramPhase } from './types';
 import {
 	STRENGTH_EXERCISE_NAMES,
 	isProgramStatus,
@@ -76,6 +76,7 @@ export async function saveGeneratedProgram(
 				programId,
 				weekNumber: week.weekNumber,
 				deload: week.deload,
+				phase: week.phase ?? null,
 				notes: week.notes ?? null
 			})
 			.returning({ id: programWeeks.id });
@@ -260,6 +261,7 @@ export async function getFullProgram(userId: string, programId: string): Promise
 		id: w.id,
 		weekNumber: w.weekNumber,
 		deload: w.deload,
+		phase: isProgramPhase(w.phase) ? w.phase : undefined,
 		notes: w.notes ?? undefined,
 		sessions: (sessionsByWeek.get(w.id) ?? []).sort((a, b) => a.dayNumber - b.dayNumber)
 	}));

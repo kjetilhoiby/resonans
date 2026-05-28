@@ -55,9 +55,12 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		? body.experience
 		: undefined;
 
-	const startDate = typeof body.startDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.startDate)
+	// Program-uker er mandag-søndag. Snap startDate til mandagen den uken
+	// brukeren valgte ligger i (eller den nærmeste fremtidige mandagen).
+	const rawStartDate = typeof body.startDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.startDate)
 		? body.startDate
 		: undefined;
+	const startDate = rawStartDate ? snapToMonday(rawStartDate) : snapToMonday(new Date().toISOString().slice(0, 10));
 
 	const includeBaselineTests = body.includeBaselineTests === true;
 	const useSnapshot = body.useAthleteSnapshot !== false; // default true
@@ -148,4 +151,17 @@ function parseIntInRange(value: unknown, min: number, max: number): number | und
 	const n = typeof value === 'number' ? value : Number(value);
 	if (!Number.isFinite(n)) return undefined;
 	return Math.max(min, Math.min(max, Math.round(n)));
+}
+
+/**
+ * Returnerer ISO-datoen for mandagen i samme kalenderuke som input-dagen.
+ * Hvis input ER en mandag, returner samme dato. Programs forutsetter at
+ * dayNumber=1 (mandag) er programmets startDate.
+ */
+function snapToMonday(iso: string): string {
+	const d = new Date(iso + 'T00:00:00Z');
+	const dow = d.getUTCDay(); // 0=søn, 1=man, ..., 6=lør
+	const daysBack = dow === 0 ? 6 : dow - 1;
+	d.setUTCDate(d.getUTCDate() - daysBack);
+	return d.toISOString().slice(0, 10);
 }

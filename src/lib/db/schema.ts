@@ -2413,6 +2413,13 @@ export const programWeeks = pgTable('program_weeks', {
 	programId: uuid('program_id').references(() => trainingPrograms.id, { onDelete: 'cascade' }).notNull(),
 	weekNumber: integer('week_number').notNull(), // 1-basert
 	deload: boolean('deload').notNull().default(false),
+	// Fase-merking — generatoren tildeler hver uke en av disse:
+	//   'rutine'    — etablere konsekvent øktsmønster, lavt volum, lav intensitet
+	//   'fart'      — bygge raskere tempo, intervaller, paceprogresjon
+	//   'distanse'  — gradvis økt langtur/total ukentlig volum
+	//   'test'      — testuke (Cooper 12 min eller annet) som ikke er ren deload
+	//   'deload'    — restitusjons-uke med redusert volum
+	phase: text('phase'),
 	notes: text('notes'),
 	createdAt: timestamp('created_at').defaultNow().notNull()
 }, (table) => ({
