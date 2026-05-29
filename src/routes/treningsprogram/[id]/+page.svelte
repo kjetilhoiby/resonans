@@ -1,22 +1,30 @@
 <script lang="ts">
 	import { AppPage, PageHeader } from '$lib/components/ui';
+	import ReadinessStrip from '$lib/components/composed/ReadinessStrip.svelte';
 	import { goto, invalidateAll } from '$app/navigation';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
 	const program = $derived(data.program);
+	const readiness = $derived(data.readiness);
 	const today = new Date().toISOString().slice(0, 10);
 
 	function fmtDate(weekNumber: number, dayNumber: number): string {
+		// Ankre uke 1 mot mandagen i startuka, slik at dayNumber = ekte ukedag.
 		const start = new Date(program.startDate + 'T00:00:00Z');
+		const offsetToMonday = (start.getUTCDay() + 6) % 7;
 		const date = new Date(start);
-		date.setUTCDate(date.getUTCDate() + (weekNumber - 1) * 7 + (dayNumber - 1));
+		date.setUTCDate(date.getUTCDate() - offsetToMonday + (weekNumber - 1) * 7 + (dayNumber - 1));
 		return date.toISOString().slice(0, 10);
 	}
 
-	function dayLabel(n: number): string {
-		return ['Man', 'Tir', 'Ons', 'Tor', 'Fre', 'Lør', 'Søn'][n - 1] ?? `Dag ${n}`;
+	function dayLabel(isoDate: string): string {
+		const raw = new Intl.DateTimeFormat('nb-NO', { weekday: 'short' }).format(
+			new Date(isoDate + 'T12:00:00')
+		);
+		const clean = raw.replace('.', '');
+		return clean.charAt(0).toUpperCase() + clean.slice(1);
 	}
 
 	function phaseLabel(phase: string): string {
@@ -155,6 +163,18 @@
 		</div>
 	{/if}
 
+	{#if readiness && program.status === 'active' && program.id}
+		<ReadinessStrip
+			readinessState={readiness.state}
+			reasons={readiness.reasons}
+			signals={readiness.signals}
+			alternative={readiness.alternative}
+			hasPlannedSession={readiness.hasPlannedSession}
+			programId={program.id}
+			date={String(readiness.date ?? today)}
+		/>
+	{/if}
+
 	<div class="weeks">
 		{#each program.weeks as week (week.weekNumber)}
 			<section class="week" class:deload={week.deload}>
@@ -178,7 +198,7 @@
 						>
 							<div class="session-head">
 								<div>
-									<span class="day-pill">{dayLabel(session.dayNumber)} {sessionDate}</span>
+									<span class="day-pill">{dayLabel(sessionDate)} {sessionDate}</span>
 									<h3>
 										{session.name}
 										{#if session.isTest}

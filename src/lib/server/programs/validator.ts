@@ -36,6 +36,7 @@ export function validateAndNormalizeProgram(
 		expectedSessionsPerWeek?: number;
 		includeStrength: boolean;
 		includeRunning: boolean;
+		startDate?: string;
 	}
 ): ProgramDTO {
 	const issues: string[] = [];
@@ -199,10 +200,13 @@ export function validateAndNormalizeProgram(
 
 	weeks.sort((a, b) => a.weekNumber - b.weekNumber);
 
+	// startDate er bestemt av kallet (default i dag), ikke av LLM-ekkoet — slik at
+	// ukestrukturen ankres deterministisk mot kalenderuka programmet starter i.
 	const today = new Date().toISOString().slice(0, 10);
-	const startDate = typeof r.startDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(r.startDate)
-		? r.startDate
-		: today;
+	const startDate =
+		context.startDate && /^\d{4}-\d{2}-\d{2}$/.test(context.startDate)
+			? context.startDate
+			: today;
 
 	return {
 		name,

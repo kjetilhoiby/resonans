@@ -41,11 +41,22 @@ function parseSlot(value: unknown): EgenfrekvensSlot | null {
 	return null;
 }
 
+// '' / null = bruker fjerner aktiv flagg, gyldig dato = ny verdi, undefined = uendret
+function parseTilstandUntil(value: unknown): string | null | undefined {
+	if (value === undefined) return undefined;
+	if (value === null || value === '') return null;
+	if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+	return undefined;
+}
+
 export const POST: RequestHandler = async ({ locals, request }) => {
 	try {
 		const body = await request.json();
 		const day =
 			typeof body?.day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.day) ? body.day : toIsoDay();
+
+		const sickUntil = parseTilstandUntil(body?.sickUntil);
+		const crunchUntil = parseTilstandUntil(body?.crunchUntil);
 
 		// Kjapp-variant: kun level + slot, ingen dimensjoner
 		const hasDimensions = body?.actions !== undefined || body?.feelings !== undefined || body?.thoughts !== undefined;
@@ -61,7 +72,9 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 				level,
 				slot,
 				note,
-				day
+				day,
+				sickUntil,
+				crunchUntil
 			});
 			return json(status);
 		}
@@ -88,7 +101,9 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			reflection,
 			reflectionThread,
 			reasons,
-			day
+			day,
+			sickUntil,
+			crunchUntil
 		});
 
 		return json(status);

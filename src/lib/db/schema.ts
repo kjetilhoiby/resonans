@@ -2630,3 +2630,78 @@ export const programTestResultsRelations = relations(programTestResults, ({ one 
 		references: [sensorEvents.id]
 	})
 }));
+
+// Daglig tilstand-vurdering for et program — kombinerer søvn, egenfrekvens,
+// sick/crunch-flags og aktive reise-temaer til en state ('klar' | 'lett' |
+// 'easy' | 'rest'), og lagrer den AI-genererte erstatningsøkten slik at vi
+// ikke kaller gpt-4o-mini på hver page-load.
+export const programReadinessAssessments = pgTable('program_readiness_assessments', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	programId: uuid('program_id').references(() => trainingPrograms.id, { onDelete: 'cascade' }).notNull(),
+	// null på hviledager
+	plannedSessionId: uuid('planned_session_id').references(() => programSessions.id, { onDelete: 'cascade' }),
+	assessmentDate: date('assessment_date').notNull(),
+	state: text('state').notNull(), // 'klar' | 'lett' | 'easy' | 'rest'
+	reasons: jsonb('reasons').$type<string[]>().notNull().default([]),
+	signals: jsonb('signals').$type<{
+		sleep?: { score: number | null; nights: Array<{ date: string; score: number | null }>; flag: 'red' | 'yellow' | 'green' | 'unknown' };
+		egenfrekvens?: { level: number | null; balance: number | null; loggedAt: string | null; flag: 'red' | 'yellow' | 'green' | 'unknown' };
+		sick?: { active: boolean; until: string | null };
+		crunch?: { active: boolean; until: string | null };
+		trip?: { active: boolean; themeId: string | null; destination: string | null; endDate: string | null };
+	}>().notNull().default({}),
+	// AI-generert erstatningsøkt for dagens state. null hvis state === 'klar'.
+	alternative: jsonb('alternative').$type<{
+		kind: 'strength' | 'run' | 'rest';
+		name: string;
+		summary: string;
+		// For løp: enklere/kortere variant av plannedRun
+		plannedRun?: {
+			runType: 'easy' | 'tempo' | 'intervals' | 'long';
+			targetDistanceMeters?: number;
+			targetDurationSeconds?: number;
+			paceHintSecPerKm?: number;
+			hrZoneHint?: string;
+			notes?: string;
+		};
+		// For styrke: redusert utgave av plannedExercises (ikke nødvendigvis samme)
+		plannedExercises?: Array<{
+			exerciseName: string;
+			sets: number;
+			repsTarget?: number;
+			durationSecondsTarget?: number;
+			notes?: string;
+		}>;
+		rationale: string;
+	}>(),
+	// Hash av signal-input — hvis fingerprint matcher cachet rad, gjenbruker vi alternative.
+	signalFingerprint: text('signal_fingerprint').notNull(),
+	// Bruker-valg: 'alternative' = aksepterte byttet, 'original' = kjørte original likevel, null = ikke valgt
+	userChoice: text('user_choice'),
+	userChoiceAt: timestamp('user_choice_at'),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	uniqueUserProgramDate: unique('program_readiness_user_program_date_uniq').on(
+		table.userId,
+		table.programId,
+		table.assessmentDate
+	),
+	idxUserDate: index('program_readiness_user_date_idx').on(table.userId, table.assessmentDate)
+}));
+
+export const programReadinessAssessmentsRelations = relations(programReadinessAssessments, ({ one }) => ({
+	user: one(users, {
+		fields: [programReadinessAssessments.userId],
+		references: [users.id]
+	}),
+	program: one(trainingPrograms, {
+		fields: [programReadinessAssessments.programId],
+		references: [trainingPrograms.id]
+	}),
+	plannedSession: one(programSessions, {
+		fields: [programReadinessAssessments.plannedSessionId],
+		references: [programSessions.id]
+	})
+}));
