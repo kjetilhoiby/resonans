@@ -97,11 +97,13 @@
       const start = -90 + i * slotDeg;
       const end = start + slotDeg - gapDeg;
 
-      const bgOuterR = s.bgRadius != null
-        ? innerR + (maxR - innerR) * Math.max(0.05, Math.min(1, s.bgRadius))
+      const bgBase = s.bgRadius != null
+        ? Math.max(0, Math.min(1, s.bgRadius))
         : null;
+      const bgOuterR = bgBase != null ? innerR + (maxR - innerR) * bgBase : null;
 
-      const outerR = innerR + (maxR - innerR) * Math.max(0.05, Math.min(1, s.radius));
+      const rBase = Math.max(0, Math.min(1, s.radius));
+      const outerR = innerR + (maxR - innerR) * rBase;
       const midDeg = start + (slotDeg - gapDeg) / 2;
       const labelR = (innerR + outerR) / 2;
 
