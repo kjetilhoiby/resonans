@@ -21,7 +21,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 		canonicalDate: string;
 		amount: string;
 		description: string | null;
-		paycheckType: string;
+		paycheckType: string | null;
 	}[] = [];
 
 	if (profile) {

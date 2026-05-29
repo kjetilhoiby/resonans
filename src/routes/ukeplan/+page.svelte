@@ -58,6 +58,7 @@
 			autoChecked?: boolean;
 			timeHour?: number;
 			timeMinute?: number;
+			hasBreakdown?: boolean;
 		} | null;
 	}
 

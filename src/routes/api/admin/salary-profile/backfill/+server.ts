@@ -72,6 +72,9 @@ export const POST: RequestHandler = async ({ locals, url }) => {
 	}
 
 	// Apply in batches using raw SQL for efficiency
+	if (!env.DATABASE_URL) {
+		return json({ error: 'DATABASE_URL er ikke konfigurert' }, { status: 500 });
+	}
 	const pgClient = postgres(env.DATABASE_URL, { max: 1 });
 	try {
 		let taggedMain = 0;
