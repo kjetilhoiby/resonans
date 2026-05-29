@@ -200,6 +200,7 @@
 	let activeChecklists = $state<Checklist[]>([]);
 	let allContextChecklists = $state<Checklist[]>([]);
 	let monthDayChecklists = $state<Checklist[]>([]);
+	let monthMetrics = $state<{ effort: Record<string, number>; egenfrekvens: Record<string, number> } | null>(null);
 	let openChecklist = $state<Checklist | null>(null);
 
 	// -- Pull to refresh (mobil) --
@@ -370,7 +371,21 @@
 				return (await res.json()) as Checklist[];
 			});
 
-			const [activeRows, contextRows] = await Promise.all([activePromise, monthDayPromise]);
+			const metricsPromise = fetch(
+				`/api/home/month-metrics?month=${encodeURIComponent(monthContext.slice('month:'.length))}`
+			).then(async (res) => {
+				if (!res.ok) return null;
+				return (await res.json()) as {
+					effort: Record<string, number>;
+					egenfrekvens: Record<string, number>;
+				};
+			});
+
+			const [activeRows, contextRows, metrics] = await Promise.all([
+				activePromise,
+				monthDayPromise,
+				metricsPromise
+			]);
 			if (activeRows) {
 				activeChecklists = sortActiveChecklists(activeRows);
 			}
@@ -379,6 +394,9 @@
 				monthDayChecklists = contextRows.filter((c) =>
 					(c.context ?? '').startsWith(`week:`) && (c.context ?? '').includes(':day:')
 				);
+			}
+			if (metrics) {
+				monthMetrics = { effort: metrics.effort ?? {}, egenfrekvens: metrics.egenfrekvens ?? {} };
 			}
 		} catch { /* stille */ }
 	}
@@ -888,9 +906,11 @@
 			const isPast = dayNum < todayDay;
 			const isToday = dayNum === todayDay;
 			const iso = `${year}-${String(month).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+			const effort = monthMetrics?.effort[iso];
+			const egenfrekvens = monthMetrics?.egenfrekvens[iso];
 			const cl = byDate.get(iso);
 			if (!cl || !(isPast || isToday)) {
-				return { planned: 0, completed: 0, isPast, isToday };
+				return { planned: 0, completed: 0, effort, egenfrekvens, isPast, isToday };
 			}
 			// Tell ikke 'gjør ikke'-oppgaver og hopp over gruppe-headere.
 			const items = cl.items.filter((it) => {
@@ -900,7 +920,7 @@
 			});
 			const planned = items.length;
 			const completed = items.filter((it) => it.checked).length;
-			return { planned, completed, isPast, isToday };
+			return { planned, completed, effort, egenfrekvens, isPast, isToday };
 		});
 	});
 

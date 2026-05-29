@@ -5,6 +5,8 @@
   export interface DayData {
     planned: number;    // antall planlagte oppgaver
     completed: number;  // antall løste oppgaver
+    effort?: number;       // daglig treningsbelastning (rå total, normaliseres mot månedens maks)
+    egenfrekvens?: number; // daglig humør/følt-score (0–10)
     isPast: boolean;
     isToday: boolean;
   }
@@ -65,28 +67,56 @@
     });
   }
 
-  function noise(seed: number, salt: number): number {
-    const x = Math.sin(seed * 12.9898 + salt * 78.233) * 43758.5453;
-    return Math.abs(x - Math.floor(x));
-  }
-
-  function buildMock(color: string, salt: number): SectorDef[] {
+  // Generisk bygger for verdi-baserte datasett (effort, egenfrekvens): hver dags
+  // verdi normaliseres mot en maks slik at den lengste armen fyller hjulet.
+  function buildValue(
+    pick: (d: DayData) => number | undefined,
+    max: number,
+    color: string
+  ): SectorDef[] {
     return Array.from({ length: daysInMonth }, (_, i) => {
       const day = days[i];
       const visible = day?.isPast || day?.isToday;
-      if (!visible) {
+      const value = visible ? (pick(day) ?? 0) : 0;
+      if (!visible || value <= 0) {
         return { radius: 0, color: 'transparent', opacity: 0 };
       }
-      const radius = 0.25 + 0.7 * noise(i + 1, salt);
+      const radius = Math.max(0, Math.min(1, value / max));
       const opacity = day.isToday ? 1 : 0.85;
       return { radius, color, opacity };
     });
   }
 
+  const effortMax = $derived(Math.max(1, ...days.map((d) => d?.effort ?? 0)));
+  // Humør ligger på en fast 0–10-skala, så vi normaliserer mot 10 (ikke månedens maks).
+  const EGENFREKVENS_MAX = 10;
+
+  const hasEffort = $derived(days.some((d) => (d?.effort ?? 0) > 0));
+  const hasEgenfrekvens = $derived(days.some((d) => (d?.egenfrekvens ?? 0) > 0));
+
+  // Bare ta med datasett som faktisk har data, så hjulet ikke står tomt med en label.
   const datasets = $derived<Dataset[]>([
     { id: 'oppgaver', label: 'Gjort', color: '#5fa080', build: buildTasks },
-    { id: 'effort',   label: 'Trent', color: '#f59e0b', build: () => buildMock('#f59e0b', 1.7) },
-    { id: 'stemning', label: 'Følt',  color: '#a78bfa', build: () => buildMock('#a78bfa', 3.1) },
+    ...(hasEffort
+      ? [
+          {
+            id: 'effort',
+            label: 'Trent',
+            color: '#f59e0b',
+            build: () => buildValue((d) => d.effort, effortMax, '#f59e0b'),
+          },
+        ]
+      : []),
+    ...(hasEgenfrekvens
+      ? [
+          {
+            id: 'egenfrekvens',
+            label: 'Følt',
+            color: '#a78bfa',
+            build: () => buildValue((d) => d.egenfrekvens, EGENFREKVENS_MAX, '#a78bfa'),
+          },
+        ]
+      : []),
   ]);
 
   let currentIdx = $state(0);
