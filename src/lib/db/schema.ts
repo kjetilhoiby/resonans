@@ -557,7 +557,12 @@ export const checklistItems = pgTable('checklist_items', {
 		progressRecordId?: string;
 		wakeHour?: number;
 		wakeMinute?: number;
+		// Tidspunkt på item (parset fra tekst eller intent)
+		timeHour?: number;
+		timeMinute?: number;
 		// Breakdown metadata
+		hasBreakdown?: boolean; // Om item har en generert underbrytning
+		breakdownGeneratedAt?: string; // ISO-timestamp for når breakdown ble generert
 		breakdownPrompt?: string; // The prompt used to generate breakdown
 		breakdownModel?: string; // The model used for breakdown
 		// Snooze tracking — id of the copy created when user snoozed this item

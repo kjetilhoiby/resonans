@@ -1,4 +1,7 @@
-import { WITHINGS_CLIENT_ID, WITHINGS_CLIENT_SECRET } from '$env/static/private';
+import { env } from '$env/dynamic/private';
+
+const WITHINGS_CLIENT_ID = env.WITHINGS_CLIENT_ID ?? '';
+const WITHINGS_CLIENT_SECRET = env.WITHINGS_CLIENT_SECRET ?? '';
 
 export interface WithingsTokenResponse {
 	status: number;

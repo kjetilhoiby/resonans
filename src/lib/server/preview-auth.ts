@@ -11,14 +11,18 @@ export function isPreviewEnv(): boolean {
 	return process.env.VERCEL_ENV === 'preview';
 }
 
-export function signPreviewToken(userId: string, secret: string): string {
+export function signPreviewToken(userId: string, secret: string | undefined): string {
+	if (!secret) {
+		throw new Error('AUTH_SECRET er ikke konfigurert — kan ikke signere preview-token');
+	}
 	const expires = Date.now() + MAX_AGE_MS;
 	const payload = `${userId}:${expires}`;
 	const mac = createHmac('sha256', secret).update(payload).digest('hex');
 	return `${Buffer.from(payload).toString('base64url')}.${mac}`;
 }
 
-export function verifyPreviewToken(token: string, secret: string): string | null {
+export function verifyPreviewToken(token: string, secret: string | undefined): string | null {
+	if (!secret) return null;
 	const dot = token.indexOf('.');
 	if (dot === -1) return null;
 
