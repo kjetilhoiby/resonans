@@ -12,7 +12,7 @@ import type {
 	ProgramSessionDTO,
 	ProgramWeekDTO
 } from './types';
-import { isProgramTestType } from './types';
+import { isProgramTestType, isProgramPhase } from './types';
 
 export class ProgramValidationError extends Error {
 	readonly issues: string[];
@@ -184,9 +184,11 @@ export function validateAndNormalizeProgram(
 		}
 
 		sessions.sort((a, b) => a.dayNumber - b.dayNumber);
+		const phase = isProgramPhase(rawWeek?.phase) ? rawWeek.phase : undefined;
 		weeks.push({
 			weekNumber,
 			deload,
+			phase,
 			notes: typeof rawWeek?.notes === 'string' ? (rawWeek.notes as string).trim() || undefined : undefined,
 			sessions
 		});

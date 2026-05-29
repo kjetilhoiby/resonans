@@ -14,13 +14,22 @@
 	let useAthleteSnapshot = $state(true);
 	let experience = $state<'beginner' | 'intermediate' | 'advanced' | ''>('');
 	let name = $state('');
-	let startDate = $state(todayISO());
+	let startDate = $state(nextMondayISO());
 
 	let submitting = $state(false);
 	let errorMessage = $state<string | null>(null);
 
-	function todayISO(): string {
-		return new Date().toISOString().slice(0, 10);
+	/**
+	 * Program-uker går mandag-søndag. Default startdato er kommende mandag
+	 * (eller i dag hvis i dag ER en mandag). dayNumber=1 = mandag i kalenderen.
+	 */
+	function nextMondayISO(): string {
+		const d = new Date();
+		d.setUTCHours(0, 0, 0, 0);
+		const dow = d.getUTCDay(); // 0=søn, 1=man, ..., 6=lør
+		const daysToAdd = dow === 1 ? 0 : (8 - dow) % 7;
+		d.setUTCDate(d.getUTCDate() + daysToAdd);
+		return d.toISOString().slice(0, 10);
 	}
 
 	async function handleSubmit(e: Event) {

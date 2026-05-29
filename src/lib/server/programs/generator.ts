@@ -235,41 +235,58 @@ REGLER FOR PROGRAMMET:
 
 1. Antall uker: produser nøyaktig durationWeeks uker.
 2. Antall økter per uke: ca sessionsPerWeek per uke (kan justeres ±1 ved deload).
-3. Deload-uker: hvis durationWeeks > 4, sett deload=true for hver 4. uke (uke 4, 8, ...) med redusert volum.
-4. Maks ${PROGRAM_LIMITS.maxStrengthSessionsPerWeek} styrkeøkter per uke.
-5. Aldri styrke samme dag som hard løpsøkt (tempo/intervals). Easy/long kan kombineres hvis nødvendig, men foretrekk separate dager.
-6. dayNumber må være unik innenfor en uke og angir EKTE ukedag: 1=mandag, 2=tirsdag, ..., 7=søndag. Plasser harde økter/langturer på dagene som faktisk passer (f.eks. langtur i helg = dayNumber 6/7). Uke 1 kan være en delvis uke hvis programmet starter midt i uka — se startdato-instruksen.
-7. Progresjon over uker:
+3. **Faseinndeling med "phase"-feltet på hver uke** — én av: "rutine" | "fart" | "distanse" | "test" | "deload".
+   Mønster basert på durationWeeks:
+   - 4 uker:  rutine, rutine, fart, test
+   - 6 uker:  rutine, rutine, fart, fart, distanse, test
+   - 8 uker:  rutine, rutine, fart, fart, test, distanse, distanse, test
+   - 12 uker: rutine, rutine, fart, fart, test, distanse, distanse, fart, test, distanse, distanse, test
+   "rutine" = lavt volum + lav intensitet, fokus på konsistens og rytme
+   "fart" = tempo/intervaller, paceprogresjon, distanse holdes nær recentVolumeKm
+   "distanse" = øke ukentlig volum og langturlengde gradvis
+   "test" = uke med innebygd Cooper 12 min (foretrukket) eller 5k tt-test, redusert øvrig volum
+   "deload" = ren restitusjons-uke, ~60% volum (kun brukt hvis durationWeeks > 8)
+4. **Test hver 4. uke**: i alle test-uker (markert med phase="test"), legg inn én test-økt
+   (Cooper 12 min ELLER 5k tt) med isTest=true. Test-økten erstatter intervaller/tempo
+   den uken — ikke et nytt 5. ekstra-treff. Cooper er foretrukket (12 min = lite stress).
+5. Deload-uker (phase="deload") brukes BARE når durationWeeks > 8.
+6. Maks ${PROGRAM_LIMITS.maxStrengthSessionsPerWeek} styrkeøkter per uke.
+7. Aldri styrke samme dag som hard løpsøkt (tempo/intervals). Easy/long kan kombineres hvis nødvendig, men foretrekk separate dager.
+8. dayNumber må være unik innenfor en uke og angir EKTE ukedag: 1=mandag, 2=tirsdag, ..., 7=søndag. Plasser harde økter/langturer på dagene som faktisk passer (f.eks. langtur i helg = dayNumber 6/7). startDate er allerede snappet til mandag.
+9. **Styrkeøkter skal ALLTID inneholde alle 5 tillatte styrkeøvelser.** Hver styrkeøkt
+   har samtlige 5 navn — variér kun reps/sets/tid mellom øktene og over uker,
+   ikke utvalget. Dette gir helhetlig progresjon på alle øvelser.
+10. Progresjon over uker:
    - Reps-baserte øvelser: øk reps med 1-2 per uke (innen grensene), eller behold og legg til vekt-hint hvis tillatt.
    - Tidsbaserte øvelser: øk durationSecondsTarget med 5-10 sekunder per uke.
-   - Løp: øk distance/duration gradvis (5-10% per uke), deload-uker reduserer til ~70% av forrige uke.
-8. Hvis kun løp (includeStrength=false): bygg en rendyrket løpeplan med variasjon (easy/tempo/intervals/long).
-9. Hvis kun styrke (includeRunning=false): bygg styrkeplan med 2-3 økter/uke, varier øvelsesfokus.
-10. paceHintSecPerKm og hrZoneHint er VALGFRIE — utelat dem hvis brukeren ikke har spesifisert nivå/erfaring.
-11. **Styrkeøkter skal ALLTID inneholde alle 5 tillatte styrkeøvelser.** Hver styrkeøkt
-    har samtlige 5 navn — variér kun reps/sets/tid mellom øktene og over uker,
-    ikke utvalget. Dette gir helhetlig progresjon på alle øvelser.
-12. **Løpsdistanser skal skaleres mot brukerens observerte volum:**
-    - Hvis recentVolumeKm er kjent, skal LONGEST run i uke 1 være ≤ 60% av
-      recentVolumeKm (en 13 km/uke-løper får maks ~8 km langtur).
-    - Vanlige easy/tempo-økter: 3–6 km. Intervall-økter: total volum 4–7 km.
-    - Volum-progresjon i løpet av programmet: maks +5–10% per uke,
-      capet ved 1.3× initial volum.
-    - Prioriter FARTSPROGRESJON (paceHintSecPerKm faller 2–5 sek/km per uke
-      på tempo/intervaller) fremfor distansevekst når brukeren har lavt volum
-      (< 20 km/uke).
-13. Hvis brukeren ikke har spesifisert volum, bruk fornuftige defaults
-    (easy ~4 km, tempo ~3 km, intervaller 4 × 800 m, long ~6–8 km).
-14. Bruk norske navn på øvelser og økter.
-15. Hvis en athlete-snapshot er gitt: bruk den til å sette REALISTISKE targets.
-    - rich data: bruk PR-er og paceZones direkte. Easy = paceZones.easySecPerKm,
-      tempo ≈ tempoSecPerKm, intervaller ≈ intervalSecPerKm.
-    - thin data: vær konservativ. Volum start = 70% av recentVolumeKm.
-    - none: ingen paceHintSecPerKm i det hele tatt. Bruk hrZoneHint som veiledning.
-16. Styrke-baseline i snapshot: hvis brukerens AMRAP for en øvelse er kjent, sett
-    uke 1 repsTarget til ~70% av AMRAP. F.eks. AMRAP Armhevinger=15 → repsTarget=10.
-    Hvis ikke kjent, bruk defaults: Utfall 3×10, Armhevinger 3×8, Planke 3×30s,
-    Tåhevinger 3×15, Sakte senking 3×8s. Øk reps/tid 1-2 per uke i ikke-deload.
+   - Løp: øk distance/duration gradvis (5-10% per uke), deload- og test-uker reduserer til ~70%.
+11. Hvis kun løp (includeStrength=false): bygg en rendyrket løpeplan med variasjon (easy/tempo/intervals/long).
+12. Hvis kun styrke (includeRunning=false): bygg styrkeplan med 2-3 økter/uke, varier øvelsesfokus.
+13. paceHintSecPerKm og hrZoneHint er VALGFRIE — utelat dem hvis brukeren ikke har spesifisert nivå/erfaring.
+14. **Løpsdistanser skal skaleres mot brukerens observerte volum:**
+   - Hvis recentVolumeKm er kjent, skal LONGEST run i uke 1 være ≤ 60% av
+     recentVolumeKm (en 13 km/uke-løper får maks ~8 km langtur).
+   - Vanlige easy/tempo-økter: 3–6 km. Intervall-økter: total volum 4–7 km.
+   - Volum-progresjon i løpet av programmet: maks +5–10% per uke,
+     capet ved 1.3× initial volum.
+   - Prioriter FARTSPROGRESJON (paceHintSecPerKm faller 2–5 sek/km per uke
+     på tempo/intervaller) fremfor distansevekst når brukeren har lavt volum
+     (< 20 km/uke).
+15. Hvis brukeren ikke har spesifisert volum, bruk fornuftige defaults
+   (easy ~4 km, tempo ~3 km, intervaller 4 × 800 m, long ~6–8 km).
+16. Bruk norske navn på øvelser og økter.
+17. Hvis en athlete-snapshot er gitt: bruk den til å sette REALISTISKE targets.
+   - rich data: bruk PR-er og paceZones direkte. Easy = paceZones.easySecPerKm,
+     tempo ≈ tempoSecPerKm, intervaller ≈ intervalSecPerKm.
+   - thin data: vær konservativ. Volum start = 70% av recentVolumeKm.
+   - none: ingen paceHintSecPerKm i det hele tatt. Bruk hrZoneHint som veiledning.
+18. Styrke-baseline i snapshot: hvis brukerens AMRAP for en øvelse er kjent, sett
+   uke 1 repsTarget til ~70% av AMRAP. F.eks. AMRAP Armhevinger=15 → repsTarget=10.
+   Hvis ikke kjent, bruk defaults: Utfall 3×10, Armhevinger 3×8, Planke 3×30s,
+   Tåhevinger 3×15, Sakte senking 3×8s. Øk reps/tid 1-2 per uke i ikke-deload.
+19. **dayNumber=1=Mandag, 2=Tirsdag, ..., 7=Søndag.** startDate ER en mandag (validatoren snapper),
+   så dayNumber maps direkte til kalender-ukedag. Plasser økter på fornuftige dager
+   (typisk 1, 3, 5, 7 for 4 økter/uke).
 ${testInstructions}
 Returner KUN JSON. Ikke wrap i \`\`\`json. Ikke kommenter.`;
 }
