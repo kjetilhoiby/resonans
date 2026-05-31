@@ -39,14 +39,14 @@
 		thisWeek,
 		prevWeek = null,
 		goals = [],
-		dailySeries = [],
+		weekDays = [],
 		categoryLabels = {},
 		compact = false
 	}: {
 		thisWeek: ScreenTimeMetric | null;
 		prevWeek?: ScreenTimeMetric | null;
 		goals?: GoalEval[];
-		dailySeries?: DayPoint[];
+		weekDays?: DayPoint[];
 		categoryLabels?: Record<string, string>;
 		compact?: boolean;
 	} = $props();
@@ -60,6 +60,7 @@
 		return `${h}t ${m}m`;
 	}
 
+	// Fast man–søn-rekkefølge. weekDays er alltid lengde 7, index 0 = mandag.
 	const dayLabels = ['M', 'T', 'O', 'T', 'F', 'L', 'S'];
 
 	// Endring i snitt/dag mot forrige uke
@@ -70,9 +71,8 @@
 		thisWeek && prevWeek ? thisWeek.socialAvgPerDayMinutes - prevWeek.socialAvgPerDayMinutes : null
 	);
 
-	// Siste 7 dager fra serien
-	const last7 = $derived(dailySeries.slice(-7));
-	const maxDay = $derived(Math.max(1, ...last7.map((d) => d.totalMinutes), thisWeek?.maxDayMinutes ?? 0));
+	const hasWeekDays = $derived(weekDays.some((d) => d.totalMinutes > 0));
+	const maxDay = $derived(Math.max(1, ...weekDays.map((d) => d.totalMinutes), thisWeek?.maxDayMinutes ?? 0));
 
 	// Time-for-time
 	const maxHour = $derived(Math.max(1, ...(thisWeek?.byHour ?? [])));
@@ -120,11 +120,11 @@
 			</div>
 		</div>
 
-		{#if last7.length > 0}
+		{#if !compact && hasWeekDays}
 			<div class="st-section">
 				<span class="section-title">Per dag</span>
 				<div class="day-bars">
-					{#each last7 as d, i}
+					{#each weekDays as d, i}
 						<div class="day-col" title={`${d.date}: ${fmt(d.totalMinutes)} (scrolling ${fmt(d.socialMinutes)})`}>
 							<div class="bar-track">
 								<div class="bar-total" style={`height:${(d.totalMinutes / maxDay) * 100}%`}>
@@ -134,7 +134,7 @@
 									></div>
 								</div>
 							</div>
-							<span class="day-label">{dayLabels[new Date(d.date).getDay() === 0 ? 6 : new Date(d.date).getDay() - 1]}</span>
+							<span class="day-label">{dayLabels[i]}</span>
 						</div>
 					{/each}
 				</div>

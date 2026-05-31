@@ -15,6 +15,17 @@
 		return `${h}t ${m}m`;
 	}
 
+	/* ── Ukevelger ────────────────────────────────────────── */
+	// weeks er nyeste først. index+1 = eldre uke, index-1 = nyere.
+	let selectedIndex = $state(data.defaultIndex ?? 0);
+	$effect(() => {
+		if (selectedIndex > data.weeks.length - 1) selectedIndex = Math.max(0, data.weeks.length - 1);
+	});
+	const current = $derived(data.weeks[selectedIndex] ?? null);
+	const prevMetric = $derived(data.weeks[selectedIndex + 1]?.metric ?? null);
+	const canOlder = $derived(selectedIndex < data.weeks.length - 1);
+	const canNewer = $derived(selectedIndex > 0);
+
 	/* ── Opplasting + tolking ─────────────────────────────── */
 	let uploading = $state(false);
 	let parsing = $state(false);
@@ -143,19 +154,33 @@
 		<p class="error">{error}</p>
 	{/if}
 
+	{#if current}
+		<div class="week-nav">
+			<button class="week-arrow" onclick={() => (selectedIndex += 1)} disabled={!canOlder} aria-label="Eldre uke">‹</button>
+			<div class="week-label">
+				<span class="week-range">{current.label}</span>
+				<span class="week-sub">
+					{selectedIndex === 0 ? 'Siste uke' : `${selectedIndex} uke${selectedIndex === 1 ? '' : 'r'} siden`}
+					{#if !current.hasWeekScreenshot}· pågår / kun dagsbilder{/if}
+				</span>
+			</div>
+			<button class="week-arrow" onclick={() => (selectedIndex -= 1)} disabled={!canNewer} aria-label="Nyere uke">›</button>
+		</div>
+	{/if}
+
 	<ScreenTimeCard
-		thisWeek={data.thisWeek}
-		prevWeek={data.prevWeek}
-		goals={data.goals}
-		dailySeries={data.dailySeries}
+		thisWeek={current?.metric ?? null}
+		prevWeek={prevMetric}
+		goals={current?.goals ?? []}
+		weekDays={current?.weekDays ?? []}
 		categoryLabels={data.categoryLabels}
 	/>
 
-	{#if data.topApps.length > 0}
+	{#if current && current.topApps.length > 0}
 		<section class="block">
-			<h2>Mest brukt (siste uke)</h2>
+			<h2>Mest brukt ({current.label})</h2>
 			<div class="apps">
-				{#each data.topApps as app}
+				{#each current.topApps as app}
 					<div class="app-row">
 						<span class="app-name">{app.name}</span>
 						<span class="app-min">{fmt(app.minutes)}</span>
@@ -285,11 +310,11 @@
 			</div>
 		{/if}
 
-		{#if data.goals.length === 0 && !showGoalForm}
+		{#if data.goalsForManagement.length === 0 && !showGoalForm}
 			<p class="muted">Ingen ukesmål satt ennå.</p>
 		{:else}
 			<div class="goal-manage">
-				{#each data.goals as g}
+				{#each data.goalsForManagement as g}
 					<div class="goal-manage-row">
 						<div>
 							<span class="goal-title">{g.title}</span>
@@ -304,6 +329,46 @@
 </AppPage>
 
 <style>
+	.week-nav {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+		background: var(--bg-secondary, #161616);
+		border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+		border-radius: 12px;
+		padding: 0.5rem 0.75rem;
+	}
+	.week-arrow {
+		background: var(--bg-tertiary, rgba(255, 255, 255, 0.06));
+		border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
+		color: var(--text-primary, #fff);
+		border-radius: 8px;
+		width: 36px;
+		height: 36px;
+		font-size: 1.2rem;
+		cursor: pointer;
+		flex-shrink: 0;
+	}
+	.week-arrow:disabled {
+		opacity: 0.3;
+		cursor: default;
+	}
+	.week-label {
+		text-align: center;
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+	}
+	.week-range {
+		font-size: 0.95rem;
+		font-weight: 600;
+		color: var(--text-primary, #fff);
+	}
+	.week-sub {
+		font-size: 0.75rem;
+		color: var(--text-secondary, rgba(255, 255, 255, 0.55));
+	}
 	.block {
 		background: var(--bg-secondary, #161616);
 		border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
