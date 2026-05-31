@@ -1465,6 +1465,24 @@ function inferStartYearFromText(input: string): string | null {
 	return String(Math.min(...years));
 }
 
+/**
+ * Plukk ut et døgnvindu fra naturlig tekst, f.eks. «mellom kl. 16 og 20»,
+ * «kl 16-20», «mellom 16 og 20». Brukes til å injisere fromHour/toHour i
+ * query_sensor_data slik at skjermtid-vindu-spørsmål alltid får vindu-data.
+ */
+function inferHourWindowFromText(input: string): { fromHour: number; toHour: number } | null {
+	const text = input.toLowerCase();
+	const m =
+		text.match(/mellom\s*(?:kl\.?)?\s*(\d{1,2})(?::\d{2})?\s*(?:og|til|og kl\.?|-|–|—)\s*(?:kl\.?)?\s*(\d{1,2})(?::\d{2})?/) ||
+		text.match(/\bkl\.?\s*(\d{1,2})(?::\d{2})?\s*(?:og|til|-|–|—)\s*(?:kl\.?)?\s*(\d{1,2})/);
+	if (!m) return null;
+	const from = Number.parseInt(m[1], 10);
+	const to = Number.parseInt(m[2], 10);
+	if (!Number.isFinite(from) || !Number.isFinite(to)) return null;
+	if (from < 0 || from > 23 || to < 1 || to > 24 || from >= to) return null;
+	return { fromHour: from, toHour: to };
+}
+
 function inferEconomicsArgsFromText(input: string): {
 	payPeriod?: 'current';
 	month?: string;
@@ -2162,6 +2180,17 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 						if (inferredStartYear) {
 							args.periodKey = inferredStartYear;
 							console.log('  📊 Inferred trend periodKey from user input:', inferredStartYear);
+						}
+					}
+					// Døgnvindu for skjermtid: utled fromHour/toHour fra teksten hvis modellen ikke satte dem,
+					// så «hvor mye scroller jeg mellom kl. 16 og 20?» alltid får vindu-data.
+					if (/skjermtid|scroll|skjerm/i.test(latestUserInput)) {
+						const win = inferHourWindowFromText(latestUserInput);
+						if (win && (args.fromHour == null || args.toHour == null)) {
+							args.metric = 'screen_time';
+							args.fromHour = win.fromHour;
+							args.toHour = win.toHour;
+							console.log('  📱 Inferred screen-time hour window:', win);
 						}
 					}
 					const { querySensorDataTool } = await import('$lib/ai/tools/query-sensor-data');
