@@ -2991,6 +2991,20 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 						});
 					}
 				}
+				// Sikkerhetsnett: hvis ingen gren håndterte dette tool-kallet, MÅ vi likevel
+				// svare på tool_call_id — ellers avviser OpenAI neste runde og hele svaret feiler
+				// med en generisk feil i UI.
+				if (messages.length === messagesBefore) {
+					console.warn(`[chat] Uhåndtert tool-kall: ${toolName} — sender fallback-svar.`);
+					messages.push({
+						role: 'tool',
+						content: JSON.stringify({
+							success: false,
+							message: `Verktøyet "${toolName}" er ikke tilgjengelig akkurat nå. Svar brukeren ut fra det du allerede vet.`
+						}),
+						tool_call_id: toolCall.id
+					});
+				}
 				// Log tool result
 				const toolResultMsg = messages[messages.length - 1];
 				if (messages.length > messagesBefore && toolResultMsg?.role === 'tool') {
