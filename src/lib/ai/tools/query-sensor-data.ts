@@ -772,6 +772,8 @@ The tool returns actual data from Withings sensors that the user can trust.`,
 						sleep: metrics?.sleep?.avg,
 						intenseMinutes: metrics?.intenseMinutes?.sum,
 						heartRate: metrics?.heartRate?.avg,
+						screenTimeAvgPerDay: metrics?.screenTime?.avgPerDayMinutes,
+						screenTimeScrollingAvgPerDay: metrics?.screenTime?.socialAvgPerDayMinutes,
 						eventCount: agg.eventCount
 					};
 				});
