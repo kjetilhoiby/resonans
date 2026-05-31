@@ -1,5 +1,5 @@
 import { db } from '$lib/db';
-import { themes, trainingPrograms, programReadinessAssessments, sensors } from '$lib/db/schema';
+import { themes, trainingPrograms, programReadinessAssessments } from '$lib/db/schema';
 import { eq, and, asc, desc } from 'drizzle-orm';
 import { getUserConversationList } from '$lib/server/conversations';
 import type { PageServerLoad } from './$types';
@@ -10,7 +10,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 	const today = new Date().toISOString().slice(0, 10);
 
-	const [activeThemes, conversationList, activeProgram, screenTimeSensor] = await Promise.all([
+	const [activeThemes, conversationList, activeProgram] = await Promise.all([
 		db
 			.select({
 				id: themes.id,
@@ -27,15 +27,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 			.from(trainingPrograms)
 			.where(and(eq(trainingPrograms.userId, locals.userId), eq(trainingPrograms.status, 'active')))
 			.orderBy(desc(trainingPrograms.createdAt))
-			.limit(1),
-		db
-			.select({ id: sensors.id })
-			.from(sensors)
-			.where(and(eq(sensors.userId, locals.userId), eq(sensors.provider, 'screen_time')))
 			.limit(1)
 	]);
-
-	const hasScreenTime = screenTimeSensor.length > 0;
 
 	console.log('[home] db done in', Date.now() - t0, 'ms — themes:', activeThemes.length, 'convs:', conversationList.length);
 
@@ -86,5 +79,5 @@ export const load: PageServerLoad = async ({ locals }) => {
 	}));
 
 	console.log('[home] load done in', Date.now() - t0, 'ms');
-	return { themes: activeThemes, recentConversations, programReadiness, hasScreenTime };
+	return { themes: activeThemes, recentConversations, programReadiness };
 };
