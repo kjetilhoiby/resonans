@@ -85,8 +85,11 @@ function coerceHourly(raw: unknown): ScreenTimeHourBucket[] | undefined {
 	for (const item of raw) {
 		if (!item || typeof item !== 'object') continue;
 		const rec = item as Record<string, unknown>;
-		const hour = coerceNumber(rec.hour);
-		const totalMinutes = coerceNumber(rec.totalMinutes);
+		const hour = coerceNumber(rec.hour ?? rec.h ?? rec.time);
+		// Godta vanlige alias modellen kan finne på (totalMinutes/minutes/min/value/minutter).
+		const totalMinutes = coerceNumber(
+			rec.totalMinutes ?? rec.minutes ?? rec.min ?? rec.minutter ?? rec.value
+		);
 		if (hour === undefined || hour < 0 || hour > 23 || totalMinutes === undefined) continue;
 		const categories = normalizeCategories(rec.categories as Record<string, number> | undefined);
 		out.push({ hour, totalMinutes: Math.max(0, totalMinutes), ...(categories ? { categories } : {}) });

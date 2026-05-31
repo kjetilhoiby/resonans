@@ -75,6 +75,7 @@
 	const maxDay = $derived(Math.max(1, ...weekDays.map((d) => d.totalMinutes), thisWeek?.maxDayMinutes ?? 0));
 
 	// Time-for-time
+	const hasHourly = $derived((thisWeek?.byHour ?? []).some((v) => v > 0));
 	const maxHour = $derived(Math.max(1, ...(thisWeek?.byHour ?? [])));
 
 	// Kategorier sortert
@@ -141,7 +142,7 @@
 			</div>
 		{/if}
 
-		{#if !compact && (thisWeek.byHour ?? []).some((v) => v > 0)}
+		{#if !compact && hasHourly}
 			<div class="st-section">
 				<span class="section-title">Tid på døgnet (snitt over uka)</span>
 				<div class="hour-bars">
@@ -165,6 +166,8 @@
 					{/each}
 				</div>
 			</div>
+		{:else if !compact}
+			<p class="st-hint">Ingen time-for-time for denne uka. Last opp et <strong>dagsbilde</strong> (Dag-fanen) for å se tid på døgnet.</p>
 		{/if}
 
 		{#if !compact && categoryRows.length > 0}
@@ -279,6 +282,14 @@
 		font-size: 0.78rem;
 		color: var(--text-secondary, rgba(255, 255, 255, 0.6));
 		margin-bottom: 0.5rem;
+	}
+	.st-hint {
+		margin: 0;
+		font-size: 0.8rem;
+		color: var(--text-secondary, rgba(255, 255, 255, 0.5));
+		padding: 0.5rem 0.75rem;
+		background: rgba(255, 255, 255, 0.03);
+		border-radius: 8px;
 	}
 	.day-bars {
 		display: flex;

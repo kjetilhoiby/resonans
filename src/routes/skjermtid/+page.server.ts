@@ -145,9 +145,9 @@ export const load: PageServerLoad = async ({ locals }) => {
 		};
 	});
 
-	// Default = siste komplette uke (nyeste med ukesbilde), ellers nyeste uke med data.
-	let defaultIndex = weeks.findIndex((w) => w.hasWeekScreenshot);
-	if (defaultIndex < 0) defaultIndex = 0;
+	// Default = nyeste uke med data (der ferske dagsbilder / time-for-time havner).
+	// Brukeren kan bla til en eldre, komplett uke med pilene.
+	const defaultIndex = 0;
 
 	return {
 		connected: Boolean(sensor),
