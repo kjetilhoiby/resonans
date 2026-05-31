@@ -1669,6 +1669,17 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		// Hent samtale-historikk (siste 5 meldinger for umiddelbar kontekst)
 		const history = await getConversationHistory(conversation.id, 5);
 
+		// Fallback til siste opplastede bilde i samtalen. Gjør at bilde-baserte verktøy
+		// (f.eks. record_screen_time) virker selv om brukeren laster opp bildet i én melding
+		// og ber om å registrere det i en senere melding ("registrer den") uten å laste opp på nytt.
+		const lastConversationImageUrl: string | null =
+			effectiveImageUrl ||
+			[...history]
+				.reverse()
+				.map((m) => (m as { imageUrl?: string | null }).imageUrl)
+				.find((url): url is string => typeof url === 'string' && url.length > 0) ||
+			null;
+
 		// Bygg memory context (viktig informasjon om brukeren)
                 // Sender med themeId slik at fil-innhold for aktivt tema vises i konteksten
                 const memoryContext = await ContextService.buildForChat({ userId, themeId: conversation.themeId ?? null });
@@ -1815,22 +1826,32 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 					},
 					{
 						type: 'text',
-						text: buildUserMessageForModel(
-							typeof message === 'string' && message.trim().length > 0
-								? message
-								: 'Hva ser du på dette bildet, og hva bør vi gjøre videre?',
-							attachment
-						)
+						text:
+							buildUserMessageForModel(
+								typeof message === 'string' && message.trim().length > 0
+									? message
+									: 'Hva ser du på dette bildet, og hva bør vi gjøre videre?',
+								attachment
+							) +
+							'\n\n[System: Hvis bildet er et iOS Skjermtid-skjermbilde (uke- eller dagsbilde), KALL verktøyet record_screen_time for å tolke og lagre det — ikke bare beskriv bildet. Bekreft kort hva som ble lagret etterpå.]'
 					}
 				]
 			});
 		} else {
+			const screenTimeFollowupHint =
+				lastConversationImageUrl &&
+				/skjermtid|screen ?time|scroll|registrer|lagre|lagr|legg inn/i.test(
+					typeof message === 'string' ? message : ''
+				)
+					? '\n\n[System: Det finnes et nylig opplastet bilde i samtalen. Hvis brukeren vil registrere/lagre skjermtid, KALL record_screen_time (det henter bildet automatisk) i stedet for å be om opplasting på nytt.]'
+					: '';
 			messages.push({
 				role: 'user',
-				content: buildUserMessageForModel(
-					typeof message === 'string' ? message : getDefaultAttachmentLabel(attachment),
-					attachment
-				)
+				content:
+					buildUserMessageForModel(
+						typeof message === 'string' ? message : getDefaultAttachmentLabel(attachment),
+						attachment
+					) + screenTimeFollowupHint
 			});
 		}
 
@@ -2327,7 +2348,9 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'record_screen_time') {
 					const args = JSON.parse(toolCall.function.arguments);
 					const imageUrl =
-						typeof args.imageUrl === 'string' && args.imageUrl.length > 0 ? args.imageUrl : effectiveImageUrl;
+						typeof args.imageUrl === 'string' && args.imageUrl.length > 0
+							? args.imageUrl
+							: effectiveImageUrl || lastConversationImageUrl;
 					console.log('  📱 Recording screen time from image:', Boolean(imageUrl));
 
 					let toolResult: Record<string, unknown>;
