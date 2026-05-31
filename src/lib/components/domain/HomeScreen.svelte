@@ -58,6 +58,7 @@
 			state: 'klar' | 'lett' | 'easy' | 'rest';
 			alternativeName: string | null;
 		} | null;
+		hasScreenTime?: boolean;
 	}
 
 	type QuickActionId = 'chat' | 'camera' | 'voice' | 'mood' | 'file';
@@ -94,7 +95,7 @@
 		prompt: string;
 	}
 
-	let { themes: initialThemes, recentConversations, programReadiness = null }: Props = $props();
+	let { themes: initialThemes, recentConversations, programReadiness = null, hasScreenTime = false }: Props = $props();
 
 	let themes = $state(initialThemes);
 	$effect(() => { themes = initialThemes; });
@@ -2169,6 +2170,21 @@
 		</section>
 	{/if}
 
+	<!-- ── Onboarding: registrer første skjermtid (vises til data finnes) ── -->
+	{#if !inputExpanded && !hasScreenTime}
+		<section class="zone zone-screentime" aria-label="Skjermtid" out:fly={{ y: -34, duration: 750 }} in:fly={{ y: -22, duration: 600 }}>
+			<button class="screentime-onboarding-card" onclick={() => { startNavMetric('home', 'skjermtid'); void goto('/skjermtid'); }}>
+				<span class="st-ob-icon">📱</span>
+				<span class="st-ob-copy">
+					<span class="st-ob-kicker">Ny sensor</span>
+					<span class="st-ob-title">Registrer din første skjermtid</span>
+					<span class="st-ob-text">Last opp et iPhone Skjermtid-skjermbilde, så følger vi scrolling og skjermtid mot ukesmål.</span>
+				</span>
+				<span class="st-ob-arrow">→</span>
+			</button>
+		</section>
+	{/if}
+
 	<!-- ── SONE 4: Chat + handlinger ── -->
 	<section class="zone zone-input" class:zone-chat-open={inputExpanded} aria-label="Chat" bind:this={chatSection}>
 		{#if !inputExpanded && programReadiness}
@@ -3428,6 +3444,61 @@
 		background: #222;
 		border-color: #4a5af0;
 		color: #aaa;
+	}
+
+	.zone-screentime {
+		width: 100%;
+	}
+	.screentime-onboarding-card {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		width: 100%;
+		text-align: left;
+		padding: 14px;
+		border-radius: 14px;
+		background: linear-gradient(155deg, rgba(51, 86, 153, 0.24), rgba(25, 29, 40, 0.9));
+		border: 1px solid rgba(130, 160, 255, 0.32);
+		cursor: pointer;
+		color: var(--text-primary, #fff);
+		transition: border-color 0.15s, transform 0.1s;
+	}
+	.screentime-onboarding-card:hover {
+		border-color: rgba(130, 160, 255, 0.6);
+	}
+	.screentime-onboarding-card:active {
+		transform: scale(0.99);
+	}
+	.st-ob-icon {
+		font-size: 1.6rem;
+		line-height: 1;
+		flex-shrink: 0;
+	}
+	.st-ob-copy {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		flex: 1;
+		min-width: 0;
+	}
+	.st-ob-kicker {
+		font-size: 0.7rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: rgba(160, 180, 255, 0.9);
+	}
+	.st-ob-title {
+		font-size: 0.95rem;
+		font-weight: 600;
+	}
+	.st-ob-text {
+		font-size: 0.8rem;
+		color: var(--text-secondary, rgba(255, 255, 255, 0.6));
+	}
+	.st-ob-arrow {
+		font-size: 1.1rem;
+		color: rgba(160, 180, 255, 0.9);
+		flex-shrink: 0;
 	}
 
 	.partner-onboarding-card {

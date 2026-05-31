@@ -26,6 +26,7 @@
 				state: 'klar' | 'lett' | 'easy' | 'rest';
 				alternativeName: string | null;
 			} | null;
+			hasScreenTime?: boolean;
 		};
 	}
 
@@ -37,5 +38,6 @@
 		themes={data.themes}
 		recentConversations={data.recentConversations}
 		programReadiness={data.programReadiness}
+		hasScreenTime={data.hasScreenTime}
 	/>
 </AppPage>
