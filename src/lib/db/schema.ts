@@ -1799,6 +1799,19 @@ export const sensorAggregates = pgTable('sensor_aggregates', {
 		// Custom metrics (from your ninthlife app)
 		sleepLag?: number; // 0-100, snitt av nattlig forskyvning fra leggetid 22-00 / våknetid 06-08
 		earlyWake?: number; // % asleep 06-08
+		// Skjermtid (iOS Screen Time): totaler, kategorier (social = scrolling) og time-for-time
+		screenTime?: {
+			totalMinutes: number;
+			avgPerDayMinutes: number;
+			maxDayMinutes: number;
+			socialMinutes: number;
+			socialAvgPerDayMinutes: number;
+			byCategory: Record<string, number>;
+			byHour: number[]; // length 24
+			socialByHour: number[]; // length 24
+			dayCount: number;
+			hourlyDayCount: number;
+		};
 		// Generic
 		[key: string]: any;
 	}>(),

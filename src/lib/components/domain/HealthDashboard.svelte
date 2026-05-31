@@ -17,6 +17,7 @@
 	import HrDistributionBar from '../charts/HrDistributionBar.svelte';
 	import DynamicWidget from '../composed/DynamicWidget.svelte';
 	import WeeklyEffortCard from '../composed/WeeklyEffortCard.svelte';
+	import ScreenTimeCard from '../composed/ScreenTimeCard.svelte';
 	import FormCard from '../composed/FormCard.svelte';
 	import BalanceCard from '../composed/BalanceCard.svelte';
 	import { computeTrainingLoad } from '$lib/util/training-load';
@@ -60,6 +61,18 @@
 		sleepLag?: number;
 		earlyWake?: number;
 		weeklyEffort?: WeeklyEffortMetric;
+		screenTime?: {
+			totalMinutes: number;
+			avgPerDayMinutes: number;
+			maxDayMinutes: number;
+			socialMinutes: number;
+			socialAvgPerDayMinutes: number;
+			byCategory: Record<string, number>;
+			byHour: number[];
+			socialByHour: number[];
+			dayCount: number;
+			hourlyDayCount: number;
+		};
 	}
 
 	interface AggregatePeriod {
@@ -153,6 +166,15 @@
 	}
 
 	let { weekly, monthly, yearly, dailyEffort = [], sources = [], recentEvents = [], tooling, embedded = false, goals = [], activities = [], metricSettings = {}, themeId }: Props = $props();
+
+	// Skjermtid: de to nyeste ukene med skjermtid-data (for snitt + endring fra forrige uke).
+	const screenWeeks = $derived(
+		[...weekly]
+			.filter((w) => w.metrics?.screenTime)
+			.sort((a, b) => (a.periodKey < b.periodKey ? 1 : -1))
+	);
+	const thisWeekScreen = $derived(screenWeeks[0]?.metrics?.screenTime ?? null);
+	const prevWeekScreen = $derived(screenWeeks[1]?.metrics?.screenTime ?? null);
 
 	let themeWidgets = $state<ThemeWidget[]>([]);
 	let themeWidgetsLoading = $state(true);
@@ -1401,6 +1423,16 @@
 		</aside>
 	{/if}
 
+	{#if thisWeekScreen}
+		<a class="hd-screentime-link" href="/skjermtid" aria-label="Åpne skjermtid">
+			<div class="hd-screentime-head">
+				<span class="hd-screentime-label">Skjermtid · siste uke</span>
+				<span class="hd-screentime-more">Se mer →</span>
+			</div>
+			<ScreenTimeCard thisWeek={thisWeekScreen} prevWeek={prevWeekScreen} compact />
+		</a>
+	{/if}
+
 	<div class="hd-pills" role="tablist" aria-label="Helseperioder">
 		<PeriodPills
 			options={['7d', '30d', '365d', 'Uke', 'Måned', 'Kvartal', 'År']}
@@ -1798,6 +1830,25 @@
 		display: flex;
 		flex-direction: column;
 		gap: 18px;
+	}
+	.hd-screentime-link {
+		display: block;
+		text-decoration: none;
+		color: inherit;
+	}
+	.hd-screentime-head {
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
+		margin-bottom: 6px;
+	}
+	.hd-screentime-label {
+		font-size: 0.8rem;
+		color: var(--text-secondary, rgba(255, 255, 255, 0.6));
+	}
+	.hd-screentime-more {
+		font-size: 0.8rem;
+		color: var(--accent-primary, #4aa8ff);
 	}
 
 	.hd-embedded {

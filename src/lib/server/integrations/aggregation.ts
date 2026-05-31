@@ -91,6 +91,87 @@ function calculateEarlyWake(events: any[]): number | undefined {
 }
 
 /**
+ * Skjermtid-aggregat for en periode. Leser `screen_time`-dagsevents (totaler +
+ * evt. kategorier/time-for-time) og — for ukesperioder — den autoritative
+ * `screen_time_week`-oppsummeringen når den finnes.
+ *
+ * Datene er allerede normalisert ved skriving (kanoniske kategorinøkler, minutter),
+ * så denne fila importerer bevisst ingenting fra screen-time-modulene (unngår
+ * sirkulær import: screen-time.ts → aggregation.ts).
+ */
+function computeScreenTimeMetrics(events: any[], useWeekEvent: boolean): Record<string, unknown> | null {
+	const days = events.filter((e) => e.dataType === 'screen_time');
+	const weekEvent = useWeekEvent ? events.find((e) => e.dataType === 'screen_time_week') : undefined;
+	if (days.length === 0 && !weekEvent) return null;
+
+	const byCategory: Record<string, number> = {};
+	const byHour: number[] = new Array(24).fill(0);
+	const socialByHour: number[] = new Array(24).fill(0);
+	let totalFromDays = 0;
+	let maxDayMinutes = 0;
+	let socialFromDays = 0;
+	let dayCount = 0;
+	let hourlyDayCount = 0;
+
+	for (const e of days) {
+		const d = (e.data ?? {}) as Record<string, any>;
+		const t = typeof d.totalMinutes === 'number' ? d.totalMinutes : 0;
+		if (t > 0) {
+			totalFromDays += t;
+			maxDayMinutes = Math.max(maxDayMinutes, t);
+			dayCount += 1;
+		}
+		const cats = d.categories as Record<string, number> | undefined;
+		if (cats) {
+			for (const [k, v] of Object.entries(cats)) {
+				if (typeof v === 'number' && Number.isFinite(v)) byCategory[k] = (byCategory[k] ?? 0) + v;
+			}
+			if (typeof cats.social === 'number') socialFromDays += cats.social;
+		}
+		const hourly = Array.isArray(d.hourly) ? d.hourly : null;
+		if (hourly && hourly.length > 0) {
+			hourlyDayCount += 1;
+			for (const bucket of hourly) {
+				const h = typeof bucket?.hour === 'number' ? bucket.hour : -1;
+				if (h < 0 || h > 23) continue;
+				byHour[h] += typeof bucket.totalMinutes === 'number' ? bucket.totalMinutes : 0;
+				const social = bucket?.categories?.social;
+				if (typeof social === 'number') socialByHour[h] += social;
+			}
+		}
+	}
+
+	// Ukesoppsummeringen er autoritativ for ukestotal + kategorisplitt når den finnes.
+	let weekCategories: Record<string, number> | null = null;
+	let weekTotal: number | null = null;
+	if (weekEvent) {
+		const wd = (weekEvent.data ?? {}) as Record<string, any>;
+		if (typeof wd.weekTotalMinutes === 'number' && wd.weekTotalMinutes > 0) weekTotal = wd.weekTotalMinutes;
+		if (wd.categories && typeof wd.categories === 'object') weekCategories = wd.categories as Record<string, number>;
+	}
+
+	const effectiveCategories =
+		weekCategories && Object.keys(weekCategories).length > 0 ? weekCategories : byCategory;
+	const totalMinutes = weekTotal ?? totalFromDays;
+	const socialMinutes =
+		typeof effectiveCategories.social === 'number' ? effectiveCategories.social : socialFromDays;
+	const denomDays = weekEvent && weekTotal ? 7 : Math.max(1, dayCount);
+
+	return {
+		totalMinutes: Math.round(totalMinutes),
+		avgPerDayMinutes: Math.round(totalMinutes / denomDays),
+		maxDayMinutes: Math.round(maxDayMinutes),
+		socialMinutes: Math.round(socialMinutes),
+		socialAvgPerDayMinutes: Math.round(socialMinutes / denomDays),
+		byCategory: effectiveCategories,
+		byHour,
+		socialByHour,
+		dayCount,
+		hourlyDayCount
+	};
+}
+
+/**
  * Hent kanoniske økter for et tidsvindu og bucket effort per family og per dag.
  * Returnerer null hvis ingen økter telles (varighet for kort, ingen effort).
  */
@@ -228,6 +309,9 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 		if (sleepHeartRates.length > 0) metrics.sleepHeartRate = { avg: avg(sleepHeartRates), min: min(sleepHeartRates), max: max(sleepHeartRates) };
 		if (workoutEvents.length > 0) metrics.workouts = { count: workoutEvents.length, types: { running: runningKm } };
 
+		const screenTime = computeScreenTimeMetrics(events, true);
+		if (screenTime) metrics.screenTime = screenTime;
+
 		const weeklyEffort = await computeWeeklyEffort(userId, week.startTime, week.endTime);
 		if (weeklyEffort) {
 			const priorTotals = await fetchPriorWeeklyEffortTotals(userId, week.startTime);
@@ -315,6 +399,9 @@ export async function aggregateMonthlyData(userId: string, months?: MonthPeriod[
 		if (heartRates.length > 0) metrics.heartRate = { avg: avg(heartRates), min: min(heartRates), max: max(heartRates) };
 		if (sleepHeartRates.length > 0) metrics.sleepHeartRate = { avg: avg(sleepHeartRates), min: min(sleepHeartRates), max: max(sleepHeartRates) };
 		if (workoutEvents.length > 0) metrics.workouts = { count: workoutEvents.length, types: { running: runningKm } };
+
+		const screenTime = computeScreenTimeMetrics(events, false);
+		if (screenTime) metrics.screenTime = screenTime;
 
 		const sleepLag = calculateSleepLag(events);
 		if (sleepLag !== undefined) metrics.sleepLag = sleepLag;

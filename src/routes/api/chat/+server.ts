@@ -567,6 +567,36 @@ const tools = [
 	{
 		type: 'function' as const,
 		function: {
+			name: 'record_screen_time',
+			description: 'Tolk og lagre et iOS Skjermtid-skjermbilde brukeren har lastet opp. Bruk denne når brukeren sender et skjermbilde fra «Skjermtid» (Uke- eller Dag-fane). Systemet kjenner igjen om det er et uke- eller dagsbilde, henter ut tall (total skjermtid, kategorier inkl. sosiale medier/«scrolling», topp-apper og fordeling per time) og lagrer det som helse-sensordata. Bildet hentes automatisk fra den vedlagte meldingen.',
+			parameters: {
+				type: 'object',
+				properties: {
+					imageUrl: {
+						type: 'string',
+						description: 'Valgfritt: URL til skjermbildet. Utelat for å bruke bildet i gjeldende melding.'
+					},
+					captureType: {
+						type: 'string',
+						enum: ['weekly', 'daily', 'auto'],
+						description: 'Hint om bildetype. Bruk auto (default) for å la systemet avgjøre.'
+					},
+					weekStartISO: {
+						type: 'string',
+						description: 'Valgfritt for ukesbilde: mandag i den aktuelle uken (YYYY-MM-DD). Default forrige uke.'
+					},
+					dateISO: {
+						type: 'string',
+						description: 'Valgfritt for dagsbilde: datoen bildet gjelder (YYYY-MM-DD). Default leses fra bildet.'
+					}
+				},
+				required: []
+			}
+		}
+	},
+	{
+		type: 'function' as const,
+		function: {
 					name: 'query_economics',
 					description: 'Hent økonomisk data fra tilkoblede bankkontoer. Brukes for saldo, transaksjoner, forbruk per måned og kontoliste.\n\nqueryType:\n- balance: Hent kontosaldo\n- transactions: Hent enkelt-transaksjoner (krever month eller dateRange)\n- spending_summary: Hent forbruk gruppert per kategori (krever month eller payPeriod). Kan filtreres til én kategori med "category".\n- category_trend: Hent månedlige totaler for ÉN kategori over et dato-spenn (krever dateRange + category). BRUK DETTE når bruker ber om månedlig utvikling for én kategori, f.eks. "dagligvare per måned".\n- account_list: List alle tilkoblede kontoer\n\nFor spørsmål om lønnsmåned/siden lønn: bruk payPeriod="current".',
 					parameters: {
@@ -2292,6 +2322,79 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 									? `✅ Sporing satt opp${result.linkedTask?.title ? ` for "${result.linkedTask.title}"` : ''}.\n\nNår du faktisk har gjort aktiviteten kan du skrive:\n- "Jeg har gjort mikroyoga"\n- "Logg mikroyoga i dag"`
 								: `✅ Registrert${result.recordType?.label ? ` ${result.recordType.label}` : ''}${result.linkedTask?.title ? ` og koblet til "${result.linkedTask.title}"` : ''}.\n\nNeste gang kan du skrive for eksempel:\n- "Jeg har gjort mikroyoga"\n- "Logg mikroyoga i dag"`
 						}),
+						tool_call_id: toolCall.id
+					});
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'record_screen_time') {
+					const args = JSON.parse(toolCall.function.arguments);
+					const imageUrl =
+						typeof args.imageUrl === 'string' && args.imageUrl.length > 0 ? args.imageUrl : effectiveImageUrl;
+					console.log('  📱 Recording screen time from image:', Boolean(imageUrl));
+
+					let toolResult: Record<string, unknown>;
+					if (!imageUrl) {
+						toolResult = {
+							success: false,
+							message: 'Fant ingen bilde å tolke. Be brukeren laste opp et iOS Skjermtid-skjermbilde.'
+						};
+					} else {
+						const { parseScreenTimeImage } = await import('$lib/server/integrations/screen-time-parser');
+						const { ingestDailyScreenTime, ingestWeeklyScreenTime, formatScreenTime, scrollingMinutes } =
+							await import('$lib/server/integrations/screen-time');
+						const parsed = await parseScreenTimeImage(imageUrl);
+
+						if (parsed.kind === 'unknown') {
+							toolResult = {
+								success: false,
+								message: 'Bildet ble ikke gjenkjent som et iOS Skjermtid-skjermbilde.'
+							};
+						} else if (parsed.kind === 'weekly' && args.captureType !== 'daily') {
+							const res = await ingestWeeklyScreenTime(
+								userId,
+								parsed.weekly,
+								typeof args.weekStartISO === 'string' ? args.weekStartISO : undefined
+							);
+							toolResult = {
+								success: true,
+								kind: 'weekly',
+								weekStartISO: res.weekStartISO,
+								daysRecorded: res.days.length,
+								weekTotal: formatScreenTime(parsed.weekly.weekTotalMinutes),
+								avgPerDay: formatScreenTime(parsed.weekly.avgPerDayMinutes),
+								scrolling: formatScreenTime(scrollingMinutes(parsed.weekly.categories)),
+								confidence: parsed.confidence,
+								message: `Lagret ukesbilde for uken som starter ${res.weekStartISO} (${res.days.length} dager).`
+							};
+						} else if (parsed.kind === 'daily' || args.captureType === 'daily') {
+							const daily = parsed.kind === 'daily' ? parsed.daily : null;
+							if (!daily) {
+								toolResult = { success: false, message: 'Klarte ikke å lese dagsdata fra bildet.' };
+							} else {
+								const dateISO =
+									(typeof args.dateISO === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(args.dateISO)
+										? args.dateISO
+										: parsed.kind === 'daily'
+											? parsed.dateISO
+											: undefined) ?? new Date().toISOString().slice(0, 10);
+								await ingestDailyScreenTime(userId, dateISO, { ...daily, captureType: 'daily' });
+								toolResult = {
+									success: true,
+									kind: 'daily',
+									dateISO,
+									total: formatScreenTime(daily.totalMinutes),
+									scrolling: formatScreenTime(scrollingMinutes(daily.categories)),
+									hasHourly: Array.isArray(daily.hourly) && daily.hourly.length > 0,
+									confidence: parsed.confidence,
+									message: `Lagret dagsbilde for ${dateISO}.`
+								};
+							}
+						} else {
+							toolResult = { success: false, message: 'Ukjent bildetype.' };
+						}
+					}
+
+					messages.push({
+						role: 'tool',
+						content: JSON.stringify(toolResult),
 						tool_call_id: toolCall.id
 					});
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'web_search') {
