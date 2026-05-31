@@ -137,6 +137,35 @@
 		await fetch(`/api/sensors/screen-time/goals/${id}`, { method: 'DELETE' });
 		await invalidateAll();
 	}
+
+	/* ── Slett data ───────────────────────────────────────── */
+	let deleting = $state(false);
+
+	async function deleteWeek() {
+		if (!current) return;
+		if (!confirm(`Slette skjermtid for ${current.label}?`)) return;
+		deleting = true;
+		try {
+			await fetch(`/api/sensors/screen-time/data?scope=week&weekStart=${current.weekStartISO}`, {
+				method: 'DELETE'
+			});
+			await invalidateAll();
+		} finally {
+			deleting = false;
+		}
+	}
+
+	async function deleteAll() {
+		if (!confirm('Slette ALL skjermtid-data? Dette kan ikke angres.')) return;
+		deleting = true;
+		try {
+			await fetch('/api/sensors/screen-time/data?scope=all', { method: 'DELETE' });
+			selectedIndex = 0;
+			await invalidateAll();
+		} finally {
+			deleting = false;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -175,6 +204,12 @@
 		weekDays={current?.weekDays ?? []}
 		categoryLabels={data.categoryLabels}
 	/>
+
+	{#if current}
+		<div class="week-actions">
+			<button class="link-danger" onclick={deleteWeek} disabled={deleting}>Slett denne uka</button>
+		</div>
+	{/if}
 
 	{#if current && current.topApps.length > 0}
 		<section class="block">
@@ -326,6 +361,16 @@
 			</div>
 		{/if}
 	</section>
+
+	{#if data.connected}
+		<section class="block danger-block">
+			<h2>Nullstill</h2>
+			<p class="muted">Sletter alle skjermtid-registreringer (uke- og dagsbilder). Mål beholdes.</p>
+			<button class="btn-danger" onclick={deleteAll} disabled={deleting}>
+				{deleting ? 'Sletter…' : 'Slett all skjermtid-data'}
+			</button>
+		</section>
+	{/if}
 </AppPage>
 
 <style>
@@ -509,5 +554,41 @@
 	}
 	.del:hover {
 		color: #fb7185;
+	}
+	.week-actions {
+		display: flex;
+		justify-content: flex-end;
+		margin-top: -0.5rem;
+	}
+	.link-danger {
+		background: none;
+		border: none;
+		color: var(--text-secondary, rgba(255, 255, 255, 0.45));
+		font-size: 0.8rem;
+		cursor: pointer;
+		padding: 0;
+	}
+	.link-danger:hover {
+		color: #fb7185;
+	}
+	.danger-block {
+		border-color: rgba(251, 113, 133, 0.25);
+	}
+	.btn-danger {
+		margin-top: 0.5rem;
+		background: rgba(251, 113, 133, 0.12);
+		border: 1px solid rgba(251, 113, 133, 0.4);
+		color: #fb7185;
+		border-radius: 10px;
+		padding: 0.6rem 1rem;
+		cursor: pointer;
+		font-size: 0.9rem;
+	}
+	.btn-danger:hover:not(:disabled) {
+		background: rgba(251, 113, 133, 0.2);
+	}
+	.btn-danger:disabled {
+		opacity: 0.5;
+		cursor: default;
 	}
 </style>
