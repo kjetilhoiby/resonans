@@ -57,9 +57,7 @@ function ll2px(
 
 async function fetchTileDataUri(x: number, y: number, z: number): Promise<string> {
 	try {
-		const res = await fetch(`https://tile.openstreetmap.org/${z}/${x}/${y}.png`, {
-			headers: { 'User-Agent': 'Ekko/1.0 (resonans.vercel.app)' }
-		});
+		const res = await fetch(`https://basemaps.cartocdn.com/light_all/${z}/${x}/${y}@2x.png`);
 		if (!res.ok) return '';
 		return `data:image/png;base64,${Buffer.from(await res.arrayBuffer()).toString('base64')}`;
 	} catch {
