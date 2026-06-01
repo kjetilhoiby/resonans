@@ -10,10 +10,17 @@ let fontCache: ArrayBuffer | null = null;
 
 async function loadFont(): Promise<ArrayBuffer> {
 	if (fontCache) return fontCache;
-	const res = await fetch(
-		'https://fonts.gstatic.com/s/inter/v18/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuLyfAZ9hjQ.woff'
-	);
-	fontCache = await res.arrayBuffer();
+	const cssRes = await fetch('https://fonts.googleapis.com/css2?family=Inter:wght@400;700', {
+		headers: {
+			'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Trident/7.0; rv:11.0) like Gecko'
+		}
+	});
+	const css = await cssRes.text();
+	const match = css.match(/src:\s*url\(([^)]+)\)\s+format\('woff'\)/);
+	if (!match) throw new Error('Could not extract woff font URL from Google Fonts CSS');
+	const fontRes = await fetch(match[1]);
+	if (!fontRes.ok) throw new Error(`Font fetch failed: ${fontRes.status}`);
+	fontCache = await fontRes.arrayBuffer();
 	return fontCache;
 }
 
