@@ -10,6 +10,13 @@ import {
 	runTrackingTriage,
 	type TrackingTriageResult
 } from '$lib/server/tracking-triage';
+import { parseScreenTimeImage } from '$lib/server/integrations/screen-time-parser';
+import {
+	ingestWeeklyScreenTime,
+	ingestDailyScreenTime,
+	scrollingMinutes,
+	formatScreenTime
+} from '$lib/server/integrations/screen-time';
 
 // @ts-ignore - Buffer is available in Node.js runtime
 const BufferGlobal = Buffer;
@@ -541,6 +548,60 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					`layout:${imageSignature.layoutPattern ?? 'unknown'}`,
 					`markers:${imageSignature.markerDensity ?? 'low'}`
 					].slice(0, 8);
+			}
+		}
+
+		// Skjermtid: kjenn igjen iOS Skjermtid-skjermbilde og lagre direkte ved opplasting,
+		// slik at brukeren slipper å «bekrefte»-loope i chatten. Gates på en billig heuristikk
+		// fra triage-resultatet så vi ikke kjører ekstra vision på alle bilder.
+		const userId = locals.userId;
+		if (kind === 'image' && userId) {
+			const haystack = `${triage.summary} ${triage.detectedIntent} ${triage.extractedSignals.join(' ')} ${extraction.contentText}`;
+			const looksLikeScreenTime = /skjermtid|screen ?time|app ?bruk|app usage|mest brukt|sosialt|produktivitet og finans/i.test(haystack);
+			if (looksLikeScreenTime) {
+				const parsed = await parseScreenTimeImage(uploaded.secure_url).catch(() => null);
+				if (parsed && parsed.kind !== 'unknown') {
+					const autoRecord = parsed.confidence !== 'low';
+					if (parsed.kind === 'weekly') {
+						const scroll = formatScreenTime(scrollingMinutes(parsed.weekly.categories));
+						const avg = formatScreenTime(parsed.weekly.avgPerDayMinutes);
+						if (autoRecord) {
+							const res = await ingestWeeklyScreenTime(userId, parsed.weekly).catch(() => null);
+							if (res) {
+								triage.summary = `✅ Lagret skjermtid for uken som starter ${res.weekStartISO} (${res.days.length} dager). Snitt/dag ${avg}, scrolling ${scroll}.`;
+								triage.detectedIntent = 'registrer-skjermtid';
+							}
+						} else {
+							triage.summary = `Dette ser ut som et ukesbilde av skjermtid (snitt/dag ${avg}, scrolling ${scroll}), men jeg er litt usikker. Vil du at jeg registrerer det?`;
+						}
+					} else if (parsed.kind === 'daily') {
+						const dateISO = parsed.dateISO ?? new Date().toISOString().slice(0, 10);
+						const total = formatScreenTime(parsed.daily.totalMinutes);
+						const scroll = formatScreenTime(scrollingMinutes(parsed.daily.categories));
+						if (autoRecord) {
+							const ok = await ingestDailyScreenTime(userId, dateISO, { ...parsed.daily, captureType: 'daily' }).catch(() => null);
+							if (ok) {
+								triage.summary = `✅ Lagret skjermtid for ${dateISO}. Total ${total}, scrolling ${scroll}.`;
+								triage.detectedIntent = 'registrer-skjermtid';
+							}
+						} else {
+							triage.summary = `Dette ser ut som et dagsbilde av skjermtid (${dateISO}: total ${total}, scrolling ${scroll}), men jeg er litt usikker. Vil du at jeg registrerer det?`;
+						}
+					}
+
+					// Sett skjermtid-spesifikke handlinger. «Registrer skjermtid» sender bildet med
+					// (chip-handleren videresender attachment.url), så ett trykk lagrer ved lav tillit.
+					triage.suggestedActions = [
+						...(autoRecord
+							? []
+							: [{ id: 'screentime-record', label: 'Registrer skjermtid', prompt: 'Registrer denne skjermtiden fra bildet.' }]),
+						{ id: 'screentime-open', label: 'Åpne skjermtid', prompt: 'Vis skjermtid-oversikten min og hvordan jeg ligger an mot målene.' },
+						{ id: 'screentime-goal', label: 'Sett ukesmål', prompt: 'Jeg vil sette et ukesmål for skjermtid eller scrolling.' }
+					].slice(0, 3);
+					triage.clarificationQuestion = autoRecord
+						? 'Vil du analysere skjermtiden eller sette et mål?'
+						: 'Skal jeg registrere skjermtiden fra dette bildet?';
+				}
 			}
 		}
 

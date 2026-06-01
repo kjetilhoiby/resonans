@@ -45,8 +45,8 @@ export function buildHealthQueryParams(metric: HealthMetric, timeframe: 'latest'
   };
 }
 
-function mapWidgetMetricToSensorMetric(metric: HealthMetric): 'weight' | 'steps' | 'sleep' | 'intense_minutes' | 'heartrate' | 'workouts' | 'all' {
-  const mapping: Record<HealthMetric, 'weight' | 'steps' | 'sleep' | 'intense_minutes' | 'heartrate' | 'workouts' | 'all'> = {
+function mapWidgetMetricToSensorMetric(metric: HealthMetric): 'weight' | 'steps' | 'sleep' | 'intense_minutes' | 'heartrate' | 'workouts' | 'screen_time' | 'all' {
+  const mapping: Record<HealthMetric, 'weight' | 'steps' | 'sleep' | 'intense_minutes' | 'heartrate' | 'workouts' | 'screen_time' | 'all'> = {
     weight: 'weight',
     sleepDuration: 'sleep',
     steps: 'steps',
@@ -54,7 +54,7 @@ function mapWidgetMetricToSensorMetric(metric: HealthMetric): 'weight' | 'steps'
     workoutCount: 'workouts',
     heartrate: 'heartrate',
     mood: 'all', // mood requires custom recording
-    screenTime: 'all' // screenTime requires custom recording
+    screenTime: 'screen_time'
   };
   return mapping[metric];
 }
@@ -67,6 +67,14 @@ export const HEALTH_DOMAIN_PROMPT = `
 - Fokuser på trender, ikke isolerte målinger
 - Foreslå widget hvis bruker vil følge metrikk over tid
 - Bruk helse-temaet for kontekst (hukommelse av tidligere helse-mål)
+
+**SKJERMTID/SCROLLING:**
+- Brukeren legger inn iOS Skjermtid-skjermbilder (uke- og dagsbilder). Bruk record_screen_time
+  for å tolke og lagre et opplastet skjermbilde, og query_sensor_data med metric='screen_time'
+  for å hente tall (total, scrolling=sosiale medier, fordeling per time på døgnet).
+- «Scrolling» = kategorien sosiale medier. Snakk om både total skjermtid og scrolling.
+- Brukeren kan ha ukesmål for total skjermtid, scrolling og tidsvinduer (f.eks. 16–20). Følg opp
+  uke-for-uke og pek på endring fra forrige uke. Egen side: /skjermtid.
 `;
 
 // Validation rules

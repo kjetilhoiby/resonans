@@ -3,7 +3,7 @@ import { db } from '$lib/db';
 import { sensorEvents, sensorAggregates } from '$lib/db/schema';
 import { eq, and, gte, lte, desc } from 'drizzle-orm';
 
-type SensorMetric = 'weight' | 'steps' | 'sleep' | 'intense_minutes' | 'heartrate' | 'workouts' | 'effort' | 'relationship' | 'all';
+type SensorMetric = 'weight' | 'steps' | 'sleep' | 'intense_minutes' | 'heartrate' | 'workouts' | 'effort' | 'relationship' | 'screen_time' | 'all';
 
 function metricToDataType(metric?: SensorMetric): string | null {
 	if (!metric || metric === 'all') return null;
@@ -12,7 +12,47 @@ function metricToDataType(metric?: SensorMetric): string | null {
 	if (metric === 'sleep' || metric === 'heartrate') return 'sleep';
 	if (metric === 'workouts') return 'workout';
 	if (metric === 'relationship') return 'relationship_checkin';
+	if (metric === 'screen_time') return 'screen_time';
 	return null;
+}
+
+/**
+ * Beriker skjermtid-metrikken med byHour/socialByHour + en valgfri tidsvindu-beregning
+ * (snitt minutter per dag innenfor [fromHour, toHour)) slik at chatten kan svare presist
+ * på spørsmål som «hvor mye scroller jeg mellom kl. 16 og 20?».
+ */
+function screenTimeWithWindow(st: any, fromHour?: number, toHour?: number) {
+	if (!st) return undefined;
+	const base = {
+		avgPerDayMinutes: st.avgPerDayMinutes,
+		totalMinutes: st.totalMinutes,
+		maxDayMinutes: st.maxDayMinutes,
+		socialAvgPerDayMinutes: st.socialAvgPerDayMinutes,
+		socialMinutes: st.socialMinutes,
+		byCategory: st.byCategory,
+		byHour: st.byHour,
+		socialByHour: st.socialByHour,
+		hourlyDayCount: st.hourlyDayCount
+	};
+	if (typeof fromHour === 'number' && typeof toHour === 'number' && Array.isArray(st.byHour)) {
+		const days = Math.max(1, st.hourlyDayCount || 0);
+		const sumRange = (arr: number[] | undefined) => {
+			let s = 0;
+			for (let h = Math.max(0, fromHour); h < Math.min(24, toHour); h++) s += arr?.[h] ?? 0;
+			return s;
+		};
+		return {
+			...base,
+			window: {
+				fromHour,
+				toHour,
+				totalPerDayMinutes: Math.round(sumRange(st.byHour) / days),
+				scrollingPerDayMinutes: Math.round(sumRange(st.socialByHour) / days),
+				hasHourlyData: (st.hourlyDayCount || 0) > 0
+			}
+		};
+	}
+	return base;
 }
 
 function startForPeriod(period: 'week' | 'month' | 'year', limit: number): Date {
@@ -314,6 +354,25 @@ function summarizeRawEvents(events: Array<{ timestamp: Date; dataType: string; d
 			: undefined;
 	}
 
+	if (safeMetric === 'all' || safeMetric === 'screen_time') {
+		const screenDays = events.filter((e) => e.dataType === 'screen_time');
+		const totals = screenDays
+			.map((e) => (typeof e.data?.totalMinutes === 'number' ? (e.data.totalMinutes as number) : null))
+			.filter((v): v is number => v !== null);
+		const socials = screenDays
+			.map((e) => (typeof e.data?.categories?.social === 'number' ? (e.data.categories.social as number) : null))
+			.filter((v): v is number => v !== null);
+		response.screenTime = totals.length
+			? {
+					avgPerDayMinutes: Math.round(avg(totals) ?? 0),
+					maxDayMinutes: Math.max(...totals),
+					totalMinutes: totals.reduce((s, v) => s + v, 0),
+					socialAvgPerDayMinutes: socials.length ? Math.round(avg(socials) ?? 0) : undefined,
+					dayCount: totals.length
+				}
+			: undefined;
+	}
+
 	if (safeMetric === 'all' || safeMetric === 'relationship') {
 		response.relationship = relationshipValues.length
 			? {
@@ -373,6 +432,7 @@ Use this tool when user asks about:
 - Intense exercise: "Am I getting enough intense exercise?"
 - Workouts: "What workouts did I do?", "How many kilometers did I run this month?"
 - Relationship check-ins: "Hvordan har vi hatt det den siste uka?", "Vis parsjekk-score"
+- Skjermtid/scrolling: "Hvor mye skjermtid hadde jeg sist uke?", "Hvor mye scroller jeg?", "Når på døgnet bruker jeg mest tid på sosiale medier?" (bruk metric='screen_time'). For døgnvindu-spørsmål ("hvor mye scroller jeg mellom kl. 16 og 20?") bruk metric='screen_time' med fromHour=16 og toHour=20 — verktøyet returnerer da window.totalPerDayMinutes og window.scrollingPerDayMinutes (snitt/dag i vinduet).
 - General health: "Show me my health summary", "How am I doing?"
 
 Query types:
@@ -390,10 +450,12 @@ The tool returns actual data from Withings sensors that the user can trust.`,
 		),
 		period: z.enum(['week', 'month', 'year']).optional().describe('Time period for aggregates'),
 		periodKey: z.string().optional().describe('Specific period (e.g., "2025W43" or "2025-W43", "2025M10" or "2025-10", "2025")'),
-		metric: z.enum(['weight', 'steps', 'sleep', 'intense_minutes', 'heartrate', 'workouts', 'effort', 'relationship', 'all']).optional().describe('Which metric to focus on. "effort" returns weekly relative effort (TRIMP+MET) with byFamily and byDay breakdown.'),
+		metric: z.enum(['weight', 'steps', 'sleep', 'intense_minutes', 'heartrate', 'workouts', 'effort', 'relationship', 'screen_time', 'all']).optional().describe('Which metric to focus on. "effort" returns weekly relative effort (TRIMP+MET) with byFamily and byDay breakdown. "screen_time" returns iOS-skjermtid: total/snitt per dag, scrolling (sosiale medier) og fordeling per time på døgnet.'),
 		limit: z.number().optional().describe('Max number of results (for raw_events or trend)'),
 		startDate: z.string().optional().describe('Start date for raw events (ISO format)'),
-		endDate: z.string().optional().describe('End date for raw events (ISO format)')
+		endDate: z.string().optional().describe('End date for raw events (ISO format)'),
+		fromHour: z.number().optional().describe('For metric=screen_time: start på døgnvindu (0–23). Sammen med toHour gir verktøyet snitt minutter/dag i vinduet (total + scrolling), f.eks. fromHour=16, toHour=20.'),
+		toHour: z.number().optional().describe('For metric=screen_time: slutt på døgnvindu, eksklusiv (1–24).')
 	}),
 
 	execute: async (args: {
@@ -405,8 +467,10 @@ The tool returns actual data from Withings sensors that the user can trust.`,
 		limit?: number;
 		startDate?: string;
 		endDate?: string;
+		fromHour?: number;
+		toHour?: number;
 	}) => {
-		let { userId, queryType, period, periodKey, metric, limit, startDate, endDate } = args;
+		let { userId, queryType, period, periodKey, metric, limit, startDate, endDate, fromHour, toHour } = args;
 
 		try {
 			// Get latest metrics from most recent aggregates
@@ -499,7 +563,8 @@ The tool returns actual data from Withings sensors that the user can trust.`,
 						hrCoveragePct: metrics.weeklyEffort.hrCoveragePct,
 						workoutCount: metrics.weeklyEffort.workoutCount,
 						baseline: metrics.weeklyEffort.baseline
-					} : undefined
+					} : undefined,
+					screenTime: screenTimeWithWindow(metrics?.screenTime, fromHour, toHour)
 				};
 
 				// Filter by metric if specified
@@ -527,7 +592,8 @@ The tool returns actual data from Withings sensors that the user can trust.`,
 							sleep: allMetrics.sleep,
 							intense_minutes: allMetrics.intenseMinutes,
 							heartrate: allMetrics.heartRate,
-							effort: allMetrics.weeklyEffort
+							effort: allMetrics.weeklyEffort,
+							screen_time: allMetrics.screenTime
 						} as const;
 
 						const selectedMetric = metricMap[metric];
@@ -638,7 +704,8 @@ The tool returns actual data from Withings sensors that the user can trust.`,
 						intenseMinutes: metrics?.intenseMinutes,
 						heartRate: metrics?.heartRate,
 						calories: metrics?.calories,
-						distance: metrics?.distance
+						distance: metrics?.distance,
+						screenTime: screenTimeWithWindow(metrics?.screenTime, fromHour, toHour)
 					},
 					message: `Summary for ${periodKey} based on ${aggregate.eventCount} measurements`
 				};
@@ -740,6 +807,8 @@ The tool returns actual data from Withings sensors that the user can trust.`,
 						sleep: metrics?.sleep?.avg,
 						intenseMinutes: metrics?.intenseMinutes?.sum,
 						heartRate: metrics?.heartRate?.avg,
+						screenTimeAvgPerDay: metrics?.screenTime?.avgPerDayMinutes,
+						screenTimeScrollingAvgPerDay: metrics?.screenTime?.socialAvgPerDayMinutes,
 						eventCount: agg.eventCount
 					};
 				});
