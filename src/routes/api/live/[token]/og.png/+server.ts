@@ -98,8 +98,8 @@ export const GET: RequestHandler = async ({ params }) => {
 	// Fetch map tiles
 	const ctX = lon2tile(centerLon, zoom);
 	const ctY = lat2tile(centerLat, zoom);
-	const nX = Math.ceil(IMG_W / TILE_SIZE) + 1;
-	const nY = Math.ceil(IMG_H / TILE_SIZE) + 1;
+	const nX = Math.ceil(IMG_W / TILE_SIZE) + 2;
+	const nY = Math.ceil(IMG_H / TILE_SIZE) + 2;
 	const sX = Math.floor(ctX) - Math.floor(nX / 2);
 	const sY = Math.floor(ctY) - Math.floor(nY / 2);
 	const offX = (ctX - sX) * TILE_SIZE - IMG_W / 2;
