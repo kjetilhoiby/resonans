@@ -26,7 +26,6 @@ async function loadFont(): Promise<ArrayBuffer> {
 
 const IMG_W = 1200;
 const IMG_H = 630;
-const MAP_H = 420;
 const TILE_SIZE = 256;
 
 function lon2tile(lon: number, z: number) {
@@ -132,7 +131,7 @@ export const GET: RequestHandler = async ({ params }) => {
 		for (let z = 16; z >= 4; z--) {
 			const tilesX = lonSpan / (360 / Math.pow(2, z));
 			const tilesY = latSpan / (180 / Math.pow(2, z));
-			if (tilesX * TILE_SIZE < IMG_W * 0.7 && tilesY * TILE_SIZE < MAP_H * 0.7) {
+			if (tilesX * TILE_SIZE < IMG_W * 0.7 && tilesY * TILE_SIZE < IMG_H * 0.7) {
 				zoom = z;
 				break;
 			}
@@ -149,11 +148,11 @@ export const GET: RequestHandler = async ({ params }) => {
 	const ctX = lon2tile(centerLon, zoom);
 	const ctY = lat2tile(centerLat, zoom);
 	const nX = Math.ceil(IMG_W / TILE_SIZE) + 1;
-	const nY = Math.ceil(MAP_H / TILE_SIZE) + 1;
+	const nY = Math.ceil(IMG_H / TILE_SIZE) + 1;
 	const sX = Math.floor(ctX) - Math.floor(nX / 2);
 	const sY = Math.floor(ctY) - Math.floor(nY / 2);
 	const offX = (ctX - sX) * TILE_SIZE - IMG_W / 2;
-	const offY = (ctY - sY) * TILE_SIZE - MAP_H / 2;
+	const offY = (ctY - sY) * TILE_SIZE - IMG_H / 2;
 
 	const tileResults = await Promise.all(
 		Array.from({ length: nX * nY }, (_, i) => {
@@ -188,7 +187,7 @@ export const GET: RequestHandler = async ({ params }) => {
 
 	if (hasRoute) {
 		const pts = routeCoords
-			.map(([lat, lon]) => ll2px(lat, lon, centerLat, centerLon, zoom, IMG_W, MAP_H))
+			.map(([lat, lon]) => ll2px(lat, lon, centerLat, centerLon, zoom, IMG_W, IMG_H))
 			.map((p) => `${p[0]},${p[1]}`)
 			.join(' ');
 		svgChildren.push({
@@ -205,7 +204,7 @@ export const GET: RequestHandler = async ({ params }) => {
 	}
 
 	if (session.lastLat !== null && session.lastLon !== null) {
-		const [ux, uy] = ll2px(session.lastLat, session.lastLon, centerLat, centerLon, zoom, IMG_W, MAP_H);
+		const [ux, uy] = ll2px(session.lastLat, session.lastLon, centerLat, centerLon, zoom, IMG_W, IMG_H);
 		svgChildren.push(
 			{ type: 'circle', props: { cx: String(ux), cy: String(uy), r: '9', fill: 'white' } },
 			{ type: 'circle', props: { cx: String(ux), cy: String(uy), r: '6', fill: '#4285f4' } }
@@ -213,7 +212,7 @@ export const GET: RequestHandler = async ({ params }) => {
 	}
 
 	if (session.destLat !== null && session.destLon !== null) {
-		const [dx, dy] = ll2px(session.destLat, session.destLon, centerLat, centerLon, zoom, IMG_W, MAP_H);
+		const [dx, dy] = ll2px(session.destLat, session.destLon, centerLat, centerLon, zoom, IMG_W, IMG_H);
 		svgChildren.push(
 			{ type: 'circle', props: { cx: String(dx), cy: String(dy), r: '8', fill: 'white' } },
 			{ type: 'circle', props: { cx: String(dx), cy: String(dy), r: '5', fill: '#ef4444' } }
@@ -225,14 +224,41 @@ export const GET: RequestHandler = async ({ params }) => {
 		props: {
 			xmlns: 'http://www.w3.org/2000/svg',
 			width: IMG_W,
-			height: MAP_H,
-			viewBox: `0 0 ${IMG_W} ${MAP_H}`,
+			height: IMG_H,
+			viewBox: `0 0 ${IMG_W} ${IMG_H}`,
 			style: { position: 'absolute', top: 0, left: 0 },
 			children: svgChildren
 		}
 	};
 
 	const font = await loadFont();
+
+	const bannerChildren: SatoriNode[] = [];
+	if (dest) {
+		bannerChildren.push({
+			type: 'span',
+			props: {
+				style: { fontSize: '32px', fontWeight: 700, color: '#1a1a2e' },
+				children: dest
+			}
+		});
+	}
+	bannerChildren.push({
+		type: 'span',
+		props: {
+			style: { fontSize: '18px', color: 'rgba(0,0,0,0.5)', marginLeft: dest ? '12px' : '0' },
+			children: statusLine
+		}
+	});
+	if (infoLine) {
+		bannerChildren.push({
+			type: 'span',
+			props: {
+				style: { fontSize: '18px', color: 'rgba(0,0,0,0.45)', marginLeft: '12px' },
+				children: infoLine
+			}
+		});
+	}
 
 	const svg = await satori(
 		{
@@ -241,90 +267,30 @@ export const GET: RequestHandler = async ({ params }) => {
 				style: {
 					width: `${IMG_W}px`,
 					height: `${IMG_H}px`,
+					position: 'relative',
 					display: 'flex',
-					flexDirection: 'column',
 					fontFamily: 'Inter',
-					background: '#1a1a2e'
+					background: '#e8e8e8'
 				},
 				children: [
+					...tileImages,
+					svgOverlay,
 					{
 						type: 'div',
 						props: {
 							style: {
-								width: `${IMG_W}px`,
-								height: `${MAP_H}px`,
-								position: 'relative',
-								overflow: 'hidden',
-								display: 'flex'
-							},
-							children: [...tileImages, svgOverlay]
-						}
-					},
-					{
-						type: 'div',
-						props: {
-							style: {
-								flex: 1,
+								position: 'absolute',
+								bottom: '0',
+								left: '0',
+								right: '0',
 								display: 'flex',
-								flexDirection: 'column',
-								justifyContent: 'center',
-								padding: '0 32px',
-								background: '#1e293b'
+								alignItems: 'center',
+								flexWrap: 'wrap',
+								padding: '14px 24px',
+								background: 'rgba(255,255,255,0.85)',
+								backdropFilter: 'blur(8px)'
 							},
-							children: [
-								{
-									type: 'div',
-									props: {
-										style: {
-											display: 'flex',
-											alignItems: 'baseline',
-											gap: '16px'
-										},
-										children: [
-											...(dest
-												? [
-														{
-															type: 'span',
-															props: {
-																style: {
-																	fontSize: '36px',
-																	fontWeight: 700,
-																	color: 'white'
-																},
-																children: dest
-															}
-														}
-													]
-												: []),
-											{
-												type: 'span',
-												props: {
-													style: {
-														fontSize: '20px',
-														color: 'rgba(255,255,255,0.5)'
-													},
-													children: statusLine
-												}
-											}
-										]
-									}
-								},
-								...(infoLine
-									? [
-											{
-												type: 'div',
-												props: {
-													style: {
-														fontSize: '22px',
-														color: 'rgba(255,255,255,0.65)',
-														marginTop: '6px'
-													},
-													children: infoLine
-												}
-											}
-										]
-									: [])
-							]
+							children: bannerChildren
 						}
 					}
 				]

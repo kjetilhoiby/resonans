@@ -121,13 +121,26 @@ async function buildContext(userId: string): Promise<ProducerContext> {
 	};
 }
 
+const PRODUCER_NAMES = [
+	'sjekk-inn', 'focus-timer', 'reflection-light', 'quick-win',
+	'inbox-note', 'sort-inbox', 'plan-tomorrow', 'plan-week',
+	'plan-month', 'training-program', 'screen-time-onboarding'
+];
+
 export async function produceActions(userId: string): Promise<ActionCandidate[]> {
+	const t0 = performance.now();
 	const ctx = await buildContext(userId);
+	const ctxMs = performance.now() - t0;
+
 	const [results, snoozed] = await Promise.all([
 		Promise.all(
-			PRODUCERS.map(async (p) => {
+			PRODUCERS.map(async (p, i) => {
+				const pt = performance.now();
 				try {
-					return await p(ctx);
+					const items = await p(ctx);
+					const ms = performance.now() - pt;
+					if (ms > 50) console.log(`[perf][actions] producer=${PRODUCER_NAMES[i]} ms=${ms.toFixed(0)} items=${items.length}`);
+					return items;
 				} catch (err) {
 					console.error('[action-suggestion-service] producer failed', err);
 					return [] as ActionCandidate[];
@@ -136,6 +149,7 @@ export async function produceActions(userId: string): Promise<ActionCandidate[]>
 		),
 		loadActiveSnoozedChipIds(userId, ctx.now)
 	]);
+	console.log(`[perf][actions] user=${userId} context=${ctxMs.toFixed(0)}ms producers=${(performance.now() - t0 - ctxMs).toFixed(0)}ms`);
 	return results
 		.flat()
 		.filter((c) => !snoozed.has(c.id))

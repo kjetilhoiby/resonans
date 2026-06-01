@@ -2,18 +2,8 @@ import type { ActionProducer } from '../action-suggestion-service';
 import type { ActionCandidate } from '$lib/types/actions';
 import { db } from '$lib/db';
 import { trainingPrograms, programWeeks, programSessions, programSessionCompletions } from '$lib/db/schema';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 
-/**
- * To måter denne dukker opp som chip i hjemskjermens action-carousel:
- *
- *   1. Brukeren har ingen aktive programmer  → CTA "Lag treningsprogram"
- *   2. Brukeren har et aktivt program, og det er en planlagt økt i dag som
- *      ikke er fullført → chip "I dag: <økt-navn>" som åpner programmet
- *
- * Hvis det er et aktivt program men hviledag (eller dagens økt er gjort),
- * dukker ingen chip opp — vi vil ikke spamme.
- */
 export const trainingProgramProducer: ActionProducer = async (ctx) => {
 	try {
 		return await produceChips(ctx);
@@ -59,29 +49,34 @@ async function produceChips(ctx: Parameters<ActionProducer>[0]): Promise<ActionC
 	const weekNumber = Math.floor(dayOffset / 7) + 1;
 	const dayNumber = (dayOffset % 7) + 1;
 
-	const week = await db.query.programWeeks.findFirst({
-		where: and(eq(programWeeks.programId, program.id), eq(programWeeks.weekNumber, weekNumber)),
-		columns: { id: true }
-	});
-	if (!week) return [];
+	const rows = await db
+		.select({
+			sessionId: programSessions.id,
+			sessionName: programSessions.name,
+			isTest: programSessions.isTest,
+			kind: programSessions.kind,
+			completionId: programSessionCompletions.id
+		})
+		.from(programWeeks)
+		.innerJoin(programSessions, eq(programSessions.weekId, programWeeks.id))
+		.leftJoin(programSessionCompletions, eq(programSessionCompletions.plannedSessionId, programSessions.id))
+		.where(
+			and(
+				eq(programWeeks.programId, program.id),
+				eq(programWeeks.weekNumber, weekNumber),
+				eq(programSessions.dayNumber, dayNumber)
+			)
+		)
+		.limit(1);
 
-	const session = await db.query.programSessions.findFirst({
-		where: and(eq(programSessions.weekId, week.id), eq(programSessions.dayNumber, dayNumber)),
-		columns: { id: true, name: true, isTest: true, kind: true }
-	});
-	if (!session) return [];
+	if (rows.length === 0 || rows[0].completionId) return [];
 
-	const completion = await db.query.programSessionCompletions.findFirst({
-		where: eq(programSessionCompletions.plannedSessionId, session.id),
-		columns: { id: true }
-	});
-	if (completion) return [];
-
+	const session = rows[0];
 	return [
 		{
 			id: `training-program-today-${program.id}`,
 			icon: session.isTest ? '🎯' : session.kind === 'run' ? '🏃' : '💪',
-			label: session.isTest ? `Test: ${session.name}` : `I dag: ${session.name}`,
+			label: session.isTest ? `Test: ${session.sessionName}` : `I dag: ${session.sessionName}`,
 			priority: 80,
 			source: 'system',
 			intent: { kind: 'navigate', href: `/treningsprogram/${program.id}` }
