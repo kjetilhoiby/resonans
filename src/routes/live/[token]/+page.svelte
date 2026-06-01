@@ -207,6 +207,9 @@
 	<meta property="og:description" content={data.destLabel
 		? `På vei til ${data.destLabel}${etaSeconds ? ` · ankomst ${formatEta(etaSeconds)}` : ''}`
 		: 'Se live posisjon'} />
+	<meta property="og:image" content={`/api/live/${data.token}/og.png`} />
+	<meta property="og:image:width" content="1200" />
+	<meta property="og:image:height" content="630" />
 </svelte:head>
 
 <main class="live-page">

@@ -5,6 +5,7 @@ import { and, eq, gte, desc, sql, inArray } from 'drizzle-orm';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals }) => {
+	const t0 = performance.now();
 	const now = new Date();
 	const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
@@ -55,6 +56,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 		const data = s.data as Record<string, unknown> | null;
 		return sum + (typeof data?.durationMinutes === 'number' ? data.durationMinutes : 0);
 	}, 0);
+
+	console.log(`[perf][jobb] user=${locals.userId} step=total ms=${(performance.now() - t0).toFixed(0)} projects=${jobbProjects.length} tasks=${recentTasks.length} focusSessions=${focusSessions.length}`);
 
 	return {
 		projects: jobbProjects.map((p) => ({

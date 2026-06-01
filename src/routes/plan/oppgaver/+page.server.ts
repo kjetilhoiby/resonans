@@ -7,6 +7,7 @@ import type { PageServerLoad } from './$types';
 const BUCKETS: TaskBucket[] = ['innboks', 'gjores', 'ugjort'];
 
 export const load: PageServerLoad = async ({ locals, url }) => {
+	const t0 = performance.now();
 	const bucketParam = url.searchParams.get('bucket');
 	const bucket: TaskBucket = bucketParam && (BUCKETS as string[]).includes(bucketParam)
 		? (bucketParam as TaskBucket)
@@ -22,6 +23,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		}),
 		countTasksByBucket(locals.userId)
 	]);
+
+	console.log(`[perf][oppgaver] user=${locals.userId} step=total ms=${(performance.now() - t0).toFixed(0)} bucket=${bucket} tasks=${tasks.length}`);
 
 	return {
 		tasks: tasks.map((t) => ({ ...t, createdAt: t.createdAt.toISOString() })),

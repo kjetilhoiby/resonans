@@ -320,6 +320,7 @@ export async function evaluateProgramReadiness(args: {
 	programId: string;
 	date?: string;
 }): Promise<ReadinessAssessment> {
+	const t0 = performance.now();
 	const date = args.date ?? todayIsoDate();
 	const { userId, programId } = args;
 
@@ -442,6 +443,8 @@ export async function evaluateProgramReadiness(args: {
 				updatedAt: new Date()
 			}
 		});
+
+	console.log(`[perf][readiness] user=${userId} program=${programId} ms=${(performance.now() - t0).toFixed(0)} state=${state} cached=false`);
 
 	return {
 		state,

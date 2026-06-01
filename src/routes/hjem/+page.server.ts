@@ -7,6 +7,7 @@ import { and, eq, desc, inArray } from 'drizzle-orm';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals }) => {
+	const t0 = performance.now();
 	const userId = locals.userId;
 	const season = currentSeason();
 
@@ -121,6 +122,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 			}
 		}
 	}
+
+	console.log(`[perf][hjem] user=${userId} step=total ms=${(performance.now() - t0).toFixed(0)} projects=${activeProjects.length} appliances=${appliances.length}`);
 
 	return {
 		projects: activeProjects.map((p) => ({

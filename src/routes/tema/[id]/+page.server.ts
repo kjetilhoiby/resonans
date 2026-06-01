@@ -10,6 +10,7 @@ import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params, locals, url }) => {
+	const t0 = performance.now();
 	await ensureConversationThemeIdColumn();
 	const selectedWorkoutId = url.searchParams.get('workout');
 
@@ -98,6 +99,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 				: Promise.resolve(null),
 			ProjectMetricsService.listProjectsWithProgress(locals.userId, { themeId: theme.id })
 		]);
+
+	console.log(`[perf][tema/:id] user=${locals.userId} theme=${theme.name} step=total ms=${(performance.now() - t0).toFixed(0)} msgs=${msgs.length} goals=${themeGoals.length} projects=${themeProjects.length}`);
 
 	return {
 		theme: {

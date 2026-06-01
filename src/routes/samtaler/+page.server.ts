@@ -97,6 +97,7 @@ async function buildWeightContext(userId: string): Promise<string | null> {
 }
 
 export const load: PageServerLoad = async ({ locals, url }) => {
+	const t0 = performance.now();
 	const conversationId = url.searchParams.get('conversation');
 	const contextParam = url.searchParams.get('context');
 
@@ -116,6 +117,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 
 	if (contextParam === 'weight') {
 		const weightContext = await buildWeightContext(locals.userId);
+		console.log(`[perf][samtaler] user=${locals.userId} step=total ms=${(performance.now() - t0).toFixed(0)} mode=weight convs=${conversations.length}`);
 		return {
 			conversations,
 			userThemes,
@@ -126,6 +128,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	}
 
 	if (!conversationId) {
+		console.log(`[perf][samtaler] user=${locals.userId} step=total ms=${(performance.now() - t0).toFixed(0)} mode=list convs=${conversations.length}`);
 		return { conversations, userThemes, selectedConversation: null, messages: [], weightContext: null };
 	}
 
@@ -136,6 +139,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 
 	const selectedConversation = conversations.find((c) => c.id === conversationId) ?? null;
 	const msgs = await getConversationMessages(conversationId);
+
+	console.log(`[perf][samtaler] user=${locals.userId} step=total ms=${(performance.now() - t0).toFixed(0)} mode=conversation convs=${conversations.length} msgs=${msgs.length}`);
 
 	return {
 		conversations,

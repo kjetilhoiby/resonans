@@ -205,30 +205,33 @@ export async function getProgramSummaries(userId: string): Promise<ProgramSummar
 }
 
 export async function getFullProgram(userId: string, programId: string): Promise<ProgramDTO | null> {
+	const t0 = performance.now();
 	const program = await db.query.trainingPrograms.findFirst({
 		where: and(eq(trainingPrograms.id, programId), eq(trainingPrograms.userId, userId))
 	});
 	if (!program) return null;
 
-	const weeks = await db.query.programWeeks.findMany({
-		where: eq(programWeeks.programId, programId),
-		orderBy: [asc(programWeeks.weekNumber)]
-	});
-
-	const sessions = await db.query.programSessions.findMany({
-		where: eq(programSessions.programId, programId),
-		orderBy: [asc(programSessions.dayNumber)]
-	});
+	const [weeks, sessions] = await Promise.all([
+		db.query.programWeeks.findMany({
+			where: eq(programWeeks.programId, programId),
+			orderBy: [asc(programWeeks.weekNumber)]
+		}),
+		db.query.programSessions.findMany({
+			where: eq(programSessions.programId, programId),
+			orderBy: [asc(programSessions.dayNumber)]
+		})
+	]);
 
 	const sessionIds = sessions.map((s) => s.id);
-	const exercises = sessionIds.length === 0 ? [] : await db.query.programExercises.findMany({
-		where: sql`${programExercises.sessionId} IN ${sessionIds}`,
-		orderBy: [asc(programExercises.order)]
-	});
-
-	const completions = sessionIds.length === 0 ? [] : await db.query.programSessionCompletions.findMany({
-		where: sql`${programSessionCompletions.plannedSessionId} IN ${sessionIds}`
-	});
+	const [exercises, completions] = await Promise.all([
+		sessionIds.length === 0 ? [] : db.query.programExercises.findMany({
+			where: sql`${programExercises.sessionId} IN ${sessionIds}`,
+			orderBy: [asc(programExercises.order)]
+		}),
+		sessionIds.length === 0 ? [] : db.query.programSessionCompletions.findMany({
+			where: sql`${programSessionCompletions.plannedSessionId} IN ${sessionIds}`
+		})
+	]);
 
 	const exercisesBySession = new Map<string, PlannedExerciseDTO[]>();
 	for (const e of exercises) {
@@ -286,6 +289,8 @@ export async function getFullProgram(userId: string, programId: string): Promise
 		notes: w.notes ?? undefined,
 		sessions: (sessionsByWeek.get(w.id) ?? []).sort((a, b) => a.dayNumber - b.dayNumber)
 	}));
+
+	console.log(`[perf][getFullProgram] program=${programId} ms=${(performance.now() - t0).toFixed(0)} weeks=${weeks.length} sessions=${sessions.length} exercises=${exercises.length}`);
 
 	return {
 		id: program.id,
