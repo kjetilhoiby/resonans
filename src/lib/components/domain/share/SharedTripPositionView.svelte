@@ -87,19 +87,6 @@
 	function updateMap() {
 		if (!map || lat === null || lng === null) return;
 		positionMarker?.setLngLat([lng, lat]);
-		if (map.getSource('route-line')) {
-			(map.getSource('route-line') as maplibregl.GeoJSONSource).setData({
-				type: 'Feature',
-				properties: {},
-				geometry: {
-					type: 'LineString',
-					coordinates:
-						resource.destLng !== null && resource.destLat !== null
-							? [[lng, lat], [resource.destLng, resource.destLat]]
-							: [[lng, lat]]
-				}
-			});
-		}
 		map.easeTo({ center: [lng, lat], duration: 1000 });
 	}
 
@@ -166,30 +153,6 @@
 			}
 
 			if (hasPosition && hasDest && lng !== null && lat !== null && resource.destLng !== null && resource.destLat !== null) {
-				map.addSource('route-line', {
-					type: 'geojson',
-					data: {
-						type: 'Feature',
-						properties: {},
-						geometry: {
-							type: 'LineString',
-							coordinates: [[lng, lat], [resource.destLng, resource.destLat]]
-						}
-					}
-				});
-
-				map.addLayer({
-					id: 'route-line',
-					type: 'line',
-					source: 'route-line',
-					paint: {
-						'line-color': '#4285f4',
-						'line-width': 2,
-						'line-dasharray': [4, 4],
-						'line-opacity': 0.5
-					}
-				});
-
 				const bounds = new maplibregl.LngLatBounds(
 					[lng, lat],
 					[resource.destLng, resource.destLat]

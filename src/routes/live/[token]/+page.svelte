@@ -77,7 +77,7 @@
 			secondsSinceUpdate = calcSecondsSince(d.lastPingAt);
 			if (lat !== null && lng !== null) {
 				posMarker?.setLngLat([lng, lat]);
-				updateRouteLine();
+				updateRouteProgress();
 				map?.easeTo({ center: [lng, lat], duration: 1000 });
 			}
 			if (endedAt && pollInterval) {
@@ -87,12 +87,26 @@
 		} catch { /* neste poll prøver igjen */ }
 	}
 
-	function updateRouteLine() {
-		if (!map || !map.getSource('dash-line') || lat === null || lng === null) return;
-		if (data.destLat === null || data.destLon === null) return;
-		(map.getSource('dash-line') as maplibregl.GeoJSONSource).setData({
+	function updateRouteProgress() {
+		if (!map || lat === null || lng === null) return;
+		const routeCoords = data.routeCoordinates as number[][] | null;
+		if (!routeCoords || routeCoords.length < 2 || !map.getSource('route-progress')) return;
+
+		let nearestIdx = 0;
+		let nearestDist = Infinity;
+		for (let i = 0; i < routeCoords.length; i++) {
+			const dlat = routeCoords[i][0] - lat;
+			const dlng = routeCoords[i][1] - lng;
+			const dist = dlat * dlat + dlng * dlng;
+			if (dist < nearestDist) { nearestDist = dist; nearestIdx = i; }
+		}
+
+		const completed = routeCoords.slice(0, nearestIdx + 1).map(c => [c[1], c[0]]);
+		completed.push([lng, lat]);
+
+		(map.getSource('route-progress') as maplibregl.GeoJSONSource).setData({
 			type: 'Feature', properties: {},
-			geometry: { type: 'LineString', coordinates: [[lng, lat], [data.destLon, data.destLat]] }
+			geometry: { type: 'LineString', coordinates: completed }
 		});
 	}
 
@@ -136,20 +150,19 @@
 				});
 			}
 
+			if (routeCoords && routeCoords.length >= 2) {
+				map.addSource('route-progress', {
+					type: 'geojson',
+					data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [] } }
+				});
+				map.addLayer({
+					id: 'route-progress', type: 'line', source: 'route-progress',
+					paint: { 'line-color': '#4285f4', 'line-width': 4, 'line-opacity': 0.85 }
+				});
+				updateRouteProgress();
+			}
+
 			if (hasDest && data.destLon !== null && data.destLat !== null) {
-				if (lat !== null && lng !== null) {
-					map.addSource('dash-line', {
-						type: 'geojson',
-						data: {
-							type: 'Feature', properties: {},
-							geometry: { type: 'LineString', coordinates: [[lng, lat], [data.destLon, data.destLat]] }
-						}
-					});
-					map.addLayer({
-						id: 'dash-line', type: 'line', source: 'dash-line',
-						paint: { 'line-color': '#4285f4', 'line-width': 2, 'line-dasharray': [4, 4], 'line-opacity': 0.4 }
-					});
-				}
 				destMarker = new maplibregl.Marker({ element: createDestPin() })
 					.setLngLat([data.destLon, data.destLat]).addTo(map);
 				if (data.destLabel) {
@@ -191,7 +204,9 @@
 	<title>{data.ownerName ? `${data.ownerName} er underveis` : 'Live posisjon'}</title>
 	<meta name="robots" content="noindex" />
 	<meta property="og:title" content={data.ownerName ? `${data.ownerName} er underveis` : 'Live posisjon'} />
-	<meta property="og:description" content={data.destLabel ? `På vei til ${data.destLabel}` : 'Se live posisjon'} />
+	<meta property="og:description" content={data.destLabel
+		? `På vei til ${data.destLabel}${etaSeconds ? ` · ankomst ${formatEta(etaSeconds)}` : ''}`
+		: 'Se live posisjon'} />
 </svelte:head>
 
 <main class="live-page">
