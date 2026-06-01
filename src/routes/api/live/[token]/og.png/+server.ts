@@ -1,28 +1,10 @@
 import { error } from '@sveltejs/kit';
 import { db } from '$lib/db';
-import { liveSessions, users } from '$lib/db/schema';
+import { liveSessions } from '$lib/db/schema';
 import { eq } from 'drizzle-orm';
 import satori from 'satori';
 import { Resvg } from '@resvg/resvg-js';
 import type { RequestHandler } from './$types';
-
-let fontCache: ArrayBuffer | null = null;
-
-async function loadFont(): Promise<ArrayBuffer> {
-	if (fontCache) return fontCache;
-	const cssRes = await fetch('https://fonts.googleapis.com/css2?family=Inter:wght@400;700', {
-		headers: {
-			'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Trident/7.0; rv:11.0) like Gecko'
-		}
-	});
-	const css = await cssRes.text();
-	const match = css.match(/src:\s*url\(([^)]+)\)\s+format\('woff'\)/);
-	if (!match) throw new Error('Could not extract woff font URL');
-	const fontRes = await fetch(match[1]);
-	if (!fontRes.ok) throw new Error(`Font fetch failed: ${fontRes.status}`);
-	fontCache = await fontRes.arrayBuffer();
-	return fontCache;
-}
 
 const IMG_W = 1200;
 const IMG_H = 630;
@@ -64,16 +46,6 @@ async function fetchTileDataUri(x: number, y: number, z: number): Promise<string
 	}
 }
 
-function formatEta(secs: number | null): string {
-	if (secs === null) return '';
-	const min = Math.round(secs / 60);
-	if (min < 1) return 'Snart fremme';
-	if (min < 60) return `ca. ${min} min`;
-	const h = Math.floor(min / 60);
-	const m = min % 60;
-	return m === 0 ? `ca. ${h} t` : `ca. ${h} t ${m} min`;
-}
-
 type SatoriNode = {
 	type: string;
 	props: Record<string, unknown>;
@@ -84,27 +56,6 @@ export const GET: RequestHandler = async ({ params }) => {
 		where: eq(liveSessions.token, params.token)
 	});
 	if (!session) throw error(404);
-
-	const owner = await db.query.users.findFirst({
-		where: eq(users.id, session.userId),
-		columns: { name: true }
-	});
-
-	const name = owner?.name ?? 'Noen';
-	const dest = session.destLabel ?? session.routeLabel ?? '';
-	const eta = formatEta(session.etaSeconds);
-	const distKm =
-		session.distanceRemainingM !== null
-			? `${(session.distanceRemainingM / 1000).toFixed(1)} km igjen`
-			: '';
-	const ended = session.endedAt !== null;
-	const arrived = session.endedReason === 'arrived';
-	const statusLine = ended
-		? arrived
-			? `${name} er fremme`
-			: `${name} er ferdig`
-		: `${name} er underveis`;
-	const infoLine = [eta, distKm].filter(Boolean).join('  ·  ');
 
 	const routeCoords = session.routeCoordinates as [number, number][] | null;
 	const hasRoute = routeCoords && routeCoords.length >= 2;
@@ -231,35 +182,6 @@ export const GET: RequestHandler = async ({ params }) => {
 		}
 	};
 
-	const font = await loadFont();
-
-	const bannerChildren: SatoriNode[] = [];
-	if (dest) {
-		bannerChildren.push({
-			type: 'span',
-			props: {
-				style: { fontSize: '32px', fontWeight: 700, color: '#1a1a2e' },
-				children: dest
-			}
-		});
-	}
-	bannerChildren.push({
-		type: 'span',
-		props: {
-			style: { fontSize: '18px', color: 'rgba(0,0,0,0.5)', marginLeft: dest ? '12px' : '0' },
-			children: statusLine
-		}
-	});
-	if (infoLine) {
-		bannerChildren.push({
-			type: 'span',
-			props: {
-				style: { fontSize: '18px', color: 'rgba(0,0,0,0.45)', marginLeft: '12px' },
-				children: infoLine
-			}
-		});
-	}
-
 	const svg = await satori(
 		{
 			type: 'div',
@@ -269,38 +191,12 @@ export const GET: RequestHandler = async ({ params }) => {
 					height: `${IMG_H}px`,
 					position: 'relative',
 					display: 'flex',
-					fontFamily: 'Inter',
 					background: '#e8e8e8'
 				},
-				children: [
-					...tileImages,
-					svgOverlay,
-					{
-						type: 'div',
-						props: {
-							style: {
-								position: 'absolute',
-								bottom: '0',
-								left: '0',
-								right: '0',
-								display: 'flex',
-								alignItems: 'center',
-								flexWrap: 'wrap',
-								padding: '14px 24px',
-								background: 'rgba(255,255,255,0.85)',
-								backdropFilter: 'blur(8px)'
-							},
-							children: bannerChildren
-						}
-					}
-				]
+				children: [...tileImages, svgOverlay]
 			}
 		},
-		{
-			width: IMG_W,
-			height: IMG_H,
-			fonts: [{ name: 'Inter', data: font, weight: 400, style: 'normal' }]
-		}
+		{ width: IMG_W, height: IMG_H, fonts: [] }
 	);
 
 	const resvg = new Resvg(svg, { fitTo: { mode: 'width', value: IMG_W } });
