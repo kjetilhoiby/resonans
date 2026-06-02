@@ -29,6 +29,7 @@
 		startedAt: string | null;
 		finishedAt: string | null;
 		loanDueDate: string | null;
+		loanStartDate: string | null;
 		createdAt: string;
 	}
 
@@ -113,16 +114,12 @@
 		const reading: Book[] = [];
 		const shelf: Book[] = [];
 		const finished: Book[] = [];
-		const loans: Book[] = [];
 		for (const b of books) {
-			if (b.loanDueDate) loans.push(b);
 			if (b.status === 'reading' || b.status === 'paused') reading.push(b);
 			else if (b.status === 'completed') finished.push(b);
 			else shelf.push(b);
 		}
-		// Lån sorteres etter innleveringsdato — det som forfaller først øverst
-		loans.sort((a, b) => new Date(a.loanDueDate!).getTime() - new Date(b.loanDueDate!).getTime());
-		return { reading, shelf, finished, loans };
+		return { reading, shelf, finished };
 	});
 
 	/* ── Views: library | book ─────────────────────────── */
@@ -1103,6 +1100,17 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		return { label: `${d} dager igjen`, tone: 'ok' };
 	}
 
+	/** Hvor stor andel (0–100) av låneperioden som er gått. Fylles mot innlevering. */
+	function loanProgress(book: Book): number {
+		if (!book.loanDueDate) return 0;
+		const due = new Date(book.loanDueDate).getTime();
+		const start = book.loanStartDate ? new Date(book.loanStartDate).getTime() : due;
+		const span = due - start;
+		if (span <= 0) return 100;
+		const elapsed = Date.now() - start;
+		return Math.max(0, Math.min(100, Math.round((elapsed / span) * 100)));
+	}
+
 	let loanSaving = $state(false);
 	/** Sett eller fjern innleveringsdato på en bok. dateStr = '' fjerner lånet. */
 	async function setLoanDueDate(book: Book, dateStr: string) {
@@ -2080,21 +2088,14 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 						{/if}
 						{#if book.loanDueDate}
 							{@const li = loanInfo(book.loanDueDate)}
-							<p class="bk-card-loan {li.tone}">📚 {li.label}</p>
+							<div class="bk-card-loan-bar"><div class="bk-card-loan-fill {li.tone}" style="width:{loanProgress(book)}%"></div></div>
+							<p class="bk-card-loan {li.tone}">📚 Innlevering {fmtDate(book.loanDueDate)} · {li.label}</p>
 						{/if}
 					</div>
 				</button>
 			{/snippet}
 
 			<div class="bk-groups">
-				{#if groupedBooks.loans.length > 0}
-					<section class="bk-group">
-						<h2 class="bk-group-title">Lån <span class="bk-group-count">{groupedBooks.loans.length}</span></h2>
-						<div class="bk-grid">
-							{#each groupedBooks.loans as book}{@render bookCard(book)}{/each}
-						</div>
-					</section>
-				{/if}
 				{#if groupedBooks.reading.length > 0}
 					<section class="bk-group">
 						<h2 class="bk-group-title">Leser <span class="bk-group-count">{groupedBooks.reading.length}</span></h2>
@@ -3038,9 +3039,24 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		margin: 0;
 	}
 
+	.bk-card-loan-bar {
+		height: 4px;
+		background: #1e1e1e;
+		border-radius: 99px;
+		overflow: hidden;
+		margin-top: 6px;
+	}
+	.bk-card-loan-fill {
+		height: 100%;
+		border-radius: 99px;
+		transition: width 0.3s ease;
+	}
+	.bk-card-loan-fill.ok { background: #5a8acb; }
+	.bk-card-loan-fill.soon { background: #e0a050; }
+	.bk-card-loan-fill.overdue { background: #e07070; }
 	.bk-card-loan {
 		font-size: 0.72rem;
-		margin: 2px 0 0;
+		margin: 3px 0 0;
 		font-weight: 500;
 	}
 	.bk-card-loan.ok { color: #8a8a8a; }

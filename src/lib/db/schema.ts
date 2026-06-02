@@ -1658,8 +1658,10 @@ export const books = pgTable('books', {
 	} | null>(),
 	startedAt: timestamp('started_at'),
 	finishedAt: timestamp('finished_at'),
-	// Innleveringsdato for bibliotekslån. Satt = boka regnes som et lån.
+	// Bibliotekslån: innleveringsdato (satt = boka regnes som et lån) og når
+	// lånet ble registrert, brukt til å vise hvor mye av låneperioden som gjenstår.
 	loanDueDate: timestamp('loan_due_date'),
+	loanStartDate: timestamp('loan_start_date'),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
 }, (table) => ({
