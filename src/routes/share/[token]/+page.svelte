@@ -5,11 +5,33 @@
 	import SharedTripPositionView from '$lib/components/domain/share/SharedTripPositionView.svelte';
 
 	let { data }: { data: PageData } = $props();
+
+	// Rikt forhåndsvisningskort for delt live posisjon (kart-OG via satori).
+	const trip = $derived(
+		data.status === 'ok' && data.resource.kind === 'tripPosition' ? data.resource : null
+	);
+	const tripTitle = $derived(
+		trip ? (data.status === 'ok' && data.ownerName ? `${data.ownerName} er underveis` : 'Live posisjon') : null
+	);
+	const tripToken = $derived(data.status === 'ok' ? data.token : '');
 </script>
 
 <svelte:head>
-	<title>Delt fra Resonans</title>
-	<meta name="robots" content="noindex" />
+	{#if trip}
+		<title>{tripTitle}</title>
+		<meta name="robots" content="noindex" />
+		<meta property="og:title" content={tripTitle} />
+		<meta
+			property="og:description"
+			content={trip.destLabel ? `På vei til ${trip.destLabel}` : 'Se live posisjon'}
+		/>
+		<meta property="og:image" content={`/api/share-link/${tripToken}/og.png`} />
+		<meta property="og:image:width" content="1200" />
+		<meta property="og:image:height" content="630" />
+	{:else}
+		<title>Delt fra Resonans</title>
+		<meta name="robots" content="noindex" />
+	{/if}
 </svelte:head>
 
 <main class="share-page">

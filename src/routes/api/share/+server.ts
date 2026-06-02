@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
-import { checklists, themeLists, themes } from '$lib/db/schema';
+import { checklists, themeLists, liveSessions } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import {
 	createShareToken,
@@ -34,8 +34,8 @@ async function ownerOwnsResource(
 		return Boolean(row);
 	}
 	if (resourceType === 'tripPosition') {
-		const row = await db.query.themes.findFirst({
-			where: and(eq(themes.id, resourceId), eq(themes.userId, userId)),
+		const row = await db.query.liveSessions.findFirst({
+			where: and(eq(liveSessions.id, resourceId), eq(liveSessions.userId, userId)),
 			columns: { id: true }
 		});
 		return Boolean(row);
