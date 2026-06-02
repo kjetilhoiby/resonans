@@ -80,6 +80,18 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 			updates.finishedAt = new Date();
 		}
 	}
+	if (body?.loanDueDate !== undefined) {
+		// null/'' fjerner lånet; en ISO-dato markerer boka som lån med innleveringsdato
+		if (body.loanDueDate === null || body.loanDueDate === '') {
+			updates.loanDueDate = null;
+		} else {
+			const due = new Date(body.loanDueDate);
+			if (Number.isNaN(due.getTime())) {
+				return json({ error: 'invalid loanDueDate' }, { status: 400 });
+			}
+			updates.loanDueDate = due;
+		}
+	}
 	if (body?.contextPack !== undefined) updates.contextPack = body.contextPack;
 	if (typeof body?.contextStatus === 'string') updates.contextStatus = body.contextStatus;
 	if (typeof body?.author === 'string') updates.author = body.author;
