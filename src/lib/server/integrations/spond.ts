@@ -51,7 +51,7 @@ export interface SpondGroup {
  * Spond uses username/password auth (no OAuth).
  */
 export async function spondLogin(email: string, password: string): Promise<string> {
-	const res = await fetch(`${SPOND_API_BASE}login`, {
+	const res = await fetch(`${SPOND_API_BASE}auth2/login`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ email, password })
@@ -63,9 +63,12 @@ export async function spondLogin(email: string, password: string): Promise<strin
 	}
 
 	const data = await res.json();
-	const token = data?.loginToken;
+	// Spond flyttet login til auth2/login og endret responsformatet fra
+	// { loginToken } til { accessToken: { token } }. Vi leser det nye feltet
+	// først, men beholder loginToken som fallback for bakoverkompatibilitet.
+	const token = data?.accessToken?.token ?? data?.loginToken;
 	if (!token) {
-		throw new Error('Spond login response missing loginToken');
+		throw new Error('Spond login response missing access token');
 	}
 	return token as string;
 }
