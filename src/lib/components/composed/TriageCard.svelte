@@ -10,7 +10,6 @@
 -->
 <script lang="ts">
 	import { marked } from 'marked';
-	import Icon from '../ui/Icon.svelte';
 
 	interface Action {
 		label: string;
@@ -41,59 +40,46 @@
 
 {#if loading}
 	<div class="tc-card tc-card-loading" role="status" aria-live="polite" aria-label="Tenker…">
-		<div class="tc-header">
-			<span class="tc-avatar" aria-hidden="true"><Icon name="chat" size={15} /></span>
-			<div class="tc-thinking-wrap">
-				<div class="tc-thinking-row">
-					<span class="tc-thinking-label">Tenker</span>
-					<span class="tc-thinking-dots" aria-hidden="true">
-						<span></span><span></span><span></span>
-					</span>
-					{#if steps.length > 0}
-						<button
-							class="tc-expand-btn"
-							onclick={() => (stepsExpanded = !stepsExpanded)}
-							aria-expanded={stepsExpanded}
-							aria-label="Vis detaljer"
-						>
-							<span class="tc-chevron" class:rotated={stepsExpanded}>›</span>
-						</button>
-					{/if}
-				</div>
-				{#if stepsExpanded && steps.length > 0}
-					<div class="tc-steps" role="list">
-						{#each steps as step}
-							<p class="tc-step" role="listitem">{step}</p>
-						{/each}
-					</div>
-				{:else if steps.length > 0}
-					<p class="tc-latest-step">{steps[steps.length - 1]}</p>
+		<div class="tc-thinking-wrap">
+			<div class="tc-thinking-row">
+				<span class="tc-thinking-label">Tenker</span>
+				<span class="tc-thinking-dots" aria-hidden="true">
+					<span></span><span></span><span></span>
+				</span>
+				{#if steps.length > 0}
+					<button
+						class="tc-expand-btn"
+						onclick={() => (stepsExpanded = !stepsExpanded)}
+						aria-expanded={stepsExpanded}
+						aria-label="Vis detaljer"
+					>
+						<span class="tc-chevron" class:rotated={stepsExpanded}>›</span>
+					</button>
 				{/if}
 			</div>
+			{#if stepsExpanded && steps.length > 0}
+				<div class="tc-steps" role="list">
+					{#each steps as step}
+						<p class="tc-step" role="listitem">{step}</p>
+					{/each}
+				</div>
+			{:else if steps.length > 0}
+				<p class="tc-latest-step">{steps[steps.length - 1]}</p>
+			{/if}
 		</div>
 	</div>
 {:else if stopped && text}
 	<div class="tc-card tc-card-stopped" role="status">
-		<div class="tc-header">
-			<span class="tc-avatar" aria-label="Resonans AI"><Icon name="chat" size={15} decorative={false} title="Resonans AI" /></span>
-			<div class="tc-text tc-text-stopped">{@html htmlContent}</div>
-		</div>
+		<div class="tc-text tc-text-stopped">{@html htmlContent}</div>
 		<div class="tc-stopped-badge">Avbrutt</div>
 	</div>
 {:else if streaming && text}
 	<div class="tc-card" role="status" aria-live="polite">
-		<div class="tc-header">
-			<span class="tc-avatar" aria-label="Resonans AI"><Icon name="chat" size={15} decorative={false} title="Resonans AI" /></span>
-			<div class="tc-text">{@html htmlContent}<span class="tc-cursor" aria-hidden="true">▌</span></div>
-		</div>
+		<div class="tc-text">{@html htmlContent}<span class="tc-cursor" aria-hidden="true">▌</span></div>
 	</div>
 {:else}
 	<div class="tc-card" role="status" aria-live="polite">
-		<!-- Avatar + boble -->
-		<div class="tc-header">
-			<span class="tc-avatar" aria-label="Resonans AI"><Icon name="chat" size={15} decorative={false} title="Resonans AI" /></span>
-			<div class="tc-text">{@html htmlContent}</div>
-		</div>
+		<div class="tc-text">{@html htmlContent}</div>
 
 		<!-- Handling-knapper -->
 		{#if actions.length > 0}
@@ -114,24 +100,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
-	}
-
-	.tc-header {
-		display: flex;
-		align-items: flex-start;
-		gap: 8px;
-	}
-
-	.tc-avatar {
-		width: 22px;
-		height: 22px;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		color: #7c8ef5;
-		flex-shrink: 0;
-		margin-top: 2px;
-		line-height: 1.5;
 	}
 
 	.tc-text {
@@ -237,7 +205,6 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 7px;
-		padding-left: 26px;
 	}
 
 	.tc-btn {
@@ -365,7 +332,6 @@
 	}
 
 	.tc-stopped-badge {
-		margin-left: 30px;
 		font-size: 0.68rem;
 		color: #555;
 		letter-spacing: 0.04em;
