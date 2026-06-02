@@ -3,6 +3,7 @@
 	import FamilyTree from './family/FamilyTree.svelte';
 	import FamilyFeed from './family/FamilyFeed.svelte';
 	import PersonDetailSheet from './family/PersonDetailSheet.svelte';
+	import { portal } from '$lib/actions/portal';
 
 	interface Props {
 		data: FamilyDashboardData;
@@ -71,7 +72,7 @@
 	{/if}
 
 	{#if selectedPerson}
-		<div class="sheet-overlay" onclick={closeSheet} role="presentation">
+		<div class="sheet-overlay" use:portal onclick={closeSheet} role="presentation">
 			<div class="sheet-wrap" onclick={(e) => e.stopPropagation()} role="presentation">
 				<PersonDetailSheet
 					person={selectedPerson}
