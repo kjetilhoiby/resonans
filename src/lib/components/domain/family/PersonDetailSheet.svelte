@@ -2,6 +2,7 @@
 	import type { FamilyDashboardData } from '$lib/client/dashboard-cache';
 	import PersonEditSheet from './PersonEditSheet.svelte';
 	import TaskTitle from '$lib/components/ui/TaskTitle.svelte';
+	import { portal } from '$lib/actions/portal';
 
 	interface Props {
 		person: FamilyDashboardData['persons'][number];
@@ -294,7 +295,7 @@
 	</header>
 
 	{#if editing && fullPerson}
-		<div class="edit-overlay" onclick={() => (editing = false)} role="presentation">
+		<div class="edit-overlay" use:portal onclick={() => (editing = false)} role="presentation">
 			<div class="edit-wrap" onclick={(e) => e.stopPropagation()} role="presentation">
 				<PersonEditSheet
 					person={fullPerson}
