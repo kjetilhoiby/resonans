@@ -367,6 +367,7 @@
 		labelPattern: string | null;
 		senderPattern: string | null;
 		subjectPattern: string | null;
+		personId: string | null;
 		processingType: string;
 		extractionPrompt: string | null;
 		eventType: string;
@@ -384,6 +385,7 @@
 		labelPattern: '',
 		senderPattern: '',
 		subjectPattern: '',
+		personId: '' as string,
 		processingType: 'workout_files' as string,
 		extractionPrompt: '',
 		eventType: 'email_content',
@@ -405,7 +407,7 @@
 	function resetRuleForm() {
 		ruleForm = {
 			name: '', labelPattern: '', senderPattern: '', subjectPattern: '',
-			processingType: 'workout_files', extractionPrompt: '',
+			personId: '', processingType: 'workout_files', extractionPrompt: '',
 			eventType: 'email_content', dataType: 'email',
 		};
 		editingRuleId = null;
@@ -419,6 +421,7 @@
 			labelPattern: rule.labelPattern ?? '',
 			senderPattern: rule.senderPattern ?? '',
 			subjectPattern: rule.subjectPattern ?? '',
+			personId: rule.personId ?? '',
 			processingType: rule.processingType,
 			extractionPrompt: rule.extractionPrompt ?? '',
 			eventType: rule.eventType,
@@ -2127,7 +2130,7 @@
 							<div class="email-rule-header">
 								<div class="email-rule-info">
 									<strong>{rule.name}</strong>
-									<span class="email-rule-type">{rule.processingType === 'ai_extraction' ? 'AI-ekstraksjon' : rule.processingType === 'workout_files' ? 'Treningsfiler' : rule.processingType === 'library' ? 'Bibliotek' : 'Rå lagring'}</span>
+									<span class="email-rule-type">{rule.processingType === 'ai_extraction' ? 'AI-ekstraksjon' : rule.processingType === 'workout_files' ? 'Treningsfiler' : rule.processingType === 'library' ? 'Bibliotek' : rule.processingType === 'school_plan' ? 'Skole/barnehage' : 'Rå lagring'}</span>
 								</div>
 								<div class="email-rule-actions">
 									<button class="rule-toggle" onclick={() => toggleRule(rule)} title={rule.isActive ? 'Deaktiver' : 'Aktiver'}>
@@ -2146,6 +2149,9 @@
 								{/if}
 								{#if rule.subjectPattern}
 									<span class="filter-chip">Emne: {rule.subjectPattern}</span>
+								{/if}
+								{#if rule.personId}
+									<span class="filter-chip">Person: {(data.people ?? []).find((p) => p.id === rule.personId)?.name ?? '—'}</span>
 								{/if}
 								{#if !rule.labelPattern && !rule.senderPattern && !rule.subjectPattern}
 									<span class="filter-chip filter-warn">Ingen filter — matcher alle e-poster</span>
@@ -2188,6 +2194,7 @@
 						<Select id="rule-type" className="input" bind:value={ruleForm.processingType}>
 							<option value="workout_files">Treningsfiler (GPX/TCX-vedlegg)</option>
 							<option value="library">Bibliotek (lånefrist → sjekkliste)</option>
+							<option value="school_plan">Skole/barnehage (planer → dagsoppgaver + nudge)</option>
 							<option value="ai_extraction">AI-ekstraksjon (GPT trekker ut data)</option>
 							<option value="raw_store">Rå lagring (lagre som tekst)</option>
 						</Select>
@@ -2196,6 +2203,18 @@
 						<div class="field">
 							<label for="rule-prompt">Tilpasset AI-prompt (valgfritt)</label>
 							<textarea id="rule-prompt" class="input" bind:value={ruleForm.extractionPrompt} rows="4" placeholder="La stå tom for standard-ekstraksjon. Skriv en tilpasset prompt for spesifikke behov."></textarea>
+						</div>
+					{/if}
+					{#if ruleForm.processingType === 'school_plan'}
+						<div class="field">
+							<label for="rule-person">Knytt til person</label>
+							<Select id="rule-person" className="input" bind:value={ruleForm.personId}>
+								<option value="">Ingen / utled fra innhold</option>
+								{#each data.people ?? [] as person}
+									<option value={person.id}>{person.name}</option>
+								{/each}
+							</Select>
+							<p class="field-hint">Oppgaver fra denne kilden tilskrives dette barnet (f.eks. barnehage-label → barnet). AI-en kan overstyre per punkt hvis et annet navn nevnes tydelig.</p>
 						</div>
 					{/if}
 					<div class="row">

@@ -1,5 +1,5 @@
 import { db } from '$lib/db';
-import { users, sensorEvents, checklistItems } from '$lib/db/schema';
+import { users, sensorEvents, checklistItems, persons } from '$lib/db/schema';
 import { and, eq, gte, sql } from 'drizzle-orm';
 import { env } from '$env/dynamic/private';
 import { ensureUser } from '$lib/server/users';
@@ -51,11 +51,20 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		libraryItems: libraryCountRow?.count ?? 0
 	};
 
+	// Personer (barn først) for person-ruting av skole-/barnehage-eposter.
+	const peopleRows = await db.query.persons.findMany({
+		where: and(eq(persons.userId, locals.userId), eq(persons.archived, false)),
+		columns: { id: true, name: true, kind: true },
+		orderBy: (p, { asc }) => [asc(p.name)]
+	});
+	const people = peopleRows.map((p) => ({ id: p.id, name: p.name, kind: p.kind }));
+
 	return {
 		user: user || null,
 		emailEndpoint: endpoint,
 		emailWebhookConfigured: token.length > 0,
 		emailAppsScriptSource: appsScriptSource,
-		emailImports
+		emailImports,
+		people
 	};
 };
