@@ -14,7 +14,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 	if (!userId) throw error(401, 'Ikke innlogget');
 
 	try {
-		const groupRows = await db.execute(sql`
+		const groupResult = await db.execute(sql`
 			SELECT
 				data->>'groupId' AS group_id,
 				MAX(data->>'groupName') AS group_name,
@@ -28,6 +28,19 @@ export const GET: RequestHandler = async ({ locals }) => {
 			ORDER BY MAX(data->>'groupName') NULLS LAST
 		`);
 
+		// Neon HTTP-driveren returnerer et resultat-objekt ({ rows, rowCount, ... }),
+		// IKKE en bar array — radene ligger på `.rows`. `.map()` direkte på objektet
+		// kastet "groupRows.map is not a function" → 500. Vi tåler begge formene
+		// i tilfelle driveren endrer seg.
+		const groupRows = (Array.isArray(groupResult)
+			? groupResult
+			: (groupResult as { rows?: unknown[] }).rows ?? []) as Array<{
+			group_id: string;
+			group_name: string | null;
+			event_count: number;
+			last_seen: string;
+		}>;
+
 		const allPersons = await db
 			.select()
 			.from(persons)
@@ -40,12 +53,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 			}
 		}
 
-		const groups = (groupRows as unknown as Array<{
-			group_id: string;
-			group_name: string | null;
-			event_count: number;
-			last_seen: string;
-		}>).map((row) => ({
+		const groups = groupRows.map((row) => ({
 			groupId: row.group_id,
 			groupName: row.group_name ?? row.group_id,
 			eventCount: row.event_count,
@@ -55,8 +63,6 @@ export const GET: RequestHandler = async ({ locals }) => {
 
 		return json({ groups });
 	} catch (err) {
-		// Logg den faktiske DB-feilen — denne ruta har tidligere feilet stille
-		// med 500 pga. schema-drift (manglende persons-kolonner, jf. PR #89).
 		console.error('[spond/groups] kunne ikke hente Spond-grupper:', err);
 		throw error(500, 'Kunne ikke hente Spond-grupper');
 	}
