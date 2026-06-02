@@ -242,7 +242,48 @@ export interface FamilyDashboardData {
 		frequency: string | null;
 		createdAt: string;
 	}>>;
+	feed: FamilyFeedItem[];
 }
+
+export type FamilyFeedItem =
+	| {
+			kind: 'event';
+			id: string;
+			personIds: string[];
+			ts: string;
+			title: string;
+			groupName: string | null;
+			future: boolean;
+	  }
+	| {
+			kind: 'task';
+			id: string;
+			personIds: string[];
+			ts: string;
+			title: string;
+			status: string;
+			source: 'direct' | 'mention';
+			confidence: 'explicit' | 'inferred' | null;
+	  }
+	| {
+			kind: 'message-mention';
+			id: string;
+			personIds: string[];
+			ts: string;
+			conversationId: string;
+			snippet: string;
+			role: string;
+			confidence: 'explicit' | 'inferred';
+	  }
+	| {
+			kind: 'checklist-mention';
+			id: string;
+			personIds: string[];
+			ts: string;
+			text: string;
+			checked: boolean;
+			confidence: 'explicit' | 'inferred';
+	  };
 
 export interface HomeDashboardData {
 	projects: Array<{

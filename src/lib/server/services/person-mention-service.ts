@@ -244,6 +244,62 @@ export class PersonMentionService {
 		return rows.filter((r) => r.task.status === 'active').slice(0, limit);
 	}
 
+	/**
+	 * Bruker-brede mention-lister (på tvers av alle personer) — brukes av den
+	 * samlede familie-feeden. Speiler *ForPerson-metodene, men uten personId-filter.
+	 */
+	static async listMessageMentionsForUser(userId: string, opts?: { limit?: number }) {
+		const limit = opts?.limit ?? 100;
+		return db
+			.select({
+				mention: messagePersonMentions,
+				message: messages
+			})
+			.from(messagePersonMentions)
+			.innerJoin(messages, eq(messagePersonMentions.messageId, messages.id))
+			.where(eq(messagePersonMentions.userId, userId))
+			.orderBy(desc(messages.createdAt))
+			.limit(limit);
+	}
+
+	static async listTaskMentionsForUser(
+		userId: string,
+		opts?: { limit?: number; includeCompleted?: boolean }
+	) {
+		const limit = opts?.limit ?? 100;
+		const rows = await db
+			.select({
+				mention: taskPersonMentions,
+				task: tasks
+			})
+			.from(taskPersonMentions)
+			.innerJoin(tasks, eq(taskPersonMentions.taskId, tasks.id))
+			.where(eq(taskPersonMentions.userId, userId))
+			.orderBy(desc(tasks.createdAt))
+			.limit(limit * 2);
+		if (opts?.includeCompleted) return rows.slice(0, limit);
+		return rows.filter((r) => r.task.status === 'active').slice(0, limit);
+	}
+
+	static async listChecklistItemMentionsForUser(
+		userId: string,
+		opts?: { limit?: number; includeChecked?: boolean }
+	) {
+		const limit = opts?.limit ?? 100;
+		const rows = await db
+			.select({
+				mention: checklistItemPersonMentions,
+				item: checklistItems
+			})
+			.from(checklistItemPersonMentions)
+			.innerJoin(checklistItems, eq(checklistItemPersonMentions.checklistItemId, checklistItems.id))
+			.where(eq(checklistItemPersonMentions.userId, userId))
+			.orderBy(desc(checklistItems.createdAt))
+			.limit(limit * 2);
+		if (opts?.includeChecked) return rows.slice(0, limit);
+		return rows.filter((r) => !r.item.checked).slice(0, limit);
+	}
+
 	static async getMentionsForMessages(userId: string, messageIds: string[]) {
 		if (messageIds.length === 0) return [];
 		return db
