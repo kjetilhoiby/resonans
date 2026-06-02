@@ -128,15 +128,15 @@
 				{#if msg.photoAnnotation && msg.photoAnnotationImageUrl}
 					<AnnotatedImageCard imageUrl={msg.photoAnnotationImageUrl} annotation={msg.photoAnnotation} />
 				{/if}
+				{#if onStarMessage}
+					<button
+						class="cm-star-btn cm-star-btn-bot"
+						class:cm-star-btn-active={msg.starred}
+						onclick={() => onStarMessage!(msg.id)}
+						title={msg.starred ? 'Fjern stjerne' : 'Stjernemerk melding'}
+					>{msg.starred ? '★' : '☆'}</button>
+				{/if}
 			</div>
-			{#if onStarMessage}
-				<button
-					class="cm-star-btn"
-					class:cm-star-btn-active={msg.starred}
-					onclick={() => onStarMessage!(msg.id)}
-					title={msg.starred ? 'Fjern stjerne' : 'Stjernemerk melding'}
-				>{msg.starred ? '★' : '☆'}</button>
-			{/if}
 		</div>
 	{/if}
 {/each}
@@ -264,6 +264,14 @@
 	}
 	.cm-star-btn:hover { color: #aaa; }
 	.cm-star-btn-active { color: #f0c040 !important; }
+
+	/* Bot-stjerne plasseres under meldingen, venstrejustert med tekstkanten */
+	.cm-star-btn-bot {
+		align-self: flex-start;
+		margin-top: -2px;
+		margin-bottom: 0;
+		margin-left: -4px;
+	}
 
 	.cm-error-row {
 		display: flex;
