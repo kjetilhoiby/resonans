@@ -1,5 +1,5 @@
 import { json, error } from '@sveltejs/kit';
-import { db } from '$lib/db';
+import { db, rowsOf } from '$lib/db';
 import { sensorEvents, persons } from '$lib/db/schema';
 import { and, eq, sql } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
@@ -14,32 +14,26 @@ export const GET: RequestHandler = async ({ locals }) => {
 	if (!userId) throw error(401, 'Ikke innlogget');
 
 	try {
-		const groupResult = await db.execute(sql`
-			SELECT
-				data->>'groupId' AS group_id,
-				MAX(data->>'groupName') AS group_name,
-				COUNT(*)::int AS event_count,
-				MAX(timestamp) AS last_seen
-			FROM sensor_events
-			WHERE user_id = ${userId}
-			  AND data_type = 'spond_event'
-			  AND data->>'groupId' IS NOT NULL
-			GROUP BY data->>'groupId'
-			ORDER BY MAX(data->>'groupName') NULLS LAST
-		`);
-
-		// Neon HTTP-driveren returnerer et resultat-objekt ({ rows, rowCount, ... }),
-		// IKKE en bar array — radene ligger på `.rows`. `.map()` direkte på objektet
-		// kastet "groupRows.map is not a function" → 500. Vi tåler begge formene
-		// i tilfelle driveren endrer seg.
-		const groupRows = (Array.isArray(groupResult)
-			? groupResult
-			: (groupResult as { rows?: unknown[] }).rows ?? []) as Array<{
+		const groupRows = rowsOf<{
 			group_id: string;
 			group_name: string | null;
 			event_count: number;
 			last_seen: string;
-		}>;
+		}>(
+			await db.execute(sql`
+				SELECT
+					data->>'groupId' AS group_id,
+					MAX(data->>'groupName') AS group_name,
+					COUNT(*)::int AS event_count,
+					MAX(timestamp) AS last_seen
+				FROM sensor_events
+				WHERE user_id = ${userId}
+				  AND data_type = 'spond_event'
+				  AND data->>'groupId' IS NOT NULL
+				GROUP BY data->>'groupId'
+				ORDER BY MAX(data->>'groupName') NULLS LAST
+			`)
+		);
 
 		const allPersons = await db
 			.select()

@@ -1,6 +1,6 @@
 import type { RequestHandler } from './$types';
 import { json } from '@sveltejs/kit';
-import { db } from '$lib/db';
+import { db, rowsOf } from '$lib/db';
 import { requireAdmin } from '$lib/server/admin-auth';
 import { sql } from 'drizzle-orm';
 
@@ -14,7 +14,13 @@ export const DELETE: RequestHandler = async ({ locals }) => {
 		await requireAdmin(locals.userId);
 		console.log('🗑️  Resetting economics data (full wipe for current user)...');
 
-		const resultRows = await db.execute(sql`
+		const resultRows = rowsOf<{
+			categorized_count?: number;
+			alias_count?: number;
+			raw_count?: number;
+			canonical_count?: number;
+			sensor_count?: number;
+		}>(await db.execute(sql`
 			WITH deleted_categorized AS (
 				DELETE FROM categorized_events
 				WHERE user_id = ${locals.userId}
@@ -45,15 +51,9 @@ export const DELETE: RequestHandler = async ({ locals }) => {
 				(SELECT COUNT(*)::int FROM deleted_raw) AS raw_count,
 				(SELECT COUNT(*)::int FROM deleted_canonical) AS canonical_count,
 				(SELECT COUNT(*)::int FROM deleted_sensor) AS sensor_count
-		`);
+		`));
 
-		const row = Array.isArray(resultRows) ? resultRows[0] as {
-			categorized_count?: number;
-			alias_count?: number;
-			raw_count?: number;
-			canonical_count?: number;
-			sensor_count?: number;
-		} : {};
+		const row = resultRows[0] ?? {};
 
 		const deleted = {
 			categorizedEvents: Number(row?.categorized_count ?? 0),

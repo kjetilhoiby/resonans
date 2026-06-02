@@ -18,7 +18,7 @@
  */
 
 import { and, eq, gte, lt, sql } from 'drizzle-orm';
-import { db } from '$lib/db';
+import { db, rowsOf } from '$lib/db';
 import { checklistItems, checklists, progress } from '$lib/db/schema';
 import { TaskExecutionService, type TaskProgressSkipReason } from '$lib/server/services/task-execution-service';
 import type { ActivityType } from './task-intent-parser';
@@ -101,7 +101,12 @@ export async function autocheckChecklistItemsForDay(params: {
 	if (candidateItems.length === 0) return [];
 
 	// Fetch workout sensor events for this day
-	const workoutRows = await db.execute(sql`
+	const workoutRows = rowsOf<{
+		id: string;
+		sport_type: string;
+		duration_seconds: number | null;
+		distance_meters: number | null;
+	}>(await db.execute(sql`
 		SELECT
 			id,
 			data->>'sportType' AS sport_type,
@@ -113,12 +118,7 @@ export async function autocheckChecklistItemsForDay(params: {
 		  AND timestamp >= ${dayStart}
 		  AND timestamp <= ${dayEnd}
 		ORDER BY timestamp DESC
-	`) as unknown as Array<{
-		id: string;
-		sport_type: string;
-		duration_seconds: number | null;
-		distance_meters: number | null;
-	}>;
+	`));
 
 	const results: AutoCheckResult[] = [];
 
@@ -323,18 +323,20 @@ function parseWakeTargetFromText(text: string): { hour: number; minute: number }
 	const searchStart = new Date(Date.UTC(y, m - 1, d - 1, 12, 0, 0));
 	const searchEnd = new Date(Date.UTC(y, m - 1, d, 18, 0, 0));
 
-	const sleepRows = await db.execute(sql`
-		SELECT
-			(metadata->>'enddate')::bigint AS enddate_unix
-		FROM sensor_events
-		WHERE user_id = ${userId}
-		  AND data_type = 'sleep'
-		  AND timestamp >= ${searchStart}
-		  AND timestamp < ${searchEnd}
-		  AND metadata->>'enddate' IS NOT NULL
-		ORDER BY (metadata->>'enddate')::bigint DESC
-		LIMIT 1
-	`) as unknown as Array<{ enddate_unix: number | null }>;
+	const sleepRows = rowsOf<{ enddate_unix: number | null }>(
+		await db.execute(sql`
+			SELECT
+				(metadata->>'enddate')::bigint AS enddate_unix
+			FROM sensor_events
+			WHERE user_id = ${userId}
+			  AND data_type = 'sleep'
+			  AND timestamp >= ${searchStart}
+			  AND timestamp < ${searchEnd}
+			  AND metadata->>'enddate' IS NOT NULL
+			ORDER BY (metadata->>'enddate')::bigint DESC
+			LIMIT 1
+		`)
+	);
 
 	const row = sleepRows[0];
 	if (!row?.enddate_unix) return { autoChecked: false, reason: 'no_sleep_data', itemId: '', itemText: '' };

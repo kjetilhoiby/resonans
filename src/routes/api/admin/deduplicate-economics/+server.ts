@@ -1,6 +1,6 @@
 import type { RequestHandler } from './$types';
 import { json } from '@sveltejs/kit';
-import { db } from '$lib/db';
+import { db, rowsOf } from '$lib/db';
 import { requireAdmin } from '$lib/server/admin-auth';
 import { sql } from 'drizzle-orm';
 
@@ -15,7 +15,7 @@ export const POST: RequestHandler = async ({ locals }) => {
 		console.log('🔍 Finding and removing duplicates...');
 
 		// Remove duplicate balance events (same accountId + date + source)
-		const balanceDuplicates = await db.execute(sql`
+		const balanceDuplicates = rowsOf(await db.execute(sql`
 			WITH ranked AS (
 				SELECT 
 					id,
@@ -35,11 +35,11 @@ export const POST: RequestHandler = async ({ locals }) => {
 				SELECT id FROM ranked WHERE rn > 1
 			)
 			RETURNING id
-		`);
+		`));
 
 		// Remove duplicate transactions (same transactionId within same source)
 		// We dedupe by transactionId for API, and by content hash for PDF (if they have no ID)
-		const transactionDuplicates = await db.execute(sql`
+		const transactionDuplicates = rowsOf(await db.execute(sql`
 			WITH ranked AS (
 				SELECT 
 					id,
@@ -71,10 +71,10 @@ export const POST: RequestHandler = async ({ locals }) => {
 				SELECT id FROM to_delete
 			)
 			RETURNING id
-		`);
+		`));
 
-		const balanceCount = Array.isArray(balanceDuplicates) ? balanceDuplicates.length : 0;
-		const transactionCount = Array.isArray(transactionDuplicates) ? transactionDuplicates.length : 0;
+		const balanceCount = balanceDuplicates.length;
+		const transactionCount = transactionDuplicates.length;
 
 		console.log(`✅ Removed ${balanceCount} duplicate balance events and ${transactionCount} duplicate transactions`);
 

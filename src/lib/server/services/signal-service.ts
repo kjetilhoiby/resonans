@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { db, pgClient } from '$lib/db';
+import { db, pgClient, rowsOf } from '$lib/db';
 import { users } from '$lib/db/schema';
 
 type Severity = 'info' | 'low' | 'medium' | 'high';
@@ -184,7 +184,7 @@ async function produceActivityRunPrWeekSignal(userId: string, now: Date) {
 		  AND timestamp < ${now}
 		  AND LOWER(COALESCE(data->>'sportType', '')) LIKE '%running%'
 	`);
-	const runCount = toNumber((runCountRows as unknown as Array<{ value: number }>)[0]?.value);
+	const runCount = toNumber(rowsOf<{ value: number }>(runCountRows)[0]?.value);
 
 	const goalRows = await db.execute(sql`
 		SELECT id, metadata
@@ -196,10 +196,10 @@ async function produceActivityRunPrWeekSignal(userId: string, now: Date) {
 		  AND COALESCE(metadata->'parsedIntent'->>'period', '') = 'week'
 	`);
 
-	const typedGoals = goalRows as unknown as Array<{
+	const typedGoals = rowsOf<{
 		id: string;
 		metadata: Record<string, unknown> | null;
-	}>;
+	}>(goalRows);
 
 	let matchedGoals = 0;
 	let metGoals = 0;
@@ -304,11 +304,11 @@ async function produceTaskCompletionWeeklySignal(userId: string, now: Date) {
 		GROUP BY t.id, t.target_value
 	`);
 
-	const tasksWeekly = rows as unknown as Array<{
+	const tasksWeekly = rowsOf<{
 		id: string;
 		target_value: number;
 		current_value: number;
-	}>;
+	}>(rows);
 
 	if (tasksWeekly.length === 0) {
 		return null;
@@ -409,8 +409,8 @@ async function produceEconomicsBudgetPressure7d(userId: string, now: Date) {
 		  AND amount::numeric < 0
 	`);
 
-	const spend7d = toNumber((spend7dRows as unknown as Array<{ value: number }>)[0]?.value);
-	const baseline30d = toNumber((baselineRows as unknown as Array<{ value: number }>)[0]?.value);
+	const spend7d = toNumber(rowsOf<{ value: number }>(spend7dRows)[0]?.value);
+	const baseline30d = toNumber(rowsOf<{ value: number }>(baselineRows)[0]?.value);
 	const baselineWeekly = baseline30d / (30 / 7);
 	const ratio = baselineWeekly > 0 ? spend7d / baselineWeekly : 1;
 	const severity = toSeverityFromRatio(ratio);
@@ -451,7 +451,7 @@ async function produceHomeOverdueSharedTasks7d(userId: string, now: Date) {
 		  AND ci.created_at < ${overdueThreshold}
 	`);
 
-	const overdueCount = toNumber((rows as unknown as Array<{ value: number }>)[0]?.value);
+	const overdueCount = toNumber(rowsOf<{ value: number }>(rows)[0]?.value);
 	const severity: Severity = overdueCount > 7 ? 'high' : overdueCount > 3 ? 'medium' : overdueCount > 0 ? 'low' : 'info';
 	const bucket = overdueCount === 0 ? 'none' : overdueCount <= 3 ? 'few' : overdueCount <= 7 ? 'some' : 'many';
 
@@ -492,7 +492,7 @@ async function produceHomePlanningReliability14d(userId: string, now: Date) {
 		GROUP BY c.id
 	`);
 
-	const typedRows = rows as unknown as Array<{ id: string; item_count: number; unchecked_count: number }>;
+	const typedRows = rowsOf<{ id: string; item_count: number; unchecked_count: number }>(rows);
 	const planned = typedRows.filter((row) => toNumber(row.item_count) > 0).length;
 	const completed = typedRows.filter((row) => toNumber(row.item_count) > 0 && toNumber(row.unchecked_count) === 0).length;
 	const reliability = planned > 0 ? (completed / planned) * 100 : 100;
@@ -542,7 +542,7 @@ async function produceRoutineAdherence7d(userId: string, now: Date) {
 		  AND c.created_at < ${now}
 	`);
 
-	const typedRows = rows as unknown as Array<{ item_count: number; checked_count: number; instance_count: number }>;
+	const typedRows = rowsOf<{ item_count: number; checked_count: number; instance_count: number }>(rows);
 	const itemCount = toNumber(typedRows[0]?.item_count);
 	const checkedCount = toNumber(typedRows[0]?.checked_count);
 	const instanceCount = toNumber(typedRows[0]?.instance_count);
@@ -592,7 +592,7 @@ async function produceRelationshipCoordinationReadinessToday(userId: string, rel
 		LIMIT 1
 	`);
 
-	const score = toNumber((rows as unknown as Array<{ score: number }>)[0]?.score);
+	const score = toNumber(rowsOf<{ score: number }>(rows)[0]?.score);
 	const readiness = score <= 3 ? 'low' : score <= 5 ? 'medium' : score > 0 ? 'high' : 'medium';
 	const severity: Severity = readiness === 'low' ? 'high' : readiness === 'medium' ? 'low' : 'info';
 
@@ -669,10 +669,10 @@ async function produceTrackingSeriesActivityPrWeekSignal(userId: string, now: Da
 		  AND COALESCE(metadata->'parsedIntent'->>'period', '') = 'week'
 	`);
 
-	const typedGoals = goalRows as unknown as Array<{
+	const typedGoals = rowsOf<{
 		id: string;
 		metadata: Record<string, unknown> | null;
-	}>;
+	}>(goalRows);
 
 	if (typedGoals.length === 0) return null;
 
@@ -693,7 +693,7 @@ async function produceTrackingSeriesActivityPrWeekSignal(userId: string, now: Da
 			  AND timestamp < ${now}
 			  AND data->>'recordTypeKey' = ${activityType}
 		`);
-		const count = toNumber((countRows as unknown as Array<{ value: number }>)[0]?.value);
+		const count = toNumber(rowsOf<{ value: number }>(countRows)[0]?.value);
 
 		const met = count >= threshold;
 		const evaluation = {
@@ -772,7 +772,7 @@ async function produceFamilyBirthdayUpcoming7d(userId: string, now: Date) {
 		  AND archived = false
 		  AND birth_date IS NOT NULL
 	`);
-	const persons = rows as unknown as Array<{ id: string; name: string; birth_date: string; kind: string }>;
+	const persons = rowsOf<{ id: string; name: string; birth_date: string; kind: string }>(rows);
 
 	for (const p of persons) {
 		const bd = new Date(p.birth_date);
@@ -820,7 +820,7 @@ async function produceFamilyRelationNeglect30d(userId: string, now: Date) {
 		  AND p.kind IN ('parent', 'in_law', 'extended_family', 'sibling', 'friend')
 	`);
 
-	const items = rows as unknown as Array<{ id: string; name: string; kind: string; last_touch: string }>;
+	const items = rowsOf<{ id: string; name: string; kind: string; last_touch: string }>(rows);
 	const windowStart = daysAgo(now, 30);
 
 	for (const it of items) {
@@ -871,13 +871,13 @@ async function produceFamilyParentTimeLow7d(userId: string, now: Date) {
 		  AND ts.status = 'active'
 		  AND ts.title ILIKE 'foreldretid%'
 	`);
-	const seriesRows = rows as unknown as Array<{
+	const seriesRows = rowsOf<{
 		series_id: string;
 		title: string;
 		theme_id: string | null;
 		task_id: string | null;
 		total_value: string | number;
-	}>;
+	}>(rows);
 	for (const r of seriesRows) {
 		const total = toNumber(r.total_value);
 		const severity: Severity = total < 1 ? 'high' : total < 2 ? 'medium' : total < 4 ? 'low' : 'info';
