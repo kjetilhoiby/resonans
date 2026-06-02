@@ -2,14 +2,11 @@ import { error, redirect } from '@sveltejs/kit';
 import { db } from '$lib/db';
 import {
 	checklists,
-	checklistItems,
 	themeLists,
-	themeListItems,
-	themes,
-	sensorEvents,
+	liveSessions,
 	users
 } from '$lib/db/schema';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import {
 	maskEmail,
 	recordShareAccess,
@@ -54,19 +51,23 @@ type SharedThemeList = {
 };
 
 type SharedTripPosition = {
-	themeId: string;
-	themeName: string;
-	themeEmoji: string | null;
-	destination: string | null;
+	sportType: string;
+	routeLabel: string | null;
+	routeCoordinates: [number, number][] | null;
 	destLat: number | null;
-	destLng: number | null;
-	currentLat: number | null;
-	currentLng: number | null;
-	currentSpeedKmh: number | null;
-	currentTimestamp: Date | null;
-	etaMinutes: number | null;
-	distanceKm: number | null;
-	isStale: boolean;
+	destLon: number | null;
+	destLabel: string | null;
+	routeDistanceM: number | null;
+	lastLat: number | null;
+	lastLon: number | null;
+	lastSpeedMps: number | null;
+	etaSeconds: number | null;
+	distanceRemainingM: number | null;
+	progressFraction: number | null;
+	startedAt: string;
+	lastPingAt: string | null;
+	endedAt: string | null;
+	endedReason: string | null;
 };
 
 async function loadChecklist(resourceId: string, ownerUserId: string): Promise<SharedChecklist | null> {
@@ -126,63 +127,30 @@ async function loadThemeList(resourceId: string, ownerUserId: string): Promise<S
 	};
 }
 
-function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
-	const R = 6371;
-	const toRad = (d: number) => (d * Math.PI) / 180;
-	const dLat = toRad(lat2 - lat1);
-	const dLng = toRad(lng2 - lng1);
-	const a =
-		Math.sin(dLat / 2) ** 2 +
-		Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-	return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
-}
-
-const STALE_AFTER_MINUTES = 15;
-
 async function loadTripPosition(resourceId: string, ownerUserId: string): Promise<SharedTripPosition | null> {
-	const theme = await db.query.themes.findFirst({
-		where: and(eq(themes.id, resourceId), eq(themes.userId, ownerUserId))
+	const session = await db.query.liveSessions.findFirst({
+		where: and(eq(liveSessions.id, resourceId), eq(liveSessions.userId, ownerUserId))
 	});
-	if (!theme) return null;
-
-	const latest = await db.query.sensorEvents.findFirst({
-		where: and(eq(sensorEvents.userId, ownerUserId), inArray(sensorEvents.dataType, ['gps', 'location'])),
-		orderBy: [desc(sensorEvents.timestamp)]
-	});
-
-	const destLat = theme.tripProfile?.lat ?? null;
-	const destLng = theme.tripProfile?.lng ?? null;
-	const currentLat = (latest?.data?.lat as number | undefined) ?? null;
-	const currentLng = (latest?.data?.lng as number | undefined) ?? null;
-	const currentSpeedKmh = (latest?.data?.speedKmh as number | undefined) ?? null;
-	const currentTimestamp = latest?.timestamp ?? null;
-
-	let distanceKm: number | null = null;
-	let etaMinutes: number | null = null;
-	if (currentLat !== null && currentLng !== null && destLat !== null && destLng !== null) {
-		distanceKm = haversineKm(currentLat, currentLng, destLat, destLng);
-		const speed = Math.max(currentSpeedKmh ?? 0, 30);
-		etaMinutes = Math.round((distanceKm / speed) * 60);
-	}
-
-	const isStale =
-		!currentTimestamp ||
-		Date.now() - currentTimestamp.getTime() > STALE_AFTER_MINUTES * 60 * 1000;
+	if (!session) return null;
 
 	return {
-		themeId: theme.id,
-		themeName: theme.name,
-		themeEmoji: theme.emoji ?? null,
-		destination: theme.tripProfile?.destination ?? null,
-		destLat,
-		destLng,
-		currentLat,
-		currentLng,
-		currentSpeedKmh,
-		currentTimestamp,
-		etaMinutes,
-		distanceKm,
-		isStale
+		sportType: session.sportType,
+		routeLabel: session.routeLabel,
+		routeCoordinates: (session.routeCoordinates as [number, number][] | null) ?? null,
+		destLat: session.destLat,
+		destLon: session.destLon,
+		destLabel: session.destLabel,
+		routeDistanceM: session.routeDistanceM,
+		lastLat: session.lastLat,
+		lastLon: session.lastLon,
+		lastSpeedMps: session.lastSpeedMps,
+		etaSeconds: session.etaSeconds,
+		distanceRemainingM: session.distanceRemainingM,
+		progressFraction: session.progressFraction,
+		startedAt: session.startedAt.toISOString(),
+		lastPingAt: session.lastPingAt?.toISOString() ?? null,
+		endedAt: session.endedAt?.toISOString() ?? null,
+		endedReason: session.endedReason
 	};
 }
 
@@ -248,7 +216,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	if (share.resourceType === 'tripPosition') {
 		const trip = await loadTripPosition(share.resourceId, share.ownerUserId);
 		if (!trip) throw error(404, 'Reisen finnes ikke lenger.');
-		return { ...baseResult, resource: { kind: 'tripPosition' as const, ...trip } };
+		return { ...baseResult, resource: { kind: 'tripPosition' as const, ownerName, ...trip } };
 	}
 
 	throw error(400, 'Ukjent ressurstype.');

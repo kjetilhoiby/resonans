@@ -217,6 +217,49 @@ export async function revokeShareToken(ownerUserId: string, tokenId: string): Pr
 	return Boolean(revoked?.id);
 }
 
+export async function revokeShareTokensForResource(
+	ownerUserId: string,
+	resourceType: ShareResourceType,
+	resourceId: string
+): Promise<void> {
+	try {
+		await db
+			.update(shareTokens)
+			.set({ revokedAt: new Date() })
+			.where(
+				and(
+					eq(shareTokens.ownerUserId, ownerUserId),
+					eq(shareTokens.resourceType, resourceType),
+					eq(shareTokens.resourceId, resourceId),
+					isNull(shareTokens.revokedAt)
+				)
+			);
+	} catch (error) {
+		mapStorageError(error);
+	}
+}
+
+/**
+ * Finn et levende (ikke revokert/utløpt) tripPosition-token for en live-session,
+ * eller opprett ett hvis det ikke finnes. Brukes for å gi app-startede sesjoner
+ * og gamle /live-lenker en robust /share-lenke.
+ */
+export async function getOrCreateTripPositionShareToken(
+	ownerUserId: string,
+	liveSessionId: string
+): Promise<ShareTokenListItem> {
+	const now = new Date();
+	const existing = await listShareTokensForResource(ownerUserId, 'tripPosition', liveSessionId);
+	const live = existing.find((t) => !t.expiresAt || t.expiresAt > now);
+	if (live) return live;
+	return createShareToken({
+		ownerUserId,
+		resourceType: 'tripPosition',
+		resourceId: liveSessionId,
+		accessMode: 'read'
+	});
+}
+
 export function buildShareUrl(origin: string, token: string): string {
 	return `${origin.replace(/\/$/, '')}/share/${token}`;
 }

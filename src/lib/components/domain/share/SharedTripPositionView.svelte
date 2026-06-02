@@ -3,48 +3,58 @@
 
 	type Resource = {
 		kind: 'tripPosition';
-		themeId: string;
-		themeName: string;
-		themeEmoji: string | null;
-		destination: string | null;
+		ownerName: string | null;
+		sportType: string;
+		routeLabel: string | null;
+		routeCoordinates: [number, number][] | null;
 		destLat: number | null;
-		destLng: number | null;
-		currentLat: number | null;
-		currentLng: number | null;
-		currentSpeedKmh: number | null;
-		currentTimestamp: Date | string | null;
-		etaMinutes: number | null;
-		distanceKm: number | null;
-		isStale: boolean;
+		destLon: number | null;
+		destLabel: string | null;
+		routeDistanceM: number | null;
+		lastLat: number | null;
+		lastLon: number | null;
+		lastSpeedMps: number | null;
+		etaSeconds: number | null;
+		distanceRemainingM: number | null;
+		progressFraction: number | null;
+		startedAt: string;
+		lastPingAt: string | null;
+		endedAt: string | null;
+		endedReason: string | null;
 	};
 
 	let { resource, token }: { resource: Resource; token: string } = $props();
 
-	let lat = $state(resource.currentLat);
-	let lng = $state(resource.currentLng);
-	let speedKmh = $state(resource.currentSpeedKmh);
-	let distanceKm = $state(resource.distanceKm);
-	let etaMinutes = $state(resource.etaMinutes);
-	let isStale = $state(resource.isStale);
-	let ended = $state(false);
-	let lastTimestamp = $state(resource.currentTimestamp);
+	let lat = $state(resource.lastLat);
+	let lng = $state(resource.lastLon);
+	let speedMps = $state(resource.lastSpeedMps);
+	let etaSeconds = $state(resource.etaSeconds);
+	let distanceRemainingM = $state(resource.distanceRemainingM);
+	let progressFraction = $state(resource.progressFraction);
+	let lastPingAt = $state(resource.lastPingAt);
+	let endedAt = $state(resource.endedAt);
+	let endedReason = $state(resource.endedReason);
 	let secondsSinceUpdate = $state(0);
 
 	let map: maplibregl.Map | null = null;
-	let positionMarker: maplibregl.Marker | null = null;
+	let posMarker: maplibregl.Marker | null = null;
 	let destMarker: maplibregl.Marker | null = null;
 	let pollInterval: ReturnType<typeof setInterval> | null = null;
 	let tickInterval: ReturnType<typeof setInterval> | null = null;
 
+	const isActive = $derived(!endedAt);
 	const hasPosition = $derived(lat !== null && lng !== null);
-	const hasDest = $derived(resource.destLat !== null && resource.destLng !== null);
+	const hasDest = $derived(resource.destLat !== null && resource.destLon !== null);
+	const speedKmh = $derived(speedMps !== null ? Math.round(speedMps * 3.6) : null);
+	const isStale = $derived(secondsSinceUpdate > 120);
 
-	function formatEta(minutes: number | null): string {
-		if (minutes === null) return '—';
-		if (minutes < 1) return 'snart fremme';
-		if (minutes < 60) return `ca. ${minutes} min`;
-		const h = Math.floor(minutes / 60);
-		const m = minutes % 60;
+	function formatEta(secs: number | null): string {
+		if (secs === null) return '—';
+		const min = Math.round(secs / 60);
+		if (min < 1) return 'snart fremme';
+		if (min < 60) return `ca. ${min} min`;
+		const h = Math.floor(min / 60);
+		const m = min % 60;
 		return m === 0 ? `ca. ${h} t` : `ca. ${h} t ${m} min`;
 	}
 
@@ -54,10 +64,21 @@
 		return `${Math.round(secs / 60)} min siden`;
 	}
 
-	function calcSecondsSince(ts: Date | string | null): number {
+	function calcSecondsSince(ts: string | null): number {
 		if (!ts) return 999;
-		const d = typeof ts === 'string' ? new Date(ts) : ts;
-		return Math.round((Date.now() - d.getTime()) / 1000);
+		return Math.round((Date.now() - new Date(ts).getTime()) / 1000);
+	}
+
+	function createPositionDot(): HTMLDivElement {
+		const el = document.createElement('div');
+		el.style.cssText = 'width:20px;height:20px;border-radius:50%;background:#4285f4;border:3px solid #fff;box-shadow:0 0 0 2px rgba(66,133,244,.3);';
+		return el;
+	}
+
+	function createDestPin(): HTMLDivElement {
+		const el = document.createElement('div');
+		el.style.cssText = 'width:14px;height:14px;border-radius:50%;background:#ef4444;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3);';
+		return el;
 	}
 
 	async function poll() {
@@ -65,47 +86,53 @@
 			const res = await fetch(`/api/share-link/${token}/position`);
 			if (!res.ok) return;
 			const d = await res.json();
-			lat = d.currentLat;
-			lng = d.currentLng;
-			speedKmh = d.speedKmh;
-			distanceKm = d.distanceKm;
-			etaMinutes = d.etaMinutes;
-			isStale = d.isStale;
-			ended = d.ended ?? false;
-			lastTimestamp = d.timestamp;
-			secondsSinceUpdate = calcSecondsSince(d.timestamp);
-			updateMap();
-			if (ended && pollInterval) {
+			lat = d.lastLat;
+			lng = d.lastLon;
+			speedMps = d.lastSpeedMps;
+			etaSeconds = d.etaSeconds;
+			distanceRemainingM = d.distanceRemainingM;
+			progressFraction = d.progressFraction;
+			lastPingAt = d.lastPingAt;
+			endedAt = d.endedAt;
+			endedReason = d.endedReason;
+			secondsSinceUpdate = calcSecondsSince(d.lastPingAt);
+			if (lat !== null && lng !== null) {
+				posMarker?.setLngLat([lng, lat]);
+				updateRouteProgress();
+				map?.easeTo({ center: [lng, lat], duration: 1000 });
+			}
+			if (endedAt && pollInterval) {
 				clearInterval(pollInterval);
 				pollInterval = null;
 			}
-		} catch {
-			// neste poll prøver igjen
-		}
+		} catch { /* neste poll prøver igjen */ }
 	}
 
-	function updateMap() {
+	function updateRouteProgress() {
 		if (!map || lat === null || lng === null) return;
-		positionMarker?.setLngLat([lng, lat]);
-		map.easeTo({ center: [lng, lat], duration: 1000 });
-	}
+		const routeCoords = resource.routeCoordinates;
+		if (!routeCoords || routeCoords.length < 2 || !map.getSource('route-progress')) return;
 
-	function createPulsingDot(): HTMLDivElement {
-		const el = document.createElement('div');
-		el.style.cssText =
-			'width:20px;height:20px;border-radius:50%;background:#4285f4;border:3px solid #fff;box-shadow:0 0 0 2px rgba(66,133,244,.3);';
-		return el;
-	}
+		let nearestIdx = 0;
+		let nearestDist = Infinity;
+		for (let i = 0; i < routeCoords.length; i++) {
+			const dlat = routeCoords[i][0] - lat;
+			const dlng = routeCoords[i][1] - lng;
+			const dist = dlat * dlat + dlng * dlng;
+			if (dist < nearestDist) { nearestDist = dist; nearestIdx = i; }
+		}
 
-	function createDestPin(): HTMLDivElement {
-		const el = document.createElement('div');
-		el.style.cssText =
-			'width:14px;height:14px;border-radius:50%;background:#ef4444;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3);';
-		return el;
+		const completed = routeCoords.slice(0, nearestIdx + 1).map((c) => [c[1], c[0]]);
+		completed.push([lng, lat]);
+
+		(map.getSource('route-progress') as maplibregl.GeoJSONSource).setData({
+			type: 'Feature', properties: {},
+			geometry: { type: 'LineString', coordinates: completed }
+		});
 	}
 
 	onMount(async () => {
-		secondsSinceUpdate = calcSecondsSince(lastTimestamp);
+		secondsSinceUpdate = calcSecondsSince(lastPingAt);
 
 		const maplibregl = await import('maplibre-gl');
 		await import('maplibre-gl/dist/maplibre-gl.css');
@@ -114,56 +141,74 @@
 		if (!mapEl) return;
 
 		const center: [number, number] =
-			lat !== null && lng !== null
-				? [lng, lat]
-				: resource.destLng !== null && resource.destLat !== null
-					? [resource.destLng, resource.destLat]
-					: [10.75, 59.91];
+			lat !== null && lng !== null ? [lng, lat]
+			: resource.destLon !== null && resource.destLat !== null ? [resource.destLon, resource.destLat]
+			: [10.75, 59.91];
 
 		map = new maplibregl.Map({
 			container: mapEl,
 			style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
-			center,
-			zoom: 13,
+			center, zoom: 13,
 			attributionControl: false
 		});
-
 		map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left');
 
 		map.on('load', () => {
 			if (!map) return;
 
-			if (hasDest && resource.destLng !== null && resource.destLat !== null) {
-				destMarker = new maplibregl.Marker({ element: createDestPin() })
-					.setLngLat([resource.destLng, resource.destLat])
-					.addTo(map);
+			const routeCoords = resource.routeCoordinates;
+			if (routeCoords && routeCoords.length >= 2) {
+				map.addSource('route', {
+					type: 'geojson',
+					data: {
+						type: 'Feature', properties: {},
+						geometry: { type: 'LineString', coordinates: routeCoords.map((c) => [c[1], c[0]]) }
+					}
+				});
+				map.addLayer({
+					id: 'route', type: 'line', source: 'route',
+					paint: { 'line-color': '#94a3b8', 'line-width': 4, 'line-opacity': 0.5 }
+				});
 
-				if (resource.destination) {
-					destMarker.setPopup(
-						new maplibregl.Popup({ offset: 12, closeButton: false }).setText(resource.destination)
-					);
+				map.addSource('route-progress', {
+					type: 'geojson',
+					data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [] } }
+				});
+				map.addLayer({
+					id: 'route-progress', type: 'line', source: 'route-progress',
+					paint: { 'line-color': '#4285f4', 'line-width': 4, 'line-opacity': 0.85 }
+				});
+				updateRouteProgress();
+			}
+
+			if (hasDest && resource.destLon !== null && resource.destLat !== null) {
+				destMarker = new maplibregl.Marker({ element: createDestPin() })
+					.setLngLat([resource.destLon, resource.destLat]).addTo(map);
+				if (resource.destLabel) {
+					destMarker.setPopup(new maplibregl.Popup({ offset: 12, closeButton: false }).setText(resource.destLabel));
 					destMarker.togglePopup();
 				}
 			}
 
 			if (hasPosition && lng !== null && lat !== null) {
-				positionMarker = new maplibregl.Marker({ element: createPulsingDot() })
-					.setLngLat([lng, lat])
-					.addTo(map);
+				posMarker = new maplibregl.Marker({ element: createPositionDot() })
+					.setLngLat([lng, lat]).addTo(map);
 			}
 
-			if (hasPosition && hasDest && lng !== null && lat !== null && resource.destLng !== null && resource.destLat !== null) {
-				const bounds = new maplibregl.LngLatBounds(
-					[lng, lat],
-					[resource.destLng, resource.destLat]
-				);
+			if (hasPosition && hasDest && lng !== null && lat !== null && resource.destLon !== null && resource.destLat !== null) {
+				const bounds = new maplibregl.LngLatBounds([lng, lat], [resource.destLon, resource.destLat]);
+				if (routeCoords) {
+					for (const c of routeCoords) bounds.extend([c[1], c[0]]);
+				}
 				map.fitBounds(bounds, { padding: 60 });
 			}
 		});
 
-		pollInterval = setInterval(poll, 10_000);
+		if (isActive) {
+			pollInterval = setInterval(poll, 10_000);
+		}
 		tickInterval = setInterval(() => {
-			secondsSinceUpdate = calcSecondsSince(lastTimestamp);
+			secondsSinceUpdate = calcSecondsSince(lastPingAt);
 		}, 1000);
 	});
 
@@ -175,45 +220,44 @@
 </script>
 
 <section class="trip-position">
-	{#if ended}
-		<div class="ended-banner">Framme!</div>
+	{#if !isActive}
+		<div class="ended-banner">
+			{endedReason === 'arrived' ? 'Framme!' : 'Turen er avsluttet'}
+		</div>
 	{/if}
 
 	<div id="live-map" class="map"></div>
 
 	<div class="info-card">
 		<header>
-			<h1>
-				{#if resource.themeEmoji}<span class="emoji">{resource.themeEmoji}</span>{/if}
-				{resource.themeName}
-			</h1>
-			{#if resource.destination}
-				<p class="dest">→ {resource.destination}</p>
+			{#if resource.ownerName}<div class="owner">{resource.ownerName}</div>{/if}
+			{#if resource.routeLabel}
+				<h1>{resource.routeLabel}</h1>
+			{/if}
+			{#if resource.destLabel}
+				<p class="dest">→ {resource.destLabel}</p>
 			{/if}
 		</header>
 
-		{#if !hasPosition && !ended}
+		{#if !hasPosition && isActive}
 			<p class="empty">Venter på posisjon fra appen …</p>
-		{:else if !ended}
+		{:else if isActive}
 			<div class="stats">
 				<div class="stat">
 					<span class="label">Ankomst</span>
-					<span class="value">{formatEta(etaMinutes)}</span>
+					<span class="value">{formatEta(etaSeconds)}</span>
 				</div>
 				<div class="stat">
-					<span class="label">Avstand</span>
+					<span class="label">Igjen</span>
 					<span class="value">
-						{distanceKm !== null ? `${distanceKm.toFixed(1)} km` : '—'}
+						{distanceRemainingM !== null ? `${(distanceRemainingM / 1000).toFixed(1)} km` : '—'}
 					</span>
 				</div>
 				<div class="stat">
 					<span class="label">Fart</span>
-					<span class="value">
-						{speedKmh !== null ? `${Math.round(speedKmh)} km/t` : '—'}
-					</span>
+					<span class="value">{speedKmh !== null ? `${speedKmh} km/t` : '—'}</span>
 				</div>
 			</div>
-
 			<p class="updated" class:stale={isStale}>
 				{formatUpdated(secondsSinceUpdate)}
 				{#if isStale}<span class="stale-tag">· signal mistet</span>{/if}
@@ -238,12 +282,14 @@
 	.info-card {
 		padding: 1rem;
 	}
+	.owner {
+		font-size: 0.8rem;
+		color: #999;
+		margin-bottom: 0.15rem;
+	}
 	.info-card h1 {
 		font-size: 1.3rem;
-		margin: 0 0 0.15rem;
-	}
-	.emoji {
-		margin-right: 0.3rem;
+		margin: 0 0 0.1rem;
 	}
 	.dest {
 		color: #555;
@@ -284,12 +330,8 @@
 		color: #999;
 		text-align: center;
 	}
-	.updated.stale {
-		color: #b16a00;
-	}
-	.stale-tag {
-		margin-left: 0.2rem;
-	}
+	.updated.stale { color: #b16a00; }
+	.stale-tag { margin-left: 0.2rem; }
 	.ended-banner {
 		position: absolute;
 		top: 1rem;

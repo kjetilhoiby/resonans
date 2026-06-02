@@ -47,6 +47,31 @@
 	let { themeId, themeEmoji = null, tripProfile = $bindable(null), onProfileSaved }: Props = $props();
 
 	let positionShareOpen = $state(false);
+	let activeSessionId = $state<string | null>(null);
+	let positionShareLoading = $state(false);
+	let positionShareError = $state('');
+
+	// Posisjonsdeling henger på en aktiv live-sesjon (matet av appen), ikke temaet.
+	// Hentes ved klikk så vi vet om det finnes noe å dele.
+	async function openPositionShare() {
+		positionShareError = '';
+		positionShareLoading = true;
+		try {
+			const res = await fetch('/api/apps/live-session');
+			if (!res.ok) throw new Error('kunne ikke hente sesjon');
+			const data = await res.json();
+			if (!data.active || !data.sessionId) {
+				positionShareError = 'Ingen aktiv tur. Start sporing i appen for å dele live posisjon.';
+				return;
+			}
+			activeSessionId = data.sessionId;
+			positionShareOpen = true;
+		} catch {
+			positionShareError = 'Klarte ikke å åpne posisjonsdeling. Prøv igjen.';
+		} finally {
+			positionShareLoading = false;
+		}
+	}
 
 	/* ── Profil-state ─────────────────────────────── */
 	let editMode = $state(false);
@@ -362,9 +387,12 @@
 						<p class="trip-duration">{tripDuration} {tripDuration === 1 ? 'dag' : 'dager'}</p>
 					{/if}
 				{/if}
-				<button class="trip-share-position-btn" onclick={() => (positionShareOpen = true)}>
-					↗ Del live posisjon
+				<button class="trip-share-position-btn" onclick={openPositionShare} disabled={positionShareLoading}>
+					↗ {positionShareLoading ? 'Åpner…' : 'Del live posisjon'}
 				</button>
+				{#if positionShareError}
+					<p class="trip-share-position-error">{positionShareError}</p>
+				{/if}
 			</div>
 			<div class="trip-hero-right">
 				{#if countdown !== null}
@@ -611,13 +639,15 @@
 	{/if}
 </div>
 
-<ShareSheet
-	resourceType="tripPosition"
-	resourceId={themeId}
-	resourceTitle={tripProfile?.destination ?? 'Live posisjon'}
-	open={positionShareOpen}
-	onClose={() => (positionShareOpen = false)}
-/>
+{#if activeSessionId}
+	<ShareSheet
+		resourceType="tripPosition"
+		resourceId={activeSessionId}
+		resourceTitle={tripProfile?.destination ?? 'Live posisjon'}
+		open={positionShareOpen}
+		onClose={() => (positionShareOpen = false)}
+	/>
+{/if}
 
 <style>
 	.trip-dash {
@@ -1017,6 +1047,13 @@
 		cursor: pointer;
 	}
 	.trip-share-position-btn:hover { border-color: #7c8ef5; color: #fff; }
+	.trip-share-position-btn:disabled { opacity: 0.6; cursor: default; }
+	.trip-share-position-error {
+		margin-top: 6px;
+		font-size: 12px;
+		color: #e6a23c;
+		max-width: 280px;
+	}
 	.trip-btn-secondary {
 		background: var(--tp-bg-2);
 		border: 1px solid var(--tp-border);
