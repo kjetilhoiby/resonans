@@ -2207,6 +2207,13 @@
 					{/if}
 					{#if ruleForm.processingType === 'school_plan'}
 						<div class="field">
+							<label for="rule-extra-prompt">Ekstra instruksjoner til AI-en (valgfritt)</label>
+							<textarea id="rule-extra-prompt" class="input" bind:value={ruleForm.extractionPrompt} rows="4" placeholder="F.eks. «Dette er SFO for Nils — ignorer info om søsken». Legges til standard-uttrekket."></textarea>
+							<p class="field-hint">Brukes i tillegg til standard skole-/barnehage-uttrekket. Bra for kilde-spesifikke vink (hvilket barn, hva som skal ignoreres osv.).</p>
+						</div>
+					{/if}
+					{#if ruleForm.processingType === 'school_plan'}
+						<div class="field">
 							<label for="rule-person">Knytt til person</label>
 							<Select id="rule-person" className="input" bind:value={ruleForm.personId}>
 								<option value="">Ingen / utled fra innhold</option>

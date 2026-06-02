@@ -48,7 +48,7 @@ function isValidIsoDate(value: string | null): value is string {
 	return !!value && /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
-function buildPrompt(children: string[], todayIso: string): string {
+function buildPrompt(children: string[], todayIso: string, extraPrompt?: string | null): string {
 	const childList = children.length
 		? `Kjente barn i denne familien: ${children.join(', ')}.`
 		: 'Ingen kjente barn er registrert.';
@@ -83,7 +83,11 @@ Regler:
 - Bruk barnets navn i "person" kun når du er rimelig sikker. Ellers null.
 - Ikke finn på datoer. Sett "dato": null hvis den ikke kan utledes trygt.
 - Ta med avvik som "stenger tidligere" som egne funn (type "info" eller "event" med dato hvis kjent).
-- Hopp over rent sosialt fyll og generelle hilsener.`;
+- Hopp over rent sosialt fyll og generelle hilsener.${
+		extraPrompt?.trim()
+			? `\n\nEkstra instruksjoner fra brukeren for denne kilden (følg disse i tillegg):\n${extraPrompt.trim()}`
+			: ''
+	}`;
 }
 
 // Ukeplaner kommer ofte som PDF-vedlegg. OpenAI kan lese PDF direkte som
@@ -103,7 +107,8 @@ function pdfAttachments(payload: InboundEmailPayload) {
 async function extractFindings(
 	payload: InboundEmailPayload,
 	children: string[],
-	todayIso: string
+	todayIso: string,
+	extraPrompt?: string | null
 ): Promise<Extraction | null> {
 	const body = payload.TextBody || (payload.HtmlBody ? stripHtml(payload.HtmlBody) : '');
 	const pdfs = pdfAttachments(payload);
@@ -134,7 +139,7 @@ async function extractFindings(
 	const completion = await openai.chat.completions.create({
 		model,
 		messages: [
-			{ role: 'system', content: buildPrompt(children, todayIso) },
+			{ role: 'system', content: buildPrompt(children, todayIso, extraPrompt) },
 			{ role: 'user', content: userContent }
 		],
 		response_format: { type: 'json_object' },
@@ -187,7 +192,7 @@ export async function processSchoolPlanEmail(
 	});
 	const childNames = children.flatMap((c) => [c.name, ...(c.aliases ?? [])]);
 
-	const extraction = await extractFindings(payload, childNames, todayIso);
+	const extraction = await extractFindings(payload, childNames, todayIso, rule.extractionPrompt);
 	if (!extraction || extraction.funn.length === 0) {
 		return { skipped: true, reason: 'no_findings' };
 	}
