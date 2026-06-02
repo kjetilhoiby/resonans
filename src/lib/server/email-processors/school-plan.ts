@@ -2,6 +2,7 @@ import { db } from '$lib/db';
 import { persons, users, emailRules, sensorEvents } from '$lib/db/schema';
 import { and, eq, sql } from 'drizzle-orm';
 import { openai } from '$lib/server/openai';
+import type { ChatCompletionContentPart } from 'openai/resources/chat/completions';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
 import { findOrCreateEmailSensor, type InboundEmailPayload } from './shared';
 import { addDatedItems, type DatedItem } from './day-checklist';
@@ -53,6 +54,7 @@ function buildPrompt(children: string[], todayIso: string): string {
 		: 'Ingen kjente barn er registrert.';
 
 	return `Du leser en e-post fra en skole eller barnehage (ukeplan, månedsplan eller infoskriv).
+Selve planen kan ligge i et vedlagt PDF-dokument — les hele innholdet i det, inkludert tabeller og dag-for-dag-oppsett.
 Trekk ut KONKRETE, handlingsrettede ting en forelder må huske. Vær ekstra oppmerksom på
 detaljer som lett glemmes — f.eks. "stenger 45 minutter før", "ha med tursko", "ta med matpakke",
 turer, temadager, frister og avvik fra normal åpningstid.
@@ -84,26 +86,56 @@ Regler:
 - Hopp over rent sosialt fyll og generelle hilsener.`;
 }
 
+// Ukeplaner kommer ofte som PDF-vedlegg. OpenAI kan lese PDF direkte som
+// `file`-input (modellen rendrer sidene og «ser» dem) — det fanger også
+// skannede/tabell-tunge planer som ren tekstuttrekking bommer på.
+const MAX_PDF_BYTES = 16 * 1024 * 1024;
+
+function pdfAttachments(payload: InboundEmailPayload) {
+	return (payload.Attachments ?? []).filter((a) => {
+		const isPdf =
+			a.ContentType?.toLowerCase().includes('pdf') || a.Name?.toLowerCase().endsWith('.pdf');
+		const fitsLimit = !a.ContentLength || a.ContentLength <= MAX_PDF_BYTES;
+		return isPdf && a.Content && fitsLimit;
+	});
+}
+
 async function extractFindings(
 	payload: InboundEmailPayload,
 	children: string[],
 	todayIso: string
 ): Promise<Extraction | null> {
 	const body = payload.TextBody || (payload.HtmlBody ? stripHtml(payload.HtmlBody) : '');
-	if (!body && !payload.Subject) return null;
+	const pdfs = pdfAttachments(payload);
+	if (!body && !payload.Subject && pdfs.length === 0) return null;
 
 	const emailContent = [
 		`Fra: ${payload.From}`,
 		`Emne: ${payload.Subject ?? '(ingen)'}`,
+		pdfs.length ? `Vedlegg: ${pdfs.map((a) => a.Name).join(', ')} (se PDF under)` : '',
 		'',
 		body.slice(0, 8000)
-	].join('\n');
+	].filter(Boolean).join('\n');
+
+	const userContent: ChatCompletionContentPart[] = [{ type: 'text', text: emailContent }];
+	for (const pdf of pdfs.slice(0, 3)) {
+		userContent.push({
+			type: 'file',
+			file: {
+				filename: pdf.Name || 'ukeplan.pdf',
+				file_data: `data:application/pdf;base64,${pdf.Content}`
+			}
+		});
+	}
+
+	// Bruk vision-modell når PDF er med (krever bilde-/fil-forståelse); ellers den raske.
+	const model = pdfs.length > 0 ? 'gpt-4o' : 'gpt-4o-mini';
 
 	const completion = await openai.chat.completions.create({
-		model: 'gpt-4o-mini',
+		model,
 		messages: [
 			{ role: 'system', content: buildPrompt(children, todayIso) },
-			{ role: 'user', content: emailContent }
+			{ role: 'user', content: userContent }
 		],
 		response_format: { type: 'json_object' },
 		temperature: 0.1,
