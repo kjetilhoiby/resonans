@@ -258,13 +258,23 @@ export async function loadFamilyDashboardData(userId: string): Promise<FamilyDas
 	// + sjekklister). Minner/mål/samtaler holdes utenfor — de hører til person-
 	// detaljen.
 	const knownPersonIds = new Set(personIds);
-	const [msgMentionRows, taskMentionRows, checklistMentionRows] = personIds.length
-		? await Promise.all([
+	// Mentions er en sekundær kilde — la feeden degradere til tom i stedet for å
+	// felle hele dashboardet hvis spørringene feiler (samme robusthet som
+	// PersonDetailSheet, som henter mentions via et separat API).
+	let msgMentionRows: Awaited<ReturnType<typeof PersonMentionService.listMessageMentionsForUser>> = [];
+	let taskMentionRows: Awaited<ReturnType<typeof PersonMentionService.listTaskMentionsForUser>> = [];
+	let checklistMentionRows: Awaited<ReturnType<typeof PersonMentionService.listChecklistItemMentionsForUser>> = [];
+	if (personIds.length) {
+		try {
+			[msgMentionRows, taskMentionRows, checklistMentionRows] = await Promise.all([
 				PersonMentionService.listMessageMentionsForUser(userId, { limit: 100 }),
 				PersonMentionService.listTaskMentionsForUser(userId, { limit: 100 }),
 				PersonMentionService.listChecklistItemMentionsForUser(userId, { limit: 100 })
-			])
-		: [[], [], []];
+			]);
+		} catch (err) {
+			console.error('[family-dashboard] kunne ikke laste mentions for feed:', err);
+		}
+	}
 
 	const feed: FamilyFeedItem[] = [];
 
