@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { FamilyDashboardData } from '$lib/client/dashboard-cache';
 	import FamilyTree from './family/FamilyTree.svelte';
-	import PersonCard from './family/PersonCard.svelte';
+	import FamilyFeed from './family/FamilyFeed.svelte';
 	import PersonDetailSheet from './family/PersonDetailSheet.svelte';
 
 	interface Props {
@@ -64,19 +64,9 @@
 			<FamilyTree tree={data.tree} onSelectPerson={selectPerson} />
 		</section>
 
-		<section class="cards-section">
-			<h3>Personer</h3>
-			<div class="cards">
-				{#each data.persons as person (person.id)}
-					<PersonCard
-						{person}
-						recentMemory={data.recentMemoriesByPerson[person.id]?.[0]}
-						nextEvent={data.upcomingEventsByPerson[person.id]?.[0]}
-						openGoalsCount={data.openGoalsByPerson[person.id]?.length ?? 0}
-						onClick={selectPerson}
-					/>
-				{/each}
-			</div>
+		<section class="feed-section">
+			<h3>Strøm</h3>
+			<FamilyFeed feed={data.feed} persons={data.persons} onSelectPerson={selectPerson} />
 		</section>
 	{/if}
 
@@ -133,11 +123,6 @@
 		margin: 0 0 0.5rem;
 		font-size: 0.95rem;
 		opacity: 0.8;
-	}
-	.cards {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-		gap: 0.75rem;
 	}
 	.sheet-overlay {
 		position: fixed;
