@@ -120,6 +120,15 @@
 			actualSeries.push({ x: xForDate(point.date), yValue: runningValue });
 		}
 
+		// For en kumulativ (incremental) serie: forankre linja på baseline ved
+		// startdatoen. Uten dette gir et mål med kun én loggført dag en path med
+		// ett punkt ("M x y") som ikke tegner noe — linja ser ut til å være borte.
+		// Anker-punktet sørger også for at den kumulative linja stiger fra 0 i
+		// stedet for å starte på første dags verdi.
+		if (seriesMode === 'incremental' && actualSeries.length > 0) {
+			actualSeries.unshift({ x: xAt(0), yValue: startValue });
+		}
+
 		const observed = actualSeries.map((point) => point.yValue);
 		const rawMin = Math.min(startValue, targetValue, currentValue, ...observed);
 		const rawMax = Math.max(startValue, targetValue, currentValue, ...observed);
@@ -157,6 +166,11 @@
 				gapPath = `M${lastPoint.x.toFixed(1)} ${lastY.toFixed(1)} L${todayX.toFixed(1)} ${lastY.toFixed(1)}`;
 			}
 		}
+		// Marker på siste/nåværende datapunkt. Gjør at et enkelt datapunkt alltid
+		// er synlig (ellers tegner en ett-punkts path ingenting), uavhengig av modus.
+		const lastActual = actualSeries.length > 0 ? actualSeries[actualSeries.length - 1] : null;
+		const currentMarker = lastActual ? { x: lastActual.x, y: yAt(lastActual.yValue) } : null;
+
 		const resolvedGridValues = gridValues.length > 0
 			? gridValues
 			: [Math.round(yMax * 10) / 10, Math.round(((yMin + yMax) / 2) * 10) / 10, Math.round(yMin * 10) / 10];
@@ -169,6 +183,7 @@
 			areaPath,
 			planPath,
 			gapPath,
+			currentMarker,
 			todayX,
 			gridLines: resolvedGridValues.map((value) => ({ value, y: yAt(value), label: valueFormatter(value) })),
 			yBottom: padT + ph
@@ -195,6 +210,10 @@
 
 		{#if chart.gapPath}
 			<path d={chart.gapPath} class="actual-gap-path" stroke={actualStroke} stroke-width="2" fill="none" />
+		{/if}
+
+		{#if chart.currentMarker}
+			<circle class:ready cx={chart.currentMarker.x} cy={chart.currentMarker.y} r="3.5" fill={actualStroke} class="actual-marker" />
 		{/if}
 
 		{#if chart.todayX !== null}
@@ -253,6 +272,15 @@
 		to {
 			opacity: 0.65;
 		}
+	}
+
+	.actual-marker {
+		opacity: 0;
+		transition: opacity 0.3s ease 0.5s;
+	}
+
+	.actual-marker.ready {
+		opacity: 1;
 	}
 
 	.trajectory-area {
