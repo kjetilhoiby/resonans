@@ -24,6 +24,7 @@ interface Finding {
 interface Extraction {
 	kilde: string;
 	sammendrag: string;
+	digest: string; // tapsfri gjengivelse av ALT innhold — sikkerhetsnett mot at funn-strukturen glipper
 	funn: Finding[];
 }
 
@@ -66,6 +67,7 @@ Returner KUN gyldig JSON med denne strukturen:
 {
   "kilde": "barnehage" | "skole" | "sfo" | "annet",
   "sammendrag": "én kort setning om hva e-posten gjelder",
+  "digest": "en FULLSTENDIG og trofast gjengivelse av ALT relevant innhold, som markdown-punktliste. Ikke utelat noe en forelder kan trenge — ta med datoer, tider, navn, beskjeder og detaljer selv om de ikke passer som et eget 'funn'. Dette er sikkerhetsnettet.",
   "funn": [
     {
       "type": "todo" | "bring" | "event" | "info",
@@ -83,6 +85,7 @@ Regler:
 - Bruk barnets navn i "person" kun når du er rimelig sikker. Ellers null.
 - Ikke finn på datoer. Sett "dato": null hvis den ikke kan utledes trygt.
 - Ta med avvik som "stenger tidligere" som egne funn (type "info" eller "event" med dato hvis kjent).
+- "digest" skal være KOMPLETT (alt relevant tas med). "funn" skal være KONSERVATIV — kun ting du er trygg på er handlingsrettet. Er du i tvil, la det stå i "digest" og dropp det som "funn"; da går ingenting tapt.
 - Hopp over rent sosialt fyll og generelle hilsener.${
 		extraPrompt?.trim()
 			? `\n\nEkstra instruksjoner fra brukeren for denne kilden (følg disse i tillegg):\n${extraPrompt.trim()}`
@@ -153,6 +156,7 @@ async function extractFindings(
 		return {
 			kilde: parsed.kilde ?? 'annet',
 			sammendrag: parsed.sammendrag ?? '',
+			digest: typeof parsed.digest === 'string' ? parsed.digest : '',
 			funn: Array.isArray(parsed.funn) ? parsed.funn : []
 		};
 	} catch {
@@ -193,8 +197,8 @@ export async function processSchoolPlanEmail(
 	const childNames = children.flatMap((c) => [c.name, ...(c.aliases ?? [])]);
 
 	const extraction = await extractFindings(payload, childNames, todayIso, rule.extractionPrompt);
-	if (!extraction || extraction.funn.length === 0) {
-		return { skipped: true, reason: 'no_findings' };
+	if (!extraction || (extraction.funn.length === 0 && !extraction.digest.trim())) {
+		return { skipped: true, reason: 'no_content' };
 	}
 
 	// Default-person fra regelen (f.eks. barnehage-etikett → ett barn).
@@ -273,6 +277,7 @@ export async function processSchoolPlanEmail(
 			data: {
 				kilde: extraction.kilde,
 				sammendrag: extraction.sammendrag,
+				digest: extraction.digest,
 				funn: extraction.funn,
 				emailSubject: payload.Subject,
 				emailFrom: payload.From
@@ -287,8 +292,9 @@ export async function processSchoolPlanEmail(
 		userId,
 		appUrl,
 		kilde: extraction.kilde,
+		digest: extraction.digest,
 		sammendrag: extraction.sammendrag,
-		findings: extraction.funn,
+		addedItems: datedItems.map((d) => ({ text: d.text, isoDate: d.isoDate })),
 		datedCount: inserted
 	}).catch((err) => console.error('[school-plan] triage nudge failed:', err));
 
@@ -302,31 +308,34 @@ export async function processSchoolPlanEmail(
 
 function formatTriageMessage(args: {
 	kilde: string;
+	digest: string;
 	sammendrag: string;
-	findings: Finding[];
+	addedItems: Array<{ text: string; isoDate: string }>;
 }): string {
-	const { kilde, sammendrag, findings } = args;
+	const { kilde, digest, sammendrag, addedItems } = args;
 	const lines: string[] = [];
-	lines.push(`📋 **Fant ${findings.length} ting fra ${kilde} du bør vite om.**`);
+	lines.push(`📋 **Ny ${kilde}-info gjennomgått.**`);
 	if (sammendrag) lines.push(`\n${sammendrag}`);
-	lines.push('');
 
-	const icon: Record<Finding['type'], string> = {
-		todo: '✅',
-		bring: '🎒',
-		event: '📅',
-		info: 'ℹ️'
-	};
+	// Tapsfri digest — alt innholdet, slik at ingenting glipper.
+	if (digest.trim()) {
+		lines.push('');
+		lines.push(digest.trim());
+	}
 
-	for (const f of findings) {
-		const who = f.person ? `**${f.person}** – ` : '';
-		const when = f.dato ? ` (${f.dato}${f.tid ? ` kl ${f.tid}` : ''})` : '';
-		const detail = f.detalj ? ` — ${f.detalj}` : '';
-		lines.push(`${icon[f.type] ?? '•'} ${who}${f.tittel}${when}${detail}`);
+	// Hva som allerede er lagt automatisk i dagslistene.
+	if (addedItems.length > 0) {
+		lines.push('');
+		lines.push(`**Lagt automatisk i dagslistene (${addedItems.length}):**`);
+		for (const item of addedItems) {
+			lines.push(`- ${item.text} — ${item.isoDate}`);
+		}
 	}
 
 	lines.push('');
-	lines.push('Daterte ting er lagt i dagslistene. Spør meg hvis noe bør justeres.');
+	lines.push(
+		'Si fra hvis noe mangler eller skal endres — jeg kan legge til, datofeste eller knytte punkter til riktig barn for deg.'
+	);
 	return lines.join('\n');
 }
 
@@ -334,29 +343,30 @@ async function sendTriageNudge(args: {
 	userId: string;
 	appUrl?: string;
 	kilde: string;
+	digest: string;
 	sammendrag: string;
-	findings: Finding[];
+	addedItems: Array<{ text: string; isoDate: string }>;
 	datedCount: number;
 }) {
-	const { userId, appUrl, kilde, sammendrag, findings, datedCount } = args;
+	const { userId, appUrl, kilde, digest, sammendrag, addedItems, datedCount } = args;
 
 	const conversation = await createConversation(userId);
-	const content = formatTriageMessage({ kilde, sammendrag, findings });
+	const content = formatTriageMessage({ kilde, digest, sammendrag, addedItems });
 	await addMessage({
 		conversationId: conversation.id,
 		role: 'assistant',
 		content,
-		metadata: { source: 'school_plan_triage', kilde, findingsCount: findings.length }
+		metadata: { source: 'school_plan_triage', kilde, addedCount: datedCount }
 	});
 
 	const url = appUrl
 		? new URL(`/samtaler?conversation=${conversation.id}`, appUrl).toString()
 		: `/samtaler?conversation=${conversation.id}`;
 
-	const title = `📋 ${findings.length} ting fra ${kilde}`;
+	const title = `📋 Ny info fra ${kilde}`;
 	const body =
 		datedCount > 0
-			? `${datedCount} lagt i dagslistene. Trykk for triage.`
+			? `${datedCount} lagt i dagslistene. Trykk for å se alt.`
 			: 'Trykk for å se hva som er verdt å vite.';
 
 	const user = await db.query.users.findFirst({
