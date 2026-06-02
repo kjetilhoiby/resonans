@@ -294,15 +294,19 @@
 	</header>
 
 	{#if editing && fullPerson}
-		<PersonEditSheet
-			person={fullPerson}
-			onClose={() => (editing = false)}
-			onSaved={(updated) => {
-				editing = false;
-				fullPerson = updated;
-				onPersonUpdated?.(updated.id);
-			}}
-		/>
+		<div class="edit-overlay" onclick={() => (editing = false)} role="presentation">
+			<div class="edit-wrap" onclick={(e) => e.stopPropagation()} role="presentation">
+				<PersonEditSheet
+					person={fullPerson}
+					onClose={() => (editing = false)}
+					onSaved={(updated) => {
+						editing = false;
+						fullPerson = updated;
+						onPersonUpdated?.(updated.id);
+					}}
+				/>
+			</div>
+		</div>
 	{/if}
 
 	<div class="filters" role="tablist">
@@ -400,6 +404,23 @@
 		align-items: flex-start;
 		gap: 1rem;
 		flex-wrap: wrap;
+	}
+
+	/* Redigering popper opp som eget bunn-panel oppå detalj-arket, i stedet for
+	   å injiseres inline midt i innholdet (som havnet langt nede i scrollen). */
+	.edit-overlay {
+		position: fixed;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.5);
+		display: flex;
+		align-items: flex-end;
+		justify-content: center;
+		z-index: 1100;
+		padding: 1rem;
+	}
+	.edit-wrap {
+		width: 100%;
+		max-width: 560px;
 	}
 	.title { display: flex; align-items: center; gap: 0.75rem; }
 	.title h2 { margin: 0; font-size: 1.25rem; color: #f0f0f0; }
