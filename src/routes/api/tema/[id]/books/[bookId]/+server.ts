@@ -55,7 +55,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 	const book = await db.query.books.findFirst({
 		where: and(eq(books.id, params.bookId), eq(books.userId, locals.userId)),
-		columns: { id: true, totalPages: true }
+		columns: { id: true, totalPages: true, loanStartDate: true }
 	});
 	if (!book) return json({ error: 'Not found' }, { status: 404 });
 
@@ -78,6 +78,22 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 		}
 		if (body.status === 'completed' && !body.finishedAt) {
 			updates.finishedAt = new Date();
+		}
+	}
+	if (body?.loanDueDate !== undefined) {
+		// null/'' fjerner lånet; en ISO-dato markerer boka som lån med innleveringsdato
+		if (body.loanDueDate === null || body.loanDueDate === '') {
+			updates.loanDueDate = null;
+			updates.loanStartDate = null;
+		} else {
+			const due = new Date(body.loanDueDate);
+			if (Number.isNaN(due.getTime())) {
+				return json({ error: 'invalid loanDueDate' }, { status: 400 });
+			}
+			updates.loanDueDate = due;
+			// Registrer startpunktet første gang lånet settes — beholdes ved
+			// senere endring/fornyelse så progressbaren ikke nullstilles.
+			if (!book.loanStartDate) updates.loanStartDate = new Date();
 		}
 	}
 	if (body?.contextPack !== undefined) updates.contextPack = body.contextPack;

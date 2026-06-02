@@ -28,6 +28,8 @@
 		contextProgress?: BookContextProgressEnvelope | null;
 		startedAt: string | null;
 		finishedAt: string | null;
+		loanDueDate: string | null;
+		loanStartDate: string | null;
 		createdAt: string;
 	}
 
@@ -1069,6 +1071,68 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 	function fmtDate(iso: string): string {
 		return new Intl.DateTimeFormat('nb-NO', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(iso));
 	}
+
+	/** YYYY-MM-DD for <input type="date"> binding. */
+	function toDateInput(iso: string | null): string {
+		if (!iso) return '';
+		const d = new Date(iso);
+		if (Number.isNaN(d.getTime())) return '';
+		return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+	}
+
+	/** Antall hele dager fra i dag til innleveringsdato (negativt = forfalt). */
+	function daysUntil(iso: string): number {
+		const today = new Date();
+		today.setHours(0, 0, 0, 0);
+		const due = new Date(iso);
+		due.setHours(0, 0, 0, 0);
+		return Math.round((due.getTime() - today.getTime()) / 86_400_000);
+	}
+
+	type LoanInfo = { label: string; tone: 'overdue' | 'soon' | 'ok' };
+	/** Tekst + farge-tone for hvor lenge det er til innlevering. */
+	function loanInfo(iso: string): LoanInfo {
+		const d = daysUntil(iso);
+		if (d < 0) return { label: d === -1 ? 'Forfalt i går' : `Forfalt for ${-d} dager siden`, tone: 'overdue' };
+		if (d === 0) return { label: 'Leveres i dag', tone: 'overdue' };
+		if (d === 1) return { label: 'Leveres i morgen', tone: 'soon' };
+		if (d <= 3) return { label: `${d} dager igjen`, tone: 'soon' };
+		return { label: `${d} dager igjen`, tone: 'ok' };
+	}
+
+	/** Hvor stor andel (0–100) av låneperioden som er gått. Fylles mot innlevering. */
+	function loanProgress(book: Book): number {
+		if (!book.loanDueDate) return 0;
+		const due = new Date(book.loanDueDate).getTime();
+		const start = book.loanStartDate ? new Date(book.loanStartDate).getTime() : due;
+		const span = due - start;
+		if (span <= 0) return 100;
+		const elapsed = Date.now() - start;
+		return Math.max(0, Math.min(100, Math.round((elapsed / span) * 100)));
+	}
+
+	let loanSaving = $state(false);
+	/** Sett eller fjern innleveringsdato på en bok. dateStr = '' fjerner lånet. */
+	async function setLoanDueDate(book: Book, dateStr: string) {
+		loanSaving = true;
+		try {
+			// Lokal middag for å unngå tidssone-skli rundt midnatt
+			const loanDueDate = dateStr ? new Date(`${dateStr}T12:00:00`).toISOString() : null;
+			const res = await fetch(`/api/tema/${themeId}/books/${book.id}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ loanDueDate })
+			});
+			if (!res.ok) throw new Error('save failed');
+			const updated: Book = await res.json();
+			books = books.map((b) => (b.id === updated.id ? updated : b));
+			if (selectedBook?.id === updated.id) selectedBook = updated;
+		} catch (err) {
+			console.warn('⚠️ Kunne ikke lagre innleveringsdato:', err);
+		} finally {
+			loanSaving = false;
+		}
+	}
 </script>
 
 {#if selectedBook}
@@ -1447,6 +1511,23 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 						{/if}
 						{#if selectedBook.startedAt}<dt>Startet</dt><dd>{fmtDate(selectedBook.startedAt)}</dd>{/if}
 						{#if selectedBook.finishedAt}<dt>Ferdig</dt><dd>{fmtDate(selectedBook.finishedAt)}</dd>{/if}
+						<dt>Innlevering</dt>
+						<dd>
+							<div class="bk-loan-row">
+								<input
+									type="date"
+									class="bk-loan-input"
+									value={toDateInput(selectedBook.loanDueDate)}
+									disabled={loanSaving}
+									onchange={(e) => setLoanDueDate(selectedBook!, (e.currentTarget as HTMLInputElement).value)}
+								/>
+								{#if selectedBook.loanDueDate}
+									{@const li = loanInfo(selectedBook.loanDueDate)}
+									<span class="bk-loan-status {li.tone}">{li.label}</span>
+									<button class="bk-link" onclick={() => setLoanDueDate(selectedBook!, '')} disabled={loanSaving}>Fjern</button>
+								{/if}
+							</div>
+						</dd>
 					</dl>
 				</div>
 
@@ -2004,6 +2085,11 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 							<p class="bk-card-pct">🎧 {pct}% · {formatMinutes(book.currentMinutes)}</p>
 						{:else}
 							<p class="bk-card-pct">{statusEmoji(book.status)} {statusLabel(book.status)}</p>
+						{/if}
+						{#if book.loanDueDate}
+							{@const li = loanInfo(book.loanDueDate)}
+							<div class="bk-card-loan-bar"><div class="bk-card-loan-fill {li.tone}" style="width:{loanProgress(book)}%"></div></div>
+							<p class="bk-card-loan {li.tone}">📚 Innlevering {fmtDate(book.loanDueDate)} · {li.label}</p>
 						{/if}
 					</div>
 				</button>
@@ -2952,6 +3038,55 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		color: #666;
 		margin: 0;
 	}
+
+	.bk-card-loan-bar {
+		height: 4px;
+		background: #1e1e1e;
+		border-radius: 99px;
+		overflow: hidden;
+		margin-top: 6px;
+	}
+	.bk-card-loan-fill {
+		height: 100%;
+		border-radius: 99px;
+		transition: width 0.3s ease;
+	}
+	.bk-card-loan-fill.ok { background: #5a8acb; }
+	.bk-card-loan-fill.soon { background: #e0a050; }
+	.bk-card-loan-fill.overdue { background: #e07070; }
+	.bk-card-loan {
+		font-size: 0.72rem;
+		margin: 3px 0 0;
+		font-weight: 500;
+	}
+	.bk-card-loan.ok { color: #8a8a8a; }
+	.bk-card-loan.soon { color: #e0a050; }
+	.bk-card-loan.overdue { color: #e07070; }
+
+	/* Lån / innleveringsdato i fakta-fanen */
+	.bk-loan-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex-wrap: wrap;
+	}
+	.bk-loan-input {
+		background: #15151c;
+		border: 1px solid #2a2a2a;
+		border-radius: 8px;
+		color: #d0d0e0;
+		padding: 4px 8px;
+		font-size: 0.8rem;
+		color-scheme: dark;
+	}
+	.bk-loan-input:disabled { opacity: 0.5; }
+	.bk-loan-status {
+		font-size: 0.72rem;
+		font-weight: 500;
+	}
+	.bk-loan-status.ok { color: #8a8a8a; }
+	.bk-loan-status.soon { color: #e0a050; }
+	.bk-loan-status.overdue { color: #e07070; }
 
 	/* Shared */
 	.bk-empty {
