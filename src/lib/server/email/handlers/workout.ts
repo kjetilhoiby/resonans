@@ -152,7 +152,7 @@ export const workoutHandler: EmailHandler = {
 
 				const { data, metadata } = buildWorkoutData(parsed);
 
-				const { event: inserted } = await SensorEventService.write({
+				const result = await SensorEventService.writeWorkoutsWithMerge([{
 					userId: envelope.userId,
 					sensorId: sensor.id,
 					eventType: 'activity',
@@ -166,11 +166,9 @@ export const workoutHandler: EmailHandler = {
 						gmailThreadId: envelope.gmailThreadId
 					},
 					source: 'email_inbound'
-				}, {
-					conflictMode: 'upsert_sensor_datatype_timestamp'
-				});
+				}], 'email_gpx');
 
-				if (inserted?.id) importedWorkoutIds.push(inserted.id);
+				importedWorkoutIds.push(...result.readyToNotify);
 				imported += 1;
 			} catch (error) {
 				failed += 1;

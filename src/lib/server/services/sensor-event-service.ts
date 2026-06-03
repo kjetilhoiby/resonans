@@ -25,6 +25,131 @@ export type WriteSensorEventResult = {
 	enqueuedProjectionRefresh: boolean;
 };
 
+const SPORT_ALIASES: Record<string, string> = {
+	'cycling': 'bike',
+	'e_bike': 'bike',
+	'indoor_cycling': 'bike',
+	'running': 'run',
+	'indoor_running': 'run',
+	'walking': 'walk',
+	'indoor_walking': 'walk',
+	'hiking': 'walk',
+	'lift_weights': 'strength',
+	'calisthenics': 'strength',
+	'weight_training': 'strength',
+};
+
+function areSportsCompatible(a: string | undefined, b: string | undefined): boolean {
+	if (!a || !b) return false;
+	if (a === b) return true;
+	const normA = SPORT_ALIASES[a] || a;
+	const normB = SPORT_ALIASES[b] || b;
+	return normA === normB;
+}
+
+/**
+ * Merge workout data from a new source into an existing workout event.
+ * Keeps per-source raw data in `sourceData`, picks best value per field.
+ */
+export function mergeWorkoutData(
+	existing: Record<string, unknown>,
+	incoming: Record<string, unknown>,
+	incomingSource: string
+): Record<string, unknown> {
+	const sourceData: Record<string, Record<string, unknown>> = (existing.sourceData as any) ?? {};
+
+	// If existing data has no sourceData yet, infer source and backfill
+	if (Object.keys(sourceData).length === 0 && existing.sportType) {
+		const existingMeta = (existing._mergeSource as string) || 'withings';
+		const { sourceData: _sd, _mergeSource: _ms, ...existingClean } = existing as any;
+		sourceData[existingMeta] = existingClean;
+	}
+
+	// Store incoming source data
+	const { sourceData: _sd, _mergeSource: _ms, ...incomingClean } = incoming as any;
+	sourceData[incomingSource] = incomingClean;
+
+	// Priority: which source wins for each field category
+	// GPS/distance: strava > withings (Strava has real GPS)
+	// HR data: withings > strava (ScanWatch continuous optical HR)
+	// Calories: strava > withings (Strava uses power/GPS for better estimate)
+	const SOURCE_PRIORITY: Record<string, string[]> = {
+		distance: ['email_gpx', 'strava', 'withings'],
+		gpsTrack: ['email_gpx', 'strava'],
+		trackPoints: ['email_gpx', 'strava'],
+		elevation: ['email_gpx', 'strava', 'withings'],
+		elevationMax: ['email_gpx', 'strava', 'withings'],
+		elevationMin: ['email_gpx', 'strava', 'withings'],
+		avgHeartRate: ['withings', 'email_gpx', 'strava'],
+		maxHeartRate: ['withings', 'email_gpx', 'strava'],
+		minHeartRate: ['withings', 'email_gpx', 'strava'],
+		hrCurve: ['withings', 'email_gpx', 'strava'],
+		hrZones: ['withings', 'strava'],
+		calories: ['strava', 'email_gpx', 'withings'],
+		avgSpeed: ['strava', 'email_gpx', 'withings'],
+		maxSpeed: ['strava', 'email_gpx', 'withings'],
+		avgPower: ['strava', 'email_gpx'],
+		avgCadence: ['strava', 'email_gpx'],
+		paceSecondsPerKm: ['email_gpx', 'strava'],
+	};
+
+	// Build merged top-level fields
+	const allSources = Object.keys(sourceData);
+	const merged: Record<string, unknown> = {
+		sportType: existing.sportType || incoming.sportType,
+		duration: existing.duration || incoming.duration,
+	};
+
+	// For each field, pick the best source according to priority
+	const allFields = new Set<string>();
+	for (const src of Object.values(sourceData)) {
+		for (const key of Object.keys(src)) allFields.add(key);
+	}
+
+	for (const field of allFields) {
+		if (field === 'sportType' || field === 'duration') continue;
+		const priority = SOURCE_PRIORITY[field] || allSources;
+		let bestVal: unknown = undefined;
+		for (const src of priority) {
+			const val = sourceData[src]?.[field];
+			if (val != null) { bestVal = val; break; }
+		}
+		if (bestVal == null) {
+			// Fallback: any source that has this field
+			for (const src of allSources) {
+				const val = sourceData[src]?.[field];
+				if (val != null) { bestVal = val; break; }
+			}
+		}
+		if (bestVal != null) merged[field] = bestVal;
+	}
+
+	merged.sourceData = sourceData;
+	return merged;
+}
+
+const INDOOR_SPORT_TYPES = new Set([
+	'yoga', 'lift_weights', 'calisthenics', 'weight_training',
+	'indoor_cycling', 'pilates', 'stretching', 'indoor_running'
+]);
+
+/**
+ * Determine if a workout has enough data to be worth notifying about.
+ * - Indoor/non-GPS sports: just need duration
+ * - Outdoor/distance sports: need GPS track or HR data
+ */
+export function workoutHasEnoughData(data: Record<string, unknown>): boolean {
+	const sport = data.sportType as string;
+	const duration = data.duration as number;
+	if (!sport || !duration || duration < 60) return false;
+
+	if (INDOOR_SPORT_TYPES.has(sport)) return true;
+
+	const hasGps = !!(data.gpsTrack || data.trackPoints);
+	const hasHr = !!(data.hrCurve || data.avgHeartRate);
+	return hasGps || hasHr;
+}
+
 export type SensorEventWriteConflictMode =
 	| 'error'
 	| 'ignore'
@@ -35,6 +160,106 @@ export type SensorEventWriteOptions = {
 };
 
 export class SensorEventService {
+	/**
+	 * Write workout events with multi-source merge support.
+	 * For each incoming workout, looks for an existing workout from a DIFFERENT
+	 * sensor within ±10 min with a compatible sport type. If found, merges into
+	 * that row (no new row created). Otherwise upserts normally.
+	 */
+	/**
+	 * Write workout events with multi-source merge support.
+	 * For each incoming workout, looks for an existing workout from a DIFFERENT
+	 * sensor within ±10 min with a compatible sport type. If found, merges into
+	 * that row (no new row created). Otherwise upserts normally.
+	 *
+	 * Returns IDs of workouts that became notification-worthy after this write
+	 * (transitioned from "not enough data" to "enough data", and not yet notified).
+	 */
+	static async writeWorkoutsWithMerge(
+		inputs: WriteSensorEventInput[],
+		sourceName: string
+	): Promise<{ written: number; merged: number; readyToNotify: string[] }> {
+		if (inputs.length === 0) return { written: 0, merged: 0, readyToNotify: [] };
+		let merged = 0;
+		let written = 0;
+		const readyToNotify: string[] = [];
+
+		for (const input of inputs) {
+			const windowMs = 10 * 60 * 1000;
+			const tMin = new Date(input.timestamp.getTime() - windowMs);
+			const tMax = new Date(input.timestamp.getTime() + windowMs);
+
+			const candidates = await db
+				.select()
+				.from(sensorEvents)
+				.where(and(
+					eq(sensorEvents.userId, input.userId),
+					eq(sensorEvents.dataType, 'workout'),
+					sql`${sensorEvents.timestamp} >= ${tMin}`,
+					sql`${sensorEvents.timestamp} <= ${tMax}`,
+					sql`${sensorEvents.sensorId} != ${input.sensorId}`
+				))
+				.limit(5);
+
+			const incomingSport = (input.data as any).sportType;
+			const match = candidates
+				.sort((a, b) =>
+					Math.abs(new Date(a.timestamp).getTime() - input.timestamp.getTime()) -
+					Math.abs(new Date(b.timestamp).getTime() - input.timestamp.getTime())
+				)
+				.find(c => {
+					const existingSport = (c.data as any)?.sportType;
+					return areSportsCompatible(existingSport, incomingSport);
+				});
+
+			if (match) {
+				const existingData = match.data as Record<string, unknown>;
+				const existingMeta = match.metadata as Record<string, unknown>;
+				const hadEnoughBefore = workoutHasEnoughData(existingData);
+				const alreadyNotified = !!(existingMeta as any)?.workoutNotified;
+
+				const mergedData = mergeWorkoutData(existingData, input.data, sourceName);
+				const hasEnoughNow = workoutHasEnoughData(mergedData);
+
+				const updatedMeta = {
+					...existingMeta,
+					sources: [...new Set([
+						...((existingMeta as any)?.sources || [(existingMeta as any)?.source]),
+						input.source
+					])]
+				};
+
+				await db.update(sensorEvents)
+					.set({ data: mergedData, metadata: updatedMeta })
+					.where(eq(sensorEvents.id, match.id));
+				merged++;
+
+				if (hasEnoughNow && !hadEnoughBefore && !alreadyNotified) {
+					readyToNotify.push(match.id);
+				}
+			} else {
+				const taggedData = {
+					...input.data,
+					sourceData: { [sourceName]: { ...input.data } }
+				};
+				const result = await SensorEventService.write(
+					{ ...input, data: taggedData },
+					{ conflictMode: 'upsert_sensor_datatype_timestamp' }
+				);
+				written++;
+
+				if (result.event && workoutHasEnoughData(taggedData) && !(input.metadata as any)?.workoutNotified) {
+					readyToNotify.push(result.event.id);
+				}
+			}
+		}
+
+		if (merged > 0) {
+			console.log(`[sensor-event-service] merged ${merged} workouts from ${sourceName} with existing data`);
+		}
+		return { written, merged, readyToNotify };
+	}
+
 	static async write(
 		input: WriteSensorEventInput,
 		options: SensorEventWriteOptions = {}
