@@ -2658,7 +2658,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 				{#if autoCheckPrompt.kind === 'day'}
 					Du har en registrert {autoCheckPrompt.activityType}-økt{#if autoCheckPrompt.durationMinutes} på {autoCheckPrompt.durationMinutes} min{/if}{#if formatClock(autoCheckPrompt.startTimeIso)} (kl. {formatClock(autoCheckPrompt.startTimeIso)}){/if} i dag. Vil du krysse av «{autoCheckPrompt.itemText}»?
 				{:else}
-					Du har {autoCheckPrompt.workoutCount} registrerte {autoCheckPrompt.activityType}-økter denne uka. Vil du krysse av {autoCheckPrompt.suggested} av {autoCheckPrompt.totalSlots}?
+					Du har {autoCheckPrompt.workoutCount} {autoCheckPrompt.activityType}-økter denne uka (fra trening eller daglista). Vil du krysse av {autoCheckPrompt.suggested} av {autoCheckPrompt.totalSlots}?
 				{/if}
 			</p>
 			<div class="ac-actions">

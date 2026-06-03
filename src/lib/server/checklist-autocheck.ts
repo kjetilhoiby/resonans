@@ -459,7 +459,7 @@ function parseWakeTargetFromText(text: string): { hour: number; minute: number }
 export type WeekAutoCheckGroup = {
 	baseLabel: string;
 	activityType: ActivityType;
-	/** Antall matchende treningsøkter i uka. */
+	/** Antall økter i uka: matchende treningsøkter + avhukede dag-punkter på dager uten økt. */
 	workoutCount: number;
 	/** Antall slots i gruppa (f.eks. 4 for "Yoga (1/4)…(4/4)"). */
 	totalSlots: number;
@@ -551,12 +551,14 @@ export async function autocheckWeekChecklistItems(params: {
 		sport_type: string;
 		duration_seconds: number | null;
 		distance_meters: number | null;
+		day: string;
 	}>(await db.execute(sql`
 		SELECT
 			id,
 			data->>'sportType' AS sport_type,
 			(data->>'duration')::float AS duration_seconds,
-			(data->>'distance')::float AS distance_meters
+			(data->>'distance')::float AS distance_meters,
+			timestamp::date::text AS day
 		FROM sensor_events
 		WHERE user_id = ${userId}
 		  AND data_type = 'workout'
@@ -564,21 +566,49 @@ export async function autocheckWeekChecklistItems(params: {
 		  AND timestamp < ${weekEnd}
 	`));
 
+	// Dag-liste-bevis: MANUELT avhukede dag-punkter i uka med en activityType.
+	// Auto-hakede dag-punkter ekskluderes — de ER allerede en treningsøkt (som
+	// telles via `workouts`), så å telle dem her ville krysse av to uke-slots
+	// for én økt. Lar uke-slots hakes av basert på daglista, ikke bare rå data.
+	const dayEvidence = rowsOf<{ activity_type: string; day: string | null }>(await db.execute(sql`
+		SELECT DISTINCT
+			ci.metadata->>'activityType' AS activity_type,
+			substring(c.context from ':day:([0-9]{4}-[0-9]{2}-[0-9]{2})') AS day
+		FROM checklist_items ci
+		JOIN checklists c ON c.id = ci.checklist_id
+		WHERE ci.user_id = ${userId}
+		  AND ci.checked = true
+		  AND c.context LIKE ${weekContext + ':day:%'}
+		  AND ci.metadata->>'activityType' IS NOT NULL
+		  AND (ci.metadata->>'autoChecked') IS DISTINCT FROM 'true'
+	`));
+	const dayEvidenceByActivity = new Map<string, Set<string>>();
+	for (const row of dayEvidence) {
+		if (!row.day) continue;
+		if (!dayEvidenceByActivity.has(row.activity_type)) dayEvidenceByActivity.set(row.activity_type, new Set());
+		dayEvidenceByActivity.get(row.activity_type)!.add(row.day);
+	}
+
 	const now = new Date();
 	const results: WeekAutoCheckGroup[] = [];
 
 	for (const group of groups.values()) {
-		const workoutCount = workouts.filter((w) => {
+		const matchingWorkouts = workouts.filter((w) => {
 			if (!w.sport_type) return false;
 			if (!activityMatchesSport(group.activityType, w.sport_type)) return false;
 			if (group.durationMin != null && w.duration_seconds != null && w.duration_seconds / 60 < group.durationMin * THRESHOLD) return false;
 			if (group.distanceKm != null && w.distance_meters != null && w.distance_meters / 1000 < group.distanceKm * THRESHOLD) return false;
 			return true;
-		}).length;
+		});
+		const workoutDays = new Set(matchingWorkouts.map((w) => w.day).filter(Boolean));
+		// Tell dag-liste-bevis kun på dager UTEN matchende økt, så en økt og det
+		// auto-hakede dag-punktet fra samme dag ikke teller dobbelt.
+		const manualDays = [...(dayEvidenceByActivity.get(group.activityType) ?? [])].filter((d) => !workoutDays.has(d));
+		const sessionCount = matchingWorkouts.length + manualDays.length;
 
 		const totalSlots = group.slots.length;
 		const alreadyChecked = group.slots.filter((s) => s.checked).length;
-		const desired = Math.min(workoutCount, totalSlots);
+		const desired = Math.min(sessionCount, totalSlots);
 		const toCheck = Math.max(0, desired - alreadyChecked);
 		const uncheckedSlots = group.slots
 			.filter((s) => !s.checked)
@@ -602,7 +632,7 @@ export async function autocheckWeekChecklistItems(params: {
 		results.push({
 			baseLabel: group.baseLabel,
 			activityType: group.activityType,
-			workoutCount,
+			workoutCount: sessionCount,
 			totalSlots,
 			alreadyChecked,
 			newlyChecked: uncheckedSlots.length,
