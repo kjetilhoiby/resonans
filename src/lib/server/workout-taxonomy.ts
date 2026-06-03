@@ -25,18 +25,10 @@ const SENSOR_GOAL_METRICS_BY_SPORT: Record<string, string[]> = {
 
 /**
  * Normaliserer en innkommende sportType til en kanonisk verdi resten av systemet
- * kjenner (autocheck, effort, taxonomy, analyse). Eksterne apper (f.eks. Ekko)
- * kan sende varianter som «eBiking», «E-Bike», «Cycling» — vi lavbokstaverer og
- * mapper e-sykkel-varianter til 'e_bike'. Trygt å kjøre på alle kilder.
+ * kjenner (autocheck, effort, taxonomy, analyse). Definisjonen ligger klient-trygt
+ * i $lib/utils/sport og re-eksporteres her for server-bruk.
  */
-export function normalizeSportType(raw: string | null | undefined): string {
-	const s = (raw ?? '').trim().toLowerCase();
-	if (!s) return s;
-	if (s.includes('ebik') || ['e-bike', 'e_bike', 'e_biking', 'elsykkel', 'el-sykkel'].includes(s)) {
-		return 'e_bike';
-	}
-	return s;
-}
+export { normalizeSportType } from '$lib/utils/sport';
 
 export function describeWorkoutSportType(sportType: string): string {
 	const normalized = sportType.trim().toLowerCase();

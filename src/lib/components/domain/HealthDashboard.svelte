@@ -22,6 +22,7 @@
 	import BalanceCard from '../composed/BalanceCard.svelte';
 	import { computeTrainingLoad } from '$lib/util/training-load';
 	import { hasElevation, hasHeartRate } from '$lib/utils/track-stats';
+	import { normalizeSportType } from '$lib/utils/sport';
 	import {
 		buildPaceBaseline,
 		compareActivityToBaseline,
@@ -275,7 +276,7 @@
 	const availableSportTypes = $derived.by(() => {
 		const counts = new Map<string, number>();
 		for (const act of activities) {
-			const t = act.sportType.toLowerCase();
+			const t = normalizeSportType(act.sportType);
 			counts.set(t, (counts.get(t) ?? 0) + 1);
 		}
 		return [...counts.entries()]
@@ -285,7 +286,7 @@
 
 	const filteredActivities = $derived(
 		activitySportFilter
-			? activities.filter(a => a.sportType.toLowerCase() === activitySportFilter)
+			? activities.filter(a => normalizeSportType(a.sportType) === activitySportFilter)
 			: activities
 	);
 
@@ -782,11 +783,20 @@
 		tennis: '🎾',
 		volleyball: '🏐',
 		badminton: '🏸',
-		basketball: '🏀'
+		basketball: '🏀',
+		rowing: '🚣',
+		soccer: '⚽',
+		football: '⚽',
+		lift_weights: '🏋️',
+		calisthenics: '🏋️',
+		strength: '🏋️',
+		pilates: '🧘‍♂️',
+		hiit: '🔥',
+		skiing: '⛷️'
 	};
 
 	function sportIcon(sportType: string): string {
-		return SPORT_ICONS[sportType.toLowerCase()] ?? '💪';
+		return SPORT_ICONS[normalizeSportType(sportType)] ?? '💪';
 	}
 
 	function sportLabel(sportType: string): string {
@@ -799,9 +809,19 @@
 			swimming: 'Svømming',
 			trail: 'Terrengløp',
 			trail_running: 'Terrengløp',
-			yoga: 'Yoga'
+			yoga: 'Yoga',
+			rowing: 'Roing',
+			soccer: 'Fotball',
+			football: 'Fotball',
+			lift_weights: 'Styrke',
+			calisthenics: 'Styrke',
+			strength: 'Styrke',
+			pilates: 'Pilates',
+			hiit: 'HIIT',
+			skiing: 'Ski'
 		};
-		return labels[sportType.toLowerCase()] ?? sportType.charAt(0).toUpperCase() + sportType.slice(1);
+		const t = normalizeSportType(sportType);
+		return labels[t] ?? t.charAt(0).toUpperCase() + t.slice(1);
 	}
 
 	// Treningstyper der distanse ikke er meningsfull
