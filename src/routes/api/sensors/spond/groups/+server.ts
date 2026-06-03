@@ -1,5 +1,5 @@
 import { json, error } from '@sveltejs/kit';
-import { db } from '$lib/db';
+import { db, rowsOf } from '$lib/db';
 import { sensorEvents, persons } from '$lib/db/schema';
 import { and, eq, sql } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
@@ -14,19 +14,26 @@ export const GET: RequestHandler = async ({ locals }) => {
 	if (!userId) throw error(401, 'Ikke innlogget');
 
 	try {
-		const groupRows = await db.execute(sql`
-			SELECT
-				data->>'groupId' AS group_id,
-				MAX(data->>'groupName') AS group_name,
-				COUNT(*)::int AS event_count,
-				MAX(timestamp) AS last_seen
-			FROM sensor_events
-			WHERE user_id = ${userId}
-			  AND data_type = 'spond_event'
-			  AND data->>'groupId' IS NOT NULL
-			GROUP BY data->>'groupId'
-			ORDER BY MAX(data->>'groupName') NULLS LAST
-		`);
+		const groupRows = rowsOf<{
+			group_id: string;
+			group_name: string | null;
+			event_count: number;
+			last_seen: string;
+		}>(
+			await db.execute(sql`
+				SELECT
+					data->>'groupId' AS group_id,
+					MAX(data->>'groupName') AS group_name,
+					COUNT(*)::int AS event_count,
+					MAX(timestamp) AS last_seen
+				FROM sensor_events
+				WHERE user_id = ${userId}
+				  AND data_type = 'spond_event'
+				  AND data->>'groupId' IS NOT NULL
+				GROUP BY data->>'groupId'
+				ORDER BY MAX(data->>'groupName') NULLS LAST
+			`)
+		);
 
 		const allPersons = await db
 			.select()
@@ -40,12 +47,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 			}
 		}
 
-		const groups = (groupRows as unknown as Array<{
-			group_id: string;
-			group_name: string | null;
-			event_count: number;
-			last_seen: string;
-		}>).map((row) => ({
+		const groups = groupRows.map((row) => ({
 			groupId: row.group_id,
 			groupName: row.group_name ?? row.group_id,
 			eventCount: row.event_count,
@@ -55,8 +57,6 @@ export const GET: RequestHandler = async ({ locals }) => {
 
 		return json({ groups });
 	} catch (err) {
-		// Logg den faktiske DB-feilen — denne ruta har tidligere feilet stille
-		// med 500 pga. schema-drift (manglende persons-kolonner, jf. PR #89).
 		console.error('[spond/groups] kunne ikke hente Spond-grupper:', err);
 		throw error(500, 'Kunne ikke hente Spond-grupper');
 	}

@@ -1,4 +1,4 @@
-import { db } from '$lib/db';
+import { db, rowsOf } from '$lib/db';
 import { goals, tasks, categories, sensorGoals } from '$lib/db/schema';
 import { and, eq, sql } from 'drizzle-orm';
 import { findSimilar } from './similarity';
@@ -426,7 +426,7 @@ export async function getOrCreatePlanningGoal(userId: string): Promise<string> {
 		  AND metadata->>'isPlanningGoal' = 'true'
 		LIMIT 1
 	`);
-	const existing = rows as unknown as Array<{ id: string }>;
+	const existing = rowsOf<{ id: string }>(rows);
 	if (existing.length > 0) return existing[0].id;
 
 	const [goal] = await db.insert(goals).values({

@@ -1,6 +1,6 @@
 import type { RequestHandler } from './$types';
 import { json } from '@sveltejs/kit';
-import { db } from '$lib/db';
+import { db, rowsOf } from '$lib/db';
 import { requireAdmin } from '$lib/server/admin-auth';
 import { sensorEvents } from '$lib/db/schema';
 import { eq, sql } from 'drizzle-orm';
@@ -9,8 +9,8 @@ export const GET: RequestHandler = async ({ locals }) => {
 	try {
 		await requireAdmin(locals.userId);
 		// Get balance snapshots grouped by account and source
-		const balanceStats = await db.execute(sql`
-			SELECT 
+		const balanceStats = rowsOf<{ count: number; source: string | null }>(await db.execute(sql`
+			SELECT
 				data->>'accountId' as "accountId",
 				metadata->>'source' as source,
 				count(*)::int as count,
@@ -21,11 +21,11 @@ export const GET: RequestHandler = async ({ locals }) => {
 			AND user_id = ${locals.userId}
 			AND data->>'accountId' IS NOT NULL
 			GROUP BY data->>'accountId', metadata->>'source'
-		`);
+		`));
 
 		// Get transaction stats grouped by account and source
-		const transactionStats = await db.execute(sql`
-			SELECT 
+		const transactionStats = rowsOf<{ count: number; source: string | null }>(await db.execute(sql`
+			SELECT
 				data->>'accountId' as "accountId",
 				metadata->>'source' as source,
 				count(*)::int as count,
@@ -37,11 +37,11 @@ export const GET: RequestHandler = async ({ locals }) => {
 			AND user_id = ${locals.userId}
 			AND data->>'accountId' IS NOT NULL
 			GROUP BY data->>'accountId', metadata->>'source'
-		`);
+		`));
 
 		// Get unique account IDs and their account numbers
-		const accounts = await db.execute(sql`
-			SELECT 
+		const accounts = rowsOf(await db.execute(sql`
+			SELECT
 				data->>'accountId' as "accountId",
 				data->>'accountNumber' as "accountNumber",
 				min(timestamp)::text as "firstSeen",
@@ -50,7 +50,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 			WHERE data->>'accountId' IS NOT NULL
 			AND user_id = ${locals.userId}
 			GROUP BY data->>'accountId', data->>'accountNumber'
-		`);
+		`));
 
 		return json({
 			accounts,

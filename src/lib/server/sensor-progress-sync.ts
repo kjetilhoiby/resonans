@@ -15,7 +15,7 @@
 
 import { and, eq } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
-import { db } from '$lib/db';
+import { db, rowsOf } from '$lib/db';
 import {
 	TASK_PROGRESS_SKIP_REASON_DUPLICATE,
 	TASK_PROGRESS_SKIP_REASON_PERIOD_TARGET,
@@ -70,7 +70,13 @@ export async function syncSensorProgressForTasks(params: {
 	const { userId, weekStart, weekEnd } = params;
 
 	// Active daily/weekly tasks that have or imply an activityType
-	const taskRows = await db.execute(sql`
+	const taskRows = rowsOf<{
+		id: string;
+		title: string;
+		target_value: number | null;
+		frequency: string;
+		activity_type: string;
+	}>(await db.execute(sql`
 		SELECT
 			t.id,
 			t.title,
@@ -91,28 +97,24 @@ export async function syncSensorProgressForTasks(params: {
 		      OR t.metadata->>'activityType' IS NOT NULL
 		      OR t.title ILIKE '%yoga%'
 		  )
-	`) as unknown as Array<{
-		id: string;
-		title: string;
-		target_value: number | null;
-		frequency: string;
-		activity_type: string;
-	}>;
+	`));
 
 	if (taskRows.length === 0) return { created: 0, skipped: 0, skippedByPeriod: 0, skippedDuplicate: 0 };
 
 	// Workouts in the week window
-	const workoutRows = await db.execute(sql`
-		SELECT
-			id,
-			timestamp,
-			data->>'sportType' AS sport_type
-		FROM sensor_events
-		WHERE user_id = ${userId}
-		  AND data_type = 'workout'
-		  AND timestamp >= ${weekStart}
-		  AND timestamp < ${weekEnd}
-	`) as unknown as Array<{ id: string; timestamp: string; sport_type: string | null }>;
+	const workoutRows = rowsOf<{ id: string; timestamp: string; sport_type: string | null }>(
+		await db.execute(sql`
+			SELECT
+				id,
+				timestamp,
+				data->>'sportType' AS sport_type
+			FROM sensor_events
+			WHERE user_id = ${userId}
+			  AND data_type = 'workout'
+			  AND timestamp >= ${weekStart}
+			  AND timestamp < ${weekEnd}
+		`)
+	);
 
 	if (workoutRows.length === 0) return { created: 0, skipped: 0, skippedByPeriod: 0, skippedDuplicate: 0 };
 
