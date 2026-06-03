@@ -259,6 +259,51 @@
 		applyBulk(activePaint, bulkFrom || startDate, bulkTo || endDate, bulkTarget);
 	}
 
+	/* ── Reiser i ferien (Fase 2) ───────────────────────── */
+	let promoting = $state<string | null>(null);
+
+	function addTrip() {
+		trips = [...trips, { id: crypto.randomUUID(), label: '', place: '', startDate: startDate || '', endDate: endDate || '' }];
+		scheduleSave();
+	}
+
+	function updateTrip(id: string, patch: Partial<FerieTrip>) {
+		trips = trips.map((t) => (t.id === id ? { ...t, ...patch } : t));
+		scheduleSave();
+	}
+
+	function removeTrip(id: string) {
+		trips = trips.filter((t) => t.id !== id);
+		scheduleSave();
+	}
+
+	async function promoteTrip(t: FerieTrip) {
+		promoting = t.id;
+		saveError = '';
+		try {
+			const res = await fetch(`/api/tema/${themeId}/ferie/promote-trip`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ label: t.label, place: t.place, startDate: t.startDate, endDate: t.endDate })
+			});
+			if (!res.ok) throw new Error('promote failed');
+			const data = (await res.json()) as { themeId: string };
+			updateTrip(t.id, { linkedThemeId: data.themeId }); // lagrer lenken via scheduleSave
+		} catch {
+			saveError = 'Klarte ikke å lage reise-tema. Prøv igjen.';
+		} finally {
+			promoting = null;
+		}
+	}
+
+	// Reise-blokk som dekker en gitt dato (for kalender-overlay).
+	function tripForDate(iso: string): FerieTrip | null {
+		for (const t of trips) {
+			if (t.startDate && t.endDate && iso >= t.startDate && iso <= t.endDate) return t;
+		}
+		return null;
+	}
+
 	/* ── Medlemmer ──────────────────────────────────────── */
 	let newMemberName = $state('');
 	let newMemberRole = $state<FerieRole>('barn');
@@ -551,15 +596,17 @@
 				</thead>
 				<tbody>
 					{#each days as day, i (day.iso)}
+						{@const trip = tripForDate(day.iso)}
 						{#if i === 0 || days[i - 1].week !== day.week}
 							<tr class="week-row">
 								<td colspan={members.length + 1}>Uke {day.week}</td>
 							</tr>
 						{/if}
-						<tr class:weekend={day.isWeekend}>
+						<tr class:weekend={day.isWeekend} class:has-trip={trip}>
 							<td class="col-date sticky-col">
 								<span class="date-day">{day.weekday}</span>
 								<span class="date-num">{day.dayMonth}</span>
+								{#if trip}<span class="date-trip" title={trip.label || trip.place || 'Reise'}>✈️</span>{/if}
 							</td>
 							{#each members as m (m.id)}
 								<td
@@ -587,6 +634,67 @@
 		{#if lastSavedAt}
 			<p class="ferie-saved-at">Sist lagret: {new Intl.DateTimeFormat('nb-NO', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }).format(new Date(lastSavedAt))}</p>
 		{/if}
+	{/if}
+
+	{#if hasWindow}
+		<section class="ferie-trips">
+			<div class="trips-head">
+				<h3>Reiser i ferien</h3>
+				<button type="button" class="ferie-btn" onclick={addTrip}>+ Reise</button>
+			</div>
+			{#if trips.length === 0}
+				<p class="trips-empty">
+					Ingen reiser planlagt ennå. Legg til en grov blokk (sted + datoer) — du kan forfremme
+					den til et fullt reise-tema (kart, vær, budsjett) når du er klar.
+				</p>
+			{:else}
+				<div class="trips-list">
+					{#each trips as t (t.id)}
+						<div class="trip-row">
+							<input
+								class="trip-label"
+								placeholder="Navn"
+								value={t.label}
+								onchange={(e) => updateTrip(t.id, { label: e.currentTarget.value })}
+							/>
+							<input
+								class="trip-place"
+								placeholder="Sted"
+								value={t.place ?? ''}
+								onchange={(e) => updateTrip(t.id, { place: e.currentTarget.value })}
+							/>
+							<input
+								type="date"
+								value={t.startDate ?? ''}
+								min={startDate}
+								max={endDate}
+								onchange={(e) => updateTrip(t.id, { startDate: e.currentTarget.value })}
+							/>
+							<input
+								type="date"
+								value={t.endDate ?? ''}
+								min={startDate}
+								max={endDate}
+								onchange={(e) => updateTrip(t.id, { endDate: e.currentTarget.value })}
+							/>
+							{#if t.linkedThemeId}
+								<a class="trip-link" href={`/tema/${t.linkedThemeId}`}>Åpne reise →</a>
+							{:else}
+								<button
+									type="button"
+									class="ferie-btn"
+									disabled={promoting === t.id}
+									onclick={() => promoteTrip(t)}
+								>
+									{promoting === t.id ? 'Lager…' : 'Forfrem til reise-tema'}
+								</button>
+							{/if}
+							<button type="button" class="trip-remove" title="Fjern" onclick={() => removeTrip(t.id)}>×</button>
+						</div>
+					{/each}
+				</div>
+			{/if}
+		</section>
 	{/if}
 </div>
 
@@ -998,5 +1106,82 @@
 		font-size: 0.75rem;
 		color: var(--tp-text-muted);
 		margin: 0;
+	}
+
+	/* Reise-overlay i kalenderen */
+	.date-trip {
+		margin-left: 0.25rem;
+		font-size: 0.75rem;
+	}
+	tr.has-trip .sticky-col {
+		box-shadow: inset 3px 0 0 var(--tp-accent);
+	}
+
+	/* Reiser i ferien */
+	.ferie-trips {
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
+		padding: 0.85rem;
+		background: var(--tp-bg-2);
+		border: 1px solid var(--tp-border);
+		border-radius: 12px;
+	}
+	.trips-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.trips-head h3 {
+		margin: 0;
+		font-size: 1rem;
+	}
+	.trips-empty {
+		margin: 0;
+		font-size: 0.85rem;
+		color: var(--tp-text-soft);
+	}
+	.trips-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+	.trip-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+		align-items: center;
+		padding-bottom: 0.5rem;
+		border-bottom: 1px solid var(--tp-border);
+	}
+	.trip-row:last-child {
+		border-bottom: none;
+		padding-bottom: 0;
+	}
+	.trip-label {
+		flex: 1 1 120px;
+		min-width: 100px;
+	}
+	.trip-place {
+		flex: 1 1 100px;
+		min-width: 90px;
+	}
+	.trip-link {
+		color: var(--tp-accent);
+		font-size: 0.85rem;
+		text-decoration: none;
+		white-space: nowrap;
+	}
+	.trip-link:hover {
+		text-decoration: underline;
+	}
+	.trip-remove {
+		background: none;
+		border: none;
+		color: var(--tp-text-muted);
+		font-size: 1.2rem;
+		line-height: 1;
+		cursor: pointer;
+		padding: 0 0.2rem;
 	}
 </style>

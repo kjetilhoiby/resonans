@@ -1,9 +1,9 @@
 # Ferie Theme Execution Plan
 
-Status: Fase 1 ferdig (DB-verifisering gjenstår) — Fase 2 & 3 ikke startet
+Status: Fase 1 & 2 ferdig (DB-verifisering gjenstår) — Fase 3 ikke startet
 Last updated: 2026-06-03
 Owner: Claude
-Branch: `claude/family-vacation-planning-ytQvk`
+Branch: `claude/ferie-fase2-reiser` (Fase 2) — bygger på `claude/family-vacation-planning-ytQvk` (Fase 1, PR #117)
 
 ## Goal
 Gi familien et eget **ferie**-dashboard, distinkt fra reise (`TripDashboard`).
@@ -53,11 +53,17 @@ Per celle (medlem × dag):
       bekreft persistens, bekreft at reise-tema fortsatt får `TripDashboard`
 - [ ] Lag PR (avventer brukerens ønske)
 
-### Fase 2 — Reiser på tidslinje (ikke startet)
-- [ ] Render `ferieProfile.trips[]` som blokker oppå oppholdsplanen (sted + datoer)
-- [ ] «Forfrem til reise-tema»-knapp: opprett reise-tema med `tripProfile` fra blokka,
-      lagre `linkedThemeId` tilbake, lenk til reise-temaets `TripDashboard`
-- [ ] UI for å legge til / redigere / slette grove reise-blokker
+### Fase 2 — Reiser på tidslinje (ferdig)
+- [x] UI «Reiser i ferien» i `FerieDashboard.svelte`: legg til / rediger (navn, sted,
+      datoer) / slett grove reise-blokker (lagres i `ferieProfile.trips[]`, autolagring)
+- [x] Kalender-overlay: dager innenfor en reise får ✈️-markør + aksent-kant i dato-kolonnen
+- [x] «Forfrem til reise-tema»-knapp → `POST /api/tema/[id]/ferie/promote-trip`
+      (gjenbruker `ensureThemeForUser`, setter `tripProfile`, sikrer travel-navn);
+      klienten skriver `linkedThemeId` tilbake og lagrer (ingen race mot autolagring)
+- [x] Lenke til reise-temaets `TripDashboard` når blokka er forfremmet
+- [x] `npm run check` grønn + produksjonsbygg `✔ done`
+- [ ] **Ende-til-ende mot DB** (krever `DATABASE_URL`): legg til reise-blokk, forfrem,
+      bekreft at nytt reise-tema får `TripDashboard` og at lenken fungerer
 
 ### Fase 3 — Feriedagbok (ikke startet)
 - [ ] Ny `ReflectionKind` `'feriedagbok'` i `src/lib/server/reflections.ts`
@@ -74,6 +80,10 @@ Per celle (medlem × dag):
 - 2026-06-03: `npm run check` → 0 feil. Produksjonsbygg → `✔ done`. Ende-til-ende mot DB
   ikke kjørt (miljøet har ingen `DATABASE_URL`).
 - 2026-06-03: Committet `2d95789` og pushet til `claude/family-vacation-planning-ytQvk`.
+  PR #117 opprettet mot `main`.
+- 2026-06-03: Fase 2 implementert på ny branch `claude/ferie-fase2-reiser`. «Reiser i
+  ferien»-UI, kalender-overlay (✈️), og `promote-trip`-endepunkt som forfremmer en
+  grov blokk til et fullt reise-tema. `npm run check` → 0 feil, bygg → `✔ done`.
 
 ## Resume notes
 - Nøkkelfiler:
@@ -84,6 +94,8 @@ Per celle (medlem × dag):
   - `src/routes/api/tema/[id]/ferie/+server.ts`
   - `src/lib/components/domain/ThemePage.svelte` (render-gren `isFerie`)
   - `src/lib/ai/tools/manage-theme.ts` (ferie-parametere)
-- Hvis kontekst nullstilles: fullfør DB-verifiseringen i Fase 1, og fortsett deretter
-  på Fase 2 (reiser på tidslinje). `ferieProfile.trips[]` er allerede definert i
-  schema-typen og klar til bruk.
+  - `src/routes/api/tema/[id]/ferie/promote-trip/+server.ts` (Fase 2: forfrem reise)
+  - `src/lib/server/themes.ts` (`ensureThemeForUser`, gjenbrukt av promote)
+- Hvis kontekst nullstilles: fullfør DB-verifiseringen for Fase 1 & 2, og fortsett
+  deretter på Fase 3 (feriedagbok + vær). Værhenting kan gjenbrukes fra
+  `TripDashboard.svelte` / `src/lib/utils/weather.ts` (api.met.no).
