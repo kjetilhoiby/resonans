@@ -104,6 +104,16 @@ function parseActivityType(lower: string): ActivityType | undefined {
 	return undefined;
 }
 
+/**
+ * Detects an activity type from free text (e.g. "sykle til jobb" → 'cycling',
+ * "yoga" → 'yoga'), or undefined if no known activity is mentioned. Unlike
+ * `parseTaskIntent`, this does NOT require a quantifiable target — useful for
+ * day-level checklist items where the bare activity name is enough.
+ */
+export function detectActivityType(text: string): ActivityType | undefined {
+	return parseActivityType(text.toLowerCase());
+}
+
 function escapeLikePattern(value: string): string {
 	return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 }

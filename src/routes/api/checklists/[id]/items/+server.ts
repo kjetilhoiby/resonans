@@ -52,7 +52,8 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 		// Only parse intent for non-subtask items
 		const weekKeys = extractWeekKeys(checklist.context);
 		const isWeekLevel = weekKeys !== null && !checklist.context!.includes(':day:');
-		const intent = parseChecklistItemIntent(parsed.label);
+		const isDayLevel = weekKeys !== null && checklist.context!.includes(':day:');
+		const intent = parseChecklistItemIntent(parsed.label, { dayLevel: isDayLevel });
 
 		if (isWeekLevel && weekKeys) {
 			// Wake-time items: store target metadata, no linked task needed
