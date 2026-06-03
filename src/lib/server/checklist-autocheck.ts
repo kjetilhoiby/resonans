@@ -589,44 +589,33 @@ export async function autocheckWeekChecklistItems(params: {
 		dayEvidenceByActivity.get(row.activity_type)!.add(row.day);
 	}
 
-	// === Kreditering (uavhengig per mål) ===
-	// Hvert mål krediteres for seg: en distanseløs oppgave hakes av av enhver
-	// matchende økt, og en distanse-/varighetsoppgave av økter som oppfyller
-	// kravet. Samme økt kan derfor hake av FLERE mål — én lang jogg oppfyller
-	// både «jogge fire ganger» og «jogge langt», og gir kryss i begge.
-	// Manuelle dag-punkter har ukjent metrikk → krediterer bare krav-løse mål,
-	// og bare på dager uten matchende økt (så økt + auto-hakt dag-punkt ikke
-	// dobles).
+	// Ren beregning (testbar) av hvilke slots som skal hakes av per mål.
+	const credits = computeWeekGoalCredits({
+		goals: [...groups.values()].map((g) => ({
+			baseLabel: g.baseLabel,
+			activityType: g.activityType,
+			durationMin: g.durationMin,
+			distanceKm: g.distanceKm,
+			slots: g.slots.map((s) => ({ id: s.id, checked: s.checked, sortOrder: s.sortOrder }))
+		})),
+		workouts: workouts.map((w) => ({
+			sportType: w.sport_type,
+			distanceKm: w.distance_meters != null ? w.distance_meters / 1000 : null,
+			durationMin: w.duration_seconds != null ? w.duration_seconds / 60 : null,
+			day: w.day
+		})),
+		manualDaysByActivity: dayEvidenceByActivity,
+		onlyBaseLabel
+	});
+
+	const slotMetaById = new Map(items.map((i) => [i.id, (i.metadata ?? {}) as Record<string, unknown>]));
 	const now = new Date();
 	const results: WeekAutoCheckGroup[] = [];
 
-	for (const group of groups.values()) {
-		if (onlyBaseLabel && group.baseLabel.toLowerCase() !== onlyBaseLabel.toLowerCase()) continue;
-
-		const hasThreshold = group.distanceKm != null || group.durationMin != null;
-		const matchingWorkouts = workouts.filter((w) => {
-			if (!w.sport_type || !activityMatchesSport(group.activityType, w.sport_type)) return false;
-			if (group.distanceKm != null && (w.distance_meters == null || w.distance_meters / 1000 < group.distanceKm * THRESHOLD)) return false;
-			if (group.durationMin != null && (w.duration_seconds == null || w.duration_seconds / 60 < group.durationMin * THRESHOLD)) return false;
-			return true;
-		});
-		const workoutDays = new Set(matchingWorkouts.map((w) => w.day).filter(Boolean));
-		const manualDays = hasThreshold
-			? []
-			: [...(dayEvidenceByActivity.get(group.activityType) ?? [])].filter((d) => !workoutDays.has(d));
-		const sessionCount = matchingWorkouts.length + manualDays.length;
-
-		const totalSlots = group.slots.length;
-		const alreadyChecked = group.slots.filter((s) => s.checked).length;
-		const toCheck = Math.max(0, Math.min(sessionCount, totalSlots) - alreadyChecked);
-		const uncheckedSlots = group.slots
-			.filter((s) => !s.checked)
-			.sort((a, b) => a.sortOrder - b.sortOrder)
-			.slice(0, toCheck);
-
+	for (const credit of credits) {
 		if (!dryRun) {
-			for (const slot of uncheckedSlots) {
-				const meta = (slot.metadata ?? {}) as Record<string, unknown>;
+			for (const slotId of credit.slotIdsToCheck) {
+				const meta = slotMetaById.get(slotId) ?? {};
 				await db
 					.update(checklistItems)
 					.set({
@@ -634,18 +623,98 @@ export async function autocheckWeekChecklistItems(params: {
 						checkedAt: now,
 						metadata: { ...meta, autoChecked: true, autoCheckedAt: now.toISOString() }
 					})
-					.where(eq(checklistItems.id, slot.id));
+					.where(eq(checklistItems.id, slotId));
 			}
 		}
 
 		results.push({
-			baseLabel: group.baseLabel,
-			activityType: group.activityType,
+			baseLabel: credit.baseLabel,
+			activityType: credit.activityType,
+			workoutCount: credit.workoutCount,
+			totalSlots: credit.totalSlots,
+			alreadyChecked: credit.alreadyChecked,
+			newlyChecked: credit.slotIdsToCheck.length,
+			itemIds: dryRun ? [] : credit.slotIdsToCheck
+		});
+	}
+
+	return results;
+}
+
+// ─── Ren kreditering (uten DB – testbar) ──────────────────────────────────
+
+export type WeekCreditSlot = { id: string; checked: boolean; sortOrder: number };
+export type WeekCreditGoal = {
+	baseLabel: string;
+	activityType: ActivityType;
+	durationMin: number | null;
+	distanceKm: number | null;
+	slots: WeekCreditSlot[];
+};
+export type WeekCreditWorkout = {
+	sportType: string | null;
+	distanceKm: number | null;
+	durationMin: number | null;
+	day: string | null;
+};
+export type WeekCredit = {
+	baseLabel: string;
+	activityType: ActivityType;
+	workoutCount: number;
+	totalSlots: number;
+	alreadyChecked: number;
+	slotIdsToCheck: string[];
+};
+
+/**
+ * Uavhengig kreditering per uke-mål. Et mål uten distanse-/varighetskrav
+ * krediteres av enhver matchende økt; et mål med krav kun av økter som
+ * oppfyller det. Samme økt kan kreditere flere mål (lang jogg → både «jogge»
+ * og «jogge langt»). Manuelle dag-dager (ukjent metrikk) krediterer bare
+ * krav-løse mål, og kun på dager uten matchende økt (unngår dobbel mot et
+ * auto-hakt dag-punkt fra samme økt).
+ */
+export function computeWeekGoalCredits(params: {
+	goals: WeekCreditGoal[];
+	workouts: WeekCreditWorkout[];
+	manualDaysByActivity: Map<string, Set<string>>;
+	onlyBaseLabel?: string;
+}): WeekCredit[] {
+	const { goals, workouts, manualDaysByActivity, onlyBaseLabel } = params;
+	const results: WeekCredit[] = [];
+
+	for (const goal of goals) {
+		if (onlyBaseLabel && goal.baseLabel.toLowerCase() !== onlyBaseLabel.toLowerCase()) continue;
+
+		const hasThreshold = goal.distanceKm != null || goal.durationMin != null;
+		const matchingWorkouts = workouts.filter((w) => {
+			if (!w.sportType || !activityMatchesSport(goal.activityType, w.sportType)) return false;
+			if (goal.distanceKm != null && (w.distanceKm == null || w.distanceKm < goal.distanceKm * THRESHOLD)) return false;
+			if (goal.durationMin != null && (w.durationMin == null || w.durationMin < goal.durationMin * THRESHOLD)) return false;
+			return true;
+		});
+		const workoutDays = new Set(matchingWorkouts.map((w) => w.day).filter(Boolean));
+		const manualDays = hasThreshold
+			? []
+			: [...(manualDaysByActivity.get(goal.activityType) ?? [])].filter((d) => !workoutDays.has(d));
+		const sessionCount = matchingWorkouts.length + manualDays.length;
+
+		const totalSlots = goal.slots.length;
+		const alreadyChecked = goal.slots.filter((s) => s.checked).length;
+		const toCheck = Math.max(0, Math.min(sessionCount, totalSlots) - alreadyChecked);
+		const slotIdsToCheck = goal.slots
+			.filter((s) => !s.checked)
+			.sort((a, b) => a.sortOrder - b.sortOrder)
+			.slice(0, toCheck)
+			.map((s) => s.id);
+
+		results.push({
+			baseLabel: goal.baseLabel,
+			activityType: goal.activityType,
 			workoutCount: sessionCount,
 			totalSlots,
 			alreadyChecked,
-			newlyChecked: uncheckedSlots.length,
-			itemIds: dryRun ? [] : uncheckedSlots.map((s) => s.id)
+			slotIdsToCheck
 		});
 	}
 
