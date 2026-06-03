@@ -151,7 +151,7 @@ export async function renderLiveSessionOgPng(session: LiveOgSession): Promise<Ui
 				points: pts,
 				fill: 'none',
 				stroke: '#4285f4',
-				'stroke-width': '4',
+				'stroke-width': '8',
 				'stroke-linecap': 'round',
 				'stroke-linejoin': 'round'
 			}
@@ -161,16 +161,16 @@ export async function renderLiveSessionOgPng(session: LiveOgSession): Promise<Ui
 	if (session.lastLat !== null && session.lastLon !== null) {
 		const [ux, uy] = ll2px(session.lastLat, session.lastLon, centerLat, centerLon, zoom, IMG_W, IMG_H);
 		svgChildren.push(
-			{ type: 'circle', props: { cx: String(ux), cy: String(uy), r: '9', fill: 'white' } },
-			{ type: 'circle', props: { cx: String(ux), cy: String(uy), r: '6', fill: '#4285f4' } }
+			{ type: 'circle', props: { cx: String(ux), cy: String(uy), r: '18', fill: 'white' } },
+			{ type: 'circle', props: { cx: String(ux), cy: String(uy), r: '12', fill: '#4285f4' } }
 		);
 	}
 
 	if (session.destLat !== null && session.destLon !== null) {
 		const [dx, dy] = ll2px(session.destLat, session.destLon, centerLat, centerLon, zoom, IMG_W, IMG_H);
 		svgChildren.push(
-			{ type: 'circle', props: { cx: String(dx), cy: String(dy), r: '8', fill: 'white' } },
-			{ type: 'circle', props: { cx: String(dx), cy: String(dy), r: '5', fill: '#ef4444' } }
+			{ type: 'circle', props: { cx: String(dx), cy: String(dy), r: '16', fill: 'white' } },
+			{ type: 'circle', props: { cx: String(dx), cy: String(dy), r: '10', fill: '#ef4444' } }
 		);
 	}
 
