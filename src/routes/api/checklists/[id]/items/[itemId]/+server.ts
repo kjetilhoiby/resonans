@@ -52,7 +52,12 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 	const updates: Record<string, unknown> = {};
 	if (body.text !== undefined) {
 		const parsed = parseTaskDateTime(body.text);
-		const intent = parseChecklistItemIntent(body.text);
+		const itemChecklist = await db.query.checklists.findFirst({
+			where: eq(checklists.id, existingItem.checklistId),
+			columns: { context: true }
+		});
+		const isDayLevel = !!itemChecklist?.context?.includes(':day:');
+		const intent = parseChecklistItemIntent(body.text, { dayLevel: isDayLevel });
 
 		updates.text = parsed.text || body.text.trim();
 		updates.startDate = parsed.startDate ?? null;
@@ -74,11 +79,7 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 		if (intent.distanceKm !== undefined) nextMetadata.distanceKm = intent.distanceKm;
 
 		if (!existingItem.parentId) {
-			const checklist = await db.query.checklists.findFirst({
-				where: eq(checklists.id, existingItem.checklistId),
-				columns: { context: true }
-			});
-			const weekKeys = extractWeekKeys(checklist?.context ?? null);
+			const weekKeys = extractWeekKeys(itemChecklist?.context ?? null);
 			if (weekKeys) {
 				const linkedTask = await findLinkedTask({
 					userId,

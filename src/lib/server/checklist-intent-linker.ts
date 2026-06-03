@@ -15,7 +15,7 @@
 import { and, eq, isNull, or } from 'drizzle-orm';
 import { db } from '$lib/db';
 import { goals, tasks, themes } from '$lib/db/schema';
-import { parseTaskIntent, type ActivityType, type TaskIntent } from './task-intent-parser';
+import { parseTaskIntent, detectActivityType, type ActivityType, type TaskIntent } from './task-intent-parser';
 
 export type ChecklistItemIntent = {
 	matched: boolean;
@@ -83,7 +83,7 @@ export type LinkedTask = {
  * Returns a simplified intent (activity + duration/distance if present,
  * or a wake-time target if "stå opp kl. X" is detected).
  */
-export function parseChecklistItemIntent(text: string): ChecklistItemIntent {
+export function parseChecklistItemIntent(text: string, opts?: { dayLevel?: boolean }): ChecklistItemIntent {
 	const lower = text.toLowerCase();
 	const parsedTime = parseItemTime(text);
 	const timeFields = parsedTime
@@ -104,7 +104,18 @@ export function parseChecklistItemIntent(text: string): ChecklistItemIntent {
 
 	const result = parseTaskIntent(text);
 	if (!result.matched || !result.intent) {
-		return { matched: parsedTime !== null, ...timeFields, sourceText: text };
+		// På daglista er et enkeltstående aktivitetsord ("yoga", "styrke",
+		// "sykle til jobb") en gyldig én-gangs-aktivitet — tagg det med
+		// activityType så autocheck kan matche, selv uten antall/frekvens/varighet
+		// (uten varighet teller en hvilken som helst økt av den typen). Ukelista
+		// krever fortsatt et målbart holdepunkt for å bli en gjentakende oppgave.
+		const bareActivity = opts?.dayLevel ? detectActivityType(text) : undefined;
+		return {
+			matched: parsedTime !== null || bareActivity !== undefined,
+			...(bareActivity && { activityType: bareActivity }),
+			...timeFields,
+			sourceText: text
+		};
 	}
 	return {
 		matched: true,

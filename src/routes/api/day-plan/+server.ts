@@ -69,7 +69,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			// Parse intent + find linked task for each day item
 			const itemsToInsert = await Promise.all(
 				toAdd.map(async (text, i) => {
-					const intent = parseChecklistItemIntent(text);
+					const intent = parseChecklistItemIntent(text, { dayLevel: true });
 					const timeFields = intent.timeHour !== undefined
 						? { timeHour: intent.timeHour, timeMinute: intent.timeMinute ?? 0 }
 						: {};
