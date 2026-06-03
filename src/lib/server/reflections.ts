@@ -9,6 +9,7 @@ export type ReflectionKind =
 	| 'salary_report'
 	| 'goal_check'
 	| 'reflection_light'
+	| 'feriedagbok'
 	| 'ad_hoc';
 
 export interface ReflectionScores {

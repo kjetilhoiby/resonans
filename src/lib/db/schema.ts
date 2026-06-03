@@ -193,6 +193,7 @@ export const themes = pgTable('themes', {
 	ferieProfile: jsonb('ferie_profile').$type<{
 		startDate?: string; // ISO 'YYYY-MM-DD' — hele ferievinduet
 		endDate?: string;   // ISO 'YYYY-MM-DD'
+		note?: string;      // foreløpig setning, f.eks. "Volda med Marte og David"
 		members?: Array<{
 			id: string;        // stabil grid-nøkkel (personId hvis valgt, ellers generert)
 			personId?: string; // FK til persons (foretrukket)

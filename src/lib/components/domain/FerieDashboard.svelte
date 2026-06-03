@@ -43,6 +43,7 @@
 	export interface FerieProfile {
 		startDate?: string;
 		endDate?: string;
+		note?: string;
 		members?: FerieMember[];
 		grid?: Record<string, Record<string, FerieCell>>;
 		trips?: FerieTrip[];
@@ -50,7 +51,8 @@
 </script>
 
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
+	import { fetchRawTimeseries, buildPeriods } from '$lib/utils/weather';
 
 	interface Props {
 		themeId: string;
@@ -89,6 +91,7 @@
 	/* ── Arbeidstilstand (initialisert fra lagret profil) ── */
 	let startDate = $state(ferieProfile?.startDate ?? '');
 	let endDate = $state(ferieProfile?.endDate ?? '');
+	let note = $state(ferieProfile?.note ?? '');
 	let members = $state<FerieMember[]>(ferieProfile?.members ? [...ferieProfile.members] : []);
 	let grid = $state<Record<string, Record<string, FerieCell>>>(
 		ferieProfile?.grid ? structuredClone(ferieProfile.grid) : {}
@@ -259,6 +262,213 @@
 		applyBulk(activePaint, bulkFrom || startDate, bulkTo || endDate, bulkTarget);
 	}
 
+	/* ── Reiser i ferien (Fase 2) ───────────────────────── */
+	let promoting = $state<string | null>(null);
+
+	function addTrip() {
+		trips = [...trips, { id: crypto.randomUUID(), label: '', place: '', startDate: startDate || '', endDate: endDate || '' }];
+		scheduleSave();
+	}
+
+	function updateTrip(id: string, patch: Partial<FerieTrip>) {
+		trips = trips.map((t) => (t.id === id ? { ...t, ...patch } : t));
+		scheduleSave();
+	}
+
+	function removeTrip(id: string) {
+		trips = trips.filter((t) => t.id !== id);
+		scheduleSave();
+	}
+
+	async function promoteTrip(t: FerieTrip) {
+		promoting = t.id;
+		saveError = '';
+		try {
+			const res = await fetch(`/api/tema/${themeId}/ferie/promote-trip`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ label: t.label, place: t.place, startDate: t.startDate, endDate: t.endDate })
+			});
+			if (!res.ok) throw new Error('promote failed');
+			const data = (await res.json()) as { themeId: string };
+			updateTrip(t.id, { linkedThemeId: data.themeId }); // lagrer lenken via scheduleSave
+		} catch {
+			saveError = 'Klarte ikke å lage reise-tema. Prøv igjen.';
+		} finally {
+			promoting = null;
+		}
+	}
+
+	// Reise-blokk som dekker en gitt dato (for kalender-overlay).
+	function tripForDate(iso: string): FerieTrip | null {
+		for (const t of trips) {
+			if (t.startDate && t.endDate && iso >= t.startDate && iso <= t.endDate) return t;
+		}
+		return null;
+	}
+
+	/* ── Feriedagbok (Fase 3) ───────────────────────────── */
+	interface DiaryWeather {
+		emoji?: string;
+		temp?: number;
+		symbol?: string;
+	}
+	interface DiaryEntry {
+		date: string;
+		content: string;
+		place?: string;
+		weather?: DiaryWeather;
+	}
+
+	let diaryEntries = $state<DiaryEntry[]>([]);
+	let diaryLoading = $state(false);
+	let diaryDate = $state('');
+	let diaryPlace = $state('');
+	let diaryText = $state('');
+	let diaryWeather = $state<DiaryWeather | null>(null);
+	let diarySaving = $state(false);
+	let diaryFetchingWx = $state(false);
+	let diaryError = $state('');
+
+	function defaultDiaryDate(): string {
+		const iso = toISO(new Date());
+		if (startDate && endDate && iso >= startDate && iso <= endDate) return iso;
+		return startDate || iso;
+	}
+
+	function loadFormForDate(date: string) {
+		const existing = diaryEntries.find((e) => e.date === date);
+		if (existing) {
+			diaryText = existing.content;
+			diaryPlace = existing.place ?? '';
+			diaryWeather = existing.weather ?? null;
+		} else {
+			diaryText = '';
+			diaryWeather = null;
+			const trip = tripForDate(date);
+			diaryPlace = trip?.place ?? trip?.label ?? '';
+		}
+	}
+
+	async function loadDiary() {
+		diaryLoading = true;
+		try {
+			const res = await fetch(`/api/tema/${themeId}/ferie/diary`);
+			if (res.ok) {
+				const data = (await res.json()) as { entries: DiaryEntry[] };
+				diaryEntries = data.entries ?? [];
+			}
+		} catch {
+			// best-effort
+		} finally {
+			diaryLoading = false;
+		}
+	}
+
+	function onDiaryDateChange() {
+		diaryError = '';
+		loadFormForDate(diaryDate);
+	}
+
+	async function fetchDiaryWeather() {
+		if (!diaryPlace) return;
+		diaryFetchingWx = true;
+		diaryError = '';
+		try {
+			const geoRes = await fetch(
+				`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(diaryPlace)}&format=json&limit=1`,
+				{ headers: { 'Accept-Language': 'nb,en' } }
+			);
+			const geo = (await geoRes.json()) as Array<{ lat: string; lon: string }>;
+			if (!geo.length) {
+				diaryError = 'Fant ikke stedet.';
+				return;
+			}
+			const ts = await fetchRawTimeseries(parseFloat(geo[0].lat), parseFloat(geo[0].lon));
+			if (!ts) {
+				diaryError = 'Fikk ikke værdata.';
+				return;
+			}
+			const periods = buildPeriods(diaryDate, ts);
+			const usable = periods.find((p) => p.key === 'middag' && p.emoji !== '—' && p.emoji !== '')
+				?? periods.find((p) => p.emoji !== '—' && p.emoji !== '');
+			if (usable) {
+				diaryWeather = { emoji: usable.emoji, temp: usable.temp };
+			} else {
+				diaryError = 'Ingen værvarsel for denne datoen (met.no gir kun ~9 dager fram).';
+			}
+		} catch {
+			diaryError = 'Klarte ikke hente vær.';
+		} finally {
+			diaryFetchingWx = false;
+		}
+	}
+
+	async function saveDiaryEntry() {
+		if (!diaryDate) return;
+		diarySaving = true;
+		diaryError = '';
+		try {
+			const res = await fetch(`/api/tema/${themeId}/ferie/diary`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					date: diaryDate,
+					content: diaryText,
+					place: diaryPlace,
+					weather: diaryWeather ?? undefined
+				})
+			});
+			if (!res.ok) throw new Error('save failed');
+			await loadDiary();
+		} catch {
+			diaryError = 'Klarte ikke lagre dagboknotat.';
+		} finally {
+			diarySaving = false;
+		}
+	}
+
+	function editDiaryEntry(e: DiaryEntry) {
+		diaryDate = e.date;
+		diaryText = e.content;
+		diaryPlace = e.place ?? '';
+		diaryWeather = e.weather ?? null;
+		diaryError = '';
+	}
+
+	async function deleteDiaryEntry(date: string) {
+		try {
+			await fetch(`/api/tema/${themeId}/ferie/diary`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ date })
+			});
+			await loadDiary();
+			if (diaryDate === date) loadFormForDate(date);
+		} catch {
+			diaryError = 'Klarte ikke slette.';
+		}
+	}
+
+	function formatDiaryDate(iso: string): string {
+		try {
+			return new Intl.DateTimeFormat('nb-NO', { weekday: 'short', day: '2-digit', month: 'short' }).format(
+				new Date(iso + 'T12:00:00')
+			);
+		} catch {
+			return iso;
+		}
+	}
+
+	onMount(() => {
+		void loadDiary().then(() => {
+			if (!diaryDate) {
+				diaryDate = defaultDiaryDate();
+				loadFormForDate(diaryDate);
+			}
+		});
+	});
+
 	/* ── Medlemmer ──────────────────────────────────────── */
 	let newMemberName = $state('');
 	let newMemberRole = $state<FerieRole>('barn');
@@ -338,6 +548,7 @@
 		const profile: FerieProfile = {
 			startDate: startDate || undefined,
 			endDate: endDate || undefined,
+			note: note.trim() || undefined,
 			members,
 			grid,
 			trips: trips.length > 0 ? trips : undefined
@@ -397,6 +608,15 @@
 			<label>
 				<span>Til</span>
 				<input type="date" bind:value={endDate} onchange={onWindowChange} />
+			</label>
+			<label class="ferie-note-field">
+				<span>Foreløpig</span>
+				<input
+					type="text"
+					placeholder="f.eks. Volda med Marte og David"
+					bind:value={note}
+					onchange={onWindowChange}
+				/>
 			</label>
 		</div>
 
@@ -551,15 +771,17 @@
 				</thead>
 				<tbody>
 					{#each days as day, i (day.iso)}
+						{@const trip = tripForDate(day.iso)}
 						{#if i === 0 || days[i - 1].week !== day.week}
 							<tr class="week-row">
 								<td colspan={members.length + 1}>Uke {day.week}</td>
 							</tr>
 						{/if}
-						<tr class:weekend={day.isWeekend}>
+						<tr class:weekend={day.isWeekend} class:has-trip={trip}>
 							<td class="col-date sticky-col">
 								<span class="date-day">{day.weekday}</span>
 								<span class="date-num">{day.dayMonth}</span>
+								{#if trip}<span class="date-trip" title={trip.label || trip.place || 'Reise'}>✈️</span>{/if}
 							</td>
 							{#each members as m (m.id)}
 								<td
@@ -587,6 +809,121 @@
 		{#if lastSavedAt}
 			<p class="ferie-saved-at">Sist lagret: {new Intl.DateTimeFormat('nb-NO', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }).format(new Date(lastSavedAt))}</p>
 		{/if}
+	{/if}
+
+	{#if hasWindow}
+		<section class="ferie-trips">
+			<div class="trips-head">
+				<h3>Reiser i ferien</h3>
+				<button type="button" class="ferie-btn" onclick={addTrip}>+ Reise</button>
+			</div>
+			{#if trips.length === 0}
+				<p class="trips-empty">
+					Ingen reiser planlagt ennå. Legg til en grov blokk (sted + datoer) — du kan forfremme
+					den til et fullt reise-tema (kart, vær, budsjett) når du er klar.
+				</p>
+			{:else}
+				<div class="trips-list">
+					{#each trips as t (t.id)}
+						<div class="trip-row">
+							<input
+								class="trip-label"
+								placeholder="Navn"
+								value={t.label}
+								onchange={(e) => updateTrip(t.id, { label: e.currentTarget.value })}
+							/>
+							<input
+								class="trip-place"
+								placeholder="Sted"
+								value={t.place ?? ''}
+								onchange={(e) => updateTrip(t.id, { place: e.currentTarget.value })}
+							/>
+							<input
+								type="date"
+								value={t.startDate ?? ''}
+								min={startDate}
+								max={endDate}
+								onchange={(e) => updateTrip(t.id, { startDate: e.currentTarget.value })}
+							/>
+							<input
+								type="date"
+								value={t.endDate ?? ''}
+								min={startDate}
+								max={endDate}
+								onchange={(e) => updateTrip(t.id, { endDate: e.currentTarget.value })}
+							/>
+							{#if t.linkedThemeId}
+								<a class="trip-link" href={`/tema/${t.linkedThemeId}`}>Åpne reise →</a>
+							{:else}
+								<button
+									type="button"
+									class="ferie-btn"
+									disabled={promoting === t.id}
+									onclick={() => promoteTrip(t)}
+								>
+									{promoting === t.id ? 'Lager…' : 'Forfrem til reise-tema'}
+								</button>
+							{/if}
+							<button type="button" class="trip-remove" title="Fjern" onclick={() => removeTrip(t.id)}>×</button>
+						</div>
+					{/each}
+				</div>
+			{/if}
+		</section>
+	{/if}
+
+	{#if hasWindow}
+		<section class="ferie-diary">
+			<div class="trips-head">
+				<h3>Feriedagbok</h3>
+			</div>
+
+			<div class="diary-form">
+				<div class="diary-form-row">
+					<label>
+						<span>Dag</span>
+						<input type="date" bind:value={diaryDate} min={startDate} max={endDate} onchange={onDiaryDateChange} />
+					</label>
+					<label class="diary-place-field">
+						<span>Sted</span>
+						<input type="text" placeholder="Sted" bind:value={diaryPlace} />
+					</label>
+					<button type="button" class="ferie-btn" disabled={diaryFetchingWx || !diaryPlace} onclick={fetchDiaryWeather}>
+						{diaryFetchingWx ? 'Henter…' : '🌤️ Hent vær'}
+					</button>
+					{#if diaryWeather}
+						<span class="diary-wx">{diaryWeather.emoji} {diaryWeather.temp}°</span>
+					{/if}
+				</div>
+				<textarea class="diary-text" rows="2" placeholder="Én setning om dagen…" bind:value={diaryText}></textarea>
+				<div class="diary-actions">
+					<button type="button" class="ferie-btn ferie-btn-primary" disabled={diarySaving} onclick={saveDiaryEntry}>
+						{diarySaving ? 'Lagrer…' : 'Lagre dag'}
+					</button>
+					{#if diaryError}<span class="ferie-error">{diaryError}</span>{/if}
+				</div>
+			</div>
+
+			{#if diaryEntries.length > 0}
+				<ul class="diary-list">
+					{#each diaryEntries as e (e.date)}
+						<li class="diary-entry">
+							<button type="button" class="diary-entry-main" onclick={() => editDiaryEntry(e)}>
+								<span class="diary-entry-head">
+									<span class="diary-entry-date">{formatDiaryDate(e.date)}</span>
+									{#if e.weather}<span class="diary-entry-wx">{e.weather.emoji} {e.weather.temp}°</span>{/if}
+									{#if e.place}<span class="diary-entry-place">📍 {e.place}</span>{/if}
+								</span>
+								<span class="diary-entry-text">{e.content}</span>
+							</button>
+							<button type="button" class="trip-remove" title="Slett" onclick={() => deleteDiaryEntry(e.date)}>×</button>
+						</li>
+					{/each}
+				</ul>
+			{:else if !diaryLoading}
+				<p class="trips-empty">Ingen dagboknotater ennå. Velg en dag, skriv én setning, og hent gjerne været.</p>
+			{/if}
+		</section>
 	{/if}
 </div>
 
@@ -639,6 +976,12 @@
 		display: flex;
 		gap: 0.75rem;
 		flex-wrap: wrap;
+	}
+	.ferie-note-field {
+		flex: 1 1 220px;
+	}
+	.ferie-note-field input {
+		width: 100%;
 	}
 	.ferie-window label,
 	.bulk-form label {
@@ -998,5 +1341,174 @@
 		font-size: 0.75rem;
 		color: var(--tp-text-muted);
 		margin: 0;
+	}
+
+	/* Reise-overlay i kalenderen */
+	.date-trip {
+		margin-left: 0.25rem;
+		font-size: 0.75rem;
+	}
+	tr.has-trip .sticky-col {
+		box-shadow: inset 3px 0 0 var(--tp-accent);
+	}
+
+	/* Reiser i ferien */
+	.ferie-trips {
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
+		padding: 0.85rem;
+		background: var(--tp-bg-2);
+		border: 1px solid var(--tp-border);
+		border-radius: 12px;
+	}
+	.trips-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.trips-head h3 {
+		margin: 0;
+		font-size: 1rem;
+	}
+	.trips-empty {
+		margin: 0;
+		font-size: 0.85rem;
+		color: var(--tp-text-soft);
+	}
+	.trips-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+	.trip-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+		align-items: center;
+		padding-bottom: 0.5rem;
+		border-bottom: 1px solid var(--tp-border);
+	}
+	.trip-row:last-child {
+		border-bottom: none;
+		padding-bottom: 0;
+	}
+	.trip-label {
+		flex: 1 1 120px;
+		min-width: 100px;
+	}
+	.trip-place {
+		flex: 1 1 100px;
+		min-width: 90px;
+	}
+	.trip-link {
+		color: var(--tp-accent);
+		font-size: 0.85rem;
+		text-decoration: none;
+		white-space: nowrap;
+	}
+	.trip-link:hover {
+		text-decoration: underline;
+	}
+	.trip-remove {
+		background: none;
+		border: none;
+		color: var(--tp-text-muted);
+		font-size: 1.2rem;
+		line-height: 1;
+		cursor: pointer;
+		padding: 0 0.2rem;
+	}
+
+	/* Feriedagbok */
+	.ferie-diary {
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
+		padding: 0.85rem;
+		background: var(--tp-bg-2);
+		border: 1px solid var(--tp-border);
+		border-radius: 12px;
+	}
+	.diary-form {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+	.diary-form-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		align-items: flex-end;
+	}
+	.diary-place-field {
+		flex: 1 1 140px;
+	}
+	.diary-place-field input {
+		width: 100%;
+	}
+	.diary-wx {
+		font-size: 0.95rem;
+		padding: 0.3rem 0.5rem;
+		background: var(--tp-bg-1);
+		border: 1px solid var(--tp-border);
+		border-radius: 8px;
+	}
+	.diary-text {
+		width: 100%;
+		background: var(--tp-bg-1);
+		border: 1px solid var(--tp-border);
+		color: var(--tp-text);
+		border-radius: 8px;
+		padding: 0.5rem;
+		font-size: 0.9rem;
+		font-family: inherit;
+		resize: vertical;
+	}
+	.diary-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+	}
+	.diary-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+	}
+	.diary-entry {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.4rem;
+		border-top: 1px solid var(--tp-border);
+		padding-top: 0.4rem;
+	}
+	.diary-entry-main {
+		flex: 1;
+		background: none;
+		border: none;
+		color: var(--tp-text);
+		text-align: left;
+		cursor: pointer;
+		display: flex;
+		flex-direction: column;
+		gap: 0.15rem;
+		padding: 0;
+	}
+	.diary-entry-head {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		font-size: 0.78rem;
+		color: var(--tp-text-soft);
+	}
+	.diary-entry-date {
+		font-weight: 600;
+		text-transform: capitalize;
+	}
+	.diary-entry-text {
+		font-size: 0.9rem;
 	}
 </style>
