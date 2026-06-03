@@ -1,6 +1,6 @@
 # Ferie Theme Execution Plan
 
-Status: Fase 1 & 2 ferdig (DB-verifisering gjenstår) — Fase 3 ikke startet
+Status: Fase 1, 2 & 3 ferdig (DB-verifisering gjenstår)
 Last updated: 2026-06-03
 Owner: Claude
 Branch: `claude/ferie-fase2-reiser` (Fase 2) — bygger på `claude/family-vacation-planning-ytQvk` (Fase 1, PR #117)
@@ -65,10 +65,18 @@ Per celle (medlem × dag):
 - [ ] **Ende-til-ende mot DB** (krever `DATABASE_URL`): legg til reise-blokk, forfrem,
       bekreft at nytt reise-tema får `TripDashboard` og at lenken fungerer
 
-### Fase 3 — Feriedagbok (ikke startet)
-- [ ] Ny `ReflectionKind` `'feriedagbok'` i `src/lib/server/reflections.ts`
-- [ ] Per-dag dagbok (sted + setning) lagret i `reflections` (themeId + periodKey=ISO-dato)
-- [ ] Værvarsel-snapshot via `src/lib/utils/weather.ts` (api.met.no)
+### Fase 3 — Feriedagbok (ferdig)
+- [x] Ny `ReflectionKind` `'feriedagbok'` i `src/lib/server/reflections.ts`
+- [x] Endepunkt `GET/PUT /api/tema/[id]/ferie/diary` — én notat per dag per ferie-tema,
+      lagret i `reflections` (themeId + periodKey=ISO-dato; sted + vær i `scores`-jsonb;
+      tomt notat sletter dagen)
+- [x] UI «Feriedagbok» i `FerieDashboard.svelte`: velg dag, sted (prefylt fra reise-blokk),
+      én setning, «Hent vær»-knapp, liste over notater (klikk = rediger, × = slett)
+- [x] Værvarsel-snapshot via `fetchRawTimeseries` + `buildPeriods` (`src/lib/utils/weather.ts`,
+      api.met.no) — geokoding via Nominatim, som i `TripDashboard`
+- [x] `npm run check` grønn + produksjonsbygg `✔ done`
+- [ ] **Ende-til-ende mot DB** (krever `DATABASE_URL`): skriv et notat, hent vær,
+      bekreft persistens + redigering + sletting
 
 ## Execution log
 - 2026-06-03: Designdiskusjon med bruker. Avklart: fasevis, rikt status-sett, flagg
@@ -84,6 +92,9 @@ Per celle (medlem × dag):
 - 2026-06-03: Fase 2 implementert på ny branch `claude/ferie-fase2-reiser`. «Reiser i
   ferien»-UI, kalender-overlay (✈️), og `promote-trip`-endepunkt som forfremmer en
   grov blokk til et fullt reise-tema. `npm run check` → 0 feil, bygg → `✔ done`.
+- 2026-06-03: Fase 3 implementert (samme branch). `'feriedagbok'`-kind, `diary`-endepunkt,
+  og dagbok-UI med sted + vær (met.no) + én setning per dag. `npm run check` → 0 feil,
+  bygg → `✔ done`. Alle tre fasene er nå kodeferdige; gjenstår DB-verifisering ved deploy.
 
 ## Resume notes
 - Nøkkelfiler:
@@ -96,6 +107,9 @@ Per celle (medlem × dag):
   - `src/lib/ai/tools/manage-theme.ts` (ferie-parametere)
   - `src/routes/api/tema/[id]/ferie/promote-trip/+server.ts` (Fase 2: forfrem reise)
   - `src/lib/server/themes.ts` (`ensureThemeForUser`, gjenbrukt av promote)
-- Hvis kontekst nullstilles: fullfør DB-verifiseringen for Fase 1 & 2, og fortsett
-  deretter på Fase 3 (feriedagbok + vær). Værhenting kan gjenbrukes fra
-  `TripDashboard.svelte` / `src/lib/utils/weather.ts` (api.met.no).
+  - `src/routes/api/tema/[id]/ferie/diary/+server.ts` (Fase 3: feriedagbok)
+  - `src/lib/server/reflections.ts` (`'feriedagbok'`-kind)
+  - `src/lib/utils/weather.ts` (`fetchRawTimeseries`/`buildPeriods`, gjenbrukt av dagboka)
+- Alle tre fasene er kodeferdige. Gjenstår: ende-til-ende-verifisering mot DB ved deploy
+  (krever `DATABASE_URL`). Mulige videreføringer: redigere reise-blokker etter forfremming,
+  dele feriedagbok eksternt, eller AI-flow som foreslår dekning for hull-dager.

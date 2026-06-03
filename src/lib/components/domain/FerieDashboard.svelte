@@ -50,7 +50,8 @@
 </script>
 
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
+	import { fetchRawTimeseries, buildPeriods } from '$lib/utils/weather';
 
 	interface Props {
 		themeId: string;
@@ -303,6 +304,168 @@
 		}
 		return null;
 	}
+
+	/* ── Feriedagbok (Fase 3) ───────────────────────────── */
+	interface DiaryWeather {
+		emoji?: string;
+		temp?: number;
+		symbol?: string;
+	}
+	interface DiaryEntry {
+		date: string;
+		content: string;
+		place?: string;
+		weather?: DiaryWeather;
+	}
+
+	let diaryEntries = $state<DiaryEntry[]>([]);
+	let diaryLoading = $state(false);
+	let diaryDate = $state('');
+	let diaryPlace = $state('');
+	let diaryText = $state('');
+	let diaryWeather = $state<DiaryWeather | null>(null);
+	let diarySaving = $state(false);
+	let diaryFetchingWx = $state(false);
+	let diaryError = $state('');
+
+	function defaultDiaryDate(): string {
+		const iso = toISO(new Date());
+		if (startDate && endDate && iso >= startDate && iso <= endDate) return iso;
+		return startDate || iso;
+	}
+
+	function loadFormForDate(date: string) {
+		const existing = diaryEntries.find((e) => e.date === date);
+		if (existing) {
+			diaryText = existing.content;
+			diaryPlace = existing.place ?? '';
+			diaryWeather = existing.weather ?? null;
+		} else {
+			diaryText = '';
+			diaryWeather = null;
+			const trip = tripForDate(date);
+			diaryPlace = trip?.place ?? trip?.label ?? '';
+		}
+	}
+
+	async function loadDiary() {
+		diaryLoading = true;
+		try {
+			const res = await fetch(`/api/tema/${themeId}/ferie/diary`);
+			if (res.ok) {
+				const data = (await res.json()) as { entries: DiaryEntry[] };
+				diaryEntries = data.entries ?? [];
+			}
+		} catch {
+			// best-effort
+		} finally {
+			diaryLoading = false;
+		}
+	}
+
+	function onDiaryDateChange() {
+		diaryError = '';
+		loadFormForDate(diaryDate);
+	}
+
+	async function fetchDiaryWeather() {
+		if (!diaryPlace) return;
+		diaryFetchingWx = true;
+		diaryError = '';
+		try {
+			const geoRes = await fetch(
+				`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(diaryPlace)}&format=json&limit=1`,
+				{ headers: { 'Accept-Language': 'nb,en' } }
+			);
+			const geo = (await geoRes.json()) as Array<{ lat: string; lon: string }>;
+			if (!geo.length) {
+				diaryError = 'Fant ikke stedet.';
+				return;
+			}
+			const ts = await fetchRawTimeseries(parseFloat(geo[0].lat), parseFloat(geo[0].lon));
+			if (!ts) {
+				diaryError = 'Fikk ikke værdata.';
+				return;
+			}
+			const periods = buildPeriods(diaryDate, ts);
+			const usable = periods.find((p) => p.key === 'middag' && p.emoji !== '—' && p.emoji !== '')
+				?? periods.find((p) => p.emoji !== '—' && p.emoji !== '');
+			if (usable) {
+				diaryWeather = { emoji: usable.emoji, temp: usable.temp };
+			} else {
+				diaryError = 'Ingen værvarsel for denne datoen (met.no gir kun ~9 dager fram).';
+			}
+		} catch {
+			diaryError = 'Klarte ikke hente vær.';
+		} finally {
+			diaryFetchingWx = false;
+		}
+	}
+
+	async function saveDiaryEntry() {
+		if (!diaryDate) return;
+		diarySaving = true;
+		diaryError = '';
+		try {
+			const res = await fetch(`/api/tema/${themeId}/ferie/diary`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					date: diaryDate,
+					content: diaryText,
+					place: diaryPlace,
+					weather: diaryWeather ?? undefined
+				})
+			});
+			if (!res.ok) throw new Error('save failed');
+			await loadDiary();
+		} catch {
+			diaryError = 'Klarte ikke lagre dagboknotat.';
+		} finally {
+			diarySaving = false;
+		}
+	}
+
+	function editDiaryEntry(e: DiaryEntry) {
+		diaryDate = e.date;
+		diaryText = e.content;
+		diaryPlace = e.place ?? '';
+		diaryWeather = e.weather ?? null;
+		diaryError = '';
+	}
+
+	async function deleteDiaryEntry(date: string) {
+		try {
+			await fetch(`/api/tema/${themeId}/ferie/diary`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ date })
+			});
+			await loadDiary();
+			if (diaryDate === date) loadFormForDate(date);
+		} catch {
+			diaryError = 'Klarte ikke slette.';
+		}
+	}
+
+	function formatDiaryDate(iso: string): string {
+		try {
+			return new Intl.DateTimeFormat('nb-NO', { weekday: 'short', day: '2-digit', month: 'short' }).format(
+				new Date(iso + 'T12:00:00')
+			);
+		} catch {
+			return iso;
+		}
+	}
+
+	onMount(() => {
+		void loadDiary().then(() => {
+			if (!diaryDate) {
+				diaryDate = defaultDiaryDate();
+				loadFormForDate(diaryDate);
+			}
+		});
+	});
 
 	/* ── Medlemmer ──────────────────────────────────────── */
 	let newMemberName = $state('');
@@ -693,6 +856,60 @@
 						</div>
 					{/each}
 				</div>
+			{/if}
+		</section>
+	{/if}
+
+	{#if hasWindow}
+		<section class="ferie-diary">
+			<div class="trips-head">
+				<h3>Feriedagbok</h3>
+			</div>
+
+			<div class="diary-form">
+				<div class="diary-form-row">
+					<label>
+						<span>Dag</span>
+						<input type="date" bind:value={diaryDate} min={startDate} max={endDate} onchange={onDiaryDateChange} />
+					</label>
+					<label class="diary-place-field">
+						<span>Sted</span>
+						<input type="text" placeholder="Sted" bind:value={diaryPlace} />
+					</label>
+					<button type="button" class="ferie-btn" disabled={diaryFetchingWx || !diaryPlace} onclick={fetchDiaryWeather}>
+						{diaryFetchingWx ? 'Henter…' : '🌤️ Hent vær'}
+					</button>
+					{#if diaryWeather}
+						<span class="diary-wx">{diaryWeather.emoji} {diaryWeather.temp}°</span>
+					{/if}
+				</div>
+				<textarea class="diary-text" rows="2" placeholder="Én setning om dagen…" bind:value={diaryText}></textarea>
+				<div class="diary-actions">
+					<button type="button" class="ferie-btn ferie-btn-primary" disabled={diarySaving} onclick={saveDiaryEntry}>
+						{diarySaving ? 'Lagrer…' : 'Lagre dag'}
+					</button>
+					{#if diaryError}<span class="ferie-error">{diaryError}</span>{/if}
+				</div>
+			</div>
+
+			{#if diaryEntries.length > 0}
+				<ul class="diary-list">
+					{#each diaryEntries as e (e.date)}
+						<li class="diary-entry">
+							<button type="button" class="diary-entry-main" onclick={() => editDiaryEntry(e)}>
+								<span class="diary-entry-head">
+									<span class="diary-entry-date">{formatDiaryDate(e.date)}</span>
+									{#if e.weather}<span class="diary-entry-wx">{e.weather.emoji} {e.weather.temp}°</span>{/if}
+									{#if e.place}<span class="diary-entry-place">📍 {e.place}</span>{/if}
+								</span>
+								<span class="diary-entry-text">{e.content}</span>
+							</button>
+							<button type="button" class="trip-remove" title="Slett" onclick={() => deleteDiaryEntry(e.date)}>×</button>
+						</li>
+					{/each}
+				</ul>
+			{:else if !diaryLoading}
+				<p class="trips-empty">Ingen dagboknotater ennå. Velg en dag, skriv én setning, og hent gjerne været.</p>
 			{/if}
 		</section>
 	{/if}
@@ -1183,5 +1400,97 @@
 		line-height: 1;
 		cursor: pointer;
 		padding: 0 0.2rem;
+	}
+
+	/* Feriedagbok */
+	.ferie-diary {
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
+		padding: 0.85rem;
+		background: var(--tp-bg-2);
+		border: 1px solid var(--tp-border);
+		border-radius: 12px;
+	}
+	.diary-form {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+	.diary-form-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		align-items: flex-end;
+	}
+	.diary-place-field {
+		flex: 1 1 140px;
+	}
+	.diary-place-field input {
+		width: 100%;
+	}
+	.diary-wx {
+		font-size: 0.95rem;
+		padding: 0.3rem 0.5rem;
+		background: var(--tp-bg-1);
+		border: 1px solid var(--tp-border);
+		border-radius: 8px;
+	}
+	.diary-text {
+		width: 100%;
+		background: var(--tp-bg-1);
+		border: 1px solid var(--tp-border);
+		color: var(--tp-text);
+		border-radius: 8px;
+		padding: 0.5rem;
+		font-size: 0.9rem;
+		font-family: inherit;
+		resize: vertical;
+	}
+	.diary-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+	}
+	.diary-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+	}
+	.diary-entry {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.4rem;
+		border-top: 1px solid var(--tp-border);
+		padding-top: 0.4rem;
+	}
+	.diary-entry-main {
+		flex: 1;
+		background: none;
+		border: none;
+		color: var(--tp-text);
+		text-align: left;
+		cursor: pointer;
+		display: flex;
+		flex-direction: column;
+		gap: 0.15rem;
+		padding: 0;
+	}
+	.diary-entry-head {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		font-size: 0.78rem;
+		color: var(--tp-text-soft);
+	}
+	.diary-entry-date {
+		font-weight: 600;
+		text-transform: capitalize;
+	}
+	.diary-entry-text {
+		font-size: 0.9rem;
 	}
 </style>
