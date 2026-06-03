@@ -256,14 +256,10 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 	}
 	let editingItem = $state<EditingItem | null>(null);
 	let breakdownTarget = $state<{ checklistId: string; item: ChecklistItem } | null>(null);
-	let autoCheckPrompt = $state<{
-		checklistId: string;
-		itemId: string;
-		itemText: string;
-		activityType: string;
-		durationMinutes: number | null;
-		startTimeIso: string | null;
-	} | null>(null);
+	type AutoCheckPrompt =
+		| { kind: 'day'; checklistId: string; itemId: string; itemText: string; activityType: string; durationMinutes: number | null; startTimeIso: string | null }
+		| { kind: 'week'; checklistId: string; baseLabel: string; activityType: string; workoutCount: number; totalSlots: number; suggested: number };
+	let autoCheckPrompt = $state<AutoCheckPrompt | null>(null);
 	let autoCheckBusy = $state(false);
 	let editingTask = $state<EditingTask | null>(null);
 	let editTaskInput = $state<HTMLInputElement | null>(null);
@@ -902,9 +898,38 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 		}
 	}
 
-	// Etter at et dag-punkt er opprettet: spør serveren om det finnes en
-	// matchende treningsøkt samme dag, og vis en bekreftelsesmodal hvis så.
+	// Etter at et punkt er opprettet: spør serveren om det allerede finnes
+	// matchende treningsøkt(er), og vis en bekreftelsesmodal hvis så.
+	// Dag-checkliste → per-punkt (én økt i dag). Uke-checkliste → per
+	// aktivitetsgruppe (antall økter i uka mot antall slots).
 	async function maybePromptAutoCheck(checklistId: string, created: ChecklistItem[]) {
+		if (weekChecklistState?.id === checklistId) {
+			const first = created.find((i) => !i.checked && i.metadata?.activityType);
+			if (!first) return;
+			const baseLabel = first.text.replace(/\s*\(\d+\/\d+\)\s*$/, '').trim();
+			try {
+				const res = await fetch(`/api/checklists/${checklistId}/autocheck-week?baseLabel=${encodeURIComponent(baseLabel)}`);
+				if (!res.ok) return;
+				const body = await res.json() as {
+					group: { activityType: string; workoutCount: number; totalSlots: number; newlyChecked: number } | null;
+				};
+				if (body.group && body.group.newlyChecked > 0) {
+					autoCheckPrompt = {
+						kind: 'week',
+						checklistId,
+						baseLabel,
+						activityType: body.group.activityType,
+						workoutCount: body.group.workoutCount,
+						totalSlots: body.group.totalSlots,
+						suggested: body.group.newlyChecked
+					};
+				}
+			} catch {
+				// best-effort
+			}
+			return;
+		}
+
 		for (const item of created) {
 			if (item.checked || !item.metadata?.activityType) continue;
 			try {
@@ -917,6 +942,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 				};
 				if (body.match) {
 					autoCheckPrompt = {
+						kind: 'day',
 						checklistId,
 						itemId: item.id,
 						itemText: body.itemText ?? item.text,
@@ -934,17 +960,37 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 
 	async function confirmAutoCheck() {
 		if (!autoCheckPrompt) return;
-		const { checklistId, itemId } = autoCheckPrompt;
+		const prompt = autoCheckPrompt;
 		autoCheckBusy = true;
 		try {
-			const res = await fetch(`/api/checklists/${checklistId}/items/${itemId}/autocheck`, { method: 'POST' });
-			if (res.ok) {
-				updateChecklistById(checklistId, (current) => ({
-					...current,
-					items: current.items.map((i) => i.id === itemId
-						? { ...i, checked: true, metadata: { ...(i.metadata ?? {}), autoChecked: true } }
-						: i)
-				}));
+			if (prompt.kind === 'day') {
+				const res = await fetch(`/api/checklists/${prompt.checklistId}/items/${prompt.itemId}/autocheck`, { method: 'POST' });
+				if (res.ok) {
+					updateChecklistById(prompt.checklistId, (current) => ({
+						...current,
+						items: current.items.map((i) => i.id === prompt.itemId
+							? { ...i, checked: true, metadata: { ...(i.metadata ?? {}), autoChecked: true } }
+							: i)
+					}));
+				}
+			} else {
+				const res = await fetch(`/api/checklists/${prompt.checklistId}/autocheck-week`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ baseLabel: prompt.baseLabel })
+				});
+				if (res.ok) {
+					const body = await res.json() as { group: { itemIds: string[] } | null };
+					const ids = new Set(body.group?.itemIds ?? []);
+					if (ids.size > 0) {
+						updateChecklistById(prompt.checklistId, (current) => ({
+							...current,
+							items: current.items.map((i) => ids.has(i.id)
+								? { ...i, checked: true, metadata: { ...(i.metadata ?? {}), autoChecked: true } }
+								: i)
+						}));
+					}
+				}
 			}
 		} finally {
 			autoCheckBusy = false;
@@ -2576,9 +2622,13 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 	<div class="ac-overlay" role="presentation">
 		<div class="ac-modal" role="dialog" aria-modal="true" aria-label="Bekreft auto-avkryssing">
 			<div class="ac-emoji">{activityTypeEmoji(autoCheckPrompt.activityType)}</div>
-			<h3 class="ac-title">Fant en økt i dag</h3>
+			<h3 class="ac-title">{autoCheckPrompt.kind === 'week' ? 'Fant økter denne uka' : 'Fant en økt i dag'}</h3>
 			<p class="ac-body">
-				Du har en registrert {autoCheckPrompt.activityType}-økt{#if autoCheckPrompt.durationMinutes} på {autoCheckPrompt.durationMinutes} min{/if}{#if formatClock(autoCheckPrompt.startTimeIso)} (kl. {formatClock(autoCheckPrompt.startTimeIso)}){/if} i dag. Vil du krysse av «{autoCheckPrompt.itemText}»?
+				{#if autoCheckPrompt.kind === 'day'}
+					Du har en registrert {autoCheckPrompt.activityType}-økt{#if autoCheckPrompt.durationMinutes} på {autoCheckPrompt.durationMinutes} min{/if}{#if formatClock(autoCheckPrompt.startTimeIso)} (kl. {formatClock(autoCheckPrompt.startTimeIso)}){/if} i dag. Vil du krysse av «{autoCheckPrompt.itemText}»?
+				{:else}
+					Du har {autoCheckPrompt.workoutCount} registrerte {autoCheckPrompt.activityType}-økter denne uka. Vil du krysse av {autoCheckPrompt.suggested} av {autoCheckPrompt.totalSlots}?
+				{/if}
 			</p>
 			<div class="ac-actions">
 				<button type="button" class="ac-btn ac-btn-secondary" disabled={autoCheckBusy} onclick={() => (autoCheckPrompt = null)}>Ikke nå</button>

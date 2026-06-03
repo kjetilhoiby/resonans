@@ -17,7 +17,7 @@
  * Called after Withings sensor events are synced.
  */
 
-import { and, eq, gte, lt, sql } from 'drizzle-orm';
+import { and, eq, gte, isNull, lt, sql } from 'drizzle-orm';
 import { db, rowsOf } from '$lib/db';
 import { checklistItems, checklists, progress } from '$lib/db/schema';
 import { TaskExecutionService, type TaskProgressSkipReason } from '$lib/server/services/task-execution-service';
@@ -452,4 +452,163 @@ function parseWakeTargetFromText(text: string): { hour: number; minute: number }
 		wakeHour,
 		wakeMinute
 	};
+}
+
+// ─── Uke-checklist autocheck ──────────────────────────────────────────────
+
+export type WeekAutoCheckGroup = {
+	baseLabel: string;
+	activityType: ActivityType;
+	/** Antall matchende treningsøkter i uka. */
+	workoutCount: number;
+	/** Antall slots i gruppa (f.eks. 4 for "Yoga (1/4)…(4/4)"). */
+	totalSlots: number;
+	alreadyChecked: number;
+	/** Antall slots som ble (eller ville blitt, ved dryRun) hakt av i denne kjøringen. */
+	newlyChecked: number;
+	/** Slot-id-ene som ble hakt av (tom ved dryRun). */
+	itemIds: string[];
+};
+
+/** Mandag (UTC) og uke-slutt for ISO-uka som datoen tilhører. */
+function isoWeekRange(date: string): { weekStart: Date; weekEnd: Date } {
+	const [y, m, d] = date.split('-').map(Number);
+	const dt = new Date(Date.UTC(y, m - 1, d));
+	const day = dt.getUTCDay() || 7; // Mon=1 … Sun=7
+	const monday = new Date(dt);
+	monday.setUTCDate(dt.getUTCDate() - day + 1);
+	monday.setUTCHours(0, 0, 0, 0);
+	const weekEnd = new Date(monday);
+	weekEnd.setUTCDate(monday.getUTCDate() + 7);
+	return { weekStart: monday, weekEnd };
+}
+
+/** Fjerner "(n/m)"-suffikset fra et slot-navn → base-label. */
+function baseLabelOf(text: string): string {
+	return text.replace(/\s*\(\d+\/\d+\)\s*$/, '').trim();
+}
+
+/**
+ * Auto-hak uke-checklist-punkter mot treningsdata. For hver aktivitetsgruppe
+ * (slots med samme base-label + activityType) telles matchende økter i uka,
+ * og inntil så mange slots hakes av (1/4 → 2/4 …). Allerede avkryssede slots
+ * teller med, så manuell + auto stemmer mot antall økter.
+ *
+ * @param onlyBaseLabel  begrens til én gruppe (bekreftelse ved opprettelse)
+ * @param dryRun         ikke skriv – returner bare hva som ville blitt hakt
+ */
+export async function autocheckWeekChecklistItems(params: {
+	userId: string;
+	date: string; // hvilken som helst dato i mål-uka
+	onlyBaseLabel?: string;
+	dryRun?: boolean;
+}): Promise<WeekAutoCheckGroup[]> {
+	const { userId, date, onlyBaseLabel, dryRun } = params;
+	const weekContext = getWeekContextForDate(date);
+
+	const weekChecklist = await db.query.checklists.findFirst({
+		where: and(eq(checklists.userId, userId), eq(checklists.context, weekContext)),
+		columns: { id: true }
+	});
+	if (!weekChecklist) return [];
+
+	const items = await db.query.checklistItems.findMany({
+		where: and(
+			eq(checklistItems.checklistId, weekChecklist.id),
+			eq(checklistItems.userId, userId),
+			isNull(checklistItems.parentId)
+		)
+	});
+
+	type Slot = typeof items[number];
+	const groups = new Map<
+		string,
+		{ baseLabel: string; activityType: ActivityType; durationMin: number | null; distanceKm: number | null; slots: Slot[] }
+	>();
+	for (const item of items) {
+		const meta = (item.metadata ?? {}) as Record<string, unknown>;
+		const activityType = typeof meta.activityType === 'string' ? (meta.activityType as ActivityType) : null;
+		if (!activityType) continue;
+		const base = baseLabelOf(item.text);
+		if (onlyBaseLabel && base.toLowerCase() !== onlyBaseLabel.toLowerCase()) continue;
+		const key = `${base.toLowerCase()}::${activityType}`;
+		if (!groups.has(key)) {
+			groups.set(key, {
+				baseLabel: base,
+				activityType,
+				durationMin: typeof meta.durationMinutes === 'number' ? meta.durationMinutes : null,
+				distanceKm: typeof meta.distanceKm === 'number' ? meta.distanceKm : null,
+				slots: []
+			});
+		}
+		groups.get(key)!.slots.push(item);
+	}
+	if (groups.size === 0) return [];
+
+	const { weekStart, weekEnd } = isoWeekRange(date);
+	const workouts = rowsOf<{
+		id: string;
+		sport_type: string;
+		duration_seconds: number | null;
+		distance_meters: number | null;
+	}>(await db.execute(sql`
+		SELECT
+			id,
+			data->>'sportType' AS sport_type,
+			(data->>'duration')::float AS duration_seconds,
+			(data->>'distance')::float AS distance_meters
+		FROM sensor_events
+		WHERE user_id = ${userId}
+		  AND data_type = 'workout'
+		  AND timestamp >= ${weekStart}
+		  AND timestamp < ${weekEnd}
+	`));
+
+	const now = new Date();
+	const results: WeekAutoCheckGroup[] = [];
+
+	for (const group of groups.values()) {
+		const workoutCount = workouts.filter((w) => {
+			if (!w.sport_type) return false;
+			if (!activityMatchesSport(group.activityType, w.sport_type)) return false;
+			if (group.durationMin != null && w.duration_seconds != null && w.duration_seconds / 60 < group.durationMin * THRESHOLD) return false;
+			if (group.distanceKm != null && w.distance_meters != null && w.distance_meters / 1000 < group.distanceKm * THRESHOLD) return false;
+			return true;
+		}).length;
+
+		const totalSlots = group.slots.length;
+		const alreadyChecked = group.slots.filter((s) => s.checked).length;
+		const desired = Math.min(workoutCount, totalSlots);
+		const toCheck = Math.max(0, desired - alreadyChecked);
+		const uncheckedSlots = group.slots
+			.filter((s) => !s.checked)
+			.sort((a, b) => a.sortOrder - b.sortOrder)
+			.slice(0, toCheck);
+
+		if (!dryRun) {
+			for (const slot of uncheckedSlots) {
+				const meta = (slot.metadata ?? {}) as Record<string, unknown>;
+				await db
+					.update(checklistItems)
+					.set({
+						checked: true,
+						checkedAt: now,
+						metadata: { ...meta, autoChecked: true, autoCheckedAt: now.toISOString() }
+					})
+					.where(eq(checklistItems.id, slot.id));
+			}
+		}
+
+		results.push({
+			baseLabel: group.baseLabel,
+			activityType: group.activityType,
+			workoutCount,
+			totalSlots,
+			alreadyChecked,
+			newlyChecked: uncheckedSlots.length,
+			itemIds: dryRun ? [] : uncheckedSlots.map((s) => s.id)
+		});
+	}
+
+	return results;
 }
