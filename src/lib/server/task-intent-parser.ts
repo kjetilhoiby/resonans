@@ -7,6 +7,7 @@ import { parseTaskIntentWithLlmFallback } from '$lib/server/intent-llm-fallback'
 export type ActivityType =
 	| 'running'
 	| 'cycling'
+	| 'ebike'
 	| 'walking'
 	| 'strength'
 	| 'swimming'
@@ -86,7 +87,8 @@ export const LONG_RUN_DISTANCE_KM = 6;
 // Maps Norwegian activity keywords to canonical ActivityType
 const ACTIVITY_KEYWORDS: Array<[RegExp, ActivityType]> = [
 	[/\b(løp(e|er|ing|etur(?:er)?)?|sprin(te?|ting)?|jogge?|jogging|joggetur(?:er)?)\b/, 'running'],
-	[/\b(sykl(e|er|ing)?|sykkel|sykkeltur(?:er)?|bike|biking)\b/, 'cycling'],
+	[/\b(elsykl(e|er|ing)?|elsykkel|rulle|rulletur(?:er)?)\b/, 'ebike'],
+	[/\b(sykl(e|er|ing)?|sykkel|sykkeltur(?:er)?|bike|biking|tråkk(e|er|ing)?)\b/, 'cycling'],
 	[/\b(gå(tur(?:er)?)?|turgå(er|ing)?|walking|walk)\b/, 'walking'],
 	[/\b(styrke(trening)?|vektløft(ing)?|gym|trene?\s+styrke)\b/, 'strength'],
 	[/\b(svøm(me|ming|mer)?|swim(ming)?)\b/, 'swimming'],

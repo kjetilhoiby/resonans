@@ -59,6 +59,7 @@ export function activityEmoji(label: string): string {
 const ACTIVITY_TYPE_EMOJI: Record<string, string> = {
 	running: '🏃',
 	cycling: '🚴',
+	ebike: '🚴',
 	walking: '🚶',
 	strength: '🏋️',
 	swimming: '🏊',

@@ -240,7 +240,8 @@ function scoreMatch(
 		const lowerTitle = taskTitle.toLowerCase();
 		const activityKeywords: Record<ActivityType, string[]> = {
 			running: ['løpe', 'løping', 'jogge', 'jogging', 'sprint', 'running'],
-			cycling: ['sykl', 'sykkel', 'bike', 'cycling'],
+			cycling: ['sykl', 'sykkel', 'bike', 'cycling', 'tråkk'],
+			ebike: ['elsykkel', 'elsykl', 'rulle', 'ebike'],
 			walking: ['gå', 'tur', 'gåtur', 'walking'],
 			strength: ['styrke', 'vekt', 'gym'],
 			swimming: ['svøm', 'swimming'],
