@@ -25,6 +25,7 @@
 		themeInstruction={data.themeInstruction}
 		themeFiles={data.themeFiles}
 		tripProfile={data.tripProfile}
+		ferieProfile={data.ferieProfile}
 		tripLists={data.tripLists}
 		selectedWorkout={data.selectedWorkout}
 		metricSettings={data.metricSettings}

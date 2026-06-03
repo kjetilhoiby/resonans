@@ -340,6 +340,7 @@ type DashboardPayloadMap = {
 	economics: EconomicsDashboardData;
 	food: FoodDashboardData;
 	travel: TravelDashboardData;
+	ferie: { themeName: string; themeEmoji: string | null; status: string };
 	books: BooksDashboardData;
 	family: FamilyDashboardData;
 	egenfrekvens: EgenfrekvensDashboardData;

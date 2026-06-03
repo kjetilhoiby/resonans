@@ -40,6 +40,8 @@ Examples of when to suggest new themes:
 
 For travel/trip themes: ALWAYS extract and pass tripDestination, tripStartDate and tripEndDate when the user mentions them during theme creation.
 
+For ferie/holiday themes (planning a vacation window with childcare coverage per family member, e.g. "Lag sommerferie 2026 fra 20. juni til 17. august"): use a name containing "ferie" (e.g. "Sommerferie 2026") and pass ferieStartDate and ferieEndDate. This is distinct from a travel theme — a ferie is a time window that can contain several trips. Example: "Planlegg sommerferien" → name="Sommerferie 2026", ferieStartDate/ferieEndDate for the school break.
+
 Be conversational and explain why a theme makes sense.`,
 
 	parameters: z.object({
@@ -56,7 +58,10 @@ Be conversational and explain why a theme makes sense.`,
 		themeId: z.string().optional().describe('Theme ID or exact theme name (required for archive action)'),
 		tripDestination: z.string().optional().describe('Travel destination city/country (for travel themes, e.g. "Tokyo", "Japan")'),
 		tripStartDate: z.string().optional().describe('Trip start date in ISO format YYYY-MM-DD'),
-		tripEndDate: z.string().optional().describe('Trip end date in ISO format YYYY-MM-DD')
+		tripEndDate: z.string().optional().describe('Trip end date in ISO format YYYY-MM-DD'),
+		ferieStartDate: z.string().optional().describe('Vacation window start date in ISO format YYYY-MM-DD (for ferie/holiday themes, e.g. school summer break)'),
+		ferieEndDate: z.string().optional().describe('Vacation window end date in ISO format YYYY-MM-DD'),
+		ferieType: z.string().optional().describe('Type of vacation, used in the theme name (e.g. "sommerferie", "påskeferie")')
 	}),
 
 	execute: async (args: {
@@ -72,8 +77,11 @@ Be conversational and explain why a theme makes sense.`,
 		tripDestination?: string;
 		tripStartDate?: string;
 		tripEndDate?: string;
+		ferieStartDate?: string;
+		ferieEndDate?: string;
+		ferieType?: string;
 	}) => {
-		const { action, userId, conversationId, name, emoji, parentTheme, description, reason, themeId, tripDestination, tripStartDate, tripEndDate } = args;
+		const { action, userId, conversationId, name, emoji, parentTheme, description, reason, themeId, tripDestination, tripStartDate, tripEndDate, ferieStartDate, ferieEndDate } = args;
 
 		try {
 			// List existing themes
@@ -169,6 +177,11 @@ Be conversational and explain why a theme makes sense.`,
 					? { destination: tripDestination, startDate: tripStartDate, endDate: tripEndDate }
 					: undefined;
 
+				// Build ferie profile if vacation window was provided (oppholdsplan fylles inn i dashboardet)
+				const ferieProfile = ferieStartDate || ferieEndDate
+					? { startDate: ferieStartDate, endDate: ferieEndDate }
+					: undefined;
+
 				// Create the theme
 				// eslint-disable-next-line @typescript-eslint/no-explicit-any
 				const newTheme = ((await db.insert(themes).values({
@@ -180,7 +193,8 @@ Be conversational and explain why a theme makes sense.`,
 					aiSuggested: true,
 					conversationId: themeConversationId,
 					archived: false,
-					...(tripProfile ? { tripProfile } : {})
+					...(tripProfile ? { tripProfile } : {}),
+					...(ferieProfile ? { ferieProfile } : {})
 				}).returning()) as any[])[0];
 
 				await maybeActivateEgenfrekvensCheckin(userId, { name, parentTheme });
@@ -193,9 +207,10 @@ Be conversational and explain why a theme makes sense.`,
 						emoji: newTheme.emoji,
 						parentTheme: newTheme.parentTheme,
 						conversationId: newTheme.conversationId,
-						tripProfile: newTheme.tripProfile ?? null
+						tripProfile: newTheme.tripProfile ?? null,
+						ferieProfile: newTheme.ferieProfile ?? null
 					},
-					message: `Created theme: ${newTheme.emoji} ${newTheme.name}${parentTheme ? ` under ${parentTheme}` : ''}${tripDestination ? ` (tur til ${tripDestination}${tripStartDate ? ` fra ${tripStartDate}` : ''}${tripEndDate ? ` til ${tripEndDate}` : ''})` : ''}`
+					message: `Created theme: ${newTheme.emoji} ${newTheme.name}${parentTheme ? ` under ${parentTheme}` : ''}${tripDestination ? ` (tur til ${tripDestination}${tripStartDate ? ` fra ${tripStartDate}` : ''}${tripEndDate ? ` til ${tripEndDate}` : ''})` : ''}${ferieProfile ? ` (ferie${ferieStartDate ? ` fra ${ferieStartDate}` : ''}${ferieEndDate ? ` til ${ferieEndDate}` : ''})` : ''}`
 				};
 			}
 
