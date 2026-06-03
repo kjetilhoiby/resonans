@@ -75,6 +75,14 @@ const NUMBER_WORDS: Record<string, number> = {
 	nitti: 90
 };
 
+/**
+ * Definisjon av et «langt» løp i km. Et løpe-mål med ordet «langt»/«lang» (uten
+ * eksplisitt distanse) tolkes som dette. Hardkodet nå — meningen er å gjøre dette
+ * bruker-konfigurerbart (en slider i innstillinger) senere; hold derfor terskelen
+ * her som ett navngitt punkt.
+ */
+export const LONG_RUN_DISTANCE_KM = 6;
+
 // Maps Norwegian activity keywords to canonical ActivityType
 const ACTIVITY_KEYWORDS: Array<[RegExp, ActivityType]> = [
 	[/\b(løp(e|er|ing|etur(?:er)?)?|sprin(te?|ting)?|jogge?|jogging|joggetur(?:er)?)\b/, 'running'],
@@ -219,7 +227,13 @@ export function parseTaskIntent(rawText: string): ParsedTaskIntent {
 	// --- Detect activity type + optional duration/distance ---
 	const activityType = parseActivityType(lower);
 	const durationMinutes = parseDurationMinutes(lower) ?? undefined;
-	const distanceKm = parseDistanceKm(lower) ?? undefined;
+	let distanceKm = parseDistanceKm(lower) ?? undefined;
+	// «langt»/«lang» løp uten eksplisitt distanse → standard langtur-distanse.
+	// Hardkodet nå via LONG_RUN_DISTANCE_KM; kan gjøres bruker-konfigurerbar
+	// (slider) senere uten å endre kallstedene.
+	if (distanceKm === undefined && activityType === 'running' && /\blang(t)?\b/.test(lower)) {
+		distanceKm = LONG_RUN_DISTANCE_KM;
+	}
 
 	// --- Frequency: "X ganger per dag/uke/måned" ---
 	// Accepts: "3 ganger i uka", "3 ganger per uke", "3 ganger i uken", "3 ganger denne uken", "tre ganger i måneden"

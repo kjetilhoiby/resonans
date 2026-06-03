@@ -588,70 +588,36 @@ export async function autocheckWeekChecklistItems(params: {
 		dayEvidenceByActivity.get(row.activity_type)!.add(row.day);
 	}
 
-	// === Fordeling ===
-	// Hver treningsøkt (med distanse/varighet) og hvert MANUELT avhukede dag-punkt
-	// er en «sesjon». Vi tildeler hver sesjon til ÉTT mål — det mest spesifikke den
-	// kvalifiserer for (mål med distanse-/varighetskrav før generelle), så et 6 km-
-	// løp går til «jogge langt» og korte løp til «jogge fire ganger». Likt spesifikke
-	// mål fylles i liste-rekkefølge. Manuelle dag-punkter har ukjent metrikk og
-	// kvalifiserer bare til mål uten distanse-/varighetskrav.
-	type GoalState = {
-		group: { baseLabel: string; activityType: ActivityType; durationMin: number | null; distanceKm: number | null; slots: Slot[] };
-		assigned: number;
-		specificity: number;
-		priority: number;
-	};
-	const goalStates: GoalState[] = [...groups.values()].map((g) => ({
-		group: g,
-		assigned: 0,
-		specificity: (g.distanceKm != null ? 1 : 0) + (g.durationMin != null ? 1 : 0),
-		priority: Math.min(...g.slots.map((s) => s.sortOrder))
-	}));
-
-	type Session = { distanceKm: number | null; durationMin: number | null };
-	const eligible = (g: GoalState, s: Session): boolean => {
-		if (g.group.distanceKm != null && (s.distanceKm == null || s.distanceKm < g.group.distanceKm * THRESHOLD)) return false;
-		if (g.group.durationMin != null && (s.durationMin == null || s.durationMin < g.group.durationMin * THRESHOLD)) return false;
-		return true;
-	};
-
-	for (const at of new Set(goalStates.map((g) => g.group.activityType))) {
-		const goalsForAt = goalStates
-			.filter((g) => g.group.activityType === at)
-			.sort((a, b) => b.specificity - a.specificity || a.priority - b.priority);
-
-		const matching = workouts.filter((w) => w.sport_type && activityMatchesSport(at, w.sport_type));
-		const workoutDays = new Set(matching.map((w) => w.day).filter(Boolean));
-		const sessions: Session[] = matching.map((w) => ({
-			distanceKm: w.distance_meters != null ? w.distance_meters / 1000 : null,
-			durationMin: w.duration_seconds != null ? w.duration_seconds / 60 : null
-		}));
-		// Manuelle dag-punkter (ukjent metrikk) kun på dager uten matchende økt.
-		for (const d of dayEvidenceByActivity.get(at) ?? []) {
-			if (!workoutDays.has(d)) sessions.push({ distanceKm: null, durationMin: null });
-		}
-
-		for (const s of sessions) {
-			for (const g of goalsForAt) {
-				if (g.assigned >= g.group.slots.length) continue;
-				if (!eligible(g, s)) continue;
-				g.assigned += 1;
-				break;
-			}
-		}
-	}
-
+	// === Kreditering (uavhengig per mål) ===
+	// Hvert mål krediteres for seg: en distanseløs oppgave hakes av av enhver
+	// matchende økt, og en distanse-/varighetsoppgave av økter som oppfyller
+	// kravet. Samme økt kan derfor hake av FLERE mål — én lang jogg oppfyller
+	// både «jogge fire ganger» og «jogge langt», og gir kryss i begge.
+	// Manuelle dag-punkter har ukjent metrikk → krediterer bare krav-løse mål,
+	// og bare på dager uten matchende økt (så økt + auto-hakt dag-punkt ikke
+	// dobles).
 	const now = new Date();
 	const results: WeekAutoCheckGroup[] = [];
 
-	for (const gs of goalStates) {
-		// onlyBaseLabel: fordelingen regnes for ALLE mål (så prioritet/spesifisitet
-		// stemmer), men vi skriver/returnerer bare det etterspurte målet.
-		if (onlyBaseLabel && gs.group.baseLabel.toLowerCase() !== onlyBaseLabel.toLowerCase()) continue;
-		const group = gs.group;
+	for (const group of groups.values()) {
+		if (onlyBaseLabel && group.baseLabel.toLowerCase() !== onlyBaseLabel.toLowerCase()) continue;
+
+		const hasThreshold = group.distanceKm != null || group.durationMin != null;
+		const matchingWorkouts = workouts.filter((w) => {
+			if (!w.sport_type || !activityMatchesSport(group.activityType, w.sport_type)) return false;
+			if (group.distanceKm != null && (w.distance_meters == null || w.distance_meters / 1000 < group.distanceKm * THRESHOLD)) return false;
+			if (group.durationMin != null && (w.duration_seconds == null || w.duration_seconds / 60 < group.durationMin * THRESHOLD)) return false;
+			return true;
+		});
+		const workoutDays = new Set(matchingWorkouts.map((w) => w.day).filter(Boolean));
+		const manualDays = hasThreshold
+			? []
+			: [...(dayEvidenceByActivity.get(group.activityType) ?? [])].filter((d) => !workoutDays.has(d));
+		const sessionCount = matchingWorkouts.length + manualDays.length;
+
 		const totalSlots = group.slots.length;
 		const alreadyChecked = group.slots.filter((s) => s.checked).length;
-		const toCheck = Math.max(0, gs.assigned - alreadyChecked);
+		const toCheck = Math.max(0, Math.min(sessionCount, totalSlots) - alreadyChecked);
 		const uncheckedSlots = group.slots
 			.filter((s) => !s.checked)
 			.sort((a, b) => a.sortOrder - b.sortOrder)
@@ -674,7 +640,7 @@ export async function autocheckWeekChecklistItems(params: {
 		results.push({
 			baseLabel: group.baseLabel,
 			activityType: group.activityType,
-			workoutCount: gs.assigned,
+			workoutCount: sessionCount,
 			totalSlots,
 			alreadyChecked,
 			newlyChecked: uncheckedSlots.length,
