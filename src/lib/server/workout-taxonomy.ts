@@ -23,6 +23,13 @@ const SENSOR_GOAL_METRICS_BY_SPORT: Record<string, string[]> = {
 	basketball: ['workouts', 'basketball']
 };
 
+/**
+ * Normaliserer en innkommende sportType til en kanonisk verdi resten av systemet
+ * kjenner (autocheck, effort, taxonomy, analyse). Definisjonen ligger klient-trygt
+ * i $lib/utils/sport og re-eksporteres her for server-bruk.
+ */
+export { normalizeSportType } from '$lib/utils/sport';
+
 export function describeWorkoutSportType(sportType: string): string {
 	const normalized = sportType.trim().toLowerCase();
 	return WORKOUT_TITLE_BY_SPORT[normalized] ?? 'Treningsøkt';

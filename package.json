@@ -10,6 +10,8 @@
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+		"test": "vitest run",
+		"test:watch": "vitest",
 		"db:generate": "drizzle-kit generate",
 		"db:migrate": "drizzle-kit migrate",
 		"db:sql-migrate": "node scripts/apply-sql-migrations.mjs",
@@ -32,7 +34,8 @@
 		"svelte-check": "^4.3.2",
 		"typescript": "^5.9.2",
 		"vercel": "^50.37.3",
-		"vite": "^7.1.7"
+		"vite": "^7.1.7",
+		"vitest": "^4.1.8"
 	},
 	"dependencies": {
 		"@auth/sveltekit": "^1.11.1",

@@ -124,7 +124,7 @@ function titleForEvent(dataType: string | null, data: Record<string, unknown>): 
 
 function sportFamily(value: string): string {
 	if (value.includes('running')) return 'running';
-	if (value.includes('cycling') || value === 'e_bike') return 'cycling';
+	if (value.includes('cycling') || value === 'e_bike' || value.includes('ebik')) return 'cycling';
 	if (value.includes('walking') || value === 'hiking') return 'walking';
 	if (value.includes('swimming')) return 'swimming';
 	return value;

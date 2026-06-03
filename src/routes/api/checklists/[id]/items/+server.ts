@@ -52,7 +52,8 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 		// Only parse intent for non-subtask items
 		const weekKeys = extractWeekKeys(checklist.context);
 		const isWeekLevel = weekKeys !== null && !checklist.context!.includes(':day:');
-		const intent = parseChecklistItemIntent(parsed.label);
+		const isDayLevel = weekKeys !== null && checklist.context!.includes(':day:');
+		const intent = parseChecklistItemIntent(parsed.label, { dayLevel: isDayLevel });
 
 		if (isWeekLevel && weekKeys) {
 			// Wake-time items: store target metadata, no linked task needed
@@ -171,18 +172,35 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 		: {};
 	const combinedMeta = { ...itemMetadata, ...subtaskTimeMeta };
 	const baseLabel = parsedSubtaskDate?.text || (itemMetadata.timeHour !== undefined ? stripTimeFromText(parsed.label) : parsed.label);
+
+	// Aktivitets-tag fra base-label, slik at også gjentatte slots ("Yoga (1/4)")
+	// bærer activityType og kan auto-hakes mot treningsdata (uke-autocheck).
+	// dayLevel:true fanger bare aktivitetsord uten antall/frekvens/varighet.
+	const baseActivityIntent = parseChecklistItemIntent(baseLabel, { dayLevel: true });
+	const activitySlotMeta: Record<string, unknown> = baseActivityIntent.activityType
+		? {
+			activityType: baseActivityIntent.activityType,
+			...(baseActivityIntent.durationMinutes !== undefined && { durationMinutes: baseActivityIntent.durationMinutes }),
+			...(baseActivityIntent.distanceKm !== undefined && { distanceKm: baseActivityIntent.distanceKm })
+		}
+		: {};
+
 	const createdItems = await db.insert(checklistItems).values(
-		Array.from({ length: repeatCount }, (_, index) => ({
-			checklistId: params.id,
-			userId,
-			parentId: parentId || null, // Support subtasks
-			text: repeatCount > 1 ? `${baseLabel} (${index + 1}/${repeatCount})` : baseLabel,
-			startDate: parsedSubtaskDate?.startDate ?? null,
-			sortOrder: sortOrder + index,
-			...(slotMeta
-				? { metadata: slotMeta }
-				: repeatCount === 1 && Object.keys(combinedMeta).length > 0 ? { metadata: combinedMeta } : {})
-		}))
+		Array.from({ length: repeatCount }, (_, index) => {
+			const baseMeta = slotMeta ?? (repeatCount === 1 ? combinedMeta : {});
+			// activitySlotMeta gir activityType til alle slots; baseMeta (rikere,
+			// m/ linkedTaskId osv.) vinner ved overlapp.
+			const meta = { ...activitySlotMeta, ...baseMeta };
+			return {
+				checklistId: params.id,
+				userId,
+				parentId: parentId || null, // Support subtasks
+				text: repeatCount > 1 ? `${baseLabel} (${index + 1}/${repeatCount})` : baseLabel,
+				startDate: parsedSubtaskDate?.startDate ?? null,
+				sortOrder: sortOrder + index,
+				...(Object.keys(meta).length > 0 ? { metadata: meta } : {})
+			};
+		})
 	).returning();
 
 	// Index @-mentions for hver opprettet item — kjører i bakgrunnen via waitUntil.

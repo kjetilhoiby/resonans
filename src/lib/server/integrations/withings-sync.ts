@@ -4,7 +4,7 @@ import { eq, and, isNull, gte, lt } from 'drizzle-orm';
 import { refreshAccessToken, fetchAllWithingsData, fetchWithingsSleep } from './withings';
 import { enqueueBackgroundJob } from '$lib/server/background-jobs';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
-import { autocheckChecklistItemsForDay } from '$lib/server/checklist-autocheck';
+import { autocheckChecklistItemsForDay, autocheckWeekChecklistItems } from '$lib/server/checklist-autocheck';
 import { syncSensorProgressForTasks } from '$lib/server/sensor-progress-sync';
 import { computeSleepLag } from '$lib/server/services/sleep-lag';
 
@@ -652,6 +652,7 @@ export async function syncAllWithingsData(userId: string, fullSync = false, over
 
 		try {
 			await autocheckChecklistItemsForDay({ userId, date: todayOslo });
+			await autocheckWeekChecklistItems({ userId, date: todayOslo });
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
 			console.error(`[withings-sync] immediate checklist autocheck failed user=${userId}: ${msg}`);

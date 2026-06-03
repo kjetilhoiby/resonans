@@ -25,7 +25,8 @@ import {
 /** Maps our activity type strings to Withings sportType substrings (lowercase). */
 const ACTIVITY_TO_SPORT_PATTERNS: Record<string, string[]> = {
 	running: ['running'],
-	cycling: ['cycling', 'e_bike'],
+	cycling: ['cycling'],
+	ebike: ['e_bike', 'ebik', 'e-bike'],
 	walking: ['walking'],
 	strength: ['lift_weights', 'calisthenics', 'strength'],
 	swimming: ['swimming'],
