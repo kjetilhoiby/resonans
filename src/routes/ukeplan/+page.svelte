@@ -1193,19 +1193,41 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 	async function deleteChecklistItem(checklistId: string, itemId: string) {
 		const checklist = getChecklistById(checklistId);
 		if (!checklist) return;
+
+		// Gjentatte punkter ("Yoga (1/4)" … "(4/4)") vises som ett punkt med flere
+		// bokser. Sletter man ett, rydder vi hele gruppen (alle slots med samme
+		// base-label på samme nivå) i én operasjon.
+		const repeatRe = /^(.+?)\s+\(\d+\/\d+\)$/;
+		const target = checklist.items.find((i) => i.id === itemId);
+		const repeatMatch = target?.text.match(repeatRe);
+		let ids: string[] = [itemId];
+		if (target && repeatMatch) {
+			const base = repeatMatch[1].trim().toLowerCase();
+			ids = checklist.items
+				.filter((i) => (i.parentId ?? null) === (target.parentId ?? null))
+				.filter((i) => {
+					const m = i.text.match(repeatRe);
+					return m !== null && m[1].trim().toLowerCase() === base;
+				})
+				.map((i) => i.id);
+		}
+		const idSet = new Set(ids);
+
 		const previousItems = checklist.items;
-		const nextItems = previousItems.filter((item) => item.id !== itemId);
+		const nextItems = previousItems.filter((item) => !idSet.has(item.id));
 		const key = saveKeyForChecklist(checklistId);
 
 		updateChecklistById(checklistId, (current) => ({ ...current, items: nextItems }));
 		editingItem = null;
 		setSaveState(key, 'saving');
 
-		const response = await fetch(`/api/checklists/${checklistId}/items/${itemId}`, {
-			method: 'DELETE'
-		});
+		const responses = await Promise.all(
+			[...idSet].map((id) =>
+				fetch(`/api/checklists/${checklistId}/items/${id}`, { method: 'DELETE' })
+			)
+		);
 
-		if (!response.ok) {
+		if (responses.some((r) => !r.ok)) {
 			updateChecklistById(checklistId, (current) => ({ ...current, items: previousItems }));
 			setSaveState(key, 'idle');
 			return;
@@ -1970,7 +1992,13 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 			<ul class="wp-checklist">
 				{#each groupChecklistItems(sortByStatus(weekChecklistState.items.filter(i => !i.parentId))) as group}
 					{#if group.type === 'group'}
-						<li class="wp-check-row">
+						<li
+							class="wp-check-row"
+							onpointerdown={(e) => handleContextPressStart(e, weekChecklistId, group.items[0])}
+							onpointerup={handleContextPressEnd}
+							onpointercancel={handleContextPressEnd}
+							onpointerleave={handleContextPressEnd}
+						>
 							<div class="wp-check-row-main">
 								<span class="wp-check-text wp-check-group-label">{activityEmoji(group.label) ? activityEmoji(group.label) + " " : ""}{group.label}</span>
 								<div class="wp-slot-row" aria-label="Progresjon">
@@ -1979,7 +2007,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 											type="button"
 											class="wp-slot wp-slot-btn"
 											class:checked={item.checked}
-											onclick={() => void toggleChecklistItem(weekChecklistId, item.id, !item.checked)}
+											onclick={() => { if (!longPressTriggered) void toggleChecklistItem(weekChecklistId, item.id, !item.checked); }}
 											aria-label={item.checked ? 'Marker som ikke gjort' : 'Marker som gjort'}
 										>{item.checked ? '✓' : ''}</button>
 									{/each}
@@ -2575,6 +2603,9 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 	}}
 	onSnooze={(targetDate) => {
 		if (contextMenuItem) void snoozeItem(contextMenuItem.checklistId, contextMenuItem.item.id, targetDate);
+	}}
+	onDelete={() => {
+		if (contextMenuItem) void deleteChecklistItem(contextMenuItem.checklistId, contextMenuItem.item.id);
 	}}
 	onSkip={() => {
 		if (contextMenuItem) void setItemSkipped(contextMenuItem.checklistId, contextMenuItem.item.id, true);
