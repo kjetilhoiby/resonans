@@ -30,7 +30,7 @@ const ACTIVITY_TO_SPORT_PATTERNS: Record<ActivityType, string[]> = {
 	running: ['running'],
 	cycling: ['cycling', 'e_bike'],
 	walking: ['walking'],
-	strength: ['lift_weights', 'calisthenics'],
+	strength: ['lift_weights', 'calisthenics', 'strength'],
 	swimming: ['swimming'],
 	yoga: ['yoga'],
 	hiit: ['hiit', 'interval'],
