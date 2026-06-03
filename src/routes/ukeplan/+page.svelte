@@ -256,6 +256,15 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 	}
 	let editingItem = $state<EditingItem | null>(null);
 	let breakdownTarget = $state<{ checklistId: string; item: ChecklistItem } | null>(null);
+	let autoCheckPrompt = $state<{
+		checklistId: string;
+		itemId: string;
+		itemText: string;
+		activityType: string;
+		durationMinutes: number | null;
+		startTimeIso: string | null;
+	} | null>(null);
+	let autoCheckBusy = $state(false);
 	let editingTask = $state<EditingTask | null>(null);
 	let editTaskInput = $state<HTMLInputElement | null>(null);
 	let skipEditTask = false;
@@ -881,6 +890,66 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 			items: [...current.items, ...created]
 		}));
 		flashSaved(key);
+		void maybePromptAutoCheck(checklistId, created);
+	}
+
+	function formatClock(iso: string | null): string {
+		if (!iso) return '';
+		try {
+			return new Date(iso).toLocaleTimeString('nb-NO', { timeZone: 'Europe/Oslo', hour: '2-digit', minute: '2-digit' });
+		} catch {
+			return '';
+		}
+	}
+
+	// Etter at et dag-punkt er opprettet: spør serveren om det finnes en
+	// matchende treningsøkt samme dag, og vis en bekreftelsesmodal hvis så.
+	async function maybePromptAutoCheck(checklistId: string, created: ChecklistItem[]) {
+		for (const item of created) {
+			if (item.checked || !item.metadata?.activityType) continue;
+			try {
+				const res = await fetch(`/api/checklists/${checklistId}/items/${item.id}/autocheck`);
+				if (!res.ok) continue;
+				const body = await res.json() as {
+					match: { durationMinutes: number | null; startTimeIso: string | null } | null;
+					itemText?: string;
+					activityType?: string;
+				};
+				if (body.match) {
+					autoCheckPrompt = {
+						checklistId,
+						itemId: item.id,
+						itemText: body.itemText ?? item.text,
+						activityType: body.activityType ?? item.metadata.activityType,
+						durationMinutes: body.match.durationMinutes,
+						startTimeIso: body.match.startTimeIso
+					};
+					return; // vis én bekreftelse om gangen
+				}
+			} catch {
+				// best-effort – forslag skal aldri blokkere opprettelse
+			}
+		}
+	}
+
+	async function confirmAutoCheck() {
+		if (!autoCheckPrompt) return;
+		const { checklistId, itemId } = autoCheckPrompt;
+		autoCheckBusy = true;
+		try {
+			const res = await fetch(`/api/checklists/${checklistId}/items/${itemId}/autocheck`, { method: 'POST' });
+			if (res.ok) {
+				updateChecklistById(checklistId, (current) => ({
+					...current,
+					items: current.items.map((i) => i.id === itemId
+						? { ...i, checked: true, metadata: { ...(i.metadata ?? {}), autoChecked: true } }
+						: i)
+				}));
+			}
+		} finally {
+			autoCheckBusy = false;
+			autoCheckPrompt = null;
+		}
 	}
 
 	async function appendChecklistItems(checklistId: string, texts: string[]) {
@@ -2503,6 +2572,22 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 	/>
 {/if}
 
+{#if autoCheckPrompt}
+	<div class="ac-overlay" role="presentation">
+		<div class="ac-modal" role="dialog" aria-modal="true" aria-label="Bekreft auto-avkryssing">
+			<div class="ac-emoji">{activityTypeEmoji(autoCheckPrompt.activityType)}</div>
+			<h3 class="ac-title">Fant en økt i dag</h3>
+			<p class="ac-body">
+				Du har en registrert {autoCheckPrompt.activityType}-økt{#if autoCheckPrompt.durationMinutes} på {autoCheckPrompt.durationMinutes} min{/if}{#if formatClock(autoCheckPrompt.startTimeIso)} (kl. {formatClock(autoCheckPrompt.startTimeIso)}){/if} i dag. Vil du krysse av «{autoCheckPrompt.itemText}»?
+			</p>
+			<div class="ac-actions">
+				<button type="button" class="ac-btn ac-btn-secondary" disabled={autoCheckBusy} onclick={() => (autoCheckPrompt = null)}>Ikke nå</button>
+				<button type="button" class="ac-btn ac-btn-primary" disabled={autoCheckBusy} onclick={() => void confirmAutoCheck()}>{autoCheckBusy ? 'Krysser av…' : 'Kryss av'}</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
 <TaskContextMenu
 	open={taskContextMenuItem !== null}
 	anchor={taskContextMenuRect}
@@ -3549,5 +3634,69 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 		.wp-day-number {
 			font-size: 0.78rem;
 		}
+	}
+
+	/* Auto-hak bekreftelsesmodal */
+	.ac-overlay {
+		position: fixed;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.55);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 1.25rem;
+		z-index: 1000;
+	}
+	.ac-modal {
+		background: var(--surface-1, #1c1c1e);
+		color: var(--text-primary, #f5f5f7);
+		border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+		border-radius: 16px;
+		padding: 1.4rem 1.3rem 1.1rem;
+		max-width: 360px;
+		width: 100%;
+		text-align: center;
+		box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+	}
+	.ac-emoji {
+		font-size: 2.2rem;
+		line-height: 1;
+		margin-bottom: 0.5rem;
+	}
+	.ac-title {
+		margin: 0 0 0.4rem;
+		font-size: 1.05rem;
+		font-weight: 600;
+	}
+	.ac-body {
+		margin: 0 0 1.1rem;
+		font-size: 0.9rem;
+		line-height: 1.45;
+		color: var(--text-secondary, rgba(245, 245, 247, 0.75));
+	}
+	.ac-actions {
+		display: flex;
+		gap: 0.6rem;
+	}
+	.ac-btn {
+		flex: 1;
+		padding: 0.65rem 0.9rem;
+		border-radius: 10px;
+		font-size: 0.9rem;
+		font-weight: 600;
+		cursor: pointer;
+		border: 1px solid transparent;
+	}
+	.ac-btn:disabled {
+		opacity: 0.6;
+		cursor: default;
+	}
+	.ac-btn-secondary {
+		background: var(--surface-2, rgba(255, 255, 255, 0.08));
+		color: var(--text-primary, #f5f5f7);
+	}
+	.ac-btn-primary {
+		background: var(--accent-primary, #7c8ef5);
+		color: #fff;
 	}
 </style>

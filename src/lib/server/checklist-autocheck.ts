@@ -66,8 +66,10 @@ export type AutoCheckResult = {
 export async function autocheckChecklistItemsForDay(params: {
 	userId: string;
 	date: string; // ISO date "2026-04-19"
+	/** Hvis satt: kun dette punktet sjekkes (brukt av bekreftet auto-hak ved opprettelse). */
+	itemId?: string;
 }): Promise<AutoCheckResult[]> {
-	const { userId, date } = params;
+	const { userId, date, itemId } = params;
 
 	// Day window
 	const dayStart = new Date(`${date}T00:00:00.000Z`);
@@ -94,6 +96,7 @@ export async function autocheckChecklistItemsForDay(params: {
 	});
 
 	const candidateItems = items.filter((item) => {
+		if (itemId && item.id !== itemId) return false;
 		const meta = (item.metadata ?? {}) as Record<string, unknown>;
 		return typeof meta.activityType === 'string';
 	});
@@ -220,6 +223,73 @@ export async function autocheckChecklistItemsForDay(params: {
 	}
 
 	return results;
+}
+
+export type WorkoutMatch = {
+	workoutId: string;
+	sportType: string;
+	durationMinutes: number | null;
+	startTimeIso: string | null;
+};
+
+/**
+ * Dry-run: finn en workout-event samme dag som matcher en gitt aktivitet,
+ * uten å hake av noe. Brukt ved opprettelse av et dag-punkt for å spørre
+ * brukeren om vi skal krysse av (bekreftelsesmodal). Samme matchings-regler
+ * som autocheckChecklistItemsForDay.
+ */
+export async function findMatchingWorkoutForItem(params: {
+	userId: string;
+	date: string; // ISO "2026-06-03"
+	activityType: ActivityType;
+	targetDurationMin?: number | null;
+	targetDistanceKm?: number | null;
+}): Promise<WorkoutMatch | null> {
+	const { userId, date, activityType, targetDurationMin, targetDistanceKm } = params;
+
+	const dayStart = new Date(`${date}T00:00:00.000Z`);
+	const dayEnd = new Date(`${date}T23:59:59.999Z`);
+
+	const workoutRows = rowsOf<{
+		id: string;
+		sport_type: string;
+		duration_seconds: number | null;
+		distance_meters: number | null;
+		ts: string;
+	}>(await db.execute(sql`
+		SELECT
+			id,
+			data->>'sportType' AS sport_type,
+			(data->>'duration')::float AS duration_seconds,
+			(data->>'distance')::float AS distance_meters,
+			timestamp AS ts
+		FROM sensor_events
+		WHERE user_id = ${userId}
+		  AND data_type = 'workout'
+		  AND timestamp >= ${dayStart}
+		  AND timestamp <= ${dayEnd}
+		ORDER BY timestamp DESC
+	`));
+
+	const match = workoutRows.find((w) => {
+		if (!w.sport_type) return false;
+		if (!activityMatchesSport(activityType, w.sport_type)) return false;
+		if (targetDurationMin != null && w.duration_seconds != null) {
+			if (w.duration_seconds / 60 < targetDurationMin * THRESHOLD) return false;
+		}
+		if (targetDistanceKm != null && w.distance_meters != null) {
+			if (w.distance_meters / 1000 < targetDistanceKm * THRESHOLD) return false;
+		}
+		return true;
+	});
+
+	if (!match) return null;
+	return {
+		workoutId: match.id,
+		sportType: match.sport_type,
+		durationMinutes: match.duration_seconds != null ? Math.round(match.duration_seconds / 60) : null,
+		startTimeIso: match.ts ?? null
+	};
 }
 
 /** Compute ISO week context key from an ISO date string, e.g. "2026-04-20" → "week:2026-W17" */
