@@ -1,6 +1,6 @@
 # Ferie Theme Execution Plan
 
-Status: Fase 1, 2 & 3 ferdig (DB-verifisering gjenstår)
+Status: Fase 1–4 ferdig (DB-verifisering gjenstår)
 Last updated: 2026-06-03
 Owner: Claude
 Branch: `claude/ferie-fase2-reiser` (Fase 2) — bygger på `claude/family-vacation-planning-ytQvk` (Fase 1, PR #117)
@@ -78,6 +78,23 @@ Per celle (medlem × dag):
 - [ ] **Ende-til-ende mot DB** (krever `DATABASE_URL`): skriv et notat, hent vær,
       bekreft persistens + redigering + sletting
 
+### Fase 4 — Familieorganisator (ferdig)
+- [x] Sesong-logikk `src/lib/ferie/seasons.ts` (rene, testbare funksjoner): de fem
+      norske skoleferiene, planleggingsvinduer (sommer=mars, høst=skolestart,
+      jul=1.okt, vinter=5.jan, påske=1.feb), Easter-beregning, `nextUnplannedFerie`,
+      `classifyDate`, `daysUntil`. Enhetstest `seasons.test.ts` (11 tester) grønn.
+- [x] Quick-action «Planlegg [ferie]» i `FamilyDashboard`: viser nærmeste kommende
+      uplanlagte ferie hvis planleggingsvinduet er åpnet → `POST /api/ferie/create`
+      oppretter ferie-tema (omtrentlig vindu prefylt) og navigerer dit
+- [x] Ferie-tab i familie-dashboardet: lister alle ferie-temaer med «starter om N dager»,
+      dato fra/til, og redigerbar foreløpig setning (f.eks. «Volda med Marte og David»)
+- [x] `ferieProfile.note` (jsonb, ingen migrasjon) + `PUT /api/tema/[id]/ferie/note`
+      (delvis oppdatering, fletter så grid/medlemmer ikke slettes); note round-trip i
+      `FerieDashboard`; `ferieThemes` lagt til `FamilyDashboardData` (server + klient)
+- [x] `npm run check` grønn + 11 tester + produksjonsbygg `✔ done`
+- [ ] **Ende-til-ende mot DB**: bekreft at knappen dukker opp i rett sesong, at
+      opprettelse navigerer til oppholdsplan, og at note + ferie-tab fungerer
+
 ## Execution log
 - 2026-06-03: Designdiskusjon med bruker. Avklart: fasevis, rikt status-sett, flagg
   dekningshull (uten feriedag-teller), grove reise-blokker → forfrem til reise-tema.
@@ -95,6 +112,11 @@ Per celle (medlem × dag):
 - 2026-06-03: Fase 3 implementert (samme branch). `'feriedagbok'`-kind, `diary`-endepunkt,
   og dagbok-UI med sted + vær (met.no) + én setning per dag. `npm run check` → 0 feil,
   bygg → `✔ done`. Alle tre fasene er nå kodeferdige; gjenstår DB-verifisering ved deploy.
+- 2026-06-03: Fase 4 (familieorganisator) implementert. Sesong-logikk + enhetstester,
+  sesongstyrt «Planlegg ferie»-knapp og ferie-tab i familie-dashboardet, foreløpig
+  setning (`note`). NB: knappen viser nærmeste kommende uplanlagte ferie (så i mars kan
+  påske vises før sommer) — avklart som ønsket sekvensering. `npm run check` → 0 feil,
+  11 tester, bygg → `✔ done`.
 
 ## Resume notes
 - Nøkkelfiler:

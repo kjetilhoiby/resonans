@@ -43,6 +43,7 @@
 	export interface FerieProfile {
 		startDate?: string;
 		endDate?: string;
+		note?: string;
 		members?: FerieMember[];
 		grid?: Record<string, Record<string, FerieCell>>;
 		trips?: FerieTrip[];
@@ -90,6 +91,7 @@
 	/* ── Arbeidstilstand (initialisert fra lagret profil) ── */
 	let startDate = $state(ferieProfile?.startDate ?? '');
 	let endDate = $state(ferieProfile?.endDate ?? '');
+	let note = $state(ferieProfile?.note ?? '');
 	let members = $state<FerieMember[]>(ferieProfile?.members ? [...ferieProfile.members] : []);
 	let grid = $state<Record<string, Record<string, FerieCell>>>(
 		ferieProfile?.grid ? structuredClone(ferieProfile.grid) : {}
@@ -546,6 +548,7 @@
 		const profile: FerieProfile = {
 			startDate: startDate || undefined,
 			endDate: endDate || undefined,
+			note: note.trim() || undefined,
 			members,
 			grid,
 			trips: trips.length > 0 ? trips : undefined
@@ -605,6 +608,15 @@
 			<label>
 				<span>Til</span>
 				<input type="date" bind:value={endDate} onchange={onWindowChange} />
+			</label>
+			<label class="ferie-note-field">
+				<span>Foreløpig</span>
+				<input
+					type="text"
+					placeholder="f.eks. Volda med Marte og David"
+					bind:value={note}
+					onchange={onWindowChange}
+				/>
 			</label>
 		</div>
 
@@ -964,6 +976,12 @@
 		display: flex;
 		gap: 0.75rem;
 		flex-wrap: wrap;
+	}
+	.ferie-note-field {
+		flex: 1 1 220px;
+	}
+	.ferie-note-field input {
+		width: 100%;
 	}
 	.ferie-window label,
 	.bulk-form label {

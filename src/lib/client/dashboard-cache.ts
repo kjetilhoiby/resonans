@@ -243,6 +243,14 @@ export interface FamilyDashboardData {
 		createdAt: string;
 	}>>;
 	feed: FamilyFeedItem[];
+	ferieThemes: Array<{
+		id: string;
+		name: string;
+		emoji: string | null;
+		startDate: string | null;
+		endDate: string | null;
+		note: string | null;
+	}>;
 }
 
 export type FamilyFeedItem =

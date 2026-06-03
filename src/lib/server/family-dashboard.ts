@@ -6,9 +6,11 @@ import {
 	goals,
 	sensorEvents,
 	conversations,
-	tasks
+	tasks,
+	themes
 } from '$lib/db/schema';
 import { and, desc, eq, gte, isNotNull } from 'drizzle-orm';
+import { resolveThemeDashboardKind } from '$lib/domain/theme-dashboard-registry';
 import { PersonService } from './services/person-service';
 import { PersonMentionService } from './services/person-mention-service';
 import {
@@ -101,6 +103,14 @@ export interface FamilyDashboardData {
 		createdAt: Date;
 	}>>;
 	feed: FamilyFeedItem[];
+	ferieThemes: Array<{
+		id: string;
+		name: string;
+		emoji: string | null;
+		startDate: string | null;
+		endDate: string | null;
+		note: string | null;
+	}>;
 }
 
 function buildSnippet(content: string): string {
@@ -408,6 +418,26 @@ export async function loadFamilyDashboardData(userId: string): Promise<FamilyDas
 
 	const tree = buildFamilyTree(personNodes, relationEdges);
 
+	// Ferie-temaer (oppholdsplaner) — vises i ferie-taben i familie-dashboardet.
+	const ferieThemeRows = await db
+		.select()
+		.from(themes)
+		.where(and(eq(themes.userId, userId), eq(themes.archived, false), isNotNull(themes.ferieProfile)));
+	const ferieThemes = ferieThemeRows
+		.filter((t) => resolveThemeDashboardKind(t.name) === 'ferie')
+		.map((t) => {
+			const profile = (t.ferieProfile ?? {}) as { startDate?: string; endDate?: string; note?: string };
+			return {
+				id: t.id,
+				name: t.name,
+				emoji: t.emoji,
+				startDate: profile.startDate ?? null,
+				endDate: profile.endDate ?? null,
+				note: profile.note ?? null
+			};
+		})
+		.sort((a, b) => (a.startDate ?? '9999').localeCompare(b.startDate ?? '9999'));
+
 	return {
 		tree,
 		persons: personNodes,
@@ -417,6 +447,7 @@ export async function loadFamilyDashboardData(userId: string): Promise<FamilyDas
 		upcomingEventsByPerson,
 		conversationsByPerson,
 		tasksByPerson,
-		feed: trimmedFeed
+		feed: trimmedFeed,
+		ferieThemes
 	};
 }
