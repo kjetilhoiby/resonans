@@ -1,4 +1,4 @@
-export type DashboardKind = 'health' | 'economics' | 'food' | 'family' | 'travel' | 'books' | 'egenfrekvens' | 'home';
+export type DashboardKind = 'health' | 'economics' | 'food' | 'family' | 'travel' | 'ferie' | 'books' | 'egenfrekvens' | 'home';
 
 export interface ThemeDashboardDefinition {
 	kind: DashboardKind;
@@ -85,14 +85,27 @@ const THEME_DASHBOARD_MATCHERS: Array<{ kind: DashboardKind; terms: string[] }> 
 		]
 	},
 	{
+		// NB: må stå før 'travel' så ferie-temaer ikke fanges av reise-matcheren.
+		kind: 'ferie',
+		terms: [
+			'ferie',
+			'sommerferie',
+			'påskeferie',
+			'juleferie',
+			'vinterferie',
+			'høstferie',
+			'ferieturer',
+			'feriedager',
+			'oppholdsplan'
+		]
+	},
+	{
 		kind: 'travel',
 		terms: [
 			'tur',
 			'turer',
 			'reise',
 			'reiser',
-			'ferie',
-			'ferieturer',
 			'utland',
 			'utenlandstur',
 			'trip',
@@ -182,6 +195,11 @@ const DASHBOARD_DEFINITIONS: Record<DashboardKind, ThemeDashboardDefinition> = {
 		kind: 'travel',
 		label: 'Tur',
 		icon: '🗺️'
+	},
+	ferie: {
+		kind: 'ferie',
+		label: 'Ferie',
+		icon: '🏖️'
 	},
 	books: {
 		kind: 'books',

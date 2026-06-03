@@ -187,6 +187,30 @@ export const themes = pgTable('themes', {
 			notes?: string;
 		}>;
 	}>(),
+	// Ferie-tema: oppholdsplan (dekning per familiemedlem per dag) + grove reise-blokker.
+	// Subtraktiv modell: blank celle = normal dekning (skole/bhg/aks åpen / voksen på jobb),
+	// 'stengt' = hull (negativt oppholdstilbud), positive statuser = fylt med alternativt tilbud.
+	ferieProfile: jsonb('ferie_profile').$type<{
+		startDate?: string; // ISO 'YYYY-MM-DD' — hele ferievinduet
+		endDate?: string;   // ISO 'YYYY-MM-DD'
+		members?: Array<{
+			id: string;        // stabil grid-nøkkel (personId hvis valgt, ellers generert)
+			personId?: string; // FK til persons (foretrukket)
+			name: string;      // visningsnavn / fallback
+			role: 'voksen' | 'barn';
+		}>;
+		// Kun ikke-default celler lagres. Barn: 'stengt' | 'sommerskole' | 'fotballskole' |
+		// 'svommeskole' | 'sommeraks' | 'besteforeldre' | 'leir' | 'annet'. Voksen: 'ferie' | 'hjemme'.
+		grid?: Record<string, Record<string, { status: string; label?: string }>>;
+		trips?: Array<{
+			id: string;
+			label: string;
+			place?: string;
+			startDate?: string;
+			endDate?: string;
+			linkedThemeId?: string; // satt når forfremmet til fullt reise-tema
+		}>;
+	}>(),
 	sortOrder: integer('sort_order').default(0).notNull(),
 	metricSettings: jsonb('metric_settings').$type<{
 		distance?: { goal?: number; thresholdWarn?: number; thresholdSuccess?: number };

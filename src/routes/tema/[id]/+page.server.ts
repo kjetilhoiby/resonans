@@ -145,6 +145,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 			progress: p.progress
 		})),
 		tripProfile: theme.tripProfile ?? null,
+		ferieProfile: theme.ferieProfile ?? null,
 		tripLists: tripListsRaw.map((l) => ({
 			id: l.id,
 			title: l.title,

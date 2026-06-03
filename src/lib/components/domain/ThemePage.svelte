@@ -19,6 +19,7 @@
 	import FoodDashboard from './FoodDashboard.svelte';
 	import FamilyDashboard from './FamilyDashboard.svelte';
 	import TripDashboard from './TripDashboard.svelte';
+	import FerieDashboard from './FerieDashboard.svelte';
 	import TripListsPanel from './TripListsPanel.svelte';
 	import BookDashboard from './BookDashboard.svelte';
 	import EgenfrekvensDashboard from './EgenfrekvensDashboard.svelte';
@@ -116,6 +117,7 @@
 		selectedWorkout?: SelectedWorkout | null;
 		tripProfile?: Record<string, unknown> | null;
 		tripLists?: import('./TripListsPanel.svelte').ThemeList[];
+		ferieProfile?: Record<string, unknown> | null;
 		themeFiles?: ThemeFile[];
 		metricSettings?: MetricSettingsMap;
 		projects?: ThemeProject[];
@@ -149,7 +151,7 @@
 		} | null;
 	}
 
-	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '', selectedWorkout = null, tripProfile = null, tripLists = [], themeFiles: initialThemeFiles = [], metricSettings: initialMetricSettings = {}, projects = [] }: Props = $props();
+	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '', selectedWorkout = null, tripProfile = null, tripLists = [], ferieProfile = null, themeFiles: initialThemeFiles = [], metricSettings: initialMetricSettings = {}, projects = [] }: Props = $props();
 
 	let currentMetricSettings = $state<MetricSettingsMap>(initialMetricSettings);
 	let metricSettingsSheetOpen = $state(false);
@@ -160,6 +162,7 @@
 	const activeDashboard = $derived(getThemeDashboardDefinition(theme?.name));
 	const hasThemeDashboard = $derived(activeDashboardKind !== null);
 	const isTravel = $derived(activeDashboardKind === 'travel');
+	const isFerie = $derived(activeDashboardKind === 'ferie');
 	const isBooks = $derived(activeDashboardKind === 'books');
 	const requestedTab = get(page).url.searchParams.get('tab');
 	const availableTabs = $derived<Tab[]>(
@@ -168,6 +171,8 @@
 			: activeDashboardKind === 'economics'
 				? ['chat', 'data', 'mål', 'flyter', 'filer']
 				: activeDashboardKind === 'travel'
+					? ['chat', 'data', 'lister', 'filer']
+					: activeDashboardKind === 'ferie'
 					? ['chat', 'data', 'lister', 'filer']
 					: activeDashboardKind === 'books'
 						? ['chat', 'data', 'filer']
@@ -204,6 +209,9 @@
 
 	/* ── Reise-state ────────────────────────────────────── */
 	let currentTripProfile = $state(tripProfile as import('./TripDashboard.svelte').TripProfile | null);
+
+	/* ── Ferie-state ────────────────────────────────────── */
+	let currentFerieProfile = $state(ferieProfile as import('./FerieDashboard.svelte').FerieProfile | null);
 	let tripListsState = $state<import('./TripListsPanel.svelte').ThemeList[]>(tripLists);
 	let themeFiles = $state<ThemeFile[]>(initialThemeFiles);
 	let fileUploading = $state(false);
@@ -1492,6 +1500,12 @@
 						themeId={theme.id}
 						themeEmoji={theme.emoji}
 						bind:tripProfile={currentTripProfile}
+					/>
+				{:else if isFerie}
+					<FerieDashboard
+						themeId={theme.id}
+						themeEmoji={theme.emoji}
+						bind:ferieProfile={currentFerieProfile}
 					/>
 				{:else}
 				{#if hasThemeDashboard && dashboardLoading && !dashboardLoaded}
