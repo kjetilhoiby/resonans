@@ -71,7 +71,7 @@ export function classifyEffortFamily(
 	const t = (sportType ?? '').trim().toLowerCase();
 	const f = (sportFamily ?? '').trim().toLowerCase();
 
-	if (t === 'e_bike' || t === 'ebike' || t.includes('e-bike')) return 'ebike';
+	if (t === 'e_bike' || t.includes('ebik') || t.includes('e-bike')) return 'ebike';
 	if (t.includes('running') || t === 'løp' || t === 'run' || t === 'løping') return 'running';
 	if (t.includes('cycling') || t === 'sykkel' || t === 'bike') return 'cycling';
 	if (t.includes('strength') || t.includes('styrke') || t === 'gym') return 'strength';

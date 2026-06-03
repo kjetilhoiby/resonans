@@ -8,6 +8,7 @@ import { v2 as cloudinary } from 'cloudinary';
 import { getAppConfig, type ExternalAppConfig } from '$lib/server/app-registry';
 import { parseWorkoutFile } from '$lib/server/integrations/dropbox-sync';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
+import { normalizeSportType } from '$lib/server/workout-taxonomy';
 
 const WORKOUT_EXTENSIONS = new Set(['.gpx', '.tcx']);
 const IMAGE_MIME_PREFIXES = ['image/'];
@@ -131,6 +132,9 @@ async function handleWorkoutUpload(
 	if (sportType) {
 		parsed.sportType = sportType;
 	}
+	// Normaliser sportType (f.eks. Ekko sender «eBiking») til kanonisk form
+	// slik at autocheck/effort/analyse kjenner den igjen.
+	parsed.sportType = normalizeSportType(parsed.sportType);
 
 	const result = await SensorEventService.write(
 		{
