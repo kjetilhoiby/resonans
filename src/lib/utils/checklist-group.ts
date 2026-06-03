@@ -55,6 +55,25 @@ export function activityEmoji(label: string): string {
 	return '';
 }
 
+/** Emoji for a parsed ActivityType value (English keys, e.g. 'cycling', 'yoga'). */
+const ACTIVITY_TYPE_EMOJI: Record<string, string> = {
+	running: '🏃',
+	cycling: '🚴',
+	walking: '🚶',
+	strength: '🏋️',
+	swimming: '🏊',
+	yoga: '🧘',
+	hiit: '⚡',
+	rowing: '🚣',
+	skiing: '⛷️',
+	other: '✅'
+};
+
+/** Emoji for a stored `metadata.activityType` value. Falls back to ✅. */
+export function activityTypeEmoji(type: string): string {
+	return ACTIVITY_TYPE_EMOJI[type] ?? '✅';
+}
+
 type WithTime = { metadata?: { timeHour?: number; timeMinute?: number } | null };
 
 /** Sort items with a scheduled time to the top, then chronologically. Untimed items keep original order. */

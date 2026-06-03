@@ -11,7 +11,7 @@
 	import type { FlowContext } from '$lib/flows/types';
 	import { finishNavMetric, startNavMetric } from '$lib/client/nav-metrics';
 	import MetricCard from '$lib/components/visualizations/MetricCard.svelte';
-	import { groupChecklistItems, activityEmoji, sortByTime, sortByStatus, formatItemTime, stripTimeFromText, type GroupedChecklistEntry } from '$lib/utils/checklist-group';
+	import { groupChecklistItems, activityEmoji, activityTypeEmoji, sortByTime, sortByStatus, formatItemTime, stripTimeFromText, type GroupedChecklistEntry } from '$lib/utils/checklist-group';
 	import TaskContextMenu from '$lib/components/ui/TaskContextMenu.svelte';
 	import BreakdownModal from '$lib/components/ui/BreakdownModal.svelte';
 	import ProcedureBadge from '$lib/components/ui/ProcedureBadge.svelte';
@@ -2209,6 +2209,11 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 											{item.metadata.linkedTaskTitle
 												? item.metadata.linkedTaskTitle.slice(0, 24) + (item.metadata.linkedTaskTitle.length > 24 ? '…' : '')
 												: 'Ukesmål'}
+										</span>
+									{:else if item.metadata?.activityType}
+										<span class="wp-intent-badge" title="Registrert som aktivitet – hakes av automatisk når en matchende økt synkes">
+											{item.metadata.autoChecked ? '⚡' : activityTypeEmoji(item.metadata.activityType)}
+											{item.metadata.autoChecked ? 'Auto-hakt' : 'Auto'}
 										</span>
 									{/if}
 								</button>
