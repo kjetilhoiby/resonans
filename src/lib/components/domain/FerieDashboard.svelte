@@ -26,6 +26,17 @@
 		role: FerieRole;
 	}
 
+	export interface FerieTripStop {
+		id: string;
+		place: string;
+		lat?: number;
+		lon?: number;
+		startDate: string;
+		endDate: string;
+		weatherEmoji?: string;
+		weatherTemp?: number;
+	}
+
 	export interface FerieTrip {
 		id: string;
 		label: string;
@@ -33,7 +44,8 @@
 		startDate?: string;
 		endDate?: string;
 		linkedThemeId?: string;
-		participants?: string[]; // member-id-er som er med på reisen
+		participants?: string[];
+		stops?: FerieTripStop[];
 	}
 
 	export interface FerieCell {
@@ -389,6 +401,104 @@
 			if (t.startDate && t.endDate && iso >= t.startDate && iso <= t.endDate) return t;
 		}
 		return null;
+	}
+
+	/* ── Stopp på reiser ────────────────────────────────── */
+	let stopInput = $state<Record<string, string>>({});
+	let stopDate = $state<Record<string, string>>({});
+	let stopGeocoding = $state<string | null>(null);
+
+	function dayDiff(a: string, b: string): number {
+		return Math.round(
+			(new Date(b + 'T00:00:00').getTime() - new Date(a + 'T00:00:00').getTime()) / 86400000
+		);
+	}
+
+	function formatStopDates(start: string, end: string): string {
+		const s = new Date(start + 'T12:00:00');
+		const e = new Date(end + 'T12:00:00');
+		const fmt = new Intl.DateTimeFormat('nb-NO', { day: 'numeric', month: 'short' });
+		if (start === end) return fmt.format(s);
+		return `${s.getDate()}.–${fmt.format(e)}`;
+	}
+
+	async function geocodePlace(place: string): Promise<{ lat: number; lon: number } | null> {
+		try {
+			const res = await fetch(
+				`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(place)}&format=json&limit=1`,
+				{ headers: { 'Accept-Language': 'nb,en' } }
+			);
+			const geo = (await res.json()) as Array<{ lat: string; lon: string }>;
+			if (geo.length > 0) return { lat: parseFloat(geo[0].lat), lon: parseFloat(geo[0].lon) };
+		} catch { /* best-effort */ }
+		return null;
+	}
+
+	async function fetchStopWeather(stop: FerieTripStop): Promise<void> {
+		if (!stop.lat || !stop.lon) return;
+		try {
+			const ts = await fetchRawTimeseries(stop.lat, stop.lon);
+			if (!ts) return;
+			const todayStr = toISO(new Date());
+			const repDate = (todayStr >= stop.startDate && todayStr <= stop.endDate) ? todayStr : stop.startDate;
+			const periods = buildPeriods(repDate, ts);
+			const usable = periods.find((p) => p.key === 'middag' && p.emoji !== '—' && p.emoji !== '')
+				?? periods.find((p) => p.emoji !== '—' && p.emoji !== '');
+			if (usable) {
+				stop.weatherEmoji = usable.emoji;
+				stop.weatherTemp = usable.temp;
+			}
+		} catch { /* best-effort */ }
+	}
+
+	async function addStop(tripId: string, place: string, date: string) {
+		const trip = trips.find((t) => t.id === tripId);
+		if (!trip) return;
+		const existing = (trip.stops ?? []).find(
+			(s) => s.place.toLowerCase() === place.toLowerCase() && dayDiff(s.endDate, date) >= 0 && dayDiff(s.endDate, date) <= 1
+		);
+		if (existing) {
+			trips = trips.map((t) =>
+				t.id === tripId
+					? { ...t, stops: (t.stops ?? []).map((s) => (s.id === existing.id ? { ...s, endDate: date } : s)) }
+					: t
+			);
+			scheduleSave();
+			return;
+		}
+		stopGeocoding = tripId;
+		const geo = await geocodePlace(place);
+		const stop: FerieTripStop = {
+			id: crypto.randomUUID(),
+			place,
+			lat: geo?.lat,
+			lon: geo?.lon,
+			startDate: date,
+			endDate: date
+		};
+		if (geo) await fetchStopWeather(stop);
+		trips = trips.map((t) =>
+			t.id === tripId ? { ...t, stops: [...(t.stops ?? []), stop] } : t
+		);
+		stopGeocoding = null;
+		scheduleSave();
+	}
+
+	function removeStop(tripId: string, stopId: string) {
+		trips = trips.map((t) =>
+			t.id === tripId ? { ...t, stops: (t.stops ?? []).filter((s) => s.id !== stopId) } : t
+		);
+		scheduleSave();
+	}
+
+	function handleStopInput(tripId: string) {
+		let text = (stopInput[tripId] ?? '').trim();
+		if (!text) return;
+		const stedMatch = text.match(/^[Ss]ted:\s*(.+)/);
+		if (stedMatch) text = stedMatch[1].trim();
+		const date = stopDate[tripId] || toISO(new Date());
+		void addStop(tripId, text, date);
+		stopInput = { ...stopInput, [tripId]: '' };
 	}
 
 	/* ── Feriedagbok (Fase 3) ───────────────────────────── */
@@ -1169,6 +1279,41 @@
 							{#if members.length === 0}
 								<span class="tp-empty">Legg til familiemedlemmer under «Rammer».</span>
 							{/if}
+						</div>
+						<div class="trip-stops">
+							{#if (t.stops ?? []).length > 0}
+								<div class="trip-stops-list">
+									{#each t.stops ?? [] as stop (stop.id)}
+										<span class="trip-stop-chip">
+											<span class="stop-place">📍 {stop.place}</span>
+											<span class="stop-dates">{formatStopDates(stop.startDate, stop.endDate)}</span>
+											{#if stop.weatherEmoji}<span class="stop-wx">{stop.weatherEmoji} {stop.weatherTemp}°</span>{/if}
+											<button type="button" class="stop-remove" title="Fjern" onclick={() => removeStop(t.id, stop.id)}>×</button>
+										</span>
+									{/each}
+								</div>
+							{/if}
+							<div class="trip-stop-composer">
+								<input
+									type="text"
+									class="stop-input"
+									placeholder="Sted: Trondheim"
+									value={stopInput[t.id] ?? ''}
+									oninput={(e) => { stopInput = { ...stopInput, [t.id]: e.currentTarget.value }; }}
+									onkeydown={(e) => { if (e.key === 'Enter') handleStopInput(t.id); }}
+								/>
+								<input
+									type="date"
+									class="stop-date-input"
+									value={stopDate[t.id] ?? toISO(new Date())}
+									min={t.startDate}
+									max={t.endDate}
+									oninput={(e) => { stopDate = { ...stopDate, [t.id]: e.currentTarget.value }; }}
+								/>
+								<button type="button" class="ferie-btn" disabled={stopGeocoding === t.id} onclick={() => handleStopInput(t.id)}>
+									{stopGeocoding === t.id ? '…' : '+'}
+								</button>
+							</div>
 						</div>
 						</div>
 					{/each}
@@ -2074,6 +2219,63 @@
 	.tp-empty {
 		font-size: 0.78rem;
 		color: var(--tp-text-muted);
+	}
+
+	/* Stopp */
+	.trip-stops {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+	}
+	.trip-stops-list {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem;
+	}
+	.trip-stop-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+		background: var(--tp-bg-1);
+		border: 1px solid var(--tp-border);
+		border-radius: 999px;
+		padding: 0.15rem 0.45rem;
+		font-size: 0.75rem;
+	}
+	.stop-place {
+		color: var(--tp-text-soft);
+	}
+	.stop-dates {
+		color: var(--tp-text-muted);
+		font-size: 0.68rem;
+	}
+	.stop-wx {
+		font-size: 0.75rem;
+	}
+	.stop-remove {
+		background: none;
+		border: none;
+		cursor: pointer;
+		color: var(--tp-text-muted);
+		font-size: 0.85rem;
+		line-height: 1;
+		padding: 0 0.1rem;
+	}
+	.trip-stop-composer {
+		display: flex;
+		gap: 0.25rem;
+		align-items: center;
+	}
+	.stop-input {
+		flex: 1;
+		min-width: 100px;
+		font-size: 0.8rem;
+		padding: 0.3rem 0.45rem;
+	}
+	.stop-date-input {
+		width: auto;
+		font-size: 0.8rem;
+		padding: 0.3rem 0.35rem;
 	}
 
 	/* Oppgaver */

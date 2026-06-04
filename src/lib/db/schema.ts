@@ -210,6 +210,17 @@ export const themes = pgTable('themes', {
 			startDate?: string;
 			endDate?: string;
 			linkedThemeId?: string; // satt når forfremmet til fullt reise-tema
+			participants?: string[];
+			stops?: Array<{
+				id: string;
+				place: string;
+				lat?: number;
+				lon?: number;
+				startDate: string;
+				endDate: string;
+				weatherEmoji?: string;
+				weatherTemp?: number;
+			}>;
 		}>;
 	}>(),
 	sortOrder: integer('sort_order').default(0).notNull(),
