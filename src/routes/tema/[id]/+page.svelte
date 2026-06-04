@@ -15,6 +15,12 @@
 <AppPage width="full" padding="none" gap="sm" surface="transparent" theme="dark">
 	<PullToRefresh onRefresh={refreshTheme}>
 	{#if data.theme}
+	<!-- Key på tema-id: /tema/[id] er én rute, så SvelteKit gjenbruker ellers
+	     samme ThemePage-instans ved navigasjon mellom temaer. Da re-synkes ikke
+	     intern state som currentFerieProfile/currentTripProfile (settes kun ved
+	     mount), og en åpnet ferie kunne vise tom oppholdsplan selv om data fantes.
+	     Keyen tvinger full remount per tema. -->
+	{#key data.theme.id}
 	<ThemePage
 		bind:this={themePage}
 		theme={data.theme}
@@ -31,6 +37,7 @@
 		metricSettings={data.metricSettings}
 		projects={data.projects}
 	/>
+	{/key}
 	{/if}
 	</PullToRefresh>
 </AppPage>
