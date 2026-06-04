@@ -50,8 +50,6 @@
 
 	let view = $state<'familie' | 'ferie'>('familie');
 	let planning = $state(false);
-	let noteEdits = $state<Record<string, string>>({});
-	let noteSaving = $state<string | null>(null);
 
 	const ferieThemes = $derived(data.ferieThemes ?? []);
 
@@ -84,21 +82,7 @@
 	}
 
 	function noteValue(t: FerieThemeSummary): string {
-		return noteEdits[t.id] ?? t.note ?? '';
-	}
-
-	async function saveNote(t: FerieThemeSummary, value: string) {
-		noteEdits[t.id] = value;
-		noteSaving = t.id;
-		try {
-			await fetch(`/api/tema/${t.id}/ferie/note`, {
-				method: 'PUT',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ note: value })
-			});
-		} finally {
-			noteSaving = null;
-		}
+		return t.note ?? '';
 	}
 
 	function fmtDate(iso: string | null): string {
@@ -176,20 +160,15 @@
 				<ul class="ferie-cards">
 					{#each ferieThemes as t (t.id)}
 						<li class="ferie-card">
-							<button class="ferie-card-main" onclick={() => goto(`/tema/${t.id}`)}>
+							<a class="ferie-card-link" href={`/tema/${t.id}`}>
 								<span class="ferie-card-top">
 									<span class="ferie-card-name">{t.emoji ?? '🏖️'} {t.name}</span>
 									{#if countdownLabel(t)}<span class="ferie-card-countdown">{countdownLabel(t)}</span>{/if}
 								</span>
 								{#if dateRange(t)}<span class="ferie-card-dates">{dateRange(t)}</span>{/if}
-							</button>
-							<input
-								class="ferie-card-note"
-								placeholder="Foreløpig setning (f.eks. Volda med Marte og David)"
-								value={noteValue(t)}
-								onchange={(e) => saveNote(t, e.currentTarget.value)}
-							/>
-							{#if noteSaving === t.id}<span class="ferie-card-saving">Lagrer…</span>{/if}
+								{#if noteValue(t)}<span class="ferie-card-note-preview">{noteValue(t)}</span>{/if}
+								<span class="ferie-card-open">Åpne ferieplan →</span>
+							</a>
 						</li>
 					{/each}
 				</ul>
@@ -300,16 +279,20 @@
 		border-radius: 12px;
 		background: var(--tp-bg-2, #20232e);
 	}
-	.ferie-card-main {
+	.ferie-card-link {
 		background: none;
 		border: none;
 		color: var(--tp-text, #e8e8ef);
 		text-align: left;
+		text-decoration: none;
 		cursor: pointer;
 		display: flex;
 		flex-direction: column;
-		gap: 0.2rem;
+		gap: 0.3rem;
 		padding: 0;
+	}
+	.ferie-card-link:hover .ferie-card-name {
+		text-decoration: underline;
 	}
 	.ferie-card-top {
 		display: flex;
@@ -330,18 +313,15 @@
 		font-size: 0.8rem;
 		color: var(--tp-text-soft, #aaa);
 	}
-	.ferie-card-note {
-		background: var(--tp-bg-1, #2a2d3a);
-		border: 1px solid var(--tp-border, #3a3d4a);
-		color: var(--tp-text, #e8e8ef);
-		border-radius: 8px;
-		padding: 0.4rem 0.55rem;
-		font: inherit;
+	.ferie-card-note-preview {
 		font-size: 0.85rem;
+		color: var(--tp-text-soft, #aaa);
+		font-style: italic;
 	}
-	.ferie-card-saving {
-		font-size: 0.72rem;
-		color: var(--tp-text-muted, #888);
+	.ferie-card-open {
+		font-size: 0.78rem;
+		color: var(--tp-accent, #9aa8f7);
+		font-weight: 600;
 	}
 	.empty {
 		padding: 1.5rem;
