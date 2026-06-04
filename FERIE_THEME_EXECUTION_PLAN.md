@@ -1,6 +1,6 @@
 # Ferie Theme Execution Plan
 
-Status: Fase 1–4 ferdig (DB-verifisering gjenstår)
+Status: Fase 1–5 ferdig (DB-verifisering gjenstår)
 Last updated: 2026-06-03
 Owner: Claude
 Branch: `claude/ferie-fase2-reiser` (Fase 2) — bygger på `claude/family-vacation-planning-ytQvk` (Fase 1, PR #117)
@@ -95,6 +95,23 @@ Per celle (medlem × dag):
 - [ ] **Ende-til-ende mot DB**: bekreft at knappen dukker opp i rett sesong, at
       opprettelse navigerer til oppholdsplan, og at note + ferie-tab fungerer
 
+### Fase 5 — Rendyrk fasene i egne views (ferdig)
+- [x] Intern view-bryter i ferie-dashboardet: **Rammer | Reiser | Gjennomfør**
+- [x] **Rammer**: wizard «Hjemme-perioder» (per medlem: hjemme fra/til; voksen = kan dekke,
+      barn = trenger dekning) med «Generer dekningsplan» som maler grid-en; grid + palett +
+      bulk beholdt for finjustering
+- [x] **Reiser**: reiser med **deltakere** (`trip.participants`) — dekningslogikken vet at en
+      reise med én voksen + ett barn ikke dekker de andre barna; bortreiste barn = dekket,
+      voksne bortreist dekker ikke hjemme. Ny celletilstand «bortreist» (lilla)
+- [x] **Gjennomfør**: oppgaveoversikt («skriv i dagboka for …», «legg til deltakere», gap),
+      feriedagbok, + ferie-nivå dashboards (dag-for-dag, trening & helse, økonomi) som
+      gjenbruker `TripDayCalendar`/`TripHealthStats`/`TripBudget`, + lenker til reise-temaene
+- [x] Generaliserte `TripHealthStats` + `/health-stats`-endepunkt til å ta `?start=&end=`
+      (faller tilbake til tripProfile) så de kan kjøre på ferievinduet
+- [x] `npm run check` → 0 feil, 40 tester, produksjonsbygg `✔ done`
+- [ ] **Ende-til-ende mot DB**: verifiser wizard-generering, deltaker-dekning, og at
+      trening/økonomi-aggregatene viser data for ferievinduet
+
 ## Execution log
 - 2026-06-03: Designdiskusjon med bruker. Avklart: fasevis, rikt status-sett, flagg
   dekningshull (uten feriedag-teller), grove reise-blokker → forfrem til reise-tema.
@@ -117,6 +134,10 @@ Per celle (medlem × dag):
   setning (`note`). NB: knappen viser nærmeste kommende uplanlagte ferie (så i mars kan
   påske vises før sommer) — avklart som ønsket sekvensering. `npm run check` → 0 feil,
   11 tester, bygg → `✔ done`.
+- 2026-06-04: Fase 1–4 merget til `main` (PR #117 + #118). Fase 5 startet på ny branch
+  `claude/ferie-fase5-views`: rendyrket de tre fasene i egne views (Rammer/Reiser/Gjennomfør),
+  wizard for rammene, deltakere på reiser med oppdatert dekningslogikk, og ferie-nivå
+  dashboards i Gjennomfør. `npm run check` → 0 feil, 40 tester, bygg → `✔ done`.
 
 ## Resume notes
 - Nøkkelfiler:
