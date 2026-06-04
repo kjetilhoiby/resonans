@@ -111,7 +111,7 @@
 		dragOverThemeId = id;
 	}
 
-	function handleThemeDrop(targetId: string) {
+	function commitThemeReorder(targetId: string) {
 		if (!dragThemeId || dragThemeId === targetId) { dragThemeId = null; dragOverThemeId = null; return; }
 		const from = themes.findIndex((t) => t.id === dragThemeId);
 		const to = themes.findIndex((t) => t.id === targetId);
@@ -127,6 +127,39 @@
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify(reordered.map((t, i) => ({ id: t.id, sortOrder: i })))
 		});
+	}
+
+	// Touch-based drag for mobile
+	let touchDragOffsetY = $state(0);
+	let touchStartY = 0;
+
+	function handleTouchDragStart(e: TouchEvent, id: string) {
+		cancelThemeRowPress();
+		const touch = e.touches[0];
+		touchStartY = touch.clientY;
+		touchDragOffsetY = 0;
+		dragThemeId = id;
+	}
+
+	function handleTouchDragMove(e: TouchEvent) {
+		if (!dragThemeId) return;
+		e.preventDefault();
+		const touch = e.touches[0];
+		touchDragOffsetY = touch.clientY - touchStartY;
+		const el = document.elementFromPoint(touch.clientX, touch.clientY);
+		const row = el?.closest('[data-theme-id]') as HTMLElement | null;
+		if (row) {
+			const id = row.dataset.themeId;
+			if (id && id !== dragThemeId) dragOverThemeId = id;
+		}
+	}
+
+	function handleTouchDragEnd() {
+		if (!dragThemeId) return;
+		if (dragOverThemeId) commitThemeReorder(dragOverThemeId);
+		dragThemeId = null;
+		dragOverThemeId = null;
+		touchDragOffsetY = 0;
 	}
 
 	// ── Langpress-meny på tema-rad (arkiver / slett) ────────────────────────────
@@ -2762,17 +2795,24 @@
 			<button class="widget-panel-close theme-panel-close" onclick={() => (themePanelOpen = false)} aria-label="Lukk"><Icon name="close" size={14} /></button>
 		</div>
 		<div class="widget-panel-content">
-			<div class="widget-panel-section">
+			<div
+				class="widget-panel-section"
+				ontouchmove={handleTouchDragMove}
+				ontouchend={handleTouchDragEnd}
+				ontouchcancel={handleTouchDragEnd}
+			>
 				{#each themes as theme (theme.id)}
 					<div
 						class="tema-panel-row"
-						class:tema-panel-row-dragover={dragOverThemeId === theme.id}
-						style={getThemeHueStyle(theme.name)}
+						class:tema-panel-row-dragover={dragOverThemeId === theme.id && dragThemeId !== theme.id}
+						class:tema-panel-row-dragging={dragThemeId === theme.id}
+						style="{getThemeHueStyle(theme.name)}{dragThemeId === theme.id && touchDragOffsetY ? `; transform: translateY(${touchDragOffsetY}px); z-index: 10;` : ''}"
+						data-theme-id={theme.id}
 						draggable="true"
 						role="listitem"
 						ondragstart={() => { cancelThemeRowPress(); handleThemeDragStart(theme.id); }}
 						ondragover={(e) => handleThemeDragOver(e, theme.id)}
-						ondrop={() => handleThemeDrop(theme.id)}
+						ondrop={() => commitThemeReorder(theme.id)}
 						ondragend={() => { dragThemeId = null; dragOverThemeId = null; }}
 						onpointerdown={() => startThemeRowPress(theme)}
 						onpointerup={cancelThemeRowPress}
@@ -2780,7 +2820,12 @@
 						onpointercancel={cancelThemeRowPress}
 						oncontextmenu={(e) => e.preventDefault()}
 					>
-						<span class="tema-panel-row-handle" aria-hidden="true">⠿</span>
+						<span
+							class="tema-panel-row-handle"
+							aria-hidden="true"
+							ontouchstart={(e) => handleTouchDragStart(e, theme.id)}
+							onpointerdown={(e) => e.stopPropagation()}
+						>⠿</span>
 						<button
 							class="tema-panel-row-btn"
 							onclick={() => handleThemeRowClick(theme)}
@@ -3639,6 +3684,12 @@
 		opacity: 0.5;
 	}
 
+	.tema-panel-row-dragging {
+		opacity: 0.9;
+		box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+		position: relative;
+	}
+
 	.tema-panel-row-handle {
 		padding: 0 4px 0 10px;
 		color: #333;
@@ -3646,6 +3697,7 @@
 		flex-shrink: 0;
 		line-height: 1;
 		cursor: grab;
+		touch-action: none;
 	}
 
 	.tema-panel-row-btn {
