@@ -160,7 +160,11 @@
 				<ul class="ferie-cards">
 					{#each ferieThemes as t (t.id)}
 						<li class="ferie-card">
-							<a class="ferie-card-link" href={`/tema/${t.id}`}>
+							<a
+								class="ferie-card-link"
+								href={`/tema/${t.id}`}
+								onclick={(e) => { e.preventDefault(); void goto(`/tema/${t.id}`); }}
+							>
 								<span class="ferie-card-top">
 									<span class="ferie-card-name">{t.emoji ?? '🏖️'} {t.name}</span>
 									{#if countdownLabel(t)}<span class="ferie-card-countdown">{countdownLabel(t)}</span>{/if}
