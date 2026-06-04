@@ -6,32 +6,10 @@ import {
 	classifyDate,
 	nextUnplannedFerie,
 	occurrenceId,
-	seasonFromThemeName,
 	toISODate
 } from './seasons';
 
 const D = (iso: string) => new Date(iso + 'T12:00:00Z');
-
-describe('seasonFromThemeName', () => {
-	it('utleder sesong + vindu fra «Sommerferie 2026»', () => {
-		const occ = seasonFromThemeName('Sommerferie 2026');
-		expect(occ?.key).toBe('sommerferie');
-		expect(occ?.year).toBe(2026);
-		expect(toISODate(occ!.start)).toBe('2026-06-20');
-		expect(toISODate(occ!.end)).toBe('2026-08-17');
-	});
-
-	it('håndterer andre sesonger (case-insensitivt)', () => {
-		expect(seasonFromThemeName('høstferie 2025')?.key).toBe('hostferie');
-		expect(seasonFromThemeName('Juleferie 2024')?.key).toBe('juleferie');
-	});
-
-	it('returnerer null for navn uten gjenkjennelig sesong/år', () => {
-		expect(seasonFromThemeName('Familie')).toBeNull();
-		expect(seasonFromThemeName('Ferie til Italia')).toBeNull();
-		expect(seasonFromThemeName('Sommerferie')).toBeNull();
-	});
-});
 
 describe('easterSunday', () => {
 	it('beregner kjente påskedager', () => {

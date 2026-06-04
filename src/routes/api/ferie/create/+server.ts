@@ -29,9 +29,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		parentTheme: 'Familie'
 	});
 
-	// Prefyll det omtrentlige vinduet. For nye temaer settes det rett; for
-	// eksisterende etterfylles kun manglende datoer (aldri overskriv en
-	// populert oppholdsplan med grid/medlemmer/reiser eller justerte datoer).
+	// Prefyll det omtrentlige vinduet kun for nye temaer — aldri overskriv en
+	// eksisterende oppholdsplan (grid/medlemmer/reiser).
 	if (created) {
 		await db
 			.update(themes)
@@ -40,29 +39,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				updatedAt: new Date()
 			})
 			.where(and(eq(themes.id, theme.id), eq(themes.userId, locals.userId)));
-	} else {
-		const existing = await db.query.themes.findFirst({
-			where: and(eq(themes.id, theme.id), eq(themes.userId, locals.userId)),
-			columns: { ferieProfile: true }
-		});
-		const cur = (existing?.ferieProfile ?? {}) as {
-			startDate?: string;
-			endDate?: string;
-			[k: string]: unknown;
-		};
-		if (!cur.startDate || !cur.endDate) {
-			await db
-				.update(themes)
-				.set({
-					ferieProfile: {
-						...cur,
-						startDate: cur.startDate ?? toISODate(win.start),
-						endDate: cur.endDate ?? toISODate(win.end)
-					},
-					updatedAt: new Date()
-				})
-				.where(and(eq(themes.id, theme.id), eq(themes.userId, locals.userId)));
-		}
 	}
 
 	return json({ themeId: theme.id, name });
