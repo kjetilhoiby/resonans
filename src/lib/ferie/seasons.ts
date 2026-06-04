@@ -150,6 +150,23 @@ export function occurrenceId(key: FerieSeasonKey, year: number): string {
 }
 
 /**
+ * Utled sesong + vindu fra et ferie-temanavn som «Sommerferie 2026».
+ * Brukes av ferie-dashboardet til å prefylle vinduet når profilen mangler
+ * datoer (selvhelbredende — matcher familie-kortets sesongramme).
+ */
+export function seasonFromThemeName(name: string): FerieOccurrence | null {
+	const m = name.trim().match(/^(.+?)\s+(\d{4})$/);
+	if (!m) return null;
+	const label = m[1].trim().toLowerCase();
+	const year = Number(m[2]);
+	if (!Number.isInteger(year)) return null;
+	const def = FERIE_SEASON_KEYS.map((k) => FERIE_SEASONS[k]).find((d) => d.label.toLowerCase() === label);
+	if (!def) return null;
+	const w = ferieWindow(def.key, year);
+	return { key: def.key, label: def.label, emoji: def.emoji, year, start: w.start, end: w.end };
+}
+
+/**
  * Neste ferie som bør planlegges: den nærmeste kommende forekomsten der
  * planleggingsvinduet er åpnet (today >= planOpens) og det ikke finnes en plan.
  * `plannedIds` er settet av occurrenceId-er som allerede har et ferie-tema.

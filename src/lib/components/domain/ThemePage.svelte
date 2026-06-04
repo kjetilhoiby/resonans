@@ -1505,6 +1505,7 @@
 					<FerieDashboard
 						themeId={theme.id}
 						themeEmoji={theme.emoji}
+						themeName={theme.name}
 						bind:ferieProfile={currentFerieProfile}
 					/>
 				{:else}

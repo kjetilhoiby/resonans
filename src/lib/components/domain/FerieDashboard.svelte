@@ -54,6 +54,7 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
 	import { fetchRawTimeseries, buildPeriods } from '$lib/utils/weather';
+	import { seasonFromThemeName, toISODate } from '$lib/ferie/seasons';
 	import TripDayCalendar from './TripDayCalendar.svelte';
 	import TripHealthStats from './TripHealthStats.svelte';
 	import TripBudget from './TripBudget.svelte';
@@ -63,11 +64,16 @@
 	interface Props {
 		themeId: string;
 		themeEmoji?: string | null;
+		themeName?: string;
 		ferieProfile: FerieProfile | null;
 		onProfileSaved?: (profile: FerieProfile) => void;
 	}
 
-	let { themeId, themeEmoji = null, ferieProfile = $bindable(null), onProfileSaved }: Props = $props();
+	let { themeId, themeEmoji = null, themeName, ferieProfile = $bindable(null), onProfileSaved }: Props = $props();
+
+	// Fallback-vindu utledet fra temanavnet («Sommerferie 2026») når profilen mangler
+	// datoer — så dashboardet ikke står tomt selv om datoene aldri ble seedet.
+	const seasonFallback = themeName ? seasonFromThemeName(themeName) : null;
 
 	/* ── Status-definisjoner ────────────────────────────── */
 	type StatusMeta = { value: string; label: string; emoji: string; short: string; role: FerieRole; cls: string };
@@ -95,8 +101,8 @@
 	const WEEKDAYS = ['Søn', 'Man', 'Tir', 'Ons', 'Tor', 'Fre', 'Lør'];
 
 	/* ── Arbeidstilstand (initialisert fra lagret profil) ── */
-	let startDate = $state(ferieProfile?.startDate ?? '');
-	let endDate = $state(ferieProfile?.endDate ?? '');
+	let startDate = $state(ferieProfile?.startDate ?? (seasonFallback ? toISODate(seasonFallback.start) : ''));
+	let endDate = $state(ferieProfile?.endDate ?? (seasonFallback ? toISODate(seasonFallback.end) : ''));
 	let note = $state(ferieProfile?.note ?? '');
 	let members = $state<FerieMember[]>(ferieProfile?.members ? [...ferieProfile.members] : []);
 	let grid = $state<Record<string, Record<string, FerieCell>>>(
@@ -534,6 +540,11 @@
 	}
 
 	onMount(() => {
+		// Hvis vinduet ble utledet fra sesongen (profilen manglet datoer), lagre det
+		// så det festes i DB og dashboardet «finner dataen sin» ved neste lasting.
+		if ((!ferieProfile?.startDate || !ferieProfile?.endDate) && startDate && endDate) {
+			scheduleSave();
+		}
 		void loadDiary().then(() => {
 			if (!diaryDate) {
 				diaryDate = defaultDiaryDate();
