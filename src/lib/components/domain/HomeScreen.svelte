@@ -129,6 +129,63 @@
 		});
 	}
 
+	// ── Langpress-meny på tema-rad (arkiver / slett) ────────────────────────────
+	let themeMenuId = $state<string | null>(null);
+	let themeMenuName = $state('');
+	let themeRowPressTimer: ReturnType<typeof setTimeout> | null = null;
+	let themeRowPressTriggered = false;
+	let themeActionBusy = $state(false);
+
+	function startThemeRowPress(theme: { id: string; name: string }) {
+		themeRowPressTriggered = false;
+		themeRowPressTimer = setTimeout(() => {
+			themeRowPressTriggered = true;
+			themeMenuId = theme.id;
+			themeMenuName = theme.name;
+			if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(20);
+		}, 500);
+	}
+
+	function cancelThemeRowPress() {
+		if (themeRowPressTimer !== null) { clearTimeout(themeRowPressTimer); themeRowPressTimer = null; }
+	}
+
+	function closeThemeMenu() { themeMenuId = null; }
+
+	function handleThemeRowClick(theme: { id: string }) {
+		if (themeRowPressTriggered) { themeRowPressTriggered = false; return; }
+		themePanelOpen = false;
+		startNavMetric('home', 'tema');
+		void goto(`/tema/${theme.id}`);
+	}
+
+	async function archiveThemeFromMenu(id: string) {
+		themeActionBusy = true;
+		try {
+			const res = await fetch(`/api/tema/${id}`, {
+				method: 'PATCH',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ archived: true })
+			});
+			if (res.ok) themes = themes.filter((t) => t.id !== id);
+		} finally {
+			themeActionBusy = false;
+			closeThemeMenu();
+		}
+	}
+
+	async function deleteThemeFromMenu(id: string, name: string) {
+		if (!confirm(`Slette temaet «${name}» permanent? Dette kan ikke angres.`)) return;
+		themeActionBusy = true;
+		try {
+			const res = await fetch(`/api/tema/${id}`, { method: 'DELETE' });
+			if (res.ok) themes = themes.filter((t) => t.id !== id);
+		} finally {
+			themeActionBusy = false;
+			closeThemeMenu();
+		}
+	}
+
 	function normalizeThemeName(value: string) {
 		return value
 			.toLowerCase()
@@ -2713,15 +2770,20 @@
 						style={getThemeHueStyle(theme.name)}
 						draggable="true"
 						role="listitem"
-						ondragstart={() => handleThemeDragStart(theme.id)}
+						ondragstart={() => { cancelThemeRowPress(); handleThemeDragStart(theme.id); }}
 						ondragover={(e) => handleThemeDragOver(e, theme.id)}
 						ondrop={() => handleThemeDrop(theme.id)}
 						ondragend={() => { dragThemeId = null; dragOverThemeId = null; }}
+						onpointerdown={() => startThemeRowPress(theme)}
+						onpointerup={cancelThemeRowPress}
+						onpointerleave={cancelThemeRowPress}
+						onpointercancel={cancelThemeRowPress}
+						oncontextmenu={(e) => e.preventDefault()}
 					>
 						<span class="tema-panel-row-handle" aria-hidden="true">⠿</span>
 						<button
 							class="tema-panel-row-btn"
-							onclick={() => { themePanelOpen = false; startNavMetric('home', 'tema'); void goto(`/tema/${theme.id}`); }}
+							onclick={() => handleThemeRowClick(theme)}
 						>
 							<span class="tema-panel-row-icon">{theme.emoji}</span>
 							<span class="tema-panel-row-name">{theme.name}</span>
@@ -2732,6 +2794,26 @@
 			</div>
 		</div>
 	</section>
+{/if}
+
+<!-- ── TEMA-LANGPRESS-MENY (arkiver / slett) ── -->
+{#if themeMenuId}
+	<button class="theme-menu-backdrop" onclick={closeThemeMenu} aria-label="Lukk meny"></button>
+	<div class="theme-menu" role="menu" aria-label={`Handlinger for ${themeMenuName}`}>
+		<div class="theme-menu-title">{themeMenuName}</div>
+		<button
+			class="theme-menu-item"
+			role="menuitem"
+			disabled={themeActionBusy}
+			onclick={() => archiveThemeFromMenu(themeMenuId!)}
+		>📥 Arkiver</button>
+		<button
+			class="theme-menu-item theme-menu-item-danger"
+			role="menuitem"
+			disabled={themeActionBusy}
+			onclick={() => deleteThemeFromMenu(themeMenuId!, themeMenuName)}
+		>🗑️ Slett permanent</button>
+	</div>
 {/if}
 
 <!-- ── WIDGET CONFIG SHEET ── -->
@@ -4429,6 +4511,72 @@
 	.media-list-date {
 		font-size: 0.7rem;
 		color: #666;
+	}
+
+	/* ── Tema-langpress-meny ────────────────────────────────────── */
+	.theme-menu-backdrop {
+		position: fixed;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.45);
+		border: 0;
+		padding: 0;
+		z-index: 1100;
+		animation: snooze-fade 120ms ease-out;
+	}
+
+	.theme-menu {
+		position: fixed;
+		left: 50%;
+		bottom: max(120px, env(safe-area-inset-bottom, 0px) + 120px);
+		transform: translateX(-50%);
+		min-width: 240px;
+		max-width: 320px;
+		background: hsl(228 19% 11%);
+		border: 1px solid hsl(228 16% 22%);
+		border-radius: 16px;
+		padding: 8px;
+		z-index: 1101;
+		box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+		animation: snooze-pop 160ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
+	}
+
+	.theme-menu-title {
+		padding: 10px 12px 6px;
+		font-size: 0.78rem;
+		color: hsl(228 10% 60%);
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.theme-menu-item {
+		display: flex;
+		width: 100%;
+		padding: 12px 14px;
+		background: transparent;
+		border: 0;
+		border-radius: 10px;
+		color: #e2e8f0;
+		font-size: 0.95rem;
+		text-align: left;
+		cursor: pointer;
+		transition: background 80ms;
+	}
+
+	.theme-menu-item:hover,
+	.theme-menu-item:focus-visible {
+		background: hsl(228 19% 16%);
+	}
+
+	.theme-menu-item:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+
+	.theme-menu-item-danger {
+		color: hsl(8 70% 70%);
 	}
 
 	/* ── Snooze-meny ────────────────────────────────────────────── */

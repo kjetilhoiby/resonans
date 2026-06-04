@@ -69,9 +69,11 @@
 
 	interface Props {
 		themeId: string;
+		startDate?: string;
+		endDate?: string;
 	}
 
-	let { themeId }: Props = $props();
+	let { themeId, startDate, endDate }: Props = $props();
 
 	let loading = $state(true);
 	let error = $state('');
@@ -118,7 +120,8 @@
 
 	onMount(async () => {
 		try {
-			const res = await fetch(`/api/tema/${themeId}/health-stats`);
+			const qs = startDate && endDate ? `?start=${startDate}&end=${endDate}` : '';
+			const res = await fetch(`/api/tema/${themeId}/health-stats${qs}`);
 			if (!res.ok) {
 				error = 'Kunne ikke laste helsedata';
 				return;

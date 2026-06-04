@@ -33,6 +33,7 @@
 		startDate?: string;
 		endDate?: string;
 		linkedThemeId?: string;
+		participants?: string[]; // member-id-er som er med på reisen
 	}
 
 	export interface FerieCell {
@@ -53,6 +54,11 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
 	import { fetchRawTimeseries, buildPeriods } from '$lib/utils/weather';
+	import TripDayCalendar from './TripDayCalendar.svelte';
+	import TripHealthStats from './TripHealthStats.svelte';
+	import TripBudget from './TripBudget.svelte';
+
+	type FerieView = 'rammer' | 'reiser' | 'gjennomfor';
 
 	interface Props {
 		themeId: string;
@@ -100,6 +106,7 @@
 
 	let activePaint = $state<string>('stengt');
 	let editMembers = $state(false);
+	let view = $state<FerieView>('rammer');
 
 	/* ── Avledede verdier ───────────────────────────────── */
 	const adultIds = $derived(members.filter((m) => m.role === 'voksen').map((m) => m.id));
@@ -155,15 +162,29 @@
 		return out;
 	});
 
+	// Er medlemmet med på en reise som dekker datoen?
+	function memberOnTrip(memberId: string, iso: string): boolean {
+		return trips.some(
+			(t) =>
+				(t.participants?.includes(memberId) ?? false) &&
+				t.startDate &&
+				t.endDate &&
+				iso >= t.startDate &&
+				iso <= t.endDate
+		);
+	}
+
+	// En voksen «hjemme» dekker barn kun hvis hen ikke selv er bortreist på en reise.
 	function adultsHomeOn(iso: string): boolean {
 		return adultIds.some((id) => {
 			const s = grid[id]?.[iso]?.status;
-			return s === 'ferie' || s === 'hjemme';
+			return (s === 'ferie' || s === 'hjemme') && !memberOnTrip(id, iso);
 		});
 	}
 
-	// 'gap' | 'covered' | 'fill' | 'adult-off' | 'default'
+	// 'gap' | 'covered' | 'fill' | 'adult-off' | 'trip' | 'default'
 	function cellState(member: FerieMember, iso: string): string {
+		if (memberOnTrip(member.id, iso)) return 'trip';
 		const s = grid[member.id]?.[iso]?.status;
 		if (member.role === 'barn') {
 			if (s === 'stengt') return adultsHomeOn(iso) ? 'covered' : 'gap';
@@ -185,6 +206,7 @@
 		for (const day of days) {
 			if (day.isWeekend) continue;
 			for (const id of childIds) {
+				if (memberOnTrip(id, day.iso)) continue; // bortreist = dekket
 				if (grid[id]?.[day.iso]?.status === 'stengt' && !adultsHomeOn(day.iso)) n++;
 			}
 		}
@@ -196,6 +218,7 @@
 		for (const day of days) {
 			if (day.isWeekend) continue;
 			for (const id of childIds) {
+				if (memberOnTrip(id, day.iso)) continue;
 				if (grid[id]?.[day.iso]?.status === 'stengt' && adultsHomeOn(day.iso)) n++;
 			}
 		}
@@ -277,6 +300,16 @@
 
 	function removeTrip(id: string) {
 		trips = trips.filter((t) => t.id !== id);
+		scheduleSave();
+	}
+
+	function toggleTripParticipant(tripId: string, memberId: string) {
+		trips = trips.map((t) => {
+			if (t.id !== tripId) return t;
+			const cur = t.participants ?? [];
+			const next = cur.includes(memberId) ? cur.filter((id) => id !== memberId) : [...cur, memberId];
+			return { ...t, participants: next };
+		});
 		scheduleSave();
 	}
 
@@ -460,6 +493,46 @@
 		}
 	}
 
+	/* ── Oppgaver (Gjennomfør) ──────────────────────────── */
+	interface FerieTask {
+		id: string;
+		kind: 'diary' | 'trip' | 'gap';
+		label: string;
+		date?: string;
+	}
+	const ferieTasks = $derived.by<FerieTask[]>(() => {
+		const out: FerieTask[] = [];
+		const todayIso = toISO(new Date());
+		const entryDates = new Set(diaryEntries.map((e) => e.date));
+		// «Skriv i dagboka» for passerte dager (siste 7) i vinduet uten notat
+		const recentPast = days.filter((d) => d.iso <= todayIso).slice(-7);
+		for (const d of recentPast) {
+			if (!entryDates.has(d.iso)) {
+				out.push({ id: `diary-${d.iso}`, kind: 'diary', date: d.iso, label: `Skriv i dagboka for ${d.weekday} ${d.dayMonth}` });
+			}
+		}
+		for (const t of trips) {
+			if (!(t.participants && t.participants.length)) {
+				out.push({ id: `trip-${t.id}`, kind: 'trip', label: `Legg til deltakere på «${t.label || 'reise'}»` });
+			}
+		}
+		if (gapCount > 0) {
+			out.push({ id: 'gap', kind: 'gap', label: `${gapCount} barn-dager mangler fortsatt dekning` });
+		}
+		return out;
+	});
+
+	function doTask(t: FerieTask) {
+		if (t.kind === 'diary' && t.date) {
+			diaryDate = t.date;
+			loadFormForDate(t.date);
+		} else if (t.kind === 'trip') {
+			view = 'reiser';
+		} else if (t.kind === 'gap') {
+			view = 'rammer';
+		}
+	}
+
 	onMount(() => {
 		void loadDiary().then(() => {
 			if (!diaryDate) {
@@ -527,8 +600,39 @@
 		scheduleSave();
 	}
 
+	function updateMemberName(id: string, name: string) {
+		members = members.map((m) => (m.id === id ? { ...m, name } : m));
+		scheduleSave();
+	}
+
 	function personIsAdded(id: string): boolean {
 		return members.some((m) => m.personId === id);
+	}
+
+	/* ── Wizard: punch de groveste rammene ──────────────── */
+	// Per medlem: når er de hjemme (voksen = tilgjengelig til å dekke, barn = hjemme
+	// uten tilbud = trenger dekning). «Generer» maler grid-en fra disse periodene.
+	let wizardRanges = $state<Record<string, { from: string; to: string }>>({});
+
+	function wizFrom(id: string): string {
+		return wizardRanges[id]?.from ?? startDate;
+	}
+	function wizTo(id: string): string {
+		return wizardRanges[id]?.to ?? endDate;
+	}
+	function setWiz(id: string, field: 'from' | 'to', value: string) {
+		const cur = wizardRanges[id] ?? { from: startDate, to: endDate };
+		wizardRanges[id] = { ...cur, [field]: value };
+	}
+
+	function generateFromWizard() {
+		for (const m of members) {
+			const from = wizFrom(m.id);
+			const to = wizTo(m.id);
+			if (!from || !to) continue;
+			// Voksen hjemme = tilgjengelig (hjemme). Barn hjemme = stengt (trenger dekning).
+			applyBulk(m.role === 'voksen' ? 'hjemme' : 'stengt', from, to, m.id);
+		}
 	}
 
 	/* ── Lagring (debounced) ────────────────────────────── */
@@ -553,11 +657,21 @@
 			grid,
 			trips: trips.length > 0 ? trips : undefined
 		};
+		// Send alle feltene eksplisitt (null = tøm) så serverens felt-vis merge
+		// kan både oppdatere og tømme felter korrekt.
+		const payload = {
+			startDate: startDate || null,
+			endDate: endDate || null,
+			note: note.trim() || null,
+			members,
+			grid,
+			trips
+		};
 		try {
 			const res = await fetch(`/api/tema/${themeId}/ferie`, {
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(profile)
+				body: JSON.stringify(payload)
 			});
 			if (!res.ok) throw new Error('Lagring feilet');
 			ferieProfile = profile;
@@ -587,7 +701,7 @@
 	<header class="ferie-head">
 		<div class="ferie-head-title">
 			<span class="ferie-emoji">{themeEmoji ?? '🏖️'}</span>
-			<h2>Oppholdsplan</h2>
+			<h2>Ferieplan</h2>
 		</div>
 		<div class="ferie-head-status">
 			{#if saving}
@@ -598,6 +712,13 @@
 		</div>
 	</header>
 
+	<nav class="view-switch">
+		<button class:active={view === 'rammer'} onclick={() => (view = 'rammer')}>1 · Rammer</button>
+		<button class:active={view === 'reiser'} onclick={() => (view = 'reiser')}>2 · Reiser</button>
+		<button class:active={view === 'gjennomfor'} onclick={() => (view = 'gjennomfor')}>3 · Gjennomfør</button>
+	</nav>
+
+	{#if view === 'rammer'}
 	<!-- Ferievindu + medlemmer -->
 	<section class="ferie-setup">
 		<div class="ferie-window">
@@ -679,6 +800,34 @@
 				</div>
 			{/if}
 		</div>
+		{#if members.length > 0}
+			<div class="wizard">
+				<div class="wizard-head">
+					<span class="wizard-title">Hjemme-perioder (rammer)</span>
+					<button type="button" class="ferie-btn ferie-btn-primary" onclick={generateFromWizard}>
+						Generer dekningsplan
+					</button>
+				</div>
+				<table class="wizard-table">
+					<thead>
+						<tr><th>Hvem</th><th>Hjemme fra</th><th>Hjemme til</th></tr>
+					</thead>
+					<tbody>
+						{#each members as m (m.id)}
+							<tr>
+								<td><span class="wiz-role">{m.role === 'voksen' ? '🧑' : '🧒'}</span> {m.name}</td>
+								<td><input type="date" value={wizFrom(m.id)} min={startDate} max={endDate} onchange={(e) => setWiz(m.id, 'from', e.currentTarget.value)} /></td>
+								<td><input type="date" value={wizTo(m.id)} min={startDate} max={endDate} onchange={(e) => setWiz(m.id, 'to', e.currentTarget.value)} /></td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+				<p class="wizard-hint">
+					Voksen hjemme = kan dekke. Barn hjemme = trenger dekning. «Generer» maler kalenderen fra
+					periodene — finjuster i grid-en under.
+				</p>
+			</div>
+		{/if}
 	</section>
 
 	{#if !hasWindow}
@@ -803,6 +952,7 @@
 			<span class="legend-item"><i class="sw gap"></i> Mangler dekning</span>
 			<span class="legend-item"><i class="sw covered"></i> Dekket av forelder</span>
 			<span class="legend-item"><i class="sw fill"></i> Alternativt tilbud</span>
+			<span class="legend-item"><i class="sw trip"></i> Bortreist (reise)</span>
 			<span class="legend-item"><i class="sw adult-off"></i> Voksen ferie/hjemme</span>
 			<span class="legend-item"><i class="sw default"></i> Normal dekning</span>
 		</div>
@@ -810,8 +960,10 @@
 			<p class="ferie-saved-at">Sist lagret: {new Intl.DateTimeFormat('nb-NO', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }).format(new Date(lastSavedAt))}</p>
 		{/if}
 	{/if}
-
-	{#if hasWindow}
+	{:else if view === 'reiser'}
+		{#if !hasWindow}
+			<div class="ferie-empty"><p>Sett ferievinduet under «Rammer» først.</p></div>
+		{:else}
 		<section class="ferie-trips">
 			<div class="trips-head">
 				<h3>Reiser i ferien</h3>
@@ -825,6 +977,7 @@
 			{:else}
 				<div class="trips-list">
 					{#each trips as t (t.id)}
+						<div class="trip-card">
 						<div class="trip-row">
 							<input
 								class="trip-label"
@@ -866,13 +1019,45 @@
 							{/if}
 							<button type="button" class="trip-remove" title="Fjern" onclick={() => removeTrip(t.id)}>×</button>
 						</div>
+						<div class="trip-participants">
+							<span class="tp-label">Med:</span>
+							{#each members as m (m.id)}
+								<button
+									type="button"
+									class="tp-chip"
+									class:on={t.participants?.includes(m.id)}
+									onclick={() => toggleTripParticipant(t.id, m.id)}
+								>
+									{m.role === 'voksen' ? '🧑' : '🧒'} {m.name}
+								</button>
+							{/each}
+							{#if members.length === 0}
+								<span class="tp-empty">Legg til familiemedlemmer under «Rammer».</span>
+							{/if}
+						</div>
+						</div>
 					{/each}
 				</div>
 			{/if}
 		</section>
-	{/if}
+		{/if}
+	{:else}
+		{#if !hasWindow}
+			<div class="ferie-empty"><p>Sett ferievinduet under «Rammer» først.</p></div>
+		{:else}
+		{#if ferieTasks.length > 0}
+			<section class="ferie-tasks">
+				<h3>Oppgaver</h3>
+				<ul class="task-list">
+					{#each ferieTasks as task (task.id)}
+						<li>
+							<button type="button" class="task-item {task.kind}" onclick={() => doTask(task)}>{task.label}</button>
+						</li>
+					{/each}
+				</ul>
+			</section>
+		{/if}
 
-	{#if hasWindow}
 		<section class="ferie-diary">
 			<div class="trips-head">
 				<h3>Feriedagbok</h3>
@@ -924,6 +1109,31 @@
 				<p class="trips-empty">Ingen dagboknotater ennå. Velg en dag, skriv én setning, og hent gjerne været.</p>
 			{/if}
 		</section>
+
+		<section class="ferie-dash">
+			<h3>Dag-for-dag</h3>
+			<TripDayCalendar {themeEmoji} startDate={startDate} endDate={endDate} />
+		</section>
+		<section class="ferie-dash">
+			<h3>Trening &amp; helse</h3>
+			<TripHealthStats {themeId} startDate={startDate} endDate={endDate} />
+		</section>
+		<section class="ferie-dash">
+			<h3>Økonomi</h3>
+			<TripBudget {themeId} startDate={startDate} endDate={endDate} />
+		</section>
+
+		{#if trips.some((t) => t.linkedThemeId)}
+			<section class="ferie-dash">
+				<h3>Reisene dine</h3>
+				<ul class="trip-links">
+					{#each trips.filter((t) => t.linkedThemeId) as t (t.id)}
+						<li><a href={`/tema/${t.linkedThemeId}`}>{t.label || t.place || 'Reise'} →</a></li>
+					{/each}
+				</ul>
+			</section>
+		{/if}
+		{/if}
 	{/if}
 </div>
 
@@ -1510,5 +1720,184 @@
 	}
 	.diary-entry-text {
 		font-size: 0.9rem;
+	}
+
+	/* View-bryter (faser) */
+	.view-switch {
+		display: flex;
+		gap: 0.25rem;
+		border-bottom: 1px solid var(--tp-border);
+	}
+	.view-switch button {
+		background: none;
+		border: none;
+		border-bottom: 2px solid transparent;
+		color: var(--tp-text-soft);
+		padding: 0.5rem 0.75rem;
+		font: inherit;
+		font-size: 0.9rem;
+		cursor: pointer;
+	}
+	.view-switch button.active {
+		color: var(--tp-text);
+		border-bottom-color: var(--tp-accent);
+	}
+
+	/* Wizard */
+	.wizard {
+		border-top: 1px solid var(--tp-border);
+		padding-top: 0.6rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+	.wizard-head {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 0.5rem;
+	}
+	.wizard-title {
+		font-size: 0.85rem;
+		font-weight: 600;
+		color: var(--tp-text-soft);
+	}
+	.wizard-table {
+		border-collapse: collapse;
+		font-size: 0.82rem;
+	}
+	.wizard-table th {
+		text-align: left;
+		font-weight: 600;
+		color: var(--tp-text-muted);
+		font-size: 0.72rem;
+		padding: 0.2rem 0.4rem;
+	}
+	.wizard-table td {
+		padding: 0.2rem 0.4rem;
+	}
+	.wiz-role {
+		margin-right: 0.2rem;
+	}
+	.wizard-hint {
+		margin: 0;
+		font-size: 0.75rem;
+		color: var(--tp-text-muted);
+	}
+
+	/* Reise — bortreist-celle */
+	.cell.trip {
+		background: hsl(265 40% 38%);
+		color: hsl(265 25% 96%);
+	}
+	.sw.trip { background: hsl(265 40% 38%); }
+
+	/* Reise-kort med deltakere */
+	.trip-card {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+		padding-bottom: 0.5rem;
+		border-bottom: 1px solid var(--tp-border);
+	}
+	.trip-card:last-child {
+		border-bottom: none;
+		padding-bottom: 0;
+	}
+	.trip-participants {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.3rem;
+		align-items: center;
+	}
+	.tp-label {
+		font-size: 0.75rem;
+		color: var(--tp-text-muted);
+	}
+	.tp-chip {
+		border: 1px solid var(--tp-border);
+		background: var(--tp-bg-1);
+		color: var(--tp-text-soft);
+		border-radius: 999px;
+		padding: 0.15rem 0.55rem;
+		font-size: 0.78rem;
+		cursor: pointer;
+	}
+	.tp-chip.on {
+		background: hsl(265 40% 32%);
+		border-color: hsl(265 45% 50%);
+		color: hsl(265 25% 96%);
+	}
+	.tp-empty {
+		font-size: 0.78rem;
+		color: var(--tp-text-muted);
+	}
+
+	/* Oppgaver */
+	.ferie-tasks {
+		padding: 0.85rem;
+		background: var(--tp-bg-2);
+		border: 1px solid var(--tp-border);
+		border-radius: 12px;
+	}
+	.ferie-tasks h3 {
+		margin: 0 0 0.5rem;
+		font-size: 1rem;
+	}
+	.task-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+	}
+	.task-item {
+		width: 100%;
+		text-align: left;
+		background: var(--tp-bg-1);
+		border: 1px solid var(--tp-border);
+		color: var(--tp-text);
+		border-radius: 8px;
+		padding: 0.45rem 0.6rem;
+		font: inherit;
+		font-size: 0.85rem;
+		cursor: pointer;
+	}
+	.task-item.gap {
+		border-color: hsl(0 55% 45%);
+	}
+	.task-item.diary::before {
+		content: '✍️ ';
+	}
+	.task-item.trip::before {
+		content: '🧳 ';
+	}
+
+	/* Ferie-dashboards (Gjennomfør) */
+	.ferie-dash {
+		padding: 0.85rem;
+		background: var(--tp-bg-2);
+		border: 1px solid var(--tp-border);
+		border-radius: 12px;
+	}
+	.ferie-dash h3 {
+		margin: 0 0 0.6rem;
+		font-size: 1rem;
+	}
+	.trip-links {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+	}
+	.trip-links a {
+		color: var(--tp-accent);
+		text-decoration: none;
+	}
+	.trip-links a:hover {
+		text-decoration: underline;
 	}
 </style>

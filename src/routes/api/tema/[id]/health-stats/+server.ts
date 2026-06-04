@@ -15,7 +15,7 @@ import { buildUnifiedWorkoutActivities } from '$lib/server/activity-layer';
  * - Number of workouts during trip
  * - Average sleep per day during trip
  */
-export const GET: RequestHandler = async ({ params, locals }) => {
+export const GET: RequestHandler = async ({ params, locals, url }) => {
 	const userId = locals.userId;
 
 	// Verify the theme belongs to this user and get trip dates
@@ -28,17 +28,23 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 		return json({ error: 'Not found' }, { status: 404 });
 	}
 
+	// Eksplisitte datoer via query (?start=&end=) overstyrer tripProfile —
+	// brukes av ferie-dashboardet for å aggregere helse over ferievinduet.
+	const qStart = url.searchParams.get('start');
+	const qEnd = url.searchParams.get('end');
 	const profile = (theme.tripProfile ?? {}) as {
 		startDate?: string;
 		endDate?: string;
 	};
+	const startStr = qStart ?? profile.startDate;
+	const endStr = qEnd ?? profile.endDate;
 
-	if (!profile.startDate || !profile.endDate) {
-		return json({ error: 'Tur mangler start- eller sluttdato' }, { status: 400 });
+	if (!startStr || !endStr) {
+		return json({ error: 'Mangler start- eller sluttdato' }, { status: 400 });
 	}
 
-	const startDate = new Date(profile.startDate + 'T00:00:00Z');
-	const endDate = new Date(profile.endDate + 'T23:59:59Z');
+	const startDate = new Date(startStr + 'T00:00:00Z');
+	const endDate = new Date(endStr + 'T23:59:59Z');
 
 	// Calculate date ranges
 	const before7Start = new Date(startDate);
