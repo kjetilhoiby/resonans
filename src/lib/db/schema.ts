@@ -220,6 +220,7 @@ export const themes = pgTable('themes', {
 				endDate: string;
 				weatherEmoji?: string;
 				weatherTemp?: number;
+				weatherFetchedAt?: string;
 			}>;
 		}>;
 	}>(),

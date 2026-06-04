@@ -35,6 +35,7 @@
 		endDate: string;
 		weatherEmoji?: string;
 		weatherTemp?: number;
+		weatherFetchedAt?: string;
 	}
 
 	export interface FerieTrip {
@@ -434,11 +435,13 @@
 		return null;
 	}
 
-	async function fetchStopWeather(stop: FerieTripStop): Promise<void> {
-		if (!stop.lat || !stop.lon) return;
+	const WEATHER_TTL_MS = 6 * 60 * 60 * 1000; // 6 timer
+
+	async function fetchStopWeather(stop: FerieTripStop): Promise<boolean> {
+		if (!stop.lat || !stop.lon) return false;
 		try {
 			const ts = await fetchRawTimeseries(stop.lat, stop.lon);
-			if (!ts) return;
+			if (!ts) return false;
 			const todayStr = toISO(new Date());
 			const repDate = (todayStr >= stop.startDate && todayStr <= stop.endDate) ? todayStr : stop.startDate;
 			const periods = buildPeriods(repDate, ts);
@@ -447,8 +450,31 @@
 			if (usable) {
 				stop.weatherEmoji = usable.emoji;
 				stop.weatherTemp = usable.temp;
+				stop.weatherFetchedAt = new Date().toISOString();
+				return true;
 			}
 		} catch { /* best-effort */ }
+		return false;
+	}
+
+	function isWeatherStale(stop: FerieTripStop): boolean {
+		if (!stop.weatherFetchedAt) return true;
+		return Date.now() - new Date(stop.weatherFetchedAt).getTime() > WEATHER_TTL_MS;
+	}
+
+	async function refreshStaleStopWeather() {
+		let changed = false;
+		for (const trip of trips) {
+			for (const stop of trip.stops ?? []) {
+				if (stop.lat && stop.lon && isWeatherStale(stop)) {
+					if (await fetchStopWeather(stop)) changed = true;
+				}
+			}
+		}
+		if (changed) {
+			trips = [...trips];
+			scheduleSave();
+		}
 	}
 
 	async function addStop(tripId: string, place: string, date: string) {
@@ -701,6 +727,7 @@
 				loadFormForDate(diaryDate);
 			}
 		});
+		void refreshStaleStopWeather();
 	});
 
 	/* ── Medlemmer ──────────────────────────────────────── */
