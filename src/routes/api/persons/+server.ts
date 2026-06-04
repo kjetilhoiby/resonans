@@ -2,6 +2,9 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { PersonService } from '$lib/server/services/person-service';
 import { isValidPersonKind } from '$lib/domains/family';
+import { db } from '$lib/db';
+import { users } from '$lib/db/schema';
+import { eq } from 'drizzle-orm';
 
 export const GET: RequestHandler = async ({ locals, url }) => {
 	const userId = locals.userId;
@@ -10,9 +13,33 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	const roleMap = PersonService.computeRoleTokens(list);
 	const persons = list.map((p) => ({
 		...p,
-		// Merge computed role tokens into aliases so MentionAutocomplete can match "kona", "eldste", etc.
 		aliases: [...p.aliases, ...(roleMap.get(p.id) ?? [])]
 	}));
+
+	if (!persons.some((p) => p.kind === 'self')) {
+		const user = await db.select({ name: users.name }).from(users).where(eq(users.id, userId)).then(r => r[0]);
+		if (user) {
+			persons.unshift({
+				id: `self-${userId}`,
+				userId,
+				name: user.name,
+				fullName: null,
+				nickname: null,
+				birthDate: null,
+				kind: 'self',
+				avatarEmoji: '🙂',
+				photoUrl: null,
+				notes: null,
+				spondGroupIds: [],
+				emailAddresses: [],
+				aliases: [],
+				archived: false,
+				createdAt: new Date(),
+				updatedAt: new Date()
+			} as (typeof persons)[number]);
+		}
+	}
+
 	return json({ persons });
 };
 

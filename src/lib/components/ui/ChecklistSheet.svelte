@@ -48,9 +48,10 @@
 		onDeleted?: () => void;
 		onChanged?: () => void;
 		onStartChat?: (itemText: string, checklistId: string, itemId: string) => void;
+		onNavigateDay?: (dateIso: string) => void;
 	}
 
-	let { checklist, onclose, onDeleted, onChanged, onStartChat }: Props = $props();
+	let { checklist, onclose, onDeleted, onChanged, onStartChat, onNavigateDay }: Props = $props();
 
 	let items = $state<ChecklistItem[]>([...checklist.items]);
 	let newItemText = $state('');
@@ -103,24 +104,47 @@
 		return '/ukeplan';
 	});
 
-	const displayTitle = $derived.by(() => {
-		const ctx = checklist.context;
-		if (!ctx) return checklist.title;
+	function formatDayLabel(dateIso: string): string {
 		const todayIso = new Date().toLocaleDateString('sv', { timeZone: 'Europe/Oslo' });
 		const tomorrow = new Date();
 		tomorrow.setDate(tomorrow.getDate() + 1);
 		const tomorrowIso = tomorrow.toLocaleDateString('sv', { timeZone: 'Europe/Oslo' });
+		const yesterday = new Date();
+		yesterday.setDate(yesterday.getDate() - 1);
+		const yesterdayIso = yesterday.toLocaleDateString('sv', { timeZone: 'Europe/Oslo' });
+		if (dateIso === todayIso) return 'I dag';
+		if (dateIso === tomorrowIso) return 'I morgen';
+		if (dateIso === yesterdayIso) return 'I går';
+		return new Intl.DateTimeFormat('nb-NO', { weekday: 'long', day: 'numeric', month: 'long' })
+			.format(new Date(dateIso + 'T12:00:00'));
+	}
+
+	const isDayChecklist = $derived.by(() => {
+		return !!checklist.context?.match(/^week:\d{4}-W\d{2}:day:\d{4}-\d{2}-\d{2}$/);
+	});
+
+	const displayTitle = $derived.by(() => {
+		const ctx = checklist.context;
+		if (!ctx) return checklist.title;
 		const dayMatch = ctx.match(/^week:(\d{4}-W\d{2}):day:(\d{4}-\d{2}-\d{2})$/);
-		if (dayMatch) {
-			if (dayMatch[2] === todayIso) return 'I dag';
-			if (dayMatch[2] === tomorrowIso) return 'I morgen';
-			return new Intl.DateTimeFormat('nb-NO', { weekday: 'long', day: 'numeric', month: 'long' })
-				.format(new Date(dayMatch[2] + 'T12:00:00'));
-		}
+		if (dayMatch) return formatDayLabel(dayMatch[2]);
 		const weekMatch = ctx.match(/^week:(\d{4}-W\d{2})$/);
 		if (weekMatch) return 'Hele uka';
 		return checklist.title;
 	});
+
+	function navigateDay(offset: number) {
+		const ctx = checklist.context;
+		if (!ctx || !onNavigateDay) return;
+		const m = ctx.match(/^week:\d{4}-W\d{2}:day:(\d{4}-\d{2}-\d{2})$/);
+		if (!m) return;
+		const d = new Date(m[1] + 'T12:00:00');
+		d.setDate(d.getDate() + offset);
+		const year = d.getFullYear();
+		const month = String(d.getMonth() + 1).padStart(2, '0');
+		const day = String(d.getDate()).padStart(2, '0');
+		onNavigateDay(`${year}-${month}-${day}`);
+	}
 
 	// Weather for day and week checklists
 	const dayContextDate = $derived.by(() => {
@@ -665,9 +689,17 @@
 		><Icon name="plus" size={16} /></button>
 	</div>
 
-	<!-- Footer: delete -->
+	<!-- Footer -->
 	<div class="cs-footer">
-		<a class="cs-calendar-link" href={calendarHref}>Åpne i kalender</a>
+		{#if isDayChecklist && onNavigateDay}
+			<div class="cs-day-nav">
+				<button class="cs-day-nav-btn" onclick={() => navigateDay(-1)} aria-label="Forrige dag">&lsaquo;</button>
+				<a class="cs-calendar-link" href={calendarHref}>Åpne i kalender</a>
+				<button class="cs-day-nav-btn" onclick={() => navigateDay(1)} aria-label="Neste dag">&rsaquo;</button>
+			</div>
+		{:else}
+			<a class="cs-calendar-link" href={calendarHref}>Åpne i kalender</a>
+		{/if}
 		<button class="cs-delete-btn" onclick={deleteChecklist}>Slett liste</button>
 	</div>
 </div>
@@ -1080,6 +1112,34 @@
 	}
 
 	.cs-calendar-link:hover {
+		color: #c7d0ff;
+		border-color: #4653a6;
+	}
+
+	.cs-day-nav {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.cs-day-nav-btn {
+		width: 30px;
+		height: 30px;
+		border-radius: 8px;
+		border: 1px solid #2f365f;
+		background: #151821;
+		color: #8ea0ff;
+		font-size: 1.1rem;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		transition: color 0.12s, border-color 0.12s;
+		padding: 0;
+		line-height: 1;
+	}
+
+	.cs-day-nav-btn:hover {
 		color: #c7d0ff;
 		border-color: #4653a6;
 	}

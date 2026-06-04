@@ -2838,6 +2838,19 @@
 			activeChecklists = activeChecklists.filter((c) => c.id !== openChecklist?.id);
 			openChecklist = null;
 		}}
+		onNavigateDay={(dateIso) => {
+			const d = new Date(dateIso + 'T12:00:00');
+			const weekKey = getLocalIsoWeekDashed(d);
+			const ctx = `week:${weekKey}:day:${dateIso}`;
+			const target = activeChecklists.find((c) => c.context === ctx)
+				?? allContextChecklists.find((c) => c.context === ctx);
+			if (target) {
+				openChecklist = target;
+			} else {
+				openChecklist = null;
+				handleChecklistPlan(ctx);
+			}
+		}}
 		onStartChat={async (itemText, checklistId, itemId) => {
 			openChecklist = null;
 			try {

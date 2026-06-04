@@ -100,12 +100,13 @@
 	let note = $state(ferieProfile?.note ?? '');
 	let members = $state<FerieMember[]>(ferieProfile?.members ? [...ferieProfile.members] : []);
 	let grid = $state<Record<string, Record<string, FerieCell>>>(
-		ferieProfile?.grid ? structuredClone(ferieProfile.grid) : {}
+		ferieProfile?.grid ? $state.snapshot(ferieProfile.grid) : {}
 	);
 	let trips = $state<FerieTrip[]>(ferieProfile?.trips ? [...ferieProfile.trips] : []);
 
 	let activePaint = $state<string>('stengt');
 	let editMembers = $state(false);
+	let editing = $state(false);
 	let view = $state<FerieView>('rammer');
 
 	/* ── Avledede verdier ───────────────────────────────── */
@@ -224,6 +225,56 @@
 		}
 		return n;
 	});
+
+	interface WeekSummary {
+		week: number;
+		dateRange: string;
+		days: DayEntry[];
+		members: Record<string, { gaps: number; covered: number; fills: number; trips: number; off: number; total: number }>;
+	}
+
+	const weekSummaries = $derived.by<WeekSummary[]>(() => {
+		const weekMap = new Map<number, DayEntry[]>();
+		for (const d of days) {
+			if (d.isWeekend) continue;
+			const list = weekMap.get(d.week) ?? [];
+			list.push(d);
+			weekMap.set(d.week, list);
+		}
+		const out: WeekSummary[] = [];
+		for (const [week, wdays] of weekMap) {
+			const first = wdays[0], last = wdays[wdays.length - 1];
+			const memberStats: WeekSummary['members'] = {};
+			for (const m of members) {
+				let gaps = 0, covered = 0, fills = 0, trips = 0, off = 0;
+				for (const d of wdays) {
+					const cs = cellState(m, d.iso);
+					if (cs === 'gap') gaps++;
+					else if (cs === 'covered') covered++;
+					else if (cs === 'fill') fills++;
+					else if (cs === 'trip') trips++;
+					else if (cs === 'adult-off') off++;
+				}
+				memberStats[m.id] = { gaps, covered, fills, trips, off, total: wdays.length };
+			}
+			out.push({ week, dateRange: `${first.dayMonth}–${last.dayMonth}`, days: wdays, members: memberStats });
+		}
+		return out;
+	});
+
+	let expandedWeeks = $state<Set<number>>(new Set());
+
+	function toggleWeek(week: number) {
+		const next = new Set(expandedWeeks);
+		if (next.has(week)) next.delete(week); else next.add(week);
+		expandedWeeks = next;
+	}
+
+	function initials(name: string): string {
+		const parts = name.trim().split(/\s+/);
+		if (parts.length === 1) return parts[0].slice(0, 2);
+		return parts.map(p => p[0]).join('').toUpperCase();
+	}
 
 	/* ── Mutasjoner ─────────────────────────────────────── */
 	function setCell(memberId: string, iso: string, status: string | null) {
@@ -759,7 +810,8 @@
 	</nav>
 
 	{#if view === 'rammer'}
-	<!-- Ferievindu + medlemmer -->
+	{#if !hasWindow || members.length === 0 || editing}
+	<!-- Ferievindu + medlemmer (alltid synlig i redigering, eller ved tom tilstand) -->
 	<section class="ferie-setup">
 		<div class="ferie-window">
 			<label>
@@ -840,7 +892,7 @@
 				</div>
 			{/if}
 		</div>
-		{#if members.length > 0}
+		{#if members.length > 0 && editing}
 			<div class="wizard">
 				<div class="wizard-head">
 					<span class="wizard-title">Hjemme-perioder (rammer)</span>
@@ -869,6 +921,7 @@
 			</div>
 		{/if}
 	</section>
+	{/if}
 
 	{#if !hasWindow}
 		<div class="ferie-empty">
@@ -879,123 +932,165 @@
 			<p>Legg til familiemedlemmer (barn og voksne) for å begynne å planlegge dekningen.</p>
 		</div>
 	{:else}
-		<!-- Hull-teller -->
 		<section class="ferie-summary">
-			<div class="summary-stat" class:has-gap={gapCount > 0}>
-				<span class="summary-num">{gapCount}</span>
-				<span class="summary-label">barn-dager mangler dekning</span>
+			<button type="button" class="ferie-btn" class:ferie-btn-primary={editing} onclick={() => (editing = !editing)}>
+				{editing ? 'Ferdig' : 'Rediger'}
+			</button>
+		</section>
+
+		{#if !editing}
+			<div class="compact-grid-wrap">
+				<table class="compact-grid">
+					<thead>
+						<tr>
+							<th class="compact-week-col"></th>
+							{#each members as m (m.id)}
+								<th class="compact-member-col" class:adult={m.role === 'voksen'}>{initials(m.name)}</th>
+							{/each}
+						</tr>
+					</thead>
+					<tbody>
+						{#each weekSummaries as ws (ws.week)}
+							{@const isExpanded = expandedWeeks.has(ws.week)}
+							<tr class="compact-week-row" class:expanded={isExpanded} onclick={() => toggleWeek(ws.week)}>
+								<td class="compact-week-col">
+									<span class="compact-week-num">{ws.week}</span>
+								</td>
+								{#each members as m (m.id)}
+									<td class="compact-cell">
+										<div class="day-bars">
+											{#each ws.days as day (day.iso)}
+												<span class="day-bar {cellState(m, day.iso)}"></span>
+											{/each}
+										</div>
+									</td>
+								{/each}
+							</tr>
+							{#if isExpanded}
+								{#each ws.days as day, di (day.iso)}
+									<tr class="expanded-day-row">
+										<td class="compact-week-col expanded-day-label">{day.weekday.slice(0, 2)}</td>
+										{#each members as m, mi (m.id)}
+											<td class="expanded-cell"><span class="day-pill {cellState(m, day.iso)}">{#if mi === 0}<span class="day-date-overlay">{day.dayMonth}</span>{/if}</span></td>
+										{/each}
+									</tr>
+								{/each}
+							{/if}
+						{/each}
+					</tbody>
+				</table>
 			</div>
-			{#if coveredByParentCount > 0}
-				<div class="summary-stat covered">
-					<span class="summary-num">{coveredByParentCount}</span>
-					<span class="summary-label">dekkes av forelder hjemme</span>
-				</div>
-			{/if}
+
+			<div class="ferie-legend">
+				<span class="legend-item"><i class="sw gap"></i> Udekket</span>
+				<span class="legend-item"><i class="sw covered"></i> Forelder</span>
+				<span class="legend-item"><i class="sw fill"></i> Tilbud</span>
+				<span class="legend-item"><i class="sw trip"></i> Reise</span>
+				<span class="legend-item"><i class="sw adult-off"></i> Fri</span>
+			</div>
+		{:else}
+			<!-- Full redigering -->
 			{#if childIds.length > 0}
 				<button type="button" class="ferie-btn ferie-btn-primary" onclick={lagHullet}>
 					🚫 Lag hullet — marker stengt for alle barn i hele perioden
 				</button>
 			{/if}
-		</section>
 
-		<!-- Palett -->
-		<section class="ferie-palette">
-			<div class="palette-group">
-				<span class="palette-title">Mal med:</span>
-				<button type="button" class="paint-chip clear" class:active={activePaint === 'clear'} onclick={() => (activePaint = 'clear')}>
-					🧽 Viske ut
-				</button>
-				{#each paletteList as s (s.value)}
-					<button
-						type="button"
-						class="paint-chip {s.cls}"
-						class:active={activePaint === s.value}
-						onclick={() => (activePaint = s.value)}
-					>
-						{s.emoji} {s.label}
+			<section class="ferie-palette">
+				<div class="palette-group">
+					<span class="palette-title">Mal med:</span>
+					<button type="button" class="paint-chip clear" class:active={activePaint === 'clear'} onclick={() => (activePaint = 'clear')}>
+						🧽 Viske ut
 					</button>
-				{/each}
-			</div>
-			<div class="palette-switch">
-				<button type="button" class:active={paletteList === CHILD_STATUSES} onclick={() => (activePaint = 'stengt')}>Barn</button>
-				<button type="button" class:active={paletteList === ADULT_STATUSES} onclick={() => (activePaint = 'ferie')}>Voksen</button>
-			</div>
-		</section>
+					{#each paletteList as s (s.value)}
+						<button
+							type="button"
+							class="paint-chip {s.cls}"
+							class:active={activePaint === s.value}
+							onclick={() => (activePaint = s.value)}
+						>
+							{s.emoji} {s.label}
+						</button>
+					{/each}
+				</div>
+				<div class="palette-switch">
+					<button type="button" class:active={paletteList === CHILD_STATUSES} onclick={() => (activePaint = 'stengt')}>Barn</button>
+					<button type="button" class:active={paletteList === ADULT_STATUSES} onclick={() => (activePaint = 'ferie')}>Voksen</button>
+				</div>
+			</section>
 
-		<!-- Bulk -->
-		<details class="ferie-bulk">
-			<summary>Marker en periode i bulk</summary>
-			<div class="bulk-form">
-				<label><span>Fra</span><input type="date" bind:value={bulkFrom} min={startDate} max={endDate} /></label>
-				<label><span>Til</span><input type="date" bind:value={bulkTo} min={startDate} max={endDate} /></label>
-				<label>
-					<span>For</span>
-					<select bind:value={bulkTarget}>
-						<option value="barn">Alle barn</option>
-						<option value="voksen">Alle voksne</option>
-						{#each members as m (m.id)}
-							<option value={m.id}>{m.name}</option>
-						{/each}
-					</select>
-				</label>
-				<button type="button" class="ferie-btn" onclick={applyBulkFromForm}>
-					Sett «{activePaint === 'clear' ? 'blank' : STATUS_META[activePaint]?.label ?? activePaint}»
-				</button>
-			</div>
-		</details>
-
-		<!-- Dekningskalender -->
-		<div class="ferie-grid-wrap">
-			<table class="ferie-grid">
-				<thead>
-					<tr>
-						<th class="col-date sticky-col">Dag</th>
-						{#each members as m (m.id)}
-							<th class="col-member" class:adult={m.role === 'voksen'}>
-								<span class="th-role">{m.role === 'voksen' ? '🧑' : '🧒'}</span>
-								<span class="th-name">{m.name}</span>
-							</th>
-						{/each}
-					</tr>
-				</thead>
-				<tbody>
-					{#each days as day, i (day.iso)}
-						{@const trip = tripForDate(day.iso)}
-						{#if i === 0 || days[i - 1].week !== day.week}
-							<tr class="week-row">
-								<td colspan={members.length + 1}>Uke {day.week}</td>
-							</tr>
-						{/if}
-						<tr class:weekend={day.isWeekend} class:has-trip={trip}>
-							<td class="col-date sticky-col">
-								<span class="date-day">{day.weekday}</span>
-								<span class="date-num">{day.dayMonth}</span>
-								{#if trip}<span class="date-trip" title={trip.label || trip.place || 'Reise'}>✈️</span>{/if}
-							</td>
+			<details class="ferie-bulk">
+				<summary>Marker en periode i bulk</summary>
+				<div class="bulk-form">
+					<label><span>Fra</span><input type="date" bind:value={bulkFrom} min={startDate} max={endDate} /></label>
+					<label><span>Til</span><input type="date" bind:value={bulkTo} min={startDate} max={endDate} /></label>
+					<label>
+						<span>For</span>
+						<select bind:value={bulkTarget}>
+							<option value="barn">Alle barn</option>
+							<option value="voksen">Alle voksne</option>
 							{#each members as m (m.id)}
-								<td
-									class="cell {cellState(m, day.iso)}"
-									title={cellLabel(m, day.iso) || (day.isWeekend ? 'Helg' : 'Normal dekning')}
-									onclick={() => paintCell(m, day.iso)}
-								>
-									{cellLabel(m, day.iso)}
-								</td>
+								<option value={m.id}>{m.name}</option>
+							{/each}
+						</select>
+					</label>
+					<button type="button" class="ferie-btn" onclick={applyBulkFromForm}>
+						Sett «{activePaint === 'clear' ? 'blank' : STATUS_META[activePaint]?.label ?? activePaint}»
+					</button>
+				</div>
+			</details>
+
+			<div class="ferie-grid-wrap">
+				<table class="ferie-grid">
+					<thead>
+						<tr>
+							<th class="col-date sticky-col">Dag</th>
+							{#each members as m (m.id)}
+								<th class="col-member" class:adult={m.role === 'voksen'}>
+									<span class="th-role">{m.role === 'voksen' ? '🧑' : '🧒'}</span>
+									<span class="th-name">{m.name}</span>
+								</th>
 							{/each}
 						</tr>
-					{/each}
-				</tbody>
-			</table>
-		</div>
+					</thead>
+					<tbody>
+						{#each days as day, i (day.iso)}
+							{@const trip = tripForDate(day.iso)}
+							{#if i === 0 || days[i - 1].week !== day.week}
+								<tr class="week-row">
+									<td colspan={members.length + 1}>Uke {day.week}</td>
+								</tr>
+							{/if}
+							<tr class:weekend={day.isWeekend} class:has-trip={trip}>
+								<td class="col-date sticky-col">
+									<span class="date-day">{day.weekday}</span>
+									<span class="date-num">{day.dayMonth}</span>
+									{#if trip}<span class="date-trip" title={trip.label || trip.place || 'Reise'}>✈️</span>{/if}
+								</td>
+								{#each members as m (m.id)}
+									<td
+										class="cell {cellState(m, day.iso)}"
+										title={cellLabel(m, day.iso) || (day.isWeekend ? 'Helg' : 'Normal dekning')}
+										onclick={() => paintCell(m, day.iso)}
+									>
+										{cellLabel(m, day.iso)}
+									</td>
+								{/each}
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
 
-		<!-- Tegnforklaring -->
-		<div class="ferie-legend">
-			<span class="legend-item"><i class="sw gap"></i> Mangler dekning</span>
-			<span class="legend-item"><i class="sw covered"></i> Dekket av forelder</span>
-			<span class="legend-item"><i class="sw fill"></i> Alternativt tilbud</span>
-			<span class="legend-item"><i class="sw trip"></i> Bortreist (reise)</span>
-			<span class="legend-item"><i class="sw adult-off"></i> Voksen ferie/hjemme</span>
-			<span class="legend-item"><i class="sw default"></i> Normal dekning</span>
-		</div>
+			<div class="ferie-legend">
+				<span class="legend-item"><i class="sw gap"></i> Mangler dekning</span>
+				<span class="legend-item"><i class="sw covered"></i> Dekket av forelder</span>
+				<span class="legend-item"><i class="sw fill"></i> Alternativt tilbud</span>
+				<span class="legend-item"><i class="sw trip"></i> Bortreist (reise)</span>
+				<span class="legend-item"><i class="sw adult-off"></i> Voksen ferie/hjemme</span>
+				<span class="legend-item"><i class="sw default"></i> Normal dekning</span>
+			</div>
+		{/if}
 		{#if lastSavedAt}
 			<p class="ferie-saved-at">Sist lagret: {new Intl.DateTimeFormat('nb-NO', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }).format(new Date(lastSavedAt))}</p>
 		{/if}
@@ -1597,6 +1692,101 @@
 		margin: 0;
 	}
 
+	/* Kompakt oversikt */
+	.compact-grid-wrap {
+		overflow-x: auto;
+	}
+	.compact-grid {
+		border-collapse: collapse;
+		width: 100%;
+		table-layout: fixed;
+		font-size: 0.78rem;
+	}
+	.compact-grid th,
+	.compact-grid td {
+		padding: 0.3rem 0.15rem;
+		text-align: center;
+		white-space: nowrap;
+	}
+	.compact-week-col {
+		text-align: left;
+		white-space: nowrap;
+		background: var(--tp-bg-2);
+		position: sticky;
+		left: 0;
+		z-index: 1;
+		padding: 0.3rem 0.35rem;
+		width: 2.2rem;
+		overflow: hidden;
+	}
+	.compact-week-num {
+		font-weight: 700;
+		font-size: 0.82rem;
+	}
+	.expanded-day-label {
+		text-align: center !important;
+		font-size: 0.65rem;
+		color: var(--tp-text-muted);
+	}
+	.day-date-overlay {
+		font-size: 0.55rem;
+		color: rgba(255, 255, 255, 0.45);
+		pointer-events: none;
+	}
+	.compact-member-col {
+		font-weight: 600;
+		color: var(--tp-text-soft);
+		font-size: 0.72rem;
+		padding: 0.3rem 0.15rem;
+	}
+	.compact-member-col.adult {
+		background: var(--tp-bg-2);
+	}
+	.compact-cell {
+		padding: 0.3rem 0.15rem;
+	}
+	.day-bars {
+		display: flex;
+		gap: 1px;
+		height: 18px;
+	}
+	.day-bar {
+		flex: 1;
+		border-radius: 2px;
+	}
+	.day-bar.gap { background: hsl(0 55% 45%); }
+	.day-bar.covered { background: hsl(35 55% 42%); }
+	.day-bar.fill { background: hsl(140 40% 36%); }
+	.day-bar.trip { background: hsl(265 40% 42%); }
+	.day-bar.adult-off { background: hsl(205 45% 40%); }
+	.day-bar.default { background: var(--tp-bg-1); }
+
+	.compact-week-row {
+		cursor: pointer;
+	}
+	.compact-week-row:hover .compact-week-num {
+		color: var(--tp-accent);
+	}
+	.expanded-day-row td {
+		font-size: 0.72rem;
+		padding: 0.1rem 0.15rem;
+		min-width: 0;
+	}
+	.expanded-cell {
+		padding: 0.1rem 0.2rem;
+	}
+	.day-pill {
+		display: block;
+		height: 18px;
+		border-radius: 3px;
+		line-height: 18px;
+	}
+	.day-pill.gap { background: hsl(0 55% 45%); }
+	.day-pill.covered { background: hsl(35 55% 42%); }
+	.day-pill.fill { background: hsl(140 40% 36%); }
+	.day-pill.trip { background: hsl(265 40% 42%); }
+	.day-pill.adult-off { background: hsl(205 45% 40%); }
+	.day-pill.default { background: var(--tp-bg-1); }
 	/* Reise-overlay i kalenderen */
 	.date-trip {
 		margin-left: 0.25rem;
