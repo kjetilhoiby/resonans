@@ -68,6 +68,24 @@ const THEME_DASHBOARD_MATCHERS: Array<{ kind: DashboardKind; terms: string[] }> 
 		]
 	},
 	{
+		// NB: må stå før 'family' og 'travel'. Ellers fanger family-matcheren
+		// (substring-match på «familie») et tema som «Familieferie» og ruter det
+		// til family-dashboardet — som ikke kan lagre oppholdsplanen. Ferie er den
+		// mer spesifikke intensjonen og skal vinne kollisjonen familie+ferie.
+		kind: 'ferie',
+		terms: [
+			'ferie',
+			'sommerferie',
+			'påskeferie',
+			'juleferie',
+			'vinterferie',
+			'høstferie',
+			'ferieturer',
+			'feriedager',
+			'oppholdsplan'
+		]
+	},
+	{
 		kind: 'family',
 		terms: [
 			'familie',
@@ -82,21 +100,6 @@ const THEME_DASHBOARD_MATCHERS: Array<{ kind: DashboardKind; terms: string[] }> 
 			'kids',
 			'children',
 			'household'
-		]
-	},
-	{
-		// NB: må stå før 'travel' så ferie-temaer ikke fanges av reise-matcheren.
-		kind: 'ferie',
-		terms: [
-			'ferie',
-			'sommerferie',
-			'påskeferie',
-			'juleferie',
-			'vinterferie',
-			'høstferie',
-			'ferieturer',
-			'feriedager',
-			'oppholdsplan'
 		]
 	},
 	{

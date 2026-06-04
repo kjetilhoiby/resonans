@@ -640,13 +640,29 @@
 	let saving = $state(false);
 	let saveError = $state('');
 	let lastSavedAt = $state<string | null>(null);
+	let pendingSave = false; // det finnes uskrevne endringer
 
 	function scheduleSave() {
+		pendingSave = true;
 		if (saveTimer) clearTimeout(saveTimer);
 		saveTimer = setTimeout(() => void save(), 800);
 	}
 
-	async function save() {
+	function buildPayload() {
+		// Send alle feltene eksplisitt (null = tøm) så serverens felt-vis merge
+		// kan både oppdatere og tømme felter korrekt.
+		return {
+			startDate: startDate || null,
+			endDate: endDate || null,
+			note: note.trim() || null,
+			members,
+			grid,
+			trips
+		};
+	}
+
+	async function save(opts?: { keepalive?: boolean }) {
+		if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
 		saving = true;
 		saveError = '';
 		const profile: FerieProfile = {
@@ -657,39 +673,61 @@
 			grid,
 			trips: trips.length > 0 ? trips : undefined
 		};
-		// Send alle feltene eksplisitt (null = tøm) så serverens felt-vis merge
-		// kan både oppdatere og tømme felter korrekt.
-		const payload = {
-			startDate: startDate || null,
-			endDate: endDate || null,
-			note: note.trim() || null,
-			members,
-			grid,
-			trips
-		};
 		try {
 			const res = await fetch(`/api/tema/${themeId}/ferie`, {
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(payload)
+				body: JSON.stringify(buildPayload()),
+				keepalive: opts?.keepalive
 			});
-			if (!res.ok) throw new Error('Lagring feilet');
+			if (!res.ok) {
+				let msg = `Lagring feilet (${res.status})`;
+				try {
+					const j = await res.json();
+					if (j?.error) msg = j.error;
+				} catch {
+					/* ignorer parse-feil, behold statuskoden */
+				}
+				throw new Error(msg);
+			}
+			pendingSave = false;
 			ferieProfile = profile;
 			lastSavedAt = new Date().toISOString();
 			onProfileSaved?.(profile);
-		} catch {
-			saveError = 'Klarte ikke lagre. Prøv igjen.';
+		} catch (e) {
+			saveError = e instanceof Error ? `Klarte ikke lagre: ${e.message}` : 'Klarte ikke lagre. Prøv igjen.';
 		} finally {
 			saving = false;
 		}
+	}
+
+	// Flush en ventende debounced lagring umiddelbart. `keepalive` lar requesten
+	// fullføre selv om komponenten/siden rives ned (fane-bytte, tilbake-navigasjon,
+	// lukking) — uten dette forkastet onDestroy en endring gjort innen 800 ms.
+	function flushPendingSave() {
+		if (!pendingSave) return;
+		if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+		void save({ keepalive: true });
 	}
 
 	function onWindowChange() {
 		scheduleSave();
 	}
 
+	onMount(() => {
+		const onHidden = () => {
+			if (typeof document !== 'undefined' && document.visibilityState === 'hidden') flushPendingSave();
+		};
+		document.addEventListener('visibilitychange', onHidden);
+		window.addEventListener('pagehide', flushPendingSave);
+		return () => {
+			document.removeEventListener('visibilitychange', onHidden);
+			window.removeEventListener('pagehide', flushPendingSave);
+		};
+	});
+
 	onDestroy(() => {
-		if (saveTimer) clearTimeout(saveTimer);
+		flushPendingSave();
 	});
 
 	const hasWindow = $derived(days.length > 0);
@@ -708,6 +746,8 @@
 				<span class="ferie-saving">Lagrer…</span>
 			{:else if saveError}
 				<span class="ferie-error">{saveError}</span>
+			{:else if lastSavedAt}
+				<span class="ferie-saved">Lagret ✓</span>
 			{/if}
 		</div>
 	</header>
@@ -1169,6 +1209,10 @@
 	}
 	.ferie-error {
 		color: hsl(0 70% 70%);
+		font-size: 0.85rem;
+	}
+	.ferie-saved {
+		color: hsl(150 50% 65%);
 		font-size: 0.85rem;
 	}
 
