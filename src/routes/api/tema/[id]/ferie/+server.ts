@@ -32,10 +32,18 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		else merged[key] = value;
 	}
 
-	await db
-		.update(themes)
-		.set({ ferieProfile: merged, updatedAt: new Date() })
-		.where(and(eq(themes.id, params.id), eq(themes.userId, locals.userId)));
+	try {
+		await db
+			.update(themes)
+			.set({ ferieProfile: merged, updatedAt: new Date() })
+			.where(and(eq(themes.id, params.id), eq(themes.userId, locals.userId)));
+	} catch (e) {
+		console.error('[ferie PUT] lagring feilet', e);
+		return json(
+			{ error: e instanceof Error ? e.message : 'Lagring feilet i databasen' },
+			{ status: 500 }
+		);
+	}
 
 	return json({ success: true });
 };
