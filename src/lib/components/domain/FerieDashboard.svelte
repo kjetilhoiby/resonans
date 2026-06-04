@@ -746,6 +746,8 @@
 				<span class="ferie-saving">Lagrer…</span>
 			{:else if saveError}
 				<span class="ferie-error">{saveError}</span>
+			{:else if lastSavedAt}
+				<span class="ferie-saved">Lagret ✓</span>
 			{/if}
 		</div>
 	</header>
@@ -1207,6 +1209,10 @@
 	}
 	.ferie-error {
 		color: hsl(0 70% 70%);
+		font-size: 0.85rem;
+	}
+	.ferie-saved {
+		color: hsl(150 50% 65%);
 		font-size: 0.85rem;
 	}
 
