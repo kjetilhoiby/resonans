@@ -657,11 +657,21 @@
 			grid,
 			trips: trips.length > 0 ? trips : undefined
 		};
+		// Send alle feltene eksplisitt (null = tøm) så serverens felt-vis merge
+		// kan både oppdatere og tømme felter korrekt.
+		const payload = {
+			startDate: startDate || null,
+			endDate: endDate || null,
+			note: note.trim() || null,
+			members,
+			grid,
+			trips
+		};
 		try {
 			const res = await fetch(`/api/tema/${themeId}/ferie`, {
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(profile)
+				body: JSON.stringify(payload)
 			});
 			if (!res.ok) throw new Error('Lagring feilet');
 			ferieProfile = profile;
