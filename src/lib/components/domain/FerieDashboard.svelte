@@ -1656,21 +1656,21 @@
 	.ferie-legend {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.75rem;
-		font-size: 0.75rem;
-		color: var(--tp-text-soft);
+		gap: 0.6rem;
+		font-size: 0.6rem;
+		color: var(--tp-text-muted);
+		letter-spacing: 0.02em;
 	}
 	.legend-item {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.3rem;
+		gap: 0.2rem;
 	}
 	.sw {
-		width: 14px;
-		height: 14px;
-		border-radius: 3px;
+		width: 10px;
+		height: 10px;
+		border-radius: 2px;
 		display: inline-block;
-		border: 1px solid var(--tp-border);
 	}
 	.sw.gap { background: hsl(0 55% 40%); }
 	.sw.covered { background: hsl(35 55% 38%); }
@@ -1720,27 +1720,36 @@
 		overflow: hidden;
 	}
 	.compact-week-num {
-		font-weight: 700;
-		font-size: 0.82rem;
+		font-weight: 500;
+		font-size: 0.75rem;
+		color: var(--tp-text-soft);
+		font-variant-numeric: tabular-nums;
 	}
 	.expanded-day-label {
 		text-align: center !important;
-		font-size: 0.65rem;
+		font-size: 0.6rem;
+		font-weight: 400;
 		color: var(--tp-text-muted);
+		letter-spacing: 0.02em;
+		opacity: 0.7;
 	}
 	.day-date-overlay {
-		font-size: 0.55rem;
-		color: rgba(255, 255, 255, 0.45);
+		font-size: 0.5rem;
+		font-weight: 400;
+		font-variant-numeric: tabular-nums;
+		color: rgba(255, 255, 255, 0.35);
 		pointer-events: none;
 	}
 	.compact-member-col {
-		font-weight: 600;
-		color: var(--tp-text-soft);
-		font-size: 0.72rem;
-		padding: 0.3rem 0.15rem;
+		font-weight: 400;
+		color: var(--tp-text-muted);
+		font-size: 0.65rem;
+		letter-spacing: 0.03em;
+		text-transform: uppercase;
+		padding: 0.25rem 0.15rem 0.4rem;
 	}
 	.compact-member-col.adult {
-		background: var(--tp-bg-2);
+		color: var(--tp-text-muted);
 	}
 	.compact-cell {
 		padding: 0.3rem 0.15rem;
