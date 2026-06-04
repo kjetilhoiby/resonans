@@ -42,6 +42,8 @@ beholder samme token mellom kjøringer.
 | `POST` | `/api/apps/programs/:id/status` | Endre status (`active`/`paused`/`completed`/`archived`). |
 | `DELETE` | `/api/apps/programs/:id` | Slett program og alt tilhørende (cascade). |
 | `GET` | `/api/apps/workouts/:id/analysis` | **v1.1** Per-workout-analytics (bestEfforts/GAP/HR zones). |
+| `POST` | `/api/apps/programs/:id/insight` | **v1.2** LLM-innsikt for et program (`scope=week`/`progression`). |
+| `POST` | `/api/apps/coach` | **v1.2** Fri-tekst coach (spørsmål + etter-økt-vurdering). |
 
 ---
 
@@ -859,4 +861,75 @@ LLM-en får eksplisitte instruksjoner per dataQuality:
 - **thin**: ignorer paceZones, sett bare `hrZoneHint`. Volum = 70% av
   observert.
 - **none**: ingen pace-hints i det hele tatt, bare HR-veiledning.
+
+---
+
+## 12. v1.2 — LLM-innsikt og coach
+
+To rene lese-/genererings-endepunkter som driver «Innsikt»-arket i Ekko
+(`ProgramInsightView`). Ingen sideeffekter — de endrer ikke programmet eller
+markerer økter. Kontrakten er hentet direkte fra Ekko-klienten
+(`ProgramInsight`, `CoachReply`, `ProgramInsightRequest`, `CoachRequest`).
+
+**Felles krav:**
+- `POST`, Bearer `rsn_`-token (samme validering som resten av `/api/apps`). 401 ved manglende/ugyldig token.
+- Alle felt i request og response er **camelCase** (Ekko bruker ren JSON-coder uten snake_case-konvertering).
+- Svaret er `application/json`. LLM-teksten er talevennlig norsk (Ekko kan lese den høyt), uten markdown og uten lange tallremser.
+- Modell: `EKKO_COACH_MODEL` env-var, default `gpt-4o-mini`.
+
+### 12.1 `POST /api/apps/programs/:id/insight`
+
+**Request:**
+```jsonc
+{
+  "scope": "week" | "progression",   // PÅKREVD — andre verdier gir 400
+  "weekNumber": 3                      // valgfri; kun for scope="week". null/utelatt = inneværende uke
+}
+```
+
+**Response 200:**
+```jsonc
+{
+  "ok": true,
+  "scope": "week",
+  "title": "Uke 3 – fart",                  // valgfri
+  "summary": "Du fullførte 4 av 4 økter …", // PÅKREVD klient-side — alltid satt
+  "highlights": ["Tempo-pace ned 4 s/km"]   // valgfri (0-4 korte punkter)
+}
+```
+
+> `summary` er ikke-valgfri i Ekko. Vi garanterer den med en regelbasert fallback
+> hvis LLM-kallet feiler — vi svarer aldri 200 uten `summary`.
+
+`scope="week"` med `weekNumber=null` → inneværende uke (samme uke-beregning som
+`/today`, klemt inn i `[1, durationWeeks]`). Datagrunnlaget bygges server-side fra
+`getFullProgram` (planlagt vs fullført, pace/puls per økt for `week`; trend +
+fullføringsgrad over hele programmet for `progression`).
+
+**Feilkoder:** `400` ugyldig/manglende `scope`, `401` token, `404 program_not_found`.
+
+### 12.2 `POST /api/apps/coach`
+
+**Request:**
+```jsonc
+{
+  "prompt": "Hvordan ligger jeg an mot målet?",  // PÅKREVD
+  "programId": "uuid"                              // valgfri kontekst-peker (kan være null)
+}
+```
+
+To prompt-typer treffer endepunktet: (1) fritekst fra «Spør coachen», og
+(2) en lengre, ferdigbygd etter-økt-vurdering (intervalløkter) med per-drag-data
+i selve prompten. For (2) er `programId` typisk `null` — planen ligger i prompten.
+Når `programId` er satt og tilhører brukeren, legges et kompakt program-sammendrag
+til konteksten. Svaret kappes ikke hardt (`max_tokens=500`).
+
+**Response 200:**
+```jsonc
+{ "ok": true, "text": "Du er i rute. Tempoet i dragene lå rett på mål …" }
+```
+
+> `text` er ikke-valgfri i Ekko. Send alltid `text`.
+
+**Feilkoder:** `400 missing_prompt`, `401` token, `502 coach_generation_failed` (LLM nede/timeout).
 
