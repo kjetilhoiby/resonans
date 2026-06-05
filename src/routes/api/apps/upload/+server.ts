@@ -8,11 +8,20 @@ import { v2 as cloudinary } from 'cloudinary';
 import { getAppConfig, type ExternalAppConfig } from '$lib/server/app-registry';
 import { parseWorkoutFile } from '$lib/server/integrations/dropbox-sync';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
-import { normalizeSportType } from '$lib/server/workout-taxonomy';
+import { normalizeSportType, describeWorkoutSportType } from '$lib/server/workout-taxonomy';
+import { pushSession } from '$lib/server/services/strava-sync-service';
 
 const WORKOUT_EXTENSIONS = new Set(['.gpx', '.tcx']);
 const IMAGE_MIME_PREFIXES = ['image/'];
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024; // 20 MB
+
+function formatWorkoutDate(date: Date): string {
+	try {
+		return new Intl.DateTimeFormat('nb-NO', { day: 'numeric', month: 'long', year: 'numeric' }).format(date);
+	} catch {
+		return date.toISOString().slice(0, 10);
+	}
+}
 
 function getFileExtension(name: string): string {
 	const dot = name.lastIndexOf('.');
@@ -168,6 +177,26 @@ async function handleWorkoutUpload(
 		},
 		{ conflictMode: 'upsert_sensor_datatype_timestamp' }
 	);
+
+	// Auto-push til Strava hvis brukeren er koblet til. pushSession er dedup-et
+	// (external_id = `<app>-<sessionId>`) og feiler aldri hardt — den bokfører
+	// utfallet på Strava-koblingen i stedet for å velte ekkos opplastingssvar.
+	// Krever sessionId (brukes til dedup) og at økten faktisk ble lagret.
+	if (ctx.sessionId && result.event?.id) {
+		try {
+			await pushSession({
+				userId: ctx.userId,
+				appId: ctx.app.id,
+				sessionId: ctx.sessionId,
+				gpx: gpxContent,
+				sportType: parsed.sportType,
+				name: `${describeWorkoutSportType(parsed.sportType)} — ${formatWorkoutDate(parsed.startTime)}`,
+				sensorEventId: result.event.id
+			});
+		} catch (err) {
+			console.error('Strava auto-push feilet (ignorert):', err);
+		}
+	}
 
 	return json({
 		ok: true,

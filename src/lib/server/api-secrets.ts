@@ -73,6 +73,47 @@ function buildMaskedSecret(prefix: string): string {
 	return `${prefix}...`;
 }
 
+/**
+ * Slår opp en bruker fra en rå secret-streng (ikke fra en header). Brukes av
+ * browser-flyter som ikke kan sette `Authorization`-header og derfor sender
+ * secret som query-param (f.eks. `/api/apps/strava/connect?secret=...`).
+ * Validerer mot samme token-tabell som Bearer.
+ */
+export async function resolveUserIdFromApiSecret(secret: string | null | undefined): Promise<string | null> {
+	const trimmed = secret?.trim();
+	if (!trimmed || trimmed.length < 20) {
+		return null;
+	}
+
+	const now = new Date();
+	const secretHash = hashApiSecret(trimmed);
+	let found: { id: string; userId: string } | undefined;
+	try {
+		found = await db.query.userApiSecrets.findFirst({
+			where: and(
+				eq(userApiSecrets.secretHash, secretHash),
+				isNull(userApiSecrets.revokedAt),
+				or(isNull(userApiSecrets.expiresAt), gt(userApiSecrets.expiresAt, now))
+			),
+			columns: { id: true, userId: true }
+		});
+	} catch (error) {
+		mapStorageError(error);
+	}
+
+	if (!found) {
+		return null;
+	}
+
+	try {
+		await db.update(userApiSecrets).set({ lastUsedAt: now }).where(eq(userApiSecrets.id, found.id));
+	} catch (error) {
+		mapStorageError(error);
+	}
+
+	return found.userId;
+}
+
 export async function resolveApiSecretAuthFromRequest(request: Request): Promise<ApiSecretAuthContext | null> {
 	const secret = extractApiSecret(request);
 	if (!secret || secret.length < 20) {

@@ -116,6 +116,8 @@ Optional integrations (configured per-user via OAuth flows in `/settings/sources
 - `WITHINGS_CLIENT_ID` / `WITHINGS_CLIENT_SECRET`
 - `DROPBOX_CLIENT_ID` / `DROPBOX_CLIENT_SECRET`
 - `SPAREBANK1_CLIENT_ID` / `SPAREBANK1_CLIENT_SECRET`
+- `STRAVA_CLIENT_ID` / `STRAVA_CLIENT_SECRET` — Strava-synk-proxy for ekko (`/api/apps/strava/*`). Callback-domene = `<baseURL>/api/apps/strava/callback`, scope `activity:write,read`.
+- `TOKEN_ENCRYPTION_KEY` — valgfri nøkkel for kryptering av lagrede tokens at rest (Strava). Faller tilbake til `AUTH_SECRET` hvis ikke satt.
 
 Push notifications:
 - `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` (generate with `npx web-push generate-vapid-keys`)
