@@ -1,5 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+import { env } from '$env/dynamic/private';
 import { getAppConfig } from '$lib/server/app-registry';
 import { resolveUserIdFromApiSecret } from '$lib/server/api-secrets';
 import { createOAuthState } from '$lib/server/services/strava-sync-service';
@@ -44,7 +45,10 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	if (!userId) throw fail('auth');
 
 	const state = await createOAuthState(userId, appId);
-	const redirectUri = `${url.origin}/api/apps/strava/callback`;
+	// Pinn til ORIGIN (kanonisk domene) så redirect_uri matcher Strava-portalens
+	// callback-domene også på preview-deploys. Faller tilbake til request-host lokalt.
+	const baseUrl = (env.ORIGIN || url.origin).replace(/\/$/, '');
+	const redirectUri = `${baseUrl}/api/apps/strava/callback`;
 
 	throw redirect(302, getAuthorizeUrl({ redirectUri, state, scope: 'activity:write,read' }));
 };
