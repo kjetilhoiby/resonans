@@ -41,8 +41,9 @@ ekko ──(POST /api/apps/upload, som i dag)──▶ Resonans ──(hvis kobl
 | Strava API-klient (OAuth/token/upload) | `src/lib/server/integrations/strava.ts` |
 | Kobling, token-refresh, push, dedup, status | `src/lib/server/services/strava-sync-service.ts` |
 | Token-kryptering at rest | `src/lib/server/crypto.ts` |
-| `GET /connect` | `src/routes/api/apps/strava/connect/+server.ts` |
+| `GET /connect` (dual-mode: ekko/web) | `src/routes/api/apps/strava/connect/+server.ts` |
 | `GET /callback` | `src/routes/api/apps/strava/callback/+server.ts` |
+| Web-UI (koble til/fra, status) | `src/routes/settings/sources/+page.svelte` («Strava»-seksjon) |
 | `GET /status` | `src/routes/api/apps/strava/status/+server.ts` |
 | `DELETE /` | `src/routes/api/apps/strava/+server.ts` |
 | `POST /sync` (valgfri backfill) | `src/routes/api/apps/strava/sync/+server.ts` |
@@ -59,22 +60,30 @@ ekko ──(POST /api/apps/upload, som i dag)──▶ Resonans ──(hvis kobl
 - **Strava-hemmeligheter** kun i server-env (`STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`). Valgfri
   `TOKEN_ENCRYPTION_KEY` (fallback `AUTH_SECRET`) brukes til kryptering av tokens.
 
-## 1) Connect — `GET /api/apps/strava/connect?app=ekko&secret=<api-secret>`
+## 1) Connect — `GET /api/apps/strava/connect`
 
-Browser-flyt (ASWebAuthenticationSession). Brukeren identifiseres fra `secret`-query-paramet
-(validert mot samme token-tabell som Bearer). Server lager en `state`-nonce (`strava_oauth_states`,
-binder runden til brukeren), og redirecter til Strava `oauth/authorize` med
-`scope=activity:write,read`, `redirect_uri=<baseURL>/api/apps/strava/callback`. Ukjent/utløpt secret
-→ redirect `ekko://strava-connected?status=error&reason=auth`.
+Browser-flyt med to moduser (modusen lagres i `state`-nonce, `appId`):
+
+- **Native (ekko):** `?app=ekko&secret=<api-secret>` — åpnes i ASWebAuthenticationSession.
+  Kan ikke sette Authorization-header, så brukeren identifiseres fra `secret`-query-paramet
+  (validert mot samme token-tabell som Bearer). Callback redirecter til `ekko://strava-connected?status=…`.
+- **Web:** `/api/apps/strava/connect` (uten secret), lenket fra `settings/sources`. Brukeren
+  identifiseres fra Resonans-session. Ikke innlogget → redirect til `/auth?next=…`. Callback
+  redirecter tilbake til `/settings/sources`.
+
+Begge lager en `state`-nonce (`strava_oauth_states`, binder runden til brukeren + modus) og redirecter
+til Strava `oauth/authorize` med `scope=activity:write,read`,
+`redirect_uri=<baseURL>/api/apps/strava/callback`. Ukjent/utløpt secret eller config-feil → redirect
+til hhv. `ekko://…?status=error&reason=auth|config` (native) eller `/settings/sources?error=strava_*` (web).
 
 ## 2) Callback — `GET /api/apps/strava/callback`
 
-Slår opp `userId` fra `state` (engangsbruk, TTL 15 min), bytter `code` mot tokens, lagrer kryptert,
-og redirecter:
-- suksess: `ekko://strava-connected?status=ok`
-- feil: `...?status=error&reason=<denied|token|state>`
+Slår opp `userId` + modus fra `state` (engangsbruk, TTL 15 min), bytter `code` mot tokens, lagrer
+kryptert, og redirecter avhengig av modus:
+- **native** suksess: `ekko://strava-connected?status=ok` / feil: `…?status=error&reason=<denied|token|state>`
+- **web** suksess: `/settings/sources?connected=strava` / feil: `/settings/sources?error=strava_<reason>`
 
-Ingen tokens sendes noensinne til appen.
+Ingen tokens sendes noensinne til klienten.
 
 ## 3) Status — `GET /api/apps/strava/status` (Bearer)
 
