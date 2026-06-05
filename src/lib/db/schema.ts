@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, integer, boolean, jsonb, decimal, doublePrecision, unique, index, uniqueIndex, date, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, timestamp, integer, bigint, boolean, jsonb, decimal, doublePrecision, unique, index, uniqueIndex, date, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 
 
@@ -2764,3 +2764,63 @@ export const programReadinessAssessmentsRelations = relations(programReadinessAs
 		references: [programSessions.id]
 	})
 }));
+
+// ---------------------------------------------------------------------------
+// Strava-synk (proxy for ekko). Resonans eier Strava-koblingen; ekko laster
+// kun opp GPX til /api/apps/upload som i dag. Se docs/STRAVA_SYNC_SPEC.
+// ---------------------------------------------------------------------------
+
+// Strava-kobling per bruker. Én aktiv kobling per bruker (user_id unik).
+// access/refresh-tokens lagres KRYPTERT (AES-256-GCM via $lib/server/crypto).
+export const stravaConnections = pgTable('strava_connections', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id')
+		.references(() => users.id, { onDelete: 'cascade' })
+		.notNull()
+		.unique(),
+	athleteId: bigint('athlete_id', { mode: 'number' }),
+	athleteName: text('athlete_name'),
+	accessToken: text('access_token').notNull(), // kryptert
+	refreshToken: text('refresh_token').notNull(), // kryptert
+	expiresAt: timestamp('expires_at'), // access-token utløp
+	scope: text('scope'),
+	lastSyncAt: timestamp('last_sync_at'),
+	lastSyncStatus: text('last_sync_status'), // 'ok' | 'pending' | 'duplicate' | 'error'
+	lastSyncError: text('last_sync_error'),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+});
+
+// Kortvarig state-nonce som binder en OAuth-runde til en Resonans-bruker.
+// Ryddes ved konsum og ved oppstart av nye connect-runder (>15 min gamle).
+export const stravaOauthStates = pgTable('strava_oauth_states', {
+	state: text('state').primaryKey(),
+	userId: text('user_id')
+		.references(() => users.id, { onDelete: 'cascade' })
+		.notNull(),
+	appId: text('app_id').notNull().default('ekko'),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+});
+
+// Dedup + resultatsporing per opplastet økt. external_id = "ekko-<sessionId>".
+export const stravaUploads = pgTable(
+	'strava_uploads',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		userId: text('user_id')
+			.references(() => users.id, { onDelete: 'cascade' })
+			.notNull(),
+		sessionId: text('session_id').notNull(),
+		externalId: text('external_id').notNull(),
+		sensorEventId: uuid('sensor_event_id'),
+		stravaUploadId: bigint('strava_upload_id', { mode: 'number' }),
+		stravaActivityId: bigint('strava_activity_id', { mode: 'number' }),
+		status: text('status').notNull().default('pending'), // 'pending' | 'ok' | 'duplicate' | 'error'
+		error: text('error'),
+		createdAt: timestamp('created_at').defaultNow().notNull(),
+		updatedAt: timestamp('updated_at').defaultNow().notNull()
+	},
+	(table) => ({
+		uniqueUserSession: unique('strava_uploads_user_session_uniq').on(table.userId, table.sessionId)
+	})
+);
