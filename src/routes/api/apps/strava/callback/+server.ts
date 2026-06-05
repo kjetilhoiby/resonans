@@ -4,22 +4,32 @@ import { getAppConfig } from '$lib/server/app-registry';
 import { consumeOAuthState, saveConnectionFromToken } from '$lib/server/services/strava-sync-service';
 import { exchangeCodeForToken } from '$lib/server/integrations/strava';
 
+const SETTINGS_PATH = '/settings/sources';
+
 /**
  * Strava redirecter hit etter OAuth. Browser-flyt: svarer med redirect tilbake
- * til appen (`<scheme>://strava-connected?status=...`). Ingen tokens sendes
- * noensinne til appen.
+ * til riktig klient avhengig av modus (lagret i state-nonce):
+ *   - web   → /settings/sources?connected=strava | ?error=strava_<reason>
+ *   - native → <scheme>://strava-connected?status=…
+ * Ingen tokens sendes noensinne til klienten.
  */
 export const GET: RequestHandler = async ({ url }) => {
 	const code = url.searchParams.get('code');
 	const state = url.searchParams.get('state');
 	const oauthError = url.searchParams.get('error');
 
-	// Slå opp brukeren tidlig så vi vet hvilken app-scheme vi skal redirecte til.
+	// Slå opp brukeren + modus tidlig så vi vet hvor vi skal redirecte.
 	const resolved = state ? await consumeOAuthState(state) : null;
 	const appId = resolved?.appId ?? 'ekko';
+	const isWeb = appId === 'web';
 	const scheme = getAppConfig(appId)?.deepLinkScheme ?? 'ekko';
 
 	const appRedirect = (status: 'ok' | 'error', reason?: string) => {
+		if (isWeb) {
+			return status === 'ok'
+				? redirect(302, `${SETTINGS_PATH}?connected=strava`)
+				: redirect(302, `${SETTINGS_PATH}?error=strava_${reason ?? 'unknown'}`);
+		}
 		const suffix = reason ? `&reason=${reason}` : '';
 		return redirect(302, `${scheme}://strava-connected?status=${status}${suffix}`);
 	};

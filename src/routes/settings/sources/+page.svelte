@@ -341,6 +341,9 @@
 	let googleSheetsStatus = $state<any>(null);
 	let loadingGoogleSheets = $state(false);
 
+	let stravaStatus = $state<any>(null);
+	let loadingStrava = $state(false);
+
 	let spondStatus = $state<any>(null);
 	let loadingSpond = $state(false);
 	let syncingSpond = $state(false);
@@ -488,6 +491,7 @@
 			loadWithingsStatus(),
 			loadSparebank1Status(),
 			loadGoogleSheetsStatus(),
+			loadStravaStatus(),
 			loadSpondStatus(),
 			loadAnchorAccounts(),
 			loadSalaryProfileData(),
@@ -1232,6 +1236,34 @@
 		if (!confirm('Koble fra Google Regneark?')) return;
 		await fetch('/api/sensors/google-sheets/disconnect', { method: 'POST' });
 		await loadGoogleSheetsStatus();
+	}
+
+	async function loadStravaStatus() {
+		loadingStrava = true;
+		try {
+			const res = await fetch('/api/apps/strava/status');
+			stravaStatus = res.ok ? await res.json() : { connected: false };
+		} catch {
+			stravaStatus = { connected: false };
+		} finally {
+			loadingStrava = false;
+		}
+	}
+
+	async function disconnectStrava() {
+		if (!confirm('Koble fra Strava?')) return;
+		await fetch('/api/apps/strava', { method: 'DELETE' });
+		await loadStravaStatus();
+	}
+
+	function formatStravaSyncStatus(status?: string): string {
+		switch (status) {
+			case 'ok': return 'OK';
+			case 'pending': return 'Behandles…';
+			case 'duplicate': return 'Allerede på Strava';
+			case 'error': return 'Feil';
+			default: return '';
+		}
 	}
 
 </script>
@@ -2301,6 +2333,31 @@
 			</div>
 		{:else}
 			<Button href="/api/sensors/google-sheets/connect">Koble til Google Regneark</Button>
+		{/if}
+	</section>
+
+	<section class="card">
+		<h2>Strava</h2>
+		<p class="meta">Pusher løpe-, sykkel- og gåturer automatisk til Strava når økten lastes opp fra ekko.</p>
+		{#if loadingStrava}
+			<p>Laster...</p>
+		{:else if stravaStatus?.connected}
+			<p class="ok">Tilkoblet{stravaStatus.athleteName ? ` som ${stravaStatus.athleteName}` : ''}</p>
+			{#if stravaStatus.lastSyncAt}
+				<p class="meta">
+					Sist synket: {formatDateTime(stravaStatus.lastSyncAt)}
+					{#if stravaStatus.lastSyncStatus}· {formatStravaSyncStatus(stravaStatus.lastSyncStatus)}{/if}
+				</p>
+			{/if}
+			{#if stravaStatus.lastSyncStatus === 'error' && stravaStatus.lastSyncError}
+				<p class="err">{stravaStatus.lastSyncError}</p>
+			{/if}
+			<div class="row">
+				<Button variant="ghost" onClick={disconnectStrava}>Koble fra</Button>
+				<Button variant="secondary" href="/api/apps/strava/connect">Koble til på nytt</Button>
+			</div>
+		{:else}
+			<Button href="/api/apps/strava/connect">Koble til Strava</Button>
 		{/if}
 	</section>
 	</div>
