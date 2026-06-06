@@ -99,29 +99,115 @@
 	let themes = $state(initialThemes);
 	$effect(() => { themes = initialThemes; });
 
+	// ── Drag-and-drop for tema-rekkefølge ──────────────────────────────────────
+	// Modell: raden du drar fjernes fra flyten (kollapses) og en "tom slot" på
+	// full radhøyde åpner seg der den vil lande. Slot-en flytter seg mens du drar
+	// og fungerer som et stort slippområde — hver posisjon får et helt rad-høyt
+	// treff, ikke bare en tynn linje.
 	let dragThemeId = $state<string | null>(null);
-	let dragOverThemeId = $state<string | null>(null);
+	// Innsettings-indeks blant de gjenværende radene (0..n) der slot-en vises.
+	let dropIndex = $state<number | null>(null);
+	// Skiller touch-drag (flytende chip følger fingeren) fra desktop HTML5-drag.
+	let isTouchDrag = $state(false);
+	let themeListEl = $state<HTMLElement | null>(null);
+
+	// Flytende chip på touch — fast posisjon som følger fingeren.
+	let touchChip = $state<{ left: number; width: number; height: number; top: number } | null>(null);
+	let grabOffsetY = 0;
+
+	const draggedTheme = $derived(
+		dragThemeId ? (themes.find((t) => t.id === dragThemeId) ?? null) : null
+	);
+
+	// Visningsliste: gjenværende rader + en placeholder-slot ved dropIndex.
+	// Den dratte raden beholdes (kollapset) til slutt slik at HTML5 `dragend`
+	// fortsatt fyrer på elementet sitt.
+	type DisplayEntry =
+		| { type: 'theme'; theme: Theme; key: string; collapsed: boolean }
+		| { type: 'placeholder'; key: string };
+	const displayList = $derived.by<DisplayEntry[]>(() => {
+		if (!dragThemeId || dropIndex === null) {
+			return themes.map((t) => ({ type: 'theme', theme: t, key: t.id, collapsed: false }));
+		}
+		// Behold alle rader i opprinnelig DOM-rekkefølge (den dratte bare kollapses),
+		// og sett inn én placeholder-node ved dropIndex. Kilde-noden flyttes aldri,
+		// slik at native HTML5-drag ikke avbrytes.
+		const out: DisplayEntry[] = [];
+		let remainingSeen = 0;
+		let placed = false;
+		for (const t of themes) {
+			const isDragged = t.id === dragThemeId;
+			if (!placed && !isDragged && remainingSeen === dropIndex) {
+				out.push({ type: 'placeholder', key: '__drop_slot__' });
+				placed = true;
+			}
+			out.push({ type: 'theme', theme: t, key: t.id, collapsed: isDragged });
+			if (!isDragged) remainingSeen++;
+		}
+		if (!placed) out.push({ type: 'placeholder', key: '__drop_slot__' });
+		return out;
+	});
+
+	function resetDrag() {
+		dragThemeId = null;
+		dropIndex = null;
+		isTouchDrag = false;
+		touchChip = null;
+	}
+
+	// Beregn innsettings-indeks fra peker-Y mot midtpunktene til de gjenværende
+	// radene. Placeholder-slot-en opptar selv plassen, så målingen er stabil:
+	// står fingeren i slot-en gir den samme indeks tilbake.
+	function computeDropIndex(clientY: number): number {
+		if (!themeListEl) return dropIndex ?? 0;
+		const rows = Array.from(
+			themeListEl.querySelectorAll<HTMLElement>('[data-theme-id]')
+		);
+		let index = 0;
+		for (const row of rows) {
+			if (row.dataset.themeId === dragThemeId) continue; // hopp over kollapset rad
+			const rect = row.getBoundingClientRect();
+			if (rect.height === 0) continue;
+			if (clientY > rect.top + rect.height / 2) index++;
+			else break;
+		}
+		return index;
+	}
 
 	function handleThemeDragStart(id: string) {
 		dragThemeId = id;
+		isTouchDrag = false;
+		// Vent én frame før slot-en åpnes: å endre DOM-en synkront i dragstart kan
+		// avbryte native drag i enkelte nettlesere. displayList er uendret så lenge
+		// dropIndex er null, så draget rekker å committe først.
+		const startId = id;
+		requestAnimationFrame(() => {
+			if (dragThemeId === startId && dropIndex === null) {
+				dropIndex = themes.findIndex((t) => t.id === startId);
+			}
+		});
 	}
 
-	function handleThemeDragOver(e: DragEvent, id: string) {
+	function handleThemeDragOver(e: DragEvent) {
+		if (!dragThemeId) return;
 		e.preventDefault();
-		dragOverThemeId = id;
+		if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+		dropIndex = computeDropIndex(e.clientY);
 	}
 
-	function commitThemeReorder(targetId: string) {
-		if (!dragThemeId || dragThemeId === targetId) { dragThemeId = null; dragOverThemeId = null; return; }
-		const from = themes.findIndex((t) => t.id === dragThemeId);
-		const to = themes.findIndex((t) => t.id === targetId);
-		if (from === -1 || to === -1) return;
-		const reordered = [...themes];
-		const [moved] = reordered.splice(from, 1);
-		reordered.splice(to, 0, moved);
+	function commitThemeReorder() {
+		const fromId = dragThemeId;
+		const idx = dropIndex;
+		resetDrag();
+		if (!fromId || idx === null) return;
+		const from = themes.findIndex((t) => t.id === fromId);
+		if (from === -1) return;
+		const moved = themes[from];
+		const reordered = themes.filter((t) => t.id !== fromId);
+		const insertAt = Math.max(0, Math.min(idx, reordered.length));
+		reordered.splice(insertAt, 0, moved);
+		if (reordered.every((t, i) => t.id === themes[i]?.id)) return; // ingen endring
 		themes = reordered;
-		dragThemeId = null;
-		dragOverThemeId = null;
 		void fetch('/api/tema/reorder', {
 			method: 'PATCH',
 			headers: { 'content-type': 'application/json' },
@@ -130,36 +216,29 @@
 	}
 
 	// Touch-based drag for mobile
-	let touchDragOffsetY = $state(0);
-	let touchStartY = 0;
-
 	function handleTouchDragStart(e: TouchEvent, id: string) {
 		cancelThemeRowPress();
 		const touch = e.touches[0];
-		touchStartY = touch.clientY;
-		touchDragOffsetY = 0;
+		const row = (e.currentTarget as HTMLElement).closest('[data-theme-id]') as HTMLElement | null;
+		const rect = (row ?? (e.currentTarget as HTMLElement)).getBoundingClientRect();
+		grabOffsetY = touch.clientY - rect.top;
+		touchChip = { left: rect.left, width: rect.width, height: rect.height, top: rect.top };
 		dragThemeId = id;
+		isTouchDrag = true;
+		dropIndex = themes.findIndex((t) => t.id === id);
 	}
 
 	function handleTouchDragMove(e: TouchEvent) {
 		if (!dragThemeId) return;
 		e.preventDefault();
 		const touch = e.touches[0];
-		touchDragOffsetY = touch.clientY - touchStartY;
-		const el = document.elementFromPoint(touch.clientX, touch.clientY);
-		const row = el?.closest('[data-theme-id]') as HTMLElement | null;
-		if (row) {
-			const id = row.dataset.themeId;
-			if (id && id !== dragThemeId) dragOverThemeId = id;
-		}
+		if (touchChip) touchChip = { ...touchChip, top: touch.clientY - grabOffsetY };
+		dropIndex = computeDropIndex(touch.clientY);
 	}
 
 	function handleTouchDragEnd() {
 		if (!dragThemeId) return;
-		if (dragOverThemeId) commitThemeReorder(dragOverThemeId);
-		dragThemeId = null;
-		dragOverThemeId = null;
-		touchDragOffsetY = 0;
+		commitThemeReorder();
 	}
 
 	// ── Langpress-meny på tema-rad (arkiver / slett) ────────────────────────────
@@ -2797,48 +2876,71 @@
 		<div class="widget-panel-content">
 			<div
 				class="widget-panel-section"
+				bind:this={themeListEl}
+				ondragover={handleThemeDragOver}
+				ondrop={commitThemeReorder}
 				ontouchmove={handleTouchDragMove}
 				ontouchend={handleTouchDragEnd}
 				ontouchcancel={handleTouchDragEnd}
+				role="list"
 			>
-				{#each themes as theme (theme.id)}
-					<div
-						class="tema-panel-row"
-						class:tema-panel-row-dragover={dragOverThemeId === theme.id && dragThemeId !== theme.id}
-						class:tema-panel-row-dragging={dragThemeId === theme.id}
-						style="{getThemeHueStyle(theme.name)}{dragThemeId === theme.id && touchDragOffsetY ? `; transform: translateY(${touchDragOffsetY}px); z-index: 10;` : ''}"
-						data-theme-id={theme.id}
-						draggable="true"
-						role="listitem"
-						ondragstart={() => { cancelThemeRowPress(); handleThemeDragStart(theme.id); }}
-						ondragover={(e) => handleThemeDragOver(e, theme.id)}
-						ondrop={() => commitThemeReorder(theme.id)}
-						ondragend={() => { dragThemeId = null; dragOverThemeId = null; }}
-						onpointerdown={() => startThemeRowPress(theme)}
-						onpointerup={cancelThemeRowPress}
-						onpointerleave={cancelThemeRowPress}
-						onpointercancel={cancelThemeRowPress}
-						oncontextmenu={(e) => e.preventDefault()}
-					>
-						<span
-							class="tema-panel-row-handle"
-							aria-hidden="true"
-							ontouchstart={(e) => handleTouchDragStart(e, theme.id)}
-							onpointerdown={(e) => e.stopPropagation()}
-						>⠿</span>
-						<button
-							class="tema-panel-row-btn"
-							onclick={() => handleThemeRowClick(theme)}
+				{#each displayList as entry (entry.key)}
+					{#if entry.type === 'placeholder'}
+						<div class="tema-panel-slot" aria-hidden="true"></div>
+					{:else}
+						{@const theme = entry.theme}
+						<div
+							class="tema-panel-row"
+							class:tema-panel-row-collapsed={entry.collapsed}
+							class:tema-panel-row-dragging={dragThemeId === theme.id && !isTouchDrag}
+							style={getThemeHueStyle(theme.name)}
+							data-theme-id={theme.id}
+							draggable="true"
+							role="listitem"
+							ondragstart={() => { cancelThemeRowPress(); handleThemeDragStart(theme.id); }}
+							ondragend={resetDrag}
+							onpointerdown={() => startThemeRowPress(theme)}
+							onpointerup={cancelThemeRowPress}
+							onpointerleave={cancelThemeRowPress}
+							onpointercancel={cancelThemeRowPress}
+							oncontextmenu={(e) => e.preventDefault()}
 						>
-							<span class="tema-panel-row-icon">{theme.emoji}</span>
-							<span class="tema-panel-row-name">{theme.name}</span>
-							<span class="tema-panel-row-arrow">→</span>
-						</button>
-					</div>
+							<span
+								class="tema-panel-row-handle"
+								aria-hidden="true"
+								ontouchstart={(e) => handleTouchDragStart(e, theme.id)}
+								onpointerdown={(e) => e.stopPropagation()}
+							>⠿</span>
+							<button
+								class="tema-panel-row-btn"
+								onclick={() => handleThemeRowClick(theme)}
+							>
+								<span class="tema-panel-row-icon">{theme.emoji}</span>
+								<span class="tema-panel-row-name">{theme.name}</span>
+								<span class="tema-panel-row-arrow">→</span>
+							</button>
+						</div>
+					{/if}
 				{/each}
 			</div>
 		</div>
 	</section>
+
+	{#if isTouchDrag && draggedTheme && touchChip}
+		<!-- Flytende chip som følger fingeren mens slot-en åpner seg i lista -->
+		<div
+			class="tema-panel-row tema-panel-row-floating"
+			style="{getThemeHueStyle(draggedTheme.name)}; left: {touchChip.left}px; top: {touchChip.top}px; width: {touchChip.width}px; height: {touchChip.height}px;"
+			aria-hidden="true"
+		>
+			<span class="tema-panel-row-handle">⠿</span>
+			<span class="tema-panel-row-btn">
+				<span class="tema-panel-row-icon">{draggedTheme.emoji}</span>
+				<span class="tema-panel-row-name">{draggedTheme.name}</span>
+				<span class="tema-panel-row-arrow">→</span>
+			</span>
+		</div>
+	{/if}
 {/if}
 
 <!-- ── TEMA-LANGPRESS-MENY (arkiver / slett) ── -->
@@ -3668,26 +3770,60 @@
 	/* ── Tema-panel: full liste ── */
 	.tema-panel-row {
 		--theme-hue: 228;
+		position: relative;
 		display: flex;
 		align-items: center;
 		gap: 6px;
 		border-radius: 12px;
 		margin-bottom: 6px;
 		background: linear-gradient(90deg, hsl(var(--theme-hue) 20% 11%) 0%, hsl(var(--theme-hue) 18% 9%) 100%);
-		transition: background 0.12s, opacity 0.12s;
+		transition: background 0.12s, opacity 0.12s, box-shadow 0.12s;
 		cursor: grab;
 	}
 
 	.tema-panel-row:active { cursor: grabbing; }
 
-	.tema-panel-row-dragover {
-		opacity: 0.5;
+	/* Kilde-raden under desktop HTML5-drag — dempes så det er tydelig hva som flyttes. */
+	.tema-panel-row-dragging {
+		opacity: 0.4;
+		outline: 1px dashed hsl(var(--theme-hue) 30% 45%);
+		outline-offset: -1px;
 	}
 
-	.tema-panel-row-dragging {
-		opacity: 0.9;
-		box-shadow: 0 4px 20px rgba(0,0,0,0.4);
-		position: relative;
+	/* Den dratte raden tas helt ut av flyten — slot-en under representerer den. */
+	.tema-panel-row-collapsed {
+		height: 0;
+		min-height: 0;
+		margin: 0;
+		padding: 0;
+		opacity: 0;
+		overflow: hidden;
+		pointer-events: none;
+	}
+
+	/* Stor "tom slot" på full radhøyde som åpner seg der raden vil lande.
+	   Hele flaten er et slippområde — mye større treff enn en tynn linje. */
+	.tema-panel-slot {
+		height: 44px;
+		margin-bottom: 6px;
+		border-radius: 12px;
+		border: 2px dashed var(--accent-primary, hsl(228 50% 55%));
+		background: hsl(228 40% 50% / 0.1);
+		box-sizing: border-box;
+		transition: height 0.12s ease;
+	}
+
+	/* Flytende chip som følger fingeren på touch. */
+	.tema-panel-row-floating {
+		position: fixed;
+		z-index: 1000;
+		margin: 0;
+		pointer-events: none;
+		box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+		outline: 2px solid var(--accent-primary, hsl(var(--theme-hue) 60% 55%));
+		outline-offset: -2px;
+		transform: scale(1.03);
+		transition: none;
 	}
 
 	.tema-panel-row-handle {
