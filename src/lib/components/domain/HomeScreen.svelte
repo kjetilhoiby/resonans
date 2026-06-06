@@ -101,27 +101,47 @@
 
 	let dragThemeId = $state<string | null>(null);
 	let dragOverThemeId = $state<string | null>(null);
+	// Hvor lander raden ift. rad-en under fingeren/peker: rett over eller rett under.
+	let dragOverPosition = $state<'before' | 'after'>('before');
+	// Skiller touch-drag (løftet rad følger fingeren) fra desktop HTML5-drag (native ghost).
+	let isTouchDrag = $state(false);
+
+	function resetDrag() {
+		dragThemeId = null;
+		dragOverThemeId = null;
+		isTouchDrag = false;
+		touchDragOffsetY = 0;
+	}
 
 	function handleThemeDragStart(id: string) {
 		dragThemeId = id;
+		isTouchDrag = false;
 	}
 
 	function handleThemeDragOver(e: DragEvent, id: string) {
 		e.preventDefault();
-		dragOverThemeId = id;
+		if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+		if (id !== dragThemeId) {
+			const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+			dragOverPosition = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+			dragOverThemeId = id;
+		}
 	}
 
 	function commitThemeReorder(targetId: string) {
-		if (!dragThemeId || dragThemeId === targetId) { dragThemeId = null; dragOverThemeId = null; return; }
-		const from = themes.findIndex((t) => t.id === dragThemeId);
-		const to = themes.findIndex((t) => t.id === targetId);
-		if (from === -1 || to === -1) return;
+		const fromId = dragThemeId;
+		const position = dragOverPosition;
+		resetDrag();
+		if (!fromId || fromId === targetId) return;
+		const from = themes.findIndex((t) => t.id === fromId);
+		if (from === -1) return;
 		const reordered = [...themes];
 		const [moved] = reordered.splice(from, 1);
-		reordered.splice(to, 0, moved);
+		const to = reordered.findIndex((t) => t.id === targetId);
+		if (to === -1) return;
+		const insertAt = position === 'after' ? to + 1 : to;
+		reordered.splice(insertAt, 0, moved);
 		themes = reordered;
-		dragThemeId = null;
-		dragOverThemeId = null;
 		void fetch('/api/tema/reorder', {
 			method: 'PATCH',
 			headers: { 'content-type': 'application/json' },
@@ -139,6 +159,7 @@
 		touchStartY = touch.clientY;
 		touchDragOffsetY = 0;
 		dragThemeId = id;
+		isTouchDrag = true;
 	}
 
 	function handleTouchDragMove(e: TouchEvent) {
@@ -146,20 +167,23 @@
 		e.preventDefault();
 		const touch = e.touches[0];
 		touchDragOffsetY = touch.clientY - touchStartY;
+		// Den løftede raden har pointer-events:none, så elementFromPoint finner raden under fingeren.
 		const el = document.elementFromPoint(touch.clientX, touch.clientY);
 		const row = el?.closest('[data-theme-id]') as HTMLElement | null;
 		if (row) {
 			const id = row.dataset.themeId;
-			if (id && id !== dragThemeId) dragOverThemeId = id;
+			if (id && id !== dragThemeId) {
+				const rect = row.getBoundingClientRect();
+				dragOverPosition = touch.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+				dragOverThemeId = id;
+			}
 		}
 	}
 
 	function handleTouchDragEnd() {
 		if (!dragThemeId) return;
 		if (dragOverThemeId) commitThemeReorder(dragOverThemeId);
-		dragThemeId = null;
-		dragOverThemeId = null;
-		touchDragOffsetY = 0;
+		else resetDrag();
 	}
 
 	// ── Langpress-meny på tema-rad (arkiver / slett) ────────────────────────────
@@ -2804,16 +2828,18 @@
 				{#each themes as theme (theme.id)}
 					<div
 						class="tema-panel-row"
-						class:tema-panel-row-dragover={dragOverThemeId === theme.id && dragThemeId !== theme.id}
-						class:tema-panel-row-dragging={dragThemeId === theme.id}
-						style="{getThemeHueStyle(theme.name)}{dragThemeId === theme.id && touchDragOffsetY ? `; transform: translateY(${touchDragOffsetY}px); z-index: 10;` : ''}"
+						class:tema-panel-row-dragging={dragThemeId === theme.id && !isTouchDrag}
+						class:tema-panel-row-touch-dragging={dragThemeId === theme.id && isTouchDrag}
+						class:insert-before={dragOverThemeId === theme.id && dragThemeId !== theme.id && dragOverPosition === 'before'}
+						class:insert-after={dragOverThemeId === theme.id && dragThemeId !== theme.id && dragOverPosition === 'after'}
+						style="{getThemeHueStyle(theme.name)}{dragThemeId === theme.id && isTouchDrag ? `; transform: translateY(${touchDragOffsetY}px) scale(1.03); z-index: 10;` : ''}"
 						data-theme-id={theme.id}
 						draggable="true"
 						role="listitem"
 						ondragstart={() => { cancelThemeRowPress(); handleThemeDragStart(theme.id); }}
 						ondragover={(e) => handleThemeDragOver(e, theme.id)}
 						ondrop={() => commitThemeReorder(theme.id)}
-						ondragend={() => { dragThemeId = null; dragOverThemeId = null; }}
+						ondragend={resetDrag}
 						onpointerdown={() => startThemeRowPress(theme)}
 						onpointerup={cancelThemeRowPress}
 						onpointerleave={cancelThemeRowPress}
@@ -3668,27 +3694,52 @@
 	/* ── Tema-panel: full liste ── */
 	.tema-panel-row {
 		--theme-hue: 228;
+		position: relative;
 		display: flex;
 		align-items: center;
 		gap: 6px;
 		border-radius: 12px;
 		margin-bottom: 6px;
 		background: linear-gradient(90deg, hsl(var(--theme-hue) 20% 11%) 0%, hsl(var(--theme-hue) 18% 9%) 100%);
-		transition: background 0.12s, opacity 0.12s;
+		transition: background 0.12s, opacity 0.12s, box-shadow 0.12s;
 		cursor: grab;
 	}
 
 	.tema-panel-row:active { cursor: grabbing; }
 
-	.tema-panel-row-dragover {
-		opacity: 0.5;
+	/* Kilde-raden under desktop HTML5-drag — dempes så det er tydelig hva som flyttes. */
+	.tema-panel-row-dragging {
+		opacity: 0.35;
+		outline: 1px dashed hsl(var(--theme-hue) 30% 45%);
+		outline-offset: -1px;
 	}
 
-	.tema-panel-row-dragging {
-		opacity: 0.9;
-		box-shadow: 0 4px 20px rgba(0,0,0,0.4);
-		position: relative;
+	/* Raden du drar på touch — løftet, ikke dempet, og «gjennomsiktig» for elementFromPoint. */
+	.tema-panel-row-touch-dragging {
+		opacity: 1;
+		z-index: 10;
+		pointer-events: none;
+		box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+		outline: 2px solid var(--accent-primary, hsl(var(--theme-hue) 60% 55%));
+		outline-offset: -2px;
 	}
+
+	/* Tydelig innsettings-linje som viser nøyaktig hvor raden lander. */
+	.tema-panel-row.insert-before::before,
+	.tema-panel-row.insert-after::after {
+		content: '';
+		position: absolute;
+		left: 6px;
+		right: 6px;
+		height: 3px;
+		border-radius: 3px;
+		background: var(--accent-primary, hsl(var(--theme-hue) 65% 60%));
+		box-shadow: 0 0 8px var(--accent-primary, hsl(var(--theme-hue) 65% 60%));
+		pointer-events: none;
+	}
+
+	.tema-panel-row.insert-before::before { top: -5px; }
+	.tema-panel-row.insert-after::after { bottom: -5px; }
 
 	.tema-panel-row-handle {
 		padding: 0 4px 0 10px;
