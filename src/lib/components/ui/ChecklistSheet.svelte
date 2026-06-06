@@ -12,7 +12,7 @@
 	import { fly, fade, scale, slide } from 'svelte/transition';
 	import { elasticOut, cubicOut } from 'svelte/easing';
 	import { onMount } from 'svelte';
-	import { groupChecklistItems, activityEmoji, sortByStatus } from '$lib/utils/checklist-group';
+	import { groupChecklistItems, activityEmoji, sortByStatus, sortByTime, formatItemTime, stripTimeFromText, type GroupedChecklistEntry } from '$lib/utils/checklist-group';
 	import WeatherStrip, { type WeatherPeriod } from '$lib/components/ui/WeatherStrip.svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import BreakdownModal from '$lib/components/ui/BreakdownModal.svelte';
@@ -31,6 +31,7 @@
 		children?: ChecklistItem[];
 		skippedAt?: string | null;
 		snoozedToDate?: string | null;
+		metadata?: { timeHour?: number; timeMinute?: number; [key: string]: unknown } | null;
 	}
 
 	interface Checklist {
@@ -65,6 +66,7 @@
 	let contextMenuItem = $state<ChecklistItem | null>(null);
 	let contextMenuRect = $state<DOMRect | null>(null);
 	let expandedParentIds = $state<Set<string>>(new Set());
+	let skippedExpanded = $state(false);
 	let newSubItemTexts = $state<Record<string, string>>({});
 	let editingItemId = $state<string | null>(null);
 	let editingText = $state('');
@@ -84,6 +86,24 @@
 	const total = $derived(plannedItems.length);
 	const allDone = $derived(total > 0 && done === total);
 	const pct = $derived(total > 0 ? done / total : 0);
+
+	// Top-nivå-punkter delt i tre seksjoner: tidfestede (med tidschip, sortert
+	// kronologisk), øvrige (sortert på status), og strøkne (kollapset under "Hoppet over").
+	const topLevelItems = $derived(items.filter((i) => !i.parentId));
+	const timedGroups = $derived(
+		groupChecklistItems(
+			sortByStatus(
+				sortByTime(topLevelItems.filter((i) => !i.skippedAt && i.metadata?.timeHour !== undefined))
+			)
+		)
+	);
+	const untimedGroups = $derived(
+		groupChecklistItems(
+			sortByStatus(topLevelItems.filter((i) => !i.skippedAt && i.metadata?.timeHour === undefined))
+		)
+	);
+	const skippedItems = $derived(topLevelItems.filter((i) => !!i.skippedAt));
+	const skippedGroups = $derived(groupChecklistItems(skippedItems));
 	const calendarHref = $derived.by(() => {
 		const context = checklist.context;
 		if (!context) return '/ukeplan';
@@ -486,100 +506,62 @@
 		></div>
 	</div>
 
-	<!-- Items list -->
-	<div class="cs-items">
-		{#each groupChecklistItems(sortByStatus(items.filter(i => !i.parentId))) as group}
-			{#if group.type === 'group'}
-				<div class="cs-group-row">
-					<span class="cs-group-label">{activityEmoji(group.label) ? activityEmoji(group.label) + ' ' : ''}{group.label}</span>
-					<div class="cs-slot-row">
-						{#each group.items as item (item.id)}
-							{@const hasChildren = items.some(i => i.parentId === item.id)}
-							{@const itemSkipped = !!item.skippedAt}
-							<button
-								type="button"
-								class="cs-slot"
-								class:cs-slot-checked={item.checked}
-								class:cs-slot-skipped={itemSkipped}
-								class:cs-slot-parent={hasChildren}
-								onpointerdown={(e) => handleItemPressStart(e, item)}
-								onpointerup={handleItemPressEnd}
-								onpointercancel={handleItemPressEnd}
-								onpointerleave={handleItemPressEnd}
-								onclick={() => toggleItem(item)}
-								title="Langtrykk for valg"
-								aria-label={item.checked ? 'Marker som ikke gjort' : 'Marker som gjort'}
-							>
-								{itemSkipped ? '✕' : item.checked ? '✓' : ''}
-								{#if hasChildren && !itemSkipped}
-									<span class="cs-slot-indicator">✕</span>
-								{/if}
-							</button>
-						{/each}
-					</div>
+	<!-- Snippet for én gruppe (enten en slot-rad med gjentakelser eller et enkelt punkt). -->
+	{#snippet groupRow(group: GroupedChecklistEntry<ChecklistItem>)}
+		{#if group.type === 'group'}
+			<div class="cs-group-row">
+				<span class="cs-group-label">{activityEmoji(group.label) ? activityEmoji(group.label) + ' ' : ''}{group.label}</span>
+				<div class="cs-slot-row">
+					{#each group.items as item (item.id)}
+						{@const hasChildren = items.some(i => i.parentId === item.id)}
+						{@const itemSkipped = !!item.skippedAt}
+						<button
+							type="button"
+							class="cs-slot"
+							class:cs-slot-checked={item.checked}
+							class:cs-slot-skipped={itemSkipped}
+							class:cs-slot-parent={hasChildren}
+							onpointerdown={(e) => handleItemPressStart(e, item)}
+							onpointerup={handleItemPressEnd}
+							onpointercancel={handleItemPressEnd}
+							onpointerleave={handleItemPressEnd}
+							onclick={() => toggleItem(item)}
+							title="Langtrykk for valg"
+							aria-label={item.checked ? 'Marker som ikke gjort' : 'Marker som gjort'}
+						>
+							{itemSkipped ? '✕' : item.checked ? '✓' : ''}
+							{#if hasChildren && !itemSkipped}
+								<span class="cs-slot-indicator">✕</span>
+							{/if}
+						</button>
+					{/each}
 				</div>
-			{:else}
-				{@const hasChildren = items.some(i => i.parentId === group.item.id)}
-				{@const childrenItems = items.filter(i => i.parentId === group.item.id)}
-				{@const completedChildren = childrenItems.filter((c) => c.checked).length}
-				{@const isExpanded = expandedParentIds.has(group.item.id)}
-				{@const cR = 8}
-				{@const cC = 2 * Math.PI * cR}
-				{@const cPct = childrenItems.length > 0 ? completedChildren / childrenItems.length : 0}
-				<div class="cs-item-wrapper" class:cs-item-wrapper-parent={hasChildren}>
-					{#if hasChildren}
-						<div class="cs-parent-row">
-							<button
-								type="button"
-								class="cs-parent-caret"
-								class:cs-caret-expanded={isExpanded}
-								onclick={() => toggleParentExpansion(group.item.id)}
-								aria-label={isExpanded ? 'Lukk substeps' : 'Utvid substeps'}
-							>
-								▸
-							</button>
-							<button
-								class="cs-item"
-								class:cs-item-checked={group.item.checked}
-								class:cs-item-skipped={!!group.item.skippedAt}
-								onpointerdown={(e) => { if (editingItemId === group.item.id) return; handleItemPressStart(e, group.item); }}
-								onpointerup={handleItemPressEnd}
-								onpointercancel={handleItemPressEnd}
-								onpointerleave={handleItemPressEnd}
-								onclick={() => { if (editingItemId === group.item.id) return; toggleItem(group.item); }}
-								title="Langtrykk for valg"
-							>
-								{#if editingItemId === group.item.id}
-									<input
-										class="cs-item-edit-input"
-										bind:this={editInputEl}
-										bind:value={editingText}
-										onkeydown={(e) => { if (e.key === 'Enter') { void commitEdit(); } else if (e.key === 'Escape') cancelEdit(); }}
-										onblur={() => void commitEdit()}
-										onclick={(e) => e.stopPropagation()}
-										onpointerdown={(e) => e.stopPropagation()}
-									/>
-								{:else}
-									<span class="cs-item-text"><TaskTitle title={group.item.text} /></span>
-								{/if}
-								<svg class="cs-parent-circle" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
-									<circle cx="10" cy="10" r={cR} fill="none" stroke="#2a2a2a" stroke-width="2.5"/>
-									<circle cx="10" cy="10" r={cR} fill="none"
-										stroke={completedChildren === childrenItems.length ? '#5fa080' : '#7c8ef5'}
-										stroke-width="2.5"
-										stroke-dasharray="{cPct * cC} {cC}"
-										stroke-linecap="round"
-										transform="rotate(-90 10 10)"
-									/>
-								</svg>
-							</button>
-						</div>
-					{:else}
-						{@const itemSkipped = !!group.item.skippedAt}
+			</div>
+		{:else}
+			{@const hasChildren = items.some(i => i.parentId === group.item.id)}
+			{@const childrenItems = items.filter(i => i.parentId === group.item.id)}
+			{@const completedChildren = childrenItems.filter((c) => c.checked).length}
+			{@const isExpanded = expandedParentIds.has(group.item.id)}
+			{@const itemTimed = group.item.metadata?.timeHour !== undefined}
+			{@const cR = 8}
+			{@const cC = 2 * Math.PI * cR}
+			{@const cPct = childrenItems.length > 0 ? completedChildren / childrenItems.length : 0}
+			<div class="cs-item-wrapper" class:cs-item-wrapper-parent={hasChildren}>
+				{#if hasChildren}
+					<div class="cs-parent-row">
+						<button
+							type="button"
+							class="cs-parent-caret"
+							class:cs-caret-expanded={isExpanded}
+							onclick={() => toggleParentExpansion(group.item.id)}
+							aria-label={isExpanded ? 'Lukk substeps' : 'Utvid substeps'}
+						>
+							▸
+						</button>
 						<button
 							class="cs-item"
 							class:cs-item-checked={group.item.checked}
-							class:cs-item-skipped={itemSkipped}
+							class:cs-item-skipped={!!group.item.skippedAt}
 							onpointerdown={(e) => { if (editingItemId === group.item.id) return; handleItemPressStart(e, group.item); }}
 							onpointerup={handleItemPressEnd}
 							onpointercancel={handleItemPressEnd}
@@ -598,64 +580,157 @@
 									onpointerdown={(e) => e.stopPropagation()}
 								/>
 							{:else}
-								<span class="cs-item-text"><TaskTitle title={group.item.text} /></span>
+								<span class="cs-item-main">
+									{#if itemTimed}
+										<span class="cs-time-chip">{formatItemTime(group.item.metadata!.timeHour!, group.item.metadata?.timeMinute ?? 0)}</span>
+									{/if}
+									<span class="cs-item-text"><TaskTitle title={itemTimed ? stripTimeFromText(group.item.text) : group.item.text} /></span>
+								</span>
 							{/if}
-							<div
-								class="cs-checkbox"
-								class:cs-checkbox-checked={group.item.checked && !itemSkipped}
-								class:cs-checkbox-skipped={itemSkipped}
-							>
-								{#if itemSkipped}
-									<span class="cs-tick cs-tick-skipped" transition:scale={{ duration: 200, easing: elasticOut }}>✕</span>
-								{:else if group.item.checked}
-									<span class="cs-tick" transition:scale={{ duration: 200, easing: elasticOut }}>✓</span>
-								{/if}
-							</div>
-						</button>
-					{/if}
-					{#if hasChildren && isExpanded}
-						<div class="cs-children" transition:slide>
-							{#each sortByStatus(childrenItems) as child (child.id)}
-								{@const childSkipped = !!child.skippedAt}
-								<button
-									class="cs-child-item"
-									class:cs-child-checked={child.checked}
-									class:cs-child-skipped={childSkipped}
-									onpointerdown={(e) => handleItemPressStart(e, child)}
-									onpointerup={handleItemPressEnd}
-									onpointercancel={handleItemPressEnd}
-									onpointerleave={handleItemPressEnd}
-									onclick={() => toggleItem(child)}
-								>
-									<span class="cs-child-text"><TaskTitle title={child.text} /></span>
-									<div
-										class="cs-checkbox cs-checkbox-small"
-										class:cs-checkbox-checked={child.checked && !childSkipped}
-										class:cs-checkbox-skipped={childSkipped}
-									>
-										{#if childSkipped}
-											<span class="cs-tick cs-tick-skipped" transition:scale={{ duration: 200, easing: elasticOut }}>✕</span>
-										{:else if child.checked}
-											<span class="cs-tick" transition:scale={{ duration: 200, easing: elasticOut }}>✓</span>
-										{/if}
-									</div>
-								</button>
-							{/each}
-							<div class="cs-subitem-add-row">
-								<input
-									class="cs-subitem-add-input"
-									type="text"
-									placeholder="Legg til deloppgave…"
-									value={newSubItemTexts[group.item.id] ?? ''}
-									oninput={(e) => newSubItemTexts = { ...newSubItemTexts, [group.item.id]: (e.target as HTMLInputElement).value }}
-									onkeydown={(e) => { if (e.key === 'Enter') addSubItem(group.item.id); }}
+							<svg class="cs-parent-circle" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
+								<circle cx="10" cy="10" r={cR} fill="none" stroke="#2a2a2a" stroke-width="2.5"/>
+								<circle cx="10" cy="10" r={cR} fill="none"
+									stroke={completedChildren === childrenItems.length ? '#5fa080' : '#7c8ef5'}
+									stroke-width="2.5"
+									stroke-dasharray="{cPct * cC} {cC}"
+									stroke-linecap="round"
+									transform="rotate(-90 10 10)"
 								/>
-							</div>
+							</svg>
+						</button>
+					</div>
+				{:else}
+					{@const itemSkipped = !!group.item.skippedAt}
+					<button
+						class="cs-item"
+						class:cs-item-checked={group.item.checked}
+						class:cs-item-skipped={itemSkipped}
+						onpointerdown={(e) => { if (editingItemId === group.item.id) return; handleItemPressStart(e, group.item); }}
+						onpointerup={handleItemPressEnd}
+						onpointercancel={handleItemPressEnd}
+						onpointerleave={handleItemPressEnd}
+						onclick={() => { if (editingItemId === group.item.id) return; toggleItem(group.item); }}
+						title="Langtrykk for valg"
+					>
+						{#if editingItemId === group.item.id}
+							<input
+								class="cs-item-edit-input"
+								bind:this={editInputEl}
+								bind:value={editingText}
+								onkeydown={(e) => { if (e.key === 'Enter') { void commitEdit(); } else if (e.key === 'Escape') cancelEdit(); }}
+								onblur={() => void commitEdit()}
+								onclick={(e) => e.stopPropagation()}
+								onpointerdown={(e) => e.stopPropagation()}
+							/>
+						{:else}
+							<span class="cs-item-main">
+								{#if itemTimed}
+									<span class="cs-time-chip">{formatItemTime(group.item.metadata!.timeHour!, group.item.metadata?.timeMinute ?? 0)}</span>
+								{/if}
+								<span class="cs-item-text"><TaskTitle title={itemTimed ? stripTimeFromText(group.item.text) : group.item.text} /></span>
+							</span>
+						{/if}
+						<div
+							class="cs-checkbox"
+							class:cs-checkbox-checked={group.item.checked && !itemSkipped}
+							class:cs-checkbox-skipped={itemSkipped}
+						>
+							{#if itemSkipped}
+								<span class="cs-tick cs-tick-skipped" transition:scale={{ duration: 200, easing: elasticOut }}>✕</span>
+							{:else if group.item.checked}
+								<span class="cs-tick" transition:scale={{ duration: 200, easing: elasticOut }}>✓</span>
+							{/if}
 						</div>
-					{/if}
-				</div>
-			{/if}
+					</button>
+				{/if}
+				{#if hasChildren && isExpanded}
+					<div class="cs-children" transition:slide>
+						{#each sortByStatus(sortByTime(childrenItems)) as child (child.id)}
+							{@const childSkipped = !!child.skippedAt}
+							{@const childTimed = child.metadata?.timeHour !== undefined}
+							<button
+								class="cs-child-item"
+								class:cs-child-checked={child.checked}
+								class:cs-child-skipped={childSkipped}
+								onpointerdown={(e) => handleItemPressStart(e, child)}
+								onpointerup={handleItemPressEnd}
+								onpointercancel={handleItemPressEnd}
+								onpointerleave={handleItemPressEnd}
+								onclick={() => toggleItem(child)}
+							>
+								{#if childTimed}
+									<span class="cs-time-chip cs-time-chip-small">{formatItemTime(child.metadata!.timeHour!, child.metadata?.timeMinute ?? 0)}</span>
+								{/if}
+								<span class="cs-child-text"><TaskTitle title={childTimed ? stripTimeFromText(child.text) : child.text} /></span>
+								<div
+									class="cs-checkbox cs-checkbox-small"
+									class:cs-checkbox-checked={child.checked && !childSkipped}
+									class:cs-checkbox-skipped={childSkipped}
+								>
+									{#if childSkipped}
+										<span class="cs-tick cs-tick-skipped" transition:scale={{ duration: 200, easing: elasticOut }}>✕</span>
+									{:else if child.checked}
+										<span class="cs-tick" transition:scale={{ duration: 200, easing: elasticOut }}>✓</span>
+									{/if}
+								</div>
+							</button>
+						{/each}
+						<div class="cs-subitem-add-row">
+							<input
+								class="cs-subitem-add-input"
+								type="text"
+								placeholder="Legg til deloppgave…"
+								value={newSubItemTexts[group.item.id] ?? ''}
+								oninput={(e) => newSubItemTexts = { ...newSubItemTexts, [group.item.id]: (e.target as HTMLInputElement).value }}
+								onkeydown={(e) => { if (e.key === 'Enter') addSubItem(group.item.id); }}
+							/>
+						</div>
+					</div>
+				{/if}
+			</div>
+		{/if}
+	{/snippet}
+
+	<!-- Items list -->
+	<div class="cs-items">
+		<!-- Tidfestede oppgaver øverst, med tidschip -->
+		{#each timedGroups as group}
+			{@render groupRow(group)}
 		{/each}
+
+		<!-- Skillelinje mellom tidfestede og øvrige oppgaver -->
+		{#if timedGroups.length > 0 && untimedGroups.length > 0}
+			<div class="cs-divider" role="separator"></div>
+		{/if}
+
+		<!-- Øvrige oppgaver -->
+		{#each untimedGroups as group}
+			{@render groupRow(group)}
+		{/each}
+
+		<!-- Strøkne oppgaver i kollapset «Hoppet over»-liste -->
+		{#if skippedItems.length > 0}
+			<div class="cs-skipped-section">
+				<button
+					type="button"
+					class="cs-skipped-header"
+					class:cs-skipped-open={skippedExpanded}
+					onclick={() => (skippedExpanded = !skippedExpanded)}
+					aria-expanded={skippedExpanded}
+				>
+					<span class="cs-skipped-caret" class:cs-caret-expanded={skippedExpanded}>▸</span>
+					<span class="cs-skipped-label">Hoppet over</span>
+					<span class="cs-skipped-count">{skippedItems.length}</span>
+				</button>
+				{#if skippedExpanded}
+					<div class="cs-skipped-items" transition:slide>
+						{#each skippedGroups as group}
+							{@render groupRow(group)}
+						{/each}
+					</div>
+				{/if}
+			</div>
+		{/if}
 	</div>
 
 	<!-- Mention autocomplete for inline editing -->
@@ -963,11 +1038,108 @@
 		min-width: 0;
 	}
 
+	.cs-item-main {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex: 1;
+		min-width: 0;
+	}
+
 	.cs-item-text {
 		font-size: 0.88rem;
 		color: #ccc;
 		line-height: 1.4;
 		transition: color 0.15s, text-decoration 0.15s;
+	}
+
+	/* ── Tidschip for tidfestede oppgaver ── */
+	.cs-time-chip {
+		display: inline-flex;
+		align-items: center;
+		font-size: 0.7rem;
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+		color: #7c8ef5;
+		background: rgba(124, 142, 245, 0.1);
+		border: 1px solid rgba(124, 142, 245, 0.25);
+		border-radius: 5px;
+		padding: 1px 5px;
+		flex-shrink: 0;
+		white-space: nowrap;
+		line-height: 1.4;
+		transition: opacity 0.15s;
+	}
+
+	.cs-time-chip-small {
+		font-size: 0.62rem;
+		padding: 0 4px;
+	}
+
+	.cs-item-checked .cs-time-chip,
+	.cs-item-skipped .cs-time-chip,
+	.cs-child-checked .cs-time-chip,
+	.cs-child-skipped .cs-time-chip {
+		opacity: 0.4;
+	}
+
+	/* ── Skillelinje mellom tidfestede og øvrige oppgaver ── */
+	.cs-divider {
+		height: 1px;
+		background: #1e1e1e;
+		margin: 6px 12px;
+		flex-shrink: 0;
+	}
+
+	/* ── «Hoppet over»-seksjon ── */
+	.cs-skipped-section {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		margin-top: 4px;
+	}
+
+	.cs-skipped-header {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		width: 100%;
+		background: transparent;
+		border: none;
+		cursor: pointer;
+		padding: 10px 12px;
+		color: #666;
+		font: inherit;
+		font-size: 0.78rem;
+		text-align: left;
+		transition: color 0.12s;
+	}
+	.cs-skipped-header:hover { color: #999; }
+
+	.cs-skipped-caret {
+		font-size: 0.8rem;
+		color: #555;
+		line-height: 1;
+		transition: transform 0.2s;
+		flex-shrink: 0;
+	}
+	.cs-skipped-caret.cs-caret-expanded {
+		transform: rotate(90deg);
+	}
+
+	.cs-skipped-label {
+		flex: 1;
+	}
+
+	.cs-skipped-count {
+		color: #555;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.cs-skipped-items {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
 	}
 
 	.cs-item-checked .cs-item-text {
