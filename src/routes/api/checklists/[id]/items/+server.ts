@@ -5,6 +5,7 @@ import { checklistItems, checklists } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { parseListRepeatCount } from '$lib/server/list-repeat-parser';
 import { parseChecklistItemIntent, findLinkedTask, stripTimeFromText } from '$lib/server/checklist-intent-linker';
+import { parseLocationPrefix, parseTravelPrefix } from '$lib/utils/checklist-group';
 import { getOrCreatePlanningGoal, createTask } from '$lib/server/goals';
 import { enqueueBackgroundJob } from '$lib/server/background-jobs';
 import { parseTaskDateTime } from '$lib/server/date-time-parser';
@@ -116,11 +117,26 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 				? { timeHour: intent.timeHour, timeMinute: intent.timeMinute ?? 0 }
 				: {};
 
+			// «Sted: X» → ikke-avkryssbart dag-kontekst (driver vær + chat-kontekst).
+			// «kjøre/båt/fly til X [kl T]» → reisesegment med transportmodus.
+			// Begge tar presedens over måltid/aktivitet/task-linking.
+			const location = parseLocationPrefix(parsed.label);
+			const travel = location ? null : parseTravelPrefix(parsed.label);
 			// Meal-prefix på dag-item — peker rett inn i mat-universet. Lagrer
 			// mealType + linkedMealId i metadata (oppretter meals-rad ved første
-			// referanse). Tar presedens over aktivitets-/task-linking.
-			const meal = detectMealPrefix(parsed.label);
-			if (meal) {
+			// referanse). Sted/reise tar presedens, deretter måltid/aktivitet/task.
+			const meal = location || travel ? null : detectMealPrefix(parsed.label);
+
+			if (location) {
+				itemMetadata = { kind: 'location', locationName: location.name };
+			} else if (travel) {
+				itemMetadata = {
+					...timeFields,
+					kind: 'travel',
+					travelMode: travel.mode,
+					destination: travel.destination
+				};
+			} else if (meal) {
 				const mealId = await findOrCreateMealId(userId, meal.cleanTitle);
 				itemMetadata = {
 					...timeFields,
@@ -171,12 +187,19 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 		}
 		: {};
 	const combinedMeta = { ...itemMetadata, ...subtaskTimeMeta };
-	const baseLabel = parsedSubtaskDate?.text || (itemMetadata.timeHour !== undefined ? stripTimeFromText(parsed.label) : parsed.label);
+	const isContextItem = itemMetadata.kind === 'location' || itemMetadata.kind === 'travel';
+	// Sted-punkt lagres med rent stedsnavn (vises som dag-kontekst, ikke som rad).
+	const baseLabel = itemMetadata.kind === 'location'
+		? (itemMetadata.locationName as string)
+		: parsedSubtaskDate?.text || (itemMetadata.timeHour !== undefined ? stripTimeFromText(parsed.label) : parsed.label);
 
 	// Aktivitets-tag fra base-label, slik at også gjentatte slots ("Yoga (1/4)")
 	// bærer activityType og kan auto-hakes mot treningsdata (uke-autocheck).
 	// dayLevel:true fanger bare aktivitetsord uten antall/frekvens/varighet.
-	const baseActivityIntent = parseChecklistItemIntent(baseLabel, { dayLevel: true });
+	// Sted/reise er ikke aktiviteter, så de hopper over activity-tagging.
+	const baseActivityIntent = isContextItem
+		? { activityType: undefined, durationMinutes: undefined, distanceKm: undefined }
+		: parseChecklistItemIntent(baseLabel, { dayLevel: true });
 	const activitySlotMeta: Record<string, unknown> = baseActivityIntent.activityType
 		? {
 			activityType: baseActivityIntent.activityType,

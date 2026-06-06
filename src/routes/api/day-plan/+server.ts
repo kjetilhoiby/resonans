@@ -4,6 +4,7 @@ import { db } from '$lib/db';
 import { checklists, checklistItems } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { parseChecklistItemIntent, findLinkedTask, stripTimeFromText } from '$lib/server/checklist-intent-linker';
+import { parseLocationPrefix, parseTravelPrefix } from '$lib/utils/checklist-group';
 import { upsertPlanArtifactField } from '$lib/server/plan-artifacts';
 
 export const POST: RequestHandler = async ({ request, locals }) => {
@@ -69,12 +70,25 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			// Parse intent + find linked task for each day item
 			const itemsToInsert = await Promise.all(
 				toAdd.map(async (text, i) => {
+					// «Sted: X» → dag-kontekst (ikke avkryssbart). «kjøre/båt/fly til X [kl T]»
+					// → reisesegment med transportmodus. Begge tar presedens over aktivitet.
+					const location = parseLocationPrefix(text);
+					const travel = location ? null : parseTravelPrefix(text);
 					const intent = parseChecklistItemIntent(text, { dayLevel: true });
 					const timeFields = intent.timeHour !== undefined
 						? { timeHour: intent.timeHour, timeMinute: intent.timeMinute ?? 0 }
 						: {};
 					let metadata: Record<string, unknown> = { ...timeFields };
-					if (intent.matched) {
+					if (location) {
+						metadata = { kind: 'location', locationName: location.name };
+					} else if (travel) {
+						metadata = {
+							...timeFields,
+							kind: 'travel',
+							travelMode: travel.mode,
+							destination: travel.destination
+						};
+					} else if (intent.matched) {
 						const linkedTask = await findLinkedTask({
 							userId,
 							itemText: text,
@@ -99,7 +113,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 							};
 						}
 					}
-					const storedText = intent.timeHour !== undefined ? stripTimeFromText(text) : text;
+					const storedText = location
+						? location.name
+						: intent.timeHour !== undefined ? stripTimeFromText(text) : text;
 					return {
 						checklistId: dayChecklist!.id,
 						userId,

@@ -120,3 +120,98 @@ export function stripTimeFromText(text: string): string {
 		.trim();
 	return result || text;
 }
+
+// ── Sted og reise («Sted:» / «kjøre til … kl …») ───────────────────────────
+//
+// Et punkt skrevet «Sted: Trondheim» er ikke en avkryssbar oppgave, men
+// dag-kontekst (driver værmelding for stedet og chat-kontekst). Reisesegmenter
+// («kjøre/båt/fly til X kl NN.NN») er fortsatt avkryssbare, men får et eget
+// transport-ikon og sorteres som tidfestede når et klokkeslett er med.
+//
+// Parserne er rene (ingen nettverk) og deles av server (ved oppretting, der vi
+// lagrer `metadata.kind`) og klient (visning + fallback for punkter laget før
+// denne funksjonen fantes, som bare bærer rå tekst).
+
+export interface ParsedLocation {
+	name: string;
+}
+
+const LOCATION_PREFIX_PATTERN = /^sted\s*[:：]\s*(.+?)\s*$/i;
+
+/** Parse «Sted: Trondheim» → { name: 'Trondheim' }. Returnerer null hvis ikke et sted-punkt. */
+export function parseLocationPrefix(text: string): ParsedLocation | null {
+	const m = text.match(LOCATION_PREFIX_PATTERN);
+	if (!m) return null;
+	const name = m[1].trim();
+	return name ? { name } : null;
+}
+
+export type TravelMode = 'drive' | 'boat' | 'flight';
+
+export interface ParsedTravel {
+	mode: TravelMode;
+	destination: string;
+}
+
+const TRAVEL_PATTERNS: Array<[RegExp, TravelMode]> = [
+	[/^(?:kj[øo]retur|kj[øo]rer|kj[øo]re|kj[øo]r)\s+til\s+(.+)$/i, 'drive'],
+	[/^(?:b[åa]t|ferge|ferje)\s+til\s+(.+)$/i, 'boat'],
+	[/^(?:flyr|flyet|fly)\s+til\s+(.+)$/i, 'flight']
+];
+
+/** Parse «kjøre til Trondheim kl 12.00» / «båt til Håøya» / «fly til Oslo kl 14:30». */
+export function parseTravelPrefix(text: string): ParsedTravel | null {
+	for (const [pattern, mode] of TRAVEL_PATTERNS) {
+		const m = text.match(pattern);
+		if (m) {
+			// Fjern et eventuelt klokkeslett fra destinasjonen (vises i egen tidschip).
+			const destination = stripTimeFromText(m[1].trim()).replace(/[\s,.;–-]+$/, '').trim();
+			if (destination) return { mode, destination };
+		}
+	}
+	return null;
+}
+
+const TRAVEL_MODE_ICON: Record<TravelMode, string> = {
+	drive: '🚗',
+	boat: '⛴️',
+	flight: '✈️'
+};
+
+export function travelModeIcon(mode: TravelMode): string {
+	return TRAVEL_MODE_ICON[mode];
+}
+
+const TRAVEL_MODE_LABEL: Record<TravelMode, string> = {
+	drive: 'Kjøretur',
+	boat: 'Båt',
+	flight: 'Fly'
+};
+
+export function travelModeLabel(mode: TravelMode): string {
+	return TRAVEL_MODE_LABEL[mode];
+}
+
+type ContextItemLike = {
+	text: string;
+	metadata?: { kind?: string; locationName?: string; travelMode?: TravelMode } | null;
+};
+
+/** Et sted-kontekst-punkt (ikke avkryssbart). Sjekker både lagret metadata og rå tekst. */
+export function isLocationItem(item: ContextItemLike): boolean {
+	return item.metadata?.kind === 'location' || parseLocationPrefix(item.text) !== null;
+}
+
+/** Visningsnavn for et sted-punkt (metadata-navn, ellers parset fra teksten). */
+export function locationDisplayName(item: ContextItemLike): string {
+	if (item.metadata?.locationName) return item.metadata.locationName;
+	const parsed = parseLocationPrefix(item.text);
+	return parsed ? parsed.name : item.text;
+}
+
+/** Transportmodus for et reisesegment, eller null. Sjekker metadata og rå tekst. */
+export function getTravelMode(item: ContextItemLike): TravelMode | null {
+	if (item.metadata?.kind === 'travel' && item.metadata.travelMode) return item.metadata.travelMode;
+	const parsed = parseTravelPrefix(item.text);
+	return parsed ? parsed.mode : null;
+}

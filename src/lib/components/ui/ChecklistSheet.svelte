@@ -11,8 +11,7 @@
 <script lang="ts">
 	import { fly, fade, scale, slide } from 'svelte/transition';
 	import { elasticOut, cubicOut } from 'svelte/easing';
-	import { onMount } from 'svelte';
-	import { groupChecklistItems, activityEmoji, sortByStatus, sortByTime, formatItemTime, stripTimeFromText, type GroupedChecklistEntry } from '$lib/utils/checklist-group';
+	import { groupChecklistItems, activityEmoji, sortByStatus, sortByTime, formatItemTime, stripTimeFromText, isLocationItem, locationDisplayName, getTravelMode, travelModeIcon, type GroupedChecklistEntry } from '$lib/utils/checklist-group';
 	import WeatherStrip, { type WeatherPeriod } from '$lib/components/ui/WeatherStrip.svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import BreakdownModal from '$lib/components/ui/BreakdownModal.svelte';
@@ -21,6 +20,7 @@
 	import MentionAutocomplete from '$lib/components/ui/MentionAutocomplete.svelte';
 	import ShareSheet from '$lib/components/domain/share/ShareSheet.svelte';
 	import { readCacheEntry, isCacheStale, fetchRawTimeseries, buildPeriods, buildWeekPeriods } from '$lib/utils/weather';
+	import { geocodePlace } from '$lib/utils/geocode';
 
 	interface ChecklistItem {
 		id: string;
@@ -31,7 +31,15 @@
 		children?: ChecklistItem[];
 		skippedAt?: string | null;
 		snoozedToDate?: string | null;
-		metadata?: { timeHour?: number; timeMinute?: number; [key: string]: unknown } | null;
+		metadata?: {
+			timeHour?: number;
+			timeMinute?: number;
+			kind?: 'location' | 'travel' | string;
+			locationName?: string;
+			travelMode?: 'drive' | 'boat' | 'flight';
+			destination?: string;
+			[key: string]: unknown;
+		} | null;
 	}
 
 	interface Checklist {
@@ -80,30 +88,38 @@
 		}
 	});
 
-	// Strøkne ("gjør ikke") teller hverken som planlagt eller løst.
-	const plannedItems = $derived(items.filter((i) => !i.skippedAt));
+	// Strøkne ("gjør ikke") og sted-kontekst («Sted: X») teller hverken som
+	// planlagt eller løst — sted-punkt er dag-kontekst, ikke en avkryssbar rad.
+	const plannedItems = $derived(items.filter((i) => !i.skippedAt && !isLocationItem(i)));
 	const done = $derived(plannedItems.filter((i) => i.checked).length);
 	const total = $derived(plannedItems.length);
 	const allDone = $derived(total > 0 && done === total);
 	const pct = $derived(total > 0 ? done / total : 0);
 
-	// Top-nivå-punkter delt i tre seksjoner: tidfestede (med tidschip, sortert
-	// kronologisk), øvrige (sortert på status), og strøkne (kollapset under "Hoppet over").
+	// Sted-punkter vises som dag-kontekst (banner øverst), ikke som liste-rader.
 	const topLevelItems = $derived(items.filter((i) => !i.parentId));
+	const locationItems = $derived(topLevelItems.filter((i) => isLocationItem(i)));
+	const listItems = $derived(topLevelItems.filter((i) => !isLocationItem(i)));
+
+	// Resten delt i tre seksjoner: tidfestede (med tidschip, sortert kronologisk),
+	// øvrige (sortert på status), og strøkne (kollapset under "Hoppet over").
 	const timedGroups = $derived(
 		groupChecklistItems(
 			sortByStatus(
-				sortByTime(topLevelItems.filter((i) => !i.skippedAt && i.metadata?.timeHour !== undefined))
+				sortByTime(listItems.filter((i) => !i.skippedAt && i.metadata?.timeHour !== undefined))
 			)
 		)
 	);
 	const untimedGroups = $derived(
 		groupChecklistItems(
-			sortByStatus(topLevelItems.filter((i) => !i.skippedAt && i.metadata?.timeHour === undefined))
+			sortByStatus(listItems.filter((i) => !i.skippedAt && i.metadata?.timeHour === undefined))
 		)
 	);
-	const skippedItems = $derived(topLevelItems.filter((i) => !!i.skippedAt));
+	const skippedItems = $derived(listItems.filter((i) => !!i.skippedAt));
 	const skippedGroups = $derived(groupChecklistItems(skippedItems));
+
+	// Primært sted for dagen (driver værmelding + vises i banner).
+	const primaryLocationName = $derived(locationItems.length ? locationDisplayName(locationItems[0]) : null);
 	const calendarHref = $derived.by(() => {
 		const context = checklist.context;
 		if (!context) return '/ukeplan';
@@ -180,33 +196,32 @@
 		return m ? m[1] : null;
 	});
 	let weatherPeriods = $state<WeatherPeriod[] | null>(null);
+	let weatherCoordsKey = '';
 
-	onMount(async () => {
+	function getDeviceCoords(): Promise<{ lat: number; lon: number }> {
+		return new Promise((resolve) => {
+			if (!navigator.geolocation) return resolve({ lat: 59.9139, lon: 10.7522 });
+			navigator.geolocation.getCurrentPosition(
+				(pos) => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+				() => resolve({ lat: 59.9139, lon: 10.7522 }),
+				{ timeout: 4000, maximumAge: 300_000 }
+			);
+		});
+	}
+
+	async function loadWeather(lat: number, lon: number) {
 		const date = dayContextDate;
 		const weekKey = weekContextKey;
 		if (!date && !weekKey) return;
 
-		// Try geolocation first, fall back to Oslo
-		const getCoords = (): Promise<{ lat: number; lon: number }> =>
-			new Promise((resolve) => {
-				if (!navigator.geolocation) return resolve({ lat: 59.9139, lon: 10.7522 });
-				navigator.geolocation.getCurrentPosition(
-					(pos) => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
-					() => resolve({ lat: 59.9139, lon: 10.7522 }),
-					{ timeout: 4000, maximumAge: 300_000 }
-				);
-			});
-		const { lat, lon } = await getCoords();
-
-		// 1. Show from cache immediately (stale-while-revalidate)
+		// 1. Vis fra cache umiddelbart (stale-while-revalidate)
 		const cached = readCacheEntry(lat, lon);
 		if (cached) {
 			weatherPeriods = date
 				? buildPeriods(date, cached.timeseries)
 				: buildWeekPeriods(weekKey!, cached.timeseries);
 		}
-
-		// 2. Revalidate if cache is stale or missing
+		// 2. Revalider hvis cache mangler eller er gammel
 		if (!cached || isCacheStale(cached)) {
 			const freshTs = await fetchRawTimeseries(lat, lon);
 			if (freshTs) {
@@ -215,6 +230,22 @@
 					: buildWeekPeriods(weekKey!, freshTs);
 			}
 		}
+	}
+
+	// Vær for dagens sted hvis et «Sted:»-punkt finnes (geokodet), ellers enhetens
+	// posisjon (fallback Oslo). Reagerer når sted legges til/endres mens arket er åpent.
+	$effect(() => {
+		const place = primaryLocationName; // reaktiv avhengighet
+		if (!dayContextDate && !weekContextKey) return;
+		const key = place ?? '__device__';
+		if (key === weatherCoordsKey) return;
+		weatherCoordsKey = key;
+		void (async () => {
+			let coords: { lat: number; lon: number } | null = null;
+			if (place) coords = await geocodePlace(place);
+			if (!coords) coords = await getDeviceCoords();
+			await loadWeather(coords.lat, coords.lon);
+		})();
 	});
 
 	// Vis payoff-animasjon én gang når alt er fullført
@@ -506,6 +537,28 @@
 		></div>
 	</div>
 
+	<!-- Sted-kontekst for dagen: «Sted: X» blir et banner (driver værmelding for stedet),
+	     ikke en avkryssbar rad. Langtrykk gir kontekstmeny (slett/rediger). -->
+	{#if locationItems.length > 0}
+		<div class="cs-location-bar">
+			{#each locationItems as loc (loc.id)}
+				<button
+					type="button"
+					class="cs-location-chip"
+					onpointerdown={(e) => handleItemPressStart(e, loc)}
+					onpointerup={handleItemPressEnd}
+					onpointercancel={handleItemPressEnd}
+					onpointerleave={handleItemPressEnd}
+					onclick={(e) => e.preventDefault()}
+					title="Sted for dagen — langtrykk for valg"
+				>
+					<span class="cs-location-pin">📍</span>
+					<span class="cs-location-name">{locationDisplayName(loc)}</span>
+				</button>
+			{/each}
+		</div>
+	{/if}
+
 	<!-- Snippet for én gruppe (enten en slot-rad med gjentakelser eller et enkelt punkt). -->
 	{#snippet groupRow(group: GroupedChecklistEntry<ChecklistItem>)}
 		{#if group.type === 'group'}
@@ -543,6 +596,7 @@
 			{@const completedChildren = childrenItems.filter((c) => c.checked).length}
 			{@const isExpanded = expandedParentIds.has(group.item.id)}
 			{@const itemTimed = group.item.metadata?.timeHour !== undefined}
+			{@const itemTravel = getTravelMode(group.item)}
 			{@const cR = 8}
 			{@const cC = 2 * Math.PI * cR}
 			{@const cPct = childrenItems.length > 0 ? completedChildren / childrenItems.length : 0}
@@ -583,6 +637,9 @@
 								<span class="cs-item-main">
 									{#if itemTimed}
 										<span class="cs-time-chip">{formatItemTime(group.item.metadata!.timeHour!, group.item.metadata?.timeMinute ?? 0)}</span>
+									{/if}
+									{#if itemTravel}
+										<span class="cs-travel-icon" aria-hidden="true">{travelModeIcon(itemTravel)}</span>
 									{/if}
 									<span class="cs-item-text"><TaskTitle title={itemTimed ? stripTimeFromText(group.item.text) : group.item.text} /></span>
 								</span>
@@ -627,6 +684,9 @@
 								{#if itemTimed}
 									<span class="cs-time-chip">{formatItemTime(group.item.metadata!.timeHour!, group.item.metadata?.timeMinute ?? 0)}</span>
 								{/if}
+								{#if itemTravel}
+									<span class="cs-travel-icon" aria-hidden="true">{travelModeIcon(itemTravel)}</span>
+								{/if}
 								<span class="cs-item-text"><TaskTitle title={itemTimed ? stripTimeFromText(group.item.text) : group.item.text} /></span>
 							</span>
 						{/if}
@@ -661,7 +721,7 @@
 								{#if childTimed}
 									<span class="cs-time-chip cs-time-chip-small">{formatItemTime(child.metadata!.timeHour!, child.metadata?.timeMinute ?? 0)}</span>
 								{/if}
-								<span class="cs-child-text"><TaskTitle title={childTimed ? stripTimeFromText(child.text) : child.text} /></span>
+								{#if getTravelMode(child)}<span class="cs-travel-icon cs-travel-icon-small" aria-hidden="true">{travelModeIcon(getTravelMode(child)!)}</span>{/if}<span class="cs-child-text"><TaskTitle title={childTimed ? stripTimeFromText(child.text) : child.text} /></span>
 								<div
 									class="cs-checkbox cs-checkbox-small"
 									class:cs-checkbox-checked={child.checked && !childSkipped}
@@ -1081,6 +1141,64 @@
 	.cs-child-checked .cs-time-chip,
 	.cs-child-skipped .cs-time-chip {
 		opacity: 0.4;
+	}
+
+	/* Transport-ikon for reisesegmenter (kjøre/båt/fly) */
+	.cs-travel-icon {
+		font-size: 0.95rem;
+		line-height: 1;
+		flex-shrink: 0;
+	}
+	.cs-travel-icon-small {
+		font-size: 0.8rem;
+	}
+	.cs-item-checked .cs-travel-icon,
+	.cs-item-skipped .cs-travel-icon,
+	.cs-child-checked .cs-travel-icon,
+	.cs-child-skipped .cs-travel-icon {
+		opacity: 0.4;
+	}
+
+	/* Sted-kontekst-banner for dagen */
+	.cs-location-bar {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		padding: 10px 20px 0;
+		flex-shrink: 0;
+	}
+
+	.cs-location-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		background: rgba(95, 160, 128, 0.12);
+		border: 1px solid rgba(95, 160, 128, 0.3);
+		border-radius: 999px;
+		padding: 5px 12px 5px 10px;
+		cursor: pointer;
+		font: inherit;
+		color: #9fd9bd;
+		touch-action: manipulation;
+		user-select: none;
+		-webkit-user-select: none;
+		-webkit-touch-callout: none;
+		transition: border-color 0.12s, background 0.12s;
+	}
+	.cs-location-chip:hover {
+		border-color: rgba(95, 160, 128, 0.55);
+		background: rgba(95, 160, 128, 0.18);
+	}
+
+	.cs-location-pin {
+		font-size: 0.85rem;
+		line-height: 1;
+	}
+
+	.cs-location-name {
+		font-size: 0.82rem;
+		font-weight: 600;
+		letter-spacing: -0.01em;
 	}
 
 	/* ── Skillelinje mellom tidfestede og øvrige oppgaver ── */
