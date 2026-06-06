@@ -11,7 +11,7 @@
 	import type { FlowContext } from '$lib/flows/types';
 	import { finishNavMetric, startNavMetric } from '$lib/client/nav-metrics';
 	import MetricCard from '$lib/components/visualizations/MetricCard.svelte';
-	import { groupChecklistItems, activityEmoji, activityTypeEmoji, sortByTime, sortByStatus, formatItemTime, stripTimeFromText, type GroupedChecklistEntry } from '$lib/utils/checklist-group';
+	import { groupChecklistItems, activityEmoji, activityTypeEmoji, sortByTime, sortByStatus, formatItemTime, stripTimeFromText, getTravelMode, travelModeIcon, isLocationItem, locationDisplayName, type GroupedChecklistEntry } from '$lib/utils/checklist-group';
 	import TaskContextMenu from '$lib/components/ui/TaskContextMenu.svelte';
 	import BreakdownModal from '$lib/components/ui/BreakdownModal.svelte';
 	import ProcedureBadge from '$lib/components/ui/ProcedureBadge.svelte';
@@ -59,6 +59,10 @@
 			timeHour?: number;
 			timeMinute?: number;
 			hasBreakdown?: boolean;
+			kind?: 'location' | 'travel' | string;
+			locationName?: string;
+			travelMode?: 'drive' | 'boat' | 'flight';
+			destination?: string;
 		} | null;
 	}
 
@@ -2345,7 +2349,12 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 									{#if item.metadata?.timeHour !== undefined}
 										<span class="wp-time-badge">{formatItemTime(item.metadata.timeHour, item.metadata.timeMinute ?? 0)}</span>
 									{/if}
-									<span class="wp-check-text" class:checked={item.checked} class:skipped={!!item.skippedAt}><TaskTitle title={item.metadata?.timeHour !== undefined ? stripTimeFromText(item.text) : item.text} /></span>
+									{#if isLocationItem(item)}
+										<span class="wp-loc-badge">📍 {locationDisplayName(item)}</span>
+									{:else}
+										{#if getTravelMode(item)}<span class="wp-travel-icon" aria-hidden="true">{travelModeIcon(getTravelMode(item)!)}</span>{/if}
+										<span class="wp-check-text" class:checked={item.checked} class:skipped={!!item.skippedAt}><TaskTitle title={item.metadata?.timeHour !== undefined ? stripTimeFromText(item.text) : item.text} /></span>
+									{/if}
 									{#if item.metadata?.linkedTaskId}
 										<span class="wp-intent-badge" title="Koblet til ukesmål: {item.metadata.linkedTaskTitle ?? ''}">
 											{item.metadata.autoChecked ? '⚡' : '🔗'}
@@ -2413,6 +2422,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 												{#if child.metadata?.timeHour !== undefined}
 													<span class="wp-time-badge">{formatItemTime(child.metadata.timeHour, child.metadata.timeMinute ?? 0)}</span>
 												{/if}
+												{#if getTravelMode(child)}<span class="wp-travel-icon" aria-hidden="true">{travelModeIcon(getTravelMode(child)!)}</span>{/if}
 												<span class="wp-check-text" class:checked={child.checked} class:skipped={!!child.skippedAt}><TaskTitle title={child.metadata?.timeHour !== undefined ? stripTimeFromText(child.text) : child.text} /></span>
 											</button>
 											<button type="button" class="wp-check-toggle" onclick={() => void toggleChecklistItem(selectedDayChecklist.id, child.id, !child.checked)} aria-label="Toggle">
@@ -3446,6 +3456,25 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 		margin-right: 6px;
 		vertical-align: middle;
 		white-space: nowrap;
+	}
+
+	.wp-loc-badge {
+		display: inline-block;
+		font-size: 0.72rem;
+		font-weight: 600;
+		color: #9fd9bd;
+		background: rgba(95, 160, 128, 0.12);
+		border: 1px solid rgba(95, 160, 128, 0.3);
+		border-radius: 999px;
+		padding: 1px 9px;
+		vertical-align: middle;
+		white-space: nowrap;
+	}
+
+	.wp-travel-icon {
+		font-size: 0.9rem;
+		margin-right: 5px;
+		vertical-align: middle;
 	}
 
 	.wp-intent-badge {
