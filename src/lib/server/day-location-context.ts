@@ -13,7 +13,8 @@ import { db } from '$lib/db';
 import { checklists, users } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { localIsoDay } from './nudge-time';
-import { dayContextForDate } from './iso-week';
+import { dayContextForDate, addDaysIso } from './iso-week';
+import { computeStaysFromDayPlans, formatStayRange } from './stays';
 import {
 	isLocationItem,
 	locationDisplayName,
@@ -64,6 +65,31 @@ export async function buildDayContextBlock(userId: string, timezone?: string): P
 
 	const locations = topItems.filter((i) => isLocationItem(i)).map((i) => locationDisplayName(i));
 
+	// Opphold (Fase C): finn et evt. flerdagers opphold som dekker i dag, så
+	// assistenten vet hvor lenge brukeren er borte («dag 2 av 3»), ikke bare i dag.
+	let stayLine: string | null = null;
+	if (locations.length > 0) {
+		try {
+			const stays = await computeStaysFromDayPlans(
+				userId,
+				addDaysIso(todayIso, -21),
+				addDaysIso(todayIso, 45)
+			);
+			const current = stays.find((s) => s.startDate <= todayIso && todayIso <= s.endDate);
+			if (current && current.startDate !== current.endDate) {
+				const total = Math.round(
+					(Date.parse(current.endDate) - Date.parse(current.startDate)) / 86400000
+				) + 1;
+				const dayNo = Math.round(
+					(Date.parse(todayIso) - Date.parse(current.startDate)) / 86400000
+				) + 1;
+				stayLine = `Opphold i ${current.place} ${formatStayRange(current)} (dag ${dayNo} av ${total}).`;
+			}
+		} catch (err) {
+			console.warn('computeStaysFromDayPlans failed:', err);
+		}
+	}
+
 	const travels: Array<{ mode: 'drive' | 'boat' | 'flight'; dest?: string; time: string | null }> = [];
 	for (const i of topItems) {
 		const mode = getTravelMode(i);
@@ -78,7 +104,9 @@ export async function buildDayContextBlock(userId: string, timezone?: string): P
 	if (locations.length === 0 && travels.length === 0) return '';
 
 	const lines: string[] = [];
-	if (locations.length > 0) {
+	if (stayLine) {
+		lines.push(stayLine);
+	} else if (locations.length > 0) {
 		lines.push(`Sted i dag: ${[...new Set(locations)].join(', ')}.`);
 	}
 	for (const t of travels) {

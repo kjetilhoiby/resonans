@@ -215,3 +215,47 @@ export function getTravelMode(item: ContextItemLike): TravelMode | null {
 	const parsed = parseTravelPrefix(item.text);
 	return parsed ? parsed.mode : null;
 }
+
+// ── Opphold-aggregering ─────────────────────────────────────────────────────
+//
+// «Sted: Trondheim» tre dager på rad blir til ett opphold (første→siste dato).
+// Brukt server-side til chat-kontekst og import til reise-/ferieplan. Ren funksjon.
+
+export interface DayLocationEntry {
+	date: string; // ISO 'YYYY-MM-DD'
+	place: string;
+}
+
+export interface LocationStay {
+	place: string;
+	startDate: string; // ISO
+	endDate: string; // ISO
+}
+
+/** Antall kalenderdager fra aIso til bIso (kan være negativ). Ren UTC-basert. */
+function isoDayDiff(aIso: string, bIso: string): number {
+	const [ay, am, ad] = aIso.split('-').map(Number);
+	const [by, bm, bd] = bIso.split('-').map(Number);
+	return Math.round((Date.UTC(by, bm - 1, bd) - Date.UTC(ay, am - 1, ad)) / 86400000);
+}
+
+/**
+ * Slå sammen dag-for-dag-steder til opphold: sammenhengende datoer (gap ≤ 1 dag)
+ * med samme sted blir ett opphold. Ulikt sted eller hull > 1 dag starter et nytt.
+ */
+export function aggregateStays(entries: DayLocationEntry[]): LocationStay[] {
+	const sorted = [...entries]
+		.filter((e) => e.place && e.date)
+		.sort((a, b) => a.date.localeCompare(b.date));
+	const stays: LocationStay[] = [];
+	for (const e of sorted) {
+		const last = stays[stays.length - 1];
+		const gap = last ? isoDayDiff(last.endDate, e.date) : Infinity;
+		if (last && last.place.toLowerCase() === e.place.toLowerCase() && gap >= 0 && gap <= 1) {
+			if (e.date > last.endDate) last.endDate = e.date;
+		} else {
+			stays.push({ place: e.place, startDate: e.date, endDate: e.date });
+		}
+	}
+	return stays;
+}
