@@ -185,6 +185,7 @@ export const themes = pgTable('themes', {
 			lockCode?: string;
 			address?: string;
 			notes?: string;
+			source?: string; // 'dayplan' = utledet fra dagsplanenes «Sted:»-punkter
 		}>;
 	}>(),
 	// Ferie-tema: oppholdsplan (dekning per familiemedlem per dag) + grove reise-blokker.
@@ -221,6 +222,7 @@ export const themes = pgTable('themes', {
 				weatherEmoji?: string;
 				weatherTemp?: number;
 				weatherFetchedAt?: string;
+				source?: string; // 'dayplan' = utledet fra dagsplanenes «Sted:»-punkter
 			}>;
 		}>;
 	}>(),

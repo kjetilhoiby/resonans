@@ -661,9 +661,11 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 	}
 
 	function checklistProgress(checklist: WeekChecklist | null) {
-		if (!checklist || checklist.items.length === 0) return { done: 0, total: 0, pct: 0 };
-		const done = checklist.items.filter((item) => item.checked).length;
-		const total = checklist.items.length;
+		// Sted-kontekst-punkter teller ikke med i fremdriften.
+		const counted = (checklist?.items ?? []).filter((item) => !isLocationItem(item));
+		if (counted.length === 0) return { done: 0, total: 0, pct: 0 };
+		const done = counted.filter((item) => item.checked).length;
+		const total = counted.length;
 		return {
 			done,
 			total,
@@ -2379,7 +2381,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 										onclick={() => toggleDayParentExpansion(item.id)}
 										aria-label={isExpanded ? 'Lukk subitems' : 'Utvid subitems'}
 									>▸</button>
-								{:else}
+								{:else if !isLocationItem(item)}
 									<button type="button" class="wp-check-toggle" onclick={() => void toggleChecklistItem(selectedDayChecklist.id, item.id, !item.checked)} aria-label="Toggle">
 										<span class="wp-check-circle" class:checked={item.checked} class:skipped={!!item.skippedAt}>{item.skippedAt ? '✕' : item.checked ? '✓' : ''}</span>
 									</button>

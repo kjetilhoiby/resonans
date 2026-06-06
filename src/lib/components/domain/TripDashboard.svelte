@@ -190,33 +190,6 @@
 		}
 	}
 
-	/* ── Importer opphold fra dagsplan (Fase C) ────────────── */
-	let importing = $state(false);
-	let importMsg = $state<string | null>(null);
-
-	async function importStays() {
-		importing = true;
-		importMsg = null;
-		try {
-			const res = await fetch(`/api/tema/${themeId}/import-stays`, { method: 'POST' });
-			if (!res.ok) {
-				const body = await res.json().catch(() => null);
-				importMsg = body?.error ?? 'Klarte ikke importere opphold.';
-				return;
-			}
-			const data = (await res.json()) as { added: number; stays: OvernightStay[] };
-			tripProfile = { ...(tripProfile ?? {}), overnightStays: data.stays };
-			onProfileSaved?.(tripProfile);
-			importMsg = data.added > 0
-				? `La til ${data.added} opphold fra dagsplanen.`
-				: 'Ingen nye opphold i dagsplanen.';
-		} catch {
-			importMsg = 'Klarte ikke importere opphold.';
-		} finally {
-			importing = false;
-		}
-	}
-
 	/* ── Vær (api.met.no) ────────────────────────── */
 	interface WeatherData {
 		temp: number;
@@ -496,20 +469,10 @@
 		{/if}
 
 		<!-- ── Overnattinger ── -->
-		{#if (tripProfile?.overnightStays ?? []).length > 0 || (tripProfile?.startDate && tripProfile?.endDate)}
+		{#if (tripProfile?.overnightStays ?? []).length > 0}
 			<div class="trip-stays">
-				<div class="trip-stays-head">
-					<h3 class="trip-section-title">🏨 Overnattinger</h3>
-					{#if tripProfile?.startDate && tripProfile?.endDate}
-						<button class="trip-import-stays-btn" type="button" onclick={importStays} disabled={importing}>
-							{importing ? 'Importerer…' : '📍 Importer fra dagsplan'}
-						</button>
-					{/if}
-				</div>
-				{#if importMsg}
-					<p class="trip-import-msg">{importMsg}</p>
-				{/if}
-				{#each tripProfile?.overnightStays ?? [] as stay}
+				<h3 class="trip-section-title">🏨 Overnattinger</h3>
+				{#each tripProfile!.overnightStays! as stay}
 					<div class="stay-card">
 						<div class="stay-header">
 							<span class="stay-name">{stay.name || 'Overnatting'}</span>
@@ -1028,31 +991,6 @@
 		font-size: 0.8rem;
 		padding: 5px 10px;
 		cursor: pointer;
-	}
-	.trip-stays-head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 10px;
-	}
-	.trip-import-stays-btn {
-		background: var(--tp-accent-bg);
-		border: 1px solid var(--tp-border-strong);
-		border-radius: 8px;
-		color: var(--tp-accent);
-		font-size: 0.76rem;
-		padding: 4px 10px;
-		cursor: pointer;
-		white-space: nowrap;
-	}
-	.trip-import-stays-btn:disabled {
-		opacity: 0.5;
-		cursor: default;
-	}
-	.trip-import-msg {
-		font-size: 0.76rem;
-		color: var(--tp-text-dim, #888);
-		margin: 4px 0 8px;
 	}
 	.stay-edit-card {
 		background: var(--tp-bg-2);

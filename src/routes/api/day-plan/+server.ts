@@ -6,6 +6,8 @@ import { and, eq } from 'drizzle-orm';
 import { parseChecklistItemIntent, findLinkedTask, stripTimeFromText } from '$lib/server/checklist-intent-linker';
 import { parseLocationPrefix, parseTravelPrefix } from '$lib/utils/checklist-group';
 import { upsertPlanArtifactField } from '$lib/server/plan-artifacts';
+import { syncStaysForDate } from '$lib/server/stays';
+import { runInBackground } from '$lib/server/run-in-background';
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const userId = locals.userId;
@@ -126,6 +128,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				})
 			);
 			await db.insert(checklistItems).values(itemsToInsert);
+
+			// Sted-punkt → skriv opphold automatisk til reise-/ferieplan som dekker dagen.
+			if (itemsToInsert.some((it) => (it.metadata as { kind?: string } | undefined)?.kind === 'location')) {
+				runInBackground(syncStaysForDate(userId, dayIso));
+			}
 		}
 	}
 

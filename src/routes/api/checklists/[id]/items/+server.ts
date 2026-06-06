@@ -6,6 +6,7 @@ import { and, eq } from 'drizzle-orm';
 import { parseListRepeatCount } from '$lib/server/list-repeat-parser';
 import { parseChecklistItemIntent, findLinkedTask, stripTimeFromText } from '$lib/server/checklist-intent-linker';
 import { parseLocationPrefix, parseTravelPrefix } from '$lib/utils/checklist-group';
+import { syncStaysForDate } from '$lib/server/stays';
 import { getOrCreatePlanningGoal, createTask } from '$lib/server/goals';
 import { enqueueBackgroundJob } from '$lib/server/background-jobs';
 import { parseTaskDateTime } from '$lib/server/date-time-parser';
@@ -229,6 +230,12 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 	// Index @-mentions for hver opprettet item — kjører i bakgrunnen via waitUntil.
 	for (const item of createdItems) {
 		runInBackground(PersonMentionService.indexChecklistItem(userId, item.id, item.text));
+	}
+
+	// Sted-punkt → skriv opphold automatisk til reise-/ferieplan som dekker dagen.
+	if (itemMetadata.kind === 'location') {
+		const dayMatch = checklist.context?.match(/:day:(\d{4}-\d{2}-\d{2})/);
+		if (dayMatch) runInBackground(syncStaysForDate(userId, dayMatch[1]));
 	}
 
 	return json(createdItems, { status: 201 });
