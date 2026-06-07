@@ -2985,17 +2985,37 @@
 			activeChecklists = activeChecklists.filter((c) => c.id !== openChecklist?.id);
 			openChecklist = null;
 		}}
-		onNavigateDay={(dateIso) => {
+		onNavigateDay={async (dateIso) => {
 			const d = new Date(dateIso + 'T12:00:00');
 			const weekKey = getLocalIsoWeekDashed(d);
 			const ctx = `week:${weekKey}:day:${dateIso}`;
-			const target = activeChecklists.find((c) => c.context === ctx)
-				?? allContextChecklists.find((c) => c.context === ctx);
+			let target = activeChecklists.find((c) => c.context === ctx)
+				?? allContextChecklists.find((c) => c.context === ctx) ?? null;
+			// Dager utenfor det forhåndshentede vinduet (f.eks. neste måned) ligger
+			// ikke i cachen — hent den konkrete dagen direkte så vi ikke feilaktig
+			// tror den er tom (og dermed lager en duplikat-liste).
+			if (!target) {
+				try {
+					const res = await fetch(`/api/checklists?contexts=${encodeURIComponent(ctx)}`);
+					if (res.ok) {
+						const rows = (await res.json()) as Checklist[];
+						target = rows.find((c) => c.context === ctx) ?? null;
+					}
+				} catch { /* stille — faller tilbake til tom dag */ }
+			}
 			if (target) {
 				openChecklist = target;
 			} else {
-				openChecklist = null;
-				handleChecklistPlan(ctx);
+				// Tom dag: vis en tom dagsliste i stedet for å starte planleggingsflyten.
+				// Lista opprettes først i DB når brukeren legger til et punkt.
+				openChecklist = {
+					id: '',
+					title: `Dag ${dateIso}`,
+					emoji: '☑️',
+					context: ctx,
+					completedAt: null,
+					items: []
+				};
 			}
 		}}
 		onStartChat={async (itemText, checklistId, itemId) => {
