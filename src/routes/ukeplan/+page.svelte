@@ -1834,17 +1834,18 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 				title="Månedsplan"
 			>Mnd</a>
 			<div class="wp-calendar-wrap">
-				<button
-					class="wp-calendar-btn"
-					type="button"
-					aria-label="Velg uke"
-					onclick={() => weekPickerInput?.showPicker?.()}
-				><Icon name="calendar" size={18} /></button>
+				<span class="wp-calendar-btn" aria-hidden="true"><Icon name="calendar" size={18} /></span>
 				<input
 					bind:this={weekPickerInput}
 					type="date"
 					class="wp-week-picker-input"
+					aria-label="Velg uke"
 					value={data.week.days[0].isoDate}
+					onclick={(event) => {
+						// Desktop-bonus: åpne kalenderen umiddelbart ved klikk. På mobil
+						// åpner native picker uansett når man trykker på input-feltet.
+						try { (event.currentTarget as HTMLInputElement).showPicker?.(); } catch { /* ikke støttet */ }
+					}}
 					onchange={(event) => {
 						const val = (event.currentTarget as HTMLInputElement).value;
 						if (val) void goto(weekHref(getIsoWeekDashedFromIsoDate(val)));
@@ -2784,6 +2785,8 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 	.wp-calendar-wrap {
 		position: relative;
 		flex-shrink: 0;
+		width: 34px;
+		height: 34px;
 	}
 
 	.wp-calendar-btn {
@@ -2810,14 +2813,36 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 	}
 	.wp-month-btn:hover { color: #bac6f9; background: #12162a; border-color: #2e3660; }
 
+	/* Den native date-inputen ligger usynlig oppå kalender-knappen og er selve
+	   trykkflaten. Å trykke på et date-input åpner OS-velgeren direkte på alle
+	   plattformer – i motsetning til showPicker(), som ikke er pålitelig i
+	   stand-alone PWA/WebKit. */
 	.wp-week-picker-input {
 		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		margin: 0;
+		padding: 0;
+		border: none;
+		background: transparent;
 		opacity: 0;
-		pointer-events: none;
-		width: 0;
-		height: 0;
-		top: 100%;
-		right: 0;
+		cursor: pointer;
+		-webkit-appearance: none;
+		appearance: none;
+	}
+
+	/* Strekk den skjulte kalender-indikatoren over hele flaten slik at hele
+	   knappen åpner velgeren (Chromium). */
+	.wp-week-picker-input::-webkit-calendar-picker-indicator {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		margin: 0;
+		padding: 0;
+		opacity: 0;
+		cursor: pointer;
 	}
 
 	.wp-days {
