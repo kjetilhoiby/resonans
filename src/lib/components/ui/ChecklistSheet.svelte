@@ -67,6 +67,9 @@
 	let { checklist, onclose, onDeleted, onChanged, onStartChat, onNavigateDay }: Props = $props();
 
 	let items = $state<ChecklistItem[]>([...checklist.items]);
+	// Faktisk DB-id. For en tom dag (virtuell sjekkliste) er `checklist.id` ''
+	// inntil første punkt legges til — da opprettes lista og `backingId` settes.
+	let backingId = $state(checklist.id);
 	let newItemText = $state('');
 	let newItemInputEl = $state<HTMLInputElement | null>(null);
 	let showPayoff = $state(false);
@@ -84,6 +87,28 @@
 	let editingText = $state('');
 	let editInputEl = $state<HTMLInputElement | null>(null);
 	let shareSheetOpen = $state(false);
+
+	// Når `checklist`-propen byttes (dag-navigasjon prev/neste) må vi re-synce
+	// den lokale `items`-staten og nullstille forbigående UI. Uten dette beholdt
+	// arket forrige dags oppgaver selv om tittelen viste riktig dag. Vi nøkler på
+	// context (unik per dag) fordi tomme dager deler den samme tomme id-en ''.
+	let loadedKey = $state(checklist.context ?? checklist.id);
+	$effect(() => {
+		const key = checklist.context ?? checklist.id;
+		if (key === loadedKey) return;
+		loadedKey = key;
+		backingId = checklist.id;
+		items = [...checklist.items];
+		newItemText = '';
+		showPayoff = false;
+		payoffDismissed = false;
+		editingItemId = null;
+		editingText = '';
+		expandedParentIds = new Set();
+		skippedExpanded = false;
+		newSubItemTexts = {};
+		pendingPlace = null;
+	});
 
 	$effect(() => {
 		if (editingItemId && editInputEl) {
@@ -358,7 +383,7 @@
 			i.id === item.id ? { ...i, checked: newChecked } : i
 		);
 
-		const res = await fetch(`/api/checklists/${checklist.id}/items/${item.id}`, {
+		const res = await fetch(`/api/checklists/${backingId}/items/${item.id}`, {
 			method: 'PATCH',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ checked: newChecked })
@@ -372,8 +397,30 @@
 		onChanged?.();
 	}
 
+	// Sørger for at lista finnes i DB. For en tom dag (virtuell liste) opprettes
+	// den her ved første punkt. Returnerer null hvis opprettelsen feiler.
+	async function ensureBackingId(): Promise<string | null> {
+		if (backingId) return backingId;
+		const res = await fetch('/api/checklists', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				title: checklist.title,
+				emoji: checklist.emoji,
+				context: checklist.context ?? undefined
+			})
+		});
+		if (!res.ok) return null;
+		const created = (await res.json()) as { id: string };
+		backingId = created.id;
+		onChanged?.();
+		return created.id;
+	}
+
 	async function createItem(text: string, coords?: { lat: number; lon: number; label?: string }) {
-		const res = await fetch(`/api/checklists/${checklist.id}/items`, {
+		const id = await ensureBackingId();
+		if (!id) return;
+		const res = await fetch(`/api/checklists/${id}/items`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ text, sortOrder: items.length, ...(coords && { coords }) })
@@ -448,7 +495,7 @@
 	async function deleteItem(itemId: string) {
 		const previousItems = items;
 		items = items.filter((i) => i.id !== itemId && i.parentId !== itemId);
-		const res = await fetch(`/api/checklists/${checklist.id}/items/${itemId}`, {
+		const res = await fetch(`/api/checklists/${backingId}/items/${itemId}`, {
 			method: 'DELETE'
 		});
 		if (!res.ok) {
@@ -465,7 +512,7 @@
 				? { ...i, skippedAt: skipped ? new Date().toISOString() : null, snoozedToDate: skipped ? i.snoozedToDate : null, checked: skipped ? false : i.checked }
 				: i
 		);
-		const res = await fetch(`/api/checklists/${checklist.id}/items/${itemId}`, {
+		const res = await fetch(`/api/checklists/${backingId}/items/${itemId}`, {
 			method: 'PATCH',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ skipped })
@@ -485,7 +532,7 @@
 				? { ...i, skippedAt: new Date().toISOString(), snoozedToDate: targetDate, checked: false }
 				: i
 		);
-		const res = await fetch(`/api/checklists/${checklist.id}/items/${itemId}/snooze`, {
+		const res = await fetch(`/api/checklists/${backingId}/items/${itemId}/snooze`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ targetDate })
@@ -537,7 +584,7 @@
 		if (!text) return;
 		newSubItemTexts = { ...newSubItemTexts, [parentId]: '' };
 		try {
-			const res = await fetch(`/api/checklists/${checklist.id}/items`, {
+			const res = await fetch(`/api/checklists/${backingId}/items`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ text, sortOrder: items.length, parentId })
@@ -574,7 +621,7 @@
 		editingText = '';
 		if (!text) return;
 		items = items.map(i => i.id === itemId ? { ...i, text } : i);
-		await fetch(`/api/checklists/${checklist.id}/items/${itemId}`, {
+		await fetch(`/api/checklists/${backingId}/items/${itemId}`, {
 			method: 'PATCH',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ text })
@@ -588,7 +635,8 @@
 	}
 
 	async function deleteChecklist() {
-		await fetch(`/api/checklists/${checklist.id}`, { method: 'DELETE' });
+		// Virtuell tom dag (ikke lagret) — bare lukk, ingenting å slette.
+		if (backingId) await fetch(`/api/checklists/${backingId}`, { method: 'DELETE' });
 		onDeleted?.();
 		onclose();
 	}
@@ -639,7 +687,7 @@
 
 	<ShareSheet
 		resourceType="checklist"
-		resourceId={checklist.id}
+		resourceId={backingId}
 		resourceTitle={checklist.title}
 		open={shareSheetOpen}
 		onClose={() => (shareSheetOpen = false)}
@@ -1008,7 +1056,7 @@
 	onSkip={() => { if (contextMenuItem) void setItemSkipped(contextMenuItem.id, true); }}
 	onUnskip={() => { if (contextMenuItem) void setItemSkipped(contextMenuItem.id, false); }}
 	onDelete={() => { if (contextMenuItem) void deleteItem(contextMenuItem.id); }}
-	onStartChat={onStartChat ? () => { if (contextMenuItem) onStartChat?.(contextMenuItem.text, checklist.id, contextMenuItem.id); } : undefined}
+	onStartChat={onStartChat ? () => { if (contextMenuItem) onStartChat?.(contextMenuItem.text, backingId, contextMenuItem.id); } : undefined}
 />
 
 <!-- Breakdown modal -->
