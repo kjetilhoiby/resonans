@@ -24,6 +24,7 @@ import { buildModularSystemPrompt } from '$lib/server/prompts';
 import { routeChatRequest } from '$lib/server/chat-router';
 import { getOrCreateConversation, addMessage, getConversationHistory, getConversationByIdForUser } from '$lib/server/conversations';
 import { buildPersonContext } from '$lib/server/person-context';
+import { buildDayContextBlock } from '$lib/server/day-location-context';
 import { findSimilarWidget } from '$lib/skills/widget-creation/service';
 import type { WidgetDraft } from '$lib/artifacts/widget-draft';
 
@@ -185,6 +186,14 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 					} catch (err) {
 						console.warn('buildPersonContext failed:', err);
 					}
+				}
+
+				// Dagens sted/reise (Fase B) — stedstilpasset kontekst.
+				try {
+					const dayContext = await buildDayContextBlock(userId);
+					if (dayContext) systemPrompt += '\n' + dayContext;
+				} catch (err) {
+					console.warn('buildDayContextBlock failed:', err);
 				}
 
 				controller.enqueue(

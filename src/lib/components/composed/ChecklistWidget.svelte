@@ -5,6 +5,7 @@
 <script lang="ts">
 	import GoalRing from '../ui/GoalRing.svelte';
 	import DayWheelChart, { type DayData } from '../visualizations/DayWheelChart.svelte';
+	import { isLocationItem } from '$lib/utils/checklist-group';
 
 	export interface ChecklistItem {
 		id: string;
@@ -13,6 +14,7 @@
 		sortOrder: number;
 		parentId?: string | null;
 		skippedAt?: string | null;
+		metadata?: { kind?: string; locationName?: string } | null;
 	}
 
 	export interface Checklist {
@@ -35,10 +37,12 @@
 	let { checklist, monthDayData, onclick, onremove, onplan }: Props = $props();
 
 	// Skipped items ("gjør ikke") teller verken som planlagt eller løst.
+	// Sted-kontekst-punkter («Sted: X») er ikke avkryssbare og teller ikke med.
 	// For items with children, count the children (not the group header) for accurate progress.
 	const effectiveItems = $derived(
 		checklist.items.filter((i) => {
 			if (i.skippedAt) return false;
+			if (isLocationItem(i)) return false;
 			if (i.parentId) return true;
 			return !checklist.items.some((c) => c.parentId === i.id);
 		})

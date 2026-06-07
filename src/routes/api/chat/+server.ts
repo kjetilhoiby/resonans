@@ -10,6 +10,7 @@ import { createMemory } from '$lib/server/memories';
 import { ContextService } from '$lib/server/services/context-service';
 import { upsertPlanArtifactField } from '$lib/server/plan-artifacts';
 import { buildPersonContext } from '$lib/server/person-context';
+import { buildDayContextBlock } from '$lib/server/day-location-context';
 import { isFutureVisionText, seedThemeInstructionFromFutureVision } from '$lib/server/theme-instructions';
 import { bookResearchToolDefinition, executeBookResearch } from '$lib/ai/tools/book-research';
 import { queryEconomicsTool } from '$lib/ai/tools/query-economics';
@@ -1799,6 +1800,14 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			weekday: 'long'
 		})} (${today.toISOString().split('T')[0]})\n--- SLUTT PÅ DATO ---\n\n`;
 
+		// Dagens sted/reise (Fase B) — injiseres som stedstilpasset kontekst.
+		let dayContext = '';
+		try {
+			dayContext = await buildDayContextBlock(userId, userTimezone);
+		} catch (err) {
+			console.warn('buildDayContextBlock failed:', err);
+		}
+
 		// Bygg meldingshistorikk for OpenAI
 		const systemPrompt = buildModularSystemPrompt(routingDecision);
 		const promptPrefix = systemPromptPrefix ? `${systemPromptPrefix}\n\n` : '';
@@ -1810,7 +1819,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		});
 
 		const messages: ChatCompletionMessageParam[] = [
-			{ role: 'system', content: promptPrefix + systemPrompt + memoryContext + personContext + goalsContext + procedureContext + sourceContextPrompt + dateContext }
+			{ role: 'system', content: promptPrefix + systemPrompt + memoryContext + personContext + goalsContext + procedureContext + sourceContextPrompt + dateContext + dayContext }
 		];
 
 		// Legg til historikk (unntatt den siste brukermeldingen som allerede er der)
