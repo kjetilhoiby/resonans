@@ -2,7 +2,7 @@
 	import { enhance } from '$app/forms';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import { tick } from 'svelte';
-	import { goto, invalidateAll } from '$app/navigation';
+	import { afterNavigate, goto, invalidateAll } from '$app/navigation';
 	import { AppPage, PullToRefresh } from '$lib/components/ui';
 	import ScreenTitle from '$lib/components/ui/ScreenTitle.svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
@@ -236,6 +236,39 @@
 	let weekComposerText = $state('');
 	let dayComposerText = $state('');
 let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayHeadlines));
+
+	// Ukevelgeren navigerer via goto('/ukeplan?week=…'). SvelteKit gjenbruker
+	// denne komponenten på samme rute, så $state-snapshotene over kjører bare
+	// initialiseringen én gang. Uten dette ville bytte av uke bare oppdatert
+	// tittel + dagstripe (som leser `data` direkte), mens ukesnotat, refleksjon,
+	// visjon og sjekklister ble stående på forrige uke. Resynk derfor snapshotene
+	// fra ny `data` etter hver faktiske navigasjon (ikke ved invalidateAll, som
+	// ikke trigger afterNavigate og dermed bevarer optimistiske endringer).
+	let loadedWeekKey = data.week.compactKey;
+	afterNavigate(({ type }) => {
+		if (type === 'enter') return;
+
+		// Bytt aktiv dag etter ny URL (?day=…), faller tilbake til i dag / mandag.
+		const dayParam = typeof window !== 'undefined'
+			? new URLSearchParams(window.location.search).get('day')
+			: null;
+		selectedDayIso = data.week.days.some((d) => d.isoDate === dayParam)
+			? (dayParam as string)
+			: (data.week.days.some((d) => d.isoDate === todayIso) ? todayIso : data.week.days[0].isoDate);
+
+		// Tyngre snapshots resynkes kun når uka faktisk endret seg, slik at
+		// optimistiske endringer innen samme uke ikke blir overskrevet.
+		if (data.week.compactKey === loadedWeekKey) return;
+		loadedWeekKey = data.week.compactKey;
+
+		weekChecklistState = data.weekChecklist ? structuredClone(data.weekChecklist) : null;
+		dayChecklistsState = structuredClone(data.dayChecklists);
+		weekNoteValue = data.weekNote;
+		reflectionValue = data.reflection;
+		visionValue = data.vision;
+		dayHeadlinesState = { ...data.dayHeadlines };
+	});
+
 	let planningImportBusy = $state(false);
 	let dayCloseBusy = $state(false);
 	let dayCloseMessage = $state('');
