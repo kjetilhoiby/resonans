@@ -224,12 +224,16 @@ export function getTravelMode(item: ContextItemLike): TravelMode | null {
 export interface DayLocationEntry {
 	date: string; // ISO 'YYYY-MM-DD'
 	place: string;
+	lat?: number;
+	lon?: number;
 }
 
 export interface LocationStay {
 	place: string;
 	startDate: string; // ISO
 	endDate: string; // ISO
+	lat?: number;
+	lon?: number;
 }
 
 /** Antall kalenderdager fra aIso til bIso (kan være negativ). Ren UTC-basert. */
@@ -253,8 +257,12 @@ export function aggregateStays(entries: DayLocationEntry[]): LocationStay[] {
 		const gap = last ? isoDayDiff(last.endDate, e.date) : Infinity;
 		if (last && last.place.toLowerCase() === e.place.toLowerCase() && gap >= 0 && gap <= 1) {
 			if (e.date > last.endDate) last.endDate = e.date;
+			if (last.lat == null && e.lat != null) {
+				last.lat = e.lat;
+				last.lon = e.lon;
+			}
 		} else {
-			stays.push({ place: e.place, startDate: e.date, endDate: e.date });
+			stays.push({ place: e.place, startDate: e.date, endDate: e.date, lat: e.lat, lon: e.lon });
 		}
 	}
 	return stays;
