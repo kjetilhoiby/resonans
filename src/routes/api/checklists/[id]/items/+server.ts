@@ -28,12 +28,18 @@ function extractWeekKeys(context: string | null): { dashedKey: string; compactKe
 // POST /api/checklists/[id]/items — legg til et nytt punkt
 export const POST: RequestHandler = async ({ locals, params, request }) => {
 	const userId = locals.userId;
-	const { text, sortOrder = 9999, count = 1, parentId } = await request.json() as {
+	const { text, sortOrder = 9999, count = 1, parentId, coords } = await request.json() as {
 		text: string;
 		sortOrder?: number;
 		count?: number;
 		parentId?: string;
+		// Pinnet geokoding fra klienten (etter evt. bekreftelse av tvetydig sted).
+		coords?: { lat: number; lon: number; label?: string };
 	};
+
+	const geoMeta = coords
+		? { lat: coords.lat, lon: coords.lon, ...(coords.label && { geoLabel: coords.label }) }
+		: {};
 
 	if (!text) return json({ error: 'text er påkrevd' }, { status: 400 });
 
@@ -129,13 +135,14 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 			const meal = location || travel ? null : detectMealPrefix(parsed.label);
 
 			if (location) {
-				itemMetadata = { kind: 'location', locationName: location.name };
+				itemMetadata = { kind: 'location', locationName: location.name, ...geoMeta };
 			} else if (travel) {
 				itemMetadata = {
 					...timeFields,
 					kind: 'travel',
 					travelMode: travel.mode,
-					destination: travel.destination
+					destination: travel.destination,
+					...geoMeta
 				};
 			} else if (meal) {
 				const mealId = await findOrCreateMealId(userId, meal.cleanTitle);

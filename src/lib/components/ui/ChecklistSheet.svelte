@@ -11,7 +11,7 @@
 <script lang="ts">
 	import { fly, fade, scale, slide } from 'svelte/transition';
 	import { elasticOut, cubicOut } from 'svelte/easing';
-	import { groupChecklistItems, activityEmoji, sortByStatus, sortByTime, formatItemTime, stripTimeFromText, isLocationItem, locationDisplayName, getTravelMode, travelModeIcon, type GroupedChecklistEntry } from '$lib/utils/checklist-group';
+	import { groupChecklistItems, activityEmoji, sortByStatus, sortByTime, formatItemTime, stripTimeFromText, isLocationItem, locationDisplayName, getTravelMode, travelModeIcon, parseLocationPrefix, parseTravelPrefix, type GroupedChecklistEntry } from '$lib/utils/checklist-group';
 	import WeatherStrip, { type WeatherPeriod } from '$lib/components/ui/WeatherStrip.svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import BreakdownModal from '$lib/components/ui/BreakdownModal.svelte';
@@ -19,8 +19,9 @@
 	import TaskTitle from '$lib/components/ui/TaskTitle.svelte';
 	import MentionAutocomplete from '$lib/components/ui/MentionAutocomplete.svelte';
 	import ShareSheet from '$lib/components/domain/share/ShareSheet.svelte';
+	import LocationPickerModal from '$lib/components/ui/LocationPickerModal.svelte';
 	import { readCacheEntry, isCacheStale, fetchRawTimeseries, buildPeriods, buildWeekPeriods } from '$lib/utils/weather';
-	import { geocodePlace } from '$lib/utils/geocode';
+	import { resolvePlace, geocodePlace, type GeoCandidate } from '$lib/utils/geocode';
 
 	interface ChecklistItem {
 		id: string;
@@ -38,6 +39,9 @@
 			locationName?: string;
 			travelMode?: 'drive' | 'boat' | 'flight';
 			destination?: string;
+			lat?: number;
+			lon?: number;
+			geoLabel?: string;
 			[key: string]: unknown;
 		} | null;
 	}
@@ -165,7 +169,15 @@
 	const skippedGroups = $derived(groupChecklistItems(skippedItems));
 
 	// Primært sted for dagen (driver værmelding + vises i banner).
-	const primaryLocationName = $derived(locationItems.length ? locationDisplayName(locationItems[0]) : null);
+	const primaryLocation = $derived(locationItems[0] ?? null);
+	// Nøkkel som endrer seg når stedet (pinnet koordinat eller navn) endres.
+	const primaryLocationKey = $derived(
+		primaryLocation
+			? primaryLocation.metadata?.lat != null
+				? `${primaryLocation.metadata.lat},${primaryLocation.metadata.lon}`
+				: locationDisplayName(primaryLocation)
+			: null
+	);
 	const calendarHref = $derived.by(() => {
 		const context = checklist.context;
 		if (!context) return '/ukeplan';
@@ -278,17 +290,24 @@
 		}
 	}
 
-	// Vær for dagens sted hvis et «Sted:»-punkt finnes (geokodet), ellers enhetens
-	// posisjon (fallback Oslo). Reagerer når sted legges til/endres mens arket er åpent.
+	// Vær for dagens sted hvis et «Sted:»-punkt finnes, ellers enhetens posisjon
+	// (fallback Oslo). Bruker pinnet koordinat når det finnes (ingen re-geokoding),
+	// ellers geokoder vi navnet biaset mot posisjonen. Reagerer på endringer.
 	$effect(() => {
-		const place = primaryLocationName; // reaktiv avhengighet
+		const loc = primaryLocation; // reaktiv avhengighet
+		const key = primaryLocationKey; // reaktiv avhengighet
 		if (!dayContextDate && !weekContextKey) return;
-		const key = place ?? '__device__';
-		if (key === weatherCoordsKey) return;
-		weatherCoordsKey = key;
+		const effectiveKey = key ?? '__device__';
+		if (effectiveKey === weatherCoordsKey) return;
+		weatherCoordsKey = effectiveKey;
 		void (async () => {
 			let coords: { lat: number; lon: number } | null = null;
-			if (place) coords = await geocodePlace(place);
+			if (loc?.metadata?.lat != null && loc?.metadata?.lon != null) {
+				coords = { lat: loc.metadata.lat, lon: loc.metadata.lon };
+			} else if (loc) {
+				const near = await getDeviceCoords();
+				coords = await geocodePlace(locationDisplayName(loc), near);
+			}
 			if (!coords) coords = await getDeviceCoords();
 			await loadWeather(coords.lat, coords.lon);
 		})();
@@ -353,23 +372,74 @@
 		onChanged?.();
 	}
 
+	async function createItem(text: string, coords?: { lat: number; lon: number; label?: string }) {
+		const res = await fetch(`/api/checklists/${checklist.id}/items`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ text, sortOrder: items.length, ...(coords && { coords }) })
+		});
+		if (res.ok) {
+			const created = await res.json() as ChecklistItem[];
+			items = [...items, ...created];
+			onChanged?.();
+		}
+	}
+
 	async function addItem() {
 		const text = newItemText.trim();
 		if (!text) return;
+
+		// Sted/reise: geokod stedsnavnet og pinn koordinat. Ved tvetydighet
+		// (flere plausible treff) ber vi brukeren velge før vi oppretter.
+		const loc = parseLocationPrefix(text);
+		const travel = loc ? null : parseTravelPrefix(text);
+		const placeName = loc?.name ?? travel?.destination ?? null;
+
 		newItemText = '';
 		addingItem = true;
-
 		try {
-			const res = await fetch(`/api/checklists/${checklist.id}/items`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ text, sortOrder: items.length })
-			});
-			if (res.ok) {
-				const created = await res.json() as ChecklistItem[];
-				items = [...items, ...created];
-				onChanged?.();
+			if (placeName) {
+				const near = await getDeviceCoords();
+				const resolution = await resolvePlace(placeName, near);
+				if (resolution.status === 'ambiguous') {
+					pendingPlace = { text, placeName, candidates: resolution.candidates };
+					return; // opprettelse skjer når brukeren velger i modalen
+				}
+				const coords =
+					resolution.status === 'confident'
+						? { lat: resolution.candidate.lat, lon: resolution.candidate.lon, label: resolution.candidate.label }
+						: undefined;
+				await createItem(text, coords);
+			} else {
+				await createItem(text);
 			}
+		} finally {
+			addingItem = false;
+		}
+	}
+
+	// Bekreftelse av tvetydig sted
+	let pendingPlace = $state<{ text: string; placeName: string; candidates: GeoCandidate[] } | null>(null);
+
+	async function confirmPlace(candidate: GeoCandidate) {
+		const pending = pendingPlace;
+		pendingPlace = null;
+		if (!pending) return;
+		addingItem = true;
+		try {
+			await createItem(pending.text, { lat: candidate.lat, lon: candidate.lon, label: candidate.label });
+		} finally {
+			addingItem = false;
+		}
+	}
+
+	async function keepPlaceAsTyped() {
+		const pending = pendingPlace;
+		pendingPlace = null;
+		if (!pending) return;
+		addingItem = true;
+		try {
+			await createItem(pending.text);
 		} finally {
 			addingItem = false;
 		}
@@ -599,7 +669,7 @@
 					title="Sted for dagen — langtrykk for valg"
 				>
 					<span class="cs-location-pin">📍</span>
-					<span class="cs-location-name">{locationDisplayName(loc)}</span>
+					<span class="cs-location-name">{loc.metadata?.geoLabel ?? locationDisplayName(loc)}</span>
 				</button>
 			{/each}
 		</div>
@@ -947,6 +1017,17 @@
 		itemTitle={breakdownItem.text}
 		onClose={() => (breakdownItem = null)}
 		onSave={handleBreakdownSave}
+	/>
+{/if}
+
+<!-- Velg sted ved tvetydig geokoding -->
+{#if pendingPlace}
+	<LocationPickerModal
+		placeName={pendingPlace.placeName}
+		candidates={pendingPlace.candidates}
+		onPick={confirmPlace}
+		onKeepAsTyped={keepPlaceAsTyped}
+		onClose={keepPlaceAsTyped}
 	/>
 {/if}
 

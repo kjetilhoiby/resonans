@@ -616,6 +616,16 @@ export const checklistItems = pgTable('checklist_items', {
 		applianceCycleId?: string;
 		appliance?: string;
 		applianceDurationMinutes?: number;
+		// Sted/reise-kontekst («Sted: X» og «kjøre/båt/fly til X»). Sted-punkter er
+		// dag-kontekst (ikke avkryssbart); reise er et segment med transportmodus.
+		kind?: 'location' | 'travel';
+		locationName?: string;
+		travelMode?: 'drive' | 'boat' | 'flight';
+		destination?: string;
+		// Pinnet geokoding (løses én gang ved oppretting, gjenbrukes for vær/opphold/chat).
+		lat?: number;
+		lon?: number;
+		geoLabel?: string; // resolvet, lesbart stedsnavn, f.eks. "Håøya, Frogn, Akershus"
 	}>(),
 	checkedViaShareTokenId: uuid('checked_via_share_token_id'),
 	createdAt: timestamp('created_at').defaultNow().notNull()

@@ -21,7 +21,7 @@ import {
 interface ChecklistItemRow {
 	parentId?: string | null;
 	text: string;
-	metadata?: { kind?: string; locationName?: string } | null;
+	metadata?: { kind?: string; locationName?: string; lat?: number; lon?: number } | null;
 }
 
 /** Alle ISO-datoer i [startIso, endIso] (inklusive). Begrenset til maxDays for sikkerhet. */
@@ -61,7 +61,14 @@ export async function computeStaysFromDayPlans(
 		if (!date) continue;
 		const items = (cl.items ?? []) as ChecklistItemRow[];
 		const locItem = items.find((i) => !i.parentId && isLocationItem(i));
-		if (locItem) entries.push({ date, place: locationDisplayName(locItem) });
+		if (locItem) {
+			entries.push({
+				date,
+				place: locationDisplayName(locItem),
+				lat: locItem.metadata?.lat,
+				lon: locItem.metadata?.lon
+			});
+		}
 	}
 
 	return aggregateStays(entries);
@@ -161,6 +168,7 @@ async function reconcileFerieBlockStays(
 		place: s.place,
 		startDate: s.startDate,
 		endDate: s.endDate,
+		...(s.lat != null && { lat: s.lat, lon: s.lon }),
 		source: DAYPLAN_SOURCE
 	}));
 
