@@ -982,17 +982,6 @@
 							{/if}
 						{/each}
 					</ul>
-				{:else}
-					<p class="mp-week-empty">
-						{#if selectedWeekChecklist}
-							Ingen punkter på ukeslisten ennå.
-						{:else}
-							Ingen ukesliste opprettet ennå.
-						{/if}
-						<a class="mp-week-link" href={`/ukeplan?week=${encodeURIComponent(selectedWeek.dashedKey)}`}>
-							Gå til ukeplan →
-						</a>
-					</p>
 				{/if}
 			</div>
 		{/if}
@@ -1555,16 +1544,6 @@
 	.mp-week-child-row.checked .mp-week-item-text {
 		color: #3c4055;
 		text-decoration: line-through;
-	}
-
-	.mp-week-empty {
-		font-size: 0.82rem;
-		color: #555;
-		margin: 0;
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		flex-wrap: wrap;
 	}
 
 	/* ── Goals ── */
