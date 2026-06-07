@@ -101,20 +101,66 @@
 	const locationItems = $derived(topLevelItems.filter((i) => isLocationItem(i)));
 	const listItems = $derived(topLevelItems.filter((i) => !isLocationItem(i)));
 
-	// Resten delt i tre seksjoner: tidfestede (med tidschip, sortert kronologisk),
-	// øvrige (sortert på status), og strøkne (kollapset under "Hoppet over").
+	// Resten delt i tre seksjoner: tidfestede (kun kronologisk — avkryssede
+	// blir stående der de er, så listen ikke hopper når noe gjøres), øvrige
+	// (sortert på status, med debounce på omsorteringen), og strøkne.
 	const timedGroups = $derived(
 		groupChecklistItems(
-			sortByStatus(
-				sortByTime(listItems.filter((i) => !i.skippedAt && i.metadata?.timeHour !== undefined))
-			)
+			sortByTime(listItems.filter((i) => !i.skippedAt && i.metadata?.timeHour !== undefined))
 		)
 	);
-	const untimedGroups = $derived(
-		groupChecklistItems(
-			sortByStatus(listItems.filter((i) => !i.skippedAt && i.metadata?.timeHour === undefined))
-		)
+
+	// Utidfestede punkter sorteres på status (åpne → avkryssede), men selve
+	// omsorteringen debounces ~1s: når man krysser av flere på rad skal ikke
+	// radene hoppe nedover umiddelbart. Vi debouncer *rekkefølgen* (en liste av
+	// ids), ikke punktene — så avkryssingen vises live, men posisjonen følger
+	// den utsatte rekkefølgen.
+	const untimedItems = $derived(
+		listItems.filter((i) => !i.skippedAt && i.metadata?.timeHour === undefined)
 	);
+	let untimedOrderIds = $state<string[]>([]);
+	let untimedOrderTimer: ReturnType<typeof setTimeout> | null = null;
+
+	$effect(() => {
+		const currentIds = untimedItems.map((i) => i.id);
+		const knownSet = new Set(untimedOrderIds);
+		const sameSet =
+			currentIds.length === untimedOrderIds.length && currentIds.every((id) => knownSet.has(id));
+		// Endret sett (lagt til / fjernet punkt) → oppdater rekkefølgen med en gang.
+		if (!sameSet) {
+			if (untimedOrderTimer) {
+				clearTimeout(untimedOrderTimer);
+				untimedOrderTimer = null;
+			}
+			untimedOrderIds = sortByStatus(untimedItems).map((i) => i.id);
+			return;
+		}
+		// Samme sett, men status kan ha endret rekkefølgen → debounce omsorteringen.
+		const desired = sortByStatus(untimedItems).map((i) => i.id);
+		if (desired.join(',') === untimedOrderIds.join(',')) return; // allerede riktig
+		if (untimedOrderTimer) clearTimeout(untimedOrderTimer);
+		untimedOrderTimer = setTimeout(() => {
+			untimedOrderIds = sortByStatus(untimedItems).map((i) => i.id);
+			untimedOrderTimer = null;
+		}, 1000);
+	});
+
+	$effect(() => () => {
+		if (untimedOrderTimer) clearTimeout(untimedOrderTimer);
+	});
+
+	const untimedGroups = $derived.by(() => {
+		const byId = new Map(untimedItems.map((i) => [i.id, i]));
+		const ordered: ChecklistItem[] = [];
+		for (const id of untimedOrderIds) {
+			const item = byId.get(id);
+			if (item) ordered.push(item);
+		}
+		// Sikkerhetsnett: punkter som ikke er i rekkefølgen ennå legges bakerst.
+		const known = new Set(untimedOrderIds);
+		for (const item of untimedItems) if (!known.has(item.id)) ordered.push(item);
+		return groupChecklistItems(ordered);
+	});
 	const skippedItems = $derived(listItems.filter((i) => !!i.skippedAt));
 	const skippedGroups = $derived(groupChecklistItems(skippedItems));
 
