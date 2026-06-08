@@ -2,6 +2,9 @@
 	import { untrack } from 'svelte';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/stores';
+	import { ChecklistCheckbox, ChecklistItemRow } from '$lib/components/ui';
+	import TaskTitle from '$lib/components/ui/TaskTitle.svelte';
+	import type { ChecklistItemLike } from '$lib/types/checklist';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -62,6 +65,40 @@
 
 	let suggesting = $state(false);
 	let suggestError = $state<string | null>(null);
+	let editingTaskId = $state<string | null>(null);
+	let editingText = $state('');
+
+	function taskToChecklistItem(task: ServerTask): ChecklistItemLike {
+		return { id: task.id, text: task.text, checked: task.checked };
+	}
+
+	function handleTaskTextClick(task: ServerTask) {
+		return (_item: ChecklistItemLike) => {
+			editingTaskId = task.id;
+			editingText = states[task.id]?.text ?? task.text;
+		};
+	}
+
+	function handleTaskToggle(task: ServerTask) {
+		return (_item: ChecklistItemLike) => {
+			toggleChecked(task.id, task.checked);
+		};
+	}
+
+	function handleTaskLongpress(task: ServerTask) {
+		return (_rect: DOMRect, _item: ChecklistItemLike) => {
+			patchState(task.id, { showEditor: true });
+		};
+	}
+
+	async function commitTaskEdit(task: ServerTask) {
+		const text = editingText.trim();
+		editingTaskId = null;
+		editingText = '';
+		if (!text || text === task.text) return;
+		markDirty(task.id, { text });
+		void saveCard(task.id);
+	}
 
 	const ESTIMATE_PRESETS = [
 		{ value: 15, label: '15 m' },
@@ -337,186 +374,169 @@
 			{#each data.tasks as task (task.id)}
 				{@const state = states[task.id]}
 				{#if state}
+					{#snippet taskBadges(_item: ChecklistItemLike)}
+						{#if task.estimateMinutes !== null}
+							<span class="badge est">⏱ {formatEstimate(task.estimateMinutes)}</span>
+						{/if}
+						{#if task.dueDate}
+							<span class="badge due {dueClass(task.dueDate)}">📅 {formatDate(task.dueDate)}</span>
+						{/if}
+						{#if task.themeId && task.themeName}
+							<span class="badge theme">{task.themeEmoji ?? '·'} {task.themeName}</span>
+						{:else if !task.themeId}
+							<span class="badge missing">🏷</span>
+						{/if}
+						{#if task.checklistContext === 'inbox'}
+							<span class="badge loc inbox">📥</span>
+						{/if}
+					{/snippet}
+
 					<li class="card" class:dirty={state.dirty} class:done={task.checked} class:unsorted={task.isUnsorted}>
-						<div class="row">
-							<button
-								type="button"
-								class="check"
-								class:checked={task.checked}
-								onclick={() => toggleChecked(task.id, task.checked)}
-								aria-label={task.checked ? 'Marker som ikke ferdig' : 'Marker ferdig'}
-							>{task.checked ? '✓' : ''}</button>
+						<ChecklistItemRow
+							item={taskToChecklistItem(task)}
+							editing={editingTaskId === task.id}
+							bind:editText={editingText}
+							animated={false}
+							showTime={false}
+							showTravel={false}
+							ontoggle={handleTaskToggle(task)}
+							ontextclick={handleTaskTextClick(task)}
+							onlongpress={handleTaskLongpress(task)}
+							oneditcommit={() => commitTaskEdit(task)}
+							oneditcancel={() => { editingTaskId = null; editingText = ''; }}
+							trailingBadge={taskBadges}
+						/>
 
-							<div class="body">
-								{#if state.showEditor}
-									<textarea
-										class="text-edit"
-										value={state.text}
-										rows="2"
-										oninput={(e) => markDirty(task.id, { text: e.currentTarget.value })}
-									></textarea>
-								{:else}
-									<div class="text-row" onclick={() => patchState(task.id, { showEditor: true })} role="button" tabindex="0" onkeydown={(e) => e.key === 'Enter' && patchState(task.id, { showEditor: true })}>
-										{state.text}
-									</div>
-								{/if}
-
-								<div class="badges">
-									{#if task.estimateMinutes !== null}
-										<span class="badge est">⏱ {formatEstimate(task.estimateMinutes)}</span>
-									{:else}
-										<span class="badge missing">⏱ Mangler estimat</span>
+						{#if state.suggestionPreview}
+							<div class="suggestion">
+								<div class="suggestion-head">✨ AI foreslår:</div>
+								<ul class="suggestion-list">
+									{#if state.suggestionPreview.estimateMinutes !== undefined}
+										<li>Estimat: <strong>{formatEstimate(state.suggestionPreview.estimateMinutes)}</strong></li>
 									{/if}
-									{#if task.dueDate}
-										<span class="badge due {dueClass(task.dueDate)}">📅 {formatDate(task.dueDate)}</span>
+									{#if state.suggestionPreview.themeId}
+										<li>Tema: <strong>{themeMap.get(state.suggestionPreview.themeId)?.name ?? 'Ukjent'}</strong></li>
+									{:else if state.suggestionPreview.themeId === null}
+										<li>Tema: <em>ingen passer</em></li>
 									{/if}
-									{#if task.themeId && task.themeName}
-										<span class="badge theme">{task.themeEmoji ?? '·'} {task.themeName}</span>
-									{:else}
-										<span class="badge missing">🏷 Uten tema</span>
+									{#if state.suggestionPreview.breakdown && state.suggestionPreview.breakdown.length > 0}
+										<li>Delsteg:
+											<ul class="sub-bullets">
+												{#each state.suggestionPreview.breakdown as step}
+													<li>{step}</li>
+												{/each}
+											</ul>
+										</li>
 									{/if}
-									{#if task.checklistContext && task.checklistContext !== 'inbox'}
-										<span class="badge loc">{task.checklistTitle}</span>
-									{:else if task.checklistContext === 'inbox'}
-										<span class="badge loc inbox">📥 Innboks</span>
-									{/if}
-									{#if task.subItems.length > 0}
-										<span class="badge sub">↳ {task.subItems.length} delsteg</span>
-									{/if}
+								</ul>
+								<div class="suggestion-actions">
+									<button type="button" class="primary" onclick={() => acceptSuggestion(task.id)}>Bruk forslaget</button>
+									<button type="button" class="ghost" onclick={() => dismissSuggestion(task.id)}>Avvis</button>
 								</div>
+							</div>
+						{/if}
 
-								{#if state.suggestionPreview}
-									<div class="suggestion">
-										<div class="suggestion-head">✨ AI foreslår:</div>
-										<ul class="suggestion-list">
-											{#if state.suggestionPreview.estimateMinutes !== undefined}
-												<li>Estimat: <strong>{formatEstimate(state.suggestionPreview.estimateMinutes)}</strong></li>
-											{/if}
-											{#if state.suggestionPreview.themeId}
-												<li>Tema: <strong>{themeMap.get(state.suggestionPreview.themeId)?.name ?? 'Ukjent'}</strong></li>
-											{:else if state.suggestionPreview.themeId === null}
-												<li>Tema: <em>ingen passer</em></li>
-											{/if}
-											{#if state.suggestionPreview.breakdown && state.suggestionPreview.breakdown.length > 0}
-												<li>Delsteg:
-													<ul class="sub-bullets">
-														{#each state.suggestionPreview.breakdown as step}
-															<li>{step}</li>
-														{/each}
-													</ul>
-												</li>
-											{/if}
-										</ul>
-										<div class="suggestion-actions">
-											<button type="button" class="primary" onclick={() => acceptSuggestion(task.id)}>Bruk forslaget</button>
-											<button type="button" class="ghost" onclick={() => dismissSuggestion(task.id)}>Avvis</button>
-										</div>
-									</div>
-								{/if}
-
-								{#if state.showEditor}
-									<div class="editor">
-										<div class="chip-group">
-											<span class="chip-label">⏱ Estimat</span>
-											<div class="chip-options">
-												{#each ESTIMATE_PRESETS as preset}
-													<button
-														type="button"
-														class="chip"
-														class:active={state.estimateMinutes === preset.value}
-														onclick={() => markDirty(task.id, { estimateMinutes: preset.value })}
-													>{preset.label}</button>
-												{/each}
-												{#if state.estimateMinutes !== null}
-													<button type="button" class="chip clear" onclick={() => markDirty(task.id, { estimateMinutes: null })}>×</button>
-												{/if}
-											</div>
-										</div>
-
-										<div class="chip-group">
-											<span class="chip-label">📅 Frist</span>
-											<div class="chip-options">
-												{#each DUE_PRESETS as preset}
-													<button
-														type="button"
-														class="chip"
-														class:active={state.dueDate === preset.iso}
-														onclick={() => markDirty(task.id, { dueDate: preset.iso })}
-													>{preset.label}</button>
-												{/each}
-												<input
-													type="date"
-													class="chip date-input"
-													value={state.dueDate ?? ''}
-													onchange={(e) => markDirty(task.id, { dueDate: e.currentTarget.value || null })}
-												/>
-												{#if state.dueDate !== null}
-													<button type="button" class="chip clear" onclick={() => markDirty(task.id, { dueDate: null })}>×</button>
-												{/if}
-											</div>
-										</div>
-
-										<div class="chip-group">
-											<span class="chip-label">🏷 Tema</span>
-											<div class="chip-options">
-												{#each data.themes as theme (theme.id)}
-													<button
-														type="button"
-														class="chip"
-														class:active={state.themeId === theme.id}
-														onclick={() => markDirty(task.id, { themeId: theme.id })}
-													>{theme.emoji ?? '·'} {theme.name}</button>
-												{/each}
-												{#if state.themeId !== null}
-													<button type="button" class="chip clear" onclick={() => markDirty(task.id, { themeId: null })}>×</button>
-												{/if}
-											</div>
-										</div>
-
-										<button
-											type="button"
-											class="breakdown-toggle"
-											onclick={() => patchState(task.id, { showBreakdown: !state.showBreakdown })}
-										>
-											↳ Bryt opp {state.breakdown.length > 0 ? `(${state.breakdown.length})` : ''}
-										</button>
-
-										{#if state.showBreakdown}
-											<div class="breakdown">
-												{#each state.breakdown as line, idx (idx)}
-													<div class="breakdown-row">
-														<input
-															type="text"
-															value={line}
-															placeholder="Delsteg"
-															oninput={(e) => updateBreakdownLine(task.id, idx, e.currentTarget.value)}
-														/>
-														<button type="button" class="ghost-icon" onclick={() => removeBreakdownLine(task.id, idx)} aria-label="Fjern">×</button>
-													</div>
-												{/each}
-												<button type="button" class="add-line" onclick={() => addBreakdownLine(task.id)}>+ Legg til delsteg</button>
-											</div>
-										{/if}
-
-										<div class="actions">
+						{#if state.showEditor}
+							<div class="editor">
+								<div class="chip-group">
+									<span class="chip-label">⏱ Estimat</span>
+									<div class="chip-options">
+										{#each ESTIMATE_PRESETS as preset}
 											<button
 												type="button"
-												class="save"
-												disabled={!state.dirty || state.saving}
-												onclick={() => saveCard(task.id)}
-											>
-												{state.saving ? 'Lagrer…' : state.dirty ? 'Lagre endringer' : 'Lagret'}
-											</button>
-											<button type="button" class="close" onclick={() => patchState(task.id, { showEditor: false })}>Lukk</button>
-											<button type="button" class="delete" onclick={() => deleteCard(task.id)}>Slett</button>
-											{#if state.message}
-												<span class="msg">{state.message}</span>
-											{/if}
-										</div>
+												class="chip"
+												class:active={state.estimateMinutes === preset.value}
+												onclick={() => markDirty(task.id, { estimateMinutes: preset.value })}
+											>{preset.label}</button>
+										{/each}
+										{#if state.estimateMinutes !== null}
+											<button type="button" class="chip clear" onclick={() => markDirty(task.id, { estimateMinutes: null })}>×</button>
+										{/if}
+									</div>
+								</div>
+
+								<div class="chip-group">
+									<span class="chip-label">📅 Frist</span>
+									<div class="chip-options">
+										{#each DUE_PRESETS as preset}
+											<button
+												type="button"
+												class="chip"
+												class:active={state.dueDate === preset.iso}
+												onclick={() => markDirty(task.id, { dueDate: preset.iso })}
+											>{preset.label}</button>
+										{/each}
+										<input
+											type="date"
+											class="chip date-input"
+											value={state.dueDate ?? ''}
+											onchange={(e) => markDirty(task.id, { dueDate: e.currentTarget.value || null })}
+										/>
+										{#if state.dueDate !== null}
+											<button type="button" class="chip clear" onclick={() => markDirty(task.id, { dueDate: null })}>×</button>
+										{/if}
+									</div>
+								</div>
+
+								<div class="chip-group">
+									<span class="chip-label">🏷 Tema</span>
+									<div class="chip-options">
+										{#each data.themes as theme (theme.id)}
+											<button
+												type="button"
+												class="chip"
+												class:active={state.themeId === theme.id}
+												onclick={() => markDirty(task.id, { themeId: theme.id })}
+											>{theme.emoji ?? '·'} {theme.name}</button>
+										{/each}
+										{#if state.themeId !== null}
+											<button type="button" class="chip clear" onclick={() => markDirty(task.id, { themeId: null })}>×</button>
+										{/if}
+									</div>
+								</div>
+
+								<button
+									type="button"
+									class="breakdown-toggle"
+									onclick={() => patchState(task.id, { showBreakdown: !state.showBreakdown })}
+								>
+									↳ Bryt opp {state.breakdown.length > 0 ? `(${state.breakdown.length})` : ''}
+								</button>
+
+								{#if state.showBreakdown}
+									<div class="breakdown">
+										{#each state.breakdown as line, idx (idx)}
+											<div class="breakdown-row">
+												<input
+													type="text"
+													value={line}
+													placeholder="Delsteg"
+													oninput={(e) => updateBreakdownLine(task.id, idx, e.currentTarget.value)}
+												/>
+												<button type="button" class="ghost-icon" onclick={() => removeBreakdownLine(task.id, idx)} aria-label="Fjern">×</button>
+											</div>
+										{/each}
+										<button type="button" class="add-line" onclick={() => addBreakdownLine(task.id)}>+ Legg til delsteg</button>
 									</div>
 								{/if}
+
+								<div class="actions">
+									<button
+										type="button"
+										class="save"
+										disabled={!state.dirty || state.saving}
+										onclick={() => saveCard(task.id)}
+									>
+										{state.saving ? 'Lagrer…' : state.dirty ? 'Lagre endringer' : 'Lagret'}
+									</button>
+									<button type="button" class="close" onclick={() => patchState(task.id, { showEditor: false })}>Lukk</button>
+									<button type="button" class="delete" onclick={() => deleteCard(task.id)}>Slett</button>
+									{#if state.message}
+										<span class="msg">{state.message}</span>
+									{/if}
+								</div>
 							</div>
-						</div>
+						{/if}
 					</li>
 				{/if}
 			{/each}
@@ -619,86 +639,33 @@
 		margin: 0;
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
 	}
 	.card {
-		background: var(--bg-card);
-		border: 1px solid var(--border-color);
-		border-radius: 12px;
-		padding: 0.7rem 0.85rem;
-		transition: border-color 0.12s, opacity 0.12s;
-	}
-	.card.dirty { border-color: var(--accent-primary); }
-	.card.done { opacity: 0.55; }
-	.card.unsorted { border-left: 3px solid hsl(40 90% 60%); padding-left: 0.75rem; }
-	.row {
-		display: flex;
-		gap: 0.65rem;
-		align-items: flex-start;
-	}
-	.check {
-		width: 22px;
-		height: 22px;
-		flex-shrink: 0;
-		border-radius: 50%;
-		border: 1.5px solid var(--border-color);
 		background: transparent;
-		color: white;
-		cursor: pointer;
-		font-size: 0.85rem;
-		font-weight: 700;
-		margin-top: 1px;
-	}
-	.check.checked {
-		background: var(--success-text);
-		border-color: var(--success-text);
-	}
-	.body {
-		flex: 1;
-		min-width: 0;
-	}
-	.text-row {
-		font-size: 0.96rem;
-		font-weight: 500;
-		cursor: text;
-		padding: 0.15rem 0;
-		line-height: 1.35;
-	}
-	.text-edit {
-		width: 100%;
-		background: transparent;
-		border: 0;
-		resize: vertical;
-		color: var(--text-primary);
-		font: inherit;
-		font-size: 0.96rem;
-		font-weight: 500;
 		padding: 0;
-		outline: none;
+		transition: opacity 0.12s;
 	}
-	.card.done .text-row {
-		text-decoration: line-through;
-	}
+	.card.done { opacity: 0.55; }
 	.badges {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.3rem;
-		margin-top: 0.4rem;
+		gap: 4px;
+		margin-top: 2px;
 	}
 	.badge {
 		display: inline-flex;
 		align-items: center;
-		gap: 4px;
-		padding: 2px 8px;
+		gap: 3px;
+		padding: 1px 6px;
 		border-radius: 999px;
-		background: var(--bg-hover);
-		color: var(--text-secondary);
-		font-size: 0.72rem;
+		background: rgba(255, 255, 255, 0.04);
+		color: #777;
+		font-size: 0.65rem;
 	}
 	.badge.missing {
 		background: transparent;
-		border: 1px dashed var(--border-color);
-		color: var(--text-tertiary);
+		border: 1px dashed #2a2a2a;
+		color: #444;
 	}
 	.badge.due.overdue {
 		background: var(--error-bg);
@@ -717,7 +684,7 @@
 		border: 1px solid var(--info-border);
 		border-radius: 10px;
 		padding: 0.6rem 0.75rem;
-		margin: 0.6rem 0;
+		margin: 4px 12px 8px;
 	}
 	.suggestion-head {
 		font-size: 0.74rem;
@@ -762,12 +729,12 @@
 		border: 1px solid var(--border-color);
 	}
 	.editor {
-		margin-top: 0.7rem;
+		margin: 4px 12px 8px;
 		display: flex;
 		flex-direction: column;
 		gap: 0.55rem;
 		padding-top: 0.65rem;
-		border-top: 1px dashed var(--border-color);
+		border-top: 1px dashed #1e1e1e;
 	}
 	.chip-group {
 		display: flex;

@@ -1,244 +1,234 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Instruksjoner for agenter som jobber med dette repoet. Primærspråk i UI, kommentarer og prompts er **norsk**.
 
-## Project Overview
+## Prosjekt
 
-Resonans is a Norwegian personal AI coach app (SvelteKit 2 + TypeScript) that connects to external data sensors (health, banking, fitness), surfaces those signals through an AI chat interface (OpenAI GPT-4o), and sends proactive push/Google Chat nudges. The primary language in UI, comments, and prompts is **Norwegian**.
+Resonans er en personlig AI-coach (SvelteKit 2 + TypeScript) som kobler helsedata, økonomi, familieplanlegging og trening gjennom en norskspråklig chat med GPT-4o. Data hentes fra Withings, SpareBank1, Spond, Dropbox og Strava, aggregeres i sensor_events → sensor_aggregates → domain_signals, og presenteres via tema-dashboards og proaktive Google Chat-nudges.
 
-## Commands
+## Kommandoer
 
 ```bash
-npm install --force     # --force required due to Node v23 compatibility issues
-npm run dev             # Dev server at http://localhost:5174 (port is strict)
-npm run build           # Production build
-npm run preview         # Preview production build locally
-npm run check           # TypeScript + Svelte type checking
-npm run check:watch     # Type checking in watch mode
+npm install --force     # --force pga. Node v23
+npm run dev             # Dev-server på http://localhost:5174 (strikt port)
+npm run build           # Produksjons-build
+npm run check           # TypeScript + Svelte typesjekk
 
 # Database (Drizzle ORM → Neon PostgreSQL)
-npm run db:generate     # Generate migration files from schema changes
-npm run db:push         # Push schema directly to DB (preferred for local dev)
-npm run db:migrate      # Run migration files
-npm run db:studio       # Open Drizzle Studio at https://local.drizzle.studio
+npm run db:push         # Push schema til DB (lokal utvikling)
+npm run db:sql-migrate  # Kjør SQL-migrasjoner fra scripts/db-migrations/
+npm run db:sync         # Full deploy-pipeline (SQL + drizzle push)
+npm run db:studio       # Drizzle Studio
 
 # Testing
-npm test                      # Enhetstester (Vitest, ~225 tester, <1s)
+npm test                      # Enhetstester (Vitest, ~320 tester, <1s)
 npm run test:watch            # Enhetstester i watch-modus
 npm run test:visual           # Piksel-diff visuell regresjon (Playwright, ~14s)
 npm run test:visual:update    # Oppdater baselines for piksel-diff
 npm run test:visual:review    # LLM-drevet visuell review (Playwright + GPT-4o, ~30s)
 ```
 
-## Testing
+---
 
-### Enhetstester (Vitest)
+## Fem prinsipper
 
-225 tester for ren forretningslogikk. Kjøres med `npm test`. Testfiler er co-located (`foo.test.ts` ved siden av `foo.ts`). Vitest-config i `vitest.config.ts` har `$lib`-alias og dummy env-variabler for å unngå DB-tilkobling.
+Alle endringer i dette repoet skal følge disse prinsippene. En agent som gjør en endring skal bruke og vedlikeholde hvert relevante system.
 
-### Visuell regresjon (Playwright)
+### 1. Bruk og vedlikehold designsystemet
 
-To moduser — begge krever at dev-serveren kjører (`npm run dev`):
+Appen har et designsystem med levende komponentsamling på `/design`. Alle UI-endringer skal bruke eksisterende komponenter og CSS-variabler.
 
-**Piksel-diff** (`npm run test:visual`): Sammenligner screenshots av 5 sider mot baselines i `tests/visual/__screenshots__/`. Feiler ved >0.2% piksel-differanse. Oppdater baselines med `npm run test:visual:update`.
+**Regler:**
+- Appen er **alltid mørk**. `AppPage` (default `theme="dark"`) er autoritativ kilde for CSS-variabler (`--bg-primary`, `--text-primary`, `--accent-primary` osv.). Bruk disse — aldri hardkodede farger.
+- Hver side: `<AppPage>` → `<PageHeader title="..." titleHref="/" />` → innhold.
+- Ingen lokal `:global()`-override for layout — fiks felleskomponenten i stedet.
+- Ingen lokal bottom-nav/tab-bar. Navigasjon via `PageHeader`-actions og `titleHref="/"`.
+- Layouts med faner: shell i `+layout.svelte`, innhold per `+page.svelte`.
+- Sjekk `/design`-siden i nettleseren for å se eksisterende komponenter før du lager nye.
 
-**LLM-drevet review** (`npm run test:visual:review`): Smartere pipeline for å vurdere om visuelle endringer er vellykkede:
-1. Tar screenshot av hjem, ukeplan, tema/helse, tema/økonomi, design
-2. Genererer diff-bilde (røde piksler = endring) med pixelmatch
-3. Sender baseline + nåværende + diff + endringsbeskrivelse til GPT-4o vision
-4. GPT-4o vurderer: `oppdater` (baseline oppdateres automatisk) eller `regresjon` (testen feiler med forklaring)
+**Komponentlag:**
+- `src/lib/components/ui/` — Primitiver (Button, Input, PageHeader, ChatBubble, etc.). Gjenbruk disse.
+- `src/lib/components/composed/` — Sammensatte (DynamicWidget, GoalCard, ReadinessStrip)
+- `src/lib/components/domain/` — Sidekomponenter (HomeScreen, HealthDashboard, ThemePage)
+- `src/lib/components/charts/` — D3/LayerCake-visualiseringer
+- `src/lib/components/visualizations/` — Fremgangs-/trajektorie-primitiver
 
-**Endringsbeskrivelse** sendes via `VISUAL_REVIEW_CONTEXT`:
-```bash
-VISUAL_REVIEW_CONTEXT="Byttet PageHeader til kompakt variant" npm run test:visual:review
+### 2. Bruk og vedlikehold delte komponenter
+
+Nye UI-elementer skal legges i riktig komponentlag og gjenbrukes — ikke dupliseres per side.
+
+**Regler:**
+- Sjekk `src/lib/components/ui/` før du lager en ny komponent. Finnes det allerede?
+- Generelle UI-elementer hører i `ui/`, domene-spesifikke i `domain/`, sammensatte i `composed/`.
+- Eksporter nye ui-komponenter fra `src/lib/components/ui/index.ts`.
+- Svelte 5 runes: bruk `$state()`, `$derived()`, `$effect()`. Bruk `untrack()` i effects som leser og skriver samme state.
+
+### 3. Bruk og vedlikehold enhetstester
+
+~320 enhetstester (Vitest) dekker forretningslogikk. Kjøres med `npm test`.
+
+**Regler:**
+- Etter endring i en modul med eksisterende tester: kjør `npm test` og fiks eventuelle brudd.
+- Etter ny ren forretningslogikk (parsere, beregninger, routing): skriv tester.
+- Testfiler co-located: `foo.test.ts` ved siden av `foo.ts`.
+- Bruk `describe`/`it`/`expect` fra vitest. Norske test-navn.
+- Unngå DB-mocking — test rene funksjoner, ekstraher logikk fra DB-koblede filer ved behov.
+- `toMatchInlineSnapshot()` for komplekse returverdier.
+- Vitest-config: `vitest.config.ts` med `$lib`-alias, `TZ=UTC`, dummy env-variabler.
+
+### 4. Bruk og vedlikehold visuelle tester
+
+Playwright-basert visuell regresjon fanger UI-endringer på 5 sider (hjem, ukeplan, tema/helse, tema/økonomi, design).
+
+**To moduser:**
+
+**Piksel-diff** (`npm run test:visual`): Sammenligner mot baselines. Feiler ved >0.2% diff. Oppdater med `npm run test:visual:update`.
+
+**LLM-drevet review** (`npm run test:visual:review`): Tar screenshot → genererer diff-bilde → sender baseline + nåværende + diff + endringsbeskrivelse til GPT-4o → godkjenner eller avviser. Auto-oppdaterer baseline ved godkjenning.
+
+**Regler:**
+- Etter visuelle endringer: kjør `npm run test:visual:review` med kontekst:
+  ```bash
+  VISUAL_REVIEW_CONTEXT="Byttet PageHeader til kompakt variant" npm run test:visual:review
+  ```
+- Eller programmatisk:
+  ```typescript
+  import { visualReview } from './tests/visual/visual-review';
+  const result = await visualReview(page, 'hjem', baselineDir, {
+    changeDescription: 'Refaktorert HomeScreen: splittet widgets i egne komponenter'
+  });
+  ```
+- Auth bypass: Playwright bruker `x-resonans-user-id`-header (konfigurert i `playwright.config.ts`).
+- Diff-bilder i `tests/visual/review-diffs/` for manuell inspeksjon.
+
+### 5. Bruk og vedlikehold monitorering
+
+Integrasjoner og bakgrunnsoppgaver overvåkes automatisk. Alle cron-endepunkter er instrumentert med `withCronTracking`.
+
+**Systemet:**
+- `cron_executions`-tabellen logger hver cron-kjøring (path, status, varighet, feil)
+- `monitoring_alerts`-tabellen deduper varsler
+- `/api/cron/monitoring` kjører daglig kl 19:30 Oslo-tid, sjekker:
+  1. Sensor-ferskhet (Withings <6t, SB1 <18t, Spond <48t)
+  2. Bakgrunnsjobb-helse (failure rate, stuck jobs)
+  3. Cron-eksekvering (manglende kjøringer)
+- Google Chat-varsel med kopierbar feilbeskrivelse for Claude-debugging
+- `/api/health?debug=true` gir full systemstatus
+
+**Regler:**
+- Nye cron-endepunkter: wrap med `withCronTracking` fra `$lib/server/monitoring/cron-wrapper`.
+- Nye integrasjoner: legg til provider i `FRESHNESS_THRESHOLDS` i `monitoring-service.ts`.
+- `MONITORING_WEBHOOK_URL` i `.env` for Google Chat-varsler.
+
+---
+
+## Arkitektur
+
+### Dataflyt
+
 ```
-
-Eller programmatisk fra en agent:
-```typescript
-import { visualReview } from './tests/visual/visual-review';
-const result = await visualReview(page, 'hjem', baselineDir, {
-  changeDescription: 'Refaktorert HomeScreen: splittet widgets i egne komponenter'
-});
-// result.verdict: 'oppdater' | 'regresjon' | 'identisk' | 'ny-baseline'
-```
-
-Etter visuelle endringer bør agenter alltid kjøre visuell review med en beskrivelse av hva som ble endret og hvorfor — dette gir GPT-4o kontekst til å vurdere om endringen lyktes. Git-diff brukes som fallback når ingen beskrivelse gis.
-
-Diff-bilder lagres i `tests/visual/review-diffs/` for manuell inspeksjon.
-
-Auth bypass: Playwright bruker `x-resonans-user-id`-header konfigurert i `playwright.config.ts`.
-
-## Architecture
-
-### Data Flow (sensor → AI → user)
-
-```
-External sensors (Withings, SpareBank1, Dropbox, Email)
-  → Sync jobs (/api/cron/* or /api/sensors/*/sync)
-  → sensor_events table (unified event stream)
-  → categorized_events (bank transactions with category)
-  → sensor_aggregates (weekly/monthly rollups)
-  → domain_signals (cross-domain computed signals)
-  → AI context (buildModularSystemPrompt)
+Sensorer (Withings, SpareBank1, Spond, Dropbox, Strava)
+  → Sync-jobber (/api/cron/* eller /api/sensors/*/sync)
+  → sensor_events (unified event stream)
+  → categorized_events (bank-transaksjoner med kategori)
+  → sensor_aggregates (uke/måned/år-aggregater)
+  → domain_signals (kryss-domene beregnede signaler)
+  → AI-kontekst (buildModularSystemPrompt)
   → GPT-4o streaming SSE → /api/chat-stream
 ```
 
-### Key Layers
+### Nøkkelmoduler
 
-**`src/lib/db/`** — Database client and schema. `index.ts` exports two clients:
-- `db` — Drizzle over Neon HTTP driver (used everywhere in server routes)
-- `pgClient` / `migrationClient` — raw `postgres` client for migrations and raw SQL
+| Mappe | Innhold |
+|-------|---------|
+| `src/lib/db/schema.ts` | Eneste kilde for alle tabeller |
+| `src/lib/server/chat-router.ts` | Regex + AI-routing av chat-meldinger |
+| `src/lib/server/prompts/` | System-prompt-builder |
+| `src/lib/server/services/` | Forretningslogikk (SensorEvent, Nudge, Signal, Monitoring) |
+| `src/lib/server/integrations/` | Ekstern API-sync (Withings, SB1, Spond, etc.) |
+| `src/lib/server/monitoring/` | Cron-tracking og overvåking |
+| `src/lib/domains/` | Domene-metadata og regex-triggers |
+| `src/lib/ai/tools/` | AI-verktøy kalt av GPT-4o |
+| `src/lib/flows/` | Strukturerte flerstegs-flyter |
 
-**`src/lib/db/schema.ts`** — Single source of truth for all tables. Key tables: `users`, `themes`, `sensor_events`, `sensor_aggregates`, `categorized_events`, `merchant_mappings`, `domain_signals`, `memories`, `tracking_series`, `goals`, `tasks`, `conversations`, `messages`, `user_widgets`, `checklists`.
+### Autentisering
 
-**`src/lib/server/`** — All server-only logic. Notable modules:
-- `chat-router.ts` — Two-phase routing: fast regex (`routeChatRequest`) then optional GPT-4o-mini AI routing (`aiRouteChatRequest`). Produces `ChatRoutingDecision` with domains, skills, mode, and hints.
-- `prompts/` — System prompt builder. `buildModularSystemPrompt(routing)` assembles base prompt + domain blocks + skill hints. Base prompt is in `prompts/base.ts`.
-- `openai.ts` — OpenAI client singleton + legacy `SYSTEM_PROMPT` constant (the main prompt is now in `prompts/base.ts`).
-- `services/` — Core business services: `SensorEventService` (write with dedup/upsert), `NudgeOrchestrationService` (scheduled daily check-ins, day planning), `SignalService` (domain signal producers), `PushDeliveryService`, `TaskExecutionService`.
-- `integrations/` — External API sync: `withings.ts`, `sparebank1.ts`, `dropbox.ts`, `spond.ts`, `google-sheets.ts`, `transaction-categories.ts` (rule-based + LLM categorization of bank transactions).
-- `scheduler.ts` — In-app `node-cron` scheduler, enabled via `ENABLE_IN_APP_SCHEDULER=true`. Runs daily check-in (09:00 Oslo), hourly local nudges, and signal producers.
+Google OAuth via `@auth/sveltekit`. Allowlist-gated (`allowed_emails`). API-ruter aksepterer også `x-resonans-user-id`-header og API-hemmeligheter (`user_api_secrets`).
 
-**`src/lib/domains/`** — Domain metadata, metric definitions, and regex trigger maps for `health`, `economics`, `food`. The `DOMAIN_METADATA` record in `index.ts` is the canonical domain registry.
+Public paths: `/auth/*`, `/api/cron/*`, `/api/health`, `/design`.
 
-**`src/lib/flows/`** — Structured multi-step onboarding and action flows (chat + form steps). `registry.ts` contains all `Flow` definitions keyed by `FlowId`. `FlowSheet.svelte` renders them.
+### Transaksjons-kategorisering
 
-**`src/lib/ai/tools/`** — AI tool definitions called by GPT-4o during chat (e.g. `query-sensor-data.ts`, `query-economics.ts`, `propose-widget.ts`, `create_widget`, `manage-meal-plan.ts`).
+Tre prioritetsnivåer: manuelle overrides → LLM-merchant-mappings → regelbasert keyword-matching. SB1 typeText-fallback for ukategoriserte.
 
-**`src/lib/components/`** — Svelte component library organized into:
-- `ui/` — Primitive UI components (Button, Input, Select, ChatBubble, etc.)
-- `domain/` — Domain-specific dashboards (HealthDashboard, EconomicsDashboard, FoodDashboard, TripDashboard)
-- `composed/` — Complex composed components (DynamicWidget, GoalCard, WorkoutStreakCard)
-- `charts/` — D3/LayerCake data visualizations
-- `visualizations/` — Progress/trajectory visualization primitives
+---
 
-**`src/routes/`** — SvelteKit file-based routing. Notable:
-- `/` — Home screen with widgets
-- `/samtaler` — Conversation list / AI chat
-- `/tema/[id]` — Theme detail (goals, lists, files, signals)
-- `/economics/[accountId]/[tab]` — Per-account transaction views
-- `/settings/` — Sources, tracking series, notification channels, classification rules
-- `/api/chat-stream` — Main streaming chat endpoint (SSE)
-- `/api/cron/` — Cron job endpoints (protected, callable by Vercel Cron or internal scheduler)
-- `/api/sensors/*/` — OAuth connect/disconnect/sync per integration
+## Database-konvensjoner
 
-### Authentication
-
-`src/auth.ts` + `src/hooks.server.ts`: Google OAuth via `@auth/sveltekit`. Sign-in is allowlist-gated (`allowed_emails` table). The first user bootstraps as admin. API routes also accept:
-- `x-resonans-user-id` header (for cron/internal calls)
-- API secret tokens (`user_api_secrets` table)
-
-Public paths: `/auth/*`, `/api/cron/*`, `/api/workouts/email-inbound`, `/api/scheduler/trigger`.
-
-### Transaction Categorization Pipeline
-
-Bank transactions flow through three priority levels in `categorized-events.ts`:
-1. Manual overrides (`classification_overrides` table, by fingerprint)
-2. LLM-generated merchant mappings (`merchant_mappings` table)
-3. Rule-based keyword matching (rules from `transaction_matching_rules` table, seeded by `seed-transaction-rules.mjs`)
-
-### Signal System
-
-`domain_signals` table stores computed cross-domain signals (e.g. `economics_budget_pressure_7d` flowing to the relationship domain). Signals are produced by `SignalService.runProducers()` and consumed by the AI context builder and theme dashboards. Contracts are defined in `signal_contracts` table.
-
-### Notification / Nudge System
-
-Two delivery channels:
-- **Google Chat webhooks** — configured per user, with routing rules per notification type
-- **Web Push (PWA)** — via `web-push` library, VAPID keys required
-
-`NudgeOrchestrationService` orchestrates timing (respects user timezone, quiet hours, nudge profiles). `nudge_events` table tracks delivery state.
-
-## Environment Variables
-
-Required:
-- `DATABASE_URL` — Neon PostgreSQL connection string
-- `OPENAI_API_KEY` — OpenAI API key
-- `AUTH_SECRET` — Auth.js secret
-
-Optional integrations (configured per-user via OAuth flows in `/settings/sources`):
-- `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — Google OAuth for login
-- `WITHINGS_CLIENT_ID` / `WITHINGS_CLIENT_SECRET`
-- `DROPBOX_CLIENT_ID` / `DROPBOX_CLIENT_SECRET`
-- `SPAREBANK1_CLIENT_ID` / `SPAREBANK1_CLIENT_SECRET`
-- `STRAVA_CLIENT_ID` / `STRAVA_CLIENT_SECRET` — Strava-synk-proxy for ekko (`/api/apps/strava/*`). Callback-domene = `<baseURL>/api/apps/strava/callback`, scope `activity:write,read`.
-- `TOKEN_ENCRYPTION_KEY` — valgfri nøkkel for kryptering av lagrede tokens at rest (Strava). Faller tilbake til `AUTH_SECRET` hvis ikke satt.
-
-Push notifications:
-- `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` (generate with `npx web-push generate-vapid-keys`)
-
-Scheduling:
-- `ENABLE_IN_APP_SCHEDULER=true` — enables node-cron scheduler (alternative to Vercel Cron)
-- `CRON_SECRET` — protects `/api/cron/*` endpoints when called externally
-- `ORIGIN` — app base URL (used by scheduler for nudge links)
-
-## UI-konvensjoner
-
-Appen er **alltid mørk**, ikke system-følgsom. Hver side skal være bygget rundt
-samme grunnstruktur — `AppPage` → `PageHeader` → eget innhold.
-
-### `AppPage`
-- Default `theme="dark"`. Ikke skriv `theme="dark"` eksplisitt — det er
-  default. Skriv kun `theme` hvis du faktisk vil ha lyst.
-- Setter `document.body.background` til mørk og eksponerer CSS-variabler
-  (`--bg-primary`, `--text-primary`, `--accent-primary` osv.) brukt over hele
-  appen. Bruk disse variablene i stedet for hardkodede farger.
-- App.css har lys default + `prefers-color-scheme: dark` som fallback. Dette
-  er kun et sikkerhetsnett — `AppPage theme="dark"` er den autoritative
-  kilden.
-
-### `PageHeader`
-- Tittel og `actions`-snippet rendres alltid på **samme linje**. Ingen mobile
-  breakpoint som dytter actions ned.
-- Bruk `actions`-snippet med `IconButton` for hjelpe-knapper (chat,
-  settings, søk osv.). Hold antallet lavt — det er en row, ikke en toolbar.
-- `titleHref="/"` peker tilbake til hjem som standard for hovedsider; bruk
-  `backHref` for under-sider med tilbake-knapp.
-
-### Layouts med faner
-- Bruk `+layout.svelte` for shell (`AppPage` + `PageHeader` + bottom-nav),
-  ikke per-fane. Hver fane (`+page.svelte`) leverer kun innhold.
-- Når innhold flyttes fra en standalone side inn under et layout: **strip
-  alltid `AppPage`/`PageHeader` fra den flyttede komponenten**, ikke bygg
-  parallelle wrappers.
-
-### Når du oppretter en ny side
-1. `<AppPage>` (ingen theme-prop nødvendig — default er dark).
-2. `<PageHeader title="..." titleHref="/" />` med eventuell actions-snippet.
-3. Eget innhold under, med variabler fra dark-tema.
-4. Ingen lokale `:global()`-overrides for å fikse layout — hvis du føler
-   trang til det, er det sannsynligvis en bug i felleskomponentene som
-   skal fikses der i stedet.
-5. **Ingen lokal bottom-nav/tab-bar.** Navigasjon til andre seksjoner
-   skjer via `PageHeader`-actions (chat, settings) og `titleHref="/"` for
-   tilbake til hjem. Appen har ikke en global tab-bar, og legger man til
-   en lokal blir det inkonsistent med resten av sidene.
-
-## Database Conventions
-
-- Schema is in a single file: `src/lib/db/schema.ts`
-- **Schema endringer auto-syncer på prod-deploy.** `scripts/sync-db-schema.mjs` kjører tre steg som del av Vercel buildCommand når `VERCEL_ENV=production`:
-  1. `scripts/apply-sql-migrations.mjs` — eksplisitte SQL-migrasjoner fra `scripts/db-migrations/*.sql`, applisert i alfabetisk rekkefølge og bokført i tabellen `_sql_migrations`.
-  2. `drizzle-kit push --force` — additive endringer fra `schema.ts` som drizzle gjenkjenner trygt.
-  3. `DATA_MIGRATIONS` — idempotente `UPDATE`/`INSERT`-statements i `sync-db-schema.mjs` som må følge kode-endringer (f.eks. rename av enum-verdier).
-- **Alle schema-endringer skal ha en eksplisitt SQL-migrasjon.** Også additive (ADD COLUMN, CREATE TABLE, ADD INDEX). `drizzle-kit push --force` har feilet stille på additive endringer i prod (se Ekko v1.1 / PR #89 — produserte 500-er i flere dager fordi `best_efforts`-kolonnen aldri ble lagt til). Vi stoler ikke lenger på drizzle push alene.
-- **Rutine for ALLE schema-endringer:**
-  1. Lag `scripts/db-migrations/NNNN_<beskrivelse>.sql` med idempotente `IF NOT EXISTS` / `IF EXISTS`-grener.
+- Schema i `src/lib/db/schema.ts`. Migrasjoner i `scripts/db-migrations/`.
+- **Alle schema-endringer skal ha en eksplisitt SQL-migrasjon** — også additive. `drizzle-kit push` er bare et sikkerhetsnett.
+- **Rutine for schema-endringer:**
+  1. Lag `scripts/db-migrations/NNNN_<beskrivelse>.sql` med `IF NOT EXISTS`/`IF EXISTS`.
   2. Oppdater `schema.ts` til samme måltilstand.
-  3. SQL-en kjører først (gjør endringen), drizzle push ser deretter matchende state og er en no-op.
-- **Hvorfor SQL alltid:** drizzle push er udeterministisk for nye kolonner (kan kreve interaktiv bekreftelse selv med --force, eller skippe endringer det vurderer som usikre). SQL-migrasjonen er den autoritative kilden — drizzle push er bare et sikkerhetsnett for ting vi måtte ha glemt.
-- **Data-migreringer som må følge kode-endringer** (f.eks. `UPDATE` for å rename enum-verdier) legges inn i `DATA_MIGRATIONS`-arrayen i `scripts/sync-db-schema.mjs`. Hver statement må være idempotent (bruk `WHERE` eller `ON CONFLICT`). Ikke lag standalone `apply-migration-XXXX.mjs`-scripts som krever manuell kjøring.
-- Sikkerhetsnett: scriptet hopper over preview/dev-deploys. `SKIP_DB_SYNC=1` deaktiverer hele steget; `SKIP_SQL_MIGRATIONS=1` hopper kun over SQL-runner-steget.
-- Migration-filer i `drizzle/` (fra `db:generate`) er valgfrie audit-trails — de kjøres ikke automatisk.
-- Lokalt: `npm run db:sync` (full deploy-pipeline), `npm run db:sql-migrate` (kun SQL-steget), `npm run db:push` (kun drizzle-steget).
-- Primary keys: `uuid` with `defaultRandom()` for most tables; `text` for `users.id` (supports `'default-user'`).
-- Timestamps: always `timestamp` columns named `created_at` / `updated_at` with `defaultNow()`.
-- User isolation: every data table has a `userId text` FK to `users.id`.
+  3. SQL kjører først ved deploy, drizzle push ser matchende state.
+- Data-migreringer: `DATA_MIGRATIONS`-arrayen i `scripts/sync-db-schema.mjs` (idempotente).
+- Deploy-pipeline: `scripts/sync-db-schema.mjs` → SQL-migrasjoner → drizzle push → build.
+- Primary keys: `uuid` med `defaultRandom()`. Timestamps: `created_at`/`updated_at` med `defaultNow()`. Alle tabeller har `userId text` FK.
+
+---
 
 ## Deployment
 
-Deployed on Vercel with `@sveltejs/adapter-vercel` (Node.js 22.x runtime). Vercel Cron jobs are defined in `vercel.json`. The in-app scheduler (`ENABLE_IN_APP_SCHEDULER=true`) is an alternative for non-Vercel environments.
+Vercel med `@sveltejs/adapter-vercel` (Node.js 22.x). `buildCommand` i `vercel.json` kjører `sync-db-schema.mjs && npm run build`. GitHub Actions dispatcher kjører cron-jobber hvert 5. minutt.
 
-`vercel.json` sin `buildCommand` kjører `node scripts/sync-db-schema.mjs && npm run build` — schema-sync skjer altså FØR build, slik at ny kode aldri går live mot en gammel DB.
+---
 
-Files listed in `.vercelignore` are excluded from deployment (scripts, planning docs, seed files).
+## Miljøvariabler
+
+**Påkrevd:** `DATABASE_URL`, `OPENAI_API_KEY`, `AUTH_SECRET`
+
+**Integrasjoner** (konfigureres via OAuth i `/settings/sources`):
+`GOOGLE_CLIENT_ID`/`SECRET`, `WITHINGS_CLIENT_ID`/`SECRET`, `SPAREBANK1_CLIENT_ID`/`SECRET`, `DROPBOX_CLIENT_ID`/`SECRET`, `STRAVA_CLIENT_ID`/`SECRET`
+
+**Monitorering:** `MONITORING_WEBHOOK_URL` (Google Chat webhook for systemvarsler)
+
+**Push:** `VAPID_PUBLIC_KEY`/`PRIVATE_KEY`/`SUBJECT`
+
+**Scheduling:** `ENABLE_IN_APP_SCHEDULER=true`, `CRON_SECRET`, `ORIGIN`
+
+---
+
+## Prosjektdokumentasjon
+
+Større endringer planlegges og dokumenteres i `docs/changelog/` som prosjekter med faser:
+
+```
+docs/changelog/
+  2026-06-perf-og-testing.md      # Eksempel: ytelsesfikser + test-infrastruktur
+  2026-06-monitorering.md         # Eksempel: overvåking av integrasjoner
+```
+
+**Format for prosjektdokumenter:**
+```markdown
+# Prosjektnavn
+
+Dato: YYYY-MM-DD
+Status: planlagt | pågår | ferdig
+
+## Kontekst
+Hvorfor denne endringen trengs.
+
+## Faser
+### Fase 1: ...
+Hva som ble gjort, hvilke filer som ble endret, beslutninger tatt.
+
+### Fase 2: ...
+
+## Beslutninger
+Viktige valg og begrunnelser (for fremtidig kontekst).
+
+## Verifisering
+Hvordan endringen ble testet og verifisert.
+```
+
+Historiske planer og specs ligger i `docs/archive/` for referanse.

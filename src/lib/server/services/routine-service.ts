@@ -310,6 +310,96 @@ export async function materializeTodaysRoutines(userId: string, now: Date = new 
 	return results;
 }
 
+function dowFromIsoDate(isoDate: string): number {
+	const [y, m, d] = isoDate.split('-').map(Number);
+	const date = new Date(Date.UTC(y, m - 1, d));
+	return date.getUTCDay();
+}
+
+export async function materializeRoutinesForDates(
+	userId: string,
+	dates: string[]
+): Promise<Record<string, MaterializedRoutine[]>> {
+	const definitions = await listRoutineDefinitions(userId, { includeInactive: false });
+	if (definitions.length === 0) return {};
+
+	const result: Record<string, MaterializedRoutine[]> = {};
+	const slotOrder: Record<RoutineSlot, number> = { morning: 0, afternoon: 1, evening: 2, flex: 3 };
+
+	for (const ymd of dates) {
+		const dow = dowFromIsoDate(ymd);
+		const matching = definitions.filter(d => Array.isArray(d.daysOfWeek) && d.daysOfWeek.includes(dow));
+		if (matching.length === 0) continue;
+
+		const dayResults: MaterializedRoutine[] = [];
+
+		for (const def of matching) {
+			const context = `routine:${def.id}:${ymd}`;
+
+			const [existing] = await db
+				.select()
+				.from(checklists)
+				.where(and(eq(checklists.userId, userId), eq(checklists.context, context)))
+				.limit(1);
+
+			let checklistId: string;
+			let completedAt: Date | null = null;
+
+			if (existing) {
+				checklistId = existing.id;
+				completedAt = existing.completedAt;
+			} else {
+				const [created] = await db
+					.insert(checklists)
+					.values({ userId, title: def.title, emoji: def.emoji, context })
+					.returning();
+				checklistId = created.id;
+
+				const itemsToInsert = (def.items ?? []).map((it, idx) => ({
+					checklistId,
+					userId,
+					text: it.text,
+					sortOrder: typeof it.sortOrder === 'number' ? it.sortOrder : idx,
+					estimateMinutes: typeof it.estimateMinutes === 'number' ? it.estimateMinutes : null
+				}));
+				if (itemsToInsert.length > 0) {
+					await db.insert(checklistItems).values(itemsToInsert);
+				}
+			}
+
+			const itemRows = await db
+				.select()
+				.from(checklistItems)
+				.where(eq(checklistItems.checklistId, checklistId))
+				.orderBy(asc(checklistItems.sortOrder));
+
+			dayResults.push({
+				definition: { id: def.id, title: def.title, emoji: def.emoji, slot: def.slot },
+				checklistId,
+				date: ymd,
+				completedAt,
+				items: itemRows.map(it => ({
+					id: it.id,
+					text: it.text,
+					checked: it.checked,
+					sortOrder: it.sortOrder,
+					estimateMinutes: it.estimateMinutes
+				}))
+			});
+		}
+
+		dayResults.sort((a, b) => {
+			const diff = slotOrder[a.definition.slot] - slotOrder[b.definition.slot];
+			if (diff !== 0) return diff;
+			return a.definition.title.localeCompare(b.definition.title);
+		});
+
+		result[ymd] = dayResults;
+	}
+
+	return result;
+}
+
 // Brukt av signal-produsenten for adherence-beregning siste 7 dager.
 export async function listRoutineInstancesSinceUtc(userId: string, since: Date) {
 	const rows = await db

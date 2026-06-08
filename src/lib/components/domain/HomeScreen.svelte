@@ -372,6 +372,7 @@
 	let monthDayChecklists = $state<Checklist[]>([]);
 	let monthMetrics = $state<{ effort: Record<string, number>; egenfrekvens: Record<string, number> } | null>(null);
 	let openChecklist = $state<Checklist | null>(null);
+	let todaysRoutines = $state<Array<{ checklistId: string; title: string; emoji: string; slot: string; items: Array<{ id: string; text: string; checked: boolean; sortOrder: number; estimateMinutes: number | null }> }>>([]);
 
 	// -- Pull to refresh (mobil) --
 	async function refreshHomeData() {
@@ -551,10 +552,16 @@
 				};
 			});
 
-			const [activeRows, contextRows, metrics] = await Promise.all([
+			const routinePromise = fetch('/api/routines/today').then(async (res) => {
+				if (!res.ok) return null;
+				return (await res.json()) as Array<{ definition: { id: string; title: string; emoji: string; slot: string }; checklistId: string; date: string; items: Array<{ id: string; text: string; checked: boolean; sortOrder: number; estimateMinutes: number | null }>; completedAt: string | null }>;
+			});
+
+			const [activeRows, contextRows, metrics, routineRows] = await Promise.all([
 				activePromise,
 				monthDayPromise,
-				metricsPromise
+				metricsPromise,
+				routinePromise
 			]);
 			if (activeRows) {
 				activeChecklists = sortActiveChecklists(activeRows);
@@ -567,6 +574,15 @@
 			}
 			if (metrics) {
 				monthMetrics = { effort: metrics.effort ?? {}, egenfrekvens: metrics.egenfrekvens ?? {} };
+			}
+			if (routineRows) {
+				todaysRoutines = routineRows.map(r => ({
+					checklistId: r.checklistId,
+					title: r.definition.title,
+					emoji: r.definition.emoji,
+					slot: r.definition.slot,
+					items: r.items
+				}));
 			}
 		} catch { /* stille */ }
 	}
@@ -2978,6 +2994,7 @@
 {#if openChecklist}
 	<ChecklistSheet
 		checklist={openChecklist}
+		routines={todaysRoutines}
 		onclose={() => (openChecklist = null)}
 		onChanged={() => {
 			void fetchChecklists();

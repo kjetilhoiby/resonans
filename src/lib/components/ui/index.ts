@@ -23,6 +23,7 @@ export { default as Checkbox } from './Checkbox.svelte';
 export { default as ChecklistCheckbox } from './ChecklistCheckbox.svelte';
 export { default as ChecklistItemRow } from './ChecklistItemRow.svelte';
 export { default as ChecklistGroupRow } from './ChecklistGroupRow.svelte';
+export { default as RoutineGroupRow } from './RoutineGroupRow.svelte';
 export { default as RelationSparkline } from './RelationSparkline.svelte';
 export { default as WidgetCircle } from './WidgetCircle.svelte';
 export { default as CompactTrendChart } from './CompactTrendChart.svelte';

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { Button, Input, ChecklistCheckbox } from '$lib/components/ui';
 	import TaskTitle from '$lib/components/ui/TaskTitle.svelte';
 	import { invalidateAll } from '$app/navigation';
@@ -127,6 +128,31 @@
 	function addItem() {
 		if (!editing) return;
 		editing.items = [...editing.items, ''];
+		tick().then(() => {
+			const inputs = document.querySelectorAll<HTMLInputElement>('.item-editor input');
+			inputs[inputs.length - 1]?.focus();
+		});
+	}
+
+	function handleItemKeydown(e: KeyboardEvent, idx: number) {
+		if (!editing) return;
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			if (editing.items[idx].trim()) {
+				editing.items = [...editing.items.slice(0, idx + 1), '', ...editing.items.slice(idx + 1)];
+				tick().then(() => {
+					const inputs = document.querySelectorAll<HTMLInputElement>('.item-editor input');
+					inputs[idx + 1]?.focus();
+				});
+			}
+		} else if (e.key === 'Backspace' && editing.items[idx] === '' && editing.items.length > 1) {
+			e.preventDefault();
+			editing.items = editing.items.filter((_, i) => i !== idx);
+			tick().then(() => {
+				const inputs = document.querySelectorAll<HTMLInputElement>('.item-editor input');
+				inputs[Math.max(0, idx - 1)]?.focus();
+			});
+		}
 	}
 
 	function removeItem(idx: number) {
@@ -404,17 +430,20 @@
 			</div>
 
 			<div class="field">
-				<div class="label-row">
-					<span>Punkter</span>
-					<button type="button" class="link" onclick={addItem}>+ Legg til</button>
-				</div>
+				<span class="label-row">Punkter</span>
 				<ul class="item-editor">
 					{#each editing.items as _, idx (idx)}
 						<li>
-							<input bind:value={editing.items[idx]} placeholder="Hva skal gjøres?" />
-							<button type="button" onclick={() => moveItem(idx, -1)} disabled={idx === 0} aria-label="Flytt opp">↑</button>
-							<button type="button" onclick={() => moveItem(idx, 1)} disabled={idx === editing.items.length - 1} aria-label="Flytt ned">↓</button>
-							<button type="button" onclick={() => removeItem(idx)} aria-label="Fjern">×</button>
+							<input
+								bind:value={editing.items[idx]}
+								placeholder={idx === editing.items.length - 1 ? 'Nytt punkt...' : ''}
+								onkeydown={(e) => handleItemKeydown(e, idx)}
+							/>
+							{#if editing.items[idx].trim()}
+								<button type="button" class="reorder-btn" onclick={() => moveItem(idx, -1)} disabled={idx === 0} aria-label="Flytt opp">↑</button>
+								<button type="button" class="reorder-btn" onclick={() => moveItem(idx, 1)} disabled={idx >= editing.items.filter(s => s.trim()).length - 1} aria-label="Flytt ned">↓</button>
+								<button type="button" class="remove-btn" onclick={() => removeItem(idx)} aria-label="Fjern">×</button>
+							{/if}
 						</li>
 					{/each}
 				</ul>
@@ -515,12 +544,14 @@
 		display: flex;
 		align-items: center;
 		gap: 8px;
+		padding: 4px 0;
 		font-size: 0.88rem;
-		color: var(--text-primary, #fff);
+		color: #ccc;
+		line-height: 1.4;
 	}
 	.checks li.checked .text {
 		text-decoration: line-through;
-		opacity: 0.55;
+		color: #444;
 	}
 
 	/* Mine rutiner */
@@ -734,26 +765,38 @@
 		margin: 0;
 		display: flex;
 		flex-direction: column;
-		gap: 6px;
 	}
 	.item-editor li {
 		display: flex;
-		gap: 6px;
+		align-items: center;
+		gap: 4px;
+		border-bottom: 1px solid #1a1a1a;
 	}
-	.item-editor input { flex: 1; }
-	.item-editor button {
-		background: var(--bg-secondary, #1a1a1a);
-		border: 1px solid var(--border, #2a2a2a);
-		color: var(--text-secondary, #aaa);
-		border-radius: 8px;
-		padding: 0 10px;
-		cursor: pointer;
+	.item-editor li:last-child { border-bottom: none; }
+	.item-editor input {
+		flex: 1;
+		background: transparent;
+		border: none;
+		color: #ccc;
 		font: inherit;
+		font-size: 0.88rem;
+		padding: 10px 0;
+		outline: none;
 	}
-	.item-editor button:disabled {
-		opacity: 0.4;
-		cursor: default;
+	.item-editor input::placeholder { color: #444; }
+	.reorder-btn, .remove-btn {
+		background: transparent;
+		border: none;
+		color: #555;
+		font-size: 0.85rem;
+		cursor: pointer;
+		padding: 4px 6px;
+		border-radius: 4px;
+		transition: color 0.1s;
 	}
+	.reorder-btn:hover { color: #aaa; }
+	.reorder-btn:disabled { opacity: 0.3; cursor: default; }
+	.remove-btn:hover { color: #e07070; }
 	.modal > footer {
 		display: flex;
 		justify-content: flex-end;

@@ -6,6 +6,7 @@ import { checklistItems, checklists, goals, progress, tasks, themes, sensorEvent
 import { parseListRepeatCount } from '$lib/server/list-repeat-parser';
 import { getPlanArtifact, getPlanArtifactsByParent, upsertPlanArtifactField } from '$lib/server/plan-artifacts';
 import { WorkoutProjectionService } from '$lib/server/services/workout-projection-service';
+import { materializeRoutinesForDates } from '$lib/server/services/routine-service';
 import { resolveDomainFromInput, type DomainType } from '$lib/domains';
 
 function detectItemDomain(text: string | null | undefined): DomainType | null {
@@ -197,7 +198,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	console.log(`[perf][ukeplan/load] user=${userId} step=spond_sensor_lookup ms=${(performance.now() - tSpondSensor).toFixed(0)} found=${spondSensor ? 1 : 0}`);
 
 	const tPrefetch = performance.now();
-	const [weekChecklist, weekTasks, weekProgressRows, weekArtifact, longTermGoals, dayChecklists, dayArtifacts, previousWeekChecklist, previousWeekArtifact, previousWeekTasks, previousWeekProgressRows, travelThemes, rawSpondEvents] = await Promise.all([
+	const [weekChecklist, weekTasks, weekProgressRows, weekArtifact, longTermGoals, dayChecklists, dayArtifacts, previousWeekChecklist, previousWeekArtifact, previousWeekTasks, previousWeekProgressRows, travelThemes, rawSpondEvents, routinesByDate] = await Promise.all([
 		db.query.checklists.findFirst({
 			where: and(eq(checklists.userId, userId), eq(checklists.context, week.contextKey)),
 			with: {
@@ -268,7 +269,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 					),
 					columns: { id: true, timestamp: true, data: true, metadata: true }
 			  })
-			: Promise.resolve([] as Array<{ id: string; timestamp: Date; data: unknown; metadata: unknown }>)
+			: Promise.resolve([] as Array<{ id: string; timestamp: Date; data: unknown; metadata: unknown }>),
+		materializeRoutinesForDates(userId, week.days.map(d => d.isoDate))
 	]);
 	console.log(
 		`[perf][ukeplan/load] user=${userId} step=prefetch_bundle ms=${(performance.now() - tPrefetch).toFixed(0)} weekTasks=${weekTasks.length} weekProgress=${weekProgressRows.length} longTermGoals=${longTermGoals.length} dayChecklists=${dayChecklists.length} dayArtifacts=${dayArtifacts.length} prevWeekTasks=${previousWeekTasks.length} prevWeekProgress=${previousWeekProgressRows.length} spondEvents=${rawSpondEvents.length}`
@@ -613,6 +615,20 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			sensorProgress: sensorProgressMap[goal.id] ?? null
 		})),
 		dayChecklists: dayChecklistMap,
+		dayRoutines: Object.fromEntries(
+			Object.entries(routinesByDate).map(([date, routines]) => [
+				date,
+				routines.map(r => ({
+					definitionId: r.definition.id,
+					checklistId: r.checklistId,
+					title: r.definition.title,
+					emoji: r.definition.emoji,
+					slot: r.definition.slot,
+					completedAt: r.completedAt?.toISOString() ?? null,
+					items: r.items
+				}))
+			])
+		),
 		dayNotes: dayNoteMap,
 		dayHeadlines: dayHeadlineMap,
 		activeTrips,

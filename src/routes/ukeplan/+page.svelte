@@ -3,7 +3,7 @@
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import { tick } from 'svelte';
 	import { afterNavigate, goto, invalidateAll } from '$app/navigation';
-	import { AppPage, ChipStrip, PullToRefresh, ChecklistItemRow, ChecklistGroupRow } from '$lib/components/ui';
+	import { AppPage, ChipStrip, PullToRefresh, ChecklistItemRow, ChecklistGroupRow, RoutineGroupRow } from '$lib/components/ui';
 	import type { ChecklistItemLike } from '$lib/types/checklist';
 	import ScreenTitle from '$lib/components/ui/ScreenTitle.svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
@@ -22,6 +22,7 @@
 	import MentionPicker from '$lib/components/ui/MentionPicker.svelte';
 	import MentionAutocomplete from '$lib/components/ui/MentionAutocomplete.svelte';
 	import { createMentionState } from '$lib/utils/mention-input.svelte';
+	import { patchItem } from '$lib/utils/checklist-api';
 
 	type SaveState = 'idle' | 'saving' | 'saved';
 
@@ -150,6 +151,21 @@
 			vision: string;
 			longTermGoals: GoalReminder[];
 			dayChecklists: Record<string, DayChecklist>;
+			dayRoutines: Record<string, Array<{
+				definitionId: string;
+				checklistId: string;
+				title: string;
+				emoji: string;
+				slot: string;
+				completedAt: string | null;
+				items: Array<{
+					id: string;
+					text: string;
+					checked: boolean;
+					sortOrder: number;
+					estimateMinutes: number | null;
+				}>;
+			}>>;
 			dayNotes: Record<string, string>;
 			dayHeadlines: Record<string, string>;
 			activeTrips: Array<{
@@ -264,6 +280,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 
 		weekChecklistState = data.weekChecklist ? structuredClone(data.weekChecklist) : null;
 		dayChecklistsState = structuredClone(data.dayChecklists);
+		dayRoutinesState = structuredClone(data.dayRoutines ?? {});
 		weekNoteValue = data.weekNote;
 		reflectionValue = data.reflection;
 		visionValue = data.vision;
@@ -408,6 +425,9 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 	let editInput = $state<HTMLInputElement | null>(null);
 	let weekPickerInput = $state<HTMLInputElement | null>(null);
 	let expandedDayParentIds = $state<Set<string>>(new Set());
+	let dayRoutinesState = $state<Record<string, typeof data.dayRoutines[string]>>(structuredClone(data.dayRoutines ?? {}));
+	let expandedRoutineIds = $state<Set<string>>(new Set());
+	const selectedDayRoutines = $derived(dayRoutinesState[selectedDayIso] ?? []);
 	let expandedWeekParentIds = $state<Set<string>>(new Set());
 	// Kontekstmeny ved langtrykk
 	let contextMenuItem = $state<{ checklistId: string; item: ChecklistItem } | null>(null);
@@ -425,6 +445,21 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 
 	const selectedDayChecklist = $derived(dayChecklistsState[selectedDayIso] ?? null);
 	const sortedDayItems = $derived(selectedDayChecklist ? sortByStatus(sortByTime(selectedDayChecklist.items.filter((item) => !item.parentId))) : []);
+
+	const SLOT_HOUR: Record<string, number> = { morning: 7, afternoon: 13, evening: 19, flex: 23 };
+	type DayEntry = { type: 'item'; item: ChecklistItem } | { type: 'routine'; routine: typeof selectedDayRoutines[number] };
+	const sortedDayEntries = $derived.by((): DayEntry[] => {
+		const entries: Array<DayEntry & { sortKey: number }> = [];
+		for (const item of sortedDayItems) {
+			const h = item.metadata?.timeHour;
+			entries.push({ type: 'item', item, sortKey: typeof h === 'number' ? h * 60 + (item.metadata?.timeMinute ?? 0) : 1440 });
+		}
+		for (const routine of selectedDayRoutines) {
+			entries.push({ type: 'routine', routine, sortKey: (SLOT_HOUR[routine.slot] ?? 12) * 60 });
+		}
+		entries.sort((a, b) => a.sortKey - b.sortKey);
+		return entries;
+	});
 	const selectedDay = $derived(data.week.days.find((day) => day.isoDate === selectedDayIso) ?? data.week.days[0]);
 	const selectedDayHeadline = $derived(dayHeadlinesState[selectedDayIso] ?? '');
 	const selectedDaySpondEvents = $derived(data.spondEventsByDay?.[selectedDayIso] ?? []);
@@ -1367,6 +1402,35 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 		};
 	}
 
+	function toggleRoutineExpansion(checklistId: string) {
+		const next = new Set(expandedRoutineIds);
+		if (next.has(checklistId)) next.delete(checklistId);
+		else next.add(checklistId);
+		expandedRoutineIds = next;
+	}
+
+	async function handleRoutineItemToggle(checklistId: string, itemId: string, newChecked: boolean) {
+		dayRoutinesState = {
+			...dayRoutinesState,
+			[selectedDayIso]: (dayRoutinesState[selectedDayIso] ?? []).map(r =>
+				r.checklistId === checklistId
+					? { ...r, items: r.items.map(i => i.id === itemId ? { ...i, checked: newChecked } : i) }
+					: r
+			)
+		};
+		const ok = await patchItem(checklistId, itemId, { checked: newChecked });
+		if (!ok) {
+			dayRoutinesState = {
+				...dayRoutinesState,
+				[selectedDayIso]: (dayRoutinesState[selectedDayIso] ?? []).map(r =>
+					r.checklistId === checklistId
+						? { ...r, items: r.items.map(i => i.id === itemId ? { ...i, checked: !newChecked } : i) }
+						: r
+				)
+			};
+		}
+	}
+
 	function makeRowAddChild(checklistId: string) {
 		return async (parentId: string, text: string) => {
 			const checklist = getChecklistById(checklistId);
@@ -2262,7 +2326,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 			<p class="wp-helper">{dayCloseMessage}</p>
 		{/if}
 
-		{#if selectedDayChecklist}
+		{#if selectedDayChecklist || selectedDayRoutines.length > 0}
 			{#snippet dayTrailingBadge(item: ChecklistItemLike)}
 				{#if item.metadata?.linkedTaskId}
 					<span class="wp-intent-badge" title="Koblet til ukesmål: {item.metadata.linkedTaskTitle ?? ''}">
@@ -2280,61 +2344,75 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 			{/snippet}
 
 			{#snippet dayTrailingAction(item: ChecklistItemLike)}
-				<span class="wp-drag-handle" aria-hidden="true" ontouchstart={(event) => startTouchDrag(event, selectedDayChecklist.id, item.id)}>⋮⋮</span>
+				{#if selectedDayChecklist}
+					<span class="wp-drag-handle" aria-hidden="true" ontouchstart={(event) => startTouchDrag(event, selectedDayChecklist.id, item.id)}>⋮⋮</span>
+				{/if}
 			{/snippet}
 
 			<ul class="wp-checklist">
-				{#each sortedDayItems as item}
-					<li
-						class="wp-check-row"
-						class:is-dragging={dragItem?.itemId === item.id}
-						class:is-drag-over={dragOverItemId === item.id && dragItem?.itemId !== item.id}
-						data-item-id={item.id}
-						draggable={editingItem?.itemId !== item.id}
-						ondragstart={() => (dragItem = { checklistId: selectedDayChecklist.id, itemId: item.id })}
-						ondragover={(event) => { event.preventDefault(); dragOverItemId = item.id; }}
-						ondragleave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) dragOverItemId = null; }}
-						ondrop={() => {
-							if (!dragItem) return;
-							void reorderChecklistItems(selectedDayChecklist.id, dragItem.itemId, item.id);
-							dragItem = null;
-							dragOverItemId = null;
-						}}
-						ondragend={() => { dragItem = null; dragOverItemId = null; }}
-					>
-						{#if editingItem?.itemId === item.id}
-							<div class="wp-edit-shell">
-								<input
-									bind:this={editInput}
-									bind:value={editingItem.text}
-									class="wp-input wp-edit-input"
-									onblur={handleEditBlur}
-									onkeydown={handleEditKeydown}
-								/>
-								<button
-									type="button"
-									class="btn-icon-danger"
-									onmousedown={() => (skipEditBlur = true)}
-									onclick={() => void deleteChecklistItem(selectedDayChecklist.id, item.id)}
-									aria-label="Slett punkt"
-								><Icon name="close" size={13} /></button>
-							</div>
-						{:else}
-							<ChecklistItemRow
-								{item}
-								allItems={selectedDayChecklist.items}
-								expandedParentIds={expandedDayParentIds}
-								ontoggle={makeRowToggle(selectedDayChecklist.id)}
-								ontextclick={makeRowTextClick(selectedDayChecklist.id)}
-								onlongpress={makeRowLongpress(selectedDayChecklist.id)}
-								onexpand={toggleDayParentExpansion}
-								onaddchild={makeRowAddChild(selectedDayChecklist.id)}
-								animated={false}
-								trailingBadge={dayTrailingBadge}
-								trailingAction={dayTrailingAction}
+				{#each sortedDayEntries as entry}
+					{#if entry.type === 'routine'}
+						<li class="wp-check-row">
+							<RoutineGroupRow
+								routine={entry.routine}
+								expanded={expandedRoutineIds.has(entry.routine.checklistId)}
+								ontoggleexpand={() => toggleRoutineExpansion(entry.routine.checklistId)}
+								ontoggleitem={handleRoutineItemToggle}
 							/>
-						{/if}
-					</li>
+						</li>
+					{:else if selectedDayChecklist}
+						{@const item = entry.item}
+						<li
+							class="wp-check-row"
+							class:is-dragging={dragItem?.itemId === item.id}
+							class:is-drag-over={dragOverItemId === item.id && dragItem?.itemId !== item.id}
+							data-item-id={item.id}
+							draggable={editingItem?.itemId !== item.id}
+							ondragstart={() => (dragItem = { checklistId: selectedDayChecklist.id, itemId: item.id })}
+							ondragover={(event) => { event.preventDefault(); dragOverItemId = item.id; }}
+							ondragleave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) dragOverItemId = null; }}
+							ondrop={() => {
+								if (!dragItem) return;
+								void reorderChecklistItems(selectedDayChecklist.id, dragItem.itemId, item.id);
+								dragItem = null;
+								dragOverItemId = null;
+							}}
+							ondragend={() => { dragItem = null; dragOverItemId = null; }}
+						>
+							{#if editingItem?.itemId === item.id}
+								<div class="wp-edit-shell">
+									<input
+										bind:this={editInput}
+										bind:value={editingItem.text}
+										class="wp-input wp-edit-input"
+										onblur={handleEditBlur}
+										onkeydown={handleEditKeydown}
+									/>
+									<button
+										type="button"
+										class="btn-icon-danger"
+										onmousedown={() => (skipEditBlur = true)}
+										onclick={() => void deleteChecklistItem(selectedDayChecklist.id, item.id)}
+										aria-label="Slett punkt"
+									><Icon name="close" size={13} /></button>
+								</div>
+							{:else}
+								<ChecklistItemRow
+									{item}
+									allItems={selectedDayChecklist.items}
+									expandedParentIds={expandedDayParentIds}
+									ontoggle={makeRowToggle(selectedDayChecklist.id)}
+									ontextclick={makeRowTextClick(selectedDayChecklist.id)}
+									onlongpress={makeRowLongpress(selectedDayChecklist.id)}
+									onexpand={toggleDayParentExpansion}
+									onaddchild={makeRowAddChild(selectedDayChecklist.id)}
+									animated={false}
+									trailingBadge={dayTrailingBadge}
+									trailingAction={dayTrailingAction}
+								/>
+							{/if}
+						</li>
+					{/if}
 				{/each}
 			</ul>
 		{/if}

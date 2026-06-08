@@ -23,6 +23,7 @@
 	import type { ChecklistItemLike } from '$lib/types/checklist';
 	import ChecklistItemRow from '$lib/components/ui/ChecklistItemRow.svelte';
 	import ChecklistGroupRow from '$lib/components/ui/ChecklistGroupRow.svelte';
+	import RoutineGroupRow from '$lib/components/ui/RoutineGroupRow.svelte';
 	import { readCacheEntry, isCacheStale, fetchRawTimeseries, buildPeriods, buildWeekPeriods } from '$lib/utils/weather';
 	import { resolvePlace, geocodePlace, type GeoCandidate } from '$lib/utils/geocode';
 
@@ -58,8 +59,17 @@
 		items: ChecklistItem[];
 	}
 
+	interface RoutineData {
+		checklistId: string;
+		title: string;
+		emoji: string;
+		slot: string;
+		items: Array<{ id: string; text: string; checked: boolean; sortOrder: number; estimateMinutes: number | null }>;
+	}
+
 	interface Props {
 		checklist: Checklist;
+		routines?: RoutineData[];
 		onclose: () => void;
 		onDeleted?: () => void;
 		onChanged?: () => void;
@@ -67,7 +77,7 @@
 		onNavigateDay?: (dateIso: string) => void;
 	}
 
-	let { checklist, onclose, onDeleted, onChanged, onStartChat, onNavigateDay }: Props = $props();
+	let { checklist, routines = [], onclose, onDeleted, onChanged, onStartChat, onNavigateDay }: Props = $props();
 
 	let items = $state<ChecklistItem[]>([...checklist.items]);
 	// Faktisk DB-id. For en tom dag (virtuell sjekkliste) er `checklist.id` ''
@@ -91,6 +101,34 @@
 	let editInputEl = $state<HTMLInputElement | null>(null);
 	let activeEditInputRef = $state<HTMLInputElement | null>(null);
 	let shareSheetOpen = $state(false);
+	let routineItems = $state<RoutineData[]>([...routines]);
+	let expandedRoutineIds = $state<Set<string>>(new Set());
+
+	const morningRoutines = $derived(routineItems.filter(r => r.slot === 'morning'));
+	const otherRoutines = $derived(routineItems.filter(r => r.slot !== 'morning'));
+
+	function toggleRoutineExpansion(id: string) {
+		const next = new Set(expandedRoutineIds);
+		if (next.has(id)) next.delete(id);
+		else next.add(id);
+		expandedRoutineIds = next;
+	}
+
+	async function handleRoutineToggle(checklistId: string, itemId: string, newChecked: boolean) {
+		routineItems = routineItems.map(r =>
+			r.checklistId === checklistId
+				? { ...r, items: r.items.map(i => i.id === itemId ? { ...i, checked: newChecked } : i) }
+				: r
+		);
+		const ok = await patchItem(checklistId, itemId, { checked: newChecked });
+		if (!ok) {
+			routineItems = routineItems.map(r =>
+				r.checklistId === checklistId
+					? { ...r, items: r.items.map(i => i.id === itemId ? { ...i, checked: !newChecked } : i) }
+					: r
+			);
+		}
+	}
 
 	// Når `checklist`-propen byttes (dag-navigasjon prev/neste) må vi re-synce
 	// den lokale `items`-staten og nullstille forbigående UI. Uten dette beholdt
@@ -109,6 +147,8 @@
 		editingItemId = null;
 		editingText = '';
 		expandedParentIds = new Set();
+		expandedRoutineIds = new Set();
+		routineItems = [...routines];
 		skippedExpanded = false;
 		newSubItemTexts = {};
 		pendingPlace = null;
@@ -759,6 +799,15 @@
 
 	<!-- Items list -->
 	<div class="cs-items">
+		{#each morningRoutines as routine (routine.checklistId)}
+			<RoutineGroupRow
+				{routine}
+				expanded={expandedRoutineIds.has(routine.checklistId)}
+				ontoggleexpand={() => toggleRoutineExpansion(routine.checklistId)}
+				ontoggleitem={handleRoutineToggle}
+			/>
+		{/each}
+
 		{#each timedGroups as group}
 			{@render renderGroup(group)}
 		{/each}
@@ -769,6 +818,15 @@
 
 		{#each untimedGroups as group}
 			{@render renderGroup(group)}
+		{/each}
+
+		{#each otherRoutines as routine (routine.checklistId)}
+			<RoutineGroupRow
+				{routine}
+				expanded={expandedRoutineIds.has(routine.checklistId)}
+				ontoggleexpand={() => toggleRoutineExpansion(routine.checklistId)}
+				ontoggleitem={handleRoutineToggle}
+			/>
 		{/each}
 
 		{#if skippedItems.length > 0}
