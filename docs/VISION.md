@@ -6,6 +6,12 @@ Resonans er en personlig AI-coach som kobler hverdagens datastrømmer — helse,
 
 Brukeren skal aldri måtte oppsøke data — Resonans surfacer det relevante til riktig tid, gjennom nudges, dashboards og samtale.
 
+To bærende designprinsipper:
+
+**Senk friksjon, bygg kontekst.** Den daglige sjekklisten er hovedkontaktflaten. Oppgaver, rutiner og sjekkins berikes med klokkeslett, mentions, auto-check og domene-kontekst — slik at hverdagen gradvis blir maskinlesbar uten at brukeren føler at han logger.
+
+**Samtalen er data.** Det brukeren skriver i chat er førsteklasses innhold — ikke bare rå-materiale for en AI-oppsummering. Refleksjoner, planer og innsikter formulert i samtale skal bevares med sin fulle rikdom. Oppsummeringer er indeks, ikke erstatning.
+
 ## Arkitekturprinsipper
 
 ### Signaler, ikke data
@@ -23,6 +29,10 @@ Signaler produseres av `SignalService`, lagres i `domain_signals`, og konsumeres
 Kjernedomener (helse, økonomi, hjem, familie) er forhåndsdefinerte med egne dashboards og datapipelines. Men brukeren komponerer **temaer** som samler relevante signaler på tvers: et "Sommerferie 2026"-tema trekker inn feriedekning fra familie, budsjettpress fra økonomi, og treningsstatus fra helse.
 
 Hvert tema har en kanonisk samtale, mål, sjekklister, filer og et valgfritt dashboard. Temaer er brukerens organiserende prinsipp — ikke mapper, men levende prosjekter.
+
+### Chat fungerer med smal, rik kontekst
+
+Generell "snakk med AI"-chat konkurrerer med ChatGPT og taper. Resonans-chatten vinner når den har *smal, rik kontekst* — bok-chat med kuratert kontekst (boken, klipp, leselogg, forfatter) har vært den beste opplevelsen. Mønsteret: hvert domene bør ha sin "bok-chat-opplevelse" der AI-en vet mye om akkurat dette emnet, ikke litt om alt.
 
 ### Frontstage enkel, backstage kompleks
 
