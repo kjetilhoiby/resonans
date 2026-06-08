@@ -1,15 +1,19 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 
-	type SectionCardTone = 'default' | 'subtle';
+	type SectionCardTone = 'default' | 'subtle' | 'transparent' | 'bordered';
 
 	interface Props {
 		title?: string;
 		meta?: string;
 		description?: string;
 		tone?: SectionCardTone;
+		interactive?: boolean;
+		statusColor?: string;
+		compact?: boolean;
 		className?: string;
 		children: Snippet;
+		actions?: Snippet;
 	}
 
 	let {
@@ -17,13 +21,20 @@
 		meta,
 		description,
 		tone = 'default',
+		interactive = false,
+		statusColor,
+		compact = false,
 		className = '',
-		children
+		children,
+		actions
 	}: Props = $props();
 </script>
 
-<section class={`section-card tone-${tone} ${className}`.trim()}>
-	{#if title || meta || description}
+<section
+	class={`section-card tone-${tone} ${interactive ? 'is-interactive' : ''} ${compact ? 'is-compact' : ''} ${className}`.trim()}
+	style={statusColor ? `border-left: 3px solid ${statusColor}` : undefined}
+>
+	{#if title || meta || description || actions}
 		<header class="section-card-header">
 			<div class="section-card-copy">
 				{#if title}
@@ -33,9 +44,14 @@
 					<p>{description}</p>
 				{/if}
 			</div>
-			{#if meta}
-				<span class="section-card-meta">{meta}</span>
-			{/if}
+			<div class="section-card-trailing">
+				{#if meta}
+					<span class="section-card-meta">{meta}</span>
+				{/if}
+				{#if actions}
+					{@render actions()}
+				{/if}
+			</div>
 		</header>
 	{/if}
 	<div class="section-card-content">
@@ -45,24 +61,48 @@
 
 <style>
 	.section-card {
-		background: #171717;
-		border-radius: 16px;
-		padding: 16px;
+		background: var(--bg-card);
+		border-radius: var(--radius-lg);
+		padding: var(--space-lg);
 		display: flex;
 		flex-direction: column;
 		gap: 14px;
 		color: var(--text-primary);
 	}
 
+	.section-card.is-compact {
+		padding: var(--space-md);
+		gap: var(--space-sm);
+	}
+
 	.section-card.tone-subtle {
-		background: #141414;
+		background: var(--bg-elevated);
+	}
+
+	.section-card.tone-transparent {
+		background: transparent;
+		padding: 0;
+	}
+
+	.section-card.tone-bordered {
+		background: var(--bg-card);
+		border: 1px solid var(--border-color);
+	}
+
+	.section-card.is-interactive {
+		cursor: pointer;
+		transition: background 0.12s, border-color 0.12s;
+	}
+
+	.section-card.is-interactive:hover {
+		background: var(--bg-hover);
 	}
 
 	.section-card-header {
 		display: flex;
 		align-items: flex-start;
 		justify-content: space-between;
-		gap: 12px;
+		gap: var(--space-md);
 	}
 
 	.section-card-copy {
@@ -70,6 +110,13 @@
 		flex-direction: column;
 		gap: 6px;
 		min-width: 0;
+	}
+
+	.section-card-trailing {
+		display: flex;
+		align-items: center;
+		gap: var(--space-sm);
+		flex-shrink: 0;
 	}
 
 	h2 {
@@ -93,7 +140,7 @@
 	.section-card-content {
 		display: flex;
 		flex-direction: column;
-		gap: 12px;
+		gap: var(--space-md);
 		color: var(--text-primary);
 	}
 </style>

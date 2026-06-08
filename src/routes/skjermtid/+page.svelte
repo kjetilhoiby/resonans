@@ -576,19 +576,5 @@
 	}
 	.btn-danger {
 		margin-top: 0.5rem;
-		background: rgba(251, 113, 133, 0.12);
-		border: 1px solid rgba(251, 113, 133, 0.4);
-		color: #fb7185;
-		border-radius: 10px;
-		padding: 0.6rem 1rem;
-		cursor: pointer;
-		font-size: 0.9rem;
-	}
-	.btn-danger:hover:not(:disabled) {
-		background: rgba(251, 113, 133, 0.2);
-	}
-	.btn-danger:disabled {
-		opacity: 0.5;
-		cursor: default;
 	}
 </style>

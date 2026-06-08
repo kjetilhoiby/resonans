@@ -13,6 +13,14 @@ const PAGES = [
 	{ name: 'tema-helse', url: '/tema/helse' },
 	{ name: 'tema-okonomi', url: '/tema/økonomi' },
 	{ name: 'design', url: '/design' },
+	{ name: 'plan-mal', url: '/plan/mal' },
+	{ name: 'plan-oppgaver', url: '/plan/oppgaver' },
+	{ name: 'skjermtid', url: '/skjermtid' },
+	{ name: 'settings-jobs', url: '/settings/jobs' },
+	{ name: 'samtaler', url: '/samtaler' },
+	{ name: 'jobb', url: '/jobb' },
+	{ name: 'maanedsplan', url: '/maanedsplan' },
+	{ name: 'settings-sources', url: '/settings/sources' },
 ];
 
 for (const { name, url } of PAGES) {

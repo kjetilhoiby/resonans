@@ -59,26 +59,40 @@
 	}
 
 	.app-page.theme-dark {
+		/* Bakgrunner */
 		--bg-primary: #0f0f0f;
 		--bg-secondary: #111;
 		--bg-card: #171717;
+		--bg-elevated: #141414;
 		--bg-header: #111;
 		--bg-input: #1a1a1a;
 		--bg-hover: #23262b;
+		--bg-overlay: rgba(0, 0, 0, 0.5);
 
+		/* Tekst */
 		--text-primary: #eee;
 		--text-secondary: #aaa;
 		--text-tertiary: #777;
+		--text-muted: #555;
 
+		/* Rammer */
 		--border-color: #2a2a2a;
 		--border-subtle: #1e1e1e;
 
+		/* Accent */
 		--accent-primary: #4a5af0;
 		--accent-hover: #3f4de0;
+		--accent-light: #7c8ef5;
+		--accent-muted: #8ba0f5;
 
+		/* Status */
 		--success-bg: rgba(74, 222, 128, 0.08);
 		--success-text: #4ade80;
 		--success-border: rgba(74, 222, 128, 0.2);
+
+		--warning-bg: rgba(240, 180, 41, 0.08);
+		--warning-text: #f0b429;
+		--warning-border: rgba(240, 180, 41, 0.2);
 
 		--error-bg: rgba(224, 112, 112, 0.08);
 		--error-text: #e07070;
@@ -87,8 +101,23 @@
 		--info-bg: rgba(74, 90, 240, 0.12);
 		--info-border: rgba(74, 90, 240, 0.3);
 
+		/* Skygger */
 		--shadow-sm: 0 8px 22px rgba(0, 0, 0, 0.28);
 		--shadow-md: 0 14px 34px rgba(0, 0, 0, 0.34);
+
+		/* Border-radius */
+		--radius-sm: 8px;
+		--radius-md: 12px;
+		--radius-lg: 16px;
+		--radius-xl: 20px;
+
+		/* Spacing (base-4) */
+		--space-xs: 4px;
+		--space-sm: 8px;
+		--space-md: 12px;
+		--space-lg: 16px;
+		--space-xl: 24px;
+		--space-2xl: 32px;
 	}
 
 	.app-page.surface-default {

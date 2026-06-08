@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 
-	type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
+	type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'warning' | 'archive' | 'restore' | 'chip';
 
 	interface Props {
 		children: Snippet;

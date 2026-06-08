@@ -978,21 +978,6 @@
 		justify-content: flex-end;
 	}
 
-	.btn-danger {
-		padding: 0.4rem 0.9rem;
-		border-radius: 8px;
-		border: 1px solid rgba(255, 100, 100, 0.3);
-		background: rgba(255, 100, 100, 0.08);
-		color: #ff9b9b;
-		font-size: 0.8rem;
-		cursor: pointer;
-		transition: background 0.15s;
-	}
-
-	.btn-danger:hover {
-		background: rgba(255, 100, 100, 0.15);
-	}
-
 	.goal-header {
 		margin-bottom: 1.25rem;
 	}
@@ -1233,36 +1218,6 @@
 		background: #7c8ef5;
 		border-radius: 50%;
 		display: inline-block;
-	}
-
-	.btn-archive {
-		padding: 0.4rem 0.9rem;
-		border-radius: 8px;
-		border: 1px solid rgba(150, 150, 150, 0.25);
-		background: rgba(150, 150, 150, 0.07);
-		color: #999;
-		font-size: 0.8rem;
-		cursor: pointer;
-		transition: background 0.15s;
-	}
-
-	.btn-archive:hover {
-		background: rgba(150, 150, 150, 0.14);
-	}
-
-	.btn-restore {
-		padding: 0.4rem 0.9rem;
-		border-radius: 8px;
-		border: 1px solid rgba(124, 142, 245, 0.3);
-		background: rgba(124, 142, 245, 0.08);
-		color: #b9c3ff;
-		font-size: 0.8rem;
-		cursor: pointer;
-		transition: background 0.15s;
-	}
-
-	.btn-restore:hover {
-		background: rgba(124, 142, 245, 0.15);
 	}
 
 	.archived-section {

@@ -1,9 +1,0 @@
-import type { PageServerLoad } from './$types';
-
-export const load: PageServerLoad = async ({ locals }) => {
-	return {
-		title: 'Streaming Chat Demo',
-		description: 'Real-time feedback + token streaming from backend',
-		userId: locals.userId || null
-	};
-};

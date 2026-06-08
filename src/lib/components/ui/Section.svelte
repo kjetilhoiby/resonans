@@ -24,31 +24,31 @@
 
 <style>
 	.section {
-		background: #141414;
-		border-radius: 18px;
-		padding: 16px;
+		background: var(--bg-elevated);
+		border-radius: var(--radius-lg);
+		padding: var(--space-lg);
 		display: flex;
 		flex-direction: column;
-		gap: 12px;
+		gap: var(--space-md);
 	}
 
 	.section-header {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		gap: 12px;
+		gap: var(--space-md);
 	}
 
 	.section-title {
 		margin: 0;
 		font-size: 0.88rem;
 		font-weight: 700;
-		color: #e7e7e7;
+		color: var(--text-primary);
 	}
 
 	.section-meta {
 		font-size: 0.72rem;
-		color: #666;
+		color: var(--text-muted);
 		white-space: nowrap;
 	}
 
