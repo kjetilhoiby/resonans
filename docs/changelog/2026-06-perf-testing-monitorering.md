@@ -67,6 +67,18 @@ Sjekker sensor-ferskhet, jobb-helse, cron-eksekvering. Sender daglig Google Chat
 - Deaktivert gammel duplikat Withings-sensor
 - `/api/health?debug=true` for full systemstatus
 
+## Fase 5: Quick wins (2026-06-08)
+
+### materializeRoutinesForDates — N+1 → batch
+Ukeplan brukte 42+ sekvensielle DB-queries for rutine-materialisering (7 dager × 3 rutiner × 2 queries per).
+Refaktorert til 4 queries: 1 bulk SELECT eksisterende, 1 batch INSERT nye, 1 batch INSERT items, 1 bulk SELECT items.
+Forventet gevinst: 2-4s på ukeplan prefetch_bundle (3.3-6.6s → ~1-2s).
+
+### activity-layer — jsonb_build_object + forenklet hasTrackPoints
+Byttet `data - 'trackPoints' - 'rawResponse' - 'laps' - 'samples'` til `jsonb_build_object(...)` som plukker kun de 11 feltene som faktisk brukes. Eliminerer serialisering av store mellom-objekter.
+Byttet `metadata - 'rawResponse'` til `jsonb_build_object(...)` med 3 nødvendige felt.
+Forenklet `hasTrackPoints` fra `data ? 'trackPoints' AND jsonb_typeof(...) AND jsonb_array_length(...) > 0` til `data ? 'trackPoints'` — unngår array-lengde-beregning.
+
 ## Verifisering
 - `npm test`: 321 tester grønne (774ms)
 - `npm run test:visual`: 5 screenshots matcher baseline

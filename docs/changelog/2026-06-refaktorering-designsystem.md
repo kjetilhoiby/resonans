@@ -1,175 +1,106 @@
 # Refaktorering: Designsystem og komponentarkitektur
 
 Dato: 2026-06-08
-Status: planlagt
+Status: fase 0–5 ferdig, layout-polish pågår
 
 ## Kontekst
 
-Kodebasen har vokst organisk og har betydelig teknisk gjeld i UI-laget: 4500+ hardkodede farger, 336 :global()-overrides, 26 filer over 1000 linjer, og 38 sider som ikke bruker standard layout-komponenter. Endringer i farger, spacing eller layout-mønstre krever jakt gjennom hundrevis av filer i stedet for én variabel.
+Kodebasen hadde vokst organisk: 4500+ hardkodede farger, 336 :global()-overrides, 26 filer over 1000 linjer, 38 sider uten standard layout. Endringer i farger, spacing eller layout krevde jakt gjennom hundrevis av filer.
 
-## Nåværende tilstand
-
-| Metrikk | Verdi | Vurdering |
-|---------|-------|-----------|
-| Filer over 1000 linjer | 26 | Kritisk — vanskelig å vedlikeholde |
-| Filer over 500 linjer | 70 | Høyt |
-| Hardkodede farger | 4501 | Kritisk — umulig å endre tema |
-| :global() CSS-overrides | 336 i 35 filer | Høyt — styling lekker mellom komponenter |
-| Sider uten AppPage/PageHeader | 38 av 49 | Inkonsistent layout |
-| Inline style-attributter | 407 | Moderat |
-| CSS-variabel vs hardkodet ratio | 1:3 i routes | Dårlig — variablene brukes for lite |
-| Ubrukte UI-komponenter | 3 (WidgetCircle, ThemeRail, CompactTrendChart) | Rydd opp |
-
-### Verste filer (linjer)
-
-| Fil | Linjer | Type |
-|-----|--------|------|
-| design-exploration/+page.svelte | 6577 | Eksperimentell — kan slettes |
-| HomeScreen.svelte | 4871 | Produksjon — trenger oppsplitting |
-| design/+page.svelte | 3786 | Levende stilguide — akseptabel størrelse |
-| ukeplan/+page.svelte | 3780 | Produksjon — trenger oppsplitting |
-| ThemePage.svelte | 3638 | Produksjon — trenger oppsplitting |
-| BookDashboard.svelte | 3313 | Produksjon — trenger oppsplitting |
-| api/chat/+server.ts | 3186 | Backend — separat refaktor |
-| settings/sources/+page.svelte | 2798 | Produksjon — trenger oppsplitting |
-| HealthDashboard.svelte | 2692 | Produksjon — trenger oppsplitting |
-| FerieDashboard.svelte | 2375 | Produksjon — trenger oppsplitting |
-| maanedsplan/+page.svelte | 1823 | Produksjon — trenger oppsplitting |
-
-### Dupliseringsmønstre
-
-- **Kort-styling**: `.card { background: #171717; border-radius: 18px; padding: 1rem }` finnes i minst 6 route-filer med små variasjoner, mens `SectionCard` kun brukes 14 steder.
-- **Knapp-varianter**: `.btn-danger`, `.btn-archive`, `.btn-restore` definert i route-filer selv om `app.css` allerede har `.btn-*`-klasser.
-- **Bakgrunnsfarger**: 5 varianter av nesten-svart (#111, #121212, #141414, #161616, #171717) brukt om hverandre — bør være én variabel.
-- **Border-radius**: 12px, 16px, 18px, 20px brukt inkonsekvent.
-
----
-
-## Faseinndeling
+## Gjennomført
 
 ### Fase 0: Rydd opp eksperimentelle sider
-**Estimat: 30 min**
-
-Slett sider som ikke er i produksjonsbruk:
-- `src/routes/legacy/` (55 :global()-overrides)
-- `src/routes/demo-streaming/` (36 :global()-overrides)
-- `src/routes/test-cron/` (27 :global()-overrides)
-- `src/routes/dashboard-new/` (eksperimentelt dashboard)
-
-Behold foreløpig: `design-exploration/` og `animation-exploration/` (sandkasser).
-
-Fjern ubrukte UI-komponenter: WidgetCircle, ThemeRail, CompactTrendChart.
+- Slettet legacy, demo-streaming, test-cron, dashboard-new routes
+- Slettet ubrukte komponenter: WidgetCircle, ThemeRail, CompactTrendChart, SensorPane
 
 ### Fase 1: CSS-variabel-fundament
-**Estimat: 2-3 timer**
-
-Utvid CSS-variabelsettet i AppPage.svelte og app.css til å dekke alle gjentatte verdier:
-
-```css
-/* Bakgrunner (erstatter 5 varianter av nesten-svart) */
---bg-elevated: #171717;    /* kort, modaler */
---bg-sunken: #0a0a0a;      /* innfelt, input-felt */
---bg-overlay: rgba(0,0,0,0.5);
-
-/* Border-radius (erstatter 12/16/18/20px-kaoset) */
---radius-sm: 8px;
---radius-md: 12px;
---radius-lg: 16px;
---radius-xl: 20px;
-
-/* Spacing (base-8 system) */
---space-xs: 4px;
---space-sm: 8px;
---space-md: 12px;
---space-lg: 16px;
---space-xl: 24px;
---space-2xl: 32px;
-
-/* Statusfarger (erstatter hardkodede hex) */
---color-success: #4ade80;
---color-warning: #fbbf24;
---color-danger: #f87171;
---color-info: #7c8ef5;
-```
-
-Oppdater de mest brukte komponentene (SectionCard, Button, Input) til å bruke variablene. Ikke migrer alle routes ennå — det skjer fil-for-fil i fase 3.
+- 18 nye variabler i AppPage: `--bg-elevated`, `--text-muted`, `--accent-light`, `--warning-*`, `--radius-*`, `--space-*`
+- Migrert SectionCard og Section til variabler
 
 ### Fase 2: Komponent-konsolidering
-**Estimat: 3-4 timer**
+- Button: 8 varianter (primary, secondary, ghost, danger, warning, archive, restore, chip)
+- SectionCard: 4 tones (default, subtle, transparent, bordered) + interactive, compact, statusColor, actions
+- Ny StatusBadge-komponent
+- Fjernet lokale knappestiler fra plan/mal og skjermtid
 
-**SectionCard** — gjør den til standard kort-komponent med varianter:
-- Default: standard bakgrunn + border
-- `elevated`: uten border, subtil shadow
-- `interactive`: hover-effekt
-- `status`: med farge-stripe (brukt i oppgavelister)
+### Fase 3: Migrert routes til variabel-systemet
+~105 hex-farger og ~23 border-radius erstattet i 5 filer (ukeplan, plan/mal, plan/oppgaver, settings/sources, maanedsplan)
 
-**Button** — sikre at alle varianter (`danger`, `archive`, `restore`) finnes i komponenten, ikke i route-filer.
+### Fase 4: Splittet store komponenter
 
-**PageList** — ny komponent for listevisninger (brukt i settings, plan/mal, merchants) som i dag alle har custom `.card`-lister.
+| Komponent | Før | Etter | Reduksjon |
+|-----------|-----|-------|-----------|
+| HomeScreen | 4871 | 929 | -81% |
+| ThemePage | 3638 | 711 | -80% |
+| ukeplan | 3780 | 624 | -83% |
+| settings/sources | 2798 | 162 | -94% |
+| BookDashboard | 3313 | 443 | -87% |
+| HealthDashboard | 2692 | 593 | -78% |
+| FerieDashboard | 2375 | 561 | -76% |
+| maanedsplan | 1823 | 495 | -73% |
+| FlowSheet | 1693 | 586 | -65% |
+| ChecklistSheet | 1407 | 953 | -32% |
+| merchants | 1290 | 289 | -78% |
+| plan/mal | 1267 | 454 | -64% |
+| EconomicsDashboard | 1108 | 305 | -72% |
+| ThemeGoalsTab | 1087 | 142 | -87% |
+| Sparebank1Card | 1215 | 395 | -68% |
+| economics/tab | 1132 | 482 | -57% |
+| HomeChatZone | 1363 | 242 | -82% |
 
-**StatusBadge** — ny komponent for status-indikatorer (ok/warn/error) som i dag hardkodes overalt.
+Filer over 1000 linjer: **26 → 3** (TripDashboard, TransactionExplorer, FerieGridView).
 
-### Fase 3: Migrer routes til variabel-systemet
-**Estimat: 1 time per fil, prioritert**
+Nye sub-komponenter og moduler opprettet i:
+- `src/lib/components/domain/home/` — 4 soner + 4 panels + context + 3 .ts-moduler
+- `src/lib/components/domain/theme/` — 5 tab-komponenter
+- `src/lib/components/domain/health/` — 3 seksjoner + data-modul
+- `src/lib/components/domain/ferie/` — grid, execution, trip-planning
+- `src/lib/components/domain/ukeplan/` — 5 komponenter + 5 .ts-moduler
+- `src/lib/components/domain/maanedsplan/` — 8 komponenter + types
+- `src/lib/components/domain/plan/` — GoalDetailCard, GoalTrajectorySection + helpers/types
+- `src/lib/components/domain/economics/` — 4 tab-komponenter + data-store
+- `src/lib/components/settings/` — 6 provider-kort + utils
+- `src/lib/components/flows/` — 6 sub-komponenter + helpers
+- `src/lib/utils/format.ts` — shared formattering
 
-Gå gjennom route-filer og erstatt hardkodede verdier med CSS-variabler. Prioritert etter bruksfrekvens:
+### Fase 5: Standardisert sidelayout
+- Alle produksjonssider bruker nå AppPage
+- Fjernet `theme="dark"` (alltid mørk) og `width="full"` (default) fra alle sider
+- Fikset jobb og prosjekter som hadde lys bakgrunn (surface="transparent")
+- 6 sider uten AppPage fikset (hjem/apparat, settings/sharing, settings/snoozes, prosjekt/[id], etc.)
 
-1. **ukeplan/+page.svelte** (3780 linjer, daglig bruk) — splitt i delkomponenter + migrer farger
-2. **settings/sources/+page.svelte** (2798 linjer) — splitt per provider-seksjon
-3. **maanedsplan/+page.svelte** (1823 linjer) — splitt i delkomponenter
-4. **plan/mal/+page.svelte** (1312 linjer) — migrer custom knapper til Button-varianter
-5. **settings/classification/merchants/+page.svelte** (1290 linjer)
+### Layout-polish (påbegynt)
+- **PageHeader konsolidert**: MorphTitle og ScreenTitle erstattet med PageHeader som har `emoji` og `morph` props. Én tittelkomponent for hele appen.
+- **Tittel-alignment**: 9 av 10 hovedsider har piksel-perfekt tittelposisjon (left=16, top=20). Tema har emoji-offset (forventet).
+- **AppPage forenklet**: Fjernet `surface="transparent"`, `flush`, `bleed`. Ny `bg` prop for bakgrunnsfarge med `transition: background 0.3s ease`. `--page-px`/`--page-pt`/`--page-pb`/`--page-gap` gir konsistent grid.
+- **Jobb-siden**: Migrert fra custom header til PageHeader.
 
-For hver fil:
-1. Erstatt hardkodede farger med CSS-variabler
-2. Erstatt custom `.card`-styling med SectionCard
-3. Erstatt custom knapper med Button-varianter
-4. Fjern :global()-overrides der mulig
-5. Kjør `npm run test:visual:review` med beskrivelse
+## Gjenstår (layout-polish, neste session)
 
-### Fase 4: Splitt store domene-komponenter
-**Estimat: 2-3 timer per komponent**
+### Bakgrunn-håndtering for sider med egne bakgrunner
+Ukeplan (gradient), tema/helse (hue-tint), og hjem (HomeScreen) har egne bakgrunnsfarger som ikke passer inn i AppPage sin `--page-bg` ennå. Mønsteret `bg` + `full-bleed` er identifisert men ikke ferdig implementert. Problemet: bakgrunnen må dekke hele viewporten kant-til-kant, mens tittelen bruker `--page-px` innrykk.
 
-| Komponent | Linjer | Splittestrategi |
-|-----------|--------|-----------------|
-| HomeScreen.svelte | 4871 | Ekstraher widget-seksjoner til composed/-komponenter |
-| ThemePage.svelte | 3638 | Ekstraher tab-innhold (chat, data, goals, flows, files, lists) |
-| BookDashboard.svelte | 3313 | Ekstraher bok-kort, leseprogresjon, klipp-seksjon |
-| HealthDashboard.svelte | 2692 | Ekstraher metrikk-kort, treningshistorikk, aggregat-visning |
-| FerieDashboard.svelte | 2375 | Ekstraher oppholdsplan, reiseplanlegger, budsjettseksjon |
+Foreslått løsning: PageHeader sitter i AppPage sin padding. Innhold under bruker `.full-bleed` med intern `padding: var(--page-px)`. Trenger testing.
 
-Mønster: identifiser logiske seksjoner (visuelt separert i UI), ekstraher til ny komponent i `composed/` eller `domain/`, importer tilbake. Behold data-lasting i foreldre-komponenten.
+### Hjem-sida: padding-inkonsistens
+Widgets og temaer har annen horisontal padding enn tittelen. Ikonknappene i headeren er små og henger. HomeScreen sine soner har egen padding som ikke matcher `--page-px`.
 
-### Fase 5: Standardiser sidelayout
-**Estimat: 30 min per side**
+### Gjenværende hardkodede farger
+~222 hardkodede farger gjenstår i routes (domene-spesifikke paletter i ukeplan, maanedsplan, tema). Disse er bevisst domene-styling, ikke generelle farger.
 
-Migrer de 38 sidene uten AppPage/PageHeader. Noen er legitime unntak (auth, partner-invite), men de fleste bør bruke standard layout. Grupper:
+### Gjenværende ScreenTitle-bruk
+Design-guiden (`/design`) bruker fortsatt ScreenTitle direkte. Bør oppdateres til PageHeader.
 
-- **Bør migreres**: settings/*, economics/*, treningsprogram/*, prosjekter, samtaler, jobb, skjermtid, sensor, drømmer
-- **Layout-unntak**: auth (ingen header), design (stilguide), share/live (public pages)
-- **Bruker AppPage via overordnet layout**: Noen sider arver AppPage fra +layout.svelte — verifiser at dette er tilfellet
+## Beslutninger
 
----
-
-## Arbeidsflyt per fil
-
-1. Les filen, identifiser hva som kan forbedres
-2. Gjør endringer (variabel-migrering, komponent-ekstraksjon, :global()-fjerning)
-3. `npm test` — enhetstester grønne
-4. `VISUAL_REVIEW_CONTEXT="<beskrivelse>" npm run test:visual:review` — visuell sjekk
-5. Commit med beskrivende melding
-
-## Prinsipper
-
-- **Ikke endre visuelt uttrykk** — dette er en ren refaktorering. Pikslene skal se like ut etterpå.
-- **Én fil om gangen** — ikke batch-endre 20 filer. Visuell regresjon fanger feil per-side.
-- **Ekstraher, ikke abstraher** — flytt kode til nye filer, ikke lag generiske abstraksjoner.
-- **Sjekk /design først** — finnes komponenten allerede? Bruk den.
+- **Én tittelkomponent**: PageHeader håndterer alt — vanlig tittel, morph-animasjon, emoji, subtitle, actions. MorphTitle og ScreenTitle kan deprekeres.
+- **`bg` prop > `surface`**: AppPage setter bakgrunn via `bg` prop som også synker til `document.body`. Transition på 0.3s gir smooth sidebytte.
+- **Ingen `flush`/`bleed`**: Alle sider får `--page-px` padding. Innhold som trenger kant-til-kant bruker `.full-bleed` utility-klassen.
+- **`setContext`/`getContext`** for store komponenter (HomeScreen) — getter/setter bridge-pattern for reaktivitet gjennom context.
+- **Props for enklere komponenter** (ThemePage tabs, HealthDashboard sections) — callbacks for mutasjoner.
 
 ## Verifisering
 
-- `npm test` etter hver endring
-- `npm run test:visual:review` med kontekst etter visuelle endringer
-- Manuell sjekk av de mest brukte sidene (hjem, ukeplan, tema/helse)
-- Ingen nye :global()-overrides
-- Hardkodet farge-telling synker monotont
+- 321 enhetstester grønne gjennom hele refaktoreringen
+- 13 visuelle tester (Playwright + GPT-4o review) godkjent etter hver fase
+- Piksel-måling av tittelposisjon verifisert programmatisk

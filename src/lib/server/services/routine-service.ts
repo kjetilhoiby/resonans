@@ -1,6 +1,6 @@
 import { db } from '$lib/db';
 import { routineDefinitions, checklists, checklistItems } from '$lib/db/schema';
-import { and, eq, asc, like } from 'drizzle-orm';
+import { and, eq, asc, inArray, like } from 'drizzle-orm';
 
 export type RoutineSlot = 'morning' | 'afternoon' | 'evening' | 'flex';
 
@@ -323,78 +323,103 @@ export async function materializeRoutinesForDates(
 	const definitions = await listRoutineDefinitions(userId, { includeInactive: false });
 	if (definitions.length === 0) return {};
 
-	const result: Record<string, MaterializedRoutine[]> = {};
 	const slotOrder: Record<RoutineSlot, number> = { morning: 0, afternoon: 1, evening: 2, flex: 3 };
 
+	const matchPairs: Array<{ ymd: string; def: RoutineDefinitionRow; context: string }> = [];
 	for (const ymd of dates) {
 		const dow = dowFromIsoDate(ymd);
-		const matching = definitions.filter(d => Array.isArray(d.daysOfWeek) && d.daysOfWeek.includes(dow));
-		if (matching.length === 0) continue;
+		for (const def of definitions) {
+			if (Array.isArray(def.daysOfWeek) && def.daysOfWeek.includes(dow)) {
+				matchPairs.push({ ymd, def, context: `routine:${def.id}:${ymd}` });
+			}
+		}
+	}
+	if (matchPairs.length === 0) return {};
 
-		const dayResults: MaterializedRoutine[] = [];
+	const allContexts = matchPairs.map(p => p.context);
+	const existingRows = await db
+		.select()
+		.from(checklists)
+		.where(and(eq(checklists.userId, userId), inArray(checklists.context, allContexts)));
+	const checklistByContext = new Map(existingRows.map(c => [c.context, c]));
 
-		for (const def of matching) {
-			const context = `routine:${def.id}:${ymd}`;
+	const missingPairs = matchPairs.filter(p => !checklistByContext.has(p.context));
+	if (missingPairs.length > 0) {
+		const inserted = await db
+			.insert(checklists)
+			.values(missingPairs.map(p => ({
+				userId,
+				title: p.def.title,
+				emoji: p.def.emoji,
+				context: p.context
+			})))
+			.returning();
+		for (const row of inserted) {
+			checklistByContext.set(row.context, row);
+		}
 
-			const [existing] = await db
-				.select()
-				.from(checklists)
-				.where(and(eq(checklists.userId, userId), eq(checklists.context, context)))
-				.limit(1);
-
-			let checklistId: string;
-			let completedAt: Date | null = null;
-
-			if (existing) {
-				checklistId = existing.id;
-				completedAt = existing.completedAt;
-			} else {
-				const [created] = await db
-					.insert(checklists)
-					.values({ userId, title: def.title, emoji: def.emoji, context })
-					.returning();
-				checklistId = created.id;
-
-				const itemsToInsert = (def.items ?? []).map((it, idx) => ({
-					checklistId,
+		const allItemsToInsert: Array<{ checklistId: string; userId: string; text: string; sortOrder: number; estimateMinutes: number | null }> = [];
+		for (const p of missingPairs) {
+			const cl = checklistByContext.get(p.context);
+			if (!cl) continue;
+			for (let idx = 0; idx < (p.def.items ?? []).length; idx++) {
+				const it = p.def.items[idx];
+				allItemsToInsert.push({
+					checklistId: cl.id,
 					userId,
 					text: it.text,
 					sortOrder: typeof it.sortOrder === 'number' ? it.sortOrder : idx,
 					estimateMinutes: typeof it.estimateMinutes === 'number' ? it.estimateMinutes : null
-				}));
-				if (itemsToInsert.length > 0) {
-					await db.insert(checklistItems).values(itemsToInsert);
-				}
+				});
 			}
-
-			const itemRows = await db
-				.select()
-				.from(checklistItems)
-				.where(eq(checklistItems.checklistId, checklistId))
-				.orderBy(asc(checklistItems.sortOrder));
-
-			dayResults.push({
-				definition: { id: def.id, title: def.title, emoji: def.emoji, slot: def.slot },
-				checklistId,
-				date: ymd,
-				completedAt,
-				items: itemRows.map(it => ({
-					id: it.id,
-					text: it.text,
-					checked: it.checked,
-					sortOrder: it.sortOrder,
-					estimateMinutes: it.estimateMinutes
-				}))
-			});
 		}
+		if (allItemsToInsert.length > 0) {
+			await db.insert(checklistItems).values(allItemsToInsert);
+		}
+	}
 
+	const allChecklistIds = [...checklistByContext.values()].map(c => c.id);
+	const allItems = await db
+		.select()
+		.from(checklistItems)
+		.where(inArray(checklistItems.checklistId, allChecklistIds))
+		.orderBy(asc(checklistItems.sortOrder));
+
+	const itemsByChecklistId = new Map<string, typeof allItems>();
+	for (const item of allItems) {
+		let arr = itemsByChecklistId.get(item.checklistId);
+		if (!arr) { arr = []; itemsByChecklistId.set(item.checklistId, arr); }
+		arr.push(item);
+	}
+
+	const result: Record<string, MaterializedRoutine[]> = {};
+	for (const p of matchPairs) {
+		const cl = checklistByContext.get(p.context);
+		if (!cl) continue;
+		const items = itemsByChecklistId.get(cl.id) ?? [];
+
+		if (!result[p.ymd]) result[p.ymd] = [];
+		result[p.ymd].push({
+			definition: { id: p.def.id, title: p.def.title, emoji: p.def.emoji, slot: p.def.slot },
+			checklistId: cl.id,
+			date: p.ymd,
+			completedAt: cl.completedAt,
+			items: items.map(it => ({
+				id: it.id,
+				text: it.text,
+				checked: it.checked,
+				sortOrder: it.sortOrder,
+				estimateMinutes: it.estimateMinutes
+			}))
+		});
+	}
+
+	for (const dayResults of Object.values(result)) {
 		dayResults.sort((a, b) => {
 			const diff = slotOrder[a.definition.slot] - slotOrder[b.definition.slot];
 			if (diff !== 0) return diff;
 			return a.definition.title.localeCompare(b.definition.title);
 		});
-
-		result[ymd] = dayResults;
 	}
 
 	return result;

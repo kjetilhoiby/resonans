@@ -227,9 +227,25 @@ export async function buildUnifiedWorkoutActivities(
 			eventType: sensorEvents.eventType,
 			dataType: sensorEvents.dataType,
 			timestamp: sensorEvents.timestamp,
-			data: sql<Record<string, unknown>>`${sensorEvents.data} - 'trackPoints' - 'rawResponse' - 'laps' - 'samples'`,
-			metadata: sql<Record<string, unknown>>`${sensorEvents.metadata} - 'rawResponse'`,
-			hasTrackPoints: sql<boolean>`${sensorEvents.data} ? 'trackPoints' AND jsonb_typeof(${sensorEvents.data}->'trackPoints') = 'array' AND jsonb_array_length(${sensorEvents.data}->'trackPoints') > 0`,
+			data: sql<Record<string, unknown>>`jsonb_build_object(
+				'sportType', ${sensorEvents.data}->'sportType',
+				'distance', ${sensorEvents.data}->'distance',
+				'duration', ${sensorEvents.data}->'duration',
+				'paceSecondsPerKm', ${sensorEvents.data}->'paceSecondsPerKm',
+				'avgHeartRate', ${sensorEvents.data}->'avgHeartRate',
+				'maxHeartRate', ${sensorEvents.data}->'maxHeartRate',
+				'heartRate', ${sensorEvents.data}->'heartRate',
+				'elevation', ${sensorEvents.data}->'elevation',
+				'notes', ${sensorEvents.data}->'notes',
+				'sourceImageUrl', ${sensorEvents.data}->'sourceImageUrl',
+				'imageUrl', ${sensorEvents.data}->'imageUrl'
+			)`,
+			metadata: sql<Record<string, unknown>>`jsonb_build_object(
+				'totalTrackPoints', ${sensorEvents.metadata}->'totalTrackPoints',
+				'sourceImageUrl', ${sensorEvents.metadata}->'sourceImageUrl',
+				'dismissed', ${sensorEvents.metadata}->'dismissed'
+			)`,
+			hasTrackPoints: sql<boolean>`${sensorEvents.data} ? 'trackPoints'`,
 		})
 		.from(sensorEvents)
 		.where(and(...conditions))
