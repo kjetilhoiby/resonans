@@ -26,14 +26,22 @@ export async function loadHealthDashboardData(userId: string) {
 			});
 			const healthSensorIds = healthSensors.map((sensor) => sensor.id);
 			const recentHealthEvents = healthSensorIds.length
-				? await db.query.sensorEvents.findMany({
-						where: and(
-							eq(sensorEvents.userId, userId),
-							inArray(sensorEvents.sensorId, healthSensorIds)
-						),
-						orderBy: [desc(sensorEvents.timestamp)],
-						limit: 500
-					})
+				? await db
+						.select({
+							id: sensorEvents.id,
+							timestamp: sensorEvents.timestamp,
+							dataType: sensorEvents.dataType,
+							data: sql<Record<string, unknown>>`${sensorEvents.data} - 'trackPoints' - 'rawResponse' - 'laps' - 'samples'`,
+						})
+						.from(sensorEvents)
+						.where(
+							and(
+								eq(sensorEvents.userId, userId),
+								inArray(sensorEvents.sensorId, healthSensorIds)
+							)
+						)
+						.orderBy(desc(sensorEvents.timestamp))
+						.limit(500)
 				: [];
 			return { healthSensors, recentHealthEvents };
 		})(),

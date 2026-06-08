@@ -21,7 +21,52 @@ npm run db:generate     # Generate migration files from schema changes
 npm run db:push         # Push schema directly to DB (preferred for local dev)
 npm run db:migrate      # Run migration files
 npm run db:studio       # Open Drizzle Studio at https://local.drizzle.studio
+
+# Testing
+npm test                      # Enhetstester (Vitest, ~225 tester, <1s)
+npm run test:watch            # Enhetstester i watch-modus
+npm run test:visual           # Piksel-diff visuell regresjon (Playwright, ~14s)
+npm run test:visual:update    # Oppdater baselines for piksel-diff
+npm run test:visual:review    # LLM-drevet visuell review (Playwright + GPT-4o, ~30s)
 ```
+
+## Testing
+
+### Enhetstester (Vitest)
+
+225 tester for ren forretningslogikk. Kjøres med `npm test`. Testfiler er co-located (`foo.test.ts` ved siden av `foo.ts`). Vitest-config i `vitest.config.ts` har `$lib`-alias og dummy env-variabler for å unngå DB-tilkobling.
+
+### Visuell regresjon (Playwright)
+
+To moduser — begge krever at dev-serveren kjører (`npm run dev`):
+
+**Piksel-diff** (`npm run test:visual`): Sammenligner screenshots av 5 sider mot baselines i `tests/visual/__screenshots__/`. Feiler ved >0.2% piksel-differanse. Oppdater baselines med `npm run test:visual:update`.
+
+**LLM-drevet review** (`npm run test:visual:review`): Smartere pipeline for å vurdere om visuelle endringer er vellykkede:
+1. Tar screenshot av hjem, ukeplan, tema/helse, tema/økonomi, design
+2. Genererer diff-bilde (røde piksler = endring) med pixelmatch
+3. Sender baseline + nåværende + diff + endringsbeskrivelse til GPT-4o vision
+4. GPT-4o vurderer: `oppdater` (baseline oppdateres automatisk) eller `regresjon` (testen feiler med forklaring)
+
+**Endringsbeskrivelse** sendes via `VISUAL_REVIEW_CONTEXT`:
+```bash
+VISUAL_REVIEW_CONTEXT="Byttet PageHeader til kompakt variant" npm run test:visual:review
+```
+
+Eller programmatisk fra en agent:
+```typescript
+import { visualReview } from './tests/visual/visual-review';
+const result = await visualReview(page, 'hjem', baselineDir, {
+  changeDescription: 'Refaktorert HomeScreen: splittet widgets i egne komponenter'
+});
+// result.verdict: 'oppdater' | 'regresjon' | 'identisk' | 'ny-baseline'
+```
+
+Etter visuelle endringer bør agenter alltid kjøre visuell review med en beskrivelse av hva som ble endret og hvorfor — dette gir GPT-4o kontekst til å vurdere om endringen lyktes. Git-diff brukes som fallback når ingen beskrivelse gis.
+
+Diff-bilder lagres i `tests/visual/review-diffs/` for manuell inspeksjon.
+
+Auth bypass: Playwright bruker `x-resonans-user-id`-header konfigurert i `playwright.config.ts`.
 
 ## Architecture
 

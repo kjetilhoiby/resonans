@@ -17,6 +17,7 @@
 	import WidgetConfigSheet from '../ui/WidgetConfigSheet.svelte';
 	import MorphTitle from '../ui/MorphTitle.svelte';
 	import Icon from '../ui/Icon.svelte';
+	import ChipStrip from '../ui/ChipStrip.svelte';
 	import ChatInput from '../ui/ChatInput.svelte';
 	import ChatMessages from '../ui/ChatMessages.svelte';
 	import ChecklistWidget, { type Checklist } from '../composed/ChecklistWidget.svelte';
@@ -2378,8 +2379,8 @@
 			</button>
 		{/if}
 		{#if !inputExpanded && actionItems.length > 0}
-			<div class="zone-actions" aria-label="Foreslåtte handlinger">
-				<div class="action-carousel">
+			<div class="zone-actions">
+				<ChipStrip gap={8} ariaLabel="Foreslåtte handlinger">
 					{#each actionItems as item (item.id)}
 						<button
 							class="action-pill"
@@ -2398,7 +2399,7 @@
 							{/if}
 						</button>
 					{/each}
-				</div>
+				</ChipStrip>
 			</div>
 		{/if}
 		{#if chatOpen}
@@ -3349,27 +3350,8 @@
 		white-space: nowrap;
 	}
 
-	.action-carousel {
-		display: flex;
-		gap: 8px;
-		overflow-x: auto;
-		overflow-y: hidden;
-		scroll-snap-type: x proximity;
-		scrollbar-width: none;
-		-webkit-overflow-scrolling: touch;
-		padding: 0;
-	}
-
-	.action-carousel::-webkit-scrollbar {
-		display: none;
-	}
-
-	.action-carousel > .action-pill {
-		flex: 0 0 auto;
-		scroll-snap-align: start;
-	}
-
 	.action-pill {
+		flex: 0 0 auto;
 		display: inline-flex;
 		align-items: center;
 		gap: 8px;
@@ -3950,7 +3932,7 @@
 		justify-content: flex-end;
 		gap: 10px;
 		box-sizing: border-box;
-		overflow: hidden;
+		overflow: clip;
 		transition: border-radius 300ms cubic-bezier(0.22, 1, 0.36, 1), margin 300ms cubic-bezier(0.22, 1, 0.36, 1), background 300ms cubic-bezier(0.22, 1, 0.36, 1);
 	}
 

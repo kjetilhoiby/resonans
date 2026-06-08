@@ -16,10 +16,12 @@
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import BreakdownModal from '$lib/components/ui/BreakdownModal.svelte';
 	import TaskContextMenu from '$lib/components/ui/TaskContextMenu.svelte';
-	import TaskTitle from '$lib/components/ui/TaskTitle.svelte';
 	import MentionAutocomplete from '$lib/components/ui/MentionAutocomplete.svelte';
 	import ShareSheet from '$lib/components/domain/share/ShareSheet.svelte';
 	import LocationPickerModal from '$lib/components/ui/LocationPickerModal.svelte';
+	import type { ChecklistItemLike } from '$lib/types/checklist';
+	import ChecklistItemRow from '$lib/components/ui/ChecklistItemRow.svelte';
+	import ChecklistGroupRow from '$lib/components/ui/ChecklistGroupRow.svelte';
 	import { readCacheEntry, isCacheStale, fetchRawTimeseries, buildPeriods, buildWeekPeriods } from '$lib/utils/weather';
 	import { resolvePlace, geocodePlace, type GeoCandidate } from '$lib/utils/geocode';
 
@@ -86,6 +88,7 @@
 	let editingItemId = $state<string | null>(null);
 	let editingText = $state('');
 	let editInputEl = $state<HTMLInputElement | null>(null);
+	let activeEditInputRef = $state<HTMLInputElement | null>(null);
 	let shareSheetOpen = $state(false);
 
 	// Når `checklist`-propen byttes (dag-navigasjon prev/neste) må vi re-synce
@@ -629,6 +632,29 @@
 		onChanged?.();
 	}
 
+	function handleItemLongpress(rect: DOMRect, item: ChecklistItemLike) {
+		contextMenuItem = item as ChecklistItem;
+		contextMenuRect = rect;
+	}
+
+	function handleItemToggle(item: ChecklistItemLike) {
+		toggleItem(item as ChecklistItem);
+	}
+
+	function handleEditCommit(_item: ChecklistItemLike, newText: string) {
+		editingText = newText;
+		void commitEdit();
+	}
+
+	function handleAddChild(parentId: string, text: string) {
+		newSubItemTexts = { ...newSubItemTexts, [parentId]: text };
+		void addSubItem(parentId);
+	}
+
+	$effect(() => {
+		editInputEl = activeEditInputRef;
+	});
+
 	function dismissPayoff() {
 		showPayoff = false;
 		payoffDismissed = true;
@@ -724,215 +750,47 @@
 	{/if}
 
 	<!-- Snippet for én gruppe (enten en slot-rad med gjentakelser eller et enkelt punkt). -->
-	{#snippet groupRow(group: GroupedChecklistEntry<ChecklistItem>)}
+	{#snippet renderGroup(group: GroupedChecklistEntry<ChecklistItem>)}
 		{#if group.type === 'group'}
-			<div class="cs-group-row">
-				<span class="cs-group-label">{activityEmoji(group.label) ? activityEmoji(group.label) + ' ' : ''}{group.label}</span>
-				<div class="cs-slot-row">
-					{#each group.items as item (item.id)}
-						{@const hasChildren = items.some(i => i.parentId === item.id)}
-						{@const itemSkipped = !!item.skippedAt}
-						<button
-							type="button"
-							class="cs-slot"
-							class:cs-slot-checked={item.checked}
-							class:cs-slot-skipped={itemSkipped}
-							class:cs-slot-parent={hasChildren}
-							onpointerdown={(e) => handleItemPressStart(e, item)}
-							onpointerup={handleItemPressEnd}
-							onpointercancel={handleItemPressEnd}
-							onpointerleave={handleItemPressEnd}
-							onclick={() => toggleItem(item)}
-							title="Langtrykk for valg"
-							aria-label={item.checked ? 'Marker som ikke gjort' : 'Marker som gjort'}
-						>
-							{itemSkipped ? '✕' : item.checked ? '✓' : ''}
-							{#if hasChildren && !itemSkipped}
-								<span class="cs-slot-indicator">✕</span>
-							{/if}
-						</button>
-					{/each}
-				</div>
-			</div>
+			<ChecklistGroupRow
+				label={group.label}
+				items={group.items}
+				allItems={items}
+				ontoggle={handleItemToggle}
+				onlongpress={handleItemLongpress}
+			/>
 		{:else}
-			{@const hasChildren = items.some(i => i.parentId === group.item.id)}
-			{@const childrenItems = items.filter(i => i.parentId === group.item.id)}
-			{@const completedChildren = childrenItems.filter((c) => c.checked).length}
-			{@const isExpanded = expandedParentIds.has(group.item.id)}
-			{@const itemTimed = group.item.metadata?.timeHour !== undefined}
-			{@const itemTravel = getTravelMode(group.item)}
-			{@const cR = 8}
-			{@const cC = 2 * Math.PI * cR}
-			{@const cPct = childrenItems.length > 0 ? completedChildren / childrenItems.length : 0}
-			<div class="cs-item-wrapper" class:cs-item-wrapper-parent={hasChildren}>
-				{#if hasChildren}
-					<div class="cs-parent-row">
-						<button
-							type="button"
-							class="cs-parent-caret"
-							class:cs-caret-expanded={isExpanded}
-							onclick={() => toggleParentExpansion(group.item.id)}
-							aria-label={isExpanded ? 'Lukk substeps' : 'Utvid substeps'}
-						>
-							▸
-						</button>
-						<button
-							class="cs-item"
-							class:cs-item-checked={group.item.checked}
-							class:cs-item-skipped={!!group.item.skippedAt}
-							onpointerdown={(e) => { if (editingItemId === group.item.id) return; handleItemPressStart(e, group.item); }}
-							onpointerup={handleItemPressEnd}
-							onpointercancel={handleItemPressEnd}
-							onpointerleave={handleItemPressEnd}
-							onclick={() => { if (editingItemId === group.item.id) return; toggleItem(group.item); }}
-							title="Langtrykk for valg"
-						>
-							{#if editingItemId === group.item.id}
-								<input
-									class="cs-item-edit-input"
-									bind:this={editInputEl}
-									bind:value={editingText}
-									onkeydown={(e) => { if (e.key === 'Enter') { void commitEdit(); } else if (e.key === 'Escape') cancelEdit(); }}
-									onblur={() => void commitEdit()}
-									onclick={(e) => e.stopPropagation()}
-									onpointerdown={(e) => e.stopPropagation()}
-								/>
-							{:else}
-								<span class="cs-item-main">
-									{#if itemTimed}
-										<span class="cs-time-chip">{formatItemTime(group.item.metadata!.timeHour!, group.item.metadata?.timeMinute ?? 0)}</span>
-									{/if}
-									{#if itemTravel}
-										<span class="cs-travel-icon" aria-hidden="true">{travelModeIcon(itemTravel)}</span>
-									{/if}
-									<span class="cs-item-text"><TaskTitle title={itemTimed ? stripTimeFromText(group.item.text) : group.item.text} /></span>
-								</span>
-							{/if}
-							<svg class="cs-parent-circle" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
-								<circle cx="10" cy="10" r={cR} fill="none" stroke="#2a2a2a" stroke-width="2.5"/>
-								<circle cx="10" cy="10" r={cR} fill="none"
-									stroke={completedChildren === childrenItems.length ? '#5fa080' : '#7c8ef5'}
-									stroke-width="2.5"
-									stroke-dasharray="{cPct * cC} {cC}"
-									stroke-linecap="round"
-									transform="rotate(-90 10 10)"
-								/>
-							</svg>
-						</button>
-					</div>
-				{:else}
-					{@const itemSkipped = !!group.item.skippedAt}
-					<button
-						class="cs-item"
-						class:cs-item-checked={group.item.checked}
-						class:cs-item-skipped={itemSkipped}
-						onpointerdown={(e) => { if (editingItemId === group.item.id) return; handleItemPressStart(e, group.item); }}
-						onpointerup={handleItemPressEnd}
-						onpointercancel={handleItemPressEnd}
-						onpointerleave={handleItemPressEnd}
-						onclick={() => { if (editingItemId === group.item.id) return; toggleItem(group.item); }}
-						title="Langtrykk for valg"
-					>
-						{#if editingItemId === group.item.id}
-							<input
-								class="cs-item-edit-input"
-								bind:this={editInputEl}
-								bind:value={editingText}
-								onkeydown={(e) => { if (e.key === 'Enter') { void commitEdit(); } else if (e.key === 'Escape') cancelEdit(); }}
-								onblur={() => void commitEdit()}
-								onclick={(e) => e.stopPropagation()}
-								onpointerdown={(e) => e.stopPropagation()}
-							/>
-						{:else}
-							<span class="cs-item-main">
-								{#if itemTimed}
-									<span class="cs-time-chip">{formatItemTime(group.item.metadata!.timeHour!, group.item.metadata?.timeMinute ?? 0)}</span>
-								{/if}
-								{#if itemTravel}
-									<span class="cs-travel-icon" aria-hidden="true">{travelModeIcon(itemTravel)}</span>
-								{/if}
-								<span class="cs-item-text"><TaskTitle title={itemTimed ? stripTimeFromText(group.item.text) : group.item.text} /></span>
-							</span>
-						{/if}
-						<div
-							class="cs-checkbox"
-							class:cs-checkbox-checked={group.item.checked && !itemSkipped}
-							class:cs-checkbox-skipped={itemSkipped}
-						>
-							{#if itemSkipped}
-								<span class="cs-tick cs-tick-skipped" transition:scale={{ duration: 200, easing: elasticOut }}>✕</span>
-							{:else if group.item.checked}
-								<span class="cs-tick" transition:scale={{ duration: 200, easing: elasticOut }}>✓</span>
-							{/if}
-						</div>
-					</button>
-				{/if}
-				{#if hasChildren && isExpanded}
-					<div class="cs-children" transition:slide>
-						{#each sortByStatus(sortByTime(childrenItems)) as child (child.id)}
-							{@const childSkipped = !!child.skippedAt}
-							{@const childTimed = child.metadata?.timeHour !== undefined}
-							<button
-								class="cs-child-item"
-								class:cs-child-checked={child.checked}
-								class:cs-child-skipped={childSkipped}
-								onpointerdown={(e) => handleItemPressStart(e, child)}
-								onpointerup={handleItemPressEnd}
-								onpointercancel={handleItemPressEnd}
-								onpointerleave={handleItemPressEnd}
-								onclick={() => toggleItem(child)}
-							>
-								{#if childTimed}
-									<span class="cs-time-chip cs-time-chip-small">{formatItemTime(child.metadata!.timeHour!, child.metadata?.timeMinute ?? 0)}</span>
-								{/if}
-								{#if getTravelMode(child)}<span class="cs-travel-icon cs-travel-icon-small" aria-hidden="true">{travelModeIcon(getTravelMode(child)!)}</span>{/if}<span class="cs-child-text"><TaskTitle title={childTimed ? stripTimeFromText(child.text) : child.text} /></span>
-								<div
-									class="cs-checkbox cs-checkbox-small"
-									class:cs-checkbox-checked={child.checked && !childSkipped}
-									class:cs-checkbox-skipped={childSkipped}
-								>
-									{#if childSkipped}
-										<span class="cs-tick cs-tick-skipped" transition:scale={{ duration: 200, easing: elasticOut }}>✕</span>
-									{:else if child.checked}
-										<span class="cs-tick" transition:scale={{ duration: 200, easing: elasticOut }}>✓</span>
-									{/if}
-								</div>
-							</button>
-						{/each}
-						<div class="cs-subitem-add-row">
-							<input
-								class="cs-subitem-add-input"
-								type="text"
-								placeholder="Legg til deloppgave…"
-								value={newSubItemTexts[group.item.id] ?? ''}
-								oninput={(e) => newSubItemTexts = { ...newSubItemTexts, [group.item.id]: (e.target as HTMLInputElement).value }}
-								onkeydown={(e) => { if (e.key === 'Enter') addSubItem(group.item.id); }}
-							/>
-						</div>
-					</div>
-				{/if}
-			</div>
+			<ChecklistItemRow
+				item={group.item}
+				allItems={items}
+				{expandedParentIds}
+				editing={editingItemId === group.item.id}
+				bind:editText={editingText}
+				bind:editInputRef={activeEditInputRef}
+				ontoggle={handleItemToggle}
+				onlongpress={handleItemLongpress}
+				oneditcommit={handleEditCommit}
+				oneditcancel={cancelEdit}
+				onexpand={toggleParentExpansion}
+				onaddchild={handleAddChild}
+			/>
 		{/if}
 	{/snippet}
 
 	<!-- Items list -->
 	<div class="cs-items">
-		<!-- Tidfestede oppgaver øverst, med tidschip -->
 		{#each timedGroups as group}
-			{@render groupRow(group)}
+			{@render renderGroup(group)}
 		{/each}
 
-		<!-- Skillelinje mellom tidfestede og øvrige oppgaver -->
 		{#if timedGroups.length > 0 && untimedGroups.length > 0}
 			<div class="cs-divider" role="separator"></div>
 		{/if}
 
-		<!-- Øvrige oppgaver -->
 		{#each untimedGroups as group}
-			{@render groupRow(group)}
+			{@render renderGroup(group)}
 		{/each}
 
-		<!-- Strøkne oppgaver i kollapset «Hoppet over»-liste -->
 		{#if skippedItems.length > 0}
 			<div class="cs-skipped-section">
 				<button
@@ -949,7 +807,7 @@
 				{#if skippedExpanded}
 					<div class="cs-skipped-items" transition:slide>
 						{#each skippedGroups as group}
-							{@render groupRow(group)}
+							{@render renderGroup(group)}
 						{/each}
 					</div>
 				{/if}
@@ -959,7 +817,7 @@
 
 	<!-- Mention autocomplete for inline editing -->
 	<MentionAutocomplete
-		textareaEl={editInputEl}
+		textareaEl={activeEditInputRef}
 		value={editingText}
 		onValueChange={(t) => (editingText = t)}
 	/>
@@ -1210,131 +1068,7 @@
 		-webkit-overflow-scrolling: touch;
 	}
 
-	.cs-item {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 12px;
-		padding: 10px 12px;
-		border-radius: 10px;
-		border: none;
-		background: transparent;
-		cursor: pointer;
-		text-align: left;
-		transition: background 0.1s;
-		font: inherit;
-		touch-action: manipulation;
-		user-select: none;
-		-webkit-user-select: none;
-		-webkit-touch-callout: none;
-	}
-	.cs-item:hover { background: #161616; }
-	.cs-item:active { background: #1a1a1a; }
-
-	.cs-checkbox {
-		width: 24px;
-		height: 24px;
-		border-radius: 50%;
-		border: 2px solid #333;
-		flex-shrink: 0;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		transition: border-color 0.15s, background 0.15s;
-	}
-
-	.cs-checkbox-checked {
-		border-color: #7c8ef5;
-		background: #7c8ef5;
-	}
-
-	.cs-item-checked .cs-checkbox.cs-checkbox-checked {
-		border-color: #5fa080;
-		background: #5fa080;
-	}
-
-	.cs-tick {
-		color: white;
-		font-size: 0.7rem;
-		font-weight: 700;
-		line-height: 1;
-	}
-
-	.cs-item-edit-input {
-		flex: 1;
-		background: none;
-		border: none;
-		border-bottom: 1px solid #4a5af0;
-		color: #ccc;
-		font: inherit;
-		font-size: 0.88rem;
-		outline: none;
-		padding: 0;
-		min-width: 0;
-	}
-
-	.cs-item-main {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		flex: 1;
-		min-width: 0;
-	}
-
-	.cs-item-text {
-		font-size: 0.88rem;
-		color: #ccc;
-		line-height: 1.4;
-		transition: color 0.15s, text-decoration 0.15s;
-	}
-
-	/* ── Tidschip for tidfestede oppgaver ── */
-	.cs-time-chip {
-		display: inline-flex;
-		align-items: center;
-		font-size: 0.7rem;
-		font-weight: 600;
-		font-variant-numeric: tabular-nums;
-		color: #7c8ef5;
-		background: rgba(124, 142, 245, 0.1);
-		border: 1px solid rgba(124, 142, 245, 0.25);
-		border-radius: 5px;
-		padding: 1px 5px;
-		flex-shrink: 0;
-		white-space: nowrap;
-		line-height: 1.4;
-		transition: opacity 0.15s;
-	}
-
-	.cs-time-chip-small {
-		font-size: 0.62rem;
-		padding: 0 4px;
-	}
-
-	.cs-item-checked .cs-time-chip,
-	.cs-item-skipped .cs-time-chip,
-	.cs-child-checked .cs-time-chip,
-	.cs-child-skipped .cs-time-chip {
-		opacity: 0.4;
-	}
-
-	/* Transport-ikon for reisesegmenter (kjøre/båt/fly) */
-	.cs-travel-icon {
-		font-size: 0.95rem;
-		line-height: 1;
-		flex-shrink: 0;
-	}
-	.cs-travel-icon-small {
-		font-size: 0.8rem;
-	}
-	.cs-item-checked .cs-travel-icon,
-	.cs-item-skipped .cs-travel-icon,
-	.cs-child-checked .cs-travel-icon,
-	.cs-child-skipped .cs-travel-icon {
-		opacity: 0.4;
-	}
-
-	/* Sted-kontekst-banner for dagen */
+	/* ── Sted-kontekst-banner for dagen ── */
 	.cs-location-bar {
 		display: flex;
 		flex-wrap: wrap;
@@ -1433,86 +1167,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 4px;
-	}
-
-	.cs-item-checked .cs-item-text {
-		color: #444;
-		text-decoration: line-through;
-	}
-
-	.cs-item-skipped .cs-item-text {
-		color: #5a4040;
-		text-decoration: line-through;
-		text-decoration-color: #774444;
-	}
-
-	.cs-checkbox-skipped {
-		border-color: #774444;
-		background: #2a1818;
-	}
-
-	.cs-tick-skipped {
-		color: #e07070;
-	}
-
-	.cs-slot-skipped {
-		border-color: #774444;
-		background: #2a1818;
-		color: #e07070;
-	}
-
-	.cs-child-skipped .cs-child-text {
-		color: #5a4040;
-		text-decoration: line-through;
-		text-decoration-color: #774444;
-	}
-
-	/* ── Grouped repeated items ── */
-	.cs-group-row {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 10px;
-		padding: 10px 12px;
-		border-radius: 10px;
-	}
-
-	.cs-group-label {
-		font-size: 0.88rem;
-		color: #ccc;
-		flex: 1;
-		min-width: 0;
-	}
-
-	.cs-slot-row {
-		display: flex;
-		gap: 6px;
-		flex-shrink: 0;
-	}
-
-	.cs-slot {
-		width: 24px;
-		height: 24px;
-		border-radius: 50%;
-		border: 2px solid #333;
-		background: transparent;
-		color: #7c8ef5;
-		font-size: 0.8rem;
-		cursor: pointer;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		transition: border-color 0.15s, background 0.15s;
-		touch-action: manipulation;
-		user-select: none;
-		-webkit-user-select: none;
-		-webkit-touch-callout: none;
-	}
-	.cs-slot:hover { border-color: #555; }
-	.cs-slot.cs-slot-checked {
-		border-color: #5fa080;
-		background: #5fa080;
-		color: #fff;
 	}
 
 	/* ── Add row ── */
@@ -1711,156 +1365,5 @@
 		to { opacity: 1; transform: translateY(0); }
 	}
 
-	/* ── Item wrapper and children ── */
-	.cs-item-wrapper {
-		display: flex;
-		flex-direction: column;
-		gap: 0;
-	}
-
-	.cs-children {
-		display: flex;
-		flex-direction: column;
-		gap: 0;
-		padding: 0 12px 0 32px;
-		background: #0a0a0a;
-		border-radius: 0 0 10px 10px;
-		margin-bottom: 4px;
-	}
-
-	.cs-child-item {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		padding: 8px 0;
-		border: none;
-		background: transparent;
-		color: inherit;
-		cursor: pointer;
-		text-align: left;
-		font: inherit;
-		transition: opacity 0.1s;
-		border-bottom: 1px solid #1a1a1a;
-		touch-action: manipulation;
-		user-select: none;
-		-webkit-user-select: none;
-		-webkit-touch-callout: none;
-	}
-
-	.cs-child-item:last-child {
-		border-bottom: none;
-	}
-
-	.cs-child-item:hover {
-		opacity: 0.8;
-	}
-
-	.cs-child-text {
-		font-size: 0.75rem;
-		color: #aaa;
-		line-height: 1.3;
-		flex: 1;
-		transition: color 0.1s, text-decoration 0.1s;
-	}
-
-	.cs-child-checked .cs-child-text {
-		color: #555;
-		text-decoration: line-through;
-	}
-
-	.cs-checkbox-small {
-		width: 18px;
-		height: 18px;
-		border-width: 1.5px;
-	}
-
-	/* Parent indicator on slot buttons */
-	.cs-slot-parent {
-		position: relative;
-	}
-
-	.cs-slot-indicator {
-		position: absolute;
-		font-size: 0.55rem;
-		color: #7c8ef5;
-		right: -4px;
-		top: -6px;
-		line-height: 1;
-	}
-
-	.cs-slot-parent.cs-slot-checked .cs-slot-indicator {
-		color: #5fa080;
-	}
-
-	/* Parent UI */
-	.cs-item-wrapper-parent {
-		border-radius: 0;
-	}
-
-	.cs-parent-row {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		padding: 0 0 0 2px;
-	}
-
-	.cs-parent-row .cs-item {
-		flex: 1;
-	}
-
-	.cs-parent-caret {
-		width: 20px;
-		height: 20px;
-		border: none;
-		background: transparent;
-		color: #7c8ef5;
-		font-size: 0.9rem;
-		cursor: pointer;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		flex-shrink: 0;
-		transition: transform 0.2s;
-		padding: 0;
-		line-height: 1;
-	}
-
-	.cs-parent-caret:hover {
-		color: #9cb0ff;
-	}
-
-	.cs-parent-caret.cs-caret-expanded {
-		transform: rotate(90deg);
-	}
-
-	.cs-parent-circle {
-		flex-shrink: 0;
-		display: block;
-	}
-
-	.cs-subitem-add-row {
-		padding: 6px 0 8px;
-		border-top: 1px solid #1e1e1e;
-	}
-
-	.cs-subitem-add-input {
-		width: 100%;
-		background: transparent;
-		border: none;
-		border-bottom: 1px solid #2a2a2a;
-		color: #888;
-		padding: 4px 0;
-		font: inherit;
-		font-size: 0.75rem;
-		outline: none;
-		transition: border-color 0.12s, color 0.12s;
-	}
-	.cs-subitem-add-input:focus {
-		border-color: #4a5af0;
-		color: #ccc;
-	}
-	.cs-subitem-add-input::placeholder {
-		color: #3a3a3a;
-	}
 
 </style>

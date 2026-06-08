@@ -81,8 +81,8 @@ export const GET: RequestHandler = async ({ locals }) => {
 		measureStep('transaction_events', userId, () =>
 			db
 				.select({
-					timestamp: sensorEvents.timestamp,
-					amount: sql<number>`(data->>'amount')::numeric`
+					month: sql<string>`to_char(${sensorEvents.timestamp}, 'YYYY-MM')`,
+					totalSpend: sql<number>`SUM(ABS((data->>'amount')::numeric))`
 				})
 				.from(sensorEvents)
 				.where(
@@ -93,6 +93,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 						sql`(data->>'amount')::numeric < 0`
 					)
 				)
+				.groupBy(sql`to_char(${sensorEvents.timestamp}, 'YYYY-MM')`)
 		),
 		partnerUserId
 			? measureStep('relationship_events', userId, () =>
@@ -166,13 +167,10 @@ export const GET: RequestHandler = async ({ locals }) => {
 	});
 	const weekKm = runSparkline.at(-1) ?? 0;
 
-	// ── Økonomi: grupper fra forhåndshentede bank_transactions ──
-	// Grupper per måned (YYYY-MM) og summer absolutt forbruk
+	// ── Økonomi: pre-aggregert per måned fra SQL ──
 	const spendByMonth = new Map<string, number>();
 	for (const row of txRows) {
-		const month = row.timestamp.toISOString().slice(0, 7);
-		const abs = Math.abs(Number(row.amount));
-		spendByMonth.set(month, (spendByMonth.get(month) ?? 0) + abs);
+		spendByMonth.set(row.month, Math.round(Number(row.totalSpend)));
 	}
 
 	// Bygg sparkline for de siste 6 månedene + inneværende

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/stores';
 	import type { PageData } from './$types';
@@ -44,9 +45,11 @@
 
 	let states = $state<Record<string, CardState>>({});
 	$effect(() => {
+		const tasks = data.tasks;
+		const prev = untrack(() => states);
 		const next: Record<string, CardState> = {};
-		for (const t of data.tasks) {
-			next[t.id] = states[t.id] ?? emptyState(t);
+		for (const t of tasks) {
+			next[t.id] = prev[t.id] ?? emptyState(t);
 		}
 		states = next;
 	});

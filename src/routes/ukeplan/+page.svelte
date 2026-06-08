@@ -3,7 +3,8 @@
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import { tick } from 'svelte';
 	import { afterNavigate, goto, invalidateAll } from '$app/navigation';
-	import { AppPage, PullToRefresh } from '$lib/components/ui';
+	import { AppPage, ChipStrip, PullToRefresh, ChecklistItemRow, ChecklistGroupRow } from '$lib/components/ui';
+	import type { ChecklistItemLike } from '$lib/types/checklist';
 	import ScreenTitle from '$lib/components/ui/ScreenTitle.svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import FlowSheet from '$lib/components/flows/FlowSheet.svelte';
@@ -1347,6 +1348,43 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 		}
 	}
 
+	function makeRowLongpress(checklistId: string) {
+		return (rect: DOMRect, item: ChecklistItemLike) => {
+			contextMenuItem = { checklistId, item: item as ChecklistItem };
+			contextMenuRect = rect;
+		};
+	}
+
+	function makeRowTextClick(checklistId: string) {
+		return (item: ChecklistItemLike) => {
+			void startEditing(checklistId, item as ChecklistItem);
+		};
+	}
+
+	function makeRowToggle(checklistId: string) {
+		return (item: ChecklistItemLike) => {
+			void toggleChecklistItem(checklistId, item.id, !item.checked);
+		};
+	}
+
+	function makeRowAddChild(checklistId: string) {
+		return async (parentId: string, text: string) => {
+			const checklist = getChecklistById(checklistId);
+			if (!checklist) return;
+			const response = await fetch(`/api/checklists/${checklistId}/items`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ text, sortOrder: checklist.items.length, parentId })
+			});
+			if (!response.ok) return;
+			const created = await response.json() as ChecklistItem[];
+			updateChecklistById(checklistId, (current) => ({
+				...current,
+				items: [...current.items, ...created]
+			}));
+		};
+	}
+
 	async function setItemSkipped(checklistId: string, itemId: string, skipped: boolean) {
 		updateChecklistById(checklistId, (current) => ({
 			...current,
@@ -1855,34 +1893,32 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 	</header>
 
 	{#if showPlanWeek || showPlanDay || showCloseDay || hasCarryovers}
-	<div class="wp-action-ribbon">
+	<ChipStrip gap={8} ariaLabel="Planleggingshandlinger" class="wp-action-strip">
 		{#if showPlanWeek}
-			<button class="wp-flow-btn wp-flow-btn--week" type="button" onclick={() => void openWeekPlanFlow()} disabled={openingWeekPlanFlow}>
-				<span class="wp-flow-btn-icon">{openingWeekPlanFlow ? '⏳' : '🗓️'}</span>
-				<span class="wp-flow-btn-label">{openingWeekPlanFlow ? 'Henter …' : 'Planlegg uka'}</span>
+			<button class="wp-action-pill wp-action-pill--week" type="button" onclick={() => void openWeekPlanFlow()} disabled={openingWeekPlanFlow}>
+				<span class="wp-action-pill-icon">{openingWeekPlanFlow ? '⏳' : '🗓️'}</span>
+				<span class="wp-action-pill-label">{openingWeekPlanFlow ? 'Henter …' : 'Planlegg uka'}</span>
 			</button>
 		{/if}
 		{#if hasCarryovers && !weekIsPlanned}
-			<button class="wp-flow-btn wp-flow-btn--util" type="button" onclick={() => void importFromPreviousWeek()} disabled={planningImportBusy}>
-				<span class="wp-flow-btn-icon">{planningImportBusy ? '⏳' : '↩️'}</span>
-				<span class="wp-flow-btn-label">{planningImportBusy ? 'Legger til …' : 'Importer forrige uke'}</span>
+			<button class="wp-action-pill wp-action-pill--util" type="button" onclick={() => void importFromPreviousWeek()} disabled={planningImportBusy}>
+				<span class="wp-action-pill-icon">{planningImportBusy ? '⏳' : '↩️'}</span>
+				<span class="wp-action-pill-label">{planningImportBusy ? 'Legger til …' : 'Importer forrige uke'}</span>
 			</button>
 		{/if}
 		{#if showPlanDay}
-			<button class="wp-flow-btn wp-flow-btn--day" type="button" onclick={() => void openDayPlanSheet()} disabled={dayPlanSheetBusy}>
-				<span class="wp-flow-btn-icon">{dayPlanSheetBusy ? '⏳' : '📋'}</span>
-				<span class="wp-flow-btn-label">{dayPlanSheetBusy ? 'Henter …' : 'Planlegg dag'}</span>
-				<span class="wp-flow-btn-sub">{smartDayLabel(selectedDayIso)}</span>
+			<button class="wp-action-pill wp-action-pill--day" type="button" onclick={() => void openDayPlanSheet()} disabled={dayPlanSheetBusy}>
+				<span class="wp-action-pill-icon">{dayPlanSheetBusy ? '⏳' : '📋'}</span>
+				<span class="wp-action-pill-label">{dayPlanSheetBusy ? 'Henter …' : 'Planlegg dag'}</span>
 			</button>
 		{/if}
 		{#if showCloseDay}
-			<button class="wp-flow-btn wp-flow-btn--day wp-flow-btn--close" type="button" onclick={openDayCloseFlow} disabled={dayCloseBusy}>
-				<span class="wp-flow-btn-icon">{dayCloseBusy ? '⏳' : '✅'}</span>
-				<span class="wp-flow-btn-label">{dayCloseBusy ? 'Jobber …' : 'Avslutt dag'}</span>
-				<span class="wp-flow-btn-sub">{smartDayLabel(selectedDayIso)}</span>
+			<button class="wp-action-pill wp-action-pill--day" type="button" onclick={openDayCloseFlow} disabled={dayCloseBusy}>
+				<span class="wp-action-pill-icon">{dayCloseBusy ? '⏳' : '✅'}</span>
+				<span class="wp-action-pill-label">{dayCloseBusy ? 'Jobber …' : 'Avslutt dag'}</span>
 			</button>
 		{/if}
-	</div>
+	</ChipStrip>
 	{/if}
 
 
@@ -2029,57 +2065,39 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 			</div>
 
 			<ul class="wp-checklist">
+				{#snippet weekTrailingAction(item: ChecklistItemLike)}
+					<span class="wp-drag-handle" aria-hidden="true" ontouchstart={(event) => startTouchDrag(event, weekChecklistId, item.id)}>⋮⋮</span>
+				{/snippet}
+
 				{#each groupChecklistItems(sortByStatus(weekChecklistState.items.filter(i => !i.parentId))) as group}
 					{#if group.type === 'group'}
-						<li
-							class="wp-check-row"
-							onpointerdown={(e) => handleContextPressStart(e, weekChecklistId, group.items[0])}
-							onpointerup={handleContextPressEnd}
-							onpointercancel={handleContextPressEnd}
-							onpointerleave={handleContextPressEnd}
-						>
-							<div class="wp-check-row-main">
-								<span class="wp-check-text wp-check-group-label">{activityEmoji(group.label) ? activityEmoji(group.label) + " " : ""}{group.label}</span>
-								<div class="wp-slot-row" aria-label="Progresjon">
-									{#each group.items as item}
-										<button
-											type="button"
-											class="wp-slot wp-slot-btn"
-											class:checked={item.checked}
-											onclick={() => { if (!longPressTriggered) void toggleChecklistItem(weekChecklistId, item.id, !item.checked); }}
-											aria-label={item.checked ? 'Marker som ikke gjort' : 'Marker som gjort'}
-										>{item.checked ? '✓' : ''}</button>
-									{/each}
-								</div>
-							</div>
+						<li class="wp-check-row">
+							<ChecklistGroupRow
+								label={group.label}
+								items={group.items}
+								allItems={weekChecklistState.items}
+								ontoggle={makeRowToggle(weekChecklistId)}
+								onlongpress={makeRowLongpress(weekChecklistId)}
+							/>
 						</li>
 					{:else}
-					{@const weekChildren = sortByStatus(weekChecklistState.items.filter(c => c.parentId === group.item.id))}
-					{@const hasWeekChildren = weekChildren.length > 0}
-					{@const completedWeekChildren = weekChildren.filter(c => c.checked).length}
-					{@const isWeekExpanded = expandedWeekParentIds.has(group.item.id)}
-					{@const wR = 8}
-					{@const wC = 2 * Math.PI * wR}
-					{@const wPct = weekChildren.length > 0 ? completedWeekChildren / weekChildren.length : 0}
-					<li
-						class="wp-check-row"
-						class:wp-check-row-parent={hasWeekChildren}
-						class:is-dragging={dragItem?.itemId === group.item.id}
-						class:is-drag-over={dragOverItemId === group.item.id && dragItem?.itemId !== group.item.id}
-						data-item-id={group.item.id}
-						draggable={editingItem?.itemId !== group.item.id}
-						ondragstart={() => (dragItem = { checklistId: weekChecklistId, itemId: group.item.id })}
-						ondragover={(event) => { event.preventDefault(); dragOverItemId = group.item.id; }}
-						ondragleave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) dragOverItemId = null; }}
-						ondrop={() => {
-							if (!dragItem) return;
-							void reorderChecklistItems(weekChecklistId, dragItem.itemId, group.item.id);
-							dragItem = null;
-							dragOverItemId = null;
-						}}
-						ondragend={() => { dragItem = null; dragOverItemId = null; }}
-					>
-						<div class="wp-check-row-main">
+						<li
+							class="wp-check-row"
+							class:is-dragging={dragItem?.itemId === group.item.id}
+							class:is-drag-over={dragOverItemId === group.item.id && dragItem?.itemId !== group.item.id}
+							data-item-id={group.item.id}
+							draggable={editingItem?.itemId !== group.item.id}
+							ondragstart={() => (dragItem = { checklistId: weekChecklistId, itemId: group.item.id })}
+							ondragover={(event) => { event.preventDefault(); dragOverItemId = group.item.id; }}
+							ondragleave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) dragOverItemId = null; }}
+							ondrop={() => {
+								if (!dragItem) return;
+								void reorderChecklistItems(weekChecklistId, dragItem.itemId, group.item.id);
+								dragItem = null;
+								dragOverItemId = null;
+							}}
+							ondragend={() => { dragItem = null; dragOverItemId = null; }}
+						>
 							{#if editingItem?.itemId === group.item.id}
 								<div class="wp-edit-shell">
 									<input
@@ -2098,103 +2116,23 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 									><Icon name="close" size={13} /></button>
 								</div>
 							{:else}
-								<button
-									type="button"
-									class="wp-item-text-btn"
-									class:is-skipped={!!group.item.skippedAt}
-									onpointerdown={(e) => handleContextPressStart(e, weekChecklistId, group.item)}
-									onpointerup={handleContextPressEnd}
-									onpointercancel={handleContextPressEnd}
-									onpointerleave={handleContextPressEnd}
-									onclick={() => handleEditPress(weekChecklistId, group.item)}
-								>
-									<span class="wp-check-text" class:checked={group.item.checked} class:skipped={!!group.item.skippedAt}><TaskTitle title={group.item.text} /></span>
-								</button>
+								<ChecklistItemRow
+									item={group.item}
+									allItems={weekChecklistState.items}
+									expandedParentIds={expandedWeekParentIds}
+									showTime={false}
+									showTravel={false}
+									ontoggle={makeRowToggle(weekChecklistId)}
+									ontextclick={makeRowTextClick(weekChecklistId)}
+									onlongpress={makeRowLongpress(weekChecklistId)}
+									onexpand={toggleWeekParentExpansion}
+									onaddchild={makeRowAddChild(weekChecklistId)}
+									animated={false}
+									trailingAction={weekTrailingAction}
+								/>
 							{/if}
-							<div class="wp-check-row-right">
-								{#if group.item.domain === 'food' && editingItem?.itemId !== group.item.id}
-									<button
-										type="button"
-										class="wp-food-affordance"
-										onclick={() => openFoodChatForItem(group.item.text)}
-										aria-label="Planlegg måltid"
-										title="Planlegg måltid"
-									>🍽️</button>
-								{/if}
-								{#if hasWeekChildren}
-									{#if completedWeekChildren === weekChildren.length}
-										<span class="wp-check-circle checked">✓</span>
-									{:else}
-										<svg class="wp-week-parent-circle" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
-											<circle cx="10" cy="10" r={wR} fill="none" stroke="#353c50" stroke-width="2"/>
-											<circle cx="10" cy="10" r={wR} fill="none"
-												stroke="#7c8ef5"
-												stroke-width="2"
-												stroke-dasharray="{wPct * wC} {wC}"
-												stroke-linecap="round"
-												transform="rotate(-90 10 10)"
-											/>
-										</svg>
-									{/if}
-									<button
-										type="button"
-										class="wp-parent-caret"
-										class:expanded={isWeekExpanded}
-										onclick={() => toggleWeekParentExpansion(group.item.id)}
-										aria-label={isWeekExpanded ? 'Lukk subitems' : 'Utvid subitems'}
-									>▸</button>
-								{:else}
-									<button type="button" class="wp-check-toggle" onclick={() => void toggleChecklistItem(weekChecklistId, group.item.id, !group.item.checked)} aria-label="Toggle">
-										<span class="wp-check-circle" class:checked={group.item.checked} class:skipped={!!group.item.skippedAt}>{group.item.skippedAt ? '✕' : group.item.checked ? '✓' : ''}</span>
-									</button>
-								{/if}
-								<span class="wp-drag-handle" aria-hidden="true" ontouchstart={(event) => startTouchDrag(event, weekChecklistId, group.item.id)}>⋮⋮</span>
-							</div>
-						</div>
-						{#if hasWeekChildren && isWeekExpanded}
-							<div class="wp-day-children">
-								{#each weekChildren as child}
-									<div class="wp-day-child-row">
-										{#if editingItem?.itemId === child.id}
-											<div class="wp-edit-shell">
-												<input
-													bind:this={editInput}
-													bind:value={editingItem.text}
-													class="wp-input wp-edit-input"
-													onblur={handleEditBlur}
-													onkeydown={handleEditKeydown}
-												/>
-												<button
-													type="button"
-													class="btn-icon-danger"
-													onmousedown={() => (skipEditBlur = true)}
-													onclick={() => void deleteChecklistItem(weekChecklistId, child.id)}
-													aria-label="Slett subpunkt"
-												><Icon name="close" size={13} /></button>
-											</div>
-										{:else}
-											<button
-												type="button"
-												class="wp-item-text-btn"
-												class:is-skipped={!!child.skippedAt}
-												onpointerdown={(e) => handleContextPressStart(e, weekChecklistId, child)}
-												onpointerup={handleContextPressEnd}
-												onpointercancel={handleContextPressEnd}
-												onpointerleave={handleContextPressEnd}
-												onclick={() => handleEditPress(weekChecklistId, child)}
-											>
-												<span class="wp-check-text" class:checked={child.checked} class:skipped={!!child.skippedAt}><TaskTitle title={child.text} /></span>
-											</button>
-											<button type="button" class="wp-check-toggle" onclick={() => void toggleChecklistItem(weekChecklistId, child.id, !child.checked)} aria-label="Toggle">
-												<span class="wp-check-circle" class:checked={child.checked} class:skipped={!!child.skippedAt}>{child.skippedAt ? '✕' : child.checked ? '✓' : ''}</span>
-											</button>
-										{/if}
-									</div>
-								{/each}
-							</div>
-						{/if}
-					</li>
-				{/if}
+						</li>
+					{/if}
 				{/each}
 			</ul>
 
@@ -2325,15 +2263,30 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 		{/if}
 
 		{#if selectedDayChecklist}
+			{#snippet dayTrailingBadge(item: ChecklistItemLike)}
+				{#if item.metadata?.linkedTaskId}
+					<span class="wp-intent-badge" title="Koblet til ukesmål: {item.metadata.linkedTaskTitle ?? ''}">
+						{item.metadata.autoChecked ? '⚡' : '🔗'}
+						{item.metadata.linkedTaskTitle
+							? (item.metadata.linkedTaskTitle as string).slice(0, 24) + ((item.metadata.linkedTaskTitle as string).length > 24 ? '…' : '')
+							: 'Ukesmål'}
+					</span>
+				{:else if item.metadata?.activityType}
+					<span class="wp-intent-badge" title="Registrert som aktivitet – hakes av automatisk når en matchende økt synkes">
+						{item.metadata.autoChecked ? '⚡' : activityTypeEmoji(item.metadata.activityType as string)}
+						{item.metadata.autoChecked ? 'Auto-hakt' : 'Auto'}
+					</span>
+				{/if}
+			{/snippet}
+
+			{#snippet dayTrailingAction(item: ChecklistItemLike)}
+				<span class="wp-drag-handle" aria-hidden="true" ontouchstart={(event) => startTouchDrag(event, selectedDayChecklist.id, item.id)}>⋮⋮</span>
+			{/snippet}
+
 			<ul class="wp-checklist">
 				{#each sortedDayItems as item}
-					{@const dayChildren = sortByStatus(sortByTime(selectedDayChecklist.items.filter((child) => child.parentId === item.id)))}
-					{@const hasChildren = dayChildren.length > 0}
-					{@const isExpanded = expandedDayParentIds.has(item.id)}
-					{@const completedChildren = dayChildren.filter((child) => child.checked).length}
 					<li
 						class="wp-check-row"
-						class:wp-check-row-parent={hasChildren}
 						class:is-dragging={dragItem?.itemId === item.id}
 						class:is-drag-over={dragOverItemId === item.id && dragItem?.itemId !== item.id}
 						data-item-id={item.id}
@@ -2349,124 +2302,37 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 						}}
 						ondragend={() => { dragItem = null; dragOverItemId = null; }}
 					>
-						<div class="wp-check-row-main">
-							{#if editingItem?.itemId === item.id}
-								<div class="wp-edit-shell">
-									<input
-										bind:this={editInput}
-										bind:value={editingItem.text}
-										class="wp-input wp-edit-input"
-										onblur={handleEditBlur}
-										onkeydown={handleEditKeydown}
-									/>
-									<button
-										type="button"
-										class="btn-icon-danger"
-										onmousedown={() => (skipEditBlur = true)}
-										onclick={() => void deleteChecklistItem(selectedDayChecklist.id, item.id)}
-										aria-label="Slett punkt"
-									><Icon name="close" size={13} /></button>
-								</div>
-							{:else}
+						{#if editingItem?.itemId === item.id}
+							<div class="wp-edit-shell">
+								<input
+									bind:this={editInput}
+									bind:value={editingItem.text}
+									class="wp-input wp-edit-input"
+									onblur={handleEditBlur}
+									onkeydown={handleEditKeydown}
+								/>
 								<button
 									type="button"
-									class="wp-item-text-btn"
-									class:is-skipped={!!item.skippedAt}
-									onpointerdown={(e) => handleContextPressStart(e, selectedDayChecklist.id, item)}
-									onpointerup={handleContextPressEnd}
-									onpointercancel={handleContextPressEnd}
-									onpointerleave={handleContextPressEnd}
-									onclick={() => handleEditPress(selectedDayChecklist.id, item)}
-								>
-									{#if hasChildren}
-										<span class="wp-parent-progress">{completedChildren}/{dayChildren.length}</span>
-									{/if}
-									{#if item.metadata?.timeHour !== undefined}
-										<span class="wp-time-badge">{formatItemTime(item.metadata.timeHour, item.metadata.timeMinute ?? 0)}</span>
-									{/if}
-									{#if isLocationItem(item)}
-										<span class="wp-loc-badge">📍 {locationDisplayName(item)}</span>
-									{:else}
-										{#if getTravelMode(item)}<span class="wp-travel-icon" aria-hidden="true">{travelModeIcon(getTravelMode(item)!)}</span>{/if}
-										<span class="wp-check-text" class:checked={item.checked} class:skipped={!!item.skippedAt}><TaskTitle title={item.metadata?.timeHour !== undefined ? stripTimeFromText(item.text) : item.text} /></span>
-									{/if}
-									{#if item.metadata?.linkedTaskId}
-										<span class="wp-intent-badge" title="Koblet til ukesmål: {item.metadata.linkedTaskTitle ?? ''}">
-											{item.metadata.autoChecked ? '⚡' : '🔗'}
-											{item.metadata.linkedTaskTitle
-												? item.metadata.linkedTaskTitle.slice(0, 24) + (item.metadata.linkedTaskTitle.length > 24 ? '…' : '')
-												: 'Ukesmål'}
-										</span>
-									{:else if item.metadata?.activityType}
-										<span class="wp-intent-badge" title="Registrert som aktivitet – hakes av automatisk når en matchende økt synkes">
-											{item.metadata.autoChecked ? '⚡' : activityTypeEmoji(item.metadata.activityType)}
-											{item.metadata.autoChecked ? 'Auto-hakt' : 'Auto'}
-										</span>
-									{/if}
-								</button>
-							{/if}
-							<div class="wp-check-row-right">
-								{#if hasChildren}
-									<button
-										type="button"
-										class="wp-parent-caret"
-										class:expanded={isExpanded}
-										onclick={() => toggleDayParentExpansion(item.id)}
-										aria-label={isExpanded ? 'Lukk subitems' : 'Utvid subitems'}
-									>▸</button>
-								{:else if !isLocationItem(item)}
-									<button type="button" class="wp-check-toggle" onclick={() => void toggleChecklistItem(selectedDayChecklist.id, item.id, !item.checked)} aria-label="Toggle">
-										<span class="wp-check-circle" class:checked={item.checked} class:skipped={!!item.skippedAt}>{item.skippedAt ? '✕' : item.checked ? '✓' : ''}</span>
-									</button>
-								{/if}
-								<span class="wp-drag-handle" aria-hidden="true" ontouchstart={(event) => startTouchDrag(event, selectedDayChecklist.id, item.id)}>⋮⋮</span>
+									class="btn-icon-danger"
+									onmousedown={() => (skipEditBlur = true)}
+									onclick={() => void deleteChecklistItem(selectedDayChecklist.id, item.id)}
+									aria-label="Slett punkt"
+								><Icon name="close" size={13} /></button>
 							</div>
-						</div>
-						{#if hasChildren && isExpanded}
-							<div class="wp-day-children">
-								{#each dayChildren as child}
-									<div class="wp-day-child-row">
-										{#if editingItem?.itemId === child.id}
-											<div class="wp-edit-shell">
-												<input
-													bind:this={editInput}
-													bind:value={editingItem.text}
-													class="wp-input wp-edit-input"
-													onblur={handleEditBlur}
-													onkeydown={handleEditKeydown}
-												/>
-												<button
-													type="button"
-													class="btn-icon-danger"
-													onmousedown={() => (skipEditBlur = true)}
-													onclick={() => void deleteChecklistItem(selectedDayChecklist.id, child.id)}
-													aria-label="Slett subpunkt"
-												><Icon name="close" size={13} /></button>
-											</div>
-										{:else}
-											<button
-												type="button"
-												class="wp-item-text-btn"
-												class:is-skipped={!!child.skippedAt}
-												onpointerdown={(e) => handleContextPressStart(e, selectedDayChecklist.id, child)}
-												onpointerup={handleContextPressEnd}
-												onpointercancel={handleContextPressEnd}
-												onpointerleave={handleContextPressEnd}
-												onclick={() => handleEditPress(selectedDayChecklist.id, child)}
-											>
-												{#if child.metadata?.timeHour !== undefined}
-													<span class="wp-time-badge">{formatItemTime(child.metadata.timeHour, child.metadata.timeMinute ?? 0)}</span>
-												{/if}
-												{#if getTravelMode(child)}<span class="wp-travel-icon" aria-hidden="true">{travelModeIcon(getTravelMode(child)!)}</span>{/if}
-												<span class="wp-check-text" class:checked={child.checked} class:skipped={!!child.skippedAt}><TaskTitle title={child.metadata?.timeHour !== undefined ? stripTimeFromText(child.text) : child.text} /></span>
-											</button>
-											<button type="button" class="wp-check-toggle" onclick={() => void toggleChecklistItem(selectedDayChecklist.id, child.id, !child.checked)} aria-label="Toggle">
-												<span class="wp-check-circle" class:checked={child.checked} class:skipped={!!child.skippedAt}>{child.skippedAt ? '✕' : child.checked ? '✓' : ''}</span>
-											</button>
-										{/if}
-									</div>
-								{/each}
-							</div>
+						{:else}
+							<ChecklistItemRow
+								{item}
+								allItems={selectedDayChecklist.items}
+								expandedParentIds={expandedDayParentIds}
+								ontoggle={makeRowToggle(selectedDayChecklist.id)}
+								ontextclick={makeRowTextClick(selectedDayChecklist.id)}
+								onlongpress={makeRowLongpress(selectedDayChecklist.id)}
+								onexpand={toggleDayParentExpansion}
+								onaddchild={makeRowAddChild(selectedDayChecklist.id)}
+								animated={false}
+								trailingBadge={dayTrailingBadge}
+								trailingAction={dayTrailingAction}
+							/>
 						{/if}
 					</li>
 				{/each}
@@ -2891,84 +2757,73 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 		font-weight: 700;
 	}
 
-	.wp-action-ribbon {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 10px;
+	:global(.wp-action-strip) {
+		margin: 0 -20px;
+		padding: 0 20px;
 	}
 
-	.wp-flow-btn {
-		display: flex;
-		flex-direction: column;
+	.wp-action-pill {
+		display: inline-flex;
 		align-items: center;
-		gap: 3px;
-		padding: 12px 16px;
-		min-width: 88px;
-		border-radius: 12px;
-		border: 1px solid var(--border-color);
-		background: var(--bg-card);
-		color: var(--text-secondary);
-		font: inherit;
+		gap: 8px;
+		flex: 0 0 auto;
+		background: hsl(228 19% 11%);
+		border: 1px solid hsl(228 16% 18%);
+		border-radius: 999px;
+		padding: 8px 14px;
 		cursor: pointer;
-		transition: border-color 0.15s, color 0.15s, background 0.15s, box-shadow 0.15s, transform 0.1s;
-		text-align: center;
+		font: inherit;
+		color: hsl(228 22% 80%);
+		font-size: 0.75rem;
+		font-weight: 600;
+		letter-spacing: 0.02em;
+		white-space: nowrap;
+		touch-action: manipulation;
+		transition: background 0.15s, border-color 0.15s, transform 0.15s, box-shadow 0.15s;
 	}
-	.wp-flow-btn:hover:not(:disabled) {
-		color: var(--text-primary);
-		background: rgba(255, 255, 255, 0.05);
+	.wp-action-pill:hover:not(:disabled) {
+		background: hsl(228 22% 14%);
+		border-color: hsl(228 28% 34%);
 		transform: translateY(-1px);
 	}
-	.wp-flow-btn:disabled {
+	.wp-action-pill:disabled {
 		opacity: 0.5;
 		cursor: default;
 	}
-	.wp-flow-btn-icon {
-		font-size: 1.55rem;
+	.wp-action-pill-icon {
+		font-size: 0.95rem;
 		line-height: 1;
 	}
-	.wp-flow-btn-label {
-		font-size: 0.72rem;
-		font-weight: 600;
-		letter-spacing: 0.01em;
-		white-space: nowrap;
-	}
-	.wp-flow-btn-sub {
-		font-size: 0.65rem;
-		color: var(--text-muted, var(--text-tertiary));
+	.wp-action-pill-label {
 		white-space: nowrap;
 	}
 
-	/* week-level: purple accent */
-	.wp-flow-btn--week {
+	.wp-action-pill--week {
 		border-color: rgba(139, 92, 246, 0.3);
 	}
-	.wp-flow-btn--week:hover:not(:disabled) {
+	.wp-action-pill--week:hover:not(:disabled) {
 		border-color: rgba(139, 92, 246, 0.65);
 		background: rgba(139, 92, 246, 0.08);
 		box-shadow: 0 0 14px rgba(139, 92, 246, 0.14);
 	}
 
-	/* day-level: teal accent */
-	.wp-flow-btn--day {
+	.wp-action-pill--day {
 		border-color: rgba(52, 211, 153, 0.28);
 	}
-	.wp-flow-btn--day:hover:not(:disabled) {
+	.wp-action-pill--day:hover:not(:disabled) {
 		border-color: rgba(52, 211, 153, 0.65);
 		background: rgba(52, 211, 153, 0.06);
 		box-shadow: 0 0 14px rgba(52, 211, 153, 0.10);
 	}
 
-	/* utility (import): amber accent */
-	.wp-flow-btn--util {
+	.wp-action-pill--util {
 		border-color: rgba(251, 191, 36, 0.28);
 	}
-	.wp-flow-btn--util:hover:not(:disabled) {
+	.wp-action-pill--util:hover:not(:disabled) {
 		border-color: rgba(251, 191, 36, 0.6);
 		background: rgba(251, 191, 36, 0.06);
 		box-shadow: 0 0 14px rgba(251, 191, 36, 0.10);
 	}
-
-	/* "close/done" variants get slightly bolder base border via their colour modifier */
 
 	.wp-card {
 		background: linear-gradient(180deg, rgba(9, 11, 17, 0.95), rgba(8, 10, 15, 0.95));

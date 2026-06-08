@@ -10,6 +10,8 @@
     <PeriodPills options={['7d','30d','90d']} value={period} onchange={(v) => period = v} />
 -->
 <script lang="ts">
+	import ChipStrip from './ChipStrip.svelte';
+
 	interface Props {
 		options: string[];
 		value: string;
@@ -19,7 +21,7 @@
 	let { options, value, onchange }: Props = $props();
 </script>
 
-<div class="period-pills" role="group">
+<ChipStrip gap={6} ariaLabel="Periodevalg">
 	{#each options as opt}
 		<button
 			class="period-btn"
@@ -28,14 +30,9 @@
 			aria-pressed={value === opt}
 		>{opt}</button>
 	{/each}
-</div>
+</ChipStrip>
 
 <style>
-	.period-pills {
-		display: flex;
-		gap: 6px;
-	}
-
 	.period-btn {
 		padding: 6px 11px;
 		border-radius: 999px;

@@ -12,7 +12,7 @@ type WeeklyEffortMetric = NonNullable<NonNullable<typeof sensorAggregates.$infer
 /**
  * Calculate average, excluding nulls
  */
-function avg(values: (number | undefined)[]): number | undefined {
+export function avg(values: (number | undefined)[]): number | undefined {
 	const valid = values.filter((v): v is number => v !== undefined && v !== null);
 	if (valid.length === 0) return undefined;
 	return valid.reduce((sum, v) => sum + v, 0) / valid.length;
@@ -21,7 +21,7 @@ function avg(values: (number | undefined)[]): number | undefined {
 /**
  * Calculate sum, excluding nulls
  */
-function sum(values: (number | undefined)[]): number | undefined {
+export function sum(values: (number | undefined)[]): number | undefined {
 	const valid = values.filter((v): v is number => v !== undefined && v !== null);
 	if (valid.length === 0) return undefined;
 	return valid.reduce((sum, v) => sum + v, 0);
@@ -30,7 +30,7 @@ function sum(values: (number | undefined)[]): number | undefined {
 /**
  * Calculate min
  */
-function min(values: (number | undefined)[]): number | undefined {
+export function min(values: (number | undefined)[]): number | undefined {
 	const valid = values.filter((v): v is number => v !== undefined && v !== null);
 	if (valid.length === 0) return undefined;
 	return Math.min(...valid);
@@ -39,7 +39,7 @@ function min(values: (number | undefined)[]): number | undefined {
 /**
  * Calculate max
  */
-function max(values: (number | undefined)[]): number | undefined {
+export function max(values: (number | undefined)[]): number | undefined {
 	const valid = values.filter((v): v is number => v !== undefined && v !== null);
 	if (valid.length === 0) return undefined;
 	return Math.max(...valid);
@@ -48,7 +48,7 @@ function max(values: (number | undefined)[]): number | undefined {
 /**
  * Get latest non-null value
  */
-function latest(values: (number | undefined)[]): number | undefined {
+export function latest(values: (number | undefined)[]): number | undefined {
 	for (let i = values.length - 1; i >= 0; i--) {
 		if (values[i] !== undefined && values[i] !== null) {
 			return values[i];

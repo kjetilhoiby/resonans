@@ -227,9 +227,9 @@ export async function buildUnifiedWorkoutActivities(
 			eventType: sensorEvents.eventType,
 			dataType: sensorEvents.dataType,
 			timestamp: sensorEvents.timestamp,
-			data: sql<Record<string, unknown>>`${sensorEvents.data} - 'trackPoints'`,
+			data: sql<Record<string, unknown>>`${sensorEvents.data} - 'trackPoints' - 'rawResponse' - 'laps' - 'samples'`,
 			metadata: sql<Record<string, unknown>>`${sensorEvents.metadata} - 'rawResponse'`,
-			hasTrackPoints: sql<boolean>`jsonb_array_length(CASE WHEN jsonb_typeof(${sensorEvents.data}->'trackPoints') = 'array' THEN ${sensorEvents.data}->'trackPoints' ELSE '[]'::jsonb END) > 0`,
+			hasTrackPoints: sql<boolean>`${sensorEvents.data} ? 'trackPoints' AND jsonb_typeof(${sensorEvents.data}->'trackPoints') = 'array' AND jsonb_array_length(${sensorEvents.data}->'trackPoints') > 0`,
 		})
 		.from(sensorEvents)
 		.where(and(...conditions))
