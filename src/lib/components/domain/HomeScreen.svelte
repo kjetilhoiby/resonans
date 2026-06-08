@@ -4,55 +4,106 @@
   Layout: 10 / 28 / 24 / 28  (tittel / widgets / tema / input)
   Ingen tab-bar, ingen overlays. Soner animerer til fullskjerm ved tap.
 
+  Sonene er ekstrahert til egne komponenter i ./home/:
+    HomeTitleZone  — SONE 1
+    HomeWidgetZone — SONE 2
+    HomeThemeZone  — SONE 3
+    HomeChatZone   — SONE 4
+
+  Delt state publiseres via setContext(HOME_CTX, ctx).
+
+  Forretningslogikk er ekstrahert til:
+    home-data.ts       — datafetching, caching, dato-hjelpere
+    home-chat.ts       — attachment-triage, sheet-snapshot, quick actions
+    home-theme-drag.ts — drag-and-drop, tema-meny
+
   Props:
     themes    aktive temaer fra DB (for tema-grid)
 -->
 <script lang="ts">
 	import { goto, preloadCode, preloadData } from '$app/navigation';
 	import { page } from '$app/stores';
-	import { onMount } from 'svelte';
-	import { fly } from 'svelte/transition';
-	import DynamicWidget from '../composed/DynamicWidget.svelte';
-	import EgenfrekvensQuickCard from '../composed/EgenfrekvensQuickCard.svelte';
-	import WidgetConfigSheet from '../ui/WidgetConfigSheet.svelte';
-	import MorphTitle from '../ui/MorphTitle.svelte';
-	import Icon from '../ui/Icon.svelte';
-	import ChipStrip from '../ui/ChipStrip.svelte';
-	import ChatInput from '../ui/ChatInput.svelte';
-	import ChatMessages from '../ui/ChatMessages.svelte';
-	import ChecklistWidget, { type Checklist } from '../composed/ChecklistWidget.svelte';
-	import ChecklistSheet from '../ui/ChecklistSheet.svelte';
-	import FlowSheet from '../flows/FlowSheet.svelte';
-	import EgenfrekvensPrompt from './EgenfrekvensPrompt.svelte';
+	import { onMount, setContext } from 'svelte';
 	import PullToRefresh from '../ui/PullToRefresh.svelte';
-	import { FLOWS } from '$lib/flows/registry';
 	import type { ActionCandidate, ActionIntent } from '$lib/types/actions';
-	import PageHeader from '../ui/PageHeader.svelte';
-	import CollapsibleSection from '../ui/CollapsibleSection.svelte';
-	import ConversationContextMenu from '../ui/ConversationContextMenu.svelte';
-	import { getThemeHueStyle } from '$lib/domain/theme-hues';
-	import { prefetchDashboard } from '$lib/client/dashboard-cache';
 	import { prefetchWidgetData } from '$lib/client/widget-data-cache';
 	import { finishNavMetric, startNavMetric, timeAsync } from '$lib/client/nav-metrics';
 	import { ChatState } from '$lib/client/chat-state.svelte';
+	import type { Checklist } from '../composed/ChecklistWidget.svelte';
 
-	interface Theme {
-		id: string;
-		name: string;
-		emoji: string;
-	}
+	import HomeTitleZone from './home/HomeTitleZone.svelte';
+	import HomeWidgetZone from './home/HomeWidgetZone.svelte';
+	import HomeThemeZone from './home/HomeThemeZone.svelte';
+	import HomeChatZone from './home/HomeChatZone.svelte';
+	import HomeOverlays from './home/HomeOverlays.svelte';
+	import {
+		HOME_CTX,
+		type HomeContext,
+		type Theme,
+		type QuickActionId,
+		type UserWidget,
+		type SensorSummary,
+		type MediaHistoryItem,
+		type HomeWidgetEntry,
+		type AttachmentRef,
+		type ActionItem,
+		type RecentConversation,
+		type EgenfrekvensSlotSummary,
+		type EgenfrekvensRecentPoint,
+	} from './home/home-context';
+
+	// ── Ekstraherte moduler ──
+	import {
+		toLocalIsoDate,
+		toLocalYearMonth,
+		getLocalIsoWeekDashed,
+		readCachedPayload,
+		writeCachedPayload,
+		HOME_SENSOR_CACHE_KEY,
+		HOME_PINNED_WIDGETS_CACHE_KEY,
+		HOME_SENSOR_CACHE_MAX_AGE_MS,
+		HOME_PINNED_WIDGETS_CACHE_MAX_AGE_MS,
+		fetchChecklistData,
+		fetchSensorAndWidgets,
+		loadActionCandidates as fetchActionCandidates,
+		loadEgenfrekvensRecent as fetchEgenfrekvensRecent,
+		fetchMediaHistory,
+		fetchWeekPlanContext,
+		fetchMonthPlanContext,
+		buildWeekPlanFlowContext,
+		buildMonthPlanFlowContext,
+		loadEgenfrekvensContext as fetchEgenfrekvensContext,
+		fetchQuickWinItems,
+		scheduleWidgetDataPrefetch,
+		chunkWidgets,
+		WIDGETS_PER_PAGE,
+	} from './home/home-data';
+
+	import {
+		QUICK_ACTIONS,
+		requestAttachmentTriage,
+		presentAttachmentTriage,
+		extractSpreadsheetId,
+		serializeSheetValues,
+		previewSheetRows,
+		formatFollowUpDate,
+		currentSlotFromTime,
+		shouldAutoFocusInput,
+		isRelationshipThemeName,
+		type AttachmentTriageResponse,
+	} from './home/home-chat';
+
+	import {
+		computeDropIndex,
+		computeReorder,
+		persistThemeOrder,
+		archiveTheme,
+		deleteTheme,
+	} from './home/home-theme-drag';
 
 	interface Props {
 		themes: Theme[];
-		recentConversations: {
-			id: string;
-			title: string;
-			preview: string;
-			starred: boolean;
-			archived: boolean;
-			linkedTheme: { id: string; name: string; emoji: string | null } | null;
-			updatedAt: string;
-		}[];
+		recentConversations: RecentConversation[];
 		programReadiness?: {
 			programId: string;
 			programName: string;
@@ -61,58 +112,20 @@
 		} | null;
 	}
 
-	type QuickActionId = 'chat' | 'camera' | 'voice' | 'mood' | 'file';
-	type QuickActionIcon = 'chat' | 'camera' | 'wave' | 'checkin' | 'file';
-
-	interface QuickAction {
-		id: QuickActionId;
-		label: string;
-		icon: QuickActionIcon;
-		description: string;
-		placeholder: string;
-		helper: string;
-	}
-
-	type AttachmentKind = 'image' | 'audio' | 'document' | 'other';
-	type AttachmentSource = 'camera' | 'file' | 'voice' | 'sheet';
-
-	interface AttachmentRef {
-		url: string;
-		publicId?: string;
-		kind: AttachmentKind;
-		name: string;
-		mimeType: string;
-		note: string;
-		source: AttachmentSource;
-		sizeBytes?: number;
-		contentText?: string;
-		extractionKind?: string;
-	}
-
-	interface TriageSuggestion {
-		id: string;
-		label: string;
-		prompt: string;
-	}
-
 	let { themes: initialThemes, recentConversations, programReadiness = null }: Props = $props();
 
+	// ── Tema-state ────────────────────────────────────────────────────────
 	let themes = $state(initialThemes);
 	$effect(() => { themes = initialThemes; });
 
-	// ── Drag-and-drop for tema-rekkefølge ──────────────────────────────────────
-	// Modell: raden du drar fjernes fra flyten (kollapses) og en "tom slot" på
-	// full radhøyde åpner seg der den vil lande. Slot-en flytter seg mens du drar
-	// og fungerer som et stort slippområde — hver posisjon får et helt rad-høyt
-	// treff, ikke bare en tynn linje.
+	const relationshipOnboardingActive = $derived($page.url.searchParams.get('onboarding') === 'partner');
+	const relationshipTheme = $derived(themes.find((theme) => isRelationshipThemeName(theme.name)) ?? null);
+
+	// ── Drag-and-drop for tema-rekkefølge ─────────────────────────────────
 	let dragThemeId = $state<string | null>(null);
-	// Innsettings-indeks blant de gjenværende radene (0..n) der slot-en vises.
 	let dropIndex = $state<number | null>(null);
-	// Skiller touch-drag (flytende chip følger fingeren) fra desktop HTML5-drag.
 	let isTouchDrag = $state(false);
 	let themeListEl = $state<HTMLElement | null>(null);
-
-	// Flytende chip på touch — fast posisjon som følger fingeren.
 	let touchChip = $state<{ left: number; width: number; height: number; top: number } | null>(null);
 	let grabOffsetY = 0;
 
@@ -120,9 +133,6 @@
 		dragThemeId ? (themes.find((t) => t.id === dragThemeId) ?? null) : null
 	);
 
-	// Visningsliste: gjenværende rader + en placeholder-slot ved dropIndex.
-	// Den dratte raden beholdes (kollapset) til slutt slik at HTML5 `dragend`
-	// fortsatt fyrer på elementet sitt.
 	type DisplayEntry =
 		| { type: 'theme'; theme: Theme; key: string; collapsed: boolean }
 		| { type: 'placeholder'; key: string };
@@ -130,9 +140,6 @@
 		if (!dragThemeId || dropIndex === null) {
 			return themes.map((t) => ({ type: 'theme', theme: t, key: t.id, collapsed: false }));
 		}
-		// Behold alle rader i opprinnelig DOM-rekkefølge (den dratte bare kollapses),
-		// og sett inn én placeholder-node ved dropIndex. Kilde-noden flyttes aldri,
-		// slik at native HTML5-drag ikke avbrytes.
 		const out: DisplayEntry[] = [];
 		let remainingSeen = 0;
 		let placed = false;
@@ -156,31 +163,9 @@
 		touchChip = null;
 	}
 
-	// Beregn innsettings-indeks fra peker-Y mot midtpunktene til de gjenværende
-	// radene. Placeholder-slot-en opptar selv plassen, så målingen er stabil:
-	// står fingeren i slot-en gir den samme indeks tilbake.
-	function computeDropIndex(clientY: number): number {
-		if (!themeListEl) return dropIndex ?? 0;
-		const rows = Array.from(
-			themeListEl.querySelectorAll<HTMLElement>('[data-theme-id]')
-		);
-		let index = 0;
-		for (const row of rows) {
-			if (row.dataset.themeId === dragThemeId) continue; // hopp over kollapset rad
-			const rect = row.getBoundingClientRect();
-			if (rect.height === 0) continue;
-			if (clientY > rect.top + rect.height / 2) index++;
-			else break;
-		}
-		return index;
-	}
-
 	function handleThemeDragStart(id: string) {
 		dragThemeId = id;
 		isTouchDrag = false;
-		// Vent én frame før slot-en åpnes: å endre DOM-en synkront i dragstart kan
-		// avbryte native drag i enkelte nettlesere. displayList er uendret så lenge
-		// dropIndex er null, så draget rekker å committe først.
 		const startId = id;
 		requestAnimationFrame(() => {
 			if (dragThemeId === startId && dropIndex === null) {
@@ -193,7 +178,7 @@
 		if (!dragThemeId) return;
 		e.preventDefault();
 		if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-		dropIndex = computeDropIndex(e.clientY);
+		dropIndex = computeDropIndex(e.clientY, themeListEl, dragThemeId, dropIndex);
 	}
 
 	function commitThemeReorder() {
@@ -201,22 +186,12 @@
 		const idx = dropIndex;
 		resetDrag();
 		if (!fromId || idx === null) return;
-		const from = themes.findIndex((t) => t.id === fromId);
-		if (from === -1) return;
-		const moved = themes[from];
-		const reordered = themes.filter((t) => t.id !== fromId);
-		const insertAt = Math.max(0, Math.min(idx, reordered.length));
-		reordered.splice(insertAt, 0, moved);
-		if (reordered.every((t, i) => t.id === themes[i]?.id)) return; // ingen endring
+		const reordered = computeReorder(themes, fromId, idx);
+		if (!reordered) return;
 		themes = reordered;
-		void fetch('/api/tema/reorder', {
-			method: 'PATCH',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify(reordered.map((t, i) => ({ id: t.id, sortOrder: i })))
-		});
+		persistThemeOrder(reordered);
 	}
 
-	// Touch-based drag for mobile
 	function handleTouchDragStart(e: TouchEvent, id: string) {
 		cancelThemeRowPress();
 		const touch = e.touches[0];
@@ -234,7 +209,7 @@
 		e.preventDefault();
 		const touch = e.touches[0];
 		if (touchChip) touchChip = { ...touchChip, top: touch.clientY - grabOffsetY };
-		dropIndex = computeDropIndex(touch.clientY);
+		dropIndex = computeDropIndex(touch.clientY, themeListEl, dragThemeId, dropIndex);
 	}
 
 	function handleTouchDragEnd() {
@@ -242,7 +217,7 @@
 		commitThemeReorder();
 	}
 
-	// ── Langpress-meny på tema-rad (arkiver / slett) ────────────────────────────
+	// ── Langpress-meny på tema-rad ────────────────────────────────────────
 	let themeMenuId = $state<string | null>(null);
 	let themeMenuName = $state('');
 	let themeRowPressTimer: ReturnType<typeof setTimeout> | null = null;
@@ -275,12 +250,7 @@
 	async function archiveThemeFromMenu(id: string) {
 		themeActionBusy = true;
 		try {
-			const res = await fetch(`/api/tema/${id}`, {
-				method: 'PATCH',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ archived: true })
-			});
-			if (res.ok) themes = themes.filter((t) => t.id !== id);
+			if (await archiveTheme(id)) themes = themes.filter((t) => t.id !== id);
 		} finally {
 			themeActionBusy = false;
 			closeThemeMenu();
@@ -291,64 +261,14 @@
 		if (!confirm(`Slette temaet «${name}» permanent? Dette kan ikke angres.`)) return;
 		themeActionBusy = true;
 		try {
-			const res = await fetch(`/api/tema/${id}`, { method: 'DELETE' });
-			if (res.ok) themes = themes.filter((t) => t.id !== id);
+			if (await deleteTheme(id)) themes = themes.filter((t) => t.id !== id);
 		} finally {
 			themeActionBusy = false;
 			closeThemeMenu();
 		}
 	}
 
-	function normalizeThemeName(value: string) {
-		return value
-			.toLowerCase()
-			.normalize('NFD')
-			.replace(/[\u0300-\u036f]/g, '');
-	}
-
-	function isRelationshipThemeName(name: string) {
-		const normalized = normalizeThemeName(name);
-		return /(parforhold|partner|samliv|relasjon|forhold)/.test(normalized);
-	}
-
-	const relationshipOnboardingActive = $derived($page.url.searchParams.get('onboarding') === 'partner');
-	const relationshipTheme = $derived(themes.find((theme) => isRelationshipThemeName(theme.name)) ?? null);
-
-	// -- Sensor-data (oppdateres fra API ved mount) --
-	interface SensorSummary {
-		weight: { current: number | null; unit: string; delta: number; sparkline: number[] };
-		sleep: { current: number | null; unit: string; sparkline: number[] };
-		steps: { current: number | null; unit: string; sparkline: number[] };
-		running: { weekKm: number; unit: string; sparkline: number[] };
-		spending: { current: number; unit: string; delta: number; sparkline: number[] };
-	}
-
-	let sensorSummary = $state<SensorSummary | null>(null);
-
-	// -- Pinned user-widgets fra DB --
-	interface UserWidget {
-		id: string;
-		title: string;
-		unit: string;
-		color: string;
-		pinned: boolean;
-		metricType: string;
-		aggregation: string;
-		period: string;
-		range: string;
-		sortOrder: number;
-		createdAt: string;
-		goal: number | null;
-		thresholdWarn: number | null;
-		thresholdSuccess: number | null;
-		filterCategory: string | null;
-		filterSubcategory: string | null;
-	}
-	let pinnedWidgets = $state<UserWidget[]>([]);
-	let hiddenWidgets = $state<UserWidget[]>([]);
-	let widgetsLoading = $state(true);
-	let configWidget = $state<UserWidget | null>(null);
-	let widgetPanelOpen = $state(false);
+	// ── Tema-panel longpress ──────────────────────────────────────────────
 	let themePanelOpen = $state(false);
 	let temaPressTimer: ReturnType<typeof setTimeout> | null = null;
 	let temaPressBlocked = false;
@@ -366,7 +286,42 @@
 		if (temaPressBlocked) { setTimeout(() => { temaPressBlocked = false; }, 50); }
 	}
 
-	// -- Sjekklister --
+	// ── Sensor-data + widgets ─────────────────────────────────────────────
+	let sensorSummary = $state<SensorSummary | null>(null);
+	let pinnedWidgets = $state<UserWidget[]>([]);
+	let hiddenWidgets = $state<UserWidget[]>([]);
+	let widgetsLoading = $state(true);
+	let configWidget = $state<UserWidget | null>(null);
+	let widgetPanelOpen = $state(false);
+
+	async function loadSensorAndWidgets(useCache: boolean) {
+		if (useCache) {
+			const cachedSummary = readCachedPayload<SensorSummary>(HOME_SENSOR_CACHE_KEY, HOME_SENSOR_CACHE_MAX_AGE_MS);
+			if (cachedSummary) { sensorSummary = cachedSummary; widgetsLoading = false; }
+			const cachedPinned = readCachedPayload<UserWidget[]>(HOME_PINNED_WIDGETS_CACHE_KEY, HOME_PINNED_WIDGETS_CACHE_MAX_AGE_MS);
+			if (cachedPinned && cachedPinned.length > 0) {
+				pinnedWidgets = cachedPinned;
+				scheduleWidgetDataPrefetch(cachedPinned, prefetchWidgetData);
+				widgetsLoading = false;
+			}
+		}
+		try {
+			const data = await timeAsync('sensor+widgets parallel', () => fetchSensorAndWidgets());
+			if (data.sensorSummary) {
+				sensorSummary = data.sensorSummary;
+				writeCachedPayload(HOME_SENSOR_CACHE_KEY, sensorSummary);
+			}
+			pinnedWidgets = data.pinnedWidgets;
+			hiddenWidgets = data.hiddenWidgets;
+			writeCachedPayload(HOME_PINNED_WIDGETS_CACHE_KEY, pinnedWidgets);
+		} catch {
+			// Stille feil
+		} finally {
+			widgetsLoading = false;
+		}
+	}
+
+	// ── Sjekklister ───────────────────────────────────────────────────────
 	let activeChecklists = $state<Checklist[]>([]);
 	let allContextChecklists = $state<Checklist[]>([]);
 	let monthDayChecklists = $state<Checklist[]>([]);
@@ -374,15 +329,89 @@
 	let openChecklist = $state<Checklist | null>(null);
 	let todaysRoutines = $state<Array<{ checklistId: string; title: string; emoji: string; slot: string; items: Array<{ id: string; text: string; checked: boolean; sortOrder: number; estimateMinutes: number | null }> }>>([]);
 
-	// -- Pull to refresh (mobil) --
-	async function refreshHomeData() {
-		await Promise.allSettled([
-			fetchChecklists(),
-			fetchSensorAndWidgets({ useCache: false })
-		]);
+	async function fetchChecklists() {
+		try {
+			const data = await fetchChecklistData();
+			activeChecklists = data.activeChecklists;
+			allContextChecklists = data.allContextChecklists;
+			monthDayChecklists = data.monthDayChecklists;
+			if (data.monthMetrics) monthMetrics = data.monthMetrics;
+			todaysRoutines = data.todaysRoutines;
+		} catch { /* stille */ }
 	}
 
-	// -- Planleggingsflyt fra tom sjekkliste --
+	// ── Handlingssone ─────────────────────────────────────────────────────
+	let serverActionCandidates = $state<ActionCandidate[]>([]);
+
+	async function loadActionCandidates() {
+		serverActionCandidates = await fetchActionCandidates();
+	}
+
+	const actionItems = $derived.by<ActionItem[]>(() => {
+		return serverActionCandidates.map((c) => ({
+			id: c.id,
+			icon: c.icon,
+			label: c.label,
+			value: c.value,
+			done: false,
+			priority: c.priority,
+			onclick: () => dispatchActionIntent(c.intent)
+		}));
+	});
+
+	// ── Egenfrekvens ──────────────────────────────────────────────────────
+	let egenfrekvensRecent = $state<{
+		today: { morning: EgenfrekvensSlotSummary | null; evening: EgenfrekvensSlotSummary | null };
+		points: EgenfrekvensRecentPoint[];
+		settings: { enabled: boolean; morningTime: string; eveningTime: string } | null;
+	} | null>(null);
+	let egenfrekvensFlowOpen = $state(false);
+	let egenfrekvensQuickFlowOpen = $state(false);
+	let egenfrekvensActiveSlot = $state<'morning' | 'evening'>('morning');
+	let egenfrekvensPromptOpen = $state(false);
+	let egenfrekvensPromptDay = $state('');
+	let egenfrekvensInitialNote = $state('');
+	let egenfrekvensReflectionPrompt = $state<string | null>(null);
+	let egenfrekvensDreamReasons = $state<Record<string, Array<{ value: string; label: string; source: string }>> | null>(null);
+	let egenfrekvensCarriedLevel = $state<number | null>(null);
+
+	async function loadEgenfrekvensRecent() {
+		egenfrekvensRecent = await fetchEgenfrekvensRecent();
+	}
+
+	async function loadEgenfrekvensContext() {
+		const ctx = await fetchEgenfrekvensContext(egenfrekvensActiveSlot);
+		egenfrekvensReflectionPrompt = ctx.reflectionPrompt;
+		egenfrekvensDreamReasons = ctx.dreamReasons;
+	}
+
+	function currentSlotFromUrl(): 'morning' | 'evening' {
+		const fromUrl = $page.url.searchParams.get('slot');
+		if (fromUrl === 'morning' || fromUrl === 'evening') return fromUrl;
+		return currentSlotFromTime();
+	}
+
+	function openEgenfrekvensFlow(initialNote = '', preserveConversation = false) {
+		egenfrekvensInitialNote = initialNote.trim();
+		returnToChatAfterFlow = preserveConversation;
+		if (!preserveConversation) chatOpen = false;
+		chatInputAutoFocus = false;
+		egenfrekvensFlowOpen = true;
+		void loadEgenfrekvensContext();
+	}
+
+	function openEgenfrekvensQuick(slot: 'morning' | 'evening') {
+		egenfrekvensActiveSlot = slot;
+		egenfrekvensQuickFlowOpen = true;
+	}
+
+	function openEgenfrekvensFull(slot: 'morning' | 'evening') {
+		egenfrekvensActiveSlot = slot;
+		egenfrekvensFlowOpen = true;
+		void loadEgenfrekvensContext();
+	}
+
+	// ── Planlegging ───────────────────────────────────────────────────────
 	let homeDayPlanOpen = $state(false);
 	let homeDayPlanIso = $state('');
 	let homeDayPlanWeekKey = $state('');
@@ -401,587 +430,93 @@
 			return;
 		}
 		const weekMatch = context.match(/^week:(\d{4}-W\d{2})$/);
-		if (weekMatch) {
-			await openWeekPlan(weekMatch[1]);
-			return;
-		}
-		if (/^month:/.test(context)) {
-			await openMonthPlan(context.replace('month:', ''));
-		}
+		if (weekMatch) { await openWeekPlan(weekMatch[1]); return; }
+		if (/^month:/.test(context)) await openMonthPlan(context.replace('month:', ''));
 	}
-
-	// -- Hjemstedsvær fjernet (vises nå bare i ChecklistSheet og ukeplan-dagsvelger) --
-
-	function getDateFromChecklistContext(context: string | null): string | null {
-		if (!context) return null;
-		const m = context.match(/^week:\d{4}-W\d{2}:day:(\d{4}-\d{2}-\d{2})$/);
-		return m?.[1] ?? null;
-	}
-
-	const HOME_SENSOR_CACHE_KEY = 'resonans:home:sensor-summary:v1';
-	const HOME_PINNED_WIDGETS_CACHE_KEY = 'resonans:home:pinned-widgets:v1';
-	const HOME_SENSOR_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
-	const HOME_PINNED_WIDGETS_CACHE_MAX_AGE_MS = 10 * 60 * 1000;
-
-	interface CachedPayload<T> {
-		cachedAt: string;
-		data: T;
-	}
-
-	function readCachedPayload<T>(key: string, maxAgeMs: number): T | null {
-		if (typeof window === 'undefined') return null;
-
-		try {
-			const raw = window.localStorage.getItem(key);
-			if (!raw) return null;
-
-			const parsed = JSON.parse(raw) as CachedPayload<T>;
-			if (!parsed?.cachedAt) return null;
-
-			const ageMs = Date.now() - new Date(parsed.cachedAt).getTime();
-			if (!Number.isFinite(ageMs) || ageMs > maxAgeMs) return null;
-
-			return parsed.data ?? null;
-		} catch {
-			return null;
-		}
-	}
-
-	function writeCachedPayload<T>(key: string, data: T) {
-		if (typeof window === 'undefined') return;
-
-		try {
-			const payload: CachedPayload<T> = {
-				cachedAt: new Date().toISOString(),
-				data
-			};
-			window.localStorage.setItem(key, JSON.stringify(payload));
-		} catch {
-			// Ignorer lagringsfeil (f.eks. quota eller private mode)
-		}
-	}
-
-	function toLocalIsoDate(date: Date) {
-		const year = date.getFullYear();
-		const month = String(date.getMonth() + 1).padStart(2, '0');
-		const day = String(date.getDate()).padStart(2, '0');
-		return `${year}-${month}-${day}`;
-	}
-
-	function toLocalYearMonth(date: Date) {
-		const year = date.getFullYear();
-		const month = String(date.getMonth() + 1).padStart(2, '0');
-		return `${year}-${month}`;
-	}
-
-	function getLocalIsoWeekDashed(now: Date = new Date()) {
-		const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
-		const dayNum = d.getUTCDay() || 7;
-		d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-		const year = d.getUTCFullYear();
-		const yearStart = new Date(Date.UTC(year, 0, 1));
-		const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-		const week = String(weekNo).padStart(2, '0');
-		return `${year}-W${week}`;
-	}
-
-	function sortActiveChecklists(rows: Checklist[]) {
-		const currentMonthContext = `month:${toLocalYearMonth(new Date())}`;
-		const currentWeekContext = `week:${getLocalIsoWeekDashed()}`;
-		const currentDayContext = `week:${getLocalIsoWeekDashed()}:day:${toLocalIsoDate(new Date())}`;
-		const priority = new Map<string, number>([
-			[currentMonthContext, 0],
-			[currentWeekContext, 1],
-			[currentDayContext, 2]
-		]);
-
-		return [...rows]
-			.filter((checklist) => {
-				const context = checklist.context ?? '';
-				return priority.has(context);
-			})
-			.sort((a, b) => {
-				const aPriority = priority.get(a.context ?? '') ?? 99;
-				const bPriority = priority.get(b.context ?? '') ?? 99;
-				if (aPriority !== bPriority) return aPriority - bPriority;
-				return a.title.localeCompare(b.title, 'nb-NO');
-			});
-	}
-
-	function getMonthDayContexts(year: number, month: number): string[] {
-		const daysInMonth = new Date(year, month, 0).getDate();
-		const contexts: string[] = [];
-		for (let day = 1; day <= daysInMonth; day++) {
-			const date = new Date(year, month - 1, day);
-			const weekKey = getLocalIsoWeekDashed(date);
-			const isoDate = toLocalIsoDate(date);
-			contexts.push(`week:${weekKey}:day:${isoDate}`);
-		}
-		return contexts;
-	}
-
-	async function fetchChecklists() {
-		try {
-			const now = new Date();
-			const [year, monthStr] = toLocalYearMonth(now).split('-');
-			const monthNum = Number(monthStr);
-			const dayContexts = getMonthDayContexts(Number(year), monthNum);
-			const monthContext = `month:${toLocalYearMonth(now)}`;
-			const weekContext = `week:${getLocalIsoWeekDashed(now)}`;
-
-			const activePromise = fetch('/api/checklists?active=true').then(async (res) => {
-				if (!res.ok) return null;
-				return (await res.json()) as Checklist[];
-			});
-
-			const allContexts = [monthContext, weekContext, ...dayContexts].join(',');
-			const monthDayPromise = fetch(
-				`/api/checklists?contexts=${encodeURIComponent(allContexts)}`
-			).then(async (res) => {
-				if (!res.ok) return null;
-				return (await res.json()) as Checklist[];
-			});
-
-			const metricsPromise = fetch(
-				`/api/home/month-metrics?month=${encodeURIComponent(monthContext.slice('month:'.length))}`
-			).then(async (res) => {
-				if (!res.ok) return null;
-				return (await res.json()) as {
-					effort: Record<string, number>;
-					egenfrekvens: Record<string, number>;
-				};
-			});
-
-			const routinePromise = fetch('/api/routines/today').then(async (res) => {
-				if (!res.ok) return null;
-				return (await res.json()) as Array<{ definition: { id: string; title: string; emoji: string; slot: string }; checklistId: string; date: string; items: Array<{ id: string; text: string; checked: boolean; sortOrder: number; estimateMinutes: number | null }>; completedAt: string | null }>;
-			});
-
-			const [activeRows, contextRows, metrics, routineRows] = await Promise.all([
-				activePromise,
-				monthDayPromise,
-				metricsPromise,
-				routinePromise
-			]);
-			if (activeRows) {
-				activeChecklists = sortActiveChecklists(activeRows);
-			}
-			if (contextRows) {
-				allContextChecklists = contextRows;
-				monthDayChecklists = contextRows.filter((c) =>
-					(c.context ?? '').startsWith(`week:`) && (c.context ?? '').includes(':day:')
-				);
-			}
-			if (metrics) {
-				monthMetrics = { effort: metrics.effort ?? {}, egenfrekvens: metrics.egenfrekvens ?? {} };
-			}
-			if (routineRows) {
-				todaysRoutines = routineRows.map(r => ({
-					checklistId: r.checklistId,
-					title: r.definition.title,
-					emoji: r.definition.emoji,
-					slot: r.definition.slot,
-					items: r.items
-				}));
-			}
-		} catch { /* stille */ }
-	}
-
-	function scheduleWidgetDataPrefetch(widgets: UserWidget[]) {
-		if (widgets.length === 0 || typeof window === 'undefined') return;
-		const connection = (navigator as { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
-		if (connection?.saveData) return;
-		if (connection?.effectiveType && /2g/.test(connection.effectiveType)) return;
-
-		const ids = widgets.slice(0, 3).map((w) => w.id);
-		const run = () => {
-			for (const id of ids) void prefetchWidgetData(id);
-		};
-		if ('requestIdleCallback' in window) {
-			window.requestIdleCallback(run, { timeout: 1200 });
-		} else {
-			setTimeout(run, 100);
-		}
-	}
-
-	async function fetchSensorAndWidgets({ useCache }: { useCache: boolean }) {
-		if (useCache) {
-			const cachedSummary = readCachedPayload<SensorSummary>(HOME_SENSOR_CACHE_KEY, HOME_SENSOR_CACHE_MAX_AGE_MS);
-			if (cachedSummary) {
-				sensorSummary = cachedSummary;
-				widgetsLoading = false;
-			}
-
-			const cachedPinnedWidgets = readCachedPayload<UserWidget[]>(
-				HOME_PINNED_WIDGETS_CACHE_KEY,
-				HOME_PINNED_WIDGETS_CACHE_MAX_AGE_MS
-			);
-			if (cachedPinnedWidgets && cachedPinnedWidgets.length > 0) {
-				pinnedWidgets = cachedPinnedWidgets;
-				// Start widget-data-henting umiddelbart for cachede IDs, så DynamicWidget
-				// finner in-memory treff allerede før/under sin egen onMount-fetch.
-				scheduleWidgetDataPrefetch(cachedPinnedWidgets);
-				widgetsLoading = false;
-			}
-		}
-
-		try {
-			const [summaryRes, widgetsRes] = await timeAsync('sensor+widgets parallel', () =>
-				Promise.all([
-					fetch('/api/sensor-summary'),
-					fetch('/api/user-widgets')
-				])
-			);
-			if (summaryRes.ok) {
-				sensorSummary = await summaryRes.json();
-				writeCachedPayload(HOME_SENSOR_CACHE_KEY, sensorSummary);
-			}
-			if (widgetsRes.ok) {
-				const allWidgets = await widgetsRes.json();
-				pinnedWidgets = allWidgets.filter((w: UserWidget) => w.pinned);
-				hiddenWidgets = allWidgets.filter((w: UserWidget) => !w.pinned);
-				writeCachedPayload(HOME_PINNED_WIDGETS_CACHE_KEY, pinnedWidgets);
-			}
-		} catch {
-			// Stille feil — fallback til cache/mock-data
-		} finally {
-			widgetsLoading = false;
-		}
-	}
-
-	onMount(() => {
-		void (async () => {
-			finishNavMetric('home');
-
-			// Start checklists concurrently — ingen datavhengighet til sensor/widget
-			const checklistPromise = timeAsync('checklists', () => fetchChecklists());
-			await fetchSensorAndWidgets({ useCache: true });
-			await checklistPromise;
-
-			// Warm up theme route code and server data so first navigation feels snappier.
-			if (typeof window !== 'undefined') {
-				const runPreload = () => {
-					void preloadCode('/tema/*');
-					// Prefetch server load-data for topp-temaer mens brukeren er idle
-					for (const theme of themes.slice(0, 2)) {
-						void preloadData(`/tema/${theme.id}`);
-					}
-				};
-
-				if ('requestIdleCallback' in window) {
-					window.requestIdleCallback(runPreload, { timeout: 1200 });
-				} else {
-					setTimeout(runPreload, 180);
-				}
-			}
-
-			if ($page.url.searchParams.get('chat') === '1') {
-				openChat();
-			}
-
-			void loadEgenfrekvensRecent();
-			void loadActionCandidates();
-
-			// URL-trigget egenfrekvens-flow (fra push-nudge eller dyp-lenke)
-			const flowParam = $page.url.searchParams.get('flow');
-			if (flowParam === 'egenfrekvens_checkin' || flowParam === 'egenfrekvens_quick') {
-				egenfrekvensActiveSlot = currentSlotFromUrl();
-				if (flowParam === 'egenfrekvens_checkin') {
-					egenfrekvensFlowOpen = true;
-					void loadEgenfrekvensContext();
-				} else {
-					egenfrekvensQuickFlowOpen = true;
-				}
-				const nudgeId = $page.url.searchParams.get('nudgeEventId');
-				if (nudgeId) {
-					void fetch(`/api/nudges/events/${nudgeId}/stage`, {
-						method: 'POST',
-						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify({ stage: 'flow_started' })
-					}).catch(() => {});
-				}
-			}
-
-			// App-open prompt: vis banner hvis dagens sjekkin venter, settings tillater og ikke avvist i dag
-			void (async () => {
-				try {
-					const isoDay = new Date().toISOString().slice(0, 10);
-					const res = await fetch(`/api/egenfrekvens/status?day=${isoDay}`);
-					if (!res.ok) return;
-					const status = await res.json();
-					if (!status.settings || status.settings.enabled === false) return;
-					if (typeof localStorage !== 'undefined') {
-						const dismissed = localStorage.getItem(`egenfrekvens-prompt-dismissed-${status.day}`);
-						if (dismissed) return;
-					}
-					const morning = status.settings.morningTime ?? '06:30';
-					const evening = status.settings.eveningTime ?? '21:00';
-					const count = typeof status.count === 'number' ? status.count : status.submitted ? 1 : 0;
-					const nowHm = new Intl.DateTimeFormat('en-GB', {
-						hour: '2-digit',
-						minute: '2-digit',
-						hour12: false
-					}).format(new Date());
-					const showMorning = nowHm >= morning && count === 0;
-					const showEvening = nowHm >= evening && count < 2;
-					if (!showMorning && !showEvening) return;
-					egenfrekvensPromptDay = status.day;
-					egenfrekvensPromptOpen = true;
-				} catch {
-					// best-effort UI hint, ignore failures
-				}
-			})();
-		})();
-
-	});
-
-	interface EgenfrekvensSlotSummary {
-		level: number | null;
-		mode: 'quick' | 'full';
-		balance: number | null;
-	}
-
-	interface EgenfrekvensRecentPoint {
-		day: string;
-		morning: EgenfrekvensSlotSummary | null;
-		evening: EgenfrekvensSlotSummary | null;
-	}
-
-	interface HomeWidgetEntry {
-		id: string;
-		kind: 'checklist' | 'dynamic' | 'skeleton' | 'partner';
-		checklist?: Checklist;
-		widget?: UserWidget;
-		skeletonIndex?: number;
-	}
-
-	let egenfrekvensRecent = $state<{
-		today: { morning: EgenfrekvensSlotSummary | null; evening: EgenfrekvensSlotSummary | null };
-		points: EgenfrekvensRecentPoint[];
-		settings: { enabled: boolean; morningTime: string; eveningTime: string } | null;
-	} | null>(null);
-
-	// ── Handlingssone (foreslåtte handlinger) ───────────────────────────────
-	// Prioritert karusell. Foreløpig kun "sjekk inn", men strukturen er klar
-	// for flere kort skåret etter tid på døgnet/uka og bruksmønster.
-	interface ActionItem {
-		id: string;
-		icon: string;
-		label: string;
-		value?: string | number;
-		done: boolean;
-		priority: number;
-		onclick: () => void;
-	}
-
-	const actionItems = $derived.by<ActionItem[]>(() => {
-		return serverActionCandidates.map((c) => ({
-			id: c.id,
-			icon: c.icon,
-			label: c.label,
-			value: c.value,
-			done: false,
-			priority: c.priority,
-			onclick: () => dispatchActionIntent(c.intent)
-		}));
-	});
 
 	async function openWeekPlan(weekKey: string) {
-		try {
-			const res = await fetch(`/api/week-plan/context?week=${encodeURIComponent(weekKey)}`);
-			if (!res.ok) { void goto('/ukeplan'); return; }
-			const ctx = await res.json() as {
-				currentWeekKey: string;
-				currentWeekNo: number;
-				prevWeekKey: string;
-				prevWeekNo: number;
-				note: string;
-				reflection: string;
-				uncheckedItems: Array<{ id: string; text: string }>;
-				weekGoals: Array<{ title: string; currentValue: number; target: { value: number; unit: string }; trackingMetric: string }>;
-				recurringTasks: string[];
-			};
-			const goalLines = ctx.weekGoals.map((g) => {
-				const pct = g.target.value > 0 ? Math.round((g.currentValue / g.target.value) * 100) : null;
-				return `- ${g.title}: ${g.currentValue} av ${g.target.value} ${g.target.unit}${pct !== null ? ` (${pct}%)` : ''}`;
-			}).join('\n');
-			homeWeekPlanContext = {
-				weekKey: ctx.currentWeekKey,
-				openItems: ctx.uncheckedItems,
-				weekTasks: ctx.recurringTasks,
-				prevWeekData: {
-					weekNo: ctx.prevWeekNo,
-					note: ctx.note,
-					reflection: ctx.reflection,
-					uncheckedItems: ctx.uncheckedItems,
-					weekGoals: ctx.weekGoals,
-					recurringTasks: ctx.recurringTasks
-				},
-				systemPrompts: {
-					refleksjon: [
-						`Brukeren er klar for å planlegge uke ${ctx.currentWeekNo}.`,
-						`\nForrige uke (uke ${ctx.prevWeekNo}):`,
-						ctx.note ? `Ukesnotat: "${ctx.note}"` : '',
-						ctx.reflection ? `Refleksjon: "${ctx.reflection}"` : '',
-						goalLines ? `\nMål:\n${goalLines}` : '',
-						'\nGi en kort, varm oppsummering av forrige uke (2-3 setninger). Avslutt med ett åpent spørsmål om hva som gikk bra og hva som var utfordrende.'
-					].filter(Boolean).join('\n'),
-					maal: [
-						`Du hjelper brukeren å sette ukesmål for uke ${ctx.currentWeekNo}.`,
-						goalLines ? `\nForrige ukes mål og fremgang (uke ${ctx.prevWeekNo}):\n${goalLines}` : '\nIngen mål fra forrige uke.',
-						'\nSkille mellom mål og oppgaver:',
-						'- UKESMÅL: kun for ting med målbar fremdrift mot et tall (f.eks. løping i km, antall treningsøkter, vekt i kg). Hold listen kort.',
-						'- UKESOPPGAVER: konkrete ting du gjør 1–7 ganger denne uka (handle, planleggingsprat, sjekke noe, møte osv.).',
-						'\nGå gjennom forrige ukes mål. Foreslå om hvert bør videreføres eller justeres. Kom gjerne med nye oppgaver basert på refleksjonen.',
-						'\nAvslutt alltid med begge listene (utelat seksjoner som ikke passer):',
-						'\nUKESMÅL:',
-						'- [tittel]: [verdi] [enhet]',
-						'\nUKESOPPGAVER:',
-						'- [tittel]: [antall] [enhet]'
-					].filter(Boolean).join('\n'),
-					ukeshistorie: [
-						`Du hjelper brukeren å skrive en kort ukesbeskrivelse for uke ${ctx.currentWeekNo}.`,
-						`Spør: "Hva handler uke ${ctx.currentWeekNo} om for deg?"`,
-						'Basert på svaret, skriv et kort utkast (1-2 setninger). Vær personlig og konkret.',
-						'La brukeren justere utkastet via chat. Avslutt med det endelige notatet.'
-					].join('\n')
-				}
-			};
-			homeWeekPlanOpen = true;
-		} catch {
-			void goto('/ukeplan');
-		}
+		const ctx = await fetchWeekPlanContext(weekKey);
+		if (!ctx) { void goto('/ukeplan'); return; }
+		homeWeekPlanContext = buildWeekPlanFlowContext(ctx);
+		homeWeekPlanOpen = true;
 	}
 
 	async function openMonthPlan(monthKey: string) {
-		try {
-			const res = await fetch(`/api/month-plan/context?month=${encodeURIComponent(monthKey)}`);
-			if (!res.ok) { void goto('/maanedsplan'); return; }
-			const ctx = await res.json() as {
-				currentMonthKey: string;
-				currentMonthName: string;
-				prevMonthKey: string;
-				prevMonthName: string;
-				note: string;
-				reflection: string;
-				uncheckedItems: Array<{ id: string; text: string }>;
-				monthGoals: Array<{ title: string; currentValue: number; target: { value: number; unit: string }; trackingMetric: string }>;
-				recurringTasks: string[];
-			};
-			const goalLines = ctx.monthGoals.map((g) => {
-				const pct = g.target.value > 0 ? Math.round((g.currentValue / g.target.value) * 100) : null;
-				return `- ${g.title}: ${g.currentValue} av ${g.target.value} ${g.target.unit}${pct !== null ? ` (${pct}%)` : ''}`;
-			}).join('\n');
-			homeMonthPlanContext = {
-				monthKey: ctx.currentMonthKey,
-				openItems: ctx.uncheckedItems,
-				weekTasks: ctx.recurringTasks,
-				prevMonthData: {
-					monthName: ctx.prevMonthName,
-					note: ctx.note,
-					reflection: ctx.reflection,
-					uncheckedItems: ctx.uncheckedItems,
-					monthGoals: ctx.monthGoals,
-					recurringTasks: ctx.recurringTasks
-				},
-				systemPrompts: {
-					refleksjon: [
-						`Det er nå ${ctx.currentMonthName} og brukeren er klar for månedsplanlegging.`,
-						ctx.prevMonthName ? `\nForrige måned (${ctx.prevMonthName}):` : '',
-						ctx.note ? `Månedsnotat: "${ctx.note}"` : '',
-						ctx.reflection ? `Refleksjon: "${ctx.reflection}"` : '',
-						goalLines ? `\nMål:\n${goalLines}` : '',
-						'\nGi en kort, varm oppsummering av forrige måned (2-3 setninger). Avslutt med ett åpent spørsmål om hva som gikk bra og hva som var utfordrende.'
-					].filter(Boolean).join('\n'),
-					maal: [
-						`Du hjelper brukeren å sette månedsmål for ${ctx.currentMonthName}.`,
-						goalLines ? `\nForrige måneds mål og fremgang (${ctx.prevMonthName}):\n${goalLines}` : '\nIngen mål fra forrige måned.',
-						'\nSkille mellom mål og oppgaver:',
-						'- MÅNEDSMÅL: kun for ting med målbar fremdrift mot et tall (løping i km, vekt i kg, frekvente treningsøkter per uke). Hold listen kort.',
-						'- MÅNEDSOPPGAVER: ting du gjør 1–8 ganger denne måneden (utenatt, utebad, sykling til jobb, planleggingsprat hjemme osv.)',
-						'\nGå gjennom forrige måneds mål. Foreslå om hvert bør videreføres eller justeres. Kom gjerne med nye oppgaver basert på refleksjonen.',
-						'\nAvslutt alltid med begge listene (utelat seksjoner som ikke passer):',
-						'\nMÅNEDSMÅL:',
-						'- [tittel]: [verdi] [enhet]',
-						'\nMÅNEDSOPPGAVER:',
-						'- [tittel]: [antall] [enhet]'
-					].filter(Boolean).join('\n'),
-					maanedshistorie: [
-						`Du hjelper brukeren å skrive en kort månedsbeskrivelse for ${ctx.currentMonthName}.`,
-						`Spør: "Hva handler ${ctx.currentMonthName} om for deg?"`,
-						'Basert på svaret, skriv et utkast på 1-2 avsnitt. Vær personlig og konkret.',
-						'La brukeren justere utkastet via chat. Avslutt med det endelige notatet.'
-					].join('\n')
-				}
-			};
-			homeMonthPlanOpen = true;
-		} catch {
-			void goto('/maanedsplan');
+		const ctx = await fetchMonthPlanContext(monthKey);
+		if (!ctx) { void goto('/maanedsplan'); return; }
+		homeMonthPlanContext = buildMonthPlanFlowContext(ctx);
+		homeMonthPlanOpen = true;
+	}
+
+	// ── Fokustimer / refleksjon / inbox / quick win ──────────────────────
+	let focusTimerFlowOpen = $state(false);
+	let reflectionLightFlowOpen = $state(false);
+	let inboxNoteFlowOpen = $state(false);
+	let quickWinFlowOpen = $state(false);
+	let quickWinOpenItems = $state<Array<{ id: string; text: string }>>([]);
+
+	async function openQuickWin() {
+		const items = await fetchQuickWinItems();
+		if (items.length === 0) return;
+		quickWinOpenItems = items;
+		quickWinFlowOpen = true;
+	}
+
+	// ── Action dispatch ───────────────────────────────────────────────────
+	function dispatchActionIntent(intent: ActionIntent): void {
+		switch (intent.kind) {
+			case 'open-flow':
+				if (intent.flowId === 'jobb_focus_timer') focusTimerFlowOpen = true;
+				else if (intent.flowId === 'reflection_light') reflectionLightFlowOpen = true;
+				else if (intent.flowId === 'quick_win') void openQuickWin();
+				else if (intent.flowId === 'inbox_note') inboxNoteFlowOpen = true;
+				else if (intent.flowId === 'egenfrekvens_quick') {
+					egenfrekvensActiveSlot = currentSlotFromTime();
+					egenfrekvensQuickFlowOpen = true;
+				} else if (intent.flowId === 'egenfrekvens_checkin') {
+					egenfrekvensActiveSlot = currentSlotFromTime();
+					egenfrekvensFlowOpen = true;
+					void loadEgenfrekvensContext();
+				} else console.warn('[home] unhandled flow intent', intent.flowId);
+				break;
+			case 'open-egenfrekvens': openEgenfrekvensQuick(intent.slot); break;
+			case 'open-day-plan':
+				homeDayPlanIso = intent.iso;
+				homeDayPlanWeekKey = intent.weekKey;
+				homeDayPlanOpen = true;
+				break;
+			case 'open-week-plan': void openWeekPlan(intent.weekKey); break;
+			case 'open-month-plan': void openMonthPlan(intent.monthKey); break;
+			case 'navigate': void goto(intent.href); break;
 		}
 	}
 
-	async function loadEgenfrekvensRecent() {
-		try {
-			const res = await fetch('/api/egenfrekvens/recent?days=7');
-			if (!res.ok) return;
-			egenfrekvensRecent = await res.json();
-		} catch {
-			// best-effort, ignore
-		}
-	}
-
-	let serverActionCandidates = $state<ActionCandidate[]>([]);
-
-	async function loadActionCandidates() {
-		try {
-			const res = await fetch('/api/home/actions');
-			if (!res.ok) return;
-			const body = (await res.json()) as { items?: ActionCandidate[] };
-			serverActionCandidates = body.items ?? [];
-		} catch {
-			// best-effort, ignore
-		}
-	}
-
-	// ── Snooze-meny for action-chips ───────────────────────────────────────────
+	// ── Snooze-meny ───────────────────────────────────────────────────────
 	let snoozeMenuChipId = $state<string | null>(null);
 	let snoozeMenuLabel = $state('');
 	let longPressTimer: ReturnType<typeof setTimeout> | null = null;
 	let longPressTriggered = false;
-	const LONG_PRESS_MS = 500;
-
-	function openSnoozeMenu(chipId: string, label: string) {
-		snoozeMenuChipId = chipId;
-		snoozeMenuLabel = label;
-		if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(20);
-	}
-
-	function closeSnoozeMenu() {
-		snoozeMenuChipId = null;
-	}
 
 	function startLongPress(chipId: string, label: string, _e: PointerEvent) {
 		longPressTriggered = false;
 		longPressTimer = setTimeout(() => {
 			longPressTriggered = true;
-			openSnoozeMenu(chipId, label);
-		}, LONG_PRESS_MS);
+			snoozeMenuChipId = chipId;
+			snoozeMenuLabel = label;
+			if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(20);
+		}, 500);
 	}
 
 	function cancelLongPress() {
-		if (longPressTimer !== null) {
-			clearTimeout(longPressTimer);
-			longPressTimer = null;
-		}
+		if (longPressTimer !== null) { clearTimeout(longPressTimer); longPressTimer = null; }
 	}
 
 	function handleChipClick(onclick: () => void) {
-		if (longPressTriggered) {
-			longPressTriggered = false;
-			return;
-		}
+		if (longPressTriggered) { longPressTriggered = false; return; }
 		onclick();
 	}
+
+	function closeSnoozeMenu() { snoozeMenuChipId = null; }
 
 	async function snoozeChip(scope: 'today' | 'week' | 'forever') {
 		const chipId = snoozeMenuChipId;
@@ -994,85 +529,414 @@
 				body: JSON.stringify({ chipId, scope })
 			});
 			await loadActionCandidates();
-		} catch {
-			// best-effort
-		}
+		} catch { /* best-effort */ }
 	}
 
-	function dispatchActionIntent(intent: ActionIntent): void {
-		switch (intent.kind) {
-			case 'open-flow':
-				if (intent.flowId === 'jobb_focus_timer') {
-					focusTimerFlowOpen = true;
-				} else if (intent.flowId === 'reflection_light') {
-					reflectionLightFlowOpen = true;
-				} else if (intent.flowId === 'quick_win') {
-					void openQuickWin();
-				} else if (intent.flowId === 'inbox_note') {
-					inboxNoteFlowOpen = true;
-				} else if (intent.flowId === 'egenfrekvens_quick') {
-					egenfrekvensActiveSlot = currentSlotFromTime();
-					egenfrekvensQuickFlowOpen = true;
-				} else if (intent.flowId === 'egenfrekvens_checkin') {
-					egenfrekvensActiveSlot = currentSlotFromTime();
-					egenfrekvensFlowOpen = true;
-					void loadEgenfrekvensContext();
-				} else {
-					console.warn('[home] unhandled flow intent', intent.flowId);
+	// ── Chat-sone ─────────────────────────────────────────────────────────
+	let chatOpen = $state(false);
+	let chatPrefill = $state('');
+	let latestClosedConversationId = $state<string | null>(null);
+	let createdThemeLink = $state<{ id: string; name: string; emoji?: string | null } | null>(null);
+	let launchingThemeId = $state<string | null>(null);
+	let chatInputAutoFocus = $state(false);
+	let returnToChatAfterFlow = $state(false);
+	let selectedChatModel = $state<string>(
+		(typeof localStorage !== 'undefined' && localStorage.getItem('chat-model')) || 'auto'
+	);
+	let suggestedTheme = $state<{ themeId: string; themeName: string; confidence: string; reasoning?: string } | null>(null);
+	let routedToTheme = $state<{ themeId: string; themeName: string } | null>(null);
+	let chatSection: HTMLElement | null = $state(null);
+
+	const homeChat = new ChatState({
+		getOrCreateConversationId: async () => {
+			const res = await fetch('/api/conversations/new', { method: 'POST' });
+			if (!res.ok) return null;
+			const json = await res.json();
+			return json.conversationId ?? null;
+		},
+		preferredModel: () => selectedChatModel !== 'auto' ? selectedChatModel : undefined,
+		onPayload: (data) => {
+			const theme = data.themeCreated && data.theme && typeof data.theme === 'object' ? data.theme as { id?: string; name?: string; emoji?: string | null } : null;
+			if (theme?.id) createdThemeLink = { id: theme.id, name: theme.name ?? '', emoji: theme.emoji ?? null };
+		},
+		onThemeRouted: (theme) => { routedToTheme = theme; },
+		onThemeSuggested: (theme) => { suggestedTheme = theme; },
+		onBookRouted: (book) => { closeChat(); goto(`/tema/${book.themeId}?tab=books&bookId=${book.bookId}`); },
+		onChecklistChanged: fetchChecklists,
+	});
+
+	let homeConversationList = $state(recentConversations);
+	let homeEditingConversationId = $state<string | null>(null);
+	let homeEditingTitle = $state('');
+	$effect(() => { homeConversationList = recentConversations; });
+
+	let selectedQuickAction = $state<QuickActionId>('chat');
+	const activeQuickAction = $derived(
+		QUICK_ACTIONS.find((action) => action.id === selectedQuickAction) ?? QUICK_ACTIONS[0]
+	);
+	const hasPersistedConversation = $derived(Boolean(homeChat.conversationId));
+	const chatConversationTitle = $derived.by(() => {
+		if (!hasPersistedConversation) return '';
+		const firstUserMessage = homeChat.messages.find((msg) => msg.role === 'user' && msg.text && msg.text !== '📷 [Bilde]');
+		const base = firstUserMessage?.text?.trim() || 'Ny samtale';
+		return base.length > 42 ? `${base.slice(0, 42).trimEnd()}…` : base;
+	});
+
+	const followUpConversations = $derived.by(() => {
+		const activeId = homeChat.conversationId || latestClosedConversationId;
+		return homeConversationList.filter((c) => c.id !== activeId).slice(0, 6);
+	});
+	const followUpStarred = $derived(followUpConversations.filter((c) => c.starred && !c.archived));
+	const followUpRegular = $derived(followUpConversations.filter((c) => !c.starred && !c.archived));
+
+	function openChat(prefill = '', actionId: QuickActionId = selectedQuickAction, options?: { focusInput?: boolean }) {
+		selectedQuickAction = actionId;
+		chatPrefill = prefill;
+		chatInputAutoFocus = options?.focusInput ?? shouldAutoFocusInput();
+		chatOpen = true;
+	}
+
+	function closeChat() {
+		if (homeChat.conversationId && homeChat.messages.length > 0) latestClosedConversationId = homeChat.conversationId;
+		homeChat.reset();
+		homeChat.conversationId = null;
+		chatPrefill = '';
+		chatInputAutoFocus = false;
+		createdThemeLink = null;
+		launchingThemeId = null;
+		chatOpen = false;
+		returnToChatAfterFlow = false;
+	}
+
+	async function sendChat(text: string, imageUrl?: string, attachment?: AttachmentRef) {
+		suggestedTheme = null;
+		routedToTheme = null;
+		await homeChat.send(text, imageUrl, attachment as Parameters<typeof homeChat.send>[2]);
+	}
+
+	function stopChat() { homeChat.stop(); }
+
+	function startQuickAction(action: import('./home/home-context').QuickAction) {
+		homeChat.reset();
+		homeChat.conversationId = null;
+		chatPrefill = '';
+		createdThemeLink = null;
+		if (action.id === 'chat') openChat('', 'chat');
+		else if (action.id === 'camera') cameraOpen = true;
+		else if (action.id === 'voice') voiceOpen = true;
+		else if (action.id === 'mood') egenfrekvensFlowOpen = true;
+		else if (action.id === 'file') fileFlowOpen = true;
+	}
+
+	function openPartnerOnboardingChat() {
+		openChat('Vi har nettopp koblet oss som partnere i Resonans. Hjelp oss å sette opp et parforhold-tema, foreslå 3 fokusområder, og lag første ukes mini-plan med konkrete steg.', 'chat');
+	}
+
+	function startHomeChat(draftOverride?: string) {
+		const draft = (draftOverride ?? chatPrefill).trim();
+		if (!draft) { openChat('', 'chat', { focusInput: true }); return; }
+		chatPrefill = '';
+		openChat('', 'chat', { focusInput: false });
+		void sendChat(draft);
+	}
+
+	function startHomeAttachment(kind: 'camera' | 'voice' | 'file', draftOverride?: string, options?: { preserveConversation?: boolean }) {
+		const draft = (draftOverride ?? chatPrefill).trim();
+		if (!options?.preserveConversation) {
+			homeChat.reset();
+			homeChat.conversationId = null;
+			createdThemeLink = null;
+		}
+		returnToChatAfterFlow = Boolean(options?.preserveConversation);
+		chatOpen = false;
+		chatInputAutoFocus = false;
+		if (kind === 'camera') { cameraCaption = draft; cameraOpen = true; return; }
+		if (kind === 'voice') { voiceText = draft; voiceOpen = true; return; }
+		fileFlowMode = 'local';
+		fileFlowNote = draft;
+		fileFlowOpen = true;
+	}
+
+	// ── Samtale-liste ─────────────────────────────────────────────────────
+	function setHomeConversationStarred(id: string, starred: boolean) {
+		homeConversationList = homeConversationList.map((c) => (c.id === id ? { ...c, starred } : c));
+	}
+	function setHomeConversationArchived(id: string, archived: boolean) {
+		homeConversationList = homeConversationList.map((c) => (c.id === id ? { ...c, archived } : c));
+	}
+	function removeHomeConversation(id: string) {
+		homeConversationList = homeConversationList.filter((c) => c.id !== id);
+	}
+	function moveHomeConversationTheme(id: string, themeId: string | null) {
+		const nextTheme = themeId ? themes.find((t) => t.id === themeId) ?? null : null;
+		homeConversationList = homeConversationList.map((c) =>
+			c.id === id
+				? { ...c, linkedTheme: nextTheme ? { id: nextTheme.id, name: nextTheme.name, emoji: nextTheme.emoji ?? null } : null }
+				: c
+		);
+	}
+	function startHomeConversationRename(id: string, currentTitle: string) {
+		homeEditingConversationId = id;
+		homeEditingTitle = currentTitle;
+	}
+	function cancelHomeConversationRename() {
+		homeEditingConversationId = null;
+		homeEditingTitle = '';
+	}
+	async function commitHomeConversationRename(id: string) {
+		const title = homeEditingTitle.trim();
+		if (!title) { cancelHomeConversationRename(); return; }
+		homeConversationList = homeConversationList.map((c) => (c.id === id ? { ...c, title } : c));
+		homeEditingConversationId = null;
+		await fetch(`/api/conversations/${id}`, {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ title })
+		});
+	}
+
+	// ── Kamera-flyt ───────────────────────────────────────────────────────
+	let cameraOpen = $state(false);
+	let cameraFileInput = $state<HTMLInputElement | null>(null);
+	let cameraSelectedFile = $state<File | null>(null);
+	let cameraPreview = $state<string | null>(null);
+	let cameraCaption = $state('');
+	let cameraUploading = $state(false);
+	let cameraError = $state(false);
+	let cameraHistory = $state<MediaHistoryItem[]>([]);
+	let cameraHistoryLoading = $state(false);
+
+	function handleCameraFileSelect(event: Event) {
+		const input = event.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		cameraSelectedFile = file;
+		const reader = new FileReader();
+		reader.onload = (e) => { cameraPreview = e.target?.result as string; };
+		reader.readAsDataURL(file);
+	}
+
+	function closeCameraFlow() {
+		cameraOpen = false;
+		cameraSelectedFile = null;
+		cameraPreview = null;
+		cameraCaption = '';
+		cameraError = false;
+		if (returnToChatAfterFlow) { chatOpen = true; chatInputAutoFocus = true; }
+		returnToChatAfterFlow = false;
+	}
+
+	async function submitCamera() {
+		if (!cameraSelectedFile) return;
+		cameraUploading = true;
+		cameraError = false;
+		try {
+			const result = await requestAttachmentTriage(cameraSelectedFile, cameraCaption.trim(), 'camera');
+			closeCameraFlow();
+			presentAttachmentTriage(result, homeChat, pendingActionHandlers, sendChat);
+			selectedQuickAction = 'chat';
+			chatOpen = true;
+			returnToChatAfterFlow = false;
+			chatPrefill = '';
+		} catch { cameraError = true; }
+		finally { cameraUploading = false; }
+	}
+
+	async function reuseCameraMedia(item: MediaHistoryItem) {
+		cameraPreview = item.url;
+		cameraCaption = item.note ?? '';
+	}
+
+	// ── Lyd-flyt ──────────────────────────────────────────────────────────
+	let voiceOpen = $state(false);
+	let voiceText = $state('');
+	let voiceFileInput = $state<HTMLInputElement | null>(null);
+	let voiceSelectedFile = $state<File | null>(null);
+	let voiceUploading = $state(false);
+	let voiceError = $state(false);
+	let voiceHistory = $state<MediaHistoryItem[]>([]);
+	let voiceHistoryLoading = $state(false);
+
+	function handleVoiceFileSelect(event: Event) {
+		const input = event.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		voiceSelectedFile = file;
+		voiceError = false;
+	}
+
+	function closeVoiceFlow() {
+		voiceOpen = false;
+		voiceText = '';
+		voiceSelectedFile = null;
+		voiceError = false;
+		if (voiceFileInput) voiceFileInput.value = '';
+		if (returnToChatAfterFlow) { chatOpen = true; chatInputAutoFocus = true; }
+		returnToChatAfterFlow = false;
+	}
+
+	async function submitVoice() {
+		if (!voiceSelectedFile) return;
+		voiceUploading = true;
+		voiceError = false;
+		try {
+			const result = await requestAttachmentTriage(voiceSelectedFile, voiceText.trim(), 'voice');
+			closeVoiceFlow();
+			presentAttachmentTriage(result, homeChat, pendingActionHandlers, sendChat);
+			selectedQuickAction = 'chat';
+			chatOpen = true;
+			returnToChatAfterFlow = false;
+			chatPrefill = '';
+		} catch { voiceError = true; }
+		finally { voiceUploading = false; }
+	}
+
+	async function reuseVoiceMedia(item: MediaHistoryItem) {
+		try {
+			const res = await fetch(item.url);
+			const blob = await res.blob();
+			voiceSelectedFile = new File([blob], item.name, { type: item.mimeType });
+			voiceText = item.note ?? '';
+		} catch (err) { console.error('Error reusing voice media:', err); }
+	}
+
+	// ── Fil-flyt ──────────────────────────────────────────────────────────
+	let fileFlowOpen = $state(false);
+	let fileFlowInput = $state<HTMLInputElement | null>(null);
+	let fileFlowSelected = $state<File | null>(null);
+	let fileFlowMode = $state<'local' | 'sheet'>('local');
+	let fileFlowNote = $state('');
+	let fileFlowUploading = $state(false);
+	let fileFlowError = $state(false);
+	let sheetFlowUrl = $state('');
+	let sheetFlowRange = $state('');
+	let sheetFlowUploading = $state(false);
+	let sheetFlowError = $state('');
+	let fileHistory = $state<MediaHistoryItem[]>([]);
+	let fileHistoryLoading = $state(false);
+
+	function handleFileFlowSelect(event: Event) {
+		const input = event.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (file) fileFlowSelected = file;
+	}
+
+	function closeFileFlow() {
+		fileFlowOpen = false;
+		fileFlowSelected = null;
+		fileFlowMode = 'local';
+		fileFlowNote = '';
+		fileFlowError = false;
+		sheetFlowUrl = '';
+		sheetFlowRange = '';
+		sheetFlowError = '';
+		if (returnToChatAfterFlow) { chatOpen = true; chatInputAutoFocus = true; }
+		returnToChatAfterFlow = false;
+	}
+
+	function submitFile() {
+		if (!fileFlowSelected) return;
+		const selectedFile = fileFlowSelected;
+		const note = fileFlowNote.trim();
+		fileFlowUploading = true;
+		fileFlowError = false;
+		requestAttachmentTriage(selectedFile, note, 'file')
+			.then((result) => {
+				closeFileFlow();
+				presentAttachmentTriage(result, homeChat, pendingActionHandlers, sendChat);
+				selectedQuickAction = 'chat';
+				chatOpen = true;
+				returnToChatAfterFlow = false;
+				chatPrefill = '';
+			})
+			.catch(() => { fileFlowError = true; })
+			.finally(() => { fileFlowUploading = false; });
+	}
+
+	async function submitSheetSnapshot() {
+		sheetFlowError = '';
+		const spreadsheetId = extractSpreadsheetId(sheetFlowUrl);
+		if (!spreadsheetId) { sheetFlowError = 'Legg inn gyldig Google Sheet-lenke eller spreadsheetId.'; return; }
+		sheetFlowUploading = true;
+		try {
+			const params = new URLSearchParams({ spreadsheetId });
+			if (sheetFlowRange.trim()) params.set('range', sheetFlowRange.trim());
+			const [response, metaResponse] = await Promise.all([
+				fetch(`/api/sensors/google-sheets/read?${params.toString()}`),
+				fetch(`/api/sensors/google-sheets/read?spreadsheetId=${encodeURIComponent(spreadsheetId)}&meta=true`)
+			]);
+			const payload = await response.json();
+			const metaPayload = metaResponse.ok ? await metaResponse.json() : null;
+			if (!response.ok) throw new Error(payload?.error || 'Kunne ikke lese regnearkdata');
+			const values: string[][] = Array.isArray(payload.values) ? payload.values : [];
+			const dataText = serializeSheetValues(values);
+			const rangeText = payload.range || sheetFlowRange.trim() || 'A1:ZZ10000';
+			const sheetTitle = typeof metaPayload?.title === 'string' && metaPayload.title.trim().length > 0 ? metaPayload.title.trim() : 'Google Sheet';
+			const rowPreview = previewSheetRows(values, 2, 8);
+			const rowPreviewText = rowPreview.length > 0 ? rowPreview.join('\n') : 'Ingen rader funnet i valgt range.';
+			const note = fileFlowNote.trim();
+			const attachment: AttachmentRef = {
+				url: sheetFlowUrl.trim() || `google-sheet://${spreadsheetId}`,
+				kind: 'document',
+				name: `${sheetTitle} (${rangeText})`,
+				mimeType: 'application/vnd.google-apps.spreadsheet',
+				note,
+				source: 'sheet',
+				contentText: `Tittel: ${sheetTitle}\nRange: ${rangeText}\n\nForhåndsvisning (2 første rader):\n${rowPreviewText}\n\nUtdrag:\n${dataText}`,
+				extractionKind: 'sheet_snapshot'
+			};
+			const promptContext = `Regnearktittel: ${sheetTitle}. Range: ${rangeText}. Forhåndsvisning: ${rowPreviewText}.${note ? ` Brukernotat: ${note}` : ''}`;
+			const triage: AttachmentTriageResponse = {
+				attachment,
+				triage: {
+					summary: `Jeg hentet ${payload.rowCount ?? values.length} rader fra «${sheetTitle}» (${rangeText}). Første rader: ${rowPreviewText}`,
+					clarificationQuestion: 'Hva vil du at vi skal gjøre med dette regnearkutdraget?',
+					suggestedActions: [
+						{ id: 'sheet-summary', label: 'Oppsummer nøkkelpunkter', prompt: `Oppsummer de viktigste innsiktene fra dette regnearkutdraget. ${promptContext}` },
+						{ id: 'sheet-patterns', label: 'Finn mønstre', prompt: `Finn mønstre, avvik og ting jeg bør reagere på i dette regnearkutdraget. ${promptContext}` },
+						{ id: 'sheet-theme', label: 'Knytt til tema', prompt: `Hvilket tema passer dette regnearkutdraget best under, og hva er anbefalt neste steg? ${promptContext}` }
+					],
+					detectedIntent: 'analyse-sheet-snapshot',
+					confidence: 'high',
+					extractedSignals: [
+						`Tittel: ${sheetTitle}`,
+						`Rader: ${payload.rowCount ?? values.length}`,
+						`Kolonner: ${payload.colCount ?? (values[0]?.length ?? 0)}`,
+						`Range: ${rangeText}`,
+						...rowPreview
+					]
 				}
-				break;
-			case 'open-egenfrekvens':
-				openEgenfrekvensQuick(intent.slot);
-				break;
-			case 'open-day-plan':
-				homeDayPlanIso = intent.iso;
-				homeDayPlanWeekKey = intent.weekKey;
-				homeDayPlanOpen = true;
-				break;
-			case 'open-week-plan':
-				void openWeekPlan(intent.weekKey);
-				break;
-			case 'open-month-plan':
-				void openMonthPlan(intent.monthKey);
-				break;
-			case 'navigate':
-				void goto(intent.href);
-				break;
-		}
+			};
+			closeFileFlow();
+			presentAttachmentTriage(triage, homeChat, pendingActionHandlers, sendChat);
+			selectedQuickAction = 'chat';
+			chatOpen = true;
+			returnToChatAfterFlow = false;
+			chatPrefill = '';
+		} catch (error) {
+			sheetFlowError = error instanceof Error ? error.message : 'Noe gikk galt. Prøv igjen.';
+		} finally { sheetFlowUploading = false; }
 	}
 
-	function openEgenfrekvensQuick(slot: 'morning' | 'evening') {
-		egenfrekvensActiveSlot = slot;
-		egenfrekvensQuickFlowOpen = true;
+	async function reuseFileMedia(item: MediaHistoryItem) {
+		try {
+			const res = await fetch(item.url);
+			const blob = await res.blob();
+			fileFlowSelected = new File([blob], item.name, { type: item.mimeType });
+			fileFlowNote = item.note ?? '';
+		} catch (err) { console.error('Error reusing file media:', err); }
 	}
 
-	function openEgenfrekvensFull(slot: 'morning' | 'evening') {
-		egenfrekvensActiveSlot = slot;
-		egenfrekvensFlowOpen = true;
-		void loadEgenfrekvensContext();
-	}
+	let pendingActionHandlers: Record<string, () => void> = {};
+
+	// ── Deriverte verdier ─────────────────────────────────────────────────
+	const inputExpanded = $derived(chatOpen || cameraOpen || voiceOpen || fileFlowOpen);
+	const dateLabel = $derived(new Intl.DateTimeFormat('nb-NO', { day: 'numeric', month: 'long' }).format(new Date()));
 
 	const metricWidgetEntries = $derived.by<HomeWidgetEntry[]>(() => {
-		if (widgetsLoading) {
-			return Array.from({ length: 3 }, (_, i) => ({
-				id: `skeleton:${i}`,
-				kind: 'skeleton',
-				skeletonIndex: i
-			}));
-		}
-
-		if (pinnedWidgets.length > 0) {
-			return pinnedWidgets.map((widget) => ({
-				id: `dynamic:${widget.id}`,
-				kind: 'dynamic' as const,
-				widget
-			}));
-		}
-
-		if (relationshipOnboardingActive) {
-			return [{ id: 'partner-onboarding', kind: 'partner' }];
-		}
-
+		if (widgetsLoading) return Array.from({ length: 3 }, (_, i) => ({ id: `skeleton:${i}`, kind: 'skeleton', skeletonIndex: i }));
+		if (pinnedWidgets.length > 0) return pinnedWidgets.map((widget) => ({ id: `dynamic:${widget.id}`, kind: 'dynamic' as const, widget }));
+		if (relationshipOnboardingActive) return [{ id: 'partner-onboarding', kind: 'partner' }];
 		return [];
 	});
 
@@ -1095,18 +959,13 @@
 			const effort = monthMetrics?.effort[iso];
 			const egenfrekvens = monthMetrics?.egenfrekvens[iso];
 			const cl = byDate.get(iso);
-			if (!cl || !(isPast || isToday)) {
-				return { planned: 0, completed: 0, effort, egenfrekvens, isPast, isToday };
-			}
-			// Tell ikke 'gjør ikke'-oppgaver og hopp over gruppe-headere.
+			if (!cl || !(isPast || isToday)) return { planned: 0, completed: 0, effort, egenfrekvens, isPast, isToday };
 			const items = cl.items.filter((it) => {
 				if (it.skippedAt) return false;
 				if (it.parentId) return true;
 				return !cl.items.some((c2) => c2.parentId === it.id);
 			});
-			const planned = items.length;
-			const completed = items.filter((it) => it.checked).length;
-			return { planned, completed, effort, egenfrekvens, isPast, isToday };
+			return { planned: items.length, completed: items.filter((it) => it.checked).length, effort, egenfrekvens, isPast, isToday };
 		});
 	});
 
@@ -1115,54 +974,22 @@
 		const monthCtx = `month:${toLocalYearMonth(now)}`;
 		const weekCtx = `week:${getLocalIsoWeekDashed(now)}`;
 		const dayCtx = `week:${getLocalIsoWeekDashed(now)}:day:${toLocalIsoDate(now)}`;
-
-		// Fast rekkefølge: måned → uke → dag
-		// Fallback til context-hentede sjekklister (inkl. fullførte) slik at
-		// ferdigkryssede dager viser n/n i stedet for «Planlegg».
 		const orderedChecklists: HomeWidgetEntry[] = [monthCtx, weekCtx, dayCtx].map((ctx) => {
-			const existing = activeChecklists.find((c) => c.context === ctx)
-				?? allContextChecklists.find((c) => c.context === ctx);
-			const checklist = existing ?? {
-				id: `synthetic:${ctx}`,
-				title: '',
-				emoji: '📅',
-				context: ctx,
-				completedAt: null,
-				items: []
-			};
-			return {
-				id: existing ? `checklist:${existing.id}` : `synthetic:${ctx}`,
-				kind: 'checklist' as const,
-				checklist
-			};
+			const existing = activeChecklists.find((c) => c.context === ctx) ?? allContextChecklists.find((c) => c.context === ctx);
+			const checklist = existing ?? { id: `synthetic:${ctx}`, title: '', emoji: '📅', context: ctx, completedAt: null, items: [] };
+			return { id: existing ? `checklist:${existing.id}` : `synthetic:${ctx}`, kind: 'checklist' as const, checklist };
 		});
-
 		return [...orderedChecklists, ...metricWidgetEntries];
 	});
 
-	function chunkWidgets<T>(rows: T[], size: number): T[][] {
-		if (rows.length === 0) return [[]];
-		const chunks: T[][] = [];
-		for (let i = 0; i < rows.length; i += size) {
-			chunks.push(rows.slice(i, i + size));
-		}
-		return chunks;
-	}
-
-	const WIDGETS_PER_PAGE = 6;
 	const homeWidgetPages = $derived(chunkWidgets(homeWidgetEntries, WIDGETS_PER_PAGE));
 	let widgetPagerEl = $state<HTMLElement | null>(null);
 	let currentWidgetPage = $state(0);
 
 	$effect(() => {
 		const total = homeWidgetPages.length;
-		if (total === 0) {
-			currentWidgetPage = 0;
-			return;
-		}
-		if (currentWidgetPage > total - 1) {
-			currentWidgetPage = total - 1;
-		}
+		if (total === 0) { currentWidgetPage = 0; return; }
+		if (currentWidgetPage > total - 1) currentWidgetPage = total - 1;
 	});
 
 	function handleWidgetPagerScroll() {
@@ -1175,874 +1002,14 @@
 	function goToWidgetPage(index: number) {
 		if (!widgetPagerEl) return;
 		const clamped = Math.max(0, Math.min(index, homeWidgetPages.length - 1));
-		widgetPagerEl.scrollTo({
-			left: clamped * widgetPagerEl.clientWidth,
-			behavior: 'smooth'
-		});
+		widgetPagerEl.scrollTo({ left: clamped * widgetPagerEl.clientWidth, behavior: 'smooth' });
 		currentWidgetPage = clamped;
 	}
 
-	// -- Chat-sone --
-	let chatOpen = $state(false);
-	let chatPrefill = $state('');
-	let latestClosedConversationId = $state<string | null>(null);
-	let createdThemeLink = $state<{ id: string; name: string; emoji?: string | null } | null>(null);
-	let launchingThemeId = $state<string | null>(null);
-	let chatInputAutoFocus = $state(false);
-	let returnToChatAfterFlow = $state(false);
-	let selectedChatModel = $state<string>(
-		(typeof localStorage !== 'undefined' && localStorage.getItem('chat-model')) || 'auto'
-	);
-	
-	// Tema-routing state
-	let suggestedTheme = $state<{ themeId: string; themeName: string; confidence: string; reasoning?: string } | null>(null);
-	let routedToTheme = $state<{ themeId: string; themeName: string } | null>(null);
-
-	const homeChat = new ChatState({
-		getOrCreateConversationId: async () => {
-			const res = await fetch('/api/conversations/new', { method: 'POST' });
-			if (!res.ok) return null;
-			const json = await res.json();
-			return json.conversationId ?? null;
-		},
-		preferredModel: () => selectedChatModel !== 'auto' ? selectedChatModel : undefined,
-		onPayload: (data) => {
-			const theme = data.themeCreated && data.theme && typeof data.theme === 'object' ? data.theme as { id?: string; name?: string; emoji?: string | null } : null;
-			if (theme?.id) {
-				createdThemeLink = { id: theme.id, name: theme.name ?? '', emoji: theme.emoji ?? null };
-			}
-		},
-		onThemeRouted: (theme) => {
-			routedToTheme = theme;
-		},
-		onThemeSuggested: (theme) => {
-			suggestedTheme = theme;
-		},
-		onBookRouted: (book) => {
-			closeChat();
-			goto(`/tema/${book.themeId}?tab=books&bookId=${book.bookId}`);
-		},
-		onChecklistChanged: fetchChecklists,
-	});
-
-	// ── Media history types ───────────────────────────────────────────────────
-	interface MediaHistoryItem {
-		id: string;
-		kind: 'image' | 'audio' | 'document' | 'other';
-		name: string;
-		url: string;
-		mimeType?: string;
-		note?: string;
-		source?: 'camera' | 'file' | 'voice' | 'sheet';
-		createdAt: string;
-	}
-
-	// ── Kamera-flyt ────────────────────────────────────────────────────────────
-	let cameraOpen = $state(false);
-	let cameraFileInput = $state<HTMLInputElement | null>(null);
-	let cameraSelectedFile = $state<File | null>(null);
-	let cameraPreview = $state<string | null>(null);
-	let cameraCaption = $state('');
-	let cameraUploading = $state(false);
-	let cameraError = $state(false);
-	let cameraHistory = $state<MediaHistoryItem[]>([]);
-	let cameraHistoryLoading = $state(false);
-
-	// ── Lyd-flyt ───────────────────────────────────────────────────────────────
-	let voiceOpen = $state(false);
-	let voiceText = $state('');
-	let voiceFileInput = $state<HTMLInputElement | null>(null);
-	let voiceSelectedFile = $state<File | null>(null);
-	let voiceUploading = $state(false);
-	let voiceError = $state(false);
-	let voiceHistory = $state<MediaHistoryItem[]>([]);
-	let voiceHistoryLoading = $state(false);
-
-	// ── Egenfrekvens-sjekkin ──────────────────────────────────────────────────
-	let egenfrekvensFlowOpen = $state(false);
-	let egenfrekvensQuickFlowOpen = $state(false);
-	let egenfrekvensActiveSlot = $state<'morning' | 'evening'>('morning');
-	let egenfrekvensPromptOpen = $state(false);
-	let egenfrekvensPromptDay = $state('');
-	let egenfrekvensInitialNote = $state('');
-	let egenfrekvensReflectionPrompt = $state<string | null>(null);
-	let egenfrekvensDreamReasons = $state<Record<string, Array<{ value: string; label: string; source: string }>> | null>(null);
-	let egenfrekvensCarriedLevel = $state<number | null>(null);
-
-	function currentSlotFromTime(): 'morning' | 'evening' {
-		return new Date().getHours() < 14 ? 'morning' : 'evening';
-	}
-
-	function currentSlotFromUrl(): 'morning' | 'evening' {
-		const fromUrl = $page.url.searchParams.get('slot');
-		if (fromUrl === 'morning' || fromUrl === 'evening') return fromUrl;
-		return currentSlotFromTime();
-	}
-
-	async function loadEgenfrekvensContext() {
-		const isoDay = new Date().toISOString().slice(0, 10);
-		const slotQuery = egenfrekvensActiveSlot ? `&slot=${egenfrekvensActiveSlot}` : '';
-		await Promise.all([
-			fetch(`/api/egenfrekvens/reflection-context?day=${isoDay}${slotQuery}`)
-				.then((r) => r.ok ? r.json() : null)
-				.then((ctx) => {
-					egenfrekvensReflectionPrompt = typeof ctx?.systemPrompt === 'string' ? ctx.systemPrompt : null;
-				})
-				.catch(() => { egenfrekvensReflectionPrompt = null; }),
-			fetch('/api/egenfrekvens/dream-reasons')
-				.then((r) => r.ok ? r.json() : null)
-				.then((reasons) => { egenfrekvensDreamReasons = reasons; })
-				.catch(() => { egenfrekvensDreamReasons = null; })
-		]);
-	}
-
-	function openEgenfrekvensFlow(initialNote = '', preserveConversation = false) {
-		egenfrekvensInitialNote = initialNote.trim();
-		returnToChatAfterFlow = preserveConversation;
-		if (!preserveConversation) {
-			chatOpen = false;
-		}
-		chatInputAutoFocus = false;
-		egenfrekvensFlowOpen = true;
-		void loadEgenfrekvensContext();
-	}
-
-	// ── Fokustimer (jobb) ──────────────────────────────────────────────────────
-	let focusTimerFlowOpen = $state(false);
-
-	// ── Kort refleksjon ────────────────────────────────────────────────────────
-	let reflectionLightFlowOpen = $state(false);
-
-	// ── Noter (inbox) ──────────────────────────────────────────────────────────
-	let inboxNoteFlowOpen = $state(false);
-
-	// ── Quick win ──────────────────────────────────────────────────────────────
-	let quickWinFlowOpen = $state(false);
-	let quickWinOpenItems = $state<Array<{ id: string; text: string }>>([]);
-
-	async function openQuickWin() {
-		try {
-			const res = await fetch('/api/checklists/open-items?limit=20');
-			if (!res.ok) return;
-			const body = (await res.json()) as {
-				items?: Array<{ id: string; text: string; checklistTitle: string }>;
-			};
-			quickWinOpenItems = (body.items ?? []).map((i) => ({
-				id: i.id,
-				text: i.checklistTitle ? `${i.text}  ·  ${i.checklistTitle}` : i.text
-			}));
-			if (quickWinOpenItems.length === 0) return;
-			quickWinFlowOpen = true;
-		} catch {
-			// best-effort
-		}
-	}
-
-	// ── Fil-flyt ───────────────────────────────────────────────────────────────
-	let fileFlowOpen = $state(false);
-	let fileFlowInput = $state<HTMLInputElement | null>(null);
-	let fileFlowSelected = $state<File | null>(null);
-	let fileFlowMode = $state<'local' | 'sheet'>('local');
-	let fileFlowNote = $state('');
-	let fileFlowUploading = $state(false);
-	let fileFlowError = $state(false);
-	let sheetFlowUrl = $state('');
-	let sheetFlowRange = $state('');
-	let sheetFlowUploading = $state(false);
-	let sheetFlowError = $state('');
-	let fileHistory = $state<MediaHistoryItem[]>([]);
-	let fileHistoryLoading = $state(false);
-
-	const QUICK_ACTIONS: QuickAction[] = [
-		{
-			id: 'chat',
-			label: 'Samtale',
-			icon: 'chat',
-			description: 'Start med en fri tanke, et spørsmål eller et behov for retning.',
-			placeholder: 'Hva tenker du på?',
-			helper: 'Fin start når du bare vil tømme hodet eller få hjelp til å sortere noe.'
-		},
-		{
-			id: 'camera',
-			label: 'Kamera',
-			icon: 'camera',
-			description: 'Fang et bilde av noe som bør registreres eller forstås.',
-			placeholder: 'Beskriv bildet, eller lim inn det viktigste du ser i det.',
-			helper: 'Tenk skjermtid, kvittering, måling, notat eller en annen visuell observasjon.'
-		},
-		{
-			id: 'voice',
-			label: 'Lyd',
-			icon: 'wave',
-			description: 'Bruk stemmen, eller last opp en video med lyd, når du vil få noe ut raskt uten å formulere deg perfekt.',
-			placeholder: 'Skriv stikkord for det du ville sagt høyt.',
-			helper: 'Bra for raske tanker, refleksjoner etter noe som nettopp skjedde, eller en spontan idé.'
-		},
-		{
-			id: 'mood',
-			label: 'Sjekkin',
-			icon: 'checkin',
-			description: 'Egenfrekvens: balanse, tanker, følelser og handlinger på 30 sekunder.',
-			placeholder: 'Hvordan har du det akkurat nå, og hva tror du påvirker det?',
-			helper: 'Korte snapshots som senere kan kobles til tema eller mønster.'
-		},
-		{
-			id: 'file',
-			label: 'Fil',
-			icon: 'file',
-			description: 'Ta inn dokumenter, utsnitt eller annet innhold som bør triageres videre.',
-			placeholder: 'Hva inneholder filen, og hva vil du at vi skal gjøre med den?',
-			helper: 'Kan være PDF, eksport, skjermdump eller annet materiale du vil rute til riktig tema.'
-		}
-	];
-	let selectedQuickAction = $state<QuickActionId>('chat');
-	const activeQuickAction = $derived(
-		QUICK_ACTIONS.find((action) => action.id === selectedQuickAction) ?? QUICK_ACTIONS[0]
-	);
-	const hasPersistedConversation = $derived(Boolean(homeChat.conversationId));
-	const chatConversationTitle = $derived.by(() => {
-		if (!hasPersistedConversation) return '';
-		const firstUserMessage = homeChat.messages.find((msg) => msg.role === 'user' && msg.text && msg.text !== '📷 [Bilde]');
-		const base = firstUserMessage?.text?.trim() || 'Ny samtale';
-		return base.length > 42 ? `${base.slice(0, 42).trimEnd()}…` : base;
-	});
-
-	let homeConversationList = $state(recentConversations);
-	let homeEditingConversationId = $state<string | null>(null);
-	let homeEditingTitle = $state('');
-
-	$effect(() => {
-		homeConversationList = recentConversations;
-	});
-
-	const followUpConversations = $derived.by(() => {
-		const activeId = homeChat.conversationId || latestClosedConversationId;
-		return homeConversationList
-			.filter((c) => c.id !== activeId)
-			.slice(0, 6);
-	});
-
-	const followUpStarred = $derived(followUpConversations.filter((c) => c.starred && !c.archived));
-	const followUpRegular = $derived(followUpConversations.filter((c) => !c.starred && !c.archived));
-
-	function setHomeConversationStarred(id: string, starred: boolean) {
-		homeConversationList = homeConversationList.map((c) => (c.id === id ? { ...c, starred } : c));
-	}
-
-	function setHomeConversationArchived(id: string, archived: boolean) {
-		homeConversationList = homeConversationList.map((c) => (c.id === id ? { ...c, archived } : c));
-	}
-
-	function removeHomeConversation(id: string) {
-		homeConversationList = homeConversationList.filter((c) => c.id !== id);
-	}
-
-	function moveHomeConversationTheme(id: string, themeId: string | null) {
-		const nextTheme = themeId ? themes.find((t) => t.id === themeId) ?? null : null;
-		homeConversationList = homeConversationList.map((c) =>
-			c.id === id
-				? {
-						...c,
-						linkedTheme: nextTheme
-							? { id: nextTheme.id, name: nextTheme.name, emoji: nextTheme.emoji ?? null }
-							: null
-					}
-				: c
-		);
-	}
-
-	function startHomeConversationRename(id: string, currentTitle: string) {
-		homeEditingConversationId = id;
-		homeEditingTitle = currentTitle;
-	}
-
-	function cancelHomeConversationRename() {
-		homeEditingConversationId = null;
-		homeEditingTitle = '';
-	}
-
-	async function commitHomeConversationRename(id: string) {
-		const title = homeEditingTitle.trim();
-		if (!title) {
-			cancelHomeConversationRename();
-			return;
-		}
-
-		homeConversationList = homeConversationList.map((c) => (c.id === id ? { ...c, title } : c));
-		homeEditingConversationId = null;
-
-		await fetch(`/api/conversations/${id}`, {
-			method: 'PATCH',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ title })
-		});
-	}
-
-	const inputExpanded = $derived(chatOpen || cameraOpen || voiceOpen || fileFlowOpen);
-	let chatSection: HTMLElement | null = $state(null);
-
-	function formatFollowUpDate(iso: string) {
-		return new Intl.DateTimeFormat('nb-NO', { day: 'numeric', month: 'short' }).format(new Date(iso));
-	}
-
-	function shouldAutoFocusInput() {
-		if (typeof window === 'undefined') return false;
-		return window.matchMedia('(pointer: fine)').matches;
-	}
-
-	function openChat(
-		prefill = '',
-		actionId: QuickActionId = selectedQuickAction,
-		options?: { focusInput?: boolean }
-	) {
-		selectedQuickAction = actionId;
-		chatPrefill = prefill;
-		chatInputAutoFocus = options?.focusInput ?? shouldAutoFocusInput();
-		chatOpen = true;
-	}
-
-	function startQuickAction(action: QuickAction) {
-		homeChat.reset();
-		homeChat.conversationId = null;
-		chatPrefill = '';
-		createdThemeLink = null;
-		if (action.id === 'chat') {
-			openChat('', 'chat');
-		} else if (action.id === 'camera') {
-			cameraOpen = true;
-		} else if (action.id === 'voice') {
-			voiceOpen = true;
-		} else if (action.id === 'mood') {
-			egenfrekvensFlowOpen = true;
-		} else if (action.id === 'file') {
-			fileFlowOpen = true;
-		}
-	}
-
-	function openPartnerOnboardingChat() {
-		openChat(
-			'Vi har nettopp koblet oss som partnere i Resonans. Hjelp oss å sette opp et parforhold-tema, foreslå 3 fokusområder, og lag første ukes mini-plan med konkrete steg.',
-			'chat'
-		);
-	}
-
-	// ── Kamera-flyt ─────────────────────────────────────────────────────────────
-
-	function handleCameraFileSelect(event: Event) {
-		const input = event.target as HTMLInputElement;
-		const file = input.files?.[0];
-		if (!file) return;
-		cameraSelectedFile = file;
-		const reader = new FileReader();
-		reader.onload = (e) => { cameraPreview = e.target?.result as string; };
-		reader.readAsDataURL(file);
-	}
-
-	interface AttachmentTriageResponse {
-		attachment: AttachmentRef;
-		triage: {
-			summary: string;
-			clarificationQuestion: string;
-			suggestedActions: TriageSuggestion[];
-			detectedIntent: string;
-			confidence: 'low' | 'medium' | 'high';
-			extractedSignals: string[];
-		};
-		tracking?: {
-			matched: boolean;
-			seriesId?: string;
-			title?: string;
-			recordTypeKey?: string;
-			confidence?: 'low' | 'medium' | 'high';
-			action?: 'auto_register' | 'confirm' | 'none';
-			reasoning?: string;
-			extracted?: {
-				date?: string;
-				note?: string;
-				measurements?: Array<{ key: string; value: number | string | boolean; unit?: string }>;
-			};
-			autoRecordedEventId?: string;
-		} | null;
-	}
-
-	async function requestAttachmentTriage(
-		file: File,
-		note: string,
-		source: AttachmentSource
-	): Promise<AttachmentTriageResponse> {
-		const formData = new FormData();
-		formData.append('file', file);
-		formData.append('note', note);
-		formData.append('source', source);
-
-		const response = await fetch('/api/attachment-triage', {
-			method: 'POST',
-			body: formData
-		});
-
-		if (!response.ok) {
-			throw new Error('Attachment triage failed');
-		}
-
-		return response.json();
-	}
-
-	function buildAttachmentTriageText(result: AttachmentTriageResponse['triage']) {
-		return [
-			result.summary,
-			result.clarificationQuestion,
-			result.extractedSignals.length > 0
-				? `Mulige signaler: ${result.extractedSignals.join(' · ')}`
-				: null
-		].filter(Boolean).join('\n\n');
-	}
-
-	function buildTrackingPrompt(tracking: NonNullable<AttachmentTriageResponse['tracking']>) {
-		const date = tracking.extracted?.date || new Date().toISOString().slice(0, 10);
-		const note = tracking.extracted?.note || '';
-		const measurements = (tracking.extracted?.measurements || [])
-			.map((m) => `${m.key}=${String(m.value)}${m.unit ? ` ${m.unit}` : ''}`)
-			.join(', ');
-
-		return [
-			`Registrer dette i tracking-serien ${tracking.title || tracking.recordTypeKey || 'ukjent'} (${tracking.seriesId || ''}).`,
-			`Dato: ${date}`,
-			note ? `Notat: ${note}` : null,
-			measurements ? `Målinger: ${measurements}` : null,
-			'Bruk record_tracking_event og seriesId fra meldingen.'
-		]
-			.filter(Boolean)
-			.join('\n');
-	}
-
-	// Handlers for action buttons in triage messages (keyed by action id)
-	let pendingActionHandlers: Record<string, () => void> = {};
-
-	function presentAttachmentTriage(result: AttachmentTriageResponse) {
-		const attachment = result.attachment;
-		const triageText = buildAttachmentTriageText(result.triage);
-
-		// Build action list with stable ids and register handlers
-		const chatStateActions: { id: string; label: string }[] = [];
-
-		result.triage.suggestedActions.forEach((action) => {
-			const id = action.id || `triage-${action.label}`;
-			chatStateActions.push({ id, label: action.label });
-			pendingActionHandlers[id] = () => {
-				void sendChat(action.prompt, attachment.kind === 'image' ? attachment.url : undefined, attachment);
-			};
-		});
-
-		let trackingText: string | null = null;
-		if (result.tracking?.matched) {
-			const conf = result.tracking.confidence || 'low';
-			const label = result.tracking.title || result.tracking.recordTypeKey || 'ukjent serie';
-			if (result.tracking.autoRecordedEventId) {
-				trackingText = `Tracking-match: ${label} (${conf}). Registrering lagret automatisk.`;
-			} else if (result.tracking.action === 'confirm') {
-				trackingText = `Tracking-match: ${label} (${conf}). Klar for bekreftet registrering.`;
-				const trackingId = 'tracking-register';
-				chatStateActions.unshift({ id: trackingId, label: 'Registrer i serie' });
-				pendingActionHandlers[trackingId] = () => {
-					if (!result.tracking) return;
-					const prompt = buildTrackingPrompt(result.tracking);
-					void sendChat(prompt, attachment.kind === 'image' ? attachment.url : undefined, attachment);
-				};
-			}
-		}
-
-		const assistantText = [triageText, trackingText].filter(Boolean).join('\n\n');
-
-		selectedQuickAction = 'chat';
-		chatOpen = true;
-		returnToChatAfterFlow = false;
-		chatPrefill = '';
-		homeChat.messages = [
-			...homeChat.messages,
-			{
-				id: crypto.randomUUID(),
-				role: 'user' as const,
-				text: attachment.note,
-				starred: false,
-				imageUrl: attachment.kind === 'image' ? attachment.url : null,
-				attachment: attachment as import('$lib/client/chat-state.svelte').ChatMessage['attachment']
-			},
-			{
-				id: crypto.randomUUID(),
-				role: 'assistant' as const,
-				text: assistantText,
-				starred: false,
-				actions: chatStateActions
-			}
-		];
-	}
-
-	async function submitCamera() {
-		if (!cameraSelectedFile) return;
-		cameraUploading = true;
-		cameraError = false;
-		try {
-			const result = await requestAttachmentTriage(cameraSelectedFile, cameraCaption.trim(), 'camera');
-			closeCameraFlow();
-			presentAttachmentTriage(result);
-		} catch {
-			cameraError = true;
-		} finally {
-			cameraUploading = false;
-		}
-	}
-
-	// ── Lyd-flyt ─────────────────────────────────────────────────────────────────
-	function closeVoiceFlow() {
-		voiceOpen = false;
-		voiceText = '';
-		voiceSelectedFile = null;
-		voiceError = false;
-		if (voiceFileInput) {
-			voiceFileInput.value = '';
-		}
-		if (returnToChatAfterFlow) {
-			chatOpen = true;
-			chatInputAutoFocus = true;
-		}
-		returnToChatAfterFlow = false;
-	}
-
-	function handleVoiceFileSelect(event: Event) {
-		const input = event.target as HTMLInputElement;
-		const file = input.files?.[0];
-		if (!file) return;
-		voiceSelectedFile = file;
-		voiceError = false;
-	}
-
-	async function submitVoice() {
-		if (!voiceSelectedFile) return;
-		voiceUploading = true;
-		voiceError = false;
-		try {
-			const result = await requestAttachmentTriage(voiceSelectedFile, voiceText.trim(), 'voice');
-			closeVoiceFlow();
-			presentAttachmentTriage(result);
-		} catch {
-			voiceError = true;
-		} finally {
-			voiceUploading = false;
-		}
-	}
-
-	// ── Fil-flyt ──────────────────────────────────────────────────────────────────
-	function closeFileFlow() {
-		fileFlowOpen = false;
-		fileFlowSelected = null;
-		fileFlowMode = 'local';
-		fileFlowNote = '';
-		fileFlowError = false;
-		sheetFlowUrl = '';
-		sheetFlowRange = '';
-		sheetFlowError = '';
-		if (returnToChatAfterFlow) {
-			chatOpen = true;
-			chatInputAutoFocus = true;
-		}
-		returnToChatAfterFlow = false;
-	}
-
-	function handleFileFlowSelect(event: Event) {
-		const input = event.target as HTMLInputElement;
-		const file = input.files?.[0];
-		if (file) fileFlowSelected = file;
-	}
-
-	function submitFile() {
-		if (!fileFlowSelected) return;
-		const selectedFile = fileFlowSelected;
-		const note = fileFlowNote.trim();
-		fileFlowUploading = true;
-		fileFlowError = false;
-		requestAttachmentTriage(selectedFile, note, 'file')
-			.then((result) => {
-				closeFileFlow();
-				presentAttachmentTriage(result);
-			})
-			.catch(() => {
-				fileFlowError = true;
-			})
-			.finally(() => {
-				fileFlowUploading = false;
-			});
-	}
-
-	function extractSpreadsheetId(value: string): string {
-		const trimmed = value.trim();
-		if (!trimmed) return '';
-		if (!trimmed.includes('docs.google.com')) return trimmed;
-		return trimmed.match(/\/d\/([a-zA-Z0-9_-]+)/)?.[1] ?? '';
-	}
-
-	function serializeSheetValues(values: string[][], maxRows = 40, maxCols = 10, maxChars = 6000): string {
-		const truncatedRows = values.slice(0, maxRows).map((row) =>
-			row
-				.slice(0, maxCols)
-				.map((cell) => cell.replace(/[\r\n\t]+/g, ' ').trim())
-				.join('\t')
-		);
-
-		const hasMoreRows = values.length > maxRows;
-		const hasMoreCols = values.some((row) => row.length > maxCols);
-		const footer = hasMoreRows || hasMoreCols ? '\n\n[data kuttet]' : '';
-		const content = `${truncatedRows.join('\n')}${footer}`.trim();
-		if (content.length <= maxChars) return content;
-		return `${content.slice(0, maxChars).trim()}\n\n[data kuttet]`;
-	}
-
-	function previewSheetRows(values: string[][], rowCount = 2, colCount = 8): string[] {
-		return values.slice(0, rowCount).map((row, index) => {
-			const cells = row
-				.slice(0, colCount)
-				.map((cell) => cell.replace(/[\r\n\t]+/g, ' ').trim())
-				.filter((cell) => cell.length > 0);
-			return `Rad ${index + 1}: ${cells.join(' | ') || '(tom)'}`;
-		});
-	}
-
-	async function submitSheetSnapshot() {
-		sheetFlowError = '';
-		const spreadsheetId = extractSpreadsheetId(sheetFlowUrl);
-		if (!spreadsheetId) {
-			sheetFlowError = 'Legg inn gyldig Google Sheet-lenke eller spreadsheetId.';
-			return;
-		}
-
-		sheetFlowUploading = true;
-		try {
-			const params = new URLSearchParams({ spreadsheetId });
-			if (sheetFlowRange.trim()) params.set('range', sheetFlowRange.trim());
-			const [response, metaResponse] = await Promise.all([
-				fetch(`/api/sensors/google-sheets/read?${params.toString()}`),
-				fetch(`/api/sensors/google-sheets/read?spreadsheetId=${encodeURIComponent(spreadsheetId)}&meta=true`)
-			]);
-			const payload = await response.json();
-			const metaPayload = metaResponse.ok ? await metaResponse.json() : null;
-
-			if (!response.ok) {
-				throw new Error(payload?.error || 'Kunne ikke lese regnearkdata');
-			}
-
-			const values: string[][] = Array.isArray(payload.values) ? payload.values : [];
-			const dataText = serializeSheetValues(values);
-			const rangeText = payload.range || sheetFlowRange.trim() || 'A1:ZZ10000';
-			const sheetTitle = typeof metaPayload?.title === 'string' && metaPayload.title.trim().length > 0
-				? metaPayload.title.trim()
-				: 'Google Sheet';
-			const rowPreview = previewSheetRows(values, 2, 8);
-			const rowPreviewText = rowPreview.length > 0 ? rowPreview.join('\n') : 'Ingen rader funnet i valgt range.';
-			const note = fileFlowNote.trim();
-
-			const attachment: AttachmentRef = {
-				url: sheetFlowUrl.trim() || `google-sheet://${spreadsheetId}`,
-				kind: 'document',
-				name: `${sheetTitle} (${rangeText})`,
-				mimeType: 'application/vnd.google-apps.spreadsheet',
-				note,
-				source: 'sheet',
-				contentText: `Tittel: ${sheetTitle}\nRange: ${rangeText}\n\nForhåndsvisning (2 første rader):\n${rowPreviewText}\n\nUtdrag:\n${dataText}`,
-				extractionKind: 'sheet_snapshot'
-			};
-
-			const promptContext = `Regnearktittel: ${sheetTitle}. Range: ${rangeText}. Forhåndsvisning: ${rowPreviewText}.${note ? ` Brukernotat: ${note}` : ''}`;
-
-			const triage: AttachmentTriageResponse = {
-				attachment,
-				triage: {
-					summary: `Jeg hentet ${payload.rowCount ?? values.length} rader fra «${sheetTitle}» (${rangeText}). Første rader: ${rowPreviewText}`,
-					clarificationQuestion: 'Hva vil du at vi skal gjøre med dette regnearkutdraget?',
-					suggestedActions: [
-						{
-							id: 'sheet-summary',
-							label: 'Oppsummer nøkkelpunkter',
-							prompt: `Oppsummer de viktigste innsiktene fra dette regnearkutdraget. ${promptContext}`
-						},
-						{
-							id: 'sheet-patterns',
-							label: 'Finn mønstre',
-							prompt: `Finn mønstre, avvik og ting jeg bør reagere på i dette regnearkutdraget. ${promptContext}`
-						},
-						{
-							id: 'sheet-theme',
-							label: 'Knytt til tema',
-							prompt: `Hvilket tema passer dette regnearkutdraget best under, og hva er anbefalt neste steg? ${promptContext}`
-						}
-					],
-					detectedIntent: 'analyse-sheet-snapshot',
-					confidence: 'high',
-					extractedSignals: [
-						`Tittel: ${sheetTitle}`,
-						`Rader: ${payload.rowCount ?? values.length}`,
-						`Kolonner: ${payload.colCount ?? (values[0]?.length ?? 0)}`,
-						`Range: ${rangeText}`,
-						...rowPreview
-					]
-				}
-			};
-
-			closeFileFlow();
-			presentAttachmentTriage(triage);
-		} catch (error) {
-			sheetFlowError = error instanceof Error ? error.message : 'Noe gikk galt. Prøv igjen.';
-		} finally {
-			sheetFlowUploading = false;
-		}
-	}
-
-	function startHomeChat(draftOverride?: string) {
-		const draft = (draftOverride ?? chatPrefill).trim();
-		if (!draft) {
-			openChat('', 'chat', { focusInput: true });
-			return;
-		}
-
-		chatPrefill = '';
-		openChat('', 'chat', { focusInput: false });
-		void sendChat(draft);
-	}
-
-	function startHomeAttachment(
-		kind: 'camera' | 'voice' | 'file',
-		draftOverride?: string,
-		options?: { preserveConversation?: boolean }
-	) {
-		const draft = (draftOverride ?? chatPrefill).trim();
-		if (!options?.preserveConversation) {
-			homeChat.reset();
-			homeChat.conversationId = null;
-			createdThemeLink = null;
-		}
-		returnToChatAfterFlow = Boolean(options?.preserveConversation);
-		chatOpen = false;
-		chatInputAutoFocus = false;
-		if (kind === 'camera') {
-			cameraCaption = draft;
-			cameraOpen = true;
-			return;
-		}
-		if (kind === 'voice') {
-			voiceText = draft;
-			voiceOpen = true;
-			return;
-		}
-		fileFlowMode = 'local';
-		fileFlowNote = draft;
-		fileFlowOpen = true;
-	}
-
-	function closeChat() {
-		if (homeChat.conversationId && homeChat.messages.length > 0) {
-			latestClosedConversationId = homeChat.conversationId;
-		}
-		homeChat.reset();
-		homeChat.conversationId = null;
-		chatPrefill = '';
-		chatInputAutoFocus = false;
-		createdThemeLink = null;
-		launchingThemeId = null;
-		chatOpen = false;
-		returnToChatAfterFlow = false;
-	}
-
-	function closeCameraFlow() {
-		cameraOpen = false;
-		cameraSelectedFile = null;
-		cameraPreview = null;
-		cameraCaption = '';
-		cameraError = false;
-		if (returnToChatAfterFlow) {
-			chatOpen = true;
-			chatInputAutoFocus = true;
-		}
-		returnToChatAfterFlow = false;
-	}
-
+	// ── Widget-operasjoner ────────────────────────────────────────────────
 	function openWidgetConfigSheet(widget: UserWidget) {
 		widgetPanelOpen = false;
 		configWidget = widget;
-	}
-
-	async function fetchMediaHistory(kind: 'image' | 'audio' | 'document') {
-		try {
-			const res = await fetch(`/api/media-history?kind=${kind}&limit=12`);
-			if (res.ok) {
-				const data = await res.json();
-				return (data.mediaHistory ?? []) as MediaHistoryItem[];
-			}
-		} catch (err) {
-			console.error('Error fetching media history:', err);
-		}
-		return [];
-	}
-
-	async function loadCameraHistory() {
-		cameraHistoryLoading = true;
-		cameraHistory = await fetchMediaHistory('image');
-		cameraHistoryLoading = false;
-	}
-
-	async function loadVoiceHistory() {
-		voiceHistoryLoading = true;
-		voiceHistory = await fetchMediaHistory('audio');
-		voiceHistoryLoading = false;
-	}
-
-	async function loadFileHistory() {
-		fileHistoryLoading = true;
-		fileHistory = await fetchMediaHistory('document');
-		fileHistoryLoading = false;
-	}
-
-	async function reuseCameraMedia(item: MediaHistoryItem) {
-		try {
-			cameraPreview = item.url;
-			cameraCaption = item.note ?? '';
-		} catch (err) {
-			console.error('Error reusing camera media:', err);
-		}
-	}
-
-	async function reuseVoiceMedia(item: MediaHistoryItem) {
-		try {
-			const res = await fetch(item.url);
-			const blob = await res.blob();
-			voiceSelectedFile = new File([blob], item.name, { type: item.mimeType });
-			voiceText = item.note ?? '';
-		} catch (err) {
-			console.error('Error reusing voice media:', err);
-		}
-	}
-
-	async function reuseFileMedia(item: MediaHistoryItem) {
-		try {
-			const res = await fetch(item.url);
-			const blob = await res.blob();
-			fileFlowSelected = new File([blob], item.name, { type: item.mimeType });
-			fileFlowNote = item.note ?? '';
-		} catch (err) {
-			console.error('Error reusing file media:', err);
-		}
-	}
-
-	async function openCreatedTheme(themeId: string) {
-		launchingThemeId = themeId;
-		await goto(`/tema/${themeId}?handoff=1`);
-	}
-
-	function stopChat() {
-		homeChat.stop();
-	}
-
-	async function sendChat(text: string, imageUrl?: string, attachment?: AttachmentRef) {
-		suggestedTheme = null;
-		routedToTheme = null;
-		await homeChat.send(text, imageUrl, attachment as Parameters<typeof homeChat.send>[2]);
 	}
 
 	async function unpinWidget(id: string) {
@@ -2050,11 +1017,7 @@
 		pinnedWidgets = pinnedWidgets.filter((w) => w.id !== id);
 		if (widget) hiddenWidgets = [widget, ...hiddenWidgets];
 		writeCachedPayload(HOME_PINNED_WIDGETS_CACHE_KEY, pinnedWidgets);
-		const res = await fetch(`/api/user-widgets/${id}`, {
-			method: 'PATCH',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ pinned: false })
-		});
+		const res = await fetch(`/api/user-widgets/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pinned: false }) });
 		if (!res.ok && widget) {
 			hiddenWidgets = hiddenWidgets.filter((w) => w.id !== id);
 			pinnedWidgets = [widget, ...pinnedWidgets];
@@ -2067,13 +1030,7 @@
 		hiddenWidgets = hiddenWidgets.filter((w) => w.id !== id);
 		if (widget) pinnedWidgets = [...pinnedWidgets, { ...widget, pinned: true }];
 		writeCachedPayload(HOME_PINNED_WIDGETS_CACHE_KEY, pinnedWidgets);
-
-		const res = await fetch(`/api/user-widgets/${id}`, {
-			method: 'PATCH',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ pinned: true })
-		});
-
+		const res = await fetch(`/api/user-widgets/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pinned: true }) });
 		if (!res.ok && widget) {
 			pinnedWidgets = pinnedWidgets.filter((w) => w.id !== id);
 			hiddenWidgets = [widget, ...hiddenWidgets];
@@ -2086,31 +1043,21 @@
 		if (index === -1) return;
 		const targetIndex = direction === 'up' ? index - 1 : index + 1;
 		if (targetIndex < 0 || targetIndex >= pinnedWidgets.length) return;
-
 		const next = [...pinnedWidgets];
 		[next[index], next[targetIndex]] = [next[targetIndex], next[index]];
 		pinnedWidgets = next;
 		writeCachedPayload(HOME_PINNED_WIDGETS_CACHE_KEY, pinnedWidgets);
-
-		await Promise.all(
-			next.map((widget, i) =>
-				fetch(`/api/user-widgets/${widget.id}`, {
-					method: 'PATCH',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ sortOrder: i })
-				})
-			)
-		);
+		await Promise.all(next.map((widget, i) =>
+			fetch(`/api/user-widgets/${widget.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sortOrder: i }) })
+		));
 	}
 
 	async function deleteWidget(id: string) {
 		const inPinned = pinnedWidgets.find((w) => w.id === id);
 		const inHidden = hiddenWidgets.find((w) => w.id === id);
-
 		if (inPinned) pinnedWidgets = pinnedWidgets.filter((w) => w.id !== id);
 		if (inHidden) hiddenWidgets = hiddenWidgets.filter((w) => w.id !== id);
 		writeCachedPayload(HOME_PINNED_WIDGETS_CACHE_KEY, pinnedWidgets);
-
 		const res = await fetch(`/api/user-widgets/${id}`, { method: 'DELETE' });
 		if (!res.ok) {
 			if (inPinned) pinnedWidgets = [...pinnedWidgets, inPinned];
@@ -2121,11 +1068,7 @@
 
 	async function saveWidgetConfig(id: string, updates: Partial<UserWidget>) {
 		configWidget = null;
-		const res = await fetch(`/api/user-widgets/${id}`, {
-			method: 'PATCH',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(updates)
-		});
+		const res = await fetch(`/api/user-widgets/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updates) });
 		if (res.ok) {
 			const updated = await res.json();
 			pinnedWidgets = pinnedWidgets.map((w) => w.id === id ? { ...w, ...updated } : w);
@@ -2144,35 +1087,25 @@
 			const t = themes.find((t) => t.name.trim().toLowerCase() === 'økonomi');
 			startNavMetric('home', 'tema');
 			void goto(t ? `/tema/${t.id}` : '/economics');
-		} else {
-			void goto('/');
-		}
+		} else void goto('/');
 	}
 
-	const dateLabel = $derived(
-		new Intl.DateTimeFormat('nb-NO', { day: 'numeric', month: 'long' }).format(new Date())
-	);
+	async function openCreatedTheme(themeId: string) {
+		launchingThemeId = themeId;
+		await goto(`/tema/${themeId}?handoff=1`);
+	}
 
-	// Load media history when flows open
-	$effect(() => {
-		if (cameraOpen) {
-			void loadCameraHistory();
-		}
-	});
+	// ── Pull to refresh ───────────────────────────────────────────────────
+	async function refreshHomeData() {
+		await Promise.allSettled([fetchChecklists(), loadSensorAndWidgets(false)]);
+	}
 
-	$effect(() => {
-		if (voiceOpen) {
-			void loadVoiceHistory();
-		}
-	});
+	// ── Media history loading effects ─────────────────────────────────────
+	$effect(() => { if (cameraOpen) { cameraHistoryLoading = true; fetchMediaHistory('image').then((h) => { cameraHistory = h; cameraHistoryLoading = false; }); } });
+	$effect(() => { if (voiceOpen) { voiceHistoryLoading = true; fetchMediaHistory('audio').then((h) => { voiceHistory = h; voiceHistoryLoading = false; }); } });
+	$effect(() => { if (fileFlowOpen) { fileHistoryLoading = true; fetchMediaHistory('document').then((h) => { fileHistory = h; fileHistoryLoading = false; }); } });
 
-	$effect(() => {
-		if (fileFlowOpen) {
-			void loadFileHistory();
-		}
-	});
-
-	// Fix iOS keyboard scroll: resize fixed overlay to match visual viewport
+	// ── iOS keyboard scroll fix ───────────────────────────────────────────
 	$effect(() => {
 		if (!inputExpanded) return;
 		if (typeof window === 'undefined' || !window.visualViewport) return;
@@ -2188,12 +1121,345 @@
 		return () => {
 			vv.removeEventListener('resize', updateLayout);
 			vv.removeEventListener('scroll', updateLayout);
-			if (chatSection) {
-				chatSection.style.height = '';
-				chatSection.style.top = '';
-			}
+			if (chatSection) { chatSection.style.height = ''; chatSection.style.top = ''; }
 		};
 	});
+
+	// ── onMount ───────────────────────────────────────────────────────────
+	onMount(() => {
+		void (async () => {
+			finishNavMetric('home');
+			const checklistPromise = timeAsync('checklists', () => fetchChecklists());
+			await loadSensorAndWidgets(true);
+			await checklistPromise;
+
+			if (typeof window !== 'undefined') {
+				const runPreload = () => {
+					void preloadCode('/tema/*');
+					for (const theme of themes.slice(0, 2)) void preloadData(`/tema/${theme.id}`);
+				};
+				if ('requestIdleCallback' in window) window.requestIdleCallback(runPreload, { timeout: 1200 });
+				else setTimeout(runPreload, 180);
+			}
+
+			if ($page.url.searchParams.get('chat') === '1') openChat();
+			void loadEgenfrekvensRecent();
+			void loadActionCandidates();
+
+			const flowParam = $page.url.searchParams.get('flow');
+			if (flowParam === 'egenfrekvens_checkin' || flowParam === 'egenfrekvens_quick') {
+				egenfrekvensActiveSlot = currentSlotFromUrl();
+				if (flowParam === 'egenfrekvens_checkin') {
+					egenfrekvensFlowOpen = true;
+					void loadEgenfrekvensContext();
+				} else egenfrekvensQuickFlowOpen = true;
+				const nudgeId = $page.url.searchParams.get('nudgeEventId');
+				if (nudgeId) void fetch(`/api/nudges/events/${nudgeId}/stage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stage: 'flow_started' }) }).catch(() => {});
+			}
+
+			// App-open egenfrekvens prompt
+			void (async () => {
+				try {
+					const isoDay = new Date().toISOString().slice(0, 10);
+					const res = await fetch(`/api/egenfrekvens/status?day=${isoDay}`);
+					if (!res.ok) return;
+					const status = await res.json();
+					if (!status.settings || status.settings.enabled === false) return;
+					if (typeof localStorage !== 'undefined') {
+						const dismissed = localStorage.getItem(`egenfrekvens-prompt-dismissed-${status.day}`);
+						if (dismissed) return;
+					}
+					const morning = status.settings.morningTime ?? '06:30';
+					const evening = status.settings.eveningTime ?? '21:00';
+					const count = typeof status.count === 'number' ? status.count : status.submitted ? 1 : 0;
+					const nowHm = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date());
+					const showMorning = nowHm >= morning && count === 0;
+					const showEvening = nowHm >= evening && count < 2;
+					if (!showMorning && !showEvening) return;
+					egenfrekvensPromptDay = status.day;
+					egenfrekvensPromptOpen = true;
+				} catch { /* best-effort */ }
+			})();
+		})();
+	});
+
+	// ── Publiser kontekst til sone-komponenter ────────────────────────────
+	const ctxObj: HomeContext = {
+		get themes() { return themes; },
+		set themes(v) { themes = v; },
+		get relationshipOnboardingActive() { return relationshipOnboardingActive; },
+		get relationshipTheme() { return relationshipTheme; },
+
+		get dragThemeId() { return dragThemeId; },
+		set dragThemeId(v) { dragThemeId = v; },
+		get dropIndex() { return dropIndex; },
+		set dropIndex(v) { dropIndex = v; },
+		get isTouchDrag() { return isTouchDrag; },
+		set isTouchDrag(v) { isTouchDrag = v; },
+		get themeListEl() { return themeListEl; },
+		set themeListEl(v) { themeListEl = v; },
+		get touchChip() { return touchChip; },
+		set touchChip(v) { touchChip = v; },
+		get draggedTheme() { return draggedTheme; },
+		get displayList() { return displayList; },
+
+		get themeMenuId() { return themeMenuId; },
+		set themeMenuId(v) { themeMenuId = v; },
+		get themeMenuName() { return themeMenuName; },
+		set themeMenuName(v) { themeMenuName = v; },
+		get themeActionBusy() { return themeActionBusy; },
+		set themeActionBusy(v) { themeActionBusy = v; },
+		get themePanelOpen() { return themePanelOpen; },
+		set themePanelOpen(v) { themePanelOpen = v; },
+		get temaPressBlocked() { return temaPressBlocked; },
+
+		get pinnedWidgets() { return pinnedWidgets; },
+		set pinnedWidgets(v) { pinnedWidgets = v; },
+		get hiddenWidgets() { return hiddenWidgets; },
+		set hiddenWidgets(v) { hiddenWidgets = v; },
+		get widgetsLoading() { return widgetsLoading; },
+		get configWidget() { return configWidget; },
+		set configWidget(v) { configWidget = v; },
+		get widgetPanelOpen() { return widgetPanelOpen; },
+		set widgetPanelOpen(v) { widgetPanelOpen = v; },
+		get homeWidgetPages() { return homeWidgetPages; },
+		get widgetPagerEl() { return widgetPagerEl; },
+		set widgetPagerEl(v) { widgetPagerEl = v; },
+		get currentWidgetPage() { return currentWidgetPage; },
+		set currentWidgetPage(v) { currentWidgetPage = v; },
+
+		get activeChecklists() { return activeChecklists; },
+		set activeChecklists(v) { activeChecklists = v; },
+		get allContextChecklists() { return allContextChecklists; },
+		set allContextChecklists(v) { allContextChecklists = v; },
+		get monthDayChecklists() { return monthDayChecklists; },
+		get monthMetrics() { return monthMetrics; },
+		get openChecklist() { return openChecklist; },
+		set openChecklist(v) { openChecklist = v; },
+		get todaysRoutines() { return todaysRoutines; },
+		get monthDayData() { return monthDayData; },
+
+		get chatOpen() { return chatOpen; },
+		set chatOpen(v) { chatOpen = v; },
+		get chatPrefill() { return chatPrefill; },
+		set chatPrefill(v) { chatPrefill = v; },
+		get chatInputAutoFocus() { return chatInputAutoFocus; },
+		set chatInputAutoFocus(v) { chatInputAutoFocus = v; },
+		get chatSection() { return chatSection; },
+		set chatSection(v) { chatSection = v; },
+		get inputExpanded() { return inputExpanded; },
+		get homeChat() { return homeChat; },
+		get selectedQuickAction() { return selectedQuickAction; },
+		set selectedQuickAction(v) { selectedQuickAction = v; },
+		get activeQuickAction() { return activeQuickAction; },
+		get hasPersistedConversation() { return hasPersistedConversation; },
+		get chatConversationTitle() { return chatConversationTitle; },
+		get latestClosedConversationId() { return latestClosedConversationId; },
+		set latestClosedConversationId(v) { latestClosedConversationId = v; },
+		get createdThemeLink() { return createdThemeLink; },
+		set createdThemeLink(v) { createdThemeLink = v; },
+		get launchingThemeId() { return launchingThemeId; },
+		set launchingThemeId(v) { launchingThemeId = v; },
+		get returnToChatAfterFlow() { return returnToChatAfterFlow; },
+		set returnToChatAfterFlow(v) { returnToChatAfterFlow = v; },
+		get selectedChatModel() { return selectedChatModel; },
+		set selectedChatModel(v) { selectedChatModel = v; },
+		get suggestedTheme() { return suggestedTheme; },
+		set suggestedTheme(v) { suggestedTheme = v; },
+		get routedToTheme() { return routedToTheme; },
+		set routedToTheme(v) { routedToTheme = v; },
+		get homeConversationList() { return homeConversationList; },
+		set homeConversationList(v) { homeConversationList = v; },
+		get homeEditingConversationId() { return homeEditingConversationId; },
+		set homeEditingConversationId(v) { homeEditingConversationId = v; },
+		get homeEditingTitle() { return homeEditingTitle; },
+		set homeEditingTitle(v) { homeEditingTitle = v; },
+		get followUpConversations() { return followUpConversations; },
+		get followUpStarred() { return followUpStarred; },
+		get followUpRegular() { return followUpRegular; },
+
+		get actionItems() { return actionItems; },
+		get serverActionCandidates() { return serverActionCandidates; },
+
+		get snoozeMenuChipId() { return snoozeMenuChipId; },
+		set snoozeMenuChipId(v) { snoozeMenuChipId = v; },
+		get snoozeMenuLabel() { return snoozeMenuLabel; },
+		set snoozeMenuLabel(v) { snoozeMenuLabel = v; },
+
+		get cameraOpen() { return cameraOpen; },
+		set cameraOpen(v) { cameraOpen = v; },
+		get cameraFileInput() { return cameraFileInput; },
+		set cameraFileInput(v) { cameraFileInput = v; },
+		get cameraSelectedFile() { return cameraSelectedFile; },
+		set cameraSelectedFile(v) { cameraSelectedFile = v; },
+		get cameraPreview() { return cameraPreview; },
+		set cameraPreview(v) { cameraPreview = v; },
+		get cameraCaption() { return cameraCaption; },
+		set cameraCaption(v) { cameraCaption = v; },
+		get cameraUploading() { return cameraUploading; },
+		get cameraError() { return cameraError; },
+		get cameraHistory() { return cameraHistory; },
+		get cameraHistoryLoading() { return cameraHistoryLoading; },
+
+		get voiceOpen() { return voiceOpen; },
+		set voiceOpen(v) { voiceOpen = v; },
+		get voiceText() { return voiceText; },
+		set voiceText(v) { voiceText = v; },
+		get voiceFileInput() { return voiceFileInput; },
+		set voiceFileInput(v) { voiceFileInput = v; },
+		get voiceSelectedFile() { return voiceSelectedFile; },
+		set voiceSelectedFile(v) { voiceSelectedFile = v; },
+		get voiceUploading() { return voiceUploading; },
+		get voiceError() { return voiceError; },
+		set voiceError(v) { voiceError = v; },
+		get voiceHistory() { return voiceHistory; },
+		get voiceHistoryLoading() { return voiceHistoryLoading; },
+
+		get fileFlowOpen() { return fileFlowOpen; },
+		set fileFlowOpen(v) { fileFlowOpen = v; },
+		get fileFlowInput() { return fileFlowInput; },
+		set fileFlowInput(v) { fileFlowInput = v; },
+		get fileFlowSelected() { return fileFlowSelected; },
+		set fileFlowSelected(v) { fileFlowSelected = v; },
+		get fileFlowMode() { return fileFlowMode; },
+		set fileFlowMode(v) { fileFlowMode = v; },
+		get fileFlowNote() { return fileFlowNote; },
+		set fileFlowNote(v) { fileFlowNote = v; },
+		get fileFlowUploading() { return fileFlowUploading; },
+		get fileFlowError() { return fileFlowError; },
+		get sheetFlowUrl() { return sheetFlowUrl; },
+		set sheetFlowUrl(v) { sheetFlowUrl = v; },
+		get sheetFlowRange() { return sheetFlowRange; },
+		set sheetFlowRange(v) { sheetFlowRange = v; },
+		get sheetFlowUploading() { return sheetFlowUploading; },
+		get sheetFlowError() { return sheetFlowError; },
+		get fileHistory() { return fileHistory; },
+		get fileHistoryLoading() { return fileHistoryLoading; },
+
+		get egenfrekvensFlowOpen() { return egenfrekvensFlowOpen; },
+		set egenfrekvensFlowOpen(v) { egenfrekvensFlowOpen = v; },
+		get egenfrekvensQuickFlowOpen() { return egenfrekvensQuickFlowOpen; },
+		set egenfrekvensQuickFlowOpen(v) { egenfrekvensQuickFlowOpen = v; },
+		get egenfrekvensActiveSlot() { return egenfrekvensActiveSlot; },
+		set egenfrekvensActiveSlot(v) { egenfrekvensActiveSlot = v; },
+		get egenfrekvensPromptOpen() { return egenfrekvensPromptOpen; },
+		set egenfrekvensPromptOpen(v) { egenfrekvensPromptOpen = v; },
+		get egenfrekvensPromptDay() { return egenfrekvensPromptDay; },
+		get egenfrekvensInitialNote() { return egenfrekvensInitialNote; },
+		set egenfrekvensInitialNote(v) { egenfrekvensInitialNote = v; },
+		get egenfrekvensReflectionPrompt() { return egenfrekvensReflectionPrompt; },
+		set egenfrekvensReflectionPrompt(v) { egenfrekvensReflectionPrompt = v; },
+		get egenfrekvensDreamReasons() { return egenfrekvensDreamReasons; },
+		set egenfrekvensDreamReasons(v) { egenfrekvensDreamReasons = v; },
+		get egenfrekvensCarriedLevel() { return egenfrekvensCarriedLevel; },
+		set egenfrekvensCarriedLevel(v) { egenfrekvensCarriedLevel = v; },
+		get egenfrekvensRecent() { return egenfrekvensRecent; },
+
+		get homeDayPlanOpen() { return homeDayPlanOpen; },
+		set homeDayPlanOpen(v) { homeDayPlanOpen = v; },
+		get homeDayPlanIso() { return homeDayPlanIso; },
+		set homeDayPlanIso(v) { homeDayPlanIso = v; },
+		get homeDayPlanWeekKey() { return homeDayPlanWeekKey; },
+		set homeDayPlanWeekKey(v) { homeDayPlanWeekKey = v; },
+		get homeWeekPlanOpen() { return homeWeekPlanOpen; },
+		set homeWeekPlanOpen(v) { homeWeekPlanOpen = v; },
+		get homeWeekPlanContext() { return homeWeekPlanContext; },
+		get homeMonthPlanOpen() { return homeMonthPlanOpen; },
+		set homeMonthPlanOpen(v) { homeMonthPlanOpen = v; },
+		get homeMonthPlanContext() { return homeMonthPlanContext; },
+
+		get programReadiness() { return programReadiness; },
+
+		get focusTimerFlowOpen() { return focusTimerFlowOpen; },
+		set focusTimerFlowOpen(v) { focusTimerFlowOpen = v; },
+		get reflectionLightFlowOpen() { return reflectionLightFlowOpen; },
+		set reflectionLightFlowOpen(v) { reflectionLightFlowOpen = v; },
+		get inboxNoteFlowOpen() { return inboxNoteFlowOpen; },
+		set inboxNoteFlowOpen(v) { inboxNoteFlowOpen = v; },
+		get quickWinFlowOpen() { return quickWinFlowOpen; },
+		set quickWinFlowOpen(v) { quickWinFlowOpen = v; },
+		get quickWinOpenItems() { return quickWinOpenItems; },
+
+		get dateLabel() { return dateLabel; },
+
+		openChat,
+		closeChat,
+		startQuickAction,
+		startHomeChat,
+		startHomeAttachment,
+		openPartnerOnboardingChat,
+		openEgenfrekvensFlow,
+		openEgenfrekvensQuick,
+		openEgenfrekvensFull,
+		sendChat,
+		stopChat,
+		closeCameraFlow,
+		closeVoiceFlow,
+		closeFileFlow,
+		handleCameraFileSelect,
+		handleVoiceFileSelect,
+		handleFileFlowSelect,
+		submitCamera,
+		submitVoice,
+		submitFile,
+		submitSheetSnapshot,
+		handleWidgetPagerScroll,
+		goToWidgetPage,
+		handleChecklistPlan,
+		openWidgetConfigSheet,
+		navigateForWidget,
+		unpinWidget,
+		repinWidget,
+		moveWidget,
+		deleteWidget,
+		saveWidgetConfig,
+		fetchChecklists,
+		loadActionCandidates,
+		loadEgenfrekvensRecent,
+		loadEgenfrekvensContext,
+		dispatchActionIntent,
+		handleChipClick,
+		startLongPress,
+		cancelLongPress,
+		closeSnoozeMenu,
+		snoozeChip,
+		handleTemaPressStart,
+		handleTemaPressEnd,
+		handleThemeDragStart,
+		handleThemeDragOver,
+		commitThemeReorder,
+		handleTouchDragStart,
+		handleTouchDragMove,
+		handleTouchDragEnd,
+		resetDrag,
+		startThemeRowPress,
+		cancelThemeRowPress,
+		closeThemeMenu,
+		handleThemeRowClick,
+		archiveThemeFromMenu,
+		deleteThemeFromMenu,
+		openCreatedTheme,
+		formatFollowUpDate,
+		setHomeConversationStarred,
+		setHomeConversationArchived,
+		removeHomeConversation,
+		moveHomeConversationTheme,
+		startHomeConversationRename,
+		cancelHomeConversationRename,
+		commitHomeConversationRename,
+		reuseCameraMedia,
+		reuseVoiceMedia,
+		reuseFileMedia,
+		refreshHomeData,
+		openWeekPlan,
+		openMonthPlan,
+		openQuickWin,
+		pendingActionHandlers,
+		getLocalIsoWeekDashed,
+		toLocalIsoDate,
+	};
+
+	setContext(HOME_CTX, ctxObj);
 </script>
 
 <PullToRefresh
@@ -2205,1028 +1471,24 @@
 	class="home-screen"
 	class:home-screen-chat-open={chatOpen}
 >
-	<!-- ── SONE 1: Tittel ── -->
-	{#if !inputExpanded}
-		<section class="zone zone-title" out:fly={{ y: -24, duration: 750 }} in:fly={{ y: -14, duration: 600 }}>
-			<div class="title-row">
-				<MorphTitle
-					from="Resonans"
-					to={dateLabel}
-					onpress={() => { startNavMetric('home', 'ukeplan'); void goto('/ukeplan'); }}
-					ariaLabel="Åpne ukeplan"
-				/>
-				<div class="title-right">
-					<a href="/plan/mal" class="icon-link" aria-label="Mål"><Icon name="goals" size={20} /></a>
-					<a href="/settings" class="icon-link" aria-label="Innstillinger"><Icon name="settings" size={18} /></a>
-				</div>
-			</div>
-			{#if egenfrekvensPromptOpen}
-				<EgenfrekvensPrompt
-					onstart={() => {
-						egenfrekvensPromptOpen = false;
-						egenfrekvensFlowOpen = true;
-					}}
-					ondismiss={() => {
-						if (typeof localStorage !== 'undefined' && egenfrekvensPromptDay) {
-							localStorage.setItem(`egenfrekvens-prompt-dismissed-${egenfrekvensPromptDay}`, '1');
-						}
-						egenfrekvensPromptOpen = false;
-					}}
-				/>
-			{/if}
-		</section>
-	{/if}
+	<!-- SONE 1: Tittel -->
+	<HomeTitleZone />
 
-	<!-- ── SONE 2: Widgets ── -->
-	{#if !inputExpanded}
-		<section class="zone zone-widgets" aria-label="Sensor-oversikt" out:fly={{ y: -30, duration: 750 }} in:fly={{ y: -18, duration: 600 }}>
-		<button
-			class="widget-panel-fab"
-			onclick={() => (widgetPanelOpen = !widgetPanelOpen)}
-			aria-label="Administrer widgets"
-			title="Administrer widgets"
-		>
-			+
-		</button>
+	<!-- SONE 2: Widgets -->
+	<HomeWidgetZone />
 
-		<div class="widget-pager" bind:this={widgetPagerEl} onscroll={handleWidgetPagerScroll}>
-			{#each homeWidgetPages as page, pageIndex (`page:${pageIndex}`)}
-				<div class="widget-page" role="group" aria-label={`Widget-side ${pageIndex + 1} av ${homeWidgetPages.length}`}>
-					<div class="widget-page-grid">
-						{#each page as item, itemIndex (item.id)}
-							{@const insertDivider =
-								itemIndex > 0 &&
-								page[itemIndex - 1]?.kind === 'checklist' &&
-								item.kind !== 'checklist'}
-							{#if insertDivider}
-								<div class="widget-page-divider" aria-hidden="true"></div>
-							{/if}
+	<!-- SONE 3: Tema -->
+	<HomeThemeZone />
 
-							{#if item.kind === 'checklist' && item.checklist}
-								{@const isSynthetic = item.checklist.id.startsWith('synthetic:')}
-								{@const isMonth = !!item.checklist.context?.startsWith('month:')}
-								<ChecklistWidget
-									checklist={item.checklist}
-									monthDayData={isMonth ? monthDayData : undefined}
-									onclick={isSynthetic ? undefined : () => (openChecklist = item.checklist!)}
-									onplan={() => handleChecklistPlan(item.checklist?.context ?? null)}
-									onremove={isSynthetic ? undefined : async () => {
-										if (!item.checklist) return;
-										await fetch(`/api/checklists/${item.checklist.id}`, { method: 'DELETE' });
-										activeChecklists = activeChecklists.filter((c) => c.id !== item.checklist?.id);
-									}}
-								/>
-							{:else if item.kind === 'skeleton'}
-								<div class="widget-skeleton" style:animation-delay="{(item.skeletonIndex ?? 0) * 120}ms"></div>
-							{:else if item.kind === 'dynamic' && item.widget}
-								<DynamicWidget
-									widgetId={item.widget.id}
-									title={item.widget.title}
-									unit={item.widget.unit}
-									color={item.widget.color}
-									pinned={item.widget.pinned}
-									onpress={() => navigateForWidget(item.widget!)}
-									onchat={(summary) => openChat(summary)}
-									onunpin={() => unpinWidget(item.widget!.id)}
-									onconfig={() => openWidgetConfigSheet(item.widget!)}
-								/>
-							{:else if item.kind === 'partner'}
-								<div class="partner-onboarding-card widget-item-full">
-									<p class="partner-onboarding-kicker">Partnermodus aktivert</p>
-									<h3>Kom i gang sammen i stedet for tomme widgets</h3>
-									<p>
-										Start med en felles oppstartsplan for parforhold og samliv, så bygger vi widgets etter det som faktisk er viktig for dere.
-									</p>
-									<div class="partner-onboarding-actions">
-										<button class="partner-onboarding-btn primary" onclick={openPartnerOnboardingChat}>Start partner-onboarding</button>
-										<button class="partner-onboarding-btn" onclick={() => goto('/ukeplan')}>Åpne ukeplan sammen</button>
-									</div>
-								</div>
-							{/if}
-						{/each}
-					</div>
-				</div>
-			{/each}
-		</div>
-
-		{#if homeWidgetPages.length > 1}
-			<div class="widget-pager-dots" aria-label="Widget-sider">
-				{#each homeWidgetPages as _, i (`dot:${i}`)}
-					<button
-						class="widget-pager-dot"
-						class:is-active={i === currentWidgetPage}
-						onclick={() => goToWidgetPage(i)}
-						aria-label={`Gå til widget-side ${i + 1}`}
-						aria-current={i === currentWidgetPage ? 'true' : undefined}
-					></button>
-				{/each}
-			</div>
-		{/if}
-
-		</section>
-	{/if}
-
-	<!-- ── SONE 3: Tema ── -->
-	{#if !inputExpanded}
-		<section
-			class="zone zone-tema"
-			aria-label="Temaer"
-			out:fly={{ y: -34, duration: 750 }}
-			in:fly={{ y: -22, duration: 600 }}
-			onpointerdown={handleTemaPressStart}
-			onpointerup={handleTemaPressEnd}
-			onpointerleave={handleTemaPressEnd}
-			onpointercancel={handleTemaPressEnd}
-		>
-		<p class="zone-label">Temaer</p>
-		{#if relationshipOnboardingActive}
-			<div class="partner-onboarding-card partner-onboarding-card-theme">
-				<p class="partner-onboarding-kicker">Felles start</p>
-				<h3>Sett retning for parforholdet deres</h3>
-				<p>
-					Lag et eget tema for samliv, prioriteringer og ukerytme. Derfra kan dere bygge mål, samtaler og oppgaver sammen.
-				</p>
-				<div class="partner-onboarding-actions">
-					{#if relationshipTheme}
-						<button class="partner-onboarding-btn primary" onclick={() => goto(`/tema/${relationshipTheme.id}`)}>Åpne partnertema</button>
-					{:else}
-						<button class="partner-onboarding-btn primary" onclick={openPartnerOnboardingChat}>Opprett partnertema</button>
-					{/if}
-					<button class="partner-onboarding-btn" onclick={() => goto('/samtaler')}>Åpne samtaler</button>
-				</div>
-			</div>
-		{/if}
-		{#if themes.length}
-			<div class="tema-v3-grid">
-				{#each themes.slice(0, 6) as theme}
-					<button class="tema-btn-v3" style={getThemeHueStyle(theme.name)} onclick={() => { if (temaPressBlocked) return; startNavMetric('home', 'tema'); void goto(`/tema/${theme.id}`); }}>
-						<span class="tema-btn-v3-icon">{theme.emoji}</span>
-						<span class="tema-btn-v3-label">{theme.name}</span>
-					</button>
-				{/each}
-			</div>
-		{:else}
-			<button class="onboarding-cta" onclick={() => openChat('Jeg vil sette opp mitt første tema. Hjelp meg å definere hva jeg ønsker å fokusere på.')}>
-			<span class="cta-icon"><Icon name="goals" size={18} /></span>
-			<span class="cta-text">Kom i gang med temaer</span>
-			<span class="cta-arrow">→</span>
-		</button>
-		{/if}
-		</section>
-	{/if}
-
-	<!-- ── SONE 4: Chat + handlinger ── -->
-	<section class="zone zone-input" class:zone-chat-open={inputExpanded} aria-label="Chat" bind:this={chatSection}>
-		{#if !inputExpanded && programReadiness}
-			<button
-				class="readiness-chip readiness-{programReadiness.state}"
-				onclick={() => goto(`/treningsprogram/${programReadiness?.programId}`)}
-				aria-label="Dagens treningstilstand"
-			>
-				<span class="readiness-dot">
-					{#if programReadiness.state === 'klar'}🟢{:else if programReadiness.state === 'lett'}🟡{:else if programReadiness.state === 'easy'}🟠{:else}🔴{/if}
-				</span>
-				<span class="readiness-label">
-					{#if programReadiness.state === 'klar'}I dag: Klar for {programReadiness.programName}
-					{:else if programReadiness.state === 'rest'}I dag: Hvile{programReadiness.alternativeName ? ` — ${programReadiness.alternativeName}` : ''}
-					{:else}I dag: {programReadiness.alternativeName ?? (programReadiness.state === 'lett' ? 'Lett på' : 'Easy-dag')}
-					{/if}
-				</span>
-			</button>
-		{/if}
-		{#if !inputExpanded && actionItems.length > 0}
-			<div class="zone-actions">
-				<ChipStrip gap={8} ariaLabel="Foreslåtte handlinger">
-					{#each actionItems as item (item.id)}
-						<button
-							class="action-pill"
-							class:is-done={item.done}
-							onclick={() => handleChipClick(item.onclick)}
-							onpointerdown={(e) => startLongPress(item.id, item.label, e)}
-							onpointerup={cancelLongPress}
-							onpointercancel={cancelLongPress}
-							onpointerleave={cancelLongPress}
-							oncontextmenu={(e) => e.preventDefault()}
-						>
-							<span class="action-pill-icon">{item.icon}</span>
-							<span class="action-pill-label">{item.label}</span>
-							{#if item.value !== undefined}
-								<span class="action-pill-val">{item.value}</span>
-							{/if}
-						</button>
-					{/each}
-				</ChipStrip>
-			</div>
-		{/if}
-		{#if chatOpen}
-			<PageHeader
-				title={hasPersistedConversation ? 'Samtale' : 'Samtaler'}
-				subtitle={hasPersistedConversation ? chatConversationTitle : ''}
-				backHref={hasPersistedConversation ? '/samtaler' : undefined}
-				backLabel="Alle samtaler"
-				onTitleClick={!hasPersistedConversation ? closeChat : undefined}
-			>
-				{#snippet actions()}
-					{#if hasPersistedConversation}
-						<button class="chat-link" onclick={() => goto(`/samtaler?conversation=${homeChat.conversationId}`)} aria-label="Åpne denne samtalen">Åpne</button>
-					{/if}
-					<button
-						class="model-pill"
-						onclick={() => {
-							const opts = ['auto', 'gpt-4o-mini', 'gpt-4.1', 'gpt-5.4'];
-							selectedChatModel = opts[(opts.indexOf(selectedChatModel) + 1) % opts.length];
-							if (typeof localStorage !== 'undefined') localStorage.setItem('chat-model', selectedChatModel);
-						}}
-						title="Modell — klikk for å bytte"
-					>{{ 'auto': 'Auto', 'gpt-4o-mini': 'Mini', 'gpt-4.1': '4.1', 'gpt-5.4': '5.4' }[selectedChatModel] ?? selectedChatModel}</button>
-				{/snippet}
-			</PageHeader>
-			<div class="chat-messages" aria-live="polite">
-				{#if homeChat.messages.length === 0 && !homeChat.loading}
-					{#if followUpConversations.length > 0}
-						<div class="followup-list" aria-label="Nylige samtaler å følge opp">
-							{#snippet followupItem(convo: typeof followUpConversations[0])}
-								<div class="followup-item-wrap" style={convo.linkedTheme ? getThemeHueStyle(convo.linkedTheme.name) : undefined}>
-									{#if homeEditingConversationId === convo.id}
-										<!-- svelte-ignore a11y_autofocus -->
-										<input
-											class="followup-rename-input"
-											bind:value={homeEditingTitle}
-											onkeydown={(e) => {
-												if (e.key === 'Enter') commitHomeConversationRename(convo.id);
-												if (e.key === 'Escape') cancelHomeConversationRename();
-											}}
-											onblur={() => commitHomeConversationRename(convo.id)}
-											autofocus
-										/>
-									{:else}
-										<button class="followup-item" onclick={() => goto(`/samtaler?conversation=${convo.id}`)}>
-											<span class="followup-title">{convo.title}</span>
-											<span class="followup-date">{formatFollowUpDate(convo.updatedAt)}</span>
-											{#if convo.preview}
-												<span class="followup-preview">{convo.preview}</span>
-											{/if}
-										</button>
-									{/if}
-									<ConversationContextMenu
-										conversationId={convo.id}
-										starred={convo.starred}
-										archived={convo.archived}
-										currentThemeId={convo.linkedTheme?.id ?? null}
-										themes={themes}
-										onStarred={setHomeConversationStarred}
-										onArchived={setHomeConversationArchived}
-										onDeleted={removeHomeConversation}
-										onMovedToTheme={moveHomeConversationTheme}
-										onStartRename={() => startHomeConversationRename(convo.id, convo.title)}
-									/>
-								</div>
-							{/snippet}
-
-							{#if followUpStarred.length > 0}
-								<CollapsibleSection title="Stjernemerkede" count={followUpStarred.length} defaultOpen={true}>
-									{#each followUpStarred as convo (convo.id)}
-										{@render followupItem(convo)}
-									{/each}
-								</CollapsibleSection>
-							{/if}
-
-							<CollapsibleSection title="Samtaler" count={followUpRegular.length} defaultOpen={true}>
-								{#if followUpRegular.length === 0}
-									<p class="followup-empty">Ingen umerkede samtaler.</p>
-								{:else}
-									{#each followUpRegular as convo (convo.id)}
-										{@render followupItem(convo)}
-									{/each}
-								{/if}
-							</CollapsibleSection>
-						</div>
-					{/if}
-				{/if}
-				<ChatMessages
-					messages={homeChat.messages}
-					streamingText={homeChat.streamingText}
-					streamingSteps={homeChat.streamingSteps}
-					loading={homeChat.loading}
-					stopped={homeChat.stopped}
-					stoppedText={homeChat.stoppedText}
-					error={homeChat.error}
-					lastUserMsgId={homeChat.lastUserMsgId}
-					onRetry={() => homeChat.retry()}
-					onAction={(id) => pendingActionHandlers[id]?.()}
-				/>
-			</div>
-			<div class="chat-input-area">
-				{#if routedToTheme}
-					{@const theme = routedToTheme}
-					<div class="theme-routing-banner routed">
-						<span class="theme-routing-icon">✓</span>
-						<span class="theme-routing-text">Melding automatisk koblet til tema: <strong>{theme.themeName}</strong></span>
-						<button class="theme-routing-dismiss" onclick={() => (routedToTheme = null)}>✕</button>
-					</div>
-				{/if}
-				{#if suggestedTheme && !routedToTheme}
-					{@const theme = suggestedTheme}
-					<div class="theme-routing-banner suggested">
-						<span class="theme-routing-icon">💡</span>
-						<span class="theme-routing-text">Foreslår å koble til tema: <strong>{theme.themeName}</strong></span>
-						<div class="theme-routing-actions">
-							<button class="theme-routing-accept" onclick={() => {
-								// Naviger til temaet
-								goto(`/tema/${theme.themeId}`);
-							}}>Gå til tema</button>
-							<button class="theme-routing-dismiss" onclick={() => (suggestedTheme = null)}>Avvis</button>
-						</div>
-					</div>
-				{/if}
-				{#if createdThemeLink}
-					{@const themeLink = createdThemeLink}
-					<button
-						class="theme-link-banner"
-						style={getThemeHueStyle(themeLink.name)}
-						class:is-launching={launchingThemeId === themeLink.id}
-						disabled={launchingThemeId === themeLink.id}
-						onclick={() => openCreatedTheme(themeLink.id)}
-					>
-						<span class="theme-link-icon">{#if themeLink.emoji}{themeLink.emoji}{:else}<Icon name="goals" size={15} />{/if}</span>
-						<span>{launchingThemeId === themeLink.id ? `Åpner ${themeLink.name}…` : `Åpne ${themeLink.name}`}</span>
-						<span class="theme-link-arrow">→</span>
-					</button>
-				{/if}
-				{#key `${activeQuickAction.id}:${chatInputAutoFocus ? 'focus' : 'nofocus'}`}
-					<ChatInput
-						placeholder={activeQuickAction.placeholder}
-						initialValue={chatPrefill}
-						autoFocus={chatInputAutoFocus}
-						showActionRig={true}
-						streaming={homeChat.loading}
-						onStop={stopChat}
-						onAttachment={(kind, draft) => startHomeAttachment(kind, draft, { preserveConversation: true })}
-						onMood={(draft) => openEgenfrekvensFlow(draft, true)}
-						onTextChange={(text) => (chatPrefill = text)}
-						onBackspaceEmpty={closeChat}
-						onsubmit={sendChat}
-					/>
-				{/key}
-			</div>
-		{:else if cameraOpen}
-			<!-- ── Kamera-flyt ── -->
-			<div class="flow-panel">
-				<div class="flow-header">
-					<button class="flow-back" onclick={closeCameraFlow} aria-label="Tilbake"><Icon name="back" size={18} /></button>
-					<span class="flow-title">Kamera</span>
-				</div>
-				<input
-					type="file"
-					accept="image/*"
-					style="display:none"
-					bind:this={cameraFileInput}
-					onchange={handleCameraFileSelect}
-				/>
-				<div class="flow-body">
-					{#if !cameraPreview}
-						<button class="upload-zone" onclick={() => cameraFileInput?.click()}>
-							<span class="upload-zone-icon"><Icon name="camera" size={28} /></span>
-							<p class="upload-zone-label">Velg bilde eller ta foto</p>
-							<p class="upload-zone-sub">Skjermtid · Kvittering · Blodprøve · Notat</p>
-						</button>
-						{#if cameraHistory.length > 0}
-							<div class="media-history">
-								<p class="media-history-label">Tidligere bilder</p>
-								<div class="media-history-grid">
-									{#each cameraHistory as item}
-										<button
-											class="media-history-item"
-											onclick={() => reuseCameraMedia(item)}
-											title={item.name}
-											aria-label={`Gjenbruk: ${item.name}`}
-										>
-											<img src={item.url} alt={item.name} />
-											<span class="media-item-name">{item.name.split('.')[0].slice(0, 10)}</span>
-										</button>
-									{/each}
-								</div>
-							</div>
-						{:else if cameraHistoryLoading}
-							<p class="media-history-loading">Laster tidligere bilder…</p>
-						{/if}
-					{:else}
-						<div class="img-preview">
-							<img src={cameraPreview} alt="Forhåndsvisning" />
-							<button class="preview-clear" onclick={() => { cameraPreview = null; cameraSelectedFile = null; }} aria-label="Fjern bilde"><Icon name="close" size={13} /></button>
-						</div>
-						<textarea
-							class="flow-textarea"
-							placeholder="Beskriv eller legg til kontekst (valgfritt)…"
-							bind:value={cameraCaption}
-							rows="2"
-						></textarea>
-						{#if cameraError}
-							<p class="flow-error">Noe gikk galt. Prøv igjen.</p>
-						{/if}
-						<button class="flow-submit" onclick={submitCamera} disabled={cameraUploading}>
-							{cameraUploading ? 'Triagerer…' : 'Last opp og triager →'}
-						</button>
-					{/if}
-				</div>
-			</div>
-		{:else if voiceOpen}
-			<!-- ── Lyd-flyt ── -->
-			<div class="flow-panel">
-				<div class="flow-header">
-					<button class="flow-back" onclick={closeVoiceFlow} aria-label="Tilbake"><Icon name="back" size={18} /></button>
-					<span class="flow-title">Lyd</span>
-				</div>
-				<input
-					bind:this={voiceFileInput}
-					type="file"
-					accept="audio/*,video/*,.m4a,.mp3,.wav,.aac,.ogg,.webm,.mp4,.mov,.m4v"
-					class="sr-only"
-					onchange={handleVoiceFileSelect}
-				/>
-				<div class="flow-body">
-					{#if !voiceSelectedFile}
-						<button class="upload-zone" onclick={() => voiceFileInput?.click()}>
-							<span class="upload-zone-icon"><Icon name="wave" size={28} /></span>
-							<p class="upload-zone-label">Velg lyd- eller videofil</p>
-							<p class="upload-zone-sub">Opptak · talememo · møteklipp · skjermopptak med lyd</p>
-						</button>
-						{#if voiceHistory.length > 0}
-							<div class="media-history">
-								<p class="media-history-label">Tidligere lydopptak</p>
-								<div class="media-history-list">
-									{#each voiceHistory as item}
-										<button
-											class="media-history-list-item"
-											onclick={() => reuseVoiceMedia(item)}
-											title={item.name}
-											aria-label={`Gjenbruk: ${item.name}`}
-										>
-											<span class="media-list-icon">🎙️</span>
-											<div class="media-list-meta">
-												<span class="media-list-name">{item.name}</span>
-												<span class="media-list-date">{new Date(item.createdAt).toLocaleDateString('nb-NO')}</span>
-											</div>
-										</button>
-									{/each}
-								</div>
-							</div>
-						{:else if voiceHistoryLoading}
-							<p class="media-history-loading">Laster tidligere opptak…</p>
-						{/if}
-					{:else}
-						<div class="selected-file-chip">
-							<div class="selected-file-chip__meta">
-								<span class="selected-file-chip__icon"><Icon name="wave" size={16} /></span>
-								<div>
-									<p>{voiceSelectedFile.name}</p>
-									<small>{Math.max(1, Math.round(voiceSelectedFile.size / 1024))} KB</small>
-								</div>
-							</div>
-							<button class="selected-file-chip__clear" onclick={() => {
-								voiceSelectedFile = null;
-								voiceError = false;
-								if (voiceFileInput) voiceFileInput.value = '';
-							}} aria-label="Fjern lydfil">
-								<Icon name="close" size={13} />
-							</button>
-						</div>
-						<p class="flow-hint">Legg til litt kontekst hvis du vil at triagen skal forstå hva lydfilen gjelder.</p>
-						<textarea
-							class="flow-textarea flow-textarea--lg"
-							placeholder="Hva er dette opptaket, og hva vil du ha hjelp til?"
-							bind:value={voiceText}
-							rows="4"
-						></textarea>
-						{#if voiceError}
-							<p class="flow-error">Noe gikk galt. Prøv igjen.</p>
-						{/if}
-						<button class="flow-submit" onclick={submitVoice} disabled={voiceUploading}>
-							{voiceUploading ? 'Triagerer…' : 'Last opp og triager →'}
-						</button>
-					{/if}
-				</div>
-			</div>
-		{:else if fileFlowOpen}
-			<!-- ── Fil-flyt ── -->
-			<div class="flow-panel">
-				<div class="flow-header">
-					<button class="flow-back" onclick={closeFileFlow} aria-label="Tilbake"><Icon name="back" size={18} /></button>
-					<span class="flow-title">Fil</span>
-				</div>
-				<input
-					type="file"
-					accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,text/*"
-					style="display:none"
-					bind:this={fileFlowInput}
-					onchange={handleFileFlowSelect}
-				/>
-				<div class="flow-body">
-					{#if fileFlowMode === 'sheet'}
-						<p class="flow-hint">Legg inn lenke eller spreadsheetId for å hente et snapshot av regnearket.</p>
-						<input
-							type="text"
-							class="flow-input"
-							placeholder="Google Sheet URL eller spreadsheetId"
-							bind:value={sheetFlowUrl}
-						/>
-						<input
-							type="text"
-							class="flow-input"
-							placeholder="Range (valgfritt), f.eks. Sheet1!A1:F120"
-							bind:value={sheetFlowRange}
-						/>
-						<textarea
-							class="flow-textarea"
-							placeholder="Hva vil du bruke dette regnearket til? (valgfritt)"
-							bind:value={fileFlowNote}
-							rows="3"
-						></textarea>
-						{#if sheetFlowError}
-							<p class="flow-error">{sheetFlowError}</p>
-						{/if}
-						<div class="flow-inline-actions">
-							<button class="flow-ghost" onclick={() => (fileFlowMode = 'local')} disabled={sheetFlowUploading}>
-								Bruk lokal fil i stedet
-							</button>
-							<button class="flow-submit" onclick={submitSheetSnapshot} disabled={sheetFlowUploading}>
-								{sheetFlowUploading ? 'Henter…' : 'Hent og triager →'}
-							</button>
-						</div>
-					{:else if !fileFlowSelected}
-						<button class="upload-zone" onclick={() => fileFlowInput?.click()}>
-							<span class="upload-zone-icon"><Icon name="file" size={28} /></span>
-							<p class="upload-zone-label">Velg fil</p>
-							<p class="upload-zone-sub">PDF · Word · Excel · Tekst</p>
-						</button>
-						{#if fileHistory.length > 0}
-							<div class="media-history">
-								<p class="media-history-label">Tidligere filer</p>
-								<div class="media-history-list">
-									{#each fileHistory as item}
-										<button
-											class="media-history-list-item"
-											onclick={() => reuseFileMedia(item)}
-											title={item.name}
-											aria-label={`Gjenbruk: ${item.name}`}
-										>
-											<span class="media-list-icon">📄</span>
-											<div class="media-list-meta">
-												<span class="media-list-name">{item.name}</span>
-												<span class="media-list-date">{new Date(item.createdAt).toLocaleDateString('nb-NO')}</span>
-											</div>
-										</button>
-									{/each}
-								</div>
-							</div>
-						{:else if fileHistoryLoading}
-							<p class="media-history-loading">Laster tidligere filer…</p>
-						{/if}
-						<button class="flow-ghost" onclick={() => (fileFlowMode = 'sheet')}>
-							Eller bruk Google Sheet snapshot
-						</button>
-					{:else}
-						<div class="file-chip">
-							<span class="file-chip-icon"><Icon name="file" size={18} /></span>
-							<span class="file-chip-name">{fileFlowSelected.name}</span>
-							<button class="preview-clear" onclick={() => fileFlowSelected = null} aria-label="Fjern fil"><Icon name="close" size={13} /></button>
-						</div>
-						<textarea
-							class="flow-textarea"
-							placeholder="Hva vil du gjøre med denne filen? (valgfritt)"
-							bind:value={fileFlowNote}
-							rows="2"
-						></textarea>
-						{#if fileFlowError}
-							<p class="flow-error">Noe gikk galt. Prøv igjen.</p>
-						{/if}
-						<button class="flow-submit" onclick={submitFile} disabled={fileFlowUploading}>
-							{fileFlowUploading ? 'Triagerer…' : 'Last opp og triager →'}
-						</button>
-						<button class="flow-ghost" onclick={() => {
-							fileFlowSelected = null;
-							fileFlowMode = 'sheet';
-						}} disabled={fileFlowUploading}>
-							Bruk Google Sheet snapshot i stedet
-						</button>
-					{/if}
-				</div>
-			</div>
-		{:else}
-			<ChatInput
-				placeholder="Hva tenker du på?"
-				initialValue={chatPrefill}
-				showActionRig={true}
-				interceptOpen={true}
-				onOpen={() => openChat(chatPrefill, 'chat', { focusInput: true })}
-				onAttachment={(kind, draft) => startHomeAttachment(kind, draft)}
-				onMood={(draft) => openEgenfrekvensFlow(draft, false)}
-				onTextChange={(text) => (chatPrefill = text)}
-				onsubmit={(message) => startHomeChat(message)}
-			/>
-		{/if}
-	</section>
+	<!-- SONE 4: Chat + handlinger -->
+	<HomeChatZone />
 
 </div>
 </PullToRefresh>
 
-{#if widgetPanelOpen}
-	<div class="widget-sheet-backdrop" onclick={() => (widgetPanelOpen = false)} aria-hidden="true"></div>
-	<section class="widget-panel" aria-label="Administrer widgets">
-		<div class="widget-panel-handle" aria-hidden="true"></div>
-		<div class="widget-panel-head">
-			<p>Widget-panel</p>
-			<button class="widget-panel-close" onclick={() => (widgetPanelOpen = false)}>Lukk</button>
-		</div>
-
-		<div class="widget-panel-content">
-			<div class="widget-panel-section">
-				<p class="widget-panel-title">På hjemskjerm</p>
-				{#if pinnedWidgets.length === 0}
-					<p class="widget-panel-empty">Ingen aktive widgets</p>
-				{:else}
-					{#each pinnedWidgets as w, i (w.id)}
-						<div class="widget-panel-row">
-							<span class="widget-panel-name">{w.title}</span>
-							<div class="widget-panel-actions">
-								<button class="widget-btn" onclick={() => openWidgetConfigSheet(w)}>Konfig</button>
-								<button class="widget-btn" onclick={() => moveWidget(w.id, 'up')} disabled={i === 0}>↑</button>
-								<button class="widget-btn" onclick={() => moveWidget(w.id, 'down')} disabled={i === pinnedWidgets.length - 1}>↓</button>
-								<button class="widget-btn" onclick={() => unpinWidget(w.id)}>Fjern</button>
-								<button class="widget-btn widget-btn-danger" onclick={() => deleteWidget(w.id)}>Slett</button>
-							</div>
-						</div>
-					{/each}
-				{/if}
-			</div>
-
-			<div class="widget-panel-section">
-				<p class="widget-panel-title">Skjulte widgets</p>
-				{#if hiddenWidgets.length === 0}
-					<p class="widget-panel-empty">Ingen skjulte widgets</p>
-				{:else}
-					{#each hiddenWidgets as w (w.id)}
-						<div class="widget-panel-row">
-							<span class="widget-panel-name">{w.title}</span>
-							<div class="widget-panel-actions">
-								<button class="widget-btn" onclick={() => openWidgetConfigSheet(w)}>Konfig</button>
-								<button class="widget-btn" onclick={() => repinWidget(w.id)}>Legg til</button>
-								<button class="widget-btn widget-btn-danger" onclick={() => deleteWidget(w.id)}>Slett</button>
-							</div>
-						</div>
-					{/each}
-				{/if}
-			</div>
-		</div>
-	</section>
-{/if}
-
-<!-- ── TEMA PANEL ── -->
-{#if themePanelOpen}
-	<div class="widget-sheet-backdrop" onclick={() => (themePanelOpen = false)} aria-hidden="true"></div>
-	<section class="widget-panel" aria-label="Temaer">
-		<div class="widget-panel-handle" aria-hidden="true"></div>
-		<div class="widget-panel-head">
-			<p>Temaer</p>
-			<button class="widget-panel-close theme-panel-close" onclick={() => (themePanelOpen = false)} aria-label="Lukk"><Icon name="close" size={14} /></button>
-		</div>
-		<div class="widget-panel-content">
-			<div
-				class="widget-panel-section"
-				bind:this={themeListEl}
-				ondragover={handleThemeDragOver}
-				ondrop={commitThemeReorder}
-				ontouchmove={handleTouchDragMove}
-				ontouchend={handleTouchDragEnd}
-				ontouchcancel={handleTouchDragEnd}
-				role="list"
-			>
-				{#each displayList as entry (entry.key)}
-					{#if entry.type === 'placeholder'}
-						<div class="tema-panel-slot" aria-hidden="true"></div>
-					{:else}
-						{@const theme = entry.theme}
-						<div
-							class="tema-panel-row"
-							class:tema-panel-row-collapsed={entry.collapsed}
-							class:tema-panel-row-dragging={dragThemeId === theme.id && !isTouchDrag}
-							style={getThemeHueStyle(theme.name)}
-							data-theme-id={theme.id}
-							draggable="true"
-							role="listitem"
-							ondragstart={() => { cancelThemeRowPress(); handleThemeDragStart(theme.id); }}
-							ondragend={resetDrag}
-							onpointerdown={() => startThemeRowPress(theme)}
-							onpointerup={cancelThemeRowPress}
-							onpointerleave={cancelThemeRowPress}
-							onpointercancel={cancelThemeRowPress}
-							oncontextmenu={(e) => e.preventDefault()}
-						>
-							<span
-								class="tema-panel-row-handle"
-								aria-hidden="true"
-								ontouchstart={(e) => handleTouchDragStart(e, theme.id)}
-								onpointerdown={(e) => e.stopPropagation()}
-							>⠿</span>
-							<button
-								class="tema-panel-row-btn"
-								onclick={() => handleThemeRowClick(theme)}
-							>
-								<span class="tema-panel-row-icon">{theme.emoji}</span>
-								<span class="tema-panel-row-name">{theme.name}</span>
-								<span class="tema-panel-row-arrow">→</span>
-							</button>
-						</div>
-					{/if}
-				{/each}
-			</div>
-		</div>
-	</section>
-
-	{#if isTouchDrag && draggedTheme && touchChip}
-		<!-- Flytende chip som følger fingeren mens slot-en åpner seg i lista -->
-		<div
-			class="tema-panel-row tema-panel-row-floating"
-			style="{getThemeHueStyle(draggedTheme.name)}; left: {touchChip.left}px; top: {touchChip.top}px; width: {touchChip.width}px; height: {touchChip.height}px;"
-			aria-hidden="true"
-		>
-			<span class="tema-panel-row-handle">⠿</span>
-			<span class="tema-panel-row-btn">
-				<span class="tema-panel-row-icon">{draggedTheme.emoji}</span>
-				<span class="tema-panel-row-name">{draggedTheme.name}</span>
-				<span class="tema-panel-row-arrow">→</span>
-			</span>
-		</div>
-	{/if}
-{/if}
-
-<!-- ── TEMA-LANGPRESS-MENY (arkiver / slett) ── -->
-{#if themeMenuId}
-	<button class="theme-menu-backdrop" onclick={closeThemeMenu} aria-label="Lukk meny"></button>
-	<div class="theme-menu" role="menu" aria-label={`Handlinger for ${themeMenuName}`}>
-		<div class="theme-menu-title">{themeMenuName}</div>
-		<button
-			class="theme-menu-item"
-			role="menuitem"
-			disabled={themeActionBusy}
-			onclick={() => archiveThemeFromMenu(themeMenuId!)}
-		>📥 Arkiver</button>
-		<button
-			class="theme-menu-item theme-menu-item-danger"
-			role="menuitem"
-			disabled={themeActionBusy}
-			onclick={() => deleteThemeFromMenu(themeMenuId!, themeMenuName)}
-		>🗑️ Slett permanent</button>
-	</div>
-{/if}
-
-<!-- ── WIDGET CONFIG SHEET ── -->
-{#if configWidget}
-	<WidgetConfigSheet
-		widget={configWidget}
-		open={true}
-		onclose={() => (configWidget = null)}
-		onsave={(updates) => saveWidgetConfig(configWidget!.id, updates)}
-	/>
-{/if}
-
-<!-- ── CHECKLIST SHEET ── -->
-{#if openChecklist}
-	<ChecklistSheet
-		checklist={openChecklist}
-		routines={todaysRoutines}
-		onclose={() => (openChecklist = null)}
-		onChanged={() => {
-			void fetchChecklists();
-		}}
-		onDeleted={() => {
-			activeChecklists = activeChecklists.filter((c) => c.id !== openChecklist?.id);
-			openChecklist = null;
-		}}
-		onNavigateDay={async (dateIso) => {
-			const d = new Date(dateIso + 'T12:00:00');
-			const weekKey = getLocalIsoWeekDashed(d);
-			const ctx = `week:${weekKey}:day:${dateIso}`;
-			let target = activeChecklists.find((c) => c.context === ctx)
-				?? allContextChecklists.find((c) => c.context === ctx) ?? null;
-			// Dager utenfor det forhåndshentede vinduet (f.eks. neste måned) ligger
-			// ikke i cachen — hent den konkrete dagen direkte så vi ikke feilaktig
-			// tror den er tom (og dermed lager en duplikat-liste).
-			if (!target) {
-				try {
-					const res = await fetch(`/api/checklists?contexts=${encodeURIComponent(ctx)}`);
-					if (res.ok) {
-						const rows = (await res.json()) as Checklist[];
-						target = rows.find((c) => c.context === ctx) ?? null;
-					}
-				} catch { /* stille — faller tilbake til tom dag */ }
-			}
-			if (target) {
-				openChecklist = target;
-			} else {
-				// Tom dag: vis en tom dagsliste i stedet for å starte planleggingsflyten.
-				// Lista opprettes først i DB når brukeren legger til et punkt.
-				openChecklist = {
-					id: '',
-					title: `Dag ${dateIso}`,
-					emoji: '☑️',
-					context: ctx,
-					completedAt: null,
-					items: []
-				};
-			}
-		}}
-		onStartChat={async (itemText, checklistId, itemId) => {
-			openChecklist = null;
-			try {
-				const res = await fetch('/api/conversations/new', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({
-						title: itemText,
-						sourceContext: { sourceChecklistId: checklistId, sourceItemId: itemId, sourceItemText: itemText }
-					})
-				});
-				if (res.ok) {
-					const { conversationId } = await res.json();
-					goto(`/samtaler?conversation=${conversationId}`);
-				} else {
-					goto('/samtaler');
-				}
-			} catch {
-				goto('/samtaler');
-			}
-		}}
-	/>
-{/if}
-
-<!-- ── PLANLEGGINGSFLYTER FRA TOM SJEKKLISTE ── -->
-{#if homeDayPlanOpen}
-	<FlowSheet
-		flow={FLOWS['day_plan']}
-		context={{ dayIso: homeDayPlanIso, weekDashedKey: homeDayPlanWeekKey }}
-		onclose={() => (homeDayPlanOpen = false)}
-		oncomplete={async () => {
-			homeDayPlanOpen = false;
-			await fetchChecklists();
-			void loadActionCandidates();
-		}}
-	/>
-{/if}
-
-{#if homeWeekPlanOpen}
-	<FlowSheet
-		flow={FLOWS['planning_week_plan']}
-		context={homeWeekPlanContext}
-		onclose={() => (homeWeekPlanOpen = false)}
-		oncomplete={async () => {
-			homeWeekPlanOpen = false;
-			await fetchChecklists();
-			void loadActionCandidates();
-		}}
-	/>
-{/if}
-
-{#if homeMonthPlanOpen}
-	<FlowSheet
-		flow={FLOWS['planning_month_plan']}
-		context={homeMonthPlanContext}
-		onclose={() => (homeMonthPlanOpen = false)}
-		oncomplete={async () => {
-			homeMonthPlanOpen = false;
-			await fetchChecklists();
-			void loadActionCandidates();
-		}}
-	/>
-{/if}
-
-{#if egenfrekvensFlowOpen}
-	{@const carriedInitialData = (() => {
-		const init: Record<string, any> = {};
-		if (egenfrekvensInitialNote) init.note = egenfrekvensInitialNote;
-		if (egenfrekvensCarriedLevel !== null) init.level = egenfrekvensCarriedLevel;
-		return Object.keys(init).length > 0 ? init : undefined;
-	})()}
-	<FlowSheet
-		flow={FLOWS['egenfrekvens_checkin']}
-		context={{
-			slot: egenfrekvensActiveSlot,
-			...(carriedInitialData ? { initialData: carriedInitialData } : {}),
-			...(egenfrekvensReflectionPrompt ? { systemPrompts: { reflection: egenfrekvensReflectionPrompt } } : {}),
-			...(egenfrekvensDreamReasons ? { dreamReasons: egenfrekvensDreamReasons } : {})
-		}}
-		onclose={() => {
-			egenfrekvensFlowOpen = false;
-			egenfrekvensInitialNote = '';
-			egenfrekvensCarriedLevel = null;
-			egenfrekvensReflectionPrompt = null;
-			egenfrekvensDreamReasons = null;
-			if (returnToChatAfterFlow) {
-				chatOpen = true;
-				chatInputAutoFocus = true;
-			}
-			returnToChatAfterFlow = false;
-		}}
-		oncomplete={() => {
-			egenfrekvensFlowOpen = false;
-			egenfrekvensPromptOpen = false;
-			egenfrekvensInitialNote = '';
-			egenfrekvensCarriedLevel = null;
-			egenfrekvensReflectionPrompt = null;
-			egenfrekvensDreamReasons = null;
-			void loadEgenfrekvensRecent();
-			void loadActionCandidates();
-			if (returnToChatAfterFlow) {
-				chatOpen = true;
-				chatInputAutoFocus = true;
-			}
-			returnToChatAfterFlow = false;
-		}}
-	/>
-{/if}
-
-{#if egenfrekvensQuickFlowOpen}
-	<FlowSheet
-		flow={FLOWS['egenfrekvens_quick']}
-		context={{ slot: egenfrekvensActiveSlot }}
-		onclose={() => {
-			egenfrekvensQuickFlowOpen = false;
-		}}
-		oncomplete={() => {
-			egenfrekvensQuickFlowOpen = false;
-			egenfrekvensPromptOpen = false;
-			void loadEgenfrekvensRecent();
-			void loadActionCandidates();
-		}}
-		onsecondaryaction={(action) => {
-			if (action.id === 'go-deeper') {
-				const carriedNote = typeof action.data?.note === 'string' ? action.data.note.trim() : '';
-				const carriedLevel = Number.isInteger(action.data?.level) ? action.data.level : null;
-				egenfrekvensQuickFlowOpen = false;
-				if (carriedNote) egenfrekvensInitialNote = carriedNote;
-				egenfrekvensCarriedLevel = carriedLevel;
-				egenfrekvensFlowOpen = true;
-				void loadEgenfrekvensContext();
-			}
-		}}
-	/>
-{/if}
-
-{#if focusTimerFlowOpen}
-	<FlowSheet
-		flow={FLOWS['jobb_focus_timer']}
-		onclose={() => { focusTimerFlowOpen = false; }}
-		oncomplete={() => { focusTimerFlowOpen = false; void loadActionCandidates(); }}
-	/>
-{/if}
-
-{#if reflectionLightFlowOpen}
-	<FlowSheet
-		flow={FLOWS['reflection_light']}
-		onclose={() => { reflectionLightFlowOpen = false; }}
-		oncomplete={() => { reflectionLightFlowOpen = false; void loadActionCandidates(); }}
-	/>
-{/if}
-
-{#if quickWinFlowOpen}
-	<FlowSheet
-		flow={FLOWS['quick_win']}
-		context={{ openItems: quickWinOpenItems }}
-		onclose={() => { quickWinFlowOpen = false; }}
-		oncomplete={() => { quickWinFlowOpen = false; void loadActionCandidates(); }}
-	/>
-{/if}
-
-{#if inboxNoteFlowOpen}
-	<FlowSheet
-		flow={FLOWS['inbox_note']}
-		onclose={() => { inboxNoteFlowOpen = false; }}
-		oncomplete={() => { inboxNoteFlowOpen = false; void loadActionCandidates(); }}
-	/>
-{/if}
-
-{#if snoozeMenuChipId}
-	<button
-		class="snooze-backdrop"
-		aria-label="Lukk snooze-meny"
-		onclick={closeSnoozeMenu}
-	></button>
-	<div class="snooze-menu" role="menu" aria-label={`Snooze ${snoozeMenuLabel}`}>
-		<div class="snooze-menu-title">{snoozeMenuLabel}</div>
-		<button class="snooze-opt" onclick={() => snoozeChip('today')}>
-			<span>Til i morgen</span>
-		</button>
-		<button class="snooze-opt" onclick={() => snoozeChip('week')}>
-			<span>Til neste mandag</span>
-		</button>
-		<button class="snooze-opt snooze-opt-strong" onclick={() => snoozeChip('forever')}>
-			<span>Skjul permanent</span>
-		</button>
-	</div>
-{/if}
+<HomeOverlays />
 
 <style>
-	/* ── Grunnlayout ── */
 	.home-screen {
 		height: 100dvh;
 		position: relative;
@@ -3237,1635 +1499,4 @@
 		flex-direction: column;
 		overflow: hidden;
 	}
-
-	/* ── Soner ── */
-	.zone {
-		overflow: hidden;
-		flex-shrink: 0;
-	}
-
-
-	/* ── Tittel-sone (10 %) ── */
-	.zone-title {
-		flex: 10 0 0;
-		min-height: 0;
-		display: flex;
-		align-items: flex-start;
-		padding:
-			var(--screen-title-top-pad, 34px)
-			max(16px, env(safe-area-inset-right, 0px))
-			0
-			max(16px, env(safe-area-inset-left, 0px));
-	}
-
-	.title-row {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		width: 100%;
-		min-width: 0;
-		gap: 8px;
-	}
-
-	.title-row :global(.morph-title) {
-		min-width: 0;
-		flex: 1 1 auto;
-	}
-
-	.title-row :global(.morph-title-text) {
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-
-	.title-right {
-		display: flex;
-		gap: 4px;
-		flex-shrink: 0;
-	}
-
-	.icon-link {
-		color: #555;
-		text-decoration: none;
-		min-width: 40px;
-		min-height: 40px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		transition: color 0.15s;
-	}
-
-	.icon-link:hover {
-		color: #aaa;
-	}
-
-	/* ── Widget-sone (28 %) — kort med avrundede hjørner ── */
-	.zone-widgets {
-		flex: 28 0 0;
-		min-height: 0;
-		padding: 8px 14px 4px;
-		background: #171717;
-		border-radius: 18px;
-		margin: 0 12px;
-		position: relative;
-	}
-
-	/* ── Tema-sone (24 %) ── */
-	.zone-tema {
-		flex: 24 0 0;
-		min-height: 0;
-		padding: 6px 16px 4px;
-		position: relative;
-		touch-action: manipulation;
-		user-select: none;
-		-webkit-user-select: none;
-		-webkit-touch-callout: none;
-	}
-
-	.zone-actions {
-		flex: 0 0 auto;
-		padding: 0;
-	}
-
-	.readiness-chip {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		padding: 8px 14px;
-		margin: 0 0 8px;
-		border-radius: 999px;
-		background: var(--bg-secondary);
-		border: 1px solid var(--border-subtle);
-		color: var(--text-primary);
-		font-size: 13px;
-		cursor: pointer;
-		max-width: 100%;
-		text-align: left;
-	}
-	.readiness-chip:hover {
-		border-color: var(--accent-primary);
-	}
-	.readiness-chip.readiness-klar {
-		border-left: 4px solid #34d399;
-	}
-	.readiness-chip.readiness-lett {
-		border-left: 4px solid #fbbf24;
-	}
-	.readiness-chip.readiness-easy {
-		border-left: 4px solid #fb923c;
-	}
-	.readiness-chip.readiness-rest {
-		border-left: 4px solid #f87171;
-	}
-	.readiness-dot {
-		font-size: 14px;
-		flex-shrink: 0;
-	}
-	.readiness-label {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.action-pill {
-		flex: 0 0 auto;
-		display: inline-flex;
-		align-items: center;
-		gap: 8px;
-		background: hsl(228 19% 11%);
-		border: 1px solid hsl(228 16% 18%);
-		border-radius: 999px;
-		touch-action: manipulation;
-		user-select: none;
-		-webkit-user-select: none;
-		-webkit-touch-callout: none;
-		padding: 8px 14px;
-		cursor: pointer;
-		font: inherit;
-		color: hsl(228 22% 80%);
-		font-size: 0.75rem;
-		font-weight: 600;
-		letter-spacing: 0.02em;
-		transition: background 0.15s, border-color 0.15s, transform 0.15s;
-	}
-
-	.action-pill:hover {
-		background: hsl(228 22% 14%);
-		border-color: hsl(228 28% 34%);
-		transform: translateY(-1px);
-	}
-
-	.action-pill.is-done {
-		opacity: 0.7;
-	}
-
-	.action-pill-icon {
-		font-size: 0.95rem;
-		line-height: 1;
-	}
-
-	.action-pill-val {
-		margin-left: 6px;
-		padding: 2px 7px;
-		background: hsl(228 28% 22%);
-		border-radius: 999px;
-		color: #e2e8f0;
-		font-weight: 700;
-	}
-
-	/* ── Zone-label ── */
-	.zone-label {
-		font-size: 0.6rem;
-		text-transform: uppercase;
-		letter-spacing: 0.1em;
-		color: #444;
-		margin: 0 0 6px;
-	}
-
-
-	/* ── Widget-pager ── */
-	.widget-pager {
-		display: flex;
-		overflow-x: auto;
-		overflow-y: hidden;
-		scroll-snap-type: x mandatory;
-		scrollbar-width: none;
-		-webkit-overflow-scrolling: touch;
-		height: 100%;
-	}
-
-	.widget-pager::-webkit-scrollbar {
-		display: none;
-	}
-
-	.widget-page {
-		flex: 0 0 100%;
-		scroll-snap-align: start;
-		min-width: 100%;
-		padding-top: 6px;
-	}
-
-	.widget-page-grid {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 10px;
-		justify-content: center;
-		align-content: flex-start;
-		min-height: 100%;
-		padding: 0 28px 4px 0;
-		box-sizing: border-box;
-	}
-
-	.widget-page-divider {
-		flex: 0 0 100%;
-		height: 1px;
-		background: #202020;
-		margin: -2px 6px 2px;
-	}
-
-	.widget-item-full {
-		flex: 0 0 100%;
-	}
-
-	.widget-pager-dots {
-		position: absolute;
-		left: 50%;
-		bottom: 12px;
-		transform: translateX(-50%);
-		display: flex;
-		gap: 6px;
-		z-index: 3;
-	}
-
-	.widget-pager-dot {
-		width: 7px;
-		height: 7px;
-		border-radius: 999px;
-		border: none;
-		background: #353535;
-		cursor: pointer;
-		padding: 0;
-	}
-
-	.widget-pager-dot.is-active {
-		background: #7c8ef5;
-	}
-
-	.widget-panel-fab {
-		position: absolute;
-		right: 10px;
-		bottom: 10px;
-		z-index: 4;
-		width: 32px;
-		height: 32px;
-		border-radius: 999px;
-		border: 1px solid #3a3a3a;
-		background: #101010;
-		color: #d8d8d8;
-		font-size: 1.2rem;
-		line-height: 1;
-		cursor: pointer;
-	}
-
-	.widget-panel-fab:hover {
-		border-color: #4a5af0;
-		color: #ffffff;
-	}
-
-	.widget-sheet-backdrop {
-		position: fixed;
-		inset: 0;
-		z-index: 39;
-		background: rgba(0, 0, 0, 0.52);
-	}
-
-	.widget-panel {
-		position: fixed;
-		left: 10px;
-		right: 10px;
-		bottom: calc(8px + env(safe-area-inset-bottom, 0px));
-		z-index: 40;
-		max-height: min(72dvh, 560px);
-		background: #111;
-		border: 1px solid #2b2b2b;
-		border-radius: 18px;
-		padding: 8px 10px 10px;
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-		overflow: hidden;
-		box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
-	}
-
-	.widget-panel-handle {
-		width: 40px;
-		height: 4px;
-		margin: 2px auto 6px;
-		border-radius: 999px;
-		background: #333;
-	}
-
-	.widget-panel-content {
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
-		overflow: auto;
-		padding-right: 2px;
-	}
-
-	.widget-panel-head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-	}
-
-	.widget-panel-head p {
-		margin: 0;
-		font-size: 0.82rem;
-		font-weight: 600;
-		color: #e6e6e6;
-	}
-
-	.widget-panel-close {
-		border: 1px solid #333;
-		background: #191919;
-		color: #cfcfcf;
-		border-radius: 999px;
-		padding: 3px 10px;
-		font-size: 0.7rem;
-		cursor: pointer;
-	}
-
-	.widget-panel-close:hover {
-		border-color: #4a5af0;
-		color: #fff;
-	}
-
-	.theme-panel-close {
-		width: 32px;
-		height: 32px;
-		padding: 0;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		flex-shrink: 0;
-	}
-
-	.widget-panel-section {
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
-	}
-
-	.widget-panel-title {
-		margin: 0;
-		font-size: 0.66rem;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: #7a7a7a;
-	}
-
-	.widget-panel-empty {
-		margin: 0;
-		font-size: 0.74rem;
-		color: #727272;
-	}
-
-	.widget-panel-row {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 8px;
-		padding: 7px 8px;
-		background: #171717;
-		border: 1px solid #272727;
-		border-radius: 10px;
-	}
-
-	.widget-panel-name {
-		font-size: 0.76rem;
-		color: #d6d6d6;
-		min-width: 0;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-
-	.widget-panel-actions {
-		display: flex;
-		gap: 4px;
-	}
-
-	.widget-btn {
-		border: 1px solid #333;
-		background: #1f1f1f;
-		color: #ccc;
-		border-radius: 8px;
-		padding: 3px 7px;
-		font-size: 0.68rem;
-		cursor: pointer;
-	}
-
-	.widget-btn:disabled {
-		opacity: 0.45;
-		cursor: default;
-	}
-
-	.widget-btn-danger {
-		border-color: #5a2e2e;
-		color: #ffb4b4;
-	}
-
-	/* ── Widget-skeleton (laster) ── */
-	.widget-skeleton {
-		width: 72px;
-		height: 88px;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 8px;
-	}
-
-	.widget-skeleton::before {
-		content: '';
-		width: 56px;
-		height: 56px;
-		border-radius: 50%;
-		background: #1e1e1e;
-		animation: skeleton-pulse 1.4s ease-in-out infinite;
-	}
-
-	.widget-skeleton::after {
-		content: '';
-		width: 40px;
-		height: 8px;
-		border-radius: 4px;
-		background: #1e1e1e;
-		animation: skeleton-pulse 1.4s ease-in-out infinite;
-		animation-delay: inherit;
-	}
-
-	@keyframes skeleton-pulse {
-		0%, 100% { background: #1e1e1e; }
-		50%       { background: #2c2c2c; }
-	}
-
-	.onboarding-cta {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		background: #1a1a1a;
-		border: 1px solid #2a2a2a;
-		border-radius: 10px;
-		padding: 10px 14px;
-		cursor: pointer;
-		width: 100%;
-		color: #888;
-		font-size: 0.82rem;
-		transition: background 0.15s, border-color 0.15s;
-	}
-
-	.onboarding-cta:hover {
-		background: #222;
-		border-color: #4a5af0;
-		color: #aaa;
-	}
-
-	.partner-onboarding-card {
-		width: 100%;
-		padding: 14px;
-		border-radius: 14px;
-		background: linear-gradient(155deg, rgba(51, 86, 153, 0.24), rgba(25, 29, 40, 0.9));
-		border: 1px solid rgba(130, 160, 255, 0.32);
-		box-shadow: 0 14px 26px rgba(6, 8, 14, 0.28);
-	}
-
-	.partner-onboarding-card-theme {
-		margin-bottom: 10px;
-	}
-
-	.partner-onboarding-kicker {
-		margin: 0;
-		font-size: 0.68rem;
-		letter-spacing: 0.1em;
-		text-transform: uppercase;
-		color: #9fb8ff;
-	}
-
-	.partner-onboarding-card h3 {
-		margin: 6px 0 8px;
-		font-size: 1rem;
-		line-height: 1.3;
-		color: #ecf2ff;
-	}
-
-	.partner-onboarding-card p {
-		margin: 0;
-		font-size: 0.82rem;
-		line-height: 1.45;
-		color: #d2daee;
-	}
-
-	.partner-onboarding-actions {
-		margin-top: 10px;
-		display: flex;
-		flex-wrap: wrap;
-		gap: 8px;
-	}
-
-	.partner-onboarding-btn {
-		border: 1px solid rgba(180, 198, 240, 0.3);
-		background: rgba(13, 16, 26, 0.6);
-		color: #dce4f6;
-		border-radius: 999px;
-		padding: 7px 12px;
-		font-size: 0.75rem;
-		font-weight: 600;
-		cursor: pointer;
-	}
-
-	.partner-onboarding-btn.primary {
-		background: linear-gradient(145deg, #5476ef, #4364d9);
-		border-color: transparent;
-		color: #fff;
-	}
-
-	.cta-icon {
-		color: #4a5af0;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.cta-text {
-		flex: 1;
-		text-align: left;
-	}
-
-	.cta-arrow {
-		color: #555;
-	}
-
-	/* ── Tema-panel: full liste ── */
-	.tema-panel-row {
-		--theme-hue: 228;
-		position: relative;
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		border-radius: 12px;
-		margin-bottom: 6px;
-		background: linear-gradient(90deg, hsl(var(--theme-hue) 20% 11%) 0%, hsl(var(--theme-hue) 18% 9%) 100%);
-		transition: background 0.12s, opacity 0.12s, box-shadow 0.12s;
-		cursor: grab;
-	}
-
-	.tema-panel-row:active { cursor: grabbing; }
-
-	/* Kilde-raden under desktop HTML5-drag — dempes så det er tydelig hva som flyttes. */
-	.tema-panel-row-dragging {
-		opacity: 0.4;
-		outline: 1px dashed hsl(var(--theme-hue) 30% 45%);
-		outline-offset: -1px;
-	}
-
-	/* Den dratte raden tas helt ut av flyten — slot-en under representerer den. */
-	.tema-panel-row-collapsed {
-		height: 0;
-		min-height: 0;
-		margin: 0;
-		padding: 0;
-		opacity: 0;
-		overflow: hidden;
-		pointer-events: none;
-	}
-
-	/* Stor "tom slot" på full radhøyde som åpner seg der raden vil lande.
-	   Hele flaten er et slippområde — mye større treff enn en tynn linje. */
-	.tema-panel-slot {
-		height: 44px;
-		margin-bottom: 6px;
-		border-radius: 12px;
-		border: 2px dashed var(--accent-primary, hsl(228 50% 55%));
-		background: hsl(228 40% 50% / 0.1);
-		box-sizing: border-box;
-		transition: height 0.12s ease;
-	}
-
-	/* Flytende chip som følger fingeren på touch. */
-	.tema-panel-row-floating {
-		position: fixed;
-		z-index: 1000;
-		margin: 0;
-		pointer-events: none;
-		box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
-		outline: 2px solid var(--accent-primary, hsl(var(--theme-hue) 60% 55%));
-		outline-offset: -2px;
-		transform: scale(1.03);
-		transition: none;
-	}
-
-	.tema-panel-row-handle {
-		padding: 0 4px 0 10px;
-		color: #333;
-		font-size: 1rem;
-		flex-shrink: 0;
-		line-height: 1;
-		cursor: grab;
-		touch-action: none;
-	}
-
-	.tema-panel-row-btn {
-		flex: 1;
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		background: none;
-		border: none;
-		padding: 11px 14px 11px 0;
-		cursor: pointer;
-		font: inherit;
-		color: #ddd;
-		text-align: left;
-	}
-
-	.tema-panel-row:hover {
-		background: linear-gradient(90deg, hsl(var(--theme-hue) 24% 14%) 0%, hsl(var(--theme-hue) 20% 11%) 100%);
-	}
-
-	.tema-panel-row-icon {
-		font-size: 1.2rem;
-		line-height: 1;
-		flex-shrink: 0;
-	}
-
-	.tema-panel-row-name {
-		flex: 1;
-		font-size: 0.9rem;
-		font-weight: 600;
-		color: hsl(var(--theme-hue) 22% 80%);
-	}
-
-	.tema-panel-row-arrow {
-		color: #444;
-		font-size: 0.85rem;
-	}
-
-	/* ── Tema v3: 3-kolonne grid med kompakte knapper ── */
-	.tema-v3-grid {
-		display: grid;
-		grid-template-columns: repeat(3, 1fr);
-		gap: 8px;
-	}
-
-	.tema-btn-v3 {
-		--theme-hue: 228;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 4px;
-		background: hsl(var(--theme-hue) 19% 11%);
-		border: none;
-		border-radius: 14px;
-		padding: 8px 6px;
-		cursor: pointer;
-		transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
-		font: inherit;
-		color: #ddd;
-	}
-
-	.tema-btn-v3:hover {
-		background: hsl(var(--theme-hue) 22% 14%);
-		box-shadow: 0 8px 20px hsl(var(--theme-hue) 55% 18% / 0.2);
-		transform: translateY(-1px);
-	}
-
-	.tema-btn-v3-icon {
-		font-size: 1.15rem;
-		line-height: 1;
-		filter: drop-shadow(0 2px 8px hsl(var(--theme-hue) 70% 18% / 0.25));
-	}
-
-	.tema-btn-v3-label {
-		font-size: 0.65rem;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.07em;
-		color: hsl(var(--theme-hue) 22% 80%);
-		opacity: 0.8;
-	}
-
-	/* ── Input-sone (28 %) — nå uten card-chrome, inneholder handlingssonen + chat-input ── */
-	.zone-input {
-		flex: 28 0 0;
-		min-height: 0;
-		padding: 0 14px;
-		padding-bottom: calc(8px + env(safe-area-inset-bottom, 8px));
-		background: transparent;
-		border-radius: 0;
-		margin: 0;
-		display: flex;
-		flex-direction: column;
-		justify-content: flex-end;
-		gap: 10px;
-		box-sizing: border-box;
-		overflow: clip;
-		transition: border-radius 300ms cubic-bezier(0.22, 1, 0.36, 1), margin 300ms cubic-bezier(0.22, 1, 0.36, 1), background 300ms cubic-bezier(0.22, 1, 0.36, 1);
-	}
-
-	.zone-chat-open {
-		position: fixed;
-		inset: 0;
-		z-index: 50;
-		display: flex;
-		flex-direction: column;
-		background: #0f0f0f;
-		border-radius: 0;
-		margin: 0;
-	}
-
-	/* ── Flow-panel (kamera / lyd / stemning / fil) ──────────────────────── */
-	.flow-panel {
-		display: flex;
-		flex-direction: column;
-		height: 100%;
-		overflow: hidden;
-	}
-
-	.flow-header {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		padding: 12px 16px;
-		border-bottom: 1px solid #1a1a1a;
-		flex-shrink: 0;
-	}
-
-	.flow-back {
-		background: none;
-		border: none;
-		color: #555;
-		font: inherit;
-		font-size: 1.1rem;
-		cursor: pointer;
-		padding: 4px 8px 4px 0;
-		transition: color 0.12s;
-	}
-	.flow-back:hover { color: #ccc; }
-
-	.flow-title {
-		font-size: 0.9rem;
-		font-weight: 700;
-		color: #aaa;
-	}
-
-	.flow-body {
-		flex: 1;
-		overflow-y: auto;
-		padding: 16px;
-		display: flex;
-		flex-direction: column;
-		gap: 12px;
-	}
-
-	.flow-hint {
-		margin: 0;
-		font-size: 0.85rem;
-		color: #555;
-	}
-
-	.flow-textarea {
-		width: 100%;
-		background: #161616;
-		border: 1px solid #2a2a2a;
-		border-radius: 12px;
-		padding: 12px 14px;
-		color: #ccc;
-		font: inherit;
-		font-size: 0.88rem;
-		line-height: 1.5;
-		resize: none;
-		box-sizing: border-box;
-	}
-	.flow-textarea:focus {
-		outline: none;
-		border-color: #3c4f9f;
-	}
-	.flow-textarea::placeholder { color: #3a3a3a; }
-	.flow-textarea--lg { min-height: 120px; }
-
-	.flow-input {
-		width: 100%;
-		background: #111;
-		border: 1px solid #242424;
-		border-radius: 12px;
-		padding: 11px 12px;
-		color: #ddd;
-		font: inherit;
-		font-size: 0.85rem;
-		transition: border-color 0.15s;
-	}
-
-	.flow-input:focus {
-		outline: none;
-		border-color: #3a3a3a;
-	}
-
-	.flow-input::placeholder {
-		color: #3a3a3a;
-	}
-
-	.flow-submit {
-		background: #4a5af0;
-		border: none;
-		color: #fff;
-		border-radius: 14px;
-		padding: 13px 20px;
-		font: inherit;
-		font-size: 0.9rem;
-		font-weight: 600;
-		cursor: pointer;
-		width: 100%;
-		transition: background 0.15s, opacity 0.15s;
-	}
-	.flow-submit:hover:not(:disabled) { background: #3a4adf; }
-	.flow-submit:disabled { opacity: 0.4; cursor: default; }
-
-	.flow-inline-actions {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-	}
-
-	.flow-ghost {
-		width: 100%;
-		background: #151515;
-		border: 1px solid #2c2c2c;
-		border-radius: 12px;
-		padding: 11px 12px;
-		color: #aaa;
-		font-size: 0.82rem;
-		cursor: pointer;
-		transition: background 0.15s, border-color 0.15s;
-	}
-
-	.flow-ghost:hover:not(:disabled) {
-		background: #1a1a1a;
-		border-color: #3a3a3a;
-	}
-
-	.flow-ghost:disabled {
-		opacity: 0.5;
-		cursor: default;
-	}
-
-	.flow-error {
-		margin: 0;
-		font-size: 0.8rem;
-		color: #e07070;
-	}
-
-	/* Upload zone (kamera + fil) */
-	.upload-zone {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 10px;
-		background: #111;
-		border: 2px dashed #2a2a2a;
-		border-radius: 18px;
-		padding: 36px 20px;
-		cursor: pointer;
-		width: 100%;
-		transition: border-color 0.15s, background 0.15s;
-		font: inherit;
-	}
-	.upload-zone:hover { border-color: #3c4f9f; background: #121218; }
-
-	.upload-zone-icon {
-		color: #4a5af0;
-		opacity: 0.7;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.upload-zone-label {
-		margin: 0;
-		font-size: 0.9rem;
-		font-weight: 600;
-		color: #ccc;
-	}
-
-	.upload-zone-sub {
-		margin: 0;
-		font-size: 0.75rem;
-		color: #555;
-	}
-
-	.sr-only {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		padding: 0;
-		margin: -1px;
-		overflow: hidden;
-		clip: rect(0, 0, 0, 0);
-		white-space: nowrap;
-		border: 0;
-	}
-
-	/* Image preview */
-	.img-preview {
-		position: relative;
-		border-radius: 14px;
-		overflow: hidden;
-		max-height: 200px;
-	}
-	.img-preview img {
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
-		display: block;
-	}
-
-	.preview-clear {
-		position: absolute;
-		top: 8px;
-		right: 8px;
-		background: rgba(0,0,0,0.7);
-		border: none;
-		color: #fff;
-		border-radius: 50%;
-		width: 28px;
-		height: 28px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		cursor: pointer;
-		font-size: 0.8rem;
-	}
-
-	/* File chip */
-	.file-chip {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		background: #161616;
-		border: 1px solid #2a2a2a;
-		border-radius: 12px;
-		padding: 12px 14px;
-	}
-
-	.file-chip-icon {
-		color: #7c8ef5;
-		flex-shrink: 0;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.file-chip-name {
-		flex: 1;
-		font-size: 0.85rem;
-		color: #ccc;
-		word-break: break-all;
-	}
-
-	.selected-file-chip {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 12px;
-		background: #161616;
-		border: 1px solid #2a2a2a;
-		border-radius: 12px;
-		padding: 12px 14px;
-	}
-
-	.selected-file-chip__meta {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		min-width: 0;
-		flex: 1;
-	}
-
-	.selected-file-chip__meta p,
-	.selected-file-chip__meta small {
-		margin: 0;
-		display: block;
-	}
-
-	.selected-file-chip__meta p {
-		font-size: 0.84rem;
-		font-weight: 600;
-		color: #d5d5d5;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-
-	.selected-file-chip__meta small {
-		font-size: 0.72rem;
-		color: #666;
-	}
-
-	.selected-file-chip__icon {
-		color: #7c8ef5;
-		flex-shrink: 0;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.selected-file-chip__clear {
-		background: transparent;
-		border: none;
-		color: #777;
-		cursor: pointer;
-		padding: 0;
-		width: 28px;
-		height: 28px;
-		border-radius: 50%;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		flex-shrink: 0;
-	}
-
-	.selected-file-chip__clear:hover {
-		background: #202020;
-		color: #d5d5d5;
-	}
-
-	:global(.zone-input .page-header) {
-		padding: var(--screen-title-top-pad, 34px) 20px 12px;
-		border-bottom: 1px solid #1a1a1a;
-		flex-shrink: 0;
-		flex-direction: row !important;
-		align-items: center !important;
-		--text-primary: #eee;
-		--text-secondary: #aaa;
-	}
-
-	:global(.zone-input .page-header h1) {
-		font-size: 1.4rem;
-		font-weight: 700;
-		letter-spacing: -0.03em;
-	}
-
-	:global(.zone-input .page-header-actions) {
-		width: auto !important;
-	}
-
-	.model-pill {
-		padding: 2px 9px;
-		border-radius: 999px;
-		border: 1px solid #252525;
-		background: #111;
-		color: #555;
-		font-size: 0.68rem;
-		font-weight: 600;
-		cursor: pointer;
-		transition: border-color 0.12s, color 0.12s;
-		letter-spacing: 0.03em;
-		flex-shrink: 0;
-	}
-
-	.model-pill:hover {
-		border-color: #333;
-		color: #999;
-	}
-
-	.chat-link {
-		border: 1px solid #292929;
-		background: #111;
-		color: #8f8f8f;
-		border-radius: 999px;
-		padding: 7px 11px;
-		font: inherit;
-		font-size: 0.74rem;
-		cursor: pointer;
-		white-space: nowrap;
-	}
-
-	.chat-link:hover {
-		border-color: #3c4f9f;
-		color: #d4daf6;
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.zone-input {
-			transition: none;
-		}
-	}
-
-
-	.followup-list {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-		opacity: 0.58;
-		margin-top: 2px;
-	}
-
-	.followup-item-wrap {
-		display: flex;
-		align-items: stretch;
-		border: 1px solid #1a1a1a;
-		border-radius: 10px;
-		overflow: visible;
-		transition: border-color 0.15s ease, color 0.15s ease;
-	}
-
-	.followup-item-wrap:hover {
-		border-color: #2b2b2b;
-	}
-
-	.followup-item {
-		text-align: left;
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto;
-		grid-template-areas:
-			'title date'
-			'preview preview';
-		gap: 3px 10px;
-		padding: 9px 10px;
-		background: transparent;
-		border: none;
-		border-radius: 10px 0 0 10px;
-		color: #7a7a7a;
-		cursor: pointer;
-		transition: opacity 0.15s ease, color 0.15s ease;
-		flex: 1;
-		min-width: 0;
-	}
-
-	.followup-item:hover {
-		opacity: 0.9;
-		color: #9a9a9a;
-	}
-
-	.followup-rename-input {
-		flex: 1;
-		min-width: 0;
-		background: #131313;
-		border: 1px solid #2a2a2a;
-		border-radius: 8px;
-		padding: 9px 10px;
-		margin: 4px;
-		color: #d2d2d2;
-		font: inherit;
-		font-size: 0.79rem;
-		font-weight: 600;
-		outline: none;
-	}
-
-	.followup-empty {
-		margin: 0;
-		padding: 8px 10px;
-		font-size: 0.72rem;
-		color: #646464;
-		font-style: italic;
-	}
-
-	.followup-title {
-		grid-area: title;
-		font-size: 0.79rem;
-		font-weight: 600;
-		letter-spacing: -0.01em;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-
-	.followup-date {
-		grid-area: date;
-		font-size: 0.7rem;
-		color: #666;
-	}
-
-	.followup-preview {
-		grid-area: preview;
-		font-size: 0.72rem;
-		line-height: 1.3;
-		color: #666;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-
-	.chat-messages {
-		flex: 1;
-		overflow-y: auto;
-		padding: 14px 16px 8px;
-		display: flex;
-		flex-direction: column;
-		gap: 12px;
-		-webkit-overflow-scrolling: touch;
-		scrollbar-width: thin;
-		scrollbar-color: #222 transparent;
-	}
-
-	.chat-input-area {
-		position: sticky;
-		bottom: 0;
-		padding: 10px 14px env(safe-area-inset-bottom, 14px);
-		border-top: 1px solid #1a1a1a;
-		background: linear-gradient(180deg, rgba(15, 15, 15, 0.72) 0%, #0f0f0f 18%);
-		backdrop-filter: blur(10px);
-		flex-shrink: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
-	}
-
-	.theme-link-banner {
-		--theme-hue: 228;
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		width: 100%;
-		background: linear-gradient(180deg, hsl(var(--theme-hue) 24% 13%) 0%, hsl(var(--theme-hue) 20% 11%) 100%);
-		border: 1px solid hsl(var(--theme-hue) 24% 26%);
-		border-radius: 14px;
-		padding: 11px 12px;
-		color: hsl(var(--theme-hue) 54% 88%);
-		font: inherit;
-		font-size: 0.82rem;
-		cursor: pointer;
-		text-align: left;
-		transition: transform 0.18s ease, opacity 0.18s ease, border-color 0.18s ease;
-	}
-
-	.theme-link-banner:hover {
-		border-color: hsl(var(--theme-hue) 34% 42%);
-	}
-
-	.theme-link-banner.is-launching {
-		opacity: 0.75;
-		transform: scale(0.99);
-		cursor: default;
-	}
-
-	.theme-link-icon {
-		width: 28px;
-		height: 28px;
-		border-radius: 9px;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		background: hsl(var(--theme-hue) 24% 16%);
-		border: 1px solid hsl(var(--theme-hue) 28% 32%);
-		flex-shrink: 0;
-	}
-
-	.theme-link-arrow {
-		margin-left: auto;
-		color: hsl(var(--theme-hue) 32% 68%);
-	}
-
-	.theme-routing-banner {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		width: 100%;
-		border-radius: 12px;
-		padding: 10px 12px;
-		font-size: 0.8rem;
-		animation: slideIn 0.3s ease;
-	}
-
-	@keyframes slideIn {
-		from {
-			opacity: 0;
-			transform: translateY(-8px);
-		}
-		to {
-			opacity: 1;
-			transform: translateY(0);
-		}
-	}
-
-	.theme-routing-banner.routed {
-		background: hsl(142 30% 12%);
-		border: 1px solid hsl(142 35% 22%);
-		color: hsl(142 50% 82%);
-	}
-
-	.theme-routing-banner.suggested {
-		background: hsl(45 28% 12%);
-		border: 1px solid hsl(45 32% 24%);
-		color: hsl(45 48% 84%);
-		flex-wrap: wrap;
-	}
-
-	.theme-routing-icon {
-		flex-shrink: 0;
-		font-size: 1.1rem;
-	}
-
-	.theme-routing-text {
-		flex: 1;
-		min-width: 0;
-	}
-
-	.theme-routing-text strong {
-		font-weight: 600;
-	}
-
-	.theme-routing-actions {
-		display: flex;
-		gap: 6px;
-		width: 100%;
-		margin-top: 4px;
-	}
-
-	.theme-routing-accept {
-		flex: 1;
-		background: hsl(45 35% 18%);
-		border: 1px solid hsl(45 38% 28%);
-		color: hsl(45 50% 88%);
-		padding: 6px 10px;
-		border-radius: 8px;
-		font-size: 0.75rem;
-		cursor: pointer;
-		transition: background 0.15s ease, border-color 0.15s ease;
-	}
-
-	.theme-routing-accept:hover {
-		background: hsl(45 38% 22%);
-		border-color: hsl(45 42% 35%);
-	}
-
-	.theme-routing-dismiss {
-		background: transparent;
-		border: none;
-		color: inherit;
-		opacity: 0.6;
-		padding: 2px 6px;
-		cursor: pointer;
-		font-size: 0.85rem;
-		transition: opacity 0.15s ease;
-	}
-
-	.theme-routing-dismiss:hover {
-		opacity: 1;
-	}
-
-	.suggested .theme-routing-dismiss {
-		flex: 0 0 auto;
-		padding: 6px 10px;
-		background: hsla(0 0% 100% / 0.08);
-		border: 1px solid hsla(0 0% 100% / 0.12);
-		border-radius: 8px;
-		font-size: 0.75rem;
-	}
-
-	.suggested .theme-routing-dismiss:hover {
-		background: hsla(0 0% 100% / 0.12);
-	}
-
-
-
-	/* Media history gallery */
-	.media-history {
-		margin-top: 16px;
-		padding-top: 12px;
-		border-top: 1px solid #2a2a2a;
-	}
-
-	.media-history-label {
-		font-size: 0.75rem;
-		font-weight: 600;
-		color: #888;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		margin: 0 0 10px 0;
-	}
-
-	.media-history-loading {
-		font-size: 0.75rem;
-		color: #666;
-		margin: 8px 0;
-	}
-
-	.media-history-grid {
-		display: grid;
-		grid-template-columns: repeat(4, 1fr);
-		gap: 8px;
-	}
-
-	.media-history-item {
-		aspect-ratio: 1;
-		border: 1px solid #2a2a2a;
-		border-radius: 8px;
-		overflow: hidden;
-		cursor: pointer;
-		background: #0f0f0f;
-		transition: border-color 0.15s, opacity 0.15s;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: flex-start;
-		padding: 0;
-		font: inherit;
-	}
-
-	.media-history-item img {
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
-	}
-
-	.media-history-item:hover {
-		border-color: #4a5af0;
-		opacity: 0.85;
-	}
-
-	.media-item-name {
-		position: absolute;
-		bottom: 0;
-		left: 0;
-		right: 0;
-		background: rgba(0, 0, 0, 0.8);
-		color: #ccc;
-		font-size: 0.65rem;
-		padding: 3px 4px;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		text-align: center;
-	}
-
-	.media-history-list {
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
-	}
-
-	.media-history-list-item {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		padding: 8px 10px;
-		border: 1px solid #2a2a2a;
-		border-radius: 6px;
-		background: transparent;
-		cursor: pointer;
-		transition: border-color 0.15s, background 0.15s;
-		text-align: left;
-		font: inherit;
-		color: inherit;
-		width: 100%;
-	}
-
-	.media-history-list-item:hover {
-		border-color: #4a5af0;
-		background: rgba(74, 90, 240, 0.05);
-	}
-
-	.media-list-icon {
-		font-size: 1.2rem;
-		flex-shrink: 0;
-	}
-
-	.media-list-meta {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-		flex: 1;
-		min-width: 0;
-	}
-
-	.media-list-name {
-		font-size: 0.8rem;
-		font-weight: 500;
-		color: #ddd;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-
-	.media-list-date {
-		font-size: 0.7rem;
-		color: #666;
-	}
-
-	/* ── Tema-langpress-meny ────────────────────────────────────── */
-	.theme-menu-backdrop {
-		position: fixed;
-		inset: 0;
-		background: rgba(0, 0, 0, 0.45);
-		border: 0;
-		padding: 0;
-		z-index: 1100;
-		animation: snooze-fade 120ms ease-out;
-	}
-
-	.theme-menu {
-		position: fixed;
-		left: 50%;
-		bottom: max(120px, env(safe-area-inset-bottom, 0px) + 120px);
-		transform: translateX(-50%);
-		min-width: 240px;
-		max-width: 320px;
-		background: hsl(228 19% 11%);
-		border: 1px solid hsl(228 16% 22%);
-		border-radius: 16px;
-		padding: 8px;
-		z-index: 1101;
-		box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
-		animation: snooze-pop 160ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
-	}
-
-	.theme-menu-title {
-		padding: 10px 12px 6px;
-		font-size: 0.78rem;
-		color: hsl(228 10% 60%);
-		text-transform: uppercase;
-		letter-spacing: 0.03em;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.theme-menu-item {
-		display: flex;
-		width: 100%;
-		padding: 12px 14px;
-		background: transparent;
-		border: 0;
-		border-radius: 10px;
-		color: #e2e8f0;
-		font-size: 0.95rem;
-		text-align: left;
-		cursor: pointer;
-		transition: background 80ms;
-	}
-
-	.theme-menu-item:hover,
-	.theme-menu-item:focus-visible {
-		background: hsl(228 19% 16%);
-	}
-
-	.theme-menu-item:disabled {
-		opacity: 0.5;
-		cursor: default;
-	}
-
-	.theme-menu-item-danger {
-		color: hsl(8 70% 70%);
-	}
-
-	/* ── Snooze-meny ────────────────────────────────────────────── */
-	.snooze-backdrop {
-		position: fixed;
-		inset: 0;
-		background: rgba(0, 0, 0, 0.45);
-		border: 0;
-		padding: 0;
-		z-index: 1000;
-		animation: snooze-fade 120ms ease-out;
-	}
-
-	.snooze-menu {
-		position: fixed;
-		left: 50%;
-		bottom: max(120px, env(safe-area-inset-bottom, 0px) + 120px);
-		transform: translateX(-50%);
-		min-width: 240px;
-		max-width: 320px;
-		background: hsl(228 19% 11%);
-		border: 1px solid hsl(228 16% 22%);
-		border-radius: 16px;
-		padding: 8px;
-		z-index: 1001;
-		box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
-		animation: snooze-pop 160ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
-	}
-
-	.snooze-menu-title {
-		padding: 10px 12px 6px;
-		font-size: 0.78rem;
-		color: hsl(228 10% 60%);
-		text-transform: uppercase;
-		letter-spacing: 0.03em;
-	}
-
-	.snooze-opt {
-		display: flex;
-		width: 100%;
-		padding: 12px 14px;
-		background: transparent;
-		border: 0;
-		border-radius: 10px;
-		color: #e2e8f0;
-		font-size: 0.95rem;
-		text-align: left;
-		cursor: pointer;
-		transition: background 80ms;
-	}
-
-	.snooze-opt:hover,
-	.snooze-opt:focus-visible {
-		background: hsl(228 19% 16%);
-	}
-
-	.snooze-opt-strong {
-		color: hsl(8 70% 70%);
-	}
-
-	@keyframes snooze-fade {
-		from { opacity: 0; }
-		to { opacity: 1; }
-	}
-
-	@keyframes snooze-pop {
-		from { opacity: 0; transform: translate(-50%, 12px); }
-		to { opacity: 1; transform: translate(-50%, 0); }
-	}
 </style>
-
-
