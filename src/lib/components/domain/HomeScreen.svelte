@@ -13,9 +13,11 @@
   Delt state publiseres via setContext(HOME_CTX, ctx).
 
   Forretningslogikk er ekstrahert til:
-    home-data.ts       — datafetching, caching, dato-hjelpere
-    home-chat.ts       — attachment-triage, sheet-snapshot, quick actions
-    home-theme-drag.ts — drag-and-drop, tema-meny
+    home-data.ts           — datafetching, caching, dato-hjelpere
+    home-chat.ts           — attachment-triage, sheet-snapshot, quick actions
+    home-theme-drag.ts     — drag-and-drop, tema-meny
+    home-media.ts          — kamera/lyd/fil-flyt handlers
+    home-conversations.ts  — samtale-liste, snooze-meny
 
   Props:
     themes    aktive temaer fra DB (for tema-grid)
@@ -52,7 +54,6 @@
 		type EgenfrekvensRecentPoint,
 	} from './home/home-context';
 
-	// ── Ekstraherte moduler ──
 	import {
 		toLocalIsoDate,
 		toLocalYearMonth,
@@ -81,16 +82,10 @@
 
 	import {
 		QUICK_ACTIONS,
-		requestAttachmentTriage,
-		presentAttachmentTriage,
-		extractSpreadsheetId,
-		serializeSheetValues,
-		previewSheetRows,
 		formatFollowUpDate,
 		currentSlotFromTime,
 		shouldAutoFocusInput,
 		isRelationshipThemeName,
-		type AttachmentTriageResponse,
 	} from './home/home-chat';
 
 	import {
@@ -100,6 +95,37 @@
 		archiveTheme,
 		deleteTheme,
 	} from './home/home-theme-drag';
+
+	import {
+		handleCameraFileSelect as cameraFileSelectHandler,
+		closeCameraFlow as cameraCloseHandler,
+		submitCamera as cameraSubmitHandler,
+		reuseCameraMedia as cameraReuseHandler,
+		handleVoiceFileSelect as voiceFileSelectHandler,
+		closeVoiceFlow as voiceCloseHandler,
+		submitVoice as voiceSubmitHandler,
+		reuseVoiceMedia as voiceReuseHandler,
+		handleFileFlowSelect as fileFlowSelectHandler,
+		closeFileFlow as fileCloseHandler,
+		submitFile as fileSubmitHandler,
+		submitSheetSnapshot as sheetSnapshotHandler,
+		reuseFileMedia as fileReuseHandler,
+	} from './home/home-media';
+
+	import {
+		setConversationStarred,
+		setConversationArchived,
+		removeConversation,
+		moveConversationTheme,
+		startConversationRename,
+		cancelConversationRename,
+		commitConversationRename,
+		startLongPress as longPressStart,
+		cancelLongPress as longPressCancel,
+		handleChipClick as chipClickHandler,
+		closeSnoozeMenu as snoozeMenuClose,
+		snoozeChip as snoozeChipHandler,
+	} from './home/home-conversations';
 
 	interface Props {
 		themes: Theme[];
@@ -129,26 +155,19 @@
 	let touchChip = $state<{ left: number; width: number; height: number; top: number } | null>(null);
 	let grabOffsetY = 0;
 
-	const draggedTheme = $derived(
-		dragThemeId ? (themes.find((t) => t.id === dragThemeId) ?? null) : null
-	);
+	const draggedTheme = $derived(dragThemeId ? (themes.find((t) => t.id === dragThemeId) ?? null) : null);
 
 	type DisplayEntry =
 		| { type: 'theme'; theme: Theme; key: string; collapsed: boolean }
 		| { type: 'placeholder'; key: string };
 	const displayList = $derived.by<DisplayEntry[]>(() => {
-		if (!dragThemeId || dropIndex === null) {
-			return themes.map((t) => ({ type: 'theme', theme: t, key: t.id, collapsed: false }));
-		}
+		if (!dragThemeId || dropIndex === null) return themes.map((t) => ({ type: 'theme', theme: t, key: t.id, collapsed: false }));
 		const out: DisplayEntry[] = [];
 		let remainingSeen = 0;
 		let placed = false;
 		for (const t of themes) {
 			const isDragged = t.id === dragThemeId;
-			if (!placed && !isDragged && remainingSeen === dropIndex) {
-				out.push({ type: 'placeholder', key: '__drop_slot__' });
-				placed = true;
-			}
+			if (!placed && !isDragged && remainingSeen === dropIndex) { out.push({ type: 'placeholder', key: '__drop_slot__' }); placed = true; }
 			out.push({ type: 'theme', theme: t, key: t.id, collapsed: isDragged });
 			if (!isDragged) remainingSeen++;
 		}
@@ -156,22 +175,12 @@
 		return out;
 	});
 
-	function resetDrag() {
-		dragThemeId = null;
-		dropIndex = null;
-		isTouchDrag = false;
-		touchChip = null;
-	}
+	function resetDrag() { dragThemeId = null; dropIndex = null; isTouchDrag = false; touchChip = null; }
 
 	function handleThemeDragStart(id: string) {
-		dragThemeId = id;
-		isTouchDrag = false;
+		dragThemeId = id; isTouchDrag = false;
 		const startId = id;
-		requestAnimationFrame(() => {
-			if (dragThemeId === startId && dropIndex === null) {
-				dropIndex = themes.findIndex((t) => t.id === startId);
-			}
-		});
+		requestAnimationFrame(() => { if (dragThemeId === startId && dropIndex === null) dropIndex = themes.findIndex((t) => t.id === startId); });
 	}
 
 	function handleThemeDragOver(e: DragEvent) {
@@ -182,14 +191,11 @@
 	}
 
 	function commitThemeReorder() {
-		const fromId = dragThemeId;
-		const idx = dropIndex;
-		resetDrag();
+		const fromId = dragThemeId; const idx = dropIndex; resetDrag();
 		if (!fromId || idx === null) return;
 		const reordered = computeReorder(themes, fromId, idx);
 		if (!reordered) return;
-		themes = reordered;
-		persistThemeOrder(reordered);
+		themes = reordered; persistThemeOrder(reordered);
 	}
 
 	function handleTouchDragStart(e: TouchEvent, id: string) {
@@ -199,23 +205,17 @@
 		const rect = (row ?? (e.currentTarget as HTMLElement)).getBoundingClientRect();
 		grabOffsetY = touch.clientY - rect.top;
 		touchChip = { left: rect.left, width: rect.width, height: rect.height, top: rect.top };
-		dragThemeId = id;
-		isTouchDrag = true;
-		dropIndex = themes.findIndex((t) => t.id === id);
+		dragThemeId = id; isTouchDrag = true; dropIndex = themes.findIndex((t) => t.id === id);
 	}
 
 	function handleTouchDragMove(e: TouchEvent) {
-		if (!dragThemeId) return;
-		e.preventDefault();
+		if (!dragThemeId) return; e.preventDefault();
 		const touch = e.touches[0];
 		if (touchChip) touchChip = { ...touchChip, top: touch.clientY - grabOffsetY };
 		dropIndex = computeDropIndex(touch.clientY, themeListEl, dragThemeId, dropIndex);
 	}
 
-	function handleTouchDragEnd() {
-		if (!dragThemeId) return;
-		commitThemeReorder();
-	}
+	function handleTouchDragEnd() { if (!dragThemeId) return; commitThemeReorder(); }
 
 	// ── Langpress-meny på tema-rad ────────────────────────────────────────
 	let themeMenuId = $state<string | null>(null);
@@ -227,45 +227,26 @@
 	function startThemeRowPress(theme: { id: string; name: string }) {
 		themeRowPressTriggered = false;
 		themeRowPressTimer = setTimeout(() => {
-			themeRowPressTriggered = true;
-			themeMenuId = theme.id;
-			themeMenuName = theme.name;
+			themeRowPressTriggered = true; themeMenuId = theme.id; themeMenuName = theme.name;
 			if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(20);
 		}, 500);
 	}
-
-	function cancelThemeRowPress() {
-		if (themeRowPressTimer !== null) { clearTimeout(themeRowPressTimer); themeRowPressTimer = null; }
-	}
-
+	function cancelThemeRowPress() { if (themeRowPressTimer !== null) { clearTimeout(themeRowPressTimer); themeRowPressTimer = null; } }
 	function closeThemeMenu() { themeMenuId = null; }
-
 	function handleThemeRowClick(theme: { id: string }) {
 		if (themeRowPressTriggered) { themeRowPressTriggered = false; return; }
-		themePanelOpen = false;
-		startNavMetric('home', 'tema');
-		void goto(`/tema/${theme.id}`);
+		themePanelOpen = false; startNavMetric('home', 'tema'); void goto(`/tema/${theme.id}`);
 	}
-
 	async function archiveThemeFromMenu(id: string) {
 		themeActionBusy = true;
-		try {
-			if (await archiveTheme(id)) themes = themes.filter((t) => t.id !== id);
-		} finally {
-			themeActionBusy = false;
-			closeThemeMenu();
-		}
+		try { if (await archiveTheme(id)) themes = themes.filter((t) => t.id !== id); }
+		finally { themeActionBusy = false; closeThemeMenu(); }
 	}
-
 	async function deleteThemeFromMenu(id: string, name: string) {
 		if (!confirm(`Slette temaet «${name}» permanent? Dette kan ikke angres.`)) return;
 		themeActionBusy = true;
-		try {
-			if (await deleteTheme(id)) themes = themes.filter((t) => t.id !== id);
-		} finally {
-			themeActionBusy = false;
-			closeThemeMenu();
-		}
+		try { if (await deleteTheme(id)) themes = themes.filter((t) => t.id !== id); }
+		finally { themeActionBusy = false; closeThemeMenu(); }
 	}
 
 	// ── Tema-panel longpress ──────────────────────────────────────────────
@@ -275,15 +256,11 @@
 
 	function handleTemaPressStart(e: PointerEvent) {
 		if (e.button !== 0 && e.pointerType === 'mouse') return;
-		temaPressTimer = setTimeout(() => {
-			temaPressBlocked = true;
-			themePanelOpen = true;
-		}, 500);
+		temaPressTimer = setTimeout(() => { temaPressBlocked = true; themePanelOpen = true; }, 500);
 	}
-
 	function handleTemaPressEnd() {
 		if (temaPressTimer) { clearTimeout(temaPressTimer); temaPressTimer = null; }
-		if (temaPressBlocked) { setTimeout(() => { temaPressBlocked = false; }, 50); }
+		if (temaPressBlocked) setTimeout(() => { temaPressBlocked = false; }, 50);
 	}
 
 	// ── Sensor-data + widgets ─────────────────────────────────────────────
@@ -299,26 +276,15 @@
 			const cachedSummary = readCachedPayload<SensorSummary>(HOME_SENSOR_CACHE_KEY, HOME_SENSOR_CACHE_MAX_AGE_MS);
 			if (cachedSummary) { sensorSummary = cachedSummary; widgetsLoading = false; }
 			const cachedPinned = readCachedPayload<UserWidget[]>(HOME_PINNED_WIDGETS_CACHE_KEY, HOME_PINNED_WIDGETS_CACHE_MAX_AGE_MS);
-			if (cachedPinned && cachedPinned.length > 0) {
-				pinnedWidgets = cachedPinned;
-				scheduleWidgetDataPrefetch(cachedPinned, prefetchWidgetData);
-				widgetsLoading = false;
-			}
+			if (cachedPinned && cachedPinned.length > 0) { pinnedWidgets = cachedPinned; scheduleWidgetDataPrefetch(cachedPinned, prefetchWidgetData); widgetsLoading = false; }
 		}
 		try {
 			const data = await timeAsync('sensor+widgets parallel', () => fetchSensorAndWidgets());
-			if (data.sensorSummary) {
-				sensorSummary = data.sensorSummary;
-				writeCachedPayload(HOME_SENSOR_CACHE_KEY, sensorSummary);
-			}
-			pinnedWidgets = data.pinnedWidgets;
-			hiddenWidgets = data.hiddenWidgets;
+			if (data.sensorSummary) { sensorSummary = data.sensorSummary; writeCachedPayload(HOME_SENSOR_CACHE_KEY, sensorSummary); }
+			pinnedWidgets = data.pinnedWidgets; hiddenWidgets = data.hiddenWidgets;
 			writeCachedPayload(HOME_PINNED_WIDGETS_CACHE_KEY, pinnedWidgets);
-		} catch {
-			// Stille feil
-		} finally {
-			widgetsLoading = false;
-		}
+		} catch { /* Stille feil */ }
+		finally { widgetsLoading = false; }
 	}
 
 	// ── Sjekklister ───────────────────────────────────────────────────────
@@ -332,8 +298,7 @@
 	async function fetchChecklists() {
 		try {
 			const data = await fetchChecklistData();
-			activeChecklists = data.activeChecklists;
-			allContextChecklists = data.allContextChecklists;
+			activeChecklists = data.activeChecklists; allContextChecklists = data.allContextChecklists;
 			monthDayChecklists = data.monthDayChecklists;
 			if (data.monthMetrics) monthMetrics = data.monthMetrics;
 			todaysRoutines = data.todaysRoutines;
@@ -342,29 +307,14 @@
 
 	// ── Handlingssone ─────────────────────────────────────────────────────
 	let serverActionCandidates = $state<ActionCandidate[]>([]);
+	async function loadActionCandidates() { serverActionCandidates = await fetchActionCandidates(); }
 
-	async function loadActionCandidates() {
-		serverActionCandidates = await fetchActionCandidates();
-	}
-
-	const actionItems = $derived.by<ActionItem[]>(() => {
-		return serverActionCandidates.map((c) => ({
-			id: c.id,
-			icon: c.icon,
-			label: c.label,
-			value: c.value,
-			done: false,
-			priority: c.priority,
-			onclick: () => dispatchActionIntent(c.intent)
-		}));
-	});
+	const actionItems = $derived.by<ActionItem[]>(() =>
+		serverActionCandidates.map((c) => ({ id: c.id, icon: c.icon, label: c.label, value: c.value, done: false, priority: c.priority, onclick: () => dispatchActionIntent(c.intent) }))
+	);
 
 	// ── Egenfrekvens ──────────────────────────────────────────────────────
-	let egenfrekvensRecent = $state<{
-		today: { morning: EgenfrekvensSlotSummary | null; evening: EgenfrekvensSlotSummary | null };
-		points: EgenfrekvensRecentPoint[];
-		settings: { enabled: boolean; morningTime: string; eveningTime: string } | null;
-	} | null>(null);
+	let egenfrekvensRecent = $state<{ today: { morning: EgenfrekvensSlotSummary | null; evening: EgenfrekvensSlotSummary | null }; points: EgenfrekvensRecentPoint[]; settings: { enabled: boolean; morningTime: string; eveningTime: string } | null; } | null>(null);
 	let egenfrekvensFlowOpen = $state(false);
 	let egenfrekvensQuickFlowOpen = $state(false);
 	let egenfrekvensActiveSlot = $state<'morning' | 'evening'>('morning');
@@ -375,41 +325,19 @@
 	let egenfrekvensDreamReasons = $state<Record<string, Array<{ value: string; label: string; source: string }>> | null>(null);
 	let egenfrekvensCarriedLevel = $state<number | null>(null);
 
-	async function loadEgenfrekvensRecent() {
-		egenfrekvensRecent = await fetchEgenfrekvensRecent();
-	}
-
+	async function loadEgenfrekvensRecent() { egenfrekvensRecent = await fetchEgenfrekvensRecent(); }
 	async function loadEgenfrekvensContext() {
 		const ctx = await fetchEgenfrekvensContext(egenfrekvensActiveSlot);
-		egenfrekvensReflectionPrompt = ctx.reflectionPrompt;
-		egenfrekvensDreamReasons = ctx.dreamReasons;
-	}
-
-	function currentSlotFromUrl(): 'morning' | 'evening' {
-		const fromUrl = $page.url.searchParams.get('slot');
-		if (fromUrl === 'morning' || fromUrl === 'evening') return fromUrl;
-		return currentSlotFromTime();
+		egenfrekvensReflectionPrompt = ctx.reflectionPrompt; egenfrekvensDreamReasons = ctx.dreamReasons;
 	}
 
 	function openEgenfrekvensFlow(initialNote = '', preserveConversation = false) {
-		egenfrekvensInitialNote = initialNote.trim();
-		returnToChatAfterFlow = preserveConversation;
+		egenfrekvensInitialNote = initialNote.trim(); returnToChatAfterFlow = preserveConversation;
 		if (!preserveConversation) chatOpen = false;
-		chatInputAutoFocus = false;
-		egenfrekvensFlowOpen = true;
-		void loadEgenfrekvensContext();
+		chatInputAutoFocus = false; egenfrekvensFlowOpen = true; void loadEgenfrekvensContext();
 	}
-
-	function openEgenfrekvensQuick(slot: 'morning' | 'evening') {
-		egenfrekvensActiveSlot = slot;
-		egenfrekvensQuickFlowOpen = true;
-	}
-
-	function openEgenfrekvensFull(slot: 'morning' | 'evening') {
-		egenfrekvensActiveSlot = slot;
-		egenfrekvensFlowOpen = true;
-		void loadEgenfrekvensContext();
-	}
+	function openEgenfrekvensQuick(slot: 'morning' | 'evening') { egenfrekvensActiveSlot = slot; egenfrekvensQuickFlowOpen = true; }
+	function openEgenfrekvensFull(slot: 'morning' | 'evening') { egenfrekvensActiveSlot = slot; egenfrekvensFlowOpen = true; void loadEgenfrekvensContext(); }
 
 	// ── Planlegging ───────────────────────────────────────────────────────
 	let homeDayPlanOpen = $state(false);
@@ -423,12 +351,7 @@
 	async function handleChecklistPlan(context: string | null) {
 		if (!context) return;
 		const dayMatch = context.match(/^week:(\d{4}-W\d{2}):day:(\d{4}-\d{2}-\d{2})$/);
-		if (dayMatch) {
-			homeDayPlanWeekKey = dayMatch[1];
-			homeDayPlanIso = dayMatch[2];
-			homeDayPlanOpen = true;
-			return;
-		}
+		if (dayMatch) { homeDayPlanWeekKey = dayMatch[1]; homeDayPlanIso = dayMatch[2]; homeDayPlanOpen = true; return; }
 		const weekMatch = context.match(/^week:(\d{4}-W\d{2})$/);
 		if (weekMatch) { await openWeekPlan(weekMatch[1]); return; }
 		if (/^month:/.test(context)) await openMonthPlan(context.replace('month:', ''));
@@ -437,15 +360,13 @@
 	async function openWeekPlan(weekKey: string) {
 		const ctx = await fetchWeekPlanContext(weekKey);
 		if (!ctx) { void goto('/ukeplan'); return; }
-		homeWeekPlanContext = buildWeekPlanFlowContext(ctx);
-		homeWeekPlanOpen = true;
+		homeWeekPlanContext = buildWeekPlanFlowContext(ctx); homeWeekPlanOpen = true;
 	}
 
 	async function openMonthPlan(monthKey: string) {
 		const ctx = await fetchMonthPlanContext(monthKey);
 		if (!ctx) { void goto('/maanedsplan'); return; }
-		homeMonthPlanContext = buildMonthPlanFlowContext(ctx);
-		homeMonthPlanOpen = true;
+		homeMonthPlanContext = buildMonthPlanFlowContext(ctx); homeMonthPlanOpen = true;
 	}
 
 	// ── Fokustimer / refleksjon / inbox / quick win ──────────────────────
@@ -458,8 +379,7 @@
 	async function openQuickWin() {
 		const items = await fetchQuickWinItems();
 		if (items.length === 0) return;
-		quickWinOpenItems = items;
-		quickWinFlowOpen = true;
+		quickWinOpenItems = items; quickWinFlowOpen = true;
 	}
 
 	// ── Action dispatch ───────────────────────────────────────────────────
@@ -470,67 +390,28 @@
 				else if (intent.flowId === 'reflection_light') reflectionLightFlowOpen = true;
 				else if (intent.flowId === 'quick_win') void openQuickWin();
 				else if (intent.flowId === 'inbox_note') inboxNoteFlowOpen = true;
-				else if (intent.flowId === 'egenfrekvens_quick') {
-					egenfrekvensActiveSlot = currentSlotFromTime();
-					egenfrekvensQuickFlowOpen = true;
-				} else if (intent.flowId === 'egenfrekvens_checkin') {
-					egenfrekvensActiveSlot = currentSlotFromTime();
-					egenfrekvensFlowOpen = true;
-					void loadEgenfrekvensContext();
-				} else console.warn('[home] unhandled flow intent', intent.flowId);
+				else if (intent.flowId === 'egenfrekvens_quick') { egenfrekvensActiveSlot = currentSlotFromTime(); egenfrekvensQuickFlowOpen = true; }
+				else if (intent.flowId === 'egenfrekvens_checkin') { egenfrekvensActiveSlot = currentSlotFromTime(); egenfrekvensFlowOpen = true; void loadEgenfrekvensContext(); }
+				else console.warn('[home] unhandled flow intent', intent.flowId);
 				break;
 			case 'open-egenfrekvens': openEgenfrekvensQuick(intent.slot); break;
-			case 'open-day-plan':
-				homeDayPlanIso = intent.iso;
-				homeDayPlanWeekKey = intent.weekKey;
-				homeDayPlanOpen = true;
-				break;
+			case 'open-day-plan': homeDayPlanIso = intent.iso; homeDayPlanWeekKey = intent.weekKey; homeDayPlanOpen = true; break;
 			case 'open-week-plan': void openWeekPlan(intent.weekKey); break;
 			case 'open-month-plan': void openMonthPlan(intent.monthKey); break;
 			case 'navigate': void goto(intent.href); break;
 		}
 	}
 
-	// ── Snooze-meny ───────────────────────────────────────────────────────
+	// ── Snooze-meny (delegert til home-conversations.ts) ──────────────────
 	let snoozeMenuChipId = $state<string | null>(null);
 	let snoozeMenuLabel = $state('');
-	let longPressTimer: ReturnType<typeof setTimeout> | null = null;
-	let longPressTriggered = false;
+	const snoozeState = { get snoozeMenuChipId() { return snoozeMenuChipId; }, set snoozeMenuChipId(v) { snoozeMenuChipId = v; }, get snoozeMenuLabel() { return snoozeMenuLabel; }, set snoozeMenuLabel(v) { snoozeMenuLabel = v; } };
 
-	function startLongPress(chipId: string, label: string, _e: PointerEvent) {
-		longPressTriggered = false;
-		longPressTimer = setTimeout(() => {
-			longPressTriggered = true;
-			snoozeMenuChipId = chipId;
-			snoozeMenuLabel = label;
-			if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(20);
-		}, 500);
-	}
-
-	function cancelLongPress() {
-		if (longPressTimer !== null) { clearTimeout(longPressTimer); longPressTimer = null; }
-	}
-
-	function handleChipClick(onclick: () => void) {
-		if (longPressTriggered) { longPressTriggered = false; return; }
-		onclick();
-	}
-
-	function closeSnoozeMenu() { snoozeMenuChipId = null; }
-
-	async function snoozeChip(scope: 'today' | 'week' | 'forever') {
-		const chipId = snoozeMenuChipId;
-		closeSnoozeMenu();
-		if (!chipId) return;
-		try {
-			await fetch('/api/actions/snooze', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ chipId, scope })
-			});
-			await loadActionCandidates();
-		} catch { /* best-effort */ }
-	}
+	function startLongPress(chipId: string, label: string, e: PointerEvent) { longPressStart(snoozeState, chipId, label, e); }
+	function cancelLongPress() { longPressCancel(); }
+	function handleChipClick(onclick: () => void) { chipClickHandler(onclick); }
+	function closeSnoozeMenu() { snoozeMenuClose(snoozeState); }
+	async function snoozeChip(scope: 'today' | 'week' | 'forever') { await snoozeChipHandler(snoozeState, scope, loadActionCandidates); }
 
 	// ── Chat-sone ─────────────────────────────────────────────────────────
 	let chatOpen = $state(false);
@@ -540,20 +421,13 @@
 	let launchingThemeId = $state<string | null>(null);
 	let chatInputAutoFocus = $state(false);
 	let returnToChatAfterFlow = $state(false);
-	let selectedChatModel = $state<string>(
-		(typeof localStorage !== 'undefined' && localStorage.getItem('chat-model')) || 'auto'
-	);
+	let selectedChatModel = $state<string>((typeof localStorage !== 'undefined' && localStorage.getItem('chat-model')) || 'auto');
 	let suggestedTheme = $state<{ themeId: string; themeName: string; confidence: string; reasoning?: string } | null>(null);
 	let routedToTheme = $state<{ themeId: string; themeName: string } | null>(null);
 	let chatSection: HTMLElement | null = $state(null);
 
 	const homeChat = new ChatState({
-		getOrCreateConversationId: async () => {
-			const res = await fetch('/api/conversations/new', { method: 'POST' });
-			if (!res.ok) return null;
-			const json = await res.json();
-			return json.conversationId ?? null;
-		},
+		getOrCreateConversationId: async () => { const res = await fetch('/api/conversations/new', { method: 'POST' }); if (!res.ok) return null; return (await res.json()).conversationId ?? null; },
 		preferredModel: () => selectedChatModel !== 'auto' ? selectedChatModel : undefined,
 		onPayload: (data) => {
 			const theme = data.themeCreated && data.theme && typeof data.theme === 'object' ? data.theme as { id?: string; name?: string; emoji?: string | null } : null;
@@ -565,15 +439,20 @@
 		onChecklistChanged: fetchChecklists,
 	});
 
+	// ── Samtale-liste (delegert til home-conversations.ts) ────────────────
 	let homeConversationList = $state(recentConversations);
 	let homeEditingConversationId = $state<string | null>(null);
 	let homeEditingTitle = $state('');
 	$effect(() => { homeConversationList = recentConversations; });
 
+	const convoState = {
+		get homeConversationList() { return homeConversationList; }, set homeConversationList(v) { homeConversationList = v; },
+		get homeEditingConversationId() { return homeEditingConversationId; }, set homeEditingConversationId(v) { homeEditingConversationId = v; },
+		get homeEditingTitle() { return homeEditingTitle; }, set homeEditingTitle(v) { homeEditingTitle = v; },
+	};
+
 	let selectedQuickAction = $state<QuickActionId>('chat');
-	const activeQuickAction = $derived(
-		QUICK_ACTIONS.find((action) => action.id === selectedQuickAction) ?? QUICK_ACTIONS[0]
-	);
+	const activeQuickAction = $derived(QUICK_ACTIONS.find((action) => action.id === selectedQuickAction) ?? QUICK_ACTIONS[0]);
 	const hasPersistedConversation = $derived(Boolean(homeChat.conversationId));
 	const chatConversationTitle = $derived.by(() => {
 		if (!hasPersistedConversation) return '';
@@ -590,37 +469,25 @@
 	const followUpRegular = $derived(followUpConversations.filter((c) => !c.starred && !c.archived));
 
 	function openChat(prefill = '', actionId: QuickActionId = selectedQuickAction, options?: { focusInput?: boolean }) {
-		selectedQuickAction = actionId;
-		chatPrefill = prefill;
-		chatInputAutoFocus = options?.focusInput ?? shouldAutoFocusInput();
-		chatOpen = true;
+		selectedQuickAction = actionId; chatPrefill = prefill;
+		chatInputAutoFocus = options?.focusInput ?? shouldAutoFocusInput(); chatOpen = true;
 	}
 
 	function closeChat() {
 		if (homeChat.conversationId && homeChat.messages.length > 0) latestClosedConversationId = homeChat.conversationId;
-		homeChat.reset();
-		homeChat.conversationId = null;
-		chatPrefill = '';
-		chatInputAutoFocus = false;
-		createdThemeLink = null;
-		launchingThemeId = null;
-		chatOpen = false;
-		returnToChatAfterFlow = false;
+		homeChat.reset(); homeChat.conversationId = null; chatPrefill = ''; chatInputAutoFocus = false;
+		createdThemeLink = null; launchingThemeId = null; chatOpen = false; returnToChatAfterFlow = false;
 	}
 
 	async function sendChat(text: string, imageUrl?: string, attachment?: AttachmentRef) {
-		suggestedTheme = null;
-		routedToTheme = null;
+		suggestedTheme = null; routedToTheme = null;
 		await homeChat.send(text, imageUrl, attachment as Parameters<typeof homeChat.send>[2]);
 	}
 
 	function stopChat() { homeChat.stop(); }
 
 	function startQuickAction(action: import('./home/home-context').QuickAction) {
-		homeChat.reset();
-		homeChat.conversationId = null;
-		chatPrefill = '';
-		createdThemeLink = null;
+		homeChat.reset(); homeChat.conversationId = null; chatPrefill = ''; createdThemeLink = null;
 		if (action.id === 'chat') openChat('', 'chat');
 		else if (action.id === 'camera') cameraOpen = true;
 		else if (action.id === 'voice') voiceOpen = true;
@@ -635,67 +502,20 @@
 	function startHomeChat(draftOverride?: string) {
 		const draft = (draftOverride ?? chatPrefill).trim();
 		if (!draft) { openChat('', 'chat', { focusInput: true }); return; }
-		chatPrefill = '';
-		openChat('', 'chat', { focusInput: false });
-		void sendChat(draft);
+		chatPrefill = ''; openChat('', 'chat', { focusInput: false }); void sendChat(draft);
 	}
 
 	function startHomeAttachment(kind: 'camera' | 'voice' | 'file', draftOverride?: string, options?: { preserveConversation?: boolean }) {
 		const draft = (draftOverride ?? chatPrefill).trim();
-		if (!options?.preserveConversation) {
-			homeChat.reset();
-			homeChat.conversationId = null;
-			createdThemeLink = null;
-		}
+		if (!options?.preserveConversation) { homeChat.reset(); homeChat.conversationId = null; createdThemeLink = null; }
 		returnToChatAfterFlow = Boolean(options?.preserveConversation);
-		chatOpen = false;
-		chatInputAutoFocus = false;
+		chatOpen = false; chatInputAutoFocus = false;
 		if (kind === 'camera') { cameraCaption = draft; cameraOpen = true; return; }
 		if (kind === 'voice') { voiceText = draft; voiceOpen = true; return; }
-		fileFlowMode = 'local';
-		fileFlowNote = draft;
-		fileFlowOpen = true;
+		fileFlowMode = 'local'; fileFlowNote = draft; fileFlowOpen = true;
 	}
 
-	// ── Samtale-liste ─────────────────────────────────────────────────────
-	function setHomeConversationStarred(id: string, starred: boolean) {
-		homeConversationList = homeConversationList.map((c) => (c.id === id ? { ...c, starred } : c));
-	}
-	function setHomeConversationArchived(id: string, archived: boolean) {
-		homeConversationList = homeConversationList.map((c) => (c.id === id ? { ...c, archived } : c));
-	}
-	function removeHomeConversation(id: string) {
-		homeConversationList = homeConversationList.filter((c) => c.id !== id);
-	}
-	function moveHomeConversationTheme(id: string, themeId: string | null) {
-		const nextTheme = themeId ? themes.find((t) => t.id === themeId) ?? null : null;
-		homeConversationList = homeConversationList.map((c) =>
-			c.id === id
-				? { ...c, linkedTheme: nextTheme ? { id: nextTheme.id, name: nextTheme.name, emoji: nextTheme.emoji ?? null } : null }
-				: c
-		);
-	}
-	function startHomeConversationRename(id: string, currentTitle: string) {
-		homeEditingConversationId = id;
-		homeEditingTitle = currentTitle;
-	}
-	function cancelHomeConversationRename() {
-		homeEditingConversationId = null;
-		homeEditingTitle = '';
-	}
-	async function commitHomeConversationRename(id: string) {
-		const title = homeEditingTitle.trim();
-		if (!title) { cancelHomeConversationRename(); return; }
-		homeConversationList = homeConversationList.map((c) => (c.id === id ? { ...c, title } : c));
-		homeEditingConversationId = null;
-		await fetch(`/api/conversations/${id}`, {
-			method: 'PATCH',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ title })
-		});
-	}
-
-	// ── Kamera-flyt ───────────────────────────────────────────────────────
+	// ── Kamera-flyt (state + delegert til home-media.ts) ──────────────────
 	let cameraOpen = $state(false);
 	let cameraFileInput = $state<HTMLInputElement | null>(null);
 	let cameraSelectedFile = $state<File | null>(null);
@@ -706,47 +526,6 @@
 	let cameraHistory = $state<MediaHistoryItem[]>([]);
 	let cameraHistoryLoading = $state(false);
 
-	function handleCameraFileSelect(event: Event) {
-		const input = event.target as HTMLInputElement;
-		const file = input.files?.[0];
-		if (!file) return;
-		cameraSelectedFile = file;
-		const reader = new FileReader();
-		reader.onload = (e) => { cameraPreview = e.target?.result as string; };
-		reader.readAsDataURL(file);
-	}
-
-	function closeCameraFlow() {
-		cameraOpen = false;
-		cameraSelectedFile = null;
-		cameraPreview = null;
-		cameraCaption = '';
-		cameraError = false;
-		if (returnToChatAfterFlow) { chatOpen = true; chatInputAutoFocus = true; }
-		returnToChatAfterFlow = false;
-	}
-
-	async function submitCamera() {
-		if (!cameraSelectedFile) return;
-		cameraUploading = true;
-		cameraError = false;
-		try {
-			const result = await requestAttachmentTriage(cameraSelectedFile, cameraCaption.trim(), 'camera');
-			closeCameraFlow();
-			presentAttachmentTriage(result, homeChat, pendingActionHandlers, sendChat);
-			selectedQuickAction = 'chat';
-			chatOpen = true;
-			returnToChatAfterFlow = false;
-			chatPrefill = '';
-		} catch { cameraError = true; }
-		finally { cameraUploading = false; }
-	}
-
-	async function reuseCameraMedia(item: MediaHistoryItem) {
-		cameraPreview = item.url;
-		cameraCaption = item.note ?? '';
-	}
-
 	// ── Lyd-flyt ──────────────────────────────────────────────────────────
 	let voiceOpen = $state(false);
 	let voiceText = $state('');
@@ -756,49 +535,6 @@
 	let voiceError = $state(false);
 	let voiceHistory = $state<MediaHistoryItem[]>([]);
 	let voiceHistoryLoading = $state(false);
-
-	function handleVoiceFileSelect(event: Event) {
-		const input = event.target as HTMLInputElement;
-		const file = input.files?.[0];
-		if (!file) return;
-		voiceSelectedFile = file;
-		voiceError = false;
-	}
-
-	function closeVoiceFlow() {
-		voiceOpen = false;
-		voiceText = '';
-		voiceSelectedFile = null;
-		voiceError = false;
-		if (voiceFileInput) voiceFileInput.value = '';
-		if (returnToChatAfterFlow) { chatOpen = true; chatInputAutoFocus = true; }
-		returnToChatAfterFlow = false;
-	}
-
-	async function submitVoice() {
-		if (!voiceSelectedFile) return;
-		voiceUploading = true;
-		voiceError = false;
-		try {
-			const result = await requestAttachmentTriage(voiceSelectedFile, voiceText.trim(), 'voice');
-			closeVoiceFlow();
-			presentAttachmentTriage(result, homeChat, pendingActionHandlers, sendChat);
-			selectedQuickAction = 'chat';
-			chatOpen = true;
-			returnToChatAfterFlow = false;
-			chatPrefill = '';
-		} catch { voiceError = true; }
-		finally { voiceUploading = false; }
-	}
-
-	async function reuseVoiceMedia(item: MediaHistoryItem) {
-		try {
-			const res = await fetch(item.url);
-			const blob = await res.blob();
-			voiceSelectedFile = new File([blob], item.name, { type: item.mimeType });
-			voiceText = item.note ?? '';
-		} catch (err) { console.error('Error reusing voice media:', err); }
-	}
 
 	// ── Fil-flyt ──────────────────────────────────────────────────────────
 	let fileFlowOpen = $state(false);
@@ -815,117 +551,24 @@
 	let fileHistory = $state<MediaHistoryItem[]>([]);
 	let fileHistoryLoading = $state(false);
 
-	function handleFileFlowSelect(event: Event) {
-		const input = event.target as HTMLInputElement;
-		const file = input.files?.[0];
-		if (file) fileFlowSelected = file;
-	}
+	// Media-flyt handlers bruker ctx (definert i setContext nedenfor) som state-bærer.
+	// ctx har getter/setter-par som proxyer til $state-variablene ovenfor.
+	// Vi deklarerer ctx-referansen her og tildeler den i setContext-blokken.
+	let ctx: HomeContext;
 
-	function closeFileFlow() {
-		fileFlowOpen = false;
-		fileFlowSelected = null;
-		fileFlowMode = 'local';
-		fileFlowNote = '';
-		fileFlowError = false;
-		sheetFlowUrl = '';
-		sheetFlowRange = '';
-		sheetFlowError = '';
-		if (returnToChatAfterFlow) { chatOpen = true; chatInputAutoFocus = true; }
-		returnToChatAfterFlow = false;
-	}
-
-	function submitFile() {
-		if (!fileFlowSelected) return;
-		const selectedFile = fileFlowSelected;
-		const note = fileFlowNote.trim();
-		fileFlowUploading = true;
-		fileFlowError = false;
-		requestAttachmentTriage(selectedFile, note, 'file')
-			.then((result) => {
-				closeFileFlow();
-				presentAttachmentTriage(result, homeChat, pendingActionHandlers, sendChat);
-				selectedQuickAction = 'chat';
-				chatOpen = true;
-				returnToChatAfterFlow = false;
-				chatPrefill = '';
-			})
-			.catch(() => { fileFlowError = true; })
-			.finally(() => { fileFlowUploading = false; });
-	}
-
-	async function submitSheetSnapshot() {
-		sheetFlowError = '';
-		const spreadsheetId = extractSpreadsheetId(sheetFlowUrl);
-		if (!spreadsheetId) { sheetFlowError = 'Legg inn gyldig Google Sheet-lenke eller spreadsheetId.'; return; }
-		sheetFlowUploading = true;
-		try {
-			const params = new URLSearchParams({ spreadsheetId });
-			if (sheetFlowRange.trim()) params.set('range', sheetFlowRange.trim());
-			const [response, metaResponse] = await Promise.all([
-				fetch(`/api/sensors/google-sheets/read?${params.toString()}`),
-				fetch(`/api/sensors/google-sheets/read?spreadsheetId=${encodeURIComponent(spreadsheetId)}&meta=true`)
-			]);
-			const payload = await response.json();
-			const metaPayload = metaResponse.ok ? await metaResponse.json() : null;
-			if (!response.ok) throw new Error(payload?.error || 'Kunne ikke lese regnearkdata');
-			const values: string[][] = Array.isArray(payload.values) ? payload.values : [];
-			const dataText = serializeSheetValues(values);
-			const rangeText = payload.range || sheetFlowRange.trim() || 'A1:ZZ10000';
-			const sheetTitle = typeof metaPayload?.title === 'string' && metaPayload.title.trim().length > 0 ? metaPayload.title.trim() : 'Google Sheet';
-			const rowPreview = previewSheetRows(values, 2, 8);
-			const rowPreviewText = rowPreview.length > 0 ? rowPreview.join('\n') : 'Ingen rader funnet i valgt range.';
-			const note = fileFlowNote.trim();
-			const attachment: AttachmentRef = {
-				url: sheetFlowUrl.trim() || `google-sheet://${spreadsheetId}`,
-				kind: 'document',
-				name: `${sheetTitle} (${rangeText})`,
-				mimeType: 'application/vnd.google-apps.spreadsheet',
-				note,
-				source: 'sheet',
-				contentText: `Tittel: ${sheetTitle}\nRange: ${rangeText}\n\nForhåndsvisning (2 første rader):\n${rowPreviewText}\n\nUtdrag:\n${dataText}`,
-				extractionKind: 'sheet_snapshot'
-			};
-			const promptContext = `Regnearktittel: ${sheetTitle}. Range: ${rangeText}. Forhåndsvisning: ${rowPreviewText}.${note ? ` Brukernotat: ${note}` : ''}`;
-			const triage: AttachmentTriageResponse = {
-				attachment,
-				triage: {
-					summary: `Jeg hentet ${payload.rowCount ?? values.length} rader fra «${sheetTitle}» (${rangeText}). Første rader: ${rowPreviewText}`,
-					clarificationQuestion: 'Hva vil du at vi skal gjøre med dette regnearkutdraget?',
-					suggestedActions: [
-						{ id: 'sheet-summary', label: 'Oppsummer nøkkelpunkter', prompt: `Oppsummer de viktigste innsiktene fra dette regnearkutdraget. ${promptContext}` },
-						{ id: 'sheet-patterns', label: 'Finn mønstre', prompt: `Finn mønstre, avvik og ting jeg bør reagere på i dette regnearkutdraget. ${promptContext}` },
-						{ id: 'sheet-theme', label: 'Knytt til tema', prompt: `Hvilket tema passer dette regnearkutdraget best under, og hva er anbefalt neste steg? ${promptContext}` }
-					],
-					detectedIntent: 'analyse-sheet-snapshot',
-					confidence: 'high',
-					extractedSignals: [
-						`Tittel: ${sheetTitle}`,
-						`Rader: ${payload.rowCount ?? values.length}`,
-						`Kolonner: ${payload.colCount ?? (values[0]?.length ?? 0)}`,
-						`Range: ${rangeText}`,
-						...rowPreview
-					]
-				}
-			};
-			closeFileFlow();
-			presentAttachmentTriage(triage, homeChat, pendingActionHandlers, sendChat);
-			selectedQuickAction = 'chat';
-			chatOpen = true;
-			returnToChatAfterFlow = false;
-			chatPrefill = '';
-		} catch (error) {
-			sheetFlowError = error instanceof Error ? error.message : 'Noe gikk galt. Prøv igjen.';
-		} finally { sheetFlowUploading = false; }
-	}
-
-	async function reuseFileMedia(item: MediaHistoryItem) {
-		try {
-			const res = await fetch(item.url);
-			const blob = await res.blob();
-			fileFlowSelected = new File([blob], item.name, { type: item.mimeType });
-			fileFlowNote = item.note ?? '';
-		} catch (err) { console.error('Error reusing file media:', err); }
-	}
+	function handleCameraFileSelect(event: Event) { cameraFileSelectHandler(ctx, event); }
+	function closeCameraFlow() { cameraCloseHandler(ctx, returnToChatAfterFlow, (v) => chatOpen = v, (v) => chatInputAutoFocus = v, (v) => returnToChatAfterFlow = v); }
+	async function submitCamera() { await cameraSubmitHandler(ctx, homeChat, pendingActionHandlers, sendChat, closeCameraFlow, (v) => selectedQuickAction = v, (v) => chatOpen = v, (v) => returnToChatAfterFlow = v, (v) => chatPrefill = v); }
+	async function reuseCameraMedia(item: MediaHistoryItem) { await cameraReuseHandler(ctx, item); }
+	function handleVoiceFileSelect(event: Event) { voiceFileSelectHandler(ctx, event); }
+	function closeVoiceFlow() { voiceCloseHandler(ctx, returnToChatAfterFlow, (v) => chatOpen = v, (v) => chatInputAutoFocus = v, (v) => returnToChatAfterFlow = v); }
+	async function submitVoice() { await voiceSubmitHandler(ctx, homeChat, pendingActionHandlers, sendChat, closeVoiceFlow, (v) => selectedQuickAction = v, (v) => chatOpen = v, (v) => returnToChatAfterFlow = v, (v) => chatPrefill = v); }
+	async function reuseVoiceMedia(item: MediaHistoryItem) { await voiceReuseHandler(ctx, item); }
+	function handleFileFlowSelect(event: Event) { fileFlowSelectHandler(ctx, event); }
+	function closeFileFlow() { fileCloseHandler(ctx, returnToChatAfterFlow, (v) => chatOpen = v, (v) => chatInputAutoFocus = v, (v) => returnToChatAfterFlow = v); }
+	function submitFile() { fileSubmitHandler(ctx, homeChat, pendingActionHandlers, sendChat, closeFileFlow, (v) => selectedQuickAction = v, (v) => chatOpen = v, (v) => returnToChatAfterFlow = v, (v) => chatPrefill = v); }
+	async function submitSheetSnapshot() { await sheetSnapshotHandler(ctx, homeChat, pendingActionHandlers, sendChat, closeFileFlow, (v) => selectedQuickAction = v, (v) => chatOpen = v, (v) => returnToChatAfterFlow = v, (v) => chatPrefill = v); }
+	async function reuseFileMedia(item: MediaHistoryItem) { await fileReuseHandler(ctx, item); }
 
 	let pendingActionHandlers: Record<string, () => void> = {};
 
@@ -941,39 +584,23 @@
 	});
 
 	const monthDayData = $derived.by(() => {
-		const now = new Date();
-		const year = now.getFullYear();
-		const month = now.getMonth() + 1;
-		const daysInMonth = new Date(year, month, 0).getDate();
-		const todayDay = now.getDate();
+		const now = new Date(); const year = now.getFullYear(); const month = now.getMonth() + 1;
+		const daysInMonth = new Date(year, month, 0).getDate(); const todayDay = now.getDate();
 		const byDate = new Map<string, Checklist>();
-		for (const c of monthDayChecklists) {
-			const m = (c.context ?? '').match(/:day:(\d{4}-\d{2}-\d{2})$/);
-			if (m) byDate.set(m[1], c);
-		}
+		for (const c of monthDayChecklists) { const m = (c.context ?? '').match(/:day:(\d{4}-\d{2}-\d{2})$/); if (m) byDate.set(m[1], c); }
 		return Array.from({ length: daysInMonth }, (_, i) => {
-			const dayNum = i + 1;
-			const isPast = dayNum < todayDay;
-			const isToday = dayNum === todayDay;
+			const dayNum = i + 1; const isPast = dayNum < todayDay; const isToday = dayNum === todayDay;
 			const iso = `${year}-${String(month).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
-			const effort = monthMetrics?.effort[iso];
-			const egenfrekvens = monthMetrics?.egenfrekvens[iso];
-			const cl = byDate.get(iso);
+			const effort = monthMetrics?.effort[iso]; const egenfrekvens = monthMetrics?.egenfrekvens[iso]; const cl = byDate.get(iso);
 			if (!cl || !(isPast || isToday)) return { planned: 0, completed: 0, effort, egenfrekvens, isPast, isToday };
-			const items = cl.items.filter((it) => {
-				if (it.skippedAt) return false;
-				if (it.parentId) return true;
-				return !cl.items.some((c2) => c2.parentId === it.id);
-			});
+			const items = cl.items.filter((it) => { if (it.skippedAt) return false; if (it.parentId) return true; return !cl.items.some((c2) => c2.parentId === it.id); });
 			return { planned: items.length, completed: items.filter((it) => it.checked).length, effort, egenfrekvens, isPast, isToday };
 		});
 	});
 
 	const homeWidgetEntries = $derived.by<HomeWidgetEntry[]>(() => {
 		const now = new Date();
-		const monthCtx = `month:${toLocalYearMonth(now)}`;
-		const weekCtx = `week:${getLocalIsoWeekDashed(now)}`;
-		const dayCtx = `week:${getLocalIsoWeekDashed(now)}:day:${toLocalIsoDate(now)}`;
+		const monthCtx = `month:${toLocalYearMonth(now)}`; const weekCtx = `week:${getLocalIsoWeekDashed(now)}`; const dayCtx = `week:${getLocalIsoWeekDashed(now)}:day:${toLocalIsoDate(now)}`;
 		const orderedChecklists: HomeWidgetEntry[] = [monthCtx, weekCtx, dayCtx].map((ctx) => {
 			const existing = activeChecklists.find((c) => c.context === ctx) ?? allContextChecklists.find((c) => c.context === ctx);
 			const checklist = existing ?? { id: `synthetic:${ctx}`, title: '', emoji: '📅', context: ctx, completedAt: null, items: [] };
@@ -986,119 +613,64 @@
 	let widgetPagerEl = $state<HTMLElement | null>(null);
 	let currentWidgetPage = $state(0);
 
-	$effect(() => {
-		const total = homeWidgetPages.length;
-		if (total === 0) { currentWidgetPage = 0; return; }
-		if (currentWidgetPage > total - 1) currentWidgetPage = total - 1;
-	});
+	$effect(() => { const total = homeWidgetPages.length; if (total === 0) { currentWidgetPage = 0; return; } if (currentWidgetPage > total - 1) currentWidgetPage = total - 1; });
 
-	function handleWidgetPagerScroll() {
-		if (!widgetPagerEl) return;
-		const width = widgetPagerEl.clientWidth;
-		if (width <= 0) return;
-		currentWidgetPage = Math.round(widgetPagerEl.scrollLeft / width);
-	}
-
-	function goToWidgetPage(index: number) {
-		if (!widgetPagerEl) return;
-		const clamped = Math.max(0, Math.min(index, homeWidgetPages.length - 1));
-		widgetPagerEl.scrollTo({ left: clamped * widgetPagerEl.clientWidth, behavior: 'smooth' });
-		currentWidgetPage = clamped;
-	}
+	function handleWidgetPagerScroll() { if (!widgetPagerEl) return; const width = widgetPagerEl.clientWidth; if (width <= 0) return; currentWidgetPage = Math.round(widgetPagerEl.scrollLeft / width); }
+	function goToWidgetPage(index: number) { if (!widgetPagerEl) return; const clamped = Math.max(0, Math.min(index, homeWidgetPages.length - 1)); widgetPagerEl.scrollTo({ left: clamped * widgetPagerEl.clientWidth, behavior: 'smooth' }); currentWidgetPage = clamped; }
 
 	// ── Widget-operasjoner ────────────────────────────────────────────────
-	function openWidgetConfigSheet(widget: UserWidget) {
-		widgetPanelOpen = false;
-		configWidget = widget;
-	}
+	function openWidgetConfigSheet(widget: UserWidget) { widgetPanelOpen = false; configWidget = widget; }
 
 	async function unpinWidget(id: string) {
-		const widget = pinnedWidgets.find((w) => w.id === id);
-		pinnedWidgets = pinnedWidgets.filter((w) => w.id !== id);
-		if (widget) hiddenWidgets = [widget, ...hiddenWidgets];
-		writeCachedPayload(HOME_PINNED_WIDGETS_CACHE_KEY, pinnedWidgets);
+		const widget = pinnedWidgets.find((w) => w.id === id); pinnedWidgets = pinnedWidgets.filter((w) => w.id !== id);
+		if (widget) hiddenWidgets = [widget, ...hiddenWidgets]; writeCachedPayload(HOME_PINNED_WIDGETS_CACHE_KEY, pinnedWidgets);
 		const res = await fetch(`/api/user-widgets/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pinned: false }) });
-		if (!res.ok && widget) {
-			hiddenWidgets = hiddenWidgets.filter((w) => w.id !== id);
-			pinnedWidgets = [widget, ...pinnedWidgets];
-			writeCachedPayload(HOME_PINNED_WIDGETS_CACHE_KEY, pinnedWidgets);
-		}
+		if (!res.ok && widget) { hiddenWidgets = hiddenWidgets.filter((w) => w.id !== id); pinnedWidgets = [widget, ...pinnedWidgets]; writeCachedPayload(HOME_PINNED_WIDGETS_CACHE_KEY, pinnedWidgets); }
 	}
 
 	async function repinWidget(id: string) {
-		const widget = hiddenWidgets.find((w) => w.id === id);
-		hiddenWidgets = hiddenWidgets.filter((w) => w.id !== id);
-		if (widget) pinnedWidgets = [...pinnedWidgets, { ...widget, pinned: true }];
-		writeCachedPayload(HOME_PINNED_WIDGETS_CACHE_KEY, pinnedWidgets);
+		const widget = hiddenWidgets.find((w) => w.id === id); hiddenWidgets = hiddenWidgets.filter((w) => w.id !== id);
+		if (widget) pinnedWidgets = [...pinnedWidgets, { ...widget, pinned: true }]; writeCachedPayload(HOME_PINNED_WIDGETS_CACHE_KEY, pinnedWidgets);
 		const res = await fetch(`/api/user-widgets/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pinned: true }) });
-		if (!res.ok && widget) {
-			pinnedWidgets = pinnedWidgets.filter((w) => w.id !== id);
-			hiddenWidgets = [widget, ...hiddenWidgets];
-			writeCachedPayload(HOME_PINNED_WIDGETS_CACHE_KEY, pinnedWidgets);
-		}
+		if (!res.ok && widget) { pinnedWidgets = pinnedWidgets.filter((w) => w.id !== id); hiddenWidgets = [widget, ...hiddenWidgets]; writeCachedPayload(HOME_PINNED_WIDGETS_CACHE_KEY, pinnedWidgets); }
 	}
 
 	async function moveWidget(id: string, direction: 'up' | 'down') {
-		const index = pinnedWidgets.findIndex((w) => w.id === id);
-		if (index === -1) return;
+		const index = pinnedWidgets.findIndex((w) => w.id === id); if (index === -1) return;
 		const targetIndex = direction === 'up' ? index - 1 : index + 1;
 		if (targetIndex < 0 || targetIndex >= pinnedWidgets.length) return;
-		const next = [...pinnedWidgets];
-		[next[index], next[targetIndex]] = [next[targetIndex], next[index]];
-		pinnedWidgets = next;
-		writeCachedPayload(HOME_PINNED_WIDGETS_CACHE_KEY, pinnedWidgets);
-		await Promise.all(next.map((widget, i) =>
-			fetch(`/api/user-widgets/${widget.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sortOrder: i }) })
-		));
+		const next = [...pinnedWidgets]; [next[index], next[targetIndex]] = [next[targetIndex], next[index]];
+		pinnedWidgets = next; writeCachedPayload(HOME_PINNED_WIDGETS_CACHE_KEY, pinnedWidgets);
+		await Promise.all(next.map((widget, i) => fetch(`/api/user-widgets/${widget.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sortOrder: i }) })));
 	}
 
 	async function deleteWidget(id: string) {
-		const inPinned = pinnedWidgets.find((w) => w.id === id);
-		const inHidden = hiddenWidgets.find((w) => w.id === id);
+		const inPinned = pinnedWidgets.find((w) => w.id === id); const inHidden = hiddenWidgets.find((w) => w.id === id);
 		if (inPinned) pinnedWidgets = pinnedWidgets.filter((w) => w.id !== id);
 		if (inHidden) hiddenWidgets = hiddenWidgets.filter((w) => w.id !== id);
 		writeCachedPayload(HOME_PINNED_WIDGETS_CACHE_KEY, pinnedWidgets);
 		const res = await fetch(`/api/user-widgets/${id}`, { method: 'DELETE' });
-		if (!res.ok) {
-			if (inPinned) pinnedWidgets = [...pinnedWidgets, inPinned];
-			if (inHidden) hiddenWidgets = [...hiddenWidgets, inHidden];
-			writeCachedPayload(HOME_PINNED_WIDGETS_CACHE_KEY, pinnedWidgets);
-		}
+		if (!res.ok) { if (inPinned) pinnedWidgets = [...pinnedWidgets, inPinned]; if (inHidden) hiddenWidgets = [...hiddenWidgets, inHidden]; writeCachedPayload(HOME_PINNED_WIDGETS_CACHE_KEY, pinnedWidgets); }
 	}
 
 	async function saveWidgetConfig(id: string, updates: Partial<UserWidget>) {
 		configWidget = null;
 		const res = await fetch(`/api/user-widgets/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updates) });
-		if (res.ok) {
-			const updated = await res.json();
-			pinnedWidgets = pinnedWidgets.map((w) => w.id === id ? { ...w, ...updated } : w);
-			hiddenWidgets = hiddenWidgets.map((w) => w.id === id ? { ...w, ...updated } : w);
-			writeCachedPayload(HOME_PINNED_WIDGETS_CACHE_KEY, pinnedWidgets);
-		}
+		if (res.ok) { const updated = await res.json(); pinnedWidgets = pinnedWidgets.map((w) => w.id === id ? { ...w, ...updated } : w); hiddenWidgets = hiddenWidgets.map((w) => w.id === id ? { ...w, ...updated } : w); writeCachedPayload(HOME_PINNED_WIDGETS_CACHE_KEY, pinnedWidgets); }
 	}
 
 	function navigateForWidget(w: UserWidget) {
 		const healthMetrics = ['weight', 'sleepDuration', 'steps', 'distance', 'workoutCount', 'heartrate', 'mood'];
 		const econMetrics = ['amount'];
-		if (healthMetrics.includes(w.metricType)) {
-			const t = themes.find((t) => t.name.trim().toLowerCase() === 'helse');
-			if (t) { startNavMetric('home', 'tema'); void goto(`/tema/${t.id}`); }
-		} else if (econMetrics.includes(w.metricType)) {
-			const t = themes.find((t) => t.name.trim().toLowerCase() === 'økonomi');
-			startNavMetric('home', 'tema');
-			void goto(t ? `/tema/${t.id}` : '/economics');
-		} else void goto('/');
+		if (healthMetrics.includes(w.metricType)) { const t = themes.find((t) => t.name.trim().toLowerCase() === 'helse'); if (t) { startNavMetric('home', 'tema'); void goto(`/tema/${t.id}`); } }
+		else if (econMetrics.includes(w.metricType)) { const t = themes.find((t) => t.name.trim().toLowerCase() === 'økonomi'); startNavMetric('home', 'tema'); void goto(t ? `/tema/${t.id}` : '/economics'); }
+		else void goto('/');
 	}
 
-	async function openCreatedTheme(themeId: string) {
-		launchingThemeId = themeId;
-		await goto(`/tema/${themeId}?handoff=1`);
-	}
+	async function openCreatedTheme(themeId: string) { launchingThemeId = themeId; await goto(`/tema/${themeId}?handoff=1`); }
 
 	// ── Pull to refresh ───────────────────────────────────────────────────
-	async function refreshHomeData() {
-		await Promise.allSettled([fetchChecklists(), loadSensorAndWidgets(false)]);
-	}
+	async function refreshHomeData() { await Promise.allSettled([fetchChecklists(), loadSensorAndWidgets(false)]); }
 
 	// ── Media history loading effects ─────────────────────────────────────
 	$effect(() => { if (cameraOpen) { cameraHistoryLoading = true; fetchMediaHistory('image').then((h) => { cameraHistory = h; cameraHistoryLoading = false; }); } });
@@ -1110,19 +682,9 @@
 		if (!inputExpanded) return;
 		if (typeof window === 'undefined' || !window.visualViewport) return;
 		const vv = window.visualViewport;
-		function updateLayout() {
-			if (!chatSection) return;
-			chatSection.style.height = `${vv.height}px`;
-			chatSection.style.top = `${vv.offsetTop}px`;
-		}
-		vv.addEventListener('resize', updateLayout);
-		vv.addEventListener('scroll', updateLayout);
-		updateLayout();
-		return () => {
-			vv.removeEventListener('resize', updateLayout);
-			vv.removeEventListener('scroll', updateLayout);
-			if (chatSection) { chatSection.style.height = ''; chatSection.style.top = ''; }
-		};
+		function updateLayout() { if (!chatSection) return; chatSection.style.height = `${vv.height}px`; chatSection.style.top = `${vv.offsetTop}px`; }
+		vv.addEventListener('resize', updateLayout); vv.addEventListener('scroll', updateLayout); updateLayout();
+		return () => { vv.removeEventListener('resize', updateLayout); vv.removeEventListener('scroll', updateLayout); if (chatSection) { chatSection.style.height = ''; chatSection.style.top = ''; } };
 	});
 
 	// ── onMount ───────────────────────────────────────────────────────────
@@ -1130,29 +692,21 @@
 		void (async () => {
 			finishNavMetric('home');
 			const checklistPromise = timeAsync('checklists', () => fetchChecklists());
-			await loadSensorAndWidgets(true);
-			await checklistPromise;
+			await loadSensorAndWidgets(true); await checklistPromise;
 
 			if (typeof window !== 'undefined') {
-				const runPreload = () => {
-					void preloadCode('/tema/*');
-					for (const theme of themes.slice(0, 2)) void preloadData(`/tema/${theme.id}`);
-				};
-				if ('requestIdleCallback' in window) window.requestIdleCallback(runPreload, { timeout: 1200 });
-				else setTimeout(runPreload, 180);
+				const runPreload = () => { void preloadCode('/tema/*'); for (const theme of themes.slice(0, 2)) void preloadData(`/tema/${theme.id}`); };
+				if ('requestIdleCallback' in window) window.requestIdleCallback(runPreload, { timeout: 1200 }); else setTimeout(runPreload, 180);
 			}
 
 			if ($page.url.searchParams.get('chat') === '1') openChat();
-			void loadEgenfrekvensRecent();
-			void loadActionCandidates();
+			void loadEgenfrekvensRecent(); void loadActionCandidates();
 
 			const flowParam = $page.url.searchParams.get('flow');
 			if (flowParam === 'egenfrekvens_checkin' || flowParam === 'egenfrekvens_quick') {
-				egenfrekvensActiveSlot = currentSlotFromUrl();
-				if (flowParam === 'egenfrekvens_checkin') {
-					egenfrekvensFlowOpen = true;
-					void loadEgenfrekvensContext();
-				} else egenfrekvensQuickFlowOpen = true;
+				const fromUrl = $page.url.searchParams.get('slot');
+				egenfrekvensActiveSlot = (fromUrl === 'morning' || fromUrl === 'evening') ? fromUrl : currentSlotFromTime();
+				if (flowParam === 'egenfrekvens_checkin') { egenfrekvensFlowOpen = true; void loadEgenfrekvensContext(); } else egenfrekvensQuickFlowOpen = true;
 				const nudgeId = $page.url.searchParams.get('nudgeEventId');
 				if (nudgeId) void fetch(`/api/nudges/events/${nudgeId}/stage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stage: 'flow_started' }) }).catch(() => {});
 			}
@@ -1165,115 +719,75 @@
 					if (!res.ok) return;
 					const status = await res.json();
 					if (!status.settings || status.settings.enabled === false) return;
-					if (typeof localStorage !== 'undefined') {
-						const dismissed = localStorage.getItem(`egenfrekvens-prompt-dismissed-${status.day}`);
-						if (dismissed) return;
-					}
-					const morning = status.settings.morningTime ?? '06:30';
-					const evening = status.settings.eveningTime ?? '21:00';
+					if (typeof localStorage !== 'undefined' && localStorage.getItem(`egenfrekvens-prompt-dismissed-${status.day}`)) return;
+					const morning = status.settings.morningTime ?? '06:30'; const evening = status.settings.eveningTime ?? '21:00';
 					const count = typeof status.count === 'number' ? status.count : status.submitted ? 1 : 0;
 					const nowHm = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date());
-					const showMorning = nowHm >= morning && count === 0;
-					const showEvening = nowHm >= evening && count < 2;
+					const showMorning = nowHm >= morning && count === 0; const showEvening = nowHm >= evening && count < 2;
 					if (!showMorning && !showEvening) return;
-					egenfrekvensPromptDay = status.day;
-					egenfrekvensPromptOpen = true;
+					egenfrekvensPromptDay = status.day; egenfrekvensPromptOpen = true;
 				} catch { /* best-effort */ }
 			})();
 		})();
 	});
 
 	// ── Publiser kontekst til sone-komponenter ────────────────────────────
-	const ctxObj: HomeContext = {
-		get themes() { return themes; },
-		set themes(v) { themes = v; },
+	ctx = {
+		get themes() { return themes; }, set themes(v) { themes = v; },
 		get relationshipOnboardingActive() { return relationshipOnboardingActive; },
 		get relationshipTheme() { return relationshipTheme; },
 
-		get dragThemeId() { return dragThemeId; },
-		set dragThemeId(v) { dragThemeId = v; },
-		get dropIndex() { return dropIndex; },
-		set dropIndex(v) { dropIndex = v; },
-		get isTouchDrag() { return isTouchDrag; },
-		set isTouchDrag(v) { isTouchDrag = v; },
-		get themeListEl() { return themeListEl; },
-		set themeListEl(v) { themeListEl = v; },
-		get touchChip() { return touchChip; },
-		set touchChip(v) { touchChip = v; },
+		get dragThemeId() { return dragThemeId; }, set dragThemeId(v) { dragThemeId = v; },
+		get dropIndex() { return dropIndex; }, set dropIndex(v) { dropIndex = v; },
+		get isTouchDrag() { return isTouchDrag; }, set isTouchDrag(v) { isTouchDrag = v; },
+		get themeListEl() { return themeListEl; }, set themeListEl(v) { themeListEl = v; },
+		get touchChip() { return touchChip; }, set touchChip(v) { touchChip = v; },
 		get draggedTheme() { return draggedTheme; },
 		get displayList() { return displayList; },
 
-		get themeMenuId() { return themeMenuId; },
-		set themeMenuId(v) { themeMenuId = v; },
-		get themeMenuName() { return themeMenuName; },
-		set themeMenuName(v) { themeMenuName = v; },
-		get themeActionBusy() { return themeActionBusy; },
-		set themeActionBusy(v) { themeActionBusy = v; },
-		get themePanelOpen() { return themePanelOpen; },
-		set themePanelOpen(v) { themePanelOpen = v; },
+		get themeMenuId() { return themeMenuId; }, set themeMenuId(v) { themeMenuId = v; },
+		get themeMenuName() { return themeMenuName; }, set themeMenuName(v) { themeMenuName = v; },
+		get themeActionBusy() { return themeActionBusy; }, set themeActionBusy(v) { themeActionBusy = v; },
+		get themePanelOpen() { return themePanelOpen; }, set themePanelOpen(v) { themePanelOpen = v; },
 		get temaPressBlocked() { return temaPressBlocked; },
 
-		get pinnedWidgets() { return pinnedWidgets; },
-		set pinnedWidgets(v) { pinnedWidgets = v; },
-		get hiddenWidgets() { return hiddenWidgets; },
-		set hiddenWidgets(v) { hiddenWidgets = v; },
+		get pinnedWidgets() { return pinnedWidgets; }, set pinnedWidgets(v) { pinnedWidgets = v; },
+		get hiddenWidgets() { return hiddenWidgets; }, set hiddenWidgets(v) { hiddenWidgets = v; },
 		get widgetsLoading() { return widgetsLoading; },
-		get configWidget() { return configWidget; },
-		set configWidget(v) { configWidget = v; },
-		get widgetPanelOpen() { return widgetPanelOpen; },
-		set widgetPanelOpen(v) { widgetPanelOpen = v; },
+		get configWidget() { return configWidget; }, set configWidget(v) { configWidget = v; },
+		get widgetPanelOpen() { return widgetPanelOpen; }, set widgetPanelOpen(v) { widgetPanelOpen = v; },
 		get homeWidgetPages() { return homeWidgetPages; },
-		get widgetPagerEl() { return widgetPagerEl; },
-		set widgetPagerEl(v) { widgetPagerEl = v; },
-		get currentWidgetPage() { return currentWidgetPage; },
-		set currentWidgetPage(v) { currentWidgetPage = v; },
+		get widgetPagerEl() { return widgetPagerEl; }, set widgetPagerEl(v) { widgetPagerEl = v; },
+		get currentWidgetPage() { return currentWidgetPage; }, set currentWidgetPage(v) { currentWidgetPage = v; },
 
-		get activeChecklists() { return activeChecklists; },
-		set activeChecklists(v) { activeChecklists = v; },
-		get allContextChecklists() { return allContextChecklists; },
-		set allContextChecklists(v) { allContextChecklists = v; },
+		get activeChecklists() { return activeChecklists; }, set activeChecklists(v) { activeChecklists = v; },
+		get allContextChecklists() { return allContextChecklists; }, set allContextChecklists(v) { allContextChecklists = v; },
 		get monthDayChecklists() { return monthDayChecklists; },
 		get monthMetrics() { return monthMetrics; },
-		get openChecklist() { return openChecklist; },
-		set openChecklist(v) { openChecklist = v; },
+		get openChecklist() { return openChecklist; }, set openChecklist(v) { openChecklist = v; },
 		get todaysRoutines() { return todaysRoutines; },
 		get monthDayData() { return monthDayData; },
 
-		get chatOpen() { return chatOpen; },
-		set chatOpen(v) { chatOpen = v; },
-		get chatPrefill() { return chatPrefill; },
-		set chatPrefill(v) { chatPrefill = v; },
-		get chatInputAutoFocus() { return chatInputAutoFocus; },
-		set chatInputAutoFocus(v) { chatInputAutoFocus = v; },
-		get chatSection() { return chatSection; },
-		set chatSection(v) { chatSection = v; },
+		get chatOpen() { return chatOpen; }, set chatOpen(v) { chatOpen = v; },
+		get chatPrefill() { return chatPrefill; }, set chatPrefill(v) { chatPrefill = v; },
+		get chatInputAutoFocus() { return chatInputAutoFocus; }, set chatInputAutoFocus(v) { chatInputAutoFocus = v; },
+		get chatSection() { return chatSection; }, set chatSection(v) { chatSection = v; },
 		get inputExpanded() { return inputExpanded; },
 		get homeChat() { return homeChat; },
-		get selectedQuickAction() { return selectedQuickAction; },
-		set selectedQuickAction(v) { selectedQuickAction = v; },
+		get selectedQuickAction() { return selectedQuickAction; }, set selectedQuickAction(v) { selectedQuickAction = v; },
 		get activeQuickAction() { return activeQuickAction; },
 		get hasPersistedConversation() { return hasPersistedConversation; },
 		get chatConversationTitle() { return chatConversationTitle; },
-		get latestClosedConversationId() { return latestClosedConversationId; },
-		set latestClosedConversationId(v) { latestClosedConversationId = v; },
-		get createdThemeLink() { return createdThemeLink; },
-		set createdThemeLink(v) { createdThemeLink = v; },
-		get launchingThemeId() { return launchingThemeId; },
-		set launchingThemeId(v) { launchingThemeId = v; },
-		get returnToChatAfterFlow() { return returnToChatAfterFlow; },
-		set returnToChatAfterFlow(v) { returnToChatAfterFlow = v; },
-		get selectedChatModel() { return selectedChatModel; },
-		set selectedChatModel(v) { selectedChatModel = v; },
-		get suggestedTheme() { return suggestedTheme; },
-		set suggestedTheme(v) { suggestedTheme = v; },
-		get routedToTheme() { return routedToTheme; },
-		set routedToTheme(v) { routedToTheme = v; },
-		get homeConversationList() { return homeConversationList; },
-		set homeConversationList(v) { homeConversationList = v; },
-		get homeEditingConversationId() { return homeEditingConversationId; },
-		set homeEditingConversationId(v) { homeEditingConversationId = v; },
-		get homeEditingTitle() { return homeEditingTitle; },
-		set homeEditingTitle(v) { homeEditingTitle = v; },
+		get latestClosedConversationId() { return latestClosedConversationId; }, set latestClosedConversationId(v) { latestClosedConversationId = v; },
+		get createdThemeLink() { return createdThemeLink; }, set createdThemeLink(v) { createdThemeLink = v; },
+		get launchingThemeId() { return launchingThemeId; }, set launchingThemeId(v) { launchingThemeId = v; },
+		get returnToChatAfterFlow() { return returnToChatAfterFlow; }, set returnToChatAfterFlow(v) { returnToChatAfterFlow = v; },
+		get selectedChatModel() { return selectedChatModel; }, set selectedChatModel(v) { selectedChatModel = v; },
+		get suggestedTheme() { return suggestedTheme; }, set suggestedTheme(v) { suggestedTheme = v; },
+		get routedToTheme() { return routedToTheme; }, set routedToTheme(v) { routedToTheme = v; },
+		get homeConversationList() { return homeConversationList; }, set homeConversationList(v) { homeConversationList = v; },
+		get homeEditingConversationId() { return homeEditingConversationId; }, set homeEditingConversationId(v) { homeEditingConversationId = v; },
+		get homeEditingTitle() { return homeEditingTitle; }, set homeEditingTitle(v) { homeEditingTitle = v; },
 		get followUpConversations() { return followUpConversations; },
 		get followUpStarred() { return followUpStarred; },
 		get followUpRegular() { return followUpRegular; },
@@ -1281,185 +795,98 @@
 		get actionItems() { return actionItems; },
 		get serverActionCandidates() { return serverActionCandidates; },
 
-		get snoozeMenuChipId() { return snoozeMenuChipId; },
-		set snoozeMenuChipId(v) { snoozeMenuChipId = v; },
-		get snoozeMenuLabel() { return snoozeMenuLabel; },
-		set snoozeMenuLabel(v) { snoozeMenuLabel = v; },
+		get snoozeMenuChipId() { return snoozeMenuChipId; }, set snoozeMenuChipId(v) { snoozeMenuChipId = v; },
+		get snoozeMenuLabel() { return snoozeMenuLabel; }, set snoozeMenuLabel(v) { snoozeMenuLabel = v; },
 
-		get cameraOpen() { return cameraOpen; },
-		set cameraOpen(v) { cameraOpen = v; },
-		get cameraFileInput() { return cameraFileInput; },
-		set cameraFileInput(v) { cameraFileInput = v; },
-		get cameraSelectedFile() { return cameraSelectedFile; },
-		set cameraSelectedFile(v) { cameraSelectedFile = v; },
-		get cameraPreview() { return cameraPreview; },
-		set cameraPreview(v) { cameraPreview = v; },
-		get cameraCaption() { return cameraCaption; },
-		set cameraCaption(v) { cameraCaption = v; },
+		get cameraOpen() { return cameraOpen; }, set cameraOpen(v) { cameraOpen = v; },
+		get cameraFileInput() { return cameraFileInput; }, set cameraFileInput(v) { cameraFileInput = v; },
+		get cameraSelectedFile() { return cameraSelectedFile; }, set cameraSelectedFile(v) { cameraSelectedFile = v; },
+		get cameraPreview() { return cameraPreview; }, set cameraPreview(v) { cameraPreview = v; },
+		get cameraCaption() { return cameraCaption; }, set cameraCaption(v) { cameraCaption = v; },
 		get cameraUploading() { return cameraUploading; },
 		get cameraError() { return cameraError; },
 		get cameraHistory() { return cameraHistory; },
 		get cameraHistoryLoading() { return cameraHistoryLoading; },
 
-		get voiceOpen() { return voiceOpen; },
-		set voiceOpen(v) { voiceOpen = v; },
-		get voiceText() { return voiceText; },
-		set voiceText(v) { voiceText = v; },
-		get voiceFileInput() { return voiceFileInput; },
-		set voiceFileInput(v) { voiceFileInput = v; },
-		get voiceSelectedFile() { return voiceSelectedFile; },
-		set voiceSelectedFile(v) { voiceSelectedFile = v; },
+		get voiceOpen() { return voiceOpen; }, set voiceOpen(v) { voiceOpen = v; },
+		get voiceText() { return voiceText; }, set voiceText(v) { voiceText = v; },
+		get voiceFileInput() { return voiceFileInput; }, set voiceFileInput(v) { voiceFileInput = v; },
+		get voiceSelectedFile() { return voiceSelectedFile; }, set voiceSelectedFile(v) { voiceSelectedFile = v; },
 		get voiceUploading() { return voiceUploading; },
-		get voiceError() { return voiceError; },
-		set voiceError(v) { voiceError = v; },
+		get voiceError() { return voiceError; }, set voiceError(v) { voiceError = v; },
 		get voiceHistory() { return voiceHistory; },
 		get voiceHistoryLoading() { return voiceHistoryLoading; },
 
-		get fileFlowOpen() { return fileFlowOpen; },
-		set fileFlowOpen(v) { fileFlowOpen = v; },
-		get fileFlowInput() { return fileFlowInput; },
-		set fileFlowInput(v) { fileFlowInput = v; },
-		get fileFlowSelected() { return fileFlowSelected; },
-		set fileFlowSelected(v) { fileFlowSelected = v; },
-		get fileFlowMode() { return fileFlowMode; },
-		set fileFlowMode(v) { fileFlowMode = v; },
-		get fileFlowNote() { return fileFlowNote; },
-		set fileFlowNote(v) { fileFlowNote = v; },
+		get fileFlowOpen() { return fileFlowOpen; }, set fileFlowOpen(v) { fileFlowOpen = v; },
+		get fileFlowInput() { return fileFlowInput; }, set fileFlowInput(v) { fileFlowInput = v; },
+		get fileFlowSelected() { return fileFlowSelected; }, set fileFlowSelected(v) { fileFlowSelected = v; },
+		get fileFlowMode() { return fileFlowMode; }, set fileFlowMode(v) { fileFlowMode = v; },
+		get fileFlowNote() { return fileFlowNote; }, set fileFlowNote(v) { fileFlowNote = v; },
 		get fileFlowUploading() { return fileFlowUploading; },
 		get fileFlowError() { return fileFlowError; },
-		get sheetFlowUrl() { return sheetFlowUrl; },
-		set sheetFlowUrl(v) { sheetFlowUrl = v; },
-		get sheetFlowRange() { return sheetFlowRange; },
-		set sheetFlowRange(v) { sheetFlowRange = v; },
+		get sheetFlowUrl() { return sheetFlowUrl; }, set sheetFlowUrl(v) { sheetFlowUrl = v; },
+		get sheetFlowRange() { return sheetFlowRange; }, set sheetFlowRange(v) { sheetFlowRange = v; },
 		get sheetFlowUploading() { return sheetFlowUploading; },
 		get sheetFlowError() { return sheetFlowError; },
 		get fileHistory() { return fileHistory; },
 		get fileHistoryLoading() { return fileHistoryLoading; },
 
-		get egenfrekvensFlowOpen() { return egenfrekvensFlowOpen; },
-		set egenfrekvensFlowOpen(v) { egenfrekvensFlowOpen = v; },
-		get egenfrekvensQuickFlowOpen() { return egenfrekvensQuickFlowOpen; },
-		set egenfrekvensQuickFlowOpen(v) { egenfrekvensQuickFlowOpen = v; },
-		get egenfrekvensActiveSlot() { return egenfrekvensActiveSlot; },
-		set egenfrekvensActiveSlot(v) { egenfrekvensActiveSlot = v; },
-		get egenfrekvensPromptOpen() { return egenfrekvensPromptOpen; },
-		set egenfrekvensPromptOpen(v) { egenfrekvensPromptOpen = v; },
+		get egenfrekvensFlowOpen() { return egenfrekvensFlowOpen; }, set egenfrekvensFlowOpen(v) { egenfrekvensFlowOpen = v; },
+		get egenfrekvensQuickFlowOpen() { return egenfrekvensQuickFlowOpen; }, set egenfrekvensQuickFlowOpen(v) { egenfrekvensQuickFlowOpen = v; },
+		get egenfrekvensActiveSlot() { return egenfrekvensActiveSlot; }, set egenfrekvensActiveSlot(v) { egenfrekvensActiveSlot = v; },
+		get egenfrekvensPromptOpen() { return egenfrekvensPromptOpen; }, set egenfrekvensPromptOpen(v) { egenfrekvensPromptOpen = v; },
 		get egenfrekvensPromptDay() { return egenfrekvensPromptDay; },
-		get egenfrekvensInitialNote() { return egenfrekvensInitialNote; },
-		set egenfrekvensInitialNote(v) { egenfrekvensInitialNote = v; },
-		get egenfrekvensReflectionPrompt() { return egenfrekvensReflectionPrompt; },
-		set egenfrekvensReflectionPrompt(v) { egenfrekvensReflectionPrompt = v; },
-		get egenfrekvensDreamReasons() { return egenfrekvensDreamReasons; },
-		set egenfrekvensDreamReasons(v) { egenfrekvensDreamReasons = v; },
-		get egenfrekvensCarriedLevel() { return egenfrekvensCarriedLevel; },
-		set egenfrekvensCarriedLevel(v) { egenfrekvensCarriedLevel = v; },
+		get egenfrekvensInitialNote() { return egenfrekvensInitialNote; }, set egenfrekvensInitialNote(v) { egenfrekvensInitialNote = v; },
+		get egenfrekvensReflectionPrompt() { return egenfrekvensReflectionPrompt; }, set egenfrekvensReflectionPrompt(v) { egenfrekvensReflectionPrompt = v; },
+		get egenfrekvensDreamReasons() { return egenfrekvensDreamReasons; }, set egenfrekvensDreamReasons(v) { egenfrekvensDreamReasons = v; },
+		get egenfrekvensCarriedLevel() { return egenfrekvensCarriedLevel; }, set egenfrekvensCarriedLevel(v) { egenfrekvensCarriedLevel = v; },
 		get egenfrekvensRecent() { return egenfrekvensRecent; },
 
-		get homeDayPlanOpen() { return homeDayPlanOpen; },
-		set homeDayPlanOpen(v) { homeDayPlanOpen = v; },
-		get homeDayPlanIso() { return homeDayPlanIso; },
-		set homeDayPlanIso(v) { homeDayPlanIso = v; },
-		get homeDayPlanWeekKey() { return homeDayPlanWeekKey; },
-		set homeDayPlanWeekKey(v) { homeDayPlanWeekKey = v; },
-		get homeWeekPlanOpen() { return homeWeekPlanOpen; },
-		set homeWeekPlanOpen(v) { homeWeekPlanOpen = v; },
+		get homeDayPlanOpen() { return homeDayPlanOpen; }, set homeDayPlanOpen(v) { homeDayPlanOpen = v; },
+		get homeDayPlanIso() { return homeDayPlanIso; }, set homeDayPlanIso(v) { homeDayPlanIso = v; },
+		get homeDayPlanWeekKey() { return homeDayPlanWeekKey; }, set homeDayPlanWeekKey(v) { homeDayPlanWeekKey = v; },
+		get homeWeekPlanOpen() { return homeWeekPlanOpen; }, set homeWeekPlanOpen(v) { homeWeekPlanOpen = v; },
 		get homeWeekPlanContext() { return homeWeekPlanContext; },
-		get homeMonthPlanOpen() { return homeMonthPlanOpen; },
-		set homeMonthPlanOpen(v) { homeMonthPlanOpen = v; },
+		get homeMonthPlanOpen() { return homeMonthPlanOpen; }, set homeMonthPlanOpen(v) { homeMonthPlanOpen = v; },
 		get homeMonthPlanContext() { return homeMonthPlanContext; },
 
 		get programReadiness() { return programReadiness; },
 
-		get focusTimerFlowOpen() { return focusTimerFlowOpen; },
-		set focusTimerFlowOpen(v) { focusTimerFlowOpen = v; },
-		get reflectionLightFlowOpen() { return reflectionLightFlowOpen; },
-		set reflectionLightFlowOpen(v) { reflectionLightFlowOpen = v; },
-		get inboxNoteFlowOpen() { return inboxNoteFlowOpen; },
-		set inboxNoteFlowOpen(v) { inboxNoteFlowOpen = v; },
-		get quickWinFlowOpen() { return quickWinFlowOpen; },
-		set quickWinFlowOpen(v) { quickWinFlowOpen = v; },
+		get focusTimerFlowOpen() { return focusTimerFlowOpen; }, set focusTimerFlowOpen(v) { focusTimerFlowOpen = v; },
+		get reflectionLightFlowOpen() { return reflectionLightFlowOpen; }, set reflectionLightFlowOpen(v) { reflectionLightFlowOpen = v; },
+		get inboxNoteFlowOpen() { return inboxNoteFlowOpen; }, set inboxNoteFlowOpen(v) { inboxNoteFlowOpen = v; },
+		get quickWinFlowOpen() { return quickWinFlowOpen; }, set quickWinFlowOpen(v) { quickWinFlowOpen = v; },
 		get quickWinOpenItems() { return quickWinOpenItems; },
 
 		get dateLabel() { return dateLabel; },
 
-		openChat,
-		closeChat,
-		startQuickAction,
-		startHomeChat,
-		startHomeAttachment,
-		openPartnerOnboardingChat,
-		openEgenfrekvensFlow,
-		openEgenfrekvensQuick,
-		openEgenfrekvensFull,
-		sendChat,
-		stopChat,
-		closeCameraFlow,
-		closeVoiceFlow,
-		closeFileFlow,
-		handleCameraFileSelect,
-		handleVoiceFileSelect,
-		handleFileFlowSelect,
-		submitCamera,
-		submitVoice,
-		submitFile,
-		submitSheetSnapshot,
-		handleWidgetPagerScroll,
-		goToWidgetPage,
-		handleChecklistPlan,
-		openWidgetConfigSheet,
-		navigateForWidget,
-		unpinWidget,
-		repinWidget,
-		moveWidget,
-		deleteWidget,
-		saveWidgetConfig,
-		fetchChecklists,
-		loadActionCandidates,
-		loadEgenfrekvensRecent,
-		loadEgenfrekvensContext,
-		dispatchActionIntent,
-		handleChipClick,
-		startLongPress,
-		cancelLongPress,
-		closeSnoozeMenu,
-		snoozeChip,
-		handleTemaPressStart,
-		handleTemaPressEnd,
-		handleThemeDragStart,
-		handleThemeDragOver,
-		commitThemeReorder,
-		handleTouchDragStart,
-		handleTouchDragMove,
-		handleTouchDragEnd,
-		resetDrag,
-		startThemeRowPress,
-		cancelThemeRowPress,
-		closeThemeMenu,
-		handleThemeRowClick,
-		archiveThemeFromMenu,
-		deleteThemeFromMenu,
-		openCreatedTheme,
+		openChat, closeChat, startQuickAction, startHomeChat, startHomeAttachment, openPartnerOnboardingChat,
+		openEgenfrekvensFlow, openEgenfrekvensQuick, openEgenfrekvensFull, sendChat, stopChat,
+		closeCameraFlow, closeVoiceFlow, closeFileFlow,
+		handleCameraFileSelect, handleVoiceFileSelect, handleFileFlowSelect,
+		submitCamera, submitVoice, submitFile, submitSheetSnapshot,
+		handleWidgetPagerScroll, goToWidgetPage, handleChecklistPlan,
+		openWidgetConfigSheet, navigateForWidget, unpinWidget, repinWidget, moveWidget, deleteWidget, saveWidgetConfig,
+		fetchChecklists, loadActionCandidates, loadEgenfrekvensRecent, loadEgenfrekvensContext,
+		dispatchActionIntent, handleChipClick, startLongPress, cancelLongPress, closeSnoozeMenu, snoozeChip,
+		handleTemaPressStart, handleTemaPressEnd,
+		handleThemeDragStart, handleThemeDragOver, commitThemeReorder,
+		handleTouchDragStart, handleTouchDragMove, handleTouchDragEnd, resetDrag,
+		startThemeRowPress, cancelThemeRowPress, closeThemeMenu, handleThemeRowClick,
+		archiveThemeFromMenu, deleteThemeFromMenu, openCreatedTheme,
 		formatFollowUpDate,
-		setHomeConversationStarred,
-		setHomeConversationArchived,
-		removeHomeConversation,
-		moveHomeConversationTheme,
-		startHomeConversationRename,
-		cancelHomeConversationRename,
-		commitHomeConversationRename,
-		reuseCameraMedia,
-		reuseVoiceMedia,
-		reuseFileMedia,
-		refreshHomeData,
-		openWeekPlan,
-		openMonthPlan,
-		openQuickWin,
-		pendingActionHandlers,
-		getLocalIsoWeekDashed,
-		toLocalIsoDate,
+		setHomeConversationStarred: (id, starred) => setConversationStarred(convoState, id, starred),
+		setHomeConversationArchived: (id, archived) => setConversationArchived(convoState, id, archived),
+		removeHomeConversation: (id) => removeConversation(convoState, id),
+		moveHomeConversationTheme: (id, themeId) => moveConversationTheme(convoState, id, themeId, themes),
+		startHomeConversationRename: (id, currentTitle) => startConversationRename(convoState, id, currentTitle),
+		cancelHomeConversationRename: () => cancelConversationRename(convoState),
+		commitHomeConversationRename: (id) => commitConversationRename(convoState, id),
+		reuseCameraMedia, reuseVoiceMedia, reuseFileMedia,
+		refreshHomeData, openWeekPlan, openMonthPlan, openQuickWin,
+		pendingActionHandlers, getLocalIsoWeekDashed, toLocalIsoDate,
 	};
-
-	setContext(HOME_CTX, ctxObj);
+	setContext(HOME_CTX, ctx);
 </script>
 
 <PullToRefresh

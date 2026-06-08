@@ -9,11 +9,10 @@
   - Langtrykk (700ms) for nedbrytning av oppgaver
 -->
 <script lang="ts">
-	import { fly, fade, scale, slide } from 'svelte/transition';
-	import { elasticOut, cubicOut } from 'svelte/easing';
-	import { groupChecklistItems, activityEmoji, sortByStatus, sortByTime, formatItemTime, stripTimeFromText, isLocationItem, locationDisplayName, getTravelMode, travelModeIcon, parseLocationPrefix, parseTravelPrefix, type GroupedChecklistEntry } from '$lib/utils/checklist-group';
+	import { fly, fade, slide } from 'svelte/transition';
+	import { cubicOut } from 'svelte/easing';
+	import { groupChecklistItems, sortByStatus, sortByTime, isLocationItem, locationDisplayName, parseLocationPrefix, parseTravelPrefix, type GroupedChecklistEntry } from '$lib/utils/checklist-group';
 	import { patchItem, deleteItem as apiDeleteItem, addItems } from '$lib/utils/checklist-api';
-	import WeatherStrip, { type WeatherPeriod } from '$lib/components/ui/WeatherStrip.svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import BreakdownModal from '$lib/components/ui/BreakdownModal.svelte';
 	import TaskContextMenu from '$lib/components/ui/TaskContextMenu.svelte';
@@ -24,8 +23,23 @@
 	import ChecklistItemRow from '$lib/components/ui/ChecklistItemRow.svelte';
 	import ChecklistGroupRow from '$lib/components/ui/ChecklistGroupRow.svelte';
 	import RoutineGroupRow from '$lib/components/ui/RoutineGroupRow.svelte';
+	import type { WeatherPeriod } from '$lib/components/ui/WeatherStrip.svelte';
 	import { readCacheEntry, isCacheStale, fetchRawTimeseries, buildPeriods, buildWeekPeriods } from '$lib/utils/weather';
 	import { resolvePlace, geocodePlace, type GeoCandidate } from '$lib/utils/geocode';
+
+	import {
+		buildCalendarHref,
+		isDayContext,
+		extractDayDate,
+		extractWeekKey,
+		computeDisplayTitle,
+		computeOffsetDate,
+		RING_RADIUS,
+		RING_CIRCUMFERENCE
+	} from './checklist-sheet-helpers';
+	import ChecklistSheetHeader from './ChecklistSheetHeader.svelte';
+	import ChecklistSheetFooter from './ChecklistSheetFooter.svelte';
+	import ChecklistPayoff from './ChecklistPayoff.svelte';
 
 	interface ChecklistItem {
 		id: string;
@@ -80,8 +94,6 @@
 	let { checklist, routines = [], onclose, onDeleted, onChanged, onStartChat, onNavigateDay }: Props = $props();
 
 	let items = $state<ChecklistItem[]>([...checklist.items]);
-	// Faktisk DB-id. For en tom dag (virtuell sjekkliste) er `checklist.id` ''
-	// inntil første punkt legges til — da opprettes lista og `backingId` settes.
 	let backingId = $state(checklist.id);
 	let newItemText = $state('');
 	let newItemInputEl = $state<HTMLInputElement | null>(null);
@@ -130,10 +142,7 @@
 		}
 	}
 
-	// Når `checklist`-propen byttes (dag-navigasjon prev/neste) må vi re-synce
-	// den lokale `items`-staten og nullstille forbigående UI. Uten dette beholdt
-	// arket forrige dags oppgaver selv om tittelen viste riktig dag. Vi nøkler på
-	// context (unik per dag) fordi tomme dager deler den samme tomme id-en ''.
+	// Re-sync local state when checklist prop changes (day navigation)
 	let loadedKey = $state(checklist.context ?? checklist.id);
 	$effect(() => {
 		const key = checklist.context ?? checklist.id;
@@ -161,33 +170,25 @@
 		}
 	});
 
-	// Strøkne ("gjør ikke") og sted-kontekst («Sted: X») teller hverken som
-	// planlagt eller løst — sted-punkt er dag-kontekst, ikke en avkryssbar rad.
+	// Derived counts — location items are context, not tasks
 	const plannedItems = $derived(items.filter((i) => !i.skippedAt && !isLocationItem(i)));
 	const done = $derived(plannedItems.filter((i) => i.checked).length);
 	const total = $derived(plannedItems.length);
 	const allDone = $derived(total > 0 && done === total);
 	const pct = $derived(total > 0 ? done / total : 0);
 
-	// Sted-punkter vises som dag-kontekst (banner øverst), ikke som liste-rader.
 	const topLevelItems = $derived(items.filter((i) => !i.parentId));
 	const locationItems = $derived(topLevelItems.filter((i) => isLocationItem(i)));
 	const listItems = $derived(topLevelItems.filter((i) => !isLocationItem(i)));
 
-	// Resten delt i tre seksjoner: tidfestede (kun kronologisk — avkryssede
-	// blir stående der de er, så listen ikke hopper når noe gjøres), øvrige
-	// (sortert på status, med debounce på omsorteringen), og strøkne.
+	// Timed groups (chronological, no reordering on check)
 	const timedGroups = $derived(
 		groupChecklistItems(
 			sortByTime(listItems.filter((i) => !i.skippedAt && i.metadata?.timeHour !== undefined))
 		)
 	);
 
-	// Utidfestede punkter sorteres på status (åpne → avkryssede), men selve
-	// omsorteringen debounces ~1s: når man krysser av flere på rad skal ikke
-	// radene hoppe nedover umiddelbart. Vi debouncer *rekkefølgen* (en liste av
-	// ids), ikke punktene — så avkryssingen vises live, men posisjonen følger
-	// den utsatte rekkefølgen.
+	// Untimed items with debounced reorder
 	const untimedItems = $derived(
 		listItems.filter((i) => !i.skippedAt && i.metadata?.timeHour === undefined)
 	);
@@ -199,18 +200,13 @@
 		const knownSet = new Set(untimedOrderIds);
 		const sameSet =
 			currentIds.length === untimedOrderIds.length && currentIds.every((id) => knownSet.has(id));
-		// Endret sett (lagt til / fjernet punkt) → oppdater rekkefølgen med en gang.
 		if (!sameSet) {
-			if (untimedOrderTimer) {
-				clearTimeout(untimedOrderTimer);
-				untimedOrderTimer = null;
-			}
+			if (untimedOrderTimer) { clearTimeout(untimedOrderTimer); untimedOrderTimer = null; }
 			untimedOrderIds = sortByStatus(untimedItems).map((i) => i.id);
 			return;
 		}
-		// Samme sett, men status kan ha endret rekkefølgen → debounce omsorteringen.
 		const desired = sortByStatus(untimedItems).map((i) => i.id);
-		if (desired.join(',') === untimedOrderIds.join(',')) return; // allerede riktig
+		if (desired.join(',') === untimedOrderIds.join(',')) return;
 		if (untimedOrderTimer) clearTimeout(untimedOrderTimer);
 		untimedOrderTimer = setTimeout(() => {
 			untimedOrderIds = sortByStatus(untimedItems).map((i) => i.id);
@@ -218,9 +214,7 @@
 		}, 1000);
 	});
 
-	$effect(() => () => {
-		if (untimedOrderTimer) clearTimeout(untimedOrderTimer);
-	});
+	$effect(() => () => { if (untimedOrderTimer) clearTimeout(untimedOrderTimer); });
 
 	const untimedGroups = $derived.by(() => {
 		const byId = new Map(untimedItems.map((i) => [i.id, i]));
@@ -229,7 +223,6 @@
 			const item = byId.get(id);
 			if (item) ordered.push(item);
 		}
-		// Sikkerhetsnett: punkter som ikke er i rekkefølgen ennå legges bakerst.
 		const known = new Set(untimedOrderIds);
 		for (const item of untimedItems) if (!known.has(item.id)) ordered.push(item);
 		return groupChecklistItems(ordered);
@@ -237,9 +230,8 @@
 	const skippedItems = $derived(listItems.filter((i) => !!i.skippedAt));
 	const skippedGroups = $derived(groupChecklistItems(skippedItems));
 
-	// Primært sted for dagen (driver værmelding + vises i banner).
+	// Primary location drives weather
 	const primaryLocation = $derived(locationItems[0] ?? null);
-	// Nøkkel som endrer seg når stedet (pinnet koordinat eller navn) endres.
 	const primaryLocationKey = $derived(
 		primaryLocation
 			? primaryLocation.metadata?.lat != null
@@ -247,81 +239,22 @@
 				: locationDisplayName(primaryLocation)
 			: null
 	);
-	const calendarHref = $derived.by(() => {
-		const context = checklist.context;
-		if (!context) return '/ukeplan';
 
-		const dayMatch = context.match(/^week:(\d{4}-W\d{2}):day:(\d{4}-\d{2}-\d{2})$/);
-		if (dayMatch) {
-			const weekKey = encodeURIComponent(dayMatch[1]);
-			const dayKey = encodeURIComponent(dayMatch[2]);
-			return `/ukeplan?week=${weekKey}&day=${dayKey}`;
-		}
-
-		const weekMatch = context.match(/^week:(\d{4}-W\d{2})$/);
-		if (weekMatch) {
-			const weekKey = encodeURIComponent(weekMatch[1]);
-			return `/ukeplan?week=${weekKey}`;
-		}
-
-		return '/ukeplan';
-	});
-
-	function formatDayLabel(dateIso: string): string {
-		const todayIso = new Date().toLocaleDateString('sv', { timeZone: 'Europe/Oslo' });
-		const tomorrow = new Date();
-		tomorrow.setDate(tomorrow.getDate() + 1);
-		const tomorrowIso = tomorrow.toLocaleDateString('sv', { timeZone: 'Europe/Oslo' });
-		const yesterday = new Date();
-		yesterday.setDate(yesterday.getDate() - 1);
-		const yesterdayIso = yesterday.toLocaleDateString('sv', { timeZone: 'Europe/Oslo' });
-		if (dateIso === todayIso) return 'I dag';
-		if (dateIso === tomorrowIso) return 'I morgen';
-		if (dateIso === yesterdayIso) return 'I går';
-		return new Intl.DateTimeFormat('nb-NO', { weekday: 'long', day: 'numeric', month: 'long' })
-			.format(new Date(dateIso + 'T12:00:00'));
-	}
-
-	const isDayChecklist = $derived.by(() => {
-		return !!checklist.context?.match(/^week:\d{4}-W\d{2}:day:\d{4}-\d{2}-\d{2}$/);
-	});
-
-	const displayTitle = $derived.by(() => {
-		const ctx = checklist.context;
-		if (!ctx) return checklist.title;
-		const dayMatch = ctx.match(/^week:(\d{4}-W\d{2}):day:(\d{4}-\d{2}-\d{2})$/);
-		if (dayMatch) return formatDayLabel(dayMatch[2]);
-		const weekMatch = ctx.match(/^week:(\d{4}-W\d{2})$/);
-		if (weekMatch) return 'Hele uka';
-		return checklist.title;
-	});
+	// Derived display values from helpers
+	const calendarHref = $derived(buildCalendarHref(checklist.context));
+	const isDayChecklist = $derived(isDayContext(checklist.context));
+	const displayTitle = $derived(computeDisplayTitle(checklist.context, checklist.title));
+	const dayContextDate = $derived(extractDayDate(checklist.context));
+	const weekContextKey = $derived(extractWeekKey(checklist.context));
+	const showEmoji = $derived(checklist.emoji && checklist.emoji !== '🗓️' && checklist.emoji !== '☑️');
+	const payoffEmoji = $derived(showEmoji ? checklist.emoji : '');
 
 	function navigateDay(offset: number) {
-		const ctx = checklist.context;
-		if (!ctx || !onNavigateDay) return;
-		const m = ctx.match(/^week:\d{4}-W\d{2}:day:(\d{4}-\d{2}-\d{2})$/);
-		if (!m) return;
-		const d = new Date(m[1] + 'T12:00:00');
-		d.setDate(d.getDate() + offset);
-		const year = d.getFullYear();
-		const month = String(d.getMonth() + 1).padStart(2, '0');
-		const day = String(d.getDate()).padStart(2, '0');
-		onNavigateDay(`${year}-${month}-${day}`);
+		const target = computeOffsetDate(checklist.context, offset);
+		if (target && onNavigateDay) onNavigateDay(target);
 	}
 
-	// Weather for day and week checklists
-	const dayContextDate = $derived.by(() => {
-		const ctx = checklist.context;
-		if (!ctx) return null;
-		const m = ctx.match(/^week:(?:\d{4}-W\d{2}):day:(\d{4}-\d{2}-\d{2})$/);
-		return m ? m[1] : null;
-	});
-	const weekContextKey = $derived.by(() => {
-		const ctx = checklist.context;
-		if (!ctx) return null;
-		const m = ctx.match(/^week:(\d{4}-W\d{2})$/);
-		return m ? m[1] : null;
-	});
+	// Weather
 	let weatherPeriods = $state<WeatherPeriod[] | null>(null);
 	let weatherCoordsKey = '';
 
@@ -341,14 +274,12 @@
 		const weekKey = weekContextKey;
 		if (!date && !weekKey) return;
 
-		// 1. Vis fra cache umiddelbart (stale-while-revalidate)
 		const cached = readCacheEntry(lat, lon);
 		if (cached) {
 			weatherPeriods = date
 				? buildPeriods(date, cached.timeseries)
 				: buildWeekPeriods(weekKey!, cached.timeseries);
 		}
-		// 2. Revalider hvis cache mangler eller er gammel
 		if (!cached || isCacheStale(cached)) {
 			const freshTs = await fetchRawTimeseries(lat, lon);
 			if (freshTs) {
@@ -359,12 +290,9 @@
 		}
 	}
 
-	// Vær for dagens sted hvis et «Sted:»-punkt finnes, ellers enhetens posisjon
-	// (fallback Oslo). Bruker pinnet koordinat når det finnes (ingen re-geokoding),
-	// ellers geokoder vi navnet biaset mot posisjonen. Reagerer på endringer.
 	$effect(() => {
-		const loc = primaryLocation; // reaktiv avhengighet
-		const key = primaryLocationKey; // reaktiv avhengighet
+		const loc = primaryLocation;
+		const key = primaryLocationKey;
 		if (!dayContextDate && !weekContextKey) return;
 		const effectiveKey = key ?? '__device__';
 		if (effectiveKey === weatherCoordsKey) return;
@@ -382,14 +310,16 @@
 		})();
 	});
 
-	// Vis payoff-animasjon én gang når alt er fullført
+	// Show payoff animation once when all done
 	$effect(() => {
 		if (allDone && !payoffDismissed && !showPayoff) {
 			setTimeout(() => { showPayoff = true; }, 400);
 		}
 	});
 
-	// Langtrykk åpner kontekstmeny (600ms, samme som widgets).
+	const ringColor = $derived(allDone ? '#5fa080' : '#7c8ef5');
+
+	// ── Long press / context menu ────────────────────────────────────
 	function handleItemPressStart(event: PointerEvent, item: ChecklistItem) {
 		const target = event.currentTarget as HTMLElement;
 		const rect = target.getBoundingClientRect();
@@ -403,40 +333,22 @@
 	}
 
 	function handleItemPressEnd() {
-		if (longPressTimer) {
-			clearTimeout(longPressTimer);
-			longPressTimer = null;
-		}
+		if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
 	}
 
+	// ── Item operations ──────────────────────────────────────────────
 	async function toggleItem(item: ChecklistItem) {
-		if (longPressTimer) {
-			clearTimeout(longPressTimer);
-			longPressTimer = null;
-		}
-		// Hvis kontekstmenyen ble åpnet via langtrykk, ikke kryss av samtidig.
-		if (longPressTriggered) {
-			longPressTriggered = false;
-			return;
-		}
+		if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+		if (longPressTriggered) { longPressTriggered = false; return; }
 
 		const newChecked = !item.checked;
 		const previousItems = items;
-		items = items.map((i) =>
-			i.id === item.id ? { ...i, checked: newChecked } : i
-		);
-
+		items = items.map((i) => i.id === item.id ? { ...i, checked: newChecked } : i);
 		const ok = await patchItem(backingId, item.id, { checked: newChecked });
-		if (!ok) {
-			items = previousItems;
-			return;
-		}
-
+		if (!ok) { items = previousItems; return; }
 		onChanged?.();
 	}
 
-	// Sørger for at lista finnes i DB. For en tom dag (virtuell liste) opprettes
-	// den her ved første punkt. Returnerer null hvis opprettelsen feiler.
 	async function ensureBackingId(): Promise<string | null> {
 		if (backingId) return backingId;
 		const res = await fetch('/api/checklists', {
@@ -474,8 +386,6 @@
 		const text = newItemText.trim();
 		if (!text) return;
 
-		// Sted/reise: geokod stedsnavnet og pinn koordinat. Ved tvetydighet
-		// (flere plausible treff) ber vi brukeren velge før vi oppretter.
 		const loc = parseLocationPrefix(text);
 		const travel = loc ? null : parseTravelPrefix(text);
 		const placeName = loc?.name ?? travel?.destination ?? null;
@@ -488,7 +398,7 @@
 				const resolution = await resolvePlace(placeName, near);
 				if (resolution.status === 'ambiguous') {
 					pendingPlace = { text, placeName, candidates: resolution.candidates };
-					return; // opprettelse skjer når brukeren velger i modalen
+					return;
 				}
 				const coords =
 					resolution.status === 'confident'
@@ -503,7 +413,6 @@
 		}
 	}
 
-	// Bekreftelse av tvetydig sted
 	let pendingPlace = $state<{ text: string; placeName: string; candidates: GeoCandidate[] } | null>(null);
 
 	async function confirmPlace(candidate: GeoCandidate) {
@@ -513,9 +422,7 @@
 		addingItem = true;
 		try {
 			await createItem(pending.text, { lat: candidate.lat, lon: candidate.lon, label: candidate.label });
-		} finally {
-			addingItem = false;
-		}
+		} finally { addingItem = false; }
 	}
 
 	async function keepPlaceAsTyped() {
@@ -523,21 +430,15 @@
 		pendingPlace = null;
 		if (!pending) return;
 		addingItem = true;
-		try {
-			await createItem(pending.text);
-		} finally {
-			addingItem = false;
-		}
+		try { await createItem(pending.text); }
+		finally { addingItem = false; }
 	}
 
 	async function deleteItem(itemId: string) {
 		const previousItems = items;
 		items = items.filter((i) => i.id !== itemId && i.parentId !== itemId);
 		const ok = await apiDeleteItem(backingId, itemId);
-		if (!ok) {
-			items = previousItems;
-			return;
-		}
+		if (!ok) { items = previousItems; return; }
 		onChanged?.();
 	}
 
@@ -549,15 +450,11 @@
 				: i
 		);
 		const ok = await patchItem(backingId, itemId, { skipped });
-		if (!ok) {
-			items = previousItems;
-			return;
-		}
+		if (!ok) { items = previousItems; return; }
 		onChanged?.();
 	}
 
 	async function snoozeItem(itemId: string, targetDate: string) {
-		// Optimistisk markér originalen som skipped + snoozed; kopien lever på et annet sjekkliste
 		const previousItems = items;
 		items = items.map((i) =>
 			i.id === itemId
@@ -569,16 +466,12 @@
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ targetDate })
 		});
-		if (!res.ok) {
-			items = previousItems;
-			return;
-		}
+		if (!res.ok) { items = previousItems; return; }
 		onChanged?.();
 	}
 
 	async function handleBreakdownSave(subtasks: string[]) {
 		if (!breakdownItem) return;
-
 		try {
 			const res = await fetch('/api/breakdown/save', {
 				method: 'POST',
@@ -589,11 +482,8 @@
 					breakdownPrompt: breakdownItem.text
 				})
 			});
-
 			if (!res.ok) throw new Error('Failed to save breakdown');
 			const data = (await res.json()) as { success: boolean; subtasks: ChecklistItem[] };
-
-			// Add subtasks to items
 			if (data.success) {
 				items = [...items, ...data.subtasks];
 				breakdownItem = null;
@@ -617,28 +507,18 @@
 		newSubItemTexts = { ...newSubItemTexts, [parentId]: '' };
 		try {
 			const created = await addItems(backingId, text, items.length, parentId) as ChecklistItem[] | null;
-			if (created) {
-				items = [...items, ...created];
-				onChanged?.();
-			}
-		} catch (err) {
-			console.error('Error adding subitem:', err);
-		}
+			if (created) { items = [...items, ...created]; onChanged?.(); }
+		} catch (err) { console.error('Error adding subitem:', err); }
 	}
 
-	function handleAddKey(e: KeyboardEvent) {
-		if (e.key === 'Enter') addItem();
-	}
+	function handleAddKey(e: KeyboardEvent) { if (e.key === 'Enter') addItem(); }
 
 	function startEditing(item: ChecklistItem) {
 		editingItemId = item.id;
 		editingText = item.text;
 	}
 
-	function cancelEdit() {
-		editingItemId = null;
-		editingText = '';
-	}
+	function cancelEdit() { editingItemId = null; editingText = ''; }
 
 	async function commitEdit() {
 		if (!editingItemId) return;
@@ -657,9 +537,7 @@
 		contextMenuRect = rect;
 	}
 
-	function handleItemToggle(item: ChecklistItemLike) {
-		toggleItem(item as ChecklistItem);
-	}
+	function handleItemToggle(item: ChecklistItemLike) { toggleItem(item as ChecklistItem); }
 
 	function handleEditCommit(_item: ChecklistItemLike, newText: string) {
 		editingText = newText;
@@ -671,27 +549,15 @@
 		void addSubItem(parentId);
 	}
 
-	$effect(() => {
-		editInputEl = activeEditInputRef;
-	});
+	$effect(() => { editInputEl = activeEditInputRef; });
 
-	function dismissPayoff() {
-		showPayoff = false;
-		payoffDismissed = true;
-	}
+	function dismissPayoff() { showPayoff = false; payoffDismissed = true; }
 
 	async function deleteChecklist() {
-		// Virtuell tom dag (ikke lagret) — bare lukk, ingenting å slette.
 		if (backingId) await fetch(`/api/checklists/${backingId}`, { method: 'DELETE' });
 		onDeleted?.();
 		onclose();
 	}
-
-	// Prosentring SVG
-	const R = 40;
-	const C = 2 * Math.PI * R;
-	const ringDash = $derived(pct * C);
-	const ringColor = $derived(allDone ? '#5fa080' : '#7c8ef5');
 </script>
 
 <!-- Overlay backdrop -->
@@ -709,27 +575,18 @@
 	role="dialog"
 	aria-modal="true"
 >
-	<!-- Header -->
-	<div class="cs-header">
-		<div class="cs-header-left">
-			{#if checklist.emoji && checklist.emoji !== '🗓️' && checklist.emoji !== '☑️'}
-				<span class="cs-header-emoji">{checklist.emoji}</span>
-			{/if}
-			<div>
-				<h2 class="cs-title">{displayTitle}</h2>
-				<p class="cs-subtitle">{done} av {total} fullført</p>
-			</div>
-		</div>
-		{#if weatherPeriods}
-			<div class="cs-header-weather">
-				<WeatherStrip periods={weatherPeriods} />
-			</div>
-		{/if}
-		<button class="cs-share-btn" onclick={() => (shareSheetOpen = true)} aria-label="Del" title="Del">
-			↗
-		</button>
-		<button class="cs-close-btn" onclick={onclose} aria-label="Lukk"><Icon name="close" size={14} /></button>
-	</div>
+	<!-- Header + Progress -->
+	<ChecklistSheetHeader
+		emoji={showEmoji ? checklist.emoji : ''}
+		{displayTitle}
+		{done}
+		{total}
+		{pct}
+		{ringColor}
+		{weatherPeriods}
+		{onclose}
+		onshare={() => (shareSheetOpen = true)}
+	/>
 
 	<ShareSheet
 		resourceType="checklist"
@@ -739,16 +596,7 @@
 		onClose={() => (shareSheetOpen = false)}
 	/>
 
-	<!-- Progress bar -->
-	<div class="cs-progress-track">
-		<div
-			class="cs-progress-fill"
-			style="width:{pct * 100}%; background:{ringColor}"
-		></div>
-	</div>
-
-	<!-- Sted-kontekst for dagen: «Sted: X» blir et banner (driver værmelding for stedet),
-	     ikke en avkryssbar rad. Langtrykk gir kontekstmeny (slett/rediger). -->
+	<!-- Location context banner -->
 	{#if locationItems.length > 0}
 		<div class="cs-location-bar">
 			{#each locationItems as loc (loc.id)}
@@ -769,7 +617,7 @@
 		</div>
 	{/if}
 
-	<!-- Snippet for én gruppe (enten en slot-rad med gjentakelser eller et enkelt punkt). -->
+	<!-- Snippet for one group -->
 	{#snippet renderGroup(group: GroupedChecklistEntry<ChecklistItem>)}
 		{#if group.type === 'group'}
 			<ChecklistGroupRow
@@ -885,59 +733,26 @@
 	</div>
 
 	<!-- Footer -->
-	<div class="cs-footer">
-		{#if isDayChecklist && onNavigateDay}
-			<div class="cs-day-nav">
-				<button class="cs-day-nav-btn" onclick={() => navigateDay(-1)} aria-label="Forrige dag">&lsaquo;</button>
-				<a class="cs-calendar-link" href={calendarHref}>Åpne i kalender</a>
-				<button class="cs-day-nav-btn" onclick={() => navigateDay(1)} aria-label="Neste dag">&rsaquo;</button>
-			</div>
-		{:else}
-			<a class="cs-calendar-link" href={calendarHref}>Åpne i kalender</a>
-		{/if}
-		<button class="cs-delete-btn" onclick={deleteChecklist}>Slett liste</button>
-	</div>
+	<ChecklistSheetFooter
+		{isDayChecklist}
+		{calendarHref}
+		hasNavigateDay={!!onNavigateDay}
+		onNavigatePrev={() => navigateDay(-1)}
+		onNavigateNext={() => navigateDay(1)}
+		onDelete={deleteChecklist}
+	/>
 </div>
 
 <!-- Payoff overlay -->
 {#if showPayoff}
-	<div
-		class="cs-payoff"
-		transition:fade={{ duration: 300 }}
-		onclick={dismissPayoff}
-		role="presentation"
-	>
-		<div class="cs-payoff-content" transition:scale={{ duration: 500, easing: elasticOut, start: 0.7 }}>
-			<!-- Animated ring -->
-			<div class="cs-payoff-ring-wrap">
-				<svg class="cs-payoff-ring" viewBox="0 0 100 100">
-					<circle cx="50" cy="50" r={R} fill="none" stroke="#1a2a1a" stroke-width="8"/>
-					<circle
-						cx="50" cy="50" r={R}
-						fill="none"
-						stroke="#5fa080"
-						stroke-width="8"
-						stroke-dasharray="{C} {C}"
-						stroke-linecap="round"
-						transform="rotate(-90 50 50)"
-						class="cs-payoff-ring-anim"
-					/>
-				</svg>
-				<div class="cs-payoff-ring-inner">
-					{#if checklist.emoji && checklist.emoji !== '🗓️' && checklist.emoji !== '☑️'}
-						<span class="cs-payoff-emoji">{checklist.emoji}</span>
-					{/if}
-				</div>
-			</div>
-
-			<h3 class="cs-payoff-title">Alt er klart!</h3>
-			<p class="cs-payoff-sub">{displayTitle}</p>
-			<p class="cs-payoff-cta">Trykk hvor som helst for å lukke</p>
-		</div>
-	</div>
+	<ChecklistPayoff
+		emoji={payoffEmoji}
+		{displayTitle}
+		ondismiss={dismissPayoff}
+	/>
 {/if}
 
-<!-- Kontekstmeny ved langtrykk -->
+<!-- Context menu (long press) -->
 <TaskContextMenu
 	open={contextMenuItem !== null}
 	anchor={contextMenuRect}
@@ -964,7 +779,7 @@
 	/>
 {/if}
 
-<!-- Velg sted ved tvetydig geokoding -->
+<!-- Location picker for ambiguous geocoding -->
 {#if pendingPlace}
 	<LocationPickerModal
 		placeName={pendingPlace.placeName}
@@ -996,117 +811,11 @@
 		display: flex;
 		flex-direction: column;
 		overflow: hidden;
-		/* Max width centering for tablet/desktop */
 		max-width: 520px;
 		margin: 0 auto;
 	}
 
-	/* ── Header ── */
-	.cs-header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding: 20px 20px 12px;
-		flex-shrink: 0;
-	}
-
-	.cs-header-left {
-		display: flex;
-		align-items: center;
-		gap: 12px;
-	}
-
-	.cs-header-emoji {
-		font-size: 1.8rem;
-		line-height: 1;
-	}
-
-	.cs-title {
-		font-size: 1rem;
-		font-weight: 700;
-		color: #eee;
-		margin: 0 0 2px;
-		letter-spacing: -0.01em;
-	}
-
-	.cs-subtitle {
-		font-size: 0.72rem;
-		color: #555;
-		margin: 0;
-	}
-
-	.cs-close-btn {
-		width: 32px;
-		height: 32px;
-		background: #1e1e1e;
-		border: 1px solid #2a2a2a;
-		border-radius: 50%;
-		color: #666;
-		font-size: 0.75rem;
-		cursor: pointer;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		flex-shrink: 0;
-		transition: color 0.12s, border-color 0.12s;
-	}
-	.cs-close-btn:hover { color: #ccc; border-color: #555; }
-
-	.cs-share-btn {
-		width: 32px;
-		height: 32px;
-		background: #1e1e1e;
-		border: 1px solid #2a2a2a;
-		border-radius: 50%;
-		color: #888;
-		font-size: 1rem;
-		cursor: pointer;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		flex-shrink: 0;
-		margin-right: 6px;
-		transition: color 0.12s, border-color 0.12s;
-	}
-	.cs-share-btn:hover { color: #ccc; border-color: #555; }
-
-	/* ── Progress bar ── */
-	.cs-progress-track {
-		height: 3px;
-		background: #1e1e1e;
-		flex-shrink: 0;
-		margin: 0 20px;
-		border-radius: 999px;
-		overflow: hidden;
-	}
-
-	.cs-progress-fill {
-		height: 100%;
-		border-radius: 999px;
-		transition: width 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-	}
-
-	/* ── Weather strip in header ── */
-	.cs-header-weather {
-		flex: 1;
-		display: flex;
-		justify-content: flex-end;
-		padding: 0 12px;
-		min-width: 0;
-	}
-
-	/* ── Items ── */
-	.cs-items {
-		flex: 1;
-		overflow-y: auto;
-		padding: 16px 20px 8px;
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-		-webkit-overflow-scrolling: touch;
-	}
-
-	/* ── Sted-kontekst-banner for dagen ── */
+	/* Location context banner */
 	.cs-location-bar {
 		display: flex;
 		flex-wrap: wrap;
@@ -1137,18 +846,20 @@
 		background: rgba(95, 160, 128, 0.18);
 	}
 
-	.cs-location-pin {
-		font-size: 0.85rem;
-		line-height: 1;
+	.cs-location-pin { font-size: 0.85rem; line-height: 1; }
+	.cs-location-name { font-size: 0.82rem; font-weight: 600; letter-spacing: -0.01em; }
+
+	/* Items list */
+	.cs-items {
+		flex: 1;
+		overflow-y: auto;
+		padding: 16px 20px 8px;
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		-webkit-overflow-scrolling: touch;
 	}
 
-	.cs-location-name {
-		font-size: 0.82rem;
-		font-weight: 600;
-		letter-spacing: -0.01em;
-	}
-
-	/* ── Skillelinje mellom tidfestede og øvrige oppgaver ── */
 	.cs-divider {
 		height: 1px;
 		background: #1e1e1e;
@@ -1156,7 +867,7 @@
 		flex-shrink: 0;
 	}
 
-	/* ── «Hoppet over»-seksjon ── */
+	/* Skipped section */
 	.cs-skipped-section {
 		display: flex;
 		flex-direction: column;
@@ -1188,18 +899,10 @@
 		transition: transform 0.2s;
 		flex-shrink: 0;
 	}
-	.cs-skipped-caret.cs-caret-expanded {
-		transform: rotate(90deg);
-	}
+	.cs-skipped-caret.cs-caret-expanded { transform: rotate(90deg); }
 
-	.cs-skipped-label {
-		flex: 1;
-	}
-
-	.cs-skipped-count {
-		color: #555;
-		font-variant-numeric: tabular-nums;
-	}
+	.cs-skipped-label { flex: 1; }
+	.cs-skipped-count { color: #555; font-variant-numeric: tabular-nums; }
 
 	.cs-skipped-items {
 		display: flex;
@@ -1207,7 +910,7 @@
 		gap: 4px;
 	}
 
-	/* ── Add row ── */
+	/* Add row */
 	.cs-add-row {
 		display: flex;
 		gap: 8px;
@@ -1247,161 +950,4 @@
 	}
 	.cs-add-btn:hover:not(:disabled) { background: #3a4adf; }
 	.cs-add-btn:disabled { opacity: 0.35; cursor: not-allowed; background: #2a2a2a; border-color: #2a2a2a; }
-
-	/* ── Footer ── */
-	.cs-footer {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 12px;
-		padding: 8px 20px 20px;
-		flex-shrink: 0;
-	}
-
-	.cs-calendar-link {
-		font-size: 0.74rem;
-		color: #8ea0ff;
-		text-decoration: none;
-		border: 1px solid #2f365f;
-		background: #151821;
-		padding: 6px 10px;
-		border-radius: 8px;
-	}
-
-	.cs-calendar-link:hover {
-		color: #c7d0ff;
-		border-color: #4653a6;
-	}
-
-	.cs-day-nav {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-	}
-
-	.cs-day-nav-btn {
-		width: 30px;
-		height: 30px;
-		border-radius: 8px;
-		border: 1px solid #2f365f;
-		background: #151821;
-		color: #8ea0ff;
-		font-size: 1.1rem;
-		cursor: pointer;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		transition: color 0.12s, border-color 0.12s;
-		padding: 0;
-		line-height: 1;
-	}
-
-	.cs-day-nav-btn:hover {
-		color: #c7d0ff;
-		border-color: #4653a6;
-	}
-
-	.cs-delete-btn {
-		background: transparent;
-		border: none;
-		color: #555;
-		font-size: 0.72rem;
-		cursor: pointer;
-		padding: 4px 0;
-		transition: color 0.12s;
-		text-decoration: underline;
-		text-underline-offset: 3px;
-	}
-	.cs-delete-btn:hover { color: #e07070; }
-
-	/* ── Payoff ── */
-	.cs-payoff {
-		position: fixed;
-		inset: 0;
-		background: rgba(0, 10, 0, 0.85);
-		z-index: 300;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		cursor: pointer;
-	}
-
-	.cs-payoff-content {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 16px;
-		text-align: center;
-		padding: 40px 32px;
-	}
-
-	.cs-payoff-ring-wrap {
-		position: relative;
-		width: 120px;
-		height: 120px;
-	}
-
-	.cs-payoff-ring {
-		width: 100%;
-		height: 100%;
-		display: block;
-	}
-
-	.cs-payoff-ring-anim {
-		stroke-dashoffset: 0;
-		animation: payoffDraw 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
-	}
-
-	@keyframes payoffDraw {
-		from { stroke-dasharray: 0 251.33; }
-		to { stroke-dasharray: 251.33 0; }
-	}
-
-	.cs-payoff-ring-inner {
-		position: absolute;
-		inset: 0;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.cs-payoff-emoji {
-		font-size: 2.5rem;
-		animation: payoffBounce 0.6s 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
-	}
-
-	@keyframes payoffBounce {
-		from { transform: scale(0.4); opacity: 0; }
-		to { transform: scale(1); opacity: 1; }
-	}
-
-	.cs-payoff-title {
-		font-size: 1.5rem;
-		font-weight: 700;
-		color: #eee;
-		letter-spacing: -0.02em;
-		margin: 0;
-		animation: payoffFadeUp 0.5s 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
-	}
-
-	.cs-payoff-sub {
-		font-size: 0.85rem;
-		color: #888;
-		margin: 0;
-		animation: payoffFadeUp 0.5s 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
-	}
-
-	.cs-payoff-cta {
-		font-size: 0.7rem;
-		color: #444;
-		margin: 8px 0 0;
-		animation: payoffFadeUp 0.5s 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
-	}
-
-	@keyframes payoffFadeUp {
-		from { opacity: 0; transform: translateY(12px); }
-		to { opacity: 1; transform: translateY(0); }
-	}
-
-
 </style>
