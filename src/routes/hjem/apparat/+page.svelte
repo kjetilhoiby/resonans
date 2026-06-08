@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { PageData } from './$types';
 	import { enhance } from '$app/forms';
-	import { AppPage, PageHeader } from '$lib/components/ui';
+	import { AppPage, PageHeader, PageSection } from '$lib/components/ui';
 
 	let { data }: { data: PageData } = $props();
 
@@ -24,6 +24,7 @@
 </svelte:head>
 
 <AppPage>
+<PageSection>
 <PageHeader title="Apparat" backHref="/hjem" />
 <div class="apparat-content">
 	<h1>{data.appliance}</h1>
@@ -64,6 +65,7 @@
 		<button type="submit">Oppdater</button>
 	</form>
 </div>
+</PageSection>
 </AppPage>
 
 <style>

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, Button, Checkbox, Input, PageHeader, Select } from '$lib/components/ui';
+	import { AppPage, Button, Checkbox, Input, PageHeader, PageSection, Select } from '$lib/components/ui';
 	import { onMount } from 'svelte';
 	import { CATEGORIES } from '$lib/integrations/transaction-categories-client';
 	import type { CategoryId } from '$lib/integrations/transaction-categories-client';
@@ -134,6 +134,7 @@
 </script>
 
 <AppPage className="rules-page">
+	<PageSection>
 	<PageHeader
 		title="Transaksjonsklassifisering"
 		titleHref="/settings/classification"
@@ -272,6 +273,7 @@
 			</section>
 		{/if}
 	</main>
+	</PageSection>
 </AppPage>
 
 <style>

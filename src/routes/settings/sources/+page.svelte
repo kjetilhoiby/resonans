@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, Button, Input, PageHeader, Select } from '$lib/components/ui';
+	import { AppPage, Button, Input, PageHeader, PageSection, Select } from '$lib/components/ui';
 	import {
 		WithingsSourceCard,
 		Sparebank1SourceCard,
@@ -57,6 +57,7 @@
 </script>
 
 <AppPage className="sources-page">
+	<PageSection>
 	<PageHeader
 		title="Kilder"
 		subtitle={`${connectedCount}/4 tilkoblet`}
@@ -101,6 +102,7 @@
 		<GoogleSheetsSourceCard onConnectedChange={(c) => googleSheetsConnected = c} />
 		<StravaSourceCard />
 	</div>
+	</PageSection>
 </AppPage>
 
 <style>

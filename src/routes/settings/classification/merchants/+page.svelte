@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, PageHeader } from '$lib/components/ui';
+	import { AppPage, PageHeader, PageSection } from '$lib/components/ui';
 	import MerchantTable from '$lib/components/settings/MerchantTable.svelte';
 	import MerchantEditForm from '$lib/components/settings/MerchantEditForm.svelte';
 	import MerchantAnalysisPanel from '$lib/components/settings/MerchantAnalysisPanel.svelte';
@@ -238,6 +238,7 @@
 </script>
 
 <AppPage className="merchants-page">
+	<PageSection>
 	<PageHeader
 		title="AI Merchant Taxonomy"
 		titleHref="/settings/classification"
@@ -264,6 +265,7 @@
 			onBulkOverride={() => showBulkOverrideModal = true}
 		/>
 	</main>
+	</PageSection>
 </AppPage>
 
 <MerchantEditForm

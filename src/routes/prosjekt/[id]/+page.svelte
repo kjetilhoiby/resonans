@@ -2,7 +2,7 @@
 	import type { PageData } from './$types';
 	import ProjectCard from '$lib/components/composed/ProjectCard.svelte';
 	import { HOME_PROJECT_TYPES, HOME_ROOMS } from '$lib/domains/home';
-	import { AppPage, PageHeader } from '$lib/components/ui';
+	import { AppPage, PageHeader, PageSection } from '$lib/components/ui';
 
 	let { data }: { data: PageData } = $props();
 
@@ -31,6 +31,7 @@
 </svelte:head>
 
 <AppPage>
+<PageSection>
 <PageHeader title={project.title ?? 'Prosjekt'} backHref="/prosjekter" />
 <div class="project-content">
 	<header>
@@ -114,6 +115,7 @@
 		{/if}
 	</section>
 </div>
+</PageSection>
 </AppPage>
 
 <style>

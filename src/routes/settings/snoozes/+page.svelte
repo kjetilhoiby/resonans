@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { PageData } from './$types';
 	import { enhance } from '$app/forms';
-	import { AppPage, PageHeader } from '$lib/components/ui';
+	import { AppPage, PageHeader, PageSection } from '$lib/components/ui';
 
 	let { data }: { data: PageData } = $props();
 
@@ -26,6 +26,7 @@
 </svelte:head>
 
 <AppPage>
+<PageSection>
 <PageHeader title="Snoozes" backHref="/settings" />
 <main>
 	<p class="lead">
@@ -102,6 +103,7 @@
 		{/if}
 	{/if}
 </main>
+</PageSection>
 </AppPage>
 
 <style>

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, Button, PageHeader, SectionCard, Select, TabButton } from '$lib/components/ui';
+	import { AppPage, Button, PageHeader, PageSection, SectionCard, Select, TabButton } from '$lib/components/ui';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -319,6 +319,7 @@
 </svelte:head>
 
 <AppPage className="economics-page">
+	<PageSection>
 	<PageHeader title="💰 Økonomi" titleHref="/" titleLabel="Tilbake til forsiden" />
 
 	{#if loadingAccounts}
@@ -531,6 +532,7 @@
 			</div>
 		{/if}
 	{/if}
+	</PageSection>
 </AppPage>
 
 <style>

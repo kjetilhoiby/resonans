@@ -459,6 +459,7 @@
 		--tp-accent-bg: hsl(var(--theme-hue) 40% 22%);
 		--tp-accent-bg-strong: hsl(var(--theme-hue) 42% 28%);
 		min-height: 100dvh;
+		padding: var(--page-pt) var(--page-px) var(--page-pb);
 		background:
 			radial-gradient(120% 90% at 50% -10%, hsl(var(--theme-hue) 72% 60% / 0.12), transparent 52%),
 			linear-gradient(180deg, var(--tp-bg-1) 0%, var(--tp-bg-0) 100%);

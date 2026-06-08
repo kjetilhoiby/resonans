@@ -114,7 +114,7 @@
 		padding: 8px 14px 4px;
 		background: #171717;
 		border-radius: 18px;
-		margin: 0 12px;
+		margin: 0;
 		position: relative;
 	}
 

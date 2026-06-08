@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
-	import { AppPage, PageHeader } from '$lib/components/ui';
+	import { AppPage, PageHeader, PageSection } from '$lib/components/ui';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -93,6 +93,7 @@
 </script>
 
 <AppPage>
+	<PageSection>
 	<PageHeader title="Drømmer" subtitle="Tilbakeblikk og retning, syntetisert" titleHref="/" />
 
 	<div class="grid">
@@ -223,6 +224,7 @@
 			</ul>
 		</details>
 	{/if}
+	</PageSection>
 </AppPage>
 
 <style>

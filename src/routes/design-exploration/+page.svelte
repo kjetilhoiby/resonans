@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage } from '$lib/components/ui';
+	import { AppPage, PageSection } from '$lib/components/ui';
 	import { fade, fly, slide, scale } from 'svelte/transition';
 	import { cubicOut, elasticOut } from 'svelte/easing';
 
@@ -639,6 +639,7 @@
 </svelte:head>
 
 <AppPage>
+<PageSection>
 
 <!-- Force theme on html element -->
 <svelte:element this={'div'}
@@ -3548,6 +3549,7 @@
 
 </svelte:element>
 
+</PageSection>
 </AppPage>
 
 <style>

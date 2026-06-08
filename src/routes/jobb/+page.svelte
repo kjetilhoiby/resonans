@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { AppPage, PageHeader } from '$lib/components/ui';
+	import { AppPage, PageHeader, PageSection } from '$lib/components/ui';
 	import ProjectCard from '$lib/components/composed/ProjectCard.svelte';
 	import TaskTitle from '$lib/components/ui/TaskTitle.svelte';
 	import FlowSheet from '$lib/components/flows/FlowSheet.svelte';
@@ -74,6 +74,7 @@
 </svelte:head>
 
 <AppPage>
+	<PageSection>
 	<PageHeader title="Jobb" subtitle="Prosjekter, oppgaver og fokus" titleHref="/">
 		{#snippet actions()}
 			<button class="focus-start-btn" onclick={() => focusFlowOpen = true}>
@@ -255,6 +256,7 @@
 		</p>
 		<a href="/settings/sources" class="email-link">Konfigurer i innstillinger</a>
 	</section>
+	</PageSection>
 </AppPage>
 
 {#if focusFlowOpen}

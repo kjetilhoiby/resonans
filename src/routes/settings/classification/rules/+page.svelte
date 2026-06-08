@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, Button, Input, PageHeader } from '$lib/components/ui';
+	import { AppPage, Button, Input, PageHeader, PageSection } from '$lib/components/ui';
 	import { onMount } from 'svelte';
 
 	interface TaskRule {
@@ -125,6 +125,7 @@
 </script>
 
 <AppPage className="rules-page">
+	<PageSection>
 	<PageHeader
 		title="Oppgaveklassifisering"
 		titleHref="/settings/classification"
@@ -251,6 +252,7 @@
 			</section>
 		{/if}
 	</main>
+	</PageSection>
 </AppPage>
 
 <style>

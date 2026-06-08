@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, PageHeader, IconButton, Button, Select } from '$lib/components/ui';
+	import { AppPage, PageHeader, IconButton, Button, Select, PageSection } from '$lib/components/ui';
 	import ScreenTimeCard from '$lib/components/composed/ScreenTimeCard.svelte';
 	import { invalidateAll } from '$app/navigation';
 	import type { PageData } from './$types';
@@ -173,6 +173,7 @@
 </svelte:head>
 
 <AppPage>
+	<PageSection>
 	<PageHeader title="Skjermtid" titleHref="/">
 		{#snippet actions()}
 			<IconButton href="/samtaler" icon="chat" variant="nav" ariaLabel="Chat" />
@@ -371,6 +372,7 @@
 			</button>
 		</section>
 	{/if}
+	</PageSection>
 </AppPage>
 
 <style>

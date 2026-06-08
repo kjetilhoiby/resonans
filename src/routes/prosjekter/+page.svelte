@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { AppPage } from '$lib/components/ui';
+	import { AppPage, PageSection } from '$lib/components/ui';
 	import ProjectCard from '$lib/components/composed/ProjectCard.svelte';
 	import type { PageData } from './$types';
 
@@ -37,6 +37,7 @@
 </svelte:head>
 
 <AppPage>
+	<PageSection>
 	<header class="page-header">
 		<h1>Prosjekter</h1>
 		<p class="subtitle">{data.projects.length} prosjekt{data.projects.length === 1 ? '' : 'er'}</p>
@@ -93,6 +94,7 @@
 			{/each}
 		</div>
 	{/if}
+	</PageSection>
 </AppPage>
 
 <style>

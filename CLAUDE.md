@@ -40,7 +40,7 @@ Appen har et designsystem med levende komponentsamling på `/design`. Alle UI-en
 
 **Regler:**
 - Appen er **alltid mørk**. `AppPage` (default `theme="dark"`) er autoritativ kilde for CSS-variabler (`--bg-primary`, `--text-primary`, `--accent-primary` osv.). Bruk disse — aldri hardkodede farger.
-- Hver side: `<AppPage>` → `<PageHeader title="..." titleHref="/" />` → innhold.
+- Hver side: `<AppPage>` → `<PageSection>` → `<PageHeader title="..." titleHref="/" />` → innhold. `<PageSection>` gir horisontal padding (`--page-px`). `<PageSection bleed>` for kant-til-kant innhold (bakgrunner, gradienter).
 - Ingen lokal `:global()`-override for layout — fiks felleskomponenten i stedet.
 - Ingen lokal bottom-nav/tab-bar. Navigasjon via `PageHeader`-actions og `titleHref="/"`.
 - Layouts med faner: shell i `+layout.svelte`, innhold per `+page.svelte`.

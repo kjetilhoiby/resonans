@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, PageHeader } from '$lib/components/ui';
+	import { AppPage, PageHeader, PageSection } from '$lib/components/ui';
 	import { goto } from '$app/navigation';
 	import type { PageData } from './$types';
 
@@ -78,6 +78,7 @@
 </script>
 
 <AppPage>
+	<PageSection>
 	<PageHeader title="Lag treningsprogram" subtitle="LLM-generert hybridprogram" backHref="/treningsprogram" />
 
 	<form class="form" onsubmit={handleSubmit}>
@@ -202,6 +203,7 @@
 			<a class="cancel" href="/treningsprogram">Avbryt</a>
 		</div>
 	</form>
+	</PageSection>
 </AppPage>
 
 <style>

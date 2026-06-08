@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { afterNavigate, goto, invalidateAll } from '$app/navigation';
-	import { AppPage, ChipStrip, PullToRefresh } from '$lib/components/ui';
+	import { AppPage, ChipStrip, PageSection, PullToRefresh } from '$lib/components/ui';
 	import { PageHeader } from '$lib/components/ui';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import FlowSheet from '$lib/components/flows/FlowSheet.svelte';
@@ -441,7 +441,8 @@
 	<title>Ukeplan</title>
 </svelte:head>
 
-<AppPage bleed>
+<AppPage>
+	<PageSection bleed>
 	<PullToRefresh excludeSelectors=".wp-header-actions, .wp-calendar-wrap">
 	<div class="week-plan-page">
 	<PageHeader title={`Uke ${data.week.week}`} titleHref="/">
@@ -518,6 +519,7 @@
 
 	</div>
 	</PullToRefresh>
+	</PageSection>
 </AppPage>
 
 {#if dayCloseFlowOpen}
@@ -587,7 +589,7 @@
 	.week-plan-page {
 		min-height: 100vh;
 		width: 100%;
-		padding: 0 0 110px;
+		padding: var(--page-pt) var(--page-px) 110px;
 		display: flex;
 		flex-direction: column;
 		gap: 14px;
@@ -603,7 +605,7 @@
 	.wp-month-btn { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.02em; border: 1px solid #1e2030; color: #8a99c4; }
 	.wp-month-btn:hover { color: #bac6f9; background: #12162a; border-color: #2e3660; }
 	.wp-week-picker-input { position: absolute; opacity: 0; pointer-events: none; width: 0; height: 0; top: 100%; right: 0; }
-	:global(.wp-action-strip) { margin: 0 -20px; padding: 0 20px; }
+	:global(.wp-action-strip) { margin: 0 calc(-1 * var(--page-px)); padding: 0 var(--page-px); }
 	.wp-action-pill { display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; background: hsl(228 19% 11%); border: 1px solid hsl(228 16% 18%); border-radius: 999px; padding: 8px 14px; cursor: pointer; font: inherit; color: hsl(228 22% 80%); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.02em; white-space: nowrap; touch-action: manipulation; transition: background 0.15s, border-color 0.15s, transform 0.15s, box-shadow 0.15s; }
 	.wp-action-pill:hover:not(:disabled) { background: hsl(228 22% 14%); border-color: hsl(228 28% 34%); transform: translateY(-1px); }
 	.wp-action-pill:disabled { opacity: 0.5; cursor: default; }
@@ -615,5 +617,4 @@
 	.wp-action-pill--day:hover:not(:disabled) { border-color: rgba(52, 211, 153, 0.65); background: rgba(52, 211, 153, 0.06); box-shadow: 0 0 14px rgba(52, 211, 153, 0.10); }
 	.wp-action-pill--util { border-color: rgba(251, 191, 36, 0.28); }
 	.wp-action-pill--util:hover:not(:disabled) { border-color: rgba(251, 191, 36, 0.6); background: rgba(251, 191, 36, 0.06); box-shadow: 0 0 14px rgba(251, 191, 36, 0.10); }
-	@media (max-width: 640px) { .week-plan-page { padding-left: 0; padding-right: 0; } }
 </style>

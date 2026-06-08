@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, PageHeader } from '$lib/components/ui';
+	import { AppPage, PageHeader, PageSection } from '$lib/components/ui';
 	import ReadinessStrip from '$lib/components/composed/ReadinessStrip.svelte';
 	import { goto, invalidateAll } from '$app/navigation';
 	import type { PageData } from './$types';
@@ -111,6 +111,7 @@
 </script>
 
 <AppPage>
+	<PageSection>
 	<PageHeader title={program.name} subtitle={program.goal} backHref="/treningsprogram" />
 
 	<header class="program-meta">
@@ -264,6 +265,7 @@
 			</section>
 		{/each}
 	</div>
+	</PageSection>
 </AppPage>
 
 <style>

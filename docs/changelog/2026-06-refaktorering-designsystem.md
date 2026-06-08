@@ -74,13 +74,9 @@ Nye sub-komponenter og moduler opprettet i:
 - **Tittel-alignment**: 9 av 10 hovedsider har piksel-perfekt tittelposisjon (left=16, top=20). Tema har emoji-offset (forventet).
 - **AppPage forenklet**: Fjernet `surface="transparent"`, `flush`, `bleed`. Ny `bg` prop for bakgrunnsfarge med `transition: background 0.3s ease`. `--page-px`/`--page-pt`/`--page-pb`/`--page-gap` gir konsistent grid.
 - **Jobb-siden**: Migrert fra custom header til PageHeader.
+- **PageSection-arkitektur**: AppPage gir nå null horisontal padding. All innhold wrapes i `<PageSection>` (som gir `padding: 0 var(--page-px)`) eller `<PageSection bleed>` (ingen padding, for kant-til-kant innhold). Fjernet `.full-bleed` negative-margin hack. Alle 42 sider migrert. Ukeplan bruker `<PageSection bleed>`.
 
 ## Gjenstår (layout-polish, neste session)
-
-### Bakgrunn-håndtering for sider med egne bakgrunner
-Ukeplan (gradient), tema/helse (hue-tint), og hjem (HomeScreen) har egne bakgrunnsfarger som ikke passer inn i AppPage sin `--page-bg` ennå. Mønsteret `bg` + `full-bleed` er identifisert men ikke ferdig implementert. Problemet: bakgrunnen må dekke hele viewporten kant-til-kant, mens tittelen bruker `--page-px` innrykk.
-
-Foreslått løsning: PageHeader sitter i AppPage sin padding. Innhold under bruker `.full-bleed` med intern `padding: var(--page-px)`. Trenger testing.
 
 ### Hjem-sida: padding-inkonsistens
 Widgets og temaer har annen horisontal padding enn tittelen. Ikonknappene i headeren er små og henger. HomeScreen sine soner har egen padding som ikke matcher `--page-px`.
@@ -95,7 +91,7 @@ Design-guiden (`/design`) bruker fortsatt ScreenTitle direkte. Bør oppdateres t
 
 - **Én tittelkomponent**: PageHeader håndterer alt — vanlig tittel, morph-animasjon, emoji, subtitle, actions. MorphTitle og ScreenTitle kan deprekeres.
 - **`bg` prop > `surface`**: AppPage setter bakgrunn via `bg` prop som også synker til `document.body`. Transition på 0.3s gir smooth sidebytte.
-- **Ingen `flush`/`bleed`**: Alle sider får `--page-px` padding. Innhold som trenger kant-til-kant bruker `.full-bleed` utility-klassen.
+- **PageSection > `.full-bleed`**: AppPage har null horisontal padding. `<PageSection>` gir `--page-px` padding, `<PageSection bleed>` gir kant-til-kant. Ingen negative-margin hack.
 - **`setContext`/`getContext`** for store komponenter (HomeScreen) — getter/setter bridge-pattern for reaktivitet gjennom context.
 - **Props for enklere komponenter** (ThemePage tabs, HealthDashboard sections) — callbacks for mutasjoner.
 

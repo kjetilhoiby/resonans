@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage } from '$lib/components/ui';
+	import { AppPage, PageSection } from '$lib/components/ui';
 
 	let { data, form } = $props();
 </script>
@@ -9,48 +9,50 @@
 </svelte:head>
 
 <AppPage>
-	<div class="auth-shell">
-		<div class="auth-card">
-		<p class="eyebrow">Invite-only</p>
-		<h1>Logg inn i Resonans</h1>
-		<p>
-			Bruk Google-kontoen din for å få tilgang. Bare inviterte e-postadresser slipper inn.
-		</p>
+	<PageSection>
+		<div class="auth-shell">
+			<div class="auth-card">
+			<p class="eyebrow">Invite-only</p>
+			<h1>Logg inn i Resonans</h1>
+			<p>
+				Bruk Google-kontoen din for å få tilgang. Bare inviterte e-postadresser slipper inn.
+			</p>
 
-		{#if data.errorMessage}
-			<p class="auth-error">{data.errorMessage}</p>
-		{/if}
+			{#if data.errorMessage}
+				<p class="auth-error">{data.errorMessage}</p>
+			{/if}
 
-		<form method="POST" action="/auth/signin/google">
-			<input type="hidden" name="callbackUrl" value={data.next} />
-			<button class="auth-submit" type="submit">Fortsett med Google</button>
-		</form>
-
-		{#if data.isPreview}
-			<div class="auth-divider"><span>eller</span></div>
-
-			<form method="POST" action="?/previewLogin">
-				<input type="hidden" name="next" value={data.next} />
-				<p class="eyebrow">Preview-tilgang</p>
-
-				{#if form?.previewError}
-					<p class="auth-error">{form.previewError}</p>
-				{/if}
-
-				<input
-					class="auth-password-input"
-					type="password"
-					name="password"
-					placeholder="Passord"
-					autocomplete="current-password"
-				/>
-				<button class="auth-submit auth-submit--preview" type="submit">
-					Logg inn med passord
-				</button>
+			<form method="POST" action="/auth/signin/google">
+				<input type="hidden" name="callbackUrl" value={data.next} />
+				<button class="auth-submit" type="submit">Fortsett med Google</button>
 			</form>
-		{/if}
+
+			{#if data.isPreview}
+				<div class="auth-divider"><span>eller</span></div>
+
+				<form method="POST" action="?/previewLogin">
+					<input type="hidden" name="next" value={data.next} />
+					<p class="eyebrow">Preview-tilgang</p>
+
+					{#if form?.previewError}
+						<p class="auth-error">{form.previewError}</p>
+					{/if}
+
+					<input
+						class="auth-password-input"
+						type="password"
+						name="password"
+						placeholder="Passord"
+						autocomplete="current-password"
+					/>
+					<button class="auth-submit auth-submit--preview" type="submit">
+						Logg inn med passord
+					</button>
+				</form>
+			{/if}
+			</div>
 		</div>
-	</div>
+	</PageSection>
 </AppPage>
 
 <style>

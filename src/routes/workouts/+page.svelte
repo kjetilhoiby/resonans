@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, PageHeader } from '$lib/components/ui';
+	import { AppPage, PageHeader, PageSection } from '$lib/components/ui';
 	import RunningProgressLayerCake from '$lib/components/charts/RunningProgressLayerCake.svelte';
 	import WeightProgressLayerCake from '$lib/components/charts/WeightProgressLayerCake.svelte';
 	
@@ -7,38 +7,40 @@
 </script>
 
 <AppPage>
-	<PageHeader title="Treningsøkter" subtitle="Progress over tid" backHref="/" />
+	<PageSection>
+		<PageHeader title="Treningsøkter" subtitle="Progress over tid" backHref="/" />
 
-	<div class="workouts-page">
-		<div class="chart-controls">
-			<div class="mode-toggle">
-				<button
-					class="btn-chip"
-					class:active={chartMode === 'comparison'}
-					onclick={() => chartMode = 'comparison'}
-				>
-					2-års sammenligning
-				</button>
-				<button
-					class="btn-chip"
-					class:active={chartMode === 'historical'}
-					onclick={() => chartMode = 'historical'}
-				>
-					Historisk oversikt (5 år)
-				</button>
+		<div class="workouts-page">
+			<div class="chart-controls">
+				<div class="mode-toggle">
+					<button
+						class="btn-chip"
+						class:active={chartMode === 'comparison'}
+						onclick={() => chartMode = 'comparison'}
+					>
+						2-års sammenligning
+					</button>
+					<button
+						class="btn-chip"
+						class:active={chartMode === 'historical'}
+						onclick={() => chartMode = 'historical'}
+					>
+						Historisk oversikt (5 år)
+					</button>
+				</div>
 			</div>
-		</div>
 
-		<div class="charts">
-			<RunningProgressLayerCake mode={chartMode} />
-			<WeightProgressLayerCake mode={chartMode} />
-		</div>
+			<div class="charts">
+				<RunningProgressLayerCake mode={chartMode} />
+				<WeightProgressLayerCake mode={chartMode} />
+			</div>
 
-		<!-- Future: Add more charts -->
-		<!-- <CyclingProgress /> -->
-		<!-- <WorkoutCalendar /> -->
-		<!-- <PersonalRecords /> -->
-	</div>
+			<!-- Future: Add more charts -->
+			<!-- <CyclingProgress /> -->
+			<!-- <WorkoutCalendar /> -->
+			<!-- <PersonalRecords /> -->
+		</div>
+	</PageSection>
 </AppPage>
 
 <style>

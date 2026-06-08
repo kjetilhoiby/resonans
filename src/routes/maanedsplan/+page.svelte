@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
-	import { AppPage } from '$lib/components/ui';
+	import { AppPage, PageSection } from '$lib/components/ui';
 	import FlowSheet from '$lib/components/flows/FlowSheet.svelte';
 	import { FLOWS } from '$lib/flows/registry';
 	import type { FlowContext } from '$lib/flows/types';
@@ -409,6 +409,7 @@
 </svelte:head>
 
 <AppPage>
+	<PageSection>
 	<div class="mp-page">
 
 	<MonthHeader
@@ -470,6 +471,7 @@
 	<LongTermGoals goals={data.longTermGoals} />
 
 	</div>
+	</PageSection>
 </AppPage>
 
 <FlowSheet

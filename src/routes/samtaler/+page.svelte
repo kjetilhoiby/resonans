@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { AppPage, PageHeader } from '$lib/components/ui';
+	import { AppPage, PageHeader, PageSection } from '$lib/components/ui';
 	import ChatInput from '$lib/components/ui/ChatInput.svelte';
 	import ChatMessages from '$lib/components/ui/ChatMessages.svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
@@ -229,6 +229,7 @@
 {#if isListView}
 	<!-- ══ LISTE-VIEW ══════════════════════════════════════════════════════════ -->
 	<AppPage className="list-page">
+		<PageSection>
 		<PageHeader title="Samtaler" titleHref="/">
 			{#snippet actions()}
 				<button class="lp-new-btn" onclick={createConversation} disabled={creatingConversation}>
@@ -315,11 +316,13 @@
 				{/if}
 			{/if}
 		</div>
+		</PageSection>
 	</AppPage>
 
 {:else}
 	<!-- ══ CHAT-VIEW ═══════════════════════════════════════════════════════════ -->
 	<AppPage className="chat-page">
+		<PageSection>
 		<PageHeader title={conversation?.title ?? (data.weightContext ? 'Vektutvikling' : 'Samtale')} subtitle={formattedDate} titleHref="/samtaler">
 			{#snippet actions()}
 				{#if conversation?.linkedTheme}
@@ -355,6 +358,7 @@
 				<ChatInput placeholder="Skriv videre i samtalen…" streaming={chat.loading} onStop={stopChat} initialValue={inputDraft} onsubmit={(t) => chat.send(t)} />
 			{/key}
 		</div>
+		</PageSection>
 	</AppPage>
 {/if}
 

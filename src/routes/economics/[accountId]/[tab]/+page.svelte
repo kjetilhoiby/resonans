@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, Button, PageHeader, SectionCard } from '$lib/components/ui';
+	import { AppPage, Button, PageHeader, PageSection, SectionCard } from '$lib/components/ui';
 	import { goto } from '$app/navigation';
 	import AccountPicker from '$lib/components/economics/AccountPicker.svelte';
 	import EconomicsTabs from '$lib/components/economics/EconomicsTabs.svelte';
@@ -60,6 +60,7 @@
 </svelte:head>
 
 <AppPage className="economics-tab-page">
+	<PageSection>
 	<PageHeader title="💰 Økonomi" titleHref="/" titleLabel="Tilbake til forsiden" />
 
 	{#if econ.loadingAccounts}
@@ -242,6 +243,7 @@
 			</div>
 		{/if}
 	{/if}
+	</PageSection>
 </AppPage>
 
 <style>

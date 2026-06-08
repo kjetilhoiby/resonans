@@ -51,7 +51,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: var(--page-gap);
-		padding: var(--page-pt) var(--page-px) var(--page-pb);
+		padding: 0;
 		color: var(--text-primary);
 		background: var(--page-bg);
 		transition: background 0.3s ease;
@@ -119,9 +119,4 @@
 	.app-page.width-content { max-width: 760px; margin: 0 auto; }
 	.app-page.width-narrow { max-width: 560px; margin: 0 auto; }
 
-	/* Full-bleed utility: barn som trenger kant-til-kant */
-	.app-page :global(.full-bleed) {
-		margin-left: calc(-1 * var(--page-px));
-		margin-right: calc(-1 * var(--page-px));
-	}
 </style>

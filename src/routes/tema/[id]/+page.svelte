@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, PullToRefresh } from '$lib/components/ui';
+	import { AppPage, PageSection, PullToRefresh } from '$lib/components/ui';
 	import ThemePage from '$lib/components/domain/ThemePage.svelte';
 	import type { PageData } from './$types';
 
@@ -13,6 +13,7 @@
 </script>
 
 <AppPage>
+	<PageSection bleed>
 	<PullToRefresh onRefresh={refreshTheme}>
 	{#if data.theme}
 	<!-- Key på tema-id: /tema/[id] er én rute, så SvelteKit gjenbruker ellers
@@ -40,4 +41,5 @@
 	{/key}
 	{/if}
 	</PullToRefresh>
+	</PageSection>
 </AppPage>

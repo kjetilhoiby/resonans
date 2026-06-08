@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, PageHeader } from '$lib/components/ui';
+	import { AppPage, PageHeader, PageSection } from '$lib/components/ui';
 	import TriageCard from '$lib/components/composed/TriageCard.svelte';
 	import ChatInput from '$lib/components/ui/ChatInput.svelte';
 	import { streamProxyChat } from '$lib/client/proxy-chat-stream';
@@ -165,6 +165,7 @@
 </script>
 
 <AppPage>
+	<PageSection>
 	<PageHeader title="Lønnsrapport" backHref="/economics" />
 
 	{#if !report}
@@ -241,6 +242,7 @@
 			{/if}
 		</div>
 	{/if}
+	</PageSection>
 </AppPage>
 
 <style>

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { PageData } from './$types';
-	import { AppPage, PageHeader } from '$lib/components/ui';
+	import { AppPage, PageHeader, PageSection } from '$lib/components/ui';
 
 	let { data }: { data: PageData } = $props();
 
@@ -64,6 +64,7 @@
 </svelte:head>
 
 <AppPage>
+<PageSection>
 <PageHeader title="Label apparater" backHref="/hjem/apparat" />
 <div class="label-content">
 	<p class="subtitle">Velg programnavn for ferdige sykluser slik at Resonans kan gjenkjenne dem neste gang.</p>
@@ -108,6 +109,7 @@
 		</div>
 	{/if}
 </div>
+</PageSection>
 </AppPage>
 
 <style>

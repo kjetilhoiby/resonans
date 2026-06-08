@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, Button, Checkbox, Input, PageHeader, Select, Textarea } from '$lib/components/ui';
+	import { AppPage, Button, Checkbox, Input, PageHeader, PageSection, Select, Textarea } from '$lib/components/ui';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -120,6 +120,7 @@
 </script>
 
 <AppPage className="tracking-page">
+	<PageSection>
 	<PageHeader
 		title="Tracking-serier"
 		subtitle={`${activeCount} aktiv${activeCount === 1 ? '' : 'e'} serie${activeCount === 1 ? '' : 'r'}`}
@@ -253,6 +254,7 @@
 		</ul>
 	</section>
 	</div>
+	</PageSection>
 </AppPage>
 
 <style>

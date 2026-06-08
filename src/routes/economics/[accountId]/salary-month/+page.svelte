@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, PageHeader } from '$lib/components/ui';
+	import { AppPage, PageHeader, PageSection } from '$lib/components/ui';
 	import { goto } from '$app/navigation';
 	import SalaryMonth from '$lib/components/charts/SalaryMonth.svelte';
 	import AccountPicker from '$lib/components/economics/AccountPicker.svelte';
@@ -20,6 +20,7 @@
 </svelte:head>
 
 <AppPage className="economics-salary-month-page">
+	<PageSection>
 	<PageHeader title="💰 Økonomi" titleHref="/" titleLabel="Tilbake til forsiden" />
 
 	<AccountPicker
@@ -44,6 +45,7 @@
 			accountName={data.account.accountName ?? data.account.accountId}
 		/>
 	</div>
+	</PageSection>
 </AppPage>
 
 <style>

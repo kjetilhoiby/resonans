@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, Button, PageHeader } from '$lib/components/ui';
+	import { AppPage, Button, PageHeader, PageSection } from '$lib/components/ui';
 	import { onMount } from 'svelte';
 	import { CATEGORIES } from '$lib/integrations/transaction-categories-client';
 
@@ -99,6 +99,7 @@
 </script>
 
 <AppPage className="classification-page">
+	<PageSection>
 	<PageHeader
 		title="Klassifisering"
 		titleHref="/settings"
@@ -260,6 +261,7 @@
 			</section>
 		{/if}
 	</main>
+	</PageSection>
 </AppPage>
 
 <style>

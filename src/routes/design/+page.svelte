@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage } from '$lib/components/ui';
+	import { AppPage, PageSection } from '$lib/components/ui';
 	import GoalRing from '$lib/components/ui/GoalRing.svelte';
 	import PeriodPills from '$lib/components/ui/PeriodPills.svelte';
 	import StreakBadge from '$lib/components/ui/StreakBadge.svelte';
@@ -157,6 +157,7 @@
 </svelte:head>
 
 <AppPage>
+	<PageSection>
 	<div class="page">
 
 	<!-- ── Sidemeny ── -->
@@ -1780,6 +1781,7 @@
 
 	</main>
 	</div>
+	</PageSection>
 </AppPage>
 
 <style>

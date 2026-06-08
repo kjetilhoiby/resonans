@@ -202,7 +202,7 @@
 	.action-pill-icon { font-size: 0.95rem; line-height: 1; }
 	.action-pill-val { margin-left: 6px; padding: 2px 7px; background: hsl(228 28% 22%); border-radius: 999px; color: #e2e8f0; font-weight: 700; }
 
-	.zone-input { flex: 28 0 0; min-height: 0; padding: 0 14px; padding-bottom: calc(8px + env(safe-area-inset-bottom, 8px)); background: transparent; border-radius: 0; margin: 0; display: flex; flex-direction: column; justify-content: flex-end; gap: 10px; box-sizing: border-box; overflow: clip; transition: border-radius 300ms cubic-bezier(0.22, 1, 0.36, 1), margin 300ms cubic-bezier(0.22, 1, 0.36, 1), background 300ms cubic-bezier(0.22, 1, 0.36, 1); }
+	.zone-input { flex: 28 0 0; min-height: 0; padding: 0; padding-bottom: calc(8px + env(safe-area-inset-bottom, 8px)); background: transparent; border-radius: 0; margin: 0; display: flex; flex-direction: column; justify-content: flex-end; gap: 10px; box-sizing: border-box; overflow: clip; transition: border-radius 300ms cubic-bezier(0.22, 1, 0.36, 1), margin 300ms cubic-bezier(0.22, 1, 0.36, 1), background 300ms cubic-bezier(0.22, 1, 0.36, 1); }
 	.zone-chat-open { position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; background: #0f0f0f; border-radius: 0; margin: 0; }
 
 	:global(.zone-input .page-header) { padding: var(--screen-title-top-pad, 34px) 20px 12px; border-bottom: 1px solid #1a1a1a; flex-shrink: 0; flex-direction: row !important; align-items: center !important; --text-primary: #eee; --text-secondary: #aaa; }

@@ -72,7 +72,7 @@
 	.zone-tema {
 		flex: 24 0 0;
 		min-height: 0;
-		padding: 6px 16px 4px;
+		padding: 6px 0 4px;
 		position: relative;
 		touch-action: manipulation;
 		user-select: none;

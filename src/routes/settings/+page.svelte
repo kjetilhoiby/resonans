@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, Button, Input, PageHeader, Radio, Textarea } from '$lib/components/ui';
+	import { AppPage, Button, Input, PageHeader, PageSection, Radio, Textarea } from '$lib/components/ui';
 	import type { PageData, ActionData } from './$types';
 	import { onMount } from 'svelte';
 
@@ -258,6 +258,7 @@
 </script>
 
 <AppPage className="settings-page">
+	<PageSection>
 	<PageHeader
 		title="Innstillinger"
 		titleHref="/"
@@ -545,6 +546,7 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 			</Button>
 		</div>
 	</main>
+	</PageSection>
 </AppPage>
 
 <style>

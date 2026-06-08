@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, PageHeader } from '$lib/components/ui';
+	import { AppPage, PageHeader, PageSection } from '$lib/components/ui';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -219,6 +219,7 @@
 </script>
 
 <AppPage className="jobs-page">
+	<PageSection>
 	<PageHeader
 		title="Bakgrunnsjobber"
 		titleHref="/settings"
@@ -461,6 +462,7 @@
 		</section>
 	{/if}
 	</div>
+	</PageSection>
 </AppPage>
 
 <style>

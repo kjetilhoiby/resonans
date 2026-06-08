@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage } from '$lib/components/ui';
+	import { AppPage, PageSection } from '$lib/components/ui';
 	import { onMount } from 'svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -43,65 +43,67 @@
 </svelte:head>
 
 <AppPage>
-	<div class="invite-page">
-	<section class="invite-card">
-		<p class="eyebrow">Partnerinvitasjon</p>
-		{#if invite}
-			<h1>{invite.inviterName} inviterer deg til Resonans</h1>
-			<p class="lede">
-				Koble dere sammen for felles oversikt, refleksjon og små hverdagsnudge i samme app.
-			</p>
-
-			<div class="invite-panel">
-				<div>
-					<span class="label">Invitert av</span>
-					<strong>{invite.inviterName}</strong>
-					{#if invite.inviterEmail}
-						<p>{invite.inviterEmail}</p>
-					{/if}
-				</div>
-				<div>
-					<span class="label">Sendt til</span>
-					<strong>{invite.inviteeEmail}</strong>
-				</div>
-				<div>
-					<span class="label">Status</span>
-					<strong>{statusText(invite.status)}</strong>
-				</div>
-			</div>
-
-			{#if form?.error}
-				<p class="error">{form.error}</p>
-			{/if}
-
-			{#if invite.status !== 'pending'}
-				<p class="info">Denne invitasjonen er ikke lenger aktiv.</p>
-			{:else if !currentUser}
-				<div class="cta-group">
-					<a class="btn-primary" href={data.signInUrl}>Logg inn for å svare</a>
-					<p class="hint">Bruk Google-kontoen med adressen {invite.inviteeEmail}.</p>
-				</div>
-			{:else if !canRespond}
-				<p class="info">
-					Du er logget inn som {currentUser.email}. For å svare på invitasjonen må du bruke {invite.inviteeEmail}.
+	<PageSection>
+		<div class="invite-page">
+		<section class="invite-card">
+			<p class="eyebrow">Partnerinvitasjon</p>
+			{#if invite}
+				<h1>{invite.inviterName} inviterer deg til Resonans</h1>
+				<p class="lede">
+					Koble dere sammen for felles oversikt, refleksjon og små hverdagsnudge i samme app.
 				</p>
-				<a class="btn-secondary" href="/signout">Logg ut</a>
-			{:else}
-				<div class="cta-group cta-row">
-					<form method="POST" action="?/accept" bind:this={autoAcceptForm}>
-						<button type="submit" class="btn-primary">Godta og gå til hjem</button>
-					</form>
-					<form method="POST" action="?/decline">
-						<button type="submit" class="btn-secondary">Avslå</button>
-					</form>
+
+				<div class="invite-panel">
+					<div>
+						<span class="label">Invitert av</span>
+						<strong>{invite.inviterName}</strong>
+						{#if invite.inviterEmail}
+							<p>{invite.inviterEmail}</p>
+						{/if}
+					</div>
+					<div>
+						<span class="label">Sendt til</span>
+						<strong>{invite.inviteeEmail}</strong>
+					</div>
+					<div>
+						<span class="label">Status</span>
+						<strong>{statusText(invite.status)}</strong>
+					</div>
 				</div>
+
+				{#if form?.error}
+					<p class="error">{form.error}</p>
+				{/if}
+
+				{#if invite.status !== 'pending'}
+					<p class="info">Denne invitasjonen er ikke lenger aktiv.</p>
+				{:else if !currentUser}
+					<div class="cta-group">
+						<a class="btn-primary" href={data.signInUrl}>Logg inn for å svare</a>
+						<p class="hint">Bruk Google-kontoen med adressen {invite.inviteeEmail}.</p>
+					</div>
+				{:else if !canRespond}
+					<p class="info">
+						Du er logget inn som {currentUser.email}. For å svare på invitasjonen må du bruke {invite.inviteeEmail}.
+					</p>
+					<a class="btn-secondary" href="/signout">Logg ut</a>
+				{:else}
+					<div class="cta-group cta-row">
+						<form method="POST" action="?/accept" bind:this={autoAcceptForm}>
+							<button type="submit" class="btn-primary">Godta og gå til hjem</button>
+						</form>
+						<form method="POST" action="?/decline">
+							<button type="submit" class="btn-secondary">Avslå</button>
+						</form>
+					</div>
+				{/if}
+			{:else}
+				<h1>Invitasjonen finnes ikke</h1>
+				<p class="lede">Lenken er ugyldig eller invitasjonen er trukket tilbake.</p>
 			{/if}
-		{:else}
-			<h1>Invitasjonen finnes ikke</h1>
-			<p class="lede">Lenken er ugyldig eller invitasjonen er trukket tilbake.</p>
-		{/if}
-	</section>
-	</div>
+		</section>
+		</div>
+	</PageSection>
 </AppPage>
 
 <style>

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, Button, Input, PageHeader, SectionCard, Select } from '$lib/components/ui';
+	import { AppPage, Button, Input, PageHeader, PageSection, SectionCard, Select } from '$lib/components/ui';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -39,6 +39,7 @@
 </script>
 
 <AppPage className="external-apps-page">
+	<PageSection>
 	<PageHeader
 		title="Eksterne apper"
 		subtitle="Opprett personlige API-secrets for Scriptable og andre klienter."
@@ -207,6 +208,7 @@ await req.loadJSON()`}</pre>
 			<li>Sjekk «Sist brukt» for å oppdage uventet aktivitet.</li>
 		</ul>
 	</SectionCard>
+	</PageSection>
 </AppPage>
 
 <style>

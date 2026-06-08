@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import { AppPage, IconButton, PageHeader } from '$lib/components/ui';
+	import { AppPage, IconButton, PageHeader, PageSection } from '$lib/components/ui';
 
 	let { children } = $props();
 
@@ -12,6 +12,7 @@
 </script>
 
 <AppPage>
+	<PageSection>
 	<PageHeader title="Plan" titleHref="/" titleLabel="Gå til forsiden">
 		{#snippet actions()}
 			<IconButton href="/" icon="chat" ariaLabel="Chat" />
@@ -38,6 +39,7 @@
 			{@render children?.()}
 		</div>
 	</div>
+	</PageSection>
 </AppPage>
 
 <style>

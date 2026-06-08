@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, PageHeader } from '$lib/components/ui';
+	import { AppPage, PageHeader, PageSection } from '$lib/components/ui';
 	import IconButton from '$lib/components/ui/IconButton.svelte';
 	import type { PageData } from './$types';
 
@@ -39,6 +39,7 @@
 </script>
 
 <AppPage>
+	<PageSection>
 	<PageHeader title="Treningsprogram" subtitle="Hybride programmer — styrke + løping" titleHref="/">
 		{#snippet actions()}
 			<IconButton href="/treningsprogram/ny" icon="plus" variant="nav" ariaLabel="Lag nytt program" />
@@ -175,6 +176,7 @@
 			</section>
 		{/if}
 	{/if}
+	</PageSection>
 </AppPage>
 
 <style>

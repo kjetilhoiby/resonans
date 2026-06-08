@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage } from '$lib/components/ui';
+	import { AppPage, PageSection } from '$lib/components/ui';
 	import { fly, fade, scale } from 'svelte/transition';
 	import { tweened, spring } from 'svelte/motion';
 	import { cubicOut, quintOut, elasticOut } from 'svelte/easing';
@@ -461,6 +461,7 @@
 </svelte:head>
 
 <AppPage>
+	<PageSection>
 	<div class="page-wrap">
 
 	<div class="phone-shell" style="--hue:{globalHueValue}" bind:this={phoneShellRef}>
@@ -771,6 +772,7 @@
 		</div>
 	</aside>
 </div>
+	</PageSection>
 </AppPage>
 
 <style>

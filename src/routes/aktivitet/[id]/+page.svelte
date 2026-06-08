@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { PageData } from './$types';
-	import { AppPage } from '$lib/components/ui';
+	import { AppPage, PageSection } from '$lib/components/ui';
 	import GpxMap from '$lib/components/charts/GpxMap.svelte';
 	import TrackProfileChart from '$lib/components/charts/TrackProfileChart.svelte';
 	import KmSplitsTable from '$lib/components/charts/KmSplitsTable.svelte';
@@ -143,6 +143,7 @@
 </svelte:head>
 
 <AppPage>
+	<PageSection>
 	<div class="backdrop" role="button" tabindex="-1" aria-label="Lukk" onclick={() => history.back()} onkeydown={(e) => e.key === 'Escape' && history.back()}></div>
 
 	<div class="sheet" role="dialog" aria-modal="true" aria-label={workout.title}>
@@ -272,6 +273,7 @@
 		/>
 	</div>
 </div>
+	</PageSection>
 </AppPage>
 
 <style>

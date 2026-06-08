@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { AppPage, Button, Checkbox, Input, PageHeader, Select, TimeInput } from '$lib/components/ui';
+	import { AppPage, Button, Checkbox, Input, PageHeader, PageSection, Select, TimeInput } from '$lib/components/ui';
 
 	let { data, form }: {
 		data: {
@@ -431,6 +431,7 @@
 </script>
 
 <AppPage className="notifications-page">
+	<PageSection>
 	<PageHeader
 		title="Varslinger"
 		titleHref="/settings"
@@ -721,6 +722,7 @@
 		</section>
 
 	</main>
+	</PageSection>
 </AppPage>
 
 <style>
