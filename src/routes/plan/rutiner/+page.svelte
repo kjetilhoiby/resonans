@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button, Input } from '$lib/components/ui';
+	import { Button, Input, ChecklistCheckbox } from '$lib/components/ui';
 	import TaskTitle from '$lib/components/ui/TaskTitle.svelte';
 	import { invalidateAll } from '$app/navigation';
 	import type { PageData } from './$types';
@@ -293,15 +293,11 @@
 									<ul class="checks">
 										{#each routine.items as item (item.id)}
 											<li class:checked={item.checked}>
-												<button
-													type="button"
-													class="check"
+												<ChecklistCheckbox
+													checked={item.checked}
+													size="sm"
 													onclick={() => toggleItem(routine, item)}
-													disabled={pendingItem === item.id}
-													aria-label={item.checked ? `Avhak ${item.text}` : `Hak av ${item.text}`}
-												>
-													{item.checked ? '✓' : ''}
-												</button>
+												/>
 												<span class="text"><TaskTitle title={item.text} /></span>
 											</li>
 										{/each}
@@ -525,28 +521,6 @@
 	.checks li.checked .text {
 		text-decoration: line-through;
 		opacity: 0.55;
-	}
-	.check {
-		flex-shrink: 0;
-		width: 20px;
-		height: 20px;
-		border-radius: 5px;
-		border: 1.5px solid var(--border, #444);
-		background: transparent;
-		color: var(--accent-primary, #7c8ef5);
-		font-size: 0.75rem;
-		font-weight: 700;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		cursor: pointer;
-		padding: 0;
-	}
-	.check:disabled { opacity: 0.5; cursor: default; }
-	.checks li.checked .check {
-		background: var(--accent-primary, #7c8ef5);
-		color: #fff;
-		border-color: transparent;
 	}
 
 	/* Mine rutiner */

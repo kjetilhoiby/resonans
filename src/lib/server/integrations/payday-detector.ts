@@ -13,20 +13,20 @@ type SalaryCandidate = {
 	timestamp: Date;
 };
 
-function toIsoDate(d: Date): string {
+export function toIsoDate(d: Date): string {
 	return d.toISOString().split('T')[0];
 }
 
-function monthKey(d: Date): string {
+export function monthKey(d: Date): string {
 	return toIsoDate(d).slice(0, 7);
 }
 
-function isWeekend(d: Date): boolean {
+export function isWeekend(d: Date): boolean {
 	const day = d.getUTCDay();
 	return day === 0 || day === 6;
 }
 
-function normalizeDescriptionFingerprint(description: string): string {
+export function normalizeDescriptionFingerprint(description: string): string {
 	const normalized = description
 		.normalize('NFKC')
 		.toUpperCase()
@@ -39,7 +39,7 @@ function normalizeDescriptionFingerprint(description: string): string {
 	return words.slice(0, 3).join(' ');
 }
 
-function amountBucket(amount: number): number {
+export function amountBucket(amount: number): number {
 	return Math.round(amount / 500) * 500;
 }
 
@@ -47,14 +47,14 @@ function fingerprintKey(tx: SalaryCandidate): string {
 	return `${normalizeDescriptionFingerprint(tx.description)}|${amountBucket(tx.amount)}`;
 }
 
-function median(nums: number[]): number {
+export function median(nums: number[]): number {
 	if (nums.length === 0) return 0;
 	const sorted = [...nums].sort((a, b) => a - b);
 	const mid = Math.floor(sorted.length / 2);
 	return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
 }
 
-function businessDayDom(d: Date): number {
+export function businessDayDom(d: Date): number {
 	const copy = new Date(d);
 	while (isWeekend(copy)) copy.setUTCDate(copy.getUTCDate() - 1);
 	return copy.getUTCDate();

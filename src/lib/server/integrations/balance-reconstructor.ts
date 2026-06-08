@@ -83,17 +83,12 @@ export async function buildDailyBalances(
 		}
 	}
 
-	// ── Walk forward day by day ───────────────────────────────────────────────
-	// Determine date range: earliest of first snapshot / first transaction → today
 	const firstSnapshotDate = snapshots[0].timestamp.toISOString().split('T')[0];
 	const firstTxDate = transactions.length > 0
 		? transactions[0].timestamp.toISOString().split('T')[0]
 		: firstSnapshotDate;
-
 	const startDateStr = firstTxDate < firstSnapshotDate ? firstTxDate : firstSnapshotDate;
 
-	// For days before the first snapshot we need an opening balance.
-	// Reconstruct backwards from the first snapshot.
 	const firstSnapshotBalance = snapshotByDate.get(firstSnapshotDate) ?? 0;
 	let txSumBeforeFirstSnapshot = 0;
 	for (const tx of transactions) {
@@ -101,24 +96,32 @@ export async function buildDailyBalances(
 		if (d < firstSnapshotDate) txSumBeforeFirstSnapshot += Number(tx.amount) || 0;
 	}
 	const openingBalance = firstSnapshotBalance - txSumBeforeFirstSnapshot;
+	const endDate = new Date().toISOString().split('T')[0];
 
-	const today = new Date();
-	today.setHours(0, 0, 0, 0);
+	return reconstructBalanceSeries(snapshotByDate, txByDate, innskuddByDate, uttakByDate, startDateStr, endDate, openingBalance);
+}
 
+export function reconstructBalanceSeries(
+	snapshotByDate: Map<string, number>,
+	txByDate: Map<string, number>,
+	innskuddByDate: Map<string, number>,
+	uttakByDate: Map<string, number>,
+	startDate: string,
+	endDate: string,
+	openingBalance: number
+): DailyBalance[] {
 	const result: DailyBalance[] = [];
 	let running = openingBalance;
 
-	const cursor = new Date(startDateStr);
+	const cursor = new Date(startDate);
 	cursor.setHours(0, 0, 0, 0);
+	const end = new Date(endDate);
+	end.setHours(0, 0, 0, 0);
 
-	while (cursor <= today) {
+	while (cursor <= end) {
 		const dateStr = cursor.toISOString().split('T')[0];
-
-		// Apply transactions for this day first
 		running += txByDate.get(dateStr) ?? 0;
 
-		// Then snap to snapshot if one exists for this day.
-		// This corrects any accumulated drift since the last anchor.
 		if (snapshotByDate.has(dateStr)) {
 			running = snapshotByDate.get(dateStr)!;
 		}

@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
 import { sendSalaryNudgesForAllUsers } from '$lib/server/salary-nudge';
+import { withCronTracking } from '$lib/server/monitoring/cron-wrapper';
 
 export const config = { maxDuration: 120 };
 
@@ -16,14 +17,10 @@ export const GET: RequestHandler = async ({ request, url }) => {
 		return json({ error: 'Unauthorized' }, { status: 401 });
 	}
 
-	try {
-		const result = await sendSalaryNudgesForAllUsers(url.origin);
-		return json({ success: true, ...result });
-	} catch (error) {
-		console.error('[salary-nudge cron] failed:', error);
-		return json(
-			{ success: false, error: error instanceof Error ? error.message : 'Unknown error' },
-			{ status: 500 }
-		);
-	}
+	const result = await withCronTracking('/api/cron/salary-nudge', async () => {
+		const nudgeResult = await sendSalaryNudgesForAllUsers(url.origin);
+		return { success: true, ...nudgeResult };
+	});
+
+	return json(result);
 };

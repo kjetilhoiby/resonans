@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
 import { db } from '$lib/db';
 import { aggregateAllPeriods, aggregateSpendingMetrics } from '$lib/server/integrations/aggregation';
+import { withCronTracking } from '$lib/server/monitoring/cron-wrapper';
 
 // Aggregation can take a while for many users — allow up to 300 seconds
 export const config = { maxDuration: 300 };
@@ -18,26 +19,30 @@ export const GET: RequestHandler = async ({ request }) => {
 		return json({ error: 'Unauthorized' }, { status: 401 });
 	}
 
-	const users = await db.query.users.findMany();
-	console.log(`[aggregate cron] ${users.length} user(s) to aggregate`);
+	const result = await withCronTracking('/api/cron/aggregate', async () => {
+		const users = await db.query.users.findMany();
+		console.log(`[aggregate cron] ${users.length} user(s) to aggregate`);
 
-	const results: Record<string, unknown>[] = [];
+		const results: Record<string, unknown>[] = [];
 
-	for (const user of users) {
-		try {
-			await aggregateAllPeriods(user.id);
-			await aggregateSpendingMetrics(user.id);
-			console.log(`[aggregate cron] user=${user.id} done`);
-			results.push({ userId: user.id, success: true });
-		} catch (err) {
-			const message = err instanceof Error ? err.message : String(err);
-			console.error(`[aggregate cron] user=${user.id} failed: ${message}`);
-			results.push({ userId: user.id, success: false, error: message });
+		for (const user of users) {
+			try {
+				await aggregateAllPeriods(user.id);
+				await aggregateSpendingMetrics(user.id);
+				console.log(`[aggregate cron] user=${user.id} done`);
+				results.push({ userId: user.id, success: true });
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				console.error(`[aggregate cron] user=${user.id} failed: ${message}`);
+				results.push({ userId: user.id, success: false, error: message });
+			}
 		}
-	}
 
-	const succeeded = results.filter((r) => r.success).length;
-	const failed = results.filter((r) => !r.success).length;
+		const succeeded = results.filter((r) => r.success).length;
+		const failed = results.filter((r) => !r.success).length;
 
-	return json({ success: true, users: users.length, succeeded, failed, results });
+		return { success: true, users: users.length, succeeded, failed, results };
+	});
+
+	return json(result);
 };

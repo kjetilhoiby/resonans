@@ -4,13 +4,23 @@
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { groupChecklistItems, activityEmoji } from '$lib/utils/checklist-group';
+	import { groupChecklistItems, sortByStatus, sortByTime } from '$lib/utils/checklist-group';
+	import type { ChecklistItemLike } from '$lib/types/checklist';
+	import ChecklistItemRow from '$lib/components/ui/ChecklistItemRow.svelte';
+	import ChecklistGroupRow from '$lib/components/ui/ChecklistGroupRow.svelte';
+	import TaskContextMenu from '$lib/components/ui/TaskContextMenu.svelte';
+	import MentionAutocomplete from '$lib/components/ui/MentionAutocomplete.svelte';
+	import { patchItem, deleteItem as apiDeleteItem, addItems } from '$lib/utils/checklist-api';
 
 	interface ChecklistItem {
 		id: string;
 		text: string;
 		checked: boolean;
 		sortOrder: number;
+		parentId?: string | null;
+		skippedAt?: string | null;
+		snoozedToDate?: string | null;
+		metadata?: Record<string, unknown> | null;
 	}
 
 	interface DayForecast {
@@ -98,6 +108,13 @@
 	let composerSaving = $state<Record<string, boolean>>({});
 	let toggleSaving = $state<Record<string, boolean>>({});
 	let expandedDay = $state<string | null>(null);
+	let contextMenuDay = $state<DayEntry | null>(null);
+	let contextMenuItem = $state<ChecklistItem | null>(null);
+	let contextMenuRect = $state<DOMRect | null>(null);
+	let editingItemId = $state<string | null>(null);
+	let editingText = $state('');
+	let expandedParentIds = $state<Set<string>>(new Set());
+	let composerInputEl = $state<HTMLInputElement | null>(null);
 
 	const todayIso = new Date().toISOString().slice(0, 10);
 
@@ -149,60 +166,120 @@
 		const text = (composerText[day.isoDate] ?? '').trim();
 		if (!text) return;
 		composerSaving = { ...composerSaving, [day.isoDate]: true };
-
 		try {
 			const cl = await ensureChecklist(day);
 			if (!cl) return;
-
 			const currentItems = days.find((d) => d.isoDate === day.isoDate)?.checklist?.items ?? [];
-			const res = await fetch(`/api/checklists/${cl.id}/items`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ text, sortOrder: currentItems.length })
-			});
-			if (!res.ok) return;
-			const newItem = await res.json() as ChecklistItem;
-
-			days = days.map((d) =>
-				d.isoDate === day.isoDate && d.checklist
-					? { ...d, checklist: { ...d.checklist, items: [...d.checklist.items, newItem] } }
-					: d
-			);
+			const created = await addItems(cl.id, text, currentItems.length) as ChecklistItem[] | null;
+			if (!created) return;
+			updateDayItems(day.isoDate, items => [...items, ...created]);
 			composerText = { ...composerText, [day.isoDate]: '' };
 		} finally {
 			composerSaving = { ...composerSaving, [day.isoDate]: false };
 		}
 	}
 
+	function updateDayItems(isoDate: string, fn: (items: ChecklistItem[]) => ChecklistItem[]) {
+		days = days.map(d =>
+			d.isoDate === isoDate && d.checklist
+				? { ...d, checklist: { ...d.checklist, items: fn(d.checklist.items) } }
+				: d
+		);
+	}
+
 	async function toggleItem(day: DayEntry, item: ChecklistItem) {
 		if (!day.checklist) return;
 		const key = `${day.isoDate}:${item.id}`;
 		toggleSaving = { ...toggleSaving, [key]: true };
-
-		// Optimistic
-		days = days.map((d) =>
-			d.isoDate === day.isoDate && d.checklist
-				? { ...d, checklist: { ...d.checklist, items: d.checklist.items.map((i) => i.id === item.id ? { ...i, checked: !i.checked } : i) } }
-				: d
-		);
-
+		updateDayItems(day.isoDate, items => items.map(i => i.id === item.id ? { ...i, checked: !i.checked } : i));
 		try {
-			const res = await fetch(`/api/checklists/${day.checklist.id}/items/${item.id}`, {
-				method: 'PATCH',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ checked: !item.checked })
-			});
-			if (!res.ok) {
-				// rollback
-				days = days.map((d) =>
-					d.isoDate === day.isoDate && d.checklist
-						? { ...d, checklist: { ...d.checklist, items: d.checklist.items.map((i) => i.id === item.id ? { ...i, checked: item.checked } : i) } }
-						: d
-				);
-			}
+			const ok = await patchItem(day.checklist.id, item.id, { checked: !item.checked });
+			if (!ok) updateDayItems(day.isoDate, items => items.map(i => i.id === item.id ? { ...i, checked: item.checked } : i));
 		} finally {
 			toggleSaving = { ...toggleSaving, [key]: false };
 		}
+	}
+
+	function handleLongpress(day: DayEntry) {
+		return (rect: DOMRect, item: ChecklistItemLike) => {
+			contextMenuDay = day;
+			contextMenuItem = item as ChecklistItem;
+			contextMenuRect = rect;
+		};
+	}
+
+	function handleTextClick(day: DayEntry) {
+		return (item: ChecklistItemLike) => {
+			contextMenuDay = day;
+			editingItemId = item.id;
+			editingText = item.text;
+		};
+	}
+
+	function handleToggle(day: DayEntry) {
+		return (item: ChecklistItemLike) => {
+			toggleItem(day, item as ChecklistItem);
+		};
+	}
+
+	async function commitEdit() {
+		if (!editingItemId || !contextMenuDay?.checklist) return;
+		const day = contextMenuDay;
+		const itemId = editingItemId;
+		const text = editingText.trim();
+		editingItemId = null;
+		editingText = '';
+		if (!text || !day.checklist) return;
+		updateDayItems(day.isoDate, items => items.map(i => i.id === itemId ? { ...i, text } : i));
+		await patchItem(day.checklist.id, itemId, { text });
+	}
+
+	async function skipItem() {
+		if (!contextMenuItem || !contextMenuDay?.checklist) return;
+		const day = contextMenuDay;
+		const item = contextMenuItem;
+		const skipped = !item.skippedAt;
+		contextMenuItem = null;
+		contextMenuRect = null;
+		updateDayItems(day.isoDate, items => items.map(i => i.id === item.id ? { ...i, skippedAt: skipped ? new Date().toISOString() : null } : i));
+		await patchItem(day.checklist!.id, item.id, { skippedAt: skipped ? new Date().toISOString() : null });
+	}
+
+	async function snoozeItem(targetDate: string) {
+		if (!contextMenuItem || !contextMenuDay?.checklist) return;
+		const day = contextMenuDay;
+		const itemId = contextMenuItem.id;
+		contextMenuItem = null;
+		contextMenuRect = null;
+		updateDayItems(day.isoDate, items => items.filter(i => i.id !== itemId));
+		await patchItem(day.checklist!.id, itemId, { snoozedToDate: targetDate });
+	}
+
+	function toggleParentExpansion(parentId: string) {
+		const next = new Set(expandedParentIds);
+		if (next.has(parentId)) next.delete(parentId);
+		else next.add(parentId);
+		expandedParentIds = next;
+	}
+
+	function makeAddChild(day: DayEntry) {
+		return async (parentId: string, text: string) => {
+			if (!day.checklist) return;
+			const created = await addItems(day.checklist.id, text, day.checklist.items.length, parentId) as ChecklistItem[] | null;
+			if (!created) return;
+			updateDayItems(day.isoDate, items => [...items, ...created]);
+		};
+	}
+
+	async function handleDeleteItem() {
+		if (!contextMenuItem || !contextMenuDay?.checklist) return;
+		const day = contextMenuDay;
+		const itemId = contextMenuItem.id;
+		contextMenuItem = null;
+		contextMenuRect = null;
+		if (!day.checklist) return;
+		updateDayItems(day.isoDate, items => items.filter(i => i.id !== itemId));
+		await apiDeleteItem(day.checklist.id, itemId);
 	}
 </script>
 
@@ -252,50 +329,56 @@
 								<p class="tdc-empty">Ingen gjøremål ennå</p>
 							{:else}
 								<ul class="tdc-items">
-								{#each groupChecklistItems(day.checklist!.items) as group}
+								{#each groupChecklistItems(sortByStatus(sortByTime(day.checklist!.items.filter(i => !i.parentId)))) as group}
 									{#if group.type === 'group'}
 										<li class="tdc-group-item">
-											<span class="tdc-group-label">{activityEmoji(group.label) ? activityEmoji(group.label) + ' ' : ''}{group.label}</span>
-											<div class="tdc-slot-row">
-												{#each group.items as item (item.id)}
-													<button
-														type="button"
-														class="tdc-slot"
-														class:tdc-slot-done={item.checked}
-														onclick={() => toggleItem(day, item)}
-														disabled={!!toggleSaving[`${day.isoDate}:${item.id}`]}
-														aria-label={item.checked ? 'Marker som ikke gjort' : 'Marker som gjort'}
-													>{item.checked ? '✓' : ''}</button>
-												{/each}
-											</div>
+											<ChecklistGroupRow
+												label={group.label}
+												items={group.items}
+												allItems={day.checklist!.items}
+												animated={false}
+												ontoggle={handleToggle(day)}
+												onlongpress={handleLongpress(day)}
+											/>
 										</li>
 									{:else}
-										<li class="tdc-item" class:tdc-item-done={group.item.checked}>
-											<button
-												type="button"
-												class="tdc-check-btn"
-												onclick={() => toggleItem(day, group.item)}
-												disabled={!!toggleSaving[`${day.isoDate}:${group.item.id}`]}
-												aria-label={group.item.checked ? 'Marker som ikke gjort' : 'Marker som gjort'}
-											>
-												{group.item.checked ? '✓' : '○'}
-											</button>
-											<span class="tdc-item-text">{group.item.text}</span>
+										<li class="tdc-item">
+											<ChecklistItemRow
+												item={group.item}
+												allItems={day.checklist!.items}
+												{expandedParentIds}
+												animated={false}
+												editing={editingItemId === group.item.id}
+												bind:editText={editingText}
+												ontoggle={handleToggle(day)}
+												ontextclick={handleTextClick(day)}
+												onlongpress={handleLongpress(day)}
+												onexpand={toggleParentExpansion}
+												onaddchild={makeAddChild(day)}
+												oneditcommit={() => commitEdit()}
+												oneditcancel={() => { editingItemId = null; editingText = ''; }}
+											/>
 										</li>
 									{/if}
-									{/each}
+								{/each}
 								</ul>
 							{/if}
 
 							<div class="tdc-composer">
 								<input
+									bind:this={composerInputEl}
 									class="tdc-input"
 									type="text"
-									placeholder="Legg til gjøremål…"
+									placeholder="Ny oppgave (skriv @ for å nevne en person)"
 									value={composerText[day.isoDate] ?? ''}
 									oninput={(e) => { composerText = { ...composerText, [day.isoDate]: (e.currentTarget as HTMLInputElement).value }; }}
 									onkeydown={(e: KeyboardEvent) => e.key === 'Enter' && addItem(day)}
 									disabled={!!composerSaving[day.isoDate]}
+								/>
+								<MentionAutocomplete
+									textareaEl={composerInputEl}
+									value={composerText[day.isoDate] ?? ''}
+									onValueChange={(t) => { composerText = { ...composerText, [day.isoDate]: t }; }}
 								/>
 								<button
 									type="button"
@@ -311,6 +394,28 @@
 		</div>
 	{/if}
 </div>
+
+<TaskContextMenu
+	open={!!contextMenuItem}
+	anchor={contextMenuRect}
+	itemText={contextMenuItem?.text ?? ''}
+	isChecked={contextMenuItem?.checked ?? false}
+	isSkipped={!!contextMenuItem?.skippedAt}
+	onClose={() => { contextMenuItem = null; contextMenuRect = null; }}
+	onEdit={() => {
+		if (contextMenuItem) {
+			contextMenuDay = contextMenuDay;
+			editingItemId = contextMenuItem.id;
+			editingText = contextMenuItem.text;
+		}
+		contextMenuItem = null;
+		contextMenuRect = null;
+	}}
+	onSkip={skipItem}
+	onUnskip={skipItem}
+	onSnooze={snoozeItem}
+	onDelete={handleDeleteItem}
+/>
 
 <style>
 	.tdc {
@@ -423,87 +528,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 4px;
-	}
-
-	.tdc-item {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-	}
-
-	.tdc-item-done .tdc-item-text {
-		text-decoration: line-through;
-		color: var(--tp-text-muted);
-	}
-
-	/* ── Grouped items ── */
-	.tdc-group-item {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 8px;
-		padding: 4px 0;
-	}
-
-	.tdc-group-label {
-		font-size: 0.84rem;
-		color: var(--tp-text-soft);
-		flex: 1;
-		min-width: 0;
-	}
-
-	.tdc-slot-row {
-		display: flex;
-		gap: 5px;
-		flex-shrink: 0;
-	}
-
-	.tdc-slot {
-		width: 24px;
-		height: 24px;
-		border-radius: 50%;
-		border: 1px solid var(--tp-border-strong);
-		background: none;
-		color: var(--tp-accent);
-		font-size: 0.7rem;
-		cursor: pointer;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		padding: 0;
-		transition: background 0.15s, border-color 0.15s;
-	}
-	.tdc-slot.tdc-slot-done {
-		background: var(--tp-accent-bg);
-		border-color: var(--tp-accent);
-		color: var(--tp-accent);
-	}
-
-	.tdc-check-btn {
-		background: none;
-		border: 1px solid var(--tp-border-strong);
-		border-radius: 50%;
-		width: 22px;
-		height: 22px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		font-size: 0.7rem;
-		cursor: pointer;
-		flex-shrink: 0;
-		color: var(--tp-text-muted);
-		padding: 0;
-	}
-
-	.tdc-item-done .tdc-check-btn {
-		background: var(--tp-accent-bg);
-		border-color: var(--tp-accent);
-		color: var(--tp-accent);
-	}
-
-	.tdc-item-text {
-		font-size: 0.84rem;
-		color: var(--tp-text-soft);
 	}
 
 	.tdc-composer {

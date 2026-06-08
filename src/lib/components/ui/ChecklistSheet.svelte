@@ -12,6 +12,7 @@
 	import { fly, fade, scale, slide } from 'svelte/transition';
 	import { elasticOut, cubicOut } from 'svelte/easing';
 	import { groupChecklistItems, activityEmoji, sortByStatus, sortByTime, formatItemTime, stripTimeFromText, isLocationItem, locationDisplayName, getTravelMode, travelModeIcon, parseLocationPrefix, parseTravelPrefix, type GroupedChecklistEntry } from '$lib/utils/checklist-group';
+	import { patchItem, deleteItem as apiDeleteItem, addItems } from '$lib/utils/checklist-api';
 	import WeatherStrip, { type WeatherPeriod } from '$lib/components/ui/WeatherStrip.svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import BreakdownModal from '$lib/components/ui/BreakdownModal.svelte';
@@ -380,19 +381,13 @@
 		}
 
 		const newChecked = !item.checked;
-		// Optimistisk oppdatering
 		const previousItems = items;
 		items = items.map((i) =>
 			i.id === item.id ? { ...i, checked: newChecked } : i
 		);
 
-		const res = await fetch(`/api/checklists/${backingId}/items/${item.id}`, {
-			method: 'PATCH',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ checked: newChecked })
-		});
-
-		if (!res.ok) {
+		const ok = await patchItem(backingId, item.id, { checked: newChecked });
+		if (!ok) {
 			items = previousItems;
 			return;
 		}
@@ -498,10 +493,8 @@
 	async function deleteItem(itemId: string) {
 		const previousItems = items;
 		items = items.filter((i) => i.id !== itemId && i.parentId !== itemId);
-		const res = await fetch(`/api/checklists/${backingId}/items/${itemId}`, {
-			method: 'DELETE'
-		});
-		if (!res.ok) {
+		const ok = await apiDeleteItem(backingId, itemId);
+		if (!ok) {
 			items = previousItems;
 			return;
 		}
@@ -515,12 +508,8 @@
 				? { ...i, skippedAt: skipped ? new Date().toISOString() : null, snoozedToDate: skipped ? i.snoozedToDate : null, checked: skipped ? false : i.checked }
 				: i
 		);
-		const res = await fetch(`/api/checklists/${backingId}/items/${itemId}`, {
-			method: 'PATCH',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ skipped })
-		});
-		if (!res.ok) {
+		const ok = await patchItem(backingId, itemId, { skipped });
+		if (!ok) {
 			items = previousItems;
 			return;
 		}
@@ -587,13 +576,8 @@
 		if (!text) return;
 		newSubItemTexts = { ...newSubItemTexts, [parentId]: '' };
 		try {
-			const res = await fetch(`/api/checklists/${backingId}/items`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ text, sortOrder: items.length, parentId })
-			});
-			if (res.ok) {
-				const created = await res.json() as ChecklistItem[];
+			const created = await addItems(backingId, text, items.length, parentId) as ChecklistItem[] | null;
+			if (created) {
 				items = [...items, ...created];
 				onChanged?.();
 			}
@@ -624,11 +608,7 @@
 		editingText = '';
 		if (!text) return;
 		items = items.map(i => i.id === itemId ? { ...i, text } : i);
-		await fetch(`/api/checklists/${backingId}/items/${itemId}`, {
-			method: 'PATCH',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ text })
-		});
+		await patchItem(backingId, itemId, { text });
 		onChanged?.();
 	}
 

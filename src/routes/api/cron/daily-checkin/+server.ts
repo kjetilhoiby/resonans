@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
 import { NudgeOrchestrationService } from '$lib/server/services/nudge-orchestration-service';
+import { withCronTracking } from '$lib/server/monitoring/cron-wrapper';
 
 /**
  * Vercel Cron endpoint for daglige check-ins
@@ -16,25 +17,18 @@ export const GET: RequestHandler = async ({ request, url }) => {
 		return json({ error: 'Unauthorized' }, { status: 401 });
 	}
 
-	try {
-		const result = await NudgeOrchestrationService.runDailyCheckInNudges({
+	const result = await withCronTracking('/api/cron/daily-checkin', async () => {
+		const nudgeResult = await NudgeOrchestrationService.runDailyCheckInNudges({
 			appUrl: url.origin,
 			requireRecentTimeWindow: true,
 			windowMinutes: 5
 		});
 
-		return json({
-			...result,
+		return {
+			...nudgeResult,
 			note: 'Kun brukere hvor lokal tid er innenfor siste 5 minutter av dailyCheckIn.time blir sendt i denne kjøringen.'
-		});
-	} catch (error) {
-		console.error('Cron job failed:', error);
-		return json(
-			{
-				success: false,
-				error: error instanceof Error ? error.message : 'Unknown error'
-			},
-			{ status: 500 }
-		);
-	}
+		};
+	});
+
+	return json(result);
 };

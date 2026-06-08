@@ -32,6 +32,7 @@
 		"@types/d3-shape": "^3.1.7",
 		"@types/d3-time-format": "^4.0.3",
 		"@types/jsdom": "^21.1.7",
+		"@types/pngjs": "^6.0.5",
 		"drizzle-kit": "^0.31.5",
 		"pixelmatch": "^7.2.0",
 		"pngjs": "^7.0.0",

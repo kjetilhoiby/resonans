@@ -3,6 +3,7 @@ import { env } from '$env/dynamic/private';
 import { db } from '$lib/db';
 import { users } from '$lib/db/schema';
 import { evaluateTasksForWeek } from '$lib/server/task-evaluation';
+import { withCronTracking } from '$lib/server/monitoring/cron-wrapper';
 
 /**
  * GET /api/cron/task-evaluation
@@ -14,7 +15,7 @@ export const GET: RequestHandler = async ({ request }) => {
 		return json({ error: 'Unauthorized' }, { status: 401 });
 	}
 
-	try {
+	const result = await withCronTracking('/api/cron/task-evaluation', async () => {
 		// Get current ISO week boundaries
 		const now = new Date();
 		const dayOfWeek = now.getUTCDay() || 7; // Sunday = 7
@@ -63,7 +64,7 @@ export const GET: RequestHandler = async ({ request }) => {
 		const totalUsers = allUsers.length;
 		const successCount = Object.values(results).filter((r) => r.errors.length === 0).length;
 
-		return json({
+		return {
 			success: true,
 			timestamp: new Date().toISOString(),
 			weekStart: weekStart.toISOString().slice(0, 10),
@@ -71,17 +72,8 @@ export const GET: RequestHandler = async ({ request }) => {
 			totalUsers,
 			successCount,
 			results
-		});
-	} catch (error) {
-		console.error('Task evaluation cron failed:', error);
-		const message = error instanceof Error ? error.message : String(error);
-		return json(
-			{
-				success: false,
-				error: message,
-				timestamp: new Date().toISOString()
-			},
-			{ status: 500 }
-		);
-	}
+		};
+	});
+
+	return json(result);
 };

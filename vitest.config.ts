@@ -8,6 +8,7 @@ export default defineConfig({
 		// $lib/db krever DATABASE_URL ved import (neon-klienten lages lazy, så en
 		// dummy-verdi er nok – ingen reell tilkobling skjer i enhetstestene).
 		env: {
+			TZ: 'UTC',
 			DATABASE_URL: 'postgres://test:test@localhost:5432/test',
 			OPENAI_API_KEY: 'test-key',
 			AUTH_SECRET: 'test-secret'

@@ -7,6 +7,7 @@ import {
 	getTaskIntentParseObservability,
 	processDueBackgroundJobs
 } from '$lib/server/background-jobs';
+import { withCronTracking } from '$lib/server/monitoring/cron-wrapper';
 
 export const config = { maxDuration: 300 };
 
@@ -20,18 +21,22 @@ export const GET: RequestHandler = async ({ request }) => {
 		return json({ error: 'Unauthorized' }, { status: 401 });
 	}
 
-	const [result, goalIntentParse, taskIntentParse, workoutSweeper] = await Promise.all([
-		processDueBackgroundJobs({
-			limit: 50,
-			workerId: `cron-${new Date().toISOString()}`
-		}),
-		getGoalIntentParseObservability(24 * 7),
-		getTaskIntentParseObservability(24 * 7),
-		enqueueStaleWorkoutProjectionRefreshSweep({
-			maxAgeMs: 15 * 60 * 1000,
-			limit: 200
-		})
-	]);
+	const trackingResult = await withCronTracking('/api/cron/background-jobs', async () => {
+		const [result, goalIntentParse, taskIntentParse, workoutSweeper] = await Promise.all([
+			processDueBackgroundJobs({
+				limit: 50,
+				workerId: `cron-${new Date().toISOString()}`
+			}),
+			getGoalIntentParseObservability(24 * 7),
+			getTaskIntentParseObservability(24 * 7),
+			enqueueStaleWorkoutProjectionRefreshSweep({
+				maxAgeMs: 15 * 60 * 1000,
+				limit: 200
+			})
+		]);
 
-	return json({ success: true, ...result, workoutSweeper, observability: { goalIntentParse, taskIntentParse } });
+		return { success: true, ...result, workoutSweeper, observability: { goalIntentParse, taskIntentParse } };
+	});
+
+	return json(trackingResult);
 };

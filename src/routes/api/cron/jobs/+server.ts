@@ -76,6 +76,12 @@ const JOBS: CronJob[] = [
 		schedule: '*/5 * * * *',
 		description: 'Egenfrekvens daglig sjekkin-nudge (lokal tid per bruker, 5-min vindu)',
 		maxDurationSeconds: 60
+	},
+	{
+		path: '/api/cron/monitoring',
+		schedule: '30 17 * * *', // 17:30 UTC = 19:30 Oslo (CEST)
+		description: 'Kveldlig systemhelsesjekk — sensor-ferskhet, jobb-helse, cron-eksekvering → Google Chat',
+		maxDurationSeconds: 30
 	}
 ];
 

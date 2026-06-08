@@ -2836,3 +2836,29 @@ export const stravaUploads = pgTable(
 		uniqueUserSession: unique('strava_uploads_user_session_uniq').on(table.userId, table.sessionId)
 	})
 );
+
+// Cron execution audit log — tracks every cron endpoint invocation
+export const cronExecutions = pgTable('cron_executions', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	jobPath: text('job_path').notNull(),
+	status: text('status').notNull(), // 'success' | 'partial' | 'error'
+	durationMs: integer('duration_ms'),
+	resultSummary: jsonb('result_summary').$type<Record<string, unknown> | null>(),
+	error: text('error'),
+	executedAt: timestamp('executed_at').defaultNow().notNull()
+}, (table) => ({
+	idxCronExecJobPath: index('cron_exec_job_path_idx').on(table.jobPath, table.executedAt)
+}));
+
+// Monitoring alert dedup/history — prevents alert fatigue
+export const monitoringAlerts = pgTable('monitoring_alerts', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	alertKey: text('alert_key').notNull().unique(),
+	alertType: text('alert_type').notNull(), // 'stale_sync' | 'job_failure' | 'cron_missing' | 'recovery'
+	status: text('status').notNull().default('active'), // 'active' | 'resolved'
+	message: text('message'),
+	lastFiredAt: timestamp('last_fired_at').notNull(),
+	resolvedAt: timestamp('resolved_at'),
+	fireCount: integer('fire_count').notNull().default(1),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+});

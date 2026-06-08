@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
 import { SignalService } from '$lib/server/services/signal-service';
+import { withCronTracking } from '$lib/server/monitoring/cron-wrapper';
 
 export const config = { maxDuration: 120 };
 
@@ -12,30 +13,26 @@ export const GET: RequestHandler = async ({ request }) => {
 		return json({ error: 'Unauthorized' }, { status: 401 });
 	}
 
-	try {
+	const result = await withCronTracking('/api/cron/domain-signals', async () => {
 		const url = new URL(request.url);
 		const hoursRaw = Number.parseInt(url.searchParams.get('hours') ?? '168', 10);
 		const hours = Number.isFinite(hoursRaw) ? hoursRaw : 168;
 
-		const [result, taskCompletionWeekly, activityRunWeekly] = await Promise.all([
+		const [producerResult, taskCompletionWeekly, activityRunWeekly] = await Promise.all([
 			SignalService.runProducers(),
 			SignalService.getObservability('task_completion_weekly', hours),
 			SignalService.getObservability('activity_run_pr_week', hours)
 		]);
 
-		return json({
+		return {
 			success: true,
-			...result,
+			...producerResult,
 			observability: {
 				taskCompletionWeekly,
 				activityRunWeekly
 			}
-		});
-	} catch (error) {
-		console.error('Domain signal cron failed:', error);
-		return json(
-			{ success: false, error: error instanceof Error ? error.message : 'Unknown error' },
-			{ status: 500 }
-		);
-	}
+		};
+	});
+
+	return json(result);
 };
