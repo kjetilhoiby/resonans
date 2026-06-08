@@ -198,17 +198,23 @@ Vercel med `@sveltejs/adapter-vercel` (Node.js 22.x). `buildCommand` i `vercel.j
 
 ---
 
-## Prosjektdokumentasjon
-
-Større endringer planlegges og dokumenteres i `docs/changelog/` som prosjekter med faser:
+## Dokumentasjon
 
 ```
-docs/changelog/
-  2026-06-perf-og-testing.md      # Eksempel: ytelsesfikser + test-infrastruktur
-  2026-06-monitorering.md         # Eksempel: overvåking av integrasjoner
+docs/
+  VISION.md              # Produktvisjon, designprinsipper, domener, retning
+  changelog/             # Prosjektdokumenter for større endringer
+    2026-06-*.md         # Ett dokument per prosjekt med faser og beslutninger
+  archive/               # Historiske planer og specs (referanse)
 ```
 
-**Format for prosjektdokumenter:**
+### docs/VISION.md
+Produktvisjon og designprinsipper. Oppdateres når brukerinnsikter, nye designprinsipper eller retningsendringer avdekkes. Les denne før du foreslår nye features — den beskriver *hva Resonans skal være*.
+
+### docs/changelog/
+Større endringer dokumenteres som prosjekter med faser. Formål: holde kontekst over tid og på tvers av sessions — slik at en agent som kommer inn senere forstår *hvorfor* noe ble bygget slik.
+
+**Format:**
 ```markdown
 # Prosjektnavn
 
@@ -222,8 +228,6 @@ Hvorfor denne endringen trengs.
 ### Fase 1: ...
 Hva som ble gjort, hvilke filer som ble endret, beslutninger tatt.
 
-### Fase 2: ...
-
 ## Beslutninger
 Viktige valg og begrunnelser (for fremtidig kontekst).
 
@@ -231,4 +235,8 @@ Viktige valg og begrunnelser (for fremtidig kontekst).
 Hvordan endringen ble testet og verifisert.
 ```
 
-Historiske planer og specs ligger i `docs/archive/` for referanse.
+### Når skal hva oppdateres?
+- **Ny feature / refaktorering / infrastruktur**: Skriv et changelog-dokument.
+- **Brukerinnsikt / designprinsipp / produktretning**: Oppdater VISION.md.
+- **Arkitektur / konvensjoner / agentinstruksjoner**: Oppdater CLAUDE.md.
+- **Ting som ikke lenger stemmer**: Slett eller flytt til archive/.
