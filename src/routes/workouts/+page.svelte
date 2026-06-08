@@ -6,7 +6,7 @@
 	let chartMode: 'comparison' | 'historical' = 'comparison';
 </script>
 
-<AppPage padding="default" gap="lg" surface="default">
+<AppPage>
 	<PageHeader title="Treningsøkter" subtitle="Progress over tid" backHref="/" />
 
 	<div class="workouts-page">

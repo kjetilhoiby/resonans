@@ -156,7 +156,7 @@
 	<title>Design</title>
 </svelte:head>
 
-<AppPage padding="default" gap="sm" surface="default">
+<AppPage>
 	<div class="page">
 
 	<!-- ── Sidemeny ── -->

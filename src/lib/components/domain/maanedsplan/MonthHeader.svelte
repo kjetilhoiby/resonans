@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import ScreenTitle from '$lib/components/ui/ScreenTitle.svelte';
+	import { PageHeader } from '$lib/components/ui';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import { startNavMetric } from '$lib/client/nav-metrics';
 
@@ -19,13 +19,12 @@
 	}
 </script>
 
-<header class="mp-header">
-	<ScreenTitle
-		title={`${monthName.charAt(0).toUpperCase() + monthName.slice(1)} ${year}`}
-		ariaLabel="Tilbake til hjem"
-		onpress={() => { startNavMetric('maanedsplan', 'home'); void goto('/'); }}
-	/>
-	<div class="mp-header-actions">
+<PageHeader
+	title={`${monthName.charAt(0).toUpperCase() + monthName.slice(1)} ${year}`}
+	onTitleClick={() => { startNavMetric('maanedsplan', 'home'); void goto('/'); }}
+	titleLabel="Tilbake til hjem"
+>
+	{#snippet actions()}
 		<a class="mp-nav-btn" href="/ukeplan" aria-label="Til ukeplan">
 			<Icon name="calendar" size={15} />
 			<span>Uke</span>
@@ -41,25 +40,10 @@
 				I dag
 			</a>
 		{/if}
-	</div>
-</header>
+	{/snippet}
+</PageHeader>
 
 <style>
-	.mp-header {
-		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: 12px;
-	}
-
-	.mp-header-actions {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		flex-shrink: 0;
-		padding-top: 2px;
-	}
-
 	.mp-nav-btn {
 		display: inline-flex;
 		align-items: center;

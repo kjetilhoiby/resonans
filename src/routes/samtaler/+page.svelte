@@ -228,7 +228,7 @@
 
 {#if isListView}
 	<!-- ══ LISTE-VIEW ══════════════════════════════════════════════════════════ -->
-	<AppPage padding="none" gap="sm" className="list-page">
+	<AppPage bleed className="list-page">
 		<PageHeader title="Samtaler" titleHref="/">
 			{#snippet actions()}
 				<button class="lp-new-btn" onclick={createConversation} disabled={creatingConversation}>
@@ -319,7 +319,7 @@
 
 {:else}
 	<!-- ══ CHAT-VIEW ═══════════════════════════════════════════════════════════ -->
-	<AppPage padding="none" gap="sm" className="chat-page">
+	<AppPage bleed className="chat-page">
 		<PageHeader title={conversation?.title ?? (data.weightContext ? 'Vektutvikling' : 'Samtale')} subtitle={formattedDate} titleHref="/samtaler">
 			{#snippet actions()}
 				{#if conversation?.linkedTheme}
@@ -373,7 +373,7 @@
 	}
 
 	:global(.list-page .page-header) {
-		padding: 52px 20px 16px;
+		padding: 0;
 	}
 
 	.lp-new-btn {
@@ -501,8 +501,8 @@
 	}
 
 	:global(.chat-page .page-header) {
-		padding: 52px 16px 14px;
-		border-bottom: 1px solid #1a1a1a;
+		padding: 0 0 14px;
+		border-bottom: 1px solid var(--border-subtle);
 		flex-shrink: 0;
 	}
 

@@ -638,7 +638,7 @@
 	<title>Resonans – Design System</title>
 </svelte:head>
 
-<AppPage padding="default" gap="sm" surface="default">
+<AppPage>
 
 <!-- Force theme on html element -->
 <svelte:element this={'div'}

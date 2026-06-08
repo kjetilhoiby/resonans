@@ -62,12 +62,13 @@
 	}
 
 	.morph-title-text {
-		font-size: 1.4rem;
+		font-size: clamp(1.45rem, 2.8vw, 1.85rem);
 		font-weight: 700;
 		letter-spacing: -0.03em;
-		color: #e8e8e8;
+		color: var(--text-primary);
 		margin: 0;
-		line-height: 1.1;
+		line-height: 1.08;
 		font-variant-numeric: tabular-nums;
 	}
+
 </style>

@@ -408,7 +408,7 @@
 	<title>Månedsplan – {data.month.monthName} {data.month.year}</title>
 </svelte:head>
 
-<AppPage padding="none" gap="sm" surface="default">
+<AppPage bleed>
 	<div class="mp-page">
 
 	<MonthHeader
@@ -483,7 +483,7 @@
 	.mp-page {
 		min-height: 100vh;
 		width: 100%;
-		padding: var(--screen-title-top-pad, 34px) 20px 110px;
+		padding: 0 0 110px;
 		display: flex;
 		flex-direction: column;
 		gap: 14px;

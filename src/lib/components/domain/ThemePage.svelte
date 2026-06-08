@@ -13,7 +13,7 @@
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { get } from 'svelte/store';
-	import ScreenTitle from '../ui/ScreenTitle.svelte';
+	import { PageHeader } from '../ui';
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
 	import { resolveThemeDashboardKind, getThemeDashboardDefinition } from '$lib/domain/theme-dashboard-registry';
 	import { finishNavMetric, startNavMetric } from '$lib/client/nav-metrics';
@@ -322,12 +322,12 @@
 	{:else}
 		<!-- ── Topptekst ── -->
 		<header class="tp-header tp-enter">
-			<ScreenTitle
+			<PageHeader
 				title={theme.name}
 				subtitle={theme.description ?? ''}
 				emoji={theme.emoji ?? '🎯'}
-				onpress={goHome}
-				ariaLabel="Gå til forsiden"
+				onTitleClick={goHome}
+				titleLabel="Gå til forsiden"
 			/>
 		</header>
 
@@ -628,7 +628,7 @@
 
 	/* ── Header ── */
 	.tp-header {
-		padding: var(--screen-title-top-pad, 34px) 20px 16px;
+		padding: 0 0 var(--space-lg);
 		border-bottom: 1px solid var(--tp-border);
 	}
 

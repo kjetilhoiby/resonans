@@ -917,13 +917,11 @@
 
 <style>
 	.home-screen {
-		height: 100dvh;
+		min-height: 100dvh;
 		position: relative;
-		background: #0f0f0f;
-		color: #ccc;
-		font-family: 'Inter', system-ui, sans-serif;
+		background: var(--bg-primary);
+		color: var(--text-secondary);
 		display: flex;
 		flex-direction: column;
-		overflow: hidden;
 	}
 </style>

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
-	import { AppPage, ScreenTitle } from '$lib/components/ui';
+	import { AppPage, PageHeader } from '$lib/components/ui';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -93,7 +93,7 @@
 </script>
 
 <AppPage>
-	<ScreenTitle title="Drømmer" subtitle="Tilbakeblikk og retning, syntetisert" />
+	<PageHeader title="Drømmer" subtitle="Tilbakeblikk og retning, syntetisert" titleHref="/" />
 
 	<div class="grid">
 		<section class="column">

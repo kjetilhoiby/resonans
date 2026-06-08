@@ -142,7 +142,7 @@
 	<title>{workout.title} – Resonans</title>
 </svelte:head>
 
-<AppPage padding="none" gap="sm" surface="default">
+<AppPage bleed>
 	<div class="backdrop" role="button" tabindex="-1" aria-label="Lukk" onclick={() => history.back()} onkeydown={(e) => e.key === 'Escape' && history.back()}></div>
 
 	<div class="sheet" role="dialog" aria-modal="true" aria-label={workout.title}>

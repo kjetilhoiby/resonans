@@ -42,7 +42,7 @@
 	<meta name="twitter:image:alt" content={meta.description} />
 </svelte:head>
 
-<AppPage padding="none" gap="sm" surface="transparent">
+<AppPage bleed>
 	<div class="invite-page">
 	<section class="invite-card">
 		<p class="eyebrow">Partnerinvitasjon</p>

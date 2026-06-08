@@ -2,7 +2,7 @@
 	import { tick } from 'svelte';
 	import { afterNavigate, goto, invalidateAll } from '$app/navigation';
 	import { AppPage, ChipStrip, PullToRefresh } from '$lib/components/ui';
-	import ScreenTitle from '$lib/components/ui/ScreenTitle.svelte';
+	import { PageHeader } from '$lib/components/ui';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import FlowSheet from '$lib/components/flows/FlowSheet.svelte';
 	import { FLOWS } from '$lib/flows/registry';
@@ -441,16 +441,11 @@
 	<title>Ukeplan</title>
 </svelte:head>
 
-<AppPage padding="none" gap="sm" surface="default">
+<AppPage bleed>
 	<PullToRefresh excludeSelectors=".wp-header-actions, .wp-calendar-wrap">
 	<div class="week-plan-page">
-	<header class="wp-header">
-		<ScreenTitle
-			title={`Uke ${data.week.week}`}
-			ariaLabel="Tilbake til hjem"
-			onpress={() => { startNavMetric('ukeplan', 'home'); void goto('/'); }}
-		/>
-		<div class="wp-header-actions">
+	<PageHeader title={`Uke ${data.week.week}`} titleHref="/">
+		{#snippet actions()}
 			{#each data.activeTrips as trip}
 				<a class="wp-calendar-btn" href="/tema/{trip.id}" aria-label={trip.name}>{trip.emoji ?? '🗺️'}</a>
 			{/each}
@@ -459,8 +454,8 @@
 				<button class="wp-calendar-btn" type="button" aria-label="Velg uke" onclick={() => weekPickerInput?.showPicker?.()}><Icon name="calendar" size={18} /></button>
 				<input bind:this={weekPickerInput} type="date" class="wp-week-picker-input" value={data.week.days[0].isoDate} onchange={(event) => { const val = (event.currentTarget as HTMLInputElement).value; if (val) void goto(weekHref(getIsoWeekDashedFromIsoDate(val))); }} />
 			</div>
-		</div>
-	</header>
+		{/snippet}
+	</PageHeader>
 
 	{#if showPlanWeek || showPlanDay || showCloseDay || hasCarryovers}
 	<ChipStrip gap={8} ariaLabel="Planleggingshandlinger" class="wp-action-strip">
@@ -592,7 +587,7 @@
 	.week-plan-page {
 		min-height: 100vh;
 		width: 100%;
-		padding: var(--screen-title-top-pad, 34px) 20px 110px;
+		padding: 0 0 110px;
 		display: flex;
 		flex-direction: column;
 		gap: 14px;
@@ -620,5 +615,5 @@
 	.wp-action-pill--day:hover:not(:disabled) { border-color: rgba(52, 211, 153, 0.65); background: rgba(52, 211, 153, 0.06); box-shadow: 0 0 14px rgba(52, 211, 153, 0.10); }
 	.wp-action-pill--util { border-color: rgba(251, 191, 36, 0.28); }
 	.wp-action-pill--util:hover:not(:disabled) { border-color: rgba(251, 191, 36, 0.6); background: rgba(251, 191, 36, 0.06); box-shadow: 0 0 14px rgba(251, 191, 36, 0.10); }
-	@media (max-width: 640px) { .week-plan-page { padding-left: 12px; padding-right: 12px; } }
+	@media (max-width: 640px) { .week-plan-page { padding-left: 0; padding-right: 0; } }
 </style>
