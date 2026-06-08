@@ -784,7 +784,7 @@
 
 <style>
 	.goals-page-shell {
-		color: #ccc;
+		color: var(--text-secondary);
 		font-family: 'Inter', system-ui, sans-serif;
 	}
 
@@ -794,11 +794,11 @@
 		padding: 0 0.5rem;
 		font-size: 0.95rem;
 		line-height: 1.55;
-		color: #d8d8d8;
+		color: var(--text-primary);
 	}
 
 	.progress-assessment.loading {
-		color: #666;
+		color: var(--text-muted);
 		font-style: italic;
 	}
 
@@ -812,9 +812,9 @@
 	.empty-state {
 		text-align: center;
 		padding: 4rem 2rem;
-		background: #1a1a1a;
-		border-radius: 16px;
-		border: 1px solid #242424;
+		background: var(--bg-input);
+		border-radius: var(--radius-lg);
+		border: 1px solid var(--border-color);
 	}
 
 	.empty-icon {
@@ -823,7 +823,7 @@
 	}
 
 	.empty-state p {
-		color: #888;
+		color: var(--text-tertiary);
 		margin-bottom: 2rem;
 	}
 
@@ -834,19 +834,19 @@
 	}
 
 	.goal-card {
-		background: #141414;
-		border: 1px solid #242424;
-		border-radius: 16px;
+		background: var(--bg-elevated);
+		border: 1px solid var(--border-color);
+		border-radius: var(--radius-lg);
 		overflow: hidden;
 		transition: border-color 0.2s;
 	}
 
 	.goal-card:hover {
-		border-color: #2e2e2e;
+		border-color: var(--border-color);
 	}
 
 	.goal-card.expanded {
-		border-color: #333;
+		border-color: var(--border-color);
 	}
 
 	.goal-summary {
@@ -880,7 +880,7 @@
 
 	.chevron {
 		font-size: 1.4rem;
-		color: #444;
+		color: var(--text-muted);
 		line-height: 1;
 		transition: transform 0.2s ease;
 		display: inline-block;
@@ -889,12 +889,12 @@
 
 	.chevron.open {
 		transform: rotate(90deg);
-		color: #7c8ef5;
+		color: var(--accent-light);
 	}
 
 	.goal-details {
 		padding: 0 1.5rem 1.5rem;
-		border-top: 1px solid #1e1e1e;
+		border-top: 1px solid var(--border-subtle);
 	}
 
 	.goal-chart-bleed {
@@ -935,14 +935,14 @@
 	}
 
 	.pace-neutral {
-		background: #1e1e1e;
-		border-color: #2a2a2a;
-		color: #aaa;
+		background: var(--border-subtle);
+		border-color: var(--border-color);
+		color: var(--text-secondary);
 	}
 
 	.goal-description {
 		font-size: 0.9rem;
-		color: #999;
+		color: var(--text-tertiary);
 		line-height: 1.6;
 		margin: 1rem 0 0.75rem;
 	}
@@ -959,10 +959,10 @@
 		align-items: center;
 		padding: 0.3rem 0.65rem;
 		border-radius: 999px;
-		background: #1e1e1e;
-		border: 1px solid #2a2a2a;
+		background: var(--border-subtle);
+		border: 1px solid var(--border-color);
 		font-size: 0.78rem;
-		color: #888;
+		color: var(--text-tertiary);
 	}
 
 	.goal-pills {
@@ -993,13 +993,13 @@
 		margin: 0;
 		font-size: 1.1rem;
 		font-weight: 600;
-		color: #e8e8e8;
+		color: var(--text-primary);
 		flex: 1;
 	}
 
 	.goal-category {
 		font-size: 0.85rem;
-		color: #888;
+		color: var(--text-tertiary);
 	}
 
 	.goal-track-pill {
@@ -1078,14 +1078,14 @@
 
 	.sensor-target {
 		font-size: 0.8rem;
-		color: #666;
+		color: var(--text-muted);
 	}
 
 	.sensor-pct {
 		margin-left: auto;
 		font-size: 0.85rem;
 		font-weight: 600;
-		color: #888;
+		color: var(--text-tertiary);
 	}
 
 	.progress-section {
@@ -1098,7 +1098,7 @@
 	.progress-bar {
 		flex: 1;
 		height: 8px;
-		background: #222;
+		background: var(--border-color);
 		border-radius: 4px;
 		overflow: hidden;
 	}
@@ -1112,14 +1112,14 @@
 	.progress-text {
 		font-size: 1.25rem;
 		font-weight: 600;
-		color: #e8e8e8;
+		color: var(--text-primary);
 		min-width: 60px;
 		text-align: right;
 	}
 
 	.meta-info {
 		font-size: 0.85rem;
-		color: #888;
+		color: var(--text-tertiary);
 		margin-bottom: 1rem;
 	}
 
@@ -1131,9 +1131,9 @@
 	}
 
 	.task-card {
-		background: #1a1a1a;
-		border: 1px solid #222;
-		border-radius: 12px;
+		background: var(--bg-input);
+		border: 1px solid var(--border-color);
+		border-radius: var(--radius-md);
 		padding: 1rem;
 	}
 
@@ -1145,21 +1145,21 @@
 	}
 
 	.task-title {
-		color: #ddd;
+		color: var(--text-secondary);
 		font-weight: 500;
 		font-size: 0.95rem;
 	}
 
 	.task-frequency {
 		font-size: 0.75rem;
-		color: #555;
+		color: var(--text-muted);
 		text-transform: uppercase;
 		letter-spacing: 0.5px;
 	}
 
 	.task-meta {
 		font-size: 0.85rem;
-		color: #888;
+		color: var(--text-tertiary);
 		margin-bottom: 0.75rem;
 	}
 
@@ -1173,20 +1173,20 @@
 	.task-progress-bar {
 		flex: 1;
 		height: 6px;
-		background: #222;
+		background: var(--border-color);
 		border-radius: 3px;
 		overflow: hidden;
 	}
 
 	.task-progress-fill {
 		height: 100%;
-		background: #7c8ef5;
+		background: var(--accent-light);
 		transition: width 0.3s ease;
 	}
 
 	.task-progress-label {
 		font-size: 0.85rem;
-		color: #888;
+		color: var(--text-tertiary);
 		font-weight: 600;
 		min-width: 45px;
 		text-align: right;
@@ -1198,12 +1198,12 @@
 		gap: 1rem;
 		margin-top: 0.75rem;
 		padding-top: 0.75rem;
-		border-top: 1px solid #1e1e1e;
+		border-top: 1px solid var(--border-subtle);
 	}
 
 	.activity-count {
 		font-size: 0.85rem;
-		color: #ddd;
+		color: var(--text-secondary);
 		font-weight: 600;
 	}
 
@@ -1215,7 +1215,7 @@
 	.activity-dot {
 		width: 8px;
 		height: 8px;
-		background: #7c8ef5;
+		background: var(--accent-light);
 		border-radius: 50%;
 		display: inline-block;
 	}
@@ -1232,7 +1232,7 @@
 		padding: 0.75rem 0;
 		background: none;
 		border: none;
-		border-top: 1px solid #222;
+		border-top: 1px solid var(--border-color);
 		cursor: pointer;
 		color: inherit;
 		text-align: left;
@@ -1240,13 +1240,13 @@
 
 	.archived-toggle-label {
 		font-size: 0.85rem;
-		color: #555;
+		color: var(--text-muted);
 		text-transform: uppercase;
 		letter-spacing: 0.5px;
 	}
 
 	.archived-toggle .chevron {
-		color: #444;
+		color: var(--text-muted);
 	}
 
 	.archived-list {
@@ -1262,6 +1262,6 @@
 	}
 
 	.archived-title {
-		color: #888 !important;
+		color: var(--text-tertiary) !important;
 	}
 </style>

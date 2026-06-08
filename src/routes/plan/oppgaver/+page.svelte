@@ -659,12 +659,12 @@
 		padding: 1px 6px;
 		border-radius: 999px;
 		background: rgba(255, 255, 255, 0.04);
-		color: #777;
+		color: var(--text-tertiary);
 		font-size: 0.65rem;
 	}
 	.badge.missing {
 		background: transparent;
-		border: 1px dashed #2a2a2a;
+		border: 1px dashed var(--border-color);
 		color: #444;
 	}
 	.badge.due.overdue {
@@ -734,7 +734,7 @@
 		flex-direction: column;
 		gap: 0.55rem;
 		padding-top: 0.65rem;
-		border-top: 1px dashed #1e1e1e;
+		border-top: 1px dashed var(--border-subtle);
 	}
 	.chip-group {
 		display: flex;

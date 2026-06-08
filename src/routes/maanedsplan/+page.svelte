@@ -1098,7 +1098,7 @@
 		transition: background 0.12s, color 0.12s, border-color 0.12s;
 	}
 	.mp-nav-btn:hover { background: #12162a; color: #bac6f9; border-color: #2e3660; }
-	.mp-nav-btn--today { color: #7c8ef5; }
+	.mp-nav-btn--today { color: var(--accent-light); }
 
 	.mp-card {
 		background: linear-gradient(180deg, rgba(9, 11, 17, 0.95), rgba(8, 10, 15, 0.95));
@@ -1125,7 +1125,7 @@
 	.mp-card h2 {
 		margin: 0;
 		font-size: 0.95rem;
-		color: #ddd;
+		color: var(--text-primary);
 		flex: 1;
 	}
 
@@ -1165,7 +1165,7 @@
 		background: #0a0c14;
 		border: 1px solid #1a1d2a;
 		border-radius: 10px;
-		color: #ccc;
+		color: var(--text-secondary);
 		padding: 9px 11px;
 		font: inherit;
 		font-size: max(0.88rem, 16px);
@@ -1190,7 +1190,7 @@
 		transition: background 0.2s;
 		flex-shrink: 0;
 	}
-	.mp-save-dot.is-saving { background: #7c8ef5; }
+	.mp-save-dot.is-saving { background: var(--accent-light); }
 	.mp-save-dot.is-saved { background: #5fa080; }
 
 	/* ── Checklist ── */
@@ -1224,12 +1224,12 @@
 
 	.mp-check-text {
 		font-size: 0.9rem;
-		color: #ccc;
+		color: var(--text-secondary);
 		line-height: 1.4;
 		transition: color 0.15s, text-decoration 0.15s;
 	}
 	.mp-check-text.checked {
-		color: #444;
+		color: var(--text-muted);
 		text-decoration: line-through;
 	}
 
@@ -1271,7 +1271,7 @@
 		background: #0a0c14;
 		border: 1px solid #1a1d2a;
 		border-radius: 9px;
-		color: #ccc;
+		color: var(--text-secondary);
 		padding: 8px 11px;
 		font: inherit;
 		font-size: max(0.88rem, 16px);
@@ -1331,7 +1331,7 @@
 		align-items: center;
 		transition: color 0.12s;
 	}
-	.mp-btn-danger:hover { color: #e07070; }
+	.mp-btn-danger:hover { color: var(--error-text); }
 
 	.mp-add-form {
 		padding-top: 2px;
@@ -1407,7 +1407,7 @@
 
 	.mp-week-detail-title {
 		font-size: 0.8rem;
-		color: #888;
+		color: var(--text-tertiary);
 		font-weight: 600;
 	}
 
@@ -1416,7 +1416,7 @@
 		align-items: center;
 		gap: 2px;
 		font-size: 0.76rem;
-		color: #7c8ef5;
+		color: var(--accent-light);
 		text-decoration: none;
 		transition: color 0.12s;
 	}
@@ -1456,7 +1456,7 @@
 
 	.mp-week-item-text {
 		font-size: 0.85rem;
-		color: #aaa;
+		color: var(--text-secondary);
 		line-height: 1.4;
 	}
 	.mp-week-item.checked .mp-week-item-text {
@@ -1470,7 +1470,7 @@
 
 	.mp-week-item-label {
 		font-size: 0.85rem;
-		color: #aaa;
+		color: var(--text-secondary);
 		line-height: 1.4;
 	}
 
@@ -1493,7 +1493,7 @@
 		justify-content: center;
 		transition: border-color 0.12s, background 0.12s;
 	}
-	.mp-week-slot.checked { border-color: #7c8ef5; background: #7c8ef5; }
+	.mp-week-slot.checked { border-color: var(--accent-light); background: var(--accent-light); }
 
 	.mp-week-item--parent {
 		align-items: center;
@@ -1513,7 +1513,7 @@
 		justify-content: center;
 		border: none;
 		background: transparent;
-		color: #7c8ef5;
+		color: var(--accent-light);
 		font-size: 0.75rem;
 		line-height: 1;
 		cursor: pointer;
@@ -1557,7 +1557,7 @@
 	}
 
 	.mp-goal-row {
-		border-radius: 8px;
+		border-radius: var(--radius-sm);
 		transition: background 0.1s;
 	}
 	.mp-goal-row:hover { background: #0c0e18; }
@@ -1579,7 +1579,7 @@
 
 	.mp-goal-date {
 		font-size: 0.72rem;
-		color: #555;
+		color: var(--text-muted);
 		flex-shrink: 0;
 	}
 
@@ -1590,10 +1590,10 @@
 		gap: 4px;
 		height: 28px;
 		padding: 0 10px;
-		border-radius: 8px;
+		border-radius: var(--radius-sm);
 		border: 1px solid #252840;
 		background: #0e1022;
-		color: #7c8ef5;
+		color: var(--accent-light);
 		font-size: 0.78rem;
 		font-weight: 600;
 		cursor: pointer;
@@ -1615,7 +1615,7 @@
 		align-items: center;
 		gap: 8px;
 		padding: 6px 4px;
-		border-radius: 8px;
+		border-radius: var(--radius-sm);
 		transition: background 0.1s;
 	}
 	.mp-month-goal-row:hover { background: #0b0d18; }
@@ -1680,13 +1680,13 @@
 		transition: background 0.1s, color 0.1s, border-color 0.1s;
 	}
 	.mp-goal-stepper:hover { background: #12162a; color: #bac6f9; border-color: #3a4adf; }
-	.mp-goal-stepper--plus { color: #7c8ef5; }
+	.mp-goal-stepper--plus { color: var(--accent-light); }
 	.mp-goal-stepper--plus:hover { color: #fff; }
 
 	.mp-goal-delete {
 		background: none;
 		border: none;
-		color: #333;
+		color: var(--border-color);
 		font-size: 1.1rem;
 		cursor: pointer;
 		padding: 2px 4px;
@@ -1695,7 +1695,7 @@
 		flex-shrink: 0;
 		transition: color 0.12s;
 	}
-	.mp-goal-delete:hover { color: #e07070; }
+	.mp-goal-delete:hover { color: var(--error-text); }
 
 	.mp-add-goal-form {
 		display: flex;
@@ -1735,7 +1735,7 @@
 	.mp-type-pill:hover { background: #101326; color: #bac6f9; }
 	.mp-type-pill.active {
 		background: #141830;
-		border-color: #7c8ef5;
+		border-color: var(--accent-light);
 		color: #bac6f9;
 	}
 

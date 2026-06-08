@@ -2805,7 +2805,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 	.wp-day-wx-temp {
 		font-size: 0.62rem;
 		font-weight: 700;
-		color: #ccc;
+		color: var(--text-secondary);
 	}
 
 	.wp-day-btn.today {
@@ -2820,7 +2820,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 
 	.wp-day-label {
 		font-size: 0.72rem;
-		color: #888;
+		color: var(--text-tertiary);
 	}
 
 	.wp-weather-strip {
@@ -2831,7 +2831,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 
 	.wp-day-number {
 		font-size: 0.95rem;
-		color: #ddd;
+		color: var(--text-primary);
 		font-weight: 700;
 	}
 
@@ -2932,7 +2932,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 		color: #aeb4c6;
 		background: #0e121c;
 		border: none;
-		border-radius: 8px;
+		border-radius: var(--radius-sm);
 		padding: 7px 9px;
 	}
 
@@ -2946,7 +2946,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 	.wp-card h2 {
 		margin: 0;
 		font-size: 0.95rem;
-		color: #ddd;
+		color: var(--text-primary);
 	}
 
 	.wp-pill {
@@ -2994,8 +2994,8 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 		flex-shrink: 0;
 	}
 	.wp-spond-item[data-rsvp="unanswered"] .wp-spond-dot { background: #f59e0b; }
-	.wp-spond-item[data-rsvp="declined"] .wp-spond-dot { background: #555; }
-	.wp-spond-item[data-rsvp="accepted"] .wp-spond-dot { background: #4ade80; }
+	.wp-spond-item[data-rsvp="declined"] .wp-spond-dot { background: var(--text-muted); }
+	.wp-spond-item[data-rsvp="accepted"] .wp-spond-dot { background: var(--success-text); }
 	.wp-spond-time {
 		color: var(--text-tertiary);
 		font-size: 0.72rem;
@@ -3069,7 +3069,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 	.wp-task-title {
 		margin: 0;
 		font-size: 0.95rem;
-		color: #ddd;
+		color: var(--text-primary);
 	}
 
 	.wp-task-title.done {
@@ -3159,7 +3159,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 	}
 
 	.wp-slot-btn:hover:not(.checked) {
-		border-color: #4a5af0;
+		border-color: var(--accent-primary);
 		background: #1a1f35;
 	}
 
@@ -3199,7 +3199,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 		padding: 4px 8px;
 		font-size: 0.95rem;
 		border-radius: 6px;
-		border: 1px solid #4a5af0;
+		border: 1px solid var(--accent-primary);
 		background: #1a1f35;
 		color: inherit;
 		outline: none;
@@ -3216,7 +3216,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 		display: inline-block;
 		margin-top: 12px;
 		font-size: 0.8rem;
-		color: #7c8ef5;
+		color: var(--accent-light);
 		text-decoration: none;
 	}
 	.wp-plan-conv-link:hover {
@@ -3243,7 +3243,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 	.wp-completion-banner-btn {
 		background: none;
 		border: none;
-		color: #7c8ef5;
+		color: var(--accent-light);
 		cursor: pointer;
 		font-size: 0.8rem;
 		padding: 2px 6px;
@@ -3313,7 +3313,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 		justify-content: center;
 		border-radius: 999px;
 		border: 1px solid #3a4155;
-		color: #4a5af0;
+		color: var(--accent-primary);
 		font-size: 0.72rem;
 		line-height: 1;
 		flex-shrink: 0;
@@ -3328,12 +3328,12 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 	.wp-check-circle.skipped {
 		border-color: #774444;
 		background: rgba(160, 80, 80, 0.18);
-		color: #e07070;
+		color: var(--error-text);
 	}
 
 	.wp-check-text {
 		font-size: 0.95rem;
-		color: #ccc;
+		color: var(--text-secondary);
 	}
 
 	.wp-check-text.checked {
@@ -3370,7 +3370,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 		justify-content: center;
 		border: none;
 		background: transparent;
-		color: #7c8ef5;
+		color: var(--accent-light);
 		font-size: 0.9rem;
 		line-height: 1;
 		cursor: pointer;
@@ -3407,7 +3407,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 		gap: 10px;
 		align-items: center;
 		background: #0b0f18;
-		border-radius: 8px;
+		border-radius: var(--radius-sm);
 		padding: 8px;
 	}
 
@@ -3416,7 +3416,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 		font-size: 0.7rem;
 		font-weight: 600;
 		font-variant-numeric: tabular-nums;
-		color: #7c8ef5;
+		color: var(--accent-light);
 		background: rgba(124, 142, 245, 0.1);
 		border: 1px solid rgba(124, 142, 245, 0.25);
 		border-radius: 5px;
@@ -3517,7 +3517,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 	}
 
 	.wp-check-row.is-drag-over {
-		box-shadow: 0 -2px 0 0 #7c8ef5;
+		box-shadow: 0 -2px 0 0 var(--accent-light);
 		background: rgba(124, 142, 245, 0.08);
 	}
 
@@ -3537,7 +3537,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 		width: 100%;
 		background: #0f121b;
 		border: none;
-		color: #ddd;
+		color: var(--text-primary);
 		border-radius: 10px;
 		font: inherit;
 	}
@@ -3576,7 +3576,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 	}
 
 	.wp-save-dot.is-saving {
-		background: #7c8ef5;
+		background: var(--accent-light);
 		animation: wp-dot-pulse 1s ease-in-out infinite;
 	}
 
@@ -3729,7 +3729,7 @@ let dayHeadlinesState = $state<Record<string, string>>(structuredClone(data.dayH
 		background: var(--surface-1, #1c1c1e);
 		color: var(--text-primary, #f5f5f7);
 		border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
-		border-radius: 16px;
+		border-radius: var(--radius-lg);
 		padding: 1.4rem 1.3rem 1.1rem;
 		max-width: 360px;
 		width: 100%;
