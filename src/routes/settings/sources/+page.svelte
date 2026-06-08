@@ -1690,6 +1690,12 @@
 		<h2>SpareBank 1</h2>
 		{#if loadingSparebank1}
 			<p>Laster...</p>
+		{:else if sparebank1Status?.connected && sparebank1Status.sensor?.isExpired}
+			<p class="warn">Tilkoblingen har utløpt</p>
+			<p class="meta">Sist synket: {sparebank1Status.sensor?.lastSync ? new Date(sparebank1Status.sensor.lastSync).toLocaleString('nb-NO') : 'ukjent'}</p>
+			<div class="row">
+				<Button href="/api/sensors/sparebank1/connect">Re-autentiser SpareBank 1</Button>
+			</div>
 		{:else if sparebank1Status?.connected}
 			<p class="ok">Tilkoblet</p>
 			<div class="field">
@@ -2410,6 +2416,7 @@
 	}
 	.row { display: flex; gap: 0.6rem; flex-wrap: wrap; }
 	.ok { color: #4ade80; margin: 0.6rem 0 0; }
+	.warn { color: #fbbf24; margin: 0.6rem 0 0; }
 	.err { color: #f87171; margin: 0.6rem 0 0; }
 	.meta { color: #7f7f7f; font-size: 0.82rem; margin: 0.2rem 0 0.6rem; }
 	.field-desc { color: #9b9b9b; font-size: 0.84rem; margin: 0 0 0.8rem; }

@@ -78,6 +78,12 @@ const JOBS: CronJob[] = [
 		maxDurationSeconds: 60
 	},
 	{
+		path: '/api/cron/spond-sync',
+		schedule: '0 2 * * *', // 02:00 UTC = 04:00 Oslo (CEST)
+		description: 'Nattlig Spond-synk (alle brukere)',
+		maxDurationSeconds: 120
+	},
+	{
 		path: '/api/cron/monitoring',
 		schedule: '30 17 * * *', // 17:30 UTC = 19:30 Oslo (CEST)
 		description: 'Kveldlig systemhelsesjekk — sensor-ferskhet, jobb-helse, cron-eksekvering → Google Chat',

@@ -9,7 +9,6 @@ const FRESHNESS_THRESHOLDS: Record<string, { maxStalenessMs: number; label: stri
 	sparebank1: { maxStalenessMs: 18 * 3600_000, label: 'SpareBank1' },
 	dropbox: { maxStalenessMs: 2 * 3600_000, label: 'Dropbox' },
 	spond: { maxStalenessMs: 48 * 3600_000, label: 'Spond' },
-	strava: { maxStalenessMs: 48 * 3600_000, label: 'Strava' },
 };
 
 interface StaleSensor {

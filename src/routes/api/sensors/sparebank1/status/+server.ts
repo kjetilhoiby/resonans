@@ -34,11 +34,12 @@ export const GET: RequestHandler = async ({ locals }) => {
 			});
 		}
 
-		// isExpired = true only if refresh token is missing (requires re-auth)
-		// Access token expiry is handled automatically by auto-refresh on sync
 		const credentials = sensor.credentials ? decodeCredentials(sensor.credentials) : null;
 		const hasRefreshToken = !!credentials?.refresh_token;
-		const isExpired = !hasRefreshToken;
+		const expiresAt = (sensor.config as Record<string, unknown> | null)?.expiresAt;
+		const expiresAtMs = typeof expiresAt === 'string' ? Number(expiresAt) * 1000
+			: typeof expiresAt === 'number' ? expiresAt * 1000 : null;
+		const isExpired = !hasRefreshToken || (expiresAtMs !== null && expiresAtMs < Date.now());
 
 		return json({
 			connected: true,
