@@ -460,7 +460,7 @@
 	<title>Animation Exploration</title>
 </svelte:head>
 
-<AppPage bleed>
+<AppPage>
 	<div class="page-wrap">
 
 	<div class="phone-shell" style="--hue:{globalHueValue}" bind:this={phoneShellRef}>

@@ -228,7 +228,7 @@
 
 {#if isListView}
 	<!-- ══ LISTE-VIEW ══════════════════════════════════════════════════════════ -->
-	<AppPage bleed className="list-page">
+	<AppPage className="list-page">
 		<PageHeader title="Samtaler" titleHref="/">
 			{#snippet actions()}
 				<button class="lp-new-btn" onclick={createConversation} disabled={creatingConversation}>
@@ -319,7 +319,7 @@
 
 {:else}
 	<!-- ══ CHAT-VIEW ═══════════════════════════════════════════════════════════ -->
-	<AppPage bleed className="chat-page">
+	<AppPage className="chat-page">
 		<PageHeader title={conversation?.title ?? (data.weightContext ? 'Vektutvikling' : 'Samtale')} subtitle={formattedDate} titleHref="/samtaler">
 			{#snippet actions()}
 				{#if conversation?.linkedTheme}

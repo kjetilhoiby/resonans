@@ -12,7 +12,7 @@
 	}
 </script>
 
-<AppPage bleed>
+<AppPage>
 	<PullToRefresh onRefresh={refreshTheme}>
 	{#if data.theme}
 	<!-- Key på tema-id: /tema/[id] er én rute, så SvelteKit gjenbruker ellers

@@ -6,6 +6,6 @@
 	let { data }: { data: PageData } = $props();
 </script>
 
-<AppPage bleed>
+<AppPage>
 	<SensorDashboard type={data.type} summary={data.summary} />
 </AppPage>

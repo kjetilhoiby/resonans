@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { AppPage } from '$lib/components/ui';
+	import { AppPage, PageHeader } from '$lib/components/ui';
 	import ProjectCard from '$lib/components/composed/ProjectCard.svelte';
 	import TaskTitle from '$lib/components/ui/TaskTitle.svelte';
 	import FlowSheet from '$lib/components/flows/FlowSheet.svelte';
@@ -74,17 +74,13 @@
 </svelte:head>
 
 <AppPage>
-	<header class="page-header">
-		<div class="header-row">
-			<div>
-				<h1>Jobb</h1>
-				<p class="subtitle">Prosjekter, oppgaver og fokus</p>
-			</div>
+	<PageHeader title="Jobb" subtitle="Prosjekter, oppgaver og fokus" titleHref="/">
+		{#snippet actions()}
 			<button class="focus-start-btn" onclick={() => focusFlowOpen = true}>
 				Start fokusøkt
 			</button>
-		</div>
-	</header>
+		{/snippet}
+	</PageHeader>
 
 	<!-- Stats -->
 	<div class="stats-row">
@@ -270,26 +266,6 @@
 {/if}
 
 <style>
-	.page-header {
-		padding: 16px 0 0;
-	}
-	.header-row {
-		display: flex;
-		justify-content: space-between;
-		align-items: flex-start;
-		gap: 12px;
-	}
-	.page-header h1 {
-		margin: 0;
-		font-size: 1.4rem;
-		font-weight: 700;
-		color: #e2e8f0;
-	}
-	.subtitle {
-		margin: 4px 0 0;
-		font-size: 0.85rem;
-		color: #94a3b8;
-	}
 	.focus-start-btn {
 		background: rgba(245, 178, 89, 0.15);
 		border: 1px solid rgba(245, 178, 89, 0.3);

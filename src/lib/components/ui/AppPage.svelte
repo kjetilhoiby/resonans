@@ -3,29 +3,26 @@
 	import type { Snippet } from 'svelte';
 
 	type AppPageWidth = 'full' | 'content' | 'narrow';
-	type AppPageSurface = 'default' | 'subtle';
 
 	interface Props {
 		width?: AppPageWidth;
-		surface?: AppPageSurface;
-		bleed?: boolean;
+		bg?: string;
 		className?: string;
 		children: Snippet;
 	}
 
 	let {
 		width = 'full',
-		surface = 'default',
-		bleed = false,
+		bg,
 		className = '',
 		children
 	}: Props = $props();
 
 	$effect(() => {
 		if (!browser) return;
-		const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg-primary').trim() || '#0f0f0f';
-		document.documentElement.style.background = bg;
-		document.body.style.background = bg;
+		const color = bg || getComputedStyle(document.documentElement).getPropertyValue('--bg-primary').trim() || '#0f0f0f';
+		document.documentElement.style.background = color;
+		document.body.style.background = color;
 		return () => {
 			document.documentElement.style.background = '';
 			document.body.style.background = '';
@@ -33,17 +30,21 @@
 	});
 </script>
 
-<main class={`app-page width-${width} surface-${surface} ${bleed ? 'bleed' : ''} ${className}`.trim()}>
+<main
+	class={`app-page width-${width} ${className}`.trim()}
+	style={bg ? `--page-bg: ${bg}` : undefined}
+>
 	{@render children()}
 </main>
 
 <style>
 	.app-page {
-		/* Layout grid — konsistent på tvers av alle sider */
+		/* Layout grid */
 		--page-px: clamp(16px, 4vw, 24px);
 		--page-pt: max(20px, env(safe-area-inset-top, 0px));
 		--page-pb: max(20px, env(safe-area-inset-bottom, 0px));
 		--page-gap: var(--space-lg);
+		--page-bg: var(--bg-primary);
 
 		width: 100%;
 		min-height: 100dvh;
@@ -52,7 +53,8 @@
 		gap: var(--page-gap);
 		padding: var(--page-pt) var(--page-px) var(--page-pb);
 		color: var(--text-primary);
-		background: var(--bg-primary);
+		background: var(--page-bg);
+		transition: background 0.3s ease;
 
 		/* Bakgrunner */
 		--bg-primary: #0f0f0f;
@@ -111,15 +113,6 @@
 		--space-xl: 24px;
 		--space-2xl: 32px;
 	}
-
-	/* Bleed: innhold styrer sin egen vertikale spacing, men tittel-innrykk bevares */
-	.app-page.bleed {
-		gap: 0;
-	}
-
-	/* Surface */
-	.app-page.surface-default { background: var(--bg-primary); }
-	.app-page.surface-subtle { background: var(--bg-secondary); }
 
 	/* Width */
 	.app-page.width-full { max-width: none; }

@@ -32,7 +32,7 @@
 	let { data }: Props = $props();
 </script>
 
-<AppPage bleed>
+<AppPage>
 	<HomeScreen
 		themes={data.themes}
 		recentConversations={data.recentConversations}

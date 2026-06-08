@@ -8,7 +8,7 @@
 	<title>Logg inn | Resonans</title>
 </svelte:head>
 
-<AppPage bleed>
+<AppPage>
 	<div class="auth-shell">
 		<div class="auth-card">
 		<p class="eyebrow">Invite-only</p>

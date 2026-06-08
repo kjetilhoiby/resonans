@@ -408,7 +408,7 @@
 	<title>Månedsplan – {data.month.monthName} {data.month.year}</title>
 </svelte:head>
 
-<AppPage bleed>
+<AppPage>
 	<div class="mp-page">
 
 	<MonthHeader
