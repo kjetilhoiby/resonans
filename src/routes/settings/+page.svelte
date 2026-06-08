@@ -257,7 +257,7 @@
 
 </script>
 
-<AppPage width="full" theme="dark" className="settings-page">
+<AppPage className="settings-page">
 	<PageHeader
 		title="Innstillinger"
 		titleHref="/"

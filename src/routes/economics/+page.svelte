@@ -318,7 +318,7 @@
 	<title>Økonomi – Resonans</title>
 </svelte:head>
 
-<AppPage width="full" theme="dark" className="economics-page">
+<AppPage className="economics-page">
 	<PageHeader title="💰 Økonomi" titleHref="/" titleLabel="Tilbake til forsiden" />
 
 	{#if loadingAccounts}

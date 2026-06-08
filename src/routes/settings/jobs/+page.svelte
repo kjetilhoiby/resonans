@@ -218,7 +218,7 @@
 	const doneJobs = $derived(jobs.filter((j) => !['queued', 'running', 'retry'].includes(j.status)));
 </script>
 
-<AppPage width="full" theme="dark" className="jobs-page">
+<AppPage className="jobs-page">
 	<PageHeader
 		title="Bakgrunnsjobber"
 		titleHref="/settings"

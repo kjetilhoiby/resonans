@@ -8,7 +8,7 @@
 	<title>Logg inn | Resonans</title>
 </svelte:head>
 
-<AppPage width="full" padding="none" gap="sm" surface="transparent">
+<AppPage padding="none" gap="sm" surface="transparent">
 	<div class="auth-shell">
 		<div class="auth-card">
 		<p class="eyebrow">Invite-only</p>

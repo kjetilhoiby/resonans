@@ -119,7 +119,7 @@
 	const activeCount = $derived(seriesList.filter((s) => s.status === 'active').length);
 </script>
 
-<AppPage width="full" theme="dark" className="tracking-page">
+<AppPage className="tracking-page">
 	<PageHeader
 		title="Tracking-serier"
 		subtitle={`${activeCount} aktiv${activeCount === 1 ? '' : 'e'} serie${activeCount === 1 ? '' : 'r'}`}

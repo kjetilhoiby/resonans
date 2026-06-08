@@ -6,6 +6,6 @@
 	let { data }: { data: PageData } = $props();
 </script>
 
-<AppPage width="full" padding="none" gap="sm" surface="default">
+<AppPage padding="none" gap="sm" surface="default">
 	<SensorDashboard type={data.type} summary={data.summary} />
 </AppPage>

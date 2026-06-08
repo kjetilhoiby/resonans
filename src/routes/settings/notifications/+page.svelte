@@ -430,7 +430,7 @@
 	});
 </script>
 
-<AppPage width="full" theme="dark" className="notifications-page">
+<AppPage className="notifications-page">
 	<PageHeader
 		title="Varslinger"
 		titleHref="/settings"

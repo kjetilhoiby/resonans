@@ -19,7 +19,7 @@
 	<title>Lønnsmåned – {data.account.accountName ?? data.account.accountId} – Resonans</title>
 </svelte:head>
 
-<AppPage width="full" theme="dark" className="economics-salary-month-page">
+<AppPage className="economics-salary-month-page">
 	<PageHeader title="💰 Økonomi" titleHref="/" titleLabel="Tilbake til forsiden" />
 
 	<AccountPicker

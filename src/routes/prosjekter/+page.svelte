@@ -36,7 +36,7 @@
 	<title>Prosjekter · Resonans</title>
 </svelte:head>
 
-<AppPage width="full" padding="default" gap="sm" surface="transparent">
+<AppPage padding="default" gap="sm">
 	<header class="page-header">
 		<h1>Prosjekter</h1>
 		<p class="subtitle">{data.projects.length} prosjekt{data.projects.length === 1 ? '' : 'er'}</p>

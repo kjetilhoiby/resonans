@@ -6,14 +6,12 @@
 	type AppPagePadding = 'none' | 'default' | 'comfortable';
 	type AppPageGap = 'sm' | 'md' | 'lg';
 	type AppPageSurface = 'default' | 'subtle' | 'transparent';
-	type AppPageTheme = 'default' | 'dark';
 
 	interface Props {
 		width?: AppPageWidth;
 		padding?: AppPagePadding;
 		gap?: AppPageGap;
 		surface?: AppPageSurface;
-		theme?: AppPageTheme;
 		className?: string;
 		children: Snippet;
 	}
@@ -23,22 +21,15 @@
 		padding = 'default',
 		gap = 'md',
 		surface = 'default',
-		theme = 'dark',
 		className = '',
 		children
 	}: Props = $props();
 
-	const darkBg: Record<AppPageSurface, string> = {
-		default: '#0f0f0f',
-		subtle: '#111',
-		transparent: '#0f0f0f'
-	};
-
 	$effect(() => {
 		if (!browser) return;
-		const color = theme === 'dark' ? darkBg[surface] : '';
-		document.documentElement.style.background = color;
-		document.body.style.background = color;
+		const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg-primary').trim() || '#0f0f0f';
+		document.documentElement.style.background = bg;
+		document.body.style.background = bg;
 		return () => {
 			document.documentElement.style.background = '';
 			document.body.style.background = '';
@@ -46,7 +37,7 @@
 	});
 </script>
 
-<main class={`app-page width-${width} pad-${padding} gap-${gap} surface-${surface} theme-${theme} ${className}`.trim()}>
+<main class={`app-page width-${width} pad-${padding} gap-${gap} surface-${surface} ${className}`.trim()}>
 	{@render children()}
 </main>
 
@@ -56,9 +47,9 @@
 		min-height: 100dvh;
 		display: flex;
 		flex-direction: column;
-	}
+		color: var(--text-primary);
+		background: var(--bg-primary);
 
-	.app-page.theme-dark {
 		/* Bakgrunner */
 		--bg-primary: #0f0f0f;
 		--bg-secondary: #111;
@@ -111,7 +102,7 @@
 		--radius-lg: 16px;
 		--radius-xl: 20px;
 
-		/* Spacing (base-4) */
+		/* Spacing */
 		--space-xs: 4px;
 		--space-sm: 8px;
 		--space-md: 12px;
@@ -120,59 +111,27 @@
 		--space-2xl: 32px;
 	}
 
-	.app-page.surface-default {
-		background: var(--bg-primary);
-	}
+	/* Surface */
+	.app-page.surface-default { background: var(--bg-primary); }
+	.app-page.surface-subtle { background: var(--bg-secondary); }
+	.app-page.surface-transparent { background: transparent; }
 
-	.app-page.surface-subtle {
-		background: var(--bg-secondary);
-	}
+	/* Padding */
+	.app-page.pad-none { padding: 0; }
+	.app-page.pad-default { padding: clamp(20px, 4vw, 32px) clamp(16px, 3vw, 24px); }
+	.app-page.pad-comfortable { padding: clamp(24px, 5vw, 40px) clamp(18px, 4vw, 32px); }
 
-	.app-page.surface-transparent {
-		background: transparent;
-	}
+	/* Gap */
+	.app-page.gap-sm { gap: var(--space-md); }
+	.app-page.gap-md { gap: var(--space-lg); }
+	.app-page.gap-lg { gap: var(--space-xl); }
 
-	.app-page.pad-none {
-		padding: 0;
-	}
+	/* Width */
+	.app-page.width-full { max-width: none; }
+	.app-page.width-content { max-width: 760px; margin: 0 auto; }
+	.app-page.width-narrow { max-width: 560px; margin: 0 auto; }
 
-	.app-page.pad-default {
-		padding: clamp(20px, 4vw, 32px) clamp(16px, 3vw, 24px);
-	}
-
-	.app-page.pad-comfortable {
-		padding: clamp(24px, 5vw, 40px) clamp(18px, 4vw, 32px);
-	}
-
-	.app-page.gap-sm {
-		gap: 12px;
-	}
-
-	.app-page.gap-md {
-		gap: 16px;
-	}
-
-	.app-page.gap-lg {
-		gap: 24px;
-	}
-
-	.app-page.width-content,
-	.app-page.width-narrow {
-		margin: 0 auto;
-	}
-
-	.app-page.width-content {
-		max-width: 760px;
-	}
-
-	.app-page.width-narrow {
-		max-width: 560px;
-	}
-
-	.app-page.width-full {
-		max-width: none;
-	}
-
+	/* Safe area */
 	@media (max-width: 720px) {
 		.app-page.pad-default,
 		.app-page.pad-comfortable {

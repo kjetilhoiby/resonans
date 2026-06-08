@@ -73,7 +73,7 @@
 	<title>Jobb · Resonans</title>
 </svelte:head>
 
-<AppPage width="full" padding="default" gap="sm" surface="transparent" theme="dark">
+<AppPage padding="default" gap="sm">
 	<header class="page-header">
 		<div class="header-row">
 			<div>

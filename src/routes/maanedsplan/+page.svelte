@@ -408,7 +408,7 @@
 	<title>Månedsplan – {data.month.monthName} {data.month.year}</title>
 </svelte:head>
 
-<AppPage width="full" padding="none" gap="sm" theme="dark" surface="default">
+<AppPage padding="none" gap="sm" surface="default">
 	<div class="mp-page">
 
 	<MonthHeader

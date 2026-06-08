@@ -172,7 +172,7 @@
 	<title>Skjermtid · Resonans</title>
 </svelte:head>
 
-<AppPage width="full" padding="default" gap="md">
+<AppPage padding="default" gap="md">
 	<PageHeader title="Skjermtid" titleHref="/">
 		{#snippet actions()}
 			<IconButton href="/samtaler" icon="chat" variant="nav" ariaLabel="Chat" />

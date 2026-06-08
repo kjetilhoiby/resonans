@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { PageData } from './$types';
 	import { enhance } from '$app/forms';
+	import { AppPage, PageHeader } from '$lib/components/ui';
 
 	let { data }: { data: PageData } = $props();
 
@@ -22,7 +23,9 @@
 	<title>{data.appliance} · Resonans</title>
 </svelte:head>
 
-<div class="page">
+<AppPage>
+<PageHeader title="Apparat" backHref="/hjem" />
+<div class="apparat-content">
 	<h1>{data.appliance}</h1>
 	{#if data.startedAt}
 		<p class="started">Startet {new Date(data.startedAt).toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' })}</p>
@@ -61,9 +64,10 @@
 		<button type="submit">Oppdater</button>
 	</form>
 </div>
+</AppPage>
 
 <style>
-	.page {
+	.apparat-content {
 		max-width: 400px;
 		margin: 0 auto;
 		padding: 2rem 1rem;

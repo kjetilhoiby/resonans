@@ -38,7 +38,7 @@
 	}
 </script>
 
-<AppPage width="full" theme="dark" className="external-apps-page">
+<AppPage className="external-apps-page">
 	<PageHeader
 		title="Eksterne apper"
 		subtitle="Opprett personlige API-secrets for Scriptable og andre klienter."

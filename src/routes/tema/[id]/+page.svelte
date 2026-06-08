@@ -12,7 +12,7 @@
 	}
 </script>
 
-<AppPage width="full" padding="none" gap="sm" surface="transparent" theme="dark">
+<AppPage padding="none" gap="sm" surface="transparent">
 	<PullToRefresh onRefresh={refreshTheme}>
 	{#if data.theme}
 	<!-- Key på tema-id: /tema/[id] er én rute, så SvelteKit gjenbruker ellers

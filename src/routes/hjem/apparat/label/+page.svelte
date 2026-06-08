@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { PageData } from './$types';
+	import { AppPage, PageHeader } from '$lib/components/ui';
 
 	let { data }: { data: PageData } = $props();
 
@@ -62,8 +63,9 @@
 	<title>Label sykluser · Resonans</title>
 </svelte:head>
 
-<div class="page">
-	<h1>Label sykluser</h1>
+<AppPage>
+<PageHeader title="Label apparater" backHref="/hjem/apparat" />
+<div class="label-content">
 	<p class="subtitle">Velg programnavn for ferdige sykluser slik at Resonans kan gjenkjenne dem neste gang.</p>
 
 	{#if data.cycles.length === 0}
@@ -106,19 +108,16 @@
 		</div>
 	{/if}
 </div>
+</AppPage>
 
 <style>
-	.page {
+	.label-content {
 		max-width: 500px;
 		margin: 0 auto;
 		padding: 2rem 1rem;
 		display: flex;
 		flex-direction: column;
 		gap: 1.5rem;
-	}
-	h1 {
-		margin: 0;
-		font-size: 1.4rem;
 	}
 	.subtitle {
 		color: var(--muted, #888);

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { AppPage, PageHeader } from '$lib/components/ui';
 	import HomeDashboard from '$lib/components/domain/HomeDashboard.svelte';
 	import type { PageData } from './$types';
 
@@ -19,11 +20,14 @@
 	<title>Hus og hjem · Resonans</title>
 </svelte:head>
 
-<HomeDashboard
-	projects={data.projects}
-	seasonalTasks={data.seasonalTasks}
-	routines={data.routines}
-	appliances={data.appliances}
-	onOpenProject={openProject}
-	onOpenChat={openChat}
-/>
+<AppPage>
+	<PageHeader title="Hus og hjem" titleHref="/" />
+	<HomeDashboard
+		projects={data.projects}
+		seasonalTasks={data.seasonalTasks}
+		routines={data.routines}
+		appliances={data.appliances}
+		onOpenProject={openProject}
+		onOpenChat={openChat}
+	/>
+</AppPage>

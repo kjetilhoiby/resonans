@@ -237,7 +237,7 @@
 	}
 </script>
 
-<AppPage width="full" className="merchants-page">
+<AppPage className="merchants-page">
 	<PageHeader
 		title="AI Merchant Taxonomy"
 		titleHref="/settings/classification"

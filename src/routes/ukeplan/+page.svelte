@@ -441,7 +441,7 @@
 	<title>Ukeplan</title>
 </svelte:head>
 
-<AppPage width="full" padding="none" gap="sm" theme="dark" surface="default">
+<AppPage padding="none" gap="sm" surface="default">
 	<PullToRefresh excludeSelectors=".wp-header-actions, .wp-calendar-wrap">
 	<div class="week-plan-page">
 	<header class="wp-header">

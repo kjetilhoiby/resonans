@@ -11,7 +11,7 @@
 	];
 </script>
 
-<AppPage width="full" theme="dark" surface="default">
+<AppPage surface="default">
 	<PageHeader title="Plan" titleHref="/" titleLabel="Gå til forsiden">
 		{#snippet actions()}
 			<IconButton href="/" icon="chat" ariaLabel="Chat" />

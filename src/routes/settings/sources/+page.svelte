@@ -56,7 +56,7 @@
 	}
 </script>
 
-<AppPage width="full" className="sources-page">
+<AppPage className="sources-page">
 	<PageHeader
 		title="Kilder"
 		subtitle={`${connectedCount}/4 tilkoblet`}

@@ -98,7 +98,7 @@
 	}
 </script>
 
-<AppPage width="full" theme="dark" className="classification-page">
+<AppPage className="classification-page">
 	<PageHeader
 		title="Klassifisering"
 		titleHref="/settings"

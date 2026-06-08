@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { PageData } from './$types';
 	import { enhance } from '$app/forms';
+	import { AppPage, PageHeader } from '$lib/components/ui';
 
 	let { data }: { data: PageData } = $props();
 
@@ -27,8 +28,9 @@
 	<title>Deling – Innstillinger | Resonans</title>
 </svelte:head>
 
+<AppPage>
+<PageHeader title="Deling" backHref="/settings" />
 <main>
-	<h1>Deling</h1>
 	<p class="lead">
 		Her ser du alle delingslenker du har laget. Hver lenke gir tilgang til én ressurs — enten åpent
 		for hvem som helst med lenken, eller låst til en bestemt e-postadresse.
@@ -88,6 +90,7 @@
 		</table>
 	{/if}
 </main>
+</AppPage>
 
 <style>
 	main {
@@ -95,10 +98,6 @@
 		margin: 0 auto;
 		padding: 1.5rem 1rem;
 		font-family: system-ui, -apple-system, sans-serif;
-	}
-	h1 {
-		font-size: 1.6rem;
-		margin: 0 0 0.5rem;
 	}
 	.lead {
 		color: #555;

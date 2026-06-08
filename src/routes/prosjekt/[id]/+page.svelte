@@ -2,6 +2,7 @@
 	import type { PageData } from './$types';
 	import ProjectCard from '$lib/components/composed/ProjectCard.svelte';
 	import { HOME_PROJECT_TYPES, HOME_ROOMS } from '$lib/domains/home';
+	import { AppPage, PageHeader } from '$lib/components/ui';
 
 	let { data }: { data: PageData } = $props();
 
@@ -29,9 +30,10 @@
 	<title>{project.title} · Resonans</title>
 </svelte:head>
 
-<div class="page">
+<AppPage>
+<PageHeader title={project.title ?? 'Prosjekt'} backHref="/prosjekter" />
+<div class="project-content">
 	<header>
-		<h1>{projectEmoji()} {project.title}</h1>
 		{#if project.description}
 			<p class="description">{project.description}</p>
 		{/if}
@@ -112,19 +114,16 @@
 		{/if}
 	</section>
 </div>
+</AppPage>
 
 <style>
-	.page {
+	.project-content {
 		display: flex;
 		flex-direction: column;
 		gap: 1.5rem;
 		padding: 1rem;
 		max-width: 800px;
 		margin: 0 auto;
-	}
-	header h1 {
-		margin: 0;
-		font-size: 1.5rem;
 	}
 	.description {
 		margin: 0.25rem 0 0;

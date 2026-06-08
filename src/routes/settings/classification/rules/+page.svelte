@@ -124,7 +124,7 @@
 	}
 </script>
 
-<AppPage width="full" theme="dark" className="rules-page">
+<AppPage className="rules-page">
 	<PageHeader
 		title="Oppgaveklassifisering"
 		titleHref="/settings/classification"

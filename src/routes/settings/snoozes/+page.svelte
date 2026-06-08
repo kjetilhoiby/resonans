@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { PageData } from './$types';
 	import { enhance } from '$app/forms';
+	import { AppPage, PageHeader } from '$lib/components/ui';
 
 	let { data }: { data: PageData } = $props();
 
@@ -24,8 +25,9 @@
 	<title>Skjulte forslag – Innstillinger | Resonans</title>
 </svelte:head>
 
+<AppPage>
+<PageHeader title="Snoozes" backHref="/settings" />
 <main>
-	<h1>Skjulte forslag</h1>
 	<p class="lead">
 		Når du holder inne en handlings-chip på hjem-skjermen og velger «til i morgen», «til neste
 		mandag» eller «skjul permanent», havner den her. Du kan ta dem tilbake når du vil.
@@ -100,6 +102,7 @@
 		{/if}
 	{/if}
 </main>
+</AppPage>
 
 <style>
 	main {
@@ -107,10 +110,6 @@
 		margin: 0 auto;
 		padding: 1.5rem 1rem;
 		font-family: system-ui, -apple-system, sans-serif;
-	}
-	h1 {
-		font-size: 1.6rem;
-		margin: 0 0 0.5rem;
 	}
 	h2 {
 		font-size: 1rem;
