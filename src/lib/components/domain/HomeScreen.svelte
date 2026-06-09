@@ -307,7 +307,8 @@
 
 	// ── Handlingssone ─────────────────────────────────────────────────────
 	let serverActionCandidates = $state<ActionCandidate[]>([]);
-	async function loadActionCandidates() { serverActionCandidates = await fetchActionCandidates(); }
+	let actionsLoading = $state(true);
+	async function loadActionCandidates() { serverActionCandidates = await fetchActionCandidates(); actionsLoading = false; }
 
 	const actionItems = $derived.by<ActionItem[]>(() =>
 		serverActionCandidates.map((c) => ({ id: c.id, icon: c.icon, label: c.label, value: c.value, done: false, priority: c.priority, onclick: () => dispatchActionIntent(c.intent) }))
@@ -792,6 +793,7 @@
 		get followUpStarred() { return followUpStarred; },
 		get followUpRegular() { return followUpRegular; },
 
+		get actionsLoading() { return actionsLoading; },
 		get actionItems() { return actionItems; },
 		get serverActionCandidates() { return serverActionCandidates; },
 

@@ -226,6 +226,7 @@ export interface HomeContext {
 	followUpRegular: RecentConversation[];
 
 	// ── Handlinger ──
+	actionsLoading: boolean;
 	actionItems: ActionItem[];
 	serverActionCandidates: ActionCandidate[];
 

@@ -26,6 +26,7 @@ export { default as ChecklistItemRow } from './ChecklistItemRow.svelte';
 export { default as ChecklistGroupRow } from './ChecklistGroupRow.svelte';
 export { default as RoutineGroupRow } from './RoutineGroupRow.svelte';
 export { default as RelationSparkline } from './RelationSparkline.svelte';
+export { default as Skeleton } from './Skeleton.svelte';
 export { default as StatusBadge } from './StatusBadge.svelte';
 export { default as TransactionList } from './TransactionList.svelte';
 export { default as Icon } from './Icon.svelte';

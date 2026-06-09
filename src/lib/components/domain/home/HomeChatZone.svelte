@@ -14,6 +14,7 @@
 	import { getContext } from 'svelte';
 	import Icon from '../../ui/Icon.svelte';
 	import ChipStrip from '../../ui/ChipStrip.svelte';
+	import Skeleton from '../../ui/Skeleton.svelte';
 	import ChatInput from '../../ui/ChatInput.svelte';
 	import ChatMessages from '../../ui/ChatMessages.svelte';
 	import PageHeader from '../../ui/PageHeader.svelte';
@@ -29,46 +30,57 @@
 </script>
 
 <section class="zone zone-input" class:zone-chat-open={ctx.inputExpanded} aria-label="Chat" bind:this={ctx.chatSection}>
-	{#if !ctx.inputExpanded && ctx.programReadiness}
-		<button
-			class="readiness-chip readiness-{ctx.programReadiness.state}"
-			onclick={() => goto(`/treningsprogram/${ctx.programReadiness?.programId}`)}
-			aria-label="Dagens treningstilstand"
-		>
-			<span class="readiness-dot">
-				{#if ctx.programReadiness.state === 'klar'}🟢{:else if ctx.programReadiness.state === 'lett'}🟡{:else if ctx.programReadiness.state === 'easy'}🟠{:else}🔴{/if}
-			</span>
-			<span class="readiness-label">
-				{#if ctx.programReadiness.state === 'klar'}I dag: Klar for {ctx.programReadiness.programName}
-				{:else if ctx.programReadiness.state === 'rest'}I dag: Hvile{ctx.programReadiness.alternativeName ? ` — ${ctx.programReadiness.alternativeName}` : ''}
-				{:else}I dag: {ctx.programReadiness.alternativeName ?? (ctx.programReadiness.state === 'lett' ? 'Lett på' : 'Easy-dag')}
-				{/if}
-			</span>
-		</button>
-	{/if}
-	{#if !ctx.inputExpanded && ctx.actionItems.length > 0}
+	{#if !ctx.inputExpanded && ctx.actionsLoading}
+		<Skeleton variant="pill" width="180px" height="34px" />
 		<div class="zone-actions">
-			<ChipStrip gap={8} ariaLabel="Foreslåtte handlinger">
-				{#each ctx.actionItems as item (item.id)}
-					<button
-						class="action-pill"
-						class:is-done={item.done}
-						onclick={() => ctx.handleChipClick(item.onclick)}
-						onpointerdown={(e) => ctx.startLongPress(item.id, item.label, e)}
-						onpointerup={ctx.cancelLongPress}
-						onpointercancel={ctx.cancelLongPress}
-						onpointerleave={ctx.cancelLongPress}
-						oncontextmenu={(e) => e.preventDefault()}
-					>
-						<span class="action-pill-icon">{item.icon}</span>
-						<span class="action-pill-label">{item.label}</span>
-						{#if item.value !== undefined}
-							<span class="action-pill-val">{item.value}</span>
-						{/if}
-					</button>
-				{/each}
+			<ChipStrip gap={8} ariaLabel="Laster handlinger">
+				<Skeleton variant="pill" width="120px" />
+				<Skeleton variant="pill" width="100px" />
+				<Skeleton variant="pill" width="80px" />
 			</ChipStrip>
 		</div>
+	{:else if !ctx.inputExpanded}
+		{#if ctx.programReadiness}
+			<button
+				class="readiness-chip readiness-{ctx.programReadiness.state}"
+				onclick={() => goto(`/treningsprogram/${ctx.programReadiness?.programId}`)}
+				aria-label="Dagens treningstilstand"
+			>
+				<span class="readiness-dot">
+					{#if ctx.programReadiness.state === 'klar'}🟢{:else if ctx.programReadiness.state === 'lett'}🟡{:else if ctx.programReadiness.state === 'easy'}🟠{:else}🔴{/if}
+				</span>
+				<span class="readiness-label">
+					{#if ctx.programReadiness.state === 'klar'}I dag: Klar for {ctx.programReadiness.programName}
+					{:else if ctx.programReadiness.state === 'rest'}I dag: Hvile{ctx.programReadiness.alternativeName ? ` — ${ctx.programReadiness.alternativeName}` : ''}
+					{:else}I dag: {ctx.programReadiness.alternativeName ?? (ctx.programReadiness.state === 'lett' ? 'Lett på' : 'Easy-dag')}
+					{/if}
+				</span>
+			</button>
+		{/if}
+		{#if ctx.actionItems.length > 0}
+			<div class="zone-actions">
+				<ChipStrip gap={8} ariaLabel="Foreslåtte handlinger">
+					{#each ctx.actionItems as item (item.id)}
+						<button
+							class="action-pill"
+							class:is-done={item.done}
+							onclick={() => ctx.handleChipClick(item.onclick)}
+							onpointerdown={(e) => ctx.startLongPress(item.id, item.label, e)}
+							onpointerup={ctx.cancelLongPress}
+							onpointercancel={ctx.cancelLongPress}
+							onpointerleave={ctx.cancelLongPress}
+							oncontextmenu={(e) => e.preventDefault()}
+						>
+							<span class="action-pill-icon">{item.icon}</span>
+							<span class="action-pill-label">{item.label}</span>
+							{#if item.value !== undefined}
+								<span class="action-pill-val">{item.value}</span>
+							{/if}
+						</button>
+					{/each}
+				</ChipStrip>
+			</div>
+		{/if}
 	{/if}
 	{#if ctx.chatOpen}
 		<PageHeader

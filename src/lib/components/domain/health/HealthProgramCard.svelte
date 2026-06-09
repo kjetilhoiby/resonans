@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Skeleton from '$lib/components/ui/Skeleton.svelte';
 	import type { ProgramSummary, TodaySession } from './health-data';
 
 	interface Props {
@@ -10,7 +11,21 @@
 	let { activeProgram, todaySession, loading }: Props = $props();
 </script>
 
-{#if !loading}
+{#if loading}
+	<aside class="hd-program-card">
+		<div class="hd-program-skeleton">
+			<div class="hd-program-main">
+				<Skeleton variant="line" width="80px" height="10px" />
+				<Skeleton variant="line" width="160px" height="14px" />
+				<Skeleton variant="line" width="120px" height="10px" />
+			</div>
+			<div class="hd-program-today">
+				<Skeleton variant="line" width="30px" height="10px" />
+				<Skeleton variant="line" width="70px" height="12px" />
+			</div>
+		</div>
+	</aside>
+{:else}
 	<aside class="hd-program-card">
 		{#if activeProgram}
 			<a class="hd-program-link" href="/treningsprogram/{activeProgram.id}">
@@ -60,6 +75,13 @@
 	}
 	.hd-program-card:hover {
 		border-color: rgba(255, 255, 255, 0.2);
+	}
+	.hd-program-skeleton {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 16px;
+		padding: 16px 20px;
 	}
 	.hd-program-link,
 	.hd-program-empty {

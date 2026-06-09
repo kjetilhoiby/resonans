@@ -572,10 +572,6 @@
 		animation: launchFade 0.65s ease;
 	}
 
-	.tp-enter {
-		animation: contentRise 0.4s ease;
-	}
-
 	@keyframes launchBackdrop {
 		from {
 			opacity: 0.1;
@@ -616,16 +612,6 @@
 		}
 	}
 
-	@keyframes contentRise {
-		from {
-			opacity: 0;
-			transform: translateY(10px);
-		}
-		to {
-			opacity: 1;
-			transform: translateY(0);
-		}
-	}
 
 	/* ── Header ── */
 	.tp-header {
