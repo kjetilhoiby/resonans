@@ -63,15 +63,17 @@
 		{/if}
 		<div class="page-header-copy">
 			{#if titleHref}
-				<a href={titleHref} class="page-header-title-link" aria-label={titleLabel}>
+				<a href={titleHref} class="page-header-title-link" aria-label={titleLabel} onclick={(e) => e.currentTarget.classList.add('is-navigating')}>
 					<div class="page-header-title-row">
+						<span class="page-header-loading"></span>
 						{#if emoji}<span class="page-header-emoji">{emoji}</span>{/if}
 						<h1>{displayed}</h1>
 					</div>
 				</a>
 			{:else if onTitleClick || morph}
-				<button class="page-header-title-link" type="button" onclick={() => onTitleClick?.()} aria-label={titleLabel}>
+				<button class="page-header-title-link" type="button" onclick={(e) => { e.currentTarget.classList.add('is-navigating'); onTitleClick?.(); }} aria-label={titleLabel}>
 					<div class="page-header-title-row">
+						<span class="page-header-loading"></span>
 						{#if emoji}<span class="page-header-emoji">{emoji}</span>{/if}
 						<h1>{displayed}</h1>
 					</div>
@@ -167,6 +169,27 @@
 		font-size: 0.85rem;
 		color: var(--text-secondary);
 		line-height: 1.5;
+	}
+
+	.page-header-loading {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--accent-primary, #4a5af0);
+		flex-shrink: 0;
+		display: none;
+		margin-left: -16px;
+		margin-right: 0;
+	}
+
+	:global(.is-navigating) .page-header-loading {
+		display: block;
+		animation: header-pulse 1s ease-in-out infinite;
+	}
+
+	@keyframes header-pulse {
+		0%, 100% { opacity: 0.3; transform: scale(0.8); }
+		50% { opacity: 1; transform: scale(1); }
 	}
 
 	.page-header-actions {
