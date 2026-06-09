@@ -166,7 +166,7 @@
 
 <AppPage>
 	<PageSection>
-	<PageHeader title="Lønnsrapport" backHref="/economics" />
+	<PageHeader title="Lønnsrapport" titleHref="/economics" />
 
 	{#if !report}
 		<div class="empty-state">

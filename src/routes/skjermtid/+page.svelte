@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, PageHeader, IconButton, Button, Select, PageSection } from '$lib/components/ui';
+	import { AppPage, PageHeader, Button, Select, PageSection } from '$lib/components/ui';
 	import ScreenTimeCard from '$lib/components/composed/ScreenTimeCard.svelte';
 	import { invalidateAll } from '$app/navigation';
 	import type { PageData } from './$types';
@@ -174,11 +174,7 @@
 
 <AppPage>
 	<PageSection>
-	<PageHeader title="Skjermtid" titleHref="/">
-		{#snippet actions()}
-			<IconButton href="/samtaler" icon="chat" variant="nav" ariaLabel="Chat" />
-		{/snippet}
-	</PageHeader>
+	<PageHeader title="Skjermtid" titleHref="/" />
 
 	{#if error}
 		<p class="error">{error}</p>

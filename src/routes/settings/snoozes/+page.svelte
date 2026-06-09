@@ -27,7 +27,7 @@
 
 <AppPage>
 <PageSection>
-<PageHeader title="Snoozes" backHref="/settings" />
+<PageHeader title="Snoozes" titleHref="/settings" />
 <main>
 	<p class="lead">
 		Når du holder inne en handlings-chip på hjem-skjermen og velger «til i morgen», «til neste

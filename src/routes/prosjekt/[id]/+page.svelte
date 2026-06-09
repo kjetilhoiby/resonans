@@ -32,7 +32,7 @@
 
 <AppPage>
 <PageSection>
-<PageHeader title={project.title ?? 'Prosjekt'} backHref="/prosjekter" />
+<PageHeader title={project.title ?? 'Prosjekt'} titleHref="/prosjekter" />
 <div class="project-content">
 	<header>
 		{#if project.description}

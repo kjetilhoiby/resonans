@@ -79,7 +79,7 @@
 
 <AppPage>
 	<PageSection>
-	<PageHeader title="Lag treningsprogram" subtitle="LLM-generert hybridprogram" backHref="/treningsprogram" />
+	<PageHeader title="Lag treningsprogram" subtitle="LLM-generert hybridprogram" titleHref="/treningsprogram" />
 
 	<form class="form" onsubmit={handleSubmit}>
 		<section class="field">

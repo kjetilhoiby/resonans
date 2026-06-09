@@ -112,7 +112,7 @@
 
 <AppPage>
 	<PageSection>
-	<PageHeader title={program.name} subtitle={program.goal} backHref="/treningsprogram" />
+	<PageHeader title={program.name} subtitle={program.goal} titleHref="/treningsprogram" />
 
 	<header class="program-meta">
 		<div>

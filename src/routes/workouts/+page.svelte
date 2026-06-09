@@ -8,7 +8,7 @@
 
 <AppPage>
 	<PageSection>
-		<PageHeader title="Treningsøkter" subtitle="Progress over tid" backHref="/" />
+		<PageHeader title="Treningsøkter" subtitle="Progress over tid" titleHref="/" />
 
 		<div class="workouts-page">
 			<div class="chart-controls">

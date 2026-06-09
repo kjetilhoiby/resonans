@@ -305,22 +305,22 @@ body {
 
 /* Sirkulær tilbake-navigasjonsknapp med ikon */
 .btn-nav {
-	width: 44px;
-	height: 44px;
-	border-radius: 50%;
+	width: 32px;
+	height: 32px;
+	border-radius: 8px;
 	border: 1px solid var(--border-color);
-	background: var(--bg-card);
-	color: var(--text-primary);
+	background: transparent;
+	color: var(--text-tertiary);
 	font: inherit;
 	cursor: pointer;
-	transition: background 0.15s, border-color 0.15s;
+	transition: background 0.12s, border-color 0.12s, color 0.12s;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
 	text-decoration: none;
 	flex-shrink: 0;
 }
-.btn-nav:hover { background: var(--bg-hover); border-color: var(--text-tertiary); }
+.btn-nav:hover { border-color: var(--text-secondary); color: var(--text-primary); background: var(--bg-card); }
 
 /* Subtabs — Chat / Data / Filer */
 .subtab {

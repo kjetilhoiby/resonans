@@ -25,7 +25,7 @@
 
 <AppPage>
 <PageSection>
-<PageHeader title="Apparat" backHref="/hjem" />
+<PageHeader title="Apparat" titleHref="/hjem" />
 <div class="apparat-content">
 	<h1>{data.appliance}</h1>
 	{#if data.startedAt}

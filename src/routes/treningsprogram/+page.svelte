@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { AppPage, PageHeader, PageSection } from '$lib/components/ui';
-	import IconButton from '$lib/components/ui/IconButton.svelte';
+
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -40,11 +40,7 @@
 
 <AppPage>
 	<PageSection>
-	<PageHeader title="Treningsprogram" subtitle="Hybride programmer — styrke + løping" titleHref="/">
-		{#snippet actions()}
-			<IconButton href="/treningsprogram/ny" icon="plus" variant="nav" ariaLabel="Lag nytt program" />
-		{/snippet}
-	</PageHeader>
+	<PageHeader title="Treningsprogram" subtitle="Hybride programmer — styrke + løping" titleHref="/" />
 
 	{#if data.snapshot}
 		<section class="snapshot-card">

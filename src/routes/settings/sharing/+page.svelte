@@ -30,7 +30,7 @@
 
 <AppPage>
 <PageSection>
-<PageHeader title="Deling" backHref="/settings" />
+<PageHeader title="Deling" titleHref="/settings" />
 <main>
 	<p class="lead">
 		Her ser du alle delingslenker du har laget. Hver lenke gir tilgang til én ressurs — enten åpent
