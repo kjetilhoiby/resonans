@@ -111,6 +111,16 @@ Integrasjoner og bakgrunnsoppgaver overvåkes automatisk. Alle cron-endepunkter 
 - Nye integrasjoner: legg til provider i `FRESHNESS_THRESHOLDS` i `monitoring-service.ts`.
 - `MONITORING_WEBHOOK_URL` i `.env` for Google Chat-varsler.
 
+**Brukslogging** (`usage_events`-tabellen, se `docs/changelog/2026-06-09-brukslogging.md`):
+
+Sidevisninger, oppmerksomhetstid og klikk logges automatisk fra rot-layouten (`$lib/client/usage-logger`) — ingen instrumentering trengs per side. Klikk på interaktive elementer får label etter denne prioriteringen: `data-track` > `aria-label` > input-type/navn > knappetekst.
+
+- **Knapper med beskrivende tekst** («Legg til», «Opprett»): trenger ingenting — teksten blir label.
+- **Ikon-knapper** (✕, ✨, …): skal ha `aria-label` (dekker både tilgjengelighet og logging). Legg til `data-track` i tillegg hvis aria-labelen er dynamisk.
+- **Tekstfelt og viktige kontroller**: sett `data-track="område:handling"` i kebab-case på norsk, f.eks. `data-track="tema-oppgaver:slett"` eller `data-track="prosjekter:nytt-prosjekt-navn"`. Området er konteksten (siden/widgeten), handlingen er hva kontrollen gjør.
+- Sjekk at nye kontroller ikke ender som anonyme labels (`✕`, `input[text]`, `<div>`) — det gjør bruksstatistikken ulesbar.
+- Bruksdata hentes med `GET /api/usage/summary?days=30` (sider, oppmerksomhetstid, økter, topp-interaksjoner).
+
 ---
 
 ## Arkitektur

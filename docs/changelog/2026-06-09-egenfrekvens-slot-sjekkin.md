@@ -50,7 +50,19 @@ forsvinner når slottet registreres. Den gamle server-produserte «Sjekk inn · 
 - `HomeOverlays.svelte`: rendrer FlowSheet; «Fortsett i chat» lagrer sjekkinnen og sender
   kontekstmelding inn i hjemchatten via `startHomeChat`.
 
-### Fase 4: Opprydding
+### Fase 4: Dashboard (2026-06-10)
+- `EgenfrekvensDashboard.svelte` bygget om fra dimensjons-visning (tanker/følelser/handlinger)
+  til slot-visning: dagens slot-stripe i siste-kortet, «Døgnrytme»-grid (dager × 5 slots,
+  nivåfargede celler med notat i tooltip), snitt-nivå pr. slot, og notat i stedet for T/F/H
+  i siste sjekkins-lista. Trend-sparkline beholdt som én samlet dagslinje.
+- `egenfrekvens-dashboard.ts`: hvert dagspunkt fikk `slots` (nyeste registrering pr.
+  periode-slot) og stats fikk `avgLevelBySlot`. Historiske morning/evening-events vises som
+  morgen/kveld via ny `displayPeriodSlotFor()` i period-slots.ts (testet). Gamle felt
+  (morning/evening/thoughts/feelings/actions) beholdt i API-et for andre konsumenter.
+- `dashboard-cache.ts`: klienttypene utvidet tilsvarende (valgfrie felt — cachede payloads
+  uten `slots` rendrer fortsatt).
+
+### Fase 5: Opprydding
 - Gammelt app-open prompt-banner fjernet: `EgenfrekvensPrompt.svelte`, `/api/egenfrekvens/status`,
   `egenfrekvensPromptOpen/Day`-state og HomeTitleZone-blokken. Quick/full-flytene og nudge-URLene
   (`?flow=egenfrekvens_quick&slot=…`) er uendret.

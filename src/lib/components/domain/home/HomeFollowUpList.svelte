@@ -22,6 +22,7 @@
 					<!-- svelte-ignore a11y_autofocus -->
 					<input
 						class="followup-rename-input"
+						data-track="hjem-samtaler:gi-nytt-navn"
 						bind:value={ctx.homeEditingTitle}
 						onkeydown={(e) => {
 							if (e.key === 'Enter') ctx.commitHomeConversationRename(convo.id);

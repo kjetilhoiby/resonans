@@ -259,6 +259,7 @@
 				<input
 					type="text"
 					placeholder="Navn, f.eks. Bygg terrasse"
+					data-track="prosjekter:nytt-prosjekt-navn"
 					bind:value={newName}
 					disabled={submitting}
 				/>

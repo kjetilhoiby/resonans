@@ -1,14 +1,10 @@
 <script lang="ts">
-	import { ACTION_PYRAMID_LABELS } from '$lib/domains/egenfrekvens';
-	import type { EgenfrekvensDashboardData, EgenfrekvensCheckinPointData } from '$lib/client/dashboard-cache';
-
-	const LEVEL_LABELS: Record<number, string> = {
-		1: 'Helt nede',
-		2: 'Tungt',
-		3: 'Midt på',
-		4: 'Greit',
-		5: 'God flyt'
-	};
+	import {
+		PERIOD_SLOTS,
+		PERIOD_SLOT_LEVEL_LABELS,
+		type PeriodSlotId
+	} from '$lib/domains/egenfrekvens/period-slots';
+	import type { EgenfrekvensDashboardData, EgenfrekvensCheckinPointData, EgenfrekvensSlotPointData } from '$lib/client/dashboard-cache';
 
 	interface Props {
 		data: EgenfrekvensDashboardData;
@@ -21,27 +17,14 @@
 
 	const oldestFirst = $derived([...data.points].sort((a, b) => (a.day < b.day ? -1 : 1)));
 
-	function fmt(n: number | null, digits = 1): string {
-		if (n === null) return '—';
+	function fmt(n: number | null | undefined, digits = 1): string {
+		if (n === null || n === undefined) return '—';
 		return n.toFixed(digits);
-	}
-
-	function fmtSigned(n: number | null, digits = 1): string {
-		if (n === null) return '—';
-		const sign = n > 0 ? '+' : '';
-		return `${sign}${n.toFixed(digits)}`;
 	}
 
 	function fmtDayLabel(day: string): string {
 		const [, m, d] = day.split('-');
 		return `${d}.${m}`;
-	}
-
-	function balanceColor(v: number | null): string {
-		if (v === null) return '#475569';
-		if (v >= 2) return '#48b581';
-		if (v >= -1) return '#8ba0f5';
-		return '#ee8c8c';
 	}
 
 	function levelColor(v: number | null): string {
@@ -52,23 +35,47 @@
 		return '#ee8c8c';
 	}
 
-	function actionLabel(v: number | null): string {
-		if (v === null) return 'Ingen registrering';
-		return ACTION_PYRAMID_LABELS[v] ?? '';
+	function levelBg(v: number | null): string {
+		if (v === null) return 'rgba(255,255,255,0.02)';
+		if (v >= 4) return 'rgba(72,181,129,0.16)';
+		if (v >= 3) return 'rgba(139,160,245,0.16)';
+		if (v >= 2) return 'rgba(246,193,119,0.16)';
+		return 'rgba(238,140,140,0.16)';
 	}
 
 	function levelLabel(v: number | null): string {
 		if (v === null) return '';
-		return LEVEL_LABELS[Math.round(v)] ?? '';
+		return PERIOD_SLOT_LEVEL_LABELS[Math.round(v)] ?? '';
 	}
 
-	// Foretrekk level fra siste registrering (quick eller full), fallback til mapping fra balance
+	function slotsOf(p: EgenfrekvensCheckinPointData): Partial<Record<PeriodSlotId, EgenfrekvensSlotPointData>> {
+		return p.slots ?? {};
+	}
+
+	// Nivå for en dag: siste slot-registrering (etter timestamp), fallback til balance-mapping
 	function pointLevel(p: EgenfrekvensCheckinPointData | null): number | null {
 		if (!p) return null;
-		const explicit = p.evening?.level ?? p.morning?.level;
-		if (typeof explicit === 'number') return explicit;
+		const entries = Object.values(slotsOf(p)).filter(
+			(e): e is EgenfrekvensSlotPointData => !!e && typeof e.level === 'number'
+		);
+		if (entries.length > 0) {
+			entries.sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1));
+			return entries[0].level;
+		}
 		if (typeof p.balance === 'number') return Math.max(1, Math.min(5, Math.round((p.balance + 5) / 2)));
 		return null;
+	}
+
+	// Notat for en dag: siste slot-notat, fallback til dagsnotatet (gamle full-sjekkins)
+	function pointNote(p: EgenfrekvensCheckinPointData): string | null {
+		const noted = Object.values(slotsOf(p)).filter(
+			(e): e is EgenfrekvensSlotPointData => !!e && typeof e.note === 'string' && e.note.length > 0
+		);
+		if (noted.length > 0) {
+			noted.sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1));
+			return noted[0].note;
+		}
+		return p.note;
 	}
 
 	const sparklineWidth = 280;
@@ -95,39 +102,8 @@
 		};
 	});
 
-	// Egne sparkline-spor for morgen/kveld når quick-data finnes
-	const slotSparklines = $derived.by(() => {
-		const total = oldestFirst.length;
-		if (total < 2) return null;
-		const xs = oldestFirst.map((_, i) => (i / (total - 1)) * sparklineWidth);
-
-		const morningDots: Array<{ x: number; y: number; day: string; val: number }> = [];
-		const eveningDots: Array<{ x: number; y: number; day: string; val: number }> = [];
-
-		oldestFirst.forEach((p, i) => {
-			if (p.morning && typeof p.morning.balance === 'number') {
-				morningDots.push({ x: xs[i], y: balanceToY(p.morning.balance), day: p.day, val: p.morning.level ?? Math.round((p.morning.balance + 5) / 2) });
-			}
-			if (p.evening && typeof p.evening.balance === 'number') {
-				eveningDots.push({ x: xs[i], y: balanceToY(p.evening.balance), day: p.day, val: p.evening.level ?? Math.round((p.evening.balance + 5) / 2) });
-			}
-		});
-
-		if (morningDots.length === 0 && eveningDots.length === 0) return null;
-
-		const lineFrom = (dots: Array<{ x: number; y: number }>) =>
-			dots.length >= 2
-				? dots.map((d, i) => `${i === 0 ? 'M' : 'L'}${d.x.toFixed(1)},${d.y.toFixed(1)}`).join(' ')
-				: null;
-
-		return {
-			morningPath: lineFrom(morningDots),
-			eveningPath: lineFrom(eveningDots),
-			morningDots,
-			eveningDots
-		};
-	});
-
+	// Døgnrytme-grid: nyeste dag øverst, maks 14 dager
+	const gridDays = $derived(data.points.slice(0, 14));
 	const last7: EgenfrekvensCheckinPointData[] = $derived(data.points.slice(0, 7));
 </script>
 
@@ -159,6 +135,8 @@
 	{:else}
 		{#if data.latest}
 			{@const latestLevel = pointLevel(data.latest)}
+			{@const latestNote = pointNote(data.latest)}
+			{@const latestSlots = slotsOf(data.latest)}
 			<section class="ef-card ef-latest">
 				<div class="ef-latest-head">
 					<span class="ef-latest-day">{fmtDayLabel(data.latest.day)}</span>
@@ -170,25 +148,22 @@
 					<span class="ef-balance-num">{latestLevel ?? '—'}<span class="ef-balance-suffix">/5</span></span>
 					<span class="ef-balance-lbl">{levelLabel(latestLevel)}</span>
 				</div>
-				<div class="ef-mini-grid">
-					<div class="ef-mini">
-						<span class="ef-mini-lbl">Tanker</span>
-						<span class="ef-mini-val">{fmt(data.latest.thoughts, 0)}<span class="ef-mini-suffix">/5</span></span>
-					</div>
-					<div class="ef-mini">
-						<span class="ef-mini-lbl">Følelser</span>
-						<span class="ef-mini-val">{fmt(data.latest.feelings, 0)}<span class="ef-mini-suffix">/5</span></span>
-					</div>
-					<div class="ef-mini">
-						<span class="ef-mini-lbl">Handlinger</span>
-						<span class="ef-mini-val">{fmt(data.latest.actions, 0)}<span class="ef-mini-suffix">/5</span></span>
-					</div>
+				<div class="ef-slot-strip" role="list" aria-label="Dagens slots">
+					{#each PERIOD_SLOTS as slot (slot.id)}
+						{@const entry = latestSlots[slot.id]}
+						<div
+							class="ef-slot-cell"
+							role="listitem"
+							style:background={levelBg(entry?.level ?? null)}
+							title="{slot.shortLabel}: {entry?.level != null ? `${entry.level}/5` : 'ikke registrert'}{entry?.note ? ` — ${entry.note}` : ''}"
+						>
+							<span class="ef-slot-emoji">{slot.emoji}</span>
+							<span class="ef-slot-val" style:color={levelColor(entry?.level ?? null)}>{entry?.level ?? '·'}</span>
+						</div>
+					{/each}
 				</div>
-				{#if data.latest.actions !== null}
-					<p class="ef-action-hint">{actionLabel(data.latest.actions)}</p>
-				{/if}
-				{#if data.latest.note}
-					<p class="ef-note">«{data.latest.note}»</p>
+				{#if latestNote}
+					<p class="ef-note">«{latestNote}»</p>
 				{/if}
 				{#if data.latest.reflectionSynthesis || data.latest.reflection || data.latest.reflectionThread?.length}
 					<details class="ef-reflection">
@@ -215,53 +190,60 @@
 			</section>
 		{/if}
 
+		<section class="ef-card">
+			<h3 class="ef-card-title">Døgnrytme</h3>
+			<div class="ef-grid" role="table" aria-label="Sjekkins per slot og dag">
+				<div class="ef-grid-row ef-grid-head" role="row">
+					<span class="ef-grid-day" role="columnheader"></span>
+					{#each PERIOD_SLOTS as slot (slot.id)}
+						<span class="ef-grid-col" role="columnheader" title={slot.shortLabel}>{slot.emoji}</span>
+					{/each}
+				</div>
+				{#each gridDays as p (p.day)}
+					{@const daySlots = slotsOf(p)}
+					<div class="ef-grid-row" role="row">
+						<span class="ef-grid-day" role="rowheader">{fmtDayLabel(p.day)}</span>
+						{#each PERIOD_SLOTS as slot (slot.id)}
+							{@const entry = daySlots[slot.id]}
+							<span
+								class="ef-grid-cell"
+								role="cell"
+								style:background={levelBg(entry?.level ?? null)}
+								style:color={levelColor(entry?.level ?? null)}
+								title="{fmtDayLabel(p.day)} {slot.shortLabel.toLowerCase()}: {entry?.level != null ? `${entry.level}/5 — ${levelLabel(entry.level)}` : 'ikke registrert'}{entry?.note ? ` · ${entry.note}` : ''}"
+							>{entry?.level ?? ''}</span>
+						{/each}
+					</div>
+				{/each}
+			</div>
+			<div class="ef-trend-stats">
+				<div class="ef-trend-stat"><span>Snitt</span><strong>{fmt(data.stats.avgLevel)}<span class="ef-mini-suffix">/5</span></strong></div>
+				{#each PERIOD_SLOTS as slot (slot.id)}
+					{@const slotAvg = data.stats.avgLevelBySlot?.[slot.id] ?? null}
+					<div class="ef-trend-stat">
+						<span>{slot.emoji} {slot.shortLabel}</span>
+						<strong style:color={levelColor(slotAvg === null ? null : Math.round(slotAvg))}>{fmt(slotAvg)}</strong>
+					</div>
+				{/each}
+				{#if data.stats.extremeDays > 0}
+					<div class="ef-trend-stat ef-trend-stat-warn"><span>Dager med utslag</span><strong>{data.stats.extremeDays}</strong></div>
+				{/if}
+			</div>
+		</section>
+
 		{#if sparklinePoints}
 			<section class="ef-card">
-				<h3 class="ef-card-title">Balanse-trend</h3>
-				<svg class="ef-sparkline" viewBox="0 0 {sparklineWidth} {sparklineHeight}" preserveAspectRatio="none" aria-label="Balanse-trend">
+				<h3 class="ef-card-title">Trend</h3>
+				<svg class="ef-sparkline" viewBox="0 0 {sparklineWidth} {sparklineHeight}" preserveAspectRatio="none" aria-label="Nivå-trend">
 					<line x1="0" y1={sparklineHeight / 2} x2={sparklineWidth} y2={sparklineHeight / 2} stroke="rgba(255,255,255,0.08)" stroke-dasharray="4 4" />
-					{#if slotSparklines}
-						{#if slotSparklines.morningPath}
-							<path d={slotSparklines.morningPath} fill="none" stroke="#f6c177" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" opacity="0.85" />
-						{/if}
-						{#if slotSparklines.eveningPath}
-							<path d={slotSparklines.eveningPath} fill="none" stroke="#8ba0f5" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" opacity="0.85" />
-						{/if}
-						{#each slotSparklines.morningDots as pt (`m-${pt.day}`)}
-							<circle cx={pt.x} cy={pt.y} r="2.5" fill="#f6c177">
-								<title>{fmtDayLabel(pt.day)} morgen: {pt.val}/5</title>
-							</circle>
-						{/each}
-						{#each slotSparklines.eveningDots as pt (`e-${pt.day}`)}
-							<circle cx={pt.x} cy={pt.y} r="2.5" fill="#8ba0f5">
-								<title>{fmtDayLabel(pt.day)} kveld: {pt.val}/5</title>
-							</circle>
-						{/each}
-					{:else}
-						<path d={sparklinePoints.areaPath} fill="rgba(139,160,245,0.18)" />
-						<path d={sparklinePoints.path} fill="none" stroke="#8ba0f5" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
-						{#each sparklinePoints.points as pt (pt.day)}
-							<circle cx={pt.x} cy={pt.y} r={pt.extreme ? 4 : 2.5} fill={pt.extreme ? '#ee8c8c' : '#8ba0f5'}>
-								<title>{fmtDayLabel(pt.day)}: {fmtSigned(pt.val, 0)}</title>
-							</circle>
-						{/each}
-					{/if}
+					<path d={sparklinePoints.areaPath} fill="rgba(139,160,245,0.18)" />
+					<path d={sparklinePoints.path} fill="none" stroke="#8ba0f5" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
+					{#each sparklinePoints.points as pt (pt.day)}
+						<circle cx={pt.x} cy={pt.y} r={pt.extreme ? 4 : 2.5} fill={pt.extreme ? '#ee8c8c' : '#8ba0f5'}>
+							<title>{fmtDayLabel(pt.day)}</title>
+						</circle>
+					{/each}
 				</svg>
-				{#if slotSparklines}
-					<div class="ef-legend">
-						<span class="ef-legend-item"><span class="ef-legend-dot" style:background="#f6c177"></span>Morgen</span>
-						<span class="ef-legend-item"><span class="ef-legend-dot" style:background="#8ba0f5"></span>Kveld</span>
-					</div>
-				{/if}
-				<div class="ef-trend-stats">
-					<div class="ef-trend-stat"><span>Snitt nivå</span><strong>{fmt(data.stats.avgLevel)}<span class="ef-mini-suffix">/5</span></strong></div>
-					<div class="ef-trend-stat"><span>Snitt tanker</span><strong>{fmt(data.stats.avgThoughts)}<span class="ef-mini-suffix">/5</span></strong></div>
-					<div class="ef-trend-stat"><span>Snitt følelser</span><strong>{fmt(data.stats.avgFeelings)}<span class="ef-mini-suffix">/5</span></strong></div>
-					<div class="ef-trend-stat"><span>Snitt handlinger</span><strong>{fmt(data.stats.avgActions)}<span class="ef-mini-suffix">/5</span></strong></div>
-					{#if data.stats.extremeDays > 0}
-						<div class="ef-trend-stat ef-trend-stat-warn"><span>Dager med utslag</span><strong>{data.stats.extremeDays}</strong></div>
-					{/if}
-				</div>
 			</section>
 		{/if}
 
@@ -270,12 +252,11 @@
 			<ul class="ef-recent">
 				{#each last7 as p (p.day)}
 					{@const lvl = pointLevel(p)}
+					{@const note = pointNote(p)}
 					<li class="ef-recent-row" class:ef-recent-extreme={p.extreme}>
 						<span class="ef-recent-day">{fmtDayLabel(p.day)}</span>
 						<span class="ef-recent-balance" style:color={levelColor(lvl)}>{lvl ?? '—'}</span>
-						<span class="ef-recent-mini">T {fmt(p.thoughts, 0)}</span>
-						<span class="ef-recent-mini">F {fmt(p.feelings, 0)}</span>
-						<span class="ef-recent-mini">H {fmt(p.actions, 0)}</span>
+						<span class="ef-recent-note">{note ?? ''}</span>
 						{#if p.extreme}
 							<span class="ef-recent-flag" title="Utslag i sjekkin">!</span>
 						{/if}
@@ -283,6 +264,7 @@
 							<button
 								class="ef-recent-delete"
 								title="Slett sjekkin"
+								aria-label="Slett sjekkins for {fmtDayLabel(p.day)}"
 								onclick={(e) => { e.stopPropagation(); ondelete(p.eventIds!); }}
 							>×</button>
 						{/if}
@@ -346,23 +328,6 @@
 	}
 	.ef-cta-secondary:hover {
 		background: rgba(255, 255, 255, 0.1);
-	}
-	.ef-legend {
-		display: flex;
-		gap: 14px;
-		margin-top: 6px;
-		font-size: 0.75rem;
-		color: #94a3b8;
-	}
-	.ef-legend-item {
-		display: flex;
-		align-items: center;
-		gap: 5px;
-	}
-	.ef-legend-dot {
-		width: 8px;
-		height: 8px;
-		border-radius: 50%;
 	}
 	.ef-empty {
 		padding: 24px 16px;
@@ -428,43 +393,65 @@
 		font-size: 0.85rem;
 		color: #94a3b8;
 	}
-	.ef-mini-grid {
+
+	/* Dagens slot-stripe */
+	.ef-slot-strip {
 		display: grid;
-		grid-template-columns: repeat(3, 1fr);
-		gap: 8px;
+		grid-template-columns: repeat(5, 1fr);
+		gap: 6px;
 		margin-bottom: 8px;
 	}
-	.ef-mini {
+	.ef-slot-cell {
 		display: flex;
 		flex-direction: column;
+		align-items: center;
 		gap: 2px;
-		padding: 8px 10px;
-		background: rgba(255, 255, 255, 0.02);
+		padding: 8px 4px;
 		border-radius: 10px;
 	}
-	.ef-mini-lbl {
-		font-size: 0.72rem;
-		color: #94a3b8;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
+	.ef-slot-emoji {
+		font-size: 0.95rem;
+		line-height: 1;
 	}
-	.ef-mini-val {
-		font-size: 1.2rem;
+	.ef-slot-val {
+		font-size: 0.95rem;
 		font-weight: 600;
-		color: #e2e8f0;
 	}
-	.ef-mini-suffix {
-		font-size: 0.75rem;
-		color: #64748b;
-		font-weight: 400;
-		margin-left: 1px;
+
+	/* Døgnrytme-grid */
+	.ef-grid {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
 	}
-	.ef-action-hint {
-		margin: 0 0 6px;
-		font-size: 0.82rem;
+	.ef-grid-row {
+		display: grid;
+		grid-template-columns: 48px repeat(5, 1fr);
+		gap: 4px;
+		align-items: center;
+	}
+	.ef-grid-head {
+		margin-bottom: 2px;
+	}
+	.ef-grid-col {
+		text-align: center;
+		font-size: 0.85rem;
+		line-height: 1;
+	}
+	.ef-grid-day {
+		font-size: 0.74rem;
 		color: #94a3b8;
-		font-style: italic;
 	}
+	.ef-grid-cell {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		height: 26px;
+		border-radius: 7px;
+		font-size: 0.8rem;
+		font-weight: 600;
+	}
+
 	.ef-note {
 		margin: 8px 0 0;
 		padding: 10px 12px;
@@ -533,9 +520,9 @@
 	}
 	.ef-trend-stats {
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+		grid-template-columns: repeat(3, 1fr);
 		gap: 8px;
-		margin-top: 10px;
+		margin-top: 12px;
 	}
 	.ef-trend-stat {
 		display: flex;
@@ -550,6 +537,7 @@
 		color: #94a3b8;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
+		white-space: nowrap;
 	}
 	.ef-trend-stat strong {
 		font-size: 1.05rem;
@@ -558,6 +546,12 @@
 	}
 	.ef-trend-stat-warn strong {
 		color: #ee8c8c;
+	}
+	.ef-mini-suffix {
+		font-size: 0.75rem;
+		color: #64748b;
+		font-weight: 400;
+		margin-left: 1px;
 	}
 	.ef-recent {
 		list-style: none;
@@ -569,7 +563,7 @@
 	}
 	.ef-recent-row {
 		display: grid;
-		grid-template-columns: 60px 50px 1fr 1fr 1fr 14px 20px;
+		grid-template-columns: 48px 28px 1fr 14px 20px;
 		align-items: center;
 		gap: 8px;
 		padding: 8px 10px;
@@ -586,9 +580,12 @@
 	.ef-recent-balance {
 		font-weight: 600;
 	}
-	.ef-recent-mini {
-		color: #cbd5e1;
+	.ef-recent-note {
+		color: #94a3b8;
 		font-size: 0.8rem;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 	.ef-recent-flag {
 		text-align: center;

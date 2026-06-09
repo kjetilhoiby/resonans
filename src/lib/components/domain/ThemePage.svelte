@@ -431,6 +431,7 @@
 		{:else if tab === 'oppgaver'}
 			<ThemeTasksTab
 				themeId={theme.id}
+				projectName={theme.name}
 				initialTasks={tasks}
 				{projectProfile}
 				onSwitchToChat={goToChat}

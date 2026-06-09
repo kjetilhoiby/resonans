@@ -128,7 +128,12 @@
 				<div class="theme-routing-banner routed">
 					<span class="theme-routing-icon">✓</span>
 					<span class="theme-routing-text">Melding automatisk koblet til tema: <strong>{theme.themeName}</strong></span>
-					<button class="theme-routing-dismiss" onclick={() => (ctx.routedToTheme = null)}>✕</button>
+					<button
+						class="theme-routing-dismiss"
+						aria-label="Fjern temakobling"
+						data-track="hjem-chat:fjern-temakobling"
+						onclick={() => (ctx.routedToTheme = null)}
+					>✕</button>
 				</div>
 			{/if}
 			{#if ctx.suggestedTheme && !ctx.routedToTheme}

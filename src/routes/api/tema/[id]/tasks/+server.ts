@@ -4,6 +4,7 @@ import { db } from '$lib/db';
 import { checklistItems } from '$lib/db/schema';
 import { and, eq, asc, sql } from 'drizzle-orm';
 import { requireTheme, ensureProjectChecklist, mapTaskItem as mapItem } from '$lib/server/project-tasks';
+import { parseTaskText } from '$lib/domains/home/task-parse';
 
 export const GET: RequestHandler = async ({ locals, params }) => {
 	const userId = locals.userId;
@@ -23,8 +24,15 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 	const theme = await requireTheme(userId, params.id);
 
 	const body = await request.json().catch(() => null);
-	const text = typeof body?.text === 'string' ? body.text.trim() : '';
-	if (!text) throw error(400, 'Mangler oppgavetekst');
+	const rawText = typeof body?.text === 'string' ? body.text.trim() : '';
+	if (!rawText) throw error(400, 'Mangler oppgavetekst');
+
+	// Parse «kjøp: X på [butikk]» → ren tekst + innkjøps-metadata.
+	const parsed = parseTaskText(rawText);
+	const text = parsed.text || rawText;
+	const shopMeta = parsed.shopping
+		? { shopping: true, ...(parsed.store ? { store: parsed.store } : {}) }
+		: {};
 
 	const parentId = typeof body?.parentId === 'string' ? body.parentId : null;
 	const dueDate = typeof body?.dueDate === 'string' && body.dueDate ? body.dueDate : null;
@@ -54,7 +62,8 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 			dueDate,
 			startDate,
 			estimateMinutes,
-			sortOrder: (maxOrder ?? -1) + 1
+			sortOrder: (maxOrder ?? -1) + 1,
+			metadata: shopMeta
 		})
 		.returning();
 
@@ -86,6 +95,7 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 	if ('estimateMinutes' in body) {
 		update.estimateMinutes = Number.isInteger(body.estimateMinutes) ? body.estimateMinutes : null;
 	}
+	if (Number.isInteger(body.sortOrder)) update.sortOrder = body.sortOrder;
 	if (Array.isArray(body.blockedBy)) {
 		const meta = (existing.metadata ?? {}) as Record<string, unknown>;
 		update.metadata = { ...meta, blockedBy: body.blockedBy.filter((x: unknown) => typeof x === 'string') };

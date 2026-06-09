@@ -12,6 +12,9 @@ export interface PeriodSlot {
 	id: PeriodSlotId;
 	/** Bestemt form til bruk i løpende tekst: «natta», «morgenen» … */
 	label: string;
+	/** Kort form til kolonneoverskrifter o.l.: «Natt», «Morgen» … */
+	shortLabel: string;
+	emoji: string;
 	question: string;
 	/** Vindusstart i minutter etter midnatt, inklusiv */
 	fromMinutes: number;
@@ -20,11 +23,11 @@ export interface PeriodSlot {
 }
 
 export const PERIOD_SLOTS: PeriodSlot[] = [
-	{ id: 'natt', label: 'natta', question: 'Hvordan gikk natta?', fromMinutes: 5 * 60, toMinutes: 7 * 60 + 30 },
-	{ id: 'morgen', label: 'morgenen', question: 'Hvordan gikk morgenen?', fromMinutes: 7 * 60 + 30, toMinutes: 12 * 60 },
-	{ id: 'arbeidsdag', label: 'arbeidsdagen', question: 'Hvordan gikk arbeidsdagen?', fromMinutes: 14 * 60, toMinutes: 18 * 60 },
-	{ id: 'ettermiddag', label: 'ettermiddagen', question: 'Hvordan gikk ettermiddagen?', fromMinutes: 18 * 60, toMinutes: 20 * 60 },
-	{ id: 'kveld', label: 'kvelden', question: 'Hvordan gikk kvelden?', fromMinutes: 20 * 60, toMinutes: 24 * 60 }
+	{ id: 'natt', label: 'natta', shortLabel: 'Natt', emoji: '🌙', question: 'Hvordan gikk natta?', fromMinutes: 5 * 60, toMinutes: 7 * 60 + 30 },
+	{ id: 'morgen', label: 'morgenen', shortLabel: 'Morgen', emoji: '🌅', question: 'Hvordan gikk morgenen?', fromMinutes: 7 * 60 + 30, toMinutes: 12 * 60 },
+	{ id: 'arbeidsdag', label: 'arbeidsdagen', shortLabel: 'Arbeid', emoji: '💼', question: 'Hvordan gikk arbeidsdagen?', fromMinutes: 14 * 60, toMinutes: 18 * 60 },
+	{ id: 'ettermiddag', label: 'ettermiddagen', shortLabel: 'Etterm.', emoji: '🌇', question: 'Hvordan gikk ettermiddagen?', fromMinutes: 18 * 60, toMinutes: 20 * 60 },
+	{ id: 'kveld', label: 'kvelden', shortLabel: 'Kveld', emoji: '🌃', question: 'Hvordan gikk kvelden?', fromMinutes: 20 * 60, toMinutes: 24 * 60 }
 ];
 
 const PERIOD_SLOT_IDS = new Set<string>(PERIOD_SLOTS.map((s) => s.id));
@@ -47,6 +50,18 @@ export const PERIOD_SLOT_GROUP: Record<PeriodSlotId, 'morning' | 'evening'> = {
 	ettermiddag: 'evening',
 	kveld: 'evening'
 };
+
+/**
+ * Visningsslot for en lagret slot-verdi: periode-slots vises som seg selv,
+ * historiske morning/evening-sjekkins vises som morgen/kveld, alt annet (legacy
+ * uten slot) hører ikke hjemme i slot-visninger.
+ */
+export function displayPeriodSlotFor(rawSlot: unknown): PeriodSlotId | null {
+	if (isPeriodSlotId(rawSlot)) return rawSlot;
+	if (rawSlot === 'morning') return 'morgen';
+	if (rawSlot === 'evening') return 'kveld';
+	return null;
+}
 
 // Naturlige svar på «Hvordan gikk …?» — må passe alle slots, natt som arbeidsdag.
 export const PERIOD_SLOT_LEVEL_LABELS: Record<number, string> = {

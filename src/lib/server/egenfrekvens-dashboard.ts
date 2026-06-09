@@ -1,7 +1,13 @@
 import { db } from '$lib/db';
 import { sensorEvents } from '$lib/db/schema';
 import { and, eq, gte } from 'drizzle-orm';
-import { isPeriodSlotId, PERIOD_SLOT_GROUP } from '$lib/domains/egenfrekvens/period-slots';
+import {
+	displayPeriodSlotFor,
+	isPeriodSlotId,
+	PERIOD_SLOT_GROUP,
+	PERIOD_SLOTS,
+	type PeriodSlotId
+} from '$lib/domains/egenfrekvens/period-slots';
 
 export type EgenfrekvensSlot = 'morning' | 'evening';
 
@@ -31,6 +37,9 @@ export interface EgenfrekvensCheckinPoint {
 	count: number;
 	morning: EgenfrekvensSlotPoint | null;
 	evening: EgenfrekvensSlotPoint | null;
+	/** Nyeste registrering pr. periode-slot (natt/morgen/arbeidsdag/ettermiddag/kveld).
+	 *  Historiske morning/evening-events vises som morgen/kveld. */
+	slots: Partial<Record<PeriodSlotId, EgenfrekvensSlotPoint>>;
 	// Aggregert "samlet" for én-event-dager eller fallback til legacy (uten slot)
 	balance: number | null;
 	thoughts: number | null;
@@ -51,6 +60,8 @@ export interface EgenfrekvensTrendStats {
 	avgThoughts: number | null;
 	avgFeelings: number | null;
 	avgActions: number | null;
+	/** Snitt-nivå (1–5) pr. periode-slot over hele perioden */
+	avgLevelBySlot: Record<PeriodSlotId, number | null>;
 	extremeDays: number;
 }
 
@@ -156,6 +167,8 @@ export async function loadEgenfrekvensDashboardData(
 		morningTs: number;
 		evening: EgenfrekvensSlotPoint | null;
 		eveningTs: number;
+		slots: Partial<Record<PeriodSlotId, EgenfrekvensSlotPoint>>;
+		slotTs: Partial<Record<PeriodSlotId, number>>;
 		legacy: EgenfrekvensSlotPoint | null; // events uten slot
 		legacyTs: number;
 		extreme: boolean;
@@ -175,6 +188,8 @@ export async function loadEgenfrekvensDashboardData(
 				morningTs: 0,
 				evening: null,
 				eveningTs: 0,
+				slots: {},
+				slotTs: {},
 				legacy: null,
 				legacyTs: 0,
 				extreme: false
@@ -186,7 +201,15 @@ export async function loadEgenfrekvensDashboardData(
 		const ts = row.timestamp.getTime();
 		const point = rowToSlotPoint(row.id, data, row.timestamp);
 		const rawSlot = data.slot;
-		// Periode-slots (natt, morgen, arbeidsdag, ettermiddag, kveld) grupperes inn i morning/evening
+
+		// Pr. periode-slot for slot-visningene (gamle morning/evening vises som morgen/kveld)
+		const displaySlot = displayPeriodSlotFor(rawSlot);
+		if (displaySlot && ts >= (bucket.slotTs[displaySlot] ?? 0)) {
+			bucket.slots[displaySlot] = point;
+			bucket.slotTs[displaySlot] = ts;
+		}
+
+		// Morning/evening-gruppering for eksisterende konsumenter (hjem-widget, mood-speiling)
 		const slot =
 			rawSlot === 'morning' || rawSlot === 'evening'
 				? rawSlot
@@ -242,6 +265,7 @@ export async function loadEgenfrekvensDashboardData(
 				count: b.ids.length,
 				morning: b.morning,
 				evening: b.evening,
+				slots: b.slots,
 				balance: avg(balances),
 				thoughts: avg(thoughts),
 				feelings: avg(feelings),
@@ -259,6 +283,9 @@ export async function loadEgenfrekvensDashboardData(
 	const levels = points.flatMap((p) => [p.morning?.level, p.evening?.level].filter(
 		(v): v is number => typeof v === 'number'
 	));
+	const avgLevelBySlot = Object.fromEntries(
+		PERIOD_SLOTS.map((slot) => [slot.id, avg(points.map((p) => p.slots[slot.id]?.level ?? null))])
+	) as Record<PeriodSlotId, number | null>;
 	const stats: EgenfrekvensTrendStats = {
 		count: points.length,
 		avgBalance: avg(points.map((p) => p.balance)),
@@ -266,6 +293,7 @@ export async function loadEgenfrekvensDashboardData(
 		avgThoughts: avg(points.map((p) => p.thoughts)),
 		avgFeelings: avg(points.map((p) => p.feelings)),
 		avgActions: avg(points.map((p) => p.actions)),
+		avgLevelBySlot,
 		extremeDays: points.filter((p) => p.extreme).length
 	};
 

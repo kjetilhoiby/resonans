@@ -142,6 +142,8 @@ export interface EgenfrekvensCheckinPointData {
 	count: number;
 	morning: EgenfrekvensSlotPointData | null;
 	evening: EgenfrekvensSlotPointData | null;
+	/** Nyeste registrering pr. periode-slot (natt/morgen/arbeidsdag/ettermiddag/kveld) */
+	slots?: Partial<Record<import('$lib/domains/egenfrekvens/period-slots').PeriodSlotId, EgenfrekvensSlotPointData>>;
 	balance: number | null;
 	thoughts: number | null;
 	feelings: number | null;
@@ -165,6 +167,7 @@ export interface EgenfrekvensDashboardData {
 		avgThoughts: number | null;
 		avgFeelings: number | null;
 		avgActions: number | null;
+		avgLevelBySlot?: Record<import('$lib/domains/egenfrekvens/period-slots').PeriodSlotId, number | null>;
 		extremeDays: number;
 	};
 	streakDays: number;

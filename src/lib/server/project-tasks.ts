@@ -41,6 +41,8 @@ export function mapTaskItem(item: typeof checklistItems.$inferSelect) {
 		dueDate: item.dueDate,
 		estimateMinutes: item.estimateMinutes,
 		blockedBy: (meta.blockedBy as string[] | undefined) ?? [],
+		shopping: (meta.shopping as boolean | undefined) ?? false,
+		store: (meta.store as string | undefined) ?? null,
 		createdAt: (item.createdAt as Date).toISOString()
 	};
 }

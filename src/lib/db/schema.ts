@@ -610,6 +610,9 @@ export const checklistItems = pgTable('checklist_items', {
 		timeMinute?: number;
 		// Avhengigheter mellom prosjekt-oppgaver — IDs av items som må fullføres først
 		blockedBy?: string[];
+		// Innkjøps-oppgave parset fra «kjøp: X på [butikk]»-prefiks
+		shopping?: boolean;
+		store?: string;
 		// Breakdown metadata
 		hasBreakdown?: boolean; // Om item har en generert underbrytning
 		breakdownGeneratedAt?: string; // ISO-timestamp for når breakdown ble generert

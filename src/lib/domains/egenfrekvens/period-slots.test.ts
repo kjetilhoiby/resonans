@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+	displayPeriodSlotFor,
 	getActivePeriodSlot,
 	isPeriodSlotId,
 	localIsoDay,
@@ -75,6 +76,24 @@ describe('PERIOD_SLOT_GROUP', () => {
 		for (const slot of PERIOD_SLOTS) {
 			expect(['morning', 'evening']).toContain(PERIOD_SLOT_GROUP[slot.id]);
 		}
+	});
+});
+
+describe('displayPeriodSlotFor', () => {
+	it('viser periode-slots som seg selv', () => {
+		for (const slot of PERIOD_SLOTS) expect(displayPeriodSlotFor(slot.id)).toBe(slot.id);
+	});
+
+	it('mapper historiske morning/evening til morgen/kveld', () => {
+		expect(displayPeriodSlotFor('morning')).toBe('morgen');
+		expect(displayPeriodSlotFor('evening')).toBe('kveld');
+	});
+
+	it('avviser legacy-events uten gyldig slot', () => {
+		expect(displayPeriodSlotFor(undefined)).toBeNull();
+		expect(displayPeriodSlotFor(null)).toBeNull();
+		expect(displayPeriodSlotFor('')).toBeNull();
+		expect(displayPeriodSlotFor('noon')).toBeNull();
 	});
 });
 
