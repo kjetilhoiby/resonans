@@ -51,7 +51,31 @@ Dette er strukturelt identisk med hvordan ferier er undertemaer av Familie. Valg
 - Playwright (auth-bypass, dev): opprett via UI → navigerer til `/tema/{id}` på oppgave-fanen → legg til oppgave → kryss av («1/1 fullført»). Dashboard-API returnerer prosjektet i `projectThemes` med korrekt progresjon. Testprosjektet ble slettet fra DB etterpå.
 - AI-nedbryting (`/breakdown`) er wiret og typesjekket, men ikke kjørt live i verifiseringen (ekte OpenAI-kall).
 
+## Fase 8–10 (oppfølging samme dag)
+
+Etter v1 ga brukeren tilbakemelding: AI-nedbrytingen var «for voldsom», og oppgavene burde manipuleres som i dagsplan.
+
+- **Mildere nedbryting:** Erstattet det auto-strukturerte `/api/tema/[id]/tasks/breakdown` (gpt-4o, satt inn 4–8 oppgaver med frist+avhengigheter automatisk) med dagsplanens `BreakdownModal` + `/api/breakdown/suggestions` (gpt-4o-mini, tekstforslag du **plukker fra**). Det aggressive endepunktet er slettet.
+- **Langpress-manipulasjon (dagsplan-mønster):** Langpress + ⋯ på en rad → `TaskContextMenu` (Rediger / Bryt ned / Slett). Nytt redigerings-sheet: tekst, estimat (chips), frist (datovelger), avhengigheter (`blockedBy`, avkrysning av andre oppgaver). Inline «＋ underoppgave» per rad.
+- **Dra/slipp-sortering (#9):** Peker-basert drag (touch + mus) via dra-håndtak (⠿), reindekserer søsken og persisterer `sortOrder` (PATCH). Innenfor samme nivå.
+- **Nøkkelord-parsing (#10):** `parseTaskText` (`src/lib/domains/home/task-parse.ts`, speiler `detectMealPrefix`) tolker «kjøp: X på [butikk]» → ren tekst + `metadata.shopping`/`store`. 🛒-badge i raden. 7 enhetstester.
+- Brukslogging: alle nye kontroller har `data-track`/`aria-label` per CLAUDE.md-konvensjonen.
+
+Verifisert: `npm run check` 0 feil, `npm test` 367/367, API + UI-smoke (parsing, redigering, reorder, kontekstmeny, badges) via Playwright; testprosjekt slettet etterpå.
+
+### Fase 11: Datering → fullt redigerbar i ukeplanens dagsliste
+Valgt modell: **dual-membership**. Når en prosjekt-oppgave får en `dueDate`, settes `checklistId` til dagens dag-checklist (`context='week:…:day:…'`, opprettes ved behov via `dayContextForDate`), mens `themeId` beholdes. Da:
+- lastes og redigeres oppgaven naturlig i ukeplanens dagsliste (toggle/dra bruker item-ets egen `checklistId` = dag-checklisten — ingen ukeplan-endringer nødvendig),
+- vises den fortsatt i prosjektets oppgave-fane (hentes via `themeId`).
+Fjernes fristen, flyttes item tilbake til prosjektets egen checklist. `src/lib/server/project-tasks.ts:syncProjectItemDayMembership`, kalt fra tasks POST/PATCH når `dueDate` settes/endres.
+
+Verifisert (Playwright + DB): frist → item får dag-context `week:2026-W24:day:2026-06-10`, beholder themeId, vises i prosjekt-fanen OG i `/ukeplan`; fjernet frist → tilbake til prosjekt-checklist.
+
 ## Kjente oppfølginger
+
+- Underoppgaver (parentId) med frist vises ikke i dagslista (DaySection filtrerer bort `parentId`-items) — kun topp-nivå daterte oppgaver. Sannsynligvis ønsket.
+- `sortOrder` deles mellom prosjekt-fane og dag-liste (ett felt), så reorder ett sted kan påvirke rekkefølgen det andre. Akseptert for v1.
+- Hjem-dashboardets klient-cache kan vise et nytt prosjekt med ett refresh-lag (stale-while-revalidate).
 
 - Hjem-dashboardets klient-cache (stale-while-revalidate) gjør at et nytt prosjekt kan mangle i lista til neste revalidering. Vurder cache-invalidasjon ved create.
 - Drag-omsortering av oppgaver (`sortOrder` finnes, ikke UI).

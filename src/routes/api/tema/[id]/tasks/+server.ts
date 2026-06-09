@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { checklistItems } from '$lib/db/schema';
 import { and, eq, asc, sql } from 'drizzle-orm';
-import { requireTheme, ensureProjectChecklist, mapTaskItem as mapItem } from '$lib/server/project-tasks';
+import { requireTheme, ensureProjectChecklist, mapTaskItem as mapItem, syncProjectItemDayMembership } from '$lib/server/project-tasks';
 import { parseTaskText } from '$lib/domains/home/task-parse';
 
 export const GET: RequestHandler = async ({ locals, params }) => {
@@ -67,12 +67,17 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 		})
 		.returning();
 
+	// Med frist: legg på dag-checklisten så den dukker opp (redigerbar) i ukeplanen.
+	if (dueDate) {
+		await syncProjectItemDayMembership(userId, created.id, params.id, theme.name, dueDate);
+	}
+
 	return json({ item: mapItem(created) });
 };
 
 export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 	const userId = locals.userId;
-	await requireTheme(userId, params.id);
+	const theme = await requireTheme(userId, params.id);
 
 	const body = await request.json().catch(() => null);
 	const itemId = typeof body?.itemId === 'string' ? body.itemId : '';
@@ -108,6 +113,11 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 		.set(update)
 		.where(eq(checklistItems.id, itemId))
 		.returning();
+
+	// Frist endret → flytt item til/fra dag-checklist (dukker opp/forsvinner i ukeplanen).
+	if ('dueDate' in body) {
+		await syncProjectItemDayMembership(userId, itemId, params.id, theme.name, body.dueDate || null);
+	}
 
 	return json({ item: mapItem(updated) });
 };
