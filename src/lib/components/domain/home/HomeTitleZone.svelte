@@ -53,6 +53,7 @@
 
 	.zone-title {
 		flex-shrink: 0;
+		padding-bottom: var(--page-pt);
 	}
 
 	.title-right {
@@ -62,17 +63,22 @@
 	}
 
 	.icon-link {
-		color: #555;
-		text-decoration: none;
-		min-width: 40px;
-		min-height: 40px;
-		display: flex;
+		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		transition: color 0.15s;
+		width: 32px;
+		height: 32px;
+		border-radius: 8px;
+		border: 1px solid #1e2030;
+		background: #0c0e18;
+		color: #8a99c4;
+		text-decoration: none;
+		transition: background 0.12s, color 0.12s, border-color 0.12s;
 	}
 
 	.icon-link:hover {
-		color: #aaa;
+		background: #12162a;
+		color: #bac6f9;
+		border-color: #2e3660;
 	}
 </style>

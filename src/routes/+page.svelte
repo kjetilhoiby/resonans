@@ -33,7 +33,7 @@
 </script>
 
 <AppPage>
-	<PageSection>
+	<PageSection bleed>
 		<HomeScreen
 			themes={data.themes}
 			recentConversations={data.recentConversations}

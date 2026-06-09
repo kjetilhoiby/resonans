@@ -919,9 +919,11 @@
 	.home-screen {
 		min-height: 100dvh;
 		position: relative;
+		padding: var(--page-pt) var(--page-px) 0;
 		background: var(--bg-primary);
 		color: var(--text-secondary);
 		display: flex;
 		flex-direction: column;
+		box-sizing: border-box;
 	}
 </style>
