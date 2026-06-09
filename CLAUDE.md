@@ -41,9 +41,14 @@ Appen har et designsystem med levende komponentsamling på `/design`. Alle UI-en
 **Regler:**
 - Appen er **alltid mørk**. `AppPage` er autoritativ kilde for CSS-variabler (`--bg-primary`, `--text-primary`, `--accent-primary` osv.). Bruk disse — aldri hardkodede farger.
 - Ingen lokal `:global()`-override for layout — fiks felleskomponenten i stedet.
-- Ingen lokal bottom-nav/tab-bar. Navigasjon via `PageHeader`-actions og `titleHref="/"`.
+- Ingen lokal bottom-nav/tab-bar.
 - Layouts med faner: shell i `+layout.svelte`, innhold per `+page.svelte`.
 - Sjekk `/design`-siden i nettleseren for å se eksisterende komponenter før du lager nye.
+
+**Navigasjon og header:**
+- **Tittelen ER tilbakeknappen.** Bruk `titleHref` (eller `onTitleClick`) — aldri `backHref` eller separate tilbake-ikoner.
+- Maks 1–2 små knapper til høyre i headeren (aksjon-knapper, ikke navigasjon). Bruk `IconButton` (32×32, `btn-icon`-stil) eller kompakte pill-knapper som `mp-nav-btn`.
+- Tema-sider bruker `emoji`-prop på PageHeader for tema-ikon ved siden av tittelen.
 
 **Sidelayout — AppPage + PageSection:**
 
@@ -73,7 +78,6 @@ Side med egen bakgrunn (gradient, hue-tint):
 ```
 `<PageSection bleed>` gir **null padding** — innholdet styrer alt selv med `var(--page-pt/px/pb)`. Bakgrunnen dekker hele viewporten kant-til-kant. Se `tema/[id]` og `ukeplan` for eksempler.
 
-**Header-knapper:** Bruk `IconButton` (32×32, `btn-icon`-stil fra `app.css`) eller pill-knapper som `mp-nav-btn` i PageHeader-actions. Ikke nakne ikon-lenker.
 
 **Komponentlag:**
 - `src/lib/components/ui/` — Primitiver (Button, Input, PageHeader, ChatBubble, etc.). Gjenbruk disse.
