@@ -159,6 +159,7 @@
 		line-height: 1;
 		letter-spacing: -0.03em;
 		color: var(--text-primary);
+		view-transition-name: page-title;
 	}
 
 	p {

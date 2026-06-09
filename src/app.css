@@ -401,3 +401,26 @@ body {
 		font-size: max(16px, 1em) !important;
 	}
 }
+
+/* View Transitions */
+@keyframes vt-fade-in { from { opacity: 0; } }
+@keyframes vt-fade-out { to { opacity: 0; } }
+@keyframes vt-slide-from-right { from { transform: translateX(24px); } }
+@keyframes vt-slide-to-left { to { transform: translateX(-24px); } }
+
+::view-transition-group(root) {
+	background: #0f0f0f;
+}
+::view-transition-old(root) {
+	animation: 180ms ease both vt-fade-out;
+}
+::view-transition-new(root) {
+	animation: 180ms ease both vt-fade-in;
+}
+
+::view-transition-old(page-title) {
+	animation: 150ms ease both vt-fade-out, 150ms ease both vt-slide-to-left;
+}
+::view-transition-new(page-title) {
+	animation: 200ms 80ms ease both vt-fade-in, 200ms 80ms ease both vt-slide-from-right;
+}
