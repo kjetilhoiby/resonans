@@ -97,7 +97,7 @@
 			emoji: r.emoji,
 			slot: r.slot,
 			daysOfWeek: [...r.daysOfWeek],
-			items: r.items.length ? r.items.map((it) => it.text) : ['']
+			items: r.items.length ? [...r.items.map((it) => it.text), ''] : ['']
 		};
 	}
 

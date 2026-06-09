@@ -39,12 +39,41 @@ Alle endringer i dette repoet skal følge disse prinsippene. En agent som gjør 
 Appen har et designsystem med levende komponentsamling på `/design`. Alle UI-endringer skal bruke eksisterende komponenter og CSS-variabler.
 
 **Regler:**
-- Appen er **alltid mørk**. `AppPage` (default `theme="dark"`) er autoritativ kilde for CSS-variabler (`--bg-primary`, `--text-primary`, `--accent-primary` osv.). Bruk disse — aldri hardkodede farger.
-- Hver side: `<AppPage>` → `<PageSection>` → `<PageHeader title="..." titleHref="/" />` → innhold. `<PageSection>` gir horisontal padding (`--page-px`). `<PageSection bleed>` for kant-til-kant innhold (bakgrunner, gradienter).
+- Appen er **alltid mørk**. `AppPage` er autoritativ kilde for CSS-variabler (`--bg-primary`, `--text-primary`, `--accent-primary` osv.). Bruk disse — aldri hardkodede farger.
 - Ingen lokal `:global()`-override for layout — fiks felleskomponenten i stedet.
 - Ingen lokal bottom-nav/tab-bar. Navigasjon via `PageHeader`-actions og `titleHref="/"`.
 - Layouts med faner: shell i `+layout.svelte`, innhold per `+page.svelte`.
 - Sjekk `/design`-siden i nettleseren for å se eksisterende komponenter før du lager nye.
+
+**Sidelayout — AppPage + PageSection:**
+
+`AppPage` har **null padding** — den leverer bare CSS-variabler, flex-container og bakgrunn. All padding kommer fra `PageSection`.
+
+Vanlig side (de fleste):
+```svelte
+<AppPage>
+  <PageSection>
+    <PageHeader title="Tittel" titleHref="/" />
+    <!-- innhold -->
+  </PageSection>
+</AppPage>
+```
+`<PageSection>` gir `padding: var(--page-pt) var(--page-px) var(--page-pb)` — safe-area top/bottom + responsive sidepadding.
+
+Side med egen bakgrunn (gradient, hue-tint):
+```svelte
+<AppPage>
+  <PageSection bleed>
+    <div class="min-side" style="padding: var(--page-pt) var(--page-px) var(--page-pb); background: ...;">
+      <PageHeader ... />
+      <!-- innhold -->
+    </div>
+  </PageSection>
+</AppPage>
+```
+`<PageSection bleed>` gir **null padding** — innholdet styrer alt selv med `var(--page-pt/px/pb)`. Bakgrunnen dekker hele viewporten kant-til-kant. Se `tema/[id]` og `ukeplan` for eksempler.
+
+**Header-knapper:** Bruk `IconButton` (32×32, `btn-icon`-stil fra `app.css`) eller pill-knapper som `mp-nav-btn` i PageHeader-actions. Ikke nakne ikon-lenker.
 
 **Komponentlag:**
 - `src/lib/components/ui/` — Primitiver (Button, Input, PageHeader, ChatBubble, etc.). Gjenbruk disse.

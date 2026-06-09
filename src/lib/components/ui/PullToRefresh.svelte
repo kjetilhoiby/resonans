@@ -137,7 +137,6 @@
 		display: flex;
 		align-items: flex-end;
 		justify-content: center;
-		padding-bottom: 10px;
 		overflow: hidden;
 		pointer-events: none;
 		z-index: 25;
@@ -162,6 +161,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		margin-bottom: 10px;
 		color: #a5b4fc;
 		transition: color 160ms ease;
 	}

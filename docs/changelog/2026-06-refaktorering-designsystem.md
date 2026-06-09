@@ -74,12 +74,15 @@ Nye sub-komponenter og moduler opprettet i:
 - **Tittel-alignment**: 9 av 10 hovedsider har piksel-perfekt tittelposisjon (left=16, top=20). Tema har emoji-offset (forventet).
 - **AppPage forenklet**: Fjernet `surface="transparent"`, `flush`, `bleed`. Ny `bg` prop for bakgrunnsfarge med `transition: background 0.3s ease`. `--page-px`/`--page-pt`/`--page-pb`/`--page-gap` gir konsistent grid.
 - **Jobb-siden**: Migrert fra custom header til PageHeader.
-- **PageSection-arkitektur**: AppPage gir nå null horisontal padding. All innhold wrapes i `<PageSection>` (som gir `padding: 0 var(--page-px)`) eller `<PageSection bleed>` (ingen padding, for kant-til-kant innhold). Fjernet `.full-bleed` negative-margin hack. Alle 42 sider migrert. Ukeplan bruker `<PageSection bleed>`.
+- **PageSection-arkitektur**: Ny `PageSection`-komponent. AppPage gir nå null padding (hverken horisontal eller vertikal). `<PageSection>` gir `padding: var(--page-pt) var(--page-px) var(--page-pb)`. `<PageSection bleed>` gir null padding — innholdet styrer alt selv. Fjernet `.full-bleed` negative-margin hack. Alle 42 sider migrert.
+- **Bleed-sider**: Ukeplan og tema bruker `<PageSection bleed>`. Begge har egne bakgrunns-gradienter som nå dekker hele viewporten kant-til-kant uten sort stripe. `.week-plan-page` og `.theme-page` bruker `var(--page-px)` og `var(--page-pt)` internt.
+- **Hjem-sida**: Byttet til `<PageSection bleed>`. `.home-screen` styrer sin egen padding (`var(--page-pt) var(--page-px) 0`) med `box-sizing: border-box` for å unngå scroll. Fjernet dobbel padding fra sone-komponentene (widget-margin 12px→0, tema-padding 16px→0, chat-padding 14px→0).
+- **PageHeader alignment**: `align-items: flex-start` → `center` — knapper sentreres vertikalt med tittelen.
+- **Hjem-knapper**: Oppgradert fra nakne ikoner (#555) til pill-stil (32×32, `#0c0e18` bakgrunn, `#1e2030` border) — matcher uke/månedplan-knappene.
+- **HomeTitleZone**: Lik luft over og under tittelen (`padding-bottom: var(--page-pt)`).
+- **PullToRefresh**: Fikset 10px blå stripe øverst i viewport — `padding-bottom: 10px` på `.ptr-backdrop` viste bakgrunn selv ved `height: 0`. Flyttet til `margin-bottom` på `.ptr-icon`.
 
-## Gjenstår (layout-polish, neste session)
-
-### Hjem-sida: padding-inkonsistens
-Widgets og temaer har annen horisontal padding enn tittelen. Ikonknappene i headeren er små og henger. HomeScreen sine soner har egen padding som ikke matcher `--page-px`.
+## Gjenstår (layout-polish)
 
 ### Gjenværende hardkodede farger
 ~222 hardkodede farger gjenstår i routes (domene-spesifikke paletter i ukeplan, maanedsplan, tema). Disse er bevisst domene-styling, ikke generelle farger.
@@ -91,9 +94,10 @@ Design-guiden (`/design`) bruker fortsatt ScreenTitle direkte. Bør oppdateres t
 
 - **Én tittelkomponent**: PageHeader håndterer alt — vanlig tittel, morph-animasjon, emoji, subtitle, actions. MorphTitle og ScreenTitle kan deprekeres.
 - **`bg` prop > `surface`**: AppPage setter bakgrunn via `bg` prop som også synker til `document.body`. Transition på 0.3s gir smooth sidebytte.
-- **PageSection > `.full-bleed`**: AppPage har null horisontal padding. `<PageSection>` gir `--page-px` padding, `<PageSection bleed>` gir kant-til-kant. Ingen negative-margin hack.
+- **PageSection > `.full-bleed`**: AppPage har null padding. `<PageSection>` gir all padding, `<PageSection bleed>` gir kant-til-kant. Bleed-sider styrer padding internt med `var(--page-pt/px/pb)`.
 - **`setContext`/`getContext`** for store komponenter (HomeScreen) — getter/setter bridge-pattern for reaktivitet gjennom context.
 - **Props for enklere komponenter** (ThemePage tabs, HealthDashboard sections) — callbacks for mutasjoner.
+- **Hjemskjermen bruker bleed**: Full-viewport layout med `box-sizing: border-box` og intern padding. Sonene har ingen egen horisontal padding — alt kommer fra `.home-screen`.
 
 ## Verifisering
 

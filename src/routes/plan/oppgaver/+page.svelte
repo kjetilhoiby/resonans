@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { ChecklistCheckbox, ChecklistItemRow } from '$lib/components/ui';
@@ -194,16 +194,17 @@
 			});
 			if (!res.ok) throw new Error(await res.text());
 
+			const cleanBreakdown = state.breakdown.map(s => s.trim()).filter(s => s.length > 0);
 			const original = data.tasks.find((t) => t.id === id);
 			const originalSubs = original ? original.subItems.map((s) => s.text) : [];
 			const breakdownChanged =
-				state.breakdown.length !== originalSubs.length ||
-				state.breakdown.some((t, i) => t !== originalSubs[i]);
+				cleanBreakdown.length !== originalSubs.length ||
+				cleanBreakdown.some((t, i) => t !== originalSubs[i]);
 			if (breakdownChanged) {
 				const breakRes = await fetch(`/api/checklist-items/${id}/breakdown`, {
 					method: 'PUT',
 					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ subItems: state.breakdown })
+					body: JSON.stringify({ subItems: cleanBreakdown })
 				});
 				if (!breakRes.ok) throw new Error(await breakRes.text());
 			}
@@ -283,6 +284,10 @@
 		const cur = states[id];
 		if (!cur) return;
 		patchState(id, { breakdown: [...cur.breakdown, ''], showBreakdown: true, dirty: true });
+		tick().then(() => {
+			const inputs = document.querySelectorAll<HTMLInputElement>(`.breakdown[data-task="${id}"] input`);
+			inputs[inputs.length - 1]?.focus();
+		});
 	}
 	function updateBreakdownLine(id: string, idx: number, value: string) {
 		const cur = states[id];
@@ -295,6 +300,28 @@
 		const cur = states[id];
 		if (!cur) return;
 		patchState(id, { breakdown: cur.breakdown.filter((_, i) => i !== idx), dirty: true });
+	}
+	function handleBreakdownKeydown(e: KeyboardEvent, id: string, idx: number) {
+		const cur = states[id];
+		if (!cur) return;
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			if (cur.breakdown[idx].trim()) {
+				const next = [...cur.breakdown.slice(0, idx + 1), '', ...cur.breakdown.slice(idx + 1)];
+				patchState(id, { breakdown: next, dirty: true });
+				tick().then(() => {
+					const inputs = document.querySelectorAll<HTMLInputElement>(`.breakdown[data-task="${id}"] input`);
+					inputs[idx + 1]?.focus();
+				});
+			}
+		} else if (e.key === 'Backspace' && cur.breakdown[idx] === '' && cur.breakdown.length > 1) {
+			e.preventDefault();
+			patchState(id, { breakdown: cur.breakdown.filter((_, i) => i !== idx), dirty: true });
+			tick().then(() => {
+				const inputs = document.querySelectorAll<HTMLInputElement>(`.breakdown[data-task="${id}"] input`);
+				inputs[Math.max(0, idx - 1)]?.focus();
+			});
+		}
 	}
 
 	async function selectBucket(bucket: 'innboks' | 'gjores' | 'ugjort') {
@@ -498,25 +525,39 @@
 								<button
 									type="button"
 									class="breakdown-toggle"
-									onclick={() => patchState(task.id, { showBreakdown: !state.showBreakdown })}
+									onclick={() => {
+										const show = !state.showBreakdown;
+										const bd = states[task.id]?.breakdown ?? [];
+										const needsEmpty = show && (bd.length === 0 || bd[bd.length - 1].trim());
+										patchState(task.id, {
+											showBreakdown: show,
+											...(needsEmpty ? { breakdown: [...bd, ''] } : {})
+										});
+										if (show) tick().then(() => {
+											const inputs = document.querySelectorAll<HTMLInputElement>(`.breakdown[data-task="${task.id}"] input`);
+											inputs[inputs.length - 1]?.focus();
+										});
+									}}
 								>
-									↳ Bryt opp {state.breakdown.length > 0 ? `(${state.breakdown.length})` : ''}
+									↳ Bryt opp {state.breakdown.filter(s => s.trim()).length > 0 ? `(${state.breakdown.filter(s => s.trim()).length})` : ''}
 								</button>
 
 								{#if state.showBreakdown}
-									<div class="breakdown">
+									<div class="breakdown" data-task={task.id}>
 										{#each state.breakdown as line, idx (idx)}
 											<div class="breakdown-row">
 												<input
 													type="text"
 													value={line}
-													placeholder="Delsteg"
+													placeholder={idx === state.breakdown.length - 1 ? 'Nytt delsteg…' : 'Delsteg'}
 													oninput={(e) => updateBreakdownLine(task.id, idx, e.currentTarget.value)}
+													onkeydown={(e) => handleBreakdownKeydown(e, task.id, idx)}
 												/>
-												<button type="button" class="ghost-icon" onclick={() => removeBreakdownLine(task.id, idx)} aria-label="Fjern">×</button>
+												{#if line.trim()}
+													<button type="button" class="ghost-icon" onclick={() => removeBreakdownLine(task.id, idx)} aria-label="Fjern">×</button>
+												{/if}
 											</div>
 										{/each}
-										<button type="button" class="add-line" onclick={() => addBreakdownLine(task.id)}>+ Legg til delsteg</button>
 									</div>
 								{/if}
 
