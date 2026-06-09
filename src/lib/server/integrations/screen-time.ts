@@ -274,7 +274,8 @@ export async function ingestDailyScreenTime(
 
 /**
  * Skriv et ukesbilde: 1 ukesoppsummering + opptil 7 dags-totaler.
- * `weekStartISO` = mandag i den aktuelle ISO-uken (default forrige uke).
+ * `weekStartISO` = en dato i den aktuelle ISO-uken (snappes til mandag,
+ * default forrige uke).
  */
 export async function ingestWeeklyScreenTime(
 	userId: string,
@@ -282,7 +283,9 @@ export async function ingestWeeklyScreenTime(
 	weekStartISO?: string
 ): Promise<{ weekStartISO: string; days: string[] }> {
 	const sid = await getOrCreateScreenTimeSensor(userId);
-	const mondayISO = weekStartISO ?? previousIsoWeekMondayISO();
+	const mondayISO = weekStartISO
+		? isoWeekMondayISO(dayTimestamp(weekStartISO))
+		: previousIsoWeekMondayISO();
 	const mondayTs = dayTimestamp(mondayISO);
 
 	// Ukesoppsummering

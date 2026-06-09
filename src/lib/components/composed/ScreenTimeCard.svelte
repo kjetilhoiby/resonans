@@ -41,7 +41,9 @@
 		goals = [],
 		weekDays = [],
 		categoryLabels = {},
-		compact = false
+		compact = false,
+		cumulative = [],
+		cumulativeRefs = []
 	}: {
 		thisWeek: ScreenTimeMetric | null;
 		prevWeek?: ScreenTimeMetric | null;
@@ -49,6 +51,10 @@
 		weekDays?: DayPoint[];
 		categoryLabels?: Record<string, string>;
 		compact?: boolean;
+		/** Akkumulert serie for valgt uke (punkt per time fra man 00:00). */
+		cumulative?: number[];
+		/** Tilsvarende serier for tidligere uker — tegnes som tynne grå referanselinjer. */
+		cumulativeRefs?: number[][];
 	} = $props();
 
 	function fmt(min: number | null | undefined): string {
@@ -74,9 +80,71 @@
 	const hasWeekDays = $derived(weekDays.some((d) => d.totalMinutes > 0));
 	const maxDay = $derived(Math.max(1, ...weekDays.map((d) => d.totalMinutes), thisWeek?.maxDayMinutes ?? 0));
 
-	// Time-for-time
+	// Time-for-time: snitt per klokketime denne uka vs forrige.
 	const hasHourly = $derived((thisWeek?.byHour ?? []).some((v) => v > 0));
-	const maxHour = $derived(Math.max(1, ...(thisWeek?.byHour ?? [])));
+	const thisHourAvg = $derived(
+		(thisWeek?.byHour ?? []).map((v) => v / Math.max(1, thisWeek?.hourlyDayCount ?? 1))
+	);
+	const prevHourAvg = $derived(
+		prevWeek && prevWeek.hourlyDayCount > 0 && (prevWeek.byHour ?? []).some((v) => v > 0)
+			? prevWeek.byHour.map((v) => v / Math.max(1, prevWeek.hourlyDayCount))
+			: null
+	);
+	const maxHourAvg = $derived(Math.max(1, ...thisHourAvg, ...(prevHourAvg ?? [])));
+
+	/* ── Akkumulert ukegraf (man 00 → søn 24) ─────────────── */
+	const HOURS_PER_WEEK = 168;
+	const CHART_W = 360;
+	const CHART_H = 150;
+	const PAD = { top: 8, right: 10, bottom: 18, left: 36 };
+	const plotW = CHART_W - PAD.left - PAD.right;
+	const plotH = CHART_H - PAD.top - PAD.bottom;
+
+	const hasCumulative = $derived(cumulative.length > 1);
+	let hourViewChoice = $state<'cumulative' | 'hours'>('cumulative');
+	const hourView = $derived(
+		hasCumulative && (hourViewChoice === 'cumulative' || !hasHourly) ? 'cumulative' : 'hours'
+	);
+
+	const cumulativeMax = $derived(
+		Math.max(
+			1,
+			cumulative[cumulative.length - 1] ?? 0,
+			...cumulativeRefs.map((r) => r[r.length - 1] ?? 0)
+		)
+	);
+
+	function cumX(i: number): number {
+		return PAD.left + (i / HOURS_PER_WEEK) * plotW;
+	}
+	function cumY(v: number): number {
+		return PAD.top + plotH - (v / cumulativeMax) * plotH;
+	}
+	function cumulativePath(series: number[]): string {
+		if (series.length < 2) return '';
+		return series
+			.map((v, i) => `${i === 0 ? 'M' : 'L'}${cumX(i).toFixed(1)},${cumY(v).toFixed(1)}`)
+			.join(' ');
+	}
+	const cumulativeArea = $derived(
+		hasCumulative
+			? `${cumulativePath(cumulative)} L${cumX(cumulative.length - 1).toFixed(1)},${(PAD.top + plotH).toFixed(1)} L${cumX(0).toFixed(1)},${(PAD.top + plotH).toFixed(1)} Z`
+			: ''
+	);
+	const cumulativeEnd = $derived(
+		hasCumulative
+			? {
+					x: cumX(cumulative.length - 1),
+					y: cumY(cumulative[cumulative.length - 1]),
+					value: cumulative[cumulative.length - 1]
+				}
+			: null
+	);
+
+	function fmtAxis(min: number): string {
+		if (min >= 95) return `${Math.round(min / 60)}t`;
+		return `${Math.round(min)}m`;
+	}
 
 	// Kategorier sortert
 	const categoryRows = $derived(
@@ -142,29 +210,125 @@
 			</div>
 		{/if}
 
-		{#if !compact && hasHourly}
+		{#if !compact && (hasCumulative || hasHourly)}
 			<div class="st-section">
-				<span class="section-title">Tid på døgnet (snitt over uka)</span>
-				<div class="hour-bars">
-					{#each thisWeek.byHour as h, hour}
-						<div
-							class="hour-col"
-							title={`kl. ${String(hour).padStart(2, '0')}: ${fmt(Math.round(h / Math.max(1, thisWeek.hourlyDayCount)))} /dag`}
-						>
-							<div class="hour-track">
-								<div class="hour-total" style={`height:${(h / maxHour) * 100}%`}>
-									<div
-										class="hour-social"
-										style={`height:${h > 0 ? ((thisWeek.socialByHour[hour] ?? 0) / h) * 100 : 0}%`}
-									></div>
-								</div>
-							</div>
-							{#if hour % 6 === 0}
-								<span class="hour-label">{String(hour).padStart(2, '0')}</span>
-							{/if}
+				<div class="section-head">
+					<span class="section-title">
+						{hourView === 'cumulative' ? 'Akkumulert gjennom uka' : 'Per time av døgnet (snitt/dag)'}
+					</span>
+					{#if hasCumulative && hasHourly}
+						<div class="view-toggle" role="group" aria-label="Velg visning">
+							<button
+								class:active={hourView === 'cumulative'}
+								onclick={() => (hourViewChoice = 'cumulative')}
+								data-track="skjermtid:visning-akkumulert">Akkumulert</button
+							>
+							<button
+								class:active={hourView === 'hours'}
+								onclick={() => (hourViewChoice = 'hours')}
+								data-track="skjermtid:visning-per-time">Per time</button
+							>
 						</div>
-					{/each}
+					{/if}
 				</div>
+
+				{#if hourView === 'cumulative'}
+					<svg
+						viewBox={`0 0 ${CHART_W} ${CHART_H}`}
+						class="cum-chart"
+						role="img"
+						aria-label="Akkumulert skjermtid fra mandag til søndag"
+					>
+						{#each [0.25, 0.5, 0.75, 1] as t}
+							<line
+								x1={PAD.left}
+								x2={PAD.left + plotW}
+								y1={PAD.top + plotH - t * plotH}
+								y2={PAD.top + plotH - t * plotH}
+								class="cum-grid"
+							/>
+						{/each}
+						<line
+							x1={PAD.left}
+							x2={PAD.left + plotW}
+							y1={PAD.top + plotH}
+							y2={PAD.top + plotH}
+							class="cum-baseline"
+						/>
+						{#each [0.5, 1] as t}
+							<text x={PAD.left - 5} y={PAD.top + plotH - t * plotH + 3} class="cum-axis-y">
+								{fmtAxis(t * cumulativeMax)}
+							</text>
+						{/each}
+						{#each dayLabels as label, i}
+							{#if i > 0}
+								<line
+									x1={cumX(i * 24)}
+									x2={cumX(i * 24)}
+									y1={PAD.top}
+									y2={PAD.top + plotH}
+									class="cum-grid day"
+								/>
+							{/if}
+							<text x={cumX(i * 24 + 12)} y={CHART_H - 5} class="cum-axis-x">{label}</text>
+						{/each}
+
+						{#each cumulativeRefs as ref}
+							<path d={cumulativePath(ref)} class="cum-ref" />
+						{/each}
+
+						<path d={cumulativeArea} class="cum-area" />
+						<path d={cumulativePath(cumulative)} class="cum-line" />
+						{#if cumulativeEnd}
+							<circle cx={cumulativeEnd.x} cy={cumulativeEnd.y} r="3" class="cum-dot" />
+						{/if}
+					</svg>
+					<div class="cum-legend">
+						<span class="legend-item"><span class="swatch this"></span>Denne uka ({fmt(Math.round(cumulativeEnd?.value ?? 0))})</span>
+						{#if cumulativeRefs.length > 0}
+							<span class="legend-item">
+								<span class="swatch ref"></span>Siste {cumulativeRefs.length} uke{cumulativeRefs.length === 1 ? '' : 'r'}
+							</span>
+						{/if}
+					</div>
+				{:else}
+					<div class="hour-bars">
+						{#each thisHourAvg as v, hour}
+							{@const prev = prevHourAvg?.[hour] ?? null}
+							{@const delta = prev === null ? null : Math.round(v - prev)}
+							{@const total = thisWeek.byHour[hour] ?? 0}
+							<div
+								class="hour-col"
+								title={`kl. ${String(hour).padStart(2, '0')}: ${fmt(Math.round(v))} /dag${
+									prev === null
+										? ''
+										: ` · forrige uke ${fmt(Math.round(prev))}${delta === 0 ? '' : ` (${delta! > 0 ? '+' : '−'}${fmt(Math.abs(delta!))})`}`
+								}`}
+							>
+								<div class="hour-track">
+									{#if prevHourAvg}
+										<div class="hour-prev" style={`height:${(prev! / maxHourAvg) * 100}%`}></div>
+									{/if}
+									<div class="hour-total" style={`height:${(v / maxHourAvg) * 100}%`}>
+										<div
+											class="hour-social"
+											style={`height:${total > 0 ? ((thisWeek.socialByHour[hour] ?? 0) / total) * 100 : 0}%`}
+										></div>
+									</div>
+								</div>
+								{#if hour % 6 === 0}
+									<span class="hour-label">{String(hour).padStart(2, '0')}</span>
+								{/if}
+							</div>
+						{/each}
+					</div>
+					{#if prevHourAvg}
+						<div class="cum-legend">
+							<span class="legend-item"><span class="swatch this"></span>Denne uka</span>
+							<span class="legend-item"><span class="swatch ref"></span>Forrige uke</span>
+						</div>
+					{/if}
+				{/if}
 			</div>
 		{:else if !compact}
 			<p class="st-hint">Ingen time-for-time for denne uka. Last opp et <strong>dagsbilde</strong> (Dag-fanen) for å se tid på døgnet.</p>
@@ -328,6 +492,103 @@
 		font-size: 0.7rem;
 		color: var(--text-secondary, rgba(255, 255, 255, 0.5));
 	}
+	.section-head {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 0.5rem;
+		margin-bottom: 0.5rem;
+	}
+	.section-head .section-title {
+		margin-bottom: 0;
+	}
+	.view-toggle {
+		display: flex;
+		gap: 2px;
+		background: rgba(255, 255, 255, 0.06);
+		border-radius: 8px;
+		padding: 2px;
+	}
+	.view-toggle button {
+		background: none;
+		border: none;
+		color: var(--text-secondary, rgba(255, 255, 255, 0.55));
+		font-size: 0.72rem;
+		padding: 0.25rem 0.55rem;
+		border-radius: 6px;
+		cursor: pointer;
+	}
+	.view-toggle button.active {
+		background: rgba(255, 255, 255, 0.12);
+		color: var(--text-primary, #fff);
+	}
+	.cum-chart {
+		width: 100%;
+		height: auto;
+		display: block;
+	}
+	.cum-grid {
+		stroke: rgba(255, 255, 255, 0.07);
+		stroke-width: 1;
+	}
+	.cum-grid.day {
+		stroke: rgba(255, 255, 255, 0.05);
+	}
+	.cum-baseline {
+		stroke: rgba(255, 255, 255, 0.18);
+		stroke-width: 1;
+	}
+	.cum-axis-y {
+		fill: var(--text-secondary, rgba(255, 255, 255, 0.45));
+		font-size: 8px;
+		text-anchor: end;
+	}
+	.cum-axis-x {
+		fill: var(--text-secondary, rgba(255, 255, 255, 0.45));
+		font-size: 8px;
+		text-anchor: middle;
+	}
+	.cum-ref {
+		fill: none;
+		stroke: rgba(255, 255, 255, 0.18);
+		stroke-width: 1;
+	}
+	.cum-area {
+		fill: var(--accent-primary, #4aa8ff);
+		opacity: 0.08;
+	}
+	.cum-line {
+		fill: none;
+		stroke: var(--accent-primary, #4aa8ff);
+		stroke-width: 2;
+		stroke-linejoin: round;
+	}
+	.cum-dot {
+		fill: var(--accent-primary, #4aa8ff);
+	}
+	.cum-legend {
+		display: flex;
+		gap: 1rem;
+		margin-top: 0.4rem;
+	}
+	.legend-item {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		font-size: 0.72rem;
+		color: var(--text-secondary, rgba(255, 255, 255, 0.55));
+	}
+	.swatch {
+		width: 14px;
+		height: 3px;
+		border-radius: 2px;
+	}
+	.swatch.this {
+		background: var(--accent-primary, #4aa8ff);
+	}
+	.swatch.ref {
+		background: rgba(255, 255, 255, 0.3);
+	}
 	.hour-bars {
 		display: flex;
 		gap: 1px;
@@ -347,9 +608,18 @@
 		width: 100%;
 		display: flex;
 		align-items: flex-end;
+		gap: 1px;
+	}
+	.hour-prev {
+		flex: 1;
+		min-width: 0;
+		background: rgba(255, 255, 255, 0.14);
+		border-radius: 2px 2px 0 0;
+		min-height: 1px;
 	}
 	.hour-total {
-		width: 100%;
+		flex: 1;
+		min-width: 0;
 		background: var(--text-secondary, rgba(255, 255, 255, 0.22));
 		border-radius: 2px 2px 0 0;
 		display: flex;
