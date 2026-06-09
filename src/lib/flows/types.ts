@@ -22,6 +22,7 @@ export type FlowId =
 	| 'day_close'
 	| 'egenfrekvens_checkin'
 	| 'egenfrekvens_quick'
+	| 'egenfrekvens_slot'
 	| 'reflection_light'
 	| 'quick_win'
 	| 'inbox_note'

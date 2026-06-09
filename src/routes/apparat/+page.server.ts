@@ -12,7 +12,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	const applianceName = url.searchParams.get('appliance');
 
 	if (!cycleId || !applianceName) {
-		redirect(302, '/hjem');
+		redirect(302, '/');
 	}
 
 	const ownedSensors = await db
@@ -25,7 +25,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			)
 		);
 
-	if (ownedSensors.length === 0) redirect(302, '/hjem');
+	if (ownedSensors.length === 0) redirect(302, '/');
 
 	const sensorIds = ownedSensors.map((s) => s.id);
 	const latest = await db
@@ -87,7 +87,7 @@ export const actions: Actions = {
 		const remainingMinutes = remainingStr ? Number(remainingStr) : null;
 
 		if (!sensorId || !cycleId || !appliance) {
-			redirect(302, '/hjem');
+			redirect(302, '/');
 		}
 
 		let estimatedFinishAt: string | undefined;
@@ -116,6 +116,6 @@ export const actions: Actions = {
 			{ conflictMode: 'upsert_sensor_datatype_timestamp' }
 		);
 
-		redirect(302, '/hjem');
+		redirect(302, '/');
 	}
 };

@@ -63,7 +63,7 @@
 		{/if}
 		<div class="page-header-copy">
 			{#if titleHref}
-				<a href={titleHref} class="page-header-title-link" aria-label={titleLabel} onclick={(e) => e.currentTarget.classList.add('is-navigating')}>
+				<a href={titleHref} class="page-header-title-link" aria-label={titleLabel}>
 					<div class="page-header-title-row">
 						<span class="page-header-loading"></span>
 						{#if emoji}<span class="page-header-emoji">{emoji}</span>{/if}
@@ -71,7 +71,7 @@
 					</div>
 				</a>
 			{:else if onTitleClick || morph}
-				<button class="page-header-title-link" type="button" onclick={(e) => { e.currentTarget.classList.add('is-navigating'); onTitleClick?.(); }} aria-label={titleLabel}>
+				<button class="page-header-title-link" type="button" onclick={() => onTitleClick?.()} aria-label={titleLabel}>
 					<div class="page-header-title-row">
 						<span class="page-header-loading"></span>
 						{#if emoji}<span class="page-header-emoji">{emoji}</span>{/if}
@@ -182,7 +182,7 @@
 		margin-right: 0;
 	}
 
-	:global(.is-navigating) .page-header-loading {
+	:global(html.is-navigating) .page-header-loading {
 		display: block;
 		animation: header-pulse 1s ease-in-out infinite;
 	}

@@ -11,7 +11,6 @@ import { localIsoDay } from '$lib/server/nudge-time';
 import { countOpenChecklistItems } from '$lib/server/checklist-open-items';
 import { loadActiveSnoozedChipIds } from '$lib/server/action-snoozes';
 import { focusTimerProducer } from './action-producers/focus-timer';
-import { sjekkInnProducer } from './action-producers/sjekk-inn';
 import { planTomorrowProducer } from './action-producers/plan-tomorrow';
 import { planWeekProducer } from './action-producers/plan-week';
 import { planMonthProducer } from './action-producers/plan-month';
@@ -52,8 +51,9 @@ export type ActionProducer = (
 	ctx: ProducerContext
 ) => Promise<ActionCandidate[]> | ActionCandidate[];
 
+// Sjekk inn-chipen produseres ikke lenger server-side: slot-sjekkinnen (HomeScreen)
+// viser en lokal chip når fullskjermen er dismisset men slottet ikke registrert.
 const PRODUCERS: ActionProducer[] = [
-	sjekkInnProducer,
 	focusTimerProducer,
 	reflectionLightProducer,
 	quickWinProducer,

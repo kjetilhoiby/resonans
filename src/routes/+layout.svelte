@@ -1,10 +1,11 @@
 <script lang="ts">
 	import '../app.css';
-	import { onNavigate } from '$app/navigation';
+	import { afterNavigate, onNavigate } from '$app/navigation';
 
 	let { children } = $props();
 
 	onNavigate((navigation) => {
+		document.documentElement.classList.add('is-navigating');
 		if (!document.startViewTransition) return;
 		return new Promise((resolve) => {
 			document.startViewTransition(async () => {
@@ -12,6 +13,10 @@
 				await navigation.complete;
 			});
 		});
+	});
+
+	afterNavigate(() => {
+		document.documentElement.classList.remove('is-navigating');
 	});
 </script>
 

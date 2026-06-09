@@ -1,6 +1,6 @@
 <script lang="ts">
 	import ProjectCard from '../composed/ProjectCard.svelte';
-	import ApplianceCycleChart from '../visualizations/ApplianceCycleChart.svelte';
+	import AnimatedProgressBar from '../visualizations/AnimatedProgressBar.svelte';
 	import type { ProjectProgress } from '$lib/server/services/project-metrics-service';
 	import { SEASONS, currentSeason, HOME_PROJECT_TYPES, HOME_ROOMS } from '$lib/domains/home';
 
@@ -66,9 +66,23 @@
 		appliances: Appliance[];
 		onOpenProject?: (id: string) => void;
 		onOpenChat?: (prefill: string) => void;
+		onOpenAppliance?: (href: string) => void;
 	}
 
-	let { projects = [], seasonalTasks = [], routines = [], appliances = [], onOpenProject, onOpenChat }: Props = $props();
+	let { projects = [], seasonalTasks = [], routines = [], appliances = [], onOpenProject, onOpenChat, onOpenAppliance }: Props = $props();
+
+	// Kjørende syklus → detaljsiden (korriger program/tid). Ellers → label-siden (merk ferdige sykluser).
+	function applianceHref(a: Appliance): string {
+		if (a.cycle?.isRunning) {
+			const cycleId = a.recentEvents.find((e) => e.data?.cycle_id)?.data.cycle_id as
+				| string
+				| undefined;
+			if (cycleId) {
+				return `/apparat?cycle=${encodeURIComponent(cycleId)}&appliance=${encodeURIComponent(a.name)}`;
+			}
+		}
+		return '/apparat/label';
+	}
 
 	const season = currentSeason();
 	const seasonLabel = SEASONS[season];
@@ -149,7 +163,13 @@
 			<div class="appliance-grid">
 				{#each appliances as a (a.sensorId + ':' + a.name)}
 					{@const status = applianceStatus(a)}
-					<div class="appliance-card" class:running={status.state === 'running'} class:done={status.state === 'done'}>
+					<button
+						type="button"
+						class="appliance-card"
+						class:running={status.state === 'running'}
+						class:done={status.state === 'done'}
+						onclick={() => onOpenAppliance?.(applianceHref(a))}
+					>
 						<div class="appliance-header">
 							<span class="appliance-emoji">{a.emoji}</span>
 							<span class="appliance-name">{a.label}</span>
@@ -160,29 +180,28 @@
 							{/if}
 							{status.label}
 						</div>
-						{#if a.cycle && a.cycle.isRunning && a.cycle.remainingMinutes > 0}
-							<div class="cycle-estimate">
-								<span class="remaining">Gjenstår {formatDuration(a.cycle.remainingMinutes)}</span>
-								{#if a.cycle.programName}
-									<span class="program">· {a.cycle.programName}</span>
-								{/if}
+						{#if a.cycle?.isRunning}
+							{@const pct =
+								a.cycle.totalMinutes > 0
+									? (a.cycle.elapsedMinutes / a.cycle.totalMinutes) * 100
+									: 0}
+							<div class="appliance-progress">
+								<AnimatedProgressBar {pct} tone="accent" height={6} />
 							</div>
+							{#if a.cycle.remainingMinutes > 0 || a.cycle.programName}
+								<div class="cycle-estimate">
+									{#if a.cycle.remainingMinutes > 0}
+										<span class="remaining">Gjenstår {formatDuration(a.cycle.remainingMinutes)}</span>
+									{/if}
+									{#if a.cycle.programName}
+										<span class="program">· {a.cycle.programName}</span>
+									{/if}
+								</div>
+							{/if}
 						{:else if status.detail}
 							<div class="appliance-detail">{status.detail}</div>
 						{/if}
-						{#if a.cycle?.isRunning}
-							<ApplianceCycleChart
-								curve={a.cycle.curve}
-								totalMinutes={a.cycle.totalMinutes}
-								peakWatts={a.cycle.peakWatts}
-								isRunning={a.cycle.isRunning}
-							/>
-							<div class="cycle-axis">
-								<span>{a.cycle.elapsedMinutes} min</span>
-								<span>{a.cycle.totalMinutes} min</span>
-							</div>
-						{/if}
-					</div>
+					</button>
 				{/each}
 			</div>
 		</section>
@@ -262,7 +281,7 @@ section h3 {
 		font-weight: 600;
 	}
 	.empty {
-		color: var(--muted, #666);
+		color: var(--text-tertiary);
 		font-size: 0.9rem;
 	}
 	.grid {
@@ -278,21 +297,33 @@ section h3 {
 		gap: 0.75rem;
 	}
 	.appliance-card {
-		background: var(--surface, #fff);
-		border: 1px solid var(--border, #e6e6e6);
+		background: var(--bg-card);
+		border: 1px solid var(--border-color);
 		border-radius: 12px;
 		padding: 0.85rem;
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
-		transition: border-color 0.2s;
+		transition: border-color 0.2s, box-shadow 0.2s;
+		font: inherit;
+		color: inherit;
+		text-align: left;
+		width: 100%;
+		cursor: pointer;
+	}
+	.appliance-card:hover {
+		border-color: var(--accent-primary);
+	}
+	.appliance-card:focus-visible {
+		outline: 2px solid var(--accent-primary);
+		outline-offset: 2px;
 	}
 	.appliance-card.running {
-		border-color: var(--accent, #4a90e2);
-		box-shadow: 0 0 0 1px var(--accent, #4a90e2);
+		border-color: var(--accent-primary);
+		box-shadow: 0 0 0 1px var(--accent-primary);
 	}
 	.appliance-card.done {
-		border-color: var(--success, #4caf50);
+		border-color: var(--success-border);
 	}
 	.appliance-header {
 		display: flex;
@@ -309,25 +340,25 @@ section h3 {
 	}
 	.appliance-status {
 		font-size: 0.85rem;
-		color: var(--muted, #666);
+		color: var(--text-tertiary);
 		display: flex;
 		align-items: center;
 		gap: 0.4rem;
 	}
 	.appliance-status.status-running {
-		color: var(--accent, #4a90e2);
+		color: var(--accent-primary);
 		font-weight: 500;
 	}
 	.appliance-status.status-done {
-		color: var(--success, #4caf50);
+		color: var(--success-text);
 	}
 	.appliance-detail {
 		font-size: 0.75rem;
-		color: var(--muted, #888);
+		color: var(--text-tertiary);
 	}
 	.cycle-estimate {
 		font-size: 0.8rem;
-		color: var(--text-primary, #ddd);
+		color: var(--text-secondary);
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.3rem;
@@ -336,20 +367,17 @@ section h3 {
 		font-weight: 500;
 	}
 	.cycle-estimate .program {
-		color: var(--muted, #888);
+		color: var(--text-tertiary);
 		font-weight: 400;
 	}
-	.cycle-axis {
-		display: flex;
-		justify-content: space-between;
-		font-size: 0.7rem;
-		color: var(--muted, #888);
+	.appliance-progress {
+		margin: 0.1rem 0 0.05rem;
 	}
 	.pulse {
 		width: 8px;
 		height: 8px;
 		border-radius: 50%;
-		background: var(--accent, #4a90e2);
+		background: var(--accent-primary);
 		animation: pulse-anim 1.5s ease-in-out infinite;
 	}
 	@keyframes pulse-anim {
@@ -370,8 +398,8 @@ section h3 {
 		align-items: center;
 		gap: 0.5rem;
 		padding: 0.5rem 0.75rem;
-		background: var(--surface, #fff);
-		border: 1px solid var(--border, #e6e6e6);
+		background: var(--bg-card);
+		border: 1px solid var(--border-color);
 		border-radius: 8px;
 	}
 	.task.done {
@@ -381,7 +409,8 @@ section h3 {
 	.badge {
 		margin-left: auto;
 		font-size: 0.7rem;
-		background: #f0f0f0;
+		background: var(--bg-hover);
+		color: var(--text-secondary);
 		padding: 0.1rem 0.4rem;
 		border-radius: 999px;
 	}
@@ -390,12 +419,12 @@ section h3 {
 		align-items: center;
 		gap: 0.5rem;
 		padding: 0.5rem 0.75rem;
-		background: var(--surface, #fff);
-		border: 1px solid var(--border, #e6e6e6);
+		background: var(--bg-card);
+		border: 1px solid var(--border-color);
 		border-radius: 8px;
 	}
 	.muted {
-		color: var(--muted, #666);
+		color: var(--text-tertiary);
 		font-size: 0.8rem;
 	}
 	.routine-list .title {

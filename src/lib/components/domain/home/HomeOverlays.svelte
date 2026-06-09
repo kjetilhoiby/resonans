@@ -13,11 +13,39 @@
 	import FlowSheet from '../../flows/FlowSheet.svelte';
 	import Icon from '../../ui/Icon.svelte';
 	import { FLOWS } from '$lib/flows/registry';
+	import { buildEgenfrekvensSlotFlow } from '$lib/flows/egenfrekvens-slot';
+	import { localIsoDay, periodSlotStorageKey } from '$lib/domains/egenfrekvens/period-slots';
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
 	import type { Checklist } from '../../composed/ChecklistWidget.svelte';
 	import { HOME_CTX, type HomeContext } from './home-context';
 
 	const ctx = getContext<HomeContext>(HOME_CTX);
+
+	// Marker dagens slot: 'dismissed' gir chip på hjemskjermen, 'done' skjuler alt
+	function markSlotCheckinSeen(state: 'dismissed' | 'done') {
+		const slot = ctx.egenfrekvensSlotCheckin;
+		if (!slot || typeof localStorage === 'undefined') return;
+		localStorage.setItem(periodSlotStorageKey(localIsoDay(), slot.id), state);
+	}
+
+	function handleSlotContinueChat(data: Record<string, any>) {
+		const slot = ctx.egenfrekvensSlotCheckin;
+		if (!slot) return;
+		const level = Number.isInteger(data?.level) ? Number(data.level) : 3;
+		const note = typeof data?.note === 'string' ? data.note.trim() : '';
+		// Lagre sjekkinnen først, så chatten har ferske data
+		void fetch('/api/egenfrekvens/checkin', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ level, slot: slot.id, note: note || null, day: localIsoDay() })
+		}).then(() => { void ctx.loadEgenfrekvensRecent(); });
+		markSlotCheckinSeen('done');
+		ctx.egenfrekvensSlotChip = null;
+		ctx.egenfrekvensSlotCheckin = null;
+		// Første melding i chatten: «Kvelden gikk 4, rolig kveld med lesing»
+		const labelCap = slot.label.charAt(0).toUpperCase() + slot.label.slice(1);
+		ctx.startHomeChat(`${labelCap} gikk ${level}${note ? `, ${note}` : ''}`);
+	}
 </script>
 
 <!-- Widget-panel -->
@@ -288,7 +316,6 @@
 		}}
 		oncomplete={() => {
 			ctx.egenfrekvensFlowOpen = false;
-			ctx.egenfrekvensPromptOpen = false;
 			ctx.egenfrekvensInitialNote = '';
 			ctx.egenfrekvensCarriedLevel = null;
 			ctx.egenfrekvensReflectionPrompt = null;
@@ -306,7 +333,7 @@
 		flow={FLOWS['egenfrekvens_quick']}
 		context={{ slot: ctx.egenfrekvensActiveSlot }}
 		onclose={() => { ctx.egenfrekvensQuickFlowOpen = false; }}
-		oncomplete={() => { ctx.egenfrekvensQuickFlowOpen = false; ctx.egenfrekvensPromptOpen = false; void ctx.loadEgenfrekvensRecent(); void ctx.loadActionCandidates(); }}
+		oncomplete={() => { ctx.egenfrekvensQuickFlowOpen = false; void ctx.loadEgenfrekvensRecent(); void ctx.loadActionCandidates(); }}
 		onsecondaryaction={(action) => {
 			if (action.id === 'go-deeper') {
 				const carriedNote = typeof action.data?.note === 'string' ? action.data.note.trim() : '';
@@ -318,6 +345,28 @@
 				void ctx.loadEgenfrekvensContext();
 			}
 		}}
+	/>
+{/if}
+
+<!-- Slot-sjekkin: app-open fullskjerm «Hvordan gikk …?» -->
+{#if ctx.egenfrekvensSlotCheckin}
+	<FlowSheet
+		flow={buildEgenfrekvensSlotFlow(ctx.egenfrekvensSlotCheckin)}
+		context={{ initialData: { level: 3 } }}
+		onclose={() => {
+			// Dismiss (X): la en chip ligge på hjemskjermen til slottet registreres
+			markSlotCheckinSeen('dismissed');
+			ctx.egenfrekvensSlotChip = ctx.egenfrekvensSlotCheckin;
+			ctx.egenfrekvensSlotCheckin = null;
+		}}
+		oncomplete={() => {
+			markSlotCheckinSeen('done');
+			ctx.egenfrekvensSlotChip = null;
+			ctx.egenfrekvensSlotCheckin = null;
+			void ctx.loadEgenfrekvensRecent();
+			void ctx.loadActionCandidates();
+		}}
+		onsecondaryaction={(action) => { if (action.id === 'continue-chat') handleSlotContinueChat(action.data); }}
 	/>
 {/if}
 

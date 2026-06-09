@@ -7,10 +7,11 @@ import {
 	isEgenfrekvensThemeName,
 	type EgenfrekvensCheckinValues
 } from '$lib/domains/egenfrekvens';
+import { isPeriodSlotId, PERIOD_SLOT_GROUP, type PeriodSlotId } from '$lib/domains/egenfrekvens/period-slots';
 
 export class EgenfrekvensCheckinError extends Error {}
 
-export type EgenfrekvensSlot = 'morning' | 'evening';
+export type EgenfrekvensSlot = 'morning' | 'evening' | PeriodSlotId;
 
 export function toIsoDay(date: Date = new Date()) {
 	return date.toISOString().slice(0, 10);
@@ -82,6 +83,8 @@ export interface EgenfrekvensCheckinStatus {
 	count: number;
 	morning: EgenfrekvensSlotEntry | null;
 	evening: EgenfrekvensSlotEntry | null;
+	/** Nyeste entry pr. rå slot-verdi (inkl. periode-slots som 'natt', 'arbeidsdag') */
+	slots: Record<string, EgenfrekvensSlotEntry>;
 	latest: EgenfrekvensSlotEntry | null;
 	// Legacy flate felt — beholder fra siste full-event på dagen (eller siste event om kun quick)
 	balance: number | null;
@@ -151,6 +154,7 @@ export async function getEgenfrekvensCheckinStatus(
 	let morning: EgenfrekvensSlotEntry | null = null;
 	let evening: EgenfrekvensSlotEntry | null = null;
 	let lastFull: EgenfrekvensSlotEntry | null = null;
+	const slots: Record<string, EgenfrekvensSlotEntry> = {};
 	const latest = rows[0]
 		? rowToEntry(rows[0].id, (rows[0].data ?? {}) as Record<string, unknown>, rows[0].timestamp)
 		: null;
@@ -160,8 +164,16 @@ export async function getEgenfrekvensCheckinStatus(
 		const entry = rowToEntry(row.id, data, row.timestamp);
 		const slot = data.slot;
 		// rows er sortert desc — første treff pr slot er nyeste
-		if (slot === 'morning' && !morning) morning = entry;
-		if (slot === 'evening' && !evening) evening = entry;
+		if (typeof slot === 'string' && !slots[slot]) slots[slot] = entry;
+		// Periode-slots grupperes inn i morning/evening så eksisterende visninger virker
+		const group =
+			slot === 'morning' || slot === 'evening'
+				? slot
+				: isPeriodSlotId(slot)
+					? PERIOD_SLOT_GROUP[slot]
+					: null;
+		if (group === 'morning' && !morning) morning = entry;
+		if (group === 'evening' && !evening) evening = entry;
 		if (entry.mode === 'full' && !lastFull) lastFull = entry;
 	}
 
@@ -173,6 +185,7 @@ export async function getEgenfrekvensCheckinStatus(
 		count: rows.length,
 		morning,
 		evening,
+		slots,
 		latest,
 		balance: baseline?.balance ?? null,
 		thoughts: baseline?.thoughts ?? null,
@@ -194,10 +207,10 @@ function validateFullValues(values: { level: number; thoughts: number; feelings:
 }
 
 function validateSlot(slot: unknown): EgenfrekvensSlot {
-	if (slot !== 'morning' && slot !== 'evening') {
-		throw new EgenfrekvensCheckinError('Slot må være "morning" eller "evening".');
-	}
-	return slot;
+	if (slot === 'morning' || slot === 'evening' || isPeriodSlotId(slot)) return slot;
+	throw new EgenfrekvensCheckinError(
+		'Slot må være "morning", "evening" eller et periode-slot (natt, morgen, arbeidsdag, ettermiddag, kveld).'
+	);
 }
 
 function parseUntilDate(value: unknown): string | null {

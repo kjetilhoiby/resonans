@@ -26,7 +26,9 @@ export function parseInboxItems(message: string): string[] {
 		.filter((line) => line.length > 0 && line.length < 240);
 }
 
-export const FLOWS: Record<FlowId, Flow> = {
+// egenfrekvens_slot bygges per slot via buildEgenfrekvensSlotFlow (egenfrekvens-slot.ts)
+// og har derfor ingen statisk registry-entry.
+export const FLOWS: Record<Exclude<FlowId, 'egenfrekvens_slot'>, Flow> = {
 	health_weight_onboarding: {
 		id: 'health_weight_onboarding',
 		name: 'Vekt & Kropp',
@@ -1369,7 +1371,7 @@ export function getFlowsByTheme(themeName: string, parentTheme?: string | null):
  * Hent en enkelt flow basert på ID
  */
 export function getFlowById(flowId: FlowId): Flow | undefined {
-	return FLOWS[flowId];
+	return (FLOWS as Partial<Record<FlowId, Flow>>)[flowId];
 }
 
 /**

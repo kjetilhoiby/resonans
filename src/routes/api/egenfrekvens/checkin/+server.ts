@@ -10,6 +10,7 @@ import {
 	toIsoDay,
 	type EgenfrekvensSlot
 } from '$lib/server/egenfrekvens-checkin';
+import { isPeriodSlotId } from '$lib/domains/egenfrekvens/period-slots';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ locals, url }) => {
@@ -37,7 +38,7 @@ export const DELETE: RequestHandler = async ({ locals, url }) => {
 };
 
 function parseSlot(value: unknown): EgenfrekvensSlot | null {
-	if (value === 'morning' || value === 'evening') return value;
+	if (value === 'morning' || value === 'evening' || isPeriodSlotId(value)) return value;
 	return null;
 }
 
@@ -64,7 +65,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			const level = Number(body.level);
 			const slot = parseSlot(body.slot);
 			if (!slot) {
-				return json({ error: 'Slot må være "morning" eller "evening".' }, { status: 400 });
+				return json({ error: 'Ugyldig slot.' }, { status: 400 });
 			}
 			const note = typeof body.note === 'string' ? body.note : null;
 			const status = await submitEgenfrekvensQuick({

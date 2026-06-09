@@ -543,6 +543,7 @@
 		<HomeDashboard
 			{...homeDashboardProps}
 			onOpenProject={(id) => goto(`/prosjekt/${id}`)}
+			onOpenAppliance={(href) => goto(href)}
 		/>
 	{/if}
 

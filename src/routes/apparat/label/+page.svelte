@@ -65,7 +65,7 @@
 
 <AppPage>
 <PageSection>
-<PageHeader title="Label apparater" titleHref="/hjem/apparat" />
+<PageHeader title="Label apparater" titleHref="/apparat" />
 <div class="label-content">
 	<p class="subtitle">Velg programnavn for ferdige sykluser slik at Resonans kan gjenkjenne dem neste gang.</p>
 

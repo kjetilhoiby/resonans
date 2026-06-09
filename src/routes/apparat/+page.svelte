@@ -25,7 +25,7 @@
 
 <AppPage>
 <PageSection>
-<PageHeader title="Apparat" titleHref="/hjem" />
+<PageHeader title="Apparat" titleHref="/" />
 <div class="apparat-content">
 	<h1>{data.appliance}</h1>
 	{#if data.startedAt}
@@ -64,6 +64,8 @@
 
 		<button type="submit">Oppdater</button>
 	</form>
+
+	<a class="label-link" href="/apparat/label">Merk tidligere sykluser →</a>
 </div>
 </PageSection>
 </AppPage>
@@ -140,5 +142,14 @@
 		font-size: 1rem;
 		font-weight: 500;
 		cursor: pointer;
+	}
+	.label-link {
+		align-self: center;
+		color: var(--muted, #888);
+		font-size: 0.9rem;
+		text-decoration: none;
+	}
+	.label-link:hover {
+		color: inherit;
 	}
 </style>

@@ -97,6 +97,13 @@
 	} from './home/home-theme-drag';
 
 	import {
+		getActivePeriodSlot,
+		localIsoDay,
+		periodSlotStorageKey,
+		type PeriodSlot,
+	} from '$lib/domains/egenfrekvens/period-slots';
+
+	import {
 		handleCameraFileSelect as cameraFileSelectHandler,
 		closeCameraFlow as cameraCloseHandler,
 		submitCamera as cameraSubmitHandler,
@@ -310,17 +317,23 @@
 	let actionsLoading = $state(true);
 	async function loadActionCandidates() { serverActionCandidates = await fetchActionCandidates(); actionsLoading = false; }
 
-	const actionItems = $derived.by<ActionItem[]>(() =>
-		serverActionCandidates.map((c) => ({ id: c.id, icon: c.icon, label: c.label, value: c.value, done: false, priority: c.priority, onclick: () => dispatchActionIntent(c.intent) }))
-	);
+	const actionItems = $derived.by<ActionItem[]>(() => {
+		const items: ActionItem[] = serverActionCandidates.map((c) => ({ id: c.id, icon: c.icon, label: c.label, value: c.value, done: false, priority: c.priority, onclick: () => dispatchActionIntent(c.intent) }));
+		// Dismisset slot-sjekkin ligger som chip til den registreres (eller dagen er over)
+		if (egenfrekvensSlotChip) {
+			const slot = egenfrekvensSlotChip;
+			items.unshift({ id: 'egenfrekvens-slot', icon: '✨', label: slot.question, done: false, priority: 100, onclick: () => { egenfrekvensSlotCheckin = slot; } });
+		}
+		return items;
+	});
 
 	// ── Egenfrekvens ──────────────────────────────────────────────────────
 	let egenfrekvensRecent = $state<{ today: { morning: EgenfrekvensSlotSummary | null; evening: EgenfrekvensSlotSummary | null }; points: EgenfrekvensRecentPoint[]; settings: { enabled: boolean; morningTime: string; eveningTime: string } | null; } | null>(null);
 	let egenfrekvensFlowOpen = $state(false);
 	let egenfrekvensQuickFlowOpen = $state(false);
+	let egenfrekvensSlotCheckin = $state<PeriodSlot | null>(null);
+	let egenfrekvensSlotChip = $state<PeriodSlot | null>(null);
 	let egenfrekvensActiveSlot = $state<'morning' | 'evening'>('morning');
-	let egenfrekvensPromptOpen = $state(false);
-	let egenfrekvensPromptDay = $state('');
 	let egenfrekvensInitialNote = $state('');
 	let egenfrekvensReflectionPrompt = $state<string | null>(null);
 	let egenfrekvensDreamReasons = $state<Record<string, Array<{ value: string; label: string; source: string }>> | null>(null);
@@ -712,21 +725,25 @@
 				if (nudgeId) void fetch(`/api/nudges/events/${nudgeId}/stage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stage: 'flow_started' }) }).catch(() => {});
 			}
 
-			// App-open egenfrekvens prompt
+			// App-open slot-sjekkin: fullskjerm «Hvordan gikk …?» for gjeldende tidsvindu.
+			// Allerede registrert → ingenting. Dismisset → chip på hjemskjermen i stedet.
 			void (async () => {
 				try {
-					const isoDay = new Date().toISOString().slice(0, 10);
-					const res = await fetch(`/api/egenfrekvens/status?day=${isoDay}`);
+					if (navigator.webdriver) return; // hold visuelle tester deterministiske
+					if (flowParam || $page.url.searchParams.get('chat') === '1') return;
+					const slot = getActivePeriodSlot();
+					if (!slot) return;
+					const day = localIsoDay();
+					const seen = typeof localStorage !== 'undefined'
+						? localStorage.getItem(periodSlotStorageKey(day, slot.id))
+						: null;
+					if (seen === 'done') return;
+					const res = await fetch(`/api/egenfrekvens/checkin?day=${day}`);
 					if (!res.ok) return;
 					const status = await res.json();
-					if (!status.settings || status.settings.enabled === false) return;
-					if (typeof localStorage !== 'undefined' && localStorage.getItem(`egenfrekvens-prompt-dismissed-${status.day}`)) return;
-					const morning = status.settings.morningTime ?? '06:30'; const evening = status.settings.eveningTime ?? '21:00';
-					const count = typeof status.count === 'number' ? status.count : status.submitted ? 1 : 0;
-					const nowHm = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date());
-					const showMorning = nowHm >= morning && count === 0; const showEvening = nowHm >= evening && count < 2;
-					if (!showMorning && !showEvening) return;
-					egenfrekvensPromptDay = status.day; egenfrekvensPromptOpen = true;
+					if (status.slots?.[slot.id]) return; // registrert via annen flate
+					if (seen === 'dismissed') egenfrekvensSlotChip = slot;
+					else egenfrekvensSlotCheckin = slot;
 				} catch { /* best-effort */ }
 			})();
 		})();
@@ -836,8 +853,8 @@
 		get egenfrekvensFlowOpen() { return egenfrekvensFlowOpen; }, set egenfrekvensFlowOpen(v) { egenfrekvensFlowOpen = v; },
 		get egenfrekvensQuickFlowOpen() { return egenfrekvensQuickFlowOpen; }, set egenfrekvensQuickFlowOpen(v) { egenfrekvensQuickFlowOpen = v; },
 		get egenfrekvensActiveSlot() { return egenfrekvensActiveSlot; }, set egenfrekvensActiveSlot(v) { egenfrekvensActiveSlot = v; },
-		get egenfrekvensPromptOpen() { return egenfrekvensPromptOpen; }, set egenfrekvensPromptOpen(v) { egenfrekvensPromptOpen = v; },
-		get egenfrekvensPromptDay() { return egenfrekvensPromptDay; },
+		get egenfrekvensSlotCheckin() { return egenfrekvensSlotCheckin; }, set egenfrekvensSlotCheckin(v) { egenfrekvensSlotCheckin = v; },
+		get egenfrekvensSlotChip() { return egenfrekvensSlotChip; }, set egenfrekvensSlotChip(v) { egenfrekvensSlotChip = v; },
 		get egenfrekvensInitialNote() { return egenfrekvensInitialNote; }, set egenfrekvensInitialNote(v) { egenfrekvensInitialNote = v; },
 		get egenfrekvensReflectionPrompt() { return egenfrekvensReflectionPrompt; }, set egenfrekvensReflectionPrompt(v) { egenfrekvensReflectionPrompt = v; },
 		get egenfrekvensDreamReasons() { return egenfrekvensDreamReasons; }, set egenfrekvensDreamReasons(v) { egenfrekvensDreamReasons = v; },

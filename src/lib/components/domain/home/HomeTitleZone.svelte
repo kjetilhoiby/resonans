@@ -8,7 +8,6 @@
 	import { getContext } from 'svelte';
 	import { PageHeader } from '../../ui';
 	import Icon from '../../ui/Icon.svelte';
-	import EgenfrekvensPrompt from '../EgenfrekvensPrompt.svelte';
 	import { startNavMetric } from '$lib/client/nav-metrics';
 	import { HOME_CTX, type HomeContext } from './home-context';
 
@@ -28,20 +27,6 @@
 				<a href="/settings" class="icon-link" aria-label="Innstillinger"><Icon name="settings" size={18} /></a>
 			{/snippet}
 		</PageHeader>
-		{#if ctx.egenfrekvensPromptOpen}
-			<EgenfrekvensPrompt
-				onstart={() => {
-					ctx.egenfrekvensPromptOpen = false;
-					ctx.egenfrekvensFlowOpen = true;
-				}}
-				ondismiss={() => {
-					if (typeof localStorage !== 'undefined' && ctx.egenfrekvensPromptDay) {
-						localStorage.setItem(`egenfrekvens-prompt-dismissed-${ctx.egenfrekvensPromptDay}`, '1');
-					}
-					ctx.egenfrekvensPromptOpen = false;
-				}}
-			/>
-		{/if}
 	</section>
 {/if}
 

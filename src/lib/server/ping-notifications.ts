@@ -83,7 +83,7 @@ export async function notifyPingEvent(args: {
 	let notifyUrl = appUrl;
 	if (data.event === 'started' && data.cycle_id) {
 		const params = new URLSearchParams({ cycle: data.cycle_id, appliance: name });
-		notifyUrl = `${appUrl}/hjem/apparat?${params}`;
+		notifyUrl = `${appUrl}/apparat?${params}`;
 	}
 
 	const delivery = await PushDeliveryService.deliverToUser({
@@ -139,7 +139,7 @@ export async function notifyPingMatch(args: {
 	const tag = `ping-match-${cycleId}`;
 
 	const params = new URLSearchParams({ cycle: cycleId, appliance });
-	const notifyUrl = `${appUrl}/hjem/apparat?${params}`;
+	const notifyUrl = `${appUrl}/apparat?${params}`;
 
 	const delivery = await PushDeliveryService.deliverToUser({
 		userId,

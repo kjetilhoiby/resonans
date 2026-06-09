@@ -11,6 +11,7 @@ import type { Checklist } from '../../composed/ChecklistWidget.svelte';
 import type { ChatState } from '$lib/client/chat-state.svelte';
 import type { ActionCandidate, ActionIntent } from '$lib/types/actions';
 import type { FlowContext } from '$lib/flows/types';
+import type { PeriodSlot } from '$lib/domains/egenfrekvens/period-slots';
 
 export const HOME_CTX = Symbol('home');
 
@@ -273,9 +274,11 @@ export interface HomeContext {
 	// ── Egenfrekvens ──
 	egenfrekvensFlowOpen: boolean;
 	egenfrekvensQuickFlowOpen: boolean;
+	/** Aktivt slot for app-open fullskjerm-sjekkin («Hvordan gikk natta?» osv.), null = lukket */
+	egenfrekvensSlotCheckin: PeriodSlot | null;
+	/** Slot som er dismisset men ikke registrert — vises som chip på hjemskjermen */
+	egenfrekvensSlotChip: PeriodSlot | null;
 	egenfrekvensActiveSlot: 'morning' | 'evening';
-	egenfrekvensPromptOpen: boolean;
-	egenfrekvensPromptDay: string;
 	egenfrekvensInitialNote: string;
 	egenfrekvensReflectionPrompt: string | null;
 	egenfrekvensDreamReasons: Record<string, Array<{ value: string; label: string; source: string }>> | null;

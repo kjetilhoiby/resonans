@@ -1,6 +1,7 @@
 import { db } from '$lib/db';
 import { sensorEvents } from '$lib/db/schema';
 import { and, eq, gte } from 'drizzle-orm';
+import { isPeriodSlotId, PERIOD_SLOT_GROUP } from '$lib/domains/egenfrekvens/period-slots';
 
 export type EgenfrekvensSlot = 'morning' | 'evening';
 
@@ -184,7 +185,14 @@ export async function loadEgenfrekvensDashboardData(
 		bucket.extreme = bucket.extreme || Boolean(data.extreme);
 		const ts = row.timestamp.getTime();
 		const point = rowToSlotPoint(row.id, data, row.timestamp);
-		const slot = data.slot;
+		const rawSlot = data.slot;
+		// Periode-slots (natt, morgen, arbeidsdag, ettermiddag, kveld) grupperes inn i morning/evening
+		const slot =
+			rawSlot === 'morning' || rawSlot === 'evening'
+				? rawSlot
+				: isPeriodSlotId(rawSlot)
+					? PERIOD_SLOT_GROUP[rawSlot]
+					: rawSlot;
 		if (slot === 'morning') {
 			if (ts >= bucket.morningTs) {
 				bucket.morning = point;
