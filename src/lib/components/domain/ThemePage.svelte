@@ -26,6 +26,7 @@
 	import ThemeFlowsTab from './theme/ThemeFlowsTab.svelte';
 	import ThemeFilesTab from './theme/ThemeFilesTab.svelte';
 	import ThemeChatTab from './theme/ThemeChatTab.svelte';
+	import ThemeTasksTab from './theme/ThemeTasksTab.svelte';
 	import ThemeDataTab from './theme/ThemeDataTab.svelte';
 
 	/* ── Types ──────────────────────────────────────────── */
@@ -115,18 +116,23 @@
 		themeFiles?: ThemeFile[];
 		metricSettings?: MetricSettingsMap;
 		projects?: ThemeProject[];
+		isHomeProject?: boolean;
+		projectProfile?: Record<string, unknown> | null;
+		tasks?: import('./theme/ThemeTasksTab.svelte').ProjectTask[];
 	}
 
-	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '', selectedWorkout = null, tripProfile = null, tripLists = [], ferieProfile = null, themeFiles: initialThemeFiles = [], metricSettings: initialMetricSettings = {}, projects = [] }: Props = $props();
+	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '', selectedWorkout = null, tripProfile = null, tripLists = [], ferieProfile = null, themeFiles: initialThemeFiles = [], metricSettings: initialMetricSettings = {}, projects = [], isHomeProject = false, projectProfile = null, tasks = [] }: Props = $props();
 
 	/* ── Subtab-tilstand ────────────────────────────────── */
-	type Tab = 'chat' | 'data' | 'mål' | 'flyter' | 'filer' | 'lister';
+	type Tab = 'chat' | 'data' | 'mål' | 'flyter' | 'filer' | 'lister' | 'oppgaver';
 	const activeDashboardKind = $derived(resolveThemeDashboardKind(theme?.name));
 	const activeDashboard = $derived(getThemeDashboardDefinition(theme?.name));
 	const hasThemeDashboard = $derived(activeDashboardKind !== null);
 	const requestedTab = get(page).url.searchParams.get('tab');
 	const availableTabs = $derived<Tab[]>(
-		activeDashboardKind === 'health'
+		isHomeProject
+			? ['chat', 'oppgaver', 'filer']
+			: activeDashboardKind === 'health'
 			? ['chat', 'data', 'mål', 'flyter', 'filer']
 			: activeDashboardKind === 'economics'
 				? ['chat', 'data', 'mål', 'flyter', 'filer']
@@ -143,15 +149,17 @@
 	const requestedPrompt = get(page).url.searchParams.get('prompt') ?? '';
 	const hasLinkedWorkout = $derived(Boolean(selectedWorkout));
 	const isHandoff = get(page).url.searchParams.get('handoff') === '1';
-	const validTabs: Tab[] = ['chat', 'data', 'mål', 'flyter', 'filer', 'lister'];
+	const validTabs: Tab[] = ['chat', 'data', 'mål', 'flyter', 'filer', 'lister', 'oppgaver'];
 	let tab = $state<Tab>(
 		hasLinkedWorkout
 			? 'chat'
 			: validTabs.includes(requestedTab as Tab)
 			? requestedTab as Tab
-			: hasThemeDashboard
-				? 'data'
-				: 'chat'
+			: isHomeProject
+				? 'oppgaver'
+				: hasThemeDashboard
+					? 'data'
+					: 'chat'
 	);
 	let handoffPhase = $state<'intro' | 'content'>('content');
 
@@ -165,8 +173,15 @@
 	let dataTabRef = $state<ThemeDataTab | null>(null);
 
 	/* ── Chat starts open? ─────────────────────────────── */
-	const chatStartOpen = $derived(isHandoff || hasLinkedWorkout || Boolean(requestedPrompt));
-	const chatInitialDraft = $derived(requestedPrompt || selectedWorkout?.chatPrompt || '');
+	// Draft satt fra et dashboard (f.eks. "+ Nytt prosjekt"-knappen) som vil åpne chatten forhåndsfylt.
+	let composedDraft = $state('');
+	const chatStartOpen = $derived(isHandoff || hasLinkedWorkout || Boolean(requestedPrompt) || Boolean(composedDraft));
+	const chatInitialDraft = $derived(composedDraft || requestedPrompt || selectedWorkout?.chatPrompt || '');
+
+	function goToChat(draft?: string) {
+		if (draft) composedDraft = draft;
+		tab = 'chat';
+	}
 
 	onMount(() => {
 		finishNavMetric('tema');
@@ -346,6 +361,7 @@
 					{:else if t === 'mål'}🎯 Mål
 					{:else if t === 'flyter'}🧭 Flyter
 					{:else if t === 'lister'}📋 Lister
+					{:else if t === 'oppgaver'}✅ Oppgaver
 					{:else}📁 Filer{/if}
 				</button>
 			{/each}
@@ -383,7 +399,7 @@
 				initialMetricSettings={initialMetricSettings}
 				{tripProfile}
 				{ferieProfile}
-				onSwitchToChat={() => { tab = 'chat'; }}
+				onSwitchToChat={goToChat}
 				onStartFlow={startFlow}
 			/>
 
@@ -409,6 +425,15 @@
 				themeName={theme.name}
 				{availableFlows}
 				onStartFlow={startFlow}
+			/>
+
+		<!-- OPPGAVER (prosjekt-undertema) -->
+		{:else if tab === 'oppgaver'}
+			<ThemeTasksTab
+				themeId={theme.id}
+				initialTasks={tasks}
+				{projectProfile}
+				onSwitchToChat={goToChat}
 			/>
 
 		<!-- FILER -->

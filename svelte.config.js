@@ -18,7 +18,12 @@ const config = {
 	kit: {
 		adapter: adapter({
 			runtime: 'nodejs22.x'
-		})
+		}),
+		version: {
+			// Poll _app/version.json så `updated` (i $app/state) oppdager nye deploys
+			// i kjørende økter — rotlayouten gjør full reload ved neste navigasjon.
+			pollInterval: 60_000
+		}
 	}
 };
 

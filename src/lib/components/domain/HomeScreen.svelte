@@ -331,6 +331,19 @@
 	let egenfrekvensRecent = $state<{ today: { morning: EgenfrekvensSlotSummary | null; evening: EgenfrekvensSlotSummary | null }; points: EgenfrekvensRecentPoint[]; settings: { enabled: boolean; morningTime: string; eveningTime: string } | null; } | null>(null);
 	let egenfrekvensFlowOpen = $state(false);
 	let egenfrekvensQuickFlowOpen = $state(false);
+	// Synkron forhåndssjekk for slot-sjekkin: dekker skjermen fra første render mens
+	// server-status avklares, så hjemskjermen ikke blinker frem før fullskjermen.
+	function initialSlotGate(): PeriodSlot | null {
+		if (typeof window === 'undefined') return null;
+		if (navigator.webdriver) return null;
+		if (window.location.search !== '') return null;
+		const slot = getActivePeriodSlot();
+		if (!slot) return null;
+		const seen = localStorage.getItem(periodSlotStorageKey(localIsoDay(), slot.id));
+		if (seen === 'done' || seen === 'dismissed') return null;
+		return slot;
+	}
+	let egenfrekvensSlotGate = $state<PeriodSlot | null>(initialSlotGate());
 	let egenfrekvensSlotCheckin = $state<PeriodSlot | null>(null);
 	let egenfrekvensSlotChip = $state<PeriodSlot | null>(null);
 	let egenfrekvensActiveSlot = $state<'morning' | 'evening'>('morning');
@@ -703,6 +716,36 @@
 
 	// ── onMount ───────────────────────────────────────────────────────────
 	onMount(() => {
+		// App-open slot-sjekkin: fullskjerm «Hvordan gikk …?» for gjeldende tidsvindu.
+		// Allerede registrert → ingenting. Dismisset → chip på hjemskjermen i stedet.
+		// Kjøres FØR resten av hjemlastingen — gaten dekker skjermen til avgjørelsen er tatt.
+		void (async () => {
+			try {
+				if (navigator.webdriver) return; // hold visuelle tester deterministiske
+				// Bare ved «ren» åpning av hjemskjermen — alle deep-links/push-lenker har query-params
+				if ($page.url.search !== '') return;
+				const slot = getActivePeriodSlot();
+				if (!slot) return;
+				const day = localIsoDay();
+				const seen = typeof localStorage !== 'undefined'
+					? localStorage.getItem(periodSlotStorageKey(day, slot.id))
+					: null;
+				if (seen === 'done') return;
+				const res = await fetch(`/api/egenfrekvens/checkin?day=${day}`, {
+					signal: AbortSignal.timeout(5000)
+				});
+				if (!res.ok) return;
+				const status = await res.json();
+				if (status.slots?.[slot.id]) return; // registrert via annen flate
+				if (seen === 'dismissed') egenfrekvensSlotChip = slot;
+				else egenfrekvensSlotCheckin = slot;
+			} catch { /* best-effort */ }
+			finally {
+				// Teppet trengs bare til avgjørelsen er tatt; åpen sheet dekker selv (samme bakgrunn)
+				if (!egenfrekvensSlotCheckin) egenfrekvensSlotGate = null;
+			}
+		})();
+
 		void (async () => {
 			finishNavMetric('home');
 			const checklistPromise = timeAsync('checklists', () => fetchChecklists());
@@ -725,27 +768,6 @@
 				if (nudgeId) void fetch(`/api/nudges/events/${nudgeId}/stage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stage: 'flow_started' }) }).catch(() => {});
 			}
 
-			// App-open slot-sjekkin: fullskjerm «Hvordan gikk …?» for gjeldende tidsvindu.
-			// Allerede registrert → ingenting. Dismisset → chip på hjemskjermen i stedet.
-			void (async () => {
-				try {
-					if (navigator.webdriver) return; // hold visuelle tester deterministiske
-					if (flowParam || $page.url.searchParams.get('chat') === '1') return;
-					const slot = getActivePeriodSlot();
-					if (!slot) return;
-					const day = localIsoDay();
-					const seen = typeof localStorage !== 'undefined'
-						? localStorage.getItem(periodSlotStorageKey(day, slot.id))
-						: null;
-					if (seen === 'done') return;
-					const res = await fetch(`/api/egenfrekvens/checkin?day=${day}`);
-					if (!res.ok) return;
-					const status = await res.json();
-					if (status.slots?.[slot.id]) return; // registrert via annen flate
-					if (seen === 'dismissed') egenfrekvensSlotChip = slot;
-					else egenfrekvensSlotCheckin = slot;
-				} catch { /* best-effort */ }
-			})();
 		})();
 	});
 
@@ -853,6 +875,7 @@
 		get egenfrekvensFlowOpen() { return egenfrekvensFlowOpen; }, set egenfrekvensFlowOpen(v) { egenfrekvensFlowOpen = v; },
 		get egenfrekvensQuickFlowOpen() { return egenfrekvensQuickFlowOpen; }, set egenfrekvensQuickFlowOpen(v) { egenfrekvensQuickFlowOpen = v; },
 		get egenfrekvensActiveSlot() { return egenfrekvensActiveSlot; }, set egenfrekvensActiveSlot(v) { egenfrekvensActiveSlot = v; },
+		get egenfrekvensSlotGate() { return egenfrekvensSlotGate; }, set egenfrekvensSlotGate(v) { egenfrekvensSlotGate = v; },
 		get egenfrekvensSlotCheckin() { return egenfrekvensSlotCheckin; }, set egenfrekvensSlotCheckin(v) { egenfrekvensSlotCheckin = v; },
 		get egenfrekvensSlotChip() { return egenfrekvensSlotChip; }, set egenfrekvensSlotChip(v) { egenfrekvensSlotChip = v; },
 		get egenfrekvensInitialNote() { return egenfrekvensInitialNote; }, set egenfrekvensInitialNote(v) { egenfrekvensInitialNote = v; },

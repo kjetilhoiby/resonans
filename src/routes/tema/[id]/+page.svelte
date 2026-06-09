@@ -37,6 +37,9 @@
 		selectedWorkout={data.selectedWorkout}
 		metricSettings={data.metricSettings}
 		projects={data.projects}
+		isHomeProject={data.isHomeProject}
+		projectProfile={data.projectProfile}
+		tasks={data.tasks}
 	/>
 	{/key}
 	{/if}

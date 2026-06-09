@@ -226,6 +226,15 @@ export const themes = pgTable('themes', {
 			}>;
 		}>;
 	}>(),
+	// Hus-prosjekt-tema (parentTheme='Hjem'): prosjekt-metadata. Oppgaver bor i
+	// checklist_items (themeId), filer i theme_files, chat i conversationId.
+	projectProfile: jsonb('project_profile').$type<{
+		room?: string;          // f.eks. "Terrasse", "Bad", "Kjøkken"
+		status?: 'planning' | 'active' | 'paused' | 'done';
+		startDate?: string;     // ISO 'YYYY-MM-DD'
+		targetDate?: string;    // ISO 'YYYY-MM-DD' — ønsket ferdigdato
+		coverImageUrl?: string; // representativt bilde (fra theme_files)
+	}>(),
 	sortOrder: integer('sort_order').default(0).notNull(),
 	metricSettings: jsonb('metric_settings').$type<{
 		distance?: { goal?: number; thresholdWarn?: number; thresholdSuccess?: number };
@@ -599,6 +608,8 @@ export const checklistItems = pgTable('checklist_items', {
 		// Tidspunkt på item (parset fra tekst eller intent)
 		timeHour?: number;
 		timeMinute?: number;
+		// Avhengigheter mellom prosjekt-oppgaver — IDs av items som må fullføres først
+		blockedBy?: string[];
 		// Breakdown metadata
 		hasBreakdown?: boolean; // Om item har en generert underbrytning
 		breakdownGeneratedAt?: string; // ISO-timestamp for når breakdown ble generert
@@ -2848,6 +2859,18 @@ export const cronExecutions = pgTable('cron_executions', {
 	executedAt: timestamp('executed_at').defaultNow().notNull()
 }, (table) => ({
 	idxCronExecJobPath: index('cron_exec_job_path_idx').on(table.jobPath, table.executedAt)
+}));
+
+// Brukslogging — sidevisninger og app-gjenopptakelser, grunnlag for brukeraudit
+export const usageEvents = pgTable('usage_events', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').notNull(),
+	eventType: text('event_type').notNull(), // 'page_view' | 'app_resume'
+	path: text('path'),
+	metadata: jsonb('metadata').$type<Record<string, unknown> | null>(),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => ({
+	idxUsageUserTime: index('usage_events_user_time_idx').on(table.userId, table.createdAt)
 }));
 
 // Monitoring alert dedup/history — prevents alert fatigue

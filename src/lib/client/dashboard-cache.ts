@@ -304,6 +304,16 @@ export interface HomeDashboardData {
 		metadata: Record<string, unknown>;
 		progress: import('$lib/server/services/project-metrics-service').ProjectProgress | null;
 	}>;
+	projectThemes: Array<{
+		id: string;
+		name: string;
+		emoji: string | null;
+		room: string | null;
+		status: string | null;
+		targetDate: string | null;
+		tasksTotal: number;
+		tasksDone: number;
+	}>;
 	seasonalTasks: Array<{
 		id: string;
 		title: string;

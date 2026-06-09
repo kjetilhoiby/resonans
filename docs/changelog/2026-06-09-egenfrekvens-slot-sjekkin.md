@@ -65,6 +65,14 @@ forsvinner når slottet registreres. Den gamle server-produserte «Sjekk inn · 
   `dismissed` (→ chip på hjemskjermen) og `done` (→ skjul alt), ikke DB — dismiss er
   enhetslokalt og lavkost; registrert-sjekken er server-side via `status.slots`.
 - **Dag**: lokal dato (`localIsoDay`), ikke UTC — slottene følger brukerens klokke.
+- **Kun ren app-åpning**: fullskjermen trigges bare på `/` uten query-params. Alle push-lenker og
+  deep-links har params (nudgeTrack, cycle, flow, …) og slipper unna; apparat-ferdig-pushen som
+  før lenket til ren `/` lenker nå til `/apparat?cycle=…` (eller `/?ref=push` uten cycle_id).
+- **Gate i stedet for ventetid**: de synkrone sjekkene (tidsvindu + localStorage) avgjøres ved
+  hydrering og rendrer et fullskjerm-teppe (`slot-gate`, samme bakgrunn som focus-sheeten, pulserende
+  app-logo) umiddelbart. Server-avklaringen (registrert via annen flate?) kjører først i onMount —
+  før resten av hjemlastingen, med 5s timeout — og enten åpner sjekkinnen sømløst over teppet eller
+  fader teppet bort til hjemskjermen. Feil/timeout faller åpent tilbake til hjemskjermen.
 
 ## Verifisering
 

@@ -75,7 +75,7 @@
 		initialMetricSettings?: MetricSettingsMap;
 		tripProfile?: Record<string, unknown> | null;
 		ferieProfile?: Record<string, unknown> | null;
-		onSwitchToChat?: () => void;
+		onSwitchToChat?: (draft?: string) => void;
 		onStartFlow?: (flow: Flow) => void;
 	}
 
@@ -544,6 +544,7 @@
 			{...homeDashboardProps}
 			onOpenProject={(id) => goto(`/prosjekt/${id}`)}
 			onOpenAppliance={(href) => goto(href)}
+			onOpenChat={(prefill) => onSwitchToChat?.(prefill)}
 		/>
 	{/if}
 

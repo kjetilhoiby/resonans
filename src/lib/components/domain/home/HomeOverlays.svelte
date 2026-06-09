@@ -8,6 +8,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { getContext } from 'svelte';
+	import { fade } from 'svelte/transition';
 	import WidgetConfigSheet from '../../ui/WidgetConfigSheet.svelte';
 	import ChecklistSheet from '../../ui/ChecklistSheet.svelte';
 	import FlowSheet from '../../flows/FlowSheet.svelte';
@@ -42,6 +43,7 @@
 		markSlotCheckinSeen('done');
 		ctx.egenfrekvensSlotChip = null;
 		ctx.egenfrekvensSlotCheckin = null;
+		ctx.egenfrekvensSlotGate = null;
 		// Første melding i chatten: «Kvelden gikk 4, rolig kveld med lesing»
 		const labelCap = slot.label.charAt(0).toUpperCase() + slot.label.slice(1);
 		ctx.startHomeChat(`${labelCap} gikk ${level}${note ? `, ${note}` : ''}`);
@@ -348,6 +350,13 @@
 	/>
 {/if}
 
+<!-- Slot-gate: dekker hjemskjermen fra første render til vi vet om sjekkinnen skal vises -->
+{#if ctx.egenfrekvensSlotGate}
+	<div class="slot-gate" out:fade={{ duration: 250 }} aria-hidden="true">
+		<img src="/icons/icon-192.svg" alt="" class="slot-gate-logo" />
+	</div>
+{/if}
+
 <!-- Slot-sjekkin: app-open fullskjerm «Hvordan gikk …?» -->
 {#if ctx.egenfrekvensSlotCheckin}
 	<FlowSheet
@@ -358,11 +367,13 @@
 			markSlotCheckinSeen('dismissed');
 			ctx.egenfrekvensSlotChip = ctx.egenfrekvensSlotCheckin;
 			ctx.egenfrekvensSlotCheckin = null;
+			ctx.egenfrekvensSlotGate = null;
 		}}
 		oncomplete={() => {
 			markSlotCheckinSeen('done');
 			ctx.egenfrekvensSlotChip = null;
 			ctx.egenfrekvensSlotCheckin = null;
+			ctx.egenfrekvensSlotGate = null;
 			void ctx.loadEgenfrekvensRecent();
 			void ctx.loadActionCandidates();
 		}}
@@ -399,6 +410,28 @@
 {/if}
 
 <style>
+	/* Slot-gate: fullskjerm-teppe mens slot-sjekkin avklares. Samme bakgrunn som
+	   FlowSheet focus-modus (#0b0b0f) og z-index rett under sheeten (201) for sømløs overgang. */
+	.slot-gate {
+		position: fixed;
+		inset: 0;
+		z-index: 200;
+		background: #0b0b0f;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.slot-gate-logo {
+		width: 72px;
+		height: 72px;
+		border-radius: 18px;
+		animation: slot-gate-pulse 1.6s ease-in-out infinite;
+	}
+	@keyframes slot-gate-pulse {
+		0%, 100% { opacity: 0.4; transform: scale(1); }
+		50% { opacity: 0.85; transform: scale(1.05); }
+	}
+
 	/* Overlay-stiler (widget-panel, tema-panel, menyer) */
 
 	.widget-sheet-backdrop {

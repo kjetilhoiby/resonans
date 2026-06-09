@@ -1,8 +1,8 @@
 <script lang="ts">
-	import ProjectCard from '../composed/ProjectCard.svelte';
 	import AnimatedProgressBar from '../visualizations/AnimatedProgressBar.svelte';
+	import { goto } from '$app/navigation';
 	import type { ProjectProgress } from '$lib/server/services/project-metrics-service';
-	import { SEASONS, currentSeason, HOME_PROJECT_TYPES, HOME_ROOMS } from '$lib/domains/home';
+	import { SEASONS, currentSeason } from '$lib/domains/home';
 
 	interface ProjectRow {
 		id: string;
@@ -59,8 +59,21 @@
 		cycle: ApplianceCycle | null;
 	}
 
+	interface ProjectTheme {
+		id: string;
+		name: string;
+		emoji: string | null;
+		room: string | null;
+		status: string | null;
+		targetDate: string | null;
+		tasksTotal: number;
+		tasksDone: number;
+	}
+
 	interface Props {
-		projects: ProjectRow[];
+		// Legacy projects-table-entiteter — beholdes for typekompat, ikke lenger rendret (prosjekter er nå undertemaer).
+		projects?: ProjectRow[];
+		projectThemes?: ProjectTheme[];
 		seasonalTasks: SeasonalTask[];
 		routines: RoutineRow[];
 		appliances: Appliance[];
@@ -69,7 +82,42 @@
 		onOpenAppliance?: (href: string) => void;
 	}
 
-	let { projects = [], seasonalTasks = [], routines = [], appliances = [], onOpenProject, onOpenChat, onOpenAppliance }: Props = $props();
+	let { projectThemes = [], seasonalTasks = [], routines = [], appliances = [], onOpenAppliance }: Props = $props();
+
+	// Prosjekt = undertema av Hjem. Opprett-form lager et nytt undertema (egen chat, oppgaver, filer) og navigerer dit.
+	let creating = $state(false);
+	let newName = $state('');
+	let submitting = $state(false);
+
+	async function createProject() {
+		const name = newName.trim();
+		if (!name || submitting) return;
+		submitting = true;
+		try {
+			const res = await fetch('/api/hjem/prosjekt/create', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name })
+			});
+			if (res.ok) {
+				const { themeId } = await res.json();
+				if (themeId) {
+					await goto(`/tema/${themeId}`);
+					return;
+				}
+			}
+		} finally {
+			submitting = false;
+		}
+	}
+
+	function projectPct(p: ProjectTheme): number {
+		return p.tasksTotal > 0 ? (p.tasksDone / p.tasksTotal) * 100 : 0;
+	}
+
+	function formatShortDate(iso: string): string {
+		return new Date(iso).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' });
+	}
 
 	// Kjørende syklus → detaljsiden (korriger program/tid). Ellers → label-siden (merk ferdige sykluser).
 	function applianceHref(a: Appliance): string {
@@ -87,14 +135,6 @@
 	const season = currentSeason();
 	const seasonLabel = SEASONS[season];
 
-	function projectEmoji(p: ProjectRow): string {
-		if (p.type && p.type in HOME_PROJECT_TYPES) {
-			return HOME_PROJECT_TYPES[p.type as keyof typeof HOME_PROJECT_TYPES].emoji;
-		}
-		const room = (p.metadata as { room?: string })?.room;
-		if (room && room in HOME_ROOMS) return HOME_ROOMS[room as keyof typeof HOME_ROOMS].emoji;
-		return '🏠';
-	}
 
 	function relativeTime(iso: string): string {
 		const diff = Date.now() - new Date(iso).getTime();
@@ -208,23 +248,47 @@
 	{/if}
 
 	<section>
-		<h3>Aktive prosjekter</h3>
-		{#if projects.length === 0}
-			<p class="empty">Ingen aktive prosjekter. Spør AI-en om å sette opp et oppussings- eller vedlikeholdsprosjekt.</p>
+		<div class="section-head">
+			<h3>🔨 Prosjekter</h3>
+			<button class="new-btn" onclick={() => (creating = !creating)}>
+				{creating ? 'Avbryt' : '+ Nytt prosjekt'}
+			</button>
+		</div>
+		{#if creating}
+			<form class="new-project" onsubmit={(e) => { e.preventDefault(); createProject(); }}>
+				<input
+					type="text"
+					placeholder="Navn, f.eks. Bygg terrasse"
+					bind:value={newName}
+					disabled={submitting}
+				/>
+				<button type="submit" class="create-submit" disabled={submitting || !newName.trim()}>
+					{submitting ? '...' : 'Opprett'}
+				</button>
+			</form>
+		{/if}
+		{#if projectThemes.length === 0}
+			<p class="empty">Ingen prosjekter ennå. Trykk «+ Nytt prosjekt» — hvert prosjekt får egen chat, oppgaveliste og filer.</p>
 		{:else}
-			<div class="grid">
-				{#each projects as project (project.id)}
-					<ProjectCard
-						id={project.id}
-						title={project.title}
-						description={project.description}
-						emoji={projectEmoji(project)}
-						domain={project.domain}
-						type={project.type}
-						status={project.status}
-						progress={project.progress}
-						onOpen={onOpenProject}
-					/>
+			<div class="project-grid">
+				{#each projectThemes as p (p.id)}
+					<button class="project-card" onclick={() => goto(`/tema/${p.id}`)}>
+						<div class="project-head">
+							<span class="project-emoji">{p.emoji ?? '🔨'}</span>
+							<span class="project-name">{p.name}</span>
+						</div>
+						{#if p.room}
+							<div class="project-room">{p.room}</div>
+						{/if}
+						{#if p.tasksTotal > 0}
+							<AnimatedProgressBar pct={projectPct(p)} tone="accent" height={6} />
+							<div class="project-meta">
+								{p.tasksDone}/{p.tasksTotal} oppgaver{#if p.targetDate} · frist {formatShortDate(p.targetDate)}{/if}
+							</div>
+						{:else if p.targetDate}
+							<div class="project-meta">Frist {formatShortDate(p.targetDate)}</div>
+						{/if}
+					</button>
 				{/each}
 			</div>
 		{/if}
@@ -279,6 +343,111 @@ section h3 {
 		margin: 0 0 0.75rem;
 		font-size: 0.95rem;
 		font-weight: 600;
+	}
+	.section-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+		margin-bottom: 0.75rem;
+	}
+	.section-head h3 {
+		margin: 0;
+	}
+	.new-btn {
+		flex-shrink: 0;
+		padding: 0.3rem 0.7rem;
+		border-radius: 999px;
+		border: 1px solid var(--border-color);
+		background: transparent;
+		color: var(--accent-light);
+		font: inherit;
+		font-size: 0.8rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: border-color 0.2s, background 0.2s;
+	}
+	.new-btn:hover {
+		border-color: var(--accent-primary);
+		background: var(--bg-hover);
+	}
+	.new-project {
+		display: flex;
+		gap: 0.5rem;
+		margin-bottom: 0.75rem;
+	}
+	.new-project input {
+		flex: 1;
+		padding: 0.5rem 0.7rem;
+		border-radius: 8px;
+		border: 1px solid var(--border-color);
+		background: var(--bg-input);
+		color: inherit;
+		font: inherit;
+		font-size: 0.9rem;
+	}
+	.create-submit {
+		padding: 0.5rem 1rem;
+		border-radius: 8px;
+		border: 0;
+		background: var(--accent-primary);
+		color: #fff;
+		font: inherit;
+		font-size: 0.9rem;
+		font-weight: 500;
+		cursor: pointer;
+	}
+	.create-submit:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+	.project-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+		gap: 0.75rem;
+	}
+	.project-card {
+		background: var(--bg-card);
+		border: 1px solid var(--border-color);
+		border-radius: 12px;
+		padding: 0.85rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		font: inherit;
+		color: inherit;
+		text-align: left;
+		width: 100%;
+		cursor: pointer;
+		transition: border-color 0.2s;
+	}
+	.project-card:hover {
+		border-color: var(--accent-primary);
+	}
+	.project-card:focus-visible {
+		outline: 2px solid var(--accent-primary);
+		outline-offset: 2px;
+	}
+	.project-head {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+	.project-emoji {
+		font-size: 1.4rem;
+		line-height: 1;
+	}
+	.project-name {
+		font-weight: 600;
+		font-size: 0.9rem;
+	}
+	.project-room {
+		font-size: 0.8rem;
+		color: var(--text-tertiary);
+	}
+	.project-meta {
+		font-size: 0.75rem;
+		color: var(--text-secondary);
 	}
 	.empty {
 		color: var(--text-tertiary);

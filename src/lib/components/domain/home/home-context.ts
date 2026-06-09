@@ -274,6 +274,8 @@ export interface HomeContext {
 	// ── Egenfrekvens ──
 	egenfrekvensFlowOpen: boolean;
 	egenfrekvensQuickFlowOpen: boolean;
+	/** Fullskjerm-teppe mens vi avklarer om slot-sjekkin skal vises (synkron forhåndssjekk traff) */
+	egenfrekvensSlotGate: PeriodSlot | null;
 	/** Aktivt slot for app-open fullskjerm-sjekkin («Hvordan gikk natta?» osv.), null = lukket */
 	egenfrekvensSlotCheckin: PeriodSlot | null;
 	/** Slot som er dismisset men ikke registrert — vises som chip på hjemskjermen */

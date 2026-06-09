@@ -1,5 +1,6 @@
 import { db } from '$lib/db';
-import { themes, goals, messages as messagesTable, conversations, themeFiles, themeLists } from '$lib/db/schema';
+import { themes, goals, messages as messagesTable, conversations, themeFiles, themeLists, checklistItems } from '$lib/db/schema';
+import { mapTaskItem } from '$lib/server/project-tasks';
 import { getThemeInstruction } from '$lib/server/theme-instructions';
 import { ensureConversationThemeIdColumn } from '$lib/server/conversation-schema';
 import { getConversationsByTheme } from '$lib/server/conversations';
@@ -59,8 +60,11 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		}
 	}
 
+	// Prosjekt-undertema av Hjem → har oppgave-fane (checklist_items knyttet til temaet).
+	const isHomeProject = theme.parentTheme === 'Hjem';
+
 	// Last alle uavhengige data parallelt
-	const [themeConversations, msgs, themeGoals, instruction, uploadedFiles, tripListsRaw, selectedWorkout, themeProjects] =
+	const [themeConversations, msgs, themeGoals, instruction, uploadedFiles, tripListsRaw, selectedWorkout, themeProjects, themeTasksRaw] =
 		await Promise.all([
 			getConversationsByTheme(locals.userId, theme.id),
 			db
@@ -97,7 +101,14 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 			selectedWorkoutId
 				? getWorkoutContextForUser(locals.userId, selectedWorkoutId)
 				: Promise.resolve(null),
-			ProjectMetricsService.listProjectsWithProgress(locals.userId, { themeId: theme.id })
+			ProjectMetricsService.listProjectsWithProgress(locals.userId, { themeId: theme.id }),
+			isHomeProject
+				? db
+						.select()
+						.from(checklistItems)
+						.where(eq(checklistItems.themeId, theme.id))
+						.orderBy(asc(checklistItems.sortOrder), asc(checklistItems.createdAt))
+				: Promise.resolve([])
 		]);
 
 	console.log(`[perf][tema/:id] user=${locals.userId} theme=${theme.name} step=total ms=${(performance.now() - t0).toFixed(0)} msgs=${msgs.length} goals=${themeGoals.length} projects=${themeProjects.length}`);
@@ -146,6 +157,9 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		})),
 		tripProfile: theme.tripProfile ?? null,
 		ferieProfile: theme.ferieProfile ?? null,
+		isHomeProject,
+		projectProfile: theme.projectProfile ?? null,
+		tasks: themeTasksRaw.map(mapTaskItem),
 		tripLists: tripListsRaw.map((l) => ({
 			id: l.id,
 			title: l.title,

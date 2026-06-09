@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
-import { themes, tasks, sensorEvents, sensors, checklists, applianceProfiles } from '$lib/db/schema';
+import { themes, tasks, sensorEvents, sensors, checklists, applianceProfiles, checklistItems } from '$lib/db/schema';
 import { resolveThemeDashboardKind } from '$lib/domain/theme-dashboard-registry';
 import { and, eq, desc, inArray } from 'drizzle-orm';
 import { ProjectMetricsService } from '$lib/server/services/project-metrics-service';
@@ -46,6 +46,30 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 				)
 			)
 	]);
+
+	// Prosjekt-undertemaer (parentTheme='Hjem') med oppgave-progresjon fra checklist_items.
+	const projectThemes = await db
+		.select()
+		.from(themes)
+		.where(and(eq(themes.userId, userId), eq(themes.parentTheme, 'Hjem'), eq(themes.archived, false)))
+		.orderBy(desc(themes.createdAt));
+
+	const projectIds = projectThemes.map((t) => t.id);
+	const projectItems = projectIds.length
+		? await db
+				.select({ themeId: checklistItems.themeId, checked: checklistItems.checked })
+				.from(checklistItems)
+				.where(inArray(checklistItems.themeId, projectIds))
+		: [];
+
+	const progressByTheme = new Map<string, { total: number; done: number }>();
+	for (const item of projectItems) {
+		if (!item.themeId) continue;
+		const agg = progressByTheme.get(item.themeId) ?? { total: 0, done: 0 };
+		agg.total += 1;
+		if (item.checked) agg.done += 1;
+		progressByTheme.set(item.themeId, agg);
+	}
 
 	const appliances: Array<{
 		sensorId: string;
@@ -146,6 +170,20 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 			metadata: (p.metadata ?? {}) as Record<string, unknown>,
 			progress: p.progress
 		})),
+		projectThemes: projectThemes.map((t) => {
+			const agg = progressByTheme.get(t.id) ?? { total: 0, done: 0 };
+			const profile = (t.projectProfile ?? {}) as Record<string, unknown>;
+			return {
+				id: t.id,
+				name: t.name,
+				emoji: t.emoji,
+				room: (profile.room as string | undefined) ?? null,
+				status: (profile.status as string | undefined) ?? null,
+				targetDate: (profile.targetDate as string | undefined) ?? null,
+				tasksTotal: agg.total,
+				tasksDone: agg.done
+			};
+		}),
 		seasonalTasks: seasonalTasks.map((t) => ({
 			id: t.id,
 			title: t.title,

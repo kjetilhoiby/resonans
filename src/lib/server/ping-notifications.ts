@@ -80,8 +80,10 @@ export async function notifyPingEvent(args: {
 		return { sent: false };
 	}
 
-	let notifyUrl = appUrl;
-	if (data.event === 'started' && data.cycle_id) {
+	// Lenk alltid til apparat-siden — ren '/' ville trigget slot-sjekkinnen på hjemskjermen.
+	// ?ref=push-markøren gjør at hjemskjermen lar være å åpne fullskjerm-sjekkin.
+	let notifyUrl = `${appUrl}/?ref=push`;
+	if (data.cycle_id) {
 		const params = new URLSearchParams({ cycle: data.cycle_id, appliance: name });
 		notifyUrl = `${appUrl}/apparat?${params}`;
 	}
