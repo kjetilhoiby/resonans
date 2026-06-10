@@ -33,6 +33,9 @@ import { executeSearchMetrics } from '$lib/ai/tools/search-metrics';
 import { getMetricByKey } from '$lib/server/services/metric-definition-service';
 import { aggregateSingleMetric } from '$lib/server/integrations/aggregation';
 import { runInBackground } from '$lib/server/run-in-background';
+import { buildChecklistItemFields } from '$lib/server/checklist-item-builder';
+import { PersonMentionService } from '$lib/server/services/person-mention-service';
+import { syncStaysForDate } from '$lib/server/stays';
 import {
 	markWidgetFlowCreated,
 	type WidgetCreationFlow
@@ -1373,7 +1376,7 @@ Bruk key-feltet direkte som metricKey i propose_widget.`,
 		type: 'function' as const,
 		function: {
 			name: 'plan_day',
-			description: 'Lagre dagsplan for brukeren: enlinjer (kort beskrivelse av hva dagen handler om) og dagsoppgaver. Kall dette verktøyet etter at du har avklart enlinjer og oppgaver med brukeren.',
+			description: 'Lagre dagsplan for brukeren: enlinjer (kort beskrivelse av hva dagen handler om) og dagsoppgaver. Kall dette verktøyet etter at du har avklart enlinjer og oppgaver med brukeren. Skriv klokkeslett rett inn i oppgaveteksten (f.eks. "Handle middag kl. 18" eller "Legge barna kl. 18:45") og nevn personer med @navn (f.eks. "Hente @Nils kl. 16") — systemet trekker automatisk ut tidspunkt og personer.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1391,7 +1394,7 @@ Bruk key-feltet direkte som metricKey i propose_widget.`,
 					},
 					tasks: {
 						type: 'array',
-						description: 'Konkrete dagsoppgaver å legge i dagslista',
+						description: 'Konkrete dagsoppgaver å legge i dagslista. Inkluder klokkeslett inline der det er relevant ("kl. 18", "kl. 18:45") og @navn for personer — disse parses automatisk ut i egne felt.',
 						items: { type: 'string' }
 					}
 				},
@@ -2858,14 +2861,38 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 						}).returning();
 
 						if (args.items?.length) {
-							await db.insert(checklistItems).values(
-								args.items.map((text, i) => ({
-									checklistId: checklist.id,
-									userId,
-									text,
-									sortOrder: i
-								}))
+							// Parse hvert punkt (tid/sted/reise/måltid/aktivitet/kobling) via den
+							// felles builderen — samme resultat som manuell oppretting. For
+							// generelle lister (kontekst som «tur»/«reise») blir det ren tekst.
+							const built = await Promise.all(
+								args.items.map((text) =>
+									buildChecklistItemFields({
+										userId,
+										context: checklist.context,
+										text,
+										allowTaskCreation: false
+									})
+								)
 							);
+							const createdItems = await db
+								.insert(checklistItems)
+								.values(
+									built.map((fields, i) => ({
+										checklistId: checklist.id,
+										userId,
+										text: fields.text,
+										startDate: fields.startDate,
+										sortOrder: i,
+										...(Object.keys(fields.metadata).length > 0 ? { metadata: fields.metadata } : {})
+									}))
+								)
+								.returning();
+							for (const item of createdItems) {
+								runInBackground(PersonMentionService.indexChecklistItem(userId, item.id, item.text));
+							}
+							for (const f of built) {
+								if (f.locationDayIso) runInBackground(syncStaysForDate(userId, f.locationDayIso));
+							}
 						}
 
 						checklistCreated = true;
@@ -2970,14 +2997,37 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 						if (itemsToAdd.length > 0) {
 							const nextSortOrder = checklist.items.reduce((maxSortOrder, item) => Math.max(maxSortOrder, item.sortOrder), -1) + 1;
 
-							await db.insert(checklistItems).values(
-								itemsToAdd.map((text, index) => ({
-									checklistId: checklist.id,
-									userId,
-									text,
-									sortOrder: nextSortOrder + index
-								}))
+							// Parse hvert nytt punkt via den felles builderen (bruker den
+							// eksisterende sjekklistens kontekst — f.eks. dag-/ukenivå).
+							const built = await Promise.all(
+								itemsToAdd.map((text) =>
+									buildChecklistItemFields({
+										userId,
+										context: checklist.context,
+										text,
+										allowTaskCreation: false
+									})
+								)
 							);
+							const createdItems = await db
+								.insert(checklistItems)
+								.values(
+									built.map((fields, index) => ({
+										checklistId: checklist.id,
+										userId,
+										text: fields.text,
+										startDate: fields.startDate,
+										sortOrder: nextSortOrder + index,
+										...(Object.keys(fields.metadata).length > 0 ? { metadata: fields.metadata } : {})
+									}))
+								)
+								.returning();
+							for (const item of createdItems) {
+								runInBackground(PersonMentionService.indexChecklistItem(userId, item.id, item.text));
+							}
+							for (const f of built) {
+								if (f.locationDayIso) runInBackground(syncStaysForDate(userId, f.locationDayIso));
+							}
 
 							if (checklist.completedAt) {
 								await db
@@ -3070,14 +3120,38 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 									(max, item) => Math.max(max, item.sortOrder),
 									-1
 								) + 1;
-							await db.insert(checklistItems).values(
-								toAdd.map((text, i) => ({
-									checklistId: dayChecklist!.id,
-									userId,
-									text,
-									sortOrder: nextSortOrder + i
-								}))
+							// Parse hvert dag-punkt (tid/sted/reise/måltid/aktivitet/kobling) via
+							// den felles builderen, slik at klokkeslett, personer osv. blir riktig
+							// — i stedet for å lagre rå tekst som «Fikse matpakker kl. 18».
+							const built = await Promise.all(
+								toAdd.map((text) =>
+									buildChecklistItemFields({
+										userId,
+										context: dayContext,
+										text,
+										allowTaskCreation: false
+									})
+								)
 							);
+							const createdItems = await db
+								.insert(checklistItems)
+								.values(
+									built.map((fields, i) => ({
+										checklistId: dayChecklist!.id,
+										userId,
+										text: fields.text,
+										startDate: fields.startDate,
+										sortOrder: nextSortOrder + i,
+										...(Object.keys(fields.metadata).length > 0 ? { metadata: fields.metadata } : {})
+									}))
+								)
+								.returning();
+							for (const item of createdItems) {
+								runInBackground(PersonMentionService.indexChecklistItem(userId, item.id, item.text));
+							}
+							if (built.some((f) => f.locationDayIso)) {
+								runInBackground(syncStaysForDate(userId, args.dayIso));
+							}
 						}
 
 						checklistCreated = true;

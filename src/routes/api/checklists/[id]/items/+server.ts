@@ -4,26 +4,12 @@ import { db } from '$lib/db';
 import { checklistItems, checklists } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { parseListRepeatCount } from '$lib/server/list-repeat-parser';
-import { parseChecklistItemIntent, findLinkedTask, stripTimeFromText } from '$lib/server/checklist-intent-linker';
-import { parseLocationPrefix, parseTravelPrefix } from '$lib/utils/checklist-group';
+import { parseChecklistItemIntent } from '$lib/server/checklist-intent-linker';
 import { syncStaysForDate } from '$lib/server/stays';
-import { getOrCreatePlanningGoal, createTask } from '$lib/server/goals';
-import { enqueueBackgroundJob } from '$lib/server/background-jobs';
 import { parseTaskDateTime } from '$lib/server/date-time-parser';
-import { detectMealPrefix } from '$lib/domains/food';
-import { findOrCreateMealId } from '$lib/server/task-intent-parser';
+import { buildChecklistItemFields } from '$lib/server/checklist-item-builder';
 import { PersonMentionService } from '$lib/server/services/person-mention-service';
 import { runInBackground } from '$lib/server/run-in-background';
-
-/** Extract week keys from a checklist context string like "week:2026-W16:day:2026-04-13" */
-function extractWeekKeys(context: string | null): { dashedKey: string; compactKey: string } | null {
-	if (!context) return null;
-	const m = context.match(/week:(\d{4}-W\d{2})/);
-	if (!m) return null;
-	const dashedKey = m[1]; // "2026-W16"
-	const compactKey = dashedKey.replace('-', ''); // "2026W16"
-	return { dashedKey, compactKey };
-}
 
 // POST /api/checklists/[id]/items — legg til et nytt punkt
 export const POST: RequestHandler = async ({ locals, params, request }) => {
@@ -37,10 +23,6 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 		coords?: { lat: number; lon: number; label?: string };
 	};
 
-	const geoMeta = coords
-		? { lat: coords.lat, lon: coords.lon, ...(coords.label && { geoLabel: coords.label }) }
-		: {};
-
 	if (!text) return json({ error: 'text er påkrevd' }, { status: 400 });
 
 	// Load checklist to get context (for week key extraction)
@@ -52,162 +34,57 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 
 	const parsed = parseListRepeatCount(text, count || 1, 12);
 	const repeatCount = parsed.repeatCount;
-	const parsedSubtaskDate = repeatCount === 1 && !!parentId ? parseTaskDateTime(parsed.label) : null;
 
-	// --- Intent parsing + task linking (only for single items, not repeat patterns) ---
-	let itemMetadata: Record<string, unknown> = {};
+	// --- Enkelt punkt på toppnivå: full parsing (tid/sted/reise/måltid/aktivitet/
+	// oppgavekobling) via den felles builderen, slik at AI-verktøy, redigering og
+	// manuell oppretting gir identisk resultat. ---
 	if (repeatCount === 1 && !parentId) {
-		// Only parse intent for non-subtask items
-		const weekKeys = extractWeekKeys(checklist.context);
-		const isWeekLevel = weekKeys !== null && !checklist.context!.includes(':day:');
-		const isDayLevel = weekKeys !== null && checklist.context!.includes(':day:');
-		const intent = parseChecklistItemIntent(parsed.label, { dayLevel: isDayLevel });
+		const fields = await buildChecklistItemFields({
+			userId,
+			context: checklist.context,
+			text: parsed.label,
+			coords,
+			allowTaskCreation: true
+		});
 
-		if (isWeekLevel && weekKeys) {
-			// Wake-time items: store target metadata, no linked task needed
-			if (intent.wakeTargetHour !== undefined) {
-				itemMetadata = {
-					wakeTargetHour: intent.wakeTargetHour,
-					wakeTargetMinute: intent.wakeTargetMinute ?? 0
-				};
-			} else {
-			// Week-level items: always create (or find) a task so progress can be tracked
-			const linkedTask = await findLinkedTask({
+		const [created] = await db
+			.insert(checklistItems)
+			.values({
+				checklistId: params.id,
 				userId,
-				itemText: parsed.label,
-				weekDashedKey: weekKeys.dashedKey,
-				weekCompactKey: weekKeys.compactKey
-			});
+				parentId: null,
+				text: fields.text,
+				startDate: fields.startDate,
+				sortOrder,
+				...(Object.keys(fields.metadata).length > 0 ? { metadata: fields.metadata } : {})
+			})
+			.returning();
 
-			if (linkedTask) {
-				itemMetadata = {
-					linkedTaskId: linkedTask.taskId,
-					linkedTaskTitle: linkedTask.taskTitle,
-					...(intent.activityType && { activityType: intent.activityType }),
-					...(intent.durationMinutes !== undefined && { durationMinutes: intent.durationMinutes }),
-					...(intent.distanceKm !== undefined && { distanceKm: intent.distanceKm })
-				};
-			} else {
-				// No existing task — create one under the planning goal
-				try {
-					const planningGoalId = await getOrCreatePlanningGoal(userId);
-					const newTask = await createTask({
-						goalId: planningGoalId,
-						title: parsed.label,
-						frequency: 'weekly',
-						periodType: 'week',
-						periodId: weekKeys.dashedKey,
-						...(intent.activityType && { unit: intent.activityType }),
-					});
-					await enqueueBackgroundJob({
-						userId,
-						type: 'task_intent_parse',
-						payload: { taskId: newTask.id, rawText: parsed.label },
-						priority: 8,
-						maxAttempts: 2
-					});
-					itemMetadata = {
-						linkedTaskId: newTask.id,
-						linkedTaskTitle: parsed.label,
-						...(intent.activityType && { activityType: intent.activityType }),
-						...(intent.durationMinutes !== undefined && { durationMinutes: intent.durationMinutes }),
-						...(intent.distanceKm !== undefined && { distanceKm: intent.distanceKm })
-					};
-				} catch (err) {
-					console.warn('[checklist items] Failed to create task for week item:', err);
-				}
-			}
-			} // end non-wake branch
-		} else if (weekKeys) {
-			// Day-level items: parse time + optionally link to existing task
-			const timeFields = intent.timeHour !== undefined
-				? { timeHour: intent.timeHour, timeMinute: intent.timeMinute ?? 0 }
-				: {};
+		// Index @-mentions for det opprettede punktet — kjører i bakgrunnen via waitUntil.
+		runInBackground(PersonMentionService.indexChecklistItem(userId, created.id, created.text));
 
-			// «Sted: X» → ikke-avkryssbart dag-kontekst (driver vær + chat-kontekst).
-			// «kjøre/båt/fly til X [kl T]» → reisesegment med transportmodus.
-			// Begge tar presedens over måltid/aktivitet/task-linking.
-			const location = parseLocationPrefix(parsed.label);
-			const travel = location ? null : parseTravelPrefix(parsed.label);
-			// Meal-prefix på dag-item — peker rett inn i mat-universet. Lagrer
-			// mealType + linkedMealId i metadata (oppretter meals-rad ved første
-			// referanse). Sted/reise tar presedens, deretter måltid/aktivitet/task.
-			const meal = location || travel ? null : detectMealPrefix(parsed.label);
-
-			if (location) {
-				itemMetadata = { kind: 'location', locationName: location.name, ...geoMeta };
-			} else if (travel) {
-				itemMetadata = {
-					...timeFields,
-					kind: 'travel',
-					travelMode: travel.mode,
-					destination: travel.destination,
-					...geoMeta
-				};
-			} else if (meal) {
-				const mealId = await findOrCreateMealId(userId, meal.cleanTitle);
-				itemMetadata = {
-					...timeFields,
-					mealType: meal.mealType,
-					...(mealId && { linkedMealId: mealId })
-				};
-			} else if (intent.matched) {
-				const linkedTask = await findLinkedTask({
-					userId,
-					itemText: parsed.label,
-					weekDashedKey: weekKeys.dashedKey,
-					weekCompactKey: weekKeys.compactKey
-				});
-
-				if (linkedTask) {
-					itemMetadata = {
-						...timeFields,
-						linkedTaskId: linkedTask.taskId,
-						linkedTaskTitle: linkedTask.taskTitle,
-						activityType: intent.activityType,
-						...(intent.durationMinutes !== undefined && { durationMinutes: intent.durationMinutes }),
-						...(intent.distanceKm !== undefined && { distanceKm: intent.distanceKm })
-					};
-				} else if (intent.activityType) {
-					itemMetadata = {
-						...timeFields,
-						activityType: intent.activityType,
-						...(intent.durationMinutes !== undefined && { durationMinutes: intent.durationMinutes }),
-						...(intent.distanceKm !== undefined && { distanceKm: intent.distanceKm })
-					};
-				} else {
-					itemMetadata = { ...timeFields };
-				}
-			} else if (Object.keys(timeFields).length > 0) {
-				itemMetadata = { ...timeFields };
-			}
+		// Sted-punkt → skriv opphold automatisk til reise-/ferieplan som dekker dagen.
+		if (fields.locationDayIso) {
+			runInBackground(syncStaysForDate(userId, fields.locationDayIso));
 		}
+
+		return json([created], { status: 201 });
 	}
 
-	// Wake-time items propagate metadata to all repeat slots
-	const slotMeta = (itemMetadata.wakeTargetHour !== undefined)
-		? itemMetadata
-		: null;
+	// --- Gjentaksmønstre («yoga (1/4)») og deloppgaver: enklere parsing
+	// (dato/tid for deloppgaver + aktivitets-tag for auto-haking). ---
+	const parsedSubtaskDate = repeatCount === 1 && parentId ? parseTaskDateTime(parsed.label) : null;
 	const subtaskTimeMeta = parsedSubtaskDate
 		? {
 			...(parsedSubtaskDate.hour !== undefined ? { timeHour: parsedSubtaskDate.hour } : {}),
 			...(parsedSubtaskDate.minute !== undefined ? { timeMinute: parsedSubtaskDate.minute } : {})
 		}
 		: {};
-	const combinedMeta = { ...itemMetadata, ...subtaskTimeMeta };
-	const isContextItem = itemMetadata.kind === 'location' || itemMetadata.kind === 'travel';
-	// Sted-punkt lagres med rent stedsnavn (vises som dag-kontekst, ikke som rad).
-	const baseLabel = itemMetadata.kind === 'location'
-		? (itemMetadata.locationName as string)
-		: parsedSubtaskDate?.text || (itemMetadata.timeHour !== undefined ? stripTimeFromText(parsed.label) : parsed.label);
+	const baseLabel = parsedSubtaskDate?.text || parsed.label;
 
 	// Aktivitets-tag fra base-label, slik at også gjentatte slots ("Yoga (1/4)")
-	// bærer activityType og kan auto-hakes mot treningsdata (uke-autocheck).
-	// dayLevel:true fanger bare aktivitetsord uten antall/frekvens/varighet.
-	// Sted/reise er ikke aktiviteter, så de hopper over activity-tagging.
-	const baseActivityIntent = isContextItem
-		? { activityType: undefined, durationMinutes: undefined, distanceKm: undefined }
-		: parseChecklistItemIntent(baseLabel, { dayLevel: true });
+	// bærer activityType og kan auto-hakes mot treningsdata.
+	const baseActivityIntent = parseChecklistItemIntent(baseLabel, { dayLevel: true });
 	const activitySlotMeta: Record<string, unknown> = baseActivityIntent.activityType
 		? {
 			activityType: baseActivityIntent.activityType,
@@ -218,10 +95,7 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 
 	const createdItems = await db.insert(checklistItems).values(
 		Array.from({ length: repeatCount }, (_, index) => {
-			const baseMeta = slotMeta ?? (repeatCount === 1 ? combinedMeta : {});
-			// activitySlotMeta gir activityType til alle slots; baseMeta (rikere,
-			// m/ linkedTaskId osv.) vinner ved overlapp.
-			const meta = { ...activitySlotMeta, ...baseMeta };
+			const meta = { ...activitySlotMeta, ...subtaskTimeMeta };
 			return {
 				checklistId: params.id,
 				userId,
@@ -237,12 +111,6 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 	// Index @-mentions for hver opprettet item — kjører i bakgrunnen via waitUntil.
 	for (const item of createdItems) {
 		runInBackground(PersonMentionService.indexChecklistItem(userId, item.id, item.text));
-	}
-
-	// Sted-punkt → skriv opphold automatisk til reise-/ferieplan som dekker dagen.
-	if (itemMetadata.kind === 'location') {
-		const dayMatch = checklist.context?.match(/:day:(\d{4}-\d{2}-\d{2})/);
-		if (dayMatch) runInBackground(syncStaysForDate(userId, dayMatch[1]));
 	}
 
 	return json(createdItems, { status: 201 });
