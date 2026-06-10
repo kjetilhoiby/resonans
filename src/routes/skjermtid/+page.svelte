@@ -2,6 +2,7 @@
 	import { AppPage, PageHeader, Button, Select, PageSection } from '$lib/components/ui';
 	import ScreenTimeCard from '$lib/components/composed/ScreenTimeCard.svelte';
 	import { invalidateAll } from '$app/navigation';
+	import { mondayOfWeekISO, previousWeekMondayISO } from '$lib/utils/screen-time-series';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -26,71 +27,154 @@
 	const canOlder = $derived(selectedIndex < data.weeks.length - 1);
 	const canNewer = $derived(selectedIndex > 0);
 
-	/* ── Opplasting + tolking ─────────────────────────────── */
-	let uploading = $state(false);
-	let parsing = $state(false);
-	let saving = $state(false);
-	let error = $state<string | null>(null);
-	let preview = $state<any | null>(null);
-	let weekStartISO = $state('');
-	let dateISO = $state('');
+	// Referanselinjer i den akkumulerte grafen: de fire ukene før valgt uke.
+	const cumulativeRefs = $derived(
+		data.weeks
+			.slice(selectedIndex + 1, selectedIndex + 5)
+			.map((w) => w.cumulativeSeries)
+			.filter((s) => Array.isArray(s) && s.length > 1)
+	);
 
-	async function onFile(e: Event) {
+	/* ── Opplasting + tolking (kø av flere bilder) ────────── */
+	interface UploadItem {
+		id: string;
+		file: File | null;
+		name: string;
+		status: 'klar' | 'laster-opp' | 'tolker' | 'tolket' | 'lagrer' | 'feil';
+		error: string | null;
+		preview: any | null;
+		dateISO: string;
+		weekStartISO: string;
+	}
+
+	let queue = $state<UploadItem[]>([]);
+	let analyzing = $state(false);
+	let savingAll = $state(false);
+	let error = $state<string | null>(null);
+
+	const pendingCount = $derived(queue.filter((i) => i.status === 'klar').length);
+	const parsedCount = $derived(queue.filter((i) => i.status === 'tolket').length);
+	const busy = $derived(analyzing || savingAll);
+
+	function onFilesSelected(e: Event) {
 		const input = e.target as HTMLInputElement;
-		const file = input.files?.[0];
-		if (!file) return;
-		error = null;
-		preview = null;
-		uploading = true;
-		try {
-			const fd = new FormData();
-			fd.append('image', file);
-			const up = await fetch('/api/upload-image', { method: 'POST', body: fd });
-			const upJson = await up.json();
-			if (!up.ok || !upJson.url) throw new Error(upJson.error || 'Opplasting feilet');
-			uploading = false;
-			parsing = true;
-			const res = await fetch('/api/sensors/screen-time/parse', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ imageUrl: upJson.url })
+		for (const file of Array.from(input.files ?? [])) {
+			queue.push({
+				id: crypto.randomUUID(),
+				file,
+				name: file.name,
+				status: 'klar',
+				error: null,
+				preview: null,
+				dateISO: '',
+				weekStartISO: ''
 			});
-			const json = await res.json();
-			if (!json.success) throw new Error(json.message || 'Klarte ikke å tolke bildet');
-			preview = json.parsed;
-			if (preview.kind === 'daily' && preview.dateISO) dateISO = preview.dateISO;
-		} catch (err) {
-			error = err instanceof Error ? err.message : 'Noe gikk galt';
-		} finally {
-			uploading = false;
-			parsing = false;
-			input.value = '';
+		}
+		input.value = '';
+	}
+
+	function removeItem(id: string) {
+		queue = queue.filter((i) => i.id !== id);
+	}
+
+	function statusLabel(item: UploadItem): string {
+		switch (item.status) {
+			case 'klar':
+				return 'Klar til analyse';
+			case 'laster-opp':
+				return 'Laster opp…';
+			case 'tolker':
+				return 'Tolker…';
+			case 'tolket':
+				return `Tolket (${item.preview?.confidence ?? '?'})`;
+			case 'lagrer':
+				return 'Lagrer…';
+			case 'feil':
+				return 'Feil';
 		}
 	}
 
-	async function confirmIngest() {
-		if (!preview) return;
-		saving = true;
+	async function analyzeAll() {
+		analyzing = true;
 		error = null;
 		try {
-			const body =
-				preview.kind === 'weekly'
-					? { kind: 'weekly', weekly: preview.weekly, weekStartISO: weekStartISO || undefined }
-					: { kind: 'daily', daily: preview.daily, dateISO: dateISO || undefined };
-			const res = await fetch('/api/sensors/screen-time/ingest', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(body)
-			});
-			const json = await res.json();
-			if (!res.ok || !json.success) throw new Error(json.error || 'Lagring feilet');
-			preview = null;
-			await invalidateAll();
-		} catch (err) {
-			error = err instanceof Error ? err.message : 'Lagring feilet';
+			for (const item of queue) {
+				if (item.status !== 'klar' || !item.file) continue;
+				try {
+					item.status = 'laster-opp';
+					const fd = new FormData();
+					fd.append('image', item.file);
+					const up = await fetch('/api/upload-image', { method: 'POST', body: fd });
+					const upJson = await up.json();
+					if (!up.ok || !upJson.url) throw new Error(upJson.error || 'Opplasting feilet');
+					item.status = 'tolker';
+					const res = await fetch('/api/sensors/screen-time/parse', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({ imageUrl: upJson.url })
+					});
+					const json = await res.json();
+					if (!json.success) throw new Error(json.message || 'Klarte ikke å tolke bildet');
+					item.preview = json.parsed;
+					if (json.parsed.kind === 'daily') {
+						item.dateISO = json.parsed.dateISO ?? '';
+					} else {
+						// Ukesbilder mangler dato i bildet — foreslå forrige uke (vanligste tilfelle).
+						item.weekStartISO = previousWeekMondayISO();
+					}
+					item.file = null;
+					item.status = 'tolket';
+				} catch (err) {
+					item.status = 'feil';
+					item.error = err instanceof Error ? err.message : 'Noe gikk galt';
+				}
+			}
 		} finally {
-			saving = false;
+			analyzing = false;
 		}
+	}
+
+	async function saveAll() {
+		savingAll = true;
+		error = null;
+		const savedIds: string[] = [];
+		try {
+			for (const item of queue) {
+				if (item.status !== 'tolket' || !item.preview) continue;
+				try {
+					if (item.preview.kind === 'daily' && !item.dateISO) {
+						throw new Error('Sett dato før lagring');
+					}
+					item.status = 'lagrer';
+					const body =
+						item.preview.kind === 'weekly'
+							? {
+									kind: 'weekly',
+									weekly: item.preview.weekly,
+									// Snapp valgfri dato i uka til mandag.
+									weekStartISO: item.weekStartISO
+										? (mondayOfWeekISO(item.weekStartISO) ?? undefined)
+										: undefined
+								}
+							: { kind: 'daily', daily: item.preview.daily, dateISO: item.dateISO };
+					const res = await fetch('/api/sensors/screen-time/ingest', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify(body)
+					});
+					const json = await res.json();
+					if (!res.ok || !json.success) throw new Error(json.error || 'Lagring feilet');
+					savedIds.push(item.id);
+				} catch (err) {
+					item.status = 'tolket';
+					item.error = err instanceof Error ? err.message : 'Lagring feilet';
+				}
+			}
+		} finally {
+			queue = queue.filter((i) => !savedIds.includes(i.id));
+			savingAll = false;
+		}
+		if (savedIds.length > 0) await invalidateAll();
 	}
 
 	/* ── Mål ──────────────────────────────────────────────── */
@@ -200,6 +284,8 @@
 		goals={current?.goals ?? []}
 		weekDays={current?.weekDays ?? []}
 		categoryLabels={data.categoryLabels}
+		cumulative={current?.cumulativeSeries ?? []}
+		{cumulativeRefs}
 	/>
 
 	{#if current}
@@ -224,55 +310,92 @@
 
 	<!-- Opplasting -->
 	<section class="block">
-		<h2>Legg inn skjermbilde</h2>
+		<h2>Legg inn skjermbilder</h2>
 		<p class="muted">
-			Last opp et iOS Skjermtid-skjermbilde — enten ukesbildet (Uke-fanen, hver mandag for forrige
-			uke) eller et dagsbilde (Dag-fanen). AI-en tolker tallene.
+			Velg ett eller flere iOS Skjermtid-skjermbilder — ukesbilder (Uke-fanen) og/eller dagsbilder
+			(Dag-fanen). AI-en tolker tallene; ukesbilder trenger riktig ukedato før lagring.
 		</p>
 
 		<label class="upload">
-			<input type="file" accept="image/*" onchange={onFile} disabled={uploading || parsing} />
-			<span>{uploading ? 'Laster opp…' : parsing ? 'Tolker bilde…' : '📷 Velg skjermbilde'}</span>
+			<input
+				type="file"
+				accept="image/*"
+				multiple
+				onchange={onFilesSelected}
+				disabled={busy}
+				data-track="skjermtid:velg-skjermbilder"
+			/>
+			<span>📷 Velg skjermbilder</span>
 		</label>
 
-		{#if preview}
-			<div class="preview">
-				{#if preview.kind === 'weekly'}
-					<p class="preview-kind">Ukesbilde gjenkjent ({preview.confidence})</p>
-					<ul>
-						<li>Total: <strong>{fmt(preview.weekly.weekTotalMinutes)}</strong></li>
-						<li>Snitt/dag: <strong>{fmt(preview.weekly.avgPerDayMinutes)}</strong></li>
-						{#if preview.weekly.categories?.social}
-							<li>Scrolling (sosialt): <strong>{fmt(preview.weekly.categories.social)}</strong></li>
+		{#if queue.length > 0}
+			<div class="queue">
+				{#each queue as item (item.id)}
+					<div class="queue-item" class:failed={item.status === 'feil'}>
+						<div class="queue-head">
+							<span class="queue-name">
+								{#if item.preview}
+									{item.preview.kind === 'weekly' ? 'Ukesbilde' : 'Dagsbilde'}
+								{:else}
+									{item.name}
+								{/if}
+							</span>
+							<span class="queue-status">{statusLabel(item)}</span>
+							<button
+								class="del"
+								onclick={() => removeItem(item.id)}
+								disabled={busy}
+								aria-label="Fjern bilde fra køen">✕</button
+							>
+						</div>
+						{#if item.error}
+							<p class="queue-error">{item.error}</p>
 						{/if}
-					</ul>
-					<label class="field">
-						Uke starter (mandag):
-						<input type="date" bind:value={weekStartISO} />
-						<small>La stå tomt for forrige uke.</small>
-					</label>
-				{:else}
-					<p class="preview-kind">Dagsbilde gjenkjent ({preview.confidence})</p>
-					<ul>
-						<li>Total: <strong>{fmt(preview.daily.totalMinutes)}</strong></li>
-						{#if preview.daily.categories?.social}
-							<li>Scrolling (sosialt): <strong>{fmt(preview.daily.categories.social)}</strong></li>
+						{#if item.preview?.kind === 'weekly'}
+							<ul>
+								<li>Total: <strong>{fmt(item.preview.weekly.weekTotalMinutes)}</strong></li>
+								<li>Snitt/dag: <strong>{fmt(item.preview.weekly.avgPerDayMinutes)}</strong></li>
+								{#if item.preview.weekly.categories?.social}
+									<li>Scrolling (sosialt): <strong>{fmt(item.preview.weekly.categories.social)}</strong></li>
+								{/if}
+							</ul>
+							<label class="field">
+								Uken (en dato i uka holder — snappes til mandag):
+								<input type="date" bind:value={item.weekStartISO} data-track="skjermtid:ukesbilde-dato" />
+							</label>
+						{:else if item.preview?.kind === 'daily'}
+							<ul>
+								<li>Total: <strong>{fmt(item.preview.daily.totalMinutes)}</strong></li>
+								{#if item.preview.daily.categories?.social}
+									<li>Scrolling (sosialt): <strong>{fmt(item.preview.daily.categories.social)}</strong></li>
+								{/if}
+								{#if item.preview.daily.hourly?.length}
+									<li>Time-for-time: <strong>{item.preview.daily.hourly.length} timer</strong></li>
+								{/if}
+							</ul>
+							<label class="field">
+								Dato:
+								<input type="date" bind:value={item.dateISO} data-track="skjermtid:dagsbilde-dato" />
+							</label>
 						{/if}
-						{#if preview.daily.hourly?.length}
-							<li>Time-for-time: <strong>{preview.daily.hourly.length} timer</strong></li>
-						{/if}
-					</ul>
-					<label class="field">
-						Dato:
-						<input type="date" bind:value={dateISO} />
-					</label>
-				{/if}
-				<div class="preview-actions">
-					<Button onClick={confirmIngest} disabled={saving}>
-						{saving ? 'Lagrer…' : 'Lagre'}
+					</div>
+				{/each}
+			</div>
+
+			<div class="queue-actions">
+				{#if pendingCount > 0}
+					<Button onClick={analyzeAll} disabled={busy}>
+						{analyzing
+							? 'Analyserer…'
+							: `Last opp og analyser (${pendingCount})`}
 					</Button>
-					<Button variant="ghost" onClick={() => (preview = null)}>Avbryt</Button>
-				</div>
+				{/if}
+				{#if parsedCount > 0}
+					<Button onClick={saveAll} disabled={busy}>
+						{savingAll ? 'Lagrer…' : `Lagre alle (${parsedCount})`}
+					</Button>
+				{/if}
+				<Button variant="ghost" onClick={() => (queue = [])} disabled={busy}>Tøm køen</Button>
 			</div>
 		{/if}
 	</section>
@@ -471,24 +594,55 @@
 	.upload input {
 		display: none;
 	}
-	.preview {
+	.queue {
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
 		margin-top: 1rem;
-		padding: 1rem;
+	}
+	.queue-item {
+		padding: 0.85rem 1rem;
 		background: var(--bg-tertiary, rgba(255, 255, 255, 0.04));
+		border: 1px solid transparent;
 		border-radius: 12px;
 	}
-	.preview-kind {
-		font-weight: 600;
-		margin: 0 0 0.5rem;
+	.queue-item.failed {
+		border-color: rgba(251, 113, 133, 0.35);
 	}
-	.preview ul {
-		margin: 0 0 0.75rem;
+	.queue-head {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+	}
+	.queue-name {
+		font-size: 0.9rem;
+		font-weight: 600;
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.queue-status {
+		font-size: 0.75rem;
+		color: var(--text-secondary, rgba(255, 255, 255, 0.55));
+		white-space: nowrap;
+	}
+	.queue-error {
+		margin: 0.4rem 0 0;
+		font-size: 0.8rem;
+		color: #fb7185;
+	}
+	.queue-item ul {
+		margin: 0.5rem 0 0.6rem;
 		padding-left: 1.1rem;
 		font-size: 0.9rem;
 	}
-	.preview-actions {
+	.queue-actions {
 		display: flex;
 		gap: 0.5rem;
+		flex-wrap: wrap;
+		margin-top: 0.85rem;
 	}
 	.field {
 		display: flex;

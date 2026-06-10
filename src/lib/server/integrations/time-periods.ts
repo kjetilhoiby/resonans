@@ -49,14 +49,39 @@ function getDateOfISOWeek(week: number, year: number): Date {
 	const naive = new Date(year, 0, 1 + (week - 1) * 7);
 	const dateOfWeek = naive.getDay();
 	const ISOweekStart = new Date(naive);
-	
+
 	if (dateOfWeek <= 4) {
 		ISOweekStart.setDate(naive.getDate() - naive.getDay() + 1);
 	} else {
 		ISOweekStart.setDate(naive.getDate() + 8 - naive.getDay());
 	}
-	
+
 	return ISOweekStart;
+}
+
+/**
+ * Lokal kalenderdato som 'YYYY-MM-DD'. Viktig: IKKE toISOString() — den
+ * konverterer til UTC og flytter lokal midnatt til dagen før når prosessen
+ * kjører i en tidssone foran UTC (f.eks. Europe/Oslo).
+ */
+function toLocalISODate(d: Date): string {
+	const y = d.getFullYear();
+	const m = String(d.getMonth() + 1).padStart(2, '0');
+	const day = String(d.getDate()).padStart(2, '0');
+	return `${y}-${m}-${day}`;
+}
+
+/**
+ * '2025W43' → mandag i ISO-uken (lokal midnatt). Brukes for å utlede ukestart
+ * fra periodKey i stedet for å stole på lagrede timestamps (som kan være
+ * tidssoneskjeve fra eldre aggregeringer).
+ */
+export function isoWeekKeyToMonday(yearweek: string): Date | undefined {
+	const m = yearweek?.match(/^(\d{4})W(\d{1,2})$/);
+	if (!m) return undefined;
+	const week = Number(m[2]);
+	if (week < 1 || week > 53) return undefined;
+	return getDateOfISOWeek(week, Number(m[1]));
 }
 
 /**
@@ -75,11 +100,12 @@ export function generateWeeks(startYear = 2017): WeekPeriod[] {
 			// Only include weeks that have started
 			if (startTime.getTime() > now) break;
 
-			// Generate all 7 dates in the week
+			// Generate all 7 dates in the week (setDate, ikke +24t — DST-trygt)
 			const dates: string[] = [];
+			const cursor = new Date(startTime);
 			for (let i = 0; i < 7; i++) {
-				const date = new Date(startTime.getTime() + i * 24 * 60 * 60 * 1000);
-				dates.push(date.toISOString().split('T')[0]);
+				dates.push(toLocalISODate(cursor));
+				cursor.setDate(cursor.getDate() + 1);
 			}
 
 			const yearweek = `${year}W${week.toString().padStart(2, '0')}`;
@@ -88,8 +114,8 @@ export function generateWeeks(startYear = 2017): WeekPeriod[] {
 				year,
 				week,
 				yearweek,
-				startDate: startTime.toISOString().split('T')[0],
-				endDate: endTime.toISOString().split('T')[0],
+				startDate: dates[0],
+				endDate: dates[6],
 				startTime,
 				endTime,
 				dates
@@ -122,8 +148,8 @@ export function generateMonths(startYear = 2017): MonthPeriod[] {
 				year,
 				month,
 				yearmonth,
-				startDate: startTime.toISOString().split('T')[0],
-				endDate: endTime.toISOString().split('T')[0],
+				startDate: toLocalISODate(startTime),
+				endDate: toLocalISODate(endTime),
 				startTime,
 				endTime
 			});

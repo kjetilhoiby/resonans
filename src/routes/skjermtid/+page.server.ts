@@ -13,6 +13,11 @@ import {
 	basisLabel,
 	type ScreenTimeMetric
 } from '$lib/server/integrations/screen-time-goals';
+import {
+	buildCumulativeWeekSeries,
+	hourlyArrayFromBuckets
+} from '$lib/utils/screen-time-series';
+import { isoWeekKeyToMonday } from '$lib/server/integrations/time-periods';
 
 function metricFromAggregate(row: { metrics: unknown } | undefined | null): ScreenTimeMetric | null {
 	const m = (row?.metrics as Record<string, unknown> | undefined)?.screenTime as ScreenTimeMetric | undefined;
@@ -56,10 +61,17 @@ export const load: PageServerLoad = async ({ locals }) => {
 	const goalsForManagement = goalRecords.map((g) => ({ id: g.id, title: g.title, basisLabel: basisLabel(g.goal) }));
 
 	// Hent dags- og ukesevents innenfor spennet av ukene vi viser, og bøtt per uke.
-	let dayEvents: Array<{ ts: Date; total: number; social: number; detailed: boolean }> = [];
+	let dayEvents: Array<{
+		ts: Date;
+		total: number;
+		social: number;
+		detailed: boolean;
+		hourly: number[] | undefined;
+	}> = [];
 	let weekEvents: Array<{ ts: Date; apps: Record<string, number> | undefined }> = [];
 	if (sensor && weekAggs.length > 0) {
-		const earliest = weekAggs[weekAggs.length - 1].startDate;
+		const oldest = weekAggs[weekAggs.length - 1];
+		const earliest = isoWeekKeyToMonday(oldest.periodKey) ?? oldest.startDate;
 		const [days, wevents] = await Promise.all([
 			db.query.sensorEvents.findMany({
 				where: and(
@@ -84,7 +96,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 				ts: e.timestamp,
 				total: typeof d.totalMinutes === 'number' ? d.totalMinutes : 0,
 				social: typeof d.categories?.social === 'number' ? d.categories.social : 0,
-				detailed: d.captureType === 'daily'
+				detailed: d.captureType === 'daily',
+				hourly: hourlyArrayFromBuckets(d.hourly)
 			};
 		});
 		weekEvents = wevents.map((e) => ({
@@ -94,8 +107,18 @@ export const load: PageServerLoad = async ({ locals }) => {
 	}
 
 	const weeks = weekAggs.map((agg, idx) => {
-		const start = agg.startDate;
-		const end = agg.endDate;
+		// Utled mandag fra periodKey ('2026W24') — lagret startDate kan være
+		// tidssoneskjev (søndag kveld UTC) fra eldre aggregeringer.
+		const start = isoWeekKeyToMonday(agg.periodKey) ?? agg.startDate;
+		const end = new Date(
+			start.getFullYear(),
+			start.getMonth(),
+			start.getDate() + 6,
+			23,
+			59,
+			59,
+			999
+		);
 		const metric = metricFromAggregate(agg)!;
 
 		// Fast man–søn-array (7 slots), totaler fra dagsevents i ukens datointervall.
@@ -105,10 +128,18 @@ export const load: PageServerLoad = async ({ locals }) => {
 			d.setDate(d.getDate() + i);
 			dayISOs.push(toISODate(d));
 		}
-		const byDate = new Map<string, { total: number; social: number; detailed: boolean }>();
+		const byDate = new Map<
+			string,
+			{ total: number; social: number; detailed: boolean; hourly: number[] | undefined }
+		>();
 		for (const ev of dayEvents) {
 			if (ev.ts < start || ev.ts > end) continue;
-			byDate.set(toISODate(ev.ts), { total: ev.total, social: ev.social, detailed: ev.detailed });
+			byDate.set(toISODate(ev.ts), {
+				total: ev.total,
+				social: ev.social,
+				detailed: ev.detailed,
+				hourly: ev.hourly
+			});
 		}
 		const weekDays = dayISOs.map((iso) => {
 			const hit = byDate.get(iso);
@@ -119,6 +150,16 @@ export const load: PageServerLoad = async ({ locals }) => {
 				detailed: hit?.detailed ?? false
 			};
 		});
+
+		// Akkumulert ukeserie (man 00 → søn 24). Dager uten time-detalj fordeles
+		// etter ukens timeprofil, ellers flatt over døgnet.
+		const cumulativeSeries = buildCumulativeWeekSeries(
+			dayISOs.map((iso) => {
+				const hit = byDate.get(iso);
+				return { totalMinutes: hit?.total ?? 0, hourly: hit?.hourly };
+			}),
+			metric.byHour
+		);
 
 		// Ukesoppsummering (apper) i ukens intervall → samme uke som resten.
 		const weekEvent = weekEvents.find((w) => w.ts >= start && w.ts <= end);
@@ -140,6 +181,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 			hasWeekScreenshot: Boolean(weekEvent),
 			metric,
 			weekDays,
+			cumulativeSeries,
 			topApps,
 			goals
 		};
