@@ -3,10 +3,10 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { checklists, checklistItems } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
-import { parseChecklistItemIntent, findLinkedTask, stripTimeFromText } from '$lib/server/checklist-intent-linker';
-import { parseLocationPrefix, parseTravelPrefix } from '$lib/utils/checklist-group';
+import { buildChecklistItemFields } from '$lib/server/checklist-item-builder';
 import { upsertPlanArtifactField } from '$lib/server/plan-artifacts';
 import { syncStaysForDate } from '$lib/server/stays';
+import { PersonMentionService } from '$lib/server/services/person-mention-service';
 import { runInBackground } from '$lib/server/run-in-background';
 
 export const POST: RequestHandler = async ({ request, locals }) => {
@@ -69,68 +69,31 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			const nextOrder =
 				(dayChecklist.items ?? []).reduce((m, i) => Math.max(m, i.sortOrder), -1) + 1;
 
-			// Parse intent + find linked task for each day item
-			const itemsToInsert = await Promise.all(
-				toAdd.map(async (text, i) => {
-					// «Sted: X» → dag-kontekst (ikke avkryssbart). «kjøre/båt/fly til X [kl T]»
-					// → reisesegment med transportmodus. Begge tar presedens over aktivitet.
-					const location = parseLocationPrefix(text);
-					const travel = location ? null : parseTravelPrefix(text);
-					const intent = parseChecklistItemIntent(text, { dayLevel: true });
-					const timeFields = intent.timeHour !== undefined
-						? { timeHour: intent.timeHour, timeMinute: intent.timeMinute ?? 0 }
-						: {};
-					let metadata: Record<string, unknown> = { ...timeFields };
-					if (location) {
-						metadata = { kind: 'location', locationName: location.name };
-					} else if (travel) {
-						metadata = {
-							...timeFields,
-							kind: 'travel',
-							travelMode: travel.mode,
-							destination: travel.destination
-						};
-					} else if (intent.matched) {
-						const linkedTask = await findLinkedTask({
-							userId,
-							itemText: text,
-							weekDashedKey,
-							weekCompactKey: compactKey
-						});
-						if (linkedTask) {
-							metadata = {
-								...timeFields,
-								linkedTaskId: linkedTask.taskId,
-								linkedTaskTitle: linkedTask.taskTitle,
-								activityType: intent.activityType,
-								...(intent.durationMinutes !== undefined && { durationMinutes: intent.durationMinutes }),
-								...(intent.distanceKm !== undefined && { distanceKm: intent.distanceKm })
-							};
-						} else if (intent.activityType) {
-							metadata = {
-								...timeFields,
-								activityType: intent.activityType,
-								...(intent.durationMinutes !== undefined && { durationMinutes: intent.durationMinutes }),
-								...(intent.distanceKm !== undefined && { distanceKm: intent.distanceKm })
-							};
-						}
-					}
-					const storedText = location
-						? location.name
-						: intent.timeHour !== undefined ? stripTimeFromText(text) : text;
-					return {
-						checklistId: dayChecklist!.id,
-						userId,
-						text: storedText,
-						sortOrder: nextOrder + i,
-						...(Object.keys(metadata).length > 0 && { metadata })
-					};
-				})
+			// Parse hvert dag-punkt (tid/sted/reise/måltid/aktivitet/kobling) via
+			// den felles builderen — samme resultat som manuell oppretting.
+			const built = await Promise.all(
+				toAdd.map((text) =>
+					buildChecklistItemFields({ userId, context: dayContext, text, allowTaskCreation: false })
+				)
 			);
-			await db.insert(checklistItems).values(itemsToInsert);
+
+			const itemsToInsert = built.map((fields, i) => ({
+				checklistId: dayChecklist!.id,
+				userId,
+				text: fields.text,
+				startDate: fields.startDate,
+				sortOrder: nextOrder + i,
+				...(Object.keys(fields.metadata).length > 0 ? { metadata: fields.metadata } : {})
+			}));
+			const createdItems = await db.insert(checklistItems).values(itemsToInsert).returning();
+
+			// Index @-mentions for hvert opprettet punkt.
+			for (const item of createdItems) {
+				runInBackground(PersonMentionService.indexChecklistItem(userId, item.id, item.text));
+			}
 
 			// Sted-punkt → skriv opphold automatisk til reise-/ferieplan som dekker dagen.
-			if (itemsToInsert.some((it) => (it.metadata as { kind?: string } | undefined)?.kind === 'location')) {
+			if (built.some((f) => f.locationDayIso)) {
 				runInBackground(syncStaysForDate(userId, dayIso));
 			}
 		}

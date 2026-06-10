@@ -5,17 +5,13 @@ import { checklistItems, checklists, progress } from '$lib/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
 import { TaskExecutionService } from '$lib/server/services/task-execution-service';
 import { parseTaskDateTime } from '$lib/server/date-time-parser';
-import { parseChecklistItemIntent, findLinkedTask } from '$lib/server/checklist-intent-linker';
+import {
+	buildChecklistItemFields,
+	PARSE_DERIVED_METADATA_KEYS
+} from '$lib/server/checklist-item-builder';
 import { PersonMentionService } from '$lib/server/services/person-mention-service';
 import { runInBackground } from '$lib/server/run-in-background';
-
-function extractWeekKeys(context: string | null): { dashedKey: string; compactKey: string } | null {
-	if (!context) return null;
-	const m = context.match(/week:(\d{4}-W\d{2})/);
-	if (!m) return null;
-	const dashedKey = m[1];
-	return { dashedKey, compactKey: dashedKey.replace('-', '') };
-}
+import { syncStaysForDate } from '$lib/server/stays';
 
 async function syncChecklistCompletion(checklistId: string) {
 	// Et item regnes som "behandlet" hvis det er enten avkrysset eller skipped.
@@ -50,51 +46,47 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 	if (!existingItem) return json({ error: 'Ikke funnet' }, { status: 404 });
 
 	const updates: Record<string, unknown> = {};
+	// Sted-punkt som re-parses til et sted skal trigge opphold-synk for dagen.
+	let reparseLocationDayIso: string | null = null;
 	if (body.text !== undefined) {
-		const parsed = parseTaskDateTime(body.text);
 		const itemChecklist = await db.query.checklists.findFirst({
 			where: eq(checklists.id, existingItem.checklistId),
 			columns: { context: true }
 		});
-		const isDayLevel = !!itemChecklist?.context?.includes(':day:');
-		const intent = parseChecklistItemIntent(body.text, { dayLevel: isDayLevel });
 
-		updates.text = parsed.text || body.text.trim();
-		updates.startDate = parsed.startDate ?? null;
-
-		const nextMetadata: Record<string, unknown> = {
+		// Parse-avledede metadata-nøkler nullstilles og bygges på nytt; øvrige
+		// nøkler (f.eks. progressRecordId) beholdes.
+		const preservedMetadata: Record<string, unknown> = {
 			...((existingItem.metadata ?? {}) as Record<string, unknown>)
 		};
-		for (const k of ['timeHour', 'timeMinute', 'activityType', 'durationMinutes', 'distanceKm', 'linkedTaskId', 'linkedTaskTitle']) {
-			delete nextMetadata[k];
+		for (const k of PARSE_DERIVED_METADATA_KEYS) {
+			delete preservedMetadata[k];
 		}
 
-		if (parsed.hour !== undefined) nextMetadata.timeHour = parsed.hour;
-		else if (intent.timeHour !== undefined) nextMetadata.timeHour = intent.timeHour;
-		if (parsed.minute !== undefined) nextMetadata.timeMinute = parsed.minute;
-		else if (intent.timeMinute !== undefined) nextMetadata.timeMinute = intent.timeMinute;
-
-		if (intent.activityType) nextMetadata.activityType = intent.activityType;
-		if (intent.durationMinutes !== undefined) nextMetadata.durationMinutes = intent.durationMinutes;
-		if (intent.distanceKm !== undefined) nextMetadata.distanceKm = intent.distanceKm;
-
-		if (!existingItem.parentId) {
-			const weekKeys = extractWeekKeys(itemChecklist?.context ?? null);
-			if (weekKeys) {
-				const linkedTask = await findLinkedTask({
-					userId,
-					itemText: body.text,
-					weekDashedKey: weekKeys.dashedKey,
-					weekCompactKey: weekKeys.compactKey
-				});
-				if (linkedTask) {
-					nextMetadata.linkedTaskId = linkedTask.taskId;
-					nextMetadata.linkedTaskTitle = linkedTask.taskTitle;
-				}
-			}
+		if (existingItem.parentId) {
+			// Deloppgaver: behold den enklere dato/tid-parsingen (ingen oppgavekobling).
+			const parsed = parseTaskDateTime(body.text);
+			updates.text = parsed.text || body.text.trim();
+			updates.startDate = parsed.startDate ?? null;
+			if (parsed.hour !== undefined) preservedMetadata.timeHour = parsed.hour;
+			if (parsed.minute !== undefined) preservedMetadata.timeMinute = parsed.minute;
+			updates.metadata = preservedMetadata;
+		} else {
+			// Toppnivå-punkt: full re-parsing via felles builder — samme resultat som
+			// når punktet legges til på nytt (tid, sted, reise, måltid, aktivitet,
+			// kobling til eksisterende ukeoppgave). Vi oppretter ikke nye oppgaver
+			// ved redigering.
+			const fields = await buildChecklistItemFields({
+				userId,
+				context: itemChecklist?.context ?? null,
+				text: body.text,
+				allowTaskCreation: false
+			});
+			updates.text = fields.text;
+			updates.startDate = fields.startDate;
+			updates.metadata = { ...preservedMetadata, ...fields.metadata };
+			reparseLocationDayIso = fields.locationDayIso;
 		}
-
-		updates.metadata = nextMetadata;
 	}
 	if (body.sortOrder !== undefined) updates.sortOrder = body.sortOrder;
 	if (body.checked !== undefined) {
@@ -129,6 +121,11 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 	// Re-index @-mentions hvis teksten ble endret — kjører i bakgrunnen via waitUntil.
 	if (body.text !== undefined && updated) {
 		runInBackground(PersonMentionService.indexChecklistItem(userId, updated.id, updated.text));
+	}
+
+	// Sted-punkt → re-synk opphold til reise-/ferieplan som dekker dagen.
+	if (reparseLocationDayIso) {
+		runInBackground(syncStaysForDate(userId, reparseLocationDayIso));
 	}
 
 	// When an item is checked and it has a linked task, log a progress record
