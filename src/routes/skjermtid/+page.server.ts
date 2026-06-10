@@ -17,6 +17,7 @@ import {
 	buildCumulativeWeekSeries,
 	hourlyArrayFromBuckets
 } from '$lib/utils/screen-time-series';
+import { isoWeekKeyToMonday } from '$lib/server/integrations/time-periods';
 
 function metricFromAggregate(row: { metrics: unknown } | undefined | null): ScreenTimeMetric | null {
 	const m = (row?.metrics as Record<string, unknown> | undefined)?.screenTime as ScreenTimeMetric | undefined;
@@ -69,7 +70,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 	}> = [];
 	let weekEvents: Array<{ ts: Date; apps: Record<string, number> | undefined }> = [];
 	if (sensor && weekAggs.length > 0) {
-		const earliest = weekAggs[weekAggs.length - 1].startDate;
+		const oldest = weekAggs[weekAggs.length - 1];
+		const earliest = isoWeekKeyToMonday(oldest.periodKey) ?? oldest.startDate;
 		const [days, wevents] = await Promise.all([
 			db.query.sensorEvents.findMany({
 				where: and(
@@ -105,8 +107,18 @@ export const load: PageServerLoad = async ({ locals }) => {
 	}
 
 	const weeks = weekAggs.map((agg, idx) => {
-		const start = agg.startDate;
-		const end = agg.endDate;
+		// Utled mandag fra periodKey ('2026W24') — lagret startDate kan være
+		// tidssoneskjev (søndag kveld UTC) fra eldre aggregeringer.
+		const start = isoWeekKeyToMonday(agg.periodKey) ?? agg.startDate;
+		const end = new Date(
+			start.getFullYear(),
+			start.getMonth(),
+			start.getDate() + 6,
+			23,
+			59,
+			59,
+			999
+		);
 		const metric = metricFromAggregate(agg)!;
 
 		// Fast man–søn-array (7 slots), totaler fra dagsevents i ukens datointervall.

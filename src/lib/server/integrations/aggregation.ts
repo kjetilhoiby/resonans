@@ -336,7 +336,15 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 	if (rows.length > 0) {
 		await db.insert(sensorAggregates).values(rows).onConflictDoUpdate({
 			target: [sensorAggregates.userId, sensorAggregates.period, sensorAggregates.periodKey],
-			set: { metrics: sql`excluded.metrics`, eventCount: sql`excluded.event_count`, updatedAt: new Date() }
+			// startDate/endDate oppdateres også: eldre rader kan ha tidssoneskjeve datoer
+			// (lokal midnatt skrevet via toISOString), og skal heles ved re-aggregering.
+			set: {
+				metrics: sql`excluded.metrics`,
+				eventCount: sql`excluded.event_count`,
+				startDate: sql`excluded.start_date`,
+				endDate: sql`excluded.end_date`,
+				updatedAt: new Date()
+			}
 		});
 	}
 }
@@ -412,7 +420,15 @@ export async function aggregateMonthlyData(userId: string, months?: MonthPeriod[
 	if (rows.length > 0) {
 		await db.insert(sensorAggregates).values(rows).onConflictDoUpdate({
 			target: [sensorAggregates.userId, sensorAggregates.period, sensorAggregates.periodKey],
-			set: { metrics: sql`excluded.metrics`, eventCount: sql`excluded.event_count`, updatedAt: new Date() }
+			// startDate/endDate oppdateres også: eldre rader kan ha tidssoneskjeve datoer
+			// (lokal midnatt skrevet via toISOString), og skal heles ved re-aggregering.
+			set: {
+				metrics: sql`excluded.metrics`,
+				eventCount: sql`excluded.event_count`,
+				startDate: sql`excluded.start_date`,
+				endDate: sql`excluded.end_date`,
+				updatedAt: new Date()
+			}
 		});
 	}
 }
@@ -482,7 +498,15 @@ export async function aggregateYearlyData(userId: string, years?: YearPeriod[]) 
 	if (rows.length > 0) {
 		await db.insert(sensorAggregates).values(rows).onConflictDoUpdate({
 			target: [sensorAggregates.userId, sensorAggregates.period, sensorAggregates.periodKey],
-			set: { metrics: sql`excluded.metrics`, eventCount: sql`excluded.event_count`, updatedAt: new Date() }
+			// startDate/endDate oppdateres også: eldre rader kan ha tidssoneskjeve datoer
+			// (lokal midnatt skrevet via toISOString), og skal heles ved re-aggregering.
+			set: {
+				metrics: sql`excluded.metrics`,
+				eventCount: sql`excluded.event_count`,
+				startDate: sql`excluded.start_date`,
+				endDate: sql`excluded.end_date`,
+				updatedAt: new Date()
+			}
 		});
 	}
 }
@@ -546,7 +570,15 @@ export async function aggregateDailyEffort(userId: string, days?: DayPeriod[]) {
 	if (rows.length > 0) {
 		await db.insert(sensorAggregates).values(rows).onConflictDoUpdate({
 			target: [sensorAggregates.userId, sensorAggregates.period, sensorAggregates.periodKey],
-			set: { metrics: sql`excluded.metrics`, eventCount: sql`excluded.event_count`, updatedAt: new Date() }
+			// startDate/endDate oppdateres også: eldre rader kan ha tidssoneskjeve datoer
+			// (lokal midnatt skrevet via toISOString), og skal heles ved re-aggregering.
+			set: {
+				metrics: sql`excluded.metrics`,
+				eventCount: sql`excluded.event_count`,
+				startDate: sql`excluded.start_date`,
+				endDate: sql`excluded.end_date`,
+				updatedAt: new Date()
+			}
 		});
 	}
 }

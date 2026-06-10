@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { generateWeeks, generateMonths, generateYears, generateDays, getCurrentWeek, getCurrentMonth, getCurrentYear, getWeeksSince, getMonthsSince } from './time-periods';
+import { generateWeeks, generateMonths, generateYears, generateDays, getCurrentWeek, getCurrentMonth, getCurrentYear, getWeeksSince, getMonthsSince, isoWeekKeyToMonday } from './time-periods';
 
 describe('generateWeeks', () => {
 	it('returnerer uker i synkende rekkefølge (nyeste først)', () => {
@@ -41,6 +41,48 @@ describe('generateWeeks', () => {
 		const from2024 = generateWeeks(2024);
 		const from2025 = generateWeeks(2025);
 		expect(from2024.length).toBeGreaterThan(from2025.length);
+	});
+
+	it('startDate-strengen er mandagens lokale dato (ikke UTC-forskjøvet)', () => {
+		const weeks = generateWeeks(2025);
+		for (const week of weeks.slice(0, 5)) {
+			const s = week.startTime;
+			const local = `${s.getFullYear()}-${String(s.getMonth() + 1).padStart(2, '0')}-${String(s.getDate()).padStart(2, '0')}`;
+			expect(week.startDate).toBe(local);
+			expect(week.dates[0]).toBe(week.startDate);
+		}
+	});
+});
+
+describe('isoWeekKeyToMonday', () => {
+	it('gir mandagen i ISO-uken', () => {
+		const d = isoWeekKeyToMonday('2026W24')!;
+		expect(d.getDay()).toBe(1); // mandag
+		expect(d.getFullYear()).toBe(2026);
+		expect(d.getMonth()).toBe(5); // juni
+		expect(d.getDate()).toBe(8);
+	});
+
+	it('matcher generateWeeks sine startTime', () => {
+		const weeks = generateWeeks(2025);
+		for (const week of weeks.slice(0, 8)) {
+			expect(isoWeekKeyToMonday(week.yearweek)?.getTime()).toBe(week.startTime.getTime());
+		}
+	});
+
+	it('håndterer uke over årsskiftet', () => {
+		// Uke 1 i 2026 starter mandag 29. des 2025
+		const d = isoWeekKeyToMonday('2026W01')!;
+		expect(d.getFullYear()).toBe(2025);
+		expect(d.getMonth()).toBe(11);
+		expect(d.getDate()).toBe(29);
+	});
+
+	it('returnerer undefined for ugyldig nøkkel', () => {
+		expect(isoWeekKeyToMonday('2026-W24')).toBeUndefined();
+		expect(isoWeekKeyToMonday('W24')).toBeUndefined();
+		expect(isoWeekKeyToMonday('2026W54')).toBeUndefined();
+		expect(isoWeekKeyToMonday('')).toBeUndefined();
 	});
 });
 

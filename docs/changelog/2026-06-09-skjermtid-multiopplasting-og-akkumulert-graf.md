@@ -66,6 +66,27 @@ bilde med status per element. Tolkede elementer viser nøkkeltall og redigerbar 
 (dagsbilder forhåndsutfylles fra bildet, ukesbilder med forrige ukes mandag).
 «Lagre alle (N)» ingester alt; feilede elementer blir stående med feilmelding.
 
+### Fase 5: Bugfiks — uka vist som søndag–lørdag
+
+Skjermtid-siden viste uka som «7.–13. jun» (søn–lør) og la mandagens tall i
+tirsdagens søyle. Rotårsak: `time-periods.ts` lagde `startDate`-strenger med
+`toISOString()` på en **lokal-midnatt**-Date — i en tidssone foran UTC blir
+mandag 00:00 til søndag 22:00 UTC, altså dagen før. Raden i `sensor_aggregates`
+ble i tillegg aldri reparert, fordi upserten kun oppdaterte `metrics`/`eventCount`.
+
+Fiks i tre lag:
+
+1. `time-periods.ts`: datostrenger formateres nå med lokale getters
+   (`toLocalISODate`), og ukedatoene genereres med `setDate` (DST-trygt).
+   Ny eksport `isoWeekKeyToMonday('2026W24')` → mandag i ISO-uken.
+2. `aggregation.ts`: alle upserts oppdaterer nå også `startDate`/`endDate`,
+   slik at tidssoneskjeve rader heles ved neste re-aggregering.
+3. `skjermtid/+page.server.ts`: ukestart utledes fra `periodKey` i stedet for
+   lagret `startDate` — visningen er riktig uavhengig av gamle rader i DB.
+
+Dagseventene var aldri feil (lagres ved lokal middag, robust mot ±12t skjevhet),
+så søylene flytter seg automatisk til riktig dag.
+
 ## Beslutninger
 
 - **Fordeling av dager uten time-detalj**: ukens timeprofil (normalisert `byHour`)
