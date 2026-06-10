@@ -1,5 +1,6 @@
 <script lang="ts">
 	import AnimatedProgressBar from '../visualizations/AnimatedProgressBar.svelte';
+	import SectionLabel from '../ui/SectionLabel.svelte';
 	import { goto } from '$app/navigation';
 	import type { ProjectProgress } from '$lib/server/services/project-metrics-service';
 	import { SEASONS, currentSeason } from '$lib/domains/home';
@@ -199,7 +200,7 @@
 <div class="home-dashboard">
 	{#if appliances.length > 0}
 		<section>
-			<h3>🔌 Apparater</h3>
+			<SectionLabel>🔌 Apparater</SectionLabel>
 			<div class="appliance-grid">
 				{#each appliances as a (a.sensorId + ':' + a.name)}
 					{@const status = applianceStatus(a)}
@@ -249,7 +250,7 @@
 
 	<section>
 		<div class="section-head">
-			<h3>🔨 Prosjekter</h3>
+			<SectionLabel>🔨 Prosjekter</SectionLabel>
 			<button class="new-btn" onclick={() => (creating = !creating)}>
 				{creating ? 'Avbryt' : '+ Nytt prosjekt'}
 			</button>
@@ -296,7 +297,7 @@
 	</section>
 
 	<section>
-		<h3>{seasonLabel.emoji} Sesong-oppgaver ({seasonLabel.label})</h3>
+		<SectionLabel>{seasonLabel.emoji} Sesong-oppgaver ({seasonLabel.label})</SectionLabel>
 		{#if seasonalTasks.length === 0}
 			<p class="empty">Ingen sesong-oppgaver registrert for {seasonLabel.label.toLowerCase()}.</p>
 		{:else}
@@ -314,7 +315,7 @@
 	</section>
 
 	<section>
-		<h3>🧹 Husarbeids-rutiner</h3>
+		<SectionLabel>🧹 Husarbeids-rutiner</SectionLabel>
 		{#if routines.length === 0}
 			<p class="empty">Ingen rutiner satt opp. Be AI-en lage en vaskeliste eller en sesongrutine.</p>
 		{:else}
@@ -338,12 +339,11 @@
 		display: flex;
 		flex-direction: column;
 		gap: 2rem;
-		padding: 1rem;
+		/* Horisontal padding kommer fra .data-panel (var(--page-px)) */
+		padding: 0;
 	}
-section h3 {
-		margin: 0 0 0.75rem;
-		font-size: 0.95rem;
-		font-weight: 600;
+	section :global(.section-label) {
+		margin-bottom: 0.75rem;
 	}
 	.section-head {
 		display: flex;
@@ -352,8 +352,8 @@ section h3 {
 		gap: 0.5rem;
 		margin-bottom: 0.75rem;
 	}
-	.section-head h3 {
-		margin: 0;
+	.section-head :global(.section-label) {
+		margin-bottom: 0;
 	}
 	.new-btn {
 		flex-shrink: 0;

@@ -188,7 +188,7 @@ Eksempel:
 
 <style>
 	.files-panel {
-		padding: 16px;
+		padding: 16px var(--page-px);
 		display: flex;
 		flex-direction: column;
 		gap: 16px;

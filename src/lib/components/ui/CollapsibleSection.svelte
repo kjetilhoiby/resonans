@@ -45,8 +45,9 @@
 		cursor: pointer;
 		text-align: left;
 		width: 100%;
-		color: #6f6f6f;
-		font-size: 0.75rem;
+		/* Samme typografi som SectionLabel (interaktiv variant med hover) */
+		color: var(--section-label-color, #94a3b8);
+		font-size: 0.85rem;
 		font-weight: 600;
 		letter-spacing: 0.05em;
 		text-transform: uppercase;

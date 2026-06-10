@@ -142,7 +142,8 @@
 		display: flex;
 		flex-direction: column;
 		gap: 1.5rem;
-		padding: 1rem;
+		/* Horisontal padding kommer fra .data-panel (var(--page-px)) */
+		padding: 0;
 	}
 
 	.head {

@@ -6,6 +6,7 @@
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import SectionLabel from '$lib/components/ui/SectionLabel.svelte';
 	import GpxMapSvg from '$lib/components/charts/GpxMapSvg.svelte';
 
 	interface DailySteps {
@@ -179,7 +180,7 @@
 <div class="ths-container">
 	<button class="ths-collapse-btn" onclick={() => collapsed = !collapsed} aria-expanded={!collapsed}>
 		<div class="ths-collapse-left">
-			<span class="ths-title">🏃 Aktivitet</span>
+			<SectionLabel tag="span">🏃 Aktivitet</SectionLabel>
 			{#if collapsed && summaryStats}
 				<span class="ths-summary-line">{summaryStats}</span>
 			{/if}
@@ -196,7 +197,7 @@
 		<!-- Weight Section -->
 		{#if data.weight.avgBefore7Days || data.weight.avgAfter7Days}
 			<div class="ths-section">
-				<h4 class="ths-section-title">⚖️ Vekt</h4>
+				<SectionLabel tag="h4">⚖️ Vekt</SectionLabel>
 				<div class="ths-stat-grid">
 					{#if data.weight.avgBefore7Days}
 						<div class="ths-stat">
@@ -227,7 +228,7 @@
 		<!-- Steps Section -->
 		{#if data.steps.avgPerDay}
 			<div class="ths-section">
-				<h4 class="ths-section-title">👟 Skritt</h4>
+				<SectionLabel tag="h4">👟 Skritt</SectionLabel>
 				<div class="ths-stat">
 					<div class="ths-stat-label">Gjennomsnitt per dag</div>
 					<div class="ths-stat-value">{data.steps.avgPerDay.toLocaleString('nb-NO')} skritt</div>
@@ -249,7 +250,7 @@
 		<!-- Workouts Section -->
 		{#if data.workouts.count > 0}
 			<div class="ths-section">
-				<h4 class="ths-section-title">🏃 Treningsturer</h4>
+				<SectionLabel tag="h4">🏃 Treningsturer</SectionLabel>
 				<div class="ths-stat">
 					<div class="ths-stat-label">Antall økter</div>
 					<div class="ths-stat-value">{data.workouts.count}</div>
@@ -334,7 +335,7 @@
 		<!-- Sleep Section -->
 		{#if data.sleep.avgPerDay}
 			<div class="ths-section">
-				<h4 class="ths-section-title">😴 Søvn</h4>
+				<SectionLabel tag="h4">😴 Søvn</SectionLabel>
 				<div class="ths-stat">
 					<div class="ths-stat-label">Gjennomsnitt per natt</div>
 					<div class="ths-stat-value">{data.sleep.avgPerDay} timer</div>
@@ -367,15 +368,6 @@
 		gap: 0;
 	}
 
-	.ths-title {
-		font-size: 0.8rem;
-		font-weight: 600;
-		color: #94a3b8;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		margin: 0;
-	}
-
 	.ths-loading,
 	.ths-error,
 	.ths-empty {
@@ -400,11 +392,8 @@
 		border-bottom: none;
 	}
 
-	.ths-section-title {
-		font-size: 0.95rem;
-		font-weight: 600;
-		color: #cbd5e1;
-		margin: 0 0 12px 0;
+	.ths-section :global(.section-label) {
+		margin-bottom: 12px;
 	}
 
 	.ths-stat-grid {

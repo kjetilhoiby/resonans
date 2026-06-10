@@ -334,7 +334,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
-		padding: 8px 16px 24px;
+		padding: 8px var(--page-px) 24px;
 	}
 
 	.tl-empty {

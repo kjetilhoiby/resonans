@@ -4,6 +4,7 @@
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import SectionLabel from '$lib/components/ui/SectionLabel.svelte';
 	import { groupChecklistItems, sortByStatus, sortByTime } from '$lib/utils/checklist-group';
 	import type { ChecklistItemLike } from '$lib/types/checklist';
 	import ChecklistItemRow from '$lib/components/ui/ChecklistItemRow.svelte';
@@ -284,7 +285,7 @@
 </script>
 
 <div class="tdc">
-	<h3 class="tdc-title">📅 Dagsprogram</h3>
+	<SectionLabel>📅 Dagsprogram</SectionLabel>
 
 	{#if loading}
 		<p class="tdc-loading">Laster dagsprogram…</p>
@@ -422,15 +423,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
-	}
-
-	.tdc-title {
-		font-size: 0.8rem;
-		font-weight: 600;
-		color: var(--tp-text-muted);
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		margin: 0;
 	}
 
 	.tdc-loading {

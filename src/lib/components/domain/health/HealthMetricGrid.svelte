@@ -1,4 +1,6 @@
 <script lang="ts">
+	import SectionLabel from '../../ui/SectionLabel.svelte';
+
 	interface PeriodMetrics {
 		weight?: { avg?: number; min?: number; max?: number; change?: number };
 		steps?: { sum?: number; avg?: number; max?: number };
@@ -195,7 +197,7 @@
 
 <div class="hd-table-card">
 	<div class="hd-table-head">
-		<h2 class="hd-table-title">Perioder</h2>
+		<SectionLabel tag="h2">Perioder</SectionLabel>
 		<div class="hd-period-filters">
 			{#each [['siste5', 'Siste 5'], ['i_ar', 'I år'], ['siste_ar', 'Siste år'], ['alt', 'Alt']] as [val, label]}
 				<button
@@ -254,13 +256,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
-	}
-
-	.hd-table-title {
-		margin: 0;
-		font-size: 0.88rem;
-		font-weight: 700;
-		color: #e7e7e7;
 	}
 
 	.hd-period-filters {

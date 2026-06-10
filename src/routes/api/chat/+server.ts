@@ -764,6 +764,31 @@ const tools = [
 			{
 				type: 'function' as const,
 				function: {
+					name: 'manage_project_tasks',
+					description: "Styr oppgavelista til et hus-prosjekt (tema-undertema av Hjem). Bruk når brukeren snakker om hva som må gjøres i prosjektet. action: 'create' (ny oppgave/underoppgave), 'update' (endre tekst/frist/estimat/avhengigheter), 'check' (kryss av/gjenåpne), 'delete'. themeId er prosjektets tema-id (oppgitt i PROSJEKTOPPGAVER-konteksten). Underoppgave: sett parentId. INNKJØP: sett shopping=true og store=butikknavn, og la text være kun varen (f.eks. text='aluminiumslister', store='Maxbo'). AVHENGIGHET: «A må gjøres før B». Hvis A er NY: opprett A i ÉN kall med blocksItemIds=[B.id] (da blokkeres B av A automatisk). Hvis begge finnes: update B med blockedBy=[A.id]. blockedBy peker på id-er som må fullføres FØRST. VIKTIG: når brukeren sier «A før B», sett ALDRI blockedBy på A — da blir retningen feil. A blokkerer B, så B.blockedBy=[A] (eller bruk blocksItemIds på A). itemId/parentId/blockedBy bruker id-ene fra PROSJEKTOPPGAVER-konteksten.",
+					parameters: {
+						type: 'object',
+						properties: {
+							themeId: { type: 'string', description: 'Prosjektets tema-id' },
+							action: { type: 'string', enum: ['create', 'update', 'check', 'delete'] },
+							itemId: { type: 'string', description: 'Oppgave-id (for update/check/delete)' },
+							text: { type: 'string', description: "Oppgavetekst. Innkjøp: 'kjøp: X på [butikk]'" },
+							parentId: { type: 'string', description: 'Forelder-oppgavens id (for underoppgave)' },
+							shopping: { type: 'boolean', description: 'true hvis dette skal kjøpes' },
+							store: { type: 'string', description: 'Butikknavn for innkjøp, f.eks. Maxbo' },
+							dueDate: { type: 'string', description: 'Frist YYYY-MM-DD' },
+							estimateMinutes: { type: 'number', description: 'Estimat i minutter (60=1t, 480=1 dag)' },
+							blockedBy: { type: 'array', items: { type: 'string' }, description: 'Id-er som må fullføres FØRST denne' },
+							blocksItemIds: { type: 'array', items: { type: 'string' }, description: 'Id-er som må vente på DENNE (denne gjøres først). «A før B»: opprett A med blocksItemIds=[B.id].' },
+							checked: { type: 'boolean', description: 'true=kryss av, false=gjenåpne' }
+						},
+						required: ['themeId', 'action']
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
 					name: 'query_projects',
 					description: 'List prosjekter med burn-up + kost-vs-budsjett. Filter på domain, status, themeId, eller søk i tittel. Bruk dette for å finne projectId før manage_project.update/complete eller link_to_project.',
 					parameters: {
@@ -1745,6 +1770,43 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		}
 		goalsContext += '--- SLUTT PÅ MÅL OG OPPGAVER ---\n\n';
 
+		// Prosjektoppgaver-kontekst (hjem-prosjekt-undertema): gir AI-en lista MED id-er, så
+		// manage_project_tasks kan referere itemId/parentId/blockedBy presist.
+		let checklistContext = '';
+		if (conversation.themeId) {
+			try {
+				const taskRows = await db
+					.select()
+					.from(checklistItems)
+					.where(eq(checklistItems.themeId, conversation.themeId));
+				if (taskRows.length > 0) {
+					taskRows.sort((a, b) => a.sortOrder - b.sortOrder);
+					const byParent = (pid: string | null) =>
+						taskRows.filter((t) => (t.parentId ?? null) === pid);
+					const fmt = (t: (typeof taskRows)[number], indent: string) => {
+						const m = (t.metadata ?? {}) as Record<string, unknown>;
+						const extra: string[] = [];
+						if (m.shopping) extra.push(`kjøp${m.store ? ` på ${m.store}` : ''}`);
+						if (t.dueDate) extra.push(`frist ${t.dueDate}`);
+						if (typeof t.estimateMinutes === 'number') extra.push(`estimat ${t.estimateMinutes}min`);
+						if (Array.isArray(m.blockedBy) && m.blockedBy.length)
+							extra.push(`avventer ${(m.blockedBy as string[]).join(',')}`);
+						let line = `${indent}[${t.checked ? 'x' : ' '}] "${t.text}" (id: ${t.id})`;
+						if (extra.length) line += ` — ${extra.join(', ')}`;
+						return line;
+					};
+					checklistContext = `\n\n--- PROSJEKTOPPGAVER (themeId: ${conversation.themeId}) ---\nBruk verktøyet manage_project_tasks med denne themeId-en for å legge til / endre / krysse av / slette oppgaver. itemId, parentId og blockedBy refererer id-ene under.\n`;
+					for (const top of byParent(null)) {
+						checklistContext += fmt(top, '') + '\n';
+						for (const child of byParent(top.id)) checklistContext += fmt(child, '  ') + '\n';
+					}
+					checklistContext += '--- SLUTT PROSJEKTOPPGAVER ---\n';
+				}
+			} catch (err) {
+				console.warn('[chat] kunne ikke laste prosjektoppgaver:', err);
+			}
+		}
+
 		// Sjekk om samtalen har en koblet fremgangsmåte
 		let procedureContext = '';
 		try {
@@ -1819,7 +1881,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		});
 
 		const messages: ChatCompletionMessageParam[] = [
-			{ role: 'system', content: promptPrefix + systemPrompt + memoryContext + personContext + goalsContext + procedureContext + sourceContextPrompt + dateContext + dayContext }
+			{ role: 'system', content: promptPrefix + systemPrompt + memoryContext + personContext + goalsContext + checklistContext + procedureContext + sourceContextPrompt + dateContext + dayContext }
 		];
 
 		// Legg til historikk (unntatt den siste brukermeldingen som allerede er der)
@@ -2300,6 +2362,16 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 					console.log('  📋 Manage project:', args.action);
 					const { manageProjectTool } = await import('$lib/ai/tools/manage-project');
 					const result = await manageProjectTool.execute({ userId, ...args });
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'manage_project_tasks') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  ✅ Manage project tasks:', args.action);
+					const { manageProjectTasksTool } = await import('$lib/ai/tools/manage-project-tasks');
+					const result = await manageProjectTasksTool.execute({
+						...args,
+						userId,
+						themeId: args.themeId || conversation.themeId
+					});
 					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'query_projects') {
 					const args = JSON.parse(toolCall.function.arguments);

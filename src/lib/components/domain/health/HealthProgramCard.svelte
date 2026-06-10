@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SectionLabel from '$lib/components/ui/SectionLabel.svelte';
 	import Skeleton from '$lib/components/ui/Skeleton.svelte';
 	import type { ProgramSummary, TodaySession } from './health-data';
 
@@ -30,7 +31,7 @@
 		{#if activeProgram}
 			<a class="hd-program-link" href="/treningsprogram/{activeProgram.id}">
 				<div class="hd-program-main">
-					<span class="hd-program-label">Aktivt program</span>
+					<SectionLabel tag="span">Aktivt program</SectionLabel>
 					<h2 class="hd-program-name">{activeProgram.name}</h2>
 					<p class="hd-program-meta">
 						{activeProgram.completedSessions} / {activeProgram.totalSessions} fullført ·
@@ -39,7 +40,7 @@
 				</div>
 				{#if todaySession}
 					<div class="hd-program-today">
-						<span class="hd-today-label">I dag</span>
+						<SectionLabel tag="span">I dag</SectionLabel>
 						<span class="hd-today-name">
 							{todaySession.name}
 							{#if todaySession.isTest}<em class="hd-test-tag">TEST</em>{/if}
@@ -47,7 +48,7 @@
 					</div>
 				{:else}
 					<div class="hd-program-today">
-						<span class="hd-today-label">I dag</span>
+						<SectionLabel tag="span">I dag</SectionLabel>
 						<span class="hd-today-name hd-rest">Hviledag</span>
 					</div>
 				{/if}
@@ -55,7 +56,7 @@
 		{:else}
 			<a class="hd-program-empty" href="/treningsprogram/ny">
 				<div>
-					<span class="hd-program-label">Treningsprogram</span>
+					<SectionLabel tag="span">Treningsprogram</SectionLabel>
 					<p>Lag et hybridprogram bygget på dine faktiske PR-er og volum.</p>
 				</div>
 				<span class="hd-program-cta">Lag program →</span>
@@ -99,12 +100,6 @@
 		gap: 2px;
 		min-width: 0;
 	}
-	.hd-program-label {
-		font-size: 11px;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		color: #888;
-	}
 	.hd-program-name {
 		margin: 0;
 		font-size: 16px;
@@ -122,12 +117,6 @@
 		align-items: flex-end;
 		gap: 2px;
 		text-align: right;
-	}
-	.hd-today-label {
-		font-size: 11px;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		color: #888;
 	}
 	.hd-today-name {
 		font-size: 14px;

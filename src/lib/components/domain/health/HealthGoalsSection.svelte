@@ -1,5 +1,6 @@
 <script lang="ts">
 	import GoalRing from '../../ui/GoalRing.svelte';
+	import SectionLabel from '../../ui/SectionLabel.svelte';
 	import { GOAL_COLORS, goalPct, goalDelta, type Goal, type RecentEvent } from './health-data';
 
 	interface Props {
@@ -24,7 +25,7 @@
 
 {#if goals.length > 0}
 	<div class="hd-goals-section">
-		<h2 class="hd-section-title">Aktive mål</h2>
+		<SectionLabel tag="h2">Aktive mål</SectionLabel>
 		<div class="hd-goals-grid">
 			{#each goals.filter((g) => g.status === 'active') as goal}
 				{@const pct = goalPct(goal)}
@@ -95,15 +96,6 @@
 		padding: 16px;
 		background: #141414;
 		border-radius: 18px;
-	}
-
-	.hd-section-title {
-		margin: 0;
-		font-size: 0.92rem;
-		font-weight: 600;
-		color: #ccc;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
 	}
 
 	.hd-goals-grid {

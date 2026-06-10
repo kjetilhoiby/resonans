@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import CompactRecordList from '../ui/CompactRecordList.svelte';
+	import SectionLabel from '../ui/SectionLabel.svelte';
 	import PeriodPills from '../ui/PeriodPills.svelte';
 	import DynamicWidget from '../composed/DynamicWidget.svelte';
 	import HealthActivityList from './health/HealthActivityList.svelte';
@@ -371,7 +372,7 @@
 	{#if tooling}
 		<div class="hd-tooling-card">
 			<div class="hd-table-head">
-				<h2 class="hd-table-title">Datatilgang og tool-sjekk</h2>
+				<SectionLabel tag="h2">Datatilgang og tool-sjekk</SectionLabel>
 				<p class="hd-table-copy">
 					query_sensor_data: {tooling.querySensorDataTool ? 'aktiv' : 'mangler'} · {tooling.tables.sensorEvents}: {tooling.weightEventCount} vektmålinger · {tooling.tables.sensorAggregates}: {tooling.weightAggregateCount} perioder med vekt
 				</p>
@@ -514,13 +515,6 @@
 		100% { background-position: -200% 0; }
 	}
 
-	.hd-table-title {
-		margin: 0;
-		font-size: 0.88rem;
-		font-weight: 700;
-		color: #e7e7e7;
-	}
-
 	.hd-table-head {
 		display: flex;
 		flex-direction: column;
@@ -530,10 +524,6 @@
 	@media (max-width: 640px) {
 		.hd-title {
 			font-size: 1.32rem;
-		}
-
-		.hd-table-title {
-			font-size: 0.94rem;
 		}
 
 		.hd-copy,

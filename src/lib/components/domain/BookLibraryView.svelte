@@ -1,4 +1,6 @@
 <script lang="ts">
+	import SectionLabel from '../ui/SectionLabel.svelte';
+
 	interface Book {
 		id: string;
 		title: string;
@@ -413,7 +415,7 @@
 		<div class="bk-groups">
 			{#if groupedBooks.reading.length > 0}
 				<section class="bk-group">
-					<h2 class="bk-group-title">Leser <span class="bk-group-count">{groupedBooks.reading.length}</span></h2>
+					<h2 class="bk-group-title"><SectionLabel tag="span">Leser</SectionLabel> <span class="bk-group-count">{groupedBooks.reading.length}</span></h2>
 					<div class="bk-grid">
 						{#each groupedBooks.reading as book}{@render bookCard(book)}{/each}
 					</div>
@@ -421,7 +423,7 @@
 			{/if}
 			{#if groupedBooks.shelf.length > 0}
 				<section class="bk-group">
-					<h2 class="bk-group-title">På hylla <span class="bk-group-count">{groupedBooks.shelf.length}</span></h2>
+					<h2 class="bk-group-title"><SectionLabel tag="span">På hylla</SectionLabel> <span class="bk-group-count">{groupedBooks.shelf.length}</span></h2>
 					<div class="bk-grid">
 						{#each groupedBooks.shelf as book}{@render bookCard(book)}{/each}
 					</div>
@@ -429,7 +431,7 @@
 			{/if}
 			{#if groupedBooks.finished.length > 0}
 				<section class="bk-group">
-					<h2 class="bk-group-title">Ferdig <span class="bk-group-count">{groupedBooks.finished.length}</span></h2>
+					<h2 class="bk-group-title"><SectionLabel tag="span">Ferdig</SectionLabel> <span class="bk-group-count">{groupedBooks.finished.length}</span></h2>
 					<div class="bk-grid">
 						{#each groupedBooks.finished as book}{@render bookCard(book)}{/each}
 					</div>
@@ -677,11 +679,6 @@
 
 	.bk-group-title {
 		margin: 0;
-		font-size: 0.78rem;
-		font-weight: 600;
-		color: #888;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
 		display: flex;
 		align-items: center;
 		gap: 8px;

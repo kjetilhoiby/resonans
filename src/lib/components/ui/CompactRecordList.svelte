@@ -1,4 +1,6 @@
 <script lang="ts">
+	import SectionLabel from './SectionLabel.svelte';
+
 	interface RecordItem {
 		id: string;
 		title: string;
@@ -36,7 +38,7 @@
 <section class="list-card" aria-label={title}>
 	<header class="list-head">
 		<div class="list-head-main">
-			<h3>{title}</h3>
+			<SectionLabel>{title}</SectionLabel>
 			{#if caption}
 				<p class="list-caption">{caption}</p>
 			{/if}
@@ -114,13 +116,6 @@
 		align-items: center;
 		gap: 8px;
 		flex-shrink: 0;
-	}
-
-	.list-head h3 {
-		margin: 0;
-		font-size: 0.95rem;
-		font-weight: 700;
-		color: #ececec;
 	}
 
 	.list-head span {

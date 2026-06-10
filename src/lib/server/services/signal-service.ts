@@ -578,6 +578,95 @@ async function produceRoutineAdherence7d(userId: string, now: Date) {
 	return adherence;
 }
 
+/**
+ * Kveldsjobbing på PC siste 7 dager, fra RescueTime (dataType 'rescuetime_day').
+ * Fase 1: ikke noe jobb/hobby-skille — måler kveldsaktivitet (fra kl. 17) totalt,
+ * med kategorifordeling som kontekst. Returnerer null uten RescueTime-data.
+ */
+async function produceEveningScreenWork7d(userId: string, now: Date) {
+	const windowStart = new Date(now.getTime() - 7 * 24 * 3600_000);
+
+	const dayRows = await db.execute(sql`
+		SELECT data
+		FROM sensor_events
+		WHERE user_id = ${userId}
+		  AND data_type = 'rescuetime_day'
+		  AND timestamp >= ${windowStart}
+		  AND timestamp <= ${now}
+	`);
+	const days = rowsOf<{ data: Record<string, unknown> | null }>(dayRows);
+	if (days.length === 0) {
+		return null;
+	}
+
+	await ensureSignalContract({
+		signalType: 'evening_screen_work_7d',
+		ownerDomain: 'health',
+		allowedConsumerDomains: ['health', 'home', 'relationship'],
+		description:
+			'PC-aktivitet på kveldstid (fra kl. 17) siste 7 dager fra RescueTime — antall kvelder, total tid og toppkategorier. Brukes til å se kveldsjobbing-mønster.'
+	});
+
+	const EVENING_DAY_THRESHOLD_SECONDS = 15 * 60;
+	let totalEveningSeconds = 0;
+	let productiveEveningSeconds = 0;
+	let eveningDays = 0;
+	const categoryTotals = new Map<string, number>();
+	const perDay: Array<{ dateISO: string; eveningMinutes: number }> = [];
+
+	for (const row of days) {
+		const data = (row.data ?? {}) as Record<string, unknown>;
+		const evening = (data.evening ?? {}) as Record<string, unknown>;
+		const seconds = toNumber(evening.seconds);
+		totalEveningSeconds += seconds;
+		productiveEveningSeconds += toNumber(evening.productiveSeconds);
+		if (seconds >= EVENING_DAY_THRESHOLD_SECONDS) eveningDays += 1;
+		perDay.push({
+			dateISO: typeof data.dateISO === 'string' ? data.dateISO : '',
+			eveningMinutes: Math.round(seconds / 60)
+		});
+		const byCategory = Array.isArray(evening.byCategory) ? evening.byCategory : [];
+		for (const entry of byCategory as Array<Record<string, unknown>>) {
+			const category = typeof entry.category === 'string' ? entry.category : null;
+			if (!category) continue;
+			categoryTotals.set(category, (categoryTotals.get(category) ?? 0) + toNumber(entry.seconds));
+		}
+	}
+
+	const topCategories = [...categoryTotals.entries()]
+		.map(([category, seconds]) => ({ category, minutes: Math.round(seconds / 60) }))
+		.sort((a, b) => b.minutes - a.minutes)
+		.slice(0, 5);
+
+	const eveningHours = totalEveningSeconds / 3600;
+	const severity: Severity =
+		eveningDays >= 4 && eveningHours >= 4 ? 'medium' : eveningDays >= 2 ? 'low' : 'info';
+
+	await upsertDomainSignal({
+		signalType: 'evening_screen_work_7d',
+		ownerDomain: 'health',
+		userId,
+		valueNumber: Math.round(totalEveningSeconds / 60),
+		valueText: `${eveningDays} kvelder, ${eveningHours.toFixed(1)} t`,
+		severity,
+		confidence: days.length >= 5 ? 0.85 : 0.6,
+		windowStart,
+		windowEnd: now,
+		observedAt: now,
+		context: {
+			eveningDays,
+			totalEveningMinutes: Math.round(totalEveningSeconds / 60),
+			productiveEveningMinutes: Math.round(productiveEveningSeconds / 60),
+			topCategories,
+			perDay,
+			daysWithData: days.length,
+			windowDays: 7
+		}
+	});
+
+	return { eveningDays, totalEveningMinutes: Math.round(totalEveningSeconds / 60) };
+}
+
 async function produceRelationshipCoordinationReadinessToday(userId: string, relatedUserId: string, now: Date) {
 	const day = isoDay(now);
 	const windowStart = new Date(`${day}T00:00:00.000Z`);
@@ -915,6 +1004,7 @@ export async function runDomainSignalProducers(now: Date = new Date()) {
 		homeOverdueSharedTasks7d: 0,
 		homePlanningReliability14d: 0,
 		routineAdherence7d: 0,
+		eveningScreenWork7d: 0,
 		relationshipCoordinationReadinessToday: 0,
 		relationshipLogisticsStressIndex14d: 0,
 		familyBirthdayUpcoming7d: 0,
@@ -960,6 +1050,12 @@ export async function runDomainSignalProducers(now: Date = new Date()) {
 			if (routineAdherence7d !== null) {
 				produced += 1;
 				producerBreakdown.routineAdherence7d += 1;
+			}
+
+			const eveningScreenWork7d = await produceEveningScreenWork7d(user.id, now);
+			if (eveningScreenWork7d !== null) {
+				produced += 1;
+				producerBreakdown.eveningScreenWork7d += 1;
 			}
 
 			if (user.partnerUserId) {

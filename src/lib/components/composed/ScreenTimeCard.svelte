@@ -4,6 +4,7 @@
 	 * medier), endring fra forrige uke, fordeling per dag og per time på døgnet,
 	 * kategorisplitt og evt. ukesmål med progresjon. Rent presentasjonell.
 	 */
+	import SectionLabel from '../ui/SectionLabel.svelte';
 
 	type Categories = Record<string, number>;
 	interface ScreenTimeMetric {
@@ -172,7 +173,7 @@
 	{:else}
 		<div class="st-headline">
 			<div class="metric">
-				<span class="metric-label">Skjermtid · snitt/dag</span>
+				<SectionLabel tag="span">Skjermtid · snitt/dag</SectionLabel>
 				<span class="metric-value">{fmt(thisWeek.avgPerDayMinutes)}</span>
 				{#if deltaText(totalDelta)}
 					{@const d = deltaText(totalDelta)}
@@ -180,7 +181,7 @@
 				{/if}
 			</div>
 			<div class="metric">
-				<span class="metric-label">Scrolling · snitt/dag</span>
+				<SectionLabel tag="span">Scrolling · snitt/dag</SectionLabel>
 				<span class="metric-value social">{fmt(thisWeek.socialAvgPerDayMinutes)}</span>
 				{#if deltaText(socialDelta)}
 					{@const d = deltaText(socialDelta)}
@@ -191,7 +192,7 @@
 
 		{#if !compact && hasWeekDays}
 			<div class="st-section">
-				<span class="section-title">Per dag</span>
+				<SectionLabel tag="span">Per dag</SectionLabel>
 				<div class="day-bars">
 					{#each weekDays as d, i}
 						<div class="day-col" title={`${d.date}: ${fmt(d.totalMinutes)} (scrolling ${fmt(d.socialMinutes)})`}>
@@ -213,9 +214,9 @@
 		{#if !compact && (hasCumulative || hasHourly)}
 			<div class="st-section">
 				<div class="section-head">
-					<span class="section-title">
+					<SectionLabel tag="span">
 						{hourView === 'cumulative' ? 'Akkumulert gjennom uka' : 'Per time av døgnet (snitt/dag)'}
-					</span>
+					</SectionLabel>
 					{#if hasCumulative && hasHourly}
 						<div class="view-toggle" role="group" aria-label="Velg visning">
 							<button
@@ -336,7 +337,7 @@
 
 		{#if !compact && categoryRows.length > 0}
 			<div class="st-section">
-				<span class="section-title">Kategorier</span>
+				<SectionLabel tag="span">Kategorier</SectionLabel>
 				<div class="cat-list">
 					{#each categoryRows as row}
 						<div class="cat-row">
@@ -359,7 +360,7 @@
 
 		{#if goals.length > 0}
 			<div class="st-section">
-				<span class="section-title">Ukesmål</span>
+				<SectionLabel tag="span">Ukesmål</SectionLabel>
 				<div class="goal-list">
 					{#each goals as g}
 						<div class="goal-row" class:ok={g.withinTarget === true} class:over={g.withinTarget === false}>
@@ -417,10 +418,6 @@
 		flex-direction: column;
 		gap: 0.15rem;
 	}
-	.metric-label {
-		font-size: 0.78rem;
-		color: var(--text-secondary, rgba(255, 255, 255, 0.6));
-	}
 	.metric-value {
 		font-size: 1.9rem;
 		font-weight: 700;
@@ -441,10 +438,8 @@
 	.delta.flat {
 		color: var(--text-secondary, rgba(255, 255, 255, 0.5));
 	}
-	.section-title {
+	.st-section > :global(.section-label) {
 		display: block;
-		font-size: 0.78rem;
-		color: var(--text-secondary, rgba(255, 255, 255, 0.6));
 		margin-bottom: 0.5rem;
 	}
 	.st-hint {
@@ -499,7 +494,7 @@
 		gap: 0.5rem;
 		margin-bottom: 0.5rem;
 	}
-	.section-head .section-title {
+	.section-head :global(.section-label) {
 		margin-bottom: 0;
 	}
 	.view-toggle {

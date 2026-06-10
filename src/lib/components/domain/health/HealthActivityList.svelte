@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SectionLabel from '../../ui/SectionLabel.svelte';
 	import GpxMap from '../../charts/GpxMap.svelte';
 	import TrackProfileChart from '../../charts/TrackProfileChart.svelte';
 	import KmSplitsTable from '../../charts/KmSplitsTable.svelte';
@@ -206,7 +207,7 @@
 
 <div class="hd-activities-section">
 	<div class="hd-activities-header">
-		<h2 class="hd-section-title">Treningsøkter</h2>
+		<SectionLabel tag="h2">Treningsøkter</SectionLabel>
 		{#if availableSportTypes.length > 1}
 			<div class="hd-sport-filters">
 				<button
@@ -385,15 +386,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
-	}
-
-	.hd-section-title {
-		margin: 0;
-		font-size: 0.92rem;
-		font-weight: 600;
-		color: #ccc;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
 	}
 
 	.hd-sport-filters {

@@ -31,6 +31,12 @@ const JOBS: CronJob[] = [
 		description: 'Daglig check-in melding via Google Chat (lokal tid per bruker, 5-min vindu)'
 	},
 	{
+		path: '/api/cron/rescuetime-sync',
+		schedule: '40 4,12,20 * * *', // tre ganger daglig — morgensync fanger hele gårsdagen
+		description: 'RescueTime PC-aktivitet — siste 3 dager per bruker (upsert per dag)',
+		maxDurationSeconds: 60
+	},
+	{
 		path: '/api/cron/day-planning-nudges',
 		schedule: '0 * * * *',
 		description: 'Timebasert lokal nudge for planlegg dag (07:00), parsjekk morgen (08:30) og avslutt dag (21:00)'

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SectionLabel from '../ui/SectionLabel.svelte';
 	import type { TrainingLoadPoint } from '$lib/util/training-load';
 
 	interface Props {
@@ -45,7 +46,7 @@
 <section class="balance-card tone-{status.tone}">
 	<header>
 		<div class="title-row">
-			<span class="title">Belastningsbalanse (TSB)</span>
+			<SectionLabel tag="span">Belastningsbalanse (TSB)</SectionLabel>
 			<span class="hint">Form − Tretthet</span>
 		</div>
 		<div class="value-row">
@@ -103,14 +104,6 @@
 		justify-content: space-between;
 		align-items: baseline;
 		gap: 1rem;
-	}
-
-	.title {
-		font-size: 0.85rem;
-		font-weight: 500;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		color: #888;
 	}
 
 	.hint {

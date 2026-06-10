@@ -315,7 +315,7 @@
 		{/if}
 
 		{#if navError}
-			<p class="chat-error" style="padding: 0 16px;">{navError}</p>
+			<p class="chat-error" style="padding: 0 var(--page-px);">{navError}</p>
 		{/if}
 	</div>
 {:else}
@@ -434,7 +434,7 @@
 	.chat-messages {
 		flex: 1;
 		overflow-y: auto;
-		padding: 16px 16px 8px;
+		padding: 16px var(--page-px) 8px;
 		display: flex;
 		flex-direction: column;
 		gap: 12px;
@@ -515,7 +515,7 @@
 	}
 
 	.chat-input-wrap {
-		padding: 10px 12px env(safe-area-inset-bottom, 12px);
+		padding: 10px var(--page-px) env(safe-area-inset-bottom, 12px);
 		border-top: 1px solid #1a1a1a;
 	}
 
@@ -535,7 +535,7 @@
 	.conv-list-actions {
 		display: flex;
 		justify-content: flex-end;
-		padding: 0 16px 10px;
+		padding: 0 var(--page-px) 10px;
 	}
 
 	.conv-new-btn {
@@ -568,7 +568,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 3px;
-		padding: 12px 4px 12px 16px;
+		padding: 12px 4px 12px var(--page-px);
 		background: none;
 		border: none;
 		border-bottom: 1px solid #1a1a1a;
@@ -612,7 +612,7 @@
 	}
 
 	.conv-section-empty {
-		padding: 8px 16px;
+		padding: 8px var(--page-px);
 		font-size: 0.78rem;
 		color: #444;
 		font-style: italic;
@@ -668,7 +668,7 @@
 	}
 
 	.conv-back-bar {
-		padding: 8px 16px 4px;
+		padding: 8px var(--page-px) 4px;
 		border-bottom: 1px solid var(--tp-border);
 	}
 
@@ -694,7 +694,7 @@
 		flex-direction: column;
 		gap: 10px;
 		padding: 14px 16px;
-		margin: 0 0 12px;
+		margin: 0 var(--page-px) 12px;
 		border-radius: 18px;
 		background: color-mix(in srgb, var(--theme-hue, #7c8ef5) 12%, #0e1118 88%);
 		border: 1px solid color-mix(in srgb, var(--theme-hue, #7c8ef5) 34%, #1d2230 66%);

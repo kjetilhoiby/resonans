@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SectionLabel from '../ui/SectionLabel.svelte';
 	interface Book {
 		id: string;
 		title: string;
@@ -244,7 +245,7 @@
 
 		{#if pack.metadata?.year || pack.metadata?.genre}
 			<section class="bk-ctx-section">
-				<h3 class="bk-ctx-title">Bok</h3>
+				<SectionLabel>Bok</SectionLabel>
 				<dl class="bk-ctx-dl">
 					{#if pack.metadata.year}<dt>År</dt><dd>{pack.metadata.year}</dd>{/if}
 					{#if pack.metadata.genre}<dt>Sjanger</dt><dd>{pack.metadata.genre}</dd>{/if}
@@ -254,7 +255,7 @@
 
 		{#if pack.themes?.length}
 			<section class="bk-ctx-section">
-				<h3 class="bk-ctx-title">Sentrale tema</h3>
+				<SectionLabel>Sentrale tema</SectionLabel>
 				<div class="bk-ctx-chips">
 					{#each pack.themes as t}
 						<span class="bk-ctx-chip">{t}</span>
@@ -265,7 +266,7 @@
 
 		{#if pack.authorContext?.bio || pack.authorContext?.howBookFits || pack.authorContext?.themes?.length}
 			<section class="bk-ctx-section">
-				<h3 class="bk-ctx-title">Forfatter</h3>
+				<SectionLabel>Forfatter</SectionLabel>
 				{#if pack.authorContext?.bio}<p class="bk-ctx-text">{pack.authorContext.bio}</p>{/if}
 				{#if pack.authorContext?.howBookFits}
 					<p class="bk-ctx-text"><em>{pack.authorContext.howBookFits}</em></p>
@@ -282,7 +283,7 @@
 
 		{#if pack.bibliographySequence}
 			<section class="bk-ctx-section">
-				<h3 class="bk-ctx-title">Plassering i forfatterskapet</h3>
+				<SectionLabel>Plassering i forfatterskapet</SectionLabel>
 				<ol class="bk-ctx-biblio">
 					{#each pack.bibliographySequence.before as w}
 						<li class="bk-ctx-biblio-item">
@@ -308,7 +309,7 @@
 
 		{#if pack.criticReviews?.length}
 			<section class="bk-ctx-section">
-				<h3 class="bk-ctx-title">Kritikeranmeldelser ({pack.criticReviews.length})</h3>
+				<SectionLabel>Kritikeranmeldelser ({pack.criticReviews.length})</SectionLabel>
 				{#each pack.criticReviews as r}
 					<article class="bk-ctx-review">
 						<div class="bk-ctx-review-head">
@@ -331,7 +332,7 @@
 
 		{#if pack.reception?.critics || pack.reception?.readers || pack.reception?.patterns?.length}
 			<section class="bk-ctx-section">
-				<h3 class="bk-ctx-title">Mottakelse — syntese</h3>
+				<SectionLabel>Mottakelse — syntese</SectionLabel>
 				{#if pack.reception?.critics}<p class="bk-ctx-text"><strong>Kritikere:</strong> {pack.reception.critics}</p>{/if}
 				{#if pack.reception?.readers}<p class="bk-ctx-text"><strong>Lesere:</strong> {pack.reception.readers}</p>{/if}
 				{#if pack.reception?.patterns?.length}
@@ -346,7 +347,7 @@
 
 		{#if pack.readerVoices?.length}
 			<section class="bk-ctx-section">
-				<h3 class="bk-ctx-title">Leserstemmer</h3>
+				<SectionLabel>Leserstemmer</SectionLabel>
 				{#each pack.readerVoices as v}
 					<article class="bk-ctx-review">
 						<div class="bk-ctx-review-head">
@@ -360,7 +361,7 @@
 
 		{#if pack.goodreads}
 			<section class="bk-ctx-section">
-				<h3 class="bk-ctx-title">Goodreads</h3>
+				<SectionLabel>Goodreads</SectionLabel>
 				<div class="bk-ctx-goodreads">
 					{#if pack.goodreads.averageRating !== undefined}
 						<span class="bk-ctx-rating">★ {pack.goodreads.averageRating.toFixed(2)}/5</span>
@@ -380,7 +381,7 @@
 
 		{#if pack.relatedWorks?.length}
 			<section class="bk-ctx-section">
-				<h3 class="bk-ctx-title">Beslektede verk</h3>
+				<SectionLabel>Beslektede verk</SectionLabel>
 				<ul class="bk-ctx-list">
 					{#each pack.relatedWorks as w}<li>{w}</li>{/each}
 				</ul>
@@ -389,7 +390,7 @@
 
 		{#if pack.conversationHints?.length}
 			<section class="bk-ctx-section">
-				<h3 class="bk-ctx-title">Samtaleinnganger</h3>
+				<SectionLabel>Samtaleinnganger</SectionLabel>
 				<ul class="bk-ctx-list">
 					{#each pack.conversationHints as h}<li>{h}</li>{/each}
 				</ul>
@@ -398,7 +399,7 @@
 
 		{#if pack.sources}
 			<section class="bk-ctx-section bk-ctx-debug">
-				<h3 class="bk-ctx-title">Kildedekning</h3>
+				<SectionLabel>Kildedekning</SectionLabel>
 				<dl class="bk-ctx-dl">
 					<dt>OpenLibrary</dt>
 					<dd>{pack.sources.openLibrary.ok ? `✓ ${pack.sources.openLibrary.worksFound ?? 0} verk` : '✗ ingen treff'}</dd>
@@ -446,7 +447,6 @@
 	.bk-ctx-collected { color: #666; }
 	.bk-ctx-section { display: flex; flex-direction: column; gap: 0.55rem; padding: 0.85rem 0; border-top: 1px solid #1f1f25; }
 	.bk-ctx-section:first-of-type { border-top: none; padding-top: 0; }
-	.bk-ctx-title { font-size: 0.82rem; font-weight: 600; color: #c0c0d0; text-transform: uppercase; letter-spacing: 0.05em; margin: 0; }
 	.bk-ctx-text { color: #c8c8d4; font-size: 0.92rem; line-height: 1.5; margin: 0; }
 	.bk-ctx-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
 	.bk-ctx-chip { background: #1a1a22; color: #b0b0c0; padding: 3px 9px; border-radius: 10px; font-size: 0.78rem; border: 1px solid #2a2a35; }
@@ -475,7 +475,7 @@
 	.bk-ctx-rating-count { color: #888; font-size: 0.82rem; }
 	.bk-ctx-list { margin: 0; padding-left: 1.1rem; color: #c8c8d4; font-size: 0.88rem; display: flex; flex-direction: column; gap: 0.25rem; }
 	.bk-ctx-debug { opacity: 0.85; }
-	.bk-ctx-debug .bk-ctx-title { color: #888; }
+	.bk-ctx-debug :global(.section-label) { --section-label-color: #888; }
 	.bk-ctx-muted { color: #666; font-size: 0.82rem; }
 	.bk-ctx-refresh {
 		background: #1a1a22;

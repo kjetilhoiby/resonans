@@ -357,7 +357,7 @@
 					onclick={() => (tab = t)}
 				>
 					{#if t === 'chat'}💬 Samtaler
-				{:else if t === 'data'}{activeDashboard ? `${activeDashboard.icon} ${activeDashboard.label}` : '📊 Data'}
+				{:else if t === 'data'}{activeDashboard ? `${activeDashboard.icon} Oversikt` : '📊 Data'}
 					{:else if t === 'mål'}🎯 Mål
 					{:else if t === 'flyter'}🧭 Flyter
 					{:else if t === 'lister'}📋 Lister
@@ -485,7 +485,9 @@
 		--tp-accent-bg: hsl(var(--theme-hue) 40% 22%);
 		--tp-accent-bg-strong: hsl(var(--theme-hue) 42% 28%);
 		min-height: 100dvh;
-		padding: var(--page-pt) var(--page-px) var(--page-pb);
+		/* Ingen horisontal padding her — tabs-båndet skal gå kant-til-kant.
+		   Header og tab-innhold setter selv var(--page-px) horisontalt. */
+		padding: var(--page-pt) 0 var(--page-pb);
 		background:
 			radial-gradient(120% 90% at 50% -10%, hsl(var(--theme-hue) 72% 60% / 0.12), transparent 52%),
 			linear-gradient(180deg, var(--tp-bg-1) 0%, var(--tp-bg-0) 100%);
@@ -641,7 +643,7 @@
 
 	/* ── Header ── */
 	.tp-header {
-		padding: 0 0 var(--space-lg);
+		padding: 0 var(--page-px) var(--space-lg);
 		border-bottom: 1px solid var(--tp-border);
 	}
 
@@ -649,7 +651,9 @@
 	.tp-tabs {
 		display: flex;
 		border-bottom: 1px solid var(--tp-border);
-		padding: 0 12px;
+		/* Båndet går kant-til-kant; første fane-label linjerer med innholdet
+		   på var(--page-px) (fanen har 12px egen padding). */
+		padding: 0 calc(var(--page-px) - 12px);
 		gap: 4px;
 		overflow-x: auto;
 		overflow-y: hidden;

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SectionLabel from '../../ui/SectionLabel.svelte';
 	import ScreenTimeCard from '../../composed/ScreenTimeCard.svelte';
 	import type { PeriodMetrics } from './health-data';
 
@@ -13,7 +14,7 @@
 {#if thisWeekScreen}
 	<a class="hd-screentime-link" href="/skjermtid" aria-label="Åpne skjermtid">
 		<div class="hd-screentime-head">
-			<span class="hd-screentime-label">Skjermtid · siste uke</span>
+			<SectionLabel tag="span">Skjermtid · siste uke</SectionLabel>
 			<span class="hd-screentime-more">Se mer →</span>
 		</div>
 		<ScreenTimeCard thisWeek={thisWeekScreen} prevWeek={prevWeekScreen} compact />
@@ -40,10 +41,6 @@
 		justify-content: space-between;
 		align-items: baseline;
 		margin-bottom: 6px;
-	}
-	.hd-screentime-label {
-		font-size: 0.8rem;
-		color: var(--text-secondary, rgba(255, 255, 255, 0.6));
 	}
 	.hd-screentime-more {
 		font-size: 0.8rem;

@@ -3,6 +3,7 @@
   Viser tilgjengelige flyter for temaet med grid-layout.
 -->
 <script lang="ts">
+	import SectionLabel from '../../ui/SectionLabel.svelte';
 	import FlowCard from '../../flows/FlowCard.svelte';
 	import type { Flow } from '$lib/flows/types';
 
@@ -18,7 +19,7 @@
 <div class="flows-panel">
 	{#if availableFlows.length > 0}
 		<div class="flows-section">
-			<h2 class="flows-section-title">Tilgjengelige flyter</h2>
+			<SectionLabel tag="h2">Tilgjengelige flyter</SectionLabel>
 			<p class="flows-section-copy">Strukturerte flyter som hjelper deg i gang med {themeName}.</p>
 			<div class="flows-grid">
 				{#each availableFlows as flow}
@@ -35,7 +36,7 @@
 
 <style>
 	.flows-panel {
-		padding: 16px;
+		padding: 16px var(--page-px);
 		overflow-y: auto;
 		display: flex;
 		flex-direction: column;
@@ -46,15 +47,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 12px;
-	}
-
-	.flows-section-title {
-		margin: 0 0 6px 0;
-		padding: 0;
-		font-size: 1.1rem;
-		font-weight: 600;
-		color: var(--tp-text, hsl(228 20% 92%));
-		letter-spacing: -0.02em;
 	}
 
 	.flows-section-copy {

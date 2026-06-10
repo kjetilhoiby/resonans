@@ -11,6 +11,7 @@ export { default as Select } from './Select.svelte';
 export { default as TabButton } from './TabButton.svelte';
 export { default as PageHeader } from './PageHeader.svelte';
 export { default as Section } from './Section.svelte';
+export { default as SectionLabel } from './SectionLabel.svelte';
 export { default as SectionCard } from './SectionCard.svelte';
 export { default as ScreenTitle } from './ScreenTitle.svelte';
 export { default as CompactRecordList } from './CompactRecordList.svelte';

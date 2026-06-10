@@ -4,6 +4,7 @@
 -->
 <script lang="ts">
 	import GoalRing from '../../ui/GoalRing.svelte';
+	import SectionLabel from '../../ui/SectionLabel.svelte';
 	import GoalEditCard from './GoalEditCard.svelte';
 	import HealthGoalCreation from './HealthGoalCreation.svelte';
 	import type { HealthDashboardData } from '$lib/client/dashboard-cache';
@@ -73,7 +74,7 @@
 <div class="goals-panel">
 	{#if goals.length > 0}
 		<div class="goals-section">
-			<h2 class="goals-section-title">Aktive mål</h2>
+			<SectionLabel tag="h2">Aktive mål</SectionLabel>
 			<div class="goals-grid">
 				{#each goals.filter(g => g.status === 'active') as goal}
 					{@const pct = goalPct(goal)}
@@ -122,9 +123,8 @@
 </div>
 
 <style>
-	.goals-panel { padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 24px; }
+	.goals-panel { padding: 16px var(--page-px); overflow-y: auto; display: flex; flex-direction: column; gap: 24px; }
 	.goals-section { display: flex; flex-direction: column; gap: 12px; }
-	.goals-section-title { margin: 0; font-size: 0.92rem; font-weight: 700; color: #e8e8e8; text-transform: uppercase; letter-spacing: 0.05em; }
 	.goals-grid { display: flex; flex-direction: column; gap: 10px; }
 	.goal-card { background: #141414; border: 1px solid #242424; border-radius: 14px; padding: 14px; display: flex; gap: 14px; align-items: center; position: relative; }
 	.goal-ring { flex-shrink: 0; }

@@ -45,6 +45,8 @@ Appen har et levende komponentsamling på `/design`. Alle UI-endringer skal bruk
 ```
 `<PageSection bleed>` gir **null padding** — innholdet styrer alt selv med `var(--page-pt/px/pb)`. Bakgrunnen dekker hele viewporten kant-til-kant. Se `tema/[id]` og `ukeplan` for eksempler.
 
+**Temasider — ett lag horisontal padding:** `.theme-page` har ingen horisontal padding, slik at tabs-båndet går kant-til-kant. Header og hver tab-rot (`.data-panel`, `.chat-messages`, `.goals-panel`, osv.) setter selv `var(--page-px)` horisontalt — nøyaktig samme gutter som homescreen. Dashboard-komponenter som rendres *inni* `.data-panel` skal **ikke** ha egen horisontal padding på rotelementet (de arver gutteren). Unntak: dashboards med egne per-seksjon-gutters (TripDashboard, BookDashboard) rendres flush og styrer margene selv.
+
 ## Sideoverganger (View Transitions)
 
 Appen bruker View Transitions API (aktivert i root `+layout.svelte` via `onNavigate`). Nettleseren tar snapshot av gammel side og crossfader til ny.
@@ -71,3 +73,7 @@ Appen bruker View Transitions API (aktivert i root `+layout.svelte` via `onNavig
 | Visualiseringer | `src/lib/components/visualizations/` | Fremgangs-/trajektorie-primitiver |
 
 Nye ui-komponenter eksporteres fra `src/lib/components/ui/index.ts`.
+
+### Seksjonslabels
+
+Alle seksjons-/diagramlabels på dashboards og soner («Treningsøkter», «Perioder», «Døgnrytme», «Prosjekter», …) bruker `<SectionLabel>` fra `ui/` — 0.85rem, 600, uppercase, muted. Ikke definer lokale tittel-klasser per dashboard. Velg `tag` (h2/h3/span) etter overskriftshierarkiet; spacing styres av forelderen (flex-gap eller en scoped `:global(.section-label)`-regel). Fargen kan overstyres med `--section-label-color`. Unntak: ukeplan-kortenes `h2` og homescreen-sonenes `zone-label` er bevisst egne stiler.

@@ -4,6 +4,7 @@
 -->
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import SectionLabel from '../../ui/SectionLabel.svelte';
 	import HealthDashboard from '../HealthDashboard.svelte';
 	import EconomicsDashboard from '../EconomicsDashboard.svelte';
 	import FoodDashboard from '../FoodDashboard.svelte';
@@ -453,7 +454,8 @@
 {#if isBooks}
 	<BookDashboard themeId={theme.id} />
 {:else}
-<div class="data-panel">
+<!-- TripDashboard har egne horisontale gutters per seksjon — flush panel unngår dobbel margin -->
+<div class="data-panel" class:data-panel-flush={isTravel}>
 	{#if isTravel}
 		<TripDashboard
 			themeId={theme.id}
@@ -550,7 +552,7 @@
 
 	{#if projects.length > 0}
 		<section class="theme-projects">
-			<h3 class="theme-projects-title">Prosjekter</h3>
+			<SectionLabel>Prosjekter</SectionLabel>
 			<div class="theme-projects-grid">
 				{#each projects as project (project.id)}
 					<ProjectCard
@@ -699,11 +701,16 @@
 <style>
 	/* ── Data tab ── */
 	.data-panel {
-		padding: 16px;
+		padding: 16px var(--page-px);
 		overflow-y: auto;
 		display: flex;
 		flex-direction: column;
 		gap: 16px;
+	}
+
+	.data-panel-flush {
+		padding-left: 0;
+		padding-right: 0;
 	}
 
 	.data-empty {
@@ -893,13 +900,8 @@
 	.theme-projects {
 		margin-top: 8px;
 	}
-	.theme-projects-title {
-		margin: 0 0 10px;
-		font-size: 0.82rem;
-		font-weight: 600;
-		color: #94a3b8;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
+	.theme-projects :global(.section-label) {
+		margin-bottom: 10px;
 	}
 	.theme-projects-grid {
 		display: grid;

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import SectionLabel from '../ui/SectionLabel.svelte';
+
 	type EffortFamily =
 		| 'running'
 		| 'cycling'
@@ -123,7 +125,7 @@
 <section class="effort-card">
 	<header>
 		<div class="title-row">
-			<span class="title">{title}</span>
+			<SectionLabel tag="span">{title}</SectionLabel>
 			{#if weekLabel}<span class="week">{weekLabel}</span>{/if}
 		</div>
 		<div class="total-row">
@@ -218,14 +220,6 @@
 		justify-content: space-between;
 		align-items: baseline;
 		gap: 1rem;
-	}
-
-	.title {
-		font-size: 0.85rem;
-		font-weight: 500;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		color: #888;
 	}
 
 	.week {

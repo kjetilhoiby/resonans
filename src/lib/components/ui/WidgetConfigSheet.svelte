@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SectionLabel from './SectionLabel.svelte';
 	import { CATEGORIES, SUBCATEGORIES } from '$lib/integrations/transaction-categories-client';
 
 	interface WidgetConfig {
@@ -229,7 +230,7 @@
 
 		<div class="form">
 			<section class="config-section">
-				<p class="config-section-title">Grunnoppsett</p>
+				<SectionLabel tag="h4">Grunnoppsett</SectionLabel>
 				<label class="field">
 					<span class="field-label">Tittel</span>
 					<input
@@ -275,7 +276,7 @@
 			</section>
 
 			<section class="config-section">
-				<p class="config-section-title">Filtre</p>
+				<SectionLabel tag="h4">Filtre</SectionLabel>
 				{#if widget.metricType === 'amount'}
 					<label class="field">
 						<span class="field-label">Kategori-filter</span>
@@ -437,7 +438,7 @@
 				type="button"
 				onclick={() => debugOpen = !debugOpen}
 			>
-				<span class="config-section-title">Debug: widget-konfig</span>
+				<SectionLabel tag="span">Debug: widget-konfig</SectionLabel>
 				<span class="debug-chevron" class:open={debugOpen}>›</span>
 			</button>
 			{#if debugOpen}
@@ -509,14 +510,6 @@
 		border: 1px solid #242424;
 		border-radius: 10px;
 		background: #141414;
-	}
-
-	.config-section-title {
-		margin: 0;
-		font-size: 0.66rem;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: #767676;
 	}
 
 	.field {

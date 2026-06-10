@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { FamilyDashboardData } from '$lib/client/dashboard-cache';
+	import SectionLabel from '../ui/SectionLabel.svelte';
 	import FamilyTree from './family/FamilyTree.svelte';
 	import FamilyFeed from './family/FamilyFeed.svelte';
 	import PersonDetailSheet from './family/PersonDetailSheet.svelte';
@@ -110,7 +111,6 @@
 
 <div class="family-dashboard">
 	<header class="head">
-		<h2>👨‍👩‍👧‍👦 Familie</h2>
 		<div class="head-actions">
 			{#if nextFerie}
 				<button class="cta" disabled={planning} onclick={planFerie}>
@@ -126,7 +126,7 @@
 	</header>
 
 	<nav class="subtabs">
-		<button class:active={view === 'familie'} onclick={() => (view = 'familie')}>Familie</button>
+		<button class:active={view === 'familie'} onclick={() => (view = 'familie')}>Familietre</button>
 		<button class:active={view === 'ferie'} onclick={() => (view = 'ferie')}>
 			Ferie{#if ferieThemes.length}<span class="subtab-count">{ferieThemes.length}</span>{/if}
 		</button>
@@ -140,12 +140,11 @@
 			</section>
 		{:else}
 			<section class="tree-section">
-				<h3>Familietre</h3>
 				<FamilyTree tree={data.tree} onSelectPerson={selectPerson} />
 			</section>
 
 			<section class="feed-section">
-				<h3>Strøm</h3>
+				<SectionLabel>Strøm</SectionLabel>
 				<FamilyFeed feed={data.feed} persons={data.persons} onSelectPerson={selectPerson} />
 			</section>
 		{/if}
@@ -200,14 +199,14 @@
 		display: flex;
 		flex-direction: column;
 		gap: 1.25rem;
-		padding: 1rem;
+		/* Horisontal padding kommer fra .data-panel (var(--page-px)) */
+		padding: 0;
 	}
 	.head {
 		display: flex;
-		justify-content: space-between;
+		justify-content: flex-end;
 		align-items: center;
 	}
-	.head h2 { margin: 0; }
 	.head-actions {
 		display: flex;
 		gap: 0.5rem;
@@ -331,10 +330,8 @@
 		border-radius: 12px;
 	}
 	.empty p { margin: 0.5rem 0; }
-	section h3 {
-		margin: 0 0 0.5rem;
-		font-size: 0.95rem;
-		opacity: 0.8;
+	section :global(.section-label) {
+		margin-bottom: 0.5rem;
 	}
 	.sheet-overlay {
 		position: fixed;

@@ -83,6 +83,10 @@ export async function ensureThemeForUser({
 		aiSuggested: false
 	}).returning()) as any[])[0];
 
+	// Koble samtalen til temaet med en gang (ellers settes themeId først ved sidelast,
+	// og chat-kontekst som er avhengig av themeId mangler hvis man chatter før det).
+	await db.update(conversations).set({ themeId: theme.id }).where(eq(conversations.id, conversation.id));
+
 	await maybeActivateEgenfrekvensCheckin(userId, { name, parentTheme });
 
 	return {

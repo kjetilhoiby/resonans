@@ -3,6 +3,7 @@
   Extracted from ThemeGoalsTab to keep the parent focused on composition.
 -->
 <script lang="ts">
+	import SectionLabel from '../../ui/SectionLabel.svelte';
 	import type { HealthDashboardData } from '$lib/client/dashboard-cache';
 
 	interface Props {
@@ -160,7 +161,7 @@
 </script>
 
 <div class="goals-create-section">
-	<h2 class="goals-section-title">Opprett helsemål</h2>
+	<SectionLabel tag="h2">Opprett helsemål</SectionLabel>
 	<p class="goals-section-copy">Sett løpemål og vektmål med fleksible tidsrammer.</p>
 
 	{#if !newHealthGoalType}
@@ -263,14 +264,6 @@
 		background: #141414;
 		border: 1px solid #242424;
 		border-radius: 14px;
-	}
-	.goals-section-title {
-		margin: 0;
-		font-size: 0.92rem;
-		font-weight: 700;
-		color: #e8e8e8;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
 	}
 	.goals-section-copy {
 		margin: 0;

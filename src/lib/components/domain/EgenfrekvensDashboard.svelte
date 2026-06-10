@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SectionLabel from '../ui/SectionLabel.svelte';
 	import {
 		PERIOD_SLOTS,
 		PERIOD_SLOT_LEVEL_LABELS,
@@ -191,7 +192,7 @@
 		{/if}
 
 		<section class="ef-card">
-			<h3 class="ef-card-title">Døgnrytme</h3>
+			<SectionLabel>Døgnrytme</SectionLabel>
 			<div class="ef-grid" role="table" aria-label="Sjekkins per slot og dag">
 				<div class="ef-grid-row ef-grid-head" role="row">
 					<span class="ef-grid-day" role="columnheader"></span>
@@ -233,7 +234,7 @@
 
 		{#if sparklinePoints}
 			<section class="ef-card">
-				<h3 class="ef-card-title">Trend</h3>
+				<SectionLabel>Trend</SectionLabel>
 				<svg class="ef-sparkline" viewBox="0 0 {sparklineWidth} {sparklineHeight}" preserveAspectRatio="none" aria-label="Nivå-trend">
 					<line x1="0" y1={sparklineHeight / 2} x2={sparklineWidth} y2={sparklineHeight / 2} stroke="rgba(255,255,255,0.08)" stroke-dasharray="4 4" />
 					<path d={sparklinePoints.areaPath} fill="rgba(139,160,245,0.18)" />
@@ -248,7 +249,7 @@
 		{/if}
 
 		<section class="ef-card">
-			<h3 class="ef-card-title">Siste sjekkins</h3>
+			<SectionLabel>Siste sjekkins</SectionLabel>
 			<ul class="ef-recent">
 				{#each last7 as p (p.day)}
 					{@const lvl = pointLevel(p)}
@@ -350,13 +351,8 @@
 		border-radius: 14px;
 		padding: 14px;
 	}
-	.ef-card-title {
-		margin: 0 0 10px;
-		font-size: 0.82rem;
-		font-weight: 600;
-		color: #94a3b8;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
+	.ef-card :global(.section-label) {
+		margin-bottom: 10px;
 	}
 	.ef-latest-head {
 		display: flex;

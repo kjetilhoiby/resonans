@@ -12,6 +12,7 @@
 	import TripBudget from './TripBudget.svelte';
 	import TripHealthStats from './TripHealthStats.svelte';
 	import Icon from '../ui/Icon.svelte';
+	import SectionLabel from '../ui/SectionLabel.svelte';
 	import ShareSheet from './share/ShareSheet.svelte';
 	import type { Map as MapLibreMap } from 'maplibre-gl';
 
@@ -471,7 +472,7 @@
 		<!-- ── Overnattinger ── -->
 		{#if (tripProfile?.overnightStays ?? []).length > 0}
 			<div class="trip-stays">
-				<h3 class="trip-section-title">🏨 Overnattinger</h3>
+				<SectionLabel>🏨 Overnattinger</SectionLabel>
 				{#each tripProfile!.overnightStays! as stay}
 					<div class="stay-card">
 						<div class="stay-header">
@@ -578,7 +579,7 @@
 			<!-- Overnattinger -->
 			<div class="trip-stays-edit">
 				<div class="trip-stays-edit-header">
-					<h3 class="trip-section-title">🏨 Overnattinger</h3>
+					<SectionLabel>🏨 Overnattinger</SectionLabel>
 					<button class="trip-add-stay-btn" type="button" onclick={addStay}>+ Legg til</button>
 				</div>
 
@@ -821,14 +822,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
-	}
-	.trip-section-title {
-		font-size: 0.82rem;
-		font-weight: 700;
-		color: var(--tp-text-soft);
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-		margin: 0 0 6px;
 	}
 	.stay-card {
 		background: var(--tp-bg-2);

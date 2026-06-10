@@ -71,7 +71,29 @@ Fjernes fristen, flyttes item tilbake til prosjektets egen checklist. `src/lib/s
 
 Verifisert (Playwright + DB): frist → item får dag-context `week:2026-W24:day:2026-06-10`, beholder themeId, vises i prosjekt-fanen OG i `/ukeplan`; fjernet frist → tilbake til prosjekt-checklist.
 
+## Fase 12: Ryddet oppgave-UI (lik ukeplan-stil)
+- Knappeløse rader — `+` og `...` fjernet; handlinger via langpress (Rediger/Bryt ned/Slett). Dra-håndtak + avkryssing beholdt.
+- Ghost-input som lagrer på enter/blur: «Ny oppgave …» (rot) og «Legg til deloppgave …» under hver toppoppgave. Ingen egen «Legg til»-knapp.
+- «✨ Foreslå flere steg» → «💬 Chat om prosjektet» (åpner prosjekt-chatten).
+
+## Fase 13: Chat styrer oppgavelista (AI-verktøy)
+- Nytt AI-verktøy `manage_project_tasks` (`src/lib/ai/tools/manage-project-tasks.ts`): create/update/check/delete på checklist_items for et themeId. Gjenbruker `project-tasks`-helpers + `parseTaskText`. Støtter parentId (underoppgave), dueDate (→ dag-membership), estimateMinutes, shopping/store, og avhengigheter (`blockedBy` + ergonomisk `blocksItemIds` for «A før B» i ett kall).
+- Registrert i `/api/chat/+server.ts` (tool-def + handler). Prosjektets oppgaveliste injiseres i systemprompten MED id-er (`PROSJEKTOPPGAVER`-blokk) når `conversation.themeId` er satt, så AI-en kan referere itemId/parentId/blockedBy presist.
+- **Robusthet-fiks:** `ensureThemeForUser` setter nå `conversations.themeId` ved oppretting (før skjedde det bare ved sidelast), så chat-konteksten virker uansett rekkefølge.
+- UI-refresh: `ThemeTasksTab` re-henter oppgaver ved mount (fanen re-monteres ved tab-bytte), så endringer gjort i chatten vises når man går til Oppgaver.
+
+Verifisert live (ekte OpenAI): «På Maxbo må jeg også kjøpe aluminiumslister …» → AI kaller `manage_project_tasks`, oppretter «Kjøp aluminiumslister» med 🛒 Maxbo. Avhengighets-retning er **best-effort** — gpt-4o-mini bommer av og til på «før»-retningen (legger blockedBy feil vei); `blocksItemIds` + eksplisitt advarsel i prompten reduserer det, men brukeren kan korrigere presist i rediger-arket.
+
+## Fase 14: Handleliste per butikk (klikkbar butikk)
+- Butikknavnet på en innkjøps-oppgave (🛒) er nå en **klikkbar lenke** → `/handleliste?store=<butikk>` (`ThemeTasksTab`).
+- Ny rute `/handleliste`: henter innkjøps-oppgaver (`metadata->>'shopping'='true'`) på tvers av alle hjem-prosjekter (`parentTheme='Hjem'`), via join mot `themes`. Uten filter: oversikt med butikk-kort (X igjen / Y kjøpt). Med `?store=`: liste over varene for butikken, **på tvers av prosjekter**, med avkryssing (PATCH til `/api/tema/[id]/tasks`) og klikkbar prosjekt-chip → `/tema/{id}`.
+- Verifisert (Playwright + HTML): innkjøp tagget «Maxbo» fra to ulike prosjekter samles i én liste; «Jernia»-vare holdes utenfor; avkryssing reflekteres.
+
 ## Kjente oppfølginger
+
+- **Merchant/transaksjons-kobling (Fase 3c, ikke bygget):** Knytte en butikk til en `merchantMappings`-nøkkel og vise `categorizedEvents`-transaksjoner for butikken i økonomi. Stort net-nytt — krever store→merchant-mapping (mangler) og en single-merchant-visning (finnes ikke). Egen runde.
+- **Kvitteringer (Fase 3d, ikke bygget):** Henge kvittering (bilde/PDF) på en innkjøps-oppgave/transaksjon. Kan gjenbruke `theme_files` (Cloudinary) + en kobling (`checklistItemId`/`transactionId`), men ingen kvitterings-konsept finnes i dag. Egen runde.
+- Avhengighets-retning fra chat er best-effort (gpt-4o-mini, se Fase 13).
 
 - Underoppgaver (parentId) med frist vises ikke i dagslista (DaySection filtrerer bort `parentId`-items) — kun topp-nivå daterte oppgaver. Sannsynligvis ønsket.
 - `sortOrder` deles mellom prosjekt-fane og dag-liste (ett felt), så reorder ett sted kan påvirke rekkefølgen det andre. Akseptert for v1.

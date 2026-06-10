@@ -16,6 +16,8 @@
 </script>
 
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import AnimatedProgressBar from '../../visualizations/AnimatedProgressBar.svelte';
 	import TaskContextMenu from '../../ui/TaskContextMenu.svelte';
 	import BreakdownModal from '../../ui/BreakdownModal.svelte';
@@ -44,13 +46,25 @@
 	let newText = $state('');
 	let adding = $state(false);
 
+	// Re-hent ved mount (fanen re-monteres ved tab-bytte) så endringer gjort i prosjekt-chatten vises.
+	onMount(async () => {
+		try {
+			const res = await fetch(`/api/tema/${themeId}/tasks`);
+			if (res.ok) {
+				const { items } = await res.json();
+				tasks = items;
+			}
+		} catch {
+			/* behold initialTasks ved feil */
+		}
+	});
+
 	// Langpress / kontekstmeny
 	let menuItem = $state<ProjectTask | null>(null);
 	let menuRect = $state<DOMRect | null>(null);
 
-	// Inline «+ underoppgave»
-	let addChildFor = $state<string | null>(null);
-	let childText = $state('');
+	// Ghost-input for under-oppgaver (lagrer på enter/blur, lik ukeplan) — utkast pr. forelder
+	let childDrafts = $state<Record<string, string>>({});
 
 	// Redigerings-sheet
 	let editItem = $state<ProjectTask | null>(null);
@@ -116,10 +130,14 @@
 	}
 
 	async function submitChild(parentId: string) {
-		if (!childText.trim()) return;
-		await addTask(parentId, childText);
-		childText = '';
-		addChildFor = null;
+		const draft = (childDrafts[parentId] ?? '').trim();
+		if (!draft) return;
+		childDrafts = { ...childDrafts, [parentId]: '' };
+		await addTask(parentId, draft);
+	}
+
+	function setChildDraft(parentId: string, value: string) {
+		childDrafts = { ...childDrafts, [parentId]: value };
 	}
 
 	async function toggle(item: ProjectTask) {
@@ -316,15 +334,7 @@
 	{/if}
 
 	{#if total === 0}
-		<div class="empty">
-			<p>Ingen oppgaver ennå. Legg til manuelt, eller la AI foreslå steg du kan plukke fra.</p>
-			<div class="empty-actions">
-				<button class="ai-btn" data-track="tema-oppgaver:foresla-steg" onclick={() => openBreakdown(null)}>✨ Foreslå steg</button>
-				{#if onSwitchToChat}
-					<button class="ghost-btn" data-track="tema-oppgaver:diskuter-chat" onclick={() => onSwitchToChat?.()}>Diskutér i chat</button>
-				{/if}
-			</div>
-		</div>
+		<p class="empty">Ingen oppgaver ennå. Skriv én under, eller bygg lista i en prat om prosjektet.</p>
 	{:else}
 		<ul class="tree">
 			{#each topLevel as item (item.id)}
@@ -333,13 +343,19 @@
 		</ul>
 	{/if}
 
-	<form class="add-row" onsubmit={(e) => { e.preventDefault(); submitNew(); }}>
-		<input type="text" placeholder="Ny oppgave …" data-track="tema-oppgaver:ny-oppgave" bind:value={newText} disabled={adding} />
-		<button type="submit" disabled={adding || !newText.trim()}>Legg til</button>
-	</form>
+	<input
+		class="ghost-add root"
+		type="text"
+		placeholder="Ny oppgave …"
+		data-track="tema-oppgaver:ny-oppgave"
+		bind:value={newText}
+		disabled={adding}
+		onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submitNew(); } }}
+		onblur={() => submitNew()}
+	/>
 
-	{#if total > 0}
-		<button class="ai-btn wide" data-track="tema-oppgaver:foresla-flere" onclick={() => openBreakdown(null)}>✨ Foreslå flere steg</button>
+	{#if onSwitchToChat}
+		<button class="chat-btn" data-track="tema-oppgaver:chat-prosjekt" onclick={() => onSwitchToChat?.()}>💬 Chat om prosjektet</button>
 	{/if}
 </div>
 
@@ -375,7 +391,16 @@
 				<span class="row-text" class:done={item.checked}>{item.text}</span>
 				<div class="row-sub">
 					{#if item.shopping}
-						<span class="badge shop">🛒{#if item.store} {item.store}{/if}</span>
+						{#if item.store}
+							<button
+								class="badge shop link"
+								data-track="tema-oppgaver:apne-handleliste"
+								onpointerdown={(e) => e.stopPropagation()}
+								onclick={(e) => { e.stopPropagation(); goto(`/handleliste?store=${encodeURIComponent(item.store ?? '')}`); }}
+							>🛒 {item.store}</button>
+						{:else}
+							<span class="badge shop">🛒</span>
+						{/if}
 					{/if}
 					{#if item.dueDate}
 						<span class="badge" class:overdue={isOverdue(item)}>frist {formatDate(item.dueDate)}</span>
@@ -388,33 +413,25 @@
 					{/if}
 				</div>
 			</div>
-			<div class="row-actions">
-				<button
-					class="icon-btn"
-					title="Legg til underoppgave"
-					aria-label="Legg til underoppgave"
-					data-track="tema-oppgaver:legg-til-underoppgave"
-					onclick={() => { addChildFor = addChildFor === item.id ? null : item.id; childText = ''; }}
-				>＋</button>
-				<button
-					class="icon-btn"
-					title="Mer"
-					aria-label="Flere handlinger"
-					data-track="tema-oppgaver:meny"
-					onclick={(e) => openMenu((e.currentTarget as HTMLElement).getBoundingClientRect(), item)}
-				>⋯</button>
-			</div>
 		</div>
-		{#if addChildFor === item.id}
-			<form class="child-add" onsubmit={(e) => { e.preventDefault(); submitChild(item.id); }}>
-				<input type="text" placeholder="Underoppgave …" data-track="tema-oppgaver:ny-underoppgave" bind:value={childText} />
-				<button type="submit" disabled={!childText.trim()}>Legg til</button>
-			</form>
-		{/if}
 	</li>
 	{#each childrenOf(item.id) as child (child.id)}
 		{@render taskRow(child, depth + 1)}
 	{/each}
+	{#if depth === 0}
+		<li class="row child-row">
+			<input
+				class="ghost-add child"
+				type="text"
+				placeholder="Legg til deloppgave …"
+				data-track="tema-oppgaver:ny-underoppgave"
+				value={childDrafts[item.id] ?? ''}
+				oninput={(e) => setChildDraft(item.id, e.currentTarget.value)}
+				onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submitChild(item.id); } }}
+				onblur={() => submitChild(item.id)}
+			/>
+		</li>
+	{/if}
 {/snippet}
 
 <TaskContextMenu
@@ -496,7 +513,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 1rem;
-		padding: 1rem;
+		padding: 1rem var(--page-px);
 		max-width: 640px;
 		margin: 0 auto;
 	}
@@ -562,6 +579,15 @@
 		background: rgba(74, 222, 128, 0.12);
 		color: var(--success-text);
 	}
+	button.badge.shop.link {
+		border: 0;
+		font: inherit;
+		font-size: 0.72rem;
+		cursor: pointer;
+	}
+	button.badge.shop.link:hover {
+		text-decoration: underline;
+	}
 	.row-main input[type='checkbox'] {
 		margin-top: 0.15rem;
 		width: 1.05rem;
@@ -607,91 +633,41 @@
 		background: rgba(250, 204, 21, 0.12);
 		color: #eab308;
 	}
-	.row-actions {
-		display: flex;
-		gap: 0.1rem;
-		flex-shrink: 0;
-	}
-	.icon-btn {
+	.ghost-add {
+		width: 100%;
 		border: 0;
+		border-radius: 8px;
 		background: transparent;
-		color: var(--text-tertiary);
-		font-size: 1rem;
-		line-height: 1;
-		cursor: pointer;
-		padding: 0.15rem 0.35rem;
-		border-radius: 6px;
-	}
-	.icon-btn:hover {
-		background: var(--bg-hover);
-		color: var(--text-primary);
-	}
-	.child-add {
-		display: flex;
-		gap: 0.4rem;
-		margin: 0.4rem 0 0 1.65rem;
-	}
-	.child-add input {
-		flex: 1;
-		padding: 0.4rem 0.6rem;
-		border-radius: 8px;
-		border: 1px solid var(--border-color);
-		background: var(--bg-input);
-		color: inherit;
-		font: inherit;
-		font-size: 0.85rem;
-	}
-	.child-add button,
-	.add-row button {
-		padding: 0.5rem 0.9rem;
-		border-radius: 8px;
-		border: 0;
-		background: var(--accent-primary);
-		color: #fff;
-		font: inherit;
-		font-size: 0.85rem;
-		font-weight: 500;
-		cursor: pointer;
-	}
-	.child-add button:disabled,
-	.add-row button:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
-	.add-row {
-		display: flex;
-		gap: 0.5rem;
-	}
-	.add-row input {
-		flex: 1;
-		padding: 0.55rem 0.7rem;
-		border-radius: 8px;
-		border: 1px solid var(--border-color);
-		background: var(--bg-input);
 		color: inherit;
 		font: inherit;
 		font-size: 0.9rem;
+		padding: 0.5rem 0.7rem;
+	}
+	.ghost-add::placeholder {
+		color: var(--text-tertiary);
+	}
+	.ghost-add:focus {
+		outline: none;
+		background: var(--bg-input);
+	}
+	.ghost-add.root {
+		border: 1px dashed var(--border-color);
+	}
+	.ghost-add.child {
+		font-size: 0.85rem;
+	}
+	.child-row {
+		margin-left: 1.25rem;
 	}
 	.empty {
 		text-align: center;
 		color: var(--text-secondary);
-		display: flex;
-		flex-direction: column;
-		gap: 0.85rem;
-		padding: 1.5rem 0;
-	}
-	.empty p {
-		margin: 0;
 		font-size: 0.9rem;
+		padding: 1rem 0;
 	}
-	.empty-actions {
-		display: flex;
-		gap: 0.5rem;
-		justify-content: center;
-		flex-wrap: wrap;
-	}
-	.ai-btn {
-		padding: 0.55rem 1rem;
+	.chat-btn {
+		align-self: center;
+		padding: 0.55rem 1.1rem;
 		border-radius: 999px;
 		border: 1px solid var(--accent-primary);
 		background: transparent;
@@ -701,11 +677,8 @@
 		font-weight: 500;
 		cursor: pointer;
 	}
-	.ai-btn:hover {
+	.chat-btn:hover {
 		background: var(--bg-hover);
-	}
-	.ai-btn.wide {
-		align-self: center;
 	}
 	.ghost-btn {
 		padding: 0.55rem 1rem;
