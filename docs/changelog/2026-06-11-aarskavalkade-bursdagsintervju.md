@@ -39,7 +39,15 @@ Poenget med intervjuet er akkumulering: svarene lagres per år, slik at neste å
 - Ny `/design`-seksjon «Kavalkade» (mellom Ukeplan og Sheets) demoer alle fem med deterministiske fixtures i `design/mocks.ts`. Seksjons-id lagt til i `tests/visual/pages.spec.ts`, og baseline `design-kavalkade.png` generert.
 - `playwright.config.ts`: readiness-URL endret til `/design` (public path) — rot-siden krever DB og ga 500 i miljøer uten, slik at webServer-sjekken aldri ble grønn.
 
-### Fase 5: Oppdagbarhet
+### Fase 5: Fullskjerm-show («Spotify Wrapped»)
+
+- `show-slides.ts` (domain/kavalkade): `buildShowSlides` — ren funksjon som bygger slide-sekvensen fra årsdataene: intro → sport-tall (maks 3) → økter → skritt → bøker → ordsky → månedshøydepunkter → minnet → årets beste → hilsner fra bokhylla → spådoms-teaser → outro. Tomme datakilder hoppes over; hver slide får hue fra et fargehjul og egen varighet. Tester i `show-slides.test.ts`.
+- `ShowSlide.svelte`: én fullskjerm-slide — ord-for-ord-typografi-reveal, count-up-tall (rAF med ease-out), drivende gradient-blobs (transform-animert, kompositor-vennlig). `animate={false}` fryser slutt-tilstand (for /design og visuell regresjon); `prefers-reduced-motion` respekteres. Display-typografi bruker `clamp()` med vilje — plakat-tekst, ikke kort-innhold.
+- `KavalkadeShow.svelte`: story-spiller — segmentert progresjonsbar, tap-soner (venstre/høyre), piltaster + Escape, auto-fremdrift per slides varighet, crossfade mellom slides. Stopper på outro.
+- Rute `/kavalkade/show` (samme datalaster) + «▶ Spill av året»-knapp øverst på `/kavalkade`.
+- `/design`: tre frosne ShowSlide-demoer i kavalkade-seksjonen (baseline regenerert) + live-demo med full animasjon på `/design/kavalkade-show` (public path, mock-data, ikke i visuell regresjon).
+
+### Fase 6: Oppdagbarhet
 
 - `src/lib/server/chat-router.ts`: `bursdag|fødselsdag|kavalkade` ruter til self-domenet med hint om `/kavalkade`. Test lagt til i `chat-router.test.ts`.
 
@@ -55,7 +63,8 @@ Poenget med intervjuet er akkumulering: svarene lagres per år, slik at neste å
 
 ## Verifisering
 
-- `npm test`: 455 tester grønne (32 nye: intervju-format, kavalkade-beregning, tidslinje, ordsky, hilsen-format, router-trigger).
+- `npm test`: 461 tester grønne (38 nye: intervju-format, kavalkade-beregning, tidslinje, ordsky, hilsen-format, show-slides, router-trigger).
+- Showet verifisert live i headless Chromium mot `/design/kavalkade-show`: intro-typografi, count-up midt i animasjon, skritt-/bok-slides og progresjonsbar fanget i screenshots.
 - `/design`-seksjonen verifisert med Playwright i dev-server (dummy-env): alle fem demoer rendrer, baseline `design-kavalkade.png` sjekket inn. NB: eksisterende design-baselines viser små font-renderingsdiffs (0.04–0.09) i agent-containeren — uavhengig av denne endringen; den nye baselinen bør re-genereres lokalt ved neste `test:visual:update` hvis den diffes.
 - `npm run check`: 0 feil, 0 advarsler.
 - Visuelle tester ikke berørt — ingen av de 5 baseline-sidene er endret; `/kavalkade` er ny side utenfor baseline-settet.

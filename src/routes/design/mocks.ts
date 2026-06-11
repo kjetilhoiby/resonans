@@ -22,6 +22,7 @@ import type {
 	Greeting as KavalkadeGreeting,
 	MonthEntry as KavalkadeMonthEntry,
 	OrdskyWordView,
+	ShowSlideDef,
 	YearData as KavalkadeYearData
 } from '$lib/components/domain/kavalkade';
 import type { InterviewAnswers } from '$lib/flows/birthday-interview';
@@ -925,4 +926,47 @@ export const kavalkadeInterviewAnswersMock: InterviewAnswers = {
 	memory: 'Soloppgangen på toppen av Gaustatoppen i juli, helt alene.',
 	best_book: 'Stoner — John Williams',
 	best_concert: 'Bon Iver i Operaen'
+};
+
+/** Statiske slide-fixtures for kavalkade-showet på /design (animate={false}) */
+export const kavalkadeShowSlidesMock: ShowSlideDef[] = [
+	{
+		kind: 'stat',
+		label: 'har du løpt',
+		value: 512.4,
+		decimals: 1,
+		unit: 'km',
+		sub: 'i fjor: 387,2 km',
+		hue: 12,
+		durationMs: 5500
+	},
+	{
+		kind: 'quote',
+		title: 'Hilsen fra bokhylla',
+		text: 'Et stille år er også et liv. Du har lest, du har gått, du har holdt ut.',
+		attribution: 'William Stoner, «Stoner»',
+		hue: 258,
+		durationMs: 8000
+	},
+	{
+		kind: 'ordsky',
+		title: 'Året i ord',
+		words: kavalkadeOrdskyMock.slice(0, 12),
+		hue: 152,
+		durationMs: 7000
+	}
+];
+
+/** Komplett show-input for live-demoen på /design/kavalkade-show */
+export const kavalkadeShowInputMock = {
+	birthday: { hasBirthDate: true, daysUntil: 7, turningAge: 44 },
+	windowLabels: { current: '18. juni 2025 – 17. juni 2026' },
+	current: kavalkadeCurrentYearMock,
+	previous: kavalkadePreviousYearMock,
+	timeline: kavalkadeTimelineMock,
+	ordsky: kavalkadeOrdskyMock,
+	interview: { thisYear: kavalkadeInterviewAnswersMock },
+	prophecy:
+		'Jeg ser et år der løpeskoene runder 600 km før løvet faller, og der svømmetakene du så nølende begynte med blir like selvfølgelige som morgenkaffen.\n\nKrystallkulen er klar: mer av det som virker.',
+	greetings: kavalkadeGreetingsMock
 };

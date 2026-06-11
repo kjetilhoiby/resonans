@@ -43,7 +43,8 @@
 		Ordsky,
 		MonthTimeline,
 		GreetingsList,
-		InterviewAnswerList
+		InterviewAnswerList,
+		ShowSlide
 	} from '$lib/components/domain/kavalkade';
 	import ProcedureSheet from '$lib/components/ui/ProcedureSheet.svelte';
 	import WidgetConfigSheet from '$lib/components/ui/WidgetConfigSheet.svelte';
@@ -118,7 +119,8 @@
 		kavalkadeOrdskyMock,
 		kavalkadeTimelineMock,
 		kavalkadeGreetingsMock,
-		kavalkadeInterviewAnswersMock
+		kavalkadeInterviewAnswersMock,
+		kavalkadeShowSlidesMock
 	} from './mocks';
 
 	const sections = [
@@ -1101,6 +1103,22 @@
 			<div class="demo-card demo-card--wide">
 				<InterviewAnswerList answers={kavalkadeInterviewAnswersMock} />
 			</div>
+
+			<h3 class="subsection">ShowSlide — fullskjerm-showet</h3>
+			<p class="section-desc">
+				Slides fra kavalkade-showet på <a href="/kavalkade/show">/kavalkade/show</a> — animert typografi
+				(ord-for-ord-reveal, count-up-tall) over drivende gradient-blobs. Demoes med
+				<code>animate=false</code> (frosset slutt-tilstand) pga. visuell regresjon; i appen styres
+				de av <code>KavalkadeShow</code>-spilleren med story-progresjon og tap-navigasjon.
+				<a href="/design/kavalkade-show">Spill av hele showet med mock-data →</a>
+			</p>
+			<div class="demo-row">
+				{#each kavalkadeShowSlidesMock as slide (slide.kind)}
+					<div class="show-stage">
+						<ShowSlide {slide} animate={false} />
+					</div>
+				{/each}
+			</div>
 		</section>
 
 		<!-- ══ SHEETS & PANELER ═══════════════════════════════════════════════════ -->
@@ -1552,6 +1570,17 @@
 	/* ── Sheet-scene ──
 	   transform gjør rammen til containing block for position:fixed-barn,
 	   så sheets rendrer inne i rammen i stedet for over hele siden. */
+	/* Ramme for ShowSlide-demoer — sliden er position:absolute og fyller rammen */
+	.show-stage {
+		position: relative;
+		flex: 1 1 240px;
+		max-width: 280px;
+		height: 440px;
+		border: 1px solid #222;
+		border-radius: 20px;
+		overflow: hidden;
+	}
+
 	.sheet-stage {
 		position: relative;
 		transform: translateZ(0);

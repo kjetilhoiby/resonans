@@ -90,6 +90,10 @@
 			<PageHeader title="Årskavalkade" titleHref="/" emoji="🎂" />
 			<p class="kv-intro">{introText}</p>
 
+			<div class="kv-show-cta">
+				<Button href="/kavalkade/show">▶&nbsp; Spill av året</Button>
+			</div>
+
 			<SectionCard title="Året i tall" meta={data.windowLabels.current}>
 				<KavalkadeStats current={data.current} previous={data.previous} />
 			</SectionCard>
@@ -230,6 +234,10 @@
 		margin: 0;
 		color: var(--text-secondary);
 		font-size: var(--font-size-body);
+	}
+
+	.kv-show-cta {
+		display: flex;
 	}
 
 	.kv-books {
