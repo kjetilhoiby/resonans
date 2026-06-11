@@ -33,7 +33,13 @@ Poenget med intervjuet er akkumulering: svarene lagres per år, slik at neste å
   - **Hilsner fra bokhylla**: bursdagshilsner fra sentrale romankarakterer i årets ferdigleste bøker (fallback fjorårets), i karakterens egen stemme.
 - `src/lib/server/kavalkade-data.ts` (ny): Felles datalaster for siden og magi-endepunktet — page-serveren ble en tynn wrapper.
 
-### Fase 4: Oppdagbarhet
+### Fase 4: Komponentuttrekk og /design-demo
+
+- De visuelle blokkene ble trukket ut av siden til props-drevne komponenter i `src/lib/components/domain/kavalkade/`: `KavalkadeStats`, `Ordsky`, `MonthTimeline`, `GreetingsList`, `InterviewAnswerList` (+ delte UI-typer i `types.ts`). `/kavalkade`-siden komponerer nå disse.
+- Ny `/design`-seksjon «Kavalkade» (mellom Ukeplan og Sheets) demoer alle fem med deterministiske fixtures i `design/mocks.ts`. Seksjons-id lagt til i `tests/visual/pages.spec.ts`, og baseline `design-kavalkade.png` generert.
+- `playwright.config.ts`: readiness-URL endret til `/design` (public path) — rot-siden krever DB og ga 500 i miljøer uten, slik at webServer-sjekken aldri ble grønn.
+
+### Fase 5: Oppdagbarhet
 
 - `src/lib/server/chat-router.ts`: `bursdag|fødselsdag|kavalkade` ruter til self-domenet med hint om `/kavalkade`. Test lagt til i `chat-router.test.ts`.
 
@@ -50,5 +56,6 @@ Poenget med intervjuet er akkumulering: svarene lagres per år, slik at neste å
 ## Verifisering
 
 - `npm test`: 455 tester grønne (32 nye: intervju-format, kavalkade-beregning, tidslinje, ordsky, hilsen-format, router-trigger).
+- `/design`-seksjonen verifisert med Playwright i dev-server (dummy-env): alle fem demoer rendrer, baseline `design-kavalkade.png` sjekket inn. NB: eksisterende design-baselines viser små font-renderingsdiffs (0.04–0.09) i agent-containeren — uavhengig av denne endringen; den nye baselinen bør re-genereres lokalt ved neste `test:visual:update` hvis den diffes.
 - `npm run check`: 0 feil, 0 advarsler.
 - Visuelle tester ikke berørt — ingen av de 5 baseline-sidene er endret; `/kavalkade` er ny side utenfor baseline-settet.

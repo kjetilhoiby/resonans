@@ -18,7 +18,8 @@ export default defineConfig({
 	},
 	webServer: {
 		command: 'npm run dev',
-		url: 'http://localhost:5174',
+		// Readiness-sjekk mot /design (public path) — rot-siden krever DB og gir 500 i miljøer uten
+		url: 'http://localhost:5174/design',
 		reuseExistingServer: true,
 		timeout: 30_000,
 	},
