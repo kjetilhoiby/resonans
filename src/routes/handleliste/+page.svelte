@@ -10,6 +10,17 @@
 		items = data.items;
 	});
 
+	function formatNOK(value: number): string {
+		return new Intl.NumberFormat('nb-NO', {
+			style: 'currency',
+			currency: 'NOK',
+			maximumFractionDigits: 0
+		}).format(value);
+	}
+	function formatTxDate(iso: string): string {
+		return new Date(iso).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' });
+	}
+
 	async function toggle(item: (typeof items)[number]) {
 		const next = !item.checked;
 		items = items.map((i) => (i.id === item.id ? { ...i, checked: next } : i));
@@ -68,6 +79,27 @@
 						</li>
 					{/each}
 				</ul>
+			{/if}
+
+			{#if data.transactions.length > 0}
+				<section class="tx-section">
+					<div class="tx-head">
+						<h3>Kjøp på {data.selectedStore}</h3>
+						<span class="tx-total">{formatNOK(data.totalSpent)} · {data.txCount} kjøp siste 180 dager</span>
+					</div>
+					{#if data.txCount > data.transactions.length}
+						<p class="tx-note">Viser de {data.transactions.length} siste</p>
+					{/if}
+					<ul class="tx-list">
+						{#each data.transactions as tx (tx.date + tx.description + tx.amount)}
+							<li class="tx-row">
+								<span class="tx-date">{formatTxDate(tx.date)}</span>
+								<span class="tx-desc">{tx.description ?? data.selectedStore}</span>
+								<span class="tx-amount" class:expense={tx.amount < 0}>{formatNOK(tx.amount)}</span>
+							</li>
+						{/each}
+					</ul>
+				</section>
 			{/if}
 		{/if}
 	</PageSection>
@@ -168,6 +200,68 @@
 		white-space: nowrap;
 	}
 	.project-chip:hover {
+		color: var(--text-primary);
+	}
+	.tx-section {
+		margin-top: 2rem;
+	}
+	.tx-head {
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
+		gap: 0.5rem;
+		margin-bottom: 0.6rem;
+	}
+	.tx-head h3 {
+		margin: 0;
+		font-size: 0.95rem;
+		font-weight: 600;
+	}
+	.tx-total {
+		font-size: 0.8rem;
+		color: var(--text-secondary);
+		text-align: right;
+	}
+	.tx-note {
+		margin: 0 0 0.4rem;
+		font-size: 0.75rem;
+		color: var(--text-tertiary);
+	}
+	.tx-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+	}
+	.tx-row {
+		display: flex;
+		align-items: baseline;
+		gap: 0.6rem;
+		padding: 0.55rem 0.1rem;
+		border-bottom: 1px solid var(--border-subtle);
+		font-size: 0.85rem;
+	}
+	.tx-date {
+		flex-shrink: 0;
+		color: var(--text-tertiary);
+		font-size: 0.78rem;
+		width: 3.2rem;
+	}
+	.tx-desc {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		color: var(--text-secondary);
+	}
+	.tx-amount {
+		flex-shrink: 0;
+		font-variant-numeric: tabular-nums;
+		color: var(--text-secondary);
+	}
+	.tx-amount.expense {
 		color: var(--text-primary);
 	}
 </style>

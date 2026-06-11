@@ -113,10 +113,10 @@
 
 <style>
 	.form-card {
-		background: #141414;
-		border: 1px solid #242424;
-		border-radius: 16px;
-		padding: 1.25rem;
+		background: var(--card-bg-subtle, #141414);
+		border: 1px solid var(--card-border, #242424);
+		border-radius: var(--card-radius, 16px);
+		padding: var(--card-padding, 16px);
 		display: flex;
 		flex-direction: column;
 		gap: 0.9rem;

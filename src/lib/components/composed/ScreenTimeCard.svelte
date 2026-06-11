@@ -214,7 +214,7 @@
 		{#if !compact && (hasCumulative || hasHourly)}
 			<div class="st-section">
 				<div class="section-head">
-					<SectionLabel tag="span">
+					<SectionLabel tag="span" nowrap>
 						{hourView === 'cumulative' ? 'Akkumulert gjennom uka' : 'Per time av døgnet (snitt/dag)'}
 					</SectionLabel>
 					{#if hasCumulative && hasHourly}
@@ -390,10 +390,10 @@
 		display: flex;
 		flex-direction: column;
 		gap: 1.25rem;
-		background: var(--bg-secondary, #161616);
-		border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
-		border-radius: 16px;
-		padding: 1.25rem;
+		background: var(--card-bg-subtle, #161616);
+		border: 1px solid var(--card-border, rgba(255, 255, 255, 0.08));
+		border-radius: var(--card-radius, 16px);
+		padding: var(--card-padding, 16px);
 		color: var(--text-primary, #fff);
 	}
 	.st-card.compact {
@@ -410,7 +410,8 @@
 	}
 	.st-headline {
 		display: grid;
-		grid-template-columns: 1fr 1fr;
+		/* minmax(0, …) lar labelene wrappe pent i stedet for å sprenge kolonnen */
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 		gap: 1rem;
 	}
 	.metric {
@@ -499,6 +500,7 @@
 	}
 	.view-toggle {
 		display: flex;
+		flex-shrink: 0;
 		gap: 2px;
 		background: rgba(255, 255, 255, 0.06);
 		border-radius: 8px;

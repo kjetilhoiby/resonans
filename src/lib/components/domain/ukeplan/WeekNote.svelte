@@ -1,16 +1,16 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
-	import type { SubmitFunction } from '@sveltejs/kit';
+	import { CardTitle } from '$lib/components/ui';
 	import type { SaveState } from './types';
 
 	interface Props {
-		dashedKey: string;
 		weekNote: string;
 		saveState: SaveState;
 		onSaveStateChange: (state: SaveState) => void;
+		/** Lagrer notatet. Returnerer true ved suksess. Eieren (ukeplan-siden) gjør action-kallet. */
+		onSave: (value: string) => Promise<boolean>;
 	}
 
-	let { dashedKey, weekNote, saveState, onSaveStateChange }: Props = $props();
+	let { weekNote, saveState, onSaveStateChange, onSave }: Props = $props();
 	let weekNoteValue = $state(weekNote);
 
 	// Resynk fra foreldren ved ukebytte
@@ -18,23 +18,21 @@
 		weekNoteValue = weekNote;
 	});
 
-	function markInitialValue(event: FocusEvent) {
-		const target = event.currentTarget as HTMLInputElement | HTMLTextAreaElement;
-		target.dataset.initialValue = target.value;
+	let initialValue = '';
+
+	function markInitialValue() {
+		initialValue = weekNoteValue;
 	}
 
-	function submitOnBlurIfChanged(event: FocusEvent) {
-		const target = event.currentTarget as HTMLInputElement | HTMLTextAreaElement;
-		const form = target.closest('form');
-		if (!form) return;
-		const initial = target.dataset.initialValue ?? '';
-		if (target.value === initial) return;
-		const allowEmpty = form.dataset.allowEmptyAutosave === 'true';
-		if (!allowEmpty && target.value.trim().length === 0) return;
-		setTimeout(() => {
-			if (form.contains(document.activeElement)) return;
-			form.requestSubmit();
-		}, 0);
+	async function saveOnBlurIfChanged() {
+		if (weekNoteValue === initialValue) return;
+		onSaveStateChange('saving');
+		const ok = await onSave(weekNoteValue);
+		if (ok) {
+			flashSaved();
+		} else {
+			onSaveStateChange('idle');
+		}
 	}
 
 	function flashSaved() {
@@ -45,50 +43,33 @@
 			}
 		}, 1400);
 	}
-
-	function autosaveEnhance(): SubmitFunction {
-		return () => {
-			onSaveStateChange('saving');
-			return async ({ result, update }) => {
-				await update();
-				if (result.type === 'success') {
-					flashSaved();
-					return;
-				}
-				onSaveStateChange('idle');
-			};
-		};
-	}
 </script>
 
 <section class="wp-card">
 	<div class="wp-card-head">
-		<h2>Ukesnotat</h2>
+		<CardTitle>Ukesnotat</CardTitle>
 	</div>
-	<form method="POST" action="?/saveWeekNote" class="wp-notes-form" use:enhance={autosaveEnhance()} data-allow-empty-autosave="true">
-		<input type="hidden" name="weekKey" value={dashedKey} />
-		<div class="wp-field-shell">
-			<textarea
-				id="weekNote"
-				name="weekNote"
-				class="wp-textarea wp-textarea-note"
-				bind:value={weekNoteValue}
-				rows="2"
-				placeholder="Ferien er over og vi skal tilbake til jobb, skole og barnehage."
-				onfocus={markInitialValue}
-				onblur={submitOnBlurIfChanged}
-			>{weekNote}</textarea>
-			<span class="wp-save-dot" class:is-saving={saveState === 'saving'} class:is-saved={saveState === 'saved'} aria-hidden="true"></span>
-		</div>
-	</form>
+	<div class="wp-field-shell">
+		<textarea
+			id="weekNote"
+			name="weekNote"
+			class="wp-textarea wp-textarea-note"
+			bind:value={weekNoteValue}
+			rows="2"
+			placeholder="Ferien er over og vi skal tilbake til jobb, skole og barnehage."
+			onfocus={markInitialValue}
+			onblur={saveOnBlurIfChanged}
+		></textarea>
+		<span class="wp-save-dot" class:is-saving={saveState === 'saving'} class:is-saved={saveState === 'saved'} aria-hidden="true"></span>
+	</div>
 </section>
 
 <style>
 	.wp-card {
-		background: linear-gradient(180deg, rgba(9, 11, 17, 0.95), rgba(8, 10, 15, 0.95));
+		background: var(--card-bg);
 		border: none;
-		border-radius: 14px;
-		padding: 12px;
+		border-radius: var(--card-radius, 14px);
+		padding: var(--card-padding, 12px);
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
@@ -98,18 +79,6 @@
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		gap: 8px;
-	}
-
-	.wp-card h2 {
-		margin: 0;
-		font-size: 0.95rem;
-		color: var(--text-primary);
-	}
-
-	.wp-notes-form {
-		display: flex;
-		flex-direction: column;
 		gap: 8px;
 	}
 

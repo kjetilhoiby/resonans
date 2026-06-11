@@ -1,17 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-
-	type ShareItem = {
-		id: string;
-		token: string;
-		accessMode: 'read' | 'write';
-		allowedEmail: string | null;
-		label: string | null;
-		expiresAt: string | Date | null;
-		lastAccessedAt: string | Date | null;
-		accessCount: number;
-		createdAt: string | Date;
-	};
+	import { shareApi, type ShareApi, type ShareItem } from './share-api';
 
 	type Props = {
 		resourceType: 'checklist' | 'themeList' | 'tripPosition';
@@ -19,9 +8,11 @@
 		resourceTitle: string;
 		open: boolean;
 		onClose: () => void;
+		/** Nettverkslag — injiseres som mock på /design. Default: ekte API. */
+		api?: ShareApi;
 	};
 
-	let { resourceType, resourceId, resourceTitle, open, onClose }: Props = $props();
+	let { resourceType, resourceId, resourceTitle, open, onClose, api = shareApi }: Props = $props();
 
 	let existing = $state<ShareItem[]>([]);
 	let loading = $state(false);
@@ -41,11 +32,7 @@
 		loading = true;
 		errorMessage = null;
 		try {
-			const res = await fetch(
-				`/api/share?resourceType=${resourceType}&resourceId=${resourceId}`
-			);
-			if (!res.ok) throw new Error(`HTTP ${res.status}`);
-			existing = await res.json();
+			existing = await api.loadShares(resourceType, resourceId);
 		} catch (err) {
 			errorMessage = 'Kunne ikke hente eksisterende delinger.';
 			console.error(err);
@@ -62,24 +49,19 @@
 		}
 		creating = true;
 		try {
-			const res = await fetch('/api/share', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({
-					resourceType,
-					resourceId,
-					accessMode: canEdit && allowEdit ? 'write' : 'read',
-					allowedEmail: mode === 'email' ? allowedEmail.trim().toLowerCase() : null,
-					label: label.trim() || null,
-					expiresInDays: typeof expiresInDays === 'number' && expiresInDays > 0 ? expiresInDays : null
-				})
+			const result = await api.createShare({
+				resourceType,
+				resourceId,
+				accessMode: canEdit && allowEdit ? 'write' : 'read',
+				allowedEmail: mode === 'email' ? allowedEmail.trim().toLowerCase() : null,
+				label: label.trim() || null,
+				expiresInDays: typeof expiresInDays === 'number' && expiresInDays > 0 ? expiresInDays : null
 			});
-			const data = await res.json();
-			if (!res.ok) {
-				errorMessage = data.error ?? `Feil: HTTP ${res.status}`;
+			if (!result.ok) {
+				errorMessage = result.error;
 				return;
 			}
-			lastCreatedUrl = `${window.location.origin}/share/${data.token}`;
+			lastCreatedUrl = `${window.location.origin}/share/${result.token}`;
 			label = '';
 			allowedEmail = '';
 			expiresInDays = '';
@@ -94,8 +76,7 @@
 
 	async function revoke(id: string) {
 		if (!confirm('Trekk tilbake denne delingen? Lenken vil slutte å fungere.')) return;
-		const res = await fetch(`/api/share/${id}`, { method: 'DELETE' });
-		if (res.ok) {
+		if (await api.revokeShare(id)) {
 			await loadExisting();
 		} else {
 			errorMessage = 'Klarte ikke trekke tilbake delingen.';

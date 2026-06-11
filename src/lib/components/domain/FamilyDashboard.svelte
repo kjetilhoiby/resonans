@@ -274,9 +274,9 @@
 		flex-direction: column;
 		gap: 0.4rem;
 		padding: 0.75rem;
-		border: 1px solid var(--tp-border, #3a3d4a);
-		border-radius: 12px;
-		background: var(--tp-bg-2, #20232e);
+		border: 1px solid var(--card-border, #3a3d4a);
+		border-radius: var(--radius-md, 12px);
+		background: var(--card-bg, #20232e);
 	}
 	.ferie-card-link {
 		background: none;

@@ -484,6 +484,10 @@
 		--tp-accent: hsl(var(--theme-hue) 70% 70%);
 		--tp-accent-bg: hsl(var(--theme-hue) 40% 22%);
 		--tp-accent-bg-strong: hsl(var(--theme-hue) 42% 28%);
+		/* Kort på temasider arver hue-tint via --card-*-tokens */
+		--card-bg: var(--tp-bg-2);
+		--card-bg-subtle: var(--tp-bg-1);
+		--card-border: var(--tp-border);
 		min-height: 100dvh;
 		/* Ingen horisontal padding her — tabs-båndet skal gå kant-til-kant.
 		   Header og tab-innhold setter selv var(--page-px) horisontalt. */

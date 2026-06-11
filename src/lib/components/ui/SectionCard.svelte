@@ -61,9 +61,9 @@
 
 <style>
 	.section-card {
-		background: var(--bg-card);
-		border-radius: var(--radius-lg);
-		padding: var(--space-lg);
+		background: var(--card-bg, var(--bg-card));
+		border-radius: var(--card-radius, var(--radius-lg));
+		padding: var(--card-padding, var(--space-lg));
 		display: flex;
 		flex-direction: column;
 		gap: 14px;
@@ -76,7 +76,7 @@
 	}
 
 	.section-card.tone-subtle {
-		background: var(--bg-elevated);
+		background: var(--card-bg-subtle, var(--bg-elevated));
 	}
 
 	.section-card.tone-transparent {
@@ -85,8 +85,8 @@
 	}
 
 	.section-card.tone-bordered {
-		background: var(--bg-card);
-		border: 1px solid var(--border-color);
+		background: var(--card-bg, var(--bg-card));
+		border: 1px solid var(--card-border, var(--border-color));
 	}
 
 	.section-card.is-interactive {
@@ -121,7 +121,8 @@
 
 	h2 {
 		margin: 0;
-		font-size: 1rem;
+		font-size: var(--font-size-title, 1rem);
+		font-weight: 600;
 		color: var(--text-primary);
 	}
 

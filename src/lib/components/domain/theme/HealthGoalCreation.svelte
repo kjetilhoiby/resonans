@@ -4,6 +4,7 @@
 -->
 <script lang="ts">
 	import SectionLabel from '../../ui/SectionLabel.svelte';
+	import DateInput from '$lib/components/ui/DateInput.svelte';
 	import type { HealthDashboardData } from '$lib/client/dashboard-cache';
 
 	interface Props {
@@ -187,11 +188,11 @@
 			<div class="goal-control-row">
 				<label class="goal-control-field">
 					Fra dato
-					<input class="goal-control-input" type="date" bind:value={runningStartDate} />
+					<DateInput bind:value={runningStartDate} />
 				</label>
 				<label class="goal-control-field">
 					Til dato
-					<input class="goal-control-input" type="date" bind:value={runningEndDate} />
+					<DateInput bind:value={runningEndDate} />
 				</label>
 			</div>
 			<label class="goal-control-field">
@@ -223,7 +224,7 @@
 			<div class="goal-control-row">
 				<label class="goal-control-field">
 					Startdato
-					<input class="goal-control-input" type="date" bind:value={weightStartDate} />
+					<DateInput bind:value={weightStartDate} />
 				</label>
 				<label class="goal-control-field">
 					Startvekt (kg)
@@ -233,7 +234,7 @@
 			<div class="goal-control-row">
 				<label class="goal-control-field">
 					Måldato
-					<input class="goal-control-input" type="date" bind:value={weightTargetDate} />
+					<DateInput bind:value={weightTargetDate} />
 				</label>
 				<label class="goal-control-field">
 					Målvekt (kg)

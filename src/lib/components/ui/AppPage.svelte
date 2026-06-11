@@ -112,6 +112,21 @@
 		--space-lg: 16px;
 		--space-xl: 24px;
 		--space-2xl: 32px;
+
+		/* Typografi */
+		--font-size-caption: 0.72rem; /* hints, delta, meta-tekst */
+		--font-size-label: 0.78rem;   /* SectionLabel (uppercase-labels) */
+		--font-size-body: 0.9rem;     /* brødtekst i kort */
+		--font-size-title: 1rem;      /* kort-titler (CardTitle) */
+		--font-size-value: 1.9rem;    /* store nøkkeltall */
+
+		/* Kort (blokktyper) — kontekster (temasider, ukeplan) kan overstyre */
+		--card-bg: var(--bg-card);
+		--card-bg-subtle: var(--bg-elevated);
+		--card-bg-inset: #0d0d0d;
+		--card-border: var(--border-color);
+		--card-radius: var(--radius-lg);
+		--card-padding: var(--space-lg);
 	}
 
 	/* Width */

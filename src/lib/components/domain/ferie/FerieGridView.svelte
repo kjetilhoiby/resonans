@@ -13,6 +13,7 @@
 -->
 <script lang="ts">
 	import type { FerieMember, FerieCell, FerieTrip } from '../FerieDashboard.svelte';
+	import DateInput from '$lib/components/ui/DateInput.svelte';
 
 	type FerieRole = 'voksen' | 'barn';
 	type StatusMeta = { value: string; label: string; emoji: string; short: string; role: FerieRole; cls: string };
@@ -261,11 +262,11 @@
 	<div class="ferie-window">
 		<label>
 			<span>Fra</span>
-			<input type="date" value={startDate} onchange={(e) => onStartDateChange(e.currentTarget.value)} />
+			<DateInput value={startDate} onChange={(e) => onStartDateChange(e.currentTarget.value)} />
 		</label>
 		<label>
 			<span>Til</span>
-			<input type="date" value={endDate} onchange={(e) => onEndDateChange(e.currentTarget.value)} />
+			<DateInput value={endDate} onChange={(e) => onEndDateChange(e.currentTarget.value)} />
 		</label>
 		<label class="ferie-note-field">
 			<span>Foreløpig</span>
@@ -353,8 +354,8 @@
 					{#each members as m (m.id)}
 						<tr>
 							<td><span class="wiz-role">{m.role === 'voksen' ? '🧑' : '🧒'}</span> {m.name}</td>
-							<td><input type="date" value={wizFrom(m.id)} min={startDate} max={endDate} onchange={(e) => setWiz(m.id, 'from', e.currentTarget.value)} /></td>
-							<td><input type="date" value={wizTo(m.id)} min={startDate} max={endDate} onchange={(e) => setWiz(m.id, 'to', e.currentTarget.value)} /></td>
+							<td><DateInput value={wizFrom(m.id)} min={startDate} max={endDate} onChange={(e) => setWiz(m.id, 'from', e.currentTarget.value)} /></td>
+							<td><DateInput value={wizTo(m.id)} min={startDate} max={endDate} onChange={(e) => setWiz(m.id, 'to', e.currentTarget.value)} /></td>
 						</tr>
 					{/each}
 				</tbody>
@@ -467,8 +468,8 @@
 		<details class="ferie-bulk">
 			<summary>Marker en periode i bulk</summary>
 			<div class="bulk-form">
-				<label><span>Fra</span><input type="date" bind:value={bulkFrom} min={startDate} max={endDate} /></label>
-				<label><span>Til</span><input type="date" bind:value={bulkTo} min={startDate} max={endDate} /></label>
+				<label><span>Fra</span><DateInput bind:value={bulkFrom} min={startDate} max={endDate} /></label>
+				<label><span>Til</span><DateInput bind:value={bulkTo} min={startDate} max={endDate} /></label>
 				<label>
 					<span>For</span>
 					<select bind:value={bulkTarget}>

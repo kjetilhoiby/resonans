@@ -80,9 +80,9 @@
 		flex-direction: column;
 		gap: 0.75rem;
 		padding: 1rem;
-		background: var(--surface, #fff);
-		border: 1px solid var(--border, #e6e6e6);
-		border-radius: 12px;
+		background: var(--card-bg, #171717);
+		border: 1px solid var(--card-border, #2a2a2a);
+		border-radius: var(--radius-md, 12px);
 		text-align: left;
 		cursor: pointer;
 		transition: transform 0.15s ease, box-shadow 0.15s ease;
@@ -116,7 +116,7 @@
 	}
 	.meta {
 		font-size: 0.75rem;
-		color: var(--muted, #666);
+		color: var(--text-tertiary, #777);
 		text-transform: capitalize;
 	}
 	.status {
@@ -125,30 +125,31 @@
 		letter-spacing: 0.05em;
 		padding: 0.15rem 0.5rem;
 		border-radius: 999px;
-		background: var(--muted-bg, #f0f0f0);
+		background: var(--bg-hover, #23262b);
+		color: var(--text-secondary, #aaa);
 	}
 	.status-active {
-		background: #e7f5ec;
-		color: #2c7a4b;
+		background: var(--success-bg, rgba(74, 222, 128, 0.08));
+		color: var(--success-text, #4ade80);
 	}
 	.status-paused {
-		background: #fff3cd;
-		color: #856404;
+		background: var(--warning-bg, rgba(240, 180, 41, 0.08));
+		color: var(--warning-text, #f0b429);
 	}
 	.status-done {
-		background: #e2e3e5;
-		color: #383d41;
+		background: var(--bg-hover, #23262b);
+		color: var(--text-secondary, #aaa);
 	}
 	.description {
 		margin: 0;
 		font-size: 0.85rem;
-		color: var(--muted, #555);
+		color: var(--text-secondary, #aaa);
 	}
 	.metric .label {
 		display: flex;
 		justify-content: space-between;
 		font-size: 0.78rem;
-		color: var(--muted, #555);
+		color: var(--text-tertiary, #777);
 		margin-bottom: 0.25rem;
 	}
 	.counts {
@@ -156,7 +157,7 @@
 	}
 	.bar {
 		height: 6px;
-		background: var(--bar-bg, #f0f0f0);
+		background: var(--bar-bg, rgba(255, 255, 255, 0.08));
 		border-radius: 999px;
 		overflow: hidden;
 	}

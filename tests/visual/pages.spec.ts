@@ -32,10 +32,32 @@ test.describe('Økonomi-tema', () => {
 	});
 });
 
+// Per-seksjon-screenshots: lokaliserte diffs + ingen terskel-maskering på lang side.
+// Holdes i synk med sections-listen i src/routes/design/+page.svelte.
+const designSections = [
+	'prinsipper',
+	'typografi',
+	'blokktyper',
+	'layout',
+	'knapper',
+	'ikoner',
+	'ringer',
+	'dashboardkort',
+	'chat',
+	'skjema',
+	'navigasjon',
+	'ukeplan',
+	'sheets',
+	'modaler',
+	'lab'
+];
+
 test.describe('Design-system', () => {
-	test('UI-primitiver rendres', async ({ page }) => {
+	test('alle seksjoner rendres', async ({ page }) => {
 		await page.goto('/design');
 		await page.waitForLoadState('networkidle');
-		await expect(page).toHaveScreenshot('design.png', { fullPage: true });
+		for (const id of designSections) {
+			await expect.soft(page.locator(`#${id}`)).toHaveScreenshot(`design-${id}.png`);
+		}
 	});
 });

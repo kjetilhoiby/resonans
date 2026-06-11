@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { goto, invalidateAll } from '$app/navigation';
-	import { ChecklistItemRow, ChecklistGroupRow } from '$lib/components/ui';
+	import { goto } from '$app/navigation';
+	import { CardTitle, ChecklistItemRow, ChecklistGroupRow } from '$lib/components/ui';
 	import type { ChecklistItemLike } from '$lib/types/checklist';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import ProcedureBadge from '$lib/components/ui/ProcedureBadge.svelte';
@@ -13,6 +13,16 @@
 	import ProcedureSheet from '$lib/components/ui/ProcedureSheet.svelte';
 	import { groupChecklistItems, sortByStatus } from '$lib/utils/checklist-group';
 	import type { WeekChecklist, WeekTask, ChecklistItem, EditingItem, EditingTask, ProcedureMatch, SaveState } from './types';
+	import { weekTasksApi, type WeekTasksApi } from './week-tasks-api';
+	import {
+		checklistProgress,
+		slotState,
+		doneTask,
+		formatStructuredTaskMeta,
+		getTaskIntentBadge,
+		getTaskIntentFailureReasonLabel,
+		getTaskEvaluationLabel
+	} from './week-tasks-logic';
 
 	interface Props {
 		weekTasks: WeekTask[];
@@ -37,6 +47,8 @@
 		editingItem: EditingItem | null;
 		selectedDayIso: string;
 		dayChecklistId: string | null;
+		/** Nettverkslag — injiseres som mock på /design. Default: ekte API. */
+		api?: WeekTasksApi;
 	}
 
 	let {
@@ -61,6 +73,7 @@
 		editingItem,
 		selectedDayIso,
 		dayChecklistId,
+		api = weekTasksApi,
 	}: Props = $props();
 
 	const LONG_PRESS_MS = 600;
@@ -96,70 +109,7 @@
 	const taskMention = createMentionState();
 	let taskMentionPickerEl = $state<ReturnType<typeof MentionPicker> | null>(null);
 
-	function checklistProgress(checklist: WeekChecklist | null) {
-		const counted = (checklist?.items ?? []).filter((item) => {
-			const kind = item.metadata?.kind;
-			return kind !== 'location' && kind !== 'travel';
-		});
-		if (counted.length === 0) return { done: 0, total: 0, pct: 0 };
-		const done = counted.filter((item) => item.checked).length;
-		const total = counted.length;
-		return { done, total, pct: Math.round((done / total) * 100) };
-	}
-
 	const progress = $derived(checklistProgress(weekChecklistState));
-
-	function slotState(task: WeekTask, index: number) {
-		return task.completedCount > index;
-	}
-
-	function doneTask(task: WeekTask) {
-		return task.completedCount >= task.repeatCount;
-	}
-
-	function formatStructuredTaskMeta(task: WeekTask) {
-		if (!task.frequency) return null;
-		if (typeof task.targetValue === 'number' && task.targetValue > 0) {
-			if (task.frequency === 'daily') return `${task.targetValue} ${task.unit || 'ganger'} per dag`;
-			if (task.frequency === 'weekly') return `${task.targetValue} ${task.unit || 'ganger'} denne uka`;
-			if (task.frequency === 'monthly') return `${task.targetValue} ${task.unit || 'ganger'} denne måneden`;
-		}
-		const labels: Record<string, string> = { daily: 'daglig', weekly: 'ukentlig', monthly: 'månedlig', once: 'én gang' };
-		return labels[task.frequency] ?? task.frequency;
-	}
-
-	function getTaskIntentBadge(task: WeekTask): { label: string; tone: 'pending' | 'parsed' | 'failed' } | null {
-		const status = task.metadata?.intentStatus;
-		if (status === 'pending') return { label: 'Tolkes...', tone: 'pending' };
-		if (status === 'parsed') return { label: 'Aktiv sporing', tone: 'parsed' };
-		if (status === 'failed') return { label: 'Trenger avklaring', tone: 'failed' };
-		return null;
-	}
-
-	function getTaskIntentFailureReasonLabel(task: WeekTask): string | null {
-		if (task.metadata?.intentStatus !== 'failed') return null;
-		const reason = task.metadata?.intentError;
-		if (!reason) return null;
-		const reasonMap: Record<string, string> = {
-			empty_text: 'Ingen tekst å tolke.',
-			unsupported_activity: 'Støtter foreløpig bare løpemål i denne flyten.',
-			unsupported_period_or_threshold: 'Fant ikke tydelig frekvens som "X ganger per uke".',
-			no_quantifiable_target: 'Fant ikke frekvens – legg til f.eks. "5 ganger per uke".',
-			invalid_threshold: 'Kunne ikke lese målverdi for antall per uke.',
-			unknown: 'Ukjent parse-feil.'
-		};
-		return reasonMap[reason] ?? `Tolking feilet (${reason}).`;
-	}
-
-	function getTaskEvaluationLabel(task: WeekTask): string | null {
-		const e = task.metadata?.intentEvaluation;
-		if (!e) return null;
-		if (typeof e.currentValue !== 'number' || typeof e.targetValue !== 'number') return null;
-		if (e.targetValue <= 0) return null;
-		const pct = Math.max(0, Math.min(100, Math.round((e.currentValue / e.targetValue) * 100)));
-		const metText = e.met ? 'oppnådd' : 'pågår';
-		return `${e.currentValue}/${e.targetValue} denne uka (${pct}%) · ${metText}`;
-	}
 
 	// Procedure loading
 	async function loadProcedureMatches() {
@@ -174,17 +124,8 @@
 				});
 				continue;
 			}
-			try {
-				const res = await fetch('/api/procedures/match', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ taskTitle: task.title })
-				});
-				const { matches } = await res.json();
-				if (matches?.length > 0) {
-					results.set(task.id, { procedureId: matches[0].procedureId, title: matches[0].title, emoji: matches[0].emoji });
-				}
-			} catch { /* ignore */ }
+			const match = await api.matchProcedure(task.title);
+			if (match) results.set(task.id, match);
 		}
 		procedureMatches = results;
 	}
@@ -192,12 +133,10 @@
 	$effect(() => { loadProcedureMatches(); });
 
 	async function openProcedureSheet(procedureId: string) {
-		try {
-			const res = await fetch(`/api/procedures/${procedureId}`);
-			if (!res.ok) return;
-			procedureSheetData = await res.json();
-			procedureSheetId = procedureId;
-		} catch { /* ignore */ }
+		const data = await api.getProcedure(procedureId);
+		if (!data) return;
+		procedureSheetData = data;
+		procedureSheetId = procedureId;
 	}
 
 	// Task press handlers
@@ -218,25 +157,13 @@
 	}
 
 	async function handleTaskStartChat(task: WeekTask) {
-		try {
-			const res = await fetch('/api/conversations/new', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ title: `Oppgave: ${task.title}`, sourceContext: { sourceTaskId: task.id, sourceItemText: task.title } })
-			});
-			if (!res.ok) { goto('/samtaler'); return; }
-			const { conversationId } = await res.json();
-			goto(`/samtaler?conversation=${conversationId}`);
-		} catch { goto('/samtaler'); }
+		await api.startTaskChat(task);
 	}
 
 	async function deleteTask(taskId: string) {
 		deletingTaskId = taskId;
 		try {
-			const fd = new FormData();
-			fd.set('taskId', taskId);
-			await fetch('?/deleteTask', { method: 'POST', body: fd });
-			await invalidateAll();
+			await api.deleteTask(taskId);
 		} finally { deletingTaskId = null; }
 	}
 
@@ -247,11 +174,7 @@
 		localEditingTask = null;
 		const trimmed = title.trim();
 		if (!trimmed || trimmed === originalTitle) return;
-		const fd = new FormData();
-		fd.set('taskId', taskId);
-		fd.set('title', trimmed);
-		await fetch('?/updateTask', { method: 'POST', body: fd });
-		await invalidateAll();
+		await api.updateTaskTitle(taskId, trimmed);
 	}
 
 	// Checklist item row callbacks (for week checklist)
@@ -335,7 +258,7 @@
 
 <section class="wp-card" id="ukeplan-checklist">
 	<div class="wp-card-head">
-		<h2>Ukas oppgaver</h2>
+		<CardTitle>Ukas oppgaver</CardTitle>
 		{#if weekChecklistState}
 			<span class="wp-pill">{weekTasks.length + progress.total} totalt</span>
 		{:else}
@@ -588,24 +511,19 @@
 		}}
 		onApply={async (procedureId) => {
 			if (!dayChecklistId) return;
-			await fetch(`/api/procedures/${procedureId}/apply`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ checklistId: dayChecklistId })
-			});
+			await api.applyProcedure(procedureId, dayChecklistId);
 			procedureSheetId = null;
 			procedureSheetData = null;
-			await invalidateAll();
 		}}
 	/>
 {/if}
 
 <style>
 	.wp-card {
-		background: linear-gradient(180deg, rgba(9, 11, 17, 0.95), rgba(8, 10, 15, 0.95));
+		background: var(--card-bg);
 		border: none;
-		border-radius: 14px;
-		padding: 12px;
+		border-radius: var(--card-radius, 14px);
+		padding: var(--card-padding, 12px);
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
@@ -618,11 +536,6 @@
 		gap: 8px;
 	}
 
-	.wp-card h2 {
-		margin: 0;
-		font-size: 0.95rem;
-		color: var(--text-primary);
-	}
 
 	.wp-pill {
 		font-size: 0.72rem;

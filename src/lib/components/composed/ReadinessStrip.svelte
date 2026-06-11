@@ -1,4 +1,6 @@
 <script lang="ts">
+	import DateInput from '$lib/components/ui/DateInput.svelte';
+
 	interface SignalFlagDisplay {
 		flag: 'red' | 'yellow' | 'green' | 'unknown';
 		label: string;
@@ -225,10 +227,9 @@
 					<input type="checkbox" checked={localSick.active} onchange={toggleSick} />
 					<span>Syk</span>
 					{#if localSick.active}
-						<input
-							type="date"
+						<DateInput
 							value={localSick.until ?? ''}
-							onchange={(e) => (localSick = { active: true, until: e.currentTarget.value })}
+							onChange={(e) => (localSick = { active: true, until: e.currentTarget.value })}
 							min={new Date().toISOString().slice(0, 10)}
 						/>
 					{/if}
@@ -237,10 +238,9 @@
 					<input type="checkbox" checked={localCrunch.active} onchange={toggleCrunch} />
 					<span>Crunch-periode</span>
 					{#if localCrunch.active}
-						<input
-							type="date"
+						<DateInput
 							value={localCrunch.until ?? ''}
-							onchange={(e) => (localCrunch = { active: true, until: e.currentTarget.value })}
+							onChange={(e) => (localCrunch = { active: true, until: e.currentTarget.value })}
 							min={new Date().toISOString().slice(0, 10)}
 						/>
 					{/if}

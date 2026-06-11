@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button, Input, Radio } from '$lib/components/ui';
+	import { Button, DateInput, Input, Radio } from '$lib/components/ui';
 	import { onMount } from 'svelte';
 	import { formatDuration } from './sources-utils';
 
@@ -613,11 +613,11 @@
 			<div class="row debug-controls">
 				<label class="option-pill">
 					<span>Fra</span>
-					<Input type="date" className="input days-input" bind:value={sleepBackfillFromDate} />
+					<DateInput className="days-input" bind:value={sleepBackfillFromDate} />
 				</label>
 				<label class="option-pill">
 					<span>Til</span>
-					<Input type="date" className="input days-input" bind:value={sleepBackfillToDate} />
+					<DateInput className="days-input" bind:value={sleepBackfillToDate} />
 				</label>
 				<Button
 					type="button"

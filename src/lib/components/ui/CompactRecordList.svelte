@@ -90,10 +90,10 @@
 
 <style>
 	.list-card {
-		border: 1px solid #262626;
-		border-radius: 14px;
-		background: #121212;
-		padding: 14px;
+		border: 1px solid var(--card-border, #262626);
+		border-radius: var(--card-radius, 14px);
+		background: var(--card-bg-subtle, #121212);
+		padding: var(--card-padding, 14px);
 	}
 
 	.list-head {

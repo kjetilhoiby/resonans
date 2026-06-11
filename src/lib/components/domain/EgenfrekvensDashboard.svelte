@@ -346,10 +346,10 @@
 		font-size: 0.9rem;
 	}
 	.ef-card {
-		background: rgba(255, 255, 255, 0.03);
-		border: 1px solid rgba(255, 255, 255, 0.06);
-		border-radius: 14px;
-		padding: 14px;
+		background: var(--card-bg-subtle, rgba(255, 255, 255, 0.03));
+		border: 1px solid var(--card-border, rgba(255, 255, 255, 0.06));
+		border-radius: var(--card-radius, 14px);
+		padding: var(--card-padding, 14px);
 	}
 	.ef-card :global(.section-label) {
 		margin-bottom: 10px;

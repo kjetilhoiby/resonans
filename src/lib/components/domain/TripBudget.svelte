@@ -160,6 +160,7 @@
 
 	// Load tur on mount
 	import { onMount } from 'svelte';
+	import DateInput from '$lib/components/ui/DateInput.svelte';
 	onMount(() => { void loadTur(); });
 
 	// Reload tur when account filter changes
@@ -288,11 +289,11 @@
 			<div class="tb-search-dates">
 				<label class="tb-date-field">
 					<span class="tb-date-label">Fra</span>
-					<input class="tb-input" type="date" bind:value={searchFrom} />
+					<DateInput bind:value={searchFrom} />
 				</label>
 				<label class="tb-date-field">
 					<span class="tb-date-label">Til</span>
-					<input class="tb-input" type="date" bind:value={searchTo} />
+					<DateInput bind:value={searchTo} />
 				</label>
 			</div>
 			<button

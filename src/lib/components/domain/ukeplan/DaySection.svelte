@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { ChecklistItemRow, RoutineGroupRow } from '$lib/components/ui';
+	import { CardTitle, ChecklistItemRow, RoutineGroupRow } from '$lib/components/ui';
 	import type { ChecklistItemLike } from '$lib/types/checklist';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import MentionAutocomplete from '$lib/components/ui/MentionAutocomplete.svelte';
@@ -231,7 +231,7 @@
 
 <section class="wp-card">
 	<div class="wp-card-head">
-		<h2>Dager og dagsmål</h2>
+		<CardTitle>Dager og dagsmål</CardTitle>
 	</div>
 
 	<div class="wp-days" aria-label="Ukas dager">
@@ -430,10 +430,10 @@
 
 <style>
 	.wp-card {
-		background: linear-gradient(180deg, rgba(9, 11, 17, 0.95), rgba(8, 10, 15, 0.95));
+		background: var(--card-bg);
 		border: none;
-		border-radius: 14px;
-		padding: 12px;
+		border-radius: var(--card-radius, 14px);
+		padding: var(--card-padding, 12px);
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
@@ -446,11 +446,6 @@
 		gap: 8px;
 	}
 
-	.wp-card h2 {
-		margin: 0;
-		font-size: 0.95rem;
-		color: var(--text-primary);
-	}
 
 	.wp-days {
 		display: grid;

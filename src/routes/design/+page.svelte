@@ -1,57 +1,158 @@
 <script lang="ts">
-	import { AppPage, PageSection } from '$lib/components/ui';
-	import GoalRing from '$lib/components/ui/GoalRing.svelte';
-	import PeriodPills from '$lib/components/ui/PeriodPills.svelte';
-	import StreakBadge from '$lib/components/ui/StreakBadge.svelte';
-	import ChatBubble from '$lib/components/ui/ChatBubble.svelte';
-	import ChatInput from '$lib/components/ui/ChatInput.svelte';
-	import RelationSparkline from '$lib/components/ui/RelationSparkline.svelte';
-	import Section from '$lib/components/ui/Section.svelte';
-	import CompactRecordList from '$lib/components/ui/CompactRecordList.svelte';
-	import ScreenTitle from '$lib/components/ui/ScreenTitle.svelte';
-	import Icon from '$lib/components/ui/Icon.svelte';
-	import { THEME_HUES, getThemeHueStyle, type ThemeHueKey } from '$lib/domain/theme-hues';
-	import DayWheelChart, { type DayData } from '$lib/components/visualizations/DayWheelChart.svelte';
-	import DomainWheelChart, { type DomainStatus } from '$lib/components/visualizations/DomainWheelChart.svelte';
+	import {
+		AppPage,
+		PageSection,
+		Button,
+		IconButton,
+		Input,
+		Textarea,
+		Select,
+		Checkbox,
+		StatusBadge,
+		Skeleton,
+		DateInput,
+		TimeInput,
+		PageHeader,
+		Section,
+		SectionLabel,
+		CardTitle,
+		SectionCard,
+		CompactRecordList,
+		GoalRing,
+		PeriodPills,
+		StreakBadge,
+		ChatBubble,
+		ChatInput,
+		RelationSparkline,
+		Icon
+	} from '$lib/components/ui';
+	import TriageCard from '$lib/components/composed/TriageCard.svelte';
+	import ChecklistWidget from '$lib/components/composed/ChecklistWidget.svelte';
+	import DynamicWidgetView from '$lib/components/composed/DynamicWidgetView.svelte';
+	import ProjectCard from '$lib/components/composed/ProjectCard.svelte';
+	import ScreenTimeCard from '$lib/components/composed/ScreenTimeCard.svelte';
+	import BalanceCard from '$lib/components/composed/BalanceCard.svelte';
+	import FormCard from '$lib/components/composed/FormCard.svelte';
+	import WeeklyEffortCard from '$lib/components/composed/WeeklyEffortCard.svelte';
+	import WeekGoals from '$lib/components/domain/ukeplan/WeekGoals.svelte';
+	import WeekNote from '$lib/components/domain/ukeplan/WeekNote.svelte';
+	import DaySection from '$lib/components/domain/ukeplan/DaySection.svelte';
+	import WeekTasks from '$lib/components/domain/ukeplan/WeekTasks.svelte';
+	import ProcedureSheet from '$lib/components/ui/ProcedureSheet.svelte';
+	import WidgetConfigSheet from '$lib/components/ui/WidgetConfigSheet.svelte';
+	import ChecklistSheet from '$lib/components/ui/ChecklistSheet.svelte';
+	import FlowSheet from '$lib/components/flows/FlowSheet.svelte';
+	import { FLOWS } from '$lib/flows/registry';
+	import ChatMessages from '$lib/components/ui/ChatMessages.svelte';
+	import MetricCard from '$lib/components/visualizations/MetricCard.svelte';
+	import WeatherStrip from '$lib/components/ui/WeatherStrip.svelte';
+	import TaskContextMenu from '$lib/components/ui/TaskContextMenu.svelte';
+	import AutoCheckModal from '$lib/components/domain/ukeplan/AutoCheckModal.svelte';
+	import LocationPickerModal from '$lib/components/ui/LocationPickerModal.svelte';
+	import BreakdownModal from '$lib/components/ui/BreakdownModal.svelte';
+	import ShareSheet from '$lib/components/domain/share/ShareSheet.svelte';
+	import type { SaveState } from '$lib/components/domain/ukeplan/types';
+	import { THEME_HUES, type ThemeHueKey } from '$lib/domain/theme-hues';
+	import DayWheelChart from '$lib/components/visualizations/DayWheelChart.svelte';
+	import DomainWheelChart from '$lib/components/visualizations/DomainWheelChart.svelte';
+	import {
+		checklistEmpty,
+		checklistHalf,
+		checklistDone,
+		checklistMonth,
+		demoMonthDays,
+		demoDomains,
+		loadSeries,
+		effortByDay,
+		effortTotal,
+		effortByFamily,
+		effortBaseline,
+		screenThisWeek,
+		screenPrevWeek,
+		screenGoals,
+		screenWeekDays,
+		screenCategoryLabels,
+		screenCumulative,
+		screenCumulativeRefs,
+		projectActive,
+		projectDone,
+		widgetWeight,
+		widgetSteps,
+		widgetSpend,
+		widgetSleep,
+		weekGoalsVision,
+		weekGoalsMock,
+		daySectionFixture,
+		weekTasksFixture,
+		procedureMock,
+		mockProcedureSheetApi,
+		widgetConfigMock,
+		mockLoadFilterPreview,
+		mockChecklistSheetApi,
+		checklistSheetFixture,
+		checklistSheetRoutines,
+		checklistSheetDoneFixture,
+		mockFlowSheetApi,
+		slotCheckinFlow,
+		chatMessagesMock,
+		metricRunning,
+		metricWeight,
+		metricSleep,
+		metricSteps,
+		metricGrocery,
+		taskMenuAnchor,
+		autoCheckPromptMock,
+		geoCandidatesMock,
+		weatherPeriodsMock,
+		mockShareApi,
+		mockLoadBreakdownSuggestions
+	} from './mocks';
 
 	const sections = [
-		'Designprinsipper',
-		'Layout & Structure',
-		'Knapper',
-		'Ikoner',
-		'Widgets',
-		'Chat-bobler',
-		'Input & skjema',
-		'Navigasjon',
-		'Hjemskjerm',
-		'Interaksjonsflyter',
-		'Ukeplan',
-		'Sjekkliste-flyt',
-		'Radiale visualiseringer',
+		{ id: 'prinsipper', label: 'Designprinsipper' },
+		{ id: 'typografi', label: 'Typografi' },
+		{ id: 'blokktyper', label: 'Blokktyper' },
+		{ id: 'layout', label: 'Layout & struktur' },
+		{ id: 'knapper', label: 'Knapper' },
+		{ id: 'ikoner', label: 'Ikoner & tema-hue' },
+		{ id: 'ringer', label: 'Ringer & widgets' },
+		{ id: 'dashboardkort', label: 'Dashboard-kort' },
+		{ id: 'chat', label: 'Chat' },
+		{ id: 'skjema', label: 'Skjema' },
+		{ id: 'navigasjon', label: 'Navigasjon' },
+		{ id: 'ukeplan', label: 'Ukeplan' },
+		{ id: 'sheets', label: 'Sheets & paneler' },
+		{ id: 'modaler', label: 'Menyer & modaler' },
+		{ id: 'lab', label: 'Lab' }
 	] as const;
 
-	// ── Interaksjonsflyt-state ──────────────────────────────────────────────────
-	let homeZone = $state<'widgets' | 'tema' | 'input' | null>(null);
-
-	// ── Widget-state ────────────────────────────────────────────────────────────
+	// ── GoalRing-demo ───────────────────────────────────────────────────────────
 	let runPeriod = $state<'uke' | 'måned' | 'kvartal'>('kvartal');
 	const runData: Record<string, { delta: string; pct: number }> = {
 		uke:     { delta: '+3 km',  pct: 79 },
 		måned:   { delta: '+8 km',  pct: 62 },
-		kvartal: { delta: '+12 km', pct: 71 },
+		kvartal: { delta: '+12 km', pct: 71 }
 	};
 
 	let weightPeriod = $state<'7d' | '30d' | '90d'>('30d');
 	const weightData: Record<string, { delta: string; pct: number; col: string }> = {
 		'7d':  { delta: '−0.4', pct: 40, col: '#5fa0a0' },
 		'30d': { delta: '−1.1', pct: 55, col: '#5fa0a0' },
-		'90d': { delta: '+2.7', pct: 22, col: '#e07070' },
+		'90d': { delta: '+2.7', pct: 22, col: '#e07070' }
 	};
 
-	// ── Chat-demo ───────────────────────────────────────────────────────────────
-	let triageDecision = $state<'glem' | 'prosjekt' | null>(null);
+	// ── Chat-demo ──────────────────────────────────────────────────────────────
+	let lastSent = $state('');
+	const noop = () => {};
 
-	// ── Input-demo ──────────────────────────────────────────────────────────────
+	// ── WeekNote-demo ──────────────────────────────────────────────────────────
+	let weekNoteSaveState = $state<SaveState>('idle');
+	async function mockSaveWeekNote(): Promise<boolean> {
+		await new Promise((r) => setTimeout(r, 600));
+		return true;
+	}
+
+	// ── Skjema-demo ────────────────────────────────────────────────────────────
 	let moodVal = $state(62);
 	const moodLabel = $derived(
 		moodVal < 22 ? 'Tung' :
@@ -65,32 +166,13 @@
 		moodVal < 62 ? '🙂' :
 		moodVal < 82 ? '😊' : '🤩'
 	);
-	let moodSaved = $state(false);
 
-	let pickedEmoji = $state<string | null>(null);
-	const emojiSet = ['😔', '😐', '🙂', '😊', '🤩'];
-
-	let energyVal = $state<number | null>(null);
-
+	// ── Ikon-lab ───────────────────────────────────────────────────────────────
 	type DesignIconToken =
-		| 'chat'
-		| 'camera'
-		| 'wave'
-		| 'checkin'
-		| 'file'
-		| 'goals'
-		| 'settings'
-		| 'back'
-		| 'forward'
-		| 'search'
-		| 'refresh'
-		| 'close';
+		| 'chat' | 'camera' | 'wave' | 'checkin' | 'file' | 'goals' | 'settings' | 'back'
+		| 'forward' | 'search' | 'refresh' | 'close' | 'plus' | 'attach' | 'check' | 'calendar';
 
-	const iconSpecs: Array<{
-		token: DesignIconToken;
-		label: string;
-		legacy: string;
-	}> = [
+	const iconSpecs: Array<{ token: DesignIconToken; label: string; legacy: string }> = [
 		{ token: 'chat', label: 'Samtale', legacy: '◈ / 💬' },
 		{ token: 'camera', label: 'Kamera', legacy: '◉' },
 		{ token: 'wave', label: 'Lyd', legacy: '∿' },
@@ -102,7 +184,11 @@
 		{ token: 'forward', label: 'Frem', legacy: '→' },
 		{ token: 'search', label: 'Søk', legacy: 'inline SVG' },
 		{ token: 'refresh', label: 'Oppdater', legacy: 'inline SVG' },
-		{ token: 'close', label: 'Lukk', legacy: '✕ / ×' }
+		{ token: 'close', label: 'Lukk', legacy: '✕ / ×' },
+		{ token: 'plus', label: 'Legg til', legacy: '+' },
+		{ token: 'attach', label: 'Vedlegg', legacy: '📎' },
+		{ token: 'check', label: 'Bekreft', legacy: '✓' },
+		{ token: 'calendar', label: 'Kalender', legacy: '📅' }
 	];
 
 	let iconThemeHue = $state(THEME_HUES.default);
@@ -114,41 +200,6 @@
 		{ key: 'economy', name: 'Økonomi', hue: THEME_HUES.economy, note: 'Strammere amber' },
 		{ key: 'literature', name: 'Litteratur', hue: THEME_HUES.literature, note: 'Varm og rolig lesetone' },
 		{ key: 'work', name: 'Arbeid', hue: THEME_HUES.work, note: 'Kjølig fokusfarge' }
-	];
-
-	// ── Ukeplan-demo ────────────────────────────────────────────────────────────
-	let weekGoalChecks = $state([true, false, false]);
-	const weekDays = [
-		{ name: 'Mandag',  note: 'Sykkel hjem(?)',  todos: ['Matpakker', 'Viktigst', 'Tidlig seng', 'Sykkel hjem', 'Barnefri'] },
-		{ name: 'Tirsdag', note: 'Første dukkert',  todos: ['Opp 05.00', 'Svømmehall', 'Levere rapport'] },
-		{ name: 'Onsdag',  note: '',                todos: ['Knekkebrød', 'Pilates', 'Tidlig seng'] },
-		{ name: 'Torsdag', note: 'Svøm?',           todos: ['Svømmehall', 'Jobb hjemmefra'] },
-		{ name: 'Fredag',  note: 'Anita reiser',    todos: ['Skole og bhg', 'Sykkel hjem', 'Handle mat'] },
-	];
-	let dayChecks = $state([
-		[false, false, true, false, true],
-		[true, true, false],
-		[false, false, false],
-		[false, false],
-		[false, false, false],
-	]);
-
-	// ── Radiale visualiseringer ─────────────────────────────────────────────────
-	// planned/completed per dag — variasjon for å vise normalisering
-	const DEMO_PLANNED =  [5, 3, 6, 4, 7, 2, 5, 4, 6, 3, 5, 7, 4, 6, 3, 5, 4, 6, 7, 5];
-	const DEMO_DONE    =  [5, 2, 4, 4, 5, 2, 3, 4, 6, 1, 4, 5, 3, 4, 3, 5, 2, 5, 4, 3];
-
-	const demoMonthDays: DayData[] = Array.from({ length: 31 }, (_, i) => {
-		const day = i + 1;
-		if (day < 21) return { planned: DEMO_PLANNED[i], completed: DEMO_DONE[i], isPast: true, isToday: false };
-		if (day === 21) return { planned: 4, completed: 1, isPast: false, isToday: true };
-		return { planned: 0, completed: 0, isPast: false, isToday: false };
-	});
-
-	const demoDomains: DomainStatus[] = [
-		{ id: 'health',    label: 'Helse',   color: '#5fa0a0', monthPct: 0.72, trend: 'up' },
-		{ id: 'economics', label: 'Økonomi', color: '#f0b429', monthPct: 0.58, trend: 'flat' },
-		{ id: 'food',      label: 'Mat',     color: '#d4829a', monthPct: 0.40, trend: 'down' },
 	];
 </script>
 
@@ -163,19 +214,22 @@
 	<!-- ── Sidemeny ── -->
 	<nav class="sidenav">
 		{#each sections as s}
-			<a class="sidenav-link" href="#{s}">{s}</a>
+			<a class="sidenav-link" href="#{s.id}">{s.label}</a>
 		{/each}
 	</nav>
 
 	<main class="content">
 
 		<h1 class="page-title">Design</h1>
-		<p class="page-sub">Levende dokumentasjon — faktiske komponenter med mock-data.</p>
+		<p class="page-sub">
+			Levende dokumentasjon: alle demoer rendrer appens faktiske komponenter med mock-data — ingen gjenskapt markup.
+			Nye komponenter utvikles og tilpasses her (under «Lab») før de tas inn i appen.
+		</p>
 
-		<!-- ══ DESIGNPRINSIPPER ════════════════════════════════════════════════════════ -->
-		<section id="Designprinsipper" class="section">
+		<!-- ══ DESIGNPRINSIPPER ═══════════════════════════════════════════════════ -->
+		<section id="prinsipper" class="section">
 			<h2 class="section-heading">Designprinsipper</h2>
-			<p class="section-desc">Kjerneverdier som styrer all UX-beslutning. Åpne appen skal føles som å puste ut, ikke inn.</p>
+			<p class="section-desc">Kjerneverdier som styrer all UX-beslutning. Åpne appen skal føles som å puste ut, ikke inn.</p>
 
 			<div class="principles-grid">
 
@@ -222,25 +276,128 @@
 			</div>
 		</section>
 
-		<!-- ══ LAYOUT & STRUCTURE ══════════════════════════════════════════════════════ -->
-		<section id="Layout & Structure" class="section">
-			<h2 class="section-heading">Layout & Structure</h2>
+		<!-- ══ TYPOGRAFI ══════════════════════════════════════════════════════════ -->
+		<section id="typografi" class="section">
+			<h2 class="section-heading">Typografi</h2>
 			<p class="section-desc">
-				Base komponenter for layout og struktur. Brukes på tvers av alle dashboards.
+				Fem størrelses-tokens definert i <code>AppPage.svelte</code>. Bruk tokens — aldri hardkodede font-sizes i nye komponenter.
 			</p>
 
-			<!-- Section -->
+			<div class="type-scale">
+				<div class="type-row"><code>--font-size-value</code><span class="type-val">1.9rem</span><span style="font-size: var(--font-size-value); font-weight: 700;">5t 38m</span></div>
+				<div class="type-row"><code>--font-size-title</code><span class="type-val">1rem</span><span style="font-size: var(--font-size-title); font-weight: 600;">Korttittel</span></div>
+				<div class="type-row"><code>--font-size-body</code><span class="type-val">0.9rem</span><span style="font-size: var(--font-size-body);">Brødtekst i kort og seksjoner.</span></div>
+				<div class="type-row"><code>--font-size-label</code><span class="type-val">0.78rem</span><span style="font-size: var(--font-size-label); text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; font-weight: 600;">Seksjonslabel</span></div>
+				<div class="type-row"><code>--font-size-caption</code><span class="type-val">0.72rem</span><span style="font-size: var(--font-size-caption); color: #777;">Hint, delta, meta-tekst</span></div>
+			</div>
+
+			<h3 class="subsection">SectionLabel — «hva er denne blokken»</h3>
+			<p class="section-desc">
+				Alle seksjons-/diagramlabels bruker <code>SectionLabel</code>: uppercase, muted, 0.78rem.
+				Velg <code>tag</code> etter overskriftshierarkiet. <code>nowrap</code> gir ellipsis i flex-rader med actions til høyre.
+			</p>
+			<div class="demo-stack">
+				<SectionLabel>Treningsøkter</SectionLabel>
+				<div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; border: 1px dashed #2a2a2a; border-radius: 8px; padding: 8px;">
+					<SectionLabel tag="span" nowrap>Akkumulert gjennom uka (nowrap i trang rad)</SectionLabel>
+					<Button variant="chip">Toggle</Button>
+				</div>
+				<div style="--section-label-color: #8ba0f5;">
+					<SectionLabel>Med fargeoverride</SectionLabel>
+				</div>
+			</div>
+
+			<h3 class="subsection">CardTitle — «hva gjør dette kortet»</h3>
+			<p class="section-desc">
+				Kort-titler bruker <code>CardTitle</code>: 1rem, 600, hvit, normal case. («Ukesnotat», «Legg inn skjermbilder», …)
+			</p>
+			<div class="demo-stack">
+				<CardTitle>Ukas oppgaver</CardTitle>
+			</div>
+		</section>
+
+		<!-- ══ BLOKKTYPER ═════════════════════════════════════════════════════════ -->
+		<section id="blokktyper" class="section">
+			<h2 class="section-heading">Blokktyper</h2>
+			<p class="section-desc">
+				Fire kanoniske blokktyper, alle bygget på <code>--card-*</code>-tokens fra AppPage.
+				Kontekster (temasider, ukeplan) overstyrer tokens — komponentene er like.
+				<strong>Overskriftsregler:</strong> (1) overskrift inne i kortet, øverst, venstrejustert;
+				(2) SectionLabel <em>over</em> kortgrupper når flere kort deler heading;
+				(3) meta/actions til høyre i samme rad — aldri over eller under tittelen.
+			</p>
+
+			<h3 class="subsection">Card — SectionCard-tones</h3>
+			<div class="demo-stack">
+				<SectionCard title="Default" meta="tone=default">
+					<p style="margin: 0; color: #888; font-size: var(--font-size-body);">--card-bg, ingen border.</p>
+				</SectionCard>
+				<SectionCard title="Subtle" tone="subtle" meta="tone=subtle">
+					<p style="margin: 0; color: #888; font-size: var(--font-size-body);">--card-bg-subtle — dashboards-standarden.</p>
+				</SectionCard>
+				<SectionCard title="Bordered" tone="bordered" meta="tone=bordered">
+					<p style="margin: 0; color: #888; font-size: var(--font-size-body);">--card-bg + 1px --card-border.</p>
+				</SectionCard>
+			</div>
+
+			<h3 class="subsection">FlatSection — label over kortgruppe</h3>
+			<div class="demo-stack" style="gap: 8px;">
+				<SectionLabel>Prosjekter</SectionLabel>
+				<SectionCard tone="subtle" compact>
+					<p style="margin: 0; color: #888; font-size: var(--font-size-body);">Kort 1 i gruppen</p>
+				</SectionCard>
+				<SectionCard tone="subtle" compact>
+					<p style="margin: 0; color: #888; font-size: var(--font-size-body);">Kort 2 i gruppen</p>
+				</SectionCard>
+			</div>
+
+			<h3 class="subsection">InsetCard — nestet kort</h3>
+			<div class="demo-stack">
+				<SectionCard tone="subtle" title="Ytre kort">
+					<div style="background: var(--card-bg-inset); border-radius: var(--radius-md); padding: 14px; color: #888; font-size: var(--font-size-body);">
+						--card-bg-inset + --radius-md for kort-i-kort (mål-kort, oppholds-kort).
+					</div>
+				</SectionCard>
+			</div>
+
+			<h3 class="subsection">FeatureCard — kontekst-overstyrt skin</h3>
+			<p class="section-desc">
+				Gradient-/hue-kort er <em>token-overrides på kontekstnivå</em>, ikke egne komponenter.
+				Ukeplan setter <code>--card-bg: linear-gradient(…)</code>; temasider setter <code>--card-bg: var(--tp-bg-2)</code>.
+				Dette er mekanismen som senere kan re-skinne hele appen (f.eks. light mode): bytt tokens, ikke komponenter.
+			</p>
+			<div class="demo-stack" style="--card-bg: linear-gradient(180deg, rgba(9, 11, 17, 0.95), rgba(8, 10, 15, 0.95)); --card-radius: 14px; --card-padding: 12px;">
+				<SectionCard title="Ukeplan-skin">
+					<p style="margin: 0; color: #888; font-size: var(--font-size-body);">Samme komponent, ukeplan-kontekstens tokens.</p>
+				</SectionCard>
+			</div>
+		</section>
+
+		<!-- ══ LAYOUT & STRUKTUR ══════════════════════════════════════════════════ -->
+		<section id="layout" class="section">
+			<h2 class="section-heading">Layout & struktur</h2>
+			<p class="section-desc">
+				Base-komponenter for sidestruktur. Hver side: <code>AppPage</code> → <code>PageSection</code> → <code>PageHeader</code> → innhold.
+			</p>
+
+			<h3 class="subsection">PageHeader</h3>
+			<p class="section-desc">
+				Standard sidetittel for hele appen — tittelen ER tilbakeknappen (<code>titleHref</code>/<code>onTitleClick</code>),
+				støtter <code>emoji</code>, <code>subtitle</code> og morph-animasjon. Erstattet ScreenTitle og MorphTitle.
+			</p>
+			<div class="demo-stack">
+				<PageHeader title="Helse" subtitle="Vekt, løping, søvn og aktivitet" emoji="🏃" titleHref="/design" />
+			</div>
+
 			<h3 class="subsection">Section</h3>
 			<p class="section-desc">
-				Standard contentwrapper: <code>Section.svelte</code>. Mørkegrå bakgrunn (#141414), avrundet (18px), ingen border.
-				Valgfri tittel og meta-info (f.eks. "3 items").
+				Standard contentwrapper bygget på <code>--card-*</code>-tokens, ingen border.
+				Valgfri tittel og meta. For nye kort: vurder <code>SectionCard</code> (flere tones + actions).
 			</p>
-
-			<div style="max-width: 420px; display: flex; flex-direction: column; gap: 12px;">
+			<div class="demo-stack">
 				<Section title="Eksempel uten innhold">
 					<p style="margin: 0; color: #888; font-size: 0.82rem;">Dette er innholdet i seksjonen.</p>
 				</Section>
-
 				<Section title="Med metadata" meta="3 items">
 					<ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px;">
 						<li style="color: #aaa; font-size: 0.82rem;">• Item 1</li>
@@ -248,28 +405,13 @@
 						<li style="color: #aaa; font-size: 0.82rem;">• Item 3</li>
 					</ul>
 				</Section>
-
-				<Section>
-					<p style="margin: 0; color: #888; font-size: 0.82rem;">Seksjon uten tittel</p>
-				</Section>
 			</div>
 
-			<!-- ScreenTitle -->
-			<h3 class="subsection">ScreenTitle</h3>
-			<p class="section-desc">
-				Standard page header med tittel og valgfri undertekst: <code>ScreenTitle.svelte</code>
-			</p>
-			<div style="max-width: 420px;">
-				<ScreenTitle title="Helse" subtitle="Vekt, løping, søvn og aktivitet" />
-			</div>
-
-			<!-- CompactRecordList -->
 			<h3 class="subsection">CompactRecordList</h3>
 			<p class="section-desc">
-				Kompakt liste med tittel, label og meta-info: <code>CompactRecordList.svelte</code>.
-				Brukes for kilder, kontoer, siste transaksjoner osv.
+				Kompakt liste med tittel, label og meta-info. Brukes for kilder, kontoer, siste transaksjoner osv.
 			</p>
-			<div style="max-width: 420px;">
+			<div class="demo-stack">
 				<CompactRecordList
 					title="Kilder"
 					items={[
@@ -280,73 +422,98 @@
 					emptyText="Ingen kilder ennå."
 				/>
 			</div>
+
+			<h3 class="subsection">Skeleton — lastetilstander</h3>
+			<p class="section-desc">
+				<code>Skeleton</code> har fire varianter. Bruk denne i stedet for ad-hoc «Laster …»-tekst.
+			</p>
+			<div class="demo-stack">
+				<div style="display: flex; align-items: center; gap: 12px;">
+					<Skeleton variant="circle" />
+					<div style="flex: 1; display: flex; flex-direction: column; gap: 8px;">
+						<Skeleton variant="line" width="60%" />
+						<Skeleton variant="line" width="85%" />
+					</div>
+				</div>
+				<Skeleton variant="card" />
+				<Skeleton variant="pill" />
+			</div>
 		</section>
 
-		<!-- ══ KNAPPER ══════════════════════════════════════════════════════════ -->
-		<section id="Knapper" class="section">
+		<!-- ══ KNAPPER ════════════════════════════════════════════════════════════ -->
+		<section id="knapper" class="section">
 			<h2 class="section-heading">Knapper</h2>
 			<p class="section-desc">
-				Alle klasser er globale — definert i <code>app.css</code>. Bruk dem direkte i alle ruter uten lokal CSS.
+				<code>&lt;Button variant="…"&gt;</code> fra <code>ui/</code> er standard-API-et — komponenten bygger på de globale
+				<code>.btn-*</code>-klassene i <code>app.css</code>, som kan brukes direkte der en komponent ikke passer.
+				Ikon-knapper bruker <code>&lt;IconButton icon="…" ariaLabel="…"&gt;</code>.
 			</p>
 			<div class="variant-grid" style="--min:100px">
 
 				<div class="variant">
-					<button class="btn-primary">Lagre</button>
-					<span class="vname">Primær<br><code>.btn-primary</code></span>
+					<Button variant="primary">Lagre</Button>
+					<span class="vname">Primær<br><code>primary</code></span>
 				</div>
 
 				<div class="variant">
-					<button class="btn-secondary">Avbryt</button>
-					<span class="vname">Sekundær<br><code>.btn-secondary</code></span>
+					<Button variant="secondary">Avbryt</Button>
+					<span class="vname">Sekundær<br><code>secondary</code></span>
 				</div>
 
 				<div class="variant">
-					<button class="btn-ghost">Mer</button>
-					<span class="vname">Ghost<br><code>.btn-ghost</code></span>
+					<Button variant="ghost">Mer</Button>
+					<span class="vname">Ghost<br><code>ghost</code></span>
 				</div>
 
 				<div class="variant">
-					<button class="btn-chip">Trening</button>
-					<span class="vname">Chip<br><code>.btn-chip</code></span>
+					<Button variant="chip">Trening</Button>
+					<span class="vname">Chip<br><code>chip</code></span>
 				</div>
 
 				<div class="variant">
-					<button class="btn-chip active">Søvn</button>
-					<span class="vname">Chip · aktiv<br><code>.btn-chip.active</code></span>
+					<Button variant="chip" className="active">Søvn</Button>
+					<span class="vname">Chip · aktiv<br><code>chip + .active</code></span>
 				</div>
 
 				<div class="variant">
-					<button class="btn-danger">Slett</button>
-					<span class="vname">Destruktiv<br><code>.btn-danger</code></span>
+					<Button variant="danger">Slett</Button>
+					<span class="vname">Destruktiv<br><code>danger</code></span>
 				</div>
 
 				<div class="variant">
-					<button class="btn-icon"><Icon name="settings" size={16} /></button>
-					<span class="vname">Ikon<br><code>.btn-icon</code></span>
+					<Button variant="warning">Arkiver?</Button>
+					<span class="vname">Advarsel<br><code>warning</code></span>
 				</div>
 
 				<div class="variant">
-					<button class="btn-icon-danger"><Icon name="close" size={14} /></button>
-					<span class="vname">Ikon · slett<br><code>.btn-icon-danger</code></span>
+					<Button variant="primary" disabled>Lagre</Button>
+					<span class="vname">Deaktivert<br><code>disabled</code></span>
+				</div>
+
+				<div class="variant">
+					<IconButton icon="settings" ariaLabel="Innstillinger" size={16} />
+					<span class="vname">Ikon<br><code>IconButton</code></span>
+				</div>
+
+				<div class="variant">
+					<IconButton icon="close" ariaLabel="Slett" variant="danger" size={14} />
+					<span class="vname">Ikon · slett<br><code>variant="danger"</code></span>
 				</div>
 
 			</div>
 		</section>
 
-		<!-- ══ IKONER ═══════════════════════════════════════════════════════════ -->
-		<section id="Ikoner" class="section">
-			<h2 class="section-heading">Ikoner</h2>
+		<!-- ══ IKONER & TEMA-HUE ══════════════════════════════════════════════════ -->
+		<section id="ikoner" class="section">
+			<h2 class="section-heading">Ikoner & tema-hue</h2>
 			<p class="section-desc">
-				Forslag til Resonans v1 ikonsett. Eget ikonsett brukes for handling og navigasjon; emoji beholdes for
+				Appens ikonsett (<code>ui/Icon.svelte</code>, 16 ikoner). Eget ikonsett brukes for handling og navigasjon; emoji beholdes for
 				domene, stemning og personlig kontekst.
 			</p>
 			<p class="section-desc">
-				Theme-lab: Bakgrunn og forgrunn drives av <code>hsl(hue, saturation, lightness)</code>, der vi holder hue konstant
-				per tema og justerer lyshet i trinn. Det gir myke overganger mellom temaer.
-			</p>
-			<p class="section-desc">
-				Samme rigg skal ogsa kunne brukes i darkmode og lightmode: hue beholdes, mens lyshetsstigen for
-				bakgrunn, border og tekst byttes per modus.
+				Hue-mekanismen under er den samme som i produksjon: <code>getThemeHueStyle(temanavn)</code> setter
+				<code>--theme-hue</code> per tema, og bakgrunn/border/forgrunn avledes som <code>hsl(hue, s, l)</code>-trinn.
+				Slideren og light-modus er laboratorium for å teste nye hues og fremtidig re-skinning — appen er alltid mørk.
 			</p>
 
 			<div class="icon-theme-lab" class:light-mode={iconThemeMode === 'light'} style={`--icon-hue:${iconThemeHue};`}>
@@ -422,20 +589,18 @@
 			</div>
 		</section>
 
-		<!-- ══ WIDGETS ══════════════════════════════════════════════════════════ -->
-		<section id="Widgets" class="section">
-			<h2 class="section-heading">Widgets</h2>
+		<!-- ══ RINGER & WIDGETS ═══════════════════════════════════════════════════ -->
+		<section id="ringer" class="section">
+			<h2 class="section-heading">Ringer & widgets</h2>
 
-			<!-- GoalRing -->
 			<h3 class="subsection">GoalRing</h3>
 			<p class="section-desc">
-				Samme komponent — <code>GoalRing</code> — i alle varianter.
-				Midtinnholdet er en snippet (children).
+				Samme komponent — <code>GoalRing</code> — i alle varianter. Midtinnholdet er en snippet (children).
+				Brukes av ChecklistWidget, DynamicWidget og dashboards.
 			</p>
 
 			<div class="variant-grid">
 
-				<!-- Todo 40% -->
 				<div class="variant">
 					<GoalRing pct={40} color="#f0b429" trackColor="#1e1a0e">
 						<span class="rv-big" style="color:#f0b429">2/5</span>
@@ -444,7 +609,6 @@
 					<span class="vname">Todo · 40%</span>
 				</div>
 
-				<!-- Løping + periodevalg -->
 				<div class="variant">
 					<GoalRing pct={runData[runPeriod].pct} color="#7c8ef5" trackColor="#1e1e2a">
 						<span class="rv-big" style="color:#7c8ef5">{runData[runPeriod].delta}</span>
@@ -458,7 +622,6 @@
 					<span class="vname">Løping · periode</span>
 				</div>
 
-				<!-- Vekt-delta + periodevalg -->
 				<div class="variant">
 					<GoalRing
 						pct={weightData[weightPeriod].pct}
@@ -476,7 +639,6 @@
 					<span class="vname">Vekt · delta</span>
 				</div>
 
-				<!-- Forbruk + pace-tick -->
 				<div class="variant">
 					<GoalRing pct={64} color="#5fa0a0" trackColor="#1a1a1a" pacePct={66.7}>
 						<span class="rv-big" style="color:#5fa0a0">−320</span>
@@ -485,7 +647,6 @@
 					<span class="vname">Forbruk · pace-tick</span>
 				</div>
 
-				<!-- Dobbelring aktivitet -->
 				<div class="variant">
 					<GoalRing
 						pct={68} r={27} strokeWidth={4} color="#e07070" trackColor="#1e1e1e"
@@ -496,7 +657,6 @@
 					<span class="vname">Dobbel · aktivitet</span>
 				</div>
 
-				<!-- Søvnmål 97% -->
 				<div class="variant">
 					<GoalRing pct={97} color="#5fa0a0" trackColor="#1a1a1a">
 						<span class="rv-big" style="color:#5fa0a0">7.8</span>
@@ -507,120 +667,269 @@
 
 			</div>
 
-			<!-- StreakBadge -->
-			<h3 class="subsection">StreakBadge</h3>
-			<div class="variant-grid">
-
+			<h3 class="subsection">ChecklistWidget — tilstander</h3>
+			<p class="section-desc">
+				Hjemskjermens sjekkliste-widget (<code>composed/ChecklistWidget</code>) — live komponent i tre fremdriftstilstander.
+				Med <code>monthDayData</code> rendres et <code>DayWheelChart</code> i stedet for ring (måneds-sjekklister).
+			</p>
+			<div class="demo-row">
 				<div class="variant">
-					<StreakBadge count={12} label="Jogging" />
-					<span class="vname">Standard</span>
+					<ChecklistWidget checklist={checklistEmpty} />
+					<span class="vname">0/8 · urørt</span>
 				</div>
-
 				<div class="variant">
-					<StreakBadge count={3} color="#7c8ef5"
-						weekDots={[false, false, false, false, true, true, true]}
-						label="Meditasjon"
-					/>
-					<span class="vname">Lav streak · blå</span>
+					<ChecklistWidget checklist={checklistHalf} />
+					<span class="vname">5/8 · underveis</span>
 				</div>
-
 				<div class="variant">
-					<StreakBadge count={42} color="#d4829a"
-						weekDots={[true, true, true, true, true, true, true]}
-						label="Kobling"
-					/>
-					<span class="vname">Perfekt uke · rosa</span>
+					<ChecklistWidget checklist={checklistDone} />
+					<span class="vname">8/8 · fullført</span>
 				</div>
-
+				<div class="variant">
+					<ChecklistWidget checklist={checklistMonth} monthDayData={demoMonthDays} monthWheelCycle={false} />
+					<span class="vname">Måned · dagshjul</span>
+				</div>
 			</div>
 
-			<!-- RelationSparkline -->
-			<h3 class="subsection">RelationSparkline</h3>
-			<p class="section-desc">Dobbel-sparkline klippet til sirkel. Siste 7 registreringer på 1–5-skala.</p>
-			<div class="variant-grid">
-
+			<h3 class="subsection">DynamicWidgetView — sensor-widget</h3>
+			<p class="section-desc">
+				Hjemskjermens dynamiske sensor-widget. <code>DynamicWidget</code> (container) henter data selv;
+				<code>DynamicWidgetView</code> er presentasjonen og vises her med mock-data — inkludert loading- og
+				feiltilstandene som ellers bare oppstår ved nettverksfeil. Long-press åpner widget-menyen.
+			</p>
+			<div class="demo-row">
 				<div class="variant">
-					<RelationSparkline
-						dataA={[3, 4, 3, 5, 4, 4, 5]}
-						dataB={[4, 3, 4, 3, 4, 3, 4]}
-					/>
-					<span class="vname">Standard · widget</span>
+					<DynamicWidgetView title="Vekt" unit="kg" color="#5fa0a0" data={null} loading />
+					<span class="vname">Loading</span>
 				</div>
-
 				<div class="variant">
-					<RelationSparkline
-						dataA={[3, 4, 3, 5, 4, 4, 5]}
-						dataB={[4, 3, 4, 3, 4, 3, 4]}
-						showLegend
-						labelA="Kjetil"
-						labelB="Partner"
-						size={96}
-					/>
-					<span class="vname">Med legend · dashbord</span>
+					<DynamicWidgetView title="Vekt" unit="kg" color="#5fa0a0" data={null} error />
+					<span class="vname">Feil</span>
 				</div>
-
 				<div class="variant">
-					<RelationSparkline
-						dataA={[2, 2, 3, 2, 1, 2, 2]}
-						dataB={[4, 3, 3, 4, 3, 4, 3]}
-						size={96}
-					/>
-					<span class="vname">Asymmetrisk · signal</span>
+					<DynamicWidgetView title="Vekt" unit="kg" color="#5fa0a0" data={widgetWeight} />
+					<span class="vname">Ring · normal</span>
 				</div>
+				<div class="variant">
+					<DynamicWidgetView title="Skritt" unit="skritt" color="#7c8ef5" data={widgetSteps} />
+					<span class="vname">State · success</span>
+				</div>
+				<div class="variant">
+					<DynamicWidgetView title="Dagligvare" unit="kr" color="#f0b429" data={widgetSpend} refreshing />
+					<span class="vname">Warn · refreshing</span>
+				</div>
+				<div class="variant">
+					<DynamicWidgetView title="Søvn" unit="timer søvn" color="#5fa0a0" data={widgetSleep} />
+					<span class="vname">Uten mål · sirkel</span>
+				</div>
+			</div>
 
+			<h3 class="subsection">DayWheelChart</h3>
+			<p class="section-desc">
+				Radial dagsprofil (<code>visualizations/DayWheelChart</code>): én sektor per dag, grå = planlagt, grønn = løst,
+				normalisert mot månedens maks. Brukes i ChecklistWidget for måneds-sjekklister.
+			</p>
+			<div class="radial-row">
+				<div class="radial-card">
+					<DayWheelChart year={2026} month={6} days={demoMonthDays} size={220} cycle={false} />
+					<p class="radial-caption">Demo: 20 dager bak oss, dag 21 = i dag (syklus-animasjonen er skrudd av her)</p>
+				</div>
+				<div class="radial-legend">
+					<div class="radial-legend-item">
+						<span class="radial-dot" style="background:rgba(255,255,255,0.18)"></span> Planlagte oppgaver
+					</div>
+					<div class="radial-legend-item">
+						<span class="radial-dot" style="background:#5fa080"></span> Løste oppgaver
+					</div>
+					<hr class="radial-hr" />
+					<div class="radial-dim"><strong>Radius</strong> = antall / maks planlagt i mnd.</div>
+					<div class="radial-dim"><strong>Fremtid</strong> = ingen sektor</div>
+				</div>
 			</div>
 		</section>
 
-		<!-- ══ CHAT-BOBLER ══════════════════════════════════════════════════════ -->
-		<section id="Chat-bobler" class="section">
-			<h2 class="section-heading">Chat-bobler</h2>
+		<!-- ══ DASHBOARD-KORT ═════════════════════════════════════════════════════ -->
+		<section id="dashboardkort" class="section">
+			<h2 class="section-heading">Dashboard-kort</h2>
 			<p class="section-desc">
-				<code>ChatBubble</code> — role: <code>'user'</code> | <code>'bot'</code>.
-				Actions er valgfrie handlingsknapper under botmeldinger.
+				Sammensatte kort fra <code>composed/</code> slik de brukes i helse-, skjermtid- og prosjektsidene.
+				Alle er rent props-drevne og rendres her med mock-data.
 			</p>
 
-			<div class="chat-demo">
-				<ChatBubble role="user" text="Jeg veide 92 kg i dag" />
-				<ChatBubble role="bot" text="✦ Registrert — ned 0.4 kg siden sist." />
-				<ChatBubble role="user" text="Og jeg løp 6 km" />
-				<ChatBubble
-					role="bot"
-					text="✦ Loggfører under Trening & helse."
-					branch="Trening & helse"
+			<h3 class="subsection">WeeklyEffortCard — relativ effort per uke</h3>
+			<div class="demo-card">
+				<WeeklyEffortCard
+					total={effortTotal}
+					byFamily={effortByFamily}
+					byDay={effortByDay}
+					hrCoveragePct={84}
+					workoutCount={5}
+					baseline={effortBaseline}
+					weekLabel="Uke 24"
 				/>
-				<ChatBubble role="user" text="Hva gjør jeg med den gamle sykkelen?" />
-				<ChatBubble
-					role="bot"
-					text="✦ Vil du glemme det eller starte et prosjekt?"
+			</div>
+
+			<h3 class="subsection">BalanceCard + FormCard — treningsbelastning</h3>
+			<p class="section-desc">Begge leser samme <code>TrainingLoadPoint[]</code>-serie (CTL/ATL/TSB).</p>
+			<div class="demo-row">
+				<div class="demo-card"><BalanceCard series={loadSeries} /></div>
+				<div class="demo-card"><FormCard series={loadSeries} windowDays={120} /></div>
+			</div>
+
+			<h3 class="subsection">ScreenTimeCard — skjermtid</h3>
+			<p class="section-desc">
+				Full variant med ukesmål, dagsfordeling, akkumulert ukegraf og kategorisplitt — som på <code>/skjermtid</code>.
+			</p>
+			<div class="demo-card demo-card--wide">
+				<ScreenTimeCard
+					thisWeek={screenThisWeek}
+					prevWeek={screenPrevWeek}
+					goals={screenGoals}
+					weekDays={screenWeekDays}
+					categoryLabels={screenCategoryLabels}
+					cumulative={screenCumulative}
+					cumulativeRefs={screenCumulativeRefs}
+				/>
+			</div>
+
+			<h3 class="subsection">ProjectCard — prosjektstatus</h3>
+			<div class="demo-row">
+				<div class="demo-card"><ProjectCard {...projectActive} /></div>
+				<div class="demo-card"><ProjectCard {...projectDone} /></div>
+			</div>
+
+			<h3 class="subsection">MetricCard — S/M/L-visualiseringer</h3>
+			<p class="section-desc">
+				Dispatch-laget for mål-fremdrift: gitt <code>metricId</code> + størrelse + datakontrakt velger den
+				riktig visualisering (trajectory, target-zone, comparison-trend …). Brukes i WeekGoals og plan-sidene.
+			</p>
+			<div class="metric-demo">
+				<div class="metric-row"><span class="metric-label">Løping (M)</span><MetricCard metricId="running_distance" size="M" data={metricRunning} animateOnMount={false} /></div>
+				<div class="metric-row"><span class="metric-label">Vekt (M)</span><MetricCard metricId="weight_change" size="M" data={metricWeight} animateOnMount={false} /></div>
+				<div class="metric-row"><span class="metric-label">Søvn (M)</span><MetricCard metricId="sleep_avg_night" size="M" data={metricSleep} animateOnMount={false} /></div>
+				<div class="metric-row"><span class="metric-label">Skritt (M)</span><MetricCard metricId="steps_avg_day" size="M" data={metricSteps} animateOnMount={false} /></div>
+				<div class="metric-row"><span class="metric-label">Dagligvarer (M)</span><MetricCard metricId="grocery_spend" size="M" data={metricGrocery} animateOnMount={false} /></div>
+			</div>
+			<h3 class="subsection">MetricCard — L (detaljgraf)</h3>
+			<div class="demo-row">
+				<div class="demo-card"><MetricCard metricId="running_distance" size="L" data={metricRunning} animateOnMount={false} /></div>
+				<div class="demo-card"><MetricCard metricId="weight_change" size="L" data={metricWeight} animateOnMount={false} /></div>
+			</div>
+		</section>
+
+		<!-- ══ CHAT ═══════════════════════════════════════════════════════════════ -->
+		<section id="chat" class="section">
+			<h2 class="section-heading">Chat</h2>
+			<p class="section-desc">
+				Bot-svar i chat-flatene (hjem, temasider) rendres som <code>TriageCard</code> — med tenketilstand,
+				streaming, markdown og triage-handlinger. Under: live komponent i alle tilstander.
+			</p>
+
+			<h3 class="subsection">TriageCard — tilstander</h3>
+			<div class="chat-demo">
+				<TriageCard loading steps={['Henter vektdata fra Withings', 'Sammenligner med forrige måned']} />
+			</div>
+			<p class="demo-caption">Tenker — med ekspanderbare steg</p>
+
+			<div class="chat-demo">
+				<TriageCard streaming text="Du har veid deg 14 ganger siste 30 dager. Trenden er **−1,1 kg**, og du ligger" />
+			</div>
+			<p class="demo-caption">Streaming — markøren pulserer mens svaret kommer</p>
+
+			<div class="chat-demo">
+				<TriageCard
+					text={'Du har veid deg 14 ganger siste 30 dager. Trenden er **−1,1 kg**, og du ligger litt bak planen mot 88 kg.\n\nVil du justere målet eller fortsette som nå?'}
 					actions={[
-						{ label: 'Glem det', onclick: () => triageDecision = 'glem' },
-						{ label: 'Start prosjekt', onclick: () => triageDecision = 'prosjekt' },
+						{ label: 'Fortsett som nå', onclick: noop },
+						{ label: 'Juster målet', onclick: noop }
 					]}
 				/>
-				{#if triageDecision === 'glem'}
-					<ChatBubble role="bot" text="✦ Notert — ingen videre oppfølging." />
-				{:else if triageDecision === 'prosjekt'}
-					<ChatBubble role="bot" text="✦ Prosjekt opprettet: Sykkelreparasjon." branch="Prosjekter" />
-				{/if}
+			</div>
+			<p class="demo-caption">Ferdig svar med triage-handlinger</p>
+
+			<div class="chat-demo">
+				<TriageCard stopped text="Jeg begynte å hente treningsdataene dine, men ble" />
+			</div>
+			<p class="demo-caption">Avbrutt av brukeren</p>
+
+			<h3 class="subsection">ChatMessages — meldingslisten</h3>
+			<p class="section-desc">
+				Den delte meldingslisten for alle chat-flater: brukerbobler, bot-svar (TriageCard), stjernemerking
+				og handlingsknapper. Demoen viser også en pågående streaming-melding nederst.
+			</p>
+			<div class="chat-demo chat-demo--wide">
+				<ChatMessages
+					messages={chatMessagesMock}
+					streamingText="Ser på treningsdataene dine — du har"
+					onAction={noop}
+					onStarMessage={noop}
+				/>
 			</div>
 
 			<h3 class="subsection">ChatInput</h3>
 			<p class="section-desc">
-				<code>ChatInput.svelte</code> — gjenbrukbar meldingsboks med auto-resize textarea.
+				Gjenbrukbar meldingsboks med auto-resize textarea — samme komponent som på hjemskjermen og temasidene.
 			</p>
-			<div style="max-width: 420px;">
+			<div class="demo-stack">
 				<ChatInput
 					placeholder="Skriv en melding…"
-					onsubmit={(msg) => console.log('Sendt:', msg)}
+					onsubmit={(msg) => (lastSent = msg)}
 				/>
+				{#if lastSent}
+					<p class="demo-caption">Sendt: «{lastSent}»</p>
+				{/if}
 			</div>
 		</section>
 
-		<!-- ══ INPUT & SKJEMA ═══════════════════════════════════════════════════ -->
-		<section id="Input & skjema" class="section">
-			<h2 class="section-heading">Input & skjema</h2>
+		<!-- ══ SKJEMA ═════════════════════════════════════════════════════════════ -->
+		<section id="skjema" class="section">
+			<h2 class="section-heading">Skjema</h2>
+			<p class="section-desc">
+				Skjemakomponentene fra <code>ui/</code> — brukt i innstillinger, flows og dashboards.
+			</p>
 
-			<h3 class="subsection">Sinnstemningsslider</h3>
+			<h3 class="subsection">Felt-komponenter</h3>
+			<div class="input-demo">
+				<Input placeholder="Hva tenker du på?" />
+				<Textarea placeholder="Lengre notat…" />
+				<Select value="uke">
+					<option value="uke">Uke</option>
+					<option value="måned">Måned</option>
+					<option value="år">År</option>
+				</Select>
+				<label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: #aaa;">
+					<Checkbox checked /> Aktivert
+				</label>
+			</div>
+
+			<h3 class="subsection">DateInput + TimeInput — dato og klokkeslett</h3>
+			<p class="section-desc">
+				Appens dato- og tidsfelt — tynne wrappere over <code>.ds-input</code> med <code>color-scheme: dark</code>,
+				så native kalender/tidvelger og ikonene deres er synlige på mørk bakgrunn.
+				Bruk disse — aldri rå <code>&lt;input type="date"&gt;</code>.
+			</p>
+			<div class="demo-row" style="align-items: center;">
+				<DateInput value="2026-06-11" ariaLabel="Dato" />
+				<DateInput value="2026-06-11" min="2026-06-01" max="2026-06-30" ariaLabel="Dato med min/maks" />
+				<DateInput disabled value="2026-06-11" ariaLabel="Deaktivert dato" />
+				<TimeInput value="06:45" />
+			</div>
+
+			<h3 class="subsection">StatusBadge</h3>
+			<p class="section-desc">Toner: <code>ok | warn | error | off</code> — som dot eller tekst.</p>
+			<div class="demo-row" style="align-items: center;">
+				<StatusBadge tone="ok" text="Tilkoblet" dot />
+				<StatusBadge tone="warn" text="Utløper snart" dot />
+				<StatusBadge tone="error" text="Feilet" dot />
+				<StatusBadge tone="off" text="Ikke aktiv" dot />
+				<StatusBadge tone="ok" text="Tilkoblet" />
+			</div>
+
+			<h3 class="subsection">Slider (flow-felttype)</h3>
+			<p class="section-desc">
+				Felttypen <code>slider</code> i <code>FlowFormStep</code> — brukes i egenfrekvens-sjekkin (1–5 med nivå-labels).
+				Demoen bruker den globale <code>.ds-slider</code>-klassen.
+			</p>
 			<div class="input-demo">
 				<div class="mood-display">
 					<span class="mood-emoji">{moodEmoji}</span>
@@ -630,53 +939,12 @@
 					type="range" min="0" max="100" step="1"
 					class="ds-slider" style="--pct:{moodVal}%"
 					bind:value={moodVal}
-					onchange={() => { moodSaved = true; setTimeout(() => moodSaved = false, 1200); }}
 				/>
-				{#if moodSaved}
-					<span class="saved-flash">✓ lagret</span>
-				{/if}
-			</div>
-
-			<h3 class="subsection">Emoji-velger</h3>
-			<div class="input-demo">
-				<div class="emoji-row">
-					{#each emojiSet as e}
-						<button
-							class="emoji-btn"
-							class:picked={pickedEmoji === e}
-							onclick={() => pickedEmoji = pickedEmoji === e ? null : e}
-						>{e}</button>
-					{/each}
-				</div>
-				{#if pickedEmoji}
-					<span class="saved-flash">✓ {pickedEmoji} valgt</span>
-				{/if}
-			</div>
-
-			<h3 class="subsection">Energiskala 1–5</h3>
-			<div class="input-demo">
-				<div class="energy-row">
-					{#each [1, 2, 3, 4, 5] as n}
-						<button
-							class="energy-btn"
-							class:active={energyVal === n}
-							onclick={() => energyVal = energyVal === n ? null : n}
-						>{n}</button>
-					{/each}
-				</div>
-				{#if energyVal}
-					<span class="saved-flash">✓ energi {energyVal}/5</span>
-				{/if}
-			</div>
-
-			<h3 class="subsection">Tekstfelt</h3>
-			<div class="input-demo">
-				<input type="text" class="ds-input" placeholder="Hva tenker du på?" />
 			</div>
 		</section>
 
-		<!-- ══ NAVIGASJON ═══════════════════════════════════════════════════════ -->
-		<section id="Navigasjon" class="section">
+		<!-- ══ NAVIGASJON ═════════════════════════════════════════════════════════ -->
+		<section id="navigasjon" class="section">
 			<h2 class="section-heading">Navigasjon</h2>
 
 			<h3 class="subsection">PeriodPills — tidsvalg</h3>
@@ -694,11 +962,16 @@
 			<h3 class="subsection">Tema-piller</h3>
 			<div class="tema-rail-demo">
 				{#each ['Trening & helse', 'Søvn', 'Økonomi', 'Jobb', 'Relasjoner'] as t}
-					<button class="btn-chip">{t}</button>
+					<Button variant="chip">{t}</Button>
 				{/each}
 			</div>
 
 			<h3 class="subsection">Subtabs</h3>
+			<p class="section-desc">
+				Global <code>.subtab</code>-klasse fra <code>app.css</code> — brukes til underfaner <em>inne i</em> dashboards
+				(Økonomi, Familie). Temasidenes hovedfaner («Samtaler | Oversikt | Mål …») er en egen stil i
+				<code>ThemePage.svelte</code> (<code>.tp-tab</code>) med kant-til-kant-bånd.
+			</p>
 			<div class="subtab-demo">
 				{#each [['Chat','aktiv'], ['Data',''], ['Filer','']] as [lbl, st]}
 					<button class="subtab" class:active={st === 'aktiv'}>{lbl}</button>
@@ -706,1077 +979,320 @@
 			</div>
 		</section>
 
-		<!-- ══ HJEMSKJERM ════════════════════════════════════════════════════════ -->
-		<section id="Hjemskjerm" class="section">
-			<h2 class="section-heading">Hjemskjerm</h2>
-			<p class="section-desc">Tre soner + tittel. Her utforsker vi forskjellige måter å prioritere plass på.</p>
-
-			<h3 class="subsection">Layout-alternativer — høydefordeling</h3>
-			<p class="section-desc">Hvilken balanse mellom widgets, tema og input gir best brukeropplevelse?</p>
-			
-			<div class="layout-compare">
-				<!-- NÅVÆRENDE -->
-				<div class="layout-option">
-					<p class="layout-label">Nåværende (10/35/20/35)</p>
-					<div class="hs-mockup">
-						<div class="hs-zone hs-title" style="height: 10%">
-							<span class="hs-zone-label">Tittel</span>
-							<span class="hs-zone-pct">10%</span>
-						</div>
-						<div class="hs-zone hs-widgets" style="height: 35%">
-							<span class="hs-zone-label">Widgets</span>
-							<span class="hs-zone-pct">35%</span>
-							<div class="hs-widget-dots">
-								{#each [1,2,3,4,5,6] as _}
-									<div class="hs-dot"></div>
-								{/each}
-							</div>
-						</div>
-						<div class="hs-zone hs-tema" style="height: 20%">
-							<span class="hs-zone-label">Tema</span>
-							<span class="hs-zone-pct">20%</span>
-							<div class="hs-chips">
-								{#each ['Trening', 'Økonomi'] as t}
-									<span class="hs-chip">{t}</span>
-								{/each}
-							</div>
-						</div>
-						<div class="hs-zone hs-input" style="height: 35%">
-							<span class="hs-zone-label">Input</span>
-							<span class="hs-zone-pct">35%</span>
-						</div>
-					</div>
-					<div class="layout-notes">
-						<p class="note-item">✗ Widgets tar mye plass</p>
-						<p class="note-item">✗ Tema får lite rom (2x1 maks)</p>
-						<p class="note-item">✓ Input har god plass</p>
-					</div>
-				</div>
-
-				<!-- BALANSERT -->
-				<div class="layout-option">
-					<p class="layout-label">Balansert (10/25/30/35)</p>
-					<div class="hs-mockup">
-						<div class="hs-zone hs-title" style="height: 10%">
-							<span class="hs-zone-label">Tittel</span>
-							<span class="hs-zone-pct">10%</span>
-						</div>
-						<div class="hs-zone hs-widgets" style="height: 25%">
-							<span class="hs-zone-label">Widgets</span>
-							<span class="hs-zone-pct">25%</span>
-							<div class="hs-widget-dots">
-								{#each [1,2,3,4] as _}
-									<div class="hs-dot"></div>
-								{/each}
-							</div>
-						</div>
-						<div class="hs-zone hs-tema hs-tema-large" style="height: 30%">
-							<span class="hs-zone-label">Tema</span>
-							<span class="hs-zone-pct">30%</span>
-							<div class="tema-grid-preview">
-								{#each [1,2,3,4] as _}
-									<div class="tema-box"></div>
-								{/each}
-							</div>
-						</div>
-						<div class="hs-zone hs-input" style="height: 35%">
-							<span class="hs-zone-label">Input</span>
-							<span class="hs-zone-pct">35%</span>
-						</div>
-					</div>
-					<div class="layout-notes">
-						<p class="note-item">✓ Widgets kompakte (4 viktigste)</p>
-						<p class="note-item">✓ Tema 2x2 grid passer!</p>
-<p class="note-item">✓ Input beholder viktighet</p>
-					</div>
-				</div>
-
-				<!-- TEMA-FOKUSERT -->
-				<div class="layout-option">
-					<p class="layout-label">Tema-fokusert (10/20/35/35)</p>
-					<div class="hs-mockup">
-						<div class="hs-zone hs-title" style="height: 10%">
-							<span class="hs-zone-label">Tittel</span>
-							<span class="hs-zone-pct">10%</span>
-						</div>
-						<div class="hs-zone hs-widgets" style="height: 20%">
-							<span class="hs-zone-label">Widgets</span>
-							<span class="hs-zone-pct">20%</span>
-							<div class="hs-widget-dots">
-								{#each [1,2,3] as _}
-									<div class="hs-dot"></div>
-								{/each}
-							</div>
-						</div>
-						<div class="hs-zone hs-tema hs-tema-large" style="height: 35%">
-							<span class="hs-zone-label">Tema</span>
-							<span class="hs-zone-pct">35%</span>
-							<div class="tema-grid-preview">
-								{#each [1,2,3,4,5,6] as _}
-									<div class="tema-box"></div>
-								{/each}
-							</div>
-						</div>
-						<div class="hs-zone hs-input" style="height: 35%">
-							<span class="hs-zone-label">Input</span>
-							<span class="hs-zone-pct">35%</span>
-						</div>
-					</div>
-					<div class="layout-notes">
-						<p class="note-item">✓ Tema får maksimal vekt (2x3)</p>
-						<p class="note-item">? Widgets minimale (3 prioriterte)</p>
-						<p class="note-item">✓ Input uendret</p>
-					</div>
-				</div>
-			</div>
-
-			<h3 class="subsection" style="margin-top: 40px">Forbedrede komponenter (v2)</h3>
-			<p class="section-desc">Store runde tema-knapper med hvite ikoner · input med felt + ikon-knapper</p>
-			
-			<!-- TEMA-KNAPPER V2 -->
-			<div class="hs-v2-demo">
-				<p class="demo-label">Tema-knapper — store runde med ikoner</p>
-				
-				<div class="tema-v3-grid">
-					{#each [
-						{emoji: '💪', name: 'Helse'},
-						{emoji: '💰', name: 'Økonomi'},
-						{emoji: '❤️', name: 'Partner'},
-						{emoji: '🧘', name: 'Meditasjon'}
-					] as t}
-						<button class="tema-btn-v3" style={getThemeHueStyle(t.name)}>
-							<span class="tema-btn-v3-icon">{t.emoji}</span>
-							<span class="tema-btn-v3-label">{t.name}</span>
-						</button>
-					{/each}
-				</div>
-			</div>
-
-			<!-- INPUT V3: FELT + IKON-KNAPPER -->
-			<div class="hs-v2-demo">
-				<p class="demo-label">Input — felt + tre ikon-knapper</p>
-				<div class="input-v4">
-					<div class="input-field-wrap">
-						<input class="input-field-v4" type="text" placeholder="Hva tenker du på?" />
-					</div>
-					<button class="icon-btn-v4" aria-label="Send">
-						<Icon name="forward" size={16} />
-					</button>
-					<button class="icon-btn-v4" aria-label="Legg ved">
-						<Icon name="attach" size={16} />
-					</button>
-					<button class="icon-btn-v4" aria-label="Sjekk inn">
-						<Icon name="checkin" size={16} />
-					</button>
-				</div>
-			</div>
-		</section>
-
-		<!-- ══ INTERAKSJONSFLYTER ════════════════════════════════════════════════ -->
-		<section id="Interaksjonsflyter" class="section">
-			<h2 class="section-heading">Interaksjonsflyter</h2>
-			<p class="section-desc">Tre overganger fra hjemskjerm — ingen tab-bar. Tap på en sone animerer den til fullskjerm; de andre forsvinner.</p>
-
-			<!-- Flytoversikt -->
-			<div class="flow-grid">
-
-				<!-- Flyt 1: Widgets → Dashboard -->
-				<div class="flow-card">
-					<div class="flow-header">
-						<span class="flow-num">01</span>
-						<span class="flow-title">Widgets → Dashboard</span>
-					</div>
-					<div class="flow-steps">
-						<div class="flow-step">
-							<span class="step-icon">👆</span>
-							<span>Tapp på widget-sonen</span>
-						</div>
-						<div class="flow-arrow">↓</div>
-						<div class="flow-step">
-							<span class="step-icon">📐</span>
-							<span>Widget-sonen <strong>ekspanderer</strong> til fullskjerm — tema-rail og input-samling forsvinner opp/ned</span>
-						</div>
-						<div class="flow-arrow">↓</div>
-						<div class="flow-step">
-							<span class="step-icon">📊</span>
-							<span>Innholdet morphes til et <strong>dashboard</strong> — nøkkeltall + grafer</span>
-						</div>
-						<div class="flow-arrow">↓</div>
-						<div class="flow-step">
-							<span class="step-icon">💬</span>
-							<span>Chat-input tilgjengelig i bunn — kan stille spørsmål om dataene</span>
-						</div>
-					</div>
-					<div class="flow-note">Ingen overlay. Ingen ny rute. Selve sonen <em>er</em> dashboardet.</div>
-				</div>
-
-				<!-- Flyt 2: Tema → Fullskjerm -->
-				<div class="flow-card">
-					<div class="flow-header">
-						<span class="flow-num">02</span>
-						<span class="flow-title">Tema → Fullskjerm</span>
-					</div>
-					<div class="flow-steps">
-						<div class="flow-step">
-							<span class="step-icon">👆</span>
-							<span>Tapp på et tema-chip i tema-railen</span>
-						</div>
-						<div class="flow-arrow">↓</div>
-						<div class="flow-step">
-							<span class="step-icon">🚀</span>
-							<span>Widget-samling <strong>forsvinner opp</strong>, input-samling <strong>forsvinner ned</strong></span>
-						</div>
-						<div class="flow-arrow">↓</div>
-						<div class="flow-step">
-							<span class="step-icon">🪟</span>
-							<span>Valgt tema fyller hele skjermen — <strong>ThemePage</strong> med Chat / Data / Filer</span>
-						</div>
-						<div class="flow-arrow">↓</div>
-						<div class="flow-step">
-							<span class="step-icon">←</span>
-							<span>Sveip ned / tilbake-knapp → hjemskjerm-animasjonen reverses</span>
-						</div>
-					</div>
-					<div class="flow-note">Ingen tab-bar. Tre soner kollapser inn i en.</div>
-				</div>
-
-				<!-- Flyt 3: Input → Fullskjerm -->
-				<div class="flow-card">
-					<div class="flow-header">
-						<span class="flow-num">03</span>
-						<span class="flow-title">Input → Fullskjerm</span>
-					</div>
-					<div class="flow-steps">
-						<div class="flow-step">
-							<span class="step-icon">👆</span>
-							<span>Tapp på et input-verktøy (chat, bilde, humør, energi…)</span>
-						</div>
-						<div class="flow-arrow">↓</div>
-						<div class="flow-step">
-							<span class="step-icon">🚀</span>
-							<span>Input-samlingen <strong>ekspanderer</strong> til fullskjerm</span>
-						</div>
-						<div class="flow-arrow">↓</div>
-						<div class="flow-step">
-							<span class="step-icon">🎯</span>
-							<span>Riktig input-verktøy er <strong>forhåndsvalgt</strong> og i fokus — chat åpner tastatur, humør viser slider, bilde åpner kamera</span>
-						</div>
-						<div class="flow-arrow">↓</div>
-						<div class="flow-step">
-							<span class="step-icon">←</span>
-							<span>Lagre / avbryt → tilbake til hjemskjerm</span>
-						</div>
-					</div>
-					<div class="flow-note">Andre soner forsvinner ikke — de er bare skyvet ut av syne av den ekspanderte input-sonen.</div>
-				</div>
-
-			</div><!-- /flow-grid -->
-
-			<h3 class="subsection" style="margin-top: 40px">Ny flyt: Spør om widget (chat-first)</h3>
-			<p class="section-desc">Forslag i chat før opprettelse: preview, konfigurering, målsetting og eksplisitt bekreftelse.</p>
-
-			<div class="wf-grid">
-				<div class="wf-card">
-					<div class="wf-head">
-						<span class="wf-num">A</span>
-						<span class="wf-title">1. Bruker beskriver widget</span>
-					</div>
-					<div class="wf-chat">
-						<ChatBubble role="user" text="Lag en widget for dagligvareforbruk per dag siste 30 dager." />
-						<ChatBubble role="bot" text="Skjønner. Jeg foreslår en widget med preview først før vi oppretter." />
-						<div class="wf-actions wf-actions--compact">
-							<button class="btn-primary">Opprett widget</button>
-							<button class="btn-chip">Konfigurer</button>
-							<button class="btn-ghost">Forkast</button>
-						</div>
-					</div>
-				</div>
-
-				<div class="wf-card">
-					<div class="wf-head">
-						<span class="wf-num">B</span>
-						<span class="wf-title">2. Forslagskort med preview</span>
-					</div>
-					<div class="wf-preview">
-						<ChatBubble role="bot" text="Slik ser forslaget ut. Vil du opprette, justere eller forkaste?" />
-						<div class="wf-actions wf-actions--compact">
-							<button class="btn-primary">Opprett widget</button>
-							<button class="btn-chip">Konfigurer</button>
-							<button class="btn-ghost">Forkast</button>
-						</div>
-						<div class="wf-preview-top">
-							<span class="wf-chip">amount</span>
-							<span class="wf-chip">sum</span>
-							<span class="wf-chip">day</span>
-							<span class="wf-chip">last30</span>
-							<span class="wf-chip">dagligvare</span>
-						</div>
-						<div class="wf-preview-body">
-							<div class="wf-ring-wrap">
-								<GoalRing pct={71} size={74} strokeWidth={5} color="#f0b429" />
-								<div class="wf-ring-value">17.7k</div>
-							</div>
-							<div class="wf-copy">
-								<p class="wf-name">Dagligvareforbruk / dag</p>
-								<p class="wf-meta">Preview basert på siste 30 dager</p>
-							</div>
-						</div>
-						<div class="wf-actions">
-							<button class="btn-primary">Opprett widget</button>
-							<button class="btn-chip">Konfigurer</button>
-							<button class="btn-ghost">Forkast</button>
-						</div>
-
-						<div class="wf-configurator">
-							<div class="wf-config-head">Konfigurator (sheet)</div>
-							<div class="wf-config-grid">
-								<div class="wf-config-item">
-									<span class="wf-config-label">Tittel</span>
-									<span class="wf-config-value">Dagligvareforbruk / dag</span>
-								</div>
-								<div class="wf-config-item">
-									<span class="wf-config-label">Metrikk</span>
-									<span class="wf-config-value">amount</span>
-								</div>
-								<div class="wf-config-item">
-									<span class="wf-config-label">Aggregation</span>
-									<span class="wf-config-value">sum</span>
-								</div>
-								<div class="wf-config-item">
-									<span class="wf-config-label">Periode / range</span>
-									<span class="wf-config-value">day · last30</span>
-								</div>
-								<div class="wf-config-item">
-									<span class="wf-config-label">Kategori</span>
-									<span class="wf-config-value">dagligvare</span>
-								</div>
-								<div class="wf-config-item">
-									<span class="wf-config-label">Mål</span>
-									<span class="wf-config-value">ikke satt</span>
-								</div>
-							</div>
-							<div class="wf-actions wf-actions--compact">
-								<button class="btn-primary">Opprett widget</button>
-								<button class="btn-chip">Konfigurer</button>
-								<button class="btn-ghost">Forkast</button>
-							</div>
-						</div>
-					</div>
-				</div>
-
-				<div class="wf-card">
-					<div class="wf-head">
-						<span class="wf-num">C</span>
-						<span class="wf-title">3. Målsetting før opprett</span>
-					</div>
-					<div class="wf-chat">
-						<ChatBubble role="bot" text="Hva er optimalt nivå for denne metrikken?" />
-						<div class="wf-actions wf-actions--compact">
-							<button class="btn-primary">Opprett widget</button>
-							<button class="btn-chip">Konfigurer</button>
-							<button class="btn-ghost">Forkast</button>
-						</div>
-						<ChatBubble role="user" text="Mindre enn snittet av forrige periode." />
-						<ChatBubble role="bot" text="Notert: relativt mål < avg(prev_period). Klar til opprettelse." />
-						<div class="wf-actions wf-actions--compact">
-							<button class="btn-primary">Opprett widget</button>
-							<button class="btn-chip">Konfigurer</button>
-							<button class="btn-ghost">Forkast</button>
-						</div>
-					</div>
-					<div class="wf-pill-row">
-						<span class="wf-pill">target: relative_prev_period</span>
-						<span class="wf-pill">operator: lt</span>
-					</div>
-				</div>
-			</div>
-
-			<div class="wf-state-row">
-				<span class="wf-state">intent_detected</span>
-				<span class="wf-state-arrow">→</span>
-				<span class="wf-state">draft_created</span>
-				<span class="wf-state-arrow">→</span>
-				<span class="wf-state">preview_rendered</span>
-				<span class="wf-state-arrow">→</span>
-				<span class="wf-state">configure/refine</span>
-				<span class="wf-state-arrow">→</span>
-				<span class="wf-state wf-state-ok">confirm_create</span>
-			</div>
-
-			<h3 class="subsection" style="margin-top: 28px">Fullskjerm-konfigurator (forslag)</h3>
-			<p class="section-desc">Sticky preview øverst + skrollbar seksjonsliste under. Nedtrekk for tekstvalg og sliders for tall.</p>
-			<div class="wf-fullscreen">
-				<div class="wf-fullscreen-preview">
-					<div class="wf-fullscreen-preview-main">
-						<div class="wf-ring-wrap">
-							<GoalRing pct={71} size={82} strokeWidth={6} color="#f0b429" />
-							<div class="wf-ring-value">17.7k</div>
-						</div>
-						<div>
-							<p class="wf-name" style="font-size:0.82rem">Dagligvareforbruk / dag</p>
-							<p class="wf-meta">Live preview oppdateres mens du justerer feltene</p>
-						</div>
-					</div>
-					<div class="wf-actions wf-actions--compact">
-						<button class="btn-primary">Opprett widget</button>
-						<button class="btn-chip">Konfigurer</button>
-						<button class="btn-ghost">Forkast</button>
-					</div>
-				</div>
-
-				<div class="wf-fullscreen-body">
-					<div class="wf-fullscreen-section">
-						<div class="wf-fullscreen-title">Grunnoppsett</div>
-						<div class="wf-form-grid">
-							<label class="wf-field">
-								<span>Tittel</span>
-								<input value="Dagligvareforbruk / dag" readonly />
-							</label>
-							<label class="wf-field">
-								<span>Metrikk</span>
-								<select>
-									<option selected>amount</option>
-									<option>weight</option>
-									<option>steps</option>
-								</select>
-							</label>
-							<label class="wf-field">
-								<span>Aggregation</span>
-								<select>
-									<option>avg</option>
-									<option selected>sum</option>
-									<option>latest</option>
-								</select>
-							</label>
-							<label class="wf-field">
-								<span>Kategori</span>
-								<select>
-									<option selected>dagligvare</option>
-									<option>mat</option>
-									<option>transport</option>
-								</select>
-							</label>
-						</div>
-					</div>
-
-					<div class="wf-fullscreen-section">
-						<div class="wf-fullscreen-title">Tid og oppløsning</div>
-						<div class="wf-form-grid">
-							<label class="wf-field">
-								<span>Periode</span>
-								<select>
-									<option selected>day</option>
-									<option>week</option>
-									<option>month</option>
-								</select>
-							</label>
-							<label class="wf-field">
-								<span>Range</span>
-								<select>
-									<option>last7</option>
-									<option>last14</option>
-									<option selected>last30</option>
-									<option>current_month</option>
-								</select>
-							</label>
-						</div>
-					</div>
-
-					<div class="wf-fullscreen-section">
-						<div class="wf-fullscreen-title">Mål og terskler</div>
-						<div class="wf-form-grid">
-							<label class="wf-field wf-field--full">
-								<span>Måltype</span>
-								<select>
-									<option>ingen</option>
-									<option>absolutt</option>
-									<option selected>relativ mot forrige periode</option>
-								</select>
-							</label>
-							<label class="wf-field wf-field--full">
-								<span>Toleranse (%)</span>
-								<input type="range" min="0" max="20" value="5" />
-							</label>
-							<label class="wf-field wf-field--full">
-								<span>Varselgrense</span>
-								<input type="range" min="0" max="100" value="60" />
-							</label>
-						</div>
-					</div>
-
-					<div class="wf-fullscreen-section">
-						<div class="wf-fullscreen-title">Råverdier fra filter</div>
-						<div class="wf-raw-head">
-							<span class="wf-raw-count">47 treff</span>
-							<div class="wf-raw-chips">
-								<span class="wf-chip">kategori: dagligvare</span>
-								<span class="wf-chip">range: last30</span>
-								<span class="wf-chip">vis: matcher</span>
-							</div>
-						</div>
-						<div class="wf-raw-list" role="table" aria-label="Råverdier som matcher filter">
-							<div class="wf-raw-row wf-raw-row--head" role="row">
-								<span>Dato</span>
-								<span>Beskrivelse</span>
-								<span>Beløp</span>
-								<span>Match</span>
-							</div>
-							{#each [
-								{ date: '31.03', desc: 'KIWI STORO', amount: '−289 kr', match: 'regel' },
-								{ date: '30.03', desc: 'REMA 1000 Bjølsen', amount: '−412 kr', match: 'regel' },
-								{ date: '29.03', desc: 'ODA AS', amount: '−1 084 kr', match: 'mapping' },
-								{ date: '27.03', desc: 'MENY RINGNES PARK', amount: '−356 kr', match: 'regel' },
-								{ date: '25.03', desc: 'COOP EXTRA SAGENE', amount: '−243 kr', match: 'regel' }
-							] as row}
-								<div class="wf-raw-row" role="row">
-									<span>{row.date}</span>
-									<span>{row.desc}</span>
-									<span>{row.amount}</span>
-									<span>{row.match}</span>
-								</div>
-							{/each}
-						</div>
-					</div>
-				</div>
-			</div>
-
-			<!-- Animasjonsnotater -->
-			<h3 class="subsection" style="margin-top: 40px">Animasjonsprinsipper</h3>
-			<div class="anim-notes">
-				<div class="anim-note">
-					<span class="anim-tag">Widgets → Dashboard</span>
-					<code>height: 35% → 100vh</code> + <code>border-radius: 18px → 0</code> + morph av innhold. Varighet ~300 ms, ease-out-quint.
-				</div>
-				<div class="anim-note">
-					<span class="anim-tag">Tema-åpning</span>
-					Widgets: <code>translateY(-100%)</code>, Inputs: <code>translateY(+100%)</code>. Tema-chip scales til full bredde. ~250 ms.
-				</div>
-				<div class="anim-note">
-					<span class="anim-tag">Input-åpning</span>
-					<code>height: 35% → 100vh</code> fra bunn. Tastatur triggers etter animasjon er ferdig (~280 ms).
-				</div>
-				<div class="anim-note">
-					<span class="anim-tag">Ingen tab-bar</span>
-					Navigasjon skjer utelukkende ved å interagere med sonene selv. Tilbake = sveip ned fra topp eller X-knapp øverst-venstre.
-				</div>
-			</div>
-
-		</section>
-
-		<!-- ══ UKEPLAN ══════════════════════════════════════════════════════════ -->
-		<section id="Ukeplan" class="section">
+		<!-- ══ UKEPLAN ════════════════════════════════════════════════════════════ -->
+		<section id="ukeplan" class="section">
 			<h2 class="section-heading">Ukeplan</h2>
-			<p class="section-desc">Hierarkisk planlegging og refleksjon — fra daglige todos til den episke årsrunden. Todo-liste som sensorwidget på hjemskjermen.</p>
-
-			<!-- Periodestruktur -->
-			<h3 class="subsection">Periodestruktur</h3>
-			<div class="period-ladder">
-				<div class="period-rung">
-					<span class="period-rung-label">År</span>
-					<span class="period-rung-desc">Livsambisjon · kavalkade · store vendepunkter</span>
-				</div>
-				<div class="period-connector">↓</div>
-				<div class="period-rung">
-					<span class="period-rung-label">Kvartal</span>
-					<span class="period-rung-desc">1–2 prioriteringer · store prosjekter · kvartalsevaluering</span>
-				</div>
-				<div class="period-connector">↓</div>
-				<div class="period-rung">
-					<span class="period-rung-label">Måned</span>
-					<span class="period-rung-desc">Fokusord · 3–5 nøkkelmål</span>
-				</div>
-				<div class="period-connector">↓</div>
-				<div class="period-rung period-rung--highlight">
-					<span class="period-rung-label">Uke</span>
-					<span class="period-rung-desc">Ukemål · dagstodos · ett-setnings-intro · kontekst fra måned og kvartal</span>
-				</div>
-				<div class="period-connector">↓</div>
-				<div class="period-rung">
-					<span class="period-rung-label">Dag</span>
-					<span class="period-rung-desc">Todo-liste · dagnotis · humør og energi</span>
-				</div>
-			</div>
-
-			<!-- Ukeplan-format -->
-			<h3 class="subsection">Ukeplan-format (interaktiv mockup)</h3>
-			<div class="week-card">
-
-				<div class="week-card-header">
-					<span class="week-num">Uke 14 · 2026</span>
-					<span class="week-headline">Anita reiser fredag og blir til mandag ettermiddag.</span>
-				</div>
-
-				<div class="week-context-bar">
-					<div class="ctx-period">
-						<span class="ctx-period-label">April</span>
-						<span class="ctx-item">Planlegge og gjennomføre</span>
-						<span class="ctx-item">Veie og trene</span>
-						<span class="ctx-item">Knekkebrød og mindre sukker</span>
-					</div>
-					<div class="ctx-period">
-						<span class="ctx-period-label">Q2</span>
-						<span class="ctx-item">Ta hverdagene på alvor</span>
-					</div>
-				</div>
-
-				<div class="week-goals">
-					<span class="week-goals-label">Ukemål</span>
-					{#each weekGoalChecks as checked, i}
-						<button
-							class="week-goal-item"
-							class:done={checked}
-							onclick={() => weekGoalChecks[i] = !weekGoalChecks[i]}
-						>
-							<span class="wg-check">{checked ? '✓' : '○'}</span>
-							<span class="wg-lbl">{['Svømme en dag (torsdag morgen?)', 'Pilates to ganger', 'Sykkel om været vil'][i]}</span>
-						</button>
-					{/each}
-				</div>
-
-				<div class="week-days-row">
-					{#each weekDays as day, di}
-						<div class="day-col" class:today={di === 1}>
-							<div class="day-name">{day.name}</div>
-							{#if day.note}<div class="day-note">{day.note}</div>{/if}
-							<div class="day-todos">
-								{#each day.todos as todo, ti}
-									<button
-										class="day-todo-item"
-										class:checked={dayChecks[di][ti]}
-										onclick={() => dayChecks[di][ti] = !dayChecks[di][ti]}
-									>
-										<span class="todo-circle">{dayChecks[di][ti] ? '✓' : '○'}</span>
-										<span class="todo-lbl" class:todo-done={dayChecks[di][ti]}>{todo}</span>
-									</button>
-								{/each}
-							</div>
-						</div>
-					{/each}
-				</div>
-
-			</div>
-			<p class="flow-note" style="margin-top: 8px">Interaktiv mockup — klikk for å toggle. Dager rulles horisontalt. Tirsdag (= i dag) er fremhevet.</p>
-
-			<!-- Todo-widget -->
-			<h3 class="subsection">Todo-widget (hjemskjerm)</h3>
-			<p class="section-desc">Viser dagens fremdrift som en sensor-ring. Kan pinnes i widget-sonen på lik linje med vekt og søvn.</p>
-			<div class="todo-widget-demo">
-				<div class="tw-widget">
-					<svg width="72" height="72" viewBox="0 0 72 72">
-						<circle cx="36" cy="36" r="28" fill="none" stroke="#1e1e1e" stroke-width="5"/>
-						<circle cx="36" cy="36" r="28" fill="none" stroke="#4a5af0" stroke-width="5"
-							stroke-dasharray="175.9"
-							stroke-dashoffset="73.3"
-							stroke-linecap="round"
-							transform="rotate(-90 36 36)"/>
-						<text x="36" y="33" dominant-baseline="middle" text-anchor="middle" fill="#eee" font-size="14" font-weight="700">7</text>
-						<text x="36" y="46" dominant-baseline="middle" text-anchor="middle" fill="#555" font-size="8">av 12</text>
-					</svg>
-					<span class="tw-label">Dagens todos</span>
-				</div>
-				<div class="tw-explainer">
-					<div class="tw-row"><span class="tw-dot" style="background:#4a5af0"></span><span>7 av 12 fullført i dag (58 %)</span></div>
-					<div class="tw-row"><span class="tw-dot" style="background:#1e1e1e; border: 1px solid #2a2a2a"></span><span>Sensor-ringen fylles proporsjonalt</span></div>
-					<div class="tw-row"><span class="tw-dot" style="background:#5fa0a0"></span><span>Streakbadge vises ved 100 % ✓</span></div>
-					<div class="tw-row"><span class="tw-dot" style="background:#e07070"></span><span>Rød ring hvis uka har nulldager</span></div>
-				</div>
-			</div>
-
-			<!-- Planleggingsflyt -->
-			<h3 class="subsection">Planleggingsflyt (chat-drevet)</h3>
-			<div class="flow-grid">
-
-				<div class="flow-card">
-					<div class="flow-header">
-						<span class="flow-num">01</span>
-						<span class="flow-title">Ny uke → Ukeplan</span>
-					</div>
-					<div class="flow-steps">
-						<div class="flow-step"><span class="step-icon">🏠</span><span>CTA på hjemskjerm: <strong>«Lag en ukeplan»</strong></span></div>
-						<div class="flow-arrow">↓</div>
-						<div class="flow-step"><span class="step-icon">🤖</span><span>Bot henter måneds- og kvartalmål — gir kontekst uten at du gjentar deg</span></div>
-						<div class="flow-arrow">↓</div>
-						<div class="flow-step"><span class="step-icon">💬</span><span>Bot spør: <em>«Hva vil du fokusere på? Hva overføres fra forrige uke?»</em></span></div>
-						<div class="flow-arrow">↓</div>
-						<div class="flow-step"><span class="step-icon">📋</span><span>Bot foreslår 3 ukemål og dagstodos basert på historikk og mål</span></div>
-						<div class="flow-arrow">↓</div>
-						<div class="flow-step"><span class="step-icon">✅</span><span>Ukeplan lagres · Todo-widget aktiveres · Tema «Uke 14» vises i tema-railen</span></div>
-					</div>
-				</div>
-
-				<div class="flow-card">
-					<div class="flow-header">
-						<span class="flow-num">02</span>
-						<span class="flow-title">Daglig innsjekk</span>
-					</div>
-					<div class="flow-steps">
-						<div class="flow-step"><span class="step-icon">☀️</span><span>Morgenvarsling (valgfri): <em>«God morgen — 4 todos er satt for i dag»</em></span></div>
-						<div class="flow-arrow">↓</div>
-						<div class="flow-step"><span class="step-icon">👆</span><span>Trykk på todo-widgeten → liste med dagens oppgaver</span></div>
-						<div class="flow-arrow">↓</div>
-						<div class="flow-step"><span class="step-icon">✓</span><span>Huk av i listen eller via chat: <em>«Jeg leverte matpakkene»</em></span></div>
-					</div>
-					<div class="flow-note">Bot lytter passivt — kan registrere fullføring nevnt i samtale uten eksplisitt kommando.</div>
-				</div>
-
-				<div class="flow-card">
-					<div class="flow-header">
-						<span class="flow-num">03</span>
-						<span class="flow-title">Refleksjon (flere nivåer)</span>
-					</div>
-					<div class="flow-steps">
-						<div class="flow-step"><span class="step-icon">🌙</span><span><strong>Fredag kveld</strong> — bot: <em>«Uka er snart over. Vil du gjøre en mini-gjennomgang?»</em></span></div>
-						<div class="flow-arrow">↓</div>
-						<div class="flow-step"><span class="step-icon">📅</span><span><strong>Månedsslutt</strong> — oppsummering av ukeplaner og hva som ble sagt om månedsmålene</span></div>
-						<div class="flow-arrow">↓</div>
-						<div class="flow-step"><span class="step-icon">🏆</span><span><strong>Nyttår</strong> — den episke kavalkaden (se under)</span></div>
-					</div>
-				</div>
-
-				<div class="flow-card">
-					<div class="flow-header">
-						<span class="flow-num">04</span>
-						<span class="flow-title">Stressdump (~15 min)</span>
-					</div>
-					<div class="flow-steps">
-						<div class="flow-step"><span class="step-icon">🏠</span><span>CTA på hjemskjerm eller ukeplan: <strong>«Noe kverner?»</strong></span></div>
-						<div class="flow-arrow">↓</div>
-						<div class="flow-step"><span class="step-icon">🗣️</span><span>Fri samtale — bot lytter uten å avbryte. Ingen struktur påkrevd.</span></div>
-						<div class="flow-arrow">↓</div>
-						<div class="flow-step"><span class="step-icon">🔍</span><span>Bot oppsummerer: hva er <em>akutt</em>, hva er <em>bekymring</em>, hva er <em>idé</em>?</span></div>
-						<div class="flow-arrow">↓</div>
-						<div class="flow-step"><span class="step-icon">📋</span><span>Foreslår: nye todos, temaer, eller lagrer bare som dagnotat. <strong>Du velger.</strong></span></div>
-					</div>
-					<div class="flow-note">Tungt hode → organisert eller akseptert. Ikke en GTD-seanse. Bare prat.</div>
-				</div>
-
-			</div>
-
-			<!-- Årsrunden -->
-			<h3 class="subsection" style="margin-top: 40px">Årsrunden — den episke kavalkaden</h3>
-			<p class="section-desc">Et nyttårsbrev til deg selv. AI-generert, men basert på faktiske data fra hele året.</p>
-			<div class="kavalkade-card">
-				<div class="kav-year">2025</div>
-				<div class="kav-headline">Du fullførte 2 534 oppgaver.</div>
-				<div class="kav-stats">
-					<div class="kav-stat"><span class="kav-stat-num">2 534</span><span class="kav-stat-lbl">Oppgaver fullført</span></div>
-					<div class="kav-stat"><span class="kav-stat-num">48</span><span class="kav-stat-lbl">Ukeplaner skrevet</span></div>
-					<div class="kav-stat"><span class="kav-stat-num">312</span><span class="kav-stat-lbl">Treningsøkter</span></div>
-					<div class="kav-stat"><span class="kav-stat-num">−4.2 kg</span><span class="kav-stat-lbl">Vektendring</span></div>
-				</div>
-				<div class="kav-insights">
-					<div class="kav-insight-row"><span class="kav-insight-icon">✅</span><span>Det du oftest lyktes med: <strong>Levere i barnehagen</strong></span></div>
-					<div class="kav-insight-row"><span class="kav-insight-icon">🔄</span><span>Det du oftest avlyste: <strong>Joggetur</strong></span></div>
-					<div class="kav-insight-row"><span class="kav-insight-icon">📈</span><span>Beste kvartal: <strong>Q2 — 72 % ukemål fullført</strong></span></div>
-					<div class="kav-insight-row"><span class="kav-insight-icon">💬</span><span>Mest brukte tema: <strong>Familie · Trening · Jobb</strong></span></div>
-				</div>
-				<div class="kav-narrative">
-					«Året begynte med knekkebrød og tidlig seng — og det hjalp faktisk. Du trente mer i Q1 enn noe annet år. Sommeren ble roligere enn planlagt, men det var kanskje akkurat det du trengte.»
-				</div>
-			</div>
-
-			<!-- CTA-varianter -->
-			<h3 class="subsection">CTA-varianter på hjemskjerm (tema-sonen)</h3>
-			<p class="section-desc">Tema-sonen viser ulike tilstander avhengig av om brukeren har ukeplan, tema eller ingenting.</p>
-			<div class="cta-variants">
-
-				<div class="cta-variant-group">
-					<span class="cta-state-label">Ingen temaer · ingen ukeplan</span>
-					<button class="up-cta">
-						<span class="up-cta-icon"><Icon name="goals" size={16} /></span>
-						<span class="up-cta-text">Lag en ukeplan</span>
-						<span class="up-cta-arrow"><Icon name="forward" size={16} /></span>
-					</button>
-				</div>
-
-				<div class="cta-variant-group">
-					<span class="cta-state-label">Ukeplan aktiv — i dag</span>
-					<div class="up-active">
-						<div class="up-active-left">
-							<span class="up-active-day">Tirsdag</span>
-							<span class="up-active-sub">3 av 5 todos</span>
-						</div>
-						<div class="up-active-right">
-							<svg width="36" height="36" viewBox="0 0 36 36">
-								<circle cx="18" cy="18" r="14" fill="none" stroke="#1e1e1e" stroke-width="3"/>
-								<circle cx="18" cy="18" r="14" fill="none" stroke="#4a5af0" stroke-width="3"
-									stroke-dasharray="87.96" stroke-dashoffset="35.2"
-									stroke-linecap="round" transform="rotate(-90 18 18)"/>
-							</svg>
-						</div>
-					</div>
-				</div>
-
-				<div class="cta-variant-group">
-					<span class="cta-state-label">Fredag — refleksjonspåminnelse</span>
-					<button class="up-cta up-cta--reflect">
-						<span class="up-cta-icon">🌙</span>
-						<span class="up-cta-text">Gjør ukens mini-gjennomgang</span>
-						<span class="up-cta-arrow"><Icon name="forward" size={16} /></span>
-					</button>
-				</div>
-
-			</div>
-
-		</section>
-
-		<!-- ── SJEKKLISTE-FLYT ─────────────────────────────────────────────── -->
-		<section id="Sjekkliste-flyt" class="section">
-			<h2 class="section-heading">Sjekkliste-flyt</h2>
-			<p class="section-desc">Fra chat-input til sjekkliste-widget til fullskjerm-sheet — og payoff-animasjon når alt er ferdig. Opprettes via AI-tool <code>create_checklist</code>.</p>
-
-			<!-- 1. Chat-flyt -->
-			<h3 class="subsection">1. Chat → opprett sjekkliste</h3>
-			<p class="section-desc">Brukeren skriver en naturlig setning om å forberede noe. AI gjenkjenner intensjon og kaller <code>create_checklist</code>-toolet.</p>
-			<div class="cl-chat-demo">
-				<div class="cl-bubble cl-bubble-user">Jeg skal på tur til Bergen neste helg, hjelp meg å pakke riktig 🏔</div>
-				<div class="cl-bubble cl-bubble-ai">
-					<p style="margin:0 0 8px">Jeg har laget en pakkeliste for deg! 🎒</p>
-					<div class="cl-ai-list">
-						{#each ['🧥 Regnjakke', '👟 Tursko', '🎽 Ullundertøy (x2)', '🧤 Hansker', '🗺 Kart/ruter lastet ned', '🔦 Hodelykt + batteri', '💊 Apotek-pakke', '🔌 Powerbank lada'] as item}
-							<div class="cl-ai-item">✓ {item}</div>
-						{/each}
-					</div>
-					<p style="margin:8px 0 0; font-size:0.75rem; color:#555">Sjekklisten "Bergenstur 🏔" er klar i widget-sonen.</p>
-				</div>
-			</div>
-
-			<!-- 2. Widget-tilstander -->
-			<h3 class="subsection" style="margin-top:40px">2. ChecklistWidget — tilstander</h3>
-			<p class="section-desc">Samme SVG-ring-komponent som GoalRing, plassert i widget-sonen på hjemskjermen. Fargen går fra blå → grønn ved fullføring.</p>
-			<div class="cl-widget-row">
-				<!-- 0/8 -->
-				<div class="cl-widget-demo">
-					<div class="cl-ring-wrap">
-						<svg viewBox="0 0 80 80" width="80" height="80">
-							<circle cx="40" cy="40" r="32" fill="none" stroke="#1a1a2a" stroke-width="6"/>
-							<circle cx="40" cy="40" r="32" fill="none" stroke="#7c8ef5" stroke-width="6"
-								stroke-dasharray="0 201" stroke-linecap="round" transform="rotate(-90 40 40)"/>
-						</svg>
-						<div class="cl-ring-center">🏔</div>
-					</div>
-					<span class="cl-widget-count">0/8</span>
-					<span class="cl-widget-title">Bergenstur</span>
-				</div>
-				<!-- 5/8 -->
-				<div class="cl-widget-demo">
-					<div class="cl-ring-wrap">
-						<svg viewBox="0 0 80 80" width="80" height="80">
-							<circle cx="40" cy="40" r="32" fill="none" stroke="#1a1a2a" stroke-width="6"/>
-							<circle cx="40" cy="40" r="32" fill="none" stroke="#7c8ef5" stroke-width="6"
-								stroke-dasharray="125.6 75.4" stroke-linecap="round" transform="rotate(-90 40 40)"/>
-						</svg>
-						<div class="cl-ring-center">🏔</div>
-					</div>
-					<span class="cl-widget-count">5/8</span>
-					<span class="cl-widget-title">Bergenstur</span>
-				</div>
-				<!-- 8/8 komplett -->
-				<div class="cl-widget-demo">
-					<div class="cl-ring-wrap">
-						<svg viewBox="0 0 80 80" width="80" height="80">
-							<circle cx="40" cy="40" r="32" fill="none" stroke="#1a2a1a" stroke-width="6"/>
-							<circle cx="40" cy="40" r="32" fill="none" stroke="#5fa080" stroke-width="6"
-								stroke-dasharray="201 0" stroke-linecap="round" transform="rotate(-90 40 40)"/>
-						</svg>
-						<div class="cl-ring-center" style="color:#5fa080">✓</div>
-					</div>
-					<span class="cl-widget-count" style="color:#5fa080">8/8</span>
-					<span class="cl-widget-title">Ferdig! 🎉</span>
-				</div>
-			</div>
-
-			<!-- 3. Sheet -->
-			<h3 class="subsection" style="margin-top:40px">3. ChecklistSheet — liste og avkryssing</h3>
-			<p class="section-desc">Bottom-sheet-overlay. Glir opp fra bunnen ved trykk på widget. Viser alle punkter med avkryssings-UI, fremdriftsbar og «Legg til punkt»-input.</p>
-			<div class="cl-sheet-demo">
-				<div class="cl-sheet-header">
-					<div style="display:flex;align-items:center;gap:10px">
-						<span style="font-size:1.4rem">🏔</span>
-						<div>
-							<div style="font-size:0.95rem;font-weight:700;color:#eee">Bergenstur</div>
-							<div style="font-size:0.7rem;color:#555">5 av 8 fullført</div>
-						</div>
-					</div>
-					<div style="width:28px;height:28px;background:#1e1e1e;border:1px solid #2a2a2a;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#555;font-size:0.7rem">✕</div>
-				</div>
-				<div style="height:3px;background:#1e1e1e;margin:0 16px;border-radius:999px">
-					<div style="width:62.5%;height:100%;background:#7c8ef5;border-radius:999px"></div>
-				</div>
-				<div class="cl-sheet-items">
-					{#each [
-						{ text: '🧥 Regnjakke', checked: true },
-						{ text: '👟 Tursko', checked: true },
-						{ text: '🎽 Ullundertøy (x2)', checked: true },
-						{ text: '🧤 Hansker', checked: true },
-						{ text: '🗺 Kart/ruter lastet ned', checked: true },
-						{ text: '🔦 Hodelykt + batteri', checked: false },
-						{ text: '💊 Apotek-pakke', checked: false },
-						{ text: '🔌 Powerbank lada', checked: false },
-					] as item}
-						<div class="cl-sheet-item" class:cl-item-done={item.checked}>
-							<div class="cl-sheet-cb" class:cl-cb-checked={item.checked}>
-								{#if item.checked}<span style="color:white;font-size:0.65rem;font-weight:700">✓</span>{/if}
-							</div>
-							<span class="cl-sheet-item-text">{item.text}</span>
-						</div>
-					{/each}
-				</div>
-				<div style="display:flex;gap:8px;padding:10px 16px;border-top:1px solid #1a1a1a">
-					<div style="flex:1;background:#161616;border:1px solid #2a2a2a;border-radius:8px;padding:7px 10px;font-size:0.8rem;color:#444">Legg til punkt…</div>
-					<div style="width:34px;height:34px;background:#2a2a2a;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#555">＋</div>
-				</div>
-			</div>
-
-			<!-- 4. Payoff -->
-			<h3 class="subsection" style="margin-top:40px">4. Payoff — alt er klart!</h3>
-			<p class="section-desc">Vises automatisk når siste punkt krysses av. Ring-animasjon + tekst + emoji. Trykk for å lukke. Designprinsipp: rask belønning, ingen modal-stack, ingen knapper å trykke.</p>
-			<div class="cl-payoff-demo">
-				<div class="cl-payoff-ring-wrap">
-					<svg viewBox="0 0 100 100" width="100" height="100">
-						<circle cx="50" cy="50" r="40" fill="none" stroke="#1a2a1a" stroke-width="8"/>
-						<circle cx="50" cy="50" r="40" fill="none" stroke="#5fa080" stroke-width="8"
-							stroke-dasharray="251 0" stroke-linecap="round" transform="rotate(-90 50 50)"/>
-					</svg>
-					<div class="cl-payoff-ring-inner">🏔</div>
-				</div>
-				<div style="font-size:1.3rem;font-weight:700;color:#eee;margin-top:12px">Alt er klart!</div>
-				<div style="font-size:0.8rem;color:#888;margin-top:4px">Bergenstur</div>
-				<div style="font-size:0.65rem;color:#444;margin-top:12px">Trykk hvor som helst for å lukke</div>
-			</div>
-
-			<!-- 5. Dataflyt -->
-			<h3 class="subsection" style="margin-top:40px">5. Dataflyt og API</h3>
-			<div class="cl-flow">
-				<div class="cl-flow-step"><span class="cl-flow-icon">💬</span><span>Bruker: «Jeg skal på tur…»</span></div>
-				<div class="cl-flow-arrow">↓</div>
-				<div class="cl-flow-step"><span class="cl-flow-icon">🤖</span><span>AI kaller <code>create_checklist</code> — title, emoji, items[]</span></div>
-				<div class="cl-flow-arrow">↓</div>
-				<div class="cl-flow-step"><span class="cl-flow-icon">🗄</span><span>POST /api/checklists → INSERT checklists + checklist_items</span></div>
-				<div class="cl-flow-arrow">↓</div>
-				<div class="cl-flow-step"><span class="cl-flow-icon">🏠</span><span>HomeScreen refetcher /api/checklists → ChecklistWidget dukker opp</span></div>
-				<div class="cl-flow-arrow">↓</div>
-				<div class="cl-flow-step"><span class="cl-flow-icon">☑</span><span>Trykk widget → ChecklistSheet → PATCH /api/checklists/[id]/items/[itemId]</span></div>
-				<div class="cl-flow-arrow">↓</div>
-				<div class="cl-flow-step" style="border-color:#5fa080"><span class="cl-flow-icon">🎉</span><span>Alle krysset av → completedAt settes → Payoff-animasjon</span></div>
-			</div>
-
-		</section>
-
-		<!-- ── Radiale visualiseringer ── -->
-		<section id="Radiale visualiseringer" class="section">
-			<h2 class="section-heading">Radiale visualiseringer</h2>
 			<p class="section-desc">
-				Felles base-komponent <code>RadialSectorChart</code> med to profiler.
-				Tre visuelle dimensjoner per sektor: <strong>radius</strong> (hvor mye),
-				<strong>farge</strong> (hva/domene), <strong>opasitet</strong> (trend/kvalitet).
+				Ukeplan-siden er bygget av <code>domain/ukeplan/</code>-komponentene WeekGoals, WeekNote, DaySection og WeekTasks —
+				alle props-drevne og vist live under med mock-data. Se dem i full kontekst på <a href="/ukeplan">/ukeplan</a>.
 			</p>
 
-			<h3 class="subsection">DayWheelChart — dagsprofil</h3>
+			<h3 class="subsection">WeekGoals — målbilde og sensor-fremdrift</h3>
 			<p class="section-desc">
-				31 sektorer, én per dag. Grått segment = planlagte oppgaver, grønt segment = løste oppgaver.
-				Begge normalisert mot høyeste antall planlagte oppgaver i måneden.
+				Viser visjon + langtidsmål med sensor-beregnet fremdrift (vektmål med forventet kurve, løpsdistanse mot plan).
 			</p>
-			<div class="radial-row">
-				<div class="radial-card">
-					<DayWheelChart year={2026} month={5} days={demoMonthDays} size={220} />
-					<p class="radial-caption">Demo: 20 dager bak oss, dag 21 = i dag</p>
+			<div class="demo-card demo-card--wide">
+				<WeekGoals vision={weekGoalsVision} longTermGoals={weekGoalsMock} />
+			</div>
+
+			<h3 class="subsection">WeekNote — ukesnotat med autosave</h3>
+			<p class="section-desc">
+				Lagrer på blur via <code>onSave</code>-callback (eieren gjør action-kallet). Skriv noe og klikk
+				utenfor for å se saving → saved-syklusen på lagre-dotten.
+			</p>
+			<div class="demo-card demo-card--wide">
+				<WeekNote
+					weekNote="Anita reiser fredag og blir til mandag ettermiddag."
+					saveState={weekNoteSaveState}
+					onSaveStateChange={(s) => (weekNoteSaveState = s)}
+					onSave={mockSaveWeekNote}
+				/>
+			</div>
+
+			<h3 class="subsection">DaySection — dagvisning</h3>
+			<p class="section-desc">
+				Dagens sjekkliste med rutiner, gruppe-items, Spond-event, vær og dagnotis. Fast demo-uke
+				(onsdag = «i dag»). Komponenten er props-drevet; callbacks her er noops, så avkryssing
+				lagres ikke.
+			</p>
+			<div class="demo-card demo-card--wide">
+				<DaySection {...daySectionFixture} />
+			</div>
+
+			<h3 class="subsection">WeatherStrip — værperioder</h3>
+			<p class="section-desc">
+				Vises i ChecklistSheet-headeren for dags-/ukelister med sted. Regn farger søylen blå etter mm.
+			</p>
+			<div class="demo-stack">
+				<WeatherStrip periods={weatherPeriodsMock} />
+			</div>
+
+			<h3 class="subsection">WeekTasks — ukas oppgaver</h3>
+			<p class="section-desc">
+				Strukturerte oppgaver (intent-badges, fremdrifts-slots, oppskrift-badge) + fri ukeliste med composer.
+				Nettverkslaget er en injisert <code>api</code>-prop — her en mock, så ingen kall går ut.
+			</p>
+			<div class="demo-card demo-card--wide">
+				<WeekTasks {...weekTasksFixture} />
+			</div>
+		</section>
+
+		<!-- ══ SHEETS & PANELER ═══════════════════════════════════════════════════ -->
+		<section id="sheets" class="section">
+			<h2 class="section-heading">Sheets & paneler</h2>
+			<p class="section-desc">
+				Bottompaneler er <code>position: fixed</code>-overlays. Scenen under bruker CSS <code>transform</code>
+				på rammen — det gjør rammen til containing block, så sheeten rendrer <em>inne i</em> rammen i stedet
+				for over hele siden. Alle sheets har injisert nettverkslag (mock her).
+			</p>
+
+			<h3 class="subsection">ChecklistSheet — dagsliste</h3>
+			<p class="section-desc">
+				Panelet bak sjekkliste-widgetene: tidsatte punkter, morgenrutine, gruppe med underpunkter,
+				«Hoppet over»-seksjon og ny-oppgave-felt. All IO (mutasjoner, vær, geolokasjon, stedsoppslag) går via
+				<code>ChecklistSheetApi</code> — mocken kvitterer lokalt, så avkryssing og nye punkter fungerer live.
+			</p>
+			<div class="sheet-stage sheet-stage--tall">
+				<ChecklistSheet
+					checklist={checklistSheetFixture}
+					routines={checklistSheetRoutines}
+					onclose={noop}
+					api={mockChecklistSheetApi}
+				/>
+			</div>
+
+			<h3 class="subsection">ChecklistSheet — payoff</h3>
+			<p class="section-desc">
+				Når siste punkt krysses av vises payoff-animasjonen. Demoen starter ferdig avkrysset, så payoffen
+				ligger over listen (trykk for å lukke den).
+			</p>
+			<div class="sheet-stage">
+				<ChecklistSheet
+					checklist={checklistSheetDoneFixture}
+					onclose={noop}
+					api={mockChecklistSheetApi}
+				/>
+			</div>
+
+			<h3 class="subsection">ProcedureSheet — oppskrift</h3>
+			<p class="section-desc">
+				To faner (markdown-fremgangsmåte + sjekkliste-trinn), handlingsrad og redigeringsmodus.
+				Lagring går via <code>api</code>-prop. Prøv fanene og «Rediger» — alt er live.
+			</p>
+			<div class="sheet-stage">
+				<ProcedureSheet
+					procedure={procedureMock}
+					onclose={noop}
+					onApply={noop}
+					onStartChat={noop}
+					api={mockProcedureSheetApi}
+				/>
+			</div>
+
+			<h3 class="subsection">WidgetConfigSheet — widget-konfigurasjon</h3>
+			<p class="section-desc">
+				Konfigurasjonspanelet for hjemskjerm-widgets. Treff-previewen for beløpsfilter hentes via
+				<code>loadPreview</code>-prop — mocken her returnerer et fast resultat (42 treff).
+			</p>
+			<div class="sheet-stage sheet-stage--tall">
+				<WidgetConfigSheet
+					widget={widgetConfigMock}
+					open
+					onclose={noop}
+					onsave={noop}
+					loadPreview={mockLoadFilterPreview}
+				/>
+			</div>
+
+			<h3 class="subsection">FlowSheet — strukturert flerstegs-flyt</h3>
+			<p class="section-desc">
+				Skallet for flows fra <code>$lib/flows/registry</code> — her vektonboardingen (skjemasteg).
+				Vær- og AI-forslags-kallene går via <code>api</code>-prop; chat-steg streamer via ChatState og
+				demoes ikke her. Naviger gjennom stegene — alt er live.
+			</p>
+			<div class="sheet-stage sheet-stage--tall">
+				<FlowSheet
+					flow={FLOWS.health_weight_onboarding}
+					onclose={noop}
+					oncomplete={noop}
+					api={mockFlowSheetApi}
+				/>
+			</div>
+
+			<h3 class="subsection">FlowSheet i fokusmodus — slot-sjekkin</h3>
+			<p class="section-desc">
+				Den tidsstyrte fullskjerm-sjekkinen («Hvordan gikk …?») er FlowSheet med <code>focus: true</code> —
+				bygget per tidsvindu av <code>buildEgenfrekvensSlotFlow</code>. Steg 1: 1–5-slider med nivå-labels og
+				autoAdvance; steg 2: valgfri setning + «Fortsett i chat». <code>onComplete</code> er mocket.
+			</p>
+			<div class="sheet-stage sheet-stage--tall">
+				<FlowSheet
+					flow={slotCheckinFlow}
+					onclose={noop}
+					oncomplete={noop}
+					onsecondaryaction={noop}
+					api={mockFlowSheetApi}
+				/>
+			</div>
+		</section>
+
+		<!-- ══ MENYER & MODALER ═══════════════════════════════════════════════════ -->
+		<section id="modaler" class="section">
+			<h2 class="section-heading">Menyer & modaler</h2>
+			<p class="section-desc">
+				Interaksjons-overlays som ellers bare er synlige ved long-press eller spesifikke hendelser —
+				her statisk åpne i scener. BreakdownModal og ShareSheet har injisert nettverkslag (mock).
+			</p>
+
+			<h3 class="subsection">TaskContextMenu — long-press-meny</h3>
+			<div class="sheet-stage sheet-stage--short">
+				<TaskContextMenu
+					open
+					anchor={taskMenuAnchor}
+					itemText="Svømmehall"
+					onClose={noop}
+					onEdit={noop}
+					onBreakdown={noop}
+					onSnooze={noop}
+					onSkip={noop}
+					onDelete={noop}
+					onStartChat={noop}
+				/>
+			</div>
+
+			<h3 class="subsection">AutoCheckModal — auto-avkryssing</h3>
+			<p class="section-desc">Foreslår avkryssing når et nytt punkt matcher en registrert treningsøkt.</p>
+			<div class="sheet-stage sheet-stage--short">
+				<AutoCheckModal prompt={autoCheckPromptMock} busy={false} onConfirm={noop} onDismiss={noop} />
+			</div>
+
+			<h3 class="subsection">LocationPickerModal — flertydig stedsnavn</h3>
+			<div class="sheet-stage">
+				<LocationPickerModal
+					placeName="Håøya"
+					candidates={geoCandidatesMock}
+					onPick={noop}
+					onKeepAsTyped={noop}
+					onClose={noop}
+				/>
+			</div>
+
+			<h3 class="subsection">BreakdownModal — AI-nedbrytning</h3>
+			<p class="section-desc">AI-forslagene hentes via <code>loadSuggestionsFn</code>-prop — mock her.</p>
+			<div class="sheet-stage">
+				<BreakdownModal
+					itemTitle="Male barnerommet"
+					onClose={noop}
+					onSave={async () => {}}
+					loadSuggestionsFn={mockLoadBreakdownSuggestions}
+				/>
+			</div>
+
+			<h3 class="subsection">ShareSheet — deling</h3>
+			<p class="section-desc">Delingspanel for sjekklister/temalister. Nettverk via <code>api</code>-prop — mock viser én eksisterende deling.</p>
+			<div class="sheet-stage sheet-stage--tall">
+				<ShareSheet
+					resourceType="checklist"
+					resourceId="cls-1"
+					resourceTitle="Bergenstur"
+					open
+					onClose={noop}
+					api={mockShareApi}
+				/>
+			</div>
+		</section>
+
+		<!-- ══ LAB ════════════════════════════════════════════════════════════════ -->
+		<section id="lab" class="section">
+			<h2 class="section-heading">Lab — ikke i appen ennå</h2>
+			<p class="section-desc">
+				Komponenter som utvikles og tilpasses her før de eventuelt tas inn i appen.
+				<strong>Ingen av disse brukes i produksjon i dag.</strong> Når en komponent tas i bruk,
+				flyttes demoen opp i riktig seksjon; når den forkastes, slettes den herfra og fra <code>ui/</code>.
+			</p>
+
+			<h3 class="subsection">StreakBadge</h3>
+			<div class="variant-grid">
+				<div class="variant">
+					<StreakBadge count={12} label="Jogging" />
+					<span class="vname">Standard</span>
 				</div>
-				<div class="radial-legend">
-					<div class="radial-legend-item">
-						<span class="radial-dot" style="background:rgba(255,255,255,0.18)"></span> Planlagte oppgaver
-					</div>
-					<div class="radial-legend-item">
-						<span class="radial-dot" style="background:#5fa080"></span> Løste oppgaver
-					</div>
-					<hr class="radial-hr" />
-					<div class="radial-dim"><strong>Radius</strong> = antall / maks planlagt i mnd.</div>
-					<div class="radial-dim"><strong>Grå</strong> = planlagt</div>
-					<div class="radial-dim"><strong>Grønn</strong> = løst</div>
-					<div class="radial-dim"><strong>Fremtid</strong> = ingen sektor</div>
+				<div class="variant">
+					<StreakBadge count={3} color="#7c8ef5"
+						weekDots={[false, false, false, false, true, true, true]}
+						label="Meditasjon"
+					/>
+					<span class="vname">Lav streak · blå</span>
+				</div>
+				<div class="variant">
+					<StreakBadge count={42} color="#d4829a"
+						weekDots={[true, true, true, true, true, true, true]}
+						label="Kobling"
+					/>
+					<span class="vname">Perfekt uke · rosa</span>
 				</div>
 			</div>
 
-			<h3 class="subsection">DomainWheelChart — domeneprofil</h3>
+			<h3 class="subsection">RelationSparkline</h3>
+			<p class="section-desc">Dobbel-sparkline klippet til sirkel. Siste 7 registreringer på 1–5-skala.</p>
+			<div class="variant-grid">
+				<div class="variant">
+					<RelationSparkline
+						dataA={[3, 4, 3, 5, 4, 4, 5]}
+						dataB={[4, 3, 4, 3, 4, 3, 4]}
+					/>
+					<span class="vname">Standard · widget</span>
+				</div>
+				<div class="variant">
+					<RelationSparkline
+						dataA={[3, 4, 3, 5, 4, 4, 5]}
+						dataB={[4, 3, 4, 3, 4, 3, 4]}
+						showLegend
+						labelA="Kjetil"
+						labelB="Partner"
+						size={96}
+					/>
+					<span class="vname">Med legend · dashbord</span>
+				</div>
+			</div>
+
+			<h3 class="subsection">ChatBubble</h3>
 			<p class="section-desc">
-				N sektorer, én per domene. Radius = andel av månedsmål nådd,
-				opasitet = trend siste 7 dager (up → 1.0, flat → 0.7, down → 0.45).
-				Sentertekst viser snitt-% på tvers av domener.
+				Enkel meldingsboble. Chat-flatene i appen bruker <code>TriageCard</code> — ChatBubble er kandidat for
+				enkle meldingslister, men er ikke i bruk i dag.
+			</p>
+			<div class="chat-demo">
+				<ChatBubble role="user" text="Jeg veide 92 kg i dag" />
+				<ChatBubble role="bot" text="✦ Registrert — ned 0.4 kg siden sist." branch="Trening & helse" />
+			</div>
+
+			<h3 class="subsection">DomainWheelChart</h3>
+			<p class="section-desc">
+				Radial domeneprofil: radius = andel av månedsmål, opasitet = trend siste 7 dager.
+				Tenkt som «livshjul»-widget på hjemskjermen.
 			</p>
 			<div class="radial-row">
 				<div class="radial-card">
 					<DomainWheelChart domains={demoDomains} size={220} />
 					<p class="radial-caption">Helse ↑, Økonomi →, Mat ↓</p>
 				</div>
-				<div class="radial-legend">
-					{#each demoDomains as d}
-						<div class="radial-legend-item">
-							<span class="radial-dot" style="background:{d.color}"></span>
-							{d.label} — {Math.round(d.monthPct * 100)}% · {d.trend === 'up' ? '↑' : d.trend === 'down' ? '↓' : '→'}
-						</div>
-					{/each}
-					<hr class="radial-hr" />
-					<div class="radial-dim"><strong>Radius</strong> = % av månedsmål nådd</div>
-					<div class="radial-dim"><strong>Farge</strong> = domenefarge</div>
-					<div class="radial-dim"><strong>Opasitet</strong> = trend (up/flat/down)</div>
+				<div class="widget-mock">
+					<div class="widget-mock-ring">
+						<DomainWheelChart domains={demoDomains} size={70} showLabels={false} centerLabel="57%" centerSublabel="" />
+					</div>
+					<span class="widget-mock-label">Widget-størrelse</span>
 				</div>
 			</div>
 
-			<h3 class="subsection">Side om side</h3>
-			<p class="section-desc">Begge profiler, samme størrelse.</p>
-			<div class="radial-pair">
-				<div class="radial-pair-item">
-					<DayWheelChart year={2026} month={5} days={demoMonthDays} size={180} />
-					<span class="radial-pair-label">Dagshjul</span>
-				</div>
-				<div class="radial-pair-item">
-					<DomainWheelChart domains={demoDomains} size={180} />
-					<span class="radial-pair-label">Domenehjul</span>
-				</div>
-			</div>
-
-			<h3 class="subsection">Widget-størrelse</h3>
+			<h3 class="subsection">Udokumenterte ui-komponenter</h3>
 			<p class="section-desc">
-				Samme dimensjoner som en widget på hjemskjermen (90 × 106 px, ring 70 px).
-				Ingen labels — bare farger og senterverdi.
+				Disse brukes i appen, men har ikke egen demo her ennå:
+				<code>TimeInput</code>, <code>Radio</code>, <code>TabButton</code>, <code>ChipStrip</code>,
+				<code>CollapsibleSection</code>, <code>Tooltip</code>, <code>TransactionList</code>,
+				<code>PullToRefresh</code> og settings-provider-kortene.
+				(TaskTitle, ChecklistItemRow/GroupRow/RoutineGroupRow og ChecklistCheckbox vises live
+				inne i sjekkliste- og ukeplan-demoene.) Legg til demoer etter hvert som de berøres.
 			</p>
-			<div class="radial-pair">
-				<div class="widget-mock">
-					<div class="widget-mock-ring">
-						<DayWheelChart year={2026} month={5} days={demoMonthDays} size={70} />
-					</div>
-					<span class="widget-mock-label">Mai</span>
-				</div>
-				<div class="widget-mock">
-					<div class="widget-mock-ring">
-						<DomainWheelChart
-							domains={demoDomains}
-							size={70}
-							showLabels={false}
-							centerLabel="62%"
-							centerSublabel=""
-						/>
-					</div>
-					<span class="widget-mock-label">Balanse</span>
-				</div>
-				<div class="widget-mock">
-					<div class="widget-mock-ring">
-						<DomainWheelChart
-							domains={[
-								{ id: 'jobb',      label: 'Jobb',      color: '#7c8ef5', monthPct: 0.5,  trend: 'flat' },
-								{ id: 'familie',   label: 'Familie',   color: '#5fa0a0', monthPct: 0.8,  trend: 'up'   },
-								{ id: 'hjem',      label: 'Hjem',      color: '#f0b429', monthPct: 0.3,  trend: 'down' },
-								{ id: 'parforhold',label: 'Parforhold',color: '#d4829a', monthPct: 0.75, trend: 'up'   },
-								{ id: 'venner',    label: 'Venner',    color: '#4ade80', monthPct: 0.4,  trend: 'flat' },
-								{ id: 'selv',      label: 'Selv',      color: '#e07070', monthPct: 0.6,  trend: 'up'   },
-							]}
-							size={70}
-							showLabels={false}
-						/>
-					</div>
-					<span class="widget-mock-label">Livshjul</span>
-				</div>
-			</div>
 		</section>
 
 	</main>
@@ -1787,25 +1303,10 @@
 <style>
 	/* ── Layout ── */
 	.page {
-		/* Tving mørkt tema uavhengig av systemvalg — design-siden er alltid mørk */
-		--bg-primary: #0f0f0f;
-		--bg-card: #1a1a1a;
-		--bg-hover: #222;
-		--border-color: #2a2a2a;
-		--border-subtle: #1e1e1e;
-		--text-primary: #eee;
-		--text-secondary: #aaa;
-		--text-tertiary: #555;
-		--accent-primary: #4a5af0;
-		--accent-hover: #3a4adf;
-		--error-bg: rgba(224, 112, 112, 0.08);
-		--error-text: #e07070;
-		--error-border: #6a2a2a;
-
 		display: flex;
 		min-height: 100vh;
-		background: #0f0f0f;
-		color: #ccc;
+		background: var(--bg-primary, #0f0f0f);
+		color: var(--text-secondary, #ccc);
 		font-family: 'Inter', system-ui, sans-serif;
 	}
 
@@ -1816,7 +1317,7 @@
 		width: 160px;
 		flex-shrink: 0;
 		padding: 48px 0 24px 20px;
-		border-right: 1px solid #1e1e1e;
+		border-right: 1px solid var(--border-subtle, #1e1e1e);
 		display: flex;
 		flex-direction: column;
 		gap: 6px;
@@ -1825,18 +1326,43 @@
 	.sidenav-link {
 		font-size: 0.72rem;
 		font-weight: 500;
-		color: #555;
+		color: var(--text-tertiary, #555);
 		text-decoration: none;
 		padding: 4px 8px;
 		border-radius: 6px;
 		transition: color 0.12s, background 0.12s;
 	}
-	.sidenav-link:hover { color: #ccc; background: #1a1a1a; }
+	.sidenav-link:hover { color: var(--text-primary, #ccc); background: var(--bg-card, #1a1a1a); }
 
 	.content {
 		flex: 1;
 		max-width: 860px;
+		min-width: 0;
 		padding: 48px 40px 120px;
+	}
+
+	/* Smal skjerm: sidenav som statisk lenkerad øverst — unngår sticky/horisontal
+	   overflow (som også smører kolonner inn i screenshot-stitchingen). */
+	@media (max-width: 700px) {
+		.page {
+			flex-direction: column;
+		}
+
+		.sidenav {
+			position: static;
+			height: auto;
+			width: auto;
+			flex-direction: row;
+			flex-wrap: wrap;
+			gap: 2px 4px;
+			padding: 16px 16px 10px;
+			border-right: none;
+			border-bottom: 1px solid var(--border-subtle, #1e1e1e);
+		}
+
+		.content {
+			padding: 24px 16px 80px;
+		}
 	}
 
 	/* ── Overskrifter ── */
@@ -1844,14 +1370,16 @@
 		font-size: 1.6rem;
 		font-weight: 700;
 		letter-spacing: -0.03em;
-		color: #eee;
+		color: var(--text-primary, #eee);
 		margin: 0 0 6px;
 	}
 
 	.page-sub {
 		font-size: 0.82rem;
-		color: #555;
+		color: var(--text-tertiary, #555);
 		margin: 0 0 48px;
+		max-width: 560px;
+		line-height: 1.6;
 	}
 
 	.section {
@@ -1865,7 +1393,7 @@
 		letter-spacing: -0.01em;
 		margin: 0 0 20px;
 		padding-bottom: 10px;
-		border-bottom: 1px solid #1e1e1e;
+		border-bottom: 1px solid var(--border-subtle, #1e1e1e);
 	}
 
 	.subsection {
@@ -1882,6 +1410,7 @@
 		color: #555;
 		margin: -6px 0 16px;
 		line-height: 1.5;
+		max-width: 620px;
 	}
 
 	.section-desc code {
@@ -1891,6 +1420,122 @@
 		border-radius: 4px;
 		padding: 0 4px;
 		color: #888;
+	}
+
+	.section-desc a {
+		color: #8ba0f5;
+	}
+
+	/* ── Typografi ── */
+	.type-scale {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		max-width: 560px;
+	}
+
+	.type-row {
+		display: grid;
+		grid-template-columns: 170px 60px 1fr;
+		align-items: baseline;
+		gap: 12px;
+		padding: 8px 0;
+		border-bottom: 1px solid var(--border-subtle, #1e1e1e);
+	}
+
+	.type-row code {
+		font-size: 0.72rem;
+		color: #8ba0f5;
+	}
+
+	.type-val {
+		font-size: 0.72rem;
+		color: #555;
+	}
+
+	/* ── Demo-wrappere ── */
+	.demo-stack {
+		max-width: 420px;
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+	}
+
+	.demo-row {
+		display: flex;
+		gap: 20px;
+		flex-wrap: wrap;
+		align-items: flex-start;
+	}
+
+	.demo-card {
+		max-width: 420px;
+		flex: 1 1 300px;
+	}
+
+	.demo-card--wide {
+		max-width: 560px;
+	}
+
+	.demo-caption {
+		font-size: 0.68rem;
+		color: #555;
+		margin: 6px 0 20px;
+	}
+
+	/* ── Sheet-scene ──
+	   transform gjør rammen til containing block for position:fixed-barn,
+	   så sheets rendrer inne i rammen i stedet for over hele siden. */
+	.sheet-stage {
+		position: relative;
+		transform: translateZ(0);
+		width: 100%;
+		max-width: 420px;
+		height: 560px;
+		border: 1px solid #222;
+		border-radius: 20px;
+		overflow: hidden;
+		background: #08080a;
+		margin-bottom: 12px;
+	}
+
+	.sheet-stage--tall {
+		height: 720px;
+	}
+
+	.sheet-stage--short {
+		height: 420px;
+	}
+
+	.chat-demo--wide {
+		max-width: 440px;
+	}
+
+	/* ── MetricCard-demo ── */
+	.metric-demo {
+		max-width: 480px;
+		display: flex;
+		flex-direction: column;
+		gap: 14px;
+	}
+
+	.metric-row {
+		display: grid;
+		grid-template-columns: 110px 1fr;
+		align-items: center;
+		gap: 12px;
+	}
+
+	.metric-label {
+		font-size: 0.68rem;
+		color: #555;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+	}
+
+	/* Sheets bruker dvh-baserte max-heights — klamp til scenen. */
+	.sheet-stage :global([role='dialog']) {
+		max-height: 100%;
 	}
 
 	/* ── Variant-grid ── */
@@ -1929,7 +1574,7 @@
 		white-space: nowrap;
 	}
 
-	/* ── Ikon-grid ── */
+	/* ── Ikon-lab ── */
 	.icon-theme-lab {
 		--icon-bg-0: hsl(var(--icon-hue) 100% 5%);
 		--icon-bg-1: hsl(var(--icon-hue) 58% 8%);
@@ -2109,355 +1754,6 @@
 		background: var(--icon-bg-2);
 	}
 
-	/* ── Widget flow demo ── */
-	.wf-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-		gap: 14px;
-	}
-
-	.wf-card {
-		background: #141414;
-		border: 1px solid #232323;
-		border-radius: 14px;
-		padding: 12px;
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
-	}
-
-	.wf-head {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-	}
-
-	.wf-num {
-		width: 20px;
-		height: 20px;
-		border-radius: 999px;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		background: #1f2a56;
-		color: #9fb0ff;
-		font-size: 0.68rem;
-		font-weight: 700;
-	}
-
-	.wf-title {
-		font-size: 0.76rem;
-		font-weight: 650;
-		color: #b7b7b7;
-	}
-
-	.wf-chat {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-	}
-
-	.wf-preview {
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
-	}
-
-	.wf-preview-top {
-		display: flex;
-		gap: 6px;
-		flex-wrap: wrap;
-	}
-
-	.wf-chip {
-		font-size: 0.62rem;
-		padding: 3px 7px;
-		border-radius: 999px;
-		background: #1d1d1d;
-		border: 1px solid #2c2c2c;
-		color: #777;
-	}
-
-	.wf-preview-body {
-		display: flex;
-		align-items: center;
-		gap: 12px;
-	}
-
-	.wf-ring-wrap {
-		position: relative;
-		width: 74px;
-		height: 74px;
-		flex-shrink: 0;
-	}
-
-	.wf-ring-value {
-		position: absolute;
-		inset: 0;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		font-size: 0.78rem;
-		font-weight: 700;
-		color: #ddd;
-	}
-
-	.wf-name {
-		margin: 0;
-		font-size: 0.76rem;
-		color: #cfcfcf;
-	}
-
-	.wf-meta {
-		margin: 3px 0 0;
-		font-size: 0.68rem;
-		color: #666;
-	}
-
-	.wf-actions {
-		display: flex;
-		gap: 8px;
-		flex-wrap: wrap;
-	}
-
-	.wf-actions--compact :global(button) {
-		padding: 7px 10px;
-		font-size: 0.72rem;
-	}
-
-	.wf-configurator {
-		margin-top: 4px;
-		padding: 10px;
-		border: 1px solid #2b2b2b;
-		border-radius: 12px;
-		background: #111111;
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
-	}
-
-	.wf-config-head {
-		font-size: 0.68rem;
-		font-weight: 700;
-		color: #8d8d8d;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-	}
-
-	.wf-config-grid {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 8px;
-	}
-
-	.wf-config-item {
-		background: #161616;
-		border: 1px solid #2a2a2a;
-		border-radius: 9px;
-		padding: 7px 8px;
-		display: flex;
-		flex-direction: column;
-		gap: 3px;
-	}
-
-	.wf-config-label {
-		font-size: 0.6rem;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		color: #666;
-	}
-
-	.wf-config-value {
-		font-size: 0.74rem;
-		color: #c4c4c4;
-	}
-
-	.wf-pill-row {
-		display: flex;
-		gap: 6px;
-		flex-wrap: wrap;
-	}
-
-	.wf-pill {
-		font-size: 0.64rem;
-		padding: 4px 8px;
-		border-radius: 8px;
-		background: #171717;
-		border: 1px solid #2a2a2a;
-		color: #8c8c8c;
-	}
-
-	.wf-state-row {
-		margin-top: 12px;
-		display: flex;
-		gap: 8px;
-		align-items: center;
-		flex-wrap: wrap;
-	}
-
-	.wf-state {
-		font-size: 0.64rem;
-		padding: 5px 8px;
-		border-radius: 7px;
-		background: #171717;
-		border: 1px solid #292929;
-		color: #7c7c7c;
-	}
-
-	.wf-state-ok {
-		border-color: #355f45;
-		color: #86b99a;
-	}
-
-	.wf-state-arrow {
-		color: #4d4d4d;
-		font-size: 0.72rem;
-	}
-
-	.wf-fullscreen {
-		margin-top: 10px;
-		height: min(78vh, 680px);
-		border: 1px solid #262626;
-		border-radius: 14px;
-		overflow: hidden;
-		background: #101010;
-		display: flex;
-		flex-direction: column;
-	}
-
-	.wf-fullscreen-preview {
-		position: sticky;
-		top: 0;
-		z-index: 2;
-		background: #111111;
-		border-bottom: 1px solid #242424;
-		padding: 12px;
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
-	}
-
-	.wf-fullscreen-preview-main {
-		display: flex;
-		align-items: center;
-		gap: 12px;
-	}
-
-	.wf-fullscreen-body {
-		overflow: auto;
-		padding: 12px;
-		display: flex;
-		flex-direction: column;
-		gap: 12px;
-	}
-
-	.wf-fullscreen-section {
-		background: #141414;
-		border: 1px solid #252525;
-		border-radius: 12px;
-		padding: 10px;
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
-	}
-
-	.wf-fullscreen-title {
-		font-size: 0.68rem;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: #7a7a7a;
-		font-weight: 700;
-	}
-
-	.wf-form-grid {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 10px;
-	}
-
-	.wf-field {
-		display: flex;
-		flex-direction: column;
-		gap: 5px;
-	}
-
-	.wf-field--full {
-		grid-column: 1 / -1;
-	}
-
-	.wf-field span {
-		font-size: 0.64rem;
-		color: #6d6d6d;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-	}
-
-	.wf-field input,
-	.wf-field select {
-		height: 34px;
-		border-radius: 8px;
-		border: 1px solid #2b2b2b;
-		background: #0f0f0f;
-		color: #d3d3d3;
-		padding: 0 10px;
-		font-size: 0.76rem;
-	}
-
-	.wf-field input[type='range'] {
-		height: auto;
-		padding: 0;
-		accent-color: #4a5af0;
-	}
-
-	.wf-raw-head {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		gap: 10px;
-		flex-wrap: wrap;
-	}
-
-	.wf-raw-count {
-		font-size: 0.72rem;
-		font-weight: 650;
-		color: #9b9b9b;
-	}
-
-	.wf-raw-chips {
-		display: flex;
-		gap: 6px;
-		flex-wrap: wrap;
-	}
-
-	.wf-raw-list {
-		border: 1px solid #2a2a2a;
-		border-radius: 10px;
-		overflow: hidden;
-	}
-
-	.wf-raw-row {
-		display: grid;
-		grid-template-columns: 62px 1fr 86px 68px;
-		gap: 8px;
-		padding: 8px 10px;
-		font-size: 0.72rem;
-		color: #b8b8b8;
-		border-top: 1px solid #212121;
-	}
-
-	.wf-raw-row:first-child {
-		border-top: none;
-	}
-
-	.wf-raw-row--head {
-		background: #121212;
-		font-size: 0.62rem;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		color: #6f6f6f;
-		font-weight: 700;
-	}
-
 	.icon-preview {
 		width: 44px;
 		height: 44px;
@@ -2508,20 +1804,19 @@
 		text-align: center;
 	}
 
-	/* ── Knapper — definert globalt i app.css (.btn-primary, .btn-secondary, .btn-ghost, .btn-chip, .btn-danger, .btn-icon) ── */
-
 	/* ── Chat-demo ── */
 	.chat-demo {
 		background: #111;
 		border: 1px solid #1e1e1e;
 		border-radius: 16px;
 		padding: 16px;
-		max-width: 360px;
+		max-width: 380px;
 		display: flex;
 		flex-direction: column;
+		gap: 8px;
 	}
 
-	/* ── Input-demo ── */
+	/* ── Skjema-demo ── */
 	.input-demo {
 		max-width: 320px;
 		display: flex;
@@ -2537,55 +1832,6 @@
 	}
 	.mood-emoji { font-size: 1.6rem; line-height: 1; }
 	.mood-label { font-size: 0.9rem; font-weight: 700; color: #ccc; }
-
-	.emoji-row {
-		display: flex;
-		gap: 8px;
-	}
-	.emoji-btn {
-		font-size: 1.5rem;
-		padding: 6px 8px;
-		border-radius: 8px;
-		border: 1px solid #2a2a2a;
-		background: transparent;
-		cursor: pointer;
-		transition: border-color 0.12s, background 0.12s;
-		line-height: 1;
-	}
-	.emoji-btn.picked {
-		border-color: #555;
-		background: #1a1a1a;
-	}
-
-	.energy-row {
-		display: flex;
-		gap: 8px;
-	}
-	.energy-btn {
-		width: 40px;
-		height: 40px;
-		border-radius: 50%;
-		border: 1px solid #2a2a2a;
-		background: transparent;
-		color: #555;
-		font: inherit;
-		font-size: 0.85rem;
-		font-weight: 700;
-		cursor: pointer;
-		transition: border-color 0.12s, color 0.12s, background 0.12s;
-	}
-	.energy-btn.active {
-		border-color: #7c8ef5;
-		color: #7c8ef5;
-		background: #1e1e2a;
-	}
-
-	.saved-flash {
-		font-size: 0.7rem;
-		color: #5fa0a0;
-	}
-
-	/* ds-input — definert globalt i app.css */
 
 	/* ── Navigasjon-demo ── */
 	.nav-demo {
@@ -2610,254 +1856,7 @@
 	}
 	/* .subtab — definert globalt i app.css */
 
-	/* ── Seksjons-intro ── */
-	.section-desc {
-		font-size: 0.8rem;
-		color: #555;
-		margin: -10px 0 28px;
-		line-height: 1.6;
-	}
-
-	/* ── Hjemskjerm-mockup ── */
-	.layout-compare {
-		display: flex;
-		gap: 24px;
-		flex-wrap: wrap;
-		margin-bottom: 40px;
-	}
-
-	.layout-option {
-		flex: 1;
-		min-width: 240px;
-		display: flex;
-		flex-direction: column;
-		gap: 12px;
-	}
-
-	.layout-label {
-		font-size: 0.75rem;
-		font-weight: 600;
-		color: #888;
-		text-align: center;
-	}
-
-	.layout-notes {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-		font-size: 0.7rem;
-		padding: 8px;
-		background: #0d0d0d;
-		border-radius: 8px;
-	}
-
-	.note-item {
-		margin: 0;
-		color: #666;
-		line-height: 1.4;
-	}
-
-	.hs-mockup {
-		display: flex;
-		flex-direction: column;
-		width: 220px;
-		height: 440px;
-		border: 1px solid #2a2a2a;
-		border-radius: 28px;
-		overflow: hidden;
-		background: #111;
-	}
-
-	.hs-zone {
-		display: flex;
-		flex-direction: column;
-		justify-content: center;
-		padding: 10px 16px;
-		position: relative;
-		gap: 8px;
-	}
-	.hs-zone + .hs-zone { border-top: 1px solid #1e1e1e; }
-
-	.hs-title  { height: 10%; background: #0f0f0f; }
-	.hs-widgets { height: 35%; background: #121212; }
-	.hs-tema   { height: 20%; background: #111; }
-	.hs-input  { height: 35%; background: #0d0d0d; }
-
-	.hs-zone-label {
-		font-size: 0.68rem;
-		font-weight: 600;
-		color: #888;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-	}
-	.hs-zone-pct {
-		position: absolute;
-		top: 8px;
-		right: 12px;
-		font-size: 0.65rem;
-		color: #444;
-	}
-
-	.hs-widget-dots {
-		display: flex;
-		gap: 8px;
-		flex-wrap: wrap;
-	}
-	.hs-dot {
-		width: 36px;
-		height: 36px;
-		border-radius: 50%;
-		background: #1e1e1e;
-		border: 1px solid #2a2a2a;
-	}
-
-	.hs-chips {
-		display: flex;
-		gap: 6px;
-		flex-wrap: wrap;
-	}
-
-	.hs-chip {
-		padding: 3px 9px;
-		border-radius: 999px;
-		border: 1px solid #2a2a2a;
-		background: transparent;
-		color: #666;
-		font-size: 0.65rem;
-	}
-
-	.hs-tema-large {
-		background: #0f0f14 !important;
-	}
-
-	.tema-grid-preview {
-		display: grid;
-		grid-template-columns: repeat(2, 1fr);
-		gap: 6px;
-		flex: 1;
-	}
-
-	.tema-box {
-		background: #1a1a1a;
-		border: 1px solid #2a2a2a;
-		border-radius: 12px;
-		aspect-ratio: 1;
-	}
-
-	/* ── Interaksjonsflyter ── */
-	.flow-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-		gap: 20px;
-	}
-
-	.flow-card {
-		background: #111;
-		border: 1px solid #222;
-		border-radius: 14px;
-		padding: 20px;
-	}
-
-	.flow-header {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		margin-bottom: 16px;
-	}
-
-	.flow-num {
-		font-size: 0.65rem;
-		font-weight: 700;
-		color: #444;
-		letter-spacing: 0.08em;
-	}
-
-	.flow-title {
-		font-size: 0.82rem;
-		font-weight: 600;
-		color: #ccc;
-	}
-
-	.flow-steps {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-	}
-
-	.flow-step {
-		display: flex;
-		gap: 10px;
-		align-items: flex-start;
-		background: #161616;
-		border-radius: 8px;
-		padding: 8px 10px;
-		font-size: 0.75rem;
-		color: #999;
-		line-height: 1.45;
-	}
-	.flow-step strong { color: #ccc; }
-
-	.step-icon {
-		flex-shrink: 0;
-		font-size: 0.85rem;
-		margin-top: 1px;
-	}
-
-	.flow-arrow {
-		text-align: center;
-		color: #333;
-		font-size: 0.75rem;
-	}
-
-	.flow-note {
-		margin-top: 12px;
-		font-size: 0.7rem;
-		color: #555;
-		font-style: italic;
-		line-height: 1.5;
-	}
-
-	/* ── Animasjonsnotater ── */
-	.anim-notes {
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
-	}
-
-	.anim-note {
-		background: #111;
-		border: 1px solid #222;
-		border-radius: 10px;
-		padding: 12px 16px;
-		font-size: 0.76rem;
-		color: #888;
-		line-height: 1.55;
-	}
-	.anim-note code {
-		background: #1a1a1a;
-		border: 1px solid #2a2a2a;
-		border-radius: 4px;
-		padding: 1px 5px;
-		font-size: 0.72rem;
-		color: #9ba8f5;
-	}
-
-	.anim-tag {
-		display: inline-block;
-		background: #1a1a1a;
-		border: 1px solid #2a2a2a;
-		border-radius: 6px;
-		padding: 2px 8px;
-		font-size: 0.68rem;
-		font-weight: 600;
-		color: #ccc;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		margin-bottom: 6px;
-	}
-
 	/* ── Designprinsipper ── */
-
 	.principles-grid {
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -2877,7 +1876,7 @@
 	.principle-icon {
 		font-size: 1.2rem;
 		line-height: 1;
-		color: #4a5af0;
+		color: var(--accent-primary, #4a5af0);
 	}
 
 	.principle-title {
@@ -2916,768 +1915,7 @@
 		color: #3a5a30;
 	}
 
-	/* ── Ukeplan ── */
-
-	.period-ladder {
-		display: flex;
-		flex-direction: column;
-		gap: 0;
-		max-width: 480px;
-		margin-bottom: 40px;
-	}
-
-	.period-rung {
-		display: flex;
-		align-items: baseline;
-		gap: 12px;
-		background: #111;
-		border: 1px solid #1e1e1e;
-		border-radius: 10px;
-		padding: 10px 14px;
-	}
-
-	.period-rung--highlight {
-		background: #14192a;
-		border-color: #2a3060;
-	}
-
-	.period-rung-label {
-		font-size: 0.72rem;
-		font-weight: 700;
-		color: #ccc;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		min-width: 64px;
-		flex-shrink: 0;
-	}
-
-	.period-rung--highlight .period-rung-label {
-		color: #7c8ef5;
-	}
-
-	.period-rung-desc {
-		font-size: 0.75rem;
-		color: #555;
-		line-height: 1.5;
-	}
-
-	.period-connector {
-		padding: 2px 0 2px 22px;
-		font-size: 0.7rem;
-		color: #333;
-	}
-
-	/* Week card */
-	.week-card {
-		background: #111;
-		border: 1px solid #2a2a2a;
-		border-radius: 16px;
-		padding: 20px 20px 0;
-		max-width: 680px;
-		overflow: hidden;
-	}
-
-	.week-card-header {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-		margin-bottom: 14px;
-	}
-
-	.week-num {
-		font-size: 1.25rem;
-		font-weight: 700;
-		color: #eee;
-		letter-spacing: -0.02em;
-	}
-
-	.week-headline {
-		font-size: 0.82rem;
-		font-style: italic;
-		color: #666;
-	}
-
-	.week-context-bar {
-		display: flex;
-		gap: 20px;
-		padding: 10px 0;
-		border-top: 1px solid #1e1e1e;
-		border-bottom: 1px solid #1e1e1e;
-		margin-bottom: 14px;
-		flex-wrap: wrap;
-	}
-
-	.ctx-period {
-		display: flex;
-		flex-direction: column;
-		gap: 3px;
-	}
-
-	.ctx-period-label {
-		font-size: 0.65rem;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: #444;
-		margin-bottom: 2px;
-	}
-
-	.ctx-item {
-		font-size: 0.72rem;
-		color: #666;
-	}
-
-	.week-goals {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-		margin-bottom: 14px;
-	}
-
-	.week-goals-label {
-		font-size: 0.65rem;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: #444;
-		margin-bottom: 4px;
-	}
-
-	.week-goal-item {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		background: transparent;
-		border: none;
-		padding: 4px 0;
-		cursor: pointer;
-		color: inherit;
-		font: inherit;
-		text-align: left;
-	}
-
-	.wg-check {
-		font-size: 0.8rem;
-		color: #444;
-		width: 16px;
-		text-align: center;
-	}
-
-	.week-goal-item.done .wg-check { color: #4a5af0; }
-
-	.wg-lbl {
-		font-size: 0.82rem;
-		color: #888;
-	}
-
-	.week-goal-item.done .wg-lbl {
-		text-decoration: line-through;
-		color: #555;
-	}
-
-	/* Day columns */
-	.week-days-row {
-		display: flex;
-		gap: 0;
-		overflow-x: auto;
-		border-top: 1px solid #1e1e1e;
-		margin: 0 -20px;
-		padding: 0 20px;
-		-webkit-overflow-scrolling: touch;
-	}
-
-	.day-col {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-		padding: 14px 16px 16px;
-		min-width: 130px;
-		border-left: 1px solid #1a1a1a;
-		flex-shrink: 0;
-	}
-
-	.day-col:first-child { border-left: none; }
-
-	.day-col.today {
-		background: #14192a;
-		border-color: #2a3060;
-	}
-
-	.day-name {
-		font-size: 0.72rem;
-		font-weight: 700;
-		color: #aaa;
-		margin-bottom: 2px;
-	}
-
-	.day-col.today .day-name { color: #7c8ef5; }
-
-	.day-note {
-		font-size: 0.7rem;
-		font-style: italic;
-		color: #555;
-		margin-bottom: 6px;
-	}
-
-	.day-todos {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-	}
-
-	.day-todo-item {
-		display: flex;
-		align-items: baseline;
-		gap: 6px;
-		background: transparent;
-		border: none;
-		padding: 2px 0;
-		cursor: pointer;
-		color: inherit;
-		font: inherit;
-		text-align: left;
-	}
-
-	.todo-circle {
-		font-size: 0.65rem;
-		color: #444;
-		flex-shrink: 0;
-		width: 12px;
-		text-align: center;
-	}
-
-	.day-todo-item.checked .todo-circle { color: #4a5af0; }
-
-	.todo-lbl {
-		font-size: 0.75rem;
-		color: #777;
-		line-height: 1.4;
-	}
-
-	.todo-done {
-		text-decoration: line-through;
-		color: #444;
-	}
-
-	/* Todo widget demo */
-	.todo-widget-demo {
-		display: flex;
-		align-items: center;
-		gap: 28px;
-		margin-bottom: 40px;
-	}
-
-	.tw-widget {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 6px;
-	}
-
-	.tw-label {
-		font-size: 0.65rem;
-		color: #555;
-		text-align: center;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-	}
-
-	.tw-explainer {
-		display: flex;
-		flex-direction: column;
-		gap: 7px;
-	}
-
-	.tw-row {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		font-size: 0.76rem;
-		color: #888;
-	}
-
-	.tw-dot {
-		width: 10px;
-		height: 10px;
-		border-radius: 50%;
-		flex-shrink: 0;
-	}
-
-	/* Kavalkade */
-	.kavalkade-card {
-		background: #0a0a0f;
-		border: 1px solid #2a3060;
-		border-radius: 18px;
-		padding: 28px;
-		max-width: 520px;
-		margin-bottom: 40px;
-	}
-
-	.kav-year {
-		font-size: 0.72rem;
-		font-weight: 700;
-		color: #4a5af0;
-		letter-spacing: 0.12em;
-		text-transform: uppercase;
-		margin-bottom: 6px;
-	}
-
-	.kav-headline {
-		font-size: 1.5rem;
-		font-weight: 700;
-		color: #eee;
-		letter-spacing: -0.02em;
-		margin-bottom: 20px;
-	}
-
-	.kav-stats {
-		display: grid;
-		grid-template-columns: repeat(2, 1fr);
-		gap: 12px;
-		margin-bottom: 20px;
-	}
-
-	.kav-stat {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-		background: #111;
-		border: 1px solid #1e1e1e;
-		border-radius: 10px;
-		padding: 10px 14px;
-	}
-
-	.kav-stat-num {
-		font-size: 1.1rem;
-		font-weight: 700;
-		color: #eee;
-		letter-spacing: -0.02em;
-	}
-
-	.kav-stat-lbl {
-		font-size: 0.68rem;
-		color: #555;
-	}
-
-	.kav-insights {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-		margin-bottom: 18px;
-	}
-
-	.kav-insight-row {
-		display: flex;
-		align-items: flex-start;
-		gap: 10px;
-		font-size: 0.78rem;
-		color: #888;
-		line-height: 1.5;
-	}
-
-	.kav-insight-row strong { color: #ccc; }
-
-	.kav-insight-icon {
-		flex-shrink: 0;
-		margin-top: 1px;
-	}
-
-	.kav-narrative {
-		font-size: 0.82rem;
-		font-style: italic;
-		color: #666;
-		line-height: 1.65;
-		border-top: 1px solid #1e1e1e;
-		padding-top: 14px;
-	}
-
-	/* CTA-varianter */
-	.cta-variants {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 20px;
-		align-items: flex-start;
-	}
-
-	.cta-variant-group {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-	}
-
-	.cta-state-label {
-		font-size: 0.65rem;
-		color: #555;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.07em;
-	}
-
-	.up-cta {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		background: #1a1a1a;
-		border: 1px solid #2a2a2a;
-		border-radius: 10px;
-		padding: 10px 14px;
-		cursor: pointer;
-		width: 220px;
-		color: #888;
-		font-size: 0.82rem;
-		transition: background 0.15s, border-color 0.15s;
-	}
-
-	.up-cta:hover { background: #222; border-color: #4a5af0; color: #aaa; }
-
-	.up-cta--reflect { border-color: #2a3020; background: #111a10; }
-	.up-cta--reflect:hover { border-color: #5fa080; }
-
-	.up-cta-icon { font-size: 1rem; color: #4a5af0; }
-	.up-cta--reflect .up-cta-icon { color: #5fa080; }
-	.up-cta-text { flex: 1; text-align: left; }
-	.up-cta-arrow { color: #444; }
-
-	.up-active {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		background: #14192a;
-		border: 1px solid #2a3060;
-		border-radius: 10px;
-		padding: 10px 14px;
-		width: 220px;
-	}
-
-	.up-active-left {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-	}
-
-	.up-active-day {
-		font-size: 0.82rem;
-		font-weight: 600;
-		color: #ccc;
-	}
-
-	.up-active-sub {
-		font-size: 0.7rem;
-		color: #555;
-	}
-
-        /* ── Sjekkliste-flyt ── */
-        .cl-chat-demo {
-                display: flex;
-                flex-direction: column;
-                gap: 10px;
-                max-width: 360px;
-        }
-
-        .cl-bubble {
-                padding: 10px 14px;
-                border-radius: 14px;
-                font-size: 0.85rem;
-                line-height: 1.5;
-        }
-
-        .cl-bubble-user {
-                background: #4a5af0;
-                color: #eee;
-                align-self: flex-end;
-                border-bottom-right-radius: 4px;
-        }
-
-        .cl-bubble-ai {
-                background: #1a1a1a;
-                border: 1px solid #2a2a2a;
-                color: #ccc;
-                align-self: flex-start;
-                border-bottom-left-radius: 4px;
-        }
-
-        .cl-ai-list {
-                display: flex;
-                flex-direction: column;
-                gap: 4px;
-        }
-
-        .cl-ai-item {
-                font-size: 0.78rem;
-                color: #888;
-                padding: 2px 0;
-        }
-
-        .cl-widget-row {
-                display: flex;
-                gap: 16px;
-                flex-wrap: wrap;
-                align-items: flex-start;
-        }
-
-        .cl-widget-demo {
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                gap: 4px;
-        }
-
-        .cl-ring-wrap {
-                position: relative;
-                width: 80px;
-                height: 80px;
-        }
-
-        .cl-ring-center {
-                position: absolute;
-                inset: 0;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 1.3rem;
-                font-weight: 700;
-        }
-
-        .cl-widget-count {
-                font-size: 0.72rem;
-                color: #555;
-                font-variant-numeric: tabular-nums;
-        }
-
-        .cl-widget-title {
-                font-size: 0.72rem;
-                color: #888;
-                max-width: 80px;
-                text-align: center;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-        }
-
-        .cl-sheet-demo {
-                background: #111;
-                border: 1px solid #222;
-                border-radius: 16px;
-                max-width: 340px;
-                overflow: hidden;
-        }
-
-        .cl-sheet-header {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                padding: 16px 16px 10px;
-        }
-
-        .cl-sheet-items {
-                padding: 8px 16px;
-                display: flex;
-                flex-direction: column;
-                gap: 2px;
-        }
-
-        .cl-sheet-item {
-                display: flex;
-                align-items: center;
-                gap: 10px;
-                padding: 7px 8px;
-                border-radius: 8px;
-        }
-
-        .cl-sheet-cb {
-                width: 20px;
-                height: 20px;
-                border-radius: 50%;
-                border: 2px solid #333;
-                flex-shrink: 0;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-        }
-
-        .cl-cb-checked {
-                border-color: #5fa080;
-                background: #5fa080;
-        }
-
-        .cl-sheet-item-text {
-                font-size: 0.82rem;
-                color: #ccc;
-        }
-
-        .cl-item-done .cl-sheet-item-text {
-                color: #444;
-                text-decoration: line-through;
-        }
-
-        .cl-payoff-demo {
-                background: rgba(0, 10, 0, 0.6);
-                border: 1px solid #1a2a1a;
-                border-radius: 16px;
-                max-width: 240px;
-                padding: 32px 24px;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                text-align: center;
-        }
-
-        .cl-payoff-ring-wrap {
-                position: relative;
-                width: 100px;
-                height: 100px;
-        }
-
-        .cl-payoff-ring-inner {
-                position: absolute;
-                inset: 0;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 2rem;
-        }
-
-        .cl-flow {
-                display: flex;
-                flex-direction: column;
-                gap: 0;
-                max-width: 480px;
-        }
-
-        .cl-flow-step {
-                display: flex;
-                align-items: center;
-                gap: 10px;
-                background: #141414;
-                border: 1px solid #222;
-                border-radius: 8px;
-                padding: 10px 14px;
-                font-size: 0.82rem;
-                color: #aaa;
-        }
-
-        .cl-flow-icon {
-                font-size: 1rem;
-                width: 24px;
-                text-align: center;
-                flex-shrink: 0;
-        }
-
-        .cl-flow-arrow {
-                text-align: center;
-                color: #333;
-                font-size: 0.9rem;
-                padding: 2px 0;
-                padding-left: 19px;
-        }
-
-	/* ── Hjemskjerm v2 demos ── */
-	.hs-v2-demo {
-		margin-bottom: 32px;
-	}
-
-	.demo-label {
-		font-size: 0.75rem;
-		font-weight: 600;
-		color: #888;
-		margin-bottom: 12px;
-	}
-
-	/* Tema v3 (store runde knapper med hvite ikoner) */
-	.tema-v3-grid {
-		display: grid;
-		grid-template-columns: repeat(2, 1fr);
-		gap: 14px;
-		max-width: 400px;
-	}
-
-	.tema-btn-v3 {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		gap: 10px;
-		background: #1a1a1a;
-		border: 1px solid #2a2a2a;
-		border-radius: 20px;
-		padding: 28px 16px;
-		cursor: pointer;
-		transition: background 0.15s;
-	}
-
-	.tema-btn-v3:hover {
-		background: #222;
-	}
-
-	.tema-btn-v3-icon {
-		font-size: 2rem;
-	}
-
-	.tema-btn-v3-label {
-		font-size: 0.85rem;
-		color: #ccc;
-		font-weight: 500;
-	}
-
-	/* Input v4 (felt + tre ikon-knapper) */
-	.input-v4 {
-		display: flex;
-		gap: 10px;
-		align-items: center;
-		max-width: 500px;
-	}
-
-	.input-v4 .input-field-wrap {
-		flex: 1;
-	}
-
-	.input-field-v4 {
-		flex: 1;
-		background: #161616;
-		border: 1px solid #2a2a2a;
-		border-radius: 14px;
-		padding: 12px 16px;
-		color: #ccc;
-		font: inherit;
-		font-size: 0.88rem;
-		outline: none;
-		transition: border-color 0.15s;
-	}
-
-	.input-field-v4:focus {
-		border-color: #3c4f9f;
-	}
-
-	.input-field-v4::placeholder {
-		color: #555;
-	}
-
-	.icon-btn-v4 {
-		width: 42px;
-		height: 42px;
-		border-radius: 12px;
-		background: #1a1a1a;
-		border: 1px solid #2a2a2a;
-		color: #ccc;
-		font-size: 1.1rem;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		cursor: pointer;
-		transition: background 0.15s, color 0.15s;
-		flex-shrink: 0;
-	}
-
-	.icon-btn-v4:hover {
-		background: #222;
-		color: #fff;
-	}
-
-	.icon-btn-v4:active {
-		transform: scale(0.95);
-	}
-
-	/* Radiale visualiseringer */
+	/* ── Radiale visualiseringer ── */
 	.radial-row {
 		display: flex;
 		align-items: flex-start;
@@ -3737,29 +1975,6 @@
 		color: #555;
 	}
 
-	.radial-pair {
-		display: flex;
-		gap: 24px;
-		flex-wrap: wrap;
-		margin-top: 16px;
-	}
-
-	.radial-pair-item {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 8px;
-		background: #111;
-		border: 1px solid #222;
-		border-radius: 16px;
-		padding: 16px;
-	}
-
-	.radial-pair-label {
-		font-size: 0.75rem;
-		color: #555;
-	}
-
 	/* Widget-mock (nøyaktig ChecklistWidget-dimensjoner) */
 	.widget-mock {
 		width: 90px;
@@ -3783,6 +1998,4 @@
 		color: #888;
 		text-align: center;
 	}
-
 </style>
-

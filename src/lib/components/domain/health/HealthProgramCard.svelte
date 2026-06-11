@@ -68,9 +68,10 @@
 <style>
 	.hd-program-card {
 		display: block;
+		/* FeatureCard: beholder gradient-skin, deler radius/border-tokens */
 		background: linear-gradient(140deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01));
-		border: 1px solid rgba(255, 255, 255, 0.08);
-		border-radius: 14px;
+		border: 1px solid var(--card-border, rgba(255, 255, 255, 0.08));
+		border-radius: var(--card-radius, 14px);
 		overflow: hidden;
 		transition: border-color 120ms ease;
 	}

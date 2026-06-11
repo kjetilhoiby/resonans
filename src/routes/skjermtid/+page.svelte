@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, PageHeader, Button, Select, PageSection } from '$lib/components/ui';
+	import { AppPage, PageHeader, Button, Select, PageSection, CardTitle } from '$lib/components/ui';
 	import ScreenTimeCard from '$lib/components/composed/ScreenTimeCard.svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { mondayOfWeekISO, previousWeekMondayISO } from '$lib/utils/screen-time-series';
@@ -296,7 +296,7 @@
 
 	{#if current && current.topApps.length > 0}
 		<section class="block">
-			<h2>Mest brukt ({current.label})</h2>
+			<CardTitle>Mest brukt ({current.label})</CardTitle>
 			<div class="apps">
 				{#each current.topApps as app}
 					<div class="app-row">
@@ -310,7 +310,7 @@
 
 	<!-- Opplasting -->
 	<section class="block">
-		<h2>Legg inn skjermbilder</h2>
+		<CardTitle>Legg inn skjermbilder</CardTitle>
 		<p class="muted">
 			Velg ett eller flere iOS Skjermtid-skjermbilder — ukesbilder (Uke-fanen) og/eller dagsbilder
 			(Dag-fanen). AI-en tolker tallene; ukesbilder trenger riktig ukedato før lagring.
@@ -403,7 +403,7 @@
 	<!-- Mål -->
 	<section class="block">
 		<div class="block-head">
-			<h2>Ukesmål</h2>
+			<CardTitle>Ukesmål</CardTitle>
 			<Button variant="ghost" onClick={() => (showGoalForm = !showGoalForm)}>
 				{showGoalForm ? 'Lukk' : '+ Nytt mål'}
 			</Button>
@@ -484,7 +484,7 @@
 
 	{#if data.connected}
 		<section class="block danger-block">
-			<h2>Nullstill</h2>
+			<CardTitle>Nullstill</CardTitle>
 			<p class="muted">Sletter alle skjermtid-registreringer (uke- og dagsbilder). Mål beholdes.</p>
 			<button class="btn-danger" onclick={deleteAll} disabled={deleting}>
 				{deleting ? 'Sletter…' : 'Slett all skjermtid-data'}
@@ -547,12 +547,11 @@
 		justify-content: space-between;
 		align-items: center;
 	}
-	h2 {
-		font-size: 1rem;
-		margin: 0 0 0.75rem;
+	.block > :global(.card-title) {
+		margin-bottom: 0.75rem;
 	}
-	.block-head h2 {
-		margin: 0;
+	.block-head :global(.card-title) {
+		margin-bottom: 0;
 	}
 	.muted {
 		color: var(--text-secondary, rgba(255, 255, 255, 0.6));

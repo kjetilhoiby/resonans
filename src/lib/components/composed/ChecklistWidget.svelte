@@ -32,9 +32,11 @@
 		onclick?: () => void;
 		onremove?: () => void;
 		onplan?: () => void;
+		/** Skru av månedshjulets evige syklus-animasjon (brukes av /design for stabile screenshots). */
+		monthWheelCycle?: boolean;
 	}
 
-	let { checklist, monthDayData, onclick, onremove, onplan }: Props = $props();
+	let { checklist, monthDayData, onclick, onremove, onplan, monthWheelCycle = true }: Props = $props();
 
 	// Skipped items ("gjør ikke") teller verken som planlagt eller løst.
 	// Sted-kontekst-punkter («Sted: X») er ikke avkryssbare og teller ikke med.
@@ -199,6 +201,7 @@
 				month={dayWheelData.month}
 				days={dayWheelData.days}
 				size={120}
+				cycle={monthWheelCycle}
 				bind:currentLabel={monthCycleLabel}
 			/>
 		</div>

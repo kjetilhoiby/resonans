@@ -12,6 +12,7 @@
 	import TripBudget from './TripBudget.svelte';
 	import TripHealthStats from './TripHealthStats.svelte';
 	import Icon from '../ui/Icon.svelte';
+	import DateInput from '$lib/components/ui/DateInput.svelte';
 	import SectionLabel from '../ui/SectionLabel.svelte';
 	import ShareSheet from './share/ShareSheet.svelte';
 	import type { Map as MapLibreMap } from 'maplibre-gl';
@@ -548,11 +549,11 @@
 			<div class="trip-field-row">
 				<label class="trip-field">
 					<span class="trip-field-label">Avreisedato</span>
-					<input class="trip-input" type="date" bind:value={editStartDate} />
+					<DateInput bind:value={editStartDate} />
 				</label>
 				<label class="trip-field">
 					<span class="trip-field-label">Hjemkomst</span>
-					<input class="trip-input" type="date" bind:value={editEndDate} />
+					<DateInput bind:value={editEndDate} />
 				</label>
 			</div>
 
@@ -595,11 +596,11 @@
 						<div class="trip-field-row">
 							<label class="trip-field">
 								<span class="trip-field-label">Innsjekk</span>
-								<input class="trip-input" type="date" bind:value={editStays[i].checkIn} />
+								<DateInput bind:value={editStays[i].checkIn} />
 							</label>
 							<label class="trip-field">
 								<span class="trip-field-label">Utsjekk</span>
-								<input class="trip-input" type="date" bind:value={editStays[i].checkOut} />
+								<DateInput bind:value={editStays[i].checkOut} />
 							</label>
 						</div>
 						<label class="trip-field">

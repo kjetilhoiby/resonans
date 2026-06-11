@@ -377,9 +377,9 @@
 		display: flex;
 		flex-direction: column;
 		gap: 12px;
-		padding: 16px;
-		background: #141414;
-		border-radius: 18px;
+		padding: var(--card-padding, 16px);
+		background: var(--card-bg-subtle, #141414);
+		border-radius: var(--card-radius, 16px);
 	}
 
 	.hd-activities-header {

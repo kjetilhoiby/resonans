@@ -1,4 +1,6 @@
 <script lang="ts">
+	import DateInput from '$lib/components/ui/DateInput.svelte';
+
 	interface Book {
 		id: string;
 		title: string;
@@ -384,12 +386,10 @@
 			<dt>Innlevering</dt>
 			<dd>
 				<div class="bk-loan-row">
-					<input
-						type="date"
-						class="bk-loan-input"
+					<DateInput
 						value={toDateInput(book.loanDueDate)}
 						disabled={loanSaving}
-						onchange={(e) => setLoanDueDate((e.currentTarget as HTMLInputElement).value)}
+						onChange={(e) => setLoanDueDate(e.currentTarget.value)}
 					/>
 					{#if book.loanDueDate}
 						{@const li = loanInfo(book.loanDueDate)}

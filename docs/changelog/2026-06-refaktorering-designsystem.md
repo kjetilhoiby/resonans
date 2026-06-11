@@ -1,7 +1,7 @@
 # Refaktorering: Designsystem og komponentarkitektur
 
 Dato: 2026-06-08
-Status: fase 0–5 ferdig, layout-polish pågår
+Status: fase 0–6 ferdig, layout-polish pågår
 
 ## Kontekst
 
@@ -82,13 +82,25 @@ Nye sub-komponenter og moduler opprettet i:
 - **HomeTitleZone**: Lik luft over og under tittelen (`padding-bottom: var(--page-pt)`).
 - **PullToRefresh**: Fikset 10px blå stripe øverst i viewport — `padding-bottom: 10px` på `.ptr-backdrop` viste bakgrunn selv ved `height: 0`. Flyttet til `margin-bottom` på `.ptr-icon`.
 
+### Fase 6: Typografi-tokens og blokk-taksonomi (2026-06-10)
+
+Utløst av SectionLabel-utrullingen (se `2026-06-10-temaside-layout-og-seksjonslabels.md`): 0.85rem uppercase skapte linjefall i smale kontekster og synliggjorde at appen hadde 14 distinkte kort-stiler og ingen typografi-skala.
+
+- **Typografi-tokens**: `--font-size-caption/label/body/title/value` (0.72/0.78/0.9/1/1.9rem) i AppPage. SectionLabel krympet 0.85 → 0.78rem (fikser wrapping) + ny `nowrap`-prop (ellipsis for flex-rader med actions).
+- **Ny CardTitle-komponent**: 1rem/600/hvit for kort-titler. Migrert: skjermtid-siden (4 h2) og ukeplan-kortene (`.wp-card h2` i WeekNote/WeekTasks/DaySection/WeekGoals). «Ukeplan-h2 er bevisst unntak»-regelen fjernet.
+- **Kort-tokens**: `--card-bg/-subtle/-inset/--card-border/--card-radius/--card-padding` i AppPage. Alle 14 kort-stiler migrert til tokens: effort-/form-/balance-/st-/list-card, hd-goals/activities/table/tooling-kort, ef-card, wp-card, goal-card (×2), ferie-card, ProjectCard, HealthProgramCard. Radius normalisert til 16px (var 12/14/18).
+- **Kontekst-overrides (FeatureCard-mønsteret)**: ukeplan setter `--card-bg: <gradient>` + 14px/12px densitet på `.week-plan-page`; temasider setter `--card-bg: var(--tp-bg-2)` m.fl. i `.theme-page` — alle kort får hue-tint automatisk.
+- **ProjectCard-bugfiks**: hadde `var(--surface, #fff)`-fallbacks som rendret hvite kort på prosjekt/jobb-sidene (kun settings/sources definerte `--surface`). Nå mørke tokens + status-badges på `--success/warning-*`.
+- **/design-katalogen**: nye seksjoner «Typografi» (token-skala + SectionLabel/CardTitle-demoer) og «Blokktyper» (4 kanoniske typer med overskriftsreglene inline).
+- **DESIGN.md**: nye avsnitt «Typografi», «Overskrifter» (to nivåer + tre plasseringsregler) og «Blokktyper».
+
 ## Gjenstår (layout-polish)
 
 ### Gjenværende hardkodede farger
 ~222 hardkodede farger gjenstår i routes (domene-spesifikke paletter i ukeplan, maanedsplan, tema). Disse er bevisst domene-styling, ikke generelle farger.
 
-### Gjenværende ScreenTitle-bruk
-Design-guiden (`/design`) bruker fortsatt ScreenTitle direkte. Bør oppdateres til PageHeader.
+### ~~Gjenværende ScreenTitle-bruk~~ (løst 2026-06-10)
+ScreenTitle er slettet; `/design` er bygget om til levende dokumentasjon med PageHeader — se `2026-06-10-design-side-levende-dokumentasjon.md`.
 
 ## Beslutninger
 

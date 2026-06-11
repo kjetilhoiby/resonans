@@ -330,6 +330,16 @@
 		return dayChecklistsState[dayIso];
 	}
 
+	// ── Week note save ──
+
+	async function saveWeekNote(value: string): Promise<boolean> {
+		const form = new FormData();
+		form.set('weekKey', data.week.dashedKey); form.set('weekNote', value);
+		const response = await fetch('?/saveWeekNote', { method: 'POST', body: form });
+		if (response.ok) weekNoteValue = value;
+		return response.ok;
+	}
+
 	// ── Day headline save ──
 
 	async function saveDayHeadline() {
@@ -487,7 +497,7 @@
 	</ChipStrip>
 	{/if}
 
-	<WeekNote dashedKey={data.week.dashedKey} weekNote={weekNoteValue} saveState={saveStates.weekNote} onSaveStateChange={(state) => setSaveState('weekNote', state)} />
+	<WeekNote weekNote={weekNoteValue} saveState={saveStates.weekNote} onSaveStateChange={(state) => setSaveState('weekNote', state)} onSave={saveWeekNote} />
 
 	<WeekTasks
 		weekTasks={data.weekTasks} {weekChecklistState} dashedKey={data.week.dashedKey} {weekPlanJustCompleted}
@@ -587,6 +597,10 @@
 
 <style>
 	.week-plan-page {
+		/* FeatureCard-kontekst: ukeplan-kortene beholder gradient og tett densitet */
+		--card-bg: linear-gradient(180deg, rgba(9, 11, 17, 0.95), rgba(8, 10, 15, 0.95));
+		--card-radius: 14px;
+		--card-padding: 12px;
 		min-height: 100vh;
 		width: 100%;
 		padding: var(--page-pt) var(--page-px) 110px;

@@ -6,18 +6,18 @@
   - Sjekkliste: trinnene som kan brukes på en sjekkliste
 -->
 <script lang="ts">
-	import { fly, fade } from 'svelte/transition';
-	import { cubicOut } from 'svelte/easing';
 	import Icon from '$lib/components/ui/Icon.svelte';
+	import BottomSheet from './BottomSheet.svelte';
+	import { procedureSheetApi, type ProcedureSheetApi } from './procedure-sheet-api';
 
-	interface ProcedureStep {
+	export interface ProcedureStep {
 		id: string;
 		text: string;
 		sortOrder: number;
 		isOptional: boolean;
 	}
 
-	interface Procedure {
+	export interface Procedure {
 		id: string;
 		title: string;
 		emoji: string | null;
@@ -41,9 +41,11 @@
 		onApply?: (procedureId: string) => void;
 		onStartChat?: (conversationId: string | null) => void;
 		onChanged?: () => void;
+		/** Nettverkslag — injiseres som mock på /design. Default: ekte API. */
+		api?: ProcedureSheetApi;
 	}
 
-	let { procedure, onclose, onApply, onStartChat, onChanged }: Props = $props();
+	let { procedure, onclose, onApply, onStartChat, onChanged, api = procedureSheetApi }: Props = $props();
 
 	let activeTab = $state<'guide' | 'checklist'>('guide');
 	let editing = $state(false);
@@ -70,11 +72,7 @@
 
 	async function toggleShared() {
 		sharing = !sharing;
-		await fetch(`/api/procedures/${procedure.id}`, {
-			method: 'PATCH',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ shared: sharing })
-		});
+		await api.updateProcedure(procedure.id, { shared: sharing });
 		onChanged?.();
 	}
 
@@ -103,11 +101,7 @@
 	}
 
 	async function saveEdit() {
-		await fetch(`/api/procedures/${procedure.id}`, {
-			method: 'PATCH',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ steps: editSteps })
-		});
+		await api.updateProcedure(procedure.id, { steps: editSteps });
 		procedure.steps = editSteps.map((text, i) => ({
 			id: `temp-${i}`,
 			text,
@@ -124,19 +118,7 @@
 	}
 </script>
 
-<div
-	class="ps-backdrop"
-	transition:fade={{ duration: 200 }}
-	onclick={onclose}
-	role="presentation"
-></div>
-
-<div
-	class="ps-sheet"
-	transition:fly={{ y: 40, duration: 350, easing: cubicOut }}
-	role="dialog"
-	aria-modal="true"
->
+<BottomSheet {onclose} ariaLabel={procedure.title}>
 	<div class="ps-header">
 		<div class="ps-header-left">
 			{#if procedure.emoji}
@@ -249,33 +231,9 @@
 			</button>
 		{/if}
 	</div>
-</div>
+</BottomSheet>
 
 <style>
-	.ps-backdrop {
-		position: fixed;
-		inset: 0;
-		background: rgba(0,0,0,0.6);
-		z-index: 200;
-	}
-
-	.ps-sheet {
-		position: fixed;
-		bottom: 0;
-		left: 0;
-		right: 0;
-		max-height: 90dvh;
-		background: #111;
-		border-radius: 24px 24px 0 0;
-		border-top: 1px solid #222;
-		z-index: 201;
-		display: flex;
-		flex-direction: column;
-		overflow: hidden;
-		max-width: 520px;
-		margin: 0 auto;
-	}
-
 	.ps-header {
 		display: flex;
 		align-items: center;

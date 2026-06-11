@@ -20,6 +20,7 @@
 	import { goto } from '$app/navigation';
 	import AnimatedProgressBar from '../../visualizations/AnimatedProgressBar.svelte';
 	import TaskContextMenu from '../../ui/TaskContextMenu.svelte';
+	import DateInput from '$lib/components/ui/DateInput.svelte';
 	import BreakdownModal from '../../ui/BreakdownModal.svelte';
 
 	interface Props {
@@ -485,7 +486,7 @@
 			</div>
 			<label class="field">
 				<span>Frist</span>
-				<input type="date" data-track="tema-oppgaver:frist" bind:value={editDue} />
+				<DateInput ariaLabel="tema-oppgaver:frist" bind:value={editDue} />
 			</label>
 			{#if editableDeps.length > 0}
 				<div class="field">

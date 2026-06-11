@@ -10,6 +10,7 @@
 <script lang="ts">
 	import { fade, scale } from 'svelte/transition';
 	import Icon from './Icon.svelte';
+	import { loadBreakdownSuggestions, type LoadBreakdownSuggestions } from './breakdown-api';
 
 	interface BreakdownStep {
 		id: string;
@@ -22,9 +23,11 @@
 		itemDescription?: string;
 		onClose: () => void;
 		onSave: (subtasks: string[]) => Promise<void>;
+		/** AI-forslagskallet — injiseres som mock på /design. Default: ekte API. */
+		loadSuggestionsFn?: LoadBreakdownSuggestions;
 	}
 
-	let { itemTitle, itemDescription = '', onClose, onSave }: Props = $props();
+	let { itemTitle, itemDescription = '', onClose, onSave, loadSuggestionsFn = loadBreakdownSuggestions }: Props = $props();
 
 	let steps = $state<BreakdownStep[]>([]);
 	let loading = $state(false);
@@ -35,19 +38,11 @@
 		loading = true;
 		error = null;
 		try {
-			const res = await fetch('/api/breakdown/suggestions', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					taskTitle: itemTitle,
-					taskDescription: itemDescription,
-					context: ''
-				})
+			const suggestions = await loadSuggestionsFn({
+				taskTitle: itemTitle,
+				taskDescription: itemDescription
 			});
-
-			if (!res.ok) throw new Error('Failed to load suggestions');
-			const data = (await res.json()) as { suggestions: string[] };
-			steps = data.suggestions.map((text, i) => ({
+			steps = suggestions.map((text, i) => ({
 				id: String(i),
 				text,
 				selected: true

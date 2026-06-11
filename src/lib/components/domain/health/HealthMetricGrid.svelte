@@ -244,9 +244,9 @@
 
 <style>
 	.hd-table-card {
-		background: #141414;
-		border-radius: 18px;
-		padding: 16px;
+		background: var(--card-bg-subtle, #141414);
+		border-radius: var(--card-radius, 16px);
+		padding: var(--card-padding, 16px);
 		display: flex;
 		flex-direction: column;
 		gap: 14px;

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { CATEGORIES, SUBCATEGORIES, type CategoryId } from '$lib/integrations/transaction-categories-client';
+	import DateInput from './DateInput.svelte';
 
 	interface Props {
 		onclose: () => void;
@@ -327,22 +328,12 @@
 				<div class="te-date-row">
 					<label class="te-date-label">
 						Fra
-						<input
-							class="te-date-input"
-							type="date"
-							bind:value={fromDate}
-							oninput={markDirty}
-						/>
+						<DateInput bind:value={fromDate} onChange={markDirty} />
 					</label>
 					<span class="te-date-sep">–</span>
 					<label class="te-date-label">
 						Til
-						<input
-							class="te-date-input"
-							type="date"
-							bind:value={toDate}
-							oninput={markDirty}
-						/>
+						<DateInput bind:value={toDate} onChange={markDirty} />
 					</label>
 				</div>
 			{/if}

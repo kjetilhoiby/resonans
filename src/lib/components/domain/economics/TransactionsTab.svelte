@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button, Checkbox, Input, SectionCard, Select } from '$lib/components/ui';
+	import { Button, Checkbox, DateInput, Input, SectionCard, Select } from '$lib/components/ui';
 	import CompactRecordList from '$lib/components/ui/CompactRecordList.svelte';
 	import PeriodPills from '$lib/components/ui/PeriodPills.svelte';
 	import { CATEGORIES, SUBCATEGORIES, type CategoryId } from '$lib/integrations/transaction-categories-client';
@@ -174,11 +174,11 @@
 	<div class="tx-filter-row">
 		<label>
 			Fra dato
-			<Input type="date" bind:value={transactionFromDate} />
+			<DateInput bind:value={transactionFromDate} />
 		</label>
 		<label>
 			Til dato
-			<Input type="date" bind:value={transactionToDate} />
+			<DateInput bind:value={transactionToDate} />
 		</label>
 		<label>
 			Kategori

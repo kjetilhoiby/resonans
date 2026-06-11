@@ -89,10 +89,15 @@ Verifisert live (ekte OpenAI): «På Maxbo må jeg også kjøpe aluminiumslister
 - Ny rute `/handleliste`: henter innkjøps-oppgaver (`metadata->>'shopping'='true'`) på tvers av alle hjem-prosjekter (`parentTheme='Hjem'`), via join mot `themes`. Uten filter: oversikt med butikk-kort (X igjen / Y kjøpt). Med `?store=`: liste over varene for butikken, **på tvers av prosjekter**, med avkryssing (PATCH til `/api/tema/[id]/tasks`) og klikkbar prosjekt-chip → `/tema/{id}`.
 - Verifisert (Playwright + HTML): innkjøp tagget «Maxbo» fra to ulike prosjekter samles i én liste; «Jernia»-vare holdes utenfor; avkryssing reflekteres.
 
+## Fase 15: Butikk → bank-transaksjoner (Fase 3c)
+- `/handleliste?store=X` viser nå en «Kjøp på X»-seksjon: bank-transaksjoner som matcher butikken via `canonicalBankTransactions.merchantKey ILIKE '%X%'` (merchantKey er normalisert/UPPERCASE, så fuzzy-match treffer «REMA» → «REMA BØLER»). Siste 180 dager.
+- Egen SUM/COUNT-spørring gir korrekt total + antall over hele vinduet; lista viser de 25 siste (med «Viser de 25 siste»-note når kuttet). Beløp formatert med `Intl.NumberFormat` (nb-NO, NOK).
+- Ingen ny tabell nødvendig — matcher direkte på normalisert merchantKey. Verifisert mot ekte data: «REMA» → «35 696 kr · 100 kjøp siste 180 dager».
+
 ## Kjente oppfølginger
 
-- **Merchant/transaksjons-kobling (Fase 3c, ikke bygget):** Knytte en butikk til en `merchantMappings`-nøkkel og vise `categorizedEvents`-transaksjoner for butikken i økonomi. Stort net-nytt — krever store→merchant-mapping (mangler) og en single-merchant-visning (finnes ikke). Egen runde.
 - **Kvitteringer (Fase 3d, ikke bygget):** Henge kvittering (bilde/PDF) på en innkjøps-oppgave/transaksjon. Kan gjenbruke `theme_files` (Cloudinary) + en kobling (`checklistItemId`/`transactionId`), men ingen kvitterings-konsept finnes i dag. Egen runde.
+- **Merchant-matching er fuzzy** (substring på merchantKey). Treffer bredt (f.eks. «Coop» matcher alle Coop-varianter), men kan gi falske treff for korte/generiske butikknavn. En eksplisitt butikk→merchantKey-mapping kan komme senere ved behov.
 - Avhengighets-retning fra chat er best-effort (gpt-4o-mini, se Fase 13).
 
 - Underoppgaver (parentId) med frist vises ikke i dagslista (DaySection filtrerer bort `parentId`-items) — kun topp-nivå daterte oppgaver. Sannsynligvis ønsket.

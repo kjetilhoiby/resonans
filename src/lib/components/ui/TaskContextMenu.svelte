@@ -9,6 +9,8 @@
   - Kalle callbackene; konsumenten oppdaterer egen state.
 -->
 <script lang="ts">
+	import DateInput from './DateInput.svelte';
+
 	function addDaysIso(isoDate: string, days: number): string {
 		const [y, m, d] = isoDate.split('-').map(Number);
 		const date = new Date(Date.UTC(y, m - 1, d));
@@ -93,6 +95,8 @@
 	// Posisjonering — kopiert fra DynamicWidget
 	const popupStyle = $derived.by(() => {
 		if (!open || !anchor) return '';
+		// SSR-guard: posisjon kan først beregnes i nettleseren (window-mål)
+		if (typeof window === 'undefined') return '';
 		const popupW = 220;
 		const estH = view === 'pickDate' ? 170 : view === 'snooze' ? 220 : view === 'confirmDelete' ? 150 : 270;
 		const margin = 8;
@@ -262,14 +266,13 @@
 			>Tilbake</button>
 		{:else if view === 'pickDate'}
 			<div class="tcm-section-label">Velg dato</div>
-			<input
-				type="date"
-				class="tcm-date"
-				min={tomorrow}
-				bind:value={pickedDate}
+			<div
+				role="presentation"
 				onpointerdown={(e) => e.stopPropagation()}
 				onclick={(e) => e.stopPropagation()}
-			/>
+			>
+				<DateInput min={tomorrow} bind:value={pickedDate} />
+			</div>
 			<button
 				class="tcm-btn tcm-btn-primary"
 				disabled={!pickedDate || pickedDate <= todayIso}

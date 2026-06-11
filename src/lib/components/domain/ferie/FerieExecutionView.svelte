@@ -14,6 +14,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { fetchRawTimeseries, buildPeriods } from '$lib/utils/weather';
+	import DateInput from '$lib/components/ui/DateInput.svelte';
 	import TripDayCalendar from '../TripDayCalendar.svelte';
 	import TripHealthStats from '../TripHealthStats.svelte';
 	import TripBudget from '../TripBudget.svelte';
@@ -286,7 +287,7 @@
 		<div class="diary-form-row">
 			<label>
 				<span>Dag</span>
-				<input type="date" bind:value={diaryDate} min={startDate} max={endDate} onchange={onDiaryDateChange} />
+				<DateInput bind:value={diaryDate} min={startDate} max={endDate} onChange={onDiaryDateChange} />
 			</label>
 			<label class="diary-place-field">
 				<span>Sted</span>

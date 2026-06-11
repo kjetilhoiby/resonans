@@ -16,6 +16,7 @@
 	import { onMount } from 'svelte';
 	import { fetchRawTimeseries, buildPeriods } from '$lib/utils/weather';
 	import type { FerieMember, FerieTrip, FerieTripStop } from '../FerieDashboard.svelte';
+	import DateInput from '$lib/components/ui/DateInput.svelte';
 
 	interface Props {
 		themeId: string;
@@ -249,19 +250,17 @@
 						value={t.place ?? ''}
 						onchange={(e) => updateTrip(t.id, { place: e.currentTarget.value })}
 					/>
-					<input
-						type="date"
+					<DateInput
 						value={t.startDate ?? ''}
 						min={startDate}
 						max={endDate}
-						onchange={(e) => updateTrip(t.id, { startDate: e.currentTarget.value })}
+						onChange={(e) => updateTrip(t.id, { startDate: e.currentTarget.value })}
 					/>
-					<input
-						type="date"
+					<DateInput
 						value={t.endDate ?? ''}
 						min={startDate}
 						max={endDate}
-						onchange={(e) => updateTrip(t.id, { endDate: e.currentTarget.value })}
+						onChange={(e) => updateTrip(t.id, { endDate: e.currentTarget.value })}
 					/>
 					{#if t.linkedThemeId}
 						<a class="trip-link" href={`/tema/${t.linkedThemeId}`}>Åpne reise →</a>
@@ -315,13 +314,11 @@
 							oninput={(e) => { stopInput = { ...stopInput, [t.id]: e.currentTarget.value }; }}
 							onkeydown={(e) => { if (e.key === 'Enter') handleStopInput(t.id); }}
 						/>
-						<input
-							type="date"
-							class="stop-date-input"
+						<DateInput
 							value={stopDate[t.id] ?? toISO(new Date())}
 							min={t.startDate}
 							max={t.endDate}
-							oninput={(e) => { stopDate = { ...stopDate, [t.id]: e.currentTarget.value }; }}
+							onChange={(e) => { stopDate = { ...stopDate, [t.id]: e.currentTarget.value }; }}
 						/>
 						<button type="button" class="ferie-btn" disabled={stopGeocoding === t.id} onclick={() => handleStopInput(t.id)}>
 							{stopGeocoding === t.id ? '…' : '+'}

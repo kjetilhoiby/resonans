@@ -93,9 +93,9 @@
 		display: flex;
 		flex-direction: column;
 		gap: 12px;
-		padding: 16px;
-		background: #141414;
-		border-radius: 18px;
+		padding: var(--card-padding, 16px);
+		background: var(--card-bg-subtle, #141414);
+		border-radius: var(--card-radius, 16px);
 	}
 
 	.hd-goals-grid {
@@ -109,8 +109,8 @@
 		align-items: center;
 		gap: 14px;
 		padding: 14px;
-		background: #0d0d0d;
-		border-radius: 12px;
+		background: var(--card-bg-inset, #0d0d0d);
+		border-radius: var(--radius-md, 12px);
 	}
 
 	.hd-goal-ring {

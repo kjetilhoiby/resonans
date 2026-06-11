@@ -46,7 +46,7 @@
 <section class="balance-card tone-{status.tone}">
 	<header>
 		<div class="title-row">
-			<SectionLabel tag="span">Belastningsbalanse (TSB)</SectionLabel>
+			<SectionLabel tag="span" nowrap>Belastningsbalanse (TSB)</SectionLabel>
 			<span class="hint">Form − Tretthet</span>
 		</div>
 		<div class="value-row">
@@ -84,10 +84,10 @@
 
 <style>
 	.balance-card {
-		background: #141414;
-		border: 1px solid #242424;
-		border-radius: 16px;
-		padding: 1.25rem;
+		background: var(--card-bg-subtle, #141414);
+		border: 1px solid var(--card-border, #242424);
+		border-radius: var(--card-radius, 16px);
+		padding: var(--card-padding, 16px);
 		display: flex;
 		flex-direction: column;
 		gap: 0.85rem;
@@ -107,8 +107,9 @@
 	}
 
 	.hint {
-		font-size: 0.72rem;
+		font-size: var(--font-size-caption, 0.72rem);
 		color: #555;
+		flex-shrink: 0;
 	}
 
 	.value-row {

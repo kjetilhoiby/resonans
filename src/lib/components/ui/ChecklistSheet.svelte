@@ -9,10 +9,10 @@
   - Langtrykk (700ms) for nedbrytning av oppgaver
 -->
 <script lang="ts">
-	import { fly, fade, slide } from 'svelte/transition';
-	import { cubicOut } from 'svelte/easing';
+	import { slide } from 'svelte/transition';
 	import { groupChecklistItems, sortByStatus, sortByTime, isLocationItem, locationDisplayName, parseLocationPrefix, parseTravelPrefix, type GroupedChecklistEntry } from '$lib/utils/checklist-group';
-	import { patchItem, deleteItem as apiDeleteItem, addItems } from '$lib/utils/checklist-api';
+	import BottomSheet from './BottomSheet.svelte';
+	import { checklistSheetApi, type ChecklistSheetApi } from './checklist-sheet-api';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import BreakdownModal from '$lib/components/ui/BreakdownModal.svelte';
 	import TaskContextMenu from '$lib/components/ui/TaskContextMenu.svelte';
@@ -24,8 +24,8 @@
 	import ChecklistGroupRow from '$lib/components/ui/ChecklistGroupRow.svelte';
 	import RoutineGroupRow from '$lib/components/ui/RoutineGroupRow.svelte';
 	import type { WeatherPeriod } from '$lib/components/ui/WeatherStrip.svelte';
-	import { readCacheEntry, isCacheStale, fetchRawTimeseries, buildPeriods, buildWeekPeriods } from '$lib/utils/weather';
-	import { resolvePlace, geocodePlace, type GeoCandidate } from '$lib/utils/geocode';
+	import { isCacheStale, buildPeriods, buildWeekPeriods } from '$lib/utils/weather';
+	import type { GeoCandidate } from '$lib/utils/geocode';
 
 	import {
 		buildCalendarHref,
@@ -89,9 +89,11 @@
 		onChanged?: () => void;
 		onStartChat?: (itemText: string, checklistId: string, itemId: string) => void;
 		onNavigateDay?: (dateIso: string) => void;
+		/** Nettverks-/enhets-IO — injiseres som mock på /design. Default: ekte API. */
+		api?: ChecklistSheetApi;
 	}
 
-	let { checklist, routines = [], onclose, onDeleted, onChanged, onStartChat, onNavigateDay }: Props = $props();
+	let { checklist, routines = [], onclose, onDeleted, onChanged, onStartChat, onNavigateDay, api = checklistSheetApi }: Props = $props();
 
 	let items = $state<ChecklistItem[]>([...checklist.items]);
 	let backingId = $state(checklist.id);
@@ -132,7 +134,7 @@
 				? { ...r, items: r.items.map(i => i.id === itemId ? { ...i, checked: newChecked } : i) }
 				: r
 		);
-		const ok = await patchItem(checklistId, itemId, { checked: newChecked });
+		const ok = await api.patchItem(checklistId, itemId, { checked: newChecked });
 		if (!ok) {
 			routineItems = routineItems.map(r =>
 				r.checklistId === checklistId
@@ -258,30 +260,19 @@
 	let weatherPeriods = $state<WeatherPeriod[] | null>(null);
 	let weatherCoordsKey = '';
 
-	function getDeviceCoords(): Promise<{ lat: number; lon: number }> {
-		return new Promise((resolve) => {
-			if (!navigator.geolocation) return resolve({ lat: 59.9139, lon: 10.7522 });
-			navigator.geolocation.getCurrentPosition(
-				(pos) => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
-				() => resolve({ lat: 59.9139, lon: 10.7522 }),
-				{ timeout: 4000, maximumAge: 300_000 }
-			);
-		});
-	}
-
 	async function loadWeather(lat: number, lon: number) {
 		const date = dayContextDate;
 		const weekKey = weekContextKey;
 		if (!date && !weekKey) return;
 
-		const cached = readCacheEntry(lat, lon);
+		const cached = api.readWeatherCache(lat, lon);
 		if (cached) {
 			weatherPeriods = date
 				? buildPeriods(date, cached.timeseries)
 				: buildWeekPeriods(weekKey!, cached.timeseries);
 		}
 		if (!cached || isCacheStale(cached)) {
-			const freshTs = await fetchRawTimeseries(lat, lon);
+			const freshTs = await api.fetchWeatherTimeseries(lat, lon);
 			if (freshTs) {
 				weatherPeriods = date
 					? buildPeriods(date, freshTs)
@@ -302,10 +293,10 @@
 			if (loc?.metadata?.lat != null && loc?.metadata?.lon != null) {
 				coords = { lat: loc.metadata.lat, lon: loc.metadata.lon };
 			} else if (loc) {
-				const near = await getDeviceCoords();
-				coords = await geocodePlace(locationDisplayName(loc), near);
+				const near = await api.getDeviceCoords();
+				coords = await api.geocodePlace(locationDisplayName(loc), near);
 			}
-			if (!coords) coords = await getDeviceCoords();
+			if (!coords) coords = await api.getDeviceCoords();
 			await loadWeather(coords.lat, coords.lon);
 		})();
 	});
@@ -344,24 +335,19 @@
 		const newChecked = !item.checked;
 		const previousItems = items;
 		items = items.map((i) => i.id === item.id ? { ...i, checked: newChecked } : i);
-		const ok = await patchItem(backingId, item.id, { checked: newChecked });
+		const ok = await api.patchItem(backingId, item.id, { checked: newChecked });
 		if (!ok) { items = previousItems; return; }
 		onChanged?.();
 	}
 
 	async function ensureBackingId(): Promise<string | null> {
 		if (backingId) return backingId;
-		const res = await fetch('/api/checklists', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				title: checklist.title,
-				emoji: checklist.emoji,
-				context: checklist.context ?? undefined
-			})
+		const created = await api.createChecklist({
+			title: checklist.title,
+			emoji: checklist.emoji,
+			context: checklist.context ?? undefined
 		});
-		if (!res.ok) return null;
-		const created = (await res.json()) as { id: string };
+		if (!created) return null;
 		backingId = created.id;
 		onChanged?.();
 		return created.id;
@@ -370,13 +356,8 @@
 	async function createItem(text: string, coords?: { lat: number; lon: number; label?: string }) {
 		const id = await ensureBackingId();
 		if (!id) return;
-		const res = await fetch(`/api/checklists/${id}/items`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ text, sortOrder: items.length, ...(coords && { coords }) })
-		});
-		if (res.ok) {
-			const created = await res.json() as ChecklistItem[];
+		const created = (await api.createItems(id, { text, sortOrder: items.length, coords })) as ChecklistItem[] | null;
+		if (created) {
 			items = [...items, ...created];
 			onChanged?.();
 		}
@@ -394,8 +375,8 @@
 		addingItem = true;
 		try {
 			if (placeName) {
-				const near = await getDeviceCoords();
-				const resolution = await resolvePlace(placeName, near);
+				const near = await api.getDeviceCoords();
+				const resolution = await api.resolvePlace(placeName, near);
 				if (resolution.status === 'ambiguous') {
 					pendingPlace = { text, placeName, candidates: resolution.candidates };
 					return;
@@ -437,7 +418,7 @@
 	async function deleteItem(itemId: string) {
 		const previousItems = items;
 		items = items.filter((i) => i.id !== itemId && i.parentId !== itemId);
-		const ok = await apiDeleteItem(backingId, itemId);
+		const ok = await api.deleteItem(backingId, itemId);
 		if (!ok) { items = previousItems; return; }
 		onChanged?.();
 	}
@@ -449,7 +430,7 @@
 				? { ...i, skippedAt: skipped ? new Date().toISOString() : null, snoozedToDate: skipped ? i.snoozedToDate : null, checked: skipped ? false : i.checked }
 				: i
 		);
-		const ok = await patchItem(backingId, itemId, { skipped });
+		const ok = await api.patchItem(backingId, itemId, { skipped });
 		if (!ok) { items = previousItems; return; }
 		onChanged?.();
 	}
@@ -461,36 +442,22 @@
 				? { ...i, skippedAt: new Date().toISOString(), snoozedToDate: targetDate, checked: false }
 				: i
 		);
-		const res = await fetch(`/api/checklists/${backingId}/items/${itemId}/snooze`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ targetDate })
-		});
-		if (!res.ok) { items = previousItems; return; }
+		const ok = await api.snoozeItem(backingId, itemId, targetDate);
+		if (!ok) { items = previousItems; return; }
 		onChanged?.();
 	}
 
 	async function handleBreakdownSave(subtasks: string[]) {
 		if (!breakdownItem) return;
-		try {
-			const res = await fetch('/api/breakdown/save', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					parentItemId: breakdownItem.id,
-					subtasks,
-					breakdownPrompt: breakdownItem.text
-				})
-			});
-			if (!res.ok) throw new Error('Failed to save breakdown');
-			const data = (await res.json()) as { success: boolean; subtasks: ChecklistItem[] };
-			if (data.success) {
-				items = [...items, ...data.subtasks];
-				breakdownItem = null;
-				onChanged?.();
-			}
-		} catch (err) {
-			console.error('Error saving breakdown:', err);
+		const created = (await api.saveBreakdown({
+			parentItemId: breakdownItem.id,
+			subtasks,
+			breakdownPrompt: breakdownItem.text
+		})) as ChecklistItem[] | null;
+		if (created) {
+			items = [...items, ...created];
+			breakdownItem = null;
+			onChanged?.();
 		}
 	}
 
@@ -506,7 +473,7 @@
 		if (!text) return;
 		newSubItemTexts = { ...newSubItemTexts, [parentId]: '' };
 		try {
-			const created = await addItems(backingId, text, items.length, parentId) as ChecklistItem[] | null;
+			const created = await api.addItems(backingId, text, items.length, parentId) as ChecklistItem[] | null;
 			if (created) { items = [...items, ...created]; onChanged?.(); }
 		} catch (err) { console.error('Error adding subitem:', err); }
 	}
@@ -528,7 +495,7 @@
 		editingText = '';
 		if (!text) return;
 		items = items.map(i => i.id === itemId ? { ...i, text } : i);
-		await patchItem(backingId, itemId, { text });
+		await api.patchItem(backingId, itemId, { text });
 		onChanged?.();
 	}
 
@@ -554,27 +521,41 @@
 	function dismissPayoff() { showPayoff = false; payoffDismissed = true; }
 
 	async function deleteChecklist() {
-		if (backingId) await fetch(`/api/checklists/${backingId}`, { method: 'DELETE' });
+		if (backingId) await api.deleteChecklist(backingId);
 		onDeleted?.();
 		onclose();
 	}
 </script>
 
-<!-- Overlay backdrop -->
-<div
-	class="cs-backdrop"
-	transition:fade={{ duration: 200 }}
-	onclick={onclose}
-	role="presentation"
-></div>
+<!-- Snippet for one group -->
+{#snippet renderGroup(group: GroupedChecklistEntry<ChecklistItem>)}
+	{#if group.type === 'group'}
+		<ChecklistGroupRow
+			label={group.label}
+			items={group.items}
+			allItems={items}
+			ontoggle={handleItemToggle}
+			onlongpress={handleItemLongpress}
+		/>
+	{:else}
+		<ChecklistItemRow
+			item={group.item}
+			allItems={items}
+			{expandedParentIds}
+			editing={editingItemId === group.item.id}
+			bind:editText={editingText}
+			bind:editInputRef={activeEditInputRef}
+			ontoggle={handleItemToggle}
+			onlongpress={handleItemLongpress}
+			oneditcommit={handleEditCommit}
+			oneditcancel={cancelEdit}
+			onexpand={toggleParentExpansion}
+			onaddchild={handleAddChild}
+		/>
+	{/if}
+{/snippet}
 
-<!-- Sheet -->
-<div
-	class="cs-sheet"
-	transition:fly={{ y: 40, duration: 350, easing: cubicOut }}
-	role="dialog"
-	aria-modal="true"
->
+<BottomSheet {onclose} ariaLabel={displayTitle}>
 	<!-- Header + Progress -->
 	<ChecklistSheetHeader
 		emoji={showEmoji ? checklist.emoji : ''}
@@ -616,34 +597,6 @@
 			{/each}
 		</div>
 	{/if}
-
-	<!-- Snippet for one group -->
-	{#snippet renderGroup(group: GroupedChecklistEntry<ChecklistItem>)}
-		{#if group.type === 'group'}
-			<ChecklistGroupRow
-				label={group.label}
-				items={group.items}
-				allItems={items}
-				ontoggle={handleItemToggle}
-				onlongpress={handleItemLongpress}
-			/>
-		{:else}
-			<ChecklistItemRow
-				item={group.item}
-				allItems={items}
-				{expandedParentIds}
-				editing={editingItemId === group.item.id}
-				bind:editText={editingText}
-				bind:editInputRef={activeEditInputRef}
-				ontoggle={handleItemToggle}
-				onlongpress={handleItemLongpress}
-				oneditcommit={handleEditCommit}
-				oneditcancel={cancelEdit}
-				onexpand={toggleParentExpansion}
-				onaddchild={handleAddChild}
-			/>
-		{/if}
-	{/snippet}
 
 	<!-- Items list -->
 	<div class="cs-items">
@@ -741,7 +694,7 @@
 		onNavigateNext={() => navigateDay(1)}
 		onDelete={deleteChecklist}
 	/>
-</div>
+</BottomSheet>
 
 <!-- Payoff overlay -->
 {#if showPayoff}
@@ -791,30 +744,6 @@
 {/if}
 
 <style>
-	.cs-backdrop {
-		position: fixed;
-		inset: 0;
-		background: rgba(0,0,0,0.6);
-		z-index: 200;
-	}
-
-	.cs-sheet {
-		position: fixed;
-		bottom: 0;
-		left: 0;
-		right: 0;
-		max-height: 90dvh;
-		background: #111;
-		border-radius: 24px 24px 0 0;
-		border-top: 1px solid #222;
-		z-index: 201;
-		display: flex;
-		flex-direction: column;
-		overflow: hidden;
-		max-width: 520px;
-		margin: 0 auto;
-	}
-
 	/* Location context banner */
 	.cs-location-bar {
 		display: flex;

@@ -126,7 +126,7 @@
 	.goals-panel { padding: 16px var(--page-px); overflow-y: auto; display: flex; flex-direction: column; gap: 24px; }
 	.goals-section { display: flex; flex-direction: column; gap: 12px; }
 	.goals-grid { display: flex; flex-direction: column; gap: 10px; }
-	.goal-card { background: #141414; border: 1px solid #242424; border-radius: 14px; padding: 14px; display: flex; gap: 14px; align-items: center; position: relative; }
+	.goal-card { background: var(--card-bg-subtle, #141414); border: 1px solid var(--card-border, #242424); border-radius: var(--radius-md, 12px); padding: 14px; display: flex; gap: 14px; align-items: center; position: relative; }
 	.goal-ring { flex-shrink: 0; }
 	.goal-info { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
 	.goal-title { font-size: 0.9rem; font-weight: 600; color: #ddd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

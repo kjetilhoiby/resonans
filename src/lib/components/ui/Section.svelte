@@ -26,9 +26,9 @@
 
 <style>
 	.section {
-		background: var(--bg-elevated);
-		border-radius: var(--radius-lg);
-		padding: var(--space-lg);
+		background: var(--card-bg-subtle, var(--bg-elevated));
+		border-radius: var(--card-radius, var(--radius-lg));
+		padding: var(--card-padding, var(--space-lg));
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-md);

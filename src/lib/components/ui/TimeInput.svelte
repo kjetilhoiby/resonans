@@ -44,5 +44,7 @@
 	.ds-time-input {
 		width: min(100%, 7.5rem);
 		min-width: 0;
+		/* Mørk native tidvelger + synlig ikon (samme fiks som DateInput) */
+		color-scheme: dark;
 	}
 </style>

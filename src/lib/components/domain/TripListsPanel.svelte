@@ -30,6 +30,7 @@
 	let { themeId, lists = $bindable([]) }: Props = $props();
 
 	import ShareSheet from '$lib/components/domain/share/ShareSheet.svelte';
+	import DateInput from '$lib/components/ui/DateInput.svelte';
 
 	let shareSheetListId = $state<string | null>(null);
 	let shareSheetListTitle = $state<string>('');
@@ -246,12 +247,7 @@
 					{#if addingItemListId === list.id}
 						<div class="tl-add-item-form">
 							{#if list.listType === 'itinerary'}
-								<input
-									class="tl-input tl-date-input"
-									type="date"
-									bind:value={newItemDate}
-									placeholder="Dato"
-								/>
+								<DateInput bind:value={newItemDate} ariaLabel="Dato" />
 							{/if}
 							<input
 								class="tl-input tl-text-input"

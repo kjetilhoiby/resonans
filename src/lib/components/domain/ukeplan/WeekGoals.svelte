@@ -1,5 +1,6 @@
 <script lang="ts">
 	import MetricCard from '$lib/components/visualizations/MetricCard.svelte';
+	import { CardTitle } from '$lib/components/ui';
 	import type { GoalReminder } from './types';
 
 	interface Props {
@@ -39,7 +40,7 @@
 {#if vision || longTermGoals.length > 0}
 <section class="wp-card">
 	<div class="wp-card-head">
-		<h2>Målbilde og retning</h2>
+		<CardTitle>Målbilde og retning</CardTitle>
 	</div>
 
 	{#if vision}
@@ -98,10 +99,10 @@
 
 <style>
 	.wp-card {
-		background: linear-gradient(180deg, rgba(9, 11, 17, 0.95), rgba(8, 10, 15, 0.95));
+		background: var(--card-bg);
 		border: none;
-		border-radius: 14px;
-		padding: 12px;
+		border-radius: var(--card-radius, 14px);
+		padding: var(--card-padding, 12px);
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
@@ -114,11 +115,6 @@
 		gap: 8px;
 	}
 
-	.wp-card h2 {
-		margin: 0;
-		font-size: 0.95rem;
-		color: var(--text-primary);
-	}
 
 	.wp-vision-text {
 		margin: 0;

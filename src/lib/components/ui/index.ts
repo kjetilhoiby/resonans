@@ -4,6 +4,7 @@ export { default as PageSection } from './PageSection.svelte';
 export { default as Button } from './Button.svelte';
 export { default as IconButton } from './IconButton.svelte';
 export { default as Input } from './Input.svelte';
+export { default as DateInput } from './DateInput.svelte';
 export { default as TimeInput } from './TimeInput.svelte';
 export { default as Textarea } from './Textarea.svelte';
 export { default as Radio } from './Radio.svelte';
@@ -12,8 +13,8 @@ export { default as TabButton } from './TabButton.svelte';
 export { default as PageHeader } from './PageHeader.svelte';
 export { default as Section } from './Section.svelte';
 export { default as SectionLabel } from './SectionLabel.svelte';
+export { default as CardTitle } from './CardTitle.svelte';
 export { default as SectionCard } from './SectionCard.svelte';
-export { default as ScreenTitle } from './ScreenTitle.svelte';
 export { default as CompactRecordList } from './CompactRecordList.svelte';
 export { default as GoalRing } from './GoalRing.svelte';
 export { default as PeriodPills } from './PeriodPills.svelte';
@@ -34,5 +35,6 @@ export { default as Icon } from './Icon.svelte';
 export { default as PullToRefresh } from './PullToRefresh.svelte';
 
 // Sheets & Overlays
+export { default as BottomSheet } from './BottomSheet.svelte';
 export { default as ChecklistSheet } from './ChecklistSheet.svelte';
 export { default as WidgetConfigSheet } from './WidgetConfigSheet.svelte';

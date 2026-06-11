@@ -3,6 +3,8 @@
   Handles title, description, metric-specific fields, and save/cancel actions.
 -->
 <script lang="ts">
+	import DateInput from '$lib/components/ui/DateInput.svelte';
+
 	interface Goal {
 		id: string;
 		title: string;
@@ -131,11 +133,11 @@
 		{#if editGoalMetricId === 'running_distance'}
 			<label class="goal-edit-label">
 				Startdato
-				<input class="goal-edit-input" type="date" bind:value={editGoalStartDate} />
+				<DateInput bind:value={editGoalStartDate} />
 			</label>
 			<label class="goal-edit-label">
 				Sluttdato
-				<input class="goal-edit-input" type="date" bind:value={editGoalEndDate} />
+				<DateInput bind:value={editGoalEndDate} />
 			</label>
 			<label class="goal-edit-label">
 				Mål (km)
@@ -144,7 +146,7 @@
 		{:else if editGoalMetricId === 'weight_change'}
 			<label class="goal-edit-label">
 				Startdato
-				<input class="goal-edit-input" type="date" bind:value={editGoalStartDate} />
+				<DateInput bind:value={editGoalStartDate} />
 			</label>
 			<label class="goal-edit-label">
 				Startvekt (kg)
@@ -152,7 +154,7 @@
 			</label>
 			<label class="goal-edit-label">
 				Måldato
-				<input class="goal-edit-input" type="date" bind:value={editGoalEndDate} />
+				<DateInput bind:value={editGoalEndDate} />
 			</label>
 			<label class="goal-edit-label">
 				Målvekt (kg)
@@ -161,7 +163,7 @@
 		{:else}
 			<label class="goal-edit-label">
 				Måldag
-				<input class="goal-edit-input" type="date" bind:value={editGoalTargetDate} />
+				<DateInput bind:value={editGoalTargetDate} />
 			</label>
 		{/if}
 

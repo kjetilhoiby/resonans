@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { FlowFormField, FlowContext } from '$lib/flows/types';
+	import DateInput from '$lib/components/ui/DateInput.svelte';
 
 	interface Props {
 		fields: FlowFormField[];
@@ -63,11 +64,9 @@
 					oninput={(e) => onFieldChange(field.id, e.currentTarget.value ? parseFloat(e.currentTarget.value) : null)}
 				/>
 			{:else if field.type === 'date'}
-				<input
-					type="date"
-					class="fs-form-input"
+				<DateInput
 					value={flowData[field.id] ?? ''}
-					oninput={(e) => onFieldChange(field.id, e.currentTarget.value)}
+					onChange={(e) => onFieldChange(field.id, e.currentTarget.value)}
 				/>
 			{:else if field.type === 'select'}
 				{@const selOptions = field.optionsFn ? field.optionsFn(flowData, context) : (field.options ?? [])}

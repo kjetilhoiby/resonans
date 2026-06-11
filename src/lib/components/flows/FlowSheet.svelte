@@ -22,6 +22,7 @@
 	import FlowFormStep from './FlowFormStep.svelte';
 	import FlowChecklistStep from './FlowChecklistStep.svelte';
 	import FlowDecisionListStep from './FlowDecisionListStep.svelte';
+	import { flowSheetApi, type FlowSheetApi } from './flow-sheet-api';
 
 	// ── Props ────────────────────────────────────────────────────────
 	interface Props {
@@ -30,9 +31,11 @@
 		onclose?: () => void;
 		oncomplete?: (data: Record<string, any>) => void | Promise<void>;
 		onsecondaryaction?: (action: { id: string; data: Record<string, any> }) => void;
+		/** Nettverkslag (vær + AI-forslag) — injiseres som mock på /design. Default: ekte API. */
+		api?: FlowSheetApi;
 	}
 
-	let { flow, context = {}, onclose, oncomplete, onsecondaryaction }: Props = $props();
+	let { flow, context = {}, onclose, oncomplete, onsecondaryaction, api = flowSheetApi }: Props = $props();
 
 	// ── Core state ───────────────────────────────────────────────────
 	let currentStepIndex = $state(0);
@@ -124,10 +127,9 @@
 		if (context.slot) flowData['_slot'] = context.slot;
 
 		if (context.dayIso) {
-			fetch(`/api/day-plan/weather?day=${context.dayIso}`)
-				.then((r) => r.json())
-				.then((d) => { if (!d.error) weather = d as WeatherData; })
-				.catch(() => {});
+			void api.fetchDayWeather(context.dayIso).then((d) => {
+				if (d) weather = d;
+			});
 		}
 	});
 
@@ -195,20 +197,14 @@
 		loadingAiSuggestions = true;
 		try {
 			const alreadyHave = checklistItems.map((i) => i.text);
-			const res = await fetch('/api/day-plan/suggestions', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					headline: headline?.trim() ?? '',
-					dayLabel: context.dayLabel ?? '',
-					carryovers: context.carryovers ?? [],
-					weekTasks: context.weekTasks ?? [],
-					...(refinementPrompt ? { refinementPrompt } : {})
-				})
+			const suggestions = await api.fetchDaySuggestions({
+				headline: headline?.trim() ?? '',
+				dayLabel: context.dayLabel ?? '',
+				carryovers: context.carryovers ?? [],
+				weekTasks: context.weekTasks ?? [],
+				...(refinementPrompt ? { refinementPrompt } : {})
 			});
-			if (!res.ok) return;
-			const data = await res.json() as { suggestions: string[] };
-			const toAdd = (data.suggestions ?? []).filter((s) => {
+			const toAdd = suggestions.filter((s) => {
 				const key = s.trim().toLowerCase();
 				return key && !alreadyHave.some((t) => t.trim().toLowerCase() === key);
 			});

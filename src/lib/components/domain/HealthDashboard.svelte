@@ -475,8 +475,8 @@
 	.hd-empty,
 	.hd-widget-card,
 	.hd-tooling-card {
-		background: #141414;
-		border-radius: 18px;
+		background: var(--card-bg-subtle, #141414);
+		border-radius: var(--card-radius, 16px);
 	}
 
 	.hd-widget-card {

@@ -917,9 +917,9 @@
 	}
 
 	.goal-card {
-		background: #141414;
-		border: 1px solid #242424;
-		border-radius: 14px;
+		background: var(--card-bg-subtle, #141414);
+		border: 1px solid var(--card-border, #242424);
+		border-radius: var(--radius-md, 12px);
 		padding: 14px;
 		display: flex;
 		gap: 14px;

@@ -1,8 +1,9 @@
 <script lang="ts">
 	import SectionLabel from './SectionLabel.svelte';
 	import { CATEGORIES, SUBCATEGORIES } from '$lib/integrations/transaction-categories-client';
+	import { loadFilterPreview as defaultLoadFilterPreview, type FilterPreview, type LoadFilterPreview } from './widget-config-api';
 
-	interface WidgetConfig {
+	export interface WidgetConfig {
 		id: string;
 		title: string;
 		metricType: string;
@@ -28,9 +29,11 @@
 		open: boolean;
 		onclose: () => void;
 		onsave: (updates: Partial<WidgetConfig>) => void;
+		/** Treff-preview for beløpsfilter — injiseres som mock på /design. Default: ekte API. */
+		loadPreview?: LoadFilterPreview;
 	}
 
-	let { widget, open, onclose, onsave }: Props = $props();
+	let { widget, open, onclose, onsave, loadPreview = defaultLoadFilterPreview }: Props = $props();
 
 	// Standardretning per metrikk: true = høyere er bedre
 	const DEFAULT_HIGHER_IS_BETTER: Record<string, boolean> = {
@@ -115,13 +118,6 @@
 	let filterCategory = $state(widget.filterCategory ?? '');
 	let filterSubcategory = $state(widget.filterSubcategory ?? '');
 
-	type FilterPreview = {
-		totalSpendTxCountInRange: number;
-		categorizedMatchCount: number;
-		keywordMatchCount: number;
-		sampleMatches: Array<{ date: string; description: string; amount: number }>;
-		sensorEventsTxCount: number;
-	};
 	let previewLoading = $state(false);
 	let previewError = $state('');
 	let preview = $state<FilterPreview | null>(null);
@@ -167,24 +163,9 @@
 		previewLoading = true;
 		previewError = '';
 
-		const params = new URLSearchParams({ debug: '1', filterCategory, range });
-		if (filterSubcategory) params.set('filterSubcategory', filterSubcategory);
-		void fetch(`/api/widget-data/${widget.id}?${params.toString()}`)
-			.then(async (res) => {
-				if (!res.ok) throw new Error('Klarte ikke hente treff-preview');
-				const data = await res.json();
-				const amountFilter = data?.debug?.amountFilter;
-				if (!amountFilter) {
-					preview = null;
-					return;
-				}
-				preview = {
-					totalSpendTxCountInRange: amountFilter.totalSpendTxCountInRange ?? 0,
-					categorizedMatchCount: amountFilter.categorizedMatchCount ?? 0,
-					keywordMatchCount: amountFilter.keywordMatchCount ?? 0,
-					sampleMatches: Array.isArray(amountFilter.sampleMatches) ? amountFilter.sampleMatches : [],
-					sensorEventsTxCount: amountFilter.sensorEventsTxCount ?? 0,
-				};
+		void loadPreview(widget.id, { filterCategory, filterSubcategory: filterSubcategory || undefined, range })
+			.then((result) => {
+				preview = result;
 			})
 			.catch((e) => {
 				preview = null;

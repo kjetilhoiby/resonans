@@ -1,5 +1,6 @@
 <script lang="ts">
 	import SpondGroupPicker from './SpondGroupPicker.svelte';
+	import DateInput from '$lib/components/ui/DateInput.svelte';
 	import { ALL_PERSON_KINDS, PERSON_KINDS, type PersonKind } from '$lib/domains/family';
 
 	interface PersonInput {
@@ -150,7 +151,7 @@
 
 		<label>
 			<span>Fødselsdato</span>
-			<input type="date" bind:value={birthDate} />
+			<DateInput bind:value={birthDate} />
 		</label>
 
 		<div class="photo-row">
