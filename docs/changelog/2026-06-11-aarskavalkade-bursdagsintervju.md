@@ -54,7 +54,15 @@ Poenget med intervjuet er akkumulering: svarene lagres per år, slik at neste å
 - Fargeløft på `/kavalkade`-siden: hver statboks får egen kulør fra showets fargehjul (venstre kant, gradient-bakgrunn, farget verdi); side-ordskyen er også flerfarget.
 - /design: outro-slide med frosset konfetti-drys lagt til i show-demoene; baseline regenerert.
 
-### Fase 7: Oppdagbarhet
+### Fase 7: Selvangivelsen som hurtighandling med frist
+
+- Intervjuet heter nå **«Selvangivelsen»** (flow-navnet i registry) og har eksplisitt frist: **midnatt kvelden før bursdagen**.
+- `action-producers/birthday-interview.ts` (ny): chip i hurtighandling-stripa på hjemmeskjermen i vinduet 7 dager før bursdagen (self-personens `birthDate`, beregnet i brukerens tidssone). Frist-etikett skjerpes mot slutten («frist om N dager» → «frist i morgen» → «frist i kveld», prioritet 85 → 95). Forsvinner når intervjuet er levert for året (reflections-oppslag) og på selve bursdagen — da er løpet kjørt. Ren fristlogikk (`selvangivelseFristLabel`, `SELVANGIVELSE_VINDU_DAGER`) i `kavalkade.ts` med tester.
+- Klient-wiring etter eksisterende mønster: dispatch-case i `HomeScreen.svelte` + FlowSheet i `HomeOverlays.svelte`. Chipen henter først kontekst fra nytt endepunkt `/api/kavalkade/interview-context` slik at speil-steget får fjorårssvar og kavalkadetall også når flyten startes fra hjem.
+- `/kavalkade`-CTA-en speiler fristen i kortteksten og knappen heter «Lever selvangivelsen».
+- NB: hjem-baselinen (visuell regresjon) vil vise chipen i bursdagsvinduet — forventet diff ved neste lokale kjøring.
+
+### Fase 8: Oppdagbarhet
 
 - `src/lib/server/chat-router.ts`: `bursdag|fødselsdag|kavalkade` ruter til self-domenet med hint om `/kavalkade`. Test lagt til i `chat-router.test.ts`.
 
@@ -70,7 +78,7 @@ Poenget med intervjuet er akkumulering: svarene lagres per år, slik at neste å
 
 ## Verifisering
 
-- `npm test`: 462 tester grønne (39 nye: intervju-format, kavalkade-beregning, tidslinje, ordsky, hilsen-format, show-slides inkl. konfetti-flagg, router-trigger).
+- `npm test`: 464 tester grønne (41 nye: intervju-format, kavalkade-beregning, tidslinje, ordsky, hilsen-format, show-slides inkl. konfetti-flagg, router-trigger).
 - Showet verifisert live i headless Chromium mot `/design/kavalkade-show`: intro-typografi, count-up midt i animasjon, skritt-/bok-slides og progresjonsbar fanget i screenshots.
 - `/design`-seksjonen verifisert med Playwright i dev-server (dummy-env): alle fem demoer rendrer, baseline `design-kavalkade.png` sjekket inn. NB: eksisterende design-baselines viser små font-renderingsdiffs (0.04–0.09) i agent-containeren — uavhengig av denne endringen; den nye baselinen bør re-genereres lokalt ved neste `test:visual:update` hvis den diffes.
 - `npm run check`: 0 feil, 0 advarsler.

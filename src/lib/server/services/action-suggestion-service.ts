@@ -20,6 +20,7 @@ import { inboxNoteProducer } from './action-producers/inbox-note';
 import { sortInboxProducer } from './action-producers/sort-inbox';
 import { trainingProgramProducer } from './action-producers/training-program';
 import { screenTimeOnboardingProducer } from './action-producers/screen-time-onboarding';
+import { birthdayInterviewProducer } from './action-producers/birthday-interview';
 
 export interface EgenfrekvensContext {
 	today: {
@@ -63,7 +64,8 @@ const PRODUCERS: ActionProducer[] = [
 	planWeekProducer,
 	planMonthProducer,
 	trainingProgramProducer,
-	screenTimeOnboardingProducer
+	screenTimeOnboardingProducer,
+	birthdayInterviewProducer
 ];
 
 async function loadPlannedContexts(userId: string) {
@@ -124,7 +126,8 @@ async function buildContext(userId: string): Promise<ProducerContext> {
 const PRODUCER_NAMES = [
 	'sjekk-inn', 'focus-timer', 'reflection-light', 'quick-win',
 	'inbox-note', 'sort-inbox', 'plan-tomorrow', 'plan-week',
-	'plan-month', 'training-program', 'screen-time-onboarding'
+	'plan-month', 'training-program', 'screen-time-onboarding',
+	'selvangivelse'
 ];
 
 export async function produceActions(userId: string): Promise<ActionCandidate[]> {

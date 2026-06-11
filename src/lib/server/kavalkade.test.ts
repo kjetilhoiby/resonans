@@ -3,6 +3,7 @@ import {
 	buildMonthTimeline,
 	formatKavalkadeForPrompt,
 	getBirthdayWindows,
+	selvangivelseFristLabel,
 	summarizeYear,
 	type KavalkadeWindow
 } from './kavalkade';
@@ -191,6 +192,21 @@ describe('buildMonthTimeline', () => {
 			monthArtifacts: []
 		});
 		expect(timeline.find((m) => m.key === '2025-09')?.topSport?.family).toBe('running');
+	});
+});
+
+describe('selvangivelseFristLabel', () => {
+	it('skjerper formuleringen mot fristen', () => {
+		expect(selvangivelseFristLabel(7)).toBe('frist om 6 dager');
+		expect(selvangivelseFristLabel(3)).toBe('frist om 2 dager');
+		expect(selvangivelseFristLabel(2)).toBe('frist i morgen');
+		expect(selvangivelseFristLabel(1)).toBe('frist i kveld');
+	});
+
+	it('er null utenfor vinduet og på selve bursdagen', () => {
+		expect(selvangivelseFristLabel(8)).toBeNull();
+		expect(selvangivelseFristLabel(0)).toBeNull(); // løpet er kjørt
+		expect(selvangivelseFristLabel(-1)).toBeNull();
 	});
 });
 

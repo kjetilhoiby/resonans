@@ -57,6 +57,16 @@
 		data.current.books.length > 0 || data.previous.books.length > 0
 	);
 
+	// Selvangivelsens frist: midnatt kvelden før bursdagen (speiler hjemmeskjerm-chipen)
+	const interviewFristText = $derived.by(() => {
+		const d = data.birthday.daysUntil;
+		if (d === null) return '';
+		if (d === 1) return ' Frist: i kveld ved midnatt!';
+		if (d === 2) return ' Frist: i morgen kveld.';
+		if (d > 2 && d <= 7) return ` Frist: midnatt kvelden før bursdagen — om ${d - 1} dager.`;
+		return '';
+	});
+
 	async function runMagi(kind: 'prophecy' | 'greetings') {
 		magiLoading = kind;
 		magiError = '';
@@ -159,11 +169,11 @@
 				</SectionCard>
 			{:else}
 				<SectionCard
-					title="Bursdagsintervjuet"
-					description="Hvem er du i år — og hvem var du i fjor? Ti spørsmål om endringer, minner og årets beste. Svarene lagres, så neste år kan du se deg selv i speilet."
+					title="Selvangivelsen"
+					description={`Hvem er du i år — og hvem var du i fjor? Ti spørsmål om endringer, minner og årets beste. Svarene lagres, så neste år kan du se deg selv i speilet.${interviewFristText}`}
 				>
 					<div class="kv-cta">
-						<Button onClick={() => (interviewOpen = true)}>Start bursdagsintervjuet</Button>
+						<Button onClick={() => (interviewOpen = true)}>Lever selvangivelsen</Button>
 					</div>
 				</SectionCard>
 			{/if}

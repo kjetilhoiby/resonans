@@ -409,6 +409,26 @@
 		quickWinOpenItems = items; quickWinFlowOpen = true;
 	}
 
+	// ── Selvangivelsen (bursdagsintervju) ─────────────────────────────────
+	let birthdayInterviewFlowOpen = $state(false);
+	let birthdayInterviewFlowContext = $state<import('$lib/flows/types').FlowContext>({});
+
+	async function openBirthdayInterview() {
+		// Fjorårssvar + kavalkadetall til speil-steget — flyten åpner uansett
+		try {
+			const res = await fetch('/api/kavalkade/interview-context');
+			if (res.ok) {
+				const ctx = await res.json() as { lastYearText: string; kavalkadeText: string };
+				birthdayInterviewFlowContext = {
+					initialData: { _lastYearAnswers: ctx.lastYearText, _kavalkadeSummary: ctx.kavalkadeText }
+				};
+			}
+		} catch {
+			birthdayInterviewFlowContext = {};
+		}
+		birthdayInterviewFlowOpen = true;
+	}
+
 	// ── Action dispatch ───────────────────────────────────────────────────
 	function dispatchActionIntent(intent: ActionIntent): void {
 		switch (intent.kind) {
@@ -417,6 +437,7 @@
 				else if (intent.flowId === 'reflection_light') reflectionLightFlowOpen = true;
 				else if (intent.flowId === 'quick_win') void openQuickWin();
 				else if (intent.flowId === 'inbox_note') inboxNoteFlowOpen = true;
+				else if (intent.flowId === 'birthday_interview') void openBirthdayInterview();
 				else if (intent.flowId === 'egenfrekvens_quick') { egenfrekvensActiveSlot = currentSlotFromTime(); egenfrekvensQuickFlowOpen = true; }
 				else if (intent.flowId === 'egenfrekvens_checkin') { egenfrekvensActiveSlot = currentSlotFromTime(); egenfrekvensFlowOpen = true; void loadEgenfrekvensContext(); }
 				else console.warn('[home] unhandled flow intent', intent.flowId);
@@ -899,6 +920,8 @@
 		get inboxNoteFlowOpen() { return inboxNoteFlowOpen; }, set inboxNoteFlowOpen(v) { inboxNoteFlowOpen = v; },
 		get quickWinFlowOpen() { return quickWinFlowOpen; }, set quickWinFlowOpen(v) { quickWinFlowOpen = v; },
 		get quickWinOpenItems() { return quickWinOpenItems; },
+		get birthdayInterviewFlowOpen() { return birthdayInterviewFlowOpen; }, set birthdayInterviewFlowOpen(v) { birthdayInterviewFlowOpen = v; },
+		get birthdayInterviewFlowContext() { return birthdayInterviewFlowContext; },
 
 		get dateLabel() { return dateLabel; },
 

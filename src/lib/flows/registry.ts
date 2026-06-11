@@ -1240,9 +1240,9 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 
 	birthday_interview: {
 		id: 'birthday_interview',
-		name: 'Bursdagsintervju',
+		name: 'Selvangivelsen',
 		description:
-			'Hvem er du i år, hvem var du i fjor? Et årlig intervju med deg selv — endringer, minner og årets beste',
+			'Hvem er du i år, hvem var du i fjor? Det årlige bursdagsintervjuet — endringer, minner og årets beste. Frist: midnatt kvelden før bursdagen',
 		icon: '🎂',
 		domain: 'self',
 		trigger: 'manual',

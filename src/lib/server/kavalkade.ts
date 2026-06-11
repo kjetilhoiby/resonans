@@ -54,6 +54,22 @@ function inWindow(date: Date, window: KavalkadeWindow): boolean {
 	return date >= window.start && date < window.end;
 }
 
+// ── Selvangivelsen (bursdagsintervjuets frist) ──────────────────────────────
+
+/** Så mange dager før bursdagen «selvangivelsen» åpner som hurtighandling */
+export const SELVANGIVELSE_VINDU_DAGER = 7;
+
+/**
+ * Frist-etikett for selvangivelse-chipen. Fristen er midnatt kvelden før
+ * bursdagen — på selve dagen er løpet kjørt (null = utenfor vinduet).
+ */
+export function selvangivelseFristLabel(daysUntil: number): string | null {
+	if (daysUntil < 1 || daysUntil > SELVANGIVELSE_VINDU_DAGER) return null;
+	if (daysUntil === 1) return 'frist i kveld';
+	if (daysUntil === 2) return 'frist i morgen';
+	return `frist om ${daysUntil - 1} dager`;
+}
+
 // ── Input-rader (generiske former av DB-radene, for testbarhet) ─────────────
 
 export interface WorkoutDayRow {
