@@ -62,7 +62,12 @@ Poenget med intervjuet er akkumulering: svarene lagres per år, slik at neste å
 - `/kavalkade`-CTA-en speiler fristen i kortteksten og knappen heter «Lever selvangivelsen».
 - NB: hjem-baselinen (visuell regresjon) vil vise chipen i bursdagsvinduet — forventet diff ved neste lokale kjøring.
 
-### Fase 8: Oppdagbarhet
+### Fase 8: Fødselsdato i profil-UI
+
+- Brukerinnsikt: fødselsdato fantes i datamodellen (`persons.birthDate`, redigerbar i familie-UI-ets `PersonEditSheet`) men ikke i profilseksjonen på `/settings` — og uten en ekte self-person syntetiserer `/api/persons` bare en virtuell med `birthDate: null` som ikke kan lagres. Hele bursdagsrigget sto dermed uten datakilde for nye brukere.
+- Nytt felt «Fødselsdato» i Profil-kortet på `/settings` (DateInput + lagre med statusknapp), lagret via nytt endepunkt `PUT /api/profile/birthdate` som oppdaterer self-personen — eller oppretter den (kind `self`, navn fra users) hvis den bare var virtuell.
+
+### Fase 9: Oppdagbarhet
 
 - `src/lib/server/chat-router.ts`: `bursdag|fødselsdag|kavalkade` ruter til self-domenet med hint om `/kavalkade`. Test lagt til i `chat-router.test.ts`.
 

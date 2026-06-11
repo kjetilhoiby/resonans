@@ -1,6 +1,6 @@
 import { db } from '$lib/db';
-import { users } from '$lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { persons, users } from '$lib/db/schema';
+import { and, eq } from 'drizzle-orm';
 import { fail, redirect } from '@sveltejs/kit';
 import { ensureUser } from '$lib/server/users';
 import {
@@ -24,6 +24,15 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	const user = await db.query.users.findFirst({
 		where: eq(users.id, locals.userId)
 	});
+	// Fødselsdato bor på self-personen (kilden for kavalkaden og selvangivelse-fristen)
+	const selfPerson = await db.query.persons.findFirst({
+		where: and(
+			eq(persons.userId, locals.userId),
+			eq(persons.kind, 'self'),
+			eq(persons.archived, false)
+		),
+		columns: { birthDate: true }
+	});
 	const relationship = await getRelationshipOverview(locals.userId);
 	const relationshipCheckinStatus = await getRelationshipCheckinStatus(locals.userId);
 	const partnerInviteShareUrl = relationship.outgoingInvite
@@ -32,6 +41,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 
 	return {
 		user: user || null,
+		selfBirthDate: selfPerson?.birthDate ?? null,
 		relationship,
 		relationshipCheckinStatus,
 		partnerInviteShareUrl
