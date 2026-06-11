@@ -24,6 +24,7 @@ export type FlowId =
 	| 'egenfrekvens_quick'
 	| 'egenfrekvens_slot'
 	| 'reflection_light'
+	| 'birthday_interview'
 	| 'quick_win'
 	| 'inbox_note'
 	| 'jobb_focus_timer';

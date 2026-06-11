@@ -3,6 +3,7 @@
  */
 
 import type { Flow, FlowId, FlowDomain } from './types';
+import { extractInterviewAnswers, formatAnswersAsText } from './birthday-interview';
 import {
 	ACTIONS_PYRAMID,
 	ACTIONS_SLIDER_LABELS,
@@ -1233,6 +1234,125 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ learned, proud })
+			});
+		}
+	},
+
+	birthday_interview: {
+		id: 'birthday_interview',
+		name: 'Bursdagsintervju',
+		description:
+			'Hvem er du i år, hvem var du i fjor? Et årlig intervju med deg selv — endringer, minner og årets beste',
+		icon: '🎂',
+		domain: 'self',
+		trigger: 'manual',
+		focus: true,
+		estimatedMinutes: 10,
+		steps: [
+			{
+				id: 'hvem',
+				type: 'form',
+				title: 'Hvem er du i år?',
+				fields: [
+					{
+						id: 'who',
+						type: 'textarea',
+						label: 'Beskriv deg selv akkurat nå',
+						placeholder: 'Hva opptar deg? Hva bruker du tiden på? Hva tror du på?'
+					}
+				]
+			},
+			{
+				id: 'siden_i_fjor',
+				type: 'form',
+				title: 'Siden i fjor',
+				fields: [
+					{
+						id: 'changed',
+						type: 'textarea',
+						label: 'Hva har endret seg?',
+						placeholder: 'Stort eller smått — i deg eller rundt deg'
+					},
+					{
+						id: 'started',
+						type: 'textarea',
+						label: 'Hva har du begynt med?',
+						placeholder: 'Vaner, hobbyer, tanker, mennesker'
+					},
+					{
+						id: 'stopped',
+						type: 'textarea',
+						label: 'Hva har du sluttet med?',
+						placeholder: 'Ting du har lagt bak deg — med vilje eller ikke'
+					}
+				]
+			},
+			{
+				id: 'minne',
+				type: 'form',
+				title: 'Hva husker du best?',
+				fields: [
+					{
+						id: 'memory',
+						type: 'textarea',
+						label: 'Øyeblikket som sitter igjen',
+						placeholder: 'Det første du tenker på når du ser tilbake på året'
+					}
+				]
+			},
+			{
+				id: 'aarets_beste',
+				type: 'form',
+				title: 'Årets beste',
+				fields: [
+					{ id: 'best_concert', type: 'text', label: 'Beste konsert' },
+					{ id: 'best_book', type: 'text', label: 'Beste bok' },
+					{ id: 'best_film', type: 'text', label: 'Beste film eller serie' },
+					{ id: 'best_theater', type: 'text', label: 'Beste teaterstykke' },
+					{ id: 'best_experience', type: 'text', label: 'Beste opplevelse' }
+				]
+			},
+			{
+				id: 'speil',
+				type: 'chat',
+				title: 'Året i speilet',
+				autoSend: true,
+				buildPrompts: (data) => {
+					const answers = formatAnswersAsText(extractInterviewAnswers(data));
+					const lastYear = typeof data._lastYearAnswers === 'string' ? data._lastYearAnswers : '';
+					const kavalkade = typeof data._kavalkadeSummary === 'string' ? data._kavalkadeSummary : '';
+					return {
+						prompt: 'Her er svarene mine fra årets bursdagsintervju. Hva ser du?',
+						systemPrompt: [
+							'Brukeren har nettopp fullført sitt årlige bursdagsintervju. Din rolle er å speile året tilbake — varmt, konkret og uten floskler.',
+							'',
+							'Årets svar:',
+							answers || '(ingen svar gitt)',
+							lastYear ? `\nFjorårets svar (fra forrige bursdagsintervju):\n${lastYear}` : '',
+							kavalkade ? `\nÅrskavalkade (målte data):\n${kavalkade}` : '',
+							'',
+							'Gjør dette i første svar (maks 4-5 setninger):',
+							lastYear
+								? '1. Trekk frem den mest interessante forskjellen mellom i år og i fjor — hva har faktisk endret seg i hvordan brukeren beskriver seg selv?'
+								: '1. Trekk frem det mest interessante mønsteret i årets svar.',
+							'2. Koble gjerne ett av svarene til et tall fra kavalkaden hvis det forsterker poenget.',
+							'3. Avslutt med ETT åpent spørsmål som graver litt dypere.',
+							'',
+							'Språk: norsk. Tone: nær venn, ikke terapeut. Ikke list opp svarene tilbake.'
+						].join('\n')
+					};
+				}
+			}
+		],
+		async onComplete(data) {
+			const answers = extractInterviewAnswers(data);
+			const mirror = typeof data.speil_lastMessage === 'string' ? data.speil_lastMessage.trim() : '';
+			if (mirror) answers.mirror = mirror;
+			if (Object.keys(answers).length === 0) return;
+			await fetch('/api/reflections/birthday', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ answers })
 			});
 		}
 	},

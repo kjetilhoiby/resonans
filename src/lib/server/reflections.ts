@@ -10,6 +10,7 @@ export type ReflectionKind =
 	| 'goal_check'
 	| 'reflection_light'
 	| 'feriedagbok'
+	| 'birthday_interview'
 	| 'ad_hoc';
 
 export interface ReflectionScores {

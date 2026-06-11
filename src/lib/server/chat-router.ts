@@ -97,6 +97,14 @@ export function routeChatRequest(input: string): ChatRoutingDecision {
 		hints.push('Bruk web_search for ferske eller tidsavhengige fakta før du svarer.');
 	}
 
+	if (/bursdag|fødselsdag|fodselsdag|kavalkade/.test(text)) {
+		if (!domains.has('self')) {
+			domains.add('self');
+			domainHints.push(DOMAIN_METADATA.self.systemPromptHint);
+		}
+		hints.push('Brukeren snakker om bursdag eller årsoppsummering — tips om Årskavalkaden på /kavalkade med årets tall og det årlige bursdagsintervjuet.');
+	}
+
 	if (domains.size === 0) domains.add('general');
 	if (skills.size === 0) skills.add('general_chat');
 
