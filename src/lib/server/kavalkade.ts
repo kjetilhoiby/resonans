@@ -193,6 +193,92 @@ export function sportLabel(family: string): string {
 	return SPORT_LABELS[family] ?? family;
 }
 
+// ── Måned for måned ─────────────────────────────────────────────────────────
+
+export interface MonthArtifactRow {
+	periodKey: string; // '2025-08'
+	headline: string | null;
+	note: string | null;
+}
+
+export interface MonthTimelineEntry {
+	key: string; // '2025-08'
+	label: string; // 'august 2025'
+	workoutCount: number;
+	topSport: { family: string; label: string; distanceKm: number; count: number } | null;
+	stepsTotal: number | null;
+	books: string[];
+	headline: string | null;
+}
+
+/**
+ * Bygg en kronologisk måned-for-måned-tidslinje for vinduet. Kalendermåneder
+ * som overlapper vinduet tas med; rader telles bare i snittet måned ∩ vindu.
+ */
+export function buildMonthTimeline(
+	window: KavalkadeWindow,
+	input: {
+		workoutDays: WorkoutDayRow[];
+		months: MonthAggregateRow[];
+		books: FinishedBookRow[];
+		monthArtifacts: MonthArtifactRow[];
+	}
+): MonthTimelineEntry[] {
+	const fmt = new Intl.DateTimeFormat('nb-NO', { month: 'long' });
+	const artifactByKey = new Map(input.monthArtifacts.map((a) => [a.periodKey, a]));
+	const entries: MonthTimelineEntry[] = [];
+
+	let cursor = new Date(window.start.getFullYear(), window.start.getMonth(), 1);
+	while (cursor < window.end) {
+		const nextMonth = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+		const rangeStart = cursor < window.start ? window.start : cursor;
+		const rangeEnd = nextMonth < window.end ? nextMonth : window.end;
+		const inRange = (d: Date) => d >= rangeStart && d < rangeEnd;
+		const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`;
+
+		const bySport = new Map<string, { count: number; meters: number }>();
+		for (const row of input.workoutDays) {
+			if (!inRange(row.date)) continue;
+			const entry = bySport.get(row.sportFamily) ?? { count: 0, meters: 0 };
+			entry.count += row.count;
+			entry.meters += row.distanceMeters;
+			bySport.set(row.sportFamily, entry);
+		}
+		const top = [...bySport.entries()].sort(
+			(a, b) => b[1].meters - a[1].meters || b[1].count - a[1].count
+		)[0];
+
+		const monthAggregate = input.months.find(
+			(m) => m.startDate >= cursor && m.startDate < nextMonth
+		);
+		const steps = monthAggregate?.metrics?.steps?.sum;
+
+		const artifact = artifactByKey.get(key);
+
+		entries.push({
+			key,
+			label: `${fmt.format(cursor)} ${cursor.getFullYear()}`,
+			workoutCount: [...bySport.values()].reduce((sum, e) => sum + e.count, 0),
+			topSport: top
+				? {
+						family: top[0],
+						label: sportLabel(top[0]),
+						distanceKm: round1(top[1].meters / 1000),
+						count: top[1].count
+					}
+				: null,
+			stepsTotal: typeof steps === 'number' ? steps : null,
+			books: input.books
+				.filter((b) => inRange(b.finishedAt))
+				.sort((a, b) => a.finishedAt.getTime() - b.finishedAt.getTime())
+				.map((b) => b.title),
+			headline: artifact?.headline?.trim() || null
+		});
+		cursor = nextMonth;
+	}
+	return entries;
+}
+
 /** Kompakt tekstoppsummering av i år vs. i fjor — til AI-konteksten i intervjuets speil-steg */
 export function formatKavalkadeForPrompt(current: YearSummary, previous: YearSummary): string {
 	const lines: string[] = [];

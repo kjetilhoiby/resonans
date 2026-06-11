@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	buildMonthTimeline,
 	formatKavalkadeForPrompt,
 	getBirthdayWindows,
 	summarizeYear,
@@ -128,6 +129,68 @@ describe('summarizeYear', () => {
 			{ title: 'Solaris', author: 'Stanisław Lem' },
 			{ title: 'Stoner', author: 'John Williams' }
 		]);
+	});
+});
+
+describe('buildMonthTimeline', () => {
+	const window: KavalkadeWindow = {
+		start: new Date(2025, 5, 18),
+		end: new Date(2026, 5, 18)
+	};
+
+	it('lager én entry per kalendermåned som overlapper vinduet, kronologisk', () => {
+		const timeline = buildMonthTimeline(window, {
+			workoutDays: [],
+			months: [],
+			books: [],
+			monthArtifacts: []
+		});
+		expect(timeline).toHaveLength(13); // juni 2025 t.o.m. juni 2026
+		expect(timeline[0].key).toBe('2025-06');
+		expect(timeline[0].label).toBe('juni 2025');
+		expect(timeline[12].key).toBe('2026-06');
+	});
+
+	it('teller bare rader i snittet måned ∩ vindu i grensemånedene', () => {
+		const timeline = buildMonthTimeline(window, {
+			workoutDays: [
+				// 10. juni 2025 er før vindusstart 18. juni — skal ikke telles
+				{ date: new Date(2025, 5, 10), sportFamily: 'running', count: 1, distanceMeters: 5000, durationSeconds: 1800 },
+				{ date: new Date(2025, 5, 20), sportFamily: 'running', count: 1, distanceMeters: 8000, durationSeconds: 2400 }
+			],
+			months: [],
+			books: [],
+			monthArtifacts: []
+		});
+		expect(timeline[0].workoutCount).toBe(1);
+		expect(timeline[0].topSport).toEqual({ family: 'running', label: 'løpt', distanceKm: 8, count: 1 });
+	});
+
+	it('kobler skritt, bøker og månedsoverskrift til riktig måned', () => {
+		const timeline = buildMonthTimeline(window, {
+			workoutDays: [],
+			months: [{ startDate: new Date(2025, 7, 1), metrics: { steps: { sum: 210_000 } } }],
+			books: [{ title: 'Solaris', author: null, finishedAt: new Date(2025, 7, 12) }],
+			monthArtifacts: [{ periodKey: '2025-08', headline: 'Ferie og lange turer', note: null }]
+		});
+		const august = timeline.find((m) => m.key === '2025-08');
+		expect(august?.stepsTotal).toBe(210_000);
+		expect(august?.books).toEqual(['Solaris']);
+		expect(august?.headline).toBe('Ferie og lange turer');
+		expect(timeline.find((m) => m.key === '2025-09')?.books).toEqual([]);
+	});
+
+	it('velger toppsport etter distanse, deretter antall', () => {
+		const timeline = buildMonthTimeline(window, {
+			workoutDays: [
+				{ date: new Date(2025, 8, 3), sportFamily: 'strength', count: 4, distanceMeters: 0, durationSeconds: 14400 },
+				{ date: new Date(2025, 8, 5), sportFamily: 'running', count: 2, distanceMeters: 20000, durationSeconds: 7200 }
+			],
+			months: [],
+			books: [],
+			monthArtifacts: []
+		});
+		expect(timeline.find((m) => m.key === '2025-09')?.topSport?.family).toBe('running');
 	});
 });
 

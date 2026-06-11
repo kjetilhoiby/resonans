@@ -11,6 +11,8 @@ export type ReflectionKind =
 	| 'reflection_light'
 	| 'feriedagbok'
 	| 'birthday_interview'
+	| 'birthday_prophecy'
+	| 'birthday_greetings'
 	| 'ad_hoc';
 
 export interface ReflectionScores {

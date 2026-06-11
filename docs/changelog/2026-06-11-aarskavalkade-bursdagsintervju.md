@@ -23,7 +23,17 @@ Poenget med intervjuet er akkumulering: svarene lagres per år, slik at neste å
 - `src/lib/server/kavalkade.ts` (ny): Rene beregningsfunksjoner. `getBirthdayWindows` regner bursdagsår (forrige bursdag → neste, fra self-personens `birthDate`; fallback siste 365 dager). `summarizeYear` aggregerer treningsøkter per sport (fra `workout_daily_aggregates`), skritt/søvn/vekt/skjermtid (fra månedsraden i `sensor_aggregates`) og ferdigleste bøker (`books.finishedAt`). `formatKavalkadeForPrompt` lager AI-kontekst. Tester i `kavalkade.test.ts`.
 - `src/routes/kavalkade/` (ny side): «Året i tall» med i-år-vs-i-fjor per metrikk, bokliste, årets intervjusvar, fjorårets svar («Hvem var du i fjor?») og start-knapp for intervjuet via `FlowSheet`. Bygget på `SectionCard`/`SectionLabel` og AppPage-tokens.
 
-### Fase 3: Oppdagbarhet
+### Fase 3: «Tenk stort» — ordsky, tidslinje og AI-magi
+
+- `src/lib/server/ordsky.ts` (ny): Ren ordfrekvens-beregning med norsk tokenisering og grammatisk stoppordliste (innholdsverb som «rydde»/«kjøpe» beholdes med vilje). Mates med årets sjekkliste-oppgaver (`checklist_items`) og rendres som vektet ordsky på siden. Tester i `ordsky.test.ts`.
+- `buildMonthTimeline` i `kavalkade.ts`: Måned-for-måned-tidslinje for bursdagsåret — toppsport, antall økter, skritt, bøker fullført den måneden og månedens overskrift fra `plan_artifacts` (kind `month`). Grensemåneder telles bare i snittet måned ∩ vindu. Tester lagt til.
+- `src/lib/kavalkade-magi.ts` (ny, delt klient/server): Markdown-format for bursdagshilsner (`## Karakter — Bok`), tapsfri tur-retur. Tester i `kavalkade-magi.test.ts`.
+- `src/routes/api/kavalkade/magi/+server.ts` (ny): To GPT-4o-genererte innslag, lagret som refleksjoner (kind `birthday_prophecy` / `birthday_greetings`, periodKey = år, upsert ved regenerering):
+  - **Spådommen**: spåkone-tekst om året som kommer, basert på kavalkade-tall, tidslinje, ordsky-toppord og intervjusvar (i år + i fjor).
+  - **Hilsner fra bokhylla**: bursdagshilsner fra sentrale romankarakterer i årets ferdigleste bøker (fallback fjorårets), i karakterens egen stemme.
+- `src/lib/server/kavalkade-data.ts` (ny): Felles datalaster for siden og magi-endepunktet — page-serveren ble en tynn wrapper.
+
+### Fase 4: Oppdagbarhet
 
 - `src/lib/server/chat-router.ts`: `bursdag|fødselsdag|kavalkade` ruter til self-domenet med hint om `/kavalkade`. Test lagt til i `chat-router.test.ts`.
 
@@ -35,8 +45,10 @@ Poenget med intervjuet er akkumulering: svarene lagres per år, slik at neste å
 - **Vektendring krever minst to måneder med data**, ellers vises bare nivået.
 - **Kavalkade-modulen ligger i `$lib/server`** (brukes kun server-side); norske sport-etiketter («løpt», «gått») mappes derfor på i page-serverens load i stedet for å importeres i klienten.
 
+- **AI-innslagene genereres på forespørsel, ikke ved sidelast.** Spådom og hilsner koster et LLM-kall; knapp + lagret refleksjon gjør siden rask og resultatet stabilt til brukeren ber om nytt.
+
 ## Verifisering
 
-- `npm test`: 441 tester grønne (18 nye for intervju-format og kavalkade-beregning, 1 ny router-test).
+- `npm test`: 455 tester grønne (32 nye: intervju-format, kavalkade-beregning, tidslinje, ordsky, hilsen-format, router-trigger).
 - `npm run check`: 0 feil, 0 advarsler.
 - Visuelle tester ikke berørt — ingen av de 5 baseline-sidene er endret; `/kavalkade` er ny side utenfor baseline-settet.
