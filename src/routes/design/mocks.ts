@@ -954,6 +954,14 @@ export const kavalkadeShowSlidesMock: ShowSlideDef[] = [
 		words: kavalkadeOrdskyMock.slice(0, 12),
 		hue: 152,
 		durationMs: 7000
+	},
+	{
+		kind: 'outro',
+		title: 'Gratulerer med dagen! 🎂',
+		sub: 'Her kommer år 44.',
+		hue: 320,
+		durationMs: 5500,
+		confetti: true
 	}
 ];
 

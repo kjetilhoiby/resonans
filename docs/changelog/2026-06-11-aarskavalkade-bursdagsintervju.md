@@ -47,7 +47,14 @@ Poenget med intervjuet er akkumulering: svarene lagres per år, slik at neste å
 - Rute `/kavalkade/show` (samme datalaster) + «▶ Spill av året»-knapp øverst på `/kavalkade`.
 - `/design`: tre frosne ShowSlide-demoer i kavalkade-seksjonen (baseline regenerert) + live-demo med full animasjon på `/design/kavalkade-show` (public path, mock-data, ikke i visuell regresjon).
 
-### Fase 6: Oppdagbarhet
+### Fase 6: Farger og konfetti
+
+- `Konfetti.svelte` (domain/kavalkade): CSS-konfettiregn med deterministisk «tilfeldighet» (golden ratio-spredning, ingen `Math.random` — /design er i visuell regresjon). Negative animation-delays gir fullt felt fra første frame; `animate={false}` og `prefers-reduced-motion` fryser bitene som et spredt drys. Regner over show-outroen alltid, og introen på selve bursdagen (`confetti`-flagg i `buildShowSlides`, testet).
+- Fargeløft i `ShowSlide`: tredje gradient-blob med komplementærfarge (screen-blend), mer mettede blobs, gradient-tall (background-clip: text, hue → hue+75), flerfarget ordsky (hue per ord) og hued punktmarkører i lister.
+- Fargeløft på `/kavalkade`-siden: hver statboks får egen kulør fra showets fargehjul (venstre kant, gradient-bakgrunn, farget verdi); side-ordskyen er også flerfarget.
+- /design: outro-slide med frosset konfetti-drys lagt til i show-demoene; baseline regenerert.
+
+### Fase 7: Oppdagbarhet
 
 - `src/lib/server/chat-router.ts`: `bursdag|fødselsdag|kavalkade` ruter til self-domenet med hint om `/kavalkade`. Test lagt til i `chat-router.test.ts`.
 
@@ -63,7 +70,7 @@ Poenget med intervjuet er akkumulering: svarene lagres per år, slik at neste å
 
 ## Verifisering
 
-- `npm test`: 461 tester grønne (38 nye: intervju-format, kavalkade-beregning, tidslinje, ordsky, hilsen-format, show-slides, router-trigger).
+- `npm test`: 462 tester grønne (39 nye: intervju-format, kavalkade-beregning, tidslinje, ordsky, hilsen-format, show-slides inkl. konfetti-flagg, router-trigger).
 - Showet verifisert live i headless Chromium mot `/design/kavalkade-show`: intro-typografi, count-up midt i animasjon, skritt-/bok-slides og progresjonsbar fanget i screenshots.
 - `/design`-seksjonen verifisert med Playwright i dev-server (dummy-env): alle fem demoer rendrer, baseline `design-kavalkade.png` sjekket inn. NB: eksisterende design-baselines viser små font-renderingsdiffs (0.04–0.09) i agent-containeren — uavhengig av denne endringen; den nye baselinen bør re-genereres lokalt ved neste `test:visual:update` hvis den diffes.
 - `npm run check`: 0 feil, 0 advarsler.

@@ -13,10 +13,10 @@
 </script>
 
 <div class="kv-ordsky">
-	{#each words as word (word.word)}
+	{#each words as word, i (word.word)}
 		<span
 			class="kv-ord"
-			style={`font-size: calc(0.72rem + ${word.weight} * 1.1rem); opacity: ${0.55 + word.weight * 0.45};`}
+			style={`font-size: calc(0.72rem + ${word.weight} * 1.1rem); opacity: ${0.55 + word.weight * 0.45}; --whue: ${(210 + i * 23) % 360};`}
 			title={`${word.count} ganger`}>{word.word}</span
 		>
 	{/each}
@@ -33,7 +33,7 @@
 	}
 
 	.kv-ord {
-		color: var(--accent-light);
+		color: hsl(var(--whue) 75% 74%);
 		line-height: 1.2;
 	}
 </style>

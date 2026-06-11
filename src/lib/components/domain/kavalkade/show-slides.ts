@@ -7,7 +7,7 @@ import type { InterviewAnswers } from '$lib/flows/birthday-interview';
 import type { Greeting, MonthEntry, OrdskyWordView, YearData } from './types';
 
 export type ShowSlideDef =
-	| { kind: 'intro'; title: string; sub?: string; hue: number; durationMs: number }
+	| { kind: 'intro'; title: string; sub?: string; hue: number; durationMs: number; confetti?: boolean }
 	| {
 			kind: 'stat';
 			label: string;
@@ -28,7 +28,7 @@ export type ShowSlideDef =
 			hue: number;
 			durationMs: number;
 	  }
-	| { kind: 'outro'; title: string; sub?: string; hue: number; durationMs: number };
+	| { kind: 'outro'; title: string; sub?: string; hue: number; durationMs: number; confetti?: boolean };
 
 export interface ShowInput {
 	birthday: { hasBirthDate: boolean; daysUntil: number | null; turningAge: number | null };
@@ -70,7 +70,15 @@ export function buildShowSlides(input: ShowInput): ShowSlideDef[] {
 				? `I dag fyller du ${turningAge} år`
 				: `Om ${daysUntil} ${daysUntil === 1 ? 'dag' : 'dager'} fyller du ${turningAge} år`
 			: input.windowLabels.current;
-	slides.push({ kind: 'intro', title: 'Dette var året ditt', sub: introSub, hue: nextHue(), durationMs: STAT_MS });
+	slides.push({
+		kind: 'intro',
+		title: 'Dette var året ditt',
+		sub: introSub,
+		hue: nextHue(),
+		durationMs: STAT_MS,
+		// Konfetti i introen kun på selve dagen — outroen har det alltid
+		confetti: daysUntil === 0
+	});
 
 	// Sport-tall — distansesporter som km, resten som økter (maks 3)
 	const prevByFamily = new Map(input.previous.sports.map((s) => [s.family, s]));
@@ -211,7 +219,8 @@ export function buildShowSlides(input: ShowInput): ShowSlideDef[] {
 		title: daysUntil === 0 ? 'Gratulerer med dagen! 🎂' : 'God bursdag når den kommer 🎂',
 		sub: turningAge !== null ? `Her kommer år ${turningAge}.` : 'Her kommer et nytt år.',
 		hue: nextHue(),
-		durationMs: STAT_MS
+		durationMs: STAT_MS,
+		confetti: true
 	});
 
 	return slides;

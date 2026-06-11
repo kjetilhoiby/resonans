@@ -9,6 +9,7 @@
   dette er plakat-tekst på 100dvh, ikke dashboard-innhold.
 -->
 <script lang="ts">
+	import Konfetti from './Konfetti.svelte';
 	import type { ShowSlideDef } from './show-slides';
 
 	interface Props {
@@ -60,6 +61,11 @@
 <div class="slide" class:animate style={`--hue: ${slide.hue};`}>
 	<div class="blob blob-a" aria-hidden="true"></div>
 	<div class="blob blob-b" aria-hidden="true"></div>
+	<div class="blob blob-c" aria-hidden="true"></div>
+
+	{#if (slide.kind === 'intro' || slide.kind === 'outro') && slide.confetti}
+		<Konfetti {animate} />
+	{/if}
 
 	<div class="content">
 		{#if slide.kind === 'intro' || slide.kind === 'outro'}
@@ -73,7 +79,7 @@
 			{/if}
 		{:else if slide.kind === 'stat'}
 			<p class="bignum rise">
-				{countedLabel}{#if slide.unit}<span class="unit">&nbsp;{slide.unit}</span>{/if}
+				<span class="num">{countedLabel}</span>{#if slide.unit}<span class="unit">&nbsp;{slide.unit}</span>{/if}
 			</p>
 			<h1 class="title title-sm">
 				{#each words(slide.label) as word, i (i)}
@@ -91,7 +97,9 @@
 			</h1>
 			<ul class="items">
 				{#each slide.items as item, i (item)}
-					<li class="rise" style={`animation-delay: ${700 + i * 450}ms;`}>{item}</li>
+					<li class="rise" style={`animation-delay: ${700 + i * 450}ms; --ihue: ${(slide.hue + i * 36) % 360};`}>
+						{item}
+					</li>
 				{/each}
 			</ul>
 			{#if slide.sub}
@@ -109,7 +117,7 @@
 				{#each slide.words as word, i (word.word)}
 					<span
 						class="cloud-word pop"
-						style={`font-size: calc(0.9rem + ${word.weight} * 1.7rem); animation-delay: ${500 + i * 90}ms; --wo: ${0.6 + word.weight * 0.4};`}
+						style={`font-size: calc(0.9rem + ${word.weight} * 1.7rem); animation-delay: ${500 + i * 90}ms; --wo: ${0.6 + word.weight * 0.4}; --whue: ${(slide.hue + i * 23) % 360};`}
 						>{word.word}</span
 					>
 				{/each}
@@ -157,15 +165,25 @@
 	}
 
 	.blob-a {
-		background: radial-gradient(circle, hsl(var(--hue) 85% 30% / 0.8) 0%, transparent 65%);
+		background: radial-gradient(circle, hsl(var(--hue) 95% 38% / 0.85) 0%, transparent 65%);
 		top: -25vmax;
 		left: -20vmax;
 	}
 
 	.blob-b {
-		background: radial-gradient(circle, hsl(calc(var(--hue) + 60) 80% 26% / 0.7) 0%, transparent 65%);
+		background: radial-gradient(circle, hsl(calc(var(--hue) + 60) 90% 34% / 0.75) 0%, transparent 65%);
 		bottom: -30vmax;
 		right: -22vmax;
+	}
+
+	/* Komplementærfargen i midten gir dybde og mer fargespill */
+	.blob-c {
+		background: radial-gradient(circle, hsl(calc(var(--hue) + 180) 80% 28% / 0.5) 0%, transparent 60%);
+		width: 50vmax;
+		height: 50vmax;
+		top: 30%;
+		left: 15%;
+		mix-blend-mode: screen;
 	}
 
 	.animate .blob-a {
@@ -174,6 +192,15 @@
 
 	.animate .blob-b {
 		animation: drift-b 19s ease-in-out infinite alternate;
+	}
+
+	.animate .blob-c {
+		animation: drift-c 23s ease-in-out infinite alternate;
+	}
+
+	@keyframes drift-c {
+		from { transform: translate3d(0, 0, 0) scale(0.9) rotate(0deg); }
+		to { transform: translate3d(-8vmax, 10vmax, 0) scale(1.3) rotate(40deg); }
 	}
 
 	@keyframes drift-a {
@@ -223,7 +250,14 @@
 		letter-spacing: -0.03em;
 		line-height: 1;
 		font-variant-numeric: tabular-nums;
-		color: hsl(var(--hue) 90% 78%);
+	}
+
+	/* Gradient-tall — fargespennet følger slidens hue */
+	.bignum .num {
+		background: linear-gradient(115deg, hsl(var(--hue) 95% 80%) 10%, hsl(calc(var(--hue) + 75) 95% 70%) 90%);
+		-webkit-background-clip: text;
+		background-clip: text;
+		color: transparent;
 	}
 
 	.bignum .unit {
@@ -258,6 +292,18 @@
 		font-weight: 500;
 	}
 
+	/* Hvert punkt får sin egen kulør på punktmarkøren */
+	.items li::before {
+		content: '';
+		display: inline-block;
+		width: 0.5em;
+		height: 0.5em;
+		border-radius: 50%;
+		margin-right: 0.55em;
+		vertical-align: 0.08em;
+		background: hsl(var(--ihue, var(--hue)) 90% 70%);
+	}
+
 	.cloud {
 		display: flex;
 		flex-wrap: wrap;
@@ -267,7 +313,7 @@
 	}
 
 	.cloud-word {
-		color: hsl(var(--hue) 85% 80%);
+		color: hsl(var(--whue, var(--hue)) 88% 76%);
 		line-height: 1.15;
 		font-weight: 600;
 		opacity: var(--wo, 1);

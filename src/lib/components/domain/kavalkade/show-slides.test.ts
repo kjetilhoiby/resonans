@@ -141,6 +141,17 @@ describe('buildShowSlides', () => {
 		expect(slides.map((s) => s.kind)).toEqual(['intro', 'outro']);
 	});
 
+	it('gir alltid outroen konfetti, introen bare på selve dagen', () => {
+		const foer = buildShowSlides(baseInput());
+		expect(foer[0]).toMatchObject({ kind: 'intro', confetti: false });
+		expect(foer[foer.length - 1]).toMatchObject({ kind: 'outro', confetti: true });
+
+		const paaDagen = buildShowSlides(
+			baseInput({ birthday: { hasBirthDate: true, daysUntil: 0, turningAge: 44 } })
+		);
+		expect(paaDagen[0]).toMatchObject({ kind: 'intro', confetti: true });
+	});
+
 	it('gir hver slide en hue fra paletten', () => {
 		const slides = buildShowSlides(baseInput());
 		for (const slide of slides) {

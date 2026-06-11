@@ -15,6 +15,9 @@
 	const nf = new Intl.NumberFormat('nb-NO');
 	const nfCompact = new Intl.NumberFormat('nb-NO', { notation: 'compact', maximumFractionDigits: 1 });
 
+	// Samme fargehjul som showet — hver statboks får sin kulør
+	const HUES = [258, 12, 152, 38, 205, 320, 88, 230];
+
 	const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 	function sportValue(s: LabeledSport): string {
@@ -86,8 +89,8 @@
 
 {#if stats.length > 0}
 	<div class="kv-stats">
-		{#each stats as stat (stat.label)}
-			<div class="kv-stat">
+		{#each stats as stat, i (stat.label)}
+			<div class="kv-stat" style={`--hue: ${HUES[i % HUES.length]};`}>
 				<span class="kv-stat-label">{stat.label}</span>
 				<span class="kv-stat-value">{stat.value}</span>
 				<span class="kv-stat-prev">i fjor: {stat.prev}</span>
@@ -109,7 +112,10 @@
 		display: flex;
 		flex-direction: column;
 		gap: 2px;
-		background: var(--card-bg-inset);
+		background:
+			linear-gradient(135deg, hsl(var(--hue) 60% 18% / 0.45), transparent 65%),
+			var(--card-bg-inset);
+		border-left: 2px solid hsl(var(--hue) 80% 55% / 0.7);
 		border-radius: var(--radius-md, 10px);
 		padding: 10px 12px;
 		min-width: 0;
@@ -126,7 +132,7 @@
 	.kv-stat-value {
 		font-size: var(--font-size-title);
 		font-weight: 700;
-		color: var(--text-primary);
+		color: hsl(var(--hue) 85% 78%);
 		overflow-wrap: anywhere;
 	}
 
