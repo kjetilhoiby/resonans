@@ -3,7 +3,13 @@
  */
 
 import type { Flow, FlowId, FlowDomain } from './types';
-import { extractInterviewAnswers, formatAnswersAsText, parseStatusBlock } from './birthday-interview';
+import {
+	extractInterviewAnswers,
+	formatAnswersAsText,
+	formatThreadTranscript,
+	parseBirthdayGoals,
+	parseStatusBlock
+} from './birthday-interview';
 import {
 	ACTIONS_PYRAMID,
 	ACTIONS_SLIDER_LABELS,
@@ -1422,6 +1428,13 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 							'',
 							'Brukeren kan chatte videre på hvilket som helst enkeltsvar her — tilby det eksplisitt, og følg dem dit de vil før de avslutter intervjuet.',
 							'',
+							'BURSDAGSMÅL: Foreslå deretter 2–4 mål frem til neste bursdag — målbare der det går (km, bøker, kg, ganger), forankret i «Hvor vil du videre»-svaret og kavalkade-tallene. Etter HVER respons der mål er tema, list gjeldende forslag mellom markørene <bursdagsmål> og </bursdagsmål>, én per linje:',
+							'<bursdagsmål>',
+							'Løpe til neste bursdag: 600 km',
+							'Skjermfri etter 22',
+							'</bursdagsmål>',
+							'Brukeren kan justere i chat — hold listen oppdatert. Ved levering opprettes målene automatisk med frist neste bursdag.',
+							'',
 							'Språk: norsk. Tone: nær venn, ikke terapeut. Ikke list opp svarene tilbake.'
 						].join('\n')
 					};
@@ -1436,13 +1449,25 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 					? parseStatusBlock(data.kropp_og_hode_lastMessage)
 					: '';
 			if (helse) answers.health_talk = helse;
-			const mirror = typeof data.speil_lastMessage === 'string' ? data.speil_lastMessage.trim() : '';
+			const speilMessage = typeof data.speil_lastMessage === 'string' ? data.speil_lastMessage : '';
+			const mirror = speilMessage
+				.replace(/<bursdagsmål>[\s\S]*?<\/bursdagsmål>/gi, '')
+				.trim();
 			if (mirror) answers.mirror = mirror;
 			if (Object.keys(answers).length === 0) return;
 			await fetch('/api/reflections/birthday', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ answers })
+				body: JSON.stringify({
+					answers,
+					// Speilets målforslag blir ekte mål med frist neste bursdag
+					goals: parseBirthdayGoals(speilMessage),
+					// «Samtalen er data»: hele chattene arkiveres som transkript
+					threads: {
+						kroppOgHode: formatThreadTranscript(data.kropp_og_hode_thread),
+						speil: formatThreadTranscript(data.speil_thread)
+					}
+				})
 			});
 		}
 	},

@@ -97,7 +97,13 @@ Poenget med intervjuet er akkumulering: svarene lagres per år, slik at neste å
 - Begrensninger: per enhet (localStorage, ikke kryss-enhet), og forlater man midt i et chat-steg starter det steget på nytt — fullførte stegs svar (inkl. chat-tråder) overlever.
 - Verifisert live i Chromium: fyll ut → reload → gjenopptatt på riktig steg med feltverdier intakt.
 
-### Fase 13: Oppdagbarhet
+### Fase 13: Chattene arkiveres og speilet foreslår bursdagsmål
+
+- **«Samtalen er data»**: hele chattene (kropp-og-hode + speilet) arkiveres nå som transkript-refleksjon (kind `birthday_interview_chat`, periodKey = år) med `Du:`/`Resonans:`-linjer. Markør-blokkene strippes fra transkriptet — destillatet bor allerede som seksjoner i selve selvangivelsen. `formatThreadTranscript` (ren, testet).
+- **Bursdagsmål**: speil-steget foreslår 2–4 mål frem til neste bursdag (forankret i «Hvor vil du videre» og kavalkade-tallene) og vedlikeholder en `<bursdagsmål>`-blokk brukeren kan justere i chat. Ved levering parses blokken (`parseBirthdayGoals`, ren, testet — «Tittel: 600 km» eller rene intensjonsmål) og opprettes som rader i `goals`: `targetDate` = neste bursdag, `periodKey` = årstall, metadata med target/tracking (running_distance → workout_aggregate, ellers manuell) — samme mønster som ukeplanens mål. Dedupe på `metadata->>'birthdayKey'` + tittel; maks 6.
+- Speilets mirror-seksjon lagres uten målblokken.
+
+### Fase 14: Oppdagbarhet
 
 - `src/lib/server/chat-router.ts`: `bursdag|fødselsdag|kavalkade` ruter til self-domenet med hint om `/kavalkade`. Test lagt til i `chat-router.test.ts`.
 

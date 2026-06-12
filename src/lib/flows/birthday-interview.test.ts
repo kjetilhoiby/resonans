@@ -3,6 +3,8 @@ import {
 	buildInterviewMarkdown,
 	extractInterviewAnswers,
 	formatAnswersAsText,
+	formatThreadTranscript,
+	parseBirthdayGoals,
 	parseInterviewMarkdown,
 	parseStatusBlock
 } from './birthday-interview';
@@ -100,6 +102,47 @@ describe('parseStatusBlock', () => {
 	it('er tom uten markører — lagrer aldri løs prosa', () => {
 		expect(parseStatusBlock('Bare en vanlig melding uten oppsummering')).toBe('');
 		expect(parseStatusBlock('')).toBe('');
+	});
+});
+
+describe('parseBirthdayGoals', () => {
+	it('parser målbare mål og rene intensjonsmål fra markør-blokken', () => {
+		const message =
+			'Da setter vi dem!\n\n<bursdagsmål>\n- Løpe til neste bursdag: 600 km\n- Lese: 6 bøker\n- Skjermfri etter 22\n</bursdagsmål>';
+		expect(parseBirthdayGoals(message)).toEqual([
+			{ title: 'Løpe til neste bursdag', value: 600, unit: 'km' },
+			{ title: 'Lese', value: 6, unit: 'bøker' },
+			{ title: 'Skjermfri etter 22', value: null, unit: null }
+		]);
+	});
+
+	it('tåler desimaltall med komma og begrenser til 6 mål', () => {
+		const lines = Array.from({ length: 9 }, (_, i) => `- Mål ${i}: ${i} ganger`).join('\n');
+		expect(parseBirthdayGoals(`<bursdagsmål>\n- Ned i vekt: 2,5 kg\n${lines}\n</bursdagsmål>`)[0])
+			.toEqual({ title: 'Ned i vekt', value: 2.5, unit: 'kg' });
+		expect(parseBirthdayGoals(`<bursdagsmål>\n${lines}\n</bursdagsmål>`)).toHaveLength(6);
+	});
+
+	it('er tom uten markører', () => {
+		expect(parseBirthdayGoals('Ingen mål her')).toEqual([]);
+	});
+});
+
+describe('formatThreadTranscript', () => {
+	it('lager Du/Resonans-transkript og stripper markør-blokker', () => {
+		const thread = [
+			{ role: 'user', text: 'Jeg er klar.' },
+			{ role: 'assistant', text: 'Hvor var du i fjor?\n\n<status>\nVar: sliten.\n</status>' },
+			{ role: 'user', text: 'Sliten, men i gang.' }
+		];
+		expect(formatThreadTranscript(thread)).toBe(
+			'Du: Jeg er klar.\n\nResonans: Hvor var du i fjor?\n\nDu: Sliten, men i gang.'
+		);
+	});
+
+	it('tåler tomme og ugyldige tråder', () => {
+		expect(formatThreadTranscript(undefined)).toBe('');
+		expect(formatThreadTranscript([{ role: 'assistant', text: '<status>x</status>' }])).toBe('');
 	});
 });
 

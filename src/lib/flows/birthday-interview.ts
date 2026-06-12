@@ -91,3 +91,62 @@ export function parseStatusBlock(message: string): string {
 	const match = message.match(/<status>([\s\S]*?)<\/status>/i);
 	return match ? match[1].trim() : '';
 }
+
+// ── Bursdagsmål: speilets forslag blir ekte mål med frist neste bursdag ─────
+
+export interface BirthdayGoal {
+	title: string;
+	value: number | null;
+	unit: string | null;
+}
+
+/**
+ * Hent foreslåtte bursdagsmål fra speil-meldingen — linjene mellom
+ * <bursdagsmål>-markørene. «Tittel: 600 km» gir målbart mål; linjer uten
+ * tall blir rene intensjonsmål. Maks 6.
+ */
+export function parseBirthdayGoals(message: string): BirthdayGoal[] {
+	const match = message.match(/<bursdagsmål>([\s\S]*?)<\/bursdagsmål>/i);
+	if (!match) return [];
+	const goals: BirthdayGoal[] = [];
+	for (const raw of match[1].split('\n')) {
+		const line = raw.trim().replace(/^[-*•·]\s*/, '');
+		if (!line || line.length > 160) continue;
+		const m = line.match(/^(.+?):\s*(\d+(?:[.,]\d+)?)\s*(.*)$/);
+		if (m) {
+			goals.push({
+				title: m[1].trim(),
+				value: parseFloat(m[2].replace(',', '.')),
+				unit: m[3].trim() || null
+			});
+		} else {
+			goals.push({ title: line, value: null, unit: null });
+		}
+	}
+	return goals.slice(0, 6);
+}
+
+/**
+ * Ren-tekst-transkript av en chat-tråd («Samtalen er data» — hele samtalen
+ * arkiveres, ikke bare destillatet). Markør-blokkene strippes; de bor
+ * allerede som seksjoner i selve selvangivelsen.
+ */
+export function formatThreadTranscript(thread: unknown): string {
+	if (!Array.isArray(thread)) return '';
+	return thread
+		.filter(
+			(m): m is { role: string; text: string } =>
+				!!m &&
+				typeof (m as { role?: unknown }).role === 'string' &&
+				typeof (m as { text?: unknown }).text === 'string'
+		)
+		.map((m) => {
+			const text = m.text
+				.replace(/<status>[\s\S]*?<\/status>/gi, '')
+				.replace(/<bursdagsmål>[\s\S]*?<\/bursdagsmål>/gi, '')
+				.trim();
+			return text ? `${m.role === 'user' ? 'Du' : 'Resonans'}: ${text}` : '';
+		})
+		.filter(Boolean)
+		.join('\n\n');
+}
