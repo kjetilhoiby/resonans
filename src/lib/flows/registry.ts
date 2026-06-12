@@ -1247,6 +1247,7 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 		domain: 'self',
 		trigger: 'manual',
 		focus: true,
+		resumable: true,
 		estimatedMinutes: 15,
 		steps: [
 			{

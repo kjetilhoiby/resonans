@@ -144,3 +144,50 @@ export interface RichChatMsg {
 	statusWidget?: WeatherStatusWidget | null;
 	confirmAction?: string;
 }
+
+// ── Flow-utkast: delvis gjennomføring som kan gjenopptas ─────────────────────
+// Flows med `resumable: true` lagrer flowData + steg fortløpende i localStorage
+// (per enhet). FlowSheet gjenoppretter ved neste åpning og rydder ved levering.
+
+export interface FlowDraft {
+	v: 1;
+	flowId: string;
+	stepIndex: number;
+	data: Record<string, unknown>;
+	savedAt: number;
+}
+
+/** Utkast eldre enn dette ignoreres — et halvt bursdagsintervju fra i fjor skal ikke spøke */
+export const FLOW_DRAFT_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
+
+export function flowDraftKey(flowId: string): string {
+	return `flow-draft:${flowId}`;
+}
+
+export function serializeFlowDraft(
+	flowId: string,
+	stepIndex: number,
+	data: Record<string, unknown>,
+	now = Date.now()
+): string {
+	const draft: FlowDraft = { v: 1, flowId, stepIndex, data, savedAt: now };
+	return JSON.stringify(draft);
+}
+
+/** Valider og pakk ut et lagret utkast. null ved feil flow, alder, versjon eller korrupt JSON. */
+export function parseFlowDraft(
+	raw: string | null,
+	flowId: string,
+	now = Date.now()
+): { stepIndex: number; data: Record<string, unknown> } | null {
+	if (!raw) return null;
+	try {
+		const parsed = JSON.parse(raw) as Partial<FlowDraft>;
+		if (parsed?.v !== 1 || parsed.flowId !== flowId) return null;
+		if (typeof parsed.savedAt !== 'number' || now - parsed.savedAt > FLOW_DRAFT_MAX_AGE_MS) return null;
+		if (typeof parsed.stepIndex !== 'number' || !parsed.data || typeof parsed.data !== 'object') return null;
+		return { stepIndex: parsed.stepIndex, data: parsed.data as Record<string, unknown> };
+	} catch {
+		return null;
+	}
+}

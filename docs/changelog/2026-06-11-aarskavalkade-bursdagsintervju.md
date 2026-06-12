@@ -90,7 +90,14 @@ Poenget med intervjuet er akkumulering: svarene lagres per år, slik at neste å
 - Showet får en «Dit du vil»-quote-slide når `direction` er besvart. estimatedMinutes 10 → 15.
 - «Årets beste» beholdt og utvidet med **beste sang** og **beste tur** (seksjoner, skjemafelt og show-sliden).
 
-### Fase 12: Oppdagbarhet
+### Fase 12: Gjenopptakbare utkast
+
+- Flows kan nå merkes `resumable: true` (kun selvangivelsen foreløpig): `FlowSheet` lagrer flowData + steg fortløpende i localStorage (`flow-draft:{flowId}`) og gjenoppretter ved neste åpning med en «Fortsetter der du slapp»-notis. Utkastet ryddes ved levering; eldre enn 14 dager ignoreres; `initialData` (kontekst per åpning) overstyrer alltid utkastets kontekstnøkler.
+- Ren utkast-logikk (`serializeFlowDraft`/`parseFlowDraft`/`flowDraftKey`) i `flow-helpers.ts` med tester (versjon, flow-id, alder, korrupt JSON).
+- Begrensninger: per enhet (localStorage, ikke kryss-enhet), og forlater man midt i et chat-steg starter det steget på nytt — fullførte stegs svar (inkl. chat-tråder) overlever.
+- Verifisert live i Chromium: fyll ut → reload → gjenopptatt på riktig steg med feltverdier intakt.
+
+### Fase 13: Oppdagbarhet
 
 - `src/lib/server/chat-router.ts`: `bursdag|fødselsdag|kavalkade` ruter til self-domenet med hint om `/kavalkade`. Test lagt til i `chat-router.test.ts`.
 
