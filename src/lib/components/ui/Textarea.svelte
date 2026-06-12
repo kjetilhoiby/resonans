@@ -7,6 +7,7 @@
 		disabled?: boolean;
 		required?: boolean;
 		className?: string;
+		ariaLabel?: string;
 		onChange?: (event: Event) => void;
 		value?: string;
 	}
@@ -19,6 +20,7 @@
 		disabled = false,
 		required = false,
 		className = '',
+		ariaLabel,
 		onChange,
 		value = $bindable('')
 	}: Props = $props();
@@ -31,6 +33,7 @@
 	{placeholder}
 	{disabled}
 	{required}
+	aria-label={ariaLabel}
 	bind:value
 	onchange={onChange}
 	class={`ds-input ds-textarea ${className}`.trim()}

@@ -36,19 +36,43 @@ hovedsiden, og burde følge samme mønster som resten.
   fra før kildene fikk egen underside. Status-henting beholdt for tellerne på
   «Kilder»-kortet.
 
-### Fase 3: Oppdatert lenke i Google Chat-nudge
+### Fase 3: Parsjekk flyttet til Familie-temaet
+
+Den daglige parsjekken er en daglig vane, ikke en innstilling — den hører
+hjemme i parforhold/familie-domenet, ikke under settings.
+
+- `src/routes/api/relationship/checkin/+server.ts`: Nytt API (GET status,
+  POST submit) etter samme mønster som egenfrekvens-checkin. Gjenbruker
+  `$lib/server/relationship-checkin`.
+- `src/lib/components/domain/family/RelationshipCheckinCard.svelte`:
+  Selvstendig kort som henter status på mount og lagrer via APIet. Rendrer
+  ingenting uten bekreftet partner. Score velges med 1–7-knapper
+  (`data-track="parsjekk:score"`), notat-felt med aria-label.
+- `FamilyDashboard.svelte`: Kortet vises øverst i «Familietre»-visningen.
+- `src/lib/components/ui/Textarea.svelte`: Fikk `ariaLabel`-prop (manglet).
+- `/settings/profile`: Parsjekk-skjemaet og `submitRelationshipCheckin`-action
+  fjernet; Partner-kortet lenker i stedet til `/tema/familie`.
+
+### Fase 4: Oppdatert lenke i Google Chat-nudge
 
 - `src/lib/server/google-chat.ts`: Parsjekk-nudgen lenket til
   `/settings#profil?nudgeTrack=...` (feilformet URL med fragment før query).
-  Oppdatert til `/settings/profile?nudgeTrack=...`.
+  Oppdatert til `/tema/familie?nudgeTrack=...` der parsjekken nå bor.
+  NB: forutsetter at brukeren har et tema som heter «Familie» (navneoppslag
+  i `/tema/[id]`) — nudgen er kun aktuell for brukere med partner.
 
 ## Beslutninger
 
 - Profil og Partner holdes på samme underside — partnerkoblingen er personinfo
   og kortene var allerede gruppert sammen.
+- Parsjekken bor i Familie-dashboardet (parforhold er del av family-domenet);
+  selve partner*koblingen* (invitasjoner) forblir under profil, siden den er
+  konto-administrasjon.
+- Parsjekk-kortet henter status selv i stedet for å gå via
+  `FamilyDashboardData`/dashboard-cache — dagsfersk status skal ikke caches
+  sammen med resten av dashboardet.
 - Hovedsidens load henter nå bare brukeren (for profilvarsel og
-  varslingsteller); relasjons- og parsjekk-spørringene kjører kun på
-  undersiden.
+  varslingsteller); relasjonsspørringene kjører kun på undersiden.
 
 ## Verifisering
 
