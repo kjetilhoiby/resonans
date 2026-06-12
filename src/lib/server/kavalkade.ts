@@ -193,6 +193,99 @@ export function summarizeYear(
 	};
 }
 
+// ── Sporthistorikk: måned for måned + år for år ─────────────────────────────
+
+export interface ChartPoint {
+	label: string;
+	value: number;
+}
+
+export interface SportSeries {
+	family: string;
+	/** true: verdiene er km, false: antall økter */
+	asDistance: boolean;
+	/** Inneværende bursdagsår, måned for måned (kalendermåneder som overlapper vinduet) */
+	monthly: ChartPoint[];
+	/** Bursdagsår bakover så langt det finnes data, eldste først */
+	yearly: ChartPoint[];
+}
+
+const MAX_HISTORY_YEARS = 6;
+
+/**
+ * Bygg graf-serier for de største sportene i inneværende bursdagsår:
+ * månedssøyler for året og årstotaler bakover til eldste datapunkt.
+ */
+export function buildSportHistory(
+	current: KavalkadeWindow,
+	workoutDays: WorkoutDayRow[],
+	opts: { maxSports?: number } = {}
+): SportSeries[] {
+	const { maxSports = 3 } = opts;
+	if (workoutDays.length === 0) return [];
+
+	const monthFmt = new Intl.DateTimeFormat('nb-NO', { month: 'short' });
+	const shiftYears = (d: Date, years: number) =>
+		new Date(d.getFullYear() + years, d.getMonth(), d.getDate());
+
+	// Topp-sporter etter antall økter i inneværende år — samme rekkefølge som summarizeYear
+	const counts = new Map<string, number>();
+	for (const row of workoutDays) {
+		if (!inWindow(row.date, current)) continue;
+		counts.set(row.sportFamily, (counts.get(row.sportFamily) ?? 0) + row.count);
+	}
+	const topFamilies = [...counts.entries()]
+		.sort((a, b) => b[1] - a[1])
+		.slice(0, maxSports)
+		.map(([family]) => family);
+
+	const earliest = workoutDays.reduce(
+		(min, r) => (r.date < min ? r.date : min),
+		workoutDays[0].date
+	);
+
+	return topFamilies.map((family) => {
+		const rows = workoutDays.filter((r) => r.sportFamily === family);
+		const totalMeters = rows.reduce((sum, r) => sum + r.distanceMeters, 0);
+		const asDistance = totalMeters >= 1000;
+
+		const valueIn = (start: Date, end: Date) => {
+			let meters = 0;
+			let count = 0;
+			for (const r of rows) {
+				if (r.date >= start && r.date < end) {
+					meters += r.distanceMeters;
+					count += r.count;
+				}
+			}
+			return asDistance ? round1(meters / 1000) : count;
+		};
+
+		const monthly: ChartPoint[] = [];
+		let cursor = new Date(current.start.getFullYear(), current.start.getMonth(), 1);
+		while (cursor < current.end) {
+			const nextMonth = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+			const rangeStart = cursor < current.start ? current.start : cursor;
+			const rangeEnd = nextMonth < current.end ? nextMonth : current.end;
+			monthly.push({ label: monthFmt.format(cursor).replace('.', ''), value: valueIn(rangeStart, rangeEnd) });
+			cursor = nextMonth;
+		}
+
+		const yearly: ChartPoint[] = [];
+		for (let back = MAX_HISTORY_YEARS - 1; back >= 0; back--) {
+			const start = shiftYears(current.start, -back);
+			const end = shiftYears(current.end, -back);
+			if (end <= earliest) continue; // før eldste datapunkt — utelat året
+			yearly.push({
+				label: `${start.getFullYear()}–${String(end.getFullYear()).slice(2)}`,
+				value: valueIn(start, end)
+			});
+		}
+
+		return { family, asDistance, monthly, yearly };
+	});
+}
+
 const SPORT_LABELS: Record<string, string> = {
 	running: 'løpt',
 	walking: 'gått',

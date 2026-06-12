@@ -141,6 +141,51 @@ describe('buildShowSlides', () => {
 		expect(slides.map((s) => s.kind)).toEqual(['intro', 'outro']);
 	});
 
+	it('fester graf-serier på sport-slides og krever minst to år for år-for-år', () => {
+		const input = baseInput({
+			current: {
+				...baseInput().current,
+				sports: [
+					{ family: 'running', label: 'løpt', count: 5, distanceKm: 512.4, durationHours: 47 },
+					{ family: 'strength', label: 'styrketrent', count: 3, distanceKm: 0, durationHours: 3 }
+				]
+			},
+			sportHistory: [
+				{
+					family: 'running',
+					asDistance: true,
+					monthly: [{ label: 'jul', value: 64 }],
+					yearly: [
+						{ label: '2024–25', value: 387 },
+						{ label: '2025–26', value: 512 }
+					]
+				},
+				{
+					family: 'strength',
+					asDistance: false,
+					monthly: [{ label: 'jul', value: 0 }],
+					yearly: [{ label: '2025–26', value: 3 }] // bare ett år — ingen graf
+				}
+			]
+		});
+		const stats = buildShowSlides(input).filter((s) => s.kind === 'stat');
+		expect(stats[0].monthly).toEqual([{ label: 'jul', value: 64 }]);
+		expect(stats[0].yearly).toHaveLength(2);
+		expect(stats[1].monthly).toBeUndefined(); // alle måneder 0
+		expect(stats[1].yearly).toBeUndefined(); // under to år
+	});
+
+	it('setter writer og strøm-tilpasset varighet på hilsner', () => {
+		const text = 'Et stille år er også et liv. '.repeat(10).trim();
+		const slides = buildShowSlides(
+			baseInput({ greetings: [{ character: 'William Stoner', book: 'Stoner', text }] })
+		);
+		const greeting = slides.find((s) => s.kind === 'quote');
+		expect(greeting).toMatchObject({ writer: 'William Stoner' });
+		// 290 tegn på 75 tegn/s ≈ 3,9 s strøm + skrive-pause + lesero > 8 s
+		expect(greeting && greeting.durationMs).toBeGreaterThan(8000);
+	});
+
 	it('gir alltid outroen konfetti, introen bare på selve dagen', () => {
 		const foer = buildShowSlides(baseInput());
 		expect(foer[0]).toMatchObject({ kind: 'intro', confetti: false });

@@ -73,7 +73,15 @@ Poenget med intervjuet er akkumulering: svarene lagres per år, slik at neste å
 - Plakat-utkast for kavalkade-kortene på `/design/kavalkade-fest` (public, mock-data, ikke i visuell regresjon): hver seksjon én mettet kulør, implementert som rene token-overrides (`--card-*`, `--text-*`, `--section-label-color` + nye komponent-tokens `--kv-stat-bg/edge/value-color`, `--kv-ord-color`, `--kv-greeting-edge`) — komponentene er uendret appens faktiske.
 - Mørk/Fest-veksler på live-demoen `/design/kavalkade-show`. Tas skinnet i bruk, flyttes overridene til `/kavalkade` og demoen opp fra utkast.
 
-### Fase 10: Oppdagbarhet
+### Fase 10: Grafer og bokstav-strøm
+
+- `buildSportHistory` i `kavalkade.ts` (ren, testet): per toppsport månedsserie for inneværende bursdagsår + årstotaler bakover så langt det finnes data (maks 6 år, km for distansesporter, økter ellers). Datalasteren henter nå hele treningshistorikken (`workout_daily_aggregates` uten datogulv).
+- Sport-slidene i showet får **månedssøyler** (staggered scaleY-grow) og **år-for-år-løp** (horisontale barer, inneværende år i gradient) under hero-tallet. År-for-år vises bare med minst to år; måneder bare når noe er > 0.
+- **Bokstav-strøm**: intro-/outro-titler strømmer inn tegn for tegn (CSS, ord-wrappet med blur-inn); quote-tekst strømmer som chat (rAF, `STREAM_CHARS_PER_SEC = 75`) med blinkende caret. Hilsner fra bokhylla åpner med «**{karakter} skriver** …»-indikator (pulserende prikker) før teksten tikker inn — attribusjonen fades inn når strømmen er ferdig. Quote-varigheter beregnes av strømlengden (`quoteDuration`).
+- `prefers-reduced-motion` dekker nå også JS-animasjonene (count-up og strøm hopper til slutt-tilstand via matchMedia).
+- /design: frossen stat-demo viser grafene, hilsen-demoen har writer; baseline regenerert. Live-demoens mock-input fikk sporthistorikk.
+
+### Fase 11: Oppdagbarhet
 
 - `src/lib/server/chat-router.ts`: `bursdag|fødselsdag|kavalkade` ruter til self-domenet med hint om `/kavalkade`. Test lagt til i `chat-router.test.ts`.
 

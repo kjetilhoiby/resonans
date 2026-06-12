@@ -6,6 +6,19 @@
 import type { InterviewAnswers } from '$lib/flows/birthday-interview';
 import type { Greeting, MonthEntry, OrdskyWordView, YearData } from './types';
 
+export interface ChartBar {
+	label: string;
+	value: number;
+}
+
+/** Strukturelt lik SportSeries fra $lib/server/kavalkade (som er server-only) */
+export interface SportHistoryInput {
+	family: string;
+	asDistance: boolean;
+	monthly: ChartBar[];
+	yearly: ChartBar[];
+}
+
 export type ShowSlideDef =
 	| { kind: 'intro'; title: string; sub?: string; hue: number; durationMs: number; confetti?: boolean }
 	| {
@@ -17,6 +30,10 @@ export type ShowSlideDef =
 			sub?: string;
 			hue: number;
 			durationMs: number;
+			/** Måned-for-måned-søyler for inneværende bursdagsår */
+			monthly?: ChartBar[];
+			/** År-for-år så langt det finnes data (vises med minst to år) */
+			yearly?: ChartBar[];
 	  }
 	| { kind: 'list'; title: string; items: string[]; sub?: string; hue: number; durationMs: number }
 	| { kind: 'ordsky'; title: string; words: OrdskyWordView[]; hue: number; durationMs: number }
@@ -25,6 +42,8 @@ export type ShowSlideDef =
 			title?: string;
 			text: string;
 			attribution?: string;
+			/** Navn som «skriver …» mens teksten strømmer inn (chat-følelse) */
+			writer?: string;
 			hue: number;
 			durationMs: number;
 	  }
@@ -37,6 +56,7 @@ export interface ShowInput {
 	previous: YearData;
 	timeline: MonthEntry[];
 	ordsky: OrdskyWordView[];
+	sportHistory?: SportHistoryInput[];
 	interview: { thisYear: InterviewAnswers | null };
 	prophecy: string | null;
 	greetings: Greeting[];
@@ -47,6 +67,15 @@ const HUES = [258, 12, 152, 38, 205, 320, 88, 230];
 
 const STAT_MS = 5500;
 const QUOTE_MS = 8000;
+
+/** Tegn per sekund i bokstav-strømmen (holdes i synk med ShowSlide) */
+export const STREAM_CHARS_PER_SEC = 75;
+
+/** Varighet for quote-slides: «skriver …»-pause + strømmetid + lesero */
+function quoteDuration(text: string, hasWriter: boolean): number {
+	const streamMs = (text.length / STREAM_CHARS_PER_SEC) * 1000;
+	return Math.min(22000, Math.max(QUOTE_MS, (hasWriter ? 1400 : 400) + streamMs + 3000));
+}
 
 /** «årets beste»-feltene fra intervjuet, med visningsetikett */
 const BEST_OF: Array<{ id: string; label: string }> = [
@@ -80,11 +109,16 @@ export function buildShowSlides(input: ShowInput): ShowSlideDef[] {
 		confetti: daysUntil === 0
 	});
 
-	// Sport-tall — distansesporter som km, resten som økter (maks 3)
+	// Sport-tall — distansesporter som km, resten som økter (maks 3),
+	// med månedssøyler og år-for-år-graf når historikken finnes
 	const prevByFamily = new Map(input.previous.sports.map((s) => [s.family, s]));
+	const historyByFamily = new Map((input.sportHistory ?? []).map((h) => [h.family, h]));
 	for (const sport of input.current.sports.slice(0, 3)) {
 		const prev = prevByFamily.get(sport.family);
 		const asDistance = sport.distanceKm >= 1;
+		const history = historyByFamily.get(sport.family);
+		const monthly = history?.monthly.some((m) => m.value > 0) ? history.monthly : undefined;
+		const yearly = history && history.yearly.length >= 2 ? history.yearly : undefined;
 		slides.push({
 			kind: 'stat',
 			label: `har du ${sport.label}`,
@@ -96,8 +130,10 @@ export function buildShowSlides(input: ShowInput): ShowSlideDef[] {
 					? `i fjor: ${prev.distanceKm.toLocaleString('nb-NO')} km`
 					: `i fjor: ${prev.count} økter`
 				: undefined,
+			monthly,
+			yearly,
 			hue: nextHue(),
-			durationMs: STAT_MS
+			durationMs: monthly || yearly ? STAT_MS + 2000 : STAT_MS
 		});
 	}
 
@@ -171,7 +207,7 @@ export function buildShowSlides(input: ShowInput): ShowSlideDef[] {
 			title: 'Det du husker best',
 			text: answers.memory,
 			hue: nextHue(),
-			durationMs: QUOTE_MS
+			durationMs: quoteDuration(answers.memory, false)
 		});
 	}
 	const bestOf = answers
@@ -187,15 +223,15 @@ export function buildShowSlides(input: ShowInput): ShowSlideDef[] {
 		});
 	}
 
-	// Hilsner fra romankarakterene
+	// Hilsner fra romankarakterene — «William Stoner skriver …» + bokstav-strøm
 	for (const greeting of input.greetings) {
 		slides.push({
 			kind: 'quote',
-			title: 'Hilsen fra bokhylla',
 			text: greeting.text,
 			attribution: greeting.book ? `${greeting.character}, «${greeting.book}»` : greeting.character,
+			writer: greeting.character,
 			hue: nextHue(),
-			durationMs: QUOTE_MS
+			durationMs: quoteDuration(greeting.text, true)
 		});
 	}
 
@@ -208,7 +244,7 @@ export function buildShowSlides(input: ShowInput): ShowSlideDef[] {
 				title: 'Spådommen for neste år',
 				text: firstParagraph,
 				hue: nextHue(),
-				durationMs: QUOTE_MS
+				durationMs: quoteDuration(firstParagraph, false)
 			});
 		}
 	}

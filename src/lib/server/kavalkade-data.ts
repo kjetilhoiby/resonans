@@ -15,12 +15,14 @@ import {
 } from '$lib/db/schema';
 import {
 	buildMonthTimeline,
+	buildSportHistory,
 	formatKavalkadeForPrompt,
 	getBirthdayWindows,
 	sportLabel,
 	summarizeYear,
 	type KavalkadeWindow,
 	type MonthTimelineEntry,
+	type SportSeries,
 	type SportSummary,
 	type YearSummary
 } from './kavalkade';
@@ -41,6 +43,8 @@ export interface KavalkadeData {
 	current: LabeledYearSummary;
 	previous: LabeledYearSummary;
 	timeline: MonthTimelineEntry[];
+	/** Graf-serier per toppsport: måned for måned i år + år-for-år så langt det finnes data */
+	sportHistory: SportSeries[];
 	ordsky: OrdskyWord[];
 	interview: {
 		thisYearKey: string;
@@ -91,10 +95,10 @@ export async function loadKavalkadeData(userId: string, today = new Date()): Pro
 		prophecyReflection,
 		greetingsReflection
 	] = await Promise.all([
+		// Hele historikken — år-for-år-grafen går så langt det finnes data
 		db.query.workoutDailyAggregates.findMany({
 			where: and(
 				eq(workoutDailyAggregates.userId, userId),
-				gte(workoutDailyAggregates.date, previous.start),
 				lt(workoutDailyAggregates.date, current.end)
 			)
 		}),
@@ -193,6 +197,7 @@ export async function loadKavalkadeData(userId: string, today = new Date()): Pro
 		current: labelSports(currentSummary),
 		previous: labelSports(previousSummary),
 		timeline,
+		sportHistory: buildSportHistory(current, workoutDays),
 		ordsky: buildOrdsky(taskRows.map((r) => r.text)),
 		interview: {
 			thisYearKey,

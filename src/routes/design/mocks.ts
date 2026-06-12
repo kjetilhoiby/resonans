@@ -937,14 +937,35 @@ export const kavalkadeShowSlidesMock: ShowSlideDef[] = [
 		decimals: 1,
 		unit: 'km',
 		sub: 'i fjor: 387,2 km',
+		monthly: [
+			{ label: 'jun', value: 18 },
+			{ label: 'jul', value: 64 },
+			{ label: 'aug', value: 48 },
+			{ label: 'sep', value: 41 },
+			{ label: 'okt', value: 39 },
+			{ label: 'nov', value: 30 },
+			{ label: 'des', value: 22 },
+			{ label: 'jan', value: 35 },
+			{ label: 'feb', value: 44 },
+			{ label: 'mar', value: 52 },
+			{ label: 'apr', value: 58 },
+			{ label: 'mai', value: 49 },
+			{ label: 'jun', value: 12 }
+		],
+		yearly: [
+			{ label: '2022–23', value: 201 },
+			{ label: '2023–24', value: 305 },
+			{ label: '2024–25', value: 387 },
+			{ label: '2025–26', value: 512 }
+		],
 		hue: 12,
-		durationMs: 5500
+		durationMs: 7500
 	},
 	{
 		kind: 'quote',
-		title: 'Hilsen fra bokhylla',
 		text: 'Et stille år er også et liv. Du har lest, du har gått, du har holdt ut.',
 		attribution: 'William Stoner, «Stoner»',
+		writer: 'William Stoner',
 		hue: 258,
 		durationMs: 8000
 	},
@@ -973,6 +994,56 @@ export const kavalkadeShowInputMock = {
 	previous: kavalkadePreviousYearMock,
 	timeline: kavalkadeTimelineMock,
 	ordsky: kavalkadeOrdskyMock,
+	sportHistory: [
+		{
+			family: 'running',
+			asDistance: true,
+			monthly: [
+				{ label: 'jun', value: 18 },
+				{ label: 'jul', value: 64 },
+				{ label: 'aug', value: 48 },
+				{ label: 'sep', value: 41 },
+				{ label: 'okt', value: 39 },
+				{ label: 'nov', value: 30 },
+				{ label: 'des', value: 22 },
+				{ label: 'jan', value: 35 },
+				{ label: 'feb', value: 44 },
+				{ label: 'mar', value: 52 },
+				{ label: 'apr', value: 58 },
+				{ label: 'mai', value: 49 },
+				{ label: 'jun', value: 12 }
+			],
+			yearly: [
+				{ label: '2022–23', value: 201 },
+				{ label: '2023–24', value: 305 },
+				{ label: '2024–25', value: 387 },
+				{ label: '2025–26', value: 512 }
+			]
+		},
+		{
+			family: 'walking',
+			asDistance: true,
+			monthly: [
+				{ label: 'jun', value: 9 },
+				{ label: 'jul', value: 26 },
+				{ label: 'aug', value: 21 },
+				{ label: 'sep', value: 17 },
+				{ label: 'okt', value: 14 },
+				{ label: 'nov', value: 11 },
+				{ label: 'des', value: 8 },
+				{ label: 'jan', value: 10 },
+				{ label: 'feb', value: 13 },
+				{ label: 'mar', value: 18 },
+				{ label: 'apr', value: 20 },
+				{ label: 'mai', value: 16 },
+				{ label: 'jun', value: 6 }
+			],
+			yearly: [
+				{ label: '2024–25', value: 201 },
+				{ label: '2025–26', value: 189 }
+			]
+		}
+	],
 	interview: { thisYear: kavalkadeInterviewAnswersMock },
 	prophecy:
 		'Jeg ser et år der løpeskoene runder 600 km før løvet faller, og der svømmetakene du så nølende begynte med blir like selvfølgelige som morgenkaffen.\n\nKrystallkulen er klar: mer av det som virker.',

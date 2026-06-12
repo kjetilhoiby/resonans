@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	buildMonthTimeline,
+	buildSportHistory,
 	formatKavalkadeForPrompt,
 	getBirthdayWindows,
 	selvangivelseFristLabel,
@@ -207,6 +208,64 @@ describe('selvangivelseFristLabel', () => {
 		expect(selvangivelseFristLabel(8)).toBeNull();
 		expect(selvangivelseFristLabel(0)).toBeNull(); // løpet er kjørt
 		expect(selvangivelseFristLabel(-1)).toBeNull();
+	});
+});
+
+describe('buildSportHistory', () => {
+	const window: KavalkadeWindow = {
+		start: new Date(2025, 5, 18),
+		end: new Date(2026, 5, 18)
+	};
+	const run = (date: Date, km: number) => ({
+		date,
+		sportFamily: 'running',
+		count: 1,
+		distanceMeters: km * 1000,
+		durationSeconds: 3600
+	});
+
+	it('lager månedsserie for året og årsserie så langt det finnes data', () => {
+		const [serie] = buildSportHistory(window, [
+			run(new Date(2023, 8, 1), 12), // bursdagsåret 2023–24
+			run(new Date(2024, 8, 1), 20), // 2024–25
+			run(new Date(2025, 7, 10), 30), // 2025–26 (inneværende)
+			run(new Date(2026, 2, 5), 25)
+		]);
+		expect(serie.family).toBe('running');
+		expect(serie.asDistance).toBe(true);
+		expect(serie.monthly).toHaveLength(13); // jun 2025 t.o.m. jun 2026
+		expect(serie.monthly[2]).toEqual({ label: 'aug', value: 30 });
+		expect(serie.yearly).toEqual([
+			{ label: '2023–24', value: 12 },
+			{ label: '2024–25', value: 20 },
+			{ label: '2025–26', value: 55 }
+		]);
+	});
+
+	it('bruker økter som enhet for sporter uten distanse', () => {
+		const [serie] = buildSportHistory(window, [
+			{ date: new Date(2025, 8, 1), sportFamily: 'strength', count: 4, distanceMeters: 0, durationSeconds: 3600 },
+			{ date: new Date(2024, 8, 1), sportFamily: 'strength', count: 7, distanceMeters: 0, durationSeconds: 3600 }
+		]);
+		expect(serie.asDistance).toBe(false);
+		expect(serie.yearly).toEqual([
+			{ label: '2024–25', value: 7 },
+			{ label: '2025–26', value: 4 }
+		]);
+	});
+
+	it('rangerer sporter etter økter i inneværende år og respekterer maxSports', () => {
+		const days = [
+			{ date: new Date(2025, 8, 1), sportFamily: 'running', count: 5, distanceMeters: 40000, durationSeconds: 1 },
+			{ date: new Date(2025, 8, 2), sportFamily: 'walking', count: 9, distanceMeters: 30000, durationSeconds: 1 },
+			{ date: new Date(2025, 8, 3), sportFamily: 'cycling', count: 2, distanceMeters: 50000, durationSeconds: 1 }
+		];
+		const series = buildSportHistory(window, days, { maxSports: 2 });
+		expect(series.map((s) => s.family)).toEqual(['walking', 'running']);
+	});
+
+	it('returnerer tom liste uten data', () => {
+		expect(buildSportHistory(window, [])).toEqual([]);
 	});
 });
 
