@@ -14,6 +14,15 @@ export interface InterviewSection {
 
 export const INTERVIEW_SECTIONS: InterviewSection[] = [
 	{ id: 'who', heading: 'Hvem er du i år?' },
+	// Rollene: hvor står du i hver av dem akkurat nå
+	{ id: 'role_dad', heading: 'Som pappa' },
+	{ id: 'role_partner', heading: 'Som partner' },
+	{ id: 'role_friend', heading: 'Som venn' },
+	{ id: 'role_work', heading: 'Som ansatt' },
+	// AI-syntese fra kropp-og-hode-chatten (psykisk helse, vekt, trening, søvn)
+	{ id: 'health_talk', heading: 'Kroppen og hodet' },
+	{ id: 'goals_past', heading: 'Hva ville du oppnå?' },
+	{ id: 'direction', heading: 'Hvor vil du videre?' },
 	{ id: 'changed', heading: 'Hva har endret seg?' },
 	{ id: 'started', heading: 'Hva har du begynt med?' },
 	{ id: 'stopped', heading: 'Hva har du sluttet med?' },
@@ -69,4 +78,14 @@ export function formatAnswersAsText(answers: InterviewAnswers): string {
 	return INTERVIEW_SECTIONS.filter((s) => s.id !== 'mirror' && answers[s.id])
 		.map((s) => `- ${s.heading} ${answers[s.id]}`)
 		.join('\n');
+}
+
+/**
+ * Hent AI-ens løpende oppsummering fra kropp-og-hode-chatten — innholdet
+ * mellom <status>-markørene i siste assistentmelding. Tom streng uten markører
+ * (bevisst strengt, så vi aldri lagrer løs prosa som status).
+ */
+export function parseStatusBlock(message: string): string {
+	const match = message.match(/<status>([\s\S]*?)<\/status>/i);
+	return match ? match[1].trim() : '';
 }

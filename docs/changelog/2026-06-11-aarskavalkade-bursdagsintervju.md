@@ -81,7 +81,15 @@ Poenget med intervjuet er akkumulering: svarene lagres per år, slik at neste å
 - `prefers-reduced-motion` dekker nå også JS-animasjonene (count-up og strøm hopper til slutt-tilstand via matchMedia).
 - /design: frossen stat-demo viser grafene, hilsen-demoen har writer; baseline regenerert. Live-demoens mock-input fikk sporthistorikk.
 
-### Fase 11: Oppdagbarhet
+### Fase 11: Selvangivelsen v2 — fire spørsmål, roller og kropp-og-hode-chat
+
+- Brukerinnsikt: selvangivelsen skal få på det rene **hvor var jeg i fjor → hva ville jeg oppnå → hvordan ble veien → hvor vil jeg videre**, på tvers av psykisk helse/vekt/trening/søvn og rollene (pappa, partner, venn, ansatt) — og tunge punkter skal kunne chattes videre på, ikke bare krysses av i skjema.
+- Nye seksjoner i `INTERVIEW_SECTIONS` (stabil markdown-kontrakt som før): `role_dad/role_partner/role_friend/role_work`, `health_talk`, `goals_past`, `direction`.
+- Nye flow-steg: **Rollene dine** (skjema, fire textareas) → **Kroppen og hodet** (chat, autoSend): AI-en intervjuer om psykisk helse/vekt/trening/søvn langs de fire spørsmålene, med kavalkade-måledata og fjorårets selvangivelse i prompten («vekta gikk fra X til Y — var det planen?»). AI-en vedlikeholder en `<status>`-blokk per melding (inbox-mønsteret); `parseStatusBlock` (ren, testet) henter den i onComplete som seksjonsinnhold → **Mål og retning** (skjema: `goals_past` + `direction`).
+- Speil-steget tilbyr eksplisitt å chatte videre på enkeltsvar. Chat-stegene er ekte flersvingssamtaler — «Neste» trykkes når man er ferdig.
+- Showet får en «Dit du vil»-quote-slide når `direction` er besvart. estimatedMinutes 10 → 15.
+
+### Fase 12: Oppdagbarhet
 
 - `src/lib/server/chat-router.ts`: `bursdag|fødselsdag|kavalkade` ruter til self-domenet med hint om `/kavalkade`. Test lagt til i `chat-router.test.ts`.
 

@@ -222,6 +222,15 @@ export function buildShowSlides(input: ShowInput): ShowSlideDef[] {
 			durationMs: Math.max(STAT_MS, 2500 + bestOf.length * 700)
 		});
 	}
+	if (answers?.direction) {
+		slides.push({
+			kind: 'quote',
+			title: 'Dit du vil',
+			text: answers.direction,
+			hue: nextHue(),
+			durationMs: quoteDuration(answers.direction, false)
+		});
+	}
 
 	// Hilsner fra romankarakterene — «William Stoner skriver …» + bokstav-strøm
 	for (const greeting of input.greetings) {

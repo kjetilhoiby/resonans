@@ -3,7 +3,8 @@ import {
 	buildInterviewMarkdown,
 	extractInterviewAnswers,
 	formatAnswersAsText,
-	parseInterviewMarkdown
+	parseInterviewMarkdown,
+	parseStatusBlock
 } from './birthday-interview';
 
 describe('extractInterviewAnswers', () => {
@@ -71,6 +72,34 @@ describe('buildInterviewMarkdown + parseInterviewMarkdown', () => {
 	it('tåler tom og overskriftsløs tekst', () => {
 		expect(parseInterviewMarkdown('')).toEqual({});
 		expect(parseInterviewMarkdown('bare løs tekst uten overskrift')).toEqual({});
+	});
+});
+
+describe('roller, helse og retning', () => {
+	it('runder tur-retur med de nye seksjonene', () => {
+		const answers = {
+			who: 'Meg',
+			role_dad: 'Mer til stede enn i fjor',
+			role_partner: 'Vi har funnet rytmen igjen',
+			health_talk: 'Var: sliten. Ville: ned i vekt. Veien: 84 → 82. Videre: holde søvnen.',
+			goals_past: 'Løpe 500 km',
+			direction: 'Mindre skjerm, mer svømming'
+		};
+		expect(parseInterviewMarkdown(buildInterviewMarkdown(answers))).toEqual(answers);
+	});
+});
+
+describe('parseStatusBlock', () => {
+	it('henter innholdet mellom status-markørene', () => {
+		const message = 'Fint — da går vi videre!\n\n<status>\nVar: sliten etter flytting.\nVille: ned 3 kg.\nVeien: 84,6 → 82,1.\nVidere: beholde morgentreningen.\n</status>';
+		expect(parseStatusBlock(message)).toBe(
+			'Var: sliten etter flytting.\nVille: ned 3 kg.\nVeien: 84,6 → 82,1.\nVidere: beholde morgentreningen.'
+		);
+	});
+
+	it('er tom uten markører — lagrer aldri løs prosa', () => {
+		expect(parseStatusBlock('Bare en vanlig melding uten oppsummering')).toBe('');
+		expect(parseStatusBlock('')).toBe('');
 	});
 });
 

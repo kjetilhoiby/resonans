@@ -3,7 +3,7 @@
  */
 
 import type { Flow, FlowId, FlowDomain } from './types';
-import { extractInterviewAnswers, formatAnswersAsText } from './birthday-interview';
+import { extractInterviewAnswers, formatAnswersAsText, parseStatusBlock } from './birthday-interview';
 import {
 	ACTIONS_PYRAMID,
 	ACTIONS_SLIDER_LABELS,
@@ -1247,7 +1247,7 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 		domain: 'self',
 		trigger: 'manual',
 		focus: true,
-		estimatedMinutes: 10,
+		estimatedMinutes: 15,
 		steps: [
 			{
 				id: 'hvem',
@@ -1259,6 +1259,85 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 						type: 'textarea',
 						label: 'Beskriv deg selv akkurat nå',
 						placeholder: 'Hva opptar deg? Hva bruker du tiden på? Hva tror du på?'
+					}
+				]
+			},
+			{
+				id: 'roller',
+				type: 'form',
+				title: 'Rollene dine',
+				fields: [
+					{
+						id: 'role_dad',
+						type: 'textarea',
+						label: 'Som pappa',
+						placeholder: 'Hvor står du? Hva er du stolt av, hva gnager?'
+					},
+					{
+						id: 'role_partner',
+						type: 'textarea',
+						label: 'Som partner',
+						placeholder: 'Én–to ærlige setninger'
+					},
+					{
+						id: 'role_friend',
+						type: 'textarea',
+						label: 'Som venn',
+						placeholder: 'Hvem har du vært der for — og motsatt?'
+					},
+					{
+						id: 'role_work',
+						type: 'textarea',
+						label: 'Som ansatt',
+						placeholder: 'Hvor står du i jobben akkurat nå?'
+					}
+				]
+			},
+			{
+				id: 'kropp_og_hode',
+				type: 'chat',
+				title: 'Kroppen og hodet',
+				autoSend: true,
+				buildPrompts: (data) => {
+					const kavalkade = typeof data._kavalkadeSummary === 'string' ? data._kavalkadeSummary : '';
+					const lastYear = typeof data._lastYearAnswers === 'string' ? data._lastYearAnswers : '';
+					return {
+						prompt: 'Jeg er klar for kropp-og-hode-delen av selvangivelsen.',
+						systemPrompt: [
+							'Du intervjuer brukeren om kropp og hode i året som gikk: psykisk helse, vekt, trening og søvn. Dette er den tunge delen av det årlige bursdagsintervjuet («selvangivelsen»), og målet er å få fire ting på det rene:',
+							'1. Hvor var du for et år siden?',
+							'2. Hva ville du oppnå?',
+							'3. Hvordan ble veien?',
+							'4. Hvor vil du videre?',
+							'',
+							kavalkade ? `Måledata fra året (bruk dem aktivt — «vekta gikk fra X til Y, var det planen?»):\n${kavalkade}` : '',
+							lastYear ? `\nFjorårets selvangivelse (sitér gjerne når du spør «hvor var du»):\n${lastYear}` : '',
+							'',
+							'Arbeidsmåte: Still ETT spørsmål om gangen, kort og konkret. Grav videre der svaret er ullent eller interessant — brukeren kan chatte så lenge de vil. Dekk både psykisk helse og kropp; ikke ramse opp alle fire spørsmålene på en gang.',
+							'',
+							'Etter HVER respons: oppdater en kompakt oppsummering mellom markørene <status> og </status> — 3–6 linjer i brukerens egne formuleringer som dekker de fire spørsmålene så langt. Denne blokken lagres som selvangivelsens «Kroppen og hodet»-seksjon.',
+							'',
+							'Når brukeren virker ferdig, si kort at de kan gå videre i intervjuet. Norsk, varm, konkret — venn, ikke terapeut.'
+						].join('\n')
+					};
+				}
+			},
+			{
+				id: 'maal_og_retning',
+				type: 'form',
+				title: 'Mål og retning',
+				fields: [
+					{
+						id: 'goals_past',
+						type: 'textarea',
+						label: 'Hva ville du oppnå i året som gikk?',
+						placeholder: 'Ambisjonene slik du husker dem fra i fjor — store eller små'
+					},
+					{
+						id: 'direction',
+						type: 'textarea',
+						label: 'Hvor vil du videre?',
+						placeholder: 'Retningen for året som kommer — som pappa, partner, venn, ansatt, og for kropp og hode'
 					}
 				]
 			},
@@ -1338,6 +1417,8 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 							'2. Koble gjerne ett av svarene til et tall fra kavalkaden hvis det forsterker poenget.',
 							'3. Avslutt med ETT åpent spørsmål som graver litt dypere.',
 							'',
+							'Brukeren kan chatte videre på hvilket som helst enkeltsvar her — tilby det eksplisitt, og følg dem dit de vil før de avslutter intervjuet.',
+							'',
 							'Språk: norsk. Tone: nær venn, ikke terapeut. Ikke list opp svarene tilbake.'
 						].join('\n')
 					};
@@ -1346,6 +1427,12 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 		],
 		async onComplete(data) {
 			const answers = extractInterviewAnswers(data);
+			// Kropp-og-hode-chatten: AI-ens løpende <status>-blokk er seksjonsinnholdet
+			const helse =
+				typeof data.kropp_og_hode_lastMessage === 'string'
+					? parseStatusBlock(data.kropp_og_hode_lastMessage)
+					: '';
+			if (helse) answers.health_talk = helse;
 			const mirror = typeof data.speil_lastMessage === 'string' ? data.speil_lastMessage.trim() : '';
 			if (mirror) answers.mirror = mirror;
 			if (Object.keys(answers).length === 0) return;
