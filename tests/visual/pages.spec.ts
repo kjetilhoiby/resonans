@@ -55,6 +55,7 @@ const designSections = [
 	'skjema',
 	'navigasjon',
 	'ukeplan',
+	'kavalkade',
 	'hjem',
 	'boker',
 	'sheets',

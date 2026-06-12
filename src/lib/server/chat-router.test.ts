@@ -49,6 +49,12 @@ describe('routeChatRequest', () => {
 			expect(r.domains).toContain('jobb');
 		});
 
+		it('ruter bursdagsmeldinger til self med kavalkade-hint', () => {
+			const r = routeChatRequest('Om en uke har jeg bursdag');
+			expect(r.domains).toContain('self');
+			expect(r.hints.some((h) => h.includes('/kavalkade'))).toBe(true);
+		});
+
 		it('ruter temameldinger til themes', () => {
 			const r = routeChatRequest('Vis meg tema helse');
 			expect(r.domains).toContain('themes');

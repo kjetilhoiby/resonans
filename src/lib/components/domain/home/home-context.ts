@@ -315,6 +315,10 @@ export interface HomeContext {
 	quickWinFlowOpen: boolean;
 	quickWinOpenItems: Array<{ id: string; text: string }>;
 
+	// ── Selvangivelsen (bursdagsintervju) ──
+	birthdayInterviewFlowOpen: boolean;
+	birthdayInterviewFlowContext: FlowContext;
+
 	// ── Dato/derivert ──
 	dateLabel: string;
 

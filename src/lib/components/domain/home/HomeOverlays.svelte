@@ -398,6 +398,10 @@
 	<FlowSheet flow={FLOWS['inbox_note']} onclose={() => { ctx.inboxNoteFlowOpen = false; }} oncomplete={() => { ctx.inboxNoteFlowOpen = false; void ctx.loadActionCandidates(); }} />
 {/if}
 
+{#if ctx.birthdayInterviewFlowOpen}
+	<FlowSheet flow={FLOWS['birthday_interview']} context={ctx.birthdayInterviewFlowContext} onclose={() => { ctx.birthdayInterviewFlowOpen = false; }} oncomplete={() => { ctx.birthdayInterviewFlowOpen = false; void ctx.loadActionCandidates(); }} />
+{/if}
+
 <!-- Snooze-meny -->
 {#if ctx.snoozeMenuChipId}
 	<button class="snooze-backdrop" aria-label="Lukk snooze-meny" onclick={ctx.closeSnoozeMenu}></button>

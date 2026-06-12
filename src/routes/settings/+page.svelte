@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, Button, Input, PageHeader, PageSection, Radio, Textarea } from '$lib/components/ui';
+	import { AppPage, Button, DateInput, Input, PageHeader, PageSection, Radio, Textarea } from '$lib/components/ui';
 	import type { PageData, ActionData } from './$types';
 	import { onMount } from 'svelte';
 
@@ -44,6 +44,25 @@
 		Boolean(googleSheetsStatus?.sensor?.isExpired)
 	);
 	const hasProfileWarning = $derived(!user?.name || !user?.email);
+
+	// ── Fødselsdato (self-personen — driver kavalkaden og selvangivelse-fristen) ──
+	let birthDateValue = $state(data.selfBirthDate ?? '');
+	let birthDateState = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
+	async function saveBirthDate() {
+		birthDateState = 'saving';
+		try {
+			const res = await fetch('/api/profile/birthdate', {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ birthDate: birthDateValue || null })
+			});
+			birthDateState = res.ok ? 'saved' : 'error';
+		} catch {
+			birthDateState = 'error';
+		}
+		if (birthDateState === 'saved') setTimeout(() => (birthDateState = 'idle'), 1800);
+	}
 
 	// Check Withings status on mount
 	onMount(async () => {
@@ -298,7 +317,7 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 				<div class="card-icon">👤</div>
 				<h2>Profil</h2>
 				<p class="help-text">
-					Samle personinfo på ett sted. Navn og e-post vises her nå; høyde og kjønn kan legges til i neste steg.
+					Samle personinfo på ett sted. Navn, e-post og fødselsdato vises her nå; høyde og kjønn kan legges til i neste steg.
 				</p>
 				<div class="notification-option">
 					<div class="option-info">
@@ -310,6 +329,29 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 					<div class="option-info">
 						<strong>E-post</strong>
 						<p>{user?.email || 'Ikke satt'}</p>
+					</div>
+				</div>
+				<div class="notification-option">
+					<div class="option-info">
+						<strong>Fødselsdato</strong>
+						<p>Driver årskavalkaden og selvangivelsens frist (midnatt kvelden før bursdagen).</p>
+						<div class="birthdate-row">
+							<DateInput bind:value={birthDateValue} ariaLabel="Fødselsdato" />
+							<Button
+								variant="secondary"
+								ariaLabel="Lagre fødselsdato"
+								disabled={birthDateState === 'saving'}
+								onClick={() => void saveBirthDate()}
+							>
+								{birthDateState === 'saving'
+									? 'Lagrer …'
+									: birthDateState === 'saved'
+										? 'Lagret ✓'
+										: birthDateState === 'error'
+											? 'Prøv igjen'
+											: 'Lagre'}
+							</Button>
+						</div>
 					</div>
 				</div>
 				<div class="notification-option">
@@ -765,6 +807,13 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 		border: none;
 		border-radius: 8px;
 		margin-bottom: 1rem;
+	}
+
+	.birthdate-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-top: 0.5rem;
 	}
 
 	.option-info strong {

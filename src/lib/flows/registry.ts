@@ -4,6 +4,13 @@
 
 import type { Flow, FlowId, FlowDomain } from './types';
 import {
+	extractInterviewAnswers,
+	formatAnswersAsText,
+	formatThreadTranscript,
+	parseBirthdayGoals,
+	parseStatusBlock
+} from './birthday-interview';
+import {
 	ACTIONS_PYRAMID,
 	ACTIONS_SLIDER_LABELS,
 	FEELINGS_PYRAMID,
@@ -1233,6 +1240,234 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ learned, proud })
+			});
+		}
+	},
+
+	birthday_interview: {
+		id: 'birthday_interview',
+		name: 'Selvangivelsen',
+		description:
+			'Hvem er du i år, hvem var du i fjor? Det årlige bursdagsintervjuet — endringer, minner og årets beste. Frist: midnatt kvelden før bursdagen',
+		icon: '🎂',
+		domain: 'self',
+		trigger: 'manual',
+		focus: true,
+		resumable: true,
+		estimatedMinutes: 15,
+		steps: [
+			{
+				id: 'hvem',
+				type: 'form',
+				title: 'Hvem er du i år?',
+				fields: [
+					{
+						id: 'who',
+						type: 'textarea',
+						label: 'Beskriv deg selv akkurat nå',
+						placeholder: 'Hva opptar deg? Hva bruker du tiden på? Hva tror du på?'
+					}
+				]
+			},
+			{
+				id: 'roller',
+				type: 'form',
+				title: 'Rollene dine',
+				fields: [
+					{
+						id: 'role_dad',
+						type: 'textarea',
+						label: 'Som pappa',
+						placeholder: 'Hvor står du? Hva er du stolt av, hva gnager?'
+					},
+					{
+						id: 'role_partner',
+						type: 'textarea',
+						label: 'Som partner',
+						placeholder: 'Én–to ærlige setninger'
+					},
+					{
+						id: 'role_friend',
+						type: 'textarea',
+						label: 'Som venn',
+						placeholder: 'Hvem har du vært der for — og motsatt?'
+					},
+					{
+						id: 'role_work',
+						type: 'textarea',
+						label: 'Som ansatt',
+						placeholder: 'Hvor står du i jobben akkurat nå?'
+					}
+				]
+			},
+			{
+				id: 'kropp_og_hode',
+				type: 'chat',
+				title: 'Kroppen og hodet',
+				autoSend: true,
+				buildPrompts: (data) => {
+					const kavalkade = typeof data._kavalkadeSummary === 'string' ? data._kavalkadeSummary : '';
+					const lastYear = typeof data._lastYearAnswers === 'string' ? data._lastYearAnswers : '';
+					return {
+						prompt: 'Jeg er klar for kropp-og-hode-delen av selvangivelsen.',
+						systemPrompt: [
+							'Du intervjuer brukeren om kropp og hode i året som gikk: psykisk helse, vekt, trening og søvn. Dette er den tunge delen av det årlige bursdagsintervjuet («selvangivelsen»), og målet er å få fire ting på det rene:',
+							'1. Hvor var du for et år siden?',
+							'2. Hva ville du oppnå?',
+							'3. Hvordan ble veien?',
+							'4. Hvor vil du videre?',
+							'',
+							kavalkade ? `Måledata fra året (bruk dem aktivt — «vekta gikk fra X til Y, var det planen?»):\n${kavalkade}` : '',
+							lastYear ? `\nFjorårets selvangivelse (sitér gjerne når du spør «hvor var du»):\n${lastYear}` : '',
+							'',
+							'Arbeidsmåte: Still ETT spørsmål om gangen, kort og konkret. Grav videre der svaret er ullent eller interessant — brukeren kan chatte så lenge de vil. Dekk både psykisk helse og kropp; ikke ramse opp alle fire spørsmålene på en gang.',
+							'',
+							'Etter HVER respons: oppdater en kompakt oppsummering mellom markørene <status> og </status> — 3–6 linjer i brukerens egne formuleringer som dekker de fire spørsmålene så langt. Denne blokken lagres som selvangivelsens «Kroppen og hodet»-seksjon.',
+							'',
+							'Når brukeren virker ferdig, si kort at de kan gå videre i intervjuet. Norsk, varm, konkret — venn, ikke terapeut.'
+						].join('\n')
+					};
+				}
+			},
+			{
+				id: 'maal_og_retning',
+				type: 'form',
+				title: 'Mål og retning',
+				fields: [
+					{
+						id: 'goals_past',
+						type: 'textarea',
+						label: 'Hva ville du oppnå i året som gikk?',
+						placeholder: 'Ambisjonene slik du husker dem fra i fjor — store eller små'
+					},
+					{
+						id: 'direction',
+						type: 'textarea',
+						label: 'Hvor vil du videre?',
+						placeholder: 'Retningen for året som kommer — som pappa, partner, venn, ansatt, og for kropp og hode'
+					}
+				]
+			},
+			{
+				id: 'siden_i_fjor',
+				type: 'form',
+				title: 'Siden i fjor',
+				fields: [
+					{
+						id: 'changed',
+						type: 'textarea',
+						label: 'Hva har endret seg?',
+						placeholder: 'Stort eller smått — i deg eller rundt deg'
+					},
+					{
+						id: 'started',
+						type: 'textarea',
+						label: 'Hva har du begynt med?',
+						placeholder: 'Vaner, hobbyer, tanker, mennesker'
+					},
+					{
+						id: 'stopped',
+						type: 'textarea',
+						label: 'Hva har du sluttet med?',
+						placeholder: 'Ting du har lagt bak deg — med vilje eller ikke'
+					}
+				]
+			},
+			{
+				id: 'minne',
+				type: 'form',
+				title: 'Hva husker du best?',
+				fields: [
+					{
+						id: 'memory',
+						type: 'textarea',
+						label: 'Øyeblikket som sitter igjen',
+						placeholder: 'Det første du tenker på når du ser tilbake på året'
+					}
+				]
+			},
+			{
+				id: 'aarets_beste',
+				type: 'form',
+				title: 'Årets beste',
+				fields: [
+					{ id: 'best_concert', type: 'text', label: 'Beste konsert' },
+					{ id: 'best_song', type: 'text', label: 'Beste sang' },
+					{ id: 'best_book', type: 'text', label: 'Beste bok' },
+					{ id: 'best_film', type: 'text', label: 'Beste film eller serie' },
+					{ id: 'best_theater', type: 'text', label: 'Beste teaterstykke' },
+					{ id: 'best_trip', type: 'text', label: 'Beste tur' },
+					{ id: 'best_experience', type: 'text', label: 'Beste opplevelse' }
+				]
+			},
+			{
+				id: 'speil',
+				type: 'chat',
+				title: 'Året i speilet',
+				autoSend: true,
+				buildPrompts: (data) => {
+					const answers = formatAnswersAsText(extractInterviewAnswers(data));
+					const lastYear = typeof data._lastYearAnswers === 'string' ? data._lastYearAnswers : '';
+					const kavalkade = typeof data._kavalkadeSummary === 'string' ? data._kavalkadeSummary : '';
+					return {
+						prompt: 'Her er svarene mine fra årets bursdagsintervju. Hva ser du?',
+						systemPrompt: [
+							'Brukeren har nettopp fullført sitt årlige bursdagsintervju. Din rolle er å speile året tilbake — varmt, konkret og uten floskler.',
+							'',
+							'Årets svar:',
+							answers || '(ingen svar gitt)',
+							lastYear ? `\nFjorårets svar (fra forrige bursdagsintervju):\n${lastYear}` : '',
+							kavalkade ? `\nÅrskavalkade (målte data):\n${kavalkade}` : '',
+							'',
+							'Gjør dette i første svar (maks 4-5 setninger):',
+							lastYear
+								? '1. Trekk frem den mest interessante forskjellen mellom i år og i fjor — hva har faktisk endret seg i hvordan brukeren beskriver seg selv?'
+								: '1. Trekk frem det mest interessante mønsteret i årets svar.',
+							'2. Koble gjerne ett av svarene til et tall fra kavalkaden hvis det forsterker poenget.',
+							'3. Avslutt med ETT åpent spørsmål som graver litt dypere.',
+							'',
+							'Brukeren kan chatte videre på hvilket som helst enkeltsvar her — tilby det eksplisitt, og følg dem dit de vil før de avslutter intervjuet.',
+							'',
+							'BURSDAGSMÅL: Foreslå deretter 2–4 mål frem til neste bursdag — målbare der det går (km, bøker, kg, ganger), forankret i «Hvor vil du videre»-svaret og kavalkade-tallene. Etter HVER respons der mål er tema, list gjeldende forslag mellom markørene <bursdagsmål> og </bursdagsmål>, én per linje:',
+							'<bursdagsmål>',
+							'Løpe til neste bursdag: 600 km',
+							'Skjermfri etter 22',
+							'</bursdagsmål>',
+							'Brukeren kan justere i chat — hold listen oppdatert. Ved levering opprettes målene automatisk med frist neste bursdag.',
+							'',
+							'Språk: norsk. Tone: nær venn, ikke terapeut. Ikke list opp svarene tilbake.'
+						].join('\n')
+					};
+				}
+			}
+		],
+		async onComplete(data) {
+			const answers = extractInterviewAnswers(data);
+			// Kropp-og-hode-chatten: AI-ens løpende <status>-blokk er seksjonsinnholdet
+			const helse =
+				typeof data.kropp_og_hode_lastMessage === 'string'
+					? parseStatusBlock(data.kropp_og_hode_lastMessage)
+					: '';
+			if (helse) answers.health_talk = helse;
+			const speilMessage = typeof data.speil_lastMessage === 'string' ? data.speil_lastMessage : '';
+			const mirror = speilMessage
+				.replace(/<bursdagsmål>[\s\S]*?<\/bursdagsmål>/gi, '')
+				.trim();
+			if (mirror) answers.mirror = mirror;
+			if (Object.keys(answers).length === 0) return;
+			await fetch('/api/reflections/birthday', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					answers,
+					// Speilets målforslag blir ekte mål med frist neste bursdag
+					goals: parseBirthdayGoals(speilMessage),
+					// «Samtalen er data»: hele chattene arkiveres som transkript
+					threads: {
+						kroppOgHode: formatThreadTranscript(data.kropp_og_hode_thread),
+						speil: formatThreadTranscript(data.speil_thread)
+					}
+				})
 			});
 		}
 	},

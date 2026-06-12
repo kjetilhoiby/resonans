@@ -18,6 +18,14 @@ import type {
 } from '$lib/components/domain/ukeplan/types';
 import type { WeekTasksApi } from '$lib/components/domain/ukeplan/week-tasks-api';
 import type { Procedure } from '$lib/components/ui/ProcedureSheet.svelte';
+import type {
+	Greeting as KavalkadeGreeting,
+	MonthEntry as KavalkadeMonthEntry,
+	OrdskyWordView,
+	ShowSlideDef,
+	YearData as KavalkadeYearData
+} from '$lib/components/domain/kavalkade';
+import type { InterviewAnswers } from '$lib/flows/birthday-interview';
 import type { ProcedureSheetApi } from '$lib/components/ui/procedure-sheet-api';
 import type { WidgetConfig } from '$lib/components/ui/WidgetConfigSheet.svelte';
 import type { ChecklistSheetApi } from '$lib/components/ui/checklist-sheet-api';
@@ -967,4 +975,248 @@ export const weekTasksFixture = {
 	selectedDayIso: daySectionTodayIso,
 	dayChecklistId: null,
 	api: mockWeekTasksApi
+};
+
+// ── Kavalkade-fixtures (bursdagsrigget på /kavalkade) ────────────────────────
+
+
+export const kavalkadeCurrentYearMock: KavalkadeYearData = {
+	workoutCount: 142,
+	sports: [
+		{ family: 'running', label: 'løpt', count: 68, distanceKm: 512.4, durationHours: 47.2 },
+		{ family: 'walking', label: 'gått', count: 41, distanceKm: 188.9, durationHours: 39.5 },
+		{ family: 'strength', label: 'styrketrent', count: 33, distanceKm: 0, durationHours: 24.8 }
+	],
+	stepsTotal: 2_841_000,
+	sleepAvgHours: 7.1,
+	weightStartKg: 84.6,
+	weightEndKg: 82.1,
+	weightChangeKg: -2.5,
+	screenTimeAvgMinPerDay: 162,
+	books: [
+		{ title: 'Solaris', author: 'Stanisław Lem' },
+		{ title: 'Stoner', author: 'John Williams' },
+		{ title: 'Min kamp 3', author: 'Karl Ove Knausgård' }
+	]
+};
+
+export const kavalkadePreviousYearMock: KavalkadeYearData = {
+	workoutCount: 117,
+	sports: [
+		{ family: 'running', label: 'løpt', count: 51, distanceKm: 387.2, durationHours: 36.9 },
+		{ family: 'walking', label: 'gått', count: 48, distanceKm: 201.3, durationHours: 42.1 },
+		{ family: 'strength', label: 'styrketrent', count: 18, distanceKm: 0, durationHours: 13.5 }
+	],
+	stepsTotal: 2_512_000,
+	sleepAvgHours: 6.8,
+	weightStartKg: 86.2,
+	weightEndKg: 84.6,
+	weightChangeKg: -1.6,
+	screenTimeAvgMinPerDay: 191,
+	books: [{ title: 'Sult', author: 'Knut Hamsun' }]
+};
+
+export const kavalkadeOrdskyMock: OrdskyWordView[] = [
+	{ word: 'rydde', count: 34, weight: 1 },
+	{ word: 'kjøpe', count: 28, weight: 0.81 },
+	{ word: 'ringe', count: 22, weight: 0.63 },
+	{ word: 'løpetur', count: 19, weight: 0.53 },
+	{ word: 'hente', count: 17, weight: 0.47 },
+	{ word: 'garasjen', count: 14, weight: 0.38 },
+	{ word: 'bursdag', count: 12, weight: 0.31 },
+	{ word: 'svømmehall', count: 10, weight: 0.25 },
+	{ word: 'bibliotek', count: 9, weight: 0.22 },
+	{ word: 'planlegge', count: 8, weight: 0.19 },
+	{ word: 'middagsplan', count: 7, weight: 0.16 },
+	{ word: 'dekkskift', count: 5, weight: 0.09 },
+	{ word: 'vanne', count: 4, weight: 0.06 },
+	{ word: 'tannlege', count: 3, weight: 0.03 },
+	{ word: 'epost', count: 2, weight: 0 }
+];
+
+export const kavalkadeTimelineMock: KavalkadeMonthEntry[] = [
+	{
+		key: '2025-07',
+		label: 'juli 2025',
+		workoutCount: 16,
+		topSport: { family: 'running', label: 'løpt', distanceKm: 64.2, count: 9 },
+		stepsTotal: 312_000,
+		books: ['Solaris'],
+		headline: 'Ferie og lange turer'
+	},
+	{
+		key: '2025-08',
+		label: 'august 2025',
+		workoutCount: 12,
+		topSport: { family: 'running', label: 'løpt', distanceKm: 48.1, count: 7 },
+		stepsTotal: 264_000,
+		books: [],
+		headline: null
+	},
+	{
+		key: '2025-09',
+		label: 'september 2025',
+		workoutCount: 0,
+		topSport: null,
+		stepsTotal: null,
+		books: [],
+		headline: null
+	},
+	{
+		key: '2025-10',
+		label: 'oktober 2025',
+		workoutCount: 14,
+		topSport: { family: 'strength', label: 'styrketrent', distanceKm: 0, count: 8 },
+		stepsTotal: 198_000,
+		books: ['Stoner'],
+		headline: 'Innemåned — styrke og lesing'
+	}
+];
+
+export const kavalkadeGreetingsMock: KavalkadeGreeting[] = [
+	{
+		character: 'Kris Kelvin',
+		book: 'Solaris',
+		text: 'Gratulerer med dagen. Jeg har lært at det vi husker, former oss mer enn det vi opplever — måtte minnene dine fra i år være av det snille slaget.'
+	},
+	{
+		character: 'William Stoner',
+		book: 'Stoner',
+		text: 'Et stille år er også et liv. Du har lest, du har gått, du har holdt ut. Det er mer enn de fleste. Gratulerer.'
+	}
+];
+
+export const kavalkadeInterviewAnswersMock: InterviewAnswers = {
+	who: 'En som løper lenger og scroller mindre. Mer ute, mer til stede.',
+	role_dad: 'Mer til stede på hverdagene — leksetid uten telefon.',
+	health_talk: 'Var: sliten etter flyttingen. Ville: ned 3 kg og sove mer. Veien: 84,6 → 82,1 og morgentrening som holdt. Videre: beholde rytmen, mindre skjerm på kvelden.',
+	direction: 'Mindre skjerm, mer svømming — og holde morgenrytmen gjennom vinteren.',
+	changed: 'Byttet treningstid til morgenen — det forandret hele døgnet.',
+	started: 'Svømming annenhver uke, og høytlesing for ungene igjen.',
+	stopped: 'Skjerm i senga. Nesten.',
+	memory: 'Soloppgangen på toppen av Gaustatoppen i juli, helt alene.',
+	best_book: 'Stoner — John Williams',
+	best_concert: 'Bon Iver i Operaen'
+};
+
+/** Statiske slide-fixtures for kavalkade-showet på /design (animate={false}) */
+export const kavalkadeShowSlidesMock: ShowSlideDef[] = [
+	{
+		kind: 'stat',
+		label: 'har du løpt',
+		value: 512.4,
+		decimals: 1,
+		unit: 'km',
+		sub: 'i fjor: 387,2 km',
+		monthly: [
+			{ label: 'jun', value: 18 },
+			{ label: 'jul', value: 64 },
+			{ label: 'aug', value: 48 },
+			{ label: 'sep', value: 41 },
+			{ label: 'okt', value: 39 },
+			{ label: 'nov', value: 30 },
+			{ label: 'des', value: 22 },
+			{ label: 'jan', value: 35 },
+			{ label: 'feb', value: 44 },
+			{ label: 'mar', value: 52 },
+			{ label: 'apr', value: 58 },
+			{ label: 'mai', value: 49 },
+			{ label: 'jun', value: 12 }
+		],
+		yearly: [
+			{ label: '2022–23', value: 201 },
+			{ label: '2023–24', value: 305 },
+			{ label: '2024–25', value: 387 },
+			{ label: '2025–26', value: 512 }
+		],
+		hue: 12,
+		durationMs: 7500
+	},
+	{
+		kind: 'quote',
+		text: 'Et stille år er også et liv. Du har lest, du har gått, du har holdt ut.',
+		attribution: 'William Stoner, «Stoner»',
+		writer: 'William Stoner',
+		hue: 258,
+		durationMs: 8000
+	},
+	{
+		kind: 'ordsky',
+		title: 'Året i ord',
+		words: kavalkadeOrdskyMock.slice(0, 12),
+		hue: 152,
+		durationMs: 7000
+	},
+	{
+		kind: 'outro',
+		title: 'Gratulerer med dagen! 🎂',
+		sub: 'Her kommer år 42.',
+		hue: 320,
+		durationMs: 5500,
+		confetti: true
+	}
+];
+
+/** Komplett show-input for live-demoen på /design/kavalkade-show */
+export const kavalkadeShowInputMock = {
+	birthday: { hasBirthDate: true, daysUntil: 7, turningAge: 42 },
+	windowLabels: { current: '18. juni 2025 – 17. juni 2026' },
+	current: kavalkadeCurrentYearMock,
+	previous: kavalkadePreviousYearMock,
+	timeline: kavalkadeTimelineMock,
+	ordsky: kavalkadeOrdskyMock,
+	sportHistory: [
+		{
+			family: 'running',
+			asDistance: true,
+			monthly: [
+				{ label: 'jun', value: 18 },
+				{ label: 'jul', value: 64 },
+				{ label: 'aug', value: 48 },
+				{ label: 'sep', value: 41 },
+				{ label: 'okt', value: 39 },
+				{ label: 'nov', value: 30 },
+				{ label: 'des', value: 22 },
+				{ label: 'jan', value: 35 },
+				{ label: 'feb', value: 44 },
+				{ label: 'mar', value: 52 },
+				{ label: 'apr', value: 58 },
+				{ label: 'mai', value: 49 },
+				{ label: 'jun', value: 12 }
+			],
+			yearly: [
+				{ label: '2022–23', value: 201 },
+				{ label: '2023–24', value: 305 },
+				{ label: '2024–25', value: 387 },
+				{ label: '2025–26', value: 512 }
+			]
+		},
+		{
+			family: 'walking',
+			asDistance: true,
+			monthly: [
+				{ label: 'jun', value: 9 },
+				{ label: 'jul', value: 26 },
+				{ label: 'aug', value: 21 },
+				{ label: 'sep', value: 17 },
+				{ label: 'okt', value: 14 },
+				{ label: 'nov', value: 11 },
+				{ label: 'des', value: 8 },
+				{ label: 'jan', value: 10 },
+				{ label: 'feb', value: 13 },
+				{ label: 'mar', value: 18 },
+				{ label: 'apr', value: 20 },
+				{ label: 'mai', value: 16 },
+				{ label: 'jun', value: 6 }
+			],
+			yearly: [
+				{ label: '2024–25', value: 201 },
+				{ label: '2025–26', value: 189 }
+			]
+		}
+	],
+	interview: { thisYear: kavalkadeInterviewAnswersMock },
+	prophecy:
+		'Jeg ser et år der løpeskoene runder 600 km før løvet faller, og der svømmetakene du så nølende begynte med blir like selvfølgelige som morgenkaffen.\n\nKrystallkulen er klar: mer av det som virker.',
+	greetings: kavalkadeGreetingsMock
 };

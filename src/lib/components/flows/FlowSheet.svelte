@@ -11,6 +11,9 @@
 		findPreviousStepIndex,
 		buildChecklistItems,
 		selectedTasks,
+		flowDraftKey,
+		parseFlowDraft,
+		serializeFlowDraft,
 		type FlowChecklistItem,
 		type WeatherData,
 		type RichChatMsg
@@ -119,6 +122,42 @@
 	const carryoverCount = $derived(
 		Object.values(decisions).filter((v) => v === 'carryover').length
 	);
+
+	// ── Utkast (resumable flows) ─────────────────────────────────────
+	let restoredFlowId = $state<string | null>(null);
+	let draftNotice = $state(false);
+
+	// Gjenopprett lagret utkast når en resumable flow åpnes
+	$effect(() => {
+		const f = flow;
+		if (!f?.resumable || restoredFlowId === f.id) return;
+		restoredFlowId = f.id;
+		untrack(() => {
+			if (typeof localStorage === 'undefined') return;
+			const draft = parseFlowDraft(localStorage.getItem(flowDraftKey(f.id)), f.id);
+			if (!draft) return;
+			// Utkastets svar i bunn — initialData (kontekst per åpning) skal alltid være fersk
+			flowData = { ...draft.data, ...(context.initialData ?? {}) };
+			currentStepIndex = Math.max(0, Math.min(draft.stepIndex, (f.steps?.length ?? 1) - 1));
+			draftNotice = true;
+			setTimeout(() => (draftNotice = false), 5000);
+		});
+	});
+
+	// Lagre fortløpende — JSON.stringify leser hele flowData og sporer dermed alle felt
+	$effect(() => {
+		const f = flow;
+		if (!f?.resumable) return;
+		const snapshot = serializeFlowDraft(f.id, currentStepIndex, flowData);
+		untrack(() => {
+			if (completing || typeof localStorage === 'undefined') return;
+			try {
+				localStorage.setItem(flowDraftKey(f.id), snapshot);
+			} catch {
+				// Full/blokkert storage — utkast er best effort
+			}
+		});
+	});
 
 	// ── Lifecycle ────────────────────────────────────────────────────
 	onMount(async () => {
@@ -342,6 +381,13 @@
 		completionError = '';
 		try {
 			await flow?.onComplete?.(flowData, context);
+			if (flow?.resumable && typeof localStorage !== 'undefined') {
+				try {
+					localStorage.removeItem(flowDraftKey(flow.id));
+				} catch {
+					// best effort
+				}
+			}
 			await oncomplete?.({ ...flowData, conversationId: flowChat.conversationId ?? undefined });
 			onclose?.();
 		} catch {
@@ -382,6 +428,12 @@
 		{weather}
 		onclose={handleClose}
 	/>
+
+	{#if draftNotice}
+		<div class="fs-draft-notice" transition:fade={{ duration: 200 }}>
+			Fortsetter der du slapp — utkastet var lagret
+		</div>
+	{/if}
 
 	<!-- Body -->
 	<div class="fs-body" class:fs-focus-body={isFocus}>
@@ -512,6 +564,17 @@
 		display: flex;
 		flex-direction: column;
 		gap: 14px;
+	}
+
+	.fs-draft-notice {
+		align-self: center;
+		margin: 6px 16px 0;
+		padding: 5px 12px;
+		border-radius: 999px;
+		background: var(--card-bg-inset, #0d0d0d);
+		border: 1px solid var(--card-border, #222);
+		font-size: var(--font-size-caption, 0.72rem);
+		color: var(--text-secondary, #aaa);
 	}
 
 	.fs-step-title {

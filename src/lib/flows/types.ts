@@ -24,6 +24,7 @@ export type FlowId =
 	| 'egenfrekvens_quick'
 	| 'egenfrekvens_slot'
 	| 'reflection_light'
+	| 'birthday_interview'
 	| 'quick_win'
 	| 'inbox_note'
 	| 'jobb_focus_timer';
@@ -160,6 +161,9 @@ export interface Flow {
 	estimatedMinutes?: number;
 	/** Focus mode: fullscreen immersive layout with centered content, large controls, progress dots */
 	focus?: boolean;
+	/** Lagre delvis gjennomføring fortløpende (localStorage) og gjenoppta ved neste åpning.
+	 *  For lange flyter (selvangivelsen) — utkastet ryddes ved levering. */
+	resumable?: boolean;
 	steps?: FlowStep[];
 	onComplete?: (data: Record<string, any>, context: FlowContext) => Promise<void>;
 	badge?: string;
