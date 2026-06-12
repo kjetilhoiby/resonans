@@ -384,7 +384,7 @@ export function buildRelationshipCheckinMorningNudgeMessage(data: {
 											text: 'Svar på parsjekk',
 											onClick: {
 												openLink: {
-													url: `${appUrl}/settings#profil?nudgeTrack=relationship_checkin_morning${eventParam}`
+													url: `${appUrl}/settings/profile?nudgeTrack=relationship_checkin_morning${eventParam}`
 												}
 											}
 										}
