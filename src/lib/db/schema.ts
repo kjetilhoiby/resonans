@@ -2461,6 +2461,10 @@ export const trainingPrograms = pgTable('training_programs', {
 	durationWeeks: integer('duration_weeks').notNull(),
 	sessionsPerWeek: integer('sessions_per_week').notNull(),
 	status: text('status').notNull().default('active'), // active|paused|completed|archived
+	// 'fast'    — planen ligger fast, justeres kun av tester/progresjon
+	// 'adaptiv' — ukentlig justering: dempet temporekalkulering fra faktiske løp,
+	//             dagplassering etter brukerens løpsvaner, volum etter effort-fordeling
+	mode: text('mode').notNull().default('fast'),
 	includeStrength: boolean('include_strength').notNull().default(true),
 	includeRunning: boolean('include_running').notNull().default(true),
 	startDate: date('start_date').notNull(),
@@ -2658,6 +2662,33 @@ export const programSessionCompletionsRelations = relations(programSessionComple
 	sensorEvent: one(sensorEvents, {
 		fields: [programSessionCompletions.sensorEventId],
 		references: [sensorEvents.id]
+	})
+}));
+
+// Logg over ukentlige justeringer gjort av adaptiv modus (mode='adaptiv').
+// Hver rad er én type justering (tempo/ukeplan/volum) med begrunnelser, slik at
+// coachen kan forklare *hvorfor* planen endret seg.
+export const programAdaptations = pgTable('program_adaptations', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	programId: uuid('program_id').references(() => trainingPrograms.id, { onDelete: 'cascade' }).notNull(),
+	weekNumber: integer('week_number').notNull(), // uken justeringen gjelder for
+	kind: text('kind').notNull(), // 'tempo' | 'ukeplan' | 'volum'
+	changes: jsonb('changes').$type<Record<string, unknown>>().notNull().default({}),
+	reasons: jsonb('reasons').$type<string[]>().notNull().default([]),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => ({
+	idxProgramCreated: index('program_adaptations_program_created_idx').on(table.programId, table.createdAt)
+}));
+
+export const programAdaptationsRelations = relations(programAdaptations, ({ one }) => ({
+	user: one(users, {
+		fields: [programAdaptations.userId],
+		references: [users.id]
+	}),
+	program: one(trainingPrograms, {
+		fields: [programAdaptations.programId],
+		references: [trainingPrograms.id]
 	})
 }));
 

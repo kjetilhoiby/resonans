@@ -74,6 +74,15 @@ export function isProgramStatus(value: unknown): value is ProgramStatus {
 	return typeof value === 'string' && (PROGRAM_STATUSES as readonly string[]).includes(value);
 }
 
+// 'fast'    — planen ligger fast, justeres kun av tester og per-økt-progresjon
+// 'adaptiv' — ukentlig justering av tempo, dagplassering og volum (se adaptive.ts)
+export const PROGRAM_MODES = ['fast', 'adaptiv'] as const;
+export type ProgramMode = (typeof PROGRAM_MODES)[number];
+
+export function isProgramMode(value: unknown): value is ProgramMode {
+	return typeof value === 'string' && (PROGRAM_MODES as readonly string[]).includes(value);
+}
+
 export const PROGRAM_KINDS = ['strength', 'run'] as const;
 export type ProgramSessionKind = (typeof PROGRAM_KINDS)[number];
 

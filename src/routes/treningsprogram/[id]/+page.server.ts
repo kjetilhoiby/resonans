@@ -2,14 +2,16 @@ import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { getFullProgram } from '$lib/server/programs/repository';
 import { evaluateProgramReadiness } from '$lib/server/programs/readiness';
+import { getRecentAdaptations } from '$lib/server/programs/adaptive-service';
 
 export const load: PageServerLoad = async ({ locals, params }) => {
 	if (!locals.userId) throw error(401, 'Unauthorized');
 	const t0 = performance.now();
 
-	const [programResult, readinessResult] = await Promise.allSettled([
+	const [programResult, readinessResult, adaptationsResult] = await Promise.allSettled([
 		getFullProgram(locals.userId, params.id),
-		evaluateProgramReadiness({ userId: locals.userId, programId: params.id })
+		evaluateProgramReadiness({ userId: locals.userId, programId: params.id }),
+		getRecentAdaptations(locals.userId, params.id)
 	]);
 
 	if (programResult.status === 'rejected') {
@@ -35,6 +37,13 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		console.error('[treningsprogram/:id] readiness-evaluering feilet', readinessResult.reason);
 	}
 
+	let adaptations: Awaited<ReturnType<typeof getRecentAdaptations>> = [];
+	if (adaptationsResult.status === 'fulfilled') {
+		adaptations = adaptationsResult.value;
+	} else {
+		console.error('[treningsprogram/:id] henting av justeringer feilet', adaptationsResult.reason);
+	}
+
 	console.log(`[perf][treningsprogram/:id] user=${locals.userId} step=total ms=${(performance.now() - t0).toFixed(0)} cached=${readiness ? readinessResult.status === 'fulfilled' && (readinessResult.value as any).cached : 'n/a'}`);
-	return { program, readiness };
+	return { program, readiness, adaptations };
 };
