@@ -982,7 +982,7 @@ export const kavalkadeShowSlidesMock: ShowSlideDef[] = [
 	{
 		kind: 'outro',
 		title: 'Gratulerer med dagen! 🎂',
-		sub: 'Her kommer år 44.',
+		sub: 'Her kommer år 42.',
 		hue: 320,
 		durationMs: 5500,
 		confetti: true
@@ -991,7 +991,7 @@ export const kavalkadeShowSlidesMock: ShowSlideDef[] = [
 
 /** Komplett show-input for live-demoen på /design/kavalkade-show */
 export const kavalkadeShowInputMock = {
-	birthday: { hasBirthDate: true, daysUntil: 7, turningAge: 44 },
+	birthday: { hasBirthDate: true, daysUntil: 7, turningAge: 42 },
 	windowLabels: { current: '18. juni 2025 – 17. juni 2026' },
 	current: kavalkadeCurrentYearMock,
 	previous: kavalkadePreviousYearMock,
