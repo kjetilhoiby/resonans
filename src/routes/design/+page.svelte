@@ -51,6 +51,18 @@
 	import LocationPickerModal from '$lib/components/ui/LocationPickerModal.svelte';
 	import BreakdownModal from '$lib/components/ui/BreakdownModal.svelte';
 	import ShareSheet from '$lib/components/domain/share/ShareSheet.svelte';
+	import BookHeaderBar from '$lib/components/domain/BookHeaderBar.svelte';
+	import BookFaktaTab from '$lib/components/domain/BookFaktaTab.svelte';
+	import BookClipsTab from '$lib/components/domain/BookClipsTab.svelte';
+	import BookContextTab from '$lib/components/domain/BookContextTab.svelte';
+	import BookChatTab from '$lib/components/domain/BookChatTab.svelte';
+	import ThemeButtonGrid from '$lib/components/domain/home/ThemeButtonGrid.svelte';
+	import PartnerOnboardingCard from '$lib/components/domain/home/PartnerOnboardingCard.svelte';
+	import ReadinessChip from '$lib/components/domain/home/ReadinessChip.svelte';
+	import ActionPillRow from '$lib/components/domain/home/ActionPillRow.svelte';
+	import PagerDots from '$lib/components/ui/PagerDots.svelte';
+	import ConversationContextMenu from '$lib/components/ui/ConversationContextMenu.svelte';
+	import { ChipStrip } from '$lib/components/ui';
 	import type { SaveState } from '$lib/components/domain/ukeplan/types';
 	import { THEME_HUES, type ThemeHueKey } from '$lib/domain/theme-hues';
 	import DayWheelChart from '$lib/components/visualizations/DayWheelChart.svelte';
@@ -105,7 +117,17 @@
 		geoCandidatesMock,
 		weatherPeriodsMock,
 		mockShareApi,
-		mockLoadBreakdownSuggestions
+		mockLoadBreakdownSuggestions,
+		bookMock,
+		bookWithPackMock,
+		bookClipsMock,
+		bookChatMessagesMock,
+		mockBookTabsApi,
+		themeButtonsMock,
+		actionPillsMock,
+		readinessMock,
+		conversationThemesMock,
+		mockConversationMenuApi
 	} from './mocks';
 
 	const sections = [
@@ -121,6 +143,8 @@
 		{ id: 'skjema', label: 'Skjema' },
 		{ id: 'navigasjon', label: 'Navigasjon' },
 		{ id: 'ukeplan', label: 'Ukeplan' },
+		{ id: 'hjem', label: 'Hjemskjerm-elementer' },
+		{ id: 'boker', label: 'Bøker' },
 		{ id: 'sheets', label: 'Sheets & paneler' },
 		{ id: 'modaler', label: 'Menyer & modaler' },
 		{ id: 'lab', label: 'Lab' }
@@ -966,6 +990,16 @@
 				{/each}
 			</div>
 
+			<h3 class="subsection">ChipStrip — horisontalt scrollbånd</h3>
+			<p class="section-desc">Wrapper for pill-rader som scroller horisontalt uten synlig scrollbar.</p>
+			<div class="demo-card demo-card--wide">
+				<ChipStrip ariaLabel="Demo-chips">
+					{#each ['Trening', 'Søvn', 'Økonomi', 'Familie', 'Bøker', 'Egenfrekvens', 'Hjem', 'Jobb'] as c}
+						<Button variant="chip">{c}</Button>
+					{/each}
+				</ChipStrip>
+			</div>
+
 			<h3 class="subsection">Subtabs</h3>
 			<p class="section-desc">
 				Global <code>.subtab</code>-klasse fra <code>app.css</code> — brukes til underfaner <em>inne i</em> dashboards
@@ -1034,6 +1068,146 @@
 			</p>
 			<div class="demo-card demo-card--wide">
 				<WeekTasks {...weekTasksFixture} />
+			</div>
+		</section>
+
+		<!-- ══ HJEMSKJERM-ELEMENTER ═══════════════════════════════════════════════ -->
+		<section id="hjem" class="section">
+			<h2 class="section-heading">Hjemskjerm-elementer</h2>
+			<p class="section-desc">
+				Byggeklossene i hjemskjerm-sonene, trukket ut som props-drevne komponenter
+				(<code>domain/home/</code>). Sonene selv er setContext-koblede orkestratorer og demoes ikke.
+			</p>
+
+			<h3 class="subsection">ThemeButtonGrid — tema-knappene</h3>
+			<div class="demo-card demo-card--wide">
+				<ThemeButtonGrid themes={themeButtonsMock} onSelect={noop} />
+			</div>
+
+			<h3 class="subsection">PartnerOnboardingCard — begge varianter</h3>
+			<div class="demo-row">
+				<div class="demo-card">
+					<PartnerOnboardingCard
+						variant="theme"
+						kicker="Felles start"
+						title="Planlegg sammen"
+						body="Koble partneren til ukeplanen og temaene deres."
+						actions={[
+							{ label: 'Opprett partnertema', onClick: noop, primary: true },
+							{ label: 'Åpne samtaler', onClick: noop }
+						]}
+					/>
+				</div>
+				<div class="demo-card">
+					<PartnerOnboardingCard
+						variant="widget"
+						kicker="Partnermodus aktivert"
+						title="Dere er koblet"
+						body="Ukeplanen og sjekklistene deles nå med partneren din."
+						actions={[{ label: 'Åpne ukeplan sammen', onClick: noop, primary: true }]}
+					/>
+				</div>
+			</div>
+
+			<h3 class="subsection">ReadinessChip + ActionPillRow — chat-sonens topp</h3>
+			<div class="demo-stack">
+				<ReadinessChip readiness={readinessMock} onClick={noop} />
+				<ActionPillRow items={actionPillsMock} onItemClick={noop} />
+			</div>
+
+			<h3 class="subsection">PagerDots — side-indikator</h3>
+			<div class="demo-stack" style="position: relative; height: 32px;">
+				<PagerDots count={3} active={1} onSelect={noop} />
+			</div>
+		</section>
+
+		<!-- ══ BØKER ══════════════════════════════════════════════════════════════ -->
+		<section id="boker" class="section">
+			<h2 class="section-heading">Bøker</h2>
+			<p class="section-desc">
+				Bok-temaets komponenter (<code>domain/Book*</code>) — på <code>--book-*</code>-tokens og med
+				injisert nettverkslag (<code>BookTabsApi</code>). Kontekst- og chat-taben demoes ikke ennå.
+			</p>
+
+			<h3 class="subsection">BookHeaderBar — bokheader med fremdrift</h3>
+			<div class="demo-card demo-card--wide">
+				<BookHeaderBar
+					book={bookMock}
+					progressEditorOpen={false}
+					progressPage="148"
+					posHours={4}
+					posMins={23}
+					totalDurHours={6}
+					totalDurMins={52}
+					progressSaving={false}
+					progressError=""
+					onClose={noop}
+					onToggleEditor={noop}
+					onSaveProgress={noop}
+					onCancelEditor={noop}
+					onProgressPageChange={noop}
+					onPosHoursChange={noop}
+					onPosMinsChange={noop}
+				/>
+			</div>
+
+			<h3 class="subsection">BookHeaderBar — fremdriftseditor åpen</h3>
+			<div class="demo-card demo-card--wide">
+				<BookHeaderBar
+					book={bookMock}
+					progressEditorOpen={true}
+					progressPage="148"
+					posHours={4}
+					posMins={23}
+					totalDurHours={6}
+					totalDurMins={52}
+					progressSaving={false}
+					progressError=""
+					onClose={noop}
+					onToggleEditor={noop}
+					onSaveProgress={noop}
+					onCancelEditor={noop}
+					onProgressPageChange={noop}
+					onPosHoursChange={noop}
+					onPosMinsChange={noop}
+				/>
+			</div>
+
+			<h3 class="subsection">BookFaktaTab — fremdriftsgraf, ETA og fakta</h3>
+			<div class="demo-card demo-card--wide">
+				<BookFaktaTab themeId="demo" book={bookMock} onBookUpdated={noop} onBookDeleted={noop} api={mockBookTabsApi} today={new Date('2026-06-12T12:00:00')} />
+			</div>
+
+			<h3 class="subsection">BookClipsTab — klipp med karaoke-spiller</h3>
+			<p class="section-desc">
+				Første klipp har ord-tidsstempler → AudioKaraokePlayer rendres (lyd-src er tom i demoen,
+				så avspilling er inert men teksten og spillerlinja er live).
+			</p>
+			<div class="demo-card demo-card--wide">
+				<BookClipsTab themeId="demo" book={bookMock} api={mockBookTabsApi} />
+			</div>
+
+			<h3 class="subsection">BookContextTab — kontekstpakke</h3>
+			<div class="demo-card demo-card--wide">
+				<BookContextTab book={bookWithPackMock} themeId="demo" onRefresh={async () => {}} api={mockBookTabsApi} />
+			</div>
+
+			<h3 class="subsection">BookChatTab — boksamtale</h3>
+			<p class="section-desc">
+				Chat om boka med klipp-referanser. Streaming/opplasting/transkripsjon går via api-prop — mock her.
+			</p>
+			<div class="demo-card demo-card--wide">
+				<BookChatTab
+					themeId="demo"
+					book={bookMock}
+					clips={bookClipsMock}
+					chatMessages={bookChatMessagesMock}
+					chatMessagesLoaded={true}
+					onAutoProgress={noop}
+					onClipAdded={noop}
+					onChatMessage={noop}
+					api={mockBookTabsApi}
+				/>
 			</div>
 		</section>
 
@@ -1188,6 +1362,22 @@
 				/>
 			</div>
 
+			<h3 class="subsection">ConversationContextMenu — samtale-meny</h3>
+			<p class="section-desc">
+				⋯-menyen på samtaler (stjerne, arkiver, flytt til tema, slett). Nettverk via <code>api</code>-prop;
+				<code>initialOpen</code> holder den åpen i demoen.
+			</p>
+			<div class="sheet-stage sheet-stage--short" style="padding: 12px 12px 0 160px;">
+				<ConversationContextMenu
+					conversationId="demo"
+					starred={true}
+					archived={false}
+					themes={conversationThemesMock}
+					api={mockConversationMenuApi}
+					initialOpen
+				/>
+			</div>
+
 			<h3 class="subsection">ShareSheet — deling</h3>
 			<p class="section-desc">Delingspanel for sjekklister/temalister. Nettverk via <code>api</code>-prop — mock viser én eksisterende deling.</p>
 			<div class="sheet-stage sheet-stage--tall">
@@ -1287,7 +1477,7 @@
 			<h3 class="subsection">Udokumenterte ui-komponenter</h3>
 			<p class="section-desc">
 				Disse brukes i appen, men har ikke egen demo her ennå:
-				<code>TimeInput</code>, <code>Radio</code>, <code>TabButton</code>, <code>ChipStrip</code>,
+				<code>Radio</code>, <code>TabButton</code>, <code>ChipStrip</code>,
 				<code>CollapsibleSection</code>, <code>Tooltip</code>, <code>TransactionList</code>,
 				<code>PullToRefresh</code> og settings-provider-kortene.
 				(TaskTitle, ChecklistItemRow/GroupRow/RoutineGroupRow og ChecklistCheckbox vises live

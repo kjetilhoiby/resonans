@@ -24,6 +24,14 @@ test.describe('Helse-tema', () => {
 	});
 });
 
+test.describe('Bøker-tema', () => {
+	test('bokbiblioteket rendres', async ({ page }) => {
+		await page.goto('/tema/bøker');
+		await page.waitForLoadState('networkidle');
+		await expect(page).toHaveScreenshot('tema-boker.png', { fullPage: true });
+	});
+});
+
 test.describe('Økonomi-tema', () => {
 	test('økonomidashboard rendres', async ({ page }) => {
 		await page.goto('/tema/økonomi');
@@ -47,6 +55,8 @@ const designSections = [
 	'skjema',
 	'navigasjon',
 	'ukeplan',
+	'hjem',
+	'boker',
 	'sheets',
 	'modaler',
 	'lab'

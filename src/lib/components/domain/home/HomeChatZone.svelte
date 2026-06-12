@@ -25,6 +25,8 @@
 	import HomeVoicePanel from './HomeVoicePanel.svelte';
 	import HomeFilePanel from './HomeFilePanel.svelte';
 	import HomeFollowUpList from './HomeFollowUpList.svelte';
+	import ReadinessChip from './ReadinessChip.svelte';
+	import ActionPillRow from './ActionPillRow.svelte';
 
 	const ctx = getContext<HomeContext>(HOME_CTX);
 </script>
@@ -41,44 +43,19 @@
 		</div>
 	{:else if !ctx.inputExpanded}
 		{#if ctx.programReadiness}
-			<button
-				class="readiness-chip readiness-{ctx.programReadiness.state}"
-				onclick={() => goto(`/treningsprogram/${ctx.programReadiness?.programId}`)}
-				aria-label="Dagens treningstilstand"
-			>
-				<span class="readiness-dot">
-					{#if ctx.programReadiness.state === 'klar'}🟢{:else if ctx.programReadiness.state === 'lett'}🟡{:else if ctx.programReadiness.state === 'easy'}🟠{:else}🔴{/if}
-				</span>
-				<span class="readiness-label">
-					{#if ctx.programReadiness.state === 'klar'}I dag: Klar for {ctx.programReadiness.programName}
-					{:else if ctx.programReadiness.state === 'rest'}I dag: Hvile{ctx.programReadiness.alternativeName ? ` — ${ctx.programReadiness.alternativeName}` : ''}
-					{:else}I dag: {ctx.programReadiness.alternativeName ?? (ctx.programReadiness.state === 'lett' ? 'Lett på' : 'Easy-dag')}
-					{/if}
-				</span>
-			</button>
+			<ReadinessChip
+				readiness={ctx.programReadiness}
+				onClick={() => goto(`/treningsprogram/${ctx.programReadiness?.programId}`)}
+			/>
 		{/if}
 		{#if ctx.actionItems.length > 0}
 			<div class="zone-actions">
-				<ChipStrip gap={8} ariaLabel="Foreslåtte handlinger">
-					{#each ctx.actionItems as item (item.id)}
-						<button
-							class="action-pill"
-							class:is-done={item.done}
-							onclick={() => ctx.handleChipClick(item.onclick)}
-							onpointerdown={(e) => ctx.startLongPress(item.id, item.label, e)}
-							onpointerup={ctx.cancelLongPress}
-							onpointercancel={ctx.cancelLongPress}
-							onpointerleave={ctx.cancelLongPress}
-							oncontextmenu={(e) => e.preventDefault()}
-						>
-							<span class="action-pill-icon">{item.icon}</span>
-							<span class="action-pill-label">{item.label}</span>
-							{#if item.value !== undefined}
-								<span class="action-pill-val">{item.value}</span>
-							{/if}
-						</button>
-					{/each}
-				</ChipStrip>
+				<ActionPillRow
+					items={ctx.actionItems}
+					onItemClick={(item) => ctx.handleChipClick(item.onclick)}
+					onItemPressStart={(item, e) => ctx.startLongPress(item.id, item.label, e)}
+					onItemPressEnd={ctx.cancelLongPress}
+				/>
 			</div>
 		{/if}
 	{/if}
@@ -203,21 +180,6 @@
 <style>
 	.zone { overflow: hidden; flex-shrink: 0; }
 	.zone-actions { flex: 0 0 auto; padding: 0; }
-
-	.readiness-chip { display: flex; align-items: center; gap: 8px; padding: 8px 14px; margin: 0 0 8px; border-radius: 999px; background: var(--bg-secondary); border: 1px solid var(--border-subtle); color: var(--text-primary); font-size: 13px; cursor: pointer; max-width: 100%; text-align: left; }
-	.readiness-chip:hover { border-color: var(--accent-primary); }
-	.readiness-chip.readiness-klar { border-left: 4px solid #34d399; }
-	.readiness-chip.readiness-lett { border-left: 4px solid #fbbf24; }
-	.readiness-chip.readiness-easy { border-left: 4px solid #fb923c; }
-	.readiness-chip.readiness-rest { border-left: 4px solid #f87171; }
-	.readiness-dot { font-size: 14px; flex-shrink: 0; }
-	.readiness-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-	.action-pill { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; background: hsl(228 19% 11%); border: 1px solid hsl(228 16% 18%); border-radius: 999px; touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; padding: 8px 14px; cursor: pointer; font: inherit; color: hsl(228 22% 80%); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.02em; transition: background 0.15s, border-color 0.15s, transform 0.15s; }
-	.action-pill:hover { background: hsl(228 22% 14%); border-color: hsl(228 28% 34%); transform: translateY(-1px); }
-	.action-pill.is-done { opacity: 0.7; }
-	.action-pill-icon { font-size: 0.95rem; line-height: 1; }
-	.action-pill-val { margin-left: 6px; padding: 2px 7px; background: hsl(228 28% 22%); border-radius: 999px; color: #e2e8f0; font-weight: 700; }
 
 	.zone-input { flex: 28 0 0; min-height: 0; padding: 0; padding-bottom: calc(8px + env(safe-area-inset-bottom, 8px)); background: transparent; border-radius: 0; margin: 0; display: flex; flex-direction: column; justify-content: flex-end; gap: 10px; box-sizing: border-box; overflow: clip; transition: border-radius 300ms cubic-bezier(0.22, 1, 0.36, 1), margin 300ms cubic-bezier(0.22, 1, 0.36, 1), background 300ms cubic-bezier(0.22, 1, 0.36, 1); }
 	.zone-chat-open { position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; background: #0f0f0f; border-radius: 0; margin: 0; }

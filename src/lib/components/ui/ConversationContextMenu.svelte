@@ -5,6 +5,24 @@
 		emoji: string | null;
 	}
 
+	interface ConversationMenuApi {
+		patchConversation(conversationId: string, updates: Record<string, unknown>): Promise<void>;
+		deleteConversation(conversationId: string): Promise<void>;
+	}
+
+	const defaultApi: ConversationMenuApi = {
+		async patchConversation(id, updates) {
+			await fetch(`/api/conversations/${id}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(updates)
+			});
+		},
+		async deleteConversation(id) {
+			await fetch(`/api/conversations/${id}`, { method: 'DELETE' });
+		}
+	};
+
 	interface Props {
 		conversationId: string;
 		starred: boolean;
@@ -17,6 +35,10 @@
 		onMovedToTheme?: (id: string, themeId: string | null) => void;
 		onDeleted?: (id: string) => void;
 		onStartRename?: () => void;
+		/** Nettverkslag — injiseres som mock på /design. Default: ekte API. */
+		api?: ConversationMenuApi;
+		/** Start med menyen åpen (brukes av /design for statisk demo). */
+		initialOpen?: boolean;
 	}
 
 	let {
@@ -30,10 +52,12 @@
 		onRenamed,
 		onMovedToTheme,
 		onDeleted,
-		onStartRename
+		onStartRename,
+		api = defaultApi,
+		initialOpen = false
 	}: Props = $props();
 
-	let open = $state(false);
+	let open = $state(initialOpen);
 	let showThemePicker = $state(false);
 	let menuEl: HTMLDivElement | undefined = $state();
 
@@ -49,11 +73,7 @@
 	}
 
 	async function patchConversation(updates: Record<string, unknown>) {
-		await fetch(`/api/conversations/${conversationId}`, {
-			method: 'PATCH',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(updates)
-		});
+		await api.patchConversation(conversationId, updates);
 	}
 
 	async function handleStar() {
@@ -80,7 +100,7 @@
 		close();
 		if (!confirm('Er du sikker på at du vil slette samtalen permanent?')) return;
 		onDeleted?.(conversationId);
-		await fetch(`/api/conversations/${conversationId}`, { method: 'DELETE' });
+		await api.deleteConversation(conversationId);
 	}
 
 	function handleRename() {

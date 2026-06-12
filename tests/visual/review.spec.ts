@@ -12,6 +12,7 @@ const PAGES = [
 	{ name: 'ukeplan', url: '/ukeplan' },
 	{ name: 'tema-helse', url: '/tema/helse' },
 	{ name: 'tema-okonomi', url: '/tema/økonomi' },
+	{ name: 'tema-boker', url: '/tema/bøker' },
 	{ name: 'design', url: '/design' },
 	{ name: 'plan-mal', url: '/plan/mal' },
 	{ name: 'plan-oppgaver', url: '/plan/oppgaver' },

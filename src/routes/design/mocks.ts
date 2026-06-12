@@ -556,6 +556,174 @@ export const mockFlowSheetApi: FlowSheetApi = {
 	fetchDaySuggestions: async () => ['Rydde kjøkkenet', 'Ringe mormor', '20 min lesing']
 };
 
+// ── Bøker ────────────────────────────────────────────────────────────────────
+import type { Book, BookTabsApi, BookClip, ProgressLogEntry } from '$lib/components/domain/book-api';
+
+export const bookMock: Book = {
+	id: 'b-1',
+	title: 'Sult',
+	author: 'Knut Hamsun',
+	coverUrl: null,
+	totalPages: 232,
+	currentPage: 148,
+	format: 'both',
+	totalMinutes: 412,
+	currentMinutes: 263,
+	status: 'reading',
+	conversationId: null,
+	contextStatus: 'ready',
+	contextPack: null,
+	contextProgress: null,
+	startedAt: '2026-05-20T00:00:00Z',
+	finishedAt: null,
+	loanDueDate: '2026-06-28',
+	loanStartDate: '2026-06-01',
+	createdAt: '2026-05-20T00:00:00Z'
+};
+
+const bookProgressLogMock: ProgressLogEntry[] = [
+	{ id: 'pl-1', currentPage: 42, currentMinutes: 70, loggedAt: '2026-05-24T20:00:00Z' },
+	{ id: 'pl-2', currentPage: 80, currentMinutes: 140, loggedAt: '2026-05-28T20:00:00Z' },
+	{ id: 'pl-3', currentPage: 112, currentMinutes: 198, loggedAt: '2026-06-03T20:00:00Z' },
+	{ id: 'pl-4', currentPage: 148, currentMinutes: 263, loggedAt: '2026-06-09T20:00:00Z' }
+];
+
+export const bookClipsMock: BookClip[] = [
+	{
+		id: 'clip-1',
+		bookId: 'b-1',
+		text: 'Det var i den Tid, jeg gik omkring og sulted i Kristiania, denne forunderlige By, som ingen forlader, før han har faaet Mærker af den.',
+		page: 1,
+		position: null,
+		note: 'Åpningslinjen',
+		source: null,
+		audioUrl: '',
+		words: [
+			{ word: 'Det', start: 0, end: 0.25 },
+			{ word: 'var', start: 0.25, end: 0.45 },
+			{ word: 'i', start: 0.45, end: 0.55 },
+			{ word: 'den', start: 0.55, end: 0.75 },
+			{ word: 'Tid,', start: 0.75, end: 1.1 },
+			{ word: 'jeg', start: 1.1, end: 1.3 },
+			{ word: 'gik', start: 1.3, end: 1.55 },
+			{ word: 'omkring', start: 1.55, end: 2.0 },
+			{ word: 'og', start: 2.0, end: 2.1 },
+			{ word: 'sulted', start: 2.1, end: 2.5 },
+			{ word: 'i', start: 2.5, end: 2.6 },
+			{ word: 'Kristiania', start: 2.6, end: 3.4 }
+		],
+		characters: ['Fortelleren'],
+		createdAt: '2026-06-01T10:00:00Z'
+	},
+	{
+		id: 'clip-2',
+		bookId: 'b-1',
+		text: 'Jeg var saa lykkelig som faa Mennesker kan være det.',
+		page: 87,
+		position: null,
+		note: null,
+		source: null,
+		audioUrl: null,
+		words: null,
+		characters: null,
+		createdAt: '2026-06-05T18:00:00Z'
+	}
+];
+
+export const mockBookTabsApi: BookTabsApi = {
+	getProgressLog: async () => bookProgressLogMock,
+	updateBook: async (_themeId, _bookId, patch) => ({ ...bookMock, ...patch }),
+	deleteBook: async () => {},
+	getClips: async () => bookClipsMock,
+	createClip: async (_themeId, _bookId, input) => ({
+		id: 'clip-new',
+		bookId: 'b-1',
+		text: input.text,
+		page: input.page,
+		position: input.position,
+		note: input.note,
+		source: null,
+		audioUrl: null,
+		words: null,
+		characters: input.characters,
+		createdAt: '2026-06-12T00:00:00Z'
+	}),
+	deleteClip: async () => {},
+	refreshContext: async () => new Response(JSON.stringify({ action: 'requeued' })),
+	uploadImage: async () => new Response(JSON.stringify({})),
+	transcribe: async () => new Response(JSON.stringify({})),
+	streamChatMessages: async () => new Response('')
+};
+
+export const bookWithPackMock: Book = {
+	...bookMock,
+	contextPack: {
+		metadata: { year: 1890, genre: 'Roman' },
+		authorContext: {
+			bio: 'Knut Hamsun (1859–1952) regnes som en av modernismens pionerer i nordisk litteratur.',
+			themes: ['sult', 'psykologi', 'byliv'],
+			howBookFits: 'Gjennombruddsromanen — det første store verket i forfatterskapet.'
+		},
+		themes: ['Eksistens', 'Stolthet', 'Kropp og sinn'],
+		criticReviews: [
+			{
+				source: 'Morgenbladet',
+				url: 'https://example.org/anmeldelse',
+				verdict: 'positive',
+				quote: 'Et nervøst mesterverk som åpner en ny epoke i romankunsten.'
+			}
+		],
+		reception: {
+			critics: 'Banebrytende psykologisk realisme.',
+			readers: 'Leses fortsatt som rystende aktuell.'
+		},
+		conversationHints: ['Hva gjør sulten med fortellerens selvbilde?', 'Byen som motstander']
+	}
+};
+
+export const bookChatMessagesMock = [
+	{ role: 'user' as const, text: 'Hva er det med åpningslinjen som gjør den så berømt?' },
+	{
+		role: 'assistant' as const,
+		text: 'Den etablerer alt på én gang: sulten, byen som aktør («ingen forlader, før han har faaet Mærker af den») og den tilbakeskuende fortelleren. Merk at *Kristiania* nevnes før jeg-et — byen er hovedmotstanderen.'
+	},
+	{ role: 'user' as const, text: 'Les klippet fra side 87 i lys av det' }
+];
+
+// ── Hjemskjerm-elementer ─────────────────────────────────────────────────────
+export const themeButtonsMock = [
+	{ id: 'helse', name: 'Helse', emoji: '💪' },
+	{ id: 'okonomi', name: 'Økonomi', emoji: '💰' },
+	{ id: 'familie', name: 'Familie', emoji: '👨‍👩‍👧' },
+	{ id: 'egenfrekvens', name: 'Egenfrekvens', emoji: '🌊' },
+	{ id: 'boker', name: 'Bøker', emoji: '📚' },
+	{ id: 'hjem', name: 'Hjem', emoji: '🏡' }
+];
+
+export const actionPillsMock = [
+	{ id: 'ap-1', icon: '⚖️', label: 'Vekt', value: '90.8', done: true },
+	{ id: 'ap-2', icon: '🏃', label: 'Løp', value: '2/5', done: false },
+	{ id: 'ap-3', icon: '😴', label: 'Søvn', done: false },
+	{ id: 'ap-4', icon: '✨', label: 'Sjekk inn', done: false }
+];
+
+export const readinessMock = {
+	programName: 'Halvmaraton-program',
+	state: 'klar' as const,
+	alternativeName: null
+};
+
+export const conversationThemesMock = [
+	{ id: 'helse', name: 'Helse', emoji: '💪' },
+	{ id: 'okonomi', name: 'Økonomi', emoji: '💰' },
+	{ id: 'familie', name: 'Familie', emoji: null }
+];
+
+export const mockConversationMenuApi = {
+	patchConversation: async () => {},
+	deleteConversation: async () => {}
+};
+
 // ── Slot-sjekkin (fokus-FlowSheet) ───────────────────────────────────────────
 const slotMock: PeriodSlot = {
 	id: 'arbeidsdag',

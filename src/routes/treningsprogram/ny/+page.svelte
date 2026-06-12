@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, PageHeader, PageSection } from '$lib/components/ui';
+	import { AppPage, DateInput, PageHeader, PageSection } from '$lib/components/ui';
 	import { goto } from '$app/navigation';
 	import type { PageData } from './$types';
 
@@ -146,7 +146,7 @@
 
 		<section class="field">
 			<label for="startDate">Startdato</label>
-			<input id="startDate" type="date" bind:value={startDate} />
+			<DateInput id="startDate" bind:value={startDate} />
 		</section>
 
 		<section class="field">

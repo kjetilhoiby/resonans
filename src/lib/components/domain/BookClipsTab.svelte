@@ -1,53 +1,14 @@
 <script lang="ts">
 	import AudioKaraokePlayer from './AudioKaraokePlayer.svelte';
-
-	interface Book {
-		id: string;
-		title: string;
-		author: string | null;
-		coverUrl: string | null;
-		totalPages: number | null;
-		currentPage: number;
-		format: 'print' | 'audio' | 'both';
-		totalMinutes: number | null;
-		currentMinutes: number;
-		status: 'not_started' | 'reading' | 'completed' | 'paused';
-		conversationId: string | null;
-		contextStatus: 'none' | 'pending' | 'partial' | 'ready';
-		contextPack: Record<string, unknown> | null;
-		startedAt: string | null;
-		finishedAt: string | null;
-		loanDueDate: string | null;
-		loanStartDate: string | null;
-		createdAt: string;
-	}
-
-	interface WordTimestamp {
-		word: string;
-		start: number;
-		end: number;
-	}
-
-	interface BookClip {
-		id: string;
-		bookId: string;
-		text: string;
-		page: number | null;
-		position: string | null;
-		note: string | null;
-		source: string | null;
-		audioUrl: string | null;
-		words: WordTimestamp[] | null;
-		characters: string[] | null;
-		createdAt: string;
-	}
+	import { bookTabsApi, type BookTabsApi, type Book, type BookClip } from './book-api';
 
 	interface Props {
 		themeId: string;
 		book: Book;
+		api?: BookTabsApi;
 	}
 
-	let { themeId, book }: Props = $props();
+	let { themeId, book, api = bookTabsApi }: Props = $props();
 
 	/* ── Clips state ──────────────────────────────────── */
 	let clips = $state<BookClip[]>([]);
@@ -72,8 +33,8 @@
 
 	async function loadClips() {
 		try {
-			const res = await fetch(`/api/tema/${themeId}/books/${book.id}/clips`);
-			if (res.ok) clips = await res.json();
+			const loaded = await api.getClips(themeId, book.id);
+			if (loaded) clips = loaded;
 		} catch { /* ignore */ }
 		clipsLoaded = true;
 	}
@@ -86,19 +47,14 @@
 			const characters = clipCharacters.trim()
 				? clipCharacters.split(',').map((c) => c.trim()).filter(Boolean)
 				: null;
-			const res = await fetch(`/api/tema/${themeId}/books/${book.id}/clips`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					text: clipText.trim(),
-					page: clipPage ? Number(clipPage) : null,
-					position: clipPosition.trim() || null,
-					note: clipNote.trim() || null,
-					characters
-				})
+			const clip = await api.createClip(themeId, book.id, {
+				text: clipText.trim(),
+				page: clipPage ? Number(clipPage) : null,
+				position: clipPosition.trim() || null,
+				note: clipNote.trim() || null,
+				characters
 			});
-			if (!res.ok) throw new Error();
-			const clip: BookClip = await res.json();
+			if (!clip) throw new Error();
 			clips = [clip, ...clips];
 			clipText = '';
 			clipPage = '';
@@ -115,7 +71,7 @@
 
 	async function deleteClip(clipId: string) {
 		clips = clips.filter((c) => c.id !== clipId);
-		await fetch(`/api/tema/${themeId}/books/${book.id}/clips/${clipId}`, { method: 'DELETE' });
+		await api.deleteClip(themeId, book.id, clipId);
 	}
 
 	function fmtDate(iso: string): string {
@@ -222,17 +178,17 @@
 		flex-direction: column;
 		gap: 8px;
 		padding: 12px;
-		background: #0f0f10;
-		border: 1px solid #1e1e1e;
+		background: var(--book-bg-card, #0f0f10);
+		border: 1px solid var(--border-subtle);
 		border-radius: 10px;
 	}
 
 	.bk-clip-textarea {
 		width: 100%;
-		background: #141414;
-		border: 1px solid #2a2a2a;
+		background: var(--bg-elevated);
+		border: 1px solid var(--border-color);
 		border-radius: 8px;
-		color: #e8e8e8;
+		color: var(--book-text-primary, #e8e8e8);
 		font: inherit;
 		font-size: 0.85rem;
 		padding: 8px 10px;
@@ -247,10 +203,10 @@
 
 	.bk-clip-input {
 		flex: 1;
-		background: #141414;
-		border: 1px solid #2a2a2a;
+		background: var(--bg-elevated);
+		border: 1px solid var(--border-color);
 		border-radius: 8px;
-		color: #e8e8e8;
+		color: var(--book-text-primary, #e8e8e8);
 		font: inherit;
 		font-size: 0.82rem;
 		padding: 6px 10px;
@@ -268,8 +224,8 @@
 	}
 
 	.bk-clip-card {
-		background: #0f0f10;
-		border: 1px solid #1e1e1e;
+		background: var(--book-bg-card, #0f0f10);
+		border: 1px solid var(--border-subtle);
 		border-radius: 10px;
 		padding: 12px;
 		display: flex;
@@ -283,7 +239,7 @@
 		font-size: 0.88rem;
 		color: #d0d0d0;
 		line-height: 1.5;
-		border-left: 3px solid #3b3e6a;
+		border-left: 3px solid var(--book-border-accent, #3b3e6a);
 		padding-left: 10px;
 	}
 
@@ -296,8 +252,8 @@
 
 	.bk-clip-loc {
 		font-size: 0.72rem;
-		color: #7c8ef5;
-		background: #111a2a;
+		color: var(--accent-light);
+		background: var(--book-bg-active, #111a2a);
 		padding: 2px 6px;
 		border-radius: 4px;
 	}
@@ -306,34 +262,34 @@
 		font-size: 0.7rem;
 		padding: 2px 7px;
 		border-radius: 99px;
-		background: #1a1a2a;
-		border: 1px solid #3a3a5a;
-		color: #9090c8;
+		background: var(--book-chip-bg, #1a1a2a);
+		border: 1px solid var(--book-chip-border, #3a3a5a);
+		color: var(--book-chip-text, #9090c8);
 	}
 
 	.bk-clip-date {
 		font-size: 0.7rem;
-		color: #555;
+		color: var(--text-muted);
 		margin-left: auto;
 	}
 
 	.bk-clip-delete {
 		background: none;
 		border: none;
-		color: #555;
+		color: var(--text-muted);
 		font-size: 1rem;
 		cursor: pointer;
 		padding: 0 2px;
 		line-height: 1;
 	}
-	.bk-clip-delete:hover { color: #e07070; }
+	.bk-clip-delete:hover { color: var(--error-text); }
 
 	.bk-clip-note {
 		margin: 0;
 		font-size: 0.8rem;
 		color: #7a7a7a;
 		padding-top: 4px;
-		border-top: 1px solid #1a1a1a;
+		border-top: 1px solid var(--bg-input);
 	}
 
 	/* Audio clip card accent */
@@ -343,14 +299,14 @@
 
 	/* Shared */
 	.bk-empty {
-		color: #666;
+		color: var(--book-text-tertiary, #666);
 		font-size: 0.85rem;
 		text-align: center;
 		padding: 24px 16px;
 	}
 
 	.bk-error {
-		color: #e07070;
+		color: var(--error-text);
 		font-size: 0.8rem;
 		margin: 0;
 	}
@@ -359,25 +315,25 @@
 		font: inherit;
 		font-size: 0.8rem;
 		padding: 7px 14px;
-		background: #1a1a1a;
-		border: 1px solid #2a2a2a;
-		color: #7c8ef5;
+		background: var(--bg-input);
+		border: 1px solid var(--border-color);
+		color: var(--accent-light);
 		border-radius: 99px;
 		cursor: pointer;
 	}
-	.bk-action-btn:hover { border-color: #7c8ef5; }
+	.bk-action-btn:hover { border-color: var(--accent-light); }
 
 	.bk-save-btn {
 		font: inherit;
 		font-size: 0.82rem;
 		padding: 8px 16px;
-		background: #1e2244;
-		border: 1px solid #3b3e6a;
-		color: #c8ccff;
+		background: var(--book-bg-accent, #1e2244);
+		border: 1px solid var(--book-border-accent, #3b3e6a);
+		color: var(--book-accent-text, #c8ccff);
 		border-radius: 8px;
 		cursor: pointer;
 		align-self: flex-start;
 	}
 	.bk-save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-	.bk-save-btn:hover:not(:disabled) { background: #252b55; }
+	.bk-save-btn:hover:not(:disabled) { background: var(--book-bg-accent-hover, #252b55); }
 </style>

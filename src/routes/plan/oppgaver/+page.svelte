@@ -2,7 +2,7 @@
 	import { tick, untrack } from 'svelte';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/stores';
-	import { ChecklistCheckbox, ChecklistItemRow } from '$lib/components/ui';
+	import { ChecklistCheckbox, ChecklistItemRow, DateInput } from '$lib/components/ui';
 	import TaskTitle from '$lib/components/ui/TaskTitle.svelte';
 	import type { ChecklistItemLike } from '$lib/types/checklist';
 	import type { PageData } from './$types';
@@ -493,11 +493,9 @@
 												onclick={() => markDirty(task.id, { dueDate: preset.iso })}
 											>{preset.label}</button>
 										{/each}
-										<input
-											type="date"
-											class="chip date-input"
+										<DateInput
 											value={state.dueDate ?? ''}
-											onchange={(e) => markDirty(task.id, { dueDate: e.currentTarget.value || null })}
+											onChange={(e) => markDirty(task.id, { dueDate: e.currentTarget.value || null })}
 										/>
 										{#if state.dueDate !== null}
 											<button type="button" class="chip clear" onclick={() => markDirty(task.id, { dueDate: null })}>×</button>

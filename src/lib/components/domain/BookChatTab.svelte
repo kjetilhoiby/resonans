@@ -3,71 +3,9 @@
 	import TriageCard from '../composed/TriageCard.svelte';
 	import AudioKaraokePlayer from './AudioKaraokePlayer.svelte';
 	import { tick } from 'svelte';
+	import { bookTabsApi, type BookTabsApi, type Book, type BookClip } from './book-api';
 
-	interface Book {
-		id: string;
-		title: string;
-		author: string | null;
-		coverUrl: string | null;
-		totalPages: number | null;
-		currentPage: number;
-		format: 'print' | 'audio' | 'both';
-		totalMinutes: number | null;
-		currentMinutes: number;
-		status: 'not_started' | 'reading' | 'completed' | 'paused';
-		conversationId: string | null;
-		contextStatus: 'none' | 'pending' | 'partial' | 'ready';
-		contextPack: Record<string, unknown> | null;
-		contextProgress?: BookContextProgressEnvelope | null;
-		startedAt: string | null;
-		finishedAt: string | null;
-		loanDueDate: string | null;
-		loanStartDate: string | null;
-		createdAt: string;
-	}
-
-	interface BookContextProgressEnvelope {
-		jobStatus: 'queued' | 'running' | 'retry' | 'completed' | 'failed' | 'canceled';
-		jobError: string | null;
-		progress: BookContextProgress | null;
-	}
-
-	interface BookContextProgress {
-		stepIndex: number;
-		totalSteps: number;
-		label: string;
-		sourcesCompleted: number;
-		sourcesTotal: number;
-		sources: {
-			openLibrary?: { ok: boolean; worksFound?: number; error?: string };
-			criticReviews?: { ok: boolean; count?: number; error?: string };
-			readerSources?: { ok: boolean; count?: number; error?: string };
-			goodreads?: { ok: boolean; reviewCount?: number; error?: string };
-		};
-		updatedAt: string;
-	}
-
-	interface WordTimestamp {
-		word: string;
-		start: number;
-		end: number;
-	}
-
-	interface BookClip {
-		id: string;
-		bookId: string;
-		text: string;
-		page: number | null;
-		position: string | null;
-		note: string | null;
-		source: string | null;
-		audioUrl: string | null;
-		words: WordTimestamp[] | null;
-		characters: string[] | null;
-		createdAt: string;
-	}
-
-	interface ChatMsg {
+	export interface ChatMsg {
 		role: 'user' | 'assistant';
 		text: string;
 	}
@@ -81,6 +19,8 @@
 		onAutoProgress: (bookId: string, currentMinutes: number, totalMinutes: number) => void;
 		onClipAdded: (clip: BookClip) => void;
 		onChatMessage: (msg: ChatMsg) => void;
+		/** Nettverkslag — injiseres som mock på /design. Default: ekte API. */
+		api?: BookTabsApi;
 	}
 
 	let {
@@ -91,7 +31,8 @@
 		chatMessagesLoaded,
 		onAutoProgress,
 		onClipAdded,
-		onChatMessage
+		onChatMessage,
+		api = bookTabsApi
 	}: Props = $props();
 
 	/* ── Chat state ──────────────────────────────────────── */
@@ -264,7 +205,7 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		try {
 			const fd = new FormData();
 			fd.append('image', file);
-			const res = await fetch('/api/upload-image', { method: 'POST', body: fd });
+			const res = await api.uploadImage(fd);
 			if (!res.ok) throw new Error();
 			const data = await res.json();
 			pendingImageUrl = data.url ?? data.secure_url ?? null;
@@ -290,9 +231,7 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 			const fd = new FormData();
 			fd.append('file', file);
 			audioUploadStatus = 'Transkriberer…';
-			const res = await fetch(`/api/tema/${themeId}/books/${book.id}/transcribe`, {
-				method: 'POST', body: fd
-			});
+			const res = await api.transcribe(themeId, book.id, fd);
 			if (!res.ok) {
 				const err = await res.json().catch(() => ({}));
 				audioUploadStatus = err.error ?? 'Transkripsjon feilet.';
@@ -351,11 +290,7 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 			};
 			if (imageUrl) body.imageUrl = imageUrl;
 
-			const response = await fetch('/api/chat-stream-messages', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(body)
-			});
+			const response = await api.streamChatMessages(body);
 
 			if (!response.ok || !response.body) throw new Error('Streaming feilet');
 
@@ -530,7 +465,7 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 
 	.bk-bubble-user {
 		align-self: flex-end;
-		background: #1e2244;
+		background: var(--book-bg-accent, #1e2244);
 		color: #e0e4ff;
 		padding: 10px 14px;
 		border-radius: 18px 18px 4px 18px;
@@ -559,11 +494,11 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		gap: 8px;
 		padding: 6px 16px;
 		background: #0f1025;
-		border-top: 1px solid #1e1e2a;
+		border-top: 1px solid var(--book-border-faint, #1e1e2a);
 	}
 	.bk-pending-audio-name {
 		font-size: 0.82rem;
-		color: #a0a8ff;
+		color: var(--book-accent-light, #a0a8ff);
 		flex: 1;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -572,7 +507,7 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 	.bk-pending-remove {
 		background: none;
 		border: none;
-		color: #888;
+		color: var(--book-text-secondary, #888);
 		font-size: 1rem;
 		cursor: pointer;
 		padding: 0 4px;
@@ -581,22 +516,22 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 	.bk-pending-remove:hover { color: #ff9999; }
 	.bk-upload-status {
 		font-size: 0.78rem;
-		color: #888;
+		color: var(--book-text-secondary, #888);
 		padding: 2px 16px;
 		margin: 0;
 	}
 
 	.bk-clip-loc {
 		font-size: 0.72rem;
-		color: #7c8ef5;
-		background: #111a2a;
+		color: var(--accent-light);
+		background: var(--book-bg-active, #111a2a);
 		padding: 2px 6px;
 		border-radius: 4px;
 	}
 
 	.bk-clip-date {
 		font-size: 0.7rem;
-		color: #555;
+		color: var(--text-muted);
 		margin-left: auto;
 	}
 
@@ -604,13 +539,13 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		font-size: 0.7rem;
 		padding: 2px 7px;
 		border-radius: 99px;
-		background: #1a1a2a;
-		border: 1px solid #3a3a5a;
-		color: #9090c8;
+		background: var(--book-chip-bg, #1a1a2a);
+		border: 1px solid var(--book-chip-border, #3a3a5a);
+		color: var(--book-chip-text, #9090c8);
 	}
 
 	.bk-chat-clips-drawer {
-		border-top: 1px solid #1a1a2a;
+		border-top: 1px solid var(--book-chip-bg, #1a1a2a);
 		flex-shrink: 0;
 	}
 
@@ -626,7 +561,7 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 		text-align: left;
 		transition: color 0.15s;
 	}
-	.bk-chat-clips-toggle:hover { color: #a0a8ff; }
+	.bk-chat-clips-toggle:hover { color: var(--book-accent-light, #a0a8ff); }
 
 	.bk-chat-clips-list {
 		display: flex;
@@ -654,14 +589,14 @@ Hvis brukeren sender et lydklipp eller transkripsjon fra boken:
 	}
 
 	.bk-empty {
-		color: #666;
+		color: var(--book-text-tertiary, #666);
 		font-size: 0.85rem;
 		text-align: center;
 		padding: 24px 16px;
 	}
 
 	.bk-error {
-		color: #e07070;
+		color: var(--error-text);
 		font-size: 0.8rem;
 		margin: 0;
 	}
