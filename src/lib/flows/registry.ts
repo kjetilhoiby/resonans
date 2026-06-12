@@ -1385,9 +1385,11 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 				title: 'Årets beste',
 				fields: [
 					{ id: 'best_concert', type: 'text', label: 'Beste konsert' },
+					{ id: 'best_song', type: 'text', label: 'Beste sang' },
 					{ id: 'best_book', type: 'text', label: 'Beste bok' },
 					{ id: 'best_film', type: 'text', label: 'Beste film eller serie' },
 					{ id: 'best_theater', type: 'text', label: 'Beste teaterstykke' },
+					{ id: 'best_trip', type: 'text', label: 'Beste tur' },
 					{ id: 'best_experience', type: 'text', label: 'Beste opplevelse' }
 				]
 			},

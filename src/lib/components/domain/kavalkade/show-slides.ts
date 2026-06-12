@@ -80,9 +80,11 @@ function quoteDuration(text: string, hasWriter: boolean): number {
 /** «årets beste»-feltene fra intervjuet, med visningsetikett */
 const BEST_OF: Array<{ id: string; label: string }> = [
 	{ id: 'best_concert', label: 'Konsert' },
+	{ id: 'best_song', label: 'Sang' },
 	{ id: 'best_book', label: 'Bok' },
 	{ id: 'best_film', label: 'Film eller serie' },
 	{ id: 'best_theater', label: 'Teater' },
+	{ id: 'best_trip', label: 'Tur' },
 	{ id: 'best_experience', label: 'Opplevelse' }
 ];
 

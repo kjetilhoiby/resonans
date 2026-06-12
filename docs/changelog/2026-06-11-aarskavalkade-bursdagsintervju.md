@@ -88,6 +88,7 @@ Poenget med intervjuet er akkumulering: svarene lagres per år, slik at neste å
 - Nye flow-steg: **Rollene dine** (skjema, fire textareas) → **Kroppen og hodet** (chat, autoSend): AI-en intervjuer om psykisk helse/vekt/trening/søvn langs de fire spørsmålene, med kavalkade-måledata og fjorårets selvangivelse i prompten («vekta gikk fra X til Y — var det planen?»). AI-en vedlikeholder en `<status>`-blokk per melding (inbox-mønsteret); `parseStatusBlock` (ren, testet) henter den i onComplete som seksjonsinnhold → **Mål og retning** (skjema: `goals_past` + `direction`).
 - Speil-steget tilbyr eksplisitt å chatte videre på enkeltsvar. Chat-stegene er ekte flersvingssamtaler — «Neste» trykkes når man er ferdig.
 - Showet får en «Dit du vil»-quote-slide når `direction` er besvart. estimatedMinutes 10 → 15.
+- «Årets beste» beholdt og utvidet med **beste sang** og **beste tur** (seksjoner, skjemafelt og show-sliden).
 
 ### Fase 12: Oppdagbarhet
 

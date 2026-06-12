@@ -28,9 +28,11 @@ export const INTERVIEW_SECTIONS: InterviewSection[] = [
 	{ id: 'stopped', heading: 'Hva har du sluttet med?' },
 	{ id: 'memory', heading: 'Hva husker du best?' },
 	{ id: 'best_concert', heading: 'Beste konsert' },
+	{ id: 'best_song', heading: 'Beste sang' },
 	{ id: 'best_book', heading: 'Beste bok' },
 	{ id: 'best_film', heading: 'Beste film eller serie' },
 	{ id: 'best_theater', heading: 'Beste teaterstykke' },
+	{ id: 'best_trip', heading: 'Beste tur' },
 	{ id: 'best_experience', heading: 'Beste opplevelse' },
 	// Skrives av onComplete (AI-ens speiling fra siste chat-steg), ikke et skjemafelt
 	{ id: 'mirror', heading: 'Året i speilet' }
