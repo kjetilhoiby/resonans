@@ -34,7 +34,7 @@
 		margin: 0;
 		padding: 10px 12px;
 		background: var(--card-bg-inset);
-		border-left: 2px solid var(--accent-muted);
+		border-left: 2px solid var(--kv-greeting-edge, var(--accent-muted));
 		border-radius: var(--radius-md, 10px);
 	}
 

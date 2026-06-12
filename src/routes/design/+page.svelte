@@ -1059,6 +1059,7 @@
 			<p class="section-desc">
 				Bursdagsrigget fra <a href="/kavalkade">/kavalkade</a> — bygget av <code>domain/kavalkade/</code>-komponentene.
 				Alle er rent props-drevne; AI-innslagene (spådom, hilsner) genereres server-side og vises her med faste fixtures.
+				Utkast: <a href="/design/kavalkade-fest">festskinn — fulle farger som bakgrunn →</a>
 			</p>
 
 			<h3 class="subsection">KavalkadeStats — året i tall vs. i fjor</h3>
@@ -1110,7 +1111,7 @@
 				(ord-for-ord-reveal, count-up-tall) over drivende gradient-blobs. Demoes med
 				<code>animate=false</code> (frosset slutt-tilstand) pga. visuell regresjon; i appen styres
 				de av <code>KavalkadeShow</code>-spilleren med story-progresjon og tap-navigasjon.
-				<a href="/design/kavalkade-show">Spill av hele showet med mock-data →</a>
+				<a href="/design/kavalkade-show">Spill av hele showet med mock-data →</a> (med Mørk/Fest-veksler for skin-utkastet)
 			</p>
 			<div class="demo-row">
 				{#each kavalkadeShowSlidesMock as slide (slide.kind)}

@@ -108,14 +108,17 @@
 		gap: 8px;
 	}
 
+	/* --kv-stat-* kan overstyres av kontekst-skins (f.eks. festskinnet) */
 	.kv-stat {
 		display: flex;
 		flex-direction: column;
 		gap: 2px;
-		background:
+		background: var(
+			--kv-stat-bg,
 			linear-gradient(135deg, hsl(var(--hue) 60% 18% / 0.45), transparent 65%),
-			var(--card-bg-inset);
-		border-left: 2px solid hsl(var(--hue) 80% 55% / 0.7);
+			var(--card-bg-inset)
+		);
+		border-left: 2px solid var(--kv-stat-edge, hsl(var(--hue) 80% 55% / 0.7));
 		border-radius: var(--radius-md, 10px);
 		padding: 10px 12px;
 		min-width: 0;
@@ -132,7 +135,7 @@
 	.kv-stat-value {
 		font-size: var(--font-size-title);
 		font-weight: 700;
-		color: hsl(var(--hue) 85% 78%);
+		color: var(--kv-stat-value-color, hsl(var(--hue) 85% 78%));
 		overflow-wrap: anywhere;
 	}
 

@@ -16,9 +16,11 @@
 		onclose?: () => void;
 		animate?: boolean;
 		autoAdvance?: boolean;
+		/** 'fest': klare, mettede farger tar over bakgrunnen (Wrapped-plakat) */
+		skin?: 'dark' | 'fest';
 	}
 
-	let { slides, onclose, animate = true, autoAdvance = true }: Props = $props();
+	let { slides, onclose, animate = true, autoAdvance = true, skin = 'dark' }: Props = $props();
 
 	let index = $state(0);
 
@@ -58,11 +60,18 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-<div class="show" class:animate role="region" aria-label="Årskavalkade-show">
+<div
+	class="show"
+	class:animate
+	class:skin-fest={skin === 'fest'}
+	role="region"
+	aria-label="Årskavalkade-show"
+	style={`--hue: ${current?.hue ?? 258};`}
+>
 	{#key index}
 		<div class="frame" in:fade={{ duration: animate ? 350 : 0 }}>
 			{#if current}
-				<ShowSlide slide={current} {animate} />
+				<ShowSlide slide={current} {animate} {skin} />
 			{/if}
 		</div>
 	{/key}
@@ -90,6 +99,11 @@
 		z-index: 1000;
 		background: #07070a;
 		overflow: hidden;
+	}
+
+	/* Fest: bakgrunnen mellom crossfades følger gjeldende slides farge */
+	.show.skin-fest {
+		background: hsl(var(--hue) 86% 50%);
 	}
 
 	.frame {

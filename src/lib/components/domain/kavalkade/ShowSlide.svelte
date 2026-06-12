@@ -2,6 +2,9 @@
   ShowSlide — én fullskjerm-slide i kavalkade-showet: animert typografi
   (ord-for-ord-reveal, count-up-tall) over en levende gradient-bakgrunn.
 
+  To skins: 'dark' (default, fargeblobs over nær sort) og 'fest' — klare,
+  mettede farger tar over hele bakgrunnen, hvit typografi (Wrapped-plakat).
+
   `animate={false}` fryser alt i slutt-tilstand — brukes av /design-demoen
   (visuell regresjon) og respekteres også via prefers-reduced-motion.
 
@@ -15,9 +18,10 @@
 	interface Props {
 		slide: ShowSlideDef;
 		animate?: boolean;
+		skin?: 'dark' | 'fest';
 	}
 
-	let { slide, animate = true }: Props = $props();
+	let { slide, animate = true, skin = 'dark' }: Props = $props();
 
 	const nf = new Intl.NumberFormat('nb-NO');
 
@@ -58,7 +62,7 @@
 	);
 </script>
 
-<div class="slide" class:animate style={`--hue: ${slide.hue};`}>
+<div class="slide" class:animate class:skin-fest={skin === 'fest'} style={`--hue: ${slide.hue};`}>
 	<div class="blob blob-a" aria-hidden="true"></div>
 	<div class="blob blob-b" aria-hidden="true"></div>
 	<div class="blob blob-c" aria-hidden="true"></div>
@@ -367,6 +371,52 @@
 			opacity: var(--wo, 1);
 			transform: scale(1);
 		}
+	}
+
+	/* ── Festskinn — mettet farge tar over hele bakgrunnen ─────────────── */
+
+	.skin-fest {
+		background:
+			radial-gradient(120% 90% at 80% 110%, hsl(calc(var(--hue) + 30) 88% 47%) 0%, transparent 60%),
+			linear-gradient(160deg, hsl(var(--hue) 88% 58%) 0%, hsl(var(--hue) 86% 48%) 100%);
+		color: #fff;
+	}
+
+	.skin-fest .blob-a {
+		background: radial-gradient(circle, hsl(calc(var(--hue) + 45) 95% 72% / 0.55) 0%, transparent 65%);
+		mix-blend-mode: screen;
+	}
+
+	.skin-fest .blob-b {
+		background: radial-gradient(circle, hsl(var(--hue) 85% 28% / 0.45) 0%, transparent 65%);
+		mix-blend-mode: multiply;
+	}
+
+	.skin-fest .blob-c {
+		background: radial-gradient(circle, hsl(calc(var(--hue) + 180) 95% 78% / 0.38) 0%, transparent 60%);
+	}
+
+	.skin-fest .bignum .num {
+		background: none;
+		color: #fff;
+		-webkit-text-fill-color: #fff;
+		text-shadow: 0 3px 28px hsl(var(--hue) 85% 25% / 0.5);
+	}
+
+	.skin-fest .kicker {
+		color: rgb(255 255 255 / 0.9);
+	}
+
+	.skin-fest .sub {
+		color: rgb(255 255 255 / 0.78);
+	}
+
+	.skin-fest .cloud-word {
+		color: hsl(var(--whue, var(--hue)) 100% 93%);
+	}
+
+	.skin-fest .items li::before {
+		background: rgb(255 255 255 / 0.95);
 	}
 
 	@media (prefers-reduced-motion: reduce) {

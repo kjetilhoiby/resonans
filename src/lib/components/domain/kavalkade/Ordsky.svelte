@@ -32,8 +32,9 @@
 		padding: 6px 0;
 	}
 
+	/* --kv-ord-color kan overstyres av kontekst-skins (f.eks. festskinnet) */
 	.kv-ord {
-		color: hsl(var(--whue) 75% 74%);
+		color: var(--kv-ord-color, hsl(var(--whue) 75% 74%));
 		line-height: 1.2;
 	}
 </style>

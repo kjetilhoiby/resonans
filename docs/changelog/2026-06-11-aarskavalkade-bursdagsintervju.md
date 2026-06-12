@@ -67,7 +67,13 @@ Poenget med intervjuet er akkumulering: svarene lagres per år, slik at neste å
 - Brukerinnsikt: fødselsdato fantes i datamodellen (`persons.birthDate`, redigerbar i familie-UI-ets `PersonEditSheet`) men ikke i profilseksjonen på `/settings` — og uten en ekte self-person syntetiserer `/api/persons` bare en virtuell med `birthDate: null` som ikke kan lagres. Hele bursdagsrigget sto dermed uten datakilde for nye brukere.
 - Nytt felt «Fødselsdato» i Profil-kortet på `/settings` (DateInput + lagre med statusknapp), lagret via nytt endepunkt `PUT /api/profile/birthdate` som oppdaterer self-personen — eller oppretter den (kind `self`, navn fra users) hvis den bare var virtuell.
 
-### Fase 9: Oppdagbarhet
+### Fase 9: Utkast — festskinn (fulle farger som bakgrunn)
+
+- `ShowSlide`/`KavalkadeShow` får `skin`-prop: `'dark'` (default) | `'fest'`. Festskinnet lar mettet farge ta over hele slide-bakgrunnen (gradient i slidens hue, lysere/mørkere blobs i screen/multiply-blend, hvit typografi, hvitt count-up-tall med fargeskygge). I appen: `/kavalkade/show?skin=fest`.
+- Plakat-utkast for kavalkade-kortene på `/design/kavalkade-fest` (public, mock-data, ikke i visuell regresjon): hver seksjon én mettet kulør, implementert som rene token-overrides (`--card-*`, `--text-*`, `--section-label-color` + nye komponent-tokens `--kv-stat-bg/edge/value-color`, `--kv-ord-color`, `--kv-greeting-edge`) — komponentene er uendret appens faktiske.
+- Mørk/Fest-veksler på live-demoen `/design/kavalkade-show`. Tas skinnet i bruk, flyttes overridene til `/kavalkade` og demoen opp fra utkast.
+
+### Fase 10: Oppdagbarhet
 
 - `src/lib/server/chat-router.ts`: `bursdag|fødselsdag|kavalkade` ruter til self-domenet med hint om `/kavalkade`. Test lagt til i `chat-router.test.ts`.
 
