@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, PageHeader, Button, Select, PageSection, CardTitle } from '$lib/components/ui';
+	import { AppPage, PageHeader, Button, DateInput, Select, PageSection, CardTitle } from '$lib/components/ui';
 	import ScreenTimeCard from '$lib/components/composed/ScreenTimeCard.svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { mondayOfWeekISO, previousWeekMondayISO } from '$lib/utils/screen-time-series';
@@ -361,7 +361,7 @@
 							</ul>
 							<label class="field">
 								Uken (en dato i uka holder — snappes til mandag):
-								<input type="date" bind:value={item.weekStartISO} data-track="skjermtid:ukesbilde-dato" />
+								<DateInput bind:value={item.weekStartISO} ariaLabel="skjermtid:ukesbilde-dato" />
 							</label>
 						{:else if item.preview?.kind === 'daily'}
 							<ul>
@@ -375,7 +375,7 @@
 							</ul>
 							<label class="field">
 								Dato:
-								<input type="date" bind:value={item.dateISO} data-track="skjermtid:dagsbilde-dato" />
+								<DateInput bind:value={item.dateISO} ariaLabel="skjermtid:dagsbilde-dato" />
 							</label>
 						{/if}
 					</div>

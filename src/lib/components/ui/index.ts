@@ -18,6 +18,7 @@ export { default as SectionCard } from './SectionCard.svelte';
 export { default as CompactRecordList } from './CompactRecordList.svelte';
 export { default as GoalRing } from './GoalRing.svelte';
 export { default as PeriodPills } from './PeriodPills.svelte';
+export { default as PagerDots } from './PagerDots.svelte';
 export { default as StreakBadge } from './StreakBadge.svelte';
 export { default as ChipStrip } from './ChipStrip.svelte';
 export { default as ChatBubble } from './ChatBubble.svelte';

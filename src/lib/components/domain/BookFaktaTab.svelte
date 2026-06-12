@@ -1,55 +1,6 @@
 <script lang="ts">
 	import DateInput from '$lib/components/ui/DateInput.svelte';
-
-	interface Book {
-		id: string;
-		title: string;
-		author: string | null;
-		coverUrl: string | null;
-		totalPages: number | null;
-		currentPage: number;
-		format: 'print' | 'audio' | 'both';
-		totalMinutes: number | null;
-		currentMinutes: number;
-		status: 'not_started' | 'reading' | 'completed' | 'paused';
-		conversationId: string | null;
-		contextStatus: 'none' | 'pending' | 'partial' | 'ready';
-		contextPack: Record<string, unknown> | null;
-		contextProgress?: BookContextProgressEnvelope | null;
-		startedAt: string | null;
-		finishedAt: string | null;
-		loanDueDate: string | null;
-		loanStartDate: string | null;
-		createdAt: string;
-	}
-
-	interface BookContextProgressEnvelope {
-		jobStatus: 'queued' | 'running' | 'retry' | 'completed' | 'failed' | 'canceled';
-		jobError: string | null;
-		progress: BookContextProgress | null;
-	}
-
-	interface BookContextProgress {
-		stepIndex: number;
-		totalSteps: number;
-		label: string;
-		sourcesCompleted: number;
-		sourcesTotal: number;
-		sources: {
-			openLibrary?: { ok: boolean; worksFound?: number; error?: string };
-			criticReviews?: { ok: boolean; count?: number; error?: string };
-			readerSources?: { ok: boolean; count?: number; error?: string };
-			goodreads?: { ok: boolean; reviewCount?: number; error?: string };
-		};
-		updatedAt: string;
-	}
-
-	interface ProgressLogEntry {
-		id: string;
-		currentPage: number | null;
-		currentMinutes: number | null;
-		loggedAt: string;
-	}
+	import { bookTabsApi, type BookTabsApi, type Book, type ProgressLogEntry } from './book-api';
 
 	interface ProgressChartData {
 		linePath: string;
@@ -67,9 +18,12 @@
 		book: Book;
 		onBookUpdated: (updated: Book) => void;
 		onBookDeleted: (bookId: string) => void;
+		api?: BookTabsApi;
+		/** Overstyr «i dag» for deterministiske demoer (/design) — påvirker lånefrist-nedtellingen. */
+		today?: Date;
 	}
 
-	let { themeId, book, onBookUpdated, onBookDeleted }: Props = $props();
+	let { themeId, book, onBookUpdated, onBookDeleted, api = bookTabsApi, today = new Date() }: Props = $props();
 
 	/* ── Chart constants ─────────────────────────────────── */
 	const CHART_VW = 340, CHART_VH = 155;
@@ -125,11 +79,11 @@
 	}
 
 	function daysUntil(iso: string): number {
-		const today = new Date();
-		today.setHours(0, 0, 0, 0);
+		const base = new Date(today);
+		base.setHours(0, 0, 0, 0);
 		const due = new Date(iso);
 		due.setHours(0, 0, 0, 0);
-		return Math.round((due.getTime() - today.getTime()) / 86_400_000);
+		return Math.round((due.getTime() - base.getTime()) / 86_400_000);
 	}
 
 	type LoanInfo = { label: string; tone: 'overdue' | 'soon' | 'ok' };
@@ -249,21 +203,16 @@
 	/* ── API calls ───────────────────────────────────────── */
 	async function loadProgressLog() {
 		try {
-			const res = await fetch(`/api/tema/${themeId}/books/${book.id}/progress-log`);
-			if (res.ok) progressLog = await res.json();
+			const log = await api.getProgressLog(themeId, book.id);
+			if (log) progressLog = log;
 		} catch { /* ignore */ }
 		progressLogLoaded = true;
 	}
 
 	async function setStatus(status: Book['status']) {
 		try {
-			const res = await fetch(`/api/tema/${themeId}/books/${book.id}`, {
-				method: 'PATCH',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ status })
-			});
-			if (!res.ok) throw new Error();
-			const updated: Book = await res.json();
+			const updated = await api.updateBook(themeId, book.id, { status });
+			if (!updated) throw new Error();
 			onBookUpdated(updated);
 		} catch { /* ignore */ }
 	}
@@ -272,13 +221,8 @@
 		const total = (totalDurHours || 0) * 60 + (totalDurMins || 0);
 		if (total <= 0) return;
 		try {
-			const res = await fetch(`/api/tema/${themeId}/books/${book.id}`, {
-				method: 'PATCH',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ totalMinutes: total })
-			});
-			if (!res.ok) throw new Error();
-			const updated: Book = await res.json();
+			const updated = await api.updateBook(themeId, book.id, { totalMinutes: total });
+			if (!updated) throw new Error();
 			onBookUpdated(updated);
 			totalDurExpanded = false;
 		} catch { /* ignore */ }
@@ -286,15 +230,8 @@
 
 	async function setFormat(f: 'print' | 'audio') {
 		try {
-			const res = await fetch(`/api/tema/${themeId}/books/${book.id}`, {
-				method: 'PATCH',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ format: f })
-			});
-			if (res.ok) {
-				const u: Book = await res.json();
-				onBookUpdated(u);
-			}
+			const u = await api.updateBook(themeId, book.id, { format: f });
+			if (u) onBookUpdated(u);
 		} catch { /* ignore */ }
 	}
 
@@ -302,13 +239,8 @@
 		loanSaving = true;
 		try {
 			const loanDueDate = dateStr ? new Date(`${dateStr}T12:00:00`).toISOString() : null;
-			const res = await fetch(`/api/tema/${themeId}/books/${book.id}`, {
-				method: 'PATCH',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ loanDueDate })
-			});
-			if (!res.ok) throw new Error('save failed');
-			const updated: Book = await res.json();
+			const updated = await api.updateBook(themeId, book.id, { loanDueDate });
+			if (!updated) throw new Error('save failed');
 			onBookUpdated(updated);
 		} catch (err) {
 			console.warn('Kunne ikke lagre innleveringsdato:', err);
@@ -319,7 +251,7 @@
 
 	async function deleteBook() {
 		if (!confirm(`Slett «${book.title}»? Dette kan ikke angres.`)) return;
-		await fetch(`/api/tema/${themeId}/books/${book.id}`, { method: 'DELETE' });
+		await api.deleteBook(themeId, book.id);
 		onBookDeleted(book.id);
 	}
 </script>
@@ -473,7 +405,7 @@
 	.bk-fremdrift-label {
 		font-size: 0.78rem;
 		font-weight: 600;
-		color: #888;
+		color: var(--book-text-secondary, #888);
 		margin: 0;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
@@ -484,18 +416,18 @@
 		align-items: center;
 		gap: 6px;
 		background: transparent;
-		border: 1px solid #3b3e6a;
-		color: #7c8ef5;
+		border: 1px solid var(--book-border-accent, #3b3e6a);
+		color: var(--accent-light);
 		padding: 4px 12px;
 		border-radius: 99px;
 		font-size: 0.82rem;
 		cursor: pointer;
 		transition: background 0.15s, border-color 0.15s;
 	}
-	.bk-pause-btn:hover { background: #111a2a; }
+	.bk-pause-btn:hover { background: var(--book-bg-active, #111a2a); }
 	.bk-pause-btn.paused {
-		border-color: #4a3a1a;
-		color: #e0a050;
+		border-color: var(--book-warning-border, #4a3a1a);
+		color: var(--book-warning, #e0a050);
 	}
 	.bk-pause-btn.paused:hover { background: #1e1a10; }
 
@@ -506,13 +438,13 @@
 		margin: 0;
 		font-size: 0.9rem;
 	}
-	.bk-fact-dl dt { color: #888; }
-	.bk-fact-dl dd { color: #d0d0e0; margin: 0; }
+	.bk-fact-dl dt { color: var(--book-text-secondary, #888); }
+	.bk-fact-dl dd { color: var(--book-text-emphasis, #d0d0e0); margin: 0; }
 
 	.bk-format-toggle {
 		display: inline-flex;
-		background: #0d0d14;
-		border: 1px solid #2a2a35;
+		background: var(--book-bg-input, #0d0d14);
+		border: 1px solid var(--book-border, #2a2a35);
 		border-radius: 8px;
 		overflow: hidden;
 	}
@@ -522,17 +454,17 @@
 		gap: 4px;
 		background: transparent;
 		border: none;
-		color: #888;
+		color: var(--book-text-secondary, #888);
 		padding: 6px 12px;
 		font-size: 0.85rem;
 		cursor: pointer;
 		transition: background 0.15s, color 0.15s;
 	}
-	.bk-format-opt + .bk-format-opt { border-left: 1px solid #2a2a35; }
-	.bk-format-opt:hover { color: #c0c0d0; }
+	.bk-format-opt + .bk-format-opt { border-left: 1px solid var(--book-border, #2a2a35); }
+	.bk-format-opt:hover { color: var(--book-text-strong, #c0c0d0); }
 	.bk-format-opt.active {
-		background: #111a2a;
-		color: #c8ccff;
+		background: var(--book-bg-active, #111a2a);
+		color: var(--book-accent-text, #c8ccff);
 	}
 	.bk-format-icon { font-size: 0.95rem; }
 
@@ -552,10 +484,10 @@
 	.bk-hm-input {
 		width: 58px;
 		text-align: center;
-		background: #141414;
-		border: 1px solid #2a2a2a;
+		background: var(--bg-elevated);
+		border: 1px solid var(--border-color);
 		border-radius: 8px;
-		color: #e8e8e8;
+		color: var(--book-text-primary, #e8e8e8);
 		font: inherit;
 		font-size: 1rem;
 		padding: 6px 8px;
@@ -563,20 +495,20 @@
 
 	.bk-hm-label {
 		font-size: 0.82rem;
-		color: #888;
+		color: var(--book-text-secondary, #888);
 	}
 
 	.bk-big-progress {
 		position: relative;
 		height: 24px;
-		background: #1a1a1a;
+		background: var(--bg-input);
 		border-radius: 12px;
 		overflow: hidden;
 	}
 
 	.bk-big-fill {
 		height: 100%;
-		background: linear-gradient(90deg, #7c8ef5, #5a70ee);
+		background: linear-gradient(90deg, var(--accent-light), var(--book-accent-deep, #5a70ee));
 		transition: width 0.4s ease;
 	}
 
@@ -594,7 +526,7 @@
 	.bk-link {
 		background: none;
 		border: none;
-		color: #7c8ef5;
+		color: var(--accent-light);
 		font-size: inherit;
 		cursor: pointer;
 		padding: 0;
@@ -610,9 +542,9 @@
 	}
 	.bk-loan-input {
 		background: #15151c;
-		border: 1px solid #2a2a2a;
+		border: 1px solid var(--border-color);
 		border-radius: 8px;
-		color: #d0d0e0;
+		color: var(--book-text-emphasis, #d0d0e0);
 		padding: 4px 8px;
 		font-size: 0.8rem;
 		color-scheme: dark;
@@ -622,9 +554,9 @@
 		font-size: 0.72rem;
 		font-weight: 500;
 	}
-	.bk-loan-status.ok { color: #8a8a8a; }
-	.bk-loan-status.soon { color: #e0a050; }
-	.bk-loan-status.overdue { color: #e07070; }
+	.bk-loan-status.ok { color: var(--book-text-dim, #8a8a8a); }
+	.bk-loan-status.soon { color: var(--book-warning, #e0a050); }
+	.bk-loan-status.overdue { color: var(--error-text); }
 
 	.bk-delete-btn {
 		font: inherit;
@@ -640,20 +572,20 @@
 
 	/* Progress chart */
 	.bk-chart-svg { width: 100%; height: auto; display: block; overflow: visible; }
-	.bk-chart-grid { stroke: #1e1e2a; stroke-width: 1; }
+	.bk-chart-grid { stroke: var(--book-border-faint, #1e1e2a); stroke-width: 1; }
 	.bk-chart-axis { stroke: #2a2a3a; stroke-width: 1; }
-	.bk-chart-line { fill: none; stroke: #6b7fff; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
-	.bk-chart-pred { fill: none; stroke: #6b7fff; stroke-width: 1.5; stroke-dasharray: 4 3; opacity: 0.5; }
-	.bk-chart-dot { fill: #6b7fff; stroke: #0d0d14; stroke-width: 1.5; cursor: default; }
-	.bk-chart-ylabel { fill: #555; font-size: 9px; }
-	.bk-chart-xlabel { fill: #555; font-size: 9px; }
+	.bk-chart-line { fill: none; stroke: var(--book-accent-strong, #6b7fff); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+	.bk-chart-pred { fill: none; stroke: var(--book-accent-strong, #6b7fff); stroke-width: 1.5; stroke-dasharray: 4 3; opacity: 0.5; }
+	.bk-chart-dot { fill: var(--book-accent-strong, #6b7fff); stroke: var(--book-bg-input, #0d0d14); stroke-width: 1.5; cursor: default; }
+	.bk-chart-ylabel { fill: var(--text-muted); font-size: 9px; }
+	.bk-chart-xlabel { fill: var(--text-muted); font-size: 9px; }
 	.bk-chart-xlabel-eta { fill: #88aaff; }
 	.bk-chart-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 6px 0 2px; font-size: 0.79rem; }
-	.bk-chart-pace { color: #a0a8ff; }
+	.bk-chart-pace { color: var(--book-accent-light, #a0a8ff); }
 	.bk-chart-eta { color: #c8d4ff; }
 
 	.bk-empty {
-		color: #666;
+		color: var(--book-text-tertiary, #666);
 		font-size: 0.85rem;
 		text-align: center;
 		padding: 24px 16px;

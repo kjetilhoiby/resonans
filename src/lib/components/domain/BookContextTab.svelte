@@ -1,5 +1,6 @@
 <script lang="ts">
 	import SectionLabel from '../ui/SectionLabel.svelte';
+	import { bookTabsApi, type BookTabsApi } from './book-api';
 	interface Book {
 		id: string;
 		title: string;
@@ -47,9 +48,11 @@
 		book: Book;
 		themeId: string;
 		onRefresh: (bookId: string) => Promise<void>;
+		/** Nettverkslag — injiseres som mock på /design. Default: ekte API. */
+		api?: BookTabsApi;
 	}
 
-	let { book, themeId, onRefresh }: Props = $props();
+	let { book, themeId, onRefresh, api = bookTabsApi }: Props = $props();
 
 	let refreshingContext = $state(false);
 	let refreshContextError = $state('');
@@ -102,9 +105,7 @@
 		refreshContextError = '';
 		lastRefreshAction = null;
 		try {
-			const res = await fetch(`/api/tema/${themeId}/books/${bookId}/refresh-context`, {
-				method: 'POST'
-			});
+			const res = await api.refreshContext(themeId, bookId);
 			if (!res.ok) {
 				refreshContextError = 'Klarte ikke å starte kontekstinnsamling.';
 				return;
@@ -439,48 +440,48 @@
 		flex-direction: column;
 		gap: 1.25rem;
 	}
-	.bk-ctx-empty { color: #888; padding: 2rem 0; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 0.85rem; }
+	.bk-ctx-empty { color: var(--book-text-secondary, #888); padding: 2rem 0; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 0.85rem; }
 	.bk-ctx-empty p { margin: 0; }
-	.bk-ctx-meta { display: flex; align-items: center; gap: 0.75rem; font-size: 0.78rem; color: #888; padding-bottom: 0.25rem; }
-	.bk-ctx-status { padding: 2px 8px; border-radius: 10px; background: #0f1e1a; color: #48b581; border: 1px solid #2a4a3a; font-size: 0.72rem; }
+	.bk-ctx-meta { display: flex; align-items: center; gap: 0.75rem; font-size: 0.78rem; color: var(--book-text-secondary, #888); padding-bottom: 0.25rem; }
+	.bk-ctx-status { padding: 2px 8px; border-radius: 10px; background: var(--book-success-bg, #0f1e1a); color: var(--book-success, #48b581); border: 1px solid var(--book-success-border, #2a4a3a); font-size: 0.72rem; }
 	.bk-ctx-status.partial { background: #1e1a10; color: #b58848; border-color: #4a3a2a; }
-	.bk-ctx-collected { color: #666; }
+	.bk-ctx-collected { color: var(--book-text-tertiary, #666); }
 	.bk-ctx-section { display: flex; flex-direction: column; gap: 0.55rem; padding: 0.85rem 0; border-top: 1px solid #1f1f25; }
 	.bk-ctx-section:first-of-type { border-top: none; padding-top: 0; }
 	.bk-ctx-text { color: #c8c8d4; font-size: 0.92rem; line-height: 1.5; margin: 0; }
 	.bk-ctx-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
-	.bk-ctx-chip { background: #1a1a22; color: #b0b0c0; padding: 3px 9px; border-radius: 10px; font-size: 0.78rem; border: 1px solid #2a2a35; }
+	.bk-ctx-chip { background: var(--book-bg-chip, #1a1a22); color: #b0b0c0; padding: 3px 9px; border-radius: 10px; font-size: 0.78rem; border: 1px solid var(--book-border, #2a2a35); }
 	.bk-ctx-dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.3rem 1rem; margin: 0; font-size: 0.86rem; }
-	.bk-ctx-dl dt { color: #888; }
+	.bk-ctx-dl dt { color: var(--book-text-secondary, #888); }
 	.bk-ctx-dl dd { color: #c8c8d4; margin: 0; }
 	.bk-ctx-biblio { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.4rem; }
 	.bk-ctx-biblio-item { display: grid; grid-template-columns: 3.2rem 1fr; gap: 0.6rem; font-size: 0.88rem; padding: 0.35rem 0.5rem; border-radius: 6px; }
 	.bk-ctx-biblio-item.current { background: #14202c; border: 1px solid #2a4a6a; }
-	.bk-ctx-biblio-year { color: #888; font-variant-numeric: tabular-nums; }
-	.bk-ctx-biblio-title { color: #d0d0e0; font-weight: 500; }
-	.bk-ctx-biblio-oneliner { grid-column: 2; color: #888; font-size: 0.82rem; font-style: italic; }
-	.bk-ctx-review { background: #14141c; padding: 0.7rem 0.9rem; border-radius: 8px; border: 1px solid #22222c; display: flex; flex-direction: column; gap: 0.4rem; }
+	.bk-ctx-biblio-year { color: var(--book-text-secondary, #888); font-variant-numeric: tabular-nums; }
+	.bk-ctx-biblio-title { color: var(--book-text-emphasis, #d0d0e0); font-weight: 500; }
+	.bk-ctx-biblio-oneliner { grid-column: 2; color: var(--book-text-secondary, #888); font-size: 0.82rem; font-style: italic; }
+	.bk-ctx-review { background: var(--book-bg-elevated, #14141c); padding: 0.7rem 0.9rem; border-radius: 8px; border: 1px solid #22222c; display: flex; flex-direction: column; gap: 0.4rem; }
 	.bk-ctx-review-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; font-size: 0.78rem; }
-	.bk-ctx-review-source { color: #88a8ff; text-decoration: none; font-weight: 500; }
+	.bk-ctx-review-source { color: var(--book-link, #88a8ff); text-decoration: none; font-weight: 500; }
 	.bk-ctx-review-source:hover { text-decoration: underline; }
-	.bk-ctx-verdict { padding: 1px 7px; border-radius: 8px; font-size: 0.72rem; border: 1px solid #2a2a35; }
-	.bk-ctx-verdict.positive { background: #0f1e1a; color: #48b581; border-color: #2a4a3a; }
+	.bk-ctx-verdict { padding: 1px 7px; border-radius: 8px; font-size: 0.72rem; border: 1px solid var(--book-border, #2a2a35); }
+	.bk-ctx-verdict.positive { background: var(--book-success-bg, #0f1e1a); color: var(--book-success, #48b581); border-color: var(--book-success-border, #2a4a3a); }
 	.bk-ctx-verdict.mixed { background: #1a1a10; color: #b5a548; border-color: #3a3a20; }
 	.bk-ctx-verdict.negative { background: #1e1010; color: #b54848; border-color: #4a2a2a; }
-	.bk-ctx-date { color: #666; font-size: 0.74rem; }
-	.bk-ctx-quote { margin: 0; padding: 0; color: #d0d0e0; font-style: italic; font-size: 0.92rem; line-height: 1.55; border-left: 2px solid #3a3a45; padding-left: 0.7rem; }
-	.bk-ctx-paraphrase { color: #888; font-size: 0.82rem; margin: 0; }
+	.bk-ctx-date { color: var(--book-text-tertiary, #666); font-size: 0.74rem; }
+	.bk-ctx-quote { margin: 0; padding: 0; color: var(--book-text-emphasis, #d0d0e0); font-style: italic; font-size: 0.92rem; line-height: 1.55; border-left: 2px solid var(--book-border-strong, #3a3a45); padding-left: 0.7rem; }
+	.bk-ctx-paraphrase { color: var(--book-text-secondary, #888); font-size: 0.82rem; margin: 0; }
 	.bk-ctx-goodreads { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; font-size: 0.88rem; }
 	.bk-ctx-rating { color: #ffc850; font-weight: 600; font-size: 1rem; }
-	.bk-ctx-rating-count { color: #888; font-size: 0.82rem; }
+	.bk-ctx-rating-count { color: var(--book-text-secondary, #888); font-size: 0.82rem; }
 	.bk-ctx-list { margin: 0; padding-left: 1.1rem; color: #c8c8d4; font-size: 0.88rem; display: flex; flex-direction: column; gap: 0.25rem; }
 	.bk-ctx-debug { opacity: 0.85; }
-	.bk-ctx-debug :global(.section-label) { --section-label-color: #888; }
-	.bk-ctx-muted { color: #666; font-size: 0.82rem; }
+	.bk-ctx-debug :global(.section-label) { --section-label-color: var(--book-text-secondary, #888); }
+	.bk-ctx-muted { color: var(--book-text-tertiary, #666); font-size: 0.82rem; }
 	.bk-ctx-refresh {
-		background: #1a1a22;
-		color: #c0c0d0;
-		border: 1px solid #2a2a35;
+		background: var(--book-bg-chip, #1a1a22);
+		color: var(--book-text-strong, #c0c0d0);
+		border: 1px solid var(--book-border, #2a2a35);
 		padding: 5px 12px;
 		border-radius: 8px;
 		font-size: 0.8rem;
@@ -492,7 +493,7 @@
 	.bk-ctx-refresh:disabled { opacity: 0.55; cursor: wait; }
 	.bk-ctx-refresh.primary {
 		background: #14202c;
-		color: #88a8ff;
+		color: var(--book-link, #88a8ff);
 		border-color: #2a4a6a;
 		padding: 8px 16px;
 		font-size: 0.9rem;
@@ -502,7 +503,7 @@
 	.bk-ctx-error { color: #b56868; font-size: 0.82rem; margin: 0; }
 
 	.bk-ctx-progress {
-		background: #14141c;
+		background: var(--book-bg-elevated, #14141c);
 		border: 1px solid #22222c;
 		border-radius: 10px;
 		padding: 1rem 1.1rem;
@@ -516,9 +517,9 @@
 		align-items: baseline;
 		gap: 0.75rem;
 	}
-	.bk-ctx-progress-label { color: #d0d0e0; font-size: 0.92rem; }
+	.bk-ctx-progress-label { color: var(--book-text-emphasis, #d0d0e0); font-size: 0.92rem; }
 	.bk-ctx-progress-pct {
-		color: #88a8ff;
+		color: var(--book-link, #88a8ff);
 		font-size: 0.85rem;
 		font-variant-numeric: tabular-nums;
 		font-weight: 600;
@@ -531,7 +532,7 @@
 	}
 	.bk-ctx-progress-fill {
 		height: 100%;
-		background: linear-gradient(90deg, #4a78d0, #88a8ff);
+		background: linear-gradient(90deg, #4a78d0, var(--book-link, #88a8ff));
 		transition: width 0.4s ease-out;
 	}
 	.bk-ctx-progress-sources {
@@ -550,9 +551,9 @@
 		gap: 0.6rem;
 		align-items: center;
 		font-size: 0.86rem;
-		color: #888;
+		color: var(--book-text-secondary, #888);
 	}
-	.bk-ctx-progress-sources li.done { color: #c0c0d0; }
+	.bk-ctx-progress-sources li.done { color: var(--book-text-strong, #c0c0d0); }
 	.bk-ctx-progress-sources li.err { color: #b58c8c; }
 	.bk-ctx-src-icon {
 		display: inline-flex;
@@ -563,12 +564,12 @@
 		border-radius: 50%;
 		font-size: 0.78rem;
 		background: #1f1f28;
-		color: #666;
+		color: var(--book-text-tertiary, #666);
 	}
-	.bk-ctx-progress-sources li.done .bk-ctx-src-icon { background: #14302a; color: #48b581; }
+	.bk-ctx-progress-sources li.done .bk-ctx-src-icon { background: #14302a; color: var(--book-success, #48b581); }
 	.bk-ctx-progress-sources li.err .bk-ctx-src-icon { background: #2e1818; color: #b56868; }
 	.bk-ctx-src-name { color: inherit; }
-	.bk-ctx-src-stat { color: #666; font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+	.bk-ctx-src-stat { color: var(--book-text-tertiary, #666); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
 	.bk-ctx-progress-actions {
 		display: flex;
 		align-items: center;
@@ -578,5 +579,5 @@
 		border-top: 1px solid #1f1f28;
 	}
 	.bk-ctx-progress-actions .bk-ctx-refresh { margin-left: 0; }
-	.bk-ctx-refresh-hint { color: #888; font-size: 0.78rem; }
+	.bk-ctx-refresh-hint { color: var(--book-text-secondary, #888); font-size: 0.78rem; }
 </style>

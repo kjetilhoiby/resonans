@@ -1,7 +1,7 @@
 <script lang="ts">
 	import PageHeader from '../ui/PageHeader.svelte';
 
-	interface Book {
+	export interface Book {
 		id: string;
 		title: string;
 		author: string | null;
@@ -197,7 +197,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
-		border-bottom: 1px solid #1e1e1e;
+		border-bottom: 1px solid var(--border-subtle);
 		flex-shrink: 0;
 	}
 
@@ -205,12 +205,12 @@
 		font-size: 0.72rem;
 		padding: 2px 8px;
 		border-radius: 99px;
-		border: 1px solid #2a2a2a;
-		color: #8a8a8a;
+		border: 1px solid var(--border-color);
+		color: var(--book-text-dim, #8a8a8a);
 	}
-	.bk-status-badge.reading { color: #7c8ef5; border-color: #3b3e6a; }
-	.bk-status-badge.completed { color: #48b581; border-color: #2a4a3a; }
-	.bk-status-badge.paused { color: #e0a050; border-color: #4a3a1a; }
+	.bk-status-badge.reading { color: var(--accent-light); border-color: var(--book-border-accent, #3b3e6a); }
+	.bk-status-badge.completed { color: var(--book-success, #48b581); border-color: var(--book-success-border, #2a4a3a); }
+	.bk-status-badge.paused { color: var(--book-warning, #e0a050); border-color: var(--book-warning-border, #4a3a1a); }
 
 	.bk-ctx-badge {
 		font-size: 0.7rem;
@@ -218,18 +218,18 @@
 		border-radius: 99px;
 	}
 	.bk-ctx-badge.pending { background: #1e1e10; color: #8a8a50; border: 1px solid #3a3a20; }
-	.bk-ctx-badge.ready { background: #0f1e1a; color: #48b581; border: 1px solid #2a4a3a; }
+	.bk-ctx-badge.ready { background: var(--book-success-bg, #0f1e1a); color: var(--book-success, #48b581); border: 1px solid var(--book-success-border, #2a4a3a); }
 
 	.bk-progress-bar {
 		height: 4px;
-		background: #1e1e1e;
+		background: var(--border-subtle);
 		border-radius: 99px;
 		overflow: hidden;
 	}
 
 	.bk-progress-fill {
 		height: 100%;
-		background: linear-gradient(90deg, #7c8ef5, #5a70ee);
+		background: linear-gradient(90deg, var(--accent-light), var(--book-accent-deep, #5a70ee));
 		border-radius: 99px;
 		transition: width 0.4s ease;
 	}
@@ -252,13 +252,13 @@
 		transition: background 0.15s;
 	}
 	.bk-progress-trigger:hover .bk-progress-bar { background: #25252e; }
-	.bk-progress-trigger:hover .bk-progress-label { color: #c0c0d0; }
+	.bk-progress-trigger:hover .bk-progress-label { color: var(--book-text-strong, #c0c0d0); }
 	.bk-progress-trigger:focus-visible { outline: 2px solid #4a5cff; outline-offset: 2px; }
 
 	.bk-progress-editor {
 		margin-top: 10px;
 		padding: 12px 14px;
-		background: #14141c;
+		background: var(--book-bg-elevated, #14141c);
 		border: 1px solid #22222e;
 		border-radius: 8px;
 		display: flex;
@@ -273,20 +273,20 @@
 	}
 	.bk-pe-label {
 		font-size: 0.78rem;
-		color: #888;
+		color: var(--book-text-secondary, #888);
 		min-width: 4.5rem;
 	}
 	.bk-pe-input {
 		width: 100px;
-		background: #0d0d14;
-		border: 1px solid #2a2a35;
+		background: var(--book-bg-input, #0d0d14);
+		border: 1px solid var(--book-border, #2a2a35);
 		color: #e0e0ea;
 		padding: 6px 8px;
 		border-radius: 6px;
 		font-size: 0.92rem;
 	}
 	.bk-pe-input-sm { width: 60px; }
-	.bk-pe-of { color: #888; font-size: 0.82rem; }
+	.bk-pe-of { color: var(--book-text-secondary, #888); font-size: 0.82rem; }
 	.bk-pe-actions {
 		display: flex;
 		justify-content: flex-end;
@@ -295,19 +295,19 @@
 	}
 	.bk-pe-cancel {
 		background: none;
-		border: 1px solid #2a2a35;
-		color: #888;
+		border: 1px solid var(--book-border, #2a2a35);
+		color: var(--book-text-secondary, #888);
 		padding: 5px 12px;
 		border-radius: 6px;
 		font-size: 0.85rem;
 		cursor: pointer;
 	}
-	.bk-pe-cancel:hover { color: #c0c0d0; border-color: #3a3a45; }
+	.bk-pe-cancel:hover { color: var(--book-text-strong, #c0c0d0); border-color: var(--book-border-strong, #3a3a45); }
 
 	.bk-time-slider {
 		width: 100%;
 		margin: 4px 0 10px;
-		accent-color: #6b7fff;
+		accent-color: var(--book-accent-strong, #6b7fff);
 		cursor: pointer;
 	}
 
@@ -315,19 +315,19 @@
 		font: inherit;
 		font-size: 0.82rem;
 		padding: 8px 16px;
-		background: #1e2244;
-		border: 1px solid #3b3e6a;
-		color: #c8ccff;
+		background: var(--book-bg-accent, #1e2244);
+		border: 1px solid var(--book-border-accent, #3b3e6a);
+		color: var(--book-accent-text, #c8ccff);
 		border-radius: 8px;
 		cursor: pointer;
 		align-self: flex-start;
 	}
 	.bk-save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-	.bk-save-btn:hover:not(:disabled) { background: #252b55; }
+	.bk-save-btn:hover:not(:disabled) { background: var(--book-bg-accent-hover, #252b55); }
 	.bk-save-btn-sm { padding: 6px 12px; }
 
 	.bk-error {
-		color: #e07070;
+		color: var(--error-text);
 		font-size: 0.8rem;
 		margin: 0;
 	}

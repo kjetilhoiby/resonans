@@ -53,6 +53,15 @@ Utløst av brukerspørsmål («hva med fullskjermregistrering 1–5 + tekst → 
 - **SSR-bugfiks i TaskContextMenu**: posisjonsberegningen leste `window` i en `$derived` — krasjet SSR når `open=true` ved første render (demoen avdekket det). Guard lagt inn; ren robusthetsfiks uten visuell endring.
 - Fortsatt bevisst utenfor: tema-dashboards, HomeScreen-soner (setContext-koblet), kamera/lyd/fil-paneler, settings-provider-kort og småkomponenter (TimeInput, Radio, TabButton, ChipStrip, CollapsibleSection, Tooltip, TransactionList) — listet i lab-seksjonen.
 
+### Fase 9: Hjemskjerm-DNA som delte komponenter (samme dag)
+Linje-for-linje-revisjon av HomeScreen (971 l + 6 soner) viste at byggeklossene var dekket, men sone-lokal markup var det ikke. Mål (fra bruker): /design skal muliggjøre både skinning og redesign — da må sone-DNA-et være komponenter.
+- **Nye komponenter** (props-drevne, CSS flyttet verbatim): `domain/home/ThemeButtonGrid` (tema-knappene m/hue-tinting), `domain/home/PartnerOnboardingCard` (dedupliserte den dupliserte markupen i WidgetZone+ThemeZone; `variant`-prop bevarer begge uttrykk), `domain/home/ReadinessChip`, `domain/home/ActionPillRow` (generisk over item-typen), `ui/PagerDots`.
+- **Piksel-nøytralitet bevist**: hjem-screenshoten passerte med 0,00 % diff uten baseline-oppdatering etter ekstraksjonen.
+- **ConversationContextMenu**: api-prop (patch/delete) + `initialOpen`-prop for statisk demo; demoet i «Menyer & modaler». Brukes på 4 flater (hjem, samtaler, tema-chat, follow-up).
+- **ChipStrip**: demo i Navigasjon.
+- Ny /design-seksjon «Hjemskjerm-elementer». Sonene selv (setContext-orkestratorer) og kamera/lyd/fil-panelene demoes fortsatt ikke — dokumentert i seksjonsteksten.
+- Korreksjon fra revisjonen: `composed/ReadinessStrip` brukes kun på treningsprogram-siden (ikke i HomeChatZone som fase 1-auditen antydet); chat-sonens chip var lokal markup (nå `ReadinessChip`).
+
 ## Beslutninger
 
 - **To refaktoreringsmønstre for fetch-komponenter** (dokumentert i DESIGN.md): container/view-splitt når presentasjonen er stor og containeren liten (DynamicWidget); injisert api-prop med ekte default når komponenten har mye interaksjonslogikk vevd inn i markup (WeekTasks — full splitt hadde krevd å flytte 500+ linjer markup).

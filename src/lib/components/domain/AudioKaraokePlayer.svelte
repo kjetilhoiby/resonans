@@ -136,8 +136,8 @@
 	.akp-play {
 		flex-shrink: 0;
 		background: #1e1e3a;
-		border: 1px solid #3b3e6a;
-		color: #a0a8ff;
+		border: 1px solid var(--book-border-accent, #3b3e6a);
+		color: var(--book-accent-light, #a0a8ff);
 		border-radius: 50%;
 		width: 30px;
 		height: 30px;
@@ -152,7 +152,7 @@
 
 	.akp-time {
 		font-size: 0.7rem;
-		color: #666;
+		color: var(--book-text-tertiary, #666);
 		min-width: 30px;
 		font-variant-numeric: tabular-nums;
 	}
@@ -166,10 +166,10 @@
 		border-radius: 99px;
 		background: linear-gradient(
 			to right,
-			#7c8ef5 0%,
-			#7c8ef5 var(--pct, 0%),
-			#1e1e2a var(--pct, 0%),
-			#1e1e2a 100%
+			var(--accent-light) 0%,
+			var(--accent-light) var(--pct, 0%),
+			var(--book-border-faint, #1e1e2a) var(--pct, 0%),
+			var(--book-border-faint, #1e1e2a) 100%
 		);
 		outline: none;
 		cursor: pointer;
@@ -179,14 +179,14 @@
 		width: 12px;
 		height: 12px;
 		border-radius: 50%;
-		background: #7c8ef5;
+		background: var(--accent-light);
 		cursor: pointer;
 	}
 	.akp-scrub::-moz-range-thumb {
 		width: 12px;
 		height: 12px;
 		border-radius: 50%;
-		background: #7c8ef5;
+		background: var(--accent-light);
 		cursor: pointer;
 		border: none;
 	}
@@ -198,7 +198,7 @@
 		font-size: 0.88rem;
 		color: #d0d0d0;
 		line-height: 1.7;
-		border-left: 3px solid #3b3e6a;
+		border-left: 3px solid var(--book-border-accent, #3b3e6a);
 		padding-left: 10px;
 	}
 

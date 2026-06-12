@@ -390,6 +390,39 @@
 <style>
 	/* Book view shell */
 	.bk-view {
+		/* Bok-domenets palett — reskin-hook. Brukes som var(--book-*, fallback)
+		   i alle Book*-komponenter (fallback = samme verdi, for f.eks. /design). */
+		--book-bg-card: #0f0f10;
+		--book-bg-elevated: #14141c;
+		--book-bg-input: #0d0d14;
+		--book-bg-chip: #1a1a22;
+		--book-bg-active: #111a2a;
+		--book-bg-accent: #1e2244;
+		--book-bg-accent-hover: #252b55;
+		--book-border: #2a2a35;
+		--book-border-strong: #3a3a45;
+		--book-border-accent: #3b3e6a;
+		--book-border-faint: #1e1e2a;
+		--book-text-primary: #e8e8e8;
+		--book-text-emphasis: #d0d0e0;
+		--book-text-strong: #c0c0d0;
+		--book-text-secondary: #888;
+		--book-text-tertiary: #666;
+		--book-text-dim: #8a8a8a;
+		--book-accent-text: #c8ccff;
+		--book-accent-light: #a0a8ff;
+		--book-accent-strong: #6b7fff;
+		--book-accent-deep: #5a70ee;
+		--book-link: #88a8ff;
+		--book-success: #48b581;
+		--book-success-bg: #0f1e1a;
+		--book-success-border: #2a4a3a;
+		--book-warning: #e0a050;
+		--book-warning-border: #4a3a1a;
+		--book-chip-bg: #1a1a2a;
+		--book-chip-border: #3a3a5a;
+		--book-chip-text: #9090c8;
+
 		position: fixed;
 		inset: 0;
 		z-index: 80;
@@ -429,15 +462,15 @@
 		font-size: 0.78rem;
 		padding: 6px 4px;
 		background: none;
-		border: 1px solid #1e1e1e;
+		border: 1px solid var(--border-subtle);
 		border-radius: 8px;
-		color: #666;
+		color: var(--book-text-tertiary, #666);
 		cursor: pointer;
 		transition: color 0.15s, border-color 0.15s;
 	}
 	.bk-tab.active {
-		color: #c8ccff;
-		border-color: #3b3e6a;
-		background: #111a2a;
+		color: var(--book-accent-text, #c8ccff);
+		border-color: var(--book-border-accent, #3b3e6a);
+		background: var(--book-bg-active, #111a2a);
 	}
 </style>

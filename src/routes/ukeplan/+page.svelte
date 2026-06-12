@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { afterNavigate, goto, invalidateAll } from '$app/navigation';
-	import { AppPage, ChipStrip, PageSection, PullToRefresh } from '$lib/components/ui';
+	import { AppPage, ChipStrip, DateInput, PageSection, PullToRefresh } from '$lib/components/ui';
 	import { PageHeader } from '$lib/components/ui';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import FlowSheet from '$lib/components/flows/FlowSheet.svelte';
@@ -183,7 +183,7 @@
 	let saveStates = $state<Record<string, SaveState>>({
 		weekNote: 'idle', weekItems: 'idle', dayItems: 'idle', dayNote: 'idle', weekReview: 'idle'
 	});
-	let weekPickerInput = $state<HTMLInputElement | null>(null);
+	let weekPickerWrap = $state<HTMLDivElement | null>(null);
 
 	// ── Derived values ──
 
@@ -461,9 +461,9 @@
 				<a class="wp-calendar-btn" href="/tema/{trip.id}" aria-label={trip.name}>{trip.emoji ?? '🗺️'}</a>
 			{/each}
 			<a class="wp-calendar-btn wp-month-btn" href={`/maanedsplan?month=${selectedDayIso.slice(0, 7)}`} aria-label="Til månedsplan" title="Månedsplan">Mnd</a>
-			<div class="wp-calendar-wrap">
-				<button class="wp-calendar-btn" type="button" aria-label="Velg uke" onclick={() => weekPickerInput?.showPicker?.()}><Icon name="calendar" size={18} /></button>
-				<input bind:this={weekPickerInput} type="date" class="wp-week-picker-input" value={data.week.days[0].isoDate} onchange={(event) => { const val = (event.currentTarget as HTMLInputElement).value; if (val) void goto(weekHref(getIsoWeekDashedFromIsoDate(val))); }} />
+			<div class="wp-calendar-wrap" bind:this={weekPickerWrap}>
+				<button class="wp-calendar-btn" type="button" aria-label="Velg uke" onclick={() => weekPickerWrap?.querySelector('input')?.showPicker?.()}><Icon name="calendar" size={18} /></button>
+				<DateInput className="wp-week-picker-input" value={data.week.days[0].isoDate} onChange={(event) => { const val = event.currentTarget.value; if (val) void goto(weekHref(getIsoWeekDashedFromIsoDate(val))); }} />
 			</div>
 		{/snippet}
 	</PageHeader>
@@ -618,7 +618,7 @@
 	.wp-calendar-btn { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border-radius: 10px; border: none; background: #0f1118; color: #bac6f9; flex-shrink: 0; text-decoration: none; font-size: 1.1rem; }
 	.wp-month-btn { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.02em; border: 1px solid #1e2030; color: #8a99c4; }
 	.wp-month-btn:hover { color: #bac6f9; background: #12162a; border-color: #2e3660; }
-	.wp-week-picker-input { position: absolute; opacity: 0; pointer-events: none; width: 0; height: 0; top: 100%; right: 0; }
+	.wp-calendar-wrap :global(input.wp-week-picker-input) { position: absolute; opacity: 0; pointer-events: none; width: 0; height: 0; top: 100%; right: 0; }
 	:global(.wp-action-strip) { margin: 0 calc(-1 * var(--page-px)); padding: 0 var(--page-px); }
 	.wp-action-pill { display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; background: hsl(228 19% 11%); border: 1px solid hsl(228 16% 18%); border-radius: 999px; padding: 8px 14px; cursor: pointer; font: inherit; color: hsl(228 22% 80%); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.02em; white-space: nowrap; touch-action: manipulation; transition: background 0.15s, border-color 0.15s, transform 0.15s, box-shadow 0.15s; }
 	.wp-action-pill:hover:not(:disabled) { background: hsl(228 22% 14%); border-color: hsl(228 28% 34%); transform: translateY(-1px); }
