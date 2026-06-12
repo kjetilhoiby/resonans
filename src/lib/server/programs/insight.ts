@@ -1,6 +1,8 @@
 import { openai } from '$lib/server/openai';
 import { env } from '$env/dynamic/private';
 import { getFullProgram, mondayOf } from './repository';
+import { getRecentAdaptations } from './adaptive-service';
+import { formatAdaptationsForPrompt } from './adaptive';
 import type { ProgramDTO, ProgramSessionDTO, ProgramWeekDTO } from './types';
 
 /**
@@ -215,6 +217,19 @@ export async function buildProgramInsight(
 	} else {
 		dataBlock = buildProgressionDataBlock(program);
 		fallback = ruleBasedProgressionSummary(program);
+	}
+
+	// Adaptiv modus: gi modellen justeringsloggen så den kan forklare hvorfor
+	// tempo/dager/volum endret seg. Beste-innsats — innsikt skal ikke feile på dette.
+	if (program.mode === 'adaptiv') {
+		try {
+			const adaptations = await getRecentAdaptations(userId, programId, 5);
+			const block = formatAdaptationsForPrompt(adaptations);
+			dataBlock += `\nModus: adaptiv — planen justeres ukentlig etter faktisk trening.`;
+			if (block) dataBlock += `\n${block}`;
+		} catch (error) {
+			console.error('[program-insight] kunne ikke hente adaptive justeringer:', error);
+		}
 	}
 
 	try {

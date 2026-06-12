@@ -71,6 +71,15 @@ dag (readiness) eller trigget av eksplisitte tester (rekalibrering). Brukeren
   (eller en forklaring av hva adaptiv modus gjør hvis loggen er tom).
 - `POST /api/apps/programs/[id]/mode` setter modus.
 
+### Fase 5: AI-coach-kontekst
+
+- `formatAdaptationsForPrompt` (adaptive.ts, ren funksjon med tester) bygger en
+  kompakt norsk tekstblokk av siste 5 justeringer.
+- `coach.ts` («Spør coachen») og `insight.ts` (Innsikt-arket) legger modus +
+  justeringsloggen i LLM-konteksten for adaptive programmer, slik at coachen
+  kan forklare hvorfor tempo/dager/volum endret seg. Beste-innsats: feiler
+  oppslaget, går svaret videre uten blokken.
+
 ## Beslutninger
 
 - **Modus på program-nivå, ikke per økt** — opt-in, eksisterende programmer

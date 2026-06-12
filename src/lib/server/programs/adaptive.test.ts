@@ -6,6 +6,7 @@ import {
 	estimateActualEffort,
 	estimatePlannedEffort,
 	evaluateEffortBalance,
+	formatAdaptationsForPrompt,
 	planDayMoves,
 	preferredDaysFor,
 	recalcWeeklyVdot,
@@ -228,6 +229,42 @@ describe('evaluateEffortBalance', () => {
 		const balance = evaluateEffortBalance({}, { running: 30 });
 		expect(balance.coverage).toBe(1);
 		expect(balance.verdict).toBe('ok');
+	});
+});
+
+describe('formatAdaptationsForPrompt', () => {
+	it('returnerer null uten justeringer', () => {
+		expect(formatAdaptationsForPrompt([])).toBeNull();
+	});
+
+	it('formaterer justeringer kompakt med uke, type og begrunnelser', () => {
+		const block = formatAdaptationsForPrompt([
+			{
+				weekNumber: 4,
+				kind: 'tempo',
+				reasons: ['VDOT justert opp: 44 → 44.5'],
+				createdAt: '2026-06-07T18:00:00.000Z'
+			},
+			{
+				weekNumber: 4,
+				kind: 'ukeplan',
+				reasons: ['Langtur flyttet til søndag'],
+				createdAt: '2026-06-07T18:00:00.000Z'
+			}
+		]);
+		expect(block).toContain('Uke 4 (tempo, 2026-06-07): VDOT justert opp: 44 → 44.5');
+		expect(block).toContain('Uke 4 (ukeplan, 2026-06-07): Langtur flyttet til søndag');
+	});
+
+	it('kapper til maks antall oppføringer', () => {
+		const entries = Array.from({ length: 8 }, (_, i) => ({
+			weekNumber: i + 1,
+			kind: 'volum',
+			reasons: ['demp'],
+			createdAt: '2026-06-07T18:00:00.000Z'
+		}));
+		const block = formatAdaptationsForPrompt(entries, 3)!;
+		expect(block.split('\n')).toHaveLength(4); // overskrift + 3 oppføringer
 	});
 });
 

@@ -428,3 +428,38 @@ export function recalcWeeklyVdot(args: {
 		reasons
 	};
 }
+
+// ── LLM-kontekst ─────────────────────────────────────────────────────────────
+
+export interface AdaptationLogEntry {
+	weekNumber: number;
+	kind: string;
+	reasons: string[];
+	createdAt: string; // ISO
+}
+
+export const ADAPTATION_KIND_LABELS: Record<string, string> = {
+	tempo: 'tempo',
+	ukeplan: 'ukeplan',
+	volum: 'volum'
+};
+
+/**
+ * Kompakt tekstblokk om siste adaptive justeringer — legges i LLM-kontekst
+ * (coach og innsikt) slik at modellen kan forklare hvorfor planen endret seg.
+ * Forventer nyeste først (slik getRecentAdaptations returnerer).
+ */
+export function formatAdaptationsForPrompt(
+	entries: AdaptationLogEntry[],
+	maxEntries = 5
+): string | null {
+	if (entries.length === 0) return null;
+	const lines = [
+		'Siste adaptive justeringer (programmet justeres automatisk hver uke etter faktisk trening):'
+	];
+	for (const e of entries.slice(0, maxEntries)) {
+		const kind = ADAPTATION_KIND_LABELS[e.kind] ?? e.kind;
+		lines.push(`  - Uke ${e.weekNumber} (${kind}, ${e.createdAt.slice(0, 10)}): ${e.reasons.join('; ')}`);
+	}
+	return lines.join('\n');
+}
