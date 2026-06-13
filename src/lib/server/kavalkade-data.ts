@@ -3,11 +3,12 @@
  * /api/kavalkade/magi (spådom + bursdagshilsner trenger samme kontekst).
  */
 
-import { and, eq, gte, inArray, isNotNull, lt } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNotNull, lt, sql } from 'drizzle-orm';
 import { db } from '$lib/db';
 import {
 	books,
 	checklistItems,
+	goals,
 	persons,
 	planArtifacts,
 	sensorAggregates,
@@ -29,6 +30,8 @@ import {
 import { buildOrdsky, type OrdskyWord } from './ordsky';
 import { getReflectionForPeriod } from './reflections';
 import { formatAnswersAsText, parseInterviewMarkdown, type InterviewAnswers } from '$lib/flows/birthday-interview';
+import { parseBirthdayPhotos, type BirthdayPhoto } from '$lib/flows/birthday-photos';
+import { buildBirthdayLoop, type BirthdayLoop } from './birthday-loop';
 import { parseGreetingsMarkdown, type CharacterGreeting } from '$lib/kavalkade-magi';
 import { daysUntilBirthday } from '$lib/domains/family/family-tree';
 
@@ -46,11 +49,17 @@ export interface KavalkadeData {
 	/** Graf-serier per toppsport: måned for måned i år + år-for-år så langt det finnes data */
 	sportHistory: SportSeries[];
 	ordsky: OrdskyWord[];
+	/** Årets opplastede bilder */
+	photos: BirthdayPhoto[];
+	/** «Dette ville du i fjor» — fjorårets mål + spådom vs. faktisk */
+	loop: BirthdayLoop;
 	interview: {
 		thisYearKey: string;
 		thisYear: InterviewAnswers | null;
 		lastYear: InterviewAnswers | null;
 		lastYearText: string;
+		/** Fjorårets brev til seg selv — vises i åpningen av årets selvangivelse */
+		lastYearLetter: string;
 		kavalkadeText: string;
 	};
 	prophecy: string | null;
@@ -93,7 +102,10 @@ export async function loadKavalkadeData(userId: string, today = new Date()): Pro
 		thisYearReflection,
 		lastYearReflection,
 		prophecyReflection,
-		greetingsReflection
+		greetingsReflection,
+		photosReflection,
+		lastYearProphecyReflection,
+		loopGoalRows
 	] = await Promise.all([
 		// Hele historikken — år-for-år-grafen går så langt det finnes data
 		db.query.workoutDailyAggregates.findMany({
@@ -137,7 +149,17 @@ export async function loadKavalkadeData(userId: string, today = new Date()): Pro
 		getReflectionForPeriod(userId, 'birthday_interview', thisYearKey),
 		getReflectionForPeriod(userId, 'birthday_interview', lastYearKey),
 		getReflectionForPeriod(userId, 'birthday_prophecy', thisYearKey),
-		getReflectionForPeriod(userId, 'birthday_greetings', thisYearKey)
+		getReflectionForPeriod(userId, 'birthday_greetings', thisYearKey),
+		getReflectionForPeriod(userId, 'birthday_photos', thisYearKey),
+		// Fjorårets spådom + målene satt da (frist nå = birthdayKey thisYear) → «Dette ville du i fjor»
+		getReflectionForPeriod(userId, 'birthday_prophecy', lastYearKey),
+		db.query.goals.findMany({
+			where: and(
+				eq(goals.userId, userId),
+				sql`${goals.metadata}->>'birthdayKey' = ${thisYearKey}`,
+				sql`${goals.metadata}->>'source' = 'birthday_interview'`
+			)
+		})
 	]);
 
 	const workoutDays = workoutRows.map((r) => ({
@@ -172,6 +194,21 @@ export async function loadKavalkadeData(userId: string, today = new Date()): Pro
 		? parseInterviewMarkdown(lastYearReflection.content)
 		: null;
 
+	const photos = photosReflection ? parseBirthdayPhotos(photosReflection.content) : [];
+
+	// «Dette ville du i fjor»: fjorårets mål (frist nå) + spådom vs. faktisk
+	const runningKm =
+		currentSummary.sports.find((s) => s.family === 'running')?.distanceKm ?? null;
+	const loop = buildBirthdayLoop({
+		goals: loopGoalRows.map((g) => ({
+			title: g.title,
+			status: g.status,
+			metadata: (g.metadata ?? null) as never
+		})),
+		prophecyContent: lastYearProphecyReflection?.content ?? null,
+		runningKm
+	});
+
 	// Norske verb-etiketter («løpt», «gått») settes her siden kavalkade-modulen er server-only
 	const labelSports = (s: YearSummary): LabeledYearSummary => ({
 		...s,
@@ -199,12 +236,15 @@ export async function loadKavalkadeData(userId: string, today = new Date()): Pro
 		timeline,
 		sportHistory: buildSportHistory(current, workoutDays),
 		ordsky: buildOrdsky(taskRows.map((r) => r.text)),
+		photos,
+		loop,
 		interview: {
 			thisYearKey,
 			thisYear: thisYearAnswers,
 			lastYear: lastYearAnswers,
 			// Kontekst som mates inn i intervjuets avsluttende chat-steg
 			lastYearText: lastYearAnswers ? formatAnswersAsText(lastYearAnswers) : '',
+			lastYearLetter: lastYearAnswers?.letter_to_future ?? '',
 			kavalkadeText: formatKavalkadeForPrompt(currentSummary, previousSummary)
 		},
 		prophecy: prophecyReflection?.content ?? null,

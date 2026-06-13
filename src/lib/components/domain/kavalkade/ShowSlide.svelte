@@ -236,6 +236,47 @@
 			{#if slide.attribution && !streaming}
 				<p class="sub attribution rise">— {slide.attribution}</p>
 			{/if}
+		{:else if slide.kind === 'photos'}
+			{#if slide.title}
+				<h1 class="title title-sm">
+					{#each words(slide.title) as word, i (i)}
+						<span class="w" style={`animation-delay: ${wordDelay(i)}ms;`}>{word}</span>
+					{/each}
+				</h1>
+			{/if}
+			<div class="photos" class:photos-many={slide.photos.length > 2}>
+				{#each slide.photos as photo, i (photo.url)}
+					<figure class="photo pop" style={`animation-delay: ${500 + i * 220}ms;`}>
+						<img src={photo.url} alt={photo.caption || 'Årets bilde'} />
+						{#if photo.caption}<figcaption>{photo.caption}</figcaption>{/if}
+					</figure>
+				{/each}
+			</div>
+		{:else if slide.kind === 'loop'}
+			<h1 class="title title-sm">
+				{#each words(slide.title) as word, i (i)}
+					<span class="w" style={`animation-delay: ${wordDelay(i)}ms;`}>{word}</span>
+				{/each}
+			</h1>
+			<ul class="loop">
+				{#each slide.promises as promise, i (promise.title)}
+					<li class="loop-row rise" style={`animation-delay: ${700 + i * 350}ms;`}>
+						<span class="loop-title">{promise.title}</span>
+						<span
+							class="loop-status"
+							class:is-hit={promise.achieved === true}
+							class:is-miss={promise.achieved === false}
+						>{promise.achieved === true
+								? 'Oppnådd'
+								: promise.achieved === false
+									? 'Ikke nådd'
+									: promise.status === 'active'
+										? 'Pågår'
+										: 'Uvisst'}</span
+						>
+					</li>
+				{/each}
+			</ul>
 		{/if}
 	</div>
 </div>
@@ -467,6 +508,87 @@
 
 	@keyframes caret-blink {
 		50% { opacity: 0; }
+	}
+
+	/* ── Årets bilder: foto-mosaikk ────────────────────────────────────── */
+
+	.photos {
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: 12px;
+		width: 100%;
+		max-width: 360px;
+	}
+
+	.photos-many {
+		grid-template-columns: repeat(2, 1fr);
+	}
+
+	.photo {
+		margin: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 5px;
+	}
+
+	.photo img {
+		width: 100%;
+		aspect-ratio: 4 / 3;
+		object-fit: cover;
+		border-radius: 14px;
+		box-shadow: 0 6px 24px rgb(0 0 0 / 0.35);
+	}
+
+	.photo figcaption {
+		font-size: clamp(0.8rem, 3vw, 0.95rem);
+		font-style: italic;
+		color: rgb(244 244 246 / 0.75);
+	}
+
+	/* ── Loop: dette ville du i fjor ───────────────────────────────────── */
+
+	.loop {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 9px;
+		width: 100%;
+		max-width: 380px;
+	}
+
+	.loop-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 10px;
+		font-size: clamp(0.95rem, 4vw, 1.15rem);
+	}
+
+	.loop-title {
+		text-align: left;
+		min-width: 0;
+	}
+
+	.loop-status {
+		flex-shrink: 0;
+		font-size: 0.78rem;
+		font-weight: 700;
+		padding: 3px 10px;
+		border-radius: 999px;
+		background: rgb(255 255 255 / 0.16);
+		color: #f4f4f6;
+	}
+
+	.loop-status.is-hit {
+		background: rgb(74 222 128 / 0.25);
+		color: #d6ffe4;
+	}
+
+	.loop-status.is-miss {
+		background: rgb(240 180 41 / 0.25);
+		color: #ffe9b8;
 	}
 
 	/* ── Grafer: måned for måned + år for år ───────────────────────────── */

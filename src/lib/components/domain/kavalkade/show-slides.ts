@@ -4,7 +4,15 @@
  */
 
 import type { InterviewAnswers } from '$lib/flows/birthday-interview';
-import type { Greeting, MonthEntry, OrdskyWordView, YearData } from './types';
+import type {
+	Greeting,
+	LoopPromiseView,
+	LoopView,
+	MonthEntry,
+	OrdskyWordView,
+	PhotoView,
+	YearData
+} from './types';
 
 export interface ChartBar {
 	label: string;
@@ -47,6 +55,15 @@ export type ShowSlideDef =
 			hue: number;
 			durationMs: number;
 	  }
+	| { kind: 'photos'; title?: string; photos: PhotoView[]; hue: number; durationMs: number }
+	| {
+			kind: 'loop';
+			title: string;
+			promises: LoopPromiseView[];
+			sub?: string;
+			hue: number;
+			durationMs: number;
+	  }
 	| { kind: 'outro'; title: string; sub?: string; hue: number; durationMs: number; confetti?: boolean };
 
 export interface ShowInput {
@@ -57,6 +74,8 @@ export interface ShowInput {
 	timeline: MonthEntry[];
 	ordsky: OrdskyWordView[];
 	sportHistory?: SportHistoryInput[];
+	photos?: PhotoView[];
+	loop?: LoopView;
 	interview: { thisYear: InterviewAnswers | null };
 	prophecy: string | null;
 	greetings: Greeting[];
@@ -168,6 +187,17 @@ export function buildShowSlides(input: ShowInput): ShowSlideDef[] {
 		});
 	}
 
+	// «Dette ville du i fjor» — lovnad vs. faktisk, nær toppen
+	if (input.loop?.hasData && input.loop.promises.length > 0) {
+		slides.push({
+			kind: 'loop',
+			title: 'Dette ville du i fjor',
+			promises: input.loop.promises,
+			hue: nextHue(),
+			durationMs: Math.max(STAT_MS, 2500 + input.loop.promises.length * 700)
+		});
+	}
+
 	if (input.current.books.length > 0) {
 		slides.push({
 			kind: 'list',
@@ -224,6 +254,18 @@ export function buildShowSlides(input: ShowInput): ShowSlideDef[] {
 			durationMs: Math.max(STAT_MS, 2500 + bestOf.length * 700)
 		});
 	}
+
+	// Årets bilder — foto-mosaikk
+	if (input.photos && input.photos.length > 0) {
+		slides.push({
+			kind: 'photos',
+			title: 'Året i bilder',
+			photos: input.photos,
+			hue: nextHue(),
+			durationMs: Math.max(STAT_MS, 2500 + input.photos.length * 800)
+		});
+	}
+
 	if (answers?.direction) {
 		slides.push({
 			kind: 'quote',

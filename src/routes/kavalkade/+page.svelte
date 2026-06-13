@@ -10,10 +10,14 @@
 		MonthTimeline,
 		GreetingsList,
 		InterviewAnswerList,
+		PhotoGallery,
+		LoopCard,
 		timelineHasContent,
 		type Greeting,
+		type LoopView,
 		type MonthEntry,
 		type OrdskyWordView,
+		type PhotoView,
 		type YearData
 	} from '$lib/components/domain/kavalkade';
 
@@ -25,11 +29,14 @@
 			previous: YearData;
 			timeline: MonthEntry[];
 			ordsky: OrdskyWordView[];
+			photos: PhotoView[];
+			loop: LoopView;
 			interview: {
 				thisYearKey: string;
 				thisYear: InterviewAnswers | null;
 				lastYear: InterviewAnswers | null;
 				lastYearText: string;
+				lastYearLetter: string;
 				kavalkadeText: string;
 			};
 			prophecy: string | null;
@@ -108,6 +115,18 @@
 				<KavalkadeStats current={data.current} previous={data.previous} />
 			</SectionCard>
 
+			{#if data.loop.hasData}
+				<SectionCard title="Dette ville du i fjor">
+					<LoopCard loop={data.loop} />
+				</SectionCard>
+			{/if}
+
+			{#if data.photos.length > 0}
+				<SectionCard title="Årets bilder">
+					<PhotoGallery photos={data.photos} />
+				</SectionCard>
+			{/if}
+
 			{#if data.ordsky.length > 0}
 				<SectionCard title="Året i ord" description="Det du faktisk skrev på oppgavelistene dine">
 					<Ordsky words={data.ordsky} />
@@ -157,6 +176,12 @@
 					</Button>
 				</div>
 			</SectionCard>
+
+			{#if data.interview.lastYearLetter}
+				<SectionCard title="Brev fra deg for ett år siden">
+					<p class="kv-letter">{data.interview.lastYearLetter}</p>
+				</SectionCard>
+			{/if}
 
 			{#if data.interview.thisYear}
 				<SectionCard title="Hvem er du i år?" meta={data.interview.thisYearKey}>
@@ -222,6 +247,7 @@
 	context={{
 		initialData: {
 			_lastYearAnswers: data.interview.lastYearText,
+			_lastYearLetter: data.interview.lastYearLetter,
 			_kavalkadeSummary: data.interview.kavalkadeText
 		}
 	}}
@@ -268,6 +294,14 @@
 
 	.kv-prophecy p:last-child {
 		margin-bottom: 0;
+	}
+
+	.kv-letter {
+		margin: 0;
+		font-size: var(--font-size-body);
+		font-style: italic;
+		white-space: pre-wrap;
+		color: var(--text-primary);
 	}
 
 	.kv-error {

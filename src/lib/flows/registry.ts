@@ -1254,20 +1254,96 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 		trigger: 'manual',
 		focus: true,
 		resumable: true,
-		estimatedMinutes: 15,
+		estimatedMinutes: 20,
 		steps: [
 			{
-				id: 'hvem',
-				type: 'form',
-				title: 'Hvem er du i år?',
-				fields: [
-					{
-						id: 'who',
-						type: 'textarea',
-						label: 'Beskriv deg selv akkurat nå',
-						placeholder: 'Hva opptar deg? Hva bruker du tiden på? Hva tror du på?'
-					}
-				]
+				id: 'hvem_naa',
+				type: 'chat',
+				title: 'Hvem er du nå?',
+				autoSend: true,
+				buildPrompts: (data) => {
+					const kavalkade = typeof data._kavalkadeSummary === 'string' ? data._kavalkadeSummary : '';
+					const lastYearLetter = typeof data._lastYearLetter === 'string' ? data._lastYearLetter : '';
+					return {
+						prompt: 'Jeg er klar til å begynne selvangivelsen. Hvem er jeg nå?',
+						systemPrompt: [
+							'Du åpner det årlige bursdagsintervjuet («selvangivelsen»). Første beat er å bli kjent med hvem brukeren er akkurat NÅ — før vi ser bakover.',
+							'',
+							'Still ETT åpent spørsmål om gangen og grav videre der det blir interessant: Hva opptar deg om dagen? Hva bruker du tiden og energien på? Hva tror du på, hva er du redd for, hva gir mening? Hvordan ville du beskrevet deg selv til en fremmed?',
+							kavalkade ? `\nDu har noen tall fra året — bruk dem lett som døråpnere, ikke fasit:\n${kavalkade}` : '',
+							lastYearLetter ? `\nFor ett år siden skrev brukeren dette brevet til seg selv. Bruk det varsomt som døråpner i det første spørsmålet ditt — ikke les det høyt i sin helhet:\n«${lastYearLetter}»` : '',
+							'',
+							'Dette er en samtale, ikke et skjema — brukeren kan snakke så lenge de vil. Ikke se bakover på fjoråret ennå (det kommer som egne steg).',
+							'',
+							'Etter HVER respons: oppdater et selvportrett mellom markørene <status> og </status> — 3–6 linjer i brukerens egne formuleringer om hvem de er nå. Denne blokken lagres som selvangivelsens «Hvem er du i år?»-seksjon.',
+							'',
+							'Når brukeren virker ferdig, si kort at neste steg er å se på hvem de var i fjor. Norsk, varm, nysgjerrig — venn, ikke terapeut.'
+						].join('\n')
+					};
+				}
+			},
+			{
+				id: 'hvem_var_du',
+				type: 'chat',
+				title: 'Hvem var du i fjor?',
+				autoSend: true,
+				buildPrompts: (data) => {
+					const lastYear = typeof data._lastYearAnswers === 'string' ? data._lastYearAnswers : '';
+					const lastLetter = typeof data._lastYearLetter === 'string' ? data._lastYearLetter : '';
+					const naa =
+						typeof data.hvem_naa_lastMessage === 'string'
+							? parseStatusBlock(data.hvem_naa_lastMessage)
+							: '';
+					return {
+						prompt: 'Nå vil jeg tenke tilbake på hvem jeg var for ett år siden.',
+						systemPrompt: [
+							'Andre beat i bursdagsintervjuet: hjelp brukeren å huske hvem de VAR for ett år siden — før vi ser på hva som endret dem.',
+							naa ? `Slik beskrev de seg selv nå:\n${naa}` : '',
+							lastYear ? `\nFjorårets selvangivelse — bruk den aktivt («i fjor skrev du …, kjenner du deg igjen i det?»):\n${lastYear}` : '',
+							lastLetter ? `\nBrevet de skrev til seg selv for ett år siden:\n«${lastLetter}»` : '',
+							'',
+							'Still ETT fokusert spørsmål om gangen (to–tre stykker holder): Hvor sto du da? Hva var du opptatt av, bekymret for, på vei mot? Grav kort der det blir interessant.',
+							'',
+							'Etter HVER respons: oppdater et portrett av fjorårets jeg mellom markørene <status> og </status> — 3–5 linjer i brukerens egne ord. Denne blokken lagres som «Hvem var du i fjor?»-seksjonen.',
+							'',
+							'Når det sitter, si at neste steg er hva som endret dem. Norsk, varm — venn, ikke terapeut.'
+						]
+							.filter(Boolean)
+							.join('\n')
+					};
+				}
+			},
+			{
+				id: 'hva_endret_deg',
+				type: 'chat',
+				title: 'Hva endret deg?',
+				autoSend: true,
+				buildPrompts: (data) => {
+					const naa =
+						typeof data.hvem_naa_lastMessage === 'string'
+							? parseStatusBlock(data.hvem_naa_lastMessage)
+							: '';
+					const ifjor =
+						typeof data.hvem_var_du_lastMessage === 'string'
+							? parseStatusBlock(data.hvem_var_du_lastMessage)
+							: '';
+					return {
+						prompt: 'Så — hva endret meg fra den jeg var til den jeg er nå?',
+						systemPrompt: [
+							'Tredje beat: broen. Brukeren har beskrevet hvem de er nå og hvem de var i fjor. Nå: hva FLYTTET dem mellom de to?',
+							ifjor ? `I fjor:\n${ifjor}` : '',
+							naa ? `\nNå:\n${naa}` : '',
+							'',
+							'Spør etter de transformative kreftene — en hendelse, et menneske, en erkjennelse, en vane, en motgang. Pek gjerne på en konkret forskjell mellom de to portrettene og spør hva som lå bak. ETT spørsmål om gangen, grav der det er liv.',
+							'',
+							'Etter HVER respons: oppdater <status>…</status> med 2–4 linjer om hva som endret dem, i deres egne ord. Denne blokken lagres som «Hva endret deg?»-seksjonen.',
+							'',
+							'Når det er sagt, før dem videre til rollene sine. Norsk, varm — venn, ikke terapeut.'
+						]
+							.filter(Boolean)
+							.join('\n')
+					};
+				}
 			},
 			{
 				id: 'roller',
@@ -1401,6 +1477,19 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 				]
 			},
 			{
+				id: 'aarets_bilder',
+				type: 'form',
+				title: 'Årets bilder',
+				fields: [
+					{
+						id: 'photos',
+						type: 'photo-gallery',
+						label: 'Tre til seks bilder fra året',
+						max: 6
+					}
+				]
+			},
+			{
 				id: 'speil',
 				type: 'chat',
 				title: 'Året i speilet',
@@ -1439,10 +1528,41 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 						].join('\n')
 					};
 				}
+			},
+			{
+				id: 'brev_til_neste_aar',
+				type: 'form',
+				title: 'Brev til neste år',
+				fields: [
+					{
+						id: 'letter_to_future',
+						type: 'textarea',
+						label: 'Skriv noen ord til deg selv om ett år',
+						placeholder:
+							'Hva håper du har skjedd? Hva vil du minne deg selv om? (Du får lese dette igjen i åpningen av neste års selvangivelse.)'
+					}
+				]
 			}
 		],
 		async onComplete(data) {
 			const answers = extractInterviewAnswers(data);
+			// «Hvem er du nå»-chatten: AI-ens <status>-selvportrett er seksjonsinnholdet
+			const naa =
+				typeof data.hvem_naa_lastMessage === 'string'
+					? parseStatusBlock(data.hvem_naa_lastMessage)
+					: '';
+			if (naa) answers.who = naa;
+			// Hvem var du i fjor / Hva endret deg — også chat med <status>-blokk
+			const ifjor =
+				typeof data.hvem_var_du_lastMessage === 'string'
+					? parseStatusBlock(data.hvem_var_du_lastMessage)
+					: '';
+			if (ifjor) answers.who_last_year = ifjor;
+			const endret =
+				typeof data.hva_endret_deg_lastMessage === 'string'
+					? parseStatusBlock(data.hva_endret_deg_lastMessage)
+					: '';
+			if (endret) answers.what_changed_you = endret;
 			// Kropp-og-hode-chatten: AI-ens løpende <status>-blokk er seksjonsinnholdet
 			const helse =
 				typeof data.kropp_og_hode_lastMessage === 'string'
@@ -1454,16 +1574,22 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 				.replace(/<bursdagsmål>[\s\S]*?<\/bursdagsmål>/gi, '')
 				.trim();
 			if (mirror) answers.mirror = mirror;
-			if (Object.keys(answers).length === 0) return;
+			const photos = Array.isArray(data.photos) ? data.photos : [];
+			if (Object.keys(answers).length === 0 && photos.length === 0) return;
 			await fetch('/api/reflections/birthday', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					answers,
+					// Årets bilder lagres som egen refleksjon (birthday_photos)
+					photos,
 					// Speilets målforslag blir ekte mål med frist neste bursdag
 					goals: parseBirthdayGoals(speilMessage),
 					// «Samtalen er data»: hele chattene arkiveres som transkript
 					threads: {
+						hvemNaa: formatThreadTranscript(data.hvem_naa_thread),
+						hvemVarDu: formatThreadTranscript(data.hvem_var_du_thread),
+						hvaEndretDeg: formatThreadTranscript(data.hva_endret_deg_thread),
 						kroppOgHode: formatThreadTranscript(data.kropp_og_hode_thread),
 						speil: formatThreadTranscript(data.speil_thread)
 					}
