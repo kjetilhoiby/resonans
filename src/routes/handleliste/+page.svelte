@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { AppPage, PageHeader, PageSection } from '$lib/components/ui';
+	import { AppPage, PageHeader, PageSection, ChecklistCheckbox } from '$lib/components/ui';
+	import TaskTitle from '$lib/components/ui/TaskTitle.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -65,17 +66,15 @@
 				<ul class="shop-list">
 					{#each items as item (item.id)}
 						<li class="shop-row">
-							<input
-								type="checkbox"
-								checked={item.checked}
-								aria-label={item.text}
-								data-track="handleliste:kryss-av"
-								onchange={() => toggle(item)}
-							/>
-							<span class="shop-text" class:done={item.checked}>{item.text}</span>
+							<span class="shop-text" class:done={item.checked}><TaskTitle title={item.text} /></span>
 							<a class="project-chip" href={`/tema/${item.themeId}`} title={item.projectName}>
 								{item.projectEmoji ?? '🔨'} {item.projectName}
 							</a>
+							<ChecklistCheckbox
+								checked={item.checked}
+								size="md"
+								onclick={() => toggle(item)}
+							/>
 						</li>
 					{/each}
 				</ul>
@@ -166,16 +165,10 @@
 		align-items: center;
 		gap: 0.6rem;
 		padding: 0.6rem 0.7rem;
-		background: var(--bg-card);
-		border: 1px solid var(--border-color);
+		/* Kanonisk «full bredde m/ramme» via --card-*-tokens. */
+		background: var(--card-bg);
+		border: 1px solid var(--card-border);
 		border-radius: 10px;
-	}
-	.shop-row input[type='checkbox'] {
-		width: 1.05rem;
-		height: 1.05rem;
-		accent-color: var(--accent-primary);
-		cursor: pointer;
-		flex-shrink: 0;
 	}
 	.shop-text {
 		flex: 1;

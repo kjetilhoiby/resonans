@@ -1,7 +1,7 @@
 # Forene oppgavelister på tvers
 
 Dato: 2026-06-13
-Status: pågår (Fase 1–3 ferdig — ThemeTasksTab konvergert; visuell review gjenstår)
+Status: pågår (Fase 1–4 ferdig — prosjekt + handleliste konvergert; visuell review gjenstår)
 
 ## Kontekst
 
@@ -113,13 +113,21 @@ Gjenstår i Fase 3:
   dra-håndtak ytterst til høyre, hue-tintet ramme.
 - `WeekTasks` (#4) er uendret (bruker allerede `ChecklistItemRow`); bør spotsjekkes visuelt.
 
-### Fase 4: Migrer minimal/gruppe-listene der det gir mening
-- Vurder #5 (handleliste), #8 (FlowChecklistStep), #11 (TaskList) → felles rad i «minimal»-konfig
-  (uten dra/subtasks), fortsatt full bredde m/ramme.
-- #6 (MonthChecklist), #2/#10 (gruppe-rader) beholder kompakt gruppe-stil der den er
-  funksjonelt riktig (slot-/ring-visualisering), men avkrysning og tekst standardiseres på
-  `ChecklistCheckbox`/`TaskTitle`.
-- #9 (`SharedChecklistView`) er lys-tema og offentlig — lav prioritet, vurderes til slutt.
+### Fase 4: Migrer minimal/gruppe-listene der det gir mening ✅ ferdig (handleliste; resten vurdert)
+
+- **#5 handleliste — konvergert.** Bruker nå `ChecklistCheckbox` (høyre) + `TaskTitle` + kanoniske
+  `--card-*`-tokens. Anatomi: `[tekst] [prosjekt-chip] [avkrysning høyre]`. Avkrysning flyttet
+  venstre→høyre. `check` + `test` grønt.
+- **#11 TaskList — hoppet over: død kode.** Null brukssteder i appen. Bør slettes i Fase 5
+  (eller når en bruker dukker opp, konvergeres da).
+- **#8 FlowChecklistStep — utsatt.** Hele raden er én `<button>` (fler-velger/selection-UI, ikke
+  en avkrysningsliste). `ChecklistCheckbox` er selv en `<button>` → kan ikke nestes uten å bygge
+  om interaksjonsmodellen. Bør restruktureres separat før konvergens.
+- **#6 MonthChecklist, #2 ChecklistGroupRow, #10 RoutineGroupRow — beholder kompakt gruppe-stil.**
+  Disse er bevisste slot-/ring-visualiseringer (ikke kort-rader). #2 og #10 bruker allerede
+  `ChecklistCheckbox`. #6 er allerede token-basert; tekst kan wrappes i `TaskTitle` senere, men
+  slot-visualiseringen røres ikke.
+- **#9 `SharedChecklistView` — utsatt.** Lys-tema og offentlig delings-visning, lav prioritet.
 
 ### Fase 5: Rydd og dokumentér sluttilstand
 - Fjern bespoke rad-CSS som nå er død.
@@ -155,4 +163,5 @@ Gjenstår:
   - `/design`-baseline endrer seg (ny «Oppgaverader»-seksjon, additivt).
   - tema/prosjekt-baseline endrer seg (avkrysning venstre→høyre + sirkulær, dra-håndtak ytterst
     til høyre, hue-tintet ramme).
+  - handleliste endrer seg (avkrysning venstre→høyre + sirkulær, `--card-*`-chrome).
   - ukeplan/hjem forventes uendret (ChecklistItemRow default-stil er pikselidentisk).
