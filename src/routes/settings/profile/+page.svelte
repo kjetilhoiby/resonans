@@ -228,8 +228,10 @@
 		color: var(--text-secondary);
 	}
 
+	/* Ingen horisontal padding — innholdet aligner med PageHeader-tittelen
+	   (PageSection gir --page-px). */
 	.content {
-		padding: 1.5rem 1rem;
+		padding: 0 0 1rem;
 	}
 
 	.alert {

@@ -150,14 +150,16 @@
 					<span>Til</span>
 					<DateInput bind:value={tripEnd} ariaLabel="Sluttdato for turen" />
 				</label>
-				<Button
-					variant="secondary"
-					disabled={tripState === 'saving'}
-					ariaLabel="Lagre reisedatoer"
-					onClick={() => void saveTrip()}
-				>
-					{saveLabel(tripState)}
-				</Button>
+				<div class="date-save">
+					<Button
+						variant="secondary"
+						disabled={tripState === 'saving'}
+						ariaLabel="Lagre reisedatoer"
+						onClick={() => void saveTrip()}
+					>
+						{saveLabel(tripState)}
+					</Button>
+				</div>
 			</div>
 		</div>
 	{:else if theme.kind === 'ferie'}
@@ -172,14 +174,16 @@
 					<span>Til</span>
 					<DateInput bind:value={ferieEnd} ariaLabel="Sluttdato for ferien" />
 				</label>
-				<Button
-					variant="secondary"
-					disabled={ferieState === 'saving'}
-					ariaLabel="Lagre ferievindu"
-					onClick={() => void saveFerie()}
-				>
-					{saveLabel(ferieState)}
-				</Button>
+				<div class="date-save">
+					<Button
+						variant="secondary"
+						disabled={ferieState === 'saving'}
+						ariaLabel="Lagre ferievindu"
+						onClick={() => void saveFerie()}
+					>
+						{saveLabel(ferieState)}
+					</Button>
+				</div>
 			</div>
 		</div>
 	{:else if theme.kind === 'health'}
@@ -276,20 +280,25 @@
 		color: var(--text-tertiary);
 	}
 
+	/* 2-kolonners grid med minmax(0,1fr): cellene kan krympe til 0 så
+	   datofeltene aldri sprenger kortet. «Lagre» spenner full bredde under. */
 	.date-row {
-		display: flex;
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
 		gap: 0.75rem;
-		align-items: flex-end;
-		flex-wrap: wrap;
+		align-items: end;
 	}
 
 	.date-row label {
 		display: flex;
 		flex-direction: column;
 		gap: 0.25rem;
-		/* La feltene krympe og bryte i stedet for å sprenge kortet på mobil. */
-		flex: 1 1 8rem;
 		min-width: 0;
+	}
+
+	.date-save {
+		grid-column: 1 / -1;
+		justify-self: start;
 	}
 
 	.date-row label span {

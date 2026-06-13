@@ -184,8 +184,10 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 		color: var(--text-secondary);
 	}
 
+	/* Ingen horisontal padding — kortene aligner med PageHeader-tittelen
+	   (PageSection gir --page-px). */
 	.content {
-		padding: 1.5rem 1rem;
+		padding: 0 0 1rem;
 	}
 
 	.overview-grid {
