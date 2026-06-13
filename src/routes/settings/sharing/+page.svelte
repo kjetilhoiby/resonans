@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { PageData } from './$types';
 	import { enhance } from '$app/forms';
-	import { AppPage, PageHeader, PageSection } from '$lib/components/ui';
+	import { AppPage, Button, PageHeader, PageSection } from '$lib/components/ui';
 
 	let { data }: { data: PageData } = $props();
 
@@ -79,7 +79,7 @@
 							{#if share.revokedAt === null}
 								<form method="POST" action="?/revoke" use:enhance>
 									<input type="hidden" name="id" value={share.id} />
-									<button type="submit" class="danger">Trekk tilbake</button>
+									<Button type="submit" variant="danger">Trekk tilbake</Button>
 								</form>
 							{:else}
 								<span class="revoked-tag">Trukket tilbake</span>
@@ -99,21 +99,21 @@
 		max-width: 1000px;
 		margin: 0 auto;
 		padding: 0 0 1rem;
-		font-family: system-ui, -apple-system, sans-serif;
 	}
 	.lead {
-		color: #555;
+		color: var(--text-secondary);
 		margin-bottom: 1.5rem;
 	}
 	.warn {
-		background: #fff7e0;
-		border: 1px solid #f0d486;
+		background: var(--warning-bg);
+		border: 1px solid var(--warning-border);
+		color: var(--text-primary);
 		padding: 0.75rem;
 		border-radius: 8px;
 		margin-bottom: 1rem;
 	}
 	.empty {
-		color: #777;
+		color: var(--text-tertiary);
 		font-style: italic;
 	}
 	table {
@@ -124,41 +124,33 @@
 	td {
 		text-align: left;
 		padding: 0.6rem 0.5rem;
-		border-bottom: 1px solid #eee;
+		border-bottom: 1px solid var(--border-subtle);
 		font-size: 0.85rem;
 		vertical-align: top;
 	}
 	th {
 		font-size: 0.75rem;
 		text-transform: uppercase;
-		color: #777;
+		color: var(--text-tertiary);
 		letter-spacing: 0.04em;
 	}
 	.title {
 		font-weight: 500;
+		color: var(--text-primary);
 	}
 	.url a {
 		font-size: 0.75rem;
-		color: #7c8ef5;
+		color: var(--accent-light);
 		text-decoration: none;
 	}
 	.url a:hover {
 		text-decoration: underline;
 	}
-	.danger {
-		background: white;
-		color: #b00020;
-		border: 1px solid #f5c2c2;
-		padding: 0.3rem 0.7rem;
-		border-radius: 6px;
-		cursor: pointer;
-		font-size: 0.8rem;
-	}
 	.revoked {
 		opacity: 0.5;
 	}
 	.revoked-tag {
-		color: #888;
+		color: var(--text-tertiary);
 		font-size: 0.75rem;
 	}
 </style>

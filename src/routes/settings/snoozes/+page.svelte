@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { PageData } from './$types';
 	import { enhance } from '$app/forms';
-	import { AppPage, PageHeader, PageSection } from '$lib/components/ui';
+	import { AppPage, Button, PageHeader, PageSection } from '$lib/components/ui';
 
 	let { data }: { data: PageData } = $props();
 
@@ -59,7 +59,7 @@
 								<td>
 									<form method="POST" action="?/clear" use:enhance>
 										<input type="hidden" name="chipId" value={snooze.chipId} />
-										<button type="submit" class="primary">Vis igjen</button>
+										<Button type="submit">Vis igjen</Button>
 									</form>
 								</td>
 							</tr>
@@ -92,7 +92,7 @@
 								<td>
 									<form method="POST" action="?/clear" use:enhance>
 										<input type="hidden" name="chipId" value={snooze.chipId} />
-										<button type="submit" class="ghost">Fjern</button>
+										<Button type="submit" variant="secondary">Fjern</Button>
 									</form>
 								</td>
 							</tr>
@@ -111,22 +111,21 @@
 		max-width: 800px;
 		margin: 0 auto;
 		padding: 0 0 1rem;
-		font-family: system-ui, -apple-system, sans-serif;
 	}
 	h2 {
 		font-size: 1rem;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
-		color: #777;
+		color: var(--text-tertiary);
 		margin: 1.75rem 0 0.5rem;
 	}
 	.lead {
-		color: #555;
+		color: var(--text-secondary);
 		margin-bottom: 1rem;
 	}
 	.empty,
 	.muted {
-		color: #888;
+		color: var(--text-tertiary);
 	}
 	.empty {
 		font-style: italic;
@@ -139,52 +138,29 @@
 	td {
 		text-align: left;
 		padding: 0.6rem 0.5rem;
-		border-bottom: 1px solid #eee;
+		border-bottom: 1px solid var(--border-subtle);
 		font-size: 0.9rem;
 		vertical-align: middle;
 	}
 	th {
 		font-size: 0.75rem;
 		text-transform: uppercase;
-		color: #777;
+		color: var(--text-tertiary);
 		letter-spacing: 0.04em;
 	}
 	.label {
 		font-weight: 500;
+		color: var(--text-primary);
 	}
 	.chip-id {
 		font-size: 0.72rem;
-		color: #999;
+		color: var(--text-tertiary);
 		font-family: ui-monospace, SFMono-Regular, monospace;
 	}
 	tr.forever .label::after {
 		content: ' · permanent';
 		font-weight: 400;
 		font-size: 0.78rem;
-		color: hsl(8 60% 55%);
-	}
-	.primary {
-		background: #4a64d4;
-		color: white;
-		border: 0;
-		padding: 0.35rem 0.8rem;
-		border-radius: 6px;
-		cursor: pointer;
-		font-size: 0.8rem;
-	}
-	.primary:hover {
-		background: #3a52c0;
-	}
-	.ghost {
-		background: white;
-		color: #555;
-		border: 1px solid #ddd;
-		padding: 0.3rem 0.7rem;
-		border-radius: 6px;
-		cursor: pointer;
-		font-size: 0.8rem;
-	}
-	.ghost:hover {
-		background: #f7f7f7;
+		color: var(--warning-text);
 	}
 </style>
