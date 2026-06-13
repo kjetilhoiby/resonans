@@ -101,6 +101,33 @@ export function estimateVdotFromBestEfforts(efforts: {
 }
 
 /**
+ * Estimer VDOT fra et jevnt løp via pace + puls-respons:
+ * pace gir VO2-forbruket (Daniels-formelen), og snittpuls som andel av
+ * heart rate reserve (Karvonen) approksimerer %VO2max. VDOT = vo2 / andel.
+ *
+ * Løper du samme pace på lavere puls enn før, gir dette høyere VDOT —
+ * altså fanger den formforbedring uten at det trengs en test.
+ * Mest pålitelig for jevne rolige løp; guards avviser ekstreme verdier.
+ */
+export function vdotFromPaceAndHr(
+	paceSecPerKm: number,
+	avgHr: number,
+	restHr: number,
+	maxHr: number
+): number | null {
+	if (paceSecPerKm < 150 || paceSecPerKm > 720) return null;
+	if (!(maxHr > restHr) || avgHr <= restHr) return null;
+	const fraction = (avgHr - restHr) / (maxHr - restHr);
+	if (fraction < 0.45 || fraction > 1.05) return null;
+	const v = 60000 / paceSecPerKm; // m/min
+	const vo2 = -4.6 + 0.182258 * v + 0.000104 * v * v;
+	if (vo2 <= 0) return null;
+	const vdot = vo2 / fraction;
+	if (!Number.isFinite(vdot) || vdot < 20 || vdot > 85) return null;
+	return Math.round(vdot * 10) / 10;
+}
+
+/**
  * Cooper 12-min test → VDOT.
  * Cooper-test måler hvor langt du kommer på 12 min av jevn maksimal innsats.
  * Distanse i meter brukes med Daniels-formelen for tMin=12.

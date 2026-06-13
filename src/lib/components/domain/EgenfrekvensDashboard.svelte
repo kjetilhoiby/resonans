@@ -108,7 +108,7 @@
 	const last7: EgenfrekvensCheckinPointData[] = $derived(data.points.slice(0, 7));
 </script>
 
-<div class="ef-dash">
+<div class="ef-dash" style:--ef-slot-count={PERIOD_SLOTS.length}>
 	<header class="ef-header">
 		<div class="ef-header-text">
 			<h2>Egenfrekvens</h2>
@@ -393,7 +393,7 @@
 	/* Dagens slot-stripe */
 	.ef-slot-strip {
 		display: grid;
-		grid-template-columns: repeat(5, 1fr);
+		grid-template-columns: repeat(var(--ef-slot-count, 5), 1fr);
 		gap: 6px;
 		margin-bottom: 8px;
 	}
@@ -422,7 +422,7 @@
 	}
 	.ef-grid-row {
 		display: grid;
-		grid-template-columns: 48px repeat(5, 1fr);
+		grid-template-columns: 48px repeat(var(--ef-slot-count, 5), 1fr);
 		gap: 4px;
 		align-items: center;
 	}

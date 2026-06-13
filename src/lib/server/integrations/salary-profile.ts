@@ -15,10 +15,7 @@ import { db } from '$lib/db';
 import { userSalaryProfiles } from '$lib/db/schema';
 import { and, eq, desc } from 'drizzle-orm';
 import { detectGlobalPayday } from './payday-detector';
-import Holidays from 'date-holidays';
-
-// Singleton – instantiation is slow (~ms), reuse across calls
-const norHolidays = new Holidays('NO');
+import { isNorwegianHoliday } from '$lib/server/norwegian-holidays';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -53,13 +50,9 @@ export function invalidateSalaryProfileCache(userId: string) {
 	profileCache.delete(userId);
 }
 
-// ─── Norwegian public holidays via date-holidays ─────────────────────────────
-
-function isNorwegianHoliday(d: Date): boolean {
-	const result = norHolidays.isHoliday(d);
-	if (!result) return false;
-	return result.some((h) => h.type === 'public');
-}
+// ─── Working-day helpers ──────────────────────────────────────────────────────
+// Norwegian public holidays come from the shared norwegian-holidays module.
+// Weekend uses UTC here because paydays are computed against UTC dates.
 
 function isWeekend(d: Date): boolean {
 	const dow = d.getUTCDay();

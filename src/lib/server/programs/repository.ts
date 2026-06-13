@@ -22,7 +22,9 @@ import type {
 import { isProgramTestType, isProgramPhase } from './types';
 import {
 	STRENGTH_EXERCISE_NAMES,
+	isProgramMode,
 	isProgramStatus,
+	type ProgramMode,
 	type ProgramStatus
 } from './constants';
 
@@ -80,6 +82,7 @@ export async function saveGeneratedProgram(
 			durationWeeks: program.durationWeeks,
 			sessionsPerWeek: program.sessionsPerWeek,
 			status: program.status,
+			mode: program.mode ?? 'fast',
 			includeStrength: program.includeStrength,
 			includeRunning: program.includeRunning,
 			startDate: program.startDate,
@@ -153,6 +156,7 @@ export async function getProgramSummaries(userId: string): Promise<ProgramSummar
 			durationWeeks: true,
 			sessionsPerWeek: true,
 			status: true,
+			mode: true,
 			includeStrength: true,
 			includeRunning: true,
 			startDate: true,
@@ -195,6 +199,7 @@ export async function getProgramSummaries(userId: string): Promise<ProgramSummar
 		durationWeeks: r.durationWeeks,
 		sessionsPerWeek: r.sessionsPerWeek,
 		status: (isProgramStatus(r.status) ? r.status : 'active') as ProgramStatus,
+		mode: (isProgramMode(r.mode) ? r.mode : 'fast') as ProgramMode,
 		startDate: typeof r.startDate === 'string' ? r.startDate : new Date(r.startDate as unknown as Date).toISOString().slice(0, 10),
 		includeStrength: r.includeStrength,
 		includeRunning: r.includeRunning,
@@ -300,6 +305,7 @@ export async function getFullProgram(userId: string, programId: string): Promise
 		durationWeeks: program.durationWeeks,
 		sessionsPerWeek: program.sessionsPerWeek,
 		status: (isProgramStatus(program.status) ? program.status : 'active') as ProgramStatus,
+		mode: (isProgramMode(program.mode) ? program.mode : 'fast') as ProgramMode,
 		includeStrength: program.includeStrength,
 		includeRunning: program.includeRunning,
 		startDate: typeof program.startDate === 'string'
@@ -412,6 +418,19 @@ export async function setProgramStatus(
 	const updated = await db
 		.update(trainingPrograms)
 		.set({ status, updatedAt: new Date() })
+		.where(and(eq(trainingPrograms.id, programId), eq(trainingPrograms.userId, userId)))
+		.returning({ id: trainingPrograms.id });
+	return updated.length > 0;
+}
+
+export async function setProgramMode(
+	userId: string,
+	programId: string,
+	mode: ProgramMode
+): Promise<boolean> {
+	const updated = await db
+		.update(trainingPrograms)
+		.set({ mode, updatedAt: new Date() })
 		.where(and(eq(trainingPrograms.id, programId), eq(trainingPrograms.userId, userId)))
 		.returning({ id: trainingPrograms.id });
 	return updated.length > 0;

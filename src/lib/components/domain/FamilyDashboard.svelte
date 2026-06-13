@@ -3,6 +3,7 @@
 	import SectionLabel from '../ui/SectionLabel.svelte';
 	import FamilyTree from './family/FamilyTree.svelte';
 	import FamilyFeed from './family/FamilyFeed.svelte';
+	import RelationshipCheckinCard from './family/RelationshipCheckinCard.svelte';
 	import PersonDetailSheet from './family/PersonDetailSheet.svelte';
 	import { portal } from '$lib/actions/portal';
 	import { goto } from '$app/navigation';
@@ -133,6 +134,8 @@
 	</nav>
 
 	{#if view === 'familie'}
+		<RelationshipCheckinCard />
+
 		{#if totalPersons === 0}
 			<section class="empty">
 				<p>Ingen familiemedlemmer registrert enda.</p>

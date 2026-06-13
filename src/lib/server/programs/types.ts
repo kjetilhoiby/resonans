@@ -1,4 +1,4 @@
-import type { ProgramSessionKind, ProgramStatus, RunType } from './constants';
+import type { ProgramMode, ProgramSessionKind, ProgramStatus, RunType } from './constants';
 
 /**
  * Renormalisert program-struktur — formen LLM-en produserer,
@@ -131,6 +131,7 @@ export interface ProgramDTO {
 	durationWeeks: number;
 	sessionsPerWeek: number;
 	status: ProgramStatus;
+	mode?: ProgramMode;
 	includeStrength: boolean;
 	includeRunning: boolean;
 	startDate: string; // ISO date (YYYY-MM-DD)
@@ -152,6 +153,7 @@ export interface ProgramSummaryDTO {
 	durationWeeks: number;
 	sessionsPerWeek: number;
 	status: ProgramStatus;
+	mode?: ProgramMode;
 	startDate: string;
 	includeStrength: boolean;
 	includeRunning: boolean;

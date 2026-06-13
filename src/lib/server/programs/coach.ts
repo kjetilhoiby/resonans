@@ -1,6 +1,8 @@
 import { openai } from '$lib/server/openai';
 import { env } from '$env/dynamic/private';
 import { getFullProgram } from './repository';
+import { getRecentAdaptations } from './adaptive-service';
+import { formatAdaptationsForPrompt } from './adaptive';
 
 /**
  * Fri-tekst coach for Ekko («Spør coachen» + etter-økt-vurdering).
@@ -47,6 +49,16 @@ async function buildProgramContext(userId: string, programId: string): Promise<s
 		`Varighet: ${program.durationWeeks} uker, ${program.sessionsPerWeek} økter/uke`,
 		`Fullført: ${completed} av ${all.length} økter`
 	];
+
+	if (program.mode === 'adaptiv') {
+		lines.push(
+			'Modus: adaptiv — planen justeres ukentlig etter faktisk trening (tempo, dagplassering, volum). Uken vurderes på samlet effort på tvers av løp/styrke/sykkel, ikke på enkeltøkter som ble hoppet over.'
+		);
+		const adaptations = await getRecentAdaptations(userId, programId, 5);
+		const block = formatAdaptationsForPrompt(adaptations);
+		if (block) lines.push(block);
+	}
+
 	return lines.join('\n');
 }
 
