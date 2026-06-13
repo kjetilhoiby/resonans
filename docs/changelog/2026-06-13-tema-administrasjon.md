@@ -187,15 +187,26 @@ Avgrensning: logikken er DB-koblet og har derfor ikke enhetstest (jf.
 test-konvensjonen om å unngå DB-mocking). De rene parserne (`findDueDate`,
 `extractBookTitle`) er uendret.
 
-### Fase 2 (gjenstår): datamodell-avhengige deler
+### Fase 2: klassifisering tilgjengelig fra økonomi-temaet (FERDIG)
 
-- **Lønnskonto redigerbar per økonomi-tema:** krever bruker-API (i dag bare
-  admin) og avklaring av om lønnskonto er global eller per tema.
-- **Foretrukne kontoer:** krever nytt felt (f.eks. `isPreferred`/`displayOrder`)
-  på kontomodellen — som i dag utledes fra `sensorEvents` (`bank_balance`),
-  ikke en egen tabell. Trenger en kontotabell eller en preferanse-tabell.
-- **Kategoriseringsregler:** flytt/speil `/settings/classification` til
-  økonomi-temaet.
+Økonomi-panelet i `/settings/themes` viser nå en «Kategorisering»-blokk med
+antall manuelle kategorikorrigeringer (`GET /api/classification-overrides?domain=transaction`)
+og lenke til `/settings/classification`. Speilet, ikke flyttet: reglene er
+globale (gjelder alle konti), så de må fortsatt nås uavhengig av om brukeren har
+et økonomi-tema. Dette fullfører prinsippet «domenekonfig nås fra temaet» for de
+delene som har en reell funksjon bak seg.
+
+### Parkert (ingen reell funksjon bak seg ennå)
+
+Vurdert, men bevisst ikke bygget — de mangler en konkret bruker/konsument:
+
+- **Foretrukne kontoer:** finnes ikke i datamodellen og ingen funksjon bruker
+  det. Kontoer sorteres på saldo i dag. Ingen grunn til å innføre et
+  `isPreferred`-felt før noe faktisk trenger det.
+- **Lønnskonto-editor per tema:** lønnskonto er global (én per bruker,
+  `user_salary_profiles`) og auto-detekteres fra transaksjoner. En *per-tema*-
+  editor gir ikke mening, og en generell bruker-editor (i dag admin-API) er en
+  egen sak uten et akutt behov. Vises read-only + lenke til Kilder.
 
 ### Visuell verifisering (gjenstår)
 

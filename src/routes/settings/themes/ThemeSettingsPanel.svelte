@@ -114,6 +114,7 @@
 		currency: string | null;
 	}
 	let accounts = $state<Account[] | null>(null);
+	let overrideCount = $state<number | null>(null);
 
 	async function loadAccounts() {
 		try {
@@ -121,6 +122,20 @@
 			accounts = res.ok ? await res.json() : [];
 		} catch {
 			accounts = [];
+		}
+	}
+
+	async function loadOverrideCount() {
+		try {
+			const res = await fetch('/api/classification-overrides?domain=transaction');
+			if (res.ok) {
+				const body = await res.json();
+				overrideCount = Array.isArray(body?.overrides) ? body.overrides.length : 0;
+			} else {
+				overrideCount = 0;
+			}
+		} catch {
+			overrideCount = 0;
 		}
 	}
 
@@ -135,7 +150,10 @@
 
 	onMount(() => {
 		if (theme.kind === 'books') void loadLibraryRules();
-		if (theme.kind === 'economics') void loadAccounts();
+		if (theme.kind === 'economics') {
+			void loadAccounts();
+			void loadOverrideCount();
+		}
 	});
 </script>
 
@@ -241,8 +259,23 @@
 				</ul>
 			{/if}
 			<p class="muted small">
-				Lønnskonto og foretrukne kontoer styres foreløpig under
-				<a href="/settings/sources">Kilder</a>. Egne tema-innstillinger for økonomi kommer.
+				Lønnskonto styres under <a href="/settings/sources">Kilder</a>.
+			</p>
+		</div>
+		<div class="field-group">
+			<h4>Kategorisering</h4>
+			<p class="muted">
+				{#if overrideCount === null}
+					Laster …
+				{:else if overrideCount === 0}
+					Ingen manuelle kategoriregler enda.
+				{:else}
+					{overrideCount} manuell{overrideCount === 1 ? '' : 'e'} kategorikorrigering{overrideCount === 1 ? '' : 'er'}.
+				{/if}
+			</p>
+			<p class="muted small">
+				Reglene er globale (gjelder alle konti). Administrer dem under
+				<a href="/settings/classification">Klassifisering</a>.
 			</p>
 		</div>
 	{/if}
