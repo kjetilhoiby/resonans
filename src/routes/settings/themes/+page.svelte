@@ -57,7 +57,7 @@
 
 <AppPage className="themes-page">
 	<PageSection>
-	<PageHeader title="Temaer" titleHref="/" titleLabel="Gå til forsiden" />
+	<PageHeader title="Temaer" titleHref="/settings" titleLabel="Tilbake til innstillinger" />
 
 	<main class="content">
 		{#if errorMessage}

@@ -102,7 +102,7 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 					<h2>Temaer</h2>
 				</div>
 				<p>Oversikt over aktive og arkiverte temaer</p>
-				<a href="/tema" class="overview-link">Åpne temaer</a>
+				<a href="/settings/themes" class="overview-link">Åpne temaer</a>
 			</article>
 			<article class="overview-card" id="profile-overview">
 				<div class="overview-head">

@@ -57,20 +57,22 @@ der de ligger. Settings beholder bare det som er ekte globalt/konto-nært.
 
 Ny side som lister alle temaer med status og lar brukeren arkivere/gjenopprette.
 
-Implementert:
-- `src/routes/tema/+page.server.ts`: henter alle temaer (aktive + arkiverte)
-  for brukeren, beriker med `dashboardLabel` fra `getThemeDashboardDefinition`.
-- `src/routes/tema/+page.svelte`: aktive temaer gruppert på `parentTheme`
-  («Uten kategori» sist), egen seksjon for arkiverte. Arkiver-/gjenopprett-
-  knapper kaller `PATCH /api/tema/[id]` og `invalidateAll()`. `data-track`
-  på begge handlinger.
+Implementert som en seksjon under settings (ikke en `/tema`-rotside —
+tema-*administrasjon* er konto-nært, mens tema-*innhold* bor på `/tema/[id]`):
+- `src/routes/settings/themes/+page.server.ts`: henter alle temaer (aktive +
+  arkiverte) for brukeren, beriker med `dashboardLabel` fra
+  `getThemeDashboardDefinition`.
+- `src/routes/settings/themes/+page.svelte`: aktive temaer gruppert på
+  `parentTheme` («Uten kategori» sist), egen seksjon for arkiverte. Arkiver-/
+  gjenopprett-knapper kaller `PATCH /api/tema/[id]` og `invalidateAll()`.
+  `data-track` på begge handlinger. Tittelen lenker tilbake til `/settings`.
 - Inngang fra `/settings`-oversikten («Temaer»-kort).
 
 Designvalg under arbeidet:
 
-- **Rute:** `/tema` (rotside for tema-administrasjon). Alternativt
-  `/settings/temaer` hvis vi heller vil ha det under settings — men `/tema` er
-  mer konsistent med at temaene er innhold, ikke konto-innstillinger.
+- **Rute:** `/settings/themes` (seksjon under settings). Valgt fordi dette er
+  tema-*administrasjon* (arkivering, oversikt) — konto-nært — mens tema-
+  *innhold* fortsatt bor på `/tema/[id]`.
 - **Innhold:**
   - Aktive temaer (`archived = false`), gruppert på `parentTheme` der det
     finnes, sortert på `sortOrder`.
