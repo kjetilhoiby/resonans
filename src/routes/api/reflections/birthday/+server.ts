@@ -56,11 +56,23 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 
 	// Chattene arkiveres som egen refleksjon — selvangivelsen beholder destillatet
 	const threads = body?.threads as
-		| { hvemNaa?: unknown; kroppOgHode?: unknown; speil?: unknown }
+		| {
+				hvemNaa?: unknown;
+				hvemVarDu?: unknown;
+				hvaEndretDeg?: unknown;
+				kroppOgHode?: unknown;
+				speil?: unknown;
+		  }
 		| undefined;
 	const transcriptParts: string[] = [];
 	if (typeof threads?.hvemNaa === 'string' && threads.hvemNaa.trim()) {
 		transcriptParts.push(`## Hvem er du nå?\n${threads.hvemNaa.trim()}`);
+	}
+	if (typeof threads?.hvemVarDu === 'string' && threads.hvemVarDu.trim()) {
+		transcriptParts.push(`## Hvem var du i fjor?\n${threads.hvemVarDu.trim()}`);
+	}
+	if (typeof threads?.hvaEndretDeg === 'string' && threads.hvaEndretDeg.trim()) {
+		transcriptParts.push(`## Hva endret deg?\n${threads.hvaEndretDeg.trim()}`);
 	}
 	if (typeof threads?.kroppOgHode === 'string' && threads.kroppOgHode.trim()) {
 		transcriptParts.push(`## Kroppen og hodet\n${threads.kroppOgHode.trim()}`);

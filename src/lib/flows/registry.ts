@@ -1254,7 +1254,7 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 		trigger: 'manual',
 		focus: true,
 		resumable: true,
-		estimatedMinutes: 18,
+		estimatedMinutes: 20,
 		steps: [
 			{
 				id: 'hvem_naa',
@@ -1284,31 +1284,66 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 			},
 			{
 				id: 'hvem_var_du',
-				type: 'form',
+				type: 'chat',
 				title: 'Hvem var du i fjor?',
-				fields: [
-					{
-						id: 'who_last_year',
-						type: 'textarea',
-						label: 'Tenk deg selv for ett år siden',
-						placeholder:
-							'Hvor sto du da? Hva var du opptatt av, bekymret for, på vei mot? (Fjorårets selvangivelse ligger på kavalkaden hvis du vil friske opp.)'
-					}
-				]
+				autoSend: true,
+				buildPrompts: (data) => {
+					const lastYear = typeof data._lastYearAnswers === 'string' ? data._lastYearAnswers : '';
+					const lastLetter = typeof data._lastYearLetter === 'string' ? data._lastYearLetter : '';
+					const naa =
+						typeof data.hvem_naa_lastMessage === 'string'
+							? parseStatusBlock(data.hvem_naa_lastMessage)
+							: '';
+					return {
+						prompt: 'Nå vil jeg tenke tilbake på hvem jeg var for ett år siden.',
+						systemPrompt: [
+							'Andre beat i bursdagsintervjuet: hjelp brukeren å huske hvem de VAR for ett år siden — før vi ser på hva som endret dem.',
+							naa ? `Slik beskrev de seg selv nå:\n${naa}` : '',
+							lastYear ? `\nFjorårets selvangivelse — bruk den aktivt («i fjor skrev du …, kjenner du deg igjen i det?»):\n${lastYear}` : '',
+							lastLetter ? `\nBrevet de skrev til seg selv for ett år siden:\n«${lastLetter}»` : '',
+							'',
+							'Still ETT fokusert spørsmål om gangen (to–tre stykker holder): Hvor sto du da? Hva var du opptatt av, bekymret for, på vei mot? Grav kort der det blir interessant.',
+							'',
+							'Etter HVER respons: oppdater et portrett av fjorårets jeg mellom markørene <status> og </status> — 3–5 linjer i brukerens egne ord. Denne blokken lagres som «Hvem var du i fjor?»-seksjonen.',
+							'',
+							'Når det sitter, si at neste steg er hva som endret dem. Norsk, varm — venn, ikke terapeut.'
+						]
+							.filter(Boolean)
+							.join('\n')
+					};
+				}
 			},
 			{
 				id: 'hva_endret_deg',
-				type: 'form',
+				type: 'chat',
 				title: 'Hva endret deg?',
-				fields: [
-					{
-						id: 'what_changed_you',
-						type: 'textarea',
-						label: 'Hva flyttet deg fra den personen til den du er nå?',
-						placeholder:
-							'En hendelse, et menneske, en erkjennelse, en vane — det som faktisk forandret deg innvendig'
-					}
-				]
+				autoSend: true,
+				buildPrompts: (data) => {
+					const naa =
+						typeof data.hvem_naa_lastMessage === 'string'
+							? parseStatusBlock(data.hvem_naa_lastMessage)
+							: '';
+					const ifjor =
+						typeof data.hvem_var_du_lastMessage === 'string'
+							? parseStatusBlock(data.hvem_var_du_lastMessage)
+							: '';
+					return {
+						prompt: 'Så — hva endret meg fra den jeg var til den jeg er nå?',
+						systemPrompt: [
+							'Tredje beat: broen. Brukeren har beskrevet hvem de er nå og hvem de var i fjor. Nå: hva FLYTTET dem mellom de to?',
+							ifjor ? `I fjor:\n${ifjor}` : '',
+							naa ? `\nNå:\n${naa}` : '',
+							'',
+							'Spør etter de transformative kreftene — en hendelse, et menneske, en erkjennelse, en vane, en motgang. Pek gjerne på en konkret forskjell mellom de to portrettene og spør hva som lå bak. ETT spørsmål om gangen, grav der det er liv.',
+							'',
+							'Etter HVER respons: oppdater <status>…</status> med 2–4 linjer om hva som endret dem, i deres egne ord. Denne blokken lagres som «Hva endret deg?»-seksjonen.',
+							'',
+							'Når det er sagt, før dem videre til rollene sine. Norsk, varm — venn, ikke terapeut.'
+						]
+							.filter(Boolean)
+							.join('\n')
+					};
+				}
 			},
 			{
 				id: 'roller',
@@ -1517,6 +1552,17 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 					? parseStatusBlock(data.hvem_naa_lastMessage)
 					: '';
 			if (naa) answers.who = naa;
+			// Hvem var du i fjor / Hva endret deg — også chat med <status>-blokk
+			const ifjor =
+				typeof data.hvem_var_du_lastMessage === 'string'
+					? parseStatusBlock(data.hvem_var_du_lastMessage)
+					: '';
+			if (ifjor) answers.who_last_year = ifjor;
+			const endret =
+				typeof data.hva_endret_deg_lastMessage === 'string'
+					? parseStatusBlock(data.hva_endret_deg_lastMessage)
+					: '';
+			if (endret) answers.what_changed_you = endret;
 			// Kropp-og-hode-chatten: AI-ens løpende <status>-blokk er seksjonsinnholdet
 			const helse =
 				typeof data.kropp_og_hode_lastMessage === 'string'
@@ -1542,6 +1588,8 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 					// «Samtalen er data»: hele chattene arkiveres som transkript
 					threads: {
 						hvemNaa: formatThreadTranscript(data.hvem_naa_thread),
+						hvemVarDu: formatThreadTranscript(data.hvem_var_du_thread),
+						hvaEndretDeg: formatThreadTranscript(data.hva_endret_deg_thread),
 						kroppOgHode: formatThreadTranscript(data.kropp_og_hode_thread),
 						speil: formatThreadTranscript(data.speil_thread)
 					}
