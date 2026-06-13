@@ -122,6 +122,31 @@
 		void goto(`/?prefill=${encodeURIComponent(prefill)}`);
 	}
 
+	let recalcing = $state(false);
+	let recalcMessage = $state<string | null>(null);
+	async function runRecalcNow() {
+		if (recalcing) return;
+		recalcing = true;
+		recalcMessage = null;
+		try {
+			const res = await fetch(`/api/apps/programs/${program.id}/recalc`, { method: 'POST' });
+			const data = await res.json();
+			if (!res.ok) {
+				recalcMessage = data?.error ?? 'Klarte ikke å kjøre justeringen.';
+				return;
+			}
+			const count = Array.isArray(data.adaptations) ? data.adaptations.length : 0;
+			recalcMessage = count > 0
+				? `Justerte planen: ${data.adaptations.map((a: { kind: string }) => adaptationKindLabel(a.kind)).join(', ')}.`
+				: 'Ingen endringer denne gangen — planen passer dataene så langt.';
+			await invalidateAll();
+		} catch {
+			recalcMessage = 'Klarte ikke å kjøre justeringen.';
+		} finally {
+			recalcing = false;
+		}
+	}
+
 	function adaptationKindLabel(kind: string): string {
 		return (
 			{
@@ -247,9 +272,15 @@
 					{/each}
 				</ul>
 			{/if}
-			<button class="discuss-coach" data-track="treningsprogram:diskuter-justering" onclick={discussWithCoach}>
-				💬 Diskuter justeringene med coachen
-			</button>
+			<div class="adaptation-actions">
+				<button class="recalc-now" data-track="treningsprogram:kjor-justering-na" onclick={runRecalcNow} disabled={recalcing}>
+					{recalcing ? 'Justerer…' : '🔄 Kjør justering nå'}
+				</button>
+				<button class="discuss-coach" data-track="treningsprogram:diskuter-justering" onclick={discussWithCoach}>
+					💬 Diskuter justeringene med coachen
+				</button>
+			</div>
+			{#if recalcMessage}<p class="recalc-message">{recalcMessage}</p>{/if}
 		</section>
 	{/if}
 
@@ -461,20 +492,44 @@
 		font-size: 13px;
 		color: var(--text-secondary);
 	}
-	.discuss-coach {
+	.adaptation-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
 		margin-top: 14px;
-		width: 100%;
+	}
+	.adaptation-actions button {
+		flex: 1 1 200px;
 		padding: 10px 16px;
 		border-radius: 999px;
-		background: color-mix(in oklab, var(--accent-primary) 14%, transparent);
-		border: 1px solid color-mix(in oklab, var(--accent-primary) 40%, transparent);
-		color: var(--accent-primary);
 		font-size: 14px;
 		font-weight: 600;
 		cursor: pointer;
 	}
+	.discuss-coach {
+		background: color-mix(in oklab, var(--accent-primary) 14%, transparent);
+		border: 1px solid color-mix(in oklab, var(--accent-primary) 40%, transparent);
+		color: var(--accent-primary);
+	}
 	.discuss-coach:hover {
 		background: color-mix(in oklab, var(--accent-primary) 22%, transparent);
+	}
+	.recalc-now {
+		background: var(--bg-tertiary);
+		border: 1px solid var(--border-subtle);
+		color: var(--text-primary);
+	}
+	.recalc-now:hover:not(:disabled) {
+		border-color: var(--accent-primary);
+	}
+	.recalc-now:disabled {
+		opacity: 0.6;
+		cursor: default;
+	}
+	.recalc-message {
+		margin: 10px 0 0;
+		font-size: 13px;
+		color: var(--text-secondary);
 	}
 
 	.actions-row {
