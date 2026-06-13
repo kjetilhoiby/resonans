@@ -110,7 +110,7 @@
 	main {
 		max-width: 800px;
 		margin: 0 auto;
-		padding: 1.5rem 1rem;
+		padding: 0 0 1rem;
 		font-family: system-ui, -apple-system, sans-serif;
 	}
 	h2 {

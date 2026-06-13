@@ -268,7 +268,7 @@
 	:global(.classification-page) { color: #aaa; }
 
 	.content {
-		padding: 1.5rem 1rem;
+		padding: 0 0 1rem;
 	}
 
 	.info-box {
