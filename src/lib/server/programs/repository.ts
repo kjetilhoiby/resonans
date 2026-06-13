@@ -13,6 +13,7 @@ import type {
 	PlannedRunDTO,
 	ProgramActuals,
 	ProgramDTO,
+	ProgramPreferences,
 	ProgramSessionDTO,
 	ProgramSummaryDTO,
 	ProgramTestType,
@@ -314,6 +315,7 @@ export async function getFullProgram(userId: string, programId: string): Promise
 		createdAt: program.createdAt.toISOString(),
 		updatedAt: program.updatedAt.toISOString(),
 		generatedWith: program.generatedWith ?? null,
+		preferences: (program.preferences ?? undefined) as ProgramPreferences | undefined,
 		weeks: weeksDTO
 	};
 }

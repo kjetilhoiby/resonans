@@ -9,6 +9,7 @@ export type NotificationRouteKey =
 	| 'salaryReceived'
 	| 'egenfrekvensCheckin'
 	| 'programReadiness'
+	| 'programAdaptive'
 	| 'applianceCycleStart'
 	| 'applianceCycleFinish';
 

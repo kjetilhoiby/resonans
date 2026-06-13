@@ -792,6 +792,32 @@ const tools = [
 			{
 				type: 'function' as const,
 				function: {
+					name: 'manage_training_program',
+					description: "Forklar og ENDRE brukerens adaptive treningsprogram direkte når brukeren foreslår justeringer (typisk etter et varsel om at planen ble rekalkulert). Ring ALLTID action='get' først for å se uker, økter (med sessionId) og siste automatiske justeringer — bruk det til å forklare hva som endret seg og hvorfor, og til å finne riktig sessionId. Deretter: 'move_session' (flytt økt til annen ukedag, dayNumber 1=man..7=søn), 'set_pace' (sett tempo i sek/km på én økt via sessionId, eller alle fremtidige av en runType), 'scale_volume' (skaler distanse/varighet, factor f.eks. 0.9=−10% eller 1.1=+10%, for én weekNumber eller fra fromWeek og fremover), 'set_preference' (varige føringer som den ukentlige automatiske justeringen respekterer: pinnedDays=ukedager løp ikke skal flyttes fra, lockPace=lås tempoet, volumeBias=ønsket volumnivå 0.5–1.5, note=fri føring). programId er valgfri — utelat den for brukerens aktive program. Bekreft konkrete endringer med brukeren før du gjør dem hvis det er tvil.",
+					parameters: {
+						type: 'object',
+						properties: {
+							action: { type: 'string', enum: ['get', 'move_session', 'set_pace', 'scale_volume', 'set_preference'] },
+							programId: { type: 'string', description: 'Valgfri — utelat for aktivt program' },
+							sessionId: { type: 'string', description: 'Økt-id fra get (for move_session/set_pace)' },
+							newDay: { type: 'number', description: 'Ny ukedag 1=man..7=søn (move_session)' },
+							paceSecPerKm: { type: 'number', description: 'Tempo i sekunder per km (set_pace), f.eks. 330 = 5:30/km' },
+							runType: { type: 'string', enum: ['easy', 'tempo', 'intervals', 'long'], description: 'For set_pace på alle fremtidige av denne typen' },
+							factor: { type: 'number', description: 'Volumfaktor (scale_volume), 0.5–1.5' },
+							weekNumber: { type: 'number', description: 'Skaler kun denne uka (scale_volume)' },
+							fromWeek: { type: 'number', description: 'Gjelder fra og med denne uka og fremover' },
+							pinnedDays: { type: 'array', items: { type: 'number' }, description: 'Ukedager (1-7) der løp ikke skal flyttes (set_preference)' },
+							lockPace: { type: 'boolean', description: 'Lås tempoet mot auto-rekalkulering (set_preference)' },
+							volumeBias: { type: 'number', description: 'Ønsket volumnivå 0.5–1.5 (set_preference)' },
+							note: { type: 'string', description: 'Fri føring coachen noterer (set_preference)' }
+						},
+						required: ['action']
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
 					name: 'query_projects',
 					description: 'List prosjekter med burn-up + kost-vs-budsjett. Filter på domain, status, themeId, eller søk i tittel. Bruk dette for å finne projectId før manage_project.update/complete eller link_to_project.',
 					parameters: {
@@ -2375,6 +2401,12 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 						userId,
 						themeId: args.themeId || conversation.themeId
 					});
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'manage_training_program') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  🏃 Manage training program:', args.action);
+					const { manageTrainingProgramTool } = await import('$lib/ai/tools/manage-training-program');
+					const result = await manageTrainingProgramTool.execute({ ...args, userId });
 					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'query_projects') {
 					const args = JSON.parse(toolCall.function.arguments);
