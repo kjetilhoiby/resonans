@@ -96,6 +96,14 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 		{/if}
 
 		<section class="overview-grid">
+			<article class="overview-card" id="themes-overview">
+				<div class="overview-head">
+					<span class="status-dot ok"></span>
+					<h2>Temaer</h2>
+				</div>
+				<p>Oversikt over aktive og arkiverte temaer</p>
+				<a href="/tema" class="overview-link">Åpne temaer</a>
+			</article>
 			<article class="overview-card" id="profile-overview">
 				<div class="overview-head">
 					<span class="status-dot {hasProfileWarning ? 'warn' : 'ok'}"></span>
