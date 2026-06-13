@@ -98,6 +98,7 @@
 			emailAppsScriptSource={data.emailAppsScriptSource}
 			emailImports={data.emailImports}
 			userEmail={data.user?.email}
+			themes={data.themes}
 		/>
 		<GoogleSheetsSourceCard onConnectedChange={(c) => googleSheetsConnected = c} />
 		<StravaSourceCard />

@@ -8,15 +8,21 @@
 		libraryItems: number;
 	};
 
+	type ThemeOption = { id: string; name: string; emoji: string | null };
+
 	interface Props {
 		emailWebhookConfigured: boolean;
 		emailEndpoint: string;
 		emailAppsScriptSource: string | null;
 		emailImports: EmailImports;
 		userEmail?: string | null;
+		themes?: ThemeOption[];
 	}
 
-	let { emailWebhookConfigured, emailEndpoint, emailAppsScriptSource, emailImports, userEmail }: Props = $props();
+	let { emailWebhookConfigured, emailEndpoint, emailAppsScriptSource, emailImports, userEmail, themes = [] }: Props = $props();
+
+	const themeName = (id: string | null): string | null =>
+		id ? (themes.find((t) => t.id === id)?.name ?? null) : null;
 
 	let emailScriptCopied = $state(false);
 	let emailEndpointCopied = $state(false);
@@ -32,6 +38,7 @@
 		senderPattern: string | null;
 		subjectPattern: string | null;
 		processingType: string;
+		themeId: string | null;
 		extractionPrompt: string | null;
 		eventType: string;
 		dataType: string;
@@ -49,6 +56,7 @@
 		senderPattern: '',
 		subjectPattern: '',
 		processingType: 'workout_files' as string,
+		themeId: '' as string,
 		extractionPrompt: '',
 		eventType: 'email_content',
 		dataType: 'email',
@@ -148,7 +156,7 @@
 	function resetRuleForm() {
 		ruleForm = {
 			name: '', labelPattern: '', senderPattern: '', subjectPattern: '',
-			processingType: 'workout_files', extractionPrompt: '',
+			processingType: 'workout_files', themeId: '', extractionPrompt: '',
 			eventType: 'email_content', dataType: 'email',
 		};
 		editingRuleId = null;
@@ -163,6 +171,7 @@
 			senderPattern: rule.senderPattern ?? '',
 			subjectPattern: rule.subjectPattern ?? '',
 			processingType: rule.processingType,
+			themeId: rule.themeId ?? '',
 			extractionPrompt: rule.extractionPrompt ?? '',
 			eventType: rule.eventType,
 			dataType: rule.dataType,
@@ -275,6 +284,9 @@
 							{#if !rule.labelPattern && !rule.senderPattern && !rule.subjectPattern}
 								<span class="filter-chip filter-warn">Ingen filter — matcher alle e-poster</span>
 							{/if}
+							{#if themeName(rule.themeId)}
+								<span class="filter-chip">Tema: {themeName(rule.themeId)}</span>
+							{/if}
 						</div>
 						{#if rule.matchCount > 0}
 							<p class="email-rule-stats">Treff: {rule.matchCount}{rule.lastMatchedAt ? ` · Sist: ${new Date(rule.lastMatchedAt).toLocaleDateString('nb-NO')}` : ''}</p>
@@ -317,6 +329,18 @@
 						<option value="raw_store">Rå lagring (lagre som tekst)</option>
 					</Select>
 				</div>
+				{#if themes.length > 0}
+					<div class="field">
+						<label for="rule-theme">Knytt til tema</label>
+						<Select id="rule-theme" className="input" bind:value={ruleForm.themeId}>
+							<option value="">Ingen — global regel</option>
+							{#each themes as t (t.id)}
+								<option value={t.id}>{t.emoji ? `${t.emoji} ` : ''}{t.name}</option>
+							{/each}
+						</Select>
+						<p class="field-hint">Valgfritt. En bibliotek-regel knyttet til Bøker-temaet vises under det temaet i Innstillinger → Temaer.</p>
+					</div>
+				{/if}
 				{#if ruleForm.processingType === 'ai_extraction'}
 					<div class="field">
 						<label for="rule-prompt">Tilpasset AI-prompt (valgfritt)</label>

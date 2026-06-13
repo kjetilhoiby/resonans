@@ -4,9 +4,12 @@ import { db } from '$lib/db';
 import { emailRules } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 
-export const GET: RequestHandler = async ({ locals }) => {
+export const GET: RequestHandler = async ({ locals, url }) => {
+	const themeId = url.searchParams.get('themeId');
 	const rules = await db.query.emailRules.findMany({
-		where: eq(emailRules.userId, locals.userId),
+		where: themeId
+			? and(eq(emailRules.userId, locals.userId), eq(emailRules.themeId, themeId))
+			: eq(emailRules.userId, locals.userId),
 		orderBy: (r, { desc }) => [desc(r.createdAt)]
 	});
 	return json(rules);
@@ -19,6 +22,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		senderPattern?: string;
 		subjectPattern?: string;
 		processingType: string;
+		themeId?: string | null;
 		extractionPrompt?: string;
 		eventType?: string;
 		dataType?: string;
@@ -38,6 +42,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		senderPattern: body.senderPattern?.trim() || null,
 		subjectPattern: body.subjectPattern?.trim() || null,
 		processingType: body.processingType,
+		themeId: body.themeId || null,
 		extractionPrompt: body.extractionPrompt?.trim() || null,
 		eventType: body.eventType || 'email_content',
 		dataType: body.dataType || 'email',
@@ -54,6 +59,7 @@ export const PATCH: RequestHandler = async ({ request, locals }) => {
 		senderPattern?: string | null;
 		subjectPattern?: string | null;
 		processingType?: string;
+		themeId?: string | null;
 		extractionPrompt?: string | null;
 		eventType?: string;
 		dataType?: string;
@@ -70,6 +76,7 @@ export const PATCH: RequestHandler = async ({ request, locals }) => {
 	if (body.senderPattern !== undefined) updates.senderPattern = body.senderPattern?.trim() || null;
 	if (body.subjectPattern !== undefined) updates.subjectPattern = body.subjectPattern?.trim() || null;
 	if (body.processingType !== undefined) updates.processingType = body.processingType;
+	if (body.themeId !== undefined) updates.themeId = body.themeId || null;
 	if (body.extractionPrompt !== undefined) updates.extractionPrompt = body.extractionPrompt?.trim() || null;
 	if (body.eventType !== undefined) updates.eventType = body.eventType;
 	if (body.dataType !== undefined) updates.dataType = body.dataType;

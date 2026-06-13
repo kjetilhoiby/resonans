@@ -83,6 +83,7 @@
 		id: string;
 		name: string;
 		processingType: string;
+		themeId: string | null;
 		senderPattern: string | null;
 		subjectPattern: string | null;
 		isActive: boolean;
@@ -91,7 +92,8 @@
 
 	async function loadLibraryRules() {
 		try {
-			const res = await fetch('/api/settings/email-rules');
+			// Hent regler knyttet til dette temaet, og vis bibliotek-reglene blant dem.
+			const res = await fetch(`/api/settings/email-rules?themeId=${theme.id}`);
 			if (res.ok) {
 				const rules: EmailRule[] = await res.json();
 				libraryRules = rules.filter((r) => r.processingType === 'library');
@@ -202,7 +204,7 @@
 			{#if libraryRules === null}
 				<p class="muted">Laster …</p>
 			{:else if libraryRules.length === 0}
-				<p class="muted">Ingen epostregler for bibliotek enda.</p>
+				<p class="muted">Ingen bibliotek-epostregler knyttet til dette temaet enda.</p>
 			{:else}
 				<ul class="rule-list">
 					{#each libraryRules as rule (rule.id)}
@@ -217,7 +219,7 @@
 				</ul>
 			{/if}
 			<p class="muted small">
-				Epostregler er foreløpig globale. Rediger dem under
+				Knytt en regel til dette temaet (eller rediger) under
 				<a href="/settings/sources">Kilder</a>.
 			</p>
 		</div>

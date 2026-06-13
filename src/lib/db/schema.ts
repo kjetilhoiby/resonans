@@ -2350,6 +2350,7 @@ export const emailRules = pgTable('email_rules', {
 	senderPattern: text('sender_pattern'), // glob pattern e.g. '*@oda.com', 'noreply@spond.com'
 	subjectPattern: text('subject_pattern'), // substring match e.g. 'Ordrebekreftelse', 'Ukeplan'
 	processingType: text('processing_type').notNull(), // 'workout_files', 'ai_extraction', 'raw_store', 'library'
+	themeId: uuid('theme_id').references(() => themes.id, { onDelete: 'set null' }), // valgfri tema-kobling (f.eks. bibliotek-regel → Bøker-tema)
 	extractionPrompt: text('extraction_prompt'), // custom prompt for AI extraction (optional)
 	eventType: text('event_type').notNull().default('email_content'), // sensor event type to create
 	dataType: text('data_type').notNull().default('email'), // sensor event data type

@@ -1,6 +1,6 @@
 import { db } from '$lib/db';
-import { users, sensorEvents, checklistItems } from '$lib/db/schema';
-import { and, eq, gte, sql } from 'drizzle-orm';
+import { users, sensorEvents, checklistItems, themes } from '$lib/db/schema';
+import { and, asc, eq, gte, sql } from 'drizzle-orm';
 import { env } from '$env/dynamic/private';
 import { ensureUser } from '$lib/server/users';
 import { buildAppsScript } from '$lib/server/email/apps-script-template';
@@ -51,11 +51,20 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		libraryItems: libraryCountRow?.count ?? 0
 	};
 
+	// Aktive temaer — for å kunne knytte en epostregel til et tema (f.eks.
+	// bibliotek-regel → Bøker).
+	const themeOptions = await db
+		.select({ id: themes.id, name: themes.name, emoji: themes.emoji })
+		.from(themes)
+		.where(and(eq(themes.userId, locals.userId), eq(themes.archived, false)))
+		.orderBy(asc(themes.sortOrder), asc(themes.createdAt));
+
 	return {
 		user: user || null,
 		emailEndpoint: endpoint,
 		emailWebhookConfigured: token.length > 0,
 		emailAppsScriptSource: appsScriptSource,
-		emailImports
+		emailImports,
+		themes: themeOptions
 	};
 };

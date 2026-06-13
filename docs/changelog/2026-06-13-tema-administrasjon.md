@@ -157,6 +157,29 @@ To UI-fikser etter mobiltest (skjermbilde):
   horisontal padding på `.content` oppå PageSection sin `--page-px`. Fjernet, så
   kortene aligner med PageHeader-tittelen.
 
+### Fase 2: epostregler koblet til tema (FERDIG)
+
+`emailRules` kan nå knyttes til et tema, så bibliotek-regelen faktisk henger
+under Bøker-temaet ende-til-ende.
+
+- Migrasjon `scripts/db-migrations/0016_email_rules_theme_id.sql`: additiv
+  `theme_id uuid` på `email_rules` med `ON DELETE SET NULL` (regelen overlever
+  at temaet slettes — blir bare global igjen). `schema.ts` oppdatert til samme
+  måltilstand.
+- API `/api/settings/email-rules`: `themeId` aksepteres i POST/PATCH og
+  returneres i GET; GET støtter `?themeId=`-filter.
+- `EmailRulesCard` (under Kilder): «Knytt til tema»-velger i regel-skjemaet
+  (alternativer fra aktive temaer, «Ingen — global regel» som default) + tema-
+  chip i regel-lista. `sources`-loaden mater inn de aktive temaene.
+- Tema-panelet (Bøker) henter nå `?themeId=<tema>` og viser bibliotek-reglene
+  som er knyttet til nettopp det temaet.
+
+**Oppfølging (ikke gjort):** Selve inbound-prosesseringen
+(`processLibraryEmail` i `/api/email/inbound`) bruker ennå ikke `rule.themeId`
+— en matchet bibliotek-e-post rutes ikke automatisk til det tilknyttede temaets
+bøker/sjekkliste. Koblingen er foreløpig organisering/visning; ruting er neste
+steg (krever å lese/endre `processLibraryEmail` og velge mål).
+
 ### Fase 2 (gjenstår): datamodell-avhengige deler
 
 - **Lønnskonto redigerbar per økonomi-tema:** krever bruker-API (i dag bare
@@ -164,7 +187,6 @@ To UI-fikser etter mobiltest (skjermbilde):
 - **Foretrukne kontoer:** krever nytt felt (f.eks. `isPreferred`/`displayOrder`)
   på kontomodellen — som i dag utledes fra `sensorEvents` (`bank_balance`),
   ikke en egen tabell. Trenger en kontotabell eller en preferanse-tabell.
-- **Epostregler koblet til tema:** krever `themeId` på `emailRules` + migrasjon.
 - **Kategoriseringsregler:** flytt/speil `/settings/classification` til
   økonomi-temaet.
 
