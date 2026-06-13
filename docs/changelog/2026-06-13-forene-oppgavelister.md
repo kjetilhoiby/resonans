@@ -1,7 +1,7 @@
 # Forene oppgavelister på tvers
 
 Dato: 2026-06-13
-Status: planlagt
+Status: pågår (Fase 1–2 ferdig)
 
 ## Kontekst
 
@@ -54,8 +54,13 @@ vi standardiserer uansett (se beslutning).
 
 ## Faser
 
-### Fase 1: Lås kanonisk rad-stil i designsystemet
-Dokumentér én kanonisk oppgaverad i `docs/DESIGN.md` og demo den i `/design`:
+### Fase 1: Lås kanonisk rad-stil i designsystemet ✅ ferdig
+Dokumentert kanonisk oppgaverad i `docs/DESIGN.md` (ny «Oppgaverader»-seksjon) og demoet i
+`/design` (ny seksjon: flat, bordered, bordered+deloppgaver). Anatomi besluttet:
+`[utvid-pil?] [tekst + badges] [avkrysning til høyre] [trailing-handling?]`, avkrysning alltid
+`ChecklistCheckbox`, tekst alltid `TaskTitle`.
+
+Opprinnelig omfang:
 
 - **Full bredde m/ramme** (besluttet) — bordered kort-rad i full bredde, bygget på
   `--card-*`-tokens (`--card-bg`, `--card-border`, `--card-radius`, `--card-padding`).
@@ -65,15 +70,19 @@ Dokumentér én kanonisk oppgaverad i `docs/DESIGN.md` og demo den i `/design`:
 - Definér de delte byggeklossene som inngår: `ChecklistCheckbox`, `TaskTitle`,
   `TaskContextMenu`, badge-stil (frist/estimat/handel/blokkert).
 
-### Fase 2: Utvid `ChecklistItemRow` til felles base
+### Fase 2: Utvid `ChecklistItemRow` til felles base ✅ ferdig
 `ChecklistItemRow` (#1) er allerede full bredde, har subtasks/dra/edit/badges og bruker de
-delte byggeklossene — den er den naturlige basen. Arbeid:
+delte byggeklossene — den er den naturlige basen.
 
-- Legg til en **bordered «card»-variant** (ramme via `--card-*`-tokens) styrt av en
-  `chrome`-prop/CSS-variabler, slik at både dagens transparente WeekTasks-rader og den nye
-  prosjekt-kortstilen dekkes av samme komponent.
-- Eksponér badge-rad (frist/estimat/handel/blokkert) som en standardisert `trailingBadge`/
-  `subRow`-kontrakt slik at `ThemeTasksTab` sine badges flytter inn uendret.
+Gjennomført:
+- La til **opt-in `bordered`-prop** → kort-chrome via `--card-*`-tokens (`.cli-item-card`).
+  Default (uten prop) er uendret flat/transparent, så eksisterende konsumenter (WeekTasks,
+  ChecklistSheet, plan/oppgaver) er pikselidentiske.
+- Verifisert med `npm run check` (0 feil) og `npm test` (531 grønne).
+
+Gjenstår i Fase 2 (gjøres sammen med migreringene under, fordi de er visuelle):
+- Eksponér badge-rad (frist/estimat/handel/blokkert) som en standardisert `trailingBadge`-kontrakt
+  slik at `ThemeTasksTab` sine badges flytter inn uendret.
 - Sørg for at dra-sortering og kontekstmeny er props-drevne (callbacks), ikke innebygd logikk.
 
 ### Fase 3: Migrer full-featured-listene
