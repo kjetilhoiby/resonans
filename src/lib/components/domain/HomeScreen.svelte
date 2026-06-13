@@ -745,18 +745,21 @@
 				if (navigator.webdriver) return; // hold visuelle tester deterministiske
 				// Bare ved «ren» åpning av hjemskjermen — alle deep-links/push-lenker har query-params
 				if ($page.url.search !== '') return;
-				const slot = getActivePeriodSlot();
-				if (!slot) return;
 				const day = localIsoDay();
-				const seen = typeof localStorage !== 'undefined'
-					? localStorage.getItem(periodSlotStorageKey(day, slot.id))
-					: null;
-				if (seen === 'done') return;
+				// Hent status først: svaret bærer isNonWorkingDay (helg/helligdag) som
+				// avgjør hvilket slot-skjema som gjelder — arbeidsdag på hverdager,
+				// «dag» med roligere tider på fridager.
 				const res = await fetch(`/api/egenfrekvens/checkin?day=${day}`, {
 					signal: AbortSignal.timeout(5000)
 				});
 				if (!res.ok) return;
 				const status = await res.json();
+				const slot = getActivePeriodSlot(new Date(), status.isNonWorkingDay === true);
+				if (!slot) return;
+				const seen = typeof localStorage !== 'undefined'
+					? localStorage.getItem(periodSlotStorageKey(day, slot.id))
+					: null;
+				if (seen === 'done') return;
 				if (status.slots?.[slot.id]) return; // registrert via annen flate
 				if (seen === 'dismissed') egenfrekvensSlotChip = slot;
 				else egenfrekvensSlotCheckin = slot;
