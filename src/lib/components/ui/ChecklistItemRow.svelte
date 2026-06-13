@@ -11,6 +11,8 @@
 		allItems?: ChecklistItemLike[];
 		showTime?: boolean;
 		showTravel?: boolean;
+		/** Kanonisk rad-stil: full bredde m/ramme (kort-chrome via --card-*-tokens). Default flat/transparent. */
+		bordered?: boolean;
 		checkboxSize?: 'sm' | 'md';
 		animated?: boolean;
 		editing?: boolean;
@@ -33,6 +35,7 @@
 		allItems = [],
 		showTime = true,
 		showTravel = true,
+		bordered = false,
 		checkboxSize = 'md',
 		animated = true,
 		editing = false,
@@ -148,6 +151,7 @@
 			>▸</button>
 			<div
 				class="cli-item"
+				class:cli-item-card={bordered}
 				class:cli-item-checked={item.checked}
 				class:cli-item-skipped={itemSkipped}
 			>
@@ -355,6 +359,16 @@
 	}
 
 	.cli-item:hover { background: #161616; }
+
+	/* Kanonisk «full bredde m/ramme»: kort-chrome via --card-*-tokens.
+	   Kontekster (ukeplan-gradient, tema-hue) re-skinner automatisk — bytt
+	   tokens, ikke komponent. Default (uten .cli-item-card) er flat/transparent. */
+	.cli-item-card {
+		background: var(--card-bg);
+		border: 1px solid var(--card-border);
+	}
+
+	.cli-item-card:hover { background: var(--card-bg); }
 
 	.cli-location-item {
 		padding: 6px 12px;

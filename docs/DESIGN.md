@@ -126,3 +126,19 @@ Alle kort bygger på `--card-*`-tokens fra AppPage (`--card-bg`, `--card-bg-subt
 **Kontekst-overrides:** Gradient-/hue-skins settes som token-overrides på side-/dashboardnivå — aldri som egne kort-stiler. Ukeplan setter `--card-bg: linear-gradient(…)`, `--card-radius: 14px`, `--card-padding: 12px` på `.week-plan-page`. Temasider setter `--card-bg: var(--tp-bg-2)`, `--card-bg-subtle: var(--tp-bg-1)`, `--card-border: var(--tp-border)` i `.theme-page` — alle kort får hue-tint automatisk.
 
 Nybygg: bruk `<SectionCard>` (tones: default/subtle/transparent/bordered + compact/interactive/actions). Ikke definer nye lokale kort-stiler.
+
+## Oppgaverader
+
+Alle oppgave-/sjekklister i appen skal bruke den samme raden: `<ChecklistItemRow>` (ui/). Se levende eksempler under «Oppgaverader» i `/design`. Bakgrunn og faseplan for foreningen: [`docs/changelog/2026-06-13-forene-oppgavelister.md`](changelog/2026-06-13-forene-oppgavelister.md).
+
+**Anatomi:** `[utvid-pil?] [tekst + badge-rad] [avkrysning] [trailing-handling?]`
+
+- **Avkrysning til høyre.** Følger «Hva har du fått til?» — handling/feiring ligger der tommelen er, ikke til venstre. Alltid `<ChecklistCheckbox>` (sirkel, sm/md), aldri en rå `<input type="checkbox">`.
+- **Tekst** rendres alltid med `<TaskTitle>` (håndterer @-mentions og lenker konsekvent).
+- **Foreldre** får utvid-pil + fremdriftsring; deloppgaver legges inline via `onaddchild`.
+- **Badges** (frist, estimat, handel, blokkert) eksponeres via `trailingBadge`-snippet.
+- **Kontekstmeny/redigering** kobles inn med `onlongpress`/`ontextclick` + `TaskContextMenu` — ikke egne langtrykk-implementasjoner per side.
+
+**Kanonisk stil: full bredde m/ramme.** Sett `bordered`-prop → raden får kort-chrome via `--card-*`-tokens (`--card-bg`, `--card-border`, `--card-radius`). Dette er standarden nye lister skal bruke. Default (uten `bordered`) er flat/transparent for tette, eksisterende lister (ukeplan, sjekklister) — disse migreres gradvis (se changelog).
+
+**Kontekst-overrides:** Som blokktypene re-skinnes raden ved å overstyre `--card-*` på side-/dashboardnivå (tema-hue, ukeplan-gradient) — bytt tokens, ikke komponent. Ikke definer nye lokale rad-stiler.
