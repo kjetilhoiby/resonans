@@ -239,11 +239,7 @@
 				<a href="/settings/sources">Kilder</a>. Egne tema-innstillinger for økonomi kommer.
 			</p>
 		</div>
-	{:else}
-		<p class="muted">Ingen egne innstillinger for dette temaet enda.</p>
 	{/if}
-
-	<a class="open-link" href={`/tema/${theme.id}`}>Åpne tema →</a>
 </div>
 
 {#if theme.kind === 'health'}
@@ -264,10 +260,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 1rem;
-		padding: 0.9rem;
-		margin-top: 0.5rem;
-		background: #111;
-		border-radius: 10px;
 	}
 
 	.field-group {
@@ -278,8 +270,10 @@
 
 	h4 {
 		margin: 0;
-		font-size: 0.85rem;
-		color: var(--text-primary);
+		font-size: 0.75rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--text-tertiary);
 	}
 
 	.date-row {
@@ -364,11 +358,5 @@
 		margin-left: auto;
 		color: var(--text-secondary);
 		font-variant-numeric: tabular-nums;
-	}
-
-	.open-link {
-		font-size: 0.82rem;
-		color: var(--accent-primary);
-		text-decoration: none;
 	}
 </style>

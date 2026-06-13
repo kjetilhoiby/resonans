@@ -111,7 +111,16 @@ Implementert:
     `GET /api/settings/email-rules`) + lenke til Kilder for redigering.
   - **economics:** lister kontoer read-only (`GET /api/economics/accounts`) +
     lenke til Kilder for lønnskonto.
-  - øvrige kinds: «ingen egne innstillinger enda» + «Åpne tema».
+  - øvrige kinds: ingen panel — kortet utvides bare til handlingene.
+
+Kort-design (justert etter brukertest på mobil — headeren ble for trang med
+tre knapper på rad): hver tema-rad er nå et utvidbart kort i samme stil som
+helse-aktivitetskortet (`HealthActivityList.svelte`). Headerlinja er én ren
+toggle-knapp (emoji + navn + domene-merke + chevron) uten handlinger.
+Innstillinger, «Åpne tema»-lenke og Arkiver/Gjenopprett vises pent inne i det
+utvidede kortet, adskilt med en tynn delelinje. «Innstillinger»-knappen er
+fjernet helt — temaer uten panel utvides rett til handlingene. Aktive og
+arkiverte kort deler samme `{#snippet themeCard}`.
 
 Bevisst utelatt i denne runden (krever datamodell-beslutninger — se under):
 - Epostregler får IKKE `themeId` ennå; bibliotek-regler vises under ALLE

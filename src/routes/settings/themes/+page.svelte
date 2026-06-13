@@ -10,11 +10,15 @@
 	let errorMessage = $state('');
 	let expandedId = $state<string | null>(null);
 
+	type ThemeRow = PageData['active'][number];
+
+	// Domener som har et innstillingspanel i dag (resten utvides bare til handlinger).
+	const HANDLED_KINDS = ['travel', 'ferie', 'health', 'books', 'economics'];
+	const hasSettings = (kind: string | null) => kind != null && HANDLED_KINDS.includes(kind);
+
 	function toggleExpanded(id: string) {
 		expandedId = expandedId === id ? null : id;
 	}
-
-	type ThemeRow = PageData['active'][number];
 
 	// Aktive temaer gruppert på parentTheme (null → «Uten kategori», vises sist).
 	const activeGroups = $derived.by(() => {
@@ -57,6 +61,57 @@
 	}
 </script>
 
+{#snippet themeCard(theme: ThemeRow)}
+	{@const isExpanded = expandedId === theme.id}
+	<li class="theme-card" class:expanded={isExpanded}>
+		<button
+			type="button"
+			class="theme-row"
+			aria-expanded={isExpanded}
+			onclick={() => toggleExpanded(theme.id)}
+		>
+			<span class="theme-emoji">{theme.emoji ?? '📁'}</span>
+			<span class="theme-info">
+				<span class="theme-name">{theme.name}</span>
+				{#if theme.dashboardLabel}<span class="theme-kind">{theme.dashboardLabel}</span>{/if}
+			</span>
+			<span class="chevron" class:open={isExpanded}>›</span>
+		</button>
+
+		{#if isExpanded}
+			<div class="theme-details">
+				{#if hasSettings(theme.kind)}
+					<ThemeSettingsPanel {theme} />
+				{/if}
+				<div class="theme-actions">
+					<a class="open-link" href={`/tema/${theme.id}`}>Åpne tema →</a>
+					{#if theme.archived}
+						<button
+							type="button"
+							class="action restore"
+							disabled={busyId === theme.id}
+							data-track="temaer:gjenopprett"
+							onclick={() => void setArchived(theme.id, false)}
+						>
+							{busyId === theme.id ? '…' : 'Gjenopprett'}
+						</button>
+					{:else}
+						<button
+							type="button"
+							class="action"
+							disabled={busyId === theme.id}
+							data-track="temaer:arkiver"
+							onclick={() => void setArchived(theme.id, true)}
+						>
+							{busyId === theme.id ? '…' : 'Arkiver'}
+						</button>
+					{/if}
+				</div>
+			</div>
+		{/if}
+	</li>
+{/snippet}
+
 <svelte:head>
 	<title>Temaer | Resonans</title>
 </svelte:head>
@@ -78,39 +133,7 @@
 					<h2>{group.parent}</h2>
 					<ul class="theme-list">
 						{#each group.themes as theme (theme.id)}
-							<li class="theme-item">
-								<div class="theme-row">
-									<a class="theme-link" href={`/tema/${theme.id}`}>
-										<span class="theme-emoji">{theme.emoji ?? '📁'}</span>
-										<span class="theme-name">{theme.name}</span>
-										{#if theme.dashboardLabel}
-											<span class="theme-kind">{theme.dashboardLabel}</span>
-										{/if}
-									</a>
-									<button
-										type="button"
-										class="action"
-										aria-expanded={expandedId === theme.id}
-										data-track="temaer:innstillinger"
-										onclick={() => toggleExpanded(theme.id)}
-									>
-										Innstillinger
-										<span class="chevron" class:open={expandedId === theme.id}>›</span>
-									</button>
-									<button
-										type="button"
-										class="action"
-										disabled={busyId === theme.id}
-										data-track="temaer:arkiver"
-										onclick={() => void setArchived(theme.id, true)}
-									>
-										{busyId === theme.id ? '…' : 'Arkiver'}
-									</button>
-								</div>
-								{#if expandedId === theme.id}
-									<ThemeSettingsPanel {theme} />
-								{/if}
-							</li>
+							{@render themeCard(theme)}
 						{/each}
 					</ul>
 				</section>
@@ -123,26 +146,7 @@
 				<p class="muted">Arkiverte temaer er skjult fra forsiden, men dataene er beholdt.</p>
 				<ul class="theme-list">
 					{#each data.archived as theme (theme.id)}
-						<li class="theme-item">
-							<div class="theme-row">
-								<a class="theme-link" href={`/tema/${theme.id}`}>
-									<span class="theme-emoji">{theme.emoji ?? '📁'}</span>
-									<span class="theme-name">{theme.name}</span>
-									{#if theme.dashboardLabel}
-										<span class="theme-kind">{theme.dashboardLabel}</span>
-									{/if}
-								</a>
-								<button
-									type="button"
-									class="action restore"
-									disabled={busyId === theme.id}
-									data-track="temaer:gjenopprett"
-									onclick={() => void setArchived(theme.id, false)}
-								>
-									{busyId === theme.id ? '…' : 'Gjenopprett'}
-								</button>
-							</div>
-						</li>
+						{@render themeCard(theme)}
 					{/each}
 				</ul>
 			</section>
@@ -205,46 +209,50 @@
 		gap: 0.5rem;
 	}
 
-	.theme-item {
+	.theme-card {
 		background: #171717;
 		border-radius: 10px;
-		padding: 0.25rem 0.9rem 0.6rem;
+		border: 1px solid transparent;
+		transition: border-color 0.15s;
+	}
+
+	.theme-card.expanded {
+		border-color: #2a2a2a;
 	}
 
 	.theme-row {
 		display: flex;
 		align-items: center;
 		gap: 0.75rem;
-		padding: 0.55rem 0;
-	}
-
-	.chevron {
-		display: inline-block;
-		transition: transform 0.15s;
-		margin-left: 0.3rem;
-	}
-
-	.chevron.open {
-		transform: rotate(90deg);
-	}
-
-	.theme-link {
-		display: flex;
-		align-items: center;
-		gap: 0.6rem;
-		flex: 1;
-		min-width: 0;
-		text-decoration: none;
-		color: var(--text-primary);
+		width: 100%;
+		padding: 0.8rem 0.9rem;
+		background: none;
+		border: none;
+		text-align: left;
+		color: inherit;
+		cursor: pointer;
+		border-radius: 10px;
+		font: inherit;
 	}
 
 	.theme-emoji {
 		font-size: 1.25rem;
 		flex-shrink: 0;
+		width: 28px;
+		text-align: center;
+	}
+
+	.theme-info {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		align-items: baseline;
+		gap: 0.5rem;
 	}
 
 	.theme-name {
 		font-weight: 500;
+		color: var(--text-primary);
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
@@ -253,10 +261,42 @@
 	.theme-kind {
 		font-size: 0.72rem;
 		color: var(--text-tertiary);
-		background: #222;
-		border-radius: 999px;
-		padding: 0.1rem 0.5rem;
 		flex-shrink: 0;
+	}
+
+	.chevron {
+		font-size: 1.2rem;
+		color: var(--text-tertiary);
+		line-height: 1;
+		flex-shrink: 0;
+		transition: transform 0.18s ease;
+	}
+
+	.chevron.open {
+		transform: rotate(90deg);
+		color: var(--accent-primary);
+	}
+
+	.theme-details {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+		padding: 0.25rem 0.9rem 0.9rem;
+	}
+
+	.theme-actions {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+		padding-top: 0.6rem;
+		border-top: 1px solid #232323;
+	}
+
+	.open-link {
+		font-size: 0.82rem;
+		color: var(--accent-primary);
+		text-decoration: none;
 	}
 
 	.action {
@@ -265,7 +305,7 @@
 		border: 1px solid var(--border-color);
 		color: var(--text-secondary);
 		border-radius: 8px;
-		padding: 0.4rem 0.75rem;
+		padding: 0.4rem 0.8rem;
 		font: inherit;
 		font-size: 0.8rem;
 		cursor: pointer;
