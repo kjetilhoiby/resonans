@@ -55,7 +55,7 @@ async function executeRule(userId: string, rule: RuleMatch, payload: InboundEmai
 			return result;
 		}
 		case 'library': {
-			return await processLibraryEmail(userId, payload);
+			return await processLibraryEmail(userId, payload, rule.themeId);
 		}
 		case 'ai_extraction': {
 			const sensor = await findOrCreateEmailSensor(userId, 'email_ai_extraction');

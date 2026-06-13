@@ -174,11 +174,18 @@ under Bøker-temaet ende-til-ende.
 - Tema-panelet (Bøker) henter nå `?themeId=<tema>` og viser bibliotek-reglene
   som er knyttet til nettopp det temaet.
 
-**Oppfølging (ikke gjort):** Selve inbound-prosesseringen
-(`processLibraryEmail` i `/api/email/inbound`) bruker ennå ikke `rule.themeId`
-— en matchet bibliotek-e-post rutes ikke automatisk til det tilknyttede temaets
-bøker/sjekkliste. Koblingen er foreløpig organisering/visning; ruting er neste
-steg (krever å lese/endre `processLibraryEmail` og velge mål).
+**Ruting (FERDIG):** `processLibraryEmail` tar nå `rule.themeId`. Når en
+bibliotek-regel er knyttet til et tema *og* e-posten har en utledbar boktittel,
+registreres lånet som en **bok under det temaet** (`books`-tabellen, med
+`loanDueDate`/`loanStartDate`) i stedet for i den globale bibliotek-sjekklista.
+Eksisterende bok med samme tittel i temaet får oppdatert lånefrist (dedup på
+tittel, case-insensitiv) i stedet for å bli duplisert. Uten tema, eller uten
+utledbar tittel, beholdes dagens oppførsel (element i den globale
+«Bibliotek-bøker»-sjekklista) så ingen påminnelse går tapt.
+
+Avgrensning: logikken er DB-koblet og har derfor ikke enhetstest (jf.
+test-konvensjonen om å unngå DB-mocking). De rene parserne (`findDueDate`,
+`extractBookTitle`) er uendret.
 
 ### Fase 2 (gjenstår): datamodell-avhengige deler
 

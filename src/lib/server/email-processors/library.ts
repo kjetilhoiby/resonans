@@ -1,5 +1,5 @@
 import { db } from '$lib/db';
-import { checklists, checklistItems } from '$lib/db/schema';
+import { books, checklists, checklistItems } from '$lib/db/schema';
 import { and, eq, sql } from 'drizzle-orm';
 import type { InboundEmailPayload } from './shared';
 
@@ -86,7 +86,52 @@ async function findOrCreateLibraryChecklist(userId: string) {
 	return created;
 }
 
-export async function processLibraryEmail(userId: string, payload: InboundEmailPayload) {
+/**
+ * Når epostregelen er knyttet til et tema (typisk et Bøker-tema): registrer
+ * lånet som en bok under det temaet. Eksisterende bok med samme tittel i temaet
+ * får oppdatert lånefrist i stedet for å bli duplisert.
+ */
+async function upsertThemeBookLoan(
+	userId: string,
+	themeId: string,
+	title: string,
+	dueDate: Date
+) {
+	const existing = await db.query.books.findFirst({
+		where: and(
+			eq(books.userId, userId),
+			eq(books.themeId, themeId),
+			sql`lower(${books.title}) = lower(${title})`
+		)
+	});
+
+	if (existing) {
+		await db
+			.update(books)
+			.set({
+				loanDueDate: dueDate,
+				loanStartDate: existing.loanStartDate ?? new Date(),
+				updatedAt: new Date()
+			})
+			.where(eq(books.id, existing.id));
+		return { success: true, updated: 1, target: 'book' as const };
+	}
+
+	await db.insert(books).values({
+		themeId,
+		userId,
+		title,
+		loanDueDate: dueDate,
+		loanStartDate: new Date()
+	});
+	return { success: true, imported: 1, target: 'book' as const };
+}
+
+export async function processLibraryEmail(
+	userId: string,
+	payload: InboundEmailPayload,
+	themeId?: string | null
+) {
 	const subject = payload.Subject ?? '';
 	const body = payload.TextBody ?? '';
 
@@ -96,6 +141,14 @@ export async function processLibraryEmail(userId: string, payload: InboundEmailP
 	}
 
 	const title = extractBookTitle(subject, body);
+
+	// Regelen er knyttet til et tema og vi har en tittel → registrer lånet som
+	// en bok under temaet (Bøker-domenet). Uten tema eller tittel faller vi
+	// tilbake til den globale bibliotek-sjekklista nedenfor.
+	if (themeId && title) {
+		return await upsertThemeBookLoan(userId, themeId, title, dueDate);
+	}
+
 	const text = title ? `Lever bok: ${title}` : `Lever bok fra biblioteket (${subject})`;
 
 	const checklist = await findOrCreateLibraryChecklist(userId);
