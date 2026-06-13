@@ -1,7 +1,20 @@
 # Forene oppgavelister på tvers
 
 Dato: 2026-06-13
-Status: pågår (Fase 1–4 ferdig — prosjekt + handleliste konvergert; visuell review gjenstår)
+Status: kode ferdig (Fase 1–5) — visuell review gjenstår lokalt
+
+## Oppsummering (sluttilstand)
+
+Oppgavelistene er forenet mot én kanonisk rad — «full bredde m/ramme», avkrysning til høyre
+(`ChecklistCheckbox`), tekst via `TaskTitle`, chrome via `--card-*`-tokens:
+- **`ChecklistItemRow`** (ui/): kanonisk base for 2-nivå-lister, nå med opt-in `bordered`.
+  Brukes av ukeplan/sjekklister (flat default, uendret).
+- **`ThemeTasksTab`** (prosjekt-oppgaver): konvergert til delte atomer + kanonisk anatomi + tokens.
+- **`handleliste`**: konvergert til delte atomer + kanonisk anatomi + tokens.
+- **`/design`** + **`DESIGN.md`**: kanonisk rad dokumentert og demoet.
+- Bevisst beholdt som spesialiserte visualiseringer: `MonthChecklist`, `ChecklistGroupRow`,
+  `RoutineGroupRow` (kompakt slot/ring). Utsatt: `FlowChecklistStep` (fler-velger), 
+  `SharedChecklistView` (lys/offentlig). Slettet: `TaskList` (død kode).
 
 ## Kontekst
 
@@ -129,10 +142,14 @@ Gjenstår i Fase 3:
   slot-visualiseringen røres ikke.
 - **#9 `SharedChecklistView` — utsatt.** Lys-tema og offentlig delings-visning, lav prioritet.
 
-### Fase 5: Rydd og dokumentér sluttilstand
-- Fjern bespoke rad-CSS som nå er død.
-- Oppdater denne fila med faktisk gjennomført + `docs/DESIGN.md` med endelig anatomi.
-- Kjør enhetstester + `npm run test:visual:review` med kontekst på endrede flater.
+### Fase 5: Rydd og dokumentér sluttilstand ✅ ferdig (kode)
+- Slettet `composed/TaskList.svelte` (død kode, null brukssteder) + fjernet eksporten fra
+  `composed/index.ts`.
+- Fjernet død bespoke rad-CSS i de migrerte filene (native `input[type=checkbox]`-stiler i
+  `ThemeTasksTab` og `handleliste`).
+- `docs/DESIGN.md` oppdatert med endelig anatomi (ny «Oppgaverader»-seksjon).
+- `npm run check` (0 feil) + `npm test` (531 grønt).
+- **Gjenstår: visuell review** — tas lokalt (krever `DATABASE_URL`). Se Verifisering.
 
 ## Beslutninger
 
