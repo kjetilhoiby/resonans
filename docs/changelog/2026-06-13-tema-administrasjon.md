@@ -168,6 +168,29 @@ To UI-fikser etter mobiltest (skjermbilde):
 - **Kategoriseringsregler:** flytt/speil `/settings/classification` til
   økonomi-temaet.
 
+### Visuell verifisering (gjenstår)
+
+`HealthActivityList` ble refaktorert til `ExpandableCard` — den er en del av den
+pikseltestede `tema/helse`-siden (prinsipp 4). CSS-variablene er satt for å
+bevare uttrykket eksakt, men diffen er ikke verifisert: utviklingsmiljøet i
+Claude Code on the web har verken database eller nettleser, så
+`npm run test:visual` / `:review` kan ikke kjøres der.
+
+Må gjøres mot et miljø med DB + nettleser:
+- Kjør `npm run test:visual` (pikseldiff) for `tema/helse` og bekreft <0.2 %
+  endring, eller `npm run test:visual:review` og oppdater baseline ved
+  godkjenning.
+
+**Idé — GitHub Action for visuell review (ikke prioritert nå):** En workflow som
+kjører `npm run test:visual:review` på PR-er. Krever:
+- `OPENAI_API_KEY` som GitHub-secret (review-modus sender bilder til GPT-4o).
+- `DATABASE_URL` (eller en seed-/mock-DB) tilgjengelig i jobben — dagens
+  dev-server kaster uten den (`src/lib/db/index.ts`), og Neon HTTP-driveren
+  treffer ikke en vanlig lokal Postgres uten en Neon-proxy.
+- Playwright-browsere installert i jobben (`playwright install chromium`).
+  Vurder å starte med ren pikseldiff (`test:visual`) som ikke trenger
+  OpenAI-token, og legge LLM-review på toppen senere.
+
 ## Åpne spørsmål (avklares før Fase 2)
 
 - Skal `/settings/classification` *flyttes* helt inn i økonomi-temaet, eller
@@ -187,8 +210,13 @@ To UI-fikser etter mobiltest (skjermbilde):
 
 ## Verifisering
 
-Planlagt — ikke implementert ennå. Når faser leveres:
-- `npm run check` og `npm test` skal være grønne.
+Gjort så langt (Fase 1 + Fase 2 første del):
+- `npm run check`: 0 feil, 0 advarsler.
+- `npm test`: 483 tester grønne.
+- Ikke kjørt: visuell regresjon (se «Visuell verifisering (gjenstår)» over) —
+  miljøet mangler DB + nettleser.
+
+Bør gjøres når faser leveres videre:
 - Tema-oversikten bør få enhetstester for filtrering aktiv/arkivert hvis ren
   logikk ekstraheres.
 - Vurder å legge tema-oversikten til i visuell regresjon
