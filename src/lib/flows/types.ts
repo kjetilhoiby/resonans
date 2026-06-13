@@ -75,7 +75,7 @@ export interface FlowStep {
 
 export interface FlowFormField {
 	id: string;
-	type: 'text' | 'textarea' | 'number' | 'date' | 'select' | 'slider' | 'multiselect';
+	type: 'text' | 'textarea' | 'number' | 'date' | 'select' | 'slider' | 'multiselect' | 'photo-gallery';
 	label: string;
 	placeholder?: string;
 	required?: boolean;

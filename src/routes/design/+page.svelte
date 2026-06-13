@@ -45,6 +45,8 @@
 		MonthTimeline,
 		GreetingsList,
 		InterviewAnswerList,
+		PhotoGallery,
+		LoopCard,
 		ShowSlide
 	} from '$lib/components/domain/kavalkade';
 	import ProcedureSheet from '$lib/components/ui/ProcedureSheet.svelte';
@@ -133,6 +135,8 @@
 		kavalkadeTimelineMock,
 		kavalkadeGreetingsMock,
 		kavalkadeInterviewAnswersMock,
+		kavalkadePhotosMock,
+		kavalkadeLoopMock,
 		kavalkadeShowSlidesMock,
 		bookMock,
 		bookWithPackMock,
@@ -1205,6 +1209,24 @@
 			</p>
 			<div class="demo-card demo-card--wide">
 				<InterviewAnswerList answers={kavalkadeInterviewAnswersMock} />
+			</div>
+
+			<h3 class="subsection">PhotoGallery — årets bilder</h3>
+			<p class="section-desc">
+				Bildene som lastes opp i selvangivelsen, som mosaikk med bildetekst. (Demo: fargede
+				placeholder-bilder.)
+			</p>
+			<div class="demo-card demo-card--wide">
+				<PhotoGallery photos={kavalkadePhotosMock} />
+			</div>
+
+			<h3 class="subsection">LoopCard — dette ville du i fjor</h3>
+			<p class="section-desc">
+				Fjorårets bursdagsmål + spådom holdt opp mot hva som faktisk skjedde, med ærlige
+				status-merker (oppnådd / ikke nådd / uvisst).
+			</p>
+			<div class="demo-card demo-card--wide">
+				<LoopCard loop={kavalkadeLoopMock} />
 			</div>
 
 			<h3 class="subsection">ShowSlide — fullskjerm-showet</h3>

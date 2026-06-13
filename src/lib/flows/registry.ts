@@ -1263,6 +1263,7 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 				autoSend: true,
 				buildPrompts: (data) => {
 					const kavalkade = typeof data._kavalkadeSummary === 'string' ? data._kavalkadeSummary : '';
+					const lastYearLetter = typeof data._lastYearLetter === 'string' ? data._lastYearLetter : '';
 					return {
 						prompt: 'Jeg er klar til å begynne selvangivelsen. Hvem er jeg nå?',
 						systemPrompt: [
@@ -1270,6 +1271,7 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 							'',
 							'Still ETT åpent spørsmål om gangen og grav videre der det blir interessant: Hva opptar deg om dagen? Hva bruker du tiden og energien på? Hva tror du på, hva er du redd for, hva gir mening? Hvordan ville du beskrevet deg selv til en fremmed?',
 							kavalkade ? `\nDu har noen tall fra året — bruk dem lett som døråpnere, ikke fasit:\n${kavalkade}` : '',
+							lastYearLetter ? `\nFor ett år siden skrev brukeren dette brevet til seg selv. Bruk det varsomt som døråpner i det første spørsmålet ditt — ikke les det høyt i sin helhet:\n«${lastYearLetter}»` : '',
 							'',
 							'Dette er en samtale, ikke et skjema — brukeren kan snakke så lenge de vil. Ikke se bakover på fjoråret ennå (det kommer som egne steg).',
 							'',
@@ -1440,6 +1442,19 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 				]
 			},
 			{
+				id: 'aarets_bilder',
+				type: 'form',
+				title: 'Årets bilder',
+				fields: [
+					{
+						id: 'photos',
+						type: 'photo-gallery',
+						label: 'Tre til seks bilder fra året',
+						max: 6
+					}
+				]
+			},
+			{
 				id: 'speil',
 				type: 'chat',
 				title: 'Året i speilet',
@@ -1478,6 +1493,20 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 						].join('\n')
 					};
 				}
+			},
+			{
+				id: 'brev_til_neste_aar',
+				type: 'form',
+				title: 'Brev til neste år',
+				fields: [
+					{
+						id: 'letter_to_future',
+						type: 'textarea',
+						label: 'Skriv noen ord til deg selv om ett år',
+						placeholder:
+							'Hva håper du har skjedd? Hva vil du minne deg selv om? (Du får lese dette igjen i åpningen av neste års selvangivelse.)'
+					}
+				]
 			}
 		],
 		async onComplete(data) {
@@ -1499,12 +1528,15 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 				.replace(/<bursdagsmål>[\s\S]*?<\/bursdagsmål>/gi, '')
 				.trim();
 			if (mirror) answers.mirror = mirror;
-			if (Object.keys(answers).length === 0) return;
+			const photos = Array.isArray(data.photos) ? data.photos : [];
+			if (Object.keys(answers).length === 0 && photos.length === 0) return;
 			await fetch('/api/reflections/birthday', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					answers,
+					// Årets bilder lagres som egen refleksjon (birthday_photos)
+					photos,
 					// Speilets målforslag blir ekte mål med frist neste bursdag
 					goals: parseBirthdayGoals(speilMessage),
 					// «Samtalen er data»: hele chattene arkiveres som transkript

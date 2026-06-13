@@ -46,6 +46,22 @@ describe('buildInterviewMarkdown + parseInterviewMarkdown', () => {
 		expect(markdown).toBe('## Hvem er du i år?\nMeg');
 	});
 
+	it('runder brev til neste år tur-retur og plukker det opp i extract', () => {
+		const letter = 'Kjære meg om ett år: håper du fortsatt løper.';
+		const markdown = buildInterviewMarkdown({ who: 'Meg', letter_to_future: letter });
+		expect(parseInterviewMarkdown(markdown).letter_to_future).toBe(letter);
+		expect(extractInterviewAnswers({ who: 'Meg', letter_to_future: letter }).letter_to_future).toBe(letter);
+	});
+
+	it('utelater brevet og speilingen fra formatAnswersAsText', () => {
+		const text = formatAnswersAsText({
+			who: 'Meg',
+			letter_to_future: 'hemmelig brev',
+			mirror: 'AI-speiling'
+		});
+		expect(text).toBe('- Hvem er du i år? Meg');
+	});
+
 	it('bevarer seksjonsrekkefølgen fra spørsmålslisten', () => {
 		const markdown = buildInterviewMarkdown({
 			best_book: 'Stoner',

@@ -12,6 +12,7 @@ export type ReflectionKind =
 	| 'feriedagbok'
 	| 'birthday_interview'
 	| 'birthday_interview_chat'
+	| 'birthday_photos'
 	| 'birthday_prophecy'
 	| 'birthday_greetings'
 	| 'ad_hoc';

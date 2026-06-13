@@ -9,6 +9,7 @@ import {
 	type BirthdayGoal,
 	type InterviewAnswers
 } from '$lib/flows/birthday-interview';
+import { serializeBirthdayPhotos, type BirthdayPhoto } from '$lib/flows/birthday-photos';
 import type { RequestHandler } from './$types';
 
 /** Enkel metrikk-gjetting for sensor-sporing — samme ånd som ukeplanens mål */
@@ -73,6 +74,18 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			kind: 'birthday_interview_chat',
 			periodKey,
 			content: transcriptParts.join('\n\n')
+		});
+	}
+
+	// Årets bilder lagres som egen refleksjon (JSON i content)
+	const rawPhotos = Array.isArray(body?.photos) ? (body.photos as BirthdayPhoto[]) : [];
+	const photosContent = serializeBirthdayPhotos(rawPhotos);
+	if (photosContent !== '[]') {
+		await upsertReflectionForPeriod({
+			userId,
+			kind: 'birthday_photos',
+			periodKey,
+			content: photosContent
 		});
 	}
 

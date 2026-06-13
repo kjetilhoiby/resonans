@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { FlowFormField, FlowContext } from '$lib/flows/types';
 	import DateInput from '$lib/components/ui/DateInput.svelte';
+	import { uploadImage } from '$lib/client/upload-image';
 
 	interface Props {
 		fields: FlowFormField[];
@@ -25,6 +26,47 @@
 		onAutoAdvanceClear,
 		onAutoAdvanceStart
 	}: Props = $props();
+
+	// ── Photo-gallery-felt: opplasting + bildetekst ──────────────────
+	let uploadingFieldId = $state<string | null>(null);
+	let uploadError = $state<string | null>(null);
+
+	async function handlePhotoFiles(fieldId: string, max: number, files: FileList | null) {
+		if (!files || files.length === 0) return;
+		const current: Array<{ url: string; publicId: string; caption: string }> = Array.isArray(flowData[fieldId])
+			? flowData[fieldId]
+			: [];
+		const room = max - current.length;
+		if (room <= 0) return;
+		uploadingFieldId = fieldId;
+		uploadError = null;
+		try {
+			const uploaded: Array<{ url: string; publicId: string; caption: string }> = [];
+			for (const file of Array.from(files).slice(0, room)) {
+				const { url, publicId } = await uploadImage(file);
+				uploaded.push({ url, publicId, caption: '' });
+			}
+			onFieldChange(fieldId, [...current, ...uploaded]);
+		} catch (err) {
+			uploadError = err instanceof Error ? err.message : 'Opplasting feilet';
+		} finally {
+			uploadingFieldId = null;
+		}
+	}
+
+	function updateCaption(fieldId: string, index: number, caption: string) {
+		const current = Array.isArray(flowData[fieldId]) ? [...flowData[fieldId]] : [];
+		if (current[index]) {
+			current[index] = { ...current[index], caption };
+			onFieldChange(fieldId, current);
+		}
+	}
+
+	function removePhoto(fieldId: string, index: number) {
+		const current = Array.isArray(flowData[fieldId]) ? [...flowData[fieldId]] : [];
+		current.splice(index, 1);
+		onFieldChange(fieldId, current);
+	}
 </script>
 
 <div class="fs-form" class:fs-focus-form={isFocus}>
@@ -190,6 +232,50 @@
 						{/each}
 					</div>
 				{/if}
+			{:else if field.type === 'photo-gallery'}
+				{@const photos = Array.isArray(flowData[field.id]) ? flowData[field.id] : []}
+				{@const maxPhotos = field.max ?? 6}
+				<div class="fs-gallery">
+					{#each photos as ph, i (ph.url)}
+						<div class="fs-gallery-item">
+							<img src={ph.url} alt={ph.caption || 'Bilde'} class="fs-gallery-img" />
+							<button
+								type="button"
+								class="fs-gallery-remove"
+								aria-label="Fjern bilde"
+								onclick={() => removePhoto(field.id, i)}>✕</button
+							>
+							<input
+								type="text"
+								class="fs-gallery-caption"
+								placeholder="Bildetekst…"
+								value={ph.caption ?? ''}
+								oninput={(e) => updateCaption(field.id, i, e.currentTarget.value)}
+							/>
+						</div>
+					{/each}
+					{#if photos.length < maxPhotos}
+						<button
+							type="button"
+							class="fs-gallery-add"
+							disabled={uploadingFieldId === field.id}
+							onclick={() => document.getElementById(`photo-input-${field.id}`)?.click()}
+						>
+							{uploadingFieldId === field.id ? 'Laster opp…' : '+ Last opp bilde'}
+						</button>
+						<input
+							id={`photo-input-${field.id}`}
+							type="file"
+							accept="image/*"
+							multiple
+							hidden
+							onchange={(e) => { void handlePhotoFiles(field.id, field.max ?? 6, e.currentTarget.files); e.currentTarget.value = ''; }}
+						/>
+					{/if}
+				</div>
+				{#if uploadError && uploadingFieldId === null}
+					<p class="fs-gallery-error">{uploadError}</p>
+				{/if}
 			{/if}
 		</label>
 	{/each}
@@ -246,6 +332,54 @@
 		transition: all 0.1s;
 	}
 	.fs-ms-opt.selected { background: #0d1828; border-color: #2a4080; color: #c8d4ef; }
+
+	/* Photo-gallery */
+	.fs-gallery { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+	.fs-gallery-item { position: relative; display: flex; flex-direction: column; gap: 5px; }
+	.fs-gallery-img {
+		width: 100%;
+		aspect-ratio: 4 / 3;
+		object-fit: cover;
+		border-radius: 10px;
+		border: 1px solid #1e1e1e;
+	}
+	.fs-gallery-remove {
+		position: absolute;
+		top: 5px;
+		right: 5px;
+		width: 26px; height: 26px;
+		border-radius: 50%;
+		border: none;
+		background: rgba(0, 0, 0, 0.6);
+		color: #fff;
+		font-size: 0.8rem;
+		cursor: pointer;
+		display: grid;
+		place-items: center;
+	}
+	.fs-gallery-caption {
+		background: #141414;
+		border: 1px solid #1e1e1e;
+		border-radius: 8px;
+		padding: 6px 9px;
+		color: #ddd;
+		font-size: 0.8rem;
+		font-family: inherit;
+	}
+	.fs-gallery-caption:focus { outline: none; border-color: #4b6ef5; }
+	.fs-gallery-add {
+		aspect-ratio: 4 / 3;
+		border: 1px dashed #2e2e2e;
+		border-radius: 10px;
+		background: #141414;
+		color: #8899aa;
+		font-size: 0.85rem;
+		cursor: pointer;
+		transition: border-color 0.12s, color 0.12s;
+	}
+	.fs-gallery-add:hover:not(:disabled) { border-color: #4b6ef5; color: #c8d4ef; }
+	.fs-gallery-add:disabled { opacity: 0.6; cursor: default; }
+	.fs-gallery-error { margin: 6px 0 0; font-size: 0.8rem; color: hsl(0 60% 65%); }
 
 	/* Focus-mode slider */
 	.fs-focus-slider-display {

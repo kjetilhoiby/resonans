@@ -20,8 +20,10 @@ import type { WeekTasksApi } from '$lib/components/domain/ukeplan/week-tasks-api
 import type { Procedure } from '$lib/components/ui/ProcedureSheet.svelte';
 import type {
 	Greeting as KavalkadeGreeting,
+	LoopView,
 	MonthEntry as KavalkadeMonthEntry,
 	OrdskyWordView,
+	PhotoView,
 	ShowSlideDef,
 	YearData as KavalkadeYearData
 } from '$lib/components/domain/kavalkade';
@@ -1098,7 +1100,30 @@ export const kavalkadeInterviewAnswersMock: InterviewAnswers = {
 	stopped: 'Skjerm i senga. Nesten.',
 	memory: 'Soloppgangen på toppen av Gaustatoppen i juli, helt alene.',
 	best_book: 'Stoner — John Williams',
-	best_concert: 'Bon Iver i Operaen'
+	best_concert: 'Bon Iver i Operaen',
+	letter_to_future: 'Kjære meg om ett år: håper du fortsatt løper i morgentimene og at svømmingen ble en vane. Vær like tålmodig med ungene som du prøvde å være i år.'
+};
+
+// Offline-trygge bilder (inline SVG data-URI) — deterministisk visuell regresjon
+function mockPhoto(hue: number): string {
+	const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='160' height='120'><rect width='160' height='120' fill='hsl(${hue},60%,45%)'/></svg>`;
+	return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
+export const kavalkadePhotosMock: PhotoView[] = [
+	{ url: mockPhoto(258), caption: 'Gaustatoppen i juli' },
+	{ url: mockPhoto(12), caption: 'Maraton-mål' },
+	{ url: mockPhoto(152), caption: 'Bålkos på hytta' }
+];
+
+export const kavalkadeLoopMock: LoopView = {
+	hasData: true,
+	promises: [
+		{ title: 'Løpe til neste bursdag', targetValue: 600, unit: 'km', actualValue: 612, achieved: true, status: 'active' },
+		{ title: 'Lese 12 bøker', targetValue: 12, unit: 'bøker', actualValue: 9, achieved: false, status: 'active' },
+		{ title: 'Skjermfri etter 22', targetValue: null, unit: null, actualValue: null, achieved: null, status: 'active' }
+	],
+	prophecyExcerpt: 'Jeg ser et år der løpeskoene runder 600 km før løvet faller.'
 };
 
 /** Statiske slide-fixtures for kavalkade-showet på /design (animate={false}) */
@@ -1141,6 +1166,20 @@ export const kavalkadeShowSlidesMock: ShowSlideDef[] = [
 		writer: 'William Stoner',
 		hue: 258,
 		durationMs: 8000
+	},
+	{
+		kind: 'loop',
+		title: 'Dette ville du i fjor',
+		promises: kavalkadeLoopMock.promises,
+		hue: 205,
+		durationMs: 6000
+	},
+	{
+		kind: 'photos',
+		title: 'Året i bilder',
+		photos: kavalkadePhotosMock,
+		hue: 38,
+		durationMs: 6000
 	},
 	{
 		kind: 'ordsky',
@@ -1217,6 +1256,8 @@ export const kavalkadeShowInputMock = {
 			]
 		}
 	],
+	photos: kavalkadePhotosMock,
+	loop: kavalkadeLoopMock,
 	interview: { thisYear: kavalkadeInterviewAnswersMock },
 	prophecy:
 		'Jeg ser et år der løpeskoene runder 600 km før løvet faller, og der svømmetakene du så nølende begynte med blir like selvfølgelige som morgenkaffen.\n\nKrystallkulen er klar: mer av det som virker.',

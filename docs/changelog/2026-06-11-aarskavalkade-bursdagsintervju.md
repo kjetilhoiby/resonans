@@ -110,7 +110,17 @@ Poenget med intervjuet er akkumulering: svarene lagres per år, slik at neste å
 - onComplete henter `who` fra `hvem_naa`-chattens status-blokk; «Hvem er du nå?»-tråden arkiveres som egen transkript-seksjon (`birthday_interview_chat`). estimatedMinutes 15 → 18.
 - /design: intervju-mock fikk de to nye seksjonene; baseline regenerert.
 
-### Fase 15: Oppdagbarhet
+### Fase 15: Tre nye «se tilbake»-øvelser — brev, bilder, sløyfe
+
+Idémyldring med brukeren landet på tre tilskudd (humørbue valgt bort):
+
+- **Brev til neste år** (tidskapsel): nytt textarea-steg `brev_til_neste_aar` til slutt i selvangivelsen, lagret som `letter_to_future`-seksjon i interview-markdownen. Neste år vises fjorårets brev som eget kort øverst på `/kavalkade` («Brev fra deg for ett år siden») og mates inn i åpningschatten (`_lastYearLetter`). Degraderer grasiøst i år 1. Utelatt fra `formatAnswersAsText`.
+- **Årets bilder**: ny `photo-gallery`-felttype i `FlowFormStep` (opplasting via delt `$lib/client/upload-image` → Cloudinary, bildetekst + fjern, maks 6). Nytt steg `aarets_bilder`. Lagres som egen refleksjon `birthday_photos` (JSON, ingen migrasjon — mønster fra `birthday_interview_chat`). Vises som `PhotoGallery`-mosaikk på `/kavalkade` og `photos`-slide i showet. Ren logikk i `birthday-photos.ts` (+ test).
+- **Dette ville du i fjor**: `buildBirthdayLoop` (`birthday-loop.ts`, ren + test) holder fjorårets bursdagsmål (`goals` der `metadata.birthdayKey` = i år) og fjorårets spådom opp mot faktisk. Ærlighetsregel: «Oppnådd» kun med ekte tall ≥ mål eller status `completed`, ellers «Uvisst». Løpemål kryssjekkes mot kavalkadens km. `LoopCard` på `/kavalkade` + `loop`-slide i showet.
+
+Felles: `KavalkadeData` fikk `photos` + `loop`; `ShowSlideDef` fikk `photos`- og `loop`-kinds (begge skjult i år 1). /design fikk PhotoGallery- og LoopCard-demoer + slidene; baseline regenerert. Ingen schema-migrasjon. estimatedMinutes 15 → 18.
+
+### Fase 16: Oppdagbarhet
 
 - `src/lib/server/chat-router.ts`: `bursdag|fødselsdag|kavalkade` ruter til self-domenet med hint om `/kavalkade`. Test lagt til i `chat-router.test.ts`.
 

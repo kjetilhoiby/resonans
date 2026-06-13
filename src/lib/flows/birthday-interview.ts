@@ -38,7 +38,9 @@ export const INTERVIEW_SECTIONS: InterviewSection[] = [
 	{ id: 'best_trip', heading: 'Beste tur' },
 	{ id: 'best_experience', heading: 'Beste opplevelse' },
 	// Skrives av onComplete (AI-ens speiling fra siste chat-steg), ikke et skjemafelt
-	{ id: 'mirror', heading: 'Året i speilet' }
+	{ id: 'mirror', heading: 'Året i speilet' },
+	// Tidskapsel: vises i åpningen av neste års selvangivelse
+	{ id: 'letter_to_future', heading: 'Brev til neste år' }
 ];
 
 export type InterviewAnswers = Record<string, string>;
@@ -78,9 +80,12 @@ export function parseInterviewMarkdown(content: string): InterviewAnswers {
 	return answers;
 }
 
-/** Punktliste-tekst av svarene — brukes i AI-prompt og som «i fjor»-kontekst */
+/** Punktliste-tekst av svarene — brukes i AI-prompt og som «i fjor»-kontekst.
+ *  Speilingen (mirror) og brevet (letter_to_future) utelates — de er meta, ikke svar. */
 export function formatAnswersAsText(answers: InterviewAnswers): string {
-	return INTERVIEW_SECTIONS.filter((s) => s.id !== 'mirror' && answers[s.id])
+	return INTERVIEW_SECTIONS.filter(
+		(s) => s.id !== 'mirror' && s.id !== 'letter_to_future' && answers[s.id]
+	)
 		.map((s) => `- ${s.heading} ${answers[s.id]}`)
 		.join('\n');
 }

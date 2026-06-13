@@ -45,6 +45,26 @@ export interface Greeting {
 	text: string;
 }
 
+export interface PhotoView {
+	url: string;
+	caption: string;
+}
+
+export interface LoopPromiseView {
+	title: string;
+	targetValue: number | null;
+	unit: string | null;
+	actualValue: number | null;
+	achieved: boolean | null;
+	status: string;
+}
+
+export interface LoopView {
+	hasData: boolean;
+	promises: LoopPromiseView[];
+	prophecyExcerpt: string | null;
+}
+
 export function timelineHasContent(months: MonthEntry[]): boolean {
 	return months.some(
 		(m) => m.workoutCount > 0 || m.stepsTotal !== null || m.books.length > 0 || !!m.headline

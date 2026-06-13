@@ -197,6 +197,34 @@ describe('buildShowSlides', () => {
 		expect(paaDagen[0]).toMatchObject({ kind: 'intro', confetti: true });
 	});
 
+	it('lager photos-slide når bilder finnes, ellers ikke', () => {
+		const med = buildShowSlides(
+			baseInput({ photos: [{ url: 'https://a/1.jpg', caption: 'Gaustatoppen' }] })
+		);
+		expect(med.some((s) => s.kind === 'photos')).toBe(true);
+		expect(buildShowSlides(baseInput()).some((s) => s.kind === 'photos')).toBe(false);
+	});
+
+	it('lager loop-slide kun når loop har mål', () => {
+		const med = buildShowSlides(
+			baseInput({
+				loop: {
+					hasData: true,
+					prophecyExcerpt: null,
+					promises: [
+						{ title: 'Løpe 600 km', targetValue: 600, unit: 'km', actualValue: 612, achieved: true, status: 'active' }
+					]
+				}
+			})
+		);
+		expect(med.some((s) => s.kind === 'loop')).toBe(true);
+		// hasData via kun spådom (ingen mål) → ingen loop-slide
+		const baretekst = buildShowSlides(
+			baseInput({ loop: { hasData: true, prophecyExcerpt: 'Du runder 600 km.', promises: [] } })
+		);
+		expect(baretekst.some((s) => s.kind === 'loop')).toBe(false);
+	});
+
 	it('gir hver slide en hue fra paletten', () => {
 		const slides = buildShowSlides(baseInput());
 		for (const slide of slides) {
