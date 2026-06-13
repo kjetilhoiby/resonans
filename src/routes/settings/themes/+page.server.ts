@@ -1,7 +1,10 @@
 import { db } from '$lib/db';
 import { themes } from '$lib/db/schema';
-import { and, asc, eq } from 'drizzle-orm';
-import { getThemeDashboardDefinition } from '$lib/domain/theme-dashboard-registry';
+import { asc, eq } from 'drizzle-orm';
+import {
+	getThemeDashboardDefinition,
+	resolveThemeDashboardKind
+} from '$lib/domain/theme-dashboard-registry';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -12,7 +15,10 @@ export const load: PageServerLoad = async ({ locals }) => {
 			emoji: themes.emoji,
 			parentTheme: themes.parentTheme,
 			archived: themes.archived,
-			sortOrder: themes.sortOrder
+			sortOrder: themes.sortOrder,
+			tripProfile: themes.tripProfile,
+			ferieProfile: themes.ferieProfile,
+			metricSettings: themes.metricSettings
 		})
 		.from(themes)
 		.where(eq(themes.userId, locals.userId))
@@ -20,6 +26,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 	const all = rows.map((t) => ({
 		...t,
+		kind: resolveThemeDashboardKind(t.name),
 		dashboardLabel: getThemeDashboardDefinition(t.name)?.label ?? null
 	}));
 

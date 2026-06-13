@@ -1,12 +1,18 @@
 <script lang="ts">
 	import { AppPage, PageHeader, PageSection } from '$lib/components/ui';
 	import { invalidateAll } from '$app/navigation';
+	import ThemeSettingsPanel from './ThemeSettingsPanel.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
 	let busyId = $state<string | null>(null);
 	let errorMessage = $state('');
+	let expandedId = $state<string | null>(null);
+
+	function toggleExpanded(id: string) {
+		expandedId = expandedId === id ? null : id;
+	}
 
 	type ThemeRow = PageData['active'][number];
 
@@ -72,23 +78,38 @@
 					<h2>{group.parent}</h2>
 					<ul class="theme-list">
 						{#each group.themes as theme (theme.id)}
-							<li class="theme-row">
-								<a class="theme-link" href={`/tema/${theme.id}`}>
-									<span class="theme-emoji">{theme.emoji ?? '📁'}</span>
-									<span class="theme-name">{theme.name}</span>
-									{#if theme.dashboardLabel}
-										<span class="theme-kind">{theme.dashboardLabel}</span>
-									{/if}
-								</a>
-								<button
-									type="button"
-									class="action"
-									disabled={busyId === theme.id}
-									data-track="temaer:arkiver"
-									onclick={() => void setArchived(theme.id, true)}
-								>
-									{busyId === theme.id ? '…' : 'Arkiver'}
-								</button>
+							<li class="theme-item">
+								<div class="theme-row">
+									<a class="theme-link" href={`/tema/${theme.id}`}>
+										<span class="theme-emoji">{theme.emoji ?? '📁'}</span>
+										<span class="theme-name">{theme.name}</span>
+										{#if theme.dashboardLabel}
+											<span class="theme-kind">{theme.dashboardLabel}</span>
+										{/if}
+									</a>
+									<button
+										type="button"
+										class="action"
+										aria-expanded={expandedId === theme.id}
+										data-track="temaer:innstillinger"
+										onclick={() => toggleExpanded(theme.id)}
+									>
+										Innstillinger
+										<span class="chevron" class:open={expandedId === theme.id}>›</span>
+									</button>
+									<button
+										type="button"
+										class="action"
+										disabled={busyId === theme.id}
+										data-track="temaer:arkiver"
+										onclick={() => void setArchived(theme.id, true)}
+									>
+										{busyId === theme.id ? '…' : 'Arkiver'}
+									</button>
+								</div>
+								{#if expandedId === theme.id}
+									<ThemeSettingsPanel {theme} />
+								{/if}
 							</li>
 						{/each}
 					</ul>
@@ -102,23 +123,25 @@
 				<p class="muted">Arkiverte temaer er skjult fra forsiden, men dataene er beholdt.</p>
 				<ul class="theme-list">
 					{#each data.archived as theme (theme.id)}
-						<li class="theme-row">
-							<a class="theme-link" href={`/tema/${theme.id}`}>
-								<span class="theme-emoji">{theme.emoji ?? '📁'}</span>
-								<span class="theme-name">{theme.name}</span>
-								{#if theme.dashboardLabel}
-									<span class="theme-kind">{theme.dashboardLabel}</span>
-								{/if}
-							</a>
-							<button
-								type="button"
-								class="action restore"
-								disabled={busyId === theme.id}
-								data-track="temaer:gjenopprett"
-								onclick={() => void setArchived(theme.id, false)}
-							>
-								{busyId === theme.id ? '…' : 'Gjenopprett'}
-							</button>
+						<li class="theme-item">
+							<div class="theme-row">
+								<a class="theme-link" href={`/tema/${theme.id}`}>
+									<span class="theme-emoji">{theme.emoji ?? '📁'}</span>
+									<span class="theme-name">{theme.name}</span>
+									{#if theme.dashboardLabel}
+										<span class="theme-kind">{theme.dashboardLabel}</span>
+									{/if}
+								</a>
+								<button
+									type="button"
+									class="action restore"
+									disabled={busyId === theme.id}
+									data-track="temaer:gjenopprett"
+									onclick={() => void setArchived(theme.id, false)}
+								>
+									{busyId === theme.id ? '…' : 'Gjenopprett'}
+								</button>
+							</div>
 						</li>
 					{/each}
 				</ul>
@@ -182,13 +205,27 @@
 		gap: 0.5rem;
 	}
 
+	.theme-item {
+		background: #171717;
+		border-radius: 10px;
+		padding: 0.25rem 0.9rem 0.6rem;
+	}
+
 	.theme-row {
 		display: flex;
 		align-items: center;
 		gap: 0.75rem;
-		padding: 0.75rem 0.9rem;
-		background: #171717;
-		border-radius: 10px;
+		padding: 0.55rem 0;
+	}
+
+	.chevron {
+		display: inline-block;
+		transition: transform 0.15s;
+		margin-left: 0.3rem;
+	}
+
+	.chevron.open {
+		transform: rotate(90deg);
 	}
 
 	.theme-link {

@@ -1,7 +1,7 @@
 # Tema-administrasjon og per-tema-innstillinger
 
 Dato: 2026-06-13
-Status: pågår (Fase 1 ferdig)
+Status: pågår (Fase 1 + 2 første del ferdig)
 
 ## Kontekst
 
@@ -90,28 +90,47 @@ Designvalg under arbeidet:
   `data-track="temaer:arkiver"`).
 - **Inngang:** Lenke fra forsiden og/eller fra `/settings`-oversikten.
 
-### Fase 2: Per-tema innstillinger-seksjon (større, rører datamodell-grenser)
+### Fase 2: Per-tema innstillinger-panel (FØRSTE DEL FERDIG)
 
-Generaliser dagens `ThemeMetricSettingsSheet` til en bredere
-«tema-innstillinger»-flate inne i `/tema/[id]`, som samler det det aktuelle
-domenet faktisk styrer.
+Hver tema-rad i `/settings/themes` ble utvidet fra en ren lenke til et
+utvidbart panel (accordion) med tema-spesifikke innstillinger. «Innstillinger»-
+knappen toggler panelet; tittelen lenker fortsatt til `/tema/[id]`.
 
-- **Helse-tema:** metric-terskler (allerede der) + søvn — beholdes, ev. flyttes
-  inn under en felles innstillinger-inngang i stedet for egen sheet-knapp.
-- **Økonomi-tema:**
-  - Lønnskonto: flytt *visningen* av `Sparebank1SalarySection` hit (data blir i
-    `salary_profile`).
-  - Kategoriseringsregler: flytt *visningen* av `/settings/classification`
-    (overrides + merchants + regler) hit (data blir i
-    `classification_overrides` m.fl.).
-- **E-postparsing:** vis `EmailRulesCard` i det/de temaene reglene mater, hvis
-  vi kan knytte en regel til et tema. Hvis reglene forblir globale uten
-  tema-kobling, kan dette bli værende under en global «integrasjoner»-flate i
-  stedet — avklares i fasen.
-- **Settings ryddes:** når en flate er flyttet, fjernes den fra settings (eller
-  erstattes med en lenke til temaet), slik at settings til slutt bare har det
-  globale: profil, kilde-innlogging, varsler, jobber, push, snoozes,
-  external-apps.
+Implementert:
+- `src/routes/settings/themes/+page.server.ts`: `load` beriker hvert tema med
+  `kind` (`resolveThemeDashboardKind`) og henter `tripProfile`, `ferieProfile`,
+  `metricSettings` (allerede kolonner på `themes` — billig å ta med).
+- `src/routes/settings/themes/ThemeSettingsPanel.svelte`: dispatcher på `kind`:
+  - **travel:** fra/til-dato, redigerbar inline via `PUT /api/tema/[id]/trip`
+    (sender med eksisterende tripProfile-felter siden APIet overskriver hele
+    profilen).
+  - **ferie:** fra/til-dato via `PUT /api/tema/[id]/ferie` (APIet merger feltvis).
+  - **health:** gjenbruker `ThemeMetricSettingsSheet` inline (lagrer selv via
+    `PUT /api/tema/[id]/metric-settings`).
+  - **books:** lister bibliotek-epostregler (`processingType === 'library'` fra
+    `GET /api/settings/email-rules`) + lenke til Kilder for redigering.
+  - **economics:** lister kontoer read-only (`GET /api/economics/accounts`) +
+    lenke til Kilder for lønnskonto.
+  - øvrige kinds: «ingen egne innstillinger enda» + «Åpne tema».
+
+Bevisst utelatt i denne runden (krever datamodell-beslutninger — se under):
+- Epostregler får IKKE `themeId` ennå; bibliotek-regler vises under ALLE
+  bøker-temaer (filtrert på `processingType`), ikke koblet til ett bestemt tema.
+- Lønnskonto er fortsatt global (`user_salary_profiles`, kun admin-API) og kun
+  lenket til, ikke redigerbar her.
+- «Foretrukne kontoer» finnes ikke som konsept i datamodellen — ikke innført.
+- Kategoriseringsregler ikke flyttet/speilet til økonomi-temaet ennå.
+
+### Fase 2 (gjenstår): datamodell-avhengige deler
+
+- **Lønnskonto redigerbar per økonomi-tema:** krever bruker-API (i dag bare
+  admin) og avklaring av om lønnskonto er global eller per tema.
+- **Foretrukne kontoer:** krever nytt felt (f.eks. `isPreferred`/`displayOrder`)
+  på kontomodellen — som i dag utledes fra `sensorEvents` (`bank_balance`),
+  ikke en egen tabell. Trenger en kontotabell eller en preferanse-tabell.
+- **Epostregler koblet til tema:** krever `themeId` på `emailRules` + migrasjon.
+- **Kategoriseringsregler:** flytt/speil `/settings/classification` til
+  økonomi-temaet.
 
 ## Åpne spørsmål (avklares før Fase 2)
 
