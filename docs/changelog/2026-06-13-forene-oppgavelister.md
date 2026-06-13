@@ -1,7 +1,7 @@
 # Forene oppgavelister på tvers
 
 Dato: 2026-06-13
-Status: pågår (Fase 1–2 ferdig)
+Status: pågår (Fase 1–3 ferdig — ThemeTasksTab konvergert; visuell review gjenstår)
 
 ## Kontekst
 
@@ -85,12 +85,33 @@ Gjenstår i Fase 2 (gjøres sammen med migreringene under, fordi de er visuelle)
   slik at `ThemeTasksTab` sine badges flytter inn uendret.
 - Sørg for at dra-sortering og kontekstmeny er props-drevne (callbacks), ikke innebygd logikk.
 
-### Fase 3: Migrer full-featured-listene
-- Migrer `ThemeTasksTab` (#3) til `ChecklistItemRow` + den nye card-varianten. Behold
-  prosjekt-spesifikk forretningslogikk (API-kall, breakdown, edit-sheet) i tabben; bare
-  rad-renderingen flyttes til den felles komponenten.
-- Verifiser at `WeekTasks` (#4) fortsatt ser riktig ut etter base-endringene (den bruker
-  allerede #1).
+### Fase 3: Konverger full-featured-listene mot kanonisk rad ✅ ferdig (ThemeTasksTab)
+
+**Viktig funn underveis:** `ChecklistItemRow` kan *ikke* være en bokstavelig drop-in base for
+`ThemeTasksTab`. To modellforskjeller:
+1. **Nestingsdybde** — `ChecklistItemRow` rendrer nøyaktig 2 nivåer (forelder → barn).
+   `ThemeTasksTab` er rekursiv (N nivåer, nås f.eks. via AI-nedbryting på en deloppgave). Et
+   blindt bytte ville *skjult* nivå-3-deloppgaver — en korrekthetsregresjon.
+2. **Dra-håndtak** — `ChecklistItemRow` har ikke eget håndtak (WeekTasks legger det på som
+   `trailingAction`); `ThemeTasksTab` eier sin egen rekursive dra-sortering.
+
+Derfor er foreningen gjort som **konvergens mot de delte byggeklossene og kanonisk anatomi**,
+ikke et strukturelt bytte:
+
+- `ThemeTasksTab` bruker nå `ChecklistCheckbox` (sirkel) i stedet for rå `<input type=checkbox>`,
+  og `TaskTitle` i stedet for rå tekst-span.
+- Kanonisk anatomi: `[tekst + badges] [avkrysning til høyre] [dra-håndtak ytterst til høyre]` —
+  avkrysningen flyttet fra venstre til høyre.
+- Chrome bytter fra `--bg-card`/`--border-color` til kanoniske `--card-bg`/`--card-border`, så
+  radene nå hue-tintes automatisk av temasiden (ThemePage overstyrer `--card-*`).
+- All prosjekt-logikk (API, breakdown, edit-sheet, dra, rekursiv nesting, badges) er beholdt
+  uendret. `npm run check` + `npm test` grønt.
+
+Gjenstår i Fase 3:
+- Visuell verifisering (`npm run test:visual:review`) — kunne ikke kjøres i denne containeren
+  (mangler `DATABASE_URL`). Kjøres lokalt: avkrysning flytter venstre→høyre + sirkulær form,
+  dra-håndtak ytterst til høyre, hue-tintet ramme.
+- `WeekTasks` (#4) er uendret (bruker allerede `ChecklistItemRow`); bør spotsjekkes visuelt.
 
 ### Fase 4: Migrer minimal/gruppe-listene der det gir mening
 - Vurder #5 (handleliste), #8 (FlowChecklistStep), #11 (TaskList) → felles rad i «minimal»-konfig
@@ -111,23 +132,27 @@ Gjenstår i Fase 2 (gjøres sammen med migreringene under, fordi de er visuelle)
   rad — frist/estimat-badges, handlelenker, dra-håndtak og blokkert-status får forutsigbar
   plassering, og kort-følelsen er tydelig. Innholdsbredde ble vraket fordi høyrejusterte
   badges/handlinger og dra-sortering blir vanskelige å plassere konsekvent.
-- **`ChecklistItemRow` blir felles base**, ikke en ny komponent fra bunnen — den dekker
-  allerede flest funksjoner og deler byggeklosser. Unngår en parallell #12.
+- **`ChecklistItemRow` er felles base for 2-nivå-lister, men deles som byggeklosser ellers.**
+  Opprinnelig plan var å gjøre den til bokstavelig base for alle. Fase 3 avdekket at rekursiv
+  nesting + eget dra-håndtak (ThemeTasksTab) ikke passer dens 2-nivå-modell. Konklusjon: lister
+  som er 2-nivå bruker `ChecklistItemRow` direkte; dypere/spesialiserte lister *deler atomene*
+  (`ChecklistCheckbox`, `TaskTitle`, `TaskContextMenu`) og de kanoniske `--card-*`-tokenene, men
+  beholder egen orkestrering. Foreningen skjer på atom- og token-nivå, ikke alltid på komponent-nivå.
 - **Chrome er token-drevet** (`--card-*`), ikke per-kontekst-CSS — så ukeplan og temasider
   re-skinner radene automatisk, i tråd med DESIGN.md «Kontekst-overrides».
 - **Forretningslogikk blir værende i flatene** (tema/ukeplan/handleliste). Bare rad-rendering
   og chrome forenes. Dette holder migreringen trygg og inkrementell.
-- **Omfang i denne sessionen: kun dokumentasjon + plan.** Ingen kodeendringer enda.
 
 ## Verifisering
 
-Når fasene gjennomføres:
+Utført (Fase 1–3):
+- `npm run check` (TypeScript + Svelte): 0 feil, 0 advarsler.
+- `npm test`: 531/531 grønt.
 
-- `npm run check` (TypeScript + Svelte) grønt.
-- `npm test` grønt (rad-logikk som ekstraheres får enhetstester).
-- `npm run test:visual:review` med `VISUAL_REVIEW_CONTEXT` på hjem/ukeplan/tema for å fange
-  utilsiktede visuelle endringer på de migrerte flatene.
-- Manuell sjekk: prosjekt-oppgaver, ukeplan-oppgaver og handleliste viser nå samme rad-stil
-  (full bredde m/ramme) med korrekt kontekst-tint.
-
-Denne fila er foreløpig kun planlegging — ingen verifisering utført ennå.
+Gjenstår:
+- `npm run test:visual:review`/`test:visual:update` på `/design` + tema/prosjekt og ukeplan.
+  Kunne ikke kjøres i denne containeren (dev-server krever `DATABASE_URL`). Må kjøres lokalt/CI.
+  - `/design`-baseline endrer seg (ny «Oppgaverader»-seksjon, additivt).
+  - tema/prosjekt-baseline endrer seg (avkrysning venstre→høyre + sirkulær, dra-håndtak ytterst
+    til høyre, hue-tintet ramme).
+  - ukeplan/hjem forventes uendret (ChecklistItemRow default-stil er pikselidentisk).
