@@ -22,6 +22,8 @@
 	import TaskContextMenu from '../../ui/TaskContextMenu.svelte';
 	import DateInput from '$lib/components/ui/DateInput.svelte';
 	import BreakdownModal from '../../ui/BreakdownModal.svelte';
+	import ChecklistCheckbox from '$lib/components/ui/ChecklistCheckbox.svelte';
+	import TaskTitle from '$lib/components/ui/TaskTitle.svelte';
 
 	interface Props {
 		themeId: string;
@@ -374,22 +376,8 @@
 			onpointercancel={pressEnd}
 			onpointerleave={pressEnd}
 		>
-			<button
-				class="drag-handle"
-				title="Dra for å sortere"
-				aria-label="Dra for å sortere"
-				data-track="tema-oppgaver:dra"
-				onpointerdown={(e) => startDrag(e, item)}
-			>⠿</button>
-			<input
-				type="checkbox"
-				checked={item.checked}
-				aria-label={item.text}
-				data-track="tema-oppgaver:toggle"
-				onchange={() => toggle(item)}
-			/>
 			<div class="row-body">
-				<span class="row-text" class:done={item.checked}>{item.text}</span>
+				<span class="row-text" class:done={item.checked}><TaskTitle title={item.text} /></span>
 				<div class="row-sub">
 					{#if item.shopping}
 						{#if item.store}
@@ -414,6 +402,18 @@
 					{/if}
 				</div>
 			</div>
+			<ChecklistCheckbox
+				checked={item.checked}
+				size="md"
+				onclick={() => toggle(item)}
+			/>
+			<button
+				class="drag-handle"
+				title="Dra for å sortere"
+				aria-label="Dra for å sortere"
+				data-track="tema-oppgaver:dra"
+				onpointerdown={(e) => startDrag(e, item)}
+			>⠿</button>
 		</div>
 	</li>
 	{#each childrenOf(item.id) as child (child.id)}
@@ -549,8 +549,9 @@
 		align-items: flex-start;
 		gap: 0.6rem;
 		padding: 0.55rem 0.7rem;
-		background: var(--bg-card);
-		border: 1px solid var(--border-color);
+		/* Kanonisk «full bredde m/ramme» — --card-*-tokens, så tema-hue re-skinner raden. */
+		background: var(--card-bg);
+		border: 1px solid var(--card-border);
 		border-radius: 10px;
 		touch-action: pan-y;
 	}
@@ -588,14 +589,6 @@
 	}
 	button.badge.shop.link:hover {
 		text-decoration: underline;
-	}
-	.row-main input[type='checkbox'] {
-		margin-top: 0.15rem;
-		width: 1.05rem;
-		height: 1.05rem;
-		accent-color: var(--accent-primary);
-		cursor: pointer;
-		flex-shrink: 0;
 	}
 	.row-body {
 		flex: 1;

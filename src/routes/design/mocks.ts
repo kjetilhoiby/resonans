@@ -4,6 +4,7 @@
  * Fixtures deles mellom demosidene; komponenter importeres der de brukes.
  */
 import type { Checklist } from '$lib/components/composed/ChecklistWidget.svelte';
+import type { ChecklistItemLike } from '$lib/types/checklist';
 import type { WidgetData } from '$lib/client/widget-data-cache';
 import type { DayData } from '$lib/components/visualizations/DayWheelChart.svelte';
 import type { DomainStatus } from '$lib/components/visualizations/DomainWheelChart.svelte';
@@ -1220,3 +1221,17 @@ export const kavalkadeShowInputMock = {
 		'Jeg ser et år der løpeskoene runder 600 km før løvet faller, og der svømmetakene du så nølende begynte med blir like selvfølgelige som morgenkaffen.\n\nKrystallkulen er klar: mer av det som virker.',
 	greetings: kavalkadeGreetingsMock
 };
+
+// ── Oppgaverader (ChecklistItemRow) ──────────────────────────────────────────
+// Kanonisk oppgaverad i flat og bordered («full bredde m/ramme») variant.
+export const checklistRowItems: ChecklistItemLike[] = [
+	{ id: 'cr1', text: 'Handle materialer', checked: false, sortOrder: 0, parentId: null },
+	{ id: 'cr2', text: 'Lag tegning', checked: true, sortOrder: 1, parentId: null },
+	{ id: 'cr3', text: 'Ta mål', checked: false, sortOrder: 2, parentId: null }
+];
+
+export const checklistRowParent: ChecklistItemLike[] = [
+	{ id: 'cp1', text: 'Bygg ramme', checked: false, sortOrder: 0, parentId: null },
+	{ id: 'cp1a', text: 'Kapp bordene', checked: true, sortOrder: 0, parentId: 'cp1' },
+	{ id: 'cp1b', text: 'Skru sammen', checked: false, sortOrder: 1, parentId: 'cp1' }
+];
