@@ -2,7 +2,73 @@
 @import 'maplibre-gl/dist/maplibre-gl.css';
 
 :root {
-	/* Light mode (default) — AppPage theme="dark" er autoritativ i prod */
+	color-scheme: dark;
+
+	/* Mørkt tema er den ubetingede baselinen — appen er «alltid mørk» (DESIGN.md
+	   prinsipp 1). Dag-modus aktiveres senere som en full reskin ved å sette
+	   data-theme="light" på <html>; det gamle lys-settet ligger parkert under
+	   :root[data-theme='light'] nedenfor. */
+	--bg-primary: #0a0a0a;
+	--bg-secondary: #111111;
+	--bg-card: #1a1a1a;
+	--bg-elevated: #141414;
+	--bg-header: #111111;
+	--bg-input: #111111;
+	--bg-hover: #222222;
+	--bg-overlay: rgba(0, 0, 0, 0.5);
+
+	--text-primary: #ffffff;
+	--text-secondary: #aaaaaa;
+	--text-tertiary: #888888;
+	--text-muted: #555555;
+
+	--border-color: #222222;
+	--border-subtle: #1a1a1a;
+
+	--accent-primary: #667eea;
+	--accent-hover: #5568d3;
+	--accent-light: #7c8ef5;
+	--accent-muted: #8ba0f5;
+
+	--success-bg: rgba(34, 197, 94, 0.1);
+	--success-text: #4ade80;
+	--success-border: rgba(34, 197, 94, 0.2);
+
+	--warning-bg: rgba(240, 180, 41, 0.1);
+	--warning-text: #f0b429;
+	--warning-border: rgba(240, 180, 41, 0.2);
+
+	--error-bg: rgba(239, 68, 68, 0.1);
+	--error-text: #f87171;
+	--error-border: rgba(239, 68, 68, 0.2);
+
+	--info-bg: rgba(102, 126, 234, 0.1);
+	--info-border: rgba(102, 126, 234, 0.3);
+
+	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+	--shadow-md: 0 4px 6px rgba(0, 0, 0, 0.5);
+
+	--radius-sm: 8px;
+	--radius-md: 12px;
+	--radius-lg: 16px;
+	--radius-xl: 20px;
+
+	--space-xs: 4px;
+	--space-sm: 8px;
+	--space-md: 12px;
+	--space-lg: 16px;
+	--space-xl: 24px;
+	--space-2xl: 32px;
+
+	--screen-title-top-pad: clamp(28px, calc(env(safe-area-inset-top, 12px) + 20px), 46px);
+}
+
+/* Dag-modus — PLANLAGT full reskin, ikke aktiv ennå. Aktiveres ved å sette
+   data-theme="light" på <html>. Verdiene er det tidligere lys-temaet og er
+   ennå ikke gjennomgått for kontrast/komponentdekning. */
+:root[data-theme='light'] {
+	color-scheme: light;
+
 	--bg-primary: #ffffff;
 	--bg-secondary: #f5f5f5;
 	--bg-card: #ffffff;
@@ -42,64 +108,6 @@
 
 	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
 	--shadow-md: 0 4px 6px rgba(0, 0, 0, 0.07);
-
-	--radius-sm: 8px;
-	--radius-md: 12px;
-	--radius-lg: 16px;
-	--radius-xl: 20px;
-
-	--space-xs: 4px;
-	--space-sm: 8px;
-	--space-md: 12px;
-	--space-lg: 16px;
-	--space-xl: 24px;
-	--space-2xl: 32px;
-
-	--screen-title-top-pad: clamp(28px, calc(env(safe-area-inset-top, 12px) + 20px), 46px);
-}
-
-@media (prefers-color-scheme: dark) {
-	:root {
-		--bg-primary: #0a0a0a;
-		--bg-secondary: #111111;
-		--bg-card: #1a1a1a;
-		--bg-elevated: #141414;
-		--bg-header: #111111;
-		--bg-input: #111111;
-		--bg-hover: #222222;
-		--bg-overlay: rgba(0, 0, 0, 0.5);
-
-		--text-primary: #ffffff;
-		--text-secondary: #aaaaaa;
-		--text-tertiary: #888888;
-		--text-muted: #555555;
-
-		--border-color: #222222;
-		--border-subtle: #1a1a1a;
-
-		--accent-primary: #667eea;
-		--accent-hover: #5568d3;
-		--accent-light: #7c8ef5;
-		--accent-muted: #8ba0f5;
-
-		--success-bg: rgba(34, 197, 94, 0.1);
-		--success-text: #4ade80;
-		--success-border: rgba(34, 197, 94, 0.2);
-
-		--warning-bg: rgba(240, 180, 41, 0.1);
-		--warning-text: #f0b429;
-		--warning-border: rgba(240, 180, 41, 0.2);
-
-		--error-bg: rgba(239, 68, 68, 0.1);
-		--error-text: #f87171;
-		--error-border: rgba(239, 68, 68, 0.2);
-
-		--info-bg: rgba(102, 126, 234, 0.1);
-		--info-border: rgba(102, 126, 234, 0.3);
-
-		--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-		--shadow-md: 0 4px 6px rgba(0, 0, 0, 0.5);
-	}
 }
 
 * {

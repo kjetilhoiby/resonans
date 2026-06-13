@@ -108,21 +108,21 @@
 		margin-right: 0.4rem;
 	}
 	.meta {
-		color: #666;
+		color: var(--text-secondary);
 		font-size: 0.85rem;
 		margin: 0 0 1rem;
 	}
 	.badge {
-		background: #eee;
+		background: var(--bg-hover);
 		border-radius: 999px;
 		padding: 0.1rem 0.5rem;
 		margin-left: 0.5rem;
 		font-size: 0.75rem;
 	}
 	.error {
-		background: #fff2f2;
-		border: 1px solid #f5c2c2;
-		color: #b00020;
+		background: var(--error-bg);
+		border: 1px solid var(--error-border);
+		color: var(--error-text);
 		padding: 0.5rem 0.75rem;
 		border-radius: 6px;
 		font-size: 0.85rem;
@@ -134,11 +134,11 @@
 	}
 	li {
 		padding: 0.6rem 0;
-		border-bottom: 1px solid #eee;
+		border-bottom: 1px solid var(--border-subtle);
 	}
 	li.checked .text {
 		text-decoration: line-through;
-		color: #999;
+		color: var(--text-tertiary);
 	}
 	label {
 		display: flex;
@@ -163,14 +163,14 @@
 	}
 	.date {
 		font-size: 0.75rem;
-		color: #999;
+		color: var(--text-tertiary);
 	}
 	.text {
 		line-height: 1.4;
 	}
 	.notes {
 		font-size: 0.8rem;
-		color: #666;
+		color: var(--text-secondary);
 		margin-top: 0.2rem;
 	}
 </style>

@@ -235,14 +235,15 @@
 		inset: auto 0 0 0;
 		max-width: 560px;
 		margin: 0 auto;
-		background: white;
-		border: none;
+		background: var(--bg-card);
+		color: var(--text-primary);
+		border: 1px solid var(--border-color);
+		border-bottom: none;
 		border-radius: 16px 16px 0 0;
 		padding: 1.25rem;
 		max-height: 85vh;
 		overflow-y: auto;
 		z-index: 1000;
-		font-family: system-ui, -apple-system, sans-serif;
 	}
 	header {
 		display: flex;
@@ -264,7 +265,7 @@
 		font-size: 0.9rem;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
-		color: #666;
+		color: var(--text-secondary);
 		margin: 1.25rem 0 0.5rem;
 	}
 	fieldset {
@@ -277,7 +278,7 @@
 	}
 	fieldset legend {
 		font-size: 0.85rem;
-		color: #555;
+		color: var(--text-secondary);
 		margin-bottom: 0.3rem;
 	}
 	.field {
@@ -288,13 +289,15 @@
 	}
 	.field span {
 		font-size: 0.8rem;
-		color: #555;
+		color: var(--text-secondary);
 	}
 	.field input {
 		padding: 0.5rem;
-		border: 1px solid #ddd;
+		border: 1px solid var(--border-color);
 		border-radius: 6px;
 		font-size: 0.9rem;
+		background: var(--bg-input);
+		color: var(--text-primary);
 	}
 	.field-checkbox {
 		display: flex;
@@ -304,8 +307,8 @@
 		margin-bottom: 0.75rem;
 	}
 	.primary {
-		background: #7c8ef5;
-		color: white;
+		background: var(--accent-primary);
+		color: #fff;
 		border: none;
 		padding: 0.6rem 1rem;
 		border-radius: 8px;
@@ -318,7 +321,7 @@
 	}
 	.created {
 		margin-top: 0.75rem;
-		background: #f4f5f9;
+		background: var(--bg-elevated);
 		padding: 0.75rem;
 		border-radius: 8px;
 	}
@@ -329,15 +332,17 @@
 	.created input {
 		width: 100%;
 		padding: 0.4rem;
-		border: 1px solid #ddd;
+		border: 1px solid var(--border-color);
 		border-radius: 4px;
 		font-size: 0.85rem;
 		margin-bottom: 0.4rem;
+		background: var(--bg-input);
+		color: var(--text-primary);
 	}
 	.error {
-		background: #fff2f2;
-		border: 1px solid #f5c2c2;
-		color: #b00020;
+		background: var(--error-bg);
+		border: 1px solid var(--error-border);
+		color: var(--error-text);
 		padding: 0.5rem;
 		border-radius: 6px;
 		font-size: 0.85rem;
@@ -348,7 +353,7 @@
 		margin: 0;
 	}
 	.existing li {
-		border: 1px solid #eee;
+		border: 1px solid var(--border-subtle);
 		border-radius: 8px;
 		padding: 0.75rem;
 		margin-bottom: 0.6rem;
@@ -365,21 +370,23 @@
 		font-weight: 500;
 	}
 	.mode {
-		color: #888;
+		color: var(--text-tertiary);
 		font-weight: normal;
 		font-size: 0.8rem;
 	}
 	.share-meta {
 		font-size: 0.75rem;
-		color: #777;
+		color: var(--text-tertiary);
 		margin: 0.15rem 0 0.3rem;
 	}
 	.share-info input {
 		width: 100%;
 		padding: 0.3rem;
-		border: 1px solid #ddd;
+		border: 1px solid var(--border-color);
 		border-radius: 4px;
 		font-size: 0.75rem;
+		background: var(--bg-input);
+		color: var(--text-primary);
 	}
 	.share-actions {
 		display: flex;
@@ -388,18 +395,19 @@
 	}
 	.share-actions button {
 		padding: 0.35rem 0.7rem;
-		border: 1px solid #ddd;
-		background: white;
+		border: 1px solid var(--border-color);
+		background: var(--bg-input);
+		color: var(--text-primary);
 		border-radius: 6px;
 		cursor: pointer;
 		font-size: 0.8rem;
 	}
 	.share-actions .danger {
-		color: #b00020;
-		border-color: #f5c2c2;
+		color: var(--error-text);
+		border-color: var(--error-border);
 	}
 	.empty {
-		color: #888;
+		color: var(--text-tertiary);
 		font-size: 0.85rem;
 	}
 </style>

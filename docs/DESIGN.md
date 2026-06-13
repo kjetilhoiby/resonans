@@ -16,7 +16,8 @@ Appen har en levende komponentkatalog på `/design`. Alle UI-endringer skal bruk
 
 ## Grunnregler
 
-- Appen er **alltid mørk**. `AppPage` er autoritativ kilde for CSS-variabler (`--bg-primary`, `--text-primary`, `--accent-primary` osv.). Bruk disse — aldri hardkodede farger.
+- Appen er **alltid mørk**. Det mørke tokensettet er den ubetingede baselinen på `:root` i `src/app.css` — så *alle* flater (også sider uten `AppPage`, f.eks. offentlige delings-/live-visninger) er mørke. `AppPage` redefinerer de samme variablene (`--bg-primary`, `--text-primary`, `--accent-primary` osv.) for app-skallet. Bruk alltid variablene — aldri hardkodede farger.
+- **Dag-modus** er planlagt som en full reskin: det gamle lys-settet ligger parkert under `:root[data-theme='light']` i `app.css` og aktiveres ved å sette `data-theme="light"` på `<html>`. Det er ikke gjennomgått for kontrast/komponentdekning ennå — derfor er nye farger som legges til *begge* steder bare hvis de er token-baserte.
 - Ingen lokal `:global()`-override for layout — fiks felleskomponenten i stedet.
 - Ingen lokal bottom-nav/tab-bar.
 - Layouts med faner: shell i `+layout.svelte`, innhold per `+page.svelte`.

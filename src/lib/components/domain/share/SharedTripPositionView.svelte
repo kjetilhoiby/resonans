@@ -284,7 +284,7 @@
 	}
 	.owner {
 		font-size: 0.8rem;
-		color: #999;
+		color: var(--text-tertiary);
 		margin-bottom: 0.15rem;
 	}
 	.info-card h1 {
@@ -292,12 +292,12 @@
 		margin: 0 0 0.1rem;
 	}
 	.dest {
-		color: #555;
+		color: var(--text-secondary);
 		margin: 0 0 0.75rem;
 		font-size: 0.95rem;
 	}
 	.empty {
-		color: #777;
+		color: var(--text-tertiary);
 		text-align: center;
 		padding: 1rem 0;
 	}
@@ -308,7 +308,7 @@
 		margin-bottom: 0.5rem;
 	}
 	.stat {
-		background: #f4f5f9;
+		background: var(--bg-elevated);
 		border-radius: 8px;
 		padding: 0.6rem;
 		display: flex;
@@ -319,7 +319,7 @@
 		font-size: 0.65rem;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
-		color: #777;
+		color: var(--text-tertiary);
 	}
 	.stat .value {
 		font-size: 1.1rem;
@@ -327,10 +327,10 @@
 	}
 	.updated {
 		font-size: 0.8rem;
-		color: #999;
+		color: var(--text-tertiary);
 		text-align: center;
 	}
-	.updated.stale { color: #b16a00; }
+	.updated.stale { color: var(--warning-text); }
 	.stale-tag { margin-left: 0.2rem; }
 	.ended-banner {
 		position: absolute;

@@ -87,15 +87,14 @@
 		max-width: 640px;
 		margin: 0 auto;
 		padding: 1.5rem 1rem 3rem;
-		font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
-		color: #1a1a1a;
+		color: var(--text-primary);
 	}
 	.share-header {
 		margin-bottom: 1rem;
 	}
 	.owner-line {
 		font-size: 0.85rem;
-		color: #666;
+		color: var(--text-secondary);
 	}
 	.locked {
 		text-align: center;
@@ -109,10 +108,10 @@
 	.viewer-footer {
 		margin-top: 2rem;
 		font-size: 0.85rem;
-		color: #666;
+		color: var(--text-secondary);
 		text-align: center;
 	}
 	.owner-footer a {
-		color: #7c8ef5;
+		color: var(--accent-light);
 	}
 </style>
