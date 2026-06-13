@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AppPage, PageHeader, PageSection } from '$lib/components/ui';
+	import { AppPage, ExpandableCard, PageHeader, PageSection } from '$lib/components/ui';
 	import { invalidateAll } from '$app/navigation';
 	import ThemeSettingsPanel from './ThemeSettingsPanel.svelte';
 	import type { PageData } from './$types';
@@ -62,23 +62,20 @@
 </script>
 
 {#snippet themeCard(theme: ThemeRow)}
-	{@const isExpanded = expandedId === theme.id}
-	<li class="theme-card" class:expanded={isExpanded}>
-		<button
-			type="button"
-			class="theme-row"
-			aria-expanded={isExpanded}
-			onclick={() => toggleExpanded(theme.id)}
+	<li>
+		<ExpandableCard
+			expanded={expandedId === theme.id}
+			onToggle={() => toggleExpanded(theme.id)}
+			ariaLabel={`Vis innstillinger for ${theme.name}`}
 		>
-			<span class="theme-emoji">{theme.emoji ?? '📁'}</span>
-			<span class="theme-info">
-				<span class="theme-name">{theme.name}</span>
-				{#if theme.dashboardLabel}<span class="theme-kind">{theme.dashboardLabel}</span>{/if}
-			</span>
-			<span class="chevron" class:open={isExpanded}>›</span>
-		</button>
+			{#snippet header()}
+				<span class="theme-emoji">{theme.emoji ?? '📁'}</span>
+				<span class="theme-info">
+					<span class="theme-name">{theme.name}</span>
+					{#if theme.dashboardLabel}<span class="theme-kind">{theme.dashboardLabel}</span>{/if}
+				</span>
+			{/snippet}
 
-		{#if isExpanded}
 			<div class="theme-details">
 				{#if hasSettings(theme.kind)}
 					<ThemeSettingsPanel {theme} />
@@ -108,7 +105,7 @@
 					{/if}
 				</div>
 			</div>
-		{/if}
+		</ExpandableCard>
 	</li>
 {/snippet}
 
@@ -160,8 +157,10 @@
 		color: var(--text-secondary);
 	}
 
+	/* Ingen horisontal padding — innholdet aligner med PageHeader-tittelen
+	   (begge sitter på PageSection sin --page-px). */
 	.content {
-		padding: 1.5rem 1rem;
+		padding: 0 0 1rem;
 	}
 
 	.alert.error {
@@ -209,32 +208,6 @@
 		gap: 0.5rem;
 	}
 
-	.theme-card {
-		background: #171717;
-		border-radius: 10px;
-		border: 1px solid transparent;
-		transition: border-color 0.15s;
-	}
-
-	.theme-card.expanded {
-		border-color: #2a2a2a;
-	}
-
-	.theme-row {
-		display: flex;
-		align-items: center;
-		gap: 0.75rem;
-		width: 100%;
-		padding: 0.8rem 0.9rem;
-		background: none;
-		border: none;
-		text-align: left;
-		color: inherit;
-		cursor: pointer;
-		border-radius: 10px;
-		font: inherit;
-	}
-
 	.theme-emoji {
 		font-size: 1.25rem;
 		flex-shrink: 0;
@@ -262,19 +235,6 @@
 		font-size: 0.72rem;
 		color: var(--text-tertiary);
 		flex-shrink: 0;
-	}
-
-	.chevron {
-		font-size: 1.2rem;
-		color: var(--text-tertiary);
-		line-height: 1;
-		flex-shrink: 0;
-		transition: transform 0.18s ease;
-	}
-
-	.chevron.open {
-		transform: rotate(90deg);
-		color: var(--accent-primary);
 	}
 
 	.theme-details {

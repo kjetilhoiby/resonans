@@ -15,6 +15,7 @@ export { default as Section } from './Section.svelte';
 export { default as SectionLabel } from './SectionLabel.svelte';
 export { default as CardTitle } from './CardTitle.svelte';
 export { default as SectionCard } from './SectionCard.svelte';
+export { default as ExpandableCard } from './ExpandableCard.svelte';
 export { default as CompactRecordList } from './CompactRecordList.svelte';
 export { default as GoalRing } from './GoalRing.svelte';
 export { default as PeriodPills } from './PeriodPills.svelte';

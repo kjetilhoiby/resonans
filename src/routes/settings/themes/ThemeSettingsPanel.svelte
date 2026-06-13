@@ -287,6 +287,9 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.25rem;
+		/* La feltene krympe og bryte i stedet for å sprenge kortet på mobil. */
+		flex: 1 1 8rem;
+		min-width: 0;
 	}
 
 	.date-row label span {

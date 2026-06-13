@@ -1,5 +1,6 @@
 <script lang="ts">
 	import SectionLabel from '../../ui/SectionLabel.svelte';
+	import ExpandableCard from '../../ui/ExpandableCard.svelte';
 	import GpxMap from '../../charts/GpxMap.svelte';
 	import TrackProfileChart from '../../charts/TrackProfileChart.svelte';
 	import KmSplitsTable from '../../charts/KmSplitsTable.svelte';
@@ -237,12 +238,18 @@
 				if (act.durationSeconds) parts.push(formatDuration(act.durationSeconds));
 				return parts.join(' · ');
 			})()}
-			<div class="hd-activity-card" class:hd-activity-card-expanded={isExpanded}>
-				<button
-					class="hd-activity-row"
-					onclick={() => toggleActivity(act.activityId, trackEventId)}
-					aria-expanded={isExpanded}
-				>
+			<ExpandableCard
+				expanded={isExpanded}
+				onToggle={() => toggleActivity(act.activityId, trackEventId)}
+				ariaLabel={`Vis detaljer for ${sportLabel(act.sportType)}`}
+				--ec-bg="transparent"
+				--ec-border-expanded="#252525"
+				--ec-header-pad="10px 8px"
+				--ec-hover="#1a1a1a"
+				--ec-chevron="#444"
+				--ec-chevron-open="#7c8ef5"
+			>
+				{#snippet header()}
 					<div class="hd-activity-icon">{sportIcon(act.sportType)}</div>
 					<div class="hd-activity-info">
 						<span class="hd-activity-label">
@@ -251,8 +258,7 @@
 							{#if compactSuffix}<span class="hd-activity-compact-suffix">· {compactSuffix}</span>{/if}
 						</span>
 					</div>
-					<span class="hd-activity-chevron" class:hd-activity-chevron-open={isExpanded}>›</span>
-				</button>
+				{/snippet}
 
 				{#if isExpanded}
 					{@const baseline = act.paceSecondsPerKm
@@ -353,7 +359,7 @@
 						{/if}
 					</div>
 				{/if}
-			</div>
+			</ExpandableCard>
 		{/each}
 	</div>
 	{#if filteredActivities.length > activityVisibleCount}
@@ -469,36 +475,6 @@
 		gap: 2px;
 	}
 
-	.hd-activity-card {
-		border-radius: 10px;
-		overflow: hidden;
-		border: 1px solid transparent;
-		transition: border-color 0.15s;
-	}
-
-	.hd-activity-card-expanded {
-		border-color: #252525;
-	}
-
-	.hd-activity-row {
-		display: flex;
-		align-items: center;
-		gap: 12px;
-		padding: 10px 8px;
-		width: 100%;
-		background: none;
-		border: none;
-		cursor: pointer;
-		color: inherit;
-		text-align: left;
-		border-radius: 10px;
-		transition: background 0.12s;
-	}
-
-	.hd-activity-row:hover {
-		background: #1a1a1a;
-	}
-
 	.hd-activity-icon {
 		font-size: 1.3rem;
 		flex-shrink: 0;
@@ -531,20 +507,6 @@
 	.hd-activity-compact-suffix {
 		font-weight: 400;
 		color: #555;
-	}
-
-	.hd-activity-chevron {
-		font-size: 1.2rem;
-		color: #444;
-		line-height: 1;
-		transition: transform 0.2s ease;
-		display: inline-block;
-		flex-shrink: 0;
-	}
-
-	.hd-activity-chevron-open {
-		transform: rotate(90deg);
-		color: #7c8ef5;
 	}
 
 	.hd-activity-details {

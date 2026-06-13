@@ -130,6 +130,33 @@ Bevisst utelatt i denne runden (krever datamodell-beslutninger — se under):
 - «Foretrukne kontoer» finnes ikke som konsept i datamodellen — ikke innført.
 - Kategoriseringsregler ikke flyttet/speilet til økonomi-temaet ennå.
 
+### Fase 2: delt `ExpandableCard`-komponent (FERDIG)
+
+Kort-stilen ble først kopiert fra helse-aktivitetskortet inn i tema-lista — et
+brudd på CLAUDE.md prinsipp 2 (delte komponenter skal gjenbrukes, ikke
+dupliseres). Rettet ved å trekke ut en ekte delt komponent:
+
+- `src/lib/components/ui/ExpandableCard.svelte`: generisk utvidbart kort
+  (kontrollert `expanded` + `onToggle`, `header`- og `children`-snippets, auto
+  chevron + a11y). Chrome styres via CSS-variabler (`--ec-bg`,
+  `--ec-border-expanded`, `--ec-header-pad`, `--ec-hover`, `--ec-chevron`,
+  `--ec-chevron-open`, `--ec-radius`, `--ec-body-pad`) så ulike kontekster
+  beholder uttrykket sitt. Eksportert fra `ui/index.ts`.
+- `src/routes/settings/themes/+page.svelte`: bruker `ExpandableCard`
+  (standardverdier — solid kort).
+- `src/lib/components/domain/health/HealthActivityList.svelte`: bruker samme
+  komponent med CSS-variabler som reproduserer dagens uttrykk (transparent
+  bakgrunn, #252525 utvidet-kant, innrykket innhold). Indre innhold/klasser
+  uendret for å holde pikseldiff minimal.
+- `/design`: ny seksjon «Utvidbare kort» viser standard- og transparent-variant.
+
+To UI-fikser etter mobiltest (skjermbilde):
+- **Datovelgere sprengte kortet:** `.date-row label` fikk `flex: 1 1 8rem;
+  min-width: 0` så feltene krymper/bryter i stedet for å flyte ut av kortet.
+- **Ulik horisontal marg på tittel og innhold:** `/settings/themes` la `1rem`
+  horisontal padding på `.content` oppå PageSection sin `--page-px`. Fjernet, så
+  kortene aligner med PageHeader-tittelen.
+
 ### Fase 2 (gjenstår): datamodell-avhengige deler
 
 - **Lønnskonto redigerbar per økonomi-tema:** krever bruker-API (i dag bare
