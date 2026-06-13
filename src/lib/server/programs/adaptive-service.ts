@@ -31,15 +31,17 @@ import {
 	type ObservedRun,
 	type PlannedSessionLite
 } from './adaptive';
-import type { PlannedRunDTO } from './types';
+import type { PlannedRunDTO, ProgramPreferences } from './types';
 import type { RunType } from './constants';
 import { isRunType } from './constants';
+import { notifyAdaptation } from './adaptive-nudge';
 
 export interface AdaptationRunResult {
 	programId: string;
 	evaluatedWeek: number;
 	adjustedWeek: number | null;
 	adaptations: Array<{ kind: string; reasons: string[] }>;
+	notified?: { pushSent: number; chatSent: boolean };
 	skipped?: string;
 }
 
@@ -68,6 +70,8 @@ export async function runWeeklyAdaptation(args: {
 	userId: string;
 	programId: string;
 	todayISO?: string;
+	/** Når satt og noe ble justert: send push/Chat-varsel med deep-link. */
+	appUrl?: string;
 }): Promise<AdaptationRunResult | null> {
 	const todayISO = args.todayISO ?? new Date().toISOString().slice(0, 10);
 	const program = await db.query.trainingPrograms.findFirst({
@@ -147,12 +151,18 @@ export async function runWeeklyAdaptation(args: {
 
 	const adaptations: Array<{ kind: string; changes: Record<string, unknown>; reasons: string[] }> = [];
 
+	// Brukerføringer satt via coachen — respekteres av alle tre justeringene.
+	const preferences = (program.preferences ?? {}) as ProgramPreferences;
+	const pinnedDays = new Set(preferences.pinnedDays ?? []);
+
 	// ── 1. Temporekalkulering (dempet, ukentlig) ──────────────────────────────
 	const baseline = (program.baseline ?? {}) as Record<string, any>;
 	const currentVdot: number | undefined = baseline.vdotEstimate;
 	const weekRuns = weekWorkouts.filter((w) => w.sportFamily === 'running').map(toObservedRun);
 
-	if (currentVdot != null && weekRuns.length > 0) {
+	if (preferences.lockPace) {
+		// Bruker har låst tempoet — ingen automatisk rekalkulering.
+	} else if (currentVdot != null && weekRuns.length > 0) {
 		const recalc = recalcWeeklyVdot({
 			currentVdot,
 			runs: weekRuns,
@@ -253,7 +263,13 @@ export async function runWeeklyAdaptation(args: {
 		const balance = evaluateEffortBalance(plannedEffort, actualEffort);
 		const nextWeekIsDeload = deloadByNumber.get(adjustedWeek!) === true;
 
-		if (balance.nextWeekVolumeFactor !== 1.0 && !nextWeekIsDeload) {
+		// Brukerens volum-ønske multipliseres inn (klemt til [0.5, 1.5]).
+		const volumeBias = preferences.volumeBias != null && Number.isFinite(preferences.volumeBias)
+			? Math.min(1.5, Math.max(0.5, preferences.volumeBias))
+			: 1;
+		const effectiveVolumeFactor = Math.round(balance.nextWeekVolumeFactor * volumeBias * 100) / 100;
+
+		if (effectiveVolumeFactor !== 1.0 && !nextWeekIsDeload) {
 			let scaled = 0;
 			for (const s of nextWeekSessions) {
 				if (s.kind !== 'run' || s.isTest) continue;
@@ -261,10 +277,10 @@ export async function runWeeklyAdaptation(args: {
 				if (!run) continue;
 				const updates: Partial<PlannedRunDTO> = {};
 				if (run.targetDistanceMeters) {
-					updates.targetDistanceMeters = Math.round((run.targetDistanceMeters * balance.nextWeekVolumeFactor) / 100) * 100;
+					updates.targetDistanceMeters = Math.round((run.targetDistanceMeters * effectiveVolumeFactor) / 100) * 100;
 				}
 				if (run.targetDurationSeconds) {
-					updates.targetDurationSeconds = Math.round((run.targetDurationSeconds * balance.nextWeekVolumeFactor) / 60) * 60;
+					updates.targetDurationSeconds = Math.round((run.targetDurationSeconds * effectiveVolumeFactor) / 60) * 60;
 				}
 				if (Object.keys(updates).length === 0) continue;
 				await db
@@ -273,16 +289,21 @@ export async function runWeeklyAdaptation(args: {
 					.where(eq(programSessions.id, s.id));
 				scaled += 1;
 			}
+			const reasons = [...balance.reasons];
+			if (volumeBias !== 1) {
+				reasons.push(`Ditt volum-ønske (${volumeBias > 1 ? '+' : ''}${Math.round((volumeBias - 1) * 100)}%) er tatt med.`);
+			}
 			adaptations.push({
 				kind: 'volum',
 				changes: {
 					coverage: Math.round(balance.coverage * 100) / 100,
 					verdict: balance.verdict,
 					byFamily: balance.byFamily,
-					volumeFactor: balance.nextWeekVolumeFactor,
+					volumeFactor: effectiveVolumeFactor,
+					volumeBias,
 					scaledSessions: scaled
 				},
-				reasons: balance.reasons
+				reasons
 			});
 		}
 	}
@@ -303,7 +324,8 @@ export async function runWeeklyAdaptation(args: {
 				runType: run && isRunType(run.runType) ? (run.runType as RunType) : undefined
 			};
 		});
-		const moves = planDayMoves(lite, profile);
+		// Respekter pinnede dager: ikke flytt økter brukeren har låst på en ukedag.
+		const moves = planDayMoves(lite, profile).filter((m) => !pinnedDays.has(m.fromDay));
 		for (const move of moves) {
 			await db
 				.update(programSessions)
@@ -333,16 +355,40 @@ export async function runWeeklyAdaptation(args: {
 		);
 	}
 
+	const publicAdaptations = adaptations.map((a) => ({ kind: a.kind, reasons: a.reasons }));
+
+	// ── Varsle brukeren (push + Chat) når planen faktisk endret seg ───────────
+	let notified: { pushSent: number; chatSent: boolean } | undefined;
+	if (args.appUrl && publicAdaptations.length > 0) {
+		try {
+			const result = await notifyAdaptation({
+				userId: args.userId,
+				programId: args.programId,
+				programName: program.name,
+				weekNumber: adjustedWeek,
+				adaptations: publicAdaptations,
+				appUrl: args.appUrl
+			});
+			notified = { pushSent: result.pushSent, chatSent: result.chatSent };
+		} catch (err) {
+			console.error('[adaptive] varsling feilet for program', args.programId, err);
+		}
+	}
+
 	return {
 		programId: args.programId,
 		evaluatedWeek,
 		adjustedWeek,
-		adaptations: adaptations.map((a) => ({ kind: a.kind, reasons: a.reasons }))
+		adaptations: publicAdaptations,
+		notified
 	};
 }
 
 /** Kjør adaptiv justering for alle aktive adaptive programmer (alle brukere). */
-export async function runWeeklyAdaptationsForAllPrograms(todayISO?: string): Promise<{
+export async function runWeeklyAdaptationsForAllPrograms(args?: {
+	todayISO?: string;
+	appUrl?: string;
+}): Promise<{
 	programsProcessed: number;
 	adaptationsApplied: number;
 	errors: string[];
@@ -357,7 +403,12 @@ export async function runWeeklyAdaptationsForAllPrograms(todayISO?: string): Pro
 	const errors: string[] = [];
 	for (const p of programs) {
 		try {
-			const result = await runWeeklyAdaptation({ userId: p.userId, programId: p.id, todayISO });
+			const result = await runWeeklyAdaptation({
+				userId: p.userId,
+				programId: p.id,
+				todayISO: args?.todayISO,
+				appUrl: args?.appUrl
+			});
 			if (result) results.push(result);
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);

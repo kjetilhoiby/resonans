@@ -87,6 +87,18 @@ export function isProgramPhase(value: unknown): value is ProgramPhase {
 	return typeof value === 'string' && (PROGRAM_PHASES as readonly string[]).includes(value);
 }
 
+/** Brukerføringer som adaptiv rekalkulering respekterer (settes via coachen). */
+export interface ProgramPreferences {
+	/** Ukedager (1=man..7=søn) der løpsøkter ikke skal flyttes bort */
+	pinnedDays?: number[];
+	/** Hopp over automatisk temporekalkulering */
+	lockPace?: boolean;
+	/** Multiplikator på fremtidig volum (1 = uendret) */
+	volumeBias?: number;
+	/** Frie føringer coachen noterte */
+	notes?: string[];
+}
+
 export interface ProgramWeekDTO {
 	id?: string;
 	weekNumber: number;
@@ -143,6 +155,7 @@ export interface ProgramDTO {
 		generatedAt?: string;
 		inputs?: Record<string, unknown>;
 	} | null;
+	preferences?: ProgramPreferences;
 	weeks: ProgramWeekDTO[];
 }
 

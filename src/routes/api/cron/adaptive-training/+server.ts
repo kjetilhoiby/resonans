@@ -11,14 +11,14 @@ import { withCronTracking } from '$lib/server/monitoring/cron-wrapper';
  * tempo dempet fra faktiske løp, og flytter neste ukes økter til brukerens
  * vanedager. Kjøres søndag kveld.
  */
-export const GET: RequestHandler = async ({ request }) => {
+export const GET: RequestHandler = async ({ request, url }) => {
 	const authHeader = request.headers.get('authorization');
 	if (env.VERCEL_ENV && authHeader !== `Bearer ${env.CRON_SECRET}`) {
 		return json({ error: 'Unauthorized' }, { status: 401 });
 	}
 
 	const result = await withCronTracking('/api/cron/adaptive-training', async () => {
-		return runWeeklyAdaptationsForAllPrograms();
+		return runWeeklyAdaptationsForAllPrograms({ appUrl: url.origin });
 	});
 	return json(result);
 };
