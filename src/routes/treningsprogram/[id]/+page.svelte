@@ -8,6 +8,8 @@
 
 	const program = $derived(data.program);
 	const readiness = $derived(data.readiness);
+	const adaptations = $derived(data.adaptations ?? []);
+	const isAdaptive = $derived(program.mode === 'adaptiv');
 	const today = new Date().toISOString().slice(0, 10);
 
 	function fmtDate(weekNumber: number, dayNumber: number): string {
@@ -98,6 +100,32 @@
 		}
 	}
 
+	let updatingMode = $state(false);
+	async function toggleMode() {
+		if (updatingMode) return;
+		updatingMode = true;
+		try {
+			await fetch(`/api/apps/programs/${program.id}/mode`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ mode: isAdaptive ? 'fast' : 'adaptiv' })
+			});
+			await invalidateAll();
+		} finally {
+			updatingMode = false;
+		}
+	}
+
+	function adaptationKindLabel(kind: string): string {
+		return (
+			{
+				tempo: 'Tempo',
+				ukeplan: 'Ukeplan',
+				volum: 'Volum'
+			}[kind] ?? kind
+		);
+	}
+
 	let confirmDelete = $state(false);
 	async function deleteProgram() {
 		if (!confirmDelete) {
@@ -118,6 +146,10 @@
 		<div>
 			<span class="meta-label">Status</span>
 			<span class="status status-{program.status}">{program.status}</span>
+		</div>
+		<div>
+			<span class="meta-label">Modus</span>
+			<span class="mode" class:adaptive={isAdaptive}>{isAdaptive ? '✨ Adaptiv' : 'Fast'}</span>
 		</div>
 		<div>
 			<span class="meta-label">Varighet</span>
@@ -141,6 +173,13 @@
 
 	{#if program.status === 'active'}
 		<div class="actions-row">
+			<button
+				data-track="treningsprogram:adaptiv-modus"
+				onclick={toggleMode}
+				disabled={updatingMode}
+			>
+				{isAdaptive ? 'Skru av adaptiv modus' : 'Skru på adaptiv modus'}
+			</button>
 			<button onclick={() => setStatus('paused')} disabled={updatingStatus}>Pause</button>
 			<button onclick={() => setStatus('archived')} disabled={updatingStatus}>Arkivér</button>
 			<button class="danger" onclick={deleteProgram}>
@@ -174,6 +213,35 @@
 			programId={program.id}
 			date={String(readiness.date ?? today)}
 		/>
+	{/if}
+
+	{#if isAdaptive}
+		<section class="adaptations">
+			<h2>Adaptive justeringer</h2>
+			{#if adaptations.length === 0}
+				<p class="adaptations-empty">
+					Programmet justeres hver søndag kveld: tempoforslag rekalkuleres forsiktig fra ukens
+					faktiske løp, neste ukes økter flyttes til dagene du pleier å løpe slike turer, og uken
+					vurderes på samlet effort (løp, styrke, sykkel) — ikke på enkeltøkter du hoppet over.
+				</p>
+			{:else}
+				<ul class="adaptation-list">
+					{#each adaptations as adaptation (adaptation.id)}
+						<li>
+							<div class="adaptation-head">
+								<span class="adaptation-kind kind-{adaptation.kind}">{adaptationKindLabel(adaptation.kind)}</span>
+								<span class="adaptation-meta">Uke {adaptation.weekNumber} · {adaptation.createdAt.slice(0, 10)}</span>
+							</div>
+							<ul class="adaptation-reasons">
+								{#each adaptation.reasons as reason}
+									<li>{reason}</li>
+								{/each}
+							</ul>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</section>
 	{/if}
 
 	<div class="weeks">
@@ -306,6 +374,83 @@
 	}
 	.status-archived {
 		color: var(--text-tertiary);
+	}
+
+	.mode {
+		font-weight: 600;
+		color: var(--text-secondary);
+	}
+	.mode.adaptive {
+		color: var(--accent-primary);
+	}
+
+	.adaptations {
+		background: var(--bg-secondary);
+		border: 1px solid var(--border-subtle);
+		border-radius: 14px;
+		padding: 16px;
+		margin-bottom: 20px;
+	}
+	.adaptations h2 {
+		margin: 0 0 10px;
+		font-size: 15px;
+		color: var(--text-primary);
+	}
+	.adaptations-empty {
+		margin: 0;
+		font-size: 13px;
+		color: var(--text-secondary);
+		line-height: 1.5;
+	}
+	.adaptation-list {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+	}
+	.adaptation-head {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		margin-bottom: 4px;
+	}
+	.adaptation-kind {
+		font-size: 11px;
+		padding: 3px 10px;
+		border-radius: 999px;
+		font-weight: 600;
+		letter-spacing: 0.03em;
+		text-transform: uppercase;
+		background: var(--bg-tertiary);
+		color: var(--text-secondary);
+	}
+	.adaptation-kind.kind-tempo {
+		background: color-mix(in oklab, #f87171 18%, transparent);
+		color: #f87171;
+	}
+	.adaptation-kind.kind-ukeplan {
+		background: color-mix(in oklab, #6ea8fe 18%, transparent);
+		color: #6ea8fe;
+	}
+	.adaptation-kind.kind-volum {
+		background: color-mix(in oklab, #34d399 18%, transparent);
+		color: #34d399;
+	}
+	.adaptation-meta {
+		font-size: 11px;
+		color: var(--text-tertiary);
+	}
+	.adaptation-reasons {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		font-size: 13px;
+		color: var(--text-secondary);
 	}
 
 	.actions-row {

@@ -90,6 +90,12 @@ const JOBS: CronJob[] = [
 		maxDurationSeconds: 120
 	},
 	{
+		path: '/api/cron/adaptive-training',
+		schedule: '0 18 * * 0', // søndag 18:00 UTC = 20:00 Oslo (CEST)
+		description: 'Ukentlig justering av adaptive treningsprogrammer — tempo, dagplassering og volum for neste uke',
+		maxDurationSeconds: 120
+	},
+	{
 		path: '/api/cron/monitoring',
 		schedule: '30 17 * * *', // 17:30 UTC = 19:30 Oslo (CEST)
 		description: 'Kveldlig systemhelsesjekk — sensor-ferskhet, jobb-helse, cron-eksekvering → Google Chat',
