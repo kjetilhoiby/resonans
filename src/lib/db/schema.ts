@@ -2491,6 +2491,13 @@ export const trainingPrograms = pgTable('training_programs', {
 		strengthBaseline?: Record<string, { reps?: number; durationSeconds?: number }>;
 		recordedAt: string;
 	}>(),
+	// Brukerføringer satt via coachen — respekteres av adaptiv rekalkulering.
+	preferences: jsonb('preferences').$type<{
+		pinnedDays?: number[]; // ukedager (1=man..7=søn) der løp ikke skal flyttes
+		lockPace?: boolean; // hopp over automatisk temporekalkulering
+		volumeBias?: number; // multiplikator på fremtidig volum (1 = uendret)
+		notes?: string[]; // frie føringer coachen noterte
+	}>(),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
 }, (table) => ({

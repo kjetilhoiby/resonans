@@ -13,7 +13,8 @@ export async function createNudgeEvent(params: {
 		| 'egenfrekvens_checkin'
 		| 'egenfrekvens_morning'
 		| 'egenfrekvens_evening'
-		| 'program_morning_readiness';
+		| 'program_morning_readiness'
+		| 'program_adaptive_recalc';
 	mode: 'interactive' | 'digest' | 'announce';
 	channel?: string;
 	context?: Record<string, unknown>;

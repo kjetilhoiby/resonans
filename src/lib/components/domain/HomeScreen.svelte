@@ -777,7 +777,11 @@
 				if ('requestIdleCallback' in window) window.requestIdleCallback(runPreload, { timeout: 1200 }); else setTimeout(runPreload, 180);
 			}
 
-			if ($page.url.searchParams.get('chat') === '1') openChat();
+			// Deep-link til chat: ?prefill=… åpner chatten og sender meldingen med en gang
+			// (brukes bl.a. av «Diskuter justeringene med coachen» fra treningsprogram).
+			const chatPrefillParam = $page.url.searchParams.get('prefill');
+			if (chatPrefillParam) startHomeChat(chatPrefillParam);
+			else if ($page.url.searchParams.get('chat') === '1') openChat();
 			void loadEgenfrekvensRecent(); void loadActionCandidates();
 
 			const flowParam = $page.url.searchParams.get('flow');

@@ -116,6 +116,12 @@
 		}
 	}
 
+	function discussWithCoach() {
+		const prefill =
+			'Forklar de siste justeringene i treningsprogrammet mitt, og hjelp meg å endre planen hvis jeg vil noe annet.';
+		void goto(`/?prefill=${encodeURIComponent(prefill)}`);
+	}
+
 	function adaptationKindLabel(kind: string): string {
 		return (
 			{
@@ -241,6 +247,9 @@
 					{/each}
 				</ul>
 			{/if}
+			<button class="discuss-coach" data-track="treningsprogram:diskuter-justering" onclick={discussWithCoach}>
+				💬 Diskuter justeringene med coachen
+			</button>
 		</section>
 	{/if}
 
@@ -451,6 +460,21 @@
 		gap: 2px;
 		font-size: 13px;
 		color: var(--text-secondary);
+	}
+	.discuss-coach {
+		margin-top: 14px;
+		width: 100%;
+		padding: 10px 16px;
+		border-radius: 999px;
+		background: color-mix(in oklab, var(--accent-primary) 14%, transparent);
+		border: 1px solid color-mix(in oklab, var(--accent-primary) 40%, transparent);
+		color: var(--accent-primary);
+		font-size: 14px;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.discuss-coach:hover {
+		background: color-mix(in oklab, var(--accent-primary) 22%, transparent);
 	}
 
 	.actions-row {
