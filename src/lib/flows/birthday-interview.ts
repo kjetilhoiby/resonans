@@ -13,7 +13,10 @@ export interface InterviewSection {
 }
 
 export const INTERVIEW_SECTIONS: InterviewSection[] = [
+	// Åpningsbuen: hvem er du nå (AI-syntese fra chat) → hvem var du i fjor → hva endret deg
 	{ id: 'who', heading: 'Hvem er du i år?' },
+	{ id: 'who_last_year', heading: 'Hvem var du i fjor?' },
+	{ id: 'what_changed_you', heading: 'Hva endret deg?' },
 	// Rollene: hvor står du i hver av dem akkurat nå
 	{ id: 'role_dad', heading: 'Som pappa' },
 	{ id: 'role_partner', heading: 'Som partner' },

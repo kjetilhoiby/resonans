@@ -1088,6 +1088,8 @@ export const kavalkadeGreetingsMock: KavalkadeGreeting[] = [
 
 export const kavalkadeInterviewAnswersMock: InterviewAnswers = {
 	who: 'En som løper lenger og scroller mindre. Mer ute, mer til stede.',
+	who_last_year: 'Sliten og litt fortapt etter flyttingen — mye autopilot, lite overskudd.',
+	what_changed_you: 'Morgenløpene. Da kroppen kom i gang, kom hodet etter.',
 	role_dad: 'Mer til stede på hverdagene — leksetid uten telefon.',
 	health_talk: 'Var: sliten etter flyttingen. Ville: ned 3 kg og sove mer. Veien: 84,6 → 82,1 og morgentrening som holdt. Videre: beholde rytmen, mindre skjerm på kvelden.',
 	direction: 'Mindre skjerm, mer svømming — og holde morgenrytmen gjennom vinteren.',

@@ -1254,18 +1254,57 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 		trigger: 'manual',
 		focus: true,
 		resumable: true,
-		estimatedMinutes: 15,
+		estimatedMinutes: 18,
 		steps: [
 			{
-				id: 'hvem',
+				id: 'hvem_naa',
+				type: 'chat',
+				title: 'Hvem er du nå?',
+				autoSend: true,
+				buildPrompts: (data) => {
+					const kavalkade = typeof data._kavalkadeSummary === 'string' ? data._kavalkadeSummary : '';
+					return {
+						prompt: 'Jeg er klar til å begynne selvangivelsen. Hvem er jeg nå?',
+						systemPrompt: [
+							'Du åpner det årlige bursdagsintervjuet («selvangivelsen»). Første beat er å bli kjent med hvem brukeren er akkurat NÅ — før vi ser bakover.',
+							'',
+							'Still ETT åpent spørsmål om gangen og grav videre der det blir interessant: Hva opptar deg om dagen? Hva bruker du tiden og energien på? Hva tror du på, hva er du redd for, hva gir mening? Hvordan ville du beskrevet deg selv til en fremmed?',
+							kavalkade ? `\nDu har noen tall fra året — bruk dem lett som døråpnere, ikke fasit:\n${kavalkade}` : '',
+							'',
+							'Dette er en samtale, ikke et skjema — brukeren kan snakke så lenge de vil. Ikke se bakover på fjoråret ennå (det kommer som egne steg).',
+							'',
+							'Etter HVER respons: oppdater et selvportrett mellom markørene <status> og </status> — 3–6 linjer i brukerens egne formuleringer om hvem de er nå. Denne blokken lagres som selvangivelsens «Hvem er du i år?»-seksjon.',
+							'',
+							'Når brukeren virker ferdig, si kort at neste steg er å se på hvem de var i fjor. Norsk, varm, nysgjerrig — venn, ikke terapeut.'
+						].join('\n')
+					};
+				}
+			},
+			{
+				id: 'hvem_var_du',
 				type: 'form',
-				title: 'Hvem er du i år?',
+				title: 'Hvem var du i fjor?',
 				fields: [
 					{
-						id: 'who',
+						id: 'who_last_year',
 						type: 'textarea',
-						label: 'Beskriv deg selv akkurat nå',
-						placeholder: 'Hva opptar deg? Hva bruker du tiden på? Hva tror du på?'
+						label: 'Tenk deg selv for ett år siden',
+						placeholder:
+							'Hvor sto du da? Hva var du opptatt av, bekymret for, på vei mot? (Fjorårets selvangivelse ligger på kavalkaden hvis du vil friske opp.)'
+					}
+				]
+			},
+			{
+				id: 'hva_endret_deg',
+				type: 'form',
+				title: 'Hva endret deg?',
+				fields: [
+					{
+						id: 'what_changed_you',
+						type: 'textarea',
+						label: 'Hva flyttet deg fra den personen til den du er nå?',
+						placeholder:
+							'En hendelse, et menneske, en erkjennelse, en vane — det som faktisk forandret deg innvendig'
 					}
 				]
 			},
@@ -1443,6 +1482,12 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 		],
 		async onComplete(data) {
 			const answers = extractInterviewAnswers(data);
+			// «Hvem er du nå»-chatten: AI-ens <status>-selvportrett er seksjonsinnholdet
+			const naa =
+				typeof data.hvem_naa_lastMessage === 'string'
+					? parseStatusBlock(data.hvem_naa_lastMessage)
+					: '';
+			if (naa) answers.who = naa;
 			// Kropp-og-hode-chatten: AI-ens løpende <status>-blokk er seksjonsinnholdet
 			const helse =
 				typeof data.kropp_og_hode_lastMessage === 'string'
@@ -1464,6 +1509,7 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 					goals: parseBirthdayGoals(speilMessage),
 					// «Samtalen er data»: hele chattene arkiveres som transkript
 					threads: {
+						hvemNaa: formatThreadTranscript(data.hvem_naa_thread),
 						kroppOgHode: formatThreadTranscript(data.kropp_og_hode_thread),
 						speil: formatThreadTranscript(data.speil_thread)
 					}

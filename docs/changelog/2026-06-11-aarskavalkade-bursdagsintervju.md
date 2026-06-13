@@ -103,7 +103,14 @@ Poenget med intervjuet er akkumulering: svarene lagres per år, slik at neste å
 - **Bursdagsmål**: speil-steget foreslår 2–4 mål frem til neste bursdag (forankret i «Hvor vil du videre» og kavalkade-tallene) og vedlikeholder en `<bursdagsmål>`-blokk brukeren kan justere i chat. Ved levering parses blokken (`parseBirthdayGoals`, ren, testet — «Tittel: 600 km» eller rene intensjonsmål) og opprettes som rader i `goals`: `targetDate` = neste bursdag, `periodKey` = årstall, metadata med target/tracking (running_distance → workout_aggregate, ellers manuell) — samme mønster som ukeplanens mål. Dedupe på `metadata->>'birthdayKey'` + tittel; maks 6.
 - Speilets mirror-seksjon lagres uten målblokken.
 
-### Fase 14: Oppdagbarhet
+### Fase 14: Fortellende åpning — Hvem er du nå (chat) → i fjor → hva endret deg
+
+- Åpningen omstrukturert til en narrativ bue. Det gamle «Hvem er du i år?»-skjemaet er nå et **chat-steg «Hvem er du nå?»** (autoSend): AI-en intervjuer om nåtiden — hva opptar deg, hva tror du på, hvordan ville du beskrevet deg selv — og vedlikeholder et `<status>`-selvportrett som lagres som `who`-seksjonen. Ser bevisst ikke bakover ennå.
+- Etterfulgt av to nye skjemasteg: **«Hvem var du i fjor?»** (`who_last_year`) og **«Hva endret deg?»** (`what_changed_you`) — den transformative broen mellom fortid og nåtid. Begge nye seksjoner i `INTERVIEW_SECTIONS` rett etter `who`.
+- onComplete henter `who` fra `hvem_naa`-chattens status-blokk; «Hvem er du nå?»-tråden arkiveres som egen transkript-seksjon (`birthday_interview_chat`). estimatedMinutes 15 → 18.
+- /design: intervju-mock fikk de to nye seksjonene; baseline regenerert.
+
+### Fase 15: Oppdagbarhet
 
 - `src/lib/server/chat-router.ts`: `bursdag|fødselsdag|kavalkade` ruter til self-domenet med hint om `/kavalkade`. Test lagt til i `chat-router.test.ts`.
 
