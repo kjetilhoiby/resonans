@@ -22,6 +22,10 @@ Thumbs.db
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
+# Visual tests — midlertidige inspeksjonsartefakter (baselines spores, disse ikke)
+tests/visual/test-results/
+tests/visual/__screenshots__/review-diffs/
+
 # Database
 /drizzle
 *.db
