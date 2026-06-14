@@ -8,73 +8,22 @@
 	import { onMount } from 'svelte';
 	import SectionLabel from '$lib/components/ui/SectionLabel.svelte';
 	import GpxMapSvg from '$lib/components/charts/GpxMapSvg.svelte';
-
-	interface DailySteps {
-		date: string;
-		steps: number;
-	}
-
-	interface DailySleep {
-		date: string;
-		hours: number;
-	}
-
-	interface TrackPoint {
-		lat: number;
-		lon: number;
-		ele?: number | null;
-		hr?: number | null;
-		time?: string | null;
-	}
-
-	interface Workout {
-		id: string;
-		timestamp: string;
-		date: string;
-		sportType: string;
-		distanceKm: number | null;
-		durationMin: number | null;
-		avgHeartRate: number | null;
-		maxHeartRate: number | null;
-		paceSecPerKm: number | null;
-		elevationMeters: number | null;
-		hasTrackPoints: boolean;
-		trackEventId: string | null;
-		sources: string[];
-		evidence: number;
-	}
-
-	interface HealthData {
-		weight: {
-			avgBefore7Days: number | null;
-			avgAfter7Days: number | null;
-			change: number | null;
-			measurementsBefore: number;
-			measurementsAfter: number;
-		};
-		steps: {
-			avgPerDay: number | null;
-			dailySteps: DailySteps[];
-			daysWithData: number;
-		};
-		workouts: {
-			count: number;
-			list: Workout[];
-		};
-		sleep: {
-			avgPerDay: number | null;
-			dailySleep: DailySleep[];
-			daysWithData: number;
-		};
-	}
+	import {
+		tripApi,
+		type TripApi,
+		type HealthData,
+		type TrackPoint,
+		type Workout
+	} from './trip-api';
 
 	interface Props {
 		themeId: string;
 		startDate?: string;
 		endDate?: string;
+		api?: TripApi;
 	}
 
-	let { themeId, startDate, endDate }: Props = $props();
+	let { themeId, startDate, endDate, api = tripApi }: Props = $props();
 
 	let loading = $state(true);
 	let error = $state('');
@@ -86,7 +35,7 @@
 
 	async function dismissWorkout(id: string) {
 		dismissedIds = new Set([...dismissedIds, id]);
-		await fetch(`/api/workouts/${id}/dismiss`, { method: 'POST' });
+		await api.dismissWorkout(id);
 	}
 
 	async function toggleExpand(w: Workout) {
@@ -102,10 +51,9 @@
 		if (!trackCache.has(w.id) && w.trackEventId) {
 			trackLoading = new Set([...trackLoading, w.id]);
 			try {
-				const res = await fetch(`/api/activities/${w.trackEventId}/track`);
-				if (res.ok) {
-					const json = await res.json();
-					trackCache = new Map([...trackCache, [w.id, json.trackPoints ?? []]]);
+				const points = await api.getActivityTrack(w.trackEventId);
+				if (points) {
+					trackCache = new Map([...trackCache, [w.id, points]]);
 				}
 			} finally {
 				trackLoading = new Set([...trackLoading].filter((x) => x !== w.id));
@@ -121,13 +69,11 @@
 
 	onMount(async () => {
 		try {
-			const qs = startDate && endDate ? `?start=${startDate}&end=${endDate}` : '';
-			const res = await fetch(`/api/tema/${themeId}/health-stats${qs}`);
-			if (!res.ok) {
+			const result = await api.getHealthStats(themeId, startDate, endDate);
+			if (!result) {
 				error = 'Kunne ikke laste helsedata';
 				return;
 			}
-			const result = await res.json();
 			if (result.success && result.data) {
 				data = result.data;
 			} else {
@@ -371,19 +317,19 @@
 	.ths-loading,
 	.ths-error,
 	.ths-empty {
-		color: #94a3b8;
+		color: var(--trip-text-secondary, #94a3b8);
 		font-size: 0.875rem;
 		padding: 8px 0;
 	}
 
 	.ths-error {
-		color: #f87171;
+		color: var(--trip-danger, #f87171);
 	}
 
 	.ths-section {
 		margin-bottom: 20px;
 		padding-bottom: 20px;
-		border-bottom: 1px solid #1a1f2e;
+		border-bottom: 1px solid var(--trip-card-border, #1a1f2e);
 	}
 
 	.ths-section:last-child {
@@ -403,22 +349,22 @@
 	}
 
 	.ths-stat {
-		background: #0f1419;
-		border: 1px solid #1a1f2e;
+		background: var(--trip-card-bg, #0f1419);
+		border: 1px solid var(--trip-card-border, #1a1f2e);
 		border-radius: 8px;
 		padding: 12px;
 	}
 
 	.ths-stat-label {
 		font-size: 0.75rem;
-		color: #94a3b8;
+		color: var(--trip-text-secondary, #94a3b8);
 		margin-bottom: 4px;
 	}
 
 	.ths-stat-value {
 		font-size: 1.3rem;
 		font-weight: 700;
-		color: #e2e8f0;
+		color: var(--trip-text-emphasis, #e2e8f0);
 		margin-bottom: 2px;
 	}
 
@@ -427,12 +373,12 @@
 	}
 
 	.ths-stat-value.negative {
-		color: #f87171;
+		color: var(--trip-danger, #f87171);
 	}
 
 	.ths-stat-meta {
 		font-size: 0.7rem;
-		color: #64748b;
+		color: var(--trip-text-muted, #64748b);
 		display: flex;
 		align-items: center;
 		gap: 8px;
@@ -451,21 +397,21 @@
 		justify-content: space-between;
 		align-items: center;
 		padding: 6px 10px;
-		background: #0f1419;
-		border: 1px solid #1a1f2e;
+		background: var(--trip-card-bg, #0f1419);
+		border: 1px solid var(--trip-card-border, #1a1f2e);
 		border-radius: 6px;
 		font-size: 0.8rem;
 	}
 
 	.ths-daily-date {
-		color: #94a3b8;
+		color: var(--trip-text-secondary, #94a3b8);
 		display: flex;
 		align-items: center;
 		gap: 6px;
 	}
 
 	.ths-daily-value {
-		color: #cbd5e1;
+		color: var(--trip-text-strong, #cbd5e1);
 		font-weight: 600;
 	}
 
@@ -477,15 +423,15 @@
 	}
 
 	.ths-workout-item {
-		background: #0f1419;
-		border: 1px solid #1a1f2e;
+		background: var(--trip-card-bg, #0f1419);
+		border: 1px solid var(--trip-card-border, #1a1f2e);
 		border-radius: 8px;
 		overflow: hidden;
 		transition: border-color 0.15s;
 	}
 
 	.ths-workout-item.expanded {
-		border-color: #2d3748;
+		border-color: var(--trip-border-strong, #2d3748);
 	}
 
 	.ths-workout-row {
@@ -516,7 +462,7 @@
 
 	.ths-chevron {
 		font-size: 1.1rem;
-		color: #444;
+		color: var(--trip-btn-border, #444);
 		line-height: 1;
 		transition: transform 0.2s ease;
 		display: inline-block;
@@ -531,7 +477,7 @@
 	.ths-dismiss-btn {
 		background: none;
 		border: none;
-		color: #475569;
+		color: var(--trip-text-faint, #475569);
 		cursor: pointer;
 		font-size: 1.1rem;
 		line-height: 1;
@@ -540,13 +486,13 @@
 	}
 
 	.ths-dismiss-btn:hover {
-		color: #f87171;
+		color: var(--trip-danger, #f87171);
 	}
 
 	.ths-workout-type {
 		font-size: 0.875rem;
 		font-weight: 600;
-		color: #cbd5e1;
+		color: var(--trip-text-strong, #cbd5e1);
 	}
 
 	.ths-workout-details-panel {
@@ -561,16 +507,16 @@
 		flex-wrap: wrap;
 		gap: 8px;
 		font-size: 0.75rem;
-		color: #94a3b8;
+		color: var(--trip-text-secondary, #94a3b8);
 	}
 
 	.ths-workout-date {
-		color: #64748b;
+		color: var(--trip-text-muted, #64748b);
 		font-size: 0.75rem;
 	}
 
 	.ths-workout-stat {
-		color: #94a3b8;
+		color: var(--trip-text-secondary, #94a3b8);
 		font-weight: 500;
 	}
 
@@ -582,10 +528,10 @@
 	}
 
 	.ths-hr-badge {
-		background: #1a1f2e;
-		border: 1px solid #2d3748;
+		background: var(--trip-card-border, #1a1f2e);
+		border: 1px solid var(--trip-border-strong, #2d3748);
 		border-radius: 99px;
-		color: #f87171;
+		color: var(--trip-danger, #f87171);
 		font-size: 0.7rem;
 		font-weight: 600;
 		padding: 2px 8px;
@@ -601,7 +547,7 @@
 		margin-top: 8px;
 		border-radius: 6px;
 		overflow: hidden;
-		border: 1px solid #1a1f2e;
+		border: 1px solid var(--trip-card-border, #1a1f2e);
 	}
 
 	.ths-map-placeholder {
@@ -609,7 +555,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		color: #475569;
+		color: var(--trip-text-faint, #475569);
 		font-size: 0.75rem;
 	}
 
@@ -622,7 +568,7 @@
 		display: flex;
 		justify-content: space-between;
 		font-size: 0.65rem;
-		color: #64748b;
+		color: var(--trip-text-muted, #64748b);
 		padding: 0 2px;
 	}
 
@@ -648,12 +594,12 @@
 	.ths-summary-line {
 		font-size: 0.9rem;
 		font-weight: 600;
-		color: #e2e8f0;
+		color: var(--trip-text-emphasis, #e2e8f0);
 	}
 
 	.ths-chevron {
 		font-size: 1rem;
-		color: #64748b;
+		color: var(--trip-text-muted, #64748b);
 		transition: transform 0.2s;
 		line-height: 1;
 		flex-shrink: 0;

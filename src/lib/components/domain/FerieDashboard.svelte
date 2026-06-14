@@ -17,51 +17,15 @@
     onProfileSaved – callback etter lagring
 -->
 <script lang="ts" module>
-	export type FerieRole = 'voksen' | 'barn';
-
-	export interface FerieMember {
-		id: string;
-		personId?: string;
-		name: string;
-		role: FerieRole;
-	}
-
-	export interface FerieTripStop {
-		id: string;
-		place: string;
-		lat?: number;
-		lon?: number;
-		startDate: string;
-		endDate: string;
-		weatherEmoji?: string;
-		weatherTemp?: number;
-		weatherFetchedAt?: string;
-	}
-
-	export interface FerieTrip {
-		id: string;
-		label: string;
-		place?: string;
-		startDate?: string;
-		endDate?: string;
-		linkedThemeId?: string;
-		participants?: string[];
-		stops?: FerieTripStop[];
-	}
-
-	export interface FerieCell {
-		status: string;
-		label?: string;
-	}
-
-	export interface FerieProfile {
-		startDate?: string;
-		endDate?: string;
-		note?: string;
-		members?: FerieMember[];
-		grid?: Record<string, Record<string, FerieCell>>;
-		trips?: FerieTrip[];
-	}
+	// Ferie-typene bor i trip-api.ts — re-eksporteres her for bakoverkompatibilitet.
+	export type {
+		FerieRole,
+		FerieMember,
+		FerieTripStop,
+		FerieTrip,
+		FerieCell,
+		FerieProfile
+	} from './trip-api';
 </script>
 
 <script lang="ts">
@@ -69,6 +33,16 @@
 	import TripPlanningSection from './ferie/TripPlanningSection.svelte';
 	import FerieGridView from './ferie/FerieGridView.svelte';
 	import FerieExecutionView from './ferie/FerieExecutionView.svelte';
+	import {
+		tripApi,
+		type TripApi,
+		type FerieRole,
+		type FerieMember,
+		type FerieTrip,
+		type FerieCell,
+		type FerieProfile,
+		type PersonRow
+	} from './trip-api';
 
 	type FerieView = 'rammer' | 'reiser' | 'gjennomfor';
 
@@ -77,9 +51,10 @@
 		themeEmoji?: string | null;
 		ferieProfile: FerieProfile | null;
 		onProfileSaved?: (profile: FerieProfile) => void;
+		api?: TripApi;
 	}
 
-	let { themeId, themeEmoji = null, ferieProfile = $bindable(null), onProfileSaved }: Props = $props();
+	let { themeId, themeEmoji = null, ferieProfile = $bindable(null), onProfileSaved, api = tripApi }: Props = $props();
 
 	/* ── Status-definisjoner (for gapCount-beregning) ──── */
 	const WEEKDAYS = ['Søn', 'Man', 'Tir', 'Ons', 'Tor', 'Fre', 'Lør'];
@@ -273,13 +248,6 @@
 	}
 
 	/* ── Medlemmer ──────────────────────────────────────── */
-	interface PersonRow {
-		id: string;
-		name: string;
-		kind: string;
-		avatarEmoji?: string | null;
-	}
-
 	function roleFromKind(kind: string): FerieRole {
 		return kind === 'child' ? 'barn' : 'voksen';
 	}
@@ -344,10 +312,7 @@
 			trips: trips.length > 0 ? trips : undefined
 		};
 		try {
-			const res = await fetch(`/api/tema/${themeId}/ferie`, {
-				method: 'PUT',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(buildPayload()),
+			const res = await api.saveFerieProfile(themeId, buildPayload(), {
 				keepalive: opts?.keepalive
 			});
 			if (!res.ok) {
@@ -449,6 +414,7 @@
 			onToggleMemberRole={toggleMemberRole}
 			onSetEditing={(v) => (editing = v)}
 			onSetEditMembers={(v) => (editMembers = v)}
+			{api}
 		/>
 		{#if lastSavedAt && hasWindow && members.length > 0}
 			<p class="ferie-saved-at">Sist lagret: {new Intl.DateTimeFormat('nb-NO', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }).format(new Date(lastSavedAt))}</p>
@@ -464,6 +430,7 @@
 				{startDate}
 				{endDate}
 				onTripsChanged={handleTripsChanged}
+				{api}
 			/>
 		{/if}
 	{:else}
@@ -479,6 +446,7 @@
 				{trips}
 				{gapCount}
 				onNavigate={(v) => (view = v)}
+				{api}
 			/>
 		{/if}
 	{/if}
@@ -486,6 +454,22 @@
 
 <style>
 	.ferie {
+		/* Reise-domenets palett — reskin-hook. Brukes som var(--trip-*, fallback)
+		   i Trip- og Ferie-komponentene (fallback = samme verdi). */
+		--trip-btn-border: #444;
+		--trip-btn-text: #ccc;
+		--trip-text-bright: #fff;
+		--trip-precip: #5b9bd8;
+		--trip-card-bg: #0f1419;
+		--trip-card-border: #1a1f2e;
+		--trip-border-strong: #2d3748;
+		--trip-text-emphasis: #e2e8f0;
+		--trip-text-strong: #cbd5e1;
+		--trip-text-secondary: #94a3b8;
+		--trip-text-muted: #64748b;
+		--trip-text-faint: #475569;
+		--trip-danger: #f87171;
+
 		display: flex;
 		flex-direction: column;
 		gap: 1rem;

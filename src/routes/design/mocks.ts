@@ -701,6 +701,72 @@ export const bookChatMessagesMock = [
 	{ role: 'user' as const, text: 'Les klippet fra side 87 i lys av det' }
 ];
 
+// ── Reise (trip/ferie) ───────────────────────────────────────────────────────
+import type { TripApi, DayForecast } from '$lib/components/domain/trip-api';
+
+export const tripWeatherMock: DayForecast[] = [
+	{ date: '2026-06-01', symbolCode: 'clearsky_day', tempMin: 12, tempMax: 22, wind: 4, precipitation: 0 },
+	{ date: '2026-06-02', symbolCode: 'partlycloudy_day', tempMin: 11, tempMax: 19, wind: 6, precipitation: 0.4 },
+	{ date: '2026-06-03', symbolCode: 'rain', tempMin: 10, tempMax: 15, wind: 9, precipitation: 6.2 },
+	{ date: '2026-06-04', symbolCode: 'fair_day', tempMin: 12, tempMax: 20, wind: 5, precipitation: 0 }
+];
+
+export const mockTripApi: TripApi = {
+	getAccounts: async () => [
+		{ id: 'acc-1', name: 'Brukskonto' },
+		{ id: 'acc-2', name: 'Felleskonto' }
+	],
+	geocode: async () => null,
+	getMetForecast: async () => null,
+	getLiveSession: async () => null,
+	saveTripProfile: async () => true,
+	getTransactions: async () => ({
+		totalSpent: 4835,
+		transactions: [
+			{ id: 't-1', date: '2026-06-03', accountId: 'acc-1', amount: -1890, description: 'HOTELL BRYGGEN', category: 'reise', label: 'Overnatting', emoji: '🏨' },
+			{ id: 't-2', date: '2026-06-03', accountId: 'acc-2', amount: -645, description: 'BRYGGELOFTET RESTAURANT', category: 'kafe_og_restaurant', label: null, emoji: '🍽️' },
+			{ id: 't-3', date: '2026-06-02', accountId: 'acc-1', amount: -1480, description: 'VY TOG OSLO-BERGEN', category: 'bil_og_transport', label: 'Transport', emoji: '🚆' },
+			{ id: 't-4', date: '2026-06-02', accountId: 'acc-2', amount: -420, description: 'KIWI BERGEN STORSENTER', category: 'dagligvarer', label: null, emoji: '🛒' },
+			{ id: 't-5', date: '2026-06-01', accountId: 'acc-1', amount: -400, description: 'FLØIBANEN', category: 'hobby_og_fritid', label: 'Opplevelse', emoji: '🚡' }
+		]
+	}),
+	createList: async () => null,
+	deleteList: async () => {},
+	createListItem: async () => null,
+	updateListItem: async () => {},
+	deleteListItem: async () => {},
+	getChecklists: async () => [
+		{
+			id: 'tc-1',
+			context: 'week:2026-W23:day:2026-06-02',
+			items: [
+				{ id: 'tci-1', text: 'Togavgang 08:25', checked: true, sortOrder: 0 },
+				{ id: 'tci-2', text: 'Sjekke inn på hotellet', checked: true, sortOrder: 1 }
+			]
+		},
+		{
+			id: 'tc-2',
+			context: 'week:2026-W23:day:2026-06-03',
+			items: [
+				{ id: 'tci-3', text: 'Fløibanen med ungene', checked: false, sortOrder: 0 },
+				{ id: 'tci-4', text: 'Akvariet hvis regn', checked: false, sortOrder: 1 }
+			]
+		}
+	],
+	createChecklist: async () => null,
+	addChecklistItems: async () => null,
+	patchChecklistItem: async () => true,
+	deleteChecklistItem: async () => true,
+	getHealthStats: async () => null,
+	dismissWorkout: async () => {},
+	getActivityTrack: async () => null,
+	saveFerieProfile: async () => new Response('{}'),
+	getPersons: async () => [],
+	getDiary: async () => null,
+	putDiaryEntry: async () => true,
+	promoteTrip: async () => null
+};
+
 // ── Hjemskjerm-elementer ─────────────────────────────────────────────────────
 export const themeButtonsMock = [
 	{ id: 'helse', name: 'Helse', emoji: '💪' },

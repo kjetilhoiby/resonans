@@ -111,7 +111,7 @@
 		themeInstruction?: string;
 		selectedWorkout?: SelectedWorkout | null;
 		tripProfile?: Record<string, unknown> | null;
-		tripLists?: import('./TripListsPanel.svelte').ThemeList[];
+		tripLists?: import('./trip-api').ThemeList[];
 		ferieProfile?: Record<string, unknown> | null;
 		themeFiles?: ThemeFile[];
 		metricSettings?: MetricSettingsMap;
@@ -164,7 +164,7 @@
 	let handoffPhase = $state<'intro' | 'content'>('content');
 
 	/* ── Reise-state ────────────────────────────────────── */
-	let tripListsState = $state<import('./TripListsPanel.svelte').ThemeList[]>(tripLists);
+	let tripListsState = $state<import('./trip-api').ThemeList[]>(tripLists);
 
 	/* ── Archive redirect (from chat tab) ──────────────── */
 	let archiveRedirect = $state<{ name: string; emoji?: string | null } | null>(null);

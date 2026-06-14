@@ -13,12 +13,18 @@
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { fetchRawTimeseries, buildPeriods } from '$lib/utils/weather';
+	import { buildPeriods } from '$lib/utils/weather';
 	import DateInput from '$lib/components/ui/DateInput.svelte';
 	import TripDayCalendar from '../TripDayCalendar.svelte';
 	import TripHealthStats from '../TripHealthStats.svelte';
 	import TripBudget from '../TripBudget.svelte';
-	import type { FerieTrip } from '../FerieDashboard.svelte';
+	import {
+		tripApi,
+		type TripApi,
+		type FerieTrip,
+		type DiaryWeather,
+		type DiaryEntry
+	} from '../trip-api';
 
 	interface DayEntry {
 		iso: string;
@@ -37,12 +43,14 @@
 		trips: FerieTrip[];
 		gapCount: number;
 		onNavigate: (view: 'rammer' | 'reiser' | 'gjennomfor') => void;
+		api?: TripApi;
 	}
 
 	let {
 		themeId, themeEmoji = null,
 		startDate, endDate, days, trips, gapCount,
-		onNavigate
+		onNavigate,
+		api = tripApi
 	}: Props = $props();
 
 	/* ── Hjelpefunksjoner ──────────────────────────────── */
@@ -72,18 +80,6 @@
 	}
 
 	/* ── Dagbok-tilstand ───────────────────────────────── */
-	interface DiaryWeather {
-		emoji?: string;
-		temp?: number;
-		symbol?: string;
-	}
-	interface DiaryEntry {
-		date: string;
-		content: string;
-		place?: string;
-		weather?: DiaryWeather;
-	}
-
 	let diaryEntries = $state<DiaryEntry[]>([]);
 	let diaryLoading = $state(false);
 	let diaryDate = $state('');
@@ -117,11 +113,8 @@
 	async function loadDiary() {
 		diaryLoading = true;
 		try {
-			const res = await fetch(`/api/tema/${themeId}/ferie/diary`);
-			if (res.ok) {
-				const data = (await res.json()) as { entries: DiaryEntry[] };
-				diaryEntries = data.entries ?? [];
-			}
+			const entries = await api.getDiary(themeId);
+			if (entries) diaryEntries = entries;
 		} catch {
 			// best-effort
 		} finally {
@@ -139,16 +132,12 @@
 		diaryFetchingWx = true;
 		diaryError = '';
 		try {
-			const geoRes = await fetch(
-				`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(diaryPlace)}&format=json&limit=1`,
-				{ headers: { 'Accept-Language': 'nb,en' } }
-			);
-			const geo = (await geoRes.json()) as Array<{ lat: string; lon: string }>;
-			if (!geo.length) {
+			const geo = await api.geocode(diaryPlace);
+			if (!geo) {
 				diaryError = 'Fant ikke stedet.';
 				return;
 			}
-			const ts = await fetchRawTimeseries(parseFloat(geo[0].lat), parseFloat(geo[0].lon));
+			const ts = await api.getMetForecast(geo.lat, geo.lon);
 			if (!ts) {
 				diaryError = 'Fikk ikke værdata.';
 				return;
@@ -173,17 +162,13 @@
 		diarySaving = true;
 		diaryError = '';
 		try {
-			const res = await fetch(`/api/tema/${themeId}/ferie/diary`, {
-				method: 'PUT',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					date: diaryDate,
-					content: diaryText,
-					place: diaryPlace,
-					weather: diaryWeather ?? undefined
-				})
+			const ok = await api.putDiaryEntry(themeId, {
+				date: diaryDate,
+				content: diaryText,
+				place: diaryPlace,
+				weather: diaryWeather ?? undefined
 			});
-			if (!res.ok) throw new Error('save failed');
+			if (!ok) throw new Error('save failed');
 			await loadDiary();
 		} catch {
 			diaryError = 'Klarte ikke lagre dagboknotat.';
@@ -202,11 +187,7 @@
 
 	async function deleteDiaryEntry(date: string) {
 		try {
-			await fetch(`/api/tema/${themeId}/ferie/diary`, {
-				method: 'PUT',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ date })
-			});
+			await api.putDiaryEntry(themeId, { date });
 			await loadDiary();
 			if (diaryDate === date) loadFormForDate(date);
 		} catch {
@@ -332,15 +313,15 @@
 
 <section class="ferie-dash">
 	<h3>Dag-for-dag</h3>
-	<TripDayCalendar {themeEmoji} startDate={startDate} endDate={endDate} />
+	<TripDayCalendar {themeEmoji} startDate={startDate} endDate={endDate} {api} />
 </section>
 <section class="ferie-dash">
 	<h3>Trening &amp; helse</h3>
-	<TripHealthStats {themeId} startDate={startDate} endDate={endDate} />
+	<TripHealthStats {themeId} startDate={startDate} endDate={endDate} {api} />
 </section>
 <section class="ferie-dash">
 	<h3>Økonomi</h3>
-	<TripBudget {themeId} startDate={startDate} endDate={endDate} />
+	<TripBudget {themeId} startDate={startDate} endDate={endDate} {api} />
 </section>
 
 {#if trips.some((t) => t.linkedThemeId)}

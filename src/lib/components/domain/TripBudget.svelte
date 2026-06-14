@@ -7,36 +7,23 @@
     endDate     – turens sluttdato (YYYY-MM-DD)
 -->
 <script lang="ts">
-	interface Account {
-		id: string;
-		name: string | null;
-	}
-
-	interface Transaction {
-		id: string;
-		date: string;
-		accountId: string | null;
-		amount: number;
-		description: string;
-		category: string;
-		label: string | null;
-		emoji: string | null;
-	}
+	import { tripApi, type TripApi, type BankAccount, type Transaction } from './trip-api';
 
 	interface Props {
 		themeId: string;
 		startDate: string;
 		endDate: string;
 		accountIds?: string[];
+		api?: TripApi;
 	}
 
-	let { themeId, startDate, endDate, accountIds }: Props = $props();
+	let { themeId, startDate, endDate, accountIds, api = tripApi }: Props = $props();
 
 	// ── State ──────────────────────────────────────────────
 	type Tab = 'tur' | 'søk';
 	let activeTab = $state<Tab>('tur');
 
-	let accounts = $state<Account[]>([]);
+	let accounts = $state<BankAccount[]>([]);
 	let selectedAccountId = $state<string>('');  // '' = all
 	let selectedCategory = $state<string>('');  // '' = all categories
 
@@ -68,15 +55,14 @@
 	async function loadTur() {
 		turLoading = true;
 		try {
-			const p = new URLSearchParams({ from: startDate, to: endDate });
-			if (accountIds && accountIds.length > 0) {
-				p.set('accountIds', accountIds.join(','));
-			} else if (selectedAccountId) {
-				p.set('accountIds', selectedAccountId);
-			}
-			const res = await fetch(`/api/transactions?${p}`);
-			if (!res.ok) return;
-			const data = await res.json() as { transactions: Transaction[]; totalSpent: number };
+			const filterIds =
+				accountIds && accountIds.length > 0
+					? accountIds
+					: selectedAccountId
+						? [selectedAccountId]
+						: undefined;
+			const data = await api.getTransactions({ from: startDate, to: endDate, accountIds: filterIds });
+			if (!data) return;
 			turTransactions = data.transactions;
 			turTotal = data.totalSpent;
 			turLoaded = true;
@@ -93,34 +79,31 @@
 	// ── Search ─────────────────────────────────────────────
 	async function loadAccounts() {
 		try {
-			const res = await fetch('/api/accounts');
-			if (res.ok) {
-				const data = (await res.json()) as { accounts: Account[] };
-				accounts = data.accounts || [];
-			}
+			accounts = await api.getAccounts();
 		} catch {
 			// Silently fail - accounts are optional
 		}
 	}
-	
+
 	async function runSearch() {
 		const q = searchText.trim();
 		if (!q && !searchFrom) return;
 		searching = true;
 		searchDone = false;
 		try {
-			const p = new URLSearchParams();
-			if (q) p.set('search', q);
-			if (searchFrom) p.set('from', searchFrom);
-			if (searchTo) p.set('to', searchTo || new Date().toISOString().slice(0, 10));
-			if (accountIds && accountIds.length > 0) {
-				p.set('accountIds', accountIds.join(','));
-			} else if (selectedAccountId) {
-				p.set('accountIds', selectedAccountId);
-			}
-			const res = await fetch(`/api/transactions?${p}`);
-			if (!res.ok) return;
-			const data = await res.json() as { transactions: Transaction[]; totalSpent: number };
+			const filterIds =
+				accountIds && accountIds.length > 0
+					? accountIds
+					: selectedAccountId
+						? [selectedAccountId]
+						: undefined;
+			const data = await api.getTransactions({
+				search: q || undefined,
+				from: searchFrom || undefined,
+				to: searchTo || undefined,
+				accountIds: filterIds
+			});
+			if (!data) return;
 			searchResults = data.transactions;
 			searchTotal = data.totalSpent;
 			searchDone = true;
@@ -576,7 +559,7 @@
 		background: var(--tp-accent);
 		border: none;
 		border-radius: 8px;
-		color: #fff;
+		color: var(--trip-text-bright, #fff);
 		font-size: 0.82rem;
 		font-weight: 600;
 		padding: 8px 16px;

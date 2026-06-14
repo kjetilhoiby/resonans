@@ -114,8 +114,8 @@
 	let dashboardCachedAt = $state<string | null>(null);
 
 	/* ── Reise/Ferie state ─────────────────────────────── */
-	let currentTripProfile = $state(tripProfile as import('../TripDashboard.svelte').TripProfile | null);
-	let currentFerieProfile = $state(ferieProfile as import('../FerieDashboard.svelte').FerieProfile | null);
+	let currentTripProfile = $state(tripProfile as import('../trip-api').TripProfile | null);
+	let currentFerieProfile = $state(ferieProfile as import('../trip-api').FerieProfile | null);
 
 	/* ── Signal state ──────────────────────────────────── */
 	let signalContracts = $state<ThemeSignalContract[]>([]);

@@ -4,30 +4,15 @@
   Hvert element kan krysses av, ha dato (itinerary), og notater.
 -->
 <script lang="ts">
-	export interface ThemeListItem {
-		id: string;
-		text: string;
-		checked: boolean;
-		notes?: string | null;
-		itemDate?: string | null;
-		sortOrder: number;
-	}
-
-	export interface ThemeList {
-		id: string;
-		title: string;
-		emoji: string;
-		listType: string;
-		sortOrder: number;
-		items: ThemeListItem[];
-	}
+	import { tripApi, type TripApi, type ThemeList, type ThemeListItem } from './trip-api';
 
 	interface Props {
 		themeId: string;
 		lists: ThemeList[];
+		api?: TripApi;
 	}
 
-	let { themeId, lists = $bindable([]) }: Props = $props();
+	let { themeId, lists = $bindable([]), api = tripApi }: Props = $props();
 
 	import ShareSheet from '$lib/components/domain/share/ShareSheet.svelte';
 	import DateInput from '$lib/components/ui/DateInput.svelte';
@@ -73,13 +58,12 @@
 		createSaving = true;
 		createError = '';
 		try {
-			const res = await fetch(`/api/tema/${themeId}/lists`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ title: newListTitle.trim(), emoji: newListEmoji, listType: newListType })
+			const data = await api.createList(themeId, {
+				title: newListTitle.trim(),
+				emoji: newListEmoji,
+				listType: newListType
 			});
-			if (!res.ok) throw new Error('create_failed');
-			const data: ThemeList = await res.json();
+			if (!data) throw new Error('create_failed');
 			lists = [...lists, { ...data, items: [] }];
 			creatingList = false;
 		} catch {
@@ -115,13 +99,11 @@
 		addItemSaving = true;
 		addItemError = '';
 		try {
-			const res = await fetch(`/api/tema/${themeId}/lists/${listId}/items`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ text: newItemText.trim(), itemDate: newItemDate || null })
+			const item = await api.createListItem(themeId, listId, {
+				text: newItemText.trim(),
+				itemDate: newItemDate || null
 			});
-			if (!res.ok) throw new Error('add_failed');
-			const item: ThemeListItem = await res.json();
+			if (!item) throw new Error('add_failed');
 			lists = lists.map((l) =>
 				l.id === listId ? { ...l, items: [...l.items, item] } : l
 			);
@@ -143,11 +125,7 @@
 				: l
 		);
 		try {
-			await fetch(`/api/tema/${themeId}/lists/${listId}/items/${item.id}`, {
-				method: 'PATCH',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ checked: newChecked })
-			});
+			await api.updateListItem(themeId, listId, item.id, { checked: newChecked });
 		} catch {
 			// Revert on failure
 			lists = lists.map((l) =>
@@ -163,14 +141,14 @@
 		lists = lists.map((l) =>
 			l.id === listId ? { ...l, items: l.items.filter((i) => i.id !== itemId) } : l
 		);
-		await fetch(`/api/tema/${themeId}/lists/${listId}/items/${itemId}`, { method: 'DELETE' });
+		await api.deleteListItem(themeId, listId, itemId);
 	}
 
 	/* ── Slett liste ──────────────────────────────── */
 	async function deleteList(listId: string) {
 		if (!confirm('Slett listen og alle elementene i den?')) return;
 		lists = lists.filter((l) => l.id !== listId);
-		await fetch(`/api/tema/${themeId}/lists/${listId}`, { method: 'DELETE' });
+		await api.deleteList(themeId, listId);
 	}
 
 	/* ── Helpers ──────────────────────────────────── */
@@ -467,7 +445,7 @@
 		flex-shrink: 0;
 	}
 	.tl-item:hover .tl-item-delete { opacity: 1; }
-	.tl-item-delete:hover { color: #e07070; }
+	.tl-item-delete:hover { color: var(--error-text); }
 
 	/* Add item form */
 	.tl-add-item-form {
@@ -525,18 +503,18 @@
 		padding: 4px 6px;
 		border-radius: 4px;
 	}
-	.tl-delete-list-btn:hover { color: #e07070; }
+	.tl-delete-list-btn:hover { color: var(--error-text); }
 	.tl-share-list-btn {
 		background: transparent;
-		border: 1px solid #444;
-		color: #ccc;
+		border: 1px solid var(--trip-btn-border, #444);
+		color: var(--trip-btn-text, #ccc);
 		padding: 6px 12px;
 		border-radius: 6px;
 		font-size: 13px;
 		cursor: pointer;
 		margin-right: 8px;
 	}
-	.tl-share-list-btn:hover { border-color: #7c8ef5; color: #fff; }
+	.tl-share-list-btn:hover { border-color: var(--accent-light); color: var(--trip-text-bright, #fff); }
 
 	/* Create form */
 	.tl-create-form {
@@ -594,7 +572,7 @@
 
 	.tl-error {
 		font-size: 0.78rem;
-		color: #e07070;
+		color: var(--error-text);
 		margin: 0;
 	}
 </style>

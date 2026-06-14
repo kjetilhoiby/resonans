@@ -16,37 +16,24 @@
 	import SectionLabel from '../ui/SectionLabel.svelte';
 	import ShareSheet from './share/ShareSheet.svelte';
 	import type { Map as MapLibreMap } from 'maplibre-gl';
-
-	export interface OvernightStay {
-		id: string;
-		name: string;
-		checkIn: string;
-		checkOut: string;
-		refNumber?: string;
-		lockCode?: string;
-		address?: string;
-		notes?: string;
-	}
-
-	export interface TripProfile {
-		destination?: string;
-		country?: string;
-		lat?: number;
-		lng?: number;
-		startDate?: string;
-		endDate?: string;
-		accountIds?: string[];
-		overnightStays?: OvernightStay[];
-	}
+	import {
+		tripApi,
+		type TripApi,
+		type TripProfile,
+		type OvernightStay,
+		type BankAccount,
+		type DayForecast
+	} from './trip-api';
 
 	interface Props {
 		themeId: string;
 		themeEmoji?: string | null;
 		tripProfile: TripProfile | null;
 		onProfileSaved?: (profile: TripProfile) => void;
+		api?: TripApi;
 	}
 
-	let { themeId, themeEmoji = null, tripProfile = $bindable(null), onProfileSaved }: Props = $props();
+	let { themeId, themeEmoji = null, tripProfile = $bindable(null), onProfileSaved, api = tripApi }: Props = $props();
 
 	let positionShareOpen = $state(false);
 	let activeSessionId = $state<string | null>(null);
@@ -59,9 +46,8 @@
 		positionShareError = '';
 		positionShareLoading = true;
 		try {
-			const res = await fetch('/api/apps/live-session');
-			if (!res.ok) throw new Error('kunne ikke hente sesjon');
-			const data = await res.json();
+			const data = await api.getLiveSession();
+			if (!data) throw new Error('kunne ikke hente sesjon');
 			if (!data.active || !data.sessionId) {
 				positionShareError = 'Ingen aktiv tur. Start sporing i appen for å dele live posisjon.';
 				return;
@@ -81,10 +67,6 @@
 	let saveError = $state('');
 
 	// Available bank accounts
-	interface BankAccount {
-		id: string;
-		name: string | null;
-	}
 	let availableAccounts = $state<BankAccount[]>([]);
 
 	// Editable form fields
@@ -107,11 +89,7 @@
 	async function fetchAccounts() {
 		if (availableAccounts.length > 0) return; // Already loaded
 		try {
-			const res = await fetch('/api/accounts');
-			if (res.ok) {
-				const data = (await res.json()) as { accounts: BankAccount[] };
-				availableAccounts = data.accounts || [];
-			}
+			availableAccounts = await api.getAccounts();
 		} catch {
 			// Silently fail - account selection is optional
 		}
@@ -147,18 +125,11 @@
 		let lng = tripProfile?.lng;
 		const destChanged = editDestination !== tripProfile?.destination;
 		if (editDestination && destChanged) {
-			try {
-				const geoRes = await fetch(
-					`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(editDestination)}&format=json&limit=1`,
-					{ headers: { 'Accept-Language': 'nb,en' } }
-				);
-				const geoData: Array<{ lat: string; lon: string }> = await geoRes.json();
-				if (geoData.length > 0) {
-					lat = parseFloat(geoData[0].lat);
-					lng = parseFloat(geoData[0].lon);
-				}
-			} catch {
-				// geocoding best-effort; proceed without coordinates
+			// geocoding best-effort; proceed without coordinates
+			const geo = await api.geocode(editDestination);
+			if (geo) {
+				lat = geo.lat;
+				lng = geo.lon;
 			}
 		}
 
@@ -173,12 +144,8 @@
 		};
 
 		try {
-			const res = await fetch(`/api/tema/${themeId}/trip`, {
-				method: 'PUT',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(updated)
-			});
-			if (!res.ok) throw new Error('Lagring feilet');
+			const ok = await api.saveTripProfile(themeId, updated);
+			if (!ok) throw new Error('Lagring feilet');
 			tripProfile = updated;
 			if (weather === null && updated.lat !== undefined && updated.lng !== undefined) {
 				void fetchWeather(updated.lat, updated.lng);
@@ -197,15 +164,6 @@
 		temp: number;
 		symbolCode: string;
 		windspeed: number;
-        }
-
-        interface DayForecast {
-                date: string;          // YYYY-MM-DD
-                symbolCode: string;
-                tempMin: number;
-                tempMax: number;
-                wind: number;          // max m/s for the day
-                precipitation: number; // total mm
         }
 
         let weather = $state<WeatherData | null>(null);
@@ -230,20 +188,8 @@
                 weatherLoading = true;
                 weatherError = '';
                 try {
-                        const url = `https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${lat.toFixed(4)}&lon=${lng.toFixed(4)}`;
-                        const res = await fetch(url, {
-                                headers: { 'User-Agent': 'resonans/1.0 https://github.com/kjetilhoiby/resonans' }
-                        });
-                        if (!res.ok) throw new Error('weather_fetch');
-                        const data = await res.json();
-                        const timeseries: Array<{
-                                time: string;
-                                data: {
-                                        instant: { details: { air_temperature: number; wind_speed: number } };
-                                        next_1_hours?: { summary?: { symbol_code?: string }; details?: { precipitation_amount?: number } };
-                                        next_6_hours?: { summary?: { symbol_code?: string }; details?: { air_temperature_max?: number; air_temperature_min?: number; precipitation_amount?: number } };
-                                };
-                        }> = data.properties.timeseries;
+                        const timeseries = await api.getMetForecast(lat, lng);
+                        if (!timeseries) throw new Error('weather_fetch');
 
                         // Current conditions from first entry
                         const current = timeseries[0];
@@ -506,6 +452,7 @@
 					startDate={tripProfile.startDate}
 					endDate={tripProfile.endDate}
 					dailyWeather={dailyForecast}
+					{api}
 				/>
 			</div>
 		{/if}
@@ -517,13 +464,14 @@
 					startDate={tripProfile.startDate}
 					endDate={tripProfile.endDate}
 					accountIds={tripProfile.accountIds}
+					{api}
 				/>
 			</div>
 		{/if}
 
 		{#if tripProfile?.startDate && tripProfile?.endDate}
 			<div class="trip-health-section">
-				<TripHealthStats themeId={themeId} />
+				<TripHealthStats themeId={themeId} {api} />
 			</div>
 		{/if}
 
@@ -653,6 +601,22 @@
 
 <style>
 	.trip-dash {
+		/* Reise-domenets palett — reskin-hook. Brukes som var(--trip-*, fallback)
+		   i Trip- og Ferie-komponentene (fallback = samme verdi). */
+		--trip-btn-border: #444;
+		--trip-btn-text: #ccc;
+		--trip-text-bright: #fff;
+		--trip-precip: #5b9bd8;
+		--trip-card-bg: #0f1419;
+		--trip-card-border: #1a1f2e;
+		--trip-border-strong: #2d3748;
+		--trip-text-emphasis: #e2e8f0;
+		--trip-text-strong: #cbd5e1;
+		--trip-text-secondary: #94a3b8;
+		--trip-text-muted: #64748b;
+		--trip-text-faint: #475569;
+		--trip-danger: #f87171;
+
 		display: flex;
 		flex-direction: column;
 		gap: 0;
@@ -810,7 +774,7 @@
         .tfd-min { color: var(--tp-text-muted); }
         .tfd-precip {
                 font-size: 0.62rem;
-                color: #5b9bd8;
+                color: var(--trip-precip, #5b9bd8);
         }
         .tfd-wind {
                 font-size: 0.62rem;
@@ -1011,7 +975,7 @@
 		align-self: flex-end;
 		margin-bottom: 1px;
 	}
-	.stay-remove-btn:hover { border-color: #e07070; color: #e07070; }
+	.stay-remove-btn:hover { border-color: var(--error-text); color: var(--error-text); }
 
 	/* Actions */
 	.trip-edit-actions {
@@ -1033,14 +997,14 @@
 	.trip-share-position-btn {
 		margin-top: 12px;
 		background: transparent;
-		border: 1px solid #444;
-		color: #ccc;
+		border: 1px solid var(--trip-btn-border, #444);
+		color: var(--trip-btn-text, #ccc);
 		padding: 6px 12px;
 		border-radius: 6px;
 		font-size: 13px;
 		cursor: pointer;
 	}
-	.trip-share-position-btn:hover { border-color: #7c8ef5; color: #fff; }
+	.trip-share-position-btn:hover { border-color: var(--accent-light); color: var(--trip-text-bright, #fff); }
 	.trip-share-position-btn:disabled { opacity: 0.6; cursor: default; }
 	.trip-share-position-error {
 		margin-top: 6px;
@@ -1059,7 +1023,7 @@
 	}
 	.trip-save-error {
 		font-size: 0.8rem;
-		color: #e07070;
+		color: var(--error-text);
 		margin: 0;
 	}
 </style>

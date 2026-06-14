@@ -11,27 +11,7 @@
 	import ChecklistGroupRow from '$lib/components/ui/ChecklistGroupRow.svelte';
 	import TaskContextMenu from '$lib/components/ui/TaskContextMenu.svelte';
 	import MentionAutocomplete from '$lib/components/ui/MentionAutocomplete.svelte';
-	import { patchItem, deleteItem as apiDeleteItem, addItems } from '$lib/utils/checklist-api';
-
-	interface ChecklistItem {
-		id: string;
-		text: string;
-		checked: boolean;
-		sortOrder: number;
-		parentId?: string | null;
-		skippedAt?: string | null;
-		snoozedToDate?: string | null;
-		metadata?: Record<string, unknown> | null;
-	}
-
-	interface DayForecast {
-		date: string;
-		symbolCode: string;
-		tempMin: number;
-		tempMax: number;
-		wind: number;
-		precipitation: number;
-	}
+	import { tripApi, type TripApi, type ChecklistItem, type DayForecast } from './trip-api';
 
 	interface DayEntry {
 		isoDate: string;
@@ -47,9 +27,10 @@
 		startDate: string; // YYYY-MM-DD
 		endDate: string;   // YYYY-MM-DD
 		dailyWeather?: DayForecast[];
+		api?: TripApi;
 	}
 
-	let { themeEmoji, startDate, endDate, dailyWeather = [] }: Props = $props();
+	let { themeEmoji, startDate, endDate, dailyWeather = [], api = tripApi }: Props = $props();
 
 	const weatherByDate = $derived(new Map(dailyWeather.map((d) => [d.date, d])));
 
@@ -124,9 +105,8 @@
 		if (contexts.length === 0) { loading = false; return; }
 
 		try {
-			const res = await fetch(`/api/checklists?contexts=${encodeURIComponent(contexts.join(','))}`);
-			if (!res.ok) return;
-			const rows = await res.json() as Array<{ id: string; context: string | null; items: ChecklistItem[] }>;
+			const rows = await api.getChecklists(contexts);
+			if (!rows) return;
 
 			// Build lookup by context
 			const byContext = new Map(rows.map((r) => [r.context, r]));
@@ -143,17 +123,12 @@
 	async function ensureChecklist(day: DayEntry): Promise<{ id: string; items: ChecklistItem[] } | null> {
 		if (day.checklist) return day.checklist;
 
-		const res = await fetch('/api/checklists', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				title: `Dag ${day.isoDate}`,
-				emoji: themeEmoji ?? '🗺️',
-				context: day.dayContext
-			})
+		const created = await api.createChecklist({
+			title: `Dag ${day.isoDate}`,
+			emoji: themeEmoji ?? '🗺️',
+			context: day.dayContext
 		});
-		if (!res.ok) return null;
-		const created = await res.json() as { id: string; title: string; items: ChecklistItem[] };
+		if (!created) return null;
 
 		days = days.map((d) =>
 			d.isoDate === day.isoDate
@@ -171,7 +146,7 @@
 			const cl = await ensureChecklist(day);
 			if (!cl) return;
 			const currentItems = days.find((d) => d.isoDate === day.isoDate)?.checklist?.items ?? [];
-			const created = await addItems(cl.id, text, currentItems.length) as ChecklistItem[] | null;
+			const created = await api.addChecklistItems(cl.id, text, currentItems.length);
 			if (!created) return;
 			updateDayItems(day.isoDate, items => [...items, ...created]);
 			composerText = { ...composerText, [day.isoDate]: '' };
@@ -194,7 +169,7 @@
 		toggleSaving = { ...toggleSaving, [key]: true };
 		updateDayItems(day.isoDate, items => items.map(i => i.id === item.id ? { ...i, checked: !i.checked } : i));
 		try {
-			const ok = await patchItem(day.checklist.id, item.id, { checked: !item.checked });
+			const ok = await api.patchChecklistItem(day.checklist.id, item.id, { checked: !item.checked });
 			if (!ok) updateDayItems(day.isoDate, items => items.map(i => i.id === item.id ? { ...i, checked: item.checked } : i));
 		} finally {
 			toggleSaving = { ...toggleSaving, [key]: false };
@@ -232,7 +207,7 @@
 		editingText = '';
 		if (!text || !day.checklist) return;
 		updateDayItems(day.isoDate, items => items.map(i => i.id === itemId ? { ...i, text } : i));
-		await patchItem(day.checklist.id, itemId, { text });
+		await api.patchChecklistItem(day.checklist.id, itemId, { text });
 	}
 
 	async function skipItem() {
@@ -243,7 +218,7 @@
 		contextMenuItem = null;
 		contextMenuRect = null;
 		updateDayItems(day.isoDate, items => items.map(i => i.id === item.id ? { ...i, skippedAt: skipped ? new Date().toISOString() : null } : i));
-		await patchItem(day.checklist!.id, item.id, { skippedAt: skipped ? new Date().toISOString() : null });
+		await api.patchChecklistItem(day.checklist!.id, item.id, { skippedAt: skipped ? new Date().toISOString() : null });
 	}
 
 	async function snoozeItem(targetDate: string) {
@@ -253,7 +228,7 @@
 		contextMenuItem = null;
 		contextMenuRect = null;
 		updateDayItems(day.isoDate, items => items.filter(i => i.id !== itemId));
-		await patchItem(day.checklist!.id, itemId, { snoozedToDate: targetDate });
+		await api.patchChecklistItem(day.checklist!.id, itemId, { snoozedToDate: targetDate });
 	}
 
 	function toggleParentExpansion(parentId: string) {
@@ -266,7 +241,7 @@
 	function makeAddChild(day: DayEntry) {
 		return async (parentId: string, text: string) => {
 			if (!day.checklist) return;
-			const created = await addItems(day.checklist.id, text, day.checklist.items.length, parentId) as ChecklistItem[] | null;
+			const created = await api.addChecklistItems(day.checklist.id, text, day.checklist.items.length, parentId);
 			if (!created) return;
 			updateDayItems(day.isoDate, items => [...items, ...created]);
 		};
@@ -280,7 +255,7 @@
 		contextMenuRect = null;
 		if (!day.checklist) return;
 		updateDayItems(day.isoDate, items => items.filter(i => i.id !== itemId));
-		await apiDeleteItem(day.checklist.id, itemId);
+		await api.deleteChecklistItem(day.checklist.id, itemId);
 	}
 </script>
 
@@ -497,7 +472,7 @@
 	.tdc-wx-temps { display: flex; gap: 2px; font-weight: 600; }
 	.tdc-wx-max { color: var(--tp-text); }
 	.tdc-wx-min { color: var(--tp-text-muted); }
-	.tdc-wx-precip { color: #5b9bd8; }
+	.tdc-wx-precip { color: var(--trip-precip, #5b9bd8); }
 	.tdc-wx-wind { color: var(--tp-text-muted); }
 
 	.tdc-day-body {

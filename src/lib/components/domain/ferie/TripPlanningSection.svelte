@@ -14,8 +14,14 @@
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { fetchRawTimeseries, buildPeriods } from '$lib/utils/weather';
-	import type { FerieMember, FerieTrip, FerieTripStop } from '../FerieDashboard.svelte';
+	import { buildPeriods } from '$lib/utils/weather';
+	import {
+		tripApi,
+		type TripApi,
+		type FerieMember,
+		type FerieTrip,
+		type FerieTripStop
+	} from '../trip-api';
 	import DateInput from '$lib/components/ui/DateInput.svelte';
 
 	interface Props {
@@ -25,9 +31,10 @@
 		startDate: string;
 		endDate: string;
 		onTripsChanged?: (trips: FerieTrip[]) => void;
+		api?: TripApi;
 	}
 
-	let { themeId, members, trips = $bindable(), startDate, endDate, onTripsChanged }: Props = $props();
+	let { themeId, members, trips = $bindable(), startDate, endDate, onTripsChanged, api = tripApi }: Props = $props();
 
 	/* ── Hjelpefunksjoner ──────────────────────────────── */
 	function pad(n: number): string {
@@ -94,13 +101,13 @@
 		promoting = t.id;
 		saveError = '';
 		try {
-			const res = await fetch(`/api/tema/${themeId}/ferie/promote-trip`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ label: t.label, place: t.place, startDate: t.startDate, endDate: t.endDate })
+			const data = await api.promoteTrip(themeId, {
+				label: t.label,
+				place: t.place,
+				startDate: t.startDate,
+				endDate: t.endDate
 			});
-			if (!res.ok) throw new Error('promote failed');
-			const data = (await res.json()) as { themeId: string };
+			if (!data) throw new Error('promote failed');
 			updateTrip(t.id, { linkedThemeId: data.themeId });
 		} catch {
 			saveError = 'Klarte ikke å lage reise-tema. Prøv igjen.';
@@ -110,24 +117,12 @@
 	}
 
 	/* ── Geocoding og vær ──────────────────────────────── */
-	async function geocodePlace(place: string): Promise<{ lat: number; lon: number } | null> {
-		try {
-			const res = await fetch(
-				`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(place)}&format=json&limit=1`,
-				{ headers: { 'Accept-Language': 'nb,en' } }
-			);
-			const geo = (await res.json()) as Array<{ lat: string; lon: string }>;
-			if (geo.length > 0) return { lat: parseFloat(geo[0].lat), lon: parseFloat(geo[0].lon) };
-		} catch { /* best-effort */ }
-		return null;
-	}
-
 	const WEATHER_TTL_MS = 6 * 60 * 60 * 1000; // 6 timer
 
 	async function fetchStopWeather(stop: FerieTripStop): Promise<boolean> {
 		if (!stop.lat || !stop.lon) return false;
 		try {
-			const ts = await fetchRawTimeseries(stop.lat, stop.lon);
+			const ts = await api.getMetForecast(stop.lat, stop.lon);
 			if (!ts) return false;
 			const todayStr = toISO(new Date());
 			const repDate = (todayStr >= stop.startDate && todayStr <= stop.endDate) ? todayStr : stop.startDate;
@@ -181,7 +176,7 @@
 			return;
 		}
 		stopGeocoding = tripId;
-		const geo = await geocodePlace(place);
+		const geo = await api.geocode(place);
 		const stop: FerieTripStop = {
 			id: crypto.randomUUID(),
 			place,

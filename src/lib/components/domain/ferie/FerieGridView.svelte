@@ -12,10 +12,17 @@
     onWindowChange / onScheduleSave – callbacks for mutasjoner
 -->
 <script lang="ts">
-	import type { FerieMember, FerieCell, FerieTrip } from '../FerieDashboard.svelte';
+	import {
+		tripApi,
+		type TripApi,
+		type FerieMember,
+		type FerieCell,
+		type FerieTrip,
+		type FerieRole,
+		type PersonRow
+	} from '../trip-api';
 	import DateInput from '$lib/components/ui/DateInput.svelte';
 
-	type FerieRole = 'voksen' | 'barn';
 	type StatusMeta = { value: string; label: string; emoji: string; short: string; role: FerieRole; cls: string };
 
 	interface DayEntry {
@@ -31,13 +38,6 @@
 		dateRange: string;
 		days: DayEntry[];
 		members: Record<string, { gaps: number; covered: number; fills: number; trips: number; off: number; total: number }>;
-	}
-
-	interface PersonRow {
-		id: string;
-		name: string;
-		kind: string;
-		avatarEmoji?: string | null;
 	}
 
 	interface Props {
@@ -66,6 +66,7 @@
 		onToggleMemberRole: (id: string) => void;
 		onSetEditing: (value: boolean) => void;
 		onSetEditMembers: (value: boolean) => void;
+		api?: TripApi;
 	}
 
 	let {
@@ -75,7 +76,8 @@
 		onStartDateChange, onEndDateChange, onNoteChange,
 		onScheduleSave, onSetCell, onApplyBulk,
 		onAddPerson, onAddManualMember, onRemoveMember, onToggleMemberRole,
-		onSetEditing, onSetEditMembers
+		onSetEditing, onSetEditMembers,
+		api = tripApi
 	}: Props = $props();
 
 	/* ── Status-definisjoner ────────────────────────────── */
@@ -216,11 +218,7 @@
 	async function fetchPersons() {
 		if (personsLoaded) return;
 		try {
-			const res = await fetch('/api/persons');
-			if (res.ok) {
-				const data = (await res.json()) as { persons: PersonRow[] };
-				availablePersons = data.persons ?? [];
-			}
+			availablePersons = await api.getPersons();
 		} catch {
 			// valgfritt
 		} finally {

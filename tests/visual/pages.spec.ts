@@ -24,6 +24,14 @@ test.describe('Helse-tema', () => {
 	});
 });
 
+test.describe('Ferie-tema', () => {
+	test('feriedashboardet rendres', async ({ page }) => {
+		await page.goto('/tema/Sommerferie 2026');
+		await page.waitForLoadState('networkidle');
+		await expect(page).toHaveScreenshot('tema-ferie.png', { fullPage: true });
+	});
+});
+
 test.describe('Bøker-tema', () => {
 	test('bokbiblioteket rendres', async ({ page }) => {
 		await page.goto('/tema/bøker');
@@ -58,6 +66,7 @@ const designSections = [
 	'kavalkade',
 	'hjem',
 	'boker',
+	'reise',
 	'sheets',
 	'modaler',
 	'lab'

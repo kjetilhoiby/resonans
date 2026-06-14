@@ -13,6 +13,7 @@ const PAGES = [
 	{ name: 'tema-helse', url: '/tema/helse' },
 	{ name: 'tema-okonomi', url: '/tema/økonomi' },
 	{ name: 'tema-boker', url: '/tema/bøker' },
+	{ name: 'tema-ferie', url: '/tema/Sommerferie 2026' },
 	{ name: 'design', url: '/design' },
 	{ name: 'plan-mal', url: '/plan/mal' },
 	{ name: 'plan-oppgaver', url: '/plan/oppgaver' },
