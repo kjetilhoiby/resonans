@@ -49,34 +49,43 @@ test.describe('Økonomi-tema', () => {
 });
 
 // Per-seksjon-screenshots: lokaliserte diffs + ingen terskel-maskering på lang side.
-// Holdes i synk med sections-listen i src/routes/design/+page.svelte.
-const designSections = [
+// Holdes i synk med sections-listene i src/routes/design/+page.svelte (komponenter)
+// og src/routes/design/flater/+page.svelte (komposisjoner). Filnavnet er design-<id>
+// uavhengig av rute, så en seksjon kan flytte rute uten å bytte baseline.
+const komponentSections = [
 	'prinsipper',
 	'typografi',
 	'blokktyper',
+	'oppgaverader',
 	'layout',
 	'knapper',
 	'ikoner',
 	'ringer',
 	'dashboardkort',
+	'utvidbare-kort',
 	'chat',
 	'skjema',
 	'navigasjon',
-	'ukeplan',
-	'kavalkade',
-	'hjem',
-	'boker',
-	'reise',
 	'sheets',
 	'modaler',
 	'lab'
 ];
 
+const flateSections = ['ukeplan', 'kavalkade', 'hjem', 'boker', 'reise'];
+
 test.describe('Design-system', () => {
-	test('alle seksjoner rendres', async ({ page }) => {
+	test('komponent-seksjoner rendres', async ({ page }) => {
 		await page.goto('/design');
 		await page.waitForLoadState('networkidle');
-		for (const id of designSections) {
+		for (const id of komponentSections) {
+			await expect.soft(page.locator(`#${id}`)).toHaveScreenshot(`design-${id}.png`);
+		}
+	});
+
+	test('flate-seksjoner rendres', async ({ page }) => {
+		await page.goto('/design/flater');
+		await page.waitForLoadState('networkidle');
+		for (const id of flateSections) {
 			await expect.soft(page.locator(`#${id}`)).toHaveScreenshot(`design-${id}.png`);
 		}
 	});
