@@ -15,6 +15,7 @@ const PAGES = [
 	{ name: 'tema-boker', url: '/tema/bøker' },
 	{ name: 'tema-ferie', url: '/tema/Sommerferie 2026' },
 	{ name: 'design', url: '/design' },
+	{ name: 'design-flater', url: '/design/flater' },
 	{ name: 'plan-mal', url: '/plan/mal' },
 	{ name: 'plan-oppgaver', url: '/plan/oppgaver' },
 	{ name: 'skjermtid', url: '/skjermtid' },

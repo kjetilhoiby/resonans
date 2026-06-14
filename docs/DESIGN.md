@@ -6,13 +6,21 @@ Appen har en levende komponentkatalog på `/design`. Alle UI-endringer skal bruk
 
 `/design` rendrer **appens faktiske komponenter med mock-data** (Storybook-prinsippet) — aldri gjenskapt markup som etterligner en komponent. Formål: (1) se alle states og varianter samlet, (2) utvikle og tilpasse nye komponenter der før de tas inn i appen, (3) på sikt kunne re-skinne hele appen (f.eks. light mode) ved å bytte tokens — hue-laben under «Ikoner & tema-hue» er forløperen.
 
+**To ruter:**
+- **`/design` — Komponenter:** primitiver (`ui/`) og sammensatte byggeklosser (`composed/`, overlays, sheets, modaler) demoet for sine states/varianter. Tittelen lenker til `/` (tilbake til appen).
+- **`/design/flater` — Komposisjoner:** hele app-skjermer bygget av domene-komponentene (ukeplan, kavalkade, hjem, bøker, reise). Tittelen lenker tilbake til `/design`.
+
+Tommelfingerregel for hvor en ny seksjon hører hjemme: *demoer jeg én komponents states* → Komponenter; *etterligner jeg en hel app-skjerm* → Flater.
+
+**Arkitektur:** Hver seksjon er en egen fil i `src/routes/design/sections/<id>.svelte` (markup + lokal demo-state). Rutene (`+page.svelte`) er tynne komposisjoner som importerer seksjonene og rendrer sidenav + `PageHeader`. Delt chrome-CSS bor i `src/routes/design/design.css`, nestet under `.design-root` (uscopet, fordi seksjonene er egne komponenter — ellers ville Svelte scopet stilene per fil). Begge ruter er public (ingen `+page.server.ts`/`+layout.server.ts`).
+
 **Regler:**
 - En demo skal importere den ekte komponenten og mate den med mock-data — aldri bygge en kopi. Hvis en komponent gjør fetch selv, refaktorer den først med ett av to mønstre: **container/view-splitt** (`DynamicWidget` → `DynamicWidgetView`) eller **injisert API-lag** (`WeekTasks` tar `api: WeekTasksApi`-prop med ekte default; `/design` injiserer mock).
 - Mock-data og fixtures bor i `src/routes/design/mocks.ts` (delt modul) og skal være deterministiske (faste datoer, ingen `Math.random()`, `todayIso` o.l. som props) — `/design` er i visuell regresjon med screenshot per seksjon. Komponenter med evige animasjonsløkker (f.eks. DayWheelCharts `cycle`) må eksponere en av-prop og demoes med den av.
 - Sheets/bottompaneler (`position: fixed`-overlays) demoes i en `.sheet-stage`-ramme: CSS `transform` på rammen gjør den til containing block, så sheeten rendrer inne i rammen i stedet for over hele siden. Se seksjonen «Sheets & paneler».
 - Nye bottompaneler bygger på **`ui/BottomSheet`** (backdrop + fly-inn, radius 24, maks 90dvh/520px) — ikke eget skall. ChecklistSheet og ProcedureSheet bruker den; WidgetConfigSheet (radius 18, intern scroll, handle) og FlowSheet (fokusmodus) har bevisst avvikende skall og migreres når skinnene samkjøres.
 - Komponenter som **ikke er i bruk i appen** hører hjemme i «Lab»-seksjonen nederst, tydelig merket. Når en komponent tas i bruk flyttes demoen opp i riktig seksjon; forkastes den, slettes både demo og komponent.
-- Ny ui-/composed-komponent → legg til demo på `/design` i samme PR.
+- Ny ui-/composed-komponent → legg til en seksjonsfil i `src/routes/design/sections/` og render den på riktig rute (Komponenter eller Flater) i samme PR.
 
 ## Grunnregler
 
