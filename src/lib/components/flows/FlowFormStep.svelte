@@ -72,8 +72,11 @@
 <div class="fs-form" class:fs-focus-form={isFocus}>
 	{#each fields as field (field.id)}
 		<label class="fs-form-field" class:fs-focus-field={isFocus}>
-			{#if !isFocus}
-			<span class="fs-form-label">
+			<!-- Slidere i fokusmodus bruker stegtittel + helperLabels og trenger ingen feltlabel.
+			     Alle andre felttyper (også i fokusmodus) MÅ vise labelen — ellers blir
+			     flerfeltsskjemaer som «Årets beste» en rad anonyme, blanke inputs. -->
+			{#if !isFocus || field.type !== 'slider'}
+			<span class="fs-form-label" class:fs-focus-form-label={isFocus}>
 				{field.label}{#if field.required}<span class="fs-required">*</span>{/if}
 			</span>
 			{/if}
@@ -487,6 +490,13 @@
 	.fs-focus-field {
 		align-items: center;
 		width: 100%;
+	}
+	/* Feltlabel i fokusmodus: venstrestilt over feltet, så flerfeltsskjemaer
+	   (f.eks. «Årets beste») viser hva hver input gjelder. */
+	.fs-focus-form-label {
+		align-self: flex-start;
+		font-size: 0.9rem;
+		color: #aab4c4;
 	}
 
 	/* Focus-mode textarea */

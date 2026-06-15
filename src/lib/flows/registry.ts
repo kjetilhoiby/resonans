@@ -1254,6 +1254,8 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 		trigger: 'manual',
 		focus: true,
 		resumable: true,
+		// Dyp, refleksiv samtale uten verktøybehov — bruk sterkeste modell, ikke hurtigveien.
+		chatModel: 'gpt-5.4',
 		estimatedMinutes: 20,
 		steps: [
 			{
@@ -1275,7 +1277,7 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 							'',
 							'Dette er en samtale, ikke et skjema — brukeren kan snakke så lenge de vil. Ikke se bakover på fjoråret ennå (det kommer som egne steg).',
 							'',
-							'Etter HVER respons: oppdater et selvportrett mellom markørene <status> og </status> — 3–6 linjer i brukerens egne formuleringer om hvem de er nå. Denne blokken lagres som selvangivelsens «Hvem er du i år?»-seksjon.',
+							'Etter HVER respons: oppdater et selvportrett mellom markørene <status> og </status> — 3–6 linjer i brukerens egne formuleringer om hvem de er nå. Blokken er INTERN (skjules for brukeren og lagres som «Hvem er du i år?»-seksjonen). Ikke nevn den, ikke skriv «oppsummering», og ikke gjenta svarene til brukeren tilbake — still heller neste spørsmål.',
 							'',
 							'Når brukeren virker ferdig, si kort at neste steg er å se på hvem de var i fjor. Norsk, varm, nysgjerrig — venn, ikke terapeut.'
 						].join('\n')
@@ -1290,6 +1292,7 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 				buildPrompts: (data) => {
 					const lastYear = typeof data._lastYearAnswers === 'string' ? data._lastYearAnswers : '';
 					const lastLetter = typeof data._lastYearLetter === 'string' ? data._lastYearLetter : '';
+					const kavalkade = typeof data._kavalkadeSummary === 'string' ? data._kavalkadeSummary : '';
 					const naa =
 						typeof data.hvem_naa_lastMessage === 'string'
 							? parseStatusBlock(data.hvem_naa_lastMessage)
@@ -1301,10 +1304,11 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 							naa ? `Slik beskrev de seg selv nå:\n${naa}` : '',
 							lastYear ? `\nFjorårets selvangivelse — bruk den aktivt («i fjor skrev du …, kjenner du deg igjen i det?»):\n${lastYear}` : '',
 							lastLetter ? `\nBrevet de skrev til seg selv for ett år siden:\n«${lastLetter}»` : '',
+							kavalkade ? `\nMålte tall fra året (trening, søvn, vekt, bøker lest) — bruk dem som døråpnere når det passer:\n${kavalkade}` : '',
 							'',
 							'Still ETT fokusert spørsmål om gangen (to–tre stykker holder): Hvor sto du da? Hva var du opptatt av, bekymret for, på vei mot? Grav kort der det blir interessant.',
 							'',
-							'Etter HVER respons: oppdater et portrett av fjorårets jeg mellom markørene <status> og </status> — 3–5 linjer i brukerens egne ord. Denne blokken lagres som «Hvem var du i fjor?»-seksjonen.',
+							'Etter HVER respons: oppdater et portrett av fjorårets jeg mellom markørene <status> og </status> — 3–5 linjer i brukerens egne ord. Blokken er INTERN (skjules og lagres som «Hvem var du i fjor?»-seksjonen). Ikke nevn den og ikke gjenta svarene tilbake til brukeren.',
 							'',
 							'Når det sitter, si at neste steg er hva som endret dem. Norsk, varm — venn, ikke terapeut.'
 						]
@@ -1327,16 +1331,18 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 						typeof data.hvem_var_du_lastMessage === 'string'
 							? parseStatusBlock(data.hvem_var_du_lastMessage)
 							: '';
+					const kavalkade = typeof data._kavalkadeSummary === 'string' ? data._kavalkadeSummary : '';
 					return {
 						prompt: 'Så — hva endret meg fra den jeg var til den jeg er nå?',
 						systemPrompt: [
 							'Tredje beat: broen. Brukeren har beskrevet hvem de er nå og hvem de var i fjor. Nå: hva FLYTTET dem mellom de to?',
 							ifjor ? `I fjor:\n${ifjor}` : '',
 							naa ? `\nNå:\n${naa}` : '',
+							kavalkade ? `\nMålte tall fra året (trening, søvn, vekt, bøker) — en endring kan vise igjen her:\n${kavalkade}` : '',
 							'',
 							'Spør etter de transformative kreftene — en hendelse, et menneske, en erkjennelse, en vane, en motgang. Pek gjerne på en konkret forskjell mellom de to portrettene og spør hva som lå bak. ETT spørsmål om gangen, grav der det er liv.',
 							'',
-							'Etter HVER respons: oppdater <status>…</status> med 2–4 linjer om hva som endret dem, i deres egne ord. Denne blokken lagres som «Hva endret deg?»-seksjonen.',
+							'Etter HVER respons: oppdater <status>…</status> med 2–4 linjer om hva som endret dem, i deres egne ord. Blokken er INTERN (skjules og lagres som «Hva endret deg?»-seksjonen). Ikke nevn den og ikke gjenta svarene tilbake.',
 							'',
 							'Når det er sagt, før dem videre til rollene sine. Norsk, varm — venn, ikke terapeut.'
 						]
@@ -1349,6 +1355,7 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 				id: 'roller',
 				type: 'form',
 				title: 'Rollene dine',
+				prompt: 'Du er flere ting for flere mennesker. Hvor står du i hver rolle akkurat nå? Hopp over det som ikke passer.',
 				fields: [
 					{
 						id: 'role_dad',
@@ -1387,67 +1394,50 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 					return {
 						prompt: 'Jeg er klar for kropp-og-hode-delen av selvangivelsen.',
 						systemPrompt: [
-							'Du intervjuer brukeren om kropp og hode i året som gikk: psykisk helse, vekt, trening og søvn. Dette er den tunge delen av det årlige bursdagsintervjuet («selvangivelsen»), og målet er å få fire ting på det rene:',
-							'1. Hvor var du for et år siden?',
-							'2. Hva ville du oppnå?',
-							'3. Hvordan ble veien?',
-							'4. Hvor vil du videre?',
+							'Du intervjuer brukeren om kropp og hode i året som gikk: psykisk helse, vekt, trening, søvn og lesing. Dette er den konkrete, måledrevne delen av selvangivelsen. Brukeren har allerede fortalt hvem de er nå og hva som endret dem — IKKE gjenta de spørsmålene, og ikke se fremover ennå (det kommer et eget «om et år»-steg). Her vil du ha på det rene hvordan året faktisk BLE for kroppen og hodet.',
 							'',
-							kavalkade ? `Måledata fra året (bruk dem aktivt — «vekta gikk fra X til Y, var det planen?»):\n${kavalkade}` : '',
-							lastYear ? `\nFjorårets selvangivelse (sitér gjerne når du spør «hvor var du»):\n${lastYear}` : '',
+							kavalkade ? `Måledata fra året (bruk dem aktivt og konkret — «vekta gikk fra X til Y, var det planen?», «du leste N bøker»):\n${kavalkade}` : '',
+							lastYear ? `\nFjorårets selvangivelse (sitér gjerne — «i fjor ville du …, hvordan gikk det?»):\n${lastYear}` : '',
 							'',
-							'Arbeidsmåte: Still ETT spørsmål om gangen, kort og konkret. Grav videre der svaret er ullent eller interessant — brukeren kan chatte så lenge de vil. Dekk både psykisk helse og kropp; ikke ramse opp alle fire spørsmålene på en gang.',
+							'Arbeidsmåte: Still ETT konkret spørsmål om gangen og grav der svaret er ullent. La samtalen dekke hvor de sto, hva de ville oppnå og hvordan veien faktisk ble. Ikke ramse opp dette som en liste til brukeren; vev det inn naturlig.',
 							'',
-							'Etter HVER respons: oppdater en kompakt oppsummering mellom markørene <status> og </status> — 3–6 linjer i brukerens egne formuleringer som dekker de fire spørsmålene så langt. Denne blokken lagres som selvangivelsens «Kroppen og hodet»-seksjon.',
+							'Etter HVER respons: oppdater en kompakt oppsummering mellom markørene <status> og </status> — 3–6 linjer i brukerens egne ord om kropp og hode i året som gikk. Blokken er INTERN (skjules og lagres som «Kroppen og hodet»-seksjonen). Ikke nevn den og ikke gjenta svarene tilbake.',
 							'',
-							'Når brukeren virker ferdig, si kort at de kan gå videre i intervjuet. Norsk, varm, konkret — venn, ikke terapeut.'
+							'Når brukeren virker ferdig, si kort at neste steg er å se ett år frem. Norsk, varm, konkret — venn, ikke terapeut.'
 						].join('\n')
 					};
 				}
 			},
 			{
-				id: 'maal_og_retning',
-				type: 'form',
-				title: 'Mål og retning',
-				fields: [
-					{
-						id: 'goals_past',
-						type: 'textarea',
-						label: 'Hva ville du oppnå i året som gikk?',
-						placeholder: 'Ambisjonene slik du husker dem fra i fjor — store eller små'
-					},
-					{
-						id: 'direction',
-						type: 'textarea',
-						label: 'Hvor vil du videre?',
-						placeholder: 'Retningen for året som kommer — som pappa, partner, venn, ansatt, og for kropp og hode'
-					}
-				]
-			},
-			{
-				id: 'siden_i_fjor',
-				type: 'form',
-				title: 'Siden i fjor',
-				fields: [
-					{
-						id: 'changed',
-						type: 'textarea',
-						label: 'Hva har endret seg?',
-						placeholder: 'Stort eller smått — i deg eller rundt deg'
-					},
-					{
-						id: 'started',
-						type: 'textarea',
-						label: 'Hva har du begynt med?',
-						placeholder: 'Vaner, hobbyer, tanker, mennesker'
-					},
-					{
-						id: 'stopped',
-						type: 'textarea',
-						label: 'Hva har du sluttet med?',
-						placeholder: 'Ting du har lagt bak deg — med vilje eller ikke'
-					}
-				]
+				id: 'om_et_aar',
+				type: 'chat',
+				title: 'Om et år',
+				autoSend: true,
+				buildPrompts: (data) => {
+					const kavalkade = typeof data._kavalkadeSummary === 'string' ? data._kavalkadeSummary : '';
+					const lastYear = typeof data._lastYearAnswers === 'string' ? data._lastYearAnswers : '';
+					const naa =
+						typeof data.hvem_naa_lastMessage === 'string'
+							? parseStatusBlock(data.hvem_naa_lastMessage)
+							: '';
+					return {
+						prompt: 'Nå vil jeg tenke fremover — hvor vil jeg være om et år?',
+						systemPrompt: [
+							'Siste beat i buen: fremover. Brukeren har sett på hvem de er nå, hvem de var, hva som endret dem og hvordan kroppen og hodet hadde det. Nå skal de se ETT ÅR FREM — til neste bursdag.',
+							naa ? `Slik beskrev de seg selv nå:\n${naa}` : '',
+							lastYear ? `\nFjorårets selvangivelse — bruk den hvis den hjelper («i fjor ville du …»):\n${lastYear}` : '',
+							kavalkade ? `\nMålte tall fra året (trening, søvn, vekt, bøker) — bruk dem som realitetssjekk og døråpner:\n${kavalkade}` : '',
+							'',
+							'Dette er visjon, ikke målsetting — den konkrete mållista kommer i et senere steg. Still ETT åpent spørsmål om gangen: Hvem vil du være om et år? Hva vil du ha mer og mindre av — i kroppen, hodet, rollene, jobben? Hva ville gjort året til et godt år? Grav varsomt der det blir liv.',
+							'',
+							'Etter HVER respons: oppdater et fremtidsbilde mellom markørene <status> og </status> — 2–5 linjer i brukerens egne ord om hvor de vil. Blokken er INTERN (skjules og lagres som «Hvor vil du videre?»-seksjonen, som mater showet og bursdagsmålene). Ikke nevn den og ikke gjenta svarene tilbake.',
+							'',
+							'Når brukeren virker ferdig, si kort at de kan gå videre. Norsk, varm, fremoverlent — venn, ikke terapeut.'
+						]
+							.filter(Boolean)
+							.join('\n')
+					};
+				}
 			},
 			{
 				id: 'minne',
@@ -1569,6 +1559,12 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 					? parseStatusBlock(data.kropp_og_hode_lastMessage)
 					: '';
 			if (helse) answers.health_talk = helse;
+			// «Om et år»-chatten: AI-ens <status>-fremtidsbilde blir «Hvor vil du videre?»-seksjonen
+			const retning =
+				typeof data.om_et_aar_lastMessage === 'string'
+					? parseStatusBlock(data.om_et_aar_lastMessage)
+					: '';
+			if (retning) answers.direction = retning;
 			const speilMessage = typeof data.speil_lastMessage === 'string' ? data.speil_lastMessage : '';
 			const mirror = speilMessage
 				.replace(/<bursdagsmål>[\s\S]*?<\/bursdagsmål>/gi, '')
@@ -1591,6 +1587,7 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 						hvemVarDu: formatThreadTranscript(data.hvem_var_du_thread),
 						hvaEndretDeg: formatThreadTranscript(data.hva_endret_deg_thread),
 						kroppOgHode: formatThreadTranscript(data.kropp_og_hode_thread),
+						omEtAar: formatThreadTranscript(data.om_et_aar_thread),
 						speil: formatThreadTranscript(data.speil_thread)
 					}
 				})

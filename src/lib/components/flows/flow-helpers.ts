@@ -17,6 +17,10 @@ export interface ParsedChatMessage {
 /**
  * Parse a raw assistant chat message, extracting confirm-actions and reformatting
  * <oppgaver>-blocks as bullet lists.
+ *
+ * Interne markør-blokker (<status>, <bursdagsmål>) strippes fra visningen — de er
+ * AI-ens løpende destillat som lagres som seksjoner/mål i onComplete, ikke noe
+ * brukeren skal lese tilbake i hver melding. (Råteksten beholdes i rawText.)
  */
 export function parseChatMessage(raw: string): ParsedChatMessage {
 	let text = raw;
@@ -26,6 +30,12 @@ export function parseChatMessage(raw: string): ParsedChatMessage {
 		text = text.replace(PLAN_KLAR_MARKER, '').trim();
 		confirmAction = 'Ja, lagre planen';
 	}
+
+	// Fjern interne markør-blokker så de ikke lekker ut som «oppsummering» i chatten.
+	text = text
+		.replace(/<status>[\s\S]*?<\/status>/gi, '')
+		.replace(/<bursdagsmål>[\s\S]*?<\/bursdagsmål>/gi, '')
+		.trim();
 
 	// Reformater <oppgaver>...</oppgaver>-blokker som bullet-liste for visning.
 	text = text.replace(/<oppgaver>\s*([\s\S]*?)\s*<\/oppgaver>/gi, (_match, block: string) => {

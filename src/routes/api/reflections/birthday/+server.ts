@@ -61,6 +61,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 				hvemVarDu?: unknown;
 				hvaEndretDeg?: unknown;
 				kroppOgHode?: unknown;
+				omEtAar?: unknown;
 				speil?: unknown;
 		  }
 		| undefined;
@@ -76,6 +77,9 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	}
 	if (typeof threads?.kroppOgHode === 'string' && threads.kroppOgHode.trim()) {
 		transcriptParts.push(`## Kroppen og hodet\n${threads.kroppOgHode.trim()}`);
+	}
+	if (typeof threads?.omEtAar === 'string' && threads.omEtAar.trim()) {
+		transcriptParts.push(`## Om et år\n${threads.omEtAar.trim()}`);
 	}
 	if (typeof threads?.speil === 'string' && threads.speil.trim()) {
 		transcriptParts.push(`## Året i speilet\n${threads.speil.trim()}`);

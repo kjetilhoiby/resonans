@@ -11,6 +11,7 @@
 		autoSendLabel?: string;
 		chatMessagesEl?: HTMLDivElement | null;
 		onsend: (text: string) => void;
+		onretry?: () => void;
 	}
 
 	let {
@@ -18,7 +19,8 @@
 		flowChat,
 		autoSendLabel = 'Starter…',
 		chatMessagesEl = $bindable(null),
-		onsend
+		onsend,
+		onretry
 	}: Props = $props();
 </script>
 
@@ -50,6 +52,14 @@
 			{:else}
 				<TriageCard loading={true} steps={flowChat.streamingSteps} />
 			{/if}
+		{/if}
+		{#if flowChat.error && !flowChat.loading}
+			<div class="fs-chat-error" role="alert">
+				<span>{flowChat.error}</span>
+				{#if onretry}
+					<button type="button" class="fs-chat-retry" onclick={() => onretry?.()} data-track="selvangivelse-chat:prov-igjen">Prøv igjen</button>
+				{/if}
+			</div>
 		{/if}
 	</div>
 	<ChatInput
@@ -108,4 +118,30 @@
 		align-self: flex-start;
 	}
 	.fs-chat-confirm:hover { background: #112038; border-color: #3a50a0; }
+	.fs-chat-error {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		background: rgba(224, 112, 112, 0.08);
+		border: 1px solid rgba(224, 112, 112, 0.35);
+		color: #e3a0a0;
+		padding: 10px 13px;
+		border-radius: 10px;
+		font-size: 0.85rem;
+		align-self: stretch;
+	}
+	.fs-chat-retry {
+		flex-shrink: 0;
+		background: #0d1828;
+		border: 1px solid #2a4080;
+		color: #8bb4ef;
+		padding: 7px 14px;
+		border-radius: 8px;
+		font-size: 0.85rem;
+		cursor: pointer;
+		font-family: inherit;
+		transition: background 0.12s, border-color 0.12s;
+	}
+	.fs-chat-retry:hover { background: #112038; border-color: #3a50a0; }
 </style>

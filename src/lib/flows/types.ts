@@ -164,6 +164,9 @@ export interface Flow {
 	/** Lagre delvis gjennomføring fortløpende (localStorage) og gjenoppta ved neste åpning.
 	 *  For lange flyter (selvangivelsen) — utkastet ryddes ved levering. */
 	resumable?: boolean;
+	/** Foretrukket chat-modell for alle chat-steg i flyten. Settes for dype, refleksive
+	 *  flyter (selvangivelsen) der vi vil ha en sterkere modell enn standard hurtigvei. */
+	chatModel?: string;
 	steps?: FlowStep[];
 	onComplete?: (data: Record<string, any>, context: FlowContext) => Promise<void>;
 	badge?: string;
