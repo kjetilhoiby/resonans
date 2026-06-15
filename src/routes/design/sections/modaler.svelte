@@ -11,6 +11,7 @@
 		geoCandidatesMock,
 		mockShareApi,
 		mockLoadBreakdownSuggestions,
+		mockSendBreakdownChat,
 		conversationThemesMock,
 		mockConversationMenuApi
 	} from '../mocks';
@@ -60,13 +61,17 @@
 	</div>
 
 	<h3 class="subsection">BreakdownModal — AI-nedbrytning</h3>
-	<p class="section-desc">AI-forslagene hentes via <code>loadSuggestionsFn</code>-prop — mock her.</p>
+	<p class="section-desc">
+		Chat → forslag → velg. Samtalen (<code>sendChatFn</code>) og forslagene
+		(<code>loadSuggestionsFn</code>) hentes via injiserte props — mock her.
+	</p>
 	<div class="sheet-stage">
 		<BreakdownModal
 			itemTitle="Male barnerommet"
 			onClose={noop}
 			onSave={async () => {}}
 			loadSuggestionsFn={mockLoadBreakdownSuggestions}
+			sendChatFn={mockSendBreakdownChat}
 		/>
 	</div>
 
