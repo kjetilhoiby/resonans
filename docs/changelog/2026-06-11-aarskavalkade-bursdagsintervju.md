@@ -124,6 +124,21 @@ Felles: `KavalkadeData` fikk `photos` + `loop`; `ShowSlideDef` fikk `photos`- og
 
 - `src/lib/server/chat-router.ts`: `bursdag|fødselsdag|kavalkade` ruter til self-domenet med hint om `/kavalkade`. Test lagt til i `chat-router.test.ts`.
 
+### Fase 17: Opprydding — lekkasjefiks, sterkere modell og strammere bue
+
+Brukertesting av selvangivelsen avdekket fire ting: chatten lakk interne markør-blokker, skjemafelt var blanke i fokusmodus, chat-stegene følte seg som en liten modell, og flere skjemasteg overlappet med chattene.
+
+- **Markør-lekkasje fikset:** `parseChatMessage` (flow-helpers.ts) strippet bare `<oppgaver>`/`[PLAN_KLAR]`. AI-ens løpende `<status>`- og `<bursdagsmål>`-blokker ble dermed vist rått i hver melding — det så ut som «en oppsummering av svarene mine» og «et internt skjema som lekker». Begge blokkene strippes nå fra visningen (råteksten beholdes i `rawText` for onComplete-parsing). Tester i `flow-helpers.test.ts`.
+- **Blanke felt fikset:** `FlowFormStep` skjulte feltlabels i fokusmodus (`{#if !isFocus}`), så «Årets beste» ble en rad anonyme inputs. Labels vises nå for alle felttyper unntatt slider (som bruker stegtittel + helperLabels).
+- **Sterkere modell:** Ny `Flow.chatModel` kobles til `ChatState.preferredModel` i `FlowSheet`. Selvangivelsen settes til `gpt-5.4` — en dyp, refleksiv samtale uten verktøybehov.
+- **Strammere bue (12 → 11 steg):** Fjernet de overlappende skjemastegene «Siden i fjor» (endret/begynt/sluttet — dekkes av «Hva endret deg?»- og «Hvem var du i fjor?»-chattene) og «Mål og retning». «Rollene dine» fikk en forklarende intro. Alle chat-steg får nå kavalkade-kontekst (trening, søvn, vekt, **lesing**), ikke bare de tre som hadde det før. Status-blokk-instruksjonene presiserer at blokken er intern — ingen «her er oppsummeringen»-prosa, ingen gjentakelse av svarene tilbake.
+- **«Om et år» som egen chat:** Det forrige `direction`-skjemafeltet (som matet showets «Dit du vil»-slide) ble til et eget chat-steg som lukker buen *nå → da → endringen → om et år*. AI-en holder et `<status>`-fremtidsbilde som lagres som `direction`-seksjonen og arkiveres som transkript (`birthday_interview_chat`). `reflections/birthday`-endepunktet arkiverer den nye tråden.
+- Historiske seksjoner (`goals_past`, `changed`, `started`, `stopped`) beholdes i `INTERVIEW_SECTIONS` for å parse fjorårets selvangivelser, men samles ikke lenger som egne steg.
+
+## Verifisering Fase 17
+
+- `npm run check`: 0 feil, 0 advarsler. `npm test`: alle tester grønne (nye parseChatMessage-tester).
+
 ## Beslutninger
 
 - **Lagring i `reflections`, ikke ny tabell.** Intervjuet er én refleksjon per år med strukturert markdown — ingen schema-endring eller migrasjon nødvendig. Parsing skjer mot de stabile overskriftene i `INTERVIEW_SECTIONS`.

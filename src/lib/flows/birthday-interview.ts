@@ -22,10 +22,13 @@ export const INTERVIEW_SECTIONS: InterviewSection[] = [
 	{ id: 'role_partner', heading: 'Som partner' },
 	{ id: 'role_friend', heading: 'Som venn' },
 	{ id: 'role_work', heading: 'Som ansatt' },
-	// AI-syntese fra kropp-og-hode-chatten (psykisk helse, vekt, trening, søvn)
+	// AI-syntese fra kropp-og-hode-chatten (psykisk helse, vekt, trening, søvn, lesing)
 	{ id: 'health_talk', heading: 'Kroppen og hodet' },
-	{ id: 'goals_past', heading: 'Hva ville du oppnå?' },
+	// AI-syntese fra «Om et år»-chatten (fremtidsbildet) — mater showets «Dit du vil» + bursdagsmål
 	{ id: 'direction', heading: 'Hvor vil du videre?' },
+	// Historiske seksjoner: samles ikke lenger som egne steg (dekkes av nå/da/endring- og
+	// kropp-og-hode-chattene), men beholdes så fjorårets selvangivelser fortsatt parses.
+	{ id: 'goals_past', heading: 'Hva ville du oppnå?' },
 	{ id: 'changed', heading: 'Hva har endret seg?' },
 	{ id: 'started', heading: 'Hva har du begynt med?' },
 	{ id: 'stopped', heading: 'Hva har du sluttet med?' },
