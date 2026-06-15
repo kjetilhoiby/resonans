@@ -80,6 +80,11 @@ export class ChatState {
 	#isFirstMessage = true;
 	#opts: ChatStateOptions;
 
+	// Generasjonsteller: hver send() får et nummer. reset()/stop() bumper telleren slik
+	// at et utdatert (avbrutt) kall ikke kan skrive i tilstanden til en nyere send — f.eks.
+	// når brukeren trykker «Neste» mens forrige steg fortsatt strømmer.
+	#generation = 0;
+
 	// Watchdog: avbryt en strøm som har vært stille for lenge (typisk en død
 	// forbindelse etter at mobilen har bakgrunnet appen midt i et LLM-svar).
 	#watchdog: ReturnType<typeof setTimeout> | null = null;
@@ -101,8 +106,13 @@ export class ChatState {
 		this.#isFirstMessage = true;
 	}
 
-	/** Tøm meldingslisten (f.eks. ved nytt steg i FlowSheet). */
+	/** Tøm meldingslisten og avbryt en eventuell pågående strøm (f.eks. ved nytt steg i FlowSheet). */
 	reset() {
+		this.#generation++; // invalider in-flight send
+		this.#clearWatchdog();
+		this.#abortController?.abort();
+		this.#abortController = null;
+		this.#pendingMessage = null;
 		this.messages = [];
 		this.loading = false;
 		this.streamingText = '';
@@ -114,6 +124,7 @@ export class ChatState {
 	}
 
 	stop() {
+		// Bumper IKKE generasjonen: catch-blokken skal kjøre og vise stoppet/feil.
 		this.#clearWatchdog();
 		this.#abortController?.abort();
 	}
@@ -178,7 +189,9 @@ export class ChatState {
 		this.error = '';
 		this.lastUserText = displayText;
 		this.lastUserMsgId = msgId;
-		this.#abortController = new AbortController();
+		const gen = ++this.#generation;
+		const controller = new AbortController();
+		this.#abortController = controller;
 		this.#timedOut = false;
 		this.#armWatchdog();
 
@@ -211,23 +224,28 @@ export class ChatState {
 				systemPrompt: typeof this.#opts.systemPrompt === 'function'
 					? this.#opts.systemPrompt()
 					: this.#opts.systemPrompt,
-				signal: this.#abortController.signal,
+				signal: controller.signal,
 				onStatus: (status) => {
+					if (gen !== this.#generation) return;
 					this.#armWatchdog();
 					this.streamingSteps = [...this.streamingSteps, status];
 				},
 				onToken: (token) => {
+					if (gen !== this.#generation) return;
 					this.#armWatchdog();
 					this.streamingText += token;
 				},
 				onThemeRouted: (theme) => {
+					if (gen !== this.#generation) return;
 					this.#opts.onThemeRouted?.(theme);
 					this.conversationId = null;
 				},
 				onThemeSuggested: (theme) => {
+					if (gen !== this.#generation) return;
 					this.#opts.onThemeSuggested?.(theme);
 				},
 				onBookRouted: (book) => {
+					if (gen !== this.#generation) return;
 					bookWasRouted = true;
 					this.loading = false;
 					this.streamingText = '';
@@ -236,6 +254,8 @@ export class ChatState {
 				}
 			});
 
+			// Utdatert kall (brukeren gikk videre / nullstilte) — ikke skriv i ny tilstand.
+			if (gen !== this.#generation) return;
 			if (bookWasRouted) return;
 
 			this.conversationId = (data.conversationId as string | null) ?? this.conversationId;
@@ -262,6 +282,7 @@ export class ChatState {
 			await this.#opts.onPayload?.(data);
 			if (data.checklistChanged) await this.#opts.onChecklistChanged?.();
 		} catch (e) {
+			if (gen !== this.#generation) return; // utdatert kall — ignorer feilen
 			if (this.#timedOut) {
 				// Watchdog-utløst abort — behandles som en tapt forbindelse, ikke som brukerstopp.
 				this.error = 'Mistet forbindelsen. Prøv igjen.';
@@ -272,16 +293,19 @@ export class ChatState {
 				this.error = 'Noe gikk galt. Prøv igjen.';
 			}
 		} finally {
-			this.#clearWatchdog();
-			this.#abortController = null;
-			this.streamingText = '';
-			this.streamingSteps = [];
-			this.loading = false;
+			// Utdatert kall: en nyere send (eller reset) eier nå tilstanden — rør ingenting.
+			if (gen === this.#generation) {
+				this.#clearWatchdog();
+				this.#abortController = null;
+				this.streamingText = '';
+				this.streamingSteps = [];
+				this.loading = false;
 
-			if (this.#pendingMessage) {
-				const next = this.#pendingMessage;
-				this.#pendingMessage = null;
-				void this.send(next);
+				if (this.#pendingMessage) {
+					const next = this.#pendingMessage;
+					this.#pendingMessage = null;
+					void this.send(next);
+				}
 			}
 		}
 	}
