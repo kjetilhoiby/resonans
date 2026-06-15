@@ -141,9 +141,33 @@
 			flowData = { ...draft.data, ...(context.initialData ?? {}) };
 			currentStepIndex = Math.max(0, Math.min(draft.stepIndex, (f.steps?.length ?? 1) - 1));
 			draftNotice = true;
-			setTimeout(() => (draftNotice = false), 5000);
 		});
 	});
+
+	/** Forkast et gjenopprettet utkast og start flyten på nytt fra første steg. */
+	function restartFlow() {
+		const f = flow;
+		flowChat.stop();
+		if (f?.resumable && typeof localStorage !== 'undefined') {
+			try {
+				localStorage.removeItem(flowDraftKey(f.id));
+			} catch {
+				// best effort
+			}
+		}
+		const wasOnFirstStep = currentStepIndex === 0;
+		flowData = { ...(context.initialData ?? {}) };
+		chatMessages = [];
+		validationError = null;
+		draftNotice = false;
+		currentStepIndex = 0;
+		// Sto vi allerede på første steg, endrer ikke index seg → steg-effekten trigger ikke.
+		// Init første steg manuelt så et autoSend-chat-steg faktisk starter på nytt.
+		if (wasOnFirstStep) {
+			const first = flow?.steps?.[0];
+			if (first?.type === 'chat') initChatStep(first);
+		}
+	}
 
 	// Lagre fortløpende — JSON.stringify leser hele flowData og sporer dermed alle felt
 	$effect(() => {
@@ -207,16 +231,7 @@
 		pyramidExpanded = false;
 
 		if (step.type === 'chat') {
-			const built = step.buildPrompts?.(flowData);
-			const prompt = context.prompts?.[step.id] ?? built?.prompt ?? step.prompt;
-			untrack(() => {
-				chatMessages = [];
-				if (step.autoSend && prompt) {
-					void sendChatMessage(prompt, true);
-				} else if (prompt) {
-					chatMessages = [{ role: 'assistant', text: prompt }];
-				}
-			});
+			untrack(() => initChatStep(step));
 		}
 
 		if (step.type === 'checklist') {
@@ -354,6 +369,18 @@
 		if (chatMessagesEl) chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
 	}
 
+	/** Init et chat-steg: tøm tråden og send autoSend-prompten (eller vis åpningsmeldingen). */
+	function initChatStep(step: NonNullable<typeof currentStep>) {
+		const built = step.buildPrompts?.(flowData);
+		const prompt = context.prompts?.[step.id] ?? built?.prompt ?? step.prompt;
+		chatMessages = [];
+		if (step.autoSend && prompt) {
+			void sendChatMessage(prompt, true);
+		} else if (prompt) {
+			chatMessages = [{ role: 'assistant', text: prompt }];
+		}
+	}
+
 	async function sendChatMessage(text: string, isAutoSend = false) {
 		if (flowChat.loading) return;
 		if (!isAutoSend) chatMessages = [...chatMessages, { role: 'user', text }];
@@ -456,7 +483,17 @@
 
 	{#if draftNotice}
 		<div class="fs-draft-notice" transition:fade={{ duration: 200 }}>
-			Fortsetter der du slapp — utkastet var lagret
+			<span class="fs-draft-text">Fortsetter der du slapp.</span>
+			<button
+				type="button"
+				class="fs-draft-restart"
+				onclick={restartFlow}
+				data-track="selvangivelse:start-paa-nytt">Start på nytt</button>
+			<button
+				type="button"
+				class="fs-draft-dismiss"
+				aria-label="Lukk"
+				onclick={() => (draftNotice = false)}>✕</button>
 		</div>
 	{/if}
 
@@ -594,13 +631,41 @@
 
 	.fs-draft-notice {
 		align-self: center;
+		display: flex;
+		align-items: center;
+		gap: 10px;
 		margin: 6px 16px 0;
-		padding: 5px 12px;
+		padding: 5px 8px 5px 14px;
 		border-radius: 999px;
 		background: var(--card-bg-inset, #0d0d0d);
 		border: 1px solid var(--card-border, #222);
 		font-size: var(--font-size-caption, 0.72rem);
 		color: var(--text-secondary, #aaa);
+	}
+	.fs-draft-text { white-space: nowrap; }
+	.fs-draft-restart {
+		flex-shrink: 0;
+		background: #0d1828;
+		border: 1px solid #2a4080;
+		color: #8bb4ef;
+		padding: 4px 12px;
+		border-radius: 999px;
+		font-size: var(--font-size-caption, 0.72rem);
+		font-family: inherit;
+		cursor: pointer;
+		white-space: nowrap;
+		transition: background 0.12s, border-color 0.12s;
+	}
+	.fs-draft-restart:hover { background: #112038; border-color: #3a50a0; }
+	.fs-draft-dismiss {
+		flex-shrink: 0;
+		background: none;
+		border: none;
+		color: var(--text-secondary, #aaa);
+		font-size: 0.8rem;
+		line-height: 1;
+		padding: 4px 6px;
+		cursor: pointer;
 	}
 
 	.fs-step-title {
