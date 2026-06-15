@@ -147,7 +147,7 @@
 	/** Forkast et gjenopprettet utkast og start flyten på nytt fra første steg. */
 	function restartFlow() {
 		const f = flow;
-		flowChat.stop();
+		flowChat.reset();
 		if (f?.resumable && typeof localStorage !== 'undefined') {
 			try {
 				localStorage.removeItem(flowDraftKey(f.id));
@@ -226,6 +226,9 @@
 		const step = currentStep;
 		if (!step) return;
 
+		// Byttet steg → avbryt en eventuell pågående strøm fra forrige steg rent, så et
+		// halvferdig svar ikke lekker inn i det neste (gen-vakten i ChatState gjør resten).
+		untrack(() => flowChat.reset());
 		validationError = null;
 		clearAutoAdvance();
 		pyramidExpanded = false;

@@ -148,6 +148,11 @@ Brukerinnsikt: «Kroppen og hodet» (og andre chat-steg) så ut til å krasje n�
 - **Avbryt ved lukking**: `onDestroy` stopper en pågående strøm så den ikke henger igjen.
 - **Feil + retry i UI**: `FlowChatStep` viser nå `flowChat.error` med en «Prøv igjen»-knapp (`flowChat.retry()`), så et tapt svar er gjenopprettelig.
 
+### Fase 19: «Start på nytt» + trygg steg-bytting midt i en strøm
+
+- **«Start på nytt»-knapp**: gjenopprettingsbanneret for resumable flows er nå handlingsbart — forkaster utkastet, nullstiller svarene og går til første steg. Banneret auto-skjules ikke lenger (har en ✕ i stedet) så reset-valget er reachable. Chat-init trukket ut til delt `initChatStep()`.
+- **Overlappende send fikset**: trykket man «Neste» mens et chat-steg fortsatt strømmet, kolliderte forrige stegs svar med det neste (lekkende melding, blokkert autoSend, hengende «Starter…»). `ChatState` har nå en generasjonsteller: `reset()` invaliderer et in-flight kall slik at dets sene callbacks/feil/opprydding blir no-ops, og `FlowSheet` kaller `flowChat.reset()` ved hvert steg-bytte. Et halvferdig svar avbrytes rent i stedet for å lekke inn i neste steg.
+
 ## Beslutninger
 
 - **Lagring i `reflections`, ikke ny tabell.** Intervjuet er én refleksjon per år med strukturert markdown — ingen schema-endring eller migrasjon nødvendig. Parsing skjer mot de stabile overskriftene i `INTERVIEW_SECTIONS`.
