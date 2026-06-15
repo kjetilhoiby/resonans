@@ -80,6 +80,14 @@ export class ChatState {
 	#isFirstMessage = true;
 	#opts: ChatStateOptions;
 
+	// Watchdog: avbryt en strøm som har vært stille for lenge (typisk en død
+	// forbindelse etter at mobilen har bakgrunnet appen midt i et LLM-svar).
+	#watchdog: ReturnType<typeof setTimeout> | null = null;
+	#timedOut = false;
+	/** Maks stillhet (ms) før strømmen regnes som tapt. Status-events og tokens nullstiller den.
+	 *  Romslig nok til at en treg gpt-5.4-generering ikke trigger den. */
+	static ACTIVITY_TIMEOUT_MS = 60_000;
+
 	constructor(opts: ChatStateOptions) {
 		this.#opts = opts;
 		if (opts.conversationId !== undefined) {
@@ -106,7 +114,32 @@ export class ChatState {
 	}
 
 	stop() {
+		this.#clearWatchdog();
 		this.#abortController?.abort();
+	}
+
+	/** Marker en pågående strøm som tapt (f.eks. etter lang backgrounding på mobil).
+	 *  Gir «Mistet forbindelsen»-feil + retry i stedet for en hengende spinner. */
+	markConnectionLost() {
+		if (!this.loading) return;
+		this.#timedOut = true;
+		this.#abortController?.abort();
+	}
+
+	/** (Re)start stillhets-timeren. Kalles ved hver mottatt status/token. */
+	#armWatchdog() {
+		this.#clearWatchdog();
+		this.#watchdog = setTimeout(() => {
+			this.#timedOut = true;
+			this.#abortController?.abort();
+		}, ChatState.ACTIVITY_TIMEOUT_MS);
+	}
+
+	#clearWatchdog() {
+		if (this.#watchdog) {
+			clearTimeout(this.#watchdog);
+			this.#watchdog = null;
+		}
 	}
 
 	retry() {
@@ -146,6 +179,8 @@ export class ChatState {
 		this.lastUserText = displayText;
 		this.lastUserMsgId = msgId;
 		this.#abortController = new AbortController();
+		this.#timedOut = false;
+		this.#armWatchdog();
 
 		// Løs opp samtale-ID
 		if (!this.conversationId && this.#opts.getOrCreateConversationId) {
@@ -178,9 +213,11 @@ export class ChatState {
 					: this.#opts.systemPrompt,
 				signal: this.#abortController.signal,
 				onStatus: (status) => {
+					this.#armWatchdog();
 					this.streamingSteps = [...this.streamingSteps, status];
 				},
 				onToken: (token) => {
+					this.#armWatchdog();
 					this.streamingText += token;
 				},
 				onThemeRouted: (theme) => {
@@ -225,13 +262,17 @@ export class ChatState {
 			await this.#opts.onPayload?.(data);
 			if (data.checklistChanged) await this.#opts.onChecklistChanged?.();
 		} catch (e) {
-			if (e instanceof Error && e.name === 'AbortError') {
+			if (this.#timedOut) {
+				// Watchdog-utløst abort — behandles som en tapt forbindelse, ikke som brukerstopp.
+				this.error = 'Mistet forbindelsen. Prøv igjen.';
+			} else if (e instanceof Error && e.name === 'AbortError') {
 				this.stopped = true;
 				this.stoppedText = this.streamingText;
 			} else {
 				this.error = 'Noe gikk galt. Prøv igjen.';
 			}
 		} finally {
+			this.#clearWatchdog();
 			this.#abortController = null;
 			this.streamingText = '';
 			this.streamingSteps = [];

@@ -139,6 +139,15 @@ Brukertesting av selvangivelsen avdekket fire ting: chatten lakk interne markør
 
 - `npm run check`: 0 feil, 0 advarsler. `npm test`: alle tester grønne (nye parseChatMessage-tester).
 
+### Fase 18: Robust chat — tapt forbindelse henger ikke lenger
+
+Brukerinnsikt: «Kroppen og hodet» (og andre chat-steg) så ut til å krasje når mobilen bakgrunnet appen mens vi ventet på et LLM-svar. Årsak: strømmen ble verken avbrutt eller feilhåndtert synlig — `flowChat.error` ble aldri vist i chat-steget, og en død forbindelse ga enten evig spinner eller en tom skjerm uten vei videre.
+
+- **Watchdog i `ChatState`**: en stillhets-timer (60 s, nullstilles ved hver status/token) avbryter en strøm som har stoppet å levere, og flagger det som tapt forbindelse i stedet for brukerstopp.
+- **Bakgrunns-deteksjon i `FlowSheet`**: `visibilitychange` — var siden borte > 10 s mens chatten lastet, regnes strømmen som tapt ved retur (`markConnectionLost`), så brukeren får retry umiddelbart i stedet for å vente på watchdog-en.
+- **Avbryt ved lukking**: `onDestroy` stopper en pågående strøm så den ikke henger igjen.
+- **Feil + retry i UI**: `FlowChatStep` viser nå `flowChat.error` med en «Prøv igjen»-knapp (`flowChat.retry()`), så et tapt svar er gjenopprettelig.
+
 ## Beslutninger
 
 - **Lagring i `reflections`, ikke ny tabell.** Intervjuet er én refleksjon per år med strukturert markdown — ingen schema-endring eller migrasjon nødvendig. Parsing skjer mot de stabile overskriftene i `INTERVIEW_SECTIONS`.

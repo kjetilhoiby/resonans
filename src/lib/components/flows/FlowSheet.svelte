@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Flow, FlowContext } from '$lib/flows/types';
 	import { ChatState } from '$lib/client/chat-state.svelte';
-	import { onMount, tick, untrack } from 'svelte';
+	import { onMount, onDestroy, tick, untrack } from 'svelte';
 	import { fly, fade } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
 
@@ -161,7 +161,23 @@
 	});
 
 	// ── Lifecycle ────────────────────────────────────────────────────
+	// Mobil bakgrunner appen mens vi venter på et LLM-svar → forbindelsen dør stille.
+	// Var siden borte lenge mens chatten lastet, regner vi strømmen som tapt og viser
+	// retry (i stedet for en evig spinner). Watchdog-en i ChatState fanger resten.
+	let hiddenAt = 0;
+	function onVisibilityChange() {
+		if (typeof document === 'undefined') return;
+		if (document.hidden) {
+			hiddenAt = Date.now();
+		} else if (flowChat.loading && hiddenAt && Date.now() - hiddenAt > 10_000) {
+			flowChat.markConnectionLost();
+		}
+	}
+
 	onMount(async () => {
+		if (typeof document !== 'undefined') {
+			document.addEventListener('visibilitychange', onVisibilityChange);
+		}
 		if (context.existingHeadline) flowData['headline'] = context.existingHeadline;
 		if (context.dreamReasons) flowData['_dreamReasons'] = context.dreamReasons;
 		if (context.slot) flowData['_slot'] = context.slot;
@@ -171,6 +187,14 @@
 				if (d) weather = d;
 			});
 		}
+	});
+
+	onDestroy(() => {
+		if (typeof document !== 'undefined') {
+			document.removeEventListener('visibilitychange', onVisibilityChange);
+		}
+		// Lukk arket → avbryt en eventuell pågående strøm så den ikke henger igjen.
+		flowChat.stop();
 	});
 
 	// When step changes, init step-specific state
@@ -454,6 +478,7 @@
 					autoSendLabel={currentStep.autoSend ? 'Starter…' : 'Si hva du tenker på…'}
 					bind:chatMessagesEl
 					onsend={(text) => void sendChatMessage(text)}
+					onretry={() => flowChat.retry()}
 				/>
 			{/if}
 
