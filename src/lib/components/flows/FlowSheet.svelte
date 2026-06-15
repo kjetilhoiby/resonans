@@ -53,6 +53,7 @@
 	let chatMessagesEl = $state<HTMLDivElement | null>(null);
 
 	const flowChat = new ChatState({
+		preferredModel: () => flow?.chatModel,
 		systemPrompt: () => {
 			const step = currentStep;
 			if (!step) return undefined;

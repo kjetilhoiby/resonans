@@ -2,9 +2,34 @@ import { describe, expect, it } from 'vitest';
 import {
 	FLOW_DRAFT_MAX_AGE_MS,
 	flowDraftKey,
+	parseChatMessage,
 	parseFlowDraft,
 	serializeFlowDraft
 } from './flow-helpers';
+
+describe('parseChatMessage', () => {
+	it('stripper <status>-blokken så den ikke lekker ut i chatten', () => {
+		const raw =
+			'Det høres ut som et tungt år. Hva tror du selv lå bak?\n\n<status>\nHvor var du: sliten\nHva ville du oppnå: ikke kartlagt ennå\n</status>';
+		expect(parseChatMessage(raw).text).toBe('Det høres ut som et tungt år. Hva tror du selv lå bak?');
+	});
+
+	it('stripper <bursdagsmål>-blokken', () => {
+		const raw = 'Fine mål!\n<bursdagsmål>\nLøpe 600 km\nSkjermfri etter 22\n</bursdagsmål>';
+		expect(parseChatMessage(raw).text).toBe('Fine mål!');
+	});
+
+	it('beholder vanlig tekst og <oppgaver>-bullets', () => {
+		const parsed = parseChatMessage('Her er forslag:\n<oppgaver>\nBytt filter\nBestill sko\n</oppgaver>');
+		expect(parsed.text).toBe('Her er forslag:\n- Bytt filter\n- Bestill sko');
+	});
+
+	it('plukker ut [PLAN_KLAR]-bekreftelse', () => {
+		const parsed = parseChatMessage('Planen er klar [PLAN_KLAR]');
+		expect(parsed.text).toBe('Planen er klar');
+		expect(parsed.confirmAction).toBe('Ja, lagre planen');
+	});
+});
 
 describe('flow-utkast', () => {
 	const now = 1_750_000_000_000;

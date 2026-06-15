@@ -1254,6 +1254,8 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 		trigger: 'manual',
 		focus: true,
 		resumable: true,
+		// Dyp, refleksiv samtale uten verktøybehov — bruk sterkeste modell, ikke hurtigveien.
+		chatModel: 'gpt-5.4',
 		estimatedMinutes: 20,
 		steps: [
 			{
