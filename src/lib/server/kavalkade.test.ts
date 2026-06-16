@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
 	buildMonthTimeline,
 	buildSportHistory,
+	daysSinceLastBirthday,
 	formatKavalkadeForPrompt,
 	getBirthdayWindows,
 	selvangivelseFristLabel,
 	summarizeYear,
+	visKavalkadeChip,
 	type KavalkadeWindow
 } from './kavalkade';
 
@@ -208,6 +210,37 @@ describe('selvangivelseFristLabel', () => {
 		expect(selvangivelseFristLabel(8)).toBeNull();
 		expect(selvangivelseFristLabel(0)).toBeNull(); // løpet er kjørt
 		expect(selvangivelseFristLabel(-1)).toBeNull();
+	});
+});
+
+describe('daysSinceLastBirthday', () => {
+	it('er 0 på selve bursdagen', () => {
+		expect(daysSinceLastBirthday('1982-06-18', new Date('2026-06-18T08:00:00Z'))).toBe(0);
+	});
+
+	it('teller dager etter bursdagen', () => {
+		expect(daysSinceLastBirthday('1982-06-18', new Date('2026-06-21T08:00:00Z'))).toBe(3);
+	});
+
+	it('ruller til fjorårets bursdag før årets', () => {
+		expect(daysSinceLastBirthday('1982-06-18', new Date('2026-06-11T12:00:00Z'))).toBe(358);
+	});
+
+	it('er null uten fødselsdato', () => {
+		expect(daysSinceLastBirthday(null, new Date('2026-06-18T08:00:00Z'))).toBeNull();
+	});
+});
+
+describe('visKavalkadeChip', () => {
+	it('vises på bursdagen og en uke etter', () => {
+		expect(visKavalkadeChip(0)).toBe(true);
+		expect(visKavalkadeChip(7)).toBe(true);
+	});
+
+	it('skjules før bursdagen og etter vinduet', () => {
+		expect(visKavalkadeChip(-1)).toBe(false);
+		expect(visKavalkadeChip(8)).toBe(false);
+		expect(visKavalkadeChip(358)).toBe(false);
 	});
 });
 

@@ -21,6 +21,7 @@ import { sortInboxProducer } from './action-producers/sort-inbox';
 import { trainingProgramProducer } from './action-producers/training-program';
 import { screenTimeOnboardingProducer } from './action-producers/screen-time-onboarding';
 import { birthdayInterviewProducer } from './action-producers/birthday-interview';
+import { birthdayKavalkadeProducer } from './action-producers/birthday-kavalkade';
 
 export interface EgenfrekvensContext {
 	today: {
@@ -65,7 +66,8 @@ const PRODUCERS: ActionProducer[] = [
 	planMonthProducer,
 	trainingProgramProducer,
 	screenTimeOnboardingProducer,
-	birthdayInterviewProducer
+	birthdayInterviewProducer,
+	birthdayKavalkadeProducer
 ];
 
 async function loadPlannedContexts(userId: string) {
@@ -123,11 +125,12 @@ async function buildContext(userId: string): Promise<ProducerContext> {
 	};
 }
 
+// Holdes i samme rekkefølge som PRODUCERS (kun brukt til perf-logging)
 const PRODUCER_NAMES = [
-	'sjekk-inn', 'focus-timer', 'reflection-light', 'quick-win',
+	'focus-timer', 'reflection-light', 'quick-win',
 	'inbox-note', 'sort-inbox', 'plan-tomorrow', 'plan-week',
 	'plan-month', 'training-program', 'screen-time-onboarding',
-	'selvangivelse'
+	'selvangivelse', 'kavalkade'
 ];
 
 export async function produceActions(userId: string): Promise<ActionCandidate[]> {
