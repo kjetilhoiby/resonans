@@ -161,6 +161,14 @@ Brukerinnsikt: på bursdagen var hjemskjermen taus om kavalkaden. «Selvangivels
 - Ren datologikk i `kavalkade.ts`: `daysSinceLastBirthday` (0 = i dag) og `visKavalkadeChip`, begge testet. Speiler dato-aritmetikken i `getBirthdayWindows`.
 - Registrert i `action-suggestion-service.ts`. Samtidig rettet en gammel skjevhet i `PRODUCER_NAMES` (perf-logging) — lista startet på det fjernede `sjekk-inn` og forskjøv alle etiketter med én.
 
+### Fase 21: Bursdags-show-feil avdekket ved bruk på selve dagen
+
+Brukertesting på selve bursdagen (via den nye chipen) avdekket tre ting:
+
+- **«Om 364 dager fyller du …» på bursdagen:** `daysUntilBirthday` (family-tree) sammenlignet en midnatt-dato (`next`) mot `today` *med klokkeslett*. På bursdagen er midnatt «før» nå, så bursdagen rullet et helt år frem → 364 i stedet for 0 (og «i morgen» ble feilaktig 0). Nå normaliseres begge til kalenderdag (som `getBirthdayWindows`/chipen alt gjorde). Fikser intro («I dag fyller du X år»), konfetti på dagen og outroens «Gratulerer med dagen». Tester i `family-tree.test.ts` (ny).
+- **Hilsner manglet i showet:** spådom og hilsner genereres on-demand av knappene på `/kavalkade`; showet *leste* bare lagrede refleksjoner. Den som gikk rett til showet (f.eks. fra bursdags-chipen) fikk dem aldri. Generatorene er trukket ut til `$lib/server/kavalkade-magi-gen.ts` (`generateProphecy`/`generateGreetings` + ny `ensureBirthdayMagi`), og showets `+page.server.ts` etterfyller manglende magi ved sidelast — best effort, parallelt, cachet etter første visning. `/api/kavalkade/magi` bruker nå samme modul (ingen duplisert prompt-logikk).
+- **Datavindu opplevd som nyttår→nå:** vinduet er korrekt bursdag→bursdag (`getBirthdayWindows`), og vindusetiketten viser den reelle spennvidden. Det som mangler før januar er datatilgang — integrasjonene er backfillet fra ~jan 2026. Ingen kodeendring; dokumentert her for ettertiden.
+
 ## Beslutninger
 
 - **Lagring i `reflections`, ikke ny tabell.** Intervjuet er én refleksjon per år med strukturert markdown — ingen schema-endring eller migrasjon nødvendig. Parsing skjer mot de stabile overskriftene i `INTERVIEW_SECTIONS`.

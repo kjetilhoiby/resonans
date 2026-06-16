@@ -105,8 +105,11 @@ export function daysUntilBirthday(birthDate: string | null, today = new Date()):
 	if (!birthDate) return null;
 	const bd = new Date(birthDate);
 	if (Number.isNaN(bd.getTime())) return null;
-	const next = new Date(today.getFullYear(), bd.getMonth(), bd.getDate());
-	if (next < today) next.setFullYear(today.getFullYear() + 1);
-	const ms = next.getTime() - today.getTime();
-	return Math.floor(ms / (1000 * 60 * 60 * 24));
+	// Sammenlign på kalenderdag, ikke klokkeslett — ellers ruller bursdagen i dag
+	// (midnatt < «nå») et helt år frem og gir 364 i stedet for 0.
+	const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+	const next = new Date(todayMidnight.getFullYear(), bd.getMonth(), bd.getDate());
+	if (next < todayMidnight) next.setFullYear(todayMidnight.getFullYear() + 1);
+	const ms = next.getTime() - todayMidnight.getTime();
+	return Math.round(ms / (1000 * 60 * 60 * 24));
 }
