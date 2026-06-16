@@ -70,6 +70,34 @@ export function selvangivelseFristLabel(daysUntil: number): string | null {
 	return `frist om ${daysUntil - 1} dager`;
 }
 
+// ── Årskavalkaden (chip på og rett etter bursdagen) ─────────────────────────
+
+/** Så mange dager etter bursdagen kavalkade-chipen blir liggende */
+export const KAVALKADE_VINDU_DAGER = 7;
+
+/**
+ * Antall dager siden forrige bursdag (0 = bursdagen er i dag), eller null uten
+ * kjent fødselsdato. Speiler dato-aritmetikken i getBirthdayWindows.
+ */
+export function daysSinceLastBirthday(birthDate: string | null, today = new Date()): number | null {
+	const parsed = birthDate ? new Date(birthDate) : null;
+	if (!parsed || Number.isNaN(parsed.getTime())) return null;
+	const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+	let last = new Date(todayMidnight.getFullYear(), parsed.getMonth(), parsed.getDate());
+	if (last > todayMidnight) {
+		last = new Date(todayMidnight.getFullYear() - 1, parsed.getMonth(), parsed.getDate());
+	}
+	return Math.round((todayMidnight.getTime() - last.getTime()) / 86_400_000);
+}
+
+/**
+ * Skal årskavalkade-chipen vises? Fra bursdagen (dag 0) og noen dager etter —
+ * tar over når «selvangivelsen» forsvinner på selve dagen.
+ */
+export function visKavalkadeChip(daysSinceBirthday: number): boolean {
+	return daysSinceBirthday >= 0 && daysSinceBirthday <= KAVALKADE_VINDU_DAGER;
+}
+
 // ── Input-rader (generiske former av DB-radene, for testbarhet) ─────────────
 
 export interface WorkoutDayRow {

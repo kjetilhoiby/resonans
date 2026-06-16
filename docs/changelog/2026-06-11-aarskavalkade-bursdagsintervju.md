@@ -153,6 +153,14 @@ Brukerinnsikt: «Kroppen og hodet» (og andre chat-steg) så ut til å krasje n�
 - **«Start på nytt»-knapp**: gjenopprettingsbanneret for resumable flows er nå handlingsbart — forkaster utkastet, nullstiller svarene og går til første steg. Banneret auto-skjules ikke lenger (har en ✕ i stedet) så reset-valget er reachable. Chat-init trukket ut til delt `initChatStep()`.
 - **Overlappende send fikset**: trykket man «Neste» mens et chat-steg fortsatt strømmet, kolliderte forrige stegs svar med det neste (lekkende melding, blokkert autoSend, hengende «Starter…»). `ChatState` har nå en generasjonsteller: `reset()` invaliderer et in-flight kall slik at dets sene callbacks/feil/opprydding blir no-ops, og `FlowSheet` kaller `flowChat.reset()` ved hvert steg-bytte. Et halvferdig svar avbrytes rent i stedet for å lekke inn i neste steg.
 
+### Fase 20: Kavalkade-chip på selve bursdagen
+
+Brukerinnsikt: på bursdagen var hjemskjermen taus om kavalkaden. «Selvangivelsen»-chipen er designet til å forsvinne på dagen («løpet er kjørt»), men ingenting tok over — så akkurat når selve gevinsten (kavalkaden/showet) skulle dukke opp, var det ingen vei inn fra hjem. Brukeren forventet kavalkade/show på bursdagen.
+
+- `action-producers/birthday-kavalkade.ts` (ny): chip 🎉 fra bursdagen (dag 0) og `KAVALKADE_VINDU_DAGER` (7) dager etter. På selve dagen «Gratulerer med dagen! — spill av året» med høyeste prioritet (99, over selvangivelsens 95) og navigasjon rett til `/kavalkade/show`; dagene etter «Årskavalkaden — året i tall» (prioritet 70) til `/kavalkade`. `navigate`-intent trenger ingen klient-wiring (håndteres allerede i `HomeScreen`).
+- Ren datologikk i `kavalkade.ts`: `daysSinceLastBirthday` (0 = i dag) og `visKavalkadeChip`, begge testet. Speiler dato-aritmetikken i `getBirthdayWindows`.
+- Registrert i `action-suggestion-service.ts`. Samtidig rettet en gammel skjevhet i `PRODUCER_NAMES` (perf-logging) — lista startet på det fjernede `sjekk-inn` og forskjøv alle etiketter med én.
+
 ## Beslutninger
 
 - **Lagring i `reflections`, ikke ny tabell.** Intervjuet er én refleksjon per år med strukturert markdown — ingen schema-endring eller migrasjon nødvendig. Parsing skjer mot de stabile overskriftene i `INTERVIEW_SECTIONS`.
