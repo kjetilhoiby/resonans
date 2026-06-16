@@ -38,7 +38,7 @@ import type { PeriodSlot } from '$lib/domains/egenfrekvens/period-slots';
 import type { ChatMessage } from '$lib/client/chat-state.svelte';
 import type { VisualizationDataContract } from '$lib/domain/visualization-spec';
 import type { ShareApi } from '$lib/components/domain/share/share-api';
-import type { LoadBreakdownSuggestions } from '$lib/components/ui/breakdown-api';
+import type { LoadBreakdownSuggestions, SendBreakdownChat } from '$lib/components/ui/breakdown-api';
 import type { AutoCheckPrompt } from '$lib/components/domain/ukeplan/autocheck';
 import type { GeoCandidate } from '$lib/utils/geocode';
 import type { WeatherPeriod } from '$lib/components/ui/WeatherStrip.svelte';
@@ -960,6 +960,13 @@ export const mockLoadBreakdownSuggestions: LoadBreakdownSuggestions = async () =
 	'Male andre strøk',
 	'Rydde og vaske utstyret'
 ];
+
+export const mockSendBreakdownChat: SendBreakdownChat = async ({ messages }) => {
+	const hasUserInput = messages.some((m) => m.role === 'user' && m.content.trim().length > 0);
+	return hasUserInput
+		? 'Skjønner — da tar vi utgangspunkt i det. Trykk «Lag forslag» når du er klar.'
+		: 'Fortell gjerne litt om hva du vil oppnå og hva som gjør det vanskelig.';
+};
 
 // ── ProcedureSheet ───────────────────────────────────────────────────────────
 export const mockProcedureSheetApi: ProcedureSheetApi = {

@@ -1,16 +1,24 @@
 <!--
-  BreakdownModal — Modal for AI-forslag til nedbrytning av oppgaver
+  BreakdownModal — Modal for nedbrytning av oppgaver: chat → forslag → velg
 
-  Viser:
-  - AI-forslåtte substeps (3-10)
-  - Mulighet for å velge hvilke som skal legges til
-  - Loading-state mens man henter forslag
-  - Feil-handling hvis AI-kallet mislykkes
+  Faser:
+  1. chat        — fri samtale med AI om oppgaven (kontekst, ambisjon, hindringer)
+  2. suggestions — AI-forslåtte substeps (3-10), velg hvilke som skal legges til
+
+  «Lag forslag» tar deg fra samtale til forslag; samtalen sendes med som kontekst.
 -->
 <script lang="ts">
 	import { fade, scale } from 'svelte/transition';
+	import { tick } from 'svelte';
 	import Icon from './Icon.svelte';
-	import { loadBreakdownSuggestions, type LoadBreakdownSuggestions } from './breakdown-api';
+	import {
+		loadBreakdownSuggestions,
+		sendBreakdownChat,
+		buildBreakdownContextFromChat,
+		type LoadBreakdownSuggestions,
+		type SendBreakdownChat,
+		type BreakdownChatMessage
+	} from './breakdown-api';
 
 	interface BreakdownStep {
 		id: string;
@@ -25,14 +33,88 @@
 		onSave: (subtasks: string[]) => Promise<void>;
 		/** AI-forslagskallet — injiseres som mock på /design. Default: ekte API. */
 		loadSuggestionsFn?: LoadBreakdownSuggestions;
+		/** AI-samtalekallet — injiseres som mock på /design. Default: ekte API. */
+		sendChatFn?: SendBreakdownChat;
 	}
 
-	let { itemTitle, itemDescription = '', onClose, onSave, loadSuggestionsFn = loadBreakdownSuggestions }: Props = $props();
+	let {
+		itemTitle,
+		itemDescription = '',
+		onClose,
+		onSave,
+		loadSuggestionsFn = loadBreakdownSuggestions,
+		sendChatFn = sendBreakdownChat
+	}: Props = $props();
 
+	type Phase = 'chat' | 'suggestions';
+	let phase = $state<Phase>('chat');
+
+	// ── Chat-fase ──────────────────────────────────────────────────────────
+	let messages = $state<BreakdownChatMessage[]>([
+		{
+			role: 'assistant',
+			content: `La oss bryte ned «${itemTitle}». Hva er målet ditt med dette — og er det noe som gjør det vanskelig å komme i gang?`
+		}
+	]);
+	let chatInput = $state('');
+	let chatLoading = $state(false);
+	let chatError = $state<string | null>(null);
+	let contentEl = $state<HTMLDivElement | null>(null);
+
+	async function scrollToBottom() {
+		await tick();
+		if (contentEl) contentEl.scrollTop = contentEl.scrollHeight;
+	}
+
+	async function sendChat() {
+		const text = chatInput.trim();
+		if (!text || chatLoading) return;
+		chatInput = '';
+		chatError = null;
+		messages = [...messages, { role: 'user', content: text }];
+		chatLoading = true;
+		await scrollToBottom();
+		try {
+			const reply = await sendChatFn({
+				taskTitle: itemTitle,
+				taskDescription: itemDescription,
+				messages
+			});
+			if (reply.trim()) {
+				messages = [...messages, { role: 'assistant', content: reply.trim() }];
+			}
+		} catch (err) {
+			chatError = err instanceof Error ? err.message : 'Kunne ikke sende melding';
+		} finally {
+			chatLoading = false;
+			await scrollToBottom();
+		}
+	}
+
+	function handleChatKeydown(e: KeyboardEvent) {
+		if (e.key === 'Enter' && !e.shiftKey) {
+			e.preventDefault();
+			sendChat();
+		}
+	}
+
+	// ── Forslag-fase ───────────────────────────────────────────────────────
 	let steps = $state<BreakdownStep[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 	let saving = $state(false);
+
+	async function goToSuggestions() {
+		if (chatLoading) return;
+		phase = 'suggestions';
+		await loadSuggestions();
+	}
+
+	function backToChat() {
+		phase = 'chat';
+		error = null;
+		scrollToBottom();
+	}
 
 	async function loadSuggestions() {
 		loading = true;
@@ -40,7 +122,8 @@
 		try {
 			const suggestions = await loadSuggestionsFn({
 				taskTitle: itemTitle,
-				taskDescription: itemDescription
+				taskDescription: itemDescription,
+				context: buildBreakdownContextFromChat(messages)
 			});
 			steps = suggestions.map((text, i) => ({
 				id: String(i),
@@ -86,10 +169,6 @@
 			saving = false;
 		}
 	}
-
-	// Load suggestions on mount
-	import { onMount } from 'svelte';
-	onMount(() => loadSuggestions());
 </script>
 
 <!-- Backdrop -->
@@ -104,8 +183,20 @@
 		</button>
 	</div>
 
-	<div class="bm-content">
-		{#if loading}
+	<div class="bm-content" bind:this={contentEl}>
+		{#if phase === 'chat'}
+			<div class="bm-chat">
+				{#each messages as msg, i (i)}
+					<div class="bm-msg bm-msg--{msg.role}">{msg.content}</div>
+				{/each}
+				{#if chatLoading}
+					<div class="bm-msg bm-msg--assistant bm-msg--typing">Tenker…</div>
+				{/if}
+				{#if chatError}
+					<p class="bm-chat-error">{chatError}</p>
+				{/if}
+			</div>
+		{:else if loading}
 			<div class="bm-loading">
 				<div class="bm-spinner"></div>
 				<p>Genererer forslag…</p>
@@ -114,6 +205,7 @@
 			<div class="bm-error">
 				<p>{error}</p>
 				<button class="bm-retry" onclick={() => loadSuggestions()}>Prøv igjen</button>
+				<button class="bm-btn-small" onclick={backToChat}>← Tilbake til samtale</button>
 			</div>
 		{:else}
 			<div class="bm-steps">
@@ -132,11 +224,35 @@
 			<div class="bm-actions-secondary">
 				<button class="bm-btn-small" onclick={selectAll}>Velg alle</button>
 				<button class="bm-btn-small" onclick={deselectAll}>Velg ingen</button>
+				<button class="bm-btn-small" onclick={backToChat}>← Samtale</button>
 			</div>
 		{/if}
 	</div>
 
-	{#if !loading && !error}
+	{#if phase === 'chat'}
+		<div class="bm-footer bm-footer--chat">
+			<div class="bm-chat-input-row">
+				<textarea
+					class="bm-chat-input"
+					bind:value={chatInput}
+					onkeydown={handleChatKeydown}
+					placeholder="Skriv litt om oppgaven…"
+					rows="1"
+					data-track="oppgave-nedbrytning:chat-melding"
+				></textarea>
+				<button
+					class="bm-chat-send"
+					onclick={sendChat}
+					disabled={chatLoading || !chatInput.trim()}
+				>
+					Send
+				</button>
+			</div>
+			<button class="bm-btn-save" onclick={goToSuggestions} disabled={chatLoading}>
+				Lag forslag
+			</button>
+		</div>
+	{:else if !loading && !error}
 		<div class="bm-footer">
 			<button class="bm-btn-cancel" onclick={onClose} disabled={saving}>Avbryt</button>
 			<button class="bm-btn-save" onclick={handleSave} disabled={saving || steps.length === 0}>
@@ -227,6 +343,101 @@
 		flex-direction: column;
 		gap: 16px;
 		-webkit-overflow-scrolling: touch;
+	}
+
+	/* ── Chat-fase ──────────────────────────────────────────────────────── */
+	.bm-chat {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+
+	.bm-msg {
+		max-width: 85%;
+		padding: 10px 12px;
+		border-radius: 12px;
+		font-size: 14px;
+		line-height: 1.4;
+		white-space: pre-wrap;
+		word-break: break-word;
+	}
+
+	.bm-msg--assistant {
+		background: #1a1a1a;
+		color: #e0e0e0;
+		align-self: flex-start;
+		border-bottom-left-radius: 4px;
+	}
+
+	.bm-msg--user {
+		background: #7c8ef5;
+		color: #fff;
+		align-self: flex-end;
+		border-bottom-right-radius: 4px;
+	}
+
+	.bm-msg--typing {
+		color: #999;
+		font-style: italic;
+	}
+
+	.bm-chat-error {
+		margin: 0;
+		font-size: 13px;
+		color: #ff6b6b;
+	}
+
+	.bm-footer--chat {
+		flex-direction: column;
+		gap: 10px;
+	}
+
+	.bm-chat-input-row {
+		display: flex;
+		gap: 8px;
+		width: 100%;
+	}
+
+	.bm-chat-input {
+		flex: 1;
+		resize: none;
+		min-height: 44px;
+		max-height: 120px;
+		padding: 11px 12px;
+		border-radius: 8px;
+		border: 1px solid #2a2a2a;
+		background: #1a1a1a;
+		color: #e0e0e0;
+		font-size: 14px;
+		font-family: inherit;
+		line-height: 1.4;
+	}
+
+	.bm-chat-input:focus {
+		outline: none;
+		border-color: #7c8ef5;
+	}
+
+	.bm-chat-send {
+		flex-shrink: 0;
+		padding: 0 16px;
+		border: none;
+		border-radius: 8px;
+		background: #1a1a1a;
+		color: #e0e0e0;
+		font-size: 14px;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.2s;
+	}
+
+	.bm-chat-send:hover:not(:disabled) {
+		background: #252525;
+	}
+
+	.bm-chat-send:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 
 	.bm-loading {
