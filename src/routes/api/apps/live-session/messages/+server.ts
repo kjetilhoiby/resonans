@@ -14,6 +14,7 @@ import {
 	DIRECTION_RUNNER_TO_VIEWER,
 	type MessageDirection
 } from '$lib/server/services/live-messages';
+import { parseBinaryReplyOptions } from '$lib/server/services/message-reply-intent';
 
 /**
  * Toveis retur-kanal for delt live posisjon. Retningen avgjøres av hvordan
@@ -68,6 +69,9 @@ async function readMessages(sessionId: string, direction: MessageDirection, afte
 		id: String(m.seq),
 		sender: m.sender,
 		text: m.text,
+		// Binært hurtigsvarsett for hands-free Ekko-bruker (kun seer→løper).
+		// Tom liste når meldingen ikke har forslag.
+		quickReplies: m.quickReplies ?? [],
 		createdAt: m.createdAt?.toISOString() ?? null
 	}));
 }
@@ -113,11 +117,21 @@ export const POST: RequestHandler = async ({ request, url }) => {
 		}
 	}
 
+	// Seer→løper: map meldingen til et binært hurtigsvar Ekko viser som
+	// nikk/rist-knapper. Feiler trygt til ingen forslag (NULL) — meldingen
+	// sendes uansett. Løper→seer trenger ikke forslag (seeren kan skrive selv).
+	let quickReplies: string[] | null = null;
+	if (direction === DIRECTION_VIEWER_TO_RUNNER) {
+		const intent = await parseBinaryReplyOptions(validated.value.text);
+		quickReplies = intent.replies.length > 0 ? intent.replies : null;
+	}
+
 	await db.insert(liveSessionMessages).values({
 		sessionId: session.id,
 		direction,
 		sender: validated.value.sender,
-		text: validated.value.text
+		text: validated.value.text,
+		quickReplies
 	});
 
 	return json({ ok: true });

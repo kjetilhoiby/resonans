@@ -86,7 +86,40 @@ dekker serversiden i resonans-repoet.
 - **Rate-limit kun på seer-kanalen**: løperen er autentisert; spam-vektoren er
   den åpne lenken.
 
+### Fase 6: Hurtigsvar via intent-parsing + chat-stil på dele-siden
+
+Ekko-brukeren sykler/kjører når en melding kommer inn og kan verken skrive eller
+snakke — bare «nikke eller riste på hodet». Vi mapper derfor enhver seer→løper-
+melding til et *binært* svarsett (to korte forslag) som Ekko viser som
+hurtigsvar-knapper. Vi antar ikke ja/nei-spørsmål: «kan du hente i barnehagen?»
+→ Ja/Nei, men «jeg kan hente i barnehagen» → bekreftelse/avkreftelse.
+
+- **Intent-parsing** (`src/lib/server/services/message-reply-intent.ts`):
+  `parseBinaryReplyOptions` kaller `gpt-4o-mini` (JSON-output) og foreslår
+  nøyaktig to korte svar, eller ingen ved ren heiarop. DB-/LLM-fri normalisering
+  (`normalizeReplyOptions`) krever nøyaktig to unike, lengde-kappede svar —
+  ellers tom liste. Feiler trygt til ingen forslag.
+- **Lagring**: ny kolonne `quick_replies jsonb` på `live_session_messages`
+  (migrasjon `0020_live_messages_quick_replies.sql`). Parses én gang ved
+  skriving, slik at polling ikke trigger nye LLM-kall.
+- **API-kontrakt**: POST (seer→løper) parser intent og lagrer forslagene. GET
+  returnerer nå `quickReplies: string[]` per melding (tom liste = ingen forslag).
+  Ekko viser dem som nikk/rist-knapper; et trykk sender et vanlig løper→seer-svar.
+- **Chat-stil** (`SharedTripPositionView.svelte`): meldings-UIen er nå én
+  sammenhengende bobletråd — egne sendte meldinger (høyre, blå) og løperens svar
+  (venstre). Egne meldinger legges til optimistisk ved send (seerens GET henter
+  kun løper→seer). Auto-scroll til bunn.
+
+## Beslutninger (forts.)
+
+- **Parse synkront ved POST, lagre på raden**: serverless deler ikke minne, og vi
+  vil ikke kjøre LLM på hver polling. Forslagene beregnes én gang og persisteres.
+- **Binært, ikke fritt antall**: hands-free betyr to valg (nikk/rist). Enten
+  nøyaktig to forslag, eller ingen knapper — aldri ett eller tre.
+- **Trygg fallback**: intent-parsing som feiler eller timer ut skal aldri hindre
+  at meldingen sendes; da utelates bare forslagene.
+
 ## Verifisering
 
-- `npm test` — 588 tester grønne (12 for live-messages).
+- `npm test` — 597 tester grønne (9 nye for `message-reply-intent`).
 - `npm run check` — 0 feil, 0 advarsler.

@@ -33,11 +33,16 @@
 	let senderName = $state('');
 	let messageText = $state('');
 	let sending = $state(false);
-	let sendStatus = $state<'idle' | 'sent' | 'error' | 'rate_limited'>('idle');
+	let sendStatus = $state<'idle' | 'error' | 'rate_limited'>('idle');
 
-	type IncomingMessage = { id: string; sender: string | null; text: string; createdAt: string | null };
-	let incomingMessages = $state<IncomingMessage[]>([]);
+	// Én sammenhengende chat-tråd: egne sendte meldinger (høyre) + svar fra
+	// løperen (venstre). Egne meldinger legges til optimistisk ved send siden
+	// seerens GET kun henter løper→seer-svarene.
+	type ThreadMessage = { key: string; mine: boolean; sender: string | null; text: string; createdAt: string | null };
+	let thread = $state<ThreadMessage[]>([]);
 	let lastIncomingId: string | null = null;
+	let ownCounter = 0;
+	let threadEl = $state<HTMLDivElement | null>(null);
 
 	let lat = $state(resource.lastLat);
 	let lng = $state(resource.lastLon);
@@ -110,6 +115,8 @@
 
 	// Henter løper→seer-meldinger (svar fra den som løper). `after`-markøren gjør
 	// at vi bare får nye. Kjøres i samme puls som posisjons-pollingen.
+	type IncomingMessage = { id: string; sender: string | null; text: string; createdAt: string | null };
+
 	async function pollIncoming() {
 		try {
 			const params = new URLSearchParams({ token });
@@ -119,10 +126,27 @@
 			const d = await res.json();
 			const fresh: IncomingMessage[] = Array.isArray(d.messages) ? d.messages : [];
 			if (fresh.length > 0) {
-				incomingMessages = [...incomingMessages, ...fresh];
+				thread = [
+					...thread,
+					...fresh.map((m) => ({
+						key: `in-${m.id}`,
+						mine: false,
+						sender: m.sender,
+						text: m.text,
+						createdAt: m.createdAt
+					}))
+				];
 				lastIncomingId = fresh[fresh.length - 1].id;
+				scrollThreadToBottom();
 			}
 		} catch { /* neste puls prøver igjen */ }
+	}
+
+	function scrollThreadToBottom() {
+		// Vent på DOM-oppdatering før vi scroller.
+		requestAnimationFrame(() => {
+			if (threadEl) threadEl.scrollTop = threadEl.scrollHeight;
+		});
 	}
 
 	async function poll() {
@@ -198,8 +222,19 @@
 				return;
 			}
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			thread = [
+				...thread,
+				{
+					key: `own-${ownCounter++}`,
+					mine: true,
+					sender: senderName.trim() || null,
+					text,
+					createdAt: new Date().toISOString()
+				}
+			];
 			messageText = '';
-			sendStatus = 'sent';
+			sendStatus = 'idle';
+			scrollThreadToBottom();
 			if (senderName.trim()) {
 				try {
 					localStorage.setItem(SENDER_STORAGE_KEY, senderName.trim());
@@ -362,12 +397,16 @@
 			</div>
 		{/if}
 
-		{#if incomingMessages.length > 0}
-			<div class="incoming">
-				{#each incomingMessages as msg (msg.id)}
-					<div class="incoming-msg">
-						<span class="incoming-from">{msg.sender || resource.ownerName || 'Løperen'}</span>
-						<span class="incoming-text">{msg.text}</span>
+		{#if thread.length > 0}
+			<div class="thread" bind:this={threadEl}>
+				{#each thread as msg (msg.key)}
+					<div class="bubble-row" class:mine={msg.mine}>
+						<div class="bubble" class:mine={msg.mine}>
+							{#if !msg.mine}
+								<span class="bubble-from">{msg.sender || resource.ownerName || 'Løperen'}</span>
+							{/if}
+							<span class="bubble-text">{msg.text}</span>
+						</div>
 					</div>
 				{/each}
 			</div>
@@ -376,7 +415,7 @@
 		{#if isActive}
 			<form class="composer" onsubmit={sendMessage}>
 				<p class="composer-hint">
-					Send en heiarop — {resource.ownerName ?? 'løperen'} får den lest opp.
+					Skriv en melding — {resource.ownerName ?? 'løperen'} får den lest opp og kan svare med ett trykk.
 				</p>
 				<input
 					class="sender-input"
@@ -406,9 +445,7 @@
 						{sending ? 'Sender …' : 'Send'}
 					</button>
 				</div>
-				{#if sendStatus === 'sent'}
-					<p class="composer-status ok">Sendt! Den blir lest opp.</p>
-				{:else if sendStatus === 'rate_limited'}
+				{#if sendStatus === 'rate_limited'}
 					<p class="composer-status err">Litt for ivrig — vent et øyeblikk før neste melding.</p>
 				{:else if sendStatus === 'error'}
 					<p class="composer-status err">Kunne ikke sende. Prøv igjen.</p>
@@ -506,31 +543,46 @@
 		font-weight: 700;
 		color: #1a1a1a;
 	}
-	.incoming {
+	.thread {
 		margin-top: 0.85rem;
 		display: flex;
 		flex-direction: column;
 		gap: 0.4rem;
+		max-height: 32vh;
+		overflow-y: auto;
 	}
-	.incoming-msg {
+	.bubble-row {
+		display: flex;
+		justify-content: flex-start;
+	}
+	.bubble-row.mine {
+		justify-content: flex-end;
+	}
+	.bubble {
 		background: #eef2ff;
 		border-radius: 10px 10px 10px 2px;
 		padding: 0.5rem 0.7rem;
 		display: flex;
 		flex-direction: column;
 		gap: 0.1rem;
-		align-self: flex-start;
 		max-width: 85%;
 	}
-	.incoming-from {
+	.bubble.mine {
+		background: #4285f4;
+		border-radius: 10px 10px 2px 10px;
+	}
+	.bubble-from {
 		font-size: 0.7rem;
 		font-weight: 600;
 		color: #4f5bd5;
 	}
-	.incoming-text {
+	.bubble-text {
 		font-size: 0.95rem;
 		color: #1a1a1a;
 		word-break: break-word;
+	}
+	.bubble.mine .bubble-text {
+		color: #fff;
 	}
 	.composer {
 		margin-top: 0.85rem;
@@ -587,7 +639,6 @@
 		margin: 0;
 		font-size: 0.82rem;
 	}
-	.composer-status.ok { color: #1a9c4f; }
 	.composer-status.err { color: #c2410c; }
 	.ended-banner {
 		position: absolute;

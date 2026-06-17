@@ -137,6 +137,9 @@ export const liveSessionMessages = pgTable('live_session_messages', {
 	direction: text('direction').notNull().default('viewer_to_runner'), // 'viewer_to_runner' | 'runner_to_viewer'
 	sender: text('sender'),
 	text: text('text').notNull(),
+	// Binært svarsett (to korte forslag) for hands-free Ekko-bruker. Kun på
+	// seer→løper-meldinger; NULL når meldingen ikke trenger svar. Se message-reply-intent.ts.
+	quickReplies: jsonb('quick_replies').$type<string[] | null>(),
 	createdAt: timestamp('created_at').defaultNow().notNull()
 }, (table) => ({
 	sessionDirSeqIdx: index('live_session_messages_session_dir_seq_idx').on(table.sessionId, table.direction, table.seq)
