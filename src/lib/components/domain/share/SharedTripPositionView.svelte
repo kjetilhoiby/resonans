@@ -25,6 +25,16 @@
 
 	let { resource, token }: { resource: Resource; token: string } = $props();
 
+	// Maks-lengder speiler serveren (src/lib/server/services/live-messages.ts).
+	const MAX_SENDER_LEN = 40;
+	const MAX_TEXT_LEN = 280;
+	const SENDER_STORAGE_KEY = 'resonans-live-sender';
+
+	let senderName = $state('');
+	let messageText = $state('');
+	let sending = $state(false);
+	let sendStatus = $state<'idle' | 'sent' | 'error' | 'rate_limited'>('idle');
+
 	let lat = $state(resource.lastLat);
 	let lng = $state(resource.lastLon);
 	let speedMps = $state(resource.lastSpeedMps);
@@ -131,8 +141,45 @@
 		});
 	}
 
+	async function sendMessage(event: SubmitEvent) {
+		event.preventDefault();
+		const text = messageText.trim();
+		if (!text || sending) return;
+
+		sending = true;
+		sendStatus = 'idle';
+		try {
+			const res = await fetch(`/api/apps/live-session/messages?token=${encodeURIComponent(token)}`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ sender: senderName.trim() || undefined, text })
+			});
+			if (res.status === 429) {
+				sendStatus = 'rate_limited';
+				return;
+			}
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			messageText = '';
+			sendStatus = 'sent';
+			if (senderName.trim()) {
+				try {
+					localStorage.setItem(SENDER_STORAGE_KEY, senderName.trim());
+				} catch { /* private mode e.l. */ }
+			}
+		} catch (err) {
+			sendStatus = 'error';
+			console.error(err);
+		} finally {
+			sending = false;
+		}
+	}
+
 	onMount(async () => {
 		secondsSinceUpdate = calcSecondsSince(lastPingAt);
+
+		try {
+			senderName = localStorage.getItem(SENDER_STORAGE_KEY) ?? '';
+		} catch { /* private mode e.l. */ }
 
 		const maplibregl = await import('maplibre-gl');
 		await import('maplibre-gl/dist/maplibre-gl.css');
@@ -263,6 +310,49 @@
 				{#if isStale}<span class="stale-tag">· signal mistet</span>{/if}
 			</p>
 		{/if}
+
+		{#if isActive}
+			<form class="composer" onsubmit={sendMessage}>
+				<p class="composer-hint">
+					Send en heiarop — {resource.ownerName ?? 'løperen'} får den lest opp.
+				</p>
+				<input
+					class="sender-input"
+					type="text"
+					placeholder="Navnet ditt (valgfritt)"
+					bind:value={senderName}
+					maxlength={MAX_SENDER_LEN}
+					aria-label="Navnet ditt"
+					data-track="delt-posisjon:avsendernavn"
+				/>
+				<div class="message-row">
+					<input
+						class="message-input"
+						type="text"
+						placeholder="Skriv en melding …"
+						bind:value={messageText}
+						maxlength={MAX_TEXT_LEN}
+						aria-label="Melding"
+						data-track="delt-posisjon:melding"
+					/>
+					<button
+						type="submit"
+						class="send-btn"
+						disabled={sending || !messageText.trim()}
+						data-track="delt-posisjon:send-melding"
+					>
+						{sending ? 'Sender …' : 'Send'}
+					</button>
+				</div>
+				{#if sendStatus === 'sent'}
+					<p class="composer-status ok">Sendt! Den blir lest opp.</p>
+				{:else if sendStatus === 'rate_limited'}
+					<p class="composer-status err">Litt for ivrig — vent et øyeblikk før neste melding.</p>
+				{:else if sendStatus === 'error'}
+					<p class="composer-status err">Kunne ikke sende. Prøv igjen.</p>
+				{/if}
+			</form>
+		{/if}
 	</div>
 </section>
 
@@ -332,6 +422,63 @@
 	}
 	.updated.stale { color: #b16a00; }
 	.stale-tag { margin-left: 0.2rem; }
+	.composer {
+		margin-top: 0.85rem;
+		padding-top: 0.85rem;
+		border-top: 1px solid #ececf1;
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+	.composer-hint {
+		margin: 0;
+		font-size: 0.8rem;
+		color: #777;
+	}
+	.sender-input,
+	.message-input {
+		width: 100%;
+		box-sizing: border-box;
+		padding: 0.6rem 0.7rem;
+		border: 1px solid #d9dae2;
+		border-radius: 8px;
+		font-size: 0.95rem;
+		background: #fff;
+		color: #1a1a1a;
+	}
+	.sender-input:focus,
+	.message-input:focus {
+		outline: none;
+		border-color: #4285f4;
+	}
+	.message-row {
+		display: flex;
+		gap: 0.5rem;
+	}
+	.message-row .message-input {
+		flex: 1;
+	}
+	.send-btn {
+		flex-shrink: 0;
+		padding: 0.6rem 1rem;
+		border: none;
+		border-radius: 8px;
+		background: #4285f4;
+		color: #fff;
+		font-weight: 600;
+		font-size: 0.95rem;
+		cursor: pointer;
+	}
+	.send-btn:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+	.composer-status {
+		margin: 0;
+		font-size: 0.82rem;
+	}
+	.composer-status.ok { color: #1a9c4f; }
+	.composer-status.err { color: #c2410c; }
 	.ended-banner {
 		position: absolute;
 		top: 1rem;
