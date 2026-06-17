@@ -25,6 +25,20 @@
 
 	let { resource, token }: { resource: Resource; token: string } = $props();
 
+	// Maks-lengder speiler serveren (src/lib/server/services/live-messages.ts).
+	const MAX_SENDER_LEN = 40;
+	const MAX_TEXT_LEN = 280;
+	const SENDER_STORAGE_KEY = 'resonans-live-sender';
+
+	let senderName = $state('');
+	let messageText = $state('');
+	let sending = $state(false);
+	let sendStatus = $state<'idle' | 'sent' | 'error' | 'rate_limited'>('idle');
+
+	type IncomingMessage = { id: string; sender: string | null; text: string; createdAt: string | null };
+	let incomingMessages = $state<IncomingMessage[]>([]);
+	let lastIncomingId: string | null = null;
+
 	let lat = $state(resource.lastLat);
 	let lng = $state(resource.lastLon);
 	let speedMps = $state(resource.lastSpeedMps);
@@ -41,12 +55,25 @@
 	let destMarker: maplibregl.Marker | null = null;
 	let pollInterval: ReturnType<typeof setInterval> | null = null;
 	let tickInterval: ReturnType<typeof setInterval> | null = null;
+	let incomingInterval: ReturnType<typeof setInterval> | null = null;
 
 	const isActive = $derived(!endedAt);
 	const hasPosition = $derived(lat !== null && lng !== null);
 	const hasDest = $derived(resource.destLat !== null && resource.destLon !== null);
 	const speedKmh = $derived(speedMps !== null ? Math.round(speedMps * 3.6) : null);
 	const isStale = $derived(secondsSinceUpdate > 120);
+	const hasArrived = $derived(!isActive && endedReason === 'arrived');
+	// Ankomsttidspunkt (klokkeslett) når turen er fullført. endedAt settes når
+	// appen registrerer ankomst (DELETE med reason 'arrived').
+	const arrivalClock = $derived(hasArrived && endedAt ? formatClock(endedAt) : null);
+
+	function formatClock(ts: string): string {
+		try {
+			return new Date(ts).toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+		} catch {
+			return '';
+		}
+	}
 
 	function formatEta(secs: number | null): string {
 		if (secs === null) return '—';
@@ -81,6 +108,23 @@
 		return el;
 	}
 
+	// Henter løper→seer-meldinger (svar fra den som løper). `after`-markøren gjør
+	// at vi bare får nye. Kjøres i samme puls som posisjons-pollingen.
+	async function pollIncoming() {
+		try {
+			const params = new URLSearchParams({ token });
+			if (lastIncomingId) params.set('after', lastIncomingId);
+			const res = await fetch(`/api/apps/live-session/messages?${params}`);
+			if (!res.ok) return;
+			const d = await res.json();
+			const fresh: IncomingMessage[] = Array.isArray(d.messages) ? d.messages : [];
+			if (fresh.length > 0) {
+				incomingMessages = [...incomingMessages, ...fresh];
+				lastIncomingId = fresh[fresh.length - 1].id;
+			}
+		} catch { /* neste puls prøver igjen */ }
+	}
+
 	async function poll() {
 		try {
 			const res = await fetch(`/api/share-link/${token}/position`);
@@ -101,9 +145,14 @@
 				updateRouteProgress();
 				map?.easeTo({ center: [lng, lat], duration: 1000 });
 			}
-			if (endedAt && pollInterval) {
-				clearInterval(pollInterval);
-				pollInterval = null;
+			if (endedAt) {
+				if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+				// Én siste henting av eventuelle svar, så stopper vi meldings-pulsen.
+				if (incomingInterval) {
+					void pollIncoming();
+					clearInterval(incomingInterval);
+					incomingInterval = null;
+				}
 			}
 		} catch { /* neste poll prøver igjen */ }
 	}
@@ -131,8 +180,45 @@
 		});
 	}
 
+	async function sendMessage(event: SubmitEvent) {
+		event.preventDefault();
+		const text = messageText.trim();
+		if (!text || sending) return;
+
+		sending = true;
+		sendStatus = 'idle';
+		try {
+			const res = await fetch(`/api/apps/live-session/messages?token=${encodeURIComponent(token)}`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ sender: senderName.trim() || undefined, text })
+			});
+			if (res.status === 429) {
+				sendStatus = 'rate_limited';
+				return;
+			}
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			messageText = '';
+			sendStatus = 'sent';
+			if (senderName.trim()) {
+				try {
+					localStorage.setItem(SENDER_STORAGE_KEY, senderName.trim());
+				} catch { /* private mode e.l. */ }
+			}
+		} catch (err) {
+			sendStatus = 'error';
+			console.error(err);
+		} finally {
+			sending = false;
+		}
+	}
+
 	onMount(async () => {
 		secondsSinceUpdate = calcSecondsSince(lastPingAt);
+
+		try {
+			senderName = localStorage.getItem(SENDER_STORAGE_KEY) ?? '';
+		} catch { /* private mode e.l. */ }
 
 		const maplibregl = await import('maplibre-gl');
 		await import('maplibre-gl/dist/maplibre-gl.css');
@@ -204,8 +290,10 @@
 			}
 		});
 
+		void pollIncoming();
 		if (isActive) {
 			pollInterval = setInterval(poll, 10_000);
+			incomingInterval = setInterval(pollIncoming, 2_000);
 		}
 		tickInterval = setInterval(() => {
 			secondsSinceUpdate = calcSecondsSince(lastPingAt);
@@ -215,6 +303,7 @@
 	onDestroy(() => {
 		if (pollInterval) clearInterval(pollInterval);
 		if (tickInterval) clearInterval(tickInterval);
+		if (incomingInterval) clearInterval(incomingInterval);
 		map?.remove();
 	});
 </script>
@@ -222,7 +311,11 @@
 <section class="trip-position">
 	{#if !isActive}
 		<div class="ended-banner">
-			{endedReason === 'arrived' ? 'Framme!' : 'Turen er avsluttet'}
+			{#if hasArrived}
+				Framme{#if arrivalClock} kl. {arrivalClock}{/if}!
+			{:else}
+				Turen er avsluttet
+			{/if}
 		</div>
 	{/if}
 
@@ -262,6 +355,65 @@
 				{formatUpdated(secondsSinceUpdate)}
 				{#if isStale}<span class="stale-tag">· signal mistet</span>{/if}
 			</p>
+		{:else if hasArrived}
+			<div class="arrived-summary">
+				<span class="arrived-label">Framme</span>
+				<span class="arrived-time">{arrivalClock ?? '—'}</span>
+			</div>
+		{/if}
+
+		{#if incomingMessages.length > 0}
+			<div class="incoming">
+				{#each incomingMessages as msg (msg.id)}
+					<div class="incoming-msg">
+						<span class="incoming-from">{msg.sender || resource.ownerName || 'Løperen'}</span>
+						<span class="incoming-text">{msg.text}</span>
+					</div>
+				{/each}
+			</div>
+		{/if}
+
+		{#if isActive}
+			<form class="composer" onsubmit={sendMessage}>
+				<p class="composer-hint">
+					Send en heiarop — {resource.ownerName ?? 'løperen'} får den lest opp.
+				</p>
+				<input
+					class="sender-input"
+					type="text"
+					placeholder="Navnet ditt (valgfritt)"
+					bind:value={senderName}
+					maxlength={MAX_SENDER_LEN}
+					aria-label="Navnet ditt"
+					data-track="delt-posisjon:avsendernavn"
+				/>
+				<div class="message-row">
+					<input
+						class="message-input"
+						type="text"
+						placeholder="Skriv en melding …"
+						bind:value={messageText}
+						maxlength={MAX_TEXT_LEN}
+						aria-label="Melding"
+						data-track="delt-posisjon:melding"
+					/>
+					<button
+						type="submit"
+						class="send-btn"
+						disabled={sending || !messageText.trim()}
+						data-track="delt-posisjon:send-melding"
+					>
+						{sending ? 'Sender …' : 'Send'}
+					</button>
+				</div>
+				{#if sendStatus === 'sent'}
+					<p class="composer-status ok">Sendt! Den blir lest opp.</p>
+				{:else if sendStatus === 'rate_limited'}
+					<p class="composer-status err">Litt for ivrig — vent et øyeblikk før neste melding.</p>
+				{:else if sendStatus === 'error'}
+					<p class="composer-status err">Kunne ikke sende. Prøv igjen.</p>
+				{/if}
+			</form>
 		{/if}
 	</div>
 </section>
@@ -332,6 +484,111 @@
 	}
 	.updated.stale { color: #b16a00; }
 	.stale-tag { margin-left: 0.2rem; }
+	.arrived-summary {
+		display: flex;
+		align-items: baseline;
+		justify-content: center;
+		gap: 0.5rem;
+		background: #ecfdf3;
+		border: 1px solid #abefc6;
+		border-radius: 8px;
+		padding: 0.7rem;
+	}
+	.arrived-label {
+		font-size: 0.7rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: #1a9c4f;
+		font-weight: 600;
+	}
+	.arrived-time {
+		font-size: 1.3rem;
+		font-weight: 700;
+		color: #1a1a1a;
+	}
+	.incoming {
+		margin-top: 0.85rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+	}
+	.incoming-msg {
+		background: #eef2ff;
+		border-radius: 10px 10px 10px 2px;
+		padding: 0.5rem 0.7rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.1rem;
+		align-self: flex-start;
+		max-width: 85%;
+	}
+	.incoming-from {
+		font-size: 0.7rem;
+		font-weight: 600;
+		color: #4f5bd5;
+	}
+	.incoming-text {
+		font-size: 0.95rem;
+		color: #1a1a1a;
+		word-break: break-word;
+	}
+	.composer {
+		margin-top: 0.85rem;
+		padding-top: 0.85rem;
+		border-top: 1px solid #ececf1;
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+	.composer-hint {
+		margin: 0;
+		font-size: 0.8rem;
+		color: #777;
+	}
+	.sender-input,
+	.message-input {
+		width: 100%;
+		box-sizing: border-box;
+		padding: 0.6rem 0.7rem;
+		border: 1px solid #d9dae2;
+		border-radius: 8px;
+		font-size: 0.95rem;
+		background: #fff;
+		color: #1a1a1a;
+	}
+	.sender-input:focus,
+	.message-input:focus {
+		outline: none;
+		border-color: #4285f4;
+	}
+	.message-row {
+		display: flex;
+		gap: 0.5rem;
+	}
+	.message-row .message-input {
+		flex: 1;
+	}
+	.send-btn {
+		flex-shrink: 0;
+		padding: 0.6rem 1rem;
+		border: none;
+		border-radius: 8px;
+		background: #4285f4;
+		color: #fff;
+		font-weight: 600;
+		font-size: 0.95rem;
+		cursor: pointer;
+	}
+	.send-btn:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+	.composer-status {
+		margin: 0;
+		font-size: 0.82rem;
+	}
+	.composer-status.ok { color: #1a9c4f; }
+	.composer-status.err { color: #c2410c; }
 	.ended-banner {
 		position: absolute;
 		top: 1rem;
