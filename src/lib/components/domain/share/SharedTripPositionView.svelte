@@ -57,6 +57,18 @@
 	const hasDest = $derived(resource.destLat !== null && resource.destLon !== null);
 	const speedKmh = $derived(speedMps !== null ? Math.round(speedMps * 3.6) : null);
 	const isStale = $derived(secondsSinceUpdate > 120);
+	const hasArrived = $derived(!isActive && endedReason === 'arrived');
+	// Ankomsttidspunkt (klokkeslett) når turen er fullført. endedAt settes når
+	// appen registrerer ankomst (DELETE med reason 'arrived').
+	const arrivalClock = $derived(hasArrived && endedAt ? formatClock(endedAt) : null);
+
+	function formatClock(ts: string): string {
+		try {
+			return new Date(ts).toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+		} catch {
+			return '';
+		}
+	}
 
 	function formatEta(secs: number | null): string {
 		if (secs === null) return '—';
@@ -269,7 +281,11 @@
 <section class="trip-position">
 	{#if !isActive}
 		<div class="ended-banner">
-			{endedReason === 'arrived' ? 'Framme!' : 'Turen er avsluttet'}
+			{#if hasArrived}
+				Framme{#if arrivalClock} kl. {arrivalClock}{/if}!
+			{:else}
+				Turen er avsluttet
+			{/if}
 		</div>
 	{/if}
 
@@ -309,6 +325,11 @@
 				{formatUpdated(secondsSinceUpdate)}
 				{#if isStale}<span class="stale-tag">· signal mistet</span>{/if}
 			</p>
+		{:else if hasArrived}
+			<div class="arrived-summary">
+				<span class="arrived-label">Framme</span>
+				<span class="arrived-time">{arrivalClock ?? '—'}</span>
+			</div>
 		{/if}
 
 		{#if isActive}
@@ -422,6 +443,28 @@
 	}
 	.updated.stale { color: #b16a00; }
 	.stale-tag { margin-left: 0.2rem; }
+	.arrived-summary {
+		display: flex;
+		align-items: baseline;
+		justify-content: center;
+		gap: 0.5rem;
+		background: #ecfdf3;
+		border: 1px solid #abefc6;
+		border-radius: 8px;
+		padding: 0.7rem;
+	}
+	.arrived-label {
+		font-size: 0.7rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: #1a9c4f;
+		font-weight: 600;
+	}
+	.arrived-time {
+		font-size: 1.3rem;
+		font-weight: 700;
+		color: #1a1a1a;
+	}
 	.composer {
 		margin-top: 0.85rem;
 		padding-top: 0.85rem;
