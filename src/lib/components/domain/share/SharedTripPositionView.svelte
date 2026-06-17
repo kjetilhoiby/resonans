@@ -55,6 +55,7 @@
 	let destMarker: maplibregl.Marker | null = null;
 	let pollInterval: ReturnType<typeof setInterval> | null = null;
 	let tickInterval: ReturnType<typeof setInterval> | null = null;
+	let incomingInterval: ReturnType<typeof setInterval> | null = null;
 
 	const isActive = $derived(!endedAt);
 	const hasPosition = $derived(lat !== null && lng !== null);
@@ -125,7 +126,6 @@
 	}
 
 	async function poll() {
-		void pollIncoming();
 		try {
 			const res = await fetch(`/api/share-link/${token}/position`);
 			if (!res.ok) return;
@@ -145,9 +145,14 @@
 				updateRouteProgress();
 				map?.easeTo({ center: [lng, lat], duration: 1000 });
 			}
-			if (endedAt && pollInterval) {
-				clearInterval(pollInterval);
-				pollInterval = null;
+			if (endedAt) {
+				if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+				// Én siste henting av eventuelle svar, så stopper vi meldings-pulsen.
+				if (incomingInterval) {
+					void pollIncoming();
+					clearInterval(incomingInterval);
+					incomingInterval = null;
+				}
 			}
 		} catch { /* neste poll prøver igjen */ }
 	}
@@ -288,6 +293,7 @@
 		void pollIncoming();
 		if (isActive) {
 			pollInterval = setInterval(poll, 10_000);
+			incomingInterval = setInterval(pollIncoming, 2_000);
 		}
 		tickInterval = setInterval(() => {
 			secondsSinceUpdate = calcSecondsSince(lastPingAt);
@@ -297,6 +303,7 @@
 	onDestroy(() => {
 		if (pollInterval) clearInterval(pollInterval);
 		if (tickInterval) clearInterval(tickInterval);
+		if (incomingInterval) clearInterval(incomingInterval);
 		map?.remove();
 	});
 </script>
