@@ -35,6 +35,10 @@
 	let sending = $state(false);
 	let sendStatus = $state<'idle' | 'sent' | 'error' | 'rate_limited'>('idle');
 
+	type IncomingMessage = { id: string; sender: string | null; text: string; createdAt: string | null };
+	let incomingMessages = $state<IncomingMessage[]>([]);
+	let lastIncomingId: string | null = null;
+
 	let lat = $state(resource.lastLat);
 	let lng = $state(resource.lastLon);
 	let speedMps = $state(resource.lastSpeedMps);
@@ -103,7 +107,25 @@
 		return el;
 	}
 
+	// Henter løper→seer-meldinger (svar fra den som løper). `after`-markøren gjør
+	// at vi bare får nye. Kjøres i samme puls som posisjons-pollingen.
+	async function pollIncoming() {
+		try {
+			const params = new URLSearchParams({ token });
+			if (lastIncomingId) params.set('after', lastIncomingId);
+			const res = await fetch(`/api/apps/live-session/messages?${params}`);
+			if (!res.ok) return;
+			const d = await res.json();
+			const fresh: IncomingMessage[] = Array.isArray(d.messages) ? d.messages : [];
+			if (fresh.length > 0) {
+				incomingMessages = [...incomingMessages, ...fresh];
+				lastIncomingId = fresh[fresh.length - 1].id;
+			}
+		} catch { /* neste puls prøver igjen */ }
+	}
+
 	async function poll() {
+		void pollIncoming();
 		try {
 			const res = await fetch(`/api/share-link/${token}/position`);
 			if (!res.ok) return;
@@ -263,6 +285,7 @@
 			}
 		});
 
+		void pollIncoming();
 		if (isActive) {
 			pollInterval = setInterval(poll, 10_000);
 		}
@@ -329,6 +352,17 @@
 			<div class="arrived-summary">
 				<span class="arrived-label">Framme</span>
 				<span class="arrived-time">{arrivalClock ?? '—'}</span>
+			</div>
+		{/if}
+
+		{#if incomingMessages.length > 0}
+			<div class="incoming">
+				{#each incomingMessages as msg (msg.id)}
+					<div class="incoming-msg">
+						<span class="incoming-from">{msg.sender || resource.ownerName || 'Løperen'}</span>
+						<span class="incoming-text">{msg.text}</span>
+					</div>
+				{/each}
 			</div>
 		{/if}
 
@@ -464,6 +498,32 @@
 		font-size: 1.3rem;
 		font-weight: 700;
 		color: #1a1a1a;
+	}
+	.incoming {
+		margin-top: 0.85rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+	}
+	.incoming-msg {
+		background: #eef2ff;
+		border-radius: 10px 10px 10px 2px;
+		padding: 0.5rem 0.7rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.1rem;
+		align-self: flex-start;
+		max-width: 85%;
+	}
+	.incoming-from {
+		font-size: 0.7rem;
+		font-weight: 600;
+		color: #4f5bd5;
+	}
+	.incoming-text {
+		font-size: 0.95rem;
+		color: #1a1a1a;
+		word-break: break-word;
 	}
 	.composer {
 		margin-top: 0.85rem;

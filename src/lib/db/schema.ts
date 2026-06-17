@@ -127,18 +127,19 @@ export const liveSessions = pgTable('live_sessions', {
 	userActiveIdx: index('live_sessions_user_active_idx').on(table.userId, table.endedAt)
 }));
 
-// Live-meldinger fra seere på en delt posisjon (retur-kanal). Seeren skriver via
-// dele-siden (offentlig), løper-appen (Ekko) poller nye meldinger og leser dem opp.
-// `seq` er en monoton markør som appen sender tilbake som `after` for å hente kun nyere.
+// Live-meldinger på en delt posisjon (toveis retur-kanal). `direction` skiller
+// seer→løper (heiarop som Ekko leser opp) fra løper→seer (svar tilbake til dele-siden).
+// `seq` er en monoton markør som klienten sender tilbake som `after` for å hente kun nyere.
 export const liveSessionMessages = pgTable('live_session_messages', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	seq: bigserial('seq', { mode: 'number' }).notNull(),
 	sessionId: uuid('session_id').references(() => liveSessions.id, { onDelete: 'cascade' }).notNull(),
+	direction: text('direction').notNull().default('viewer_to_runner'), // 'viewer_to_runner' | 'runner_to_viewer'
 	sender: text('sender'),
 	text: text('text').notNull(),
 	createdAt: timestamp('created_at').defaultNow().notNull()
 }, (table) => ({
-	sessionSeqIdx: index('live_session_messages_session_seq_idx').on(table.sessionId, table.seq)
+	sessionDirSeqIdx: index('live_session_messages_session_dir_seq_idx').on(table.sessionId, table.direction, table.seq)
 }));
 
 // Delbare lenker — én token gir tilgang til én ressurs (sjekkliste, tema-liste, eller live posisjon).

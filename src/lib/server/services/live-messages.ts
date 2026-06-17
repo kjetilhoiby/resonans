@@ -6,6 +6,11 @@
 export const MAX_SENDER_LEN = 40;
 export const MAX_TEXT_LEN = 280;
 
+// Retning på en melding. Seer→løper leses opp av Ekko; løper→seer vises på dele-siden.
+export const DIRECTION_VIEWER_TO_RUNNER = 'viewer_to_runner';
+export const DIRECTION_RUNNER_TO_VIEWER = 'runner_to_viewer';
+export type MessageDirection = typeof DIRECTION_VIEWER_TO_RUNNER | typeof DIRECTION_RUNNER_TO_VIEWER;
+
 // Rate-limit: alle med dele-lenken kan skrive, så vi beskytter mot spam ved å
 // begrense antall meldinger per økt innenfor et tidsvindu.
 export const RATE_LIMIT_WINDOW_MS = 60_000;

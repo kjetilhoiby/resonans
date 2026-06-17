@@ -61,7 +61,32 @@ dekker serversiden i resonans-repoet.
 - **Rate-limit i DB, ikke in-memory**: serverless (Vercel) deler ikke minne
   mellom instanser, så vi teller meldinger i tidsvinduet i databasen.
 
+### Fase 5: Toveis — løper→seer (`direction`-kolonne)
+
+- Ny kolonne `direction` på `live_session_messages`
+  (`'viewer_to_runner' | 'runner_to_viewer'`, default `viewer_to_runner` for
+  eksisterende rader). Migrasjon `0019_live_messages_direction.sql` bytter
+  indeksen til `(session_id, direction, seq)`.
+- Endepunktet `/api/apps/live-session/messages` er nå symmetrisk og avgjør
+  retning ut fra autentisering:
+  - **Bearer rsn_** = løperen (Ekko): POST skriver løper→seer, GET leser
+    seer→løper-heiarop.
+  - **Ingen secret** = seeren (dele-siden): POST skriver seer→løper, GET leser
+    løper→seer.
+  - Eksisterende kontrakt er uendret — Ekkos GET (Bearer) returnerer fortsatt
+    seer→løper, seerens POST skriver fortsatt seer→løper.
+- Dele-siden (`SharedTripPositionView`) poller nå også innkommende løper→seer-
+  meldinger (samme 10-sek puls, egen `after`-markør) og viser dem som bobler.
+
+## Beslutninger (forts.)
+
+- **Retning via autentiseringsmetode, ikke eget felt**: holder API-et symmetrisk
+  uten nye endepunkter, og gjenbruker token-scopingen som allerede skiller
+  løper (økt-token + Bearer) fra seer (share-token).
+- **Rate-limit kun på seer-kanalen**: løperen er autentisert; spam-vektoren er
+  den åpne lenken.
+
 ## Verifisering
 
-- `npm test` — 587 tester grønne (11 nye for live-messages).
+- `npm test` — 588 tester grønne (12 for live-messages).
 - `npm run check` — 0 feil, 0 advarsler.

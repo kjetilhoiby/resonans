@@ -4,7 +4,9 @@ import {
 	validateMessageInput,
 	parseAfterMarker,
 	MAX_SENDER_LEN,
-	MAX_TEXT_LEN
+	MAX_TEXT_LEN,
+	DIRECTION_VIEWER_TO_RUNNER,
+	DIRECTION_RUNNER_TO_VIEWER
 } from './live-messages';
 
 describe('normalizeSender', () => {
@@ -51,6 +53,14 @@ describe('validateMessageInput', () => {
 		const result = validateMessageInput({ text: long });
 		expect(result.ok).toBe(true);
 		if (result.ok) expect(result.value.text).toHaveLength(MAX_TEXT_LEN);
+	});
+});
+
+describe('meldingsretninger', () => {
+	it('har to distinkte retninger', () => {
+		expect(DIRECTION_VIEWER_TO_RUNNER).toBe('viewer_to_runner');
+		expect(DIRECTION_RUNNER_TO_VIEWER).toBe('runner_to_viewer');
+		expect(DIRECTION_VIEWER_TO_RUNNER).not.toBe(DIRECTION_RUNNER_TO_VIEWER);
 	});
 });
 
