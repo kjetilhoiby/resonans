@@ -10,6 +10,7 @@ const FRESHNESS_THRESHOLDS: Record<string, { maxStalenessMs: number; label: stri
 	dropbox: { maxStalenessMs: 2 * 3600_000, label: 'Dropbox' },
 	spond: { maxStalenessMs: 48 * 3600_000, label: 'Spond' },
 	rescuetime: { maxStalenessMs: 26 * 3600_000, label: 'RescueTime' },
+	tesla: { maxStalenessMs: 26 * 3600_000, label: 'Tesla' },
 };
 
 interface StaleSensor {

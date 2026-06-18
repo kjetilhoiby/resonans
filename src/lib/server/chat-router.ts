@@ -58,6 +58,13 @@ export function routeChatRequest(input: string): ChatRoutingDecision {
 		domains.add('home');
 		domainHints.push(DOMAIN_METADATA.home.systemPromptHint);
 	}
+	if (/tesla|elbil|\bbil(?:en|s)?\b|lading|\blade\b|batteri|rekkevidde|kjøretur|kjoretur/.test(text)) {
+		if (!domains.has('home')) {
+			domains.add('home');
+			domainHints.push(DOMAIN_METADATA.home.systemPromptHint);
+		}
+		hints.push('Bruk query_tesla_vehicle for bilens batteri/lading/posisjon/rekkevidde — gjett aldri tall.');
+	}
 	if (focusModules.includes('jobb') || JOBB_DOMAIN_TRIGGER.test(text)) {
 		domains.add('jobb');
 		domainHints.push(DOMAIN_METADATA.jobb.systemPromptHint);

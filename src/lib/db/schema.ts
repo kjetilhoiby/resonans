@@ -117,6 +117,10 @@ export const liveSessions = pgTable('live_sessions', {
 	etaSeconds: integer('eta_seconds'),
 	distanceRemainingM: integer('distance_remaining_m'),
 	progressFraction: doublePrecision('progress_fraction'),
+	// Kjøretøy-telemetri for kjøre-økter (sportType='driving', matet av Tesla-sync).
+	batteryPercent: integer('battery_percent'),
+	rangeKm: doublePrecision('range_km'),
+	charging: boolean('charging'),
 	startedAt: timestamp('started_at').defaultNow().notNull(),
 	lastPingAt: timestamp('last_ping_at'),
 	endedAt: timestamp('ended_at'),
