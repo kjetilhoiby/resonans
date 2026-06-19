@@ -14,11 +14,12 @@
 	import BookDashboard from '../BookDashboard.svelte';
 	import EgenfrekvensDashboard from '../EgenfrekvensDashboard.svelte';
 	import HomeDashboard from '../HomeDashboard.svelte';
+	import VehicleDashboard from '../VehicleDashboard.svelte';
 	import GoalRing from '../../ui/GoalRing.svelte';
 	import ProjectCard from '../../composed/ProjectCard.svelte';
 	import ThemeMetricSettingsSheet from '../ThemeMetricSettingsSheet.svelte';
 	import type { MetricSettingsMap } from '../ThemeMetricSettingsSheet.svelte';
-	import { fetchDashboard, getCachedDashboard, type EconomicsDashboardData, type HealthDashboardData, type TravelDashboardData, type FoodDashboardData, type FamilyDashboardData, type EgenfrekvensDashboardData, type HomeDashboardData } from '$lib/client/dashboard-cache';
+	import { fetchDashboard, getCachedDashboard, type EconomicsDashboardData, type HealthDashboardData, type TravelDashboardData, type FoodDashboardData, type FamilyDashboardData, type EgenfrekvensDashboardData, type HomeDashboardData, type VehicleDashboardData } from '$lib/client/dashboard-cache';
 	import { getThemeDashboardDefinition, resolveThemeDashboardKind } from '$lib/domain/theme-dashboard-registry';
 	import { FLOWS } from '$lib/flows/registry';
 	import type { Flow } from '$lib/flows/types';
@@ -107,6 +108,7 @@
 	let familyDashboard = $state<FamilyDashboardData | null>(null);
 	let egenfrekvensDashboard = $state<EgenfrekvensDashboardData | null>(null);
 	let homeDashboard = $state<HomeDashboardData | null>(null);
+	let vehicleDashboard = $state<VehicleDashboardData | null>(null);
 	let dashboardLoading = $state(false);
 	let dashboardLoaded = $state(false);
 	let dashboardError = $state('');
@@ -183,6 +185,15 @@
 	const homeDashboardProps = $derived.by(() => {
 		if (activeDashboardKind !== 'home' || !homeDashboard) return null;
 		return homeDashboard;
+	});
+
+	const vehicleDashboardProps = $derived.by(() => {
+		if (activeDashboardKind !== 'vehicle' || !vehicleDashboard) return null;
+		return {
+			connected: vehicleDashboard.connected,
+			hourly: vehicleDashboard.hourly,
+			costPerKm: vehicleDashboard.costPerKm
+		};
 	});
 
 	/* ── Goal helpers (for non-dashboard themes) ───────── */
@@ -327,6 +338,8 @@
 			egenfrekvensDashboard = cached.data as EgenfrekvensDashboardData;
 		} else if (kind === 'home') {
 			homeDashboard = cached.data as HomeDashboardData;
+		} else if (kind === 'vehicle') {
+			vehicleDashboard = cached.data as VehicleDashboardData;
 		}
 
 		return cached;
@@ -369,6 +382,8 @@
 				egenfrekvensDashboard = result.data as EgenfrekvensDashboardData;
 			} else if (kind === 'home') {
 				homeDashboard = result.data as HomeDashboardData;
+			} else if (kind === 'vehicle') {
+				vehicleDashboard = result.data as VehicleDashboardData;
 			}
 			dashboardLoaded = true;
 		} catch {
@@ -548,6 +563,10 @@
 			onOpenAppliance={(href) => goto(href)}
 			onOpenChat={(prefill) => onSwitchToChat?.(prefill)}
 		/>
+	{/if}
+
+	{#if vehicleDashboardProps}
+		<VehicleDashboard {...vehicleDashboardProps} />
 	{/if}
 
 	{#if projects.length > 0}

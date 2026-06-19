@@ -107,6 +107,47 @@ Infrastruktur-oppsettet som koden forutsetter ble fullført:
 Gjenstår: bruker klikker «Koble til Tesla» i `/settings/sources` (interaktiv
 OAuth-innlogging) for å fullføre tilkoblingen.
 
+### Fase 7: Kjøretøy-dashboard (kjørt + kost/km) (2026-06-19)
+
+Tesla går fra ren live-statusvisning til datakilde med to grafer i et eget
+kjøretøy-tema-dashboard:
+
+- **Datalag** (`src/lib/server/integrations/tesla-metrics.ts`): rene, testbare
+  funksjoner `deriveHourlyDistance` / `deriveMonthlyDistance` (odometer-delta
+  bøttet per time/måned; positive deltaer tilskrives slutt-målingens bøtte,
+  negative/null ignoreres) og `computeCostPerKm` (kr/km = bilkostnad / km,
+  `null` når km = 0). `loadVehicleMetrics` er en tynn loader som henter
+  `vehicle_state`-odometer fra `sensor_events` og bilrelaterte transaksjoner via
+  `queryCanonicalTransactions` (kategoriene `bil_og_transport` +
+  `bilforsikring_og_billan`). Tester: `tesla-metrics.test.ts` (11 stk).
+- **Grafer** (`src/lib/components/charts/`): `DistanceTimelineChart` (kronologisk
+  søyle per time med dato-skille) og `CostPerKmChart` (kr/km per måned). Rene
+  SVG/flex-komponenter i samme idiom som `HrDistributionBar`, Oslo-tidssone i
+  labels.
+- **Dashboard** (`src/lib/components/domain/VehicleDashboard.svelte`): KPI-rad
+  (km siste 7 dager, kr/km siste måned, km denne måneden) + de to grafene i
+  `SectionCard`.
+- **Ruting**: ny `'vehicle'`-`DashboardKind` i `theme-dashboard-registry.ts`
+  (matcher «bil»/«kjøretøy»/«tesla»/«elbil»), API-rute
+  `/api/tema/[id]/dashboard/vehicle`, `VehicleDashboardData` i
+  `dashboard-cache.ts`, og dispatch i `ThemeDataTab.svelte`. Tester:
+  `theme-dashboard-registry.test.ts`.
+
+**Kost/km-modell (avklart med bruker):** lading skjer nesten utelukkende på
+betal-ladere, så ladekostnaden ligger allerede i banktransaksjonene
+(`bil_og_transport` → «drivstoff»). Faste kostnader (forsikring + billån) tas med
+via `bilforsikring_og_billan`. Det gir et reelt kr/km-tall uten egen
+strømpris-integrasjon. Energiforbruk-basert kost (batteri-delta × pakkekapasitet
+× spotpris) er bevisst utsatt.
+
+**Forbehold (dokumentert i koden):** kjørt-grafen virker umiddelbart, men
+nattgapet (ingen synk 22–05 UTC) gjør at nattkjøring tilskrives morgentimen.
+Kost/km trenger minst én måned odometer-historikk + kategoriserte transaksjoner
+før den blir meningsfull.
+
+**Bruker må:** opprette et tema med navn «Bil»/«Kjøretøy»/«Tesla» for å se
+dashboardet.
+
 ## Beslutninger
 
 - **Offisiell Fleet API, ikke tredjeparts-proxy**: full kontroll, ingen

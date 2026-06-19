@@ -1,4 +1,4 @@
-export type DashboardKind = 'health' | 'economics' | 'food' | 'family' | 'travel' | 'ferie' | 'books' | 'egenfrekvens' | 'home';
+export type DashboardKind = 'health' | 'economics' | 'food' | 'family' | 'travel' | 'ferie' | 'books' | 'egenfrekvens' | 'home' | 'vehicle';
 
 export interface ThemeDashboardDefinition {
 	kind: DashboardKind;
@@ -155,6 +155,10 @@ const THEME_DASHBOARD_MATCHERS: Array<{ kind: DashboardKind; terms: string[] }> 
 		]
 	},
 	{
+		kind: 'vehicle',
+		terms: ['bil', 'kjøretøy', 'kjoretoy', 'tesla', 'elbil', 'bilen', 'kjøring', 'kjoring']
+	},
+	{
 		kind: 'home',
 		terms: [
 			'hus',
@@ -218,6 +222,11 @@ const DASHBOARD_DEFINITIONS: Record<DashboardKind, ThemeDashboardDefinition> = {
 		kind: 'home',
 		label: 'Hjem',
 		icon: '🏠'
+	},
+	vehicle: {
+		kind: 'vehicle',
+		label: 'Kjøretøy',
+		icon: '🚗'
 	}
 };
 

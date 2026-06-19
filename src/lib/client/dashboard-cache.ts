@@ -356,6 +356,13 @@ export interface HomeDashboardData {
 	}>;
 }
 
+export interface VehicleDashboardData {
+	connected: boolean;
+	hourly: Array<{ key: string; km: number }>;
+	costPerKm: Array<{ month: string; km: number; cost: number; krPerKm: number | null }>;
+	generatedAt: string;
+}
+
 type DashboardPayloadMap = {
 	health: HealthDashboardData;
 	economics: EconomicsDashboardData;
@@ -366,6 +373,7 @@ type DashboardPayloadMap = {
 	family: FamilyDashboardData;
 	egenfrekvens: EgenfrekvensDashboardData;
 	home: HomeDashboardData;
+	vehicle: VehicleDashboardData;
 };
 
 export interface DashboardCacheEntry<K extends DashboardKind = DashboardKind> {
