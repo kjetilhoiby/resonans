@@ -76,7 +76,7 @@ SpareBank1-transaksjoner kategorisert i tre lag. Lønnsdeteksjon via fingerprint
 Spond-aktiviteter synket nattlig. Familiemedlemmer med relasjoner og Spond-mapping. Ferieplanlegging med oppholdstilbud-modell (subtraktiv: finn hullene, fyll dem).
 
 ### Egenfrekvens
-Daglig selvinnsjekk (humør, energi, overskudd). Parsjekk med partner (synkronisert reveal). Refleksjonssynteser. Signaler for mental helse-trend.
+Daglig selvinnsjekk (humør, energi, overskudd). Parsjekk med partner (synkronisert reveal). Refleksjonssynteser. Signaler for mental helse-trend. **Livskompasset** legger en ukentlig (helg) verdi-akse over dette: ACT-basert scoring av livets verdiområder på to akser — viktighet og ukens samsvar — der gapet mellom dem er det chatten tar tak i.
 
 ### Hjem
 Smarte enheter (strømmålere, IoT). Rutiner og prosedyrer. Prosjektsporing.

@@ -8,6 +8,7 @@ export type NotificationRouteKey =
 	| 'digestDay'
 	| 'salaryReceived'
 	| 'egenfrekvensCheckin'
+	| 'livskompassetWeekend'
 	| 'programReadiness'
 	| 'programAdaptive'
 	| 'applianceCycleStart'

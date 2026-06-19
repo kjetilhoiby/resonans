@@ -13,6 +13,8 @@
 	import FerieDashboard from '../FerieDashboard.svelte';
 	import BookDashboard from '../BookDashboard.svelte';
 	import EgenfrekvensDashboard from '../EgenfrekvensDashboard.svelte';
+	import LivskompassWidget from '../LivskompassWidget.svelte';
+	import type { LivskompassScores } from '$lib/domains/livskompass/dimensions';
 	import HomeDashboard from '../HomeDashboard.svelte';
 	import GoalRing from '../../ui/GoalRing.svelte';
 	import ProjectCard from '../../composed/ProjectCard.svelte';
@@ -98,6 +100,23 @@
 	const isTravel = $derived(activeDashboardKind === 'travel');
 	const isFerie = $derived(activeDashboardKind === 'ferie');
 	const isBooks = $derived(activeDashboardKind === 'books');
+	const isEgenfrekvens = $derived(activeDashboardKind === 'egenfrekvens');
+
+	/* ── Livskompasset (ukentlig) — vises i egenfrekvens-temaet ── */
+	let livskompassScores = $state<LivskompassScores | null>(null);
+	let livskompassLoaded = $state(false);
+	async function loadLivskompass() {
+		try {
+			const res = await fetch('/api/livskompass/checkin');
+			if (!res.ok) return;
+			const status = await res.json();
+			livskompassScores = status.latest?.scores ?? null;
+		} catch { /* stille */ }
+		finally { livskompassLoaded = true; }
+	}
+	$effect(() => {
+		if (isEgenfrekvens && !livskompassLoaded) void loadLivskompass();
+	});
 
 	/* ── Dashboard state ───────────────────────────────── */
 	let healthDashboard = $state<HealthDashboardData | null>(null);
@@ -541,6 +560,13 @@
 		/>
 	{/if}
 
+	{#if isEgenfrekvens}
+		<div class="livskompass-section">
+			<SectionLabel>Livskompasset — ukentlig</SectionLabel>
+			<LivskompassWidget scores={livskompassScores} onOpen={() => goto('/?flow=livskompass')} />
+		</div>
+	{/if}
+
 	{#if homeDashboardProps}
 		<HomeDashboard
 			{...homeDashboardProps}
@@ -699,6 +725,12 @@
 {/if}
 
 <style>
+	.livskompass-section {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+
 	/* ── Data tab ── */
 	.data-panel {
 		padding: 16px var(--page-px);

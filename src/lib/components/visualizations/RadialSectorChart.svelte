@@ -25,6 +25,8 @@
     size?: number;
     animateOnMount?: boolean;
     showLabels?: boolean;
+    /** Plasser etiketter på fast radius (andel av maxR) i stedet for midt i hver ark. */
+    labelRadiusFraction?: number;
     /** Vis subtil sporring for alle plasser (grå bakgrunn) */
     showTrack?: boolean;
     centerLabel?: string;
@@ -39,6 +41,7 @@
     size = 200,
     animateOnMount = true,
     showLabels = true,
+    labelRadiusFraction,
     showTrack = true,
     centerLabel,
     centerSublabel,
@@ -105,7 +108,10 @@
       const rBase = Math.max(0, Math.min(1, s.radius));
       const outerR = innerR + (maxR - innerR) * rBase;
       const midDeg = start + (slotDeg - gapDeg) / 2;
-      const labelR = (innerR + outerR) / 2;
+      const labelR =
+        labelRadiusFraction != null
+          ? innerR + (maxR - innerR) * labelRadiusFraction
+          : (innerR + outerR) / 2;
 
       return {
         bgD: bgOuterR != null ? buildArc(c, c, innerR, bgOuterR, start, end) : null,

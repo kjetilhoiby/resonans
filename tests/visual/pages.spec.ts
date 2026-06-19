@@ -68,6 +68,7 @@ const komponentSections = [
 	'navigasjon',
 	'sheets',
 	'modaler',
+	'livskompasset',
 	'lab'
 ];
 

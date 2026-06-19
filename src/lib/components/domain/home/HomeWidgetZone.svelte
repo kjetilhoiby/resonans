@@ -155,6 +155,7 @@
 		margin: -2px 6px 2px;
 	}
 
+
 	.widget-panel-fab {
 		position: absolute;
 		right: 10px;
