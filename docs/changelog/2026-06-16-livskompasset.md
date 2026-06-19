@@ -93,6 +93,17 @@ ETT poeng neste uke, med konkrete grep.
 - Ny `startLivskompassCoachingChat(seed, systemPrompt)` i `HomeScreen`: fersk samtale med prefikset
   aktivt for hele samtalen, ryddes i `closeChat`/`startHomeChat` så det ikke lekker til andre chatter.
 
+### Fase 9: Tiltak fra chat → ukelista (2026-06-20)
+Coaching-chatten kan nå føre avtalte, målbare tiltak rett på en ukes sjekkliste — typisk neste uke.
+- Nytt AI-verktøy `add_to_week_plan` (`src/lib/ai/tools/add-to-week-plan.ts`): `{ weekOffset, items }`.
+  Finner-eller-oppretter ukas liste (`context = week:YYYY-Www`, default neste uke), tolker frekvens
+  i teksten via `parseListRepeatCount` («Skjermfri 16–19 tre kvelder» → tre punkter) og klokkeslett
+  via `buildChecklistItemFields` («kl. 21» → metadata). Speiler innsetting fra `add_checklist_items`.
+- Registrert i `/api/chat/+server.ts` (verktøydefinisjon + handler i verktøy-loopen). Coaching-chatten
+  går via `_runChatRequest`, så verktøyet er tilgjengelig der.
+- `buildCoachingSystemPrompt` instruerer AI-en om å bruke verktøyet (weekOffset=1) når dere blir enige
+  om tiltak og brukeren vil føre dem opp.
+
 ## Beslutninger
 
 - **Gapet er signalet**, ikke samsvaret alene. `computeOutOfSync` krever gap ≥2 og viktighet ≥3.

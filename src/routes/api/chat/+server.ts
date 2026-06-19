@@ -1401,6 +1401,28 @@ Bruk key-feltet direkte som metricKey i propose_widget.`,
 	{
 		type: 'function' as const,
 		function: {
+			name: 'add_to_week_plan',
+			description: 'Legg målbare tiltak på en ukes sjekkliste (ukelista) — finner eller oppretter ukas liste automatisk. Bruk når brukeren vil føre opp konkrete mål/tiltak for en uke, f.eks. fra livskompass-coachingen («legg dette på neste ukes liste»). Skriv frekvens rett i teksten («Skjermfri 16–19 tre kvelder», «Legge meg før kl. 21 en gang») — systemet lager riktig antall punkter og trekker ut klokkeslett.',
+			parameters: {
+				type: 'object',
+				properties: {
+					weekOffset: {
+						type: 'number',
+						description: 'Hvilken uke: 0 = denne uka, 1 = neste uke (standard). Bruk 1 for «neste uke».'
+					},
+					items: {
+						type: 'array',
+						description: 'Tiltakene som skal føres opp, med frekvens i teksten der det er relevant.',
+						items: { type: 'string' }
+					}
+				},
+				required: ['items']
+			}
+		}
+	},
+	{
+		type: 'function' as const,
+		function: {
 			name: 'plan_day',
 			description: 'Lagre dagsplan for brukeren: enlinjer (kort beskrivelse av hva dagen handler om) og dagsoppgaver. Kall dette verktøyet etter at du har avklart enlinjer og oppgaver med brukeren. Skriv klokkeslett rett inn i oppgaveteksten (f.eks. "Handle middag kl. 18" eller "Legge barna kl. 18:45") og nevn personer med @navn (f.eks. "Hente @Nils kl. 16") — systemet trekker automatisk ut tidspunkt og personer.',
 			parameters: {
@@ -3091,6 +3113,28 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 						messages.push({
 							role: 'tool',
 							content: JSON.stringify({ success: false, error: 'Klarte ikke utvide sjekkliste' }),
+							tool_call_id: toolCall.id
+						});
+					}
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'add_to_week_plan') {
+					const args = JSON.parse(toolCall.function.arguments) as {
+						weekOffset?: number;
+						items: string[];
+					};
+					try {
+						const { addToWeekPlanTool } = await import('$lib/ai/tools/add-to-week-plan');
+						const result = await addToWeekPlanTool.execute({ userId, ...args });
+						checklistUpdated = true;
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify(result),
+							tool_call_id: toolCall.id
+						});
+					} catch (e) {
+						console.error('  📋 add_to_week_plan failed:', e);
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify({ success: false, error: 'Klarte ikke legge tiltak på ukelista' }),
 							tool_call_id: toolCall.id
 						});
 					}

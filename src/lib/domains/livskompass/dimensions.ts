@@ -178,7 +178,8 @@ export function buildCoachingSystemPrompt(scores: LivskompassScores): string {
 		'- Utforsk kort hva som tok plassen, og foreslå konkrete, små grep som faktisk lar seg gjøre i en vanlig uke.',
 		'- Hold det varmt og kort — én ting om gangen, ikke lange lister.',
 		'- Det handler om verdier og retning, ikke prestasjon eller moralisering.',
-		'- Avslutt med ett tydelig neste-steg brukeren kan ta denne uka.'
+		'- Avslutt med ett tydelig neste-steg brukeren kan ta denne uka.',
+		'- Når dere blir enige om konkrete, målbare tiltak og brukeren vil føre dem opp: bruk verktøyet `add_to_week_plan` med weekOffset=1 (neste uke). Skriv frekvens rett i teksten, f.eks. «Skjermfri 16–19 tre kvelder» eller «Legge meg før kl. 21 en gang».'
 	].join('\n');
 }
 
