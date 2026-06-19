@@ -8,6 +8,7 @@
 	import ChatInput from '$lib/components/ui/ChatInput.svelte';
 	import TriageCard from '$lib/components/composed/TriageCard.svelte';
 	import { tick } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { ChatState } from '$lib/client/chat-state.svelte';
 	import {
 		cumulativeDistanceMeters,
@@ -23,6 +24,39 @@
 	let tab = $state<Tab>('detaljer');
 
 	let messagesEl = $state<HTMLElement | null>(null);
+
+	// Skjul-økt-tilstand (to-stegs bekreftelse — backend setter metadata.dismissed)
+	let hiding = $state(false);
+	let confirmHide = $state(false);
+	let hideError = $state<string | null>(null);
+	let confirmTimer: ReturnType<typeof setTimeout> | null = null;
+
+	async function hideWorkout() {
+		if (hiding) return;
+		if (!confirmHide) {
+			confirmHide = true;
+			hideError = null;
+			confirmTimer = setTimeout(() => { confirmHide = false; }, 3500);
+			return;
+		}
+		if (confirmTimer) { clearTimeout(confirmTimer); confirmTimer = null; }
+		confirmHide = false;
+		hiding = true;
+		hideError = null;
+		try {
+			const res = await fetch(`/api/workouts/${workout.id}/dismiss`, { method: 'POST' });
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			// Naviger til en fersk oversikt slik at den skjulte økten ikke vises fra cache
+			if (healthThemeId) {
+				await goto(`/tema/${healthThemeId}`, { invalidateAll: true });
+			} else {
+				history.back();
+			}
+		} catch {
+			hideError = 'Kunne ikke skjule økten. Prøv igjen.';
+			hiding = false;
+		}
+	}
 
 	// Build workout context note injected on the first chat message
 	const workoutContextNote = $derived.by(() => {
@@ -159,7 +193,30 @@
 			<h1>{workout.title}</h1>
 			<time>{formatDate(workout.timestamp)}</time>
 		</div>
+		<button
+			class="hide-btn"
+			class:confirm={confirmHide}
+			onclick={hideWorkout}
+			disabled={hiding}
+			data-track="aktivitet:skjul-okt"
+			aria-label="Skjul økt fra oversikten"
+		>
+			{#if hiding}
+				Skjuler…
+			{:else if confirmHide}
+				Bekreft skjul
+			{:else}
+				<svg width="15" height="15" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+					<path d="M2.5 10S5.5 4.5 10 4.5 17.5 10 17.5 10 14.5 15.5 10 15.5 2.5 10 2.5 10z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+					<path d="M4 4l12 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+				</svg>
+				Skjul
+			{/if}
+		</button>
 	</header>
+	{#if hideError}
+		<p class="hide-error" role="alert">{hideError}</p>
+	{/if}
 
 	<div class="tabs" role="tablist">
 		<button role="tab" aria-selected={tab === 'detaljer'} class:active={tab === 'detaljer'} onclick={() => (tab = 'detaljer')}>Detaljer</button>
@@ -345,6 +402,47 @@
 		font-size: 0.8rem;
 		color: #888;
 		text-transform: capitalize;
+	}
+
+	.hide-btn {
+		margin-left: auto;
+		flex-shrink: 0;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		background: #1a1f2e;
+		border: 1px solid #2a2f3e;
+		color: #9aa3b5;
+		font-size: 0.78rem;
+		font-weight: 500;
+		padding: 0.4rem 0.7rem;
+		border-radius: 8px;
+		cursor: pointer;
+		transition: all 0.15s;
+	}
+
+	.hide-btn:hover:not(:disabled) {
+		background: #242a3a;
+		color: #c8cedb;
+	}
+
+	.hide-btn.confirm {
+		background: rgba(239, 68, 68, 0.14);
+		border-color: rgba(239, 68, 68, 0.4);
+		color: #f87171;
+	}
+
+	.hide-btn:disabled {
+		opacity: 0.6;
+		cursor: default;
+	}
+
+	.hide-error {
+		margin: 0;
+		padding: 0 1rem 0.5rem;
+		font-size: 0.78rem;
+		color: #f87171;
+		flex-shrink: 0;
 	}
 
 	/* Tabs */
