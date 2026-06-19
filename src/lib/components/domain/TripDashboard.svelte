@@ -11,6 +11,7 @@
 	import TripDayCalendar from './TripDayCalendar.svelte';
 	import TripBudget from './TripBudget.svelte';
 	import TripHealthStats from './TripHealthStats.svelte';
+	import TripDiary from './TripDiary.svelte';
 	import Icon from '../ui/Icon.svelte';
 	import DateInput from '$lib/components/ui/DateInput.svelte';
 	import SectionLabel from '../ui/SectionLabel.svelte';
@@ -472,6 +473,18 @@
 		{#if tripProfile?.startDate && tripProfile?.endDate}
 			<div class="trip-health-section">
 				<TripHealthStats themeId={themeId} {api} />
+			</div>
+		{/if}
+
+		{#if tripProfile?.startDate && tripProfile?.endDate}
+			<div class="trip-diary-section">
+				<TripDiary
+					themeId={themeId}
+					startDate={tripProfile.startDate}
+					endDate={tripProfile.endDate}
+					geoByDay={tripProfile.geoByDay}
+					{api}
+				/>
 			</div>
 		{/if}
 
