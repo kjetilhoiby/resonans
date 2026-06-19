@@ -486,6 +486,23 @@ const tools = [
 	{
 		type: 'function' as const,
 		function: {
+			name: 'query_tesla_vehicle',
+			description: 'Hent gjeldende tilstand for brukerens Tesla: batteriprosent, rekkevidde, ladestatus, posisjon, kilometerstand, lås og innetemperatur. Bruk ved spørsmål om bil/elbil/lading/batteri/rekkevidde/hvor bilen står. Leser ferskeste lagrede data; sett forceLive=true kun når brukeren eksplisitt vil ha live-status NÅ (kan vekke bilen).',
+			parameters: {
+				type: 'object',
+				properties: {
+					forceLive: {
+						type: 'boolean',
+						description: 'Hent ferskt øyeblikksbilde direkte fra Tesla (kan vekke bilen). Default false = les lagrede data.'
+					}
+				},
+				required: []
+			}
+		}
+	},
+	{
+		type: 'function' as const,
+		function: {
 			name: 'record_tracking_event',
 			description: 'Generisk registrering av vaner/aktiviteter/målinger i tracking-systemet. Bruk denne i stedet for hardkodede record_* tools. Kan opprette ny serie ved første registrering eller bruke eksisterende seriesId/taskId ved senere registreringer. Systemet finner automatisk eksisterende serie for recordTypeKey hvis seriesId ikke oppgis.',
 			parameters: {
@@ -1471,6 +1488,7 @@ function getToolProgressMessage(toolName: string) {
 		create_memory: 'Lagrer hukommelse...',
 		manage_theme: 'Oppdaterer tema...',
 		query_sensor_data: 'Henter sensordata...',
+		query_tesla_vehicle: 'Sjekker bilen...',
 		query_economics: 'Henter økonomidata...',
 		query_food: 'Henter mat-data...',
 		manage_procedure: 'Lagrer fremgangsmåte...',
@@ -2301,6 +2319,18 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 						...args
 					});
 					console.log('  📊 Result:', result.success ? 'Success' : 'Failed', result.message);
+
+					messages.push({
+						role: 'tool',
+						content: JSON.stringify(result),
+						tool_call_id: toolCall.id
+					});
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'query_tesla_vehicle') {
+					const args = JSON.parse(toolCall.function.arguments || '{}');
+					const { queryTeslaVehicleTool } = await import('$lib/ai/tools/query-tesla-vehicle');
+					console.log('  🚗 Querying Tesla vehicle with:', args);
+					const result = await queryTeslaVehicleTool.execute({ userId, ...args });
+					console.log('  🚗 Result:', result.success ? 'Success' : 'Failed', result.message);
 
 					messages.push({
 						role: 'tool',

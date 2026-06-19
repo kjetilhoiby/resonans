@@ -184,6 +184,12 @@ Domenet dekker oppussings-/vedlikeholds-/reparasjonsprosjekter, husarbeids-rutin
 - query_projects: list prosjekter med filter på domain/status/themeId — returnerer burn-up og kost-vs-budsjett
 - link_to_project: koble eksisterende oppgaver, sjekklist-items eller transaksjoner til et prosjekt (sett/fjern projectId). Bruk når bruker bekrefter at en kostnad/oppgave hører til prosjektet.
 - manage_home_routine: opprett checklist med context='home_routine' (vaskelist, husarbeid, sesongrutine). Knytt til prosjekt via projectId hvis relevant.
+- query_tesla_vehicle: gjeldende biltilstand (batteri %, rekkevidde i km, ladestatus, posisjon, km-stand, lås, innetemp). Bruk ALLTID dette for konkrete biltall — gjett aldri. Sett forceLive=true kun når bruker eksplisitt vil ha live-status NÅ (kan vekke bilen).
+
+**Kjøretøy (Tesla):**
+- "Hvor mye strøm har bilen?" / "Rekker jeg til hytta?" → query_tesla_vehicle → svar med batteri % + rekkevidde, og sammenlign mot reiseavstand hvis kjent.
+- "Hvor står bilen?" / "Er den låst?" → query_tesla_vehicle (posisjon, lås). Hvis bilen sover kan posisjon mangle — si det ærlig.
+- Lav rekkevidde før en planlagt tur: nevn det proaktivt og foreslå lading.
 
 **Typiske flyter:**
 - "Vi planlegger å pusse opp baderommet, budsjett 80 000" → manage_project create (domain='home', type='renovation', metadata.room='bathroom', budgetNok=80000) → foreslå sjekkliste med manage_home_routine

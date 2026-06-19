@@ -90,6 +90,12 @@ const JOBS: CronJob[] = [
 		maxDurationSeconds: 120
 	},
 	{
+		path: '/api/cron/tesla-sync',
+		schedule: '*/15 5-22 * * *', // hvert 15. minutt 05:00–22:00 UTC — konservativt for ikke å holde bilen våken
+		description: 'Tesla vehicle_data synk (alle brukere) — batteri/posisjon/km-stand',
+		maxDurationSeconds: 120
+	},
+	{
 		path: '/api/cron/adaptive-training',
 		schedule: '0 18 * * 0', // søndag 18:00 UTC = 20:00 Oslo (CEST)
 		description: 'Ukentlig justering av adaptive treningsprogrammer — tempo, dagplassering og volum for neste uke',

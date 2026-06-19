@@ -128,7 +128,7 @@ Sidevisninger, oppmerksomhetstid og klikk logges automatisk fra rot-layouten (`$
 ### Dataflyt
 
 ```
-Sensorer (Withings, SpareBank1, Spond, Dropbox, Strava)
+Sensorer (Withings, SpareBank1, Spond, Dropbox, Strava, Tesla)
   → Sync-jobber (/api/cron/* eller /api/sensors/*/sync)
   → sensor_events (unified event stream)
   → categorized_events (bank-transaksjoner med kategori)
@@ -189,7 +189,7 @@ Vercel med `@sveltejs/adapter-vercel` (Node.js 22.x). `buildCommand` i `vercel.j
 **Påkrevd:** `DATABASE_URL`, `OPENAI_API_KEY`, `AUTH_SECRET`
 
 **Integrasjoner** (konfigureres via OAuth i `/settings/sources`):
-`GOOGLE_CLIENT_ID`/`SECRET`, `WITHINGS_CLIENT_ID`/`SECRET`, `SPAREBANK1_CLIENT_ID`/`SECRET`, `DROPBOX_CLIENT_ID`/`SECRET`, `STRAVA_CLIENT_ID`/`SECRET`
+`GOOGLE_CLIENT_ID`/`SECRET`, `WITHINGS_CLIENT_ID`/`SECRET`, `SPAREBANK1_CLIENT_ID`/`SECRET`, `DROPBOX_CLIENT_ID`/`SECRET`, `STRAVA_CLIENT_ID`/`SECRET`, `TESLA_CLIENT_ID`/`SECRET`
 
 **Monitorering:** `MONITORING_WEBHOOK_URL` (Google Chat webhook for systemvarsler)
 

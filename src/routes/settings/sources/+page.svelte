@@ -6,6 +6,7 @@
 		SpondSourceCard,
 		GoogleSheetsSourceCard,
 		StravaSourceCard,
+		TeslaSourceCard,
 		EmailRulesCard
 	} from '$lib/components/settings';
 	import type { PageData } from './$types';
@@ -22,12 +23,14 @@
 	let sparebank1Connected = $state(false);
 	let googleSheetsConnected = $state(false);
 	let spondConnected = $state(false);
+	let teslaConnected = $state(false);
 
 	const connectedCount = $derived(
 		(withingsConnected ? 1 : 0) +
 		(sparebank1Connected ? 1 : 0) +
 		(googleSheetsConnected ? 1 : 0) +
 		(spondConnected ? 1 : 0) +
+		(teslaConnected ? 1 : 0) +
 		(webhook.trim().length > 0 ? 1 : 0)
 	);
 
@@ -60,7 +63,7 @@
 	<PageSection>
 	<PageHeader
 		title="Kilder"
-		subtitle={`${connectedCount}/4 tilkoblet`}
+		subtitle={`${connectedCount}/5 tilkoblet`}
 		titleHref="/settings"
 		titleLabel="Gå til innstillinger"
 	/>
@@ -100,6 +103,7 @@
 			userEmail={data.user?.email}
 		/>
 		<GoogleSheetsSourceCard onConnectedChange={(c) => googleSheetsConnected = c} />
+		<TeslaSourceCard onConnectedChange={(c) => teslaConnected = c} />
 		<StravaSourceCard />
 	</div>
 	</PageSection>
