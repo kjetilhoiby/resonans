@@ -1,7 +1,7 @@
 # Bilferie: Ekko-tracking + reise-tema + feriedagbok
 
 Dato: 2026-06-19
-Status: planlagt
+Status: pågår (fase 1–3 implementert serverside + UI; venter på Ekko-app-støtte for `themeId`)
 
 ## Kontekst
 
@@ -173,13 +173,54 @@ hvor-var-vi) overlever selv om rådataene tynnes ut.
   samlet snapshot ved reiseslutt? Inkrementelt er mer robust mot at turen aldri
   «avsluttes» eksplisitt.
 
-## Verifisering (planlagt)
+## Implementert 2026-06-19
 
-- `npm run check` + `npm test` (nye tester for geo-presedens og
-  `live_session` → `geoByDay`-bygging).
-- Etter UI-endring i `TripDashboard`: `npm run test:visual:review` med
-  `VISUAL_REVIEW_CONTEXT`.
-- Manuelt ende-til-ende: opprett reise-tema → legg «Kjøre til Volda» som
-  dagsoppgave → Ekko starter `driving`-økt med `themeId` → kjør/avslutt →
-  verifiser at `geoByDay` for dagen ble raffinert fra deklarert til observert →
-  se reiserute, geo-plasserte transaksjoner og auto-seedet dagbok i `TripDashboard`.
+**Fase 1 — datamodell:**
+- `scripts/db-migrations/0021_live_session_theme.sql`: `live_sessions.theme_id`
+  (nullbar FK → `themes`, `ON DELETE SET NULL`) + indeks. Matchende felt i
+  `schema.ts`.
+- `tripProfile.geoByDay` lagt til i `schema.ts` og i `TripProfile`-typen
+  (`components/domain/trip-api.ts`).
+
+**Fase 2 — capture + ren logikk:**
+- `src/lib/server/trip-geo.ts`: rene funksjoner `shouldReplaceDayGeo` (presedens
+  observert > deklarert > overnatting), `buildObservedDayGeo` (kjøre-økt → dags-geo,
+  faktisk sluttposisjon med fallback til destinasjon), `applyDayGeo` (immutabel
+  merge) og `osloDayKey` (ISO-dato i Oslo-tid). 15 enhetstester i `trip-geo.test.ts`.
+- `POST /api/apps/live-session` tar imot valgfri `themeId`.
+- `DELETE /api/apps/live-session` med `reason='arrived'`: henter økten, og hvis den
+  har `themeId`, beriker temaets `tripProfile.geoByDay` for ankomstdatoen med
+  observert sted (helper `enrichThemeGeo`).
+- `PUT /api/tema/[id]/trip` gjort felt-vis mergende (som ferie-endepunktet) slik at
+  skjema-lagring ikke overskriver `geoByDay`.
+
+**Fase 3 — UI:**
+- `src/lib/components/domain/TripDiary.svelte`: per-dag reisedagbok over turvinduet.
+  Stedet auto-seedes fra `geoByDay` med kilde-merke (📍 spored / 🗓 planlagt /
+  🏨 overnatting). Gjenbruker det tema-agnostiske dagbok-endepunktet via `tripApi`
+  (`getDiary`/`putDiaryEntry`). Lagrer per dag ved blur. `data-track` satt på felt.
+- Montert i `TripDashboard.svelte` etter helse-seksjonen.
+
+## Gjenstår
+
+- **Ekko-app må sende `themeId`** ved start av en kjøre-etappe (eget repo). Til da
+  fanges ingen observerte etapper automatisk; geoByDay kan settes manuelt/via chat.
+- **Vær-snapshot ved auto-seed** (deklarert i Fase 3-planen) er ikke koblet på —
+  `geoByDay` bærer foreløpig sted + koordinater, ikke vær. Dagboken viser vær hvis
+  notatet allerede har det.
+- **Transaksjons-geo** (tids-match mot `geoByDay`) er ikke bygd — venter til vi har
+  reelle observerte data å matche mot.
+- **Backfill av deklarert geo** fra dagsoppgaver inn i `geoByDay` (presedens-laget
+  «declared») er forberedt i logikken, men ennå ikke trigget noe sted.
+
+## Verifisering
+
+- `npm run check` (0 feil) og `npm test` (629 tester grønne, inkl. 15 nye
+  `trip-geo`-tester).
+- Reise-temaet er ikke en av de 5 visuelle baseline-sidene, så `test:visual`
+  (piksel-diff) påvirkes ikke. LLM-review (`test:visual:review`) krever
+  OpenAI-nøkkel + kjørende server og er ikke kjørt i denne sesjonen.
+- Manuelt ende-til-ende (når Ekko sender `themeId`): opprett reise-tema → legg
+  «Kjøre til Volda» som dagsoppgave → Ekko starter `driving`-økt med `themeId` →
+  kjør/avslutt med `arrived` → verifiser at `geoByDay` for dagen ble satt til
+  observert → se auto-seedet dagbok i `TripDashboard`.
