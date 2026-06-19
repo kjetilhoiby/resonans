@@ -1,9 +1,10 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
-import { liveSessions } from '$lib/db/schema';
+import { liveSessions, themes } from '$lib/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
 import { randomBytes } from 'crypto';
+import { applyDayGeo, buildObservedDayGeo, osloDayKey } from '$lib/server/trip-geo';
 import {
 	getOrCreateTripPositionShareToken,
 	revokeShareTokensForResource,
@@ -37,6 +38,32 @@ async function revokeSessionShares(userId: string, sessionId: string): Promise<v
 	}
 }
 
+/**
+ * Read-modify-write av et reise-temas tripProfile.geoByDay med et nytt dags-geo.
+ * Presedens-logikken er ren (applyDayGeo); her gjør vi kun DB-runden. No-op hvis
+ * temaet ikke finnes eller ikke tilhører brukeren.
+ */
+async function enrichThemeGeo(
+	userId: string,
+	themeId: string,
+	dateKey: string,
+	candidate: import('$lib/server/trip-geo').DayGeo
+): Promise<void> {
+	const theme = await db.query.themes.findFirst({
+		where: and(eq(themes.id, themeId), eq(themes.userId, userId)),
+		columns: { tripProfile: true }
+	});
+	if (!theme) return;
+
+	const profile = theme.tripProfile ?? {};
+	const nextGeo = applyDayGeo(profile.geoByDay, dateKey, candidate);
+
+	await db
+		.update(themes)
+		.set({ tripProfile: { ...profile, geoByDay: nextGeo }, updatedAt: new Date() })
+		.where(and(eq(themes.id, themeId), eq(themes.userId, userId)));
+}
+
 export const GET: RequestHandler = async ({ locals, request }) => {
 	const userId = locals.userId;
 	if (!userId) return json({ error: 'Unauthorized' }, { status: 401 });
@@ -62,7 +89,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	if (!userId) return json({ error: 'Unauthorized' }, { status: 401 });
 
 	const body = await request.json();
-	const { sportType, routeLabel, routeCoordinates, destLat, destLon, destLabel, routeDistanceM, lat, lng } = body;
+	const { sportType, routeLabel, routeCoordinates, destLat, destLon, destLabel, routeDistanceM, lat, lng, themeId } = body;
 
 	if (!sportType) return json({ error: 'sportType er påkrevd' }, { status: 400 });
 
@@ -90,7 +117,8 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		destLabel: destLabel ?? null,
 		routeDistanceM: routeDistanceM ?? null,
 		lastLat: lat ?? null,
-		lastLon: lng ?? null
+		lastLon: lng ?? null,
+		themeId: typeof themeId === 'string' ? themeId : null
 	}).returning();
 
 	const shareUrl = await buildShareUrl(origin, userId, session.id, token);
@@ -143,16 +171,35 @@ export const DELETE: RequestHandler = async ({ locals, request }) => {
 
 	if (!token) return json({ error: 'token er påkrevd' }, { status: 400 });
 
+	const session = await db.query.liveSessions.findFirst({
+		where: and(
+			eq(liveSessions.token, token),
+			eq(liveSessions.userId, userId),
+			isNull(liveSessions.endedAt)
+		)
+	});
+
+	const endedAt = new Date();
+
 	// Vi revoker ikke share-token ved naturlig stopp/ankomst — da skal mottakeren
 	// fortsatt se «Framme!»-tilstanden (samme som /live gjør i dag). Eier kan
 	// revoke manuelt via delings-arket, og token kan settes med utløp.
 	await db.update(liveSessions)
-		.set({ endedAt: new Date(), endedReason: reason ?? 'stopped' })
+		.set({ endedAt, endedReason: reason ?? 'stopped' })
 		.where(and(
 			eq(liveSessions.token, token),
 			eq(liveSessions.userId, userId),
 			isNull(liveSessions.endedAt)
 		));
+
+	// Ankomst på en etappe knyttet til et reise-tema: berik temaets geo-kontekst
+	// med observert sluttposisjon, etter presedens (observert > deklarert > overnatting).
+	if (session && reason === 'arrived' && session.themeId) {
+		const candidate = buildObservedDayGeo(session);
+		if (candidate) {
+			await enrichThemeGeo(userId, session.themeId, osloDayKey(endedAt), candidate);
+		}
+	}
 
 	return json({ ok: true });
 };

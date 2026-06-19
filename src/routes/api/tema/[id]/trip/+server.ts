@@ -10,16 +10,37 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		return json({ error: 'Invalid body' }, { status: 400 });
 	}
 
-	// Sanitize: only allow known fields
-	const allowed = ['destination', 'country', 'lat', 'lng', 'startDate', 'endDate', 'accountIds', 'overnightStays'];
-	const profile: Record<string, unknown> = {};
+	// Felt-vis merge: behold eksisterende felter (særlig geoByDay, som skrives av
+	// live-session-flyten og ikke av dette skjemaet) og overlay kun feltene som er
+	// eksplisitt med i requesten. null/undefined fjerner feltet.
+	const allowed = [
+		'destination',
+		'country',
+		'lat',
+		'lng',
+		'startDate',
+		'endDate',
+		'accountIds',
+		'overnightStays',
+		'geoByDay'
+	];
+
+	const existing = await db.query.themes.findFirst({
+		where: and(eq(themes.id, params.id), eq(themes.userId, locals.userId)),
+		columns: { tripProfile: true }
+	});
+
+	const merged: Record<string, unknown> = { ...(existing?.tripProfile ?? {}) };
 	for (const key of allowed) {
-		if (key in body) profile[key] = body[key];
+		if (!(key in body)) continue;
+		const value = body[key];
+		if (value === null || value === undefined) delete merged[key];
+		else merged[key] = value;
 	}
 
 	await db
 		.update(themes)
-		.set({ tripProfile: profile, updatedAt: new Date() })
+		.set({ tripProfile: merged, updatedAt: new Date() })
 		.where(and(eq(themes.id, params.id), eq(themes.userId, locals.userId)));
 
 	return json({ success: true });

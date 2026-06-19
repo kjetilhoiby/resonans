@@ -23,6 +23,14 @@ export interface OvernightStay {
 	notes?: string;
 }
 
+export interface DayGeo {
+	place?: string;
+	lat?: number;
+	lon?: number;
+	source: 'observed' | 'declared' | 'overnight';
+	liveSessionId?: string;
+}
+
 export interface TripProfile {
 	destination?: string;
 	country?: string;
@@ -32,6 +40,8 @@ export interface TripProfile {
 	endDate?: string;
 	accountIds?: string[];
 	overnightStays?: OvernightStay[];
+	/** Geo-kontekst turen har akkumulert, per ISO-dato. Skrives av live-session-flyten. */
+	geoByDay?: Record<string, DayGeo>;
 }
 
 /* ── Delte typer: ferieprofil ────────────────────────── */

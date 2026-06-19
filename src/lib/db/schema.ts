@@ -121,6 +121,9 @@ export const liveSessions = pgTable('live_sessions', {
 	batteryPercent: integer('battery_percent'),
 	rangeKm: doublePrecision('range_km'),
 	charging: boolean('charging'),
+	// Reise-tema en etappe hører til. Satt av Ekko ved start; ved 'arrived' beriker
+	// den avsluttede økten temaets tripProfile.geoByDay med observert sted.
+	themeId: uuid('theme_id').references((): AnyPgColumn => themes.id, { onDelete: 'set null' }),
 	startedAt: timestamp('started_at').defaultNow().notNull(),
 	lastPingAt: timestamp('last_ping_at'),
 	endedAt: timestamp('ended_at'),
@@ -128,7 +131,8 @@ export const liveSessions = pgTable('live_sessions', {
 	createdAt: timestamp('created_at').defaultNow().notNull()
 }, (table) => ({
 	tokenIdx: uniqueIndex('live_sessions_token_idx').on(table.token),
-	userActiveIdx: index('live_sessions_user_active_idx').on(table.userId, table.endedAt)
+	userActiveIdx: index('live_sessions_user_active_idx').on(table.userId, table.endedAt),
+	themeIdx: index('live_sessions_theme_idx').on(table.themeId)
 }));
 
 // Live-meldinger på en delt posisjon (toveis retur-kanal). `direction` skiller
@@ -205,6 +209,16 @@ export const themes = pgTable('themes', {
 			address?: string;
 			notes?: string;
 			source?: string; // 'dayplan' = utledet fra dagsplanenes «Sted:»-punkter
+		}>;
+		// Geo-kontekst turen akkumulerer: beste stedssignal per dag, frosset slik at
+		// reise-minnet (dagbok, kart) overlever at sensor_events tynnes ut. Nøkkel = ISO-dato.
+		// Presedens: observert kjøretur (presist) > deklarert dagsoppgave > overnatting.
+		geoByDay?: Record<string, {
+			place?: string;        // beste stedsnavn for dagen
+			lat?: number;
+			lon?: number;
+			source: 'observed' | 'declared' | 'overnight';
+			liveSessionId?: string; // satt når kilden er en observert kjøretur
 		}>;
 	}>(),
 	// Ferie-tema: oppholdsplan (dekning per familiemedlem per dag) + grove reise-blokker.
