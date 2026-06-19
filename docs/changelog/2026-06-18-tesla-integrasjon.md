@@ -1,7 +1,7 @@
 # Tesla-integrasjon: sensor + proxy for Ekko
 
 Dato: 2026-06-18
-Status: pågår
+Status: pågår (aktivert i prod 2026-06-19, venter på første brukertilkobling)
 
 ## Kontekst
 
@@ -83,6 +83,30 @@ live-kadens/streaming; serversiden her er bygd for å tåle det.
   utilgjengelig lenge).
 - `.env.example` + CLAUDE.md oppdatert.
 
+### Fase 6: Aktivering i prod (2026-06-19)
+
+Infrastruktur-oppsettet som koden forutsetter ble fullført:
+
+- **Env-vars**: `TESLA_CLIENT_ID` / `TESLA_CLIENT_SECRET` (fra developer.tesla.com,
+  app-navn «Resonans») satt lokalt og i Vercel.
+- **Tesla-app-config**: Allowed Origin `https://resonans.vercel.app`, redirect URI
+  `https://resonans.vercel.app/api/sensors/tesla/callback`.
+- **Public-key-hosting**: EC `prime256v1`/P-256-nøkkelpar generert med `openssl`.
+  Public-delen lagt i `static/.well-known/appspecific/com.tesla.3p.public-key.pem`
+  (committet, serveres statisk av adapter-vercel). Privatnøkkelen lagres utenfor
+  repoet (passordmanager) — trengs ikke for read-only v1, kun for fremtidige
+  signerte kommandoer.
+- **Partner-registrering**: `scripts/tesla-register-partner.mjs` — engangs/idempotent
+  script som (1) verifiserer at public-nøkkelen er live på domenet, (2) henter et
+  `client_credentials`-partner-token mot `auth.tesla.com` med EU-audience, (3)
+  `POST /api/1/partner_accounts` med domenet. Kjørt mot EU-regionen 2026-06-19;
+  Tesla returnerte `public_key`/`public_key_hash` som matcher den hostede nøkkelen.
+- Region: EU (`fleet-api.prd.eu.vn.cloud.tesla.com`). `enterprise_tier`
+  = `pay_as_you_go` (gratiskvote/måned, så betaling — cron er konservativ).
+
+Gjenstår: bruker klikker «Koble til Tesla» i `/settings/sources` (interaktiv
+OAuth-innlogging) for å fullføre tilkoblingen.
+
 ## Beslutninger
 
 - **Offisiell Fleet API, ikke tredjeparts-proxy**: full kontroll, ingen
@@ -101,7 +125,8 @@ live-kadens/streaming; serversiden her er bygd for å tåle det.
 - Endelig live-kadens og om Fleet Telemetry streaming (mTLS-server) skal brukes
   for ekte sanntid i stedet for polling.
 - Kjøretøyvelger i UI hvis bruker har flere biler (liste finnes i `config.vehicles`).
-- Partner-registrering + public-key-fil må settes opp manuelt før første tilkobling.
+- ~~Partner-registrering + public-key-fil må settes opp manuelt før første tilkobling.~~
+  Gjort 2026-06-19 (se Fase 6).
 
 ## Verifisering
 
