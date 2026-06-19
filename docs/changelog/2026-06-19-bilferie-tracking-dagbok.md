@@ -1,7 +1,7 @@
 # Bilferie: Ekko-tracking + reise-tema + feriedagbok
 
 Dato: 2026-06-19
-Status: pågår (fase 1–3 implementert serverside + UI; venter på Ekko-app-støtte for `themeId`)
+Status: pågår (fase 1–3 implementert serverside + UI; ingen Ekko-endring nødvendig)
 
 ## Kontekst
 
@@ -158,12 +158,15 @@ hvor-var-vi) overlever selv om rådataene tynnes ut.
   unngår familie-grid-overhead for en liten bilferie.
 - **Gjenbruk av diary-endepunktet uten kontraktsendring** — det er allerede
   tema-agnostisk; arbeidet er å eksponere det i `TripDashboard` + auto-seede.
+- **Serveren utleder tema fra datoen, ikke Ekko.** Reisen er et temporalt filter,
+  så tilhørighet er en funksjon av datoen. Ekko skal ikke kjenne tema-taksonomien;
+  `themeId` på API-et er en override for overlappende turer / kjøretur utenfor vinduet.
 
 ## Åpne punkter (avklares før bygging)
 
-- **Identifisering av aktivt reise-tema i Ekko**: eksplisitt `themeId` (bruker
-  velger tema før etappe) er enklest og minst overraskende. Alternativt kan
-  serveren gjette fra dato innen et temas `[startDate, endDate]`.
+- ~~**Identifisering av aktivt reise-tema i Ekko**~~ Avgjort: serveren utleder
+  temaet fra ankomstdatoen (`pickTripForDate`), `themeId` fra Ekko er kun override.
+  Holder Ekko uvitende om tema-taksonomien og treffer «reise = temporalt filter».
 - **Forsoning plan ↔ observasjon**: matche på dato + destinasjons-streng, eller
   nærhet i koordinater? Stedsnavn-match er sprøtt; koordinat-nærhet krever at
   begge sider er geokodet.
@@ -187,10 +190,14 @@ hvor-var-vi) overlever selv om rådataene tynnes ut.
   observert > deklarert > overnatting), `buildObservedDayGeo` (kjøre-økt → dags-geo,
   faktisk sluttposisjon med fallback til destinasjon), `applyDayGeo` (immutabel
   merge) og `osloDayKey` (ISO-dato i Oslo-tid). 15 enhetstester i `trip-geo.test.ts`.
-- `POST /api/apps/live-session` tar imot valgfri `themeId`.
-- `DELETE /api/apps/live-session` med `reason='arrived'`: henter økten, og hvis den
-  har `themeId`, beriker temaets `tripProfile.geoByDay` for ankomstdatoen med
-  observert sted (helper `enrichThemeGeo`).
+- `DELETE /api/apps/live-session` med `reason='arrived'`: henter økten, **utleder
+  reise-temaet fra ankomstdatoen** (`inferTripThemeId` → `pickTripForDate`) og
+  beriker temaets `tripProfile.geoByDay` med observert sted (helper `enrichThemeGeo`).
+  Ekko trenger ikke vite noe om temaet.
+- `pickTripForDate` (ren funksjon, 5 tester): velger turen hvis vinduet
+  [startDate, endDate] dekker datoen; smaleste vindu vinner ved overlapp.
+- `POST /api/apps/live-session` tar imot valgfri `themeId` som **override** for de
+  flertydige tilfellene (overlappende turer, kjøretur utenfor turvinduet).
 - `PUT /api/tema/[id]/trip` gjort felt-vis mergende (som ferie-endepunktet) slik at
   skjema-lagring ikke overskriver `geoByDay`.
 
@@ -203,8 +210,6 @@ hvor-var-vi) overlever selv om rådataene tynnes ut.
 
 ## Gjenstår
 
-- **Ekko-app må sende `themeId`** ved start av en kjøre-etappe (eget repo). Til da
-  fanges ingen observerte etapper automatisk; geoByDay kan settes manuelt/via chat.
 - **Vær-snapshot ved auto-seed** (deklarert i Fase 3-planen) er ikke koblet på —
   `geoByDay` bærer foreløpig sted + koordinater, ikke vær. Dagboken viser vær hvis
   notatet allerede har det.
@@ -220,7 +225,7 @@ hvor-var-vi) overlever selv om rådataene tynnes ut.
 - Reise-temaet er ikke en av de 5 visuelle baseline-sidene, så `test:visual`
   (piksel-diff) påvirkes ikke. LLM-review (`test:visual:review`) krever
   OpenAI-nøkkel + kjørende server og er ikke kjørt i denne sesjonen.
-- Manuelt ende-til-ende (når Ekko sender `themeId`): opprett reise-tema → legg
-  «Kjøre til Volda» som dagsoppgave → Ekko starter `driving`-økt med `themeId` →
-  kjør/avslutt med `arrived` → verifiser at `geoByDay` for dagen ble satt til
-  observert → se auto-seedet dagbok i `TripDashboard`.
+- Manuelt ende-til-ende: opprett reise-tema med datoer som dekker i dag → start en
+  `driving`-økt (dagens Ekko-flyt, uten `themeId`) → avslutt med `arrived` →
+  verifiser at `geoByDay` for dagen ble satt til observert på riktig tema (utledet
+  fra datoen) → se auto-seedet dagbok i `TripDashboard`.

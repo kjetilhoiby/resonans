@@ -4,7 +4,9 @@ import {
 	buildObservedDayGeo,
 	applyDayGeo,
 	osloDayKey,
-	type DayGeo
+	pickTripForDate,
+	type DayGeo,
+	type TripCandidate
 } from './trip-geo';
 
 describe('shouldReplaceDayGeo — presedens observert > deklarert > overnatting', () => {
@@ -111,6 +113,35 @@ describe('applyDayGeo — ren merge', () => {
 	it('håndterer udefinert startkart', () => {
 		const after = applyDayGeo(undefined, '2026-07-01', { source: 'overnight', place: 'Hytta' });
 		expect(after).toEqual({ '2026-07-01': { source: 'overnight', place: 'Hytta' } });
+	});
+});
+
+describe('pickTripForDate — serveren utleder turen fra datoen', () => {
+	const trips: TripCandidate[] = [
+		{ id: 'bilferie', startDate: '2026-07-01', endDate: '2026-07-05' },
+		{ id: 'sommer', startDate: '2026-06-20', endDate: '2026-08-10' }
+	];
+
+	it('velger turen hvis vindu dekker datoen', () => {
+		expect(pickTripForDate([trips[0]], '2026-07-03')).toBe('bilferie');
+	});
+
+	it('returnerer null når ingen tur dekker datoen', () => {
+		expect(pickTripForDate(trips, '2026-09-01')).toBeNull();
+	});
+
+	it('inkluderer endepunktene (start og slutt)', () => {
+		expect(pickTripForDate([trips[0]], '2026-07-01')).toBe('bilferie');
+		expect(pickTripForDate([trips[0]], '2026-07-05')).toBe('bilferie');
+	});
+
+	it('velger smaleste vindu ved overlapp', () => {
+		// Begge dekker 3. juli; bilferie (5 dager) er smalere enn sommer (52 dager).
+		expect(pickTripForDate(trips, '2026-07-03')).toBe('bilferie');
+	});
+
+	it('ignorerer kandidater uten datoer', () => {
+		expect(pickTripForDate([{ id: 'udatert' }], '2026-07-03')).toBeNull();
 	});
 });
 

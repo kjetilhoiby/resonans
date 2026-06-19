@@ -96,3 +96,29 @@ export function applyDayGeo(
 export function osloDayKey(date: Date, timezone = 'Europe/Oslo'): string {
 	return date.toLocaleDateString('sv', { timeZone: timezone });
 }
+
+/** Minimal projeksjon av et reise-tema for å avgjøre om en dato faller i turvinduet. */
+export interface TripCandidate {
+	id: string;
+	startDate?: string; // ISO 'YYYY-MM-DD'
+	endDate?: string;
+}
+
+/**
+ * Hvilket reise-tema «eier» en gitt dato? Reisen er et temporalt filter, så en
+ * kjøretur tilhører turen hvis vinduet [startDate, endDate] dekker datoen — Ekko
+ * trenger ikke vite noe om temaet. ISO-datoer sammenlignes leksikografisk.
+ *
+ * Ved overlapp vinner det smaleste vinduet (den mest spesifikke turen); ellers
+ * beholdes kandidatenes rekkefølge. Returnerer null når ingen tur dekker datoen.
+ */
+export function pickTripForDate(candidates: TripCandidate[], dateKey: string): string | null {
+	const matches = candidates.filter(
+		(c) => c.startDate && c.endDate && c.startDate <= dateKey && dateKey <= c.endDate
+	);
+	if (matches.length === 0) return null;
+	const windowDays = (c: TripCandidate) =>
+		(Date.parse(`${c.endDate}T00:00:00Z`) - Date.parse(`${c.startDate}T00:00:00Z`)) / 86400000;
+	matches.sort((a, b) => windowDays(a) - windowDays(b));
+	return matches[0].id;
+}

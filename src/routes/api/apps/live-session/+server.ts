@@ -4,7 +4,7 @@ import { db } from '$lib/db';
 import { liveSessions, themes } from '$lib/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
 import { randomBytes } from 'crypto';
-import { applyDayGeo, buildObservedDayGeo, osloDayKey } from '$lib/server/trip-geo';
+import { applyDayGeo, buildObservedDayGeo, osloDayKey, pickTripForDate } from '$lib/server/trip-geo';
 import {
 	getOrCreateTripPositionShareToken,
 	revokeShareTokensForResource,
@@ -62,6 +62,22 @@ async function enrichThemeGeo(
 		.update(themes)
 		.set({ tripProfile: { ...profile, geoByDay: nextGeo }, updatedAt: new Date() })
 		.where(and(eq(themes.id, themeId), eq(themes.userId, userId)));
+}
+
+/**
+ * Hvilket reise-tema en kjøretur tilhører utledes fra datoen — reisen er et
+ * temporalt filter, så Ekko trenger ikke vite om temaet. Velger turen hvis
+ * vindu dekker `dateKey` (smaleste ved overlapp). Returnerer null hvis ingen.
+ */
+async function inferTripThemeId(userId: string, dateKey: string): Promise<string | null> {
+	const rows = await db.query.themes.findMany({
+		where: eq(themes.userId, userId),
+		columns: { id: true, tripProfile: true }
+	});
+	const candidates = rows
+		.filter((r) => r.tripProfile?.startDate && r.tripProfile?.endDate)
+		.map((r) => ({ id: r.id, startDate: r.tripProfile!.startDate, endDate: r.tripProfile!.endDate }));
+	return pickTripForDate(candidates, dateKey);
 }
 
 export const GET: RequestHandler = async ({ locals, request }) => {
@@ -192,12 +208,17 @@ export const DELETE: RequestHandler = async ({ locals, request }) => {
 			isNull(liveSessions.endedAt)
 		));
 
-	// Ankomst på en etappe knyttet til et reise-tema: berik temaets geo-kontekst
-	// med observert sluttposisjon, etter presedens (observert > deklarert > overnatting).
-	if (session && reason === 'arrived' && session.themeId) {
+	// Ankomst: berik temaets geo-kontekst med observert sluttposisjon (presedens
+	// observert > deklarert > overnatting). Temaet utledes fra datoen — Ekko trenger
+	// ikke kjenne det — men en eksplisitt `themeId` på økten overstyrer ved overlapp.
+	if (session && reason === 'arrived') {
 		const candidate = buildObservedDayGeo(session);
 		if (candidate) {
-			await enrichThemeGeo(userId, session.themeId, osloDayKey(endedAt), candidate);
+			const dateKey = osloDayKey(endedAt);
+			const themeId = session.themeId ?? (await inferTripThemeId(userId, dateKey));
+			if (themeId) {
+				await enrichThemeGeo(userId, themeId, dateKey, candidate);
+			}
 		}
 	}
 
