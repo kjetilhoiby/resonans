@@ -3,7 +3,6 @@ import { sensors, liveSessions, sensorEvents } from '$lib/db/schema';
 import { and, eq, isNull, desc } from 'drizzle-orm';
 import { encryptSecret, decryptSecret } from '$lib/server/crypto';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
-import { aggregateCurrentPeriods } from '$lib/server/integrations/aggregation';
 import {
 	refreshAccessToken,
 	getVehicleData,
@@ -140,7 +139,9 @@ export async function syncTeslaForUser(userId: string): Promise<TeslaSyncResult>
 			})),
 			{ conflictMode: 'upsert_sensor_datatype_timestamp' }
 		);
-		await aggregateCurrentPeriods(userId);
+		// Ingen aggregering her: Tesla-dataType-ene inngår ikke i health-/effort-
+		// aggregatene, og Ekko poller ?live=true hvert 45. sek under kjøring — en
+		// aggregeringskjøring per poll ville vært ren overhead uten nytte.
 	}
 
 	await db
