@@ -71,6 +71,21 @@
 		tasksDone: number;
 	}
 
+	interface ChoreItem {
+		id: string;
+		checklistId: string;
+		text: string;
+		appliance: string | null;
+		cycleId: string | null;
+		createdAt: string;
+	}
+
+	interface Chores {
+		stats: { gross: number; completed: number; windowDays: number };
+		checklistId: string | null;
+		items: ChoreItem[];
+	}
+
 	interface Props {
 		// Legacy projects-table-entiteter — beholdes for typekompat, ikke lenger rendret (prosjekter er nå undertemaer).
 		projects?: ProjectRow[];
@@ -78,12 +93,72 @@
 		seasonalTasks: SeasonalTask[];
 		routines: RoutineRow[];
 		appliances: Appliance[];
+		chores?: Chores;
 		onOpenProject?: (id: string) => void;
 		onOpenChat?: (prefill: string) => void;
 		onOpenAppliance?: (href: string) => void;
 	}
 
-	let { projectThemes = [], seasonalTasks = [], routines = [], appliances = [], onOpenAppliance }: Props = $props();
+	let { projectThemes = [], seasonalTasks = [], routines = [], appliances = [], chores, onOpenAppliance }: Props = $props();
+
+	// Lokal, mutérbar kopi så avkryssing/«ta inn i dag» kan oppdatere optimistisk.
+	let choreItems = $state<ChoreItem[]>([]);
+	let grossCount = $state(0);
+	let completedCount = $state(0);
+	let windowDays = $state(7);
+	$effect(() => {
+		choreItems = chores?.items ? [...chores.items] : [];
+		grossCount = chores?.stats.gross ?? 0;
+		completedCount = chores?.stats.completed ?? 0;
+		windowDays = chores?.stats.windowDays ?? 7;
+	});
+
+	const completionPct = $derived(grossCount > 0 ? (completedCount / grossCount) * 100 : 0);
+
+	// Grupper ventende husarbeid per syklus, så «Legg i min dag» tar hele lasset.
+	const choresByCycle = $derived.by(() => {
+		const groups = new Map<string, { cycleId: string | null; appliance: string | null; items: ChoreItem[] }>();
+		for (const item of choreItems) {
+			const key = item.cycleId ?? item.id;
+			if (!groups.has(key)) groups.set(key, { cycleId: item.cycleId, appliance: item.appliance, items: [] });
+			groups.get(key)!.items.push(item);
+		}
+		return [...groups.values()];
+	});
+
+	async function completeChore(item: ChoreItem) {
+		// Avkryssing = registrert fullført. Oppdater optimistisk.
+		choreItems = choreItems.filter((c) => c.id !== item.id);
+		completedCount += 1;
+		try {
+			await fetch(`/api/checklists/${item.checklistId}/items/${item.id}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ checked: true })
+			});
+		} catch {
+			// Best effort — neste dashboard-refresh korrigerer ev. avvik.
+		}
+	}
+
+	let claiming = $state<string | null>(null);
+	async function claimCycle(cycleId: string | null) {
+		if (!cycleId || claiming) return;
+		claiming = cycleId;
+		// «Ta» hele syklusen inn i dagslista — fjern fra ventelista lokalt.
+		choreItems = choreItems.filter((c) => c.cycleId !== cycleId);
+		try {
+			await fetch('/api/apps/ping/claim-day', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ cycleId })
+			});
+		} catch {
+			// ignorér — items er allerede flyttet server-side eller korrigeres ved refresh.
+		} finally {
+			claiming = null;
+		}
+	}
 
 	// Prosjekt = undertema av Hjem. Opprett-form lager et nytt undertema (egen chat, oppgaver, filer) og navigerer dit.
 	let creating = $state(false);
@@ -245,6 +320,66 @@
 					</button>
 				{/each}
 			</div>
+		</section>
+	{/if}
+
+	{#if grossCount > 0 || choreItems.length > 0}
+		<section>
+			<SectionLabel>🧺 Husarbeid</SectionLabel>
+			{#if grossCount > 0}
+				<div class="chore-tally">
+					<div class="chore-tally-head">
+						<span class="chore-tally-count">{completedCount} av {grossCount} registrert</span>
+						<span class="chore-tally-window">siste {windowDays} dager</span>
+					</div>
+					<AnimatedProgressBar pct={completionPct} tone="accent" height={6} />
+					{#if grossCount - completedCount > 0}
+						<div class="chore-tally-hint">
+							{grossCount - completedCount} sannsynlige gjøremål ikke registrert ennå
+						</div>
+					{/if}
+				</div>
+			{/if}
+
+			{#if choreItems.length === 0}
+				<p class="empty">Ingen ventende husarbeid akkurat nå.</p>
+			{:else}
+				<div class="chore-groups">
+					{#each choresByCycle as group (group.cycleId ?? group.items[0].id)}
+						<div class="chore-group">
+							{#if group.appliance}
+								<div class="chore-group-head">{group.appliance}</div>
+							{/if}
+							<ul class="chore-list">
+								{#each group.items as item (item.id)}
+									<li class="chore">
+										<label class="chore-check">
+											<input
+												type="checkbox"
+												data-track="tema-husarbeid:fullfor"
+												aria-label={`Fullfør: ${item.text}`}
+												onchange={() => completeChore(item)}
+											/>
+											<span>{item.text}</span>
+										</label>
+									</li>
+								{/each}
+							</ul>
+							{#if group.cycleId}
+								<button
+									type="button"
+									class="chore-claim"
+									data-track="tema-husarbeid:legg-i-min-dag"
+									disabled={claiming === group.cycleId}
+									onclick={() => claimCycle(group.cycleId)}
+								>
+									{claiming === group.cycleId ? '...' : '+ Legg i min dag'}
+								</button>
+							{/if}
+						</div>
+					{/each}
+				</div>
+			{/if}
 		</section>
 	{/if}
 
@@ -453,6 +588,97 @@
 	.empty {
 		color: var(--text-tertiary);
 		font-size: 0.9rem;
+	}
+
+	/* Husarbeid (chores-view) */
+	.chore-tally {
+		background: var(--bg-card);
+		border: 1px solid var(--border-color);
+		border-radius: 12px;
+		padding: 0.75rem 0.85rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+		margin-bottom: 0.75rem;
+	}
+	.chore-tally-head {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 0.5rem;
+	}
+	.chore-tally-count {
+		font-weight: 600;
+		font-size: 0.95rem;
+	}
+	.chore-tally-window {
+		font-size: 0.75rem;
+		color: var(--text-tertiary);
+	}
+	.chore-tally-hint {
+		font-size: 0.75rem;
+		color: var(--text-secondary);
+	}
+	.chore-groups {
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
+	}
+	.chore-group {
+		background: var(--bg-card);
+		border: 1px solid var(--border-color);
+		border-radius: 12px;
+		padding: 0.6rem 0.75rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+	}
+	.chore-group-head {
+		font-size: 0.78rem;
+		color: var(--text-tertiary);
+		font-weight: 500;
+	}
+	.chore-list {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+	}
+	.chore-check {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-size: 0.9rem;
+		cursor: pointer;
+	}
+	.chore-check input {
+		width: 1.05rem;
+		height: 1.05rem;
+		accent-color: var(--accent-primary);
+		flex-shrink: 0;
+	}
+	.chore-claim {
+		align-self: flex-start;
+		padding: 0.3rem 0.7rem;
+		border-radius: 999px;
+		border: 1px solid var(--border-color);
+		background: transparent;
+		color: var(--accent-light);
+		font: inherit;
+		font-size: 0.8rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: border-color 0.2s, background 0.2s;
+	}
+	.chore-claim:hover:not(:disabled) {
+		border-color: var(--accent-primary);
+		background: var(--bg-hover);
+	}
+	.chore-claim:disabled {
+		opacity: 0.5;
+		cursor: default;
 	}
 	.grid {
 		display: grid;

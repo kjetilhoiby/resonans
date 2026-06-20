@@ -8,6 +8,10 @@ export type PushDeliveryPayload = {
 	body: string;
 	url: string;
 	tag?: string;
+	/** Valgfrie notification action-knapper (håndteres i service worker). */
+	actions?: Array<{ action: string; title: string }>;
+	/** Ekstra data som følger varselet (f.eks. claimCycleId for «Legg i min dag»). */
+	data?: Record<string, unknown>;
 };
 
 export type PushGoneAction = 'disable' | 'delete';
@@ -109,7 +113,9 @@ export class PushDeliveryService {
 					title: args.payload.title,
 					body: args.payload.body,
 					url: args.payload.url,
-					tag: args.payload.tag
+					tag: args.payload.tag,
+					actions: args.payload.actions,
+					data: args.payload.data
 				}
 			);
 

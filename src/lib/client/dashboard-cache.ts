@@ -297,6 +297,18 @@ export type FamilyFeedItem =
 	  };
 
 export interface HomeDashboardData {
+	chores: {
+		stats: { gross: number; completed: number; windowDays: number };
+		checklistId: string | null;
+		items: Array<{
+			id: string;
+			checklistId: string;
+			text: string;
+			appliance: string | null;
+			cycleId: string | null;
+			createdAt: string;
+		}>;
+	};
 	projects: Array<{
 		id: string;
 		title: string;

@@ -659,7 +659,11 @@ export const checklistItems = pgTable('checklist_items', {
 		gmailMessageId?: string;
 		gmailThreadId?: string;
 		from?: string;
+		// Husarbeid-budsjett: item teller i brutto-vs-fullført-tellingen på hjem.
+		// Settes av apparat-sykluser, og kan settes på rutine-/dagsoppgaver «eid av chores».
+		chore?: boolean;
 		// Appliance task metadata
+		applianceChore?: boolean; // Husarbeid generert fra en apparat-syklus (kilde-markør)
 		applianceCycleId?: string;
 		appliance?: string;
 		applianceDurationMinutes?: number;
