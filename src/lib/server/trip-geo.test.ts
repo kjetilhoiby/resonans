@@ -6,8 +6,10 @@ import {
 	osloDayKey,
 	pickTripForDate,
 	dayWindowInfo,
+	reconcileDeclaredGeo,
 	type DayGeo,
-	type TripCandidate
+	type TripCandidate,
+	type GeoByDay
 } from './trip-geo';
 
 describe('shouldReplaceDayGeo — presedens observert > deklarert > overnatting', () => {
@@ -161,6 +163,59 @@ describe('dayWindowInfo', () => {
 
 	it('én-dags vindu', () => {
 		expect(dayWindowInfo('2026-07-01', '2026-07-01', '2026-07-01')).toEqual({ dayNo: 1, totalDays: 1 });
+	});
+});
+
+describe('reconcileDeclaredGeo', () => {
+	const window = ['2026-07-01', '2026-07-05'] as const;
+
+	it('legger inn deklarerte dager fra dagsoppgaver', () => {
+		const out = reconcileDeclaredGeo({}, window[0], window[1], [
+			{ date: '2026-07-02', place: 'Volda', lat: 62.1, lon: 6.07 }
+		]);
+		expect(out['2026-07-02']).toEqual({
+			place: 'Volda',
+			lat: 62.1,
+			lon: 6.07,
+			source: 'declared'
+		});
+	});
+
+	it('rører ikke observert dag (presedens)', () => {
+		const existing: GeoByDay = {
+			'2026-07-02': { place: 'Volda sentrum', lat: 62.15, lon: 6.08, source: 'observed', liveSessionId: 's1' }
+		};
+		const out = reconcileDeclaredGeo(existing, window[0], window[1], [
+			{ date: '2026-07-02', place: 'Volda', lat: 62.1, lon: 6.07 }
+		]);
+		expect(out['2026-07-02'].source).toBe('observed');
+		expect(out['2026-07-02'].place).toBe('Volda sentrum');
+	});
+
+	it('fjerner foreldet deklarert dag i vinduet (oppgave slettet)', () => {
+		const existing: GeoByDay = {
+			'2026-07-02': { place: 'Volda', source: 'declared' },
+			'2026-07-03': { place: 'Ørsta', source: 'declared' }
+		};
+		const out = reconcileDeclaredGeo(existing, window[0], window[1], [
+			{ date: '2026-07-02', place: 'Volda' }
+		]);
+		expect(out['2026-07-02']).toBeDefined();
+		expect(out['2026-07-03']).toBeUndefined();
+	});
+
+	it('beholder deklarerte dager utenfor vinduet', () => {
+		const existing: GeoByDay = { '2026-06-15': { place: 'Annet', source: 'declared' } };
+		const out = reconcileDeclaredGeo(existing, window[0], window[1], []);
+		expect(out['2026-06-15']).toBeDefined();
+	});
+
+	it('overskriver eldre deklarert med ny deklarert', () => {
+		const existing: GeoByDay = { '2026-07-02': { place: 'Gammel', source: 'declared' } };
+		const out = reconcileDeclaredGeo(existing, window[0], window[1], [
+			{ date: '2026-07-02', place: 'Ny', lat: 1, lon: 2 }
+		]);
+		expect(out['2026-07-02'].place).toBe('Ny');
 	});
 });
 

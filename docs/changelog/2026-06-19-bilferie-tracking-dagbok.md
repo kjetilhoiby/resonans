@@ -1,7 +1,7 @@
 # Bilferie: Ekko-tracking + reise-tema + feriedagbok
 
 Dato: 2026-06-19
-Status: pågår (fase 1–4 implementert serverside + UI; ingen Ekko-endring nødvendig)
+Status: pågår (fase 1–5 implementert serverside + UI; ingen Ekko-endring nødvendig)
 
 ## Kontekst
 
@@ -269,23 +269,32 @@ intensjoner Resonans holder — Ekko henter dagens skive og melder tilbake.
   aktivt program — Ekko driller ned i `/programs/[id]/today` for detalj.
 - Program-API-et er uendret; `/day` aggregerer kun henting.
 
+**Fase 5 — gjenstående geo-berikelse (2026-06-20):**
+- **Deklarert geo-backfill**: `reconcileDeclaredGeo(geoByDay, vindu, ønskede)` (ren,
+  5 tester) fyller `geoByDay`-laget «declared» fra dagsoppgaver. Trigget fra
+  `reconcileTripStays` i `stays.ts` (samme `syncStaysForDate`-hook som overnattinger),
+  så «Kjøre til Volda» gir et stedssignal samme dag — selv uten kjøretur. Selv-
+  korrigerende (fjerner foreldede declared-dager) og rører aldri `observed`.
+- **Vær-snapshot ved ankomst**: `seedArrivalDiary` i live-session `arrived`-stien
+  henter met.no for ankomstkoordinatet (best-effort, `fetchRawTimeseries` +
+  `buildPeriods`) og legger sted + vær på dagboknotatet uten å røre brukerens tekst.
+- **Reiserute-kart**: `TripDashboard` plotter `geoByDay`-punktene kronologisk med
+  rutelinje, fargede markører (grønn = spored / gul = planlagt) og auto-fit. Kart-
+  containeren fikk omsider eksplisitt høyde + stiler.
+
 ## Gjenstår
 
-- **Vær-snapshot ved auto-seed** (deklarert i Fase 3-planen) er ikke koblet på —
-  `geoByDay` bærer foreløpig sted + koordinater, ikke vær. Dagboken viser vær hvis
-  notatet allerede har det.
-- **Transaksjons-geo** (tids-match mot `geoByDay`) er ikke bygd — venter til vi har
-  reelle observerte data å matche mot.
-- **Backfill av deklarert geo** fra dagsoppgaver inn i `geoByDay` (presedens-laget
-  «declared») er forberedt i logikken, men ennå ikke trigget noe sted.
+- **Transaksjons-geo** (tids-match mot `geoByDay`) er ikke bygd — bevisst utsatt.
+  Nå som Ekko mater observerte data kan det bygges når behovet melder seg.
 
 ## Verifisering
 
-- `npm run check` (0 feil) og `npm test` (643 tester grønne, inkl. 29 nye
-  `trip-geo`-tester).
+- `npm run check` (0 feil) og `npm test` (648 tester grønne, inkl. 34 nye
+  `trip-geo`-/dagskontekst-tester).
 - Reise-temaet er ikke en av de 5 visuelle baseline-sidene, så `test:visual`
-  (piksel-diff) påvirkes ikke. LLM-review (`test:visual:review`) krever
-  OpenAI-nøkkel + kjørende server og er ikke kjørt i denne sesjonen.
+  (piksel-diff) påvirkes ikke. Reiserute-kartet og dagbok-UI bør røyktestes i
+  nettleser; LLM-review (`test:visual:review`) krever OpenAI-nøkkel + kjørende
+  server og er ikke kjørt i denne sesjonen.
 - Manuelt ende-til-ende: opprett reise-tema med datoer som dekker i dag → start en
   `driving`-økt (dagens Ekko-flyt, uten `themeId`) → avslutt med `arrived` →
   verifiser at `geoByDay` for dagen ble satt til observert på riktig tema (utledet

@@ -87,6 +87,48 @@ export function applyDayGeo(
 	return next;
 }
 
+/** Et ønsket deklarert dags-sted utledet fra en dagsoppgave («Kjøre til Volda»). */
+export interface DeclaredDay {
+	date: string;
+	place: string;
+	lat?: number;
+	lon?: number;
+}
+
+/**
+ * Rekonsiler det deklarerte geo-laget for et turvindu mot dagsoppgavene.
+ * Selv-korrigerende: deklarerte dager som ikke lenger er ønsket (oppgave slettet
+ * eller flyttet) fjernes i vinduet, mens ønskede dager legges inn etter presedens.
+ * Rører ALDRI `observed`/`overnight`-dager — de overlever uansett. Returnerer et
+ * nytt kart (muterer ikke input).
+ */
+export function reconcileDeclaredGeo(
+	geoByDay: GeoByDay | undefined,
+	windowStart: string,
+	windowEnd: string,
+	desired: DeclaredDay[]
+): GeoByDay {
+	const next: GeoByDay = { ...(geoByDay ?? {}) };
+	const desiredDates = new Set(desired.map((d) => d.date));
+
+	for (const [date, geo] of Object.entries(next)) {
+		if (geo.source === 'declared' && date >= windowStart && date <= windowEnd && !desiredDates.has(date)) {
+			delete next[date];
+		}
+	}
+
+	let merged = next;
+	for (const d of desired) {
+		merged = applyDayGeo(merged, d.date, {
+			place: d.place,
+			lat: d.lat,
+			lon: d.lon,
+			source: 'declared'
+		});
+	}
+	return merged;
+}
+
 /**
  * ISO-datonøkkel ('YYYY-MM-DD') for et tidspunkt i Oslo-tid. Bruker 'sv'-locale
  * som formaterer nettopp som ISO. Samme idiom som resten av kodebasen
