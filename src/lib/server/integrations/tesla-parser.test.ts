@@ -63,6 +63,36 @@ describe('buildSnapshot', () => {
 		expect(snap.charging).toBe(false);
 		expect(snap.chargingState).toBe('Disconnected');
 	});
+
+	it('mapper aktiv navigasjon (mål + ETA) når bilen navigerer', () => {
+		const raw = fullVehicleData();
+		(raw.drive_state as any).active_route_destination = 'Volda';
+		(raw.drive_state as any).active_route_minutes_to_arrival = 41.6;
+		const snap = buildSnapshot(raw, NOW);
+		expect(snap.navigationDestination).toBe('Volda');
+		expect(snap.navigationEtaMinutes).toBe(42); // avrundet til hele minutter
+	});
+
+	it('utelater navigasjonsfelt når bilen ikke navigerer', () => {
+		const snap = buildSnapshot(fullVehicleData(), NOW);
+		expect(snap.navigationDestination).toBeUndefined();
+		expect(snap.navigationEtaMinutes).toBeUndefined();
+	});
+
+	it('sender ikke ETA uten et navigasjonsmål', () => {
+		const raw = fullVehicleData();
+		(raw.drive_state as any).active_route_minutes_to_arrival = 17;
+		const snap = buildSnapshot(raw, NOW);
+		expect(snap.navigationDestination).toBeUndefined();
+		expect(snap.navigationEtaMinutes).toBeUndefined();
+	});
+
+	it('befolker ikke navigationRoute (Tesla eksponerer ikke polyline)', () => {
+		const raw = fullVehicleData();
+		(raw.drive_state as any).active_route_destination = 'Volda';
+		const snap = buildSnapshot(raw, NOW);
+		expect(snap.navigationRoute).toBeUndefined();
+	});
 });
 
 describe('parseVehicleData', () => {

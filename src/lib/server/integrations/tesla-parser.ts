@@ -49,6 +49,17 @@ export interface TeslaSnapshot {
 	heading?: number;
 	speedKmh?: number;
 	shiftState?: string | null;
+	/** Aktivt navigasjonsmål (navn) — kun satt når bilen faktisk navigerer. */
+	navigationDestination?: string;
+	/** Minutter til ankomst for aktivt navigasjonsmål. */
+	navigationEtaMinutes?: number;
+	/**
+	 * Gjenstående rute til mål som [lat, lon]-par (samme konvensjon som live-
+	 * session `routeCoordinates`). Tesla Fleet API eksponerer normalt ikke hele
+	 * polyline-en, så feltet befolkes foreløpig ikke her — cockpiten viser da mål
+	 * + ETA uten rutelinje. Kan fylles av en egen ruting-motor senere.
+	 */
+	navigationRoute?: [number, number][];
 	odometerKm?: number;
 	locked?: boolean;
 	insideTempC?: number;
@@ -75,6 +86,15 @@ export function buildSnapshot(raw: Record<string, any> | null, now: Date = new D
 	const speedMph = num(drive.speed); // mph eller null
 	const chargingState = typeof charge.charging_state === 'string' ? charge.charging_state : undefined;
 
+	// Aktiv navigasjon: send mål/ETA kun når bilen faktisk navigerer (mål satt).
+	const navDestination =
+		typeof drive.active_route_destination === 'string' && drive.active_route_destination.length > 0
+			? drive.active_route_destination
+			: undefined;
+	const navEtaRaw = num(drive.active_route_minutes_to_arrival);
+	const navEtaMinutes =
+		navDestination !== undefined && navEtaRaw !== undefined ? Math.round(navEtaRaw) : undefined;
+
 	return {
 		asleep: false,
 		state: typeof raw.state === 'string' ? raw.state : undefined,
@@ -90,6 +110,8 @@ export function buildSnapshot(raw: Record<string, any> | null, now: Date = new D
 		heading: num(drive.heading),
 		speedKmh: speedMph !== undefined ? Math.round(speedMph * MILES_TO_KM * 10) / 10 : undefined,
 		shiftState: typeof drive.shift_state === 'string' ? drive.shift_state : null,
+		navigationDestination: navDestination,
+		navigationEtaMinutes: navEtaMinutes,
 		odometerKm: milesToKm(vehicle.odometer),
 		locked: bool(vehicle.locked),
 		insideTempC: num(climate.inside_temp),
