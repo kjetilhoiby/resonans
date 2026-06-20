@@ -242,3 +242,43 @@ export async function getVehicleData(
 	}
 	return { ok: true, data: body.response };
 }
+
+export type NearbyChargersResult =
+	| { ok: true; data: Record<string, any> }
+	| { ok: false; asleep: true };
+
+/**
+ * Hent ladere nær bilens nåværende posisjon (superchargere med live stall-
+ * tilgjengelighet + destination chargers). Krever bil online — sover den svarer
+ * Fleet API 408 og vi returnerer `{ ok: false, asleep: true }`. Dekkes av
+ * `vehicle_device_data`-scope (samme som vehicle_data); ingen ny tilgang trengs.
+ */
+export async function getNearbyChargers(
+	accessToken: string,
+	baseUrl: string,
+	vehicleTag: string | number
+): Promise<NearbyChargersResult> {
+	const url = `${baseUrl}/api/1/vehicles/${vehicleTag}/nearby_charging_sites`;
+	const res = await teslaFetch(url, {
+		headers: { Authorization: `Bearer ${accessToken}` }
+	});
+
+	if (res.status === 408) {
+		return { ok: false, asleep: true };
+	}
+	if (res.status === 401 || res.status === 403) {
+		throw new TeslaApiError('Tesla avviste forespørsel (mangler tilgang)', res.status);
+	}
+	if (res.status === 429) {
+		throw new TeslaApiError('Tesla rate limit', 429);
+	}
+	if (!res.ok) {
+		const text = await res.text().catch(() => '');
+		throw new TeslaApiError(`Tesla nearby_charging_sites ${res.status}: ${text}`, res.status);
+	}
+	const body = (await res.json()) as { response?: Record<string, any> };
+	if (!body.response) {
+		return { ok: false, asleep: true };
+	}
+	return { ok: true, data: body.response };
+}

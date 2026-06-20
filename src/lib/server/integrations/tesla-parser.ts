@@ -135,6 +135,55 @@ export function buildSnapshot(raw: Record<string, any> | null, now: Date = new D
 }
 
 /**
+ * Én ladestasjon nær bilen, enhets-normalisert (km). Supercharger-spesifikke
+ * felt (stall-tilgjengelighet) er fraværende for destination chargers.
+ */
+export interface TeslaCharger {
+	type: 'supercharger' | 'destination';
+	name?: string;
+	location?: { lat: number; lon: number };
+	distanceKm?: number;
+	availableStalls?: number;
+	totalStalls?: number;
+	siteClosed?: boolean;
+}
+
+export interface NearbyChargers {
+	superchargers: TeslaCharger[];
+	destinationChargers: TeslaCharger[];
+}
+
+function mapCharger(raw: any, type: 'supercharger' | 'destination'): TeslaCharger {
+	// Tesla bruker `long` (ikke `longitude`) i nearby_charging_sites-svaret.
+	const lat = num(raw?.location?.lat);
+	const lon = num(raw?.location?.long);
+	const charger: TeslaCharger = {
+		type,
+		name: typeof raw?.name === 'string' ? raw.name : undefined,
+		location: lat !== undefined && lon !== undefined ? { lat, lon } : undefined,
+		distanceKm: milesToKm(raw?.distance_miles)
+	};
+	if (type === 'supercharger') {
+		charger.availableStalls = num(raw?.available_stalls);
+		charger.totalStalls = num(raw?.total_stalls);
+		charger.siteClosed = bool(raw?.site_closed);
+	}
+	return charger;
+}
+
+/**
+ * Normaliser rå nearby_charging_sites-svar til metrisk, Ekko-vennlig form.
+ */
+export function parseNearbyChargers(raw: Record<string, any> | null): NearbyChargers {
+	const superRaw = Array.isArray(raw?.superchargers) ? raw!.superchargers : [];
+	const destRaw = Array.isArray(raw?.destination_charging) ? raw!.destination_charging : [];
+	return {
+		superchargers: superRaw.map((c: any) => mapCharger(c, 'supercharger')),
+		destinationChargers: destRaw.map((c: any) => mapCharger(c, 'destination'))
+	};
+}
+
+/**
  * Map rå vehicle_data til sensor-events. Tom liste hvis bilen sover / mangler
  * data. drive_state-eventet skrives bare når posisjon er tilgjengelig (krever
  * vehicle_location-scope + at bilen er våken).
