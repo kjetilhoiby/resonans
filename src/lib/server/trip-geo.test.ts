@@ -5,6 +5,7 @@ import {
 	applyDayGeo,
 	osloDayKey,
 	pickTripForDate,
+	dayWindowInfo,
 	type DayGeo,
 	type TripCandidate
 } from './trip-geo';
@@ -142,6 +143,24 @@ describe('pickTripForDate — serveren utleder turen fra datoen', () => {
 
 	it('ignorerer kandidater uten datoer', () => {
 		expect(pickTripForDate([{ id: 'udatert' }], '2026-07-03')).toBeNull();
+	});
+});
+
+describe('dayWindowInfo', () => {
+	it('første dag = dag 1', () => {
+		expect(dayWindowInfo('2026-07-01', '2026-07-05', '2026-07-01')).toEqual({ dayNo: 1, totalDays: 5 });
+	});
+
+	it('midt i vinduet', () => {
+		expect(dayWindowInfo('2026-07-01', '2026-07-05', '2026-07-03')).toEqual({ dayNo: 3, totalDays: 5 });
+	});
+
+	it('siste dag = totalDays', () => {
+		expect(dayWindowInfo('2026-07-01', '2026-07-05', '2026-07-05')).toEqual({ dayNo: 5, totalDays: 5 });
+	});
+
+	it('én-dags vindu', () => {
+		expect(dayWindowInfo('2026-07-01', '2026-07-01', '2026-07-01')).toEqual({ dayNo: 1, totalDays: 1 });
 	});
 });
 

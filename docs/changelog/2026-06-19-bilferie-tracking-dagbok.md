@@ -1,7 +1,7 @@
 # Bilferie: Ekko-tracking + reise-tema + feriedagbok
 
 Dato: 2026-06-19
-Status: pågår (fase 1–3 implementert serverside + UI; ingen Ekko-endring nødvendig)
+Status: pågår (fase 1–4 implementert serverside + UI; ingen Ekko-endring nødvendig)
 
 ## Kontekst
 
@@ -133,7 +133,7 @@ hvor-var-vi) overlever selv om rådataene tynnes ut.
   `SharedTripPositionView.svelte`) med ruter + overnattinger + geo-plasserte kjøp,
   og dagbok-tidslinjen under.
 
-### Fase 4: Dagens plan til Ekko — `GET /api/apps/day` (planlagt)
+### Fase 4: Dagens plan til Ekko — `GET /api/apps/day` (implementert 2026-06-20)
 
 Ekko skal kunne *hente* dagens bevegelses- og oppholdskontekst fra Resonans —
 «det finnes en oppgave som heter Kjøre til Volda» — på samme måte som den henter
@@ -258,6 +258,17 @@ intensjoner Resonans holder — Ekko henter dagens skive og melder tilbake.
   (`getDiary`/`putDiaryEntry`). Lagrer per dag ved blur. `data-track` satt på felt.
 - Montert i `TripDashboard.svelte` etter helse-seksjonen.
 
+**Fase 4 — dagens plan til Ekko (2026-06-20):**
+- `gatherDayContext(userId, date?, tz?)` + `formatDayContextBlock(ctx)` ekstrahert i
+  `day-location-context.ts`. `buildDayContextBlock` er nå en tynn wrapper — chat og
+  Ekko deler samme strukturkilde. Prosaen er uendret (5 tester på formatteren).
+- `dayWindowInfo(start, end, dato)` i `trip-geo.ts` (delt «dag X av Y», 4 tester).
+- `GET /api/apps/day?date=` (`src/routes/api/apps/day/+server.ts`): komponerer
+  `{ date, trip, movement, stay, training }`. `trip` utledes via `pickTripForDate`,
+  `training` er en tynn peker (`programId`/`sessionId`/`kind`/`name`/`done`) til
+  aktivt program — Ekko driller ned i `/programs/[id]/today` for detalj.
+- Program-API-et er uendret; `/day` aggregerer kun henting.
+
 ## Gjenstår
 
 - **Vær-snapshot ved auto-seed** (deklarert i Fase 3-planen) er ikke koblet på —
@@ -270,7 +281,7 @@ intensjoner Resonans holder — Ekko henter dagens skive og melder tilbake.
 
 ## Verifisering
 
-- `npm run check` (0 feil) og `npm test` (629 tester grønne, inkl. 15 nye
+- `npm run check` (0 feil) og `npm test` (643 tester grønne, inkl. 29 nye
   `trip-geo`-tester).
 - Reise-temaet er ikke en av de 5 visuelle baseline-sidene, så `test:visual`
   (piksel-diff) påvirkes ikke. LLM-review (`test:visual:review`) krever

@@ -122,3 +122,23 @@ export function pickTripForDate(candidates: TripCandidate[], dateKey: string): s
 	matches.sort((a, b) => windowDays(a) - windowDays(b));
 	return matches[0].id;
 }
+
+/**
+ * Hvor i et datovindu en dato faller: `dayNo` (1-indeksert fra startDate) og
+ * `totalDays` (inklusive begge endepunkter). Delt av opphold («dag 2 av 3») og
+ * reise-briefingen. Ren UTC-basert telling.
+ */
+export function dayWindowInfo(
+	startDate: string,
+	endDate: string,
+	dateKey: string
+): { dayNo: number; totalDays: number } {
+	const day = 86400000;
+	const start = Date.parse(`${startDate}T00:00:00Z`);
+	const end = Date.parse(`${endDate}T00:00:00Z`);
+	const cur = Date.parse(`${dateKey}T00:00:00Z`);
+	return {
+		dayNo: Math.round((cur - start) / day) + 1,
+		totalDays: Math.round((end - start) / day) + 1
+	};
+}
