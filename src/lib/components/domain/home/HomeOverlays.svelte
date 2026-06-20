@@ -353,7 +353,14 @@
 <!-- Slot-gate: dekker hjemskjermen fra første render til vi vet om sjekkinnen skal vises -->
 {#if ctx.egenfrekvensSlotGate}
 	<div class="slot-gate" out:fade={{ duration: 250 }} aria-hidden="true">
-		<img src="/icons/icon-192.svg" alt="" class="slot-gate-logo" />
+		<svg class="slot-gate-logo" viewBox="0 0 512 512" width="72" height="72" role="img" aria-label="Resonans">
+			<rect width="512" height="512" rx="108" fill="#0f0f0f" />
+			<circle class="ring ring-4" cx="256" cy="256" r="210" fill="none" stroke="#8ba0f5" stroke-width="20" />
+			<circle class="ring ring-3" cx="256" cy="256" r="158" fill="none" stroke="#4a5af0" stroke-width="26" />
+			<circle class="ring ring-2" cx="256" cy="256" r="108" fill="none" stroke="#4a5af0" stroke-width="32" />
+			<circle class="ring ring-1" cx="256" cy="256" r="58" fill="none" stroke="#7c8ef5" stroke-width="34" />
+			<circle class="core" cx="256" cy="256" r="26" fill="#82c882" />
+		</svg>
 	</div>
 {/if}
 
@@ -429,11 +436,30 @@
 		width: 72px;
 		height: 72px;
 		border-radius: 18px;
-		animation: slot-gate-pulse 1.6s ease-in-out infinite;
 	}
-	@keyframes slot-gate-pulse {
-		0%, 100% { opacity: 0.4; transform: scale(1); }
-		50% { opacity: 0.85; transform: scale(1.05); }
+	/* Hver ring puls­er svakt og forskjøvet fra kjernen og utover, som en
+	   resonans som forplanter seg. Skalering rundt eget sentrum. */
+	.slot-gate-logo .ring,
+	.slot-gate-logo .core {
+		transform-box: fill-box;
+		transform-origin: center;
+		animation: slot-gate-resonate 2.4s ease-in-out infinite;
+	}
+	.slot-gate-logo .core { --base: 1; animation-delay: 0s; }
+	.slot-gate-logo .ring-1 { --base: 0.95; animation-delay: 0.12s; }
+	.slot-gate-logo .ring-2 { --base: 0.68; animation-delay: 0.28s; }
+	.slot-gate-logo .ring-3 { --base: 0.34; animation-delay: 0.44s; }
+	.slot-gate-logo .ring-4 { --base: 0.16; animation-delay: 0.6s; }
+	@keyframes slot-gate-resonate {
+		0%, 100% { opacity: calc(var(--base) * 0.55); transform: scale(0.985); }
+		50% { opacity: var(--base); transform: scale(1.015); }
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.slot-gate-logo .ring,
+		.slot-gate-logo .core {
+			animation: none;
+			opacity: var(--base);
+		}
 	}
 
 	/* Overlay-stiler (widget-panel, tema-panel, menyer) */
