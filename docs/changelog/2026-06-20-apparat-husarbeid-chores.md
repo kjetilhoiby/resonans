@@ -42,13 +42,15 @@ Signalet hører hjemme i et eget **chores-view på hjem**, med en telling av
   syklus. Avkryssing = registrert fullført; «+ Legg i min dag» tar syklusen inn i
   dagslista.
 
-**Claiming (begge mekanismer):**
-- Avkryssing i chores-view (`PATCH /api/checklists/[id]/items/[itemId]`).
-- Push-knapp «Legg i min dag» på ferdig-varselet → `POST /api/apps/ping/claim-day`.
-  - `src/service-worker.ts`: håndterer notification `actions` og `claim-day`-action
-    (same-origin fetch med cookie-auth).
-  - `src/lib/server/services/push-delivery-service.ts` + `web-push`-kjeden:
-    `actions`/`data` føres gjennom til varselet.
+**Claiming i chores-view:**
+- Avkryssing = registrert fullført (`PATCH /api/checklists/[id]/items/[itemId]`).
+- «+ Legg i min dag»-knapp per syklus → `POST /api/apps/ping/claim-day`
+  (re-parenter syklusens husarbeid til dagslista).
+
+> Vurdert og forkastet: en «Legg i min dag»-action-knapp direkte på ferdig-pushen.
+> Notification action-knapper støttes ikke i web push på iOS/iPadOS (Apple
+> ignorerer `actions`), og appen brukes primært på iPhone. Claiming holdes derfor
+> i chores-viewet, og ferdig-varselet forblir et rent signal.
 
 ### Fase 2: rutine-/dagsoppgaver «eid av chores» via «chore:»-prefiks
 
@@ -71,7 +73,8 @@ som apparat-husarbeidet, uten ny UI.
 ## Beslutninger
 
 - **Eget chores-view, ikke dagslista** som standard destinasjon (løser flommen).
-- **Begge** claim-mekanismer: avkryssing i chores-view + push-knapp.
+- **Claiming i chores-view** (avkryssing + «Legg i min dag»). Push-action-knapp
+  forkastet pga. manglende iOS-støtte.
 - **Rullerende 7 dager** for tellingen.
 - **Re-parenting** ved claim (flytter samme item) framfor kopiering — unngår
   dobbelttelling; `metadata.chore` gjør at det fortsatt teller uansett liste.

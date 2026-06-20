@@ -53,21 +53,12 @@ self.addEventListener('fetch', (event) => {
 	}
 });
 
-type PushPayload = {
-	title?: string;
-	body?: string;
-	url?: string;
-	tag?: string;
-	actions?: Array<{ action: string; title: string }>;
-	data?: Record<string, unknown>;
-};
-
 self.addEventListener('push', (event) => {
 	const payload = (() => {
 		try {
-			return event.data?.json() as PushPayload | undefined;
+			return event.data?.json() as { title?: string; body?: string; url?: string; tag?: string } | undefined;
 		} catch {
-			return { body: event.data?.text() } as PushPayload;
+			return { body: event.data?.text() };
 		}
 	})();
 
@@ -75,37 +66,20 @@ self.addEventListener('push', (event) => {
 	const body = payload?.body ?? 'Ny oppdatering';
 	const url = payload?.url ?? '/';
 
-	const options: NotificationOptions = {
-		body,
-		icon: '/icons/icon-192.svg',
-		badge: '/icons/icon-192.svg',
-		tag: payload?.tag ?? 'resonans-push',
-		data: { url, ...(payload?.data ?? {}) }
-	};
-	if (payload?.actions?.length) {
-		(options as NotificationOptions & { actions: unknown[] }).actions = payload.actions;
-	}
-
-	event.waitUntil(self.registration.showNotification(title, options));
+	event.waitUntil(
+		self.registration.showNotification(title, {
+			body,
+			icon: '/icons/icon-192.svg',
+			badge: '/icons/icon-192.svg',
+			tag: payload?.tag ?? 'resonans-push',
+			data: { url }
+		})
+	);
 });
 
 self.addEventListener('notificationclick', (event) => {
 	event.notification.close();
-	const data = (event.notification.data ?? {}) as { url?: string; claimCycleId?: string };
-	const targetUrl = data.url ?? '/';
-
-	// «Legg i min dag»: flytt syklusens husarbeid fra chores-view til dagslista.
-	// Cookie-auth følger med same-origin fetch fra service worker.
-	if (event.action === 'claim-day' && data.claimCycleId) {
-		event.waitUntil(
-			fetch('/api/apps/ping/claim-day', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ cycleId: data.claimCycleId })
-			}).catch(() => {})
-		);
-		return;
-	}
+	const targetUrl = (event.notification.data?.url as string | undefined) ?? '/';
 
 	event.waitUntil(
 		(async () => {

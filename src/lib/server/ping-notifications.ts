@@ -4,7 +4,6 @@ import { PushDeliveryService } from '$lib/server/services/push-delivery-service'
 import { sendGoogleChatMessage } from '$lib/server/google-chat';
 import { eq } from 'drizzle-orm';
 import { addChoresForCycle } from '$lib/server/services/chore-service';
-import { choresForAppliance } from '$lib/domains/home/appliance-chores';
 
 import type { MatchResult } from '$lib/server/services/appliance-profile-service';
 
@@ -56,8 +55,6 @@ export async function notifyPingEvent(args: {
 	let title: string;
 	let body: string;
 	let tag: string;
-	let actions: Array<{ action: string; title: string }> | undefined;
-	let extraData: Record<string, unknown> | undefined;
 
 	if (data.event === 'started') {
 		if (settings.applianceCycles?.notifyStart === false) return { sent: false };
@@ -72,22 +69,15 @@ export async function notifyPingEvent(args: {
 	} else if (data.event === 'finished') {
 		if (settings.applianceCycles?.notifyFinish === false) return { sent: false };
 
-		// Husarbeidet samles i chores-view på hjem (ikke dagslista). Pushen tilbyr
-		// å «ta» det inn i din egen dagsliste i stedet for å dytte det dit automatisk.
-		const chores = choresForAppliance(name);
-
+		// Husarbeidet samles i chores-view på hjem (ikke dagslista). Claiming
+		// («Legg i min dag») skjer derfra — varselet er bare et signal.
 		const duration = data.duration_minutes ? formatDuration(data.duration_minutes) : '';
 		const kwh = data.total_kwh ? `${data.total_kwh} kWh` : '';
 		const stats = [duration, kwh].filter(Boolean).join(', ');
 
 		title = `${name} er ferdig!`;
-		body = chores.length > 0 ? [stats, chores.join(' · ')].filter(Boolean).join('\n') : stats;
+		body = stats;
 		tag = `ping-finish-${data.cycle_id ?? name}`;
-
-		if (chores.length > 0 && data.cycle_id) {
-			actions = [{ action: 'claim-day', title: 'Legg i min dag' }];
-			extraData = { claimCycleId: data.cycle_id };
-		}
 	} else {
 		return { sent: false };
 	}
@@ -102,7 +92,7 @@ export async function notifyPingEvent(args: {
 
 	const delivery = await PushDeliveryService.deliverToUser({
 		userId,
-		payload: { title, body, url: notifyUrl, tag, actions, data: extraData },
+		payload: { title, body, url: notifyUrl, tag },
 		onGone: 'disable'
 	});
 	let sent = delivery.sent > 0;
