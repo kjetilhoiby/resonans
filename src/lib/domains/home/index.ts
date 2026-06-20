@@ -95,6 +95,15 @@ export function pingApplianceEmoji(name: string): string {
 	return PING_APPLIANCE_EMOJI[key] ?? '🔌';
 }
 
+export {
+	APPLIANCE_CHORES,
+	choresForAppliance,
+	computeChoreStats,
+	parseChorePrefix,
+	type ChoreStats,
+	type ChoreCountItem
+} from './appliance-chores';
+
 // Regex som peker mot home-domenet
 export const HOME_DOMAIN_TRIGGER =
 	/hus(?!holdning|t(re|ru))|hjem(?!met)|stua|kjøkken|kjokken|bad|baderom|soverom|gang|kjeller|loft|garasje|garaje|hage(?!stell)?|balkong|verandaen?|terrasse|oppussing|pusse\s*opp|vedlikehold|reparasjon|reparere|vaske(?:lis)?t|rydd[ei]|støvsug|stovsug|rengj[øo]ring|tørketrommel|torketrommel|vaskemaskin|oppvaskmaskin|oppvask\b|kjøleskap|kjoleskap|fryser|sluk|grill|sykl(?:er|en)|sesongvask|husrutine|husarbeid/i;

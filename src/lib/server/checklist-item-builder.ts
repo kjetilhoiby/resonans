@@ -27,6 +27,7 @@ import {
 	stripTimeFromText
 } from './checklist-intent-linker';
 import { parseLocationPrefix, parseTravelPrefix } from '$lib/utils/checklist-group';
+import { parseChorePrefix } from '$lib/domains/home/appliance-chores';
 import { detectMealPrefix } from '$lib/domains/food';
 import { findOrCreateMealId } from './task-intent-parser';
 import { getOrCreatePlanningGoal, createTask } from './goals';
@@ -80,7 +81,13 @@ export interface BuildChecklistItemOptions {
 export async function buildChecklistItemFields(
 	opts: BuildChecklistItemOptions
 ): Promise<BuiltChecklistItemFields> {
-	const { userId, context, text, coords, allowTaskCreation = false } = opts;
+	const { userId, context, coords, allowTaskCreation = false } = opts;
+
+	// «chore:»-prefiks → item eies av husarbeid-budsjettet (metadata.chore).
+	// Strippes først så resten av teksten parses som vanlig.
+	const choreParse = parseChorePrefix(opts.text);
+	const text = choreParse.text;
+	const choreMeta = choreParse.chore ? { chore: true } : {};
 
 	const geoMeta = coords
 		? { lat: coords.lat, lon: coords.lon, ...(coords.label && { geoLabel: coords.label }) }
@@ -251,7 +258,7 @@ export async function buildChecklistItemFields(
 
 	// activitySlotMeta gir activityType; metadata (rikere, m/ linkedTaskId osv.)
 	// vinner ved overlapp.
-	const finalMetadata = { ...activitySlotMeta, ...metadata };
+	const finalMetadata = { ...activitySlotMeta, ...metadata, ...choreMeta };
 
 	return {
 		text: storedText,
@@ -284,5 +291,6 @@ export const PARSE_DERIVED_METADATA_KEYS = [
 	'linkedMealId',
 	'lat',
 	'lon',
-	'geoLabel'
+	'geoLabel',
+	'chore'
 ] as const;

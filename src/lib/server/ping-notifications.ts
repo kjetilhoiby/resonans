@@ -1,9 +1,9 @@
 import { db } from '$lib/db';
-import { users, checklists, checklistItems } from '$lib/db/schema';
+import { users } from '$lib/db/schema';
 import { PushDeliveryService } from '$lib/server/services/push-delivery-service';
 import { sendGoogleChatMessage } from '$lib/server/google-chat';
-import { eq, and } from 'drizzle-orm';
-import { dayContextForDate } from '$lib/server/iso-week';
+import { eq } from 'drizzle-orm';
+import { addChoresForCycle } from '$lib/server/services/chore-service';
 
 import type { MatchResult } from '$lib/server/services/appliance-profile-service';
 
@@ -69,6 +69,8 @@ export async function notifyPingEvent(args: {
 	} else if (data.event === 'finished') {
 		if (settings.applianceCycles?.notifyFinish === false) return { sent: false };
 
+		// Husarbeidet samles i chores-view på hjem (ikke dagslista). Claiming
+		// («Legg i min dag») skjer derfra — varselet er bare et signal.
 		const duration = data.duration_minutes ? formatDuration(data.duration_minutes) : '';
 		const kwh = data.total_kwh ? `${data.total_kwh} kWh` : '';
 		const stats = [duration, kwh].filter(Boolean).join(', ');
@@ -104,12 +106,12 @@ export async function notifyPingEvent(args: {
 	}
 
 	if (data.event === 'finished') {
-		await createApplianceTask(
+		await addChoresForCycle(
 			userId,
 			data.appliance,
 			data.cycle_id,
 			data.duration_minutes
-		).catch((err) => console.error('[ping-task]', err));
+		).catch((err) => console.error('[ping-chore]', err));
 	}
 
 	return { sent };
@@ -157,61 +159,3 @@ export async function notifyPingMatch(args: {
 	}
 }
 
-const APPLIANCE_TASKS: Record<string, string[]> = {
-	vaskemaskin: ['Tøm vaskemaskin', 'Heng opp klær'],
-	oppvaskmaskin: ['Tøm oppvaskmaskin'],
-	'tørketrommel': ['Tøm tørketrommel', 'Brett og legg vekk klær'],
-};
-
-function normalizeApplianceName(name: string): string {
-	return name.toLowerCase().replace(/a$/, '').replace(/en$/, '');
-}
-
-async function createApplianceTask(userId: string, appliance: string, cycleId?: string, durationMinutes?: number) {
-	const key = normalizeApplianceName(appliance);
-	const matched = Object.entries(APPLIANCE_TASKS).find(([k]) => key.includes(k));
-	if (!matched) return;
-
-	const taskTexts = matched[1];
-	const now = new Date();
-	const tz = 'Europe/Oslo';
-	const isoDate = now.toLocaleDateString('sv-SE', { timeZone: tz });
-	const context = dayContextForDate(isoDate);
-
-	let dayChecklist = await db.query.checklists.findFirst({
-		where: and(eq(checklists.userId, userId), eq(checklists.context, context))
-	});
-
-	if (!dayChecklist) {
-		const weekday = now.toLocaleDateString('nb-NO', { weekday: 'long', timeZone: tz });
-		const [created] = await db.insert(checklists).values({
-			userId,
-			title: weekday.charAt(0).toUpperCase() + weekday.slice(1),
-			emoji: '🗓️',
-			context
-		}).returning();
-		dayChecklist = created;
-	}
-
-	const existing = await db.query.checklistItems.findMany({
-		where: and(
-			eq(checklistItems.checklistId, dayChecklist.id),
-			eq(checklistItems.userId, userId)
-		),
-		columns: { id: true, text: true }
-	});
-
-	await db.insert(checklistItems).values(
-		taskTexts.map((text, i) => ({
-			checklistId: dayChecklist!.id,
-			userId,
-			text,
-			sortOrder: existing.length + i,
-			metadata: {
-				appliance,
-				applianceCycleId: cycleId ?? undefined,
-				applianceDurationMinutes: durationMinutes ?? undefined,
-			}
-		}))
-	);
-}

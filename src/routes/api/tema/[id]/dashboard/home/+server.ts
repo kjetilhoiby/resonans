@@ -7,6 +7,7 @@ import { and, eq, desc, inArray } from 'drizzle-orm';
 import { ProjectMetricsService } from '$lib/server/services/project-metrics-service';
 import { currentSeason, HOME_APPLIANCE_SUBTYPES, HOME_APPLIANCE_LABELS, type HomeApplianceSubtype, pingApplianceEmoji } from '$lib/domains/home';
 import { buildApplianceCycle, type ApplianceCycle } from '$lib/server/services/appliance-cycle';
+import { getChoreStats, listPendingChores } from '$lib/server/services/chore-service';
 
 export const GET: RequestHandler = async ({ locals, params }) => {
 	const userId = locals.userId;
@@ -159,7 +160,18 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 		}
 	}
 
+	// Apparat-husarbeid: telling (brutto vs. fullført, siste 7 dager) + ventende liste.
+	const [choreStats, pendingChores] = await Promise.all([
+		getChoreStats(userId, 7),
+		listPendingChores(userId)
+	]);
+
 	return json({
+		chores: {
+			stats: choreStats,
+			checklistId: pendingChores.checklistId,
+			items: pendingChores.items
+		},
 		projects: activeProjects.map((p) => ({
 			id: p.id,
 			title: p.title,
