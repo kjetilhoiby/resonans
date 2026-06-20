@@ -6,10 +6,17 @@ import { SensorEventService } from '$lib/server/services/sensor-event-service';
 import {
 	refreshAccessToken,
 	getVehicleData,
+	getNearbyChargers,
 	getRegion,
 	type VehicleDataResult
 } from './tesla';
-import { parseVehicleData, buildSnapshot, type TeslaSnapshot } from './tesla-parser';
+import {
+	parseVehicleData,
+	parseNearbyChargers,
+	buildSnapshot,
+	type TeslaSnapshot,
+	type NearbyChargers
+} from './tesla-parser';
 
 interface TeslaCredentials {
 	access_token: string;
@@ -153,6 +160,35 @@ export async function syncTeslaForUser(userId: string): Promise<TeslaSyncResult>
 	await updateDrivingLiveSession(userId, snapshot);
 
 	return { asleep: false, eventsWritten: parsed.length, snapshot };
+}
+
+export interface NearbyChargersResponse {
+	asleep: boolean;
+	chargers: NearbyChargers | null;
+}
+
+/**
+ * Hent ladere nær bilen for Ekko. Egen lett henting (ikke del av kjøre-poll)
+ * fordi tilgjengelighetsdata trengs sjeldnere enn posisjon/batteri. Skriver
+ * ingen sensor-events — ren proxy mot Tesla.
+ */
+export async function getNearbyChargersForUser(userId: string): Promise<NearbyChargersResponse> {
+	const sensor = await getTeslaSensor(userId);
+	if (!sensor) throw new Error('Ingen aktiv Tesla-sensor for bruker');
+
+	const config = (sensor.config ?? {}) as TeslaConfig;
+	const baseUrl = config.fleetApiBaseUrl;
+	const vehicleTag = config.vehicleId ?? config.vin;
+	if (!baseUrl || !vehicleTag) {
+		throw new Error('Tesla-sensor mangler fleetApiBaseUrl eller vehicleId i config');
+	}
+
+	const accessToken = await getValidAccessToken(sensor);
+	const result = await getNearbyChargers(accessToken, baseUrl, vehicleTag);
+	if (!result.ok) {
+		return { asleep: true, chargers: null };
+	}
+	return { asleep: false, chargers: parseNearbyChargers(result.data) };
 }
 
 /**

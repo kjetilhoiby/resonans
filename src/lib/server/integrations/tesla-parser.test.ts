@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildSnapshot, parseVehicleData } from './tesla-parser';
+import { buildSnapshot, parseVehicleData, parseNearbyChargers } from './tesla-parser';
 
 const NOW = new Date('2026-06-18T10:00:00.000Z');
 
@@ -63,6 +63,40 @@ describe('buildSnapshot', () => {
 		expect(snap.charging).toBe(false);
 		expect(snap.chargingState).toBe('Disconnected');
 	});
+
+	it('mapper aktiv navigasjon (mål + ETA + koordinater) når bilen navigerer', () => {
+		const raw = fullVehicleData();
+		(raw.drive_state as any).active_route_destination = 'Volda';
+		(raw.drive_state as any).active_route_minutes_to_arrival = 41.6;
+		(raw.drive_state as any).active_route_latitude = 62.146;
+		(raw.drive_state as any).active_route_longitude = 6.071;
+		const snap = buildSnapshot(raw, NOW);
+		expect(snap.navigationDestination).toBe('Volda');
+		expect(snap.navigationEtaMinutes).toBe(42); // avrundet til hele minutter
+		expect(snap.navigationDestinationLocation).toEqual({ lat: 62.146, lon: 6.071 });
+	});
+
+	it('utelater navigasjonsfelt når bilen ikke navigerer', () => {
+		const snap = buildSnapshot(fullVehicleData(), NOW);
+		expect(snap.navigationDestination).toBeUndefined();
+		expect(snap.navigationEtaMinutes).toBeUndefined();
+		expect(snap.navigationDestinationLocation).toBeUndefined();
+	});
+
+	it('sender ikke ETA uten et navigasjonsmål', () => {
+		const raw = fullVehicleData();
+		(raw.drive_state as any).active_route_minutes_to_arrival = 17;
+		const snap = buildSnapshot(raw, NOW);
+		expect(snap.navigationDestination).toBeUndefined();
+		expect(snap.navigationEtaMinutes).toBeUndefined();
+	});
+
+	it('befolker ikke navigationRoute (Tesla eksponerer ikke polyline)', () => {
+		const raw = fullVehicleData();
+		(raw.drive_state as any).active_route_destination = 'Volda';
+		const snap = buildSnapshot(raw, NOW);
+		expect(snap.navigationRoute).toBeUndefined();
+	});
 });
 
 describe('parseVehicleData', () => {
@@ -94,5 +128,60 @@ describe('parseVehicleData', () => {
 		const charge = events.find((e) => e.dataType === 'charge_state');
 		expect(charge?.data.batteryPercent).toBe(40);
 		expect(charge?.data.rangeKm).toBeUndefined();
+	});
+});
+
+describe('parseNearbyChargers', () => {
+	function rawChargers() {
+		return {
+			congestion_sync_time_utc_secs: 1700000000,
+			timestamp: 1700000001,
+			superchargers: [
+				{
+					type: 'supercharger',
+					name: 'Vinstra Supercharger',
+					location: { lat: 61.59, long: 9.75 },
+					distance_miles: 10, // 16.1 km
+					available_stalls: 6,
+					total_stalls: 8,
+					site_closed: false
+				}
+			],
+			destination_charging: [
+				{
+					type: 'destination',
+					name: 'Hotell Volda',
+					location: { lat: 62.146, long: 6.071 },
+					distance_miles: 2 // 3.2 km
+				}
+			]
+		};
+	}
+
+	it('normaliserer superchargere med stall-tilgjengelighet til metrisk', () => {
+		const out = parseNearbyChargers(rawChargers());
+		expect(out.superchargers).toHaveLength(1);
+		const sc = out.superchargers[0];
+		expect(sc.name).toBe('Vinstra Supercharger');
+		expect(sc.location).toEqual({ lat: 61.59, lon: 9.75 }); // long → lon
+		expect(sc.distanceKm).toBe(16.1);
+		expect(sc.availableStalls).toBe(6);
+		expect(sc.totalStalls).toBe(8);
+		expect(sc.siteClosed).toBe(false);
+	});
+
+	it('utelater stall-felt for destination chargers', () => {
+		const out = parseNearbyChargers(rawChargers());
+		expect(out.destinationChargers).toHaveLength(1);
+		const dc = out.destinationChargers[0];
+		expect(dc.name).toBe('Hotell Volda');
+		expect(dc.distanceKm).toBe(3.2);
+		expect(dc.availableStalls).toBeUndefined();
+		expect(dc.totalStalls).toBeUndefined();
+	});
+
+	it('tåler tomt/manglende svar uten å kaste', () => {
+		expect(parseNearbyChargers(null)).toEqual({ superchargers: [], destinationChargers: [] });
+		expect(parseNearbyChargers({})).toEqual({ superchargers: [], destinationChargers: [] });
 	});
 });

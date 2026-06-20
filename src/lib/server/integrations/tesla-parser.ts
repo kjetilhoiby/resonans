@@ -49,6 +49,23 @@ export interface TeslaSnapshot {
 	heading?: number;
 	speedKmh?: number;
 	shiftState?: string | null;
+	/** Aktivt navigasjonsmål (navn) — kun satt når bilen faktisk navigerer. */
+	navigationDestination?: string;
+	/** Minutter til ankomst for aktivt navigasjonsmål. */
+	navigationEtaMinutes?: number;
+	/**
+	 * Målpunktets koordinater (lat/lon) — samme konvensjon som `location`. Lar
+	 * Ekko kjøre egen ruting on-device (bilposisjon → mål) og tegne rutelinja
+	 * uten å geokode navnet.
+	 */
+	navigationDestinationLocation?: { lat: number; lon: number };
+	/**
+	 * Gjenstående rute til mål som [lat, lon]-par (samme konvensjon som live-
+	 * session `routeCoordinates`). Tesla Fleet API eksponerer normalt ikke hele
+	 * polyline-en, så feltet befolkes foreløpig ikke her — cockpiten viser da mål
+	 * + ETA uten rutelinje. Kan fylles av en egen ruting-motor senere.
+	 */
+	navigationRoute?: [number, number][];
 	odometerKm?: number;
 	locked?: boolean;
 	insideTempC?: number;
@@ -75,6 +92,21 @@ export function buildSnapshot(raw: Record<string, any> | null, now: Date = new D
 	const speedMph = num(drive.speed); // mph eller null
 	const chargingState = typeof charge.charging_state === 'string' ? charge.charging_state : undefined;
 
+	// Aktiv navigasjon: send mål/ETA kun når bilen faktisk navigerer (mål satt).
+	const navDestination =
+		typeof drive.active_route_destination === 'string' && drive.active_route_destination.length > 0
+			? drive.active_route_destination
+			: undefined;
+	const navEtaRaw = num(drive.active_route_minutes_to_arrival);
+	const navEtaMinutes =
+		navDestination !== undefined && navEtaRaw !== undefined ? Math.round(navEtaRaw) : undefined;
+	const navDestLat = num(drive.active_route_latitude);
+	const navDestLon = num(drive.active_route_longitude);
+	const navDestLocation =
+		navDestination !== undefined && navDestLat !== undefined && navDestLon !== undefined
+			? { lat: navDestLat, lon: navDestLon }
+			: undefined;
+
 	return {
 		asleep: false,
 		state: typeof raw.state === 'string' ? raw.state : undefined,
@@ -90,12 +122,64 @@ export function buildSnapshot(raw: Record<string, any> | null, now: Date = new D
 		heading: num(drive.heading),
 		speedKmh: speedMph !== undefined ? Math.round(speedMph * MILES_TO_KM * 10) / 10 : undefined,
 		shiftState: typeof drive.shift_state === 'string' ? drive.shift_state : null,
+		navigationDestination: navDestination,
+		navigationEtaMinutes: navEtaMinutes,
+		navigationDestinationLocation: navDestLocation,
 		odometerKm: milesToKm(vehicle.odometer),
 		locked: bool(vehicle.locked),
 		insideTempC: num(climate.inside_temp),
 		outsideTempC: num(climate.outside_temp),
 		climateOn: bool(climate.is_climate_on),
 		asOf: now.toISOString()
+	};
+}
+
+/**
+ * Én ladestasjon nær bilen, enhets-normalisert (km). Supercharger-spesifikke
+ * felt (stall-tilgjengelighet) er fraværende for destination chargers.
+ */
+export interface TeslaCharger {
+	type: 'supercharger' | 'destination';
+	name?: string;
+	location?: { lat: number; lon: number };
+	distanceKm?: number;
+	availableStalls?: number;
+	totalStalls?: number;
+	siteClosed?: boolean;
+}
+
+export interface NearbyChargers {
+	superchargers: TeslaCharger[];
+	destinationChargers: TeslaCharger[];
+}
+
+function mapCharger(raw: any, type: 'supercharger' | 'destination'): TeslaCharger {
+	// Tesla bruker `long` (ikke `longitude`) i nearby_charging_sites-svaret.
+	const lat = num(raw?.location?.lat);
+	const lon = num(raw?.location?.long);
+	const charger: TeslaCharger = {
+		type,
+		name: typeof raw?.name === 'string' ? raw.name : undefined,
+		location: lat !== undefined && lon !== undefined ? { lat, lon } : undefined,
+		distanceKm: milesToKm(raw?.distance_miles)
+	};
+	if (type === 'supercharger') {
+		charger.availableStalls = num(raw?.available_stalls);
+		charger.totalStalls = num(raw?.total_stalls);
+		charger.siteClosed = bool(raw?.site_closed);
+	}
+	return charger;
+}
+
+/**
+ * Normaliser rå nearby_charging_sites-svar til metrisk, Ekko-vennlig form.
+ */
+export function parseNearbyChargers(raw: Record<string, any> | null): NearbyChargers {
+	const superRaw = Array.isArray(raw?.superchargers) ? raw!.superchargers : [];
+	const destRaw = Array.isArray(raw?.destination_charging) ? raw!.destination_charging : [];
+	return {
+		superchargers: superRaw.map((c: any) => mapCharger(c, 'supercharger')),
+		destinationChargers: destRaw.map((c: any) => mapCharger(c, 'destination'))
 	};
 }
 
