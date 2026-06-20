@@ -1,7 +1,7 @@
 # Bilferie: Ekko-tracking + reise-tema + feriedagbok
 
 Dato: 2026-06-19
-Status: pågår (fase 1–3 implementert serverside + UI; ingen Ekko-endring nødvendig)
+Status: pågår (fase 1–5 implementert serverside + UI; ingen Ekko-endring nødvendig)
 
 ## Kontekst
 
@@ -133,6 +133,51 @@ hvor-var-vi) overlever selv om rådataene tynnes ut.
   `SharedTripPositionView.svelte`) med ruter + overnattinger + geo-plasserte kjøp,
   og dagbok-tidslinjen under.
 
+### Fase 4: Dagens plan til Ekko — `GET /api/apps/day` (implementert 2026-06-20)
+
+Ekko skal kunne *hente* dagens bevegelses- og oppholdskontekst fra Resonans —
+«det finnes en oppgave som heter Kjøre til Volda» — på samme måte som den henter
+treningsprogram. Gathering-logikken finnes allerede; den produserer i dag kun
+prosa for chat-prompten (`buildDayContextBlock` i `day-location-context.ts`, som
+bruker `computeStaysFromDayPlans` i `stays.ts`, kalt fra `/api/chat` +
+`/api/chat-stream`). Arbeidet er å eksponere den som struktur.
+
+**Refaktor (prinsipp 2/3):** splitt gatheringen fra formateringen.
+- `gatherDayContext(userId, date) → DayContext` — ren(-ere) strukturbygging
+  (dagens `location`/`travel`-punkter + aktivt opphold + aktiv tur via
+  `pickTripForDate`).
+- `buildDayContextBlock` blir en tynn prosa-formatter over `DayContext`, slik at
+  chat og Ekko deler én kilde og ikke kan drive fra hverandre.
+
+**Nytt endepunkt** (Bearer `rsn_`, read-only, som resten av `/api/apps/*`):
+```
+GET /api/apps/day?date=YYYY-MM-DD        (default i dag)
+→ {
+    date,
+    trip:     { themeId, name, dayNo, totalDays } | null,   // pickTripForDate
+    movement: [ { mode: 'drive'|'boat'|'flight', destination, time } ],
+    stay:     { place, checkIn, checkOut, dayNo, totalDays } | null,
+    training: { programId, sessionId, summary } | null       // tynn peker
+  }
+```
+
+**Avgrensning — erstatter IKKE program-API-et.** `/day` generaliserer *henting*
+(en tynn lesekomposisjon / BFF-briefing); *rapportering* forblir spesialisert per
+domene. Program-endepunktene beholdes som detalj-kilde + tilbakekoblingssløyfe
+(`programs/[id]/today` → `complete-session` → progresjon → `status`/`mode`).
+`/day` *refererer* dagens økt med en peker + sammendrag; Ekko driller ned i
+`/programs/[id]/today` for sett/reps/fullføring.
+
+**Symmetri (plan ↔ utført):**
+
+| | Trening | Bevegelse/opphold |
+|---|---|---|
+| Hent plan (deklarert) | `programs/[id]/today` | `GET /api/apps/day` ← ny |
+| Rapporter utført (observert) | `complete-session` | `live-session` `arrived` (bygd) |
+
+Resonans er planleggeren/system-of-record; Ekko er feltklienten. Begge domener er
+intensjoner Resonans holder — Ekko henter dagens skive og melder tilbake.
+
 ### Avgrensninger (bevisst utelatt i v1)
 
 - **Strava-push** (`/api/apps/upload`): gjelder løping/sykling med GPX, ikke
@@ -161,6 +206,11 @@ hvor-var-vi) overlever selv om rådataene tynnes ut.
 - **Serveren utleder tema fra datoen, ikke Ekko.** Reisen er et temporalt filter,
   så tilhørighet er en funksjon av datoen. Ekko skal ikke kjenne tema-taksonomien;
   `themeId` på API-et er en override for overlappende turer / kjøretur utenfor vinduet.
+- **`/api/apps/day` aggregerer henting, men erstatter ikke program-API-et.** Et
+  tynt lese-aggregat (BFF) gir Ekko dagens plan i ett kall og *refererer* trening;
+  den stateful program-sløyfa (today → complete-session → progresjon) og
+  domene-spesifikk rapportering beholdes. Gathering deles med chat via
+  `gatherDayContext` slik at de ikke driver fra hverandre.
 
 ## Åpne punkter (avklares før bygging)
 
@@ -208,23 +258,43 @@ hvor-var-vi) overlever selv om rådataene tynnes ut.
   (`getDiary`/`putDiaryEntry`). Lagrer per dag ved blur. `data-track` satt på felt.
 - Montert i `TripDashboard.svelte` etter helse-seksjonen.
 
+**Fase 4 — dagens plan til Ekko (2026-06-20):**
+- `gatherDayContext(userId, date?, tz?)` + `formatDayContextBlock(ctx)` ekstrahert i
+  `day-location-context.ts`. `buildDayContextBlock` er nå en tynn wrapper — chat og
+  Ekko deler samme strukturkilde. Prosaen er uendret (5 tester på formatteren).
+- `dayWindowInfo(start, end, dato)` i `trip-geo.ts` (delt «dag X av Y», 4 tester).
+- `GET /api/apps/day?date=` (`src/routes/api/apps/day/+server.ts`): komponerer
+  `{ date, trip, movement, stay, training }`. `trip` utledes via `pickTripForDate`,
+  `training` er en tynn peker (`programId`/`sessionId`/`kind`/`name`/`done`) til
+  aktivt program — Ekko driller ned i `/programs/[id]/today` for detalj.
+- Program-API-et er uendret; `/day` aggregerer kun henting.
+
+**Fase 5 — gjenstående geo-berikelse (2026-06-20):**
+- **Deklarert geo-backfill**: `reconcileDeclaredGeo(geoByDay, vindu, ønskede)` (ren,
+  5 tester) fyller `geoByDay`-laget «declared» fra dagsoppgaver. Trigget fra
+  `reconcileTripStays` i `stays.ts` (samme `syncStaysForDate`-hook som overnattinger),
+  så «Kjøre til Volda» gir et stedssignal samme dag — selv uten kjøretur. Selv-
+  korrigerende (fjerner foreldede declared-dager) og rører aldri `observed`.
+- **Vær-snapshot ved ankomst**: `seedArrivalDiary` i live-session `arrived`-stien
+  henter met.no for ankomstkoordinatet (best-effort, `fetchRawTimeseries` +
+  `buildPeriods`) og legger sted + vær på dagboknotatet uten å røre brukerens tekst.
+- **Reiserute-kart**: `TripDashboard` plotter `geoByDay`-punktene kronologisk med
+  rutelinje, fargede markører (grønn = spored / gul = planlagt) og auto-fit. Kart-
+  containeren fikk omsider eksplisitt høyde + stiler.
+
 ## Gjenstår
 
-- **Vær-snapshot ved auto-seed** (deklarert i Fase 3-planen) er ikke koblet på —
-  `geoByDay` bærer foreløpig sted + koordinater, ikke vær. Dagboken viser vær hvis
-  notatet allerede har det.
-- **Transaksjons-geo** (tids-match mot `geoByDay`) er ikke bygd — venter til vi har
-  reelle observerte data å matche mot.
-- **Backfill av deklarert geo** fra dagsoppgaver inn i `geoByDay` (presedens-laget
-  «declared») er forberedt i logikken, men ennå ikke trigget noe sted.
+- **Transaksjons-geo** (tids-match mot `geoByDay`) er ikke bygd — bevisst utsatt.
+  Nå som Ekko mater observerte data kan det bygges når behovet melder seg.
 
 ## Verifisering
 
-- `npm run check` (0 feil) og `npm test` (629 tester grønne, inkl. 15 nye
-  `trip-geo`-tester).
+- `npm run check` (0 feil) og `npm test` (648 tester grønne, inkl. 34 nye
+  `trip-geo`-/dagskontekst-tester).
 - Reise-temaet er ikke en av de 5 visuelle baseline-sidene, så `test:visual`
-  (piksel-diff) påvirkes ikke. LLM-review (`test:visual:review`) krever
-  OpenAI-nøkkel + kjørende server og er ikke kjørt i denne sesjonen.
+  (piksel-diff) påvirkes ikke. Reiserute-kartet og dagbok-UI bør røyktestes i
+  nettleser; LLM-review (`test:visual:review`) krever OpenAI-nøkkel + kjørende
+  server og er ikke kjørt i denne sesjonen.
 - Manuelt ende-til-ende: opprett reise-tema med datoer som dekker i dag → start en
   `driving`-økt (dagens Ekko-flyt, uten `themeId`) → avslutt med `arrived` →
   verifiser at `geoByDay` for dagen ble satt til observert på riktig tema (utledet

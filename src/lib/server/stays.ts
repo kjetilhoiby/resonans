@@ -10,6 +10,7 @@ import { db } from '$lib/db';
 import { checklists, themes } from '$lib/db/schema';
 import { and, eq, inArray } from 'drizzle-orm';
 import { dayContextForDate, addDaysIso } from './iso-week';
+import { reconcileDeclaredGeo, type DeclaredDay } from './trip-geo';
 import {
 	aggregateStays,
 	isLocationItem,
@@ -143,10 +144,24 @@ async function reconcileTripStays(themeId: string, userId: string, trip: TripPro
 
 	const all = trip.overnightStays ?? [];
 	const prevAuto = all.filter((s) => s.source === DAYPLAN_SOURCE);
-	if (tripStaysSignature(prevAuto) === tripStaysSignature(auto)) return; // ingen endring
-
 	const manual = all.filter((s) => s.source !== DAYPLAN_SOURCE);
-	const merged: TripProfileShape = { ...trip, overnightStays: [...manual, ...auto] };
+	const nextStays = [...manual, ...auto];
+
+	// Deklarert geo-lag: utled per-dag sted fra de samme oppholdene og rekonsiler
+	// det inn i geoByDay (rører ikke observerte kjøre-etapper, jf. presedens).
+	const desired: DeclaredDay[] = [];
+	for (const s of stays) {
+		for (const date of datesInRange(s.startDate, s.endDate)) {
+			desired.push({ date, place: s.place, lat: s.lat, lon: s.lon });
+		}
+	}
+	const nextGeo = reconcileDeclaredGeo(trip.geoByDay, trip.startDate!, trip.endDate!, desired);
+
+	const staysUnchanged = tripStaysSignature(prevAuto) === tripStaysSignature(auto);
+	const geoUnchanged = JSON.stringify(trip.geoByDay ?? {}) === JSON.stringify(nextGeo);
+	if (staysUnchanged && geoUnchanged) return; // ingen endring
+
+	const merged: TripProfileShape = { ...trip, overnightStays: nextStays, geoByDay: nextGeo };
 	await db
 		.update(themes)
 		.set({ tripProfile: merged, updatedAt: new Date() })

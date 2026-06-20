@@ -1,10 +1,11 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
-import { liveSessions, themes } from '$lib/db/schema';
-import { and, eq, isNull } from 'drizzle-orm';
+import { liveSessions, themes, reflections } from '$lib/db/schema';
+import { and, eq, desc, isNull } from 'drizzle-orm';
 import { randomBytes } from 'crypto';
-import { applyDayGeo, buildObservedDayGeo, osloDayKey, pickTripForDate } from '$lib/server/trip-geo';
+import { applyDayGeo, buildObservedDayGeo, osloDayKey, pickTripForDate, type DayGeo } from '$lib/server/trip-geo';
+import { fetchRawTimeseries, buildPeriods } from '$lib/utils/weather';
 import {
 	getOrCreateTripPositionShareToken,
 	revokeShareTokensForResource,
@@ -47,7 +48,7 @@ async function enrichThemeGeo(
 	userId: string,
 	themeId: string,
 	dateKey: string,
-	candidate: import('$lib/server/trip-geo').DayGeo
+	candidate: DayGeo
 ): Promise<void> {
 	const theme = await db.query.themes.findFirst({
 		where: and(eq(themes.id, themeId), eq(themes.userId, userId)),
@@ -62,6 +63,61 @@ async function enrichThemeGeo(
 		.update(themes)
 		.set({ tripProfile: { ...profile, geoByDay: nextGeo }, updatedAt: new Date() })
 		.where(and(eq(themes.id, themeId), eq(themes.userId, userId)));
+}
+
+/**
+ * Auto-seed dagboknotatet for ankomstdagen med sted + vær-snapshot. Best-effort:
+ * henter met.no for ankomstkoordinatet og legger emoji/temp på notatet uten å røre
+ * brukerens egen tekst/sted. Skriver kun hvis det er noe nytt å fylle inn.
+ */
+async function seedArrivalDiary(
+	userId: string,
+	themeId: string,
+	date: string,
+	candidate: DayGeo
+): Promise<void> {
+	let weather: { emoji: string; temp: number } | undefined;
+	if (candidate.lat != null && candidate.lon != null) {
+		try {
+			const ts = await fetchRawTimeseries(candidate.lat, candidate.lon);
+			if (ts) {
+				const usable = buildPeriods(date, ts).find((p) => p.emoji && p.emoji !== '—');
+				if (usable) weather = { emoji: usable.emoji, temp: usable.temp };
+			}
+		} catch {
+			/* best-effort — vær er valgfritt */
+		}
+	}
+
+	const existing = await db.query.reflections.findFirst({
+		where: and(
+			eq(reflections.userId, userId),
+			eq(reflections.themeId, themeId),
+			eq(reflections.kind, 'feriedagbok'),
+			eq(reflections.periodKey, date)
+		),
+		orderBy: [desc(reflections.createdAt)]
+	});
+
+	const scores: Record<string, unknown> = { ...((existing?.scores as Record<string, unknown>) ?? {}) };
+	let changed = false;
+	if (!scores.place && candidate.place) {
+		scores.place = candidate.place;
+		changed = true;
+	}
+	if (!scores.weather && weather) {
+		scores.weather = weather;
+		changed = true;
+	}
+	if (!changed) return;
+
+	if (existing) {
+		await db.update(reflections).set({ scores }).where(eq(reflections.id, existing.id));
+	} else {
+		await db
+			.insert(reflections)
+			.values({ userId, themeId, kind: 'feriedagbok', periodKey: date, content: '', scores });
+	}
 }
 
 /**
@@ -218,6 +274,7 @@ export const DELETE: RequestHandler = async ({ locals, request }) => {
 			const themeId = session.themeId ?? (await inferTripThemeId(userId, dateKey));
 			if (themeId) {
 				await enrichThemeGeo(userId, themeId, dateKey, candidate);
+				await seedArrivalDiary(userId, themeId, dateKey, candidate);
 			}
 		}
 	}
