@@ -54,6 +54,12 @@ export interface TeslaSnapshot {
 	/** Minutter til ankomst for aktivt navigasjonsmål. */
 	navigationEtaMinutes?: number;
 	/**
+	 * Målpunktets koordinater (lat/lon) — samme konvensjon som `location`. Lar
+	 * Ekko kjøre egen ruting on-device (bilposisjon → mål) og tegne rutelinja
+	 * uten å geokode navnet.
+	 */
+	navigationDestinationLocation?: { lat: number; lon: number };
+	/**
 	 * Gjenstående rute til mål som [lat, lon]-par (samme konvensjon som live-
 	 * session `routeCoordinates`). Tesla Fleet API eksponerer normalt ikke hele
 	 * polyline-en, så feltet befolkes foreløpig ikke her — cockpiten viser da mål
@@ -94,6 +100,12 @@ export function buildSnapshot(raw: Record<string, any> | null, now: Date = new D
 	const navEtaRaw = num(drive.active_route_minutes_to_arrival);
 	const navEtaMinutes =
 		navDestination !== undefined && navEtaRaw !== undefined ? Math.round(navEtaRaw) : undefined;
+	const navDestLat = num(drive.active_route_latitude);
+	const navDestLon = num(drive.active_route_longitude);
+	const navDestLocation =
+		navDestination !== undefined && navDestLat !== undefined && navDestLon !== undefined
+			? { lat: navDestLat, lon: navDestLon }
+			: undefined;
 
 	return {
 		asleep: false,
@@ -112,6 +124,7 @@ export function buildSnapshot(raw: Record<string, any> | null, now: Date = new D
 		shiftState: typeof drive.shift_state === 'string' ? drive.shift_state : null,
 		navigationDestination: navDestination,
 		navigationEtaMinutes: navEtaMinutes,
+		navigationDestinationLocation: navDestLocation,
 		odometerKm: milesToKm(vehicle.odometer),
 		locked: bool(vehicle.locked),
 		insideTempC: num(climate.inside_temp),

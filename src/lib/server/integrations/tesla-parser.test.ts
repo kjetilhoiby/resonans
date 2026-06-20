@@ -64,19 +64,23 @@ describe('buildSnapshot', () => {
 		expect(snap.chargingState).toBe('Disconnected');
 	});
 
-	it('mapper aktiv navigasjon (mål + ETA) når bilen navigerer', () => {
+	it('mapper aktiv navigasjon (mål + ETA + koordinater) når bilen navigerer', () => {
 		const raw = fullVehicleData();
 		(raw.drive_state as any).active_route_destination = 'Volda';
 		(raw.drive_state as any).active_route_minutes_to_arrival = 41.6;
+		(raw.drive_state as any).active_route_latitude = 62.146;
+		(raw.drive_state as any).active_route_longitude = 6.071;
 		const snap = buildSnapshot(raw, NOW);
 		expect(snap.navigationDestination).toBe('Volda');
 		expect(snap.navigationEtaMinutes).toBe(42); // avrundet til hele minutter
+		expect(snap.navigationDestinationLocation).toEqual({ lat: 62.146, lon: 6.071 });
 	});
 
 	it('utelater navigasjonsfelt når bilen ikke navigerer', () => {
 		const snap = buildSnapshot(fullVehicleData(), NOW);
 		expect(snap.navigationDestination).toBeUndefined();
 		expect(snap.navigationEtaMinutes).toBeUndefined();
+		expect(snap.navigationDestinationLocation).toBeUndefined();
 	});
 
 	it('sender ikke ETA uten et navigasjonsmål', () => {
