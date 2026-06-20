@@ -21,6 +21,17 @@ export function normalizeApplianceName(name: string): string {
 	return name.toLowerCase().trim().replace(/en$/, '').replace(/a$/, '');
 }
 
+/**
+ * «chore: …»-prefiks markerer at en oppgave eies av husarbeid-budsjettet
+ * (samme konvensjon som «kjøp:»). Returnerer flagget + teksten uten prefiks.
+ * Brukes for rutine- og dagsoppgaver som skal telle i brutto-vs-fullført.
+ */
+export function parseChorePrefix(text: string): { chore: boolean; text: string } {
+	const match = /^\s*chore:\s*/i.exec(text);
+	if (!match) return { chore: false, text };
+	return { chore: true, text: text.slice(match[0].length).trim() };
+}
+
 /** Returner gjøremål for et apparatnavn, eller tom liste om ingen match. */
 export function choresForAppliance(appliance: string): string[] {
 	const key = normalizeApplianceName(appliance);

@@ -1,6 +1,7 @@
 import { db } from '$lib/db';
 import { routineDefinitions, checklists, checklistItems } from '$lib/db/schema';
 import { and, eq, asc, inArray, like } from 'drizzle-orm';
+import { parseChorePrefix } from '$lib/domains/home/appliance-chores';
 
 export type RoutineSlot = 'morning' | 'afternoon' | 'evening' | 'flex';
 
@@ -267,13 +268,17 @@ export async function materializeTodaysRoutines(userId: string, now: Date = new 
 				.returning();
 			checklistId = created.id;
 
-			const itemsToInsert = (def.items ?? []).map((it, idx) => ({
-				checklistId,
-				userId,
-				text: it.text,
-				sortOrder: typeof it.sortOrder === 'number' ? it.sortOrder : idx,
-				estimateMinutes: typeof it.estimateMinutes === 'number' ? it.estimateMinutes : null
-			}));
+			const itemsToInsert = (def.items ?? []).map((it, idx) => {
+				const parsed = parseChorePrefix(it.text);
+				return {
+					checklistId,
+					userId,
+					text: parsed.text,
+					sortOrder: typeof it.sortOrder === 'number' ? it.sortOrder : idx,
+					estimateMinutes: typeof it.estimateMinutes === 'number' ? it.estimateMinutes : null,
+					...(parsed.chore ? { metadata: { chore: true } } : {})
+				};
+			});
 			if (itemsToInsert.length > 0) {
 				await db.insert(checklistItems).values(itemsToInsert);
 			}
@@ -358,18 +363,20 @@ export async function materializeRoutinesForDates(
 			checklistByContext.set(row.context, row);
 		}
 
-		const allItemsToInsert: Array<{ checklistId: string; userId: string; text: string; sortOrder: number; estimateMinutes: number | null }> = [];
+		const allItemsToInsert: Array<{ checklistId: string; userId: string; text: string; sortOrder: number; estimateMinutes: number | null; metadata?: { chore: boolean } }> = [];
 		for (const p of missingPairs) {
 			const cl = checklistByContext.get(p.context);
 			if (!cl) continue;
 			for (let idx = 0; idx < (p.def.items ?? []).length; idx++) {
 				const it = p.def.items[idx];
+				const parsed = parseChorePrefix(it.text);
 				allItemsToInsert.push({
 					checklistId: cl.id,
 					userId,
-					text: it.text,
+					text: parsed.text,
 					sortOrder: typeof it.sortOrder === 'number' ? it.sortOrder : idx,
-					estimateMinutes: typeof it.estimateMinutes === 'number' ? it.estimateMinutes : null
+					estimateMinutes: typeof it.estimateMinutes === 'number' ? it.estimateMinutes : null,
+					...(parsed.chore ? { metadata: { chore: true } } : {})
 				});
 			}
 		}

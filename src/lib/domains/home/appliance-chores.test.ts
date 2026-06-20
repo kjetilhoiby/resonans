@@ -3,6 +3,7 @@ import {
 	choresForAppliance,
 	normalizeApplianceName,
 	computeChoreStats,
+	parseChorePrefix,
 	type ChoreCountItem
 } from './appliance-chores';
 
@@ -31,6 +32,22 @@ describe('choresForAppliance', () => {
 	it('returnerer tom liste for ukjent apparat', () => {
 		expect(choresForAppliance('Kjøleskap')).toEqual([]);
 		expect(choresForAppliance('')).toEqual([]);
+	});
+});
+
+describe('parseChorePrefix', () => {
+	it('plukker opp chore-prefiks og stripper det (case-insensitivt)', () => {
+		expect(parseChorePrefix('chore: Tøm oppvask')).toEqual({ chore: true, text: 'Tøm oppvask' });
+		expect(parseChorePrefix('Chore:Rydde kjøkken')).toEqual({ chore: true, text: 'Rydde kjøkken' });
+		expect(parseChorePrefix('  chore:  Vanne planter ')).toEqual({
+			chore: true,
+			text: 'Vanne planter'
+		});
+	});
+
+	it('lar vanlig tekst stå urørt', () => {
+		expect(parseChorePrefix('Tøm oppvask')).toEqual({ chore: false, text: 'Tøm oppvask' });
+		expect(parseChorePrefix('kjøp: melk')).toEqual({ chore: false, text: 'kjøp: melk' });
 	});
 });
 

@@ -99,6 +99,7 @@ export {
 	APPLIANCE_CHORES,
 	choresForAppliance,
 	computeChoreStats,
+	parseChorePrefix,
 	type ChoreStats,
 	type ChoreCountItem
 } from './appliance-chores';

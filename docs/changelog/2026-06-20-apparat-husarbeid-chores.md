@@ -50,14 +50,23 @@ Signalet hører hjemme i et eget **chores-view på hjem**, med en telling av
   - `src/lib/server/services/push-delivery-service.ts` + `web-push`-kjeden:
     `actions`/`data` føres gjennom til varselet.
 
-### Fase 2 (planlagt, ikke bygget): rutine-/dagsoppgaver «eid av chores»
+### Fase 2: rutine-/dagsoppgaver «eid av chores» via «chore:»-prefiks
 
-Foundation er på plass: budsjettet (`getChoreStats`) teller **alt** med
-`metadata.chore = true`, ikke bare apparat-genererte. Neste steg er å la
-enkelte rutine-items (morgen/kveld) og ad-hoc dagsoppgaver markeres som chores
-slik at de instansieres med `metadata.chore = true` og dermed teller i
-budsjettet. Krever felt på `routineDefinitions.items` + propagering ved
-instansiering + en toggle i UI. Avventer produktbeslutning.
+Budsjettet (`getChoreStats`) teller **alt** med `metadata.chore = true`, ikke bare
+apparat-genererte. For at rutine- og dagsoppgaver skal kunne eies av chores, ble
+det innført en tekst-konvensjon på linje med «kjøp:»:
+
+- `parseChorePrefix()` i `appliance-chores.ts` (ren, testet): et item-tekst som
+  starter med «chore:» strippes og får `metadata.chore = true`.
+- `checklist-item-builder.ts`: parser prefikset for alle manuelle/AI/dagsplan-items.
+  `chore` lagt til i `PARSE_DERIVED_METADATA_KEYS` så re-parsing ved redigering
+  følger med (legger man til/fjerner «chore:» oppdateres flagget).
+- `routine-service.ts`: begge instansieringsstedene parser prefikset, slik at et
+  rutine-item «chore: Tøm oppvask» (morgen/kveld) instansieres med
+  `metadata.chore = true` og teller i budsjettet hver dag det dukker opp.
+
+Slik kan f.eks. faste morgen-/kveldsrutine-gjøremål inngå i samme balanse-telling
+som apparat-husarbeidet, uten ny UI.
 
 ## Beslutninger
 
@@ -68,6 +77,8 @@ instansiering + en toggle i UI. Avventer produktbeslutning.
   dobbelttelling; `metadata.chore` gjør at det fortsatt teller uansett liste.
 - **Kanonisk `chore`-flagg** (ikke bare `applianceChore`) i budsjett-tellingen,
   for å støtte fase 2 uten ny refaktorering.
+- **«chore:»-prefiks** (tekst-konvensjon) framfor egen UI-toggle for å markere
+  rutine-/dagsoppgaver som husarbeid — konsistent med «kjøp:».
 
 ## Verifisering
 
