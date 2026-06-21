@@ -2,6 +2,13 @@ import { db } from '$lib/db';
 import { conversations, messages } from '$lib/db/schema';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { addMessage, createConversation, getConversationByIdForUser } from '$lib/server/conversations';
+import {
+	CONVERSATION_CONTEXT_WINDOW,
+	selectContextWindow,
+	type ConversationRole,
+	type ConversationTurn,
+	type ContextWindow
+} from '$lib/server/conversation-window';
 
 /**
  * Server-holdt samtaletilstand for Ekko-coachen.
@@ -13,42 +20,15 @@ import { addMessage, createConversation, getConversationByIdForUser } from '$lib
  *
  * Vi lagrer KUN `user`/`assistant`-turer — aldri efemær situasjonskontekst (live-metrikk) og
  * aldri klientens system-notiser.
+ *
+ * Kontekst-vinduet deles med assistenten via `conversation-window.ts`.
  */
 
-export type CoachRole = 'user' | 'assistant';
-
-export interface CoachTurn {
-	role: CoachRole;
-	text: string;
-	timestamp: Date;
-}
-
-/**
- * Hvor mange nylige turer vi sender ordrett til LLM-en. Eldre turer trunkeres til en
- * kort norsk notis slik at tråden ikke fylles av utdaterte tallremser, men modellen
- * fortsatt vet at samtalen er lengre enn vinduet.
- */
-export const COACH_CONTEXT_WINDOW = 20;
-
-export interface ContextWindow {
-	/** De nyeste turene, ordrett, i kronologisk rekkefølge. */
-	turns: CoachTurn[];
-	/** Antall eldre turer som ble utelatt (0 hvis alt fikk plass). */
-	droppedCount: number;
-}
-
-/**
- * Velg kontekst-vinduet: behold de `limit` nyeste turene ordrett, rapporter hvor mange
- * eldre som ble droppet. Ren funksjon (ingen DB/LLM) — testbar.
- */
-export function selectContextWindow(turns: CoachTurn[], limit = COACH_CONTEXT_WINDOW): ContextWindow {
-	if (limit <= 0) return { turns: [], droppedCount: turns.length };
-	if (turns.length <= limit) return { turns, droppedCount: 0 };
-	return {
-		turns: turns.slice(turns.length - limit),
-		droppedCount: turns.length - limit
-	};
-}
+export type CoachRole = ConversationRole;
+export type CoachTurn = ConversationTurn;
+export type { ContextWindow };
+export { selectContextWindow };
+export const COACH_CONTEXT_WINDOW = CONVERSATION_CONTEXT_WINDOW;
 
 /** Opprett en ny tom coach-tråd (source 'ekko') og returner den server-genererte id-en. */
 export async function createCoachConversation(userId: string): Promise<string> {
