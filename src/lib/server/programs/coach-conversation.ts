@@ -50,9 +50,9 @@ export function selectContextWindow(turns: CoachTurn[], limit = COACH_CONTEXT_WI
 	};
 }
 
-/** Opprett en ny tom tråd for brukeren og returner den server-genererte id-en. */
+/** Opprett en ny tom coach-tråd (source 'ekko') og returner den server-genererte id-en. */
 export async function createCoachConversation(userId: string): Promise<string> {
-	const conversation = await createConversation(userId);
+	const conversation = await createConversation(userId, 'ekko');
 	return conversation.id;
 }
 

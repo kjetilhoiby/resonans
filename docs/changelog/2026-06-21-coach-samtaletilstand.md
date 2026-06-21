@@ -15,17 +15,21 @@ skal oppføre seg nøyaktig som før (statsløst engangssvar — brukes av etter
 
 ## Faser
 
-### Fase 1: Delt struktur med resonans
+### Fase 1: Delt struktur med resonans + `source`-skille
 
 Coach-trådene lagres i de **eksisterende** `conversations`/`messages`-tabellene (ikke egne
-coach-tabeller), via den delte tjenesten i `src/lib/server/conversations.ts`. En voice-samtale
-med coachen er dermed samme samtale som dukker opp i `/samtaler`, og arver gratis:
+coach-tabeller), via den delte tjenesten i `src/lib/server/conversations.ts`. De arver gratis:
 
 - tittel-generering fra første brukermelding,
 - person-mention-indeksering,
 - `updatedAt`-bumping og eksisterende sletting (`DELETE /api/conversations/[id]`).
 
-Ingen schema-endring eller migrasjon trengs.
+Ny kolonne `conversations.source` (`'web'` | `'ekko'`, default `'web'`, migrasjon
+`0022_conversations_source.sql`) skiller hvilken flate en samtale oppsto på. Coach-tråder lagres
+som `'ekko'` og holdes ute av web-chatlisten: både `getUserConversationList` (`/samtaler` + hjem)
+og `getOrCreateConversation` (web-chattens aktive-samtale-fallback) filtrerer nå på `source = 'web'`.
+Eksisterende rader får `'web'` via DEFAULT. En **handoff** av en ekko-tråd inn i web-chatten gjøres
+senere ganske enkelt ved å sette `source` til `'web'`.
 
 ### Fase 2: Tråd-adapter
 
@@ -54,10 +58,11 @@ samtalepartner-system-prompt → valgfri program-kontekst → trunkerings-notis 
 
 ## Beslutninger
 
-- **Delt struktur med resonans (etter ønske):** coach-tråder er resonans-samtaler, ikke en parallell
-  tabell. Konsekvens: de vises i web-chattens samtaleliste — en voice-samtale kan fortsettes på web
-  og omvendt. Det finnes ingen `source`/`app`-diskriminator i skjemaet, så full deling er den
-  naturlige modellen.
+- **Delt struktur med resonans + `source`-skille (etter ønske):** coach-tråder er resonans-samtaler
+  (samme tabeller), men en `source`-kolonne skiller flatene. Coach-tråder (`'ekko'`) holdes ute av
+  web-chatlisten nå, mens kolonnen gir grunnlag for en framtidig handoff (sett `source = 'web'`).
+  Eierskaps-sjekken er fortsatt kun bruker-scopet (ikke source-scopet), så en handet-off tråd kan
+  fortsettes fra begge flater.
 - **Tråd-modus utløses av feltets tilstedeværelse, ikke av en sann verdi.** Kontrakten sier både
   «null/utelatt ⇒ ny tråd» og «kall uten conversationId = som før (statsløst)». For å unngå at
   etter-økt-vurderingen (som ikke sender feltet) plutselig begynner å persistere tråder, tolker vi

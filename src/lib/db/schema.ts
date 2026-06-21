@@ -444,6 +444,9 @@ export const conversations = pgTable('conversations', {
 	userId: text('user_id').references(() => users.id).notNull(),
 	themeId: uuid('theme_id').references((): AnyPgColumn => themes.id, { onDelete: 'set null' }),
 	personId: uuid('person_id').references((): AnyPgColumn => persons.id, { onDelete: 'set null' }), // Samtale dedikert til en relasjon (kan kombineres med themeId)
+	// Hvilken flate samtalen oppsto på: 'web' (chat i resonans) eller 'ekko' (coach-appen).
+	// Lar oss skille ekko-trådene fra web-chatlisten. En handoff = sette source til 'web'.
+	source: text('source').notNull().default('web'),
 	title: text('title'),
 	starred: boolean('starred').default(false).notNull(),
 	archived: boolean('archived').default(false).notNull(),
@@ -456,7 +459,8 @@ export const conversations = pgTable('conversations', {
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
 }, (table) => ({
-	idxPerson: index('conversations_person_idx').on(table.personId)
+	idxPerson: index('conversations_person_idx').on(table.personId),
+	idxUserSource: index('conversations_user_source_idx').on(table.userId, table.source, table.updatedAt)
 }));
 
 // Meldinger i samtaler
