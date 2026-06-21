@@ -70,41 +70,42 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			? body.conversationId.trim()
 			: null;
 
-	let conversationId: string;
+	// Eksisterende tråd: verifiser eierskap (404 ved fremmed/ukjent) og last historikk.
+	// Ny tråd (null): vent med å opprette til LLM-svaret er i havn, så vi ikke legger igjen
+	// tomme «Ny samtale»-rader i /samtaler hvis genereringen feiler.
 	let history: Awaited<ReturnType<typeof loadConversationTurns>> = [];
-
 	if (requestedId) {
 		const owned = await getOwnedConversation(userId, requestedId);
 		if (!owned) {
 			return json({ error: 'Conversation not found', code: 'conversation_not_found' }, { status: 404 });
 		}
-		conversationId = owned.id;
-		history = await loadConversationTurns(conversationId);
-	} else {
-		conversationId = await createCoachConversation(userId);
+		history = await loadConversationTurns(owned.id);
 	}
 
 	const { turns, droppedCount } = selectContextWindow(history);
 
+	let text: string;
 	try {
-		const { text } = await runCoachConversationTurn({
+		({ text } = await runCoachConversationTurn({
 			userId,
 			prompt,
 			programId,
 			history: turns,
 			droppedCount,
 			context
-		});
-
-		// Lagre KUN user- og assistant-turene (aldri efemær context).
-		await appendTurns(conversationId, [
-			{ role: 'user', text: prompt },
-			{ role: 'assistant', text }
-		]);
-
-		return json({ ok: true, text, conversationId });
+		}));
 	} catch (error) {
 		console.error('[api/apps/coach] generering feilet:', error);
 		return json({ error: 'Coach generation failed', code: 'coach_generation_failed' }, { status: 502 });
 	}
+
+	const conversationId = requestedId ?? (await createCoachConversation(userId));
+
+	// Lagre KUN user- og assistant-turene (aldri efemær context).
+	await appendTurns(conversationId, [
+		{ role: 'user', text: prompt },
+		{ role: 'assistant', text }
+	]);
+
+	return json({ ok: true, text, conversationId });
 };

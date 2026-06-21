@@ -1,14 +1,18 @@
 import { db } from '$lib/db';
-import { coachConversations, coachMessages } from '$lib/db/schema';
-import { and, asc, eq } from 'drizzle-orm';
+import { conversations, messages } from '$lib/db/schema';
+import { and, asc, eq, inArray } from 'drizzle-orm';
+import { addMessage, createConversation, getConversationByIdForUser } from '$lib/server/conversations';
 
 /**
  * Server-holdt samtaletilstand for Ekko-coachen.
  *
- * Serveren eier tråden, nøklet på (token-bruker, conversationId). Klienten sender bare
- * ny ytring + en opak server-generert conversationId; vi setter sammen full kontekst fra
- * de lagrede turene. Vi lagrer KUN `user`/`assistant`-turer — aldri efemær situasjonskontekst
- * (live-metrikk) og aldri klientens system-notiser.
+ * Delt struktur med resonans: coach-trådene lagres i de samme `conversations`/`messages`-
+ * tabellene som web-chatten, via den delte tjenesten i `conversations.ts`. En voice-samtale
+ * med coachen er dermed samme samtale som dukker opp i `/samtaler` — og får tittel-generering
+ * og person-indeksering på kjøpet. Serveren eier tråden, nøklet på (token-bruker, conversationId).
+ *
+ * Vi lagrer KUN `user`/`assistant`-turer — aldri efemær situasjonskontekst (live-metrikk) og
+ * aldri klientens system-notiser.
  */
 
 export type CoachRole = 'user' | 'assistant';
@@ -47,12 +51,9 @@ export function selectContextWindow(turns: CoachTurn[], limit = COACH_CONTEXT_WI
 }
 
 /** Opprett en ny tom tråd for brukeren og returner den server-genererte id-en. */
-export async function createCoachConversation(userId: string, title?: string | null): Promise<string> {
-	const [row] = await db
-		.insert(coachConversations)
-		.values({ userId, title: title ?? null })
-		.returning({ id: coachConversations.id });
-	return row.id;
+export async function createCoachConversation(userId: string): Promise<string> {
+	const conversation = await createConversation(userId);
+	return conversation.id;
 }
 
 /**
@@ -63,48 +64,53 @@ export async function getOwnedConversation(
 	userId: string,
 	conversationId: string
 ): Promise<{ id: string; title: string | null } | null> {
-	const row = await db.query.coachConversations.findFirst({
-		where: and(eq(coachConversations.id, conversationId), eq(coachConversations.userId, userId)),
-		columns: { id: true, title: true }
-	});
-	return row ?? null;
+	const conversation = await getConversationByIdForUser(conversationId, userId);
+	return conversation ? { id: conversation.id, title: conversation.title } : null;
 }
 
-/** Last alle turer i en tråd i kronologisk rekkefølge. */
+/**
+ * Last trådens `user`/`assistant`-turer i kronologisk rekkefølge. Eventuelle `system`-meldinger
+ * (kan finnes hvis tråden også brukes i web-chatten) utelates — coachen bygger sin egen
+ * system-prompt.
+ */
 export async function loadConversationTurns(conversationId: string): Promise<CoachTurn[]> {
-	const rows = await db.query.coachMessages.findMany({
-		where: eq(coachMessages.conversationId, conversationId),
-		orderBy: [asc(coachMessages.createdAt)],
-		columns: { role: true, text: true, createdAt: true }
+	const rows = await db.query.messages.findMany({
+		where: and(
+			eq(messages.conversationId, conversationId),
+			inArray(messages.role, ['user', 'assistant'])
+		),
+		orderBy: [asc(messages.createdAt)],
+		columns: { role: true, content: true, createdAt: true }
 	});
 	return rows.map((r) => ({
 		role: r.role === 'assistant' ? 'assistant' : 'user',
-		text: r.text,
+		text: r.content,
 		timestamp: r.createdAt
 	}));
 }
 
-/** Append turer (typisk en `user`- og en `assistant`-tur) og bump trådens updatedAt. */
+/**
+ * Append turer (typisk en `user`- og en `assistant`-tur) via den delte `addMessage` — som
+ * også bumper trådens updatedAt, genererer tittel fra første brukermelding og indekserer
+ * personer som nevnes. Bevarer rekkefølgen.
+ */
 export async function appendTurns(
 	conversationId: string,
 	turns: Array<{ role: CoachRole; text: string }>
 ): Promise<void> {
-	if (turns.length === 0) return;
-	await db.insert(coachMessages).values(turns.map((t) => ({ conversationId, role: t.role, text: t.text })));
-	await db
-		.update(coachConversations)
-		.set({ updatedAt: new Date() })
-		.where(eq(coachConversations.id, conversationId));
+	for (const turn of turns) {
+		await addMessage({ conversationId, role: turn.role, content: turn.text });
+	}
 }
 
 /**
- * Slett en tråd server-side («glem samtalen»). Meldinger fjernes via ON DELETE CASCADE.
+ * Slett en tråd server-side («glem samtalen»). Speiler `DELETE /api/conversations/[id]`.
  * Returnerer `false` hvis tråden ikke finnes / ikke eies av brukeren (→ 404).
  */
 export async function deleteCoachConversation(userId: string, conversationId: string): Promise<boolean> {
 	const deleted = await db
-		.delete(coachConversations)
-		.where(and(eq(coachConversations.id, conversationId), eq(coachConversations.userId, userId)))
-		.returning({ id: coachConversations.id });
+		.delete(conversations)
+		.where(and(eq(conversations.id, conversationId), eq(conversations.userId, userId)))
+		.returning({ id: conversations.id });
 	return deleted.length > 0;
 }

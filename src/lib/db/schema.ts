@@ -150,31 +150,6 @@ export const liveSessionMessages = pgTable('live_session_messages', {
 	sessionDirSeqIdx: index('live_session_messages_session_dir_seq_idx').on(table.sessionId, table.direction, table.seq)
 }));
 
-// Vedvarende samtaletråder for Ekko-coachen (POST /api/apps/coach med conversationId).
-// Serveren eier tilstanden: klienten sender bare ny ytring + en opak conversationId,
-// serveren setter sammen full kontekst fra de lagrede turene. Egen tabell (ikke `conversations`)
-// fordi dette er en talevennlig coach-tråd uten temaer/relasjoner/stjernemerking.
-export const coachConversations = pgTable('coach_conversations', {
-	id: uuid('id').primaryKey().defaultRandom(),
-	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-	title: text('title'),
-	createdAt: timestamp('created_at').defaultNow().notNull(),
-	updatedAt: timestamp('updated_at').defaultNow().notNull()
-}, (table) => ({
-	userIdx: index('coach_conversations_user_idx').on(table.userId, table.updatedAt)
-}));
-
-// Turer i en coach-samtale. Lagrer KUN `user`/`assistant` — aldri efemær situasjonskontekst.
-export const coachMessages = pgTable('coach_messages', {
-	id: uuid('id').primaryKey().defaultRandom(),
-	conversationId: uuid('conversation_id').references(() => coachConversations.id, { onDelete: 'cascade' }).notNull(),
-	role: text('role').notNull(), // 'user' | 'assistant'
-	text: text('text').notNull(),
-	createdAt: timestamp('created_at').defaultNow().notNull()
-}, (table) => ({
-	conversationCreatedIdx: index('coach_messages_conversation_created_idx').on(table.conversationId, table.createdAt)
-}));
-
 // Delbare lenker — én token gir tilgang til én ressurs (sjekkliste, tema-liste, eller live posisjon).
 // Polymorf: resourceType + resourceId. Integritet håndteres i applaget.
 export const shareTokens = pgTable('share_tokens', {
@@ -1339,21 +1314,6 @@ export const messagesRelations = relations(messages, ({ one, many }) => ({
 		references: [conversations.id]
 	}),
 	personMentions: many(messagePersonMentions)
-}));
-
-export const coachConversationsRelations = relations(coachConversations, ({ one, many }) => ({
-	user: one(users, {
-		fields: [coachConversations.userId],
-		references: [users.id]
-	}),
-	messages: many(coachMessages)
-}));
-
-export const coachMessagesRelations = relations(coachMessages, ({ one }) => ({
-	conversation: one(coachConversations, {
-		fields: [coachMessages.conversationId],
-		references: [coachConversations.id]
-	})
 }));
 
 export const memoriesRelations = relations(memories, ({ one }) => ({
