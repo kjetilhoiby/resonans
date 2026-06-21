@@ -49,9 +49,16 @@ function generateConversationTitle(content: string) {
 		.join(' ');
 }
 
-export async function createConversation(userId: string) {
+/**
+ * Hvilken flate en samtale oppsto på. 'web' er chat i resonans (standard);
+ * 'ekko' er coach-appen. Web-chatlisten viser kun 'web' — en handoff av en
+ * ekko-tråd gjøres ved å sette source til 'web'.
+ */
+export type ConversationSource = 'web' | 'ekko';
+
+export async function createConversation(userId: string, source: ConversationSource = 'web') {
 	await ensureConversationThemeIdColumn();
-	const result = await db.insert(conversations).values({ userId, title: 'Ny samtale' }).returning();
+	const result = await db.insert(conversations).values({ userId, title: 'Ny samtale', source }).returning();
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	return (result as any[])[0];
 }
@@ -61,11 +68,14 @@ export async function getOrCreateConversation(userId: string) {
 
 	// Finn den nyeste aktive samtalen for brukeren — ekskluder boksamtaler
 	// (boksamtaler er linked fra books.conversation_id og skal aldri brukes som fallback-samtale)
+	// og ekko-tråder (egen flate; skal aldri bli web-chattens aktive samtale).
 	const rows = await db
 		.select({ conversation: conversations })
 		.from(conversations)
 		.leftJoin(books, eq(books.conversationId, conversations.id))
-		.where(and(eq(conversations.userId, userId), isNull(books.id)))
+		.where(
+			and(eq(conversations.userId, userId), isNull(books.id), eq(conversations.source, 'web'))
+		)
 		.orderBy(desc(conversations.updatedAt))
 		.limit(1);
 
@@ -216,8 +226,9 @@ export async function getUserConversationList(userId: string, options?: { limit?
 			? Math.floor(requestedLimit)
 			: undefined;
 
+	// Kun web-flatens samtaler — ekko-coachens tråder hører til coach-appen, ikke web-chatlisten.
 	const userConversations = await db.query.conversations.findMany({
-		where: eq(conversations.userId, userId),
+		where: and(eq(conversations.userId, userId), eq(conversations.source, 'web')),
 		orderBy: [desc(conversations.updatedAt)],
 		...(normalizedLimit ? { limit: normalizedLimit } : {})
 	});
