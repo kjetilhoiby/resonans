@@ -39,6 +39,27 @@ To irritasjonsmomenter i chatten:
     høyden som legges til på toppen.
   - Liten spinner på toppen mens eldre lastes.
 
+### Fase 3: Kompakte vedlegg i samtale-tråden
+
+Samtale-tråden (`/samtaler?conversation=…`) hadde ingen mulighet til å legge ved
+bilder eller filer — kun en send-knapp. Nå kan man legge ved uten å bruke mye plass:
+
+- **`src/lib/components/ui/ChatInput.svelte`**: ny `showAttachButton`-prop som
+  rendrer én kompakt binders-knapp helt til venstre i feltet + en skjult
+  filvelger (`accept` for bilder, PDF, Office-dokumenter, CSV/TXT, lyd/video).
+  Valgte filer sendes via `onFilesSelected`. Ny `attachmentPending`-prop lar
+  send-knappen aktiveres (og tom-tekst-sending tillates) når et vedlegg venter.
+- **`src/routes/samtaler/+page.svelte`**:
+  - Bilder lastes opp via `/api/upload-image` (rask, ingen triage-sideeffekter
+    som skjermtid-/tracking-auto-registrering, som kun gjelder bilder i
+    triage-endepunktet).
+  - Dokumenter/lyd går via `/api/attachment-triage` for tekst-uttrekk/transkripsjon;
+    `triage`-feltet ignoreres her — vi vil bare ha selve `attachment`-objektet med
+    `contentText` slik at AI-en «ser» innholdet i tråden.
+  - En kompakt chip over feltet viser miniatyr (bilde) eller ikon + filnavn,
+    med opplastings-spinner og fjern-knapp. Vedlegget sendes med neste melding
+    (`chat.send(text, imageUrl, attachment)`) og nullstilles ved bytte av samtale.
+
 ### Fase 2: Mer skriveflate i ChatInput
 
 - **`src/lib/components/ui/ChatInput.svelte`**: når `showActionRig` er aktiv og

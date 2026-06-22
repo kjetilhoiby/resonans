@@ -10,6 +10,7 @@
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
 	import { ChatState } from '$lib/client/chat-state.svelte';
 	import type { ChatMessage } from '$lib/client/chat-state.svelte';
+	import type { AttachmentRef } from '$lib/components/domain/home/home-context';
 	import type { WidgetCreationFlow } from '$lib/flows/widget-creation/flow';
 	import type { WeatherStatusWidget } from '$lib/ai/tools/weather-forecast';
 	import type { PhotoAnnotationResult } from '$lib/ai/tools/annotate-photo';
@@ -104,6 +105,63 @@
 	let loadingOlder = $state(false);
 	let oldestCursor = $state<string | null>(null);
 
+	// ── Vedlegg (bilde/dokument/lyd lagt til i tråden) ────────────────────────
+	let pendingImageUrl = $state<string | null>(null);
+	let pendingAttachment = $state<AttachmentRef | null>(null);
+	let attachmentUploading = $state(false);
+	let attachmentError = $state('');
+	const hasPendingAttachment = $derived(!!pendingImageUrl || !!pendingAttachment);
+
+	function clearPendingAttachment() {
+		pendingImageUrl = null;
+		pendingAttachment = null;
+		attachmentError = '';
+	}
+
+	async function handleAttachmentFiles(files: File[]) {
+		const file = files[0];
+		if (!file) return;
+		clearPendingAttachment();
+		attachmentUploading = true;
+		try {
+			if (file.type.startsWith('image/')) {
+				// Bilder lastes opp direkte (raskt, ingen triage-sideeffekter).
+				const fd = new FormData();
+				fd.append('image', file);
+				const res = await fetch('/api/upload-image', { method: 'POST', body: fd });
+				const data = res.ok ? await res.json() : null;
+				pendingImageUrl = data?.url ?? null;
+				if (!pendingImageUrl) throw new Error('upload failed');
+			} else {
+				// Dokumenter/lyd går via attachment-triage som henter ut tekst/transkripsjon.
+				const fd = new FormData();
+				fd.append('file', file);
+				fd.append('note', '');
+				fd.append('source', file.type.startsWith('audio/') || file.type.startsWith('video/') ? 'voice' : 'file');
+				const res = await fetch('/api/attachment-triage', { method: 'POST', body: fd });
+				const data = res.ok ? await res.json() : null;
+				pendingAttachment = (data?.attachment as AttachmentRef | undefined) ?? null;
+				if (!pendingAttachment) throw new Error('triage failed');
+			}
+		} catch {
+			clearPendingAttachment();
+			attachmentError = 'Kunne ikke laste opp filen. Prøv igjen.';
+		} finally {
+			attachmentUploading = false;
+		}
+	}
+
+	function sendMessage(text: string) {
+		const imageUrl = pendingImageUrl ?? undefined;
+		const attachment = pendingAttachment ?? undefined;
+		clearPendingAttachment();
+		void chat.send(text, imageUrl, attachment);
+	}
+
+	const attachmentIcon = $derived(
+		pendingAttachment?.kind === 'audio' ? '🎙️' : pendingAttachment?.kind === 'document' ? '📄' : '📎'
+	);
+
 	// Last inn meldinger fra server og synkroniser med ChatState
 	$effect(() => {
 		chat.messages = toChatMessages(data.messages);
@@ -111,6 +169,9 @@
 		hasMoreMessages = data.hasMoreMessages;
 		// Cursor = eldste lastede melding (rå, før system-filtrering) for paginering.
 		oldestCursor = data.messages[0]?.timestamp ?? null;
+		// Nullstill vedlegg ved bytte av samtale.
+		clearPendingAttachment();
+		attachmentUploading = false;
 	});
 
 	// Hold visningen ved bunnen når en ny melding legges til eller svaret strømmer.
@@ -417,8 +478,42 @@
 		</div>
 
 		<div class="cp-input">
+			{#if attachmentUploading || hasPendingAttachment}
+				<div class="cp-attach-chip">
+					{#if attachmentUploading}
+						<span class="cp-load-spinner"></span>
+						<span class="cp-attach-name">Laster opp…</span>
+					{:else if pendingImageUrl}
+						<img class="cp-attach-thumb" src={pendingImageUrl} alt="Vedlegg" />
+						<span class="cp-attach-name">Bilde klart</span>
+					{:else if pendingAttachment}
+						<span class="cp-attach-emoji">{attachmentIcon}</span>
+						<span class="cp-attach-name">{pendingAttachment.name}</span>
+					{/if}
+					{#if !attachmentUploading}
+						<button
+							class="cp-attach-remove"
+							aria-label="Fjern vedlegg"
+							data-track="samtale-chat:fjern-vedlegg"
+							onclick={clearPendingAttachment}
+						>✕</button>
+					{/if}
+				</div>
+			{/if}
+			{#if attachmentError}
+				<p class="cp-attach-error">{attachmentError}</p>
+			{/if}
 			{#key inputKey}
-				<ChatInput placeholder="Skriv videre i samtalen…" streaming={chat.loading} onStop={stopChat} initialValue={inputDraft} onsubmit={(t) => chat.send(t)} />
+				<ChatInput
+					placeholder="Skriv videre i samtalen…"
+					streaming={chat.loading}
+					onStop={stopChat}
+					initialValue={inputDraft}
+					showAttachButton={true}
+					attachmentPending={hasPendingAttachment}
+					onFilesSelected={handleAttachmentFiles}
+					onsubmit={sendMessage}
+				/>
 			{/key}
 		</div>
 		</PageSection>
@@ -697,6 +792,54 @@
 		display: flex;
 		flex-direction: column;
 		gap: 6px;
+	}
+
+	.cp-attach-chip {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		align-self: flex-start;
+		max-width: 100%;
+		background: #161616;
+		border: 1px solid #2a2a2a;
+		border-radius: 12px;
+		padding: 6px 8px 6px 10px;
+	}
+	.cp-attach-thumb {
+		width: 28px;
+		height: 28px;
+		border-radius: 6px;
+		object-fit: cover;
+		flex-shrink: 0;
+	}
+	.cp-attach-emoji {
+		font-size: 1.05rem;
+		flex-shrink: 0;
+	}
+	.cp-attach-name {
+		font-size: 0.8rem;
+		color: #bbb;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		min-width: 0;
+	}
+	.cp-attach-remove {
+		flex-shrink: 0;
+		background: none;
+		border: none;
+		color: #777;
+		font-size: 0.85rem;
+		line-height: 1;
+		cursor: pointer;
+		padding: 2px 4px;
+		transition: color 0.12s;
+	}
+	.cp-attach-remove:hover { color: #ddd; }
+	.cp-attach-error {
+		margin: 0;
+		font-size: 0.78rem;
+		color: #e07070;
 	}
 
 	.cp-error-row {
