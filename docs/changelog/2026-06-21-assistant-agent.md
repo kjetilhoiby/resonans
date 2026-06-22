@@ -46,6 +46,19 @@ re-eksporterer det uendret, så coach-kontrakten er uberørt.
 - `GET`/`DELETE /api/apps/assistant/conversations/[id]`: gjenoppretting og «glem samtalen»,
   source-scopet til assistent-tråder.
 
+### Fase 4: Additiv opt-in streaming (SSE)
+
+`POST /api/apps/assistant` støtter nå strømming av det endelige svaret, opt-in via
+`Accept: text/event-stream` eller `stream: true` i bodyen. JSON-kontrakten er **uendret** for
+klienter som ikke ber om det — additivt, så dagens ekko er uberørt til de bygger en consumer.
+
+- Agent-løkka løser verktøyrundene server-side (akkumulerer verktøykall-fragmenter fra streamen);
+  når modellen til slutt svarer med tekst, sendes token-fragmentene som `delta`-events.
+- Events: `start` { conversationId } (kun ved eksisterende tråd), `delta` { text },
+  `complete` { ok, text, conversationId, usedTools }, `error` { code }.
+- 401/400/404 forblir rene JSON-svar (sjekkes før streamen åpnes). Full tekst bufres uansett
+  server-side for persistering, og er også med i `complete` for robusthet.
+
 ## Beslutninger
 
 - **Eget endepunkt, ikke ny coach-modus:** tool-calling endrer request/response-livssyklusen

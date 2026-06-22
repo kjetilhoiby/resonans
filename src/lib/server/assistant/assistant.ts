@@ -71,12 +71,13 @@ async function buildProgramContext(userId: string, programId: string): Promise<s
 }
 
 /**
- * Kjør én tur i en assistent-samtale med server-kjørt agent-løkke. Returnerer den endelige
- * teksten og hvilke verktøy som ble brukt (for transparens/feilsøking).
+ * Bygg LLM-meldingene for en assistent-tur (delt mellom strømmende og ikke-strømmende vei):
+ * system-prompt → valgfri program-kontekst → trunkerings-notis → trådhistorikk → efemær
+ * situasjonskontekst → brukerens nye ytring.
  */
-export async function runAssistantTurn(
+async function buildAssistantMessages(
 	input: AssistantTurnInput
-): Promise<{ text: string; usedTools: string[] }> {
+): Promise<OpenAI.Chat.Completions.ChatCompletionMessageParam[]> {
 	const { userId, prompt, programId, history, droppedCount = 0, context } = input;
 
 	const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
@@ -110,7 +111,17 @@ export async function runAssistantTurn(
 	}
 
 	messages.push({ role: 'user', content: prompt });
+	return messages;
+}
 
+/**
+ * Kjør én tur i en assistent-samtale med server-kjørt agent-løkke. Returnerer den endelige
+ * teksten og hvilke verktøy som ble brukt (for transparens/feilsøking).
+ */
+export async function runAssistantTurn(
+	input: AssistantTurnInput
+): Promise<{ text: string; usedTools: string[] }> {
+	const messages = await buildAssistantMessages(input);
 	const usedTools: string[] = [];
 
 	try {
@@ -139,7 +150,7 @@ export async function runAssistantTurn(
 					} catch {
 						args = {};
 					}
-					const result = await runAssistantTool(userId, call.function.name, args);
+					const result = await runAssistantTool(input.userId, call.function.name, args);
 					messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) });
 				}
 				continue;
@@ -150,6 +161,95 @@ export async function runAssistantTurn(
 				return { text, usedTools: Array.from(new Set(usedTools)) };
 			}
 			// Ingen verktøykall og tomt svar — be om et endelig svar én gang til via løkka.
+		}
+		throw new AssistantError('Agenten nådde rundetaket uten et endelig svar');
+	} catch (error) {
+		if (error instanceof AssistantError) throw error;
+		throw new AssistantError('LLM-/verktøy-kall feilet', error);
+	}
+}
+
+/** Akkumulator for verktøykall som strømmer inn fragmentvis (id/name/arguments i biter). */
+interface StreamingToolCall {
+	id: string;
+	name: string;
+	args: string;
+}
+
+/**
+ * Strømmende variant av {@link runAssistantTurn}. Verktøyrundene løses som vanlig (agenten
+ * eier løkka), og når modellen til slutt svarer med tekst i stedet for verktøykall, sendes
+ * hvert token-fragment til `onDelta`. Returnerer den fulle teksten (for persistering) og
+ * hvilke verktøy som ble brukt.
+ */
+export async function runAssistantTurnStreaming(
+	input: AssistantTurnInput,
+	onDelta: (chunk: string) => void
+): Promise<{ text: string; usedTools: string[] }> {
+	const messages = await buildAssistantMessages(input);
+	const usedTools: string[] = [];
+	let streamedText = '';
+
+	try {
+		for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
+			const offerTools = round < MAX_TOOL_ROUNDS;
+			const stream = await openai.chat.completions.create({
+				model: model(),
+				messages,
+				temperature: 0.5,
+				max_tokens: 600,
+				stream: true,
+				...(offerTools ? { tools: ASSISTANT_TOOL_DEFINITIONS, tool_choice: 'auto' as const } : {})
+			});
+
+			let content = '';
+			const toolAcc = new Map<number, StreamingToolCall>();
+			for await (const chunk of stream) {
+				const delta = chunk.choices[0]?.delta;
+				if (delta?.content) {
+					content += delta.content;
+					streamedText += delta.content;
+					onDelta(delta.content);
+				}
+				for (const tc of delta?.tool_calls ?? []) {
+					const cur = toolAcc.get(tc.index) ?? { id: '', name: '', args: '' };
+					if (tc.id) cur.id = tc.id;
+					if (tc.function?.name) cur.name += tc.function.name;
+					if (tc.function?.arguments) cur.args += tc.function.arguments;
+					toolAcc.set(tc.index, cur);
+				}
+			}
+
+			const toolCalls = [...toolAcc.values()].filter((t) => t.name);
+			if (offerTools && toolCalls.length > 0) {
+				messages.push({
+					role: 'assistant',
+					content: content || null,
+					tool_calls: toolCalls.map((t) => ({
+						id: t.id,
+						type: 'function' as const,
+						function: { name: t.name, arguments: t.args }
+					}))
+				});
+				for (const t of toolCalls) {
+					usedTools.push(t.name);
+					let args: Record<string, unknown> = {};
+					try {
+						args = t.args ? JSON.parse(t.args) : {};
+					} catch {
+						args = {};
+					}
+					const result = await runAssistantTool(input.userId, t.name, args);
+					messages.push({ role: 'tool', tool_call_id: t.id, content: JSON.stringify(result) });
+				}
+				continue;
+			}
+
+			const text = streamedText.trim();
+			if (text) {
+				return { text, usedTools: Array.from(new Set(usedTools)) };
+			}
+			// Tomt svar uten verktøykall — prøv en runde til.
 		}
 		throw new AssistantError('Agenten nådde rundetaket uten et endelig svar');
 	} catch (error) {
