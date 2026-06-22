@@ -85,7 +85,13 @@ export async function deleteAssistantConversation(
 	userId: string,
 	conversationId: string
 ): Promise<boolean> {
-	const deleted = await db
+	// Source-scopet eierskap først, så vi aldri rører en coach-/web-tråd.
+	const owned = await getOwnedAssistantConversation(userId, conversationId);
+	if (!owned) return false;
+	// `messages.conversation_id` cascader ikke i basen — fjern meldingene først
+	// (person-mentions cascader fra messages), deretter samtalen.
+	await db.delete(messages).where(eq(messages.conversationId, conversationId));
+	await db
 		.delete(conversations)
 		.where(
 			and(
@@ -93,7 +99,6 @@ export async function deleteAssistantConversation(
 				eq(conversations.userId, userId),
 				eq(conversations.source, ASSISTANT_SOURCE)
 			)
-		)
-		.returning({ id: conversations.id });
-	return deleted.length > 0;
+		);
+	return true;
 }

@@ -84,13 +84,17 @@ export async function appendTurns(
 }
 
 /**
- * Slett en tråd server-side («glem samtalen»). Speiler `DELETE /api/conversations/[id]`.
- * Returnerer `false` hvis tråden ikke finnes / ikke eies av brukeren (→ 404).
+ * Slett en tråd server-side («glem samtalen»). `messages.conversation_id` har ingen
+ * ON DELETE CASCADE i basen, så vi fjerner meldingene først (deres person-mentions
+ * cascader fra messages), deretter selve samtalen. Returnerer `false` hvis tråden ikke
+ * finnes / ikke eies av brukeren (→ 404).
  */
 export async function deleteCoachConversation(userId: string, conversationId: string): Promise<boolean> {
-	const deleted = await db
+	const owned = await getConversationByIdForUser(conversationId, userId);
+	if (!owned) return false;
+	await db.delete(messages).where(eq(messages.conversationId, conversationId));
+	await db
 		.delete(conversations)
-		.where(and(eq(conversations.id, conversationId), eq(conversations.userId, userId)))
-		.returning({ id: conversations.id });
-	return deleted.length > 0;
+		.where(and(eq(conversations.id, conversationId), eq(conversations.userId, userId)));
+	return true;
 }
