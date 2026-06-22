@@ -3,7 +3,9 @@ import { sensorAggregates, sensorEvents, sensors, goals as goalsTable, themes } 
 import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { buildUnifiedWorkoutActivities } from '$lib/server/activity-layer';
 
-const HEALTH_DASHBOARD_WORKOUT_LOOKBACK_DAYS = 60;
+// Dekker 365d-vinduet for løpe-widgeten: dashboardets «løpt»-tall summeres fra
+// dette deduplikerte aktivitetslaget, så lookbacken må romme det lengste vinduet.
+const HEALTH_DASHBOARD_WORKOUT_LOOKBACK_DAYS = 400;
 
 export async function loadHealthDashboardData(userId: string) {
 	const t0 = performance.now();
@@ -82,7 +84,7 @@ export async function loadHealthDashboardData(userId: string) {
 		// Group D: workout activities (the slowest query — runs in parallel now)
 		buildUnifiedWorkoutActivities(userId, {
 			since: new Date(Date.now() - 1000 * 60 * 60 * 24 * HEALTH_DASHBOARD_WORKOUT_LOOKBACK_DAYS),
-			limit: 1200
+			limit: 2000
 		}),
 		// Group E: weight counts
 		Promise.all([

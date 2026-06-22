@@ -226,6 +226,44 @@ async function computeWeeklyEffort(
 	};
 }
 
+/**
+ * Dedupliserte løpe-km og total økt-antall for et tidsvindu, hentet fra
+ * canonical_workouts (samme dedup-lag som aktivitetsfeeden). Dette unngår at
+ * samme tur telles flere ganger når den finnes hos flere kilder (Strava +
+ * Withings + manuell logg), og ekskluderer skjulte (dismissed) økter — som
+ * begge ga kunstig høye «løpt»-tall ved summering av rå sensor_events.
+ */
+async function computeWorkoutSummaryFromCanonical(
+	userId: string,
+	start: Date,
+	end: Date
+): Promise<{ count: number; runningKm: number } | null> {
+	const rows = await db.query.canonicalWorkouts.findMany({
+		where: and(
+			eq(canonicalWorkouts.userId, userId),
+			gte(canonicalWorkouts.startTime, start),
+			lte(canonicalWorkouts.startTime, end)
+		),
+		columns: { sportFamily: true, sportType: true, distanceMeters: true }
+	});
+
+	if (rows.length === 0) return null;
+
+	let runningMeters = 0;
+	for (const row of rows) {
+		const family = (row.sportFamily ?? '').toLowerCase();
+		const sport = (row.sportType ?? '').toLowerCase();
+		if (family === 'running' || sport.includes('run')) {
+			runningMeters += row.distanceMeters ? Number(row.distanceMeters) : 0;
+		}
+	}
+
+	return {
+		count: rows.length,
+		runningKm: Math.round((runningMeters / 1000) * 10) / 10
+	};
+}
+
 /** Hent total weekly effort for de 4 ukene umiddelbart før gitt dato fra allerede lagrede aggregater. */
 async function fetchPriorWeeklyEffortTotals(userId: string, beforeStart: Date): Promise<number[]> {
 	const rows = await db.query.sensorAggregates.findMany({
@@ -287,11 +325,7 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 		const intenseMinutes = activityEvents
 			.map((e) => ((e.data?.intense || 0) + (e.data?.moderate || 0)) / 60)
 			.filter((v) => v > 0);
-		const workoutEvents = events.filter(e => e.dataType === 'workout');
-		const runningEvents = workoutEvents.filter(e =>
-			((e.data?.sportType as string | undefined) ?? '').toLowerCase().includes('run')
-		);
-		const runningKm = runningEvents.reduce((s, e) => s + ((e.data?.distance as number | undefined) ?? 0), 0) / 1000;
+		const workoutSummary = await computeWorkoutSummaryFromCanonical(userId, week.startTime, week.endTime);
 		const sleepHeartRates = events
 			.filter(e => e.dataType === 'sleep')
 			.map(e => e.data?.hr_average)
@@ -307,7 +341,7 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 		if (intenseMinutes.length > 0) metrics.intenseMinutes = { sum: sum(intenseMinutes), avg: avg(intenseMinutes) };
 		if (heartRates.length > 0) metrics.heartRate = { avg: avg(heartRates), min: min(heartRates), max: max(heartRates), values: heartRates };
 		if (sleepHeartRates.length > 0) metrics.sleepHeartRate = { avg: avg(sleepHeartRates), min: min(sleepHeartRates), max: max(sleepHeartRates) };
-		if (workoutEvents.length > 0) metrics.workouts = { count: workoutEvents.length, types: { running: runningKm } };
+		if (workoutSummary) metrics.workouts = { count: workoutSummary.count, types: { running: workoutSummary.runningKm } };
 
 		const screenTime = computeScreenTimeMetrics(events, true);
 		if (screenTime) metrics.screenTime = screenTime;
@@ -386,11 +420,7 @@ export async function aggregateMonthlyData(userId: string, months?: MonthPeriod[
 		const intenseMinutes = activityEvents
 			.map((e) => ((e.data?.intense || 0) + (e.data?.moderate || 0)) / 60)
 			.filter((v) => v > 0);
-		const workoutEvents = events.filter(e => e.dataType === 'workout');
-		const runningEvents = workoutEvents.filter(e =>
-			((e.data?.sportType as string | undefined) ?? '').toLowerCase().includes('run')
-		);
-		const runningKm = runningEvents.reduce((s, e) => s + ((e.data?.distance as number | undefined) ?? 0), 0) / 1000;
+		const workoutSummary = await computeWorkoutSummaryFromCanonical(userId, month.startTime, month.endTime);
 		const sleepHeartRates = events
 			.filter(e => e.dataType === 'sleep')
 			.map(e => e.data?.hr_average)
@@ -406,7 +436,7 @@ export async function aggregateMonthlyData(userId: string, months?: MonthPeriod[
 		if (intenseMinutes.length > 0) metrics.intenseMinutes = { sum: sum(intenseMinutes), avg: avg(intenseMinutes) };
 		if (heartRates.length > 0) metrics.heartRate = { avg: avg(heartRates), min: min(heartRates), max: max(heartRates) };
 		if (sleepHeartRates.length > 0) metrics.sleepHeartRate = { avg: avg(sleepHeartRates), min: min(sleepHeartRates), max: max(sleepHeartRates) };
-		if (workoutEvents.length > 0) metrics.workouts = { count: workoutEvents.length, types: { running: runningKm } };
+		if (workoutSummary) metrics.workouts = { count: workoutSummary.count, types: { running: workoutSummary.runningKm } };
 
 		const screenTime = computeScreenTimeMetrics(events, false);
 		if (screenTime) metrics.screenTime = screenTime;
@@ -470,11 +500,7 @@ export async function aggregateYearlyData(userId: string, years?: YearPeriod[]) 
 		const intenseMinutes = activityEvents
 			.map((e) => ((e.data?.intense || 0) + (e.data?.moderate || 0)) / 60)
 			.filter((v) => v > 0);
-		const workoutEvents = events.filter(e => e.dataType === 'workout');
-		const runningEvents = workoutEvents.filter(e =>
-			((e.data?.sportType as string | undefined) ?? '').toLowerCase().includes('run')
-		);
-		const runningKm = runningEvents.reduce((s, e) => s + ((e.data?.distance as number | undefined) ?? 0), 0) / 1000;
+		const workoutSummary = await computeWorkoutSummaryFromCanonical(userId, year.startTime, year.endTime);
 		const sleepHeartRates = events
 			.filter(e => e.dataType === 'sleep')
 			.map(e => e.data?.hr_average)
@@ -490,7 +516,7 @@ export async function aggregateYearlyData(userId: string, years?: YearPeriod[]) 
 		if (intenseMinutes.length > 0) metrics.intenseMinutes = { sum: sum(intenseMinutes), avg: avg(intenseMinutes) };
 		if (heartRates.length > 0) metrics.heartRate = { avg: avg(heartRates), min: min(heartRates), max: max(heartRates) };
 		if (sleepHeartRates.length > 0) metrics.sleepHeartRate = { avg: avg(sleepHeartRates), min: min(sleepHeartRates), max: max(sleepHeartRates) };
-		if (workoutEvents.length > 0) metrics.workouts = { count: workoutEvents.length, types: { running: runningKm } };
+		if (workoutSummary) metrics.workouts = { count: workoutSummary.count, types: { running: workoutSummary.runningKm } };
 
 		rows.push({ userId, period: 'year', periodKey: year.year.toString(), year: year.year, startDate: year.startTime, endDate: year.endTime, metrics, eventCount: events.length });
 	}
