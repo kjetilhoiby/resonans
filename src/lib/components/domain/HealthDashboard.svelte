@@ -27,7 +27,6 @@
 		buildRunningTrackSet,
 		buildWeightTrackSet,
 		toWidgetWindow,
-		extractRunningDistanceKm,
 		computeSleepHoursAvg,
 		computeAvgStepsPerDay,
 		computeAvgActiveMinutesPerDay,
@@ -189,8 +188,15 @@
 	const windowCopy = $derived(describeWindow(selectedWindow));
 
 	// ── Running metrics ───────────────────────────────────
+	// Bruk det deduplikerte kanoniske aktivitetslaget (activities), ikke rå
+	// sensor_events. Rå events double-teller samme tur på tvers av kilder
+	// (Strava + Withings + manuell logg) og gir kunstig høye «løpt»-tall.
+	// activities ekskluderer også skjulte (dismissed) økter.
 	const runningKm = $derived(
-		filteredEvents.reduce((sum, event) => sum + (extractRunningDistanceKm(event) ?? 0), 0)
+		activities
+			.filter((a) => new Date(a.startTime) >= windowStartDate)
+			.filter((a) => (a.sportType ?? '').toLowerCase().includes('run'))
+			.reduce((sum, a) => sum + ((a.distanceMeters ?? 0) / 1000), 0)
 	);
 	const runningTrackSet = $derived(buildRunningTrackSet(runningGoalWeekInput, runningGoalQuarterInput, runningGoalYearInput));
 	const runningWidgetWindow = $derived(toWidgetWindow(selectedWindow));
