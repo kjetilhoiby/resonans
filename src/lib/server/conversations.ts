@@ -51,10 +51,11 @@ function generateConversationTitle(content: string) {
 
 /**
  * Hvilken flate en samtale oppsto på. 'web' er chat i resonans (standard);
- * 'ekko' er coach-appen. Web-chatlisten viser kun 'web' — en handoff av en
- * ekko-tråd gjøres ved å sette source til 'web'.
+ * 'ekko' er coach-appen; 'ekko-assistant' er den verktøy-bevisste assistenten i
+ * samme app. Web-chatlisten viser kun 'web' — en handoff av en ekko-tråd gjøres
+ * ved å sette source til 'web'.
  */
-export type ConversationSource = 'web' | 'ekko';
+export type ConversationSource = 'web' | 'ekko' | 'ekko-assistant';
 
 export async function createConversation(userId: string, source: ConversationSource = 'web') {
 	await ensureConversationThemeIdColumn();
