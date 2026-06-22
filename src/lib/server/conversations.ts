@@ -1,6 +1,6 @@
 import { db, pgClient } from '$lib/db';
 import { conversations, messages, themes, books } from '$lib/db/schema';
-import { eq, desc, and, asc, sql, inArray, isNull } from 'drizzle-orm';
+import { eq, desc, and, asc, lt, sql, inArray, isNull } from 'drizzle-orm';
 import { ensureConversationThemeIdColumn } from '$lib/server/conversation-schema';
 import { PersonMentionService } from '$lib/server/services/person-mention-service';
 
@@ -152,6 +152,33 @@ export async function getConversationMessages(conversationId: string) {
 		where: eq(messages.conversationId, conversationId),
 		orderBy: (messages, { asc }) => [asc(messages.createdAt)]
 	});
+}
+
+/**
+ * Henter en «side» med meldinger for infinite scroll oppover.
+ * Returnerer de nyeste `limit` meldingene eldre enn `before` (cursor på createdAt),
+ * i kronologisk rekkefølge (eldst først), samt `hasMore` som forteller om det
+ * finnes flere eldre meldinger å laste.
+ */
+export async function getConversationMessagesPage(
+	conversationId: string,
+	opts: { limit?: number; before?: Date } = {}
+) {
+	const limit = opts.limit ?? 12;
+	const where = opts.before
+		? and(eq(messages.conversationId, conversationId), lt(messages.createdAt, opts.before))
+		: eq(messages.conversationId, conversationId);
+
+	// Hent én ekstra for å avgjøre om det finnes flere eldre meldinger.
+	const rows = await db.query.messages.findMany({
+		where,
+		orderBy: (messages, { desc }) => [desc(messages.createdAt)],
+		limit: limit + 1
+	});
+
+	const hasMore = rows.length > limit;
+	const page = hasMore ? rows.slice(0, limit) : rows;
+	return { messages: page.reverse(), hasMore };
 }
 
 /**

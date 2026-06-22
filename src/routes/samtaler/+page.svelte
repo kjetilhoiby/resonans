@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { tick } from 'svelte';
 	import { AppPage, PageHeader, PageSection } from '$lib/components/ui';
 	import ChatInput from '$lib/components/ui/ChatInput.svelte';
 	import ChatMessages from '$lib/components/ui/ChatMessages.svelte';
@@ -50,6 +51,7 @@
 			userThemes: UserTheme[];
 			selectedConversation: ConversationSummary | null;
 			messages: ConversationMessage[];
+			hasMoreMessages: boolean;
 			weightContext: string | null;
 		};
 	}
@@ -96,11 +98,69 @@
 	let inputKey = $state(0);
 	let weightAutoSent = $state(false);
 
+	// ── Infinite scroll (last eldre meldinger ved scroll oppover) ─────────────
+	let messagesEl = $state<HTMLDivElement | null>(null);
+	let hasMoreMessages = $state(false);
+	let loadingOlder = $state(false);
+	let oldestCursor = $state<string | null>(null);
+
 	// Last inn meldinger fra server og synkroniser med ChatState
 	$effect(() => {
 		chat.messages = toChatMessages(data.messages);
 		chat.error = '';
+		hasMoreMessages = data.hasMoreMessages;
+		// Cursor = eldste lastede melding (rå, før system-filtrering) for paginering.
+		oldestCursor = data.messages[0]?.timestamp ?? null;
 	});
+
+	// Hold visningen ved bunnen når en ny melding legges til eller svaret strømmer.
+	// Sporer kun siste melding + streaming — endres IKKE når eldre meldinger
+	// prepend-es, så infinite scroll oppover river deg ikke ned til bunnen.
+	const bottomKey = $derived(
+		`${chat.messages.at(-1)?.id ?? ''}:${chat.streamingText.length}:${chat.loading}`
+	);
+	$effect(() => {
+		bottomKey;
+		if (!messagesEl) return;
+		messagesEl.scrollTop = messagesEl.scrollHeight;
+	});
+
+	async function loadOlderMessages() {
+		if (!conversation || loadingOlder || !hasMoreMessages || !oldestCursor || !messagesEl) return;
+		loadingOlder = true;
+		const el = messagesEl;
+		const prevHeight = el.scrollHeight;
+		const prevTop = el.scrollTop;
+		try {
+			const res = await fetch(
+				`/api/conversations/${conversation.id}/messages?before=${encodeURIComponent(oldestCursor)}&limit=12`
+			);
+			if (!res.ok) return;
+			const older = (await res.json()) as ConversationMessage[];
+			hasMoreMessages = res.headers.get('X-Has-More') === '1';
+			if (older.length === 0) {
+				hasMoreMessages = false;
+				return;
+			}
+			oldestCursor = older[0].timestamp;
+			const existing = new Set(chat.messages.map((m) => m.id));
+			const prepend = toChatMessages(older).filter((m) => !existing.has(m.id));
+			if (prepend.length === 0) return;
+			chat.messages = [...prepend, ...chat.messages];
+			// Bevar scroll-posisjonen: kompenser for høyden som ble lagt til på toppen.
+			await tick();
+			el.scrollTop = el.scrollHeight - prevHeight + prevTop;
+		} finally {
+			loadingOlder = false;
+		}
+	}
+
+	function onMessagesScroll() {
+		if (!messagesEl) return;
+		if (messagesEl.scrollTop < 120 && hasMoreMessages && !loadingOlder) {
+			void loadOlderMessages();
+		}
+	}
 
 	// Oppdater conversationId i ChatState når valgt samtale endres
 	$effect(() => {
@@ -334,7 +394,10 @@
 			{/snippet}
 		</PageHeader>
 
-		<div class="cp-messages">
+		<div class="cp-messages" bind:this={messagesEl} onscroll={onMessagesScroll}>
+			{#if loadingOlder}
+				<div class="cp-load-older"><span class="cp-load-spinner"></span></div>
+			{/if}
 			{#if chat.messages.length === 0}
 				<p class="cp-empty">Ingen meldinger ennå.</p>
 			{/if}
@@ -533,6 +596,24 @@
 		-webkit-overflow-scrolling: touch;
 		scrollbar-width: thin;
 		scrollbar-color: #1e1e1e transparent;
+	}
+
+	.cp-load-older {
+		display: flex;
+		justify-content: center;
+		padding: 4px 0 8px;
+		flex-shrink: 0;
+	}
+	.cp-load-spinner {
+		width: 16px;
+		height: 16px;
+		border: 2px solid #2a2a2a;
+		border-top-color: #7c8ef5;
+		border-radius: 50%;
+		animation: cp-spin 0.7s linear infinite;
+	}
+	@keyframes cp-spin {
+		to { transform: rotate(360deg); }
 	}
 
 	.cp-msg-row {

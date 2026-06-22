@@ -1,5 +1,5 @@
 import { redirect } from '@sveltejs/kit';
-import { getConversationByIdForUser, getConversationMessages, getUserConversationList } from '$lib/server/conversations';
+import { getConversationByIdForUser, getConversationMessagesPage, getUserConversationList } from '$lib/server/conversations';
 import { db } from '$lib/db';
 import { themes, sensorEvents, goals } from '$lib/db/schema';
 import { eq, and, gte, desc, or, ilike } from 'drizzle-orm';
@@ -96,6 +96,10 @@ async function buildWeightContext(userId: string): Promise<string | null> {
 	return lines.join('\n');
 }
 
+// Antall meldinger som lastes ved første åpning av en tråd. Resten hentes ved
+// infinite scroll oppover (se /api/conversations/[id]/messages?before=…&limit=…).
+const INITIAL_MESSAGE_BUFFER = 12;
+
 export const load: PageServerLoad = async ({ locals, url }) => {
 	const t0 = performance.now();
 	const conversationId = url.searchParams.get('conversation');
@@ -123,13 +127,14 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			userThemes,
 			selectedConversation: null,
 			messages: [],
+			hasMoreMessages: false,
 			weightContext
 		};
 	}
 
 	if (!conversationId) {
 		console.log(`[perf][samtaler] user=${locals.userId} step=total ms=${(performance.now() - t0).toFixed(0)} mode=list convs=${conversations.length}`);
-		return { conversations, userThemes, selectedConversation: null, messages: [], weightContext: null };
+		return { conversations, userThemes, selectedConversation: null, messages: [], hasMoreMessages: false, weightContext: null };
 	}
 
 	const verifiedConversation = await getConversationByIdForUser(conversationId, locals.userId);
@@ -138,15 +143,18 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	}
 
 	const selectedConversation = conversations.find((c) => c.id === conversationId) ?? null;
-	const msgs = await getConversationMessages(conversationId);
+	const { messages: msgs, hasMore } = await getConversationMessagesPage(conversationId, {
+		limit: INITIAL_MESSAGE_BUFFER
+	});
 
-	console.log(`[perf][samtaler] user=${locals.userId} step=total ms=${(performance.now() - t0).toFixed(0)} mode=conversation convs=${conversations.length} msgs=${msgs.length}`);
+	console.log(`[perf][samtaler] user=${locals.userId} step=total ms=${(performance.now() - t0).toFixed(0)} mode=conversation convs=${conversations.length} msgs=${msgs.length} hasMore=${hasMore}`);
 
 	return {
 		conversations,
 		userThemes,
 		selectedConversation,
 		weightContext: null,
+		hasMoreMessages: hasMore,
 		messages: msgs.map((m) => ({
 			id: m.id,
 			role: m.role as 'user' | 'assistant' | 'system',

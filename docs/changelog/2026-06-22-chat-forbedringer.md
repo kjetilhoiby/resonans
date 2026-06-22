@@ -1,0 +1,66 @@
+# Chat-forbedringer: infinite scroll + mer skriveflate
+
+Dato: 2026-06-22
+Status: ferdig
+
+## Kontekst
+
+To irritasjonsmomenter i chatten:
+
+1. **Lange tråder lastet alt på én gang.** Når man åpnet en lang samtale
+   (`/samtaler?conversation=…`) ble samtlige meldinger hentet og rendret. Treg
+   første-last og ingen naturlig «start nederst, bla oppover»-opplevelse.
+
+2. **Knapperaden stjal skriveflate.** I kompose-boksen (HomeChatZone, BookChatTab)
+   lå handlingsknappene (kamera/lyd/fil/send) på samme rad som tekstfeltet, til
+   høyre. Under skriving ble teksten klemt til ~60 % bredde — dårlig oversikt
+   over egen tekst.
+
+## Faser
+
+### Fase 1: Infinite scroll oppover i tråder
+
+- **`src/lib/server/conversations.ts`**: ny `getConversationMessagesPage(id, { limit, before })`
+  som henter de nyeste `limit` meldingene eldre enn en `before`-cursor (på
+  `createdAt`), i kronologisk rekkefølge, og en `hasMore`-flagg (henter én ekstra
+  rad for å avgjøre om det finnes flere).
+- **`src/routes/samtaler/+page.server.ts`**: første-last henter nå kun de nyeste
+  `INITIAL_MESSAGE_BUFFER = 12` meldingene + `hasMoreMessages`, i stedet for alle.
+- **`src/routes/api/conversations/[id]/messages/+server.ts`**: paginert modus via
+  `?limit=N&before=<ISO>`. Returnerer fortsatt et array (bakoverkompatibelt med
+  ThemeChatTab/BookDashboard) men med rikere felter (starred, imageUrl,
+  widget-/status-/foto-metadata) og `hasMore` i `X-Has-More`-header.
+- **`src/routes/samtaler/+page.svelte`**:
+  - Scroller til siste melding ved åpning, og holder seg ved bunnen når nye
+    meldinger legges til / svar strømmer (sporer kun siste melding + streaming,
+    så prepend av eldre meldinger river deg ikke ned).
+  - Laster eldre meldinger når man scroller nær toppen (`scrollTop < 120`),
+    de-duper på id og bevarer scroll-posisjonen ved å kompensere for
+    høyden som legges til på toppen.
+  - Liten spinner på toppen mens eldre lastes.
+
+### Fase 2: Mer skriveflate i ChatInput
+
+- **`src/lib/components/ui/ChatInput.svelte`**: når `showActionRig` er aktiv og
+  feltet har tekst (`hasDraft`), legges knapperaden _under_ tekstfeltet
+  (`flex-direction: column`) slik at teksten får full bredde. Send-knappen flyttes
+  sist i raden, skyves til høyre (`margin-left: auto`) og får aksentfarge.
+  Tom tilstand er uendret (kompakt enkelt-rad), så visuelle baselines påvirkes ikke.
+
+## Beslutninger
+
+- **Cursor på `createdAt`, ikke offset.** Robust mot at nye meldinger kommer til
+  mens man blar. Klienten de-duper på id som ekstra sikring mot kant-tilfeller
+  med identiske tidsstempler.
+- **Beholdt array-respons fra messages-API-et.** ThemeChatTab og BookDashboard
+  leser `{ role, content }` fra samme endepunkt; `hasMore` legges i header i
+  stedet for å endre body-formen.
+- **Kolonne-layout kun under skriving.** Treffer akkurat «mer oversikt under
+  skriving» uten å endre den kompakte tom-tilstanden (og dermed hjem-baselinen).
+
+## Verifisering
+
+- `npm run check`: 0 feil, 0 advarsler.
+- `npm test`: 675 tester passerer.
+- Visuell review (`npm run test:visual:review`) bør kjøres lokalt for å bekrefte
+  at den kompakte tom-tilstanden er pikselidentisk.

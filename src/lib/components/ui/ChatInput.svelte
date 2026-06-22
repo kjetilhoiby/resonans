@@ -145,6 +145,7 @@
 
 <form
 	class="ci-form"
+	class:ci-form-rig={showActionRig && hasDraft}
 	onsubmit={(e) => {
 		e.preventDefault();
 		submit();
@@ -152,7 +153,7 @@
 >
 	<textarea
 		class="ci-area"
-		class:ci-area-rig={showActionRig}
+		class:ci-area-rig={showActionRig && !hasDraft}
 		bind:this={textareaEl}
 		bind:value={text}
 		{placeholder}
@@ -188,9 +189,6 @@
 			{#if streaming}
 				<button class="ci-icon-btn ci-stop-btn" type="button" title="Stopp" onmousedown={(e) => e.preventDefault()} onclick={onStop}>■</button>
 			{:else if hasDraft}
-				<button class="ci-icon-btn" type="button" title="Send" onmousedown={(e) => e.preventDefault()} onclick={submit} disabled={disabled}>
-					<Icon name="forward" size={18} />
-				</button>
 				<button class="ci-icon-btn" type="button" title="Legg til bilde til samtale" onmousedown={(e) => e.preventDefault()} onclick={() => triggerAttachment('camera')} disabled={disabled}>
 					<Icon name="camera" size={18} />
 				</button>
@@ -199,6 +197,9 @@
 				</button>
 				<button class="ci-icon-btn" type="button" title="Legg til fil til samtale" onmousedown={(e) => e.preventDefault()} onclick={() => triggerAttachment('file')} disabled={disabled}>
 					<Icon name="attach" size={18} />
+				</button>
+				<button class="ci-icon-btn ci-icon-send" type="button" title="Send" onmousedown={(e) => e.preventDefault()} onclick={submit} disabled={disabled}>
+					<Icon name="forward" size={18} />
 				</button>
 			{:else}
 				<button class="ci-icon-btn" type="button" title="Legg ved bilde" onmousedown={(e) => e.preventDefault()} onclick={() => triggerAttachment('camera')} disabled={disabled}>
@@ -242,6 +243,17 @@
 		border-radius: 18px;
 		padding: 8px 10px 8px 14px;
 		gap: 8px;
+	}
+
+	/* Under skriving: stable knapperaden under tekstfeltet slik at teksten får
+	   full bredde — mer oversikt over egen tekst. */
+	.ci-form-rig {
+		flex-direction: column;
+		align-items: stretch;
+		gap: 10px;
+	}
+	.ci-form-rig .ci-actions-rig {
+		width: 100%;
 	}
 
 	.ci-area {
@@ -297,6 +309,19 @@
 	.ci-icon-btn:disabled {
 		opacity: 0.35;
 		cursor: default;
+	}
+
+	/* Send-knappen i kolonne-modus: skyves til høyre og får aksentfarge. */
+	.ci-icon-send {
+		margin-left: auto;
+		background: #7c8ef5;
+		border-color: #7c8ef5;
+		color: #fff;
+	}
+	.ci-icon-send:hover:not(:disabled) {
+		background: #8f9ff7;
+		border-color: #8f9ff7;
+		color: #fff;
 	}
 
 	.ci-send {
