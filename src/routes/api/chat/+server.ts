@@ -87,12 +87,23 @@ function describeAttachment(attachment: AttachmentPayload): string {
 	return lines.join('\n');
 }
 
+// Kontekst-flyt-hint: i en etablert samtale er ikke en kald, kontekstløs triage
+// nyttig. I stedet ber vi modellen tolke vedlegget i lys av samtalen og — når det
+// faktisk passer — foreslå konkrete neste steg via verktøyene/flytene den har
+// (widget, måling/tracking, plan/oppgave, tema/prosjekt). Dette er «triage med
+// kontekst», men der flyt-maskineriet faktisk bor: på selve chatturen.
+const ATTACHMENT_FLOW_HINT =
+	'\n\n[System: Tolk vedlegget i lys av samtalen så langt — ikke som en isolert fil. ' +
+	'Hvis innholdet naturlig peker mot et konkret neste steg (f.eks. opprette/oppdatere en widget, ' +
+	'registrere en måling, lage en plan eller oppgave, eller knytte til et tema/prosjekt), så foreslå det ' +
+	'kort og tilby å sette det i gang med verktøyene dine. Hold deg til det som faktisk passer — ikke finn på handlinger.]';
+
 function buildUserMessageForModel(message: string, attachment: AttachmentPayload | null): string {
 	if (!attachment) {
 		return message;
 	}
 
-	return `${message}\n\n--- VEDLEGG ---\n${describeAttachment(attachment)}\n--- SLUTT PÅ VEDLEGG ---`;
+	return `${message}\n\n--- VEDLEGG ---\n${describeAttachment(attachment)}\n--- SLUTT PÅ VEDLEGG ---${ATTACHMENT_FLOW_HINT}`;
 }
 
 function getDefaultAttachmentLabel(attachment: AttachmentPayload | null): string {

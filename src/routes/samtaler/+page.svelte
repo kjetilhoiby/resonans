@@ -124,25 +124,18 @@
 		clearPendingAttachment();
 		attachmentUploading = true;
 		try {
-			if (file.type.startsWith('image/')) {
-				// Bilder lastes opp direkte (raskt, ingen triage-sideeffekter).
-				const fd = new FormData();
-				fd.append('image', file);
-				const res = await fetch('/api/upload-image', { method: 'POST', body: fd });
-				const data = res.ok ? await res.json() : null;
-				pendingImageUrl = data?.url ?? null;
-				if (!pendingImageUrl) throw new Error('upload failed');
-			} else {
-				// Dokumenter/lyd går via attachment-triage som henter ut tekst/transkripsjon.
-				const fd = new FormData();
-				fd.append('file', file);
-				fd.append('note', '');
-				fd.append('source', file.type.startsWith('audio/') || file.type.startsWith('video/') ? 'voice' : 'file');
-				const res = await fetch('/api/attachment-triage', { method: 'POST', body: fd });
-				const data = res.ok ? await res.json() : null;
-				pendingAttachment = (data?.attachment as AttachmentRef | undefined) ?? null;
-				if (!pendingAttachment) throw new Error('triage failed');
-			}
+			// Slankt endepunkt: laster opp + trekker ut innhold uten kald triage
+			// eller sideeffekter. Chatturen håndterer konteksten når meldingen sendes.
+			const fd = new FormData();
+			fd.append('file', file);
+			fd.append('note', '');
+			fd.append('source', file.type.startsWith('audio/') || file.type.startsWith('video/') ? 'voice' : 'file');
+			const res = await fetch('/api/attachment-extract', { method: 'POST', body: fd });
+			const data = res.ok ? await res.json() : null;
+			const attachment = (data?.attachment as AttachmentRef | undefined) ?? null;
+			if (!attachment) throw new Error('upload failed');
+			pendingAttachment = attachment;
+			if (attachment.kind === 'image') pendingImageUrl = attachment.url;
 		} catch {
 			clearPendingAttachment();
 			attachmentError = 'Kunne ikke laste opp filen. Prøv igjen.';

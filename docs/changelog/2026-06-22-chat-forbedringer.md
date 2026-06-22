@@ -50,15 +50,31 @@ bilder eller filer — kun en send-knapp. Nå kan man legge ved uten å bruke my
   Valgte filer sendes via `onFilesSelected`. Ny `attachmentPending`-prop lar
   send-knappen aktiveres (og tom-tekst-sending tillates) når et vedlegg venter.
 - **`src/routes/samtaler/+page.svelte`**:
-  - Bilder lastes opp via `/api/upload-image` (rask, ingen triage-sideeffekter
-    som skjermtid-/tracking-auto-registrering, som kun gjelder bilder i
-    triage-endepunktet).
-  - Dokumenter/lyd går via `/api/attachment-triage` for tekst-uttrekk/transkripsjon;
-    `triage`-feltet ignoreres her — vi vil bare ha selve `attachment`-objektet med
-    `contentText` slik at AI-en «ser» innholdet i tråden.
+  - Alle filtyper lastes opp via det slanke `/api/attachment-extract` (se Fase 4).
   - En kompakt chip over feltet viser miniatyr (bilde) eller ikon + filnavn,
     med opplastings-spinner og fjern-knapp. Vedlegget sendes med neste melding
     (`chat.send(text, imageUrl, attachment)`) og nullstilles ved bytte av samtale.
+
+### Fase 4: Slankt uttrekks-endepunkt + kontekst-flyt i chat
+
+I stedet for å ignorere triage-svaret fra `/api/attachment-triage` (som er en *kald,
+kontekstløs* triage laget for innboks-/hjem-flyten, med bilde-sideeffekter som
+skjermtid-/tracking-auto-registrering), splittet vi ut den sideeffekt-frie kjernen:
+
+- **`src/lib/server/attachment-extract.ts`** (ny): delt `uploadAndExtractAttachment()`
+  — Cloudinary-opplasting + innholdsuttrekk (PDF/DOCX/XLSX/CSV/TXT) / lyd-transkripsjon.
+  Ingen LLM-triage, ingen sideeffekter.
+- **`src/routes/api/attachment-extract/+server.ts`** (ny): slankt endepunkt som
+  returnerer `{ success, attachment }`. Brukes av samtale-tråden.
+- **`src/routes/api/attachment-triage/+server.ts`**: refaktorert til å bygge på samme
+  delte kjerne (uttrekks-hjelperne flyttet til lib-modulen). Uendret oppførsel — kald
+  triage + bilde-sideeffekter beholdes for hjem/innboks.
+- **`src/routes/api/chat/+server.ts`**: nytt `ATTACHMENT_FLOW_HINT` i
+  `buildUserMessageForModel()`. Når et vedlegg er med, bes modellen tolke det *i lys av
+  samtalen* og foreslå konkrete neste steg via verktøyene/flytene sine (widget, måling,
+  plan/oppgave, tema/prosjekt). Dette er «triage med kontekst» — men der flyt-maskineriet
+  faktisk bor (chatturen har full historikk + ~28 verktøy + strukturerte
+  `actions`/`widgetFlow`-svar), ikke som et parallelt kontekstløst kall.
 
 ### Fase 2: Mer skriveflate i ChatInput
 
