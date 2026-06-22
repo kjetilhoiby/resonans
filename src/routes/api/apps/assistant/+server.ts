@@ -10,6 +10,13 @@ import {
 } from '$lib/server/assistant/conversation';
 
 /**
+ * Agent-løkka gjør flere sekvensielle LLM-kall (gpt-4o) + verktøyoppslag, så den trenger mer
+ * tid enn Vercels standard funksjonstimeout (10–15s). Uten dette blir et fler-stegs svar drept
+ * midtveis og ser ut som «kunne ikke nå assistenten» i klienten.
+ */
+export const config = { maxDuration: 60 };
+
+/**
  * POST /api/apps/assistant
  *
  * Verktøy-bevisst, vedvarende samtaleagent for Ekko (den «avanserte» bruken). Parallell til
@@ -95,10 +102,15 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		}
 
 		const conversationId = requestedId ?? (await createAssistantConversation(userId));
-		await appendAssistantTurns(conversationId, [
-			{ role: 'user', text: prompt },
-			{ role: 'assistant', text }
-		]);
+		try {
+			await appendAssistantTurns(conversationId, [
+				{ role: 'user', text: prompt },
+				{ role: 'assistant', text }
+			]);
+		} catch (error) {
+			// Lagring feilet, men svaret er generert — gi brukeren svaret framfor en hard feil.
+			console.error('[api/apps/assistant] kunne ikke lagre turene:', error);
+		}
 		return json({ ok: true, text, conversationId, usedTools });
 	}
 
