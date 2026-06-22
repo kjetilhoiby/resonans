@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { tick } from 'svelte';
 	import { AppPage, PageHeader, PageSection } from '$lib/components/ui';
 	import ChatInput from '$lib/components/ui/ChatInput.svelte';
 	import ChatMessages from '$lib/components/ui/ChatMessages.svelte';
@@ -9,6 +10,7 @@
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
 	import { ChatState } from '$lib/client/chat-state.svelte';
 	import type { ChatMessage } from '$lib/client/chat-state.svelte';
+	import type { AttachmentRef } from '$lib/components/domain/home/home-context';
 	import type { WidgetCreationFlow } from '$lib/flows/widget-creation/flow';
 	import type { WeatherStatusWidget } from '$lib/ai/tools/weather-forecast';
 	import type { PhotoAnnotationResult } from '$lib/ai/tools/annotate-photo';
@@ -50,6 +52,7 @@
 			userThemes: UserTheme[];
 			selectedConversation: ConversationSummary | null;
 			messages: ConversationMessage[];
+			hasMoreMessages: boolean;
 			weightContext: string | null;
 		};
 	}
@@ -96,11 +99,122 @@
 	let inputKey = $state(0);
 	let weightAutoSent = $state(false);
 
+	// ── Infinite scroll (last eldre meldinger ved scroll oppover) ─────────────
+	let messagesEl = $state<HTMLDivElement | null>(null);
+	let hasMoreMessages = $state(false);
+	let loadingOlder = $state(false);
+	let oldestCursor = $state<string | null>(null);
+
+	// ── Vedlegg (bilde/dokument/lyd lagt til i tråden) ────────────────────────
+	let pendingImageUrl = $state<string | null>(null);
+	let pendingAttachment = $state<AttachmentRef | null>(null);
+	let attachmentUploading = $state(false);
+	let attachmentError = $state('');
+	const hasPendingAttachment = $derived(!!pendingImageUrl || !!pendingAttachment);
+
+	function clearPendingAttachment() {
+		pendingImageUrl = null;
+		pendingAttachment = null;
+		attachmentError = '';
+	}
+
+	async function handleAttachmentFiles(files: File[]) {
+		const file = files[0];
+		if (!file) return;
+		clearPendingAttachment();
+		attachmentUploading = true;
+		try {
+			// Slankt endepunkt: laster opp + trekker ut innhold uten kald triage
+			// eller sideeffekter. Chatturen håndterer konteksten når meldingen sendes.
+			const fd = new FormData();
+			fd.append('file', file);
+			fd.append('note', '');
+			fd.append('source', file.type.startsWith('audio/') || file.type.startsWith('video/') ? 'voice' : 'file');
+			const res = await fetch('/api/attachment-extract', { method: 'POST', body: fd });
+			const data = res.ok ? await res.json() : null;
+			const attachment = (data?.attachment as AttachmentRef | undefined) ?? null;
+			if (!attachment) throw new Error('upload failed');
+			pendingAttachment = attachment;
+			if (attachment.kind === 'image') pendingImageUrl = attachment.url;
+		} catch {
+			clearPendingAttachment();
+			attachmentError = 'Kunne ikke laste opp filen. Prøv igjen.';
+		} finally {
+			attachmentUploading = false;
+		}
+	}
+
+	function sendMessage(text: string) {
+		const imageUrl = pendingImageUrl ?? undefined;
+		const attachment = pendingAttachment ?? undefined;
+		clearPendingAttachment();
+		void chat.send(text, imageUrl, attachment);
+	}
+
+	const attachmentIcon = $derived(
+		pendingAttachment?.kind === 'audio' ? '🎙️' : pendingAttachment?.kind === 'document' ? '📄' : '📎'
+	);
+
 	// Last inn meldinger fra server og synkroniser med ChatState
 	$effect(() => {
 		chat.messages = toChatMessages(data.messages);
 		chat.error = '';
+		hasMoreMessages = data.hasMoreMessages;
+		// Cursor = eldste lastede melding (rå, før system-filtrering) for paginering.
+		oldestCursor = data.messages[0]?.timestamp ?? null;
+		// Nullstill vedlegg ved bytte av samtale.
+		clearPendingAttachment();
+		attachmentUploading = false;
 	});
+
+	// Hold visningen ved bunnen når en ny melding legges til eller svaret strømmer.
+	// Sporer kun siste melding + streaming — endres IKKE når eldre meldinger
+	// prepend-es, så infinite scroll oppover river deg ikke ned til bunnen.
+	const bottomKey = $derived(
+		`${chat.messages.at(-1)?.id ?? ''}:${chat.streamingText.length}:${chat.loading}`
+	);
+	$effect(() => {
+		bottomKey;
+		if (!messagesEl) return;
+		messagesEl.scrollTop = messagesEl.scrollHeight;
+	});
+
+	async function loadOlderMessages() {
+		if (!conversation || loadingOlder || !hasMoreMessages || !oldestCursor || !messagesEl) return;
+		loadingOlder = true;
+		const el = messagesEl;
+		const prevHeight = el.scrollHeight;
+		const prevTop = el.scrollTop;
+		try {
+			const res = await fetch(
+				`/api/conversations/${conversation.id}/messages?before=${encodeURIComponent(oldestCursor)}&limit=12`
+			);
+			if (!res.ok) return;
+			const older = (await res.json()) as ConversationMessage[];
+			hasMoreMessages = res.headers.get('X-Has-More') === '1';
+			if (older.length === 0) {
+				hasMoreMessages = false;
+				return;
+			}
+			oldestCursor = older[0].timestamp;
+			const existing = new Set(chat.messages.map((m) => m.id));
+			const prepend = toChatMessages(older).filter((m) => !existing.has(m.id));
+			if (prepend.length === 0) return;
+			chat.messages = [...prepend, ...chat.messages];
+			// Bevar scroll-posisjonen: kompenser for høyden som ble lagt til på toppen.
+			await tick();
+			el.scrollTop = el.scrollHeight - prevHeight + prevTop;
+		} finally {
+			loadingOlder = false;
+		}
+	}
+
+	function onMessagesScroll() {
+		if (!messagesEl) return;
+		if (messagesEl.scrollTop < 120 && hasMoreMessages && !loadingOlder) {
+			void loadOlderMessages();
+		}
+	}
 
 	// Oppdater conversationId i ChatState når valgt samtale endres
 	$effect(() => {
@@ -334,7 +448,10 @@
 			{/snippet}
 		</PageHeader>
 
-		<div class="cp-messages">
+		<div class="cp-messages" bind:this={messagesEl} onscroll={onMessagesScroll}>
+			{#if loadingOlder}
+				<div class="cp-load-older"><span class="cp-load-spinner"></span></div>
+			{/if}
 			{#if chat.messages.length === 0}
 				<p class="cp-empty">Ingen meldinger ennå.</p>
 			{/if}
@@ -354,8 +471,42 @@
 		</div>
 
 		<div class="cp-input">
+			{#if attachmentUploading || hasPendingAttachment}
+				<div class="cp-attach-chip">
+					{#if attachmentUploading}
+						<span class="cp-load-spinner"></span>
+						<span class="cp-attach-name">Laster opp…</span>
+					{:else if pendingImageUrl}
+						<img class="cp-attach-thumb" src={pendingImageUrl} alt="Vedlegg" />
+						<span class="cp-attach-name">Bilde klart</span>
+					{:else if pendingAttachment}
+						<span class="cp-attach-emoji">{attachmentIcon}</span>
+						<span class="cp-attach-name">{pendingAttachment.name}</span>
+					{/if}
+					{#if !attachmentUploading}
+						<button
+							class="cp-attach-remove"
+							aria-label="Fjern vedlegg"
+							data-track="samtale-chat:fjern-vedlegg"
+							onclick={clearPendingAttachment}
+						>✕</button>
+					{/if}
+				</div>
+			{/if}
+			{#if attachmentError}
+				<p class="cp-attach-error">{attachmentError}</p>
+			{/if}
 			{#key inputKey}
-				<ChatInput placeholder="Skriv videre i samtalen…" streaming={chat.loading} onStop={stopChat} initialValue={inputDraft} onsubmit={(t) => chat.send(t)} />
+				<ChatInput
+					placeholder="Skriv videre i samtalen…"
+					streaming={chat.loading}
+					onStop={stopChat}
+					initialValue={inputDraft}
+					showAttachButton={true}
+					attachmentPending={hasPendingAttachment}
+					onFilesSelected={handleAttachmentFiles}
+					onsubmit={sendMessage}
+				/>
 			{/key}
 		</div>
 		</PageSection>
@@ -535,6 +686,24 @@
 		scrollbar-color: #1e1e1e transparent;
 	}
 
+	.cp-load-older {
+		display: flex;
+		justify-content: center;
+		padding: 4px 0 8px;
+		flex-shrink: 0;
+	}
+	.cp-load-spinner {
+		width: 16px;
+		height: 16px;
+		border: 2px solid #2a2a2a;
+		border-top-color: #7c8ef5;
+		border-radius: 50%;
+		animation: cp-spin 0.7s linear infinite;
+	}
+	@keyframes cp-spin {
+		to { transform: rotate(360deg); }
+	}
+
 	.cp-msg-row {
 		display: flex;
 		align-items: flex-end;
@@ -616,6 +785,54 @@
 		display: flex;
 		flex-direction: column;
 		gap: 6px;
+	}
+
+	.cp-attach-chip {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		align-self: flex-start;
+		max-width: 100%;
+		background: #161616;
+		border: 1px solid #2a2a2a;
+		border-radius: 12px;
+		padding: 6px 8px 6px 10px;
+	}
+	.cp-attach-thumb {
+		width: 28px;
+		height: 28px;
+		border-radius: 6px;
+		object-fit: cover;
+		flex-shrink: 0;
+	}
+	.cp-attach-emoji {
+		font-size: 1.05rem;
+		flex-shrink: 0;
+	}
+	.cp-attach-name {
+		font-size: 0.8rem;
+		color: #bbb;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		min-width: 0;
+	}
+	.cp-attach-remove {
+		flex-shrink: 0;
+		background: none;
+		border: none;
+		color: #777;
+		font-size: 0.85rem;
+		line-height: 1;
+		cursor: pointer;
+		padding: 2px 4px;
+		transition: color 0.12s;
+	}
+	.cp-attach-remove:hover { color: #ddd; }
+	.cp-attach-error {
+		margin: 0;
+		font-size: 0.78rem;
+		color: #e07070;
 	}
 
 	.cp-error-row {

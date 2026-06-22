@@ -24,6 +24,13 @@
 		showActionRig?: boolean;
 		interceptOpen?: boolean;
 		enableMentions?: boolean;
+		/** Kompakt binders-knapp til venstre for å legge ved fil (tar minimal plass). */
+		showAttachButton?: boolean;
+		/** `accept`-attributt for filvelgeren. */
+		attachAccept?: string;
+		/** Tillat sending uten tekst (f.eks. når et vedlegg venter). */
+		attachmentPending?: boolean;
+		onFilesSelected?: (files: File[]) => void;
 		onAttachment?: (kind: AttachmentAction, draft: string) => void;
 		onMood?: (draft: string) => void;
 		onOpen?: () => void;
@@ -42,6 +49,10 @@
 		showActionRig = false,
 		interceptOpen = false,
 		enableMentions = true,
+		showAttachButton = false,
+		attachAccept = 'image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,audio/*,video/*',
+		attachmentPending = false,
+		onFilesSelected,
 		onAttachment,
 		onMood,
 		onOpen,
@@ -52,6 +63,7 @@
 
 	let text = $state(initialValue);
 	let textareaEl = $state<HTMLTextAreaElement | null>(null);
+	let fileInputEl = $state<HTMLInputElement | null>(null);
 	const hasDraft = $derived(text.trim().length > 0);
 	let isTouchDevice = $state(false);
 
@@ -65,7 +77,7 @@
 
 	function submit() {
 		const trimmed = text.trim();
-		if (!trimmed || disabled) return;
+		if ((!trimmed && !attachmentPending) || disabled) return;
 		onsubmit(trimmed);
 		text = '';
 		onTextChange?.('');
@@ -117,6 +129,13 @@
 		onAttachment?.(kind, text.trim());
 	}
 
+	function onFilePicked(e: Event) {
+		const input = e.currentTarget as HTMLInputElement;
+		const files = input.files ? Array.from(input.files) : [];
+		input.value = ''; // tillat å velge samme fil på nytt
+		if (files.length > 0) onFilesSelected?.(files);
+	}
+
 	function triggerMood() {
 		if (disabled) return;
 		onMood?.(text.trim());
@@ -145,14 +164,38 @@
 
 <form
 	class="ci-form"
+	class:ci-form-rig={showActionRig && hasDraft}
 	onsubmit={(e) => {
 		e.preventDefault();
 		submit();
 	}}
 >
+	{#if showAttachButton}
+		<input
+			class="ci-file-input"
+			type="file"
+			accept={attachAccept}
+			bind:this={fileInputEl}
+			onchange={onFilePicked}
+			tabindex="-1"
+			aria-hidden="true"
+		/>
+		<button
+			class="ci-attach-btn"
+			type="button"
+			title="Legg ved fil"
+			aria-label="Legg ved fil"
+			onmousedown={(e) => e.preventDefault()}
+			onclick={() => fileInputEl?.click()}
+			disabled={disabled}
+		>
+			<Icon name="attach" size={18} />
+		</button>
+	{/if}
+
 	<textarea
 		class="ci-area"
-		class:ci-area-rig={showActionRig}
+		class:ci-area-rig={showActionRig && !hasDraft}
 		bind:this={textareaEl}
 		bind:value={text}
 		{placeholder}
@@ -188,9 +231,6 @@
 			{#if streaming}
 				<button class="ci-icon-btn ci-stop-btn" type="button" title="Stopp" onmousedown={(e) => e.preventDefault()} onclick={onStop}>■</button>
 			{:else if hasDraft}
-				<button class="ci-icon-btn" type="button" title="Send" onmousedown={(e) => e.preventDefault()} onclick={submit} disabled={disabled}>
-					<Icon name="forward" size={18} />
-				</button>
 				<button class="ci-icon-btn" type="button" title="Legg til bilde til samtale" onmousedown={(e) => e.preventDefault()} onclick={() => triggerAttachment('camera')} disabled={disabled}>
 					<Icon name="camera" size={18} />
 				</button>
@@ -199,6 +239,9 @@
 				</button>
 				<button class="ci-icon-btn" type="button" title="Legg til fil til samtale" onmousedown={(e) => e.preventDefault()} onclick={() => triggerAttachment('file')} disabled={disabled}>
 					<Icon name="attach" size={18} />
+				</button>
+				<button class="ci-icon-btn ci-icon-send" type="button" title="Send" onmousedown={(e) => e.preventDefault()} onclick={submit} disabled={disabled}>
+					<Icon name="forward" size={18} />
 				</button>
 			{:else}
 				<button class="ci-icon-btn" type="button" title="Legg ved bilde" onmousedown={(e) => e.preventDefault()} onclick={() => triggerAttachment('camera')} disabled={disabled}>
@@ -221,7 +264,7 @@
 		<button
 			class="ci-send"
 			type="submit"
-			disabled={disabled || !hasDraft}
+			disabled={disabled || (!hasDraft && !attachmentPending)}
 			aria-label="Send melding"
 		>
 			{#if disabled}
@@ -242,6 +285,45 @@
 		border-radius: 18px;
 		padding: 8px 10px 8px 14px;
 		gap: 8px;
+	}
+
+	/* Under skriving: stable knapperaden under tekstfeltet slik at teksten får
+	   full bredde — mer oversikt over egen tekst. */
+	.ci-form-rig {
+		flex-direction: column;
+		align-items: stretch;
+		gap: 10px;
+	}
+	.ci-form-rig .ci-actions-rig {
+		width: 100%;
+	}
+
+	.ci-file-input {
+		display: none;
+	}
+
+	.ci-attach-btn {
+		flex-shrink: 0;
+		align-self: flex-end;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 30px;
+		height: 30px;
+		border-radius: 50%;
+		border: none;
+		background: transparent;
+		color: #6a6a6a;
+		cursor: pointer;
+		transition: color 0.15s, background 0.15s;
+	}
+	.ci-attach-btn:hover:not(:disabled) {
+		color: #b9c2ff;
+		background: #1a1a1a;
+	}
+	.ci-attach-btn:disabled {
+		opacity: 0.35;
+		cursor: default;
 	}
 
 	.ci-area {
@@ -297,6 +379,19 @@
 	.ci-icon-btn:disabled {
 		opacity: 0.35;
 		cursor: default;
+	}
+
+	/* Send-knappen i kolonne-modus: skyves til høyre og får aksentfarge. */
+	.ci-icon-send {
+		margin-left: auto;
+		background: #7c8ef5;
+		border-color: #7c8ef5;
+		color: #fff;
+	}
+	.ci-icon-send:hover:not(:disabled) {
+		background: #8f9ff7;
+		border-color: #8f9ff7;
+		color: #fff;
 	}
 
 	.ci-send {
