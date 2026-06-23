@@ -8,6 +8,7 @@
 -->
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { RESONANS_DARK_MAP_STYLE } from '../charts/mapStyle';
 	import TripDayCalendar from './TripDayCalendar.svelte';
 	import TripBudget from './TripBudget.svelte';
 	import TripHealthStats from './TripHealthStats.svelte';
@@ -304,7 +305,7 @@
 
 		mapInstance = new Map({
 			container: mapContainer,
-			style: 'https://tiles.openfreemap.org/styles/liberty',
+			style: RESONANS_DARK_MAP_STYLE,
 			center: [centerLng, centerLat],
 			zoom: points.length > 0 ? 6 : 10,
 			attributionControl: { compact: true }

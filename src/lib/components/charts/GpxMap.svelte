@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import type { Map as MapLibreMap } from 'maplibre-gl';
+	import { RESONANS_DARK_MAP_STYLE } from './mapStyle';
 
 	interface TrackPoint {
 		lat: number;
@@ -37,7 +38,7 @@
 
 		map = new Map({
 			container: el,
-			style: 'https://tiles.openfreemap.org/styles/liberty',
+			style: RESONANS_DARK_MAP_STYLE,
 			bounds,
 			fitBoundsOptions: { padding: 48 },
 			attributionControl: { compact: true }

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { RESONANS_DARK_MAP_STYLE } from '$lib/components/charts/mapStyle';
 
 	type Resource = {
 		kind: 'tripPosition';
@@ -233,7 +234,7 @@
 
 		map = new maplibregl.Map({
 			container: mapEl,
-			style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+			style: RESONANS_DARK_MAP_STYLE,
 			center, zoom: 13,
 			attributionControl: false
 		});
