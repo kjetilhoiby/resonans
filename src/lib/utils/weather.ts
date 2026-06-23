@@ -33,6 +33,75 @@ export function metSymbolToEmoji(symbol: string): string {
 	return '🌡️';
 }
 
+// ── Open-Meteo (historikk-fallback) ──────────────────────────────────────────
+// met.no gir kun varsel ~9 dager fram og ingen historikk. For dager som ligger
+// utenfor det vinduet (typisk passerte feriedager) henter vi observert vær fra
+// Open-Meteo i stedet. WMO-værkoder mappes til samme emoji-sett som met.no.
+
+/** WMO weather interpretation code → emoji. */
+export function wmoToEmoji(code: number): string {
+	if (code === 0) return '☀️';                       // klarvær
+	if (code === 1) return '🌤️';                       // hovedsakelig klart
+	if (code === 2) return '⛅';                        // delvis skyet
+	if (code === 3) return '☁️';                        // overskyet
+	if (code === 45 || code === 48) return '🌫️';       // tåke
+	if (code >= 71 && code <= 77) return '❄️';          // snø
+	if (code === 85 || code === 86) return '❄️';        // snøbyger
+	if (code >= 95 && code <= 99) return '⛈️';          // torden
+	if (code >= 51 && code <= 67) return '🌧️';         // yr / regn / underkjølt
+	if (code >= 80 && code <= 82) return '🌧️';         // regnbyger
+	return '🌡️';
+}
+
+/** Parser Open-Meteo daily-respons for én dag til {emoji, temp}. null hvis data mangler. */
+export function parseOpenMeteoDay(data: any): { emoji: string; temp: number } | null {
+	const code = data?.daily?.weather_code?.[0];
+	const tempMax = data?.daily?.temperature_2m_max?.[0];
+	if (typeof code !== 'number' || typeof tempMax !== 'number') return null;
+	return { emoji: wmoToEmoji(code), temp: Math.round(tempMax) };
+}
+
+/** ISO-dato `days` dager før `iso` (UTC). */
+function isoMinusDays(iso: string, days: number): string {
+	const d = new Date(`${iso}T00:00:00Z`);
+	d.setUTCDate(d.getUTCDate() - days);
+	return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Velger Open-Meteo-endepunkt for en dato. Arkivet (ERA5) har ~5 dagers
+ * etterslep, så for de siste dagene brukes forecast-API-et (som dekker nær
+ * fortid), ellers arkivet.
+ */
+export function openMeteoBaseUrl(date: string, todayIso: string): string {
+	const useArchive = date < isoMinusDays(todayIso, 5);
+	return useArchive
+		? 'https://archive-api.open-meteo.com/v1/archive'
+		: 'https://api.open-meteo.com/v1/forecast';
+}
+
+/** Henter observert vær for én dato fra Open-Meteo. null ved feil/manglende data. */
+export async function fetchOpenMeteoDay(
+	lat: number,
+	lon: number,
+	date: string
+): Promise<{ emoji: string; temp: number } | null> {
+	try {
+		const todayIso = new Date().toLocaleDateString('sv', { timeZone: 'Europe/Oslo' });
+		const base = openMeteoBaseUrl(date, todayIso);
+		const url =
+			`${base}?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}` +
+			`&start_date=${date}&end_date=${date}` +
+			`&daily=weather_code,temperature_2m_max&timezone=Europe%2FOslo`;
+		const res = await fetch(url);
+		if (!res.ok) return null;
+		const data = await res.json();
+		return parseOpenMeteoDay(data);
+	} catch {
+		return null;
+	}
+}
+
 // ── Cache ───────────────────────────────────────────────────────────────────
 
 const CACHE_MAX_AGE_MS = 30 * 60 * 1000; // 30 min

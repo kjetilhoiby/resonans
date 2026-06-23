@@ -50,7 +50,22 @@ er allerede `Record<string, unknown>`.
 - **Gjenbrukbar `DiaryImages`-komponent:** begge dagbøkene har identisk behov,
   så logikken bor ett sted (prinsipp 2 i CLAUDE.md).
 
+### Fase 4: Vær for passerte dager (Open-Meteo-fallback)
+met.no gir kun varsel ~9 dager fram og ingen historikk, så «Hent vær» fant
+ingenting når man logget en dag i ettertid. La til Open-Meteo som fallback:
+
+- `src/lib/utils/weather.ts`: `wmoToEmoji` (WMO-koder → samme emoji-sett som
+  met.no), `parseOpenMeteoDay`, `openMeteoBaseUrl` (velger forecast-API for de
+  siste ~5 dagene siden arkivet har etterslep, ellers arkiv-API), og
+  `fetchOpenMeteoDay`. Enhetstester i `weather.test.ts`.
+- `trip-api.ts`: ny `getHistoricalWeather(lat, lon, date)`.
+- `ferie/FerieExecutionView.svelte`: `fetchDiaryWeather` prøver met.no først,
+  faller tilbake til Open-Meteo når varselet er utløpt.
+
+Open-Meteo er gratis, krever ingen API-nøkkel og kan kalles fra klienten som
+met.no. met.no beholdes som primærkilde for i dag/framover.
+
 ## Verifisering
 
 - `npm run check`: 0 feil, 0 advarsler.
-- `npm test`: 675 tester passerer.
+- `npm test`: 682 tester passerer (7 nye værtester).

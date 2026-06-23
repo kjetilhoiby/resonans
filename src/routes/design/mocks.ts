@@ -718,6 +718,7 @@ export const mockTripApi: TripApi = {
 	],
 	geocode: async () => null,
 	getMetForecast: async () => null,
+	getHistoricalWeather: async () => null,
 	getLiveSession: async () => null,
 	saveTripProfile: async () => true,
 	getTransactions: async () => ({

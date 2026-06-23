@@ -141,18 +141,23 @@
 				diaryError = 'Fant ikke stedet.';
 				return;
 			}
+			// 1) met.no-varsel for i dag/framover.
 			const ts = await api.getMetForecast(geo.lat, geo.lon);
-			if (!ts) {
-				diaryError = 'Fikk ikke værdata.';
-				return;
+			if (ts) {
+				const periods = buildPeriods(diaryDate, ts);
+				const usable = periods.find((p) => p.key === 'middag' && p.emoji !== '—' && p.emoji !== '')
+					?? periods.find((p) => p.emoji !== '—' && p.emoji !== '');
+				if (usable) {
+					diaryWeather = { emoji: usable.emoji, temp: usable.temp };
+					return;
+				}
 			}
-			const periods = buildPeriods(diaryDate, ts);
-			const usable = periods.find((p) => p.key === 'middag' && p.emoji !== '—' && p.emoji !== '')
-				?? periods.find((p) => p.emoji !== '—' && p.emoji !== '');
-			if (usable) {
-				diaryWeather = { emoji: usable.emoji, temp: usable.temp };
+			// 2) Fallback: observert vær fra Open-Meteo når varselet er utløpt (passert dag).
+			const hist = await api.getHistoricalWeather(geo.lat, geo.lon, diaryDate);
+			if (hist) {
+				diaryWeather = hist;
 			} else {
-				diaryError = 'Ingen værvarsel for denne datoen (met.no gir kun ~9 dager fram).';
+				diaryError = 'Fant ikke værdata for denne datoen.';
 			}
 		} catch {
 			diaryError = 'Klarte ikke hente vær.';

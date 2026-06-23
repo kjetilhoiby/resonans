@@ -8,7 +8,7 @@
  */
 
 import { patchItem, deleteItem, addItems } from '$lib/utils/checklist-api';
-import { fetchRawTimeseries } from '$lib/utils/weather';
+import { fetchRawTimeseries, fetchOpenMeteoDay } from '$lib/utils/weather';
 
 /* ── Delte typer: reiseprofil ────────────────────────── */
 
@@ -352,6 +352,8 @@ export interface TripApi {
 	geocode(query: string): Promise<GeoPoint | null>;
 	/** Rå met.no-timeseries for et koordinat. null ved feil. */
 	getMetForecast(lat: number, lon: number): Promise<MetTimeseriesEntry[] | null>;
+	/** Observert vær for én dato via Open-Meteo (fallback når met.no-varsel er utløpt). null ved feil. */
+	getHistoricalWeather(lat: number, lon: number, date: string): Promise<DiaryWeather | null>;
 
 	/* TripDashboard */
 	/** Aktiv live-sesjon for posisjonsdeling. null ved feil. */
@@ -453,6 +455,11 @@ export const tripApi: TripApi = {
 	async getMetForecast(lat, lon) {
 		const ts = await fetchRawTimeseries(lat, lon);
 		return ts as MetTimeseriesEntry[] | null;
+	},
+
+	async getHistoricalWeather(lat, lon, date) {
+		const wx = await fetchOpenMeteoDay(lat, lon, date);
+		return wx ? { emoji: wx.emoji, temp: wx.temp } : null;
 	},
 
 	async getLiveSession() {
