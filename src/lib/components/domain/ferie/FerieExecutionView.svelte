@@ -15,6 +15,7 @@
 	import { onMount } from 'svelte';
 	import { buildPeriods } from '$lib/utils/weather';
 	import DateInput from '$lib/components/ui/DateInput.svelte';
+	import BottomSheet from '$lib/components/ui/BottomSheet.svelte';
 	import DiaryImages from '../DiaryImages.svelte';
 	import TripDayCalendar from '../TripDayCalendar.svelte';
 	import TripHealthStats from '../TripHealthStats.svelte';
@@ -106,6 +107,19 @@
 	let diarySaving = $state(false);
 	let diaryFetchingWx = $state(false);
 	let diaryError = $state('');
+	let editorOpen = $state(false);
+
+	function openEditor(date?: string) {
+		const d = date ?? defaultDiaryDate();
+		diaryDate = d;
+		diaryError = '';
+		loadFormForDate(d);
+		editorOpen = true;
+	}
+
+	function closeEditor() {
+		editorOpen = false;
+	}
 
 	function defaultDiaryDate(): string {
 		const iso = toISO(new Date());
@@ -209,6 +223,7 @@
 			});
 			if (!ok) throw new Error('save failed');
 			await loadDiary();
+			closeEditor();
 		} catch {
 			diaryError = 'Klarte ikke lagre dagboknotat.';
 		} finally {
@@ -216,20 +231,11 @@
 		}
 	}
 
-	function editDiaryEntry(e: DiaryEntry) {
-		diaryDate = e.date;
-		diaryText = e.content;
-		diaryPlace = e.place ?? '';
-		diaryWeather = e.weather ?? null;
-		diaryImages = e.images ?? [];
-		diaryError = '';
-	}
-
 	async function deleteDiaryEntry(date: string) {
 		try {
 			await api.putDiaryEntry(themeId, { date });
 			await loadDiary();
-			if (diaryDate === date) loadFormForDate(date);
+			if (diaryDate === date) closeEditor();
 		} catch {
 			diaryError = 'Klarte ikke slette.';
 		}
@@ -295,8 +301,7 @@
 		const t = ferieTasks.find((task) => task.id === id);
 		if (!t) return;
 		if (t.kind === 'diary' && t.date) {
-			diaryDate = t.date;
-			loadFormForDate(t.date);
+			openEditor(t.date);
 		} else if (t.kind === 'trip') {
 			onNavigate('reiser');
 		} else if (t.kind === 'gap') {
@@ -318,12 +323,7 @@
 
 	/* ── Lifecycle ─────────────────────────────────────── */
 	onMount(() => {
-		void loadDiary().then(() => {
-			if (!diaryDate) {
-				diaryDate = defaultDiaryDate();
-				loadFormForDate(diaryDate);
-			}
-		});
+		void loadDiary();
 		void loadMapData();
 	});
 </script>
@@ -343,40 +343,16 @@
 <section class="ferie-diary">
 	<div class="trips-head">
 		<h3>Feriedagbok</h3>
-	</div>
-
-	<div class="diary-form">
-		<div class="diary-form-row">
-			<label>
-				<span>Dag</span>
-				<DateInput bind:value={diaryDate} min={startDate} max={endDate} onChange={onDiaryDateChange} />
-			</label>
-			<label class="diary-place-field">
-				<span>Sted</span>
-				<input type="text" placeholder="Sted" bind:value={diaryPlace} />
-			</label>
-			<button type="button" class="ferie-btn" disabled={diaryFetchingWx || !diaryPlace} onclick={fetchDiaryWeather}>
-				{diaryFetchingWx ? 'Henter…' : '🌤️ Hent vær'}
-			</button>
-			{#if diaryWeather}
-				<span class="diary-wx">{diaryWeather.emoji} {diaryWeather.temp}°</span>
-			{/if}
-		</div>
-		<textarea class="diary-text" rows="2" placeholder="Én setning om dagen…" bind:value={diaryText}></textarea>
-		<DiaryImages bind:images={diaryImages} track="ferie-dagbok" />
-		<div class="diary-actions">
-			<button type="button" class="ferie-btn ferie-btn-primary" disabled={diarySaving} onclick={saveDiaryEntry}>
-				{diarySaving ? 'Lagrer…' : 'Lagre dag'}
-			</button>
-			{#if diaryError}<span class="ferie-error">{diaryError}</span>{/if}
-		</div>
+		<button type="button" class="ferie-btn ferie-btn-primary" onclick={() => openEditor()} data-track="ferie-dagbok:ny-dag">
+			+ Ny dag
+		</button>
 	</div>
 
 	{#if diaryEntries.length > 0}
 		<ul class="diary-list">
 			{#each diaryEntries as e (e.date)}
 				<li class="diary-entry">
-					<button type="button" class="diary-entry-main" onclick={() => editDiaryEntry(e)}>
+					<button type="button" class="diary-entry-main" onclick={() => openEditor(e.date)}>
 						<span class="diary-entry-head">
 							<span class="diary-entry-date">{formatDiaryDate(e.date)}</span>
 							{#if e.weather}<span class="diary-entry-wx">{e.weather.emoji} {e.weather.temp}°</span>{/if}
@@ -396,9 +372,44 @@
 			{/each}
 		</ul>
 	{:else if !diaryLoading}
-		<p class="trips-empty">Ingen dagboknotater ennå. Velg en dag, skriv én setning, og hent gjerne været.</p>
+		<p class="trips-empty">Ingen dagboknotater ennå. Trykk «+ Ny dag», skriv én setning, og hent gjerne været.</p>
 	{/if}
 </section>
+
+{#if editorOpen}
+	<BottomSheet onclose={closeEditor} ariaLabel="Rediger feriedagbok">
+		<div class="diary-sheet-head">
+			<h3>Feriedagbok</h3>
+			<button type="button" class="diary-sheet-close" aria-label="Lukk" onclick={closeEditor}>✕</button>
+		</div>
+		<div class="diary-sheet-body">
+			<div class="diary-form-row">
+				<label>
+					<span>Dag</span>
+					<DateInput bind:value={diaryDate} min={startDate} max={endDate} onChange={onDiaryDateChange} />
+				</label>
+				<label class="diary-place-field">
+					<span>Sted</span>
+					<input type="text" placeholder="Sted" bind:value={diaryPlace} />
+				</label>
+				<button type="button" class="ferie-btn" disabled={diaryFetchingWx || !diaryPlace} onclick={fetchDiaryWeather}>
+					{diaryFetchingWx ? 'Henter…' : '🌤️ Hent vær'}
+				</button>
+				{#if diaryWeather}
+					<span class="diary-wx">{diaryWeather.emoji} {diaryWeather.temp}°</span>
+				{/if}
+			</div>
+			<textarea class="diary-text" rows="3" placeholder="Én setning om dagen…" bind:value={diaryText}></textarea>
+			<DiaryImages bind:images={diaryImages} track="ferie-dagbok" />
+		</div>
+		<div class="diary-sheet-footer">
+			{#if diaryError}<span class="ferie-error">{diaryError}</span>{/if}
+			<button type="button" class="ferie-btn ferie-btn-primary" disabled={diarySaving} onclick={saveDiaryEntry}>
+				{diarySaving ? 'Lagrer…' : 'Lagre dag'}
+			</button>
+		</div>
+	</BottomSheet>
+{/if}
 
 <div class="ferie-map-story" bind:this={mapSection}>
 	<TripMapStory
@@ -471,11 +482,6 @@
 		font-size: 0.85rem;
 		color: var(--tp-text-soft);
 	}
-	.diary-form {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
 	.diary-form-row {
 		display: flex;
 		flex-wrap: wrap;
@@ -513,10 +519,45 @@
 		font-family: inherit;
 		resize: vertical;
 	}
-	.diary-actions {
+	/* Dagbok-bottompanel */
+	.diary-sheet-head {
 		display: flex;
 		align-items: center;
+		justify-content: space-between;
+		padding: 1rem 1rem 0.5rem;
+	}
+	.diary-sheet-head h3 {
+		margin: 0;
+		font-size: 1.05rem;
+		color: var(--tp-text);
+	}
+	.diary-sheet-close {
+		background: none;
+		border: none;
+		color: var(--tp-text-muted);
+		font-size: 1.1rem;
+		line-height: 1;
+		cursor: pointer;
+		padding: 0.2rem 0.4rem;
+	}
+	.diary-sheet-body {
+		display: flex;
+		flex-direction: column;
 		gap: 0.6rem;
+		padding: 0 1rem;
+		flex: 1;
+		min-height: 0;
+		overflow-y: auto;
+	}
+	.diary-sheet-footer {
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
+		gap: 0.6rem;
+		padding: 0.75rem 1rem;
+		padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0));
+		border-top: 1px solid var(--tp-border);
+		margin-top: 0.25rem;
 	}
 	.diary-list {
 		list-style: none;
