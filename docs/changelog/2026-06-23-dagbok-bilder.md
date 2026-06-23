@@ -83,7 +83,8 @@ Datamodell (ingen migrasjon — alt i eksisterende JSONB):
 - `trip-map-story.ts` (ny, ren logikk): `buildDayPins` (dag-nåler fra notater +
   geoByDay) og `partialPath` (interpolert rute for animasjon). Enhetstester i
   `trip-map-story.test.ts`.
-- `TripMapStory.svelte` (ny): MapLibre + OpenFreeMap. Animert rutelinje
+- `TripMapStory.svelte` (ny): MapLibre med den delte mørke basiskart-stilen
+  (`RESONANS_DARK_MAP_STYLE`, fra PR #161). Animert rutelinje
   (requestAnimationFrame + `partialPath`), nummererte dag-nåler med popup,
   bilde-nåler (klikk på kartet → last opp → lagres på `imagePins`), «Spill av».
 - `TripDashboard.svelte`: erstattet det gamle statiske inline-kartet med

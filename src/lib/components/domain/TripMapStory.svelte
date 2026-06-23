@@ -6,11 +6,12 @@
   hvor som helst på kartet. Dag-nålenes koordinat kommer fra notatets geokodede
   sted (eller turens geoByDay). Bilde-nåler lagres på tripProfile.imagePins.
 
-  Gjenbruker MapLibre + OpenFreeMap (samme stil som TripDashboard/GpxMap).
+  Gjenbruker MapLibre + den delte mørke basiskart-stilen (RESONANS_DARK_MAP_STYLE).
 -->
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import type { Map as MapLibreMap, Marker as MapLibreMarker } from 'maplibre-gl';
+	import { RESONANS_DARK_MAP_STYLE } from '../charts/mapStyle';
 	import SectionLabel from '../ui/SectionLabel.svelte';
 	import { uploadImage } from '$lib/client/upload-image';
 	import { buildDayPins, partialPath, type DayPin } from './trip-map-story';
@@ -116,7 +117,7 @@
 
 		map = new Map({
 			container,
-			style: 'https://tiles.openfreemap.org/styles/liberty',
+			style: RESONANS_DARK_MAP_STYLE,
 			center: start,
 			zoom: 5,
 			attributionControl: { compact: true }
