@@ -9,4 +9,6 @@ export interface ActionPillItem {
 	label: string;
 	value?: string | number;
 	done: boolean;
+	/** Når true (og onItemDismiss er satt) vises en avvis-knapp (×) på pillen. */
+	dismissable?: boolean;
 }

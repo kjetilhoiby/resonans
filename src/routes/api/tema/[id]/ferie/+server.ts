@@ -14,7 +14,7 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	// eksplisitt med i requesten. Felter som ikke nevnes beholdes urørt — så en
 	// delvis lagring aldri sletter grid/medlemmer/reiser den ikke rører.
 	// Eksplisitt `null`/`undefined` betyr «fjern feltet».
-	const allowed = ['startDate', 'endDate', 'note', 'members', 'grid', 'trips'] as const;
+	const allowed = ['startDate', 'endDate', 'note', 'members', 'grid', 'trips', 'gapAckCount'] as const;
 
 	const existing = await db.query.themes.findFirst({
 		where: and(eq(themes.id, params.id), eq(themes.userId, locals.userId)),

@@ -19,6 +19,8 @@
 	import TripDayCalendar from '../TripDayCalendar.svelte';
 	import TripHealthStats from '../TripHealthStats.svelte';
 	import TripBudget from '../TripBudget.svelte';
+	import ActionPillRow from '../home/ActionPillRow.svelte';
+	import type { ActionPillItem } from '../home/action-pill-types';
 	import {
 		tripApi,
 		type TripApi,
@@ -43,6 +45,9 @@
 		days: DayEntry[];
 		trips: FerieTrip[];
 		gapCount: number;
+		/** Antall udekkede barn-dager brukeren har avvist (skjuler påminnelsen til antallet endres). */
+		gapAckCount?: number;
+		onDismissGap?: () => void;
 		onNavigate: (view: 'rammer' | 'reiser' | 'gjennomfor') => void;
 		api?: TripApi;
 	}
@@ -50,6 +55,8 @@
 	let {
 		themeId, themeEmoji = null,
 		startDate, endDate, days, trips, gapCount,
+		gapAckCount,
+		onDismissGap,
 		onNavigate,
 		api = tripApi
 	}: Props = $props();
@@ -229,13 +236,29 @@
 				out.push({ id: `trip-${t.id}`, kind: 'trip', label: `Legg til deltakere på «${t.label || 'reise'}»` });
 			}
 		}
-		if (gapCount > 0) {
+		// Gap-påminnelsen skjules når brukeren har avvist akkurat dette antallet.
+		if (gapCount > 0 && gapCount !== gapAckCount) {
 			out.push({ id: 'gap', kind: 'gap', label: `${gapCount} barn-dager mangler fortsatt dekning` });
 		}
 		return out;
 	});
 
-	function doTask(t: FerieTask) {
+	const TASK_ICON: Record<FerieTask['kind'], string> = { diary: '✍️', trip: '🧳', gap: '⚠️' };
+
+	// Oppgaver som pills for hurtigvalgstripa. Gap-pillen kan avvises.
+	const taskPills = $derived<ActionPillItem[]>(
+		ferieTasks.map((t) => ({
+			id: t.id,
+			icon: TASK_ICON[t.kind],
+			label: t.label,
+			done: false,
+			dismissable: t.kind === 'gap'
+		}))
+	);
+
+	function doTaskById(id: string) {
+		const t = ferieTasks.find((task) => task.id === id);
+		if (!t) return;
 		if (t.kind === 'diary' && t.date) {
 			diaryDate = t.date;
 			loadFormForDate(t.date);
@@ -257,16 +280,15 @@
 	});
 </script>
 
-{#if ferieTasks.length > 0}
+{#if taskPills.length > 0}
 	<section class="ferie-tasks">
 		<h3>Oppgaver</h3>
-		<ul class="task-list">
-			{#each ferieTasks as task (task.id)}
-				<li>
-					<button type="button" class="task-item {task.kind}" onclick={() => doTask(task)}>{task.label}</button>
-				</li>
-			{/each}
-		</ul>
+		<ActionPillRow
+			items={taskPills}
+			ariaLabel="Ferieoppgaver"
+			onItemClick={(item) => doTaskById(item.id)}
+			onItemDismiss={() => onDismissGap?.()}
+		/>
 	</section>
 {/if}
 
@@ -365,35 +387,6 @@
 	.ferie-tasks h3 {
 		margin: 0 0 0.5rem;
 		font-size: 1rem;
-	}
-	.task-list {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0.35rem;
-	}
-	.task-item {
-		width: 100%;
-		text-align: left;
-		background: var(--tp-bg-1);
-		border: 1px solid var(--tp-border);
-		color: var(--tp-text);
-		border-radius: 8px;
-		padding: 0.45rem 0.6rem;
-		font: inherit;
-		font-size: 0.85rem;
-		cursor: pointer;
-	}
-	.task-item.gap {
-		border-color: hsl(0 55% 45%);
-	}
-	.task-item.diary::before {
-		content: '✍️ ';
-	}
-	.task-item.trip::before {
-		content: '🧳 ';
 	}
 
 	/* Feriedagbok */

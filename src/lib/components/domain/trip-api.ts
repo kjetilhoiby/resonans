@@ -103,6 +103,9 @@ export interface FerieProfile {
 	members?: FerieMember[];
 	grid?: Record<string, Record<string, FerieCell>>;
 	trips?: FerieTrip[];
+	/** Antall udekkede barn-dager brukeren har avvist. Påminnelsen vises igjen
+	 *  hvis antallet endrer seg fra dette. */
+	gapAckCount?: number;
 }
 
 /** Payload for PUT /api/tema/:id/ferie (null-felter tømmer verdien). */
@@ -113,6 +116,7 @@ export interface FerieProfilePayload {
 	members: FerieMember[];
 	grid: Record<string, Record<string, FerieCell>>;
 	trips: FerieTrip[];
+	gapAckCount: number | null;
 }
 
 /* ── Delte typer: vær og geografi ────────────────────── */
