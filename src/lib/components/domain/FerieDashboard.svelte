@@ -68,6 +68,7 @@
 		ferieProfile?.grid ? $state.snapshot(ferieProfile.grid) : {}
 	);
 	let trips = $state<FerieTrip[]>(ferieProfile?.trips ? [...ferieProfile.trips] : []);
+	let gapAckCount = $state<number | undefined>(ferieProfile?.gapAckCount);
 
 	let editMembers = $state(false);
 	let editing = $state(false);
@@ -295,7 +296,8 @@
 			note: note.trim() || null,
 			members,
 			grid,
-			trips
+			trips,
+			gapAckCount: gapAckCount ?? null
 		};
 	}
 
@@ -309,7 +311,8 @@
 			note: note.trim() || undefined,
 			members,
 			grid,
-			trips: trips.length > 0 ? trips : undefined
+			trips: trips.length > 0 ? trips : undefined,
+			gapAckCount
 		};
 		try {
 			const res = await api.saveFerieProfile(themeId, buildPayload(), {
@@ -445,6 +448,8 @@
 				{days}
 				{trips}
 				{gapCount}
+				{gapAckCount}
+				onDismissGap={() => { gapAckCount = gapCount; scheduleSave(); }}
 				onNavigate={(v) => (view = v)}
 				{api}
 			/>

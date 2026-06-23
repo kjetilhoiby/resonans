@@ -19,12 +19,17 @@
 	import TripDayCalendar from '../TripDayCalendar.svelte';
 	import TripHealthStats from '../TripHealthStats.svelte';
 	import TripBudget from '../TripBudget.svelte';
+	import TripMapStory from '../TripMapStory.svelte';
+	import ActionPillRow from '../home/ActionPillRow.svelte';
+	import type { ActionPillItem } from '../home/action-pill-types';
 	import {
 		tripApi,
 		type TripApi,
 		type FerieTrip,
 		type DiaryWeather,
-		type DiaryEntry
+		type DiaryEntry,
+		type DayGeo,
+		type ImagePin
 	} from '../trip-api';
 
 	interface DayEntry {
@@ -43,6 +48,9 @@
 		days: DayEntry[];
 		trips: FerieTrip[];
 		gapCount: number;
+		/** Antall udekkede barn-dager brukeren har avvist (skjuler påminnelsen til antallet endres). */
+		gapAckCount?: number;
+		onDismissGap?: () => void;
 		onNavigate: (view: 'rammer' | 'reiser' | 'gjennomfor') => void;
 		api?: TripApi;
 	}
@@ -50,6 +58,8 @@
 	let {
 		themeId, themeEmoji = null,
 		startDate, endDate, days, trips, gapCount,
+		gapAckCount,
+		onDismissGap,
 		onNavigate,
 		api = tripApi
 	}: Props = $props();
@@ -79,6 +89,11 @@
 			return iso;
 		}
 	}
+
+	/* ── Kartfortelling-tilstand ───────────────────────── */
+	let tripGeoByDay = $state<Record<string, DayGeo>>({});
+	let tripImagePins = $state<ImagePin[]>([]);
+	let mapSection = $state<HTMLElement | null>(null);
 
 	/* ── Dagbok-tilstand ───────────────────────────────── */
 	let diaryEntries = $state<DiaryEntry[]>([]);
@@ -171,12 +186,26 @@
 		diarySaving = true;
 		diaryError = '';
 		try {
+			// Geokod stedet for kartfortellingen (bare når det er nytt/endret).
+			const existing = diaryEntries.find((e) => e.date === diaryDate);
+			const place = diaryPlace.trim();
+			let geo = existing?.geo;
+			if (place) {
+				if (place !== existing?.place || !geo) {
+					const g = await api.geocode(place);
+					if (g) geo = { lat: g.lat, lon: g.lon };
+				}
+			} else {
+				geo = undefined;
+			}
+
 			const ok = await api.putDiaryEntry(themeId, {
 				date: diaryDate,
 				content: diaryText,
 				place: diaryPlace,
 				weather: diaryWeather ?? undefined,
-				images: diaryImages
+				images: diaryImages,
+				geo
 			});
 			if (!ok) throw new Error('save failed');
 			await loadDiary();
@@ -229,13 +258,42 @@
 				out.push({ id: `trip-${t.id}`, kind: 'trip', label: `Legg til deltakere på «${t.label || 'reise'}»` });
 			}
 		}
-		if (gapCount > 0) {
+		// Gap-påminnelsen skjules når brukeren har avvist akkurat dette antallet.
+		if (gapCount > 0 && gapCount !== gapAckCount) {
 			out.push({ id: 'gap', kind: 'gap', label: `${gapCount} barn-dager mangler fortsatt dekning` });
 		}
 		return out;
 	});
 
-	function doTask(t: FerieTask) {
+	const TASK_ICON: Record<FerieTask['kind'], string> = { diary: '✍️', trip: '🧳', gap: '⚠️' };
+
+	const MAP_PILL_ID = 'map-story';
+
+	// Kartfortellingen har innhold når minst én dag er stedfestet eller det finnes bilde-nåler.
+	const hasMapContent = $derived(diaryEntries.some((e) => e.geo) || tripImagePins.length > 0);
+
+	// Oppgaver som pills for hurtigvalgstripa. Gap-pillen kan avvises; en
+	// kartfortelling-inngang legges sist når det finnes noe å vise.
+	const taskPills = $derived<ActionPillItem[]>([
+		...ferieTasks.map((t) => ({
+			id: t.id,
+			icon: TASK_ICON[t.kind],
+			label: t.label,
+			done: false,
+			dismissable: t.kind === 'gap'
+		})),
+		...(hasMapContent
+			? [{ id: MAP_PILL_ID, icon: '🗺️', label: 'Kartfortelling', done: false }]
+			: [])
+	]);
+
+	function onPillClick(id: string) {
+		if (id === MAP_PILL_ID) {
+			mapSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+			return;
+		}
+		const t = ferieTasks.find((task) => task.id === id);
+		if (!t) return;
 		if (t.kind === 'diary' && t.date) {
 			diaryDate = t.date;
 			loadFormForDate(t.date);
@@ -243,6 +301,18 @@
 			onNavigate('reiser');
 		} else if (t.kind === 'gap') {
 			onNavigate('rammer');
+		}
+	}
+
+	async function loadMapData() {
+		try {
+			const profile = await api.getTripProfile(themeId);
+			if (profile) {
+				tripGeoByDay = profile.geoByDay ?? {};
+				tripImagePins = profile.imagePins ?? [];
+			}
+		} catch {
+			// best-effort — kartfortellingen klarer seg uten reiseprofil
 		}
 	}
 
@@ -254,19 +324,19 @@
 				loadFormForDate(diaryDate);
 			}
 		});
+		void loadMapData();
 	});
 </script>
 
-{#if ferieTasks.length > 0}
+{#if taskPills.length > 0}
 	<section class="ferie-tasks">
 		<h3>Oppgaver</h3>
-		<ul class="task-list">
-			{#each ferieTasks as task (task.id)}
-				<li>
-					<button type="button" class="task-item {task.kind}" onclick={() => doTask(task)}>{task.label}</button>
-				</li>
-			{/each}
-		</ul>
+		<ActionPillRow
+			items={taskPills}
+			ariaLabel="Ferieoppgaver"
+			onItemClick={(item) => onPillClick(item.id)}
+			onItemDismiss={() => onDismissGap?.()}
+		/>
 	</section>
 {/if}
 
@@ -330,6 +400,16 @@
 	{/if}
 </section>
 
+<div class="ferie-map-story" bind:this={mapSection}>
+	<TripMapStory
+		{themeId}
+		geoByDay={tripGeoByDay}
+		imagePins={tripImagePins}
+		onImagePinsChange={(p) => (tripImagePins = p)}
+		{api}
+	/>
+</div>
+
 <section class="ferie-dash">
 	<h3>Dag-for-dag</h3>
 	<TripDayCalendar {themeEmoji} startDate={startDate} endDate={endDate} {api} />
@@ -365,35 +445,6 @@
 	.ferie-tasks h3 {
 		margin: 0 0 0.5rem;
 		font-size: 1rem;
-	}
-	.task-list {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0.35rem;
-	}
-	.task-item {
-		width: 100%;
-		text-align: left;
-		background: var(--tp-bg-1);
-		border: 1px solid var(--tp-border);
-		color: var(--tp-text);
-		border-radius: 8px;
-		padding: 0.45rem 0.6rem;
-		font: inherit;
-		font-size: 0.85rem;
-		cursor: pointer;
-	}
-	.task-item.gap {
-		border-color: hsl(0 55% 45%);
-	}
-	.task-item.diary::before {
-		content: '✍️ ';
-	}
-	.task-item.trip::before {
-		content: '🧳 ';
 	}
 
 	/* Feriedagbok */
@@ -564,6 +615,15 @@
 		background: var(--tp-bg-2);
 		border: 1px solid var(--tp-border);
 		border-radius: 12px;
+	}
+	/* Kartfortelling: kort-ramme som de andre seksjonene, men TripMapStory eier
+	   sin egen indre padding (topp/sider), så her trengs bare bunn-padding. */
+	.ferie-map-story {
+		background: var(--tp-bg-2);
+		border: 1px solid var(--tp-border);
+		border-radius: 12px;
+		padding-bottom: 0.85rem;
+		scroll-margin-top: 12px;
 	}
 	.ferie-dash h3 {
 		margin: 0 0 0.6rem;

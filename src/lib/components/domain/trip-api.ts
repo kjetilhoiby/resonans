@@ -103,6 +103,9 @@ export interface FerieProfile {
 	members?: FerieMember[];
 	grid?: Record<string, Record<string, FerieCell>>;
 	trips?: FerieTrip[];
+	/** Antall udekkede barn-dager brukeren har avvist. Påminnelsen vises igjen
+	 *  hvis antallet endrer seg fra dette. */
+	gapAckCount?: number;
 }
 
 /** Payload for PUT /api/tema/:id/ferie (null-felter tømmer verdien). */
@@ -113,6 +116,7 @@ export interface FerieProfilePayload {
 	members: FerieMember[];
 	grid: Record<string, Record<string, FerieCell>>;
 	trips: FerieTrip[];
+	gapAckCount: number | null;
 }
 
 /* ── Delte typer: vær og geografi ────────────────────── */
@@ -379,6 +383,8 @@ export interface TripApi {
 	/* TripDashboard */
 	/** Aktiv live-sesjon for posisjonsdeling. null ved feil. */
 	getLiveSession(): Promise<LiveSession | null>;
+	/** Henter reiseprofilen (for kartfortelling: geoByDay + imagePins). null ved feil. */
+	getTripProfile(themeId: string): Promise<TripProfile | null>;
 	/** Lagrer reiseprofilen. false ved feil. */
 	saveTripProfile(themeId: string, profile: TripProfile): Promise<boolean>;
 
@@ -487,6 +493,12 @@ export const tripApi: TripApi = {
 		const res = await fetch('/api/apps/live-session');
 		if (!res.ok) return null;
 		return (await res.json()) as LiveSession;
+	},
+
+	async getTripProfile(themeId) {
+		const res = await fetch(`/api/tema/${themeId}/trip`);
+		if (!res.ok) return null;
+		return (await res.json()) as TripProfile;
 	},
 
 	async saveTripProfile(themeId, profile) {
