@@ -41,7 +41,9 @@
 			style: RESONANS_DARK_MAP_STYLE,
 			bounds,
 			fitBoundsOptions: { padding: 48 },
-			attributionControl: { compact: true }
+			// Krediteringen (OpenFreeMap/OpenMapTiles/OpenStreetMap) ligger samlet
+			// i innstillinger (/settings) i stedet for som overlay på hvert kart.
+			attributionControl: false
 		});
 
 		new Marker({ color: '#28a745' }).setLngLat(coords[0]).addTo(map);

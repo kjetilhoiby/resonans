@@ -170,6 +170,18 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 			</article>
 		</section>
 
+		<section class="credits-card" aria-label="Kreditering">
+			<h2>Kreditering</h2>
+			<p>
+				Kartdata fra
+				<a href="https://openfreemap.org" target="_blank" rel="noopener noreferrer">OpenFreeMap</a>
+				og
+				<a href="https://openmaptiles.org" target="_blank" rel="noopener noreferrer">OpenMapTiles</a>,
+				basert på
+				<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a>-bidragsytere.
+			</p>
+		</section>
+
 		<div class="actions">
 			<Button type="button" variant="ghost" onClick={() => showDebug = !showDebug}>
 				{showDebug ? '🐛 Skjul Debug' : '🐛 Vis Debug'}
@@ -267,6 +279,30 @@ Settings: {JSON.stringify(settings, null, 2)}</pre>
 		overflow-x: auto;
 		font-size: 0.875rem;
 		color: var(--success-text);
+	}
+
+	.credits-card {
+		background: #171717;
+		border-radius: 12px;
+		padding: 1rem;
+	}
+
+	.credits-card h2 {
+		margin: 0 0 0.45rem;
+		font-size: 1rem;
+		color: var(--text-primary);
+	}
+
+	.credits-card p {
+		margin: 0;
+		font-size: 0.85rem;
+		line-height: 1.5;
+		color: var(--text-secondary);
+	}
+
+	.credits-card a {
+		color: var(--accent-primary);
+		text-decoration: none;
 	}
 
 	.actions {
