@@ -65,7 +65,44 @@ ingenting når man logget en dag i ettertid. La til Open-Meteo som fallback:
 Open-Meteo er gratis, krever ingen API-nøkkel og kan kalles fra klienten som
 met.no. met.no beholdes som primærkilde for i dag/framover.
 
+### Fase 5: Kartfortelling med animert rute og bilde-nåler
+Reisedagboka kan nå vises som en kartfortelling: en animert linje fra sted til
+sted, én nål per dag (med oneliner + bilder i popup), pluss frie bilde-nåler.
+
+Datamodell (ingen migrasjon — alt i eksisterende JSONB):
+- `reflections.scores.geo = { lat, lon }`: dagboknotatets geokodede sted.
+- `tripProfile.imagePins[]`: `{ id, url, lat, lon, caption?, date? }` — bilder
+  plassert fritt på kartet.
+
+- `trip-api.ts`: `GeoCoord`, `ImagePin`, `geo` på `DiaryEntry`/`DiaryEntryInput`,
+  `imagePins` på `TripProfile`.
+- `diary/+server.ts`: lagrer/returnerer `geo` (validert). `trip/+server.ts`:
+  `imagePins` lagt til i felt-merge.
+- `TripDiary.svelte`: geokoder stedet ved lagring (`api.geocode`), fallback til
+  `geoByDay`, lagrer som `geo` på notatet.
+- `trip-map-story.ts` (ny, ren logikk): `buildDayPins` (dag-nåler fra notater +
+  geoByDay) og `partialPath` (interpolert rute for animasjon). Enhetstester i
+  `trip-map-story.test.ts`.
+- `TripMapStory.svelte` (ny): MapLibre + OpenFreeMap. Animert rutelinje
+  (requestAnimationFrame + `partialPath`), nummererte dag-nåler med popup,
+  bilde-nåler (klikk på kartet → last opp → lagres på `imagePins`), «Spill av».
+- `TripDashboard.svelte`: erstattet det gamle statiske inline-kartet med
+  `TripMapStory`. Bilde-nål-endringer synkes tilbake til `tripProfile`.
+
+## Beslutninger (kartfortelling)
+
+- **Erstattet inline-kartet** i TripDashboard fremfor å ha to kart. Det gamle
+  viste bare geoByDay-punkter med stiplet linje; kartfortellingen er en rikere
+  variant av samme idé (dagbok-drevet, animert, med bilder).
+- **Geokoding via `api.geocode`** (samme som destinasjonen bruker) for å holde
+  all nettverks-IO bak `TripApi` slik /design kan mocke den.
+- **Bilde-nåler på tripProfile, ikke per dag:** de er frie punkter uavhengig av
+  én dag, og hører naturlig til turen som helhet.
+
 ## Verifisering
 
 - `npm run check`: 0 feil, 0 advarsler.
-- `npm test`: 682 tester passerer (7 nye værtester).
+- `npm test`: 692 tester passerer (7 værtester + 10 kartfortelling-tester).
+- Kartfortellingen vises på reise-temaets data-fane (ikke blant de 5
+  piksel-diff-sidene), så visuelle baselines er uendret. Bør verifiseres
+  manuelt i appen / med `test:visual:review` ved behov.

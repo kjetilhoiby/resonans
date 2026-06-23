@@ -91,12 +91,30 @@
 		if (!content && !place && images.length === 0 && !existing) return;
 
 		savingDay = date;
+
+		// Geokod stedet for kartfortellingen. Bare når stedet er nytt/endret, ellers
+		// gjenbruk lagret koordinat. Fall tilbake til turens geo-kontekst (geoByDay).
+		let geo = existing?.geo;
+		if (place) {
+			if (place !== existing?.place || !geo) {
+				const g = await api.geocode(place);
+				if (g) geo = { lat: g.lat, lon: g.lon };
+			}
+		} else {
+			geo = undefined;
+		}
+		if (!geo) {
+			const gd = geoByDay[date];
+			if (gd?.lat != null && gd?.lon != null) geo = { lat: gd.lat, lon: gd.lon };
+		}
+
 		const ok = await api.putDiaryEntry(themeId, {
 			date,
 			content,
 			place: place || undefined,
 			weather: existing?.weather,
-			images
+			images,
+			geo
 		});
 		if (ok) {
 			const others = entries.filter((e) => e.date !== date);
@@ -109,7 +127,8 @@
 								content,
 								place: place || undefined,
 								weather: existing?.weather,
-								images: images.length > 0 ? images : undefined
+								images: images.length > 0 ? images : undefined,
+								geo
 							}
 						]
 					: others;

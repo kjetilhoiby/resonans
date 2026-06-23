@@ -16,6 +16,18 @@ interface DiaryWeather {
 	symbol?: string;
 }
 
+interface DiaryGeo {
+	lat: number;
+	lon: number;
+}
+
+function parseGeo(value: unknown): DiaryGeo | undefined {
+	if (!value || typeof value !== 'object') return undefined;
+	const g = value as Record<string, unknown>;
+	if (typeof g.lat === 'number' && typeof g.lon === 'number') return { lat: g.lat, lon: g.lon };
+	return undefined;
+}
+
 export const GET: RequestHandler = async ({ params, locals }) => {
 	const rows = await db.query.reflections.findMany({
 		where: and(
@@ -36,7 +48,8 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 			content: r.content,
 			place: typeof scores.place === 'string' ? scores.place : undefined,
 			weather: (scores.weather as DiaryWeather | undefined) ?? undefined,
-			images: images && images.length > 0 ? images : undefined
+			images: images && images.length > 0 ? images : undefined,
+			geo: parseGeo(scores.geo)
 		};
 	});
 
@@ -56,6 +69,7 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	const images = Array.isArray(body.images)
 		? (body.images as unknown[]).filter((u): u is string => typeof u === 'string')
 		: [];
+	const geo = parseGeo(body.geo);
 
 	const existing = await db.query.reflections.findFirst({
 		where: and(
@@ -79,6 +93,7 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	if (place) scores.place = place;
 	if (weather) scores.weather = weather;
 	if (images.length > 0) scores.images = images;
+	if (geo) scores.geo = geo;
 
 	if (existing) {
 		await db

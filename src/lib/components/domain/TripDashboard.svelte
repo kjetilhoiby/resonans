@@ -7,16 +7,16 @@
     onProfileSaved – callback etter lagring
 -->
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount } from 'svelte';
 	import TripDayCalendar from './TripDayCalendar.svelte';
 	import TripBudget from './TripBudget.svelte';
 	import TripHealthStats from './TripHealthStats.svelte';
 	import TripDiary from './TripDiary.svelte';
+	import TripMapStory from './TripMapStory.svelte';
 	import Icon from '../ui/Icon.svelte';
 	import DateInput from '$lib/components/ui/DateInput.svelte';
 	import SectionLabel from '../ui/SectionLabel.svelte';
 	import ShareSheet from './share/ShareSheet.svelte';
-	import type { Map as MapLibreMap } from 'maplibre-gl';
 	import {
 		tripApi,
 		type TripApi,
@@ -272,108 +272,11 @@
 		return Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
 	});
 
-	/* ── Kart (MapLibre + OpenFreeMap) ───────────── */
-	let mapContainer = $state<HTMLDivElement | null>(null);
-	let mapInstance: MapLibreMap | null = null;
-
-	// Reisepunkter fra geo-konteksten turen har akkumulert, sortert kronologisk.
-	const routePoints = $derived(
-		Object.entries(tripProfile?.geoByDay ?? {})
-			.filter(([, g]) => g && g.lat != null && g.lon != null)
-			.sort((a, b) => a[0].localeCompare(b[0]))
-			.map(([date, g]) => ({ date, lng: g.lon as number, lat: g.lat as number, place: g.place, source: g.source }))
-	);
-
-	const hasMap = $derived((tripProfile?.lat != null && tripProfile?.lng != null) || routePoints.length > 0);
-
-	// Markørfarge etter geo-kilde (samme semantikk som dagbok-merkene).
-	function geoColor(source: string): string {
-		return source === 'observed' ? '#4ade80' : source === 'declared' ? '#fbbf24' : '#94a3b8';
-	}
-
-	async function initMap() {
-		if (!mapContainer || typeof window === 'undefined') return;
-		// Lazy-load MapLibre to keep SSR safe
-		const { Map, Marker, LngLatBounds } = await import('maplibre-gl');
-		mapInstance?.remove();
-
-		const points = routePoints;
-		const centerLng = tripProfile?.lng ?? points[0]?.lng;
-		const centerLat = tripProfile?.lat ?? points[0]?.lat;
-		if (centerLng == null || centerLat == null) return;
-
-		mapInstance = new Map({
-			container: mapContainer,
-			style: 'https://tiles.openfreemap.org/styles/liberty',
-			center: [centerLng, centerLat],
-			zoom: points.length > 0 ? 6 : 10,
-			attributionControl: { compact: true }
-		});
-
-		// Destinasjonsmarkør (turens senter) når den er satt.
-		if (tripProfile?.lat != null && tripProfile?.lng != null) {
-			new Marker({ color: 'var(--tp-accent, #7c8ef5)' })
-				.setLngLat([tripProfile.lng, tripProfile.lat])
-				.addTo(mapInstance);
-		}
-
-		// Per-dag markører langs ruten, farget etter kilde.
-		for (const p of points) {
-			new Marker({ color: geoColor(p.source) }).setLngLat([p.lng, p.lat]).addTo(mapInstance);
-		}
-
-		// Rutelinje når vi har minst to punkter.
-		if (points.length >= 2) {
-			const coordinates = points.map((p) => [p.lng, p.lat]);
-			const draw = () => {
-				if (!mapInstance || mapInstance.getSource('trip-route')) return;
-				mapInstance.addSource('trip-route', {
-					type: 'geojson',
-					data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates } }
-				});
-				mapInstance.addLayer({
-					id: 'trip-route-line',
-					type: 'line',
-					source: 'trip-route',
-					layout: { 'line-cap': 'round', 'line-join': 'round' },
-					paint: { 'line-color': '#7c8ef5', 'line-width': 3, 'line-dasharray': [2, 1] }
-				});
-			};
-			if (mapInstance.isStyleLoaded()) draw();
-			else mapInstance.on('load', draw);
-		}
-
-		// Tilpass utsnittet til alle punkter.
-		const all: Array<[number, number]> = [
-			...(tripProfile?.lat != null && tripProfile?.lng != null
-				? [[tripProfile.lng, tripProfile.lat] as [number, number]]
-				: []),
-			...points.map((p) => [p.lng, p.lat] as [number, number])
-		];
-		if (all.length >= 2) {
-			const bounds = new LngLatBounds(all[0], all[0]);
-			for (const c of all) bounds.extend(c);
-			mapInstance.fitBounds(bounds, { padding: 48, maxZoom: 11 });
-		}
-	}
-
-	$effect(() => {
-		const n = routePoints.length;
-		const hasDest = tripProfile?.lat != null && tripProfile?.lng != null;
-		if (mapContainer && (hasDest || n > 0)) {
-			void initMap();
-		}
-	});
-
-	/* ── Mount / destroy ─────────────────────────── */
+	/* ── Mount ───────────────────────────────────── */
 	onMount(() => {
 		if (tripProfile?.lat != null && tripProfile?.lng != null) {
 			void fetchWeather(tripProfile.lat, tripProfile.lng);
 		}
-	});
-
-	onDestroy(() => {
-		mapInstance?.remove();
 	});
 
 	function fmtDate(iso: string): string {
@@ -473,18 +376,21 @@
 			{/if}
 		</div>
 
-		<!-- ── Kart / reiserute ── -->
-		{#if hasMap}
-			<div class="trip-map-wrap">
-				<div bind:this={mapContainer} class="trip-map"></div>
-				{#if routePoints.length > 0}
-					<div class="trip-route-legend">
-						<span class="legend-item"><span class="legend-dot" style="background:#4ade80"></span> spored</span>
-						<span class="legend-item"><span class="legend-dot" style="background:#fbbf24"></span> planlagt</span>
-					</div>
-				{/if}
-			</div>
-		{/if}
+		<!-- ── Kartfortelling ── -->
+		<div class="trip-map-story-section">
+			<TripMapStory
+				{themeId}
+				geoByDay={tripProfile?.geoByDay}
+				imagePins={tripProfile?.imagePins ?? []}
+				center={tripProfile?.lat != null && tripProfile?.lng != null
+					? { lat: tripProfile.lat, lon: tripProfile.lng }
+					: null}
+				onImagePinsChange={(p) => {
+					if (tripProfile) tripProfile = { ...tripProfile, imagePins: p };
+				}}
+				{api}
+			/>
+		</div>
 
 		<!-- ── Overnattinger ── -->
 		{#if (tripProfile?.overnightStays ?? []).length > 0}
@@ -1109,39 +1015,7 @@
 		margin: 0;
 	}
 
-	/* Kart / reiserute */
-	.trip-map-wrap {
-		position: relative;
-		margin: 12px 0;
-	}
-	.trip-map {
-		width: 100%;
-		height: 260px;
-		border-radius: 12px;
-		overflow: hidden;
-		border: 1px solid var(--trip-card-border, #1a1f2e);
-	}
-	.trip-route-legend {
-		position: absolute;
-		left: 8px;
-		bottom: 8px;
-		display: flex;
-		gap: 10px;
-		padding: 4px 8px;
-		border-radius: 999px;
-		background: rgba(15, 20, 25, 0.82);
-		font-size: 0.72rem;
-		color: var(--trip-text-secondary, #94a3b8);
-	}
-	.legend-item {
-		display: inline-flex;
-		align-items: center;
-		gap: 4px;
-	}
-	.legend-dot {
-		width: 8px;
-		height: 8px;
-		border-radius: 50%;
-		display: inline-block;
+	.trip-map-story-section {
+		margin: 4px 0;
 	}
 </style>

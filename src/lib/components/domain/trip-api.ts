@@ -31,6 +31,17 @@ export interface DayGeo {
 	liveSessionId?: string;
 }
 
+/** Et bilde plassert som nål på et fritt punkt i kartfortellingen. */
+export interface ImagePin {
+	id: string;
+	url: string;
+	lat: number;
+	lon: number;
+	caption?: string;
+	/** ISO-dato bildet hører til (valgfritt). */
+	date?: string;
+}
+
 export interface TripProfile {
 	destination?: string;
 	country?: string;
@@ -42,6 +53,8 @@ export interface TripProfile {
 	overnightStays?: OvernightStay[];
 	/** Geo-kontekst turen har akkumulert, per ISO-dato. Skrives av live-session-flyten. */
 	geoByDay?: Record<string, DayGeo>;
+	/** Bilder plassert som nåler på kartet (kartfortelling). */
+	imagePins?: ImagePin[];
 }
 
 /* ── Delte typer: ferieprofil ────────────────────────── */
@@ -318,12 +331,19 @@ export interface DiaryWeather {
 	symbol?: string;
 }
 
+/** Lagret koordinat for et dagboknotat (geokodet sted, for kartfortellingen). */
+export interface GeoCoord {
+	lat: number;
+	lon: number;
+}
+
 export interface DiaryEntry {
 	date: string;
 	content: string;
 	place?: string;
 	weather?: DiaryWeather;
 	images?: string[];
+	geo?: GeoCoord;
 }
 
 /** PUT på dagbok-endepunktet: kun {date} sletter notatet for dagen. */
@@ -333,6 +353,7 @@ export interface DiaryEntryInput {
 	place?: string;
 	weather?: DiaryWeather;
 	images?: string[];
+	geo?: GeoCoord;
 }
 
 export interface PromoteTripInput {
