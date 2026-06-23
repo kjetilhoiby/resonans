@@ -85,6 +85,28 @@
 	$effect(() => { days = generateDays(startDate, endDate); });
 	let loading = $state(true);
 
+	// ── Paginering: maks 5 dager i fortiden og 10 i fremtiden rundt i dag ──
+	const PAST_INITIAL = 5;
+	const FUTURE_INITIAL = 10;
+	let pastLimit = $state(PAST_INITIAL);
+	let futureLimit = $state(FUTURE_INITIAL);
+
+	const todayIso = new Date().toISOString().slice(0, 10);
+
+	const pastDays = $derived(days.filter((d) => d.isoDate < todayIso));
+	const futureDays = $derived(days.filter((d) => d.isoDate > todayIso));
+	const todayDay = $derived(days.find((d) => d.isoDate === todayIso) ?? null);
+
+	// Synlige dager: siste `pastLimit` fortid + i dag + første `futureLimit` fremtid.
+	const visibleDays = $derived.by(() => {
+		const past = pastDays.slice(Math.max(0, pastDays.length - pastLimit));
+		const future = futureDays.slice(0, futureLimit);
+		return [...past, ...(todayDay ? [todayDay] : []), ...future];
+	});
+
+	const hiddenPast = $derived(Math.max(0, pastDays.length - pastLimit));
+	const hiddenFuture = $derived(Math.max(0, futureDays.length - futureLimit));
+
 	// Per-day composer state
 	let composerText = $state<Record<string, string>>({});
 	let composerSaving = $state<Record<string, boolean>>({});
@@ -97,8 +119,6 @@
 	let editingText = $state('');
 	let expandedParentIds = $state<Set<string>>(new Set());
 	let composerInputEl = $state<HTMLInputElement | null>(null);
-
-	const todayIso = new Date().toISOString().slice(0, 10);
 
 	onMount(async () => {
 		const contexts = days.map((d) => d.dayContext);
@@ -266,7 +286,15 @@
 		<p class="tdc-loading">Laster dagsprogram…</p>
 	{:else}
 		<div class="tdc-days">
-			{#each days as day}
+			{#if hiddenPast > 0}
+				<button
+					type="button"
+					class="tdc-show-more"
+					data-track="ferie-dagsprogram:vis-tidligere"
+					onclick={() => { pastLimit += PAST_INITIAL; }}
+				>↑ Vis tidligere ({hiddenPast})</button>
+			{/if}
+			{#each visibleDays as day (day.isoDate)}
 				{@const isToday = day.isoDate === todayIso}
 				{@const itemCount = day.checklist?.items.length ?? 0}
 				{@const doneCount = day.checklist?.items.filter((i) => i.checked).length ?? 0}
@@ -367,6 +395,14 @@
 					{/if}
 				</div>
 			{/each}
+			{#if hiddenFuture > 0}
+				<button
+					type="button"
+					class="tdc-show-more"
+					data-track="ferie-dagsprogram:vis-senere"
+					onclick={() => { futureLimit += FUTURE_INITIAL; }}
+				>↓ Vis senere ({hiddenFuture})</button>
+			{/if}
 		</div>
 	{/if}
 </div>
@@ -530,5 +566,23 @@
 	.tdc-add-btn:disabled {
 		opacity: 0.4;
 		cursor: default;
+	}
+
+	.tdc-show-more {
+		align-self: center;
+		padding: 7px 18px;
+		font-size: 0.8rem;
+		font-weight: 500;
+		border-radius: 10px;
+		border: 1px solid var(--tp-border);
+		background: var(--tp-bg-1);
+		color: var(--tp-text-muted);
+		cursor: pointer;
+		transition: all 0.12s;
+	}
+
+	.tdc-show-more:hover {
+		color: var(--tp-text);
+		border-color: var(--tp-border-strong);
 	}
 </style>
