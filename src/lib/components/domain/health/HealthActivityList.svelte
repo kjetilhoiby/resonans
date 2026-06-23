@@ -317,7 +317,7 @@
 								{#if mapLoading && mapEventId === trackEventId}
 									<div class="hd-map-loading">Laster kart…</div>
 								{:else if showMapData}
-									<GpxMap points={mapPoints} height={220} />
+									<GpxMap points={mapPoints} height={280} />
 								{/if}
 							</div>
 
@@ -510,7 +510,8 @@
 	}
 
 	.hd-activity-details {
-		padding: 6px 8px 12px 52px;
+		/* Minimalt innrykk slik at kart, grafer og tall fyller nesten hele bredden */
+		padding: 6px 2px 14px;
 		display: flex;
 		flex-direction: column;
 		gap: 14px;
@@ -634,7 +635,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		height: 220px;
+		height: 280px;
 		color: #555;
 		font-size: 0.85rem;
 		background: #0d1117;
