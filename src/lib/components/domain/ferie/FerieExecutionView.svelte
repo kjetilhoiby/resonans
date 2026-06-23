@@ -15,6 +15,7 @@
 	import { onMount } from 'svelte';
 	import { buildPeriods } from '$lib/utils/weather';
 	import DateInput from '$lib/components/ui/DateInput.svelte';
+	import DiaryImages from '../DiaryImages.svelte';
 	import TripDayCalendar from '../TripDayCalendar.svelte';
 	import TripHealthStats from '../TripHealthStats.svelte';
 	import TripBudget from '../TripBudget.svelte';
@@ -86,6 +87,7 @@
 	let diaryPlace = $state('');
 	let diaryText = $state('');
 	let diaryWeather = $state<DiaryWeather | null>(null);
+	let diaryImages = $state<string[]>([]);
 	let diarySaving = $state(false);
 	let diaryFetchingWx = $state(false);
 	let diaryError = $state('');
@@ -102,9 +104,11 @@
 			diaryText = existing.content;
 			diaryPlace = existing.place ?? '';
 			diaryWeather = existing.weather ?? null;
+			diaryImages = existing.images ?? [];
 		} else {
 			diaryText = '';
 			diaryWeather = null;
+			diaryImages = [];
 			const trip = tripForDate(date);
 			diaryPlace = trip?.place ?? trip?.label ?? '';
 		}
@@ -137,18 +141,23 @@
 				diaryError = 'Fant ikke stedet.';
 				return;
 			}
+			// 1) met.no-varsel for i dag/framover.
 			const ts = await api.getMetForecast(geo.lat, geo.lon);
-			if (!ts) {
-				diaryError = 'Fikk ikke værdata.';
-				return;
+			if (ts) {
+				const periods = buildPeriods(diaryDate, ts);
+				const usable = periods.find((p) => p.key === 'middag' && p.emoji !== '—' && p.emoji !== '')
+					?? periods.find((p) => p.emoji !== '—' && p.emoji !== '');
+				if (usable) {
+					diaryWeather = { emoji: usable.emoji, temp: usable.temp };
+					return;
+				}
 			}
-			const periods = buildPeriods(diaryDate, ts);
-			const usable = periods.find((p) => p.key === 'middag' && p.emoji !== '—' && p.emoji !== '')
-				?? periods.find((p) => p.emoji !== '—' && p.emoji !== '');
-			if (usable) {
-				diaryWeather = { emoji: usable.emoji, temp: usable.temp };
+			// 2) Fallback: observert vær fra Open-Meteo når varselet er utløpt (passert dag).
+			const hist = await api.getHistoricalWeather(geo.lat, geo.lon, diaryDate);
+			if (hist) {
+				diaryWeather = hist;
 			} else {
-				diaryError = 'Ingen værvarsel for denne datoen (met.no gir kun ~9 dager fram).';
+				diaryError = 'Fant ikke værdata for denne datoen.';
 			}
 		} catch {
 			diaryError = 'Klarte ikke hente vær.';
@@ -166,7 +175,8 @@
 				date: diaryDate,
 				content: diaryText,
 				place: diaryPlace,
-				weather: diaryWeather ?? undefined
+				weather: diaryWeather ?? undefined,
+				images: diaryImages
 			});
 			if (!ok) throw new Error('save failed');
 			await loadDiary();
@@ -182,6 +192,7 @@
 		diaryText = e.content;
 		diaryPlace = e.place ?? '';
 		diaryWeather = e.weather ?? null;
+		diaryImages = e.images ?? [];
 		diaryError = '';
 	}
 
@@ -282,6 +293,7 @@
 			{/if}
 		</div>
 		<textarea class="diary-text" rows="2" placeholder="Én setning om dagen…" bind:value={diaryText}></textarea>
+		<DiaryImages bind:images={diaryImages} track="ferie-dagbok" />
 		<div class="diary-actions">
 			<button type="button" class="ferie-btn ferie-btn-primary" disabled={diarySaving} onclick={saveDiaryEntry}>
 				{diarySaving ? 'Lagrer…' : 'Lagre dag'}
@@ -301,6 +313,13 @@
 							{#if e.place}<span class="diary-entry-place">📍 {e.place}</span>{/if}
 						</span>
 						<span class="diary-entry-text">{e.content}</span>
+						{#if e.images && e.images.length > 0}
+							<span class="diary-entry-thumbs">
+								{#each e.images as img (img)}
+									<img src={img} alt="Dagbokbilde" loading="lazy" />
+								{/each}
+							</span>
+						{/if}
 					</button>
 					<button type="button" class="trip-remove" title="Slett" onclick={() => deleteDiaryEntry(e.date)}>×</button>
 				</li>
@@ -488,6 +507,19 @@
 	}
 	.diary-entry-text {
 		font-size: 0.9rem;
+	}
+	.diary-entry-thumbs {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.3rem;
+		margin-top: 0.2rem;
+	}
+	.diary-entry-thumbs img {
+		width: 48px;
+		height: 48px;
+		object-fit: cover;
+		border-radius: 6px;
+		border: 1px solid var(--tp-border);
 	}
 
 	/* Delt knappestil */
