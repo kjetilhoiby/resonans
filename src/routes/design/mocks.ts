@@ -720,6 +720,7 @@ export const mockTripApi: TripApi = {
 	getMetForecast: async () => null,
 	getHistoricalWeather: async () => null,
 	getLiveSession: async () => null,
+	getTripProfile: async () => null,
 	saveTripProfile: async () => true,
 	getTransactions: async () => ({
 		totalSpent: 4835,

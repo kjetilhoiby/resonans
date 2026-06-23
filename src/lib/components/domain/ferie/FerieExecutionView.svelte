@@ -19,6 +19,7 @@
 	import TripDayCalendar from '../TripDayCalendar.svelte';
 	import TripHealthStats from '../TripHealthStats.svelte';
 	import TripBudget from '../TripBudget.svelte';
+	import TripMapStory from '../TripMapStory.svelte';
 	import ActionPillRow from '../home/ActionPillRow.svelte';
 	import type { ActionPillItem } from '../home/action-pill-types';
 	import {
@@ -26,7 +27,9 @@
 		type TripApi,
 		type FerieTrip,
 		type DiaryWeather,
-		type DiaryEntry
+		type DiaryEntry,
+		type DayGeo,
+		type ImagePin
 	} from '../trip-api';
 
 	interface DayEntry {
@@ -86,6 +89,11 @@
 			return iso;
 		}
 	}
+
+	/* ── Kartfortelling-tilstand ───────────────────────── */
+	let tripGeoByDay = $state<Record<string, DayGeo>>({});
+	let tripImagePins = $state<ImagePin[]>([]);
+	let mapSection = $state<HTMLElement | null>(null);
 
 	/* ── Dagbok-tilstand ───────────────────────────────── */
 	let diaryEntries = $state<DiaryEntry[]>([]);
@@ -178,12 +186,26 @@
 		diarySaving = true;
 		diaryError = '';
 		try {
+			// Geokod stedet for kartfortellingen (bare når det er nytt/endret).
+			const existing = diaryEntries.find((e) => e.date === diaryDate);
+			const place = diaryPlace.trim();
+			let geo = existing?.geo;
+			if (place) {
+				if (place !== existing?.place || !geo) {
+					const g = await api.geocode(place);
+					if (g) geo = { lat: g.lat, lon: g.lon };
+				}
+			} else {
+				geo = undefined;
+			}
+
 			const ok = await api.putDiaryEntry(themeId, {
 				date: diaryDate,
 				content: diaryText,
 				place: diaryPlace,
 				weather: diaryWeather ?? undefined,
-				images: diaryImages
+				images: diaryImages,
+				geo
 			});
 			if (!ok) throw new Error('save failed');
 			await loadDiary();
@@ -245,18 +267,31 @@
 
 	const TASK_ICON: Record<FerieTask['kind'], string> = { diary: '✍️', trip: '🧳', gap: '⚠️' };
 
-	// Oppgaver som pills for hurtigvalgstripa. Gap-pillen kan avvises.
-	const taskPills = $derived<ActionPillItem[]>(
-		ferieTasks.map((t) => ({
+	const MAP_PILL_ID = 'map-story';
+
+	// Kartfortellingen har innhold når minst én dag er stedfestet eller det finnes bilde-nåler.
+	const hasMapContent = $derived(diaryEntries.some((e) => e.geo) || tripImagePins.length > 0);
+
+	// Oppgaver som pills for hurtigvalgstripa. Gap-pillen kan avvises; en
+	// kartfortelling-inngang legges sist når det finnes noe å vise.
+	const taskPills = $derived<ActionPillItem[]>([
+		...ferieTasks.map((t) => ({
 			id: t.id,
 			icon: TASK_ICON[t.kind],
 			label: t.label,
 			done: false,
 			dismissable: t.kind === 'gap'
-		}))
-	);
+		})),
+		...(hasMapContent
+			? [{ id: MAP_PILL_ID, icon: '🗺️', label: 'Kartfortelling', done: false }]
+			: [])
+	]);
 
-	function doTaskById(id: string) {
+	function onPillClick(id: string) {
+		if (id === MAP_PILL_ID) {
+			mapSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+			return;
+		}
 		const t = ferieTasks.find((task) => task.id === id);
 		if (!t) return;
 		if (t.kind === 'diary' && t.date) {
@@ -269,6 +304,18 @@
 		}
 	}
 
+	async function loadMapData() {
+		try {
+			const profile = await api.getTripProfile(themeId);
+			if (profile) {
+				tripGeoByDay = profile.geoByDay ?? {};
+				tripImagePins = profile.imagePins ?? [];
+			}
+		} catch {
+			// best-effort — kartfortellingen klarer seg uten reiseprofil
+		}
+	}
+
 	/* ── Lifecycle ─────────────────────────────────────── */
 	onMount(() => {
 		void loadDiary().then(() => {
@@ -277,6 +324,7 @@
 				loadFormForDate(diaryDate);
 			}
 		});
+		void loadMapData();
 	});
 </script>
 
@@ -286,7 +334,7 @@
 		<ActionPillRow
 			items={taskPills}
 			ariaLabel="Ferieoppgaver"
-			onItemClick={(item) => doTaskById(item.id)}
+			onItemClick={(item) => onPillClick(item.id)}
 			onItemDismiss={() => onDismissGap?.()}
 		/>
 	</section>
@@ -351,6 +399,16 @@
 		<p class="trips-empty">Ingen dagboknotater ennå. Velg en dag, skriv én setning, og hent gjerne været.</p>
 	{/if}
 </section>
+
+<div class="ferie-map-story" bind:this={mapSection}>
+	<TripMapStory
+		{themeId}
+		geoByDay={tripGeoByDay}
+		imagePins={tripImagePins}
+		onImagePinsChange={(p) => (tripImagePins = p)}
+		{api}
+	/>
+</div>
 
 <section class="ferie-dash">
 	<h3>Dag-for-dag</h3>
@@ -557,6 +615,15 @@
 		background: var(--tp-bg-2);
 		border: 1px solid var(--tp-border);
 		border-radius: 12px;
+	}
+	/* Kartfortelling: kort-ramme som de andre seksjonene, men TripMapStory eier
+	   sin egen indre padding (topp/sider), så her trengs bare bunn-padding. */
+	.ferie-map-story {
+		background: var(--tp-bg-2);
+		border: 1px solid var(--tp-border);
+		border-radius: 12px;
+		padding-bottom: 0.85rem;
+		scroll-margin-top: 12px;
 	}
 	.ferie-dash h3 {
 		margin: 0 0 0.6rem;

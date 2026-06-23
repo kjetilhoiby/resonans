@@ -34,6 +34,18 @@ til å avvise påminnelsen om udekkede barn-dager.
 - Gap-påminnelsen vises kun når `gapCount > 0 && gapCount !== gapAckCount` — så
   den dukker opp igjen hvis antallet udekkede dager endrer seg.
 
+### Fase 4: Kartfortelling-inngang i stripa
+Ferie-visningen fikk sin egen kartfortelling (samme `TripMapStory` som
+reise-temaet), matet av feriedagbokas steder, med en inngang fra stripa:
+- `FerieExecutionView.saveDiaryEntry`: geokoder stedet ved lagring og lagrer
+  `geo` på notatet (som `TripDiary` allerede gjorde) — slik får feriedagene
+  kart-nåler.
+- `TripApi.getTripProfile` (ny): henter reiseprofilen, brukt til å laste
+  bilde-nåler (`imagePins`) og `geoByDay` inn i ferie-kartet.
+- `FerieExecutionView`: monterer `TripMapStory`, og legger en «🗺️
+  Kartfortelling»-pill sist i oppgavestripa når det finnes stedfestede dager
+  eller bilde-nåler. Pillen scroller til kartet.
+
 ## Beslutninger
 
 - **Utvidet `ActionPillRow` additivt** i stedet for å duplisere pill-stilen, slik
