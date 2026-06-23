@@ -5,7 +5,8 @@ import { reflections } from '$lib/db/schema';
 import { and, asc, desc, eq } from 'drizzle-orm';
 
 // Feriedagbok: én notat per dag per ferie-tema, lagret i reflections med
-// kind='feriedagbok', periodKey=ISO-dato. Sted + vær-snapshot ligger i scores-jsonb.
+// kind='feriedagbok', periodKey=ISO-dato. Sted, vær-snapshot og bilde-URLer
+// ligger i scores-jsonb.
 
 const KIND = 'feriedagbok';
 
@@ -27,11 +28,15 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 
 	const entries = rows.map((r) => {
 		const scores = (r.scores ?? {}) as Record<string, unknown>;
+		const images = Array.isArray(scores.images)
+			? (scores.images as unknown[]).filter((u): u is string => typeof u === 'string')
+			: undefined;
 		return {
 			date: r.periodKey,
 			content: r.content,
 			place: typeof scores.place === 'string' ? scores.place : undefined,
-			weather: (scores.weather as DiaryWeather | undefined) ?? undefined
+			weather: (scores.weather as DiaryWeather | undefined) ?? undefined,
+			images: images && images.length > 0 ? images : undefined
 		};
 	});
 
@@ -48,6 +53,9 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	const content = typeof body.content === 'string' ? body.content.trim() : '';
 	const place = typeof body.place === 'string' ? body.place.trim() : '';
 	const weather = body.weather && typeof body.weather === 'object' ? (body.weather as DiaryWeather) : undefined;
+	const images = Array.isArray(body.images)
+		? (body.images as unknown[]).filter((u): u is string => typeof u === 'string')
+		: [];
 
 	const existing = await db.query.reflections.findFirst({
 		where: and(
@@ -59,8 +67,8 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		orderBy: [desc(reflections.createdAt)]
 	});
 
-	// Tomt notat uten sted/vær = slett dagen.
-	if (!content && !place && !weather) {
+	// Tomt notat uten sted/vær/bilder = slett dagen.
+	if (!content && !place && !weather && images.length === 0) {
 		if (existing) {
 			await db.delete(reflections).where(eq(reflections.id, existing.id));
 		}
@@ -70,6 +78,7 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	const scores: Record<string, unknown> = {};
 	if (place) scores.place = place;
 	if (weather) scores.weather = weather;
+	if (images.length > 0) scores.images = images;
 
 	if (existing) {
 		await db

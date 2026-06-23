@@ -323,6 +323,7 @@ export interface DiaryEntry {
 	content: string;
 	place?: string;
 	weather?: DiaryWeather;
+	images?: string[];
 }
 
 /** PUT på dagbok-endepunktet: kun {date} sletter notatet for dagen. */
@@ -331,6 +332,7 @@ export interface DiaryEntryInput {
 	content?: string;
 	place?: string;
 	weather?: DiaryWeather;
+	images?: string[];
 }
 
 export interface PromoteTripInput {

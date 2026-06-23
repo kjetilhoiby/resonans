@@ -9,6 +9,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import SectionLabel from '../ui/SectionLabel.svelte';
+	import DiaryImages from './DiaryImages.svelte';
 	import { tripApi, type TripApi, type DiaryEntry, type DayGeo } from './trip-api';
 
 	interface Props {
@@ -23,7 +24,7 @@
 
 	let entries = $state<DiaryEntry[]>([]);
 	let loading = $state(true);
-	let drafts = $state<Record<string, { place: string; content: string }>>({});
+	let drafts = $state<Record<string, { place: string; content: string; images: string[] }>>({});
 	let savingDay = $state<string | null>(null);
 
 	function enumerateDays(from: string, to: string): string[] {
@@ -55,7 +56,8 @@
 			const e = entryFor(date);
 			next[date] = {
 				place: e?.place ?? geoByDay[date]?.place ?? '',
-				content: e?.content ?? ''
+				content: e?.content ?? '',
+				images: e?.images ?? []
 			};
 		}
 		drafts = next;
@@ -83,22 +85,33 @@
 		if (!d) return;
 		const content = d.content.trim();
 		const place = d.place.trim();
+		const images = d.images ?? [];
 		const existing = entryFor(date);
 		// Ingen endring verdt å lagre, og ingenting fra før → hopp over.
-		if (!content && !place && !existing) return;
+		if (!content && !place && images.length === 0 && !existing) return;
 
 		savingDay = date;
 		const ok = await api.putDiaryEntry(themeId, {
 			date,
 			content,
 			place: place || undefined,
-			weather: existing?.weather
+			weather: existing?.weather,
+			images
 		});
 		if (ok) {
 			const others = entries.filter((e) => e.date !== date);
 			entries =
-				content || place
-					? [...others, { date, content, place: place || undefined, weather: existing?.weather }]
+				content || place || images.length > 0
+					? [
+							...others,
+							{
+								date,
+								content,
+								place: place || undefined,
+								weather: existing?.weather,
+								images: images.length > 0 ? images : undefined
+							}
+						]
 					: others;
 		}
 		savingDay = null;
@@ -150,6 +163,13 @@
 					onblur={() => saveDay(date)}
 					data-track="reise-dagbok:notat"
 				></textarea>
+				<div class="diary-images-row">
+					<DiaryImages
+						bind:images={drafts[date].images}
+						onChange={() => saveDay(date)}
+						track="reise-dagbok"
+					/>
+				</div>
 			</div>
 		{/each}
 	{/if}
@@ -249,5 +269,9 @@
 	.diary-text:focus {
 		outline: none;
 		border-color: var(--tp-accent);
+	}
+
+	.diary-images-row {
+		margin-top: 0.5rem;
 	}
 </style>
