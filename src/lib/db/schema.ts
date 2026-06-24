@@ -326,17 +326,30 @@ export const themeFiles = pgTable('theme_files', {
 }));
 
 // Kapplister — materialkalkulator knyttet til et prosjekt (tema).
-// Hver kappliste eier rader med {dimensjon, lengde, antall, meterpris} i en JSONB-array.
-// Beregning (antall fjøler + kostnad) gjøres i $lib/kappliste/calc.ts, ikke i DB.
+// Hver kappliste eier en JSONB-array med MATERIALER. Et materiale er enten en
+// lengdevare (lekt/bjelke, meterpris) eller en plate (plate-pris), og har ett
+// eller flere kapp. Beregning (antall lekter/plater + kostnad) gjøres i
+// $lib/kappliste/calc.ts, ikke i DB.
 export const cutLists = pgTable('cut_lists', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
 	themeId: uuid('theme_id').references(() => themes.id, { onDelete: 'cascade' }).notNull(),
 	title: text('title').notNull().default('Kappliste'),
-	boardLengthCm: integer('board_length_cm').notNull().default(390), // standard fjøllengde
-	kerfMm: integer('kerf_mm').notNull().default(0), // sagsnitt mellom biter
-	rows: jsonb('rows')
-		.$type<Array<{ id: string; dimension: string; lengthCm: number; quantity: number; meterPriceNok: number }>>()
+	kerfMm: integer('kerf_mm').notNull().default(0), // sagsnitt mellom kapp
+	materials: jsonb('materials')
+		.$type<
+			Array<{
+				id: string;
+				name: string;
+				kind: 'linear' | 'sheet';
+				stockLengthMm?: number;
+				pricePerMeterNok?: number;
+				stockWidthMm?: number;
+				stockHeightMm?: number;
+				pricePerSheetNok?: number;
+				cuts: Array<{ id: string; lengthMm?: number; widthMm?: number; heightMm?: number; quantity: number }>;
+			}>
+		>()
 		.notNull()
 		.default([]),
 	sortOrder: integer('sort_order').notNull().default(0),

@@ -4,7 +4,7 @@ import { and, desc, eq, gte } from 'drizzle-orm';
 import { getRecentReflections } from '$lib/server/reflections';
 import { DreamService } from '$lib/server/services/dream-service';
 import { touchMemory } from '$lib/server/memories';
-import { computeCutList, formatNok, formatMeters } from '$lib/kappliste/calc';
+import { computeCutList, formatNok } from '$lib/kappliste/calc';
 
 interface BuildContextArgs {
 	userId: string;
@@ -61,24 +61,21 @@ export class ContextService {
 			where: and(eq(cutLists.themeId, themeId), eq(cutLists.userId, userId)),
 			orderBy: [desc(cutLists.createdAt)]
 		});
-		const withRows = lists.filter((l) => (l.rows ?? []).length > 0);
-		if (withRows.length === 0) return '';
+		const withMaterials = lists.filter((l) => (l.materials ?? []).length > 0);
+		if (withMaterials.length === 0) return '';
 
 		let out = '\n--- KAPPLISTER I PROSJEKTET (materialberegning) ---\n';
-		for (const list of withRows) {
-			const res = computeCutList(list.rows ?? [], list.boardLengthCm, list.kerfMm);
-			out += `\n${list.title} (fjøllengde ${formatMeters(res.boardLengthCm)}):\n`;
-			for (const row of list.rows ?? []) {
-				out += `  - ${row.dimension}: ${row.quantity} × ${row.lengthCm} cm @ ${row.meterPriceNok} kr/m\n`;
-			}
-			for (const dim of res.dimensions) {
-				if (dim.tooLong.length > 0) {
-					out += `  → ${dim.dimension}: biter på ${dim.tooLong.join(', ')} cm er lengre enn fjølen\n`;
+		for (const list of withMaterials) {
+			const res = computeCutList(list.materials ?? [], list.kerfMm);
+			out += `\n${list.title}:\n`;
+			for (const mat of res.materials) {
+				if (mat.tooBig.length > 0) {
+					out += `  → ${mat.name || mat.unitLabel}: kapp ${mat.tooBig.join(', ')} er for store for ${mat.stockLabel}\n`;
 				} else {
-					out += `  → ${dim.dimension}: ${dim.boardsNeeded} fjøl(er), ${formatNok(dim.costNok)}\n`;
+					out += `  → ${mat.name || mat.unitLabel}: ${mat.stockNeeded} × ${mat.unitLabel} (${mat.stockLabel}), ${formatNok(mat.costNok)}\n`;
 				}
 			}
-			if (!res.hasErrors) out += `  → Totalt: ${res.totalBoards} fjøler, ${formatNok(res.totalCostNok)}\n`;
+			if (!res.hasErrors) out += `  → Totalt: ${formatNok(res.totalCostNok)}\n`;
 		}
 		out += '--- SLUTT PÅ KAPPLISTER ---\n';
 		return out;

@@ -4,15 +4,14 @@ import { db } from '$lib/db';
 import { cutLists } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { requireTheme } from '$lib/server/project-tasks';
-import { sanitizeRows } from '$lib/kappliste/rows';
+import { sanitizeMaterials } from '$lib/kappliste/rows';
 
 function mapCutList(row: typeof cutLists.$inferSelect) {
 	return {
 		id: row.id,
 		title: row.title,
-		boardLengthCm: row.boardLengthCm,
 		kerfMm: row.kerfMm,
-		rows: row.rows ?? [],
+		materials: row.materials ?? [],
 		sortOrder: row.sortOrder,
 		updatedAt: row.updatedAt.toISOString()
 	};
@@ -31,10 +30,9 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 	const update: Partial<typeof cutLists.$inferInsert> = { updatedAt: new Date() };
 
 	if (typeof body?.title === 'string' && body.title.trim()) update.title = body.title.trim().slice(0, 80);
-	if (Number.isFinite(body?.boardLengthCm) && body.boardLengthCm > 0) update.boardLengthCm = Math.round(body.boardLengthCm);
 	if (Number.isFinite(body?.kerfMm) && body.kerfMm >= 0) update.kerfMm = Math.round(body.kerfMm);
 	if (Number.isInteger(body?.sortOrder)) update.sortOrder = body.sortOrder;
-	if ('rows' in (body ?? {})) update.rows = sanitizeRows(body.rows);
+	if ('materials' in (body ?? {})) update.materials = sanitizeMaterials(body.materials);
 
 	const [updated] = await db
 		.update(cutLists)

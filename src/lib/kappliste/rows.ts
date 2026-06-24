@@ -1,26 +1,50 @@
-// Server-side validering/normalisering av kappliste-rader fra klient-input.
-import type { CutListRow } from './calc';
+// Server-side validering/normalisering av kappliste-materialer fra klient-input.
+import type { Material, CutSpec } from './calc';
 
 function toFiniteNumber(value: unknown, fallback = 0): number {
 	const n = typeof value === 'string' ? Number(value.replace(',', '.')) : Number(value);
 	return Number.isFinite(n) ? n : fallback;
 }
 
-/** Rens en ukjent klient-payload til en trygg liste med kappliste-rader. */
-export function sanitizeRows(input: unknown): CutListRow[] {
+function sanitizeCut(raw: unknown): CutSpec | null {
+	if (!raw || typeof raw !== 'object') return null;
+	const c = raw as Record<string, unknown>;
+	const cut: CutSpec = {
+		id: typeof c.id === 'string' && c.id ? c.id : crypto.randomUUID(),
+		quantity: Math.max(0, Math.round(toFiniteNumber(c.quantity)))
+	};
+	if ('lengthMm' in c) cut.lengthMm = Math.max(0, Math.round(toFiniteNumber(c.lengthMm)));
+	if ('widthMm' in c) cut.widthMm = Math.max(0, Math.round(toFiniteNumber(c.widthMm)));
+	if ('heightMm' in c) cut.heightMm = Math.max(0, Math.round(toFiniteNumber(c.heightMm)));
+	return cut;
+}
+
+/** Rens en ukjent klient-payload til en trygg liste med materialer. */
+export function sanitizeMaterials(input: unknown): Material[] {
 	if (!Array.isArray(input)) return [];
-	const rows: CutListRow[] = [];
+	const materials: Material[] = [];
 	for (const raw of input) {
 		if (!raw || typeof raw !== 'object') continue;
-		const r = raw as Record<string, unknown>;
-		const dimension = typeof r.dimension === 'string' ? r.dimension.slice(0, 40) : '';
-		rows.push({
-			id: typeof r.id === 'string' && r.id ? r.id : crypto.randomUUID(),
-			dimension,
-			lengthCm: Math.max(0, Math.round(toFiniteNumber(r.lengthCm))),
-			quantity: Math.max(0, Math.round(toFiniteNumber(r.quantity))),
-			meterPriceNok: Math.max(0, toFiniteNumber(r.meterPriceNok))
-		});
+		const m = raw as Record<string, unknown>;
+		const kind = m.kind === 'sheet' ? 'sheet' : 'linear';
+		const cuts = Array.isArray(m.cuts)
+			? (m.cuts.map(sanitizeCut).filter(Boolean) as CutSpec[]).slice(0, 100)
+			: [];
+		const material: Material = {
+			id: typeof m.id === 'string' && m.id ? m.id : crypto.randomUUID(),
+			name: typeof m.name === 'string' ? m.name.slice(0, 80) : '',
+			kind,
+			cuts
+		};
+		if (kind === 'linear') {
+			material.stockLengthMm = Math.max(0, Math.round(toFiniteNumber(m.stockLengthMm, 3900)));
+			material.pricePerMeterNok = Math.max(0, toFiniteNumber(m.pricePerMeterNok));
+		} else {
+			material.stockWidthMm = Math.max(0, Math.round(toFiniteNumber(m.stockWidthMm, 2440)));
+			material.stockHeightMm = Math.max(0, Math.round(toFiniteNumber(m.stockHeightMm, 1220)));
+			material.pricePerSheetNok = Math.max(0, toFiniteNumber(m.pricePerSheetNok));
+		}
+		materials.push(material);
 	}
-	return rows.slice(0, 100);
+	return materials.slice(0, 50);
 }

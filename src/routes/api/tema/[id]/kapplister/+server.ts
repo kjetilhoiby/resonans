@@ -4,15 +4,14 @@ import { db } from '$lib/db';
 import { cutLists } from '$lib/db/schema';
 import { and, eq, asc, sql } from 'drizzle-orm';
 import { requireTheme } from '$lib/server/project-tasks';
-import { sanitizeRows } from '$lib/kappliste/rows';
+import { sanitizeMaterials } from '$lib/kappliste/rows';
 
 function mapCutList(row: typeof cutLists.$inferSelect) {
 	return {
 		id: row.id,
 		title: row.title,
-		boardLengthCm: row.boardLengthCm,
 		kerfMm: row.kerfMm,
-		rows: row.rows ?? [],
+		materials: row.materials ?? [],
 		sortOrder: row.sortOrder,
 		updatedAt: row.updatedAt.toISOString()
 	};
@@ -37,9 +36,8 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 
 	const body = await request.json().catch(() => null);
 	const title = typeof body?.title === 'string' && body.title.trim() ? body.title.trim().slice(0, 80) : 'Kappliste';
-	const boardLengthCm = Number.isFinite(body?.boardLengthCm) && body.boardLengthCm > 0 ? Math.round(body.boardLengthCm) : 390;
 	const kerfMm = Number.isFinite(body?.kerfMm) && body.kerfMm >= 0 ? Math.round(body.kerfMm) : 0;
-	const rows = sanitizeRows(body?.rows);
+	const materials = sanitizeMaterials(body?.materials);
 
 	const [{ maxOrder }] = await db
 		.select({ maxOrder: sql<number>`coalesce(max(${cutLists.sortOrder}), -1)` })
@@ -48,7 +46,7 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 
 	const [created] = await db
 		.insert(cutLists)
-		.values({ userId, themeId: params.id, title, boardLengthCm, kerfMm, rows, sortOrder: (maxOrder ?? -1) + 1 })
+		.values({ userId, themeId: params.id, title, kerfMm, materials, sortOrder: (maxOrder ?? -1) + 1 })
 		.returning();
 
 	return json({ cutList: mapCutList(created) });

@@ -170,9 +170,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		cutLists: cutListsRaw.map((c) => ({
 			id: c.id,
 			title: c.title,
-			boardLengthCm: c.boardLengthCm,
 			kerfMm: c.kerfMm,
-			rows: c.rows ?? [],
+			materials: c.materials ?? [],
 			sortOrder: c.sortOrder,
 			updatedAt: c.updatedAt.toISOString()
 		})),

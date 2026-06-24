@@ -1,18 +1,24 @@
 <!--
   ThemeKapplisteTab — Kapplister-fanen i ThemePage (prosjekt-undertema).
-  Lar deg lage materiallister: dimensjon, ønskede lengder, antall og meterpris.
-  Regner ut hvor mange hele fjøler du må kjøpe (optimal kapping) og hva det koster.
+  Hver kappliste har materialer (lengdevarer eller plater). Et materiale har ett
+  eller flere kapp. Resonans regner ut hvor mange hele lekter/bjelker eller plater
+  du må kjøpe (smart kapping) og hva det koster — for å scope prosjektet.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { computeCutList, formatNok, formatMeters, type CutListRow } from '$lib/kappliste/calc';
+	import {
+		computeMaterial,
+		computeCutList,
+		formatNok,
+		type Material,
+		type CutSpec
+	} from '$lib/kappliste/calc';
 
 	interface CutList {
 		id: string;
 		title: string;
-		boardLengthCm: number;
 		kerfMm: number;
-		rows: CutListRow[];
+		materials: Material[];
 		sortOrder: number;
 		updatedAt: string;
 	}
@@ -47,10 +53,6 @@
 		return Number.isFinite(n) ? n : 0;
 	}
 
-	function result(list: CutList) {
-		return computeCutList(list.rows, list.boardLengthCm, list.kerfMm);
-	}
-
 	/* ── Lagring (debounce per liste) ───────────────────── */
 	function scheduleSave(id: string) {
 		const existing = saveTimers.get(id);
@@ -72,12 +74,7 @@
 			await fetch(`/api/tema/${themeId}/kapplister/${id}`, {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					title: list.title,
-					boardLengthCm: list.boardLengthCm,
-					kerfMm: list.kerfMm,
-					rows: list.rows
-				})
+				body: JSON.stringify({ title: list.title, kerfMm: list.kerfMm, materials: list.materials })
 			});
 		} finally {
 			const next = new Set(savingIds);
@@ -86,37 +83,68 @@
 		}
 	}
 
+	/* ── Mutasjoner ─────────────────────────────────────── */
 	function patchList(id: string, patch: Partial<CutList>) {
 		lists = lists.map((l) => (l.id === id ? { ...l, ...patch } : l));
 		scheduleSave(id);
 	}
 
-	/* ── Rader ──────────────────────────────────────────── */
-	function patchRow(listId: string, rowId: string, patch: Partial<CutListRow>) {
-		lists = lists.map((l) =>
-			l.id === listId ? { ...l, rows: l.rows.map((r) => (r.id === rowId ? { ...r, ...patch } : r)) } : l
+	function updateMaterials(listId: string, fn: (materials: Material[]) => Material[]) {
+		lists = lists.map((l) => (l.id === listId ? { ...l, materials: fn(l.materials) } : l));
+		scheduleSave(listId);
+	}
+
+	function patchMaterial(listId: string, matId: string, patch: Partial<Material>) {
+		updateMaterials(listId, (mats) => mats.map((m) => (m.id === matId ? { ...m, ...patch } : m)));
+	}
+
+	function patchCut(listId: string, matId: string, cutId: string, patch: Partial<CutSpec>) {
+		updateMaterials(listId, (mats) =>
+			mats.map((m) =>
+				m.id === matId ? { ...m, cuts: m.cuts.map((c) => (c.id === cutId ? { ...c, ...patch } : c)) } : m
+			)
 		);
-		scheduleSave(listId);
 	}
 
-	function addRow(listId: string) {
-		const list = lists.find((l) => l.id === listId);
-		const lastDim = list?.rows.at(-1)?.dimension ?? '';
-		const lastPrice = list?.rows.at(-1)?.meterPriceNok ?? 0;
-		const newRow: CutListRow = {
-			id: crypto.randomUUID(),
-			dimension: lastDim,
-			lengthCm: 0,
-			quantity: 1,
-			meterPriceNok: lastPrice
-		};
-		lists = lists.map((l) => (l.id === listId ? { ...l, rows: [...l.rows, newRow] } : l));
-		scheduleSave(listId);
+	function addMaterial(listId: string, kind: 'linear' | 'sheet') {
+		const material: Material =
+			kind === 'linear'
+				? {
+						id: crypto.randomUUID(),
+						name: '',
+						kind: 'linear',
+						stockLengthMm: 3900,
+						pricePerMeterNok: 0,
+						cuts: [{ id: crypto.randomUUID(), lengthMm: 0, quantity: 1 }]
+					}
+				: {
+						id: crypto.randomUUID(),
+						name: '',
+						kind: 'sheet',
+						stockWidthMm: 2440,
+						stockHeightMm: 1220,
+						pricePerSheetNok: 0,
+						cuts: [{ id: crypto.randomUUID(), widthMm: 0, heightMm: 0, quantity: 1 }]
+					};
+		updateMaterials(listId, (mats) => [...mats, material]);
 	}
 
-	function removeRow(listId: string, rowId: string) {
-		lists = lists.map((l) => (l.id === listId ? { ...l, rows: l.rows.filter((r) => r.id !== rowId) } : l));
-		scheduleSave(listId);
+	function removeMaterial(listId: string, matId: string) {
+		updateMaterials(listId, (mats) => mats.filter((m) => m.id !== matId));
+	}
+
+	function addCut(listId: string, mat: Material) {
+		const cut: CutSpec =
+			mat.kind === 'linear'
+				? { id: crypto.randomUUID(), lengthMm: 0, quantity: 1 }
+				: { id: crypto.randomUUID(), widthMm: 0, heightMm: 0, quantity: 1 };
+		updateMaterials(listId, (mats) => mats.map((m) => (m.id === mat.id ? { ...m, cuts: [...m.cuts, cut] } : m)));
+	}
+
+	function removeCut(listId: string, matId: string, cutId: string) {
+		updateMaterials(listId, (mats) =>
+			mats.map((m) => (m.id === matId ? { ...m, cuts: m.cuts.filter((c) => c.id !== cutId) } : m))
+		);
 	}
 
 	/* ── Lister ─────────────────────────────────────────── */
@@ -127,14 +155,11 @@
 			const res = await fetch(`/api/tema/${themeId}/kapplister`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ title: `Kappliste ${lists.length + 1}`, boardLengthCm: 390 })
+				body: JSON.stringify({ title: `Kappliste ${lists.length + 1}` })
 			});
 			if (res.ok) {
 				const { cutList } = await res.json();
-				// Start med én tom rad så det er noe å fylle ut.
-				cutList.rows = [{ id: crypto.randomUUID(), dimension: '', lengthCm: 0, quantity: 1, meterPriceNok: 0 }];
 				lists = [...lists, cutList];
-				scheduleSave(cutList.id);
 			}
 		} finally {
 			creating = false;
@@ -149,12 +174,13 @@
 
 <div class="kapp">
 	<p class="intro">
-		Lag en kappliste for prosjektet: dimensjon, ønskede lengder, antall og meterpris. Resonans regner ut hvor
-		mange hele fjøler du må kjøpe (optimal kapping) og hva det koster.
+		Lag kapplister for å scope prosjektet. Legg til materialer — <strong>lengdevarer</strong> (lekt/bjelke
+		med meterpris) eller <strong>plater</strong> (med plate-pris) — og hvor mange kapp du trenger i hvilke mål.
+		Resonans regner ut hvor mange hele lekter/bjelker eller plater du må kjøpe, og hva det koster.
 	</p>
 
 	{#each lists as list (list.id)}
-		{@const res = result(list)}
+		{@const total = computeCutList(list.materials, list.kerfMm)}
 		<section class="card">
 			<header class="card-head">
 				<input
@@ -171,108 +197,178 @@
 				</div>
 			</header>
 
-			<label class="board-len">
-				<span>Fjøllengde</span>
-				<span class="board-len-field">
-					<input
-						type="text"
-						inputmode="decimal"
-						value={(list.boardLengthCm / 100).toString().replace('.', ',')}
-						data-track="kappliste:fjollengde"
-						onchange={(e) => {
-							const cm = Math.round(parseNum(e.currentTarget.value) * 100);
-							patchList(list.id, { boardLengthCm: cm > 0 ? cm : 390 });
-						}}
-					/>
-					<span class="unit">m</span>
-				</span>
-			</label>
-
-			<!-- Rader -->
-			<div class="rows" role="table" aria-label="Kappliste-rader">
-				<div class="row head" role="row">
-					<span role="columnheader">Dimensjon</span>
-					<span role="columnheader">Lengde</span>
-					<span role="columnheader">Antall</span>
-					<span role="columnheader">Meterpris</span>
-					<span role="columnheader" aria-label="Handlinger"></span>
-				</div>
-				{#each list.rows as row (row.id)}
-					<div class="row" role="row">
+			{#each list.materials as mat (mat.id)}
+				{@const res = computeMaterial(mat, list.kerfMm)}
+				<div class="material">
+					<div class="mat-head">
 						<input
-							class="cell"
+							class="mat-name"
 							type="text"
-							placeholder="48x48"
-							value={row.dimension}
-							data-track="kappliste:dimensjon"
-							oninput={(e) => patchRow(list.id, row.id, { dimension: e.currentTarget.value })}
-							aria-label="Dimensjon"
+							placeholder={mat.kind === 'linear' ? 'F.eks. 48x48 impregnert furu' : 'F.eks. 15mm kryssfiner poppel'}
+							value={mat.name}
+							data-track="kappliste:materialnavn"
+							oninput={(e) => patchMaterial(list.id, mat.id, { name: e.currentTarget.value })}
+							aria-label="Materialnavn"
 						/>
-						<span class="cell with-unit">
-							<input
-								type="text"
-								inputmode="numeric"
-								placeholder="120"
-								value={row.lengthCm || ''}
-								data-track="kappliste:lengde"
-								oninput={(e) => patchRow(list.id, row.id, { lengthCm: Math.round(parseNum(e.currentTarget.value)) })}
-								aria-label="Lengde i cm"
-							/><span class="suffix">cm</span>
-						</span>
-						<input
-							class="cell narrow"
-							type="text"
-							inputmode="numeric"
-							placeholder="5"
-							value={row.quantity || ''}
-							data-track="kappliste:antall"
-							oninput={(e) => patchRow(list.id, row.id, { quantity: Math.round(parseNum(e.currentTarget.value)) })}
-							aria-label="Antall"
-						/>
-						<span class="cell with-unit">
-							<input
-								type="text"
-								inputmode="decimal"
-								placeholder="54"
-								value={row.meterPriceNok || ''}
-								data-track="kappliste:meterpris"
-								oninput={(e) => patchRow(list.id, row.id, { meterPriceNok: parseNum(e.currentTarget.value) })}
-								aria-label="Meterpris i kroner"
-							/><span class="suffix">kr/m</span>
-						</span>
-						<button class="icon-btn small" onclick={() => removeRow(list.id, row.id)} aria-label="Slett rad">✕</button>
+						<span class="kind-tag">{mat.kind === 'linear' ? 'Lengdevare' : 'Plate'}</span>
+						<button class="icon-btn small" onclick={() => removeMaterial(list.id, mat.id)} aria-label="Slett materiale">✕</button>
 					</div>
-				{/each}
-			</div>
 
-			<button class="add-row" onclick={() => addRow(list.id)} data-track="kappliste:ny-rad">+ Legg til rad</button>
-
-			<!-- Resultat -->
-			{#if res.dimensions.length > 0}
-				<div class="result">
-					{#each res.dimensions as dim (dim.dimension)}
-						<div class="result-line" class:error={dim.tooLong.length > 0}>
-							<span class="result-dim">{dim.dimension}</span>
-							{#if dim.tooLong.length > 0}
-								<span class="result-val error">
-									{dim.tooLong.length === 1 ? 'Bit' : 'Biter'} på {dim.tooLong.join(', ')} cm er lengre enn fjølen
-								</span>
-							{:else}
-								<span class="result-val">
-									{dim.boardsNeeded} {dim.boardsNeeded === 1 ? 'fjøl' : 'fjøler'} ({formatNok(dim.costNok)})
-								</span>
-								<span class="result-sub">
-									à {formatMeters(res.boardLengthCm)}{#if dim.piecesPerFullBoard > 0} · {dim.piecesPerFullBoard} biter per fjøl{/if}{#if dim.wasteCm > 0} · {Math.round(dim.wasteCm)} cm kapp{/if}
-								</span>
-							{/if}
+					<!-- Stock + pris -->
+					{#if mat.kind === 'linear'}
+						<div class="stock-line">
+							<label>
+								<span>Lengde per lekt/bjelke</span>
+								<span class="field"
+									><input
+										type="text"
+										inputmode="numeric"
+										value={mat.stockLengthMm ?? 3900}
+										data-track="kappliste:lengde-per-lekt"
+										onchange={(e) => patchMaterial(list.id, mat.id, { stockLengthMm: Math.round(parseNum(e.currentTarget.value)) || 3900 })}
+									/><span class="suffix">mm</span></span
+								>
+							</label>
+							<label>
+								<span>Meterpris</span>
+								<span class="field"
+									><input
+										type="text"
+										inputmode="decimal"
+										placeholder="54"
+										value={mat.pricePerMeterNok || ''}
+										data-track="kappliste:meterpris"
+										oninput={(e) => patchMaterial(list.id, mat.id, { pricePerMeterNok: parseNum(e.currentTarget.value) })}
+									/><span class="suffix">kr/m</span></span
+								>
+							</label>
 						</div>
-					{/each}
-					{#if res.dimensions.length > 1 && !res.hasErrors}
-						<div class="result-total">
-							<span>Totalt</span>
-							<span>{res.totalBoards} fjøler · {formatNok(res.totalCostNok)}</span>
+					{:else}
+						<div class="stock-line">
+							<label>
+								<span>Platestørrelse</span>
+								<span class="field dims">
+									<input
+										type="text"
+										inputmode="numeric"
+										value={mat.stockWidthMm ?? 2440}
+										data-track="kappliste:platebredde"
+										onchange={(e) => patchMaterial(list.id, mat.id, { stockWidthMm: Math.round(parseNum(e.currentTarget.value)) || 2440 })}
+									/><span class="x">×</span><input
+										type="text"
+										inputmode="numeric"
+										value={mat.stockHeightMm ?? 1220}
+										data-track="kappliste:platehoyde"
+										onchange={(e) => patchMaterial(list.id, mat.id, { stockHeightMm: Math.round(parseNum(e.currentTarget.value)) || 1220 })}
+									/><span class="suffix">mm</span>
+								</span>
+							</label>
+							<label>
+								<span>Pris per plate</span>
+								<span class="field"
+									><input
+										type="text"
+										inputmode="decimal"
+										placeholder="299"
+										value={mat.pricePerSheetNok || ''}
+										data-track="kappliste:plate-pris"
+										oninput={(e) => patchMaterial(list.id, mat.id, { pricePerSheetNok: parseNum(e.currentTarget.value) })}
+									/><span class="suffix">kr</span></span
+								>
+							</label>
 						</div>
 					{/if}
+
+					<!-- Kapp -->
+					<div class="cuts">
+						<div class="cut-row head" class:sheet={mat.kind === 'sheet'}>
+							{#if mat.kind === 'linear'}
+								<span>Lengde</span><span>Antall</span><span></span>
+							{:else}
+								<span>Bredde</span><span>Høyde</span><span>Antall</span><span></span>
+							{/if}
+						</div>
+						{#each mat.cuts as cut (cut.id)}
+							<div class="cut-row" class:sheet={mat.kind === 'sheet'}>
+								{#if mat.kind === 'linear'}
+									<span class="field"
+										><input
+											type="text"
+											inputmode="numeric"
+											placeholder="1200"
+											value={cut.lengthMm || ''}
+											data-track="kappliste:kapp-lengde"
+											oninput={(e) => patchCut(list.id, mat.id, cut.id, { lengthMm: Math.round(parseNum(e.currentTarget.value)) })}
+											aria-label="Lengde i mm"
+										/><span class="suffix">mm</span></span
+									>
+								{:else}
+									<span class="field"
+										><input
+											type="text"
+											inputmode="numeric"
+											placeholder="380"
+											value={cut.widthMm || ''}
+											data-track="kappliste:kapp-bredde"
+											oninput={(e) => patchCut(list.id, mat.id, cut.id, { widthMm: Math.round(parseNum(e.currentTarget.value)) })}
+											aria-label="Bredde i mm"
+										/><span class="suffix">mm</span></span
+									>
+									<span class="field"
+										><input
+											type="text"
+											inputmode="numeric"
+											placeholder="420"
+											value={cut.heightMm || ''}
+											data-track="kappliste:kapp-hoyde"
+											oninput={(e) => patchCut(list.id, mat.id, cut.id, { heightMm: Math.round(parseNum(e.currentTarget.value)) })}
+											aria-label="Høyde i mm"
+										/><span class="suffix">mm</span></span
+									>
+								{/if}
+								<input
+									class="qty"
+									type="text"
+									inputmode="numeric"
+									placeholder="5"
+									value={cut.quantity || ''}
+									data-track="kappliste:kapp-antall"
+									oninput={(e) => patchCut(list.id, mat.id, cut.id, { quantity: Math.round(parseNum(e.currentTarget.value)) })}
+									aria-label="Antall"
+								/>
+								<button class="icon-btn small" onclick={() => removeCut(list.id, mat.id, cut.id)} aria-label="Slett kapp">✕</button>
+							</div>
+						{/each}
+						<button class="add-cut" onclick={() => addCut(list.id, mat)} data-track="kappliste:nytt-kapp">+ Kapp</button>
+					</div>
+
+					<!-- Materialresultat -->
+					{#if res.totalPieces > 0 || res.tooBig.length > 0}
+						<div class="mat-result" class:error={res.tooBig.length > 0}>
+							{#if res.tooBig.length > 0}
+								<span class="val error">Kapp {res.tooBig.join(', ')} er for store for {res.stockLabel}</span>
+							{:else}
+								<span class="val">
+									{res.stockNeeded}
+									{res.kind === 'linear' ? (res.stockNeeded === 1 ? 'lekt/bjelke' : 'lekter/bjelker') : res.stockNeeded === 1 ? 'plate' : 'plater'}
+									({formatNok(res.costNok)})
+								</span>
+								<span class="sub">à {res.stockLabel}{#if res.wasteText} · {res.wasteText}{/if}</span>
+							{/if}
+						</div>
+					{/if}
+				</div>
+			{/each}
+
+			<div class="add-material">
+				<button onclick={() => addMaterial(list.id, 'linear')} data-track="kappliste:nytt-materiale-lengde">+ Lekt/bjelke</button>
+				<button onclick={() => addMaterial(list.id, 'sheet')} data-track="kappliste:nytt-materiale-plate">+ Plate</button>
+			</div>
+
+			{#if total.materials.length > 0 && !total.hasErrors}
+				<div class="list-total">
+					<span>Totalt for kapplista</span>
+					<span>{formatNok(total.totalCostNok)}</span>
 				</div>
 			{/if}
 		</section>
@@ -295,6 +391,10 @@
 		font-size: 0.85rem;
 		line-height: 1.45;
 		color: var(--tp-text-muted);
+	}
+	.intro strong {
+		color: var(--tp-text-soft);
+		font-weight: 600;
 	}
 	.card {
 		border: 1px solid var(--card-border);
@@ -352,86 +452,93 @@
 	.icon-btn.small {
 		font-size: 0.8rem;
 	}
-	.board-len {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		font-size: 0.82rem;
-		color: var(--tp-text-soft);
-	}
-	.board-len-field {
-		display: inline-flex;
-		align-items: center;
-		gap: 4px;
-	}
-	.board-len-field input {
-		width: 64px;
-		text-align: right;
-		background: var(--tp-bg-1);
-		border: 1px solid var(--card-border);
-		border-radius: 8px;
-		color: var(--tp-text);
-		font: inherit;
-		font-size: 0.85rem;
-		padding: 5px 8px;
-	}
-	.unit {
-		color: var(--tp-text-muted);
-		font-size: 0.8rem;
-	}
 
-	/* Rader-grid */
-	.rows {
+	/* Materiale */
+	.material {
+		border: 1px solid var(--card-border);
+		border-radius: 12px;
+		background: var(--tp-bg-1);
+		padding: 12px;
 		display: flex;
 		flex-direction: column;
-		gap: 6px;
+		gap: 10px;
 	}
-	.row {
-		display: grid;
-		grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) 56px minmax(0, 1fr) 28px;
-		gap: 6px;
+	.mat-head {
+		display: flex;
 		align-items: center;
+		gap: 8px;
 	}
-	.row.head {
-		font-size: 0.68rem;
-		text-transform: uppercase;
-		letter-spacing: 0.03em;
-		color: var(--tp-text-muted);
-		padding: 0 2px;
-	}
-	.cell,
-	.cell.with-unit input {
-		width: 100%;
+	.mat-name {
+		flex: 1;
 		min-width: 0;
-		background: var(--tp-bg-1);
+		background: var(--tp-bg-2);
 		border: 1px solid var(--card-border);
 		border-radius: 8px;
 		color: var(--tp-text);
 		font: inherit;
-		font-size: 0.85rem;
-		padding: 7px 8px;
+		font-size: 0.9rem;
+		font-weight: 500;
+		padding: 7px 9px;
 	}
-	.cell:focus,
-	.cell.with-unit input:focus {
+	.mat-name:focus {
 		outline: none;
 		border-color: var(--tp-border-strong);
 	}
-	.cell.with-unit {
+	.kind-tag {
+		font-size: 0.66rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--tp-text-muted);
+		background: var(--tp-bg-2);
+		border: 1px solid var(--card-border);
+		border-radius: 6px;
+		padding: 3px 6px;
+		flex-shrink: 0;
+	}
+
+	.stock-line {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 10px;
+	}
+	.stock-line label {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		font-size: 0.72rem;
+		color: var(--tp-text-soft);
+	}
+	.field {
 		display: inline-flex;
 		align-items: center;
-		gap: 3px;
-		background: var(--tp-bg-1);
+		gap: 4px;
+		background: var(--tp-bg-2);
 		border: 1px solid var(--card-border);
 		border-radius: 8px;
-		padding-right: 7px;
+		padding: 0 8px;
 	}
-	.cell.with-unit input {
+	.field input {
+		width: 60px;
+		background: transparent;
 		border: 0;
-		padding-right: 2px;
+		color: var(--tp-text);
+		font: inherit;
+		font-size: 0.85rem;
+		padding: 7px 0;
 		text-align: right;
 	}
-	.cell.narrow {
-		text-align: center;
+	.field.dims input {
+		width: 52px;
+	}
+	.field input:focus {
+		outline: none;
+	}
+	.field:focus-within {
+		border-color: var(--tp-border-strong);
+	}
+	.x {
+		color: var(--tp-text-muted);
+		font-size: 0.8rem;
 	}
 	.suffix {
 		font-size: 0.72rem;
@@ -439,65 +546,118 @@
 		flex-shrink: 0;
 	}
 
-	.add-row {
+	/* Kapp */
+	.cuts {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+	.cut-row {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) 56px 28px;
+		gap: 6px;
+		align-items: center;
+	}
+	.cut-row.sheet {
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 56px 28px;
+	}
+	.cut-row.head {
+		font-size: 0.66rem;
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+		color: var(--tp-text-muted);
+	}
+	.cut-row .field {
+		width: 100%;
+	}
+	.cut-row .field input {
+		width: 100%;
+		flex: 1;
+	}
+	.qty {
+		width: 100%;
+		background: var(--tp-bg-2);
+		border: 1px solid var(--card-border);
+		border-radius: 8px;
+		color: var(--tp-text);
+		font: inherit;
+		font-size: 0.85rem;
+		padding: 7px 4px;
+		text-align: center;
+	}
+	.qty:focus {
+		outline: none;
+		border-color: var(--tp-border-strong);
+	}
+	.add-cut {
 		align-self: flex-start;
 		background: none;
 		border: 1px dashed var(--card-border);
 		border-radius: 8px;
 		color: var(--tp-text-soft);
 		font: inherit;
-		font-size: 0.8rem;
-		padding: 6px 12px;
+		font-size: 0.76rem;
+		padding: 5px 10px;
 		cursor: pointer;
 	}
-	.add-row:hover {
+	.add-cut:hover {
 		border-color: var(--tp-border-strong);
 		color: var(--tp-text);
 	}
 
-	/* Resultat */
-	.result {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-		padding: 12px;
-		border-radius: 12px;
-		background: var(--tp-accent-bg);
-		border: 1px solid var(--tp-border-strong);
-	}
-	.result-line {
+	/* Materialresultat */
+	.mat-result {
 		display: flex;
 		flex-direction: column;
 		gap: 1px;
+		padding: 9px 11px;
+		border-radius: 10px;
+		background: var(--tp-accent-bg);
+		border: 1px solid var(--tp-border-strong);
 	}
-	.result-dim {
-		font-size: 0.72rem;
-		text-transform: uppercase;
-		letter-spacing: 0.03em;
-		color: var(--tp-text-muted);
-	}
-	.result-val {
-		font-size: 0.98rem;
+	.mat-result .val {
+		font-size: 0.92rem;
 		font-weight: 600;
 		color: var(--tp-text);
 	}
-	.result-val.error {
-		font-size: 0.85rem;
+	.mat-result .val.error {
+		font-size: 0.82rem;
 		font-weight: 500;
 		color: #f0a0a0;
 	}
-	.result-sub {
-		font-size: 0.74rem;
+	.mat-result .sub {
+		font-size: 0.72rem;
 		color: var(--tp-text-soft);
 	}
-	.result-total {
+
+	.add-material {
+		display: flex;
+		gap: 8px;
+		flex-wrap: wrap;
+	}
+	.add-material button {
+		background: none;
+		border: 1px dashed var(--card-border);
+		border-radius: 8px;
+		color: var(--tp-text-soft);
+		font: inherit;
+		font-size: 0.8rem;
+		padding: 7px 12px;
+		cursor: pointer;
+	}
+	.add-material button:hover {
+		border-color: var(--tp-border-strong);
+		color: var(--tp-text);
+	}
+
+	.list-total {
 		display: flex;
 		justify-content: space-between;
 		align-items: baseline;
-		border-top: 1px solid var(--tp-border-strong);
-		padding-top: 8px;
-		font-size: 0.92rem;
-		font-weight: 600;
+		border-top: 1px solid var(--card-border);
+		padding-top: 10px;
+		font-size: 0.95rem;
+		font-weight: 700;
 		color: var(--tp-text);
 	}
 
