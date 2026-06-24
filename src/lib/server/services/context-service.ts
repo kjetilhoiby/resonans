@@ -1,9 +1,10 @@
 import { db } from '$lib/db';
-import { memories, themeFiles, planArtifacts } from '$lib/db/schema';
+import { memories, themeFiles, planArtifacts, cutLists } from '$lib/db/schema';
 import { and, desc, eq, gte } from 'drizzle-orm';
 import { getRecentReflections } from '$lib/server/reflections';
 import { DreamService } from '$lib/server/services/dream-service';
 import { touchMemory } from '$lib/server/memories';
+import { computeCutList, formatNok } from '$lib/kappliste/calc';
 
 interface BuildContextArgs {
 	userId: string;
@@ -19,8 +20,9 @@ interface BuildContextArgs {
  */
 export class ContextService {
 	static async buildForChat({ userId, themeId }: BuildContextArgs): Promise<string> {
-		const [fileBlock, dreamBlock, visionBlock, memoriesBlock, plansBlock, reflectionsBlock] = await Promise.all([
+		const [fileBlock, cutListBlock, dreamBlock, visionBlock, memoriesBlock, plansBlock, reflectionsBlock] = await Promise.all([
 			this.themeFiles(userId, themeId),
+			this.cutLists(userId, themeId),
 			this.activeDream(userId),
 			this.activeVision(userId),
 			this.stableMemories(userId),
@@ -28,7 +30,7 @@ export class ContextService {
 			this.recentReflections(userId)
 		]);
 
-		const sections = [fileBlock, dreamBlock, visionBlock, memoriesBlock.text, plansBlock, reflectionsBlock]
+		const sections = [fileBlock, cutListBlock, dreamBlock, visionBlock, memoriesBlock.text, plansBlock, reflectionsBlock]
 			.filter(Boolean)
 			.join('');
 
@@ -50,6 +52,32 @@ export class ContextService {
 		let out = '\n--- FILER I TEMAET (opplastet innhold) ---\n';
 		for (const file of withContent) out += `\n${file.parsedContent}\n`;
 		out += '--- SLUTT PÅ TEMA-FILER ---\n';
+		return out;
+	}
+
+	private static async cutLists(userId: string, themeId?: string | null): Promise<string> {
+		if (!themeId) return '';
+		const lists = await db.query.cutLists.findMany({
+			where: and(eq(cutLists.themeId, themeId), eq(cutLists.userId, userId)),
+			orderBy: [desc(cutLists.createdAt)]
+		});
+		const withMaterials = lists.filter((l) => (l.materials ?? []).length > 0);
+		if (withMaterials.length === 0) return '';
+
+		let out = '\n--- KAPPLISTER I PROSJEKTET (materialberegning) ---\n';
+		for (const list of withMaterials) {
+			const res = computeCutList(list.materials ?? [], list.kerfMm);
+			out += `\n${list.title}:\n`;
+			for (const mat of res.materials) {
+				if (mat.tooBig.length > 0) {
+					out += `  → ${mat.name || mat.unitLabel}: kapp ${mat.tooBig.join(', ')} er for store for ${mat.stockLabel}\n`;
+				} else {
+					out += `  → ${mat.name || mat.unitLabel}: ${mat.stockNeeded} × ${mat.unitLabel} (${mat.stockLabel}), ${formatNok(mat.costNok)}\n`;
+				}
+			}
+			if (!res.hasErrors) out += `  → Totalt: ${formatNok(res.totalCostNok)}\n`;
+		}
+		out += '--- SLUTT PÅ KAPPLISTER ---\n';
 		return out;
 	}
 

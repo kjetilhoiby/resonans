@@ -40,6 +40,7 @@
 		isHomeProject={data.isHomeProject}
 		projectProfile={data.projectProfile}
 		tasks={data.tasks}
+		cutLists={data.cutLists}
 	/>
 	{/key}
 	{/if}

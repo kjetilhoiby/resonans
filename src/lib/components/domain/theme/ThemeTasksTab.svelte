@@ -515,8 +515,8 @@
 		flex-direction: column;
 		gap: 1rem;
 		padding: 1rem var(--page-px);
-		max-width: 640px;
-		margin: 0 auto;
+		/* Kant-til-kant: lista bruker hele bredden (samme gutter som resten av appen). */
+		width: 100%;
 	}
 	.proj-meta {
 		display: flex;

@@ -1,5 +1,5 @@
 import { db } from '$lib/db';
-import { themes, goals, messages as messagesTable, conversations, themeFiles, themeLists, checklistItems } from '$lib/db/schema';
+import { themes, goals, messages as messagesTable, conversations, themeFiles, themeLists, checklistItems, cutLists } from '$lib/db/schema';
 import { mapTaskItem } from '$lib/server/project-tasks';
 import { getThemeInstruction } from '$lib/server/theme-instructions';
 import { ensureConversationThemeIdColumn } from '$lib/server/conversation-schema';
@@ -64,7 +64,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const isHomeProject = theme.parentTheme === 'Hjem';
 
 	// Last alle uavhengige data parallelt
-	const [themeConversations, msgs, themeGoals, instruction, uploadedFiles, tripListsRaw, selectedWorkout, themeProjects, themeTasksRaw] =
+	const [themeConversations, msgs, themeGoals, instruction, uploadedFiles, tripListsRaw, selectedWorkout, themeProjects, themeTasksRaw, cutListsRaw] =
 		await Promise.all([
 			getConversationsByTheme(locals.userId, theme.id),
 			db
@@ -108,6 +108,13 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 						.from(checklistItems)
 						.where(eq(checklistItems.themeId, theme.id))
 						.orderBy(asc(checklistItems.sortOrder), asc(checklistItems.createdAt))
+				: Promise.resolve([]),
+			isHomeProject
+				? db
+						.select()
+						.from(cutLists)
+						.where(and(eq(cutLists.themeId, theme.id), eq(cutLists.userId, locals.userId)))
+						.orderBy(asc(cutLists.sortOrder), asc(cutLists.createdAt))
 				: Promise.resolve([])
 		]);
 
@@ -160,6 +167,14 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		isHomeProject,
 		projectProfile: theme.projectProfile ?? null,
 		tasks: themeTasksRaw.map(mapTaskItem),
+		cutLists: cutListsRaw.map((c) => ({
+			id: c.id,
+			title: c.title,
+			kerfMm: c.kerfMm,
+			materials: c.materials ?? [],
+			sortOrder: c.sortOrder,
+			updatedAt: c.updatedAt.toISOString()
+		})),
 		tripLists: tripListsRaw.map((l) => ({
 			id: l.id,
 			title: l.title,

@@ -27,6 +27,7 @@
 	import ThemeFilesTab from './theme/ThemeFilesTab.svelte';
 	import ThemeChatTab from './theme/ThemeChatTab.svelte';
 	import ThemeTasksTab from './theme/ThemeTasksTab.svelte';
+	import ThemeKapplisteTab from './theme/ThemeKapplisteTab.svelte';
 	import ThemeDataTab from './theme/ThemeDataTab.svelte';
 
 	/* ── Types ──────────────────────────────────────────── */
@@ -119,19 +120,20 @@
 		isHomeProject?: boolean;
 		projectProfile?: Record<string, unknown> | null;
 		tasks?: import('./theme/ThemeTasksTab.svelte').ProjectTask[];
+		cutLists?: Array<{ id: string; title: string; kerfMm: number; materials: import('$lib/kappliste/calc').Material[]; sortOrder: number; updatedAt: string }>;
 	}
 
-	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '', selectedWorkout = null, tripProfile = null, tripLists = [], ferieProfile = null, themeFiles: initialThemeFiles = [], metricSettings: initialMetricSettings = {}, projects = [], isHomeProject = false, projectProfile = null, tasks = [] }: Props = $props();
+	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '', selectedWorkout = null, tripProfile = null, tripLists = [], ferieProfile = null, themeFiles: initialThemeFiles = [], metricSettings: initialMetricSettings = {}, projects = [], isHomeProject = false, projectProfile = null, tasks = [], cutLists = [] }: Props = $props();
 
 	/* ── Subtab-tilstand ────────────────────────────────── */
-	type Tab = 'chat' | 'data' | 'mål' | 'flyter' | 'filer' | 'lister' | 'oppgaver';
+	type Tab = 'chat' | 'data' | 'mål' | 'flyter' | 'filer' | 'lister' | 'oppgaver' | 'kapp';
 	const activeDashboardKind = $derived(resolveThemeDashboardKind(theme?.name));
 	const activeDashboard = $derived(getThemeDashboardDefinition(theme?.name));
 	const hasThemeDashboard = $derived(activeDashboardKind !== null);
 	const requestedTab = get(page).url.searchParams.get('tab');
 	const availableTabs = $derived<Tab[]>(
 		isHomeProject
-			? ['chat', 'oppgaver', 'filer']
+			? ['chat', 'oppgaver', 'kapp', 'filer']
 			: activeDashboardKind === 'health'
 			? ['chat', 'data', 'mål', 'flyter', 'filer']
 			: activeDashboardKind === 'economics'
@@ -149,7 +151,7 @@
 	const requestedPrompt = get(page).url.searchParams.get('prompt') ?? '';
 	const hasLinkedWorkout = $derived(Boolean(selectedWorkout));
 	const isHandoff = get(page).url.searchParams.get('handoff') === '1';
-	const validTabs: Tab[] = ['chat', 'data', 'mål', 'flyter', 'filer', 'lister', 'oppgaver'];
+	const validTabs: Tab[] = ['chat', 'data', 'mål', 'flyter', 'filer', 'lister', 'oppgaver', 'kapp'];
 	let tab = $state<Tab>(
 		hasLinkedWorkout
 			? 'chat'
@@ -362,6 +364,7 @@
 					{:else if t === 'flyter'}🧭 Flyter
 					{:else if t === 'lister'}📋 Lister
 					{:else if t === 'oppgaver'}✅ Oppgaver
+					{:else if t === 'kapp'}📐 Kapp
 					{:else}📁 Filer{/if}
 				</button>
 			{/each}
@@ -435,6 +438,13 @@
 				initialTasks={tasks}
 				{projectProfile}
 				onSwitchToChat={goToChat}
+			/>
+
+		<!-- KAPPLISTER (prosjekt-undertema) -->
+		{:else if tab === 'kapp'}
+			<ThemeKapplisteTab
+				themeId={theme.id}
+				initialCutLists={cutLists}
 			/>
 
 		<!-- FILER -->
