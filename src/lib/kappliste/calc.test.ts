@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
 	packLinear,
 	packSheets,
+	layoutLinear,
+	layoutSheets,
 	computeMaterial,
 	computeCutList,
 	formatNok,
@@ -87,6 +89,36 @@ describe('packSheets', () => {
 		const res = packSheets([{ w: 3000, h: 1500 }], 2440, 1220);
 		expect(res.tooLarge).toHaveLength(1);
 		expect(res.sheets).toBe(0);
+	});
+});
+
+describe('layoutLinear', () => {
+	it('plasserer kappene på lektene (3+2) og oppgir svinn per lekt', () => {
+		const { boards } = layoutLinear([1200, 1200, 1200, 1200, 1200], 3900);
+		expect(boards).toHaveLength(2);
+		expect(boards[0].pieces).toEqual([1200, 1200, 1200]);
+		expect(boards[0].wasteMm).toBeCloseTo(300);
+		expect(boards[1].pieces).toEqual([1200, 1200]);
+	});
+});
+
+describe('layoutSheets', () => {
+	it('gir koordinater for hvert kapp på plata, alle innenfor plata', () => {
+		const { sheets } = layoutSheets(
+			[
+				{ w: 380, h: 420 },
+				{ w: 380, h: 420 }
+			],
+			2440,
+			1220
+		);
+		expect(sheets).toHaveLength(1);
+		const placements = sheets[0].placements;
+		expect(placements).toHaveLength(2);
+		for (const p of placements) {
+			expect(p.x + p.w).toBeLessThanOrEqual(2440 + 1e-6);
+			expect(p.y + p.h).toBeLessThanOrEqual(1220 + 1e-6);
+		}
 	});
 });
 

@@ -36,10 +36,12 @@ Hovedarbeidet ble derfor kapplister + å gjøre oppgavelista bred.
   - `packLinear` — 1D First-Fit-Decreasing for lengdevarer.
   - `packSheets` — 2D hylle-heuristikk (rotasjon tillatt) for plater. Estimat for
     scoping; kan overestimere litt, men aldri underestimere grovt.
-  - `computeMaterial` / `computeCutList` — antall lekter/plater + kostnad per
+  - `layoutLinear` / `layoutSheets` — samme pakking, men returnerer plasseringene
+    (hvilke kapp på hvilken lekt/plate, med koordinater) for visuell kappeplan.
+  - `computeMaterial` / `computeCutList` — antall lekter/plater + kostnad + layout per
     materiale og totalt. Pluss `formatNok`, `formatMeters`.
-- `src/lib/kappliste/calc.test.ts`: 17 tester (5×1200 → 2 lekter, blandede lengder,
-  plate-pakking, rotasjon, for store/lange kapp, sagsnitt, kostnad, totalsum).
+- `src/lib/kappliste/calc.test.ts`: 19 tester (5×1200 → 2 lekter, blandede lengder,
+  plate-pakking, rotasjon, layout-koordinater, for store/lange kapp, sagsnitt, kostnad).
 - `src/lib/kappliste/rows.ts`: `sanitizeMaterials` for server-side validering.
 
 ### Fase 3: Datamodell + API
@@ -57,6 +59,11 @@ Hovedarbeidet ble derfor kapplister + å gjøre oppgavelista bred.
   pris og flere kapp per materiale. Viser live resultat per materiale («2 lekter à
   3,90 m (421 kr)» / «3 plater 2440×1220 (897 kr)») og totalsum. Autolagrer med
   600 ms debounce. Tema-tokens (`--tp-*`, `--card-*`), `var(--page-px)`-gutter, mørkt.
+- **Visuell kappeplan** per materiale (kollapsbar): lengdevarer vises som horisontale
+  stolper der hver lekt deles i segmenter per kapp + kapp til overs (skravert); plater
+  vises som en målestokk-riktig plate med kappene plassert (x/y/b/h fra `layoutSheets`).
+  `calc.ts` fikk `layoutLinear`/`layoutSheets` som returnerer plasseringene, og
+  `MaterialResult.layout` bærer dem til UI-et.
 - `ThemePage.svelte`: ny fane «📐 Kapp» for prosjekter (`isHomeProject`), wiret inn
   prop `cutLists`.
 - `tema/[id]/+page.server.ts` + `+page.svelte`: laster og sender `cutLists`.
@@ -83,4 +90,4 @@ Hovedarbeidet ble derfor kapplister + å gjøre oppgavelista bred.
 ## Verifisering
 
 - `npm run check`: 0 errors, 0 warnings.
-- `npm test`: 743 tester passerer (inkl. 17 for kappliste-beregningen).
+- `npm test`: 745 tester passerer (inkl. 19 for kappliste-beregningen, med layout).

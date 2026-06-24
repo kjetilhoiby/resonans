@@ -33,8 +33,19 @@
 	let lists = $state<CutList[]>(initialCutLists);
 	let creating = $state(false);
 	let savingIds = $state<Set<string>>(new Set());
+	let collapsedPlans = $state<Set<string>>(new Set()); // tom = alle kappeplaner vises
 
 	const saveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+	function isPlanOpen(matId: string): boolean {
+		return !collapsedPlans.has(matId);
+	}
+	function togglePlan(matId: string) {
+		const next = new Set(collapsedPlans);
+		if (next.has(matId)) next.delete(matId);
+		else next.add(matId);
+		collapsedPlans = next;
+	}
 
 	onMount(async () => {
 		try {
@@ -357,6 +368,65 @@
 							{/if}
 						</div>
 					{/if}
+
+					<!-- Kappeplan (visuell layout) -->
+					{#if res.tooBig.length === 0 && res.totalPieces > 0}
+						<div class="plan-block">
+							<button
+								class="plan-toggle"
+								onclick={() => togglePlan(mat.id)}
+								data-track="kappliste:vis-kappeplan"
+								aria-expanded={isPlanOpen(mat.id)}
+							>
+								{isPlanOpen(mat.id) ? '▾' : '▸'} Kappeplan
+							</button>
+							{#if isPlanOpen(mat.id)}
+								{#if res.layout.kind === 'linear'}
+									{@const lay = res.layout}
+									<div class="plan linear">
+										{#each lay.boards as board, i (i)}
+											<div class="plan-row">
+												<span class="plan-idx">{i + 1}</span>
+												<div class="bar" title={`${board.pieces.join(' + ')} mm`}>
+													{#each board.pieces as p, j (j)}
+														<span class="seg" style:flex={p}>{p}</span>
+													{/each}
+													{#if board.wasteMm > 1}
+														<span class="seg waste" style:flex={board.wasteMm}>{Math.round(board.wasteMm)}</span>
+													{/if}
+												</div>
+											</div>
+										{/each}
+									</div>
+								{:else}
+									{@const lay = res.layout}
+									<div class="plan sheets">
+										{#each lay.sheets as sheet, i (i)}
+											<div class="sheet-wrap">
+												<span class="plan-idx">{i + 1}</span>
+												<div class="sheet-box" style:aspect-ratio={`${lay.stockWidthMm} / ${lay.stockHeightMm}`}>
+													{#each sheet.placements as pl, j (j)}
+														<div
+															class="rect"
+															style:left={`${(pl.x / lay.stockWidthMm) * 100}%`}
+															style:top={`${(pl.y / lay.stockHeightMm) * 100}%`}
+															style:width={`${(pl.w / lay.stockWidthMm) * 100}%`}
+															style:height={`${(pl.h / lay.stockHeightMm) * 100}%`}
+														>
+															<span>{pl.w}×{pl.h}</span>
+														</div>
+													{/each}
+												</div>
+											</div>
+										{/each}
+									</div>
+								{/if}
+								<p class="plan-note">
+									{res.kind === 'sheet' ? 'Forenklet kappeplan (estimat) — ' : ''}grå felt er kapp til overs.
+								</p>
+							{/if}
+						</div>
+					{/if}
 				</div>
 			{/each}
 
@@ -628,6 +698,128 @@
 	.mat-result .sub {
 		font-size: 0.72rem;
 		color: var(--tp-text-soft);
+	}
+
+	/* Kappeplan */
+	.plan-block {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+	.plan-toggle {
+		align-self: flex-start;
+		background: none;
+		border: 0;
+		color: var(--tp-text-muted);
+		font: inherit;
+		font-size: 0.74rem;
+		padding: 2px 0;
+		cursor: pointer;
+	}
+	.plan-toggle:hover {
+		color: var(--tp-text-soft);
+	}
+	.plan {
+		display: flex;
+		flex-direction: column;
+		gap: 7px;
+	}
+	.plan.sheets {
+		flex-flow: row wrap;
+		gap: 12px;
+	}
+	.plan-idx {
+		font-size: 0.66rem;
+		color: var(--tp-text-muted);
+		font-variant-numeric: tabular-nums;
+	}
+
+	/* Linear: horisontal stolpe med segmenter */
+	.plan-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.plan-row .plan-idx {
+		width: 14px;
+		flex-shrink: 0;
+		text-align: right;
+	}
+	.bar {
+		flex: 1;
+		display: flex;
+		height: 26px;
+		border-radius: 6px;
+		overflow: hidden;
+		border: 1px solid var(--card-border);
+		gap: 1px;
+		background: var(--card-border);
+	}
+	.seg {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 0;
+		overflow: hidden;
+		background: var(--tp-accent-bg-strong);
+		color: var(--tp-text);
+		font-size: 0.64rem;
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
+	}
+	.seg.waste {
+		background: repeating-linear-gradient(
+			45deg,
+			var(--tp-bg-2),
+			var(--tp-bg-2) 4px,
+			var(--tp-bg-1) 4px,
+			var(--tp-bg-1) 8px
+		);
+		color: var(--tp-text-muted);
+	}
+
+	/* Sheet: plate med absolutt-plasserte kapp */
+	.sheet-wrap {
+		display: flex;
+		align-items: flex-start;
+		gap: 6px;
+	}
+	.sheet-box {
+		position: relative;
+		width: 100%;
+		max-width: 280px;
+		background: repeating-linear-gradient(
+			45deg,
+			var(--tp-bg-2),
+			var(--tp-bg-2) 4px,
+			var(--tp-bg-1) 4px,
+			var(--tp-bg-1) 8px
+		);
+		border: 1px solid var(--card-border);
+		border-radius: 6px;
+		overflow: hidden;
+	}
+	.rect {
+		position: absolute;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: var(--tp-accent-bg-strong);
+		border: 1px solid var(--tp-border-strong);
+		box-sizing: border-box;
+		overflow: hidden;
+	}
+	.rect span {
+		font-size: 0.6rem;
+		color: var(--tp-text);
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
+		padding: 0 2px;
+	}
+	.plan-note {
+		margin: 0;
+		font-size: 0.68rem;
+		color: var(--tp-text-muted);
 	}
 
 	.add-material {

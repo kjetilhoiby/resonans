@@ -6,9 +6,9 @@
 //  - 'sheet'   plate (f.eks. «15mm kryssfiner poppel» 2440x1220) som selges per plate
 //              til en plate-pris. Kappene er rektangler (bredde × høyde).
 //
-// Vi regner ut hvor mange hele lekter/bjelker eller plater du må kjøpe (smart kapping)
-// og hva det koster. Kostnad = antall hele enheter × enhetspris (du betaler for hele
-// lekter/plater inkl. kapp/svinn).
+// Vi regner ut hvor mange hele lekter/bjelker eller plater du må kjøpe (smart kapping),
+// hvordan kappene fordeler seg (layout for visning), og hva det koster. Kostnad =
+// antall hele enheter × enhetspris (du betaler for hele lekter/plater inkl. svinn).
 
 export interface CutSpec {
 	id: string;
@@ -32,6 +32,28 @@ export interface Material {
 	cuts: CutSpec[];
 }
 
+/** Én lekt/bjelke med kappene som er plassert på den (i rekkefølge). */
+export interface LinearBoard {
+	pieces: number[]; // lengder i mm
+	wasteMm: number; // kapp til overs
+}
+
+/** Et plassert rektangel på en plate (mm, origo øverst til venstre). */
+export interface SheetPlacement {
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+}
+
+export interface SheetUnit {
+	placements: SheetPlacement[];
+}
+
+export type MaterialLayout =
+	| { kind: 'linear'; stockLengthMm: number; boards: LinearBoard[] }
+	| { kind: 'sheet'; stockWidthMm: number; stockHeightMm: number; sheets: SheetUnit[] };
+
 export interface MaterialResult {
 	id: string;
 	name: string;
@@ -44,6 +66,7 @@ export interface MaterialResult {
 	piecesPerStock: number; // kun meningsfullt ved én kapp-lengde (linear), ellers 0
 	wasteText: string; // kort svinn-/kapp-beskrivelse
 	tooBig: string[]; // kapp som er for store for stock-enheten (visningstekst)
+	layout: MaterialLayout;
 }
 
 export interface CutListResult {
@@ -56,55 +79,60 @@ export const DEFAULT_STOCK_LENGTH_MM = 3900;
 export const DEFAULT_SHEET_WIDTH_MM = 2440;
 export const DEFAULT_SHEET_HEIGHT_MM = 1220;
 
+const EPS = 1e-6;
+
 /* ── 1D: lengdevarer (First-Fit-Decreasing) ─────────────────────────── */
+
+export function layoutLinear(
+	lengths: number[],
+	stockLengthMm: number,
+	kerfMm = 0
+): { boards: LinearBoard[]; tooLong: number[] } {
+	const tooLong = lengths.filter((l) => l > stockLengthMm);
+	const fit = lengths.filter((l) => l > 0 && l <= stockLengthMm).sort((a, b) => b - a);
+
+	const bins: Array<{ remaining: number; pieces: number[] }> = [];
+	for (const len of fit) {
+		let placed = false;
+		for (const bin of bins) {
+			const cost = len + (bin.pieces.length > 0 ? kerfMm : 0);
+			if (bin.remaining + EPS >= cost) {
+				bin.remaining -= cost;
+				bin.pieces.push(len);
+				placed = true;
+				break;
+			}
+		}
+		if (!placed) bins.push({ remaining: stockLengthMm - len, pieces: [len] });
+	}
+
+	return { boards: bins.map((b) => ({ pieces: b.pieces, wasteMm: b.remaining })), tooLong };
+}
 
 export function packLinear(
 	lengths: number[],
 	stockLengthMm: number,
 	kerfMm = 0
 ): { stock: number; wasteMm: number; tooLong: number[] } {
-	const tooLong = lengths.filter((l) => l > stockLengthMm);
-	const fit = lengths.filter((l) => l > 0 && l <= stockLengthMm).sort((a, b) => b - a);
-
-	const bins: Array<{ remaining: number; count: number }> = [];
-	for (const len of fit) {
-		let placed = false;
-		for (const bin of bins) {
-			const cost = len + (bin.count > 0 ? kerfMm : 0);
-			if (bin.remaining + 1e-6 >= cost) {
-				bin.remaining -= cost;
-				bin.count++;
-				placed = true;
-				break;
-			}
-		}
-		if (!placed) bins.push({ remaining: stockLengthMm - len, count: 1 });
-	}
-
-	const wasteMm = bins.reduce((sum, b) => sum + b.remaining, 0);
-	return { stock: bins.length, wasteMm, tooLong };
+	const { boards, tooLong } = layoutLinear(lengths, stockLengthMm, kerfMm);
+	return { stock: boards.length, wasteMm: boards.reduce((s, b) => s + b.wasteMm, 0), tooLong };
 }
 
 /* ── 2D: plater (hylle-basert heuristikk, rotasjon tillatt) ──────────── */
 // Estimat for scoping — kan overestimere litt, men aldri underestimere grovt.
 
 interface Shelf {
+	y: number;
 	height: number;
 	used: number;
 }
-interface Sheet {
+interface SheetState {
 	shelves: Shelf[];
 	usedHeight: number;
+	placements: SheetPlacement[];
 }
 
-function tryPlaceOnSheet(
-	sheet: Sheet,
-	w: number,
-	h: number,
-	stockW: number,
-	stockH: number,
-	kerf: number
-): boolean {
+function placeOnSheet(sheet: SheetState, w: number, h: number, stockW: number, stockH: number, kerf: number): boolean {
 	const orients = [
 		{ w, h },
 		{ w: h, h: w }
@@ -112,36 +140,38 @@ function tryPlaceOnSheet(
 	// Forsøk eksisterende hyller først (begge orienteringer).
 	for (const shelf of sheet.shelves) {
 		for (const o of orients) {
-			const wCost = o.w + (shelf.used > 0 ? kerf : 0);
-			if (o.h <= shelf.height + 1e-6 && shelf.used + wCost <= stockW + 1e-6) {
-				shelf.used += wCost;
+			const x = shelf.used + (shelf.used > 0 ? kerf : 0);
+			if (o.h <= shelf.height + EPS && x + o.w <= stockW + EPS) {
+				sheet.placements.push({ x, y: shelf.y, w: o.w, h: o.h });
+				shelf.used = x + o.w;
 				return true;
 			}
 		}
 	}
 	// Åpne ny hylle — velg orientering som passer bredden og gir lavest høyde.
-	let best: { o: { w: number; h: number }; hCost: number } | null = null;
+	let best: { o: { w: number; h: number }; y: number } | null = null;
 	for (const o of orients) {
-		if (o.w > stockW + 1e-6) continue;
-		const hCost = o.h + (sheet.usedHeight > 0 ? kerf : 0);
-		if (sheet.usedHeight + hCost <= stockH + 1e-6) {
-			if (!best || o.h < best.o.h) best = { o, hCost };
+		if (o.w > stockW + EPS) continue;
+		const y = sheet.usedHeight + (sheet.usedHeight > 0 ? kerf : 0);
+		if (y + o.h <= stockH + EPS) {
+			if (!best || o.h < best.o.h) best = { o, y };
 		}
 	}
 	if (best) {
-		sheet.shelves.push({ height: best.o.h, used: best.o.w });
-		sheet.usedHeight += best.hCost;
+		sheet.shelves.push({ y: best.y, height: best.o.h, used: best.o.w });
+		sheet.placements.push({ x: 0, y: best.y, w: best.o.w, h: best.o.h });
+		sheet.usedHeight = best.y + best.o.h;
 		return true;
 	}
 	return false;
 }
 
-export function packSheets(
+export function layoutSheets(
 	rects: Array<{ w: number; h: number }>,
 	stockW: number,
 	stockH: number,
 	kerfMm = 0
-): { sheets: number; tooLarge: Array<{ w: number; h: number }> } {
+): { sheets: SheetUnit[]; tooLarge: Array<{ w: number; h: number }> } {
 	const tooLarge: Array<{ w: number; h: number }> = [];
 	const items: Array<{ w: number; h: number }> = [];
 	for (const r of rects) {
@@ -151,26 +181,35 @@ export function packSheets(
 			tooLarge.push(r);
 			continue;
 		}
-		// Normaliser: w = kortside, h = langside.
 		items.push({ w: Math.min(r.w, r.h), h: Math.max(r.w, r.h) });
 	}
 	items.sort((a, b) => b.h - a.h || b.w - a.w);
 
-	const sheets: Sheet[] = [];
+	const sheets: SheetState[] = [];
 	for (const it of items) {
 		let placed = false;
 		for (const sheet of sheets) {
-			if (tryPlaceOnSheet(sheet, it.w, it.h, stockW, stockH, kerfMm)) {
+			if (placeOnSheet(sheet, it.w, it.h, stockW, stockH, kerfMm)) {
 				placed = true;
 				break;
 			}
 		}
 		if (!placed) {
-			const sheet: Sheet = { shelves: [], usedHeight: 0 };
-			if (tryPlaceOnSheet(sheet, it.w, it.h, stockW, stockH, kerfMm)) sheets.push(sheet);
+			const sheet: SheetState = { shelves: [], usedHeight: 0, placements: [] };
+			if (placeOnSheet(sheet, it.w, it.h, stockW, stockH, kerfMm)) sheets.push(sheet);
 			else tooLarge.push({ w: it.w, h: it.h });
 		}
 	}
+	return { sheets: sheets.map((s) => ({ placements: s.placements })), tooLarge };
+}
+
+export function packSheets(
+	rects: Array<{ w: number; h: number }>,
+	stockW: number,
+	stockH: number,
+	kerfMm = 0
+): { sheets: number; tooLarge: Array<{ w: number; h: number }> } {
+	const { sheets, tooLarge } = layoutSheets(rects, stockW, stockH, kerfMm);
 	return { sheets: sheets.length, tooLarge };
 }
 
@@ -196,21 +235,21 @@ export function computeMaterial(material: Material, kerfMm = 0): MaterialResult 
 				.filter((c) => (c.widthMm ?? 0) > 0 && (c.heightMm ?? 0) > 0)
 				.map((c) => ({ value: { w: c.widthMm!, h: c.heightMm! }, quantity: c.quantity }))
 		);
-		const { sheets, tooLarge } = packSheets(rects, stockW, stockH, kerfMm);
-		const stockNeeded = tooLarge.length > 0 ? sheets : sheets;
+		const { sheets, tooLarge } = layoutSheets(rects, stockW, stockH, kerfMm);
 
 		return {
 			id: material.id,
 			name: material.name,
 			kind: 'sheet',
-			stockNeeded,
+			stockNeeded: sheets.length,
 			totalPieces: rects.length,
-			costNok: stockNeeded * price,
+			costNok: sheets.length * price,
 			unitLabel: 'plate',
 			stockLabel: `${stockW}×${stockH} mm`,
 			piecesPerStock: 0,
 			wasteText: '',
-			tooBig: tooLarge.map((r) => `${Math.round(r.w)}×${Math.round(r.h)} mm`)
+			tooBig: tooLarge.map((r) => `${Math.round(r.w)}×${Math.round(r.h)} mm`),
+			layout: { kind: 'sheet', stockWidthMm: stockW, stockHeightMm: stockH, sheets }
 		};
 	}
 
@@ -220,13 +259,14 @@ export function computeMaterial(material: Material, kerfMm = 0): MaterialResult 
 	const lengths = expandQuantity(
 		material.cuts.filter((c) => (c.lengthMm ?? 0) > 0).map((c) => ({ value: c.lengthMm!, quantity: c.quantity }))
 	);
-	const { stock, wasteMm, tooLong } = packLinear(lengths, stockLen, kerfMm);
+	const { boards, tooLong } = layoutLinear(lengths, stockLen, kerfMm);
+	const wasteMm = boards.reduce((s, b) => s + b.wasteMm, 0);
 
 	const uniqueLengths = [...new Set(lengths)];
 	const piecesPerStock = uniqueLengths.length === 1 ? Math.floor(stockLen / uniqueLengths[0]) : 0;
-	const costNok = stock * (stockLen / 1000) * price;
+	const costNok = boards.length * (stockLen / 1000) * price;
 	const wasteText =
-		stock > 0 && wasteMm > 0
+		boards.length > 0 && wasteMm > 0
 			? `${piecesPerStock > 0 ? `${piecesPerStock} per lengde · ` : ''}${Math.round(wasteMm / 10)} cm kapp`
 			: '';
 
@@ -234,14 +274,15 @@ export function computeMaterial(material: Material, kerfMm = 0): MaterialResult 
 		id: material.id,
 		name: material.name,
 		kind: 'linear',
-		stockNeeded: stock,
+		stockNeeded: boards.length,
 		totalPieces: lengths.length,
 		costNok,
 		unitLabel: 'lekt/bjelke',
 		stockLabel: formatMeters(stockLen),
 		piecesPerStock,
 		wasteText,
-		tooBig: tooLong.map((l) => `${Math.round(l)} mm`)
+		tooBig: tooLong.map((l) => `${Math.round(l)} mm`),
+		layout: { kind: 'linear', stockLengthMm: stockLen, boards }
 	};
 }
 
