@@ -1,11 +1,12 @@
 import OpenAI from 'openai';
 import { openai } from '$lib/server/openai';
-import { env } from '$env/dynamic/private';
 import type { ConversationTurn } from '$lib/server/conversation-window';
 import { ASSISTANT_TOOL_DEFINITIONS, runAssistantTool } from './tools';
 import { CLIENT_TOOL_DEFINITIONS, CLIENT_TOOL_NAMES } from './client-tools';
 import { getFullProgram } from '$lib/server/programs/repository';
 import { localHm, localIsoDay } from '$lib/server/nudge-time';
+import { chooseModelId, reasoningModelId, providerFor } from './model-router';
+import { streamAnthropic } from './anthropic-adapter';
 
 /**
  * Server-kjørt, verktøy-bevisst samtaleagent for Ekko. Til forskjell fra den raske, statsløse
@@ -19,9 +20,6 @@ export class AssistantError extends Error {
 		this.name = 'AssistantError';
 	}
 }
-
-const DEFAULT_MODEL = 'gpt-4o';
-const model = () => env.EKKO_ASSISTANT_MODEL?.trim() || DEFAULT_MODEL;
 
 /** Tak på antall LLM↔verktøy-runder, så en agent ikke kan løkke i det uendelige. */
 const MAX_TOOL_ROUNDS = 6;
@@ -190,6 +188,50 @@ interface StreamingToolCall {
 }
 
 /**
+ * Strøm én modell-respons og normaliser til {content, toolCalls}. Provider velges av modell-id-en
+ * (Claude → Anthropic-adapteren, ellers OpenAI). `messages`/`tools` holdes i OpenAI-format som
+ * kanonisk kilde; Anthropic-veien oversetter internt.
+ */
+async function streamOnce(
+	modelId: string,
+	messages: AgentMessages,
+	tools: OpenAI.Chat.Completions.ChatCompletionFunctionTool[],
+	offerTools: boolean,
+	onDelta: (chunk: string) => void
+): Promise<{ content: string; toolCalls: StreamingToolCall[] }> {
+	if (providerFor(modelId) === 'anthropic') {
+		return streamAnthropic(modelId, messages, tools, offerTools, onDelta);
+	}
+
+	const stream = await openai.chat.completions.create({
+		model: modelId,
+		messages,
+		temperature: 0.5,
+		max_tokens: 600,
+		stream: true,
+		...(offerTools ? { tools, tool_choice: 'auto' as const } : {})
+	});
+
+	let content = '';
+	const toolAcc = new Map<number, StreamingToolCall>();
+	for await (const chunk of stream) {
+		const delta = chunk.choices[0]?.delta;
+		if (delta?.content) {
+			content += delta.content;
+			onDelta(delta.content);
+		}
+		for (const tc of delta?.tool_calls ?? []) {
+			const cur = toolAcc.get(tc.index) ?? { id: '', name: '', args: '' };
+			if (tc.id) cur.id = tc.id;
+			if (tc.function?.name) cur.name += tc.function.name;
+			if (tc.function?.arguments) cur.args += tc.function.arguments;
+			toolAcc.set(tc.index, cur);
+		}
+	}
+	return { content, toolCalls: [...toolAcc.values()].filter((t) => t.name) };
+}
+
+/**
  * Kjerne-agentløkka (alltid strømmende internt; `onDelta` no-op for ikke-strømmende kallere).
  * Server-verktøy kjøres her og fôres tilbake til modellen. Klient-verktøy (allow-list) kan ikke
  * kjøres her — kalles ett av dem, legges assistent-meldingen + ev. server-resultater i `messages`
@@ -201,7 +243,7 @@ async function runAgentLoop(
 	messages: AgentMessages,
 	usedTools: string[],
 	onDelta: (chunk: string) => void,
-	opts: { offerClientTools: boolean }
+	opts: { offerClientTools: boolean; modelId: string }
 ): Promise<AgentLoopResult> {
 	const tools = opts.offerClientTools
 		? [...ASSISTANT_TOOL_DEFINITIONS, ...CLIENT_TOOL_DEFINITIONS]
@@ -210,33 +252,8 @@ async function runAgentLoop(
 	for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
 		// Siste runde: tving et tekstsvar ved å ikke tilby verktøy lenger.
 		const offerTools = round < MAX_TOOL_ROUNDS;
-		const stream = await openai.chat.completions.create({
-			model: model(),
-			messages,
-			temperature: 0.5,
-			max_tokens: 600,
-			stream: true,
-			...(offerTools ? { tools, tool_choice: 'auto' as const } : {})
-		});
+		const { content, toolCalls } = await streamOnce(opts.modelId, messages, tools, offerTools, onDelta);
 
-		let content = '';
-		const toolAcc = new Map<number, StreamingToolCall>();
-		for await (const chunk of stream) {
-			const delta = chunk.choices[0]?.delta;
-			if (delta?.content) {
-				content += delta.content;
-				onDelta(delta.content);
-			}
-			for (const tc of delta?.tool_calls ?? []) {
-				const cur = toolAcc.get(tc.index) ?? { id: '', name: '', args: '' };
-				if (tc.id) cur.id = tc.id;
-				if (tc.function?.name) cur.name += tc.function.name;
-				if (tc.function?.arguments) cur.args += tc.function.arguments;
-				toolAcc.set(tc.index, cur);
-			}
-		}
-
-		const toolCalls = [...toolAcc.values()].filter((t) => t.name);
 		if (offerTools && toolCalls.length > 0) {
 			messages.push({
 				role: 'assistant',
@@ -300,7 +317,10 @@ export async function runAssistantTurn(
 ): Promise<{ text: string; usedTools: string[] }> {
 	const messages = await buildAssistantMessages(input);
 	try {
-		const result = await runAgentLoop(input.userId, messages, [], () => {}, { offerClientTools: false });
+		const result = await runAgentLoop(input.userId, messages, [], () => {}, {
+			offerClientTools: false,
+			modelId: chooseModelId(input.prompt)
+		});
 		if (result.status !== 'complete') {
 			throw new AssistantError('uventet suspensjon i ikke-strømmende modus');
 		}
@@ -322,7 +342,10 @@ export async function runAssistantTurnStreaming(
 ): Promise<AgentLoopResult> {
 	const messages = await buildAssistantMessages(input);
 	try {
-		return await runAgentLoop(input.userId, messages, [], onDelta, { offerClientTools: true });
+		return await runAgentLoop(input.userId, messages, [], onDelta, {
+			offerClientTools: true,
+			modelId: chooseModelId(input.prompt)
+		});
 	} catch (error) {
 		if (error instanceof AssistantError) throw error;
 		throw new AssistantError('LLM-/verktøy-kall feilet', error);
@@ -332,6 +355,7 @@ export async function runAssistantTurnStreaming(
 /**
  * Gjenoppta en suspendert tur etter at klient-verktøy-resultatene er lagt inn i `messages`.
  * Samme løkke som over (kan suspendere på nytt hvis modellen ber om enda et klient-verktøy).
+ * Gjenopptak er midt i en verktøy-tung oppgave → resonnement-tier.
  */
 export async function resumeAgentLoop(
 	userId: string,
@@ -340,7 +364,10 @@ export async function resumeAgentLoop(
 	onDelta: (chunk: string) => void
 ): Promise<AgentLoopResult> {
 	try {
-		return await runAgentLoop(userId, messages, usedTools, onDelta, { offerClientTools: true });
+		return await runAgentLoop(userId, messages, usedTools, onDelta, {
+			offerClientTools: true,
+			modelId: reasoningModelId()
+		});
 	} catch (error) {
 		if (error instanceof AssistantError) throw error;
 		throw new AssistantError('LLM-/verktøy-kall feilet', error);

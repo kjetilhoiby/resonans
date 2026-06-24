@@ -193,6 +193,8 @@ Vercel med `@sveltejs/adapter-vercel` (Node.js 22.x). `buildCommand` i `vercel.j
 
 **Monitorering:** `MONITORING_WEBHOOK_URL` (Google Chat webhook for systemvarsler)
 
+**Ekko-assistent (modell-routing):** `ANTHROPIC_API_KEY` (aktiverer Claude for resonnement-turer; uten den brukes OpenAI som før). Valgfri overstyring: `EKKO_REASONING_MODEL` (default `claude-sonnet-4-6` m/ Claude, ellers `gpt-4o`), `EKKO_FAST_MODEL` (default `claude-haiku-4-5-20251001` m/ Claude, ellers `gpt-4o-mini`). `EKKO_ASSISTANT_MODEL` (gammel) overstyrer begge tier-ene.
+
 **Push:** `VAPID_PUBLIC_KEY`/`PRIVATE_KEY`/`SUBJECT`
 
 **Scheduling:** `ENABLE_IN_APP_SCHEDULER=true`, `CRON_SECRET`, `ORIGIN`
