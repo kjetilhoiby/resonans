@@ -23,6 +23,11 @@ import { manageThemeTool } from '$lib/ai/tools/manage-theme';
 import { addToWeekPlanTool } from '$lib/ai/tools/add-to-week-plan';
 import { manageTrainingProgramTool } from '$lib/ai/tools/manage-training-program';
 import { weatherForecastTool } from '$lib/ai/tools/weather-forecast';
+import { createTaskTool } from '$lib/ai/tools/create-task';
+import { createGoalTool } from '$lib/ai/tools/create-goal';
+import { logActivityTool } from '$lib/ai/tools/log-activity';
+import { createMemoryTool } from '$lib/ai/tools/create-memory';
+import { ASSISTANT_SOURCE } from './conversation';
 
 /**
  * Adapter som gjør de delte chat-verktøyene i `$lib/ai/tools/*` tilgjengelige for den
@@ -181,5 +186,11 @@ export const SHARED_ASSISTANT_TOOLS: AssistantTool[] = [
 		description:
 			'Værprognose (MET.no) for et sted. Oppgi koordinater når du har dem (f.eks. fra et reisemål via driving_route), ellers default Oslo. Bruk for vær på reisemålet eller underveis.',
 		parametersSchema: WEATHER_SCHEMA
-	})
+	}),
+	// Fange-handlinger (samme delte moduler som chatten bruker)
+	adaptSharedTool(createTaskTool),
+	adaptSharedTool(createGoalTool),
+	adaptSharedTool(logActivityTool),
+	// `source` settes server-side til assistent-kilden, ikke av modellen
+	adaptSharedTool(createMemoryTool, { inject: { source: ASSISTANT_SOURCE } })
 ];

@@ -54,11 +54,21 @@ en regel om å bekrefte konkrete ENDRINGER ved tvil siden tale kan mishøres.
 
 - **Adapter framfor refaktor av chat-endepunktet.** `/api/chat` (3450 linjer) er urørt — null
   risiko for hovedchatten. De delte modulene er allerede single source of truth for `execute`.
-- **Fange-verktøyene er bespoke i assistenten** (ikke nye delte moduler), fordi chat har dem
-  inline; å lage delte moduler nå ville ikke deduplisert uten å også røre chat. Kan konsolideres
-  senere.
 - **OSRM offentlig demo-server** er greit for én privat bruker; bytt til egen instans / nøkkel-API
   ved behov for live trafikk eller volum.
+
+### Fase 5: Konsolidering av fange-verktøyene (oppfølging)
+Fange-handlingene var først bespoke kopier i assistenten, parallelt med chattens inline-versjoner.
+De er nå trukket ut til delte moduler i `src/lib/ai/tools/`: `create-goal.ts`, `create-task.ts`,
+`log-activity.ts`, `create-memory.ts` (standard `{ name, description, parameters: zod, execute }`).
+Logikk som tidligere lå i chat-dispatchen bor nå i `execute`: `create_task` setter
+`task_intent_parse` i kø, `create_memory` sår tema-instruks fra framtidsvisjon. Begge konsumenter
+bruker samme implementasjon:
+- Assistenten via `adaptSharedTool` (`create_memory` får `source` injisert til assistent-kilden).
+- `/api/chat` kaller `…Tool.execute({ userId, ...args })` i dispatchen; `create_goal` bevarer
+  `createdGoalId`-bivirkningen og `themeId`-fallback til samtalens tema, `create_memory` sender
+  `source: conversation.id`. De inline JSON-skjemaene i chattens tools-array er beholdt (samme
+  konvensjon som de øvrige delte verktøyene). Døde service-importer i chatten er fjernet.
 
 ## Verifisering
 
