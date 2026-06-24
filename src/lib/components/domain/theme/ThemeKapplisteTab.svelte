@@ -451,7 +451,7 @@
 									<div class="plan sheets">
 										{#each lay.sheets as sheet, i (i)}
 											<div class="sheet-wrap">
-												<span class="plan-idx">{i + 1}</span>
+												<span class="sheet-cap">Plate {i + 1} · {lay.stockWidthMm}×{lay.stockHeightMm} mm</span>
 												<div class="sheet-box" style:aspect-ratio={`${lay.stockWidthMm} / ${lay.stockHeightMm}`}>
 													{#each sheet.placements as pl, j (j)}
 														<div
@@ -846,7 +846,7 @@
 	}
 	.plan.sheets {
 		flex-flow: row wrap;
-		gap: 12px;
+		gap: 14px;
 	}
 	.plan-idx {
 		font-size: 0.66rem;
@@ -901,13 +901,19 @@
 	/* Sheet: plate med absolutt-plasserte kapp */
 	.sheet-wrap {
 		display: flex;
-		align-items: flex-start;
-		gap: 6px;
+		flex-direction: column;
+		gap: 4px;
+		width: 260px;
+		max-width: 100%;
+	}
+	.sheet-cap {
+		font-size: 0.66rem;
+		color: var(--tp-text-muted);
+		font-variant-numeric: tabular-nums;
 	}
 	.sheet-box {
 		position: relative;
 		width: 100%;
-		max-width: 280px;
 		background: repeating-linear-gradient(
 			45deg,
 			var(--tp-bg-2),
