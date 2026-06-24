@@ -90,6 +90,36 @@ describe('packSheets', () => {
 		expect(res.tooLarge).toHaveLength(1);
 		expect(res.sheets).toBe(0);
 	});
+
+	it('kombinerer høye og lave kapp på én plate (rest-soner)', () => {
+		// 3×(1200×600) stående = 1800 bred stripe, 640×1220 til overs.
+		// 6×(400×300) får plass som to kolonner × tre rader i stripa → 1 plate.
+		const rects = [
+			...Array.from({ length: 3 }, () => ({ w: 1200, h: 600 })),
+			...Array.from({ length: 6 }, () => ({ w: 400, h: 300 }))
+		];
+		const res = packSheets(rects, 2440, 1220);
+		expect(res.sheets).toBe(1);
+		expect(res.tooLarge).toEqual([]);
+	});
+
+	it('underestimerer aldri: alle kapp plasseres innenfor en plate', () => {
+		const rects = [
+			{ w: 1200, h: 600 },
+			{ w: 1200, h: 600 },
+			{ w: 800, h: 400 },
+			{ w: 380, h: 420 }
+		];
+		const { sheets } = layoutSheets(rects, 2440, 1220);
+		const placed = sheets.flatMap((s) => s.placements);
+		expect(placed).toHaveLength(rects.length);
+		for (const p of placed) {
+			expect(p.x + p.w).toBeLessThanOrEqual(2440 + 1e-6);
+			expect(p.y + p.h).toBeLessThanOrEqual(1220 + 1e-6);
+			expect(p.x).toBeGreaterThanOrEqual(-1e-6);
+			expect(p.y).toBeGreaterThanOrEqual(-1e-6);
+		}
+	});
 });
 
 describe('layoutLinear', () => {

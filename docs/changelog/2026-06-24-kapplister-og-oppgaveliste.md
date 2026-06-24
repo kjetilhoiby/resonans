@@ -86,12 +86,42 @@ Hovedarbeidet ble derfor kapplister + å gjøre oppgavelista bred.
 - **Kostnadsmodell: hele lekter/plater × enhetspris.** Du betaler for hele enheter
   inkl. kapp/svinn, ikke bare brukt materiale. Avklart med bruker.
 - **Antall: optimal kapping.** Lengdevarer: 1D FFD (5×1200 fra 3900 → 2 lekter,
-  3 per lekt). Plater: 2D hylle-heuristikk med rotasjon — et *estimat* for scoping.
+  3 per lekt). Plater: 2D MaxRects fri-rektangel-pakker med rotasjon (se Fase 6) —
+  et *estimat* for scoping, men tett.
 - **Alt i mm** (matcher byggvare-språk: 3900, 2440×1220, 380×420).
 - **JSONB-materials** framfor egne tabeller: kapplister er små og selvstendige per
   prosjekt, så hele lista lagres/oppdateres i ett kall.
 
+### Fase 6: Bedre plate-pakking (MaxRects)
+
+Den opprinnelige plate-pakkeren var hylle-basert (Next-Fit Decreasing Height). Den
+la kapp i fulle horisontale hyller og kunne ikke fylle restsoner *under* et plassert
+kapp — bare ved siden av. Den valgte også orientering grådig per hylle (laveste
+høyde), som kunne legge høye kapp flatt og spise opp platehøyden. Resultat:
+overestimerte antall plater i vanlige tilfeller.
+
+Eksempel funnet av bruker: 3×(1200×600) + 6×(400×300) på 2440×1220 (totalt
+2 880 000 mm² < 2 976 800 mm² = én plate) ble pakket på **2** plater. Optimalt: de
+tre store stående (1800 mm bred stripe), seks små i restsona 640×1220 som to
+kolonner × tre rader → **1** plate.
+
+- `calc.ts`: byttet hylle-heuristikken med en **MaxRects fri-rektangel-pakker**
+  (`splitFree`/`pruneFree`/`findPlacement`/`packWithStrategy`). Den holder en liste
+  fri-rektangler per plate og deler dem opp rundt hvert plasserte kapp, så soner
+  både ved siden av og under utnyttes.
+- Fordi 2D-pakking er NP-hardt og ingen enkelt grådig regel er best for alle
+  tilfeller (BSSF stiller store kapp stående men legger små flatt; BLSF motsatt),
+  kjører `layoutSheets` **flere strategier** — 3 sorteringer × 5 plasseringsregler
+  (`bssf`, `blsf`, `baf`, `portrait`, `landscape`) — og velger pakkingen med færrest
+  plater, deretter minst svinn. `portrait`/`landscape` tvinger konsekvent orientering,
+  som løser tilfeller der grådig per-kapp-fit pakker dårlig.
+- Sagsnitt (`kerfMm`) reserveres til høyre og under hvert kapp via fotavtrykket som
+  deler fri-rektanglene.
+- Nye tester: brukerens tilfelle → 1 plate; alle kapp innenfor platemålene (aldri
+  underestimat). `tooLarge`-flagging og rotasjons-tilfellene består uendret.
+
 ## Verifisering
 
 - `npm run check`: 0 errors, 0 warnings.
-- `npm test`: 745 tester passerer (inkl. 19 for kappliste-beregningen, med layout).
+- `npm test`: 747 tester passerer (inkl. 21 for kappliste-beregningen, med layout
+  og MaxRects-pakking).
