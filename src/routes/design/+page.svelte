@@ -17,6 +17,7 @@
 	import Navigasjon from './sections/navigasjon.svelte';
 	import Sheets from './sections/sheets.svelte';
 	import Modaler from './sections/modaler.svelte';
+	import Livskompasset from './sections/livskompasset.svelte';
 	import Lab from './sections/lab.svelte';
 
 	const sections = [
@@ -35,6 +36,7 @@
 		{ id: 'navigasjon', label: 'Navigasjon' },
 		{ id: 'sheets', label: 'Sheets & paneler' },
 		{ id: 'modaler', label: 'Menyer & modaler' },
+		{ id: 'livskompasset', label: 'Livskompasset (prototype)' },
 		{ id: 'lab', label: 'Lab' }
 	] as const;
 </script>
@@ -83,6 +85,7 @@
 		<Navigasjon />
 		<Sheets />
 		<Modaler />
+		<Livskompasset />
 		<Lab />
 
 	</main>

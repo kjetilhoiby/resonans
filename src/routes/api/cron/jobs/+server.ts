@@ -84,6 +84,12 @@ const JOBS: CronJob[] = [
 		maxDurationSeconds: 60
 	},
 	{
+		path: '/api/notifications/livskompasset-weekend',
+		schedule: '*/15 * * * 6', // lørdag UTC, hvert 15. min — per-bruker lørdag-i-tz + 15-min vindu
+		description: 'Livskompasset ukentlig helge-nudge (lørdag morgen, lokal tid per bruker)',
+		maxDurationSeconds: 60
+	},
+	{
 		path: '/api/cron/spond-sync',
 		schedule: '0 2 * * *', // 02:00 UTC = 04:00 Oslo (CEST)
 		description: 'Nattlig Spond-synk (alle brukere)',

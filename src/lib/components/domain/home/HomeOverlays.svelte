@@ -16,6 +16,8 @@
 	import { FLOWS } from '$lib/flows/registry';
 	import { buildEgenfrekvensSlotFlow } from '$lib/flows/egenfrekvens-slot';
 	import { localIsoDay, periodSlotStorageKey } from '$lib/domains/egenfrekvens/period-slots';
+	import { livskompassWeekStorageKey, type LivskompassScores } from '$lib/domains/livskompass/dimensions';
+	import LivskompassCheckin from '../LivskompassCheckin.svelte';
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
 	import type { Checklist } from '../../composed/ChecklistWidget.svelte';
 	import { HOME_CTX, type HomeContext } from './home-context';
@@ -47,6 +49,58 @@
 		// Første melding i chatten: «Kvelden gikk 4, rolig kveld med lesing»
 		const labelCap = slot.label.charAt(0).toUpperCase() + slot.label.slice(1);
 		ctx.startHomeChat(`${labelCap} gikk ${level}${note ? `, ${note}` : ''}`);
+	}
+
+	// ── Livskompasset ──
+	function markLivskompassSeen(state: 'dismissed' | 'done') {
+		if (typeof localStorage === 'undefined') return;
+		localStorage.setItem(livskompassWeekStorageKey(ctx.livskompassWeek), state);
+	}
+
+	function saveLivskompass(scores: LivskompassScores, note: string) {
+		return fetch('/api/livskompass/checkin', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ week: ctx.livskompassWeek, scores, note: note || null })
+		}).then(() => { void ctx.loadLivskompass(); });
+	}
+
+	function handleLivskompassSaveImportance(importance: Record<string, number>) {
+		// Lagrer viktighets-profilen fra onboarding; brukeren fortsetter i samme flyt.
+		ctx.livskompassNeedsOnboarding = false;
+		void fetch('/api/livskompass/importance', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ importance })
+		}).then(() => { void ctx.loadLivskompass(); });
+	}
+
+	function closeLivskompass() {
+		ctx.livskompassCheckinOpen = false;
+		ctx.livskompassGate = false;
+	}
+
+	function handleLivskompassComplete(data: { scores: LivskompassScores; note: string }) {
+		void saveLivskompass(data.scores, data.note);
+		markLivskompassSeen('done');
+		ctx.livskompassChip = false;
+		closeLivskompass();
+	}
+
+	function handleLivskompassContinueChat(data: { scores: LivskompassScores; note: string; seed: string; systemPrompt: string }) {
+		void saveLivskompass(data.scores, data.note);
+		markLivskompassSeen('done');
+		ctx.livskompassChip = false;
+		closeLivskompass();
+		// Åpne en coaching-chat med ACT-prefiks: hjelp å heve de største avvikene ett poeng.
+		ctx.startLivskompassCoachingChat(data.seed, data.systemPrompt);
+	}
+
+	function dismissLivskompass() {
+		// X uten å lagre: la chip ligge til uka registreres
+		markLivskompassSeen('dismissed');
+		ctx.livskompassChip = true;
+		closeLivskompass();
 	}
 </script>
 
@@ -385,6 +439,27 @@
 			void ctx.loadActionCandidates();
 		}}
 		onsecondaryaction={(action) => { if (action.id === 'continue-chat') handleSlotContinueChat(action.data); }}
+	/>
+{/if}
+
+<!-- Helgekompass-gate: dekker hjemskjermen til vi vet om kompasset skal vises -->
+{#if ctx.livskompassGate}
+	<div class="slot-gate" out:fade={{ duration: 250 }} aria-hidden="true">
+		<img src="/icons/icon-192.svg" alt="" class="slot-gate-logo" />
+	</div>
+{/if}
+
+<!-- Livskompasset: ukentlig fullskjerm-innsjekk -->
+{#if ctx.livskompassCheckinOpen}
+	<LivskompassCheckin
+		prefillImportance={ctx.livskompassPrefill}
+		initialScores={ctx.livskompassInitialScores}
+		needsOnboarding={ctx.livskompassNeedsOnboarding}
+		startStage={ctx.livskompassStartStage}
+		onSaveImportance={handleLivskompassSaveImportance}
+		onComplete={handleLivskompassComplete}
+		onContinueChat={handleLivskompassContinueChat}
+		onClose={dismissLivskompass}
 	/>
 {/if}
 

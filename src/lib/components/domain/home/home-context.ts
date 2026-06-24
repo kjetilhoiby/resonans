@@ -12,6 +12,7 @@ import type { ChatState } from '$lib/client/chat-state.svelte';
 import type { ActionCandidate, ActionIntent } from '$lib/types/actions';
 import type { FlowContext } from '$lib/flows/types';
 import type { PeriodSlot } from '$lib/domains/egenfrekvens/period-slots';
+import type { LivskompassScores } from '$lib/domains/livskompass/dimensions';
 
 export const HOME_CTX = Symbol('home');
 
@@ -291,6 +292,28 @@ export interface HomeContext {
 		settings: { enabled: boolean; morningTime: string; eveningTime: string } | null;
 	} | null;
 
+	// ── Livskompasset (ukentlig helgekompass) ──
+	/** Fullskjerm-teppe mens vi avklarer om helgekompasset skal vises */
+	livskompassGate: boolean;
+	/** Åpent kompass (helgegate eller widget-tapp), null = lukket */
+	livskompassCheckinOpen: boolean;
+	/** Start på scoring («ny uke») eller resultat («se registrert kompass») */
+	livskompassStartStage: 'scoring' | 'result';
+	/** Scorer å forhåndsfylle inn i et åpent kompass (null = bygg fra prefill) */
+	livskompassInitialScores: LivskompassScores | null;
+	/** Forhåndsutfylt viktighet fra forrige uke */
+	livskompassPrefill: Record<string, number>;
+	/** Inneværende ISO-uke */
+	livskompassWeek: string;
+	/** Bruker har aldri rangert viktighet → vis onboarding først */
+	livskompassNeedsOnboarding: boolean;
+	/** Dismisset denne helga men ikke registrert — vises som chip */
+	livskompassChip: boolean;
+	/** Siste registrerte kompass (til hjem-widget) */
+	livskompassLatest: { week: string; scores: LivskompassScores } | null;
+	loadLivskompass: () => Promise<void>;
+	openLivskompass: (opts?: { startStage?: 'scoring' | 'result' }) => void;
+
 	// ── Planlegging ──
 	homeDayPlanOpen: boolean;
 	homeDayPlanIso: string;
@@ -327,6 +350,8 @@ export interface HomeContext {
 	closeChat: () => void;
 	startQuickAction: (action: QuickAction) => void;
 	startHomeChat: (draftOverride?: string) => void;
+	/** Starter en fersk coaching-chat med et ACT-system-prompt-prefiks (livskompass). */
+	startLivskompassCoachingChat: (seed: string, systemPrompt: string) => void;
 	startHomeAttachment: (kind: 'camera' | 'voice' | 'file', draftOverride?: string, options?: { preserveConversation?: boolean }) => void;
 	openPartnerOnboardingChat: () => void;
 	openEgenfrekvensFlow: (initialNote?: string, preserveConversation?: boolean) => void;

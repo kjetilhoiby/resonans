@@ -98,10 +98,16 @@
 
 	import {
 		getActivePeriodSlot,
+		isWeekendDay,
 		localIsoDay,
 		periodSlotStorageKey,
 		type PeriodSlot,
 	} from '$lib/domains/egenfrekvens/period-slots';
+	import {
+		localIsoWeek,
+		livskompassWeekStorageKey,
+		type LivskompassScores,
+	} from '$lib/domains/livskompass/dimensions';
 
 	import {
 		handleCameraFileSelect as cameraFileSelectHandler,
@@ -324,6 +330,10 @@
 			const slot = egenfrekvensSlotChip;
 			items.unshift({ id: 'egenfrekvens-slot', icon: '✨', label: slot.question, done: false, priority: 100, onclick: () => { egenfrekvensSlotCheckin = slot; } });
 		}
+		// Dismisset helgekompass ligger som chip til uka registreres
+		if (livskompassChip) {
+			items.unshift({ id: 'livskompass', icon: '🧭', label: 'Ukens kompass', done: false, priority: 99, onclick: () => openLivskompass() });
+		}
 		return items;
 	});
 
@@ -365,6 +375,51 @@
 	}
 	function openEgenfrekvensQuick(slot: 'morning' | 'evening') { egenfrekvensActiveSlot = slot; egenfrekvensQuickFlowOpen = true; }
 	function openEgenfrekvensFull(slot: 'morning' | 'evening') { egenfrekvensActiveSlot = slot; egenfrekvensFlowOpen = true; void loadEgenfrekvensContext(); }
+
+	// ── Livskompasset (ukentlig helgekompass) ──────────────────────────────
+	let livskompassWeek = $state<string>(localIsoWeek());
+	let livskompassPrefill = $state<Record<string, number>>({});
+	let livskompassLatest = $state<{ week: string; scores: LivskompassScores } | null>(null);
+	let livskompassInitialScores = $state<LivskompassScores | null>(null);
+	let livskompassStartStage = $state<'scoring' | 'result'>('scoring');
+	let livskompassNeedsOnboarding = $state(false);
+	let livskompassCheckinOpen = $state(false);
+	let livskompassChip = $state(false);
+	// Synkron forhåndssjekk: teppe i helga til serverstatus avklarer om kompasset skal opp.
+	function initialLivskompassGate(): boolean {
+		if (typeof window === 'undefined') return false;
+		if (navigator.webdriver) return false;
+		if (window.location.search !== '') return false;
+		if (!isWeekendDay()) return false;
+		const seen = localStorage.getItem(livskompassWeekStorageKey(localIsoWeek()));
+		return seen !== 'done' && seen !== 'dismissed';
+	}
+	let livskompassGate = $state<boolean>(initialLivskompassGate());
+
+	async function loadLivskompass() {
+		try {
+			const res = await fetch('/api/livskompass/checkin', { signal: AbortSignal.timeout(5000) });
+			if (!res.ok) return;
+			const status = await res.json();
+			livskompassWeek = status.week;
+			livskompassPrefill = status.prefillImportance ?? {};
+			livskompassNeedsOnboarding = status.needsOnboarding === true;
+			livskompassLatest = status.latest ? { week: status.latest.week, scores: status.latest.scores } : null;
+		} catch { /* best-effort */ }
+	}
+
+	function openLivskompass(opts?: { startStage?: 'scoring' | 'result' }) {
+		// Registrert denne uka → åpne på resultat med eksisterende scorer. Ellers fersk scoring.
+		if (livskompassLatest && livskompassLatest.week === livskompassWeek) {
+			livskompassInitialScores = livskompassLatest.scores;
+			livskompassStartStage = opts?.startStage ?? 'result';
+		} else {
+			livskompassInitialScores = null;
+			livskompassStartStage = opts?.startStage ?? 'scoring';
+		}
+		livskompassChip = false;
+		livskompassCheckinOpen = true;
+	}
 
 	// ── Planlegging ───────────────────────────────────────────────────────
 	let homeDayPlanOpen = $state(false);
@@ -473,8 +528,12 @@
 	let suggestedTheme = $state<{ themeId: string; themeName: string; confidence: string; reasoning?: string } | null>(null);
 	let routedToTheme = $state<{ themeId: string; themeName: string } | null>(null);
 	let chatSection: HTMLElement | null = $state(null);
+	// ACT-coaching-prefiks for livskompass-chatten (null = vanlig hjem-chat). Sendes som
+	// systemPrompt-prefiks på toppen av den modulære prompten for hele coaching-samtalen.
+	let livskompassCoachingPrompt = $state<string | null>(null);
 
 	const homeChat = new ChatState({
+		systemPrompt: () => livskompassCoachingPrompt ?? undefined,
 		getOrCreateConversationId: async () => { const res = await fetch('/api/conversations/new', { method: 'POST' }); if (!res.ok) return null; return (await res.json()).conversationId ?? null; },
 		preferredModel: () => selectedChatModel !== 'auto' ? selectedChatModel : undefined,
 		onPayload: (data) => {
@@ -525,6 +584,7 @@
 		if (homeChat.conversationId && homeChat.messages.length > 0) latestClosedConversationId = homeChat.conversationId;
 		homeChat.reset(); homeChat.conversationId = null; chatPrefill = ''; chatInputAutoFocus = false;
 		createdThemeLink = null; launchingThemeId = null; chatOpen = false; returnToChatAfterFlow = false;
+		livskompassCoachingPrompt = null;
 	}
 
 	async function sendChat(text: string, imageUrl?: string, attachment?: AttachmentRef) {
@@ -548,9 +608,17 @@
 	}
 
 	function startHomeChat(draftOverride?: string) {
+		livskompassCoachingPrompt = null; // vanlig chat skal ikke bære coaching-prefikset
 		const draft = (draftOverride ?? chatPrefill).trim();
 		if (!draft) { openChat('', 'chat', { focusInput: true }); return; }
 		chatPrefill = ''; openChat('', 'chat', { focusInput: false }); void sendChat(draft);
+	}
+
+	function startLivskompassCoachingChat(seed: string, systemPrompt: string) {
+		// Fersk samtale med ACT-coaching-prefikset aktivt for hele samtalen.
+		homeChat.reset(); homeChat.conversationId = null; createdThemeLink = null;
+		livskompassCoachingPrompt = systemPrompt;
+		chatPrefill = ''; openChat('', 'chat', { focusInput: false }); void sendChat(seed);
 	}
 
 	function startHomeAttachment(kind: 'camera' | 'voice' | 'file', draftOverride?: string, options?: { preserveConversation?: boolean }) {
@@ -740,7 +808,7 @@
 		// App-open slot-sjekkin: fullskjerm «Hvordan gikk …?» for gjeldende tidsvindu.
 		// Allerede registrert → ingenting. Dismisset → chip på hjemskjermen i stedet.
 		// Kjøres FØR resten av hjemlastingen — gaten dekker skjermen til avgjørelsen er tatt.
-		void (async () => {
+		const dailySlotDecision = (async () => {
 			try {
 				if (navigator.webdriver) return; // hold visuelle tester deterministiske
 				// Bare ved «ren» åpning av hjemskjermen — alle deep-links/push-lenker har query-params
@@ -770,6 +838,36 @@
 			}
 		})();
 
+		// App-open helgekompass: i helga, fullskjerm «Ukens kompass» om uka ikke er tatt.
+		// Laster også siste kompass til hjem-widgeten (utenfor webdriver, så visuelle tester er stabile).
+		void (async () => {
+			try {
+				if (navigator.webdriver) return; // hold visuelle tester deterministiske
+				if ($page.url.search !== '') return;
+				const res = await fetch('/api/livskompass/checkin', { signal: AbortSignal.timeout(5000) });
+				if (!res.ok) return;
+				const status = await res.json();
+				livskompassWeek = status.week;
+				livskompassPrefill = status.prefillImportance ?? {};
+				livskompassNeedsOnboarding = status.needsOnboarding === true;
+				livskompassLatest = status.latest ? { week: status.latest.week, scores: status.latest.scores } : null;
+				if (status.isWeekendNow !== true) return; // gaten gjelder bare i helga
+				if (status.submitted) return; // allerede tatt denne uka
+				const seen = typeof localStorage !== 'undefined'
+					? localStorage.getItem(livskompassWeekStorageKey(status.week))
+					: null;
+				if (seen === 'done') return;
+				// Den daglige sjekkinnen er hovedkontaktflaten — vent på dens avgjørelse,
+				// og vik for chip om den tar fullskjermen denne åpningen (ingen dobbel-fullskjerm).
+				await dailySlotDecision.catch(() => {});
+				if (seen === 'dismissed' || egenfrekvensSlotCheckin) livskompassChip = true;
+				else { livskompassInitialScores = null; livskompassStartStage = 'scoring'; livskompassCheckinOpen = true; }
+			} catch { /* best-effort */ }
+			finally {
+				if (!livskompassCheckinOpen) livskompassGate = false;
+			}
+		})();
+
 		void (async () => {
 			finishNavMetric('home');
 			const checklistPromise = timeAsync('checklists', () => fetchChecklists());
@@ -794,6 +892,13 @@
 				if (flowParam === 'egenfrekvens_checkin') { egenfrekvensFlowOpen = true; void loadEgenfrekvensContext(); } else egenfrekvensQuickFlowOpen = true;
 				const nudgeId = $page.url.searchParams.get('nudgeEventId');
 				if (nudgeId) void fetch(`/api/nudges/events/${nudgeId}/stage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stage: 'flow_started' }) }).catch(() => {});
+			}
+
+			// Deep-link til helgekompasset (fra hjem-widget i egenfrekvens-temaet eller helge-nudge)
+			if (flowParam === 'livskompass') {
+				const nudgeId = $page.url.searchParams.get('nudgeEventId');
+				if (nudgeId) void fetch(`/api/nudges/events/${nudgeId}/stage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stage: 'flow_started' }) }).catch(() => {});
+				void (async () => { await loadLivskompass(); openLivskompass(); })();
 			}
 
 		})();
@@ -912,6 +1017,18 @@
 		get egenfrekvensCarriedLevel() { return egenfrekvensCarriedLevel; }, set egenfrekvensCarriedLevel(v) { egenfrekvensCarriedLevel = v; },
 		get egenfrekvensRecent() { return egenfrekvensRecent; },
 
+		get livskompassGate() { return livskompassGate; }, set livskompassGate(v) { livskompassGate = v; },
+		get livskompassCheckinOpen() { return livskompassCheckinOpen; }, set livskompassCheckinOpen(v) { livskompassCheckinOpen = v; },
+		get livskompassStartStage() { return livskompassStartStage; }, set livskompassStartStage(v) { livskompassStartStage = v; },
+		get livskompassInitialScores() { return livskompassInitialScores; }, set livskompassInitialScores(v) { livskompassInitialScores = v; },
+		get livskompassPrefill() { return livskompassPrefill; }, set livskompassPrefill(v) { livskompassPrefill = v; },
+		get livskompassWeek() { return livskompassWeek; }, set livskompassWeek(v) { livskompassWeek = v; },
+		get livskompassNeedsOnboarding() { return livskompassNeedsOnboarding; }, set livskompassNeedsOnboarding(v) { livskompassNeedsOnboarding = v; },
+		get livskompassChip() { return livskompassChip; }, set livskompassChip(v) { livskompassChip = v; },
+		get livskompassLatest() { return livskompassLatest; }, set livskompassLatest(v) { livskompassLatest = v; },
+		loadLivskompass,
+		openLivskompass,
+
 		get homeDayPlanOpen() { return homeDayPlanOpen; }, set homeDayPlanOpen(v) { homeDayPlanOpen = v; },
 		get homeDayPlanIso() { return homeDayPlanIso; }, set homeDayPlanIso(v) { homeDayPlanIso = v; },
 		get homeDayPlanWeekKey() { return homeDayPlanWeekKey; }, set homeDayPlanWeekKey(v) { homeDayPlanWeekKey = v; },
@@ -932,7 +1049,7 @@
 
 		get dateLabel() { return dateLabel; },
 
-		openChat, closeChat, startQuickAction, startHomeChat, startHomeAttachment, openPartnerOnboardingChat,
+		openChat, closeChat, startQuickAction, startHomeChat, startLivskompassCoachingChat, startHomeAttachment, openPartnerOnboardingChat,
 		openEgenfrekvensFlow, openEgenfrekvensQuick, openEgenfrekvensFull, sendChat, stopChat,
 		closeCameraFlow, closeVoiceFlow, closeFileFlow,
 		handleCameraFileSelect, handleVoiceFileSelect, handleFileFlowSelect,

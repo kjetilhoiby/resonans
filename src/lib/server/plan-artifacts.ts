@@ -1,6 +1,6 @@
 import { db } from '$lib/db';
 import { planArtifacts } from '$lib/db/schema';
-import { and, eq, gte, lte, desc, sql } from 'drizzle-orm';
+import { and, eq, gte, lte, desc, inArray } from 'drizzle-orm';
 
 export type PlanArtifactKind = 'day' | 'week' | 'month' | 'quarter' | 'year';
 export type PlanArtifactField = 'headline' | 'note' | 'reflection' | 'vision';
@@ -77,7 +77,7 @@ export async function getRecentPlanArtifacts(userId: string, kinds: PlanArtifact
 		.where(
 			and(
 				eq(planArtifacts.userId, userId),
-				sql`${planArtifacts.kind} = ANY(${kinds})`
+				inArray(planArtifacts.kind, kinds)
 			)
 		)
 		.orderBy(desc(planArtifacts.updatedAt))
