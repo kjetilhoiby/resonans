@@ -7,16 +7,20 @@ import {
 } from '$lib/server/programs/repository';
 import { buildAthleteSnapshot } from '$lib/server/programs/athlete-context';
 import { gatherDayContext } from '$lib/server/day-location-context';
-import { getStoredTeslaState } from '$lib/server/integrations/tesla-sync';
 import { pickRecentCompletedSessions } from './recent-sessions';
 import type { ProgramSessionDTO } from '$lib/server/programs/types';
+import { SHARED_ASSISTANT_TOOLS } from './shared-tools';
+import { CAR_ASSISTANT_TOOLS } from './car-tools';
 
 /**
- * Verktøy for den server-kjørte assistent-agenten. v1 er **kun lesing**, scoped til
- * token-brukeren, og gjenbruker samme datalag som de eksisterende `/api/apps/*`-endepunktene.
- * Ingen muterende verktøy: agenten skal ikke fullføre økter, starte kjøre-økter, sende
- * live-meldinger eller endre programmer. Tesla hentes alltid fra lagret tilstand — aldri live,
- * så agenten ikke vekker bilen.
+ * Verktøy for den server-kjørte assistent-agenten, scoped til token-brukeren. Assistenten har nå
+ * full paritet med vanlig Resonans-chat (de modulariserte domene-verktøyene gjenbrukes via
+ * `shared-tools.ts`), pluss bil/biltur-ekspertise (`car-tools.ts`).
+ *
+ * Verktøyene her i fila er de assistent-spesifikke tale-tunede lese-snarveiene for trening/dag.
+ * Fange-handlinger (oppgave/mål/aktivitet/minne) og resten av domenene kommer fra de delte
+ * `$lib/ai/tools`-modulene. Tesla leses via det delte `query_tesla_vehicle` (default lagret
+ * tilstand; live kun ved eksplisitt ønske).
  */
 
 export interface AssistantTool {
@@ -32,7 +36,7 @@ function requiredId(args: Record<string, unknown>, key: string): string | null {
 	return typeof args[key] === 'string' && (args[key] as string).trim() ? (args[key] as string).trim() : null;
 }
 
-export const ASSISTANT_TOOLS: AssistantTool[] = [
+const BESPOKE_ASSISTANT_TOOLS: AssistantTool[] = [
 	{
 		definition: {
 			type: 'function',
@@ -175,22 +179,13 @@ export const ASSISTANT_TOOLS: AssistantTool[] = [
 			return { date: ctx.date, movement: ctx.movement, stay: ctx.stay };
 		}
 	},
-	{
-		definition: {
-			type: 'function',
-			function: {
-				name: 'teslaState',
-				description:
-					'Ferskeste LAGREDE biltilstand (batteri, rekkevidde, lading, posisjon). Vekker aldri bilen. Returnerer connected:false hvis bilen ikke er koblet.',
-				parameters: { type: 'object', properties: {} }
-			}
-		},
-		run: async (userId) => {
-			const stored = await getStoredTeslaState(userId);
-			if (!stored.connected) return { connected: false, state: null };
-			return { connected: true, state: stored.state };
-		}
-	}
+];
+
+/** Hele verktøysettet: tale-tunede snarveier + fange-handlinger + delte domene-verktøy + bil. */
+export const ASSISTANT_TOOLS: AssistantTool[] = [
+	...BESPOKE_ASSISTANT_TOOLS,
+	...SHARED_ASSISTANT_TOOLS,
+	...CAR_ASSISTANT_TOOLS
 ];
 
 const TOOL_BY_NAME = new Map(ASSISTANT_TOOLS.map((t) => [t.definition.function.name, t]));

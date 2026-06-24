@@ -4,6 +4,7 @@ import { env } from '$env/dynamic/private';
 import type { ConversationTurn } from '$lib/server/conversation-window';
 import { ASSISTANT_TOOL_DEFINITIONS, runAssistantTool } from './tools';
 import { getFullProgram } from '$lib/server/programs/repository';
+import { localHm, localIsoDay } from '$lib/server/nudge-time';
 
 /**
  * Server-kjørt, verktøy-bevisst samtaleagent for Ekko. Til forskjell fra den raske, statsløse
@@ -25,17 +26,60 @@ const model = () => env.EKKO_ASSISTANT_MODEL?.trim() || DEFAULT_MODEL;
 const MAX_TOOL_ROUNDS = 6;
 
 const SYSTEM_PROMPT = `Du er en innsiktsfull, varm og talevennlig norsk Resonans-assistent. Svaret ditt leses høyt.
+Du har samme brede tilgang som Resonans-chatten OG er ekspert på bil og bilturer.
 
-Du har verktøy som henter brukerens egne data (treningsprogram, dagens økt, nylige økter,
-utøver-kontekst, dagskontekst, biltilstand). Bruk dem aktivt når brukeren spør om noe som
-krever faktiske tall — ikke gjett.
+Bruk verktøyene AKTIVT og av eget initiativ når noe kan besvares eller gjøres med dem — ikke be
+om lov for oppslag, og ikke gjett. Du kan blant annet:
+- Bil og biltur: biltilstand (query_tesla_vehicle: batteri, rekkevidde, lading, posisjon),
+  kjøreavstand og kjøretid mellom steder (driving_route — startpunkt er bilens posisjon når du
+  ikke oppgir origin), og ladere nær bilen (nearby_chargers).
+- Trening: programmer (programList → programDetail / manage_training_program), dagens økt
+  (programToday), nylige økter (recentSessions), utøver-kontekst (athleteContext).
+- Dag og sted (dayPlan), økonomi, familie, hjem, prosjekter, mat/oppskrifter/handleliste,
+  sensorer og helse, tema og rutiner, og vær (weather_forecast).
+- Fange og endre: opprette oppgaver/mål, registrere aktivitet, lagre minner, og justere planer
+  via de relevante verktøyene.
+
+Bil-ekspertise:
+- «Hvor langt/lenge til X»: bruk driving_route (ekte kjøreavstand/-tid, uten live trafikk).
+- Rekker bilen turen? Sammenlign driving_route-avstanden mot rekkevidden fra
+  query_tesla_vehicle. Er det knapt (legg inn margin), si fra og foreslå lading —
+  bruk nearby_chargers og nevn vær på reisemålet (weather_forecast) når det er relevant.
+
+Arbeidsmåte:
+- Vage spørsmål («hva bør jeg prioritere i morgen?») besvares ved å FØRST hente relevant
+  kontekst og DERETTER svare konkret — ikke et generelt ikke-svar.
+- Finn riktig id (programId, goalId, projectId …) med et liste-/query-verktøy før du endrer noe.
+- Bekreft konkrete ENDRINGER med brukeren ved tvil — tale kan mishøres. Oppslag/lesing gjør du
+  uten å spørre.
+- Når et verktøy gir tomt resultat, si hva som mangler kort — ikke påstå at du «ikke har tilgang».
 
 Stil:
 - Korte svar (det leses høyt). Ren tekst, INGEN markdown, ingen punktlister med tegn.
 - Bygg på det som er sagt tidligere i samtalen.
-- Bruk KUN tall og fakta fra verktøyene eller samtalen; aldri dikt opp tempo, puls, distanser
-  eller saldoer. Mangler data, si det kort framfor å gjette.
+- Bruk KUN tall og fakta fra verktøyene, tidskonteksten eller samtalen; aldri dikt opp tempo,
+  puls, distanser, avstander, saldoer eller datoer. Mangler data, si det kort framfor å gjette.
 - Unngå ordet «ekko».`;
+
+/** Brukeren bor i Norge — assistenten forankres til Oslo-tid. */
+const ASSISTANT_TZ = 'Europe/Oslo';
+
+/**
+ * Talevennlig nå-kontekst (ukedag, dato, klokkeslett) i brukerens tidssone. Uten denne faller
+ * modellen tilbake på treningsdataen sin og kan påstå feil årstall («i dag er det 2023»).
+ */
+export function buildTimeContext(now: Date): string {
+	const pretty = new Intl.DateTimeFormat('nb-NO', {
+		timeZone: ASSISTANT_TZ,
+		weekday: 'long',
+		day: 'numeric',
+		month: 'long',
+		year: 'numeric'
+	}).format(now);
+	const iso = localIsoDay(ASSISTANT_TZ, now);
+	const hm = localHm(ASSISTANT_TZ, now);
+	return `Akkurat nå er det ${pretty}, klokka ${hm} (ISO ${iso}). Bruk dette når brukeren sier «i dag», «i morgen» eller «i går», eller spør om dato/tid — aldri gjett årstall.`;
+}
 
 export interface AssistantTurnInput {
 	userId: string;
@@ -81,7 +125,8 @@ async function buildAssistantMessages(
 	const { userId, prompt, programId, history, droppedCount = 0, context } = input;
 
 	const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-		{ role: 'system', content: SYSTEM_PROMPT }
+		{ role: 'system', content: SYSTEM_PROMPT },
+		{ role: 'system', content: buildTimeContext(new Date()) }
 	];
 
 	if (programId) {

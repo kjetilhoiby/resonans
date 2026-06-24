@@ -2,17 +2,18 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { buildModularSystemPrompt } from '$lib/server/prompts';
 import { openai } from '$lib/server/openai';
-import { createGoal, createTask, getUserActiveGoalsAndTasks, findSimilarGoals, findSimilarTasks } from '$lib/server/goals';
+import { getUserActiveGoalsAndTasks, findSimilarGoals, findSimilarTasks } from '$lib/server/goals';
 import { getOrCreateConversation, createConversation, addMessage, getConversationHistory, getConversationByIdForUser } from '$lib/server/conversations';
-import { logActivity } from '$lib/server/activities';
 import { recordTrackingEvent } from '$lib/server/tracking-series';
-import { createMemory } from '$lib/server/memories';
 import { ContextService } from '$lib/server/services/context-service';
 import { upsertPlanArtifactField } from '$lib/server/plan-artifacts';
 import { buildPersonContext } from '$lib/server/person-context';
 import { buildDayContextBlock } from '$lib/server/day-location-context';
-import { isFutureVisionText, seedThemeInstructionFromFutureVision } from '$lib/server/theme-instructions';
 import { bookResearchToolDefinition, executeBookResearch } from '$lib/ai/tools/book-research';
+import { createGoalTool } from '$lib/ai/tools/create-goal';
+import { createTaskTool } from '$lib/ai/tools/create-task';
+import { logActivityTool } from '$lib/ai/tools/log-activity';
+import { createMemoryTool } from '$lib/ai/tools/create-memory';
 import { queryEconomicsTool } from '$lib/ai/tools/query-economics';
 import { queryFoodTool } from '$lib/ai/tools/query-food';
 import { manageRecipeTool } from '$lib/ai/tools/manage-recipe';
@@ -41,7 +42,6 @@ import {
 	type WidgetCreationFlow
 } from '$lib/flows/widget-creation/flow';
 import { routeChatRequest, aiRouteChatRequest } from '$lib/server/chat-router';
-import { enqueueBackgroundJob } from '$lib/server/background-jobs';
 import { db } from '$lib/db';
 import { checklists, checklistItems, users } from '$lib/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -2175,120 +2175,39 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 					}
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'create_goal') {
 					const args = JSON.parse(toolCall.function.arguments);
-					const goal = await createGoal({
+					const result = await createGoalTool.execute({
 						userId,
 						...args,
 						themeId: args.themeId || conversation.themeId || undefined
 					});
-					createdGoalId = goal.id;
-
+					if (result.success) createdGoalId = result.goalId;
 					messages.push({
 						role: 'tool',
-						content: JSON.stringify({ 
-							success: true, 
-							goalId: goal.id,
-							goalTitle: goal.title,
-							message: `✅ Målet "${goal.title}" er opprettet med ID: ${goal.id}. VIKTIG: Bruk denne eksakte ID-en hvis du skal lage oppgaver for dette målet!` 
-						}),
+						content: JSON.stringify(result),
 						tool_call_id: toolCall.id
 					});
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'create_task') {
-					try {
-						const args = JSON.parse(toolCall.function.arguments);
-						const task = await createTask({
-							userId,
-							...args
-						});
-
-						const textParts = [task.title, task.description || '']
-							.map((v) => (typeof v === 'string' ? v.trim() : ''))
-							.filter(Boolean);
-						const rawText = textParts.join('. ');
-
-						try {
-							await enqueueBackgroundJob({
-								userId,
-								type: 'task_intent_parse',
-								payload: {
-									taskId: task.id,
-									rawText
-								},
-								priority: 8,
-								maxAttempts: 2
-							});
-						} catch (queueError) {
-							console.warn('Failed to enqueue task intent parse job:', queueError);
-						}
-
-						messages.push({
-							role: 'tool',
-							content: JSON.stringify({ 
-								success: true, 
-								taskId: task.id,
-								message: `Oppgaven "${task.title}" er opprettet!` 
-							}),
-							tool_call_id: toolCall.id
-						});
-					} catch (error) {
-						// Håndter feil - f.eks. ugyldig goalId
-						let errorMessage = 'Kunne ikke opprette oppgave';
-						if (error instanceof Error && error.message.includes('foreign key')) {
-							errorMessage = `FEIL: goalId er ugyldig! Sjekk listen over aktive mål og bruk den eksakte UUID-en derfra. Ikke bruk tittel eller nummer.`;
-						}
-						messages.push({
-							role: 'tool',
-							content: JSON.stringify({ 
-								success: false, 
-								error: errorMessage
-							}),
-							tool_call_id: toolCall.id
-						});
-					}
-				} else if (toolCall.type === 'function' && toolCall.function.name === 'log_activity') {
 					const args = JSON.parse(toolCall.function.arguments);
-					const result = await logActivity({
-						userId,
-						...args
-					});
-
-					// Bygg en fin melding om hva som ble registrert
-					const taskSummary = result.progressEntries.map((p) => 
-						`• ${p.task.title}${p.value ? ` (+${p.value} ${p.task.unit || ''})` : ''}`
-					).join('\n');
-
+					const result = await createTaskTool.execute({ userId, ...args });
 					messages.push({
 						role: 'tool',
-						content: JSON.stringify({ 
-							success: true,
-							activityId: result.activity.id,
-							tasksUpdated: result.progressEntries.length,
-							message: `✅ Aktivitet registrert!\n\nTeller mot:\n${taskSummary || '(Ingen matchende oppgaver funnet)'}` 
-						}),
+						content: JSON.stringify(result),
+						tool_call_id: toolCall.id
+					});
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'log_activity') {
+					const args = JSON.parse(toolCall.function.arguments);
+					const result = await logActivityTool.execute({ userId, ...args });
+					messages.push({
+						role: 'tool',
+						content: JSON.stringify(result),
 						tool_call_id: toolCall.id
 					});
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'create_memory') {
 					const args = JSON.parse(toolCall.function.arguments);
-					const memory = await createMemory({
-						userId,
-						themeId: args.themeId || null,
-						category: args.category,
-						content: args.content,
-						importance: args.importance || 'medium',
-						source: conversation.id
-					});
-
-					if (args.themeId && typeof args.content === 'string' && isFutureVisionText(args.content)) {
-						await seedThemeInstructionFromFutureVision(userId, args.themeId, args.content);
-					}
-
+					const result = await createMemoryTool.execute({ userId, ...args, source: conversation.id });
 					messages.push({
 						role: 'tool',
-						content: JSON.stringify({ 
-							success: true,
-							memoryId: memory.id,
-							themeSpecific: !!args.themeId,
-							message: `Memory lagret${args.themeId ? ' (tema-spesifikk)' : ''}: ${args.content}` 
-						}),
+						content: JSON.stringify(result),
 						tool_call_id: toolCall.id
 					});
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'manage_theme') {
