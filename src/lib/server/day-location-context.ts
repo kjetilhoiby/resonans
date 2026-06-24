@@ -10,12 +10,12 @@
  */
 
 import { db } from '$lib/db';
-import { checklists, users } from '$lib/db/schema';
+import { checklists, users, themes } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { localIsoDay } from './nudge-time';
 import { dayContextForDate, addDaysIso } from './iso-week';
 import { computeStaysFromDayPlans, formatStayRange } from './stays';
-import { dayWindowInfo } from './trip-geo';
+import { dayWindowInfo, pickTripForDate } from './trip-geo';
 import {
 	isLocationItem,
 	locationDisplayName,
@@ -131,6 +131,40 @@ export async function gatherDayContext(
 	}
 
 	return { date: day, locations, stay, movement };
+}
+
+export interface ActiveTrip {
+	themeId: string;
+	name: string;
+	emoji: string | null;
+	dayNo: number;
+	totalDays: number;
+}
+
+/**
+ * Hvilken reise (reise-tema) dekker en gitt dato, og hvor i turvinduet datoen faller
+ * («dag 2 av 4»)? Delt av `/api/apps/day` (BFF) og assistentens biltur-lese-verktøy, så de
+ * ikke driver fra hverandre. `date` default = i dag i brukerens tidssone. Null hvis ingen tur.
+ */
+export async function getActiveTripForDate(
+	userId: string,
+	date?: string,
+	timezone = 'Europe/Oslo'
+): Promise<ActiveTrip | null> {
+	const day = date ?? localIsoDay(timezone, new Date());
+	const themeRows = await db.query.themes.findMany({
+		where: eq(themes.userId, userId),
+		columns: { id: true, name: true, emoji: true, tripProfile: true }
+	});
+	const candidates = themeRows
+		.filter((r) => r.tripProfile?.startDate && r.tripProfile?.endDate)
+		.map((r) => ({ id: r.id, startDate: r.tripProfile!.startDate, endDate: r.tripProfile!.endDate }));
+	const tripThemeId = pickTripForDate(candidates, day);
+	if (!tripThemeId) return null;
+
+	const t = themeRows.find((r) => r.id === tripThemeId)!;
+	const { dayNo, totalDays } = dayWindowInfo(t.tripProfile!.startDate!, t.tripProfile!.endDate!, day);
+	return { themeId: t.id, name: t.name, emoji: t.emoji, dayNo, totalDays };
 }
 
 /** Formater strukturert dagskontekst til prosa-blokken chat-prompten bruker. */

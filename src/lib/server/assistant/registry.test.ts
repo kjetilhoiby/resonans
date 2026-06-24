@@ -11,12 +11,15 @@ describe('ASSISTANT_TOOL_DEFINITIONS', () => {
 		expect(new Set(names).size).toBe(names.length);
 	});
 
-	it('eksponerer både bil-ekspertise og bred chat-paritet', () => {
+	it('eksponerer bil, dag/reise og bred chat-paritet', () => {
 		const names = new Set(ASSISTANT_TOOL_DEFINITIONS.map((d) => d.function.name));
-		// Bil/biltur
-		expect(names).toContain('driving_route');
+		// Bil (server-side; ruting eies av klienten)
 		expect(names).toContain('nearby_chargers');
 		expect(names).toContain('query_tesla_vehicle');
+		// Dag/reise-lese-verktøy
+		for (const expected of ['dayPlan', 'movementToday', 'tripOverview', 'fullContext']) {
+			expect(names).toContain(expected);
+		}
 		// Bred paritet
 		for (const expected of ['query_economics', 'query_family', 'manage_training_program', 'weather_forecast', 'create_task']) {
 			expect(names).toContain(expected);

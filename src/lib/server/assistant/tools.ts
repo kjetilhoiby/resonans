@@ -6,7 +6,7 @@ import {
 	sessionPlannedDate
 } from '$lib/server/programs/repository';
 import { buildAthleteSnapshot } from '$lib/server/programs/athlete-context';
-import { gatherDayContext } from '$lib/server/day-location-context';
+import { gatherDayContext, getActiveTripForDate } from '$lib/server/day-location-context';
 import { pickRecentCompletedSessions } from './recent-sessions';
 import type { ProgramSessionDTO } from '$lib/server/programs/types';
 import { SHARED_ASSISTANT_TOOLS } from './shared-tools';
@@ -167,7 +167,7 @@ const BESPOKE_ASSISTANT_TOOLS: AssistantTool[] = [
 			function: {
 				name: 'dayPlan',
 				description:
-					'Dagens kontekst: bevegelse/opphold og hvor brukeren er. Valgfri date (YYYY-MM-DD), default i dag.',
+					'Dagens kontekst: bevegelse/opphold og hvor brukeren er. For «i morgen»/«i går»: regn ut ISO-datoen fra tidskonteksten og send den som date. Default i dag.',
 				parameters: {
 					type: 'object',
 					properties: { date: { type: 'string', description: 'YYYY-MM-DD, default i dag' } }
@@ -176,9 +176,84 @@ const BESPOKE_ASSISTANT_TOOLS: AssistantTool[] = [
 		},
 		run: async (userId, args) => {
 			const ctx = await gatherDayContext(userId, optionalDate(args));
-			return { date: ctx.date, movement: ctx.movement, stay: ctx.stay };
+			return { date: ctx.date, locations: ctx.locations, movement: ctx.movement, stay: ctx.stay };
 		}
 	},
+	{
+		definition: {
+			type: 'function',
+			function: {
+				name: 'movementToday',
+				description:
+					'Kun reise-/bevegelsessegmentene for en dag (kjøre/båt/fly, med klokkeslett og destinasjon). For «i morgen»: send morgendagens ISO-dato. Default i dag.',
+				parameters: {
+					type: 'object',
+					properties: { date: { type: 'string', description: 'YYYY-MM-DD, default i dag' } }
+				}
+			}
+		},
+		run: async (userId, args) => {
+			const ctx = await gatherDayContext(userId, optionalDate(args));
+			return { date: ctx.date, movement: ctx.movement };
+		}
+	},
+	{
+		definition: {
+			type: 'function',
+			function: {
+				name: 'tripOverview',
+				description:
+					'Aktiv reise for en dato: hvilket reise-tema som dekker dagen og hvor i turen man er («dag 2 av 4»). Valgfri date (YYYY-MM-DD), default i dag. Returnerer trip:null hvis ingen pågående tur.',
+				parameters: {
+					type: 'object',
+					properties: { date: { type: 'string', description: 'YYYY-MM-DD, default i dag' } }
+				}
+			}
+		},
+		run: async (userId, args) => {
+			const trip = await getActiveTripForDate(userId, optionalDate(args));
+			return { trip };
+		}
+	},
+	{
+		definition: {
+			type: 'function',
+			function: {
+				name: 'fullContext',
+				description:
+					'Kompakt orientering ved samtalestart: dagens sted/bevegelse, ev. aktiv reise, og en peker til aktivt treningsprogram + dagens økt. Ett kall for å bli oppdatert — drill ned med de andre verktøyene etterpå.',
+				parameters: { type: 'object', properties: {} }
+			}
+		},
+		run: async (userId) => {
+			const [ctx, trip, programs] = await Promise.all([
+				gatherDayContext(userId),
+				getActiveTripForDate(userId),
+				getProgramSummaries(userId)
+			]);
+			const active = programs.find((p) => p.status === 'active') ?? null;
+			let program: { id: string; name: string; goal: string | null } | null = null;
+			let todaySession: { id: string | null; name: string; kind: string | null; done: boolean } | null = null;
+			if (active) {
+				program = { id: active.id, name: active.name, goal: active.goal ?? null };
+				const today = await getTodaySession(userId, active.id);
+				if (today) {
+					todaySession = {
+						id: today.session.id ?? null,
+						name: today.session.name,
+						kind: today.session.kind,
+						done: today.session.completion != null
+					};
+				}
+			}
+			return {
+				day: { date: ctx.date, locations: ctx.locations, movement: ctx.movement, stay: ctx.stay },
+				trip,
+				program,
+				todaySession
+			};
+		}
+	}
 ];
 
 /** Hele verktøysettet: tale-tunede snarveier + fange-handlinger + delte domene-verktøy + bil. */

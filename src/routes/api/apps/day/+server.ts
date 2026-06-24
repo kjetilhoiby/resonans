@@ -1,10 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/db';
-import { themes } from '$lib/db/schema';
-import { eq } from 'drizzle-orm';
-import { gatherDayContext } from '$lib/server/day-location-context';
-import { pickTripForDate, dayWindowInfo } from '$lib/server/trip-geo';
+import { gatherDayContext, getActiveTripForDate } from '$lib/server/day-location-context';
 import { getProgramSummaries, getTodaySession } from '$lib/server/programs/repository';
 
 /**
@@ -26,26 +22,8 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 
 	const ctx = await gatherDayContext(userId, date);
 
-	// Aktiv tur fra datoen (Ekko trenger ikke kjenne tema-taksonomien).
-	const themeRows = await db.query.themes.findMany({
-		where: eq(themes.userId, userId),
-		columns: { id: true, name: true, emoji: true, tripProfile: true }
-	});
-	const candidates = themeRows
-		.filter((r) => r.tripProfile?.startDate && r.tripProfile?.endDate)
-		.map((r) => ({ id: r.id, startDate: r.tripProfile!.startDate, endDate: r.tripProfile!.endDate }));
-	const tripThemeId = pickTripForDate(candidates, ctx.date);
-
-	let trip = null;
-	if (tripThemeId) {
-		const t = themeRows.find((r) => r.id === tripThemeId)!;
-		const { dayNo, totalDays } = dayWindowInfo(
-			t.tripProfile!.startDate!,
-			t.tripProfile!.endDate!,
-			ctx.date
-		);
-		trip = { themeId: t.id, name: t.name, emoji: t.emoji, dayNo, totalDays };
-	}
+	// Aktiv tur fra datoen (Ekko trenger ikke kjenne tema-taksonomien). Delt helper med assistenten.
+	const trip = await getActiveTripForDate(userId, ctx.date);
 
 	return json({
 		date: ctx.date,
