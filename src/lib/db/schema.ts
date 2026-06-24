@@ -325,6 +325,28 @@ export const themeFiles = pgTable('theme_files', {
 	idxThemeId: index('theme_files_theme_id_idx').on(table.themeId)
 }));
 
+// Kapplister — materialkalkulator knyttet til et prosjekt (tema).
+// Hver kappliste eier rader med {dimensjon, lengde, antall, meterpris} i en JSONB-array.
+// Beregning (antall fjøler + kostnad) gjøres i $lib/kappliste/calc.ts, ikke i DB.
+export const cutLists = pgTable('cut_lists', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	themeId: uuid('theme_id').references(() => themes.id, { onDelete: 'cascade' }).notNull(),
+	title: text('title').notNull().default('Kappliste'),
+	boardLengthCm: integer('board_length_cm').notNull().default(390), // standard fjøllengde
+	kerfMm: integer('kerf_mm').notNull().default(0), // sagsnitt mellom biter
+	rows: jsonb('rows')
+		.$type<Array<{ id: string; dimension: string; lengthCm: number; quantity: number; meterPriceNok: number }>>()
+		.notNull()
+		.default([]),
+	sortOrder: integer('sort_order').notNull().default(0),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	idxTheme: index('cut_lists_theme_idx').on(table.themeId),
+	idxUser: index('cut_lists_user_idx').on(table.userId)
+}));
+
 // Mål (overordnede målsetninger)
 export const goals = pgTable('goals', {
 	id: uuid('id').primaryKey().defaultRandom(),
