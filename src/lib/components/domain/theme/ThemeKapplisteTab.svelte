@@ -34,8 +34,35 @@
 	let creating = $state(false);
 	let savingIds = $state<Set<string>>(new Set());
 	let collapsedPlans = $state<Set<string>>(new Set()); // tom = alle kappeplaner vises
+	let collapsedMaterials = $state<Set<string>>(collapseAllMaterials(initialCutLists));
 
 	const saveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+	function collapseAllMaterials(ls: CutList[]): Set<string> {
+		const s = new Set<string>();
+		for (const l of ls) for (const m of l.materials) s.add(m.id);
+		return s;
+	}
+	function isMaterialOpen(matId: string): boolean {
+		return !collapsedMaterials.has(matId);
+	}
+	function toggleMaterial(matId: string) {
+		const next = new Set(collapsedMaterials);
+		if (next.has(matId)) next.delete(matId);
+		else next.add(matId);
+		collapsedMaterials = next;
+	}
+	/** Kompakt oppsummering av kappene (lengde/mål × antall) for kollapset kort. */
+	function cutSummary(mat: Material): string[] {
+		if (mat.kind === 'linear') {
+			return mat.cuts
+				.filter((c) => (c.lengthMm ?? 0) > 0 && c.quantity > 0)
+				.map((c) => `${c.lengthMm} mm × ${c.quantity}`);
+		}
+		return mat.cuts
+			.filter((c) => (c.widthMm ?? 0) > 0 && (c.heightMm ?? 0) > 0 && c.quantity > 0)
+			.map((c) => `${c.widthMm}×${c.heightMm} mm × ${c.quantity}`);
+	}
 
 	function isPlanOpen(matId: string): boolean {
 		return !collapsedPlans.has(matId);
@@ -53,6 +80,7 @@
 			if (res.ok) {
 				const { cutLists } = await res.json();
 				lists = cutLists;
+				collapsedMaterials = collapseAllMaterials(cutLists);
 			}
 		} catch {
 			/* behold initialCutLists ved feil */
@@ -210,7 +238,28 @@
 
 			{#each list.materials as mat (mat.id)}
 				{@const res = computeMaterial(mat, list.kerfMm)}
-				<div class="material">
+				<div class="material" class:is-open={isMaterialOpen(mat.id)}>
+					<div class="mat-bar">
+						<button
+							class="mat-toggle"
+							onclick={() => toggleMaterial(mat.id)}
+							aria-expanded={isMaterialOpen(mat.id)}
+							data-track="kappliste:apne-materiale"
+						>
+							<span class="chev">{isMaterialOpen(mat.id) ? '▾' : '▸'}</span>
+							<span class="mat-title">{mat.name.trim() || (mat.kind === 'linear' ? 'Lengdevare' : 'Plate')}</span>
+						</button>
+						{#if !isMaterialOpen(mat.id)}
+							<div class="mat-summary">
+								{#each cutSummary(mat) as s, i (i)}<span class="sum-chip">{s}</span>{/each}
+								{#if cutSummary(mat).length === 0}<span class="sum-empty">ingen kapp</span>{/if}
+							</div>
+						{/if}
+						<button class="icon-btn small mat-del" onclick={() => removeMaterial(list.id, mat.id)} aria-label="Slett materiale">✕</button>
+					</div>
+
+					{#if isMaterialOpen(mat.id)}
+					<div class="mat-body">
 					<div class="mat-head">
 						<input
 							class="mat-name"
@@ -222,7 +271,6 @@
 							aria-label="Materialnavn"
 						/>
 						<span class="kind-tag">{mat.kind === 'linear' ? 'Lengdevare' : 'Plate'}</span>
-						<button class="icon-btn small" onclick={() => removeMaterial(list.id, mat.id)} aria-label="Slett materiale">✕</button>
 					</div>
 
 					<!-- Stock + pris -->
@@ -427,6 +475,8 @@
 							{/if}
 						</div>
 					{/if}
+					</div>
+					{/if}
 				</div>
 			{/each}
 
@@ -528,6 +578,76 @@
 		border: 1px solid var(--card-border);
 		border-radius: 12px;
 		background: var(--tp-bg-1);
+		overflow: hidden;
+	}
+
+	/* Topplinje (klikkbar) */
+	.mat-bar {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 6px 8px;
+		padding: 10px 12px;
+	}
+	.material.is-open .mat-bar {
+		border-bottom: 1px solid var(--card-border);
+	}
+	.mat-toggle {
+		flex: 1 1 auto;
+		order: 1;
+		min-width: 0;
+		display: flex;
+		align-items: center;
+		gap: 7px;
+		background: none;
+		border: 0;
+		padding: 0;
+		cursor: pointer;
+		color: var(--tp-text);
+		font: inherit;
+		text-align: left;
+	}
+	.chev {
+		color: var(--tp-text-muted);
+		font-size: 0.7rem;
+		flex-shrink: 0;
+	}
+	.mat-title {
+		font-size: 0.92rem;
+		font-weight: 600;
+		color: var(--tp-text);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.mat-del {
+		order: 2;
+		flex: 0 0 auto;
+	}
+	.mat-summary {
+		order: 3;
+		flex: 1 1 100%;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 5px;
+		padding-left: 17px; /* linjer opp under tittelen, forbi chevron */
+	}
+	.sum-chip {
+		font-size: 0.72rem;
+		color: var(--tp-text-soft);
+		background: var(--tp-bg-2);
+		border: 1px solid var(--card-border);
+		border-radius: 6px;
+		padding: 2px 7px;
+		font-variant-numeric: tabular-nums;
+	}
+	.sum-empty {
+		font-size: 0.72rem;
+		color: var(--tp-text-muted);
+		padding-left: 0;
+	}
+
+	.mat-body {
 		padding: 12px;
 		display: flex;
 		flex-direction: column;

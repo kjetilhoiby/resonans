@@ -64,6 +64,10 @@ Hovedarbeidet ble derfor kapplister + å gjøre oppgavelista bred.
   vises som en målestokk-riktig plate med kappene plassert (x/y/b/h fra `layoutSheets`).
   `calc.ts` fikk `layoutLinear`/`layoutSheets` som returnerer plasseringene, og
   `MaterialResult.layout` bærer dem til UI-et.
+- **Kollapsbare materialkort:** hvert råmateriale er et kort med en klikkbar topplinje.
+  Kollapset viser den bare navnet (dim/tykkelse) + kompakte kapp-chips (lengde/mål ×
+  antall); utvidet viser hele editoren. Eksisterende materialer starter kollapset, nye
+  starter åpne.
 - `ThemePage.svelte`: ny fane «📐 Kapp» for prosjekter (`isHomeProject`), wiret inn
   prop `cutLists`.
 - `tema/[id]/+page.server.ts` + `+page.svelte`: laster og sender `cutLists`.
