@@ -477,6 +477,29 @@ export const messages = pgTable('messages', {
 	idxConversationId: index('messages_conversation_id_idx').on(table.conversationId)
 }));
 
+// Suspendert agent-tilstand for assistentens hybride klient-verktøy. Når modellen kaller et
+// klient-verktøy (driveDistance o.l.) som må kjøres on-device, lagres OpenAI-meldingene så langt
+// + de ventende klient-kallene her, mens strømmen sender toolCall-ene og lukkes. /tool-result
+// gjenopptar fra denne raden. Efemær: slettes ved fullføring, og TTL-ryddes hvis klienten aldri
+// kommer tilbake.
+export const assistantPendingTurns = pgTable('assistant_pending_turns', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id).notNull(),
+	conversationId: uuid('conversation_id')
+		.references(() => conversations.id, { onDelete: 'cascade' })
+		.notNull(),
+	messages: jsonb('messages').$type<unknown[]>().notNull(),
+	pendingToolCalls: jsonb('pending_tool_calls')
+		.$type<Array<{ id: string; name: string; args: Record<string, string> }>>()
+		.notNull(),
+	usedTools: jsonb('used_tools').$type<string[]>().default([]).notNull(),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	idxConversation: index('assistant_pending_turns_conversation_idx').on(table.conversationId),
+	idxCreated: index('assistant_pending_turns_created_idx').on(table.createdAt)
+}));
+
 // Planlagte påminnelser/check-ins
 export const reminders = pgTable('reminders', {
 	id: uuid('id').primaryKey().defaultRandom(),

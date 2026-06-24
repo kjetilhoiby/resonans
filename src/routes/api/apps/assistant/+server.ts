@@ -8,6 +8,7 @@ import {
 	getOwnedAssistantConversation,
 	loadAssistantTurns
 } from '$lib/server/assistant/conversation';
+import { savePendingTurn } from '$lib/server/assistant/pending-turns';
 
 /**
  * POST /api/apps/assistant
@@ -113,17 +114,42 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			try {
 				if (requestedId) controller.enqueue(send('start', { conversationId: requestedId }));
 
-				const { text, usedTools } = await runAssistantTurnStreaming(turnInput, (chunk) => {
+				const result = await runAssistantTurnStreaming(turnInput, (chunk) => {
 					controller.enqueue(send('delta', { text: chunk }));
 				});
 
+				// Samtalen må finnes nå — klienten trenger id-en for å poste tool-resultater / fortsette.
 				const conversationId = requestedId ?? (await createAssistantConversation(userId));
-				await appendAssistantTurns(conversationId, [
-					{ role: 'user', text: prompt },
-					{ role: 'assistant', text }
-				]);
+				if (!requestedId) controller.enqueue(send('start', { conversationId }));
 
-				controller.enqueue(send('complete', { ok: true, text, conversationId, usedTools }));
+				if (result.status === 'suspended') {
+					// Brukerturen lagres nå; assistentturen lagres når /tool-result fullfører.
+					await appendAssistantTurns(conversationId, [{ role: 'user', text: prompt }]);
+					await savePendingTurn({
+						userId,
+						conversationId,
+						messages: result.messages,
+						pendingToolCalls: result.pendingToolCalls,
+						usedTools: result.usedTools
+					});
+					for (const call of result.pendingToolCalls) {
+						controller.enqueue(send('tool_call', call));
+					}
+					controller.enqueue(
+						send('suspended', {
+							conversationId,
+							toolCallIds: result.pendingToolCalls.map((c) => c.id)
+						})
+					);
+				} else {
+					await appendAssistantTurns(conversationId, [
+						{ role: 'user', text: prompt },
+						{ role: 'assistant', text: result.text }
+					]);
+					controller.enqueue(
+						send('complete', { ok: true, text: result.text, conversationId, usedTools: result.usedTools })
+					);
+				}
 			} catch (error) {
 				console.error('[api/apps/assistant] streaming feilet:', error);
 				controller.enqueue(send('error', { code: 'assistant_generation_failed' }));
