@@ -4,6 +4,7 @@ import { env } from '$env/dynamic/private';
 import type { ConversationTurn } from '$lib/server/conversation-window';
 import { ASSISTANT_TOOL_DEFINITIONS, runAssistantTool } from './tools';
 import { getFullProgram } from '$lib/server/programs/repository';
+import { localHm, localIsoDay } from '$lib/server/nudge-time';
 
 /**
  * Server-kjørt, verktøy-bevisst samtaleagent for Ekko. Til forskjell fra den raske, statsløse
@@ -26,16 +27,51 @@ const MAX_TOOL_ROUNDS = 6;
 
 const SYSTEM_PROMPT = `Du er en innsiktsfull, varm og talevennlig norsk Resonans-assistent. Svaret ditt leses høyt.
 
-Du har verktøy som henter brukerens egne data (treningsprogram, dagens økt, nylige økter,
-utøver-kontekst, dagskontekst, biltilstand). Bruk dem aktivt når brukeren spør om noe som
-krever faktiske tall — ikke gjett.
+Du har verktøy som henter brukerens EGNE data. Bruk dem AKTIVT og av eget initiativ når
+spørsmålet kan besvares med dem — ikke be om lov, og ikke gjett. Dette kan du hente:
+- Trening: treningsprogrammer (programList → programDetail), dagens planlagte økt (programToday),
+  nylig fullførte økter (recentSessions) og et utøver-øyeblikksbilde (athleteContext).
+- Dag og sted: hvor brukeren er og bevegelse/reise i dag (dayPlan).
+- Bil: ferskeste lagrede biltilstand — batteri, rekkevidde, lading, posisjon (teslaState).
+
+Arbeidsmåte:
+- Vage spørsmål («hva bør jeg prioritere i morgen?», «hvordan ligger jeg an?») besvares ved å
+  FØRST hente relevant kontekst (dayPlan, programToday, recentSessions) og DERETTER gi et
+  konkret svar bygd på dataene — ikke et generelt ikke-svar.
+- Finn riktig programId med programList før du henter program-detaljer.
+- Når et verktøy gir tomt resultat, si hva som mangler kort og konkret — ikke påstå at du
+  «ikke har tilgang».
+
+Utenfor rekkevidde: ting du ikke har data om (kjøreavstand/navigasjon, vær, alder på
+familiemedlemmer, generell faktakunnskap) sier du kort fra om — og peker på hva du FAKTISK kan
+hjelpe med (trening, dagens plan/sted, biltilstand). Ikke svar bare «jeg har ikke tilgang».
 
 Stil:
 - Korte svar (det leses høyt). Ren tekst, INGEN markdown, ingen punktlister med tegn.
 - Bygg på det som er sagt tidligere i samtalen.
-- Bruk KUN tall og fakta fra verktøyene eller samtalen; aldri dikt opp tempo, puls, distanser
-  eller saldoer. Mangler data, si det kort framfor å gjette.
+- Bruk KUN tall og fakta fra verktøyene, tidskonteksten eller samtalen; aldri dikt opp tempo,
+  puls, distanser, saldoer eller datoer. Mangler data, si det kort framfor å gjette.
 - Unngå ordet «ekko».`;
+
+/** Brukeren bor i Norge — assistenten forankres til Oslo-tid. */
+const ASSISTANT_TZ = 'Europe/Oslo';
+
+/**
+ * Talevennlig nå-kontekst (ukedag, dato, klokkeslett) i brukerens tidssone. Uten denne faller
+ * modellen tilbake på treningsdataen sin og kan påstå feil årstall («i dag er det 2023»).
+ */
+export function buildTimeContext(now: Date): string {
+	const pretty = new Intl.DateTimeFormat('nb-NO', {
+		timeZone: ASSISTANT_TZ,
+		weekday: 'long',
+		day: 'numeric',
+		month: 'long',
+		year: 'numeric'
+	}).format(now);
+	const iso = localIsoDay(ASSISTANT_TZ, now);
+	const hm = localHm(ASSISTANT_TZ, now);
+	return `Akkurat nå er det ${pretty}, klokka ${hm} (ISO ${iso}). Bruk dette når brukeren sier «i dag», «i morgen» eller «i går», eller spør om dato/tid — aldri gjett årstall.`;
+}
 
 export interface AssistantTurnInput {
 	userId: string;
@@ -81,7 +117,8 @@ async function buildAssistantMessages(
 	const { userId, prompt, programId, history, droppedCount = 0, context } = input;
 
 	const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-		{ role: 'system', content: SYSTEM_PROMPT }
+		{ role: 'system', content: SYSTEM_PROMPT },
+		{ role: 'system', content: buildTimeContext(new Date()) }
 	];
 
 	if (programId) {
