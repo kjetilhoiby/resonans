@@ -160,6 +160,95 @@ export function hasKnowledge(s: KnowledgeSnapshot): boolean {
 	return !!s.notes || s.interests.length > 0 || s.goals.length > 0;
 }
 
+export interface QuizResult {
+	player: string;
+	correct: boolean;
+}
+
+export interface QuizStanding {
+	name: string;
+	score: number;
+	streak: number;
+	bestStreak: number;
+	streakLabel: string | null;
+	current: boolean; // er det denne spillerens tur nå?
+}
+
+export interface QuizBoardView {
+	active: boolean;
+	theme: string | null;
+	round: number;
+	currentPlayer: string | null;
+	currentQuestion: string | null;
+	answered: boolean; // gjeldende spørsmål er besvart (da kan fasit vises)
+	answer: string | null; // fasit — kun når besvart, ellers skjult
+	lastResult: QuizResult | null;
+	standings: QuizStanding[];
+}
+
+export interface QuizSessionState {
+	participants: QuizParticipant[];
+	theme: string | null;
+	round: number;
+	active: boolean;
+	currentPlayer: string | null;
+	currentQuestion: string | null;
+	currentAnswer: string | null;
+	lastResult: QuizResult | null;
+}
+
+/**
+ * Projiser en quiz-sesjon til det skjermen viser. Holder fasiten (`answer`) SKJULT til
+ * spørsmålet er besvart (`lastResult` satt) — slik at en delt skjerm i baksetet ikke
+ * røper svaret før noen har gjettet. Ren, så gatingen kan enhetstestes.
+ */
+export function projectQuizBoard(session: QuizSessionState): QuizBoardView {
+	const answered = session.lastResult != null;
+	const currentName = (session.currentPlayer ?? '').trim().toLowerCase();
+	const standings: QuizStanding[] = buildStandings(session.participants).map((p) => ({
+		name: p.name,
+		score: p.score,
+		streak: p.streak,
+		bestStreak: p.bestStreak,
+		streakLabel: streakLabel(p.streak),
+		current: !!currentName && p.name.toLowerCase() === currentName
+	}));
+	return {
+		active: session.active,
+		theme: session.theme,
+		round: session.round,
+		currentPlayer: session.currentPlayer,
+		currentQuestion: session.currentQuestion,
+		answered,
+		answer: answered ? session.currentAnswer : null,
+		lastResult: session.lastResult,
+		standings
+	};
+}
+
+/** Map en lagret quiz-sesjon (DB-rad) til den rene tilstanden board-projeksjonen forventer. */
+export function toQuizSessionState(row: {
+	participants: QuizParticipant[] | null;
+	theme: string | null;
+	round: number;
+	active: boolean;
+	currentPlayer: string | null;
+	currentQuestion: string | null;
+	currentAnswer: string | null;
+	lastResult: QuizResult | null;
+}): QuizSessionState {
+	return {
+		participants: row.participants ?? [],
+		theme: row.theme,
+		round: row.round,
+		active: row.active,
+		currentPlayer: row.currentPlayer,
+		currentQuestion: row.currentQuestion,
+		currentAnswer: row.currentAnswer,
+		lastResult: row.lastResult ?? null
+	};
+}
+
 export interface GeneratedQuestion {
 	player: string;
 	question: string;

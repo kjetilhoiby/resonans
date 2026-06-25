@@ -1047,6 +1047,11 @@ export const quizSessions = pgTable('quiz_sessions', {
 	theme: text('theme'),                                  // tema for inneværende runde
 	round: integer('round').notNull().default(0),          // antall fullførte runder
 	active: boolean('active').notNull().default(true),
+	// Live-tilstand for spillskjermen (/spill + delt /share-lenke):
+	currentPlayer: text('current_player'),                 // hvem sin tur det er nå
+	currentQuestion: text('current_question'),             // gjeldende spørsmål (vises på skjerm)
+	currentAnswer: text('current_answer'),                 // fasit — avsløres på skjerm først når besvart
+	lastResult: jsonb('last_result').$type<{ player: string; correct: boolean } | null>(),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
 }, (table) => ({

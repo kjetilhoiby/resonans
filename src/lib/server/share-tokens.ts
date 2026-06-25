@@ -3,7 +3,7 @@ import { shareTokens } from '$lib/db/schema';
 import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 
-export type ShareResourceType = 'checklist' | 'themeList' | 'tripPosition';
+export type ShareResourceType = 'checklist' | 'themeList' | 'tripPosition' | 'quizSession';
 export type ShareAccessMode = 'read' | 'write';
 
 export const SHARE_TOKEN_HEADER_NAME = 'x-resonans-share-token';
@@ -256,6 +256,26 @@ export async function getOrCreateTripPositionShareToken(
 		ownerUserId,
 		resourceType: 'tripPosition',
 		resourceId: liveSessionId,
+		accessMode: 'read'
+	});
+}
+
+/**
+ * Finn et levende (ikke revokert/utløpt) quizSession-token for en quiz, eller opprett ett.
+ * Brukes av spillskjermens «del»-knapp så barna kan følge scoreboardet på et eget nettbrett.
+ */
+export async function getOrCreateQuizShareToken(
+	ownerUserId: string,
+	quizSessionId: string
+): Promise<ShareTokenListItem> {
+	const now = new Date();
+	const existing = await listShareTokensForResource(ownerUserId, 'quizSession', quizSessionId);
+	const live = existing.find((t) => !t.expiresAt || t.expiresAt > now);
+	if (live) return live;
+	return createShareToken({
+		ownerUserId,
+		resourceType: 'quizSession',
+		resourceId: quizSessionId,
 		accessMode: 'read'
 	});
 }

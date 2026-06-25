@@ -4,9 +4,11 @@ import {
 	checklists,
 	themeLists,
 	liveSessions,
+	quizSessions,
 	users
 } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
+import { projectQuizBoard, toQuizSessionState, type QuizBoardView } from '$lib/server/assistant/quiz-logic';
 import {
 	maskEmail,
 	recordShareAccess,
@@ -154,6 +156,14 @@ async function loadTripPosition(resourceId: string, ownerUserId: string): Promis
 	};
 }
 
+async function loadQuizBoard(resourceId: string, ownerUserId: string): Promise<QuizBoardView | null> {
+	const session = await db.query.quizSessions.findFirst({
+		where: and(eq(quizSessions.id, resourceId), eq(quizSessions.userId, ownerUserId))
+	});
+	if (!session) return null;
+	return projectQuizBoard(toQuizSessionState(session));
+}
+
 async function loadOwnerDisplayName(ownerUserId: string): Promise<string | null> {
 	const owner = await db.query.users.findFirst({
 		where: eq(users.id, ownerUserId),
@@ -217,6 +227,12 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		const trip = await loadTripPosition(share.resourceId, share.ownerUserId);
 		if (!trip) throw error(404, 'Reisen finnes ikke lenger.');
 		return { ...baseResult, resource: { kind: 'tripPosition' as const, ownerName, ...trip } };
+	}
+
+	if (share.resourceType === 'quizSession') {
+		const board = await loadQuizBoard(share.resourceId, share.ownerUserId);
+		if (!board) throw error(404, 'Quizen finnes ikke lenger.');
+		return { ...baseResult, resource: { kind: 'quizSession' as const, board } };
 	}
 
 	throw error(400, 'Ukjent ressurstype.');

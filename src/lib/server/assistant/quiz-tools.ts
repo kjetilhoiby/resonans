@@ -16,6 +16,8 @@ import {
 	parseGeneratedQuestions,
 	buildKnowledgeSnapshot,
 	hasKnowledge,
+	projectQuizBoard,
+	toQuizSessionState,
 	type QuizParticipant,
 	type AgeBand,
 	type KnowledgeSnapshot
@@ -329,10 +331,40 @@ async function startSession(userId: string, names: string[]) {
 	await db.update(quizSessions).set({ active: false, updatedAt: new Date() }).where(and(eq(quizSessions.userId, userId), eq(quizSessions.active, true)));
 	const inserted = await db
 		.insert(quizSessions)
-		.values({ userId, participants, round: 0, active: true })
+		.values({
+			userId,
+			participants,
+			round: 0,
+			active: true,
+			currentPlayer: null,
+			currentQuestion: null,
+			currentAnswer: null,
+			lastResult: null
+		})
 		.returning({ id: quizSessions.id });
 
 	return { sessionId: inserted[0]?.id, participants: participants.map((p) => p.name), standings: standingsView(participants) };
+}
+
+/** Sett gjeldende spørsmål + hvem sin tur, så skjermen viser det. Nullstiller forrige resultat. */
+async function askQuestion(userId: string, player: string, question: string, answer: string) {
+	const session = await loadActiveSession(userId);
+	if (!session) return { error: 'Ingen aktiv quiz. Start en med action="start" først.' };
+	const participants = session.participants ?? [];
+	if (findParticipantIndex(participants, player) === -1) {
+		return { error: `Ukjent spiller «${player}». Aktive spillere: ${participants.map((p) => p.name).join(', ') || 'ingen'}.` };
+	}
+	await db
+		.update(quizSessions)
+		.set({
+			currentPlayer: player.trim(),
+			currentQuestion: question.trim(),
+			currentAnswer: answer.trim(),
+			lastResult: null,
+			updatedAt: new Date()
+		})
+		.where(eq(quizSessions.id, session.id));
+	return { ok: true, currentPlayer: player.trim() };
 }
 
 async function recordAnswer(userId: string, player: string, correct: boolean, theme?: string) {
@@ -350,7 +382,12 @@ async function recordAnswer(userId: string, player: string, correct: boolean, th
 
 	await db
 		.update(quizSessions)
-		.set({ participants: updated, theme: theme ?? session.theme, updatedAt: new Date() })
+		.set({
+			participants: updated,
+			theme: theme ?? session.theme,
+			lastResult: { player: updated[idx].name, correct }, // avslører fasiten på skjermen
+			updatedAt: new Date()
+		})
 		.where(eq(quizSessions.id, session.id));
 
 	const me = updated[idx];
@@ -443,13 +480,15 @@ export const QUIZ_ASSISTANT_TOOLS: AssistantTool[] = [
 			function: {
 				name: 'quiz_score',
 				description:
-					'Hold poeng og streaks per spiller i en quiz. action="start" (med names) starter en ny quiz og nullstiller stillingen. action="record" registrerer ett svar (player + correct) og returnerer oppdatert stilling og streak — bruk svaret til å si f.eks. «tre på rad, on fire!». action="status" gir gjeldende stilling. action="end" avslutter og kårer vinneren. Registrer ETT svar per spiller per spørsmål.',
+					'Hold poeng/streaks og driv spill-skjermen. action="start" (med names) starter en ny quiz. action="ask" (player + question + answer) setter gjeldende spørsmål og hvem sin tur det er — kall dette RETT FØR du leser spørsmålet høyt, så skjermen viser det (fasiten holdes skjult til besvart). action="record" (player + correct) registrerer svaret, avslører fasiten på skjermen og returnerer stilling + streak — bruk det til tilrop som «tre på rad, on fire!». action="status" gir gjeldende stilling. action="end" avslutter og kårer vinneren. Registrer ETT svar per spiller per spørsmål.',
 				parameters: {
 					type: 'object',
 					properties: {
-						action: { type: 'string', enum: ['start', 'record', 'status', 'end'] },
+						action: { type: 'string', enum: ['start', 'ask', 'record', 'status', 'end'] },
 						names: { type: 'array', items: { type: 'string' }, description: 'Deltakernavn (for action="start")' },
-						player: { type: 'string', description: 'Hvem som svarte (for action="record")' },
+						player: { type: 'string', description: 'Hvem sin tur / hvem som svarte (for action="ask"/"record")' },
+						question: { type: 'string', description: 'Spørsmålet som stilles (for action="ask")' },
+						answer: { type: 'string', description: 'Fasit på spørsmålet (for action="ask") — vises på skjerm først når besvart' },
 						correct: { type: 'boolean', description: 'Var svaret riktig? (for action="record")' },
 						theme: { type: 'string', description: 'Valgfritt tema for runden som spilles (record)' }
 					},
@@ -464,6 +503,13 @@ export const QUIZ_ASSISTANT_TOOLS: AssistantTool[] = [
 					const names = Array.isArray(args.names) ? args.names.filter((n): n is string => typeof n === 'string') : [];
 					return startSession(userId, names);
 				}
+				case 'ask': {
+					const player = typeof args.player === 'string' ? args.player.trim() : '';
+					const question = typeof args.question === 'string' ? args.question.trim() : '';
+					const answer = typeof args.answer === 'string' ? args.answer.trim() : '';
+					if (!player || !question || !answer) return { error: 'Oppgi player, question og answer.' };
+					return askQuestion(userId, player, question, answer);
+				}
 				case 'record': {
 					const player = typeof args.player === 'string' ? args.player : '';
 					if (!player) return { error: 'Oppgi player.' };
@@ -473,8 +519,8 @@ export const QUIZ_ASSISTANT_TOOLS: AssistantTool[] = [
 				}
 				case 'status': {
 					const session = await loadActiveSession(userId);
-					if (!session) return { error: 'Ingen aktiv quiz.' };
-					return { theme: session.theme, standings: standingsView(session.participants ?? []) };
+					if (!session) return { active: false };
+					return projectQuizBoard(toQuizSessionState(session));
 				}
 				case 'end':
 					return endSession(userId);

@@ -10,7 +10,9 @@ import {
 	streakLabel,
 	parseGeneratedQuestions,
 	buildKnowledgeSnapshot,
-	hasKnowledge
+	hasKnowledge,
+	projectQuizBoard,
+	type QuizSessionState
 } from './quiz-logic';
 
 describe('participantsFromNames', () => {
@@ -179,5 +181,43 @@ describe('hasKnowledge', () => {
 		expect(hasKnowledge({ interests: [], goals: [] })).toBe(false);
 		expect(hasKnowledge({ interests: ['Lego'], goals: [] })).toBe(true);
 		expect(hasKnowledge({ notes: 'noe', interests: [], goals: [] })).toBe(true);
+	});
+});
+
+describe('projectQuizBoard', () => {
+	const base: QuizSessionState = {
+		participants: [
+			{ name: 'Nils', score: 3, streak: 3, bestStreak: 3, asked: 4, correct: 3 },
+			{ name: 'Erle', score: 1, streak: 0, bestStreak: 1, asked: 4, correct: 1 }
+		],
+		theme: 'hovedsteder',
+		round: 1,
+		active: true,
+		currentPlayer: 'Erle',
+		currentQuestion: 'Hva er hovedstaden i Norge?',
+		currentAnswer: 'Oslo',
+		lastResult: null
+	};
+
+	it('skjuler fasiten før spørsmålet er besvart', () => {
+		const board = projectQuizBoard(base);
+		expect(board.answered).toBe(false);
+		expect(board.answer).toBeNull();
+		expect(board.currentQuestion).toBe('Hva er hovedstaden i Norge?');
+	});
+
+	it('avslører fasiten når svaret er registrert', () => {
+		const board = projectQuizBoard({ ...base, lastResult: { player: 'Erle', correct: true } });
+		expect(board.answered).toBe(true);
+		expect(board.answer).toBe('Oslo');
+		expect(board.lastResult).toEqual({ player: 'Erle', correct: true });
+	});
+
+	it('sorterer stillingen og markerer hvem sin tur det er', () => {
+		const board = projectQuizBoard(base);
+		expect(board.standings.map((s) => s.name)).toEqual(['Nils', 'Erle']);
+		expect(board.standings.find((s) => s.name === 'Nils')?.streakLabel).toBe('varm');
+		expect(board.standings.find((s) => s.name === 'Erle')?.current).toBe(true);
+		expect(board.standings.find((s) => s.name === 'Nils')?.current).toBe(false);
 	});
 });
