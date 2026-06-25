@@ -22,6 +22,10 @@ export interface Material {
 	id: string;
 	name: string; // f.eks. "48x48 impregnert furu" eller "15mm kryssfiner poppel"
 	kind: 'linear' | 'sheet';
+	woodType?: string; // tresort/platetype, f.eks. "furu", "kryssfiner poppel"
+	treatment?: string; // behandling, f.eks. "Trykkimpregnert", "Ubehandlet"
+	thicknessMm?: number; // godstykkelse (plate-z / lekt-tykkelse) — metadata, ikke i beregning
+	crossWidthMm?: number; // tverrsnittsbredde for lengdevare — metadata, ikke i beregning
 	// linear:
 	stockLengthMm?: number; // lengde per lekt/bjelke (default 3900)
 	pricePerMeterNok?: number;

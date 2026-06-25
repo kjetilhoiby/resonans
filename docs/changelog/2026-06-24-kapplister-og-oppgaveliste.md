@@ -133,10 +133,37 @@ ekte sagblad (~1,8 mm) ble aldri trukket fra. Bruker påpekte dette.
 - `ThemeKapplisteTab.svelte`: nytt **Sagsnitt**-felt per kappliste (under tittelen,
   `data-track="kappliste:sagsnitt"`), så bladbredden kan justeres per liste.
 
+### Fase 8: Materiale-modal med presets
+
+Råmaterialer ble lagt til via to knapper («+ Lekt/bjelke» / «+ Plate») som lagde et
+tomt materiale du måtte fylle ut inline. Erstattet med én **«+ Materiale»**-knapp som
+åpner en modal for å velge materialet skikkelig.
+
+- `MaterialPickerModal.svelte` (domain/theme, bygd på delt `BottomSheet`): toggle
+  plate/lengdevare, tresort/platetype (input + `datalist`), behandling (chips), mål
+  (x/y/z) og pris. Navnet genereres automatisk fra valgene («15 mm kryssfiner poppel»)
+  og kan overstyres.
+- **Presets som chips**: dine egne, tidligere brukte materialer (utledet on-the-fly
+  fra alle kapplistene dine, deduplisert) — klikk fyller alle felt. Ingen innebygd
+  katalog og ingen ny tabell (bevisst valg).
+- `catalog.ts`: `WOOD_TYPES`/`TREATMENTS` (valg-alternativer), `materialDisplayName`
+  (auto-navn), `presetKey` + `derivePresets` (deduplisering). Rene, testede funksjoner.
+- Modellutvidelse (JSONB, ingen SQL-migrasjon): `Material` fikk `woodType`,
+  `treatment`, `thicknessMm` og `crossWidthMm`. Brukt til navn/presets — ikke i
+  beregningen. `sanitizeMaterials` og schema-`$type` oppdatert.
+
+## Beslutninger (forts.)
+
+- **Presets = kun egne brukte materialer**, ikke en innebygd byggevare-katalog.
+  Avklart med bruker — katalogen (norske standardmål) ble brukt som referanse for
+  valg-listene, men chips speiler det brukeren faktisk har brukt.
+- **Tresort/behandling som egne felt** (ikke bare fritekst-navn), så de kan
+  filtreres/gjenbrukes og navnet genereres konsistent.
+
 ## Verifisering
 
 - `npm run check`: 0 errors, 0 warnings.
-- `npm test`: 747 tester passerer (inkl. 21 for kappliste-beregningen, med layout
-  og MaxRects-pakking).
+- `npm test`: 755 tester passerer (inkl. 21 for beregning/MaxRects og 8 for
+  katalog/presets).
 - Verifisert at brukerens plate (3×1200×600 + 6×400×300 på 2440×1220) fortsatt
   pakkes på 1 plate med sagsnitt 1,8 mm.

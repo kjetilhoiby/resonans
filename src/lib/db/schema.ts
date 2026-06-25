@@ -342,6 +342,10 @@ export const cutLists = pgTable('cut_lists', {
 				id: string;
 				name: string;
 				kind: 'linear' | 'sheet';
+				woodType?: string;
+				treatment?: string;
+				thicknessMm?: number;
+				crossWidthMm?: number;
 				stockLengthMm?: number;
 				pricePerMeterNok?: number;
 				stockWidthMm?: number;

@@ -36,6 +36,10 @@ export function sanitizeMaterials(input: unknown): Material[] {
 			kind,
 			cuts
 		};
+		if (typeof m.woodType === 'string' && m.woodType.trim()) material.woodType = m.woodType.trim().slice(0, 40);
+		if (typeof m.treatment === 'string' && m.treatment.trim()) material.treatment = m.treatment.trim().slice(0, 40);
+		if ('thicknessMm' in m && m.thicknessMm != null) material.thicknessMm = Math.max(0, toFiniteNumber(m.thicknessMm));
+		if ('crossWidthMm' in m && m.crossWidthMm != null) material.crossWidthMm = Math.max(0, Math.round(toFiniteNumber(m.crossWidthMm)));
 		if (kind === 'linear') {
 			material.stockLengthMm = Math.max(0, Math.round(toFiniteNumber(m.stockLengthMm, 3900)));
 			material.pricePerMeterNok = Math.max(0, toFiniteNumber(m.pricePerMeterNok));

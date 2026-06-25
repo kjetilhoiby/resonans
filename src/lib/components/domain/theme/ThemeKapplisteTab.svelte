@@ -13,6 +13,8 @@
 		type Material,
 		type CutSpec
 	} from '$lib/kappliste/calc';
+	import { derivePresets } from '$lib/kappliste/catalog';
+	import MaterialPickerModal from './MaterialPickerModal.svelte';
 
 	interface CutList {
 		id: string;
@@ -35,6 +37,10 @@
 	let savingIds = $state<Set<string>>(new Set());
 	let collapsedPlans = $state<Set<string>>(new Set()); // tom = alle kappeplaner vises
 	let collapsedMaterials = $state<Set<string>>(collapseAllMaterials(initialCutLists));
+	let pickerListId = $state<string | null>(null); // åpen materiale-modal for denne lista
+
+	// Presets til modalen: brukerens egne, tidligere brukte materialer (deduplisert).
+	const materialPresets = $derived(derivePresets(lists.flatMap((l) => l.materials)));
 
 	const saveTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -143,29 +149,6 @@
 				m.id === matId ? { ...m, cuts: m.cuts.map((c) => (c.id === cutId ? { ...c, ...patch } : c)) } : m
 			)
 		);
-	}
-
-	function addMaterial(listId: string, kind: 'linear' | 'sheet') {
-		const material: Material =
-			kind === 'linear'
-				? {
-						id: crypto.randomUUID(),
-						name: '',
-						kind: 'linear',
-						stockLengthMm: 3900,
-						pricePerMeterNok: 0,
-						cuts: [{ id: crypto.randomUUID(), lengthMm: 0, quantity: 1 }]
-					}
-				: {
-						id: crypto.randomUUID(),
-						name: '',
-						kind: 'sheet',
-						stockWidthMm: 2440,
-						stockHeightMm: 1220,
-						pricePerSheetNok: 0,
-						cuts: [{ id: crypto.randomUUID(), widthMm: 0, heightMm: 0, quantity: 1 }]
-					};
-		updateMaterials(listId, (mats) => [...mats, material]);
 	}
 
 	function removeMaterial(listId: string, matId: string) {
@@ -499,8 +482,7 @@
 			{/each}
 
 			<div class="add-material">
-				<button onclick={() => addMaterial(list.id, 'linear')} data-track="kappliste:nytt-materiale-lengde">+ Lekt/bjelke</button>
-				<button onclick={() => addMaterial(list.id, 'sheet')} data-track="kappliste:nytt-materiale-plate">+ Plate</button>
+				<button onclick={() => (pickerListId = list.id)} data-track="kappliste:nytt-materiale">+ Materiale</button>
 			</div>
 
 			{#if total.materials.length > 0 && !total.hasErrors}
@@ -516,6 +498,21 @@
 		{creating ? 'Oppretter…' : '+ Ny kappliste'}
 	</button>
 </div>
+
+{#if pickerListId}
+	<MaterialPickerModal
+		presets={materialPresets}
+		onClose={() => (pickerListId = null)}
+		onAdd={(material) => {
+			const listId = pickerListId;
+			if (listId) {
+				updateMaterials(listId, (mats) => [...mats, material]);
+				collapsedMaterials = new Set([...collapsedMaterials].filter((id) => id !== material.id));
+			}
+			pickerListId = null;
+		}}
+	/>
+{/if}
 
 <style>
 	.kapp {
