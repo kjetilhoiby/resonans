@@ -3,8 +3,15 @@
 	import SharedChecklistView from '$lib/components/domain/share/SharedChecklistView.svelte';
 	import SharedThemeListView from '$lib/components/domain/share/SharedThemeListView.svelte';
 	import SharedTripPositionView from '$lib/components/domain/share/SharedTripPositionView.svelte';
+	import { AppPage, PageSection, PageHeader } from '$lib/components/ui';
+	import QuizBoard from '$lib/components/domain/quiz/QuizBoard.svelte';
 
 	let { data }: { data: PageData } = $props();
+
+	// Delt spillskjerm: egen mørk fullskjermsvisning (ikke det lyse share-skallet).
+	const quiz = $derived(
+		data.status === 'ok' && data.resource.kind === 'quizSession' ? data.resource.board : null
+	);
 
 	// Rikt forhåndsvisningskort for delt live posisjon (kart-OG via satori).
 	const trip = $derived(
@@ -34,6 +41,17 @@
 	{/if}
 </svelte:head>
 
+{#if quiz}
+	<AppPage>
+		<PageSection>
+			<PageHeader title="Quiz" />
+			{#if data.status === 'ok' && data.ownerName}
+				<p class="quiz-owner">Delt av {data.ownerName}</p>
+			{/if}
+			<QuizBoard initial={quiz} pollUrl={`/api/share-link/${data.status === 'ok' ? data.token : ''}/quiz`} />
+		</PageSection>
+	</AppPage>
+{:else}
 <main class="share-page">
 	{#if data.status === 'email_locked'}
 		<section class="locked">
@@ -81,8 +99,14 @@
 		{/if}
 	{/if}
 </main>
+{/if}
 
 <style>
+	.quiz-owner {
+		margin: var(--space-sm, 8px) 0 0;
+		font-size: var(--font-size-caption);
+		color: var(--text-secondary);
+	}
 	.share-page {
 		max-width: 640px;
 		margin: 0 auto;
