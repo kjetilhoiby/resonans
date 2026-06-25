@@ -31,8 +31,9 @@ poller hvert par sekunder), så vi gjenbruker det.
 
 ### Fase 3: API
 - `GET /api/quiz/status` — innlogget brukers aktive quiz (spillskjermen i appen poller dette).
-- `GET /api/quiz/[token]` — offentlig, token-basert (delt skjerm). Krever et `quizSession`-
-  share-token.
+- `GET /api/share-link/[token]/quiz` — offentlig, token-basert (delt skjerm). Ligger under den
+  allerede-offentlige `/api/share-link`-prefiksen (jf. hooks.server.ts) på linje med `/position`
+  for delt reise, så barnas nettbrett slipper gjennom auth-laget.
 - `POST /api/quiz/share` — lager/gjenbruker en delelenke til aktiv quiz.
 - Delings-systemet (`share_tokens`) utvidet med ressurstype `quizSession` +
   `getOrCreateQuizShareToken`. Delte quiz-skjermer vises via den eksisterende `/share/[token]`.

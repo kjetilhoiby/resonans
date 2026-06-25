@@ -48,7 +48,7 @@
 			{#if data.status === 'ok' && data.ownerName}
 				<p class="quiz-owner">Delt av {data.ownerName}</p>
 			{/if}
-			<QuizBoard initial={quiz} pollUrl={`/api/quiz/${data.status === 'ok' ? data.token : ''}`} />
+			<QuizBoard initial={quiz} pollUrl={`/api/share-link/${data.status === 'ok' ? data.token : ''}/quiz`} />
 		</PageSection>
 	</AppPage>
 {:else}
