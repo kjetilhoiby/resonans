@@ -236,6 +236,24 @@
 				</div>
 			</header>
 
+			<div class="kerf-line">
+				<label>
+					<span>Sagsnitt (sagbladbredde)</span>
+					<span class="field"
+						><input
+							type="text"
+							inputmode="decimal"
+							placeholder="1,8"
+							value={list.kerfMm}
+							data-track="kappliste:sagsnitt"
+							onchange={(e) => patchList(list.id, { kerfMm: Math.min(parseNum(e.currentTarget.value), 50) })}
+							aria-label="Sagsnitt i mm"
+						/><span class="suffix">mm</span></span
+					>
+				</label>
+				<span class="kerf-hint">Trekkes fra mellom kapp ved beregning</span>
+			</div>
+
 			{#each list.materials as mat (mat.id)}
 				{@const res = computeMaterial(mat, list.kerfMm)}
 				<div class="material" class:is-open={isMaterialOpen(mat.id)}>
@@ -555,6 +573,29 @@
 	.saving {
 		font-size: 0.72rem;
 		color: var(--tp-text-muted);
+	}
+
+	/* Sagsnitt */
+	.kerf-line {
+		display: flex;
+		align-items: flex-end;
+		flex-wrap: wrap;
+		gap: 6px 12px;
+	}
+	.kerf-line label {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		font-size: 0.72rem;
+		color: var(--tp-text-soft);
+	}
+	.kerf-line .field input {
+		width: 56px;
+	}
+	.kerf-hint {
+		font-size: 0.68rem;
+		color: var(--tp-text-muted);
+		padding-bottom: 8px;
 	}
 	.icon-btn {
 		background: none;

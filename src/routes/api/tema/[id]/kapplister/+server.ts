@@ -36,7 +36,8 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 
 	const body = await request.json().catch(() => null);
 	const title = typeof body?.title === 'string' && body.title.trim() ? body.title.trim().slice(0, 80) : 'Kappliste';
-	const kerfMm = Number.isFinite(body?.kerfMm) && body.kerfMm >= 0 ? Math.round(body.kerfMm) : 0;
+	// Sagsnitt med desimaler (sagblad ~1.8 mm). Klem til et fornuftig område.
+	const kerfMm = Number.isFinite(body?.kerfMm) && body.kerfMm >= 0 ? Math.min(body.kerfMm, 50) : 1.8;
 	const materials = sanitizeMaterials(body?.materials);
 
 	const [{ maxOrder }] = await db

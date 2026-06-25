@@ -30,7 +30,7 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 	const update: Partial<typeof cutLists.$inferInsert> = { updatedAt: new Date() };
 
 	if (typeof body?.title === 'string' && body.title.trim()) update.title = body.title.trim().slice(0, 80);
-	if (Number.isFinite(body?.kerfMm) && body.kerfMm >= 0) update.kerfMm = Math.round(body.kerfMm);
+	if (Number.isFinite(body?.kerfMm) && body.kerfMm >= 0) update.kerfMm = Math.min(body.kerfMm, 50);
 	if (Number.isInteger(body?.sortOrder)) update.sortOrder = body.sortOrder;
 	if ('materials' in (body ?? {})) update.materials = sanitizeMaterials(body.materials);
 

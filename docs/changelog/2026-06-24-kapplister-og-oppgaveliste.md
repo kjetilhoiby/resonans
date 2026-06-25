@@ -120,8 +120,23 @@ kolonner × tre rader → **1** plate.
 - Nye tester: brukerens tilfelle → 1 plate; alle kapp innenfor platemålene (aldri
   underestimat). `tooLarge`-flagging og rotasjons-tilfellene består uendret.
 
+### Fase 7: Sagsnitt med desimaler + UI
+
+Sagsnittet (kerf) sto som `integer` med standard `0` og hadde ingen UI — så et
+ekte sagblad (~1,8 mm) ble aldri trukket fra. Bruker påpekte dette.
+
+- `cut_lists.kerf_mm`: `integer` → `double precision`, standard `1.8`. Migrasjon
+  `0024_kerf_decimal.sql` (bytter type, ny default, og løfter eksisterende 0-rader
+  til 1.8 siden 0 bare var en plassholder).
+- API (POST/PATCH): tar imot desimaler, klemmer til `[0, 50]` mm, faller tilbake
+  til 1,8 ved manglende verdi (i stedet for å avrunde til heltall).
+- `ThemeKapplisteTab.svelte`: nytt **Sagsnitt**-felt per kappliste (under tittelen,
+  `data-track="kappliste:sagsnitt"`), så bladbredden kan justeres per liste.
+
 ## Verifisering
 
 - `npm run check`: 0 errors, 0 warnings.
 - `npm test`: 747 tester passerer (inkl. 21 for kappliste-beregningen, med layout
   og MaxRects-pakking).
+- Verifisert at brukerens plate (3×1200×600 + 6×400×300 på 2440×1220) fortsatt
+  pakkes på 1 plate med sagsnitt 1,8 mm.
