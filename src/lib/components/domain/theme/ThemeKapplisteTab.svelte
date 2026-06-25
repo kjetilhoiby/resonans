@@ -15,12 +15,14 @@
 	} from '$lib/kappliste/calc';
 	import { derivePresets } from '$lib/kappliste/catalog';
 	import { planMaterialTransport, type TransportLimit } from '$lib/kappliste/transport';
+	import Checkbox from '$lib/components/ui/Checkbox.svelte';
 	import MaterialPickerModal from './MaterialPickerModal.svelte';
 
 	interface CutList {
 		id: string;
 		title: string;
 		kerfMm: number;
+		transportEnabled: boolean;
 		transportMaxLengthMm: number;
 		transportMaxWidthMm: number;
 		materials: Material[];
@@ -125,6 +127,7 @@
 				body: JSON.stringify({
 					title: list.title,
 					kerfMm: list.kerfMm,
+					transportEnabled: list.transportEnabled,
 					transportMaxLengthMm: list.transportMaxLengthMm,
 					transportMaxWidthMm: list.transportMaxWidthMm,
 					materials: list.materials
@@ -247,35 +250,44 @@
 			</div>
 
 			<div class="kerf-line transport-line">
-				<label>
-					<span>Transport (bil) — maks lengde</span>
-					<span class="field"
-						><input
-							type="text"
-							inputmode="numeric"
-							placeholder="1900"
-							value={list.transportMaxLengthMm}
-							data-track="kappliste:transport-lengde"
-							onchange={(e) => patchList(list.id, { transportMaxLengthMm: Math.round(parseNum(e.currentTarget.value)) || 1900 })}
-							aria-label="Maks transportlengde i mm"
-						/><span class="suffix">mm</span></span
-					>
+				<label class="tp-toggle">
+					<Checkbox
+						checked={list.transportEnabled}
+						onChange={(e) => patchList(list.id, { transportEnabled: (e.currentTarget as HTMLInputElement).checked })}
+					/>
+					<span>Tilpass kapp til bil</span>
 				</label>
-				<label>
-					<span>maks bredde</span>
-					<span class="field"
-						><input
-							type="text"
-							inputmode="numeric"
-							placeholder="1000"
-							value={list.transportMaxWidthMm}
-							data-track="kappliste:transport-bredde"
-							onchange={(e) => patchList(list.id, { transportMaxWidthMm: Math.round(parseNum(e.currentTarget.value)) || 1000 })}
-							aria-label="Maks transportbredde i mm"
-						/><span class="suffix">mm</span></span
-					>
-				</label>
-				<span class="kerf-hint">Default: Tesla Model Y (baksete ned)</span>
+				{#if list.transportEnabled}
+					<label>
+						<span>maks lengde</span>
+						<span class="field"
+							><input
+								type="text"
+								inputmode="numeric"
+								placeholder="1900"
+								value={list.transportMaxLengthMm}
+								data-track="kappliste:transport-lengde"
+								onchange={(e) => patchList(list.id, { transportMaxLengthMm: Math.round(parseNum(e.currentTarget.value)) || 1900 })}
+								aria-label="Maks transportlengde i mm"
+							/><span class="suffix">mm</span></span
+						>
+					</label>
+					<label>
+						<span>maks bredde</span>
+						<span class="field"
+							><input
+								type="text"
+								inputmode="numeric"
+								placeholder="1000"
+								value={list.transportMaxWidthMm}
+								data-track="kappliste:transport-bredde"
+								onchange={(e) => patchList(list.id, { transportMaxWidthMm: Math.round(parseNum(e.currentTarget.value)) || 1000 })}
+								aria-label="Maks transportbredde i mm"
+							/><span class="suffix">mm</span></span
+						>
+					</label>
+					<span class="kerf-hint">Default: Tesla Model Y (baksete ned)</span>
+				{/if}
 			</div>
 
 			{#each list.materials as mat (mat.id)}
@@ -518,7 +530,7 @@
 							{/if}
 						</div>
 
-						{#if transport.needed}
+						{#if list.transportEnabled && transport.needed}
 							<div class="transport-block" class:warn={!transport.allFit}>
 								<span class="tp-title">📦 Kapp i butikk for transport</span>
 								{#if transport.allFit}
@@ -651,6 +663,14 @@
 	.kerf-hint {
 		font-size: 0.68rem;
 		color: var(--tp-text-muted);
+		padding-bottom: 8px;
+	}
+	.tp-toggle {
+		flex-direction: row !important;
+		align-items: center;
+		gap: 7px !important;
+		cursor: pointer;
+		color: var(--tp-text-soft);
 		padding-bottom: 8px;
 	}
 	.icon-btn {

@@ -171,6 +171,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 			id: c.id,
 			title: c.title,
 			kerfMm: c.kerfMm,
+			transportEnabled: c.transportEnabled,
 			transportMaxLengthMm: c.transportMaxLengthMm,
 			transportMaxWidthMm: c.transportMaxWidthMm,
 			materials: c.materials ?? [],

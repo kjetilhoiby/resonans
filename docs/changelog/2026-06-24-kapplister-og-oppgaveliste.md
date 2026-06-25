@@ -200,3 +200,6 @@ Mange byggevarebutikker kapper gratis. Resonans foreslår nå hvilke snitt du b�
   Advarer hvis en ferdig bit selv er for stor for bilen.
 - Eksempel: 3×(1200×600) + 6×(400×300) på 2440×1220 → 3 snitt → 4 striper
   (≤636×1220) som alle passer Model Y.
+- **«Tilpass kapp til bil» som checkbox** (kolonne `transport_enabled`, migrasjon
+  0026, default på): krysses av/på per kappliste. Avkrysset skjuler både
+  transport-grense-feltene og «kapp i butikk»-linja.
