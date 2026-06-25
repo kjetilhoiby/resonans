@@ -143,12 +143,15 @@ async function checkBackgroundJobHealth(): Promise<FailingJobType[]> {
 }
 
 async function checkCronExecutionHealth(): Promise<CronMiss[]> {
+	// Terskel = romslig buffer over jobbens faktiske kadens (se /api/cron/jobs).
+	// Må være større enn kadensen, ellers gir GitHub Actions-jitter (eller en
+	// daglig jobb som per definisjon er >12t gammel) falske «cron mangler».
 	const expectedJobs: Record<string, number> = {
-		'/api/cron/withings-sync': 30 * 60_000,
-		'/api/cron/background-jobs': 30 * 60_000,
-		'/api/cron/sparebank1-sync': 12 * 3600_000,
-		'/api/cron/aggregate': 12 * 3600_000,
-		'/api/cron/dropbox-sync': 30 * 60_000,
+		'/api/cron/withings-sync': 60 * 60_000,   // */5 05–22 UTC → 60 min buffer
+		'/api/cron/background-jobs': 60 * 60_000,  // */5 → 60 min buffer
+		'/api/cron/sparebank1-sync': 14 * 3600_000, // hver 6. time → 14t buffer
+		'/api/cron/aggregate': 28 * 3600_000,      // daglig (03:00 UTC) → 28t buffer
+		'/api/cron/dropbox-sync': 60 * 60_000,     // */5 → 60 min buffer
 	};
 
 	const misses: CronMiss[] = [];

@@ -1,12 +1,19 @@
 import { json } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
+import { db } from '$lib/db';
+import { cronExecutions } from '$lib/db/schema';
+import { sql } from 'drizzle-orm';
+import { isDue } from '$lib/server/cron-schedule';
 import type { RequestHandler } from './$types';
 
 /**
  * GET /api/cron/jobs
  * Returnerer alle registrerte cron-jobber med path og schedule.
- * GitHub Actions-workflowen bruker denne listen til å avgjøre
- * hvilke jobber som skal kjøres hvert 5. minutt.
+ *
+ * GET /api/cron/jobs?due=1
+ * Returnerer kun jobbene som skal kjøre nå (beregnet server-side mot
+ * `cron_executions` for å unngå dobbeltkjøring). GitHub Actions-workflowen
+ * bruker dette slik at en forsinket dispatch fortsatt fanger daglige jobber.
  *
  * Legg til nye cron-jobber her — ingen endringer nødvendig i workflow.
  */
@@ -21,7 +28,7 @@ export type CronJob = {
 const JOBS: CronJob[] = [
 	{
 		path: '/api/cron/aggregate',
-		schedule: '0 0 * * *', // midnatt UTC
+		schedule: '0 3 * * *', // 03:00 UTC = 05:00 Oslo — unna det overbelastede midnatt-UTC-slotet
 		description: 'Nattlig aggregering — ukentlig/månedlig/årlig (alle brukere)',
 		maxDurationSeconds: 300
 	},
@@ -115,11 +122,32 @@ const JOBS: CronJob[] = [
 	}
 ];
 
-export const GET: RequestHandler = async ({ request }) => {
+export const GET: RequestHandler = async ({ request, url }) => {
 	const authHeader = request.headers.get('authorization');
 	if (env.CRON_SECRET && authHeader !== `Bearer ${env.CRON_SECRET}`) {
 		return json({ error: 'Unauthorized' }, { status: 401 });
 	}
 
-	return json(JOBS);
+	if (url.searchParams.get('due') !== '1') {
+		return json(JOBS);
+	}
+
+	// Siste faktiske kjøring per jobb (uavhengig av status) for dedup.
+	const lastRunRows = await db
+		.select({
+			jobPath: cronExecutions.jobPath,
+			lastRunAt: sql<string>`max(${cronExecutions.executedAt})`
+		})
+		.from(cronExecutions)
+		.groupBy(cronExecutions.jobPath);
+
+	const lastRunByPath = new Map<string, Date>();
+	for (const row of lastRunRows) {
+		if (row.lastRunAt) lastRunByPath.set(row.jobPath, new Date(row.lastRunAt));
+	}
+
+	const now = new Date();
+	const due = JOBS.filter((job) => isDue(job.schedule, now, lastRunByPath.get(job.path) ?? null));
+
+	return json(due);
 };
