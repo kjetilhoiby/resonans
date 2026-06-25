@@ -336,6 +336,8 @@ export const cutLists = pgTable('cut_lists', {
 	themeId: uuid('theme_id').references(() => themes.id, { onDelete: 'cascade' }).notNull(),
 	title: text('title').notNull().default('Kappliste'),
 	kerfMm: doublePrecision('kerf_mm').notNull().default(1.8), // sagsnitt (sagbladbredde), ~1.8 mm
+	transportMaxLengthMm: doublePrecision('transport_max_length_mm').notNull().default(1900), // lasterom: lengste side
+	transportMaxWidthMm: doublePrecision('transport_max_width_mm').notNull().default(1000), // lasterom: korteste side
 	materials: jsonb('materials')
 		.$type<
 			Array<{

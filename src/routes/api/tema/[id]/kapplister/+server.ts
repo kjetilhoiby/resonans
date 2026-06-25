@@ -11,6 +11,8 @@ function mapCutList(row: typeof cutLists.$inferSelect) {
 		id: row.id,
 		title: row.title,
 		kerfMm: row.kerfMm,
+		transportMaxLengthMm: row.transportMaxLengthMm,
+		transportMaxWidthMm: row.transportMaxWidthMm,
 		materials: row.materials ?? [],
 		sortOrder: row.sortOrder,
 		updatedAt: row.updatedAt.toISOString()

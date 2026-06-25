@@ -14,12 +14,15 @@
 		type CutSpec
 	} from '$lib/kappliste/calc';
 	import { derivePresets } from '$lib/kappliste/catalog';
+	import { planMaterialTransport, type TransportLimit } from '$lib/kappliste/transport';
 	import MaterialPickerModal from './MaterialPickerModal.svelte';
 
 	interface CutList {
 		id: string;
 		title: string;
 		kerfMm: number;
+		transportMaxLengthMm: number;
+		transportMaxWidthMm: number;
 		materials: Material[];
 		sortOrder: number;
 		updatedAt: string;
@@ -119,7 +122,13 @@
 			await fetch(`/api/tema/${themeId}/kapplister/${id}`, {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ title: list.title, kerfMm: list.kerfMm, materials: list.materials })
+				body: JSON.stringify({
+					title: list.title,
+					kerfMm: list.kerfMm,
+					transportMaxLengthMm: list.transportMaxLengthMm,
+					transportMaxWidthMm: list.transportMaxWidthMm,
+					materials: list.materials
+				})
 			});
 		} finally {
 			const next = new Set(savingIds);
@@ -237,8 +246,41 @@
 				<span class="kerf-hint">Trekkes fra mellom kapp ved beregning</span>
 			</div>
 
+			<div class="kerf-line transport-line">
+				<label>
+					<span>Transport (bil) — maks lengde</span>
+					<span class="field"
+						><input
+							type="text"
+							inputmode="numeric"
+							placeholder="1900"
+							value={list.transportMaxLengthMm}
+							data-track="kappliste:transport-lengde"
+							onchange={(e) => patchList(list.id, { transportMaxLengthMm: Math.round(parseNum(e.currentTarget.value)) || 1900 })}
+							aria-label="Maks transportlengde i mm"
+						/><span class="suffix">mm</span></span
+					>
+				</label>
+				<label>
+					<span>maks bredde</span>
+					<span class="field"
+						><input
+							type="text"
+							inputmode="numeric"
+							placeholder="1000"
+							value={list.transportMaxWidthMm}
+							data-track="kappliste:transport-bredde"
+							onchange={(e) => patchList(list.id, { transportMaxWidthMm: Math.round(parseNum(e.currentTarget.value)) || 1000 })}
+							aria-label="Maks transportbredde i mm"
+						/><span class="suffix">mm</span></span
+					>
+				</label>
+				<span class="kerf-hint">Default: Tesla Model Y (baksete ned)</span>
+			</div>
+
 			{#each list.materials as mat (mat.id)}
 				{@const res = computeMaterial(mat, list.kerfMm)}
+				{@const transport = planMaterialTransport(res, { maxLengthMm: list.transportMaxLengthMm, maxWidthMm: list.transportMaxWidthMm } satisfies TransportLimit)}
 				<div class="material" class:is-open={isMaterialOpen(mat.id)}>
 					<div class="mat-bar">
 						<button
@@ -475,6 +517,23 @@
 								</p>
 							{/if}
 						</div>
+
+						{#if transport.needed}
+							<div class="transport-block" class:warn={!transport.allFit}>
+								<span class="tp-title">📦 Kapp i butikk for transport</span>
+								{#if transport.allFit}
+									<span class="tp-text">
+										Be butikken kappe {transport.units}
+										{res.kind === 'sheet' ? (transport.units === 1 ? 'plate' : 'plater') : transport.units === 1 ? 'lekt/bjelke' : 'lekter/bjelker'}
+										med {transport.totalCuts} snitt → alle deler passer bilen ({list.transportMaxLengthMm}×{list.transportMaxWidthMm} mm). Ingen ferdige kapp deles.
+									</span>
+								{:else}
+									<span class="tp-text warn">
+										Noen biter er for store for bilen selv etter kapping{#if transport.oversized.length}: {transport.oversized.join(', ')}{/if}. De må kappes mindre (deler en ferdig bit) eller fraktes annerledes.
+									</span>
+								{/if}
+							</div>
+						{/if}
 					{/if}
 					</div>
 					{/if}
@@ -984,6 +1043,35 @@
 		margin: 0;
 		font-size: 0.68rem;
 		color: var(--tp-text-muted);
+	}
+
+	/* Transport (kapp i butikk) */
+	.transport-block {
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+		padding: 9px 11px;
+		border-radius: 10px;
+		background: var(--tp-bg-2);
+		border: 1px solid var(--card-border);
+	}
+	.transport-block.warn {
+		border-color: #8a6d3b;
+		background: rgba(138, 109, 59, 0.12);
+	}
+	.tp-title {
+		font-size: 0.74rem;
+		font-weight: 600;
+		color: var(--tp-text-soft);
+	}
+	.tp-text {
+		font-size: 0.74rem;
+		line-height: 1.4;
+		color: var(--tp-text-muted);
+		font-variant-numeric: tabular-nums;
+	}
+	.tp-text.warn {
+		color: #e0b878;
 	}
 
 	.add-material {
