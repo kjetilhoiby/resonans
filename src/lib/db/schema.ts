@@ -350,7 +350,7 @@ export const cutLists = pgTable('cut_lists', {
 				pricePerMeterNok?: number;
 				stockWidthMm?: number;
 				stockHeightMm?: number;
-				pricePerSheetNok?: number;
+				pricePerSquareMeterNok?: number;
 				cuts: Array<{ id: string; lengthMm?: number; widthMm?: number; heightMm?: number; quantity: number }>;
 			}>
 		>()

@@ -3,12 +3,13 @@
 // En kappliste består av MATERIALER. Hvert materiale er enten:
 //  - 'linear'  lengdevare (lekt/bjelke, f.eks. «48x48 impregnert furu») som selges i
 //              faste lengder (stockLengthMm) til en meterpris. Kappene er lengder.
-//  - 'sheet'   plate (f.eks. «15mm kryssfiner poppel» 2440x1220) som selges per plate
-//              til en plate-pris. Kappene er rektangler (bredde × høyde).
+//  - 'sheet'   plate (f.eks. «15mm kryssfiner poppel» 2440x1220) som selges per m²
+//              (pris/m²). Kappene er rektangler (bredde × høyde).
 //
 // Vi regner ut hvor mange hele lekter/bjelker eller plater du må kjøpe (smart kapping),
-// hvordan kappene fordeler seg (layout for visning), og hva det koster. Kostnad =
-// antall hele enheter × enhetspris (du betaler for hele lekter/plater inkl. svinn).
+// hvordan kappene fordeler seg (layout for visning), og hva det koster. Du betaler for
+// hele enheter inkl. svinn: lekt/bjelke = antall × (lengde × meterpris), plate =
+// antall × (plateareal × pris/m²).
 
 export interface CutSpec {
 	id: string;
@@ -32,7 +33,7 @@ export interface Material {
 	// sheet:
 	stockWidthMm?: number; // platebredde (default 2440)
 	stockHeightMm?: number; // platehøyde (default 1220)
-	pricePerSheetNok?: number;
+	pricePerSquareMeterNok?: number; // pris per m² plate
 	cuts: CutSpec[];
 }
 
@@ -350,7 +351,8 @@ export function computeMaterial(material: Material, kerfMm = 0): MaterialResult 
 	if (material.kind === 'sheet') {
 		const stockW = material.stockWidthMm && material.stockWidthMm > 0 ? material.stockWidthMm : DEFAULT_SHEET_WIDTH_MM;
 		const stockH = material.stockHeightMm && material.stockHeightMm > 0 ? material.stockHeightMm : DEFAULT_SHEET_HEIGHT_MM;
-		const price = material.pricePerSheetNok ?? 0;
+		const pricePerM2 = material.pricePerSquareMeterNok ?? 0;
+		const sheetAreaM2 = (stockW / 1000) * (stockH / 1000);
 
 		const rects = expandQuantity(
 			material.cuts
@@ -365,7 +367,7 @@ export function computeMaterial(material: Material, kerfMm = 0): MaterialResult 
 			kind: 'sheet',
 			stockNeeded: sheets.length,
 			totalPieces: rects.length,
-			costNok: sheets.length * price,
+			costNok: sheets.length * sheetAreaM2 * pricePerM2,
 			unitLabel: 'plate',
 			stockLabel: `${stockW}×${stockH} mm`,
 			piecesPerStock: 0,

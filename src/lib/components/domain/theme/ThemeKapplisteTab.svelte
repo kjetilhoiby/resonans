@@ -324,16 +324,16 @@
 								</span>
 							</label>
 							<label>
-								<span>Pris per plate</span>
+								<span>Pris per m²</span>
 								<span class="field"
 									><input
 										type="text"
 										inputmode="decimal"
-										placeholder="299"
-										value={mat.pricePerSheetNok || ''}
-										data-track="kappliste:plate-pris"
-										oninput={(e) => patchMaterial(list.id, mat.id, { pricePerSheetNok: parseNum(e.currentTarget.value) })}
-									/><span class="suffix">kr</span></span
+										placeholder="120"
+										value={mat.pricePerSquareMeterNok || ''}
+										data-track="kappliste:plate-pris-m2"
+										oninput={(e) => patchMaterial(list.id, mat.id, { pricePerSquareMeterNok: parseNum(e.currentTarget.value) })}
+									/><span class="suffix">kr/m²</span></span
 								>
 							</label>
 						</div>

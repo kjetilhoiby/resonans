@@ -29,7 +29,7 @@ function sheetMaterial(partial: Partial<Material> & { cuts: CutSpec[] }): Materi
 		name: '15mm kryssfiner',
 		stockWidthMm: 2440,
 		stockHeightMm: 1220,
-		pricePerSheetNok: 300,
+		pricePerSquareMeterNok: 100,
 		...partial,
 		kind: 'sheet'
 	};
@@ -182,15 +182,16 @@ describe('computeMaterial — linear', () => {
 });
 
 describe('computeMaterial — sheet', () => {
-	it('regner ut plater og kostnad per plate', () => {
+	it('regner ut plater og kostnad per m² (hele plater × areal × pris/m²)', () => {
 		const mat = sheetMaterial({
-			pricePerSheetNok: 300,
+			pricePerSquareMeterNok: 100,
 			cuts: [{ id: 'c1', widthMm: 380, heightMm: 420, quantity: 6 }]
 		});
 		const res = computeMaterial(mat, 0);
 		expect(res.kind).toBe('sheet');
 		expect(res.stockNeeded).toBe(1);
-		expect(res.costNok).toBe(300);
+		// 1 plate × (2,44 × 1,22 = 2,9768 m²) × 100 kr/m² = 297,68 kr
+		expect(res.costNok).toBeCloseTo(297.68);
 		expect(res.stockLabel).toBe('2440×1220 mm');
 	});
 
@@ -205,11 +206,12 @@ describe('computeCutList', () => {
 	it('summerer kostnad på tvers av lengdevarer og plater', () => {
 		const materials: Material[] = [
 			linearMaterial({ id: 'a', cuts: [{ id: 'c1', lengthMm: 1200, quantity: 5 }] }),
-			sheetMaterial({ id: 'b', pricePerSheetNok: 300, cuts: [{ id: 'c2', widthMm: 380, heightMm: 420, quantity: 6 }] })
+			sheetMaterial({ id: 'b', pricePerSquareMeterNok: 100, cuts: [{ id: 'c2', widthMm: 380, heightMm: 420, quantity: 6 }] })
 		];
 		const res = computeCutList(materials, 0);
 		expect(res.materials).toHaveLength(2);
-		expect(res.totalCostNok).toBeCloseTo(421.2 + 300);
+		// lengdevare 421,2 kr + plate 297,68 kr
+		expect(res.totalCostNok).toBeCloseTo(421.2 + 297.68);
 		expect(res.hasErrors).toBe(false);
 	});
 

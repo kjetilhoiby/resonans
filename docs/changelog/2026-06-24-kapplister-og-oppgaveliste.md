@@ -167,3 +167,18 @@ tomt materiale du måtte fylle ut inline. Erstattet med én **«+ Materiale»**-
   katalog/presets).
 - Verifisert at brukerens plate (3×1200×600 + 6×400×300 på 2440×1220) fortsatt
   pakkes på 1 plate med sagsnitt 1,8 mm.
+
+### Fase 9: Plate-pris i kr/m² (egen PR)
+
+Plater ble priset per hele plate (`pricePerSheetNok`). Bruker påpekte at plater
+vanligvis prises i **kr/m²** — analogt med at lengdevarer prises i kr/m.
+
+- `Material.pricePerSheetNok` → `pricePerSquareMeterNok`. Kostnad for plate =
+  `antall plater × plateareal (m²) × pris/m²` (du betaler fortsatt for hele plater
+  inkl. svinn). `computeMaterial`, `rows.ts`, schema-`$type`, modal og inline-editor
+  oppdatert. Felt-label «Pris per m²» med suffiks `kr/m²`.
+- Data-migrasjon i `DATA_MIGRATIONS` konverterer eksisterende plate-materialer:
+  `pricePerSquareMeterNok = pricePerSheetNok / plateareal`, fjerner `pricePerSheetNok`.
+  Idempotent (kun rader som fortsatt har en plate med `pricePerSheetNok`), så
+  effektiv kostnad bevares.
+- Tester oppdatert: plate-kostnad bruker areal × pris/m².
