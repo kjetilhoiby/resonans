@@ -1031,6 +1031,30 @@ export const taskPersonMentions = pgTable('task_person_mentions', {
 	idxPersonCreated: index('task_person_mentions_person_created_idx').on(table.personId, table.createdAt)
 }));
 
+// Quiz-sesjoner for tale-assistentens bilferie-quizmaster. Holder tracking per deltaker
+// (poeng/streak) så «on fire!» blir korrekt over et langt spill. Én aktiv quiz per bruker.
+export const quizSessions = pgTable('quiz_sessions', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	participants: jsonb('participants').$type<Array<{
+		name: string;
+		score: number;       // antall riktige (1 poeng per rett)
+		streak: number;      // riktige på rad akkurat nå
+		bestStreak: number;  // beste streak i denne quizen
+		asked: number;       // spørsmål stilt
+		correct: number;     // riktige svar
+	}>>().notNull().default(sql`'[]'::jsonb`),
+	theme: text('theme'),                                  // tema for inneværende runde
+	round: integer('round').notNull().default(0),          // antall fullførte runder
+	active: boolean('active').notNull().default(true),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	idxUser: index('quiz_sessions_user_idx').on(table.userId),
+	// Maks én aktiv quiz per bruker; «start» deaktiverer forrige først.
+	uniqActiveUser: uniqueIndex('quiz_sessions_active_user_uq').on(table.userId).where(sql`${table.active}`)
+}));
+
 // Indeks over hvilke personer som er nevnt i et checklist-item (dag-task).
 // Speiler taskPersonMentions, men for items som ikke har sin egen task-rad.
 export const checklistItemPersonMentions = pgTable('checklist_item_person_mentions', {

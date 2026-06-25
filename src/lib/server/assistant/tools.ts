@@ -11,6 +11,7 @@ import { pickRecentCompletedSessions } from './recent-sessions';
 import type { ProgramSessionDTO } from '$lib/server/programs/types';
 import { SHARED_ASSISTANT_TOOLS } from './shared-tools';
 import { CAR_ASSISTANT_TOOLS } from './car-tools';
+import { QUIZ_ASSISTANT_TOOLS } from './quiz-tools';
 
 /**
  * Verktøy for den server-kjørte assistent-agenten, scoped til token-brukeren. Assistenten har nå
@@ -181,11 +182,12 @@ const BESPOKE_ASSISTANT_TOOLS: AssistantTool[] = [
 	},
 ];
 
-/** Hele verktøysettet: tale-tunede snarveier + fange-handlinger + delte domene-verktøy + bil. */
+/** Hele verktøysettet: tale-tunede snarveier + fange-handlinger + delte domene-verktøy + bil + quiz. */
 export const ASSISTANT_TOOLS: AssistantTool[] = [
 	...BESPOKE_ASSISTANT_TOOLS,
 	...SHARED_ASSISTANT_TOOLS,
-	...CAR_ASSISTANT_TOOLS
+	...CAR_ASSISTANT_TOOLS,
+	...QUIZ_ASSISTANT_TOOLS
 ];
 
 const TOOL_BY_NAME = new Map(ASSISTANT_TOOLS.map((t) => [t.definition.function.name, t]));
