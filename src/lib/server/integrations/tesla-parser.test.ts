@@ -73,22 +73,28 @@ describe('buildSnapshot', () => {
 		const snap = buildSnapshot(raw, NOW);
 		expect(snap.navigationDestination).toBe('Volda');
 		expect(snap.navigationEtaMinutes).toBe(42); // avrundet til hele minutter
-		expect(snap.navigationDestinationLocation).toEqual({ lat: 62.146, lon: 6.071 });
+		expect(snap.navigationDestinationLat).toBe(62.146);
+		expect(snap.navigationDestinationLon).toBe(6.071);
 	});
 
 	it('utelater navigasjonsfelt når bilen ikke navigerer', () => {
 		const snap = buildSnapshot(fullVehicleData(), NOW);
 		expect(snap.navigationDestination).toBeUndefined();
 		expect(snap.navigationEtaMinutes).toBeUndefined();
-		expect(snap.navigationDestinationLocation).toBeUndefined();
+		expect(snap.navigationDestinationLat).toBeUndefined();
+		expect(snap.navigationDestinationLon).toBeUndefined();
 	});
 
-	it('sender ikke ETA uten et navigasjonsmål', () => {
+	it('sender ikke ETA eller koordinater uten et navigasjonsmål', () => {
 		const raw = fullVehicleData();
 		(raw.drive_state as any).active_route_minutes_to_arrival = 17;
+		(raw.drive_state as any).active_route_latitude = 62.146;
+		(raw.drive_state as any).active_route_longitude = 6.071;
 		const snap = buildSnapshot(raw, NOW);
 		expect(snap.navigationDestination).toBeUndefined();
 		expect(snap.navigationEtaMinutes).toBeUndefined();
+		expect(snap.navigationDestinationLat).toBeUndefined();
+		expect(snap.navigationDestinationLon).toBeUndefined();
 	});
 
 	it('befolker ikke navigationRoute (Tesla eksponerer ikke polyline)', () => {

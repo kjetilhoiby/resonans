@@ -20,16 +20,23 @@ mappet fra `drive_state` i Tesla Fleet API:
 
 - `navigationDestination` ← `active_route_destination` (navn)
 - `navigationEtaMinutes` ← `active_route_minutes_to_arrival` (avrundet til hele min)
-- `navigationDestinationLocation` ← `active_route_latitude/longitude` (`{lat, lon}`)
+- `navigationDestinationLat` ← `active_route_latitude`
+- `navigationDestinationLon` ← `active_route_longitude`
 
 Feltene utelates når bilen ikke navigerer (gated på at destinasjonsnavn finnes).
 Implementert i `buildSnapshot` (`tesla-parser.ts`), som live-endepunktet returnerer
 direkte — `undefined`-felt forsvinner i JSON.
 
+> **2026-06-25:** Koordinatene ble opprinnelig levert som et nestet objekt
+> `navigationDestinationLocation: {lat, lon}`, men Ekkos `TeslaState`-dekoder leser
+> flate felt `navigationDestinationLat`/`navigationDestinationLon`. Endret til flate
+> felt for å matche kontrakten — uten dette leste Ekko aldri målkoordinatene, og
+> delmål/sluttmål-matching falt tilbake på skjør navne-streng-sammenligning.
+
 `navigationRoute` er lagt til i `TeslaSnapshot`-typen som valgfritt felt, men
 befolkes ikke: Tesla Fleet API eksponerer normalt ikke hele rute-polyline-en.
-Med målkoordinatene kan Ekko i stedet kjøre egen ruting on-device
-(bilposisjon → mål) og tegne linja.
+Med målkoordinatene (`navigationDestinationLat/Lon`) kan Ekko i stedet kjøre egen
+ruting on-device (bilposisjon → mål) og tegne linja.
 
 ### Fase 2: Ladere nær bilen
 

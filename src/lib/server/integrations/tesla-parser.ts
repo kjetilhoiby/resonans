@@ -54,11 +54,14 @@ export interface TeslaSnapshot {
 	/** Minutter til ankomst for aktivt navigasjonsmål. */
 	navigationEtaMinutes?: number;
 	/**
-	 * Målpunktets koordinater (lat/lon) — samme konvensjon som `location`. Lar
-	 * Ekko kjøre egen ruting on-device (bilposisjon → mål) og tegne rutelinja
-	 * uten å geokode navnet.
+	 * Målpunktets breddegrad — mappet fra `active_route_latitude`. Flatt felt
+	 * (ikke nestet) fordi Ekkos `TeslaState` dekoder leser `navigationDestinationLat`
+	 * direkte. Lar Ekko matche delmål/sluttmål på avstand og kjøre egen ruting
+	 * on-device uten å geokode navnet.
 	 */
-	navigationDestinationLocation?: { lat: number; lon: number };
+	navigationDestinationLat?: number;
+	/** Målpunktets lengdegrad — mappet fra `active_route_longitude`. Se over. */
+	navigationDestinationLon?: number;
 	/**
 	 * Gjenstående rute til mål som [lat, lon]-par (samme konvensjon som live-
 	 * session `routeCoordinates`). Tesla Fleet API eksponerer normalt ikke hele
@@ -100,12 +103,10 @@ export function buildSnapshot(raw: Record<string, any> | null, now: Date = new D
 	const navEtaRaw = num(drive.active_route_minutes_to_arrival);
 	const navEtaMinutes =
 		navDestination !== undefined && navEtaRaw !== undefined ? Math.round(navEtaRaw) : undefined;
-	const navDestLat = num(drive.active_route_latitude);
-	const navDestLon = num(drive.active_route_longitude);
-	const navDestLocation =
-		navDestination !== undefined && navDestLat !== undefined && navDestLon !== undefined
-			? { lat: navDestLat, lon: navDestLon }
-			: undefined;
+	// Send koordinater kun når bilen faktisk navigerer (mål satt) og begge finnes.
+	const hasNav = navDestination !== undefined;
+	const navDestLat = hasNav ? num(drive.active_route_latitude) : undefined;
+	const navDestLon = hasNav ? num(drive.active_route_longitude) : undefined;
 
 	return {
 		asleep: false,
@@ -124,7 +125,8 @@ export function buildSnapshot(raw: Record<string, any> | null, now: Date = new D
 		shiftState: typeof drive.shift_state === 'string' ? drive.shift_state : null,
 		navigationDestination: navDestination,
 		navigationEtaMinutes: navEtaMinutes,
-		navigationDestinationLocation: navDestLocation,
+		navigationDestinationLat: navDestLat,
+		navigationDestinationLon: navDestLon,
 		odometerKm: milesToKm(vehicle.odometer),
 		locked: bool(vehicle.locked),
 		insideTempC: num(climate.inside_temp),
