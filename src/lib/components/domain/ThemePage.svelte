@@ -120,7 +120,7 @@
 		isHomeProject?: boolean;
 		projectProfile?: Record<string, unknown> | null;
 		tasks?: import('./theme/ThemeTasksTab.svelte').ProjectTask[];
-		cutLists?: Array<{ id: string; title: string; kerfMm: number; materials: import('$lib/kappliste/calc').Material[]; sortOrder: number; updatedAt: string }>;
+		cutLists?: Array<{ id: string; title: string; kerfMm: number; transportEnabled: boolean; transportMaxLengthMm: number; transportMaxWidthMm: number; materials: import('$lib/kappliste/calc').Material[]; sortOrder: number; updatedAt: string }>;
 	}
 
 	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '', selectedWorkout = null, tripProfile = null, tripLists = [], ferieProfile = null, themeFiles: initialThemeFiles = [], metricSettings: initialMetricSettings = {}, projects = [], isHomeProject = false, projectProfile = null, tasks = [], cutLists = [] }: Props = $props();
