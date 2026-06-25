@@ -108,6 +108,58 @@ export function streakLabel(streak: number): string | null {
 	return null;
 }
 
+export interface KnowledgeSnapshot {
+	notes?: string;
+	interests: string[]; // korte snutter fra minner (det personen liker/holder på med)
+	goals: string[]; // titler på aktive mål
+}
+
+function tidy(text: string, maxLen: number): string {
+	const clean = text.replace(/\s+/g, ' ').trim();
+	return clean.length <= maxLen ? clean : `${clean.slice(0, maxLen).trimEnd()}…`;
+}
+
+/** Dedupliser (case-insensitivt), trim, kutt lengde og antall. Ren hjelper. */
+function condense(items: string[], maxItems: number, maxLen: number): string[] {
+	const seen = new Set<string>();
+	const out: string[] = [];
+	for (const raw of items) {
+		const value = tidy(raw ?? '', maxLen);
+		if (!value) continue;
+		const key = value.toLowerCase();
+		if (seen.has(key)) continue;
+		seen.add(key);
+		out.push(value);
+		if (out.length >= maxItems) break;
+	}
+	return out;
+}
+
+/**
+ * Kompakt interesse-/kunnskaps-snapshot for en deltaker, satt sammen av notater, minner
+ * («liker Pokémon», «spiller fotball») og aktive mål. Brukes til å gjøre quiz-spørsmål
+ * personlige, ikke bare aldersdifferensierte. Ren — kalleren mater inn rådata fra DB.
+ */
+export function buildKnowledgeSnapshot(
+	input: { notes?: string | null; memories?: string[]; goals?: string[] },
+	opts: { maxItems?: number; maxLen?: number } = {}
+): KnowledgeSnapshot {
+	const maxItems = opts.maxItems ?? 3;
+	const maxLen = opts.maxLen ?? 120;
+	const snapshot: KnowledgeSnapshot = {
+		interests: condense(input.memories ?? [], maxItems, maxLen),
+		goals: condense(input.goals ?? [], maxItems, maxLen)
+	};
+	const notes = tidy(input.notes ?? '', maxLen);
+	if (notes) snapshot.notes = notes;
+	return snapshot;
+}
+
+/** Har snapshotet noe innhold i det hele tatt? Brukes for å utelate tomme snapshots. */
+export function hasKnowledge(s: KnowledgeSnapshot): boolean {
+	return !!s.notes || s.interests.length > 0 || s.goals.length > 0;
+}
+
 export interface GeneratedQuestion {
 	player: string;
 	question: string;

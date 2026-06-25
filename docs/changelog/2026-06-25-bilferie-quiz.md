@@ -44,22 +44,36 @@ tracking.
 
 ### Fase 3: Verktøy
 - `src/lib/server/assistant/quiz-tools.ts` — tre `AssistantTool`-er:
-  - **`quiz_companions`**: finner den pågående reisen (vindu i `themes.tripProfile` eller
+  - **`trip_companions`**: finner den pågående reisen (vindu i `themes.tripProfile` eller
     `ferieProfile` som dekker dagens Oslo-dato, via `pickTripForDate`), henter deltakerne fra
-    `ferieProfile.members` og slår opp alder fra `persons.birthDate`. Gjenbrukbart for andre
-    reise-spill senere.
-  - **`quiz_round`**: lager aldersdifferensierte spørsmål **med fasit**. `freshFacts=true`
-    trigger Tavily-websøk (samme stack som `book_research`) for ferske/nisje-fakta; ellers
-    bruker den modellkunnskap (raskt for matte/geografi/gloser). Genererer via `gpt-4o-mini`
-    med JSON-respons, validert av `parseGeneratedQuestions`.
+    `ferieProfile.members`, slår opp alder fra `persons.birthDate`, OG bygger et kompakt
+    interesse-/kunnskaps-snapshot per person (notater + relevante minner + aktive mål — tre
+    batchede spørringer, ingen N+1). Reise-nivå og gjenbrukbart for andre spill.
+  - **`quiz_questions`**: lager spørsmål **med fasit**, tilpasset hver spillers alder OG
+    interesser. `freshFacts=true` trigger Tavily-websøk (samme stack som `book_research`) for
+    ferske/nisje-fakta. Genererer via `gpt-4o-mini` med JSON-respons, validert av
+    `parseGeneratedQuestions`.
   - **`quiz_score`**: `start` / `record` / `status` / `end` mot `quiz_sessions`. Holder
     poeng og streaks per person og returnerer stilling + streak-hint.
 
 ### Fase 4: Innkobling + prompt
 - `QUIZ_ASSISTANT_TOOLS` lagt til i `ASSISTANT_TOOLS` (`tools.ts`).
-- Quizmaster-seksjon lagt til i systemprompten (`assistant.ts`): hent deltakere → start →
-  velg tema → hent runde (forklarer når `freshFacts` skal på) → still ett spørsmål om gangen
-  på omgang → registrer svar og bruk streak-hintet til tilrop → avslutt og kår vinner.
+- Quizmaster-seksjon lagt til i systemprompten (`assistant.ts`): hent deltakere (med interesser)
+  → start → velg tema → hent spørsmål (forklarer når `freshFacts` skal på, og at trivielle
+  spørsmål lages selv) → still ett spørsmål om gangen på omgang → registrer svar og bruk
+  streak-hintet til tilrop → avslutt og kår vinner.
+
+### Fase 5: Personalisering + navngiving (samme dag)
+- **Prinsipp:** et verktøy fortjener plassen sin når det henter inn data modellen ikke kan ha.
+  Mekanikk (tur-rekkefølge, tilrop, «vinneren blir stående»-spill) styres konversasjonelt.
+- **Research om deltakerne** ble kronjuvelen: `trip_companions` utvidet fra navn+alder til også
+  interesser/kunnskap, så spørsmål blir *personlige*, ikke bare aldersdifferensierte («Nils, du
+  som spiller fotball …»). `quiz_questions` tar nå `interests` per spiller.
+- **Navngiving:** `quiz_companions` → `trip_companions` (reise-nivå, ikke quiz). `quiz_round` →
+  `quiz_questions`. Poeng/scoring viste seg å være quiz-formet (rett/galt → poeng), ikke
+  spill-generisk — så `quiz_score`/`quiz_sessions` beholdt `quiz_`-prefiks. Ingen `game_`-
+  navnerom innføres før noe faktisk deles av flere spill.
+- Ny ren logikk `buildKnowledgeSnapshot` + `hasKnowledge` (4 nye tester).
 
 ## Beslutninger
 
@@ -75,7 +89,7 @@ tracking.
 
 ## Verifisering
 
-- `npm test`: 796 tester passerer (64 filer), inkl. 15 nye for quiz-logikken.
+- `npm test`: 800 tester passerer (64 filer), inkl. 19 nye for quiz-logikken.
 - `npm run check`: 0 feil, 0 advarsler.
 - Research- og generering-stien bruker eksisterende, verifiserte byggeklosser (`tavilySearch`,
   `openai`) på samme måte som `book_research`.

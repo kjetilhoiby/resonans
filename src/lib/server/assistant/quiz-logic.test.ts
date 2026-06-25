@@ -8,7 +8,9 @@ import {
 	findParticipantIndex,
 	buildStandings,
 	streakLabel,
-	parseGeneratedQuestions
+	parseGeneratedQuestions,
+	buildKnowledgeSnapshot,
+	hasKnowledge
 } from './quiz-logic';
 
 describe('participantsFromNames', () => {
@@ -139,5 +141,43 @@ describe('parseGeneratedQuestions', () => {
 				{ player: 'Erle', question: 'Q2', answer: 'A2' }
 			])
 		).toEqual([{ player: 'Erle', question: 'Q2', answer: 'A2' }]);
+	});
+});
+
+describe('buildKnowledgeSnapshot', () => {
+	it('setter sammen notater, interesser og mål kompakt', () => {
+		const s = buildKnowledgeSnapshot({
+			notes: '  Spiller fotball i Kolbotn  ',
+			memories: ['Elsker Pokémon', 'Liker å tegne'],
+			goals: ['Lære gangetabellen']
+		});
+		expect(s).toEqual({
+			notes: 'Spiller fotball i Kolbotn',
+			interests: ['Elsker Pokémon', 'Liker å tegne'],
+			goals: ['Lære gangetabellen']
+		});
+	});
+
+	it('dedupliserer, kutter antall og lengde', () => {
+		const s = buildKnowledgeSnapshot(
+			{ memories: ['Pokémon', 'pokémon', 'Fotball', 'Lego', 'Sjakk'] },
+			{ maxItems: 2, maxLen: 5 }
+		);
+		expect(s.interests).toEqual(['Pokém…', 'Fotba…']);
+	});
+
+	it('utelater tom notes og gir tomme lister når ingenting finnes', () => {
+		const s = buildKnowledgeSnapshot({ notes: '   ' });
+		expect(s.notes).toBeUndefined();
+		expect(s.interests).toEqual([]);
+		expect(s.goals).toEqual([]);
+	});
+});
+
+describe('hasKnowledge', () => {
+	it('er sann bare når snapshotet har innhold', () => {
+		expect(hasKnowledge({ interests: [], goals: [] })).toBe(false);
+		expect(hasKnowledge({ interests: ['Lego'], goals: [] })).toBe(true);
+		expect(hasKnowledge({ notes: 'noe', interests: [], goals: [] })).toBe(true);
 	});
 });

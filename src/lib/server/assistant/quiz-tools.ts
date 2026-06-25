@@ -1,7 +1,7 @@
 import type { AssistantTool } from './tools';
 import { db } from '$lib/db';
-import { themes, persons, quizSessions } from '$lib/db/schema';
-import { and, eq, inArray } from 'drizzle-orm';
+import { themes, persons, memories, goals, quizSessions } from '$lib/db/schema';
+import { and, eq, desc, inArray } from 'drizzle-orm';
 import { openai } from '$lib/server/openai';
 import { tavilySearch } from '$lib/server/web/tavily';
 import { osloDayKey, pickTripForDate, dayWindowInfo, type TripCandidate } from '$lib/server/trip-geo';
@@ -14,32 +14,43 @@ import {
 	buildStandings,
 	streakLabel,
 	parseGeneratedQuestions,
+	buildKnowledgeSnapshot,
+	hasKnowledge,
 	type QuizParticipant,
-	type AgeBand
+	type AgeBand,
+	type KnowledgeSnapshot
 } from './quiz-logic';
+
+/** Minne-kategorier som er trygge og morsomme å bygge spørsmål av (utelater helse/psyke). */
+const INTEREST_MEMORY_CATEGORIES = ['preferences', 'personal', 'relationship', 'fitness', 'other'];
+const MEMORIES_PER_PERSON = 3;
+const GOALS_PER_PERSON = 2;
 
 /**
  * Quiz-verktøy for tale-assistentens bilferie-quizmaster.
  *
- * Den rene konversasjonelle quizen kan modellen kjøre selv — disse verktøyene dekker det den
- * IKKE gjør pålitelig alene:
- *   - `quiz_companions`: hent deltakere (med alder) fra den pågående reisen, så quizmasteren
- *      slipper å spørre «hvem er med».
- *   - `quiz_round`: lag ferske, faktasjekkede og aldersdifferensierte spørsmål (Tavily-research
- *      når temaet trenger det), og returner fasit så modellen aldri dikter opp svaret.
- *   - `quiz_score`: tell poeng og streaks per person, så «3 på rad — Nils er on fire!» blir sant.
+ * Prinsippet: et verktøy fortjener plassen sin når det henter inn data modellen ikke kan ha.
+ * Mekanikk (tur-rekkefølge, tilrop) styres konversasjonelt. Disse henter:
+ *   - `trip_companions`: hvem som er med på reisen + alder + et kompakt interesse-/kunnskaps-
+ *      snapshot per person (research om deltakerne). Gjør spørsmål personlige, ikke bare
+ *      aldersdifferensierte. Reise-nivå og gjenbrukbart for andre spill.
+ *   - `quiz_questions`: ferske/faktasjekkede og personlig tilpassede spørsmål med fasit
+ *      (Tavily-research når temaet trenger det), så modellen aldri dikter opp svaret.
+ *   - `quiz_score`: tell poeng og streaks per person (bokføring modellen sklir på i lange spill),
+ *      så «3 på rad — Nils er on fire!» blir sant.
  *
  * Tracking-state ligger i `quiz_sessions` (én aktiv quiz per bruker). Den rene logikken
- * (scoring/streaks/alder) bor i `quiz-logic.ts` og er enhetstestet.
+ * (scoring/streaks/alder/snapshot) bor i `quiz-logic.ts` og er enhetstestet.
  */
 
-/* ── quiz_companions ──────────────────────────────────────────────────────────────────────── */
+/* ── trip_companions ──────────────────────────────────────────────────────────────────────── */
 
 interface CompanionMember {
 	name: string;
 	age: number | null;
 	band: AgeBand;
 	role: 'voksen' | 'barn' | null;
+	knowledge?: KnowledgeSnapshot; // interesser/kunnskap når personen er kjent
 }
 
 /** Finn det reise-temaet hvis vindu dekker en gitt dato — sjekker både ferie- og tripProfile. */
@@ -59,6 +70,70 @@ function pickActiveTrip(
 		if (t?.startDate && t?.endDate) candidates.push({ id: r.id, startDate: t.startDate, endDate: t.endDate });
 	}
 	return pickTripForDate(candidates, dateKey);
+}
+
+/**
+ * Batch-hent alder + interesse-snapshot for et sett personer. Tre spørringer totalt
+ * (persons, minner, mål) — ingen N+1. Returnerer kart personId → { age, snapshot }.
+ */
+async function loadKnowledge(
+	userId: string,
+	personIds: string[],
+	today: Date
+): Promise<Map<string, { age: number | null; snapshot: KnowledgeSnapshot }>> {
+	const out = new Map<string, { age: number | null; snapshot: KnowledgeSnapshot }>();
+	if (personIds.length === 0) return out;
+
+	const [people, mems, gls] = await Promise.all([
+		db
+			.select({ id: persons.id, birthDate: persons.birthDate, notes: persons.notes })
+			.from(persons)
+			.where(and(eq(persons.userId, userId), inArray(persons.id, personIds))),
+		db
+			.select({ personId: memories.personId, content: memories.content, category: memories.category })
+			.from(memories)
+			.where(
+				and(
+					eq(memories.userId, userId),
+					inArray(memories.personId, personIds),
+					inArray(memories.category, INTEREST_MEMORY_CATEGORIES)
+				)
+			)
+			.orderBy(desc(memories.createdAt)),
+		db
+			.select({ personId: goals.personId, title: goals.title })
+			.from(goals)
+			.where(and(eq(goals.userId, userId), inArray(goals.personId, personIds), eq(goals.status, 'active')))
+			.orderBy(desc(goals.createdAt))
+	]);
+
+	// Grupper minne-innhold og mål-titler per person (allerede sortert nyeste først).
+	const memByPerson = new Map<string, string[]>();
+	for (const m of mems) {
+		if (!m.personId) continue;
+		const list = memByPerson.get(m.personId) ?? [];
+		if (list.length < MEMORIES_PER_PERSON) list.push(m.content);
+		memByPerson.set(m.personId, list);
+	}
+	const goalByPerson = new Map<string, string[]>();
+	for (const g of gls) {
+		if (!g.personId) continue;
+		const list = goalByPerson.get(g.personId) ?? [];
+		if (list.length < GOALS_PER_PERSON) list.push(g.title);
+		goalByPerson.set(g.personId, list);
+	}
+
+	for (const p of people) {
+		out.set(p.id, {
+			age: ageFromBirthDate(p.birthDate, today),
+			snapshot: buildKnowledgeSnapshot({
+				notes: p.notes,
+				memories: memByPerson.get(p.id) ?? [],
+				goals: goalByPerson.get(p.id) ?? []
+			})
+		});
+	}
+	return out;
 }
 
 async function loadCompanions(userId: string): Promise<{
@@ -82,21 +157,21 @@ async function loadCompanions(userId: string): Promise<{
 	const theme = rows.find((r) => r.id === activeId)!;
 	const members = theme.ferieProfile?.members ?? [];
 
-	// Slå opp fødselsdato for medlemmer som er knyttet til en person.
+	// Research om deltakerne: alder + interesser/kunnskap for medlemmer knyttet til en person.
 	const personIds = members.map((m) => m.personId).filter((id): id is string => !!id);
-	const birthByPerson = new Map<string, string | null>();
-	if (personIds.length > 0) {
-		const people = await db
-			.select({ id: persons.id, birthDate: persons.birthDate })
-			.from(persons)
-			.where(and(eq(persons.userId, userId), inArray(persons.id, personIds)));
-		for (const p of people) birthByPerson.set(p.id, p.birthDate);
-	}
+	const knowledge = await loadKnowledge(userId, personIds, today);
 
 	const participants: CompanionMember[] = members.map((m) => {
-		const birth = m.personId ? birthByPerson.get(m.personId) ?? null : null;
-		const age = ageFromBirthDate(birth, today);
-		return { name: m.name, age, band: ageBand(age), role: m.role ?? null };
+		const k = m.personId ? knowledge.get(m.personId) : undefined;
+		const age = k?.age ?? null;
+		const snapshot = k?.snapshot;
+		return {
+			name: m.name,
+			age,
+			band: ageBand(age),
+			role: m.role ?? null,
+			knowledge: snapshot && hasKnowledge(snapshot) ? snapshot : undefined
+		};
 	});
 
 	// Geo-vindu for «dag X av Y» når ferieprofilen har et vindu.
@@ -117,11 +192,12 @@ async function loadCompanions(userId: string): Promise<{
 	};
 }
 
-/* ── quiz_round ───────────────────────────────────────────────────────────────────────────── */
+/* ── quiz_questions ───────────────────────────────────────────────────────────────────────── */
 
 interface RoundPlayer {
 	name: string;
 	age: number | null;
+	interests: string[]; // det spilleren liker/kan — gjør spørsmål personlige
 }
 
 const BAND_GUIDANCE: Record<AgeBand, string> = {
@@ -140,7 +216,10 @@ function coercePlayers(raw: unknown): RoundPlayer[] {
 		const name = typeof o.name === 'string' ? o.name.trim() : '';
 		if (!name) continue;
 		const age = typeof o.age === 'number' && Number.isFinite(o.age) ? Math.round(o.age) : null;
-		out.push({ name, age });
+		const interests = Array.isArray(o.interests)
+			? o.interests.filter((i): i is string => typeof i === 'string' && i.trim().length > 0).map((i) => i.trim()).slice(0, 5)
+			: [];
+		out.push({ name, age, interests });
 	}
 	return out;
 }
@@ -171,7 +250,11 @@ async function buildRound(
 	}
 
 	const roster = players
-		.map((p) => `- ${p.name} (${p.age != null ? `${p.age} år` : 'ukjent alder'}): ${BAND_GUIDANCE[ageBand(p.age)]}`)
+		.map((p) => {
+			const alder = p.age != null ? `${p.age} år` : 'ukjent alder';
+			const liker = p.interests.length > 0 ? ` — liker/kan: ${p.interests.join(', ')}` : '';
+			return `- ${p.name} (${alder}): ${BAND_GUIDANCE[ageBand(p.age)]}${liker}`;
+		})
 		.join('\n');
 
 	const factsBlock =
@@ -186,6 +269,8 @@ ${factsBlock}
 Krav:
 - Spørsmål og svar på norsk.
 - Tilpass vanskelighetsgraden til hver spillers nivå (samme tema kan ha ulik vanskelighet per spiller).
+- Når en spiller har «liker/kan»-interesser, vri gjerne spørsmålet mot dem for å gjøre det personlig
+  (men hold deg til temaet og ikke tving det hvis det blir søkt).
 - Korte spørsmål som egner seg for høytlesing i en bil. Ett tydelig, kort fasitsvar per spørsmål.
 - Ikke dikt opp fakta. Er du usikker på en faktaopplysning, velg et tryggere spørsmål.
 Returner JSON: { "questions": [ { "player": "<navn>", "question": "<spørsmål>", "answer": "<kort fasit>" } ] }`;
@@ -294,9 +379,9 @@ export const QUIZ_ASSISTANT_TOOLS: AssistantTool[] = [
 		definition: {
 			type: 'function',
 			function: {
-				name: 'quiz_companions',
+				name: 'trip_companions',
 				description:
-					'Hent deltakerne på den pågående reisen (navn + alder + voksen/barn) så quizen kan starte uten å spørre «hvem er med». Bruk når brukeren vil starte quiz eller andre reise-spill. Tom liste betyr ingen pågående reise eller ingen registrerte deltakere — spør da hvem som spiller.',
+					'Hent deltakerne på den pågående reisen: navn, alder, voksen/barn, OG et kompakt interesse-/kunnskaps-snapshot per person (hva de liker og holder på med). Bruk for å starte quiz eller andre reise-spill uten å spørre «hvem er med», og for å gjøre spørsmål personlige (gi interessene videre til quiz_questions). Tom liste betyr ingen pågående reise eller ingen registrerte deltakere — spør da hvem som spiller.',
 				parameters: { type: 'object', properties: {} }
 			}
 		},
@@ -306,21 +391,26 @@ export const QUIZ_ASSISTANT_TOOLS: AssistantTool[] = [
 		definition: {
 			type: 'function',
 			function: {
-				name: 'quiz_round',
+				name: 'quiz_questions',
 				description:
-					'Lag en runde aldersdifferensierte quiz-spørsmål for et tema, med fasit (så du aldri trenger å gjette svaret). Gir ett eller flere spørsmål per spiller, tilpasset hver spillers alder. Sett freshFacts=true for temaer som trenger ferske eller spesifikke fakta (favorittserie/-spill, dagsaktuell sport, et bestemt land) — da gjør verktøyet websøk først. La freshFacts stå false for tidløse temaer (mattestykker, enkel geografi, engelske gloser) som du kan trygt nok selv.',
+					'Lag quiz-spørsmål for et tema, med fasit (så du aldri trenger å gjette svaret), tilpasset hver spillers alder OG interesser. Bruk dette når du vil ha ferske fakta eller personlig tilpasning — for helt trivielle temaer (enkel hoderegning o.l.) kan du like gjerne lage spørsmålet selv. Sett freshFacts=true for temaer som trenger ferske/spesifikke fakta (favorittserie/-spill, dagsaktuell sport, et bestemt land) — da gjør verktøyet websøk først.',
 				parameters: {
 					type: 'object',
 					properties: {
 						theme: { type: 'string', description: 'Tema for runden, f.eks. «hovedsteder», «gangetabellen», «Bluey», «engelske dyr»' },
 						participants: {
 							type: 'array',
-							description: 'Spillerne med alder (bruk quiz_companions for å hente dem)',
+							description: 'Spillerne med alder og interesser (hent dem fra trip_companions)',
 							items: {
 								type: 'object',
 								properties: {
 									name: { type: 'string' },
-									age: { type: 'number', description: 'Alder i år (utelat om ukjent — da behandles som voksen)' }
+									age: { type: 'number', description: 'Alder i år (utelat om ukjent — da behandles som voksen)' },
+									interests: {
+										type: 'array',
+										items: { type: 'string' },
+										description: 'Hva spilleren liker/kan (fra trip_companions) — brukes til å gjøre spørsmål personlige'
+									}
 								},
 								required: ['name']
 							}
