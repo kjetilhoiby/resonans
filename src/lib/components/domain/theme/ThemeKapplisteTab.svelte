@@ -13,11 +13,18 @@
 		type Material,
 		type CutSpec
 	} from '$lib/kappliste/calc';
+	import { derivePresets } from '$lib/kappliste/catalog';
+	import { planMaterialTransport, type TransportLimit } from '$lib/kappliste/transport';
+	import Checkbox from '$lib/components/ui/Checkbox.svelte';
+	import MaterialPickerModal from './MaterialPickerModal.svelte';
 
 	interface CutList {
 		id: string;
 		title: string;
 		kerfMm: number;
+		transportEnabled: boolean;
+		transportMaxLengthMm: number;
+		transportMaxWidthMm: number;
 		materials: Material[];
 		sortOrder: number;
 		updatedAt: string;
@@ -34,8 +41,39 @@
 	let creating = $state(false);
 	let savingIds = $state<Set<string>>(new Set());
 	let collapsedPlans = $state<Set<string>>(new Set()); // tom = alle kappeplaner vises
+	let collapsedMaterials = $state<Set<string>>(collapseAllMaterials(initialCutLists));
+	let pickerListId = $state<string | null>(null); // åpen materiale-modal for denne lista
+
+	// Presets til modalen: brukerens egne, tidligere brukte materialer (deduplisert).
+	const materialPresets = $derived(derivePresets(lists.flatMap((l) => l.materials)));
 
 	const saveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+	function collapseAllMaterials(ls: CutList[]): Set<string> {
+		const s = new Set<string>();
+		for (const l of ls) for (const m of l.materials) s.add(m.id);
+		return s;
+	}
+	function isMaterialOpen(matId: string): boolean {
+		return !collapsedMaterials.has(matId);
+	}
+	function toggleMaterial(matId: string) {
+		const next = new Set(collapsedMaterials);
+		if (next.has(matId)) next.delete(matId);
+		else next.add(matId);
+		collapsedMaterials = next;
+	}
+	/** Kompakt oppsummering av kappene (lengde/mål × antall) for kollapset kort. */
+	function cutSummary(mat: Material): string[] {
+		if (mat.kind === 'linear') {
+			return mat.cuts
+				.filter((c) => (c.lengthMm ?? 0) > 0 && c.quantity > 0)
+				.map((c) => `${c.lengthMm} mm × ${c.quantity}`);
+		}
+		return mat.cuts
+			.filter((c) => (c.widthMm ?? 0) > 0 && (c.heightMm ?? 0) > 0 && c.quantity > 0)
+			.map((c) => `${c.widthMm}×${c.heightMm} mm × ${c.quantity}`);
+	}
 
 	function isPlanOpen(matId: string): boolean {
 		return !collapsedPlans.has(matId);
@@ -53,6 +91,7 @@
 			if (res.ok) {
 				const { cutLists } = await res.json();
 				lists = cutLists;
+				collapsedMaterials = collapseAllMaterials(cutLists);
 			}
 		} catch {
 			/* behold initialCutLists ved feil */
@@ -85,7 +124,14 @@
 			await fetch(`/api/tema/${themeId}/kapplister/${id}`, {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ title: list.title, kerfMm: list.kerfMm, materials: list.materials })
+				body: JSON.stringify({
+					title: list.title,
+					kerfMm: list.kerfMm,
+					transportEnabled: list.transportEnabled,
+					transportMaxLengthMm: list.transportMaxLengthMm,
+					transportMaxWidthMm: list.transportMaxWidthMm,
+					materials: list.materials
+				})
 			});
 		} finally {
 			const next = new Set(savingIds);
@@ -115,29 +161,6 @@
 				m.id === matId ? { ...m, cuts: m.cuts.map((c) => (c.id === cutId ? { ...c, ...patch } : c)) } : m
 			)
 		);
-	}
-
-	function addMaterial(listId: string, kind: 'linear' | 'sheet') {
-		const material: Material =
-			kind === 'linear'
-				? {
-						id: crypto.randomUUID(),
-						name: '',
-						kind: 'linear',
-						stockLengthMm: 3900,
-						pricePerMeterNok: 0,
-						cuts: [{ id: crypto.randomUUID(), lengthMm: 0, quantity: 1 }]
-					}
-				: {
-						id: crypto.randomUUID(),
-						name: '',
-						kind: 'sheet',
-						stockWidthMm: 2440,
-						stockHeightMm: 1220,
-						pricePerSheetNok: 0,
-						cuts: [{ id: crypto.randomUUID(), widthMm: 0, heightMm: 0, quantity: 1 }]
-					};
-		updateMaterials(listId, (mats) => [...mats, material]);
 	}
 
 	function removeMaterial(listId: string, matId: string) {
@@ -208,9 +231,90 @@
 				</div>
 			</header>
 
+			<div class="kerf-line">
+				<label>
+					<span>Sagsnitt (sagbladbredde)</span>
+					<span class="field"
+						><input
+							type="text"
+							inputmode="decimal"
+							placeholder="1,8"
+							value={list.kerfMm}
+							data-track="kappliste:sagsnitt"
+							onchange={(e) => patchList(list.id, { kerfMm: Math.min(parseNum(e.currentTarget.value), 50) })}
+							aria-label="Sagsnitt i mm"
+						/><span class="suffix">mm</span></span
+					>
+				</label>
+				<span class="kerf-hint">Trekkes fra mellom kapp ved beregning</span>
+			</div>
+
+			<div class="kerf-line transport-line">
+				<label class="tp-toggle">
+					<Checkbox
+						checked={list.transportEnabled}
+						onChange={(e) => patchList(list.id, { transportEnabled: (e.currentTarget as HTMLInputElement).checked })}
+					/>
+					<span>Tilpass kapp til bil</span>
+				</label>
+				{#if list.transportEnabled}
+					<label>
+						<span>maks lengde</span>
+						<span class="field"
+							><input
+								type="text"
+								inputmode="numeric"
+								placeholder="1900"
+								value={list.transportMaxLengthMm}
+								data-track="kappliste:transport-lengde"
+								onchange={(e) => patchList(list.id, { transportMaxLengthMm: Math.round(parseNum(e.currentTarget.value)) || 1900 })}
+								aria-label="Maks transportlengde i mm"
+							/><span class="suffix">mm</span></span
+						>
+					</label>
+					<label>
+						<span>maks bredde</span>
+						<span class="field"
+							><input
+								type="text"
+								inputmode="numeric"
+								placeholder="1000"
+								value={list.transportMaxWidthMm}
+								data-track="kappliste:transport-bredde"
+								onchange={(e) => patchList(list.id, { transportMaxWidthMm: Math.round(parseNum(e.currentTarget.value)) || 1000 })}
+								aria-label="Maks transportbredde i mm"
+							/><span class="suffix">mm</span></span
+						>
+					</label>
+					<span class="kerf-hint">Default: Tesla Model Y (baksete ned)</span>
+				{/if}
+			</div>
+
 			{#each list.materials as mat (mat.id)}
 				{@const res = computeMaterial(mat, list.kerfMm)}
-				<div class="material">
+				{@const transport = planMaterialTransport(res, { maxLengthMm: list.transportMaxLengthMm, maxWidthMm: list.transportMaxWidthMm } satisfies TransportLimit)}
+				<div class="material" class:is-open={isMaterialOpen(mat.id)}>
+					<div class="mat-bar">
+						<button
+							class="mat-toggle"
+							onclick={() => toggleMaterial(mat.id)}
+							aria-expanded={isMaterialOpen(mat.id)}
+							data-track="kappliste:apne-materiale"
+						>
+							<span class="chev">{isMaterialOpen(mat.id) ? '▾' : '▸'}</span>
+							<span class="mat-title">{mat.name.trim() || (mat.kind === 'linear' ? 'Lengdevare' : 'Plate')}</span>
+						</button>
+						{#if !isMaterialOpen(mat.id)}
+							<div class="mat-summary">
+								{#each cutSummary(mat) as s, i (i)}<span class="sum-chip">{s}</span>{/each}
+								{#if cutSummary(mat).length === 0}<span class="sum-empty">ingen kapp</span>{/if}
+							</div>
+						{/if}
+						<button class="icon-btn small mat-del" onclick={() => removeMaterial(list.id, mat.id)} aria-label="Slett materiale">✕</button>
+					</div>
+
+					{#if isMaterialOpen(mat.id)}
+					<div class="mat-body">
 					<div class="mat-head">
 						<input
 							class="mat-name"
@@ -222,7 +326,6 @@
 							aria-label="Materialnavn"
 						/>
 						<span class="kind-tag">{mat.kind === 'linear' ? 'Lengdevare' : 'Plate'}</span>
-						<button class="icon-btn small" onclick={() => removeMaterial(list.id, mat.id)} aria-label="Slett materiale">✕</button>
 					</div>
 
 					<!-- Stock + pris -->
@@ -275,16 +378,16 @@
 								</span>
 							</label>
 							<label>
-								<span>Pris per plate</span>
+								<span>Pris per m²</span>
 								<span class="field"
 									><input
 										type="text"
 										inputmode="decimal"
-										placeholder="299"
-										value={mat.pricePerSheetNok || ''}
-										data-track="kappliste:plate-pris"
-										oninput={(e) => patchMaterial(list.id, mat.id, { pricePerSheetNok: parseNum(e.currentTarget.value) })}
-									/><span class="suffix">kr</span></span
+										placeholder="120"
+										value={mat.pricePerSquareMeterNok || ''}
+										data-track="kappliste:plate-pris-m2"
+										oninput={(e) => patchMaterial(list.id, mat.id, { pricePerSquareMeterNok: parseNum(e.currentTarget.value) })}
+									/><span class="suffix">kr/m²</span></span
 								>
 							</label>
 						</div>
@@ -403,7 +506,7 @@
 									<div class="plan sheets">
 										{#each lay.sheets as sheet, i (i)}
 											<div class="sheet-wrap">
-												<span class="plan-idx">{i + 1}</span>
+												<span class="sheet-cap">Plate {i + 1} · {lay.stockWidthMm}×{lay.stockHeightMm} mm</span>
 												<div class="sheet-box" style:aspect-ratio={`${lay.stockWidthMm} / ${lay.stockHeightMm}`}>
 													{#each sheet.placements as pl, j (j)}
 														<div
@@ -426,13 +529,31 @@
 								</p>
 							{/if}
 						</div>
+
+						{#if list.transportEnabled && transport.needed}
+							<div class="transport-block" class:warn={!transport.allFit}>
+								<span class="tp-title">📦 Kapp i butikk for transport</span>
+								{#if transport.allFit}
+									<span class="tp-text">
+										Be butikken kappe {transport.units}
+										{res.kind === 'sheet' ? (transport.units === 1 ? 'plate' : 'plater') : transport.units === 1 ? 'lekt/bjelke' : 'lekter/bjelker'}
+										med {transport.totalCuts} snitt → alle deler passer bilen ({list.transportMaxLengthMm}×{list.transportMaxWidthMm} mm). Ingen ferdige kapp deles.
+									</span>
+								{:else}
+									<span class="tp-text warn">
+										Noen biter er for store for bilen selv etter kapping{#if transport.oversized.length}: {transport.oversized.join(', ')}{/if}. De må kappes mindre (deler en ferdig bit) eller fraktes annerledes.
+									</span>
+								{/if}
+							</div>
+						{/if}
+					{/if}
+					</div>
 					{/if}
 				</div>
 			{/each}
 
 			<div class="add-material">
-				<button onclick={() => addMaterial(list.id, 'linear')} data-track="kappliste:nytt-materiale-lengde">+ Lekt/bjelke</button>
-				<button onclick={() => addMaterial(list.id, 'sheet')} data-track="kappliste:nytt-materiale-plate">+ Plate</button>
+				<button onclick={() => (pickerListId = list.id)} data-track="kappliste:nytt-materiale">+ Materiale</button>
 			</div>
 
 			{#if total.materials.length > 0 && !total.hasErrors}
@@ -448,6 +569,21 @@
 		{creating ? 'Oppretter…' : '+ Ny kappliste'}
 	</button>
 </div>
+
+{#if pickerListId}
+	<MaterialPickerModal
+		presets={materialPresets}
+		onClose={() => (pickerListId = null)}
+		onAdd={(material) => {
+			const listId = pickerListId;
+			if (listId) {
+				updateMaterials(listId, (mats) => [...mats, material]);
+				collapsedMaterials = new Set([...collapsedMaterials].filter((id) => id !== material.id));
+			}
+			pickerListId = null;
+		}}
+	/>
+{/if}
 
 <style>
 	.kapp {
@@ -506,6 +642,37 @@
 		font-size: 0.72rem;
 		color: var(--tp-text-muted);
 	}
+
+	/* Sagsnitt */
+	.kerf-line {
+		display: flex;
+		align-items: flex-end;
+		flex-wrap: wrap;
+		gap: 6px 12px;
+	}
+	.kerf-line label {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		font-size: 0.72rem;
+		color: var(--tp-text-soft);
+	}
+	.kerf-line .field input {
+		width: 56px;
+	}
+	.kerf-hint {
+		font-size: 0.68rem;
+		color: var(--tp-text-muted);
+		padding-bottom: 8px;
+	}
+	.tp-toggle {
+		flex-direction: row !important;
+		align-items: center;
+		gap: 7px !important;
+		cursor: pointer;
+		color: var(--tp-text-soft);
+		padding-bottom: 8px;
+	}
 	.icon-btn {
 		background: none;
 		border: 0;
@@ -528,6 +695,76 @@
 		border: 1px solid var(--card-border);
 		border-radius: 12px;
 		background: var(--tp-bg-1);
+		overflow: hidden;
+	}
+
+	/* Topplinje (klikkbar) */
+	.mat-bar {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 6px 8px;
+		padding: 10px 12px;
+	}
+	.material.is-open .mat-bar {
+		border-bottom: 1px solid var(--card-border);
+	}
+	.mat-toggle {
+		flex: 1 1 auto;
+		order: 1;
+		min-width: 0;
+		display: flex;
+		align-items: center;
+		gap: 7px;
+		background: none;
+		border: 0;
+		padding: 0;
+		cursor: pointer;
+		color: var(--tp-text);
+		font: inherit;
+		text-align: left;
+	}
+	.chev {
+		color: var(--tp-text-muted);
+		font-size: 0.7rem;
+		flex-shrink: 0;
+	}
+	.mat-title {
+		font-size: 0.92rem;
+		font-weight: 600;
+		color: var(--tp-text);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.mat-del {
+		order: 2;
+		flex: 0 0 auto;
+	}
+	.mat-summary {
+		order: 3;
+		flex: 1 1 100%;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 5px;
+		padding-left: 17px; /* linjer opp under tittelen, forbi chevron */
+	}
+	.sum-chip {
+		font-size: 0.72rem;
+		color: var(--tp-text-soft);
+		background: var(--tp-bg-2);
+		border: 1px solid var(--card-border);
+		border-radius: 6px;
+		padding: 2px 7px;
+		font-variant-numeric: tabular-nums;
+	}
+	.sum-empty {
+		font-size: 0.72rem;
+		color: var(--tp-text-muted);
+		padding-left: 0;
+	}
+
+	.mat-body {
 		padding: 12px;
 		display: flex;
 		flex-direction: column;
@@ -726,7 +963,7 @@
 	}
 	.plan.sheets {
 		flex-flow: row wrap;
-		gap: 12px;
+		gap: 14px;
 	}
 	.plan-idx {
 		font-size: 0.66rem;
@@ -781,13 +1018,19 @@
 	/* Sheet: plate med absolutt-plasserte kapp */
 	.sheet-wrap {
 		display: flex;
-		align-items: flex-start;
-		gap: 6px;
+		flex-direction: column;
+		gap: 4px;
+		width: 260px;
+		max-width: 100%;
+	}
+	.sheet-cap {
+		font-size: 0.66rem;
+		color: var(--tp-text-muted);
+		font-variant-numeric: tabular-nums;
 	}
 	.sheet-box {
 		position: relative;
 		width: 100%;
-		max-width: 280px;
 		background: repeating-linear-gradient(
 			45deg,
 			var(--tp-bg-2),
@@ -820,6 +1063,35 @@
 		margin: 0;
 		font-size: 0.68rem;
 		color: var(--tp-text-muted);
+	}
+
+	/* Transport (kapp i butikk) */
+	.transport-block {
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+		padding: 9px 11px;
+		border-radius: 10px;
+		background: var(--tp-bg-2);
+		border: 1px solid var(--card-border);
+	}
+	.transport-block.warn {
+		border-color: #8a6d3b;
+		background: rgba(138, 109, 59, 0.12);
+	}
+	.tp-title {
+		font-size: 0.74rem;
+		font-weight: 600;
+		color: var(--tp-text-soft);
+	}
+	.tp-text {
+		font-size: 0.74rem;
+		line-height: 1.4;
+		color: var(--tp-text-muted);
+		font-variant-numeric: tabular-nums;
+	}
+	.tp-text.warn {
+		color: #e0b878;
 	}
 
 	.add-material {

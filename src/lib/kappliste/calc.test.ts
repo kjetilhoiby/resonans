@@ -29,7 +29,7 @@ function sheetMaterial(partial: Partial<Material> & { cuts: CutSpec[] }): Materi
 		name: '15mm kryssfiner',
 		stockWidthMm: 2440,
 		stockHeightMm: 1220,
-		pricePerSheetNok: 300,
+		pricePerSquareMeterNok: 100,
 		...partial,
 		kind: 'sheet'
 	};
@@ -89,6 +89,36 @@ describe('packSheets', () => {
 		const res = packSheets([{ w: 3000, h: 1500 }], 2440, 1220);
 		expect(res.tooLarge).toHaveLength(1);
 		expect(res.sheets).toBe(0);
+	});
+
+	it('kombinerer høye og lave kapp på én plate (rest-soner)', () => {
+		// 3×(1200×600) stående = 1800 bred stripe, 640×1220 til overs.
+		// 6×(400×300) får plass som to kolonner × tre rader i stripa → 1 plate.
+		const rects = [
+			...Array.from({ length: 3 }, () => ({ w: 1200, h: 600 })),
+			...Array.from({ length: 6 }, () => ({ w: 400, h: 300 }))
+		];
+		const res = packSheets(rects, 2440, 1220);
+		expect(res.sheets).toBe(1);
+		expect(res.tooLarge).toEqual([]);
+	});
+
+	it('underestimerer aldri: alle kapp plasseres innenfor en plate', () => {
+		const rects = [
+			{ w: 1200, h: 600 },
+			{ w: 1200, h: 600 },
+			{ w: 800, h: 400 },
+			{ w: 380, h: 420 }
+		];
+		const { sheets } = layoutSheets(rects, 2440, 1220);
+		const placed = sheets.flatMap((s) => s.placements);
+		expect(placed).toHaveLength(rects.length);
+		for (const p of placed) {
+			expect(p.x + p.w).toBeLessThanOrEqual(2440 + 1e-6);
+			expect(p.y + p.h).toBeLessThanOrEqual(1220 + 1e-6);
+			expect(p.x).toBeGreaterThanOrEqual(-1e-6);
+			expect(p.y).toBeGreaterThanOrEqual(-1e-6);
+		}
 	});
 });
 
@@ -152,15 +182,16 @@ describe('computeMaterial — linear', () => {
 });
 
 describe('computeMaterial — sheet', () => {
-	it('regner ut plater og kostnad per plate', () => {
+	it('regner ut plater og kostnad per m² (hele plater × areal × pris/m²)', () => {
 		const mat = sheetMaterial({
-			pricePerSheetNok: 300,
+			pricePerSquareMeterNok: 100,
 			cuts: [{ id: 'c1', widthMm: 380, heightMm: 420, quantity: 6 }]
 		});
 		const res = computeMaterial(mat, 0);
 		expect(res.kind).toBe('sheet');
 		expect(res.stockNeeded).toBe(1);
-		expect(res.costNok).toBe(300);
+		// 1 plate × (2,44 × 1,22 = 2,9768 m²) × 100 kr/m² = 297,68 kr
+		expect(res.costNok).toBeCloseTo(297.68);
 		expect(res.stockLabel).toBe('2440×1220 mm');
 	});
 
@@ -175,11 +206,12 @@ describe('computeCutList', () => {
 	it('summerer kostnad på tvers av lengdevarer og plater', () => {
 		const materials: Material[] = [
 			linearMaterial({ id: 'a', cuts: [{ id: 'c1', lengthMm: 1200, quantity: 5 }] }),
-			sheetMaterial({ id: 'b', pricePerSheetNok: 300, cuts: [{ id: 'c2', widthMm: 380, heightMm: 420, quantity: 6 }] })
+			sheetMaterial({ id: 'b', pricePerSquareMeterNok: 100, cuts: [{ id: 'c2', widthMm: 380, heightMm: 420, quantity: 6 }] })
 		];
 		const res = computeCutList(materials, 0);
 		expect(res.materials).toHaveLength(2);
-		expect(res.totalCostNok).toBeCloseTo(421.2 + 300);
+		// lengdevare 421,2 kr + plate 297,68 kr
+		expect(res.totalCostNok).toBeCloseTo(421.2 + 297.68);
 		expect(res.hasErrors).toBe(false);
 	});
 

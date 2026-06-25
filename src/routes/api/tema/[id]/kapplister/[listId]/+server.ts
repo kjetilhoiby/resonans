@@ -11,6 +11,9 @@ function mapCutList(row: typeof cutLists.$inferSelect) {
 		id: row.id,
 		title: row.title,
 		kerfMm: row.kerfMm,
+		transportEnabled: row.transportEnabled,
+		transportMaxLengthMm: row.transportMaxLengthMm,
+		transportMaxWidthMm: row.transportMaxWidthMm,
 		materials: row.materials ?? [],
 		sortOrder: row.sortOrder,
 		updatedAt: row.updatedAt.toISOString()
@@ -30,7 +33,12 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 	const update: Partial<typeof cutLists.$inferInsert> = { updatedAt: new Date() };
 
 	if (typeof body?.title === 'string' && body.title.trim()) update.title = body.title.trim().slice(0, 80);
-	if (Number.isFinite(body?.kerfMm) && body.kerfMm >= 0) update.kerfMm = Math.round(body.kerfMm);
+	if (Number.isFinite(body?.kerfMm) && body.kerfMm >= 0) update.kerfMm = Math.min(body.kerfMm, 50);
+	if (typeof body?.transportEnabled === 'boolean') update.transportEnabled = body.transportEnabled;
+	if (Number.isFinite(body?.transportMaxLengthMm) && body.transportMaxLengthMm > 0)
+		update.transportMaxLengthMm = Math.min(body.transportMaxLengthMm, 10000);
+	if (Number.isFinite(body?.transportMaxWidthMm) && body.transportMaxWidthMm > 0)
+		update.transportMaxWidthMm = Math.min(body.transportMaxWidthMm, 10000);
 	if (Number.isInteger(body?.sortOrder)) update.sortOrder = body.sortOrder;
 	if ('materials' in (body ?? {})) update.materials = sanitizeMaterials(body.materials);
 

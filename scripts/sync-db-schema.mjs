@@ -93,7 +93,40 @@ console.log('[db:sync] Skjema synkronisert.');
 const DATA_MIGRATIONS = [
 	// 2026-05: Omdøp domain 'egenfrekvens' → 'self' (paraply-domene)
 	`UPDATE "projects" SET "domain" = 'self' WHERE "domain" = 'egenfrekvens'`,
-	`UPDATE "procedures" SET "domain" = 'self' WHERE "domain" = 'egenfrekvens'`
+	`UPDATE "procedures" SET "domain" = 'self' WHERE "domain" = 'egenfrekvens'`,
+	// 2026-06: Plater prises i pris/m² i stedet for pris/plate. Konverter
+	// eksisterende plate-materialer: pricePerSquareMeterNok = pricePerSheetNok /
+	// plateareal (m²), og fjern pricePerSheetNok. Idempotent (kun rader som
+	// fortsatt har en plate med pricePerSheetNok).
+	`UPDATE cut_lists c
+	 SET materials = sub.new_materials
+	 FROM (
+	   SELECT cl.id,
+	     jsonb_agg(
+	       CASE
+	         WHEN (m->>'kind') = 'sheet' AND (m ? 'pricePerSheetNok')
+	         THEN (m - 'pricePerSheetNok') || jsonb_build_object(
+	           'pricePerSquareMeterNok',
+	           round(
+	             (m->>'pricePerSheetNok')::numeric
+	             / NULLIF(
+	                 (COALESCE((m->>'stockWidthMm')::numeric, 2440) / 1000)
+	                 * (COALESCE((m->>'stockHeightMm')::numeric, 1220) / 1000),
+	               0),
+	             2)
+	         )
+	         ELSE m
+	       END
+	       ORDER BY ord
+	     ) AS new_materials
+	   FROM cut_lists cl, jsonb_array_elements(cl.materials) WITH ORDINALITY AS t(m, ord)
+	   GROUP BY cl.id
+	 ) sub
+	 WHERE c.id = sub.id
+	   AND EXISTS (
+	     SELECT 1 FROM jsonb_array_elements(c.materials) e
+	     WHERE (e->>'kind') = 'sheet' AND (e ? 'pricePerSheetNok')
+	   )`
 ];
 
 if (DATA_MIGRATIONS.length > 0) {

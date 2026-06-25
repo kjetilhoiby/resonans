@@ -3,12 +3,13 @@
 // En kappliste består av MATERIALER. Hvert materiale er enten:
 //  - 'linear'  lengdevare (lekt/bjelke, f.eks. «48x48 impregnert furu») som selges i
 //              faste lengder (stockLengthMm) til en meterpris. Kappene er lengder.
-//  - 'sheet'   plate (f.eks. «15mm kryssfiner poppel» 2440x1220) som selges per plate
-//              til en plate-pris. Kappene er rektangler (bredde × høyde).
+//  - 'sheet'   plate (f.eks. «15mm kryssfiner poppel» 2440x1220) som selges per m²
+//              (pris/m²). Kappene er rektangler (bredde × høyde).
 //
 // Vi regner ut hvor mange hele lekter/bjelker eller plater du må kjøpe (smart kapping),
-// hvordan kappene fordeler seg (layout for visning), og hva det koster. Kostnad =
-// antall hele enheter × enhetspris (du betaler for hele lekter/plater inkl. svinn).
+// hvordan kappene fordeler seg (layout for visning), og hva det koster. Du betaler for
+// hele enheter inkl. svinn: lekt/bjelke = antall × (lengde × meterpris), plate =
+// antall × (plateareal × pris/m²).
 
 export interface CutSpec {
 	id: string;
@@ -22,13 +23,17 @@ export interface Material {
 	id: string;
 	name: string; // f.eks. "48x48 impregnert furu" eller "15mm kryssfiner poppel"
 	kind: 'linear' | 'sheet';
+	woodType?: string; // tresort/platetype, f.eks. "furu", "kryssfiner poppel"
+	treatment?: string; // behandling, f.eks. "Trykkimpregnert", "Ubehandlet"
+	thicknessMm?: number; // godstykkelse (plate-z / lekt-tykkelse) — metadata, ikke i beregning
+	crossWidthMm?: number; // tverrsnittsbredde for lengdevare — metadata, ikke i beregning
 	// linear:
 	stockLengthMm?: number; // lengde per lekt/bjelke (default 3900)
 	pricePerMeterNok?: number;
 	// sheet:
 	stockWidthMm?: number; // platebredde (default 2440)
 	stockHeightMm?: number; // platehøyde (default 1220)
-	pricePerSheetNok?: number;
+	pricePerSquareMeterNok?: number; // pris per m² plate
 	cuts: CutSpec[];
 }
 
@@ -118,52 +123,161 @@ export function packLinear(
 	return { stock: boards.length, wasteMm: boards.reduce((s, b) => s + b.wasteMm, 0), tooLong };
 }
 
-/* ── 2D: plater (hylle-basert heuristikk, rotasjon tillatt) ──────────── */
-// Estimat for scoping — kan overestimere litt, men aldri underestimere grovt.
+/* ── 2D: plater (MaxRects fri-rektangel, rotasjon tillatt) ──────────── */
+// Estimat for scoping. Bedre enn en ren hylle-heuristikk: pakkeren kan fylle
+// restsoner BÅDE ved siden av og under et plassert kapp, så høye og lave kapp
+// kombineres tett. Fordi 2D-pakking er NP-hardt kjører vi flere heuristikker
+// (ulik plasseringsregel + sortering) og velger resultatet med færrest plater
+// (deretter minst svinn). Kan fortsatt overestimere i sjeldne tilfeller, men
+// finner langt oftere den optimale platebruken enn hylle-varianten.
 
-interface Shelf {
+interface FreeRect {
+	x: number;
 	y: number;
-	height: number;
-	used: number;
-}
-interface SheetState {
-	shelves: Shelf[];
-	usedHeight: number;
-	placements: SheetPlacement[];
+	w: number;
+	h: number;
 }
 
-function placeOnSheet(sheet: SheetState, w: number, h: number, stockW: number, stockH: number, kerf: number): boolean {
-	const orients = [
-		{ w, h },
-		{ w: h, h: w }
+/** Er a helt innenfor b? */
+function isContained(a: FreeRect, b: FreeRect): boolean {
+	return a.x >= b.x - EPS && a.y >= b.y - EPS && a.x + a.w <= b.x + b.w + EPS && a.y + a.h <= b.y + b.h + EPS;
+}
+
+/** Fjern fri-rektangler som er dekket av et annet (behold ett ved likhet). */
+function pruneFree(free: FreeRect[]): FreeRect[] {
+	return free.filter(
+		(a, i) => !free.some((b, j) => j !== i && isContained(a, b) && (!isContained(b, a) || j < i))
+	);
+}
+
+/** Del opp fri-rektangler rundt et opptatt rektangel (MaxRects-splitt). */
+function splitFree(free: FreeRect[], used: FreeRect): FreeRect[] {
+	const out: FreeRect[] = [];
+	for (const f of free) {
+		const noOverlap =
+			used.x >= f.x + f.w - EPS ||
+			used.x + used.w <= f.x + EPS ||
+			used.y >= f.y + f.h - EPS ||
+			used.y + used.h <= f.y + EPS;
+		if (noOverlap) {
+			out.push(f);
+			continue;
+		}
+		if (used.x > f.x + EPS) out.push({ x: f.x, y: f.y, w: used.x - f.x, h: f.h }); // venstre
+		if (used.x + used.w < f.x + f.w - EPS)
+			out.push({ x: used.x + used.w, y: f.y, w: f.x + f.w - (used.x + used.w), h: f.h }); // høyre
+		if (used.y > f.y + EPS) out.push({ x: f.x, y: f.y, w: f.w, h: used.y - f.y }); // topp
+		if (used.y + used.h < f.y + f.h - EPS)
+			out.push({ x: f.x, y: used.y + used.h, w: f.w, h: f.y + f.h - (used.y + used.h) }); // bunn
+	}
+	return pruneFree(out);
+}
+
+// Plasseringsregler:
+//  bssf/blsf/baf — vurder begge orienteringer, posisjoner etter best short/long/area fit.
+//  portrait/landscape — tving foretrukket orientering (stående/liggende) der den
+//    passer, fall tilbake til den andre kun ved behov. Disse to løser tilfeller der
+//    én konsekvent orientering pakker tettere enn grådig fit per kapp.
+type FitRule = 'bssf' | 'blsf' | 'baf' | 'portrait' | 'landscape';
+
+interface Placement {
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+	score1: number;
+	score2: number;
+}
+
+/** Orienteringer å prøve, i prioritert rekkefølge for regelen. */
+function orientations(w: number, h: number, rule: FitRule): Array<[number, number]> {
+	if (w === h) return [[w, h]];
+	const tall: [number, number] = h >= w ? [w, h] : [h, w];
+	const wide: [number, number] = w >= h ? [w, h] : [h, w];
+	if (rule === 'portrait') return [tall, wide];
+	if (rule === 'landscape') return [wide, tall];
+	return [
+		[w, h],
+		[h, w]
 	];
-	// Forsøk eksisterende hyller først (begge orienteringer).
-	for (const shelf of sheet.shelves) {
-		for (const o of orients) {
-			const x = shelf.used + (shelf.used > 0 ? kerf : 0);
-			if (o.h <= shelf.height + EPS && x + o.w <= stockW + EPS) {
-				sheet.placements.push({ x, y: shelf.y, w: o.w, h: o.h });
-				shelf.used = x + o.w;
-				return true;
+}
+
+/** Finn beste plassering av w×h blant fri-rektangler etter gitt regel. */
+function findPlacement(free: FreeRect[], w: number, h: number, rule: FitRule): Placement | null {
+	const biased = rule === 'portrait' || rule === 'landscape';
+	let best: Placement | null = null;
+	for (const f of free) {
+		for (const [rw, rh] of orientations(w, h, rule)) {
+			if (rw > f.w + EPS || rh > f.h + EPS) continue;
+			const leftH = f.w - rw;
+			const leftV = f.h - rh;
+			const short = Math.min(leftH, leftV);
+			const long = Math.max(leftH, leftV);
+			let score1: number;
+			let score2: number;
+			if (rule === 'blsf') {
+				score1 = long;
+				score2 = short;
+			} else if (rule === 'baf') {
+				score1 = f.w * f.h - rw * rh; // best area fit
+				score2 = short;
+			} else {
+				score1 = short; // bssf + orienteringsstyrte regler posisjonerer etter short fit
+				score2 = long;
+			}
+			if (!best || score1 < best.score1 - EPS || (Math.abs(score1 - best.score1) <= EPS && score2 < best.score2 - EPS)) {
+				best = { x: f.x, y: f.y, w: rw, h: rh, score1, score2 };
+			}
+			if (biased) break; // bruk kun foretrukket orientering som passer dette fri-rektangelet
+		}
+	}
+	return best;
+}
+
+interface PackedSheet {
+	placements: SheetPlacement[];
+	free: FreeRect[];
+}
+
+/** Én komplett pakking med gitt sortering + plasseringsregel. */
+function packWithStrategy(
+	items: Array<{ w: number; h: number }>,
+	stockW: number,
+	stockH: number,
+	kerfMm: number,
+	rule: FitRule
+): PackedSheet[] {
+	const sheets: PackedSheet[] = [];
+	for (const it of items) {
+		let bestSheet = -1;
+		let bestPlace: Placement | null = null;
+		for (let s = 0; s < sheets.length; s++) {
+			const cand = findPlacement(sheets[s].free, it.w, it.h, rule);
+			if (
+				cand &&
+				(!bestPlace ||
+					cand.score1 < bestPlace.score1 - EPS ||
+					(Math.abs(cand.score1 - bestPlace.score1) <= EPS && cand.score2 < bestPlace.score2 - EPS))
+			) {
+				bestPlace = cand;
+				bestSheet = s;
 			}
 		}
-	}
-	// Åpne ny hylle — velg orientering som passer bredden og gir lavest høyde.
-	let best: { o: { w: number; h: number }; y: number } | null = null;
-	for (const o of orients) {
-		if (o.w > stockW + EPS) continue;
-		const y = sheet.usedHeight + (sheet.usedHeight > 0 ? kerf : 0);
-		if (y + o.h <= stockH + EPS) {
-			if (!best || o.h < best.o.h) best = { o, y };
+		if (!bestPlace) {
+			const free: FreeRect[] = [{ x: 0, y: 0, w: stockW, h: stockH }];
+			// Garantert plass: kappet er allerede sjekket mot platemålene.
+			bestPlace = findPlacement(free, it.w, it.h, rule);
+			if (!bestPlace) continue; // skal ikke skje (feasibility sjekket på forhånd)
+			sheets.push({ placements: [], free });
+			bestSheet = sheets.length - 1;
 		}
+		const sheet = sheets[bestSheet];
+		sheet.placements.push({ x: bestPlace.x, y: bestPlace.y, w: bestPlace.w, h: bestPlace.h });
+		// Reserver sagsnitt til høyre og under hvert kapp.
+		const footprint: FreeRect = { x: bestPlace.x, y: bestPlace.y, w: bestPlace.w + kerfMm, h: bestPlace.h + kerfMm };
+		sheet.free = splitFree(sheet.free, footprint);
 	}
-	if (best) {
-		sheet.shelves.push({ y: best.y, height: best.o.h, used: best.o.w });
-		sheet.placements.push({ x: 0, y: best.y, w: best.o.w, h: best.o.h });
-		sheet.usedHeight = best.y + best.o.h;
-		return true;
-	}
-	return false;
+	return sheets;
 }
 
 export function layoutSheets(
@@ -181,26 +295,35 @@ export function layoutSheets(
 			tooLarge.push(r);
 			continue;
 		}
-		items.push({ w: Math.min(r.w, r.h), h: Math.max(r.w, r.h) });
+		items.push({ w: r.w, h: r.h });
 	}
-	items.sort((a, b) => b.h - a.h || b.w - a.w);
 
-	const sheets: SheetState[] = [];
-	for (const it of items) {
-		let placed = false;
-		for (const sheet of sheets) {
-			if (placeOnSheet(sheet, it.w, it.h, stockW, stockH, kerfMm)) {
-				placed = true;
-				break;
+	// Flere sorteringer × plasseringsregler — velg pakkingen med færrest plater,
+	// deretter minst total-svinn (mest brukt areal).
+	const sorters: Array<(a: { w: number; h: number }, b: { w: number; h: number }) => number> = [
+		(a, b) => b.w * b.h - a.w * a.h, // areal synkende
+		(a, b) => Math.max(b.w, b.h) - Math.max(a.w, a.h), // lengste side synkende
+		(a, b) => b.h - a.h || b.w - a.w // høyde synkende
+	];
+	const rules: FitRule[] = ['bssf', 'blsf', 'baf', 'portrait', 'landscape'];
+
+	const usedArea = items.reduce((s, it) => s + it.w * it.h, 0);
+	let best: PackedSheet[] | null = null;
+	let bestWaste = Infinity;
+	for (const sorter of sorters) {
+		const sorted = [...items].sort(sorter);
+		for (const rule of rules) {
+			const packed = packWithStrategy(sorted, stockW, stockH, kerfMm, rule);
+			const waste = packed.length * stockW * stockH - usedArea;
+			if (best === null || packed.length < best.length || (packed.length === best.length && waste < bestWaste - EPS)) {
+				best = packed;
+				bestWaste = waste;
 			}
 		}
-		if (!placed) {
-			const sheet: SheetState = { shelves: [], usedHeight: 0, placements: [] };
-			if (placeOnSheet(sheet, it.w, it.h, stockW, stockH, kerfMm)) sheets.push(sheet);
-			else tooLarge.push({ w: it.w, h: it.h });
-		}
 	}
-	return { sheets: sheets.map((s) => ({ placements: s.placements })), tooLarge };
+
+	const sheets: SheetUnit[] = (best ?? []).map((s) => ({ placements: s.placements }));
+	return { sheets, tooLarge };
 }
 
 export function packSheets(
@@ -228,7 +351,8 @@ export function computeMaterial(material: Material, kerfMm = 0): MaterialResult 
 	if (material.kind === 'sheet') {
 		const stockW = material.stockWidthMm && material.stockWidthMm > 0 ? material.stockWidthMm : DEFAULT_SHEET_WIDTH_MM;
 		const stockH = material.stockHeightMm && material.stockHeightMm > 0 ? material.stockHeightMm : DEFAULT_SHEET_HEIGHT_MM;
-		const price = material.pricePerSheetNok ?? 0;
+		const pricePerM2 = material.pricePerSquareMeterNok ?? 0;
+		const sheetAreaM2 = (stockW / 1000) * (stockH / 1000);
 
 		const rects = expandQuantity(
 			material.cuts
@@ -243,7 +367,7 @@ export function computeMaterial(material: Material, kerfMm = 0): MaterialResult 
 			kind: 'sheet',
 			stockNeeded: sheets.length,
 			totalPieces: rects.length,
-			costNok: sheets.length * price,
+			costNok: sheets.length * sheetAreaM2 * pricePerM2,
 			unitLabel: 'plate',
 			stockLabel: `${stockW}×${stockH} mm`,
 			piecesPerStock: 0,
