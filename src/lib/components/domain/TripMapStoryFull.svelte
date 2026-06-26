@@ -344,6 +344,10 @@
 	.tmf-map {
 		position: absolute;
 		inset: 0;
+		/* Kartet er ikke-interaktivt; scrolleren over skal eie all touch. Uten
+		   dette kan et langt trykk treffe kart-canvaset og trigge iOS sin
+		   tekstmarkerings-meny i stedet for å scrolle. */
+		pointer-events: none;
 	}
 
 	/* Lett vignett så hvite tekstkort alltid har kontrast mot kartet. */
@@ -374,28 +378,30 @@
 		background: rgba(0, 0, 0, 0.7);
 	}
 
-	/* Høyden bindes til SYNLIG viewport (svh), ikke layout-viewporten. Med
-	   position:fixed;inset:0 ville scrolleren strukket seg ned bak nettleser-
-	   chromet (URL/nav-baren i in-app-browsere), så siste steg ble unåelig. */
+	/* Scrolleren dekker hele overlayet (inset:0) så den fanger ALL touch — ellers
+	   blir det en død sone der kart-canvaset stjeler trykk og hindrer scroll.
+	   At siste steg ikke gjemmer seg bak nettleser-chromet løses i stedet med rikelig
+	   bunn-padding på stegene (kortene løftes over chromet). */
 	.tmf-scroller {
 		position: absolute;
-		top: 0;
-		left: 0;
-		right: 0;
-		height: 100vh;
-		height: 100svh;
+		inset: 0;
 		z-index: 2;
 		overflow-y: auto;
 		scroll-behavior: smooth;
 		-webkit-overflow-scrolling: touch;
 		scroll-snap-type: y proximity;
+		touch-action: pan-y;
+		/* Drag skal scrolle, ikke markere tekst (unngår iOS-callout midt i fortellingen). */
+		-webkit-user-select: none;
+		user-select: none;
+		-webkit-touch-callout: none;
 	}
 
 	.tmf-step {
-		min-height: 100%;
+		min-height: 100svh;
 		display: flex;
 		align-items: flex-end;
-		padding: calc(env(safe-area-inset-top) + 64px) 16px calc(env(safe-area-inset-bottom) + 56px);
+		padding: calc(env(safe-area-inset-top) + 64px) 16px calc(env(safe-area-inset-bottom) + 104px);
 		box-sizing: border-box;
 		scroll-snap-align: center;
 	}
