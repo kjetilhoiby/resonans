@@ -167,3 +167,39 @@ tomt materiale du måtte fylle ut inline. Erstattet med én **«+ Materiale»**-
   katalog/presets).
 - Verifisert at brukerens plate (3×1200×600 + 6×400×300 på 2440×1220) fortsatt
   pakkes på 1 plate med sagsnitt 1,8 mm.
+
+### Fase 9: Plate-pris i kr/m² (egen PR)
+
+Plater ble priset per hele plate (`pricePerSheetNok`). Bruker påpekte at plater
+vanligvis prises i **kr/m²** — analogt med at lengdevarer prises i kr/m.
+
+- `Material.pricePerSheetNok` → `pricePerSquareMeterNok`. Kostnad for plate =
+  `antall plater × plateareal (m²) × pris/m²` (du betaler fortsatt for hele plater
+  inkl. svinn). `computeMaterial`, `rows.ts`, schema-`$type`, modal og inline-editor
+  oppdatert. Felt-label «Pris per m²» med suffiks `kr/m²`.
+- Data-migrasjon i `DATA_MIGRATIONS` konverterer eksisterende plate-materialer:
+  `pricePerSquareMeterNok = pricePerSheetNok / plateareal`, fjerner `pricePerSheetNok`.
+  Idempotent (kun rader som fortsatt har en plate med `pricePerSheetNok`), så
+  effektiv kostnad bevares.
+- Tester oppdatert: plate-kostnad bruker areal × pris/m².
+
+### Fase 10: «Kapp i butikk» for transport (Tesla Model Y, egen PR)
+
+En hel plate (2440×1220) eller lang lekt (3,90 m) får ikke plass i et bil-lasterom.
+Mange byggevarebutikker kapper gratis. Resonans foreslår nå hvilke snitt du bør be om.
+
+- `transport.ts` (ren logikk + 14 tester): `fitsTransport`, layout-bevisst
+  **giljotin-partisjonering** av plater (`planSheetTransport`) som legger snittene i
+  mellomrommene i kappeplanen — ingen ferdig bit deles — og 1D-segmentering av
+  lengdevarer (`planBoardTransport`). `planMaterialTransport` aggregerer per materiale.
+- **Transport-grense per kappliste**, forhåndsutfylt med Tesla Model Y (baksete ned:
+  ~1900 mm lengde × ~1000 mm bredde mellom hjulkassene), redigerbar. Nye kolonner
+  `transport_max_length_mm`/`transport_max_width_mm` (migrasjon 0025), API + loader.
+- UI: transport-grense-felt ved siden av sagsnitt, og en «📦 Kapp i butikk»-linje per
+  materiale: «Be butikken kappe N plate(r) med M snitt → alle deler passer bilen».
+  Advarer hvis en ferdig bit selv er for stor for bilen.
+- Eksempel: 3×(1200×600) + 6×(400×300) på 2440×1220 → 3 snitt → 4 striper
+  (≤636×1220) som alle passer Model Y.
+- **«Tilpass kapp til bil» som checkbox** (kolonne `transport_enabled`, migrasjon
+  0026, default på): krysses av/på per kappliste. Avkrysset skjuler både
+  transport-grense-feltene og «kapp i butikk»-linja.

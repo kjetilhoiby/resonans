@@ -54,7 +54,7 @@
 		if (p.kind === 'sheet') {
 			stockWidthMm = String(p.stockWidthMm ?? 2440);
 			stockHeightMm = String(p.stockHeightMm ?? 1220);
-			price = p.pricePerSheetNok ? String(p.pricePerSheetNok) : '';
+			price = p.pricePerSquareMeterNok ? String(p.pricePerSquareMeterNok) : '';
 		} else {
 			stockLengthMm = String(p.stockLengthMm ?? 3900);
 			price = p.pricePerMeterNok ? String(p.pricePerMeterNok) : '';
@@ -85,7 +85,7 @@
 		if (kind === 'sheet') {
 			base.stockWidthMm = Math.round(parseNum(stockWidthMm)) || 2440;
 			base.stockHeightMm = Math.round(parseNum(stockHeightMm)) || 1220;
-			base.pricePerSheetNok = parseNum(price);
+			base.pricePerSquareMeterNok = parseNum(price);
 		} else {
 			base.crossWidthMm = Math.round(parseNum(crossWidthMm)) || undefined;
 			base.stockLengthMm = Math.round(parseNum(stockLengthMm)) || 3900;
@@ -164,7 +164,7 @@
 					<label>Tykkelse<span class="mp-fld"><input type="text" inputmode="decimal" placeholder="15" bind:value={thicknessMm} data-track="materiale-modal:tykkelse" /><span class="sfx">mm</span></span></label>
 					<label>Bredde<span class="mp-fld"><input type="text" inputmode="numeric" bind:value={stockWidthMm} data-track="materiale-modal:platebredde" /><span class="sfx">mm</span></span></label>
 					<label>Høyde<span class="mp-fld"><input type="text" inputmode="numeric" bind:value={stockHeightMm} data-track="materiale-modal:platehoyde" /><span class="sfx">mm</span></span></label>
-					<label>Pris/plate<span class="mp-fld"><input type="text" inputmode="decimal" placeholder="299" bind:value={price} data-track="materiale-modal:plate-pris" /><span class="sfx">kr</span></span></label>
+					<label>Pris/m²<span class="mp-fld"><input type="text" inputmode="decimal" placeholder="120" bind:value={price} data-track="materiale-modal:plate-pris-m2" /><span class="sfx">kr/m²</span></span></label>
 				</div>
 			{:else}
 				<div class="mp-dims">

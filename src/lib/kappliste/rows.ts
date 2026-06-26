@@ -46,7 +46,7 @@ export function sanitizeMaterials(input: unknown): Material[] {
 		} else {
 			material.stockWidthMm = Math.max(0, Math.round(toFiniteNumber(m.stockWidthMm, 2440)));
 			material.stockHeightMm = Math.max(0, Math.round(toFiniteNumber(m.stockHeightMm, 1220)));
-			material.pricePerSheetNok = Math.max(0, toFiniteNumber(m.pricePerSheetNok));
+			material.pricePerSquareMeterNok = Math.max(0, toFiniteNumber(m.pricePerSquareMeterNok));
 		}
 		materials.push(material);
 	}

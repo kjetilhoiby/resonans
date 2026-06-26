@@ -98,7 +98,7 @@ export function derivePresets(materials: Material[], limit = 24): Material[] {
 			pricePerMeterNok: m.pricePerMeterNok,
 			stockWidthMm: m.stockWidthMm,
 			stockHeightMm: m.stockHeightMm,
-			pricePerSheetNok: m.pricePerSheetNok,
+			pricePerSquareMeterNok: m.pricePerSquareMeterNok,
 			cuts: []
 		});
 	}
