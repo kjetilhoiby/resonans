@@ -8,6 +8,7 @@ import { processWorkoutEmail } from '$lib/server/email-processors/workout';
 import { processAiExtractionEmail } from '$lib/server/email-processors/ai-extraction';
 import { processRawStoreEmail } from '$lib/server/email-processors/raw-store';
 import { processLibraryEmail } from '$lib/server/email-processors/library';
+import { processSchoolPlanEmail } from '$lib/server/email-processors/school-plan';
 import { findOrCreateEmailSensor, type InboundEmailPayload } from '$lib/server/email-processors/shared';
 
 export const config = { maxDuration: 60 };
@@ -46,16 +47,19 @@ function matchesPattern(value: string, pattern: string): boolean {
 
 type RuleMatch = typeof emailRules.$inferSelect;
 
-async function executeRule(userId: string, rule: RuleMatch, payload: InboundEmailPayload) {
+async function executeRule(userId: string, rule: RuleMatch, payload: InboundEmailPayload, appUrl?: string) {
 	switch (rule.processingType) {
 		case 'workout_files': {
 			const sensor = await findOrCreateEmailSensor(userId, 'workout_files');
-			const result = await processWorkoutEmail(userId, sensor, payload);
+			const result = await processWorkoutEmail(userId, sensor, payload, appUrl);
 			await db.update(sensors).set({ lastSync: new Date(), updatedAt: new Date() }).where(eq(sensors.id, sensor.id));
 			return result;
 		}
 		case 'library': {
 			return await processLibraryEmail(userId, payload);
+		}
+		case 'school_plan': {
+			return await processSchoolPlanEmail(userId, payload, rule, appUrl);
 		}
 		case 'ai_extraction': {
 			const sensor = await findOrCreateEmailSensor(userId, 'email_ai_extraction');
@@ -153,10 +157,11 @@ export const POST: RequestHandler = async ({ request, url }) => {
 
 	if (matchedRules.length > 0) {
 		const results: Array<{ ruleId: string; ruleName: string; success: boolean; detail?: any }> = [];
+		const appUrl = env.ORIGIN ?? url.origin;
 
 		for (const rule of matchedRules) {
 			try {
-				const result = await executeRule(user.id, rule, payload);
+				const result = await executeRule(user.id, rule, payload, appUrl);
 
 				await db.update(emailRules).set({
 					lastMatchedAt: new Date(),

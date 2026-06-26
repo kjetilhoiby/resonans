@@ -2,6 +2,7 @@ import { db } from '$lib/db';
 import { checklists, checklistItems } from '$lib/db/schema';
 import { and, eq, sql } from 'drizzle-orm';
 import type { InboundEmailPayload } from './shared';
+import { addDatedItems } from './day-checklist';
 
 const NORWEGIAN_MONTHS: Record<string, number> = {
 	januar: 1, jan: 1,
@@ -116,18 +117,31 @@ export async function processLibraryEmail(userId: string, payload: InboundEmailP
 
 	const dueDateStr = dueDate.toISOString().slice(0, 10);
 
+	const itemMeta = {
+		source: 'email_inbound',
+		label: payload.Label,
+		gmailMessageId,
+		from: payload.From,
+		findingType: 'return' as const
+	};
+
 	await db.insert(checklistItems).values({
 		checklistId: checklist.id,
 		userId,
 		text,
 		endDate: dueDateStr,
-		metadata: {
-			source: 'email_inbound',
-			label: payload.Label,
-			gmailMessageId,
-			from: payload.From
-		}
+		dueDate: dueDateStr,
+		metadata: itemMeta
 	});
+
+	// Vis fristen i dagslisten på innleveringsdagen, så den ikke blir liggende
+	// glemt i bibliotek-lista.
+	const today = new Date().toISOString().slice(0, 10);
+	if (dueDateStr >= today) {
+		await addDatedItems(userId, [
+			{ isoDate: dueDateStr, text, dueDate: dueDateStr, metadata: itemMeta }
+		]);
+	}
 
 	return { success: true, imported: 1 };
 }

@@ -708,6 +708,11 @@ export const checklistItems = pgTable('checklist_items', {
 		// Husarbeid-budsjett: item teller i brutto-vs-fullført-tellingen på hjem.
 		// Settes av apparat-sykluser, og kan settes på rutine-/dagsoppgaver «eid av chores».
 		chore?: boolean;
+		// Skole/barnehage-uttrekk — hvilken person og hva slags funn
+		personId?: string;
+		personName?: string;
+		findingType?: 'todo' | 'bring' | 'event' | 'return';
+		emailSubject?: string;
 		// Appliance task metadata
 		applianceChore?: boolean; // Husarbeid generert fra en apparat-syklus (kilde-markør)
 		applianceCycleId?: string;
@@ -2461,7 +2466,8 @@ export const emailRules = pgTable('email_rules', {
 	labelPattern: text('label_pattern'), // exact or glob match on Gmail label e.g. 'resonans/oda', 'resonans/*'
 	senderPattern: text('sender_pattern'), // glob pattern e.g. '*@oda.com', 'noreply@spond.com'
 	subjectPattern: text('subject_pattern'), // substring match e.g. 'Ordrebekreftelse', 'Ukeplan'
-	processingType: text('processing_type').notNull(), // 'workout_files', 'ai_extraction', 'raw_store', 'library'
+	personId: uuid('person_id').references((): AnyPgColumn => persons.id, { onDelete: 'set null' }), // default-person for kilden (f.eks. barnehage → barnet)
+	processingType: text('processing_type').notNull(), // 'workout_files', 'ai_extraction', 'raw_store', 'library', 'school_plan'
 	extractionPrompt: text('extraction_prompt'), // custom prompt for AI extraction (optional)
 	eventType: text('event_type').notNull().default('email_content'), // sensor event type to create
 	dataType: text('data_type').notNull().default('email'), // sensor event data type
@@ -2478,6 +2484,10 @@ export const emailRulesRelations = relations(emailRules, ({ one }) => ({
 	user: one(users, {
 		fields: [emailRules.userId],
 		references: [users.id]
+	}),
+	person: one(persons, {
+		fields: [emailRules.personId],
+		references: [persons.id]
 	})
 }));
 

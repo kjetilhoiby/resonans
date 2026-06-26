@@ -22,6 +22,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		extractionPrompt?: string;
 		eventType?: string;
 		dataType?: string;
+		personId?: string | null;
 	};
 
 	if (!body.name?.trim()) {
@@ -37,6 +38,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		labelPattern: body.labelPattern?.trim() || null,
 		senderPattern: body.senderPattern?.trim() || null,
 		subjectPattern: body.subjectPattern?.trim() || null,
+		personId: body.personId || null,
 		processingType: body.processingType,
 		extractionPrompt: body.extractionPrompt?.trim() || null,
 		eventType: body.eventType || 'email_content',
@@ -58,6 +60,7 @@ export const PATCH: RequestHandler = async ({ request, locals }) => {
 		eventType?: string;
 		dataType?: string;
 		isActive?: boolean;
+		personId?: string | null;
 	};
 
 	if (!body.id) {
@@ -69,6 +72,7 @@ export const PATCH: RequestHandler = async ({ request, locals }) => {
 	if (body.labelPattern !== undefined) updates.labelPattern = body.labelPattern?.trim() || null;
 	if (body.senderPattern !== undefined) updates.senderPattern = body.senderPattern?.trim() || null;
 	if (body.subjectPattern !== undefined) updates.subjectPattern = body.subjectPattern?.trim() || null;
+	if (body.personId !== undefined) updates.personId = body.personId || null;
 	if (body.processingType !== undefined) updates.processingType = body.processingType;
 	if (body.extractionPrompt !== undefined) updates.extractionPrompt = body.extractionPrompt?.trim() || null;
 	if (body.eventType !== undefined) updates.eventType = body.eventType;
