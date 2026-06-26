@@ -329,6 +329,8 @@
 				<button type="button" class="tmf-done" onclick={onclose} data-track="reise-kart:fullfor-fullskjerm">Lukk</button>
 			</div>
 		</section>
+
+		<div class="tmf-tail" aria-hidden="true"></div>
 	</div>
 </div>
 
@@ -389,7 +391,6 @@
 		overflow-y: auto;
 		scroll-behavior: smooth;
 		-webkit-overflow-scrolling: touch;
-		scroll-snap-type: y proximity;
 		touch-action: pan-y;
 		/* Drag skal scrolle, ikke markere tekst (unngår iOS-callout midt i fortellingen). */
 		-webkit-user-select: none;
@@ -403,7 +404,13 @@
 		align-items: flex-end;
 		padding: calc(env(safe-area-inset-top) + 64px) 16px calc(env(safe-area-inset-bottom) + 104px);
 		box-sizing: border-box;
-		scroll-snap-align: center;
+	}
+
+	/* Ekstra scroll-rom etter siste steg, så det nederste dag-kortet alltid kan
+	   løftes godt over nettleser-baren. */
+	.tmf-tail {
+		height: 25svh;
+		flex: 0 0 auto;
 	}
 
 	.tmf-step-intro,
