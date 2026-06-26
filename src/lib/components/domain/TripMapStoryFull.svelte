@@ -402,7 +402,9 @@
 		min-height: 100svh;
 		display: flex;
 		align-items: flex-end;
-		padding: calc(env(safe-area-inset-top) + 64px) 16px calc(env(safe-area-inset-bottom) + 104px);
+		/* Rikelig bunn-klaring: et aktivt kort er forankret nederst i steget, så
+		   uten dette havner det rett over (eller bak) nettleserens bunn-bar. */
+		padding: calc(env(safe-area-inset-top) + 64px) 16px calc(env(safe-area-inset-bottom) + 150px);
 		box-sizing: border-box;
 	}
 
