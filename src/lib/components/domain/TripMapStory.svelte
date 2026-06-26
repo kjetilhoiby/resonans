@@ -16,6 +16,7 @@
 	import { uploadImage } from '$lib/client/upload-image';
 	import { buildDayPins, partialPath, type DayPin } from './trip-map-story';
 	import { tripApi, type TripApi, type DayGeo, type ImagePin, type GeoCoord } from './trip-api';
+	import TripMapStoryFull from './TripMapStoryFull.svelte';
 
 	interface Props {
 		themeId: string;
@@ -45,10 +46,10 @@
 	let placing = $state(false);
 	let uploading = $state(false);
 	let error = $state('');
+	let fullscreen = $state(false);
 
 	let map: MapLibreMap | null = null;
 	let initStarted = false;
-	let mapReady = $state(false);
 	let dayMarkers: MapLibreMarker[] = [];
 	const imageMarkers = new Map<string, MapLibreMarker>();
 	let fileInput: HTMLInputElement | null = null;
@@ -125,7 +126,6 @@
 
 		map.on('load', () => {
 			if (!map) return;
-			mapReady = true;
 
 			// Rutelinje (skygge + farge), starter tom og animeres inn.
 			map.addSource('story-route', {
@@ -305,8 +305,7 @@
 					<button
 						type="button"
 						class="tms-btn"
-						onclick={animateRoute}
-						disabled={!mapReady}
+						onclick={() => (fullscreen = true)}
 						data-track="reise-kart:spill-av">▶ Spill av</button
 					>
 				{/if}
@@ -356,6 +355,10 @@
 		data-track="reise-kart:bilde-fil"
 	/>
 </div>
+
+{#if fullscreen}
+	<TripMapStoryFull {dayPins} imagePins={pins} onclose={() => (fullscreen = false)} />
+{/if}
 
 <style>
 	.trip-map-story {

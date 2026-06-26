@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildDayPins, partialPath } from './trip-map-story';
+import { buildDayPins, partialPath, cumulativeFractions } from './trip-map-story';
 import type { DiaryEntry, DayGeo } from './trip-api';
 
 describe('buildDayPins', () => {
@@ -92,5 +92,41 @@ describe('partialPath', () => {
 	it('klarer degenererte input', () => {
 		expect(partialPath([[1, 1]], 0.5)).toEqual([[1, 1]]);
 		expect(partialPath([], 0.5)).toEqual([]);
+	});
+});
+
+describe('cumulativeFractions', () => {
+	it('gir andel tilbakelagt ved hvert punkt, fra 0 til 1', () => {
+		const coords: Array<[number, number]> = [
+			[0, 0],
+			[10, 0],
+			[10, 10]
+		];
+		// Segmentene er like lange (10 + 10) → 0, 0.5, 1
+		expect(cumulativeFractions(coords)).toEqual([0, 0.5, 1]);
+	});
+
+	it('vekter etter faktisk segmentlengde', () => {
+		const coords: Array<[number, number]> = [
+			[0, 0],
+			[30, 0],
+			[40, 0]
+		];
+		// Lengder 30 + 10 = 40 → 0, 0.75, 1
+		expect(cumulativeFractions(coords)).toEqual([0, 0.75, 1]);
+	});
+
+	it('fordeler jevnt når alle punktene er like', () => {
+		const coords: Array<[number, number]> = [
+			[5, 5],
+			[5, 5],
+			[5, 5]
+		];
+		expect(cumulativeFractions(coords)).toEqual([0, 0.5, 1]);
+	});
+
+	it('klarer degenererte input', () => {
+		expect(cumulativeFractions([])).toEqual([]);
+		expect(cumulativeFractions([[1, 1]])).toEqual([0]);
 	});
 });

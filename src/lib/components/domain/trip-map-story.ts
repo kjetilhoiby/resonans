@@ -55,6 +55,38 @@ export function buildDayPins(
 }
 
 /**
+ * Andelen (0–1) av total rutelengde man har tilbakelagt når man når hvert punkt.
+ * Brukes av fullskjerm-fortellingen til å animere ruten til å vokse nøyaktig
+ * fram til den aktive dagen mens man scroller. Returnerer alltid `[0, …, 1]`
+ * med ett tall per koordinat. Faller tilbake til jevn fordeling hvis alle
+ * punktene er like (total lengde 0), så stegene fortsatt skiller seg fra hverandre.
+ */
+export function cumulativeFractions(coords: Array<[number, number]>): number[] {
+	if (coords.length === 0) return [];
+	if (coords.length === 1) return [0];
+
+	const segLen: number[] = [];
+	let total = 0;
+	for (let i = 1; i < coords.length; i++) {
+		const d = Math.hypot(coords[i][0] - coords[i - 1][0], coords[i][1] - coords[i - 1][1]);
+		segLen.push(d);
+		total += d;
+	}
+
+	if (total === 0) {
+		return coords.map((_, i) => i / (coords.length - 1));
+	}
+
+	const out = [0];
+	let acc = 0;
+	for (const d of segLen) {
+		acc += d;
+		out.push(acc / total);
+	}
+	return out;
+}
+
+/**
  * Returnerer ruten tegnet opp til en andel `fraction` (0–1) av total lengde.
  * Brukes til å animere at linja vokser fra sted til sted. Siste segment kuttes
  * på et interpolert punkt. Planar avstand holder for animasjon.
