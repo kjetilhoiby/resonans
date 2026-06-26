@@ -90,6 +90,19 @@ export function findParticipantIndex(list: QuizParticipant[], name: string): num
 	return list.findIndex((p) => p.name.toLowerCase() === key);
 }
 
+/**
+ * Er det stilt et spørsmål som ennå ikke er bokført? Sant når et spørsmål er satt
+ * (`currentQuestion`) uten at et resultat er registrert (`lastResult` er null). Brukes til å
+ * hindre at quizmasteren stiller neste spørsmål før forrige svar er registrert — ellers
+ * forsvinner poenget for et riktig svar (modellen sa «riktig» i tale, men bokførte aldri).
+ */
+export function hasPendingAnswer(session: {
+	currentQuestion: string | null;
+	lastResult: { player: string; correct: boolean } | null;
+}): boolean {
+	return !!session.currentQuestion && session.lastResult == null;
+}
+
 /** Stilling sortert synkende på poeng, så på nåværende streak, så alfabetisk. */
 export function buildStandings(list: QuizParticipant[]): QuizParticipant[] {
 	return [...list].sort(

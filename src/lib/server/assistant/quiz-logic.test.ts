@@ -6,6 +6,7 @@ import {
 	ageBand,
 	applyAnswer,
 	findParticipantIndex,
+	hasPendingAnswer,
 	buildStandings,
 	streakLabel,
 	parseGeneratedQuestions,
@@ -94,6 +95,22 @@ describe('findParticipantIndex', () => {
 	it('returnerer -1 for ukjent eller tomt navn', () => {
 		expect(findParticipantIndex(list, 'Pappa')).toBe(-1);
 		expect(findParticipantIndex(list, '')).toBe(-1);
+	});
+});
+
+describe('hasPendingAnswer', () => {
+	it('er sann når et spørsmål er stilt men ikke registrert', () => {
+		expect(hasPendingAnswer({ currentQuestion: 'Hovedstad i Norge?', lastResult: null })).toBe(true);
+	});
+
+	it('er usann når svaret er registrert', () => {
+		expect(
+			hasPendingAnswer({ currentQuestion: 'Hovedstad i Norge?', lastResult: { player: 'Kjetil', correct: true } })
+		).toBe(false);
+	});
+
+	it('er usann når ingen spørsmål er stilt ennå', () => {
+		expect(hasPendingAnswer({ currentQuestion: null, lastResult: null })).toBe(false);
 	});
 });
 
