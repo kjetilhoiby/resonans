@@ -10,6 +10,7 @@ import {
 	ageBand,
 	participantsFromNames,
 	findParticipantIndex,
+	hasPendingAnswer,
 	applyAnswer,
 	buildStandings,
 	streakLabel,
@@ -353,6 +354,15 @@ async function askQuestion(userId: string, player: string, question: string, ans
 	const participants = session.participants ?? [];
 	if (findParticipantIndex(participants, player) === -1) {
 		return { error: `Ukjent spiller «${player}». Aktive spillere: ${participants.map((p) => p.name).join(', ') || 'ingen'}.` };
+	}
+	// Vakt: ikke still et nytt spørsmål før forrige svar er registrert. Uten dette kan
+	// quizmasteren si «riktig!» i tale og gå videre uten å kalle record — da forsvinner poenget
+	// (jf. «riktig svar, men null poeng»). Tvinger et record-kall først.
+	if (hasPendingAnswer(session)) {
+		const pending = session.currentPlayer ? ` til ${session.currentPlayer}` : '';
+		return {
+			error: `Forrige spørsmål${pending} er ikke registrert ennå. Kall quiz_score action="record" (player + correct) for å bokføre svaret før du stiller neste spørsmål.`
+		};
 	}
 	await db
 		.update(quizSessions)
