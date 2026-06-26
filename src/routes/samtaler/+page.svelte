@@ -655,6 +655,15 @@
 		overflow: hidden;
 	}
 
+	/* PageSection må fylle hele chat-page (100dvh) slik at cp-messages kan
+	   scrolle internt og cp-input holdes synlig nederst. Uten dette vokser
+	   page-section til innholdshøyden, og en lang gjenåpnet samtale skyver
+	   input-feltet ut under viewport (chat-page har overflow: hidden). */
+	:global(.chat-page .page-section) {
+		flex: 1;
+		min-height: 0;
+	}
+
 	:global(.chat-page .page-header) {
 		padding: 0 0 14px;
 		border-bottom: 1px solid var(--border-subtle);
