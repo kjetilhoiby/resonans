@@ -4,6 +4,9 @@ import { and, desc, eq, gte, isNull, lte, or } from 'drizzle-orm';
 import { openai } from '$lib/server/openai';
 import { getRecentReflections } from '$lib/server/reflections';
 import { getRecentPlanArtifacts, getPlanArtifact } from '$lib/server/plan-artifacts';
+import { gatherDayContext } from '$lib/server/day-location-context';
+import { computeStaysFromDayPlans } from '$lib/server/stays';
+import { addDaysIso } from '$lib/server/iso-week';
 
 const DREAM_PROMPT_VERSION = 'pyramid-v1';
 
@@ -82,7 +85,7 @@ export class DreamService {
 
 		const payload = await this.synthesize({
 			kind: 'daily_dream',
-			scope: 'siste 24-72 timer',
+			scope: 'nåsituasjonen, siste 24–72 timer, og det som ligger rett foran resten av uka',
 			inputs: this.dailyInputsAsLines(inputs),
 			previousSummary: previous?.summary,
 			alignmentGoals: inputs.goals
@@ -392,35 +395,74 @@ export class DreamService {
 	// ── Intern: input-innsamling og persist ──────────────────────────────────
 
 	private static async collectDailyInputs(userId: string, from: Date, to: Date) {
-		const [reflections, plans, egenfrekvensEvents, activeGoals] = await Promise.all([
-			getRecentReflections(userId, { sinceDays: 3, limit: 10 }),
-			getRecentPlanArtifacts(userId, ['day', 'week', 'month'], 6),
-			db
-				.select({ timestamp: sensorEvents.timestamp, data: sensorEvents.data })
-				.from(sensorEvents)
-				.where(
-					and(
-						eq(sensorEvents.userId, userId),
-						eq(sensorEvents.dataType, 'egenfrekvens_checkin'),
-						gte(sensorEvents.timestamp, from),
-						lte(sensorEvents.timestamp, to)
-					)
-				)
-				.orderBy(desc(sensorEvents.timestamp))
-				.limit(3),
-			db.query.goals.findMany({
-				where: and(eq(goals.userId, userId), eq(goals.status, 'active')),
-				columns: { id: true, title: true, targetDate: true, periodKey: true },
-				orderBy: [desc(goals.updatedAt)],
-				limit: 8
-			})
-		]);
+		// Foroverlent vindu: «resten av uka» = kommende 7 dager.
+		const weekAhead = new Date(to.getTime() + 7 * 86400000);
 
-		return { reflections, plans, egenfrekvensEvents, goals: activeGoals };
+		const [reflections, plans, egenfrekvensEvents, activeGoals, dayContext, upcomingSpond] =
+			await Promise.all([
+				getRecentReflections(userId, { sinceDays: 3, limit: 10 }),
+				getRecentPlanArtifacts(userId, ['day', 'week', 'month'], 6),
+				db
+					.select({ timestamp: sensorEvents.timestamp, data: sensorEvents.data })
+					.from(sensorEvents)
+					.where(
+						and(
+							eq(sensorEvents.userId, userId),
+							eq(sensorEvents.dataType, 'egenfrekvens_checkin'),
+							gte(sensorEvents.timestamp, from),
+							lte(sensorEvents.timestamp, to)
+						)
+					)
+					.orderBy(desc(sensorEvents.timestamp))
+					.limit(3),
+				db.query.goals.findMany({
+					where: and(eq(goals.userId, userId), eq(goals.status, 'active')),
+					columns: { id: true, title: true, targetDate: true, periodKey: true },
+					orderBy: [desc(goals.updatedAt)],
+					limit: 8
+				}),
+				// NÅSITUASJON: pågående opphold/ferie + sted i dag (samme kilde som chat-prompten).
+				gatherDayContext(userId).catch(() => null),
+				// RESTEN AV UKA: kommende Spond-aktiviteter de neste 7 dagene.
+				db
+					.select({ timestamp: sensorEvents.timestamp, data: sensorEvents.data })
+					.from(sensorEvents)
+					.where(
+						and(
+							eq(sensorEvents.userId, userId),
+							eq(sensorEvents.dataType, 'spond_event'),
+							gte(sensorEvents.timestamp, to),
+							lte(sensorEvents.timestamp, weekAhead)
+						)
+					)
+					.orderBy(sensorEvents.timestamp)
+					.limit(8)
+			]);
+
+		// RESTEN AV UKA: kommende opphold/reiser fra dagsplanene (i morgen → +7d).
+		const today = dayContext?.date ?? to.toISOString().slice(0, 10);
+		let upcomingStays: Awaited<ReturnType<typeof computeStaysFromDayPlans>> = [];
+		try {
+			const all = await computeStaysFromDayPlans(userId, addDaysIso(today, 1), addDaysIso(today, 7));
+			upcomingStays = all.filter((s) => s.endDate >= addDaysIso(today, 1));
+		} catch (err) {
+			console.warn('[DreamService] computeStaysFromDayPlans failed:', err);
+		}
+
+		return {
+			reflections,
+			plans,
+			egenfrekvensEvents,
+			goals: activeGoals,
+			dayContext,
+			upcomingStays,
+			upcomingSpond
+		};
 	}
 
 	private static dailyInputsAsLines(inputs: Awaited<ReturnType<typeof DreamService.collectDailyInputs>>) {
 		return [
+			...this.naasituasjonLines(inputs.dayContext),
 			'AKTIVE MÅL:',
 			...inputs.goals.map((g) => `- ${g.title}${g.periodKey ? ` (${g.periodKey})` : ''}${g.targetDate ? ` frist ${g.targetDate.toISOString().slice(0, 10)}` : ''}`),
 			'',
@@ -437,8 +479,47 @@ export class DreamService {
 			...inputs.plans.map((p) => {
 				const fields = [p.headline, p.note, p.reflection].filter(Boolean).join(' | ');
 				return `- ${p.kind} ${p.periodKey}: ${fields}`;
-			})
+			}),
+			'',
+			...this.restenAvUkaLines(inputs.upcomingStays, inputs.upcomingSpond)
 		];
+	}
+
+	/** NÅSITUASJON: pågående opphold/ferie + sted i dag. Tom hvis ingenting. */
+	private static naasituasjonLines(
+		ctx: Awaited<ReturnType<typeof gatherDayContext>> | null
+	): string[] {
+		if (!ctx) return [];
+		const lines: string[] = [];
+		if (ctx.stay) {
+			lines.push(
+				`- opphold i ${ctx.stay.place} (dag ${ctx.stay.dayNo} av ${ctx.stay.totalDays}, ${ctx.stay.startDate}–${ctx.stay.endDate})`
+			);
+		} else if (ctx.locations.length > 0) {
+			lines.push(`- sted i dag: ${ctx.locations.join(', ')}`);
+		}
+		for (const m of ctx.movement) {
+			lines.push(`- reise i dag: ${m.mode}${m.destination ? ` til ${m.destination}` : ''}${m.time ? ` kl. ${m.time}` : ''}`);
+		}
+		return lines.length ? ['NÅSITUASJON:', ...lines, ''] : [];
+	}
+
+	/** RESTEN AV UKA: kommende opphold/reiser + Spond-aktiviteter (neste 7 dager). */
+	private static restenAvUkaLines(
+		stays: Awaited<ReturnType<typeof computeStaysFromDayPlans>>,
+		spond: Array<{ timestamp: Date; data: unknown }>
+	): string[] {
+		const lines: string[] = [];
+		for (const s of stays) {
+			lines.push(`- opphold: ${s.place} (${s.startDate}–${s.endDate})`);
+		}
+		for (const e of spond) {
+			const d = (e.data as { name?: string; cancelled?: boolean; groupName?: string } | null) ?? {};
+			if (d.cancelled) continue;
+			const day = e.timestamp.toISOString().slice(0, 10);
+			lines.push(`- ${day}: ${d.name ?? 'aktivitet'}${d.groupName ? ` (${d.groupName})` : ''}`);
+		}
+		return lines.length ? ['RESTEN AV UKA (kommende 7 dager):', ...lines] : [];
 	}
 
 	private static async synthesize(

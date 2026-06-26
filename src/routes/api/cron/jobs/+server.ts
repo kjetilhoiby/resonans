@@ -119,6 +119,33 @@ const JOBS: CronJob[] = [
 		schedule: '30 17 * * *', // 17:30 UTC = 19:30 Oslo (CEST)
 		description: 'Kveldlig systemhelsesjekk — sensor-ferskhet, jobb-helse, cron-eksekvering → Google Chat',
 		maxDurationSeconds: 30
+	},
+	// Drøm-pyramide: hvert nivå leser nivået under, så tidspunktene er adskilte
+	// og staggered (en time mellom) slik at de aldri dispatches i samme tick —
+	// rekkefølgen dag → uke → måned → år holdes selv 1. januar.
+	{
+		path: '/api/cron/dreams?level=daily',
+		schedule: '0 1 * * *', // 01:00 UTC = 03:00 Oslo (CEST)
+		description: 'Daglig drøm-syntese (alle brukere) — leser refleksjoner + plan-artefakter + egenfrekvens',
+		maxDurationSeconds: 300
+	},
+	{
+		path: '/api/cron/dreams?level=weekly',
+		schedule: '0 20 * * 0', // søndag 20:00 UTC = 22:00 Oslo (CEST), slutten av ISO-uka
+		description: 'Ukentlig drøm-syntese (alle brukere) — leser ukens daglige drømmer',
+		maxDurationSeconds: 300
+	},
+	{
+		path: '/api/cron/dreams?level=monthly',
+		schedule: '0 2 1 * *', // 1. i mnd 02:00 UTC = 04:00 Oslo (CEST)
+		description: 'Månedlig drøm-syntese (alle brukere) — leser forrige måneds ukentlige drømmer',
+		maxDurationSeconds: 300
+	},
+	{
+		path: '/api/cron/dreams?level=yearly',
+		schedule: '0 3 1 1 *', // 1. jan 03:00 UTC = 05:00 Oslo (CEST)
+		description: 'Årlig drøm-syntese (alle brukere) — leser fjorårets månedlige drømmer',
+		maxDurationSeconds: 300
 	}
 ];
 
