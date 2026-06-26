@@ -94,7 +94,7 @@
       "layout": { "line-join": "round", "line-cap": "round" },
       "paint": {
         "line-color": "#0a0a0a",
-        "line-width": ["interpolate", ["linear"], ["zoom"], 13, 1.5, 18, 7]
+        "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.8, 18, 3.5]
       }
     },
     {
@@ -107,7 +107,7 @@
       "layout": { "line-join": "round", "line-cap": "round" },
       "paint": {
         "line-color": "#1d1d22",
-        "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.7, 18, 5]
+        "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.4, 18, 2.5]
       }
     },
     {
@@ -119,7 +119,7 @@
       "layout": { "line-join": "round", "line-cap": "round" },
       "paint": {
         "line-color": "#0a0a0a",
-        "line-width": ["interpolate", ["linear"], ["zoom"], 8, 1, 18, 10]
+        "line-width": ["interpolate", ["linear"], ["zoom"], 8, 0.6, 18, 5]
       }
     },
     {
@@ -130,8 +130,8 @@
       "filter": ["in", "class", "secondary", "tertiary"],
       "layout": { "line-join": "round", "line-cap": "round" },
       "paint": {
-        "line-color": "#27272e",
-        "line-width": ["interpolate", ["linear"], ["zoom"], 8, 0.6, 18, 8]
+        "line-color": "#25252b",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 8, 0.4, 18, 3.5]
       }
     },
     {
@@ -143,7 +143,7 @@
       "layout": { "line-join": "round", "line-cap": "round" },
       "paint": {
         "line-color": "#0a0a0a",
-        "line-width": ["interpolate", ["linear"], ["zoom"], 6, 1.2, 18, 13]
+        "line-width": ["interpolate", ["linear"], ["zoom"], 6, 0.7, 18, 6]
       }
     },
     {
@@ -154,8 +154,8 @@
       "filter": ["in", "class", "primary", "trunk"],
       "layout": { "line-join": "round", "line-cap": "round" },
       "paint": {
-        "line-color": "#34343d",
-        "line-width": ["interpolate", ["linear"], ["zoom"], 6, 0.8, 18, 11]
+        "line-color": "#2e2e36",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 6, 0.5, 18, 4.5]
       }
     },
     {
@@ -167,7 +167,7 @@
       "layout": { "line-join": "round", "line-cap": "round" },
       "paint": {
         "line-color": "#0a0a0a",
-        "line-width": ["interpolate", ["linear"], ["zoom"], 5, 1.4, 18, 15]
+        "line-width": ["interpolate", ["linear"], ["zoom"], 5, 0.9, 18, 7]
       }
     },
     {
@@ -178,8 +178,8 @@
       "filter": ["==", "class", "motorway"],
       "layout": { "line-join": "round", "line-cap": "round" },
       "paint": {
-        "line-color": "#3f3f4d",
-        "line-width": ["interpolate", ["linear"], ["zoom"], 5, 1, 18, 13]
+        "line-color": "#36363f",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 5, 0.7, 18, 5.5]
       }
     },
     {
@@ -226,7 +226,7 @@
       "source": "openmaptiles",
       "source-layer": "water_name",
       "layout": {
-        "text-field": "{name:nb}",
+        "text-field": ["coalesce", ["get", "name:nb"], ["get", "name:latin"], ["get", "name"]],
         "text-font": ["Noto Sans Italic"],
         "text-size": 12,
         "text-letter-spacing": 0.1
@@ -244,7 +244,7 @@
       "source-layer": "transportation_name",
       "minzoom": 13,
       "layout": {
-        "text-field": "{name:nb}",
+        "text-field": ["coalesce", ["get", "name:nb"], ["get", "name:latin"], ["get", "name"]],
         "text-font": ["Noto Sans Regular"],
         "text-size": 11,
         "symbol-placement": "line"
@@ -263,7 +263,7 @@
       "filter": ["in", "class", "village", "suburb", "neighbourhood", "hamlet"],
       "minzoom": 10,
       "layout": {
-        "text-field": "{name:nb}",
+        "text-field": ["coalesce", ["get", "name:nb"], ["get", "name:latin"], ["get", "name"]],
         "text-font": ["Noto Sans Regular"],
         "text-size": 11
       },
@@ -280,7 +280,7 @@
       "source-layer": "place",
       "filter": ["in", "class", "town", "city"],
       "layout": {
-        "text-field": "{name:nb}",
+        "text-field": ["coalesce", ["get", "name:nb"], ["get", "name:latin"], ["get", "name"]],
         "text-font": ["Noto Sans Regular"],
         "text-size": ["interpolate", ["linear"], ["zoom"], 6, 11, 12, 16],
         "text-letter-spacing": 0.05
