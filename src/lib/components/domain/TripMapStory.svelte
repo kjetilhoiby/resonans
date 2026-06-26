@@ -9,7 +9,7 @@
   Gjenbruker MapLibre + den delte mørke basiskart-stilen (RESONANS_DARK_MAP_STYLE).
 -->
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount, onDestroy, tick } from 'svelte';
 	import type { Map as MapLibreMap, Marker as MapLibreMarker } from 'maplibre-gl';
 	import { RESONANS_DARK_MAP_STYLE } from '../charts/mapStyle';
 	import SectionLabel from '../ui/SectionLabel.svelte';
@@ -285,14 +285,39 @@
 	});
 
 	// Init når data er klart og container montert (dekker rekkefølge-variasjoner).
+	// Avhenger bevisst IKKE av `fullscreen`: gjenoppretting etter fullskjerm
+	// gjøres av closeFullscreen() (etter tick), så vi aldri har to kart i live.
 	$effect(() => {
 		if (!loading && container && hasContent && !map) void initMap();
 	});
 
-	onDestroy(() => {
+	function teardownMap() {
 		if (animTimer) cancelAnimationFrame(animTimer);
+		animTimer = null;
+		dayMarkers = [];
+		imageMarkers.clear();
 		map?.remove();
 		map = null;
+		initStarted = false;
+	}
+
+	// iOS Safari/webview tåler få samtidige WebGL-kontekster: to MapLibre-kart
+	// (inline + fullskjerm) kan gjøre at det eldste mister konteksten og blir
+	// svart. Derfor river vi inline-kartet mens fullskjerm er åpent, og bygger
+	// det opp igjen ved lukking.
+	function openFullscreen() {
+		teardownMap();
+		fullscreen = true;
+	}
+
+	async function closeFullscreen() {
+		fullscreen = false;
+		await tick(); // vent til fullskjerm-kartet er revet (onDestroy) før vi gjenoppretter inline
+		if (container && hasContent && !map) void initMap();
+	}
+
+	onDestroy(() => {
+		teardownMap();
 	});
 </script>
 
@@ -305,7 +330,7 @@
 					<button
 						type="button"
 						class="tms-btn"
-						onclick={() => (fullscreen = true)}
+						onclick={openFullscreen}
 						data-track="reise-kart:spill-av">▶ Spill av</button
 					>
 				{/if}
@@ -357,7 +382,7 @@
 </div>
 
 {#if fullscreen}
-	<TripMapStoryFull {dayPins} imagePins={pins} onclose={() => (fullscreen = false)} />
+	<TripMapStoryFull {dayPins} imagePins={pins} onclose={closeFullscreen} />
 {/if}
 
 <style>
