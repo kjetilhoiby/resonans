@@ -374,21 +374,30 @@
 		background: rgba(0, 0, 0, 0.7);
 	}
 
+	/* Høyden bindes til SYNLIG viewport (svh), ikke layout-viewporten. Med
+	   position:fixed;inset:0 ville scrolleren strukket seg ned bak nettleser-
+	   chromet (URL/nav-baren i in-app-browsere), så siste steg ble unåelig. */
 	.tmf-scroller {
 		position: absolute;
-		inset: 0;
+		top: 0;
+		left: 0;
+		right: 0;
+		height: 100vh;
+		height: 100svh;
 		z-index: 2;
 		overflow-y: auto;
 		scroll-behavior: smooth;
 		-webkit-overflow-scrolling: touch;
+		scroll-snap-type: y proximity;
 	}
 
 	.tmf-step {
-		min-height: 100svh;
+		min-height: 100%;
 		display: flex;
 		align-items: flex-end;
-		padding: 24px 16px calc(40px + env(safe-area-inset-bottom));
+		padding: calc(env(safe-area-inset-top) + 64px) 16px calc(env(safe-area-inset-bottom) + 56px);
 		box-sizing: border-box;
+		scroll-snap-align: center;
 	}
 
 	.tmf-step-intro,
