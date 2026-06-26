@@ -904,6 +904,33 @@ const tools = [
 			{
 				type: 'function' as const,
 				function: {
+					name: 'manage_day_tasks',
+					description: 'Legg punkter i en bestemt dags oppgaveliste (dagslisten på forsiden). Bruk når brukeren vil huske noe på en konkret dato — turer, "ha med"-ting, frister, avtaler. Sett personName for å knytte punktet til riktig barn/person. Skriv teksten naturlig og selvforklarende.',
+					parameters: {
+						type: 'object',
+						properties: {
+							items: {
+								type: 'array',
+								description: 'Punktene som skal legges til',
+								items: {
+									type: 'object',
+									properties: {
+										text: { type: 'string', description: 'Selvforklarende punkttekst, uten personnavn' },
+										dayIso: { type: 'string', description: 'Dagen punktet vises på, YYYY-MM-DD' },
+										dueDate: { type: 'string', description: 'Valgfri hard frist, YYYY-MM-DD' },
+										personName: { type: 'string', description: 'Navn på person punktet gjelder' }
+									},
+									required: ['text', 'dayIso']
+								}
+							}
+						},
+						required: ['items']
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
 					name: 'manage_home_routine',
 					description: "Opprett en hus-rutine — checklist med context='home_routine'. Eksempler: ukentlig vaskerutine, sesong-oppgaver, klesvask-rotasjon. Knytt til prosjekt via projectId hvis relevant.",
 					parameters: {
@@ -1542,6 +1569,7 @@ function getToolProgressMessage(toolName: string) {
 		create_checklist: 'Oppretter sjekkliste...',
 		get_active_checklists: 'Henter sjekklister...',
 		add_checklist_items: 'Legger til sjekklistepunkter...',
+		manage_day_tasks: 'Legger i dagslisten...',
 		plan_day: 'Lagrer dagsplan...'
 	};
 
@@ -2407,6 +2435,12 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 					console.log('  📋 Manage procedure:', args.action);
 					const { manageProcedureTool } = await import('$lib/ai/tools/manage-procedure');
 					const result = await manageProcedureTool.execute({ userId, conversationId: conversation.id, ...args });
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'manage_day_tasks') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  📅 Manage day tasks:', Array.isArray(args.items) ? args.items.length : 0);
+					const { manageDayTasksTool } = await import('$lib/ai/tools/manage-day-tasks');
+					const result = await manageDayTasksTool.execute({ userId, ...args });
 					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'manage_home_routine') {
 					const args = JSON.parse(toolCall.function.arguments);

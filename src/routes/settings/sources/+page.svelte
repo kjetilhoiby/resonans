@@ -101,6 +101,7 @@
 			emailAppsScriptSource={data.emailAppsScriptSource}
 			emailImports={data.emailImports}
 			userEmail={data.user?.email}
+			people={data.people}
 		/>
 		<GoogleSheetsSourceCard onConnectedChange={(c) => googleSheetsConnected = c} />
 		<TeslaSourceCard onConnectedChange={(c) => teslaConnected = c} />
