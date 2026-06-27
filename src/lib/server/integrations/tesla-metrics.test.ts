@@ -3,13 +3,19 @@ import {
 	deriveHourlyDistance,
 	deriveMonthlyDistance,
 	computeCostPerKm,
+	clusterPositions,
 	utcHourKey,
 	utcMonthKey,
-	type OdometerSample
+	type OdometerSample,
+	type PositionSample
 } from './tesla-metrics';
 
 function sample(iso: string, odometerKm: number): OdometerSample {
 	return { timestamp: new Date(iso), odometerKm };
+}
+
+function pos(iso: string, lat: number, lon: number): PositionSample {
+	return { timestamp: new Date(iso), lat, lon };
 }
 
 describe('utcHourKey / utcMonthKey', () => {
@@ -120,5 +126,76 @@ describe('computeCostPerKm', () => {
 			{ month: '2026-05', km: 0, cost: 800, krPerKm: null },
 			{ month: '2026-06', km: 400, cost: 0, krPerKm: 0 }
 		]);
+	});
+});
+
+describe('clusterPositions', () => {
+	// Hjemme-koordinat (Oslo) med GPS-jitter innenfor noen titalls meter.
+	const HOME = { lat: 59.91, lon: 10.75 };
+
+	it('slår sammen lang stillstand til ett stopp-punkt (ikke ett per kvarter)', () => {
+		// Fem målinger over to dager, alle innenfor GPS-jitter rundt hjemme.
+		const result = clusterPositions([
+			pos('2026-06-20T22:00:00Z', HOME.lat, HOME.lon),
+			pos('2026-06-21T05:00:00Z', HOME.lat + 0.0002, HOME.lon + 0.0003),
+			pos('2026-06-21T12:00:00Z', HOME.lat - 0.0001, HOME.lon - 0.0002),
+			pos('2026-06-21T22:00:00Z', HOME.lat + 0.0001, HOME.lon + 0.0001),
+			pos('2026-06-22T05:00:00Z', HOME.lat, HOME.lon - 0.0003)
+		]);
+		expect(result).toHaveLength(1);
+		expect(result[0].kind).toBe('stop');
+		expect(result[0].samples).toBe(5);
+		expect(result[0].from).toBe('2026-06-20T22:00:00.000Z');
+		expect(result[0].to).toBe('2026-06-22T05:00:00.000Z');
+		// Representativt punkt = snitt, fortsatt nær hjemme.
+		expect(result[0].lat).toBeCloseTo(HOME.lat, 3);
+		expect(result[0].lon).toBeCloseTo(HOME.lon, 3);
+	});
+
+	it('gir egne move-noder for kjøring og stopp for parkeringer', () => {
+		const result = clusterPositions([
+			// Parkert hjemme
+			pos('2026-06-20T08:00:00Z', HOME.lat, HOME.lon),
+			pos('2026-06-20T08:15:00Z', HOME.lat + 0.0001, HOME.lon),
+			// Kjører — hvert punkt langt fra forrige
+			pos('2026-06-20T08:30:00Z', 59.93, 10.78),
+			pos('2026-06-20T08:45:00Z', 59.95, 10.82),
+			pos('2026-06-20T09:00:00Z', 59.97, 10.86),
+			// Parkert på destinasjon
+			pos('2026-06-20T09:15:00Z', 59.99, 10.9),
+			pos('2026-06-20T12:00:00Z', 59.9901, 10.9002)
+		]);
+		expect(result.map((n) => n.kind)).toEqual(['stop', 'move', 'move', 'move', 'stop']);
+		expect(result.map((n) => n.samples)).toEqual([2, 1, 1, 1, 2]);
+	});
+
+	it('behandler en enslig måling som et move-punkt', () => {
+		const result = clusterPositions([pos('2026-06-20T08:00:00Z', HOME.lat, HOME.lon)]);
+		expect(result).toEqual([
+			{
+				lat: HOME.lat,
+				lon: HOME.lon,
+				kind: 'move',
+				from: '2026-06-20T08:00:00.000Z',
+				to: '2026-06-20T08:00:00.000Z',
+				samples: 1
+			}
+		]);
+	});
+
+	it('sorterer usorterte målinger før klyngning', () => {
+		const result = clusterPositions([
+			pos('2026-06-20T09:00:00Z', 59.97, 10.86),
+			pos('2026-06-20T08:00:00Z', HOME.lat, HOME.lon),
+			pos('2026-06-20T08:15:00Z', HOME.lat + 0.0001, HOME.lon)
+		]);
+		expect(result.map((n) => n.kind)).toEqual(['stop', 'move']);
+		expect(result[0].from).toBe('2026-06-20T08:00:00.000Z');
+		expect(result[0].to).toBe('2026-06-20T08:15:00.000Z');
+	});
+
+	it('ignorerer ugyldige koordinater og returnerer tom liste når alt mangler', () => {
+		expect(clusterPositions([])).toEqual([]);
+		expect(clusterPositions([pos('2026-06-20T08:00:00Z', NaN, 10.75)])).toEqual([]);
 	});
 });

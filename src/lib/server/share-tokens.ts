@@ -3,7 +3,7 @@ import { shareTokens } from '$lib/db/schema';
 import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 
-export type ShareResourceType = 'checklist' | 'themeList' | 'tripPosition' | 'quizSession';
+export type ShareResourceType = 'checklist' | 'themeList' | 'tripPosition' | 'quizSession' | 'storySession';
 export type ShareAccessMode = 'read' | 'write';
 
 export const SHARE_TOKEN_HEADER_NAME = 'x-resonans-share-token';
@@ -276,6 +276,27 @@ export async function getOrCreateQuizShareToken(
 		ownerUserId,
 		resourceType: 'quizSession',
 		resourceId: quizSessionId,
+		accessMode: 'read'
+	});
+}
+
+/**
+ * Finn et levende (ikke revokert/utløpt) storySession-token for en fortelling, eller opprett ett.
+ * Brukes av fortellingens «del»-knapp så baksetet kan følge world + siste avsnitt på et eget
+ * nettbrett. Speiler getOrCreateQuizShareToken.
+ */
+export async function getOrCreateStoryShareToken(
+	ownerUserId: string,
+	storySessionId: string
+): Promise<ShareTokenListItem> {
+	const now = new Date();
+	const existing = await listShareTokensForResource(ownerUserId, 'storySession', storySessionId);
+	const live = existing.find((t) => !t.expiresAt || t.expiresAt > now);
+	if (live) return live;
+	return createShareToken({
+		ownerUserId,
+		resourceType: 'storySession',
+		resourceId: storySessionId,
 		accessMode: 'read'
 	});
 }

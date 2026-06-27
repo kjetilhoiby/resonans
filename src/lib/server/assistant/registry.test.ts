@@ -23,6 +23,16 @@ describe('ASSISTANT_TOOL_DEFINITIONS', () => {
 		}
 	});
 
+	it('eksponerer quiz- og forteller-verktøyene', () => {
+		const names = new Set(ASSISTANT_TOOL_DEFINITIONS.map((d) => d.function.name));
+		for (const expected of ['trip_companions', 'quiz_questions', 'quiz_score']) {
+			expect(names).toContain(expected);
+		}
+		for (const expected of ['story_start', 'story_scene', 'story_request', 'story_fill', 'story_end', 'story_state']) {
+			expect(names).toContain(expected);
+		}
+	});
+
 	it('hver definisjon er et gyldig function-tool med objekt-parametre', () => {
 		for (const def of ASSISTANT_TOOL_DEFINITIONS) {
 			expect(def.type).toBe('function');

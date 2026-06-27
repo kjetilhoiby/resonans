@@ -1,4 +1,4 @@
-import { fail } from '@sveltejs/kit';
+import { fail, redirect } from '@sveltejs/kit';
 import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, or } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/db';
@@ -8,6 +8,7 @@ import { getPlanArtifact, getPlanArtifactsByParent, upsertPlanArtifactField } fr
 import { WorkoutProjectionService } from '$lib/server/services/workout-projection-service';
 import { materializeRoutinesForDates } from '$lib/server/services/routine-service';
 import { resolveDomainFromInput, type DomainType } from '$lib/domains';
+import { activeFerieThemes } from '$lib/ferie/active-ferie';
 
 function detectItemDomain(text: string | null | undefined): DomainType | null {
 	if (!text) return null;
@@ -82,6 +83,22 @@ async function loadTravelThemes(userId: string) {
 		});
 
 		return fallbackThemes.map((theme) => ({ ...theme, tripProfile: null }));
+	}
+}
+
+async function loadFerieThemes(userId: string) {
+	try {
+		return await db.query.themes.findMany({
+			where: and(eq(themes.userId, userId), eq(themes.archived, false)),
+			columns: { id: true, name: true, emoji: true, ferieProfile: true }
+		});
+	} catch (error) {
+		const cause = (error as { cause?: unknown })?.cause;
+		const causeMessage = cause instanceof Error ? cause.message : String(cause ?? '');
+
+		// Backward compatibility for databases where ferie_profile is not migrated yet.
+		if (!/ferie_profile/i.test(causeMessage)) throw error;
+		return [];
 	}
 }
 
@@ -198,7 +215,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	console.log(`[perf][ukeplan/load] user=${userId} step=spond_sensor_lookup ms=${(performance.now() - tSpondSensor).toFixed(0)} found=${spondSensor ? 1 : 0}`);
 
 	const tPrefetch = performance.now();
-	const [weekChecklist, weekTasks, weekProgressRows, weekArtifact, longTermGoals, dayChecklists, dayArtifacts, previousWeekChecklist, previousWeekArtifact, previousWeekTasks, previousWeekProgressRows, travelThemes, rawSpondEvents, routinesByDate] = await Promise.all([
+	const [weekChecklist, weekTasks, weekProgressRows, weekArtifact, longTermGoals, dayChecklists, dayArtifacts, previousWeekChecklist, previousWeekArtifact, previousWeekTasks, previousWeekProgressRows, travelThemes, rawSpondEvents, routinesByDate, ferieThemes] = await Promise.all([
 		db.query.checklists.findFirst({
 			where: and(eq(checklists.userId, userId), eq(checklists.context, week.contextKey)),
 			with: {
@@ -270,7 +287,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 					columns: { id: true, timestamp: true, data: true, metadata: true }
 			  })
 			: Promise.resolve([] as Array<{ id: string; timestamp: Date; data: unknown; metadata: unknown }>),
-		materializeRoutinesForDates(userId, week.days.map(d => d.isoDate))
+		materializeRoutinesForDates(userId, week.days.map(d => d.isoDate)),
+		loadFerieThemes(userId)
 	]);
 	console.log(
 		`[perf][ukeplan/load] user=${userId} step=prefetch_bundle ms=${(performance.now() - tPrefetch).toFixed(0)} weekTasks=${weekTasks.length} weekProgress=${weekProgressRows.length} longTermGoals=${longTermGoals.length} dayChecklists=${dayChecklists.length} dayArtifacts=${dayArtifacts.length} prevWeekTasks=${previousWeekTasks.length} prevWeekProgress=${previousWeekProgressRows.length} spondEvents=${rawSpondEvents.length}`
@@ -343,6 +361,9 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			startDate: t.tripProfile!.startDate!,
 			endDate: t.tripProfile!.endDate!
 		}));
+
+	// Pågående ferie denne uka → ikon i toppen + dag-merking (som reiser).
+	const activeFerie = activeFerieThemes(ferieThemes, weekStartStr, weekEndStr);
 
 	// Group Spond events by ISO date, including RSVP status for the account holder's family
 	const myMemberIds: string[] = (spondSensor?.config as any)?.myMemberIds ?? [];
@@ -632,6 +653,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		dayNotes: dayNoteMap,
 		dayHeadlines: dayHeadlineMap,
 		activeTrips,
+		activeFerie,
 		spondEventsByDay,
 		previousWeekSummary: {
 			weekKey: previousWeek.dashedKey,
@@ -684,7 +706,9 @@ export const actions = {
 			});
 		}
 
-		return { success: true };
+		// Behold den valgte uka i URL-en. Skjemaet poster til ?/createChecklistForWeek,
+		// som ellers ville droppet ?week=-parameteren og sendt brukeren til inneværende uke.
+		redirect(303, `/ukeplan?week=${week.dashedKey}`);
 	},
 
 	addItem: async ({ request, locals }) => {

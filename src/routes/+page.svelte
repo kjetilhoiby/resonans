@@ -26,6 +26,8 @@
 				state: 'klar' | 'lett' | 'easy' | 'rest';
 				alternativeName: string | null;
 			} | null;
+			activeFerie?: { id: string; name: string; emoji: string; startDate: string; endDate: string }[];
+			feriedagbokTodo?: { themeId: string; themeName: string; emoji: string } | null;
 		};
 	}
 
@@ -38,6 +40,8 @@
 			themes={data.themes}
 			recentConversations={data.recentConversations}
 			programReadiness={data.programReadiness}
+			activeFerie={data.activeFerie ?? []}
+			feriedagbokTodo={data.feriedagbokTodo ?? null}
 		/>
 	</PageSection>
 </AppPage>

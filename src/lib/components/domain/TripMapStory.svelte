@@ -11,7 +11,7 @@
 <script lang="ts">
 	import { onMount, onDestroy, tick } from 'svelte';
 	import type { Map as MapLibreMap, Marker as MapLibreMarker } from 'maplibre-gl';
-	import { RESONANS_DARK_MAP_STYLE } from '../charts/mapStyle';
+	import { RESONANS_DARK_MAP_STYLE, mapTransformRequest } from '../charts/mapStyle';
 	import SectionLabel from '../ui/SectionLabel.svelte';
 	import { uploadImage } from '$lib/client/upload-image';
 	import { buildDayPins, partialPath, type DayPin } from './trip-map-story';
@@ -124,9 +124,10 @@
 		map = new Map({
 			container,
 			style: RESONANS_DARK_MAP_STYLE,
+			transformRequest: mapTransformRequest,
 			center: start,
 			zoom: 5,
-			attributionControl: { compact: true }
+			attributionControl: false
 		});
 
 		map.on('load', () => {

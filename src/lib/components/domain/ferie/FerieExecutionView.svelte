@@ -51,6 +51,8 @@
 		gapCount: number;
 		/** Antall udekkede barn-dager brukeren har avvist (skjuler påminnelsen til antallet endres). */
 		gapAckCount?: number;
+		/** Åpne dagboka for i dag automatisk (fra hjemskjerm-hurtighandling). */
+		autoOpenDiary?: boolean;
 		onDismissGap?: () => void;
 		onNavigate: (view: 'rammer' | 'reiser' | 'gjennomfor') => void;
 		api?: TripApi;
@@ -60,6 +62,7 @@
 		themeId, themeEmoji = null,
 		startDate, endDate, days, trips, gapCount,
 		gapAckCount,
+		autoOpenDiary = false,
 		onDismissGap,
 		onNavigate,
 		api = tripApi
@@ -323,7 +326,12 @@
 
 	/* ── Lifecycle ─────────────────────────────────────── */
 	onMount(() => {
-		void loadDiary();
+		void (async () => {
+			await loadDiary();
+			// Hurtighandling «Skriv feriedagbok» ber om dagens notat — åpnes etter
+			// at eksisterende innlegg er lastet, så skjemaet kan forhåndsfylles.
+			if (autoOpenDiary) openEditor();
+		})();
 		void loadMapData();
 	});
 </script>

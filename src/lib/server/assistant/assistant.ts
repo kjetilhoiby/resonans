@@ -3,6 +3,7 @@ import { openai } from '$lib/server/openai';
 import { env } from '$env/dynamic/private';
 import type { ConversationTurn } from '$lib/server/conversation-window';
 import { ASSISTANT_TOOL_DEFINITIONS, runAssistantTool } from './tools';
+import { hasActiveStory } from './story-tools';
 import { getFullProgram } from '$lib/server/programs/repository';
 import { localHm, localIsoDay } from '$lib/server/nudge-time';
 
@@ -22,6 +23,20 @@ export class AssistantError extends Error {
 const DEFAULT_MODEL = 'gpt-4o';
 const model = () => env.EKKO_ASSISTANT_MODEL?.trim() || DEFAULT_MODEL;
 
+/**
+ * Forteller-modus krever den sterke, ferske modellen (jf. forteller-kontrakten, punkt 8) — IKKE
+ * den raske prat-tieren, som gir frikoblede, grunne avsnitt. Story-turer (en aktiv fortelling, eller
+ * når et story_*-verktøy er brukt i turen) rutes derfor til en egen, sterkere modell. Knappen er en
+ * env-variabel akkurat som EKKO_ASSISTANT_MODEL, så den er provider-uavhengig: et bytte til Claude
+ * (Opus/Sonnet 4.x) senere er bare en annen modell-id her — ingen endringer i board-skjema/verktøy.
+ */
+const DEFAULT_STORY_MODEL = 'gpt-5.4';
+const storyModel = () => env.EKKO_STORY_MODEL?.trim() || DEFAULT_STORY_MODEL;
+/** Fortelleravsnitt + bibel-oppdateringer trenger mer rom enn et vanlig kort talesvar. */
+const STORY_MAX_TOKENS = 1500;
+/** Litt høyere temperatur for fortellinger — mer språkglede, fortsatt forankret i bibelen. */
+const STORY_TEMPERATURE = 0.8;
+
 /** Tak på antall LLM↔verktøy-runder, så en agent ikke kan løkke i det uendelige. */
 const MAX_TOOL_ROUNDS = 6;
 
@@ -40,6 +55,8 @@ om lov for oppslag, og ikke gjett. Du kan blant annet:
 - Fange og endre: opprette oppgaver/mål, registrere aktivitet, lagre minner, og justere planer
   via de relevante verktøyene.
 - Bilferie-quiz: kjør en leken quiz for hele bilen (trip_companions, quiz_questions, quiz_score).
+- Interaktive fortellinger: fortell et velg-selv-eventyr eller en madlib for hele bilen
+  (trip_companions, story_start, story_scene/story_request/story_fill, story_state, story_end).
 
 Quizmaster (når brukeren vil ha quiz/spill på bilturen):
 - Start med trip_companions for å hente hvem som er med, alder, OG interessene deres. Mangler
@@ -62,6 +79,42 @@ Quizmaster (når brukeren vil ha quiz/spill på bilturen):
   nettbrett i baksetet. Nevn den hvis det passer, men spillet funker fint på stemmen alene.
 - Hold det gøy og inkluderende: ros forsøk, gjør lette spørsmål til de minste. Avslutt med
   quiz_score action="end" og kår en vinner når de vil gi seg.
+
+Forteller (når brukeren vil høre en historie / et eventyr på bilturen):
+- Hent trip_companions FØRST for navn og ALDER på passasjerene, og kalibrer tonen mot den yngste.
+  Velg variant med story_start: "branching" (velg-selv-eventyr) er standard for en lang biltur;
+  "madlib" (tulle-fortelling der dere fyller inn ord) er kortere og fjollete — sett blanksTotal.
+- Tone: sikt mot Roald Dahl-stemningen (Heksene, SVK) — magisk og oppfinnsom, med rar språkglede,
+  barnehelter og passe grøssende skurker. Spennende og litt nifst, men alltid trygt og lekent,
+  aldri ekte horror eller mareritt. Hold avsnittene KORTE og bil-vennlige (de leses høyt).
+- Velg-selv-eventyr har to faser. story_start setter phase="setup": bygg verdenen med hyppige,
+  åpne spørsmål — ett om gangen — og lås hvert svar inn i world via story_scene: univers/sjanger
+  (Zelda, Stjerneskogen, Star Wars eller noe de finner på), hvem som er med (er passasjerene selv
+  helter?), hvor dere er på vei og hvordan det er der, og hva dere skal gjøre der. Tilby gjerne
+  forslag i choices, men fritt talesvar gjelder alltid. Når kjernekonteksten sitter, bytt til
+  phase="adventure": lengre avsnitt og valg om hva man GJØR (utforske, kjempe, hjelpe, liste seg
+  forbi). Veivalg er altså hyppige i starten, mer handlingsorienterte etter hvert.
+- Allusjon, ikke gjengivelse: den ekte turen er INSPIRASJON, ikke manus. Forvandle konteksten —
+  fotballcupen blir et mesterskap i Stjerneskogen, hytteturen et skjult tårn. Ingen bokstavelig
+  presisjon om reiserute eller klokkeslett, bare gjenkjennelige glimt. world beskriver den
+  fantastiske verdenen, ikke dagsplanen.
+- INVARIANT (branching): når en spiller sier et valg, fortell neste avsnitt KONSEKVENT med valget
+  via story_scene SAMTIDIG som du leser det høyt — det er én udelelig operasjon — FØR du flytter
+  turen videre. Alltid nøyaktig to valg med stabile id-er «a» og «b».
+- Madlib: bruk story_request for å be om neste ord (sett slot, f.eks. «et adjektiv») RETT FØR du
+  spør i tale, story_fill for å bokføre ordet de ga. Avslør hele tulle-fortellingen med story_end
+  FØRST når alle ord er samlet (blanksFilled === blanksTotal).
+- Sammenheng: hold en intern fortellings-bibel (kanon: figurer/steder/regler; bue: hvor historien
+  er på vei og hvilket beat dere er på; tone). Oppdater den via bible-feltet på story_start/
+  story_scene, og les den med story_state ved START av hver fortelling-tur så kanon og buen holder
+  over en halvtime. Ved gjenopptakelse etter et opphold (også neste dag): kall story_state og gi en
+  kort «Sist i eventyret …»-gjenoppfriskning før du fortsetter.
+- Pacing: ikke sikt mot rask slutt — vev inn nye tråder, steder og figurer, og bruk «vil dere høre
+  mer?»-kroker. Avslutt (story_end) først når passasjerene selv vil runde av, eller når en bue
+  naturlig lander. Tissepauser er gratis: bare slutt å snakke, tilstanden står.
+- Det finnes en delt skjerm for baksetet (samme «del»-mønster som quizen) som viser world og siste
+  avsnitt live; den fulle teksten avsløres først når fortellingen er avsluttet. Nevn den hvis det
+  passer, men fortellingen funker fint på stemmen alene.
 
 Bil-ekspertise:
 - «Hvor langt/lenge til X»: bruk driving_route (ekte kjøreavstand/-tid, uten live trafikk).
@@ -191,16 +244,21 @@ export async function runAssistantTurn(
 ): Promise<{ text: string; usedTools: string[] }> {
 	const messages = await buildAssistantMessages(input);
 	const usedTools: string[] = [];
+	// Aktiv fortelling ⇒ hele turen på den sterke forteller-modellen (også runde 0).
+	const storyTurn = await hasActiveStory(input.userId);
 
 	try {
 		for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
 			// Siste runde: tving et tekstsvar ved å ikke tilby verktøy lenger.
 			const offerTools = round < MAX_TOOL_ROUNDS;
+			// Etter at et story_*-verktøy er brukt i turen (f.eks. «start en fortelling»), gå over til
+			// forteller-modellen for resten — så selve narrasjonen leveres på den sterke tieren.
+			const useStory = storyTurn || usedTools.some((n) => n.startsWith('story_'));
 			const response = await openai.chat.completions.create({
-				model: model(),
+				model: useStory ? storyModel() : model(),
 				messages,
-				temperature: 0.5,
-				max_tokens: 600,
+				temperature: useStory ? STORY_TEMPERATURE : 0.5,
+				max_tokens: useStory ? STORY_MAX_TOKENS : 600,
 				...(offerTools ? { tools: ASSISTANT_TOOL_DEFINITIONS, tool_choice: 'auto' as const } : {})
 			});
 
@@ -257,15 +315,20 @@ export async function runAssistantTurnStreaming(
 	const messages = await buildAssistantMessages(input);
 	const usedTools: string[] = [];
 	let streamedText = '';
+	// Aktiv fortelling ⇒ hele turen på den sterke forteller-modellen (også runde 0).
+	const storyTurn = await hasActiveStory(input.userId);
 
 	try {
 		for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
 			const offerTools = round < MAX_TOOL_ROUNDS;
+			// Etter at et story_*-verktøy er brukt i turen, gå over til forteller-modellen for resten,
+			// så selve narrasjonen som strømmes til klienten leveres på den sterke tieren.
+			const useStory = storyTurn || usedTools.some((n) => n.startsWith('story_'));
 			const stream = await openai.chat.completions.create({
-				model: model(),
+				model: useStory ? storyModel() : model(),
 				messages,
-				temperature: 0.5,
-				max_tokens: 600,
+				temperature: useStory ? STORY_TEMPERATURE : 0.5,
+				max_tokens: useStory ? STORY_MAX_TOKENS : 600,
 				stream: true,
 				...(offerTools ? { tools: ASSISTANT_TOOL_DEFINITIONS, tool_choice: 'auto' as const } : {})
 			});
