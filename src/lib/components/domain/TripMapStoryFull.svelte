@@ -15,6 +15,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { fade } from 'svelte/transition';
 	import type { Map as MapLibreMap, Marker as MapLibreMarker } from 'maplibre-gl';
+	import { portal } from '$lib/actions/portal';
 	import { RESONANS_DARK_MAP_STYLE } from '../charts/mapStyle';
 	import { partialPath, cumulativeFractions, type DayPin } from './trip-map-story';
 	import type { ImagePin } from './trip-api';
@@ -354,7 +355,7 @@
 
 <svelte:window onkeydown={onKey} onorientationchange={onOrient} />
 
-<div class="tmf-root" transition:fade={{ duration: 220 }} style="--app-vh:{vpH}px">
+<div class="tmf-root" use:portal transition:fade={{ duration: 220 }} style="--app-vh:{vpH}px">
 	<div bind:this={mapContainer} class="tmf-map"></div>
 	<div class="tmf-veil"></div>
 
@@ -448,9 +449,7 @@
 
 	.tmf-close {
 		position: absolute;
-		/* Skyves godt ned fra toppen: i in-app-browsere (uten safe-area-inset) ligger
-		   host-appens topp-bar over de øverste ~110px, så selv 64px ble usynlig. */
-		top: max(130px, calc(env(safe-area-inset-top) + 80px));
+		top: max(48px, calc(env(safe-area-inset-top) + 12px));
 		right: 16px;
 		z-index: 50;
 		width: 46px;
