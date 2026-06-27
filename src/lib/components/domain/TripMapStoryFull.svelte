@@ -432,7 +432,7 @@
 	/* Midlertidig diagnose-linje — fjernes når synk er bekreftet. */
 	.tmf-debug {
 		position: absolute;
-		top: max(14px, env(safe-area-inset-top));
+		top: calc(max(14px, env(safe-area-inset-top)) + 52px);
 		left: 12px;
 		z-index: 5;
 		max-width: 84%;
@@ -447,17 +447,12 @@
 		pointer-events: none;
 	}
 
-	/* Høyden settes til den SYNLIGE viewporten (--app-vh = window.innerHeight), ikke
-	   inset:0. I in-app-browsere er layout-viewporten (det inset:0 ville gitt) større
-	   enn skjermen, så clientHeight ble oppblåst og maxScroll (scrollHeight−clientHeight)
-	   for liten til å nå siste kort. Kartet ligger fullskjerm bak og er pointer-events:none,
-	   så området under scrolleren (bak nettleser-baren) gir ingen død sone. */
+	/* Dekker hele overlayet (inset:0) så den fanger all touch. clientHeight kan
+	   være større enn skjermen i in-app-browsere, så maxScroll blir mindre enn
+	   forventet — det kompenseres med rikelig hale-spacer (.tmf-tail) etter siste steg. */
 	.tmf-scroller {
 		position: absolute;
-		top: 0;
-		left: 0;
-		right: 0;
-		height: var(--app-vh, 100vh);
+		inset: 0;
 		z-index: 2;
 		overflow-y: auto;
 		scroll-behavior: smooth;
@@ -482,7 +477,9 @@
 	/* Ekstra scroll-rom etter siste steg, så det nederste dag-kortet alltid kan
 	   løftes godt over nettleser-baren. */
 	.tmf-tail {
-		height: calc(var(--app-vh, 100vh) * 0.3);
+		/* Rikelig ekstra runway så siste kort + sluttslide kan scrolles fram selv
+		   når clientHeight (og dermed maxScroll) er «feil» i in-app-browsere. */
+		height: calc(var(--app-vh, 100vh) * 1.1);
 		flex: 0 0 auto;
 	}
 
