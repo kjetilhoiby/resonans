@@ -45,6 +45,7 @@
 	let currentFraction = 0;
 	let dayCardEls: HTMLElement[] = [];
 	let scrollRaf: number | null = null;
+	let dbg = $state(''); // midlertidig diagnose
 
 	const routeCoords = $derived(dayPins.map((p) => [p.lon, p.lat] as [number, number]));
 	const fractions = $derived(cumulativeFractions(routeCoords));
@@ -184,8 +185,12 @@
 
 	function highlightMarker(index: number) {
 		dayMarkerEls.forEach((el, i) => {
-			el.classList.toggle('is-active', i === index);
+			const active = i === index;
+			el.classList.toggle('is-active', active);
 			el.classList.toggle('is-dimmed', index >= 0 && i > index);
+			// Løft aktiv markør til topps. Flere dager på samme sted stables ellers
+			// oppå hverandre, og den øverste (høyeste nr.) skjuler den aktive.
+			el.style.zIndex = active ? '20' : '1';
 		});
 		const activeDate = index >= 0 ? dayPins[index]?.date : null;
 		for (const pin of imagePins) {
@@ -232,7 +237,7 @@
 			map.fitBounds(bounds, {
 				padding: framePadding(),
 				maxZoom: 13,
-				duration: reduceMotion ? 0 : 1200
+				duration: reduceMotion ? 0 : 650
 			});
 		} else {
 			// Første dag, eller samme sted som i går → senter på dagens punkt, fast zoom.
@@ -240,7 +245,7 @@
 				center: here,
 				zoom: 12,
 				padding: framePadding(),
-				duration: reduceMotion ? 0 : 900
+				duration: reduceMotion ? 0 : 550
 			});
 		}
 	}
@@ -261,12 +266,8 @@
 	function updateActive() {
 		if (!scroller) return;
 		const vh = scroller.clientHeight;
-		if (scroller.scrollTop < vh * 0.45) {
-			activeIndex = -1;
-			return;
-		}
 		const target = vh * 0.58;
-		let best = activeIndex < 0 ? 0 : activeIndex;
+		let best = -1;
 		let bestDist = Infinity;
 		dayCardEls.forEach((el, i) => {
 			if (!el) return;
@@ -277,7 +278,9 @@
 				best = i;
 			}
 		});
+		if (scroller.scrollTop < vh * 0.45) best = -1;
 		activeIndex = best;
+		dbg = `aktiv ${best} (${best >= 0 ? (dayPins[best]?.place ?? '?') : 'intro'}) · top ${Math.round(scroller.scrollTop)} · vpH ${vpH} · ch ${vh}`;
 	}
 
 	function onScroll() {
@@ -320,6 +323,8 @@
 	<div class="tmf-veil"></div>
 
 	<button type="button" class="tmf-close" aria-label="Lukk kartfortelling" onclick={onclose} data-track="reise-kart:lukk-fullskjerm">✕</button>
+
+	{#if dbg}<div class="tmf-debug">{dbg}</div>{/if}
 
 	<div bind:this={scroller} class="tmf-scroller" onscroll={onScroll}>
 		<!-- Intro / oversikt -->
@@ -416,6 +421,23 @@
 	}
 	.tmf-close:hover {
 		background: rgba(0, 0, 0, 0.7);
+	}
+
+	/* Midlertidig diagnose-linje — fjernes når synk er bekreftet. */
+	.tmf-debug {
+		position: absolute;
+		top: max(14px, env(safe-area-inset-top));
+		left: 12px;
+		z-index: 4;
+		max-width: 72%;
+		padding: 4px 8px;
+		border-radius: 8px;
+		background: rgba(0, 0, 0, 0.72);
+		color: #9fffa0;
+		font-size: 0.64rem;
+		font-family: ui-monospace, monospace;
+		line-height: 1.3;
+		pointer-events: none;
 	}
 
 	/* Scrolleren dekker hele overlayet (inset:0) så den fanger ALL touch — ellers
