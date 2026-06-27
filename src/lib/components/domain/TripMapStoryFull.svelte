@@ -37,6 +37,7 @@
 
 	let map: MapLibreMap | null = null;
 	let mapReady = $state(false);
+	let LngLatBoundsCtor: typeof import('maplibre-gl').LngLatBounds | null = null;
 	const dayMarkers: MapLibreMarker[] = [];
 	const dayMarkerEls: HTMLElement[] = [];
 	const imageMarkers = new Map<string, MapLibreMarker>();
@@ -74,6 +75,7 @@
 	async function initMap() {
 		if (!mapContainer || typeof window === 'undefined' || map) return;
 		const { Map, Marker, LngLatBounds } = await import('maplibre-gl');
+		LngLatBoundsCtor = LngLatBounds; // lagres så applyStep kan være synkron (unngår race ved rask scroll)
 
 		const start = routeCoords[0] ?? [10.75, 59.91];
 		map = new Map({
@@ -192,16 +194,25 @@
 		}
 	}
 
-	async function applyStep(index: number) {
-		if (!map || !mapReady) return;
-		const { LngLatBounds } = await import('maplibre-gl');
+	// To koordinater regnes som samme sted hvis de er nærmere enn ~80 m. Flere dager
+	// på samme sted (f.eks. hjemme) ga ellers en degenerert «strekning», og fitBounds
+	// på et nullareal flytter ikke kameraet — så det ble hengende på forrige utsnitt.
+	function sameSpot(a: [number, number], b: [number, number]): boolean {
+		return Math.hypot(a[0] - b[0], a[1] - b[1]) < 0.0008;
+	}
+
+	// Synkron: kjører umiddelbart per activeIndex-endring. Var tidligere async (await
+	// import) — da kunne et gammelt kall vinne over et nyere ved rask scroll, så kart
+	// og kort kom ut av synk.
+	function applyStep(index: number) {
+		if (!map || !mapReady || !LngLatBoundsCtor) return;
 
 		if (index < 0) {
 			// Intro/oversikt øverst: vis hele reisens utsnitt, men med blank rute —
 			// så vokser linja naturlig fra dag 1 når man scroller (ingen retrett).
 			highlightMarker(-1);
 			if (routeCoords.length >= 2) {
-				const bounds = new LngLatBounds(routeCoords[0], routeCoords[0]);
+				const bounds = new LngLatBoundsCtor(routeCoords[0], routeCoords[0]);
 				for (const c of routeCoords) bounds.extend(c);
 				map.fitBounds(bounds, { padding: framePadding(), maxZoom: 12, duration: 800 });
 			}
@@ -214,9 +225,9 @@
 
 		const here = routeCoords[index];
 		const prev = index > 0 ? routeCoords[index - 1] : null;
-		if (prev) {
-			// Vis strekningen som ble reist: fra forrige dag til denne.
-			const bounds = new LngLatBounds(prev, prev);
+		if (prev && !sameSpot(prev, here)) {
+			// Reell reise fra forrige dag → ramm inn strekningen som ble reist.
+			const bounds = new LngLatBoundsCtor(prev, prev);
 			bounds.extend(here);
 			map.fitBounds(bounds, {
 				padding: framePadding(),
@@ -224,9 +235,10 @@
 				duration: reduceMotion ? 0 : 1200
 			});
 		} else {
+			// Første dag, eller samme sted som i går → senter på dagens punkt, fast zoom.
 			map.flyTo({
 				center: here,
-				zoom: 11,
+				zoom: 12,
 				padding: framePadding(),
 				duration: reduceMotion ? 0 : 900
 			});
