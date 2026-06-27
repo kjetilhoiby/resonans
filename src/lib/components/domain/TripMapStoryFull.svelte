@@ -45,7 +45,6 @@
 	let currentFraction = 0;
 	let dayCardEls: HTMLElement[] = [];
 	let scrollRaf: number | null = null;
-	let dbg = $state(''); // midlertidig diagnose
 
 	const routeCoords = $derived(dayPins.map((p) => [p.lon, p.lat] as [number, number]));
 	const fractions = $derived(cumulativeFractions(routeCoords));
@@ -285,8 +284,6 @@
 		});
 		if (scroller.scrollTop < vh * 0.45) best = -1;
 		activeIndex = best;
-		const maxScroll = scroller.scrollHeight - scroller.clientHeight;
-		dbg = `aktiv ${best} · top ${Math.round(scroller.scrollTop)}/${Math.round(maxScroll)} · vpH ${vpH} ch ${scroller.clientHeight} sh ${scroller.scrollHeight}`;
 	}
 
 	function onScroll() {
@@ -330,7 +327,6 @@
 
 	<button type="button" class="tmf-close" aria-label="Lukk kartfortelling" onclick={onclose} data-track="reise-kart:lukk-fullskjerm">✕</button>
 
-	<div class="tmf-debug">{dbg || 'debug: init …'}</div>
 
 	<div bind:this={scroller} class="tmf-scroller" onscroll={onScroll}>
 		<!-- Intro / oversikt -->
@@ -432,24 +428,6 @@
 	}
 	.tmf-close:hover {
 		background: rgba(0, 0, 0, 0.7);
-	}
-
-	/* Midlertidig diagnose-linje — fjernes når synk er bekreftet. */
-	.tmf-debug {
-		position: absolute;
-		top: calc(max(14px, env(safe-area-inset-top)) + 52px);
-		left: 12px;
-		z-index: 9999;
-		max-width: 84%;
-		padding: 5px 9px;
-		border-radius: 8px;
-		background: rgba(0, 0, 0, 0.88);
-		color: #ffe45e;
-		font-size: 0.72rem;
-		font-weight: 600;
-		font-family: ui-monospace, monospace;
-		line-height: 1.3;
-		pointer-events: none;
 	}
 
 	/* Dekker hele overlayet (inset:0) så den fanger all touch. clientHeight kan
