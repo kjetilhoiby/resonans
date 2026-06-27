@@ -30,6 +30,7 @@
 	import {
 		buildCalendarHref,
 		isDayContext,
+		isTodayDayContext,
 		extractDayDate,
 		extractWeekKey,
 		computeDisplayTitle,
@@ -118,8 +119,11 @@
 	let routineItems = $state<RoutineData[]>([...routines]);
 	let expandedRoutineIds = $state<Set<string>>(new Set());
 
-	const morningRoutines = $derived(routineItems.filter(r => r.slot === 'morning'));
-	const otherRoutines = $derived(routineItems.filter(r => r.slot !== 'morning'));
+	// Rutiner gjelder dagens dag. Vis dem bare i dagens dagsliste — ikke i ukelista
+	// (week:…) eller andre dagers lister, der todaysRoutines ville vært feil.
+	const showRoutines = $derived(isTodayDayContext(checklist.context));
+	const morningRoutines = $derived(showRoutines ? routineItems.filter(r => r.slot === 'morning') : []);
+	const otherRoutines = $derived(showRoutines ? routineItems.filter(r => r.slot !== 'morning') : []);
 
 	function toggleRoutineExpansion(id: string) {
 		const next = new Set(expandedRoutineIds);

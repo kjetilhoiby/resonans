@@ -1,4 +1,4 @@
-import { fail } from '@sveltejs/kit';
+import { fail, redirect } from '@sveltejs/kit';
 import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, or } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/db';
@@ -684,7 +684,9 @@ export const actions = {
 			});
 		}
 
-		return { success: true };
+		// Behold den valgte uka i URL-en. Skjemaet poster til ?/createChecklistForWeek,
+		// som ellers ville droppet ?week=-parameteren og sendt brukeren til inneværende uke.
+		redirect(303, `/ukeplan?week=${week.dashedKey}`);
 	},
 
 	addItem: async ({ request, locals }) => {
