@@ -59,7 +59,21 @@ Et kart må slå sammen stillstand til ett punkt, ellers blir det ulesbart.
   (`positionDays`) hvis vi vil utvide senere.
 - **Circle-lag, ikke DOM-markører**: skalerer til mange punkter uten ytelsestap.
 
+### Fase 4: Skjult kart-kreditering + ferskere TileJSON
+
+- Attribution-kontrollen er fjernet fra alle kart (krediteringen ligger samlet i
+  `/settings`).
+- Sentral `mapTransformRequest` i `mapStyle.ts`: legger en cache-buster bare på
+  OpenFreeMap-TileJSON-en (`…/planet`) per sidelasting. OpenFreeMap roterer
+  planet-utgaver og sletter gamle; en TileJSON cachet i 24 t kunne peke på en
+  slettet utgave → alle tiles 404'er → blankt bakgrunnskart (kun overlay igjen).
+  Cache-busteren tvinger fersk peker. Selve tilene/fontene/sprites caches som før.
+  Koblet på alle seks kartene.
+
 ## Verifisering
 
 - `npm test`: 815 tester grønne (16 nye for `clusterPositions`).
 - `npm run check`: 0 feil, 0 advarsler.
+- OpenFreeMap-endepunkt verifisert oppe (TileJSON 200, versjonert Oslo-tile 43 KB,
+  fonter 77 KB) — blank bakgrunn skyldtes utdatert TileJSON-peker i cache, ikke
+  fjerning av attribution.

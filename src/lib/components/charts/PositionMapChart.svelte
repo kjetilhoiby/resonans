@@ -9,7 +9,7 @@
 	 * parkering er allerede ett punkt — ikke ett per kvarter.
 	 */
 	import { onMount, onDestroy } from 'svelte';
-	import { RESONANS_DARK_MAP_STYLE } from './mapStyle';
+	import { RESONANS_DARK_MAP_STYLE, mapTransformRequest } from './mapStyle';
 
 	interface PositionNode {
 		lat: number;
@@ -54,6 +54,7 @@
 		map = new maplibregl.Map({
 			container: mapEl,
 			style: RESONANS_DARK_MAP_STYLE,
+			transformRequest: mapTransformRequest,
 			center: coords[coords.length - 1],
 			zoom: 11,
 			attributionControl: false

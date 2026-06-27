@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { RESONANS_DARK_MAP_STYLE } from '$lib/components/charts/mapStyle';
+	import { RESONANS_DARK_MAP_STYLE, mapTransformRequest } from '$lib/components/charts/mapStyle';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -138,6 +138,7 @@
 		map = new maplibregl.Map({
 			container: mapEl,
 			style: RESONANS_DARK_MAP_STYLE,
+			transformRequest: mapTransformRequest,
 			center, zoom: 13,
 			attributionControl: false
 		});
