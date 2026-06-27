@@ -240,7 +240,14 @@
 			if (routeCoords.length >= 2) {
 				const bounds = new LngLatBoundsCtor(routeCoords[0], routeCoords[0]);
 				for (const c of routeCoords) bounds.extend(c);
-				map.fitBounds(bounds, { padding: framePadding(), maxZoom: 12, duration: 800 });
+				// essential: true — ellers hopper MapLibre over kamera-bevegelsen når
+				// brukeren har «redusert bevegelse» på (da blir kartet stående stille).
+				map.fitBounds(bounds, {
+					padding: framePadding(),
+					maxZoom: 12,
+					duration: reduceMotion ? 0 : 800,
+					essential: true
+				});
 			}
 			animateRouteTo(index >= OUTRO ? 1 : 0);
 			return;
@@ -258,7 +265,8 @@
 			map.fitBounds(bounds, {
 				padding: framePadding(),
 				maxZoom: 13,
-				duration: reduceMotion ? 0 : 650
+				duration: reduceMotion ? 0 : 650,
+				essential: true
 			});
 		} else {
 			// Første dag, eller samme sted som i går → senter på dagens punkt, fast zoom.
@@ -266,7 +274,8 @@
 				center: here,
 				zoom: 12,
 				padding: framePadding(),
-				duration: reduceMotion ? 0 : 550
+				duration: reduceMotion ? 0 : 550,
+				essential: true
 			});
 		}
 	}
