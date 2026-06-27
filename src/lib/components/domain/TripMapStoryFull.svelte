@@ -265,8 +265,13 @@
 	// kortet man faktisk leser. Helt øverst viser vi oversikten (-1).
 	function updateActive() {
 		if (!scroller) return;
-		const vh = scroller.clientHeight;
-		const target = vh * 0.58;
+		// VIKTIG: bruk den SYNLIGE viewporthøyden (window.innerHeight), ikke
+		// scroller.clientHeight. I in-app-browsere er clientHeight (layout-viewporten)
+		// større enn skjermen, mens kort-rektanglene fra getBoundingClientRect er
+		// relativ til den synlige viewporten — bruker vi clientHeight havner leselinja
+		// under skjermkanten og treffer et kort 1–2 hakk for langt ned.
+		const vh = vpH || scroller.clientHeight;
+		const target = vh * 0.5;
 		let best = -1;
 		let bestDist = Infinity;
 		dayCardEls.forEach((el, i) => {
@@ -280,7 +285,7 @@
 		});
 		if (scroller.scrollTop < vh * 0.45) best = -1;
 		activeIndex = best;
-		dbg = `aktiv ${best} (${best >= 0 ? (dayPins[best]?.place ?? '?') : 'intro'}) · top ${Math.round(scroller.scrollTop)} · vpH ${vpH} · ch ${vh}`;
+		dbg = `aktiv ${best} (${best >= 0 ? (dayPins[best]?.place ?? '?') : 'intro'}) · top ${Math.round(scroller.scrollTop)} · vpH ${vpH} · ch ${scroller.clientHeight}`;
 	}
 
 	function onScroll() {
