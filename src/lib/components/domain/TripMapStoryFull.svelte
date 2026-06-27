@@ -436,22 +436,24 @@
 
 	.tmf-close {
 		position: absolute;
-		top: max(14px, env(safe-area-inset-top));
-		right: 14px;
-		z-index: 3;
-		width: 40px;
-		height: 40px;
+		/* Skyves godt ned fra toppen: i in-app-browsere (uten safe-area-inset) ligger
+		   host-appens topp-bar over de øverste ~90px, så top:14px ble usynlig. */
+		top: max(64px, calc(env(safe-area-inset-top) + 52px));
+		right: 16px;
+		z-index: 50;
+		width: 46px;
+		height: 46px;
 		border-radius: 50%;
-		border: 1px solid rgba(255, 255, 255, 0.18);
-		background: rgba(0, 0, 0, 0.5);
+		border: 1.5px solid rgba(255, 255, 255, 0.5);
+		background: rgba(0, 0, 0, 0.82);
 		color: #fff;
-		font-size: 1.1rem;
+		font-size: 1.25rem;
 		line-height: 1;
 		cursor: pointer;
-		backdrop-filter: blur(6px);
+		box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
 	}
 	.tmf-close:hover {
-		background: rgba(0, 0, 0, 0.7);
+		background: rgba(0, 0, 0, 0.95);
 	}
 
 	/* Dekker hele overlayet (inset:0) så den fanger all touch. clientHeight kan
