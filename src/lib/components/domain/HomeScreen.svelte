@@ -50,6 +50,7 @@
 		type AttachmentRef,
 		type ActionItem,
 		type RecentConversation,
+		type ActiveFerie,
 		type EgenfrekvensSlotSummary,
 		type EgenfrekvensRecentPoint,
 	} from './home/home-context';
@@ -149,9 +150,17 @@
 			state: 'klar' | 'lett' | 'easy' | 'rest';
 			alternativeName: string | null;
 		} | null;
+		activeFerie?: ActiveFerie[];
+		feriedagbokTodo?: { themeId: string; themeName: string; emoji: string } | null;
 	}
 
-	let { themes: initialThemes, recentConversations, programReadiness = null }: Props = $props();
+	let {
+		themes: initialThemes,
+		recentConversations,
+		programReadiness = null,
+		activeFerie = [],
+		feriedagbokTodo = null
+	}: Props = $props();
 
 	// ── Tema-state ────────────────────────────────────────────────────────
 	let themes = $state(initialThemes);
@@ -333,6 +342,11 @@
 		// Dismisset helgekompass ligger som chip til uka registreres
 		if (livskompassChip) {
 			items.unshift({ id: 'livskompass', icon: '🧭', label: 'Ukens kompass', done: false, priority: 99, onclick: () => openLivskompass() });
+		}
+		// Pågående ferie uten dagens dagboknotat → hurtighandling som åpner dagboka.
+		if (feriedagbokTodo) {
+			const todo = feriedagbokTodo;
+			items.unshift({ id: 'feriedagbok', icon: todo.emoji || '✍️', label: 'Skriv feriedagbok', done: false, priority: 98, onclick: () => { startNavMetric('home', 'tema'); void goto(`/tema/${todo.themeId}?tab=data&feriedagbok=idag`); } });
 		}
 		return items;
 	});
@@ -909,6 +923,7 @@
 		get themes() { return themes; }, set themes(v) { themes = v; },
 		get relationshipOnboardingActive() { return relationshipOnboardingActive; },
 		get relationshipTheme() { return relationshipTheme; },
+		get activeFerie() { return activeFerie; },
 
 		get dragThemeId() { return dragThemeId; }, set dragThemeId(v) { dragThemeId = v; },
 		get dropIndex() { return dropIndex; }, set dropIndex(v) { dropIndex = v; },

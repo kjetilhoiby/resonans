@@ -30,6 +30,7 @@
 
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
+	import { page } from '$app/stores';
 	import TripPlanningSection from './ferie/TripPlanningSection.svelte';
 	import FerieGridView from './ferie/FerieGridView.svelte';
 	import FerieExecutionView from './ferie/FerieExecutionView.svelte';
@@ -72,7 +73,15 @@
 
 	let editMembers = $state(false);
 	let editing = $state(false);
-	let view = $state<FerieView>('rammer');
+
+	/* Når ferien pågår nå, hopp rett til «Underveis» i stedet for planleggingen. */
+	function isWithinWindow(iso: string): boolean {
+		return !!startDate && !!endDate && startDate <= iso && iso <= endDate;
+	}
+	let view = $state<FerieView>(isWithinWindow(toISO(new Date())) ? 'gjennomfor' : 'rammer');
+
+	/* Hjemskjerm/hurtighandling kan be om at dagens dagboknotat åpnes direkte. */
+	const autoOpenDiary = $derived($page.url.searchParams.get('feriedagbok') === 'idag');
 
 	/* ── Avledede verdier ───────────────────────────────── */
 	const adultIds = $derived(members.filter((m) => m.role === 'voksen').map((m) => m.id));
@@ -387,7 +396,7 @@
 	<nav class="view-switch">
 		<button class:active={view === 'rammer'} onclick={() => (view = 'rammer')}>1 · Rammer</button>
 		<button class:active={view === 'reiser'} onclick={() => (view = 'reiser')}>2 · Reiser</button>
-		<button class:active={view === 'gjennomfor'} onclick={() => (view = 'gjennomfor')}>3 · Gjennomfør</button>
+		<button class:active={view === 'gjennomfor'} onclick={() => (view = 'gjennomfor')}>3 · Underveis</button>
 	</nav>
 
 	{#if view === 'rammer'}
@@ -449,6 +458,7 @@
 				{trips}
 				{gapCount}
 				{gapAckCount}
+				{autoOpenDiary}
 				onDismissGap={() => { gapAckCount = gapCount; scheduleSave(); }}
 				onNavigate={(v) => (view = v)}
 				{api}

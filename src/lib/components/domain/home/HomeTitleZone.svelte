@@ -23,6 +23,15 @@
 			titleLabel="Åpne ukeplan"
 		>
 			{#snippet actions()}
+				{#each ctx.activeFerie as ferie (ferie.id)}
+					<a
+						href="/tema/{ferie.id}?tab=data"
+						class="icon-link ferie-link"
+						aria-label={`Ferie: ${ferie.name}`}
+						title={ferie.name}
+						onclick={() => startNavMetric('home', 'tema')}
+					>{ferie.emoji}</a>
+				{/each}
 				<a href="/plan/mal" class="icon-link" aria-label="Mål"><Icon name="goals" size={20} /></a>
 				<a href="/settings" class="icon-link" aria-label="Innstillinger"><Icon name="settings" size={18} /></a>
 			{/snippet}
@@ -65,5 +74,12 @@
 		background: #12162a;
 		color: #bac6f9;
 		border-color: #2e3660;
+	}
+
+	/* Ferie-snarvei: emoji i stedet for ikon, litt varmere ramme. */
+	.ferie-link {
+		font-size: 1.1rem;
+		line-height: 1;
+		border-color: #2c2740;
 	}
 </style>

@@ -56,6 +56,7 @@
 			dayNotes: Record<string, string>;
 			dayHeadlines: Record<string, string>;
 			activeTrips: ActiveTrip[];
+			activeFerie: { id: string; name: string; emoji: string; startDate: string; endDate: string }[];
 			spondEventsByDay: Record<string, SpondEvent[]>;
 			previousWeekSummary: {
 				weekKey: string; note: string; reflection: string;
@@ -212,6 +213,14 @@
 			for (const day of data.week.days) {
 				if (day.isoDate >= trip.startDate && day.isoDate <= trip.endDate) {
 					map[day.isoDate] = trip.emoji ?? '🗺️';
+				}
+			}
+		}
+		// Ferie-dager merkes også — reiser (mer spesifikke) vinner når begge dekker dagen.
+		for (const ferie of data.activeFerie) {
+			for (const day of data.week.days) {
+				if (!map[day.isoDate] && day.isoDate >= ferie.startDate && day.isoDate <= ferie.endDate) {
+					map[day.isoDate] = ferie.emoji;
 				}
 			}
 		}
@@ -459,6 +468,9 @@
 		{#snippet actions()}
 			{#each data.activeTrips as trip}
 				<a class="wp-calendar-btn" href="/tema/{trip.id}" aria-label={trip.name}>{trip.emoji ?? '🗺️'}</a>
+			{/each}
+			{#each data.activeFerie as ferie}
+				<a class="wp-calendar-btn" href="/tema/{ferie.id}?tab=data" aria-label={`Ferie: ${ferie.name}`} title={ferie.name}>{ferie.emoji}</a>
 			{/each}
 			<a class="wp-calendar-btn wp-month-btn" href={`/maanedsplan?month=${selectedDayIso.slice(0, 7)}`} aria-label="Til månedsplan" title="Månedsplan">Mnd</a>
 			<div class="wp-calendar-wrap" bind:this={weekPickerWrap}>
