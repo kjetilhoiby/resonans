@@ -285,7 +285,8 @@
 		});
 		if (scroller.scrollTop < vh * 0.45) best = -1;
 		activeIndex = best;
-		dbg = `aktiv ${best} (${best >= 0 ? (dayPins[best]?.place ?? '?') : 'intro'}) · top ${Math.round(scroller.scrollTop)} · vpH ${vpH} · ch ${scroller.clientHeight}`;
+		const maxScroll = scroller.scrollHeight - scroller.clientHeight;
+		dbg = `aktiv ${best} · top ${Math.round(scroller.scrollTop)}/${Math.round(maxScroll)} · vpH ${vpH} ch ${scroller.clientHeight} sh ${scroller.scrollHeight}`;
 	}
 
 	function onScroll() {
@@ -433,25 +434,30 @@
 		position: absolute;
 		top: max(14px, env(safe-area-inset-top));
 		left: 12px;
-		z-index: 4;
-		max-width: 72%;
-		padding: 4px 8px;
+		z-index: 5;
+		max-width: 84%;
+		padding: 5px 9px;
 		border-radius: 8px;
-		background: rgba(0, 0, 0, 0.72);
-		color: #9fffa0;
-		font-size: 0.64rem;
+		background: rgba(0, 0, 0, 0.88);
+		color: #ffe45e;
+		font-size: 0.72rem;
+		font-weight: 600;
 		font-family: ui-monospace, monospace;
 		line-height: 1.3;
 		pointer-events: none;
 	}
 
-	/* Scrolleren dekker hele overlayet (inset:0) så den fanger ALL touch — ellers
-	   blir det en død sone der kart-canvaset stjeler trykk og hindrer scroll.
-	   At siste steg ikke gjemmer seg bak nettleser-chromet løses i stedet med rikelig
-	   bunn-padding på stegene (kortene løftes over chromet). */
+	/* Høyden settes til den SYNLIGE viewporten (--app-vh = window.innerHeight), ikke
+	   inset:0. I in-app-browsere er layout-viewporten (det inset:0 ville gitt) større
+	   enn skjermen, så clientHeight ble oppblåst og maxScroll (scrollHeight−clientHeight)
+	   for liten til å nå siste kort. Kartet ligger fullskjerm bak og er pointer-events:none,
+	   så området under scrolleren (bak nettleser-baren) gir ingen død sone. */
 	.tmf-scroller {
 		position: absolute;
-		inset: 0;
+		top: 0;
+		left: 0;
+		right: 0;
+		height: var(--app-vh, 100vh);
 		z-index: 2;
 		overflow-y: auto;
 		scroll-behavior: smooth;
