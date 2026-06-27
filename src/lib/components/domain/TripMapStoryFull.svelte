@@ -30,6 +30,10 @@
 	let mapContainer = $state<HTMLDivElement | null>(null);
 	let scroller = $state<HTMLDivElement | null>(null);
 	let activeIndex = $state(-1); // -1 = intro-steget (oversikt over hele ruten)
+	// Steg-høyde i ekte piksler. Vi kan IKKE stole på svh/dvh-CSS-enheter — i enkelte
+	// in-app-browsere resol­verer de ikke, og da kollapser korte steg (outro/hale) til
+	// innholdshøyde, så scrollen bunner før siste kort. window.innerHeight funker overalt.
+	let vpH = $state(typeof window !== 'undefined' ? window.innerHeight : 800);
 
 	let map: MapLibreMap | null = null;
 	let mapReady = $state(false);
@@ -272,8 +276,18 @@
 		});
 	}
 
+	// Mål viewport på nytt ved rotasjon (ikke ved hver resize — chrome som vises/skjules
+	// under scroll ville ellers endret steg-høyden midt i scrollen og gitt hopp).
+	function onOrient() {
+		setTimeout(() => {
+			vpH = window.innerHeight;
+			updateActive();
+		}, 250);
+	}
+
 	onMount(() => {
 		document.body.style.overflow = 'hidden';
+		vpH = window.innerHeight;
 		void initMap();
 		updateActive();
 	});
@@ -287,9 +301,9 @@
 	});
 </script>
 
-<svelte:window onkeydown={onKey} />
+<svelte:window onkeydown={onKey} onorientationchange={onOrient} />
 
-<div class="tmf-root" transition:fade={{ duration: 220 }}>
+<div class="tmf-root" transition:fade={{ duration: 220 }} style="--app-vh:{vpH}px">
 	<div bind:this={mapContainer} class="tmf-map"></div>
 	<div class="tmf-veil"></div>
 
@@ -411,7 +425,7 @@
 	}
 
 	.tmf-step {
-		min-height: 100svh;
+		min-height: var(--app-vh, 100vh);
 		display: flex;
 		align-items: flex-end;
 		/* Rikelig bunn-klaring: et aktivt kort er forankret nederst i steget, så
@@ -423,7 +437,7 @@
 	/* Ekstra scroll-rom etter siste steg, så det nederste dag-kortet alltid kan
 	   løftes godt over nettleser-baren. */
 	.tmf-tail {
-		height: 25svh;
+		height: calc(var(--app-vh, 100vh) * 0.3);
 		flex: 0 0 auto;
 	}
 
