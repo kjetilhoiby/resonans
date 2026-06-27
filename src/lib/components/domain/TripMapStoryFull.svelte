@@ -77,7 +77,7 @@
 			style: RESONANS_DARK_MAP_STYLE,
 			center: start,
 			zoom: 5,
-			attributionControl: { compact: true },
+			attributionControl: false,
 			interactive: false // kamera styres av scroll — kartet er en lerret, ikke et leketøy
 		});
 

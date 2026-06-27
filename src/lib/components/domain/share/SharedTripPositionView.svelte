@@ -238,7 +238,6 @@
 			center, zoom: 13,
 			attributionControl: false
 		});
-		map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left');
 
 		map.on('load', () => {
 			if (!map) return;

@@ -121,7 +121,7 @@
 			style: RESONANS_DARK_MAP_STYLE,
 			center: start,
 			zoom: 5,
-			attributionControl: { compact: true }
+			attributionControl: false
 		});
 
 		map.on('load', () => {
