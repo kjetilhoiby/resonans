@@ -40,6 +40,7 @@
 	let currentFraction = 0;
 	let dayCardEls: HTMLElement[] = [];
 	let scrollRaf: number | null = null;
+	let dbg = $state(''); // midlertidig: scroll-tall for diagnose
 
 	const routeCoords = $derived(dayPins.map((p) => [p.lon, p.lat] as [number, number]));
 	const fractions = $derived(cumulativeFractions(routeCoords));
@@ -245,6 +246,13 @@
 	function updateActive() {
 		if (!scroller) return;
 		const vh = scroller.clientHeight;
+		const top = Math.round(scroller.scrollTop);
+		const sh = scroller.scrollHeight;
+		const maxScroll = sh - vh;
+		const cards = dayCardEls.filter(Boolean).length;
+		const lastCard = dayCardEls[dayPins.length - 1];
+		const lastTop = lastCard ? Math.round(lastCard.getBoundingClientRect().top) : -1;
+		dbg = `${cards} kort · top ${top}/${maxScroll} (h ${sh}, vis ${vh}) · siste-kort y ${lastTop} · aktiv ${activeIndex}`;
 		if (scroller.scrollTop < vh * 0.45) {
 			activeIndex = -1;
 			return;
@@ -294,6 +302,8 @@
 	<div class="tmf-veil"></div>
 
 	<button type="button" class="tmf-close" aria-label="Lukk kartfortelling" onclick={onclose} data-track="reise-kart:lukk-fullskjerm">✕</button>
+
+	{#if dbg}<div class="tmf-debug">{dbg}</div>{/if}
 
 	<div bind:this={scroller} class="tmf-scroller" onscroll={onScroll}>
 		<!-- Intro / oversikt -->
@@ -392,6 +402,23 @@
 		background: rgba(0, 0, 0, 0.7);
 	}
 
+	/* Midlertidig diagnose-linje — fjernes når scroll er bekreftet. */
+	.tmf-debug {
+		position: absolute;
+		top: max(14px, env(safe-area-inset-top));
+		left: 12px;
+		z-index: 4;
+		max-width: 70%;
+		padding: 4px 8px;
+		border-radius: 8px;
+		background: rgba(0, 0, 0, 0.7);
+		color: #9fffa0;
+		font-size: 0.62rem;
+		font-family: ui-monospace, monospace;
+		line-height: 1.3;
+		pointer-events: none;
+	}
+
 	/* Scrolleren dekker hele overlayet (inset:0) så den fanger ALL touch — ellers
 	   blir det en død sone der kart-canvaset stjeler trykk og hindrer scroll.
 	   At siste steg ikke gjemmer seg bak nettleser-chromet løses i stedet med rikelig
@@ -402,7 +429,7 @@
 		z-index: 2;
 		overflow-y: auto;
 		scroll-behavior: smooth;
-		-webkit-overflow-scrolling: touch;
+		overscroll-behavior: contain;
 		touch-action: pan-y;
 		/* Drag skal scrolle, ikke markere tekst (unngår iOS-callout midt i fortellingen). */
 		-webkit-user-select: none;
