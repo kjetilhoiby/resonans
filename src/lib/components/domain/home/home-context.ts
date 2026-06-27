@@ -24,6 +24,14 @@ export interface Theme {
 	emoji: string;
 }
 
+export interface ActiveFerie {
+	id: string;
+	name: string;
+	emoji: string;
+	startDate: string;
+	endDate: string;
+}
+
 export interface RecentConversation {
 	id: string;
 	title: string;
@@ -147,6 +155,9 @@ export interface HomeContext {
 	themes: Theme[];
 	relationshipOnboardingActive: boolean;
 	relationshipTheme: Theme | null;
+
+	// ── Pågående ferie (ikon ved datoen) ──
+	activeFerie: ActiveFerie[];
 
 	// ── Drag & drop tema ──
 	dragThemeId: string | null;
