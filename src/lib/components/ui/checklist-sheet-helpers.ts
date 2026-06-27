@@ -51,6 +51,14 @@ export function extractDayDate(context: string | null): string | null {
 	return m ? m[1] : null;
 }
 
+/** True if the context is a day-checklist for today (Oslo-tid). Rutiner hører kun til dagens dagsliste. */
+export function isTodayDayContext(context: string | null, now: Date = new Date()): boolean {
+	const date = extractDayDate(context);
+	if (!date) return false;
+	const todayIso = now.toLocaleDateString('sv', { timeZone: 'Europe/Oslo' });
+	return date === todayIso;
+}
+
 /** Extract the week key from a week-context string, or null. */
 export function extractWeekKey(context: string | null): string | null {
 	if (!context) return null;
