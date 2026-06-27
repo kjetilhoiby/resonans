@@ -240,14 +240,11 @@
 			if (routeCoords.length >= 2) {
 				const bounds = new LngLatBoundsCtor(routeCoords[0], routeCoords[0]);
 				for (const c of routeCoords) bounds.extend(c);
-				// essential: true — ellers hopper MapLibre over kamera-bevegelsen når
-				// brukeren har «redusert bevegelse» på (da blir kartet stående stille).
-				map.fitBounds(bounds, {
-					padding: framePadding(),
-					maxZoom: 12,
-					duration: reduceMotion ? 0 : 800,
-					essential: true
-				});
+				// Instant (animate:false). Animert kamera (duration) beveger seg ikke i
+				// denne in-app-webview-en — animasjons-loopen kjører ikke. Instant virker
+				// (samme som load-handleren) og passer scroll-styringen: kameraet følger
+				// scroll-posisjonen tett i stedet for å henge etter med en fly-animasjon.
+				map.fitBounds(bounds, { padding: framePadding(), maxZoom: 12, animate: false });
 			}
 			animateRouteTo(index >= OUTRO ? 1 : 0);
 			return;
@@ -262,21 +259,10 @@
 			// Reell reise fra forrige dag → ramm inn strekningen som ble reist.
 			const bounds = new LngLatBoundsCtor(prev, prev);
 			bounds.extend(here);
-			map.fitBounds(bounds, {
-				padding: framePadding(),
-				maxZoom: 13,
-				duration: reduceMotion ? 0 : 650,
-				essential: true
-			});
+			map.fitBounds(bounds, { padding: framePadding(), maxZoom: 13, animate: false });
 		} else {
 			// Første dag, eller samme sted som i går → senter på dagens punkt, fast zoom.
-			map.flyTo({
-				center: here,
-				zoom: 12,
-				padding: framePadding(),
-				duration: reduceMotion ? 0 : 550,
-				essential: true
-			});
+			map.jumpTo({ center: here, zoom: 12, padding: framePadding() });
 		}
 	}
 
