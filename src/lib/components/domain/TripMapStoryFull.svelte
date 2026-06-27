@@ -231,9 +231,11 @@
 	}
 
 	// Bunn-padding holder den aktive nåla i øvre, ledige halvdel — over dag-kortet.
+	// Ikke for stor: top+bottom må være godt under karthøyden, ellers returnerer
+	// cameraForBounds undefined (kan ikke beregne utsnitt) og kameraet flytter seg ikke.
 	function framePadding() {
 		const h = typeof window !== 'undefined' ? window.innerHeight : 800;
-		return { top: 80, bottom: Math.round(h * 0.5), left: 48, right: 48 };
+		return { top: 56, bottom: Math.round(h * 0.36), left: 40, right: 40 };
 	}
 
 	function highlightMarker(index: number) {
@@ -272,7 +274,7 @@
 			if (routeCoords.length >= 2) {
 				const bounds = new LngLatBoundsCtor(routeCoords[0], routeCoords[0]);
 				for (const c of routeCoords) bounds.extend(c);
-				cameraToBounds(bounds, 12, 800);
+				animateToBounds(bounds, 12, 800, routeCoords[0]);
 			}
 			animateRouteTo(index >= OUTRO ? 1 : 0);
 			return;
@@ -287,20 +289,30 @@
 			// Reell reise fra forrige dag → ramm inn strekningen som ble reist.
 			const bounds = new LngLatBoundsCtor(prev, prev);
 			bounds.extend(here);
-			cameraToBounds(bounds, 13, 650);
+			animateToBounds(bounds, 13, 650, here);
 		} else {
 			// Første dag, eller samme sted som i går → senter på dagens punkt, fast zoom.
 			animateCameraTo(here, 12, 550);
 		}
 	}
 
-	// Regner ut kamera for et utsnitt (ren beregning, ingen animasjon) og animerer dit.
-	function cameraToBounds(bounds: InstanceType<NonNullable<typeof LngLatBoundsCtor>>, maxZoom: number, dur: number) {
+	// Beregner kamera for et utsnitt og animerer dit. cameraForBounds kan returnere
+	// undefined (f.eks. når den ikke får plass) — da glir vi i det minste til fallback-
+	// punktet (dagens sted) så kameraet ALLTID følger med.
+	function animateToBounds(
+		bounds: InstanceType<NonNullable<typeof LngLatBoundsCtor>>,
+		maxZoom: number,
+		dur: number,
+		fallback: [number, number]
+	) {
 		if (!map) return;
 		const cam = map.cameraForBounds(bounds, { padding: framePadding(), maxZoom });
-		if (!cam || !cam.center) return;
-		const c = 'lng' in cam.center ? [cam.center.lng, cam.center.lat] : (cam.center as [number, number]);
-		animateCameraTo(c as [number, number], cam.zoom ?? map.getZoom(), dur);
+		if (cam?.center) {
+			const c = 'lng' in cam.center ? [cam.center.lng, cam.center.lat] : (cam.center as [number, number]);
+			animateCameraTo(c as [number, number], cam.zoom ?? maxZoom, dur);
+		} else {
+			animateCameraTo(fallback, maxZoom - 1, dur);
+		}
 	}
 
 	$effect(() => {
