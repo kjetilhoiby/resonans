@@ -65,6 +65,7 @@
 	let dayCardEls: HTMLElement[] = [];
 	let outroEl = $state<HTMLElement | null>(null);
 	let scrollRaf: number | null = null;
+	let dbg = $state('init'); // midlertidig diagnose — midt på skjermen
 	const OUTRO = $derived(dayPins.length); // sentinel-indeks for slutt-bokstøtta
 
 	const routeCoords = $derived(dayPins.map((p) => [p.lon, p.lat] as [number, number]));
@@ -307,6 +308,15 @@
 		consider(OUTRO, outroEl); // slutt-bokstøtta teller som eget steg
 		if (scroller.scrollTop < vh * 0.45) best = -1; // start-bokstøtta øverst
 		activeIndex = best;
+
+		const steps = scroller.querySelectorAll('.tmf-step').length;
+		const introTop = scroller.querySelector('.tmf-step-intro')?.getBoundingClientRect().top;
+		const closeEl = document.querySelector('.tmf-close')?.getBoundingClientRect();
+		dbg =
+			`steg ${steps} · aktiv ${best}\n` +
+			`top ${Math.round(scroller.scrollTop)}/${Math.round(scroller.scrollHeight - scroller.clientHeight)}\n` +
+			`vpH ${vpH} ch ${scroller.clientHeight} sh ${scroller.scrollHeight}\n` +
+			`introTop ${introTop != null ? Math.round(introTop) : '?'} · ✕@ ${closeEl ? Math.round(closeEl.top) + ',' + Math.round(closeEl.left) : 'mangler'}`;
 	}
 
 	function onScroll() {
@@ -349,6 +359,8 @@
 	<div class="tmf-veil"></div>
 
 	<button type="button" class="tmf-close" aria-label="Lukk kartfortelling" onclick={onclose} data-track="reise-kart:lukk-fullskjerm">✕</button>
+
+	<div class="tmf-dbg2">{dbg}</div>
 
 
 	<div bind:this={scroller} class="tmf-scroller" onscroll={onScroll}>
@@ -437,8 +449,8 @@
 	.tmf-close {
 		position: absolute;
 		/* Skyves godt ned fra toppen: i in-app-browsere (uten safe-area-inset) ligger
-		   host-appens topp-bar over de øverste ~90px, så top:14px ble usynlig. */
-		top: max(64px, calc(env(safe-area-inset-top) + 52px));
+		   host-appens topp-bar over de øverste ~110px, så selv 64px ble usynlig. */
+		top: max(130px, calc(env(safe-area-inset-top) + 80px));
 		right: 16px;
 		z-index: 50;
 		width: 46px;
@@ -454,6 +466,26 @@
 	}
 	.tmf-close:hover {
 		background: rgba(0, 0, 0, 0.95);
+	}
+
+	/* Midlertidig diagnose midt på skjermen — kan ikke gjemmes av host-baren. */
+	.tmf-dbg2 {
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		transform: translate(-50%, -50%);
+		z-index: 99999;
+		padding: 10px 14px;
+		border-radius: 10px;
+		background: rgba(0, 0, 0, 0.85);
+		color: #ffe45e;
+		font-size: 0.78rem;
+		font-weight: 600;
+		font-family: ui-monospace, monospace;
+		line-height: 1.5;
+		white-space: pre;
+		text-align: center;
+		pointer-events: none;
 	}
 
 	/* Dekker hele overlayet (inset:0) så den fanger all touch. clientHeight kan
