@@ -211,7 +211,8 @@
 		return {
 			connected: vehicleDashboard.connected,
 			hourly: vehicleDashboard.hourly,
-			costPerKm: vehicleDashboard.costPerKm
+			costPerKm: vehicleDashboard.costPerKm,
+			positions: vehicleDashboard.positions ?? []
 		};
 	});
 

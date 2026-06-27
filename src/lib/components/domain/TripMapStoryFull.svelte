@@ -15,7 +15,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { fade } from 'svelte/transition';
 	import type { Map as MapLibreMap, Marker as MapLibreMarker } from 'maplibre-gl';
-	import { RESONANS_DARK_MAP_STYLE } from '../charts/mapStyle';
+	import { RESONANS_DARK_MAP_STYLE, mapTransformRequest } from '../charts/mapStyle';
 	import { partialPath, cumulativeFractions, type DayPin } from './trip-map-story';
 	import type { ImagePin } from './trip-api';
 
@@ -75,9 +75,10 @@
 		map = new Map({
 			container: mapContainer,
 			style: RESONANS_DARK_MAP_STYLE,
+			transformRequest: mapTransformRequest,
 			center: start,
 			zoom: 5,
-			attributionControl: { compact: true },
+			attributionControl: false,
 			interactive: false // kamera styres av scroll — kartet er en lerret, ikke et leketøy
 		});
 

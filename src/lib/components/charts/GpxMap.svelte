@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import type { Map as MapLibreMap } from 'maplibre-gl';
-	import { RESONANS_DARK_MAP_STYLE } from './mapStyle';
+	import { RESONANS_DARK_MAP_STYLE, mapTransformRequest } from './mapStyle';
 
 	interface TrackPoint {
 		lat: number;
@@ -39,6 +39,7 @@
 		map = new Map({
 			container: el,
 			style: RESONANS_DARK_MAP_STYLE,
+			transformRequest: mapTransformRequest,
 			bounds,
 			fitBoundsOptions: { padding: 48 },
 			// Krediteringen (OpenFreeMap/OpenMapTiles/OpenStreetMap) ligger samlet
