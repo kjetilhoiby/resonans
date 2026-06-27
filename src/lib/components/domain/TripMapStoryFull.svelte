@@ -330,7 +330,7 @@
 
 	<button type="button" class="tmf-close" aria-label="Lukk kartfortelling" onclick={onclose} data-track="reise-kart:lukk-fullskjerm">✕</button>
 
-	{#if dbg}<div class="tmf-debug">{dbg}</div>{/if}
+	<div class="tmf-debug">{dbg || 'debug: init …'}</div>
 
 	<div bind:this={scroller} class="tmf-scroller" onscroll={onScroll}>
 		<!-- Intro / oversikt -->
@@ -395,6 +395,11 @@
 	.tmf-map {
 		position: absolute;
 		inset: 0;
+		/* z-index + isolation gjør kartet til en egen stacking-context, så MapLibre
+		   sine interne z-indekser (markører, kontroller) ALDRI kan legge seg over
+		   UI-laget (kort, lukk-knapp, debug). */
+		z-index: 0;
+		isolation: isolate;
 		/* Kartet er ikke-interaktivt; scrolleren over skal eie all touch. Uten
 		   dette kan et langt trykk treffe kart-canvaset og trigge iOS sin
 		   tekstmarkerings-meny i stedet for å scrolle. */
@@ -434,7 +439,7 @@
 		position: absolute;
 		top: calc(max(14px, env(safe-area-inset-top)) + 52px);
 		left: 12px;
-		z-index: 5;
+		z-index: 9999;
 		max-width: 84%;
 		padding: 5px 9px;
 		border-radius: 8px;
