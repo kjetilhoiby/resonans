@@ -155,8 +155,8 @@ export const liveSessionMessages = pgTable('live_session_messages', {
 export const shareTokens = pgTable('share_tokens', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	ownerUserId: text('owner_user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-	resourceType: text('resource_type').notNull(), // 'checklist' | 'themeList' | 'tripPosition'
-	resourceId: uuid('resource_id').notNull(),     // checklists.id | themeLists.id | themes.id (for tripPosition)
+	resourceType: text('resource_type').notNull(), // 'checklist' | 'themeList' | 'tripPosition' | 'quizSession' | 'storySession'
+	resourceId: uuid('resource_id').notNull(),     // checklists.id | themeLists.id | themes.id (for tripPosition) | quizSessions.id | storySessions.id
 	token: text('token').notNull().unique(),
 	accessMode: text('access_mode').notNull().default('read'), // 'read' | 'write'
 	allowedEmail: text('allowed_email'),           // null = åpen lenke
@@ -1063,6 +1063,43 @@ export const quizSessions = pgTable('quiz_sessions', {
 	idxUser: index('quiz_sessions_user_idx').on(table.userId),
 	// Maks én aktiv quiz per bruker; «start» deaktiverer forrige først.
 	uniqActiveUser: uniqueIndex('quiz_sessions_active_user_uq').on(table.userId).where(sql`${table.active}`)
+}));
+
+// Interaktive fortellinger for tale-assistentens forteller-modus. Ett board dekker to varianter
+// (branching = velg-selv-eventyr, madlib = tulle-fortelling); motsatt variants felt er null/tomme.
+// Én aktiv fortelling per bruker — uavhengig av quiz (egen tabell, egen tilstand). `story` (full
+// tekst) er skjult til ended=true. `bible` er den interne fortellings-bibelen (kanon + bue + tone)
+// som re-injiseres i modell-konteksten hver tur — aldri en del av det offentlige board-skjemaet.
+export const storySessions = pgTable('story_sessions', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	kind: text('kind').notNull(), // 'branching' | 'madlib'
+	title: text('title'),
+	theme: text('theme'),
+	currentPlayer: text('current_player'),         // hvem agenten venter på (null = hvem som helst)
+	active: boolean('active').notNull().default(true),
+	ended: boolean('ended').notNull().default(false),
+	story: text('story'),                          // full tekst — avsløres på skjerm først når ended
+	bible: text('bible').notNull().default(''),    // intern fortellings-bibel (skjult bak `world`)
+	// --- branching (velg-selv-eventyr) ---
+	phase: text('phase'),                          // 'setup' | 'adventure' | null
+	world: jsonb('world').$type<Array<{ label: string; value: string }>>().notNull().default(sql`'[]'::jsonb`),
+	passage: text('passage'),                      // gjeldende avsnitt (vises på skjerm)
+	choices: jsonb('choices').$type<Array<{ id: string; label: string }>>().notNull().default(sql`'[]'::jsonb`),
+	lastChoice: text('last_choice'),               // siste valg som ble tatt
+	step: integer('step').notNull().default(0),    // antall avsnitt fortalt
+	history: jsonb('history').$type<Array<{ passage: string; choiceLabel: string | null }>>().notNull().default(sql`'[]'::jsonb`),
+	// --- madlib (tulle-fortelling) ---
+	request: text('request'),                      // ordet agenten ber om nå; null når alle samlet
+	blanksFilled: integer('blanks_filled').notNull().default(0),
+	blanksTotal: integer('blanks_total').notNull().default(0),
+	filled: jsonb('filled').$type<Array<{ slot: string; word: string }>>().notNull().default(sql`'[]'::jsonb`),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	idxUser: index('story_sessions_user_idx').on(table.userId),
+	// Maks én aktiv fortelling per bruker; «start» deaktiverer forrige først.
+	uniqActiveUser: uniqueIndex('story_sessions_active_user_uq').on(table.userId).where(sql`${table.active}`)
 }));
 
 // Indeks over hvilke personer som er nevnt i et checklist-item (dag-task).
