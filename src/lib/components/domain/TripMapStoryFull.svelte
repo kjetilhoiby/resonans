@@ -15,6 +15,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { fade } from 'svelte/transition';
 	import type { Map as MapLibreMap, Marker as MapLibreMarker } from 'maplibre-gl';
+	import { portal } from '$lib/actions/portal';
 	import { RESONANS_DARK_MAP_STYLE, mapTransformRequest } from '../charts/mapStyle';
 	import { partialPath, cumulativeFractions, type DayPin } from './trip-map-story';
 	import type { ImagePin } from './trip-api';
@@ -22,24 +23,51 @@
 	interface Props {
 		dayPins: DayPin[];
 		imagePins?: ImagePin[];
+		/** Turens dato-vindu — brukes til «N av M dager» i bokendene. */
+		startDate?: string;
+		endDate?: string;
 		onclose: () => void;
 	}
 
-	let { dayPins, imagePins = [], onclose }: Props = $props();
+	let { dayPins, imagePins = [], startDate, endDate, onclose }: Props = $props();
+
+	// Antall dager i hele turvinduet (for «7 av 50»). 0 hvis vinduet er ukjent.
+	const totalDays = $derived.by(() => {
+		if (!startDate || !endDate) return 0;
+		const a = new Date(`${startDate}T00:00:00Z`).getTime();
+		const b = new Date(`${endDate}T00:00:00Z`).getTime();
+		if (Number.isNaN(a) || Number.isNaN(b) || b < a) return 0;
+		return Math.round((b - a) / 86_400_000) + 1;
+	});
+
+	// «N av M dager fortalt», eller «N dager på kartet» når vinduet er ukjent.
+	const daysLabel = $derived(
+		totalDays > 0
+			? `${dayPins.length} av ${totalDays} dager fortalt`
+			: `${dayPins.length} ${dayPins.length === 1 ? 'dag' : 'dager'} på kartet`
+	);
 
 	let mapContainer = $state<HTMLDivElement | null>(null);
 	let scroller = $state<HTMLDivElement | null>(null);
 	let activeIndex = $state(-1); // -1 = intro-steget (oversikt over hele ruten)
+	// Steg-høyde i ekte piksler. Vi kan IKKE stole på svh/dvh-CSS-enheter — i enkelte
+	// in-app-browsere resol­verer de ikke, og da kollapser korte steg (outro/hale) til
+	// innholdshøyde, så scrollen bunner før siste kort. window.innerHeight funker overalt.
+	let vpH = $state(typeof window !== 'undefined' ? window.innerHeight : 800);
 
 	let map: MapLibreMap | null = null;
 	let mapReady = $state(false);
+	let LngLatBoundsCtor: typeof import('maplibre-gl').LngLatBounds | null = null;
 	const dayMarkers: MapLibreMarker[] = [];
 	const dayMarkerEls: HTMLElement[] = [];
 	const imageMarkers = new Map<string, MapLibreMarker>();
 	let animTimer: number | null = null;
+	let camTimer: number | null = null;
 	let currentFraction = 0;
-	let stepEls: HTMLElement[] = [];
-	let observer: IntersectionObserver | null = null;
+	let dayCardEls: HTMLElement[] = [];
+	let outroEl = $state<HTMLElement | null>(null);
+	let scrollRaf: number | null = null;
+	const OUTRO = $derived(dayPins.length); // sentinel-indeks for slutt-bokstøtta
 
 	const routeCoords = $derived(dayPins.map((p) => [p.lon, p.lat] as [number, number]));
 	const fractions = $derived(cumulativeFractions(routeCoords));
@@ -70,6 +98,7 @@
 	async function initMap() {
 		if (!mapContainer || typeof window === 'undefined' || map) return;
 		const { Map, Marker, LngLatBounds } = await import('maplibre-gl');
+		LngLatBoundsCtor = LngLatBounds; // lagres så applyStep kan være synkron (unngår race ved rask scroll)
 
 		const start = routeCoords[0] ?? [10.75, 59.91];
 		map = new Map({
@@ -171,16 +200,53 @@
 		animTimer = requestAnimationFrame(step);
 	}
 
+	// Animerer kameraet selv med rAF + jumpTo. MapLibre sin egen flyTo/fitBounds-
+	// animasjon kjører ikke når overlayet er portalert til <body> i denne webview-en
+	// (instant jumpTo virker derimot). Vi interpolerer center/zoom for hånd — samme
+	// mønster som animateRouteTo — så vi får myk bevegelse uten MapLibres loop.
+	function animateCameraTo(center: [number, number], zoom: number, dur: number) {
+		if (!map) return;
+		if (camTimer) cancelAnimationFrame(camTimer);
+		const pad = framePadding();
+		if (reduceMotion || dur <= 0) {
+			map.jumpTo({ center, zoom, padding: pad });
+			return;
+		}
+		const c0 = map.getCenter();
+		const fromLng = c0.lng;
+		const fromLat = c0.lat;
+		const fromZoom = map.getZoom();
+		const t0 = performance.now();
+		const step = (now: number) => {
+			if (!map) return;
+			const t = Math.min(1, (now - t0) / dur);
+			const e = 1 - Math.pow(1 - t, 3);
+			map.jumpTo({
+				center: [fromLng + (center[0] - fromLng) * e, fromLat + (center[1] - fromLat) * e],
+				zoom: fromZoom + (zoom - fromZoom) * e,
+				padding: pad
+			});
+			if (t < 1) camTimer = requestAnimationFrame(step);
+		};
+		camTimer = requestAnimationFrame(step);
+	}
+
 	// Bunn-padding holder den aktive nåla i øvre, ledige halvdel — over dag-kortet.
+	// Ikke for stor: top+bottom må være godt under karthøyden, ellers returnerer
+	// cameraForBounds undefined (kan ikke beregne utsnitt) og kameraet flytter seg ikke.
 	function framePadding() {
 		const h = typeof window !== 'undefined' ? window.innerHeight : 800;
-		return { top: 80, bottom: Math.round(h * 0.5), left: 48, right: 48 };
+		return { top: 56, bottom: Math.round(h * 0.36), left: 40, right: 40 };
 	}
 
 	function highlightMarker(index: number) {
 		dayMarkerEls.forEach((el, i) => {
-			el.classList.toggle('is-active', i === index);
+			const active = i === index;
+			el.classList.toggle('is-active', active);
 			el.classList.toggle('is-dimmed', index >= 0 && i > index);
+			// Løft aktiv markør til topps. Flere dager på samme sted stables ellers
+			// oppå hverandre, og den øverste (høyeste nr.) skjuler den aktive.
+			el.style.zIndex = active ? '20' : '1';
 		});
 		const activeDate = index >= 0 ? dayPins[index]?.date : null;
 		for (const pin of imagePins) {
@@ -189,19 +255,29 @@
 		}
 	}
 
-	async function applyStep(index: number) {
-		if (!map || !mapReady) return;
-		const { LngLatBounds } = await import('maplibre-gl');
+	// To koordinater regnes som samme sted hvis de er nærmere enn ~80 m. Flere dager
+	// på samme sted (f.eks. hjemme) ga ellers en degenerert «strekning», og fitBounds
+	// på et nullareal flytter ikke kameraet — så det ble hengende på forrige utsnitt.
+	function sameSpot(a: [number, number], b: [number, number]): boolean {
+		return Math.hypot(a[0] - b[0], a[1] - b[1]) < 0.0008;
+	}
 
-		if (index < 0) {
-			// Oversikts-steget: hele ruten, ingenting fremhevet, linja tegnet helt.
+	// Synkron: kjører umiddelbart per activeIndex-endring. Var tidligere async (await
+	// import) — da kunne et gammelt kall vinne over et nyere ved rask scroll, så kart
+	// og kort kom ut av synk.
+	function applyStep(index: number) {
+		if (!map || !mapReady || !LngLatBoundsCtor) return;
+
+		if (index < 0 || index >= OUTRO) {
+			// Bokstøttene: vis hele reisens utsnitt. Intro (-1) har blank rute så linja
+			// vokser fra dag 1; outro (OUTRO) viser hele ruten ferdig tegnet.
 			highlightMarker(-1);
 			if (routeCoords.length >= 2) {
-				const bounds = new LngLatBounds(routeCoords[0], routeCoords[0]);
+				const bounds = new LngLatBoundsCtor(routeCoords[0], routeCoords[0]);
 				for (const c of routeCoords) bounds.extend(c);
-				map.fitBounds(bounds, { padding: framePadding(), maxZoom: 12, duration: 800 });
+				animateToBounds(bounds, 12, 800, routeCoords[0]);
 			}
-			animateRouteTo(1);
+			animateRouteTo(index >= OUTRO ? 1 : 0);
 			return;
 		}
 
@@ -210,22 +286,33 @@
 
 		const here = routeCoords[index];
 		const prev = index > 0 ? routeCoords[index - 1] : null;
-		if (prev) {
-			// Vis strekningen som ble reist: fra forrige dag til denne.
-			const bounds = new LngLatBounds(prev, prev);
+		if (prev && !sameSpot(prev, here)) {
+			// Reell reise fra forrige dag → ramm inn strekningen som ble reist.
+			const bounds = new LngLatBoundsCtor(prev, prev);
 			bounds.extend(here);
-			map.fitBounds(bounds, {
-				padding: framePadding(),
-				maxZoom: 13,
-				duration: reduceMotion ? 0 : 1200
-			});
+			animateToBounds(bounds, 13, 650, here);
 		} else {
-			map.flyTo({
-				center: here,
-				zoom: 11,
-				padding: framePadding(),
-				duration: reduceMotion ? 0 : 900
-			});
+			// Første dag, eller samme sted som i går → senter på dagens punkt, fast zoom.
+			animateCameraTo(here, 12, 550);
+		}
+	}
+
+	// Beregner kamera for et utsnitt og animerer dit. cameraForBounds kan returnere
+	// undefined (f.eks. når den ikke får plass) — da glir vi i det minste til fallback-
+	// punktet (dagens sted) så kameraet ALLTID følger med.
+	function animateToBounds(
+		bounds: InstanceType<NonNullable<typeof LngLatBoundsCtor>>,
+		maxZoom: number,
+		dur: number,
+		fallback: [number, number]
+	) {
+		if (!map) return;
+		const cam = map.cameraForBounds(bounds, { padding: framePadding(), maxZoom });
+		if (cam?.center) {
+			const c = 'lng' in cam.center ? [cam.center.lng, cam.center.lat] : (cam.center as [number, number]);
+			animateCameraTo(c as [number, number], cam.zoom ?? maxZoom, dur);
+		} else {
+			animateCameraTo(fallback, maxZoom - 1, dur);
 		}
 	}
 
@@ -238,66 +325,93 @@
 		if (e.key === 'Escape') onclose();
 	}
 
-	function setupObserver() {
+	// Aktiv dag = kortet hvis senter er nærmest «leselinja» (~58 % ned i bildet).
+	// Vi måler selve KORTET, ikke steget — kortet er forankret nederst i steget,
+	// så å observere stegets senter ville fått kamera til å ligge et hakk foran
+	// kortet man faktisk leser. Helt øverst viser vi oversikten (-1).
+	function updateActive() {
 		if (!scroller) return;
-		observer = new IntersectionObserver(
-			(entries) => {
-				for (const entry of entries) {
-					if (!entry.isIntersecting) continue;
-					const raw = (entry.target as HTMLElement).dataset.stepIndex;
-					if (raw != null) activeIndex = Number(raw);
-				}
-			},
-			{ root: scroller, rootMargin: '-45% 0px -45% 0px', threshold: 0 }
-		);
-		for (const el of stepEls) if (el) observer.observe(el);
+		// VIKTIG: bruk den SYNLIGE viewporthøyden (window.innerHeight), ikke
+		// scroller.clientHeight. I in-app-browsere er clientHeight (layout-viewporten)
+		// større enn skjermen, mens kort-rektanglene fra getBoundingClientRect er
+		// relativ til den synlige viewporten — bruker vi clientHeight havner leselinja
+		// under skjermkanten og treffer et kort 1–2 hakk for langt ned.
+		const vh = vpH || scroller.clientHeight;
+		const target = vh * 0.5;
+		let best = -1;
+		let bestDist = Infinity;
+		const consider = (idx: number, el: HTMLElement | null) => {
+			if (!el) return;
+			const r = el.getBoundingClientRect();
+			const dist = Math.abs(r.top + r.height / 2 - target);
+			if (dist < bestDist) {
+				bestDist = dist;
+				best = idx;
+			}
+		};
+		dayCardEls.forEach((el, i) => consider(i, el));
+		consider(OUTRO, outroEl); // slutt-bokstøtta teller som eget steg
+		if (scroller.scrollTop < vh * 0.45) best = -1; // start-bokstøtta øverst
+		activeIndex = best;
+	}
+
+	function onScroll() {
+		if (scrollRaf != null) return;
+		scrollRaf = requestAnimationFrame(() => {
+			scrollRaf = null;
+			updateActive();
+		});
+	}
+
+	// Mål viewport på nytt ved rotasjon (ikke ved hver resize — chrome som vises/skjules
+	// under scroll ville ellers endret steg-høyden midt i scrollen og gitt hopp).
+	function onOrient() {
+		setTimeout(() => {
+			vpH = window.innerHeight;
+			updateActive();
+		}, 250);
 	}
 
 	onMount(() => {
 		document.body.style.overflow = 'hidden';
+		vpH = window.innerHeight;
 		void initMap();
-		setupObserver();
+		updateActive();
 	});
 
 	onDestroy(() => {
 		document.body.style.overflow = '';
 		if (animTimer) cancelAnimationFrame(animTimer);
-		observer?.disconnect();
+		if (camTimer) cancelAnimationFrame(camTimer);
+		if (scrollRaf != null) cancelAnimationFrame(scrollRaf);
 		map?.remove();
 		map = null;
 	});
 </script>
 
-<svelte:window onkeydown={onKey} />
+<svelte:window onkeydown={onKey} onorientationchange={onOrient} />
 
-<div class="tmf-root" transition:fade={{ duration: 220 }}>
+<div class="tmf-root" use:portal transition:fade={{ duration: 220 }} style="--app-vh:{vpH}px">
 	<div bind:this={mapContainer} class="tmf-map"></div>
 	<div class="tmf-veil"></div>
 
 	<button type="button" class="tmf-close" aria-label="Lukk kartfortelling" onclick={onclose} data-track="reise-kart:lukk-fullskjerm">✕</button>
 
-	<div bind:this={scroller} class="tmf-scroller">
-		<!-- Intro / oversikt -->
-		<section
-			class="tmf-step tmf-step-intro"
-			data-step-index="-1"
-			bind:this={stepEls[0]}
-		>
+
+	<div bind:this={scroller} class="tmf-scroller" onscroll={onScroll}>
+		<!-- Start-bokstøtte -->
+		<section class="tmf-step tmf-step-intro">
 			<div class="tmf-intro-card">
 				<span class="tmf-kicker">🗺️ Kartfortelling</span>
 				<h1 class="tmf-title">{fmtRange()}</h1>
-				<p class="tmf-sub">{dayPins.length} {dayPins.length === 1 ? 'dag' : 'dager'} på kartet</p>
+				<p class="tmf-sub">{daysLabel}</p>
 				<span class="tmf-scroll-hint">Scroll for å reise gjennom dagene ↓</span>
 			</div>
 		</section>
 
 		{#each dayPins as pin, i (pin.date)}
-			<section
-				class="tmf-step"
-				data-step-index={i}
-				bind:this={stepEls[i + 1]}
-			>
-				<div class="tmf-day-card">
+			<section class="tmf-step">
+				<div class="tmf-day-card" bind:this={dayCardEls[i]}>
 					<div class="tmf-day-head">
 						<span class="tmf-day-num">{i + 1}</span>
 						<div class="tmf-day-meta">
@@ -322,11 +436,12 @@
 			</section>
 		{/each}
 
-		<!-- Avslutning: tilbake til oversikt -->
-		<section class="tmf-step tmf-step-outro" data-step-index="-1" bind:this={stepEls[dayPins.length + 1]}>
-			<div class="tmf-intro-card">
-				<span class="tmf-kicker">Reisens slutt</span>
-				<p class="tmf-sub">Hele ruten · {dayPins.length} {dayPins.length === 1 ? 'dag' : 'dager'}</p>
+		<!-- Slutt-bokstøtte: oppsummering, ikke «reisens slutt» (kan være dag 7 av 50) -->
+		<section class="tmf-step tmf-step-outro">
+			<div class="tmf-intro-card" bind:this={outroEl}>
+				<span class="tmf-kicker">✨ Reisen så langt</span>
+				<h1 class="tmf-title">{fmtRange()}</h1>
+				<p class="tmf-sub">{daysLabel}</p>
 				<button type="button" class="tmf-done" onclick={onclose} data-track="reise-kart:fullfor-fullskjerm">Lukk</button>
 			</div>
 		</section>
@@ -347,6 +462,11 @@
 	.tmf-map {
 		position: absolute;
 		inset: 0;
+		/* z-index + isolation gjør kartet til en egen stacking-context, så MapLibre
+		   sine interne z-indekser (markører, kontroller) ALDRI kan legge seg over
+		   UI-laget (kort, lukk-knapp, debug). */
+		z-index: 0;
+		isolation: isolate;
 		/* Kartet er ikke-interaktivt; scrolleren over skal eie all touch. Uten
 		   dette kan et langt trykk treffe kart-canvaset og trigge iOS sin
 		   tekstmarkerings-meny i stedet for å scrolle. */
@@ -363,35 +483,34 @@
 
 	.tmf-close {
 		position: absolute;
-		top: max(14px, env(safe-area-inset-top));
-		right: 14px;
-		z-index: 3;
-		width: 40px;
-		height: 40px;
+		top: max(48px, calc(env(safe-area-inset-top) + 12px));
+		right: 16px;
+		z-index: 50;
+		width: 46px;
+		height: 46px;
 		border-radius: 50%;
-		border: 1px solid rgba(255, 255, 255, 0.18);
-		background: rgba(0, 0, 0, 0.5);
+		border: 1.5px solid rgba(255, 255, 255, 0.5);
+		background: rgba(0, 0, 0, 0.82);
 		color: #fff;
-		font-size: 1.1rem;
+		font-size: 1.25rem;
 		line-height: 1;
 		cursor: pointer;
-		backdrop-filter: blur(6px);
+		box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
 	}
 	.tmf-close:hover {
-		background: rgba(0, 0, 0, 0.7);
+		background: rgba(0, 0, 0, 0.95);
 	}
 
-	/* Scrolleren dekker hele overlayet (inset:0) så den fanger ALL touch — ellers
-	   blir det en død sone der kart-canvaset stjeler trykk og hindrer scroll.
-	   At siste steg ikke gjemmer seg bak nettleser-chromet løses i stedet med rikelig
-	   bunn-padding på stegene (kortene løftes over chromet). */
+	/* Dekker hele overlayet (inset:0) så den fanger all touch. clientHeight kan
+	   være større enn skjermen i in-app-browsere, så maxScroll blir mindre enn
+	   forventet — det kompenseres med rikelig hale-spacer (.tmf-tail) etter siste steg. */
 	.tmf-scroller {
 		position: absolute;
 		inset: 0;
 		z-index: 2;
 		overflow-y: auto;
 		scroll-behavior: smooth;
-		-webkit-overflow-scrolling: touch;
+		overscroll-behavior: contain;
 		touch-action: pan-y;
 		/* Drag skal scrolle, ikke markere tekst (unngår iOS-callout midt i fortellingen). */
 		-webkit-user-select: none;
@@ -400,7 +519,7 @@
 	}
 
 	.tmf-step {
-		min-height: 100svh;
+		min-height: var(--app-vh, 100vh);
 		display: flex;
 		align-items: flex-end;
 		/* Rikelig bunn-klaring: et aktivt kort er forankret nederst i steget, så
@@ -412,7 +531,8 @@
 	/* Ekstra scroll-rom etter siste steg, så det nederste dag-kortet alltid kan
 	   løftes godt over nettleser-baren. */
 	.tmf-tail {
-		height: 25svh;
+		/* Litt runway så slutt-bokstøtta kan sentreres komfortabelt. */
+		height: calc(var(--app-vh, 100vh) * 0.4);
 		flex: 0 0 auto;
 	}
 

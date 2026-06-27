@@ -424,6 +424,8 @@
 		{themeId}
 		geoByDay={tripGeoByDay}
 		imagePins={tripImagePins}
+		{startDate}
+		{endDate}
 		onImagePinsChange={(p) => (tripImagePins = p)}
 		{api}
 	/>
