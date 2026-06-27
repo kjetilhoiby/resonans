@@ -7,6 +7,7 @@
 	import SectionCard from '../ui/SectionCard.svelte';
 	import DistanceTimelineChart from '../charts/DistanceTimelineChart.svelte';
 	import CostPerKmChart from '../charts/CostPerKmChart.svelte';
+	import PositionMapChart from '../charts/PositionMapChart.svelte';
 
 	interface HourPoint {
 		key: string;
@@ -18,14 +19,23 @@
 		cost: number;
 		krPerKm: number | null;
 	}
+	interface PositionNode {
+		lat: number;
+		lon: number;
+		kind: 'stop' | 'move';
+		from: string;
+		to: string;
+		samples: number;
+	}
 
 	interface Props {
 		connected: boolean;
 		hourly: HourPoint[];
 		costPerKm: CostPoint[];
+		positions?: PositionNode[];
 	}
 
-	let { connected, hourly, costPerKm }: Props = $props();
+	let { connected, hourly, costPerKm, positions = [] }: Props = $props();
 
 	const kmLast7 = $derived(Math.round(hourly.reduce((sum, p) => sum + p.km, 0)));
 
@@ -65,6 +75,10 @@
 
 		<SectionCard tone="subtle">
 			<DistanceTimelineChart data={hourly} />
+		</SectionCard>
+
+		<SectionCard tone="subtle">
+			<PositionMapChart {positions} />
 		</SectionCard>
 
 		<SectionCard tone="subtle">

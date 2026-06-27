@@ -372,6 +372,14 @@ export interface VehicleDashboardData {
 	connected: boolean;
 	hourly: Array<{ key: string; km: number }>;
 	costPerKm: Array<{ month: string; km: number; cost: number; krPerKm: number | null }>;
+	positions: Array<{
+		lat: number;
+		lon: number;
+		kind: 'stop' | 'move';
+		from: string;
+		to: string;
+		samples: number;
+	}>;
 	generatedAt: string;
 }
 
