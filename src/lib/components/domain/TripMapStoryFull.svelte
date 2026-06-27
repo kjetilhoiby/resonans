@@ -38,8 +38,8 @@
 	const imageMarkers = new Map<string, MapLibreMarker>();
 	let animTimer: number | null = null;
 	let currentFraction = 0;
-	let stepEls: HTMLElement[] = [];
-	let observer: IntersectionObserver | null = null;
+	let dayCardEls: HTMLElement[] = [];
+	let scrollRaf: number | null = null;
 
 	const routeCoords = $derived(dayPins.map((p) => [p.lon, p.lat] as [number, number]));
 	const fractions = $derived(cumulativeFractions(routeCoords));
@@ -193,14 +193,15 @@
 		const { LngLatBounds } = await import('maplibre-gl');
 
 		if (index < 0) {
-			// Oversikts-steget: hele ruten, ingenting fremhevet, linja tegnet helt.
+			// Intro/oversikt øverst: vis hele reisens utsnitt, men med blank rute —
+			// så vokser linja naturlig fra dag 1 når man scroller (ingen retrett).
 			highlightMarker(-1);
 			if (routeCoords.length >= 2) {
 				const bounds = new LngLatBounds(routeCoords[0], routeCoords[0]);
 				for (const c of routeCoords) bounds.extend(c);
 				map.fitBounds(bounds, { padding: framePadding(), maxZoom: 12, duration: 800 });
 			}
-			animateRouteTo(1);
+			animateRouteTo(0);
 			return;
 		}
 
@@ -237,31 +238,50 @@
 		if (e.key === 'Escape') onclose();
 	}
 
-	function setupObserver() {
+	// Aktiv dag = kortet hvis senter er nærmest «leselinja» (~58 % ned i bildet).
+	// Vi måler selve KORTET, ikke steget — kortet er forankret nederst i steget,
+	// så å observere stegets senter ville fått kamera til å ligge et hakk foran
+	// kortet man faktisk leser. Helt øverst viser vi oversikten (-1).
+	function updateActive() {
 		if (!scroller) return;
-		observer = new IntersectionObserver(
-			(entries) => {
-				for (const entry of entries) {
-					if (!entry.isIntersecting) continue;
-					const raw = (entry.target as HTMLElement).dataset.stepIndex;
-					if (raw != null) activeIndex = Number(raw);
-				}
-			},
-			{ root: scroller, rootMargin: '-45% 0px -45% 0px', threshold: 0 }
-		);
-		for (const el of stepEls) if (el) observer.observe(el);
+		const vh = scroller.clientHeight;
+		if (scroller.scrollTop < vh * 0.45) {
+			activeIndex = -1;
+			return;
+		}
+		const target = vh * 0.58;
+		let best = activeIndex < 0 ? 0 : activeIndex;
+		let bestDist = Infinity;
+		dayCardEls.forEach((el, i) => {
+			if (!el) return;
+			const r = el.getBoundingClientRect();
+			const dist = Math.abs(r.top + r.height / 2 - target);
+			if (dist < bestDist) {
+				bestDist = dist;
+				best = i;
+			}
+		});
+		activeIndex = best;
+	}
+
+	function onScroll() {
+		if (scrollRaf != null) return;
+		scrollRaf = requestAnimationFrame(() => {
+			scrollRaf = null;
+			updateActive();
+		});
 	}
 
 	onMount(() => {
 		document.body.style.overflow = 'hidden';
 		void initMap();
-		setupObserver();
+		updateActive();
 	});
 
 	onDestroy(() => {
 		document.body.style.overflow = '';
 		if (animTimer) cancelAnimationFrame(animTimer);
-		observer?.disconnect();
+		if (scrollRaf != null) cancelAnimationFrame(scrollRaf);
 		map?.remove();
 		map = null;
 	});
@@ -275,13 +295,9 @@
 
 	<button type="button" class="tmf-close" aria-label="Lukk kartfortelling" onclick={onclose} data-track="reise-kart:lukk-fullskjerm">✕</button>
 
-	<div bind:this={scroller} class="tmf-scroller">
+	<div bind:this={scroller} class="tmf-scroller" onscroll={onScroll}>
 		<!-- Intro / oversikt -->
-		<section
-			class="tmf-step tmf-step-intro"
-			data-step-index="-1"
-			bind:this={stepEls[0]}
-		>
+		<section class="tmf-step tmf-step-intro">
 			<div class="tmf-intro-card">
 				<span class="tmf-kicker">🗺️ Kartfortelling</span>
 				<h1 class="tmf-title">{fmtRange()}</h1>
@@ -291,12 +307,8 @@
 		</section>
 
 		{#each dayPins as pin, i (pin.date)}
-			<section
-				class="tmf-step"
-				data-step-index={i}
-				bind:this={stepEls[i + 1]}
-			>
-				<div class="tmf-day-card">
+			<section class="tmf-step">
+				<div class="tmf-day-card" bind:this={dayCardEls[i]}>
 					<div class="tmf-day-head">
 						<span class="tmf-day-num">{i + 1}</span>
 						<div class="tmf-day-meta">
@@ -322,7 +334,7 @@
 		{/each}
 
 		<!-- Avslutning: tilbake til oversikt -->
-		<section class="tmf-step tmf-step-outro" data-step-index="-1" bind:this={stepEls[dayPins.length + 1]}>
+		<section class="tmf-step tmf-step-outro">
 			<div class="tmf-intro-card">
 				<span class="tmf-kicker">Reisens slutt</span>
 				<p class="tmf-sub">Hele ruten · {dayPins.length} {dayPins.length === 1 ? 'dag' : 'dager'}</p>
@@ -390,7 +402,7 @@
 		z-index: 2;
 		overflow-y: auto;
 		scroll-behavior: smooth;
-		-webkit-overflow-scrolling: touch;
+		overscroll-behavior: contain;
 		touch-action: pan-y;
 		/* Drag skal scrolle, ikke markere tekst (unngår iOS-callout midt i fortellingen). */
 		-webkit-user-select: none;
