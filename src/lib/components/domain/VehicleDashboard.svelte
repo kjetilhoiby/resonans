@@ -74,11 +74,11 @@
 		</div>
 
 		<SectionCard tone="subtle">
-			<DistanceTimelineChart data={hourly} />
+			<PositionMapChart {positions} />
 		</SectionCard>
 
 		<SectionCard tone="subtle">
-			<PositionMapChart {positions} />
+			<DistanceTimelineChart data={hourly} />
 		</SectionCard>
 
 		<SectionCard tone="subtle">
