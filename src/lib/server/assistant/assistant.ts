@@ -3,6 +3,7 @@ import { openai } from '$lib/server/openai';
 import { env } from '$env/dynamic/private';
 import type { ConversationTurn } from '$lib/server/conversation-window';
 import { ASSISTANT_TOOL_DEFINITIONS, runAssistantTool } from './tools';
+import { hasActiveStory } from './story-tools';
 import { getFullProgram } from '$lib/server/programs/repository';
 import { localHm, localIsoDay } from '$lib/server/nudge-time';
 
@@ -21,6 +22,20 @@ export class AssistantError extends Error {
 
 const DEFAULT_MODEL = 'gpt-4o';
 const model = () => env.EKKO_ASSISTANT_MODEL?.trim() || DEFAULT_MODEL;
+
+/**
+ * Forteller-modus krever den sterke, ferske modellen (jf. forteller-kontrakten, punkt 8) — IKKE
+ * den raske prat-tieren, som gir frikoblede, grunne avsnitt. Story-turer (en aktiv fortelling, eller
+ * når et story_*-verktøy er brukt i turen) rutes derfor til en egen, sterkere modell. Knappen er en
+ * env-variabel akkurat som EKKO_ASSISTANT_MODEL, så den er provider-uavhengig: et bytte til Claude
+ * (Opus/Sonnet 4.x) senere er bare en annen modell-id her — ingen endringer i board-skjema/verktøy.
+ */
+const DEFAULT_STORY_MODEL = 'gpt-5.4';
+const storyModel = () => env.EKKO_STORY_MODEL?.trim() || DEFAULT_STORY_MODEL;
+/** Fortelleravsnitt + bibel-oppdateringer trenger mer rom enn et vanlig kort talesvar. */
+const STORY_MAX_TOKENS = 1500;
+/** Litt høyere temperatur for fortellinger — mer språkglede, fortsatt forankret i bibelen. */
+const STORY_TEMPERATURE = 0.8;
 
 /** Tak på antall LLM↔verktøy-runder, så en agent ikke kan løkke i det uendelige. */
 const MAX_TOOL_ROUNDS = 6;
@@ -229,16 +244,21 @@ export async function runAssistantTurn(
 ): Promise<{ text: string; usedTools: string[] }> {
 	const messages = await buildAssistantMessages(input);
 	const usedTools: string[] = [];
+	// Aktiv fortelling ⇒ hele turen på den sterke forteller-modellen (også runde 0).
+	const storyTurn = await hasActiveStory(input.userId);
 
 	try {
 		for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
 			// Siste runde: tving et tekstsvar ved å ikke tilby verktøy lenger.
 			const offerTools = round < MAX_TOOL_ROUNDS;
+			// Etter at et story_*-verktøy er brukt i turen (f.eks. «start en fortelling»), gå over til
+			// forteller-modellen for resten — så selve narrasjonen leveres på den sterke tieren.
+			const useStory = storyTurn || usedTools.some((n) => n.startsWith('story_'));
 			const response = await openai.chat.completions.create({
-				model: model(),
+				model: useStory ? storyModel() : model(),
 				messages,
-				temperature: 0.5,
-				max_tokens: 600,
+				temperature: useStory ? STORY_TEMPERATURE : 0.5,
+				max_tokens: useStory ? STORY_MAX_TOKENS : 600,
 				...(offerTools ? { tools: ASSISTANT_TOOL_DEFINITIONS, tool_choice: 'auto' as const } : {})
 			});
 
@@ -295,15 +315,20 @@ export async function runAssistantTurnStreaming(
 	const messages = await buildAssistantMessages(input);
 	const usedTools: string[] = [];
 	let streamedText = '';
+	// Aktiv fortelling ⇒ hele turen på den sterke forteller-modellen (også runde 0).
+	const storyTurn = await hasActiveStory(input.userId);
 
 	try {
 		for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
 			const offerTools = round < MAX_TOOL_ROUNDS;
+			// Etter at et story_*-verktøy er brukt i turen, gå over til forteller-modellen for resten,
+			// så selve narrasjonen som strømmes til klienten leveres på den sterke tieren.
+			const useStory = storyTurn || usedTools.some((n) => n.startsWith('story_'));
 			const stream = await openai.chat.completions.create({
-				model: model(),
+				model: useStory ? storyModel() : model(),
 				messages,
-				temperature: 0.5,
-				max_tokens: 600,
+				temperature: useStory ? STORY_TEMPERATURE : 0.5,
+				max_tokens: useStory ? STORY_MAX_TOKENS : 600,
 				stream: true,
 				...(offerTools ? { tools: ASSISTANT_TOOL_DEFINITIONS, tool_choice: 'auto' as const } : {})
 			});

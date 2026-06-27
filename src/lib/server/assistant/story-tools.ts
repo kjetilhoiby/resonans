@@ -38,6 +38,26 @@ async function loadActiveStory(userId: string) {
 	return rows[0] ?? null;
 }
 
+/**
+ * Har brukeren en pågående (aktiv OG ikke avsluttet) fortelling? Brukes av assistent-løkka til
+ * å rute hele turen til den sterke forteller-modellen — en ren fortelling drifter og blir grunn
+ * på den raske prat-tieren. En avsluttet (ended) fortelling teller ikke: da er turen vanlig prat.
+ */
+export async function hasActiveStory(userId: string): Promise<boolean> {
+	const rows = await db
+		.select({ id: storySessions.id })
+		.from(storySessions)
+		.where(
+			and(
+				eq(storySessions.userId, userId),
+				eq(storySessions.active, true),
+				eq(storySessions.ended, false)
+			)
+		)
+		.limit(1);
+	return !!rows[0];
+}
+
 /* ── story_start ──────────────────────────────────────────────────────────────────────────── */
 
 async function startStory(

@@ -82,13 +82,17 @@ egen tabell, så quiz og fortelling har hver sin tilstand og overlever hverandre
   (quiz injiserer heller ikke kontekst automatisk). Agenten leser bibelen med `story_state` ved
   turstart og oppdaterer den via `bible`-feltet på `story_start`/`story_scene`. Det holder kanon +
   buen stram over en halvtime uten å koble den generiske agenten til forteller-domenet.
-- **Modell-tier (jf. oppgavens punkt 8): narrasjonen rir på hovedløkkas sterke modell.** I dag har
-  prosjektet ikke det intent/tiering-systemet `resonans-lab`-dokumentene beskriver — assistenten
-  kjører på én sterk OpenAI-modell (`EKKO_ASSISTANT_MODEL` ?? `gpt-4o`) i hele agent-løkka. Selve
-  fortelleravsnittene produseres derfor i hovedløkka på den sterke modellen, IKKE via et eget
-  billig modellkall (slik `quiz_questions` bruker `gpt-4o-mini`). Det er nettopp poenget i punkt 8:
-  dybde krever den sterke/ferske tieren. Et fremtidig bytte til Claude (Opus/Sonnet 4.x) krever
-  ingen endringer i board-skjema eller verktøy.
+- **Modell-tier (jf. oppgavens punkt 8): story-turer rutes til en egen, sterk modell.** Prosjektet
+  har ikke intent/tiering-systemet `resonans-lab`-dokumentene beskriver; assistenten kjører ellers
+  på `EKKO_ASSISTANT_MODEL` ?? `gpt-4o`. For fortellinger innførte vi i stedet en egen knapp,
+  `EKKO_STORY_MODEL` (default `gpt-5.4`), og ruter HELE turen til den når (a) brukeren har en aktiv,
+  ikke-avsluttet fortelling (sjekkes ved turstart), eller (b) et `story_*`-verktøy er brukt i turen
+  (fanger «start en fortelling»-turen — agent-løkka bytter til forteller-modellen etter verktøy-
+  kallet, så selve narrasjonen leveres på den sterke tieren). Story-turer får også mer rom
+  (`max_tokens` 1500, for avsnitt + bibel-oppdateringer) og litt høyere temperatur (0.8). Knappen er
+  en ren env-variabel, så bytte til Claude (Opus/Sonnet 4.x) senere er bare en annen modell-id —
+  ingen endringer i board-skjema eller verktøy. Sett `EKKO_STORY_MODEL` om deploy-ens eksakte
+  modell-id avviker fra `gpt-5.4`.
 
 ## Verifisering
 
