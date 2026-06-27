@@ -23,6 +23,9 @@
 		geoByDay?: Record<string, DayGeo>;
 		imagePins?: ImagePin[];
 		center?: GeoCoord | null;
+		/** Turens dato-vindu — gir «N av M dager» i fullskjerm-bokendene. */
+		startDate?: string;
+		endDate?: string;
 		/** Kalles når bilde-nåler endres, så forelderen kan oppdatere tripProfile. */
 		onImagePinsChange?: (pins: ImagePin[]) => void;
 		api?: TripApi;
@@ -34,6 +37,8 @@
 		geoByDay = {},
 		imagePins = [],
 		center = null,
+		startDate,
+		endDate,
 		onImagePinsChange,
 		api = tripApi,
 		height = 320
@@ -382,7 +387,7 @@
 </div>
 
 {#if fullscreen}
-	<TripMapStoryFull {dayPins} imagePins={pins} onclose={closeFullscreen} />
+	<TripMapStoryFull {dayPins} imagePins={pins} {startDate} {endDate} onclose={closeFullscreen} />
 {/if}
 
 <style>

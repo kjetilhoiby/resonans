@@ -22,10 +22,29 @@
 	interface Props {
 		dayPins: DayPin[];
 		imagePins?: ImagePin[];
+		/** Turens dato-vindu — brukes til «N av M dager» i bokendene. */
+		startDate?: string;
+		endDate?: string;
 		onclose: () => void;
 	}
 
-	let { dayPins, imagePins = [], onclose }: Props = $props();
+	let { dayPins, imagePins = [], startDate, endDate, onclose }: Props = $props();
+
+	// Antall dager i hele turvinduet (for «7 av 50»). 0 hvis vinduet er ukjent.
+	const totalDays = $derived.by(() => {
+		if (!startDate || !endDate) return 0;
+		const a = new Date(`${startDate}T00:00:00Z`).getTime();
+		const b = new Date(`${endDate}T00:00:00Z`).getTime();
+		if (Number.isNaN(a) || Number.isNaN(b) || b < a) return 0;
+		return Math.round((b - a) / 86_400_000) + 1;
+	});
+
+	// «N av M dager fortalt», eller «N dager på kartet» når vinduet er ukjent.
+	const daysLabel = $derived(
+		totalDays > 0
+			? `${dayPins.length} av ${totalDays} dager fortalt`
+			: `${dayPins.length} ${dayPins.length === 1 ? 'dag' : 'dager'} på kartet`
+	);
 
 	let mapContainer = $state<HTMLDivElement | null>(null);
 	let scroller = $state<HTMLDivElement | null>(null);
@@ -44,7 +63,9 @@
 	let animTimer: number | null = null;
 	let currentFraction = 0;
 	let dayCardEls: HTMLElement[] = [];
+	let outroEl = $state<HTMLElement | null>(null);
 	let scrollRaf: number | null = null;
+	const OUTRO = $derived(dayPins.length); // sentinel-indeks for slutt-bokstøtta
 
 	const routeCoords = $derived(dayPins.map((p) => [p.lon, p.lat] as [number, number]));
 	const fractions = $derived(cumulativeFractions(routeCoords));
@@ -211,16 +232,16 @@
 	function applyStep(index: number) {
 		if (!map || !mapReady || !LngLatBoundsCtor) return;
 
-		if (index < 0) {
-			// Intro/oversikt øverst: vis hele reisens utsnitt, men med blank rute —
-			// så vokser linja naturlig fra dag 1 når man scroller (ingen retrett).
+		if (index < 0 || index >= OUTRO) {
+			// Bokstøttene: vis hele reisens utsnitt. Intro (-1) har blank rute så linja
+			// vokser fra dag 1; outro (OUTRO) viser hele ruten ferdig tegnet.
 			highlightMarker(-1);
 			if (routeCoords.length >= 2) {
 				const bounds = new LngLatBoundsCtor(routeCoords[0], routeCoords[0]);
 				for (const c of routeCoords) bounds.extend(c);
 				map.fitBounds(bounds, { padding: framePadding(), maxZoom: 12, duration: 800 });
 			}
-			animateRouteTo(0);
+			animateRouteTo(index >= OUTRO ? 1 : 0);
 			return;
 		}
 
@@ -273,16 +294,18 @@
 		const target = vh * 0.5;
 		let best = -1;
 		let bestDist = Infinity;
-		dayCardEls.forEach((el, i) => {
+		const consider = (idx: number, el: HTMLElement | null) => {
 			if (!el) return;
 			const r = el.getBoundingClientRect();
 			const dist = Math.abs(r.top + r.height / 2 - target);
 			if (dist < bestDist) {
 				bestDist = dist;
-				best = i;
+				best = idx;
 			}
-		});
-		if (scroller.scrollTop < vh * 0.45) best = -1;
+		};
+		dayCardEls.forEach((el, i) => consider(i, el));
+		consider(OUTRO, outroEl); // slutt-bokstøtta teller som eget steg
+		if (scroller.scrollTop < vh * 0.45) best = -1; // start-bokstøtta øverst
 		activeIndex = best;
 	}
 
@@ -329,12 +352,12 @@
 
 
 	<div bind:this={scroller} class="tmf-scroller" onscroll={onScroll}>
-		<!-- Intro / oversikt -->
+		<!-- Start-bokstøtte -->
 		<section class="tmf-step tmf-step-intro">
 			<div class="tmf-intro-card">
 				<span class="tmf-kicker">🗺️ Kartfortelling</span>
 				<h1 class="tmf-title">{fmtRange()}</h1>
-				<p class="tmf-sub">{dayPins.length} {dayPins.length === 1 ? 'dag' : 'dager'} på kartet</p>
+				<p class="tmf-sub">{daysLabel}</p>
 				<span class="tmf-scroll-hint">Scroll for å reise gjennom dagene ↓</span>
 			</div>
 		</section>
@@ -366,11 +389,12 @@
 			</section>
 		{/each}
 
-		<!-- Avslutning: tilbake til oversikt -->
+		<!-- Slutt-bokstøtte: oppsummering, ikke «reisens slutt» (kan være dag 7 av 50) -->
 		<section class="tmf-step tmf-step-outro">
-			<div class="tmf-intro-card">
-				<span class="tmf-kicker">Reisens slutt</span>
-				<p class="tmf-sub">Hele ruten · {dayPins.length} {dayPins.length === 1 ? 'dag' : 'dager'}</p>
+			<div class="tmf-intro-card" bind:this={outroEl}>
+				<span class="tmf-kicker">✨ Reisen så langt</span>
+				<h1 class="tmf-title">{fmtRange()}</h1>
+				<p class="tmf-sub">{daysLabel}</p>
 				<button type="button" class="tmf-done" onclick={onclose} data-track="reise-kart:fullfor-fullskjerm">Lukk</button>
 			</div>
 		</section>

@@ -382,6 +382,8 @@
 				{themeId}
 				geoByDay={tripProfile?.geoByDay}
 				imagePins={tripProfile?.imagePins ?? []}
+				startDate={tripProfile?.startDate}
+				endDate={tripProfile?.endDate}
 				center={tripProfile?.lat != null && tripProfile?.lng != null
 					? { lat: tripProfile.lat, lon: tripProfile.lng }
 					: null}
