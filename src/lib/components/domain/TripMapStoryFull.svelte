@@ -62,6 +62,7 @@
 	const dayMarkerEls: HTMLElement[] = [];
 	const imageMarkers = new Map<string, MapLibreMarker>();
 	let animTimer: number | null = null;
+	let camTimer: number | null = null;
 	let currentFraction = 0;
 	let dayCardEls: HTMLElement[] = [];
 	let outroEl = $state<HTMLElement | null>(null);
@@ -198,6 +199,37 @@
 		animTimer = requestAnimationFrame(step);
 	}
 
+	// Animerer kameraet selv med rAF + jumpTo. MapLibre sin egen flyTo/fitBounds-
+	// animasjon kjører ikke når overlayet er portalert til <body> i denne webview-en
+	// (instant jumpTo virker derimot). Vi interpolerer center/zoom for hånd — samme
+	// mønster som animateRouteTo — så vi får myk bevegelse uten MapLibres loop.
+	function animateCameraTo(center: [number, number], zoom: number, dur: number) {
+		if (!map) return;
+		if (camTimer) cancelAnimationFrame(camTimer);
+		const pad = framePadding();
+		if (reduceMotion || dur <= 0) {
+			map.jumpTo({ center, zoom, padding: pad });
+			return;
+		}
+		const c0 = map.getCenter();
+		const fromLng = c0.lng;
+		const fromLat = c0.lat;
+		const fromZoom = map.getZoom();
+		const t0 = performance.now();
+		const step = (now: number) => {
+			if (!map) return;
+			const t = Math.min(1, (now - t0) / dur);
+			const e = 1 - Math.pow(1 - t, 3);
+			map.jumpTo({
+				center: [fromLng + (center[0] - fromLng) * e, fromLat + (center[1] - fromLat) * e],
+				zoom: fromZoom + (zoom - fromZoom) * e,
+				padding: pad
+			});
+			if (t < 1) camTimer = requestAnimationFrame(step);
+		};
+		camTimer = requestAnimationFrame(step);
+	}
+
 	// Bunn-padding holder den aktive nåla i øvre, ledige halvdel — over dag-kortet.
 	function framePadding() {
 		const h = typeof window !== 'undefined' ? window.innerHeight : 800;
@@ -240,11 +272,7 @@
 			if (routeCoords.length >= 2) {
 				const bounds = new LngLatBoundsCtor(routeCoords[0], routeCoords[0]);
 				for (const c of routeCoords) bounds.extend(c);
-				// Instant (animate:false). Animert kamera (duration) beveger seg ikke i
-				// denne in-app-webview-en — animasjons-loopen kjører ikke. Instant virker
-				// (samme som load-handleren) og passer scroll-styringen: kameraet følger
-				// scroll-posisjonen tett i stedet for å henge etter med en fly-animasjon.
-				map.fitBounds(bounds, { padding: framePadding(), maxZoom: 12, animate: false });
+				cameraToBounds(bounds, 12, 800);
 			}
 			animateRouteTo(index >= OUTRO ? 1 : 0);
 			return;
@@ -259,11 +287,20 @@
 			// Reell reise fra forrige dag → ramm inn strekningen som ble reist.
 			const bounds = new LngLatBoundsCtor(prev, prev);
 			bounds.extend(here);
-			map.fitBounds(bounds, { padding: framePadding(), maxZoom: 13, animate: false });
+			cameraToBounds(bounds, 13, 650);
 		} else {
 			// Første dag, eller samme sted som i går → senter på dagens punkt, fast zoom.
-			map.jumpTo({ center: here, zoom: 12, padding: framePadding() });
+			animateCameraTo(here, 12, 550);
 		}
+	}
+
+	// Regner ut kamera for et utsnitt (ren beregning, ingen animasjon) og animerer dit.
+	function cameraToBounds(bounds: InstanceType<NonNullable<typeof LngLatBoundsCtor>>, maxZoom: number, dur: number) {
+		if (!map) return;
+		const cam = map.cameraForBounds(bounds, { padding: framePadding(), maxZoom });
+		if (!cam || !cam.center) return;
+		const c = 'lng' in cam.center ? [cam.center.lng, cam.center.lat] : (cam.center as [number, number]);
+		animateCameraTo(c as [number, number], cam.zoom ?? map.getZoom(), dur);
 	}
 
 	$effect(() => {
@@ -332,6 +369,7 @@
 	onDestroy(() => {
 		document.body.style.overflow = '';
 		if (animTimer) cancelAnimationFrame(animTimer);
+		if (camTimer) cancelAnimationFrame(camTimer);
 		if (scrollRaf != null) cancelAnimationFrame(scrollRaf);
 		map?.remove();
 		map = null;
