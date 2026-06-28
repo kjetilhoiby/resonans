@@ -44,18 +44,26 @@ async function loadActiveStory(userId: string) {
  * på den raske prat-tieren. En avsluttet (ended) fortelling teller ikke: da er turen vanlig prat.
  */
 export async function hasActiveStory(userId: string): Promise<boolean> {
-	const rows = await db
-		.select({ id: storySessions.id })
-		.from(storySessions)
-		.where(
-			and(
-				eq(storySessions.userId, userId),
-				eq(storySessions.active, true),
-				eq(storySessions.ended, false)
+	// Best-effort ruting-hint på HVER assistent-tur. Må aldri kaste videre — feiler den (f.eks.
+	// fordi story_sessions-migrasjonen ikke er kjørt i miljøet ennå), faller vi bare tilbake til
+	// vanlig modell i stedet for å 502-e hele turen. Story-verktøyene fanger sine egne feil selv.
+	try {
+		const rows = await db
+			.select({ id: storySessions.id })
+			.from(storySessions)
+			.where(
+				and(
+					eq(storySessions.userId, userId),
+					eq(storySessions.active, true),
+					eq(storySessions.ended, false)
+				)
 			)
-		)
-		.limit(1);
-	return !!rows[0];
+			.limit(1);
+		return !!rows[0];
+	} catch (error) {
+		console.warn('[story] hasActiveStory feilet — ruter som vanlig tur:', error);
+		return false;
+	}
 }
 
 /* ── story_start ──────────────────────────────────────────────────────────────────────────── */

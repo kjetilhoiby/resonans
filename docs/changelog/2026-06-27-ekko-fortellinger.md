@@ -94,6 +94,14 @@ egen tabell, så quiz og fortelling har hver sin tilstand og overlever hverandre
   en ren env-variabel, så bytte til Claude (Opus/Sonnet 4.x) senere er bare en annen modell-id —
   ingen endringer i board-skjema eller verktøy. Sett `EKKO_STORY_MODEL` for å bytte modell (f.eks.
   `gpt-5.5-pro` for enda mer dybde, eller en Claude-modell).
+  - **Parameter-format per modell.** GPT-5/o-serien er reasoning-modeller med et annet format enn
+    gpt-4o: de krever `max_completion_tokens` (ikke `max_tokens`) og bare default-temperatur. Feil
+    her gir 400 fra OpenAI → 502 mot frontend. `completionTuning()` skiller derfor per modell
+    (`isReasoningModel`), og story-token-taket er romslig (4000) fordi reasoning-tokens trekkes fra
+    samme budsjett. Begge dekket av `model-tuning.test.ts`.
+  - **Ruting-probe må aldri 502-e.** `hasActiveStory` kjøres på hver assistent-tur og er nå
+    try/catch-et: feiler den (f.eks. før `story_sessions`-migrasjonen er kjørt i miljøet), faller
+    turen tilbake til vanlig modell i stedet for å krasje hele assistenten.
 
 ## Verifisering
 
