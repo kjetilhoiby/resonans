@@ -30,12 +30,40 @@ const model = () => env.EKKO_ASSISTANT_MODEL?.trim() || DEFAULT_MODEL;
  * env-variabel akkurat som EKKO_ASSISTANT_MODEL, så den er provider-uavhengig: et bytte til Claude
  * (Opus/Sonnet 4.x) senere er bare en annen modell-id her — ingen endringer i board-skjema/verktøy.
  */
-const DEFAULT_STORY_MODEL = 'gpt-5.4';
+const DEFAULT_STORY_MODEL = 'gpt-5.5';
 const storyModel = () => env.EKKO_STORY_MODEL?.trim() || DEFAULT_STORY_MODEL;
-/** Fortelleravsnitt + bibel-oppdateringer trenger mer rom enn et vanlig kort talesvar. */
-const STORY_MAX_TOKENS = 1500;
-/** Litt høyere temperatur for fortellinger — mer språkglede, fortsatt forankret i bibelen. */
+/**
+ * Tak på completion-tokens for fortellinger. Romslig fordi GPT-5/reasoning-modeller bruker
+ * (skjulte) reasoning-tokens AV samme budsjett — er det for knapt, kan svaret bli tomt/avkuttet,
+ * og løkka går tom uten endelig tekst. Vanlige prat-turer beholder det stramme 600-taket.
+ */
+const STORY_MAX_TOKENS = 4000;
+/** Litt høyere temperatur for fortellinger — kun for modeller som støtter egendefinert temperatur. */
 const STORY_TEMPERATURE = 0.8;
+const CHAT_MAX_TOKENS = 600;
+const CHAT_TEMPERATURE = 0.5;
+
+/**
+ * GPT-5- og o-serien er reasoning-modeller med et annet parameter-format enn gpt-4o: de krever
+ * `max_completion_tokens` (ikke `max_tokens`) og støtter bare default-temperatur. Sender vi feil
+ * navn/verdi, svarer OpenAI 400 → 502 mot frontend. Skill derfor per modell.
+ */
+export function isReasoningModel(modelId: string): boolean {
+	return /^(o\d|gpt-5)/i.test(modelId);
+}
+
+/** Bygg de modell-spesifikke completion-parametrene (token-tak + ev. temperatur). */
+export function completionTuning(
+	modelId: string,
+	maxTokens: number,
+	temperature: number
+): Record<string, number> {
+	if (isReasoningModel(modelId)) {
+		// Reasoning-modeller: nytt token-felt, og ingen egendefinert temperatur (default = 1).
+		return { max_completion_tokens: maxTokens };
+	}
+	return { max_tokens: maxTokens, temperature };
+}
 
 /** Tak på antall LLM↔verktøy-runder, så en agent ikke kan løkke i det uendelige. */
 const MAX_TOOL_ROUNDS = 6;
@@ -254,11 +282,15 @@ export async function runAssistantTurn(
 			// Etter at et story_*-verktøy er brukt i turen (f.eks. «start en fortelling»), gå over til
 			// forteller-modellen for resten — så selve narrasjonen leveres på den sterke tieren.
 			const useStory = storyTurn || usedTools.some((n) => n.startsWith('story_'));
+			const activeModel = useStory ? storyModel() : model();
 			const response = await openai.chat.completions.create({
-				model: useStory ? storyModel() : model(),
+				model: activeModel,
 				messages,
-				temperature: useStory ? STORY_TEMPERATURE : 0.5,
-				max_tokens: useStory ? STORY_MAX_TOKENS : 600,
+				...completionTuning(
+					activeModel,
+					useStory ? STORY_MAX_TOKENS : CHAT_MAX_TOKENS,
+					useStory ? STORY_TEMPERATURE : CHAT_TEMPERATURE
+				),
 				...(offerTools ? { tools: ASSISTANT_TOOL_DEFINITIONS, tool_choice: 'auto' as const } : {})
 			});
 
@@ -324,11 +356,15 @@ export async function runAssistantTurnStreaming(
 			// Etter at et story_*-verktøy er brukt i turen, gå over til forteller-modellen for resten,
 			// så selve narrasjonen som strømmes til klienten leveres på den sterke tieren.
 			const useStory = storyTurn || usedTools.some((n) => n.startsWith('story_'));
+			const activeModel = useStory ? storyModel() : model();
 			const stream = await openai.chat.completions.create({
-				model: useStory ? storyModel() : model(),
+				model: activeModel,
 				messages,
-				temperature: useStory ? STORY_TEMPERATURE : 0.5,
-				max_tokens: useStory ? STORY_MAX_TOKENS : 600,
+				...completionTuning(
+					activeModel,
+					useStory ? STORY_MAX_TOKENS : CHAT_MAX_TOKENS,
+					useStory ? STORY_TEMPERATURE : CHAT_TEMPERATURE
+				),
 				stream: true,
 				...(offerTools ? { tools: ASSISTANT_TOOL_DEFINITIONS, tool_choice: 'auto' as const } : {})
 			});
