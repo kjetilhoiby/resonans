@@ -85,14 +85,15 @@ egen tabell, så quiz og fortelling har hver sin tilstand og overlever hverandre
 - **Modell-tier (jf. oppgavens punkt 8): story-turer rutes til en egen, sterk modell.** Prosjektet
   har ikke intent/tiering-systemet `resonans-lab`-dokumentene beskriver; assistenten kjører ellers
   på `EKKO_ASSISTANT_MODEL` ?? `gpt-4o`. For fortellinger innførte vi i stedet en egen knapp,
-  `EKKO_STORY_MODEL` (default `gpt-5.4`), og ruter HELE turen til den når (a) brukeren har en aktiv,
+  `EKKO_STORY_MODEL` (default `gpt-5.5` — den sterkeste standard-flaggskipmodellen; Pro-variantene er
+  i overkant for korte avsnitt som leses høyt i bilen), og ruter HELE turen til den når (a) brukeren har en aktiv,
   ikke-avsluttet fortelling (sjekkes ved turstart), eller (b) et `story_*`-verktøy er brukt i turen
   (fanger «start en fortelling»-turen — agent-løkka bytter til forteller-modellen etter verktøy-
   kallet, så selve narrasjonen leveres på den sterke tieren). Story-turer får også mer rom
   (`max_tokens` 1500, for avsnitt + bibel-oppdateringer) og litt høyere temperatur (0.8). Knappen er
   en ren env-variabel, så bytte til Claude (Opus/Sonnet 4.x) senere er bare en annen modell-id —
-  ingen endringer i board-skjema eller verktøy. Sett `EKKO_STORY_MODEL` om deploy-ens eksakte
-  modell-id avviker fra `gpt-5.4`.
+  ingen endringer i board-skjema eller verktøy. Sett `EKKO_STORY_MODEL` for å bytte modell (f.eks.
+  `gpt-5.5-pro` for enda mer dybde, eller en Claude-modell).
 
 ## Verifisering
 

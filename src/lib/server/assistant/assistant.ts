@@ -30,7 +30,7 @@ const model = () => env.EKKO_ASSISTANT_MODEL?.trim() || DEFAULT_MODEL;
  * env-variabel akkurat som EKKO_ASSISTANT_MODEL, så den er provider-uavhengig: et bytte til Claude
  * (Opus/Sonnet 4.x) senere er bare en annen modell-id her — ingen endringer i board-skjema/verktøy.
  */
-const DEFAULT_STORY_MODEL = 'gpt-5.4';
+const DEFAULT_STORY_MODEL = 'gpt-5.5';
 const storyModel = () => env.EKKO_STORY_MODEL?.trim() || DEFAULT_STORY_MODEL;
 /** Fortelleravsnitt + bibel-oppdateringer trenger mer rom enn et vanlig kort talesvar. */
 const STORY_MAX_TOKENS = 1500;
