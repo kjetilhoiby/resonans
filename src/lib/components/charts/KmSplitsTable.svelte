@@ -1,14 +1,17 @@
 <script lang="ts">
 	import { computeKmSplits, type TrackPoint } from '$lib/utils/track-stats';
+	import { isWheeledSport, formatPace, formatSpeed } from '$lib/utils/activity-metrics';
 
 	interface Props {
 		points: TrackPoint[];
 		title?: string;
+		sportType?: string;
 	}
 
-	let { points, title = 'Splits' }: Props = $props();
+	let { points, title = 'Splits', sportType = '' }: Props = $props();
 
 	const splits = $derived(computeKmSplits(points));
+	const wheeled = $derived(isWheeledSport(sportType));
 
 	const fastestPace = $derived.by(() => {
 		const fullSplits = splits.filter((s) => !s.isPartial);
@@ -22,11 +25,9 @@
 		return Math.max(...fullSplits.map((s) => s.paceSecondsPerKm));
 	});
 
-	function formatPace(sec: number): string {
+	function formatSplit(sec: number): string {
 		if (!sec || !Number.isFinite(sec)) return '–';
-		const m = Math.floor(sec / 60);
-		const s = Math.round(sec % 60);
-		return `${m}:${String(s).padStart(2, '0')}`;
+		return wheeled ? formatSpeed(sec) : formatPace(sec, '/km');
 	}
 
 	function barFraction(paceSec: number): number {
@@ -56,7 +57,7 @@
 						{/if}
 					</span>
 					<span class="pace" class:fastest={isFastest(split.paceSecondsPerKm, split.isPartial)}>
-						{formatPace(split.paceSecondsPerKm)}/km
+						{formatSplit(split.paceSecondsPerKm)}
 					</span>
 					<div class="bar-track">
 						<div
@@ -97,7 +98,7 @@
 	}
 	.row {
 		display: grid;
-		grid-template-columns: 3rem 4.2rem 1fr 3rem;
+		grid-template-columns: 3rem 4.8rem 1fr 3rem;
 		align-items: center;
 		gap: 0.5rem;
 		font-size: 0.78rem;

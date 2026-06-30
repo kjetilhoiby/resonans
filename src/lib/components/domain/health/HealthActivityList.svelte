@@ -8,6 +8,14 @@
 	import { hasElevation, hasHeartRate } from '$lib/utils/track-stats';
 	import { normalizeSportType } from '$lib/utils/sport';
 	import {
+		isWheeledSport,
+		speedKmh,
+		formatPace,
+		formatSpeed,
+		formatSpeedDelta,
+		paceOrSpeedLabel
+	} from '$lib/utils/activity-metrics';
+	import {
 		buildPaceBaseline,
 		compareActivityToBaseline,
 		formatPaceDelta
@@ -177,13 +185,6 @@
 		return rem === 0 ? `${h} t` : `${h} t ${rem} min`;
 	}
 
-	function formatPace(secondsPerKm: number | null): string {
-		if (!secondsPerKm) return '';
-		const m = Math.floor(secondsPerKm / 60);
-		const s = Math.round(secondsPerKm % 60);
-		return `${m}:${String(s).padStart(2, '0')} /km`;
-	}
-
 	function providerLabel(provider: string, sensorType: string): string {
 		if (provider === 'dropbox' || sensorType === 'workout_files') return 'Dropbox (GPX/TCX)';
 		if (provider === 'withings') return 'Withings';
@@ -284,8 +285,12 @@
 							{/if}
 							{#if act.paceSecondsPerKm && !noDistance}
 								<div class="hd-stat">
-									<span class="hd-stat-label">Tempo</span>
-									<span class="hd-stat-value">{formatPace(act.paceSecondsPerKm)}</span>
+									<span class="hd-stat-label">{paceOrSpeedLabel(act.sportType)}</span>
+									<span class="hd-stat-value">
+										{isWheeledSport(act.sportType)
+											? formatSpeed(act.paceSecondsPerKm)
+											: formatPace(act.paceSecondsPerKm)}
+									</span>
 								</div>
 							{/if}
 							{#if act.avgHeartRate}
@@ -303,10 +308,20 @@
 						</div>
 
 						{#if comparison && baseline}
+							{@const wheeled = isWheeledSport(act.sportType)}
+							{@const speedDelta =
+								(speedKmh(act.paceSecondsPerKm) ?? 0) -
+								(speedKmh(baseline.avgPaceSecondsPerKm) ?? 0)}
 							<div class="hd-comparison" class:hd-comparison-faster={comparison.isFaster}>
-								<span class="hd-comparison-icon">{comparison.isFaster ? '▼' : '▲'}</span>
+								<span class="hd-comparison-icon">
+									{#if wheeled}{comparison.isFaster ? '▲' : '▼'}{:else}{comparison.isFaster ? '▼' : '▲'}{/if}
+								</span>
 								<span class="hd-comparison-text">
-									{formatPaceDelta(comparison.deltaSecondsPerKm)}/km vs snitt siste {baseline.weeksBack} uker
+									{#if wheeled}
+										{formatSpeedDelta(speedDelta)} km/t vs snitt siste {baseline.weeksBack} uker
+									{:else}
+										{formatPaceDelta(comparison.deltaSecondsPerKm)}/km vs snitt siste {baseline.weeksBack} uker
+									{/if}
 								</span>
 								<span class="hd-comparison-meta">n={baseline.sampleCount}</span>
 							</div>
@@ -326,7 +341,7 @@
 								{#if hasElevation(mapPoints)}
 									<TrackProfileChart points={mapPoints} kind="elevation" height={70} />
 								{/if}
-								<KmSplitsTable points={mapPoints} />
+								<KmSplitsTable points={mapPoints} sportType={act.sportType} />
 								{#if hasHeartRate(mapPoints)}
 									<HrDistributionBar points={mapPoints} />
 								{/if}

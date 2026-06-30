@@ -15,6 +15,7 @@
 		hasElevation,
 		hasHeartRate
 	} from '$lib/utils/track-stats';
+	import { isWheeledSport, formatSpeed, paceOrSpeedLabel } from '$lib/utils/activity-metrics';
 
 	let { data }: { data: PageData } = $props();
 	const { workout, trackPoints, assessment, healthThemeId } = data;
@@ -234,7 +235,7 @@
 					<div class="stat"><span class="label">Varighet</span><span class="value">{formatDuration(workout.durationSeconds)}</span></div>
 				{/if}
 				{#if workout.paceSecondsPerKm != null}
-					<div class="stat"><span class="label">Tempo</span><span class="value">{formatPace(workout.paceSecondsPerKm)}</span></div>
+					<div class="stat"><span class="label">{paceOrSpeedLabel(workout.sportType)}</span><span class="value">{isWheeledSport(workout.sportType) ? formatSpeed(workout.paceSecondsPerKm) : formatPace(workout.paceSecondsPerKm)}</span></div>
 				{/if}
 				{#if workout.avgHeartRate != null}
 					<div class="stat"><span class="label">Snitt puls</span><span class="value">{Math.round(workout.avgHeartRate)} bpm</span></div>
@@ -294,7 +295,7 @@
 						{/if}
 					</div>
 				{/if}
-				<KmSplitsTable points={trackPoints} />
+				<KmSplitsTable points={trackPoints} sportType={workout.sportType} />
 				{#if hasHeartRate(trackPoints)}
 					<HrDistributionBar points={trackPoints} />
 				{/if}
