@@ -75,6 +75,42 @@ describe('buildChecklistItemFields — dag-nivå sted/reise', () => {
 			timeMinute: 0
 		});
 	});
+
+	it('tolker «innen 18:00» som ankomstfrist, ikke avgangstid', async () => {
+		const fields = await buildChecklistItemFields({
+			userId: USER,
+			context: dayContext,
+			text: 'Kjøre til Oslo innen 18:00'
+		});
+		expect(fields.text).toBe('Kjøre til Oslo');
+		expect(fields.metadata).toMatchObject({
+			kind: 'travel',
+			travelMode: 'drive',
+			destination: 'Oslo',
+			arriveByHour: 18,
+			arriveByMinute: 0
+		});
+		// Fristen skal ikke bli avgangstid.
+		expect(fields.metadata.timeHour).toBeUndefined();
+	});
+
+	it('skiller avgang («kl 14») fra ankomstfrist («innen 18»)', async () => {
+		const fields = await buildChecklistItemFields({
+			userId: USER,
+			context: dayContext,
+			text: 'Kjøre til Oslo kl 14 innen 18:30'
+		});
+		expect(fields.text).toBe('Kjøre til Oslo');
+		expect(fields.metadata).toMatchObject({
+			kind: 'travel',
+			travelMode: 'drive',
+			destination: 'Oslo',
+			timeHour: 14,
+			timeMinute: 0,
+			arriveByHour: 18,
+			arriveByMinute: 30
+		});
+	});
 });
 
 describe('buildChecklistItemFields — wake-time på ukenivå', () => {

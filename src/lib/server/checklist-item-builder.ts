@@ -26,7 +26,7 @@ import {
 	findLinkedTask,
 	stripTimeFromText
 } from './checklist-intent-linker';
-import { parseLocationPrefix, parseTravelPrefix } from '$lib/utils/checklist-group';
+import { parseLocationPrefix, parseTravelPrefix, extractArriveBy } from '$lib/utils/checklist-group';
 import { parseChorePrefix } from '$lib/domains/home/appliance-chores';
 import { detectMealPrefix } from '$lib/domains/food';
 import { findOrCreateMealId } from './task-intent-parser';
@@ -182,11 +182,24 @@ export async function buildChecklistItemFields(
 			const dayMatch = context!.match(/:day:(\d{4}-\d{2}-\d{2})/);
 			locationDayIso = dayMatch ? dayMatch[1] : null;
 		} else if (travel) {
+			// «innen 18:00» er ankomstfrist, ikke avgang — den skal ikke bli timeHour.
+			// Parse avgangstiden på nytt fra teksten med frist-leddet fjernet.
+			const depIntent = parseChecklistItemIntent(extractArriveBy(text).rest, {
+				dayLevel: isDayLevel
+			});
+			const depTimeFields =
+				depIntent.timeHour !== undefined
+					? { timeHour: depIntent.timeHour, timeMinute: depIntent.timeMinute ?? 0 }
+					: {};
 			metadata = {
-				...timeFields,
+				...depTimeFields,
 				kind: 'travel',
 				travelMode: travel.mode,
 				destination: travel.destination,
+				...(travel.arriveByHour !== undefined && {
+					arriveByHour: travel.arriveByHour,
+					arriveByMinute: travel.arriveByMinute ?? 0
+				}),
 				...geoMeta
 			};
 		} else if (meal) {
@@ -234,9 +247,11 @@ export async function buildChecklistItemFields(
 	const storedText =
 		metadata.kind === 'location'
 			? (metadata.locationName as string)
-			: metadata.timeHour !== undefined
-				? stripTimeFromText(text)
-				: text;
+			: metadata.kind === 'travel'
+				? stripTimeFromText(extractArriveBy(text).rest)
+				: metadata.timeHour !== undefined
+					? stripTimeFromText(text)
+					: text;
 
 	// Aktivitets-tag fra den lagrede teksten, slik at punktet kan auto-hakes mot
 	// treningsdata. Sted/reise er ikke aktiviteter, så de hopper over taggingen.
@@ -287,6 +302,8 @@ export const PARSE_DERIVED_METADATA_KEYS = [
 	'locationName',
 	'travelMode',
 	'destination',
+	'arriveByHour',
+	'arriveByMinute',
 	'mealType',
 	'linkedMealId',
 	'lat',
