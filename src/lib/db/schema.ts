@@ -724,6 +724,11 @@ export const checklistItems = pgTable('checklist_items', {
 		locationName?: string;
 		travelMode?: 'drive' | 'boat' | 'flight';
 		destination?: string;
+		// Ankomstfrist for reisesegmentet («kjøre til Oslo innen 18:00»). Skilt fra
+		// timeHour (avgang): dette er når man må være FREMME. Brukes av Ekko til
+		// ankomstbudsjett. Lokal tid samme dag.
+		arriveByHour?: number;
+		arriveByMinute?: number;
 		// Pinnet geokoding (løses én gang ved oppretting, gjenbrukes for vær/opphold/chat).
 		lat?: number;
 		lon?: number;

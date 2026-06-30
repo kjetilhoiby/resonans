@@ -50,6 +50,9 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	return json({
 		date: ctx.date,
 		trip,
+		// movement[]: hvert segment har mode/destination/time, og — når planen har
+		// dem — destLat/destLon (pinnet geokoding, begge eller ingen) og arriveBy
+		// (ankomstfrist 'HH:MM') for Ekkos sluttmål/ankomstbudsjett.
 		movement: ctx.movement,
 		stay: ctx.stay,
 		training: await buildTrainingPointer(userId, ctx.date)

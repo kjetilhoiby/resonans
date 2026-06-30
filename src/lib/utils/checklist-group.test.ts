@@ -8,6 +8,7 @@ import {
 	stripTimeFromText,
 	parseLocationPrefix,
 	parseTravelPrefix,
+	extractArriveBy,
 	aggregateStays
 } from './checklist-group';
 
@@ -172,6 +173,73 @@ describe('parseTravelPrefix', () => {
 	it('returnerer null for vanlige punkter', () => {
 		expect(parseTravelPrefix('Handle mat')).toBeNull();
 		expect(parseTravelPrefix('Sted: Oslo')).toBeNull();
+	});
+
+	it('parser ankomstfrist «innen HH:MM» uten å forveksle den med destinasjon', () => {
+		expect(parseTravelPrefix('Kjøre til Oslo innen 18:00')).toEqual({
+			mode: 'drive',
+			destination: 'Oslo',
+			arriveByHour: 18,
+			arriveByMinute: 0
+		});
+	});
+
+	it('parser «innen kl 18» og «innen 18» (uten minutter)', () => {
+		expect(parseTravelPrefix('Kjøre til Oslo innen kl 18')).toEqual({
+			mode: 'drive',
+			destination: 'Oslo',
+			arriveByHour: 18,
+			arriveByMinute: 0
+		});
+		expect(parseTravelPrefix('Fly til Bergen innen 9')).toEqual({
+			mode: 'flight',
+			destination: 'Bergen',
+			arriveByHour: 9,
+			arriveByMinute: 0
+		});
+	});
+
+	it('skiller avgangstid («kl 14») fra ankomstfrist («innen 18»)', () => {
+		expect(parseTravelPrefix('Kjøre til Oslo kl 14 innen 18:30')).toEqual({
+			mode: 'drive',
+			destination: 'Oslo',
+			arriveByHour: 18,
+			arriveByMinute: 30
+		});
+	});
+
+	it('uten «innen» settes ingen ankomstfrist', () => {
+		expect(parseTravelPrefix('Kjøre til Oslo kl 18:00')).toEqual({
+			mode: 'drive',
+			destination: 'Oslo'
+		});
+	});
+});
+
+describe('extractArriveBy', () => {
+	it('trekker ut «innen 18:00» og fjerner leddet fra teksten', () => {
+		expect(extractArriveBy('Oslo innen 18:00')).toEqual({
+			deadline: { hour: 18, minute: 0 },
+			rest: 'Oslo'
+		});
+	});
+
+	it('håndterer «innen kl. 9» og fyller minutt 0', () => {
+		expect(extractArriveBy('Bergen innen kl. 9')).toEqual({
+			deadline: { hour: 9, minute: 0 },
+			rest: 'Bergen'
+		});
+	});
+
+	it('returnerer null + uendret tekst uten frist', () => {
+		expect(extractArriveBy('Oslo kl 18:00')).toEqual({ deadline: null, rest: 'Oslo kl 18:00' });
+	});
+
+	it('avviser ugyldig klokkeslett', () => {
+		expect(extractArriveBy('Oslo innen 25:00')).toEqual({
+			deadline: null,
+			rest: 'Oslo innen 25:00'
+		});
 	});
 });
 

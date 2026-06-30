@@ -151,6 +151,10 @@ export type TravelMode = 'drive' | 'boat' | 'flight';
 export interface ParsedTravel {
 	mode: TravelMode;
 	destination: string;
+	/** Ankomstfrist (time 0–23) hvis teksten har en «innen»-frist, ellers udefinert. */
+	arriveByHour?: number;
+	/** Ankomstfrist (minutt 0–59), default 0 når en frist finnes. */
+	arriveByMinute?: number;
 }
 
 const TRAVEL_PATTERNS: Array<[RegExp, TravelMode]> = [
@@ -159,14 +163,48 @@ const TRAVEL_PATTERNS: Array<[RegExp, TravelMode]> = [
 	[/^(?:flyr|flyet|fly)\s+til\s+(.+)$/i, 'flight']
 ];
 
-/** Parse «kjøre til Trondheim kl 12.00» / «båt til Håøya» / «fly til Oslo kl 14:30». */
+// «innen [kl] HH(:MM)» → ankomstfrist for målet. Skilt fra avgangstid («kl HH»):
+// fristen er når man må VÆRE fremme, ikke når man drar.
+const ARRIVE_BY_PATTERN = /\binnen\s+(?:kl(?:okka)?\.?\s*)?(\d{1,2})(?:[.:](\d{2}))?\b/i;
+
+/**
+ * Trekk ut en ankomstfrist («innen 18:00», «innen kl 18») fra teksten.
+ * Returnerer fristen (eller null) og teksten med frist-leddet fjernet, slik at
+ * en eventuell avgangstid kan parses uavhengig av fristen. Ren funksjon.
+ */
+export function extractArriveBy(text: string): {
+	deadline: { hour: number; minute: number } | null;
+	rest: string;
+} {
+	const m = text.match(ARRIVE_BY_PATTERN);
+	if (!m || m.index === undefined) return { deadline: null, rest: text };
+	const hour = parseInt(m[1], 10);
+	const minute = parseInt(m[2] ?? '0', 10);
+	if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return { deadline: null, rest: text };
+	const rest = (text.slice(0, m.index) + text.slice(m.index + m[0].length))
+		.replace(/\s{2,}/g, ' ')
+		.replace(/[\s,.;–-]+$/, '')
+		.trim();
+	return { deadline: { hour, minute }, rest };
+}
+
+/** Parse «kjøre til Trondheim kl 12.00» / «båt til Håøya» / «kjøre til Oslo innen 18:00». */
 export function parseTravelPrefix(text: string): ParsedTravel | null {
 	for (const [pattern, mode] of TRAVEL_PATTERNS) {
 		const m = text.match(pattern);
 		if (m) {
+			// Skill ut en evt. ankomstfrist før destinasjonen renses, så «innen 18»
+			// ikke forveksles med stedsnavn eller avgangstid.
+			const { deadline, rest } = extractArriveBy(m[1].trim());
 			// Fjern et eventuelt klokkeslett fra destinasjonen (vises i egen tidschip).
-			const destination = stripTimeFromText(m[1].trim()).replace(/[\s,.;–-]+$/, '').trim();
-			if (destination) return { mode, destination };
+			const destination = stripTimeFromText(rest).replace(/[\s,.;–-]+$/, '').trim();
+			if (destination) {
+				return {
+					mode,
+					destination,
+					...(deadline && { arriveByHour: deadline.hour, arriveByMinute: deadline.minute })
+				};
+			}
 		}
 	}
 	return null;
