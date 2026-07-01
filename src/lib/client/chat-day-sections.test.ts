@@ -4,6 +4,7 @@ import {
 	isSameDay,
 	formatDayLabel,
 	daySpacerBefore,
+	dayKey,
 	type DayAware
 } from './chat-day-sections';
 
@@ -46,6 +47,13 @@ describe('formatDayLabel', () => {
 		const label = formatDayLabel(new Date(2025, 11, 31), NOW);
 		expect(label).toContain('2025');
 		expect(label).toContain('31. desember');
+	});
+});
+
+describe('dayKey', () => {
+	it('gir nullpolstret YYYY-MM-DD i lokal tid', () => {
+		expect(dayKey(new Date(2026, 0, 5))).toBe('2026-01-05');
+		expect(dayKey(new Date(2026, 11, 31))).toBe('2026-12-31');
 	});
 });
 

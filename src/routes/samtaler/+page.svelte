@@ -14,6 +14,7 @@
 	import type { WidgetCreationFlow } from '$lib/flows/widget-creation/flow';
 	import type { WeatherStatusWidget } from '$lib/ai/tools/weather-forecast';
 	import type { PhotoAnnotationResult } from '$lib/ai/tools/annotate-photo';
+	import type { ChatEventCard } from '$lib/chat/event-cards';
 
 	interface ConversationSummary {
 		id: string;
@@ -44,6 +45,7 @@
 		statusWidget?: WeatherStatusWidget | null;
 		photoAnnotation?: PhotoAnnotationResult | null;
 		photoAnnotationImageUrl?: string | null;
+		eventCard?: ChatEventCard | null;
 	}
 
 	interface Props {
@@ -53,6 +55,7 @@
 			selectedConversation: ConversationSummary | null;
 			messages: ConversationMessage[];
 			hasMoreMessages: boolean;
+			scrollToDate: string | null;
 			weightContext: string | null;
 		};
 	}
@@ -75,7 +78,8 @@
 				widgetFlow: m.widgetFlow ?? null,
 				statusWidget: m.statusWidget ?? null,
 				photoAnnotation: m.photoAnnotation ?? null,
-				photoAnnotationImageUrl: m.photoAnnotationImageUrl ?? null
+				photoAnnotationImageUrl: m.photoAnnotationImageUrl ?? null,
+				eventCard: m.eventCard ?? null
 			}));
 	}
 
@@ -177,7 +181,24 @@
 	$effect(() => {
 		bottomKey;
 		if (!messagesEl) return;
+		// Ved hopp-til-dag: ikke dra til bunn før hoppet er utført (jumpLatch er satt).
+		if (data.scrollToDate && jumpLatch !== data.scrollToDate) return;
 		messagesEl.scrollTop = messagesEl.scrollHeight;
+	});
+
+	// Hopp-til-dag fra ukeplanen: scroll til dag-ankeret én gang per måldato.
+	// jumpLatch er en vanlig variabel (ikke reaktiv) for å unngå effekt-løkke.
+	let jumpLatch = '';
+	$effect(() => {
+		const date = data.scrollToDate;
+		const rendered = chat.messages.length; // avheng av at meldingene er lastet
+		if (!date || !messagesEl || rendered === 0 || jumpLatch === date) return;
+		jumpLatch = date;
+		void tick().then(() => {
+			const anchor = messagesEl?.querySelector(`[id="dag-${date}"]`) as HTMLElement | null;
+			if (anchor) anchor.scrollIntoView({ block: 'start' });
+			else if (messagesEl) messagesEl.scrollTop = 0;
+		});
 	});
 
 	async function loadOlderMessages() {

@@ -35,6 +35,17 @@ function startOfDay(d: Date): number {
 }
 
 /**
+ * Stabil dag-nøkkel «YYYY-MM-DD» (lokal tid). Brukes som anker-id på dato-spacere
+ * (`dag-<key>`) slik at ukeplanen kan hoppe rett til en dag i den kanoniske tråden.
+ */
+export function dayKey(date: Date): string {
+	const y = date.getFullYear();
+	const m = String(date.getMonth() + 1).padStart(2, '0');
+	const d = String(date.getDate()).padStart(2, '0');
+	return `${y}-${m}-${d}`;
+}
+
+/**
  * Norsk etikett for en dag-spacer: «I dag», «I går», ellers «Onsdag 25. juni»
  * (år tas med kun når det avviker fra `now`).
  */

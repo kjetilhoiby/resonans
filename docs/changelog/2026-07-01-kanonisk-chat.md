@@ -1,7 +1,7 @@
 # Kanonisk chat — chat som ryggrad
 
 Dato: 2026-07-01
-Status: pågår
+Status: pågår (fase 1 + 2 ferdig)
 
 ## Kontekst
 
@@ -74,20 +74,40 @@ friksjonen.
 Lesesflaten for dagboken er `/samtaler?conversation=<kanonisk>` (hjem-chatten har allerede
 en «Åpne»-knapp dit). Forsiden beholder sin rene «tøm hodet»-inngang.
 
-### Fase 2 (ikke i denne endringen)
+### Fase 2: Hopp-til-dag + inline hendelseskort (denne endringen)
 
-- **Hopp inn fra ukeplanen.** Stabile per-dag-ankere i den kanoniske tråden +
-  scroll-til-dato, slik at en dag i ukeplanen linker rett til riktig dag i dagboken.
-  (`planConversationId` finnes allerede på sjekklister som utgangspunkt.)
-- **Inline hendelses-widgets.** Generaliser den eksisterende
-  `message.metadata`-widgetmekanismen (`widgetProposal`, `statusWidget`,
-  `photoAnnotation`) til noen typede tidslinje-innslag (fullført økt, nudge-respons,
-  egenfrekvens-innsjekk) som dukker opp i dagboken.
-- **Referanse-kort** fra tema-/flyt-samtaler inn i den kanoniske visningen.
+- **Hopp inn fra ukeplanen.** `dayKey(date)` gir stabile dag-ankere (`id="dag-YYYY-MM-DD"`)
+  på dato-spacerne. Ukeplanens `DaySection` fikk en «Dagbok →»-lenke per valgt dag som går
+  til `/samtaler?canonical=1&date=<dag>`. `/samtaler`-lasteren løser opp den kanoniske
+  tråden ved `?canonical=1`, og ved `?date=` laster den et dato-vindu
+  (`getConversationMessagesFromDate` — dagen og alt etter, med buffer for tidssone) og
+  returnerer `scrollToDate`. Klienten scroller til dag-ankeret; infinite-scroll-oppover
+  henter eldre meldinger som før. Tom dag faller tilbake til vanlig «nyeste»-lasting.
+- **Inline hendelseskort.** Rammeverk-agnostisk `src/lib/chat/event-cards.ts`
+  (`ChatEventCard`, `buildCheckinEventCard`, testet) beskriver et kompakt kort lagret i
+  `message.metadata.eventCard`. `ChatMessages.svelte` rendrer kortet (med valgfri
+  deep-link). `ChatMessage` fikk `eventCard`. Server-writer `addCanonicalEventMessage`
+  skriver et kort inn i ryggraden; `POST /api/conversations/canonical/event` lar
+  klient-flyter gjøre det samme.
+- **Første produsent.** En egenfrekvens-innsjekk med skreven refleksjon legger nå igjen et
+  hendelseskort i dagboken (`submitEgenfrekvensCheckin`, fire-and-forget) — «prate med
+  underbevisstheten». Kun refleksjoner, ikke kjappe morgen/kveld-tap, for å holde støyen
+  nede.
+
+### Fase 3 (ikke i denne endringen)
+
+- **Flere produsenter.** Fullført økt, nudge-respons og flyt-fullføring som hendelseskort
+  (via `addCanonicalEventMessage` / event-endepunktet).
+- **Referanse-kort** fra tema-/flyt-samtaler inn i den kanoniske visningen (deep-link til
+  kilden, ikke kopierte meldinger).
+- **Dagbok fra forsiden.** Vurder om hjem-chatten skal laste ryggrad-historikk ved åpning
+  (mer dagbok-følelse) vs. beholde den rene «tøm hodet»-inngangen. Produktbeslutning.
 
 ## Verifisering
 
-- `npm run check` (TypeScript + Svelte) grønn.
-- `npm test` grønn, inkl. nye enhetstester for `chat-day-sections.ts`.
-- Dato-spacere bekreftet i `/samtaler`-visningen (der historikk med tidsstempler lastes);
-  ingen spacere i kontekster uten tidsstempler (bakoverkompatibelt).
+- `npm run check` (TypeScript + Svelte) grønn (0 feil, 0 advarsler).
+- `npm test` grønn — 900 tester, inkl. nye enhetstester for `chat-day-sections.ts`
+  (dato-spacere + `dayKey`) og `event-cards.ts` (kort-bygging).
+- Dato-spacere + dag-ankere bekreftet i `/samtaler`-visningen; hopp-til-dag via
+  `?canonical=1&date=`; hendelseskort rendres fra `metadata.eventCard`. Bakoverkompatibelt:
+  ingen spacere/kort i kontekster uten tidsstempler/metadata.
