@@ -24,6 +24,8 @@
 	import AnnotatedImageCard from '$lib/components/domain/AnnotatedImageCard.svelte';
 	import type { ChatMessage } from '$lib/client/chat-state.svelte';
 	import { daySpacerBefore, dayKey, toDate } from '$lib/client/chat-day-sections';
+	import { longpress } from '$lib/actions/longpress';
+	import ChatImageMenu from './ChatImageMenu.svelte';
 
 	interface Props {
 		messages: ChatMessage[];
@@ -38,6 +40,10 @@
 		onStarMessage?: (id: string) => void;
 		onEditStopped?: () => void;
 		onAction?: (actionId: string) => void;
+		/** Langtrykk-handlinger på et bilde i tråden. Utelates de, er langtrykk av. */
+		onImageDescribe?: (msg: ChatMessage, text: string) => void;
+		onImageRemove?: (msg: ChatMessage) => void;
+		onImageRegister?: (msg: ChatMessage) => void;
 	}
 
 	let {
@@ -52,8 +58,14 @@
 		onRetry,
 		onStarMessage,
 		onEditStopped,
-		onAction
+		onAction,
+		onImageDescribe,
+		onImageRemove,
+		onImageRegister
 	}: Props = $props();
+
+	let imageMenu = $state<{ rect: DOMRect; msg: ChatMessage } | null>(null);
+	const imageActionsEnabled = $derived(Boolean(onImageDescribe || onImageRemove || onImageRegister));
 </script>
 
 {#each messages as msg, i (msg.id)}
@@ -116,7 +128,16 @@
 			{:else}
 				<div class="cm-bubble-user">
 					{#if msg.imageUrl}
-						<img class="cm-bubble-img" src={msg.imageUrl} alt="Vedlagt bilde" />
+						{#if imageActionsEnabled}
+							<img
+								class="cm-bubble-img cm-bubble-img-actionable"
+								src={msg.imageUrl}
+								alt="Vedlagt bilde"
+								use:longpress={{ onLongPress: (rect) => (imageMenu = { rect, msg }) }}
+							/>
+						{:else}
+							<img class="cm-bubble-img" src={msg.imageUrl} alt="Vedlagt bilde" />
+						{/if}
 					{/if}
 					{#if msg.attachment && !msg.imageUrl}
 						{@const att = msg.attachment as { kind?: string; name?: string; mimeType?: string }}
@@ -196,6 +217,17 @@
 		{/if}
 	</div>
 {/if}
+
+<ChatImageMenu
+	open={!!imageMenu}
+	anchor={imageMenu?.rect ?? null}
+	initialText={imageMenu && imageMenu.msg.text !== '📷 [Bilde]' ? imageMenu.msg.text : ''}
+	canPersist={!!imageMenu?.msg.dbId}
+	onClose={() => (imageMenu = null)}
+	onDescribe={(t) => { const m = imageMenu?.msg; imageMenu = null; if (m) onImageDescribe?.(m, t); }}
+	onRegister={() => { const m = imageMenu?.msg; imageMenu = null; if (m) onImageRegister?.(m); }}
+	onRemove={() => { const m = imageMenu?.msg; imageMenu = null; if (m) onImageRemove?.(m); }}
+/>
 
 <style>
 	.cm-day-spacer {
@@ -322,6 +354,11 @@
 		max-height: 200px;
 		border-radius: 10px;
 		object-fit: cover;
+	}
+	.cm-bubble-img-actionable {
+		cursor: pointer;
+		touch-action: manipulation;
+		-webkit-touch-callout: none;
 	}
 
 	.cm-edit-hint {

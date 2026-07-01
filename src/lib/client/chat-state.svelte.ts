@@ -21,6 +21,9 @@ export interface ChatAction {
 
 export interface ChatMessage {
 	id: string;
+	/** DB-id for den lagrede meldingen (settes etter at svaret er ferdig). Brukes til
+	 *  redigering/sletting. I /samtaler er `id` allerede DB-id-en; da er dbId lik id. */
+	dbId?: string | null;
 	role: 'user' | 'assistant';
 	text: string;
 	starred: boolean;
@@ -104,6 +107,17 @@ export class ChatState {
 		if (opts.conversationId !== undefined) {
 			this.conversationId = opts.conversationId ?? null;
 		}
+	}
+
+	/** Oppdater teksten på en melding lokalt (etter en lagret redigering). */
+	applyLocalEdit(id: string, text: string) {
+		const msg = this.messages.find((m) => m.id === id);
+		if (msg) msg.text = text;
+	}
+
+	/** Fjern en melding lokalt (etter en lagret sletting). */
+	removeLocal(id: string) {
+		this.messages = this.messages.filter((m) => m.id !== id);
 	}
 
 	/** Oppdater conversationId utenfra (f.eks. ThemePage ved bytte av samtale). */
@@ -266,8 +280,16 @@ export class ChatState {
 
 			this.conversationId = (data.conversationId as string | null) ?? this.conversationId;
 
+			// Fest DB-id-en på brukermeldingen slik at den kan redigeres/slettes senere.
+			const userDbId = data.userMessageId as string | undefined;
+			if (userDbId) {
+				const userMsg = this.messages.find((m) => m.id === msgId);
+				if (userMsg) userMsg.dbId = userDbId;
+			}
+
 			const assistantMsg: ChatMessage = {
 				id: crypto.randomUUID(),
+				dbId: (data.assistantMessageId as string | null) ?? null,
 				role: 'assistant',
 				text: (data.message as string) ?? '',
 				starred: false,

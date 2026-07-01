@@ -107,13 +107,25 @@ vegg av tekst rundt bildet.
   Resultat: pent bilde + valgfri kontekst («barna sover»), naturlig chat-respons, ingen
   auto-logging. Google Sheet-snapshot beholder sin egen flyt.
 
-### Fase 3 (ikke i denne endringen)
+### Fase 3: Langpress-meny på bilde (denne endringen)
 
-- **Langpress-meny på bilde** (Beskriv / Registrer i serie / Fjern). Blokker som må løses
-  først: hjem-chattens meldinger har klient-genererte id-er (`crypto.randomUUID`), ikke
-  DB-id-er, så persistent redigering/sletting krever at chat-strømmen returnerer de lagrede
-  meldings-id-ene til klienten. «Registrer i serie» (sender bildet til chatten med
-  tracking-verktøyet) og en gjenbrukbar `longpress`-action kan gjøres uavhengig.
+Langtrykk på et bilde i tråden gir en liten meny: **Beskriv / legg til kontekst**,
+**Registrer i serie**, **Fjern**.
+
+- **Id-plumbing (blokker løst).** Chat-strømmen returnerer nå `userMessageId` og
+  `assistantMessageId` (`/api/chat`), og `ChatState` fester dem som `ChatMessage.dbId`.
+  I `/samtaler` er `dbId = id` (allerede DB-id). Redigering/sletting bruker `dbId`, så
+  persistent Beskriv/Fjern virker i begge flater. Beskriv/Fjern vises kun når `dbId` finnes.
+- **Gjenbrukbar langtrykk.** Ny `src/lib/actions/longpress.ts` (`use:longpress`) — pointer-
+  basert, samme mønster som dagsoppgavelistene, men uten duplisert timer-logikk.
+- **Meny + handlinger.** `ChatImageMenu.svelte` (fixed-posisjonert, klikk-utenfor lukker,
+  egen «beskriv»-visning). `ChatMessages` fikk callbacks `onImageDescribe/onImageRemove/
+  onImageRegister`; wiret i hjem-chatten (`HomeChatZone`) og `/samtaler`. Backend: meldings-
+  `PATCH` tar nå `content`, og fikk `DELETE` (`messages/[messageId]`), begge eierskaps-sjekket.
+  «Registrer i serie» sender bildet til chatten med instruks om tracking-verktøyet (triage
+  på forespørsel, ikke automatisk).
+
+### Fase 4 (ikke i denne endringen)
 
 - **Flere produsenter.** Fullført økt, nudge-respons og flyt-fullføring som hendelseskort
   (via `addCanonicalEventMessage` / event-endepunktet).
@@ -121,6 +133,8 @@ vegg av tekst rundt bildet.
   kilden, ikke kopierte meldinger).
 - **Dagbok fra forsiden.** Vurder om hjem-chatten skal laste ryggrad-historikk ved åpning
   (mer dagbok-følelse) vs. beholde den rene «tøm hodet»-inngangen. Produktbeslutning.
+- **Dedup langtrykk.** Migrer de resterende inline-langtrykk-variantene (action-pills,
+  tema-rader, `ChecklistItemRow`) til den nye `longpress`-actionen.
 
 ## Verifisering
 

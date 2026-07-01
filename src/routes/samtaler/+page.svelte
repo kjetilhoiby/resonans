@@ -10,6 +10,7 @@
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
 	import { ChatState } from '$lib/client/chat-state.svelte';
 	import type { ChatMessage } from '$lib/client/chat-state.svelte';
+	import { patchMessageContent, deleteMessage } from '$lib/client/chat-message-actions';
 	import type { AttachmentRef } from '$lib/components/domain/home/home-context';
 	import type { WidgetCreationFlow } from '$lib/flows/widget-creation/flow';
 	import type { WeatherStatusWidget } from '$lib/ai/tools/weather-forecast';
@@ -69,6 +70,7 @@
 			.filter((m) => m.role !== 'system')
 			.map((m) => ({
 				id: m.id,
+				dbId: m.id,
 				role: m.role as 'user' | 'assistant',
 				text: m.content,
 				starred: m.starred,
@@ -296,6 +298,19 @@
 		});
 	}
 
+	// Langtrykk-handlinger på et bilde i tråden.
+	async function describeImage(msg: ChatMessage, text: string) {
+		if (conversation && msg.dbId) await patchMessageContent(conversation.id, msg.dbId, text);
+		chat.applyLocalEdit(msg.id, text);
+	}
+	async function removeImage(msg: ChatMessage) {
+		if (conversation && msg.dbId) await deleteMessage(conversation.id, msg.dbId);
+		chat.removeLocal(msg.id);
+	}
+	function registerImage(msg: ChatMessage) {
+		void chat.send('Registrer dette i riktig tracking-serie.', msg.imageUrl ?? undefined, msg.attachment);
+	}
+
 	// ── Samtaleliste-tilstand ────────────────────────────────────────────────
 	let convList = $state<ConversationSummary[]>(data.conversations);
 	let editingId = $state<string | null>(null);
@@ -489,6 +504,9 @@
 				onRetry={() => chat.retry()}
 				onStarMessage={toggleMessageStar}
 				onEditStopped={editStoppedMessage}
+				onImageDescribe={describeImage}
+				onImageRemove={removeImage}
+				onImageRegister={registerImage}
 			/>
 		</div>
 

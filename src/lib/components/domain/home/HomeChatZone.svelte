@@ -19,6 +19,8 @@
 	import ChatMessages from '../../ui/ChatMessages.svelte';
 	import PageHeader from '../../ui/PageHeader.svelte';
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
+	import { patchMessageContent, deleteMessage } from '$lib/client/chat-message-actions';
+	import type { ChatMessage } from '$lib/client/chat-state.svelte';
 	import { HOME_CTX, type HomeContext } from './home-context';
 
 	import HomeCameraPanel from './HomeCameraPanel.svelte';
@@ -29,6 +31,21 @@
 	import ActionPillRow from './ActionPillRow.svelte';
 
 	const ctx = getContext<HomeContext>(HOME_CTX);
+
+	// Langtrykk-handlinger på et bilde i tråden (Beskriv / Registrer i serie / Fjern).
+	async function describeImage(msg: ChatMessage, text: string) {
+		const convId = ctx.homeChat.conversationId;
+		if (convId && msg.dbId) await patchMessageContent(convId, msg.dbId, text);
+		ctx.homeChat.applyLocalEdit(msg.id, text);
+	}
+	async function removeImage(msg: ChatMessage) {
+		const convId = ctx.homeChat.conversationId;
+		if (convId && msg.dbId) await deleteMessage(convId, msg.dbId);
+		ctx.homeChat.removeLocal(msg.id);
+	}
+	function registerImage(msg: ChatMessage) {
+		void ctx.homeChat.send('Registrer dette i riktig tracking-serie.', msg.imageUrl ?? undefined, msg.attachment);
+	}
 </script>
 
 <section class="zone zone-input" class:zone-chat-open={ctx.inputExpanded} aria-label="Chat" bind:this={ctx.chatSection}>
@@ -97,6 +114,9 @@
 				lastUserMsgId={ctx.homeChat.lastUserMsgId}
 				onRetry={() => ctx.homeChat.retry()}
 				onAction={(id) => ctx.pendingActionHandlers[id]?.()}
+				onImageDescribe={describeImage}
+				onImageRemove={removeImage}
+				onImageRegister={registerImage}
 			/>
 		</div>
 		<div class="chat-input-area">
