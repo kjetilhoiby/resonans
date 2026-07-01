@@ -84,7 +84,10 @@ export class ChatState {
 	lastUserText = $state('');
 	lastUserMsgId = $state('');
 
-	#pendingMessage: string | null = null;
+	// Kø for en melding som sendes mens en strøm pågår. Lagrer hele payloaden
+	// (tekst + bilde + vedlegg) slik at f.eks. to bilder rett etter hverandre begge
+	// får svar, i rekkefølge — i stedet for at det andre kortslutter det første.
+	#pendingSend: { text: string; imageUrl?: string; attachment?: unknown } | null = null;
 	#abortController: AbortController | null = null;
 	#isFirstMessage = true;
 	#opts: ChatStateOptions;
@@ -132,7 +135,7 @@ export class ChatState {
 		this.#clearWatchdog();
 		this.#abortController?.abort();
 		this.#abortController = null;
-		this.#pendingMessage = null;
+		this.#pendingSend = null;
 		this.messages = [];
 		this.loading = false;
 		this.streamingText = '';
@@ -191,8 +194,10 @@ export class ChatState {
 	async send(text: string, imageUrl?: string, attachment?: unknown) {
 		const displayText = text || (imageUrl ? '📷 [Bilde]' : '');
 
-		if (this.loading && !imageUrl && !attachment) {
-			this.#pendingMessage = displayText;
+		// Kø alt (også bilder/vedlegg) mens en strøm pågår, så hver melding får sitt
+		// eget svar i rekkefølge. Lagre rå-input; displayText utledes på nytt ved replay.
+		if (this.loading) {
+			this.#pendingSend = { text, imageUrl, attachment };
 			return;
 		}
 
@@ -331,10 +336,10 @@ export class ChatState {
 				this.streamingSteps = [];
 				this.loading = false;
 
-				if (this.#pendingMessage) {
-					const next = this.#pendingMessage;
-					this.#pendingMessage = null;
-					void this.send(next);
+				if (this.#pendingSend) {
+					const next = this.#pendingSend;
+					this.#pendingSend = null;
+					void this.send(next.text, next.imageUrl, next.attachment);
 				}
 			}
 		}
