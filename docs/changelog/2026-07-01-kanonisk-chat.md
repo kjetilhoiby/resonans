@@ -94,7 +94,26 @@ en «Åpne»-knapp dit). Forsiden beholder sin rene «tøm hodet»-inngang.
   underbevisstheten». Kun refleksjoner, ikke kjappe morgen/kveld-tap, for å holde støyen
   nede.
 
+### Vedlegg: pen visning i stedet for triage (denne endringen)
+
+Vedlegg fra hjem-/kanonisk-chatten gikk før alltid gjennom den kalde
+`/api/attachment-triage` (LLM-oppsummering + suggested-actions + auto-registrering av
+tracking + skjermtid-parsing) — en funksjon som i praksis aldri ble brukt, og som la en
+vegg av tekst rundt bildet.
+
+- **Slank sti nå.** `submitCamera`/`submitVoice`/`submitFile` (`home-media.ts`) laster opp
+  via den eksisterende slanke `/api/attachment-extract` (opplasting + innholdsuttrekk, ingen
+  triage, ingen sideeffekter) og sender bildet + bildeteksten rett i tråden via `sendChat`.
+  Resultat: pent bilde + valgfri kontekst («barna sover»), naturlig chat-respons, ingen
+  auto-logging. Google Sheet-snapshot beholder sin egen flyt.
+
 ### Fase 3 (ikke i denne endringen)
+
+- **Langpress-meny på bilde** (Beskriv / Registrer i serie / Fjern). Blokker som må løses
+  først: hjem-chattens meldinger har klient-genererte id-er (`crypto.randomUUID`), ikke
+  DB-id-er, så persistent redigering/sletting krever at chat-strømmen returnerer de lagrede
+  meldings-id-ene til klienten. «Registrer i serie» (sender bildet til chatten med
+  tracking-verktøyet) og en gjenbrukbar `longpress`-action kan gjøres uavhengig.
 
 - **Flere produsenter.** Fullført økt, nudge-respons og flyt-fullføring som hendelseskort
   (via `addCanonicalEventMessage` / event-endepunktet).

@@ -8,7 +8,7 @@
 import type { AttachmentRef, MediaHistoryItem } from './home-context';
 import type { ChatState } from '$lib/client/chat-state.svelte';
 import {
-	requestAttachmentTriage,
+	requestAttachmentUpload,
 	presentAttachmentTriage,
 	extractSpreadsheetId,
 	serializeSheetValues,
@@ -90,13 +90,15 @@ export async function submitCamera(
 	state.cameraUploading = true;
 	state.cameraError = false;
 	try {
-		const result = await requestAttachmentTriage(state.cameraSelectedFile, state.cameraCaption.trim(), 'camera');
+		const caption = state.cameraCaption.trim();
+		const attachment = await requestAttachmentUpload(state.cameraSelectedFile, caption, 'camera');
 		closeFn();
-		presentAttachmentTriage(result, homeChat, pendingActionHandlers, sendChat);
 		setSelectedQuickAction('chat');
 		setChatOpen(true);
 		setReturnToChatAfterFlow(false);
 		setChatPrefill('');
+		// Pen visning i tråden: bilde + valgfri bildetekst, uten kald triage.
+		await sendChat(caption, attachment.kind === 'image' ? attachment.url : undefined, attachment);
 	} catch {
 		state.cameraError = true;
 	} finally {
@@ -177,13 +179,14 @@ export async function submitVoice(
 	state.voiceUploading = true;
 	state.voiceError = false;
 	try {
-		const result = await requestAttachmentTriage(state.voiceSelectedFile, state.voiceText.trim(), 'voice');
+		const caption = state.voiceText.trim();
+		const attachment = await requestAttachmentUpload(state.voiceSelectedFile, caption, 'voice');
 		closeFn();
-		presentAttachmentTriage(result, homeChat, pendingActionHandlers, sendChat);
 		setSelectedQuickAction('chat');
 		setChatOpen(true);
 		setReturnToChatAfterFlow(false);
 		setChatPrefill('');
+		await sendChat(caption, attachment.kind === 'image' ? attachment.url : undefined, attachment);
 	} catch {
 		state.voiceError = true;
 	} finally {
@@ -282,14 +285,14 @@ export function submitFile(
 	const note = state.fileFlowNote.trim();
 	state.fileFlowUploading = true;
 	state.fileFlowError = false;
-	requestAttachmentTriage(selectedFile, note, 'file')
-		.then((result) => {
+	requestAttachmentUpload(selectedFile, note, 'file')
+		.then((attachment) => {
 			closeFn();
-			presentAttachmentTriage(result, homeChat, pendingActionHandlers, sendChat);
 			setSelectedQuickAction('chat');
 			setChatOpen(true);
 			setReturnToChatAfterFlow(false);
 			setChatPrefill('');
+			return sendChat(note, attachment.kind === 'image' ? attachment.url : undefined, attachment);
 		})
 		.catch(() => {
 			state.fileFlowError = true;
