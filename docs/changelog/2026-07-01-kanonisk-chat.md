@@ -132,13 +132,20 @@ Langtrykk på et bilde i tråden gir en liten meny: **Beskriv / legg til konteks
   forkastet klient-side (to bilder rett etter hverandre → coach-svar forsvant). `ChatState`
   køer nå *alle* sendinger med full payload (tekst + bilde + vedlegg), så hvert innlegg får
   sitt eget svar i rekkefølge.
-- **Dagbok-tone.** Den kanoniske tråden får et «Dagbok-modus»-tillegg i systemprompten
-  (`/api/chat`, gated på `conversation.metadata.canonical`): kort og varm medvandrer når
-  brukeren deler stemninger/bilder/refleksjoner, men fortsatt full hjelp + verktøy når han
-  ber om noe konkret. Tonen påvirker kun den kanoniske tråden.
+- **Vedlegg festes i skrivefeltet (A).** Kamera/fil/lyd sender ikke lenger umiddelbart.
+  Etter opplasting festes vedlegget i skrivefeltet (`pendingImageUrl`/`pendingAttachment` i
+  `HomeScreen`, vist som en chip i `HomeChatZone`), chatten åpnes fokusert med bildeteksten
+  som utgangspunkt, og bilde + tanker sendes som **én** melding. `submitCamera/Voice/File`
+  ble slanket til `(state, closeFn, onReady)`. Dette lar brukeren forankre en refleksjon i
+  bildet i stedet for å fyre av løsrevne enkeltbilder. (Fler-bilde per melding = fase 4 «B».)
+- **Ingen egen dagbok-tone.** Vurderte et «Dagbok-modus» i systemprompten, men forkastet det
+  bevisst: brukeren styrer dybden via selve meldingen (kort deling → lett svar; refleksjon →
+  substansielt svar). Den kanoniske tråden bruker samme coach/tone som ellers.
 
 ### Fase 4 (ikke i denne endringen)
 
+- **Flere bilder per melding (B).** La én melding bære flere bilder (i dag ett `imageUrl`) —
+  datamodell + Vision-API (flere `image_url`) + rendering av flere miniatyrer.
 - **Flere produsenter.** Fullført økt, nudge-respons og flyt-fullføring som hendelseskort
   (via `addCanonicalEventMessage` / event-endepunktet).
 - **Referanse-kort** fra tema-/flyt-samtaler inn i den kanoniske visningen (deep-link til

@@ -533,6 +533,9 @@
 	// ── Chat-sone ─────────────────────────────────────────────────────────
 	let chatOpen = $state(false);
 	let chatPrefill = $state('');
+	// Vedlegg festet i skrivefeltet (kamera/fil/lyd), sendes med neste melding.
+	let pendingImageUrl = $state<string | null>(null);
+	let pendingAttachment = $state<AttachmentRef | null>(null);
 	let latestClosedConversationId = $state<string | null>(null);
 	let createdThemeLink = $state<{ id: string; name: string; emoji?: string | null } | null>(null);
 	let launchingThemeId = $state<string | null>(null);
@@ -600,12 +603,25 @@
 		if (homeChat.conversationId && homeChat.messages.length > 0) latestClosedConversationId = homeChat.conversationId;
 		homeChat.reset(); homeChat.conversationId = null; chatPrefill = ''; chatInputAutoFocus = false;
 		createdThemeLink = null; launchingThemeId = null; chatOpen = false; returnToChatAfterFlow = false;
-		livskompassCoachingPrompt = null;
+		livskompassCoachingPrompt = null; clearPendingAttachment();
+	}
+
+	function clearPendingAttachment() { pendingImageUrl = null; pendingAttachment = null; }
+
+	// Fest et opplastet vedlegg i skrivefeltet og åpne chatten fokusert, med bildeteksten
+	// som utgangspunkt. Brukeren utdyper og sender bilde + tanker som én melding.
+	function stageAttachment(attachment: AttachmentRef, caption: string) {
+		pendingAttachment = attachment;
+		pendingImageUrl = attachment.kind === 'image' ? attachment.url : null;
+		openChat(caption, 'chat', { focusInput: true });
 	}
 
 	async function sendChat(text: string, imageUrl?: string, attachment?: AttachmentRef) {
 		suggestedTheme = null; routedToTheme = null;
-		await homeChat.send(text, imageUrl, attachment as Parameters<typeof homeChat.send>[2]);
+		const img = imageUrl ?? pendingImageUrl ?? undefined;
+		const att = (attachment ?? pendingAttachment ?? undefined) as Parameters<typeof homeChat.send>[2];
+		clearPendingAttachment();
+		await homeChat.send(text, img, att);
 	}
 
 	function stopChat() { homeChat.stop(); }
@@ -690,15 +706,15 @@
 
 	function handleCameraFileSelect(event: Event) { cameraFileSelectHandler(ctx, event); }
 	function closeCameraFlow() { cameraCloseHandler(ctx, returnToChatAfterFlow, (v) => chatOpen = v, (v) => chatInputAutoFocus = v, (v) => returnToChatAfterFlow = v); }
-	async function submitCamera() { await cameraSubmitHandler(ctx, homeChat, pendingActionHandlers, sendChat, closeCameraFlow, (v) => selectedQuickAction = v, (v) => chatOpen = v, (v) => returnToChatAfterFlow = v, (v) => chatPrefill = v); }
+	async function submitCamera() { await cameraSubmitHandler(ctx, closeCameraFlow, stageAttachment); }
 	async function reuseCameraMedia(item: MediaHistoryItem) { await cameraReuseHandler(ctx, item); }
 	function handleVoiceFileSelect(event: Event) { voiceFileSelectHandler(ctx, event); }
 	function closeVoiceFlow() { voiceCloseHandler(ctx, returnToChatAfterFlow, (v) => chatOpen = v, (v) => chatInputAutoFocus = v, (v) => returnToChatAfterFlow = v); }
-	async function submitVoice() { await voiceSubmitHandler(ctx, homeChat, pendingActionHandlers, sendChat, closeVoiceFlow, (v) => selectedQuickAction = v, (v) => chatOpen = v, (v) => returnToChatAfterFlow = v, (v) => chatPrefill = v); }
+	async function submitVoice() { await voiceSubmitHandler(ctx, closeVoiceFlow, stageAttachment); }
 	async function reuseVoiceMedia(item: MediaHistoryItem) { await voiceReuseHandler(ctx, item); }
 	function handleFileFlowSelect(event: Event) { fileFlowSelectHandler(ctx, event); }
 	function closeFileFlow() { fileCloseHandler(ctx, returnToChatAfterFlow, (v) => chatOpen = v, (v) => chatInputAutoFocus = v, (v) => returnToChatAfterFlow = v); }
-	function submitFile() { fileSubmitHandler(ctx, homeChat, pendingActionHandlers, sendChat, closeFileFlow, (v) => selectedQuickAction = v, (v) => chatOpen = v, (v) => returnToChatAfterFlow = v, (v) => chatPrefill = v); }
+	function submitFile() { fileSubmitHandler(ctx, closeFileFlow, stageAttachment); }
 	async function submitSheetSnapshot() { await sheetSnapshotHandler(ctx, homeChat, pendingActionHandlers, sendChat, closeFileFlow, (v) => selectedQuickAction = v, (v) => chatOpen = v, (v) => returnToChatAfterFlow = v, (v) => chatPrefill = v); }
 	async function reuseFileMedia(item: MediaHistoryItem) { await fileReuseHandler(ctx, item); }
 
@@ -960,6 +976,9 @@
 
 		get chatOpen() { return chatOpen; }, set chatOpen(v) { chatOpen = v; },
 		get chatPrefill() { return chatPrefill; }, set chatPrefill(v) { chatPrefill = v; },
+		get pendingImageUrl() { return pendingImageUrl; },
+		get pendingAttachment() { return pendingAttachment; },
+		clearPendingAttachment,
 		get chatInputAutoFocus() { return chatInputAutoFocus; }, set chatInputAutoFocus(v) { chatInputAutoFocus = v; },
 		get chatSection() { return chatSection; }, set chatSection(v) { chatSection = v; },
 		get inputExpanded() { return inputExpanded; },

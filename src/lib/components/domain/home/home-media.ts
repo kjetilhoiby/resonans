@@ -77,14 +77,8 @@ export function closeCameraFlow(
 
 export async function submitCamera(
 	state: CameraState,
-	homeChat: ChatState,
-	pendingActionHandlers: Record<string, () => void>,
-	sendChat: (text: string, imageUrl?: string, attachment?: AttachmentRef) => Promise<void>,
 	closeFn: () => void,
-	setSelectedQuickAction: (v: 'chat') => void,
-	setChatOpen: (v: boolean) => void,
-	setReturnToChatAfterFlow: (v: boolean) => void,
-	setChatPrefill: (v: string) => void,
+	onReady: (attachment: AttachmentRef, caption: string) => void,
 ): Promise<void> {
 	if (!state.cameraSelectedFile) return;
 	state.cameraUploading = true;
@@ -93,12 +87,8 @@ export async function submitCamera(
 		const caption = state.cameraCaption.trim();
 		const attachment = await requestAttachmentUpload(state.cameraSelectedFile, caption, 'camera');
 		closeFn();
-		setSelectedQuickAction('chat');
-		setChatOpen(true);
-		setReturnToChatAfterFlow(false);
-		setChatPrefill('');
-		// Pen visning i tråden: bilde + valgfri bildetekst, uten kald triage.
-		await sendChat(caption, attachment.kind === 'image' ? attachment.url : undefined, attachment);
+		// Fest vedlegget i skrivefeltet; brukeren skriver tankene og sender alt som én melding.
+		onReady(attachment, caption);
 	} catch {
 		state.cameraError = true;
 	} finally {
@@ -166,14 +156,8 @@ export function closeVoiceFlow(
 
 export async function submitVoice(
 	state: VoiceState,
-	homeChat: ChatState,
-	pendingActionHandlers: Record<string, () => void>,
-	sendChat: (text: string, imageUrl?: string, attachment?: AttachmentRef) => Promise<void>,
 	closeFn: () => void,
-	setSelectedQuickAction: (v: 'chat') => void,
-	setChatOpen: (v: boolean) => void,
-	setReturnToChatAfterFlow: (v: boolean) => void,
-	setChatPrefill: (v: string) => void,
+	onReady: (attachment: AttachmentRef, caption: string) => void,
 ): Promise<void> {
 	if (!state.voiceSelectedFile) return;
 	state.voiceUploading = true;
@@ -182,11 +166,7 @@ export async function submitVoice(
 		const caption = state.voiceText.trim();
 		const attachment = await requestAttachmentUpload(state.voiceSelectedFile, caption, 'voice');
 		closeFn();
-		setSelectedQuickAction('chat');
-		setChatOpen(true);
-		setReturnToChatAfterFlow(false);
-		setChatPrefill('');
-		await sendChat(caption, attachment.kind === 'image' ? attachment.url : undefined, attachment);
+		onReady(attachment, caption);
 	} catch {
 		state.voiceError = true;
 	} finally {
@@ -271,14 +251,8 @@ export function closeFileFlow(
 
 export function submitFile(
 	state: FileFlowState,
-	homeChat: ChatState,
-	pendingActionHandlers: Record<string, () => void>,
-	sendChat: (text: string, imageUrl?: string, attachment?: AttachmentRef) => Promise<void>,
 	closeFn: () => void,
-	setSelectedQuickAction: (v: 'chat') => void,
-	setChatOpen: (v: boolean) => void,
-	setReturnToChatAfterFlow: (v: boolean) => void,
-	setChatPrefill: (v: string) => void,
+	onReady: (attachment: AttachmentRef, caption: string) => void,
 ): void {
 	if (!state.fileFlowSelected) return;
 	const selectedFile = state.fileFlowSelected;
@@ -288,11 +262,7 @@ export function submitFile(
 	requestAttachmentUpload(selectedFile, note, 'file')
 		.then((attachment) => {
 			closeFn();
-			setSelectedQuickAction('chat');
-			setChatOpen(true);
-			setReturnToChatAfterFlow(false);
-			setChatPrefill('');
-			return sendChat(note, attachment.kind === 'image' ? attachment.url : undefined, attachment);
+			onReady(attachment, note);
 		})
 		.catch(() => {
 			state.fileFlowError = true;

@@ -1982,13 +1982,6 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		const systemPrompt = buildModularSystemPrompt(routingDecision);
 		const promptPrefix = systemPromptPrefix ? `${systemPromptPrefix}\n\n` : '';
 
-		// Dagbok-tone for den kanoniske tråden: varm, kort medvandrer når brukeren deler
-		// stemninger/bilder/refleksjoner — men fortsatt full hjelp (og verktøy) når han ber
-		// om noe konkret. Se docs/changelog/2026-07-01-kanonisk-chat.md.
-		const canonicalDiaryPrompt = (conversation as { metadata?: { canonical?: boolean } | null }).metadata?.canonical
-			? '\n\n## Dagbok-modus\nDette er brukerens løpende, kanoniske dagbok — som å tenke høyt med seg selv. Når han deler et bilde, en stemning eller en kort refleksjon (ikke en oppgave eller et konkret spørsmål): svar KORT og varmt — anerkjenn og speil det han deler i én–to setninger, og still av og til ett lett, åpent spørsmål. Ikke analyser, ikke gi uoppfordrede råd, ikke lag lister. Når han faktisk ber om noe eller stiller et spørsmål: hjelp som vanlig og bruk verktøy ved behov.'
-			: '';
-
 		await emitProgress(onProgress, 'routing_complete', 'Forespørselen er analysert.', {
 			domains: routingDecision.domains,
 			skills: routingDecision.skills,
@@ -1996,7 +1989,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		});
 
 		const messages: ChatCompletionMessageParam[] = [
-			{ role: 'system', content: promptPrefix + systemPrompt + canonicalDiaryPrompt + memoryContext + personContext + goalsContext + checklistContext + procedureContext + sourceContextPrompt + dateContext + dayContext }
+			{ role: 'system', content: promptPrefix + systemPrompt + memoryContext + personContext + goalsContext + checklistContext + procedureContext + sourceContextPrompt + dateContext + dayContext }
 		];
 
 		// Legg til historikk (unntatt den siste brukermeldingen som allerede er der)
