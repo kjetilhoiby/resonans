@@ -11,6 +11,7 @@ import type { WidgetDraft } from '$lib/artifacts/widget-draft';
 import type { WidgetCreationFlow } from '$lib/flows/widget-creation/flow';
 import type { WeatherStatusWidget } from '$lib/ai/tools/weather-forecast';
 import type { PhotoAnnotationResult } from '$lib/ai/tools/annotate-photo';
+import type { ChatEventCard } from '$lib/chat/event-cards';
 
 export interface ChatAction {
 	id: string;
@@ -20,9 +21,15 @@ export interface ChatAction {
 
 export interface ChatMessage {
 	id: string;
+	/** DB-id for den lagrede meldingen (settes etter at svaret er ferdig). Brukes til
+	 *  redigering/sletting. I /samtaler er `id` allerede DB-id-en; da er dbId lik id. */
+	dbId?: string | null;
 	role: 'user' | 'assistant';
 	text: string;
 	starred: boolean;
+	/** Tidspunkt meldingen ble opprettet. Brukes til dato-seksjonering i den kanoniske
+	 *  tråden. Valgfritt — kontekster uten tidsstempel viser ingen dato-spacere. */
+	createdAt?: string | Date | null;
 	imageUrl?: string | null;
 	attachment?: unknown;
 	actions?: ChatAction[];
@@ -31,6 +38,8 @@ export interface ChatMessage {
 	statusWidget?: WeatherStatusWidget | null;
 	photoAnnotation?: PhotoAnnotationResult | null;
 	photoAnnotationImageUrl?: string | null;
+	/** Inline hendelseskort i den kanoniske tråden (egenfrekvens, økt, nudge …). */
+	eventCard?: ChatEventCard | null;
 }
 
 export interface ChatStateOptions {
@@ -75,7 +84,10 @@ export class ChatState {
 	lastUserText = $state('');
 	lastUserMsgId = $state('');
 
-	#pendingMessage: string | null = null;
+	// Kø for en melding som sendes mens en strøm pågår. Lagrer hele payloaden
+	// (tekst + bilde + vedlegg) slik at f.eks. to bilder rett etter hverandre begge
+	// får svar, i rekkefølge — i stedet for at det andre kortslutter det første.
+	#pendingSend: { text: string; imageUrl?: string; attachment?: unknown } | null = null;
 	#abortController: AbortController | null = null;
 	#isFirstMessage = true;
 	#opts: ChatStateOptions;
@@ -100,6 +112,17 @@ export class ChatState {
 		}
 	}
 
+	/** Oppdater teksten på en melding lokalt (etter en lagret redigering). */
+	applyLocalEdit(id: string, text: string) {
+		const msg = this.messages.find((m) => m.id === id);
+		if (msg) msg.text = text;
+	}
+
+	/** Fjern en melding lokalt (etter en lagret sletting). */
+	removeLocal(id: string) {
+		this.messages = this.messages.filter((m) => m.id !== id);
+	}
+
 	/** Oppdater conversationId utenfra (f.eks. ThemePage ved bytte av samtale). */
 	setConversationId(id: string | null) {
 		this.conversationId = id;
@@ -112,7 +135,7 @@ export class ChatState {
 		this.#clearWatchdog();
 		this.#abortController?.abort();
 		this.#abortController = null;
-		this.#pendingMessage = null;
+		this.#pendingSend = null;
 		this.messages = [];
 		this.loading = false;
 		this.streamingText = '';
@@ -171,15 +194,17 @@ export class ChatState {
 	async send(text: string, imageUrl?: string, attachment?: unknown) {
 		const displayText = text || (imageUrl ? '📷 [Bilde]' : '');
 
-		if (this.loading && !imageUrl && !attachment) {
-			this.#pendingMessage = displayText;
+		// Kø alt (også bilder/vedlegg) mens en strøm pågår, så hver melding får sitt
+		// eget svar i rekkefølge. Lagre rå-input; displayText utledes på nytt ved replay.
+		if (this.loading) {
+			this.#pendingSend = { text, imageUrl, attachment };
 			return;
 		}
 
 		const msgId = crypto.randomUUID();
 		this.messages = [
 			...this.messages,
-			{ id: msgId, role: 'user', text: displayText, starred: false, imageUrl: imageUrl ?? null, attachment }
+			{ id: msgId, role: 'user', text: displayText, starred: false, createdAt: new Date(), imageUrl: imageUrl ?? null, attachment }
 		];
 		this.loading = true;
 		this.streamingText = '';
@@ -260,11 +285,20 @@ export class ChatState {
 
 			this.conversationId = (data.conversationId as string | null) ?? this.conversationId;
 
+			// Fest DB-id-en på brukermeldingen slik at den kan redigeres/slettes senere.
+			const userDbId = data.userMessageId as string | undefined;
+			if (userDbId) {
+				const userMsg = this.messages.find((m) => m.id === msgId);
+				if (userMsg) userMsg.dbId = userDbId;
+			}
+
 			const assistantMsg: ChatMessage = {
 				id: crypto.randomUUID(),
+				dbId: (data.assistantMessageId as string | null) ?? null,
 				role: 'assistant',
 				text: (data.message as string) ?? '',
 				starred: false,
+				createdAt: new Date(),
 				imageUrl: null,
 				actions: (data.actions as ChatAction[] | undefined) ?? undefined,
 				widgetProposal: (data.widgetProposal ?? data.metadata?.widgetProposal) as WidgetDraft | null ?? null,
@@ -272,6 +306,7 @@ export class ChatState {
 				statusWidget: (data.statusWidget ?? data.metadata?.statusWidget) as WeatherStatusWidget | null ?? null,
 				photoAnnotation: (data.photoAnnotation ?? data.metadata?.photoAnnotation) as PhotoAnnotationResult | null ?? null,
 				photoAnnotationImageUrl: (data.photoAnnotationImageUrl ?? data.metadata?.photoAnnotationImageUrl) as string | null ?? null,
+				eventCard: (data.eventCard ?? data.metadata?.eventCard) as ChatEventCard | null ?? null,
 			};
 
 			const transformed = this.#opts.onAssistantMessage?.(assistantMsg, data);
@@ -301,10 +336,10 @@ export class ChatState {
 				this.streamingSteps = [];
 				this.loading = false;
 
-				if (this.#pendingMessage) {
-					const next = this.#pendingMessage;
-					this.#pendingMessage = null;
-					void this.send(next);
+				if (this.#pendingSend) {
+					const next = this.#pendingSend;
+					this.#pendingSend = null;
+					void this.send(next.text, next.imageUrl, next.attachment);
 				}
 			}
 		}

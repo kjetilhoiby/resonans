@@ -10,10 +10,12 @@
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
 	import { ChatState } from '$lib/client/chat-state.svelte';
 	import type { ChatMessage } from '$lib/client/chat-state.svelte';
+	import { patchMessageContent, deleteMessage } from '$lib/client/chat-message-actions';
 	import type { AttachmentRef } from '$lib/components/domain/home/home-context';
 	import type { WidgetCreationFlow } from '$lib/flows/widget-creation/flow';
 	import type { WeatherStatusWidget } from '$lib/ai/tools/weather-forecast';
 	import type { PhotoAnnotationResult } from '$lib/ai/tools/annotate-photo';
+	import type { ChatEventCard } from '$lib/chat/event-cards';
 
 	interface ConversationSummary {
 		id: string;
@@ -44,6 +46,7 @@
 		statusWidget?: WeatherStatusWidget | null;
 		photoAnnotation?: PhotoAnnotationResult | null;
 		photoAnnotationImageUrl?: string | null;
+		eventCard?: ChatEventCard | null;
 	}
 
 	interface Props {
@@ -53,6 +56,7 @@
 			selectedConversation: ConversationSummary | null;
 			messages: ConversationMessage[];
 			hasMoreMessages: boolean;
+			scrollToDate: string | null;
 			weightContext: string | null;
 		};
 	}
@@ -66,15 +70,18 @@
 			.filter((m) => m.role !== 'system')
 			.map((m) => ({
 				id: m.id,
+				dbId: m.id,
 				role: m.role as 'user' | 'assistant',
 				text: m.content,
 				starred: m.starred,
+				createdAt: m.timestamp,
 				imageUrl: m.imageUrl ?? null,
 				widgetProposal: m.widgetProposal ?? null,
 				widgetFlow: m.widgetFlow ?? null,
 				statusWidget: m.statusWidget ?? null,
 				photoAnnotation: m.photoAnnotation ?? null,
-				photoAnnotationImageUrl: m.photoAnnotationImageUrl ?? null
+				photoAnnotationImageUrl: m.photoAnnotationImageUrl ?? null,
+				eventCard: m.eventCard ?? null
 			}));
 	}
 
@@ -176,7 +183,24 @@
 	$effect(() => {
 		bottomKey;
 		if (!messagesEl) return;
+		// Ved hopp-til-dag: ikke dra til bunn før hoppet er utført (jumpLatch er satt).
+		if (data.scrollToDate && jumpLatch !== data.scrollToDate) return;
 		messagesEl.scrollTop = messagesEl.scrollHeight;
+	});
+
+	// Hopp-til-dag fra ukeplanen: scroll til dag-ankeret én gang per måldato.
+	// jumpLatch er en vanlig variabel (ikke reaktiv) for å unngå effekt-løkke.
+	let jumpLatch = '';
+	$effect(() => {
+		const date = data.scrollToDate;
+		const rendered = chat.messages.length; // avheng av at meldingene er lastet
+		if (!date || !messagesEl || rendered === 0 || jumpLatch === date) return;
+		jumpLatch = date;
+		void tick().then(() => {
+			const anchor = messagesEl?.querySelector(`[id="dag-${date}"]`) as HTMLElement | null;
+			if (anchor) anchor.scrollIntoView({ block: 'start' });
+			else if (messagesEl) messagesEl.scrollTop = 0;
+		});
 	});
 
 	async function loadOlderMessages() {
@@ -272,6 +296,19 @@
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ starred: !current })
 		});
+	}
+
+	// Langtrykk-handlinger på et bilde i tråden.
+	async function describeImage(msg: ChatMessage, text: string) {
+		if (conversation && msg.dbId) await patchMessageContent(conversation.id, msg.dbId, text);
+		chat.applyLocalEdit(msg.id, text);
+	}
+	async function removeImage(msg: ChatMessage) {
+		if (conversation && msg.dbId) await deleteMessage(conversation.id, msg.dbId);
+		chat.removeLocal(msg.id);
+	}
+	function registerImage(msg: ChatMessage) {
+		void chat.send('Registrer dette i riktig tracking-serie.', msg.imageUrl ?? undefined, msg.attachment);
 	}
 
 	// ── Samtaleliste-tilstand ────────────────────────────────────────────────
@@ -467,6 +504,9 @@
 				onRetry={() => chat.retry()}
 				onStarMessage={toggleMessageStar}
 				onEditStopped={editStoppedMessage}
+				onImageDescribe={describeImage}
+				onImageRemove={removeImage}
+				onImageRegister={registerImage}
 			/>
 		</div>
 

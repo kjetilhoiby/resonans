@@ -216,6 +216,9 @@ export interface HomeContext {
 	// ── Chat-sone ──
 	chatOpen: boolean;
 	chatPrefill: string;
+	pendingImageUrl: string | null;
+	pendingAttachment: AttachmentRef | null;
+	clearPendingAttachment: () => void;
 	chatInputAutoFocus: boolean;
 	chatSection: HTMLElement | null;
 	inputExpanded: boolean;

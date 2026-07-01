@@ -23,6 +23,9 @@
 	import ChatStatusWidget from '$lib/components/domain/ChatStatusWidget.svelte';
 	import AnnotatedImageCard from '$lib/components/domain/AnnotatedImageCard.svelte';
 	import type { ChatMessage } from '$lib/client/chat-state.svelte';
+	import { daySpacerBefore, dayKey, toDate } from '$lib/client/chat-day-sections';
+	import { longpress } from '$lib/actions/longpress';
+	import ChatImageMenu from './ChatImageMenu.svelte';
 
 	interface Props {
 		messages: ChatMessage[];
@@ -37,6 +40,10 @@
 		onStarMessage?: (id: string) => void;
 		onEditStopped?: () => void;
 		onAction?: (actionId: string) => void;
+		/** Langtrykk-handlinger på et bilde i tråden. Utelates de, er langtrykk av. */
+		onImageDescribe?: (msg: ChatMessage, text: string) => void;
+		onImageRemove?: (msg: ChatMessage) => void;
+		onImageRegister?: (msg: ChatMessage) => void;
 	}
 
 	let {
@@ -51,12 +58,52 @@
 		onRetry,
 		onStarMessage,
 		onEditStopped,
-		onAction
+		onAction,
+		onImageDescribe,
+		onImageRemove,
+		onImageRegister
 	}: Props = $props();
+
+	let imageMenu = $state<{ rect: DOMRect; msg: ChatMessage } | null>(null);
+	const imageActionsEnabled = $derived(Boolean(onImageDescribe || onImageRemove || onImageRegister));
 </script>
 
-{#each messages as msg (msg.id)}
-	{#if msg.role === 'user'}
+{#each messages as msg, i (msg.id)}
+	{@const daySpacer = daySpacerBefore(messages, i)}
+	{#if daySpacer}
+		{@const dayDate = toDate(msg.createdAt)}
+		<div
+			class="cm-day-spacer"
+			id={dayDate ? `dag-${dayKey(dayDate)}` : undefined}
+			role="separator"
+			aria-label={daySpacer}
+		>
+			<span class="cm-day-spacer-label">{daySpacer}</span>
+		</div>
+	{/if}
+	{#if msg.eventCard}
+		{@const card = msg.eventCard}
+		<div class="cm-row cm-row-event">
+			{#if card.href}
+				<a class="cm-event-card cm-event-card-link" href={card.href}>
+					{#if card.icon}<span class="cm-event-icon" aria-hidden="true">{card.icon}</span>{/if}
+					<span class="cm-event-copy">
+						<span class="cm-event-title">{card.title}</span>
+						{#if card.detail}<span class="cm-event-detail">{card.detail}</span>{/if}
+					</span>
+					<span class="cm-event-arrow" aria-hidden="true">→</span>
+				</a>
+			{:else}
+				<div class="cm-event-card">
+					{#if card.icon}<span class="cm-event-icon" aria-hidden="true">{card.icon}</span>{/if}
+					<span class="cm-event-copy">
+						<span class="cm-event-title">{card.title}</span>
+						{#if card.detail}<span class="cm-event-detail">{card.detail}</span>{/if}
+					</span>
+				</div>
+			{/if}
+		</div>
+	{:else if msg.role === 'user'}
 		<div class="cm-row cm-row-user">
 			{#if stopped && msg.id === lastUserMsgId && onEditStopped}
 				<button class="cm-bubble-user cm-bubble-stoppable" onclick={onEditStopped}>
@@ -81,7 +128,16 @@
 			{:else}
 				<div class="cm-bubble-user">
 					{#if msg.imageUrl}
-						<img class="cm-bubble-img" src={msg.imageUrl} alt="Vedlagt bilde" />
+						{#if imageActionsEnabled}
+							<img
+								class="cm-bubble-img cm-bubble-img-actionable"
+								src={msg.imageUrl}
+								alt="Vedlagt bilde"
+								use:longpress={{ onLongPress: (rect) => (imageMenu = { rect, msg }) }}
+							/>
+						{:else}
+							<img class="cm-bubble-img" src={msg.imageUrl} alt="Vedlagt bilde" />
+						{/if}
 					{/if}
 					{#if msg.attachment && !msg.imageUrl}
 						{@const att = msg.attachment as { kind?: string; name?: string; mimeType?: string }}
@@ -162,11 +218,93 @@
 	</div>
 {/if}
 
+<ChatImageMenu
+	open={!!imageMenu}
+	anchor={imageMenu?.rect ?? null}
+	initialText={imageMenu && imageMenu.msg.text !== '📷 [Bilde]' ? imageMenu.msg.text : ''}
+	canPersist={!!imageMenu?.msg.dbId}
+	onClose={() => (imageMenu = null)}
+	onDescribe={(t) => { const m = imageMenu?.msg; imageMenu = null; if (m) onImageDescribe?.(m, t); }}
+	onRegister={() => { const m = imageMenu?.msg; imageMenu = null; if (m) onImageRegister?.(m); }}
+	onRemove={() => { const m = imageMenu?.msg; imageMenu = null; if (m) onImageRemove?.(m); }}
+/>
+
 <style>
+	.cm-day-spacer {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		margin: 6px 0;
+		color: #6a6a6a;
+	}
+	.cm-day-spacer::before,
+	.cm-day-spacer::after {
+		content: '';
+		flex: 1;
+		height: 1px;
+		background: #232323;
+	}
+	.cm-day-spacer-label {
+		font-size: 0.72rem;
+		font-weight: 600;
+		letter-spacing: 0.04em;
+		white-space: nowrap;
+	}
+
 	.cm-row {
 		display: flex;
 		align-items: flex-end;
 		gap: 6px;
+	}
+
+	.cm-row-event {
+		justify-content: stretch;
+	}
+	.cm-event-card {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		width: 100%;
+		box-sizing: border-box;
+		background: #12141c;
+		border: 1px solid #23262f;
+		border-radius: 12px;
+		padding: 10px 12px;
+		text-decoration: none;
+		color: inherit;
+	}
+	.cm-event-card-link {
+		transition: border-color 0.12s, background 0.12s;
+	}
+	.cm-event-card-link:hover {
+		border-color: #3c4f9f;
+		background: #151826;
+	}
+	.cm-event-icon {
+		font-size: 1.15rem;
+		line-height: 1;
+		flex-shrink: 0;
+	}
+	.cm-event-copy {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		min-width: 0;
+		flex: 1;
+	}
+	.cm-event-title {
+		font-size: 0.82rem;
+		font-weight: 600;
+		color: #dcdce4;
+	}
+	.cm-event-detail {
+		font-size: 0.8rem;
+		color: #9a9aa6;
+		line-height: 1.4;
+	}
+	.cm-event-arrow {
+		color: #6a728f;
+		flex-shrink: 0;
 	}
 
 	.cm-row-user {
@@ -216,6 +354,11 @@
 		max-height: 200px;
 		border-radius: 10px;
 		object-fit: cover;
+	}
+	.cm-bubble-img-actionable {
+		cursor: pointer;
+		touch-action: manipulation;
+		-webkit-touch-callout: none;
 	}
 
 	.cm-edit-hint {

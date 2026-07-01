@@ -19,6 +19,8 @@
 	import ChatMessages from '../../ui/ChatMessages.svelte';
 	import PageHeader from '../../ui/PageHeader.svelte';
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
+	import { patchMessageContent, deleteMessage } from '$lib/client/chat-message-actions';
+	import type { ChatMessage } from '$lib/client/chat-state.svelte';
 	import { HOME_CTX, type HomeContext } from './home-context';
 
 	import HomeCameraPanel from './HomeCameraPanel.svelte';
@@ -29,6 +31,21 @@
 	import ActionPillRow from './ActionPillRow.svelte';
 
 	const ctx = getContext<HomeContext>(HOME_CTX);
+
+	// Langtrykk-handlinger på et bilde i tråden (Beskriv / Registrer i serie / Fjern).
+	async function describeImage(msg: ChatMessage, text: string) {
+		const convId = ctx.homeChat.conversationId;
+		if (convId && msg.dbId) await patchMessageContent(convId, msg.dbId, text);
+		ctx.homeChat.applyLocalEdit(msg.id, text);
+	}
+	async function removeImage(msg: ChatMessage) {
+		const convId = ctx.homeChat.conversationId;
+		if (convId && msg.dbId) await deleteMessage(convId, msg.dbId);
+		ctx.homeChat.removeLocal(msg.id);
+	}
+	function registerImage(msg: ChatMessage) {
+		void ctx.homeChat.send('Registrer dette i riktig tracking-serie.', msg.imageUrl ?? undefined, msg.attachment);
+	}
 </script>
 
 <section class="zone zone-input" class:zone-chat-open={ctx.inputExpanded} aria-label="Chat" bind:this={ctx.chatSection}>
@@ -97,6 +114,9 @@
 				lastUserMsgId={ctx.homeChat.lastUserMsgId}
 				onRetry={() => ctx.homeChat.retry()}
 				onAction={(id) => ctx.pendingActionHandlers[id]?.()}
+				onImageDescribe={describeImage}
+				onImageRemove={removeImage}
+				onImageRegister={registerImage}
 			/>
 		</div>
 		<div class="chat-input-area">
@@ -139,6 +159,22 @@
 					<span>{ctx.launchingThemeId === themeLink.id ? `Åpner ${themeLink.name}…` : `Åpne ${themeLink.name}`}</span>
 					<span class="theme-link-arrow">→</span>
 				</button>
+			{/if}
+			{#if ctx.pendingImageUrl || ctx.pendingAttachment}
+				<div class="pending-attach">
+					{#if ctx.pendingImageUrl}
+						<img class="pending-thumb" src={ctx.pendingImageUrl} alt="Vedlegg" />
+					{:else}
+						<span class="pending-icon" aria-hidden="true">📎</span>
+					{/if}
+					<span class="pending-name">{ctx.pendingAttachment?.name ?? 'Vedlegg'}</span>
+					<button
+						class="pending-remove"
+						aria-label="Fjern vedlegg"
+						data-track="hjem-chat:fjern-vedlegg"
+						onclick={ctx.clearPendingAttachment}
+					>✕</button>
+				</div>
 			{/if}
 			{#key `${ctx.activeQuickAction.id}:${ctx.chatInputAutoFocus ? 'focus' : 'nofocus'}`}
 				<ChatInput
@@ -196,6 +232,13 @@
 	@media (prefers-reduced-motion: reduce) { .zone-input { transition: none; } }
 
 	.chat-messages { flex: 1; overflow-y: auto; padding: 14px 16px 8px; display: flex; flex-direction: column; gap: 12px; -webkit-overflow-scrolling: touch; scrollbar-width: thin; scrollbar-color: #222 transparent; }
+	.pending-attach { display: flex; align-items: center; gap: 8px; background: #14161d; border: 1px solid #262a33; border-radius: 10px; padding: 6px 8px; }
+	.pending-thumb { width: 34px; height: 34px; border-radius: 7px; object-fit: cover; flex-shrink: 0; }
+	.pending-icon { font-size: 1.1rem; width: 34px; text-align: center; flex-shrink: 0; }
+	.pending-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8rem; color: #b8b8c0; }
+	.pending-remove { background: none; border: none; color: #7a7a86; font-size: 0.9rem; cursor: pointer; padding: 4px 6px; flex-shrink: 0; }
+	.pending-remove:hover { color: #ddd; }
+
 	.chat-input-area { position: sticky; bottom: 0; padding: 10px 14px env(safe-area-inset-bottom, 14px); border-top: 1px solid #1a1a1a; background: linear-gradient(180deg, rgba(15, 15, 15, 0.72) 0%, #0f0f0f 18%); backdrop-filter: blur(10px); flex-shrink: 0; display: flex; flex-direction: column; gap: 10px; }
 
 	.theme-link-banner { --theme-hue: 228; display: flex; align-items: center; gap: 10px; width: 100%; background: linear-gradient(180deg, hsl(var(--theme-hue) 24% 13%) 0%, hsl(var(--theme-hue) 20% 11%) 100%); border: 1px solid hsl(var(--theme-hue) 24% 26%); border-radius: 14px; padding: 11px 12px; color: hsl(var(--theme-hue) 54% 88%); font: inherit; font-size: 0.82rem; cursor: pointer; text-align: left; transition: transform 0.18s ease, opacity 0.18s ease, border-color 0.18s ease; }

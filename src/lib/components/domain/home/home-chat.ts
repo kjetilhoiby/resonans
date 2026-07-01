@@ -106,6 +106,30 @@ export async function requestAttachmentTriage(
 	return response.json();
 }
 
+/**
+ * Slank opplasting uten triage: laster kun opp + trekker ut innhold via
+ * /api/attachment-extract. Brukes for «pen visning i tråden»-flyten der bildet
+ * vises med en valgfri bildetekst, og chatturen selv håndterer konteksten —
+ * ingen kald LLM-triage, ingen auto-registrering. (Triage kan fortsatt kjøres
+ * på forespørsel via langpress på bildet.)
+ */
+export async function requestAttachmentUpload(
+	file: File,
+	note: string,
+	source: AttachmentSource
+): Promise<AttachmentRef> {
+	const formData = new FormData();
+	formData.append('file', file);
+	formData.append('note', note);
+	formData.append('source', source);
+	const response = await fetch('/api/attachment-extract', { method: 'POST', body: formData });
+	if (!response.ok) {
+		throw new Error('Attachment upload failed');
+	}
+	const data = await response.json();
+	return data.attachment as AttachmentRef;
+}
+
 export function buildAttachmentTriageText(result: AttachmentTriageResponse['triage']): string {
 	return [
 		result.summary,

@@ -1,5 +1,5 @@
 import { redirect } from '@sveltejs/kit';
-import { getConversationByIdForUser, getConversationMessagesPage, getUserConversationList } from '$lib/server/conversations';
+import { getConversationByIdForUser, getConversationMessagesPage, getConversationMessagesFromDate, getOrCreateCanonicalConversation, getUserConversationList } from '$lib/server/conversations';
 import { db } from '$lib/db';
 import { themes, sensorEvents, goals } from '$lib/db/schema';
 import { eq, and, gte, desc, or, ilike } from 'drizzle-orm';
@@ -102,8 +102,17 @@ const INITIAL_MESSAGE_BUFFER = 12;
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	const t0 = performance.now();
-	const conversationId = url.searchParams.get('conversation');
+	let conversationId = url.searchParams.get('conversation');
 	const contextParam = url.searchParams.get('context');
+	const canonicalParam = url.searchParams.get('canonical');
+	const dateParam = url.searchParams.get('date');
+	const isValidDate = !!dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam);
+
+	// ?canonical=1 (typisk fra ukeplanen) løser opp den kanoniske «dagbok»-tråden.
+	if (!conversationId && canonicalParam === '1' && contextParam !== 'weight') {
+		const canonical = await getOrCreateCanonicalConversation(locals.userId);
+		conversationId = canonical.id;
+	}
 
 	const [conversationList, userThemes] = await Promise.all([
 		getUserConversationList(locals.userId),
@@ -128,13 +137,14 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			selectedConversation: null,
 			messages: [],
 			hasMoreMessages: false,
+			scrollToDate: null,
 			weightContext
 		};
 	}
 
 	if (!conversationId) {
 		console.log(`[perf][samtaler] user=${locals.userId} step=total ms=${(performance.now() - t0).toFixed(0)} mode=list convs=${conversations.length}`);
-		return { conversations, userThemes, selectedConversation: null, messages: [], hasMoreMessages: false, weightContext: null };
+		return { conversations, userThemes, selectedConversation: null, messages: [], hasMoreMessages: false, scrollToDate: null, weightContext: null };
 	}
 
 	const verifiedConversation = await getConversationByIdForUser(conversationId, locals.userId);
@@ -143,11 +153,33 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	}
 
 	const selectedConversation = conversations.find((c) => c.id === conversationId) ?? null;
-	const { messages: msgs, hasMore } = await getConversationMessagesPage(conversationId, {
-		limit: INITIAL_MESSAGE_BUFFER
-	});
 
-	console.log(`[perf][samtaler] user=${locals.userId} step=total ms=${(performance.now() - t0).toFixed(0)} mode=conversation convs=${conversations.length} msgs=${msgs.length} hasMore=${hasMore}`);
+	// Hopp-til-dag (fra ukeplanen): last dagen og alt etter, slik at klienten kan scrolle
+	// til dag-ankeret. Buffer én dag bakover for å være robust mot tidssone-grenser.
+	// Faller tilbake til vanlig «nyeste»-lasting hvis dagen (og alt etter) er tom.
+	let msgs;
+	let hasMore: boolean;
+	let scrollToDate: string | null = null;
+	if (isValidDate) {
+		const from = new Date(dateParam + 'T00:00:00Z');
+		from.setUTCDate(from.getUTCDate() - 1);
+		const windowed = await getConversationMessagesFromDate(conversationId, from);
+		if (windowed.messages.length > 0) {
+			msgs = windowed.messages;
+			hasMore = windowed.hasMoreOlder;
+			scrollToDate = dateParam;
+		} else {
+			const page = await getConversationMessagesPage(conversationId, { limit: INITIAL_MESSAGE_BUFFER });
+			msgs = page.messages;
+			hasMore = page.hasMore;
+		}
+	} else {
+		const page = await getConversationMessagesPage(conversationId, { limit: INITIAL_MESSAGE_BUFFER });
+		msgs = page.messages;
+		hasMore = page.hasMore;
+	}
+
+	console.log(`[perf][samtaler] user=${locals.userId} step=total ms=${(performance.now() - t0).toFixed(0)} mode=conversation convs=${conversations.length} msgs=${msgs.length} hasMore=${hasMore} jump=${scrollToDate ?? 'none'}`);
 
 	return {
 		conversations,
@@ -155,6 +187,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		selectedConversation,
 		weightContext: null,
 		hasMoreMessages: hasMore,
+		scrollToDate,
 		messages: msgs.map((m) => ({
 			id: m.id,
 			role: m.role as 'user' | 'assistant' | 'system',
@@ -166,7 +199,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			widgetFlow: (m.metadata as { widgetFlow?: unknown } | null)?.widgetFlow ?? null,
 			statusWidget: (m.metadata as { statusWidget?: unknown } | null)?.statusWidget ?? null,
 			photoAnnotation: (m.metadata as { photoAnnotation?: unknown } | null)?.photoAnnotation ?? null,
-			photoAnnotationImageUrl: (m.metadata as { photoAnnotationImageUrl?: unknown } | null)?.photoAnnotationImageUrl ?? null
+			photoAnnotationImageUrl: (m.metadata as { photoAnnotationImageUrl?: unknown } | null)?.photoAnnotationImageUrl ?? null,
+			eventCard: (m.metadata as { eventCard?: unknown } | null)?.eventCard ?? null
 		}))
 	};
 };

@@ -232,6 +232,12 @@
 <section class="wp-card">
 	<div class="wp-card-head">
 		<CardTitle>Dager og dagsmål</CardTitle>
+		<a
+			class="wp-diary-link"
+			href={`/samtaler?canonical=1&date=${selectedDayIso}`}
+			data-track="ukeplan:apne-dagbok"
+			title="Åpne denne dagen i dagboken"
+		>Dagbok →</a>
 	</div>
 
 	<div class="wp-days" aria-label="Ukas dager">
@@ -444,6 +450,21 @@
 		justify-content: space-between;
 		align-items: center;
 		gap: 8px;
+	}
+
+	.wp-diary-link {
+		font-size: 0.76rem;
+		color: var(--text-tertiary);
+		text-decoration: none;
+		white-space: nowrap;
+		flex-shrink: 0;
+		border-radius: 8px;
+		padding: 3px 8px;
+		transition: color 0.12s, background 0.12s;
+	}
+	.wp-diary-link:hover {
+		color: var(--text-primary);
+		background: rgba(124, 142, 245, 0.1);
 	}
 
 

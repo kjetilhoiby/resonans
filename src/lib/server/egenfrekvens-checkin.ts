@@ -8,6 +8,8 @@ import {
 	type EgenfrekvensCheckinValues
 } from '$lib/domains/egenfrekvens';
 import { isPeriodSlotId, PERIOD_SLOT_GROUP, type PeriodSlotId } from '$lib/domains/egenfrekvens/period-slots';
+import { addCanonicalEventMessage } from '$lib/server/conversations';
+import { buildCheckinEventCard } from '$lib/chat/event-cards';
 
 export class EgenfrekvensCheckinError extends Error {}
 
@@ -304,6 +306,15 @@ export async function submitEgenfrekvensCheckin(params: {
 		},
 		{ conflictMode: 'ignore' }
 	);
+
+	// La en skreven refleksjon dukke opp som et hendelseskort i den kanoniske «dagbok»-
+	// tråden — «prate med underbevisstheten». Fire-and-forget: skal aldri velte innsjekken.
+	if (cleanReflection) {
+		void addCanonicalEventMessage(
+			params.userId,
+			buildCheckinEventCard({ level: params.level, reflection: cleanReflection, slot })
+		).catch((err) => console.warn('kanonisk egenfrekvens-hendelse feilet:', err));
+	}
 
 	const status = await getEgenfrekvensCheckinStatus(params.userId, day);
 	return { ...status, eventId: writeResult.event?.id ?? null };

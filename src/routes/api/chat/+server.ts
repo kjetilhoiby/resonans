@@ -3329,7 +3329,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		await emitProgress(onProgress, 'finalizing', 'Lagrer og ferdigstiller svar...');
 
 		// Lagre assistentens svar til database
-		await addMessage({
+		const savedAssistantMessage = await addMessage({
 			conversationId: conversation.id,
 			role: 'assistant',
 			content: finalMessage,
@@ -3343,6 +3343,9 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		return {
 			message: finalMessage,
 			conversationId: conversation.id,
+			// DB-id-er slik at klienten kan referere de lagrede meldingene (rediger/slett).
+			userMessageId: savedUserMessage.id,
+			assistantMessageId: savedAssistantMessage.id,
 			goalCreated: createdGoalId !== null,
 			goalId: createdGoalId,
 			themeCreated: createdTheme !== null,

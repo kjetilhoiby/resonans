@@ -1,6 +1,7 @@
 import { db, pgClient } from '$lib/db';
 import { conversations, messages, themes, books } from '$lib/db/schema';
-import { eq, desc, and, asc, lt, sql, inArray, isNull } from 'drizzle-orm';
+import { eq, desc, and, asc, lt, gte, sql, inArray, isNull } from 'drizzle-orm';
+import type { ChatEventCard } from '$lib/chat/event-cards';
 import { ensureConversationThemeIdColumn } from '$lib/server/conversation-schema';
 import { PersonMentionService } from '$lib/server/services/person-mention-service';
 
@@ -95,6 +96,84 @@ export async function getOrCreateConversation(userId: string) {
 	const newConversation = (result as any[])[0];
 
 	return newConversation;
+}
+
+/**
+ * Den kanoniske «dagbok»-tråden — ryggraden all fri hjem-chat akkumulerer i.
+ * Én per bruker, markert via metadata.canonical = true. I motsetning til
+ * getOrCreateConversation (som bare tar nyeste web-samtale) er dette en *stabil*
+ * tråd som ikke drifter etter hvert som andre samtaler opprettes.
+ */
+export async function getOrCreateCanonicalConversation(userId: string) {
+	await ensureConversationThemeIdColumn();
+
+	const existing = await db
+		.select({ conversation: conversations })
+		.from(conversations)
+		.where(
+			and(
+				eq(conversations.userId, userId),
+				eq(conversations.source, 'web'),
+				eq(conversations.archived, false),
+				sql`${conversations.metadata}->>'canonical' = 'true'`
+			)
+		)
+		.orderBy(desc(conversations.updatedAt))
+		.limit(1);
+
+	if (existing[0]?.conversation) {
+		return existing[0].conversation;
+	}
+
+	const result = await db
+		.insert(conversations)
+		.values({ userId, title: 'Dagbok', source: 'web', metadata: { canonical: true } })
+		.returning();
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	return (result as any[])[0];
+}
+
+/**
+ * Skriver et inline hendelseskort inn i den kanoniske «dagbok»-tråden. Brukes av
+ * produsenter (egenfrekvens-refleksjon, fullført økt, nudge-svar …) for å la relevante
+ * hendelser dukke opp i dagboken. Fire-and-forget hos kalleren — feil skal ikke velte
+ * den underliggende handlingen.
+ */
+export async function addCanonicalEventMessage(userId: string, card: ChatEventCard) {
+	const conversation = await getOrCreateCanonicalConversation(userId);
+	const content = [card.icon, card.title].filter(Boolean).join(' ').trim() || card.title;
+	return addMessage({
+		conversationId: conversation.id,
+		role: 'assistant',
+		content,
+		metadata: { eventCard: card }
+	});
+}
+
+/**
+ * Meldinger fra og med en gitt dato (kronologisk), pluss et flagg om det finnes eldre
+ * meldinger før vinduet. Brukes når ukeplanen hopper til en bestemt dag i dagboken —
+ * da lastes dagen og alt etter, og infinite-scroll-oppover henter resten ved behov.
+ */
+export async function getConversationMessagesFromDate(
+	conversationId: string,
+	from: Date,
+	opts: { limit?: number } = {}
+) {
+	const limit = opts.limit ?? 300;
+	const [rows, older] = await Promise.all([
+		db.query.messages.findMany({
+			where: and(eq(messages.conversationId, conversationId), gte(messages.createdAt, from)),
+			orderBy: (messages, { asc }) => [asc(messages.createdAt)],
+			limit
+		}),
+		db.query.messages.findMany({
+			where: and(eq(messages.conversationId, conversationId), lt(messages.createdAt, from)),
+			columns: { id: true },
+			limit: 1
+		})
+	]);
+	return { messages: rows, hasMoreOlder: older.length > 0 };
 }
 
 export async function addMessage(params: AddMessageParams) {
