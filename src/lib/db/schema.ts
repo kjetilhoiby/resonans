@@ -497,6 +497,9 @@ export const conversations = pgTable('conversations', {
 		sourceChecklistId?: string;
 		sourceItemId?: string;
 		sourceItemText?: string;
+		// Den kanoniske «dagbok»-tråden — ryggraden all fri hjem-chat akkumulerer i.
+		// Én per bruker; se getOrCreateCanonicalConversation.
+		canonical?: boolean;
 	}>(),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()

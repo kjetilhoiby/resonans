@@ -23,6 +23,9 @@ export interface ChatMessage {
 	role: 'user' | 'assistant';
 	text: string;
 	starred: boolean;
+	/** Tidspunkt meldingen ble opprettet. Brukes til dato-seksjonering i den kanoniske
+	 *  tråden. Valgfritt — kontekster uten tidsstempel viser ingen dato-spacere. */
+	createdAt?: string | Date | null;
 	imageUrl?: string | null;
 	attachment?: unknown;
 	actions?: ChatAction[];
@@ -179,7 +182,7 @@ export class ChatState {
 		const msgId = crypto.randomUUID();
 		this.messages = [
 			...this.messages,
-			{ id: msgId, role: 'user', text: displayText, starred: false, imageUrl: imageUrl ?? null, attachment }
+			{ id: msgId, role: 'user', text: displayText, starred: false, createdAt: new Date(), imageUrl: imageUrl ?? null, attachment }
 		];
 		this.loading = true;
 		this.streamingText = '';
@@ -265,6 +268,7 @@ export class ChatState {
 				role: 'assistant',
 				text: (data.message as string) ?? '',
 				starred: false,
+				createdAt: new Date(),
 				imageUrl: null,
 				actions: (data.actions as ChatAction[] | undefined) ?? undefined,
 				widgetProposal: (data.widgetProposal ?? data.metadata?.widgetProposal) as WidgetDraft | null ?? null,

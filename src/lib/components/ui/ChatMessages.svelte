@@ -23,6 +23,7 @@
 	import ChatStatusWidget from '$lib/components/domain/ChatStatusWidget.svelte';
 	import AnnotatedImageCard from '$lib/components/domain/AnnotatedImageCard.svelte';
 	import type { ChatMessage } from '$lib/client/chat-state.svelte';
+	import { daySpacerBefore } from '$lib/client/chat-day-sections';
 
 	interface Props {
 		messages: ChatMessage[];
@@ -55,7 +56,13 @@
 	}: Props = $props();
 </script>
 
-{#each messages as msg (msg.id)}
+{#each messages as msg, i (msg.id)}
+	{@const daySpacer = daySpacerBefore(messages, i)}
+	{#if daySpacer}
+		<div class="cm-day-spacer" role="separator" aria-label={daySpacer}>
+			<span class="cm-day-spacer-label">{daySpacer}</span>
+		</div>
+	{/if}
 	{#if msg.role === 'user'}
 		<div class="cm-row cm-row-user">
 			{#if stopped && msg.id === lastUserMsgId && onEditStopped}
@@ -163,6 +170,27 @@
 {/if}
 
 <style>
+	.cm-day-spacer {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		margin: 6px 0;
+		color: #6a6a6a;
+	}
+	.cm-day-spacer::before,
+	.cm-day-spacer::after {
+		content: '';
+		flex: 1;
+		height: 1px;
+		background: #232323;
+	}
+	.cm-day-spacer-label {
+		font-size: 0.72rem;
+		font-weight: 600;
+		letter-spacing: 0.04em;
+		white-space: nowrap;
+	}
+
 	.cm-row {
 		display: flex;
 		align-items: flex-end;

@@ -69,6 +69,7 @@
 				role: m.role as 'user' | 'assistant',
 				text: m.content,
 				starred: m.starred,
+				createdAt: m.timestamp,
 				imageUrl: m.imageUrl ?? null,
 				widgetProposal: m.widgetProposal ?? null,
 				widgetFlow: m.widgetFlow ?? null,

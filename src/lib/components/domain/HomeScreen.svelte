@@ -548,7 +548,9 @@
 
 	const homeChat = new ChatState({
 		systemPrompt: () => livskompassCoachingPrompt ?? undefined,
-		getOrCreateConversationId: async () => { const res = await fetch('/api/conversations/new', { method: 'POST' }); if (!res.ok) return null; return (await res.json()).conversationId ?? null; },
+		// Fri hjem-chat akkumulerer i den kanoniske «dagbok»-tråden (ryggraden) i stedet
+		// for å lage en ny samtale hver gang. Se docs/changelog/2026-07-01-kanonisk-chat.md.
+		getOrCreateConversationId: async () => { const res = await fetch('/api/conversations/canonical', { method: 'POST' }); if (!res.ok) return null; return (await res.json()).conversationId ?? null; },
 		preferredModel: () => selectedChatModel !== 'auto' ? selectedChatModel : undefined,
 		onPayload: (data) => {
 			const theme = data.themeCreated && data.theme && typeof data.theme === 'object' ? data.theme as { id?: string; name?: string; emoji?: string | null } : null;

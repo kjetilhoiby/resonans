@@ -97,6 +97,41 @@ export async function getOrCreateConversation(userId: string) {
 	return newConversation;
 }
 
+/**
+ * Den kanoniske «dagbok»-tråden — ryggraden all fri hjem-chat akkumulerer i.
+ * Én per bruker, markert via metadata.canonical = true. I motsetning til
+ * getOrCreateConversation (som bare tar nyeste web-samtale) er dette en *stabil*
+ * tråd som ikke drifter etter hvert som andre samtaler opprettes.
+ */
+export async function getOrCreateCanonicalConversation(userId: string) {
+	await ensureConversationThemeIdColumn();
+
+	const existing = await db
+		.select({ conversation: conversations })
+		.from(conversations)
+		.where(
+			and(
+				eq(conversations.userId, userId),
+				eq(conversations.source, 'web'),
+				eq(conversations.archived, false),
+				sql`${conversations.metadata}->>'canonical' = 'true'`
+			)
+		)
+		.orderBy(desc(conversations.updatedAt))
+		.limit(1);
+
+	if (existing[0]?.conversation) {
+		return existing[0].conversation;
+	}
+
+	const result = await db
+		.insert(conversations)
+		.values({ userId, title: 'Dagbok', source: 'web', metadata: { canonical: true } })
+		.returning();
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	return (result as any[])[0];
+}
+
 export async function addMessage(params: AddMessageParams) {
 	await ensureConversationThemeIdColumn();
 
