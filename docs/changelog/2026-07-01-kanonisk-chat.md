@@ -125,6 +125,18 @@ Langtrykk på et bilde i tråden gir en liten meny: **Beskriv / legg til konteks
   «Registrer i serie» sender bildet til chatten med instruks om tracking-verktøyet (triage
   på forespørsel, ikke automatisk).
 
+### Respons i dagboken (denne endringen)
+
+- **Send-kø-fiks.** Meldinger med bilde/vedlegg hoppet før over sende-køen og kjørte
+  samtidig med en pågående strøm; det bumpet generasjonstelleren, så det forrige svaret ble
+  forkastet klient-side (to bilder rett etter hverandre → coach-svar forsvant). `ChatState`
+  køer nå *alle* sendinger med full payload (tekst + bilde + vedlegg), så hvert innlegg får
+  sitt eget svar i rekkefølge.
+- **Dagbok-tone.** Den kanoniske tråden får et «Dagbok-modus»-tillegg i systemprompten
+  (`/api/chat`, gated på `conversation.metadata.canonical`): kort og varm medvandrer når
+  brukeren deler stemninger/bilder/refleksjoner, men fortsatt full hjelp + verktøy når han
+  ber om noe konkret. Tonen påvirker kun den kanoniske tråden.
+
 ### Fase 4 (ikke i denne endringen)
 
 - **Flere produsenter.** Fullført økt, nudge-respons og flyt-fullføring som hendelseskort
