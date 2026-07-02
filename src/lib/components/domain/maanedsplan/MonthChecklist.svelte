@@ -15,6 +15,21 @@
 
 	let { checklist, saveState, onensure, ontoggle, onadd, onedit, ondelete }: Props = $props();
 
+	// Over denne grensen blir avkryssings-slots for mange til å vises som sirkler,
+	// og raden wrapper stygt. Da bytter vi til en kompakt teller (X / N med −/+),
+	// samme mønster som månedsmål. Slots beholdes for små, taktile antall.
+	const COUNTER_THRESHOLD = 6;
+
+	function incrementGroup(children: ChecklistItem[]) {
+		const next = children.find((c) => !c.checked);
+		if (next) ontoggle(next.id, true);
+	}
+
+	function decrementGroup(children: ChecklistItem[]) {
+		const lastChecked = [...children].reverse().find((c) => c.checked);
+		if (lastChecked) ontoggle(lastChecked.id, false);
+	}
+
 	let composerText = $state('');
 	let composerInput = $state<HTMLInputElement | null>(null);
 	let editingItemId = $state<string | null>(null);
@@ -112,7 +127,25 @@
 							<span class="mp-check-text" class:checked={children.length > 0 ? doneChildren === children.length : item.checked}>{item.text}</span>
 						</button>
 					{/if}
-					{#if children.length > 0}
+					{#if children.length > COUNTER_THRESHOLD}
+						<div class="mp-check-counter">
+							<span class="mp-counter-count" class:reached={doneChildren === children.length}>{doneChildren} / {children.length}</span>
+							<button
+								type="button"
+								class="mp-counter-step"
+								onclick={() => decrementGroup(children)}
+								disabled={doneChildren === 0}
+								aria-label="Marker én som ikke gjort"
+							>&minus;</button>
+							<button
+								type="button"
+								class="mp-counter-step mp-counter-step--plus"
+								onclick={() => incrementGroup(children)}
+								disabled={doneChildren === children.length}
+								aria-label="Marker én som gjort"
+							>+</button>
+						</div>
+					{:else if children.length > 0}
 						<div class="mp-child-slots">
 							{#each children as child (child.id)}
 								<button
@@ -320,6 +353,43 @@
 	.mp-child-slot:hover:not(.checked) {
 		border-color: #4a5a70;
 	}
+
+	.mp-check-counter {
+		display: flex;
+		align-items: center;
+		gap: 5px;
+		flex-shrink: 0;
+	}
+
+	.mp-counter-count {
+		font-size: 0.78rem;
+		color: #60687e;
+		min-width: 44px;
+		text-align: right;
+		transition: color 0.2s;
+	}
+	.mp-counter-count.reached { color: #5fa080; }
+
+	.mp-counter-step {
+		width: 26px;
+		height: 26px;
+		border-radius: 50%;
+		border: 1px solid #1e2030;
+		background: #0c0e18;
+		color: #70788f;
+		font-size: 1rem;
+		line-height: 1;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+		transition: background 0.1s, color 0.1s, border-color 0.1s;
+	}
+	.mp-counter-step:hover:not(:disabled) { background: #12162a; color: #bac6f9; border-color: #3a4adf; }
+	.mp-counter-step--plus { color: var(--accent-light); }
+	.mp-counter-step--plus:hover:not(:disabled) { color: #fff; }
+	.mp-counter-step:disabled { opacity: 0.4; cursor: default; }
 
 	.mp-btn-danger {
 		background: none;
