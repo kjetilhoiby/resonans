@@ -3,6 +3,10 @@ import {
 	isFerieActiveOn,
 	ferieOverlaps,
 	activeFerieThemes,
+	tripPhase,
+	formatTripDates,
+	buildFerieContextBlock,
+	makeParticipantResolver,
 	FERIE_FALLBACK_EMOJI
 } from './active-ferie';
 
@@ -88,5 +92,102 @@ describe('activeFerieThemes', () => {
 	it('returnerer vinduet for dag-merking', () => {
 		const aktive = activeFerieThemes([sommerferie], '2026-07-08', '2026-07-08');
 		expect(aktive[0]).toMatchObject({ startDate: '2026-07-01', endDate: '2026-07-14' });
+	});
+});
+
+describe('tripPhase', () => {
+	const today = '2026-07-08';
+	it('klassifiserer pågående, kommende og passerte reiser', () => {
+		expect(tripPhase({ label: 'Hytta', startDate: '2026-07-07', endDate: '2026-07-09' }, today)).toBe('ongoing');
+		expect(tripPhase({ label: 'Volda', startDate: '2026-07-10', endDate: '2026-07-14' }, today)).toBe('upcoming');
+		expect(tripPhase({ label: 'Bestemor', startDate: '2026-07-01', endDate: '2026-07-03' }, today)).toBe('past');
+		expect(tripPhase({ label: 'Udatert' }, today)).toBe('undated');
+	});
+	it('en-dags reise på dagens dato er pågående', () => {
+		expect(tripPhase({ label: 'Tur', startDate: today, endDate: today }, today)).toBe('ongoing');
+	});
+});
+
+describe('formatTripDates', () => {
+	it('formaterer intervall og enkeltdag', () => {
+		expect(formatTripDates({ label: 'x', startDate: '2026-07-05', endDate: '2026-07-07' })).toBe('5. juli–7. juli');
+		expect(formatTripDates({ label: 'x', startDate: '2026-07-05', endDate: '2026-07-05' })).toBe('5. juli');
+		expect(formatTripDates({ label: 'x', startDate: '2026-07-05' })).toBe('fra 5. juli');
+	});
+});
+
+describe('buildFerieContextBlock', () => {
+	const themes = [
+		{
+			name: 'Sommerferie',
+			ferieProfile: {
+				startDate: '2026-07-01',
+				endDate: '2026-07-20',
+				note: 'Volda med Marte og David.',
+				trips: [
+					{ label: 'Hytta', participants: ['Kjetil', 'Nils', 'Erle'], startDate: '2026-07-07', endDate: '2026-07-09' },
+					{ label: 'Volda', place: 'Sunnmøre', participants: ['Anita', 'Erle', 'Iver', 'Nils'], startDate: '2026-07-10', endDate: '2026-07-14' },
+					{ label: 'Passert', startDate: '2026-07-01', endDate: '2026-07-02' }
+				]
+			}
+		},
+		{ name: 'Helse', ferieProfile: { startDate: '2026-07-01', endDate: '2026-07-20' } }
+	];
+
+	it('tar med pågående og kommende reiser, men ikke passerte', () => {
+		const block = buildFerieContextBlock(themes, '2026-07-08');
+		expect(block).toContain('Pågående ferie: «Sommerferie»');
+		expect(block).toContain('Volda med Marte og David.');
+		expect(block).toContain('Reiser som pågår nå:');
+		expect(block).toContain('Hytta – Kjetil, Nils, Erle');
+		expect(block).toContain('Kommende reiser:');
+		expect(block).toContain('Volda (Sunnmøre) – Anita, Erle, Iver, Nils');
+		expect(block).not.toContain('Passert');
+	});
+
+	it('gir tom streng når ingen ferie er aktiv i dag', () => {
+		expect(buildFerieContextBlock(themes, '2026-08-01')).toBe('');
+	});
+
+	it('ignorerer ikke-ferie-temaer selv med ferieProfile', () => {
+		const block = buildFerieContextBlock([{ name: 'Helse', ferieProfile: { startDate: '2026-07-01', endDate: '2026-07-20', trips: [] } }], '2026-07-08');
+		expect(block).toBe('');
+	});
+
+	it('kanoniserer kjente deltakere og flagger ukjente via resolver', () => {
+		const resolve = makeParticipantResolver([
+			{ name: 'Kjetil', nickname: null, aliases: [] },
+			{ name: 'Nils', nickname: null, aliases: ['Nisse'] },
+			{ name: 'Erle', nickname: null, aliases: [] }
+		]);
+		const themesWithGuest = [
+			{
+				name: 'Sommerferie',
+				ferieProfile: {
+					startDate: '2026-07-01',
+					endDate: '2026-07-20',
+					trips: [
+						{ label: 'Hytta', participants: ['kjetil', 'Nisse', 'Marte'], startDate: '2026-07-07', endDate: '2026-07-09' }
+					]
+				}
+			}
+		];
+		const block = buildFerieContextBlock(themesWithGuest, '2026-07-08', resolve);
+		// «kjetil» → «Kjetil», alias «Nisse» → «Nils», «Marte» ukjent
+		expect(block).toContain('Hytta – Kjetil, Nils, Marte (ukjent)');
+	});
+});
+
+describe('makeParticipantResolver', () => {
+	const resolve = makeParticipantResolver([
+		{ name: 'Anita', nickname: 'Nita', aliases: ['Mamma'] }
+	]);
+	it('matcher på navn, nickname og alias (case-insensitivt)', () => {
+		expect(resolve('anita')).toEqual({ name: 'Anita', known: true });
+		expect(resolve('Nita')).toEqual({ name: 'Anita', known: true });
+		expect(resolve('mamma')).toEqual({ name: 'Anita', known: true });
+	});
+	it('flagger ukjente navn', () => {
+		expect(resolve('David')).toEqual({ name: 'David', known: false });
 	});
 });
