@@ -51,6 +51,9 @@ problemer:
 - **Oppsummering, ikke siste melding:** Substansen ligger i det brukeren landet på gjennom
   samtalen, ikke i den siste (ofte spørrende) assistent-meldingen. Derfor et dedikert
   renskrivings-kall framfor regex-skrubbing.
+- **Full gpt-4o, ikke mini:** Kallet forvalter brukerens egne, nyanserte refleksjoner. En
+  tynn mini-modell flater ut stemme og mister dybde, og jobben kjører bare én gang ved
+  fullføring — så vi bruker full gpt-4o (som resten av innholds-jobbene) med lav temperatur.
 - **Behold punktlister:** Å strippe all markdown ville fjerne ekte struktur. Vi beholder
   lister og fjerner bare inline-utheving.
 - **Ikke-destruktiv refleksjon:** En AI-oppsummering skal aldri overskrive noe brukeren

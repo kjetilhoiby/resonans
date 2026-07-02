@@ -68,7 +68,11 @@ export async function finalizePlanField(
 
 	try {
 		const response = await openai.chat.completions.create({
-			model: opts.model ?? 'gpt-4o-mini',
+			// Dette forvalter brukerens egne refleksjoner/notater — nyansert, personlig
+			// prosa. Bruk full gpt-4o (som resten av innholds-jobbene), ikke en tynn
+			// mini-modell, så vi ikke flater ut stemme og mister dybde. Lav temperatur
+			// for å holde oss tett på brukerens egne formuleringer.
+			model: opts.model ?? 'gpt-4o',
 			temperature: 0.2,
 			response_format: { type: 'json_object' },
 			messages: buildFinalizeMessages(kind, messages, opts.periodLabel)
