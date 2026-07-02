@@ -21,39 +21,44 @@ problemer:
 
 ## Faser
 
-### Fase 1: Ren tekst-modul
-- Ny `src/lib/server/plan-text.ts`:
-  - `markdownToPlain()` — fjerner fet/kursiv, overskrifter, sitatblokk, inline-kode og
-    lenker; gjør punktlister til «- »; beholder nummererte lister og rører ikke
-    `snake_case`.
-  - `cleanPlanField()` — kjører `markdownToPlain`, fjerner en innledende samtale-linje
-    som avslutter med kolon («Her er et utkast:»), og et avsluttende meta-spørsmål rettet
-    mot brukeren.
-- Enhetstester i `src/lib/server/plan-text.test.ts` (11 tester, bygget på de faktiske
-  lekkasje-strengene fra skjermbildene).
+### Fase 1: Oppsummering → renskriving (dedikert modellkall)
+- Ny `src/lib/server/plan-field-writer.ts` med `finalizePlanField(kind, thread, opts)`:
+  leser hele samtaletråden, vekter **brukerens** egne meldinger/valg som substans (assistenten
+  er kontekst), og returnerer ren feltverdi via `response_format: { type: 'json_object' }`
+  (samme mønster som `goals.ts`/`dream-service.ts`). Faller tilbake til markdown-renset siste
+  assistent-melding hvis kallet feiler; tom tråd → tom streng (ingen kall).
+- Vi bruker altså ikke lenger siste melding rått — den er ofte et spørsmål eller mellomsteg.
 
-### Fase 2: Bruk i completion-endepunktene
-- `src/routes/api/month-plan/complete/+server.ts` og
-  `src/routes/api/week-plan/complete/+server.ts`: kjør notat og refleksjon gjennom
-  `cleanPlanField` før lagring.
+### Fase 2: `markdownToPlain` som tynt sikkerhetsnett
+- `src/lib/server/plan-text.ts` beholder kun `markdownToPlain()` — fjerner inline-støy
+  (**fet**, #overskrift, lenker) men **beholder listestruktur** (punktlister → «- »,
+  nummererte lister intakt), siden punktlister er ekte, ønsket innhold i en ren textarea.
+  De skjøre preamble/spørsmål-heuristikkene er fjernet — modellen produserer nå ren tekst.
 
-### Fase 3: Refleksjon til riktig periode
-- Refleksjonen lagres nå på *forrige* måned/uke (den den faktisk handler om), ikke på den
-  vi planlegger. Ikke-destruktivt: skriver bare hvis perioden ikke allerede har en
-  refleksjon brukeren har ført.
+### Fase 3: Bruk i completion-endepunktene
+- `month-plan/complete` og `week-plan/complete`: kjør notat- og refleksjons-tråden gjennom
+  `finalizePlanField` (i parallell) før lagring. Flyten sender nå hele `{stepId}_thread`
+  i stedet for `{stepId}_lastMessage`.
+
+### Fase 4: Refleksjon til riktig periode
+- Refleksjonen lagres på *forrige* måned/uke (den den faktisk handler om), ikke på den vi
+  planlegger. Ikke-destruktivt: skriver bare hvis perioden ikke allerede har en refleksjon.
 - Inneværende periodes refleksjonsfelt fylles ikke lenger ved planlegging — det er ment å
   fylles når perioden er over.
 
 ## Beslutninger
 
-- **Rensing på lagringstidspunkt, ikke rendering:** Feltene skal være ren tekst (redigerbar
-  textarea), så vi normaliserer inn i feltet i stedet for å tolke markdown ved visning.
-- **Heuristikk, ikke markører:** Vi valgte robust rensing framfor å tvinge modellen til å
-  emittere markører, slik at det virker likt for både måned og uke uten prompt-kobling.
+- **Oppsummering, ikke siste melding:** Substansen ligger i det brukeren landet på gjennom
+  samtalen, ikke i den siste (ofte spørrende) assistent-meldingen. Derfor et dedikert
+  renskrivings-kall framfor regex-skrubbing.
+- **Behold punktlister:** Å strippe all markdown ville fjerne ekte struktur. Vi beholder
+  lister og fjerner bare inline-utheving.
 - **Ikke-destruktiv refleksjon:** En AI-oppsummering skal aldri overskrive noe brukeren
   selv har skrevet.
 
 ## Verifisering
 
-- `npm test`: 932 tester grønne (inkl. 11 nye).
+- `npm test`: 931 tester grønne (inkl. nye for `plan-text` og `plan-field-writer`).
 - `npm run check`: 0 feil, 0 advarsler.
+- Merk: selve modell-renskrivingen krever en live kjøring for å verifiseres ende-til-ende
+  (testene dekker prompt-bygging, tom-tråd og markdown-sikkerhetsnettet).

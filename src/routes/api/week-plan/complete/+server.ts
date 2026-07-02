@@ -5,7 +5,7 @@ import { checklistItems, checklists, goals, sensorEvents } from '$lib/db/schema'
 import { and, desc, eq, lte, sql } from 'drizzle-orm';
 import { getPlanArtifact, upsertPlanArtifactField } from '$lib/server/plan-artifacts';
 import { createReflection } from '$lib/server/reflections';
-import { cleanPlanField } from '$lib/server/plan-text';
+import { finalizePlanField, type PlanFieldThreadMsg } from '$lib/server/plan-field-writer';
 
 function getIsoWeekInfo(now: Date) {
 	const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -102,11 +102,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		selectedTasks: string[];
 		goalUpdatesText: string;
 		prevWeekGoals: Array<{ title: string; currentValue: number; target: { value: number; unit: string }; trackingMetric: string }>;
-		narrative: string;
-		refleksjonText?: string;
+		narrativeThread?: PlanFieldThreadMsg[];
+		refleksjonThread?: PlanFieldThreadMsg[];
 	};
 
-	const { weekKey, carryoverTexts, selectedTasks, goalUpdatesText, prevWeekGoals, narrative, refleksjonText } = body;
+	const { weekKey, carryoverTexts, selectedTasks, goalUpdatesText, prevWeekGoals, narrativeThread, refleksjonThread } = body;
 
 	const week = getIsoWeekInfoFromKey(weekKey);
 	if (!week) return json({ error: 'Ugyldig ukenøkkel' }, { status: 400 });
@@ -269,8 +269,16 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		});
 	}
 
-	// ── 3. Save narrative as week note (renset for markdown/samtale-innpakning) ──
-	const cleanedNarrative = cleanPlanField(narrative);
+	// ── 3. Ukesnotat: oppsummer samtalen og renskriv. Refleksjonen handler om FORRIGE
+	// uke, så renskriv den med forrige uke som periode. Kjør begge i parallell. ──
+	const prevMonday = new Date(`${week.startDate}T00:00:00.000Z`);
+	prevMonday.setUTCDate(prevMonday.getUTCDate() - 7);
+	const prevWeek = getIsoWeekInfo(prevMonday);
+	const [cleanedNarrative, cleanedRefleksjon] = await Promise.all([
+		finalizePlanField('note', narrativeThread, { periodLabel: `uke ${week.week}` }),
+		finalizePlanField('reflection', refleksjonThread, { periodLabel: `uke ${prevWeek.week}` })
+	]);
+
 	if (cleanedNarrative) {
 		await upsertPlanArtifactField({
 			userId,
@@ -281,13 +289,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		});
 	}
 
-	// ── 4. Refleksjonen handler om FORRIGE uke — lagre den der, ikke på uka vi nå
+	// ── 4. Lagre refleksjonen på FORRIGE uke (den den handler om), ikke på uka vi nå
 	// planlegger. Ikke overskriv en refleksjon brukeren allerede har skrevet. ──
-	const cleanedRefleksjon = cleanPlanField(refleksjonText ?? '');
 	if (cleanedRefleksjon) {
-		const prevMonday = new Date(`${week.startDate}T00:00:00.000Z`);
-		prevMonday.setUTCDate(prevMonday.getUTCDate() - 7);
-		const prevWeek = getIsoWeekInfo(prevMonday);
 		const existing = await getPlanArtifact(userId, 'week', prevWeek.compactKey);
 		if (!existing?.reflection?.trim()) {
 			await upsertPlanArtifactField({

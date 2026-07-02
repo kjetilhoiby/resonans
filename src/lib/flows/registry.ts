@@ -3,6 +3,9 @@
  */
 
 import type { Flow, FlowId, FlowDomain } from './types';
+
+/** Samtaletråd fanget fra et chat-steg ({stepId}_thread) — sendes til finalisering. */
+type FlowChatThread = Array<{ role: 'user' | 'assistant'; text: string }>;
 import {
 	extractInterviewAnswers,
 	formatAnswersAsText,
@@ -366,8 +369,8 @@ export const FLOWS: Record<Exclude<FlowId, 'egenfrekvens_slot'>, Flow> = {
 
 			const selectedTasks = (data['selectedTasks'] as string[]) ?? [];
 			const goalUpdatesText = (data['maal_lastMessage'] as string) ?? '';
-			const narrative = (data['ukeshistorie_lastMessage'] as string) ?? '';
-			const refleksjonText = (data['refleksjon_lastMessage'] as string) ?? '';
+			const narrativeThread = (data['ukeshistorie_thread'] as FlowChatThread) ?? [];
+			const refleksjonThread = (data['refleksjon_thread'] as FlowChatThread) ?? [];
 			const prevWeekGoals = context.prevWeekData?.weekGoals ?? [];
 
 			await fetch('/api/week-plan/complete', {
@@ -379,8 +382,8 @@ export const FLOWS: Record<Exclude<FlowId, 'egenfrekvens_slot'>, Flow> = {
 					selectedTasks,
 					goalUpdatesText,
 					prevWeekGoals,
-					narrative,
-					refleksjonText
+					narrativeThread,
+					refleksjonThread
 				})
 			});
 		}
@@ -572,8 +575,8 @@ export const FLOWS: Record<Exclude<FlowId, 'egenfrekvens_slot'>, Flow> = {
 
 			const selectedTasks = (data['selectedTasks'] as string[]) ?? [];
 			const goalUpdatesText = (data['maal_lastMessage'] as string) ?? '';
-			const narrative = (data['maanedshistorie_lastMessage'] as string) ?? '';
-			const refleksjonText = (data['refleksjon_lastMessage'] as string) ?? '';
+			const narrativeThread = (data['maanedshistorie_thread'] as FlowChatThread) ?? [];
+			const refleksjonThread = (data['refleksjon_thread'] as FlowChatThread) ?? [];
 			const prevMonthGoals = context.prevMonthData?.monthGoals ?? [];
 
 			await fetch('/api/month-plan/complete', {
@@ -585,8 +588,8 @@ export const FLOWS: Record<Exclude<FlowId, 'egenfrekvens_slot'>, Flow> = {
 					selectedTasks,
 					goalUpdatesText,
 					prevMonthGoals,
-					narrative,
-					refleksjonText
+					narrativeThread,
+					refleksjonThread
 				})
 			});
 		}
