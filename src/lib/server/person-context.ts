@@ -125,6 +125,51 @@ export async function buildPersonContext(userId: string, personId: string): Prom
 	return lines.join('\n');
 }
 
+/**
+ * Kompakt familieoversikt til bruk i vanlige (ikke person-scopede) chatter, slik at
+ * modellen kan koble navn og uttrykk som «minstemann»/«mellomste» til rette personer
+ * uten å narrere et oppslag. Returnerer tom streng hvis ingen personer finnes.
+ */
+export async function buildFamilyOverview(userId: string): Promise<string> {
+	const people = await db
+		.select({
+			name: persons.name,
+			nickname: persons.nickname,
+			kind: persons.kind,
+			birthDate: persons.birthDate
+		})
+		.from(persons)
+		.where(and(eq(persons.userId, userId), eq(persons.archived, false)));
+
+	if (people.length === 0) return '';
+
+	type P = (typeof people)[number];
+	const withAge = (p: P) => {
+		const age = computeAge(p.birthDate);
+		const nm = p.nickname && p.nickname !== p.name ? `${p.name} («${p.nickname}»)` : p.name;
+		return age !== null ? `${nm} (${age} år)` : nm;
+	};
+
+	const self = people.find((p) => p.kind === 'self');
+	const partners = people.filter((p) => p.kind === 'partner');
+	// Eldst → yngst (tidligst fødselsdato først); ukjent dato havner sist.
+	const children = people
+		.filter((p) => p.kind === 'child')
+		.sort((a, b) => (a.birthDate ?? '9999') < (b.birthDate ?? '9999') ? -1 : 1);
+	const others = people.filter((p) => !['self', 'partner', 'child'].includes(p.kind ?? ''));
+
+	const lines: string[] = [];
+	if (self) lines.push(`- Deg: ${self.name}`);
+	if (partners.length) lines.push(`- Partner: ${partners.map((p) => p.name).join(', ')}`);
+	if (children.length) lines.push(`- Barn (eldst→yngst): ${children.map(withAge).join(', ')}`);
+	if (others.length) {
+		lines.push(`- Andre: ${others.slice(0, 12).map((p) => `${p.name} (${p.kind})`).join(', ')}`);
+	}
+	if (lines.length === 0) return '';
+
+	return `\n\n## Familieoversikt\n(Bruk denne til å koble navn og uttrykk som «minstemann»/«mellomste» til rette personer uten å slå opp eller spørre. Ikke nevn dette oppslaget for brukeren.)\n${lines.join('\n')}`;
+}
+
 function computeAge(birthDate: string | null): number | null {
 	if (!birthDate) return null;
 	const d = new Date(birthDate);

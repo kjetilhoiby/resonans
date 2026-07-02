@@ -7,7 +7,8 @@ import { getOrCreateConversation, createConversation, addMessage, getConversatio
 import { recordTrackingEvent } from '$lib/server/tracking-series';
 import { ContextService } from '$lib/server/services/context-service';
 import { upsertPlanArtifactField } from '$lib/server/plan-artifacts';
-import { buildPersonContext } from '$lib/server/person-context';
+import { buildPersonContext, buildFamilyOverview } from '$lib/server/person-context';
+import { stripToolLeakage } from '$lib/server/chat-sanitize';
 import { buildDayContextBlock } from '$lib/server/day-location-context';
 import { bookResearchToolDefinition, executeBookResearch } from '$lib/ai/tools/book-research';
 import { createGoalTool } from '$lib/ai/tools/create-goal';
@@ -1844,6 +1845,14 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
                         } catch (err) {
                                 console.warn('buildPersonContext failed:', err);
                         }
+                } else {
+                        // Ikke person-scopet: injiser kompakt familieoversikt slik at modellen kjenner
+                        // personene (og «minstemann»/«mellomste») uten å narrere et oppslag.
+                        try {
+                                personContext = await buildFamilyOverview(userId);
+                        } catch (err) {
+                                console.warn('buildFamilyOverview failed:', err);
+                        }
                 }
 		// Hent brukerens aktive mål og oppgaver for kontekst
 		const activeGoals = await getUserActiveGoalsAndTasks(userId);
@@ -3316,7 +3325,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			});
 		}
 
-		const finalMessage = responseMessage?.content || 'Beklager, jeg fikk ikke generert noe svar.';
+		const finalMessage = stripToolLeakage(responseMessage?.content || 'Beklager, jeg fikk ikke generert noe svar.');
 		const assistantMetadata: Record<string, unknown> = {};
 		if (createdGoalId) assistantMetadata.goalId = createdGoalId;
 		if (widgetProposal) assistantMetadata.widgetProposal = widgetProposal;

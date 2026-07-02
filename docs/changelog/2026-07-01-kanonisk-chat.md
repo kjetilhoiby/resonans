@@ -142,10 +142,33 @@ Langtrykk på et bilde i tråden gir en liten meny: **Beskriv / legg til konteks
   bevisst: brukeren styrer dybden via selve meldingen (kort deling → lett svar; refleksjon →
   substansielt svar). Den kanoniske tråden bruker samme coach/tone som ellers.
 
+### Person-kontekst + verktøy-lekkasje (denne endringen)
+
+Symptom: chat-svar lekket verktøy-narrasjon og rå JSON («Jeg sjekker først hvem som finnes
+i familieoversikten … {"personName":"Anita"}»), og modellen kjente ikke familien uten å
+narrere et oppslag.
+
+- **Ingen verktøy-prat/JSON i svar.** `base.ts` fikk en «intern verktøybruk»-regel (verktøy
+  er usynlige; ikke skriv verktøynavn/JSON/egne trinn). `domains.ts` (family) ber nå om at
+  oppslag/lagring skjer stille. Siste forsvarslinje: `stripToolLeakage` (`chat-sanitize.ts`,
+  testet) fjerner JSON-blobber fra `finalMessage` før lagring/sending.
+- **Familieoversikt i konteksten.** `buildFamilyOverview(userId)` (person-context) injiseres
+  i vanlige (ikke person-scopede) chatter, så modellen kjenner partner + barn (sortert
+  eldst→yngst med alder) og kan koble «minstemann»/«mellomste» til rett person uten oppslag.
+
 ### Fase 4 (ikke i denne endringen)
 
 - **Flere bilder per melding (B).** La én melding bære flere bilder (i dag ett `imageUrl`) —
   datamodell + Vision-API (flere `image_url`) + rendering av flere miniatyrer.
+- **Reise-/ferie-kontekst i chat.** `buildDayContextBlock` gir i dag kun sted/bevegelse fra
+  dagens sjekkliste — ikke *hvem* som er med, og ikke kommende reiser. Surface aktive +
+  kommende `ferieProfile.trips[]` med deltakere (koble `participants`-navn → personId) så
+  konteksten «snapper på plass» (hvem er på hytta nå vs. hvem reiser neste uke).
+- **Person-chips (uavklart → velg fra liste).** Strukturert `personProposal` i
+  `assistantMetadata` + chips under meldingen med tap-to-resolve, i stedet for at forslag
+  havner som fritekst/JSON. (Egen klient-kanal finnes for widgets, ikke for personer ennå.)
+- **Input-layout på mobil.** Skrivefeltet flyter med tom plass over og et gap mot
+  tastaturet; ønsket: forankret nederst, bredere. Krever verifisering på faktisk enhet.
 - **Flere produsenter.** Fullført økt, nudge-respons og flyt-fullføring som hendelseskort
   (via `addCanonicalEventMessage` / event-endepunktet).
 - **Referanse-kort** fra tema-/flyt-samtaler inn i den kanoniske visningen (deep-link til
