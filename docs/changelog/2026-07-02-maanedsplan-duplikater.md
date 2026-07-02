@@ -42,6 +42,15 @@ To underliggende feil:
 - `maalPrompt` i `maanedsplan/+page.svelte` presiserer at antall for MÅNEDSOPPGAVER skal
   være 1–8, og at ting som gjentas oftere hører hjemme som MÅNEDSMÅL.
 
+### Fase 4: Teller for mange repetisjoner
+- `MonthChecklist.svelte`: en gruppe med flere enn `COUNTER_THRESHOLD` (6) barn vises nå
+  som en kompakt teller (`X / N` med −/+) i stedet for en rad med sirkel-slots som wrapper
+  og presser tittelen. Slots beholdes for små, taktile antall (1–6).
+- Telleren driver de samme barn-punktene via `ontoggle`: «+» haker av neste åpne barn,
+  «−» fjerner haken på det siste avkryssede. Ingen skjema- eller API-endring — samme
+  parentId/barn-modell, bare et annet visningsvalg. Gjenbruker teller-mønsteret fra
+  månedsmål (prinsipp 2).
+
 ## Beslutninger
 
 - **Tak på 12, ikke 8:** Selv om prompten sier 1–8, klamper vi til 12 for å være i tråd
