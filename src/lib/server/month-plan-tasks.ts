@@ -2,14 +2,15 @@
  * Ekspandering av MÅNEDSOPPGAVER til gjøremål på månedslista.
  *
  * En månedsoppgave med et antall (f.eks. «Yoga: 4 ganger») blir ett foreldre-punkt
- * med N barn-slots som hakes av én etter én (MonthChecklist rendrer barna som
- * kompakte sirkler gruppert på parentId). Antallet slots klampes til
- * {@link MAX_MONTH_TASK_SLOTS} slik at en for høy AI-foreslått frekvens («20 ganger»)
- * ikke eksploderer lista til dusinvis av duplikater — høyfrekvente ting hører uansett
- * hjemme som MÅNEDSMÅL, ikke som avkryssbare oppgaver.
+ * med N barn som hakes av én etter én. MonthChecklist rendrer små antall som
+ * kompakte sirkler og større antall som en teller (X / N) — begge gruppert på
+ * parentId. Fordi telleren skalerer til et hvilket som helst antall, bevarer vi det
+ * foreslåtte antallet (20 forblir 20) og klamper bare mot et høyt sikkerhetstak
+ * {@link MAX_MONTH_TASK_SLOTS} for å unngå absurde verdier som lager hundrevis av rader.
  */
 
-export const MAX_MONTH_TASK_SLOTS = 12;
+// Maks dager i en måned — en naturlig øvre grense for «antall ganger denne måneden».
+export const MAX_MONTH_TASK_SLOTS = 31;
 
 export type MonthTaskInput = { title: string; value: number; unit: string };
 

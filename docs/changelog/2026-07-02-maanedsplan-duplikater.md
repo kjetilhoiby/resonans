@@ -25,13 +25,16 @@ To underliggende feil:
 
 ## Faser
 
-### Fase 1: Klamp antall slots (ny, testbar modul)
-- Ny `src/lib/server/month-plan-tasks.ts` med `planMonthTask()` og
-  `MAX_MONTH_TASK_SLOTS = 12`. Ren funksjon som regner ut foreldre-label, antall slots
-  (klampet til [1, 12]) og barn-tekst.
+### Fase 1: Ekspander oppgaver via ny, testbar modul
+- Ny `src/lib/server/month-plan-tasks.ts` med `planMonthTask()`. Ren funksjon som regner
+  ut foreldre-label, antall og barn-tekst.
 - `src/routes/api/month-plan/complete/+server.ts` bruker `planMonthTask` i stedet for
-  inline-ekspandering. En for høy frekvens («20 ganger») blir nå maks 12 slots.
-- Enhetstester i `src/lib/server/month-plan-tasks.test.ts` (6 tester).
+  inline-ekspandering.
+- Antallet bevares som foreslått (20 forblir 20) og klampes bare mot et høyt
+  sikkerhetstak `MAX_MONTH_TASK_SLOTS = 31` (maks dager i en måned) for å unngå absurde
+  verdier som lager hundrevis av rader. Telleren (Fase 4) gjør at store antall vises pent
+  uansett, så vi trenger ikke skjule brukerens tall.
+- Enhetstester i `src/lib/server/month-plan-tasks.test.ts`.
 
 ### Fase 2: Ta med `parentId` ved lasting
 - `maanedsplan/+page.server.ts`: legg `parentId` i item-mappingen.
@@ -53,9 +56,10 @@ To underliggende feil:
 
 ## Beslutninger
 
-- **Tak på 12, ikke 8:** Selv om prompten sier 1–8, klamper vi til 12 for å være i tråd
-  med resten av kodebasen (`list-repeat-parser`, `ukeplan`). Prompten dytter AI-en mot
-  1–8; koden er sikkerhetsnettet mot eksplosjon.
+- **Ikke klamp fornuftige antall (20→12):** Første forsøk klampet til 12, men det skjuler
+  brukerens/AI-ens tall. Siden telleren rendrer et hvilket som helst antall pent, bevarer
+  vi det foreslåtte antallet og klamper bare mot et høyt sikkerhetstak (31). Prompten
+  dytter fortsatt mot 1–8.
 - **Ikke automatisk konvertering oppgave → mål:** Høyfrekvente ting *bør* være MÅNEDSMÅL,
   men å konvertere automatisk ved lagring er mer inngripende og overraskende. Vi nøyer oss
   med promptveiledning + tak.

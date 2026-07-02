@@ -26,11 +26,17 @@ describe('planMonthTask', () => {
 		});
 	});
 
-	it('klamper en for høy frekvens til maks antall slots', () => {
+	it('bevarer et fornuftig antall uten å klampe', () => {
 		const plan = planMonthTask({ title: 'Yoga', value: 20, unit: 'ganger' });
+		expect(plan.slotCount).toBe(20);
+		expect(plan.parentLabel).toBe('Yoga (20 ganger)');
+		expect(plan.childLabel).toBe('Yoga');
+	});
+
+	it('klamper bare absurde verdier til sikkerhetstaket', () => {
+		const plan = planMonthTask({ title: 'Yoga', value: 200, unit: 'ganger' });
 		expect(plan.slotCount).toBe(MAX_MONTH_TASK_SLOTS);
 		expect(plan.parentLabel).toBe(`Yoga (${MAX_MONTH_TASK_SLOTS} ganger)`);
-		expect(plan.childLabel).toBe('Yoga');
 	});
 
 	it('runder ned desimaltall', () => {
