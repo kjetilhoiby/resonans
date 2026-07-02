@@ -169,7 +169,7 @@ const BESPOKE_ASSISTANT_TOOLS: AssistantTool[] = [
 			function: {
 				name: 'dayPlan',
 				description:
-					'Dagens kontekst: bevegelse/opphold og hvor brukeren er. Valgfri date (YYYY-MM-DD), default i dag.',
+					'Dagens kontekst: startpunkt (origin), bevegelse/opphold og hvor brukeren er. Valgfri date (YYYY-MM-DD), default i dag.',
 				parameters: {
 					type: 'object',
 					properties: { date: { type: 'string', description: 'YYYY-MM-DD, default i dag' } }
@@ -178,7 +178,7 @@ const BESPOKE_ASSISTANT_TOOLS: AssistantTool[] = [
 		},
 		run: async (userId, args) => {
 			const ctx = await gatherDayContext(userId, optionalDate(args));
-			return { date: ctx.date, movement: ctx.movement, stay: ctx.stay };
+			return { date: ctx.date, origin: ctx.origin, movement: ctx.movement, stay: ctx.stay };
 		}
 	},
 ];

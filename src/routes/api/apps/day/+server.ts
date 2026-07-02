@@ -50,9 +50,14 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	return json({
 		date: ctx.date,
 		trip,
+		// origin: utledet startpunkt for dagen (dagens «Sted:», ellers siste kjente
+		// sted/reisemål de foregående dagene). Origin for første reisesegment.
+		origin: ctx.origin,
 		// movement[]: hvert segment har mode/destination/time, og — når planen har
 		// dem — destLat/destLon (pinnet geokoding, begge eller ingen) og arriveBy
-		// (ankomstfrist 'HH:MM') for Ekkos sluttmål/ankomstbudsjett.
+		// (ankomstfrist 'HH:MM') for Ekkos sluttmål/ankomstbudsjett. Etappene er
+		// kronologisk kjedet: origin/originLat/originLon peker på der etappen starter
+		// (forrige etappes mål), så et mellomstopp blir én sammensatt reise.
 		movement: ctx.movement,
 		stay: ctx.stay,
 		training: await buildTrainingPointer(userId, ctx.date)
