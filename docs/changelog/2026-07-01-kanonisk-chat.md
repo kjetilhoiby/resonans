@@ -156,14 +156,26 @@ narrere et oppslag.
   i vanlige (ikke person-scopede) chatter, så modellen kjenner partner + barn (sortert
   eldst→yngst med alder) og kan koble «minstemann»/«mellomste» til rett person uten oppslag.
 
+### Reise-/ferie-kontekst i chat (denne endringen)
+
+Chatten visste før ikke hvem som var med på hvilken reise. Nå injiseres pågående ferie +
+dens reiser i konteksten:
+
+- **Ren, testet logikk** i `src/lib/ferie/active-ferie.ts`: `tripPhase` (pågående/kommende/
+  passert), `formatTripDates`, og `buildFerieContextBlock(themes, todayIso)` som formaterer
+  «Pågående ferie … / Reiser som pågår nå: … / Kommende reiser: …» med deltakere, sted og
+  datoer. Passerte reiser utelates; ikke-ferie-temaer ignoreres.
+- **Server-wrapper** `buildTripContext(userId, todayIso)` (`ferie-context.ts`) leser
+  `ferieProfile` fra brukerens temaer og injiseres i chat-systemprompten (tz-riktig «i dag»).
+- Leser deltakere fra `ferieProfile.trips[].participants` (navn-strenger) — foreløpig som
+  navn, ikke koblet til personId (se fase 4).
+
 ### Fase 4 (ikke i denne endringen)
 
 - **Flere bilder per melding (B).** La én melding bære flere bilder (i dag ett `imageUrl`) —
   datamodell + Vision-API (flere `image_url`) + rendering av flere miniatyrer.
-- **Reise-/ferie-kontekst i chat.** `buildDayContextBlock` gir i dag kun sted/bevegelse fra
-  dagens sjekkliste — ikke *hvem* som er med, og ikke kommende reiser. Surface aktive +
-  kommende `ferieProfile.trips[]` med deltakere (koble `participants`-navn → personId) så
-  konteksten «snapper på plass» (hvem er på hytta nå vs. hvem reiser neste uke).
+- **Koble reise-deltakere til personId.** `participants` er navn-strenger; koble til `persons`
+  så reise-kontekst og person-kontekst deler samme identitet.
 - **Person-chips (uavklart → velg fra liste).** Strukturert `personProposal` i
   `assistantMetadata` + chips under meldingen med tap-to-resolve, i stedet for at forslag
   havner som fritekst/JSON. (Egen klient-kanal finnes for widgets, ikke for personer ennå.)
