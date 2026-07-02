@@ -6,6 +6,7 @@ import {
 	tripPhase,
 	formatTripDates,
 	buildFerieContextBlock,
+	makeParticipantResolver,
 	FERIE_FALLBACK_EMOJI
 } from './active-ferie';
 
@@ -151,5 +152,42 @@ describe('buildFerieContextBlock', () => {
 	it('ignorerer ikke-ferie-temaer selv med ferieProfile', () => {
 		const block = buildFerieContextBlock([{ name: 'Helse', ferieProfile: { startDate: '2026-07-01', endDate: '2026-07-20', trips: [] } }], '2026-07-08');
 		expect(block).toBe('');
+	});
+
+	it('kanoniserer kjente deltakere og flagger ukjente via resolver', () => {
+		const resolve = makeParticipantResolver([
+			{ name: 'Kjetil', nickname: null, aliases: [] },
+			{ name: 'Nils', nickname: null, aliases: ['Nisse'] },
+			{ name: 'Erle', nickname: null, aliases: [] }
+		]);
+		const themesWithGuest = [
+			{
+				name: 'Sommerferie',
+				ferieProfile: {
+					startDate: '2026-07-01',
+					endDate: '2026-07-20',
+					trips: [
+						{ label: 'Hytta', participants: ['kjetil', 'Nisse', 'Marte'], startDate: '2026-07-07', endDate: '2026-07-09' }
+					]
+				}
+			}
+		];
+		const block = buildFerieContextBlock(themesWithGuest, '2026-07-08', resolve);
+		// «kjetil» → «Kjetil», alias «Nisse» → «Nils», «Marte» ukjent
+		expect(block).toContain('Hytta – Kjetil, Nils, Marte (ukjent)');
+	});
+});
+
+describe('makeParticipantResolver', () => {
+	const resolve = makeParticipantResolver([
+		{ name: 'Anita', nickname: 'Nita', aliases: ['Mamma'] }
+	]);
+	it('matcher på navn, nickname og alias (case-insensitivt)', () => {
+		expect(resolve('anita')).toEqual({ name: 'Anita', known: true });
+		expect(resolve('Nita')).toEqual({ name: 'Anita', known: true });
+		expect(resolve('mamma')).toEqual({ name: 'Anita', known: true });
+	});
+	it('flagger ukjente navn', () => {
+		expect(resolve('David')).toEqual({ name: 'David', known: false });
 	});
 });

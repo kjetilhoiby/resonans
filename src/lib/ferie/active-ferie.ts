@@ -92,6 +92,45 @@ export interface FerieContextTheme {
 
 export type TripPhase = 'ongoing' | 'upcoming' | 'past' | 'undated';
 
+// ── Deltaker-oppslag (reise-navn → person) ──────────────────────────────────
+
+export interface FeriePerson {
+	name: string;
+	nickname?: string | null;
+	aliases?: string[] | null;
+}
+
+export interface ResolvedParticipant {
+	/** Kanonisk navn (personens `name` hvis truffet, ellers rå-navnet). */
+	name: string;
+	/** Om navnet matcher en registrert person. */
+	known: boolean;
+}
+
+export type ParticipantResolver = (name: string) => ResolvedParticipant;
+
+/**
+ * Bygger en resolver som matcher et reise-deltakernavn mot registrerte personer
+ * (på name/nickname/alias, case-insensitivt). Deler identitet med person-konteksten,
+ * og lar chatten skille kjente personer fra ukjente navn (f.eks. venner uten profil).
+ */
+export function makeParticipantResolver(persons: FeriePerson[]): ParticipantResolver {
+	const byToken = new Map<string, FeriePerson>();
+	const add = (token: string | null | undefined, person: FeriePerson) => {
+		const key = token?.trim().toLowerCase();
+		if (key && !byToken.has(key)) byToken.set(key, person);
+	};
+	for (const p of persons) {
+		add(p.name, p);
+		add(p.nickname, p);
+		for (const a of p.aliases ?? []) add(a, p);
+	}
+	return (name: string): ResolvedParticipant => {
+		const match = byToken.get(name.trim().toLowerCase());
+		return match ? { name: match.name, known: true } : { name: name.trim(), known: false };
+	};
+}
+
 /** Hvor en reise ligger i forhold til `todayIso` (inklusiv begge ender). */
 export function tripPhase(trip: FerieTrip, todayIso: string): TripPhase {
 	const { startDate, endDate } = trip;
@@ -122,11 +161,17 @@ export function formatTripDates(trip: FerieTrip): string {
 	return '';
 }
 
-function formatTripLine(trip: FerieTrip): string {
+function formatParticipant(name: string, resolve?: ParticipantResolver): string {
+	if (!resolve) return name;
+	const r = resolve(name);
+	return r.known ? r.name : `${r.name} (ukjent)`;
+}
+
+function formatTripLine(trip: FerieTrip, resolve?: ParticipantResolver): string {
 	const parts: string[] = [];
 	parts.push(trip.place ? `${trip.label} (${trip.place})` : trip.label);
 	if (trip.participants && trip.participants.length > 0) {
-		parts.push(`– ${trip.participants.join(', ')}`);
+		parts.push(`– ${trip.participants.map((n) => formatParticipant(n, resolve)).join(', ')}`);
 	}
 	const dates = formatTripDates(trip);
 	if (dates) parts.push(`[${dates}]`);
@@ -138,7 +183,11 @@ function formatTripLine(trip: FerieTrip): string {
  * slik at chatten vet hvor brukeren er og hvem som er med — uten å spørre.
  * Ren og testbar. Returnerer tom streng hvis ingen ferie er aktiv i dag.
  */
-export function buildFerieContextBlock(themes: FerieContextTheme[], todayIso: string): string {
+export function buildFerieContextBlock(
+	themes: FerieContextTheme[],
+	todayIso: string,
+	resolve?: ParticipantResolver
+): string {
 	const active = themes.filter(
 		(t) => resolveThemeDashboardKind(t.name) === 'ferie' && isFerieActiveOn(t.ferieProfile, todayIso)
 	);
@@ -162,11 +211,11 @@ export function buildFerieContextBlock(themes: FerieContextTheme[], todayIso: st
 		const lines = [header];
 		if (ongoing.length > 0) {
 			lines.push('Reiser som pågår nå:');
-			lines.push(...ongoing.map(formatTripLine));
+			lines.push(...ongoing.map((t) => formatTripLine(t, resolve)));
 		}
 		if (upcoming.length > 0) {
 			lines.push('Kommende reiser:');
-			lines.push(...upcoming.map(formatTripLine));
+			lines.push(...upcoming.map((t) => formatTripLine(t, resolve)));
 		}
 		blocks.push(lines.join('\n'));
 	}

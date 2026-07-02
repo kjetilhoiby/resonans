@@ -167,15 +167,19 @@ dens reiser i konteksten:
   datoer. Passerte reiser utelates; ikke-ferie-temaer ignoreres.
 - **Server-wrapper** `buildTripContext(userId, todayIso)` (`ferie-context.ts`) leser
   `ferieProfile` fra brukerens temaer og injiseres i chat-systemprompten (tz-riktig «i dag»).
-- Leser deltakere fra `ferieProfile.trips[].participants` (navn-strenger) — foreløpig som
-  navn, ikke koblet til personId (se fase 4).
+- **Deltaker-kobling (read-time).** `makeParticipantResolver(persons)` matcher deltaker-navn
+  mot registrerte personer på name/nickname/alias (case-insensitivt). Kjente deltakere vises
+  med kanonisk navn (delt identitet med person-konteksten); ukjente navn flagges «(ukjent)»
+  så chatten kan foreslå å opprette dem. `buildTripContext` laster persons og bygger
+  resolveren. Ingen migrasjon/mutasjon — koblingen skjer ved kontekst-bygging.
 
 ### Fase 4 (ikke i denne endringen)
 
 - **Flere bilder per melding (B).** La én melding bære flere bilder (i dag ett `imageUrl`) —
   datamodell + Vision-API (flere `image_url`) + rendering av flere miniatyrer.
-- **Koble reise-deltakere til personId.** `participants` er navn-strenger; koble til `persons`
-  så reise-kontekst og person-kontekst deler samme identitet.
+- **Persister personId på reise-deltakere.** Read-time-koblingen forener identitet i
+  konteksten nå; en full kobling ville lagret personId på `trips[].participants` (krever
+  FerieDashboard-UI for å velge personer + backfill-migrasjon).
 - **Person-chips (uavklart → velg fra liste).** Strukturert `personProposal` i
   `assistantMetadata` + chips under meldingen med tap-to-resolve, i stedet for at forslag
   havner som fritekst/JSON. (Egen klient-kanal finnes for widgets, ikke for personer ennå.)
