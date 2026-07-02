@@ -5,6 +5,7 @@ import { checklistItems, checklists, goals, sensorEvents } from '$lib/db/schema'
 import { and, desc, eq, lte, sql } from 'drizzle-orm';
 import { upsertPlanArtifactField } from '$lib/server/plan-artifacts';
 import { createReflection } from '$lib/server/reflections';
+import { planMonthTask } from '$lib/server/month-plan-tasks';
 
 function getMonthInfoFromKey(key: string) {
 	const match = key.match(/^(\d{4})-(\d{2})$/);
@@ -132,32 +133,31 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			nextSortOrder += simpleToInsert.length;
 		}
 
-		// Insert MÅNEDSOPPGAVER: N=1 → single item, N>1 → parent + N children
+		// Insert MÅNEDSOPPGAVER: 1 slot → enkelt punkt, flere → foreldre + N barn.
+		// planMonthTask klamper antallet slik at «20 ganger» ikke eksploderer lista.
 		for (const task of parsedTasks) {
-			const parentLabel = task.value > 1
-				? `${task.title} (${task.value} ${task.unit})`
-				: task.title;
-			if (existingTexts.has(parentLabel.trim().toLowerCase())) continue;
+			const plan = planMonthTask(task);
+			if (existingTexts.has(plan.parentLabel.toLowerCase())) continue;
 
-			if (task.value <= 1) {
+			if (plan.slotCount <= 1) {
 				await db.insert(checklistItems).values({
 					checklistId: checklist.id,
 					userId,
-					text: parentLabel.trim(),
+					text: plan.parentLabel,
 					sortOrder: nextSortOrder++
 				});
 			} else {
 				const [parent] = await db.insert(checklistItems).values({
 					checklistId: checklist.id,
 					userId,
-					text: parentLabel.trim(),
+					text: plan.parentLabel,
 					sortOrder: nextSortOrder++
 				}).returning({ id: checklistItems.id });
 
-				const children = Array.from({ length: task.value }, (_, i) => ({
+				const children = Array.from({ length: plan.slotCount }, (_, i) => ({
 					checklistId: checklist!.id,
 					userId,
-					text: task.title.trim(),
+					text: plan.childLabel,
 					parentId: parent.id,
 					sortOrder: i
 				}));

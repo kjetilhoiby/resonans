@@ -263,7 +263,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 					items: monthChecklist.items.map((i) => ({
 						id: i.id,
 						text: i.text,
-						checked: i.checked
+						checked: i.checked,
+						parentId: i.parentId ?? null
 					}))
 			  }
 			: null,
