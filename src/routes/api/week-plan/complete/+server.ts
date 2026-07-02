@@ -3,8 +3,9 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { checklistItems, checklists, goals, sensorEvents } from '$lib/db/schema';
 import { and, desc, eq, lte, sql } from 'drizzle-orm';
-import { upsertPlanArtifactField } from '$lib/server/plan-artifacts';
+import { getPlanArtifact, upsertPlanArtifactField } from '$lib/server/plan-artifacts';
 import { createReflection } from '$lib/server/reflections';
+import { cleanPlanField } from '$lib/server/plan-text';
 
 function getIsoWeekInfo(now: Date) {
 	const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -268,32 +269,41 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		});
 	}
 
-	// ── 3. Save narrative as week note ─────────────────────────────────────────
-	if (narrative.trim()) {
+	// ── 3. Save narrative as week note (renset for markdown/samtale-innpakning) ──
+	const cleanedNarrative = cleanPlanField(narrative);
+	if (cleanedNarrative) {
 		await upsertPlanArtifactField({
 			userId,
 			kind: 'week',
 			periodKey: week.compactKey,
 			field: 'note',
-			content: narrative
+			content: cleanedNarrative
 		});
 	}
 
-	// ── 4. Save refleksjon as plan-artefact reflection AND tracked reflection ──
-	if (refleksjonText?.trim()) {
-		await upsertPlanArtifactField({
-			userId,
-			kind: 'week',
-			periodKey: week.compactKey,
-			field: 'reflection',
-			content: refleksjonText
-		});
-		await createReflection({
-			userId,
-			kind: 'week_review',
-			periodKey: week.dashedKey,
-			content: refleksjonText
-		});
+	// ── 4. Refleksjonen handler om FORRIGE uke — lagre den der, ikke på uka vi nå
+	// planlegger. Ikke overskriv en refleksjon brukeren allerede har skrevet. ──
+	const cleanedRefleksjon = cleanPlanField(refleksjonText ?? '');
+	if (cleanedRefleksjon) {
+		const prevMonday = new Date(`${week.startDate}T00:00:00.000Z`);
+		prevMonday.setUTCDate(prevMonday.getUTCDate() - 7);
+		const prevWeek = getIsoWeekInfo(prevMonday);
+		const existing = await getPlanArtifact(userId, 'week', prevWeek.compactKey);
+		if (!existing?.reflection?.trim()) {
+			await upsertPlanArtifactField({
+				userId,
+				kind: 'week',
+				periodKey: prevWeek.compactKey,
+				field: 'reflection',
+				content: cleanedRefleksjon
+			});
+			await createReflection({
+				userId,
+				kind: 'week_review',
+				periodKey: prevWeek.dashedKey,
+				content: cleanedRefleksjon
+			});
+		}
 	}
 
 	return json({ success: true });
