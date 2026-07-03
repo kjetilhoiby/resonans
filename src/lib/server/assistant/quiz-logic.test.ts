@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
 	newParticipant,
 	participantsFromNames,
+	participantsFromEntries,
+	coercePlayerEntries,
 	ageFromBirthDate,
 	ageBand,
 	applyAnswer,
@@ -10,9 +12,16 @@ import {
 	buildStandings,
 	streakLabel,
 	parseGeneratedQuestions,
+	filterRepeatQuestions,
+	normalizeQuestionText,
+	nextUnusedQuestion,
+	markQuestionUsed,
+	unusedCounts,
+	nextPlayerName,
 	buildKnowledgeSnapshot,
 	hasKnowledge,
 	projectQuizBoard,
+	type QuizBankQuestion,
 	type QuizSessionState
 } from './quiz-logic';
 
@@ -21,6 +30,57 @@ describe('participantsFromNames', () => {
 		const list = participantsFromNames([' Nils ', 'Erle', 'nils', '', '  ']);
 		expect(list.map((p) => p.name)).toEqual(['Nils', 'Erle']);
 		expect(list[0]).toEqual(newParticipant('Nils'));
+	});
+});
+
+describe('participantsFromEntries', () => {
+	it('registrerer hele laget i ett kall med alder («Erle 7, Nils 9, Kjetil 42»)', () => {
+		const list = participantsFromEntries([
+			{ name: 'Erle', age: 7 },
+			{ name: 'Nils', age: 9 },
+			{ name: 'Kjetil', age: 42 }
+		]);
+		expect(list.map((p) => `${p.name} ${p.age}`)).toEqual(['Erle 7', 'Nils 9', 'Kjetil 42']);
+		expect(list.every((p) => p.score === 0 && p.streak === 0)).toBe(true);
+	});
+
+	it('runder alder til hele år, forkaster ugyldig alder, og tar med interesser', () => {
+		const list = participantsFromEntries([
+			{ name: 'Erle', age: 7.6, interests: [' Bluey ', ''] },
+			{ name: 'Nils', age: -3 },
+			{ name: 'Mormor', age: 200 }
+		]);
+		expect(list[0].age).toBe(8);
+		expect(list[0].interests).toEqual(['Bluey']);
+		expect(list[1].age).toBeUndefined();
+		expect(list[2].age).toBeUndefined();
+	});
+
+	it('fjerner tomme og duplikate navn (case-insensitivt)', () => {
+		const list = participantsFromEntries([
+			{ name: ' Nils ', age: 9 },
+			{ name: 'nils', age: 10 },
+			{ name: '' }
+		]);
+		expect(list).toHaveLength(1);
+		expect(list[0]).toMatchObject({ name: 'Nils', age: 9 });
+	});
+});
+
+describe('coercePlayerEntries', () => {
+	it('tolker rå LLM-argumenter og dropper søppel', () => {
+		const entries = coercePlayerEntries([
+			{ name: 'Erle', age: 7, interests: ['Bluey', 42] },
+			{ name: '', age: 9 },
+			'tekst',
+			{ age: 12 }
+		]);
+		expect(entries).toEqual([{ name: 'Erle', age: 7, interests: ['Bluey'] }]);
+	});
+
+	it('gir tom liste for ikke-array', () => {
+		expect(coercePlayerEntries(null)).toEqual([]);
+		expect(coercePlayerEntries({ name: 'Erle' })).toEqual([]);
 	});
 });
 
@@ -112,6 +172,84 @@ describe('hasPendingAnswer', () => {
 	it('er usann når ingen spørsmål er stilt ennå', () => {
 		expect(hasPendingAnswer({ currentQuestion: null, lastResult: null })).toBe(false);
 	});
+
+	it('følger questionState når banken er i bruk', () => {
+		expect(
+			hasPendingAnswer({ currentQuestion: 'Q', lastResult: null, questionState: 'open' })
+		).toBe(true);
+		// «answered» vinner selv om lastResult skulle være null (f.eks. midt i en oppdatering).
+		expect(
+			hasPendingAnswer({ currentQuestion: 'Q', lastResult: null, questionState: 'answered' })
+		).toBe(false);
+	});
+});
+
+describe('normalizeQuestionText', () => {
+	it('kollapser casing, tegnsetting og whitespace til én kanonisk form', () => {
+		expect(normalizeQuestionText('Hva heter hovedstaden i Norge?')).toBe(
+			'hva heter hovedstaden i norge'
+		);
+		expect(normalizeQuestionText('  Hva heter   hovedstaden i NORGE!? ')).toBe(
+			'hva heter hovedstaden i norge'
+		);
+		expect(normalizeQuestionText('Hvor mange bein har en edderkopp (åtte)?')).toBe(
+			'hvor mange bein har en edderkopp åtte'
+		);
+	});
+});
+
+describe('spørsmålsbank', () => {
+	const bank: QuizBankQuestion[] = [
+		{ id: 'a', player: 'Erle', text: 'Q1', answer: 'A1', category: 'dyr', used: true },
+		{ id: 'b', player: 'Erle', text: 'Q2', answer: 'A2', category: 'tall', used: false },
+		{ id: 'c', player: 'Nils', text: 'Q3', answer: 'A3', category: 'geografi', used: false }
+	];
+
+	it('nextUnusedQuestion trekker første ubrukte for spilleren (case-insensitivt)', () => {
+		expect(nextUnusedQuestion(bank, 'erle')?.id).toBe('b');
+		expect(nextUnusedQuestion(bank, 'Nils')?.id).toBe('c');
+		expect(nextUnusedQuestion(bank, 'Kjetil')).toBeNull();
+	});
+
+	it('markQuestionUsed markerer uten å mutere input', () => {
+		const after = markQuestionUsed(bank, 'b');
+		expect(after.find((q) => q.id === 'b')?.used).toBe(true);
+		expect(bank.find((q) => q.id === 'b')?.used).toBe(false);
+	});
+
+	it('unusedCounts teller ubrukte per spiller', () => {
+		expect(unusedCounts(bank)).toEqual({ Erle: 1, Nils: 1 });
+	});
+});
+
+describe('nextPlayerName', () => {
+	const list = [newParticipant('Erle'), newParticipant('Nils'), newParticipant('Kjetil')];
+
+	it('roterer i registreringsrekkefølge og wrapper rundt', () => {
+		expect(nextPlayerName(list, 'Erle')).toBe('Nils');
+		expect(nextPlayerName(list, 'Kjetil')).toBe('Erle');
+	});
+
+	it('starter på første deltaker ved null/ukjent current, og gir null for tom liste', () => {
+		expect(nextPlayerName(list, null)).toBe('Erle');
+		expect(nextPlayerName(list, 'Ukjent')).toBe('Erle');
+		expect(nextPlayerName([], 'Erle')).toBeNull();
+	});
+});
+
+describe('filterRepeatQuestions', () => {
+	it('fjerner alt som (normalisert) er stilt før, og dedupliserer innad i batchen', () => {
+		const asked = new Set([normalizeQuestionText('Hva heter hovedstaden i Norge?')]);
+		const out = filterRepeatQuestions(
+			[
+				{ player: 'Erle', question: 'Hva heter hovedstaden i NORGE!?', answer: 'Oslo', category: 'geografi' },
+				{ player: 'Nils', question: 'Hva er 7 + 5?', answer: '12', category: 'tall' },
+				{ player: 'Kjetil', question: 'Hva er 7+5', answer: '12', category: 'tall' }
+			],
+			asked
+		);
+		expect(out.map((q) => q.player)).toEqual(['Nils']);
+	});
 });
 
 describe('buildStandings', () => {
@@ -134,20 +272,20 @@ describe('streakLabel', () => {
 });
 
 describe('parseGeneratedQuestions', () => {
-	it('aksepterer toppnivå-array', () => {
+	it('aksepterer toppnivå-array og tar med kategori', () => {
 		const out = parseGeneratedQuestions([
-			{ player: 'Erle', question: 'Hva er 7+5?', answer: '12' },
-			{ player: 'Nils', question: 'Hovedstad i Sverige?', answer: 'Stockholm' }
+			{ player: 'Erle', question: 'Hva er 7+5?', answer: '12', category: 'tall' },
+			{ player: 'Nils', question: 'Hovedstad i Sverige?', answer: 'Stockholm', category: 'geografi' }
 		]);
 		expect(out).toHaveLength(2);
-		expect(out[0]).toEqual({ player: 'Erle', question: 'Hva er 7+5?', answer: '12' });
+		expect(out[0]).toEqual({ player: 'Erle', question: 'Hva er 7+5?', answer: '12', category: 'tall' });
 	});
 
-	it('aksepterer { questions: [...] } og trimmer feltene', () => {
+	it('aksepterer { questions: [...] }, trimmer feltene og defaulter kategori', () => {
 		const out = parseGeneratedQuestions({
 			questions: [{ player: ' Nils ', question: ' 2+2? ', answer: ' 4 ' }]
 		});
-		expect(out).toEqual([{ player: 'Nils', question: '2+2?', answer: '4' }]);
+		expect(out).toEqual([{ player: 'Nils', question: '2+2?', answer: '4', category: 'generelt' }]);
 	});
 
 	it('dropper poster som mangler felt og tåler søppel', () => {
@@ -157,9 +295,9 @@ describe('parseGeneratedQuestions', () => {
 			parseGeneratedQuestions([
 				{ player: 'Nils', question: 'Q' }, // mangler answer
 				{ player: '', question: 'Q', answer: 'A' }, // tomt navn
-				{ player: 'Erle', question: 'Q2', answer: 'A2' }
+				{ player: 'Erle', question: 'Q2', answer: 'A2', category: 'dyr' }
 			])
-		).toEqual([{ player: 'Erle', question: 'Q2', answer: 'A2' }]);
+		).toEqual([{ player: 'Erle', question: 'Q2', answer: 'A2', category: 'dyr' }]);
 	});
 });
 
@@ -228,6 +366,17 @@ describe('projectQuizBoard', () => {
 		expect(board.answered).toBe(true);
 		expect(board.answer).toBe('Oslo');
 		expect(board.lastResult).toEqual({ player: 'Erle', correct: true });
+	});
+
+	it('følger questionState når banken er i bruk', () => {
+		expect(projectQuizBoard({ ...base, questionState: 'open' }).answer).toBeNull();
+		const answered = projectQuizBoard({
+			...base,
+			questionState: 'answered',
+			lastResult: { player: 'Erle', correct: false }
+		});
+		expect(answered.answered).toBe(true);
+		expect(answered.answer).toBe('Oslo');
 	});
 
 	it('sorterer stillingen og markerer hvem sin tur det er', () => {

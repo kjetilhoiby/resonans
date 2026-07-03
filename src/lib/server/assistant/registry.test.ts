@@ -25,7 +25,7 @@ describe('ASSISTANT_TOOL_DEFINITIONS', () => {
 
 	it('eksponerer quiz- og forteller-verktøyene', () => {
 		const names = new Set(ASSISTANT_TOOL_DEFINITIONS.map((d) => d.function.name));
-		for (const expected of ['trip_companions', 'quiz_questions', 'quiz_score']) {
+		for (const expected of ['trip_companions', 'quiz_score']) {
 			expect(names).toContain(expected);
 		}
 		for (const expected of ['story_start', 'story_scene', 'story_request', 'story_fill', 'story_end', 'story_state']) {

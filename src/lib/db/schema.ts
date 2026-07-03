@@ -1051,6 +1051,8 @@ export const quizSessions = pgTable('quiz_sessions', {
 	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
 	participants: jsonb('participants').$type<Array<{
 		name: string;
+		age?: number | null; // alder i år fra registreringen — styrer vanskelighetsgrad i banken
+		interests?: string[]; // hva spilleren liker/kan (fra trip_companions) — personlige spørsmål
 		score: number;       // antall riktige (1 poeng per rett)
 		streak: number;      // riktige på rad akkurat nå
 		bestStreak: number;  // beste streak i denne quizen
@@ -1065,6 +1067,18 @@ export const quizSessions = pgTable('quiz_sessions', {
 	currentQuestion: text('current_question'),             // gjeldende spørsmål (vises på skjerm)
 	currentAnswer: text('current_answer'),                 // fasit — avsløres på skjerm først når besvart
 	lastResult: jsonb('last_result').$type<{ player: string; correct: boolean } | null>(),
+	// Pre-generert spørsmålsbank + idempotent vurdering (se 0031-migrasjonen):
+	currentQuestionId: text('current_question_id'),        // bank-id for gjeldende spørsmål — record nøkles på denne
+	questionState: text('question_state'),                 // 'open' | 'answered' | null — serialiserer vurderingen
+	questionBank: jsonb('question_bank').$type<Array<{
+		id: string;
+		player: string;
+		text: string;
+		answer: string;
+		category: string;
+		used: boolean;
+	}>>().notNull().default(sql`'[]'::jsonb`),
+	askedLog: jsonb('asked_log').$type<string[]>().notNull().default(sql`'[]'::jsonb`), // normaliserte stilte spørsmål — refill hopper over disse
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
 }, (table) => ({
