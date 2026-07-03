@@ -4,6 +4,7 @@ import { db } from '$lib/db';
 import { themes } from '$lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { gatherDayContext } from '$lib/server/day-location-context';
+import { loadDayOrigin, enrichMovementWithOrigins } from '$lib/server/day-origin';
 import { pickTripForDate, dayWindowInfo } from '$lib/server/trip-geo';
 import { getProgramSummaries, getTodaySession } from '$lib/server/programs/repository';
 
@@ -47,13 +48,22 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		trip = { themeId: t.id, name: t.name, emoji: t.emoji, dayNo, totalDays };
 	}
 
+	// Dagens fra-punkt: deklarert fra planen (opphold / gårsdagens siste reise),
+	// ellers bilens sist observerte posisjon før dagen startet.
+	const origin = await loadDayOrigin(userId, ctx.date);
+
 	return json({
 		date: ctx.date,
 		trip,
+		// origin: hvor dagen starter — place/lat/lon/source/fromDate, felt utelates
+		// når ukjent. null når verken plan eller observert posisjon sier noe.
+		origin,
 		// movement[]: hvert segment har mode/destination/time, og — når planen har
 		// dem — destLat/destLon (pinnet geokoding, begge eller ingen) og arriveBy
-		// (ankomstfrist 'HH:MM') for Ekkos sluttmål/ankomstbudsjett.
-		movement: ctx.movement,
+		// (ankomstfrist 'HH:MM') for Ekkos sluttmål/ankomstbudsjett. origin-feltene
+		// (origin/originLat/originLon/originSource) kjedes: etappe 1 arver dagens
+		// origin, etappe N>1 får forrige etappes destinasjon.
+		movement: enrichMovementWithOrigins(ctx.movement, origin),
 		stay: ctx.stay,
 		training: await buildTrainingPointer(userId, ctx.date)
 	});

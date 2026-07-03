@@ -1,7 +1,9 @@
 import { db } from '$lib/db';
-import { sensors, liveSessions, sensorEvents } from '$lib/db/schema';
+import { sensors, liveSessions, sensorEvents, themes, users } from '$lib/db/schema';
 import { and, eq, isNull, desc } from 'drizzle-orm';
 import { encryptSecret, decryptSecret } from '$lib/server/crypto';
+import { localIsoDay } from '$lib/server/nudge-time';
+import { pickTripForDate } from '$lib/server/trip-geo';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
 import {
 	refreshAccessToken,
@@ -82,6 +84,31 @@ export async function getValidAccessToken(sensor: {
 		.where(eq(sensors.id, sensor.id));
 
 	return newCreds.access_token;
+}
+
+/**
+ * Har brukeren en aktiv reise (theme med tripProfile) for sin LOKALE dato nå?
+ * Brukes av cron-jobben til å avgjøre om nattevinduet skal polles — samme
+ * trip-utleding som /api/apps/day (pickTripForDate).
+ */
+export async function hasActiveTripForLocalDate(
+	userId: string,
+	now: Date = new Date()
+): Promise<boolean> {
+	const user = await db.query.users.findFirst({
+		where: eq(users.id, userId),
+		columns: { timezone: true }
+	});
+	const day = localIsoDay(user?.timezone ?? 'Europe/Oslo', now);
+
+	const themeRows = await db.query.themes.findMany({
+		where: eq(themes.userId, userId),
+		columns: { id: true, tripProfile: true }
+	});
+	const candidates = themeRows
+		.filter((r) => r.tripProfile?.startDate && r.tripProfile?.endDate)
+		.map((r) => ({ id: r.id, startDate: r.tripProfile!.startDate, endDate: r.tripProfile!.endDate }));
+	return pickTripForDate(candidates, day) !== null;
 }
 
 export interface TeslaSyncResult {
@@ -233,6 +260,9 @@ export async function getStoredTeslaState(userId: string): Promise<{
 			outsideTempC: vehicle.outsideTempC,
 			location: drive.lat !== undefined && drive.lon !== undefined ? { lat: drive.lat, lon: drive.lon } : undefined,
 			speedKmh: drive.speedKmh,
+			// P|D|R|N eller null (parkert/idle) fra siste lagrede drive_state — lar
+			// Ekko/klient se giret uten ?live (som ville holdt bilen våken).
+			shiftState: drive.shiftState,
 			asOf: asOf ? new Date(asOf).toISOString() : undefined
 		}
 	};

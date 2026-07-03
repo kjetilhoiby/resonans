@@ -14,8 +14,8 @@ function sample(iso: string, odometerKm: number): OdometerSample {
 	return { timestamp: new Date(iso), odometerKm };
 }
 
-function pos(iso: string, lat: number, lon: number): PositionSample {
-	return { timestamp: new Date(iso), lat, lon };
+function pos(iso: string, lat: number, lon: number, charging?: boolean): PositionSample {
+	return { timestamp: new Date(iso), lat, lon, charging };
 }
 
 describe('utcHourKey / utcMonthKey', () => {
@@ -197,5 +197,38 @@ describe('clusterPositions', () => {
 	it('ignorerer ugyldige koordinater og returnerer tom liste når alt mangler', () => {
 		expect(clusterPositions([])).toEqual([]);
 		expect(clusterPositions([pos('2026-06-20T08:00:00Z', NaN, 10.75)])).toEqual([]);
+	});
+
+	it('klassifiserer kort dvele uten lading som move — ikke falskt 0-min stopp', () => {
+		// To live-poll-samples (45 sek mellomrom) ved et rødt lys: samme sted,
+		// men uten reell dvele-tid. Skal IKKE bli «Parkert 12:35–12:35».
+		const result = clusterPositions([
+			pos('2026-07-03T12:35:00Z', HOME.lat, HOME.lon),
+			pos('2026-07-03T12:35:45Z', HOME.lat + 0.0001, HOME.lon)
+		]);
+		expect(result).toHaveLength(1);
+		expect(result[0].kind).toBe('move');
+		expect(result[0].samples).toBe(2);
+	});
+
+	it('lading gjør et kort stopp til parkering uansett varighet', () => {
+		// Kort/undersamplet ladestopp: dvele under terskelen, men charging observert.
+		const result = clusterPositions([
+			pos('2026-07-03T12:35:00Z', HOME.lat, HOME.lon, false),
+			pos('2026-07-03T12:40:00Z', HOME.lat + 0.0001, HOME.lon, true)
+		]);
+		expect(result).toHaveLength(1);
+		expect(result[0].kind).toBe('stop');
+		expect(result[0].charging).toBe(true);
+	});
+
+	it('lang dvele uten lading er fortsatt parkering (Hamar-moteksempelet)', () => {
+		const result = clusterPositions([
+			pos('2026-07-03T09:00:00Z', HOME.lat, HOME.lon),
+			pos('2026-07-03T14:00:00Z', HOME.lat + 0.0001, HOME.lon)
+		]);
+		expect(result).toHaveLength(1);
+		expect(result[0].kind).toBe('stop');
+		expect(result[0].charging).toBeUndefined();
 	});
 });

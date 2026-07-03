@@ -4,11 +4,16 @@ import { env } from '$env/dynamic/private';
 import { db } from '$lib/db';
 import { sensors } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
-import { syncTeslaForUser } from '$lib/server/integrations/tesla-sync';
+import { syncTeslaForUser, hasActiveTripForLocalDate } from '$lib/server/integrations/tesla-sync';
+import {
+	isTeslaQuietWindowUtc,
+	shouldSyncTeslaUser
+} from '$lib/server/integrations/tesla-poll-window';
 import { withCronTracking } from '$lib/server/monitoring/cron-wrapper';
 
 type TeslaSyncRow =
 	| { userId: string; success: true; asleep: boolean; eventsWritten: number }
+	| { userId: string; success: true; skipped: true; reason: 'quiet_window' }
 	| { userId: string; success: false; error: string };
 
 export const config = { maxDuration: 120 };
@@ -18,6 +23,10 @@ export const config = { maxDuration: 120 };
  * Poller vehicle_data for hver bruker med aktiv Tesla-sensor. Vekker ikke bilen;
  * sover den, registreres en tom (men vellykket) kjøring. Kjøres sjeldnere enn
  * helsesensorene for å ikke holde bilen våken / drenere batteri.
+ *
+ * Nattevinduet (23–05 UTC): jobben kjører, men poller kun brukere med en aktiv
+ * reise (trip) for sin lokale dato — så tidlig avreise og nattlading fanges på
+ * reisedager uten at vanlige netter holder bilen våken.
  */
 export const GET: RequestHandler = async ({ request }) => {
 	const authHeader = request.headers.get('authorization');
@@ -30,11 +39,18 @@ export const GET: RequestHandler = async ({ request }) => {
 			where: and(eq(sensors.provider, 'tesla'), eq(sensors.isActive, true))
 		});
 		const userIds = [...new Set(teslaSensors.map((s) => s.userId))];
-		console.log(`[tesla-sync cron] ${userIds.length} user(s) to sync`);
+		const now = new Date();
+		const quiet = isTeslaQuietWindowUtc(now);
+		console.log(`[tesla-sync cron] ${userIds.length} user(s) to sync${quiet ? ' (quiet window)' : ''}`);
 
 		const results: TeslaSyncRow[] = [];
 		for (const userId of userIds) {
 			try {
+				const hasTrip = quiet ? await hasActiveTripForLocalDate(userId, now) : false;
+				if (!shouldSyncTeslaUser(now, hasTrip)) {
+					results.push({ userId, success: true, skipped: true, reason: 'quiet_window' });
+					continue;
+				}
 				const r = await syncTeslaForUser(userId);
 				results.push({ userId, success: true, asleep: r.asleep, eventsWritten: r.eventsWritten });
 			} catch (err) {
@@ -44,9 +60,10 @@ export const GET: RequestHandler = async ({ request }) => {
 			}
 		}
 
-		const succeeded = results.filter((r) => r.success).length;
+		const succeeded = results.filter((r) => r.success && !('skipped' in r)).length;
+		const skipped = results.filter((r) => 'skipped' in r).length;
 		const failed = results.filter((r) => !r.success).length;
-		return { success: true, users: userIds.length, succeeded, failed, results };
+		return { success: true, users: userIds.length, succeeded, skipped, failed, results };
 	});
 
 	return json(result);

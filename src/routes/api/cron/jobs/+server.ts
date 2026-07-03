@@ -104,8 +104,12 @@ const JOBS: CronJob[] = [
 	},
 	{
 		path: '/api/cron/tesla-sync',
-		schedule: '*/15 5-22 * * *', // hvert 15. minutt 05:00–22:00 UTC — konservativt for ikke å holde bilen våken
-		description: 'Tesla vehicle_data synk (alle brukere) — batteri/posisjon/km-stand',
+		// Hvert 15. minutt hele døgnet — men i nattevinduet (23–05 UTC) poller
+		// endepunktet kun brukere med aktiv trip for sin lokale dato, slik at
+		// reisedager fanger tidlig avreise/nattlading uten at vanlige netter
+		// holder bilen våken (se tesla-poll-window.ts).
+		schedule: '*/15 * * * *',
+		description: 'Tesla vehicle_data synk (alle brukere) — batteri/posisjon/km-stand; natt kun på reisedager',
 		maxDurationSeconds: 120
 	},
 	{

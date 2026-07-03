@@ -101,13 +101,16 @@ export interface PositionSample {
 	timestamp: Date;
 	lat: number;
 	lon: number;
+	/** Ladet bilen ved denne målingen (fra charge_state med samme tidsstempel)? */
+	charging?: boolean;
 }
 
 /**
- * En node på kartet. `move` = ett enkelt GPS-punkt registrert under kjøring
- * (blir et knekkpunkt i ruta). `stop` = flere påfølgende målinger på (tilnærmet)
- * samme sted slått sammen til ett punkt — altså en parkering. `from`/`to` er
- * første/siste måling i klyngen, `samples` antall rå-målinger som ble slått sammen.
+ * En node på kartet. `move` = GPS-punkt registrert under kjøring (blir et
+ * knekkpunkt i ruta). `stop` = flere påfølgende målinger på (tilnærmet) samme
+ * sted MED reell dvele-tid eller lading — altså en parkering. `from`/`to` er
+ * første/siste måling i klyngen, `samples` antall rå-målinger som ble slått
+ * sammen, `charging` satt når lading ble observert i klyngen.
  */
 export interface PositionNode {
 	lat: number;
@@ -116,15 +119,26 @@ export interface PositionNode {
 	from: string;
 	to: string;
 	samples: number;
+	charging?: boolean;
 }
 
 /**
- * Radius (meter) for å regne påfølgende målinger som «samme sted». Tesla synker
- * hvert 15. min; under kjøring flytter bilen seg hundrevis av meter mellom hver
- * måling (egne `move`-noder), mens en parkert bil holder seg innenfor GPS-jitter
- * (typisk <30 m). 60 m gir margin uten å slå sammen reell kjøring.
+ * Radius (meter) for å regne påfølgende målinger som «samme sted». Under kjøring
+ * flytter bilen seg hundrevis av meter mellom målingene (egne `move`-noder),
+ * mens en parkert bil holder seg innenfor GPS-jitter (typisk <30 m). 60 m gir
+ * margin uten å slå sammen reell kjøring.
  */
 export const STOP_RADIUS_M = 60;
+
+/**
+ * Minste dvele-tid (first→last måling i klyngen) for at en klynge skal regnes
+ * som parkering. Loggen mates både av cron (hvert 15. min) og Ekkos live-poll
+ * (hvert 45. sek når cockpiten er åpen) — uten varighetsgating ble to
+ * live-samples ved et rødt lys til falske 0-minutters «Parkert»-noder.
+ * Observert lading overstyrer terskelen: et ladestopp er en parkering uansett
+ * hvor kort det er.
+ */
+export const STOP_MIN_DWELL_MS = 15 * 60_000;
 
 /** Haversine-avstand i meter mellom to lat/lon-punkter. */
 function haversineMeters(aLat: number, aLon: number, bLat: number, bLon: number): number {
@@ -144,9 +158,11 @@ function haversineMeters(aLat: number, aLon: number, bLat: number, bLon: number)
  *
  * Påfølgende målinger innenfor `radiusM` av klyngens ankerpunkt slås sammen til
  * én node — slik blir tre dagers stillstand (mange like målinger) til ett
- * `stop`-punkt, ikke ett punkt per kvarter. En klynge med ≥2 målinger regnes som
- * en parkering (`stop`, posisjon = snitt av målingene); en enslig måling er et
- * kjøre-knekkpunkt (`move`). Nodene er kronologiske og kan tegnes som polyline.
+ * `stop`-punkt, ikke ett punkt per kvarter. En klynge regnes som parkering
+ * (`stop`) når den har ≥2 målinger OG reell dvele-tid (≥ STOP_MIN_DWELL_MS)
+ * ELLER observert lading — korte klynger uten lading (rødt lys, kø fanget av
+ * live-pollingen) forblir kjørepunkt (`move`). Posisjon = snitt av målingene.
+ * Nodene er kronologiske og kan tegnes som polyline.
  */
 export function clusterPositions(samples: PositionSample[], radiusM = STOP_RADIUS_M): PositionNode[] {
 	const sorted = samples
@@ -163,16 +179,19 @@ export function clusterPositions(samples: PositionSample[], radiusM = STOP_RADIU
 	let count = 1;
 	let first = anchor;
 	let last = anchor;
+	let anyCharging = anchor.charging === true;
 
 	const flush = () => {
-		const isStop = count >= 2;
+		const dwellMs = last.timestamp.getTime() - first.timestamp.getTime();
+		const isStop = count >= 2 && (dwellMs >= STOP_MIN_DWELL_MS || anyCharging);
 		nodes.push({
-			lat: isStop ? latSum / count : first.lat,
-			lon: isStop ? lonSum / count : first.lon,
+			lat: latSum / count,
+			lon: lonSum / count,
 			kind: isStop ? 'stop' : 'move',
 			from: first.timestamp.toISOString(),
 			to: last.timestamp.toISOString(),
-			samples: count
+			samples: count,
+			...(anyCharging ? { charging: true } : {})
 		});
 	};
 
@@ -183,6 +202,7 @@ export function clusterPositions(samples: PositionSample[], radiusM = STOP_RADIU
 			lonSum += p.lon;
 			count++;
 			last = p;
+			if (p.charging === true) anyCharging = true;
 		} else {
 			flush();
 			anchor = p;
@@ -191,6 +211,7 @@ export function clusterPositions(samples: PositionSample[], radiusM = STOP_RADIU
 			count = 1;
 			first = p;
 			last = p;
+			anyCharging = p.charging === true;
 		}
 	}
 	flush();
@@ -343,8 +364,32 @@ export async function loadVehicleMetrics(
 		)
 		.orderBy(asc(sensorEvents.timestamp));
 
+	// Ladetilstand joines på poll-tidsstempel (én poll skriver alle dataTypene
+	// med samme timestamp) — lading redder korte/undersamplede stopp i gatingen.
+	const chargeRows = await db
+		.select({
+			timestamp: sensorEvents.timestamp,
+			charging: sql<boolean>`(data->>'charging')::boolean`
+		})
+		.from(sensorEvents)
+		.where(
+			and(
+				eq(sensorEvents.userId, userId),
+				eq(sensorEvents.sensorId, sensor.id),
+				eq(sensorEvents.dataType, 'charge_state'),
+				sql`data ? 'charging'`,
+				sql`${sensorEvents.timestamp} >= ${positionFrom.toISOString()}`
+			)
+		);
+	const chargingByTs = new Map(chargeRows.map((r) => [r.timestamp.getTime(), r.charging === true]));
+
 	const positionSamples: PositionSample[] = posRows
-		.map((r) => ({ timestamp: r.timestamp, lat: Number(r.lat), lon: Number(r.lon) }))
+		.map((r) => ({
+			timestamp: r.timestamp,
+			lat: Number(r.lat),
+			lon: Number(r.lon),
+			charging: chargingByTs.get(r.timestamp.getTime())
+		}))
 		.filter((s) => Number.isFinite(s.lat) && Number.isFinite(s.lon));
 	const positions = clusterPositions(positionSamples);
 

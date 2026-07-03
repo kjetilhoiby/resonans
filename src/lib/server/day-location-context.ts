@@ -53,6 +53,16 @@ export interface DayMovement {
 	destLon?: number;
 	/** Ankomstfrist for målet, 'HH:MM' lokal tid samme dag. Utelatt når ingen frist. */
 	arriveBy?: string;
+	/**
+	 * Fra-punkt for segmentet (Ekko-kontrakt). Fylles av /api/apps/day via
+	 * enrichMovementWithOrigins — ikke av gatherDayContext (chat-prompten trenger
+	 * dem ikke). Koordinat sendes alltid sammen — begge eller ingen; felt utelates
+	 * heller enn å sendes tomme.
+	 */
+	origin?: string;
+	originLat?: number;
+	originLon?: number;
+	originSource?: 'declared' | 'observed';
 }
 
 export interface DayStay {
