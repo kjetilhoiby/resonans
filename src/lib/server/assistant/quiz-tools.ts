@@ -1,25 +1,36 @@
 import type { AssistantTool } from './tools';
 import { db } from '$lib/db';
 import { themes, persons, memories, goals, quizSessions } from '$lib/db/schema';
-import { and, eq, desc, inArray } from 'drizzle-orm';
+import { and, eq, desc, inArray, sql } from 'drizzle-orm';
+import { env } from '$env/dynamic/private';
 import { openai } from '$lib/server/openai';
+import { completionTuning } from './model-tuning';
 import { tavilySearch } from '$lib/server/web/tavily';
 import { osloDayKey, pickTripForDate, dayWindowInfo, type TripCandidate } from '$lib/server/trip-geo';
 import {
 	ageFromBirthDate,
 	ageBand,
-	participantsFromNames,
+	participantsFromEntries,
+	coercePlayerEntries,
 	findParticipantIndex,
 	hasPendingAnswer,
 	applyAnswer,
 	buildStandings,
 	streakLabel,
 	parseGeneratedQuestions,
+	filterRepeatQuestions,
+	normalizeQuestionText,
+	nextUnusedQuestion,
+	markQuestionUsed,
+	unusedCounts,
+	nextPlayerName,
 	buildKnowledgeSnapshot,
 	hasKnowledge,
 	projectQuizBoard,
 	toQuizSessionState,
 	type QuizParticipant,
+	type QuizBankQuestion,
+	type QuizPlayerEntry,
 	type AgeBand,
 	type KnowledgeSnapshot
 } from './quiz-logic';
@@ -30,20 +41,22 @@ const MEMORIES_PER_PERSON = 3;
 const GOALS_PER_PERSON = 2;
 
 /**
- * Quiz-verktøy for tale-assistentens bilferie-quizmaster.
+ * Quiz-verktøy for tale-assistentens bilferie-quizmaster — omlagt etter brukertesten i full bil
+ * (se docs/changelog/2026-07-03-quiz-brukertest-fikser.md og QUIZ_AGENT_SPEC.md i resonans-lab):
  *
- * Prinsippet: et verktøy fortjener plassen sin når det henter inn data modellen ikke kan ha.
- * Mekanikk (tur-rekkefølge, tilrop) styres konversasjonelt. Disse henter:
- *   - `trip_companions`: hvem som er med på reisen + alder + et kompakt interesse-/kunnskaps-
- *      snapshot per person (research om deltakerne). Gjør spørsmål personlige, ikke bare
- *      aldersdifferensierte. Reise-nivå og gjenbrukbart for andre spill.
- *   - `quiz_questions`: ferske/faktasjekkede og personlig tilpassede spørsmål med fasit
- *      (Tavily-research når temaet trenger det), så modellen aldri dikter opp svaret.
- *   - `quiz_score`: tell poeng og streaks per person (bokføring modellen sklir på i lange spill),
- *      så «3 på rad — Nils er on fire!» blir sant.
+ *   - `trip_companions`: hvem som er med på reisen + alder + interesse-snapshot. Kalles ved
+ *      quiz-start så laget kan FORESLÅS — det arves aldri implisitt fra forrige quiz.
+ *   - `quiz_score action="start"`: fersk quiz med TOM deltakerliste (forrige deaktiveres).
+ *   - `quiz_score action="register"`: hele laget som ETT array av {name, age, interests}.
+ *   - `quiz_score action="prepare"`: batch-generer spørsmålsbanken per spiller med den STERKE
+ *      modellen (alderstilpasset, personlig, varierte kategorier) — utenfor tur-stien. Refill
+ *      ekskluderer en normalisert logg over alt som er stilt i brukerens siste quizer.
+ *   - `quiz_score action="next"`: TREKK neste ubrukte bank-spørsmål (ingen generering i turen).
+ *   - `quiz_score action="record"`: idempotent vurdering nøklet på spørsmåls-id — evaluer →
+ *      poeng → answered → bytt tur som ÉN betinget UPDATE. Allerede besvart re-vurderes aldri.
  *
  * Tracking-state ligger i `quiz_sessions` (én aktiv quiz per bruker). Den rene logikken
- * (scoring/streaks/alder/snapshot) bor i `quiz-logic.ts` og er enhetstestet.
+ * (scoring/streaks/alder/bank/rotasjon) bor i `quiz-logic.ts` og er enhetstestet.
  */
 
 /* ── trip_companions ──────────────────────────────────────────────────────────────────────── */
@@ -195,13 +208,27 @@ async function loadCompanions(userId: string): Promise<{
 	};
 }
 
-/* ── quiz_questions ───────────────────────────────────────────────────────────────────────── */
+/* ── Spørsmålsbank: batch-generering (sterk modell, utenfor tur-stien) ────────────────────── */
 
-interface RoundPlayer {
-	name: string;
-	age: number | null;
-	interests: string[]; // det spilleren liker/kan — gjør spørsmål personlige
-}
+/**
+ * Banken genereres med en STERK modell (samme tier som fortelleren) — det er et engangs
+ * batch-kall ved bekreftet lag, ikke i tur-stien. Spilleturene selv kjøres på den raske
+ * prat-modellen (se `hasActiveQuiz` + rutingen i assistant.ts).
+ */
+const DEFAULT_QUIZ_GEN_MODEL = 'gpt-5.5';
+const quizGenModel = () => env.EKKO_QUIZ_GEN_MODEL?.trim() || DEFAULT_QUIZ_GEN_MODEL;
+/** Romslig fordi reasoning-tokens trekkes av samme budsjett (jf. STORY_MAX_TOKENS). */
+const QUIZ_GEN_MAX_TOKENS = 8000;
+const QUIZ_GEN_TEMPERATURE = 0.8;
+
+/** Spørsmål per spiller i en bank-batch (kontrakten sier 8–10). */
+const DEFAULT_QUESTIONS_PER_PLAYER = 8;
+const MAX_QUESTIONS_PER_PLAYER = 10;
+/** Gjentakelses-vern: hvor mange av brukerens siste quizer asked-loggen hentes fra. */
+const ASKED_LOG_QUIZ_LOOKBACK = 5;
+/** Tak på asked-loggen per quiz (eldste kuttes) og på eksklusjonslista i prompten. */
+const ASKED_LOG_MAX = 500;
+const EXCLUSION_PROMPT_MAX = 80;
 
 const BAND_GUIDANCE: Record<AgeBand, string> = {
 	småbarn: 'svært enkelt (farger, dyrelyder, telle til ti, hverdagsord)',
@@ -210,24 +237,7 @@ const BAND_GUIDANCE: Record<AgeBand, string> = {
 	voksen: 'krevende (vanskelig geografi, årstall, ordforklaringer, detaljer)'
 };
 
-function coercePlayers(raw: unknown): RoundPlayer[] {
-	if (!Array.isArray(raw)) return [];
-	const out: RoundPlayer[] = [];
-	for (const item of raw) {
-		if (!item || typeof item !== 'object') continue;
-		const o = item as Record<string, unknown>;
-		const name = typeof o.name === 'string' ? o.name.trim() : '';
-		if (!name) continue;
-		const age = typeof o.age === 'number' && Number.isFinite(o.age) ? Math.round(o.age) : null;
-		const interests = Array.isArray(o.interests)
-			? o.interests.filter((i): i is string => typeof i === 'string' && i.trim().length > 0).map((i) => i.trim()).slice(0, 5)
-			: [];
-		out.push({ name, age, interests });
-	}
-	return out;
-}
-
-/** Hent korte fakta-snutter for et tema når quizmasteren ber om ferske/nisje-fakta. */
+/** Hent korte fakta-snutter for et tema når banken skal bygges på ferske/nisje-fakta. */
 async function gatherFacts(theme: string): Promise<string[]> {
 	const hits = await tavilySearch(`fakta om ${theme}`, { maxResults: 5, searchDepth: 'basic' });
 	return hits
@@ -237,12 +247,18 @@ async function gatherFacts(theme: string): Promise<string[]> {
 		.slice(0, 4);
 }
 
-async function buildRound(
+/**
+ * Generer en bank-batch: `perPlayer` spørsmål til HVER deltaker, alderstilpasset og personlig,
+ * med varierte kategorier innen temaet. `excluded` (normaliserte, allerede stilte spørsmål)
+ * legges i prompten som hint OG håndheves hardt med `filterRepeatQuestions` etterpå.
+ */
+async function generateBank(
 	theme: string,
-	players: RoundPlayer[],
-	questionsPerPlayer: number,
+	participants: QuizParticipant[],
+	perPlayer: number,
+	excluded: Set<string>,
 	freshFacts: boolean
-): Promise<{ theme: string; questions: ReturnType<typeof parseGeneratedQuestions>; usedResearch: boolean }> {
+): Promise<QuizBankQuestion[]> {
 	let facts: string[] = [];
 	if (freshFacts) {
 		try {
@@ -252,11 +268,13 @@ async function buildRound(
 		}
 	}
 
-	const roster = players
+	const roster = participants
 		.map((p) => {
-			const alder = p.age != null ? `${p.age} år` : 'ukjent alder';
-			const liker = p.interests.length > 0 ? ` — liker/kan: ${p.interests.join(', ')}` : '';
-			return `- ${p.name} (${alder}): ${BAND_GUIDANCE[ageBand(p.age)]}${liker}`;
+			const age = p.age ?? null;
+			const alder = age != null ? `${age} år` : 'ukjent alder';
+			const interests = p.interests ?? [];
+			const liker = interests.length > 0 ? ` — liker/kan: ${interests.join(', ')}` : '';
+			return `- ${p.name} (${alder}): ${BAND_GUIDANCE[ageBand(age)]}${liker}`;
 		})
 		.join('\n');
 
@@ -265,21 +283,30 @@ async function buildRound(
 			? `\nFaktagrunnlag (bruk KUN dette for fakta, ikke dikt opp noe utover det):\n${facts.map((f) => `- ${f}`).join('\n')}\n`
 			: '';
 
+	const exclusionBlock =
+		excluded.size > 0
+			? `\nDisse spørsmålene er allerede stilt (normalisert form) — IKKE lag noe likt eller nesten likt:\n${[...excluded].slice(-EXCLUSION_PROMPT_MAX).map((q) => `- ${q}`).join('\n')}\n`
+			: '';
+
 	const prompt = `Tema: ${theme}
-Lag ${questionsPerPlayer} spørsmål til HVER av disse spillerne, tilpasset alder/nivå:
+Lag ${perPlayer} spørsmål til HVER av disse spillerne, tilpasset alder/nivå:
 ${roster}
-${factsBlock}
+${factsBlock}${exclusionBlock}
 Krav:
 - Spørsmål og svar på norsk.
-- Tilpass vanskelighetsgraden til hver spillers nivå (samme tema kan ha ulik vanskelighet per spiller).
-- Når en spiller har «liker/kan»-interesser, vri gjerne spørsmålet mot dem for å gjøre det personlig
-  (men hold deg til temaet og ikke tving det hvis det blir søkt).
+- Tilpass vanskelighetsgraden TYDELIG til hver spillers nivå — en 7-åring og en 42-åring skal
+  merke forskjell selv innen samme tema. Aldri samme spørsmål til to spillere.
+- Når en spiller har «liker/kan»-interesser, vri gjerne spørsmålet mot dem for å gjøre det
+  personlig (men hold deg til temaet og ikke tving det hvis det blir søkt).
+- Varier kategoriene innen temaet (f.eks. geografi, dyr, tall, språk, historie) og sett
+  «category» på hvert spørsmål — ikke ti varianter av samme type.
 - Korte spørsmål som egner seg for høytlesing i en bil. Ett tydelig, kort fasitsvar per spørsmål.
 - Ikke dikt opp fakta. Er du usikker på en faktaopplysning, velg et tryggere spørsmål.
-Returner JSON: { "questions": [ { "player": "<navn>", "question": "<spørsmål>", "answer": "<kort fasit>" } ] }`;
+Returner JSON: { "questions": [ { "player": "<navn>", "question": "<spørsmål>", "answer": "<kort fasit>", "category": "<kategori>" } ] }`;
 
+	const genModel = quizGenModel();
 	const completion = await openai.chat.completions.create({
-		model: 'gpt-4o-mini',
+		model: genModel,
 		messages: [
 			{
 				role: 'system',
@@ -289,8 +316,7 @@ Returner JSON: { "questions": [ { "player": "<navn>", "question": "<spørsmål>"
 			{ role: 'user', content: prompt }
 		],
 		response_format: { type: 'json_object' },
-		temperature: 0.8,
-		max_tokens: 800
+		...completionTuning(genModel, QUIZ_GEN_MAX_TOKENS, QUIZ_GEN_TEMPERATURE)
 	});
 
 	const content = completion.choices[0]?.message?.content ?? '';
@@ -300,10 +326,32 @@ Returner JSON: { "questions": [ { "player": "<navn>", "question": "<spørsmål>"
 	} catch {
 		parsed = null;
 	}
-	return { theme, questions: parseGeneratedQuestions(parsed), usedResearch: facts.length > 0 };
+
+	// Hard håndheving: kun kjente spillere (kanonisk navn fra rosteret), ingen gjentakelser,
+	// maks perPlayer per spiller. Id-ene settes her — det er dem vurderingen nøkles på.
+	const fresh = filterRepeatQuestions(parseGeneratedQuestions(parsed), excluded);
+	const perPlayerCount = new Map<string, number>();
+	const bank: QuizBankQuestion[] = [];
+	for (const q of fresh) {
+		const idx = findParticipantIndex(participants, q.player);
+		if (idx === -1) continue;
+		const canonical = participants[idx].name;
+		const count = perPlayerCount.get(canonical) ?? 0;
+		if (count >= perPlayer) continue;
+		perPlayerCount.set(canonical, count + 1);
+		bank.push({
+			id: crypto.randomUUID(),
+			player: canonical,
+			text: q.question,
+			answer: q.answer,
+			category: q.category,
+			used: false
+		});
+	}
+	return bank;
 }
 
-/* ── quiz_score ───────────────────────────────────────────────────────────────────────────── */
+/* ── quiz_score: sesjons-tilstand ─────────────────────────────────────────────────────────── */
 
 async function loadActiveSession(userId: string) {
 	const rows = await db
@@ -312,6 +360,25 @@ async function loadActiveSession(userId: string) {
 		.where(and(eq(quizSessions.userId, userId), eq(quizSessions.active, true)))
 		.limit(1);
 	return rows[0] ?? null;
+}
+
+/**
+ * Rask, billig ruting-signal for assistent-løkka: har brukeren en aktiv quiz, kjøres
+ * spilleturene på den raske prat-modellen (batch-genereringen bruker den sterke — se
+ * `generateBank`). Best-effort: må aldri kaste videre.
+ */
+export async function hasActiveQuiz(userId: string): Promise<boolean> {
+	try {
+		const rows = await db
+			.select({ id: quizSessions.id })
+			.from(quizSessions)
+			.where(and(eq(quizSessions.userId, userId), eq(quizSessions.active, true)))
+			.limit(1);
+		return !!rows[0];
+	} catch (error) {
+		console.warn('[quiz] hasActiveQuiz feilet — ruter som vanlig tur:', error);
+		return false;
+	}
 }
 
 function standingsView(participants: QuizParticipant[]) {
@@ -324,81 +391,304 @@ function standingsView(participants: QuizParticipant[]) {
 	}));
 }
 
-async function startSession(userId: string, names: string[]) {
-	const participants = participantsFromNames(names);
-	if (participants.length === 0) return { error: 'Oppgi minst én deltaker (names).' };
+/** Talevennlig lag-liste («Erle 7 år, Nils 9 år og Kjetil 42 år») til opplesing. */
+function rosterReadback(participants: QuizParticipant[]): string {
+	const parts = participants.map((p) => (p.age != null ? `${p.name} ${p.age} år` : p.name));
+	if (parts.length <= 1) return parts[0] ?? '';
+	return `${parts.slice(0, -1).join(', ')} og ${parts[parts.length - 1]}`;
+}
 
-	// Maks én aktiv quiz per bruker — deaktiver forrige før vi starter en ny.
-	await db.update(quizSessions).set({ active: false, updatedAt: new Date() }).where(and(eq(quizSessions.userId, userId), eq(quizSessions.active, true)));
+/**
+ * Start en FERSK quiz med TOM deltakerliste. En eventuell pågående quiz deaktiveres — deltakere
+ * (og bank/poeng) arves ALDRI implisitt til den nye. «Samme lag som sist» skjer kun ved at
+ * modellen registrerer laget eksplisitt etter bekreftelse fra brukeren.
+ */
+async function startSession(userId: string, theme?: string) {
+	await db
+		.update(quizSessions)
+		.set({ active: false, updatedAt: new Date() })
+		.where(and(eq(quizSessions.userId, userId), eq(quizSessions.active, true)));
 	const inserted = await db
 		.insert(quizSessions)
 		.values({
 			userId,
-			participants,
+			participants: [],
+			theme: theme?.trim() || null,
 			round: 0,
 			active: true,
 			currentPlayer: null,
 			currentQuestion: null,
 			currentAnswer: null,
-			lastResult: null
+			lastResult: null,
+			currentQuestionId: null,
+			questionState: null,
+			questionBank: [],
+			askedLog: []
 		})
 		.returning({ id: quizSessions.id });
 
-	return { sessionId: inserted[0]?.id, participants: participants.map((p) => p.name), standings: standingsView(participants) };
+	return {
+		sessionId: inserted[0]?.id,
+		participants: [],
+		note: 'Fersk quiz uten deltakere. Foreslå laget fra trip_companions og registrer det de bekrefter med action="register" (hele laget i ETT kall).'
+	};
 }
 
-/** Sett gjeldende spørsmål + hvem sin tur, så skjermen viser det. Nullstiller forrige resultat. */
-async function askQuestion(userId: string, player: string, question: string, answer: string) {
+/**
+ * Registrer HELE laget som ett array av {name, age, interests}. Erstatter rosteret, men
+ * bevarer poeng/streaks for navn som allerede står der (så en sen-registrering av en ny
+ * spiller midt i quizen ikke nuller de andre).
+ */
+async function registerPlayers(userId: string, entries: QuizPlayerEntry[]) {
 	const session = await loadActiveSession(userId);
 	if (!session) return { error: 'Ingen aktiv quiz. Start en med action="start" først.' };
-	const participants = session.participants ?? [];
-	if (findParticipantIndex(participants, player) === -1) {
-		return { error: `Ukjent spiller «${player}». Aktive spillere: ${participants.map((p) => p.name).join(', ') || 'ingen'}.` };
-	}
-	// Vakt: ikke still et nytt spørsmål før forrige svar er registrert. Uten dette kan
-	// quizmasteren si «riktig!» i tale og gå videre uten å kalle record — da forsvinner poenget
-	// (jf. «riktig svar, men null poeng»). Tvinger et record-kall først.
-	if (hasPendingAnswer(session)) {
-		const pending = session.currentPlayer ? ` til ${session.currentPlayer}` : '';
-		return {
-			error: `Forrige spørsmål${pending} er ikke registrert ennå. Kall quiz_score action="record" (player + correct) for å bokføre svaret før du stiller neste spørsmål.`
-		};
-	}
+
+	const fresh = participantsFromEntries(entries);
+	if (fresh.length === 0) return { error: 'Oppgi minst én spiller i players ({name, age}).' };
+
+	const existing = session.participants ?? [];
+	const participants = fresh.map((p) => {
+		const idx = findParticipantIndex(existing, p.name);
+		return idx >= 0 ? { ...existing[idx], age: p.age ?? existing[idx].age, interests: p.interests ?? existing[idx].interests } : p;
+	});
+
+	// Forsvinner spilleren med åpent spørsmål ut av rosteret, nullstill tur-tilstanden.
+	const currentGone =
+		session.currentPlayer != null && findParticipantIndex(participants, session.currentPlayer) === -1;
+
 	await db
 		.update(quizSessions)
 		.set({
-			currentPlayer: player.trim(),
-			currentQuestion: question.trim(),
-			currentAnswer: answer.trim(),
-			lastResult: null,
+			participants,
+			...(currentGone
+				? { currentPlayer: null, currentQuestion: null, currentAnswer: null, currentQuestionId: null, questionState: null, lastResult: null }
+				: {}),
 			updatedAt: new Date()
 		})
 		.where(eq(quizSessions.id, session.id));
-	return { ok: true, currentPlayer: player.trim() };
+
+	return {
+		participants: participants.map((p) => ({ name: p.name, age: p.age ?? null })),
+		readBack: rosterReadback(participants),
+		note: 'Les hele laget med alder tilbake til brukeren før første spørsmål. Bygg så banken med action="prepare" (theme).'
+	};
 }
 
-async function recordAnswer(userId: string, player: string, correct: boolean, theme?: string) {
+/** Normaliserte spørsmål stilt i brukerens siste quizer + alt som alt ligger i banken. */
+async function loadExclusionSet(userId: string, currentBank: QuizBankQuestion[]): Promise<Set<string>> {
+	const excluded = new Set<string>();
+	try {
+		const rows = await db
+			.select({ askedLog: quizSessions.askedLog })
+			.from(quizSessions)
+			.where(eq(quizSessions.userId, userId))
+			.orderBy(desc(quizSessions.createdAt))
+			.limit(ASKED_LOG_QUIZ_LOOKBACK);
+		for (const row of rows) {
+			for (const q of row.askedLog ?? []) excluded.add(q);
+		}
+	} catch (error) {
+		// Gjentakelses-vern på tvers av quizer er best-effort — banken kan fortsatt bygges.
+		console.warn('[quiz] kunne ikke lese asked-logg fra tidligere quizer:', error);
+	}
+	for (const q of currentBank) excluded.add(normalizeQuestionText(q.text));
+	return excluded;
+}
+
+/**
+ * Bygg (eller etterfyll) spørsmålsbanken for det bekreftede laget. Kalles ved quiz-start etter
+ * registrering, og igjen som refill når banken går tom — aldri i selve tur-stien.
+ */
+async function prepareBank(
+	userId: string,
+	theme: string,
+	perPlayerRaw: number | undefined,
+	freshFacts: boolean
+) {
+	const session = await loadActiveSession(userId);
+	if (!session) return { error: 'Ingen aktiv quiz. Start en med action="start" først.' };
+	const participants = session.participants ?? [];
+	if (participants.length === 0) {
+		return { error: 'Ingen spillere registrert. Registrer laget med action="register" først.' };
+	}
+
+	const perPlayer =
+		typeof perPlayerRaw === 'number' && perPlayerRaw > 0
+			? Math.min(Math.floor(perPlayerRaw), MAX_QUESTIONS_PER_PLAYER)
+			: DEFAULT_QUESTIONS_PER_PLAYER;
+
+	const existingBank = session.questionBank ?? [];
+	const excluded = await loadExclusionSet(userId, existingBank);
+
+	let batch: QuizBankQuestion[];
+	try {
+		batch = await generateBank(theme, participants, perPlayer, excluded, freshFacts);
+	} catch (error) {
+		console.error('[quiz] kunne ikke generere spørsmålsbank:', error);
+		return { error: 'Klarte ikke å lage spørsmålsbank akkurat nå. Prøv igjen.' };
+	}
+	if (batch.length === 0) {
+		return { error: 'Genereringen ga ingen brukbare spørsmål. Prøv igjen, gjerne med et annet tema.' };
+	}
+
+	const bank = [...existingBank, ...batch];
+	await db
+		.update(quizSessions)
+		.set({ theme: theme, questionBank: bank, updatedAt: new Date() })
+		.where(eq(quizSessions.id, session.id));
+
+	const added: Record<string, number> = {};
+	for (const q of batch) added[q.player] = (added[q.player] ?? 0) + 1;
+
+	return {
+		ok: true,
+		theme,
+		added,
+		unused: unusedCounts(bank),
+		note: 'Banken er klar. Trekk spørsmål med action="next" — ikke finn på egne spørsmål.'
+	};
+}
+
+/**
+ * Trekk neste ubrukte bank-spørsmål og sett det som gjeldende (åpent) — dette er hele
+ * tur-stien, ingen generering her. Verktøyet velger spiller ved tur-rotasjon når `player`
+ * ikke er oppgitt. Fasiten returneres til modellen (skjules på skjermen til besvart).
+ */
+async function drawNextQuestion(userId: string, playerArg?: string) {
+	const session = await loadActiveSession(userId);
+	if (!session) return { error: 'Ingen aktiv quiz. Start en med action="start" først.' };
+	const participants = session.participants ?? [];
+	if (participants.length === 0) {
+		return { error: 'Ingen spillere registrert. Registrer laget med action="register" først.' };
+	}
+
+	// Vakt: ikke trekk nytt spørsmål før forrige svar er bokført — ellers forsvinner poenget.
+	if (hasPendingAnswer(session)) {
+		const pending = session.currentPlayer ? ` til ${session.currentPlayer}` : '';
+		return {
+			error: `Gjeldende spørsmål${pending} er ikke vurdert ennå. Kall quiz_score action="record" (questionId="${session.currentQuestionId ?? ''}" + correct) før du trekker neste.`
+		};
+	}
+
+	// Tur-rotasjon: eksplisitt spiller > spilleren record roterte til > første deltaker.
+	let target: string;
+	if (playerArg && playerArg.trim()) {
+		const idx = findParticipantIndex(participants, playerArg);
+		if (idx === -1) {
+			return { error: `Ukjent spiller «${playerArg}». Aktive spillere: ${participants.map((p) => p.name).join(', ')}.` };
+		}
+		target = participants[idx].name;
+	} else {
+		const idx = session.currentPlayer ? findParticipantIndex(participants, session.currentPlayer) : -1;
+		target = idx >= 0 ? participants[idx].name : (nextPlayerName(participants, null) as string);
+	}
+
+	const bank = session.questionBank ?? [];
+	const question = nextUnusedQuestion(bank, target);
+	if (!question) {
+		return {
+			error: `Tomt for spørsmål til ${target}. Etterfyll banken med action="prepare" (theme) — den hopper over alt som er stilt før.`,
+			unused: unusedCounts(bank)
+		};
+	}
+
+	const askedLog = [...(session.askedLog ?? []), normalizeQuestionText(question.text)].slice(-ASKED_LOG_MAX);
+
+	// Betinget UPDATE: taper mot et samtidig trekk/åpent spørsmål i stedet for å overskrive det.
+	const updated = await db
+		.update(quizSessions)
+		.set({
+			questionBank: markQuestionUsed(bank, question.id),
+			askedLog,
+			currentPlayer: target,
+			currentQuestion: question.text,
+			currentAnswer: question.answer,
+			currentQuestionId: question.id,
+			questionState: 'open',
+			lastResult: null,
+			updatedAt: new Date()
+		})
+		.where(and(eq(quizSessions.id, session.id), sql`${quizSessions.questionState} IS DISTINCT FROM 'open'`))
+		.returning({ id: quizSessions.id });
+	if (updated.length === 0) {
+		return { error: 'Et annet spørsmål ble nettopp åpnet. Kall action="status" og les gjeldende spørsmål.' };
+	}
+
+	const remaining = unusedCounts(markQuestionUsed(bank, question.id));
+	return {
+		questionId: question.id,
+		player: target,
+		question: question.text,
+		answer: question.answer,
+		category: question.category,
+		remainingForPlayer: remaining[target] ?? 0,
+		...((remaining[target] ?? 0) <= 1
+			? { refillHint: 'Banken er nesten tom for denne spilleren — kall action="prepare" for påfyll ved neste anledning.' }
+			: {})
+	};
+}
+
+/**
+ * Idempotent vurdering nøklet på spørsmåls-id: evaluer → poeng → marker answered → bytt
+ * currentPlayer, alt som ÉN betinget UPDATE (statuskolonne-CAS — den serverless-vennlige
+ * serialiseringen). Et allerede besvart spørsmål re-vurderes ALDRI: to raske svar («Riktig»,
+ * så «Snø») gir nøyaktig én bokføring, og nummer to får «already graded» tilbake.
+ */
+async function recordAnswer(userId: string, questionId: string, correct: boolean) {
 	const session = await loadActiveSession(userId);
 	if (!session) return { error: 'Ingen aktiv quiz. Start en med action="start" først.' };
 
+	const alreadyGraded = (s: typeof session) => ({
+		alreadyGraded: true,
+		note: 'Dette spørsmålet er allerede vurdert — IKKE vurder det på nytt. Kvitter kort og les gjeldende spørsmål en gang til.',
+		currentPlayer: s.currentPlayer,
+		currentQuestion: s.currentQuestion,
+		currentQuestionId: s.currentQuestionId,
+		standings: standingsView(s.participants ?? [])
+	});
+
+	if (session.currentQuestionId !== questionId || session.questionState !== 'open') {
+		// Kjent, brukt bank-spørsmål som ikke lenger er åpent ⇒ allerede vurdert (idempotens).
+		const known = (session.questionBank ?? []).find((q) => q.id === questionId);
+		if (known?.used) return alreadyGraded(session);
+		return { error: `Ukjent questionId «${questionId}». Gjeldende spørsmål har id «${session.currentQuestionId ?? 'ingen'}».` };
+	}
+
 	const participants = session.participants ?? [];
-	const idx = findParticipantIndex(participants, player);
+	const bankItem = (session.questionBank ?? []).find((q) => q.id === questionId);
+	const playerName = bankItem?.player ?? session.currentPlayer ?? '';
+	const idx = findParticipantIndex(participants, playerName);
 	if (idx === -1) {
-		return { error: `Ukjent spiller «${player}». Aktive spillere: ${participants.map((p) => p.name).join(', ') || 'ingen'}.` };
+		return { error: `Spilleren «${playerName}» for spørsmålet finnes ikke i laget. Registrer laget på nytt med action="register".` };
 	}
 
 	const updated = [...participants];
 	updated[idx] = applyAnswer(updated[idx], correct);
+	const nextPlayer = nextPlayerName(updated, updated[idx].name);
 
-	await db
+	// CAS: vinner bare hvis spørsmålet fortsatt er åpent. Taper vi (parallell tur), er svaret
+	// allerede bokført av noen andre — da svarer vi «already graded» i stedet for å telle dobbelt.
+	const won = await db
 		.update(quizSessions)
 		.set({
 			participants: updated,
-			theme: theme ?? session.theme,
 			lastResult: { player: updated[idx].name, correct }, // avslører fasiten på skjermen
+			questionState: 'answered',
+			currentPlayer: nextPlayer,
 			updatedAt: new Date()
 		})
-		.where(eq(quizSessions.id, session.id));
+		.where(
+			and(
+				eq(quizSessions.id, session.id),
+				eq(quizSessions.currentQuestionId, questionId),
+				eq(quizSessions.questionState, 'open')
+			)
+		)
+		.returning({ id: quizSessions.id });
+	if (won.length === 0) {
+		const reloaded = await loadActiveSession(userId);
+		return alreadyGraded(reloaded ?? session);
+	}
 
 	const me = updated[idx];
 	return {
@@ -407,6 +697,7 @@ async function recordAnswer(userId: string, player: string, correct: boolean, th
 		score: me.score,
 		streak: me.streak,
 		streakLabel: streakLabel(me.streak),
+		nextPlayer,
 		standings: standingsView(updated)
 	};
 }
@@ -428,7 +719,7 @@ export const QUIZ_ASSISTANT_TOOLS: AssistantTool[] = [
 			function: {
 				name: 'trip_companions',
 				description:
-					'Hent deltakerne på den pågående reisen: navn, alder, voksen/barn, OG et kompakt interesse-/kunnskaps-snapshot per person (hva de liker og holder på med). Bruk for å starte quiz eller andre reise-spill uten å spørre «hvem er med», og for å gjøre spørsmål personlige (gi interessene videre til quiz_questions). Tom liste betyr ingen pågående reise eller ingen registrerte deltakere — spør da hvem som spiller.',
+					'Hent deltakerne på den pågående reisen: navn, alder, voksen/barn, OG et kompakt interesse-/kunnskaps-snapshot per person (hva de liker og holder på med). Bruk ved quiz-start for å FORESLÅ laget (det arves aldri automatisk), og for andre reise-spill. Tom liste betyr ingen pågående reise eller ingen registrerte deltakere — spør da hvem som spiller.',
 				parameters: { type: 'object', properties: {} }
 			}
 		},
@@ -438,16 +729,17 @@ export const QUIZ_ASSISTANT_TOOLS: AssistantTool[] = [
 		definition: {
 			type: 'function',
 			function: {
-				name: 'quiz_questions',
+				name: 'quiz_score',
 				description:
-					'Lag quiz-spørsmål for et tema, med fasit (så du aldri trenger å gjette svaret), tilpasset hver spillers alder OG interesser. Bruk dette når du vil ha ferske fakta eller personlig tilpasning — for helt trivielle temaer (enkel hoderegning o.l.) kan du like gjerne lage spørsmålet selv. Sett freshFacts=true for temaer som trenger ferske/spesifikke fakta (favorittserie/-spill, dagsaktuell sport, et bestemt land) — da gjør verktøyet websøk først.',
+					'Kjør bilferie-quizen og driv spill-skjermen. Flyt: action="start" oppretter en FERSK quiz med tom deltakerliste (en gammel quiz deaktiveres — ingen spillere arves). action="register" (players: HELE laget som ett array av {name, age, interests}) registrerer spillerne — parse «Erle 7, Nils 9 og Kjetil 42» til ETT kall. action="prepare" (theme) bygger en alderstilpasset spørsmålsbank per spiller — kalles ved bekreftet lag og som påfyll når banken går tom. action="next" trekker neste ubrukte spørsmål fra banken (verktøyet roterer turen; fasiten følger med) — kall RETT FØR du leser spørsmålet høyt. action="record" (questionId + correct) bokfører svaret idempotent — allerede vurderte spørsmål re-vurderes aldri. action="status" gir stilling og gjeldende spørsmål; action="end" avslutter og kårer vinneren.',
 				parameters: {
 					type: 'object',
 					properties: {
-						theme: { type: 'string', description: 'Tema for runden, f.eks. «hovedsteder», «gangetabellen», «Bluey», «engelske dyr»' },
-						participants: {
+						action: { type: 'string', enum: ['start', 'register', 'prepare', 'next', 'record', 'status', 'end'] },
+						theme: { type: 'string', description: 'Tema for banken, f.eks. «hovedsteder», «dyr», «blandet» (for start/prepare)' },
+						players: {
 							type: 'array',
-							description: 'Spillerne med alder og interesser (hent dem fra trip_companions)',
+							description: 'HELE laget i ett kall (for action="register") — alder styrer vanskelighetsgraden',
 							items: {
 								type: 'object',
 								properties: {
@@ -456,51 +748,17 @@ export const QUIZ_ASSISTANT_TOOLS: AssistantTool[] = [
 									interests: {
 										type: 'array',
 										items: { type: 'string' },
-										description: 'Hva spilleren liker/kan (fra trip_companions) — brukes til å gjøre spørsmål personlige'
+										description: 'Hva spilleren liker/kan (fra trip_companions) — gjør bank-spørsmålene personlige'
 									}
 								},
 								required: ['name']
 							}
 						},
-						questionsPerPlayer: { type: 'number', description: 'Antall spørsmål per spiller, default 1' },
-						freshFacts: { type: 'boolean', description: 'true = gjør websøk for ferske/nisje-fakta før spørsmålene lages' }
-					},
-					required: ['theme', 'participants']
-				}
-			}
-		},
-		run: async (userId, args) => {
-			const theme = typeof args.theme === 'string' ? args.theme.trim() : '';
-			if (!theme) return { error: 'Oppgi et tema.' };
-			const players = coercePlayers(args.participants);
-			if (players.length === 0) return { error: 'Oppgi minst én spiller i participants.' };
-			const perPlayer = typeof args.questionsPerPlayer === 'number' && args.questionsPerPlayer > 0 ? Math.min(Math.floor(args.questionsPerPlayer), 5) : 1;
-			const freshFacts = args.freshFacts === true;
-			try {
-				return await buildRound(theme, players, perPlayer, freshFacts);
-			} catch (error) {
-				console.error('[quiz] kunne ikke lage runde:', error);
-				return { error: 'Klarte ikke å lage spørsmål akkurat nå.' };
-			}
-		}
-	},
-	{
-		definition: {
-			type: 'function',
-			function: {
-				name: 'quiz_score',
-				description:
-					'Hold poeng/streaks og driv spill-skjermen. action="start" (med names) starter en ny quiz. action="ask" (player + question + answer) setter gjeldende spørsmål og hvem sin tur det er — kall dette RETT FØR du leser spørsmålet høyt, så skjermen viser det (fasiten holdes skjult til besvart). action="record" (player + correct) registrerer svaret, avslører fasiten på skjermen og returnerer stilling + streak — bruk det til tilrop som «tre på rad, on fire!». action="status" gir gjeldende stilling. action="end" avslutter og kårer vinneren. Registrer ETT svar per spiller per spørsmål.',
-				parameters: {
-					type: 'object',
-					properties: {
-						action: { type: 'string', enum: ['start', 'ask', 'record', 'status', 'end'] },
-						names: { type: 'array', items: { type: 'string' }, description: 'Deltakernavn (for action="start")' },
-						player: { type: 'string', description: 'Hvem sin tur / hvem som svarte (for action="ask"/"record")' },
-						question: { type: 'string', description: 'Spørsmålet som stilles (for action="ask")' },
-						answer: { type: 'string', description: 'Fasit på spørsmålet (for action="ask") — vises på skjerm først når besvart' },
-						correct: { type: 'boolean', description: 'Var svaret riktig? (for action="record")' },
-						theme: { type: 'string', description: 'Valgfritt tema for runden som spilles (record)' }
+						questionsPerPlayer: { type: 'number', description: 'Spørsmål per spiller i banken, default 8 (for action="prepare")' },
+						freshFacts: { type: 'boolean', description: 'true = websøk for ferske/nisje-fakta før banken bygges (for action="prepare")' },
+						player: { type: 'string', description: 'Overstyr hvem som får neste spørsmål (for action="next"; default tur-rotasjon)' },
+						questionId: { type: 'string', description: 'Id-en til spørsmålet som vurderes (for action="record") — fra next' },
+						correct: { type: 'boolean', description: 'Var svaret riktig? (for action="record")' }
 					},
 					required: ['action']
 				}
@@ -510,32 +768,41 @@ export const QUIZ_ASSISTANT_TOOLS: AssistantTool[] = [
 			const action = typeof args.action === 'string' ? args.action : '';
 			switch (action) {
 				case 'start': {
-					const names = Array.isArray(args.names) ? args.names.filter((n): n is string => typeof n === 'string') : [];
-					return startSession(userId, names);
+					const theme = typeof args.theme === 'string' ? args.theme : undefined;
+					return startSession(userId, theme);
 				}
-				case 'ask': {
-					const player = typeof args.player === 'string' ? args.player.trim() : '';
-					const question = typeof args.question === 'string' ? args.question.trim() : '';
-					const answer = typeof args.answer === 'string' ? args.answer.trim() : '';
-					if (!player || !question || !answer) return { error: 'Oppgi player, question og answer.' };
-					return askQuestion(userId, player, question, answer);
+				case 'register':
+					return registerPlayers(userId, coercePlayerEntries(args.players));
+				case 'prepare': {
+					const theme = typeof args.theme === 'string' ? args.theme.trim() : '';
+					if (!theme) return { error: 'Oppgi et tema (theme).' };
+					const perPlayer = typeof args.questionsPerPlayer === 'number' ? args.questionsPerPlayer : undefined;
+					return prepareBank(userId, theme, perPlayer, args.freshFacts === true);
+				}
+				case 'next': {
+					const player = typeof args.player === 'string' ? args.player : undefined;
+					return drawNextQuestion(userId, player);
 				}
 				case 'record': {
-					const player = typeof args.player === 'string' ? args.player : '';
-					if (!player) return { error: 'Oppgi player.' };
+					const questionId = typeof args.questionId === 'string' ? args.questionId.trim() : '';
+					if (!questionId) return { error: 'Oppgi questionId (fra action="next").' };
 					if (typeof args.correct !== 'boolean') return { error: 'Oppgi correct (true/false).' };
-					const theme = typeof args.theme === 'string' ? args.theme.trim() || undefined : undefined;
-					return recordAnswer(userId, player, args.correct, theme);
+					return recordAnswer(userId, questionId, args.correct);
 				}
 				case 'status': {
 					const session = await loadActiveSession(userId);
 					if (!session) return { active: false };
-					return projectQuizBoard(toQuizSessionState(session));
+					return {
+						...projectQuizBoard(toQuizSessionState(session)),
+						currentQuestionId: session.currentQuestionId,
+						questionState: session.questionState,
+						unused: unusedCounts(session.questionBank ?? [])
+					};
 				}
 				case 'end':
 					return endSession(userId);
 				default:
-					return { error: 'Ukjent action. Bruk start, record, status eller end.' };
+					return { error: 'Ukjent action. Bruk start, register, prepare, next, record, status eller end.' };
 			}
 		}
 	}

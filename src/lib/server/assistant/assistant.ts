@@ -3,7 +3,9 @@ import { openai } from '$lib/server/openai';
 import { env } from '$env/dynamic/private';
 import type { ConversationTurn } from '$lib/server/conversation-window';
 import { ASSISTANT_TOOL_DEFINITIONS, runAssistantTool } from './tools';
+import { completionTuning } from './model-tuning';
 import { hasActiveStory } from './story-tools';
+import { hasActiveQuiz } from './quiz-tools';
 import { getFullProgram } from '$lib/server/programs/repository';
 import { localHm, localIsoDay } from '$lib/server/nudge-time';
 
@@ -32,6 +34,16 @@ const model = () => env.EKKO_ASSISTANT_MODEL?.trim() || DEFAULT_MODEL;
  */
 const DEFAULT_STORY_MODEL = 'gpt-5.5';
 const storyModel = () => env.EKKO_STORY_MODEL?.trim() || DEFAULT_STORY_MODEL;
+
+/**
+ * Spilleturer i quizen rutes til en RASK modell (brukertesten viste lang responstid per tur).
+ * Signalet er billig: brukeren har en aktiv quiz (hasActiveQuiz), eller et quiz_-verktøy er
+ * brukt i turen. Turene er mekaniske (trekk spørsmål, bokfør svar, les fasit/stilling) og
+ * trenger ikke den sterke tieren — den brukes kun i bank-genereringen inne i
+ * quiz_score action="prepare", utenfor tur-stien (se quiz-tools.ts).
+ */
+const DEFAULT_QUIZ_MODEL = 'gpt-4o-mini';
+const quizModel = () => env.EKKO_QUIZ_MODEL?.trim() || DEFAULT_QUIZ_MODEL;
 /**
  * Tak på completion-tokens for fortellinger. Romslig fordi GPT-5/reasoning-modeller bruker
  * (skjulte) reasoning-tokens AV samme budsjett — er det for knapt, kan svaret bli tomt/avkuttet,
@@ -43,27 +55,8 @@ const STORY_TEMPERATURE = 0.8;
 const CHAT_MAX_TOKENS = 600;
 const CHAT_TEMPERATURE = 0.5;
 
-/**
- * GPT-5- og o-serien er reasoning-modeller med et annet parameter-format enn gpt-4o: de krever
- * `max_completion_tokens` (ikke `max_tokens`) og støtter bare default-temperatur. Sender vi feil
- * navn/verdi, svarer OpenAI 400 → 502 mot frontend. Skill derfor per modell.
- */
-export function isReasoningModel(modelId: string): boolean {
-	return /^(o\d|gpt-5)/i.test(modelId);
-}
-
-/** Bygg de modell-spesifikke completion-parametrene (token-tak + ev. temperatur). */
-export function completionTuning(
-	modelId: string,
-	maxTokens: number,
-	temperature: number
-): Record<string, number> {
-	if (isReasoningModel(modelId)) {
-		// Reasoning-modeller: nytt token-felt, og ingen egendefinert temperatur (default = 1).
-		return { max_completion_tokens: maxTokens };
-	}
-	return { max_tokens: maxTokens, temperature };
-}
+// Flyttet til model-tuning.ts (delt med quiz-bankens batch-generering); re-eksportert herfra.
+export { isReasoningModel, completionTuning } from './model-tuning';
 
 /** Tak på antall LLM↔verktøy-runder, så en agent ikke kan løkke i det uendelige. */
 const MAX_TOOL_ROUNDS = 6;
@@ -82,31 +75,41 @@ om lov for oppslag, og ikke gjett. Du kan blant annet:
   sensorer og helse, tema og rutiner, og vær (weather_forecast).
 - Fange og endre: opprette oppgaver/mål, registrere aktivitet, lagre minner, og justere planer
   via de relevante verktøyene.
-- Bilferie-quiz: kjør en leken quiz for hele bilen (trip_companions, quiz_questions, quiz_score).
+- Bilferie-quiz: kjør en leken quiz for hele bilen (trip_companions, quiz_score).
 - Interaktive fortellinger: fortell et velg-selv-eventyr eller en madlib for hele bilen
   (trip_companions, story_start, story_scene/story_request/story_fill, story_state, story_end).
 
 Quizmaster (når brukeren vil ha quiz/spill på bilturen):
-- Start med trip_companions for å hente hvem som er med, alder, OG interessene deres. Mangler
-  det deltakere, spør kort hvem som spiller. Kall så quiz_score action="start" med navnene.
-- Spør hvilket tema de vil ha (favorittserie/-spill, land, engelske ord, mattestykker, dyr …)
-  eller foreslå et som treffer interessene deres. For ferske/spesifikke eller personlige
-  spørsmål, hent dem med quiz_questions — gi det deltakerne med alder og interesser, og sett
-  freshFacts=true når temaet trenger ferske fakta (en bestemt serie, dagsaktuelt). Helt enkle
-  spørsmål (lett hoderegning o.l.) kan du lage selv.
-- Still ett spørsmål om gangen, på omgang, tilpasset hver spillers nivå og interesser. Når du
-  brukte quiz_questions, bruk fasiten derfra til å avgjøre rett/galt — aldri gjett svaret.
-- RETT FØR du leser et spørsmål høyt: kall quiz_score action="ask" (player + question + answer),
-  så spill-skjermen viser spørsmålet og hvem sin tur det er (fasiten holdes skjult til besvart).
-- Etter HVERT svar, FØR du sier om det var rett eller galt og før du går videre til neste
-  spiller: kall quiz_score action="record" (player + correct). Det er dette kallet som gir
-  poenget — sier du bare «riktig!» i tale uten å registrere, blir det stående med null poeng.
-  Bruk streak-hintet til korte, varme tilrop («tre på rad, Erle er on fire!») og les opp
-  stillingen av og til.
+- Quiz-start: kall trip_companions og quiz_score action="start" i samme runde. Start gir alltid
+  en FERSK quiz med tom deltakerliste — spillere fra en tidligere quiz arves ALDRI. FORESLÅ
+  laget fra trip_companions («Er det Erle 7, Nils 9 og Kjetil 42 som spiller?») og registrer
+  det først når brukeren bekrefter — det gjelder også «samme lag som sist».
+- Registrering: parse HELE ytringen til ETT register-kall. «Erle 7, Nils 9 og Kjetil 42»
+  (komma eller «og» mellom navnene) er TRE spillere i samme players-array — aldri bare den
+  første. Ta med interests fra trip_companions for kjente personer. Les hele laget med alder
+  tilbake før første spørsmål: «Da spiller Erle 7, Nils 9 og Kjetil 42. Klar?»
+- Tema + bank: avklar tema (eller foreslå ett som treffer interessene) og kall quiz_score
+  action="prepare" med temaet. Banken er alderstilpasset per spiller (en 7-åring og en
+  42-åring får ulikt nivå) og unngår alt som er stilt før. Du lager ALDRI spørsmål selv —
+  hvert spørsmål trekkes fra banken.
+- Spilletur: kall action="next" (verktøyet roterer turen og gir deg spørsmålet MED fasit) rett
+  før du leser spørsmålet høyt. Når spilleren svarer: avgjør rett/galt mot fasiten fra next,
+  kall action="record" (questionId + correct), og kall gjerne next for neste spiller i SAMME
+  verktøyrunde — så hele svaret ditt kommer som én melding.
+- Svar-form (VIKTIG): hvert quiz-svar er ÉN melding i korte, talevennlige setninger uten
+  markdown, i FAST rekkefølge: først fasit-vurderingen, så poeng/stilling, så neste spørsmål.
+  Eksempel: «Riktig, det er snø! Erle har 3 poeng og leder. Nils, din tur: hva heter
+  hovedstaden i Frankrike?» Den FØRSTE talte setningen er alltid fasiten — aldri noe annet
+  foran. Ikke skriv tekst i verktøyrundene underveis.
+- Svarer record med alreadyGraded, er svaret allerede bokført: IKKE vurder på nytt — kvitter
+  kort («Det har vi allerede tatt!») og les gjeldende spørsmål en gang til.
+- Går banken tom (next sier fra), etterfyll med action="prepare" — den hopper over alt som er
+  stilt. Bruk streak-hintet fra record til korte, varme tilrop («tre på rad, Erle er on fire!»)
+  og les opp stillingen av og til.
 - Det finnes en spill-skjerm («Spill») som viser stillingen live; den kan deles til et eget
   nettbrett i baksetet. Nevn den hvis det passer, men spillet funker fint på stemmen alene.
-- Hold det gøy og inkluderende: ros forsøk, gjør lette spørsmål til de minste. Avslutt med
-  quiz_score action="end" og kår en vinner når de vil gi seg.
+- Hold det gøy og inkluderende: ros forsøk. Avslutt med quiz_score action="end" og kår en
+  vinner når de vil gi seg.
 
 Forteller (når brukeren vil høre en historie / et eventyr på bilturen):
 - Hent trip_companions FØRST for navn og ALDER på passasjerene, og kalibrer tonen mot den yngste.
@@ -272,8 +275,11 @@ export async function runAssistantTurn(
 ): Promise<{ text: string; usedTools: string[] }> {
 	const messages = await buildAssistantMessages(input);
 	const usedTools: string[] = [];
-	// Aktiv fortelling ⇒ hele turen på den sterke forteller-modellen (også runde 0).
-	const storyTurn = await hasActiveStory(input.userId);
+	// Aktiv fortelling ⇒ sterk forteller-modell; aktiv quiz ⇒ rask spilletur-modell (også runde 0).
+	const [storyTurn, quizTurn] = await Promise.all([
+		hasActiveStory(input.userId),
+		hasActiveQuiz(input.userId)
+	]);
 
 	try {
 		for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
@@ -282,7 +288,9 @@ export async function runAssistantTurn(
 			// Etter at et story_*-verktøy er brukt i turen (f.eks. «start en fortelling»), gå over til
 			// forteller-modellen for resten — så selve narrasjonen leveres på den sterke tieren.
 			const useStory = storyTurn || usedTools.some((n) => n.startsWith('story_'));
-			const activeModel = useStory ? storyModel() : model();
+			// Quiz-turer på rask modell — men fortelling vinner hvis begge er aktive.
+			const useQuiz = !useStory && (quizTurn || usedTools.some((n) => n.startsWith('quiz_')));
+			const activeModel = useStory ? storyModel() : useQuiz ? quizModel() : model();
 			const response = await openai.chat.completions.create({
 				model: activeModel,
 				messages,
@@ -347,8 +355,11 @@ export async function runAssistantTurnStreaming(
 	const messages = await buildAssistantMessages(input);
 	const usedTools: string[] = [];
 	let streamedText = '';
-	// Aktiv fortelling ⇒ hele turen på den sterke forteller-modellen (også runde 0).
-	const storyTurn = await hasActiveStory(input.userId);
+	// Aktiv fortelling ⇒ sterk forteller-modell; aktiv quiz ⇒ rask spilletur-modell (også runde 0).
+	const [storyTurn, quizTurn] = await Promise.all([
+		hasActiveStory(input.userId),
+		hasActiveQuiz(input.userId)
+	]);
 
 	try {
 		for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
@@ -356,7 +367,9 @@ export async function runAssistantTurnStreaming(
 			// Etter at et story_*-verktøy er brukt i turen, gå over til forteller-modellen for resten,
 			// så selve narrasjonen som strømmes til klienten leveres på den sterke tieren.
 			const useStory = storyTurn || usedTools.some((n) => n.startsWith('story_'));
-			const activeModel = useStory ? storyModel() : model();
+			// Quiz-turer på rask modell — men fortelling vinner hvis begge er aktive.
+			const useQuiz = !useStory && (quizTurn || usedTools.some((n) => n.startsWith('quiz_')));
+			const activeModel = useStory ? storyModel() : useQuiz ? quizModel() : model();
 			const stream = await openai.chat.completions.create({
 				model: activeModel,
 				messages,

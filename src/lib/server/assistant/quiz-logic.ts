@@ -10,6 +10,8 @@
 
 export interface QuizParticipant {
 	name: string;
+	age?: number | null; // alder i år fra registreringen — styrer vanskelighetsgrad i banken
+	interests?: string[]; // hva spilleren liker/kan — gjør bank-spørsmål personlige
 	score: number; // 1 poeng per riktige svar
 	streak: number; // riktige på rad akkurat nå
 	bestStreak: number; // beste streak i denne quizen
@@ -27,15 +29,62 @@ export function newParticipant(name: string): QuizParticipant {
 
 /** Bygg en deltakerliste fra navn. Tomme/duplikate (case-insensitivt) navn fjernes. */
 export function participantsFromNames(names: string[]): QuizParticipant[] {
+	return participantsFromEntries(names.map((name) => ({ name })));
+}
+
+/** Én spiller slik registreringsverktøyet mottar dem: navn + alder (+ ev. interesser). */
+export interface QuizPlayerEntry {
+	name: string;
+	age?: number | null;
+	interests?: string[];
+}
+
+/**
+ * Bygg en deltakerliste fra registrerings-poster ({name, age, interests?}). Tomme/duplikate
+ * (case-insensitivt) navn fjernes, alder klippes til hele år i [0, 129], interesser trimmes.
+ * Hele laget registreres i ETT kall — «Erle 7, Nils 9, Kjetil 42» skal bli tre poster her.
+ */
+export function participantsFromEntries(entries: QuizPlayerEntry[]): QuizParticipant[] {
 	const seen = new Set<string>();
 	const out: QuizParticipant[] = [];
-	for (const raw of names) {
-		const name = (raw ?? '').trim();
+	for (const entry of entries) {
+		const name = (entry?.name ?? '').trim();
 		if (!name) continue;
 		const key = name.toLowerCase();
 		if (seen.has(key)) continue;
 		seen.add(key);
-		out.push(newParticipant(name));
+		const p = newParticipant(name);
+		const age = entry.age;
+		if (typeof age === 'number' && Number.isFinite(age)) {
+			const whole = Math.round(age);
+			if (whole >= 0 && whole < 130) p.age = whole;
+		}
+		const interests = (entry.interests ?? [])
+			.filter((i): i is string => typeof i === 'string' && i.trim().length > 0)
+			.map((i) => i.trim())
+			.slice(0, 5);
+		if (interests.length > 0) p.interests = interests;
+		out.push(p);
+	}
+	return out;
+}
+
+/** Tolk rå verktøy-argumenter (LLM-JSON) til spiller-poster. Robust mot søppel/ekstra felt. */
+export function coercePlayerEntries(raw: unknown): QuizPlayerEntry[] {
+	if (!Array.isArray(raw)) return [];
+	const out: QuizPlayerEntry[] = [];
+	for (const item of raw) {
+		if (!item || typeof item !== 'object') continue;
+		const o = item as Record<string, unknown>;
+		const name = typeof o.name === 'string' ? o.name.trim() : '';
+		if (!name) continue;
+		out.push({
+			name,
+			age: typeof o.age === 'number' && Number.isFinite(o.age) ? o.age : null,
+			interests: Array.isArray(o.interests)
+				? o.interests.filter((i): i is string => typeof i === 'string')
+				: []
+		});
 	}
 	return out;
 }
@@ -91,16 +140,104 @@ export function findParticipantIndex(list: QuizParticipant[], name: string): num
 }
 
 /**
- * Er det stilt et spørsmål som ennå ikke er bokført? Sant når et spørsmål er satt
- * (`currentQuestion`) uten at et resultat er registrert (`lastResult` er null). Brukes til å
- * hindre at quizmasteren stiller neste spørsmål før forrige svar er registrert — ellers
- * forsvinner poenget for et riktig svar (modellen sa «riktig» i tale, men bokførte aldri).
+ * Er det stilt et spørsmål som ennå ikke er bokført? Brukes til å hindre at quizmasteren
+ * trekker neste spørsmål før forrige svar er registrert — ellers forsvinner poenget for et
+ * riktig svar (modellen sa «riktig» i tale, men bokførte aldri).
+ *
+ * Med spørsmålsbanken er `questionState` ('open' | 'answered') fasiten; eldre rader uten
+ * tilstandskolonnen faller tilbake på den opprinnelige heuristikken (spørsmål satt uten resultat).
  */
 export function hasPendingAnswer(session: {
 	currentQuestion: string | null;
 	lastResult: { player: string; correct: boolean } | null;
+	questionState?: string | null;
 }): boolean {
+	if (session.questionState === 'open') return true;
+	if (session.questionState === 'answered') return false;
 	return !!session.currentQuestion && session.lastResult == null;
+}
+
+/* ── Spørsmålsbank ──────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Ett pre-generert spørsmål i quizens bank. Banken lages i batch (sterk modell) når laget er
+ * bekreftet; spilleturer TREKKER neste ubrukte og markerer det brukt — ingen generering i
+ * tur-stien. `id` er nøkkelen vurderingen (record) idempotens-sjekkes mot.
+ */
+export interface QuizBankQuestion {
+	id: string;
+	player: string;
+	text: string;
+	answer: string;
+	category: string;
+	used: boolean;
+}
+
+/**
+ * Normaliser et spørsmål for gjentakelses-vern: små bokstaver, all tegnsetting/whitespace
+ * kollapset til enkle mellomrom. To formuleringer som bare skiller seg i tegnsetting/casing
+ * regnes som samme spørsmål.
+ */
+export function normalizeQuestionText(text: string): string {
+	return (text ?? '')
+		.toLowerCase()
+		.replace(/[^\p{L}\p{N}]+/gu, ' ')
+		.trim();
+}
+
+/** Neste ubrukte bank-spørsmål for en spiller (case-insensitivt navn), i generert rekkefølge. */
+export function nextUnusedQuestion(
+	bank: QuizBankQuestion[],
+	player: string
+): QuizBankQuestion | null {
+	const key = (player ?? '').trim().toLowerCase();
+	if (!key) return null;
+	return bank.find((q) => !q.used && q.player.toLowerCase() === key) ?? null;
+}
+
+/** Marker et bank-spørsmål som brukt. Returnerer en NY bank (muterer ikke input). */
+export function markQuestionUsed(bank: QuizBankQuestion[], id: string): QuizBankQuestion[] {
+	return bank.map((q) => (q.id === id ? { ...q, used: true } : q));
+}
+
+/** Antall ubrukte bank-spørsmål per spiller (nøkkel = navnet slik det står i banken). */
+export function unusedCounts(bank: QuizBankQuestion[]): Record<string, number> {
+	const out: Record<string, number> = {};
+	for (const q of bank) {
+		if (q.used) continue;
+		out[q.player] = (out[q.player] ?? 0) + 1;
+	}
+	return out;
+}
+
+/**
+ * Hvem sin tur er det etter `current`? Rotasjonen følger registreringsrekkefølgen og wrapper
+ * rundt. Ukjent/`null` current gir første deltaker (spillstart). Tom liste gir null.
+ */
+export function nextPlayerName(list: QuizParticipant[], current: string | null): string | null {
+	if (list.length === 0) return null;
+	const idx = current ? findParticipantIndex(list, current) : -1;
+	return list[(idx + 1) % list.length].name;
+}
+
+/**
+ * Fjern genererte spørsmål som (normalisert) allerede er stilt — på tvers av brukerens siste
+ * quizer — og dedupliser innad i batchen. Dette er den harde garantien mot gjentakelser;
+ * eksklusjonslista i genererings-prompten er bare et hint.
+ */
+export function filterRepeatQuestions(
+	questions: GeneratedQuestion[],
+	askedNormalized: Set<string>
+): GeneratedQuestion[] {
+	const seen = new Set(askedNormalized);
+	const out: GeneratedQuestion[] = [];
+	for (const q of questions) {
+		const key = normalizeQuestionText(q.question);
+		if (!key || seen.has(key)) continue;
+		seen.add(key);
+		out.push(q);
+	}
+	return out;
 }
 
 /** Stilling sortert synkende på poeng, så på nåværende streak, så alfabetisk. */
@@ -208,15 +345,17 @@ export interface QuizSessionState {
 	currentQuestion: string | null;
 	currentAnswer: string | null;
 	lastResult: QuizResult | null;
+	questionState?: string | null; // 'open' | 'answered' | null (bank-flyten)
 }
 
 /**
  * Projiser en quiz-sesjon til det skjermen viser. Holder fasiten (`answer`) SKJULT til
- * spørsmålet er besvart (`lastResult` satt) — slik at en delt skjerm i baksetet ikke
- * røper svaret før noen har gjettet. Ren, så gatingen kan enhetstestes.
+ * spørsmålet er besvart (`questionState === 'answered'`, ev. `lastResult` satt for eldre
+ * rader) — slik at en delt skjerm i baksetet ikke røper svaret før noen har gjettet.
+ * Ren, så gatingen kan enhetstestes. Board-skjemaet er UENDRET (Ekko-kontrakten).
  */
 export function projectQuizBoard(session: QuizSessionState): QuizBoardView {
-	const answered = session.lastResult != null;
+	const answered = session.questionState === 'answered' || session.lastResult != null;
 	const currentName = (session.currentPlayer ?? '').trim().toLowerCase();
 	const standings: QuizStanding[] = buildStandings(session.participants).map((p) => ({
 		name: p.name,
@@ -249,6 +388,7 @@ export function toQuizSessionState(row: {
 	currentQuestion: string | null;
 	currentAnswer: string | null;
 	lastResult: QuizResult | null;
+	questionState?: string | null;
 }): QuizSessionState {
 	return {
 		participants: row.participants ?? [],
@@ -258,7 +398,8 @@ export function toQuizSessionState(row: {
 		currentPlayer: row.currentPlayer,
 		currentQuestion: row.currentQuestion,
 		currentAnswer: row.currentAnswer,
-		lastResult: row.lastResult ?? null
+		lastResult: row.lastResult ?? null,
+		questionState: row.questionState ?? null
 	};
 }
 
@@ -266,12 +407,14 @@ export interface GeneratedQuestion {
 	player: string;
 	question: string;
 	answer: string;
+	category: string; // varierte kategorier innen temaet (f.eks. «geografi», «dyr»)
 }
 
 /**
  * Normaliser spørsmål generert av LLM-en (JSON). Aksepterer enten et toppnivå-array
- * eller `{ questions: [...] }`. Dropper poster som mangler player/question/answer.
- * Robust mot at modellen finner på ekstra felter eller leverer halvgyldig JSON.
+ * eller `{ questions: [...] }`. Dropper poster som mangler player/question/answer;
+ * manglende kategori får «generelt». Robust mot at modellen finner på ekstra felter
+ * eller leverer halvgyldig JSON.
  */
 export function parseGeneratedQuestions(raw: unknown): GeneratedQuestion[] {
 	const arr = Array.isArray(raw)
@@ -287,8 +430,9 @@ export function parseGeneratedQuestions(raw: unknown): GeneratedQuestion[] {
 		const player = typeof o.player === 'string' ? o.player.trim() : '';
 		const question = typeof o.question === 'string' ? o.question.trim() : '';
 		const answer = typeof o.answer === 'string' ? o.answer.trim() : '';
+		const category = (typeof o.category === 'string' ? o.category.trim() : '') || 'generelt';
 		if (!player || !question || !answer) continue;
-		out.push({ player, question, answer });
+		out.push({ player, question, answer, category });
 	}
 	return out;
 }
