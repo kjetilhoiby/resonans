@@ -174,7 +174,8 @@ export const POST: RequestHandler = async ({ request, locals, fetch, url }) => {
 
 					// Create OpenAI streaming request
 					const completion = await openai.chat.completions.create({
-						model: 'gpt-4o-mini',
+						// Direkte coaching-svar brukeren leser — full gpt-4o, ikke mini.
+						model: 'gpt-4o',
 						messages: openaiMessages,
 						temperature: 0.7,
 						stream: true,

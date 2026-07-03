@@ -25,7 +25,9 @@ export class ProgramCoachError extends Error {
 	}
 }
 
-const DEFAULT_MODEL = 'gpt-4o-mini';
+// Coaching-narrativ brukeren leser/hører — full gpt-4o for varm, nyansert stemme.
+// Overstyrbar via EKKO_COACH_MODEL.
+const DEFAULT_MODEL = 'gpt-4o';
 const model = () => env.EKKO_COACH_MODEL?.trim() || DEFAULT_MODEL;
 
 const SYSTEM_PROMPT = `Du er en erfaren, varm løpetrener som svarer brukeren direkte på norsk.

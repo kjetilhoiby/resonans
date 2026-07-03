@@ -3,9 +3,10 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { checklistItems, checklists, goals, sensorEvents } from '$lib/db/schema';
 import { and, desc, eq, lte, sql } from 'drizzle-orm';
-import { upsertPlanArtifactField } from '$lib/server/plan-artifacts';
+import { getPlanArtifact, upsertPlanArtifactField } from '$lib/server/plan-artifacts';
 import { createReflection } from '$lib/server/reflections';
 import { planMonthTask } from '$lib/server/month-plan-tasks';
+import { finalizePlanField, type PlanFieldThreadMsg } from '$lib/server/plan-field-writer';
 
 function getMonthInfoFromKey(key: string) {
 	const match = key.match(/^(\d{4})-(\d{2})$/);
@@ -27,6 +28,11 @@ function getMonthInfoFromKey(key: string) {
 		endDate: `${year}-${monthStr}-${endDay}`,
 		monthName
 	};
+}
+
+function previousMonthKey(m: { year: number; month: string }): string {
+	const d = new Date(m.year, parseInt(m.month, 10) - 2, 1);
+	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
 function parseSection(text: string, marker: string): Array<{ title: string; value: number; unit: string }> {
@@ -82,11 +88,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		selectedTasks: string[];
 		goalUpdatesText: string;
 		prevMonthGoals: Array<{ title: string; currentValue: number; target: { value: number; unit: string }; trackingMetric: string }>;
-		narrative: string;
-		refleksjonText?: string;
+		narrativeThread?: PlanFieldThreadMsg[];
+		refleksjonThread?: PlanFieldThreadMsg[];
 	};
 
-	const { monthKey, carryoverTexts, selectedTasks, goalUpdatesText, prevMonthGoals, narrative, refleksjonText } = body;
+	const { monthKey, carryoverTexts, selectedTasks, goalUpdatesText, prevMonthGoals, narrativeThread, refleksjonThread } = body;
 
 	const month = getMonthInfoFromKey(monthKey);
 	if (!month) return json({ error: 'Ugyldig månedsnøkkel' }, { status: 400 });
@@ -255,32 +261,44 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		});
 	}
 
-	// ── 3. Save narrative as month note ──────────────────────────────────────
-	if (narrative.trim()) {
+	// ── 3. Månedsnotat: oppsummer samtalen (brukerens meldinger som substans) og
+	// renskriv. Refleksjonen handler om FORRIGE måned, så renskriv den med forrige
+	// måned som periode. Kjør begge i parallell. ──
+	const prevMonth = getMonthInfoFromKey(previousMonthKey(month));
+	const [cleanedNarrative, cleanedRefleksjon] = await Promise.all([
+		finalizePlanField('note', narrativeThread, { periodLabel: month.monthName }),
+		finalizePlanField('reflection', refleksjonThread, { periodLabel: prevMonth?.monthName })
+	]);
+
+	if (cleanedNarrative) {
 		await upsertPlanArtifactField({
 			userId,
 			kind: 'month',
 			periodKey: month.compactKey,
 			field: 'note',
-			content: narrative
+			content: cleanedNarrative
 		});
 	}
 
-	// ── 4. Save refleksjon both as plan-artefact reflection and as a tracked reflection ──
-	if (refleksjonText?.trim()) {
-		await upsertPlanArtifactField({
-			userId,
-			kind: 'month',
-			periodKey: month.compactKey,
-			field: 'reflection',
-			content: refleksjonText
-		});
-		await createReflection({
-			userId,
-			kind: 'month_review',
-			periodKey: month.compactKey,
-			content: refleksjonText
-		});
+	// ── 4. Lagre refleksjonen på FORRIGE måned (den den handler om), ikke på måneden
+	// vi nå planlegger. Ikke overskriv en refleksjon brukeren allerede har skrevet. ──
+	if (cleanedRefleksjon && prevMonth) {
+		const existing = await getPlanArtifact(userId, 'month', prevMonth.compactKey);
+		if (!existing?.reflection?.trim()) {
+			await upsertPlanArtifactField({
+				userId,
+				kind: 'month',
+				periodKey: prevMonth.compactKey,
+				field: 'reflection',
+				content: cleanedRefleksjon
+			});
+			await createReflection({
+				userId,
+				kind: 'month_review',
+				periodKey: prevMonth.compactKey,
+				content: cleanedRefleksjon
+			});
+		}
 	}
 
 	return json({ success: true });

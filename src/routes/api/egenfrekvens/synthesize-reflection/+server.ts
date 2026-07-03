@@ -96,7 +96,8 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	}
 
 	const completion = await openai.chat.completions.create({
-		model: 'gpt-4o-mini',
+		// Forvalter brukerens egen refleksjon — full gpt-4o for å bevare nyanse/stemme.
+		model: 'gpt-4o',
 		messages: [
 			{
 				role: 'system',
