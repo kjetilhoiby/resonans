@@ -46,6 +46,19 @@ problemer:
 - Inneværende periodes refleksjonsfelt fylles ikke lenger ved planlegging — det er ment å
   fylles når perioden er over.
 
+### Fase 5: Oppgrader tynne modeller som forvalter brukerens egen prosa
+- Audit av alle `gpt-4o-mini`-kall avdekket samme feilkategori flere steder: en tynn modell
+  satt til å foredle/syntetisere brukerens egne, nyanserte tekster. Oppgradert til `gpt-4o`:
+  - `api/egenfrekvens/synthesize-reflection` — syntetiserer check-in + refleksjonschat.
+  - `services/dream-service.ts` (`envisionSynth`) — 5-års/år/kvartal-visjon i førsteperson
+    (persistert `model`-label følger nå med).
+  - `programs/coach.ts` (`DEFAULT_MODEL`) — varm løpe-coach-narrativ (fortsatt overstyrbar
+    via `EKKO_COACH_MODEL`).
+  - `api/chat-stream-messages` — direkte coaching-svar (ikke-proxy-grenen).
+- Rent mekaniske kall (klassifisering, ruting, uttrekk, parsing, transkribering) ble beholdt
+  på `gpt-4o-mini`. Hovedchattens modellvalg (`chooseChatModel`) ble bevisst *ikke* endret —
+  det er en fart/kostnad-avveining som eier separat.
+
 ## Beslutninger
 
 - **Oppsummering, ikke siste melding:** Substansen ligger i det brukeren landet på gjennom

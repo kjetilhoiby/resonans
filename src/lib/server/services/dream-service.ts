@@ -288,12 +288,14 @@ export class DreamService {
 			vision_themed: theme ? `tema "${theme.name}"` : 'tema'
 		} as const)[args.horizon];
 
+		// Visjon i brukerens stemme (5-års/år/kvartal) — full gpt-4o for dybde og nyanse.
+		const visionModel = opts.model ?? 'gpt-4o';
 		const payload = await this.envisionSynth({
 			kind: args.horizon,
 			horizon: horizonLabel,
 			inputs: inputLines,
 			previousSummary: previous?.summary
-		}, opts.model);
+		}, visionModel);
 
 		return this.persist(userId, {
 			kind: args.horizon,
@@ -301,7 +303,7 @@ export class DreamService {
 			scopeEnd: now,
 			payload,
 			previousId: previous?.id,
-			model: opts.model,
+			model: visionModel,
 			confidence: 'llm_inferred',
 			originKind: 'llm_proposed',
 			themeIds: args.themeId ? [args.themeId] : undefined,
@@ -561,7 +563,7 @@ export class DreamService {
 			inputs: string[];
 			previousSummary?: string;
 		},
-		model = 'gpt-4o-mini'
+		model = 'gpt-4o'
 	): Promise<DreamPayload> {
 		const lines = [
 			`Du foreslår en realistisk og inspirerende visjon for brukeren — horisont: ${args.horizon}.`,
