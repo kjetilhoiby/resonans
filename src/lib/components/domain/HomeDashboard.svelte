@@ -116,6 +116,7 @@
 	const completionPct = $derived(grossCount > 0 ? (completedCount / grossCount) * 100 : 0);
 
 	// Grupper ventende husarbeid per syklus, så «Legg i min dag» tar hele lasset.
+	// Items kommer nyeste først fra API-et, så første gruppe er siste syklus.
 	const choresByCycle = $derived.by(() => {
 		const groups = new Map<string, { cycleId: string | null; appliance: string | null; items: ChoreItem[] }>();
 		for (const item of choreItems) {
@@ -125,6 +126,14 @@
 		}
 		return [...groups.values()];
 	});
+
+	// Lista kan bli svært lang (én gruppe per syklus). Vis bare siste syklus,
+	// resten bak en «Vis eldre»-toggle.
+	let choresExpanded = $state(false);
+	const visibleChoreGroups = $derived(choresExpanded ? choresByCycle : choresByCycle.slice(0, 1));
+	const olderChoreCount = $derived(
+		choreItems.length - (choresByCycle[0]?.items.length ?? 0)
+	);
 
 	async function completeChore(item: ChoreItem) {
 		// Avkryssing = registrert fullført. Oppdater optimistisk.
@@ -329,7 +338,10 @@
 			{#if grossCount > 0}
 				<div class="chore-tally">
 					<div class="chore-tally-head">
-						<span class="chore-tally-count">{completedCount} av {grossCount} registrert</span>
+						<span class="chore-tally-count">
+							{completedCount} av {grossCount} registrert
+							<span class="chore-tally-pct">· {Math.round(completionPct)} %</span>
+						</span>
 						<span class="chore-tally-window">siste {windowDays} dager</span>
 					</div>
 					<AnimatedProgressBar pct={completionPct} tone="accent" height={6} />
@@ -345,11 +357,12 @@
 				<p class="empty">Ingen ventende husarbeid akkurat nå.</p>
 			{:else}
 				<div class="chore-groups">
-					{#each choresByCycle as group (group.cycleId ?? group.items[0].id)}
+					{#each visibleChoreGroups as group (group.cycleId ?? group.items[0].id)}
 						<div class="chore-group">
-							{#if group.appliance}
-								<div class="chore-group-head">{group.appliance}</div>
-							{/if}
+							<div class="chore-group-head">
+								{#if group.appliance}<span>{group.appliance}</span>{/if}
+								<span class="chore-group-time">{relativeTime(group.items[0].createdAt)}</span>
+							</div>
 							<ul class="chore-list">
 								{#each group.items as item (item.id)}
 									<li class="chore">
@@ -379,6 +392,18 @@
 						</div>
 					{/each}
 				</div>
+				{#if choresByCycle.length > 1}
+					<button
+						type="button"
+						class="chore-toggle"
+						data-track="tema-husarbeid:vis-eldre"
+						onclick={() => (choresExpanded = !choresExpanded)}
+					>
+						{choresExpanded
+							? 'Vis færre'
+							: `Vis ${olderChoreCount} eldre oppgave${olderChoreCount === 1 ? '' : 'r'}`}
+					</button>
+				{/if}
 			{/if}
 		</section>
 	{/if}
@@ -615,6 +640,10 @@
 		font-size: 0.75rem;
 		color: var(--text-tertiary);
 	}
+	.chore-tally-pct {
+		font-weight: 400;
+		color: var(--text-secondary);
+	}
 	.chore-tally-hint {
 		font-size: 0.75rem;
 		color: var(--text-secondary);
@@ -634,9 +663,16 @@
 		gap: 0.4rem;
 	}
 	.chore-group-head {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 0.5rem;
 		font-size: 0.78rem;
 		color: var(--text-tertiary);
 		font-weight: 500;
+	}
+	.chore-group-time {
+		font-weight: 400;
 	}
 	.chore-list {
 		list-style: none;
@@ -679,6 +715,24 @@
 	.chore-claim:disabled {
 		opacity: 0.5;
 		cursor: default;
+	}
+	.chore-toggle {
+		align-self: flex-start;
+		margin-top: 0.6rem;
+		padding: 0.3rem 0.7rem;
+		border-radius: 999px;
+		border: 1px solid var(--border-color);
+		background: transparent;
+		color: var(--text-secondary);
+		font: inherit;
+		font-size: 0.8rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: border-color 0.2s, background 0.2s;
+	}
+	.chore-toggle:hover {
+		border-color: var(--accent-primary);
+		background: var(--bg-hover);
 	}
 	.grid {
 		display: grid;
