@@ -8,6 +8,7 @@
 	import CollapsibleSection from '$lib/components/ui/CollapsibleSection.svelte';
 	import ConversationContextMenu from '$lib/components/ui/ConversationContextMenu.svelte';
 	import KebabMenu from '$lib/components/ui/KebabMenu.svelte';
+	import ChatSearchSheet from '$lib/components/domain/samtaler/ChatSearchSheet.svelte';
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
 	import { ChatState } from '$lib/client/chat-state.svelte';
 	import type { ChatMessage } from '$lib/client/chat-state.svelte';
@@ -657,6 +658,14 @@
 			{/key}
 		</div>
 		</div>
+
+		{#if activeSheet === 'sok' && conversation}
+			<ChatSearchSheet
+				conversationId={conversation.id}
+				onclose={() => (activeSheet = null)}
+				onJump={(day, messageId) => void jumpToDay(day, messageId)}
+			/>
+		{/if}
 		</PageSection>
 	</AppPage>
 {/if}
