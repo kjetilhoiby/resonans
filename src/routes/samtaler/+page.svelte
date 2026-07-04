@@ -586,6 +586,7 @@
 					onStop={stopChat}
 					initialValue={inputDraft}
 					showAttachButton={true}
+					expandOnFocus={true}
 					attachmentPending={hasPendingAttachment}
 					onFilesSelected={handleAttachmentFiles}
 					onsubmit={sendMessage}
