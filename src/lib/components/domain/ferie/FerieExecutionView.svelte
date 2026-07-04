@@ -149,8 +149,8 @@
 	async function loadDiary() {
 		diaryLoading = true;
 		try {
-			const entries = await api.getDiary(themeId);
-			if (entries) diaryEntries = entries;
+			const feed = await api.getDiary(themeId);
+			if (feed) diaryEntries = feed.entries;
 		} catch {
 			// best-effort
 		} finally {
