@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildDayPins, partialPath, cumulativeFractions } from './trip-map-story';
+import { buildDayPins, buildStoryPath, partialPath, cumulativeFractions } from './trip-map-story';
 import type { DiaryEntry, DayGeo } from './trip-api';
 
 describe('buildDayPins', () => {
@@ -46,14 +46,95 @@ describe('buildDayPins', () => {
 				date: '2026-07-01',
 				content: 'Sol',
 				geo: { lat: 1, lon: 1 },
-				images: ['a.jpg', 'b.jpg'],
+				images: [{ url: 'a.jpg', caption: 'Bading' }, { url: 'b.jpg' }],
 				weather: { emoji: '☀️', temp: 27 }
 			}
 		];
 		const pin = buildDayPins(entries, {})[0];
-		expect(pin.images).toEqual(['a.jpg', 'b.jpg']);
+		expect(pin.images).toEqual([{ url: 'a.jpg', caption: 'Bading' }, { url: 'b.jpg' }]);
 		expect(pin.weatherEmoji).toBe('☀️');
 		expect(pin.weatherTemp).toBe(27);
+	});
+});
+
+describe('buildStoryPath', () => {
+	const pins = (
+		...days: Array<[string, number, number]>
+	): ReturnType<typeof buildDayPins> =>
+		days.map(([date, lat, lon]) => ({ date, lat, lon, content: '', images: [] }));
+
+	it('uten kjørespor er ruten luftlinje mellom dagpunktene', () => {
+		const path = buildStoryPath(pins(['2026-07-01', 0, 0], ['2026-07-02', 0, 10], ['2026-07-03', 10, 10]));
+		expect(path.coords).toEqual([
+			[0, 0],
+			[10, 0],
+			[10, 10]
+		]);
+		expect(path.pinIndices).toEqual([0, 1, 2]);
+		expect(path.pinFractions).toEqual([0, 0.5, 1]);
+	});
+
+	it('fletter inn kjørespor mellom to dagpunkter', () => {
+		const path = buildStoryPath(pins(['2026-07-01', 0, 0], ['2026-07-02', 0, 10]), {
+			'2026-07-02': [
+				[2, 1],
+				[6, 1]
+			]
+		});
+		expect(path.coords).toEqual([
+			[0, 0],
+			[2, 1],
+			[6, 1],
+			[10, 0]
+		]);
+		expect(path.pinIndices).toEqual([0, 3]);
+		expect(path.pinFractions).toEqual([0, 1]);
+	});
+
+	it('bruker hvert dags-spor bare én gang selv om datoen treffer to segmenter', () => {
+		// Sporet for 07-02 kvalifiserer både for segmentet 01→02 og 02→03; det
+		// skal bare flettes inn i det første.
+		const path = buildStoryPath(
+			pins(['2026-07-01', 0, 0], ['2026-07-02', 0, 10], ['2026-07-03', 0, 20]),
+			{ '2026-07-02': [[5, 1]] }
+		);
+		expect(path.coords).toEqual([
+			[0, 0],
+			[5, 1],
+			[10, 0],
+			[20, 0]
+		]);
+	});
+
+	it('fletter spor for mellomliggende dager uten eget dagpunkt', () => {
+		const path = buildStoryPath(pins(['2026-07-01', 0, 0], ['2026-07-04', 0, 30]), {
+			'2026-07-02': [[10, 0]],
+			'2026-07-03': [[20, 0]]
+		});
+		expect(path.coords).toEqual([
+			[0, 0],
+			[10, 0],
+			[20, 0],
+			[30, 0]
+		]);
+	});
+
+	it('ignorerer spor utenfor dagpunkt-vinduet', () => {
+		const path = buildStoryPath(pins(['2026-07-02', 0, 0], ['2026-07-03', 0, 10]), {
+			'2026-07-01': [[99, 99]],
+			'2026-07-05': [[99, 99]]
+		});
+		expect(path.coords).toEqual([
+			[0, 0],
+			[10, 0]
+		]);
+	});
+
+	it('klarer degenererte input', () => {
+		expect(buildStoryPath([])).toEqual({ coords: [], pinIndices: [], pinFractions: [] });
+		const single = buildStoryPath(pins(['2026-07-01', 1, 2]));
+		expect(single.coords).toEqual([[2, 1]]);
+		expect(single.pinFractions).toEqual([0]);
 	});
 });
 

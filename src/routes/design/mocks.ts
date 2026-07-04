@@ -722,6 +722,7 @@ export const mockTripApi: TripApi = {
 	getLiveSession: async () => null,
 	getTripProfile: async () => null,
 	saveTripProfile: async () => true,
+	importTeslaRoutes: async () => null,
 	getTransactions: async () => ({
 		totalSpent: 4835,
 		transactions: [

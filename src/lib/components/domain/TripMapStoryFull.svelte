@@ -7,6 +7,9 @@
   opp mens de andre dempes. Dag-innholdet (dato, vær, sted, oneliner, bilder) kommer
   som et kort over nedre halvdel med en mørk gradient bak teksten — kartet fades
   aldri bort. Frie bilde-nåler vises hele veien og lyser opp på sin egen dato.
+  Importerte kjørespor (driveRoutes) flettes inn i linja så den følger faktisk
+  kjørte veier. Kamera og rutelinje animeres i SAMME rAF-loop med felles easing,
+  så de aldri kommer ut av synk når kartet zoomer dynamisk.
 
   Åpnes fra «▶ Spill av» i TripMapStory. Gjenbruker dag-nåler, partialPath og den
   delte mørke basiskart-stilen (RESONANS_DARK_MAP_STYLE).
@@ -17,19 +20,21 @@
 	import type { Map as MapLibreMap, Marker as MapLibreMarker } from 'maplibre-gl';
 	import { portal } from '$lib/actions/portal';
 	import { RESONANS_DARK_MAP_STYLE, mapTransformRequest } from '../charts/mapStyle';
-	import { partialPath, cumulativeFractions, type DayPin } from './trip-map-story';
-	import type { ImagePin } from './trip-api';
+	import { partialPath, buildStoryPath, type DayPin } from './trip-map-story';
+	import type { ImagePin, DriveRoutes } from './trip-api';
 
 	interface Props {
 		dayPins: DayPin[];
 		imagePins?: ImagePin[];
+		/** Importerte kjørespor per ISO-dato ([lon, lat]) — linja følger disse. */
+		driveRoutes?: DriveRoutes;
 		/** Turens dato-vindu — brukes til «N av M dager» i bokendene. */
 		startDate?: string;
 		endDate?: string;
 		onclose: () => void;
 	}
 
-	let { dayPins, imagePins = [], startDate, endDate, onclose }: Props = $props();
+	let { dayPins, imagePins = [], driveRoutes = {}, startDate, endDate, onclose }: Props = $props();
 
 	// Antall dager i hele turvinduet (for «7 av 50»). 0 hvis vinduet er ukjent.
 	const totalDays = $derived.by(() => {
@@ -61,16 +66,18 @@
 	const dayMarkers: MapLibreMarker[] = [];
 	const dayMarkerEls: HTMLElement[] = [];
 	const imageMarkers = new Map<string, MapLibreMarker>();
-	let animTimer: number | null = null;
-	let camTimer: number | null = null;
+	const diaryImageMarkerEls: Array<{ date: string; el: HTMLElement }> = [];
+	let stepTimer: number | null = null;
 	let currentFraction = 0;
 	let dayCardEls: HTMLElement[] = [];
 	let outroEl = $state<HTMLElement | null>(null);
 	let scrollRaf: number | null = null;
 	const OUTRO = $derived(dayPins.length); // sentinel-indeks for slutt-bokstøtta
 
-	const routeCoords = $derived(dayPins.map((p) => [p.lon, p.lat] as [number, number]));
-	const fractions = $derived(cumulativeFractions(routeCoords));
+	// Tett rute (kjørespor flettet inn) + hvor på ruten hvert dagpunkt ligger.
+	const storyPath = $derived(buildStoryPath(dayPins, driveRoutes));
+	const routeCoords = $derived(storyPath.coords);
+	const pinCoords = $derived(dayPins.map((p) => [p.lon, p.lat] as [number, number]));
 
 	const reduceMotion =
 		typeof window !== 'undefined' &&
@@ -155,6 +162,21 @@
 				imageMarkers.set(pin.id, marker);
 			}
 
+			// Dagbokbilder med eget geokodet sted — lyser opp på sin egen dato.
+			for (const pin of dayPins) {
+				for (const dImg of pin.images) {
+					if (!dImg.geo) continue;
+					const el = document.createElement('div');
+					el.className = 'tmf-img-marker';
+					const img = document.createElement('img');
+					img.src = dImg.url;
+					img.alt = dImg.caption ?? '';
+					el.appendChild(img);
+					new Marker({ element: el }).setLngLat([dImg.geo.lon, dImg.geo.lat]).addTo(map!);
+					diaryImageMarkerEls.push({ date: pin.date, el });
+				}
+			}
+
 			// Start på oversikt: hele ruten i utsnittet, ingen markør fremhevet.
 			if (routeCoords.length >= 2) {
 				const bounds = new LngLatBounds(routeCoords[0], routeCoords[0]);
@@ -179,56 +201,50 @@
 		});
 	}
 
-	function animateRouteTo(target: number) {
+	// Animerer kamera OG rutelinje i samme rAF-loop med felles easing. MapLibre
+	// sin egen flyTo/fitBounds-animasjon kjører ikke når overlayet er portalert
+	// til <body> i denne webview-en (instant jumpTo virker derimot), så vi
+	// interpolerer center/zoom for hånd. At linja deler loop og easing med
+	// kameraet er poenget: to separate timere med ulik varighet gjorde at punkt
+	// og linje kom ut av synk mens kartet zoomet dynamisk.
+	function animateStep(
+		camera: { center: [number, number]; zoom: number } | null,
+		routeTarget: number,
+		dur: number
+	) {
 		if (!map) return;
-		if (animTimer) cancelAnimationFrame(animTimer);
-		const from = currentFraction;
-		if (reduceMotion || routeCoords.length < 2) {
-			currentFraction = target;
-			setRouteData(partialPath(routeCoords, target));
-			return;
-		}
-		const t0 = performance.now();
-		const dur = 700;
-		const step = (now: number) => {
-			const t = Math.min(1, (now - t0) / dur);
-			const eased = 1 - Math.pow(1 - t, 3);
-			currentFraction = from + (target - from) * eased;
-			setRouteData(partialPath(routeCoords, currentFraction));
-			if (t < 1) animTimer = requestAnimationFrame(step);
-		};
-		animTimer = requestAnimationFrame(step);
-	}
-
-	// Animerer kameraet selv med rAF + jumpTo. MapLibre sin egen flyTo/fitBounds-
-	// animasjon kjører ikke når overlayet er portalert til <body> i denne webview-en
-	// (instant jumpTo virker derimot). Vi interpolerer center/zoom for hånd — samme
-	// mønster som animateRouteTo — så vi får myk bevegelse uten MapLibres loop.
-	function animateCameraTo(center: [number, number], zoom: number, dur: number) {
-		if (!map) return;
-		if (camTimer) cancelAnimationFrame(camTimer);
+		if (stepTimer) cancelAnimationFrame(stepTimer);
 		const pad = framePadding();
-		if (reduceMotion || dur <= 0) {
-			map.jumpTo({ center, zoom, padding: pad });
-			return;
-		}
+		const fromFraction = currentFraction;
 		const c0 = map.getCenter();
 		const fromLng = c0.lng;
 		const fromLat = c0.lat;
 		const fromZoom = map.getZoom();
+
+		const apply = (e: number) => {
+			if (!map) return;
+			if (camera) {
+				map.jumpTo({
+					center: [fromLng + (camera.center[0] - fromLng) * e, fromLat + (camera.center[1] - fromLat) * e],
+					zoom: fromZoom + (camera.zoom - fromZoom) * e,
+					padding: pad
+				});
+			}
+			currentFraction = fromFraction + (routeTarget - fromFraction) * e;
+			setRouteData(partialPath(routeCoords, currentFraction));
+		};
+
+		if (reduceMotion || dur <= 0) {
+			apply(1);
+			return;
+		}
 		const t0 = performance.now();
 		const step = (now: number) => {
-			if (!map) return;
 			const t = Math.min(1, (now - t0) / dur);
-			const e = 1 - Math.pow(1 - t, 3);
-			map.jumpTo({
-				center: [fromLng + (center[0] - fromLng) * e, fromLat + (center[1] - fromLat) * e],
-				zoom: fromZoom + (zoom - fromZoom) * e,
-				padding: pad
-			});
-			if (t < 1) camTimer = requestAnimationFrame(step);
+			apply(1 - Math.pow(1 - t, 3));
+			if (t < 1) stepTimer = requestAnimationFrame(step);
 		};
-		camTimer = requestAnimationFrame(step);
+		stepTimer = requestAnimationFrame(step);
 	}
 
 	// Bunn-padding holder den aktive nåla i øvre, ledige halvdel — over dag-kortet.
@@ -253,6 +269,9 @@
 			const el = imageMarkers.get(pin.id)?.getElement();
 			if (el) el.classList.toggle('is-active', !!activeDate && pin.date === activeDate);
 		}
+		for (const { date, el } of diaryImageMarkerEls) {
+			el.classList.toggle('is-active', !!activeDate && date === activeDate);
+		}
 	}
 
 	// To koordinater regnes som samme sted hvis de er nærmere enn ~80 m. Flere dager
@@ -272,48 +291,49 @@
 			// Bokstøttene: vis hele reisens utsnitt. Intro (-1) har blank rute så linja
 			// vokser fra dag 1; outro (OUTRO) viser hele ruten ferdig tegnet.
 			highlightMarker(-1);
+			let camera: { center: [number, number]; zoom: number } | null = null;
 			if (routeCoords.length >= 2) {
 				const bounds = new LngLatBoundsCtor(routeCoords[0], routeCoords[0]);
 				for (const c of routeCoords) bounds.extend(c);
-				animateToBounds(bounds, 12, 800, routeCoords[0]);
+				camera = cameraFor(bounds, 12, routeCoords[0]);
 			}
-			animateRouteTo(index >= OUTRO ? 1 : 0);
+			animateStep(camera, index >= OUTRO ? 1 : 0, 800);
 			return;
 		}
 
 		highlightMarker(index);
-		animateRouteTo(fractions[index] ?? 0);
+		const routeTarget = storyPath.pinFractions[index] ?? 0;
 
-		const here = routeCoords[index];
-		const prev = index > 0 ? routeCoords[index - 1] : null;
+		const here = pinCoords[index];
+		const prev = index > 0 ? pinCoords[index - 1] : null;
 		if (prev && !sameSpot(prev, here)) {
-			// Reell reise fra forrige dag → ramm inn strekningen som ble reist.
+			// Reell reise fra forrige dag → ramm inn strekningen som ble reist,
+			// inkludert et eventuelt kjørespor mellom dagpunktene.
 			const bounds = new LngLatBoundsCtor(prev, prev);
-			bounds.extend(here);
-			animateToBounds(bounds, 13, 650, here);
+			const fromIdx = storyPath.pinIndices[index - 1] ?? 0;
+			const toIdx = storyPath.pinIndices[index] ?? routeCoords.length - 1;
+			for (let i = fromIdx; i <= toIdx; i++) bounds.extend(routeCoords[i]);
+			animateStep(cameraFor(bounds, 13, here), routeTarget, 650);
 		} else {
 			// Første dag, eller samme sted som i går → senter på dagens punkt, fast zoom.
-			animateCameraTo(here, 12, 550);
+			animateStep({ center: here, zoom: 12 }, routeTarget, 550);
 		}
 	}
 
-	// Beregner kamera for et utsnitt og animerer dit. cameraForBounds kan returnere
-	// undefined (f.eks. når den ikke får plass) — da glir vi i det minste til fallback-
-	// punktet (dagens sted) så kameraet ALLTID følger med.
-	function animateToBounds(
+	// Beregner kamera-mål for et utsnitt. cameraForBounds kan returnere undefined
+	// (f.eks. når den ikke får plass) — da brukes fallback-punktet (dagens sted)
+	// så kameraet ALLTID følger med.
+	function cameraFor(
 		bounds: InstanceType<NonNullable<typeof LngLatBoundsCtor>>,
 		maxZoom: number,
-		dur: number,
 		fallback: [number, number]
-	) {
-		if (!map) return;
-		const cam = map.cameraForBounds(bounds, { padding: framePadding(), maxZoom });
+	): { center: [number, number]; zoom: number } {
+		const cam = map?.cameraForBounds(bounds, { padding: framePadding(), maxZoom });
 		if (cam?.center) {
 			const c = 'lng' in cam.center ? [cam.center.lng, cam.center.lat] : (cam.center as [number, number]);
-			animateCameraTo(c as [number, number], cam.zoom ?? maxZoom, dur);
-		} else {
-			animateCameraTo(fallback, maxZoom - 1, dur);
+			return { center: c as [number, number], zoom: cam.zoom ?? maxZoom };
 		}
+		return { center: fallback, zoom: maxZoom - 1 };
 	}
 
 	$effect(() => {
@@ -381,8 +401,7 @@
 
 	onDestroy(() => {
 		document.body.style.overflow = '';
-		if (animTimer) cancelAnimationFrame(animTimer);
-		if (camTimer) cancelAnimationFrame(camTimer);
+		if (stepTimer) cancelAnimationFrame(stepTimer);
 		if (scrollRaf != null) cancelAnimationFrame(scrollRaf);
 		map?.remove();
 		map = null;
@@ -427,8 +446,16 @@
 					{/if}
 					{#if pin.images.length}
 						<div class="tmf-day-imgs">
-							{#each pin.images as url (url)}
-								<img src={url} alt="" loading="lazy" />
+							{#each pin.images as img (img.url)}
+								<figure class="tmf-day-img">
+									<img src={img.url} alt={img.caption ?? ''} loading="lazy" />
+									{#if img.caption || img.place}
+										<figcaption>
+											{#if img.caption}{img.caption}{/if}
+											{#if img.place}<span class="tmf-img-place">📍 {img.place}</span>{/if}
+										</figcaption>
+									{/if}
+								</figure>
 							{/each}
 						</div>
 					{/if}
@@ -662,6 +689,14 @@
 		margin: 0 -2px;
 		padding: 2px;
 	}
+	.tmf-day-img {
+		margin: 0;
+		flex: 0 0 auto;
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		max-width: 78vw;
+	}
 	.tmf-day-imgs img {
 		height: 132px;
 		width: auto;
@@ -670,6 +705,16 @@
 		object-fit: cover;
 		border-radius: 10px;
 		border: 1px solid rgba(255, 255, 255, 0.12);
+	}
+	.tmf-day-img figcaption {
+		font-size: 0.75rem;
+		color: rgba(255, 255, 255, 0.72);
+		display: flex;
+		flex-wrap: wrap;
+		gap: 2px 8px;
+	}
+	.tmf-img-place {
+		color: rgba(255, 255, 255, 0.55);
 	}
 
 	/* Markører (globalt — MapLibre rendrer utenfor scope). */

@@ -1,6 +1,9 @@
 <!--
   TripDayCalendar — per-dag gjøremålskalender for reise-tema.
   Viser hver dag i reiseperioden med tilhørende dagsjekkliste fra ukeplan.
+  Kan i tillegg vise dagboknotater integrert i dagskortene (diaryEntries +
+  onOpenDiary): kollapset kort får en blyant når dagen har notat, og det
+  ekspanderte kortet viser notatet med redigeringsinngang.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -11,7 +14,13 @@
 	import ChecklistGroupRow from '$lib/components/ui/ChecklistGroupRow.svelte';
 	import TaskContextMenu from '$lib/components/ui/TaskContextMenu.svelte';
 	import MentionAutocomplete from '$lib/components/ui/MentionAutocomplete.svelte';
-	import { tripApi, type TripApi, type ChecklistItem, type DayForecast } from './trip-api';
+	import {
+		tripApi,
+		type TripApi,
+		type ChecklistItem,
+		type DayForecast,
+		type DiaryEntry
+	} from './trip-api';
 
 	interface DayEntry {
 		isoDate: string;
@@ -27,12 +36,25 @@
 		startDate: string; // YYYY-MM-DD
 		endDate: string;   // YYYY-MM-DD
 		dailyWeather?: DayForecast[];
+		/** Dagboknotater — når satt vises dagbok integrert i dagskortene. */
+		diaryEntries?: DiaryEntry[];
+		/** Åpner dagbok-redigering for en dato. Kreves for skriv/rediger-knappene. */
+		onOpenDiary?: (date: string) => void;
 		api?: TripApi;
 	}
 
-	let { themeEmoji, startDate, endDate, dailyWeather = [], api = tripApi }: Props = $props();
+	let {
+		themeEmoji,
+		startDate,
+		endDate,
+		dailyWeather = [],
+		diaryEntries = [],
+		onOpenDiary,
+		api = tripApi
+	}: Props = $props();
 
 	const weatherByDate = $derived(new Map(dailyWeather.map((d) => [d.date, d])));
+	const diaryByDate = $derived(new Map(diaryEntries.map((e) => [e.date, e])));
 
 	function metSymbolToEmoji(symbol: string): string {
 		if (symbol.startsWith('clearsky')) return '☀️';
@@ -300,6 +322,7 @@
 				{@const doneCount = day.checklist?.items.filter((i) => i.checked).length ?? 0}
 				{@const isExpanded = expandedDay === day.isoDate}
 				{@const wx = weatherByDate.get(day.isoDate)}
+				{@const diary = diaryByDate.get(day.isoDate)}
 
 				<div
 					class="tdc-day"
@@ -313,6 +336,9 @@
 						aria-expanded={isExpanded}
 					>
 						<span class="tdc-day-label">{day.label}</span>
+						{#if diary}
+							<span class="tdc-day-diary-mark" title="Dagen har dagboknotat">✏️</span>
+						{/if}
 						{#if wx}
 							<span class="tdc-wx">
 								<span class="tdc-wx-sym">{metSymbolToEmoji(wx.symbolCode)}</span>
@@ -329,6 +355,42 @@
 
 					{#if isExpanded}
 						<div class="tdc-day-body">
+							{#if diary}
+								<button
+									type="button"
+									class="tdc-diary"
+									onclick={() => onOpenDiary?.(day.isoDate)}
+									disabled={!onOpenDiary}
+									data-track="ferie-dagsprogram:rediger-dagbok"
+								>
+									<span class="tdc-diary-head">
+										<span class="tdc-diary-icon">✏️</span>
+										{#if diary.weather?.emoji}
+											<span class="tdc-diary-wx">{diary.weather.emoji}{diary.weather.temp != null ? ` ${Math.round(diary.weather.temp)}°` : ''}</span>
+										{/if}
+										{#if diary.place}
+											<span class="tdc-diary-place">📍 {diary.place}</span>
+										{/if}
+									</span>
+									{#if diary.content}
+										<span class="tdc-diary-text">{diary.content}</span>
+									{/if}
+									{#if diary.images && diary.images.length > 0}
+										<span class="tdc-diary-thumbs">
+											{#each diary.images as img (img.url)}
+												<img src={img.url} alt={img.caption ?? 'Dagbokbilde'} loading="lazy" />
+											{/each}
+										</span>
+									{/if}
+								</button>
+							{:else if onOpenDiary && day.isoDate <= todayIso}
+								<button
+									type="button"
+									class="tdc-diary-write"
+									onclick={() => onOpenDiary?.(day.isoDate)}
+									data-track="ferie-dagsprogram:skriv-dagbok"
+								>✏️ Skriv dagbok</button>
+							{/if}
 							{#if itemCount === 0}
 								<p class="tdc-empty">Ingen gjøremål ennå</p>
 							{:else}
@@ -516,6 +578,85 @@
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
+	}
+
+	/* Blyant i kollapset header når dagen har dagboknotat */
+	.tdc-day-diary-mark {
+		font-size: 0.75rem;
+		line-height: 1;
+		flex-shrink: 0;
+	}
+
+	/* Dagbok-blokk i ekspandert kort */
+	.tdc-diary {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		text-align: left;
+		background: var(--tp-bg-1);
+		border: 1px solid var(--tp-border);
+		border-radius: 8px;
+		padding: 8px 10px;
+		cursor: pointer;
+		color: var(--tp-text);
+		font: inherit;
+	}
+
+	.tdc-diary:disabled {
+		cursor: default;
+	}
+
+	.tdc-diary:hover:not(:disabled) {
+		border-color: var(--tp-border-strong);
+	}
+
+	.tdc-diary-head {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 8px;
+		font-size: 0.76rem;
+		color: var(--tp-text-muted);
+	}
+
+	.tdc-diary-icon {
+		font-size: 0.8rem;
+	}
+
+	.tdc-diary-text {
+		font-size: 0.84rem;
+		color: var(--tp-text-soft);
+	}
+
+	.tdc-diary-thumbs {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px;
+		margin-top: 2px;
+	}
+
+	.tdc-diary-thumbs img {
+		width: 44px;
+		height: 44px;
+		object-fit: cover;
+		border-radius: 6px;
+		border: 1px solid var(--tp-border);
+	}
+
+	.tdc-diary-write {
+		align-self: flex-start;
+		background: none;
+		border: 1px dashed var(--tp-border-strong);
+		border-radius: 8px;
+		color: var(--tp-text-muted);
+		font-size: 0.78rem;
+		padding: 5px 10px;
+		cursor: pointer;
+	}
+
+	.tdc-diary-write:hover {
+		color: var(--tp-text-soft);
+		border-color: var(--tp-accent);
 	}
 
 	.tdc-empty {

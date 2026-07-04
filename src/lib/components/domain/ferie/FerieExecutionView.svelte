@@ -25,12 +25,15 @@
 	import type { ActionPillItem } from '../home/action-pill-types';
 	import {
 		tripApi,
+		geocodeDiaryImages,
 		type TripApi,
 		type FerieTrip,
 		type DiaryWeather,
 		type DiaryEntry,
+		type DiaryImage,
 		type DayGeo,
-		type ImagePin
+		type ImagePin,
+		type DriveRoutes
 	} from '../trip-api';
 
 	interface DayEntry {
@@ -84,19 +87,10 @@
 		return null;
 	}
 
-	function formatDiaryDate(iso: string): string {
-		try {
-			return new Intl.DateTimeFormat('nb-NO', { weekday: 'short', day: '2-digit', month: 'short' }).format(
-				new Date(iso + 'T12:00:00')
-			);
-		} catch {
-			return iso;
-		}
-	}
-
 	/* ── Kartfortelling-tilstand ───────────────────────── */
 	let tripGeoByDay = $state<Record<string, DayGeo>>({});
 	let tripImagePins = $state<ImagePin[]>([]);
+	let tripDriveRoutes = $state<DriveRoutes>({});
 	let mapSection = $state<HTMLElement | null>(null);
 
 	/* ── Dagbok-tilstand ───────────────────────────────── */
@@ -106,7 +100,7 @@
 	let diaryPlace = $state('');
 	let diaryText = $state('');
 	let diaryWeather = $state<DiaryWeather | null>(null);
-	let diaryImages = $state<string[]>([]);
+	let diaryImages = $state<DiaryImage[]>([]);
 	let diarySaving = $state(false);
 	let diaryFetchingWx = $state(false);
 	let diaryError = $state('');
@@ -216,12 +210,15 @@
 				geo = undefined;
 			}
 
+			// Geokod bildesteder også, så bildene kan vises som nåler på kartet.
+			const images = await geocodeDiaryImages(diaryImages, existing?.images, (q) => api.geocode(q));
+
 			const ok = await api.putDiaryEntry(themeId, {
 				date: diaryDate,
 				content: diaryText,
 				place: diaryPlace,
 				weather: diaryWeather ?? undefined,
-				images: diaryImages,
+				images,
 				geo
 			});
 			if (!ok) throw new Error('save failed');
@@ -318,6 +315,7 @@
 			if (profile) {
 				tripGeoByDay = profile.geoByDay ?? {};
 				tripImagePins = profile.imagePins ?? [];
+				tripDriveRoutes = profile.driveRoutes ?? {};
 			}
 		} catch {
 			// best-effort — kartfortellingen klarer seg uten reiseprofil
@@ -348,42 +346,6 @@
 	</section>
 {/if}
 
-<section class="ferie-diary">
-	<div class="trips-head">
-		<h3>Feriedagbok</h3>
-		<button type="button" class="ferie-btn ferie-btn-primary" onclick={() => openEditor()} data-track="ferie-dagbok:ny-dag">
-			+ Ny dag
-		</button>
-	</div>
-
-	{#if diaryEntries.length > 0}
-		<ul class="diary-list">
-			{#each diaryEntries as e (e.date)}
-				<li class="diary-entry">
-					<button type="button" class="diary-entry-main" onclick={() => openEditor(e.date)}>
-						<span class="diary-entry-head">
-							<span class="diary-entry-date">{formatDiaryDate(e.date)}</span>
-							{#if e.weather}<span class="diary-entry-wx">{e.weather.emoji} {e.weather.temp}°</span>{/if}
-							{#if e.place}<span class="diary-entry-place">📍 {e.place}</span>{/if}
-						</span>
-						<span class="diary-entry-text">{e.content}</span>
-						{#if e.images && e.images.length > 0}
-							<span class="diary-entry-thumbs">
-								{#each e.images as img (img)}
-									<img src={img} alt="Dagbokbilde" loading="lazy" />
-								{/each}
-							</span>
-						{/if}
-					</button>
-					<button type="button" class="trip-remove" title="Slett" onclick={() => deleteDiaryEntry(e.date)}>×</button>
-				</li>
-			{/each}
-		</ul>
-	{:else if !diaryLoading}
-		<p class="trips-empty">Ingen dagboknotater ennå. Trykk «+ Ny dag», skriv én setning, og hent gjerne været.</p>
-	{/if}
-</section>
-
 {#if editorOpen}
 	<BottomSheet onclose={closeEditor} ariaLabel="Rediger feriedagbok">
 		<div class="diary-sheet-head">
@@ -412,6 +374,15 @@
 		</div>
 		<div class="diary-sheet-footer">
 			{#if diaryError}<span class="ferie-error">{diaryError}</span>{/if}
+			{#if diaryEntries.some((e) => e.date === diaryDate)}
+				<button
+					type="button"
+					class="ferie-btn diary-delete-btn"
+					disabled={diarySaving}
+					onclick={() => deleteDiaryEntry(diaryDate)}
+					data-track="ferie-dagbok:slett-dag"
+				>Slett dag</button>
+			{/if}
 			<button type="button" class="ferie-btn ferie-btn-primary" disabled={diarySaving} onclick={saveDiaryEntry}>
 				{diarySaving ? 'Lagrer…' : 'Lagre dag'}
 			</button>
@@ -424,16 +395,26 @@
 		{themeId}
 		geoByDay={tripGeoByDay}
 		imagePins={tripImagePins}
+		driveRoutes={tripDriveRoutes}
+		diaryEntries={diaryEntries}
 		{startDate}
 		{endDate}
 		onImagePinsChange={(p) => (tripImagePins = p)}
+		onDriveRoutesChange={(r) => (tripDriveRoutes = r)}
 		{api}
 	/>
 </div>
 
 <section class="ferie-dash">
 	<h3>Dag-for-dag</h3>
-	<TripDayCalendar {themeEmoji} startDate={startDate} endDate={endDate} {api} />
+	<TripDayCalendar
+		{themeEmoji}
+		startDate={startDate}
+		endDate={endDate}
+		diaryEntries={diaryLoading ? [] : diaryEntries}
+		onOpenDiary={(date) => openEditor(date)}
+		{api}
+	/>
 </section>
 <section class="ferie-dash">
 	<h3>Trening &amp; helse</h3>
@@ -468,30 +449,7 @@
 		font-size: 1rem;
 	}
 
-	/* Feriedagbok */
-	.ferie-diary {
-		display: flex;
-		flex-direction: column;
-		gap: 0.6rem;
-		padding: 0.85rem;
-		background: var(--tp-bg-2);
-		border: 1px solid var(--tp-border);
-		border-radius: 12px;
-	}
-	.trips-head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-	}
-	.trips-head h3 {
-		margin: 0;
-		font-size: 1rem;
-	}
-	.trips-empty {
-		margin: 0;
-		font-size: 0.85rem;
-		color: var(--tp-text-soft);
-	}
+	/* Feriedagbok (redigeringspanel) */
 	.diary-form-row {
 		display: flex;
 		flex-wrap: wrap;
@@ -569,59 +527,10 @@
 		border-top: 1px solid var(--tp-border);
 		margin-top: 0.25rem;
 	}
-	.diary-list {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0.4rem;
-	}
-	.diary-entry {
-		display: flex;
-		align-items: flex-start;
-		gap: 0.4rem;
-		border-top: 1px solid var(--tp-border);
-		padding-top: 0.4rem;
-	}
-	.diary-entry-main {
-		flex: 1;
-		background: none;
-		border: none;
-		color: var(--tp-text);
-		text-align: left;
-		cursor: pointer;
-		display: flex;
-		flex-direction: column;
-		gap: 0.15rem;
-		padding: 0;
-	}
-	.diary-entry-head {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.5rem;
-		font-size: 0.78rem;
-		color: var(--tp-text-soft);
-	}
-	.diary-entry-date {
-		font-weight: 600;
-		text-transform: capitalize;
-	}
-	.diary-entry-text {
-		font-size: 0.9rem;
-	}
-	.diary-entry-thumbs {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.3rem;
-		margin-top: 0.2rem;
-	}
-	.diary-entry-thumbs img {
-		width: 48px;
-		height: 48px;
-		object-fit: cover;
-		border-radius: 6px;
-		border: 1px solid var(--tp-border);
+	.diary-delete-btn {
+		margin-right: auto;
+		color: var(--trip-danger, #f87171);
+		border-color: var(--tp-border);
 	}
 
 	/* Delt knappestil */
@@ -640,15 +549,6 @@
 	.ferie-error {
 		color: hsl(0 70% 70%);
 		font-size: 0.85rem;
-	}
-	.trip-remove {
-		background: none;
-		border: none;
-		color: var(--tp-text-muted);
-		font-size: 1.2rem;
-		line-height: 1;
-		cursor: pointer;
-		padding: 0 0.2rem;
 	}
 	input[type='date'],
 	input[type='text'] {
