@@ -1,12 +1,22 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
-import { reflections } from '$lib/db/schema';
+import { reflections, themes } from '$lib/db/schema';
 import { and, asc, desc, eq } from 'drizzle-orm';
+import {
+	findParentFerieLink,
+	isWithinWindow,
+	mergeInheritedDiary,
+	type ParentFerieLink
+} from '$lib/ferie/trip-diary-inherit';
 
-// Feriedagbok: én notat per dag per ferie-tema, lagret i reflections med
+// Feriedagbok: én notat per dag per tema, lagret i reflections med
 // kind='feriedagbok', periodKey=ISO-dato. Sted, vær-snapshot og bilde-URLer
 // ligger i scores-jsonb.
+//
+// Reise-temaer forfremmet fra en ferie deler dagbok med ferien: GET fletter
+// inn feriens notater for datoer i reisevinduet, og PUT skriver tilbake til
+// ferie-temaet — én dagbok per dag, ferien eier den.
 
 const KIND = 'feriedagbok';
 
@@ -28,32 +38,56 @@ function parseGeo(value: unknown): DiaryGeo | undefined {
 	return undefined;
 }
 
-export const GET: RequestHandler = async ({ params, locals }) => {
+type ReflectionRow = typeof reflections.$inferSelect;
+
+function rowToEntry(r: ReflectionRow) {
+	const scores = (r.scores ?? {}) as Record<string, unknown>;
+	const images = Array.isArray(scores.images)
+		? (scores.images as unknown[]).filter((u): u is string => typeof u === 'string')
+		: undefined;
+	return {
+		date: r.periodKey ?? '',
+		content: r.content ?? '',
+		place: typeof scores.place === 'string' ? scores.place : undefined,
+		weather: (scores.weather as DiaryWeather | undefined) ?? undefined,
+		images: images && images.length > 0 ? images : undefined,
+		geo: parseGeo(scores.geo)
+	};
+}
+
+async function fetchEntries(userId: string, themeId: string) {
 	const rows = await db.query.reflections.findMany({
 		where: and(
-			eq(reflections.userId, locals.userId),
-			eq(reflections.themeId, params.id),
+			eq(reflections.userId, userId),
+			eq(reflections.themeId, themeId),
 			eq(reflections.kind, KIND)
 		),
 		orderBy: [asc(reflections.periodKey)]
 	});
+	return rows.map(rowToEntry);
+}
 
-	const entries = rows.map((r) => {
-		const scores = (r.scores ?? {}) as Record<string, unknown>;
-		const images = Array.isArray(scores.images)
-			? (scores.images as unknown[]).filter((u): u is string => typeof u === 'string')
-			: undefined;
-		return {
-			date: r.periodKey,
-			content: r.content,
-			place: typeof scores.place === 'string' ? scores.place : undefined,
-			weather: (scores.weather as DiaryWeather | undefined) ?? undefined,
-			images: images && images.length > 0 ? images : undefined,
-			geo: parseGeo(scores.geo)
-		};
+/** Ferie-temaet dette reise-temaet arver dagbok fra, hvis noe. */
+async function resolveParentLink(userId: string, themeId: string): Promise<ParentFerieLink | null> {
+	const rows = await db.query.themes.findMany({
+		where: eq(themes.userId, userId),
+		columns: { id: true, name: true, tripProfile: true, ferieProfile: true }
 	});
+	return findParentFerieLink(rows, themeId);
+}
 
-	return json({ entries });
+export const GET: RequestHandler = async ({ params, locals }) => {
+	const own = await fetchEntries(locals.userId, params.id);
+
+	const link = await resolveParentLink(locals.userId, params.id);
+	if (!link) return json({ entries: own });
+
+	const parentEntries = await fetchEntries(locals.userId, link.parent.id);
+	const entries = mergeInheritedDiary(own, parentEntries, link.window);
+	return json({
+		entries,
+		inheritsFrom: { themeId: link.parent.id, name: link.parent.name }
+	});
 };
 
 export const PUT: RequestHandler = async ({ params, request, locals }) => {
@@ -71,20 +105,33 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		: [];
 	const geo = parseGeo(body.geo);
 
-	const existing = await db.query.reflections.findFirst({
-		where: and(
-			eq(reflections.userId, locals.userId),
-			eq(reflections.themeId, params.id),
-			eq(reflections.kind, KIND),
-			eq(reflections.periodKey, date)
-		),
-		orderBy: [desc(reflections.createdAt)]
-	});
+	// Reise med ferie-kobling: dagboka bor på ferie-temaet for datoer i vinduet.
+	const link = await resolveParentLink(locals.userId, params.id);
+	const targetThemeId =
+		link && isWithinWindow(date, link.window) ? link.parent.id : params.id;
+
+	const findExisting = (themeId: string) =>
+		db.query.reflections.findFirst({
+			where: and(
+				eq(reflections.userId, locals.userId),
+				eq(reflections.themeId, themeId),
+				eq(reflections.kind, KIND),
+				eq(reflections.periodKey, date)
+			),
+			orderBy: [desc(reflections.createdAt)]
+		});
+
+	const existing = await findExisting(targetThemeId);
 
 	// Tomt notat uten sted/vær/bilder = slett dagen.
 	if (!content && !place && !weather && images.length === 0) {
 		if (existing) {
 			await db.delete(reflections).where(eq(reflections.id, existing.id));
+		}
+		// Rydd også reisens egen rad (f.eks. Ekko-seedet sted), ellers gjenoppstår den.
+		if (targetThemeId !== params.id) {
+			const ownRow = await findExisting(params.id);
+			if (ownRow) await db.delete(reflections).where(eq(reflections.id, ownRow.id));
 		}
 		return json({ success: true, deleted: true });
 	}
@@ -103,7 +150,7 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	} else {
 		await db.insert(reflections).values({
 			userId: locals.userId,
-			themeId: params.id,
+			themeId: targetThemeId,
 			kind: KIND,
 			periodKey: date,
 			content,

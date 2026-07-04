@@ -23,6 +23,7 @@
 	let { themeId, startDate, endDate, geoByDay = {}, api = tripApi }: Props = $props();
 
 	let entries = $state<DiaryEntry[]>([]);
+	let inheritsFrom = $state<{ themeId: string; name: string } | null>(null);
 	let loading = $state(true);
 	let drafts = $state<Record<string, { place: string; content: string; images: string[] }>>({});
 	let savingDay = $state<string | null>(null);
@@ -74,8 +75,11 @@
 	}
 
 	onMount(async () => {
-		const loaded = await api.getDiary(themeId);
-		if (loaded) entries = loaded;
+		const feed = await api.getDiary(themeId);
+		if (feed) {
+			entries = feed.entries;
+			inheritsFrom = feed.inheritsFrom ?? null;
+		}
 		loading = false;
 		buildDrafts();
 	});
@@ -145,6 +149,12 @@
 <div class="trip-diary">
 	<SectionLabel>📔 Reisedagbok</SectionLabel>
 
+	{#if inheritsFrom}
+		<p class="diary-shared-note">
+			Deles med feriedagboka i <a href={`/tema/${inheritsFrom.themeId}`}>«{inheritsFrom.name}»</a>
+		</p>
+	{/if}
+
 	{#if loading}
 		<p class="diary-empty">Laster dagbok …</p>
 	{:else}
@@ -203,6 +213,16 @@
 		color: var(--tp-text-muted);
 		font-size: 0.9rem;
 		margin: 0.5rem 0;
+	}
+
+	.diary-shared-note {
+		color: var(--tp-text-muted);
+		font-size: 0.8rem;
+		margin: 0.25rem 0 0.6rem;
+	}
+
+	.diary-shared-note a {
+		color: var(--tp-text-soft);
 	}
 
 	.diary-day {
