@@ -34,6 +34,7 @@
 	.tema-v3-grid {
 		display: grid;
 		grid-template-columns: repeat(3, 1fr);
+		grid-auto-rows: 1fr; /* like høye rader selv når en label brekker over to linjer */
 		gap: 8px;
 	}
 
@@ -42,7 +43,9 @@
 		display: flex;
 		flex-direction: column;
 		align-items: center;
+		justify-content: center;
 		gap: 4px;
+		min-width: 0;
 		background: hsl(var(--theme-hue) 19% 11%);
 		border: none;
 		border-radius: 14px;
@@ -66,6 +69,7 @@
 	}
 
 	.tema-btn-v3-label {
+		text-align: center;
 		font-size: 0.65rem;
 		font-weight: 700;
 		text-transform: uppercase;
