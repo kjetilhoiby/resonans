@@ -45,6 +45,16 @@ export function dayKey(date: Date): string {
 	return `${y}-${m}-${d}`;
 }
 
+/** Invers av `dayKey`: «YYYY-MM-DD» → Date (lokal tid). Returnerer null for ugyldig nøkkel. */
+export function parseDayKey(key: string): Date | null {
+	const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
+	if (!match) return null;
+	const [, y, m, d] = match;
+	const date = new Date(Number(y), Number(m) - 1, Number(d));
+	// Avvis nøkler som ikke rundtripper (f.eks. «2026-02-31» ruller over til mars).
+	return dayKey(date) === key ? date : null;
+}
+
 /**
  * Norsk etikett for en dag-spacer: «I dag», «I går», ellers «Onsdag 25. juni»
  * (år tas med kun når det avviker fra `now`).

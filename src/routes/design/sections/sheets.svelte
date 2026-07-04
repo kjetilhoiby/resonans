@@ -3,6 +3,9 @@
 	import WidgetConfigSheet from '$lib/components/ui/WidgetConfigSheet.svelte';
 	import ChecklistSheet from '$lib/components/ui/ChecklistSheet.svelte';
 	import FlowSheet from '$lib/components/flows/FlowSheet.svelte';
+	import ChatSearchSheet from '$lib/components/domain/samtaler/ChatSearchSheet.svelte';
+	import ChatCalendarSheet from '$lib/components/domain/samtaler/ChatCalendarSheet.svelte';
+	import ChatStarredSheet from '$lib/components/domain/samtaler/ChatStarredSheet.svelte';
 	import { FLOWS } from '$lib/flows/registry';
 	import {
 		procedureMock,
@@ -14,7 +17,10 @@
 		checklistSheetRoutines,
 		checklistSheetDoneFixture,
 		mockFlowSheetApi,
-		slotCheckinFlow
+		slotCheckinFlow,
+		mockChatSearchApi,
+		mockChatCalendarApi,
+		mockChatStarredApi
 	} from '../mocks';
 
 	const noop = () => {};
@@ -100,6 +106,33 @@
 			oncomplete={noop}
 			api={mockFlowSheetApi}
 		/>
+	</div>
+
+	<h3 class="subsection">ChatSearchSheet — søk i samtalen</h3>
+	<p class="section-desc">
+		Åpnes fra kebabmenyen i dagbok-chatten. Server-side søk via <code>api</code>-prop —
+		mocken her matcher på «hytta». Treff viser dag-etikett og utdrag med markert søkeord.
+	</p>
+	<div class="sheet-stage sheet-stage--tall">
+		<ChatSearchSheet conversationId="demo" onclose={noop} onJump={noop} api={mockChatSearchApi} />
+	</div>
+
+	<h3 class="subsection">ChatCalendarSheet — hopp til dag</h3>
+	<p class="section-desc">
+		MonthCalendar med markørprikk på dager som har meldinger (mock: juni 2026).
+		Trykk på en markert dag hopper til dagen i tråden.
+	</p>
+	<div class="sheet-stage sheet-stage--tall">
+		<ChatCalendarSheet conversationId="demo" onclose={noop} onJump={noop} api={mockChatCalendarApi} />
+	</div>
+
+	<h3 class="subsection">ChatStarredSheet — stjernemerkede meldinger</h3>
+	<p class="section-desc">
+		Samlevisning av stjernemerkede meldinger med dag-etikett og 3-linjers utdrag.
+		Trykk hopper til meldingen i tråden.
+	</p>
+	<div class="sheet-stage sheet-stage--tall">
+		<ChatStarredSheet conversationId="demo" onclose={noop} onJump={noop} api={mockChatStarredApi} />
 	</div>
 
 	<h3 class="subsection">FlowSheet i fokusmodus — slot-sjekkin</h3>

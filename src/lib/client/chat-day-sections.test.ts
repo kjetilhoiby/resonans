@@ -5,6 +5,7 @@ import {
 	formatDayLabel,
 	daySpacerBefore,
 	dayKey,
+	parseDayKey,
 	type DayAware
 } from './chat-day-sections';
 
@@ -54,6 +55,21 @@ describe('dayKey', () => {
 	it('gir nullpolstret YYYY-MM-DD i lokal tid', () => {
 		expect(dayKey(new Date(2026, 0, 5))).toBe('2026-01-05');
 		expect(dayKey(new Date(2026, 11, 31))).toBe('2026-12-31');
+	});
+});
+
+describe('parseDayKey', () => {
+	it('rundtripper med dayKey', () => {
+		const d = new Date(2026, 6, 4);
+		expect(parseDayKey(dayKey(d))?.getTime()).toBe(d.getTime());
+		expect(parseDayKey('2026-01-05')?.getDate()).toBe(5);
+	});
+
+	it('avviser ugyldig format og dager som ruller over', () => {
+		expect(parseDayKey('')).toBeNull();
+		expect(parseDayKey('2026-7-4')).toBeNull();
+		expect(parseDayKey('ikke en dato')).toBeNull();
+		expect(parseDayKey('2026-02-31')).toBeNull();
 	});
 });
 

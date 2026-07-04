@@ -1354,3 +1354,86 @@ export const checklistRowParent: ChecklistItemLike[] = [
 	{ id: 'cp1a', text: 'Kapp bordene', checked: true, sortOrder: 0, parentId: 'cp1' },
 	{ id: 'cp1b', text: 'Skru sammen', checked: false, sortOrder: 1, parentId: 'cp1' }
 ];
+
+// ── Dagbokchat-sheets (søk / kalender / stjernemerkede) ──────────────────────
+// Faste datoer i juni 2026 så demoene er deterministiske.
+export const chatSearchHitsMock: Array<{
+	id: string;
+	role: 'user' | 'assistant';
+	content: string;
+	starred: boolean;
+	timestamp: string;
+}> = [
+	{
+		id: 'hit-1',
+		role: 'user',
+		content: 'Vi var på hytta med to av barna, og jeg tror de har kost seg skikkelig.',
+		starred: true,
+		timestamp: '2026-06-28T09:15:00Z'
+	},
+	{
+		id: 'hit-2',
+		role: 'assistant',
+		content: 'Det høres ut som en fin uke på hytta — nærhet teller også som påfyll.',
+		starred: false,
+		timestamp: '2026-06-28T09:16:00Z'
+	},
+	{
+		id: 'hit-3',
+		role: 'user',
+		content: 'Planla neste hyttetur og handleliste for uka.',
+		starred: false,
+		timestamp: '2026-06-14T18:40:00Z'
+	}
+];
+
+export const mockChatSearchApi = {
+	async searchMessages(_conversationId: string, q: string) {
+		const term = q.toLowerCase();
+		return chatSearchHitsMock.filter((h) => h.content.toLowerCase().includes(term));
+	}
+};
+
+export const chatMessageDaysMock = [
+	{ day: '2026-06-02', count: 3 },
+	{ day: '2026-06-05', count: 7 },
+	{ day: '2026-06-08', count: 2 },
+	{ day: '2026-06-14', count: 5 },
+	{ day: '2026-06-15', count: 1 },
+	{ day: '2026-06-21', count: 4 },
+	{ day: '2026-06-27', count: 6 },
+	{ day: '2026-06-28', count: 9 }
+];
+
+export const mockChatCalendarApi = {
+	async getMessageDays(_conversationId: string, _tz: string) {
+		return chatMessageDaysMock;
+	}
+};
+
+export const chatStarredMock: Array<{
+	id: string;
+	role: 'user' | 'assistant';
+	content: string;
+	timestamp: string;
+}> = [
+	{
+		id: 'star-1',
+		role: 'user',
+		content: 'Sto opp med barna og lot Anita sove lenge i dag.',
+		timestamp: '2026-06-21T08:05:00Z'
+	},
+	{
+		id: 'star-2',
+		role: 'assistant',
+		content:
+			'Hvis målet bare er ett poeng opp neste uke, ville jeg gjort det veldig lite: én kort økt tidlig i uka, avtalt på forhånd.',
+		timestamp: '2026-06-27T11:30:00Z'
+	}
+];
+
+export const mockChatStarredApi = {
+	async getStarred(_conversationId: string) {
+		return chatStarredMock;
+	}
+};

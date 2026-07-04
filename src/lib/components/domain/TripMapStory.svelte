@@ -137,8 +137,8 @@
 	async function loadDiary() {
 		loading = true;
 		try {
-			const entries = await api.getDiary(themeId);
-			dayPins = buildDayPins(entries ?? [], geoByDay);
+			const feed = await api.getDiary(themeId);
+			dayPins = buildDayPins(feed?.entries ?? [], geoByDay);
 		} catch {
 			dayPins = [];
 		} finally {

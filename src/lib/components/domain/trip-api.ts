@@ -368,6 +368,14 @@ export interface DiaryEntry {
 	weather?: DiaryWeather;
 	images?: DiaryImage[];
 	geo?: GeoCoord;
+	/** Sann når notatet (helt eller delvis) er arvet fra feriedagboka. */
+	inherited?: boolean;
+}
+
+/** GET på dagbok-endepunktet. inheritsFrom settes når reisen deler dagbok med en ferie. */
+export interface DiaryFeed {
+	entries: DiaryEntry[];
+	inheritsFrom?: { themeId: string; name: string };
 }
 
 /** PUT på dagbok-endepunktet: kun {date} sletter notatet for dagen. */
@@ -502,8 +510,8 @@ export interface TripApi {
 	getPersons(): Promise<PersonRow[]>;
 
 	/* FerieExecutionView */
-	/** Dagboknotater for ferien. null ved feil. */
-	getDiary(themeId: string): Promise<DiaryEntry[] | null>;
+	/** Dagboknotater for temaet (inkl. arv fra ferie for reise-temaer). null ved feil. */
+	getDiary(themeId: string): Promise<DiaryFeed | null>;
 	/** Lagrer (eller sletter, ved kun {date}) et dagboknotat. false ved feil. */
 	putDiaryEntry(themeId: string, entry: DiaryEntryInput): Promise<boolean>;
 
@@ -688,8 +696,8 @@ export const tripApi: TripApi = {
 	async getDiary(themeId) {
 		const res = await fetch(`/api/tema/${themeId}/ferie/diary`);
 		if (!res.ok) return null;
-		const data = (await res.json()) as { entries: DiaryEntry[] };
-		return data.entries ?? [];
+		const data = (await res.json()) as DiaryFeed;
+		return { entries: data.entries ?? [], inheritsFrom: data.inheritsFrom };
 	},
 
 	async putDiaryEntry(themeId, entry) {
