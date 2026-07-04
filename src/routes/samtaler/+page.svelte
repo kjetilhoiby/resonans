@@ -9,6 +9,7 @@
 	import ConversationContextMenu from '$lib/components/ui/ConversationContextMenu.svelte';
 	import KebabMenu from '$lib/components/ui/KebabMenu.svelte';
 	import ChatSearchSheet from '$lib/components/domain/samtaler/ChatSearchSheet.svelte';
+	import ChatCalendarSheet from '$lib/components/domain/samtaler/ChatCalendarSheet.svelte';
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
 	import { ChatState } from '$lib/client/chat-state.svelte';
 	import type { ChatMessage } from '$lib/client/chat-state.svelte';
@@ -664,6 +665,12 @@
 				conversationId={conversation.id}
 				onclose={() => (activeSheet = null)}
 				onJump={(day, messageId) => void jumpToDay(day, messageId)}
+			/>
+		{:else if activeSheet === 'kalender' && conversation}
+			<ChatCalendarSheet
+				conversationId={conversation.id}
+				onclose={() => (activeSheet = null)}
+				onJump={(day) => void jumpToDay(day)}
 			/>
 		{/if}
 		</PageSection>
