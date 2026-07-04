@@ -1,14 +1,18 @@
 <!--
   SONE 3: Tema
-  Tema-grid med 3-kolonne layout og onboarding-kort.
+  Sideveis sveipbar tema-pager med snap: seks tema per side.
+  Side 1 = de seks prioriterte standard-temaene (sorteringsrekkefølge fra
+  langpress-lista); ferier/reiser og prosjekter får egne sider til slutt.
 -->
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { fly } from 'svelte/transition';
 	import { getContext } from 'svelte';
 	import Icon from '../../ui/Icon.svelte';
+	import PagerDots from '../../ui/PagerDots.svelte';
 	import { startNavMetric } from '$lib/client/nav-metrics';
 	import { HOME_CTX, type HomeContext } from './home-context';
+	import { buildThemePages } from './home-theme-pages';
 	import ThemeButtonGrid from './ThemeButtonGrid.svelte';
 	import PartnerOnboardingCard from './PartnerOnboardingCard.svelte';
 
@@ -20,11 +24,45 @@
 			: { label: 'Opprett partnertema', primary: true, onClick: ctx.openPartnerOnboardingChat },
 		{ label: 'Åpne samtaler', onClick: () => goto('/samtaler') }
 	]);
+
+	// ── Tema-pager ──
+	const themePages = $derived(buildThemePages(ctx.themes));
+	let pagerEl = $state<HTMLElement | null>(null);
+	let currentPage = $state(0);
+
+	$effect(() => {
+		const total = themePages.length;
+		if (total === 0) { currentPage = 0; return; }
+		if (currentPage > total - 1) currentPage = total - 1;
+	});
+
+	const zoneLabel = $derived(themePages[currentPage]?.label ?? 'Temaer');
+
+	function handlePagerScroll() {
+		if (!pagerEl) return;
+		const width = pagerEl.clientWidth;
+		if (width <= 0) return;
+		currentPage = Math.round(pagerEl.scrollLeft / width);
+	}
+
+	function goToPage(index: number) {
+		if (!pagerEl) return;
+		const clamped = Math.max(0, Math.min(index, themePages.length - 1));
+		pagerEl.scrollTo({ left: clamped * pagerEl.clientWidth, behavior: 'smooth' });
+		currentPage = clamped;
+	}
+
+	function selectTheme(theme: { id: string }) {
+		if (ctx.temaPressBlocked) return;
+		startNavMetric('home', 'tema');
+		void goto(`/tema/${theme.id}`);
+	}
 </script>
 
 {#if !ctx.inputExpanded}
 	<section
 		class="zone zone-tema"
+		class:has-pager-dots={themePages.length > 1}
 		aria-label="Temaer"
 		out:fly={{ y: -34, duration: 750 }}
 		in:fly={{ y: -22, duration: 600 }}
@@ -33,7 +71,7 @@
 		onpointerleave={ctx.handleTemaPressEnd}
 		onpointercancel={ctx.handleTemaPressEnd}
 	>
-	<p class="zone-label">Temaer</p>
+	<p class="zone-label">{zoneLabel}</p>
 	{#if ctx.relationshipOnboardingActive}
 		<PartnerOnboardingCard
 			variant="theme"
@@ -44,10 +82,16 @@
 		/>
 	{/if}
 	{#if ctx.themes.length}
-		<ThemeButtonGrid
-			themes={ctx.themes.slice(0, 6)}
-			onSelect={(theme) => { if (ctx.temaPressBlocked) return; startNavMetric('home', 'tema'); void goto(`/tema/${theme.id}`); }}
-		/>
+		<div class="tema-pager" bind:this={pagerEl} onscroll={handlePagerScroll}>
+			{#each themePages as page, pageIndex (page.key)}
+				<div class="tema-page" role="group" aria-label={`${page.label} — side ${pageIndex + 1} av ${themePages.length}`}>
+					<ThemeButtonGrid themes={page.themes} onSelect={selectTheme} />
+				</div>
+			{/each}
+		</div>
+		{#if themePages.length > 1}
+			<PagerDots count={themePages.length} active={currentPage} onSelect={goToPage} ariaLabel="Tema-sider" />
+		{/if}
 	{:else}
 		<button class="onboarding-cta" onclick={() => ctx.openChat('Jeg vil sette opp mitt første tema. Hjelp meg å definere hva jeg ønsker å fokusere på.')}>
 		<span class="cta-icon"><Icon name="goals" size={18} /></span>
@@ -76,6 +120,10 @@
 		-webkit-touch-callout: none;
 	}
 
+	.zone-tema.has-pager-dots {
+		padding-bottom: 22px;
+	}
+
 	/* ── Zone-label ── */
 	.zone-label {
 		font-size: 0.6rem;
@@ -83,6 +131,26 @@
 		letter-spacing: 0.1em;
 		color: #444;
 		margin: 0 0 6px;
+	}
+
+	/* ── Tema-pager (sveip + snap, seks tema per side) ── */
+	.tema-pager {
+		display: flex;
+		overflow-x: auto;
+		overflow-y: hidden;
+		scroll-snap-type: x mandatory;
+		scrollbar-width: none;
+		-webkit-overflow-scrolling: touch;
+	}
+
+	.tema-pager::-webkit-scrollbar {
+		display: none;
+	}
+
+	.tema-page {
+		flex: 0 0 100%;
+		min-width: 100%;
+		scroll-snap-align: start;
 	}
 
 	.onboarding-cta {

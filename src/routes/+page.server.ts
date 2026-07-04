@@ -1,9 +1,48 @@
 import { db } from '$lib/db';
 import { themes, trainingPrograms, programReadinessAssessments, reflections } from '$lib/db/schema';
-import { eq, and, asc, desc, inArray } from 'drizzle-orm';
+import { eq, and, asc, desc, inArray, sql } from 'drizzle-orm';
 import { getUserConversationList } from '$lib/server/conversations';
 import { activeFerieThemes } from '$lib/ferie/active-ferie';
 import type { PageServerLoad } from './$types';
+
+/**
+ * Aktive temaer med kind-klassifisering for tema-sidene på hjemskjermen:
+ * ferie-/reiseprofil → 'ferie', prosjektprofil → 'prosjekt', ellers 'standard'.
+ * Defensiv mot databaser der profil-kolonnene ikke er migrert ennå.
+ */
+async function loadActiveThemes(userId: string) {
+	const baseColumns = {
+		id: themes.id,
+		name: themes.name,
+		emoji: themes.emoji,
+		sortOrder: themes.sortOrder
+	};
+	const whereActive = and(eq(themes.userId, userId), eq(themes.archived, false));
+	try {
+		return await db
+			.select({
+				...baseColumns,
+				kind: sql<'standard' | 'ferie' | 'prosjekt'>`case
+					when ${themes.ferieProfile} is not null or ${themes.tripProfile} is not null then 'ferie'
+					when ${themes.projectProfile} is not null then 'prosjekt'
+					else 'standard'
+				end`
+			})
+			.from(themes)
+			.where(whereActive)
+			.orderBy(asc(themes.sortOrder), asc(themes.createdAt));
+	} catch (error) {
+		const cause = (error as { cause?: unknown })?.cause;
+		const causeMessage = cause instanceof Error ? cause.message : String(cause ?? '');
+		if (!/(ferie_profile|trip_profile|project_profile)/i.test(causeMessage)) throw error;
+		const rows = await db
+			.select(baseColumns)
+			.from(themes)
+			.where(whereActive)
+			.orderBy(asc(themes.sortOrder), asc(themes.createdAt));
+		return rows.map((row) => ({ ...row, kind: 'standard' as const }));
+	}
+}
 
 /**
  * Ferie-temaer med vindu. Defensiv mot databaser der ferie_profile-kolonnen
@@ -30,16 +69,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 	const today = new Date().toISOString().slice(0, 10);
 
 	const [activeThemes, conversationList, activeProgram, ferieThemes] = await Promise.all([
-		db
-			.select({
-				id: themes.id,
-				name: themes.name,
-				emoji: themes.emoji,
-				sortOrder: themes.sortOrder,
-			})
-			.from(themes)
-			.where(and(eq(themes.userId, locals.userId), eq(themes.archived, false)))
-			.orderBy(asc(themes.sortOrder), asc(themes.createdAt)),
+		loadActiveThemes(locals.userId),
 		getUserConversationList(locals.userId, { limit: 6 }),
 		db
 			.select({ id: trainingPrograms.id, name: trainingPrograms.name })

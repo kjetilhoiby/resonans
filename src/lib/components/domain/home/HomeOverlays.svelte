@@ -21,8 +21,12 @@
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
 	import type { Checklist } from '../../composed/ChecklistWidget.svelte';
 	import { HOME_CTX, type HomeContext } from './home-context';
+	import { findPriorityBoundaryId, themeKindOf } from './home-theme-pages';
 
 	const ctx = getContext<HomeContext>(HOME_CTX);
+
+	// Skillelinje etter siste tema på de prioriterte plassene (side 1 i tema-pageren)
+	const priorityBoundaryId = $derived(findPriorityBoundaryId(ctx.themes));
 
 	// Marker dagens slot: 'dismissed' gir chip på hjemskjermen, 'done' skjuler alt
 	function markSlotCheckinSeen(state: 'dismissed' | 'done') {
@@ -209,9 +213,17 @@
 							>
 								<span class="tema-panel-row-icon">{theme.emoji}</span>
 								<span class="tema-panel-row-name">{theme.name}</span>
+								{#if themeKindOf(theme) !== 'standard'}
+									<span class="tema-panel-row-tag">{themeKindOf(theme) === 'ferie' ? 'Ferie' : 'Prosjekt'}</span>
+								{/if}
 								<span class="tema-panel-row-arrow">→</span>
 							</button>
 						</div>
+						{#if theme.id === priorityBoundaryId}
+							<div class="tema-panel-priority-divider" aria-hidden="true">
+								<span>Vises på forsiden ↑</span>
+							</div>
+						{/if}
 					{/if}
 				{/each}
 			</div>
@@ -781,6 +793,42 @@
 	.tema-panel-row-arrow {
 		color: #444;
 		font-size: 0.85rem;
+	}
+
+	.tema-panel-row-tag {
+		flex-shrink: 0;
+		font-size: 0.58rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.07em;
+		color: hsl(var(--theme-hue) 20% 62%);
+		background: hsl(var(--theme-hue) 22% 18%);
+		border-radius: 6px;
+		padding: 2px 6px;
+	}
+
+	/* Skille mellom prioriterte tema (side 1) og resten i sorteringslista */
+	.tema-panel-priority-divider {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin: 2px 4px 8px;
+	}
+
+	.tema-panel-priority-divider::before,
+	.tema-panel-priority-divider::after {
+		content: '';
+		flex: 1;
+		height: 1px;
+		background: #2a2a2a;
+	}
+
+	.tema-panel-priority-divider span {
+		font-size: 0.58rem;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: #555;
+		white-space: nowrap;
 	}
 
 	/* Tema-langpress-meny */
