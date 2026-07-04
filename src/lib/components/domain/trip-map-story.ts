@@ -4,7 +4,7 @@
  * så den kan enhetstestes uten DOM/MapLibre.
  */
 
-import type { DiaryEntry, DayGeo } from './trip-api';
+import type { DiaryEntry, DayGeo, DiaryImage, DriveRoutes } from './trip-api';
 
 /** En dag i kartfortellingen: et sted på kartet med oneliner + bilder. */
 export interface DayPin {
@@ -13,7 +13,7 @@ export interface DayPin {
 	lon: number;
 	place?: string;
 	content: string;
-	images: string[];
+	images: DiaryImage[];
 	weatherEmoji?: string;
 	weatherTemp?: number;
 }
@@ -52,6 +52,52 @@ export function buildDayPins(
 	}
 	pins.sort((a, b) => a.date.localeCompare(b.date));
 	return pins;
+}
+
+/**
+ * Den tegnbare ruten for kartfortellingen: tett koordinatliste (dagpunkter med
+ * eventuelle kjørespor flettet inn mellom dem), pluss hvor på ruten hvert
+ * dagpunkt ligger — som indeks i `coords` og som andel (0–1) av total lengde.
+ */
+export interface StoryPath {
+	coords: Array<[number, number]>;
+	pinIndices: number[];
+	pinFractions: number[];
+}
+
+/**
+ * Bygger ruten mellom dagpunktene, med importerte kjørespor (driveRoutes,
+ * [lon, lat] per ISO-dato) flettet inn der de finnes — så linja følger faktisk
+ * kjørte veier i stedet for luftlinje. For hvert segment (pin i-1 → pin i)
+ * flettes sporene for dagene i intervallet [dato(i-1), dato(i)] inn i
+ * kronologisk rekkefølge; hver dags spor brukes bare én gang. Spor utenfor
+ * pin-vinduet ignoreres (de har ingen forankring i fortellingen).
+ */
+export function buildStoryPath(dayPins: DayPin[], driveRoutes: DriveRoutes = {}): StoryPath {
+	const coords: Array<[number, number]> = [];
+	const pinIndices: number[] = [];
+	if (dayPins.length === 0) return { coords, pinIndices, pinFractions: [] };
+
+	const routeDays = Object.keys(driveRoutes).sort();
+	const consumed = new Set<string>();
+
+	coords.push([dayPins[0].lon, dayPins[0].lat]);
+	pinIndices.push(0);
+
+	for (let i = 1; i < dayPins.length; i++) {
+		const fromDate = dayPins[i - 1].date;
+		const toDate = dayPins[i].date;
+		for (const day of routeDays) {
+			if (consumed.has(day) || day < fromDate || day > toDate) continue;
+			consumed.add(day);
+			for (const c of driveRoutes[day]) coords.push([c[0], c[1]]);
+		}
+		coords.push([dayPins[i].lon, dayPins[i].lat]);
+		pinIndices.push(coords.length - 1);
+	}
+
+	const fractions = cumulativeFractions(coords);
+	return { coords, pinIndices, pinFractions: pinIndices.map((idx) => fractions[idx]) };
 }
 
 /**

@@ -23,7 +23,8 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		'accountIds',
 		'overnightStays',
 		'geoByDay',
-		'imagePins'
+		'imagePins',
+		'driveRoutes'
 	];
 
 	const existing = await db.query.themes.findFirst({

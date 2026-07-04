@@ -100,12 +100,12 @@ describe('mergeDiaryDay', () => {
 
 	it('lar ferien vinne felt-for-felt ved konflikt', () => {
 		const merged = mergeDiaryDay(
-			entry('2026-06-29', { content: 'Ferie-tekst', place: 'Resdalen', images: ['a.jpg'] }),
-			entry('2026-06-29', { content: 'Reise-tekst', place: 'Rindal', images: ['b.jpg'] })
+			entry('2026-06-29', { content: 'Ferie-tekst', place: 'Resdalen', images: [{ url: 'a.jpg' }] }),
+			entry('2026-06-29', { content: 'Reise-tekst', place: 'Rindal', images: [{ url: 'b.jpg' }] })
 		);
 		expect(merged?.content).toBe('Ferie-tekst');
 		expect(merged?.place).toBe('Resdalen');
-		expect(merged?.images).toEqual(['a.jpg']);
+		expect(merged?.images).toEqual([{ url: 'a.jpg' }]);
 	});
 
 	it('beholder reisens eget notat når ferien mangler dagen', () => {

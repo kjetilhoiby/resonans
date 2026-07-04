@@ -30,12 +30,21 @@ export interface DiaryThemeLike {
 	} | null;
 }
 
+/** Dagbokbilde i objektform (bildetekst/sted/nål — se dagbok-endepunktet). */
+export interface DiaryImageField {
+	url: string;
+	caption?: string;
+	place?: string;
+	geo?: unknown;
+	geoManual?: boolean;
+}
+
 export interface DiaryEntryFields {
 	date: string;
 	content: string;
 	place?: string;
 	weather?: unknown;
-	images?: string[];
+	images?: DiaryImageField[];
 	geo?: unknown;
 }
 

@@ -382,6 +382,7 @@
 				{themeId}
 				geoByDay={tripProfile?.geoByDay}
 				imagePins={tripProfile?.imagePins ?? []}
+				driveRoutes={tripProfile?.driveRoutes ?? {}}
 				startDate={tripProfile?.startDate}
 				endDate={tripProfile?.endDate}
 				center={tripProfile?.lat != null && tripProfile?.lng != null
@@ -389,6 +390,9 @@
 					: null}
 				onImagePinsChange={(p) => {
 					if (tripProfile) tripProfile = { ...tripProfile, imagePins: p };
+				}}
+				onDriveRoutesChange={(r) => {
+					if (tripProfile) tripProfile = { ...tripProfile, driveRoutes: r };
 				}}
 				{api}
 			/>

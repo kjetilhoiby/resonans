@@ -10,7 +10,15 @@
 	import { onMount } from 'svelte';
 	import SectionLabel from '../ui/SectionLabel.svelte';
 	import DiaryImages from './DiaryImages.svelte';
-	import { tripApi, type TripApi, type DiaryEntry, type DayGeo } from './trip-api';
+	import {
+		tripApi,
+		geocodeDiaryImages,
+		type TripApi,
+		type DiaryEntry,
+		type DiaryImage,
+		type DayGeo,
+		type GeoCoord
+	} from './trip-api';
 
 	interface Props {
 		themeId: string;
@@ -25,7 +33,7 @@
 	let entries = $state<DiaryEntry[]>([]);
 	let inheritsFrom = $state<{ themeId: string; name: string } | null>(null);
 	let loading = $state(true);
-	let drafts = $state<Record<string, { place: string; content: string; images: string[] }>>({});
+	let drafts = $state<Record<string, { place: string; content: string; images: DiaryImage[] }>>({});
 	let savingDay = $state<string | null>(null);
 
 	function enumerateDays(from: string, to: string): string[] {
@@ -89,10 +97,9 @@
 		if (!d) return;
 		const content = d.content.trim();
 		const place = d.place.trim();
-		const images = d.images ?? [];
 		const existing = entryFor(date);
 		// Ingen endring verdt å lagre, og ingenting fra før → hopp over.
-		if (!content && !place && images.length === 0 && !existing) return;
+		if (!content && !place && (d.images ?? []).length === 0 && !existing) return;
 
 		savingDay = date;
 
@@ -111,6 +118,9 @@
 			const gd = geoByDay[date];
 			if (gd?.lat != null && gd?.lon != null) geo = { lat: gd.lat, lon: gd.lon };
 		}
+
+		// Geokod bildesteder også, så bildene kan vises som nåler på kartet.
+		const images = await geocodeDiaryImages(d.images ?? [], existing?.images, (q) => api.geocode(q));
 
 		const ok = await api.putDiaryEntry(themeId, {
 			date,
@@ -143,6 +153,16 @@
 	function fmtDay(iso: string): string {
 		const d = new Date(`${iso}T00:00:00`);
 		return d.toLocaleDateString('nb', { weekday: 'short', day: 'numeric', month: 'short' });
+	}
+
+	// Fallback-senter for bilde-kartvelgeren: dagens notat-koordinat, ellers
+	// turens geo-kontekst for datoen.
+	function dayCenter(date: string): GeoCoord | null {
+		const e = entryFor(date);
+		if (e?.geo) return e.geo;
+		const g = geoByDay[date];
+		if (g?.lat != null && g?.lon != null) return { lat: g.lat, lon: g.lon };
+		return null;
 	}
 </script>
 
@@ -196,6 +216,7 @@
 					<DiaryImages
 						bind:images={drafts[date].images}
 						onChange={() => saveDay(date)}
+						defaultCenter={dayCenter(date)}
 						track="reise-dagbok"
 					/>
 				</div>

@@ -220,6 +220,9 @@ export const themes = pgTable('themes', {
 			source: 'observed' | 'declared' | 'overnight';
 			liveSessionId?: string; // satt når kilden er en observert kjøretur
 		}>;
+		// Kjørespor importert fra Tesla (drive_state-breadcrumbs), per ISO-dato som
+		// [lon, lat]-par. Frosset her så kartfortellingen overlever event-tynning.
+		driveRoutes?: Record<string, Array<[number, number]>>;
 	}>(),
 	// Ferie-tema: oppholdsplan (dekning per familiemedlem per dag) + grove reise-blokker.
 	// Subtraktiv modell: blank celle = normal dekning (skole/bhg/aks åpen / voksen på jobb),

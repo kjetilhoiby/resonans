@@ -42,6 +42,9 @@ export interface ImagePin {
 	date?: string;
 }
 
+/** Kjørespor importert fra Tesla, per ISO-dato: [lon, lat]-par (GeoJSON-rekkefølge). */
+export type DriveRoutes = Record<string, Array<[number, number]>>;
+
 export interface TripProfile {
 	destination?: string;
 	country?: string;
@@ -55,6 +58,8 @@ export interface TripProfile {
 	geoByDay?: Record<string, DayGeo>;
 	/** Bilder plassert som nåler på kartet (kartfortelling). */
 	imagePins?: ImagePin[];
+	/** Kjørespor importert fra Tesla (kartfortellingen tegner linja langs disse). */
+	driveRoutes?: DriveRoutes;
 }
 
 /* ── Delte typer: ferieprofil ────────────────────────── */
@@ -341,12 +346,27 @@ export interface GeoCoord {
 	lon: number;
 }
 
+/**
+ * Et dagbokbilde med valgfri bildetekst og sted. Stedet geokodes ved lagring
+ * (geo) slik at bildet kan vises som egen nål i kartfortellingen. Eldre notater
+ * har rene URL-strenger i DB — API-et normaliserer til denne formen ved lesing.
+ * `geoManual` = nålen er satt/korrigert i kartet av brukeren; da rører
+ * geokodingen aldri koordinatet.
+ */
+export interface DiaryImage {
+	url: string;
+	caption?: string;
+	place?: string;
+	geo?: GeoCoord;
+	geoManual?: boolean;
+}
+
 export interface DiaryEntry {
 	date: string;
 	content: string;
 	place?: string;
 	weather?: DiaryWeather;
-	images?: string[];
+	images?: DiaryImage[];
 	geo?: GeoCoord;
 	/** Sann når notatet (helt eller delvis) er arvet fra feriedagboka. */
 	inherited?: boolean;
@@ -364,7 +384,7 @@ export interface DiaryEntryInput {
 	content?: string;
 	place?: string;
 	weather?: DiaryWeather;
-	images?: string[];
+	images?: DiaryImage[];
 	geo?: GeoCoord;
 }
 
@@ -373,6 +393,41 @@ export interface PromoteTripInput {
 	place?: string;
 	startDate?: string;
 	endDate?: string;
+}
+
+/**
+ * Geokoder bildesteder før lagring av et dagboknotat. Bare bilder med
+ * nytt/endret sted geokodes (sammenlignet mot forrige lagrede versjon, matchet
+ * på url); ellers gjenbrukes lagret koordinat. Tomt sted fjerner koordinatet.
+ * Bilder med manuelt satt nål (geoManual) røres aldri av geokodingen —
+ * koordinatet beholdes uansett hva som skjer med stedsteksten.
+ */
+export async function geocodeDiaryImages(
+	images: DiaryImage[],
+	existing: DiaryImage[] | undefined,
+	geocode: (query: string) => Promise<GeoPoint | null>
+): Promise<DiaryImage[]> {
+	const prevByUrl = new Map((existing ?? []).map((img) => [img.url, img]));
+	const out: DiaryImage[] = [];
+	for (const img of images) {
+		const place = img.place?.trim();
+		if (img.geoManual && img.geo) {
+			out.push({ ...img, place: place || undefined });
+			continue;
+		}
+		if (!place) {
+			out.push({ ...img, place: undefined, geo: undefined, geoManual: undefined });
+			continue;
+		}
+		const prev = prevByUrl.get(img.url);
+		if (prev?.geo && prev.place === place) {
+			out.push({ ...img, place, geo: prev.geo, geoManual: prev.geoManual });
+			continue;
+		}
+		const g = await geocode(place);
+		out.push({ ...img, place, geo: g ? { lat: g.lat, lon: g.lon } : undefined, geoManual: undefined });
+	}
+	return out;
 }
 
 /* ── API-interface ───────────────────────────────────── */
@@ -395,6 +450,8 @@ export interface TripApi {
 	getTripProfile(themeId: string): Promise<TripProfile | null>;
 	/** Lagrer reiseprofilen. false ved feil. */
 	saveTripProfile(themeId: string, profile: TripProfile): Promise<boolean>;
+	/** Importerer kjørespor fra Tesla inn i tripProfile.driveRoutes. null ved feil. */
+	importTeslaRoutes(themeId: string): Promise<{ days: number; points: number } | null>;
 
 	/* TripBudget */
 	/** Transaksjoner i periode og/eller via søk. null ved feil. */
@@ -516,6 +573,12 @@ export const tripApi: TripApi = {
 			body: JSON.stringify(profile)
 		});
 		return res.ok;
+	},
+
+	async importTeslaRoutes(themeId) {
+		const res = await fetch(`/api/tema/${themeId}/trip/import-tesla-routes`, { method: 'POST' });
+		if (!res.ok) return null;
+		return (await res.json()) as { days: number; points: number };
 	},
 
 	async getTransactions(query) {

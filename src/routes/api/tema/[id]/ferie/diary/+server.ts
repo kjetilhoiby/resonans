@@ -38,19 +38,50 @@ function parseGeo(value: unknown): DiaryGeo | undefined {
 	return undefined;
 }
 
+interface DiaryImage {
+	url: string;
+	caption?: string;
+	place?: string;
+	geo?: DiaryGeo;
+	geoManual?: boolean;
+}
+
+// Bilder lagres som objekter med valgfri bildetekst/sted, men eldre notater har
+// rene URL-strenger — begge former godtas og normaliseres til objektform.
+function parseImages(value: unknown): DiaryImage[] {
+	if (!Array.isArray(value)) return [];
+	const out: DiaryImage[] = [];
+	for (const raw of value) {
+		if (typeof raw === 'string') {
+			out.push({ url: raw });
+			continue;
+		}
+		if (!raw || typeof raw !== 'object') continue;
+		const img = raw as Record<string, unknown>;
+		if (typeof img.url !== 'string' || !img.url) continue;
+		const entry: DiaryImage = { url: img.url };
+		if (typeof img.caption === 'string' && img.caption.trim()) entry.caption = img.caption.trim();
+		if (typeof img.place === 'string' && img.place.trim()) entry.place = img.place.trim();
+		const geo = parseGeo(img.geo);
+		if (geo) entry.geo = geo;
+		// Manuelt satt nål (kartvelger) — bare meningsfullt sammen med koordinat.
+		if (geo && img.geoManual === true) entry.geoManual = true;
+		out.push(entry);
+	}
+	return out;
+}
+
 type ReflectionRow = typeof reflections.$inferSelect;
 
 function rowToEntry(r: ReflectionRow) {
 	const scores = (r.scores ?? {}) as Record<string, unknown>;
-	const images = Array.isArray(scores.images)
-		? (scores.images as unknown[]).filter((u): u is string => typeof u === 'string')
-		: undefined;
+	const images = parseImages(scores.images);
 	return {
 		date: r.periodKey ?? '',
 		content: r.content ?? '',
 		place: typeof scores.place === 'string' ? scores.place : undefined,
 		weather: (scores.weather as DiaryWeather | undefined) ?? undefined,
-		images: images && images.length > 0 ? images : undefined,
+		images: images.length > 0 ? images : undefined,
 		geo: parseGeo(scores.geo)
 	};
 }
@@ -100,9 +131,7 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	const content = typeof body.content === 'string' ? body.content.trim() : '';
 	const place = typeof body.place === 'string' ? body.place.trim() : '';
 	const weather = body.weather && typeof body.weather === 'object' ? (body.weather as DiaryWeather) : undefined;
-	const images = Array.isArray(body.images)
-		? (body.images as unknown[]).filter((u): u is string => typeof u === 'string')
-		: [];
+	const images = parseImages(body.images);
 	const geo = parseGeo(body.geo);
 
 	// Reise med ferie-kobling: dagboka bor på ferie-temaet for datoer i vinduet.

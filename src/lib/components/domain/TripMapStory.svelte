@@ -3,8 +3,10 @@
 
   Tegner reisen som en animert linje fra sted til sted (én nål per dagboknotat
   med oneliner + bilder i popup), pluss frie «bilde-nåler» man kan plassere
-  hvor som helst på kartet. Dag-nålenes koordinat kommer fra notatets geokodede
-  sted (eller turens geoByDay). Bilde-nåler lagres på tripProfile.imagePins.
+  hvor som helst på kartet og dagbokbilder med eget sted. Dag-nålenes koordinat
+  kommer fra notatets geokodede sted (eller turens geoByDay). Bilde-nåler
+  lagres på tripProfile.imagePins. Med importerte Tesla-kjørespor
+  (tripProfile.driveRoutes) følger linja faktisk kjørte veier.
 
   Gjenbruker MapLibre + den delte mørke basiskart-stilen (RESONANS_DARK_MAP_STYLE).
 -->
@@ -14,20 +16,34 @@
 	import { RESONANS_DARK_MAP_STYLE, mapTransformRequest } from '../charts/mapStyle';
 	import SectionLabel from '../ui/SectionLabel.svelte';
 	import { uploadImage } from '$lib/client/upload-image';
-	import { buildDayPins, partialPath, type DayPin } from './trip-map-story';
-	import { tripApi, type TripApi, type DayGeo, type ImagePin, type GeoCoord } from './trip-api';
+	import { buildDayPins, buildStoryPath, partialPath, type DayPin } from './trip-map-story';
+	import {
+		tripApi,
+		type TripApi,
+		type DayGeo,
+		type DiaryEntry,
+		type DriveRoutes,
+		type ImagePin,
+		type GeoCoord
+	} from './trip-api';
 	import TripMapStoryFull from './TripMapStoryFull.svelte';
 
 	interface Props {
 		themeId: string;
 		geoByDay?: Record<string, DayGeo>;
 		imagePins?: ImagePin[];
+		/** Importerte kjørespor per ISO-dato ([lon, lat]). */
+		driveRoutes?: DriveRoutes;
+		/** Dagboknotater fra forelderen — når satt brukes disse (reaktivt) i stedet for egen henting. */
+		diaryEntries?: DiaryEntry[] | null;
 		center?: GeoCoord | null;
 		/** Turens dato-vindu — gir «N av M dager» i fullskjerm-bokendene. */
 		startDate?: string;
 		endDate?: string;
 		/** Kalles når bilde-nåler endres, så forelderen kan oppdatere tripProfile. */
 		onImagePinsChange?: (pins: ImagePin[]) => void;
+		/** Kalles når kjørespor er importert, så forelderen kan oppdatere tripProfile. */
+		onDriveRoutesChange?: (routes: DriveRoutes) => void;
 		api?: TripApi;
 		height?: number;
 	}
@@ -36,10 +52,13 @@
 		themeId,
 		geoByDay = {},
 		imagePins = [],
+		driveRoutes = {},
+		diaryEntries = null,
 		center = null,
 		startDate,
 		endDate,
 		onImagePinsChange,
+		onDriveRoutesChange,
 		api = tripApi,
 		height = 320
 	}: Props = $props();
@@ -47,21 +66,40 @@
 	let container = $state<HTMLDivElement | null>(null);
 	let dayPins = $state<DayPin[]>([]);
 	let pins = $state<ImagePin[]>([...imagePins]);
+	let routes = $state<DriveRoutes>({ ...driveRoutes });
 	let loading = $state(true);
 	let placing = $state(false);
 	let uploading = $state(false);
+	let importingRoutes = $state(false);
+	let importHint = $state('');
 	let error = $state('');
 	let fullscreen = $state(false);
 
 	let map: MapLibreMap | null = null;
+	let mapLoaded = $state(false);
 	let initStarted = false;
 	let dayMarkers: MapLibreMarker[] = [];
+	let diaryImageMarkers: MapLibreMarker[] = [];
 	const imageMarkers = new Map<string, MapLibreMarker>();
 	let fileInput: HTMLInputElement | null = null;
 	let pendingLngLat: { lat: number; lon: number } | null = null;
 	let animTimer: number | null = null;
 
 	const hasContent = $derived(dayPins.length > 0 || pins.length > 0 || center != null);
+	const storyPath = $derived(buildStoryPath(dayPins, routes));
+
+	// Dagboknotater fra forelderen holder dag-nålene i synk med redigering.
+	$effect(() => {
+		if (diaryEntries) {
+			dayPins = buildDayPins(diaryEntries, geoByDay);
+			loading = false;
+		}
+	});
+
+	// Kjørespor fra forelderen (lastes asynkront der).
+	$effect(() => {
+		routes = { ...driveRoutes };
+	});
 
 	function escapeHtml(s: string): string {
 		return s.replace(/[&<>"']/g, (c) =>
@@ -90,7 +128,7 @@
 		const text = pin.content ? `<p class="tms-pop-text">${escapeHtml(pin.content)}</p>` : '';
 		const imgs = pin.images.length
 			? `<div class="tms-pop-imgs">${pin.images
-					.map((u) => `<img src="${escapeHtml(u)}" alt="" loading="lazy" />`)
+					.map((img) => `<img src="${escapeHtml(img.url)}" alt="${escapeHtml(img.caption ?? '')}" loading="lazy" />`)
 					.join('')}</div>`
 			: '';
 		return `<div class="tms-pop">${head}${text}${imgs}</div>`;
@@ -111,21 +149,15 @@
 	async function initMap() {
 		if (!container || typeof window === 'undefined' || initStarted) return;
 		initStarted = true;
-		const { Map, Marker, Popup, LngLatBounds } = await import('maplibre-gl');
+		const { Map, Marker, Popup } = await import('maplibre-gl');
 
-		const dayCoords = dayPins.map((p) => [p.lon, p.lat] as [number, number]);
-		const all: Array<[number, number]> = [
-			...dayCoords,
-			...pins.map((p) => [p.lon, p.lat] as [number, number]),
-			...(center ? [[center.lon, center.lat] as [number, number]] : [])
-		];
-		const start = all[0] ?? [10.75, 59.91];
+		const start = storyPath.coords[0] ?? (center ? [center.lon, center.lat] : [10.75, 59.91]);
 
 		map = new Map({
 			container,
 			style: RESONANS_DARK_MAP_STYLE,
 			transformRequest: mapTransformRequest,
-			center: start,
+			center: start as [number, number],
 			zoom: 5,
 			attributionControl: false
 		});
@@ -153,32 +185,10 @@
 				paint: { 'line-color': '#7c8ef5', 'line-width': 3 }
 			});
 
-			// Dag-nåler, nummerert i rekkefølge.
-			dayPins.forEach((pin, i) => {
-				const el = document.createElement('div');
-				el.className = 'tms-day-marker';
-				el.textContent = String(i + 1);
-				const marker = new Marker({ element: el })
-					.setLngLat([pin.lon, pin.lat])
-					.setPopup(new Popup({ offset: 18, maxWidth: '240px' }).setHTML(dayPopupHtml(pin)))
-					.addTo(map!);
-				dayMarkers.push(marker);
-			});
-
 			// Eksisterende bilde-nåler.
 			for (const pin of pins) addImageMarker(pin, Marker, Popup);
 
-			// Tilpass utsnitt.
-			if (all.length >= 2) {
-				const bounds = new LngLatBounds(all[0], all[0]);
-				for (const c of all) bounds.extend(c);
-				map.fitBounds(bounds, { padding: 56, maxZoom: 12 });
-			} else if (all.length === 1) {
-				map.setCenter(all[0]);
-				map.setZoom(9);
-			}
-
-			animateRoute();
+			mapLoaded = true;
 		});
 
 		// Plassering av bilde-nål: klikk på kartet → velg bilde.
@@ -188,6 +198,78 @@
 			fileInput?.click();
 		});
 	}
+
+	// Tegn fortellingen (dag-nåler, dagbokbilde-nåler, utsnitt, ruteanimasjon).
+	// Kjøres på nytt når dagbok eller kjørespor endres, så kartet følger med.
+	async function drawStory() {
+		if (!map || !mapLoaded) return;
+		const { Marker, Popup, LngLatBounds } = await import('maplibre-gl');
+		if (!map) return;
+
+		for (const m of dayMarkers) m.remove();
+		dayMarkers = [];
+		for (const m of diaryImageMarkers) m.remove();
+		diaryImageMarkers = [];
+
+		dayPins.forEach((pin, i) => {
+			const el = document.createElement('div');
+			el.className = 'tms-day-marker';
+			el.textContent = String(i + 1);
+			const marker = new Marker({ element: el })
+				.setLngLat([pin.lon, pin.lat])
+				.setPopup(new Popup({ offset: 18, maxWidth: '240px' }).setHTML(dayPopupHtml(pin)))
+				.addTo(map!);
+			dayMarkers.push(marker);
+		});
+
+		// Dagbokbilder med eget geokodet sted vises som bilde-nåler.
+		for (const pin of dayPins) {
+			for (const img of pin.images) {
+				if (!img.geo) continue;
+				const el = document.createElement('div');
+				el.className = 'tms-img-marker';
+				const imgEl = document.createElement('img');
+				imgEl.src = img.url;
+				imgEl.alt = img.caption ?? '';
+				el.appendChild(imgEl);
+				const capt = [img.caption, img.place ? `📍 ${img.place}` : '']
+					.filter(Boolean)
+					.map((t) => `<p class="tms-pop-text">${escapeHtml(t!)}</p>`)
+					.join('');
+				const popup = new Popup({ offset: 14, maxWidth: '220px' }).setHTML(
+					`<div class="tms-pop"><img class="tms-pop-single" src="${escapeHtml(img.url)}" alt="" />${capt}</div>`
+				);
+				const marker = new Marker({ element: el })
+					.setLngLat([img.geo.lon, img.geo.lat])
+					.setPopup(popup)
+					.addTo(map!);
+				diaryImageMarkers.push(marker);
+			}
+		}
+
+		// Tilpass utsnitt til alt innhold (rute, nåler, senter).
+		const all: Array<[number, number]> = [
+			...storyPath.coords,
+			...pins.map((p) => [p.lon, p.lat] as [number, number]),
+			...(center ? [[center.lon, center.lat] as [number, number]] : [])
+		];
+		if (all.length >= 2) {
+			const bounds = new LngLatBounds(all[0], all[0]);
+			for (const c of all) bounds.extend(c);
+			map.fitBounds(bounds, { padding: 56, maxZoom: 12 });
+		} else if (all.length === 1) {
+			map.setCenter(all[0]);
+			map.setZoom(9);
+		}
+
+		animateRoute();
+	}
+
+	$effect(() => {
+		// Reaktive avhengigheter: fortellingens innhold + kartets klar-status.
+		void storyPath;
+		if (mapLoaded) void drawStory();
+	});
 
 	function setRouteData(coords: Array<[number, number]>) {
 		const src = map?.getSource('story-route') as
@@ -201,8 +283,12 @@
 	}
 
 	function animateRoute() {
-		if (!map || dayPins.length < 2) return;
-		const coords = dayPins.map((p) => [p.lon, p.lat] as [number, number]);
+		if (!map) return;
+		const coords = storyPath.coords;
+		if (coords.length < 2) {
+			setRouteData(coords);
+			return;
+		}
 		const durationMs = Math.min(800 + dayPins.length * 350, 4000);
 		const t0 = performance.now();
 		if (animTimer) cancelAnimationFrame(animTimer);
@@ -284,10 +370,37 @@
 		}
 	}
 
+	// Importer kjørespor fra Tesla — linja følger da faktisk kjørte veier.
+	async function importRoutes() {
+		importingRoutes = true;
+		importHint = '';
+		error = '';
+		try {
+			const result = await api.importTeslaRoutes(themeId);
+			if (!result) {
+				error = 'Klarte ikke hente kjøreruter. Er Tesla koblet til?';
+				return;
+			}
+			if (result.days === 0) {
+				importHint = 'Fant ingen kjøreturer i perioden.';
+				return;
+			}
+			const profile = await api.getTripProfile(themeId);
+			routes = profile?.driveRoutes ?? routes;
+			onDriveRoutesChange?.(routes);
+			importHint = `Hentet kjørespor for ${result.days} ${result.days === 1 ? 'dag' : 'dager'}.`;
+		} catch {
+			error = 'Klarte ikke hente kjøreruter.';
+		} finally {
+			importingRoutes = false;
+		}
+	}
+
 	onMount(() => {
-		void loadDiary().then(() => {
+		void (async () => {
+			if (!diaryEntries) await loadDiary();
 			if (container && hasContent && !map) void initMap();
-		});
+		})();
 	});
 
 	// Init når data er klart og container montert (dekker rekkefølge-variasjoner).
@@ -301,9 +414,11 @@
 		if (animTimer) cancelAnimationFrame(animTimer);
 		animTimer = null;
 		dayMarkers = [];
+		diaryImageMarkers = [];
 		imageMarkers.clear();
 		map?.remove();
 		map = null;
+		mapLoaded = false;
 		initStarted = false;
 	}
 
@@ -343,6 +458,15 @@
 				<button
 					type="button"
 					class="tms-btn"
+					onclick={importRoutes}
+					disabled={importingRoutes}
+					data-track="reise-kart:importer-kjoreruter"
+				>
+					{importingRoutes ? 'Henter…' : '🚗 Kjøreruter'}
+				</button>
+				<button
+					type="button"
+					class="tms-btn"
 					class:tms-btn-active={placing}
 					onclick={() => (placing = !placing)}
 					disabled={uploading}
@@ -356,6 +480,9 @@
 
 	{#if placing}
 		<p class="tms-hint">Trykk på kartet der bildet hører hjemme.</p>
+	{/if}
+	{#if importHint}
+		<p class="tms-hint">{importHint}</p>
 	{/if}
 	{#if error}
 		<p class="tms-error">{error}</p>
@@ -388,7 +515,14 @@
 </div>
 
 {#if fullscreen}
-	<TripMapStoryFull {dayPins} imagePins={pins} {startDate} {endDate} onclose={closeFullscreen} />
+	<TripMapStoryFull
+		{dayPins}
+		imagePins={pins}
+		driveRoutes={routes}
+		{startDate}
+		{endDate}
+		onclose={closeFullscreen}
+	/>
 {/if}
 
 <style>
@@ -406,6 +540,8 @@
 	}
 	.tms-actions {
 		display: flex;
+		flex-wrap: wrap;
+		justify-content: flex-end;
 		gap: 6px;
 	}
 	.tms-btn {
