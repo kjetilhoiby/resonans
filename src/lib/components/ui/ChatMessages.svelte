@@ -104,7 +104,7 @@
 			{/if}
 		</div>
 	{:else if msg.role === 'user'}
-		<div class="cm-row cm-row-user">
+		<div class="cm-row cm-row-user" id={msg.dbId ? `melding-${msg.dbId}` : undefined}>
 			{#if stopped && msg.id === lastUserMsgId && onEditStopped}
 				<button class="cm-bubble-user cm-bubble-stoppable" onclick={onEditStopped}>
 					{#if msg.imageUrl}
@@ -164,7 +164,7 @@
 			{/if}
 		</div>
 	{:else}
-		<div class="cm-row cm-row-bot">
+		<div class="cm-row cm-row-bot" id={msg.dbId ? `melding-${msg.dbId}` : undefined}>
 			<div class="cm-bot-content">
 				<TriageCard
 					text={msg.text}

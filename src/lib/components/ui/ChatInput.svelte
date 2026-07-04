@@ -30,6 +30,12 @@
 		attachAccept?: string;
 		/** Tillat sending uten tekst (f.eks. når et vedlegg venter). */
 		attachmentPending?: boolean;
+		/**
+		 * Kompakt overlay-modus (dagbok-chatten): én linje når inaktiv; ved fokus spretter
+		 * en handlingsrad (vedlegg + send) opp under feltet, og binders-knappen på
+		 * tekstlinja glir ut. Bakgrunnen blir halvgjennomsiktig så wrapper-blur synes.
+		 */
+		expandOnFocus?: boolean;
 		onFilesSelected?: (files: File[]) => void;
 		onAttachment?: (kind: AttachmentAction, draft: string) => void;
 		onMood?: (draft: string) => void;
@@ -52,6 +58,7 @@
 		showAttachButton = false,
 		attachAccept = 'image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,audio/*,video/*',
 		attachmentPending = false,
+		expandOnFocus = false,
 		onFilesSelected,
 		onAttachment,
 		onMood,
@@ -66,6 +73,10 @@
 	let fileInputEl = $state<HTMLInputElement | null>(null);
 	const hasDraft = $derived(text.trim().length > 0);
 	let isTouchDevice = $state(false);
+	let focused = $state(false);
+	// Handlingsraden holdes oppe så lenge noe er «i arbeid» — utkast, vedlegg eller
+	// streaming — slik at send/stopp ikke forsvinner ved et uhell når feltet blurres.
+	const expanded = $derived(expandOnFocus && (focused || hasDraft || attachmentPending || streaming));
 
 	$effect(() => {
 		isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
@@ -110,6 +121,7 @@
 	}
 
 	function openFromInput() {
+		focused = true;
 		onOpen?.();
 	}
 
@@ -165,6 +177,8 @@
 <form
 	class="ci-form"
 	class:ci-form-rig={showActionRig && hasDraft}
+	class:ci-form-expand={expandOnFocus}
+	class:ci-expanded={expanded}
 	onsubmit={(e) => {
 		e.preventDefault();
 		submit();
@@ -180,35 +194,44 @@
 			tabindex="-1"
 			aria-hidden="true"
 		/>
-		<button
-			class="ci-attach-btn"
-			type="button"
-			title="Legg ved fil"
-			aria-label="Legg ved fil"
-			onmousedown={(e) => e.preventDefault()}
-			onclick={() => fileInputEl?.click()}
-			disabled={disabled}
-		>
-			<Icon name="attach" size={18} />
-		</button>
 	{/if}
 
-	<textarea
-		class="ci-area"
-		class:ci-area-rig={showActionRig && !hasDraft}
-		bind:this={textareaEl}
-		bind:value={text}
-		{placeholder}
-		disabled={disabled && !streaming}
-		rows="1"
-		autocapitalize="sentences"
-		onfocus={openFromInput}
-		onpointerdown={onPointerDown}
-		onmousedown={onMouseDown}
-		oninput={autoResize}
-		onkeydown={onKeyDown}
-		aria-label="Melding"
-	></textarea>
+	<!-- .ci-line er display:contents i standardmodus (layouten uendret) og en egen
+	     flex-rad i expand-modus, der binders-knappen glir ut når feltet aktiveres. -->
+	<div class="ci-line">
+		{#if showAttachButton}
+			<button
+				class="ci-attach-btn"
+				type="button"
+				title="Legg ved fil"
+				aria-label="Legg ved fil"
+				tabindex={expandOnFocus && expanded ? -1 : undefined}
+				onmousedown={(e) => e.preventDefault()}
+				onclick={() => fileInputEl?.click()}
+				disabled={disabled}
+			>
+				<Icon name="attach" size={18} />
+			</button>
+		{/if}
+
+		<textarea
+			class="ci-area"
+			class:ci-area-rig={showActionRig && !hasDraft}
+			bind:this={textareaEl}
+			bind:value={text}
+			{placeholder}
+			disabled={disabled && !streaming}
+			rows="1"
+			autocapitalize="sentences"
+			onfocus={openFromInput}
+			onblur={() => (focused = false)}
+			onpointerdown={onPointerDown}
+			onmousedown={onMouseDown}
+			oninput={autoResize}
+			onkeydown={onKeyDown}
+			aria-label="Melding"
+		></textarea>
+	</div>
 
 	{#if enableMentions}
 		<MentionAutocomplete
@@ -226,7 +249,44 @@
 		/>
 	{/if}
 
-	{#if showActionRig}
+	{#if expandOnFocus}
+		<!-- Handlingsrad som spretter opp under feltet ved fokus. Alltid i DOM slik at
+		     åpne/lukke animeres; `inert` gjør den utilgjengelig når den er kollapset. -->
+		<div class="ci-actions-row" inert={!expanded}>
+			{#if showAttachButton}
+				<button
+					class="ci-attach-btn"
+					type="button"
+					title="Legg ved fil"
+					aria-label="Legg ved fil"
+					onmousedown={(e) => e.preventDefault()}
+					onclick={() => fileInputEl?.click()}
+					disabled={disabled}
+				>
+					<Icon name="attach" size={18} />
+				</button>
+			{:else}
+				<span></span>
+			{/if}
+			{#if streaming}
+				<button class="ci-send" type="button" onmousedown={(e) => e.preventDefault()} onclick={onStop} aria-label="Stopp">■</button>
+			{:else}
+				<button
+					class="ci-send"
+					type="submit"
+					onmousedown={(e) => e.preventDefault()}
+					disabled={disabled || (!hasDraft && !attachmentPending)}
+					aria-label="Send melding"
+				>
+					{#if disabled}
+						<span class="ci-spinner"></span>
+					{:else}
+						↑
+					{/if}
+				</button>
+			{/if}
+		</div>
+	{:else if showActionRig}
 		<div class="ci-actions-rig" aria-label="Input-handlinger">
 			{#if streaming}
 				<button class="ci-icon-btn ci-stop-btn" type="button" title="Stopp" onmousedown={(e) => e.preventDefault()} onclick={onStop}>■</button>
@@ -285,6 +345,68 @@
 		border-radius: 18px;
 		padding: 8px 10px 8px 14px;
 		gap: 8px;
+	}
+
+	/* Standardmodus: .ci-line-wrapperen er usynlig for layouten. */
+	.ci-line {
+		display: contents;
+	}
+
+	/* ── Expand-modus (dagbok-chatten) ──────────────────────────────────────
+	   Inaktiv: én kompakt linje [binders][tekstfelt] med halvgjennomsiktig
+	   bakgrunn (wrapperens backdrop-blur skinner gjennom). Aktiv: binders-
+	   knappen glir ut til venstre og handlingsraden spretter opp nedenfra. */
+	.ci-form-expand {
+		flex-direction: column;
+		align-items: stretch;
+		gap: 0;
+		background: rgba(24, 24, 24, 0.55);
+		border-color: rgba(42, 42, 42, 0.7);
+	}
+
+	.ci-form-expand .ci-line {
+		display: flex;
+		align-items: flex-end;
+		gap: 8px;
+	}
+
+	.ci-form-expand .ci-line .ci-attach-btn {
+		transition:
+			transform 0.25s ease,
+			opacity 0.2s ease,
+			width 0.25s ease,
+			margin 0.25s ease;
+	}
+	.ci-form-expand.ci-expanded .ci-line .ci-attach-btn {
+		width: 0;
+		min-width: 0;
+		margin: 0;
+		padding: 0;
+		opacity: 0;
+		transform: translateX(-48px);
+		pointer-events: none;
+		overflow: hidden;
+	}
+
+	.ci-actions-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		max-height: 0;
+		opacity: 0;
+		overflow: hidden;
+		transform: translateY(10px);
+		transition:
+			max-height 0.28s ease,
+			opacity 0.2s ease,
+			transform 0.28s ease,
+			margin 0.28s ease;
+	}
+	.ci-form-expand.ci-expanded .ci-actions-row {
+		max-height: 48px;
+		opacity: 1;
+		transform: translateY(0);
+		margin-top: 8px;
 	}
 
 	/* Under skriving: stable knapperaden under tekstfeltet slik at teksten får

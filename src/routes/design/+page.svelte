@@ -17,6 +17,7 @@
 	import Navigasjon from './sections/navigasjon.svelte';
 	import Sheets from './sections/sheets.svelte';
 	import Modaler from './sections/modaler.svelte';
+	import Kalender from './sections/kalender.svelte';
 	import Livskompasset from './sections/livskompasset.svelte';
 	import Lab from './sections/lab.svelte';
 
@@ -36,6 +37,7 @@
 		{ id: 'navigasjon', label: 'Navigasjon' },
 		{ id: 'sheets', label: 'Sheets & paneler' },
 		{ id: 'modaler', label: 'Menyer & modaler' },
+		{ id: 'kalender', label: 'Kalender' },
 		{ id: 'livskompasset', label: 'Livskompasset (prototype)' },
 		{ id: 'lab', label: 'Lab' }
 	] as const;
@@ -85,6 +87,7 @@
 		<Navigasjon />
 		<Sheets />
 		<Modaler />
+		<Kalender />
 		<Livskompasset />
 		<Lab />
 

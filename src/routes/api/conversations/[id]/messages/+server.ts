@@ -1,9 +1,10 @@
 import { json, error } from '@sveltejs/kit';
 import { db } from '$lib/db';
 import { messages, conversations } from '$lib/db/schema';
-import { and, eq, asc } from 'drizzle-orm';
+import { and, eq, ne, asc, desc, ilike } from 'drizzle-orm';
 import { ensureConversationThemeIdColumn } from '$lib/server/conversation-schema';
 import { getConversationMessagesPage } from '$lib/server/conversations';
+import { escapeLike } from '$lib/utils/like-escape';
 import type { RequestHandler } from './$types';
 
 type MessageRow = typeof messages.$inferSelect;
@@ -32,6 +33,38 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 		where: and(eq(conversations.id, params.id), eq(conversations.userId, locals.userId))
 	});
 	if (!conv) error(404, 'Samtale ikke funnet');
+
+	// Søkemodus: ?q=<term> — ILIKE i meldingsteksten, nyeste treff først.
+	const q = url.searchParams.get('q');
+	if (q !== null) {
+		const term = q.trim();
+		if (!term) return json([]);
+		const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') ?? '30', 10) || 30, 1), 50);
+		const hits = await db.query.messages.findMany({
+			where: and(
+				eq(messages.conversationId, params.id),
+				ne(messages.role, 'system'),
+				ilike(messages.content, `%${escapeLike(term)}%`)
+			),
+			orderBy: [desc(messages.createdAt)],
+			limit
+		});
+		return json(hits.map(serialize));
+	}
+
+	// Stjernemerket-modus: ?starred=1 — alle stjernemerkede meldinger, kronologisk.
+	if (url.searchParams.get('starred') === '1') {
+		const starredMsgs = await db.query.messages.findMany({
+			where: and(
+				eq(messages.conversationId, params.id),
+				ne(messages.role, 'system'),
+				eq(messages.starred, true)
+			),
+			orderBy: [asc(messages.createdAt)],
+			limit: 100
+		});
+		return json(starredMsgs.map(serialize));
+	}
 
 	// Paginert modus (infinite scroll): ?limit=N&before=<ISO-timestamp>
 	const limitParam = url.searchParams.get('limit');

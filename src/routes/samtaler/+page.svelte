@@ -7,10 +7,16 @@
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import CollapsibleSection from '$lib/components/ui/CollapsibleSection.svelte';
 	import ConversationContextMenu from '$lib/components/ui/ConversationContextMenu.svelte';
+	import KebabMenu from '$lib/components/ui/KebabMenu.svelte';
+	import ChatSearchSheet from '$lib/components/domain/samtaler/ChatSearchSheet.svelte';
+	import ChatCalendarSheet from '$lib/components/domain/samtaler/ChatCalendarSheet.svelte';
+	import ChatStarredSheet from '$lib/components/domain/samtaler/ChatStarredSheet.svelte';
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
 	import { ChatState } from '$lib/client/chat-state.svelte';
 	import type { ChatMessage } from '$lib/client/chat-state.svelte';
 	import { patchMessageContent, deleteMessage } from '$lib/client/chat-message-actions';
+	import { formatDayLabel, parseDayKey } from '$lib/client/chat-day-sections';
+	import { currentDayFromSpacers, type SpacerPos } from '$lib/client/chat-visible-day';
 	import type { AttachmentRef } from '$lib/components/domain/home/home-context';
 	import type { WidgetCreationFlow } from '$lib/flows/widget-creation/flow';
 	import type { WeatherStatusWidget } from '$lib/ai/tools/weather-forecast';
@@ -112,6 +118,37 @@
 	let loadingOlder = $state(false);
 	let oldestCursor = $state<string | null>(null);
 
+	// ── Overlay-header/-input: målte høyder styrer scroll-padding ────────────
+	let headerH = $state(0);
+	let inputH = $state(0);
+
+	// ── Kebabmeny: søk, kalender og stjernemerkede som bottom sheets ──────────
+	type ChatSheet = 'sok' | 'kalender' | 'stjerner' | null;
+	let activeSheet = $state<ChatSheet>(null);
+
+	// ── «Dag i view»: dynamisk undertittel i headeren ─────────────────────────
+	let visibleDayKey = $state<string | null>(null);
+	let visibleDayRafPending = false; // vanlig variabel — rAF-latch, ikke reaktiv
+
+	function updateVisibleDay() {
+		if (!messagesEl) return;
+		const containerTop = messagesEl.getBoundingClientRect().top;
+		const spacers: SpacerPos[] = Array.from(
+			messagesEl.querySelectorAll<HTMLElement>('[id^="dag-"]')
+		).map((el) => ({ key: el.id.slice(4), top: el.getBoundingClientRect().top }));
+		// Terskel = underkanten av det blurrede header-overlayet.
+		visibleDayKey = currentDayFromSpacers(spacers, containerTop + headerH);
+	}
+
+	function scheduleVisibleDayUpdate() {
+		if (visibleDayRafPending) return;
+		visibleDayRafPending = true;
+		requestAnimationFrame(() => {
+			visibleDayRafPending = false;
+			updateVisibleDay();
+		});
+	}
+
 	// ── Vedlegg (bilde/dokument/lyd lagt til i tråden) ────────────────────────
 	let pendingImageUrl = $state<string | null>(null);
 	let pendingAttachment = $state<AttachmentRef | null>(null);
@@ -186,22 +223,70 @@
 		// Ved hopp-til-dag: ikke dra til bunn før hoppet er utført (jumpLatch er satt).
 		if (data.scrollToDate && jumpLatch !== data.scrollToDate) return;
 		messagesEl.scrollTop = messagesEl.scrollHeight;
+		scheduleVisibleDayUpdate();
 	});
 
 	// Hopp-til-dag fra ukeplanen: scroll til dag-ankeret én gang per måldato.
 	// jumpLatch er en vanlig variabel (ikke reaktiv) for å unngå effekt-løkke.
 	let jumpLatch = '';
+	// Melding det skal etterscrolles til når hopp-til-dag går via loaderen (?date=).
+	let pendingJumpMessageId: string | null = null;
 	$effect(() => {
 		const date = data.scrollToDate;
 		const rendered = chat.messages.length; // avheng av at meldingene er lastet
 		if (!date || !messagesEl || rendered === 0 || jumpLatch === date) return;
 		jumpLatch = date;
 		void tick().then(() => {
+			const msgId = pendingJumpMessageId;
+			pendingJumpMessageId = null;
+			if (msgId && scrollToLoadedTarget(date, msgId)) return;
 			const anchor = messagesEl?.querySelector(`[id="dag-${date}"]`) as HTMLElement | null;
 			if (anchor) anchor.scrollIntoView({ block: 'start' });
 			else if (messagesEl) messagesEl.scrollTop = 0;
+			scheduleVisibleDayUpdate();
 		});
 	});
+
+	/** Kort visuell markering av meldingen det ble hoppet til. */
+	function flashElement(el: HTMLElement) {
+		el.classList.add('cp-flash');
+		window.setTimeout(() => el.classList.remove('cp-flash'), 1700);
+	}
+
+	/**
+	 * Scroll til en melding (eller dagens spacer som fallback) som allerede er lastet.
+	 * Returnerer false hvis ingen av ankrene finnes i DOM.
+	 */
+	function scrollToLoadedTarget(day: string, messageId: string | null): boolean {
+		if (!messagesEl) return false;
+		const msgEl = messageId
+			? messagesEl.querySelector<HTMLElement>(`[id="melding-${messageId}"]`)
+			: null;
+		const target = msgEl ?? messagesEl.querySelector<HTMLElement>(`[id="dag-${day}"]`);
+		if (!target) return false;
+		target.scrollIntoView({ block: 'start' });
+		if (msgEl) flashElement(msgEl);
+		scheduleVisibleDayUpdate();
+		return true;
+	}
+
+	/**
+	 * Hopp til en dag/melding fra søk, kalender eller stjernemerkede. Er dagen
+	 * allerede lastet scroller vi direkte; ellers går vi via loaderens ?date=-
+	 * windowing (samme mekanikk som hopp fra ukeplanen).
+	 */
+	async function jumpToDay(day: string, messageId?: string) {
+		activeSheet = null;
+		await tick(); // la sheet-lukkingen rendre før vi måler/scroller
+		if (scrollToLoadedTarget(day, messageId ?? null)) return;
+		if (!conversation) return;
+		pendingJumpMessageId = messageId ?? null;
+		jumpLatch = ''; // tillat nytt hopp, også til samme dato som sist
+		await goto(`/samtaler?conversation=${conversation.id}&date=${day}`, {
+			noScroll: true,
+			keepFocus: true
+		});
+	}
 
 	async function loadOlderMessages() {
 		if (!conversation || loadingOlder || !hasMoreMessages || !oldestCursor || !messagesEl) return;
@@ -228,6 +313,7 @@
 			// Bevar scroll-posisjonen: kompenser for høyden som ble lagt til på toppen.
 			await tick();
 			el.scrollTop = el.scrollHeight - prevHeight + prevTop;
+			scheduleVisibleDayUpdate();
 		} finally {
 			loadingOlder = false;
 		}
@@ -235,6 +321,7 @@
 
 	function onMessagesScroll() {
 		if (!messagesEl) return;
+		scheduleVisibleDayUpdate();
 		if (messagesEl.scrollTop < 120 && hasMoreMessages && !loadingOlder) {
 			void loadOlderMessages();
 		}
@@ -258,6 +345,13 @@
 				.format(new Date(conversation.updatedAt))
 			: ''
 	);
+
+	// Undertittel i chat-headeren: dagen for meldingene i view («I dag», «I går»,
+	// «Onsdag 25. juni»), med samtalens tidsstempel som fallback før første måling.
+	const headerSubtitle = $derived.by(() => {
+		const d = visibleDayKey ? parseDayKey(visibleDayKey) : null;
+		return d ? formatDayLabel(d) : formattedDate;
+	});
 
 	function fmtDay(iso: string) {
 		return new Intl.DateTimeFormat('nb-NO', { day: 'numeric', month: 'short' }).format(new Date(iso));
@@ -474,16 +568,31 @@
 	<!-- ══ CHAT-VIEW ═══════════════════════════════════════════════════════════ -->
 	<AppPage className="chat-page">
 		<PageSection>
-		<PageHeader title={conversation?.title ?? (data.weightContext ? 'Vektutvikling' : 'Samtale')} subtitle={formattedDate} titleHref="/samtaler">
-			{#snippet actions()}
-				{#if conversation?.linkedTheme}
-					{@const t = conversation.linkedTheme}
-					<button class="cp-theme-btn" style={getThemeHueStyle(t.name)} onclick={() => goto(`/tema/${t.id}`)}>
-						{#if t.emoji}{t.emoji}{:else}<Icon name="goals" size={14} />{/if} {t.name}
-					</button>
-				{/if}
-			{/snippet}
-		</PageHeader>
+		<div class="cp-shell" style="--cp-header-h: {headerH}px; --cp-input-h: {inputH}px">
+		<div class="cp-header" bind:clientHeight={headerH}>
+			<PageHeader title={conversation?.title ?? (data.weightContext ? 'Vektutvikling' : 'Samtale')} subtitle={headerSubtitle} titleHref="/samtaler">
+				{#snippet actions()}
+					{#if conversation?.linkedTheme}
+						{@const t = conversation.linkedTheme}
+						<button class="cp-theme-btn" style={getThemeHueStyle(t.name)} onclick={() => goto(`/tema/${t.id}`)}>
+							{#if t.emoji}{t.emoji}{:else}<Icon name="goals" size={14} />{/if} {t.name}
+						</button>
+					{/if}
+					{#if conversation}
+						<KebabMenu
+							ariaLabel="Naviger i samtalen"
+							track="samtale-chat:meny"
+							items={[
+								{ id: 'sok', label: 'Søk', icon: 'search' },
+								{ id: 'kalender', label: 'Kalender', icon: 'calendar' },
+								{ id: 'stjerner', label: 'Stjernemerkede meldinger', icon: 'star' }
+							]}
+							onSelect={(id) => (activeSheet = id as ChatSheet)}
+						/>
+					{/if}
+				{/snippet}
+			</PageHeader>
+		</div>
 
 		<div class="cp-messages" bind:this={messagesEl} onscroll={onMessagesScroll}>
 			{#if loadingOlder}
@@ -510,7 +619,7 @@
 			/>
 		</div>
 
-		<div class="cp-input">
+		<div class="cp-input" bind:clientHeight={inputH}>
 			{#if attachmentUploading || hasPendingAttachment}
 				<div class="cp-attach-chip">
 					{#if attachmentUploading}
@@ -543,12 +652,34 @@
 					onStop={stopChat}
 					initialValue={inputDraft}
 					showAttachButton={true}
+					expandOnFocus={true}
 					attachmentPending={hasPendingAttachment}
 					onFilesSelected={handleAttachmentFiles}
 					onsubmit={sendMessage}
 				/>
 			{/key}
 		</div>
+		</div>
+
+		{#if activeSheet === 'sok' && conversation}
+			<ChatSearchSheet
+				conversationId={conversation.id}
+				onclose={() => (activeSheet = null)}
+				onJump={(day, messageId) => void jumpToDay(day, messageId)}
+			/>
+		{:else if activeSheet === 'kalender' && conversation}
+			<ChatCalendarSheet
+				conversationId={conversation.id}
+				onclose={() => (activeSheet = null)}
+				onJump={(day) => void jumpToDay(day)}
+			/>
+		{:else if activeSheet === 'stjerner' && conversation}
+			<ChatStarredSheet
+				conversationId={conversation.id}
+				onclose={() => (activeSheet = null)}
+				onJump={(day, messageId) => void jumpToDay(day, messageId)}
+			/>
+		{/if}
 		</PageSection>
 	</AppPage>
 {/if}
@@ -696,18 +827,42 @@
 	}
 
 	/* PageSection må fylle hele chat-page (100dvh) slik at cp-messages kan
-	   scrolle internt og cp-input holdes synlig nederst. Uten dette vokser
-	   page-section til innholdshøyden, og en lang gjenåpnet samtale skyver
-	   input-feltet ut under viewport (chat-page har overflow: hidden). */
+	   scrolle internt og overlay-header/-input kan posisjoneres absolutt.
+	   Padding nulles: header og input legger på egne gutters (--page-px m.m.). */
 	:global(.chat-page .page-section) {
 		flex: 1;
 		min-height: 0;
+		padding: 0;
+		position: relative;
+		display: flex;
+	}
+
+	/* Shell: relativ ramme for de absolutte overlayene. Publiserer målte høyder
+	   som --cp-header-h/--cp-input-h slik at scroller-paddingen alltid matcher. */
+	.cp-shell {
+		position: relative;
+		flex: 1;
+		min-height: 0;
+		display: flex;
+		flex-direction: column;
+	}
+
+	/* Header som blurret overlay: meldingene scroller svakt synlig bak. */
+	.cp-header {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		z-index: 10;
+		padding: var(--page-pt) var(--page-px) 10px;
+		background: linear-gradient(180deg, rgba(15, 15, 15, 0.88) 0%, rgba(15, 15, 15, 0.62) 100%);
+		backdrop-filter: blur(14px);
+		-webkit-backdrop-filter: blur(14px);
+		border-bottom: 1px solid rgba(30, 30, 30, 0.6);
 	}
 
 	:global(.chat-page .page-header) {
-		padding: 0 0 14px;
-		border-bottom: 1px solid var(--border-subtle);
-		flex-shrink: 0;
+		padding: 0;
 	}
 
 	.cp-theme-btn {
@@ -726,13 +881,38 @@
 	.cp-messages {
 		flex: 1;
 		overflow-y: auto;
-		padding: 16px;
+		/* Paddingen kompenserer for overlay-header/-input — ligger inne i scrolleren,
+		   så bunn-pinning og prepend-kompensasjon påvirkes ikke. */
+		padding: calc(var(--cp-header-h, 90px) + 12px) var(--page-px, 16px)
+			calc(var(--cp-input-h, 70px) + 12px);
 		display: flex;
 		flex-direction: column;
 		gap: 12px;
 		-webkit-overflow-scrolling: touch;
 		scrollbar-width: thin;
 		scrollbar-color: #1e1e1e transparent;
+	}
+
+	/* Ankere skal lande under det faste header-overlayet ved scrollIntoView. */
+	.cp-messages :global(.cm-day-spacer),
+	.cp-messages :global(.cm-row) {
+		scroll-margin-top: calc(var(--cp-header-h, 90px) + 8px);
+	}
+
+	/* Kort puls på meldingen det ble hoppet til fra søk/kalender/stjerner. */
+	.cp-messages :global(.cp-flash) {
+		animation: cp-flash-pulse 1.6s ease;
+		border-radius: 12px;
+	}
+	@keyframes cp-flash-pulse {
+		0% {
+			background: rgba(124, 142, 245, 0.16);
+			box-shadow: 0 0 0 4px rgba(124, 142, 245, 0.16);
+		}
+		100% {
+			background: transparent;
+			box-shadow: none;
+		}
 	}
 
 	.cp-load-older {
@@ -827,10 +1007,17 @@
 		border: 1px solid #2a2a4a;
 	}
 
+	/* Input som blurret overlay nederst: én kompakt linje når inaktiv. */
 	.cp-input {
-		padding: 10px 16px env(safe-area-inset-bottom, 14px);
-		border-top: 1px solid #1a1a1a;
-		flex-shrink: 0;
+		position: absolute;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		z-index: 10;
+		padding: 10px var(--page-px, 16px) max(env(safe-area-inset-bottom), 14px);
+		background: linear-gradient(0deg, rgba(15, 15, 15, 0.85) 0%, rgba(15, 15, 15, 0.45) 100%);
+		backdrop-filter: blur(12px);
+		-webkit-backdrop-filter: blur(12px);
 		display: flex;
 		flex-direction: column;
 		gap: 6px;
