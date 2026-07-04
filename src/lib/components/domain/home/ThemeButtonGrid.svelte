@@ -34,8 +34,10 @@
 	.tema-v3-grid {
 		display: grid;
 		grid-template-columns: repeat(3, 1fr);
-		grid-auto-rows: 1fr; /* like høye rader selv når en label brekker over to linjer */
+		/* Radene deler tilgjengelig høyde likt — like høye knapper uansett linjebryting */
+		grid-auto-rows: minmax(0, 1fr);
 		gap: 8px;
+		height: 100%;
 	}
 
 	.tema-btn-v3 {
@@ -46,6 +48,13 @@
 		justify-content: center;
 		gap: 4px;
 		min-width: 0;
+		min-height: 0;
+		width: 100%;
+		box-sizing: border-box;
+		/* Så høy som bredden tillater (4:3), men aldri høyere enn raden gir plass til */
+		aspect-ratio: 4 / 3;
+		max-height: 100%;
+		align-self: center;
 		background: hsl(var(--theme-hue) 19% 11%);
 		border: none;
 		border-radius: 14px;
