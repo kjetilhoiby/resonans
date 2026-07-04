@@ -5,6 +5,7 @@
 	import BreakdownModal from '$lib/components/ui/BreakdownModal.svelte';
 	import ShareSheet from '$lib/components/domain/share/ShareSheet.svelte';
 	import ConversationContextMenu from '$lib/components/ui/ConversationContextMenu.svelte';
+	import KebabMenu from '$lib/components/ui/KebabMenu.svelte';
 	import {
 		taskMenuAnchor,
 		autoCheckPromptMock,
@@ -87,6 +88,25 @@
 			archived={false}
 			themes={conversationThemesMock}
 			api={mockConversationMenuApi}
+			initialOpen
+		/>
+	</div>
+
+	<h3 class="subsection">KebabMenu — generisk «•••»-meny</h3>
+	<p class="section-desc">
+		Datadrevet header-meny: liste av valg med ikon, melder valgt id via <code>onSelect</code>.
+		Brukes i dagbok-chattens header (søk/kalender/stjernemerkede). <code>initialOpen</code> holder
+		den åpen i demoen.
+	</p>
+	<div class="sheet-stage sheet-stage--short" style="padding: 12px 12px 0 160px;">
+		<KebabMenu
+			ariaLabel="Naviger i samtalen"
+			items={[
+				{ id: 'sok', label: 'Søk', icon: 'search' },
+				{ id: 'kalender', label: 'Kalender', icon: 'calendar' },
+				{ id: 'stjerner', label: 'Stjernemerkede meldinger', icon: 'star' }
+			]}
+			onSelect={noop}
 			initialOpen
 		/>
 	</div>

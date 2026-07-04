@@ -70,4 +70,19 @@
 			<p class="demo-caption">Sendt: «{lastSent}»</p>
 		{/if}
 	</div>
+
+	<h3 class="subsection">ChatInput — expandOnFocus (dagbok-chatten)</h3>
+	<p class="section-desc">
+		Kompakt overlay-modus: én linje med binders + tekstfelt når inaktiv. Ved fokus glir
+		binders-knappen ut og en handlingsrad med vedlegg + send spretter opp under feltet.
+		Klikk i feltet for å prøve.
+	</p>
+	<div class="demo-stack">
+		<ChatInput
+			placeholder="Skriv videre i samtalen…"
+			showAttachButton={true}
+			expandOnFocus={true}
+			onsubmit={(msg) => (lastSent = msg)}
+		/>
+	</div>
 </section>
