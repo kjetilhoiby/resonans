@@ -52,6 +52,20 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 		return json(hits.map(serialize));
 	}
 
+	// Stjernemerket-modus: ?starred=1 — alle stjernemerkede meldinger, kronologisk.
+	if (url.searchParams.get('starred') === '1') {
+		const starredMsgs = await db.query.messages.findMany({
+			where: and(
+				eq(messages.conversationId, params.id),
+				ne(messages.role, 'system'),
+				eq(messages.starred, true)
+			),
+			orderBy: [asc(messages.createdAt)],
+			limit: 100
+		});
+		return json(starredMsgs.map(serialize));
+	}
+
 	// Paginert modus (infinite scroll): ?limit=N&before=<ISO-timestamp>
 	const limitParam = url.searchParams.get('limit');
 	if (limitParam) {
