@@ -18,10 +18,15 @@ export const HOME_CTX = Symbol('home');
 
 // ── Gjenbrukbare typer ──────────────────────────────────────────────────
 
+/** Klassifisering av tema for hjemskjermens sveipbare tema-sider. */
+export type ThemeKind = 'standard' | 'ferie' | 'prosjekt';
+
 export interface Theme {
 	id: string;
 	name: string;
 	emoji: string;
+	/** Settes server-side ut fra ferie-/reise-/prosjektprofil. Fravær = standard. */
+	kind?: ThemeKind;
 }
 
 export interface ActiveFerie {
