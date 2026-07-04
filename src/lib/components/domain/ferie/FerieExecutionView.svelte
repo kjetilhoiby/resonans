@@ -32,6 +32,7 @@
 		type DiaryEntry,
 		type DiaryImage,
 		type DayGeo,
+		type GeoCoord,
 		type ImagePin,
 		type DriveRoutes
 	} from '../trip-api';
@@ -231,6 +232,16 @@
 		}
 	}
 
+	// Fallback-senter for bilde-kartvelgeren: dagens notat-koordinat, ellers
+	// turens geo-kontekst for datoen.
+	const diaryMapCenter = $derived.by<GeoCoord | null>(() => {
+		const e = diaryEntries.find((x) => x.date === diaryDate);
+		if (e?.geo) return e.geo;
+		const g = tripGeoByDay[diaryDate];
+		if (g?.lat != null && g?.lon != null) return { lat: g.lat, lon: g.lon };
+		return null;
+	});
+
 	async function deleteDiaryEntry(date: string) {
 		try {
 			await api.putDiaryEntry(themeId, { date });
@@ -370,7 +381,7 @@
 				{/if}
 			</div>
 			<textarea class="diary-text" rows="3" placeholder="Én setning om dagen…" bind:value={diaryText}></textarea>
-			<DiaryImages bind:images={diaryImages} track="ferie-dagbok" />
+			<DiaryImages bind:images={diaryImages} defaultCenter={diaryMapCenter} track="ferie-dagbok" />
 		</div>
 		<div class="diary-sheet-footer">
 			{#if diaryError}<span class="ferie-error">{diaryError}</span>{/if}

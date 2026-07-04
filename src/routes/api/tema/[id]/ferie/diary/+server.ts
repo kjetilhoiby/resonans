@@ -33,6 +33,7 @@ interface DiaryImage {
 	caption?: string;
 	place?: string;
 	geo?: DiaryGeo;
+	geoManual?: boolean;
 }
 
 // Bilder lagres som objekter med valgfri bildetekst/sted, men eldre notater har
@@ -53,6 +54,8 @@ function parseImages(value: unknown): DiaryImage[] {
 		if (typeof img.place === 'string' && img.place.trim()) entry.place = img.place.trim();
 		const geo = parseGeo(img.geo);
 		if (geo) entry.geo = geo;
+		// Manuelt satt nål (kartvelger) — bare meningsfullt sammen med koordinat.
+		if (geo && img.geoManual === true) entry.geoManual = true;
 		out.push(entry);
 	}
 	return out;

@@ -62,6 +62,18 @@ Etter første ferieuke med feriedagboken kom fire brukerinnsikter:
   felles cubic-easing. Kamerarammen for et steg utvides nå også over
   kjøresporet mellom dagpunktene, så linja aldri stikker ut av utsnittet.
 
+### Fase 5: Manuell nål-korrigering for bilder
+
+Geokoding av stedsnavn kan bomme. Ny `MapPointPicker.svelte` (fullskjerm
+kartvelger, portalert over bottompanelene, z 400): trykk for å sette nålen,
+dra for å finjustere, bekreft — eller fjern nålen. Åpnes fra en
+«📍 Plasser på kart»-knapp per bilde i `DiaryImages.svelte`, med dagens
+notat-koordinat (ellers turens geo-kontekst) som fallback-senter.
+
+Manuelt satte nåler merkes `geoManual` på bildet, og `geocodeDiaryImages`
+rører aldri slike koordinater — heller ikke når stedsteksten endres eller
+tømmes. Endres stedet på et ikke-manuelt bilde re-geokodes som før.
+
 ## Beslutninger
 
 - **Dagbok-lagring uendret** (reflections, kind='feriedagbok') — bare
@@ -77,7 +89,8 @@ Etter første ferieuke med feriedagboken kom fire brukerinnsikter:
 
 ## Verifisering
 
-- `npm test`: 962 tester grønne, inkl. nye tester for `buildDriveRoutes`
-  (jitter, dagsgruppering i Oslo-tid, tynning) og `buildStoryPath`
-  (fletting, én-gangs-konsumering, vindu).
+- `npm test`: 969 tester grønne, inkl. nye tester for `buildDriveRoutes`
+  (jitter, dagsgruppering i Oslo-tid, tynning), `buildStoryPath`
+  (fletting, én-gangs-konsumering, vindu) og `geocodeDiaryImages`
+  (gjenbruk, re-geokoding, geoManual-vern).
 - `npm run check`: 0 feil.

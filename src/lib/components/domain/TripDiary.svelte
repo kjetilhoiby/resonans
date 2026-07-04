@@ -16,7 +16,8 @@
 		type TripApi,
 		type DiaryEntry,
 		type DiaryImage,
-		type DayGeo
+		type DayGeo,
+		type GeoCoord
 	} from './trip-api';
 
 	interface Props {
@@ -149,6 +150,16 @@
 		const d = new Date(`${iso}T00:00:00`);
 		return d.toLocaleDateString('nb', { weekday: 'short', day: 'numeric', month: 'short' });
 	}
+
+	// Fallback-senter for bilde-kartvelgeren: dagens notat-koordinat, ellers
+	// turens geo-kontekst for datoen.
+	function dayCenter(date: string): GeoCoord | null {
+		const e = entryFor(date);
+		if (e?.geo) return e.geo;
+		const g = geoByDay[date];
+		if (g?.lat != null && g?.lon != null) return { lat: g.lat, lon: g.lon };
+		return null;
+	}
 </script>
 
 <div class="trip-diary">
@@ -195,6 +206,7 @@
 					<DiaryImages
 						bind:images={drafts[date].images}
 						onChange={() => saveDay(date)}
+						defaultCenter={dayCenter(date)}
 						track="reise-dagbok"
 					/>
 				</div>

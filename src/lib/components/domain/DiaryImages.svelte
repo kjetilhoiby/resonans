@@ -15,18 +15,23 @@
 -->
 <script lang="ts">
 	import { uploadImage } from '$lib/client/upload-image';
-	import type { DiaryImage } from './trip-api';
+	import MapPointPicker from './MapPointPicker.svelte';
+	import type { DiaryImage, GeoCoord } from './trip-api';
 
 	interface Props {
 		images: DiaryImage[];
 		onChange?: (images: DiaryImage[]) => void;
+		/** Fallback-senter for kartvelgeren når bildet ikke har koordinat (f.eks. dagens sted). */
+		defaultCenter?: GeoCoord | null;
 		track?: string;
 	}
 
-	let { images = $bindable([]), onChange, track = 'dagbok' }: Props = $props();
+	let { images = $bindable([]), onChange, defaultCenter = null, track = 'dagbok' }: Props = $props();
 
 	let uploading = $state(false);
 	let error = $state('');
+	/** Indeks for bildet som redigeres i kartvelgeren; null = lukket. */
+	let pickerIndex = $state<number | null>(null);
 
 	async function onFilesSelected(e: Event) {
 		const input = e.currentTarget as HTMLInputElement;
@@ -65,6 +70,18 @@
 	function commit() {
 		onChange?.(images);
 	}
+
+	// Manuell nål fra kartvelgeren: korrigerer feilplassert geokoding, og
+	// beskyttes mot fremtidig re-geokoding (geoManual).
+	function pinImage(index: number, geo: GeoCoord) {
+		updateImage(index, { geo, geoManual: true });
+		commit();
+	}
+
+	function unpinImage(index: number) {
+		updateImage(index, { geo: undefined, geoManual: undefined });
+		commit();
+	}
 </script>
 
 <div class="diary-images">
@@ -92,6 +109,15 @@
 							onblur={commit}
 							data-track="{track}:bilde-sted"
 						/>
+						<button
+							type="button"
+							class="img-pin-btn"
+							class:img-pin-btn-set={!!img.geo}
+							onclick={() => (pickerIndex = i)}
+							data-track="{track}:plasser-paa-kart"
+						>
+							{img.geoManual ? '📍 Nål satt manuelt' : img.geo ? '📍 Juster nål på kart' : '📍 Plasser på kart'}
+						</button>
 					</div>
 					<button
 						type="button"
@@ -121,6 +147,18 @@
 		{#if error}<span class="upload-error">{error}</span>{/if}
 	</div>
 </div>
+
+{#if pickerIndex !== null && images[pickerIndex]}
+	<MapPointPicker
+		title="Plasser bildet"
+		initial={images[pickerIndex].geo ?? null}
+		center={defaultCenter}
+		onConfirm={(geo) => pinImage(pickerIndex!, geo)}
+		onRemove={images[pickerIndex].geo ? () => unpinImage(pickerIndex!) : null}
+		onClose={() => (pickerIndex = null)}
+		track="{track}-kartvelger"
+	/>
+{/if}
 
 <style>
 	.diary-images {
@@ -180,6 +218,27 @@
 	.img-input:focus {
 		outline: none;
 		border-bottom-color: var(--tp-accent, #6072e6);
+	}
+
+	.img-pin-btn {
+		align-self: flex-start;
+		background: none;
+		border: 1px dashed var(--tp-border-strong, var(--tp-border, #2a2a2a));
+		border-radius: 8px;
+		color: var(--tp-text-muted, #8a8a8a);
+		font-size: 0.75rem;
+		padding: 3px 8px;
+		cursor: pointer;
+	}
+
+	.img-pin-btn:hover {
+		border-color: var(--tp-accent, #6072e6);
+		color: var(--tp-text-soft, #cbd5e1);
+	}
+
+	.img-pin-btn-set {
+		border-style: solid;
+		color: var(--tp-accent, #6072e6);
 	}
 
 	.img-remove {
