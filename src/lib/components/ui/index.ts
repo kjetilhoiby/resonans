@@ -34,6 +34,7 @@ export { default as Skeleton } from './Skeleton.svelte';
 export { default as StatusBadge } from './StatusBadge.svelte';
 export { default as TransactionList } from './TransactionList.svelte';
 export { default as Icon } from './Icon.svelte';
+export { default as KebabMenu } from './KebabMenu.svelte';
 export { default as PullToRefresh } from './PullToRefresh.svelte';
 
 // Sheets & Overlays

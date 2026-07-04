@@ -7,6 +7,7 @@
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import CollapsibleSection from '$lib/components/ui/CollapsibleSection.svelte';
 	import ConversationContextMenu from '$lib/components/ui/ConversationContextMenu.svelte';
+	import KebabMenu from '$lib/components/ui/KebabMenu.svelte';
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
 	import { ChatState } from '$lib/client/chat-state.svelte';
 	import type { ChatMessage } from '$lib/client/chat-state.svelte';
@@ -118,6 +119,10 @@
 	let headerH = $state(0);
 	let inputH = $state(0);
 
+	// ── Kebabmeny: søk, kalender og stjernemerkede som bottom sheets ──────────
+	type ChatSheet = 'sok' | 'kalender' | 'stjerner' | null;
+	let activeSheet = $state<ChatSheet>(null);
+
 	// ── «Dag i view»: dynamisk undertittel i headeren ─────────────────────────
 	let visibleDayKey = $state<string | null>(null);
 	let visibleDayRafPending = false; // vanlig variabel — rAF-latch, ikke reaktiv
@@ -221,18 +226,64 @@
 	// Hopp-til-dag fra ukeplanen: scroll til dag-ankeret én gang per måldato.
 	// jumpLatch er en vanlig variabel (ikke reaktiv) for å unngå effekt-løkke.
 	let jumpLatch = '';
+	// Melding det skal etterscrolles til når hopp-til-dag går via loaderen (?date=).
+	let pendingJumpMessageId: string | null = null;
 	$effect(() => {
 		const date = data.scrollToDate;
 		const rendered = chat.messages.length; // avheng av at meldingene er lastet
 		if (!date || !messagesEl || rendered === 0 || jumpLatch === date) return;
 		jumpLatch = date;
 		void tick().then(() => {
+			const msgId = pendingJumpMessageId;
+			pendingJumpMessageId = null;
+			if (msgId && scrollToLoadedTarget(date, msgId)) return;
 			const anchor = messagesEl?.querySelector(`[id="dag-${date}"]`) as HTMLElement | null;
 			if (anchor) anchor.scrollIntoView({ block: 'start' });
 			else if (messagesEl) messagesEl.scrollTop = 0;
 			scheduleVisibleDayUpdate();
 		});
 	});
+
+	/** Kort visuell markering av meldingen det ble hoppet til. */
+	function flashElement(el: HTMLElement) {
+		el.classList.add('cp-flash');
+		window.setTimeout(() => el.classList.remove('cp-flash'), 1700);
+	}
+
+	/**
+	 * Scroll til en melding (eller dagens spacer som fallback) som allerede er lastet.
+	 * Returnerer false hvis ingen av ankrene finnes i DOM.
+	 */
+	function scrollToLoadedTarget(day: string, messageId: string | null): boolean {
+		if (!messagesEl) return false;
+		const msgEl = messageId
+			? messagesEl.querySelector<HTMLElement>(`[id="melding-${messageId}"]`)
+			: null;
+		const target = msgEl ?? messagesEl.querySelector<HTMLElement>(`[id="dag-${day}"]`);
+		if (!target) return false;
+		target.scrollIntoView({ block: 'start' });
+		if (msgEl) flashElement(msgEl);
+		scheduleVisibleDayUpdate();
+		return true;
+	}
+
+	/**
+	 * Hopp til en dag/melding fra søk, kalender eller stjernemerkede. Er dagen
+	 * allerede lastet scroller vi direkte; ellers går vi via loaderens ?date=-
+	 * windowing (samme mekanikk som hopp fra ukeplanen).
+	 */
+	async function jumpToDay(day: string, messageId?: string) {
+		activeSheet = null;
+		await tick(); // la sheet-lukkingen rendre før vi måler/scroller
+		if (scrollToLoadedTarget(day, messageId ?? null)) return;
+		if (!conversation) return;
+		pendingJumpMessageId = messageId ?? null;
+		jumpLatch = ''; // tillat nytt hopp, også til samme dato som sist
+		await goto(`/samtaler?conversation=${conversation.id}&date=${day}`, {
+			noScroll: true,
+			keepFocus: true
+		});
+	}
 
 	async function loadOlderMessages() {
 		if (!conversation || loadingOlder || !hasMoreMessages || !oldestCursor || !messagesEl) return;
@@ -524,6 +575,18 @@
 							{#if t.emoji}{t.emoji}{:else}<Icon name="goals" size={14} />{/if} {t.name}
 						</button>
 					{/if}
+					{#if conversation}
+						<KebabMenu
+							ariaLabel="Naviger i samtalen"
+							track="samtale-chat:meny"
+							items={[
+								{ id: 'sok', label: 'Søk', icon: 'search' },
+								{ id: 'kalender', label: 'Kalender', icon: 'calendar' },
+								{ id: 'stjerner', label: 'Stjernemerkede meldinger', icon: 'star' }
+							]}
+							onSelect={(id) => (activeSheet = id as ChatSheet)}
+						/>
+					{/if}
 				{/snippet}
 			</PageHeader>
 		</div>
@@ -807,9 +870,26 @@
 		scrollbar-color: #1e1e1e transparent;
 	}
 
-	/* Dag-anker skal lande under det faste header-overlayet ved scrollIntoView. */
-	.cp-messages :global(.cm-day-spacer) {
+	/* Ankere skal lande under det faste header-overlayet ved scrollIntoView. */
+	.cp-messages :global(.cm-day-spacer),
+	.cp-messages :global(.cm-row) {
 		scroll-margin-top: calc(var(--cp-header-h, 90px) + 8px);
+	}
+
+	/* Kort puls på meldingen det ble hoppet til fra søk/kalender/stjerner. */
+	.cp-messages :global(.cp-flash) {
+		animation: cp-flash-pulse 1.6s ease;
+		border-radius: 12px;
+	}
+	@keyframes cp-flash-pulse {
+		0% {
+			background: rgba(124, 142, 245, 0.16);
+			box-shadow: 0 0 0 4px rgba(124, 142, 245, 0.16);
+		}
+		100% {
+			background: transparent;
+			box-shadow: none;
+		}
 	}
 
 	.cp-load-older {

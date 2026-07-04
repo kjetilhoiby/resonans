@@ -15,7 +15,9 @@
 		| 'plus'
 		| 'attach'
 		| 'check'
-		| 'calendar';
+		| 'calendar'
+		| 'star'
+		| 'kebab';
 
 	interface Props {
 		name: IconName;
@@ -96,5 +98,11 @@
 		<path d="M3.5 10.5h17" />
 		<path d="M8 4V7" />
 		<path d="M16 4V7" />
+	{:else if name === 'star'}
+		<path d="M12 3.5l2.6 5.3 5.9.9-4.2 4.1 1 5.8-5.3-2.8-5.3 2.8 1-5.8-4.2-4.1 5.9-.9z" />
+	{:else if name === 'kebab'}
+		<circle cx="12" cy="5" r="1.1" fill="currentColor" stroke="none" />
+		<circle cx="12" cy="12" r="1.1" fill="currentColor" stroke="none" />
+		<circle cx="12" cy="19" r="1.1" fill="currentColor" stroke="none" />
 	{/if}
 </svg>
