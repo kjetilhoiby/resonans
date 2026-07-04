@@ -52,12 +52,13 @@ skillelinjen har ikke `data-theme-id` og ignoreres av `computeDropIndex`.
 
 - **Ferie og reise deles på samme sider** (`kind: 'ferie'`): begge er tidsavgrensede
   «bobler» og skilles fra løpende temaer; egen reise-side kan splittes ut senere.
-- **Prioritering = eksisterende sortering**: side 1 er de seks første standard-temaene
-  i `sortOrder`. Ingen ny «pinned»-mekanikk — langpress-lista er fortsatt eneste
-  sorteringsflate, og `/api/tema/reorder` er uendret (flat rekkefølge på tvers av kinds;
-  relativ rekkefølge innen hver side følger den globale).
-- **Ferie-/prosjekt-temaer kan ikke innta side 1** selv om de sorteres øverst — de har
-  egne sider. Tags i lista kommuniserer dette.
+- **Prioritering = eksisterende sortering, på tvers av kinds**: side 1 er de seks
+  øverste temaene i `sortOrder` uansett type, så en ferie eller et prosjekt kan
+  prioriteres opp til forsiden ved å dras inn i topp seks i langpress-lista.
+  Ingen ny «pinned»-mekanikk — `/api/tema/reorder` er uendret. Skillelinja
+  «Vises på forsiden ↑» i lista ligger etter sjette rad og speiler forsiden eksakt.
+- **Ferie-/prosjekt-temaer under skillelinja** havner på egne sider bakerst i
+  sveipen i stedet for på «Flere temaer»-sidene. Tags i lista viser typen.
 - Kind beregnes i SQL (case-uttrykk) i stedet for å sende profil-jsonb til klienten
   (geoByDay m.m. kan bli stort).
 

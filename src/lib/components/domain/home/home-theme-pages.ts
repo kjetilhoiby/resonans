@@ -1,10 +1,10 @@
 /**
  * Bygger sveipbare tema-sider for hjemskjermens tema-sone.
  *
- * Standard-temaer chunkes seks og seks — side 1 er de seks prioriterte
- * plassene (sorteringsrekkefølgen fra langpress-lista). Ferie-/reise-temaer
- * og prosjekt-temaer får egne sider til slutt, slik at de aldri opptar de
- * prioriterte plassene.
+ * De seks øverste temaene i sorteringsrekkefølgen (langpress-lista) utgjør
+ * forsiden — uansett kind, så en ferie eller et prosjekt kan prioriteres opp.
+ * Resten fordeles på egne sider: standard-temaer chunkes seks og seks,
+ * deretter ferie-/reise-temaer og prosjekt-temaer.
  */
 
 import type { Theme, ThemeKind } from './home-context';
@@ -14,12 +14,12 @@ export const THEMES_PER_PAGE = 6;
 export interface ThemePage {
 	key: string;
 	label: string;
-	kind: ThemeKind;
+	kind: ThemeKind | 'prioritert';
 	themes: Theme[];
 }
 
 const PAGE_LABELS: Record<ThemeKind, string> = {
-	standard: 'Temaer',
+	standard: 'Flere temaer',
 	ferie: 'Ferier & reiser',
 	prosjekt: 'Prosjekter'
 };
@@ -36,12 +36,19 @@ export function themeKindOf(theme: Theme): ThemeKind {
 
 export function buildThemePages(themes: Theme[]): ThemePage[] {
 	const pages: ThemePage[] = [];
+
+	const prioritized = themes.slice(0, THEMES_PER_PAGE);
+	if (prioritized.length) {
+		pages.push({ key: 'prioritert:0', label: 'Temaer', kind: 'prioritert', themes: prioritized });
+	}
+
+	const rest = themes.slice(THEMES_PER_PAGE);
 	for (const kind of ['standard', 'ferie', 'prosjekt'] as const) {
-		const rows = themes.filter((t) => themeKindOf(t) === kind);
+		const rows = rest.filter((t) => themeKindOf(t) === kind);
 		for (const [index, pageThemes] of chunk(rows, THEMES_PER_PAGE).entries()) {
 			pages.push({
 				key: `${kind}:${index}`,
-				label: kind === 'standard' && index > 0 ? 'Flere temaer' : PAGE_LABELS[kind],
+				label: PAGE_LABELS[kind],
 				kind,
 				themes: pageThemes
 			});
@@ -52,10 +59,9 @@ export function buildThemePages(themes: Theme[]): ThemePage[] {
 
 /**
  * Id-en til det siste temaet på de prioriterte plassene (side 1) — brukes som
- * skillelinje i sorteringslista. Null når alle standard-temaer får plass på én side.
+ * skillelinje i sorteringslista. Null når alle temaer får plass på én side.
  */
 export function findPriorityBoundaryId(themes: Theme[]): string | null {
-	const standard = themes.filter((t) => themeKindOf(t) === 'standard');
-	if (standard.length <= THEMES_PER_PAGE) return null;
-	return standard[THEMES_PER_PAGE - 1]?.id ?? null;
+	if (themes.length <= THEMES_PER_PAGE) return null;
+	return themes[THEMES_PER_PAGE - 1]?.id ?? null;
 }
