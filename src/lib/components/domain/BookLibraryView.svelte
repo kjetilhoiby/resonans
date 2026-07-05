@@ -69,6 +69,7 @@
 	let manualPages = $state('');
 	let manualFormat = $state<'print' | 'audio'>('print');
 	let manualTotalMinutes = $state('');
+	let manualCoverUrl = $state<string | null>(null);
 
 	/* ── Discover book ───────────────────────────────────── */
 	let discoverLoading = $state(false);
@@ -168,6 +169,7 @@
 		manualAuthor = '';
 		manualPages = '';
 		manualTotalMinutes = '';
+		manualCoverUrl = null;
 		addError = '';
 	}
 
@@ -187,6 +189,7 @@
 			manualTitle = data.title;
 			manualAuthor = data.author ?? '';
 			manualFormat = data.format === 'audio' ? 'audio' : 'print';
+			manualCoverUrl = typeof data.coverUrl === 'string' ? data.coverUrl : null;
 			if (data.totalMinutes) manualTotalMinutes = String(data.totalMinutes);
 			manualMode = true;
 			void doSearch(data.title);
@@ -325,6 +328,18 @@
 				<input type="file" accept="image/*" style="display:none" bind:this={bookDiscoverInput} onchange={discoverBookFromImage} />
 			{:else}
 				<div class="bk-add-form">
+					{#if manualCoverUrl}
+						<div class="bk-manual-cover">
+							<img class="bk-manual-cover-img" src={manualCoverUrl} alt="Omslag hentet fra bildet" />
+							<button
+								type="button"
+								class="bk-manual-cover-remove"
+								aria-label="Fjern omslag"
+								data-track="bok-bibliotek:fjern-omslag"
+								onclick={() => (manualCoverUrl = null)}
+							>✕</button>
+						</div>
+					{/if}
 					<input class="bk-add-input" placeholder="Tittel *" bind:value={manualTitle} />
 					<input class="bk-add-input" placeholder="Forfatter (valgfritt)" bind:value={manualAuthor} />
 					<div class="bk-format-toggle" style="margin-bottom:0.5rem">
@@ -350,7 +365,7 @@
 							onclick={() => addBook({
 								title: manualTitle.trim(),
 								author: manualAuthor.trim() || null,
-								coverUrl: null,
+								coverUrl: manualCoverUrl,
 								totalPages: manualPages ? Number(manualPages) : null,
 								format: manualFormat,
 								totalMinutes: manualTotalMinutes ? Number(manualTotalMinutes) : null
@@ -646,6 +661,37 @@
 		border: 1px solid var(--border-subtle);
 		border-radius: 10px;
 	}
+
+	.bk-manual-cover {
+		position: relative;
+		align-self: flex-start;
+	}
+	.bk-manual-cover-img {
+		width: 72px;
+		height: 106px;
+		object-fit: cover;
+		border-radius: 6px;
+		border: 1px solid var(--book-border, #2a2a35);
+		display: block;
+	}
+	.bk-manual-cover-remove {
+		position: absolute;
+		top: -7px;
+		right: -7px;
+		width: 20px;
+		height: 20px;
+		border-radius: 50%;
+		background: var(--book-bg-chip, #1a1a22);
+		border: 1px solid var(--book-border-strong, #3a3a45);
+		color: var(--book-text-secondary, #888);
+		font-size: 0.65rem;
+		line-height: 1;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.bk-manual-cover-remove:hover { color: var(--book-text-primary, #e8e8e8); }
 
 	.bk-add-input {
 		background: var(--bg-elevated);
