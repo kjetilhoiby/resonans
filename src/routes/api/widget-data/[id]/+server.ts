@@ -668,6 +668,62 @@ function computeState(
 	return 'normal';
 }
 
+// ─── effortBalance ────────────────────────────────────────────────────────────
+
+/**
+ * Widget-data for effortBalance: rullerende 7-dagers effort mot estimert
+ * vekt-terskel, lest fra siste health_effort_vs_threshold-signal (cachen
+ * produseres av domain-signals-cronen). GoalRing viser andel av terskelen.
+ */
+async function fetchEffortBalanceData(userId: string, unit: string | null) {
+	const rows = (await sql(
+		`SELECT value_number, context
+		 FROM domain_signals
+		 WHERE user_id = $1
+		   AND signal_type = 'health_effort_vs_threshold'
+		 ORDER BY observed_at DESC
+		 LIMIT 1`,
+		[userId]
+	)) as Array<{ value_number: string | number | null; context: Record<string, unknown> | null }>;
+	const row = rows[0];
+
+	if (!row) {
+		return { current: null, sparkline: [], unit: unit ?? 'effort', delta: 0, pct: null, state: 'normal' };
+	}
+
+	const context = (row.context ?? {}) as Record<string, unknown>;
+	const rolling7dEffort =
+		typeof context.rolling7dEffort === 'number' ? Math.round(context.rolling7dEffort) : null;
+	const ratio = row.value_number != null ? Number(row.value_number) : null;
+	const quality = typeof context.quality === 'string' ? context.quality : 'insufficient';
+	const sparkline = Array.isArray(context.weeklyEffortLast8)
+		? (context.weeklyEffortLast8 as unknown[]).filter((v): v is number => typeof v === 'number')
+		: [];
+
+	const hasThreshold = ratio != null && Number.isFinite(ratio) && (quality === 'ok' || quality === 'good');
+	const pct = hasThreshold ? Math.max(0, Math.min(100, Math.round(ratio * 100))) : null;
+	const state: 'success' | 'warn' | 'normal' = !hasThreshold
+		? 'normal'
+		: ratio >= 1
+			? 'success'
+			: ratio < 0.85
+				? 'warn'
+				: 'normal';
+
+	const last = sparkline.length > 0 ? sparkline[sparkline.length - 1] : null;
+	const prev = sparkline.length > 1 ? sparkline[sparkline.length - 2] : null;
+	const delta = last != null && prev != null ? Math.round(last - prev) : 0;
+
+	return {
+		current: rolling7dEffort,
+		sparkline,
+		unit: unit ?? 'effort',
+		delta,
+		pct,
+		state,
+	};
+}
+
 // ─── Cache-helpers ────────────────────────────────────────────────────────────
 
 /** Konverter widget.range til (period, periodKey) for cache-oppslag. Returnerer null for rullende vinduer. */
@@ -825,6 +881,11 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 		runInBackground(aggregateSingleMetric(userId, widget.metricKey));
 	}
 	// ─────────────────────────────────────────────────────────────────────────
+
+	// ─── effortBalance: rullerende 7d effort mot vekt-terskel (fra domain_signals) ───
+	if (widget.metricType === 'effortBalance') {
+		return json(await fetchEffortBalanceData(userId, widget.unit));
+	}
 
 	const metricConf = METRIC_CONFIG[widget.metricType];
 	if (!metricConf) throw error(400, `Ukjent metrikk-type: ${widget.metricType}`);

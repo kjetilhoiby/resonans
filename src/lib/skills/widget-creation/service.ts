@@ -13,7 +13,8 @@ export const VALID_WIDGET_METRICS = [
 	'sleepHeartRate',
 	'mood',
 	'screenTime',
-	'amount'
+	'amount',
+	'effortBalance'
 ] as const;
 
 export const VALID_WIDGET_AGGS = ['avg', 'sum', 'count', 'latest', 'delta'] as const;

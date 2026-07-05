@@ -1,6 +1,12 @@
 import { sql } from 'drizzle-orm';
 import { db, pgClient, rowsOf } from '$lib/db';
 import { users } from '$lib/db/schema';
+import {
+	buildWeeklyPairs,
+	fitEffortWeightModel,
+	predictDeltaKg,
+	type WeeklyEffortWeightInput
+} from '$lib/util/effort-weight-model';
 
 type Severity = 'info' | 'low' | 'medium' | 'high';
 
@@ -667,6 +673,128 @@ async function produceEveningScreenWork7d(userId: string, now: Date) {
 	return { eveningDays, totalEveningMinutes: Math.round(totalEveningSeconds / 60) };
 }
 
+/**
+ * Rullerende 7-dagers effort mot estimert ukentlig effort-terskel for
+ * vektvedlikehold/-nedgang. Terskelen fittes fra historiske ukespar
+ * (vektendring vs ukeseffort) med effort-weight-modellen.
+ */
+async function produceHealthEffortVsThreshold(userId: string, now: Date) {
+	const weeksBack = 26;
+	const windowStart = daysAgo(now, weeksBack * 7);
+
+	const weekRows = await db.execute(sql`
+		SELECT period_key, metrics
+		FROM sensor_aggregates
+		WHERE user_id = ${userId}
+		  AND period = 'week'
+		  AND start_date >= ${windowStart}
+		  AND start_date <= ${now}
+		ORDER BY start_date ASC
+	`);
+	const weeks = rowsOf<{ period_key: string; metrics: Record<string, unknown> | null }>(weekRows);
+
+	const inputs: WeeklyEffortWeightInput[] = weeks.map((row) => {
+		const metrics = (row.metrics ?? {}) as Record<string, unknown>;
+		const weight = (metrics.weight ?? {}) as Record<string, unknown>;
+		const weeklyEffort = (metrics.weeklyEffort ?? {}) as Record<string, unknown>;
+		const values = Array.isArray(weight.values) ? weight.values : [];
+		return {
+			weekKey: row.period_key,
+			weightAvg: typeof weight.avg === 'number' ? weight.avg : null,
+			weighInCount: values.length,
+			// Manglende weeklyEffort-aggregat = reell hvileuke, ikke manglende data.
+			effort: toNumber(weeklyEffort.total)
+		};
+	});
+
+	// Hopp over brukere helt uten vektdata — signalet gir ingen mening da.
+	if (!inputs.some((w) => w.weightAvg != null)) {
+		return null;
+	}
+
+	await ensureSignalContract({
+		signalType: 'health_effort_vs_threshold',
+		ownerDomain: 'health',
+		allowedConsumerDomains: ['health', 'home', 'relationship'],
+		description:
+			'Rullerende 7-dagers effort mot estimert ukentlig effort-terskel for vektvedlikehold/-nedgang (lineær regresjon av ukentlig vektendring mot ukeseffort). context har modellparametre og kvalitet.'
+	});
+
+	const pairs = buildWeeklyPairs(inputs);
+	const model = fitEffortWeightModel(pairs);
+
+	const dayRows = await db.execute(sql`
+		SELECT metrics
+		FROM sensor_aggregates
+		WHERE user_id = ${userId}
+		  AND period = 'day'
+		  AND start_date >= ${daysAgo(now, 7)}
+		  AND start_date <= ${now}
+	`);
+	const rolling7dEffort = Math.round(
+		rowsOf<{ metrics: Record<string, unknown> | null }>(dayRows).reduce((sum, row) => {
+			const daily = ((row.metrics ?? {}) as Record<string, unknown>).dailyEffort as
+				| Record<string, unknown>
+				| undefined;
+			return sum + toNumber(daily?.total);
+		}, 0)
+	);
+
+	const threshold = model.thresholdEffort;
+	const hasThreshold = threshold != null && threshold > 0;
+	const ratio = hasThreshold ? rolling7dEffort / threshold : null;
+	const pctVsThreshold = ratio != null ? Math.round((ratio - 1) * 100) : null;
+	const predictedWeeklyDeltaKg = predictDeltaKg(model, rolling7dEffort);
+
+	let valueText: string;
+	if (ratio == null) valueText = 'ukjent';
+	else if (ratio >= 1) valueText = 'over_terskel';
+	else if (ratio >= 0.85) valueText = 'naer_terskel';
+	else if (ratio >= 0.6) valueText = 'under_terskel';
+	else valueText = 'langt_under';
+
+	// Høy severity = trenger oppmerksomhet gitt intensjon om vektnedgang.
+	let severity: Severity;
+	if (ratio == null || ratio >= 1) severity = 'info';
+	else if (ratio >= 0.85) severity = 'low';
+	else if (ratio >= 0.6) severity = 'medium';
+	else severity = 'high';
+
+	const confidence =
+		model.quality === 'good' ? 0.85 : model.quality === 'ok' ? 0.7 : model.quality === 'weak' ? 0.45 : 0.3;
+
+	const weeklyEffortLast8 = inputs.slice(-8).map((w) => Math.round(w.effort));
+
+	await upsertDomainSignal({
+		signalType: 'health_effort_vs_threshold',
+		ownerDomain: 'health',
+		userId,
+		valueNumber: ratio != null ? Math.round(ratio * 100) / 100 : null,
+		valueText,
+		severity,
+		confidence,
+		windowStart: daysAgo(now, 7),
+		windowEnd: now,
+		observedAt: now,
+		context: {
+			thresholdEffort: threshold,
+			slope: model.slope,
+			intercept: model.intercept,
+			r: model.r,
+			nWeeks: model.nWeeks,
+			quality: model.quality,
+			extrapolated: model.extrapolated,
+			rolling7dEffort,
+			pctVsThreshold,
+			predictedWeeklyDeltaKg,
+			weeklyEffortLast8,
+			modelWindowWeeks: weeksBack
+		}
+	});
+
+	return { ratio, quality: model.quality, rolling7dEffort };
+}
+
 async function produceRelationshipCoordinationReadinessToday(userId: string, relatedUserId: string, now: Date) {
 	const day = isoDay(now);
 	const windowStart = new Date(`${day}T00:00:00.000Z`);
@@ -1005,6 +1133,7 @@ export async function runDomainSignalProducers(now: Date = new Date()) {
 		homePlanningReliability14d: 0,
 		routineAdherence7d: 0,
 		eveningScreenWork7d: 0,
+		healthEffortVsThreshold: 0,
 		relationshipCoordinationReadinessToday: 0,
 		relationshipLogisticsStressIndex14d: 0,
 		familyBirthdayUpcoming7d: 0,
@@ -1056,6 +1185,12 @@ export async function runDomainSignalProducers(now: Date = new Date()) {
 			if (eveningScreenWork7d !== null) {
 				produced += 1;
 				producerBreakdown.eveningScreenWork7d += 1;
+			}
+
+			const effortVsThreshold = await produceHealthEffortVsThreshold(user.id, now);
+			if (effortVsThreshold !== null) {
+				produced += 1;
+				producerBreakdown.healthEffortVsThreshold += 1;
 			}
 
 			if (user.partnerUserId) {

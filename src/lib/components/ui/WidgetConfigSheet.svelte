@@ -48,6 +48,7 @@
 		amount: false,
 		screenTime: false,
 		heartrate: false,
+		effortBalance: true,
 	};
 
 	const RANGE_OPTIONS = [
@@ -108,6 +109,7 @@
 		mood: ['score'],
 		screenTime: ['min', 'timer'],
 		amount: ['kr', 'NOK'],
+		effortBalance: ['effort'],
 	};
 
 	let title = $state(widget.title);
