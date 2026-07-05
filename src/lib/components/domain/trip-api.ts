@@ -9,6 +9,7 @@
 
 import { patchItem, deleteItem, addItems } from '$lib/utils/checklist-api';
 import { fetchRawTimeseries, fetchOpenMeteoDay } from '$lib/utils/weather';
+import type { FerieBook } from '$lib/ferie/ferie-reading';
 
 /* ── Delte typer: reiseprofil ────────────────────────── */
 
@@ -514,6 +515,8 @@ export interface TripApi {
 	getDiary(themeId: string): Promise<DiaryFeed | null>;
 	/** Lagrer (eller sletter, ved kun {date}) et dagboknotat. false ved feil. */
 	putDiaryEntry(themeId: string, entry: DiaryEntryInput): Promise<boolean>;
+	/** Bøker med fremdriftslogg i ferievinduet (lesing-seksjonen). null ved feil. */
+	getFerieBooks(themeId: string, startDate: string, endDate: string): Promise<{ books: FerieBook[] } | null>;
 
 	/* TripPlanningSection */
 	/** Forfremmer en ferie-reise til eget reise-tema. null ved feil. */
@@ -707,6 +710,12 @@ export const tripApi: TripApi = {
 			body: JSON.stringify(entry)
 		});
 		return res.ok;
+	},
+
+	async getFerieBooks(themeId, startDate, endDate) {
+		const res = await fetch(`/api/tema/${themeId}/ferie/books?start=${startDate}&end=${endDate}`);
+		if (!res.ok) return null;
+		return (await res.json()) as { books: FerieBook[] };
 	},
 
 	async promoteTrip(themeId, input) {
