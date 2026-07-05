@@ -1,6 +1,6 @@
 import { eq, and, desc } from 'drizzle-orm';
 import { db } from '$lib/db';
-import { users, trainingPrograms } from '$lib/db/schema';
+import { users, trainingPrograms, trainingPlans } from '$lib/db/schema';
 import {
 	getGoogleChatWebhooksForRoutes,
 	resolveRoutesForNotification,
@@ -118,25 +118,71 @@ export async function runProgramReadinessNudges(args: {
 				continue;
 			}
 
-			const activeProgram = await db
-				.select({ id: trainingPrograms.id, name: trainingPrograms.name })
-				.from(trainingPrograms)
-				.where(and(eq(trainingPrograms.userId, user.id), eq(trainingPrograms.status, 'active')))
-				.orderBy(desc(trainingPrograms.createdAt))
+			// Treningsløp (ny modell) har forrang over legacy-programmer
+			const activePlan = await db
+				.select({ id: trainingPlans.id, name: trainingPlans.name })
+				.from(trainingPlans)
+				.where(and(eq(trainingPlans.userId, user.id), eq(trainingPlans.status, 'active')))
+				.orderBy(desc(trainingPlans.createdAt))
 				.limit(1);
-			if (activeProgram.length === 0) {
-				results.push({ ...base, success: true, skipped: true, skipReason: 'no_active_program' });
-				continue;
-			}
-			const program = activeProgram[0];
-			base.programId = program.id;
 
+			let program: { id: string; name: string };
 			const isoDay = localIsoDay(tz, now);
-			const assessment = await evaluateProgramReadiness({
-				userId: user.id,
-				programId: program.id,
-				date: isoDay
-			});
+			let assessment: {
+				state: 'klar' | 'lett' | 'easy' | 'rest';
+				reasons: string[];
+				plannedSession: { name: string } | null;
+				alternative: { name: string } | null;
+			};
+
+			if (activePlan.length > 0) {
+				program = activePlan[0];
+				const { getTrackTodaySession, resolveTrackPlan } = await import('$lib/server/tracks/adapter');
+				const { evaluatePlanReadiness } = await import('$lib/server/tracks/readiness');
+				const plan = (await resolveTrackPlan(user.id, program.id))!;
+				const { result: today } = await getTrackTodaySession(user.id, plan, isoDay);
+				const planAssessment = await evaluatePlanReadiness({
+					userId: user.id,
+					planId: plan.id,
+					trackSessionId: today?.trackSessionId ?? null,
+					plannedSession: today?.session ?? null,
+					date: isoDay
+				});
+				assessment = {
+					state: planAssessment.state,
+					reasons: planAssessment.reasons,
+					plannedSession: today?.session ? { name: today.session.name } : null,
+					alternative: planAssessment.alternative ? { name: planAssessment.alternative.name } : null
+				};
+			} else {
+				const activeProgram = await db
+					.select({ id: trainingPrograms.id, name: trainingPrograms.name })
+					.from(trainingPrograms)
+					.where(and(eq(trainingPrograms.userId, user.id), eq(trainingPrograms.status, 'active')))
+					.orderBy(desc(trainingPrograms.createdAt))
+					.limit(1);
+				if (activeProgram.length === 0) {
+					results.push({ ...base, success: true, skipped: true, skipReason: 'no_active_program' });
+					continue;
+				}
+				program = activeProgram[0];
+				const programAssessment = await evaluateProgramReadiness({
+					userId: user.id,
+					programId: program.id,
+					date: isoDay
+				});
+				assessment = {
+					state: programAssessment.state,
+					reasons: programAssessment.reasons,
+					plannedSession: programAssessment.plannedSession
+						? { name: programAssessment.plannedSession.name }
+						: null,
+					alternative: programAssessment.alternative
+						? { name: programAssessment.alternative.name }
+						: null
+				};
+			}
+			base.programId = program.id;
 
 			const routes = resolveRoutesForNotification(user, 'programReadiness');
 			if (routes.length === 0) {
@@ -152,7 +198,11 @@ export async function runProgramReadinessNudges(args: {
 				context: { dayIso: isoDay, programId: program.id, state: assessment.state }
 			});
 
-			const programUrl = new URL(`/treningsprogram/${program.id}`, args.appUrl);
+			// Ny modell peker på /trening; legacy-programmer på arkivsiden
+			const programUrl =
+				activePlan.length > 0
+					? new URL('/trening', args.appUrl)
+					: new URL(`/treningsprogram/${program.id}`, args.appUrl);
 			if (eventId) programUrl.searchParams.set('nudgeEventId', eventId);
 
 			const { title, body } = buildPushBody({

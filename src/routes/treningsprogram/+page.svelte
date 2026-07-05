@@ -42,6 +42,14 @@
 	<PageSection>
 	<PageHeader title="Treningsprogram" subtitle="Hybride programmer — styrke + løping" titleHref="/" />
 
+	<aside class="archive-banner">
+		<p>
+			Treningsprogrammene er arkivert — de er avløst av <strong>treningsløpene</strong>, to
+			uavhengige progresjonsløp som følger det du faktisk registrerer.
+		</p>
+		<a href="/trening" data-track="treningsprogram:til-trening">Gå til Trening →</a>
+	</aside>
+
 	{#if data.snapshot}
 		<section class="snapshot-card">
 			<header class="snapshot-head">
@@ -176,6 +184,33 @@
 </AppPage>
 
 <style>
+	.archive-banner {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		background: color-mix(in srgb, var(--accent-primary, #4a5af0) 12%, transparent);
+		border: 1px solid color-mix(in srgb, var(--accent-primary, #4a5af0) 35%, transparent);
+		border-radius: var(--card-radius, 14px);
+		padding: 0.85rem 1rem;
+		margin-bottom: 1rem;
+	}
+
+	.archive-banner p {
+		margin: 0;
+		font-size: 0.85rem;
+		color: var(--text-secondary, #aaa);
+		line-height: 1.45;
+	}
+
+	.archive-banner a {
+		flex-shrink: 0;
+		font-size: 0.85rem;
+		font-weight: 600;
+		color: var(--accent-light, #7c8ef5);
+		text-decoration: none;
+	}
+
 	.snapshot-card {
 		background: var(--bg-secondary);
 		border: 1px solid var(--border-subtle);

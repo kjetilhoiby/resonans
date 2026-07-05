@@ -1,7 +1,7 @@
 # Treningsløp: to uavhengige progresjonsløp
 
 Dato: 2026-07-05
-Status: pågår
+Status: ferdig
 
 ## Kontekst
 

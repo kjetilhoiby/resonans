@@ -1,7 +1,7 @@
 # Effort-terskel for vekt: normalisert effort → vektprediksjon
 
 Dato: 2026-07-05
-Status: pågår
+Status: ferdig
 
 ## Kontekst
 
