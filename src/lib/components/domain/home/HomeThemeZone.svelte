@@ -112,6 +112,8 @@
 	.zone-tema {
 		flex: 24 0 0;
 		min-height: 0;
+		display: flex;
+		flex-direction: column;
 		padding: 6px 0 4px;
 		position: relative;
 		touch-action: manipulation;
@@ -135,6 +137,8 @@
 
 	/* ── Tema-pager (sveip + snap, seks tema per side) ── */
 	.tema-pager {
+		flex: 1;
+		min-height: 0;
 		display: flex;
 		overflow-x: auto;
 		overflow-y: hidden;
@@ -150,6 +154,7 @@
 	.tema-page {
 		flex: 0 0 100%;
 		min-width: 100%;
+		height: 100%;
 		scroll-snap-align: start;
 	}
 
