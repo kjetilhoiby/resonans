@@ -675,11 +675,10 @@ async function produceEveningScreenWork7d(userId: string, now: Date) {
  * (vektendring vs ukeseffort) med effort-weight-modellen.
  */
 async function produceHealthEffortVsThreshold(userId: string, now: Date) {
-	const weeksBack = 26;
-
 	// Direkte fra kildene (sensor_events + canonical_workouts) — historiske
 	// sensor_aggregates kan mangle weeklyEffort og ville gitt falske 0-uker.
-	const { weeks: inputs, rolling7dEffort } = await buildEffortWeightInputs(userId, weeksBack);
+	// Hele historikken brukes (samme grunnlag som effort/vekt-kortet).
+	const { weeks: inputs, rolling7dEffort } = await buildEffortWeightInputs(userId);
 
 	// Hopp over brukere helt uten vektdata — signalet gir ingen mening da.
 	if (!inputs.some((w) => w.weightAvg != null)) {
@@ -745,7 +744,7 @@ async function produceHealthEffortVsThreshold(userId: string, now: Date) {
 			pctVsThreshold,
 			predictedWeeklyDeltaKg,
 			weeklyEffortLast8,
-			modelWindowWeeks: weeksBack
+			modelWindowWeeks: inputs.length
 		}
 	});
 

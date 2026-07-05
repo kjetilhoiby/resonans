@@ -154,7 +154,15 @@ const DATA_MIGRATIONS = [
 	// ikke lenger finnes i manuelle overstyringer). Idempotent.
 	`UPDATE training_plans
 	 SET schedule = NULL, updated_at = NOW()
-	 WHERE schedule->'days'->>'1' = 'styrke'`
+	 WHERE schedule->'days'->>'1' = 'styrke'`,
+	// 2026-07: ukes_km-milepælene ble feilkrysset av den gamle eqKm-logikken
+	// (sykkel talte som løpe-km). Omdøp metrikken til ukes_lop_km OG nullstill
+	// kryssene i samme operasjon — etter første kjøring matcher ingen rader
+	// lenger (engangs-reset, idempotent).
+	`UPDATE track_milestones
+	 SET criteria = jsonb_set(criteria, '{metric}', '"ukes_lop_km"'),
+	     achieved_at = NULL, sensor_event_id = NULL, updated_at = NOW()
+	 WHERE criteria->>'metric' = 'ukes_km'`
 ];
 
 if (DATA_MIGRATIONS.length > 0) {

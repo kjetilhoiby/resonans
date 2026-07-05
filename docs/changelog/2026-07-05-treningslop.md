@@ -66,6 +66,11 @@ Tre justeringer fra faktisk bruk:
   trykket videre; neste ukes intervall ankres på faktisk total.
 Nytt UI: `EffortBudgetCard` («Ukas effort» med intervall-sone) på /trening.
 
+Etterfiks: ukes_km-milepælene ble feilkrysset av første deploy (gammel
+eqKm-logikk der sykkel talte som løpe-km). Metrikken omdøpt til `ukes_lop_km`
+med samtidig nullstilling av kryssene i én idempotent datamigrering — etter
+første kjøring matcher ingen rader det gamle navnet.
+
 ## Beslutninger
 
 - **Registrering-først, ikke plan-først**: progresjonen beregnes alltid fra faktiske

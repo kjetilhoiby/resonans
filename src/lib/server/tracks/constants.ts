@@ -44,11 +44,13 @@ export const STRENGTH_MILESTONES = [
 	{ navn: '60 s planke', criteria: { metric: 'planke_sekunder', value: 60 } }
 ] as const;
 
+// Metrikken heter ukes_lop_km (rene løpte km) — 'ukes_km' var den gamle
+// eqKm-varianten der sykkel talte med, og ble omdøpt+nullstilt i migrering.
 export const ENDURANCE_MILESTONES = [
-	{ navn: '16 km på en uke', criteria: { metric: 'ukes_km', value: 16 } },
-	{ navn: '18 km på en uke', criteria: { metric: 'ukes_km', value: 18 } },
-	{ navn: '20 km på en uke', criteria: { metric: 'ukes_km', value: 20 } },
-	{ navn: '22 km på en uke', criteria: { metric: 'ukes_km', value: 22 } }
+	{ navn: '16 km på en uke', criteria: { metric: 'ukes_lop_km', value: 16 } },
+	{ navn: '18 km på en uke', criteria: { metric: 'ukes_lop_km', value: 18 } },
+	{ navn: '20 km på en uke', criteria: { metric: 'ukes_lop_km', value: 20 } },
+	{ navn: '22 km på en uke', criteria: { metric: 'ukes_lop_km', value: 22 } }
 ] as const;
 
 // Navnet Ekko bruker for negativer — må matche STRENGTH_EXERCISES i programs/constants.
