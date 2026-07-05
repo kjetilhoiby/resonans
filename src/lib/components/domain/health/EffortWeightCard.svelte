@@ -35,7 +35,7 @@
 
 	onMount(async () => {
 		try {
-			const res = await fetch('/api/health/effort-weight?weeks=26');
+			const res = await fetch('/api/effort-weight?weeks=26');
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
 			const data = await res.json();
 			weeks = data.weeks ?? [];
