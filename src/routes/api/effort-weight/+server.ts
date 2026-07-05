@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { buildEffortWeightInputs } from '$lib/server/health/effort-weight-data';
+import { buildEffortWeightInputs, EFFORT_WEIGHT_MAX_WEEKS } from '$lib/server/health/effort-weight-data';
 import {
 	buildWeeklyPairs,
 	fitEffortWeightModel,
@@ -22,8 +22,12 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		return json({ error: 'Ikke autentisert' }, { status: 401 });
 	}
 
+	// Default: hele historikken (opp mot 10 år)
 	const weeksParam = Number(url.searchParams.get('weeks'));
-	const weeksBack = Number.isFinite(weeksParam) && weeksParam >= 8 && weeksParam <= 104 ? weeksParam : 26;
+	const weeksBack =
+		Number.isFinite(weeksParam) && weeksParam >= 8 && weeksParam <= EFFORT_WEIGHT_MAX_WEEKS
+			? weeksParam
+			: EFFORT_WEIGHT_MAX_WEEKS;
 
 	const { weeks: inputs, rolling7dEffort } = await buildEffortWeightInputs(userId, weeksBack);
 

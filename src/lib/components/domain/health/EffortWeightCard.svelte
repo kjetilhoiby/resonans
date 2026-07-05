@@ -35,7 +35,7 @@
 
 	onMount(async () => {
 		try {
-			const res = await fetch('/api/effort-weight?weeks=26');
+			const res = await fetch('/api/effort-weight');
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
 			const data = await res.json();
 			weeks = data.weeks ?? [];
@@ -73,6 +73,10 @@
 
 	const statusSentence = $derived.by(() => {
 		if (!hasModel || !current || current.pctVsThreshold == null) {
+			// Skill «for lite data» fra «nok data, men ingen sammenheng»
+			if (model && model.quality === 'weak' && points.length >= 6) {
+				return 'Ingen tydelig sammenheng mellom effort og vektendring ennå.';
+			}
 			return 'For lite data til å beregne terskelen ennå.';
 		}
 		const pct = current.pctVsThreshold;
@@ -89,11 +93,14 @@
 
 	const qualityLabel = $derived.by(() => {
 		if (!model) return '';
-		if (model.quality === 'insufficient' || model.quality === 'weak') {
-			const n = points.length;
+		const n = points.length;
+		const rText = model.r.toFixed(2).replace('.', ',').replace('-', '−');
+		if (model.quality === 'insufficient') {
 			return `For lite data ennå (${n} ${n === 1 ? 'uke' : 'uker'} med veiinger)`;
 		}
-		const rText = model.r.toFixed(2).replace('.', ',').replace('-', '−');
+		if (model.quality === 'weak') {
+			return `Ingen tydelig sammenheng (${n} uker, r = ${rText})`;
+		}
 		const base = `Basert på ${model.nWeeks} uker (r = ${rText})`;
 		return model.extrapolated ? `${base} — terskelen er utenfor observert nivå` : base;
 	});
@@ -161,9 +168,15 @@
 				<text x={sx(current.rolling7dEffort)} y={PAD.top + 2} class="current-label" text-anchor="middle">nå</text>
 			{/if}
 
-			<!-- ukespunkter -->
+			<!-- ukespunkter (tettere/svakere ved lang historikk) -->
 			{#each points as p (p.weekKey)}
-				<circle cx={sx(p.effort)} cy={sy(Math.max(-yAbsMax, Math.min(yAbsMax, p.deltaKg)))} r="3.5" class="point">
+				<circle
+					cx={sx(p.effort)}
+					cy={sy(Math.max(-yAbsMax, Math.min(yAbsMax, p.deltaKg)))}
+					r={points.length > 60 ? 2.5 : 3.5}
+					class="point"
+					style="opacity: {points.length > 60 ? 0.55 : 0.75}"
+				>
 					<title>{p.weekKey}: effort {p.effort}, {p.deltaKg > 0 ? '+' : ''}{p.deltaKg} kg</title>
 				</circle>
 			{/each}

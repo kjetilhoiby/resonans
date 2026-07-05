@@ -598,13 +598,14 @@ export async function evaluateAndMarkMilestones(userId: string, states: TrackSta
 	if (pending.length === 0) return [];
 
 	const strengthBest = bestStrengthMetrics(states.strengthSessions);
-	// ukes_km-milepælene måles i rene løpe-km — sykkel teller ikke
+	// ukes_lop_km-milepælene måles i rene løpe-km — sykkel teller ikke
 	const enduranceBest = states.utholdenhetTrack ? bestWeekRunKm(states.enduranceWorkouts) : 0;
 
 	const achieved: string[] = [];
 	for (const milestone of pending) {
 		const { metric, value } = milestone.criteria;
-		const current = metric === 'ukes_km' ? enduranceBest : (strengthBest[metric] ?? 0);
+		// 'ukes_km' aksepteres defensivt (gammelt navn før metric-rename-migreringen)
+		const current = metric === 'ukes_lop_km' || metric === 'ukes_km' ? enduranceBest : (strengthBest[metric] ?? 0);
 		if (current >= value) {
 			await db
 				.update(trackMilestones)

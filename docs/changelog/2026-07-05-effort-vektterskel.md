@@ -44,6 +44,14 @@ regresjonen. Modellen fitter nå på hele historikken umiddelbart, uten backfill
 Manglende projeksjon køes via `WorkoutProjectionService.ensureFreshnessForRange`
 (enqueue_only).
 
+### Fase 6: Full historikk + ærligere tekster
+Vinduet utvidet fra 26 til 520 uker (hele historikken, ~10 år) i både kort,
+endepunkt og signal — brukeren har mange år med løp og veiinger, og flere
+gyldige ukespar gir reell sjanse for signifikant korrelasjon. Kortet skiller
+nå «for lite data» (insufficient, < 6 uker) fra «ingen tydelig sammenheng»
+(weak — nok uker, men |r| < 0.3): sistnevnte viste tidligere misvisende
+«for lite data ennå».
+
 ### Fase 4: Widget (effortBalance)
 Spesialtilfelle i widget-data-endepunktet (leser siste signal), registrert i
 VALID_WIDGET_METRICS så chat-flyten kan opprette den.

@@ -17,7 +17,13 @@ export interface EffortWeightInputs {
 	rolling7dEffort: number;
 }
 
-export async function buildEffortWeightInputs(userId: string, weeksBack = 26): Promise<EffortWeightInputs> {
+/** Default-vindu: hele historikken (opp mot 10 år) — modellens vakter dropper uker uten data. */
+export const EFFORT_WEIGHT_MAX_WEEKS = 520;
+
+export async function buildEffortWeightInputs(
+	userId: string,
+	weeksBack = EFFORT_WEIGHT_MAX_WEEKS
+): Promise<EffortWeightInputs> {
 	const now = new Date();
 	const windowStart = new Date(now.getTime() - weeksBack * 7 * 24 * 3600_000);
 
