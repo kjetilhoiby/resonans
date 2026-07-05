@@ -1,0 +1,290 @@
+<script lang="ts">
+	import { enhance } from '$app/forms';
+	import { AppPage, PageHeader, PageSection } from '$lib/components/ui';
+	import TrackCard from '$lib/components/domain/training/TrackCard.svelte';
+	import MilestoneList from '$lib/components/domain/training/MilestoneList.svelte';
+	import TrackHistory from '$lib/components/domain/training/TrackHistory.svelte';
+	import type { PageData } from './$types';
+
+	let { data }: { data: PageData } = $props();
+
+	function fmtPace(secPerKm: number | null | undefined): string {
+		if (secPerKm == null) return '–';
+		const m = Math.floor(secPerKm / 60);
+		const s = Math.round(secPerKm - m * 60);
+		return `${m}:${s.toString().padStart(2, '0')}`;
+	}
+
+	const strength = $derived(data.states?.strength ?? null);
+	const endurance = $derived(data.states?.endurance ?? null);
+
+	const styrkeMilestones = $derived(
+		(data.milestones ?? []).filter((m) => m.trackId === data.states?.styrkeTrackId)
+	);
+	const utholdenhetMilestones = $derived(
+		(data.milestones ?? []).filter((m) => m.trackId === data.states?.utholdenhetTrackId)
+	);
+
+	const styrkePct = $derived.by(() => {
+		if (!strength) return null;
+		const goal = data.states?.styrkeGoal?.armhevinger;
+		if (!goal) return null;
+		const current = strength.armhevinger.siste ?? goal.fra;
+		return Math.max(0, Math.min(100, ((current - 0) / goal.til) * 100));
+	});
+
+	const utholdenhetPct = $derived.by(() => {
+		if (!endurance) return null;
+		const goal = data.states?.utholdenhetGoal?.ukesKm;
+		if (!goal) return null;
+		return Math.max(0, Math.min(100, (endurance.week.weekTargetKm / goal.til) * 100));
+	});
+
+	const strengthHistory = $derived(
+		(data.states?.recentStrengthSessions ?? []).map((s) => {
+			const arm = s.exercises
+				.filter((e) => e.name.toLowerCase().includes('armheving'))
+				.flatMap((e) => e.sets)
+				.reduce((sum, set) => sum + (set.reps ?? 0), 0);
+			const planke = Math.max(
+				0,
+				...s.exercises
+					.filter((e) => e.name.toLowerCase().includes('planke') || e.name.toLowerCase().includes('plank'))
+					.flatMap((e) => e.sets)
+					.map((set) => set.durationSeconds ?? 0)
+			);
+			const parts = [arm > 0 ? `${arm} armhevinger` : null, planke > 0 ? `${planke}s planke` : null].filter(Boolean);
+			return { date: s.date, label: 'Styrke', detail: parts.join(' · ') || `${s.exercises.length} øvelser` };
+		})
+	);
+
+	const enduranceHistory = $derived(
+		(data.states?.recentEnduranceWorkouts ?? [])
+			.filter((w) => ['running', 'cycling', 'ebike'].includes(w.family))
+			.map((w) => {
+				const km = w.distanceMeters != null ? `${(w.distanceMeters / 1000).toFixed(1)} km` : '';
+				const label = w.family === 'running' ? 'Løp' : w.family === 'ebike' ? 'El-sykkel' : 'Sykkel';
+				const pace =
+					w.family === 'running' && w.distanceMeters && w.durationSeconds
+						? ` @ ${fmtPace(w.durationSeconds / (w.distanceMeters / 1000))}`
+						: '';
+				return { date: w.date, label, detail: `${km}${pace}` };
+			})
+	);
+
+	const todayText = $derived.by(() => {
+		const s = data.states;
+		if (!s) return '';
+		if (s.todayOwner === 'hvile' || !s.todaySuggestion) return 'Hviledag i dag.';
+		const t = s.todaySuggestion;
+		if (t.kind === 'strength' && t.plannedExercises) {
+			return t.plannedExercises
+				.map((e) =>
+					e.repsTarget != null ? `${e.exerciseName} ${e.sets}×${e.repsTarget}` : `${e.exerciseName} ${e.sets}×${e.durationSecondsTarget}s`
+				)
+				.join(' · ');
+		}
+		if (t.plannedRun) {
+			const km = t.plannedRun.targetDistanceMeters != null ? `${(t.plannedRun.targetDistanceMeters / 1000).toFixed(1)} km` : '';
+			return `${t.name}: ${km} @ ${fmtPace(t.plannedRun.paceHintSecPerKm)}/km`;
+		}
+		return t.name;
+	});
+</script>
+
+<AppPage>
+	<PageSection>
+		<PageHeader title="Trening" subtitle="To løp — styrke og utholdenhet" titleHref="/" />
+
+		{#if !data.plan}
+			<!-- Oppsett-modus -->
+			<section class="setup-card">
+				<h2>Start treningsløpene</h2>
+				<p>
+					To uavhengige løp over 26 uker: styrke (armhevinger mot 100 per økt, pull-up, planke) og
+					utholdenhet (mot 22 km/uke i 5:30-pace, der sykkel teller med). Progresjonen følger det du
+					faktisk registrerer i Ekko.
+				</p>
+				<form method="POST" action="?/opprett" use:enhance>
+					<div class="field-grid">
+						<label>
+							Armhevinger per økt nå
+							<input type="number" name="armhevinger" value="10" min="1" data-track="trening:oppsett-armhevinger" />
+						</label>
+						<label>
+							Planke nå (sek)
+							<input type="number" name="planke" value="30" min="5" data-track="trening:oppsett-planke" />
+						</label>
+						<label>
+							Negativ pull-up nå (sek)
+							<input type="number" name="pullupNegativ" value="10" min="1" data-track="trening:oppsett-pullup" />
+						</label>
+						<label>
+							Løpevolum nå (km/uke)
+							<input type="number" name="ukesKm" value={data.snapshot?.recentVolumeKm && data.snapshot.recentVolumeKm > 0 ? Math.round(data.snapshot.recentVolumeKm) : 14} min="1" data-track="trening:oppsett-ukeskm" />
+						</label>
+						<label>
+							Vanlig pace nå (sek/km)
+							<input type="number" name="paceSek" value="400" min="180" data-track="trening:oppsett-pace" />
+						</label>
+					</div>
+					<button type="submit" class="primary">Start løpene</button>
+				</form>
+			</section>
+		{:else}
+			<!-- Dagens økt -->
+			<section class="today-card">
+				<h2>I dag</h2>
+				<p class="today-text">{todayText}</p>
+				{#if data.states?.todaySuggestion?.notes}
+					<p class="today-note">{data.states.todaySuggestion.notes}</p>
+				{/if}
+			</section>
+
+			{#if strength}
+				<TrackCard
+					title="Styrke"
+					subtitle="Mot 100 armhevinger, 3 pull-ups og 60 s planke"
+					progressPct={styrkePct}
+					badge={strength.armhevinger.stall || strength.planke.stall ? 'Justert ned' : undefined}
+					rows={[
+						{
+							label: 'Armhevinger',
+							value: `${strength.armhevinger.siste ?? '–'}`,
+							hint: `neste mål ${strength.armhevinger.nesteTarget}`
+						},
+						{
+							label: 'Planke',
+							value: strength.planke.sisteSek != null ? `${strength.planke.sisteSek}s` : '–',
+							hint: `neste mål ${strength.planke.nesteTargetSek}s`
+						},
+						{
+							label: 'Pull-up',
+							value:
+								strength.pullup.fase === 'negativer'
+									? strength.pullup.sisteNegativSek != null
+										? `${strength.pullup.sisteNegativSek}s negativ`
+										: 'negativer'
+									: `${strength.pullup.sisteReps ?? 0} strikte`,
+							hint:
+								strength.pullup.fase === 'negativer'
+									? `neste mål ${strength.pullup.nesteTarget.negativSek}s`
+									: `neste mål ${strength.pullup.nesteTarget.reps} reps`
+						}
+					]}
+				/>
+				<MilestoneList title="Milepæler — styrke" milestones={styrkeMilestones} />
+				<TrackHistory title="Siste styrkeøkter" entries={strengthHistory} />
+			{/if}
+
+			{#if endurance}
+				<TrackCard
+					title="Utholdenhet"
+					subtitle="Mot 22 km/uke i 5:30-pace — sykkel teller med"
+					progressPct={utholdenhetPct}
+					badge={endurance.week.deload ? 'Deload-uke' : endurance.week.stallRebased ? 'Justert ned' : undefined}
+					rows={[
+						{
+							label: 'Denne uken',
+							value: `${endurance.week.totalEqKm} km`,
+							hint: `av ${endurance.week.weekTargetKm} km (${endurance.week.runKm} løp + ${endurance.week.eqKmNonRun} sykkel)`
+						},
+						{
+							label: 'Pace',
+							value: endurance.sistePaceSekPerKm != null ? `${fmtPace(endurance.sistePaceSekPerKm)}/km` : '–',
+							hint: `forventet ${fmtPace(endurance.forventetPaceSekPerKm)}/km`
+						},
+						{
+							label: 'Gjenstår',
+							value: `${endurance.week.remainingKm} km`,
+							hint: endurance.week.remainingKm <= 1 ? 'uken er i mål' : undefined
+						}
+					]}
+				/>
+				<MilestoneList title="Milepæler — utholdenhet" milestones={utholdenhetMilestones} />
+				<TrackHistory title="Siste økter" entries={enduranceHistory} />
+			{/if}
+		{/if}
+	</PageSection>
+</AppPage>
+
+<style>
+	.setup-card,
+	.today-card {
+		background: var(--card-bg-subtle, #141414);
+		border: 1px solid var(--card-border, #242424);
+		border-radius: var(--card-radius, 16px);
+		padding: var(--card-padding, 16px);
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.setup-card h2,
+	.today-card h2 {
+		font-size: 1.05rem;
+		font-weight: 700;
+		color: var(--text-primary, #eee);
+		margin: 0;
+	}
+
+	.setup-card p {
+		font-size: 0.88rem;
+		color: var(--text-secondary, #aaa);
+		margin: 0;
+		line-height: 1.5;
+	}
+
+	.field-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+		gap: 0.75rem;
+	}
+
+	label {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		font-size: 0.78rem;
+		color: var(--text-secondary, #aaa);
+	}
+
+	input {
+		background: var(--card-bg-inset, #0d0d0d);
+		border: 1px solid var(--card-border, #242424);
+		border-radius: 10px;
+		color: var(--text-primary, #eee);
+		padding: 0.5rem 0.65rem;
+		font-size: 0.95rem;
+	}
+
+	button.primary {
+		align-self: flex-start;
+		background: var(--accent-primary, #4a5af0);
+		color: #fff;
+		border: none;
+		border-radius: 12px;
+		padding: 0.6rem 1.2rem;
+		font-size: 0.95rem;
+		font-weight: 600;
+		cursor: pointer;
+		margin-top: 0.5rem;
+	}
+
+	button.primary:hover {
+		background: var(--accent-hover, #3f4de0);
+	}
+
+	.today-text {
+		font-size: 0.95rem;
+		font-weight: 600;
+		color: var(--text-primary, #eee);
+		margin: 0;
+	}
+
+	.today-note {
+		font-size: 0.82rem;
+		color: var(--text-secondary, #aaa);
+		margin: 0;
+	}
+</style>

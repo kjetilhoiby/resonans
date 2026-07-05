@@ -82,7 +82,7 @@ function todayIsoDate(): string {
  * Henter siste 3 nettsøvn for bruker (sensor_events.dataType = 'sleep').
  * Returnerer sortert nyeste først.
  */
-async function fetchRecentSleep(
+export async function fetchRecentSleep(
 	userId: string,
 	today: string
 ): Promise<Array<{ date: string; score: number | null }>> {
@@ -120,7 +120,7 @@ async function fetchRecentSleep(
 	return nights;
 }
 
-function evaluateSleepFlag(nights: Array<{ score: number | null }>): SignalFlag {
+export function evaluateSleepFlag(nights: Array<{ score: number | null }>): SignalFlag {
 	const scored = nights.filter((n) => n.score !== null) as Array<{ score: number }>;
 	if (scored.length === 0) return 'unknown';
 	const last = scored[0].score;
@@ -134,7 +134,7 @@ function evaluateSleepFlag(nights: Array<{ score: number | null }>): SignalFlag 
 	return 'green';
 }
 
-function evaluateEgenfrekvensFlag(level: number | null, balance: number | null): SignalFlag {
+export function evaluateEgenfrekvensFlag(level: number | null, balance: number | null): SignalFlag {
 	if (level === null) return 'unknown';
 	if (level <= 2) return 'red';
 	if (balance !== null && balance <= -2) return 'red';
@@ -142,7 +142,7 @@ function evaluateEgenfrekvensFlag(level: number | null, balance: number | null):
 	return 'green';
 }
 
-async function fetchActiveTrip(
+export async function fetchActiveTrip(
 	userId: string,
 	today: string
 ): Promise<{ themeId: string; destination: string | null; endDate: string | null } | null> {
@@ -172,7 +172,7 @@ async function fetchActiveTrip(
  *   - lett: 1 rød eller 2 gule
  *   - klar: ellers
  */
-function deriveState(signals: ReadinessSignals): { state: ReadinessState; reasons: string[] } {
+export function deriveState(signals: ReadinessSignals): { state: ReadinessState; reasons: string[] } {
 	const reasons: string[] = [];
 	if (signals.sick.active) {
 		reasons.push(`Markert syk t.o.m. ${signals.sick.until}`);
@@ -224,7 +224,7 @@ function deriveState(signals: ReadinessSignals): { state: ReadinessState; reason
 	return { state: 'klar', reasons };
 }
 
-function buildFingerprint(args: {
+export function buildFingerprint(args: {
 	plannedSessionId: string | null;
 	signals: ReadinessSignals;
 	state: ReadinessState;

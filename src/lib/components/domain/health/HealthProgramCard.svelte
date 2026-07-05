@@ -29,7 +29,7 @@
 {:else}
 	<aside class="hd-program-card">
 		{#if activeProgram}
-			<a class="hd-program-link" href="/treningsprogram/{activeProgram.id}">
+			<a class="hd-program-link" href="/trening">
 				<div class="hd-program-main">
 					<SectionLabel tag="span">Aktivt program</SectionLabel>
 					<h2 class="hd-program-name">{activeProgram.name}</h2>
@@ -54,12 +54,12 @@
 				{/if}
 			</a>
 		{:else}
-			<a class="hd-program-empty" href="/treningsprogram/ny">
+			<a class="hd-program-empty" href="/trening">
 				<div>
-					<SectionLabel tag="span">Treningsprogram</SectionLabel>
-					<p>Lag et hybridprogram bygget på dine faktiske PR-er og volum.</p>
+					<SectionLabel tag="span">Treningsløp</SectionLabel>
+					<p>Start to progresjonsløp — styrke og utholdenhet — som følger det du faktisk registrerer.</p>
 				</div>
-				<span class="hd-program-cta">Lag program →</span>
+				<span class="hd-program-cta">Start løpene →</span>
 			</a>
 		{/if}
 	</aside>

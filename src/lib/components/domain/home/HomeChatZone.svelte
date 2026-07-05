@@ -62,7 +62,7 @@
 		{#if ctx.programReadiness}
 			<ReadinessChip
 				readiness={ctx.programReadiness}
-				onClick={() => goto(`/treningsprogram/${ctx.programReadiness?.programId}`)}
+				onClick={() => goto('/trening')}
 			/>
 		{/if}
 		{#if ctx.actionItems.length > 0}

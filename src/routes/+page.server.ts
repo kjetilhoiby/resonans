@@ -1,5 +1,5 @@
 import { db } from '$lib/db';
-import { themes, trainingPrograms, programReadinessAssessments, reflections } from '$lib/db/schema';
+import { themes, trainingPrograms, trainingPlans, programReadinessAssessments, trackReadinessAssessments, reflections } from '$lib/db/schema';
 import { eq, and, asc, desc, inArray, sql } from 'drizzle-orm';
 import { getUserConversationList } from '$lib/server/conversations';
 import { activeFerieThemes } from '$lib/ferie/active-ferie';
@@ -68,7 +68,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 	const today = new Date().toISOString().slice(0, 10);
 
-	const [activeThemes, conversationList, activeProgram, ferieThemes] = await Promise.all([
+	const [activeThemes, conversationList, activeProgram, activePlanRows, ferieThemes] = await Promise.all([
 		loadActiveThemes(locals.userId),
 		getUserConversationList(locals.userId, { limit: 6 }),
 		db
@@ -76,6 +76,12 @@ export const load: PageServerLoad = async ({ locals }) => {
 			.from(trainingPrograms)
 			.where(and(eq(trainingPrograms.userId, locals.userId), eq(trainingPrograms.status, 'active')))
 			.orderBy(desc(trainingPrograms.createdAt))
+			.limit(1),
+		db
+			.select({ id: trainingPlans.id, name: trainingPlans.name })
+			.from(trainingPlans)
+			.where(and(eq(trainingPlans.userId, locals.userId), eq(trainingPlans.status, 'active')))
+			.orderBy(desc(trainingPlans.createdAt))
 			.limit(1),
 		loadFerieThemes(locals.userId)
 	]);
@@ -113,7 +119,36 @@ export const load: PageServerLoad = async ({ locals }) => {
 		state: 'klar' | 'lett' | 'easy' | 'rest';
 		alternativeName: string | null;
 	} | null = null;
-	if (activeProgram[0]) {
+	// Treningsløp (ny modell) har forrang over legacy-programmer
+	if (activePlanRows[0]) {
+		try {
+			const cached = await db
+				.select({
+					state: trackReadinessAssessments.state,
+					alternative: trackReadinessAssessments.alternative
+				})
+				.from(trackReadinessAssessments)
+				.where(
+					and(
+						eq(trackReadinessAssessments.userId, locals.userId),
+						eq(trackReadinessAssessments.planId, activePlanRows[0].id),
+						eq(trackReadinessAssessments.assessmentDate, today)
+					)
+				)
+				.limit(1);
+			if (cached[0]) {
+				const alt = cached[0].alternative as { name?: string } | null;
+				programReadiness = {
+					programId: activePlanRows[0].id,
+					programName: activePlanRows[0].name,
+					state: cached[0].state as 'klar' | 'lett' | 'easy' | 'rest',
+					alternativeName: alt?.name ?? null
+				};
+			}
+		} catch (err) {
+			console.error('[home] plan readiness lookup failed:', err);
+		}
+	} else if (activeProgram[0]) {
 		try {
 			const cached = await db
 				.select({

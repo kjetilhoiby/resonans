@@ -6,6 +6,7 @@
 	import DynamicWidget from '../composed/DynamicWidget.svelte';
 	import HealthActivityList from './health/HealthActivityList.svelte';
 	import HealthEffortSection from './health/HealthEffortSection.svelte';
+	import EffortWeightCard from './health/EffortWeightCard.svelte';
 	import HealthMetricGrid from './health/HealthMetricGrid.svelte';
 	import HealthScreenTime from './health/HealthScreenTime.svelte';
 	import HealthProgramCard from './health/HealthProgramCard.svelte';
@@ -374,6 +375,8 @@
 		{periodEffortAggregate}
 		{trainingLoadSeries}
 	/>
+
+	<EffortWeightCard />
 
 	{#if tooling}
 		<div class="hd-tooling-card">

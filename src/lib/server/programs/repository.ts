@@ -541,7 +541,8 @@ export async function completePlannedSession(
 	};
 }
 
-function buildActualsSnapshot(
+// Eksportert for gjenbruk i tracks-adapteren (samme snapshot-form).
+export function buildActualsSnapshot(
 	kind: 'strength' | 'run',
 	event: typeof sensorEvents.$inferSelect
 ): ProgramActuals {

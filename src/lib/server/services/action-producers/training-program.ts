@@ -1,9 +1,14 @@
 import type { ActionProducer } from '../action-suggestion-service';
 import type { ActionCandidate } from '$lib/types/actions';
 import { db } from '$lib/db';
-import { trainingPrograms, programWeeks, programSessions, programSessionCompletions } from '$lib/db/schema';
-import { and, eq, sql } from 'drizzle-orm';
+import { trainingPlans, trackSessions } from '$lib/db/schema';
+import { and, eq } from 'drizzle-orm';
 
+/**
+ * Chips for treningsløpene (ny modell). Uten aktiv plan: foreslå oppsett på
+ * /trening. Med aktiv plan: chip for dagens materialiserte økt hvis den ikke
+ * er fullført. (Legacy-programmer er arkivert og produserer ingen chips.)
+ */
 export const trainingProgramProducer: ActionProducer = async (ctx) => {
 	try {
 		return await produceChips(ctx);
@@ -14,72 +19,60 @@ export const trainingProgramProducer: ActionProducer = async (ctx) => {
 };
 
 async function produceChips(ctx: Parameters<ActionProducer>[0]): Promise<ActionCandidate[]> {
-	const activePrograms = await db.query.trainingPrograms.findMany({
-		where: and(eq(trainingPrograms.userId, ctx.userId), eq(trainingPrograms.status, 'active')),
-		columns: { id: true, name: true, startDate: true, durationWeeks: true },
+	const activePlans = await db.query.trainingPlans.findMany({
+		where: and(eq(trainingPlans.userId, ctx.userId), eq(trainingPlans.status, 'active')),
+		columns: { id: true, name: true },
 		orderBy: (t, { desc }) => [desc(t.createdAt)],
 		limit: 1
 	});
 
-	if (activePrograms.length === 0) {
+	if (activePlans.length === 0) {
 		return [
 			{
 				id: 'training-program-create',
 				icon: '🏃',
-				label: 'Lag treningsprogram',
+				label: 'Start treningsløp',
 				priority: 25,
 				source: 'system',
-				intent: { kind: 'navigate', href: '/treningsprogram/ny' }
+				intent: { kind: 'navigate', href: '/trening' }
 			}
 		];
 	}
 
-	const program = activePrograms[0];
-	const startDate =
-		typeof program.startDate === 'string'
-			? program.startDate
-			: new Date(program.startDate as unknown as Date).toISOString().slice(0, 10);
-
-	const startMs = new Date(startDate + 'T00:00:00Z').getTime();
+	const plan = activePlans[0];
 	const todayIso = ctx.now.toISOString().slice(0, 10);
-	const todayMs = new Date(todayIso + 'T00:00:00Z').getTime();
-	const dayOffset = Math.floor((todayMs - startMs) / (1000 * 60 * 60 * 24));
-	if (dayOffset < 0 || dayOffset >= program.durationWeeks * 7) return [];
 
-	const weekNumber = Math.floor(dayOffset / 7) + 1;
-	const dayNumber = (dayOffset % 7) + 1;
-
+	// Chip kun for materialisert (Ekko-hentet) økt som ikke er fullført —
+	// selve forslaget beregnes på /trening og i /api/apps-flyten.
 	const rows = await db
 		.select({
-			sessionId: programSessions.id,
-			sessionName: programSessions.name,
-			isTest: programSessions.isTest,
-			kind: programSessions.kind,
-			completionId: programSessionCompletions.id
+			id: trackSessions.id,
+			kind: trackSessions.kind,
+			payload: trackSessions.payload,
+			status: trackSessions.status
 		})
-		.from(programWeeks)
-		.innerJoin(programSessions, eq(programSessions.weekId, programWeeks.id))
-		.leftJoin(programSessionCompletions, eq(programSessionCompletions.plannedSessionId, programSessions.id))
+		.from(trackSessions)
 		.where(
 			and(
-				eq(programWeeks.programId, program.id),
-				eq(programWeeks.weekNumber, weekNumber),
-				eq(programSessions.dayNumber, dayNumber)
+				eq(trackSessions.planId, plan.id),
+				eq(trackSessions.userId, ctx.userId),
+				eq(trackSessions.date, todayIso)
 			)
 		)
 		.limit(1);
 
-	if (rows.length === 0 || rows[0].completionId) return [];
+	if (rows.length === 0 || rows[0].status === 'completed') return [];
 
 	const session = rows[0];
+	const isTest = session.payload.isTest === true;
 	return [
 		{
-			id: `training-program-today-${program.id}`,
-			icon: session.isTest ? '🎯' : session.kind === 'run' ? '🏃' : '💪',
-			label: session.isTest ? `Test: ${session.sessionName}` : `I dag: ${session.sessionName}`,
+			id: `training-program-today-${plan.id}`,
+			icon: isTest ? '🎯' : session.kind === 'run' ? '🏃' : '💪',
+			label: isTest ? `Test: ${session.payload.name}` : `I dag: ${session.payload.name}`,
 			priority: 80,
 			source: 'system',
-			intent: { kind: 'navigate', href: `/treningsprogram/${program.id}` }
+			intent: { kind: 'navigate', href: '/trening' }
 		}
 	];
-};
+}

@@ -1,6 +1,8 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { recordReadinessChoice } from '$lib/server/programs/readiness';
+import { resolveTrackPlan } from '$lib/server/tracks/adapter';
+import { recordPlanReadinessChoice } from '$lib/server/tracks/readiness';
 
 export const POST: RequestHandler = async ({ locals, params, request }) => {
 	const userId = locals.userId;
@@ -16,12 +18,15 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 		return json({ error: 'choice must be "alternative" or "original"' }, { status: 400 });
 	}
 
-	const ok = await recordReadinessChoice({
-		userId,
-		programId: params.id,
-		date,
-		choice
-	});
+	const plan = await resolveTrackPlan(userId, params.id);
+	const ok = plan
+		? await recordPlanReadinessChoice({ userId, planId: plan.id, date, choice })
+		: await recordReadinessChoice({
+				userId,
+				programId: params.id,
+				date,
+				choice
+			});
 
 	if (!ok) {
 		return json({ error: 'No readiness assessment found for that date' }, { status: 404 });

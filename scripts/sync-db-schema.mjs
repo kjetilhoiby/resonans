@@ -142,7 +142,13 @@ const DATA_MIGRATIONS = [
 	     ),
 	     updated_at = NOW()
 	 WHERE frequency IN ('daily', 'weekly', 'monthly', 'once')
-	   AND metadata->>'intentStatus' = 'failed'`
+	   AND metadata->>'intentStatus' = 'failed'`,
+	// 2026-07: Treningsløp (training_plans/tracks) avløser training_programs.
+	// Aktive/pausede legacy-programmer arkiveres — adaptive-cron og
+	// readiness-precompute no-oper seg selv. Idempotent.
+	`UPDATE training_programs
+	 SET status = 'archived', updated_at = NOW()
+	 WHERE status IN ('active', 'paused')`
 ];
 
 if (DATA_MIGRATIONS.length > 0) {

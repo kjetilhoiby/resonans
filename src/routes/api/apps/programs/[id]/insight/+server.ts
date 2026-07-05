@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { buildProgramInsight, type ProgramInsightScope } from '$lib/server/programs/insight';
+import { buildTrackInsight, resolveTrackPlan } from '$lib/server/tracks/adapter';
 
 const VALID_SCOPES: ProgramInsightScope[] = ['week', 'progression'];
 
@@ -39,7 +40,10 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 		weekNumber = n;
 	}
 
-	const result = await buildProgramInsight(userId, params.id, scope as ProgramInsightScope, weekNumber);
+	const plan = await resolveTrackPlan(userId, params.id);
+	const result = plan
+		? await buildTrackInsight(userId, plan, scope as ProgramInsightScope)
+		: await buildProgramInsight(userId, params.id, scope as ProgramInsightScope, weekNumber);
 	if (!result) {
 		return json({ error: 'Program not found', code: 'program_not_found' }, { status: 404 });
 	}
