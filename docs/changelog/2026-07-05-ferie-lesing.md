@@ -35,32 +35,49 @@ lest i løpet av ferien, med et diagram over fremdriften. Signalet er upresist
   serieberegningen skjer klient-side.
 - `TripApi.getFerieBooks()` i `trip-api.ts` (+ mock i `/design`-mocks).
 
-### Fase 3: UI
+### Fase 3: UI — mål-kort per bok
 
 - `src/lib/components/domain/ferie/FerieBooksSection.svelte` — presentasjons-
-  komponent: SVG-linjediagram (andel av boka over ferievinduet, punkter =
-  faktiske slider-snapshots, «i dag»-markør i pågående ferie) + bokliste med
-  lest-mengde, utledet leseperiode og prosent-spenn.
+  komponent med ett ekspanderbart mål-kort per bok:
+  - **Kollapset**: fremdriftslinje (før-ferien som dempet segment, ferie-
+    lesingen som lyst), prosent, og «Ferdig 4. juli 🎉» / «ferdig ~12. juli».
+  - **Ekspandert**: akkumulert-mot-total-graf — punkter = faktiske slider-
+    snapshots, stiplet prediksjonslinje mot 100 % fra lineær regresjon over
+    ferie-tempoet, ferieslutt- og «i dag»-markører, tempo-etikett og lenke
+    til boka.
 - `FerieExecutionView` laster dataene og rendrer seksjonen «Lesing» mellom
   «Trening & helse» og «Økonomi» — skjult helt når ingenting er lest.
-- Demo i `/design` → Reise-seksjonen (fast periode 1.–4. juni).
+- Demo i `/design` → Reise-seksjonen (fast periode 1.–4. juni,
+  `defaultExpanded` så grafene vises i katalogen).
+
+### Fase 4: Forventet ferdig (ETA)
+
+`ferie-reading.ts` beregner ETA per bok: regresjon over dagene med kjent
+verdi (ekte baseline-dag før ferien teller med, den syntetiske gjør ikke).
+x-domenet i grafen strekkes til ETA når den ligger maks én ferielengde etter
+ferieslutt; ellers klippes prediksjonslinja ved høyre kant med regresjons-
+verdien der (stigningen forvrenges ikke). Ferdige bøker får `finishedDate`
+(siste økning) i stedet for ETA.
 
 ## Beslutninger
 
 - **Dataeierskap**: seriene bygges i FerieExecutionView, ikke i seksjonen,
   slik at kortet kan skjules helt ved tom tilstand (scoped styles hindrer at
   barnet gjenbruker `.ferie-dash`-rammen).
-- **Linjefarger**: fast rekkefølge `#5b93e8`, `#ce7f26`, `#2aa88a`, `#d162a8`
-  — validert for CVD-separasjon (ΔE 14.7) og ≥3:1-kontrast mot mørk temaflate.
-  Maks fire linjer; alle bøker listes uansett under diagrammet.
+- **Én graf per bok** (mål-kort som ekspanderer) i stedet for ett felles
+  flerlinje-diagram — da trengs ingen kategorisk fargepalett; kurven bruker
+  temaets `--tp-accent` (med `#5b93e8`-fallback utenfor ThemePage, f.eks. i
+  `/design`). Alle `--tp-*`-variabler i komponenten har fallbacks av samme
+  grunn.
 - **Baseline-antagelse**: bok uten logg før ferien = påbegynt i ferien.
   Bevisst valg; første logg kan i teorien være en «sett posisjon»-justering.
 
 ## Verifisering
 
-- `npm test`: 1050 tester grønne (16 nye). `npm run check`: 0 feil.
+- `npm test`: 1054 tester grønne (20 nye). `npm run check`: 0 feil.
 - `/design`-demoen rendret i Playwright og inspisert manuelt: baseline-punkt,
-  delta-etiketter, leseperioder og prosent-spenn stemmer med mock-dataene.
+  delta-etiketter, leseperioder, prosent-spenn og ETA (kryssjekket for hånd:
+  125 min/dag → 340 min nås 5. juni) stemmer med mock-dataene.
 - Piksel-baselines er IKKE oppdatert fra denne sesjonen: containeren har
   annen Chromium-versjon (1194) enn baselines, og 17 urelaterte seksjoner
   diffet også. `design-reise`-baselinen må oppdateres i vanlig miljø

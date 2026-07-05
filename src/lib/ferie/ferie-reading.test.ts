@@ -154,17 +154,85 @@ describe('buildFerieReadingSeries', () => {
 		expect(serier.map((s) => s.bookId)).toEqual(['mye', 'lite']);
 	});
 
-	it('x-posisjoner spenner ferievinduet 0..1', () => {
+	it('x-posisjoner spenner ferievinduet 0..1 når domenet ikke strekkes', () => {
 		const serier = buildFerieReadingSeries(
 			[bok({ points: [
 				pkt('2026-07-01T18:00:00Z', 20),
-				pkt('2026-07-10T18:00:00Z', 120)
+				pkt('2026-07-10T18:00:00Z', 200) // ferdig — ingen ETA-forlengelse
 			] })],
 			START, SLUTT
 		);
 		const xs = serier[0].points.map((p) => p.x);
 		expect(xs[0]).toBe(0);
 		expect(xs[xs.length - 1]).toBe(1);
+		expect(serier[0].ferieEndX).toBe(1);
+	});
+
+	it('ferdig bok får ferdigdato og ingen prediksjon', () => {
+		const serier = buildFerieReadingSeries(
+			[bok({ points: [
+				pkt('2026-07-02T18:00:00Z', 120),
+				pkt('2026-07-06T18:00:00Z', 200),
+				pkt('2026-07-08T18:00:00Z', 200)
+			] })],
+			START, SLUTT
+		);
+		const s = serier[0];
+		expect(s.finished).toBe(true);
+		expect(s.finishedDate).toBe('2026-07-06'); // siste økning, ikke siste logg
+		expect(s.etaDate).toBeNull();
+		expect(s.pred).toBeNull();
+	});
+
+	it('pågående bok får forventet ferdig-dato og prediksjonslinje mot 100 %', () => {
+		// 28.06: 50 → 04.07: 110 → 10.07: 170 gir 10 sider/dag (verdi 80 ved
+		// feriestart); 200 sider nås dag 12.
+		const serier = buildFerieReadingSeries(
+			[bok({ points: [
+				pkt('2026-06-28T18:00:00Z', 50),
+				pkt('2026-07-04T18:00:00Z', 110),
+				pkt('2026-07-10T18:00:00Z', 170)
+			] })],
+			START, SLUTT
+		);
+		const s = serier[0];
+		expect(s.finished).toBe(false);
+		expect(s.etaDate).toBe('2026-07-13');
+		expect(s.paceLabel).toBe('10 sider/dag');
+		// Domenet strekkes til ETA: ferieslutt ligger da før høyre kant …
+		expect(s.domainEnd).toBe('2026-07-13');
+		expect(s.ferieEndX).toBeCloseTo(9 / 12, 5);
+		// … og prediksjonslinja ender på 100 % ved høyre kant.
+		expect(s.pred).toMatchObject({ x2: 1, y2: 1 });
+		expect(s.pred?.x1).toBeCloseTo(9 / 12, 5);
+		expect(s.pred?.y1).toBeCloseTo(170 / 200, 5);
+	});
+
+	it('ETA langt forbi ferien: domenet beholdes og prediksjonen klippes ved kanten', () => {
+		// 2 sider/dag på en 200-siders bok → ferdig langt frem i tid.
+		const serier = buildFerieReadingSeries(
+			[bok({ points: [
+				pkt('2026-07-01T18:00:00Z', 10),
+				pkt('2026-07-10T18:00:00Z', 28)
+			] })],
+			START, SLUTT
+		);
+		const s = serier[0];
+		expect(s.domainEnd).toBe(SLUTT);
+		expect(s.ferieEndX).toBe(1);
+		expect(s.etaDate).toBe('2026-10-04');
+		expect(s.pred?.x2).toBe(1);
+		expect(s.pred?.y2).toBeLessThan(1); // klippet med regresjonsverdien, ikke dratt til 100 %
+	});
+
+	it('ett enkelt loggpunkt gir verken tempo eller ETA', () => {
+		const serier = buildFerieReadingSeries(
+			[bok({ points: [pkt('2026-07-05T18:00:00Z', 80)] })],
+			START, SLUTT
+		);
+		expect(serier[0].paceLabel).toBeNull();
+		expect(serier[0].etaDate).toBeNull();
+		expect(serier[0].pred).toBeNull();
 	});
 });
 

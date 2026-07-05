@@ -31,12 +31,20 @@
 
 	<h3 class="subsection">FerieBooksSection — lesing i ferien</h3>
 	<p class="section-desc">
-		Fremdriftskurver fra bok-sliderens loggpunkter (<code>book_progress_log</code>), klemt til
-		ferievinduet. Seriene bygges av <code>buildFerieReadingSeries</code>; seksjonen skjules helt
-		når ingen bøker har registrert lesing i vinduet.
+		Mål-kort per bok fra bok-sliderens loggpunkter (<code>book_progress_log</code>):
+		fremdriftslinje der ferie-lesingen er lyst segment, prosent og ferdig/forventet
+		ferdig-dato. Ekspanderer til akkumulert-mot-total-graf med stiplet prediksjon mot 100 %
+		(her åpnet med <code>defaultExpanded</code>). Seriene bygges av
+		<code>buildFerieReadingSeries</code>; seksjonen skjules helt når ingen bøker har
+		registrert lesing i vinduet.
 	</p>
 	<div class="demo-card demo-card--wide">
-		<FerieBooksSection series={ferieReadingSeries} startDate="2026-06-01" endDate="2026-06-04" />
+		<FerieBooksSection
+			series={ferieReadingSeries}
+			startDate="2026-06-01"
+			endDate="2026-06-04"
+			defaultExpanded
+		/>
 	</div>
 
 	<h3 class="subsection">TripBudget — turforbruk</h3>
