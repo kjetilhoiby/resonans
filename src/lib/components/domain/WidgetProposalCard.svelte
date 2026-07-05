@@ -59,6 +59,8 @@
 					period: draft.period,
 					range: draft.range,
 					filterCategory: draft.filterCategory,
+					filterHourFrom: draft.filterHourFrom ?? null,
+					filterHourTo: draft.filterHourTo ?? null,
 					unit: draft.unit,
 					goal: draft.goal,
 					color: draft.color,

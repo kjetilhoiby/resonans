@@ -1255,6 +1255,14 @@ Bruk key-feltet direkte som metricKey i propose_widget.`,
 								type: 'string',
 								description: 'Valgfri underkategorifilter, f.eks. "drivstoff", "kollektivtransport". Settes automatisk fra metricKey hvis oppgitt.'
 							},
+							filterHourFrom: {
+								type: 'number',
+								description: 'Timevindu-start (0–23, inklusiv) — KUN for screenTime. F.eks. 16 for «skjermtid kl. 16–19». Krever at filterHourTo også settes.'
+							},
+							filterHourTo: {
+								type: 'number',
+								description: 'Timevindu-slutt (1–24, eksklusiv) — KUN for screenTime. F.eks. 19 for «skjermtid kl. 16–19».'
+							},
 							unit: {
 								type: 'string',
 								description: 'Enhet som vises på widgeten, f.eks. "kg", "timer", "km", "steg", "kr"'
@@ -1317,6 +1325,14 @@ Bruk key-feltet direkte som metricKey i propose_widget.`,
 					filterSubcategory: {
 						type: 'string',
 						description: 'Valgfri underkategorifilter, f.eks. "drivstoff", "kollektivtransport". Settes automatisk fra metricKey hvis oppgitt.'
+					},
+					filterHourFrom: {
+						type: 'number',
+						description: 'Timevindu-start (0–23, inklusiv) — KUN for screenTime. F.eks. 16 for «skjermtid kl. 16–19». Krever at filterHourTo også settes.'
+					},
+					filterHourTo: {
+						type: 'number',
+						description: 'Timevindu-slutt (1–24, eksklusiv) — KUN for screenTime. F.eks. 19 for «skjermtid kl. 16–19».'
 					},
 					unit: {
 						type: 'string',
@@ -2833,6 +2849,8 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 								goal: args.goal ?? null,
 								filterCategory: resolvedCategory,
 								filterSubcategory: resolvedSubcategory,
+								filterHourFrom: args.filterHourFrom ?? null,
+								filterHourTo: args.filterHourTo ?? null,
 								metricKey: args.metricKey ?? null,
 								unit: args.unit || '',
 								color: args.color || '#7c8ef5',

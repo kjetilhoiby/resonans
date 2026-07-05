@@ -633,6 +633,8 @@ export const userWidgets = pgTable('user_widgets', {
 	unit: text('unit').notNull(),                           // 'kg'|'h'|'km'|'kr'|'skritt'|'slag/min' etc.
 	filterCategory: text('filter_category'),                // Valgfri kategorifilter for amount-metrikk (f.eks. 'dagligvarer', 'kafe_og_restaurant', 'bil_og_transport')
 	filterSubcategory: text('filter_subcategory'),          // Valgfri subkategorifilter (f.eks. 'fastfood', 'kafe' under kafe_og_restaurant)
+	filterHourFrom: integer('filter_hour_from'),            // Timevindu-start, inklusiv 0–23 (kun screenTime, krever hourly-data). NULL = hele døgnet
+	filterHourTo: integer('filter_hour_to'),                // Timevindu-slutt, eksklusiv 1–24 (f.eks. 16→19 = kl. 16:00–19:00)
 	metricKey: text('metric_key'),                          // Dynamisk metrikkregisternøkkel (f.eks. 'spending_bil_og_transport_drivstoff'). Overstyrer METRIC_CONFIG-path i widget-API.
 	color: text('color').notNull().default('#7c8ef5'),      // Hex-farge for widget
 	pinned: boolean('pinned').default(false).notNull(),     // Vises på hjemmeskjerm (kun relevant når themeId IS NULL)

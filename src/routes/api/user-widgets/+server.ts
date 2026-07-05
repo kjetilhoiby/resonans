@@ -32,7 +32,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const userId = locals.userId;
 	const body = await request.json();
 
-	const { title, metricType, aggregation, period, range, filterCategory, goal, unit, color, pinned, themeId } = body;
+	const { title, metricType, aggregation, period, range, filterCategory, filterHourFrom, filterHourTo, goal, unit, color, pinned, themeId } = body;
 
 	if (!title || typeof title !== 'string' || title.trim().length === 0) {
 		throw error(400, 'title er påkrevd');
@@ -67,6 +67,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		period,
 		range,
 		filterCategory: filterCategory ?? null,
+		filterHourFrom: filterHourFrom ?? null,
+		filterHourTo: filterHourTo ?? null,
 		goal: goal ?? null,
 		unit,
 		color: color ?? null,

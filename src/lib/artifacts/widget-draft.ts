@@ -22,6 +22,8 @@ export type WidgetDraft = {
 	range: WidgetRange;
 	filterCategory: string | null;
 	filterSubcategory?: string | null;
+	filterHourFrom?: number | null;
+	filterHourTo?: number | null;
 	metricKey?: string | null;
 	unit: string;
 	goal: number | null;
