@@ -41,7 +41,13 @@
 	let vapidPublicKey = $state<string | null>(null);
 	let missingEnvVars = $state<string[]>([]);
 	let pwaChannelSupported = $state(false);
-	let isIosWithoutPush = $state(false);
+	let deviceDiag = $state<{
+		standalone: boolean;
+		serviceWorker: boolean;
+		pushManager: boolean;
+		notification: boolean;
+		ios: boolean;
+	} | null>(null);
 
 	let googleChatChannels = $state(
 		(data.settings.channels?.googleChat?.length
@@ -114,10 +120,22 @@
 		return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
 	}
 
+	function isStandaloneDisplay() {
+		if (typeof window === 'undefined') return false;
+		return (
+			window.matchMedia?.('(display-mode: standalone)')?.matches === true ||
+			(navigator as Navigator & { standalone?: boolean }).standalone === true
+		);
+	}
+
 	function supportsPwaChannel() {
 		if (typeof window === 'undefined') return false;
 		const hasPushApi = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 		if (!hasPushApi) return false;
+
+		// Installert PWA (standalone) har push uansett hva UA-en sier —
+		// UA-sniffingen under skal bare luke ut Safari-*fanen* på iOS.
+		if (isStandaloneDisplay()) return true;
 
 		const ua = navigator.userAgent || '';
 		const isIOS = /iPad|iPhone|iPod/.test(ua);
@@ -175,8 +193,14 @@
 		if (typeof window === 'undefined') return;
 		pwaChannelSupported = supportsPwaChannel();
 		pushSupported = pwaChannelSupported;
-		isIosWithoutPush = !pwaChannelSupported && /iPad|iPhone|iPod/.test(navigator.userAgent || '');
-		pushPermission = pushSupported ? Notification.permission : 'denied';
+		deviceDiag = {
+			standalone: isStandaloneDisplay(),
+			serviceWorker: 'serviceWorker' in navigator,
+			pushManager: 'PushManager' in window,
+			notification: 'Notification' in window,
+			ios: /iPad|iPhone|iPod/.test(navigator.userAgent || '')
+		};
+		pushPermission = pushSupported && 'Notification' in window ? Notification.permission : 'denied';
 
 		try {
 			const response = await fetch('/api/push/status');
@@ -654,12 +678,20 @@
 					<li>Server-konfigurasjon: {pushConfigured ? 'OK' : 'Mangler VAPID'}</li>
 					<li>Tillatelse: {pushPermission}</li>
 					<li>Abonnert (denne kontoen): {pushSubscribed ? 'Ja' : 'Nei'}</li>
+					{#if deviceDiag}
+						<li>Kjører som installert PWA: {deviceDiag.standalone ? 'Ja' : 'Nei'}</li>
+						<li>Service worker-API: {deviceDiag.serviceWorker ? 'Ja' : 'Nei'} · Push-API: {deviceDiag.pushManager ? 'Ja' : 'Nei'} · Notification-API: {deviceDiag.notification ? 'Ja' : 'Nei'}</li>
+					{/if}
 				</ul>
-				{#if !pwaChannelSupported}
+				{#if !pwaChannelSupported && deviceDiag}
 					<p class="config-warning">
-						{isIosWithoutPush
-							? 'På iPhone/iPad virker push bare når Resonans er installert på hjemskjermen. Åpne i Safari → Del → «Legg til på Hjem-skjerm», og aktiver push derfra.'
-							: 'Denne nettleseren støtter ikke web push. PWA-rutingen over gjelder likevel enhetene der push er aktivert.'}
+						{#if deviceDiag.ios && deviceDiag.standalone}
+							Appen kjører som installert PWA, men Push API mangler. Dette skjer typisk når installasjonen er gammel — fjern Resonans fra hjemskjermen og legg den til på nytt fra Safari (Del → «Legg til på Hjem-skjerm»).
+						{:else if deviceDiag.ios}
+							På iPhone/iPad virker push bare når Resonans er installert på hjemskjermen. Åpne i Safari → Del → «Legg til på Hjem-skjerm», og aktiver push derfra.
+						{:else}
+							Denne nettleseren støtter ikke web push. PWA-rutingen over gjelder likevel enhetene der push er aktivert.
+						{/if}
 					</p>
 				{/if}
 				{#if !pushConfigured && missingEnvVars.length > 0}
