@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { detectActivityType, parseTaskIntent, LONG_RUN_DISTANCE_KM } from './task-intent-parser';
+import {
+	buildDefaultIntentFromTask,
+	detectActivityType,
+	parseTaskIntent,
+	LONG_RUN_DISTANCE_KM
+} from './task-intent-parser';
 
 describe('detectActivityType – aliaser', () => {
 	it('rulle/elsykkel → ebike', () => {
@@ -50,5 +55,53 @@ describe('parseTaskIntent – «langt» løp', () => {
 		// "sykle langt" → cycling uten kvantifiserbart mål → ingen intent
 		const r = parseTaskIntent('sykle langt');
 		expect(r.intent?.distanceKm).toBeUndefined();
+	});
+});
+
+describe('buildDefaultIntentFromTask – frekvens fra oppgaven når teksten mangler den', () => {
+	it('ukeplan-oppgave uten frekvens i teksten → 1 gang denne uka', () => {
+		// «Vaske bil» opprettet fra ukeplanen med frequency='weekly'
+		expect(parseTaskIntent('Vaske bil').matched).toBe(false);
+
+		const r = buildDefaultIntentFromTask(
+			{ frequency: 'weekly', targetValue: null, unit: null },
+			'Vaske bil'
+		);
+		expect(r?.matched).toBe(true);
+		expect(r?.parser).toBe('default');
+		expect(r?.intent).toEqual({
+			frequency: 'weekly',
+			targetValue: 1,
+			unit: 'ganger',
+			period: 'week',
+			comparator: '>=',
+			sourceText: 'Vaske bil'
+		});
+	});
+
+	it('beholder eksisterende målverdi og enhet', () => {
+		const r = buildDefaultIntentFromTask(
+			{ frequency: 'daily', targetValue: 3, unit: 'glass' },
+			'Drikke vann'
+		);
+		expect(r?.intent?.targetValue).toBe(3);
+		expect(r?.intent?.unit).toBe('glass');
+		expect(r?.intent?.period).toBe('day');
+	});
+
+	it('mapper alle frekvenser til riktig periode', () => {
+		expect(buildDefaultIntentFromTask({ frequency: 'monthly', targetValue: null, unit: null }, 'x')?.intent?.period).toBe('month');
+		expect(buildDefaultIntentFromTask({ frequency: 'once', targetValue: null, unit: null }, 'x')?.intent?.period).toBe('day');
+	});
+
+	it('gir null uten frekvens eller med ukjent frekvens — da trengs avklaring', () => {
+		expect(buildDefaultIntentFromTask({ frequency: null, targetValue: null, unit: null }, 'Vaske bil')).toBeNull();
+		expect(buildDefaultIntentFromTask({ frequency: 'annenhver', targetValue: null, unit: null }, 'Vaske bil')).toBeNull();
+	});
+
+	it('normaliserer ugyldig målverdi og tom enhet', () => {
+		const r = buildDefaultIntentFromTask({ frequency: 'weekly', targetValue: 0, unit: '  ' }, 'Rydde garasjen');
+		expect(r?.intent?.targetValue).toBe(1);
+		expect(r?.intent?.unit).toBe('ganger');
 	});
 });

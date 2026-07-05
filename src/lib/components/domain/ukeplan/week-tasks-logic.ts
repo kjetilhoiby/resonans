@@ -26,9 +26,11 @@ export function doneTask(task: WeekTask): boolean {
 export function formatStructuredTaskMeta(task: WeekTask): string | null {
 	if (!task.frequency) return null;
 	if (typeof task.targetValue === 'number' && task.targetValue > 0) {
-		if (task.frequency === 'daily') return `${task.targetValue} ${task.unit || 'ganger'} per dag`;
-		if (task.frequency === 'weekly') return `${task.targetValue} ${task.unit || 'ganger'} denne uka`;
-		if (task.frequency === 'monthly') return `${task.targetValue} ${task.unit || 'ganger'} denne måneden`;
+		const unit = task.unit || 'ganger';
+		const unitLabel = task.targetValue === 1 && unit === 'ganger' ? 'gang' : unit;
+		if (task.frequency === 'daily') return `${task.targetValue} ${unitLabel} per dag`;
+		if (task.frequency === 'weekly') return `${task.targetValue} ${unitLabel} denne uka`;
+		if (task.frequency === 'monthly') return `${task.targetValue} ${unitLabel} denne måneden`;
 	}
 	const labels: Record<string, string> = { daily: 'daglig', weekly: 'ukentlig', monthly: 'månedlig', once: 'én gang' };
 	return labels[task.frequency] ?? task.frequency;
@@ -42,7 +44,12 @@ export interface TaskIntentBadge {
 export function getTaskIntentBadge(task: WeekTask): TaskIntentBadge | null {
 	const status = task.metadata?.intentStatus;
 	if (status === 'pending') return { label: 'Tolkes...', tone: 'pending' };
-	if (status === 'parsed') return { label: 'Aktiv sporing', tone: 'parsed' };
+	// Standard-tolkning (frekvens fra oppgaven, ikke teksten) er ikke «aktiv
+	// sporing» — en vanlig ukeoppgave skal ikke bære badge.
+	if (status === 'parsed') {
+		if (task.metadata?.intentParser === 'default') return null;
+		return { label: 'Aktiv sporing', tone: 'parsed' };
+	}
 	if (status === 'failed') return { label: 'Trenger avklaring', tone: 'failed' };
 	return null;
 }

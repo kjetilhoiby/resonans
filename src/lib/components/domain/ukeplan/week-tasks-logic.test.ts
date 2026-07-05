@@ -90,7 +90,14 @@ describe('formatStructuredTaskMeta', () => {
 	it('formaterer målverdi per frekvens', () => {
 		expect(formatStructuredTaskMeta(mkTask({ frequency: 'daily', targetValue: 2, unit: 'glass' }))).toBe('2 glass per dag');
 		expect(formatStructuredTaskMeta(mkTask({ frequency: 'weekly', targetValue: 3 }))).toBe('3 ganger denne uka');
-		expect(formatStructuredTaskMeta(mkTask({ frequency: 'monthly', targetValue: 1 }))).toBe('1 ganger denne måneden');
+		expect(formatStructuredTaskMeta(mkTask({ frequency: 'monthly', targetValue: 1 }))).toBe('1 gang denne måneden');
+	});
+
+	it('bruker entall «gang» ved målverdi 1', () => {
+		expect(formatStructuredTaskMeta(mkTask({ frequency: 'weekly', targetValue: 1 }))).toBe('1 gang denne uka');
+		expect(formatStructuredTaskMeta(mkTask({ frequency: 'daily', targetValue: 1 }))).toBe('1 gang per dag');
+		// Egne enheter beholdes uendret
+		expect(formatStructuredTaskMeta(mkTask({ frequency: 'weekly', targetValue: 1, unit: 'økt' }))).toBe('1 økt denne uka');
 	});
 
 	it('faller tilbake til frekvens-label uten målverdi', () => {
@@ -109,6 +116,12 @@ describe('getTaskIntentBadge', () => {
 
 	it('gir null uten intentStatus', () => {
 		expect(getTaskIntentBadge(mkTask())).toBeNull();
+	});
+
+	it('gir null for standard-tolkede oppgaver (frekvens fra oppgaven, ikke teksten)', () => {
+		expect(
+			getTaskIntentBadge(mkTask({ metadata: { intentStatus: 'parsed', intentParser: 'default' } }))
+		).toBeNull();
 	});
 });
 

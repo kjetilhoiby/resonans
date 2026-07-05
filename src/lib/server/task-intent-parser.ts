@@ -38,7 +38,7 @@ export type TaskIntent = {
 export type ParsedTaskIntent = {
 	matched: boolean;
 	reason?: string;
-	parser?: 'rule' | 'llm';
+	parser?: 'rule' | 'llm' | 'default';
 	intent?: TaskIntent;
 };
 
@@ -321,6 +321,44 @@ export function parseTaskIntent(rawText: string): ParsedTaskIntent {
 	return { matched: false, reason: 'no_quantifiable_target' };
 }
 
+const FREQUENCY_PERIODS: Record<TaskIntent['frequency'], TaskIntent['period']> = {
+	daily: 'day',
+	weekly: 'week',
+	monthly: 'month',
+	once: 'day'
+};
+
+/**
+ * Bygger en standard-intent fra oppgavens egne felter når teksten ikke inneholder
+ * noen eksplisitt frekvens. Oppgaver fra ukeplanen opprettes med frequency='weekly'
+ * allerede ved opprettelse — «Vaske bil» betyr da «én gang denne uka», ikke en
+ * parse-feil som trenger avklaring. Returnerer null når oppgaven mangler frekvens
+ * (da er avklaring faktisk nødvendig).
+ */
+export function buildDefaultIntentFromTask(
+	task: { frequency: string | null; targetValue: number | null; unit: string | null },
+	sourceText: string
+): ParsedTaskIntent | null {
+	const frequency = task.frequency as TaskIntent['frequency'];
+	if (!frequency || !(frequency in FREQUENCY_PERIODS)) return null;
+
+	const targetValue =
+		typeof task.targetValue === 'number' && task.targetValue > 0 ? task.targetValue : 1;
+
+	return {
+		matched: true,
+		parser: 'default',
+		intent: {
+			frequency,
+			targetValue,
+			unit: task.unit?.trim() || 'ganger',
+			period: FREQUENCY_PERIODS[frequency],
+			comparator: '>=',
+			sourceText
+		}
+	};
+}
+
 export async function processTaskIntentParseJob(params: {
 	userId: string;
 	taskId: string;
@@ -353,6 +391,12 @@ export async function processTaskIntentParseJob(params: {
 	let parsed = parseTaskIntent(sourceText);
 	if (!parsed.matched && parsed.reason !== 'empty_text') {
 		parsed = await parseTaskIntentWithLlmFallback(sourceText);
+	}
+	// Ingen eksplisitt frekvens i teksten, men oppgaven har allerede en frekvens
+	// fra opprettelsen (f.eks. ukeplan-oppgaver) → fall tilbake til den i stedet
+	// for å be brukeren om avklaring.
+	if (!parsed.matched && parsed.reason !== 'empty_text') {
+		parsed = buildDefaultIntentFromTask(task, sourceText) ?? parsed;
 	}
 
 	const currentMetadata = (task.metadata ?? {}) as Record<string, unknown>;
