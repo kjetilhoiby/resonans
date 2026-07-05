@@ -126,7 +126,23 @@ const DATA_MIGRATIONS = [
 	   AND EXISTS (
 	     SELECT 1 FROM jsonb_array_elements(c.materials) e
 	     WHERE (e->>'kind') = 'sheet' AND (e ? 'pricePerSheetNok')
-	   )`
+	   )`,
+	// 2026-07: Oppgaver med frekvens satt ved opprettelse (f.eks. ukeplan-oppgaver
+	// med frequency='weekly') skal ikke stå som «Trenger avklaring» når teksten
+	// mangler eksplisitt frekvens — de betyr «1 gang i perioden». Speiler
+	// buildDefaultIntentFromTask i task-intent-parser.ts for rader som allerede
+	// var markert failed. Idempotent (intentStatus blir 'parsed').
+	`UPDATE tasks
+	 SET target_value = COALESCE(target_value, 1),
+	     unit = COALESCE(NULLIF(unit, ''), 'ganger'),
+	     metadata = metadata || jsonb_build_object(
+	       'intentStatus', 'parsed',
+	       'intentError', null,
+	       'intentParser', 'default'
+	     ),
+	     updated_at = NOW()
+	 WHERE frequency IN ('daily', 'weekly', 'monthly', 'once')
+	   AND metadata->>'intentStatus' = 'failed'`
 ];
 
 if (DATA_MIGRATIONS.length > 0) {
