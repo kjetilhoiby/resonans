@@ -92,6 +92,8 @@ export interface UserWidget {
 	thresholdSuccess: number | null;
 	filterCategory: string | null;
 	filterSubcategory: string | null;
+	filterHourFrom?: number | null;
+	filterHourTo?: number | null;
 }
 
 export interface MediaHistoryItem {

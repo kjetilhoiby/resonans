@@ -20,6 +20,8 @@
 		thresholdSuccess: number | null;
 		filterCategory?: string | null;
 		filterSubcategory?: string | null;
+		filterHourFrom?: number | null;
+		filterHourTo?: number | null;
 	}
 
 	let debugOpen = $state(false);
@@ -117,6 +119,12 @@
 	let range = $state(widget.range ?? 'current_month');
 	let filterCategory = $state(widget.filterCategory ?? '');
 	let filterSubcategory = $state(widget.filterSubcategory ?? '');
+	// Timevindu (kun screenTime): '' = ikke satt = hele døgnet
+	let hourFromStr = $state(widget.filterHourFrom != null ? String(widget.filterHourFrom) : '');
+	let hourToStr = $state(widget.filterHourTo != null ? String(widget.filterHourTo) : '');
+
+	const HOUR_FROM_OPTIONS = Array.from({ length: 24 }, (_, i) => i);      // 0–23
+	const HOUR_TO_OPTIONS = Array.from({ length: 24 }, (_, i) => i + 1);    // 1–24
 
 	let previewLoading = $state(false);
 	let previewError = $state('');
@@ -142,6 +150,8 @@
 		range = widget.range ?? 'current_month';
 		filterCategory = widget.filterCategory ?? '';
 		filterSubcategory = widget.filterSubcategory ?? '';
+		hourFromStr = widget.filterHourFrom != null ? String(widget.filterHourFrom) : '';
+		hourToStr = widget.filterHourTo != null ? String(widget.filterHourTo) : '';
 		higherIsBetter = detectDirection();
 	});
 
@@ -181,13 +191,23 @@
 		return isNaN(n) ? null : n;
 	}
 
+	function intOrNull(s: string): number | null {
+		const n = parseInt(s, 10);
+		return isNaN(n) ? null : n;
+	}
+
 	function handleSave() {
 		onsave({
 			title: title.trim() || widget.title,
 			unit: unit.trim() || widget.unit,
 			range,
-			filterCategory: filterCategory || null,
+			// Kategorifilter gjelder kun økonomi-widgets — nullstill det på andre metrikker
+			// slik at strøverdier (f.eks. 'ukategorisert' på en skjermtid-widget) ryddes bort.
+			// filterSubcategory beholdes som den er: workout-widgets bruker den som sportType-filter.
+			filterCategory: widget.metricType === 'amount' ? (filterCategory || null) : null,
 			filterSubcategory: filterSubcategory || null,
+			filterHourFrom: widget.metricType === 'screenTime' ? intOrNull(hourFromStr) : null,
+			filterHourTo: widget.metricType === 'screenTime' ? intOrNull(hourToStr) : null,
 			goal: numOrNull(goalStr),
 			thresholdWarn: numOrNull(warnStr),
 			thresholdSuccess: numOrNull(successStr),
@@ -316,8 +336,38 @@
 							{/if}
 						{/if}
 					</div>
+				{:else if widget.metricType === 'screenTime'}
+					<div class="hour-window">
+						<label class="field field-half">
+							<span class="field-label">Fra kl.</span>
+							<select class="field-input" bind:value={hourFromStr} data-track="widget-konfig:timevindu-fra">
+								<option value="">Hele døgnet</option>
+								{#each HOUR_FROM_OPTIONS as h}
+									<option value={String(h)}>{String(h).padStart(2, '0')}:00</option>
+								{/each}
+							</select>
+						</label>
+						<label class="field field-half">
+							<span class="field-label">Til kl.</span>
+							<select class="field-input" bind:value={hourToStr} data-track="widget-konfig:timevindu-til">
+								<option value="">Hele døgnet</option>
+								{#each HOUR_TO_OPTIONS as h}
+									<option value={String(h)}>{String(h % 24).padStart(2, '0')}:00</option>
+								{/each}
+							</select>
+						</label>
+					</div>
+					{#if (hourFromStr === '') !== (hourToStr === '')}
+						<p class="filter-preview-muted">Velg både fra og til for å aktivere timevinduet.</p>
+					{:else if hourFromStr !== '' && hourFromStr === hourToStr}
+						<p class="filter-preview-muted">Fra og til kan ikke være like — vinduet blir tomt.</p>
+					{:else if hourFromStr !== ''}
+						<p class="filter-preview-muted">Teller kun skjermtid mellom {hourFromStr.padStart(2, '0')}:00 og {String(parseInt(hourToStr, 10) % 24).padStart(2, '0')}:00. Dager uten timesoppløsning holdes utenfor.</p>
+					{:else}
+						<p class="filter-preview-muted">Avgrens til et tidsrom på døgnet, f.eks. 16–19. Krever timesoppløsning i skjermtid-dataene.</p>
+					{/if}
 				{:else}
-					<p class="filter-preview-muted">Filtre er tilgjengelig for økonomi-widgets.</p>
+					<p class="filter-preview-muted">Filtre er tilgjengelig for økonomi- og skjermtid-widgets.</p>
 				{/if}
 			</section>
 
@@ -599,6 +649,11 @@
 	.range.warn { color: #f0b429; }
 	.range.normal { color: #555; }
 	.range.success { color: #82c882; }
+
+	.hour-window {
+		display: flex;
+		gap: 10px;
+	}
 
 	.filter-preview {
 		border: 1px solid #2a2a2a;

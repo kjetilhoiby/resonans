@@ -18,6 +18,7 @@ import { and, eq } from 'drizzle-orm';
 import { ensureCategorizedEventsForRange } from '$lib/server/integrations/categorized-events';
 import { loadTransactionMatchingRules } from '$lib/server/classification-overrides';
 import { getMetricByKey, deriveMetricKey } from '$lib/server/services/metric-definition-service';
+import { minutesInWindow, normalizeHourWindow, type HourBucket, type HourWindow } from '$lib/server/services/screen-time-window';
 import { aggregateSingleMetric } from '$lib/server/integrations/aggregation';
 import { runInBackground } from '$lib/server/run-in-background';
 import type { RequestHandler } from './$types';
@@ -263,6 +264,39 @@ async function fetchCategorizedAmountRows(
 	return fetchKeywordFilteredAmountRows(userId, from, to, filterCategory);
 }
 
+/**
+ * Henter skjermtid-minutter innenfor et timevindu per event (én per dag).
+ * Kun events med `hourly`-oppløsning (daglige skjermbilder) kan vindus-filtreres —
+ * dager uten hourly-data utelates i stedet for å telle som 0.
+ */
+async function fetchHourWindowScreenTimeRows(
+	userId: string,
+	from: Date,
+	to: Date,
+	window: HourWindow,
+): Promise<Array<{ timestamp: Date; value: number }>> {
+	const rows = await sql(
+		`
+		SELECT timestamp, data->'hourly' AS hourly
+		FROM sensor_events
+		WHERE user_id = $1
+		  AND data_type = 'screen_time'
+		  AND timestamp >= $2
+		  AND timestamp <= $3
+		  AND data ? 'hourly'
+		ORDER BY timestamp ASC
+		`,
+		[userId, from.toISOString(), to.toISOString()]
+	) as unknown as Array<{ timestamp: Date; hourly: HourBucket[] | null }>;
+
+	const result: Array<{ timestamp: Date; value: number }> = [];
+	for (const row of rows) {
+		const value = minutesInWindow(row.hourly, window);
+		if (value !== null) result.push({ timestamp: new Date(row.timestamp), value });
+	}
+	return result;
+}
+
 async function collectAmountFilterDebug(
 	userId: string,
 	from: Date,
@@ -380,6 +414,29 @@ function aggregateValues(values: number[], aggregation: string): number {
 	return values.reduce((sum, v) => sum + v, 0);
 }
 
+/** Grupperer rå (timestamp, value)-rader i tidsbøtter og aggregerer per bøtte */
+function bucketRows(
+	rows: Array<{ timestamp: Date; value: number }>,
+	period: string,
+	aggregation: string,
+): { bucket: string; value: number }[] {
+	const byBucket = new Map<string, number[]>();
+
+	for (const row of rows) {
+		const key = getBucketKey(row.timestamp, period);
+		const list = byBucket.get(key) ?? [];
+		list.push(row.value);
+		byBucket.set(key, list);
+	}
+
+	return [...byBucket.entries()]
+		.sort(([a], [b]) => a.localeCompare(b))
+		.map(([bucket, values]) => ({
+			bucket,
+			value: aggregateValues(values, aggregation),
+		}));
+}
+
 /** Henter tidsseriedata gruppert per periode */
 async function fetchTimeSeries(
 	userId: string,
@@ -390,24 +447,16 @@ async function fetchTimeSeries(
 	to: Date,
 	filterCategory?: string | null,
 	filterSubcategory?: string | null,
+	hourWindow?: HourWindow | null,
 ): Promise<{ bucket: string; value: number }[]> {
 	if (metricConf.dataType === 'bank_transaction' && filterCategory) {
 		const rows = await fetchCategorizedAmountRows(userId, from, to, filterCategory, filterSubcategory);
-		const byBucket = new Map<string, number[]>();
+		return bucketRows(rows, period, aggregation);
+	}
 
-		for (const row of rows) {
-			const key = getBucketKey(row.timestamp, period);
-			const list = byBucket.get(key) ?? [];
-			list.push(row.value);
-			byBucket.set(key, list);
-		}
-
-		return [...byBucket.entries()]
-			.sort(([a], [b]) => a.localeCompare(b))
-			.map(([bucket, values]) => ({
-				bucket,
-				value: aggregateValues(values, aggregation),
-			}));
+	if (metricConf.dataType === 'screen_time' && hourWindow) {
+		const rows = await fetchHourWindowScreenTimeRows(userId, from, to, hourWindow);
+		return bucketRows(rows, period, aggregation);
 	}
 
 	const pgTrunc = period === 'day' ? 'day' : period === 'week' ? 'week' : 'month';
@@ -479,9 +528,16 @@ async function fetchSingleValue(
 	to: Date,
 	filterCategory?: string | null,
 	filterSubcategory?: string | null,
+	hourWindow?: HourWindow | null,
 ): Promise<number | null> {
 	if (metricConf.dataType === 'bank_transaction' && filterCategory) {
 		const rows = await fetchCategorizedAmountRows(userId, from, to, filterCategory, filterSubcategory);
+		if (rows.length === 0) return null;
+		return aggregateValues(rows.map((row) => row.value), aggregation);
+	}
+
+	if (metricConf.dataType === 'screen_time' && hourWindow) {
+		const rows = await fetchHourWindowScreenTimeRows(userId, from, to, hourWindow);
 		if (rows.length === 0) return null;
 		return aggregateValues(rows.map((row) => row.value), aggregation);
 	}
@@ -788,14 +844,18 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 	const filterSubcategory = filterSubcategoryOverride !== null
 		? (filterSubcategoryOverride.trim() || null)
 		: (widget.filterSubcategory ?? null);
+	// Timevindu (kun screenTime): ugyldig/manglende par → hele døgnet
+	const hourWindow = widget.metricType === 'screenTime'
+		? normalizeHourWindow(widget.filterHourFrom, widget.filterHourTo)
+		: null;
 	let [series, currentValue, prevValue] = await Promise.all([
-		fetchTimeSeries(userId, metricConf, widget.aggregation, widget.period, from, to, filterCategory, filterSubcategory),
+		fetchTimeSeries(userId, metricConf, widget.aggregation, widget.period, from, to, filterCategory, filterSubcategory, hourWindow),
 		// For avg/sum: bruk periodeaggregat som current (mer representativt enn kun siste dag)
 		// For latest: siste bøtteverdi er riktigst (peker på nyeste måling)
 		widget.aggregation !== 'latest'
-			? fetchSingleValue(userId, metricConf, widget.aggregation, from, to, filterCategory, filterSubcategory)
+			? fetchSingleValue(userId, metricConf, widget.aggregation, from, to, filterCategory, filterSubcategory, hourWindow)
 			: Promise.resolve(null),
-		fetchSingleValue(userId, metricConf, widget.aggregation, prev.from, prev.to, filterCategory, filterSubcategory),
+		fetchSingleValue(userId, metricConf, widget.aggregation, prev.from, prev.to, filterCategory, filterSubcategory, hourWindow),
 	]);
 
 	if (
@@ -865,8 +925,8 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 
 	let pct: number | null = null;
 	if (current !== null && goalNum !== null && goalNum > 0) {
-		// For vekt: lavere er bedre → inverter
-		if (widget.metricType === 'weight') {
+		// For vekt og skjermtid: lavere er bedre → inverter
+		if (widget.metricType === 'weight' || widget.metricType === 'screenTime') {
 			pct = Math.max(0, Math.min(100, Math.round((1 - (current - goalNum) / goalNum) * 100)));
 		} else {
 			pct = Math.max(0, Math.min(100, Math.round((current / goalNum) * 100)));
@@ -901,6 +961,7 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 					storedRange: widget.range,
 					filterCategory,
 					filterSubcategory,
+					hourWindow,
 					effectiveRange,
 					usedRangeFallback,
 					from: from.toISOString(),

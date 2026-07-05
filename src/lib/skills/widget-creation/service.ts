@@ -33,6 +33,8 @@ export interface CreateWidgetInput {
 	range: WidgetRange;
 	filterCategory?: string | null;
 	filterSubcategory?: string | null;
+	filterHourFrom?: number | null;
+	filterHourTo?: number | null;
 	metricKey?: string | null;
 	goal?: number | null;
 	unit: string;
@@ -54,10 +56,18 @@ export interface UpdateWidgetInput {
 	range?: WidgetRange;
 	filterCategory?: string | null;
 	filterSubcategory?: string | null;
+	filterHourFrom?: number | null;
+	filterHourTo?: number | null;
 }
 
 function parseDecimal(value: string | null): number | null {
 	return value != null ? parseFloat(value) : null;
+}
+
+/** Gyldig timegrense for lagring: heltall innenfor [min, max]. Ugyldig → null (hele døgnet). */
+function validHourOrNull(value: number | null | undefined, min: number, max: number): number | null {
+	if (typeof value !== 'number' || !Number.isInteger(value)) return null;
+	return value >= min && value <= max ? value : null;
 }
 
 function toClientWidget<T extends { goal: string | null; thresholdWarn: string | null; thresholdSuccess: string | null }>(
@@ -138,6 +148,8 @@ export async function createUserWidget(userId: string, input: CreateWidgetInput)
 			goal: input.goal != null ? String(input.goal) : null,
 			filterCategory: input.filterCategory ?? null,
 			filterSubcategory: input.filterSubcategory ?? null,
+			filterHourFrom: validHourOrNull(input.filterHourFrom, 0, 23),
+			filterHourTo: validHourOrNull(input.filterHourTo, 1, 24),
 			metricKey: input.metricKey ?? null,
 			unit: input.unit.slice(0, 20),
 			color: input.color || '#7c8ef5',
@@ -189,6 +201,8 @@ export async function updateUserWidget(userId: string, widgetId: string, updates
 	if (updates.filterCategory === null) payload.filterCategory = null;
 	if (typeof updates.filterSubcategory === 'string' && updates.filterSubcategory.trim()) payload.filterSubcategory = updates.filterSubcategory.trim();
 	if (updates.filterSubcategory === null) payload.filterSubcategory = null;
+	if (updates.filterHourFrom !== undefined) payload.filterHourFrom = validHourOrNull(updates.filterHourFrom, 0, 23);
+	if (updates.filterHourTo !== undefined) payload.filterHourTo = validHourOrNull(updates.filterHourTo, 1, 24);
 
 	const [updated] = await db
 		.update(userWidgets)

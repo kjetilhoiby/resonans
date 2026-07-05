@@ -23,12 +23,14 @@ Aldri opprett widget direkte uten at bruker har sett og bekreftet forslaget.`,
 		range: string;
 		filterCategory?: string | null;
 		filterSubcategory?: string | null;
+		filterHourFrom?: number | null;
+		filterHourTo?: number | null;
 		metricKey?: string | null;
 		unit: string;
 		goal?: number | null;
 		color?: string | null;
 	}) => {
-		const { userId, title, metricType, aggregation, period, range, filterCategory, filterSubcategory, metricKey, unit, goal, color } = args;
+		const { userId, title, metricType, aggregation, period, range, filterCategory, filterSubcategory, filterHourFrom, filterHourTo, metricKey, unit, goal, color } = args;
 
 		// Sjekk om det finnes en tilsvarende widget på hjemmeskjermen allerede (themeId: null)
 		const existing = await findSimilarWidget(
@@ -50,6 +52,8 @@ Aldri opprett widget direkte uten at bruker har sett og bekreftet forslaget.`,
 			range: range as WidgetDraft['range'],
 			filterCategory: filterCategory ?? null,
 			filterSubcategory: filterSubcategory ?? null,
+			filterHourFrom: filterHourFrom ?? null,
+			filterHourTo: filterHourTo ?? null,
 			metricKey: metricKey ?? null,
 			unit: unit.slice(0, 20),
 			goal: goal ?? null,
