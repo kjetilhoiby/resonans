@@ -6,6 +6,8 @@ import { eq } from 'drizzle-orm';
 import { gatherDayContext } from '$lib/server/day-location-context';
 import { pickTripForDate, dayWindowInfo } from '$lib/server/trip-geo';
 import { getProgramSummaries, getTodaySession } from '$lib/server/programs/repository';
+import { getActivePlan } from '$lib/server/tracks/repository';
+import { getTrackTodaySession } from '$lib/server/tracks/adapter';
 
 /**
  * GET /api/apps/day?date=YYYY-MM-DD   (default i dag, brukerens tidssone)
@@ -66,6 +68,20 @@ export const GET: RequestHandler = async ({ locals, url }) => {
  */
 async function buildTrainingPointer(userId: string, date: string) {
 	try {
+		// Treningsløp (ny modell) har forrang over legacy-programmer
+		const plan = await getActivePlan(userId);
+		if (plan) {
+			const { result } = await getTrackTodaySession(userId, plan, date);
+			if (!result) return { programId: plan.id, sessionId: null, kind: null, name: null, done: false };
+			return {
+				programId: plan.id,
+				sessionId: result.session.id,
+				kind: result.session.kind,
+				name: result.session.name,
+				done: result.session.completion != null
+			};
+		}
+
 		const programs = await getProgramSummaries(userId);
 		const active = programs.find((p) => p.status === 'active');
 		if (!active) return null;

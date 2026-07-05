@@ -55,6 +55,11 @@ Stil:
 
 /** Kompakt program-kontekst for fritekst-spørsmål (utelates for etter-økt-vurderinger). */
 async function buildProgramContext(userId: string, programId: string): Promise<string | null> {
+	// Treningsløp (ny modell): programId kan peke på en training_plans-rad
+	const { resolveTrackPlan, buildTrackCoachContext } = await import('$lib/server/tracks/adapter');
+	const plan = await resolveTrackPlan(userId, programId);
+	if (plan) return buildTrackCoachContext(userId, plan);
+
 	const program = await getFullProgram(userId, programId);
 	if (!program) return null;
 

@@ -7,6 +7,8 @@ import { completePlannedSession } from '$lib/server/programs/repository';
 import { applyProgression } from '$lib/server/programs/progression';
 import { maybeRecalibrate } from '$lib/server/programs/recalibration';
 import { isProgramTestType, type ProgramTestType } from '$lib/server/programs/types';
+import { completeTrackSession, resolveTrackPlan } from '$lib/server/tracks/adapter';
+import { getTrackSessionById } from '$lib/server/tracks/repository';
 
 interface CompleteBody {
 	plannedSessionId?: unknown;
@@ -43,6 +45,41 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 		if (!isNaN(parsed.getTime())) completedAt = parsed;
 	}
 
+	// ─── Treningsløp (ny modell) ───────────────────────────────────────────────
+	const plan = await resolveTrackPlan(userId, params.id);
+	if (plan) {
+		const trackResult = await completeTrackSession(userId, plan, {
+			plannedSessionId,
+			sensorEventId,
+			completedAt
+		});
+		if (!trackResult) {
+			return json({ error: 'Planned session not found', code: 'session_not_found' }, { status: 404 });
+		}
+
+		// Test-økter: lagre resultat (uten program-FK — track-økten er kilden)
+		const trackRow = await getTrackSessionById(userId, plannedSessionId);
+		if (trackRow?.payload.isTest && isProgramTestType(trackRow.payload.testType) && body.testResult) {
+			await db.insert(programTestResults).values({
+				userId,
+				programId: null,
+				sessionId: null,
+				sensorEventId,
+				testType: trackRow.payload.testType as ProgramTestType,
+				recordedAt: completedAt ?? new Date(),
+				result: body.testResult
+			});
+		}
+
+		return json({
+			ok: true,
+			completion: trackResult.completion,
+			plannedSession: trackResult.plannedSession,
+			progression: trackResult.progression
+		});
+	}
+
+	// ─── Legacy-program ────────────────────────────────────────────────────────
 	const result = await completePlannedSession({
 		userId,
 		programId: params.id,

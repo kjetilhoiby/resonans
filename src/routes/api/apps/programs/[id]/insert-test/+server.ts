@@ -4,6 +4,7 @@ import { db } from '$lib/db';
 import { programSessions, programWeeks, trainingPrograms } from '$lib/db/schema';
 import { and, eq, sql } from 'drizzle-orm';
 import { isProgramTestType, type ProgramTestType } from '$lib/server/programs/types';
+import { insertTrackTest, resolveTrackPlan } from '$lib/server/tracks/adapter';
 
 interface InsertTestBody {
 	testType?: unknown;
@@ -42,6 +43,19 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 		throw error(400, 'Ugyldig weekNumber/dayNumber');
 	}
 
+	// ─── Treningsløp (ny modell) ───────────────────────────────────────────────
+	const plan = await resolveTrackPlan(userId, params.id);
+	if (plan) {
+		if (weekNumber > plan.durationWeeks) {
+			throw error(400, `Ukenummer ${weekNumber} er utenfor planens ${plan.durationWeeks} uker`);
+		}
+		const session = await insertTrackTest(userId, plan, { testType, weekNumber, dayNumber });
+		if (!session) return json({ error: 'Program not found', code: 'program_not_found' }, { status: 404 });
+		const runTests = ['cooper_12min', 'time_5k', 'time_10k'];
+		return json({ ok: true, sessionId: session.id, kind: runTests.includes(testType) ? 'run' : 'strength', testType });
+	}
+
+	// ─── Legacy-program ────────────────────────────────────────────────────────
 	const program = await db.query.trainingPrograms.findFirst({
 		where: and(eq(trainingPrograms.id, params.id), eq(trainingPrograms.userId, userId)),
 		columns: { id: true, durationWeeks: true }

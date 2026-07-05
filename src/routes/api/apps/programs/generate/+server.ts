@@ -1,25 +1,22 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { generateProgram, ProgramGenerationError } from '$lib/server/programs/generator';
-import { getFullProgram, saveGeneratedProgram } from '$lib/server/programs/repository';
-import { ProgramValidationError } from '$lib/server/programs/validator';
-import { PROGRAM_LIMITS } from '$lib/server/programs/constants';
-import { buildAthleteSnapshot, snapshotForPersistence } from '$lib/server/programs/athlete-context';
+import { createDefaultPlan } from '$lib/server/tracks/repository';
+import { getTrackFullProgram } from '$lib/server/tracks/adapter';
 
 interface GenerateBody {
 	goal?: unknown;
-	durationWeeks?: unknown;
-	sessionsPerWeek?: unknown;
-	runningKmPerWeek?: unknown;
-	experience?: unknown;
-	includeStrength?: unknown;
-	includeRunning?: unknown;
-	startDate?: unknown;
-	name?: unknown;
-	includeBaselineTests?: unknown;
-	useAthleteSnapshot?: unknown;
 }
 
+/**
+ * POST /api/apps/programs/generate
+ *
+ * Treningsløp-modellen: «generering» er nå bootstrap av brukerens plan med to
+ * progresjonsløp (styrke + utholdenhet) — intet LLM-kall, ingen pre-generert
+ * øktstruktur. Idempotent: eksisterende aktiv plan returneres. Response-shape
+ * er den samme som den gamle LLM-genereringen ({ok, programId, model, program}),
+ * så Ekko trenger ingen endringer. Legacy-programmer forblir lesbare via de
+ * andre endepunktene.
+ */
 export const POST: RequestHandler = async ({ locals, request }) => {
 	const userId = locals.userId;
 	if (!userId) return json({ error: 'Unauthorized' }, { status: 401 });
@@ -34,134 +31,14 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	const goal = typeof body.goal === 'string' ? body.goal.trim() : '';
 	if (!goal) throw error(400, 'Missing "goal" field');
 
-	const includeStrength = body.includeStrength === false ? false : true;
-	const includeRunning = body.includeRunning === false ? false : true;
-	if (!includeStrength && !includeRunning) {
-		throw error(400, 'Minst én av includeStrength/includeRunning må være true');
-	}
+	const { plan } = await createDefaultPlan(userId, {});
+	const full = await getTrackFullProgram(userId, plan);
 
-	const durationWeeks = parseIntInRange(
-		body.durationWeeks,
-		PROGRAM_LIMITS.minDurationWeeks,
-		PROGRAM_LIMITS.maxDurationWeeks
-	);
-	const sessionsPerWeek = parseIntInRange(
-		body.sessionsPerWeek,
-		PROGRAM_LIMITS.minSessionsPerWeek,
-		PROGRAM_LIMITS.maxSessionsPerWeek
-	);
-
-	const experience = body.experience === 'beginner' || body.experience === 'intermediate' || body.experience === 'advanced'
-		? body.experience
-		: undefined;
-
-	// Program-uker er mandag-søndag. Snap startDate til mandagen den uken
-	// brukeren valgte ligger i (eller den nærmeste fremtidige mandagen).
-	const rawStartDate = typeof body.startDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.startDate)
-		? body.startDate
-		: undefined;
-	const startDate = rawStartDate ? snapToMonday(rawStartDate) : snapToMonday(new Date().toISOString().slice(0, 10));
-
-	const includeBaselineTests = body.includeBaselineTests === true;
-	const useSnapshot = body.useAthleteSnapshot !== false; // default true
-	const snapshot = useSnapshot ? await buildAthleteSnapshot(userId) : undefined;
-
-	try {
-		const { program, model } = await generateProgram({
-			goal,
-			durationWeeks,
-			sessionsPerWeek,
-			runningKmPerWeek: typeof body.runningKmPerWeek === 'number' ? body.runningKmPerWeek : undefined,
-			experience,
-			includeStrength,
-			includeRunning,
-			startDate,
-			name: typeof body.name === 'string' ? body.name.trim() || undefined : undefined,
-			includeBaselineTests,
-			athleteSnapshot: snapshot
-				? {
-						dataQuality: snapshot.dataQuality,
-						recentVolumeKm: snapshot.recentVolumeKm,
-						recentSessionsPerWeek: snapshot.recentSessionsPerWeek,
-						bestEfforts: snapshot.bestEfforts,
-						vdotEstimate: snapshot.vdotEstimate,
-						paceZones: snapshot.paceZones,
-						strengthBaseline: Object.fromEntries(
-							Object.entries(snapshot.strengthBaseline).map(([k, v]) => [
-								k,
-								{ reps: v.reps, durationSeconds: v.durationSeconds }
-							])
-						)
-					}
-				: undefined
-		});
-
-		const persistedBaseline = snapshot ? snapshotForPersistence(snapshot) : null;
-		const programId = await saveGeneratedProgram(userId, program, persistedBaseline);
-		const full = await getFullProgram(userId, programId);
-
-		return json({
-			ok: true,
-			programId,
-			model,
-			program: full,
-			snapshot: snapshot
-				? {
-						dataQuality: snapshot.dataQuality,
-						vdotEstimate: snapshot.vdotEstimate,
-						recentVolumeKm: snapshot.recentVolumeKm
-					}
-				: null
-		});
-	} catch (err) {
-		if (err instanceof ProgramValidationError) {
-			console.error('[programs/generate] validation failed', err.issues);
-			return json(
-				{
-					error: 'LLM produced invalid program',
-					code: 'program_validation_failed',
-					issues: err.issues
-				},
-				{ status: 422 }
-			);
-		}
-		if (err instanceof ProgramGenerationError) {
-			console.error('[programs/generate]', err);
-			return json(
-				{
-					error: err.message,
-					code: 'program_generation_failed'
-				},
-				{ status: 502 }
-			);
-		}
-		console.error('[programs/generate] unexpected', err);
-		return json(
-			{
-				error: err instanceof Error ? err.message : 'Generation failed',
-				code: 'internal_error'
-			},
-			{ status: 500 }
-		);
-	}
+	return json({
+		ok: true,
+		programId: plan.id,
+		model: 'tracks-v1',
+		program: full,
+		snapshot: null
+	});
 };
-
-function parseIntInRange(value: unknown, min: number, max: number): number | undefined {
-	if (value === undefined || value === null) return undefined;
-	const n = typeof value === 'number' ? value : Number(value);
-	if (!Number.isFinite(n)) return undefined;
-	return Math.max(min, Math.min(max, Math.round(n)));
-}
-
-/**
- * Returnerer ISO-datoen for mandagen i samme kalenderuke som input-dagen.
- * Hvis input ER en mandag, returner samme dato. Programs forutsetter at
- * dayNumber=1 (mandag) er programmets startDate.
- */
-function snapToMonday(iso: string): string {
-	const d = new Date(iso + 'T00:00:00Z');
-	const dow = d.getUTCDay(); // 0=søn, 1=man, ..., 6=lør
-	const daysBack = dow === 0 ? 6 : dow - 1;
-	d.setUTCDate(d.getUTCDate() - daysBack);
-	return d.toISOString().slice(0, 10);
-}

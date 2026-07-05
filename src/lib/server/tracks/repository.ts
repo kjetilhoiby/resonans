@@ -516,6 +516,26 @@ export async function getSessionsForPlan(userId: string, planId: string): Promis
 		.orderBy(asc(trackSessions.date));
 }
 
+export async function setPlanStatus(userId: string, planId: string, status: string): Promise<boolean> {
+	const result = await db
+		.update(trainingPlans)
+		.set({ status, updatedAt: new Date() })
+		.where(and(eq(trainingPlans.id, planId), eq(trainingPlans.userId, userId)))
+		.returning({ id: trainingPlans.id });
+	return result.length > 0;
+}
+
+/** Lagrer Ekkos mode-valg i preferences — treningsløp har ingen adaptiv modus (no-op). */
+export async function setPlanPreferenceMode(userId: string, planId: string, mode: string): Promise<boolean> {
+	const plan = await getPlanById(userId, planId);
+	if (!plan) return false;
+	await db
+		.update(trainingPlans)
+		.set({ preferences: { ...(plan.preferences ?? {}), mode }, updatedAt: new Date() })
+		.where(eq(trainingPlans.id, planId));
+	return true;
+}
+
 export async function countCompletedSessions(userId: string, planId: string): Promise<number> {
 	const rows = await db
 		.select({ count: sql<number>`count(*)::int` })
