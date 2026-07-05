@@ -14,24 +14,15 @@ export const DEFAULT_ENDURANCE_GOAL: EnduranceGoal = {
 
 export const DEFAULT_ENDURANCE_CONFIG: EnduranceConfig = {
 	deloadHverNteUke: 4,
-	maksIkkeLopAndel: 0.4
+	effortVekstFaktor: 1.2, // ukesband: forrige uke → forrige uke × 1.2
+	hvileRatioTerskel: 1.5 // akutt(3d)/kronisk(30d)-ratio som anbefaler hvile
 };
 
 export const DEFAULT_PLAN_DURATION_WEEKS = 26;
 
-/**
- * Hvilket løp som "eier" hver ukedag (1=man..7=søn) når planen ikke
- * overstyrer. Ekko-kontrakten er én økt per dag.
- */
-export const DEFAULT_SCHEDULE: Record<number, 'styrke' | 'utholdenhet' | 'hvile'> = {
-	1: 'styrke',
-	2: 'utholdenhet',
-	3: 'styrke',
-	4: 'utholdenhet',
-	5: 'styrke',
-	6: 'utholdenhet',
-	7: 'hvile'
-};
+// Ukedagsmønsteret hardkodes ikke lenger — løpedagene læres av faktisk
+// atferd (deriveWeekdayPattern i schedule.ts, med DEFAULT_RUN_PATTERN som
+// fallback). Styrke og sykkel planlegges aldri på dager.
 
 /** Pull-up-fasene som seedes som milepæler ved oppsett. */
 export const PULLUP_PHASES = [

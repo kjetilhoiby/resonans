@@ -1,12 +1,8 @@
 import { sql } from 'drizzle-orm';
 import { db, pgClient, rowsOf } from '$lib/db';
 import { users } from '$lib/db/schema';
-import {
-	buildWeeklyPairs,
-	fitEffortWeightModel,
-	predictDeltaKg,
-	type WeeklyEffortWeightInput
-} from '$lib/util/effort-weight-model';
+import { buildWeeklyPairs, fitEffortWeightModel, predictDeltaKg } from '$lib/util/effort-weight-model';
+import { buildEffortWeightInputs } from '$lib/server/health/effort-weight-data';
 
 type Severity = 'info' | 'low' | 'medium' | 'high';
 
@@ -680,32 +676,10 @@ async function produceEveningScreenWork7d(userId: string, now: Date) {
  */
 async function produceHealthEffortVsThreshold(userId: string, now: Date) {
 	const weeksBack = 26;
-	const windowStart = daysAgo(now, weeksBack * 7);
 
-	const weekRows = await db.execute(sql`
-		SELECT period_key, metrics
-		FROM sensor_aggregates
-		WHERE user_id = ${userId}
-		  AND period = 'week'
-		  AND start_date >= ${windowStart}
-		  AND start_date <= ${now}
-		ORDER BY start_date ASC
-	`);
-	const weeks = rowsOf<{ period_key: string; metrics: Record<string, unknown> | null }>(weekRows);
-
-	const inputs: WeeklyEffortWeightInput[] = weeks.map((row) => {
-		const metrics = (row.metrics ?? {}) as Record<string, unknown>;
-		const weight = (metrics.weight ?? {}) as Record<string, unknown>;
-		const weeklyEffort = (metrics.weeklyEffort ?? {}) as Record<string, unknown>;
-		const values = Array.isArray(weight.values) ? weight.values : [];
-		return {
-			weekKey: row.period_key,
-			weightAvg: typeof weight.avg === 'number' ? weight.avg : null,
-			weighInCount: values.length,
-			// Manglende weeklyEffort-aggregat = reell hvileuke, ikke manglende data.
-			effort: toNumber(weeklyEffort.total)
-		};
-	});
+	// Direkte fra kildene (sensor_events + canonical_workouts) — historiske
+	// sensor_aggregates kan mangle weeklyEffort og ville gitt falske 0-uker.
+	const { weeks: inputs, rolling7dEffort } = await buildEffortWeightInputs(userId, weeksBack);
 
 	// Hopp over brukere helt uten vektdata — signalet gir ingen mening da.
 	if (!inputs.some((w) => w.weightAvg != null)) {
@@ -722,23 +696,6 @@ async function produceHealthEffortVsThreshold(userId: string, now: Date) {
 
 	const pairs = buildWeeklyPairs(inputs);
 	const model = fitEffortWeightModel(pairs);
-
-	const dayRows = await db.execute(sql`
-		SELECT metrics
-		FROM sensor_aggregates
-		WHERE user_id = ${userId}
-		  AND period = 'day'
-		  AND start_date >= ${daysAgo(now, 7)}
-		  AND start_date <= ${now}
-	`);
-	const rolling7dEffort = Math.round(
-		rowsOf<{ metrics: Record<string, unknown> | null }>(dayRows).reduce((sum, row) => {
-			const daily = ((row.metrics ?? {}) as Record<string, unknown>).dailyEffort as
-				| Record<string, unknown>
-				| undefined;
-			return sum + toNumber(daily?.total);
-		}, 0)
-	);
 
 	const threshold = model.thresholdEffort;
 	const hasThreshold = threshold != null && threshold > 0;

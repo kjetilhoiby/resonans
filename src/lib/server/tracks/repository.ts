@@ -24,7 +24,6 @@ import {
 	DEFAULT_ENDURANCE_CONFIG,
 	DEFAULT_ENDURANCE_GOAL,
 	DEFAULT_PLAN_DURATION_WEEKS,
-	DEFAULT_SCHEDULE,
 	DEFAULT_STRENGTH_GOAL,
 	ENDURANCE_MILESTONES,
 	PULLUP_PHASES,
@@ -33,10 +32,19 @@ import {
 import {
 	bestStrengthMetrics,
 	computeStrengthState,
-	nextStrengthSession
+	nextStrengthSession,
+	summarizeStrengthSession
 } from './strength-engine';
-import { bestWeekEqKm, computeEnduranceState, nextEnduranceSession } from './endurance-engine';
-import { suggestSessionForDate } from './schedule';
+import {
+	bestWeekRunKm,
+	computeEnduranceState,
+	countsTowardEndurance,
+	isRunFamily,
+	nextEnduranceSession
+} from './endurance-engine';
+import { computeEffortBudget, composeEffortSuggestion } from './effort-budget';
+import { deriveWeekdayPattern, suggestSessionForDate, type WeekdayPattern } from './schedule';
+import type { EffortBudget } from './types';
 
 export type TrainingPlanRow = typeof trainingPlans.$inferSelect;
 export type TrainingTrackRow = typeof trainingTracks.$inferSelect;
@@ -112,6 +120,8 @@ export async function createDefaultPlan(
 	const targetDate = addWeeks(startDate, durationWeeks);
 	const recordedAt = new Date().toISOString();
 
+	// schedule seedes IKKE — løpedagene læres av faktisk atferd
+	// (deriveWeekdayPattern); schedule.days er kun manuell overstyring.
 	const [plan] = await db
 		.insert(trainingPlans)
 		.values({
@@ -119,8 +129,7 @@ export async function createDefaultPlan(
 			name: 'Treningsløp',
 			status: 'active',
 			startDate,
-			durationWeeks,
-			schedule: { days: Object.fromEntries(Object.entries(DEFAULT_SCHEDULE).map(([k, v]) => [k, v])) }
+			durationWeeks
 		})
 		.returning();
 
@@ -181,7 +190,8 @@ export async function createDefaultPlan(
 			},
 			config: {
 				deloadHverNteUke: DEFAULT_ENDURANCE_CONFIG.deloadHverNteUke,
-				maksIkkeLopAndel: DEFAULT_ENDURANCE_CONFIG.maksIkkeLopAndel
+				effortVekstFaktor: DEFAULT_ENDURANCE_CONFIG.effortVekstFaktor,
+				hvileRatioTerskel: DEFAULT_ENDURANCE_CONFIG.hvileRatioTerskel
 			}
 		})
 		.returning();
@@ -301,10 +311,19 @@ export interface TrackStates {
 	utholdenhetTrack: TrainingTrackRow | null;
 	strengthState: StrengthState | null;
 	enduranceState: EnduranceState | null;
+	/** Stående styrkemål — planlegges aldri på dager, men er alltid tilgjengelige (Ekko). */
 	strengthSuggestion: SessionSuggestion | null;
 	enduranceSuggestion: SessionSuggestion | null;
-	todayOwner: 'styrke' | 'utholdenhet' | 'hvile';
+	todayOwner: 'utholdenhet' | 'hvile';
 	todaySuggestion: SessionSuggestion | null;
+	/** Begrunnelse når dagens forslag er hvile pga. belastning/budsjett. */
+	restReason: string | null;
+	budget: EffortBudget | null;
+	/** Forslag til sammensetning av gjenstående ukeseffort («8 km løp + 45 min sykkel»). */
+	effortComposition: string | null;
+	pattern: WeekdayPattern;
+	/** Gjennomført (registrert) trening i dag — vinner alltid over forslag i visning. */
+	todayCompleted: TrackSessionRow | null;
 	strengthSessions: StrengthSessionActual[];
 	enduranceWorkouts: EnduranceWorkout[];
 }
@@ -329,7 +348,8 @@ function enduranceConfigOf(track: TrainingTrackRow): EnduranceConfig {
 	const config = track.config ?? {};
 	return {
 		deloadHverNteUke: config.deloadHverNteUke ?? DEFAULT_ENDURANCE_CONFIG.deloadHverNteUke,
-		maksIkkeLopAndel: config.maksIkkeLopAndel ?? DEFAULT_ENDURANCE_CONFIG.maksIkkeLopAndel
+		effortVekstFaktor: config.effortVekstFaktor ?? DEFAULT_ENDURANCE_CONFIG.effortVekstFaktor,
+		hvileRatioTerskel: config.hvileRatioTerskel ?? DEFAULT_ENDURANCE_CONFIG.hvileRatioTerskel
 	};
 }
 
@@ -352,6 +372,17 @@ export async function computeTrackStates(
 		getEnduranceWorkouts(userId)
 	]);
 
+	// Auto-kobling: registrert trening siste uke materialiseres som gjennomførte
+	// økter — «i dag løp jeg» skal aldri vises som «hvile foreslått».
+	await reconcileSessionsWithActuals(
+		userId,
+		plan,
+		{ styrkeTrack, utholdenhetTrack },
+		strengthSessions,
+		enduranceWorkouts,
+		today
+	);
+
 	const strengthState = styrkeTrack
 		? computeStrengthState(strengthSessions, strengthGoalOf(styrkeTrack), windowOf(styrkeTrack), today)
 		: null;
@@ -369,8 +400,30 @@ export async function computeTrackStates(
 	const weekdayNumber = ((new Date(`${today}T00:00:00Z`).getUTCDay() + 6) % 7) + 1;
 	const enduranceSuggestion = enduranceState ? nextEnduranceSession(enduranceState, weekdayNumber) : null;
 
+	const budget = utholdenhetTrack
+		? computeEffortBudget(enduranceWorkouts, enduranceConfigOf(utholdenhetTrack), plan.startDate, today)
+		: null;
+	const effortComposition =
+		budget && enduranceState
+			? composeEffortSuggestion(budget.remainingMin, budget.remainingMax, enduranceState.forventetPaceSekPerKm)
+			: null;
+
+	const pattern = deriveWeekdayPattern(enduranceWorkouts, today);
 	const scheduleDays = plan.schedule?.days;
-	const { owner, suggestion } = suggestSessionForDate(today, scheduleDays, strengthSuggestion, enduranceSuggestion);
+	const { owner, suggestion, restReason } = suggestSessionForDate(
+		today,
+		scheduleDays,
+		pattern,
+		enduranceSuggestion,
+		budget
+	);
+
+	// Gjennomført trening i dag (auto-koblet eller via complete-session) vinner i visning
+	const todayRows = await db
+		.select()
+		.from(trackSessions)
+		.where(and(eq(trackSessions.planId, plan.id), eq(trackSessions.userId, userId), eq(trackSessions.date, today)));
+	const todayCompleted = todayRows.find((r) => r.status === 'completed') ?? null;
 
 	return {
 		plan,
@@ -382,9 +435,153 @@ export async function computeTrackStates(
 		enduranceSuggestion,
 		todayOwner: owner,
 		todaySuggestion: suggestion,
+		restReason,
+		budget,
+		effortComposition,
+		pattern,
+		todayCompleted,
 		strengthSessions,
 		enduranceWorkouts
 	};
+}
+
+// ─── Auto-kobling (reconcile) ────────────────────────────────────────────────
+
+const RECONCILE_DAYS = 7;
+
+function noonOf(date: string): Date {
+	return new Date(`${date}T12:00:00Z`);
+}
+
+/**
+ * Materialiserer registrert trening siste ~uke som gjennomførte track_sessions:
+ * styrkeøkter → styrke-løpet, løp/sykkel → utholdenhetsløpet. Idempotent —
+ * rader som alt er completed røres ikke; suggested-rader oppgraderes;
+ * manglende rader opprettes direkte som completed. Ekkos complete-session
+ * forblir støttet og beriker med eksplisitt sensorEventId.
+ */
+export async function reconcileSessionsWithActuals(
+	userId: string,
+	plan: TrainingPlanRow,
+	tracks: { styrkeTrack: TrainingTrackRow | null; utholdenhetTrack: TrainingTrackRow | null },
+	strengthSessions: StrengthSessionActual[],
+	enduranceWorkouts: EnduranceWorkout[],
+	today: string
+): Promise<void> {
+	const cutoff = new Date(`${today}T00:00:00Z`);
+	cutoff.setUTCDate(cutoff.getUTCDate() - (RECONCILE_DAYS - 1));
+	const cutoffIso = cutoff.toISOString().slice(0, 10);
+
+	// Grupper per dato
+	const strengthByDate = new Map<string, StrengthSessionActual[]>();
+	for (const s of strengthSessions) {
+		if (s.date < cutoffIso || s.date > today) continue;
+		const list = strengthByDate.get(s.date) ?? [];
+		list.push(s);
+		strengthByDate.set(s.date, list);
+	}
+	const enduranceByDate = new Map<string, EnduranceWorkout[]>();
+	for (const w of enduranceWorkouts) {
+		if (w.date < cutoffIso || w.date > today || !countsTowardEndurance(w.family)) continue;
+		const list = enduranceByDate.get(w.date) ?? [];
+		list.push(w);
+		enduranceByDate.set(w.date, list);
+	}
+
+	if (strengthByDate.size === 0 && enduranceByDate.size === 0) return;
+
+	// Eksisterende rader i vinduet i ett oppslag
+	const existing = await db
+		.select()
+		.from(trackSessions)
+		.where(
+			and(
+				eq(trackSessions.planId, plan.id),
+				eq(trackSessions.userId, userId),
+				gte(trackSessions.date, cutoffIso)
+			)
+		);
+	const byTrackDate = new Map<string, TrackSessionRow>();
+	for (const row of existing) byTrackDate.set(`${row.trackId}:${row.date}`, row);
+
+	// Styrke
+	if (tracks.styrkeTrack) {
+		for (const [date, sessions] of strengthByDate) {
+			const exercises = sessions.flatMap((s) => s.exercises);
+			const summary = summarizeStrengthSession({ date, exercises });
+			await upsertCompletedSession(userId, plan.id, tracks.styrkeTrack.id, date, byTrackDate, {
+				kind: 'strength',
+				name: summary.armhevingerTotal > 0 ? `Styrke (${summary.armhevingerTotal} armhevinger)` : 'Styrke',
+				actuals: { kind: 'strength', totalReps: summary.armhevingerTotal || undefined, exercises }
+			});
+		}
+	}
+
+	// Utholdenhet (løp + sykkel)
+	if (tracks.utholdenhetTrack) {
+		for (const [date, workouts] of enduranceByDate) {
+			const runKm = workouts.filter((w) => isRunFamily(w.family)).reduce((s, w) => s + (w.distanceMeters ?? 0) / 1000, 0);
+			const rideMin = workouts
+				.filter((w) => !isRunFamily(w.family))
+				.reduce((s, w) => s + (w.durationSeconds ?? 0) / 60, 0);
+			const parts: string[] = [];
+			if (runKm > 0) parts.push(`Løp ${runKm.toFixed(1).replace('.', ',')} km`);
+			if (rideMin > 0) parts.push(`Sykkel ${Math.round(rideMin)} min`);
+			const totalDistance = workouts.reduce((s, w) => s + (w.distanceMeters ?? 0), 0);
+			const totalDuration = workouts.reduce((s, w) => s + (w.durationSeconds ?? 0), 0);
+			await upsertCompletedSession(userId, plan.id, tracks.utholdenhetTrack.id, date, byTrackDate, {
+				kind: 'run',
+				name: parts.join(' + ') || 'Utholdenhet',
+				actuals: {
+					kind: 'run',
+					distance: totalDistance > 0 ? Math.round(totalDistance) : undefined,
+					duration: totalDuration > 0 ? Math.round(totalDuration) : undefined,
+					sportType: workouts[0]?.family
+				}
+			});
+		}
+	}
+}
+
+async function upsertCompletedSession(
+	userId: string,
+	planId: string,
+	trackId: string,
+	date: string,
+	byTrackDate: Map<string, TrackSessionRow>,
+	input: {
+		kind: 'strength' | 'run';
+		name: string;
+		actuals: NonNullable<TrackSessionRow['actuals']>;
+	}
+): Promise<void> {
+	const existing = byTrackDate.get(`${trackId}:${date}`);
+	if (existing?.status === 'completed') return;
+
+	if (existing) {
+		await db
+			.update(trackSessions)
+			.set({
+				status: 'completed',
+				completedAt: existing.completedAt ?? noonOf(date),
+				actuals: input.actuals,
+				updatedAt: new Date()
+			})
+			.where(eq(trackSessions.id, existing.id));
+		return;
+	}
+
+	await db.insert(trackSessions).values({
+		userId,
+		trackId,
+		planId,
+		date,
+		kind: input.kind,
+		payload: { name: input.name },
+		status: 'completed',
+		completedAt: noonOf(date),
+		actuals: input.actuals
+	});
 }
 
 // ─── Milepæler ───────────────────────────────────────────────────────────────
@@ -401,15 +598,8 @@ export async function evaluateAndMarkMilestones(userId: string, states: TrackSta
 	if (pending.length === 0) return [];
 
 	const strengthBest = bestStrengthMetrics(states.strengthSessions);
-	let enduranceBest = 0;
-	if (states.utholdenhetTrack) {
-		enduranceBest = bestWeekEqKm(
-			states.enduranceWorkouts,
-			enduranceGoalOf(states.utholdenhetTrack),
-			enduranceConfigOf(states.utholdenhetTrack),
-			windowOf(states.utholdenhetTrack)
-		);
-	}
+	// ukes_km-milepælene måles i rene løpe-km — sykkel teller ikke
+	const enduranceBest = states.utholdenhetTrack ? bestWeekRunKm(states.enduranceWorkouts) : 0;
 
 	const achieved: string[] = [];
 	for (const milestone of pending) {

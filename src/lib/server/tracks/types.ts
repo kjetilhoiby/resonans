@@ -70,15 +70,32 @@ export interface EnduranceGoal {
 
 export interface EnduranceConfig {
 	deloadHverNteUke: number; // 0 = aldri
-	maksIkkeLopAndel: number; // f.eks. 0.4
+	/** @deprecated Sykkel teller ikke lenger i km-regnskapet — feltet kan stå i DB. */
+	maksIkkeLopAndel?: number;
+	effortVekstFaktor?: number; // ukesband: forrigeUke × faktor (default 1.2)
+	hvileRatioTerskel?: number; // akutt/kronisk-ratio som utløser hvileanbefaling (default 1.5)
+}
+
+// ─── Effort-budsjett (uke) ───────────────────────────────────────────────────
+
+export interface EffortBudget {
+	/** Intervall for denne uken, forankret i forrige ukes faktiske total. */
+	bandMin: number;
+	bandMax: number;
+	spentThisWeek: number;
+	remainingMin: number;
+	remainingMax: number;
+	/** sum(effort siste 3 dager) / (3 × dagsnitt siste 30). Null ved < 14 dagers historikk. */
+	acuteChronicRatio: number | null;
+	restRecommended: boolean;
+	deload: boolean;
+	anchor: 'forrige_uke' | 'p4w_snitt' | 'gulv';
 }
 
 export interface EnduranceWeekState {
-	weekTargetKm: number;
+	weekTargetKm: number; // rene løpe-km — sykkel teller IKKE her (kun i effort-budsjettet)
 	deload: boolean;
 	runKm: number;
-	eqKmNonRun: number; // sykkel/ebike konvertert, etter cap
-	totalEqKm: number;
 	remainingKm: number;
 	stallRebased: boolean;
 }

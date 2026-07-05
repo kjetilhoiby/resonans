@@ -4,6 +4,7 @@
 	import TrackCard from '$lib/components/domain/training/TrackCard.svelte';
 	import MilestoneList from '$lib/components/domain/training/MilestoneList.svelte';
 	import TrackHistory from '$lib/components/domain/training/TrackHistory.svelte';
+	import EffortBudgetCard from '$lib/components/domain/training/EffortBudgetCard.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -75,20 +76,26 @@
 	const todayText = $derived.by(() => {
 		const s = data.states;
 		if (!s) return '';
-		if (s.todayOwner === 'hvile' || !s.todaySuggestion) return 'Hviledag i dag.';
+		// Registrert trening vinner alltid — aldri «jeg hadde foreslått hvile»
+		if (s.todayCompleted) return `Gjennomført: ${s.todayCompleted.name} ✓`;
+		if (s.restReason) return s.restReason;
 		const t = s.todaySuggestion;
-		if (t.kind === 'strength' && t.plannedExercises) {
-			return t.plannedExercises
-				.map((e) =>
-					e.repsTarget != null ? `${e.exerciseName} ${e.sets}×${e.repsTarget}` : `${e.exerciseName} ${e.sets}×${e.durationSecondsTarget}s`
-				)
-				.join(' · ');
-		}
-		if (t.plannedRun) {
+		if (t?.plannedRun) {
 			const km = t.plannedRun.targetDistanceMeters != null ? `${(t.plannedRun.targetDistanceMeters / 1000).toFixed(1)} km` : '';
 			return `${t.name}: ${km} @ ${fmtPace(t.plannedRun.paceHintSecPerKm)}/km`;
 		}
-		return t.name;
+		if (t) return t.name;
+		return 'Ingen planlagt økt i dag — styrkemålene ligger klare i Ekko når det passer.';
+	});
+
+	const strengthTargetsText = $derived.by(() => {
+		const t = data.states?.strengthSuggestion;
+		if (!t?.plannedExercises) return null;
+		return t.plannedExercises
+			.map((e) =>
+				e.repsTarget != null ? `${e.exerciseName} ${e.sets}×${e.repsTarget}` : `${e.exerciseName} ${e.sets}×${e.durationSecondsTarget}s`
+			)
+			.join(' · ');
 	});
 </script>
 
@@ -139,7 +146,14 @@
 				{#if data.states?.todaySuggestion?.notes}
 					<p class="today-note">{data.states.todaySuggestion.notes}</p>
 				{/if}
+				{#if !data.states?.todayCompleted && strengthTargetsText}
+					<p class="today-note">Styrkemål nå: {strengthTargetsText}</p>
+				{/if}
 			</section>
+
+			{#if data.states?.budget}
+				<EffortBudgetCard budget={data.states.budget} composition={data.states.effortComposition} />
+			{/if}
 
 			{#if strength}
 				<TrackCard
@@ -180,14 +194,14 @@
 			{#if endurance}
 				<TrackCard
 					title="Utholdenhet"
-					subtitle="Mot 22 km/uke i 5:30-pace — sykkel teller med"
+					subtitle="Mot 22 km/uke i 5:30-pace — sykkel telles i ukas effort"
 					progressPct={utholdenhetPct}
 					badge={endurance.week.deload ? 'Deload-uke' : endurance.week.stallRebased ? 'Justert ned' : undefined}
 					rows={[
 						{
-							label: 'Denne uken',
-							value: `${endurance.week.totalEqKm} km`,
-							hint: `av ${endurance.week.weekTargetKm} km (${endurance.week.runKm} løp + ${endurance.week.eqKmNonRun} sykkel)`
+							label: 'Løpt denne uken',
+							value: `${endurance.week.runKm} km`,
+							hint: `av ${endurance.week.weekTargetKm} km — sykkel telles i ukas effort`
 						},
 						{
 							label: 'Pace',

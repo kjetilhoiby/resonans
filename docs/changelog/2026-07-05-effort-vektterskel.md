@@ -28,9 +28,21 @@ domain-signals-cron. valueNumber = ratio (rullende 7d effort / terskel), alt av
 modellparametre i context jsonb — ingen schema-endring.
 
 ### Fase 3: Detaljvisning
-`GET /api/health/effort-weight` (fitter live) + `EffortWeightCard.svelte` i
+`GET /api/effort-weight` (fitter live) + `EffortWeightCard.svelte` i
 helsedashboardet: scatter ukeseffort vs ΔW med regresjonslinje, terskelmarkør og
 kvalitetslabel.
+
+### Fase 5: Flyttet endepunkt + aggregat-uavhengig historikk (etter prod-feil)
+Kortet feilet i prod: endepunktet lå opprinnelig på `/api/health/effort-weight`,
+men `/api/health` er et PUBLIC-prefiks i hooks.server.ts (startsWith-matching) —
+`locals.userId` settes aldri på offentlige stier → 401 selv for innloggede.
+Flyttet til `/api/effort-weight`. Samtidig byttet datainnhenting fra
+sensor_aggregates til kildene direkte (`effort-weight-data.ts`: sensor_events
+for vekt, canonical_workouts for effort, gruppert på ISO-uke): historiske
+ukeaggregater kan mangle `weeklyEffort` og ville gitt falske 0-effort-uker i
+regresjonen. Modellen fitter nå på hele historikken umiddelbart, uten backfill.
+Manglende projeksjon køes via `WorkoutProjectionService.ensureFreshnessForRange`
+(enqueue_only).
 
 ### Fase 4: Widget (effortBalance)
 Spesialtilfelle i widget-data-endepunktet (leser siste signal), registrert i

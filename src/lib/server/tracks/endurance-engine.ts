@@ -9,15 +9,10 @@ import type {
 import { expectedAt, mondayOfDate, weekNumberAt } from './curve';
 
 /**
- * Utholdenhetsmotoren: ukesvolum i løpsekvivalente km (eqKm) der sykkel og
- * el-sykkel teller med via effortScore, og pace-progresjon målt kun på løp.
+ * Utholdenhetsmotoren: ukesvolum i RENE løpe-km (14→22) og pace-progresjon
+ * målt kun på løp. Sykkel og el-sykkel teller ikke her — de fanges av
+ * effort-budsjettet (effort-budget.ts) som dekker samlet ukesbelastning.
  *
- *  - eqKm for ikke-løp = effortScore / effortPerRunKm, der effortPerRunKm er
- *    effort-kostnaden for 1 km løp i kurve-pace (pace-min/km × 2.5 — MET-
- *    faktoren for løping er 1.0). MET-vektene (cycling 0.85, ebike 0.4) gir
- *    dermed en allerede kalibrert vekting av sykkel mot løp.
- *  - Ikke-løp cappes til maksIkkeLopAndel av uketarget så pace-målet forblir
- *    løpsdrevet.
  *  - Uketarget følger kurven 14→22, hver deloadHverNteUke-uke × 0.8.
  *  - Stall: forrige uke < 70 % av target → target = min(kurve, forrigeUke × 1.1).
  */
@@ -31,11 +26,12 @@ export function isRunFamily(family: string): boolean {
 	return family === 'running';
 }
 
+/** Familier som teller i effort-budsjettet (ukesbelastning på tvers av løp/sykkel). */
 export function countsTowardEndurance(family: string): boolean {
 	return family === 'running' || family === 'cycling' || family === 'ebike';
 }
 
-/** Effort-kostnaden for 1 km løp i gitt pace (sek/km). */
+/** Effort-kostnaden for 1 km løp i gitt pace (sek/km) — brukes av effort-budsjettet. */
 export function effortPerRunKm(paceSekPerKm: number): number {
 	return (paceSekPerKm / 60) * MET_CALIBRATION;
 }
@@ -62,23 +58,13 @@ function weekKeyOf(date: string): string {
 	return mondayOfDate(date);
 }
 
-/** Summerer én ukes økter til (runKm, ikke-løp-eqKm før cap). */
-function sumWeek(
-	workouts: EnduranceWorkout[],
-	paceForEq: number
-): { runKm: number; nonRunEqKm: number } {
-	let runKm = 0;
-	let nonRunEqKm = 0;
-	const perKm = effortPerRunKm(paceForEq);
+/** Rene løpte km i en liste økter. */
+function sumRunKm(workouts: EnduranceWorkout[]): number {
+	let km = 0;
 	for (const w of workouts) {
-		if (!countsTowardEndurance(w.family)) continue;
-		if (isRunFamily(w.family)) {
-			runKm += (w.distanceMeters ?? 0) / 1000;
-		} else if (w.effortScore != null && w.effortScore > 0 && perKm > 0) {
-			nonRunEqKm += w.effortScore / perKm;
-		}
+		if (isRunFamily(w.family)) km += (w.distanceMeters ?? 0) / 1000;
 	}
-	return { runKm, nonRunEqKm };
+	return km;
 }
 
 /**
@@ -104,27 +90,21 @@ export function computeEnduranceState(
 		byWeek.set(key, list);
 	}
 
-	// Forrige uke → stall-sjekk
+	// Forrige uke → stall-sjekk (rene løpe-km)
 	const prevMonday = new Date(`${thisWeekKey}T00:00:00Z`);
 	prevMonday.setUTCDate(prevMonday.getUTCDate() - 7);
 	const prevWeekKey = prevMonday.toISOString().slice(0, 10);
-	const prevSums = sumWeek(byWeek.get(prevWeekKey) ?? [], pace);
-	const prevCap = config.maksIkkeLopAndel * curveTarget;
-	const prevTotal = prevSums.runKm + Math.min(prevSums.nonRunEqKm, prevCap);
+	const prevRunKm = sumRunKm(byWeek.get(prevWeekKey) ?? []);
 	const { targetKm: prevCurveTarget } = curveWeekKm(goal, config, window, prevWeekKey);
 	const hadPrevWeekData = (byWeek.get(prevWeekKey) ?? []).length > 0;
-	const stallRebased = hadPrevWeekData && prevTotal < STALL_RATIO * prevCurveTarget;
+	const stallRebased = hadPrevWeekData && prevRunKm < STALL_RATIO * prevCurveTarget;
 	const weekTargetKm = stallRebased
-		? Math.round(Math.min(curveTarget, prevTotal * STALL_REBASE_FACTOR) * 10) / 10
+		? Math.round(Math.min(curveTarget, Math.max(3, prevRunKm * STALL_REBASE_FACTOR)) * 10) / 10
 		: curveTarget;
 
 	// Denne uken
-	const thisSums = sumWeek(byWeek.get(thisWeekKey) ?? [], pace);
-	const cap = config.maksIkkeLopAndel * weekTargetKm;
-	const eqKmNonRun = Math.round(Math.min(thisSums.nonRunEqKm, cap) * 10) / 10;
-	const runKm = Math.round(thisSums.runKm * 10) / 10;
-	const totalEqKm = Math.round((runKm + eqKmNonRun) * 10) / 10;
-	const remainingKm = Math.max(0, Math.round((weekTargetKm - totalEqKm) * 10) / 10);
+	const runKm = Math.round(sumRunKm(byWeek.get(thisWeekKey) ?? []) * 10) / 10;
+	const remainingKm = Math.max(0, Math.round((weekTargetKm - runKm) * 10) / 10);
 
 	// Pace: snitt av løpeøkter siste 14 dager
 	const cutoff = new Date(`${today}T00:00:00Z`);
@@ -148,7 +128,7 @@ export function computeEnduranceState(
 	const lengsteLopKm = Math.max(0, ...workouts.filter((w) => isRunFamily(w.family)).map((w) => (w.distanceMeters ?? 0) / 1000));
 
 	return {
-		week: { weekTargetKm, deload, runKm, eqKmNonRun, totalEqKm, remainingKm, stallRebased },
+		week: { weekTargetKm, deload, runKm, remainingKm, stallRebased },
 		forventetPaceSekPerKm: Math.round(pace),
 		sistePaceSekPerKm: sistePace,
 		lengsteLopKmSiste6Uker: Math.round(lengsteLopKm * 10) / 10
@@ -188,27 +168,15 @@ export function nextEnduranceSession(
 	};
 }
 
-/** Beste ukes-total (eqKm) i registreringene — for ukes_km-milepælene. */
-export function bestWeekEqKm(
-	workouts: EnduranceWorkout[],
-	goal: EnduranceGoal,
-	config: EnduranceConfig,
-	window: TrackWindow
-): number {
-	const byWeek = new Map<string, EnduranceWorkout[]>();
+/** Beste ukes-total i rene løpe-km — for ukes_km-milepælene. */
+export function bestWeekRunKm(workouts: EnduranceWorkout[]): number {
+	const byWeek = new Map<string, number>();
 	for (const w of workouts) {
+		if (!isRunFamily(w.family)) continue;
 		const key = weekKeyOf(w.date);
-		const list = byWeek.get(key) ?? [];
-		list.push(w);
-		byWeek.set(key, list);
+		byWeek.set(key, (byWeek.get(key) ?? 0) + (w.distanceMeters ?? 0) / 1000);
 	}
 	let best = 0;
-	for (const [weekKey, list] of byWeek) {
-		const pace = curvePace(goal, window, weekKey);
-		const { targetKm } = curveWeekKm(goal, config, window, weekKey);
-		const sums = sumWeek(list, pace);
-		const total = sums.runKm + Math.min(sums.nonRunEqKm, config.maksIkkeLopAndel * targetKm);
-		best = Math.max(best, total);
-	}
+	for (const km of byWeek.values()) best = Math.max(best, km);
 	return Math.round(best * 10) / 10;
 }

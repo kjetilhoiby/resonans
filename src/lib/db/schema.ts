@@ -3077,7 +3077,9 @@ export const trainingTracks = pgTable('training_tracks', {
 	}>().notNull(),
 	config: jsonb('config').$type<{
 		deloadHverNteUke?: number;
-		maksIkkeLopAndel?: number; // andel av uketarget som kan dekkes av sykkel/ebike
+		maksIkkeLopAndel?: number; // utfaset — sykkel teller ikke lenger i km-regnskapet
+		effortVekstFaktor?: number; // ukesband: forrige uke × faktor (default 1.2)
+		hvileRatioTerskel?: number; // akutt/kronisk-ratio som anbefaler hvile (default 1.5)
 	}>(),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
