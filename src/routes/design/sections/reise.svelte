@@ -1,7 +1,11 @@
 <script lang="ts">
 	import TripBudget from '$lib/components/domain/TripBudget.svelte';
 	import TripDayCalendar from '$lib/components/domain/TripDayCalendar.svelte';
-	import { mockTripApi, tripWeatherMock } from '../mocks';
+	import FerieBooksSection from '$lib/components/domain/ferie/FerieBooksSection.svelte';
+	import { buildFerieReadingSeries } from '$lib/ferie/ferie-reading';
+	import { mockTripApi, tripWeatherMock, ferieBooksMock } from '../mocks';
+
+	const ferieReadingSeries = buildFerieReadingSeries(ferieBooksMock, '2026-06-01', '2026-06-04');
 </script>
 
 <!-- ══ REISE ══════════════════════════════════════════════════════════════ -->
@@ -23,6 +27,16 @@
 			dailyWeather={tripWeatherMock}
 			api={mockTripApi}
 		/>
+	</div>
+
+	<h3 class="subsection">FerieBooksSection — lesing i ferien</h3>
+	<p class="section-desc">
+		Fremdriftskurver fra bok-sliderens loggpunkter (<code>book_progress_log</code>), klemt til
+		ferievinduet. Seriene bygges av <code>buildFerieReadingSeries</code>; seksjonen skjules helt
+		når ingen bøker har registrert lesing i vinduet.
+	</p>
+	<div class="demo-card demo-card--wide">
+		<FerieBooksSection series={ferieReadingSeries} startDate="2026-06-01" endDate="2026-06-04" />
 	</div>
 
 	<h3 class="subsection">TripBudget — turforbruk</h3>

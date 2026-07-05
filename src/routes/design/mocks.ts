@@ -703,6 +703,41 @@ export const bookChatMessagesMock = [
 
 // ── Reise (trip/ferie) ───────────────────────────────────────────────────────
 import type { TripApi, DayForecast } from '$lib/components/domain/trip-api';
+import type { FerieBook } from '$lib/ferie/ferie-reading';
+
+/** Lesing i ferien: slider-snapshots over demo-perioden 1.–4. juni. */
+export const ferieBooksMock: FerieBook[] = [
+	{
+		id: 'fb-1',
+		themeId: 'boker',
+		title: 'Sult',
+		author: 'Knut Hamsun',
+		coverUrl: null,
+		format: 'print',
+		totalPages: 232,
+		totalMinutes: null,
+		points: [
+			{ loggedAt: '2026-05-28T20:00:00Z', currentPage: 40, currentMinutes: null },
+			{ loggedAt: '2026-06-01T21:00:00Z', currentPage: 78, currentMinutes: null },
+			{ loggedAt: '2026-06-03T09:00:00Z', currentPage: 145, currentMinutes: null },
+			{ loggedAt: '2026-06-04T21:30:00Z', currentPage: 232, currentMinutes: null }
+		]
+	},
+	{
+		id: 'fb-2',
+		themeId: 'boker',
+		title: 'Doppler',
+		author: 'Erlend Loe',
+		coverUrl: null,
+		format: 'audio',
+		totalPages: null,
+		totalMinutes: 340,
+		points: [
+			{ loggedAt: '2026-06-02T10:00:00Z', currentPage: null, currentMinutes: 65 },
+			{ loggedAt: '2026-06-03T18:00:00Z', currentPage: null, currentMinutes: 190 }
+		]
+	}
+];
 
 export const tripWeatherMock: DayForecast[] = [
 	{ date: '2026-06-01', symbolCode: 'clearsky_day', tempMin: 12, tempMax: 22, wind: 4, precipitation: 0 },
@@ -767,6 +802,7 @@ export const mockTripApi: TripApi = {
 	getPersons: async () => [],
 	getDiary: async () => null,
 	putDiaryEntry: async () => true,
+	getFerieBooks: async () => ({ books: ferieBooksMock }),
 	promoteTrip: async () => null
 };
 

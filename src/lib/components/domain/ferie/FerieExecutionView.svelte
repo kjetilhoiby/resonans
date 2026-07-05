@@ -22,7 +22,9 @@
 	import TripBudget from '../TripBudget.svelte';
 	import TripMapStory from '../TripMapStory.svelte';
 	import ActionPillRow from '../home/ActionPillRow.svelte';
+	import FerieBooksSection from './FerieBooksSection.svelte';
 	import type { ActionPillItem } from '../home/action-pill-types';
+	import { buildFerieReadingSeries, type FerieReadingSeries } from '$lib/ferie/ferie-reading';
 	import {
 		tripApi,
 		geocodeDiaryImages,
@@ -333,6 +335,20 @@
 		}
 	}
 
+	/* ── Lesing i ferien ───────────────────────────────── */
+	// Lastes her (ikke i FerieBooksSection) slik at hele seksjonen kan skjules
+	// når ingen bøker har registrert lesing i vinduet.
+	let ferieBookSeries = $state<FerieReadingSeries[]>([]);
+
+	async function loadFerieBooks() {
+		try {
+			const res = await api.getFerieBooks(themeId, startDate, endDate);
+			if (res) ferieBookSeries = buildFerieReadingSeries(res.books, startDate, endDate);
+		} catch {
+			// best-effort — feriesida klarer seg uten lesing-seksjonen
+		}
+	}
+
 	/* ── Lifecycle ─────────────────────────────────────── */
 	onMount(() => {
 		void (async () => {
@@ -342,6 +358,7 @@
 			if (autoOpenDiary) openEditor();
 		})();
 		void loadMapData();
+		void loadFerieBooks();
 	});
 </script>
 
@@ -431,6 +448,12 @@
 	<h3>Trening &amp; helse</h3>
 	<TripHealthStats {themeId} startDate={startDate} endDate={endDate} {api} />
 </section>
+{#if ferieBookSeries.length > 0}
+	<section class="ferie-dash">
+		<h3>Lesing</h3>
+		<FerieBooksSection series={ferieBookSeries} {startDate} {endDate} />
+	</section>
+{/if}
 <section class="ferie-dash">
 	<h3>Økonomi</h3>
 	<TripBudget {themeId} startDate={startDate} endDate={endDate} {api} />
