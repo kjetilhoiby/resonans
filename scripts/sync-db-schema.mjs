@@ -148,7 +148,13 @@ const DATA_MIGRATIONS = [
 	// readiness-precompute no-oper seg selv. Idempotent.
 	`UPDATE training_programs
 	 SET status = 'archived', updated_at = NOW()
-	 WHERE status IN ('active', 'paused')`
+	 WHERE status IN ('active', 'paused')`,
+	// 2026-07: Løpedager læres nå av faktisk atferd — nullstill auto-seedede
+	// ukedagsmønstre fra første versjon (identifiseres ved 'styrke'-dager, som
+	// ikke lenger finnes i manuelle overstyringer). Idempotent.
+	`UPDATE training_plans
+	 SET schedule = NULL, updated_at = NOW()
+	 WHERE schedule->'days'->>'1' = 'styrke'`
 ];
 
 if (DATA_MIGRATIONS.length > 0) {

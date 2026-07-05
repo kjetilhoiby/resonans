@@ -45,6 +45,27 @@ Alle `/api/apps/programs/**`-endepunkter + `/api/apps/day` sjekker om `:id` er e
 Hjem-chip, nudges og kort peker til /trening. Idempotent datamigrering arkiverer aktive
 gamle programmer → adaptive-cron og readiness-precompute no-oper seg selv.
 
+### Fase 6: Opprydding etter første bruk (samme dag)
+Tre justeringer fra faktisk bruk:
+- **Rene løpe-km**: eqKm-konverteringen fjernet — 14→22-målet måles i rene løpte
+  km (`endurance-engine.ts`). Sykkel/el-sykkel fanges i stedet av det nye
+  **effort-budsjettet** (`effort-budget.ts`): et ukesintervall forankret i
+  forrige ukes faktiske effort (200 → anbefalt 200–240, faktor 1.2), med
+  deload, akutt(3d)/kronisk(30d)-ratio som hvileanbefaling (> 1.5), og
+  omsetting av gjenstående effort til øktsammensetning («8 km løp + 45 min sykkel»).
+- **Planen legger kun inn løpeøkter**: styrke og sykkel planlegges aldri på
+  dager — de antas å skje når det passer og trekkes fra når de registreres.
+  Løpedagene **læres av faktisk atferd** siste 6 uker (`deriveWeekdayPattern`),
+  ikke hardkodet mønster; `plan.schedule.days` er kun manuell overstyring
+  (auto-seedede mønstre nullstilles av datamigrering). Ekko får de stående
+  styrkemålene som valgfri økt på dager uten løp.
+- **Auto-kobling**: registrert trening siste uke materialiseres som
+  gjennomførte track_sessions (`reconcileSessionsWithActuals`) — «i dag løp
+  jeg 8 km» vises som gjennomført økt, aldri «hvile foreslått». En hardere
+  økt enn planlagt spiser av ukas effort-intervall og tar automatisk ned
+  trykket videre; neste ukes intervall ankres på faktisk total.
+Nytt UI: `EffortBudgetCard` («Ukas effort» med intervall-sone) på /trening.
+
 ## Beslutninger
 
 - **Registrering-først, ikke plan-først**: progresjonen beregnes alltid fra faktiske

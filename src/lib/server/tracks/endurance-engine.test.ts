@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-	bestWeekEqKm,
+	bestWeekRunKm,
 	computeEnduranceState,
 	curveWeekKm,
 	effortPerRunKm,
@@ -13,7 +13,7 @@ const GOAL: EnduranceGoal = {
 	paceSekPerKm: { fra: 400, til: 330 }
 };
 
-const CONFIG: EnduranceConfig = { deloadHverNteUke: 4, maksIkkeLopAndel: 0.4 };
+const CONFIG: EnduranceConfig = { deloadHverNteUke: 4 };
 
 // 26 uker: 2026-07-06 (mandag) → 2027-01-04
 const WINDOW: TrackWindow = { startDate: '2026-07-06', targetDate: '2027-01-04' };
@@ -29,7 +29,7 @@ function run(date: string, km: number, paceSekPerKm = 400): EnduranceWorkout {
 }
 
 function sykkel(date: string, effortScore: number, family: 'cycling' | 'ebike' = 'cycling'): EnduranceWorkout {
-	return { date, family, effortScore, distanceMeters: null, durationSeconds: null };
+	return { date, family, effortScore, distanceMeters: 20000, durationSeconds: 3600 };
 }
 
 describe('curveWeekKm', () => {
@@ -54,7 +54,7 @@ describe('effortPerRunKm', () => {
 });
 
 describe('computeEnduranceState', () => {
-	it('summerer løpe-km denne uken og beregner gjenstående', () => {
+	it('summerer rene løpe-km denne uken og beregner gjenstående', () => {
 		// Uke 1: mandag 2026-07-06, i dag torsdag 09.
 		const state = computeEnduranceState(
 			[run('2026-07-07', 5), run('2026-07-08', 4)],
@@ -68,32 +68,31 @@ describe('computeEnduranceState', () => {
 		expect(state.week.remainingKm).toBe(5);
 	});
 
-	it('sykkel konverteres via effortScore og teller som eqKm', () => {
-		// effort 50 i uke 1 (pace 400 → 16.7 per km) ≈ 3 eqKm
-		const state = computeEnduranceState([sykkel('2026-07-07', 50)], GOAL, CONFIG, WINDOW, '2026-07-09');
-		expect(state.week.eqKmNonRun).toBeCloseTo(3, 0.5);
-		expect(state.week.runKm).toBe(0);
+	it('sykkel teller IKKE i km-regnskapet', () => {
+		const state = computeEnduranceState(
+			[run('2026-07-07', 5), sykkel('2026-07-08', 200)],
+			GOAL,
+			CONFIG,
+			WINDOW,
+			'2026-07-09'
+		);
+		expect(state.week.runKm).toBe(5);
+		expect(state.week.remainingKm).toBe(9);
 	});
 
-	it('ikke-løp cappes til 40 % av uketarget', () => {
-		// Massiv sykkeleffort (500 ≈ 30 eqKm) skal cappes til 0.4 × 14 = 5.6
-		const state = computeEnduranceState([sykkel('2026-07-07', 500)], GOAL, CONFIG, WINDOW, '2026-07-09');
-		expect(state.week.eqKmNonRun).toBeCloseTo(5.6, 1);
-	});
-
-	it('e-sykkel teller mindre enn vanlig sykkel for samme varighet (via effortScore)', () => {
-		// Samme økt-varighet gir ebike lavere effortScore fra effort-service —
-		// motoren konverterer bare score → eqKm, så lavere score = færre km.
-		const cycling = computeEnduranceState([sykkel('2026-07-07', 85)], GOAL, CONFIG, WINDOW, '2026-07-09');
-		const ebike = computeEnduranceState([sykkel('2026-07-07', 40, 'ebike')], GOAL, CONFIG, WINDOW, '2026-07-09');
-		expect(ebike.week.eqKmNonRun).toBeLessThan(cycling.week.eqKmNonRun);
-	});
-
-	it('stall: forrige uke < 70 % av target rebaser uketarget til forrige × 1.1', () => {
-		// Uke 2 (start 13.07): forrige uke hadde bare 4 km (< 70 % av 14)
+	it('stall: forrige uke < 70 % av target rebaser uketarget (rene løpe-km)', () => {
+		// Uke 2 (start 13.07): forrige uke hadde bare 4 løpe-km (< 70 % av 14)
 		const state = computeEnduranceState([run('2026-07-08', 4)], GOAL, CONFIG, WINDOW, '2026-07-15');
 		expect(state.week.stallRebased).toBe(true);
 		expect(state.week.weekTargetKm).toBeCloseTo(4.4, 1);
+	});
+
+	it('sykkel forrige uke redder ikke km-stallen, men utløser den heller ikke alene', () => {
+		// Forrige uke: kun sykkel → 0 løpe-km, men det VAR aktivitet → stall-rebase på løp
+		const state = computeEnduranceState([sykkel('2026-07-08', 200)], GOAL, CONFIG, WINDOW, '2026-07-15');
+		expect(state.week.stallRebased).toBe(true);
+		// Gulv på 3 km så målet ikke kollapser til 0
+		expect(state.week.weekTargetKm).toBe(3);
 	});
 
 	it('ingen stall-rebase uten data forrige uke (ferie/oppstart)', () => {
@@ -156,14 +155,15 @@ describe('nextEnduranceSession', () => {
 	});
 });
 
-describe('bestWeekEqKm', () => {
-	it('finner beste ukes-total på tvers av uker', () => {
+describe('bestWeekRunKm', () => {
+	it('finner beste ukes-total i rene løpe-km — sykkel ignoreres', () => {
 		const workouts = [
 			run('2026-07-07', 5),
 			run('2026-07-09', 6),
+			sykkel('2026-07-10', 300),
 			run('2026-07-14', 8),
 			run('2026-07-16', 9)
 		];
-		expect(bestWeekEqKm(workouts, GOAL, CONFIG, WINDOW)).toBe(17);
+		expect(bestWeekRunKm(workouts)).toBe(17);
 	});
 });

@@ -147,35 +147,46 @@ export async function getTrackTodaySession(
 	const day = date ?? new Date().toISOString().slice(0, 10);
 	const states = await computeTrackStates(userId, plan, day);
 
-	// Allerede materialisert økt for dagen (uansett track) vinner — fullførte
-	// rader skal aldri byttes ut med nye forslag.
+	// Registrert/fullført trening i dag vinner ALLTID — «i dag løp jeg» skal
+	// aldri vises som «hvile foreslått». (Auto-koblet av reconcile i
+	// computeTrackStates, eller satt av complete-session.)
 	const existing = await db
 		.select()
 		.from(trackSessions)
-		.where(and(eq(trackSessions.planId, plan.id), eq(trackSessions.userId, userId), eq(trackSessions.date, day)))
-		.limit(1);
-	if (existing[0] && existing[0].status !== 'suggested') {
-		const dto = toSessionDTO(existing[0], plan);
+		.where(and(eq(trackSessions.planId, plan.id), eq(trackSessions.userId, userId), eq(trackSessions.date, day)));
+	const nonSuggested = existing.find((r) => r.status === 'completed') ?? existing.find((r) => r.status === 'skipped');
+	if (nonSuggested) {
+		const dto = toSessionDTO(nonSuggested, plan);
 		return {
 			result: {
 				session: dto,
 				weekNumber: dto.weekNumber,
 				programStartDate: plan.startDate,
 				states,
-				trackSessionId: existing[0].id
+				trackSessionId: nonSuggested.id
 			},
 			states
 		};
 	}
 
-	if (!states.todaySuggestion) {
-		return { result: null, states };
+	// Planen legger kun inn løp. Uten løpsforslag: høy belastning → ekte
+	// hviledag (null); ellers serveres de stående styrkemålene som VALGFRI
+	// økt, så «dagens armhevinger» alltid er ett trykk unna i Ekko.
+	let suggestion = states.todaySuggestion;
+	let trackId = states.utholdenhetTrack?.id ?? null;
+	if (!suggestion) {
+		if (states.restReason || !states.strengthSuggestion || !states.styrkeTrack) {
+			return { result: null, states };
+		}
+		suggestion = {
+			...states.strengthSuggestion,
+			notes: 'Valgfri styrke — ingen planlagt økt i dag. Gjør den når det passer.'
+		};
+		trackId = states.styrkeTrack.id;
 	}
-
-	const trackId = states.todayOwner === 'styrke' ? states.styrkeTrack?.id : states.utholdenhetTrack?.id;
 	if (!trackId) return { result: null, states };
 
-	const row = await upsertSuggestedSession(userId, plan.id, trackId, day, states.todaySuggestion);
+	const row = await upsertSuggestedSession(userId, plan.id, trackId, day, suggestion);
 	const dto = toSessionDTO(row, plan);
 	return {
 		result: {
@@ -278,9 +289,13 @@ export async function completeTrackSession(
 			}
 		} else if (row.kind === 'run' && states.enduranceState) {
 			const e = states.enduranceState;
-			summary.push(`Uke: ${e.week.totalEqKm} av ${e.week.weekTargetKm} km`);
+			summary.push(`Løpeuke: ${e.week.runKm} av ${e.week.weekTargetKm} km`);
 			if (e.sistePaceSekPerKm != null) {
 				summary.push(`Pace: ${fmtPace(e.sistePaceSekPerKm)} (forventet ${fmtPace(e.forventetPaceSekPerKm)})`);
+			}
+			if (states.budget) {
+				const b = states.budget;
+				summary.push(`Effort denne uka: ${b.spentThisWeek} av ${b.bandMin}–${b.bandMax}`);
 			}
 		}
 
@@ -316,9 +331,15 @@ export async function buildTrackInsight(
 
 	if (scope === 'week') {
 		if (e) {
-			highlights.push(`Utholdenhet: ${e.week.totalEqKm} av ${e.week.weekTargetKm} km denne uken (${e.week.runKm} løp + ${e.week.eqKmNonRun} sykkel-ekvivalent).`);
+			highlights.push(`Løping: ${e.week.runKm} av ${e.week.weekTargetKm} km denne uken.`);
 			if (e.week.deload) highlights.push('Deload-uke — redusert volum er meningen.');
 			if (e.week.stallRebased) highlights.push('Uketarget er justert ned etter en rolig forrige uke.');
+		}
+		if (states.budget) {
+			const b = states.budget;
+			highlights.push(`Effort (løp + sykkel): ${b.spentThisWeek} av ${b.bandMin}–${b.bandMax} denne uka.`);
+			if (b.restRecommended) highlights.push('Høy belastning siste 3 dager — hvil eller hold det rolig.');
+			if (states.effortComposition) highlights.push(states.effortComposition);
 		}
 		if (s?.armhevinger.siste != null) {
 			highlights.push(`Styrke: sist ${s.armhevinger.siste} armhevinger — neste mål ${s.armhevinger.nesteTarget}.`);

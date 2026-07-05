@@ -41,6 +41,17 @@ export const load: PageServerLoad = async ({ locals }) => {
 		states: {
 			todayOwner: states.todayOwner,
 			todaySuggestion: states.todaySuggestion,
+			restReason: states.restReason,
+			budget: states.budget,
+			effortComposition: states.effortComposition,
+			todayCompleted: states.todayCompleted
+				? {
+						name: states.todayCompleted.payload.name,
+						kind: states.todayCompleted.kind,
+						actuals: states.todayCompleted.actuals
+					}
+				: null,
+			strengthSuggestion: states.strengthSuggestion,
 			strength: states.strengthState,
 			endurance: states.enduranceState,
 			styrkeTrackId: states.styrkeTrack?.id ?? null,
