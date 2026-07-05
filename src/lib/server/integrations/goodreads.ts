@@ -53,20 +53,45 @@ function parseRatingsCount(text: string): number | undefined {
 const BOILERPLATE_PATTERNS: RegExp[] = [
 	/^(Sign in|Get help|©|Goodreads|Genres|Want to read|Currently reading|Buy a copy|ISBN|Published\s)/i,
 	/(Loading\.\.\.|Sponsored|Advertisement|Cookie policy|Privacy policy)/i,
-	/^(About the author|Ratings & Reviews|Community Reviews|Friends & Following|Readers also enjoyed)/i
+	/^(About the author|Ratings & Reviews|Community Reviews|Friends & Following|Readers also enjoyed)/i,
+	// Navigasjon og sidetittel fra Tavily-markdown av Goodreads-sider
+	/Jump to ratings/i,
+	/\|\s*Goodreads\b/i,
+	/^(Displaying \d|Create a free account|Rate this book|Search review text|Show more|Join the discussion)/i
 ];
 
 function isBoilerplate(p: string): boolean {
 	return BOILERPLATE_PATTERNS.some((re) => re.test(p));
 }
 
-function extractTopReviews(text: string): GoodreadsTopReview[] {
+/**
+ * Fjerner markdown-syntaks fra et Tavily-utdrag slik at det kan vises
+ * som ren sitat-tekst: lenker → lenketekst, bilder/overskriftstegn/
+ * utheving/backticks → bort, rå URL-er → bort.
+ */
+export function cleanMarkdownSnippet(p: string): string {
+	return p
+		.replace(/!\[[^\]]*\]\([^)]*\)/g, '') // bilder
+		.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1') // lenker → tekst
+		.replace(/^#{1,6}\s*/gm, '') // overskriftstegn
+		.replace(/(\*\*|__)(.*?)\1/g, '$2') // fet
+		.replace(/(\*|_)(.*?)\1/g, '$2') // kursiv
+		.replace(/`+/g, '')
+		.replace(/https?:\/\/\S+/g, '')
+		.replace(/\s+/g, ' ')
+		.trim();
+}
+
+export function extractTopReviews(text: string): GoodreadsTopReview[] {
 	const reviews: GoodreadsTopReview[] = [];
 	const seenStarts = new Set<string>();
 
 	const paragraphs = text
 		.split(/\n{2,}|\s{3,}/)
-		.map((p) => p.replace(/\s+/g, ' ').trim())
+		.map((p) => p.trim())
+		// Markdown-overskrifter (### Forfatternavn o.l.) er struktur, ikke omtaler
+		.filter((p) => !/^#{1,6}\s/.test(p))
+		.map(cleanMarkdownSnippet)
 		.filter((p) => p.length >= 80 && p.length <= 800);
 
 	for (const p of paragraphs) {
