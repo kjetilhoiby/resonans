@@ -41,6 +41,13 @@
 	let vapidPublicKey = $state<string | null>(null);
 	let missingEnvVars = $state<string[]>([]);
 	let pwaChannelSupported = $state(false);
+	let deviceDiag = $state<{
+		standalone: boolean;
+		serviceWorker: boolean;
+		pushManager: boolean;
+		notification: boolean;
+		ios: boolean;
+	} | null>(null);
 
 	let googleChatChannels = $state(
 		(data.settings.channels?.googleChat?.length
@@ -113,10 +120,22 @@
 		return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
 	}
 
+	function isStandaloneDisplay() {
+		if (typeof window === 'undefined') return false;
+		return (
+			window.matchMedia?.('(display-mode: standalone)')?.matches === true ||
+			(navigator as Navigator & { standalone?: boolean }).standalone === true
+		);
+	}
+
 	function supportsPwaChannel() {
 		if (typeof window === 'undefined') return false;
 		const hasPushApi = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 		if (!hasPushApi) return false;
+
+		// Installert PWA (standalone) har push uansett hva UA-en sier —
+		// UA-sniffingen under skal bare luke ut Safari-*fanen* på iOS.
+		if (isStandaloneDisplay()) return true;
 
 		const ua = navigator.userAgent || '';
 		const isIOS = /iPad|iPhone|iPod/.test(ua);
@@ -174,7 +193,14 @@
 		if (typeof window === 'undefined') return;
 		pwaChannelSupported = supportsPwaChannel();
 		pushSupported = pwaChannelSupported;
-		pushPermission = pushSupported ? Notification.permission : 'denied';
+		deviceDiag = {
+			standalone: isStandaloneDisplay(),
+			serviceWorker: 'serviceWorker' in navigator,
+			pushManager: 'PushManager' in window,
+			notification: 'Notification' in window,
+			ios: /iPad|iPhone|iPod/.test(navigator.userAgent || '')
+		};
+		pushPermission = pushSupported && 'Notification' in window ? Notification.permission : 'denied';
 
 		try {
 			const response = await fetch('/api/push/status');
@@ -595,9 +621,7 @@
 				<div class="route-row">
 					<div class="route-label">Daglig check-in</div>
 					<div class="route-options">
-						{#if pwaChannelSupported}
-							<label><Checkbox name="route_dailyCheckIn" value="pwa" bind:group={routesDailyCheckIn} /> PWA</label>
-						{/if}
+						<label><Checkbox name="route_dailyCheckIn" value="pwa" bind:group={routesDailyCheckIn} /> PWA</label>
 						{#each googleChatChannels as channel (channel.id)}
 							<label><Checkbox name="route_dailyCheckIn" value={`chat:${channel.id}`} bind:group={routesDailyCheckIn} /> {channel.name || 'Chat'}</label>
 						{/each}
@@ -607,9 +631,7 @@
 				<div class="route-row">
 					<div class="route-label">Planlegg dag</div>
 					<div class="route-options">
-						{#if pwaChannelSupported}
-							<label><Checkbox name="route_dayPlanning" value="pwa" bind:group={routesDayPlanning} /> PWA</label>
-						{/if}
+						<label><Checkbox name="route_dayPlanning" value="pwa" bind:group={routesDayPlanning} /> PWA</label>
 						{#each googleChatChannels as channel (channel.id)}
 							<label><Checkbox name="route_dayPlanning" value={`chat:${channel.id}`} bind:group={routesDayPlanning} /> {channel.name || 'Chat'}</label>
 						{/each}
@@ -619,9 +641,7 @@
 				<div class="route-row">
 					<div class="route-label">Avslutt dag</div>
 					<div class="route-options">
-						{#if pwaChannelSupported}
-							<label><Checkbox name="route_dayClose" value="pwa" bind:group={routesDayClose} /> PWA</label>
-						{/if}
+						<label><Checkbox name="route_dayClose" value="pwa" bind:group={routesDayClose} /> PWA</label>
 						{#each googleChatChannels as channel (channel.id)}
 							<label><Checkbox name="route_dayClose" value={`chat:${channel.id}`} bind:group={routesDayClose} /> {channel.name || 'Chat'}</label>
 						{/each}
@@ -631,9 +651,7 @@
 				<div class="route-row">
 					<div class="route-label">Digest</div>
 					<div class="route-options">
-						{#if pwaChannelSupported}
-							<label><Checkbox name="route_digestDay" value="pwa" bind:group={routesDigestDay} /> PWA</label>
-						{/if}
+						<label><Checkbox name="route_digestDay" value="pwa" bind:group={routesDigestDay} /> PWA</label>
 						{#each googleChatChannels as channel (channel.id)}
 							<label><Checkbox name="route_digestDay" value={`chat:${channel.id}`} bind:group={routesDigestDay} /> {channel.name || 'Chat'}</label>
 						{/each}
@@ -643,9 +661,7 @@
 				<div class="route-row">
 					<div class="route-label">Relasjonssjekk morgen</div>
 					<div class="route-options">
-						{#if pwaChannelSupported}
-							<label><Checkbox name="route_relationshipCheckinMorning" value="pwa" bind:group={routesRelationshipCheckinMorning} /> PWA</label>
-						{/if}
+						<label><Checkbox name="route_relationshipCheckinMorning" value="pwa" bind:group={routesRelationshipCheckinMorning} /> PWA</label>
 						{#each googleChatChannels as channel (channel.id)}
 							<label><Checkbox name="route_relationshipCheckinMorning" value={`chat:${channel.id}`} bind:group={routesRelationshipCheckinMorning} /> {channel.name || 'Chat'}</label>
 						{/each}
@@ -655,39 +671,52 @@
 				<Button type="submit" fullWidth className="nudge-submit">Lagre kanaler</Button>
 			</form>
 
-			{#if pwaChannelSupported}
-				<div class="info-box" style="margin-top:1rem;">
-					<div class="info-title">PWA-kanal status</div>
-					<ul>
-						<li>Støtte: {pushSupported ? 'Ja' : 'Nei'}</li>
-						<li>Server-konfigurasjon: {pushConfigured ? 'OK' : 'Mangler VAPID'}</li>
-						<li>Tillatelse: {pushPermission}</li>
-						<li>Abonnert: {pushSubscribed ? 'Ja' : 'Nei'}</li>
-					</ul>
-					{#if !pushConfigured && missingEnvVars.length > 0}
-						<p class="config-warning">
-							Mangler miljøvariabler på server: {missingEnvVars.join(', ')}.
-						</p>
+			<div class="info-box" style="margin-top:1rem;">
+				<div class="info-title">PWA-kanal status</div>
+				<ul>
+					<li>Støtte på denne enheten: {pushSupported ? 'Ja' : 'Nei'}</li>
+					<li>Server-konfigurasjon: {pushConfigured ? 'OK' : 'Mangler VAPID'}</li>
+					<li>Tillatelse: {pushPermission}</li>
+					<li>Abonnert (denne kontoen): {pushSubscribed ? 'Ja' : 'Nei'}</li>
+					{#if deviceDiag}
+						<li>Kjører som installert PWA: {deviceDiag.standalone ? 'Ja' : 'Nei'}</li>
+						<li>Service worker-API: {deviceDiag.serviceWorker ? 'Ja' : 'Nei'} · Push-API: {deviceDiag.pushManager ? 'Ja' : 'Nei'} · Notification-API: {deviceDiag.notification ? 'Ja' : 'Nei'}</li>
 					{/if}
-				</div>
-
-				<div class="push-actions">
-					<Button type="button" onClick={enablePush} disabled={pushLoading || pushSubscribed || !pushConfigured}>
-						{pushLoading ? 'Jobber...' : pushSubscribed ? 'Push aktivert' : 'Aktiver Push'}
-					</Button>
-					<Button type="button" variant="secondary" onClick={disablePush} disabled={pushLoading || !pushSubscribed}>
-						Deaktiver Push
-					</Button>
-					<Button type="button" variant="secondary" onClick={sendTestPush} disabled={pushLoading || !pushSubscribed}>
-						Send Test Push
-					</Button>
-				</div>
-
-				{#if pushResult}
-					<div class="result {pushResult.success ? 'success' : 'error'}">
-						{pushResult.message}
-					</div>
+				</ul>
+				{#if !pwaChannelSupported && deviceDiag}
+					<p class="config-warning">
+						{#if deviceDiag.ios && deviceDiag.standalone}
+							Appen kjører som installert PWA, men Push API mangler. Dette skjer typisk når installasjonen er gammel — fjern Resonans fra hjemskjermen og legg den til på nytt fra Safari (Del → «Legg til på Hjem-skjerm»).
+						{:else if deviceDiag.ios}
+							På iPhone/iPad virker push bare når Resonans er installert på hjemskjermen. Åpne i Safari → Del → «Legg til på Hjem-skjerm», og aktiver push derfra.
+						{:else}
+							Denne nettleseren støtter ikke web push. PWA-rutingen over gjelder likevel enhetene der push er aktivert.
+						{/if}
+					</p>
 				{/if}
+				{#if !pushConfigured && missingEnvVars.length > 0}
+					<p class="config-warning">
+						Mangler miljøvariabler på server: {missingEnvVars.join(', ')}.
+					</p>
+				{/if}
+			</div>
+
+			<div class="push-actions">
+				<Button type="button" onClick={enablePush} disabled={pushLoading || pushSubscribed || !pushConfigured || !pushSupported}>
+					{pushLoading ? 'Jobber...' : pushSubscribed ? 'Push aktivert' : 'Aktiver Push'}
+				</Button>
+				<Button type="button" variant="secondary" onClick={disablePush} disabled={pushLoading || !pushSubscribed || !pushSupported}>
+					Deaktiver Push
+				</Button>
+				<Button type="button" variant="secondary" onClick={sendTestPush} disabled={pushLoading || !pushSubscribed}>
+					Send Test Push
+				</Button>
+			</div>
+
+			{#if pushResult}
+				<div class="result {pushResult.success ? 'success' : 'error'}">
+					{pushResult.message}
+				</div>
 			{/if}
 		</section>
 
