@@ -3016,6 +3016,274 @@ export const programReadinessAssessmentsRelations = relations(programReadinessAs
 }));
 
 // ---------------------------------------------------------------------------
+// Treningsløp (tracks) — avløser training_programs. To uavhengige progresjons-
+// løp (styrke + utholdenhet) som måles mot faktiske Ekko-registreringer.
+// Ingen pre-generert øktstruktur: dagens økt syntetiseres on-demand og
+// materialiseres som track_sessions-rad når Ekko henter /today.
+// training_plans er det Ekko-synlige "programmet" (plan-id = programId utad).
+// Se docs/changelog/2026-07-05-treningslop.md.
+// ---------------------------------------------------------------------------
+
+export const trainingPlans = pgTable('training_plans', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	name: text('name').notNull(),
+	status: text('status').notNull().default('active'), // active|paused|completed|archived
+	startDate: date('start_date').notNull(),
+	durationWeeks: integer('duration_weeks').notNull().default(26),
+	// Ukedagsmønster: hvilket løp som "eier" hver ukedag (1=man..7=søn).
+	schedule: jsonb('schedule').$type<{
+		days?: Record<string, 'styrke' | 'utholdenhet' | 'hvile'>;
+	}>(),
+	// Bl.a. lagringsplass for det no-op'ede /mode-endepunktet fra Ekko.
+	preferences: jsonb('preferences').$type<{
+		mode?: string;
+		notes?: string[];
+	}>(),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	idxUserStatus: index('training_plans_user_status_idx').on(table.userId, table.status, table.createdAt)
+}));
+
+export const trainingTracks = pgTable('training_tracks', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	planId: uuid('plan_id').references(() => trainingPlans.id, { onDelete: 'cascade' }).notNull(),
+	kind: text('kind').notNull(), // 'styrke' | 'utholdenhet'
+	name: text('name').notNull(),
+	status: text('status').notNull().default('active'), // active|paused|completed|archived
+	startDate: date('start_date').notNull(),
+	targetDate: date('target_date').notNull(),
+	// Utgangspunkt målt ved oppstart — progresjonskurven interpolerer baseline → goal.
+	baseline: jsonb('baseline').$type<{
+		// Styrke
+		armhevingerPerOkt?: number;
+		plankeSekunder?: number;
+		pullupNegativSekunder?: number;
+		// Utholdenhet
+		ukesKm?: number;
+		paceSekPerKm?: number;
+		recordedAt?: string;
+	}>(),
+	goal: jsonb('goal').$type<{
+		// Styrke
+		armhevinger?: { fra: number; til: number };
+		planke?: { fraSek: number; tilSek: number };
+		pullup?: { faser: Array<{ navn: string; kriterium: string }> };
+		// Utholdenhet
+		ukesKm?: { fra: number; til: number };
+		paceSekPerKm?: { fra: number; til: number };
+	}>().notNull(),
+	config: jsonb('config').$type<{
+		deloadHverNteUke?: number;
+		maksIkkeLopAndel?: number; // andel av uketarget som kan dekkes av sykkel/ebike
+	}>(),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	idxPlanKind: index('training_tracks_plan_idx').on(table.planId, table.kind),
+	idxUserStatus: index('training_tracks_user_status_idx').on(table.userId, table.status)
+}));
+
+// Kontrollpunkter på veien mot målet — f.eks. «50 armhevinger totalt»,
+// «3×20 s negativer», «1 strikt pull-up». Pull-up-fasene drives herfra.
+export const trackMilestones = pgTable('track_milestones', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	trackId: uuid('track_id').references(() => trainingTracks.id, { onDelete: 'cascade' }).notNull(),
+	order: integer('order').notNull(),
+	name: text('name').notNull(),
+	criteria: jsonb('criteria').$type<{
+		metric: string; // f.eks. 'armhevinger_total' | 'planke_sekunder' | 'pullup_negativ_sett' | 'pullup_reps' | 'ukes_km'
+		value: number;
+		manual?: boolean; // krever manuell avhuking i /trening-UI
+	}>().notNull(),
+	achievedAt: timestamp('achieved_at'),
+	sensorEventId: uuid('sensor_event_id').references(() => sensorEvents.id, { onDelete: 'set null' }),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	idxTrackOrder: index('track_milestones_track_order_idx').on(table.trackId, table.order)
+}));
+
+// Materialiserte øktforslag/fullføringer. Raden opprettes når dagens forslag
+// hentes (upsert på track_id+date) — id-en er plannedSessionId i Ekko-API-et.
+export const trackSessions = pgTable('track_sessions', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	trackId: uuid('track_id').references(() => trainingTracks.id, { onDelete: 'cascade' }).notNull(),
+	planId: uuid('plan_id').references(() => trainingPlans.id, { onDelete: 'cascade' }).notNull(),
+	date: date('date').notNull(),
+	kind: text('kind').notNull(), // 'strength' | 'run'
+	// ProgramSessionDTO-kompatibel payload — serveres direkte til Ekko.
+	payload: jsonb('payload').$type<{
+		name: string;
+		restSeconds?: number;
+		plannedExercises?: Array<{
+			exerciseName: string;
+			sets: number;
+			repsTarget?: number;
+			durationSecondsTarget?: number;
+			notes?: string;
+		}>;
+		plannedRun?: {
+			runType: 'easy' | 'tempo' | 'intervals' | 'long';
+			targetDistanceMeters?: number;
+			targetDurationSeconds?: number;
+			paceHintSecPerKm?: number;
+			hrZoneHint?: string;
+			notes?: string;
+		};
+		isTest?: boolean;
+		testType?: string;
+		notes?: string;
+	}>().notNull(),
+	status: text('status').notNull().default('suggested'), // suggested|completed|skipped
+	completedAt: timestamp('completed_at'),
+	sensorEventId: uuid('sensor_event_id').references(() => sensorEvents.id, { onDelete: 'set null' }),
+	// Samme snapshot-form som program_session_completions.actuals.
+	actuals: jsonb('actuals').$type<{
+		kind: 'strength' | 'run';
+		duration?: number;
+		avgHeartRate?: number;
+		maxHeartRate?: number;
+		totalSets?: number;
+		totalReps?: number;
+		totalVolume?: number;
+		exercises?: Array<{
+			name: string;
+			sets: Array<{ reps?: number; weight?: number; durationSeconds?: number }>;
+		}>;
+		distance?: number;
+		paceSecondsPerKm?: number;
+		sportType?: string;
+	}>(),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	uniqueTrackDate: unique('track_sessions_track_date_unique').on(table.trackId, table.date),
+	idxUserDate: index('track_sessions_user_date_idx').on(table.userId, table.date),
+	idxPlanDate: index('track_sessions_plan_date_idx').on(table.planId, table.date)
+}));
+
+// Daglig readiness-cache for treningsløp — speiler program_readiness_assessments
+// men FK-er mot training_plans i stedet for training_programs.
+export const trackReadinessAssessments = pgTable('track_readiness_assessments', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	planId: uuid('plan_id').references(() => trainingPlans.id, { onDelete: 'cascade' }).notNull(),
+	// null på hviledager
+	trackSessionId: uuid('track_session_id').references(() => trackSessions.id, { onDelete: 'cascade' }),
+	assessmentDate: date('assessment_date').notNull(),
+	state: text('state').notNull(), // 'klar' | 'lett' | 'easy' | 'rest'
+	reasons: jsonb('reasons').$type<string[]>().notNull().default([]),
+	signals: jsonb('signals').$type<{
+		sleep?: { score: number | null; nights: Array<{ date: string; score: number | null }>; flag: 'red' | 'yellow' | 'green' | 'unknown' };
+		egenfrekvens?: { level: number | null; balance: number | null; loggedAt: string | null; flag: 'red' | 'yellow' | 'green' | 'unknown' };
+		sick?: { active: boolean; until: string | null };
+		crunch?: { active: boolean; until: string | null };
+		trip?: { active: boolean; themeId: string | null; destination: string | null; endDate: string | null };
+	}>().notNull().default({}),
+	alternative: jsonb('alternative').$type<{
+		kind: 'strength' | 'run' | 'rest';
+		name: string;
+		summary: string;
+		plannedRun?: {
+			runType: 'easy' | 'tempo' | 'intervals' | 'long';
+			targetDistanceMeters?: number;
+			targetDurationSeconds?: number;
+			paceHintSecPerKm?: number;
+			hrZoneHint?: string;
+			notes?: string;
+		};
+		plannedExercises?: Array<{
+			exerciseName: string;
+			sets: number;
+			repsTarget?: number;
+			durationSecondsTarget?: number;
+			notes?: string;
+		}>;
+		rationale: string;
+	}>(),
+	signalFingerprint: text('signal_fingerprint').notNull(),
+	userChoice: text('user_choice'),
+	userChoiceAt: timestamp('user_choice_at'),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	uniqueUserPlanDate: unique('track_readiness_user_plan_date_uniq').on(
+		table.userId,
+		table.planId,
+		table.assessmentDate
+	),
+	idxUserDate: index('track_readiness_user_date_idx').on(table.userId, table.assessmentDate)
+}));
+
+export const trainingPlansRelations = relations(trainingPlans, ({ one, many }) => ({
+	user: one(users, {
+		fields: [trainingPlans.userId],
+		references: [users.id]
+	}),
+	tracks: many(trainingTracks),
+	sessions: many(trackSessions)
+}));
+
+export const trainingTracksRelations = relations(trainingTracks, ({ one, many }) => ({
+	user: one(users, {
+		fields: [trainingTracks.userId],
+		references: [users.id]
+	}),
+	plan: one(trainingPlans, {
+		fields: [trainingTracks.planId],
+		references: [trainingPlans.id]
+	}),
+	milestones: many(trackMilestones),
+	sessions: many(trackSessions)
+}));
+
+export const trackMilestonesRelations = relations(trackMilestones, ({ one }) => ({
+	track: one(trainingTracks, {
+		fields: [trackMilestones.trackId],
+		references: [trainingTracks.id]
+	}),
+	sensorEvent: one(sensorEvents, {
+		fields: [trackMilestones.sensorEventId],
+		references: [sensorEvents.id]
+	})
+}));
+
+export const trackSessionsRelations = relations(trackSessions, ({ one }) => ({
+	track: one(trainingTracks, {
+		fields: [trackSessions.trackId],
+		references: [trainingTracks.id]
+	}),
+	plan: one(trainingPlans, {
+		fields: [trackSessions.planId],
+		references: [trainingPlans.id]
+	}),
+	sensorEvent: one(sensorEvents, {
+		fields: [trackSessions.sensorEventId],
+		references: [sensorEvents.id]
+	})
+}));
+
+export const trackReadinessAssessmentsRelations = relations(trackReadinessAssessments, ({ one }) => ({
+	user: one(users, {
+		fields: [trackReadinessAssessments.userId],
+		references: [users.id]
+	}),
+	plan: one(trainingPlans, {
+		fields: [trackReadinessAssessments.planId],
+		references: [trainingPlans.id]
+	}),
+	trackSession: one(trackSessions, {
+		fields: [trackReadinessAssessments.trackSessionId],
+		references: [trackSessions.id]
+	})
+}));
+
+// ---------------------------------------------------------------------------
 // Strava-synk (proxy for ekko). Resonans eier Strava-koblingen; ekko laster
 // kun opp GPX til /api/apps/upload som i dag. Se docs/STRAVA_SYNC_SPEC.
 // ---------------------------------------------------------------------------
