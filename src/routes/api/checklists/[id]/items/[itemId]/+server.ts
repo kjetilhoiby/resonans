@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
-import { checklistItems, checklists, progress } from '$lib/db/schema';
+import { checklistItems, checklists } from '$lib/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
 import { TaskExecutionService } from '$lib/server/services/task-execution-service';
 import { parseTaskDateTime } from '$lib/server/date-time-parser';
@@ -12,6 +12,7 @@ import {
 import { PersonMentionService } from '$lib/server/services/person-mention-service';
 import { runInBackground } from '$lib/server/run-in-background';
 import { syncStaysForDate } from '$lib/server/stays';
+import { shouldParentBeChecked } from '$lib/components/domain/ukeplan/week-schedule-logic';
 
 async function syncChecklistCompletion(checklistId: string) {
 	// Et item regnes som "behandlet" hvis det er enten avkrysset eller skipped.
@@ -32,6 +33,65 @@ async function syncChecklistCompletion(checklistId: string) {
 	}
 
 	await db.update(checklists).set({ completedAt: null }).where(eq(checklists.id, checklistId));
+}
+
+/**
+ * Bivirkninger av å (av)krysse ett punkt: logg/fjern fremdrift for koblet
+ * tema/mål-oppgave (linkedTaskId), og speil avkryssingen til et koblet
+ * ukeliste-punkt (linkedChecklistItemId). Returnerer oppdatert metadata for
+ * punktet (progressRecordId lagt til/fjernet).
+ *
+ * Kalles både for punktet som ble togglet direkte, og for en forelder som
+ * auto-hakes når alle barna er ferdige — slik kaskaderer nedbrytning opp til
+ * ukeplan.
+ */
+async function applyItemCheckedSideEffects(
+	userId: string,
+	item: typeof checklistItems.$inferSelect,
+	checked: boolean
+): Promise<Record<string, unknown>> {
+	const meta = (item.metadata ?? {}) as Record<string, unknown>;
+	let resultMeta: Record<string, unknown> = meta;
+
+	// Koblet tema/mål-oppgave → fremdrift.
+	const linkedTaskId = typeof meta.linkedTaskId === 'string' ? meta.linkedTaskId : null;
+	if (checked && linkedTaskId && !meta.progressRecordId) {
+		const progressRecord = await TaskExecutionService.recordTaskProgress({
+			taskId: linkedTaskId,
+			userId,
+			value: 1,
+			note: `Auto-loggert fra dagsjekkliste: "${item.text}"`,
+			completedAt: item.checkedAt ?? new Date()
+		});
+		if (progressRecord) {
+			resultMeta = { ...meta, progressRecordId: progressRecord.id };
+			await db.update(checklistItems).set({ metadata: resultMeta }).where(eq(checklistItems.id, item.id));
+		}
+	} else if (!checked) {
+		const progressRecordId = typeof meta.progressRecordId === 'string' ? meta.progressRecordId : null;
+		if (progressRecordId) {
+			await TaskExecutionService.deleteProgressRecord(progressRecordId);
+			resultMeta = { ...meta };
+			delete resultMeta.progressRecordId;
+			await db.update(checklistItems).set({ metadata: resultMeta }).where(eq(checklistItems.id, item.id));
+		}
+	}
+
+	// Koblet ukeliste-punkt → speil avkryssingen.
+	const linkedChecklistItemId =
+		typeof meta.linkedChecklistItemId === 'string' ? meta.linkedChecklistItemId : null;
+	if (linkedChecklistItemId && linkedChecklistItemId !== item.id) {
+		const [linked] = await db
+			.update(checklistItems)
+			.set({ checked, checkedAt: checked ? (item.checkedAt ?? new Date()) : null })
+			.where(and(eq(checklistItems.id, linkedChecklistItemId), eq(checklistItems.userId, userId)))
+			.returning({ checklistId: checklistItems.checklistId });
+		if (linked?.checklistId) {
+			await syncChecklistCompletion(linked.checklistId);
+		}
+	}
+
+	return resultMeta;
 }
 
 // PATCH /api/checklists/[id]/items/[itemId] — toggle checked / endre tekst
@@ -128,68 +188,32 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 		runInBackground(syncStaysForDate(userId, reparseLocationDayIso));
 	}
 
-	// When an item is checked and it has a linked task, log a progress record
-	if (body.checked === true) {
-		const meta = (updated.metadata ?? {}) as Record<string, unknown>;
-		const linkedTaskId = typeof meta.linkedTaskId === 'string' ? meta.linkedTaskId : null;
-
-		if (linkedTaskId && !meta.progressRecordId) {
-			const progressRecord = await TaskExecutionService.recordTaskProgress({
-				taskId: linkedTaskId,
-				userId,
-				value: 1,
-				note: `Auto-loggert fra dagsjekkliste: "${updated.text}"`,
-				completedAt: updated.checkedAt ?? new Date()
-			});
-
-			if (progressRecord) {
-				// Store the progress record ID in metadata so we don't double-log
-				await db
-					.update(checklistItems)
-					.set({ metadata: { ...meta, progressRecordId: progressRecord.id } })
-					.where(eq(checklistItems.id, updated.id));
-
-				updated.metadata = { ...meta, progressRecordId: progressRecord.id };
-			}
-		}
-	}
-
-	// When an item is unchecked, remove the progress record if present
-	if (body.checked === false) {
-		const meta = (updated.metadata ?? {}) as Record<string, unknown>;
-		const progressRecordId = typeof meta.progressRecordId === 'string' ? meta.progressRecordId : null;
-
-		if (progressRecordId) {
-			await TaskExecutionService.deleteProgressRecord(progressRecordId);
-
-			const newMeta = { ...meta };
-			delete newMeta.progressRecordId;
-			await db
-				.update(checklistItems)
-				.set({ metadata: newMeta })
-				.where(eq(checklistItems.id, updated.id));
-
-			updated.metadata = newMeta;
-		}
-	}
-
-	// Dag-punkt som «utfører» et ukeliste-punkt (linkedChecklistItemId): speil
-	// avkryssingen til det koblede ukeliste-punktet, slik at begge resolves samtidig.
+	// (Av)krysning: kjør link-bivirkninger for punktet (fremdrift + speiling til
+	// koblet ukeliste-punkt), og kaskader oppover ved nedbrytning.
 	if (body.checked !== undefined) {
-		const meta = (updated.metadata ?? {}) as Record<string, unknown>;
-		const linkedChecklistItemId =
-			typeof meta.linkedChecklistItemId === 'string' ? meta.linkedChecklistItemId : null;
+		updated.metadata = await applyItemCheckedSideEffects(userId, updated, body.checked);
 
-		if (linkedChecklistItemId && linkedChecklistItemId !== updated.id) {
-			const [linkedItem] = await db
-				.update(checklistItems)
-				.set({ checked: body.checked, checkedAt: body.checked ? (updated.checkedAt ?? new Date()) : null })
-				.where(and(eq(checklistItems.id, linkedChecklistItemId), eq(checklistItems.userId, userId)))
-				.returning({ checklistId: checklistItems.checklistId });
-
-			// Hold sjekklisten som ukeliste-punktet ligger i i synk (completedAt).
-			if (linkedItem?.checklistId && linkedItem.checklistId !== params.id) {
-				await syncChecklistCompletion(linkedItem.checklistId);
+		// Forelder-auto-hak: er dette et barn, hak av (eller opphev) forelderen når
+		// alle barna er ferdige. Forelderens egne koblinger kaskaderer videre — slik
+		// resolves et nedbrutt ukeliste-punkt når «hele lista» er krysset ut.
+		if (updated.parentId) {
+			const siblings = await db.query.checklistItems.findMany({
+				where: eq(checklistItems.parentId, updated.parentId),
+				columns: { checked: true, skippedAt: true }
+			});
+			const parentShouldBeChecked = shouldParentBeChecked(
+				siblings.map((s) => ({ checked: s.checked, skippedAt: s.skippedAt }))
+			);
+			const parent = await db.query.checklistItems.findFirst({
+				where: and(eq(checklistItems.id, updated.parentId), eq(checklistItems.userId, userId))
+			});
+			if (parent && parent.checked !== parentShouldBeChecked) {
+				const [updatedParent] = await db
+					.update(checklistItems)
+					.set({ checked: parentShouldBeChecked, checkedAt: parentShouldBeChecked ? new Date() : null })
+					.where(eq(checklistItems.id, parent.id))
+					.returning();
+				await applyItemCheckedSideEffects(userId, updatedParent, parentShouldBeChecked);
 			}
 		}
 	}

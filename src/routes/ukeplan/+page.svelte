@@ -20,7 +20,7 @@
 	import AutoCheckModal from '$lib/components/domain/ukeplan/AutoCheckModal.svelte';
 	import { fetchTripWeather, fetchHomeWeather, type DayWeatherEntry, type DayWeatherSummary } from '$lib/components/domain/ukeplan/weather';
 	import { buildWeekPlanFlowContext } from '$lib/components/domain/ukeplan/week-plan-context';
-	import { buildScheduleLink, isAlreadyScheduled, type ScheduleSource } from '$lib/components/domain/ukeplan/week-schedule-logic';
+	import { buildScheduleLink, isAlreadyScheduled, shouldParentBeChecked, type ScheduleSource } from '$lib/components/domain/ukeplan/week-schedule-logic';
 	import type { AutoCheckPrompt } from '$lib/components/domain/ukeplan/autocheck';
 	import type {
 		SaveState, WeekInfo, ChecklistItem, WeekChecklist, WeekTask, GoalReminder,
@@ -286,12 +286,36 @@
 		};
 	}
 
+	// Speil serverens forelder-auto-hak optimistisk: når et barn (av)krysses og
+	// alle søsken er ferdige, hakes forelderen av (eller åpnes igjen), og
+	// forelderens koblinger kaskaderer opp til ukeplan.
+	function cascadeParentAfterChildToggle(checklistId: string, childItemId: string) {
+		const cl = getChecklistById(checklistId);
+		const child = cl?.items.find((i) => i.id === childItemId);
+		if (!cl || !child?.parentId) return;
+		const parent = cl.items.find((i) => i.id === child.parentId);
+		if (!parent) return;
+		const siblings = cl.items.filter((i) => i.parentId === parent.id);
+		const shouldCheck = shouldParentBeChecked(
+			siblings.map((s) => ({ checked: s.checked, skippedAt: s.skippedAt ?? null }))
+		);
+		if (parent.checked === shouldCheck) return;
+		updateChecklistById(checklistId, (current) => ({
+			...current,
+			items: current.items.map((i) => (i.id === parent.id ? { ...i, checked: shouldCheck } : i))
+		}));
+		const pmeta = parent.metadata ?? null;
+		if (pmeta?.linkedTaskId) adjustTaskCompleted(pmeta.linkedTaskId, shouldCheck ? 1 : -1);
+		if (pmeta?.linkedChecklistItemId) setWeekChecklistItemChecked(pmeta.linkedChecklistItemId, shouldCheck);
+	}
+
 	async function toggleChecklistItem(cid: string, iid: string, checked: boolean) {
 		// Les koblingene før toggle (state kan endres av mutasjonen).
 		const meta = getChecklistById(cid)?.items.find((i) => i.id === iid)?.metadata ?? null;
 		await _toggleItem(deps, cid, iid, checked);
 		if (meta?.linkedTaskId) adjustTaskCompleted(meta.linkedTaskId, checked ? 1 : -1);
 		if (meta?.linkedChecklistItemId) setWeekChecklistItemChecked(meta.linkedChecklistItemId, checked);
+		cascadeParentAfterChildToggle(cid, iid);
 	}
 
 	// Planlegg et ukeplan-element (tema/mål-oppgave eller ukeliste-punkt) ned på

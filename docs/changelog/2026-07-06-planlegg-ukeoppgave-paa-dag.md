@@ -53,13 +53,33 @@ og (2) en tilsvarende kobling for ukeliste-punkter (ikke bare tema/mål-oppgaver
   no-op (ingen duplikat), men fjerner ikke planleggingen.
 - **Begge flater** støttes (ukeliste-rader og tema/mål-slots), per brukervalg.
 
+### Fase 4: Nedbrytning på dagsnivå → auto-hak på ukesnivå
+Et planlagt dag-punkt kan brytes ned til en underoppgaveliste (eksisterende
+breakdown, barn under dag-punktet), og uke-elementet auto-hakes når hele lista er
+krysset ut.
+- Ny generell regel i `PATCH …/[itemId]`: når et barn (av)krysses, auto-hakes
+  forelderen når alle barn er behandlet (avkrysset/hoppet), og åpnes igjen hvis
+  ett barn åpnes. Forelderens egne koblinger kjøres via en felles hjelpefunksjon
+  (`applyItemCheckedSideEffects`), så avkryssingen kaskaderer opp til ukeplan
+  (`linkedChecklistItemId` → ukeliste-punkt, `linkedTaskId` → fremdrift/slot).
+- Ren, testbar `shouldParentBeChecked(children)` (skippede barn teller som
+  behandlet). Klienten (`cascadeParentAfterChildToggle`) speiler kaskaden
+  optimistisk.
+- Beslutning: forelder-auto-hak er en **generell** regel (gjelder alle
+  nedbrutte punkter, ikke bare ukeplan-koblede) — nedbrutte forelder-punkter
+  fullføres nå automatisk, noe de ikke gjorde før. Reversering er streng:
+  åpnes et barn, åpnes forelderen (og uke-elementet) igjen.
+
 ## Kjent begrensning
 - Sensor-basert auto-hak av et planlagt dag-punkt (`autocheckChecklistItemsForDay`)
   propagerer ikke `linkedChecklistItemId` direkte. For aktivitets-punkter fanges
   dette likevel opp av den eksisterende uke-autohaken (`autocheckWeekChecklistItems`),
   som teller økter/dag-bevis mot uke-slots.
+- Forelder-auto-hak kaskaderer ett nivå (barn → direkte forelder). Dypere
+  nesting (barnebarn) re-evaluerer ikke besteforelderen automatisk; breakdown er
+  i praksis ett nivå.
 
 ## Verifisering
 - `npm run check`: 0 feil / 0 advarsler.
-- `npm test`: 1166 tester passerer (inkl. 12 nye i `week-schedule-logic.test.ts`).
+- `npm test`: 1170 tester passerer (inkl. 16 nye i `week-schedule-logic.test.ts`).
 - `npm run build`: fullfører (med dummy-env for analyse-steget).

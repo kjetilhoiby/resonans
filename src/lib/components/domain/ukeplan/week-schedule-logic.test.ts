@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { scheduleLabel, buildScheduleLink, isAlreadyScheduled } from './week-schedule-logic';
+import { scheduleLabel, buildScheduleLink, isAlreadyScheduled, shouldParentBeChecked } from './week-schedule-logic';
 import type { ChecklistItem, WeekTask } from './types';
 
 function mkTask(overrides: Partial<WeekTask> = {}): WeekTask {
@@ -107,5 +107,24 @@ describe('isAlreadyScheduled', () => {
 
 	it('er false for tom dag-liste', () => {
 		expect(isAlreadyScheduled([], { taskId: 't1' })).toBe(false);
+	});
+});
+
+describe('shouldParentBeChecked', () => {
+	it('er true når alle barn er avkrysset', () => {
+		expect(shouldParentBeChecked([{ checked: true }, { checked: true }])).toBe(true);
+	});
+
+	it('er false når minst ett barn er åpent', () => {
+		expect(shouldParentBeChecked([{ checked: true }, { checked: false }])).toBe(false);
+	});
+
+	it('teller hoppede barn som behandlet', () => {
+		expect(shouldParentBeChecked([{ checked: true }, { checked: false, skippedAt: '2026-07-06' }])).toBe(true);
+		expect(shouldParentBeChecked([{ checked: false, skippedAt: new Date() }])).toBe(true);
+	});
+
+	it('er false uten barn', () => {
+		expect(shouldParentBeChecked([])).toBe(false);
 	});
 });

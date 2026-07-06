@@ -92,6 +92,21 @@ export function buildScheduleLink(source: ScheduleSource): { label: string; link
 }
 
 /**
+ * Skal et forelder-punkt være avkrysset? True når det finnes minst ett barn og
+ * alle barn er «behandlet» (avkrysset eller hoppet over — skippede punkter
+ * blokkerer ikke fullføring, likt sjekkliste-fullføring ellers).
+ *
+ * Brukes både på server (auto-hak av forelder ved barn-toggle) og klient
+ * (optimistisk speiling) så et nedbrutt punkt resolves når hele lista er ferdig.
+ */
+export function shouldParentBeChecked(
+	children: Array<{ checked: boolean; skippedAt?: string | Date | null }>
+): boolean {
+	if (children.length === 0) return false;
+	return children.every((c) => c.checked || c.skippedAt != null);
+}
+
+/**
  * Er kilden allerede planlagt på denne dagen? True hvis dag-lista har et
  * ikke-avkrysset punkt koblet til samme oppgave/ukeliste-punkt. Brukes for å
  * unngå duplikater ved gjentatt tapp (uten «angre ved tapp»).
