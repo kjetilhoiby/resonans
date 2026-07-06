@@ -76,6 +76,17 @@ Kortet tegner bin-snittene som aksentkurve oppå scatteren og forteller hva
 høy-effort-ukene faktisk gjør: «over ~X er snittet −Y kg/uke (Z %
 nedgangsuker)». Bins-basert confidence i signalet: 0,6.
 
+### Fase 9: Effort↔kcal-broen — tommelfingerregler
+Effort er minutt×MET-basert og kan derfor regnes om til energi: MET/faktor-
+forholdet er ~9.5 på tvers av familiene → kcal per effort-poeng ≈ 0.066 × kg
+(`effort-kcal.ts`, ±20–30 %). Kortet fikk «Tommelfingerregler»-seksjon
+personalisert med siste vekt: hva dagens nivå tilsvarer i kcal/kg per uke,
+hvor mye av et −0,5 kg/uke-underskudd treningen dekker, og konkrete bytter
+(2×30 min fotball, el-sykkel→manuell 2×40 min, én ekstra 5 km) med både
+effort-poeng (systemets skåring) og reelle kcal. I tillegg: når verken
+regresjon eller bins finner terskel, sier kortet konklusjonen rett ut med
+tallfestet lav/høy-bin-forskjell («Kosthold er spaken») — avklart med bruker.
+
 ### Fase 4: Widget (effortBalance)
 Spesialtilfelle i widget-data-endepunktet (leser siste signal), registrert i
 VALID_WIDGET_METRICS så chat-flyten kan opprette den.
