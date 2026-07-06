@@ -170,10 +170,108 @@ export function predictDeltaKg(model: EffortWeightModel, effort: number): number
 	return Math.round((model.intercept + model.slope * effort) * 100) / 100;
 }
 
+// ─── Binnet analyse ──────────────────────────────────────────────────────────
+// Lineær OLS drukner terskel-aktige mønstre: en stor masse støyete
+// lav-effort-uker dominerer selv om høy-effort-ukene konsekvent går ned.
+// Kvantil-bins viser snitt-ΔW per effort-nivå og utleder terskelen fra
+// null-krysningen — robust og lett å lese.
+
+export interface EffortBin {
+	effortMin: number;
+	effortMax: number;
+	meanEffort: number;
+	meanDeltaKg: number;
+	nWeeks: number;
+	/** Andel av ukene i binnet med vektnedgang (ΔW < 0). */
+	shareNegative: number;
+}
+
+export interface BinThreshold {
+	thresholdEffort: number;
+	topBinMeanDeltaKg: number;
+	topBinShareNegative: number;
+}
+
+/** Deler parene i kvantil-bins (likt antall uker per bin) langs effort-aksen. */
+export function binEffortWeight(
+	points: WeeklyEffortWeightPoint[],
+	opts: { binCount?: number; minPerBin?: number } = {}
+): EffortBin[] {
+	const binCount = opts.binCount ?? 5;
+	const minPerBin = opts.minPerBin ?? 8;
+	if (points.length < binCount * minPerBin) return [];
+
+	const sorted = [...points].sort((a, b) => a.effort - b.effort);
+	const bins: EffortBin[] = [];
+	for (let b = 0; b < binCount; b++) {
+		const start = Math.floor((b * sorted.length) / binCount);
+		const end = Math.floor(((b + 1) * sorted.length) / binCount);
+		const slice = sorted.slice(start, end);
+		if (slice.length === 0) continue;
+		const meanEffort = slice.reduce((s, p) => s + p.effort, 0) / slice.length;
+		const meanDelta = slice.reduce((s, p) => s + p.weightDeltaKg, 0) / slice.length;
+		const negative = slice.filter((p) => p.weightDeltaKg < 0).length;
+		bins.push({
+			effortMin: Math.round(slice[0].effort),
+			effortMax: Math.round(slice[slice.length - 1].effort),
+			meanEffort: Math.round(meanEffort),
+			meanDeltaKg: Math.round(meanDelta * 1000) / 1000,
+			nWeeks: slice.length,
+			shareNegative: Math.round((negative / slice.length) * 100) / 100
+		});
+	}
+	return bins;
+}
+
+const BIN_TOP_MIN_LOSS = -0.1; // øverste bin må vise reell nedgang (kg/uke)
+const BIN_TOP_MIN_SHARE_NEGATIVE = 0.6;
+const BIN_MIN_SPREAD = 0.15; // øverste bin må ligge så mye under nederste
+
+/**
+ * Terskel fra bin-snittene: der snitt-ΔW krysser null på vei ned (lineær
+ * interpolasjon på effort-aksen). Vakter sørger for at støy ikke gir terskel:
+ * øverste bin må vise reell, konsistent nedgang og ligge klart under nederste.
+ */
+export function thresholdFromBins(bins: EffortBin[]): BinThreshold | null {
+	if (bins.length < 3) return null;
+	const first = bins[0];
+	const last = bins[bins.length - 1];
+	if (last.meanDeltaKg > BIN_TOP_MIN_LOSS) return null;
+	if (last.shareNegative < BIN_TOP_MIN_SHARE_NEGATIVE) return null;
+	if (first.meanDeltaKg - last.meanDeltaKg < BIN_MIN_SPREAD) return null;
+
+	// Finn siste null-krysning fra + til − (mest konservative terskel)
+	let threshold: number | null = null;
+	for (let i = 0; i < bins.length - 1; i++) {
+		const a = bins[i];
+		const b = bins[i + 1];
+		if (a.meanDeltaKg > 0 && b.meanDeltaKg <= 0) {
+			const t = a.meanDeltaKg / (a.meanDeltaKg - b.meanDeltaKg);
+			threshold = a.meanEffort + t * (b.meanEffort - a.meanEffort);
+		}
+	}
+	// Alle bins negative → vekta faller allerede på laveste nivå
+	if (threshold == null) {
+		threshold = first.meanDeltaKg <= 0 ? first.meanEffort : null;
+	}
+	if (threshold == null) return null;
+
+	return {
+		thresholdEffort: Math.round(threshold),
+		topBinMeanDeltaKg: last.meanDeltaKg,
+		topBinShareNegative: last.shareNegative
+	};
+}
+
 export interface BestEffortWeightFit {
 	model: EffortWeightModel;
 	windowWeeks: number;
 	pairs: WeeklyEffortWeightPoint[];
+	bins: EffortBin[];
+	binThreshold: BinThreshold | null;
+	/** Effektiv terskel: OLS når ok/good, ellers bins når vaktene slipper den gjennom. */
+	effectiveThreshold: number | null;
+	thresholdSource: 'regresjon' | 'bins' | null;
 }
 
 /**
@@ -188,7 +286,7 @@ export function fitBestEffortWeightModel(
 ): BestEffortWeightFit {
 	const windows = opts.windows ?? [1, 2, 3, 4, 6];
 
-	let best: BestEffortWeightFit | null = null;
+	let best: { model: EffortWeightModel; windowWeeks: number; pairs: WeeklyEffortWeightPoint[] } | null = null;
 	for (const windowWeeks of windows) {
 		const pairs = buildWeeklyPairs(weeks, { minWeighIns: opts.minWeighIns, effortWindowWeeks: windowWeeks });
 		const model = fitEffortWeightModel(pairs, windowWeeks);
@@ -197,7 +295,19 @@ export function fitBestEffortWeightModel(
 		}
 	}
 
-	return best!;
+	const { model, windowWeeks, pairs } = best!;
+	const bins = binEffortWeight(pairs);
+	const binThreshold = thresholdFromBins(bins);
+
+	const olsUsable = (model.quality === 'ok' || model.quality === 'good') && model.thresholdEffort != null;
+	const effectiveThreshold = olsUsable ? model.thresholdEffort : (binThreshold?.thresholdEffort ?? null);
+	const thresholdSource: BestEffortWeightFit['thresholdSource'] = olsUsable
+		? 'regresjon'
+		: binThreshold != null
+			? 'bins'
+			: null;
+
+	return { model, windowWeeks, pairs, bins, binThreshold, effectiveThreshold, thresholdSource };
 }
 
 function mean(values: number[]): number {

@@ -10,6 +10,15 @@
 		weighInCount: number;
 	}
 
+	interface BinInfo {
+		effortMin: number;
+		effortMax: number;
+		meanEffort: number;
+		meanDeltaKg: number;
+		nWeeks: number;
+		shareNegative: number;
+	}
+
 	interface ModelInfo {
 		slope: number;
 		intercept: number;
@@ -17,6 +26,9 @@
 		nWeeks: number;
 		quality: 'insufficient' | 'weak' | 'ok' | 'good';
 		thresholdEffort: number | null;
+		binThreshold: { thresholdEffort: number; topBinMeanDeltaKg: number; topBinShareNegative: number } | null;
+		effectiveThreshold: number | null;
+		thresholdSource: 'regresjon' | 'bins' | null;
 		extrapolated: boolean;
 		windowWeeks: number;
 	}
@@ -30,6 +42,7 @@
 	}
 
 	let weeks = $state<WeekPoint[]>([]);
+	let bins = $state<BinInfo[]>([]);
 	let model = $state<ModelInfo | null>(null);
 	let current = $state<CurrentInfo | null>(null);
 	let loading = $state(true);
@@ -41,6 +54,7 @@
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
 			const data = await res.json();
 			weeks = data.weeks ?? [];
+			bins = data.bins ?? [];
 			model = data.model ?? null;
 			current = data.current ?? null;
 		} catch {
@@ -51,9 +65,11 @@
 	});
 
 	const points = $derived(weeks.filter((w): w is WeekPoint & { deltaKg: number } => w.deltaKg != null));
-	const hasModel = $derived(
+	// Regresjonslinjen tegnes kun når regresjonen selv er kilden
+	const hasRegression = $derived(
 		model != null && (model.quality === 'ok' || model.quality === 'good') && model.thresholdEffort != null
 	);
+	const hasThreshold = $derived(model?.effectiveThreshold != null);
 
 	// SVG-geometri for scatter: x = ukeseffort, y = ΔW kg
 	const W = 320;
@@ -62,7 +78,7 @@
 
 	const nowEffort = $derived(current?.currentEffortAvg ?? current?.rolling7dEffort ?? 0);
 	const xMax = $derived(
-		Math.max(50, ...points.map((p) => p.effort), model?.thresholdEffort ?? 0, nowEffort) * 1.08
+		Math.max(50, ...points.map((p) => p.effort), model?.effectiveThreshold ?? 0, nowEffort) * 1.08
 	);
 	const yAbsMax = $derived(Math.max(0.3, ...points.map((p) => Math.abs(p.deltaKg))) * 1.15);
 
@@ -75,12 +91,23 @@
 	}
 
 	const statusSentence = $derived.by(() => {
-		if (!hasModel || !current || current.pctVsThreshold == null) {
+		if (!hasThreshold || !current || current.pctVsThreshold == null) {
 			// Skill «for lite data» fra «nok data, men ingen sammenheng»
 			if (model && model.quality === 'weak' && points.length >= 6) {
 				return 'Ingen tydelig sammenheng mellom effort og vektendring ennå.';
 			}
 			return 'For lite data til å beregne terskelen ennå.';
+		}
+		// Bins-kilde: fortell hva de høyeste effort-ukene faktisk gjør med vekta
+		if (model?.thresholdSource === 'bins' && model.binThreshold) {
+			const b = model.binThreshold;
+			const lossText = Math.abs(b.topBinMeanDeltaKg).toFixed(2).replace('.', ',');
+			const shareText = Math.round(b.topBinShareNegative * 100);
+			const pos =
+				current.pctVsThreshold >= 0
+					? `Du ligger over nivået nå.`
+					: `Du ligger ${Math.abs(current.pctVsThreshold)} % under nivået.`;
+			return `Ukene med høyest effort trekker vekta ned: over ~${b.thresholdEffort} er snittet −${lossText} kg/uke (${shareText} % nedgangsuker). ${pos}`;
 		}
 		const pct = current.pctVsThreshold;
 		const delta = current.predictedWeeklyDeltaKg;
@@ -100,6 +127,9 @@
 		const rText = model.r.toFixed(2).replace('.', ',').replace('-', '−');
 		if (model.quality === 'insufficient') {
 			return `For lite data ennå (${n} ${n === 1 ? 'uke' : 'uker'} med veiinger)`;
+		}
+		if (model.thresholdSource === 'bins') {
+			return `Terskel fra bin-analyse (${n} uker i ${model.windowWeeks === 1 ? 'ukesvindu' : `${model.windowWeeks}-ukers snitt`}; lineær r = ${rText})`;
 		}
 		if (model.quality === 'weak') {
 			return `Ingen tydelig sammenheng (${n} uker, beste vindu ${model.windowWeeks} ${model.windowWeeks === 1 ? 'uke' : 'uker'}, r = ${rText})`;
@@ -137,7 +167,7 @@
 			>
 
 			<!-- regresjonslinje -->
-			{#if hasModel && model}
+			{#if hasRegression && model}
 				<line
 					x1={sx(0)}
 					y1={sy(Math.max(-yAbsMax, Math.min(yAbsMax, model.intercept)))}
@@ -145,19 +175,20 @@
 					y2={sy(Math.max(-yAbsMax, Math.min(yAbsMax, model.intercept + model.slope * xMax)))}
 					class="fit-line"
 				/>
-				<!-- terskelmarkør -->
-				{#if model.thresholdEffort != null && model.thresholdEffort <= xMax}
-					<line
-						x1={sx(model.thresholdEffort)}
-						y1={PAD.top}
-						x2={sx(model.thresholdEffort)}
-						y2={H - PAD.bottom}
-						class="threshold-line"
-					/>
-					<text x={sx(model.thresholdEffort)} y={H - PAD.bottom + 14} class="threshold-label" text-anchor="middle"
-						>terskel {model.thresholdEffort}</text
-					>
-				{/if}
+			{/if}
+
+			<!-- terskelmarkør (effektiv terskel — regresjon eller bins) -->
+			{#if model?.effectiveThreshold != null && model.effectiveThreshold <= xMax}
+				<line
+					x1={sx(model.effectiveThreshold)}
+					y1={PAD.top}
+					x2={sx(model.effectiveThreshold)}
+					y2={H - PAD.bottom}
+					class="threshold-line"
+				/>
+				<text x={sx(model.effectiveThreshold)} y={H - PAD.bottom + 14} class="threshold-label" text-anchor="middle"
+					>terskel ~{model.effectiveThreshold}{model.thresholdSource === 'bins' ? ' (bins)' : ''}</text
+				>
 			{/if}
 
 			<!-- nåværende nivå (snitt over modellens vindu) -->
@@ -178,6 +209,26 @@
 					<title>{p.weekKey}: effort {p.effort}, {p.deltaKg > 0 ? '+' : ''}{p.deltaKg} kg</title>
 				</circle>
 			{/each}
+
+			<!-- bin-snitt: gjennomsnittlig vektendring per effort-nivå -->
+			{#if bins.length > 0}
+				<polyline
+					points={bins.map((b) => `${sx(b.meanEffort)},${sy(Math.max(-yAbsMax, Math.min(yAbsMax, b.meanDeltaKg)))}`).join(' ')}
+					class="bin-line"
+				/>
+				{#each bins as b (b.meanEffort)}
+					<circle
+						cx={sx(b.meanEffort)}
+						cy={sy(Math.max(-yAbsMax, Math.min(yAbsMax, b.meanDeltaKg)))}
+						r="4.5"
+						class="bin-point"
+					>
+						<title
+							>Effort {b.effortMin}–{b.effortMax}: snitt {b.meanDeltaKg > 0 ? '+' : ''}{b.meanDeltaKg} kg/uke ({Math.round(b.shareNegative * 100)} % nedgangsuker, {b.nWeeks} uker)</title
+						>
+					</circle>
+				{/each}
+			{/if}
 
 			<text x={(PAD.left + W - PAD.right) / 2} y={H - 2} class="axis-label" text-anchor="middle"
 				>{model && model.windowWeeks > 1 ? `snitt ukeseffort (siste ${model.windowWeeks} uker) →` : 'ukeseffort →'}</text
@@ -256,6 +307,19 @@
 	.point {
 		fill: #e5e5e5;
 		opacity: 0.75;
+	}
+
+	.bin-point {
+		fill: #c084fc;
+		stroke: #141414;
+		stroke-width: 1;
+	}
+
+	.bin-line {
+		fill: none;
+		stroke: #c084fc;
+		stroke-width: 1.5;
+		opacity: 0.7;
 	}
 
 	.axis-label {

@@ -28,7 +28,8 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 
 	const { weeks: inputs, rolling7dEffort } = await buildEffortWeightInputs(userId, weeksBack);
 
-	const { model, windowWeeks, pairs } = fitBestEffortWeightModel(inputs);
+	const { model, windowWeeks, pairs, bins, binThreshold, effectiveThreshold, thresholdSource } =
+		fitBestEffortWeightModel(inputs);
 
 	// Scatter viser modellens x (snitt over vinduet) så punkter og linje hører sammen
 	const rawByWeek = new Map(inputs.map((w) => [w.weekKey, w]));
@@ -51,12 +52,21 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 			? Math.round(lastWindow.reduce((sum, w) => sum + w.effort, 0) / lastWindow.length)
 			: 0;
 
-	const threshold = model.thresholdEffort;
-	const hasThreshold = threshold != null && threshold > 0;
-	const ratio = hasThreshold ? Math.round((currentEffortAvg / threshold) * 100) / 100 : null;
+	const hasThreshold = effectiveThreshold != null && effectiveThreshold > 0;
+	const ratio = hasThreshold ? Math.round((currentEffortAvg / effectiveThreshold) * 100) / 100 : null;
+
+	// Prediksjon: OLS-linjen når regresjonen er kilden; ved bins-kilde er det
+	// ærligste estimatet topp-binnets snitt (gjelder når man ligger over terskelen).
+	const predictedWeeklyDeltaKg =
+		thresholdSource === 'regresjon'
+			? predictDeltaKg(model, currentEffortAvg)
+			: thresholdSource === 'bins' && binThreshold != null && currentEffortAvg >= (effectiveThreshold ?? Infinity)
+				? binThreshold.topBinMeanDeltaKg
+				: null;
 
 	return json({
 		weeks,
+		bins,
 		model: {
 			slope: model.slope,
 			intercept: model.intercept,
@@ -64,6 +74,9 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 			nWeeks: model.nWeeks,
 			quality: model.quality,
 			thresholdEffort: model.thresholdEffort,
+			binThreshold,
+			effectiveThreshold,
+			thresholdSource,
 			extrapolated: model.extrapolated,
 			windowWeeks
 		},
@@ -72,7 +85,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 			rolling7dEffort,
 			ratio,
 			pctVsThreshold: ratio != null ? Math.round((ratio - 1) * 100) : null,
-			predictedWeeklyDeltaKg: predictDeltaKg(model, currentEffortAvg)
+			predictedWeeklyDeltaKg
 		}
 	});
 };

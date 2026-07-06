@@ -693,7 +693,8 @@ async function produceHealthEffortVsThreshold(userId: string, now: Date) {
 			'Nåværende ukentlig effort-nivå (snitt over modellens lag-vindu) mot estimert effort-terskel for vektvedlikehold/-nedgang (lineær regresjon av ukentlig vektendring mot trailing snitt-effort). context har modellparametre og kvalitet.'
 	});
 
-	const { model, windowWeeks } = fitBestEffortWeightModel(inputs);
+	const { model, windowWeeks, binThreshold, effectiveThreshold, thresholdSource } =
+		fitBestEffortWeightModel(inputs);
 
 	// Nå-tilstand i samme enhet som modellens x: snitt-effort siste L uker
 	const lastWindow = inputs.slice(-windowWeeks);
@@ -702,11 +703,16 @@ async function produceHealthEffortVsThreshold(userId: string, now: Date) {
 			? Math.round(lastWindow.reduce((sum, w) => sum + w.effort, 0) / lastWindow.length)
 			: 0;
 
-	const threshold = model.thresholdEffort;
+	const threshold = effectiveThreshold;
 	const hasThreshold = threshold != null && threshold > 0;
 	const ratio = hasThreshold ? currentEffortAvg / threshold : null;
 	const pctVsThreshold = ratio != null ? Math.round((ratio - 1) * 100) : null;
-	const predictedWeeklyDeltaKg = predictDeltaKg(model, currentEffortAvg);
+	const predictedWeeklyDeltaKg =
+		thresholdSource === 'regresjon'
+			? predictDeltaKg(model, currentEffortAvg)
+			: thresholdSource === 'bins' && binThreshold != null && hasThreshold && currentEffortAvg >= threshold
+				? binThreshold.topBinMeanDeltaKg
+				: null;
 
 	let valueText: string;
 	if (ratio == null) valueText = 'ukjent';
@@ -723,7 +729,15 @@ async function produceHealthEffortVsThreshold(userId: string, now: Date) {
 	else severity = 'high';
 
 	const confidence =
-		model.quality === 'good' ? 0.85 : model.quality === 'ok' ? 0.7 : model.quality === 'weak' ? 0.45 : 0.3;
+		thresholdSource === 'bins'
+			? 0.6
+			: model.quality === 'good'
+				? 0.85
+				: model.quality === 'ok'
+					? 0.7
+					: model.quality === 'weak'
+						? 0.45
+						: 0.3;
 
 	const weeklyEffortLast8 = inputs.slice(-8).map((w) => Math.round(w.effort));
 
@@ -740,6 +754,8 @@ async function produceHealthEffortVsThreshold(userId: string, now: Date) {
 		observedAt: now,
 		context: {
 			thresholdEffort: threshold,
+			thresholdSource,
+			binThreshold,
 			slope: model.slope,
 			intercept: model.intercept,
 			r: model.r,

@@ -702,11 +702,15 @@ async function fetchEffortBalanceData(userId: string, unit: string | null) {
 				: null;
 	const ratio = row.value_number != null ? Number(row.value_number) : null;
 	const quality = typeof context.quality === 'string' ? context.quality : 'insufficient';
+	const thresholdSource = typeof context.thresholdSource === 'string' ? context.thresholdSource : null;
 	const sparkline = Array.isArray(context.weeklyEffortLast8)
 		? (context.weeklyEffortLast8 as unknown[]).filter((v): v is number => typeof v === 'number')
 		: [];
 
-	const hasThreshold = ratio != null && Number.isFinite(ratio) && (quality === 'ok' || quality === 'good');
+	const hasThreshold =
+		ratio != null &&
+		Number.isFinite(ratio) &&
+		(quality === 'ok' || quality === 'good' || thresholdSource === 'bins');
 	const pct = hasThreshold ? Math.max(0, Math.min(100, Math.round(ratio * 100))) : null;
 	const state: 'success' | 'warn' | 'normal' = !hasThreshold
 		? 'normal'
