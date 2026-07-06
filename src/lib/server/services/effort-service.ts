@@ -13,7 +13,7 @@ export type EffortFamily =
 	| 'swimming'
 	| 'other';
 
-export type EffortMethod = 'trimp' | 'met';
+export type EffortMethod = 'trimp' | 'met' | 'met_pace';
 
 export interface EffortBaseline {
 	/** Hvileplus i bpm. */
@@ -22,6 +22,8 @@ export interface EffortBaseline {
 	maxHr: number;
 	/** Hvor sikre vi er på baseline (true = utledet fra brukerens data, false = default-fallback). */
 	derived: boolean;
+	/** Brukerens typiske (median) løpe-pace siste 60 dager — referanse for intensitet. */
+	easyPaceSecPerKm?: number | null;
 }
 
 export interface WorkoutEffortInput {
@@ -29,6 +31,8 @@ export interface WorkoutEffortInput {
 	sportFamily?: string | null;
 	durationSeconds: number | null | undefined;
 	avgHeartRate?: number | null;
+	/** Øktas pace (sek/km) — gir intensitets-justert MET for løp uten puls. */
+	paceSecPerKm?: number | null;
 }
 
 export interface WorkoutEffortResult {
@@ -125,8 +129,20 @@ export function computeWorkoutEffort(
 		return { score: round1(score), method: 'trimp', family };
 	}
 
-	const score = durationMin * MET_FACTOR_BY_FAMILY[family] * MET_CALIBRATION;
-	return { score: round1(score), method: 'met', family };
+	const base = durationMin * MET_FACTOR_BY_FAMILY[family] * MET_CALIBRATION;
+
+	// Intensitets-justering for løp uten puls: «35 min med 4×1000 på terskel»
+	// skal koste mer enn 35 rolige minutter. Faktoren er (typisk pace / øktas
+	// pace)² — kvadratisk fordi energikost stiger raskere enn farten — klampet
+	// til [0.75, 1.5] så enkeltøkter ikke kan stikke av.
+	const pace = typeof input.paceSecPerKm === 'number' && input.paceSecPerKm > 0 ? input.paceSecPerKm : null;
+	const easyPace = baseline.easyPaceSecPerKm ?? null;
+	if (family === 'running' && pace != null && easyPace != null && easyPace > 0) {
+		const intensity = Math.max(0.75, Math.min(1.5, (easyPace / pace) ** 2));
+		return { score: round1(base * intensity), method: 'met_pace', family };
+	}
+
+	return { score: round1(base), method: 'met', family };
 }
 
 function round1(value: number): number {
@@ -186,7 +202,49 @@ export async function getEffortBaseline(userId: string): Promise<EffortBaseline>
 		maxHr = restHr + 60;
 	}
 
-	return { restHr: Math.round(restHr), maxHr: Math.round(maxHr), derived };
+	const easyPaceSecPerKm = await deriveEasyPace(userId);
+
+	return { restHr: Math.round(restHr), maxHr: Math.round(maxHr), derived, easyPaceSecPerKm };
+}
+
+/**
+ * Typisk løpe-pace: median av løpeøkter siste 60 dager (de fleste økter er
+ * rolige, så medianen ≈ easy-pace). Gangfart (>9:00/km) og småturer filtreres.
+ * Leses fra forrige projeksjon av canonical_workouts — nye score-beregninger
+ * bruker altså historikkens referanse, som er poenget.
+ */
+async function deriveEasyPace(userId: string): Promise<number | null> {
+	try {
+		const { canonicalWorkouts } = await import('$lib/db/schema');
+		const since = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+		const rows = await db
+			.select({
+				distanceMeters: canonicalWorkouts.distanceMeters,
+				durationSeconds: canonicalWorkouts.durationSeconds
+			})
+			.from(canonicalWorkouts)
+			.where(
+				and(
+					eq(canonicalWorkouts.userId, userId),
+					eq(canonicalWorkouts.sportFamily, 'running'),
+					gte(canonicalWorkouts.startTime, since)
+				)
+			);
+
+		const paces: number[] = [];
+		for (const row of rows) {
+			const meters = row.distanceMeters != null ? Number(row.distanceMeters) : 0;
+			const seconds = row.durationSeconds != null ? Number(row.durationSeconds) : 0;
+			if (meters < 1000 || seconds <= 0) continue;
+			const pace = seconds / (meters / 1000);
+			if (pace >= 150 && pace <= 540) paces.push(pace);
+		}
+		if (paces.length < 3) return null;
+		return Math.round(median(paces));
+	} catch (err) {
+		console.warn('[effort-service] easy-pace-utledning feilet:', err);
+		return null;
+	}
 }
 
 function median(values: number[]): number {

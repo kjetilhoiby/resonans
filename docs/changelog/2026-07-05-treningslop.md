@@ -91,6 +91,18 @@ tid skal båndet vokse forbi terskelen):
   gapet (`pickBoostSuggestion`): «Prognose ~180 — under vekt-linja (210).
   Løp 5 km (+83) løfter deg til ~263.» Blå prognosemarkør på grafen.
 
+Intensitets-justert løpe-effort (met_pace): «35 min med 4×1000 på terskel»
+koster nå mer enn 35 rolige minutter. Uten puls brukes pace mot brukerens
+typiske løpe-pace (median siste 60 dager fra canonical_workouts, utledet i
+getEffortBaseline): faktor = (typisk/økt-pace)², klampet [0.75, 1.5]. Gangfart-
+løp vektes automatisk ned. Metode-labelen 'met_pace' skiller den fra flat MET;
+hrCoveragePct teller fortsatt bare TRIMP. Historisk effort heles gradvis via
+projeksjons-refresh (effort/vekt-kortet køer hele vinduet). Øktkomponisten
+priser intervaller med samme terskel-faktor (~1.38). NESTE STEG (design
+avklart med bruker): rutebibliotek — navngitte runder (pendlerunde 8k,
+vannrunden, 10×200 m-bakken) med fartsvarianter og effort-estimat per
+variant, koblet mot Ekko-ruter, som grunnlag for varierte øktforslag.
+
 Etterfiks 2 (fra bruk 6. juli):
 - Auto-koblingen beholdt forslagsnavnet ved oppgradering («Gjennomført: Rolig
   løp» etter to el-sykkeløkter) — payload skrives nå om til faktisk aktivitet.

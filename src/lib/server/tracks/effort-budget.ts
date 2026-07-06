@@ -256,8 +256,8 @@ export interface WeekRecipe {
  * «Rolig 8 km + Intervaller 30 min (~208)». Enumererer kombinasjoner på
  * 1–3 økter fra en liten katalog og foretrekker: total innenfor intervallet,
  * minst én løpeøkt (støtter km-målet), færrest økter, nærmest midten.
- * NB: intervaller skåres som løpeminutter (MET-stien kjenner ikke intensitet
- * uten puls) — de er med for variasjon, ikke fordi de «teller mer».
+ * Intervaller prises med terskel-intensitetsfaktor — konsistent med
+ * met_pace-skåringen som faktiske harde økter får.
  */
 export function composeWeekRecipe(
 	remainingMin: number,
@@ -267,10 +267,13 @@ export function composeWeekRecipe(
 	if (remainingMax <= 20) return null; // uken er i praksis i mål
 
 	const runEffort = (km: number) => Math.round(km * (paceSekPerKm / 60) * MET_CALIBRATION);
+	// Terskelfart ≈ 85 % av easy-pace-tiden → intensitetsfaktor (1/0.85)² ≈ 1.38
+	// (samme kvadratiske modell som met_pace i effort-service).
+	const INTERVAL_INTENSITET = 1.38;
 	const catalog: Array<{ label: string; effort: number; isRun: boolean }> = [
 		{ label: 'Rolig 5 km', effort: runEffort(5), isRun: true },
 		{ label: 'Rolig 8 km', effort: runEffort(8), isRun: true },
-		{ label: 'Intervaller 30 min', effort: Math.round(30 * MET_CALIBRATION), isRun: true },
+		{ label: 'Intervaller 30 min', effort: Math.round(30 * MET_CALIBRATION * INTERVAL_INTENSITET), isRun: true },
 		{ label: 'Sykkeltur 40 min', effort: Math.round(40 * CYCLING_FAKTOR * MET_CALIBRATION), isRun: false },
 		{ label: 'El-sykkel 40 min', effort: Math.round(40 * EBIKE_FAKTOR * MET_CALIBRATION), isRun: false }
 	];
