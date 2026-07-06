@@ -1110,14 +1110,13 @@ export const FLOWS: Record<Exclude<FlowId, 'egenfrekvens_slot'>, Flow> = {
 			{
 				id: 'step_note',
 				type: 'form',
-				title: 'Vil du si noe kort?',
-				prompt: 'Valgfritt — hopp over om det ikke trengs.',
+				title: 'Hvorfor?',
 				fields: [
 					{
 						id: 'note',
 						type: 'textarea',
-						label: 'Notat',
-						placeholder: 'F.eks. søvn, jobb, en hendelse …',
+						label: 'Hvorfor?',
+						hideLabel: true,
 						required: false
 					}
 				],

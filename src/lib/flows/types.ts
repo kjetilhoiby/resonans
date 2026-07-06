@@ -77,6 +77,9 @@ export interface FlowFormField {
 	id: string;
 	type: 'text' | 'textarea' | 'number' | 'date' | 'select' | 'slider' | 'multiselect' | 'photo-gallery';
 	label: string;
+	/** Skjul labelen visuelt når stegtittelen fungerer som label (enkeltfelt-steg).
+	    Labelen brukes fortsatt som aria-label på feltet. */
+	hideLabel?: boolean;
 	placeholder?: string;
 	required?: boolean;
 	min?: number;

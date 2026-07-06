@@ -74,8 +74,10 @@
 		<label class="fs-form-field" class:fs-focus-field={isFocus}>
 			<!-- Slidere i fokusmodus bruker stegtittel + helperLabels og trenger ingen feltlabel.
 			     Alle andre felttyper (også i fokusmodus) MÅ vise labelen — ellers blir
-			     flerfeltsskjemaer som «Årets beste» en rad anonyme, blanke inputs. -->
-			{#if !isFocus || field.type !== 'slider'}
+			     flerfeltsskjemaer som «Årets beste» en rad anonyme, blanke inputs.
+			     Unntak: hideLabel for enkeltfelt-steg der stegtittelen er labelen;
+			     da settes field.label som aria-label på selve feltet i stedet. -->
+			{#if !field.hideLabel && (!isFocus || field.type !== 'slider')}
 			<span class="fs-form-label" class:fs-focus-form-label={isFocus}>
 				{field.label}{#if field.required}<span class="fs-required">*</span>{/if}
 			</span>
@@ -86,6 +88,7 @@
 					type="text"
 					class="fs-form-input"
 					placeholder={field.placeholder}
+					aria-label={field.hideLabel ? field.label : undefined}
 					value={flowData[field.id] ?? ''}
 					oninput={(e) => onFieldChange(field.id, e.currentTarget.value)}
 				/>
@@ -93,6 +96,7 @@
 				<textarea
 					class="fs-form-textarea"
 					placeholder={field.placeholder}
+					aria-label={field.hideLabel ? field.label : undefined}
 					rows="4"
 					value={flowData[field.id] ?? ''}
 					oninput={(e) => onFieldChange(field.id, e.currentTarget.value)}
