@@ -11,17 +11,52 @@
 		anchor: 'forrige_uke' | 'p4w_snitt' | 'gulv';
 	}
 
+	interface SessionSlice {
+		date: string;
+		family: string;
+		effort: number;
+	}
+
+	interface PlanExample {
+		label: string;
+		effort: number;
+		pctOfBand: number;
+	}
+
 	interface Props {
 		budget: Budget;
 		composition: string | null;
+		sessions?: SessionSlice[];
+		planExamples?: PlanExample[];
 	}
 
-	let { budget, composition }: Props = $props();
+	let { budget, composition, sessions = [], planExamples = [] }: Props = $props();
+
+	const familyColors: Record<string, string> = {
+		running: '#f59e0b',
+		cycling: '#10b981',
+		ebike: '#6ee7b7'
+	};
+	const familyLabels: Record<string, string> = {
+		running: 'Løp',
+		cycling: 'Sykkel',
+		ebike: 'El-sykkel'
+	};
 
 	const scaleMax = $derived(Math.max(budget.bandMax * 1.15, budget.spentThisWeek * 1.05, 1));
-	const spentPct = $derived(Math.min(100, (budget.spentThisWeek / scaleMax) * 100));
 	const minPct = $derived((budget.bandMin / scaleMax) * 100);
 	const maxPct = $derived((budget.bandMax / scaleMax) * 100);
+
+	// Stablede segmenter: hver registrert økt som andel av skalaen
+	const segments = $derived.by(() => {
+		let cursor = 0;
+		return sessions.map((s) => {
+			const left = (cursor / scaleMax) * 100;
+			const width = (s.effort / scaleMax) * 100;
+			cursor += s.effort;
+			return { ...s, left, width };
+		});
+	});
 
 	const statusText = $derived.by(() => {
 		if (budget.restRecommended) return 'Høy belastning siste 3 dager — ta en rolig dag.';
@@ -37,6 +72,8 @@
 				? 'basert på snitt siste 4 uker'
 				: 'forsiktig oppstartsnivå'
 	);
+
+	const showPlanner = $derived(planExamples.length > 0 && budget.remainingMax > 0 && !budget.restRecommended);
 </script>
 
 <section class="budget-card">
@@ -55,16 +92,47 @@
 		</p>
 	</header>
 
-	<div class="bar-track" role="progressbar" aria-valuenow={budget.spentThisWeek} aria-valuemin="0" aria-valuemax={budget.bandMax} aria-label="Effort denne uka mot ukesintervallet">
+	<div class="bar-track" role="progressbar" aria-valuenow={budget.spentThisWeek} aria-valuemin="0" aria-valuemax={budget.bandMax} aria-label="Effort denne uka mot ukesintervallet, stablet per økt">
 		<div class="band-zone" style="left: {minPct}%; width: {Math.max(0, maxPct - minPct)}%"></div>
-		<div class="bar" class:over={budget.spentThisWeek > budget.bandMax} style="width: {spentPct}%"></div>
+		{#each segments as seg, i (seg.date + i)}
+			<div
+				class="segment"
+				style="left: {seg.left}%; width: {Math.max(0.5, seg.width)}%; background: {familyColors[seg.family] ?? '#94a3b8'}"
+				title="{familyLabels[seg.family] ?? seg.family} {seg.date}: {seg.effort} effort"
+			></div>
+		{/each}
 		<div class="tick" style="left: {minPct}%"></div>
 		<div class="tick" style="left: {maxPct}%"></div>
 	</div>
 
+	{#if segments.length > 0}
+		<ul class="legend">
+			{#each segments as seg, i (seg.date + i)}
+				<li>
+					<span class="dot" style="background: {familyColors[seg.family] ?? '#94a3b8'}"></span>
+					<span>{familyLabels[seg.family] ?? seg.family} {seg.effort}</span>
+				</li>
+			{/each}
+		</ul>
+	{/if}
+
 	<p class="status">{statusText}</p>
 	{#if budget.acuteChronicRatio != null}
 		<p class="ratio">Belastning siste 3 dager mot siste 30: {budget.acuteChronicRatio.toFixed(2).replace('.', ',')}</p>
+	{/if}
+
+	{#if showPlanner}
+		<section class="planner">
+			<h3>Sånn blir uka — hva typiske økter gir</h3>
+			<ul>
+				{#each planExamples as ex (ex.label)}
+					<li>
+						<span class="planner-label">{ex.label}</span>
+						<span class="planner-value">{ex.effort} effort · {ex.pctOfBand} % av uka</span>
+					</li>
+				{/each}
+			</ul>
+		</section>
 	{/if}
 </section>
 
@@ -146,7 +214,7 @@
 
 	.bar-track {
 		position: relative;
-		height: 10px;
+		height: 12px;
 		border-radius: 999px;
 		background: var(--card-bg-inset, #0d0d0d);
 		overflow: hidden;
@@ -159,18 +227,10 @@
 		background: color-mix(in srgb, var(--accent-primary, #4a5af0) 22%, transparent);
 	}
 
-	.bar {
+	.segment {
 		position: absolute;
-		top: 0;
-		bottom: 0;
-		left: 0;
-		border-radius: 999px;
-		background: var(--accent-primary, #4a5af0);
-		transition: width 0.4s ease;
-	}
-
-	.bar.over {
-		background: #fbbf24;
+		top: 1px;
+		bottom: 1px;
 	}
 
 	.tick {
@@ -179,6 +239,30 @@
 		bottom: 0;
 		width: 2px;
 		background: color-mix(in srgb, var(--text-primary, #eee) 40%, transparent);
+	}
+
+	.legend {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem 0.9rem;
+	}
+
+	.legend li {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+		font-size: 0.75rem;
+		color: var(--text-secondary, #aaa);
+	}
+
+	.dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 999px;
+		flex-shrink: 0;
 	}
 
 	.status {
@@ -192,5 +276,44 @@
 		margin: 0;
 		font-size: 0.75rem;
 		color: var(--text-tertiary, #777);
+	}
+
+	.planner {
+		border-top: 1px solid var(--card-border, #242424);
+		padding-top: 0.65rem;
+	}
+
+	.planner h3 {
+		font-size: 0.72rem;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--text-tertiary, #777);
+		margin: 0 0 0.4rem;
+	}
+
+	.planner ul {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+	}
+
+	.planner li {
+		display: flex;
+		justify-content: space-between;
+		gap: 0.75rem;
+		font-size: 0.8rem;
+	}
+
+	.planner-label {
+		color: var(--text-secondary, #aaa);
+	}
+
+	.planner-value {
+		color: var(--text-primary, #eee);
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
 	}
 </style>

@@ -66,6 +66,20 @@ Tre justeringer fra faktisk bruk:
   trykket videre; neste ukes intervall ankres på faktisk total.
 Nytt UI: `EffortBudgetCard` («Ukas effort» med intervall-sone) på /trening.
 
+Effort i tre situasjoner (brukerinnsikt: «gjøre nok, ikke for mye, og se når
+jeg ikke gjør nok»):
+- **Stabilitet (hjem-widget)**: ny metricType `effortDaily` — snitt effort per
+  dag siste 30 dager, sparkline = ukesnitt siste 8 uker, delta mot forrige
+  30-dagersperiode. Leser canonical_workouts direkte.
+- **«Gikk uka bra»**: budsjettgrafen på /trening er nå STABLET — hver
+  registrert økt er et fargekodet segment (løp/sykkel/el-sykkel) mot
+  målsonen, med legend.
+- **«Sånn blir uka»**: planlegger-liste på budsjettkortet som omsetter
+  typiske økter til effort og andel av ukas mål («Løp 8 km ≈ 133 effort ≈
+  61 % av uka», «El-sykkel 40 min ≈ 40 ≈ 18 %») — beregnet fra brukerens
+  kurve-pace og faktiske band (`buildWeekPlanExamples`/`summarizeWeekSessions`
+  i effort-budget.ts).
+
 Etterfiks: ukes_km-milepælene ble feilkrysset av første deploy (gammel
 eqKm-logikk der sykkel talte som løpe-km). Metrikken omdøpt til `ukes_lop_km`
 med samtidig nullstilling av kryssene i én idempotent datamigrering — etter

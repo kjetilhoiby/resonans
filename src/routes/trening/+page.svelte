@@ -152,7 +152,12 @@
 			</section>
 
 			{#if data.states?.budget}
-				<EffortBudgetCard budget={data.states.budget} composition={data.states.effortComposition} />
+				<EffortBudgetCard
+					budget={data.states.budget}
+					composition={data.states.effortComposition}
+					sessions={data.states.weekSessions ?? []}
+					planExamples={data.states.planExamples ?? []}
+				/>
 			{/if}
 
 			{#if strength}

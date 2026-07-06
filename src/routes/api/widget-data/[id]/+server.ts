@@ -734,6 +734,80 @@ async function fetchEffortBalanceData(userId: string, unit: string | null) {
 	};
 }
 
+/**
+ * Widget-data for effortDaily: snitt effort per dag siste 30 dager, direkte
+ * fra canonical_workouts. Sparkline = snitt/dag per uke siste 8 uker — viser
+ * om nivået holder seg stabilt over «siste fire uker». Delta mot forrige
+ * 30-dagersperiode.
+ */
+async function fetchEffortDailyData(
+	userId: string,
+	widget: { unit: string | null; goal: string | null; thresholdWarn: string | null; thresholdSuccess: string | null }
+) {
+	const rows = (await sql(
+		`SELECT start_time::date::text AS day, effort_score AS effort
+		 FROM canonical_workouts
+		 WHERE user_id = $1
+		   AND effort_score IS NOT NULL
+		   AND start_time >= now() - interval '60 days'`,
+		[userId]
+	)) as Array<{ day: string; effort: string | number }>;
+
+	const now = new Date();
+	const iso = (daysAgo: number) => {
+		const d = new Date(now.getTime() - daysAgo * 24 * 3600_000);
+		return d.toISOString().slice(0, 10);
+	};
+	const cut30 = iso(29);
+	const cut60 = iso(59);
+
+	let sum30 = 0;
+	let sumPrev30 = 0;
+	const byWeekMonday = new Map<string, number>();
+	for (const row of rows) {
+		const effort = Number(row.effort);
+		if (!Number.isFinite(effort) || effort <= 0) continue;
+		if (row.day >= cut30) sum30 += effort;
+		else if (row.day >= cut60) sumPrev30 += effort;
+
+		const d = new Date(`${row.day}T00:00:00Z`);
+		const weekday = d.getUTCDay() === 0 ? 7 : d.getUTCDay();
+		d.setUTCDate(d.getUTCDate() - (weekday - 1));
+		const monday = d.toISOString().slice(0, 10);
+		byWeekMonday.set(monday, (byWeekMonday.get(monday) ?? 0) + effort);
+	}
+
+	const current = Math.round((sum30 / 30) * 10) / 10;
+	const prev = Math.round((sumPrev30 / 30) * 10) / 10;
+
+	// Sparkline: snitt/dag per uke, siste 8 uker (eldst → nyest)
+	const sparkline: number[] = [];
+	for (let w = 7; w >= 0; w--) {
+		const d = new Date(now.getTime() - w * 7 * 24 * 3600_000);
+		const weekday = d.getUTCDay() === 0 ? 7 : d.getUTCDay();
+		d.setUTCDate(d.getUTCDate() - (weekday - 1));
+		const monday = d.toISOString().slice(0, 10);
+		sparkline.push(Math.round(((byWeekMonday.get(monday) ?? 0) / 7) * 10) / 10);
+	}
+
+	const goalNum = widget.goal ? parseFloat(String(widget.goal)) : null;
+	const warnNum = widget.thresholdWarn ? parseFloat(String(widget.thresholdWarn)) : null;
+	const successNum = widget.thresholdSuccess ? parseFloat(String(widget.thresholdSuccess)) : null;
+	let pct: number | null = null;
+	if (goalNum !== null && goalNum > 0) {
+		pct = Math.max(0, Math.min(100, Math.round((current / goalNum) * 100)));
+	}
+
+	return {
+		current,
+		sparkline,
+		unit: widget.unit ?? 'effort/dag',
+		delta: Math.round((current - prev) * 10) / 10,
+		pct,
+		state: computeState(current, warnNum, successNum)
+	};
+}
+
 // ─── Cache-helpers ────────────────────────────────────────────────────────────
 
 /** Konverter widget.range til (period, periodKey) for cache-oppslag. Returnerer null for rullende vinduer. */
@@ -895,6 +969,11 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 	// ─── effortBalance: rullerende 7d effort mot vekt-terskel (fra domain_signals) ───
 	if (widget.metricType === 'effortBalance') {
 		return json(await fetchEffortBalanceData(userId, widget.unit));
+	}
+
+	// ─── effortDaily: snitt effort per dag siste 30 dager (stabilitet over 4 uker) ───
+	if (widget.metricType === 'effortDaily') {
+		return json(await fetchEffortDailyData(userId, widget));
 	}
 
 	const metricConf = METRIC_CONFIG[widget.metricType];

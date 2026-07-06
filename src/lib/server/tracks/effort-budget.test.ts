@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { composeEffortSuggestion, computeEffortBudget } from './effort-budget';
+import {
+	buildWeekPlanExamples,
+	composeEffortSuggestion,
+	computeEffortBudget,
+	summarizeWeekSessions
+} from './effort-budget';
 import type { EnduranceConfig, EnduranceWorkout } from './types';
 
 const CONFIG: EnduranceConfig = { deloadHverNteUke: 4 };
@@ -120,5 +125,49 @@ describe('composeEffortSuggestion', () => {
 
 	it('returnerer null når uken i praksis er i mål', () => {
 		expect(composeEffortSuggestion(0, 10, 400)).toBeNull();
+	});
+});
+
+describe('summarizeWeekSessions', () => {
+	it('tar med denne ukas løp/sykkel-økter som segmenter, ikke forrige uke eller styrke', () => {
+		// I dag onsdag 2026-07-15 (uke fra mandag 13.)
+		const sessions = summarizeWeekSessions(
+			[
+				okt('2026-07-10', 100), // forrige uke
+				okt('2026-07-13', 130),
+				okt('2026-07-14', 60, 'cycling'),
+				okt('2026-07-14', 500, 'strength'),
+				okt('2026-07-15', 40, 'ebike')
+			],
+			'2026-07-15'
+		);
+		expect(sessions).toEqual([
+			{ date: '2026-07-13', family: 'running', effort: 130 },
+			{ date: '2026-07-14', family: 'cycling', effort: 60 },
+			{ date: '2026-07-15', family: 'ebike', effort: 40 }
+		]);
+	});
+});
+
+describe('buildWeekPlanExamples', () => {
+	it('regner økter om til effort og andel av ukas mål', () => {
+		// Pace 400 sek/km, band 200–240 → mid 220
+		const examples = buildWeekPlanExamples(400, 200, 240);
+		const lop8 = examples.find((e) => e.label === 'Løp 8 km')!;
+		// 8 × (400/60) × 2.5 ≈ 133 → 61 % av 220
+		expect(lop8.effort).toBe(133);
+		expect(lop8.pctOfBand).toBe(61);
+
+		const elsykkel = examples.find((e) => e.label === 'El-sykkel 40 min')!;
+		expect(elsykkel.effort).toBe(40);
+		expect(elsykkel.pctOfBand).toBe(18);
+
+		const sykkel = examples.find((e) => e.label === 'Sykkeltur 40 min')!;
+		expect(sykkel.effort).toBe(85);
+	});
+
+	it('tåler tomt band uten å dele på null', () => {
+		const examples = buildWeekPlanExamples(400, 0, 0);
+		expect(examples.every((e) => Number.isFinite(e.pctOfBand))).toBe(true);
 	});
 });

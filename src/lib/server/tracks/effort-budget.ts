@@ -156,3 +156,59 @@ export function composeEffortSuggestion(
 function fmtKm(km: number): string {
 	return km % 1 === 0 ? String(km) : km.toFixed(1).replace('.', ',');
 }
+
+// ─── Ukeskomposisjon: «gikk uka bra» og «sånn blir uka» ─────────────────────
+
+export interface WeekSessionSlice {
+	date: string;
+	family: string;
+	effort: number;
+}
+
+/** Denne ukas registrerte økter som segmenter til den stablede budsjettgrafen. */
+export function summarizeWeekSessions(workouts: EnduranceWorkout[], today: string): WeekSessionSlice[] {
+	const monday = mondayOfDate(today);
+	return workouts
+		.filter(
+			(w) =>
+				w.date >= monday && w.date <= today && countsTowardEndurance(w.family) && (w.effortScore ?? 0) > 0
+		)
+		.map((w) => ({ date: w.date, family: w.family, effort: Math.round(w.effortScore!) }));
+}
+
+export interface WeekPlanExample {
+	label: string;
+	effort: number;
+	/** Andel av ukas mål (midten av intervallet), i prosent. */
+	pctOfBand: number;
+}
+
+const CYCLING_FAKTOR = 0.85;
+const EBIKE_FAKTOR = 0.4;
+
+/**
+ * «Sånn blir uka»-planleggeren: hva typiske økter gir i effort og som andel
+ * av ukas mål — så det er lett å se at f.eks. to 8 km-løp dekker X % og to
+ * el-sykkelturer bare legger Y % på toppen.
+ */
+export function buildWeekPlanExamples(
+	paceSekPerKm: number,
+	bandMin: number,
+	bandMax: number
+): WeekPlanExample[] {
+	const bandMid = Math.max(1, (bandMin + bandMax) / 2);
+	const runEffort = (km: number) => km * (paceSekPerKm / 60) * MET_CALIBRATION;
+
+	const items = [
+		{ label: 'Løp 5 km', effort: runEffort(5) },
+		{ label: 'Løp 8 km', effort: runEffort(8) },
+		{ label: 'Sykkeltur 40 min', effort: 40 * CYCLING_FAKTOR * MET_CALIBRATION },
+		{ label: 'El-sykkel 40 min', effort: 40 * EBIKE_FAKTOR * MET_CALIBRATION }
+	];
+
+	return items.map((i) => ({
+		label: i.label,
+		effort: Math.round(i.effort),
+		pctOfBand: Math.round((i.effort / bandMid) * 100)
+	}));
+}

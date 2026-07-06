@@ -49,6 +49,7 @@
 		screenTime: false,
 		heartrate: false,
 		effortBalance: true,
+		effortDaily: true,
 	};
 
 	const RANGE_OPTIONS = [
@@ -110,6 +111,7 @@
 		screenTime: ['min', 'timer'],
 		amount: ['kr', 'NOK'],
 		effortBalance: ['effort'],
+		effortDaily: ['effort/dag'],
 	};
 
 	let title = $state(widget.title);

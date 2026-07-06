@@ -9,6 +9,7 @@ import {
 	setMilestoneAchieved
 } from '$lib/server/tracks/repository';
 import { buildAthleteSnapshot } from '$lib/server/programs/athlete-context';
+import { buildWeekPlanExamples, summarizeWeekSessions } from '$lib/server/tracks/effort-budget';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const userId = locals.userId;
@@ -44,6 +45,15 @@ export const load: PageServerLoad = async ({ locals }) => {
 			restReason: states.restReason,
 			budget: states.budget,
 			effortComposition: states.effortComposition,
+			weekSessions: summarizeWeekSessions(states.enduranceWorkouts, new Date().toISOString().slice(0, 10)),
+			planExamples:
+				states.budget && states.enduranceState
+					? buildWeekPlanExamples(
+							states.enduranceState.forventetPaceSekPerKm,
+							states.budget.bandMin,
+							states.budget.bandMax
+						)
+					: [],
 			todayCompleted: states.todayCompleted
 				? {
 						name: states.todayCompleted.payload.name,
