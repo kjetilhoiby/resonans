@@ -63,6 +63,19 @@ kan ikke fabrikkere en terskel av støy), og valgt vindu vises i UI («snitt
 ukeseffort (siste 3 uker)», «beste vindu 3 uker»). Nå-tilstanden måles i
 samme enhet: snitt-effort siste L uker (currentEffortAvg).
 
+### Fase 8: Binnet analyse — «mer ned i høyre hjørne»
+Brukeren observerte at scatteren har tydelig overvekt av negative uker på
+høy-effort-siden selv om lineær r bare var −0,11: massen av støyete
+lav-effort-uker drukner et terskel-aktig mønster i OLS. Ny kvantil-binnet
+analyse (`binEffortWeight` + `thresholdFromBins`): ukene deles i 5 effort-bins,
+snitt-ΔW og andel nedgangsuker per bin, terskel = null-krysningen mellom
+bin-snittene. Vakter mot støy: topp-binnet må vise reell nedgang (≤ −0,1
+kg/uke), ≥ 60 % nedgangsuker og ligge ≥ 0,15 under bunn-binnet. «Effektiv
+terskel» = OLS når ok/good, ellers bins (thresholdSource i API/signal/UI).
+Kortet tegner bin-snittene som aksentkurve oppå scatteren og forteller hva
+høy-effort-ukene faktisk gjør: «over ~X er snittet −Y kg/uke (Z %
+nedgangsuker)». Bins-basert confidence i signalet: 0,6.
+
 ### Fase 4: Widget (effortBalance)
 Spesialtilfelle i widget-data-endepunktet (leser siste signal), registrert i
 VALID_WIDGET_METRICS så chat-flyten kan opprette den.

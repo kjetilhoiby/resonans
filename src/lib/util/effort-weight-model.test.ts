@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
+	binEffortWeight,
 	buildWeeklyPairs,
 	fitBestEffortWeightModel,
 	fitEffortWeightModel,
 	predictDeltaKg,
+	thresholdFromBins,
 	type WeeklyEffortWeightInput,
 	type WeeklyEffortWeightPoint
 } from './effort-weight-model';
@@ -167,6 +169,100 @@ describe('fitBestEffortWeightModel (lag/kumulativ effekt)', () => {
 		const { model } = fitBestEffortWeightModel(weeks);
 		expect(model.quality).toBe('weak');
 		expect(model.thresholdEffort).toBeNull();
+	});
+});
+
+describe('binnet analyse (terskel-aktige mønstre)', () => {
+	/**
+	 * Terskel-data: under effort 200 er ΔW ren støy rundt +0.05; over 200 er
+	 * snittet −0.3. Lineær OLS blir svak (skyen dominerer), men bins fanger det.
+	 */
+	function thresholdSeries(count: number): WeeklyEffortWeightInput[] {
+		const weeks: WeeklyEffortWeightInput[] = [];
+		let w = 90;
+		for (let i = 0; i < count; i++) {
+			// 3 av 4 uker lav effort (50–190), hver 4. uke høy (220–380)
+			const high = i % 4 === 3;
+			const effort = high ? 220 + (i * 37) % 160 : 50 + (i * 53) % 140;
+			const noise = NOISE[i % NOISE.length] * 3; // ±0.27 støy
+			const delta = high ? -0.3 + noise : 0.05 + noise;
+			w += delta;
+			weeks.push(week(i + 1, w, effort));
+		}
+		return weeks;
+	}
+
+	it('binEffortWeight deler i kvantil-bins med likt antall uker', () => {
+		const pairs = buildWeeklyPairs(thresholdSeries(60));
+		const bins = binEffortWeight(pairs, { binCount: 5, minPerBin: 8 });
+		expect(bins).toHaveLength(5);
+		const total = bins.reduce((s, b) => s + b.nWeeks, 0);
+		expect(total).toBe(pairs.length);
+		// Sortert på effort
+		for (let i = 1; i < bins.length; i++) {
+			expect(bins[i].meanEffort).toBeGreaterThanOrEqual(bins[i - 1].meanEffort);
+		}
+	});
+
+	it('bins redder terskelen når lineær r er svak: stor støysky + tydelig negativ topp', () => {
+		// 100 lav-effort-uker med ren støy (±0.64), 15 høy-effort-uker med snitt −0.35.
+		// Kalibrert til lineær r ≈ −0.2 (weak) — men topp-binnet er klart negativt.
+		const pairs: WeeklyEffortWeightPoint[] = [];
+		for (let i = 0; i < 100; i++) {
+			pairs.push({ weekKey: `c${i}`, effort: 40 + ((i * 47) % 180), weightDeltaKg: NOISE[i % NOISE.length] * 8 });
+		}
+		for (let i = 0; i < 15; i++) {
+			pairs.push({ weekKey: `h${i}`, effort: 240 + ((i * 37) % 140), weightDeltaKg: -0.35 + NOISE[i % NOISE.length] * 2 });
+		}
+
+		const model = fitEffortWeightModel(pairs);
+		expect(model.quality).toBe('weak'); // OLS ser ikke mønsteret
+
+		const bins = binEffortWeight(pairs);
+		const binThreshold = thresholdFromBins(bins);
+		expect(binThreshold).not.toBeNull(); // ...men bins gjør det
+		expect(binThreshold!.thresholdEffort).toBeGreaterThan(100);
+		expect(binThreshold!.thresholdEffort).toBeLessThan(280);
+		expect(binThreshold!.topBinMeanDeltaKg).toBeLessThan(-0.1);
+		expect(binThreshold!.topBinShareNegative).toBeGreaterThanOrEqual(0.6);
+	});
+
+	it('fitBest: kilden er konsistent — regresjon krever ok/good, bins krever bin-terskel', () => {
+		const fit = fitBestEffortWeightModel(thresholdSeries(80));
+		expect(fit.effectiveThreshold).not.toBeNull();
+		if (fit.thresholdSource === 'regresjon') {
+			expect(['ok', 'good']).toContain(fit.model.quality);
+			expect(fit.effectiveThreshold).toBe(fit.model.thresholdEffort);
+		} else {
+			expect(fit.thresholdSource).toBe('bins');
+			expect(fit.effectiveThreshold).toBe(fit.binThreshold!.thresholdEffort);
+		}
+	});
+
+	it('ren støy gir ingen bin-terskel', () => {
+		const weeks = Array.from({ length: 60 }, (_, i) =>
+			week(i + 1, 90 + NOISE[i % NOISE.length], 50 + ((i * 53) % 300))
+		);
+		const fit = fitBestEffortWeightModel(weeks);
+		expect(fit.binThreshold).toBeNull();
+		expect(fit.thresholdSource).toBeNull();
+	});
+
+	it('for få uker per bin gir tom bin-liste', () => {
+		const pairs = buildWeeklyPairs(thresholdSeries(20));
+		expect(binEffortWeight(pairs, { binCount: 5, minPerBin: 8 })).toEqual([]);
+		expect(thresholdFromBins([])).toBeNull();
+	});
+
+	it('lineær sammenheng: OLS-terskelen vinner som kilde (regresjon)', () => {
+		const efforts = Array.from({ length: 60 }, (_, i) => 50 + ((i * 53) % 350));
+		const weeks = exactSeries(0.5, -0.002, efforts);
+		const fit = fitBestEffortWeightModel(weeks);
+		expect(fit.thresholdSource).toBe('regresjon');
+		expect(fit.effectiveThreshold).toBe(250);
+		// Bin-terskelen finnes også og ligger i nærheten
+		expect(fit.binThreshold).not.toBeNull();
+		expect(Math.abs(fit.binThreshold!.thresholdEffort - 250)).toBeLessThan(60);
 	});
 });
 
