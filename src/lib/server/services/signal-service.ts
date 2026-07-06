@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { db, pgClient, rowsOf } from '$lib/db';
 import { users } from '$lib/db/schema';
-import { buildWeeklyPairs, fitEffortWeightModel, predictDeltaKg } from '$lib/util/effort-weight-model';
+import { fitBestEffortWeightModel, predictDeltaKg } from '$lib/util/effort-weight-model';
 import { buildEffortWeightInputs } from '$lib/server/health/effort-weight-data';
 
 type Severity = 'info' | 'low' | 'medium' | 'high';
@@ -670,9 +670,9 @@ async function produceEveningScreenWork7d(userId: string, now: Date) {
 }
 
 /**
- * Rullerende 7-dagers effort mot estimert ukentlig effort-terskel for
- * vektvedlikehold/-nedgang. Terskelen fittes fra historiske ukespar
- * (vektendring vs ukeseffort) med effort-weight-modellen.
+ * Nåværende effort-nivå (snitt over modellens vindu) mot estimert ukentlig
+ * effort-terskel for vektvedlikehold/-nedgang. Terskelen fittes fra
+ * historiske ukespar med vindu-skanning for kumulativ/lag-effekt.
  */
 async function produceHealthEffortVsThreshold(userId: string, now: Date) {
 	// Direkte fra kildene (sensor_events + canonical_workouts) — historiske
@@ -690,17 +690,23 @@ async function produceHealthEffortVsThreshold(userId: string, now: Date) {
 		ownerDomain: 'health',
 		allowedConsumerDomains: ['health', 'home', 'relationship'],
 		description:
-			'Rullerende 7-dagers effort mot estimert ukentlig effort-terskel for vektvedlikehold/-nedgang (lineær regresjon av ukentlig vektendring mot ukeseffort). context har modellparametre og kvalitet.'
+			'Nåværende ukentlig effort-nivå (snitt over modellens lag-vindu) mot estimert effort-terskel for vektvedlikehold/-nedgang (lineær regresjon av ukentlig vektendring mot trailing snitt-effort). context har modellparametre og kvalitet.'
 	});
 
-	const pairs = buildWeeklyPairs(inputs);
-	const model = fitEffortWeightModel(pairs);
+	const { model, windowWeeks } = fitBestEffortWeightModel(inputs);
+
+	// Nå-tilstand i samme enhet som modellens x: snitt-effort siste L uker
+	const lastWindow = inputs.slice(-windowWeeks);
+	const currentEffortAvg =
+		lastWindow.length > 0
+			? Math.round(lastWindow.reduce((sum, w) => sum + w.effort, 0) / lastWindow.length)
+			: 0;
 
 	const threshold = model.thresholdEffort;
 	const hasThreshold = threshold != null && threshold > 0;
-	const ratio = hasThreshold ? rolling7dEffort / threshold : null;
+	const ratio = hasThreshold ? currentEffortAvg / threshold : null;
 	const pctVsThreshold = ratio != null ? Math.round((ratio - 1) * 100) : null;
-	const predictedWeeklyDeltaKg = predictDeltaKg(model, rolling7dEffort);
+	const predictedWeeklyDeltaKg = predictDeltaKg(model, currentEffortAvg);
 
 	let valueText: string;
 	if (ratio == null) valueText = 'ukjent';
@@ -741,6 +747,8 @@ async function produceHealthEffortVsThreshold(userId: string, now: Date) {
 			quality: model.quality,
 			extrapolated: model.extrapolated,
 			rolling7dEffort,
+			currentEffortAvg,
+			windowWeeks,
 			pctVsThreshold,
 			predictedWeeklyDeltaKg,
 			weeklyEffortLast8,

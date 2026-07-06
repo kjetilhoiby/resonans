@@ -52,6 +52,17 @@ nå «for lite data» (insufficient, < 6 uker) fra «ingen tydelig sammenheng»
 (weak — nok uker, men |r| < 0.3): sistnevnte viste tidligere misvisende
 «for lite data ennå».
 
+### Fase 7: Lag/kumulativ effekt — vindu-skanning
+Med 225 ukespar fant modellen ingen sammenheng (r = 0,03) på uke-mot-uke-nivå.
+Brukerhypotese (fysiologisk rimelig): vekten reagerer på AKKUMULERT effort,
+ikke samme ukes — uke-til-uke-vekt domineres av vann/glykogen-støy. Modellen
+prøver nå trailing snitt-effort over L ∈ {1, 2, 3, 4, 6} uker og velger vinduet
+med sterkest korrelasjon (`fitBestEffortWeightModel`). Ærlighetsgrep:
+kvalitetstersklene er uendret (beste av fem svake forblir weak — skanningen
+kan ikke fabrikkere en terskel av støy), og valgt vindu vises i UI («snitt
+ukeseffort (siste 3 uker)», «beste vindu 3 uker»). Nå-tilstanden måles i
+samme enhet: snitt-effort siste L uker (currentEffortAvg).
+
 ### Fase 4: Widget (effortBalance)
 Spesialtilfelle i widget-data-endepunktet (leser siste signal), registrert i
 VALID_WIDGET_METRICS så chat-flyten kan opprette den.

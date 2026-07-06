@@ -38,6 +38,8 @@ export interface EffortWeightModel {
 	thresholdEffort: number | null; // E0 = −a/b, null når modellen er for svak
 	quality: ModelQuality;
 	extrapolated: boolean; // terskelen ligger >25 % over maks observert effort
+	/** x er trailing snitt-effort over så mange uker (1 = samme ukes effort). */
+	windowWeeks: number;
 }
 
 const MIN_WEEKS = 6;
@@ -52,22 +54,32 @@ const EXTRAPOLATION_FACTOR = 1.25;
  *  - begge ukene i paret må ha ≥ minWeighIns veiinger (default 2)
  *  - hull i serien (uke uten vektdata) dropper paret, ikke hele serien
  *  - effort 0 er et gyldig datapunkt (reell hvileuke), ikke manglende data
+ *
+ * `effortWindowWeeks` > 1 gir x = trailing SNITT-effort over de siste L ukene
+ * (inkl. inneværende) — fanger kumulativ/lag-effekt der vekten reagerer på
+ * akkumulert belastning, ikke samme ukes. Krever kontinuerlig ukesserie
+ * (hvileuker = 0), som buildEffortWeightInputs leverer.
  */
 export function buildWeeklyPairs(
 	weeks: WeeklyEffortWeightInput[],
-	opts: { minWeighIns?: number } = {}
+	opts: { minWeighIns?: number; effortWindowWeeks?: number } = {}
 ): WeeklyEffortWeightPoint[] {
 	const minWeighIns = opts.minWeighIns ?? 2;
+	const windowWeeks = Math.max(1, Math.round(opts.effortWindowWeeks ?? 1));
 	const out: WeeklyEffortWeightPoint[] = [];
 
-	for (let i = 1; i < weeks.length; i++) {
+	for (let i = Math.max(1, windowWeeks - 1); i < weeks.length; i++) {
 		const prev = weeks[i - 1];
 		const curr = weeks[i];
 		if (prev.weightAvg == null || curr.weightAvg == null) continue;
 		if (prev.weighInCount < minWeighIns || curr.weighInCount < minWeighIns) continue;
+
+		let effortSum = 0;
+		for (let j = i - windowWeeks + 1; j <= i; j++) effortSum += weeks[j].effort;
+
 		out.push({
 			weekKey: curr.weekKey,
-			effort: curr.effort,
+			effort: Math.round((effortSum / windowWeeks) * 10) / 10,
 			weightDeltaKg: Math.round((curr.weightAvg - prev.weightAvg) * 1000) / 1000
 		});
 	}
@@ -75,7 +87,10 @@ export function buildWeeklyPairs(
 	return out;
 }
 
-export function fitEffortWeightModel(points: WeeklyEffortWeightPoint[]): EffortWeightModel {
+export function fitEffortWeightModel(
+	points: WeeklyEffortWeightPoint[],
+	windowWeeks = 1
+): EffortWeightModel {
 	const n = points.length;
 	const empty: EffortWeightModel = {
 		slope: 0,
@@ -85,7 +100,8 @@ export function fitEffortWeightModel(points: WeeklyEffortWeightPoint[]): EffortW
 		residualStd: 0,
 		thresholdEffort: null,
 		quality: 'insufficient',
-		extrapolated: false
+		extrapolated: false,
+		windowWeeks
 	};
 	if (n < MIN_WEEKS) return empty;
 
@@ -127,7 +143,8 @@ export function fitEffortWeightModel(points: WeeklyEffortWeightPoint[]): EffortW
 		residualStd: Math.round(residualStd * 1000) / 1000,
 		thresholdEffort: null,
 		quality: 'weak',
-		extrapolated: false
+		extrapolated: false,
+		windowWeeks
 	};
 
 	// Terskelen krever negativ helning (mer effort → mer nedgang) og reell samvariasjon.
@@ -151,6 +168,36 @@ export function fitEffortWeightModel(points: WeeklyEffortWeightPoint[]): EffortW
 export function predictDeltaKg(model: EffortWeightModel, effort: number): number | null {
 	if (model.quality === 'insufficient' || model.quality === 'weak') return null;
 	return Math.round((model.intercept + model.slope * effort) * 100) / 100;
+}
+
+export interface BestEffortWeightFit {
+	model: EffortWeightModel;
+	windowWeeks: number;
+	pairs: WeeklyEffortWeightPoint[];
+}
+
+/**
+ * Prøver flere trailing-vinduer (kumulativ/lag-effekt) og velger det med
+ * sterkest korrelasjon; ved likhet vinner minst vindu (enklest forklaring).
+ * Kvalitetstersklene er uendret — «beste av fem svake» forblir weak, så
+ * vindu-skanningen kan ikke fabrikkere en terskel av støy.
+ */
+export function fitBestEffortWeightModel(
+	weeks: WeeklyEffortWeightInput[],
+	opts: { windows?: number[]; minWeighIns?: number } = {}
+): BestEffortWeightFit {
+	const windows = opts.windows ?? [1, 2, 3, 4, 6];
+
+	let best: BestEffortWeightFit | null = null;
+	for (const windowWeeks of windows) {
+		const pairs = buildWeeklyPairs(weeks, { minWeighIns: opts.minWeighIns, effortWindowWeeks: windowWeeks });
+		const model = fitEffortWeightModel(pairs, windowWeeks);
+		if (best == null || Math.abs(model.r) > Math.abs(best.model.r)) {
+			best = { model, windowWeeks, pairs };
+		}
+	}
+
+	return best!;
 }
 
 function mean(values: number[]): number {

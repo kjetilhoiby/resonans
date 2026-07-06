@@ -692,8 +692,14 @@ async function fetchEffortBalanceData(userId: string, unit: string | null) {
 	}
 
 	const context = (row.context ?? {}) as Record<string, unknown>;
+	// currentEffortAvg (snitt over modellens lag-vindu) foretrekkes; eldre
+	// signal-rader har bare rolling7dEffort.
 	const rolling7dEffort =
-		typeof context.rolling7dEffort === 'number' ? Math.round(context.rolling7dEffort) : null;
+		typeof context.currentEffortAvg === 'number'
+			? Math.round(context.currentEffortAvg)
+			: typeof context.rolling7dEffort === 'number'
+				? Math.round(context.rolling7dEffort)
+				: null;
 	const ratio = row.value_number != null ? Number(row.value_number) : null;
 	const quality = typeof context.quality === 'string' ? context.quality : 'insufficient';
 	const sparkline = Array.isArray(context.weeklyEffortLast8)
