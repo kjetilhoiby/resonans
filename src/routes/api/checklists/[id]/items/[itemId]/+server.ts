@@ -173,6 +173,27 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 		}
 	}
 
+	// Dag-punkt som «utfører» et ukeliste-punkt (linkedChecklistItemId): speil
+	// avkryssingen til det koblede ukeliste-punktet, slik at begge resolves samtidig.
+	if (body.checked !== undefined) {
+		const meta = (updated.metadata ?? {}) as Record<string, unknown>;
+		const linkedChecklistItemId =
+			typeof meta.linkedChecklistItemId === 'string' ? meta.linkedChecklistItemId : null;
+
+		if (linkedChecklistItemId && linkedChecklistItemId !== updated.id) {
+			const [linkedItem] = await db
+				.update(checklistItems)
+				.set({ checked: body.checked, checkedAt: body.checked ? (updated.checkedAt ?? new Date()) : null })
+				.where(and(eq(checklistItems.id, linkedChecklistItemId), eq(checklistItems.userId, userId)))
+				.returning({ checklistId: checklistItems.checklistId });
+
+			// Hold sjekklisten som ukeliste-punktet ligger i i synk (completedAt).
+			if (linkedItem?.checklistId && linkedItem.checklistId !== params.id) {
+				await syncChecklistCompletion(linkedItem.checklistId);
+			}
+		}
+	}
+
 	await syncChecklistCompletion(params.id);
 
 	return json(updated);

@@ -14,6 +14,7 @@
 	import { groupChecklistItems, sortByStatus } from '$lib/utils/checklist-group';
 	import type { WeekChecklist, WeekTask, ChecklistItem, EditingItem, EditingTask, ProcedureMatch, SaveState } from './types';
 	import { weekTasksApi, type WeekTasksApi } from './week-tasks-api';
+	import { scheduleLabel } from './week-schedule-logic';
 	import {
 		checklistProgress,
 		slotState,
@@ -43,6 +44,12 @@
 		onContextMenuOpen: (checklistId: string, item: ChecklistItem, rect: DOMRect) => void;
 		onToggleWeekParent: (parentId: string) => void;
 		onAddChild: (checklistId: string, parentId: string, text: string) => Promise<void>;
+		/** Planlegg en tema/mål-oppgave ned på valgt dag (tapp på tom slot). */
+		onScheduleTask: (task: WeekTask) => void;
+		/** Planlegg et ukeliste-punkt ned på valgt dag (tapp på avkryssingsboks). */
+		onScheduleItem: (item: ChecklistItem) => void;
+		/** Etikett for valgt dag, f.eks. «I dag» / «Tor» — brukt i aria-labels. */
+		selectedDayLabel: string;
 		expandedWeekParentIds: Set<string>;
 		editingItem: EditingItem | null;
 		selectedDayIso: string;
@@ -69,6 +76,9 @@
 		onContextMenuOpen,
 		onToggleWeekParent,
 		onAddChild,
+		onScheduleTask,
+		onScheduleItem,
+		selectedDayLabel,
 		expandedWeekParentIds,
 		editingItem,
 		selectedDayIso,
@@ -190,9 +200,16 @@
 		};
 	}
 
+	// Ukeliste-rader: tapp på en ikke-avkrysset boks planlegger punktet ned på
+	// valgt dag (i stedet for å hake det av direkte). Det resolves når dag-punktet
+	// krysses av. Å tappe en allerede avkrysset boks fjerner haken (angre-utvei).
 	function makeRowToggle(checklistId: string) {
 		return (item: ChecklistItemLike) => {
-			void onToggleChecklistItem(checklistId, item.id, !item.checked);
+			if (!item.checked) {
+				onScheduleItem(item as ChecklistItem);
+			} else {
+				void onToggleChecklistItem(checklistId, item.id, false);
+			}
 		};
 	}
 
@@ -360,7 +377,18 @@
 						</div>
 						<div class="wp-slot-row" aria-label="Progresjon">
 							{#each Array.from({ length: task.repeatCount }) as _, index}
-								<span class="wp-slot" class:checked={slotState(task, index)}>{slotState(task, index) ? '✓' : ''}</span>
+								{#if slotState(task, index)}
+									<span class="wp-slot checked">✓</span>
+								{:else}
+									<button
+										type="button"
+										class="wp-slot wp-slot-empty"
+										aria-label={`Legg «${scheduleLabel(task.title)}» på ${selectedDayLabel}`}
+										title={`Legg på ${selectedDayLabel}`}
+										onpointerdown={(e) => e.stopPropagation()}
+										onclick={(e) => { e.stopPropagation(); onScheduleTask(task); }}
+									>+</button>
+								{/if}
 							{/each}
 						</div>
 					</div>
@@ -675,6 +703,23 @@
 		border-color: #5566b7;
 		background: #1a2454;
 		color: #ccd8ff;
+	}
+
+	/* Tom slot er en knapp: tapp for å planlegge oppgaven på valgt dag. */
+	button.wp-slot-empty {
+		margin: 0;
+		padding: 0;
+		font-family: inherit;
+		cursor: pointer;
+		color: #4a5470;
+		touch-action: manipulation;
+		transition: border-color 0.15s, color 0.15s, background 0.15s;
+	}
+
+	button.wp-slot-empty:hover {
+		border-color: #5566b7;
+		color: #aab6ee;
+		background: #161c30;
 	}
 
 	.wp-task-edit-input {

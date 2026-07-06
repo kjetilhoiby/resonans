@@ -20,6 +20,7 @@
 	import AutoCheckModal from '$lib/components/domain/ukeplan/AutoCheckModal.svelte';
 	import { fetchTripWeather, fetchHomeWeather, type DayWeatherEntry, type DayWeatherSummary } from '$lib/components/domain/ukeplan/weather';
 	import { buildWeekPlanFlowContext } from '$lib/components/domain/ukeplan/week-plan-context';
+	import { buildScheduleLink, isAlreadyScheduled, type ScheduleSource } from '$lib/components/domain/ukeplan/week-schedule-logic';
 	import type { AutoCheckPrompt } from '$lib/components/domain/ukeplan/autocheck';
 	import type {
 		SaveState, WeekInfo, ChecklistItem, WeekChecklist, WeekTask, GoalReminder,
@@ -117,6 +118,7 @@
 		: (data.week.days.some((d) => d.isoDate === todayIso) ? todayIso : data.week.days[0].isoDate);
 
 	let selectedDayIso = $state(selectedDefault);
+	let weekTasksState = $state<WeekTask[]>(structuredClone(data.weekTasks));
 	let weekChecklistState = $state<WeekChecklist | null>(data.weekChecklist ? structuredClone(data.weekChecklist) : null);
 	let dayChecklistsState = $state<Record<string, DayChecklist>>(structuredClone(data.dayChecklists));
 	let weekNoteValue = $state(data.weekNote);
@@ -138,6 +140,7 @@
 			: (data.week.days.some((d) => d.isoDate === todayIso) ? todayIso : data.week.days[0].isoDate);
 		if (data.week.compactKey === loadedWeekKey) return;
 		loadedWeekKey = data.week.compactKey;
+		weekTasksState = structuredClone(data.weekTasks);
 		weekChecklistState = data.weekChecklist ? structuredClone(data.weekChecklist) : null;
 		dayChecklistsState = structuredClone(data.dayChecklists);
 		dayRoutinesState = structuredClone(data.dayRoutines ?? {});
@@ -267,7 +270,57 @@
 		const prompt = await _createItem(deps, checklistId, text, count, weekChecklistState?.id ?? null);
 		if (prompt) autoCheckPrompt = prompt;
 	}
-	async function toggleChecklistItem(cid: string, iid: string, checked: boolean) { await _toggleItem(deps, cid, iid, checked); }
+
+	// Optimistisk speiling av ukeplan-elementer når et koblet dag-punkt (av)krysses,
+	// slik at tema/mål-slot fylles og ukeliste-punkt hakes av uten full reload.
+	function adjustTaskCompleted(taskId: string, delta: number) {
+		weekTasksState = weekTasksState.map((t) =>
+			t.id === taskId ? { ...t, completedCount: Math.max(0, t.completedCount + delta) } : t
+		);
+	}
+	function setWeekChecklistItemChecked(itemId: string, checked: boolean) {
+		if (!weekChecklistState) return;
+		weekChecklistState = {
+			...weekChecklistState,
+			items: weekChecklistState.items.map((i) => (i.id === itemId ? { ...i, checked } : i))
+		};
+	}
+
+	async function toggleChecklistItem(cid: string, iid: string, checked: boolean) {
+		// Les koblingene før toggle (state kan endres av mutasjonen).
+		const meta = getChecklistById(cid)?.items.find((i) => i.id === iid)?.metadata ?? null;
+		await _toggleItem(deps, cid, iid, checked);
+		if (meta?.linkedTaskId) adjustTaskCompleted(meta.linkedTaskId, checked ? 1 : -1);
+		if (meta?.linkedChecklistItemId) setWeekChecklistItemChecked(meta.linkedChecklistItemId, checked);
+	}
+
+	// Planlegg et ukeplan-element (tema/mål-oppgave eller ukeliste-punkt) ned på
+	// den valgte dagen: lag et koblet dag-punkt. Elementet resolves når dag-punktet
+	// krysses av. Dedup: hopp over hvis samme kilde alt er planlagt (ikke avkrysset)
+	// på dagen.
+	async function scheduleWeekElementOnDay(source: ScheduleSource) {
+		const { label, link } = buildScheduleLink(source);
+		if (!label) return;
+		const target = await ensureDayChecklist(selectedDayIso);
+		if (!target) return;
+		if (isAlreadyScheduled(target.items, link)) {
+			flashSaved('weekItems');
+			return;
+		}
+		setSaveState('weekItems', 'saving');
+		const response = await fetch(`/api/checklists/${target.id}/items`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ text: label, sortOrder: target.items.length, link })
+		});
+		if (!response.ok) { setSaveState('weekItems', 'idle'); return; }
+		const created = await response.json() as ChecklistItem[];
+		dayChecklistsState = {
+			...dayChecklistsState,
+			[selectedDayIso]: { ...target, items: [...target.items, ...created] }
+		};
+		flashSaved('weekItems');
+	}
 	async function deleteChecklistItem(cid: string, iid: string) { editingItem = null; await _deleteItem(deps, cid, iid); }
 	async function reorderChecklistItems(cid: string, src: string, tgt: string) { await _reorderItems(deps, cid, src, tgt); }
 	async function saveEditedItem(item: EditingItem) { await _saveEdited(deps, item, deleteChecklistItem); editingItem = null; }
@@ -512,13 +565,16 @@
 	<WeekNote weekNote={weekNoteValue} saveState={saveStates.weekNote} onSaveStateChange={(state) => setSaveState('weekNote', state)} onSave={saveWeekNote} />
 
 	<WeekTasks
-		weekTasks={data.weekTasks} {weekChecklistState} dashedKey={data.week.dashedKey} {weekPlanJustCompleted}
+		weekTasks={weekTasksState} {weekChecklistState} dashedKey={data.week.dashedKey} {weekPlanJustCompleted}
 		planConversationId={data.weekChecklist?.planConversationId} saveStateWeekItems={saveStates.weekItems}
 		onCreateChecklistItem={createChecklistItem} onToggleChecklistItem={toggleChecklistItem}
 		onDeleteChecklistItem={deleteChecklistItem} onReorderChecklistItems={reorderChecklistItems}
 		onSaveEditedItem={saveEditedItem} onStartEditing={startEditing} onCreateWeekChecklist={() => {}}
 		onSetWeekPlanJustCompleted={(v) => weekPlanJustCompleted = v} onContextMenuOpen={handleContextMenuOpen}
 		onToggleWeekParent={toggleWeekParentExpansion} onAddChild={async (cid, pid, text) => { await _addChild(deps, cid, pid, text); }}
+		onScheduleTask={(task) => void scheduleWeekElementOnDay({ kind: 'task', task })}
+		onScheduleItem={(item) => void scheduleWeekElementOnDay({ kind: 'item', item })}
+		selectedDayLabel={smartDayLabel(selectedDayIso)}
 		{expandedWeekParentIds} {editingItem} {selectedDayIso}
 		dayChecklistId={dayChecklistsState[selectedDayIso]?.id ?? null}
 	/>

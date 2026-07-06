@@ -677,6 +677,11 @@ export const checklistItems = pgTable('checklist_items', {
 		// Intent linking
 		linkedTaskId?: string;
 		linkedTaskTitle?: string;
+		// Kobling til et ukeliste-punkt (checklist_items.id) som dette dag-punktet
+		// «utfører». Når dag-punktet krysses av, krysses det koblede ukeliste-punktet
+		// av også (og omvendt ved av-kryssing). Parallell til linkedTaskId, som
+		// kobler mot tema/mål-oppgaver via progress.
+		linkedChecklistItemId?: string;
 		activityType?: string;
 		durationMinutes?: number;
 		distanceKm?: number;
