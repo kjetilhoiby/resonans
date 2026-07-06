@@ -14,13 +14,23 @@ import { runInBackground } from '$lib/server/run-in-background';
 // POST /api/checklists/[id]/items — legg til et nytt punkt
 export const POST: RequestHandler = async ({ locals, params, request }) => {
 	const userId = locals.userId;
-	const { text, sortOrder = 9999, count = 1, parentId, coords } = await request.json() as {
+	const { text, sortOrder = 9999, count = 1, parentId, coords, link } = await request.json() as {
 		text: string;
 		sortOrder?: number;
 		count?: number;
 		parentId?: string;
 		// Pinnet geokoding fra klienten (etter evt. bekreftelse av tvetydig sted).
 		coords?: { lat: number; lon: number; label?: string };
+		// Eksplisitt kobling fra ukeplan: planlegg en oppgave/ukeliste-punkt ned på
+		// denne dagen. Når satt, hopper vi over tekst-basert kobling og bruker denne.
+		link?: {
+			taskId?: string;
+			taskTitle?: string;
+			checklistItemId?: string;
+			activityType?: string;
+			durationMinutes?: number;
+			distanceKm?: number;
+		};
 	};
 
 	if (!text) return json({ error: 'text er påkrevd' }, { status: 400 });
@@ -31,6 +41,49 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 		columns: { id: true, context: true }
 	});
 	if (!checklist) return json({ error: 'Sjekkliste ikke funnet' }, { status: 404 });
+
+	// --- Eksplisitt planlagt punkt fra ukeplan ---
+	// Kobling er oppgitt direkte (linkedTaskId eller linkedChecklistItemId), så vi
+	// bygger et enkelt punkt uten tekst-basert oppgavekobling/-oppretting. Tid og
+	// aktivitet parses fortsatt fra teksten så tids-chip og auto-hak virker.
+	if (link && (link.taskId || link.checklistItemId) && !parentId) {
+		const intent = parseChecklistItemIntent(text, { dayLevel: true });
+		const timeMeta =
+			intent.timeHour !== undefined ? { timeHour: intent.timeHour, timeMinute: intent.timeMinute ?? 0 } : {};
+		const activityMeta = link.activityType
+			? {
+					activityType: link.activityType,
+					...(link.durationMinutes !== undefined ? { durationMinutes: link.durationMinutes } : {}),
+					...(link.distanceKm !== undefined ? { distanceKm: link.distanceKm } : {})
+				}
+			: intent.activityType
+				? {
+						activityType: intent.activityType,
+						...(intent.durationMinutes !== undefined ? { durationMinutes: intent.durationMinutes } : {}),
+						...(intent.distanceKm !== undefined ? { distanceKm: intent.distanceKm } : {})
+					}
+				: {};
+		const linkMeta = {
+			...(link.taskId ? { linkedTaskId: link.taskId, linkedTaskTitle: link.taskTitle ?? text.trim() } : {}),
+			...(link.checklistItemId ? { linkedChecklistItemId: link.checklistItemId } : {})
+		};
+		const metadata = { ...activityMeta, ...timeMeta, ...linkMeta };
+
+		const [created] = await db
+			.insert(checklistItems)
+			.values({
+				checklistId: params.id,
+				userId,
+				parentId: null,
+				text: text.trim(),
+				sortOrder,
+				metadata
+			})
+			.returning();
+
+		runInBackground(PersonMentionService.indexChecklistItem(userId, created.id, created.text));
+		return json([created], { status: 201 });
+	}
 
 	const parsed = parseListRepeatCount(text, count || 1, 12);
 	const repeatCount = parsed.repeatCount;

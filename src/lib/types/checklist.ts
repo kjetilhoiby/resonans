@@ -14,6 +14,7 @@ export interface ChecklistItemLike {
 		destination?: string;
 		linkedTaskId?: string;
 		linkedTaskTitle?: string;
+		linkedChecklistItemId?: string;
 		activityType?: string;
 		autoChecked?: boolean;
 		hasBreakdown?: boolean;

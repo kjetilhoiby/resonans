@@ -28,6 +28,7 @@ export interface ChecklistItem {
 	metadata?: {
 		linkedTaskId?: string;
 		linkedTaskTitle?: string;
+		linkedChecklistItemId?: string;
 		activityType?: string;
 		durationMinutes?: number;
 		distanceKm?: number;
