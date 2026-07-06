@@ -215,6 +215,12 @@ export async function createDefaultPlan(
 	];
 	await db.insert(trackMilestones).values(milestoneRows);
 
+	// Seed startruter (pendlerunde, vannrunden, bakke) — prefylt med brukerens pace
+	const { seedDefaultRoutes } = await import('./routes-repository');
+	await seedDefaultRoutes(userId, opts.enduranceBaseline?.paceSekPerKm ?? null).catch((err) =>
+		console.warn('[tracks] rute-seeding feilet:', err)
+	);
+
 	return { plan, tracks: [styrke, utholdenhet] };
 }
 

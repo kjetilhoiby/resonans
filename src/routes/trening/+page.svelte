@@ -5,6 +5,7 @@
 	import MilestoneList from '$lib/components/domain/training/MilestoneList.svelte';
 	import TrackHistory from '$lib/components/domain/training/TrackHistory.svelte';
 	import EffortBudgetCard from '$lib/components/domain/training/EffortBudgetCard.svelte';
+	import RouteLibrary from '$lib/components/domain/training/RouteLibrary.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -227,6 +228,8 @@
 				<MilestoneList title="Milepæler — utholdenhet" milestones={utholdenhetMilestones} />
 				<TrackHistory title="Siste økter" entries={enduranceHistory} />
 			{/if}
+
+			<RouteLibrary routes={data.states?.routes ?? []} />
 		{/if}
 	</PageSection>
 </AppPage>

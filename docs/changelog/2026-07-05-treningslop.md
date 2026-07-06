@@ -91,6 +91,16 @@ tid skal båndet vokse forbi terskelen):
   gapet (`pickBoostSuggestion`): «Prognose ~180 — under vekt-linja (210).
   Løp 5 km (+83) løfter deg til ~263.» Blå prognosemarkør på grafen.
 
+Rutebibliotek (0034_training_routes): navngitte, gjenbrukbare ruter
+(pendlerunde, vannrunden, bakkeintervaller, sti) med fartsvarianter. Effort
+per variant BEREGNES (routes.ts `variantEffort`/`routeEffortRange`) fra rutens
+fysiske fakta + variantens fart/reps med samme intensitetsmodell som
+met_pace — så «Pendlerunde» vises som «Rolig ≈133 / Moderat ≈152 / Terskel
+≈190», og bakke som «10×200 m ≈ …». Sykkel og el-sykkel som varianter av samme
+rute. Startruter seedes ved plan-oppsett (`seedDefaultRoutes`), prefylt med
+brukerens pace. UI: `RouteLibrary` på /trening med legg-til-form; `ekko_route_id`-
+kolonne klar for fremtidig Ekko-rute-kobling.
+
 Intensitets-justert løpe-effort (met_pace): «35 min med 4×1000 på terskel»
 koster nå mer enn 35 rolige minutter. Uten puls brukes pace mot brukerens
 typiske løpe-pace (median siste 60 dager fra canonical_workouts, utledet i
