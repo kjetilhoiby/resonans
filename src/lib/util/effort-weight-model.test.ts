@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
 	buildWeeklyPairs,
+	fitBestEffortWeightModel,
 	fitEffortWeightModel,
 	predictDeltaKg,
 	type WeeklyEffortWeightInput,
@@ -115,6 +116,57 @@ describe('fitEffortWeightModel', () => {
 		const weeks = exactSeries(-0.2, -0.002, [100, 300, 200, 400, 150, 350, 250, 50, 320, 180, 280, 120]);
 		const model = fitEffortWeightModel(buildWeeklyPairs(weeks));
 		expect(model.thresholdEffort).toBe(0);
+	});
+});
+
+describe('buildWeeklyPairs med effort-vindu', () => {
+	it('x blir trailing snitt over L uker', () => {
+		const weeks = [week(1, 90, 300), week(2, 90, 0), week(3, 90, 150)];
+		const pairs = buildWeeklyPairs(weeks, { effortWindowWeeks: 3 });
+		expect(pairs).toEqual([{ weekKey: '2026W03', effort: 150, weightDeltaKg: 0 }]);
+	});
+});
+
+describe('fitBestEffortWeightModel (lag/kumulativ effekt)', () => {
+	/** Serie der ΔW følger 3-ukers snitt-effort: ΔW_i = 0.5 − 0.002·snitt(E_{i−2..i}). */
+	function laggedSeries(efforts: number[], startWeight = 90): WeeklyEffortWeightInput[] {
+		const weeks: WeeklyEffortWeightInput[] = [];
+		let w = startWeight;
+		efforts.forEach((e, i) => {
+			if (i >= 2) {
+				const avg = (efforts[i] + efforts[i - 1] + efforts[i - 2]) / 3;
+				w += 0.5 - 0.002 * avg;
+			}
+			weeks.push(week(i + 1, w, e));
+		});
+		return weeks;
+	}
+
+	it('finner lag-vinduet (L=3) og gjenfinner terskelen 250', () => {
+		const efforts = [100, 300, 200, 400, 150, 350, 250, 50, 320, 180, 280, 120, 220, 380, 90, 310];
+		const { model, windowWeeks } = fitBestEffortWeightModel(laggedSeries(efforts));
+		expect(windowWeeks).toBe(3);
+		expect(model.windowWeeks).toBe(3);
+		expect(model.thresholdEffort).not.toBeNull();
+		expect(model.thresholdEffort!).toBeGreaterThan(250 * 0.9);
+		expect(model.thresholdEffort!).toBeLessThan(250 * 1.1);
+	});
+
+	it('velger L=1 når effekten er umiddelbar (ingen lag)', () => {
+		const weeks = exactSeries(0.5, -0.002, [100, 300, 200, 400, 150, 350, 250, 50, 320, 180, 280, 120]);
+		const { windowWeeks, model } = fitBestEffortWeightModel(weeks);
+		expect(windowWeeks).toBe(1);
+		expect(model.thresholdEffort).toBe(250);
+	});
+
+	it('ren støy forblir weak selv etter vindu-skanning', () => {
+		// Vekt flat, effort varierer — ingen sammenheng i noe vindu
+		const weeks = [0, 100, 300, 50, 250, 150, 350, 200, 80, 270, 130, 310].map((e, i) =>
+			week(i + 1, 90 + NOISE[i % NOISE.length], e)
+		);
+		const { model } = fitBestEffortWeightModel(weeks);
+		expect(model.quality).toBe('weak');
+		expect(model.thresholdEffort).toBeNull();
 	});
 });
 

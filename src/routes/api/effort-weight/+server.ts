@@ -1,17 +1,14 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { buildEffortWeightInputs, EFFORT_WEIGHT_MAX_WEEKS } from '$lib/server/health/effort-weight-data';
-import {
-	buildWeeklyPairs,
-	fitEffortWeightModel,
-	predictDeltaKg
-} from '$lib/util/effort-weight-model';
+import { fitBestEffortWeightModel, predictDeltaKg } from '$lib/util/effort-weight-model';
 
 /**
- * Effort→vekt-detaljdata: ukespar (ukeseffort, vektendring), fittet modell og
- * nå-tilstand (rullende 7-dagers effort mot terskelen). Data hentes direkte
- * fra sensor_events/canonical_workouts (se effort-weight-data.ts) og fittes
- * live — billig.
+ * Effort→vekt-detaljdata: ukespar (snitt-effort over modellens vindu,
+ * vektendring), fittet modell og nå-tilstand. Modellen prøver flere
+ * trailing-vinduer (kumulativ/lag-effekt) og velger det med sterkest
+ * korrelasjon. Data hentes direkte fra sensor_events/canonical_workouts
+ * (se effort-weight-data.ts) og fittes live.
  *
  * NB: ruten ligger bevisst UTENFOR /api/health/* — det prefikset er offentlig
  * i hooks.server.ts og får aldri locals.userId satt.
@@ -31,21 +28,32 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 
 	const { weeks: inputs, rolling7dEffort } = await buildEffortWeightInputs(userId, weeksBack);
 
-	const pairs = buildWeeklyPairs(inputs);
-	const model = fitEffortWeightModel(pairs);
+	const { model, windowWeeks, pairs } = fitBestEffortWeightModel(inputs);
 
-	const deltaByWeek = new Map(pairs.map((p) => [p.weekKey, p.weightDeltaKg]));
-	const weeks = inputs.map((w) => ({
-		weekKey: w.weekKey,
-		effort: Math.round(w.effort),
-		weightAvg: w.weightAvg != null ? Math.round(w.weightAvg * 10) / 10 : null,
-		deltaKg: deltaByWeek.get(w.weekKey) ?? null,
-		weighInCount: w.weighInCount
-	}));
+	// Scatter viser modellens x (snitt over vinduet) så punkter og linje hører sammen
+	const rawByWeek = new Map(inputs.map((w) => [w.weekKey, w]));
+	const weeks = pairs.map((p) => {
+		const raw = rawByWeek.get(p.weekKey);
+		return {
+			weekKey: p.weekKey,
+			effort: Math.round(p.effort),
+			rawEffort: raw ? Math.round(raw.effort) : null,
+			weightAvg: raw?.weightAvg != null ? Math.round(raw.weightAvg * 10) / 10 : null,
+			deltaKg: p.weightDeltaKg,
+			weighInCount: raw?.weighInCount ?? 0
+		};
+	});
+
+	// Nå-tilstand måles i samme enhet som modellens x: snitt-effort siste L uker
+	const lastWindow = inputs.slice(-windowWeeks);
+	const currentEffortAvg =
+		lastWindow.length > 0
+			? Math.round(lastWindow.reduce((sum, w) => sum + w.effort, 0) / lastWindow.length)
+			: 0;
 
 	const threshold = model.thresholdEffort;
 	const hasThreshold = threshold != null && threshold > 0;
-	const ratio = hasThreshold ? Math.round((rolling7dEffort / threshold) * 100) / 100 : null;
+	const ratio = hasThreshold ? Math.round((currentEffortAvg / threshold) * 100) / 100 : null;
 
 	return json({
 		weeks,
@@ -56,13 +64,15 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 			nWeeks: model.nWeeks,
 			quality: model.quality,
 			thresholdEffort: model.thresholdEffort,
-			extrapolated: model.extrapolated
+			extrapolated: model.extrapolated,
+			windowWeeks
 		},
 		current: {
+			currentEffortAvg,
 			rolling7dEffort,
 			ratio,
 			pctVsThreshold: ratio != null ? Math.round((ratio - 1) * 100) : null,
-			predictedWeeklyDeltaKg: predictDeltaKg(model, rolling7dEffort)
+			predictedWeeklyDeltaKg: predictDeltaKg(model, currentEffortAvg)
 		}
 	});
 };

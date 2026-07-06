@@ -18,9 +18,11 @@
 		quality: 'insufficient' | 'weak' | 'ok' | 'good';
 		thresholdEffort: number | null;
 		extrapolated: boolean;
+		windowWeeks: number;
 	}
 
 	interface CurrentInfo {
+		currentEffortAvg: number;
 		rolling7dEffort: number;
 		ratio: number | null;
 		pctVsThreshold: number | null;
@@ -58,8 +60,9 @@
 	const H = 180;
 	const PAD = { top: 12, right: 12, bottom: 26, left: 38 };
 
+	const nowEffort = $derived(current?.currentEffortAvg ?? current?.rolling7dEffort ?? 0);
 	const xMax = $derived(
-		Math.max(50, ...points.map((p) => p.effort), model?.thresholdEffort ?? 0, current?.rolling7dEffort ?? 0) * 1.08
+		Math.max(50, ...points.map((p) => p.effort), model?.thresholdEffort ?? 0, nowEffort) * 1.08
 	);
 	const yAbsMax = $derived(Math.max(0.3, ...points.map((p) => Math.abs(p.deltaKg))) * 1.15);
 
@@ -99,9 +102,10 @@
 			return `For lite data ennå (${n} ${n === 1 ? 'uke' : 'uker'} med veiinger)`;
 		}
 		if (model.quality === 'weak') {
-			return `Ingen tydelig sammenheng (${n} uker, r = ${rText})`;
+			return `Ingen tydelig sammenheng (${n} uker, beste vindu ${model.windowWeeks} ${model.windowWeeks === 1 ? 'uke' : 'uker'}, r = ${rText})`;
 		}
-		const base = `Basert på ${model.nWeeks} uker (r = ${rText})`;
+		const windowText = model.windowWeeks > 1 ? `, ${model.windowWeeks}-ukers snitt` : '';
+		const base = `Basert på ${model.nWeeks} uker${windowText} (r = ${rText})`;
 		return model.extrapolated ? `${base} — terskelen er utenfor observert nivå` : base;
 	});
 </script>
@@ -156,16 +160,10 @@
 				{/if}
 			{/if}
 
-			<!-- nåværende rullerende 7d effort -->
-			{#if current && current.rolling7dEffort > 0}
-				<line
-					x1={sx(current.rolling7dEffort)}
-					y1={PAD.top}
-					x2={sx(current.rolling7dEffort)}
-					y2={H - PAD.bottom}
-					class="current-line"
-				/>
-				<text x={sx(current.rolling7dEffort)} y={PAD.top + 2} class="current-label" text-anchor="middle">nå</text>
+			<!-- nåværende nivå (snitt over modellens vindu) -->
+			{#if nowEffort > 0}
+				<line x1={sx(nowEffort)} y1={PAD.top} x2={sx(nowEffort)} y2={H - PAD.bottom} class="current-line" />
+				<text x={sx(nowEffort)} y={PAD.top + 2} class="current-label" text-anchor="middle">nå</text>
 			{/if}
 
 			<!-- ukespunkter (tettere/svakere ved lang historikk) -->
@@ -182,7 +180,7 @@
 			{/each}
 
 			<text x={(PAD.left + W - PAD.right) / 2} y={H - 2} class="axis-label" text-anchor="middle"
-				>ukeseffort →</text
+				>{model && model.windowWeeks > 1 ? `snitt ukeseffort (siste ${model.windowWeeks} uker) →` : 'ukeseffort →'}</text
 			>
 		</svg>
 		<footer>
