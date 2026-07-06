@@ -48,14 +48,13 @@ export function buildEgenfrekvensSlotFlow(slot: PeriodSlot): Flow {
 			{
 				id: 'step_note',
 				type: 'form',
-				title: 'Vil du si noe kort?',
-				prompt: 'Valgfritt — hopp over om det ikke trengs.',
+				title: 'Hvorfor?',
 				fields: [
 					{
 						id: 'note',
 						type: 'textarea',
-						label: 'Setning',
-						placeholder: 'Én setning om det?',
+						label: 'Hvorfor?',
+						hideLabel: true,
 						required: false
 					}
 				],
