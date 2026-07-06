@@ -1,6 +1,7 @@
 import type { EffortBudget, EnduranceConfig, EnduranceWorkout } from './types';
 import { countsTowardEndurance, effortPerRunKm } from './endurance-engine';
 import { mondayOfDate, weekNumberAt } from './curve';
+import { fmtMinutter } from '$lib/util/duration';
 
 /**
  * Effort-budsjettet: et ukesintervall for samlet utholdenhetsbelastning
@@ -150,7 +151,7 @@ export function composeEffortSuggestion(
 		return `F.eks. ${fmtKm(onlyRunKm)} km løp (~${Math.round(onlyRunKm * perRunKm)})`;
 	}
 	const cyclingEffort = Math.round(cyclingMin * perCyclingMin);
-	return `F.eks. ${fmtKm(runKm)} km løp (~${runEffort}) + ${cyclingMin} min sykkel (~${cyclingEffort})`;
+	return `F.eks. ${fmtKm(runKm)} km løp (~${runEffort}) + ${fmtMinutter(cyclingMin)} sykkel (~${cyclingEffort})`;
 }
 
 function fmtKm(km: number): string {

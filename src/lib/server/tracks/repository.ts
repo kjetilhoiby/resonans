@@ -9,6 +9,7 @@ import {
 	trainingTracks
 } from '$lib/db/schema';
 import { classifyEffortFamily } from '$lib/server/services/effort-service';
+import { fmtMinutter } from '$lib/util/duration';
 import type {
 	EnduranceConfig,
 	EnduranceGoal,
@@ -526,7 +527,7 @@ export async function reconcileSessionsWithActuals(
 				.reduce((s, w) => s + (w.durationSeconds ?? 0) / 60, 0);
 			const parts: string[] = [];
 			if (runKm > 0) parts.push(`Løp ${runKm.toFixed(1).replace('.', ',')} km`);
-			if (rideMin > 0) parts.push(`Sykkel ${Math.round(rideMin)} min`);
+			if (rideMin > 0) parts.push(`Sykkel ${fmtMinutter(rideMin)}`);
 			const totalDistance = workouts.reduce((s, w) => s + (w.distanceMeters ?? 0), 0);
 			const totalDuration = workouts.reduce((s, w) => s + (w.durationSeconds ?? 0), 0);
 			await upsertCompletedSession(userId, plan.id, tracks.utholdenhetTrack.id, date, byTrackDate, {
