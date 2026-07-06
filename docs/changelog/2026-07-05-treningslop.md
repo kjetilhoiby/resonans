@@ -101,6 +101,40 @@ rute. Startruter seedes ved plan-oppsett (`seedDefaultRoutes`), prefylt med
 brukerens pace. UI: `RouteLibrary` på /trening med legg-til-form; `ekko_route_id`-
 kolonne klar for fremtidig Ekko-rute-kobling.
 
+### Overlevering: Ekko-rute-synk (ikke bygget — for ny økt med begge repo)
+
+Mål: ruter opprettet/tegnet i Ekko dukker opp i Resonans-rutebiblioteket
+automatisk (med GPS/høydeprofil), i stedet for manuell inntasting.
+
+Slik det står nå (Resonans-siden):
+- Tabell `training_routes` (migrasjon 0034, schema.ts): har allerede den
+  ubrukte kolonnen `ekko_route_id text`. Effort beregnes i
+  `src/lib/server/tracks/routes.ts`; repo/CRUD i `routes-repository.ts`.
+- Ekko autentiserer alt mot `/api/apps/*` med `rsn_`-Bearer-token
+  (`user_api_secrets`), se `docs/archive/EKKO_PROGRAMS_INTEGRATION.md`.
+  GPX-økter lastes opp via `POST /api/apps/upload` → `sensor_events`.
+
+Foreslått synk (retning: Ekko → Resonans, Ekko er kilden for GPS-ruter):
+1. Nytt endepunkt `POST /api/apps/routes` (samme auth-mønster som andre
+   /api/apps-ruter). Ekko sender sin ruteliste: `{ekkoRouteId, name, kind,
+   distanceMeters, elevationMeters, polyline?/gpsRoute?, terrain?}`.
+2. Upsert i `training_routes` på `(user_id, ekko_route_id)` — BEVAR
+   brukerens redigerte `variants` (Ekko eier geometri/fakta, Resonans eier
+   fartsvariantene). Ny `upsertRouteFromEkko` i `routes-repository.ts`.
+3. Ved første import uten varianter: seed default-varianter fra pace
+   (gjenbruk `defaultRouteSeeds`-logikken per kind).
+4. `GET /api/apps/routes` returnerer biblioteket med beregnet effort per
+   variant (gjenbruk `getRoutesWithEffort`) — så Ekko kan vise «denne ruten
+   ≈ X effort» ved øktstart.
+5. Valgfritt: lagre polyline i egen kolonne/jsonb for kart i /trening.
+
+Åpne valg for neste økt:
+- Matcher vi eksisterende manuelle ruter mot innkomne Ekko-ruter (på navn?)
+  eller holder vi dem adskilt til brukeren lenker dem?
+- Trenger Ekko å pushe hele lista hver gang (full replace) eller
+  inkrementelt? Anbefaling: idempotent upsert per ekkoRouteId, ingen sletting
+  av manuelle (ekko_route_id IS NULL) ruter.
+
 Intensitets-justert løpe-effort (met_pace): «35 min med 4×1000 på terskel»
 koster nå mer enn 35 rolige minutter. Uten puls brukes pace mot brukerens
 typiske løpe-pace (median siste 60 dager fra canonical_workouts, utledet i
