@@ -226,7 +226,12 @@ export class WorkoutProjectionService {
 					sportType: workout.sportType,
 					sportFamily: family,
 					durationSeconds: workout.durationSeconds,
-					avgHeartRate: workout.avgHeartRate
+					avgHeartRate: workout.avgHeartRate,
+					// Pace gir intensitets-justert effort for løp uten puls
+					paceSecPerKm:
+						workout.distanceMeters && workout.distanceMeters > 0 && workout.durationSeconds
+							? workout.durationSeconds / (workout.distanceMeters / 1000)
+							: null
 				},
 				baseline
 			);

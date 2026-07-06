@@ -66,6 +66,99 @@ Tre justeringer fra faktisk bruk:
   trykket videre; neste ukes intervall ankres på faktisk total.
 Nytt UI: `EffortBudgetCard` («Ukas effort» med intervall-sone) på /trening.
 
+Effort i tre situasjoner (brukerinnsikt: «gjøre nok, ikke for mye, og se når
+jeg ikke gjør nok»):
+- **Stabilitet (hjem-widget)**: ny metricType `effortDaily` — snitt effort per
+  dag siste 30 dager, sparkline = ukesnitt siste 8 uker, delta mot forrige
+  30-dagersperiode. Leser canonical_workouts direkte.
+- **«Gikk uka bra»**: budsjettgrafen på /trening er nå STABLET — hver
+  registrert økt er et fargekodet segment (løp/sykkel/el-sykkel) mot
+  målsonen, med legend.
+- **«Sånn blir uka»**: planlegger-liste på budsjettkortet som omsetter
+  typiske økter til effort og andel av ukas mål («Løp 8 km ≈ 133 effort ≈
+  61 % av uka», «El-sykkel 40 min ≈ 40 ≈ 18 %») — beregnet fra brukerens
+  kurve-pace og faktiske band (`buildWeekPlanExamples`/`summarizeWeekSessions`
+  i effort-budget.ts).
+
+Samlet skala + prognose (brukerinnsikt: båndet og vekt-terskelen er to linjer
+på samme akse — båndet er trenings-trygt, terskelen er vekt-nøytral, og over
+tid skal båndet vokse forbi terskelen):
+- Vekt-nøytral-linja (fra effort/vekt-signalet, `getLatestWeightThreshold`)
+  tegnes som gul markør på budsjettgrafen med forklaringstekst.
+- **Ukesprognose** (`projectWeekEffort`): forbrukt + det brukeren vanligvis
+  gjør resten av uka (snitt per ukedag siste 4 uker, sykkelvaner inkludert).
+  Ligger prognosen under båndet/vekt-linja foreslås minste økt som tetter
+  gapet (`pickBoostSuggestion`): «Prognose ~180 — under vekt-linja (210).
+  Løp 5 km (+83) løfter deg til ~263.» Blå prognosemarkør på grafen.
+
+Rutebibliotek (0034_training_routes): navngitte, gjenbrukbare ruter
+(pendlerunde, vannrunden, bakkeintervaller, sti) med fartsvarianter. Effort
+per variant BEREGNES (routes.ts `variantEffort`/`routeEffortRange`) fra rutens
+fysiske fakta + variantens fart/reps med samme intensitetsmodell som
+met_pace — så «Pendlerunde» vises som «Rolig ≈133 / Moderat ≈152 / Terskel
+≈190», og bakke som «10×200 m ≈ …». Sykkel og el-sykkel som varianter av samme
+rute. Startruter seedes ved plan-oppsett (`seedDefaultRoutes`), prefylt med
+brukerens pace. UI: `RouteLibrary` på /trening med legg-til-form; `ekko_route_id`-
+kolonne klar for fremtidig Ekko-rute-kobling.
+
+### Overlevering: Ekko-rute-synk (ikke bygget — for ny økt med begge repo)
+
+Mål: ruter opprettet/tegnet i Ekko dukker opp i Resonans-rutebiblioteket
+automatisk (med GPS/høydeprofil), i stedet for manuell inntasting.
+
+Slik det står nå (Resonans-siden):
+- Tabell `training_routes` (migrasjon 0034, schema.ts): har allerede den
+  ubrukte kolonnen `ekko_route_id text`. Effort beregnes i
+  `src/lib/server/tracks/routes.ts`; repo/CRUD i `routes-repository.ts`.
+- Ekko autentiserer alt mot `/api/apps/*` med `rsn_`-Bearer-token
+  (`user_api_secrets`), se `docs/archive/EKKO_PROGRAMS_INTEGRATION.md`.
+  GPX-økter lastes opp via `POST /api/apps/upload` → `sensor_events`.
+
+Foreslått synk (retning: Ekko → Resonans, Ekko er kilden for GPS-ruter):
+1. Nytt endepunkt `POST /api/apps/routes` (samme auth-mønster som andre
+   /api/apps-ruter). Ekko sender sin ruteliste: `{ekkoRouteId, name, kind,
+   distanceMeters, elevationMeters, polyline?/gpsRoute?, terrain?}`.
+2. Upsert i `training_routes` på `(user_id, ekko_route_id)` — BEVAR
+   brukerens redigerte `variants` (Ekko eier geometri/fakta, Resonans eier
+   fartsvariantene). Ny `upsertRouteFromEkko` i `routes-repository.ts`.
+3. Ved første import uten varianter: seed default-varianter fra pace
+   (gjenbruk `defaultRouteSeeds`-logikken per kind).
+4. `GET /api/apps/routes` returnerer biblioteket med beregnet effort per
+   variant (gjenbruk `getRoutesWithEffort`) — så Ekko kan vise «denne ruten
+   ≈ X effort» ved øktstart.
+5. Valgfritt: lagre polyline i egen kolonne/jsonb for kart i /trening.
+
+Åpne valg for neste økt:
+- Matcher vi eksisterende manuelle ruter mot innkomne Ekko-ruter (på navn?)
+  eller holder vi dem adskilt til brukeren lenker dem?
+- Trenger Ekko å pushe hele lista hver gang (full replace) eller
+  inkrementelt? Anbefaling: idempotent upsert per ekkoRouteId, ingen sletting
+  av manuelle (ekko_route_id IS NULL) ruter.
+
+Intensitets-justert løpe-effort (met_pace): «35 min med 4×1000 på terskel»
+koster nå mer enn 35 rolige minutter. Uten puls brukes pace mot brukerens
+typiske løpe-pace (median siste 60 dager fra canonical_workouts, utledet i
+getEffortBaseline): faktor = (typisk/økt-pace)², klampet [0.75, 1.5]. Gangfart-
+løp vektes automatisk ned. Metode-labelen 'met_pace' skiller den fra flat MET;
+hrCoveragePct teller fortsatt bare TRIMP. Historisk effort heles gradvis via
+projeksjons-refresh (effort/vekt-kortet køer hele vinduet). Øktkomponisten
+priser intervaller med samme terskel-faktor (~1.38). NESTE STEG (design
+avklart med bruker): rutebibliotek — navngitte runder (pendlerunde 8k,
+vannrunden, 10×200 m-bakken) med fartsvarianter og effort-estimat per
+variant, koblet mot Ekko-ruter, som grunnlag for varierte øktforslag.
+
+Etterfiks 2 (fra bruk 6. juli):
+- Auto-koblingen beholdt forslagsnavnet ved oppgradering («Gjennomført: Rolig
+  løp» etter to el-sykkeløkter) — payload skrives nå om til faktisk aktivitet.
+- Gangfart-registreringer klassifisert som løp (f.eks. 4,7 km @ 10:34) blåste
+  opp løpe-km, pace-snitt og km-milepæler. Nytt pace-filter (`isCountableRun`,
+  tak 9:00/km) i km-summer, pace og milepæl-evaluering; feilkryssede
+  milepæler nullstilles av dato-avgrenset migrering.
+- Ny øktkomponist `composeWeekRecipe`: konkret oppskrift som tetter
+  gjenstående effort («Rolig 8 km + Intervaller 30 min (~208)») — vises i
+  planleggeren på budsjettkortet. Intervaller skåres ærlig som løpeminutter
+  (MET-stien kjenner ikke intensitet uten puls).
+
 Etterfiks: ukes_km-milepælene ble feilkrysset av første deploy (gammel
 eqKm-logikk der sykkel talte som løpe-km). Metrikken omdøpt til `ukes_lop_km`
 med samtidig nullstilling av kryssene i én idempotent datamigrering — etter

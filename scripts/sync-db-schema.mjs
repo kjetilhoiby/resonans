@@ -162,7 +162,16 @@ const DATA_MIGRATIONS = [
 	`UPDATE track_milestones
 	 SET criteria = jsonb_set(criteria, '{metric}', '"ukes_lop_km"'),
 	     achieved_at = NULL, sensor_event_id = NULL, updated_at = NOW()
-	 WHERE criteria->>'metric' = 'ukes_km'`
+	 WHERE criteria->>'metric' = 'ukes_km'`,
+	// 2026-07: km-milepæler krysset FØR pace-filteret (gangfart-registreringer
+	// talte som løpe-km) nullstilles. Kryss satt etter cutoff er beregnet med
+	// riktig logikk og røres ikke — idempotent fordi re-merking alltid skjer
+	// etter cutoff.
+	`UPDATE track_milestones
+	 SET achieved_at = NULL, sensor_event_id = NULL, updated_at = NOW()
+	 WHERE criteria->>'metric' = 'ukes_lop_km'
+	   AND achieved_at IS NOT NULL
+	   AND achieved_at < TIMESTAMP '2026-07-07 00:00:00'`
 ];
 
 if (DATA_MIGRATIONS.length > 0) {

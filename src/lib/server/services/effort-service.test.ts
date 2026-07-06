@@ -140,3 +140,64 @@ describe('computeWorkoutEffort', () => {
 		expect(computeWorkoutEffort({ sportType: 'hiking', durationSeconds: 3600 }, baseline)!.family).toBe('hiking');
 	});
 });
+
+describe('intensitets-justert MET for løp (met_pace)', () => {
+	const paceBaseline: EffortBaseline = { ...baseline, easyPaceSecPerKm: 400 };
+
+	it('terskeløkt koster mer enn rolig økt med samme varighet', () => {
+		// 35 min rolig (400 s/km) vs 35 min hardt (330 s/km — 4×1000-terskeløkt)
+		const rolig = computeWorkoutEffort(
+			{ sportType: 'running', durationSeconds: 2100, paceSecPerKm: 400 },
+			paceBaseline
+		)!;
+		const terskel = computeWorkoutEffort(
+			{ sportType: 'running', durationSeconds: 2100, paceSecPerKm: 330 },
+			paceBaseline
+		)!;
+		expect(rolig.method).toBe('met_pace');
+		expect(rolig.score).toBeCloseTo(87.5, 0); // faktor 1.0 i egen easy-pace
+		expect(terskel.method).toBe('met_pace');
+		expect(terskel.score / rolig.score).toBeCloseTo((400 / 330) ** 2, 1); // ~1.47
+	});
+
+	it('gangfart-aktig løp vektes NED, klampet på 0.75', () => {
+		const treg = computeWorkoutEffort(
+			{ sportType: 'running', durationSeconds: 2100, paceSecPerKm: 634 },
+			paceBaseline
+		)!;
+		expect(treg.score).toBeCloseTo(87.5 * 0.75, 0);
+	});
+
+	it('faktoren klampes oppad på 1.5', () => {
+		const sprint = computeWorkoutEffort(
+			{ sportType: 'running', durationSeconds: 2100, paceSecPerKm: 250 },
+			paceBaseline
+		)!;
+		expect(sprint.score).toBeCloseTo(87.5 * 1.5, 0);
+	});
+
+	it('uten easy-pace-referanse: vanlig flat MET som før', () => {
+		const result = computeWorkoutEffort(
+			{ sportType: 'running', durationSeconds: 2100, paceSecPerKm: 330 },
+			baseline
+		)!;
+		expect(result.method).toBe('met');
+		expect(result.score).toBeCloseTo(87.5, 0);
+	});
+
+	it('sykkel påvirkes ikke av pace-justeringen', () => {
+		const result = computeWorkoutEffort(
+			{ sportType: 'cycling', durationSeconds: 2100, paceSecPerKm: 150 },
+			paceBaseline
+		)!;
+		expect(result.method).toBe('met');
+	});
+
+	it('puls trumfer fortsatt pace (TRIMP når HR finnes)', () => {
+		const result = computeWorkoutEffort(
+			{ sportType: 'running', durationSeconds: 2100, avgHeartRate: 155, paceSecPerKm: 330 },
+			paceBaseline
+		)!;
+		expect(result.method).toBe('trimp');
+	});
+});

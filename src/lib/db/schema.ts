@@ -3291,6 +3291,49 @@ export const trackReadinessAssessmentsRelations = relations(trackReadinessAssess
 }));
 
 // ---------------------------------------------------------------------------
+// Rutebibliotek — navngitte, gjenbrukbare treningsruter med fartsvarianter.
+// Effort per variant beregnes (ikke lagret), se src/lib/server/tracks/routes.ts.
+// ---------------------------------------------------------------------------
+
+export const trainingRoutes = pgTable('training_routes', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	name: text('name').notNull(),
+	kind: text('kind').notNull(), // 'run' | 'bike' | 'hill' | 'trail' | 'mixed'
+	distanceMeters: integer('distance_meters'),
+	elevationMeters: integer('elevation_meters'),
+	terrain: text('terrain'),
+	notes: text('notes'),
+	// Fartsvarianter / intervall-oppsett per rute.
+	variants: jsonb('variants')
+		.$type<
+			Array<{
+				label: string;
+				paceSecPerKm?: number; // for løp/tur der farten kan justeres
+				reps?: number; // for bakke/intervall (antall drag)
+				repDistanceMeters?: number; // lengde per drag
+				family?: 'running' | 'cycling' | 'ebike'; // sykkel/elsykkel samme rute
+			}>
+		>()
+		.notNull()
+		.default([]),
+	ekkoRouteId: text('ekko_route_id'),
+	archived: boolean('archived').notNull().default(false),
+	sortOrder: integer('sort_order').notNull().default(0),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	idxUser: index('training_routes_user_idx').on(table.userId, table.archived, table.sortOrder)
+}));
+
+export const trainingRoutesRelations = relations(trainingRoutes, ({ one }) => ({
+	user: one(users, {
+		fields: [trainingRoutes.userId],
+		references: [users.id]
+	})
+}));
+
+// ---------------------------------------------------------------------------
 // Strava-synk (proxy for ekko). Resonans eier Strava-koblingen; ekko laster
 // kun opp GPX til /api/apps/upload som i dag. Se docs/STRAVA_SYNC_SPEC.
 // ---------------------------------------------------------------------------

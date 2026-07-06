@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { buildEffortWeightInputs, EFFORT_WEIGHT_MAX_WEEKS } from '$lib/server/health/effort-weight-data';
 import { fitBestEffortWeightModel, predictDeltaKg } from '$lib/util/effort-weight-model';
+import { buildSwapExamples, effortToKcal, kcalPerEffortPoint, weeklyKcalToKg } from '$lib/util/effort-kcal';
 
 /**
  * Effort→vekt-detaljdata: ukespar (snitt-effort over modellens vindu,
@@ -86,6 +87,28 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 			ratio,
 			pctVsThreshold: ratio != null ? Math.round((ratio - 1) * 100) : null,
 			predictedWeeklyDeltaKg
-		}
+		},
+		kcal: buildKcalBlock(inputs, currentEffortAvg)
 	});
 };
+
+/**
+ * Tommelfingerregler: effort → kcal → kg, personalisert med siste kjente vekt.
+ * Pace-antakelsen (6:40/km) brukes kun for løpetur-eksempelet.
+ */
+function buildKcalBlock(
+	inputs: Array<{ weightAvg: number | null; effort: number }>,
+	currentEffortAvg: number
+) {
+	const latestWeight = [...inputs].reverse().find((w) => w.weightAvg != null)?.weightAvg ?? null;
+	if (latestWeight == null) return null;
+
+	const currentWeeklyKcal = effortToKcal(currentEffortAvg, latestWeight);
+	return {
+		weightKg: Math.round(latestWeight * 10) / 10,
+		kcalPerEffort: kcalPerEffortPoint(latestWeight),
+		currentWeeklyKcal,
+		currentWeeklyKg: weeklyKcalToKg(currentWeeklyKcal),
+		examples: buildSwapExamples(latestWeight, 400)
+	};
+}

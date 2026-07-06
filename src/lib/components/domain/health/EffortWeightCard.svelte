@@ -41,10 +41,19 @@
 		predictedWeeklyDeltaKg: number | null;
 	}
 
+	interface KcalInfo {
+		weightKg: number;
+		kcalPerEffort: number;
+		currentWeeklyKcal: number;
+		currentWeeklyKg: number;
+		examples: Array<{ label: string; effortPoints: number; kcalPerWeek: number; weeklyKg: number }>;
+	}
+
 	let weeks = $state<WeekPoint[]>([]);
 	let bins = $state<BinInfo[]>([]);
 	let model = $state<ModelInfo | null>(null);
 	let current = $state<CurrentInfo | null>(null);
+	let kcal = $state<KcalInfo | null>(null);
 	let loading = $state(true);
 	let failed = $state(false);
 
@@ -57,6 +66,7 @@
 			bins = data.bins ?? [];
 			model = data.model ?? null;
 			current = data.current ?? null;
+			kcal = data.kcal ?? null;
 		} catch {
 			failed = true;
 		} finally {
@@ -92,8 +102,13 @@
 
 	const statusSentence = $derived.by(() => {
 		if (!hasThreshold || !current || current.pctVsThreshold == null) {
-			// Skill «for lite data» fra «nok data, men ingen sammenheng»
+			// Nok data, men ingen sammenheng: si konklusjonen rett ut, tallfestet
 			if (model && model.quality === 'weak' && points.length >= 6) {
+				if (bins.length >= 3) {
+					const diff = Math.abs(bins[0].meanDeltaKg - bins[bins.length - 1].meanDeltaKg);
+					const diffText = diff.toFixed(2).replace('.', ',');
+					return `Effort forklarer lite av vektendringen din — forskjellen mellom dine letteste og tyngste treningsuker er ~${diffText} kg/uke. Kosthold er spaken.`;
+				}
 				return 'Ingen tydelig sammenheng mellom effort og vektendring ennå.';
 			}
 			return 'For lite data til å beregne terskelen ennå.';
@@ -237,6 +252,26 @@
 		<footer>
 			<span class="quality">{qualityLabel}</span>
 		</footer>
+
+		{#if kcal}
+			<section class="rules">
+				<h3>Tommelfingerregler (ved {kcal.weightKg.toFixed(0)} kg)</h3>
+				<ul>
+					<li>
+						1 effort-poeng ≈ {kcal.kcalPerEffort.toFixed(1).replace('.', ',')} kcal — ditt nivå nå ({current?.currentEffortAvg ?? 0}/uke)
+						≈ {kcal.currentWeeklyKcal} kcal ≈ {kcal.currentWeeklyKg.toFixed(2).replace('.', ',')} kg/uke
+					</li>
+					<li>
+						−0,5 kg/uke krever ~3 850 kcal underskudd — treningen dekker nå ~{kcal.currentWeeklyKcal}, resten er mat
+					</li>
+					{#each kcal.examples as ex (ex.label)}
+						<li>
+							{ex.label}: +{ex.effortPoints} effort ≈ {ex.kcalPerWeek} kcal ≈ {ex.weeklyKg.toFixed(2).replace('.', ',')} kg/uke
+						</li>
+					{/each}
+				</ul>
+			</section>
+		{/if}
 	{/if}
 </section>
 
@@ -338,6 +373,34 @@
 		font-size: 0.85rem;
 		color: #888;
 		margin: 0;
+	}
+
+	.rules {
+		border-top: 1px solid var(--card-border, #242424);
+		padding-top: 0.75rem;
+	}
+
+	.rules h3 {
+		font-size: 0.72rem;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: #777;
+		margin: 0 0 0.4rem;
+	}
+
+	.rules ul {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+	}
+
+	.rules li {
+		font-size: 0.8rem;
+		color: #aaa;
+		line-height: 1.45;
 	}
 
 	.skeleton {

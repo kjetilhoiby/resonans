@@ -14,7 +14,8 @@ export const VALID_WIDGET_METRICS = [
 	'mood',
 	'screenTime',
 	'amount',
-	'effortBalance'
+	'effortBalance',
+	'effortDaily'
 ] as const;
 
 export const VALID_WIDGET_AGGS = ['avg', 'sum', 'count', 'latest', 'delta'] as const;

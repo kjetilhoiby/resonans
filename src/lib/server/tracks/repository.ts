@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, gte, inArray, sql } from 'drizzle-orm';
-import { db } from '$lib/db';
+import { db, rowsOf } from '$lib/db';
 import {
 	canonicalWorkouts,
 	sensorEvents,
@@ -9,6 +9,7 @@ import {
 	trainingTracks
 } from '$lib/db/schema';
 import { classifyEffortFamily } from '$lib/server/services/effort-service';
+import { fmtMinutter } from '$lib/util/duration';
 import type {
 	EnduranceConfig,
 	EnduranceGoal,
@@ -213,6 +214,12 @@ export async function createDefaultPlan(
 		}))
 	];
 	await db.insert(trackMilestones).values(milestoneRows);
+
+	// Seed startruter (pendlerunde, vannrunden, bakke) — prefylt med brukerens pace
+	const { seedDefaultRoutes } = await import('./routes-repository');
+	await seedDefaultRoutes(userId, opts.enduranceBaseline?.paceSekPerKm ?? null).catch((err) =>
+		console.warn('[tracks] rute-seeding feilet:', err)
+	);
 
 	return { plan, tracks: [styrke, utholdenhet] };
 }
@@ -526,7 +533,7 @@ export async function reconcileSessionsWithActuals(
 				.reduce((s, w) => s + (w.durationSeconds ?? 0) / 60, 0);
 			const parts: string[] = [];
 			if (runKm > 0) parts.push(`Løp ${runKm.toFixed(1).replace('.', ',')} km`);
-			if (rideMin > 0) parts.push(`Sykkel ${Math.round(rideMin)} min`);
+			if (rideMin > 0) parts.push(`Sykkel ${fmtMinutter(rideMin)}`);
 			const totalDistance = workouts.reduce((s, w) => s + (w.distanceMeters ?? 0), 0);
 			const totalDuration = workouts.reduce((s, w) => s + (w.durationSeconds ?? 0), 0);
 			await upsertCompletedSession(userId, plan.id, tracks.utholdenhetTrack.id, date, byTrackDate, {
@@ -559,10 +566,15 @@ async function upsertCompletedSession(
 	if (existing?.status === 'completed') return;
 
 	if (existing) {
+		// Oppgrader forslag → gjennomført. Payload SKRIVES OM til det som faktisk
+		// ble gjort — et materialisert «Rolig løp»-forslag skal ikke stå som
+		// gjennomført når registreringen var to el-sykkeløkter.
 		await db
 			.update(trackSessions)
 			.set({
 				status: 'completed',
+				kind: input.kind,
+				payload: { name: input.name },
 				completedAt: existing.completedAt ?? noonOf(date),
 				actuals: input.actuals,
 				updatedAt: new Date()
@@ -705,6 +717,31 @@ export async function getSessionsForPlan(userId: string, planId: string): Promis
 		.from(trackSessions)
 		.where(and(eq(trackSessions.planId, planId), eq(trackSessions.userId, userId)))
 		.orderBy(asc(trackSessions.date));
+}
+
+/**
+ * Siste beregnede vekt-terskel fra effort/vekt-signalet (cachet daglig av
+ * domain-signals-cronen). Null når modellen ikke har funnet noen terskel.
+ */
+export async function getLatestWeightThreshold(
+	userId: string
+): Promise<{ thresholdEffort: number; source: string } | null> {
+	const result = await db.execute(sql`
+		SELECT context
+		FROM domain_signals
+		WHERE user_id = ${userId}
+		  AND signal_type = 'health_effort_vs_threshold'
+		ORDER BY observed_at DESC
+		LIMIT 1
+	`);
+	const rows = rowsOf<{ context: Record<string, unknown> | null }>(result);
+	const context = (rows[0]?.context ?? {}) as Record<string, unknown>;
+	const threshold = context.thresholdEffort;
+	if (typeof threshold !== 'number' || threshold <= 0) return null;
+	return {
+		thresholdEffort: Math.round(threshold),
+		source: typeof context.thresholdSource === 'string' ? context.thresholdSource : 'regresjon'
+	};
 }
 
 export async function setPlanStatus(userId: string, planId: string, status: string): Promise<boolean> {

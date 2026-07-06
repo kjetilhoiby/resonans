@@ -1,6 +1,7 @@
 import type { EffortBudget, EnduranceConfig, EnduranceWorkout } from './types';
 import { countsTowardEndurance, effortPerRunKm } from './endurance-engine';
 import { mondayOfDate, weekNumberAt } from './curve';
+import { fmtMinutter } from '$lib/util/duration';
 
 /**
  * Effort-budsjettet: et ukesintervall for samlet utholdenhetsbelastning
@@ -150,9 +151,208 @@ export function composeEffortSuggestion(
 		return `F.eks. ${fmtKm(onlyRunKm)} km løp (~${Math.round(onlyRunKm * perRunKm)})`;
 	}
 	const cyclingEffort = Math.round(cyclingMin * perCyclingMin);
-	return `F.eks. ${fmtKm(runKm)} km løp (~${runEffort}) + ${cyclingMin} min sykkel (~${cyclingEffort})`;
+	return `F.eks. ${fmtKm(runKm)} km løp (~${runEffort}) + ${fmtMinutter(cyclingMin)} sykkel (~${cyclingEffort})`;
 }
 
 function fmtKm(km: number): string {
 	return km % 1 === 0 ? String(km) : km.toFixed(1).replace('.', ',');
+}
+
+// ─── Ukeskomposisjon: «gikk uka bra» og «sånn blir uka» ─────────────────────
+
+export interface WeekSessionSlice {
+	date: string;
+	family: string;
+	effort: number;
+}
+
+/** Denne ukas registrerte økter som segmenter til den stablede budsjettgrafen. */
+export function summarizeWeekSessions(workouts: EnduranceWorkout[], today: string): WeekSessionSlice[] {
+	const monday = mondayOfDate(today);
+	return workouts
+		.filter(
+			(w) =>
+				w.date >= monday && w.date <= today && countsTowardEndurance(w.family) && (w.effortScore ?? 0) > 0
+		)
+		.map((w) => ({ date: w.date, family: w.family, effort: Math.round(w.effortScore!) }));
+}
+
+// ─── Ukesprognose: se tidlig om uka må dras opp av grøfta ────────────────────
+
+export interface WeekProjection {
+	/** Forventet effort resten av uka (fra ditt vanlige mønster per ukedag, siste 4 uker). */
+	expectedRemaining: number;
+	/** Forbrukt + forventet rest. */
+	projectedTotal: number;
+	/** Antall gjenstående dager i uka (etter i dag). */
+	remainingDays: number;
+}
+
+const PROJECTION_WEEKS = 4;
+
+/**
+ * Prognose for ukas totale effort: det du har gjort + det du VANLIGVIS gjør
+ * resten av uka (snitt per ukedag over de siste 4 hele ukene — inkluderer
+ * sykkelvanene automatisk). Gjør det mulig å se onsdag at uka ligger an til
+ * å lande under terskelen, mens det fortsatt er tid til en kveldstur.
+ */
+export function projectWeekEffort(workouts: EnduranceWorkout[], today: string): WeekProjection {
+	const counted = workouts.filter((w) => countsTowardEndurance(w.family));
+	const thisMonday = mondayOfDate(today);
+
+	// Snitt effort per ukedag over de siste 4 hele ukene (før denne uka)
+	const weekdayTotals = new Map<number, number>();
+	for (let d = 1; d <= 7; d++) weekdayTotals.set(d, 0);
+	const projStart = addDays(thisMonday, -7 * PROJECTION_WEEKS);
+	for (const w of counted) {
+		if (w.date < projStart || w.date >= thisMonday) continue;
+		const day = new Date(`${w.date}T00:00:00Z`).getUTCDay();
+		const weekday = day === 0 ? 7 : day;
+		weekdayTotals.set(weekday, (weekdayTotals.get(weekday) ?? 0) + (w.effortScore ?? 0));
+	}
+
+	const todayDay = new Date(`${today}T00:00:00Z`).getUTCDay();
+	const todayWeekday = todayDay === 0 ? 7 : todayDay;
+
+	let expectedRemaining = 0;
+	for (let d = todayWeekday + 1; d <= 7; d++) {
+		expectedRemaining += (weekdayTotals.get(d) ?? 0) / PROJECTION_WEEKS;
+	}
+
+	const spentThisWeek = counted
+		.filter((w) => w.date >= thisMonday && w.date <= today)
+		.reduce((sum, w) => sum + (w.effortScore ?? 0), 0);
+
+	return {
+		expectedRemaining: Math.round(expectedRemaining),
+		projectedTotal: Math.round(spentThisWeek + expectedRemaining),
+		remainingDays: 7 - todayWeekday
+	};
+}
+
+/**
+ * Minste typiske økt som tetter gapet — «en løpetur i skogen en kveld».
+ * Returnerer null når ingenting trengs; største eksempel hvis gapet er
+ * større enn alle.
+ */
+export function pickBoostSuggestion(
+	gap: number,
+	examples: WeekPlanExample[]
+): WeekPlanExample | null {
+	if (gap <= 0 || examples.length === 0) return null;
+	const sorted = [...examples].sort((a, b) => a.effort - b.effort);
+	return sorted.find((e) => e.effort >= gap) ?? sorted[sorted.length - 1];
+}
+
+export interface WeekRecipe {
+	/** F.eks. «Rolig 8 km + Intervaller 30 min». */
+	label: string;
+	totalEffort: number;
+	sessions: string[];
+}
+
+/**
+ * Setter sammen en konkret øktoppskrift som tetter gjenstående effort:
+ * «Rolig 8 km + Intervaller 30 min (~208)». Enumererer kombinasjoner på
+ * 1–3 økter fra en liten katalog og foretrekker: total innenfor intervallet,
+ * minst én løpeøkt (støtter km-målet), færrest økter, nærmest midten.
+ * Intervaller prises med terskel-intensitetsfaktor — konsistent med
+ * met_pace-skåringen som faktiske harde økter får.
+ */
+export function composeWeekRecipe(
+	remainingMin: number,
+	remainingMax: number,
+	paceSekPerKm: number
+): WeekRecipe | null {
+	if (remainingMax <= 20) return null; // uken er i praksis i mål
+
+	const runEffort = (km: number) => Math.round(km * (paceSekPerKm / 60) * MET_CALIBRATION);
+	// Terskelfart ≈ 85 % av easy-pace-tiden → intensitetsfaktor (1/0.85)² ≈ 1.38
+	// (samme kvadratiske modell som met_pace i effort-service).
+	const INTERVAL_INTENSITET = 1.38;
+	const catalog: Array<{ label: string; effort: number; isRun: boolean }> = [
+		{ label: 'Rolig 5 km', effort: runEffort(5), isRun: true },
+		{ label: 'Rolig 8 km', effort: runEffort(8), isRun: true },
+		{ label: 'Intervaller 30 min', effort: Math.round(30 * MET_CALIBRATION * INTERVAL_INTENSITET), isRun: true },
+		{ label: 'Sykkeltur 40 min', effort: Math.round(40 * CYCLING_FAKTOR * MET_CALIBRATION), isRun: false },
+		{ label: 'El-sykkel 40 min', effort: Math.round(40 * EBIKE_FAKTOR * MET_CALIBRATION), isRun: false }
+	];
+
+	const target = Math.max(remainingMin, 1);
+	const mid = (Math.max(remainingMin, 0) + remainingMax) / 2;
+
+	interface Candidate {
+		sessions: typeof catalog;
+		total: number;
+	}
+	const candidates: Candidate[] = [];
+	const n = catalog.length;
+	for (let a = 0; a < n; a++) {
+		candidates.push({ sessions: [catalog[a]], total: catalog[a].effort });
+		for (let b = a; b < n; b++) {
+			candidates.push({ sessions: [catalog[a], catalog[b]], total: catalog[a].effort + catalog[b].effort });
+			for (let c = b; c < n; c++) {
+				candidates.push({
+					sessions: [catalog[a], catalog[b], catalog[c]],
+					total: catalog[a].effort + catalog[b].effort + catalog[c].effort
+				});
+			}
+		}
+	}
+
+	const inBand = candidates.filter((c) => c.total >= target && c.total <= remainingMax);
+	const pool = inBand.length > 0 ? inBand : candidates.filter((c) => c.total >= target);
+	if (pool.length === 0) return null;
+
+	pool.sort((x, y) => {
+		const xRun = x.sessions.some((s) => s.isRun) ? 0 : 1;
+		const yRun = y.sessions.some((s) => s.isRun) ? 0 : 1;
+		if (xRun !== yRun) return xRun - yRun; // løp foretrekkes
+		if (x.sessions.length !== y.sessions.length) return x.sessions.length - y.sessions.length;
+		return Math.abs(x.total - mid) - Math.abs(y.total - mid);
+	});
+
+	const best = pool[0];
+	return {
+		label: best.sessions.map((s) => s.label).join(' + '),
+		totalEffort: best.total,
+		sessions: best.sessions.map((s) => s.label)
+	};
+}
+
+export interface WeekPlanExample {
+	label: string;
+	effort: number;
+	/** Andel av ukas mål (midten av intervallet), i prosent. */
+	pctOfBand: number;
+}
+
+const CYCLING_FAKTOR = 0.85;
+const EBIKE_FAKTOR = 0.4;
+
+/**
+ * «Sånn blir uka»-planleggeren: hva typiske økter gir i effort og som andel
+ * av ukas mål — så det er lett å se at f.eks. to 8 km-løp dekker X % og to
+ * el-sykkelturer bare legger Y % på toppen.
+ */
+export function buildWeekPlanExamples(
+	paceSekPerKm: number,
+	bandMin: number,
+	bandMax: number
+): WeekPlanExample[] {
+	const bandMid = Math.max(1, (bandMin + bandMax) / 2);
+	const runEffort = (km: number) => km * (paceSekPerKm / 60) * MET_CALIBRATION;
+
+	const items = [
+		{ label: 'Løp 5 km', effort: runEffort(5) },
+		{ label: 'Løp 8 km', effort: runEffort(8) },
+		{ label: 'Sykkeltur 40 min', effort: 40 * CYCLING_FAKTOR * MET_CALIBRATION },
+		{ label: 'El-sykkel 40 min', effort: 40 * EBIKE_FAKTOR * MET_CALIBRATION }
+	];
+
+	return items.map((i) => ({
+		label: i.label,
+		effort: Math.round(i.effort),
+		pctOfBand: Math.round((i.effort / bandMid) * 100)
+	}));
 }

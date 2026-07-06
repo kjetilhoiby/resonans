@@ -808,7 +808,7 @@
 	}
 
 	function navigateForWidget(w: UserWidget) {
-		const healthMetrics = ['weight', 'sleepDuration', 'steps', 'distance', 'workoutCount', 'heartrate', 'mood', 'effortBalance'];
+		const healthMetrics = ['weight', 'sleepDuration', 'steps', 'distance', 'workoutCount', 'heartrate', 'mood', 'effortBalance', 'effortDaily'];
 		const econMetrics = ['amount'];
 		if (healthMetrics.includes(w.metricType)) { const t = themes.find((t) => t.name.trim().toLowerCase() === 'helse'); if (t) { startNavMetric('home', 'tema'); void goto(`/tema/${t.id}`); } }
 		else if (econMetrics.includes(w.metricType)) { const t = themes.find((t) => t.name.trim().toLowerCase() === 'økonomi'); startNavMetric('home', 'tema'); void goto(t ? `/tema/${t.id}` : '/economics'); }
