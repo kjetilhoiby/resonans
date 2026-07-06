@@ -12,6 +12,7 @@ import {
 import { buildAthleteSnapshot } from '$lib/server/programs/athlete-context';
 import {
 	buildWeekPlanExamples,
+	composeWeekRecipe,
 	pickBoostSuggestion,
 	projectWeekEffort,
 	summarizeWeekSessions
@@ -63,6 +64,16 @@ export const load: PageServerLoad = async ({ locals }) => {
 			? pickBoostSuggestion(referenceTarget - projection.projectedTotal, planExamples)
 			: null;
 
+	// Konkret øktoppskrift som tetter gjenstående effort («Rolig 8 km + Intervaller 30 min»)
+	const weekRecipe =
+		states.budget && states.enduranceState
+			? composeWeekRecipe(
+					states.budget.remainingMin,
+					states.budget.remainingMax,
+					states.enduranceState.forventetPaceSekPerKm
+				)
+			: null;
+
 	return {
 		plan: {
 			id: plan.id,
@@ -81,6 +92,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 			weightThreshold,
 			projection,
 			boost,
+			weekRecipe,
 			todayCompleted: states.todayCompleted
 				? {
 						name: states.todayCompleted.payload.name,

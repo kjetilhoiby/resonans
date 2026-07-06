@@ -155,6 +155,46 @@ describe('nextEnduranceSession', () => {
 	});
 });
 
+describe('isCountableRun / pace-filter', () => {
+	it('gangfart-registrering klassifisert som løp teller IKKE i løpe-km', () => {
+		// «Løp» 4,7 km @ 10:34/km (634 sek/km) er gåtur — skal ikke telle
+		const state = computeEnduranceState(
+			[run('2026-07-07', 4.7, 634), run('2026-07-08', 5, 480)],
+			GOAL,
+			CONFIG,
+			WINDOW,
+			'2026-07-09'
+		);
+		expect(state.week.runKm).toBe(5);
+	});
+
+	it('gangfart-løp forurenser heller ikke pace-snittet', () => {
+		const state = computeEnduranceState(
+			[run('2026-07-07', 4.7, 634), run('2026-07-08', 8, 479)],
+			GOAL,
+			CONFIG,
+			WINDOW,
+			'2026-07-09'
+		);
+		expect(state.sistePaceSekPerKm).toBe(479);
+	});
+
+	it('bestWeekRunKm ignorerer gangfart-løp', () => {
+		expect(bestWeekRunKm([run('2026-07-07', 10, 634), run('2026-07-08', 6, 400)])).toBe(6);
+	});
+
+	it('løp uten varighet teller på distanse (kan ikke pace-sjekkes)', () => {
+		const noDuration: EnduranceWorkout = {
+			date: '2026-07-07',
+			family: 'running',
+			effortScore: 50,
+			distanceMeters: 5000,
+			durationSeconds: null
+		};
+		expect(bestWeekRunKm([noDuration])).toBe(5);
+	});
+});
+
 describe('bestWeekRunKm', () => {
 	it('finner beste ukes-total i rene løpe-km — sykkel ignoreres', () => {
 		const workouts = [

@@ -160,6 +160,7 @@
 					weightThreshold={data.states.weightThreshold ?? null}
 					projection={data.states.projection ?? null}
 					boost={data.states.boost ?? null}
+					weekRecipe={data.states.weekRecipe ?? null}
 				/>
 			{/if}
 

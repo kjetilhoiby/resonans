@@ -559,10 +559,15 @@ async function upsertCompletedSession(
 	if (existing?.status === 'completed') return;
 
 	if (existing) {
+		// Oppgrader forslag → gjennomført. Payload SKRIVES OM til det som faktisk
+		// ble gjort — et materialisert «Rolig løp»-forslag skal ikke stå som
+		// gjennomført når registreringen var to el-sykkeløkter.
 		await db
 			.update(trackSessions)
 			.set({
 				status: 'completed',
+				kind: input.kind,
+				payload: { name: input.name },
 				completedAt: existing.completedAt ?? noonOf(date),
 				actuals: input.actuals,
 				updatedAt: new Date()

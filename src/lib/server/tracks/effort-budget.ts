@@ -243,6 +243,79 @@ export function pickBoostSuggestion(
 	return sorted.find((e) => e.effort >= gap) ?? sorted[sorted.length - 1];
 }
 
+export interface WeekRecipe {
+	/** F.eks. «Rolig 8 km + Intervaller 30 min». */
+	label: string;
+	totalEffort: number;
+	sessions: string[];
+}
+
+/**
+ * Setter sammen en konkret øktoppskrift som tetter gjenstående effort:
+ * «Rolig 8 km + Intervaller 30 min (~208)». Enumererer kombinasjoner på
+ * 1–3 økter fra en liten katalog og foretrekker: total innenfor intervallet,
+ * minst én løpeøkt (støtter km-målet), færrest økter, nærmest midten.
+ * NB: intervaller skåres som løpeminutter (MET-stien kjenner ikke intensitet
+ * uten puls) — de er med for variasjon, ikke fordi de «teller mer».
+ */
+export function composeWeekRecipe(
+	remainingMin: number,
+	remainingMax: number,
+	paceSekPerKm: number
+): WeekRecipe | null {
+	if (remainingMax <= 20) return null; // uken er i praksis i mål
+
+	const runEffort = (km: number) => Math.round(km * (paceSekPerKm / 60) * MET_CALIBRATION);
+	const catalog: Array<{ label: string; effort: number; isRun: boolean }> = [
+		{ label: 'Rolig 5 km', effort: runEffort(5), isRun: true },
+		{ label: 'Rolig 8 km', effort: runEffort(8), isRun: true },
+		{ label: 'Intervaller 30 min', effort: Math.round(30 * MET_CALIBRATION), isRun: true },
+		{ label: 'Sykkeltur 40 min', effort: Math.round(40 * CYCLING_FAKTOR * MET_CALIBRATION), isRun: false },
+		{ label: 'El-sykkel 40 min', effort: Math.round(40 * EBIKE_FAKTOR * MET_CALIBRATION), isRun: false }
+	];
+
+	const target = Math.max(remainingMin, 1);
+	const mid = (Math.max(remainingMin, 0) + remainingMax) / 2;
+
+	interface Candidate {
+		sessions: typeof catalog;
+		total: number;
+	}
+	const candidates: Candidate[] = [];
+	const n = catalog.length;
+	for (let a = 0; a < n; a++) {
+		candidates.push({ sessions: [catalog[a]], total: catalog[a].effort });
+		for (let b = a; b < n; b++) {
+			candidates.push({ sessions: [catalog[a], catalog[b]], total: catalog[a].effort + catalog[b].effort });
+			for (let c = b; c < n; c++) {
+				candidates.push({
+					sessions: [catalog[a], catalog[b], catalog[c]],
+					total: catalog[a].effort + catalog[b].effort + catalog[c].effort
+				});
+			}
+		}
+	}
+
+	const inBand = candidates.filter((c) => c.total >= target && c.total <= remainingMax);
+	const pool = inBand.length > 0 ? inBand : candidates.filter((c) => c.total >= target);
+	if (pool.length === 0) return null;
+
+	pool.sort((x, y) => {
+		const xRun = x.sessions.some((s) => s.isRun) ? 0 : 1;
+		const yRun = y.sessions.some((s) => s.isRun) ? 0 : 1;
+		if (xRun !== yRun) return xRun - yRun; // løp foretrekkes
+		if (x.sessions.length !== y.sessions.length) return x.sessions.length - y.sessions.length;
+		return Math.abs(x.total - mid) - Math.abs(y.total - mid);
+	});
+
+	const best = pool[0];
+	return {
+		label: best.sessions.map((s) => s.label).join(' + '),
+		totalEffort: best.total,
+		sessions: best.sessions.map((s) => s.label)
+	};
+}
+
 export interface WeekPlanExample {
 	label: string;
 	effort: number;

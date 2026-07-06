@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
 	buildWeekPlanExamples,
 	composeEffortSuggestion,
+	composeWeekRecipe,
 	computeEffortBudget,
 	pickBoostSuggestion,
 	projectWeekEffort,
@@ -201,6 +202,34 @@ describe('projectWeekEffort', () => {
 			'2026-07-15'
 		);
 		expect(projection.projectedTotal).toBe(100);
+	});
+});
+
+describe('composeWeekRecipe', () => {
+	it('setter sammen økter som lander i gjenstående intervall, med løp foretrukket', () => {
+		// Gjenstår 180–230 @ pace 400: Rolig 8 km (133) + Intervaller 30 min (75) = 208 ✓
+		const recipe = composeWeekRecipe(180, 230, 400)!;
+		expect(recipe.totalEffort).toBeGreaterThanOrEqual(180);
+		expect(recipe.totalEffort).toBeLessThanOrEqual(230);
+		expect(recipe.sessions.some((s) => s.includes('km') || s.includes('Intervaller'))).toBe(true);
+	});
+
+	it('lite gjenstående → én økt holder', () => {
+		const recipe = composeWeekRecipe(70, 100, 400)!;
+		expect(recipe.sessions).toHaveLength(1);
+		expect(recipe.totalEffort).toBeGreaterThanOrEqual(70);
+		expect(recipe.totalEffort).toBeLessThanOrEqual(100);
+	});
+
+	it('uken i praksis i mål → null', () => {
+		expect(composeWeekRecipe(0, 15, 400)).toBeNull();
+	});
+
+	it('stort gap → nærmeste kombinasjon over minimum', () => {
+		const recipe = composeWeekRecipe(500, 520, 400);
+		// 3 × Rolig 8 km = 399 < 500 → ingen når target... eller sykkel-kombos:
+		// maks 3 økter: 133+133+133=399; med sykkel 133+133+85=351. Ingen ≥ 500 → null
+		expect(recipe).toBeNull();
 	});
 });
 

@@ -91,6 +91,18 @@ tid skal båndet vokse forbi terskelen):
   gapet (`pickBoostSuggestion`): «Prognose ~180 — under vekt-linja (210).
   Løp 5 km (+83) løfter deg til ~263.» Blå prognosemarkør på grafen.
 
+Etterfiks 2 (fra bruk 6. juli):
+- Auto-koblingen beholdt forslagsnavnet ved oppgradering («Gjennomført: Rolig
+  løp» etter to el-sykkeløkter) — payload skrives nå om til faktisk aktivitet.
+- Gangfart-registreringer klassifisert som løp (f.eks. 4,7 km @ 10:34) blåste
+  opp løpe-km, pace-snitt og km-milepæler. Nytt pace-filter (`isCountableRun`,
+  tak 9:00/km) i km-summer, pace og milepæl-evaluering; feilkryssede
+  milepæler nullstilles av dato-avgrenset migrering.
+- Ny øktkomponist `composeWeekRecipe`: konkret oppskrift som tetter
+  gjenstående effort («Rolig 8 km + Intervaller 30 min (~208)») — vises i
+  planleggeren på budsjettkortet. Intervaller skåres ærlig som løpeminutter
+  (MET-stien kjenner ikke intensitet uten puls).
+
 Etterfiks: ukes_km-milepælene ble feilkrysset av første deploy (gammel
 eqKm-logikk der sykkel talte som løpe-km). Metrikken omdøpt til `ukes_lop_km`
 med samtidig nullstilling av kryssene i én idempotent datamigrering — etter

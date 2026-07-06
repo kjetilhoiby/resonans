@@ -38,6 +38,8 @@
 		weightThreshold?: { thresholdEffort: number; source: string } | null;
 		projection?: Projection | null;
 		boost?: PlanExample | null;
+		/** Konkret øktoppskrift som tetter gjenstående effort. */
+		weekRecipe?: { label: string; totalEffort: number; sessions: string[] } | null;
 	}
 
 	let {
@@ -47,7 +49,8 @@
 		planExamples = [],
 		weightThreshold = null,
 		projection = null,
-		boost = null
+		boost = null,
+		weekRecipe = null
 	}: Props = $props();
 
 	const familyColors: Record<string, string> = {
@@ -190,6 +193,11 @@
 	{#if showPlanner}
 		<section class="planner">
 			<h3>Sånn blir uka — hva typiske økter gir</h3>
+			{#if weekRecipe}
+				<p class="recipe">
+					For å nå ukas mål: <strong>{weekRecipe.label}</strong> (~{weekRecipe.totalEffort})
+				</p>
+			{/if}
 			<ul>
 				{#each planExamples as ex (ex.label)}
 					<li>
@@ -416,5 +424,17 @@
 		color: var(--text-primary, #eee);
 		font-variant-numeric: tabular-nums;
 		white-space: nowrap;
+	}
+
+	.recipe {
+		margin: 0 0 0.5rem;
+		font-size: 0.85rem;
+		color: var(--text-primary, #eee);
+		line-height: 1.45;
+	}
+
+	.recipe strong {
+		color: var(--accent-light, #7c8ef5);
+		font-weight: 650;
 	}
 </style>

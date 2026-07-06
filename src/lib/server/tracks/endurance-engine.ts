@@ -26,6 +26,24 @@ export function isRunFamily(family: string): boolean {
 	return family === 'running';
 }
 
+/**
+ * Gangfart-registreringer klassifiseres av og til som løp (Withings-autologg)
+ * og blåser opp både løpe-km og pace. Rene løpe-km krever løps-pace: raskere
+ * enn 9:00/km når pace kan beregnes. Løp uten varighet teller på distanse
+ * (kan ikke pace-sjekkes).
+ */
+const RUN_PACE_CEILING_SEK_PER_KM = 540;
+
+export function isCountableRun(w: EnduranceWorkout): boolean {
+	if (!isRunFamily(w.family)) return false;
+	const meters = w.distanceMeters ?? 0;
+	if (meters < 500) return false;
+	const seconds = w.durationSeconds ?? 0;
+	if (seconds <= 0) return true; // kan ikke pace-sjekkes — teller på distanse
+	const pace = seconds / (meters / 1000);
+	return pace <= RUN_PACE_CEILING_SEK_PER_KM;
+}
+
 /** Familier som teller i effort-budsjettet (ukesbelastning på tvers av løp/sykkel). */
 export function countsTowardEndurance(family: string): boolean {
 	return family === 'running' || family === 'cycling' || family === 'ebike';
@@ -58,11 +76,11 @@ function weekKeyOf(date: string): string {
 	return mondayOfDate(date);
 }
 
-/** Rene løpte km i en liste økter. */
+/** Rene løpte km i en liste økter (kun løp i løps-pace, se isCountableRun). */
 function sumRunKm(workouts: EnduranceWorkout[]): number {
 	let km = 0;
 	for (const w of workouts) {
-		if (isRunFamily(w.family)) km += (w.distanceMeters ?? 0) / 1000;
+		if (isCountableRun(w)) km += (w.distanceMeters ?? 0) / 1000;
 	}
 	return km;
 }
@@ -111,11 +129,7 @@ export function computeEnduranceState(
 	cutoff.setUTCDate(cutoff.getUTCDate() - 14);
 	const cutoffIso = cutoff.toISOString().slice(0, 10);
 	const recentRuns = workouts.filter(
-		(w) =>
-			isRunFamily(w.family) &&
-			w.date >= cutoffIso &&
-			(w.distanceMeters ?? 0) > 500 &&
-			(w.durationSeconds ?? 0) > 0
+		(w) => isCountableRun(w) && w.date >= cutoffIso && (w.durationSeconds ?? 0) > 0
 	);
 	let sistePace: number | null = null;
 	if (recentRuns.length > 0) {
@@ -125,7 +139,7 @@ export function computeEnduranceState(
 	}
 
 	// Lengste løp siste 6 uker → tak for neste øktlengde
-	const lengsteLopKm = Math.max(0, ...workouts.filter((w) => isRunFamily(w.family)).map((w) => (w.distanceMeters ?? 0) / 1000));
+	const lengsteLopKm = Math.max(0, ...workouts.filter(isCountableRun).map((w) => (w.distanceMeters ?? 0) / 1000));
 
 	return {
 		week: { weekTargetKm, deload, runKm, remainingKm, stallRebased },
@@ -168,11 +182,11 @@ export function nextEnduranceSession(
 	};
 }
 
-/** Beste ukes-total i rene løpe-km — for ukes_km-milepælene. */
+/** Beste ukes-total i rene løpe-km — for ukes_lop_km-milepælene. */
 export function bestWeekRunKm(workouts: EnduranceWorkout[]): number {
 	const byWeek = new Map<string, number>();
 	for (const w of workouts) {
-		if (!isRunFamily(w.family)) continue;
+		if (!isCountableRun(w)) continue;
 		const key = weekKeyOf(w.date);
 		byWeek.set(key, (byWeek.get(key) ?? 0) + (w.distanceMeters ?? 0) / 1000);
 	}
