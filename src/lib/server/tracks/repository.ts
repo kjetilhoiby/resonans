@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, gte, inArray, sql } from 'drizzle-orm';
-import { db } from '$lib/db';
+import { db, rowsOf } from '$lib/db';
 import {
 	canonicalWorkouts,
 	sensorEvents,
@@ -705,6 +705,31 @@ export async function getSessionsForPlan(userId: string, planId: string): Promis
 		.from(trackSessions)
 		.where(and(eq(trackSessions.planId, planId), eq(trackSessions.userId, userId)))
 		.orderBy(asc(trackSessions.date));
+}
+
+/**
+ * Siste beregnede vekt-terskel fra effort/vekt-signalet (cachet daglig av
+ * domain-signals-cronen). Null når modellen ikke har funnet noen terskel.
+ */
+export async function getLatestWeightThreshold(
+	userId: string
+): Promise<{ thresholdEffort: number; source: string } | null> {
+	const result = await db.execute(sql`
+		SELECT context
+		FROM domain_signals
+		WHERE user_id = ${userId}
+		  AND signal_type = 'health_effort_vs_threshold'
+		ORDER BY observed_at DESC
+		LIMIT 1
+	`);
+	const rows = rowsOf<{ context: Record<string, unknown> | null }>(result);
+	const context = (rows[0]?.context ?? {}) as Record<string, unknown>;
+	const threshold = context.thresholdEffort;
+	if (typeof threshold !== 'number' || threshold <= 0) return null;
+	return {
+		thresholdEffort: Math.round(threshold),
+		source: typeof context.thresholdSource === 'string' ? context.thresholdSource : 'regresjon'
+	};
 }
 
 export async function setPlanStatus(userId: string, planId: string, status: string): Promise<boolean> {

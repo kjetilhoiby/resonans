@@ -157,6 +157,9 @@
 					composition={data.states.effortComposition}
 					sessions={data.states.weekSessions ?? []}
 					planExamples={data.states.planExamples ?? []}
+					weightThreshold={data.states.weightThreshold ?? null}
+					projection={data.states.projection ?? null}
+					boost={data.states.boost ?? null}
 				/>
 			{/if}
 

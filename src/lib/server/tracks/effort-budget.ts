@@ -176,6 +176,73 @@ export function summarizeWeekSessions(workouts: EnduranceWorkout[], today: strin
 		.map((w) => ({ date: w.date, family: w.family, effort: Math.round(w.effortScore!) }));
 }
 
+// ─── Ukesprognose: se tidlig om uka må dras opp av grøfta ────────────────────
+
+export interface WeekProjection {
+	/** Forventet effort resten av uka (fra ditt vanlige mønster per ukedag, siste 4 uker). */
+	expectedRemaining: number;
+	/** Forbrukt + forventet rest. */
+	projectedTotal: number;
+	/** Antall gjenstående dager i uka (etter i dag). */
+	remainingDays: number;
+}
+
+const PROJECTION_WEEKS = 4;
+
+/**
+ * Prognose for ukas totale effort: det du har gjort + det du VANLIGVIS gjør
+ * resten av uka (snitt per ukedag over de siste 4 hele ukene — inkluderer
+ * sykkelvanene automatisk). Gjør det mulig å se onsdag at uka ligger an til
+ * å lande under terskelen, mens det fortsatt er tid til en kveldstur.
+ */
+export function projectWeekEffort(workouts: EnduranceWorkout[], today: string): WeekProjection {
+	const counted = workouts.filter((w) => countsTowardEndurance(w.family));
+	const thisMonday = mondayOfDate(today);
+
+	// Snitt effort per ukedag over de siste 4 hele ukene (før denne uka)
+	const weekdayTotals = new Map<number, number>();
+	for (let d = 1; d <= 7; d++) weekdayTotals.set(d, 0);
+	const projStart = addDays(thisMonday, -7 * PROJECTION_WEEKS);
+	for (const w of counted) {
+		if (w.date < projStart || w.date >= thisMonday) continue;
+		const day = new Date(`${w.date}T00:00:00Z`).getUTCDay();
+		const weekday = day === 0 ? 7 : day;
+		weekdayTotals.set(weekday, (weekdayTotals.get(weekday) ?? 0) + (w.effortScore ?? 0));
+	}
+
+	const todayDay = new Date(`${today}T00:00:00Z`).getUTCDay();
+	const todayWeekday = todayDay === 0 ? 7 : todayDay;
+
+	let expectedRemaining = 0;
+	for (let d = todayWeekday + 1; d <= 7; d++) {
+		expectedRemaining += (weekdayTotals.get(d) ?? 0) / PROJECTION_WEEKS;
+	}
+
+	const spentThisWeek = counted
+		.filter((w) => w.date >= thisMonday && w.date <= today)
+		.reduce((sum, w) => sum + (w.effortScore ?? 0), 0);
+
+	return {
+		expectedRemaining: Math.round(expectedRemaining),
+		projectedTotal: Math.round(spentThisWeek + expectedRemaining),
+		remainingDays: 7 - todayWeekday
+	};
+}
+
+/**
+ * Minste typiske økt som tetter gapet — «en løpetur i skogen en kveld».
+ * Returnerer null når ingenting trengs; største eksempel hvis gapet er
+ * større enn alle.
+ */
+export function pickBoostSuggestion(
+	gap: number,
+	examples: WeekPlanExample[]
+): WeekPlanExample | null {
+	if (gap <= 0 || examples.length === 0) return null;
+	const sorted = [...examples].sort((a, b) => a.effort - b.effort);
+	return sorted.find((e) => e.effort >= gap) ?? sorted[sorted.length - 1];
+}
+
 export interface WeekPlanExample {
 	label: string;
 	effort: number;

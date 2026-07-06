@@ -5,11 +5,17 @@ import {
 	createDefaultPlan,
 	evaluateAndMarkMilestones,
 	getActivePlan,
+	getLatestWeightThreshold,
 	getMilestonesForTracks,
 	setMilestoneAchieved
 } from '$lib/server/tracks/repository';
 import { buildAthleteSnapshot } from '$lib/server/programs/athlete-context';
-import { buildWeekPlanExamples, summarizeWeekSessions } from '$lib/server/tracks/effort-budget';
+import {
+	buildWeekPlanExamples,
+	pickBoostSuggestion,
+	projectWeekEffort,
+	summarizeWeekSessions
+} from '$lib/server/tracks/effort-budget';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const userId = locals.userId;
@@ -30,7 +36,32 @@ export const load: PageServerLoad = async ({ locals }) => {
 		console.error('[trening] milepæl-evaluering feilet', err)
 	);
 	const trackIds = [states.styrkeTrack?.id, states.utholdenhetTrack?.id].filter((id): id is string => !!id);
-	const milestones = await getMilestonesForTracks(trackIds);
+	const [milestones, weightThreshold] = await Promise.all([
+		getMilestonesForTracks(trackIds),
+		getLatestWeightThreshold(userId).catch(() => null)
+	]);
+
+	const today = new Date().toISOString().slice(0, 10);
+	const planExamples =
+		states.budget && states.enduranceState
+			? buildWeekPlanExamples(
+					states.enduranceState.forventetPaceSekPerKm,
+					states.budget.bandMin,
+					states.budget.bandMax
+				)
+			: [];
+
+	// Ukesprognose: forbrukt + det du vanligvis gjør resten av uka.
+	// «Grøfta» = under både bandMin (regresjon) og vekt-terskelen (når den finnes).
+	const projection = states.budget ? projectWeekEffort(states.enduranceWorkouts, today) : null;
+	const referenceTarget = Math.max(
+		states.budget?.bandMin ?? 0,
+		weightThreshold?.thresholdEffort ?? 0
+	);
+	const boost =
+		projection && referenceTarget > 0
+			? pickBoostSuggestion(referenceTarget - projection.projectedTotal, planExamples)
+			: null;
 
 	return {
 		plan: {
@@ -45,15 +76,11 @@ export const load: PageServerLoad = async ({ locals }) => {
 			restReason: states.restReason,
 			budget: states.budget,
 			effortComposition: states.effortComposition,
-			weekSessions: summarizeWeekSessions(states.enduranceWorkouts, new Date().toISOString().slice(0, 10)),
-			planExamples:
-				states.budget && states.enduranceState
-					? buildWeekPlanExamples(
-							states.enduranceState.forventetPaceSekPerKm,
-							states.budget.bandMin,
-							states.budget.bandMax
-						)
-					: [],
+			weekSessions: summarizeWeekSessions(states.enduranceWorkouts, today),
+			planExamples,
+			weightThreshold,
+			projection,
+			boost,
 			todayCompleted: states.todayCompleted
 				? {
 						name: states.todayCompleted.payload.name,

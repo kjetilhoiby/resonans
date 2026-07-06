@@ -80,6 +80,17 @@ jeg ikke gjør nok»):
   kurve-pace og faktiske band (`buildWeekPlanExamples`/`summarizeWeekSessions`
   i effort-budget.ts).
 
+Samlet skala + prognose (brukerinnsikt: båndet og vekt-terskelen er to linjer
+på samme akse — båndet er trenings-trygt, terskelen er vekt-nøytral, og over
+tid skal båndet vokse forbi terskelen):
+- Vekt-nøytral-linja (fra effort/vekt-signalet, `getLatestWeightThreshold`)
+  tegnes som gul markør på budsjettgrafen med forklaringstekst.
+- **Ukesprognose** (`projectWeekEffort`): forbrukt + det brukeren vanligvis
+  gjør resten av uka (snitt per ukedag siste 4 uker, sykkelvaner inkludert).
+  Ligger prognosen under båndet/vekt-linja foreslås minste økt som tetter
+  gapet (`pickBoostSuggestion`): «Prognose ~180 — under vekt-linja (210).
+  Løp 5 km (+83) løfter deg til ~263.» Blå prognosemarkør på grafen.
+
 Etterfiks: ukes_km-milepælene ble feilkrysset av første deploy (gammel
 eqKm-logikk der sykkel talte som løpe-km). Metrikken omdøpt til `ukes_lop_km`
 med samtidig nullstilling av kryssene i én idempotent datamigrering — etter

@@ -3,6 +3,8 @@ import {
 	buildWeekPlanExamples,
 	composeEffortSuggestion,
 	computeEffortBudget,
+	pickBoostSuggestion,
+	projectWeekEffort,
 	summarizeWeekSessions
 } from './effort-budget';
 import type { EnduranceConfig, EnduranceWorkout } from './types';
@@ -169,5 +171,57 @@ describe('buildWeekPlanExamples', () => {
 	it('tåler tomt band uten å dele på null', () => {
 		const examples = buildWeekPlanExamples(400, 0, 0);
 		expect(examples.every((e) => Number.isFinite(e.pctOfBand))).toBe(true);
+	});
+});
+
+describe('projectWeekEffort', () => {
+	it('prognostiserer resten av uka fra vanlig ukedagsmønster', () => {
+		// 4 uker med fast mønster: tirsdag 100, torsdag 80 (uker som starter 15.06–06.07).
+		// Denne uka (mandag 13.07): tirsdag 14. er gjort (100). I dag onsdag 15.
+		const history = ['2026-06-16', '2026-06-23', '2026-06-30', '2026-07-07'].map((d) => okt(d, 100));
+		const thursdays = ['2026-06-18', '2026-06-25', '2026-07-02', '2026-07-09'].map((d) => okt(d, 80));
+		const thisWeek = [okt('2026-07-14', 100)];
+		const projection = projectWeekEffort([...history, ...thursdays, ...thisWeek], '2026-07-15');
+		// Gjenstår tor–søn: torsdag pleier å gi 80 → forventet rest 80
+		expect(projection.expectedRemaining).toBe(80);
+		expect(projection.projectedTotal).toBe(180);
+		expect(projection.remainingDays).toBe(4);
+	});
+
+	it('søndag: ingen gjenstående dager, prognose = forbrukt', () => {
+		const projection = projectWeekEffort([okt('2026-07-14', 100)], '2026-07-19');
+		expect(projection.remainingDays).toBe(0);
+		expect(projection.expectedRemaining).toBe(0);
+		expect(projection.projectedTotal).toBe(100);
+	});
+
+	it('styrke teller ikke i prognosen', () => {
+		const projection = projectWeekEffort(
+			[okt('2026-07-07', 500, 'strength'), okt('2026-07-14', 100)],
+			'2026-07-15'
+		);
+		expect(projection.projectedTotal).toBe(100);
+	});
+});
+
+describe('pickBoostSuggestion', () => {
+	const EXAMPLES = [
+		{ label: 'Løp 5 km', effort: 83, pctOfBand: 38 },
+		{ label: 'Løp 8 km', effort: 133, pctOfBand: 61 },
+		{ label: 'El-sykkel 40 min', effort: 40, pctOfBand: 18 }
+	];
+
+	it('velger minste økt som tetter gapet', () => {
+		expect(pickBoostSuggestion(70, EXAMPLES)!.label).toBe('Løp 5 km');
+		expect(pickBoostSuggestion(30, EXAMPLES)!.label).toBe('El-sykkel 40 min');
+	});
+
+	it('gap større enn alt → største eksempel', () => {
+		expect(pickBoostSuggestion(200, EXAMPLES)!.label).toBe('Løp 8 km');
+	});
+
+	it('intet gap → null', () => {
+		expect(pickBoostSuggestion(0, EXAMPLES)).toBeNull();
+		expect(pickBoostSuggestion(-50, EXAMPLES)).toBeNull();
 	});
 });
