@@ -118,7 +118,10 @@ export interface EkkoRouteInput {
 /**
  * Upsert av en rute fra Ekko på `(user_id, ekko_route_id)`. Ekko eier geometri/
  * fakta (navn, distanse, høyde, terreng); Resonans eier fartsvariantene:
- *  - Finnes ruten fra før: oppdater fakta, men BEVAR brukerens `variants`.
+ *  - Finnes ruten fra før: oppdater ren geometri (distanse/høyde/navn), men
+ *    BEVAR brukerens `variants`, `kind` og `terrain` (Resonans-eid tolkning —
+ *    Ekkos sportType er grov, så en rute raffinert til «sti» i Resonans skal
+ *    ikke klobbes tilbake til «løp» ved neste synk).
  *  - Ny rute: seed default-varianter fra pace (per kind).
  * Manuelle ruter (`ekko_route_id IS NULL`) røres aldri.
  */
@@ -138,11 +141,12 @@ export async function upsertRouteFromEkko(
 			.update(trainingRoutes)
 			.set({
 				name: input.name,
-				kind: input.kind,
+				// kind BEVARES (Resonans-eid): en rute raffinert til 'trail' skal ikke
+				// klobbes tilbake av Ekkos grove sportType.
 				distanceMeters: input.distanceMeters ?? null,
 				elevationMeters: input.elevationMeters ?? null,
-				// Terreng fra Ekko når oppgitt, ellers behold det brukeren evt. satte.
-				terrain: input.terrain ?? existing[0].terrain,
+				// Terreng: behold brukerens verdi, fyll kun inn hvis den mangler.
+				terrain: existing[0].terrain ?? input.terrain ?? null,
 				archived: false,
 				updatedAt: new Date()
 			})
