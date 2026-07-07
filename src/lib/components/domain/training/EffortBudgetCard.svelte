@@ -9,6 +9,7 @@
 		restRecommended: boolean;
 		deload: boolean;
 		anchor: 'forrige_uke' | 'p4w_snitt' | 'gulv';
+		maintenance?: boolean;
 	}
 
 	interface SessionSlice {
@@ -136,6 +137,7 @@
 		<div class="title-row">
 			<h2>Ukas effort</h2>
 			<div class="badges">
+				{#if budget.maintenance}<span class="badge">Ferie · vedlikehold</span>{/if}
 				{#if budget.deload}<span class="badge">Deload-uke</span>{/if}
 				{#if budget.restRecommended}<span class="badge warn">Hvil</span>{/if}
 			</div>

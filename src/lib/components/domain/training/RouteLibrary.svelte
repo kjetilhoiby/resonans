@@ -81,6 +81,9 @@
 						</span>
 					{/each}
 				</div>
+				{#if route.kind === 'trail'}
+					<p class="coach">Kjør på følelse — jevn innsats i motbakkene, ikke jag klokka. Høydemeteren teller med i effort.</p>
+				{/if}
 			</li>
 		{/each}
 	</ul>
@@ -226,6 +229,15 @@
 	.variant strong {
 		color: var(--accent-light, #7c8ef5);
 		font-weight: 650;
+	}
+
+	.coach {
+		margin: 0.1rem 0 0;
+		padding-left: 1.4rem;
+		font-size: 0.75rem;
+		font-style: italic;
+		color: var(--text-tertiary, #777);
+		line-height: 1.4;
 	}
 
 	.route-form {

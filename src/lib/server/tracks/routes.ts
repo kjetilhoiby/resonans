@@ -13,6 +13,13 @@ const CYCLING_MET = 0.85;
 const EBIKE_MET = 0.4;
 // Fart mellom intervalldrag (jogg/gange) i sek/km — for total-tid på bakkeøkter.
 const HILL_RECOVERY_PACE = 480;
+// Klatre-ekvivalens: 100 høydemeter ≈ 1 km flatt løp (tommelfingerregel for
+// trail/kupert løp). Høydemeteren legger på tid/effort uavhengig av fart.
+const VERTICAL_M_PER_EQUIV_KM = 100;
+// På sti er sakte IKKE lett (teknisk terreng) — intensiteten gulves høyere enn
+// på vei så en langsom stiøkt ikke feilaktig skåres som en rolig joggetur.
+const TRAIL_INTENSITY_FLOOR = 1.0;
+const ROAD_INTENSITY_FLOOR = 0.75;
 
 export type RouteKind = 'run' | 'bike' | 'hill' | 'trail' | 'mixed';
 
@@ -98,17 +105,30 @@ export function variantEffort(
 		};
 	}
 
-	// Løp: pace fra variant, intensitet mot easy-pace
+	// Løp: pace fra variant, intensitet mot easy-pace. Høydemeter legger på
+	// klatre-ekvivalent distanse (100 hm ≈ 1 km flatt) — så en kupert rute koster
+	// mer i både tid og effort uavhengig av farten. På sti gulves intensiteten
+	// høyere (sakte ≠ lett): høydemeteren og terrenget bærer belastningen, ikke
+	// pace-modellen som ellers ville lest en langsom stiøkt som rolig.
 	const pace = variant.paceSecPerKm ?? easyPaceSecPerKm ?? 400;
 	const km = distanceMeters / 1000;
-	const durationMin = (km * pace) / 60;
-	const intensity = easyPaceSecPerKm ? clamp((easyPaceSecPerKm / pace) ** 2, 0.75, 1.5) : 1;
+	const elevation = route.elevationMeters ?? 0;
+	const climbKm = elevation > 0 ? elevation / VERTICAL_M_PER_EQUIV_KM : 0;
+	const durationMin = ((km + climbKm) * pace) / 60;
+	const isTrail = route.kind === 'trail';
+	const floor = isTrail ? TRAIL_INTENSITY_FLOOR : ROAD_INTENSITY_FLOOR;
+	const intensity = easyPaceSecPerKm
+		? clamp((easyPaceSecPerKm / pace) ** 2, floor, 1.5)
+		: isTrail
+			? TRAIL_INTENSITY_FLOOR
+			: 1;
 	const effort = Math.round(durationMin * RUN_MET * MET_CALIBRATION * intensity);
+	const climbNote = elevation > 0 ? ` · ${elevation} hm` : '';
 	return {
 		label: variant.label,
 		effort,
 		durationMin: Math.round(durationMin),
-		detail: distanceMeters > 0 ? `${fmtKm(distanceMeters)} @ ${fmtPace(pace)}` : `@ ${fmtPace(pace)}`
+		detail: distanceMeters > 0 ? `${fmtKm(distanceMeters)} @ ${fmtPace(pace)}${climbNote}` : `@ ${fmtPace(pace)}`
 	};
 }
 
@@ -127,6 +147,35 @@ export function routeEffortRange(
 
 function clamp(value: number, min: number, max: number): number {
 	return Math.max(min, Math.min(max, value));
+}
+
+/**
+ * Default fartsvarianter for en rute-type, skalert til brukerens easy-pace.
+ * Brukes når en rute importeres fra Ekko uten varianter (Ekko eier geometri/
+ * fakta, Resonans eier fartsvariantene) — og som byggekloss for startrutene.
+ */
+export function defaultVariantsForKind(kind: RouteKind, easyPaceSecPerKm: number | null): RouteVariant[] {
+	const easy = easyPaceSecPerKm ?? 400;
+	switch (kind) {
+		case 'bike':
+			return [
+				{ label: 'Sykkel', family: 'cycling' },
+				{ label: 'El-sykkel', family: 'ebike' }
+			];
+		case 'hill':
+			return [{ label: '10 × 200 m', reps: 10, repDistanceMeters: 200, paceSecPerKm: 300 }];
+		case 'trail':
+			return [
+				{ label: 'Rolig', paceSecPerKm: Math.round(easy * 1.05) },
+				{ label: 'Jevnt', paceSecPerKm: easy }
+			];
+		default: // run, mixed
+			return [
+				{ label: 'Rolig', paceSecPerKm: easy },
+				{ label: 'Moderat', paceSecPerKm: Math.round(easy * 0.9) },
+				{ label: 'Terskel', paceSecPerKm: Math.round(easy * 0.82) }
+			];
+	}
 }
 
 /**

@@ -735,6 +735,49 @@ async function fetchEffortBalanceData(userId: string, unit: string | null) {
 }
 
 /**
+ * Widget-data for trainingBalance: siste balanse-score (0–100) fra
+ * training_balance-signalet (cachen produseres av domain-signals-cronen).
+ * GoalRing viser scoren; nudge-teksten følger med som label.
+ */
+async function fetchTrainingBalanceData(userId: string, unit: string | null) {
+	const rows = (await sql(
+		`SELECT value_number, value_text, context
+		 FROM domain_signals
+		 WHERE user_id = $1
+		   AND signal_type = 'training_balance'
+		 ORDER BY observed_at DESC
+		 LIMIT 1`,
+		[userId]
+	)) as Array<{
+		value_number: string | number | null;
+		value_text: string | null;
+		context: Record<string, unknown> | null;
+	}>;
+	const row = rows[0];
+
+	if (!row || row.value_number == null) {
+		return { current: null, sparkline: [], unit: unit ?? 'score', delta: 0, pct: null, state: 'normal' };
+	}
+
+	const score = Math.round(Number(row.value_number));
+	const context = (row.context ?? {}) as Record<string, unknown>;
+	const nudge = (context.nudge ?? null) as { message?: string } | null;
+	const label = nudge?.message ?? 'Fin variasjon';
+	// Høyere score = bedre balanse.
+	const state: 'success' | 'warn' | 'normal' = score >= 70 ? 'success' : score < 45 ? 'warn' : 'normal';
+
+	return {
+		current: score,
+		sparkline: [],
+		unit: unit ?? 'score',
+		delta: 0,
+		pct: Math.max(0, Math.min(100, score)),
+		state,
+		label,
+	};
+}
+
+/**
  * Widget-data for effortDaily: snitt effort per dag siste 30 dager, direkte
  * fra canonical_workouts. Sparkline = snitt/dag per uke siste 8 uker — viser
  * om nivået holder seg stabilt over «siste fire uker». Delta mot forrige
@@ -974,6 +1017,11 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 	// ─── effortDaily: snitt effort per dag siste 30 dager (stabilitet over 4 uker) ───
 	if (widget.metricType === 'effortDaily') {
 		return json(await fetchEffortDailyData(userId, widget));
+	}
+
+	// ─── trainingBalance: balanse-score fra training_balance-signalet ───
+	if (widget.metricType === 'trainingBalance') {
+		return json(await fetchTrainingBalanceData(userId, widget.unit));
 	}
 
 	const metricConf = METRIC_CONFIG[widget.metricType];

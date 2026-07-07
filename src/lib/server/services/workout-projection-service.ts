@@ -4,6 +4,7 @@ import { and, eq, gte, inArray, lte, max, sql } from 'drizzle-orm';
 import { buildUnifiedWorkoutActivities } from '$lib/server/activity-layer';
 import { enqueueWorkoutProjectionRefresh } from '$lib/server/workout-projection-refresh-queue';
 import { computeWorkoutEffort, getEffortBaseline } from '$lib/server/services/effort-service';
+import { getTrailAttributedEventIds } from '$lib/server/tracks/routes-repository';
 import { analyzeWorkout, type TrackPoint, type WorkoutAnalyticsResult } from '$lib/server/workouts/workout-analytics';
 
 export type WorkoutProjectionRefreshResult = {
@@ -219,8 +220,13 @@ export class WorkoutProjectionService {
 		// Activity-layeren stripper trackPoints fra query-pathen, så vi henter dem her.
 		const analyticsByEventId = await fetchAnalyticsForRunningWorkouts(inRange, baseline);
 
+		// Sti-attribuerte økter (via Ekko-tagget metadata.ekkoRouteId → trail-rute):
+		// pace-intensiteten gulves for disse. Prospektivt — kun taggede økter påvirkes.
+		const trailEventIds = await getTrailAttributedEventIds(userId, startDate).catch(() => new Set<string>());
+
 		const canonicalRows = inRange.map((workout) => {
 			const family = sportFamily(workout.sportType);
+			const isTrail = trailEventIds.size > 0 && workout.evidence.some((e) => trailEventIds.has(e.eventId));
 			const effort = computeWorkoutEffort(
 				{
 					sportType: workout.sportType,
@@ -231,7 +237,8 @@ export class WorkoutProjectionService {
 					paceSecPerKm:
 						workout.distanceMeters && workout.distanceMeters > 0 && workout.durationSeconds
 							? workout.durationSeconds / (workout.distanceMeters / 1000)
-							: null
+							: null,
+					isTrail
 				},
 				baseline
 			);

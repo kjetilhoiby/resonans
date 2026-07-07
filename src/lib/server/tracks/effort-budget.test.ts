@@ -73,6 +73,17 @@ describe('computeEffortBudget', () => {
 		expect(budget.bandMax).toBe(120);
 	});
 
+	it('vedlikeholdsmodus (reise): senker båndet til hold-ved-like (0.5–0.8× anker)', () => {
+		// Samme anker som første test (forrige uke 200), men på reise.
+		const normal = computeEffortBudget([okt('2026-07-07', 200)], CONFIG, PLAN_START, '2026-07-15');
+		const ferie = computeEffortBudget([okt('2026-07-07', 200)], CONFIG, PLAN_START, '2026-07-15', true);
+		expect(normal.maintenance).toBe(false);
+		expect(ferie.maintenance).toBe(true);
+		expect(ferie.bandMin).toBe(100); // 200 × 0.5
+		expect(ferie.bandMax).toBe(160); // 200 × 0.8
+		expect(ferie.bandMax).toBeLessThan(normal.bandMax);
+	});
+
 	it('deload hver 4. uke skalerer intervallet med 0.8', () => {
 		// Uke 4 av planen starter 2026-07-27. Forrige uke: 200 effort.
 		const budget = computeEffortBudget([okt('2026-07-22', 200)], CONFIG, PLAN_START, '2026-07-29');
@@ -223,6 +234,16 @@ describe('composeWeekRecipe', () => {
 
 	it('uken i praksis i mål → null', () => {
 		expect(composeWeekRecipe(0, 15, 400)).toBeNull();
+	});
+
+	it('preferVariety vekter mot kryss-trening når løp dominerer', () => {
+		// Uten variasjonsvekting foretrekkes løp; med preferVariety skal en
+		// ikke-løpsøkt inngå i oppskriften (belønner balanse).
+		const gap = { min: 70, max: 130 };
+		const uten = composeWeekRecipe(gap.min, gap.max, 400)!;
+		const med = composeWeekRecipe(gap.min, gap.max, 400, { preferVariety: true })!;
+		expect(uten.sessions.every((s) => s.includes('km') || s.includes('Intervaller'))).toBe(true);
+		expect(med.sessions.some((s) => /sykkel/i.test(s))).toBe(true);
 	});
 
 	it('stort gap → nærmeste kombinasjon over minimum', () => {

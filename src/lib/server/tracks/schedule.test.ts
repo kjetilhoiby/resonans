@@ -28,6 +28,7 @@ function budget(overrides: Partial<EffortBudget> = {}): EffortBudget {
 		restRecommended: false,
 		deload: false,
 		anchor: 'forrige_uke',
+		maintenance: false,
 		...overrides
 	};
 }

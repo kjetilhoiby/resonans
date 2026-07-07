@@ -44,6 +44,9 @@ import {
 	nextEnduranceSession
 } from './endurance-engine';
 import { computeEffortBudget, composeEffortSuggestion } from './effort-budget';
+import { computeBalanceState, type BalanceState } from './balance';
+import { getRecentRouteLabels } from './routes-repository';
+import { fetchActiveTrip } from '$lib/server/programs/readiness';
 import { deriveWeekdayPattern, suggestSessionForDate, type WeekdayPattern } from './schedule';
 import type { EffortBudget } from './types';
 
@@ -326,6 +329,8 @@ export interface TrackStates {
 	/** Begrunnelse når dagens forslag er hvile pga. belastning/budsjett. */
 	restReason: string | null;
 	budget: EffortBudget | null;
+	/** Balanse/variasjon: disiplin-miks, styrke-dekning, intensitetsspredning + én nudge. */
+	balance: BalanceState | null;
 	/** Forslag til sammensetning av gjenstående ukeseffort («8 km løp + 45 min sykkel»). */
 	effortComposition: string | null;
 	pattern: WeekdayPattern;
@@ -407,13 +412,36 @@ export async function computeTrackStates(
 	const weekdayNumber = ((new Date(`${today}T00:00:00Z`).getUTCDay() + 6) % 7) + 1;
 	const enduranceSuggestion = enduranceState ? nextEnduranceSession(enduranceState, weekdayNumber) : null;
 
+	// Vedlikeholdsmodus ved aktiv reise/ferie: senk effort-båndet så en lett uke
+	// på reise ikke leses som svikt.
+	const activeTrip = await fetchActiveTrip(userId, today).catch(() => null);
 	const budget = utholdenhetTrack
-		? computeEffortBudget(enduranceWorkouts, enduranceConfigOf(utholdenhetTrack), plan.startDate, today)
+		? computeEffortBudget(
+				enduranceWorkouts,
+				enduranceConfigOf(utholdenhetTrack),
+				plan.startDate,
+				today,
+				!!activeTrip
+			)
 		: null;
 	const effortComposition =
 		budget && enduranceState
 			? composeEffortSuggestion(budget.remainingMin, budget.remainingMax, enduranceState.forventetPaceSekPerKm)
 			: null;
+
+	// Balanse: referanse-pace for intensitetssoner = faktisk snitt siste 14 dager,
+	// ellers kurve. Styrke-dekning teller også rå sensor_events-datoer. Rute-labels
+	// (fra Ekko-tagget metadata) gir rotasjons-nudgen.
+	const balanceEasyPace =
+		enduranceState?.sistePaceSekPerKm ?? enduranceState?.forventetPaceSekPerKm ?? null;
+	const routeLabels = await getRecentRouteLabels(userId, LOOKBACK_DAYS).catch(() => []);
+	const balance = computeBalanceState(
+		enduranceWorkouts,
+		strengthSessions.map((s) => s.date),
+		balanceEasyPace,
+		today,
+		routeLabels
+	);
 
 	const pattern = deriveWeekdayPattern(enduranceWorkouts, today);
 	const scheduleDays = plan.schedule?.days;
@@ -444,6 +472,7 @@ export async function computeTrackStates(
 		todaySuggestion: suggestion,
 		restReason,
 		budget,
+		balance,
 		effortComposition,
 		pattern,
 		todayCompleted,

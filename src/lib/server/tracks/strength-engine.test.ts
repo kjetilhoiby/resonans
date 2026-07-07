@@ -90,6 +90,17 @@ describe('computeStrengthState', () => {
 		expect(state.armhevinger.nesteTarget).toBe(Math.round(0.9 * 40));
 	});
 
+	it('gjenopptrapping: opphold > 14 dager → target fra siste økt (0.85×), ikke kurven', () => {
+		// Siste økt 08.07 (60 armhevinger), i dag 30.07 → 22 dagers opphold.
+		const state = computeStrengthState([okt('2026-07-08', [20, 20, 20], [40])], GOAL, WINDOW, '2026-07-30');
+		expect(state.armhevinger.comeback).toBe(true);
+		expect(state.armhevinger.nesteTarget).toBe(Math.round(0.85 * 60));
+		expect(state.armhevinger.stall).toBe(false);
+		// Planke: siste 40 s → 0.85 × 40 = 34
+		expect(state.planke.comeback).toBe(true);
+		expect(state.planke.nesteTargetSek).toBe(Math.round(0.85 * 40));
+	});
+
 	it('capper target på målet (100 reps / 60 s)', () => {
 		const sessions = [okt('2026-12-28', [40, 35, 30], [58]), okt('2026-12-30', [40, 35, 33], [60])];
 		const state = computeStrengthState(sessions, GOAL, WINDOW, '2027-01-02');

@@ -50,6 +50,7 @@
 		heartrate: false,
 		effortBalance: true,
 		effortDaily: true,
+		trainingBalance: true,
 	};
 
 	const RANGE_OPTIONS = [
@@ -112,6 +113,7 @@
 		amount: ['kr', 'NOK'],
 		effortBalance: ['effort'],
 		effortDaily: ['effort/dag'],
+		trainingBalance: ['score'],
 	};
 
 	let title = $state(widget.title);

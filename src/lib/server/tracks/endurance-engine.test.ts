@@ -100,6 +100,14 @@ describe('computeEnduranceState', () => {
 		expect(state.week.stallRebased).toBe(false);
 	});
 
+	it('gjenopptrapping: opphold > 14 dager siden siste løp → mål tilbake til baseline', () => {
+		// Siste løp 25.07, i dag 15.08 → 21 dagers opphold. Kurven har klatret forbi 14.
+		const state = computeEnduranceState([run('2026-07-25', 6)], GOAL, CONFIG, WINDOW, '2026-08-15');
+		expect(state.week.comebackRebased).toBe(true);
+		expect(state.week.stallRebased).toBe(false);
+		expect(state.week.weekTargetKm).toBe(14); // min(kurve, goal.fra)
+	});
+
 	it('måler pace kun på løpeøkter siste 14 dager', () => {
 		const state = computeEnduranceState(
 			[run('2026-07-07', 5, 390), sykkel('2026-07-08', 100)],
