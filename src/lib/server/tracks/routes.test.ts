@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { defaultRouteSeeds, routeEffortRange, variantEffort, type RouteInput } from './routes';
+import {
+	defaultRouteSeeds,
+	defaultVariantsForKind,
+	routeEffortRange,
+	variantEffort,
+	type RouteInput
+} from './routes';
 
 describe('variantEffort — løp med fartsvarianter', () => {
 	const pendler: RouteInput = {
@@ -112,6 +118,31 @@ describe('routeEffortRange', () => {
 		expect(range.minEffort).toBe(range.variants[0].effort);
 		expect(range.maxEffort).toBe(range.variants[2].effort);
 		expect(range.maxEffort).toBeGreaterThan(range.minEffort);
+	});
+});
+
+describe('defaultVariantsForKind', () => {
+	it('løp: rolig/moderat/terskel skalert til pace', () => {
+		const v = defaultVariantsForKind('run', 400);
+		expect(v.map((x) => x.label)).toEqual(['Rolig', 'Moderat', 'Terskel']);
+		expect(v[0].paceSecPerKm).toBe(400);
+		expect(v[2].paceSecPerKm!).toBeLessThan(v[0].paceSecPerKm!);
+	});
+
+	it('sti: rolig + jevnt', () => {
+		const v = defaultVariantsForKind('trail', 400);
+		expect(v.map((x) => x.label)).toEqual(['Rolig', 'Jevnt']);
+	});
+
+	it('sykkel: sykkel + el-sykkel som familier', () => {
+		const v = defaultVariantsForKind('bike', null);
+		expect(v.map((x) => x.family)).toEqual(['cycling', 'ebike']);
+	});
+
+	it('bakke: ett intervall-drag som utgangspunkt', () => {
+		const v = defaultVariantsForKind('hill', 400);
+		expect(v[0].reps).toBe(10);
+		expect(v[0].repDistanceMeters).toBe(200);
 	});
 });
 

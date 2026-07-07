@@ -150,6 +150,35 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /**
+ * Default fartsvarianter for en rute-type, skalert til brukerens easy-pace.
+ * Brukes når en rute importeres fra Ekko uten varianter (Ekko eier geometri/
+ * fakta, Resonans eier fartsvariantene) — og som byggekloss for startrutene.
+ */
+export function defaultVariantsForKind(kind: RouteKind, easyPaceSecPerKm: number | null): RouteVariant[] {
+	const easy = easyPaceSecPerKm ?? 400;
+	switch (kind) {
+		case 'bike':
+			return [
+				{ label: 'Sykkel', family: 'cycling' },
+				{ label: 'El-sykkel', family: 'ebike' }
+			];
+		case 'hill':
+			return [{ label: '10 × 200 m', reps: 10, repDistanceMeters: 200, paceSecPerKm: 300 }];
+		case 'trail':
+			return [
+				{ label: 'Rolig', paceSecPerKm: Math.round(easy * 1.05) },
+				{ label: 'Jevnt', paceSecPerKm: easy }
+			];
+		default: // run, mixed
+			return [
+				{ label: 'Rolig', paceSecPerKm: easy },
+				{ label: 'Moderat', paceSecPerKm: Math.round(easy * 0.9) },
+				{ label: 'Terskel', paceSecPerKm: Math.round(easy * 0.82) }
+			];
+	}
+}
+
+/**
  * Startruter som seedes ved plan-oppsett — brukerens egne eksempler, klare
  * til å redigeres. Distanser/fart er plassholdere som justeres i UI.
  */
