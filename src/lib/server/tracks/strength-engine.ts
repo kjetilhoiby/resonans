@@ -8,7 +8,7 @@ import type {
 	TrackWindow
 } from './types';
 import { ARMHEVINGER_NAME, PLANKE_NAME, PULLUP_NAME, PULLUP_NEGATIV_NAME } from './constants';
-import { expectedAt } from './curve';
+import { daysBetween, expectedAt } from './curve';
 
 /**
  * Styrkemotoren: beregner tilstand og neste økt-targets fra faktiske
@@ -29,6 +29,10 @@ const PULLUP_NEGATIV_INCREMENT_SEC = 2;
 const PULLUP_NEGATIV_MAX_SEC = 20;
 const PULLUP_MAX_REPS = 3;
 const STALL_RATIO = 0.9;
+// Gjenopptrapping: opphold lengre enn dette siden siste økt → ikke jag kurven,
+// start på en andel av siste faktiske (kroppen har mistet litt, bygg gradvis).
+const COMEBACK_GAP_DAYS = 14;
+const COMEBACK_FACTOR = 0.85;
 
 function normalizeName(name: string): string {
 	return name.trim().toLowerCase();
@@ -119,11 +123,16 @@ export function computeStrengthState(
 		expectedAt(goal.armhevinger.fra, goal.armhevinger.til, window.startDate, window.targetDate, date);
 	const armValues = summaries.filter((s) => s.armhevingerTotal > 0);
 	const armSiste = armValues.length > 0 ? armValues[armValues.length - 1].armhevingerTotal : null;
+	const armLastDate = armValues.length > 0 ? armValues[armValues.length - 1].date : null;
+	const armComeback = armLastDate != null && daysBetween(armLastDate, today) > COMEBACK_GAP_DAYS;
 	const armBesteAvSiste2 = Math.max(0, ...armValues.slice(-2).map((s) => s.armhevingerTotal));
-	const armStall = detectStall(summaries, (s) => s.armhevingerTotal, armCurve);
+	const armStall = detectStall(summaries, (s) => s.armhevingerTotal, armCurve) && !armComeback;
 	const armForventet = Math.round(armCurve(today));
 	let armNesteTarget: number;
-	if (armStall && armSiste != null) {
+	if (armComeback && armSiste != null) {
+		// Tilbake etter opphold: start på en andel av siste faktiske, ikke kurven.
+		armNesteTarget = Math.min(goal.armhevinger.til, Math.max(goal.armhevinger.fra, Math.round(COMEBACK_FACTOR * armSiste)));
+	} else if (armStall && armSiste != null) {
 		armNesteTarget = Math.round(STALL_RATIO * armSiste);
 	} else if (armValues.length === 0) {
 		armNesteTarget = Math.min(goal.armhevinger.til, Math.max(goal.armhevinger.fra, armForventet));
@@ -139,11 +148,15 @@ export function computeStrengthState(
 		expectedAt(goal.planke.fraSek, goal.planke.tilSek, window.startDate, window.targetDate, date);
 	const plankeValues = summaries.filter((s) => s.plankeBestSeconds > 0);
 	const plankeSiste = plankeValues.length > 0 ? plankeValues[plankeValues.length - 1].plankeBestSeconds : null;
+	const plankeLastDate = plankeValues.length > 0 ? plankeValues[plankeValues.length - 1].date : null;
+	const plankeComeback = plankeLastDate != null && daysBetween(plankeLastDate, today) > COMEBACK_GAP_DAYS;
 	const plankeBesteAvSiste2 = Math.max(0, ...plankeValues.slice(-2).map((s) => s.plankeBestSeconds));
-	const plankeStall = detectStall(summaries, (s) => s.plankeBestSeconds, plankeCurve);
+	const plankeStall = detectStall(summaries, (s) => s.plankeBestSeconds, plankeCurve) && !plankeComeback;
 	const plankeForventet = Math.round(plankeCurve(today));
 	let plankeNesteTarget: number;
-	if (plankeStall && plankeSiste != null) {
+	if (plankeComeback && plankeSiste != null) {
+		plankeNesteTarget = Math.min(goal.planke.tilSek, Math.max(goal.planke.fraSek, Math.round(COMEBACK_FACTOR * plankeSiste)));
+	} else if (plankeStall && plankeSiste != null) {
 		plankeNesteTarget = Math.round(STALL_RATIO * plankeSiste);
 	} else if (plankeValues.length === 0) {
 		plankeNesteTarget = Math.min(goal.planke.tilSek, Math.max(goal.planke.fraSek, plankeForventet));
@@ -175,12 +188,13 @@ export function computeStrengthState(
 			: { reps: Math.min(PULLUP_MAX_REPS, Math.max(1, (sisteReps ?? 0) + 1)) };
 
 	return {
-		armhevinger: { siste: armSiste, forventet: armForventet, nesteTarget: armNesteTarget, stall: armStall },
+		armhevinger: { siste: armSiste, forventet: armForventet, nesteTarget: armNesteTarget, stall: armStall, comeback: armComeback },
 		planke: {
 			sisteSek: plankeSiste,
 			forventetSek: plankeForventet,
 			nesteTargetSek: plankeNesteTarget,
-			stall: plankeStall
+			stall: plankeStall,
+			comeback: plankeComeback
 		},
 		pullup: { fase, sisteNegativSek: sisteNegativ, sisteReps, nesteTarget }
 	};
@@ -223,7 +237,12 @@ export function nextStrengthSession(state: StrengthState): SessionSuggestion {
 		name: 'Styrke',
 		restSeconds: 90,
 		plannedExercises,
-		notes: state.armhevinger.stall || state.planke.stall ? 'Rolig uke — targets justert ned etter et par tunge økter.' : undefined
+		notes:
+			state.armhevinger.comeback || state.planke.comeback
+				? 'Tilbake etter opphold — targets satt fra siste økt. Bygg gradvis opp igjen.'
+				: state.armhevinger.stall || state.planke.stall
+					? 'Rolig uke — targets justert ned etter et par tunge økter.'
+					: undefined
 	};
 }
 

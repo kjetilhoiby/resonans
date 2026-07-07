@@ -45,6 +45,7 @@ import {
 } from './endurance-engine';
 import { computeEffortBudget, composeEffortSuggestion } from './effort-budget';
 import { computeBalanceState, type BalanceState } from './balance';
+import { fetchActiveTrip } from '$lib/server/programs/readiness';
 import { deriveWeekdayPattern, suggestSessionForDate, type WeekdayPattern } from './schedule';
 import type { EffortBudget } from './types';
 
@@ -410,8 +411,17 @@ export async function computeTrackStates(
 	const weekdayNumber = ((new Date(`${today}T00:00:00Z`).getUTCDay() + 6) % 7) + 1;
 	const enduranceSuggestion = enduranceState ? nextEnduranceSession(enduranceState, weekdayNumber) : null;
 
+	// Vedlikeholdsmodus ved aktiv reise/ferie: senk effort-båndet så en lett uke
+	// på reise ikke leses som svikt.
+	const activeTrip = await fetchActiveTrip(userId, today).catch(() => null);
 	const budget = utholdenhetTrack
-		? computeEffortBudget(enduranceWorkouts, enduranceConfigOf(utholdenhetTrack), plan.startDate, today)
+		? computeEffortBudget(
+				enduranceWorkouts,
+				enduranceConfigOf(utholdenhetTrack),
+				plan.startDate,
+				today,
+				!!activeTrip
+			)
 		: null;
 	const effortComposition =
 		budget && enduranceState

@@ -22,6 +22,10 @@ const DEFAULT_GROWTH_FACTOR = 1.2;
 const DEFAULT_REST_RATIO = 1.5;
 const DELOAD_FACTOR = 0.8;
 const FLOOR_EFFORT = 100;
+// Vedlikeholdsmodus (aktiv reise/ferie): båndet senkes til «hold litt ved like»
+// framfor progressiv overload — en lett uke på reise skal ikke leses som svikt.
+const MAINTENANCE_MIN_FACTOR = 0.5;
+const MAINTENANCE_MAX_FACTOR = 0.8;
 const MIN_HISTORY_DAYS_FOR_RATIO = 14;
 const CYCLING_MET = 0.85;
 const MET_CALIBRATION = 2.5;
@@ -45,7 +49,8 @@ export function computeEffortBudget(
 	workouts: EnduranceWorkout[],
 	config: EnduranceConfig,
 	planStartDate: string,
-	today: string
+	today: string,
+	maintenanceMode = false
 ): EffortBudget {
 	const counted = workouts.filter((w) => countsTowardEndurance(w.family));
 	const growthFactor = config.effortVekstFaktor ?? DEFAULT_GROWTH_FACTOR;
@@ -81,8 +86,13 @@ export function computeEffortBudget(
 	const deload = config.deloadHverNteUke > 0 && weekNumber % config.deloadHverNteUke === 0;
 	const deloadFactor = deload ? DELOAD_FACTOR : 1;
 
-	const bandMin = Math.round(anchorEffort * deloadFactor);
-	const bandMax = Math.round(anchorEffort * growthFactor * deloadFactor);
+	// Vedlikeholdsmodus overstyrer vekst/deload: hold-ved-like-bånd rundt ankeret.
+	const bandMin = maintenanceMode
+		? Math.round(anchorEffort * MAINTENANCE_MIN_FACTOR)
+		: Math.round(anchorEffort * deloadFactor);
+	const bandMax = maintenanceMode
+		? Math.round(anchorEffort * MAINTENANCE_MAX_FACTOR)
+		: Math.round(anchorEffort * growthFactor * deloadFactor);
 
 	// Forbrukt denne uken
 	const thisWeek = counted.filter((w) => w.date >= thisMonday && w.date <= today);
@@ -117,7 +127,8 @@ export function computeEffortBudget(
 		acuteChronicRatio,
 		restRecommended,
 		deload,
-		anchor
+		anchor,
+		maintenance: maintenanceMode
 	};
 }
 

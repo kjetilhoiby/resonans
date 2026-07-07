@@ -43,8 +43,8 @@ export interface StrengthSessionSummary {
 export type PullupPhase = 'negativer' | 'strikte';
 
 export interface StrengthState {
-	armhevinger: { siste: number | null; forventet: number; nesteTarget: number; stall: boolean };
-	planke: { sisteSek: number | null; forventetSek: number; nesteTargetSek: number; stall: boolean };
+	armhevinger: { siste: number | null; forventet: number; nesteTarget: number; stall: boolean; comeback: boolean };
+	planke: { sisteSek: number | null; forventetSek: number; nesteTargetSek: number; stall: boolean; comeback: boolean };
 	pullup: {
 		fase: PullupPhase;
 		sisteNegativSek: number | null;
@@ -90,6 +90,8 @@ export interface EffortBudget {
 	restRecommended: boolean;
 	deload: boolean;
 	anchor: 'forrige_uke' | 'p4w_snitt' | 'gulv';
+	/** Vedlikeholdsmodus (aktiv reise/ferie): båndet senkes så en lett uke ikke straffes. */
+	maintenance: boolean;
 }
 
 export interface EnduranceWeekState {
@@ -98,6 +100,8 @@ export interface EnduranceWeekState {
 	runKm: number;
 	remainingKm: number;
 	stallRebased: boolean;
+	/** Gjenopptrapping: opphold > terskel siden siste løp → målet rebases mot baseline. */
+	comebackRebased: boolean;
 }
 
 export interface EnduranceState {

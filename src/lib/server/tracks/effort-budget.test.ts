@@ -73,6 +73,17 @@ describe('computeEffortBudget', () => {
 		expect(budget.bandMax).toBe(120);
 	});
 
+	it('vedlikeholdsmodus (reise): senker båndet til hold-ved-like (0.5–0.8× anker)', () => {
+		// Samme anker som første test (forrige uke 200), men på reise.
+		const normal = computeEffortBudget([okt('2026-07-07', 200)], CONFIG, PLAN_START, '2026-07-15');
+		const ferie = computeEffortBudget([okt('2026-07-07', 200)], CONFIG, PLAN_START, '2026-07-15', true);
+		expect(normal.maintenance).toBe(false);
+		expect(ferie.maintenance).toBe(true);
+		expect(ferie.bandMin).toBe(100); // 200 × 0.5
+		expect(ferie.bandMax).toBe(160); // 200 × 0.8
+		expect(ferie.bandMax).toBeLessThan(normal.bandMax);
+	});
+
 	it('deload hver 4. uke skalerer intervallet med 0.8', () => {
 		// Uke 4 av planen starter 2026-07-27. Forrige uke: 200 effort.
 		const budget = computeEffortBudget([okt('2026-07-22', 200)], CONFIG, PLAN_START, '2026-07-29');

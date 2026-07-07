@@ -1,7 +1,7 @@
 # Treningsbalanse og variasjon: det tredje hodet
 
 Dato: 2026-07-07
-Status: pågår
+Status: ferdig (fase 1–4; rute-rotasjon + trail-demping i pipeline venter på Ekko-rute-synk)
 
 ## Kontekst
 
@@ -160,12 +160,24 @@ Forbehold: Swift-endringer er ikke bygget her (ingen Xcode i CI-containeren) —
 må kompileres på klientsiden. Verifisert statisk: additivt, ingen memberwise-
 init-brudd, konsistent med eksisterende `loadRemoteSession`-mønster.
 
-### Fase 4 (grunnmur, mindre): ferie/gjenopptrapping
+### Fase 4: Ferie/gjenopptrapping — BYGGET
 
-- **Vedlikeholdsmodus** i effort-budsjettet ved aktivt `trip`-signal: senk
-  gulvet, ikke straff en lett uke.
-- **Gjenopptrapping** etter opphold: styrke-/utholdenhetskurven ramper opp fra
-  faktisk nivå etter en pause i stedet for å marsjere videre.
+- **Vedlikeholdsmodus** (`computeEffortBudget`, opt-in `maintenanceMode`): ved
+  aktiv reise/ferie senkes effort-båndet til hold-ved-like (0.5–0.8× anker mot
+  normalens 1.0–1.2×) — en lett uke på reise leses ikke som svikt. Wiret i
+  `computeTrackStates` via `fetchActiveTrip`; «Ferie · vedlikehold»-merke på
+  `EffortBudgetCard`. `maintenance`-flagg på `EffortBudget`.
+- **Gjenopptrapping** (begge motorer): opphold > 14 dager siden siste økt →
+  ikke jag kurven.
+  - Styrke: `nesteTarget = 0.85 × siste faktiske` (armhevinger + planke), tar
+    forrang over stall. `comeback`-flagg på tilstanden; øktnotat «Tilbake etter
+    opphold — bygg gradvis opp igjen».
+  - Utholdenhet: `weekTargetKm = min(kurve, baseline)` — ease tilbake til
+    start-volumet i stedet for kurvens klatrede forventning. `comebackRebased`-
+    flagg; eget øktnotat.
+  - Utledet rent fra opphold i registreringene (ingen ekstern trigger).
+  - Grense: har brukeren vært helt borte > 6 uker (tomt lese-vindu) faller den
+    tilbake til fersk-start-oppførsel — dokumentert, sjeldnere kant.
 
 ## Beslutninger
 
@@ -177,26 +189,35 @@ init-brudd, konsistent med eksisterende `loadRemoteSession`-mønster.
   sjekkliste — konsistent med readiness/effort-budsjett-tonen.
 - **Sti er en egen modell, ikke en pace-variant.** Høydemeter og tid driver
   effort; pace nedvektes. Testruter beholder pace-stilen.
-- **Additive familier, ingen MET-omkalibrering av eksisterende.** Fotball legges
-  til; eksisterende vekter røres ikke (unngår inkonsistent historikk-fit).
+- **Fotball/svømming kommer fra Withings** — dekket server-side i
+  canonical_workouts. Ingen egen ekko-logging eller ny effort-family nødvendig
+  (avklart med bruker); MET-vektene røres ikke.
+- **Gjenopptrapping utledes av data, ikke ekstern trigger.** Oppholdet leses fra
+  registreringene selv (siste økt-dato), så logikken virker uten et «ferie»-flagg.
+  Vedlikeholdsmodus bruker derimot det eksisterende `trip`-signalet (reise er
+  planlagt, ikke utledbart av trening alene).
+- **Comeback tar forrang over stall.** Et langt opphold er en annen situasjon enn
+  «to tunge økter» — ease-tilbake-fra-siste vinner over stall-nedjusteringen.
 - **Rekkefølge: balanse først.** Størst gevinst for fler-hodet-strategien og
-  rent server-arbeid; sti og logging bygger videre.
+  rent server-arbeid; sti, ekko-logging og ferie/gjenopptrapping bygger videre.
 
 ## Verifisering
 
-Fase 1 (utført):
-- `npm test`: 1221 tester grønne, inkl. 11 nye i `balance.test.ts`
-  (intensitetssoner, miks + vindu-avgrensning, styrke-nudge, dobbeltkilde-
-  telling, konsentrasjon, grå-sone-nudge, tom tilstand → score 0, balansert
-  uke → score > 60) + 1 for `composeWeekRecipe`-variasjonsvekting.
+Server (fase 1, 2, 4 — utført):
+- `npm test`: 1227 tester grønne. Nye: 12 i `balance.test.ts` +
+  `composeWeekRecipe`-variasjon (fase 1); 3 i `routes.test.ts` (høydemeter øker
+  effort, sti underskåres ikke ved sakte pace, sti uten easy-pace ≥ 1.0)
+  (fase 2); 3 for gjenopptrapping/vedlikehold (styrke-comeback 0.85×,
+  utholdenhet-comeback → baseline, vedlikeholds-bånd 0.5–0.8×) (fase 4).
 - `npm run check`: 0 feil / 0 advarsler.
-- `npm run build`: kompilerer rent (postbuild-`analyse` krever `DATABASE_URL`
-  som ikke finnes i CI-containeren — build fullfører med env satt).
-- Gjenstår i miljø med DB: visuell review av /trening etter `BalanceCard`
-  (`VISUAL_REVIEW_CONTEXT="Nytt BalanceCard på /trening"`), og
-  signal-observability for `training_balance` via `GET /api/cron/domain-signals`.
+- `npm run build`: kompilerer rent (postbuild-`analyse` krever `DATABASE_URL`;
+  build fullfører med env satt).
+- Gjenstår i miljø med DB: visuell review av /trening etter `BalanceCard`,
+  `RouteLibrary`-sti-hint og «Ferie»-merket; signal-observability for
+  `training_balance` via `GET /api/cron/domain-signals`.
 
-Fase 2–4 (planlagt):
-- Vitest for trail-effort (høydemeter øker effort, sakte sti ikke underskåret).
-- Kontraktsverifisering av evt. nytt logge-endepunkt med curl
-  (`x-resonans-user-id`), uendret Ekko-shape.
+Ekko (fase 3 — resonans-lab):
+- Swift-endringer ikke bygget her (ingen Xcode i CI-containeren). Verifisert
+  statisk: additivt, ingen memberwise-init-brudd, konsistent med
+  `loadRemoteSession`. Må bygges + røyktestes i Xcode klientside (hurtig-logg,
+  tidtaker for planke/negativ, pre-fylte mål på «Styrke»-kortet).

@@ -6,7 +6,7 @@ import type {
 	SessionSuggestion,
 	TrackWindow
 } from './types';
-import { expectedAt, mondayOfDate, weekNumberAt } from './curve';
+import { daysBetween, expectedAt, mondayOfDate, weekNumberAt } from './curve';
 
 /**
  * Utholdenhetsmotoren: ukesvolum i RENE løpe-km (14→22) og pace-progresjon
@@ -21,6 +21,9 @@ const DELOAD_FACTOR = 0.8;
 const STALL_RATIO = 0.7;
 const STALL_REBASE_FACTOR = 1.1;
 const MET_CALIBRATION = 2.5; // samme kalibrering som effort-service
+// Gjenopptrapping: opphold lengre enn dette siden siste løp → ease tilbake mot
+// baseline-volumet i stedet for å hoppe rett på kurvens forventning.
+const COMEBACK_GAP_DAYS = 14;
 
 export function isRunFamily(family: string): boolean {
 	return family === 'running';
@@ -115,10 +118,20 @@ export function computeEnduranceState(
 	const prevRunKm = sumRunKm(byWeek.get(prevWeekKey) ?? []);
 	const { targetKm: prevCurveTarget } = curveWeekKm(goal, config, window, prevWeekKey);
 	const hadPrevWeekData = (byWeek.get(prevWeekKey) ?? []).length > 0;
-	const stallRebased = hadPrevWeekData && prevRunKm < STALL_RATIO * prevCurveTarget;
-	const weekTargetKm = stallRebased
-		? Math.round(Math.min(curveTarget, Math.max(3, prevRunKm * STALL_REBASE_FACTOR)) * 10) / 10
-		: curveTarget;
+
+	// Gjenopptrapping: siste løp innenfor vinduet er eldre enn terskelen → tilbake
+	// etter opphold. Ease mot baseline-volumet (goal.fra) framfor kurvens forventning,
+	// og la det ha forrang over stall-rebasen.
+	const countableRuns = workouts.filter(isCountableRun);
+	const lastRunDate = countableRuns.length > 0 ? countableRuns[countableRuns.length - 1].date : null;
+	const comebackRebased = lastRunDate != null && daysBetween(lastRunDate, today) > COMEBACK_GAP_DAYS;
+
+	const stallRebased = !comebackRebased && hadPrevWeekData && prevRunKm < STALL_RATIO * prevCurveTarget;
+	const weekTargetKm = comebackRebased
+		? Math.round(Math.min(curveTarget, goal.ukesKm.fra) * 10) / 10
+		: stallRebased
+			? Math.round(Math.min(curveTarget, Math.max(3, prevRunKm * STALL_REBASE_FACTOR)) * 10) / 10
+			: curveTarget;
 
 	// Denne uken
 	const runKm = Math.round(sumRunKm(byWeek.get(thisWeekKey) ?? []) * 10) / 10;
@@ -142,7 +155,7 @@ export function computeEnduranceState(
 	const lengsteLopKm = Math.max(0, ...workouts.filter(isCountableRun).map((w) => (w.distanceMeters ?? 0) / 1000));
 
 	return {
-		week: { weekTargetKm, deload, runKm, remainingKm, stallRebased },
+		week: { weekTargetKm, deload, runKm, remainingKm, stallRebased, comebackRebased },
 		forventetPaceSekPerKm: Math.round(pace),
 		sistePaceSekPerKm: sistePace,
 		lengsteLopKmSiste6Uker: Math.round(lengsteLopKm * 10) / 10
@@ -173,11 +186,13 @@ export function nextEnduranceSession(
 			runType: longRun ? 'long' : 'easy',
 			targetDistanceMeters: Math.round(distanceKm * 10) * 100,
 			paceHintSecPerKm: state.forventetPaceSekPerKm,
-			notes: state.week.deload
-				? 'Deload-uke — hold det rolig.'
-				: state.week.stallRebased
-					? 'Målet er justert ned etter en rolig uke — bygg gradvis.'
-					: undefined
+			notes: state.week.comebackRebased
+				? 'Tilbake etter opphold — start rolig på baseline-volum og bygg opp igjen.'
+				: state.week.deload
+					? 'Deload-uke — hold det rolig.'
+					: state.week.stallRebased
+						? 'Målet er justert ned etter en rolig uke — bygg gradvis.'
+						: undefined
 		}
 	};
 }
