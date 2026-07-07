@@ -1,7 +1,7 @@
 # Treningsbalanse og variasjon: det tredje hodet
 
 Dato: 2026-07-07
-Status: ferdig (fase 1–7)
+Status: ferdig (fase 1–7); fase 8 (bakke-modus i ekko) skrevet, må bygges i Xcode
 
 ## Kontekst
 
@@ -234,6 +234,38 @@ init-brudd, konsistent med eksisterende `loadRemoteSession`-mønster.
   - Utledet rent fra opphold i registreringene (ingen ekstern trigger).
   - Grense: har brukeren vært helt borte > 6 uker (tomt lese-vindu) faller den
     tilbake til fersk-start-oppførsel — dokumentert, sjeldnere kant.
+
+### Fase 8: Bakke-drag-modus i ekko (live coaching + analyse) — SKREVET (resonans-lab)
+
+Egen live-modus for motbakke-intervaller, drevet av brukerscenarioet: jogg til
+bakkefoten, trykk start → 3-2-1 → drag med live pulssone → nedjogg-skjerm som
+sammenligner draget mot forrige → nytt drag. Manuell «Ferdig» på første drag
+(lærer draglengden), auto-ferdig på senere. Adaptiv «ta ett til / gi deg»-
+anbefaling siden nivået er ukjent for brukeren.
+
+Nye filer (ekko):
+- `Models/HeartRateZones.swift` — 5-soners pulsmodell (% av maks-puls), tid-i-sone.
+- `Models/HillRep.swift` — per-drag (varighet, pace, snitt/maks-puls, tid-i-sone),
+  `HillRepComparison` (mot forrige drag), `HillCoach` (lært draglengde +
+  fart-/puls-fade-anbefaling). Rene, testbare (`EkkoTests/HillIntervalTests.swift`).
+- `ViewModels/HillIntervalViewModel.swift` — tilstandsmaskin (warmup → countdown →
+  work → recovery → finished), delt BLE-pulstracker, egen `HillLocationRecorder`
+  for distanse/pace, tale via `SpeechCoach`, best-effort GPX-opplasting med `routeId`.
+- `Views/HillIntervalView.swift` — cockpit per fase.
+- `ActivityHubView`: nytt «Bakkedrag»-kort + `.hill`-modus.
+
+Beslutninger:
+- **Puls + tid er ryggraden**, GPS/pace en bonus — så modusen funker robust i
+  bratt/skyggefull bakke der GPS er upålitelig.
+- **Manuell start hver gang** (sted-forankret ved bakkefoten), manuell «Ferdig»
+  kun første drag → lært draglengde styrer auto-ferdig senere.
+- **Ren analyse-kjerne** (soner/drag/coach) skilt fra UI/tjenester, med Swift-
+  tester — samme mønster som `IntervalSplit`/`IntervalPacer`.
+
+Forbehold: **ikke bygget/kompilert** (ingen Xcode i CI). Skrevet mot eksisterende
+API-er (`BLEHeartRateTracker`, `SpeechCoach`, `GPXBuilder`, `TrackingSession`,
+`uploadGPX(routeId:)`); må bygges + røyktestes i Xcode. Sannsynlige småfikser:
+Swift 6-samtidighet rundt recorder-closure og evt. SF Symbol-navn.
 
 ## Beslutninger
 
