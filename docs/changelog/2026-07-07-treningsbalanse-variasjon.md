@@ -104,17 +104,32 @@ Gjenstår i fase 1:
   — venter på Ekko-rute-synk. Bevisst utelatt framfor å fabrikkere et
   rotasjonssignal uten data.
 
-### Fase 2: Sti- og høydemeter-bevisst effort + coaching
+### Fase 2: Sti- og høydemeter-bevisst effort + coaching — BYGGET
 
 Mål: sti får sin egen modell og stemme, ikke pace-logikken fra vei.
 
-- `routes.ts`: la `elevationMeters` bidra til effort for `kind:'trail'` og
-  distansebaserte løp med høyde (vertikal-tillegg, ikke pace-intensitet).
-  Trail-variant skåres på tid + høydemeter + terreng, med lavere pace-vekt.
-- `effort-service.ts` / `met_pace`: for trail-family, demp pace-intensiteten
-  (sakte ≠ lett) og bruk varighet/HR som primær driver når puls finnes.
-- Coaching-språk i øktforslag for sti: «kjør på følelse, hold jevn innsats i
-  motbakke, ikke jag klokka». Testruter (flat bane) beholder pace/tempo-stilen.
+Bygget:
+- `routes.ts`: `elevationMeters` bidrar nå til effort på distansebaserte løp —
+  klatre-ekvivalens `100 hm ≈ 1 km flatt` (`VERTICAL_M_PER_EQUIV_KM`) legger på
+  tid og effort uavhengig av fart. En kupert rute koster mer enn en flat.
+- **Sti-intensitet gulves høyere** (`TRAIL_INTENSITY_FLOOR = 1.0` mot
+  `ROAD_INTENSITY_FLOOR = 0.75`): på `kind:'trail'` leses ikke en langsom økt som
+  «rolig» — sakte ≠ lett på teknisk terreng; høydemeteren/terrenget bærer
+  belastningen i stedet for pace-modellen. Vei beholder full pace-intensitet.
+- Detalj-labelen viser høydemeter («6 km @ 6:00 · 200 hm»).
+- **Coaching-stemme for sti** (`RouteLibrary`): sti-ruter får en linje «Kjør på
+  følelse — jevn innsats i motbakkene, ikke jag klokka. Høydemeteren teller.»
+  Testruter/vei beholder pace/tempo-stilen.
+- Tester (`routes.test.ts`, +3): høydemeter øker effort; sti underskåres ikke
+  ved sakte pace; sti uten easy-pace bruker ≥ 1.0 intensitet.
+
+Bevisst utsatt:
+- **`effort-service.ts`/`met_pace` trail-demping**: `canonical_workouts` har
+  ingen terreng-markør, så en registrert løpeøkt kan ikke klassifiseres som
+  sti vs. vei i effort-pipelinen. Å dempe pace-intensiteten der ville krevd et
+  terreng-signal på økten (f.eks. fra Ekko-rute-kobling eller GPS-høydeprofil).
+  Rute-biblioteket er derfor stedet sti-modellen lever nå — der brukeren
+  faktisk velger terreng. Kobles på når økter bærer terreng/rute-id.
 
 ### Fase 3: Styrke-logging i ekko — friksjonsfjerning (resonans-lab) — BYGGET
 

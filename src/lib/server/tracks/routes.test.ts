@@ -27,6 +27,37 @@ describe('variantEffort — løp med fartsvarianter', () => {
 	});
 });
 
+describe('variantEffort — høydemeter og sti', () => {
+	it('høydemeter øker effort (100 hm ≈ 1 km flatt)', () => {
+		const flat: RouteInput = { kind: 'run', distanceMeters: 6000, variants: [{ label: 'Jevnt', paceSecPerKm: 400 }] };
+		const kupert: RouteInput = { kind: 'run', distanceMeters: 6000, elevationMeters: 200, variants: flat.variants };
+		const flatE = variantEffort(flat, flat.variants[0], 400);
+		const kupertE = variantEffort(kupert, kupert.variants[0], 400);
+		// 200 hm ≈ +2 km flatt → 8 km-ekvivalent mot 6 km
+		expect(kupertE.effort).toBeGreaterThan(flatE.effort);
+		expect(kupertE.detail).toContain('200 hm');
+	});
+
+	it('sti: sakte løp underskåres ikke (intensiteten gulves på 1.0)', () => {
+		// Samme sakte pace (litt saktere enn easy) på vei vs sti.
+		const easy = 400;
+		const slow = 440; // saktere enn easy → vei ville gitt intensitet < 1
+		const vei: RouteInput = { kind: 'run', distanceMeters: 6000, variants: [{ label: 'Rolig', paceSecPerKm: slow }] };
+		const sti: RouteInput = { kind: 'trail', distanceMeters: 6000, variants: [{ label: 'Rolig', paceSecPerKm: slow }] };
+		const veiE = variantEffort(vei, vei.variants[0], easy);
+		const stiE = variantEffort(sti, sti.variants[0], easy);
+		// Vei: (400/440)² ≈ 0.83 < 1 → nedskalert. Sti: gulvet på 1.0.
+		expect(stiE.effort).toBeGreaterThan(veiE.effort);
+	});
+
+	it('sti uten easy-pace-referanse bruker minst 1.0 i intensitet', () => {
+		const sti: RouteInput = { kind: 'trail', distanceMeters: 6000, variants: [{ label: 'Jevnt', paceSecPerKm: 400 }] };
+		const v = variantEffort(sti, sti.variants[0], null);
+		// 6 km × 6:40 = 40 min × 2.5 × 1.0 = 100
+		expect(v.effort).toBe(100);
+	});
+});
+
 describe('variantEffort — bakkeintervaller', () => {
 	const bakke: RouteInput = {
 		kind: 'hill',
