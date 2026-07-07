@@ -45,6 +45,7 @@ import {
 } from './endurance-engine';
 import { computeEffortBudget, composeEffortSuggestion } from './effort-budget';
 import { computeBalanceState, type BalanceState } from './balance';
+import { getRecentRouteLabels } from './routes-repository';
 import { fetchActiveTrip } from '$lib/server/programs/readiness';
 import { deriveWeekdayPattern, suggestSessionForDate, type WeekdayPattern } from './schedule';
 import type { EffortBudget } from './types';
@@ -429,14 +430,17 @@ export async function computeTrackStates(
 			: null;
 
 	// Balanse: referanse-pace for intensitetssoner = faktisk snitt siste 14 dager,
-	// ellers kurve. Styrke-dekning teller også rå sensor_events-datoer.
+	// ellers kurve. Styrke-dekning teller også rå sensor_events-datoer. Rute-labels
+	// (fra Ekko-tagget metadata) gir rotasjons-nudgen.
 	const balanceEasyPace =
 		enduranceState?.sistePaceSekPerKm ?? enduranceState?.forventetPaceSekPerKm ?? null;
+	const routeLabels = await getRecentRouteLabels(userId, LOOKBACK_DAYS).catch(() => []);
 	const balance = computeBalanceState(
 		enduranceWorkouts,
 		strengthSessions.map((s) => s.date),
 		balanceEasyPace,
-		today
+		today,
+		routeLabels
 	);
 
 	const pattern = deriveWeekdayPattern(enduranceWorkouts, today);

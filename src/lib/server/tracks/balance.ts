@@ -21,6 +21,8 @@ const STRENGTH_SESSIONS_TARGET = 2; // enkelt ukemål for styrke-dekning
 const CONCENTRATION_THRESHOLD = 0.7; // én family > 70 % av effort → for ensidig
 const GRAY_ZONE_THRESHOLD = 0.8; // > 80 % i én intensitetssone → for lite variert
 const MIN_RUNS_FOR_INTENSITY = 3; // færre løp → ikke grunnlag for intensitets-nudge
+const ROTATION_MIN_SESSIONS = 4; // færre rute-taggede økter → ikke grunnlag for rotasjons-nudge
+const ROTATION_DOMINANCE = 0.6; // samme rute > 60 % av de siste → for lite rute-variasjon
 
 // Intensitetssoner mot brukerens easy-pace (samme logikk som rute-seedene:
 // moderat ≈ 0.9 × easy, terskel ≈ 0.82 × easy).
@@ -29,7 +31,7 @@ const HARD_MAX_RATIO = 0.85; // pace ≤ 85 % av easy-tid → hard
 
 export type IntensityBand = 'rolig' | 'moderat' | 'hard';
 
-export type BalanceNudgeKind = 'styrke' | 'konsentrasjon' | 'intensitet';
+export type BalanceNudgeKind = 'styrke' | 'konsentrasjon' | 'rotasjon' | 'intensitet';
 
 export interface BalanceNudge {
 	kind: BalanceNudgeKind;
@@ -53,6 +55,8 @@ export interface BalanceState {
 	runSessionsThisWeek: number;
 	/** Andel av løpe-effort i hver sone (0–100). Null når det ikke er nok løp. */
 	intensity: { rolig: number; moderat: number; hard: number } | null;
+	/** Rute-rotasjon: dominerende rute blant de siste rute-taggede øktene. Null uten nok data. */
+	routeRotation: { topLabel: string; count: number; total: number } | null;
 	/** Sammensatt balanse-score 0–100 (heuristikk, ikke måling). */
 	score: number;
 	/** Én nudge om gangen — det største avviket. Null når balansen er god. */
@@ -98,12 +102,15 @@ export function classifyIntensity(
  * familier (fra canonical_workouts, klassifisert) kronologisk. `strengthDates`
  * er datoer med registrert styrkeøkt fra rå sensor_events — styrke-effort kan
  * mangle i canonical_workouts, så dekningstellingen bruker begge kilder.
+ * `recentRouteLabels` er rute-navnet per rute-tagget økt i vinduet (kronologisk);
+ * tom liste ⇒ ingen rotasjons-nudge (ingen attribusjon ennå).
  */
 export function computeBalanceState(
 	workouts: EnduranceWorkout[],
 	strengthDates: string[],
 	easyPaceSekPerKm: number | null,
-	today: string
+	today: string,
+	recentRouteLabels: string[] = []
 ): BalanceState {
 	const cutoff = addDays(today, -(WINDOW_DAYS - 1));
 	const monday = mondayOfDate(today);
@@ -146,13 +153,17 @@ export function computeBalanceState(
 	// ── Intensitetsfordeling (løp, hele vinduet) ──
 	const intensity = computeIntensity(inWindow, easyPaceSekPerKm);
 
+	// ── Rute-rotasjon: dominerer én rute blant de siste øktene? ──
+	const routeRotation = computeRouteRotation(recentRouteLabels);
+
 	// ── Nudge: største avvik, én om gangen ──
 	const nudge = pickNudge({
 		disciplines,
 		totalEffort,
 		strengthSessionsThisWeek,
 		runSessionsThisWeek,
-		intensity
+		intensity,
+		routeRotation
 	});
 
 	// ── Score: grov heuristikk (diversitet + styrke-dekning + intensitetsspredning) ──
@@ -164,9 +175,27 @@ export function computeBalanceState(
 		strengthSessionsThisWeek,
 		runSessionsThisWeek,
 		intensity,
+		routeRotation,
 		score,
 		nudge
 	};
+}
+
+/** Dominerer én rute blant de siste rute-taggede øktene? Null uten nok data. */
+function computeRouteRotation(labels: string[]): BalanceState['routeRotation'] {
+	const recent = labels.filter((l) => l && l.trim().length > 0);
+	if (recent.length < ROTATION_MIN_SESSIONS) return null;
+	const counts = new Map<string, number>();
+	for (const l of recent) counts.set(l, (counts.get(l) ?? 0) + 1);
+	let topLabel = '';
+	let count = 0;
+	for (const [label, n] of counts) {
+		if (n > count) {
+			topLabel = label;
+			count = n;
+		}
+	}
+	return { topLabel, count, total: recent.length };
 }
 
 function computeIntensity(
@@ -203,8 +232,9 @@ function pickNudge(state: {
 	strengthSessionsThisWeek: number;
 	runSessionsThisWeek: number;
 	intensity: BalanceState['intensity'];
+	routeRotation: BalanceState['routeRotation'];
 }): BalanceNudge | null {
-	const { disciplines, totalEffort, strengthSessionsThisWeek, runSessionsThisWeek, intensity } =
+	const { disciplines, totalEffort, strengthSessionsThisWeek, runSessionsThisWeek, intensity, routeRotation } =
 		state;
 
 	// 1. Styrke-dekning: har trent utholdenhet, men ingen/lite styrke denne uka.
@@ -230,7 +260,17 @@ function pickNudge(state: {
 		}
 	}
 
-	// 3. Intensitet: for mye i én sone (typisk grå sone) — mangler polarisering.
+	// 3. Rute-rotasjon: samme rute dominerer de siste øktene → varier for allsidig
+	// belastning og lavere overbelastningsrisiko.
+	if (routeRotation && routeRotation.count / routeRotation.total >= ROTATION_DOMINANCE) {
+		return {
+			kind: 'rotasjon',
+			message: `${routeRotation.count} av de siste ${routeRotation.total} øktene var «${routeRotation.topLabel}» — prøv en annen rute for variasjon.`,
+			severity: 'low'
+		};
+	}
+
+	// 4. Intensitet: for mye i én sone (typisk grå sone) — mangler polarisering.
 	if (intensity) {
 		const entries = Object.entries(intensity) as Array<[IntensityBand, number]>;
 		const [band, pct] = entries.reduce((a, b) => (b[1] > a[1] ? b : a));

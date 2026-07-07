@@ -4,6 +4,7 @@ import { users } from '$lib/db/schema';
 import { fitBestEffortWeightModel, predictDeltaKg } from '$lib/util/effort-weight-model';
 import { buildEffortWeightInputs } from '$lib/server/health/effort-weight-data';
 import { getEnduranceWorkouts, getStrengthSessions } from '$lib/server/tracks/repository';
+import { getRecentRouteLabels } from '$lib/server/tracks/routes-repository';
 import { computeBalanceState } from '$lib/server/tracks/balance';
 
 type Severity = 'info' | 'low' | 'medium' | 'high';
@@ -785,9 +786,10 @@ async function produceHealthEffortVsThreshold(userId: string, now: Date) {
  */
 async function produceTrainingBalance(userId: string, now: Date) {
 	const day = isoDay(now);
-	const [workouts, strengthSessions] = await Promise.all([
+	const [workouts, strengthSessions, routeLabels] = await Promise.all([
 		getEnduranceWorkouts(userId, 42),
-		getStrengthSessions(userId, 42)
+		getStrengthSessions(userId, 42),
+		getRecentRouteLabels(userId, 42).catch(() => [] as string[])
 	]);
 	if (workouts.length === 0 && strengthSessions.length === 0) return null;
 
@@ -803,7 +805,8 @@ async function produceTrainingBalance(userId: string, now: Date) {
 		workouts,
 		strengthSessions.map((s) => s.date),
 		easyPace,
-		day
+		day,
+		routeLabels
 	);
 	if (balance.totalEffort === 0) return null;
 
@@ -840,6 +843,7 @@ async function produceTrainingBalance(userId: string, now: Date) {
 			strengthSessionsThisWeek: balance.strengthSessionsThisWeek,
 			runSessionsThisWeek: balance.runSessionsThisWeek,
 			intensity: balance.intensity,
+			routeRotation: balance.routeRotation,
 			nudge: balance.nudge
 		}
 	});

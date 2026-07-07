@@ -1,6 +1,6 @@
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray } from 'drizzle-orm';
 import { db } from '$lib/db';
-import { trainingRoutes } from '$lib/db/schema';
+import { sensorEvents, trainingRoutes } from '$lib/db/schema';
 import {
 	defaultRouteSeeds,
 	defaultVariantsForKind,
@@ -177,6 +177,48 @@ export async function upsertRouteFromEkko(
 		})
 		.returning();
 	return { row, created: true };
+}
+
+/**
+ * Rute-navn per rute-tagget økt siste `sinceDays`, kronologisk — grunnlag for
+ * rute-rotasjons-nudgen i balanse-signalet. Leser `ekkoRouteId` fra
+ * `sensor_events.metadata` (Ekko tagger opplastede økter) og mapper til rutenavn.
+ * Returnerer [] når biblioteket har < 2 ruter (ingen å variere til) eller ingen
+ * økter er rute-tagget ennå — da gir balansen ingen rotasjons-nudge.
+ */
+export async function getRecentRouteLabels(userId: string, sinceDays: number): Promise<string[]> {
+	const routes = await db
+		.select({ ekkoRouteId: trainingRoutes.ekkoRouteId, name: trainingRoutes.name })
+		.from(trainingRoutes)
+		.where(and(eq(trainingRoutes.userId, userId), eq(trainingRoutes.archived, false)));
+	if (routes.length < 2) return [];
+
+	const nameByEkkoId = new Map<string, string>();
+	for (const r of routes) if (r.ekkoRouteId) nameByEkkoId.set(r.ekkoRouteId, r.name);
+	if (nameByEkkoId.size === 0) return [];
+
+	const since = new Date(Date.now() - sinceDays * 24 * 3600_000);
+	const rows = await db
+		.select({ timestamp: sensorEvents.timestamp, metadata: sensorEvents.metadata })
+		.from(sensorEvents)
+		.where(
+			and(
+				eq(sensorEvents.userId, userId),
+				gte(sensorEvents.timestamp, since),
+				inArray(sensorEvents.dataType, ['workout', 'strength_workout'])
+			)
+		)
+		.orderBy(asc(sensorEvents.timestamp));
+
+	const labels: string[] = [];
+	for (const row of rows) {
+		const meta = (row.metadata ?? {}) as Record<string, unknown>;
+		const ekkoRouteId = typeof meta.ekkoRouteId === 'string' ? meta.ekkoRouteId : null;
+		if (!ekkoRouteId) continue;
+		const name = nameByEkkoId.get(ekkoRouteId);
+		if (name) labels.push(name);
+	}
+	return labels;
 }
 
 export async function archiveRoute(userId: string, routeId: string): Promise<boolean> {

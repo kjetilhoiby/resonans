@@ -90,6 +90,31 @@ describe('computeBalanceState — konsentrasjon', () => {
 	});
 });
 
+describe('computeBalanceState — rute-rotasjon', () => {
+	// Balansert miks + styrke dekket, så rotasjon er det gjenværende avviket.
+	const base = [
+		w({ date: '2026-07-06', family: 'running', effortScore: 100 }),
+		w({ date: '2026-07-04', family: 'cycling', effortScore: 100 }),
+		w({ date: '2026-07-07', family: 'strength', effortScore: 80 })
+	];
+
+	it('nudger når samme rute dominerer siste økter (≥ 60 %)', () => {
+		const labels = ['Pendlerunde', 'Pendlerunde', 'Pendlerunde', 'Vannrunden'];
+		const state = computeBalanceState(base, ['2026-07-07'], 400, TODAY, labels);
+		expect(state.routeRotation?.topLabel).toBe('Pendlerunde');
+		expect(state.routeRotation).toMatchObject({ count: 3, total: 4 });
+		expect(state.nudge?.kind).toBe('rotasjon');
+		expect(state.nudge?.message).toContain('Pendlerunde');
+	});
+
+	it('ingen rotasjon under 4 økter, og ingen nudge ved jevn fordeling', () => {
+		expect(computeBalanceState(base, ['2026-07-07'], 400, TODAY, ['A', 'B', 'A']).routeRotation).toBeNull();
+		const even = computeBalanceState(base, ['2026-07-07'], 400, TODAY, ['A', 'B', 'A', 'B']);
+		expect(even.routeRotation).not.toBeNull();
+		expect(even.nudge?.kind).not.toBe('rotasjon');
+	});
+});
+
 describe('computeBalanceState — intensitet', () => {
 	it('nudger når nesten alle løp er i moderat sone', () => {
 		// easy-pace 400; moderat ≈ 360. Fire moderate løp + nok sykkel til at løp

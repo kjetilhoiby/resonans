@@ -99,10 +99,8 @@ Bygget (andre runde):
   → GoalRing med score + nudge-tekst som label. Generisk DynamicWidget-path,
   ingen bespoke komponent (samme mønster som `effortBalance`).
 
-Gjenstår i fase 1:
-- **Rute-rotasjon**: krever rute-attribusjon *per økt* — se fase 5 (rute-synk er
-  bygget, men attribusjon av hver registrerte økt til en rute mangler ennå).
-  Bevisst utelatt framfor å fabrikkere et rotasjonssignal uten data.
+Fase 1s utsatte **rute-rotasjon** er nå bygget (se fase 6) — den ventet på
+rute-attribusjon per økt.
 
 ### Fase 5: Ekko-rute-synk — BYGGET (begge repo)
 
@@ -119,12 +117,34 @@ Resonans-rutebiblioteket automatisk.
   pusher `SavedRoute`-lista; `routeKind`/`cumulativeAscent` mapper sportType →
   kind og utleder høydemeter fra koordinatenes altitude. Docs: `ekko/ROUTES_API.md`.
 
-Gjenstår for å lukke rute-rotasjon + trail-demping i effort-*pipelinen*:
-**rute-attribusjon per registrerte økt**. Rute-synken gir biblioteket, men ikke
-hvilken rute hver *loggede* økt fulgte. Neste brikke: Ekko taggar opplastede
-økter med `ekkoRouteId` (i `sensor_events.metadata`), serveren slår opp
-rute→terreng/høyde, og balanse-signalet leser rutefordeling → rotasjons-nudge.
-Krever koordinert Ekko-opplastingsendring + oppslag; bevisst ikke bygget blindt.
+### Fase 6: Rute-attribusjon per økt → rute-rotasjon — BYGGET (begge repo)
+
+Den siste brikken som låser rute-rotasjon: hver *loggede* økt knyttes til en rute.
+
+- **Ekko**: `uploadGPX` fikk valgfri `routeId` (økta bærer alt `session.routeId`
+  = `SavedRoute.id`), sendt som form-felt fra alle tre opplastingssteder
+  (`SessionFinalizer`, `TrackingViewModel`, `SessionDetailView`).
+- **Server-opplasting**: `/api/apps/upload` lagrer `routeId` som
+  `sensor_events.metadata.ekkoRouteId` — samme id som `training_routes.ekko_route_id`
+  fra rute-synken, så attribusjonen matcher.
+- **Balanse-rotasjon** (`balance.ts`, `computeBalanceState` fikk
+  `recentRouteLabels`): `computeRouteRotation` finner dominerende rute; nudge når
+  én rute er ≥ 60 % av de siste ≥ 4 rute-taggede øktene («3 av siste 4 var
+  Pendlerunde — prøv en annen rute»). Prioritet styrke → konsentrasjon →
+  rotasjon → intensitet.
+- **Oppslag** (`getRecentRouteLabels`): leser `metadata.ekkoRouteId` fra
+  sensor_events og mapper til rutenavn. Returnerer [] når biblioteket har < 2
+  ruter (ingen å variere til) — så vi aldri nudger uten et reelt alternativ.
+  Wiret i `computeTrackStates` + `produceTrainingBalance`. Tester (+2).
+
+Rotasjonen lyser opp så snart Ekko-endringene er bygget og økter tagges; til da
+gir `getRecentRouteLabels` [] og balansen ingen rotasjons-nudge (ærlig tomtilstand).
+
+Gjenstår fortsatt: **trail-demping i effort-*pipelinen*** for loggede økter —
+krever at effort-skåringen (canonicalization/projeksjon) slår opp den attribuerte
+rutens terreng når den priser en registrert økt. Attribusjonen finnes nå
+(`metadata.ekkoRouteId`), men effort-service-endringen er en dypere
+projeksjons-endring og er ikke bygget her.
 
 ### Fase 2: Sti- og høydemeter-bevisst effort + coaching — BYGGET
 

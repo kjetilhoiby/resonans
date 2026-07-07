@@ -131,6 +131,8 @@ async function handleWorkoutUpload(
 	ctx: { userId: string; sensorId: string; app: ExternalAppConfig; sessionId: string | null; formData: FormData }
 ) {
 	const sportType = ctx.formData.get('sportType') as string | null;
+	// Rute-attribusjon: Ekko tagger økta med rutens id → balanse-rotasjon slår opp navnet.
+	const ekkoRouteId = (ctx.formData.get('routeId') as string | null)?.trim() || null;
 	const gpxContent = await file.text();
 	const parsed = parseWorkoutFile(file.name || 'track.gpx', gpxContent);
 
@@ -170,7 +172,8 @@ async function handleWorkoutUpload(
 				sourceApp: ctx.app.id,
 				sourceFormat: getFileExtension(file.name).slice(1),
 				totalTrackPoints: parsed.trackPoints.length,
-				sessionId: ctx.sessionId
+				sessionId: ctx.sessionId,
+				...(ekkoRouteId ? { ekkoRouteId } : {})
 			},
 			dedupeKey: ctx.sessionId ? `${ctx.app.id}::${ctx.sessionId}` : undefined,
 			source: `${ctx.app.id}_upload`
