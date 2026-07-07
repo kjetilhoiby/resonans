@@ -12,14 +12,19 @@ import {
 } from '$lib/server/egenfrekvens-checkin';
 import { isPeriodSlotId } from '$lib/domains/egenfrekvens/period-slots';
 import { isNonWorkingIsoDay } from '$lib/server/norwegian-holidays';
+import { isUserOnFerie } from '$lib/server/ferie-status';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ locals, url }) => {
 	const dayParam = url.searchParams.get('day');
 	const day = dayParam && /^\d{4}-\d{2}-\d{2}$/.test(dayParam) ? dayParam : toIsoDay();
-	const status = await getEgenfrekvensCheckinStatus(locals.userId, day);
 	// Hverdag-aware slot-valg klientside: helg/helligdag → roligere skjema med «dag».
-	return json({ ...status, isNonWorkingDay: isNonWorkingIsoDay(day) });
+	// Registrert ferie teller også som fridag, så man slipper arbeidsdag-spørsmålet på ferie.
+	const [status, onFerie] = await Promise.all([
+		getEgenfrekvensCheckinStatus(locals.userId, day),
+		isUserOnFerie(locals.userId, day)
+	]);
+	return json({ ...status, isNonWorkingDay: isNonWorkingIsoDay(day) || onFerie });
 };
 
 export const DELETE: RequestHandler = async ({ locals, url }) => {

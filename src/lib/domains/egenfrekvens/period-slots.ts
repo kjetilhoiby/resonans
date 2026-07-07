@@ -47,26 +47,32 @@ const slot = (id: PeriodSlotId, fromMinutes: number, toMinutes: number): PeriodS
 });
 
 /**
- * Hverdagsrytme: natt → morgen → (lunsj-hull) → arbeidsdag → ettermiddag → kveld.
- * Hullene 00–05 og 12–14 har bevisst ingen slot.
+ * Hverdagsrytme: natt → morgen → arbeidsdag → ettermiddag → kveld.
+ *
+ * Vinduene er lagt slik at det retrospektive «Hvordan gikk …?»-spørsmålet
+ * fyres av *når perioden er over eller på hell* — ikke i det den begynner.
+ * Derfor spør vi om morgenen først ut på formiddagen, om arbeidsdagen mot
+ * slutten av den, osv. Hullene mellom vinduene (00–05, 09–10, 13–15:30) har
+ * bevisst ingen slot — da er perioden i gang og det er for tidlig å spørre.
  */
 export const WORKDAY_SLOTS: PeriodSlot[] = [
-	slot('natt', h(5), h(7, 30)),
-	slot('morgen', h(7, 30), h(12)),
-	slot('arbeidsdag', h(14), h(18)),
-	slot('ettermiddag', h(18), h(20)),
-	slot('kveld', h(20), h(24))
+	slot('natt', h(5), h(9)), // spør om natta etter at man har stått opp
+	slot('morgen', h(10), h(13)), // spør om morgenen når den er unnagjort
+	slot('arbeidsdag', h(15, 30), h(18)), // spør om arbeidsdagen når den runder av
+	slot('ettermiddag', h(18), h(20, 30)), // spør om ettermiddagen tidlig på kvelden
+	slot('kveld', h(20, 30), h(24)) // spør om kvelden når den er på hell
 ];
 
 /**
  * Helg/helligdag-rytme: roligere, uten arbeidsdag-begrep. Man sover lenger
- * (natt til 7, morgen til 10), har én lang «dag» til 19, og en kveld som
- * runder av kl. 23. Hullene 00–05 og 23–24 har ingen slot.
+ * (natt til 10), og «dag»-spørsmålet kommer først når dagen faktisk er på hell
+ * (fra 15) i stedet for i det den så vidt har begynt. Hullene 13–15 og 23–24
+ * har ingen slot.
  */
 export const WEEKEND_SLOTS: PeriodSlot[] = [
-	slot('natt', h(5), h(7)),
-	slot('morgen', h(7), h(10)),
-	slot('dag', h(10), h(19)),
+	slot('natt', h(5), h(10)), // helg-morgen: sov lenger, spør om natta ut på formiddagen
+	slot('morgen', h(10), h(13)), // spør om morgenen rundt lunsj
+	slot('dag', h(15), h(19)), // spør om dagen når den runder av, ikke kl. 10
 	slot('kveld', h(19), h(23))
 ];
 

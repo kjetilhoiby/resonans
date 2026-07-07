@@ -67,16 +67,27 @@
 		return null;
 	}
 
-	// Notat for en dag: siste slot-notat, fallback til dagsnotatet (gamle full-sjekkins)
-	function pointNote(p: EgenfrekvensCheckinPointData): string | null {
-		const noted = Object.values(slotsOf(p)).filter(
-			(e): e is EgenfrekvensSlotPointData => !!e && typeof e.note === 'string' && e.note.length > 0
-		);
-		if (noted.length > 0) {
-			noted.sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1));
-			return noted[0].note;
+	// Alle slot-notater for en dag, i kronologisk slot-rekkefølge, hver merket med sitt slot.
+	// Slik skjules ikke f.eks. formiddagsnotatet av et senere kveldsnotat. Faller tilbake til
+	// dagsnotatet (gamle full-sjekkins uten slot) når ingen slot har notat.
+	function pointNotes(p: EgenfrekvensCheckinPointData): Array<{ key: string; emoji: string | null; note: string }> {
+		const slots = slotsOf(p);
+		const out: Array<{ key: string; emoji: string | null; note: string }> = [];
+		for (const slot of PERIOD_SLOTS) {
+			const entry = slots[slot.id];
+			if (entry && typeof entry.note === 'string' && entry.note.length > 0) {
+				out.push({ key: slot.id, emoji: slot.emoji, note: entry.note });
+			}
 		}
-		return p.note;
+		if (out.length === 0 && p.note) out.push({ key: 'legacy', emoji: null, note: p.note });
+		return out;
+	}
+
+	// Kompakt én-linjes sammendrag av dagens notater til siste-listen.
+	function pointNotesText(p: EgenfrekvensCheckinPointData): string {
+		return pointNotes(p)
+			.map((n) => (n.emoji ? `${n.emoji} ${n.note}` : n.note))
+			.join('  ·  ');
 	}
 
 	const sparklineWidth = 280;
@@ -136,7 +147,7 @@
 	{:else}
 		{#if data.latest}
 			{@const latestLevel = pointLevel(data.latest)}
-			{@const latestNote = pointNote(data.latest)}
+			{@const latestNotes = pointNotes(data.latest)}
 			{@const latestSlots = slotsOf(data.latest)}
 			<section class="ef-card ef-latest">
 				<div class="ef-latest-head">
@@ -163,8 +174,12 @@
 						</div>
 					{/each}
 				</div>
-				{#if latestNote}
-					<p class="ef-note">«{latestNote}»</p>
+				{#if latestNotes.length}
+					<div class="ef-notes">
+						{#each latestNotes as n (n.key)}
+							<p class="ef-note">{#if n.emoji}<span class="ef-note-slot">{n.emoji}</span>{/if}«{n.note}»</p>
+						{/each}
+					</div>
 				{/if}
 				{#if data.latest.reflectionSynthesis || data.latest.reflection || data.latest.reflectionThread?.length}
 					<details class="ef-reflection">
@@ -253,11 +268,10 @@
 			<ul class="ef-recent">
 				{#each last7 as p (p.day)}
 					{@const lvl = pointLevel(p)}
-					{@const note = pointNote(p)}
 					<li class="ef-recent-row" class:ef-recent-extreme={p.extreme}>
 						<span class="ef-recent-day">{fmtDayLabel(p.day)}</span>
 						<span class="ef-recent-balance" style:color={levelColor(lvl)}>{lvl ?? '—'}</span>
-						<span class="ef-recent-note">{note ?? ''}</span>
+						<span class="ef-recent-note">{pointNotesText(p)}</span>
 						{#if p.extreme}
 							<span class="ef-recent-flag" title="Utslag i sjekkin">!</span>
 						{/if}
@@ -448,6 +462,11 @@
 		font-weight: 600;
 	}
 
+	.ef-notes {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
 	.ef-note {
 		margin: 8px 0 0;
 		padding: 10px 12px;
@@ -456,6 +475,12 @@
 		border-radius: 0 8px 8px 0;
 		font-size: 0.88rem;
 		color: #cbd5e1;
+	}
+	.ef-notes .ef-note {
+		margin: 0;
+	}
+	.ef-note-slot {
+		margin-right: 6px;
 	}
 	.ef-reflection {
 		margin-top: 8px;
