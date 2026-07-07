@@ -116,19 +116,34 @@ Mål: sti får sin egen modell og stemme, ikke pace-logikken fra vei.
 - Coaching-språk i øktforslag for sti: «kjør på følelse, hold jevn innsats i
   motbakke, ikke jag klokka». Testruter (flat bane) beholder pace/tempo-stilen.
 
-### Fase 3: Per-disiplin-logging + fotball-family
+### Fase 3: Styrke-logging i ekko — friksjonsfjerning (resonans-lab) — BYGGET
 
-Mål: alle disiplinene brukeren lister blir enkle å registrere og skårer riktig.
+Avklaring fra bruker: **fotball og svømming kommer fra Withings**, så de er
+allerede dekket server-side (canonical_workouts) — ingen egen ekko-logging
+trengs, og fotball-family på serveren er ikke nødvendig. Fokus ble derfor de
+reelle friksjonspunktene i ekkos styrke-flyt:
 
-- **Resonans-server**: legg `football` (og evt. `ballsport`) i
-  `MET_FACTOR_BY_FAMILY` med en kalibrert vekt; utvid `normalizeSportType` og
-  taxonomy. Additiv — ingen re-projeksjon nødvendig med mindre miksen domineres
-  av den nye familien (jf. effort-vektterskel-beslutningen om MET-endringer).
-- **Ekko (resonans-lab)**: rask tell-og-tapp-logging for ikke-GPS-økter
-  (armhevinger/planke/fotball/basseng) som skriver `sensor_events` via
-  `/api/apps/upload` eller et lettvekts strength-endepunkt — server-kontrakten
-  finnes allerede (`dataType:'strength_workout'`, `exercises[]`). Egen økt,
-  koordineres når begge repo er åpne.
+- **2-minutters-grensa fjernet** (`StrengthViewModel.stop`): en økt lastes nå
+  opp så snart det finnes ≥ 1 loggført sett (`session.totalSets >= 1 || pid`),
+  ikke først etter 2 min. En rask «45 armhevinger» teller nå — kjernen i
+  daglig, gradvis progresjon.
+- **Pull-up negativ som øvelse** (`ExerciseLibrary`): lagt til, pluss navne-basert
+  tid-deteksjon (`timedDefaultSeconds`) så planke/negativ legges til som
+  TIDSbaserte (tidtaker-kort, `durationSeconds`) også fra fri-flyten — matcher
+  serverens `isPlanke`/`isPullupNegativ`-gjenkjenning.
+- **Varighetsmål dekodes** (`PlannedExercise.durationSecondsTarget`): ekko droppet
+  tidligere serverens varighetsmål (planke/negativ) fordi bare `repsTarget` ble
+  dekodet — timede øvelser ble feilaktig reps. Nå dekodes og brukes begge
+  (`addPlannedExercise` velger reps/varighet/navn-fallback). Retter både guidet
+  og fri flyt.
+- **Fri styrke arver serverens mål** (`seedFreestyleTargets` +
+  `ActivityHubView`): «Styrke»-kortet pre-fyller med dagens stående styrkemål
+  (samme progresjon som guidet) uten å binde `plannedSessionId` — registreringen
+  fanges av auto-koblingen. Faller tilbake til tom økt på løpsdager.
+
+Forbehold: Swift-endringer er ikke bygget her (ingen Xcode i CI-containeren) —
+må kompileres på klientsiden. Verifisert statisk: additivt, ingen memberwise-
+init-brudd, konsistent med eksisterende `loadRemoteSession`-mønster.
 
 ### Fase 4 (grunnmur, mindre): ferie/gjenopptrapping
 
