@@ -100,9 +100,31 @@ Bygget (andre runde):
   ingen bespoke komponent (samme mønster som `effortBalance`).
 
 Gjenstår i fase 1:
-- **Rute-rotasjon**: krever rute-attribusjon per økt (`ekko_route_id` er ubrukt)
-  — venter på Ekko-rute-synk. Bevisst utelatt framfor å fabrikkere et
-  rotasjonssignal uten data.
+- **Rute-rotasjon**: krever rute-attribusjon *per økt* — se fase 5 (rute-synk er
+  bygget, men attribusjon av hver registrerte økt til en rute mangler ennå).
+  Bevisst utelatt framfor å fabrikkere et rotasjonssignal uten data.
+
+### Fase 5: Ekko-rute-synk — BYGGET (begge repo)
+
+Overleveringen fra `2026-07-05-treningslop.md`: ruter tegnet i Ekko dukker opp i
+Resonans-rutebiblioteket automatisk.
+
+- **Server** (`POST/GET /api/apps/routes`): idempotent upsert på
+  `(userId, ekkoRouteId)`. Ekko eier geometri (navn/distanse/høyde); Resonans
+  eier `kind`, `terrain` og `variants` — bevares ved oppdatering så en rute
+  raffinert til «sti» ikke klobbes tilbake. `defaultVariantsForKind` seeder
+  varianter ved ny import. Manuelle ruter (uten `ekkoRouteId`) røres aldri.
+  Ingen schema-endring (`ekko_route_id` fantes). Tester (+4) for varianter.
+- **Ekko** (`ResonansAPI.syncRoutes`, best-effort fra `SessionStore.saveRoutes`):
+  pusher `SavedRoute`-lista; `routeKind`/`cumulativeAscent` mapper sportType →
+  kind og utleder høydemeter fra koordinatenes altitude. Docs: `ekko/ROUTES_API.md`.
+
+Gjenstår for å lukke rute-rotasjon + trail-demping i effort-*pipelinen*:
+**rute-attribusjon per registrerte økt**. Rute-synken gir biblioteket, men ikke
+hvilken rute hver *loggede* økt fulgte. Neste brikke: Ekko taggar opplastede
+økter med `ekkoRouteId` (i `sensor_events.metadata`), serveren slår opp
+rute→terreng/høyde, og balanse-signalet leser rutefordeling → rotasjons-nudge.
+Krever koordinert Ekko-opplastingsendring + oppslag; bevisst ikke bygget blindt.
 
 ### Fase 2: Sti- og høydemeter-bevisst effort + coaching — BYGGET
 
