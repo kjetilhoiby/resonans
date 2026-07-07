@@ -168,6 +168,30 @@ describe('intensitets-justert MET for løp (met_pace)', () => {
 		expect(treg.score).toBeCloseTo(87.5 * 0.75, 0);
 	});
 
+	it('sti (isTrail): sakte løp underskåres ikke — intensiteten gulves på 1.0', () => {
+		// Samme tröge pace (634 s/km) som ville gitt 0.75 på vei.
+		const vei = computeWorkoutEffort(
+			{ sportType: 'running', durationSeconds: 2100, paceSecPerKm: 634 },
+			paceBaseline
+		)!;
+		const sti = computeWorkoutEffort(
+			{ sportType: 'running', durationSeconds: 2100, paceSecPerKm: 634, isTrail: true },
+			paceBaseline
+		)!;
+		expect(vei.score).toBeCloseTo(87.5 * 0.75, 0);
+		expect(sti.method).toBe('met_trail');
+		expect(sti.score).toBeCloseTo(87.5, 0); // gulvet på 1.0
+		expect(sti.score).toBeGreaterThan(vei.score);
+	});
+
+	it('sti endrer ikke en hard økt (faktor > 1 uansett)', () => {
+		const terskel = computeWorkoutEffort(
+			{ sportType: 'running', durationSeconds: 2100, paceSecPerKm: 330, isTrail: true },
+			paceBaseline
+		)!;
+		expect(terskel.score).toBeCloseTo(87.5 * (400 / 330) ** 2, 0);
+	});
+
 	it('faktoren klampes oppad på 1.5', () => {
 		const sprint = computeWorkoutEffort(
 			{ sportType: 'running', durationSeconds: 2100, paceSecPerKm: 250 },

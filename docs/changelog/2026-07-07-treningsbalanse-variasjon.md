@@ -1,7 +1,7 @@
 # Treningsbalanse og variasjon: det tredje hodet
 
 Dato: 2026-07-07
-Status: ferdig (fase 1–4; rute-rotasjon + trail-demping i pipeline venter på Ekko-rute-synk)
+Status: ferdig (fase 1–7)
 
 ## Kontekst
 
@@ -140,11 +140,25 @@ Den siste brikken som låser rute-rotasjon: hver *loggede* økt knyttes til en r
 Rotasjonen lyser opp så snart Ekko-endringene er bygget og økter tagges; til da
 gir `getRecentRouteLabels` [] og balansen ingen rotasjons-nudge (ærlig tomtilstand).
 
-Gjenstår fortsatt: **trail-demping i effort-*pipelinen*** for loggede økter —
-krever at effort-skåringen (canonicalization/projeksjon) slår opp den attribuerte
-rutens terreng når den priser en registrert økt. Attribusjonen finnes nå
-(`metadata.ekkoRouteId`), men effort-service-endringen er en dypere
-projeksjons-endring og er ikke bygget her.
+### Fase 7: Trail-demping i effort-pipelinen for loggede økter — BYGGET
+
+Siste brikke: en *registrert* stiøkt underskåres ikke lenger fordi GPS-pacen var
+lav.
+
+- `effort-service.ts`: `computeWorkoutEffort` fikk `isTrail` — gulver
+  pace-intensiteten på 1.0 (mot veiens 0.75), samme skille som rute-biblioteket
+  (fase 2). Ny metode-label `met_trail` for observabilitet. Tester (+2).
+- `getTrailAttributedEventIds` (routes-repository): sensor_event-id-er attribuert
+  til en `kind:'trail'`-rute (via `metadata.ekkoRouteId`).
+- `WorkoutProjectionService.refreshForRange`: slår opp sti-attribuerte økter og
+  setter `isTrail` per økt.
+
+**Ingen re-projeksjon nødvendig — endringen er prospektiv.** Rute-attribusjon
+finnes bare på nye, Ekko-taggede økter; historiske økter har ingen `ekkoRouteId`
+→ `isTrail=false` → effort-scoren deres er uendret. Serien forblir konsistent
+(i motsetning til en MET-faktor-endring, som ville truffet HELE historikken og
+krevd backfill — jf. effort-vektterskel-beslutningen). Effekten kommer gradvis
+etter hvert som sti-økter tagges og projeksjonen kjører.
 
 ### Fase 2: Sti- og høydemeter-bevisst effort + coaching — BYGGET
 

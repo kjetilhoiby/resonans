@@ -221,6 +221,43 @@ export async function getRecentRouteLabels(userId: string, sinceDays: number): P
 	return labels;
 }
 
+/**
+ * sensor_event-id-er (siden `since`) som er attribuert til en **sti-rute** — så
+ * effort-projeksjonen kan gulve pace-intensiteten for loggede stiøkter. Leser
+ * `metadata.ekkoRouteId` og matcher mot brukerens `kind:'trail'`-ruter. Tom uten
+ * sti-ruter eller uten attribuerte økter (helt prospektivt: kun nye, taggede
+ * økter påvirkes — historikk endres ikke).
+ */
+export async function getTrailAttributedEventIds(userId: string, since: Date): Promise<Set<string>> {
+	const trailRoutes = await db
+		.select({ ekkoRouteId: trainingRoutes.ekkoRouteId })
+		.from(trainingRoutes)
+		.where(and(eq(trainingRoutes.userId, userId), eq(trainingRoutes.kind, 'trail')));
+	const trailIds = new Set(
+		trailRoutes.map((r) => r.ekkoRouteId).filter((x): x is string => typeof x === 'string' && x.length > 0)
+	);
+	if (trailIds.size === 0) return new Set();
+
+	const rows = await db
+		.select({ id: sensorEvents.id, metadata: sensorEvents.metadata })
+		.from(sensorEvents)
+		.where(
+			and(
+				eq(sensorEvents.userId, userId),
+				gte(sensorEvents.timestamp, since),
+				inArray(sensorEvents.dataType, ['workout', 'strength_workout'])
+			)
+		);
+
+	const result = new Set<string>();
+	for (const row of rows) {
+		const meta = (row.metadata ?? {}) as Record<string, unknown>;
+		const rid = typeof meta.ekkoRouteId === 'string' ? meta.ekkoRouteId : null;
+		if (rid && trailIds.has(rid)) result.add(row.id);
+	}
+	return result;
+}
+
 export async function archiveRoute(userId: string, routeId: string): Promise<boolean> {
 	const result = await db
 		.update(trainingRoutes)

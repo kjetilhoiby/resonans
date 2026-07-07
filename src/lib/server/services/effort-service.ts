@@ -13,7 +13,7 @@ export type EffortFamily =
 	| 'swimming'
 	| 'other';
 
-export type EffortMethod = 'trimp' | 'met' | 'met_pace';
+export type EffortMethod = 'trimp' | 'met' | 'met_pace' | 'met_trail';
 
 export interface EffortBaseline {
 	/** Hvileplus i bpm. */
@@ -33,6 +33,12 @@ export interface WorkoutEffortInput {
 	avgHeartRate?: number | null;
 	/** Øktas pace (sek/km) — gir intensitets-justert MET for løp uten puls. */
 	paceSecPerKm?: number | null;
+	/**
+	 * Økta gikk på sti (attribuert til en trail-rute). På sti er sakte IKKE lett
+	 * (teknisk terreng), så pace-intensiteten gulves høyere — en langsom stiøkt
+	 * skal ikke underskåres som en rolig joggetur.
+	 */
+	isTrail?: boolean;
 }
 
 export interface WorkoutEffortResult {
@@ -138,8 +144,11 @@ export function computeWorkoutEffort(
 	const pace = typeof input.paceSecPerKm === 'number' && input.paceSecPerKm > 0 ? input.paceSecPerKm : null;
 	const easyPace = baseline.easyPaceSecPerKm ?? null;
 	if (family === 'running' && pace != null && easyPace != null && easyPace > 0) {
-		const intensity = Math.max(0.75, Math.min(1.5, (easyPace / pace) ** 2));
-		return { score: round1(base * intensity), method: 'met_pace', family };
+		// På sti gulves intensiteten på 1.0 (sakte ≠ lett i teknisk terreng); på
+		// vei ned til 0.75. Samme skille som rute-biblioteket (fase 2).
+		const floor = input.isTrail ? 1.0 : 0.75;
+		const intensity = Math.max(floor, Math.min(1.5, (easyPace / pace) ** 2));
+		return { score: round1(base * intensity), method: input.isTrail ? 'met_trail' : 'met_pace', family };
 	}
 
 	return { score: round1(base), method: 'met', family };
