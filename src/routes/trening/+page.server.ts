@@ -70,13 +70,20 @@ export const load: PageServerLoad = async ({ locals }) => {
 			? pickBoostSuggestion(referenceTarget - projection.projectedTotal, planExamples)
 			: null;
 
-	// Konkret øktoppskrift som tetter gjenstående effort («Rolig 8 km + Intervaller 30 min»)
+	// Konkret øktoppskrift som tetter gjenstående effort («Rolig 8 km + Intervaller 30 min»).
+	// Belønn variasjon: når løp dominerer miksen (≥ 60 %), vektes oppskriften mot
+	// kryss-trening for balanse — km-målet fanger fortsatt løpsbehovet separat.
+	const runHeavy =
+		(states.balance?.disciplines[0]?.family === 'running' &&
+			(states.balance?.disciplines[0]?.pct ?? 0) >= 60) ??
+		false;
 	const weekRecipe =
 		states.budget && states.enduranceState
 			? composeWeekRecipe(
 					states.budget.remainingMin,
 					states.budget.remainingMax,
-					states.enduranceState.forventetPaceSekPerKm
+					states.enduranceState.forventetPaceSekPerKm,
+					{ preferVariety: runHeavy }
 				)
 			: null;
 

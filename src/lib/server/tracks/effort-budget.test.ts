@@ -225,6 +225,16 @@ describe('composeWeekRecipe', () => {
 		expect(composeWeekRecipe(0, 15, 400)).toBeNull();
 	});
 
+	it('preferVariety vekter mot kryss-trening når løp dominerer', () => {
+		// Uten variasjonsvekting foretrekkes løp; med preferVariety skal en
+		// ikke-løpsøkt inngå i oppskriften (belønner balanse).
+		const gap = { min: 70, max: 130 };
+		const uten = composeWeekRecipe(gap.min, gap.max, 400)!;
+		const med = composeWeekRecipe(gap.min, gap.max, 400, { preferVariety: true })!;
+		expect(uten.sessions.every((s) => s.includes('km') || s.includes('Intervaller'))).toBe(true);
+		expect(med.sessions.some((s) => /sykkel/i.test(s))).toBe(true);
+	});
+
 	it('stort gap → nærmeste kombinasjon over minimum', () => {
 		const recipe = composeWeekRecipe(500, 520, 400);
 		// 3 × Rolig 8 km = 399 < 500 → ingen når target... eller sykkel-kombos:

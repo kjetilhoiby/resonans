@@ -87,16 +87,22 @@ Bygget:
   valueNumber = score, valueText = nudge-type, detaljer i context jsonb —
   ingen schema-endring. `ownerDomain: health`.
 
+Bygget (andre runde):
+- **Belønning via forslags-vekting**: `composeWeekRecipe` fikk opt-in-parameter
+  `{ preferVariety }` (default = uendret oppførsel → alle gamle tester består).
+  Når løp dominerer miksen (≥ 60 %, fra balance-tilstanden) vektes oppskriften
+  mot kryss-trening — km-målet fanger fortsatt løpsbehovet separat. Koblet inn
+  i /trening-loaderen; egen test verifiserer at sykkel foretrekkes med flagget.
+- **Hjem-widget** `trainingBalance`: registrert i `VALID_WIDGET_METRICS`,
+  `WidgetConfigSheet` (retning + enhet «score») og `HomeScreen`-navigasjon
+  (→ /trening). `fetchTrainingBalanceData` leser siste `training_balance`-signal
+  → GoalRing med score + nudge-tekst som label. Generisk DynamicWidget-path,
+  ingen bespoke komponent (samme mønster som `effortBalance`).
+
 Gjenstår i fase 1:
-- **Belønning via forslags-vekting**: la `pickBoostSuggestion`/`composeWeekRecipe`
-  vekte mot underbrukt disiplin ved likt effort-bidrag (nudgen steerer allerede,
-  men øktoppskriften vekter ennå ikke). Utsatt for å ikke røre de testede
-  effort-budsjett-snapshotene i samme steg.
 - **Rute-rotasjon**: krever rute-attribusjon per økt (`ekko_route_id` er ubrukt)
   — venter på Ekko-rute-synk. Bevisst utelatt framfor å fabrikkere et
   rotasjonssignal uten data.
-- **Hjem-widget** `trainingBalance` (generisk DynamicWidget-path som
-  `effortBalance`) — signalet er cachen, widgeten gjenstår.
 
 ### Fase 2: Sti- og høydemeter-bevisst effort + coaching
 
@@ -149,10 +155,10 @@ Mål: alle disiplinene brukeren lister blir enkle å registrere og skårer rikti
 ## Verifisering
 
 Fase 1 (utført):
-- `npm test`: 1220 tester grønne, inkl. 11 nye i `balance.test.ts`
+- `npm test`: 1221 tester grønne, inkl. 11 nye i `balance.test.ts`
   (intensitetssoner, miks + vindu-avgrensning, styrke-nudge, dobbeltkilde-
   telling, konsentrasjon, grå-sone-nudge, tom tilstand → score 0, balansert
-  uke → score > 60).
+  uke → score > 60) + 1 for `composeWeekRecipe`-variasjonsvekting.
 - `npm run check`: 0 feil / 0 advarsler.
 - `npm run build`: kompilerer rent (postbuild-`analyse` krever `DATABASE_URL`
   som ikke finnes i CI-containeren — build fullfører med env satt).
