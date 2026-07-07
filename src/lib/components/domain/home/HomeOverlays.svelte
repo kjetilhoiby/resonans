@@ -15,7 +15,11 @@
 	import Icon from '../../ui/Icon.svelte';
 	import { FLOWS } from '$lib/flows/registry';
 	import { buildEgenfrekvensSlotFlow } from '$lib/flows/egenfrekvens-slot';
-	import { localIsoDay, periodSlotStorageKey } from '$lib/domains/egenfrekvens/period-slots';
+	import {
+		localIsoDay,
+		periodSlotStorageKey,
+		PERIOD_SLOT_LEVEL_LABELS
+	} from '$lib/domains/egenfrekvens/period-slots';
 	import { livskompassWeekStorageKey, type LivskompassScores } from '$lib/domains/livskompass/dimensions';
 	import LivskompassCheckin from '../LivskompassCheckin.svelte';
 	import { getThemeHueStyle } from '$lib/domain/theme-hues';
@@ -50,9 +54,12 @@
 		ctx.egenfrekvensSlotChip = null;
 		ctx.egenfrekvensSlotCheckin = null;
 		ctx.egenfrekvensSlotGate = null;
-		// Første melding i chatten: «Kvelden gikk 4, rolig kveld med lesing»
+		// Første melding i chatten: «Kvelden gikk fint (4/5), rolig kveld med lesing».
+		// Ordet + «/5»-skalaen er nødvendig — uten den leser chatten «4» som 4/10 og tror det gikk dårlig.
 		const labelCap = slot.label.charAt(0).toUpperCase() + slot.label.slice(1);
-		ctx.startHomeChat(`${labelCap} gikk ${level}${note ? `, ${note}` : ''}`);
+		const word = (PERIOD_SLOT_LEVEL_LABELS[level] ?? '').toLowerCase();
+		const scoreText = word ? `${word} (${level}/5)` : `${level}/5`;
+		ctx.startHomeChat(`${labelCap} gikk ${scoreText}${note ? `, ${note}` : ''}`);
 	}
 
 	// ── Livskompasset ──
