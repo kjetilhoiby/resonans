@@ -1,7 +1,7 @@
 # Treningsbalanse og variasjon: det tredje hodet
 
 Dato: 2026-07-07
-Status: planlagt
+Status: pågår
 
 ## Kontekst
 
@@ -54,34 +54,49 @@ Brukerinnsikt (7. juli) legger til en tredje dimensjon systemet i dag ikke har:
 
 ## Faser
 
-### Fase 1: Balanse-signalet (størst gevinst, rent Resonans-server)
+### Fase 1: Balanse-signalet (størst gevinst, rent Resonans-server) — BYGGET
 
 Mål: gjør balanse/variasjon til noe som måles, vises og *belønnes* — ikke bare
 total effort.
 
+Bygget:
 - Ny ren modul `src/lib/server/tracks/balance.ts` (mønster som
-  `effort-budget.ts`: injiserte data, ingen DB): tar siste ~4 ukers
-  `EnduranceWorkout[]` + styrkeøkter og beregner en **balanse-tilstand**:
-  - disiplin-miks (andel effort per family: løp / sykkel / el-sykkel / styrke /
-    annet),
-  - styrke-vs-utholdenhet-dekning denne uka (antall styrkeøkter mot et enkelt
-    ukemål, f.eks. 2),
-  - rute-rotasjon (siste N økter fordelt på ruter fra biblioteket — flagg når
-    samme rute dominerer),
-  - intensitetsfordeling (andel rolig/moderat/hard fra pace-band —
-    polarisering, ikke alt i grå sone).
-- **Én balanse-nudge om gangen**, valgt etter største avvik:
-  «3 løp, 0 styrke denne uka — ta en kort styrkeøkt», «Samme rute 5×, prøv
-  vannrunden», «Alt i moderat sone — legg inn en rolig eller en hard».
-- **Belønning av variasjon**: mindre variasjons-tillegg til øktforslaget når en
-  underbrukt disiplin/rute velges (påvirker *forslaget*, ikke effort-skåringen —
-  den holdes ærlig/fysiologisk). Konkret: `pickBoostSuggestion`/`composeWeekRecipe`
-  vekter mot det underbrukte hodet ved likt effort-bidrag.
-- Signal `training_balance` via eksisterende domain-signals-cron (samme mønster
-  som `health_effort_vs_threshold`): valueNumber = enkel balanse-score,
-  detaljer i context jsonb — ingen schema-endring.
-- UI: `BalanceCard` på /trening (miks-donut + nudge) og evt. hjem-widget
-  (`trainingBalance`, generisk DynamicWidget-path som effortBalance).
+  `effort-budget.ts`: injiserte data, ingen DB). `computeBalanceState(workouts,
+  strengthDates, easyPace, today)` beregner:
+  - **disiplin-miks** (andel effort per family siste 4 uker),
+  - **styrke-dekning** denne uka (registrerte styrkeøkter fra både
+    canonical `strength`-family og rå sensor_events-datoer, mot ukemål 2),
+  - **intensitetsfordeling** for løp (rolig/moderat/hard mot easy-pace via
+    `classifyIntensity`; soner speiler rute-seedene: moderat ≈ 0.9×, terskel
+    ≈ 0.82×),
+  - **balanse-score** 0–100 (grov heuristikk: 0.4 diversitet + 0.35
+    styrke-dekning + 0.25 intensitetsspredning — dokumentert som heuristikk,
+    ikke måling).
+- **Én nudge om gangen**, prioritet styrke → konsentrasjon → intensitet (største
+  avvik vinner): «N løp og ingen styrke denne uka …», «X % er sykkel de siste
+  fire ukene — prøv mer løp …», «Nesten alle løp i moderat sone — legg inn én
+  rolig og én med fart».
+- **Enhetstester** `balance.test.ts` (11): intensitets-klassifisering, miks +
+  vindu-avgrensning, styrke-nudge, dobbeltkilde-telling, konsentrasjon,
+  grå-sone-nudge, tom tilstand (score 0), balansert uke (score > 60).
+- Koblet inn i `computeTrackStates` (repository.ts) → eksponert på /trening.
+- UI: `BalanceCard.svelte` (stablet miks-stolpe + legende, intensitetsbar,
+  nudge/status) montert etter `EffortBudgetCard` på /trening.
+- Signal `training_balance` via domain-signals-cron (`produceTrainingBalance` i
+  signal-service.ts, samme mønster som `health_effort_vs_threshold`):
+  valueNumber = score, valueText = nudge-type, detaljer i context jsonb —
+  ingen schema-endring. `ownerDomain: health`.
+
+Gjenstår i fase 1:
+- **Belønning via forslags-vekting**: la `pickBoostSuggestion`/`composeWeekRecipe`
+  vekte mot underbrukt disiplin ved likt effort-bidrag (nudgen steerer allerede,
+  men øktoppskriften vekter ennå ikke). Utsatt for å ikke røre de testede
+  effort-budsjett-snapshotene i samme steg.
+- **Rute-rotasjon**: krever rute-attribusjon per økt (`ekko_route_id` er ubrukt)
+  — venter på Ekko-rute-synk. Bevisst utelatt framfor å fabrikkere et
+  rotasjonssignal uten data.
+- **Hjem-widget** `trainingBalance` (generisk DynamicWidget-path som
+  `effortBalance`) — signalet er cachen, widgeten gjenstår.
 
 ### Fase 2: Sti- og høydemeter-bevisst effort + coaching
 
@@ -133,11 +148,19 @@ Mål: alle disiplinene brukeren lister blir enkle å registrere og skårer rikti
 
 ## Verifisering
 
-- Vitest for `balance.ts`: syntetiske ukesmikser → forventet nudge og score
-  (kun-løp → styrke-nudge; rotasjon; polarisert vs grå sone). Trail-effort:
-  høydemeter øker effort, sakte sti ikke underskåret.
-- `GET /api/cron/domain-signals` + signal-observability for `training_balance`.
-- Visuell review av /trening etter `BalanceCard` er montert
-  (`VISUAL_REVIEW_CONTEXT`).
+Fase 1 (utført):
+- `npm test`: 1220 tester grønne, inkl. 11 nye i `balance.test.ts`
+  (intensitetssoner, miks + vindu-avgrensning, styrke-nudge, dobbeltkilde-
+  telling, konsentrasjon, grå-sone-nudge, tom tilstand → score 0, balansert
+  uke → score > 60).
+- `npm run check`: 0 feil / 0 advarsler.
+- `npm run build`: kompilerer rent (postbuild-`analyse` krever `DATABASE_URL`
+  som ikke finnes i CI-containeren — build fullfører med env satt).
+- Gjenstår i miljø med DB: visuell review av /trening etter `BalanceCard`
+  (`VISUAL_REVIEW_CONTEXT="Nytt BalanceCard på /trening"`), og
+  signal-observability for `training_balance` via `GET /api/cron/domain-signals`.
+
+Fase 2–4 (planlagt):
+- Vitest for trail-effort (høydemeter øker effort, sakte sti ikke underskåret).
 - Kontraktsverifisering av evt. nytt logge-endepunkt med curl
   (`x-resonans-user-id`), uendret Ekko-shape.

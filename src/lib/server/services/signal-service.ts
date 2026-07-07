@@ -3,6 +3,8 @@ import { db, pgClient, rowsOf } from '$lib/db';
 import { users } from '$lib/db/schema';
 import { fitBestEffortWeightModel, predictDeltaKg } from '$lib/util/effort-weight-model';
 import { buildEffortWeightInputs } from '$lib/server/health/effort-weight-data';
+import { getEnduranceWorkouts, getStrengthSessions } from '$lib/server/tracks/repository';
+import { computeBalanceState } from '$lib/server/tracks/balance';
 
 type Severity = 'info' | 'low' | 'medium' | 'high';
 
@@ -775,6 +777,76 @@ async function produceHealthEffortVsThreshold(userId: string, now: Date) {
 	return { ratio, quality: model.quality, rolling7dEffort };
 }
 
+/**
+ * Treningsbalanse-signalet: disiplin-miks, styrke-dekning og intensitetsspredning
+ * siste ~4 uker + én nudge mot det underbrukte hodet. Cache for hjem-widget og
+ * AI-coach; /trening beregner samme tilstand live. Balanse påvirker forslag,
+ * ikke effort-skåringen. Returnerer null for brukere uten registrert trening.
+ */
+async function produceTrainingBalance(userId: string, now: Date) {
+	const day = isoDay(now);
+	const [workouts, strengthSessions] = await Promise.all([
+		getEnduranceWorkouts(userId, 42),
+		getStrengthSessions(userId, 42)
+	]);
+	if (workouts.length === 0 && strengthSessions.length === 0) return null;
+
+	// Enkel referanse-pace for intensitetssoner: median pace av tellende løp.
+	const runPaces = workouts
+		.filter((w) => w.family === 'running' && (w.distanceMeters ?? 0) >= 500 && (w.durationSeconds ?? 0) > 0)
+		.map((w) => (w.durationSeconds ?? 0) / ((w.distanceMeters ?? 0) / 1000))
+		.filter((p) => p <= 540)
+		.sort((a, b) => a - b);
+	const easyPace = runPaces.length > 0 ? runPaces[Math.floor(runPaces.length / 2)] : null;
+
+	const balance = computeBalanceState(
+		workouts,
+		strengthSessions.map((s) => s.date),
+		easyPace,
+		day
+	);
+	if (balance.totalEffort === 0) return null;
+
+	await ensureSignalContract({
+		signalType: 'training_balance',
+		ownerDomain: 'health',
+		allowedConsumerDomains: ['health', 'home', 'relationship'],
+		description:
+			'Treningsbalanse siste 4 uker: disiplin-miks (andel effort per family), styrke-dekning denne uka og intensitetsspredning for løp. valueNumber = balanse-score 0–100, valueText = nudge-type. context har miks, intensitet og nudge-tekst.'
+	});
+
+	// Nudge = trenger oppmerksomhet. Ingen nudge = balansen er god.
+	const severity: Severity = balance.nudge
+		? balance.nudge.severity === 'medium'
+			? 'medium'
+			: 'low'
+		: 'info';
+
+	await upsertDomainSignal({
+		signalType: 'training_balance',
+		ownerDomain: 'health',
+		userId,
+		valueNumber: balance.score,
+		valueText: balance.nudge?.kind ?? 'balansert',
+		severity,
+		confidence: 0.7,
+		windowStart: daysAgo(now, 28),
+		windowEnd: now,
+		observedAt: now,
+		context: {
+			score: balance.score,
+			totalEffort: balance.totalEffort,
+			disciplines: balance.disciplines,
+			strengthSessionsThisWeek: balance.strengthSessionsThisWeek,
+			runSessionsThisWeek: balance.runSessionsThisWeek,
+			intensity: balance.intensity,
+			nudge: balance.nudge
+		}
+	});
+
+	return { score: balance.score, nudge: balance.nudge };
+}
+
 async function produceRelationshipCoordinationReadinessToday(userId: string, relatedUserId: string, now: Date) {
 	const day = isoDay(now);
 	const windowStart = new Date(`${day}T00:00:00.000Z`);
@@ -1114,6 +1186,7 @@ export async function runDomainSignalProducers(now: Date = new Date()) {
 		routineAdherence7d: 0,
 		eveningScreenWork7d: 0,
 		healthEffortVsThreshold: 0,
+		trainingBalance: 0,
 		relationshipCoordinationReadinessToday: 0,
 		relationshipLogisticsStressIndex14d: 0,
 		familyBirthdayUpcoming7d: 0,
@@ -1171,6 +1244,12 @@ export async function runDomainSignalProducers(now: Date = new Date()) {
 			if (effortVsThreshold !== null) {
 				produced += 1;
 				producerBreakdown.healthEffortVsThreshold += 1;
+			}
+
+			const trainingBalance = await produceTrainingBalance(user.id, now);
+			if (trainingBalance !== null) {
+				produced += 1;
+				producerBreakdown.trainingBalance += 1;
 			}
 
 			if (user.partnerUserId) {

@@ -92,6 +92,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 			todaySuggestion: states.todaySuggestion,
 			restReason: states.restReason,
 			budget: states.budget,
+			balance: states.balance,
 			effortComposition: states.effortComposition,
 			weekSessions: summarizeWeekSessions(states.enduranceWorkouts, today),
 			planExamples,

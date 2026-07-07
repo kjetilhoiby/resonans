@@ -44,6 +44,7 @@ import {
 	nextEnduranceSession
 } from './endurance-engine';
 import { computeEffortBudget, composeEffortSuggestion } from './effort-budget';
+import { computeBalanceState, type BalanceState } from './balance';
 import { deriveWeekdayPattern, suggestSessionForDate, type WeekdayPattern } from './schedule';
 import type { EffortBudget } from './types';
 
@@ -326,6 +327,8 @@ export interface TrackStates {
 	/** Begrunnelse når dagens forslag er hvile pga. belastning/budsjett. */
 	restReason: string | null;
 	budget: EffortBudget | null;
+	/** Balanse/variasjon: disiplin-miks, styrke-dekning, intensitetsspredning + én nudge. */
+	balance: BalanceState | null;
 	/** Forslag til sammensetning av gjenstående ukeseffort («8 km løp + 45 min sykkel»). */
 	effortComposition: string | null;
 	pattern: WeekdayPattern;
@@ -415,6 +418,17 @@ export async function computeTrackStates(
 			? composeEffortSuggestion(budget.remainingMin, budget.remainingMax, enduranceState.forventetPaceSekPerKm)
 			: null;
 
+	// Balanse: referanse-pace for intensitetssoner = faktisk snitt siste 14 dager,
+	// ellers kurve. Styrke-dekning teller også rå sensor_events-datoer.
+	const balanceEasyPace =
+		enduranceState?.sistePaceSekPerKm ?? enduranceState?.forventetPaceSekPerKm ?? null;
+	const balance = computeBalanceState(
+		enduranceWorkouts,
+		strengthSessions.map((s) => s.date),
+		balanceEasyPace,
+		today
+	);
+
 	const pattern = deriveWeekdayPattern(enduranceWorkouts, today);
 	const scheduleDays = plan.schedule?.days;
 	const { owner, suggestion, restReason } = suggestSessionForDate(
@@ -444,6 +458,7 @@ export async function computeTrackStates(
 		todaySuggestion: suggestion,
 		restReason,
 		budget,
+		balance,
 		effortComposition,
 		pattern,
 		todayCompleted,
