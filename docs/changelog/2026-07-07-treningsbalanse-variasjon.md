@@ -279,9 +279,10 @@ Nye filer (ekko):
   amplitude), justerbare terskler.
 - `Models/PullupRep.swift` — drag (tempo, dybde, hengetid, puls), `PullupCoach`
   (tempo-feedback + adaptiv «gi deg» når kontrollen svikter). Rene, testbare.
-- `Services/PullupMotionSource.swift` — fusjon av akselerometer (`CMDeviceMotion`,
-  responsivt) og barometer (`CMAltimeter`, driftfri) via komplementærfilter →
-  vertikal forskyvning. Muliggjør skrivebords-test (løft + senk telefonen).
+- `Services/PullupMotionSource.swift` — vertikal HASTIGHET fra akselerometeret
+  (`CMDeviceMotion`) med ZUPT (nullstill hastighet ved ro). Barometeret er droppet
+  fra per-drag-stien (en pull-up ≈ 0,5 m ≈ 0,06 hPa ligger på barometerets støygulv
+  og er for tregt). Muliggjør skrivebords-test (løft + senk telefonen).
 - `ViewModels/PullupViewModel.swift` — tilstandsmaskin, gjenbruker
   `VoiceCommandListener` for «der» (auto-bunn + stemme-override + manuell knapp),
   pip per sekund, `SpeechCoach`-tale, 20 s hvile med auto-progresjon.
@@ -290,10 +291,14 @@ Nye filer (ekko):
 - `Info.plist`: `NSMotionUsageDescription` lagt til (kreves for CoreMotion).
 
 Beslutninger:
-- **Sensor-fusjon:** akselerometeret gir respons (fanger bevegelsen umiddelbart),
-  barometeret gir driftfri absolutt forskyvning — komplementærfilter mellom dem.
-  Akselerometer alene drifter ved integrasjon til posisjon; barometer alene er
-  for tregt for en håndbevegelse. Sammen dekker de både skrivebords-test og drag.
+- **Akselerometer, ikke barometer (rettet):** en pull-up er bare ~0,5 m ≈ 0,06 hPa
+  — på/under barometerets støygulv og for tregt. Vi trenger ikke posisjon i meter,
+  men FASER og TEMPO (stille→opp→ned→stille), som leses fra vertikal hastighet.
+  Integrerer akselerasjon til hastighet (ikke posisjon — halverer drift) + ZUPT
+  (nullstill hastighet i ro) mot restdrift. Barometeret droppet per drag.
+- **Debug-visning** (rå hastighet) i cockpiten fordi terskel-kalibrering på device
+  er selve arbeidet — auto-deteksjonen er et utgangspunkt, ikke en fasit. Apple
+  Watch (håndledd) ville lest bevegelsen renere, men scenariet er telefon-i-lomma.
 - **Auto-bunn + «der»-override + manuell knapp** i lag — hendene er på stanga og
   telefonen i lomma, så input må være automatisk eller stemme.
 - **Tersklene MÅ kalibreres på ekte** (barometer i lomma er støyete) — `PullupRepDetector`
