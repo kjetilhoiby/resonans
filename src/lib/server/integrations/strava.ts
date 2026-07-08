@@ -176,6 +176,8 @@ const SPORT_MAP: Record<string, string> = {
 	indoor_walking: 'Walk',
 	hiking: 'Hike',
 	trail: 'TrailRun',
+	// Strava har ingen «hill»-type — bakkedrag er en løpeøkt der stigningen ligger i GPX-en.
+	hill: 'Run',
 	swimming: 'Swim'
 };
 

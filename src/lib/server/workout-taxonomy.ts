@@ -6,11 +6,13 @@ const WORKOUT_TITLE_BY_SPORT: Record<string, string> = {
 	indoor_cycling: 'Sykkeløkt',
 	swimming: 'Svømmeøkt',
 	walking: 'Gåtur',
-	indoor_walking: 'Gåtur'
+	indoor_walking: 'Gåtur',
+	hill: 'Bakkedrag'
 };
 
 const SENSOR_GOAL_METRICS_BY_SPORT: Record<string, string[]> = {
 	running: ['workouts', 'runs', 'running'],
+	hill: ['workouts', 'runs', 'running'],
 	cycling: ['workouts', 'cycling'],
 	e_bike: ['workouts', 'cycling'],
 	swimming: ['workouts', 'swimming'],
