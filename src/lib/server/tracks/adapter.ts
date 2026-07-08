@@ -102,7 +102,12 @@ export async function getTrackFullProgram(userId: string, plan: TrainingPlanRow)
 	const weeks: ProgramWeekDTO[] = [...byWeek.entries()]
 		.sort(([a], [b]) => a - b)
 		.map(([weekNumber, weekSessions]) => ({
+			// Stabil uke-id + fase — Ekko krever begge på hver uke (jf.
+			// TRENINGSPROGRAM_API.md). Treningsløpet har ingen egen fase-inndeling,
+			// så «rutine» er en nøytral default.
+			id: `${plan.id}-w${weekNumber}`,
 			weekNumber,
+			phase: 'rutine' as const,
 			deload: false,
 			sessions: weekSessions.sort((a, b) => a.dayNumber - b.dayNumber)
 		}));
