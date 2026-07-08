@@ -1,7 +1,7 @@
 # Treningsbalanse og variasjon: det tredje hodet
 
 Dato: 2026-07-07
-Status: ferdig (fase 1–7); fase 8 (bakke-modus i ekko) skrevet, må bygges i Xcode
+Status: ferdig (fase 1–7); fase 8–9 (bakke- + pull-up-modus i ekko) skrevet, må bygges i Xcode
 
 ## Kontekst
 
@@ -266,6 +266,49 @@ Forbehold: **ikke bygget/kompilert** (ingen Xcode i CI). Skrevet mot eksisterend
 API-er (`BLEHeartRateTracker`, `SpeechCoach`, `GPXBuilder`, `TrackingSession`,
 `uploadGPX(routeId:)`); må bygges + røyktestes i Xcode. Sannsynlige småfikser:
 Swift 6-samtidighet rundt recorder-closure og evt. SF Symbol-navn.
+
+### Fase 9: Pull-up-coaching med telefon i lomma — SKREVET (resonans-lab)
+
+Egen modus for negative og positive pull-ups, drevet av barometrisk høyde
+(`CMAltimeter`) med telefonen i lomma: Start → 3-2-1 → (negativ: hopp opp, pip
+per sekund mens du senker) → bunn oppdaget automatisk ELLER du sier «der» →
+20 s hvile med tempo-/hengetid-tilbakemelding → ny nedtelling → nytt drag.
+
+Nye filer (ekko):
+- `Models/PullupRepDetector.swift` — ren vendepunkt-detektor på høyde (topp/bunn +
+  amplitude), justerbare terskler.
+- `Models/PullupRep.swift` — drag (tempo, dybde, hengetid, puls), `PullupCoach`
+  (tempo-feedback + adaptiv «gi deg» når kontrollen svikter). Rene, testbare.
+- `Services/PullupMotionSource.swift` — vertikal HASTIGHET fra akselerometeret
+  (`CMDeviceMotion`) med ZUPT (nullstill hastighet ved ro). Barometeret er droppet
+  fra per-drag-stien (en pull-up ≈ 0,5 m ≈ 0,06 hPa ligger på barometerets støygulv
+  og er for tregt). Muliggjør skrivebords-test (løft + senk telefonen).
+- `ViewModels/PullupViewModel.swift` — tilstandsmaskin, gjenbruker
+  `VoiceCommandListener` for «der» (auto-bunn + stemme-override + manuell knapp),
+  pip per sekund, `SpeechCoach`-tale, 20 s hvile med auto-progresjon.
+- `Views/PullupView.swift` + «Pull-ups»-kort i `ActivityHubView`.
+- `EkkoTests/PullupTests.swift`.
+- `Info.plist`: `NSMotionUsageDescription` lagt til (kreves for CoreMotion).
+
+Beslutninger:
+- **Akselerometer, ikke barometer (rettet):** en pull-up er bare ~0,5 m ≈ 0,06 hPa
+  — på/under barometerets støygulv og for tregt. Vi trenger ikke posisjon i meter,
+  men FASER og TEMPO (stille→opp→ned→stille), som leses fra vertikal hastighet.
+  Integrerer akselerasjon til hastighet (ikke posisjon — halverer drift) + ZUPT
+  (nullstill hastighet i ro) mot restdrift. Barometeret droppet per drag.
+- **Debug-visning** (rå hastighet) i cockpiten fordi terskel-kalibrering på device
+  er selve arbeidet — auto-deteksjonen er et utgangspunkt, ikke en fasit. Apple
+  Watch (håndledd) ville lest bevegelsen renere, men scenariet er telefon-i-lomma.
+- **Auto-bunn + «der»-override + manuell knapp** i lag — hendene er på stanga og
+  telefonen i lomma, så input må være automatisk eller stemme.
+- **Tersklene MÅ kalibreres på ekte** (barometer i lomma er støyete) — `PullupRepDetector`
+  har justerbare konstanter; auto-deteksjonen er et utgangspunkt, ikke en fasit.
+
+Forbehold: **ikke bygget/kompilert** (ingen Xcode i CI). Sannsynlige oppgaver i
+Xcode: legg de 6 nye filene i targetet, kalibrer detektor-tersklene på stanga,
+og verifiser lydøkt-samspillet mellom `VoiceCommandListener` (mikrofon) og
+`SpeechCoach` (tale). Apple Watch ville lest bevegelsen renere — men scenariet
+er bevisst telefon-i-lomma.
 
 ## Beslutninger
 
