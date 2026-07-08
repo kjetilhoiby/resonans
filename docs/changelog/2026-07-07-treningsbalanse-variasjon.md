@@ -279,7 +279,9 @@ Nye filer (ekko):
   amplitude), justerbare terskler.
 - `Models/PullupRep.swift` — drag (tempo, dybde, hengetid, puls), `PullupCoach`
   (tempo-feedback + adaptiv «gi deg» når kontrollen svikter). Rene, testbare.
-- `Services/PullupMotionSource.swift` — `CMAltimeter`-strøm.
+- `Services/PullupMotionSource.swift` — fusjon av akselerometer (`CMDeviceMotion`,
+  responsivt) og barometer (`CMAltimeter`, driftfri) via komplementærfilter →
+  vertikal forskyvning. Muliggjør skrivebords-test (løft + senk telefonen).
 - `ViewModels/PullupViewModel.swift` — tilstandsmaskin, gjenbruker
   `VoiceCommandListener` for «der» (auto-bunn + stemme-override + manuell knapp),
   pip per sekund, `SpeechCoach`-tale, 20 s hvile med auto-progresjon.
@@ -288,8 +290,10 @@ Nye filer (ekko):
 - `Info.plist`: `NSMotionUsageDescription` lagt til (kreves for CoreMotion).
 
 Beslutninger:
-- **Barometrisk høyde er ryggraden**, ikke akselerometeret (som drifter ved
-  integrasjon til posisjon). En pull-up ≈ 0,4–0,6 m vertikalt fanges av barometeret.
+- **Sensor-fusjon:** akselerometeret gir respons (fanger bevegelsen umiddelbart),
+  barometeret gir driftfri absolutt forskyvning — komplementærfilter mellom dem.
+  Akselerometer alene drifter ved integrasjon til posisjon; barometer alene er
+  for tregt for en håndbevegelse. Sammen dekker de både skrivebords-test og drag.
 - **Auto-bunn + «der»-override + manuell knapp** i lag — hendene er på stanga og
   telefonen i lomma, så input må være automatisk eller stemme.
 - **Tersklene MÅ kalibreres på ekte** (barometer i lomma er støyete) — `PullupRepDetector`
