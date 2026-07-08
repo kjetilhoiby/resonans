@@ -21,33 +21,38 @@ function weekendAt(hours: number, minutes: number): Date {
 }
 
 describe('getActivePeriodSlot – hverdag', () => {
-	it('gir natt fra 05:00 til 07:29', () => {
+	it('gir natt fra 05:00 til 08:59', () => {
 		expect(getActivePeriodSlot(weekdayAt(5, 0))?.id).toBe('natt');
-		expect(getActivePeriodSlot(weekdayAt(7, 29))?.id).toBe('natt');
+		expect(getActivePeriodSlot(weekdayAt(8, 59))?.id).toBe('natt');
 	});
 
-	it('gir morgen fra 07:30 til 11:59', () => {
-		expect(getActivePeriodSlot(weekdayAt(7, 30))?.id).toBe('morgen');
-		expect(getActivePeriodSlot(weekdayAt(11, 59))?.id).toBe('morgen');
+	it('gir ingenting i hullet 09:00–09:59 (morgenen er i gang, for tidlig å spørre)', () => {
+		expect(getActivePeriodSlot(weekdayAt(9, 0))).toBeNull();
+		expect(getActivePeriodSlot(weekdayAt(9, 59))).toBeNull();
 	});
 
-	it('gir ingenting i lunsj-hullet 12:00–13:59', () => {
-		expect(getActivePeriodSlot(weekdayAt(12, 0))).toBeNull();
-		expect(getActivePeriodSlot(weekdayAt(13, 59))).toBeNull();
+	it('gir morgen fra 10:00 til 12:59', () => {
+		expect(getActivePeriodSlot(weekdayAt(10, 0))?.id).toBe('morgen');
+		expect(getActivePeriodSlot(weekdayAt(12, 59))?.id).toBe('morgen');
 	});
 
-	it('gir arbeidsdag fra 14:00 til 17:59', () => {
-		expect(getActivePeriodSlot(weekdayAt(14, 0))?.id).toBe('arbeidsdag');
+	it('gir ingenting i hullet 13:00–15:29', () => {
+		expect(getActivePeriodSlot(weekdayAt(13, 0))).toBeNull();
+		expect(getActivePeriodSlot(weekdayAt(15, 29))).toBeNull();
+	});
+
+	it('gir arbeidsdag fra 15:30 til 17:59', () => {
+		expect(getActivePeriodSlot(weekdayAt(15, 30))?.id).toBe('arbeidsdag');
 		expect(getActivePeriodSlot(weekdayAt(17, 59))?.id).toBe('arbeidsdag');
 	});
 
-	it('gir ettermiddag fra 18:00 til 19:59', () => {
+	it('gir ettermiddag fra 18:00 til 20:29', () => {
 		expect(getActivePeriodSlot(weekdayAt(18, 0))?.id).toBe('ettermiddag');
-		expect(getActivePeriodSlot(weekdayAt(19, 59))?.id).toBe('ettermiddag');
+		expect(getActivePeriodSlot(weekdayAt(20, 29))?.id).toBe('ettermiddag');
 	});
 
-	it('gir kveld fra 20:00 til 23:59', () => {
-		expect(getActivePeriodSlot(weekdayAt(20, 0))?.id).toBe('kveld');
+	it('gir kveld fra 20:30 til 23:59', () => {
+		expect(getActivePeriodSlot(weekdayAt(20, 30))?.id).toBe('kveld');
 		expect(getActivePeriodSlot(weekdayAt(23, 59))?.id).toBe('kveld');
 	});
 
@@ -64,18 +69,24 @@ describe('getActivePeriodSlot – hverdag', () => {
 });
 
 describe('getActivePeriodSlot – helg/fridag', () => {
-	it('gir natt fra 05:00 til 06:59 (kortere enn hverdag)', () => {
+	it('gir natt fra 05:00 til 09:59 (lengre helg-morgen)', () => {
 		expect(getActivePeriodSlot(weekendAt(5, 0))?.id).toBe('natt');
-		expect(getActivePeriodSlot(weekendAt(6, 59))?.id).toBe('natt');
+		expect(getActivePeriodSlot(weekendAt(9, 59))?.id).toBe('natt');
 	});
 
-	it('gir morgen fra 07:00 til 09:59', () => {
-		expect(getActivePeriodSlot(weekendAt(7, 0))?.id).toBe('morgen');
-		expect(getActivePeriodSlot(weekendAt(9, 59))?.id).toBe('morgen');
+	it('gir morgen fra 10:00 til 12:59', () => {
+		expect(getActivePeriodSlot(weekendAt(10, 0))?.id).toBe('morgen');
+		expect(getActivePeriodSlot(weekendAt(12, 59))?.id).toBe('morgen');
 	});
 
-	it('gir dag fra 10:00 til 18:59', () => {
-		expect(getActivePeriodSlot(weekendAt(10, 0))?.id).toBe('dag');
+	it('gir ingenting midt på dagen 13:00–14:59 (for tidlig å spørre om dagen)', () => {
+		expect(getActivePeriodSlot(weekendAt(13, 0))).toBeNull();
+		expect(getActivePeriodSlot(weekendAt(14, 59))).toBeNull();
+	});
+
+	it('gir dag fra 15:00 til 18:59, ikke kl. 10', () => {
+		expect(getActivePeriodSlot(weekendAt(10, 0))?.id).not.toBe('dag');
+		expect(getActivePeriodSlot(weekendAt(15, 0))?.id).toBe('dag');
 		expect(getActivePeriodSlot(weekendAt(18, 59))?.id).toBe('dag');
 	});
 
