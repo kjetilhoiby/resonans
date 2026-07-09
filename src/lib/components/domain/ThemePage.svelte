@@ -404,6 +404,7 @@
 				initialMetricSettings={initialMetricSettings}
 				{tripProfile}
 				{ferieProfile}
+				themeConversationId={conversationId}
 				onSwitchToChat={goToChat}
 				onStartFlow={startFlow}
 			/>

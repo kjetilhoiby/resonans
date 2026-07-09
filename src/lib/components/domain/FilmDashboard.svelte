@@ -8,14 +8,18 @@
 	import FilmListView from './FilmListView.svelte';
 	import WhatToWatchView from './WhatToWatchView.svelte';
 	import FilmProvidersSettings from './FilmProvidersSettings.svelte';
+	import FilmThemeChatView from './FilmThemeChatView.svelte';
 	import { page } from '$app/stores';
 	import { get } from 'svelte/store';
 	import type { Film, FilmList, FilmListItem } from './film-api';
 
 	interface Props {
 		themeId: string;
+		themeName?: string;
+		themeEmoji?: string | null;
+		themeConversationId?: string | null;
 	}
-	let { themeId }: Props = $props();
+	let { themeId, themeName = 'Film', themeEmoji = '🎬', themeConversationId = null }: Props = $props();
 
 	interface ChatMsg {
 		role: 'user' | 'assistant';
@@ -30,7 +34,7 @@
 	let loaded = $state(false);
 
 	/* ── View ───────────────────────────────────────────── */
-	type View = 'library' | 'film' | 'list' | 'whatToWatch' | 'providers';
+	type View = 'library' | 'film' | 'list' | 'whatToWatch' | 'providers' | 'themeChat';
 	let view = $state<View>('library');
 	type FilmTab = 'chat' | 'klipp' | 'fakta' | 'kontekst';
 	let filmTab = $state<FilmTab>('chat');
@@ -232,9 +236,19 @@
 		<WhatToWatchView {themeId} onClose={() => (view = 'library')} onOpenProviders={() => (view = 'providers')} />
 	{:else if view === 'providers'}
 		<FilmProvidersSettings {themeId} onClose={() => (view = 'library')} />
+	{:else if view === 'themeChat'}
+		<FilmThemeChatView
+			{themeId}
+			{themeName}
+			conversationId={themeConversationId}
+			{films}
+			onBack={() => (view = 'library')}
+		/>
 	{:else}
 		<FilmLibraryView
 			{themeId}
+			{themeName}
+			{themeEmoji}
 			{films}
 			{lists}
 			{loading}
@@ -245,6 +259,7 @@
 			onListCreated={handleListCreated}
 			onOpenWhatToWatch={() => (view = 'whatToWatch')}
 			onOpenProviders={() => (view = 'providers')}
+			onOpenChat={() => (view = 'themeChat')}
 		/>
 	{/if}
 </div>
