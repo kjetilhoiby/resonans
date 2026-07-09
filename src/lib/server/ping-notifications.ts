@@ -86,8 +86,7 @@ export async function notifyPingEvent(args: {
 	// ?ref=push-markøren gjør at hjemskjermen lar være å åpne fullskjerm-sjekkin.
 	let notifyUrl = `${appUrl}/?ref=push`;
 	if (data.cycle_id) {
-		const params = new URLSearchParams({ cycle: data.cycle_id, appliance: name });
-		notifyUrl = `${appUrl}/apparat?${params}`;
+		notifyUrl = `${appUrl}/apparat/${encodeURIComponent(name)}`;
 	}
 
 	const delivery = await PushDeliveryService.deliverToUser({
@@ -142,8 +141,7 @@ export async function notifyPingMatch(args: {
 	const body = `Ferdig ca. ${finishTime}`;
 	const tag = `ping-match-${cycleId}`;
 
-	const params = new URLSearchParams({ cycle: cycleId, appliance });
-	const notifyUrl = `${appUrl}/apparat?${params}`;
+	const notifyUrl = `${appUrl}/apparat/${encodeURIComponent(appliance)}`;
 
 	const delivery = await PushDeliveryService.deliverToUser({
 		userId,

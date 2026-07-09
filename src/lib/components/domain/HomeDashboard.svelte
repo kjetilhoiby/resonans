@@ -222,19 +222,9 @@
 		return new Date(iso).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' });
 	}
 
-	// Kjørende syklus → detaljsiden (korriger program/tid). Ellers → label-siden (merk ferdige sykluser).
-	// Støvsuger har ingen label-/detaljside ennå → tomt (kortet navigerer ikke).
+	// Alle apparater → per-apparat statusside (status + runs-liste + labeling).
 	function applianceHref(a: Appliance): string {
-		if (a.vacuum) return '';
-		if (a.cycle?.isRunning) {
-			const cycleId = a.recentEvents.find((e) => e.data?.cycle_id)?.data.cycle_id as
-				| string
-				| undefined;
-			if (cycleId) {
-				return `/apparat?cycle=${encodeURIComponent(cycleId)}&appliance=${encodeURIComponent(a.name)}`;
-			}
-		}
-		return '/apparat/label';
+		return `/apparat/${encodeURIComponent(a.name)}`;
 	}
 
 	const season = currentSeason();
@@ -339,11 +329,7 @@
 						class="appliance-card"
 						class:running={status.state === 'running'}
 						class:done={status.state === 'done'}
-						class:static={!!a.vacuum}
-						onclick={() => {
-							const href = applianceHref(a);
-							if (href) onOpenAppliance?.(href);
-						}}
+						onclick={() => onOpenAppliance?.(applianceHref(a))}
 					>
 						<div class="appliance-header">
 							<span class="appliance-emoji">{a.emoji}</span>
@@ -843,13 +829,6 @@
 	}
 	.appliance-card.done {
 		border-color: var(--success-border);
-	}
-	/* Støvsuger-kort navigerer ikke (ingen detaljside ennå) → ikke klikkbart-utseende. */
-	.appliance-card.static {
-		cursor: default;
-	}
-	.appliance-card.static:not(.running):hover {
-		border-color: var(--border-color);
 	}
 	.vacuum-battery {
 		margin-left: 0.4rem;
