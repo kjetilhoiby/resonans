@@ -80,6 +80,7 @@
 		initialMetricSettings?: MetricSettingsMap;
 		tripProfile?: Record<string, unknown> | null;
 		ferieProfile?: Record<string, unknown> | null;
+		themeConversationId?: string | null;
 		onSwitchToChat?: (draft?: string) => void;
 		onStartFlow?: (flow: Flow) => void;
 	}
@@ -91,6 +92,7 @@
 		initialMetricSettings = {},
 		tripProfile = null,
 		ferieProfile = null,
+		themeConversationId = null,
 		onSwitchToChat,
 		onStartFlow
 	}: Props = $props();
@@ -491,7 +493,12 @@
 {#if isBooks}
 	<BookDashboard themeId={theme.id} />
 {:else if isFilm}
-	<FilmDashboard themeId={theme.id} />
+	<FilmDashboard
+		themeId={theme.id}
+		themeName={theme.name}
+		themeEmoji={theme.emoji}
+		{themeConversationId}
+	/>
 {:else}
 <!-- TripDashboard har egne horisontale gutters per seksjon — flush panel unngår dobbel margin -->
 <div class="data-panel" class:data-panel-flush={isTravel}>

@@ -4,6 +4,8 @@
 
 	interface Props {
 		themeId: string;
+		themeName?: string;
+		themeEmoji?: string | null;
 		films: Film[];
 		lists: FilmList[];
 		loading: boolean;
@@ -14,10 +16,13 @@
 		onListCreated: (list: FilmList) => void;
 		onOpenWhatToWatch: () => void;
 		onOpenProviders: () => void;
+		onOpenChat: () => void;
 	}
 
 	let {
 		themeId,
+		themeName = 'Film',
+		themeEmoji = '🎬',
 		films,
 		lists,
 		loading,
@@ -27,7 +32,8 @@
 		onOpenList,
 		onListCreated,
 		onOpenWhatToWatch,
-		onOpenProviders
+		onOpenProviders,
+		onOpenChat
 	}: Props = $props();
 
 	const grouped = $derived.by(() => {
@@ -177,9 +183,22 @@
 </script>
 
 <div class="fl-library">
+	<!-- Tittel-linje — tittelen ER tilbakeknappen (→ hjem) -->
+	<header class="fl-lib-header">
+		<a class="fl-lib-title" href="/" data-track="film-bibliotek:tilbake-hjem">
+			<span class="fl-lib-emoji">{themeEmoji ?? '🎬'}</span>{themeName}
+		</a>
+		{#if films.length}
+			<span class="fl-lib-subtitle">
+				{films.filter((f) => f.status === 'watched').length} sett · {films.filter((f) => f.status === 'want_to_watch').length} på ønskelisten
+			</span>
+		{/if}
+	</header>
+
 	<!-- Snarveier -->
 	<div class="fl-lib-shortcuts">
 		<button class="fl-shortcut fl-shortcut-primary" onclick={onOpenWhatToWatch}>🍿 Hva ser jeg i kveld?</button>
+		<button class="fl-shortcut" onclick={onOpenChat} aria-label="Prat om film">💬</button>
 		<button class="fl-shortcut" onclick={onOpenProviders} aria-label="Mine strømmetjenester">📺</button>
 	</div>
 
@@ -334,6 +353,29 @@
 		flex-direction: column;
 		gap: 12px;
 		flex: 1;
+	}
+
+	.fl-lib-header {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+	.fl-lib-title {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		font-size: 1.5rem;
+		font-weight: 700;
+		color: var(--film-text-primary, #f0e8e6);
+		text-decoration: none;
+		width: fit-content;
+	}
+	.fl-lib-emoji {
+		font-size: 1.4rem;
+	}
+	.fl-lib-subtitle {
+		font-size: 0.78rem;
+		color: var(--film-text-tertiary, #7a6a6a);
 	}
 
 	.fl-lib-shortcuts {
