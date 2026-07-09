@@ -72,6 +72,7 @@ export interface MaterialResult {
 	wasteText: string; // kort svinn-/kapp-beskrivelse
 	tooBig: string[]; // kapp som er for store for stock-enheten (visningstekst)
 	layout: MaterialLayout;
+	cutCount?: number; // antall sagsnitt (kun satt i guillotine-modus for plater)
 }
 
 export interface CutListResult {
@@ -336,6 +337,188 @@ export function packSheets(
 	return { sheets: sheets.length, tooLarge };
 }
 
+/* ── 2D guillotine: sagbare kutt (kant-til-kant) ─────────────────────── */
+// Guillotine-pakking: hvert kutt går HELE veien tvers over det aktuelle
+// (rest)rektangelet — slik en sag faktisk kutter. Vi holder fri-rektanglene
+// DISJUNKTE (i motsetning til MaxRects, som lar dem overlappe): når et kapp
+// legges, deles kun fri-rektangelet det havner i, med ett rett snitt i to nye
+// rektangler. Det garanterer at hele layouten kan sages med rette gjennomgående
+// snitt. Pakkingen blir litt løsere enn MaxRects (kan trenge en ekstra plate i
+// blant), men planen kan faktisk gjennomføres med en vanlig sag.
+
+// Hvordan L-resten etter et kapp deles i to fri-rektangler:
+//  hsplit    — horisontalt snitt: bunnfeltet får full bredde
+//  vsplit    — vertikalt snitt: høyrefeltet får full høyde
+//  maxarea   — velg snittet som gir det største enkelt-fri-rektangelet
+//  minarea   — motsatt (etterlater mindre spredning)
+type GuillotineSplit = 'hsplit' | 'vsplit' | 'maxarea' | 'minarea';
+
+/** Del fri-rektangelet f i to disjunkte rester etter at rw×rh er lagt øverst til venstre. */
+function guillotineChildren(f: FreeRect, rw: number, rh: number, kerf: number, split: GuillotineSplit): FreeRect[] {
+	const rightW = f.w - rw - kerf; // ledig bredde til høyre for kappet
+	const bottomH = f.h - rh - kerf; // ledig høyde under kappet
+	let horizontal: boolean; // true → bunnfeltet spenner full bredde (hsplit)
+	if (split === 'hsplit') horizontal = true;
+	else if (split === 'vsplit') horizontal = false;
+	else {
+		const hMax = Math.max(rightW * rh, f.w * bottomH); // største barn ved hsplit
+		const vMax = Math.max(rightW * f.h, rw * bottomH); // største barn ved vsplit
+		horizontal = split === 'maxarea' ? hMax >= vMax : hMax < vMax;
+	}
+	const out: FreeRect[] = [];
+	if (horizontal) {
+		if (rightW > EPS) out.push({ x: f.x + rw + kerf, y: f.y, w: rightW, h: rh });
+		if (bottomH > EPS) out.push({ x: f.x, y: f.y + rh + kerf, w: f.w, h: bottomH });
+	} else {
+		if (rightW > EPS) out.push({ x: f.x + rw + kerf, y: f.y, w: rightW, h: f.h });
+		if (bottomH > EPS) out.push({ x: f.x, y: f.y + rh + kerf, w: rw, h: bottomH });
+	}
+	return out;
+}
+
+/** Én komplett guillotine-pakking med gitt sortering + split-regel. */
+function packWithGuillotine(
+	items: Array<{ w: number; h: number }>,
+	stockW: number,
+	stockH: number,
+	kerfMm: number,
+	split: GuillotineSplit
+): PackedSheet[] {
+	const sheets: PackedSheet[] = [];
+	for (const it of items) {
+		// Beste (plate, fri-rektangel, orientering) etter best-short-side-fit.
+		let best: { s: number; fi: number; x: number; y: number; w: number; h: number; s1: number; s2: number } | null = null;
+		for (let s = 0; s < sheets.length; s++) {
+			const free = sheets[s].free;
+			for (let fi = 0; fi < free.length; fi++) {
+				const f = free[fi];
+				for (const [rw, rh] of orientations(it.w, it.h, 'bssf')) {
+					if (rw > f.w + EPS || rh > f.h + EPS) continue;
+					const s1 = Math.min(f.w - rw, f.h - rh);
+					const s2 = Math.max(f.w - rw, f.h - rh);
+					if (!best || s1 < best.s1 - EPS || (Math.abs(s1 - best.s1) <= EPS && s2 < best.s2 - EPS)) {
+						best = { s, fi, x: f.x, y: f.y, w: rw, h: rh, s1, s2 };
+					}
+				}
+			}
+		}
+		if (!best) {
+			// Ny plate — kappet er allerede sjekket mot platemålene (feasibility).
+			let rw = it.w;
+			let rh = it.h;
+			if (!(rw <= stockW + EPS && rh <= stockH + EPS)) [rw, rh] = [it.h, it.w];
+			if (!(rw <= stockW + EPS && rh <= stockH + EPS)) continue; // skal ikke skje
+			sheets.push({ placements: [], free: [{ x: 0, y: 0, w: stockW, h: stockH }] });
+			best = { s: sheets.length - 1, fi: 0, x: 0, y: 0, w: rw, h: rh, s1: 0, s2: 0 };
+		}
+		const sheet = sheets[best.s];
+		sheet.placements.push({ x: best.x, y: best.y, w: best.w, h: best.h });
+		const f = sheet.free[best.fi];
+		sheet.free.splice(best.fi, 1, ...guillotineChildren(f, best.w, best.h, kerfMm, split));
+	}
+	return sheets;
+}
+
+export function layoutSheetsGuillotine(
+	rects: Array<{ w: number; h: number }>,
+	stockW: number,
+	stockH: number,
+	kerfMm = 0
+): { sheets: SheetUnit[]; tooLarge: Array<{ w: number; h: number }> } {
+	const tooLarge: Array<{ w: number; h: number }> = [];
+	const items: Array<{ w: number; h: number }> = [];
+	for (const r of rects) {
+		if (r.w <= 0 || r.h <= 0) continue;
+		const fits = (r.w <= stockW && r.h <= stockH) || (r.h <= stockW && r.w <= stockH);
+		if (!fits) {
+			tooLarge.push(r);
+			continue;
+		}
+		items.push({ w: r.w, h: r.h });
+	}
+
+	const sorters: Array<(a: { w: number; h: number }, b: { w: number; h: number }) => number> = [
+		(a, b) => b.w * b.h - a.w * a.h, // areal synkende
+		(a, b) => Math.max(b.w, b.h) - Math.max(a.w, a.h), // lengste side synkende
+		(a, b) => b.h - a.h || b.w - a.w // høyde synkende
+	];
+	const splits: GuillotineSplit[] = ['hsplit', 'vsplit', 'maxarea', 'minarea'];
+
+	const usedArea = items.reduce((s, it) => s + it.w * it.h, 0);
+	let best: PackedSheet[] | null = null;
+	let bestWaste = Infinity;
+	for (const sorter of sorters) {
+		const sorted = [...items].sort(sorter);
+		for (const split of splits) {
+			const packed = packWithGuillotine(sorted, stockW, stockH, kerfMm, split);
+			const waste = packed.length * stockW * stockH - usedArea;
+			if (best === null || packed.length < best.length || (packed.length === best.length && waste < bestWaste - EPS)) {
+				best = packed;
+				bestWaste = waste;
+			}
+		}
+	}
+
+	const sheets: SheetUnit[] = (best ?? []).map((s) => ({ placements: s.placements }));
+	return { sheets, tooLarge };
+}
+
+/* ── Snitt-telling for en guillotine-layout ──────────────────────────── */
+// Antall sagsnitt ≈ antall rette gjennomgående kutt som må til for å frigjøre
+// alle kappene fra plata. Vi dekomponerer rekursivt: finn et snitt (loddrett
+// eller vannrett) som deler kappene i to ikke-tomme grupper uten å skjære
+// gjennom noe kapp, tell +1, og gjenta på hver side. Et enslig kapp med svinn
+// igjen krever inntil to trimmesnitt (høyre kant + bunn). Estimat for scoping.
+
+const CUT_TOL = 0.5; // mm slingringsmonn for kant-sammenligninger
+
+function cutsInRegion(rects: SheetPlacement[], x: number, y: number, w: number, h: number, kerf: number): number {
+	if (rects.length === 0) return 0;
+	if (rects.length === 1) {
+		const r = rects[0];
+		let c = 0;
+		if (x + w - (r.x + r.w) > kerf + CUT_TOL) c++; // svinn til høyre → ett snitt
+		if (y + h - (r.y + r.h) > kerf + CUT_TOL) c++; // svinn under → ett snitt
+		return c;
+	}
+	// Prøv loddrette snitt (ved hvert kapps høyre kant), deretter vannrette.
+	for (const axis of ['v', 'h'] as const) {
+		const candidates = [
+			...new Set(rects.map((r) => (axis === 'v' ? r.x + r.w : r.y + r.h)))
+		].sort((a, b) => a - b);
+		for (const cut of candidates) {
+			const before: SheetPlacement[] = [];
+			const after: SheetPlacement[] = [];
+			let straddles = false;
+			for (const r of rects) {
+				const lo = axis === 'v' ? r.x : r.y;
+				const hi = axis === 'v' ? r.x + r.w : r.y + r.h;
+				if (hi <= cut + CUT_TOL) before.push(r);
+				else if (lo >= cut - CUT_TOL) after.push(r);
+				else {
+					straddles = true;
+					break;
+				}
+			}
+			if (straddles || before.length === 0 || after.length === 0) continue;
+			const near = axis === 'v'
+				? cutsInRegion(before, x, y, cut - x, h, kerf)
+				: cutsInRegion(before, x, y, w, cut - y, kerf);
+			const far = axis === 'v'
+				? cutsInRegion(after, cut + kerf, y, x + w - (cut + kerf), h, kerf)
+				: cutsInRegion(after, x, cut + kerf, w, y + h - (cut + kerf), kerf);
+			return 1 + near + far;
+		}
+	}
+	// Ingen gyldig guillotine-snitt funnet (skal ikke skje for guillotine-layout).
+	return rects.length;
+}
+
+/** Totalt antall sagsnitt for en guillotine-layout (alle plater). */
+export function countGuillotineCuts(sheets: SheetUnit[], stockW: number, stockH: number, kerfMm = 0): number {
+	return sheets.reduce((sum, sheet) => sum + cutsInRegion(sheet.placements, 0, 0, stockW, stockH, kerfMm), 0);
+}
+
 /* ── Materiale → resultat ─────────────────────────────────────────── */
 
 function expandQuantity<T>(items: Array<{ value: T; quantity: number }>): T[] {
@@ -347,7 +530,7 @@ function expandQuantity<T>(items: Array<{ value: T; quantity: number }>): T[] {
 	return out;
 }
 
-export function computeMaterial(material: Material, kerfMm = 0): MaterialResult {
+export function computeMaterial(material: Material, kerfMm = 0, guillotine = false): MaterialResult {
 	if (material.kind === 'sheet') {
 		const stockW = material.stockWidthMm && material.stockWidthMm > 0 ? material.stockWidthMm : DEFAULT_SHEET_WIDTH_MM;
 		const stockH = material.stockHeightMm && material.stockHeightMm > 0 ? material.stockHeightMm : DEFAULT_SHEET_HEIGHT_MM;
@@ -359,7 +542,9 @@ export function computeMaterial(material: Material, kerfMm = 0): MaterialResult 
 				.filter((c) => (c.widthMm ?? 0) > 0 && (c.heightMm ?? 0) > 0)
 				.map((c) => ({ value: { w: c.widthMm!, h: c.heightMm! }, quantity: c.quantity }))
 		);
-		const { sheets, tooLarge } = layoutSheets(rects, stockW, stockH, kerfMm);
+		const { sheets, tooLarge } = guillotine
+			? layoutSheetsGuillotine(rects, stockW, stockH, kerfMm)
+			: layoutSheets(rects, stockW, stockH, kerfMm);
 
 		return {
 			id: material.id,
@@ -373,7 +558,8 @@ export function computeMaterial(material: Material, kerfMm = 0): MaterialResult 
 			piecesPerStock: 0,
 			wasteText: '',
 			tooBig: tooLarge.map((r) => `${Math.round(r.w)}×${Math.round(r.h)} mm`),
-			layout: { kind: 'sheet', stockWidthMm: stockW, stockHeightMm: stockH, sheets }
+			layout: { kind: 'sheet', stockWidthMm: stockW, stockHeightMm: stockH, sheets },
+			cutCount: guillotine ? countGuillotineCuts(sheets, stockW, stockH, kerfMm) : undefined
 		};
 	}
 
@@ -410,8 +596,10 @@ export function computeMaterial(material: Material, kerfMm = 0): MaterialResult 
 	};
 }
 
-export function computeCutList(materials: Material[], kerfMm = 0): CutListResult {
-	const results = materials.map((m) => computeMaterial(m, kerfMm)).filter((r) => r.totalPieces > 0 || r.tooBig.length > 0);
+export function computeCutList(materials: Material[], kerfMm = 0, guillotine = false): CutListResult {
+	const results = materials
+		.map((m) => computeMaterial(m, kerfMm, guillotine))
+		.filter((r) => r.totalPieces > 0 || r.tooBig.length > 0);
 	const totalCostNok = results.reduce((sum, r) => sum + r.costNok, 0);
 	const hasErrors = results.some((r) => r.tooBig.length > 0);
 	return { materials: results, totalCostNok, hasErrors };

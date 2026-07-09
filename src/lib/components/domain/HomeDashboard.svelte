@@ -50,6 +50,23 @@
 		isRunning: boolean;
 	}
 
+	interface VacuumState {
+		isRunning: boolean;
+		state: string | null;
+		battery: number | null;
+		cleanMinutes: number | null;
+		cleanAreaM2: number | null;
+		cleanPercent: number | null;
+		lastClean: {
+			at: string;
+			areaM2: number | null;
+			durationMinutes: number | null;
+			cleanType: string | null;
+			mapName: string | null;
+			complete: boolean | null;
+		} | null;
+	}
+
 	interface Appliance {
 		sensorId: string;
 		subtype: string;
@@ -58,6 +75,7 @@
 		emoji: string;
 		recentEvents: ApplianceEvent[];
 		cycle: ApplianceCycle | null;
+		vacuum?: VacuumState | null;
 	}
 
 	interface ProjectTheme {
@@ -205,7 +223,9 @@
 	}
 
 	// Kjørende syklus → detaljsiden (korriger program/tid). Ellers → label-siden (merk ferdige sykluser).
+	// Støvsuger har ingen label-/detaljside ennå → tomt (kortet navigerer ikke).
 	function applianceHref(a: Appliance): string {
+		if (a.vacuum) return '';
 		if (a.cycle?.isRunning) {
 			const cycleId = a.recentEvents.find((e) => e.data?.cycle_id)?.data.cycle_id as
 				| string
@@ -255,7 +275,33 @@
 		return rem === 0 ? `${h}t` : `${h}t ${rem}min`;
 	}
 
+	const VACUUM_STATE_LABELS: Record<string, string> = {
+		charging: 'Lader',
+		charger_disconnected: 'I ro',
+		idle: 'I ro',
+		sleeping: 'Hviler',
+		returning_home: 'På vei til dokk',
+		going_to_wash: 'Vasker mopp',
+		washing: 'Vasker mopp',
+		drying: 'Tørker',
+		paused: 'På pause',
+		error: 'Feil'
+	};
+
+	function vacuumStateLabel(state: string | null): string {
+		if (!state) return 'Ukjent';
+		return VACUUM_STATE_LABELS[state] ?? 'I ro';
+	}
+
+	function vacuumStatus(v: VacuumState): { label: string; detail: string | null; state: 'running' | 'done' | 'idle' } {
+		if (v.isRunning) return { label: 'Kjører', detail: null, state: 'running' };
+		if (v.lastClean) return { label: `Sist ${relativeTime(v.lastClean.at)}`, detail: null, state: 'idle' };
+		return { label: vacuumStateLabel(v.state), detail: null, state: 'idle' };
+	}
+
 	function applianceStatus(a: Appliance): { label: string; detail: string | null; state: 'running' | 'done' | 'idle' } {
+		if (a.vacuum) return vacuumStatus(a.vacuum);
+
 		const latest = a.recentEvents[0];
 		if (!latest) return { label: 'Ingen data', detail: null, state: 'idle' };
 
@@ -293,7 +339,11 @@
 						class="appliance-card"
 						class:running={status.state === 'running'}
 						class:done={status.state === 'done'}
-						onclick={() => onOpenAppliance?.(applianceHref(a))}
+						class:static={!!a.vacuum}
+						onclick={() => {
+							const href = applianceHref(a);
+							if (href) onOpenAppliance?.(href);
+						}}
 					>
 						<div class="appliance-header">
 							<span class="appliance-emoji">{a.emoji}</span>
@@ -305,7 +355,26 @@
 							{/if}
 							{status.label}
 						</div>
-						{#if a.cycle?.isRunning}
+						{#if a.vacuum}
+							{#if a.vacuum.isRunning}
+								{#if a.vacuum.cleanPercent != null}
+									<div class="appliance-progress">
+										<AnimatedProgressBar pct={a.vacuum.cleanPercent} tone="accent" height={6} />
+									</div>
+								{/if}
+								<div class="cycle-estimate">
+									<span class="remaining">{formatDuration(a.vacuum.cleanMinutes ?? 0)}</span>
+									{#if a.vacuum.cleanAreaM2 != null}
+										<span class="program">· {a.vacuum.cleanAreaM2} m²</span>
+									{/if}
+								</div>
+							{:else}
+								<div class="appliance-detail">
+									{#if a.vacuum.lastClean?.areaM2 != null}Sist: {a.vacuum.lastClean.areaM2} m²{/if}
+									{#if a.vacuum.battery != null}<span class="vacuum-battery">🔋 {a.vacuum.battery} %</span>{/if}
+								</div>
+							{/if}
+						{:else if a.cycle?.isRunning}
 							{@const pct =
 								a.cycle.totalMinutes > 0
 									? (a.cycle.elapsedMinutes / a.cycle.totalMinutes) * 100
@@ -774,6 +843,17 @@
 	}
 	.appliance-card.done {
 		border-color: var(--success-border);
+	}
+	/* Støvsuger-kort navigerer ikke (ingen detaljside ennå) → ikke klikkbart-utseende. */
+	.appliance-card.static {
+		cursor: default;
+	}
+	.appliance-card.static:not(.running):hover {
+		border-color: var(--border-color);
+	}
+	.vacuum-battery {
+		margin-left: 0.4rem;
+		color: var(--text-tertiary);
 	}
 	.appliance-header {
 		display: flex;

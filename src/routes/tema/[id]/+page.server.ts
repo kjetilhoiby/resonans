@@ -174,6 +174,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 			transportEnabled: c.transportEnabled,
 			transportMaxLengthMm: c.transportMaxLengthMm,
 			transportMaxWidthMm: c.transportMaxWidthMm,
+			guillotine: c.guillotine,
 			materials: c.materials ?? [],
 			sortOrder: c.sortOrder,
 			updatedAt: c.updatedAt.toISOString()

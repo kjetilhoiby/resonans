@@ -15,6 +15,105 @@ interface ApplianceEventInput {
 	data: unknown;
 }
 
+/** Tilstand for en støvsuger, bygget fra vacuum_*-events (ikke watt-basert). */
+export interface VacuumState {
+	isRunning: boolean;
+	state: string | null; // rå tilstandskode fra enheten (charging/cleaning/…)
+	battery: number | null;
+	// Live, kun meningsfullt når isRunning:
+	cleanMinutes: number | null;
+	cleanAreaM2: number | null;
+	cleanPercent: number | null;
+	// Siste fullførte runde:
+	lastClean: {
+		at: string;
+		areaM2: number | null;
+		durationMinutes: number | null;
+		cleanType: string | null;
+		mapName: string | null;
+		complete: boolean | null;
+	} | null;
+}
+
+interface VacuumEventInput {
+	dataType: string;
+	timestamp: string;
+	data: unknown;
+}
+
+// Hvor gammel siste progress kan være før vi ikke lenger regner den som "kjører".
+const PROGRESS_FRESH_MS = 5 * 60_000;
+
+function numberOrNull(v: unknown): number | null {
+	return typeof v === 'number' && !Number.isNaN(v) ? v : null;
+}
+
+/**
+ * Bygg støvsuger-tilstand fra vacuum_*-events (sortert nyeste først).
+ *
+ * - `vacuum_progress` (hvert 30s under kjøring): medgått tid/areal/prosent
+ * - `vacuum_status` (ved tilstandsendring, også i ro): state + batteri
+ * - `vacuum_clean` (fullført runde): siste rengjøring
+ *
+ * "Kjører nå" utledes av at ferske progress-events er nyere enn siste status
+ * (progress sendes kun mens den kjører). Returnerer null om ingen vacuum-events.
+ */
+export function buildVacuumState(events: VacuumEventInput[]): VacuumState | null {
+	let latestStatus: VacuumEventInput | undefined;
+	let latestProgress: VacuumEventInput | undefined;
+	let lastClean: VacuumEventInput | undefined;
+	for (const ev of events) {
+		if (ev.dataType === 'vacuum_status') latestStatus ??= ev;
+		else if (ev.dataType === 'vacuum_progress') latestProgress ??= ev;
+		else if (ev.dataType === 'vacuum_clean') lastClean ??= ev;
+	}
+	if (!latestStatus && !latestProgress && !lastClean) return null;
+
+	const sData = (latestStatus?.data ?? {}) as Record<string, unknown>;
+	const pData = (latestProgress?.data ?? {}) as Record<string, unknown>;
+
+	const statusTs = latestStatus ? Date.parse(latestStatus.timestamp) : -Infinity;
+	const progressTs = latestProgress ? Date.parse(latestProgress.timestamp) : -Infinity;
+	const progressFresh = latestProgress != null && Date.now() - progressTs < PROGRESS_FRESH_MS;
+
+	// Progress sendes kun mens den kjører: fersk progress nyere enn siste
+	// tilstandsendring ⇒ kjører. Ellers stol på siste status.in_cleaning.
+	const isRunning =
+		progressFresh && progressTs >= statusTs ? true : latestStatus ? sData.in_cleaning === true : false;
+
+	// state/batteri fra den nyeste kilden.
+	const newest = progressTs >= statusTs ? pData : sData;
+	const state =
+		(typeof newest.state === 'string'
+			? newest.state
+			: typeof sData.state === 'string'
+				? (sData.state as string)
+				: null) ?? null;
+	const battery = numberOrNull(newest.battery) ?? numberOrNull(sData.battery) ?? numberOrNull(pData.battery);
+
+	const lcd = (lastClean?.data ?? {}) as Record<string, unknown>;
+	const last = lastClean
+		? {
+				at: typeof lcd.timestamp === 'string' ? lcd.timestamp : lastClean.timestamp,
+				areaM2: numberOrNull(lcd.area_m2),
+				durationMinutes: numberOrNull(lcd.duration_minutes),
+				cleanType: typeof lcd.clean_type === 'string' ? lcd.clean_type : null,
+				mapName: typeof lcd.map_name === 'string' ? lcd.map_name : null,
+				complete: typeof lcd.complete === 'boolean' ? lcd.complete : null
+			}
+		: null;
+
+	return {
+		isRunning,
+		state,
+		battery,
+		cleanMinutes: isRunning ? numberOrNull(pData.clean_minutes) : null,
+		cleanAreaM2: isRunning ? numberOrNull(pData.clean_area_m2) : null,
+		cleanPercent: isRunning ? numberOrNull(pData.clean_percent) : null,
+		lastClean: last
+	};
+}
+
 function collectPastDurations(events: ApplianceEventInput[]): number[] {
 	const durations: number[] = [];
 	for (const ev of events) {

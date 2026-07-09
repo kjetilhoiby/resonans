@@ -203,3 +203,27 @@ Mange byggevarebutikker kapper gratis. Resonans foreslår nå hvilke snitt du b�
 - **«Tilpass kapp til bil» som checkbox** (kolonne `transport_enabled`, migrasjon
   0026, default på): krysses av/på per kappliste. Avkrysset skjuler både
   transport-grense-feltene og «kapp i butikk»-linja.
+
+### Fase 11: «Sagbare kutt (guillotine)» — opt-in optimering
+
+Dagens MaxRects-pakker minimerer antall plater, men kan lage layouter som krever
+«innstikk»-kutt (biter som ikke går kant-til-kant) — umulig å sage med en vanlig
+sag/panelsag. Ny toggle lar deg be om en layout der hvert snitt går HELE veien
+tvers over, slik en sag faktisk kutter.
+
+- `calc.ts`: `layoutSheetsGuillotine` — pakker med DISJUNKTE fri-rektangler (deler
+  kun rektangelet kappet legges i, med ett rett snitt). Prøver 3 sorteringer × 4
+  split-regler (`hsplit`/`vsplit`/`maxarea`/`minarea`), velger færrest plater →
+  minst svinn. Garanterer at layouten kan sages med rette gjennomgående snitt.
+- `countGuillotineCuts` — teller sagsnitt ved rekursiv guillotine-dekomponering
+  (loddrett/vannrett fullkutt som deler kappene i to grupper; enslig kapp med svinn
+  = inntil 2 trimmesnitt). Vises som «≈ N sagsnitt» i kappeplanen. Estimat.
+- `computeMaterial(mat, kerf, guillotine)` og `computeCutList(..., guillotine)` fikk
+  et `guillotine`-flagg; `MaterialResult.cutCount` settes kun i guillotine-modus.
+- **Kolonne `guillotine boolean default false`** (migrasjon 0035, opt-in slik at
+  eksisterende lister beholder tettest pakking og samme kostnad). Schema, begge
+  API-endepunkt, `+page.server.ts`-loader og `ThemePage`-props oppdatert.
+- UI: checkbox «Sagbare kutt (guillotine)» ved siden av sagsnitt. AI-kontekst
+  (`context-service.ts`) bruker samme modus så estimatet matcher det brukeren ser.
+- Tester: guillotine-egenskap (layouten kan dekomponeres med rette snitt),
+  feasibility/ingen overlapp på skjermbilde-eksempelet, snitt-telling, `cutCount`.
