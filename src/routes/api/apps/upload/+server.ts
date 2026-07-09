@@ -6,7 +6,7 @@ import { and, eq } from 'drizzle-orm';
 import { env } from '$env/dynamic/private';
 import { v2 as cloudinary } from 'cloudinary';
 import { getAppConfig, type ExternalAppConfig } from '$lib/server/app-registry';
-import { parseWorkoutFile } from '$lib/server/integrations/dropbox-sync';
+import { parseWorkoutFile, downsampleTrack, MAX_STORED_TRACK_POINTS } from '$lib/server/integrations/dropbox-sync';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
 import { normalizeSportType, describeWorkoutSportType } from '$lib/server/workout-taxonomy';
 import { pushSession } from '$lib/server/services/strava-sync-service';
@@ -169,7 +169,7 @@ async function handleWorkoutUpload(
 					parsed.distance > 0
 						? parsed.duration / (parsed.distance / 1000)
 						: undefined,
-				trackPoints: parsed.trackPoints.slice(0, 500)
+				trackPoints: downsampleTrack(parsed.trackPoints, MAX_STORED_TRACK_POINTS)
 			},
 			metadata: {
 				sourceApp: ctx.app.id,
