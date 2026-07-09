@@ -10,7 +10,7 @@ import {
 import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
 import { getActiveEgenfrekvensFlags } from '$lib/server/egenfrekvens-checkin';
-import { generateSessionAlternative } from './session-alternative';
+import { generateSessionAlternative, normalizeAlternative } from './session-alternative';
 import { sessionPlannedDate, mondayOf } from './repository';
 import type { ProgramSessionDTO } from './types';
 
@@ -53,6 +53,8 @@ export interface ReadinessAlternative {
 		notes?: string;
 	};
 	plannedExercises?: Array<{
+		id?: string;
+		order?: number;
 		exerciseName: string;
 		sets: number;
 		repsTarget?: number;
@@ -376,7 +378,9 @@ export async function evaluateProgramReadiness(args: {
 			state: existing.state as ReadinessState,
 			reasons: existing.reasons ?? reasons,
 			signals: (existing.signals as ReadinessSignals) ?? signals,
-			alternative: (existing.alternative as ReadinessAlternative | null) ?? null,
+			alternative: existing.alternative
+				? normalizeAlternative(existing.alternative as ReadinessAlternative)
+				: null,
 			plannedSession,
 			plannedSessionDate: date,
 			programId,

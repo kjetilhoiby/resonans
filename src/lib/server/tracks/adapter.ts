@@ -59,7 +59,13 @@ export function toSessionDTO(row: TrackSessionRow, plan: TrainingPlanRow): Progr
 		kind: row.kind === 'run' ? 'run' : 'strength',
 		name: payload.name,
 		restSeconds: payload.restSeconds,
-		plannedExercises: payload.plannedExercises?.map((e, i) => ({ order: i + 1, ...e })),
+		// Ekko krever id på hver øvelse (TRENINGSPROGRAM_API.md). Payloaden har
+		// ingen egne øvelses-id-er, så en stabil id avledes av rad-id + posisjon.
+		plannedExercises: payload.plannedExercises?.map((e, i) => ({
+			order: i + 1,
+			...e,
+			id: `${row.id}-e${i + 1}`
+		})),
 		plannedRun: payload.plannedRun,
 		notes: payload.notes,
 		isTest: payload.isTest,

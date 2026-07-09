@@ -13,7 +13,10 @@ import {
 	type ReadinessSignals,
 	type ReadinessState
 } from '$lib/server/programs/readiness';
-import { generateSessionAlternative } from '$lib/server/programs/session-alternative';
+import {
+	generateSessionAlternative,
+	normalizeAlternative
+} from '$lib/server/programs/session-alternative';
 import type { ProgramSessionDTO } from '$lib/server/programs/types';
 
 /**
@@ -90,7 +93,9 @@ export async function evaluatePlanReadiness(args: {
 			state: existing.state as ReadinessState,
 			reasons: existing.reasons ?? reasons,
 			signals: (existing.signals as ReadinessSignals) ?? signals,
-			alternative: (existing.alternative as ReadinessAlternative | null) ?? null,
+			alternative: existing.alternative
+				? normalizeAlternative(existing.alternative as ReadinessAlternative)
+				: null,
 			cached: true,
 			date
 		};

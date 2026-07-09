@@ -2979,8 +2979,11 @@ export const programReadinessAssessments = pgTable('program_readiness_assessment
 			hrZoneHint?: string;
 			notes?: string;
 		};
-		// For styrke: redusert utgave av plannedExercises (ikke nødvendigvis samme)
+		// For styrke: redusert utgave av plannedExercises (ikke nødvendigvis samme).
+		// id/order syntetiseres ved generering — Ekko krever begge på hver øvelse.
 		plannedExercises?: Array<{
+			id?: string;
+			order?: number;
 			exerciseName: string;
 			sets: number;
 			repsTarget?: number;
@@ -3204,7 +3207,10 @@ export const trackReadinessAssessments = pgTable('track_readiness_assessments', 
 			hrZoneHint?: string;
 			notes?: string;
 		};
+		// id/order syntetiseres ved generering — Ekko krever begge på hver øvelse.
 		plannedExercises?: Array<{
+			id?: string;
+			order?: number;
 			exerciseName: string;
 			sets: number;
 			repsTarget?: number;

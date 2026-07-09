@@ -61,6 +61,7 @@ describe('toSessionDTO (Ekko-kontrakten)', () => {
 			  "plannedExercises": [
 			    {
 			      "exerciseName": "Armhevinger",
+			      "id": "ts-1-e1",
 			      "notes": "Totalt 33 reps",
 			      "order": 1,
 			      "repsTarget": 11,
@@ -69,12 +70,14 @@ describe('toSessionDTO (Ekko-kontrakten)', () => {
 			    {
 			      "durationSecondsTarget": 12,
 			      "exerciseName": "Sakte senking fra pullup-stang",
+			      "id": "ts-1-e2",
 			      "order": 2,
 			      "sets": 3,
 			    },
 			    {
 			      "durationSecondsTarget": 35,
 			      "exerciseName": "Planke",
+			      "id": "ts-1-e3",
 			      "order": 3,
 			      "sets": 3,
 			    },

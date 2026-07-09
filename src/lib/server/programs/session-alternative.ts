@@ -91,6 +91,24 @@ function buildUserPrompt(input: AlternativeInput): string {
 	return lines.join('\n');
 }
 
+/**
+ * Ekko dekoder alternative.plannedExercises som samme PlannedExercise-type som
+ * øktene — der er `id` og `order` påkrevd. Verken LLM-svaret eller regel-
+ * fallbacken setter dem, så de syntetiseres her. Brukes også på cache-les i
+ * readiness-modulene, siden gamle lagrede alternativer mangler feltene.
+ */
+export function normalizeAlternative(alternative: ReadinessAlternative): ReadinessAlternative {
+	if (!alternative.plannedExercises?.length) return alternative;
+	return {
+		...alternative,
+		plannedExercises: alternative.plannedExercises.map((ex, i) => ({
+			...ex,
+			id: ex.id ?? `alt-e${i + 1}`,
+			order: ex.order ?? i + 1
+		}))
+	};
+}
+
 export async function generateSessionAlternative(
 	input: AlternativeInput
 ): Promise<ReadinessAlternative> {
@@ -108,13 +126,13 @@ export async function generateSessionAlternative(
 		const content = response.choices[0]?.message?.content ?? '{}';
 		const parsed = JSON.parse(content) as ReadinessAlternative;
 		if (parsed.kind && parsed.name && parsed.summary) {
-			return parsed;
+			return normalizeAlternative(parsed);
 		}
 		console.warn('[session-alternative] AI response missing required fields, falling back');
 	} catch (error) {
 		console.error('[session-alternative] AI generation failed, using rule fallback:', error);
 	}
-	return ruleBasedAlternative(input);
+	return normalizeAlternative(ruleBasedAlternative(input));
 }
 
 /**
