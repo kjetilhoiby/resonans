@@ -7,6 +7,8 @@
 	import HrDistributionBar from '../../charts/HrDistributionBar.svelte';
 	import { hasElevation, hasHeartRate } from '$lib/utils/track-stats';
 	import { normalizeSportType } from '$lib/utils/sport';
+	import { invalidateAll } from '$app/navigation';
+	import BottomSheet from '../../ui/BottomSheet.svelte';
 	import {
 		isWheeledSport,
 		speedKmh,
@@ -50,6 +52,51 @@
 	}
 
 	let { activities }: Props = $props();
+
+	// Kilde-panel: trykk på en kilde-chip → bunnpanel med kildens data og hurtigvalg (vinner-rolle
+	// per metrikk, eller fjern). Rollene lagres på event-nivå og respekteres av aggregeringen.
+	let sheetActivity = $state<WorkoutActivity | null>(null);
+	let sheetEv = $state<WorkoutEvidence | null>(null);
+	let sheetBusy = $state(false);
+
+	function openSourceSheet(activity: WorkoutActivity, ev: WorkoutEvidence) {
+		sheetActivity = activity;
+		sheetEv = ev;
+	}
+	function closeSourceSheet() {
+		sheetActivity = null;
+		sheetEv = null;
+	}
+
+	async function applyRole(role: 'gps' | 'hr' | 'main' | 'none') {
+		if (!sheetEv || !sheetActivity || sheetBusy) return;
+		sheetBusy = true;
+		try {
+			const winner = sheetEv.eventId;
+			const siblings = sheetActivity.evidence.map((e) => e.eventId).filter((id) => id !== winner);
+			await fetch(`/api/workouts/${winner}/source-role`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ role, siblings })
+			});
+			await invalidateAll();
+			closeSourceSheet();
+		} finally {
+			sheetBusy = false;
+		}
+	}
+
+	async function removeSource() {
+		if (!sheetEv || sheetBusy) return;
+		sheetBusy = true;
+		try {
+			await fetch(`/api/workouts/${sheetEv.eventId}/dismiss?scope=source`, { method: 'POST' });
+			await invalidateAll();
+			closeSourceSheet();
+		} finally {
+			sheetBusy = false;
+		}
+	}
 
 	// Activity map state
 	interface TrackPoint { lat: number; lon: number; ele?: number | null; hr?: number | null; time?: string | null; }
@@ -357,12 +404,17 @@
 									{#if act.evidence.length > 0}
 										<div class="hd-activity-sources">
 											{#each act.evidence as ev}
-												<span class="hd-source-chip" class:hd-source-chip-track={ev.hasTrackPoints}>
+												<button
+													class="hd-source-chip"
+													class:hd-source-chip-track={ev.hasTrackPoints}
+													title="Velg vinnerkilde eller fjern"
+													onclick={() => openSourceSheet(act, ev)}
+												>
 													{providerLabel(ev.provider, ev.sensorType)}
 													{#if ev.distanceMeters !== null && !noDistance}{(ev.distanceMeters / 1000).toFixed(1)} km{/if}
 													{#if ev.durationSeconds !== null}· {formatDuration(ev.durationSeconds)}{/if}
 													{#if ev.avgHeartRate !== null}· ♥ {ev.avgHeartRate}{/if}
-												</span>
+												</button>
 											{/each}
 										</div>
 									{/if}
@@ -392,6 +444,29 @@
 		</div>
 	{/if}
 </div>
+
+{#if sheetEv && sheetActivity}
+	{@const multi = sheetActivity.evidence.length > 1}
+	<BottomSheet onclose={closeSourceSheet} ariaLabel="Kilde">
+		<div class="hd-sheet">
+			<h3 class="hd-sheet-title">{providerLabel(sheetEv.provider, sheetEv.sensorType)}</h3>
+			<div class="hd-sheet-data">
+				{#if sheetEv.distanceMeters !== null}<span>{(sheetEv.distanceMeters / 1000).toFixed(2)} km</span>{/if}
+				{#if sheetEv.durationSeconds !== null}<span>{formatDuration(sheetEv.durationSeconds)}</span>{/if}
+				{#if sheetEv.avgHeartRate !== null}<span>♥ {sheetEv.avgHeartRate}</span>{/if}
+			</div>
+			<div class="hd-sheet-actions">
+				{#if multi}
+					<button class="hd-sheet-btn" disabled={sheetBusy} onclick={() => applyRole('main')}>Hovedkilde (alt)</button>
+					<button class="hd-sheet-btn" disabled={sheetBusy} onclick={() => applyRole('gps')}>Kilde for GPS/distanse</button>
+					<button class="hd-sheet-btn" disabled={sheetBusy} onclick={() => applyRole('hr')}>Kilde for puls</button>
+					<button class="hd-sheet-btn hd-sheet-btn-ghost" disabled={sheetBusy} onclick={() => applyRole('none')}>Nullstill valg (auto)</button>
+				{/if}
+				<button class="hd-sheet-btn hd-sheet-btn-danger" disabled={sheetBusy} onclick={removeSource}>Fjern kilde</button>
+			</div>
+		</div>
+	</BottomSheet>
+{/if}
 
 <style>
 	.hd-activities-section {
@@ -616,11 +691,71 @@
 		border-radius: 6px;
 		padding: 2px 7px;
 		white-space: nowrap;
+		cursor: pointer;
+		font-family: inherit;
+	}
+
+	.hd-source-chip:hover {
+		border-color: #3a3a3a;
 	}
 
 	.hd-source-chip-track {
 		border-color: #2a3a55;
 		color: #6a9edd;
+	}
+
+	.hd-sheet {
+		padding: 20px;
+		display: flex;
+		flex-direction: column;
+		gap: 14px;
+	}
+
+	.hd-sheet-title {
+		margin: 0;
+		font-size: 1rem;
+		color: #eee;
+	}
+
+	.hd-sheet-data {
+		display: flex;
+		gap: 12px;
+		flex-wrap: wrap;
+		color: #999;
+		font-size: 0.85rem;
+	}
+
+	.hd-sheet-actions {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+
+	.hd-sheet-btn {
+		padding: 12px;
+		border-radius: 12px;
+		border: 1px solid #2a2a2a;
+		background: #1a1a1a;
+		color: #eee;
+		font-size: 0.95rem;
+		font-family: inherit;
+		cursor: pointer;
+		text-align: center;
+	}
+
+	.hd-sheet-btn:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+
+	.hd-sheet-btn-ghost {
+		background: transparent;
+		color: #999;
+	}
+
+	.hd-sheet-btn-danger {
+		color: #d06767;
+		border-color: #4a2a2a;
 	}
 
 	.hd-activity-discrepancy {

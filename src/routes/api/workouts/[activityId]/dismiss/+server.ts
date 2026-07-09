@@ -24,18 +24,28 @@ async function refreshProjectionForEvent(userId: string, timestamp: Date): Promi
 }
 
 /**
+ * `?scope=source` → avviser én enkelt kilde-registrering (`metadata.sourceRejected`), som
+ * ekskluderes fra sin aktivitet på event-nivå (aktiviteten består på gjenværende kilder).
+ * Uten scope → skjuler HELE økta (`metadata.dismissed`, klynge-nivå). Begge er reversible.
+ */
+function metadataKeyForScope(scope: string | null): 'dismissed' | 'sourceRejected' {
+	return scope === 'source' ? 'sourceRejected' : 'dismissed';
+}
+
+/**
  * POST /api/workouts/[activityId]/dismiss
  * Skjuler en treningsøkt ved å sette metadata.dismissed = true.
  * Økten slettes ikke fra databasen — den vises bare ikke i kanonisk lag og
  * telles ikke med i aggregerte tall.
  */
-export const POST: RequestHandler = async ({ locals, params }) => {
+export const POST: RequestHandler = async ({ locals, params, url }) => {
 	const userId = locals.userId;
+	const key = metadataKeyForScope(url.searchParams.get('scope'));
 
 	const result = await db
 		.update(sensorEvents)
 		.set({
-			metadata: sql`jsonb_set(COALESCE(${sensorEvents.metadata}, '{}'::jsonb), '{dismissed}', 'true'::jsonb)`
+			metadata: sql`jsonb_set(COALESCE(${sensorEvents.metadata}, '{}'::jsonb), ${`{${key}}`}::text[], 'true'::jsonb)`
 		})
 		.where(and(eq(sensorEvents.id, params.activityId), eq(sensorEvents.userId, userId)))
 		.returning({ id: sensorEvents.id, timestamp: sensorEvents.timestamp });
@@ -53,13 +63,14 @@ export const POST: RequestHandler = async ({ locals, params }) => {
  * DELETE /api/workouts/[activityId]/dismiss
  * Angrer skjuling av en treningsøkt.
  */
-export const DELETE: RequestHandler = async ({ locals, params }) => {
+export const DELETE: RequestHandler = async ({ locals, params, url }) => {
 	const userId = locals.userId;
+	const key = metadataKeyForScope(url.searchParams.get('scope'));
 
 	const result = await db
 		.update(sensorEvents)
 		.set({
-			metadata: sql`${sensorEvents.metadata} - 'dismissed'`
+			metadata: sql`${sensorEvents.metadata} - ${key}`
 		})
 		.where(and(eq(sensorEvents.id, params.activityId), eq(sensorEvents.userId, userId)))
 		.returning({ id: sensorEvents.id, timestamp: sensorEvents.timestamp });

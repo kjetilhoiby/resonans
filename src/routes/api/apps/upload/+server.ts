@@ -131,6 +131,9 @@ async function handleWorkoutUpload(
 	ctx: { userId: string; sensorId: string; app: ExternalAppConfig; sessionId: string | null; formData: FormData }
 ) {
 	const sportType = ctx.formData.get('sportType') as string | null;
+	// Klienten kan be om Resonans-only (hopp over Strava-auto-push) — brukes når en økt lastes
+	// opp manuelt til Resonans, men bevisst holdes utenfor Strava (f.eks. tvilsomme GPS-spor).
+	const skipStrava = ctx.formData.get('skipStrava') === 'true';
 	// Rute-attribusjon: Ekko tagger økta med rutens id → balanse-rotasjon slår opp navnet.
 	const ekkoRouteId = (ctx.formData.get('routeId') as string | null)?.trim() || null;
 	const gpxContent = await file.text();
@@ -185,7 +188,7 @@ async function handleWorkoutUpload(
 	// (external_id = `<app>-<sessionId>`) og feiler aldri hardt — den bokfører
 	// utfallet på Strava-koblingen i stedet for å velte ekkos opplastingssvar.
 	// Krever sessionId (brukes til dedup) og at økten faktisk ble lagret.
-	if (ctx.sessionId && result.event?.id) {
+	if (ctx.sessionId && result.event?.id && !skipStrava) {
 		try {
 			await pushSession({
 				userId: ctx.userId,

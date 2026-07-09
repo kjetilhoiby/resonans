@@ -152,6 +152,31 @@ function sourcePriority(provider: string, sensorType: string): number {
 	return 1;
 }
 
+/** Kilden brukeren har utpekt som vinner for et felt (GPS eller puls), eller null. */
+function preferredEventFor(
+	events: WorkoutEvidenceEvent[],
+	flag: 'preferGps' | 'preferHr'
+): WorkoutEvidenceEvent | null {
+	return events.find((e) => e.metadata[flag] === true || e.metadata[flag] === 'true') ?? null;
+}
+
+/**
+ * Velger feltverdi med manuell overstyring først: er en kilde utpekt som vinner for feltets rolle
+ * (GPS/puls) og har en verdi, brukes den. Ellers faller vi tilbake på prioritet-så-verdi.
+ */
+function pickNumericField(
+	events: WorkoutEvidenceEvent[],
+	valueFrom: (event: WorkoutEvidenceEvent) => number | null,
+	flag: 'preferGps' | 'preferHr'
+): number | null {
+	const forced = preferredEventFor(events, flag);
+	if (forced) {
+		const value = valueFrom(forced);
+		if (value !== null) return value;
+	}
+	return choosePreferredNumeric(events, valueFrom);
+}
+
 function choosePreferredNumeric(
 	events: WorkoutEvidenceEvent[],
 	valueFrom: (event: WorkoutEvidenceEvent) => number | null
@@ -243,7 +268,10 @@ export async function buildUnifiedWorkoutActivities(
 			metadata: sql<Record<string, unknown>>`jsonb_build_object(
 				'totalTrackPoints', ${sensorEvents.metadata}->'totalTrackPoints',
 				'sourceImageUrl', ${sensorEvents.metadata}->'sourceImageUrl',
-				'dismissed', ${sensorEvents.metadata}->'dismissed'
+				'dismissed', ${sensorEvents.metadata}->'dismissed',
+				'sourceRejected', ${sensorEvents.metadata}->'sourceRejected',
+				'preferGps', ${sensorEvents.metadata}->'preferGps',
+				'preferHr', ${sensorEvents.metadata}->'preferHr'
 			)`,
 			hasTrackPoints: sql<boolean>`${sensorEvents.data} ? 'trackPoints'`,
 		})
@@ -285,6 +313,10 @@ export async function buildUnifiedWorkoutActivities(
 	const clusters: Array<{ sportFamily: string; startTime: Date; events: WorkoutEvidenceEvent[] }> = [];
 
 	for (const event of normalizedEvents) {
+		// Kilde-avviste enkeltregistreringer holdes utenfor klyngingen (event-nivå), så en
+		// aktivitet består av sine gjenværende gode kilder. Skiller seg fra `dismissed`, som
+		// skjuler HELE økta (klynge-nivå, lenger ned). Avvises alle kilder, forsvinner økta.
+		if (event.metadata.sourceRejected === true || event.metadata.sourceRejected === 'true') continue;
 		const sport = normalizeSportType(event.data.sportType);
 		const family = sportFamily(sport);
 		let matchIndex = -1;
@@ -317,23 +349,23 @@ export async function buildUnifiedWorkoutActivities(
 	const unified = clusters
 		.map((cluster): UnifiedWorkoutActivity => {
 			const events = cluster.events;
-			const distanceMeters = choosePreferredNumeric(events, (event) => normalizeDistanceMeters(event.data.distance));
-			const durationSeconds = choosePreferredNumeric(events, (event) => normalizeDurationSeconds(event.data.duration));
+			const distanceMeters = pickNumericField(events, (event) => normalizeDistanceMeters(event.data.distance), 'preferGps');
+			const durationSeconds = pickNumericField(events, (event) => normalizeDurationSeconds(event.data.duration), 'preferGps');
 			const paceSecondsPerKm =
-				choosePreferredNumeric(events, (event) =>
-					typeof event.data.paceSecondsPerKm === 'number' ? event.data.paceSecondsPerKm : null
-				) ??
+				pickNumericField(events, (event) =>
+					typeof event.data.paceSecondsPerKm === 'number' ? event.data.paceSecondsPerKm : null,
+				'preferGps') ??
 				(distanceMeters && durationSeconds && distanceMeters > 0
 					? durationSeconds / (distanceMeters / 1000)
 					: null);
 
-			const avgHeartRate = choosePreferredNumeric(events, (event) => normalizeHeartRate(event.data.avgHeartRate));
-			const maxHeartRate = choosePreferredNumeric(events, (event) => normalizeHeartRate(event.data.maxHeartRate));
-			const elevationMeters = choosePreferredNumeric(events, (event) =>
+			const avgHeartRate = pickNumericField(events, (event) => normalizeHeartRate(event.data.avgHeartRate), 'preferHr');
+			const maxHeartRate = pickNumericField(events, (event) => normalizeHeartRate(event.data.maxHeartRate), 'preferHr');
+			const elevationMeters = pickNumericField(events, (event) =>
 				typeof event.data.elevation === 'number' && Number.isFinite(event.data.elevation)
 					? event.data.elevation
-					: null
-			);
+					: null,
+			'preferGps');
 
 			const notes = events
 				.map((event) => (typeof event.data.notes === 'string' ? event.data.notes.trim() : ''))
