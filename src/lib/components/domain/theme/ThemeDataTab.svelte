@@ -12,6 +12,7 @@
 	import TripDashboard from '../TripDashboard.svelte';
 	import FerieDashboard from '../FerieDashboard.svelte';
 	import BookDashboard from '../BookDashboard.svelte';
+	import FilmDashboard from '../FilmDashboard.svelte';
 	import EgenfrekvensDashboard from '../EgenfrekvensDashboard.svelte';
 	import LivskompassWidget from '../LivskompassWidget.svelte';
 	import type { LivskompassScores } from '$lib/domains/livskompass/dimensions';
@@ -101,6 +102,7 @@
 	const isTravel = $derived(activeDashboardKind === 'travel');
 	const isFerie = $derived(activeDashboardKind === 'ferie');
 	const isBooks = $derived(activeDashboardKind === 'books');
+	const isFilm = $derived(activeDashboardKind === 'film');
 	const isEgenfrekvens = $derived(activeDashboardKind === 'egenfrekvens');
 
 	/* ── Livskompasset (ukentlig) — vises i egenfrekvens-temaet ── */
@@ -488,6 +490,8 @@
 
 {#if isBooks}
 	<BookDashboard themeId={theme.id} />
+{:else if isFilm}
+	<FilmDashboard themeId={theme.id} />
 {:else}
 <!-- TripDashboard har egne horisontale gutters per seksjon — flush panel unngår dobbel margin -->
 <div class="data-panel" class:data-panel-flush={isTravel}>

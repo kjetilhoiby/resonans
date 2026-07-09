@@ -86,6 +86,27 @@ export interface BooksDashboardData {
 	}>;
 }
 
+export interface FilmDashboardData {
+	themeName: string;
+	themeEmoji: string | null;
+	totalFilms: number;
+	wantToWatch: number;
+	watched: number;
+	listCount: number;
+	films: Array<{
+		id: string;
+		title: string;
+		year: number | null;
+		director: string | null;
+		status: string;
+		rating: number | null;
+		posterUrl: string | null;
+		contextStatus: string;
+		watchedAt: string | null;
+		createdAt: string;
+	}>;
+}
+
 export interface FoodDashboardData {
 	weekContext: string;
 	mealPlans: Array<{
@@ -406,6 +427,7 @@ type DashboardPayloadMap = {
 	travel: TravelDashboardData;
 	ferie: { themeName: string; themeEmoji: string | null; status: string };
 	books: BooksDashboardData;
+	film: FilmDashboardData;
 	family: FamilyDashboardData;
 	egenfrekvens: EgenfrekvensDashboardData;
 	home: HomeDashboardData;

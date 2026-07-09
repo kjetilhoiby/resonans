@@ -67,6 +67,8 @@ export interface ChatStateOptions {
 	onThemeSuggested?: (theme: { themeId: string; themeName: string; confidence: string; reasoning?: string }) => void;
 	/** HomeScreen: AI har rutet til en bok. */
 	onBookRouted?: (book: { bookId: string; bookTitle: string; themeId: string }) => void;
+	/** HomeScreen: AI har rutet til en film. */
+	onFilmRouted?: (film: { filmId: string; filmTitle: string; themeId: string }) => void;
 	/** Kalles etter at sjekklister er oppdatert (HomeScreen). */
 	onChecklistChanged?: () => Promise<void>;
 }
@@ -237,6 +239,7 @@ export class ChatState {
 
 		try {
 			let bookWasRouted = false;
+			let filmWasRouted = false;
 
 			const data = await streamProxyChat({
 				message: displayText,
@@ -276,12 +279,20 @@ export class ChatState {
 					this.streamingText = '';
 					this.streamingSteps = [];
 					this.#opts.onBookRouted?.(book);
+				},
+				onFilmRouted: (film) => {
+					if (gen !== this.#generation) return;
+					filmWasRouted = true;
+					this.loading = false;
+					this.streamingText = '';
+					this.streamingSteps = [];
+					this.#opts.onFilmRouted?.(film);
 				}
 			});
 
 			// Utdatert kall (brukeren gikk videre / nullstilte) — ikke skriv i ny tilstand.
 			if (gen !== this.#generation) return;
-			if (bookWasRouted) return;
+			if (bookWasRouted || filmWasRouted) return;
 
 			this.conversationId = (data.conversationId as string | null) ?? this.conversationId;
 

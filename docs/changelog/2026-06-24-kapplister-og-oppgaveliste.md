@@ -227,3 +227,26 @@ tvers over, slik en sag faktisk kutter.
   (`context-service.ts`) bruker samme modus så estimatet matcher det brukeren ser.
 - Tester: guillotine-egenskap (layouten kan dekomponeres med rette snitt),
   feasibility/ingen overlapp på skjermbilde-eksempelet, snitt-telling, `cutCount`.
+- **Kuttlinjer tegnet på plata** (`guillotineCutLines` + `.cut-line`-overlay): den
+  frie-rektangel-pakkeren gir tette, men visuelt «trappete» layouter, så det var
+  ikke åpenbart at snittene faktisk går kant-til-kant. Nå tegnes hvert sagsnitt
+  som en stiplet linje tvers over sin delregion. `countGuillotineCuts` er
+  refaktorert til `guillotineCutLines(...).length` (én kilde til sannhet).
+  Verifisert med fuzz-test (400 tilfeldige input → alltid giljotin-kuttbar).
+
+### Fase 12: PDF-/utskrift av kappliste
+
+Egen utskriftsvennlig side så en kappliste kan lagres som PDF eller printes og tas
+med i verkstedet/butikken.
+
+- **Delt komponent `KappeplanDiagram.svelte`**: kappeplanen (lengdevare-stolper /
+  plate-diagram med guillotine-kuttlinjer) er trukket ut av `ThemeKapplisteTab` og
+  gjenbrukes nå av både fanen (mørkt app-tema) og utskriftssiden. Fargene styres av
+  CSS-variabler med en `paper`-variant (lyst papir-tema) — én kilde til UI.
+- **Rute `/tema/[id]/kapplister/skriv-ut`** (`+page.server.ts` + `+page.svelte`):
+  lyst A4-dokument med prosjektnavn, dato, per materiale: resultatlinje (antall +
+  kostnad), kapp-tabell og kappeplan. `?list=<id>` skriver ut kun én liste.
+  `window.print()` kalles automatisk on mount; egen «Skriv ut / Lagre som PDF»-knapp
+  skjules i selve utskriften (`@media print`). `@page`-marg satt.
+- **🖨-lenke** i hver kapplistes header (åpner utskriftssiden i ny fane).
+- Ingen nye avhengigheter — bruker nettleserens innebygde «Lagre som PDF».

@@ -191,6 +191,8 @@ Vercel med `@sveltejs/adapter-vercel` (Node.js 22.x). `buildCommand` i `vercel.j
 **Integrasjoner** (konfigureres via OAuth i `/settings/sources`):
 `GOOGLE_CLIENT_ID`/`SECRET`, `WITHINGS_CLIENT_ID`/`SECRET`, `SPAREBANK1_CLIENT_ID`/`SECRET`, `DROPBOX_CLIENT_ID`/`SECRET`, `STRAVA_CLIENT_ID`/`SECRET`, `TESLA_CLIENT_ID`/`SECRET`
 
+**Film-tema:** `TMDB_API_KEY` (The Movie Database — film-metadata, regissør/skuespiller-filmografier og strømmetilgjengelighet i Norge). Støtter både v3 API-nøkkel og v4 read access token. Uten nøkkel degraderer film-søk/kontekst til tomme resultater. Se `docs/changelog/2026-07-09-film-tema.md`.
+
 **Monitorering:** `MONITORING_WEBHOOK_URL` (Google Chat webhook for systemvarsler)
 
 **Push:** `VAPID_PUBLIC_KEY`/`PRIVATE_KEY`/`SUBJECT`

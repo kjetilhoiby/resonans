@@ -144,6 +144,8 @@
 					? ['chat', 'data', 'lister', 'filer']
 					: activeDashboardKind === 'books'
 						? ['chat', 'data', 'filer']
+						: activeDashboardKind === 'film'
+						? ['chat', 'data', 'filer']
 						: activeDashboardKind === 'egenfrekvens'
 							? ['chat', 'data', 'mål', 'flyter', 'filer']
 							: ['chat', 'data', 'mål', 'filer']

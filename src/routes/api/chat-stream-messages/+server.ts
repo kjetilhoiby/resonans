@@ -111,7 +111,7 @@ export const POST: RequestHandler = async ({ request, locals, fetch, url }) => {
 								requestFetch: fetch,							preferredModel: preferredModel || undefined,								systemPromptPrefix: systemPrompt || undefined,
 								onProgress: async (event) => {
 									// Routing events must be forwarded with their real type so the client can handle them
-									const routingEventTypes = ['book_routed', 'theme_routed', 'theme_suggested', 'routing_complete'];
+									const routingEventTypes = ['book_routed', 'film_routed', 'theme_routed', 'theme_suggested', 'routing_complete'];
 									if (routingEventTypes.includes(event.stage)) {
 										controller.enqueue(
 											sendStreamEvent(event.stage, event.detail ?? { message: event.message }, encoder)
@@ -126,8 +126,8 @@ export const POST: RequestHandler = async ({ request, locals, fetch, url }) => {
 
 							const responseText = String(payload.message ?? '');
 
-							// If this was a book/theme routing redirect, close stream without streaming tokens
-							if ((payload as any).bookRouted) {
+							// If this was a book/film/theme routing redirect, close stream without streaming tokens
+							if ((payload as any).bookRouted || (payload as any).filmRouted) {
 								controller.enqueue(
 									sendStreamEvent('complete', { ...payload, fullMessage: responseText }, encoder)
 								);

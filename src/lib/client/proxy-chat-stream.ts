@@ -14,6 +14,7 @@ interface ProxyChatStreamOptions {
 	onThemeRouted?: (theme: { themeId: string; themeName: string; confidence: string }) => void;
 	onThemeSuggested?: (theme: { themeId: string; themeName: string; confidence: string; reasoning?: string }) => void;
 	onBookRouted?: (book: { bookId: string; bookTitle: string; themeId: string }) => void;
+	onFilmRouted?: (film: { filmId: string; filmTitle: string; themeId: string }) => void;
 }
 
 export async function streamProxyChat({
@@ -31,7 +32,8 @@ export async function streamProxyChat({
 	onError,
 	onThemeRouted,
 	onThemeSuggested,
-	onBookRouted
+	onBookRouted,
+	onFilmRouted
 }: ProxyChatStreamOptions): Promise<Record<string, any>> {
 	const response = await fetch('/api/chat-stream-messages', {
 		method: 'POST',
@@ -61,6 +63,7 @@ export async function streamProxyChat({
 	let buffer = '';
 	let finalPayload: Record<string, any> | null = null;
 	let bookRouted = false;
+	let filmRouted = false;
 
 	while (true) {
 		const { done, value } = await reader.read();
@@ -92,6 +95,9 @@ export async function streamProxyChat({
 			} else if (event.type === 'book_routed') {
 				bookRouted = true;
 				onBookRouted?.(event.data);
+			} else if (event.type === 'film_routed') {
+				filmRouted = true;
+				onFilmRouted?.(event.data);
 			}
 		}
 
@@ -106,8 +112,8 @@ export async function streamProxyChat({
 		}
 	}
 
-	// Book-routing: stream ends after navigation — no complete payload needed
-	if (!finalPayload && bookRouted) {
+	// Book/film-routing: stream ends after navigation — no complete payload needed
+	if (!finalPayload && (bookRouted || filmRouted)) {
 		return {};
 	}
 
