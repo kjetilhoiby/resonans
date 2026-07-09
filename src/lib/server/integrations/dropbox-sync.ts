@@ -217,6 +217,19 @@ export function parseWorkoutFile(path: string, content: string): ParsedWorkout |
 	return null;
 }
 
+/**
+ * Nedsampler et spor jevnt til `max` punkter (beholder første og siste) i stedet for å kutte de
+ * første `max` — så hele formen bevares når størrelsen kappes. Head-kutting mistet f.eks. de siste
+ * bakkedragene på en lang økt.
+ */
+export function downsampleTrack<T>(points: T[], max: number): T[] {
+	if (points.length <= max) return points;
+	const step = (points.length - 1) / (max - 1);
+	const result: T[] = [];
+	for (let i = 0; i < max; i += 1) result.push(points[Math.round(i * step)]);
+	return result;
+}
+
 function shouldImport(entry: DropboxListFolderEntry): boolean {
 	if (entry['.tag'] !== 'file') return false;
 	const path = (entry.path_lower || '').toLowerCase();
@@ -367,7 +380,7 @@ export async function syncDropboxWorkoutsForUser(
 			}
 
 			const paceSecondsPerKm = parsed.distance > 0 ? (parsed.duration / (parsed.distance / 1000)) : undefined;
-			const sampledTrack = parsed.trackPoints.slice(0, 500).map((p) => ({
+			const sampledTrack = downsampleTrack(parsed.trackPoints, 500).map((p) => ({
 				lat: p.lat,
 				lon: p.lon,
 				ele: p.ele,
