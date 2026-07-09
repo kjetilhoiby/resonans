@@ -556,12 +556,20 @@ export async function reconcileSessionsWithActuals(
 	// Utholdenhet (løp + sykkel)
 	if (tracks.utholdenhetTrack) {
 		for (const [date, workouts] of enduranceByDate) {
-			const runKm = workouts.filter((w) => isRunFamily(w.family)).reduce((s, w) => s + (w.distanceMeters ?? 0) / 1000, 0);
+			const runs = workouts.filter((w) => isRunFamily(w.family));
+			const runKm = runs.reduce((s, w) => s + (w.distanceMeters ?? 0) / 1000, 0);
+			const runMin = runs.reduce((s, w) => s + (w.durationSeconds ?? 0) / 60, 0);
 			const rideMin = workouts
 				.filter((w) => !isRunFamily(w.family))
 				.reduce((s, w) => s + (w.durationSeconds ?? 0) / 60, 0);
 			const parts: string[] = [];
-			if (runKm > 0) parts.push(`Løp ${runKm.toFixed(1).replace('.', ',')} km`);
+			if (runs.length > 0) {
+				// Distanse kan mangle i kildedataene — «Løp 0,0 km» er verre enn
+				// varighet, som alltid finnes for en registrert økt.
+				if (runKm >= 0.1) parts.push(`Løp ${runKm.toFixed(1).replace('.', ',')} km`);
+				else if (runMin > 0) parts.push(`Løp ${fmtMinutter(runMin)}`);
+				else parts.push('Løp');
+			}
 			if (rideMin > 0) parts.push(`Sykkel ${fmtMinutter(rideMin)}`);
 			const totalDistance = workouts.reduce((s, w) => s + (w.distanceMeters ?? 0), 0);
 			const totalDuration = workouts.reduce((s, w) => s + (w.durationSeconds ?? 0), 0);
@@ -592,7 +600,20 @@ async function upsertCompletedSession(
 	}
 ): Promise<void> {
 	const existing = byTrackDate.get(`${trackId}:${date}`);
-	if (existing?.status === 'completed') return;
+	if (existing?.status === 'completed') {
+		// Rader reconcile selv har skapt (ingen sensorEventId, ren navne-payload)
+		// eies av reconcile: oppdater navn/actuals idempotent, slik at bedre data
+		// senere (f.eks. distanse som dukker opp ved re-sync) retter visningen.
+		const reconcileOwned =
+			!existing.sensorEventId && !existing.payload.plannedRun && !existing.payload.plannedExercises;
+		if (reconcileOwned && existing.payload.name !== input.name) {
+			await db
+				.update(trackSessions)
+				.set({ payload: { name: input.name }, actuals: input.actuals, updatedAt: new Date() })
+				.where(eq(trackSessions.id, existing.id));
+		}
+		return;
+	}
 
 	if (existing) {
 		// Oppgrader forslag → gjennomført. Payload SKRIVES OM til det som faktisk

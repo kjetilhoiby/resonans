@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { toSessionDTO } from './adapter';
+import { contractWeekNumber, toSessionDTO } from './adapter';
+import { isoWeekday } from './curve';
+import { sessionPlannedDate } from '$lib/server/programs/repository';
 import type { TrackSessionRow, TrainingPlanRow } from './repository';
 
 /**
@@ -46,6 +48,27 @@ function row(overrides: Partial<TrackSessionRow>): TrackSessionRow {
 		...overrides
 	} as TrackSessionRow;
 }
+
+describe('contractWeekNumber (Ekko-kontrakten)', () => {
+	it('uke 1 = kalenderuka som inneholder startDate, også når start er en søndag', () => {
+		// 2026-07-05 er en søndag — kalenderuka er man. 29. juni til søn. 5. juli.
+		expect(contractWeekNumber('2026-07-05', '2026-06-29')).toBe(1);
+		expect(contractWeekNumber('2026-07-05', '2026-07-05')).toBe(1);
+		// Dagen etter start er en ny kalenderuke — IKKE fortsatt uke 1
+		// (rullerende 7-dagersvinduer viste alle økter én uke tilbake i Ekko).
+		expect(contractWeekNumber('2026-07-05', '2026-07-06')).toBe(2);
+		expect(contractWeekNumber('2026-07-05', '2026-07-08')).toBe(2);
+	});
+
+	it('rundtur: uke/dag gjenskaper øktens faktiske dato via Ekkos dato-utledning', () => {
+		// Ekko viser dato = mandag(startuke) + (uke-1)·7 + (dag-1) — samme som
+		// sessionPlannedDate. Adapterens uke/dag må derfor invertere den.
+		for (const date of ['2026-06-29', '2026-07-05', '2026-07-06', '2026-07-08', '2026-08-16']) {
+			const week = contractWeekNumber('2026-07-05', date);
+			expect(sessionPlannedDate('2026-07-05', week, isoWeekday(date))).toBe(date);
+		}
+	});
+});
 
 describe('toSessionDTO (Ekko-kontrakten)', () => {
 	it('styrkeøkt: samme shape som ProgramSession-spec-en', () => {
