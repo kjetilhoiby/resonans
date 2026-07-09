@@ -6,6 +6,13 @@ import {
 	upsertRouteFromEkko,
 	type EkkoRouteInput
 } from '$lib/server/tracks/routes-repository';
+import { buildAthleteSnapshot } from '$lib/server/programs/athlete-context';
+
+/** Easy-pace-referanse for effort-beregning — fra utøverens pace-soner (VDOT). */
+async function easyPaceOf(userId: string): Promise<number | null> {
+	const snapshot = await buildAthleteSnapshot(userId).catch(() => null);
+	return snapshot?.paceZones?.easySecPerKm ?? null;
+}
 
 /**
  * Ekko-rute-synk (retning: Ekko → Resonans). Ekko eier GPS-rutene og pusher
@@ -26,9 +33,9 @@ export const GET: RequestHandler = async ({ locals }) => {
 	const userId = locals.userId;
 	if (!userId) return json({ error: 'Unauthorized' }, { status: 401 });
 
-	// easyPace er ukjent i API-konteksten → flat MET-intensitet (Ekko viser
-	// relativ effort mellom variantene, ikke absolutt kalibrert mot pace).
-	const routes = await getRoutesWithEffort(userId, null);
+	// Effort må regnes mot brukerens FAKTISKE easy-pace — uten referanse ville
+	// seedede varianter servert frosne farter fra opprettelsestidspunktet.
+	const routes = await getRoutesWithEffort(userId, await easyPaceOf(userId));
 	return json({ routes });
 };
 
@@ -47,6 +54,9 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 
 	const results: Array<{ ekkoRouteId: string; id: string; created: boolean }> = [];
 	const skipped: Array<{ index: number; reason: string }> = [];
+	// Nye ruter seedes med varianter forankret i brukerens faktiske easy-pace
+	// (paceFactor gjør dem uansett selvjusterende ved senere formendring).
+	const easyPace = await easyPaceOf(userId);
 
 	for (let i = 0; i < incoming.length; i++) {
 		const r = (incoming[i] ?? {}) as Record<string, unknown>;
@@ -71,7 +81,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		};
 
 		try {
-			const { row, created } = await upsertRouteFromEkko(userId, input, null);
+			const { row, created } = await upsertRouteFromEkko(userId, input, easyPace);
 			results.push({ ekkoRouteId, id: row.id, created });
 		} catch (err) {
 			skipped.push({ index: i, reason: err instanceof Error ? err.message : 'ukjent feil' });

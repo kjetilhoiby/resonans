@@ -3,9 +3,11 @@ import {
 	bestWeekRunKm,
 	computeEnduranceState,
 	curveWeekKm,
+	describeEnduranceDay,
 	effortPerRunKm,
 	nextEnduranceSession
 } from './endurance-engine';
+import { fmtMinutter } from '$lib/util/duration';
 import type { EnduranceConfig, EnduranceGoal, EnduranceWorkout, TrackWindow } from './types';
 
 const GOAL: EnduranceGoal = {
@@ -200,6 +202,48 @@ describe('isCountableRun / pace-filter', () => {
 			durationSeconds: null
 		};
 		expect(bestWeekRunKm([noDuration])).toBe(5);
+	});
+});
+
+describe('describeEnduranceDay', () => {
+	const beskriv = (workouts: EnduranceWorkout[]) => describeEnduranceDay(workouts, fmtMinutter);
+
+	it('ekte løp navngis med distanse', () => {
+		expect(beskriv([run('2026-07-08', 2.5, 496)])).toBe('Løp 2,5 km');
+	});
+
+	it('ren pendlerdag (el-sykkel) blir «Registrert:» — ikke en treningsøkt', () => {
+		const dag = [sykkel('2026-07-07', 25, 'ebike'), sykkel('2026-07-07', 26, 'ebike')];
+		expect(beskriv(dag)).toBe('Registrert: El-sykkel 2 t');
+	});
+
+	it('løp + pendling samme dag: løpet leder, pendlinga henges på', () => {
+		const dag = [run('2026-07-08', 2.5, 496), sykkel('2026-07-08', 25, 'ebike')];
+		expect(beskriv(dag)).toBe('Løp 2,5 km + El-sykkel 1 t');
+	});
+
+	it('sykkel og el-sykkel navngis hver for seg', () => {
+		const dag = [sykkel('2026-07-07', 40, 'cycling'), sykkel('2026-07-07', 20, 'ebike')];
+		expect(beskriv(dag)).toBe('Registrert: Sykkel 1 t + El-sykkel 1 t');
+	});
+
+	it('gangfart-autologg («løp» i 10:34/km) blir nøytral aktivitet, ikke «Løp»', () => {
+		expect(beskriv([run('2026-07-07', 4.7, 634)])).toBe('Registrert: Aktivitet 50 min');
+	});
+
+	it('løp uten distanse ennå (midt i synk) blir nøytral aktivitet — selvhelbredes senere', () => {
+		const midtISynk: EnduranceWorkout = {
+			date: '2026-07-08',
+			family: 'running',
+			effortScore: null,
+			distanceMeters: null,
+			durationSeconds: 1240
+		};
+		expect(beskriv([midtISynk])).toBe('Registrert: Aktivitet 21 min');
+	});
+
+	it('tom dag faller tilbake til «Utholdenhet»', () => {
+		expect(beskriv([])).toBe('Utholdenhet');
 	});
 });
 

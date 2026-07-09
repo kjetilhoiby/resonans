@@ -40,7 +40,7 @@ import {
 	bestWeekRunKm,
 	computeEnduranceState,
 	countsTowardEndurance,
-	isRunFamily,
+	describeEnduranceDay,
 	nextEnduranceSession
 } from './endurance-engine';
 import { computeEffortBudget, composeEffortSuggestion } from './effort-budget';
@@ -556,26 +556,11 @@ export async function reconcileSessionsWithActuals(
 	// Utholdenhet (løp + sykkel)
 	if (tracks.utholdenhetTrack) {
 		for (const [date, workouts] of enduranceByDate) {
-			const runs = workouts.filter((w) => isRunFamily(w.family));
-			const runKm = runs.reduce((s, w) => s + (w.distanceMeters ?? 0) / 1000, 0);
-			const runMin = runs.reduce((s, w) => s + (w.durationSeconds ?? 0) / 60, 0);
-			const rideMin = workouts
-				.filter((w) => !isRunFamily(w.family))
-				.reduce((s, w) => s + (w.durationSeconds ?? 0) / 60, 0);
-			const parts: string[] = [];
-			if (runs.length > 0) {
-				// Distanse kan mangle i kildedataene — «Løp 0,0 km» er verre enn
-				// varighet, som alltid finnes for en registrert økt.
-				if (runKm >= 0.1) parts.push(`Løp ${runKm.toFixed(1).replace('.', ',')} km`);
-				else if (runMin > 0) parts.push(`Løp ${fmtMinutter(runMin)}`);
-				else parts.push('Løp');
-			}
-			if (rideMin > 0) parts.push(`Sykkel ${fmtMinutter(rideMin)}`);
 			const totalDistance = workouts.reduce((s, w) => s + (w.distanceMeters ?? 0), 0);
 			const totalDuration = workouts.reduce((s, w) => s + (w.durationSeconds ?? 0), 0);
 			await upsertCompletedSession(userId, plan.id, tracks.utholdenhetTrack.id, date, byTrackDate, {
 				kind: 'run',
-				name: parts.join(' + ') || 'Utholdenhet',
+				name: describeEnduranceDay(workouts, fmtMinutter),
 				actuals: {
 					kind: 'run',
 					distance: totalDistance > 0 ? Math.round(totalDistance) : undefined,

@@ -2,9 +2,11 @@ import { describe, it, expect } from 'vitest';
 import {
 	defaultRouteSeeds,
 	defaultVariantsForKind,
+	inferPaceFactors,
 	routeEffortRange,
 	variantEffort,
-	type RouteInput
+	type RouteInput,
+	type RouteVariant
 } from './routes';
 
 describe('variantEffort — løp med fartsvarianter', () => {
@@ -118,6 +120,87 @@ describe('routeEffortRange', () => {
 		expect(range.minEffort).toBe(range.variants[0].effort);
 		expect(range.maxEffort).toBe(range.variants[2].effort);
 		expect(range.maxEffort).toBeGreaterThan(range.minEffort);
+	});
+});
+
+describe('paceFactor — re-forankring mot dagens easy-pace', () => {
+	it('faktor-variant oppløses mot dagens easy, ikke lagret snapshot-pace', () => {
+		const rute: RouteInput = {
+			kind: 'run',
+			distanceMeters: 8000,
+			variants: [{ label: 'Rolig', paceFactor: 1.0, paceSecPerKm: 400 }]
+		};
+		// Dagens easy = 480 → 8 km × 8:00 = 64 min × 2.5 × 1.0 = 160 (ikke 133 fra 400)
+		const v = variantEffort(rute, rute.variants[0], 480);
+		expect(v.effort).toBe(160);
+		expect(v.detail).toBe('8 km @ 8:00');
+	});
+
+	it('stale seedet variantsett: terskel koster mer enn rolig etter re-forankring', () => {
+		// Seedet med fallback-anker 400, brukerens faktiske easy er 476 — dette
+		// ga invertert rekkefølge (rolig dyrest) fordi alle traff intensitets-taket.
+		const stale: RouteVariant[] = [
+			{ label: 'Rolig', paceSecPerKm: 400 },
+			{ label: 'Moderat', paceSecPerKm: 360 },
+			{ label: 'Terskel', paceSecPerKm: 328 }
+		];
+		const rute: RouteInput = {
+			kind: 'run',
+			distanceMeters: 7600,
+			elevationMeters: 56,
+			variants: inferPaceFactors('run', stale)
+		};
+		const range = routeEffortRange(rute, 476);
+		const [rolig, moderat, terskel] = range.variants;
+		expect(rolig.effort).toBeLessThan(moderat.effort);
+		expect(moderat.effort).toBeLessThan(terskel.effort);
+	});
+});
+
+describe('inferPaceFactors', () => {
+	it('stempler faktorer på sett som matcher default-mønsteret (± avrunding)', () => {
+		const seeded: RouteVariant[] = [
+			{ label: 'Rolig', paceSecPerKm: 400 },
+			{ label: 'Moderat', paceSecPerKm: 360 },
+			{ label: 'Terskel', paceSecPerKm: 328 }
+		];
+		const result = inferPaceFactors('run', seeded);
+		expect(result.map((v) => v.paceFactor)).toEqual([1.0, 0.9, 0.82]);
+	});
+
+	it('rører ikke manuelt justerte farter (mønsteret matcher ikke)', () => {
+		const manuell: RouteVariant[] = [
+			{ label: 'Rolig', paceSecPerKm: 400 },
+			{ label: 'Moderat', paceSecPerKm: 345 }, // bruker-satt, ikke 0.9×400
+			{ label: 'Terskel', paceSecPerKm: 328 }
+		];
+		expect(inferPaceFactors('run', manuell).every((v) => v.paceFactor == null)).toBe(true);
+	});
+
+	it('rører ikke sett som allerede har faktorer', () => {
+		const medFaktor: RouteVariant[] = [
+			{ label: 'Rolig', paceFactor: 1.0, paceSecPerKm: 999 },
+			{ label: 'Terskel', paceSecPerKm: 328 }
+		];
+		expect(inferPaceFactors('run', medFaktor)).toBe(medFaktor);
+	});
+
+	it('sti-sett gjenkjennes med sti-faktorene', () => {
+		const seeded: RouteVariant[] = [
+			{ label: 'Rolig', paceSecPerKm: 420 },
+			{ label: 'Jevnt', paceSecPerKm: 400 }
+		];
+		expect(inferPaceFactors('trail', seeded).map((v) => v.paceFactor)).toEqual([1.05, 1.0]);
+	});
+
+	it('ett enkelt pace-punkt kan ikke skilles fra manuelt — beholdes absolutt', () => {
+		const single: RouteVariant[] = [{ label: 'Rolig', paceSecPerKm: 400 }];
+		expect(inferPaceFactors('run', single)[0].paceFactor).toBeUndefined();
+	});
+
+	it('sykkel/bakke-varianter passerer urørt', () => {
+		const bike: RouteVariant[] = [{ label: 'Sykkel', family: 'cycling' }];
+		expect(inferPaceFactors('bike', bike)).toBe(bike);
 	});
 });
 
