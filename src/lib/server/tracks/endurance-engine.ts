@@ -57,6 +57,35 @@ export function effortPerRunKm(paceSekPerKm: number): number {
 	return (paceSekPerKm / 60) * MET_CALIBRATION;
 }
 
+/**
+ * Visningsnavn for en dag med registrert utholdenhetsaktivitet (reconcile-
+ * lista i Ekko/ukeplanen). Ekte løp (isCountableRun — gåtur-vakten) navngis
+ * med distanse; alt annet (pendel-sykling, el-sykkel, gangfart-autologg)
+ * prefikses «Registrert:» så hverdagsaktivitet ikke framstår som en
+ * gjennomført treningsøkt. Aktiviteten teller uansett i effort-budsjettet.
+ */
+export function describeEnduranceDay(workouts: EnduranceWorkout[], fmtMin: (min: number) => string): string {
+	const runs = workouts.filter(isCountableRun);
+	const runKm = runs.reduce((s, w) => s + (w.distanceMeters ?? 0) / 1000, 0);
+	const rest = workouts.filter((w) => !isCountableRun(w));
+	const minutesOf = (list: EnduranceWorkout[]) => list.reduce((s, w) => s + (w.durationSeconds ?? 0) / 60, 0);
+	const cyclingMin = minutesOf(rest.filter((w) => w.family === 'cycling'));
+	const ebikeMin = minutesOf(rest.filter((w) => w.family === 'ebike'));
+	const otherMin = minutesOf(rest.filter((w) => w.family !== 'cycling' && w.family !== 'ebike'));
+
+	const parts: string[] = [];
+	if (runs.length > 0) {
+		parts.push(runKm >= 0.1 ? `Løp ${runKm.toFixed(1).replace('.', ',')} km` : 'Løp');
+	}
+	if (cyclingMin > 0) parts.push(`Sykkel ${fmtMin(cyclingMin)}`);
+	if (ebikeMin > 0) parts.push(`El-sykkel ${fmtMin(ebikeMin)}`);
+	// Gangfart-autologg o.l. — nevnes bare når dagen ellers er tom, som nøytral aktivitet.
+	if (parts.length === 0 && otherMin > 0) parts.push(`Aktivitet ${fmtMin(otherMin)}`);
+
+	if (parts.length === 0) return 'Utholdenhet';
+	return runs.length > 0 ? parts.join(' + ') : `Registrert: ${parts.join(' + ')}`;
+}
+
 export function curvePace(goal: EnduranceGoal, window: TrackWindow, date: string): number {
 	return expectedAt(goal.paceSekPerKm.fra, goal.paceSekPerKm.til, window.startDate, window.targetDate, date);
 }

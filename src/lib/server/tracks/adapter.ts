@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { db } from '$lib/db';
 import { sensorEvents, trackSessions } from '$lib/db/schema';
-import { buildActualsSnapshot } from '$lib/server/programs/repository';
+import { buildActualsSnapshot, sessionPlannedDate } from '$lib/server/programs/repository';
 import type {
 	ProgramDTO,
 	ProgramSessionDTO,
@@ -21,7 +21,7 @@ import {
 	type TrainingPlanRow,
 	type TrackStates
 } from './repository';
-import { isoWeekday, weekNumberAt } from './curve';
+import { daysBetween, isoWeekday, mondayOfDate } from './curve';
 import { computeStrengthState, nextStrengthSession, summarizeStrengthSession } from './strength-engine';
 
 /**
@@ -50,16 +50,33 @@ function toCompletionDTO(row: TrackSessionRow): SessionCompletionDTO | null {
 	};
 }
 
+/**
+ * Ukenummer etter Ekko-kontrakten: uke 1 = KALENDERUKA som inneholder startDate
+ * (ankret på mandag), slik at Ekkos dato-utledning mandag(startuke) +
+ * (uke-1)·7 + (dag-1) treffer øktens faktiske dato. curve.weekNumberAt teller
+ * derimot rullerende 7-dagersvinduer fra selve startDate (motor-semantikk) —
+ * med start på en søndag viste det alle økter én uke tilbake i tid i Ekko.
+ */
+export function contractWeekNumber(startDate: string, date: string): number {
+	return Math.max(1, Math.floor(daysBetween(mondayOfDate(startDate), date) / 7) + 1);
+}
+
 export function toSessionDTO(row: TrackSessionRow, plan: TrainingPlanRow): ProgramSessionDTO {
 	const payload = row.payload;
 	return {
 		id: row.id,
-		weekNumber: weekNumberAt(plan.startDate, row.date),
+		weekNumber: contractWeekNumber(plan.startDate, row.date),
 		dayNumber: isoWeekday(row.date),
 		kind: row.kind === 'run' ? 'run' : 'strength',
 		name: payload.name,
 		restSeconds: payload.restSeconds,
-		plannedExercises: payload.plannedExercises?.map((e, i) => ({ order: i + 1, ...e })),
+		// Ekko krever id på hver øvelse (TRENINGSPROGRAM_API.md). Payloaden har
+		// ingen egne øvelses-id-er, så en stabil id avledes av rad-id + posisjon.
+		plannedExercises: payload.plannedExercises?.map((e, i) => ({
+			order: i + 1,
+			...e,
+			id: `${row.id}-e${i + 1}`
+		})),
 		plannedRun: payload.plannedRun,
 		notes: payload.notes,
 		isTest: payload.isTest,
@@ -388,9 +405,9 @@ export async function insertTrackTest(
 	const track = isRunTest ? states.utholdenhetTrack : states.styrkeTrack;
 	if (!track) return null;
 
-	const start = new Date(`${plan.startDate}T00:00:00Z`);
-	start.setUTCDate(start.getUTCDate() + (input.weekNumber - 1) * 7 + (input.dayNumber - 1));
-	const date = start.toISOString().slice(0, 10);
+	// Inversen av contractWeekNumber/isoWeekday: uke/dag fra Ekko ankres på
+	// mandagen i startuka (samme utregning som legacy sessionPlannedDate).
+	const date = sessionPlannedDate(plan.startDate, input.weekNumber, input.dayNumber);
 
 	const suggestion = isRunTest
 		? {

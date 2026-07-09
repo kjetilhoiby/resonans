@@ -4,6 +4,7 @@ import { sensorEvents, trainingRoutes } from '$lib/db/schema';
 import {
 	defaultRouteSeeds,
 	defaultVariantsForKind,
+	inferPaceFactors,
 	routeEffortRange,
 	type RouteKind,
 	type RouteVariant
@@ -40,7 +41,9 @@ export async function getRoutesWithEffort(userId: string, easyPaceSecPerKm: numb
 				kind: r.kind as RouteKind,
 				distanceMeters: r.distanceMeters,
 				elevationMeters: r.elevationMeters,
-				variants: r.variants ?? []
+				// Seedede variantsett re-forankres mot dagens easy-pace (lagrede
+				// rader mangler paceFactor — stemples her når mønsteret matcher).
+				variants: inferPaceFactors(r.kind as RouteKind, r.variants ?? [])
 			},
 			easyPaceSecPerKm
 		)

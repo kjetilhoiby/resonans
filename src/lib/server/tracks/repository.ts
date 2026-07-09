@@ -40,7 +40,7 @@ import {
 	bestWeekRunKm,
 	computeEnduranceState,
 	countsTowardEndurance,
-	isRunFamily,
+	describeEnduranceDay,
 	nextEnduranceSession
 } from './endurance-engine';
 import { computeEffortBudget, composeEffortSuggestion } from './effort-budget';
@@ -556,18 +556,11 @@ export async function reconcileSessionsWithActuals(
 	// Utholdenhet (løp + sykkel)
 	if (tracks.utholdenhetTrack) {
 		for (const [date, workouts] of enduranceByDate) {
-			const runKm = workouts.filter((w) => isRunFamily(w.family)).reduce((s, w) => s + (w.distanceMeters ?? 0) / 1000, 0);
-			const rideMin = workouts
-				.filter((w) => !isRunFamily(w.family))
-				.reduce((s, w) => s + (w.durationSeconds ?? 0) / 60, 0);
-			const parts: string[] = [];
-			if (runKm > 0) parts.push(`Løp ${runKm.toFixed(1).replace('.', ',')} km`);
-			if (rideMin > 0) parts.push(`Sykkel ${fmtMinutter(rideMin)}`);
 			const totalDistance = workouts.reduce((s, w) => s + (w.distanceMeters ?? 0), 0);
 			const totalDuration = workouts.reduce((s, w) => s + (w.durationSeconds ?? 0), 0);
 			await upsertCompletedSession(userId, plan.id, tracks.utholdenhetTrack.id, date, byTrackDate, {
 				kind: 'run',
-				name: parts.join(' + ') || 'Utholdenhet',
+				name: describeEnduranceDay(workouts, fmtMinutter),
 				actuals: {
 					kind: 'run',
 					distance: totalDistance > 0 ? Math.round(totalDistance) : undefined,
@@ -592,7 +585,20 @@ async function upsertCompletedSession(
 	}
 ): Promise<void> {
 	const existing = byTrackDate.get(`${trackId}:${date}`);
-	if (existing?.status === 'completed') return;
+	if (existing?.status === 'completed') {
+		// Rader reconcile selv har skapt (ingen sensorEventId, ren navne-payload)
+		// eies av reconcile: oppdater navn/actuals idempotent, slik at bedre data
+		// senere (f.eks. distanse som dukker opp ved re-sync) retter visningen.
+		const reconcileOwned =
+			!existing.sensorEventId && !existing.payload.plannedRun && !existing.payload.plannedExercises;
+		if (reconcileOwned && existing.payload.name !== input.name) {
+			await db
+				.update(trackSessions)
+				.set({ payload: { name: input.name }, actuals: input.actuals, updatedAt: new Date() })
+				.where(eq(trackSessions.id, existing.id));
+		}
+		return;
+	}
 
 	if (existing) {
 		// Oppgrader forslag → gjennomført. Payload SKRIVES OM til det som faktisk

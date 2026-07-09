@@ -25,6 +25,14 @@ export type RouteKind = 'run' | 'bike' | 'hill' | 'trail' | 'mixed';
 
 export interface RouteVariant {
 	label: string;
+	/**
+	 * Fart som andel av brukerens easy-pace (1.0 = rolig, 0.82 = terskel).
+	 * Faktor-baserte varianter re-forankres mot DAGENS easy-pace ved hver
+	 * beregning — så «Terskel» følger formen i stedet for farten som gjaldt da
+	 * ruta ble opprettet. `paceSecPerKm` beholdes som fallback/snapshot for
+	 * visning når easy-referansen mangler.
+	 */
+	paceFactor?: number;
 	paceSecPerKm?: number;
 	reps?: number;
 	repDistanceMeters?: number;
@@ -110,7 +118,16 @@ export function variantEffort(
 	// mer i både tid og effort uavhengig av farten. På sti gulves intensiteten
 	// høyere (sakte ≠ lett): høydemeteren og terrenget bærer belastningen, ikke
 	// pace-modellen som ellers ville lest en langsom stiøkt som rolig.
-	const pace = variant.paceSecPerKm ?? easyPaceSecPerKm ?? 400;
+	//
+	// Faktor-baserte varianter oppløses mot DAGENS easy-pace. Med frosne
+	// absolutt-farter fra et gammelt (eller fallback-)anker kunne alle varianter
+	// treffe intensitets-taket på 1.5 — da skilte bare varigheten dem, og rolig
+	// framsto som dyrere enn terskel. Faktorene holder intensiteten under taket
+	// ((1/0.82)² ≈ 1.49), så hardere variant alltid koster mer.
+	const pace =
+		variant.paceFactor && easyPaceSecPerKm
+			? Math.round(easyPaceSecPerKm * variant.paceFactor)
+			: (variant.paceSecPerKm ?? easyPaceSecPerKm ?? 400);
 	const km = distanceMeters / 1000;
 	const elevation = route.elevationMeters ?? 0;
 	const climbKm = elevation > 0 ? elevation / VERTICAL_M_PER_EQUIV_KM : 0;
@@ -149,6 +166,42 @@ function clamp(value: number, min: number, max: number): number {
 	return Math.max(min, Math.min(max, value));
 }
 
+// Standard fartsvarianter som andel av easy-pace — én kilde for både
+// default-generering og gjenkjenning av seedede variantsett.
+const RUN_PACE_FACTORS: Record<string, number> = { Rolig: 1.0, Moderat: 0.9, Terskel: 0.82 };
+const TRAIL_PACE_FACTORS: Record<string, number> = { Rolig: 1.05, Jevnt: 1.0 };
+
+/**
+ * Stempler `paceFactor` på lagrede variantsett som beviselig er seedet fra
+ * default-faktorene (alle paces = samme anker × standardfaktor, ±2 s
+ * avrunding). Slike sett betyr «rolig/moderat/terskel for MEG» og skal følge
+ * dagens easy-pace — ikke ankeret som gjaldt (eller manglet, fallback 400) da
+ * ruta ble opprettet. Manuelt justerte farter matcher ikke mønsteret og
+ * beholdes som absolutte.
+ */
+export function inferPaceFactors(kind: RouteKind, variants: RouteVariant[]): RouteVariant[] {
+	const factors =
+		kind === 'trail' ? TRAIL_PACE_FACTORS : kind === 'run' || kind === 'mixed' ? RUN_PACE_FACTORS : null;
+	if (!factors) return variants;
+
+	const paced = variants.filter((v) => !v.reps && !v.family && v.paceSecPerKm != null);
+	if (paced.length < 2) return variants; // ett punkt kan ikke skille seedet fra manuelt
+	if (variants.some((v) => v.paceFactor != null)) return variants; // allerede faktor-basert
+	if (!paced.every((v) => factors[v.label] != null)) return variants;
+
+	const anchor = paced[0].paceSecPerKm! / factors[paced[0].label];
+	const consistent = paced.every(
+		(v) => Math.abs(v.paceSecPerKm! - anchor * factors[v.label]) <= 2
+	);
+	if (!consistent) return variants;
+
+	return variants.map((v) =>
+		!v.reps && !v.family && v.paceSecPerKm != null && factors[v.label] != null
+			? { ...v, paceFactor: factors[v.label] }
+			: v
+	);
+}
+
 /**
  * Default fartsvarianter for en rute-type, skalert til brukerens easy-pace.
  * Brukes når en rute importeres fra Ekko uten varianter (Ekko eier geometri/
@@ -166,14 +219,14 @@ export function defaultVariantsForKind(kind: RouteKind, easyPaceSecPerKm: number
 			return [{ label: '10 × 200 m', reps: 10, repDistanceMeters: 200, paceSecPerKm: 300 }];
 		case 'trail':
 			return [
-				{ label: 'Rolig', paceSecPerKm: Math.round(easy * 1.05) },
-				{ label: 'Jevnt', paceSecPerKm: easy }
+				{ label: 'Rolig', paceFactor: 1.05, paceSecPerKm: Math.round(easy * 1.05) },
+				{ label: 'Jevnt', paceFactor: 1.0, paceSecPerKm: easy }
 			];
 		default: // run, mixed
 			return [
-				{ label: 'Rolig', paceSecPerKm: easy },
-				{ label: 'Moderat', paceSecPerKm: Math.round(easy * 0.9) },
-				{ label: 'Terskel', paceSecPerKm: Math.round(easy * 0.82) }
+				{ label: 'Rolig', paceFactor: 1.0, paceSecPerKm: easy },
+				{ label: 'Moderat', paceFactor: 0.9, paceSecPerKm: Math.round(easy * 0.9) },
+				{ label: 'Terskel', paceFactor: 0.82, paceSecPerKm: Math.round(easy * 0.82) }
 			];
 	}
 }
@@ -201,9 +254,9 @@ export function defaultRouteSeeds(easyPaceSecPerKm: number | null): Array<{
 			elevationMeters: null,
 			terrain: 'vei',
 			variants: [
-				{ label: 'Rolig', paceSecPerKm: easy },
-				{ label: 'Moderat', paceSecPerKm: moderate },
-				{ label: 'Terskel', paceSecPerKm: threshold }
+				{ label: 'Rolig', paceFactor: 1.0, paceSecPerKm: easy },
+				{ label: 'Moderat', paceFactor: 0.9, paceSecPerKm: moderate },
+				{ label: 'Terskel', paceFactor: 0.82, paceSecPerKm: threshold }
 			]
 		},
 		{
@@ -224,8 +277,8 @@ export function defaultRouteSeeds(easyPaceSecPerKm: number | null): Array<{
 			elevationMeters: 80,
 			terrain: 'variert / sti',
 			variants: [
-				{ label: 'Rolig', paceSecPerKm: Math.round(easy * 1.05) },
-				{ label: 'Jevnt', paceSecPerKm: easy }
+				{ label: 'Rolig', paceFactor: 1.05, paceSecPerKm: Math.round(easy * 1.05) },
+				{ label: 'Jevnt', paceFactor: 1.0, paceSecPerKm: easy }
 			]
 		},
 		{
