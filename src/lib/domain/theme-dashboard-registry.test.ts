@@ -23,3 +23,27 @@ describe('resolveThemeDashboardKind — kjøretøy', () => {
 		expect(resolveThemeDashboardKind('Helse')).toBe('health');
 	});
 });
+
+describe('resolveThemeDashboardKind — film', () => {
+	it('matcher film-temanavn', () => {
+		expect(resolveThemeDashboardKind('Film')).toBe('film');
+		expect(resolveThemeDashboardKind('Filmer')).toBe('film');
+		expect(resolveThemeDashboardKind('Kino')).toBe('film');
+		expect(resolveThemeDashboardKind('Movies')).toBe('film');
+	});
+
+	it('gir film-definisjon med riktig ikon og label', () => {
+		expect(getThemeDashboardDefinition('Film')).toEqual({
+			kind: 'film',
+			label: 'Film',
+			icon: '🎬'
+		});
+	});
+
+	it('kolliderer ikke med bøker eller familie', () => {
+		expect(resolveThemeDashboardKind('Bøker')).toBe('books');
+		expect(resolveThemeDashboardKind('Familie')).toBe('family');
+		// "film" (4 tegn) matcher kun som helt ord, ikke som delstreng i andre navn
+		expect(resolveThemeDashboardKind('Filantropi')).toBeNull();
+	});
+});

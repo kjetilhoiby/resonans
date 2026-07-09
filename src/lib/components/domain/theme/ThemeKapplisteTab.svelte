@@ -17,6 +17,7 @@
 	import { planMaterialTransport, type TransportLimit } from '$lib/kappliste/transport';
 	import Checkbox from '$lib/components/ui/Checkbox.svelte';
 	import MaterialPickerModal from './MaterialPickerModal.svelte';
+	import KappeplanDiagram from './KappeplanDiagram.svelte';
 
 	interface CutList {
 		id: string;
@@ -229,6 +230,14 @@
 				/>
 				<div class="head-right">
 					{#if savingIds.has(list.id)}<span class="saving">Lagrer…</span>{/if}
+					<a
+						class="icon-btn print-link"
+						href={`/tema/${themeId}/kapplister/skriv-ut?list=${list.id}`}
+						target="_blank"
+						rel="noopener"
+						data-track="kappliste:skriv-ut"
+						aria-label="Skriv ut eller lagre kappliste som PDF"
+					>🖨</a>
 					<button class="icon-btn" onclick={() => deleteList(list.id)} aria-label="Slett kappliste">🗑</button>
 				</div>
 			</header>
@@ -497,49 +506,7 @@
 								{isPlanOpen(mat.id) ? '▾' : '▸'} Kappeplan
 							</button>
 							{#if isPlanOpen(mat.id)}
-								{#if res.layout.kind === 'linear'}
-									{@const lay = res.layout}
-									<div class="plan linear">
-										{#each lay.boards as board, i (i)}
-											<div class="plan-row">
-												<span class="plan-idx">{i + 1}</span>
-												<div class="bar" title={`${board.pieces.join(' + ')} mm`}>
-													{#each board.pieces as p, j (j)}
-														<span class="seg" style:flex={p}>{p}</span>
-													{/each}
-													{#if board.wasteMm > 1}
-														<span class="seg waste" style:flex={board.wasteMm}>{Math.round(board.wasteMm)}</span>
-													{/if}
-												</div>
-											</div>
-										{/each}
-									</div>
-								{:else}
-									{@const lay = res.layout}
-									<div class="plan sheets">
-										{#each lay.sheets as sheet, i (i)}
-											<div class="sheet-wrap">
-												<span class="sheet-cap">Plate {i + 1} · {lay.stockWidthMm}×{lay.stockHeightMm} mm</span>
-												<div class="sheet-box" style:aspect-ratio={`${lay.stockWidthMm} / ${lay.stockHeightMm}`}>
-													{#each sheet.placements as pl, j (j)}
-														<div
-															class="rect"
-															style:left={`${(pl.x / lay.stockWidthMm) * 100}%`}
-															style:top={`${(pl.y / lay.stockHeightMm) * 100}%`}
-															style:width={`${(pl.w / lay.stockWidthMm) * 100}%`}
-															style:height={`${(pl.h / lay.stockHeightMm) * 100}%`}
-														>
-															<span>{pl.w}×{pl.h}</span>
-														</div>
-													{/each}
-												</div>
-											</div>
-										{/each}
-									</div>
-								{/if}
-								<p class="plan-note">
-									{#if res.cutCount != null}≈ {res.cutCount} sagsnitt · {/if}{res.kind === 'sheet' ? 'Forenklet kappeplan (estimat) — ' : ''}grå felt er kapp til overs.
-								</p>
+								<KappeplanDiagram {res} guillotine={list.guillotine} kerfMm={list.kerfMm} />
 							{/if}
 						</div>
 
@@ -701,6 +668,10 @@
 	}
 	.icon-btn.small {
 		font-size: 0.8rem;
+	}
+	.print-link {
+		text-decoration: none;
+		line-height: 1;
 	}
 
 	/* Materiale */
@@ -969,115 +940,6 @@
 	.plan-toggle:hover {
 		color: var(--tp-text-soft);
 	}
-	.plan {
-		display: flex;
-		flex-direction: column;
-		gap: 7px;
-	}
-	.plan.sheets {
-		flex-flow: row wrap;
-		gap: 14px;
-	}
-	.plan-idx {
-		font-size: 0.66rem;
-		color: var(--tp-text-muted);
-		font-variant-numeric: tabular-nums;
-	}
-
-	/* Linear: horisontal stolpe med segmenter */
-	.plan-row {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-	}
-	.plan-row .plan-idx {
-		width: 14px;
-		flex-shrink: 0;
-		text-align: right;
-	}
-	.bar {
-		flex: 1;
-		display: flex;
-		height: 26px;
-		border-radius: 6px;
-		overflow: hidden;
-		border: 1px solid var(--card-border);
-		gap: 1px;
-		background: var(--card-border);
-	}
-	.seg {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		min-width: 0;
-		overflow: hidden;
-		background: var(--tp-accent-bg-strong);
-		color: var(--tp-text);
-		font-size: 0.64rem;
-		font-variant-numeric: tabular-nums;
-		white-space: nowrap;
-	}
-	.seg.waste {
-		background: repeating-linear-gradient(
-			45deg,
-			var(--tp-bg-2),
-			var(--tp-bg-2) 4px,
-			var(--tp-bg-1) 4px,
-			var(--tp-bg-1) 8px
-		);
-		color: var(--tp-text-muted);
-	}
-
-	/* Sheet: plate med absolutt-plasserte kapp */
-	.sheet-wrap {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-		width: 260px;
-		max-width: 100%;
-	}
-	.sheet-cap {
-		font-size: 0.66rem;
-		color: var(--tp-text-muted);
-		font-variant-numeric: tabular-nums;
-	}
-	.sheet-box {
-		position: relative;
-		width: 100%;
-		background: repeating-linear-gradient(
-			45deg,
-			var(--tp-bg-2),
-			var(--tp-bg-2) 4px,
-			var(--tp-bg-1) 4px,
-			var(--tp-bg-1) 8px
-		);
-		border: 1px solid var(--card-border);
-		border-radius: 6px;
-		overflow: hidden;
-	}
-	.rect {
-		position: absolute;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		background: var(--tp-accent-bg-strong);
-		border: 1px solid var(--tp-border-strong);
-		box-sizing: border-box;
-		overflow: hidden;
-	}
-	.rect span {
-		font-size: 0.6rem;
-		color: var(--tp-text);
-		font-variant-numeric: tabular-nums;
-		white-space: nowrap;
-		padding: 0 2px;
-	}
-	.plan-note {
-		margin: 0;
-		font-size: 0.68rem;
-		color: var(--tp-text-muted);
-	}
-
 	/* Transport (kapp i butikk) */
 	.transport-block {
 		display: flex;

@@ -14,6 +14,15 @@ export interface UserBookContext {
 	themeName?: string | null;
 }
 
+export interface UserFilmContext {
+	id: string;
+	title: string;
+	director?: string | null;
+	year?: number | null;
+	themeId: string;
+	themeName?: string | null;
+}
+
 export interface ChatRoutingDecision {
 	domains: ChatDomain[];
 	skills: ChatSkill[];
@@ -24,6 +33,8 @@ export interface ChatRoutingDecision {
 	modelSuggestion?: string;
 	/** Set when the router detects the user wants to navigate to a specific book */
 	routedBook?: { bookId: string; bookTitle: string; themeId: string };
+	/** Set when the router detects the user wants to navigate to a specific film */
+	routedFilm?: { filmId: string; filmTitle: string; themeId: string };
 }
 
 export function routeChatRequest(input: string): ChatRoutingDecision {
@@ -140,18 +151,21 @@ Bestem routing basert på meldingen:
   "domain"       — spørsmål om data: helse-statistikk, økonomi/forbruk, planer, temaer
   "conversation" — snakke, reflektere, utforske, få råd, diskutere (bruk sterkere modell)
   "book"         — brukeren vil gå til, snakke om eller fortsette en bestemt bok (kun hvis du er sikker)
+  "film"         — brukeren vil gå til, snakke om eller fortsette en bestemt film (kun hvis du er sikker)
 - domains: relevante domener, array av: "health", "economics", "food", "family", "self", "home", "jobb", "planning", "themes", "general"
 - modelSuggestion: inkluder kun "gpt-5.4" hvis samtalen er dyp, refleksiv eller kreativ, ellers utelat feltet
 - hints: maks 2 korte hints (én setning hver) til hoved-assistenten, eller tom array
 - bookId: kun sett dette hvis mode="book" og du kan identifisere boken fra konteksten
+- filmId: kun sett dette hvis mode="film" og du kan identifisere filmen fra konteksten
 
 Eksempel: {"mode":"conversation","domains":["general"],"modelSuggestion":"gpt-5.4","hints":["Brukeren virker usikker, møt dem der de er"]}
 Eksempel: {"mode":"tool","domains":["health"],"hints":["Sjekk eksisterende mål før du oppretter nytt"]}
-Eksempel: {"mode":"book","domains":["themes"],"bookId":"<uuid>","hints":[]}`;
+Eksempel: {"mode":"book","domains":["themes"],"bookId":"<uuid>","hints":[]}
+Eksempel: {"mode":"film","domains":["themes"],"filmId":"<uuid>","hints":[]}`;
 
 export async function aiRouteChatRequest(
 	input: string,
-	userContext?: { recentBooks?: UserBookContext[] }
+	userContext?: { recentBooks?: UserBookContext[]; recentFilms?: UserFilmContext[] }
 ): Promise<ChatRoutingDecision> {
 	const regexFallback = routeChatRequest(input);
 	try {
@@ -160,7 +174,13 @@ export async function aiRouteChatRequest(
 			const bookLines = userContext.recentBooks
 				.map((b) => `  - ID: ${b.id}, Tittel: "${b.title}"${b.author ? `, Forfatter: ${b.author}` : ''}${b.themeName ? `, Tema: "${b.themeName}"` : ''}`)
 				.join('\n');
-			contextBlock = `\n\nBrukerens nylige bøker (bruk dette for å gjenkjenne bokreferanser):\n${bookLines}`;
+			contextBlock += `\n\nBrukerens nylige bøker (bruk dette for å gjenkjenne bokreferanser):\n${bookLines}`;
+		}
+		if (userContext?.recentFilms && userContext.recentFilms.length > 0) {
+			const filmLines = userContext.recentFilms
+				.map((f) => `  - ID: ${f.id}, Tittel: "${f.title}"${f.director ? `, Regissør: ${f.director}` : ''}${f.year ? `, År: ${f.year}` : ''}${f.themeName ? `, Tema: "${f.themeName}"` : ''}`)
+				.join('\n');
+			contextBlock += `\n\nBrukerens nylige filmer (bruk dette for å gjenkjenne filmreferanser):\n${filmLines}`;
 		}
 
 		const completion = await openai.chat.completions.create({
@@ -181,9 +201,10 @@ export async function aiRouteChatRequest(
 			modelSuggestion?: string;
 			hints?: string[];
 			bookId?: string;
+			filmId?: string;
 		};
 
-		const rawMode = parsed.mode === 'book' ? 'conversation' : parsed.mode;
+		const rawMode = parsed.mode === 'book' || parsed.mode === 'film' ? 'conversation' : parsed.mode;
 		const mode: ChatMode = (rawMode === 'tool' || rawMode === 'conversation' || rawMode === 'domain')
 			? rawMode
 			: regexFallback.mode;
@@ -200,13 +221,23 @@ export async function aiRouteChatRequest(
 			}
 		}
 
+		// Resolve routedFilm if router identified a specific film
+		let routedFilm: ChatRoutingDecision['routedFilm'];
+		if (parsed.mode === 'film' && parsed.filmId && userContext?.recentFilms) {
+			const matched = userContext.recentFilms.find((f) => f.id === parsed.filmId);
+			if (matched) {
+				routedFilm = { filmId: matched.id, filmTitle: matched.title, themeId: matched.themeId };
+			}
+		}
+
 		return {
 			...regexFallback,
 			mode,
 			domains: domains.length > 0 ? domains : regexFallback.domains,
 			hints: [...regexFallback.hints, ...(parsed.hints ?? [])],
 			modelSuggestion: parsed.modelSuggestion,
-			routedBook
+			routedBook,
+			routedFilm
 		};
 	} catch (err) {
 		console.warn('⚠️ AI router failed, falling back to regex routing:', err);

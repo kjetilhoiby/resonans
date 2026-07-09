@@ -1350,7 +1350,9 @@ export const themesRelations = relations(themes, ({ one, many }) => ({
 	lists: many(themeLists),
 	files: many(themeFiles),
 	trackingSeries: many(trackingSeries),
-	books: many(books)
+	books: many(books),
+	films: many(films),
+	filmLists: many(filmLists)
 }));
 
 export const goalsRelations = relations(goals, ({ one, many }) => ({
@@ -1988,6 +1990,213 @@ export const bookClipsRelations = relations(bookClips, ({ one }) => ({
 	}),
 	user: one(users, {
 		fields: [bookClips.userId],
+		references: [users.id]
+	})
+}));
+
+// Filmer knyttet til et film-tema. Speiler books-modellen, men uten fremdrift:
+// en film ses på én kveld → status er want_to_watch | watched, med terning + setning.
+export const films = pgTable('films', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	themeId: uuid('theme_id').references(() => themes.id, { onDelete: 'cascade' }).notNull(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	tmdbId: integer('tmdb_id'), // The Movie Database-id (kilde for metadata/strømming)
+	title: text('title').notNull(),
+	originalTitle: text('original_title'),
+	year: integer('year'),
+	director: text('director'),
+	runtime: integer('runtime'), // Spilletid i minutter
+	posterUrl: text('poster_url'),
+	backdropUrl: text('backdrop_url'),
+	overview: text('overview'), // Kort synopsis
+	genres: jsonb('genres').$type<string[]>(),
+	cast: jsonb('cast').$type<Array<{ name: string; character?: string }>>(), // Topp 5-10
+	status: text('status').notNull().default('want_to_watch'), // 'want_to_watch'|'watched'
+	rating: integer('rating'), // Terning 1-6 (valgfri)
+	reviewNote: text('review_note'), // Brukerens setning om filmen
+	watchedAt: timestamp('watched_at'),
+	conversationId: uuid('conversation_id').references(() => conversations.id, { onDelete: 'set null' }),
+	contextStatus: text('context_status').notNull().default('none'), // 'none'|'pending'|'partial'|'ready'
+	contextPack: jsonb('context_pack').$type<{
+		metadata?: { year?: number; runtime?: number; genres?: string[]; country?: string; language?: string };
+		directorContext?: { name?: string; bio?: string; themes?: string[]; howFilmFits?: string };
+		themes?: string[];
+		filmographySequence?: {
+			directorName: string;
+			currentFilm: { title: string; year?: number };
+			before: Array<{ title: string; year?: number; oneLiner?: string }>;
+			after: Array<{ title: string; year?: number; oneLiner?: string }>;
+		};
+		criticReviews?: Array<{
+			source: string;
+			url: string;
+			publishedAt?: string;
+			verdict?: 'positive' | 'mixed' | 'negative';
+			quote: string;
+			paraphrase?: string;
+		}>;
+		reception?: { critics?: string; audience?: string; patterns?: string[] };
+		letterboxd?: {
+			url: string;
+			averageRating?: number;
+			ratingsCount?: number;
+			topReviews?: Array<{ rating?: number; quote: string }>;
+		};
+		castHighlights?: Array<{ name: string; character?: string; note?: string }>;
+		whereToWatch?: {
+			region: string;
+			flatrate?: Array<{ provider: string; logoUrl?: string }>;
+			rent?: Array<{ provider: string; logoUrl?: string }>;
+			buy?: Array<{ provider: string; logoUrl?: string }>;
+		};
+		conversationHints?: string[];
+		sources?: {
+			collectedAt: string;
+			tmdb: { ok: boolean; filmographyFound?: number };
+			criticDomainsHit: string[];
+			criticDomainsMissed: string[];
+			letterboxdBlocked?: boolean;
+			extractorErrors?: Array<{ url: string; error: string }>;
+		};
+	} | null>(),
+	// Cache av strømmetilgjengelighet (NO) for rask visning i biblioteket
+	watchProviders: jsonb('watch_providers').$type<{
+		region: string;
+		flatrate?: Array<{ provider: string; logoUrl?: string }>;
+		rent?: Array<{ provider: string; logoUrl?: string }>;
+		buy?: Array<{ provider: string; logoUrl?: string }>;
+	} | null>(),
+	watchProvidersUpdatedAt: timestamp('watch_providers_updated_at'),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	idxFilmsThemeId: index('films_theme_id_idx').on(table.themeId),
+	idxFilmsUserId: index('films_user_id_idx').on(table.userId)
+}));
+
+// Klipp/notater fra filmer — favorittscener, replikker, refleksjoner
+export const filmClips = pgTable('film_clips', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	filmId: uuid('film_id').references(() => films.id, { onDelete: 'cascade' }).notNull(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	text: text('text').notNull(), // Sitert replikk eller notat
+	timestamp: text('timestamp'), // Scene-tidsstempel (f.eks. "1:24:35")
+	note: text('note'), // Brukerens refleksjon
+	source: text('source'), // 'manual'|'screenshot'
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => ({
+	idxFilmClipsFilmId: index('film_clips_film_id_idx').on(table.filmId)
+}));
+
+// Navngitte lister over filmer man vil se (f.eks. et regissør- eller skuespiller-utvalg)
+export const filmLists = pgTable('film_lists', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	themeId: uuid('theme_id').references(() => themes.id, { onDelete: 'cascade' }).notNull(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	name: text('name').notNull(),
+	description: text('description'),
+	kind: text('kind').notNull().default('manual'), // 'manual'|'director'|'actor'|'watchlist'
+	tmdbPersonId: integer('tmdb_person_id'), // For director/actor-lister
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	idxFilmListsThemeId: index('film_lists_theme_id_idx').on(table.themeId),
+	idxFilmListsUserId: index('film_lists_user_id_idx').on(table.userId)
+}));
+
+// Elementer i en filmliste. Lett TMDB-snapshot; filmId settes når filmen «promoteres»
+// til en full films-rad (egen samtale + kontekstpakke).
+export const filmListItems = pgTable('film_list_items', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	listId: uuid('list_id').references(() => filmLists.id, { onDelete: 'cascade' }).notNull(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	filmId: uuid('film_id').references(() => films.id, { onDelete: 'set null' }), // Nullable
+	tmdbId: integer('tmdb_id'),
+	title: text('title').notNull(),
+	year: integer('year'),
+	posterUrl: text('poster_url'),
+	runtime: integer('runtime'),
+	position: integer('position').notNull().default(0),
+	addedAt: timestamp('added_at').defaultNow().notNull()
+}, (table) => ({
+	idxFilmListItemsListId: index('film_list_items_list_id_idx').on(table.listId)
+}));
+
+// Brukerens strømmepreferanser per film-tema — hvilke tjenester det finnes abonnement på
+export const filmPreferences = pgTable('film_preferences', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	themeId: uuid('theme_id').references(() => themes.id, { onDelete: 'cascade' }).notNull(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	region: text('region').notNull().default('NO'),
+	providerIds: jsonb('provider_ids').$type<number[]>(),
+	providerNames: jsonb('provider_names').$type<string[]>(),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	idxFilmPreferencesThemeId: index('film_preferences_theme_id_idx').on(table.themeId)
+}));
+
+export const filmsRelations = relations(films, ({ one, many }) => ({
+	theme: one(themes, {
+		fields: [films.themeId],
+		references: [themes.id]
+	}),
+	user: one(users, {
+		fields: [films.userId],
+		references: [users.id]
+	}),
+	conversation: one(conversations, {
+		fields: [films.conversationId],
+		references: [conversations.id]
+	}),
+	clips: many(filmClips)
+}));
+
+export const filmClipsRelations = relations(filmClips, ({ one }) => ({
+	film: one(films, {
+		fields: [filmClips.filmId],
+		references: [films.id]
+	}),
+	user: one(users, {
+		fields: [filmClips.userId],
+		references: [users.id]
+	})
+}));
+
+export const filmListsRelations = relations(filmLists, ({ one, many }) => ({
+	theme: one(themes, {
+		fields: [filmLists.themeId],
+		references: [themes.id]
+	}),
+	user: one(users, {
+		fields: [filmLists.userId],
+		references: [users.id]
+	}),
+	items: many(filmListItems)
+}));
+
+export const filmListItemsRelations = relations(filmListItems, ({ one }) => ({
+	list: one(filmLists, {
+		fields: [filmListItems.listId],
+		references: [filmLists.id]
+	}),
+	film: one(films, {
+		fields: [filmListItems.filmId],
+		references: [films.id]
+	}),
+	user: one(users, {
+		fields: [filmListItems.userId],
+		references: [users.id]
+	})
+}));
+
+export const filmPreferencesRelations = relations(filmPreferences, ({ one }) => ({
+	theme: one(themes, {
+		fields: [filmPreferences.themeId],
+		references: [themes.id]
+	}),
+	user: one(users, {
+		fields: [filmPreferences.userId],
 		references: [users.id]
 	})
 }));

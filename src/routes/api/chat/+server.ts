@@ -12,6 +12,7 @@ import { stripToolLeakage } from '$lib/server/chat-sanitize';
 import { buildDayContextBlock } from '$lib/server/day-location-context';
 import { buildTripContext } from '$lib/server/ferie-context';
 import { bookResearchToolDefinition, executeBookResearch } from '$lib/ai/tools/book-research';
+import { filmResearchToolDefinition, executeFilmResearch } from '$lib/ai/tools/film-research';
 import { createGoalTool } from '$lib/ai/tools/create-goal';
 import { createTaskTool } from '$lib/ai/tools/create-task';
 import { logActivityTool } from '$lib/ai/tools/log-activity';
@@ -1149,6 +1150,7 @@ const tools = [
 				}
 			},
 			bookResearchToolDefinition,
+			filmResearchToolDefinition,
 			{
 				type: 'function' as const,
 				function: {
@@ -1578,6 +1580,7 @@ function getToolProgressMessage(toolName: string) {
 		record_tracking_event: 'Registrerer tracking-hendelse...',
 		web_search: 'Søker på nettet...',
 		book_research: 'Leser kilder om boken...',
+		film_research: 'Leser kilder om filmen...',
 		weather_forecast: 'Henter værdata...',
 		annotate_photo_composition: 'Analyserer bilde...',
 		propose_widget: 'Lager widget-forslag...',
@@ -1761,11 +1764,32 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 				.limit(5);
 		}
 
+		let recentFilms: { id: string; title: string; director: string | null; year: number | null; themeId: string; themeName: string | null }[] = [];
+		if (!isSpecializedContext) {
+			const { films: filmsSchema } = await import('$lib/db/schema');
+			const { themes: themesSchema } = await import('$lib/db/schema');
+			const { desc } = await import('drizzle-orm');
+			recentFilms = await db
+				.select({
+					id: filmsSchema.id,
+					title: filmsSchema.title,
+					director: filmsSchema.director,
+					year: filmsSchema.year,
+					themeId: filmsSchema.themeId,
+					themeName: themesSchema.name
+				})
+				.from(filmsSchema)
+				.leftJoin(themesSchema, eq(filmsSchema.themeId, themesSchema.id))
+				.where(eq(filmsSchema.userId, userId))
+				.orderBy(desc(filmsSchema.updatedAt))
+				.limit(5);
+		}
+
 		// AI routing — must happen before conversation creation to allow early-exit without orphaned data
 		const latestUserInput = typeof message === 'string' && message.trim().length > 0
 			? message
 			: (attachment?.note || attachment?.contentText || '');
-		const routingDecision = await aiRouteChatRequest(latestUserInput, isSpecializedContext ? {} : { recentBooks });
+		const routingDecision = await aiRouteChatRequest(latestUserInput, isSpecializedContext ? {} : { recentBooks, recentFilms });
 
 		// Book routing: navigate without creating a conversation or saving a message
 		if (!isSpecializedContext && routingDecision.routedBook) {
@@ -1780,6 +1804,22 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 				conversationId: null,
 				bookRouted: true,
 				book: { id: bookId, title: bookTitle, themeId }
+			};
+		}
+
+		// Film routing: navigate without creating a conversation or saving a message
+		if (!isSpecializedContext && routingDecision.routedFilm) {
+			const { filmId, filmTitle, themeId } = routingDecision.routedFilm;
+			await emitProgress(onProgress, 'film_routed', `Melding koblet til film: ${filmTitle}`, {
+				filmId,
+				filmTitle,
+				themeId
+			});
+			return {
+				message: `Åpner «${filmTitle}»…`,
+				conversationId: null,
+				filmRouted: true,
+				film: { id: filmId, title: filmTitle, themeId }
 			};
 		}
 
@@ -2690,6 +2730,44 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 								findings: '',
 								sources: [],
 								error: 'book_research feilet. Prøv igjen.'
+							}),
+							tool_call_id: toolCall.id
+						});
+					}
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'film_research') {
+					const args = JSON.parse(toolCall.function.arguments) as {
+						filmId?: string;
+						query?: string;
+						focus?: 'critics' | 'filmography' | 'theme' | 'general';
+					};
+
+					if (!args.query || typeof args.query !== 'string') {
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify({ findings: '', sources: [], error: 'Mangler query for film_research.' }),
+							tool_call_id: toolCall.id
+						});
+						continue;
+					}
+
+					try {
+						const result = await executeFilmResearch(
+							{ filmId: args.filmId, query: args.query.trim(), focus: args.focus },
+							{ userId }
+						);
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify(result),
+							tool_call_id: toolCall.id
+						});
+					} catch (error) {
+						console.error('  🎬 film_research failed:', error);
+						messages.push({
+							role: 'tool',
+							content: JSON.stringify({
+								findings: '',
+								sources: [],
+								error: 'film_research feilet. Prøv igjen.'
 							}),
 							tool_call_id: toolCall.id
 						});

@@ -5,6 +5,7 @@ import { syncAllSparebank1Data } from '$lib/server/integrations/sparebank1-sync'
 import { processGoalIntentParseJob } from '$lib/server/goal-intent-parser';
 import { processTaskIntentParseJob } from '$lib/server/task-intent-parser';
 import { processBookContextCollectJob } from '$lib/server/book-context-collector';
+import { processFilmContextCollectJob } from '$lib/server/film-context-collector';
 import { autocheckChecklistItemsForDay } from '$lib/server/checklist-autocheck';
 import { syncSensorProgressForTasks } from '$lib/server/sensor-progress-sync';
 import { WorkoutProjectionService } from '$lib/server/services/workout-projection-service';
@@ -150,6 +151,14 @@ export async function listRecentBackgroundJobs(limit = 50) {
 			const contextPack = (result.contextPack ?? {}) as Record<string, unknown>;
 			resultSummary = {
 				bookId: result.bookId ?? null,
+				hasContext: contextPack != null && Object.keys(contextPack).length > 0
+			};
+		}
+
+		if (job.type === 'film_context_collect') {
+			const contextPack = (result.contextPack ?? {}) as Record<string, unknown>;
+			resultSummary = {
+				filmId: result.filmId ?? null,
 				hasContext: contextPack != null && Object.keys(contextPack).length > 0
 			};
 		}
@@ -640,6 +649,32 @@ async function executeJob(job: any): Promise<Record<string, unknown>> {
 			});
 
 			return { bookId: payload.bookId, contextPack };
+		}
+		case 'film_context_collect': {
+			const payload = (job.payload ?? {}) as {
+				filmId?: string;
+				tmdbId?: number | null;
+				title?: string;
+				director?: string | null;
+				year?: number | null;
+			};
+			if (!payload.filmId || typeof payload.filmId !== 'string') {
+				throw new Error('film_context_collect requires payload.filmId');
+			}
+			if (!payload.title || typeof payload.title !== 'string') {
+				throw new Error('film_context_collect requires payload.title');
+			}
+
+			const contextPack = await processFilmContextCollectJob({
+				filmId: payload.filmId,
+				tmdbId: typeof payload.tmdbId === 'number' ? payload.tmdbId : null,
+				title: payload.title,
+				director: typeof payload.director === 'string' ? payload.director : null,
+				year: typeof payload.year === 'number' ? payload.year : null,
+				jobId: typeof job.id === 'string' ? job.id : undefined
+			});
+
+			return { filmId: payload.filmId, contextPack };
 		}
 		case 'checklist_autocheck': {
 			if (!job.user_id) throw new Error('checklist_autocheck requires user_id');

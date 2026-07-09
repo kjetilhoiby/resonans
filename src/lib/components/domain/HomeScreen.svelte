@@ -562,6 +562,7 @@
 		onThemeRouted: (theme) => { routedToTheme = theme; },
 		onThemeSuggested: (theme) => { suggestedTheme = theme; },
 		onBookRouted: (book) => { closeChat(); goto(`/tema/${book.themeId}?tab=books&bookId=${book.bookId}`); },
+		onFilmRouted: (film) => { closeChat(); goto(`/tema/${film.themeId}?tab=data&film=${film.filmId}`); },
 		onChecklistChanged: fetchChecklists,
 	});
 

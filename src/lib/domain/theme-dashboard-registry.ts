@@ -1,4 +1,4 @@
-export type DashboardKind = 'health' | 'economics' | 'food' | 'family' | 'travel' | 'ferie' | 'books' | 'egenfrekvens' | 'home' | 'vehicle';
+export type DashboardKind = 'health' | 'economics' | 'food' | 'family' | 'travel' | 'ferie' | 'books' | 'film' | 'egenfrekvens' | 'home' | 'vehicle';
 
 export interface ThemeDashboardDefinition {
 	kind: DashboardKind;
@@ -141,6 +141,10 @@ const THEME_DASHBOARD_MATCHERS: Array<{ kind: DashboardKind; terms: string[] }> 
 		]
 	},
 	{
+		kind: 'film',
+		terms: ['film', 'filmer', 'kino', 'kinofilm', 'movie', 'movies', 'regissør', 'regissor']
+	},
+	{
 		kind: 'egenfrekvens',
 		terms: [
 			'egenfrekvens',
@@ -212,6 +216,11 @@ const DASHBOARD_DEFINITIONS: Record<DashboardKind, ThemeDashboardDefinition> = {
 		kind: 'books',
 		label: 'Bøker',
 		icon: '📚'
+	},
+	film: {
+		kind: 'film',
+		label: 'Film',
+		icon: '🎬'
 	},
 	egenfrekvens: {
 		kind: 'egenfrekvens',
