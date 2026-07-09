@@ -6,6 +6,7 @@ import {
 	layoutSheets,
 	layoutSheetsGuillotine,
 	countGuillotineCuts,
+	guillotineCutLines,
 	computeMaterial,
 	computeCutList,
 	formatNok,
@@ -236,6 +237,35 @@ describe('countGuillotineCuts', () => {
 			}
 		];
 		expect(countGuillotineCuts(sheets, 1200, 600)).toBe(1);
+	});
+});
+
+describe('guillotineCutLines', () => {
+	it('gir like mange linjer som countGuillotineCuts, alle rette og innenfor plata', () => {
+		const rects = [
+			{ w: 474, h: 262 },
+			{ w: 262, h: 62 },
+			{ w: 474, h: 62 },
+			{ w: 224, h: 312 },
+			{ w: 224, h: 112 },
+			{ w: 312, h: 112 }
+		];
+		const { sheets } = layoutSheetsGuillotine(rects, 1200, 600, 1.8);
+		let total = 0;
+		for (const s of sheets) {
+			const lines = guillotineCutLines(s.placements, 1200, 600, 1.8);
+			total += lines.length;
+			for (const l of lines) {
+				// Rett linje: enten loddrett (x1==x2) eller vannrett (y1==y2).
+				if (l.orientation === 'v') expect(l.x1).toBeCloseTo(l.x2);
+				else expect(l.y1).toBeCloseTo(l.y2);
+				expect(l.x1).toBeGreaterThanOrEqual(-1e-6);
+				expect(l.y1).toBeGreaterThanOrEqual(-1e-6);
+				expect(Math.max(l.x1, l.x2)).toBeLessThanOrEqual(1200 + 1e-6);
+				expect(Math.max(l.y1, l.y2)).toBeLessThanOrEqual(600 + 1e-6);
+			}
+		}
+		expect(total).toBe(countGuillotineCuts(sheets, 1200, 600, 1.8));
 	});
 });
 

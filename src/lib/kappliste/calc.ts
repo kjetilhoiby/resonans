@@ -463,29 +463,49 @@ export function layoutSheetsGuillotine(
 	return { sheets, tooLarge };
 }
 
-/* ── Snitt-telling for en guillotine-layout ──────────────────────────── */
-// Antall sagsnitt ≈ antall rette gjennomgående kutt som må til for å frigjøre
-// alle kappene fra plata. Vi dekomponerer rekursivt: finn et snitt (loddrett
-// eller vannrett) som deler kappene i to ikke-tomme grupper uten å skjære
-// gjennom noe kapp, tell +1, og gjenta på hver side. Et enslig kapp med svinn
-// igjen krever inntil to trimmesnitt (høyre kant + bunn). Estimat for scoping.
+/* ── Kuttlinjer for en guillotine-layout ─────────────────────────────── */
+// Vi dekomponerer plata rekursivt: finn et snitt (loddrett eller vannrett) som
+// deler kappene i to ikke-tomme grupper uten å skjære gjennom noe kapp, tegn
+// linja tvers over delregionen, og gjenta på hver side. Et enslig kapp med
+// svinn igjen får inntil to trimmesnitt (høyre kant + bunn). Hver linje er ett
+// rett gjennomgående sagsnitt — det beviser at layouten faktisk kan sages.
+
+/** Ett rett gjennomgående sagsnitt (mm-koordinater på plata). */
+export interface CutLine {
+	x1: number;
+	y1: number;
+	x2: number;
+	y2: number;
+	orientation: 'v' | 'h';
+}
 
 const CUT_TOL = 0.5; // mm slingringsmonn for kant-sammenligninger
 
-function cutsInRegion(rects: SheetPlacement[], x: number, y: number, w: number, h: number, kerf: number): number {
-	if (rects.length === 0) return 0;
+function collectCuts(
+	rects: SheetPlacement[],
+	x: number,
+	y: number,
+	w: number,
+	h: number,
+	kerf: number,
+	out: CutLine[]
+): void {
+	if (rects.length === 0) return;
 	if (rects.length === 1) {
 		const r = rects[0];
-		let c = 0;
-		if (x + w - (r.x + r.w) > kerf + CUT_TOL) c++; // svinn til høyre → ett snitt
-		if (y + h - (r.y + r.h) > kerf + CUT_TOL) c++; // svinn under → ett snitt
-		return c;
+		let leftW = w; // bredden på delregionen som trimmes i bunn (etter et evt. høyre-trim)
+		if (x + w - (r.x + r.w) > kerf + CUT_TOL) {
+			out.push({ x1: r.x + r.w, y1: y, x2: r.x + r.w, y2: y + h, orientation: 'v' }); // trim høyre
+			leftW = r.x + r.w - x;
+		}
+		if (y + h - (r.y + r.h) > kerf + CUT_TOL) {
+			out.push({ x1: x, y1: r.y + r.h, x2: x + leftW, y2: r.y + r.h, orientation: 'h' }); // trim bunn
+		}
+		return;
 	}
 	// Prøv loddrette snitt (ved hvert kapps høyre kant), deretter vannrette.
 	for (const axis of ['v', 'h'] as const) {
-		const candidates = [
-			...new Set(rects.map((r) => (axis === 'v' ? r.x + r.w : r.y + r.h)))
-		].sort((a, b) => a - b);
+		const candidates = [...new Set(rects.map((r) => (axis === 'v' ? r.x + r.w : r.y + r.h)))].sort((a, b) => a - b);
 		for (const cut of candidates) {
 			const before: SheetPlacement[] = [];
 			const after: SheetPlacement[] = [];
@@ -501,22 +521,31 @@ function cutsInRegion(rects: SheetPlacement[], x: number, y: number, w: number, 
 				}
 			}
 			if (straddles || before.length === 0 || after.length === 0) continue;
-			const near = axis === 'v'
-				? cutsInRegion(before, x, y, cut - x, h, kerf)
-				: cutsInRegion(before, x, y, w, cut - y, kerf);
-			const far = axis === 'v'
-				? cutsInRegion(after, cut + kerf, y, x + w - (cut + kerf), h, kerf)
-				: cutsInRegion(after, x, cut + kerf, w, y + h - (cut + kerf), kerf);
-			return 1 + near + far;
+			if (axis === 'v') {
+				out.push({ x1: cut, y1: y, x2: cut, y2: y + h, orientation: 'v' });
+				collectCuts(before, x, y, cut - x, h, kerf, out);
+				collectCuts(after, cut + kerf, y, x + w - (cut + kerf), h, kerf, out);
+			} else {
+				out.push({ x1: x, y1: cut, x2: x + w, y2: cut, orientation: 'h' });
+				collectCuts(before, x, y, w, cut - y, kerf, out);
+				collectCuts(after, x, cut + kerf, w, y + h - (cut + kerf), kerf, out);
+			}
+			return;
 		}
 	}
 	// Ingen gyldig guillotine-snitt funnet (skal ikke skje for guillotine-layout).
-	return rects.length;
+}
+
+/** Kuttlinjene for én plate — hver linje er ett rett gjennomgående sagsnitt. */
+export function guillotineCutLines(placements: SheetPlacement[], stockW: number, stockH: number, kerfMm = 0): CutLine[] {
+	const out: CutLine[] = [];
+	collectCuts(placements, 0, 0, stockW, stockH, kerfMm, out);
+	return out;
 }
 
 /** Totalt antall sagsnitt for en guillotine-layout (alle plater). */
 export function countGuillotineCuts(sheets: SheetUnit[], stockW: number, stockH: number, kerfMm = 0): number {
-	return sheets.reduce((sum, sheet) => sum + cutsInRegion(sheet.placements, 0, 0, stockW, stockH, kerfMm), 0);
+	return sheets.reduce((sum, sheet) => sum + guillotineCutLines(sheet.placements, stockW, stockH, kerfMm).length, 0);
 }
 
 /* ── Materiale → resultat ─────────────────────────────────────────── */
