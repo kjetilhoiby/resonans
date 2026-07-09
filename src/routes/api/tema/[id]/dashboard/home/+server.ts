@@ -6,7 +6,12 @@ import { resolveThemeDashboardKind } from '$lib/domain/theme-dashboard-registry'
 import { and, eq, desc, inArray } from 'drizzle-orm';
 import { ProjectMetricsService } from '$lib/server/services/project-metrics-service';
 import { currentSeason, HOME_APPLIANCE_SUBTYPES, HOME_APPLIANCE_LABELS, type HomeApplianceSubtype, pingApplianceEmoji } from '$lib/domains/home';
-import { buildApplianceCycle, type ApplianceCycle } from '$lib/server/services/appliance-cycle';
+import {
+	buildApplianceCycle,
+	buildVacuumState,
+	type ApplianceCycle,
+	type VacuumState
+} from '$lib/server/services/appliance-cycle';
 import { getChoreStats, listPendingChores } from '$lib/server/services/chore-service';
 
 export const GET: RequestHandler = async ({ locals, params }) => {
@@ -86,6 +91,7 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 			data: Record<string, unknown>;
 		}>;
 		cycle: ApplianceCycle | null;
+		vacuum: VacuumState | null;
 	}> = [];
 
 	if (ownedSensors.length > 0) {
@@ -103,7 +109,7 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 				.from(sensorEvents)
 				.where(and(eq(sensorEvents.userId, userId), inArray(sensorEvents.sensorId, sensorIds)))
 				.orderBy(desc(sensorEvents.timestamp))
-				.limit(100),
+				.limit(300),
 			db.select().from(applianceProfiles).where(eq(applianceProfiles.userId, userId))
 		]);
 
@@ -132,14 +138,17 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 				}
 
 				for (const [appName, evts] of byAppliance) {
+					const mapped = evts.map(mapEvent);
+					const isVacuum = mapped.some((e) => e.dataType.startsWith('vacuum_'));
 					appliances.push({
 						sensorId: sensor.id,
-						subtype: 'ping',
+						subtype: isVacuum ? 'vacuum' : 'ping',
 						name: appName,
 						label: appName,
-						emoji: pingApplianceEmoji(appName),
-						recentEvents: evts.slice(0, 10).map(mapEvent),
-						cycle: buildApplianceCycle(appName, evts, allProfiles)
+						emoji: isVacuum ? '🧹' : pingApplianceEmoji(appName),
+						recentEvents: mapped.slice(0, 10),
+						cycle: isVacuum ? null : buildApplianceCycle(appName, evts, allProfiles),
+						vacuum: isVacuum ? buildVacuumState(mapped) : null
 					});
 				}
 			} else {
@@ -154,7 +163,8 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 					label: meta.label,
 					emoji: meta.emoji,
 					recentEvents: events.map(mapEvent),
-					cycle: buildApplianceCycle(sensor.name, sensorEvts, allProfiles)
+					cycle: buildApplianceCycle(sensor.name, sensorEvts, allProfiles),
+					vacuum: null
 				});
 			}
 		}

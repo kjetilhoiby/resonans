@@ -365,6 +365,22 @@ export interface HomeDashboardData {
 			programName: string | null;
 			isRunning: boolean;
 		} | null;
+		vacuum: {
+			isRunning: boolean;
+			state: string | null;
+			battery: number | null;
+			cleanMinutes: number | null;
+			cleanAreaM2: number | null;
+			cleanPercent: number | null;
+			lastClean: {
+				at: string;
+				areaM2: number | null;
+				durationMinutes: number | null;
+				cleanType: string | null;
+				mapName: string | null;
+				complete: boolean | null;
+			} | null;
+		} | null;
 	}>;
 }
 
