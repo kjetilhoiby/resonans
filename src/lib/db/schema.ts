@@ -342,6 +342,8 @@ export const cutLists = pgTable('cut_lists', {
 	transportEnabled: boolean('transport_enabled').notNull().default(true), // «tilpass kapp til bil» av/på
 	transportMaxLengthMm: doublePrecision('transport_max_length_mm').notNull().default(1900), // lasterom: lengste side
 	transportMaxWidthMm: doublePrecision('transport_max_width_mm').notNull().default(1000), // lasterom: korteste side
+	guillotine: boolean('guillotine').notNull().default(false), // «sagbare kutt» — pakk plater kant-til-kant
+
 	materials: jsonb('materials')
 		.$type<
 			Array<{

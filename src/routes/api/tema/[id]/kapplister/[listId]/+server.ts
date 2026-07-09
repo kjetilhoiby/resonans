@@ -14,6 +14,7 @@ function mapCutList(row: typeof cutLists.$inferSelect) {
 		transportEnabled: row.transportEnabled,
 		transportMaxLengthMm: row.transportMaxLengthMm,
 		transportMaxWidthMm: row.transportMaxWidthMm,
+		guillotine: row.guillotine,
 		materials: row.materials ?? [],
 		sortOrder: row.sortOrder,
 		updatedAt: row.updatedAt.toISOString()
@@ -35,6 +36,7 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 	if (typeof body?.title === 'string' && body.title.trim()) update.title = body.title.trim().slice(0, 80);
 	if (Number.isFinite(body?.kerfMm) && body.kerfMm >= 0) update.kerfMm = Math.min(body.kerfMm, 50);
 	if (typeof body?.transportEnabled === 'boolean') update.transportEnabled = body.transportEnabled;
+	if (typeof body?.guillotine === 'boolean') update.guillotine = body.guillotine;
 	if (Number.isFinite(body?.transportMaxLengthMm) && body.transportMaxLengthMm > 0)
 		update.transportMaxLengthMm = Math.min(body.transportMaxLengthMm, 10000);
 	if (Number.isFinite(body?.transportMaxWidthMm) && body.transportMaxWidthMm > 0)

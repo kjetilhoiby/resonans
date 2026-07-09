@@ -4,13 +4,46 @@ import {
 	packSheets,
 	layoutLinear,
 	layoutSheets,
+	layoutSheetsGuillotine,
+	countGuillotineCuts,
 	computeMaterial,
 	computeCutList,
 	formatNok,
 	formatMeters,
 	type Material,
-	type CutSpec
+	type CutSpec,
+	type SheetPlacement
 } from './calc';
+
+/** Kan kappene på én plate frigjøres med rette gjennomgående (guillotine-)snitt? */
+function isGuillotineCuttable(placements: SheetPlacement[], tol = 0.5): boolean {
+	if (placements.length <= 1) return true;
+	for (const axis of ['v', 'h'] as const) {
+		const edges = [...new Set(placements.map((p) => (axis === 'v' ? p.x + p.w : p.y + p.h)))];
+		for (const cut of edges) {
+			const before: SheetPlacement[] = [];
+			const after: SheetPlacement[] = [];
+			let straddle = false;
+			for (const p of placements) {
+				const lo = axis === 'v' ? p.x : p.y;
+				const hi = axis === 'v' ? p.x + p.w : p.y + p.h;
+				if (hi <= cut + tol) before.push(p);
+				else if (lo >= cut - tol) after.push(p);
+				else {
+					straddle = true;
+					break;
+				}
+			}
+			if (straddle || before.length === 0 || after.length === 0) continue;
+			if (isGuillotineCuttable(before, tol) && isGuillotineCuttable(after, tol)) return true;
+		}
+	}
+	return false;
+}
+
+function overlaps(a: SheetPlacement, b: SheetPlacement): boolean {
+	return a.x < b.x + b.w - 1e-6 && b.x < a.x + a.w - 1e-6 && a.y < b.y + b.h - 1e-6 && b.y < a.y + a.h - 1e-6;
+}
 
 function linearMaterial(partial: Partial<Material> & { cuts: CutSpec[] }): Material {
 	return {
@@ -122,6 +155,90 @@ describe('packSheets', () => {
 	});
 });
 
+describe('layoutSheetsGuillotine', () => {
+	it('plasserer alle kapp innenfor plata uten overlapp', () => {
+		// Kappene fra skjermbildet (12 mm kryssfiner poppel, 1200×600 plate).
+		const rects = [
+			{ w: 474, h: 262 },
+			{ w: 262, h: 62 },
+			{ w: 262, h: 62 },
+			{ w: 474, h: 62 },
+			{ w: 224, h: 312 },
+			{ w: 224, h: 112 },
+			{ w: 224, h: 112 },
+			{ w: 312, h: 112 }
+		];
+		const { sheets, tooLarge } = layoutSheetsGuillotine(rects, 1200, 600);
+		expect(tooLarge).toEqual([]);
+		const placed = sheets.flatMap((s) => s.placements);
+		expect(placed).toHaveLength(rects.length);
+		for (const p of placed) {
+			expect(p.x).toBeGreaterThanOrEqual(-1e-6);
+			expect(p.y).toBeGreaterThanOrEqual(-1e-6);
+			expect(p.x + p.w).toBeLessThanOrEqual(1200 + 1e-6);
+			expect(p.y + p.h).toBeLessThanOrEqual(600 + 1e-6);
+		}
+		for (const s of sheets) {
+			for (let i = 0; i < s.placements.length; i++)
+				for (let j = i + 1; j < s.placements.length; j++)
+					expect(overlaps(s.placements[i], s.placements[j])).toBe(false);
+		}
+	});
+
+	it('gir en layout som faktisk kan sages med rette gjennomgående snitt', () => {
+		const rects = [
+			{ w: 474, h: 262 },
+			{ w: 262, h: 62 },
+			{ w: 474, h: 62 },
+			{ w: 224, h: 312 },
+			{ w: 224, h: 112 },
+			{ w: 312, h: 112 }
+		];
+		const { sheets } = layoutSheetsGuillotine(rects, 1200, 600, 1.8);
+		for (const s of sheets) expect(isGuillotineCuttable(s.placements)).toBe(true);
+	});
+
+	it('tillater rotasjon slik at et høyt kapp legges på tvers', () => {
+		const { sheets } = layoutSheetsGuillotine([{ w: 1200, h: 600 }], 2440, 1220);
+		expect(sheets).toHaveLength(1);
+	});
+
+	it('flagger kapp som er for store for plata', () => {
+		const { sheets, tooLarge } = layoutSheetsGuillotine([{ w: 3000, h: 1500 }], 2440, 1220);
+		expect(sheets).toHaveLength(0);
+		expect(tooLarge).toHaveLength(1);
+	});
+});
+
+describe('countGuillotineCuts', () => {
+	it('gir 0 snitt når kappet fyller hele plata', () => {
+		const sheets = [{ placements: [{ x: 0, y: 0, w: 1200, h: 600 }] }];
+		expect(countGuillotineCuts(sheets, 1200, 600)).toBe(0);
+	});
+
+	it('gir 2 snitt for ett kapp mindre enn plata i begge retninger', () => {
+		const sheets = [{ placements: [{ x: 0, y: 0, w: 800, h: 400 }] }];
+		expect(countGuillotineCuts(sheets, 1200, 600)).toBe(2);
+	});
+
+	it('gir 1 snitt for ett kapp i full bredde men lavere', () => {
+		const sheets = [{ placements: [{ x: 0, y: 0, w: 1200, h: 400 }] }];
+		expect(countGuillotineCuts(sheets, 1200, 600)).toBe(1);
+	});
+
+	it('gir 1 snitt for to kapp side ved side i full høyde uten svinn', () => {
+		const sheets = [
+			{
+				placements: [
+					{ x: 0, y: 0, w: 600, h: 600 },
+					{ x: 600, y: 0, w: 600, h: 600 }
+				]
+			}
+		];
+		expect(countGuillotineCuts(sheets, 1200, 600)).toBe(1);
+	});
+});
+
 describe('layoutLinear', () => {
 	it('plasserer kappene på lektene (3+2) og oppgir svinn per lekt', () => {
 		const { boards } = layoutLinear([1200, 1200, 1200, 1200, 1200], 3900);
@@ -199,6 +316,18 @@ describe('computeMaterial — sheet', () => {
 		const mat = sheetMaterial({ cuts: [{ id: 'c1', widthMm: 3000, heightMm: 1500, quantity: 1 }] });
 		const res = computeMaterial(mat, 0);
 		expect(res.tooBig).toEqual(['3000×1500 mm']);
+	});
+
+	it('setter cutCount og guillotine-layout når guillotine er på', () => {
+		const mat = sheetMaterial({
+			pricePerSquareMeterNok: 100,
+			cuts: [{ id: 'c1', widthMm: 380, heightMm: 420, quantity: 6 }]
+		});
+		const plain = computeMaterial(mat, 1.8, false);
+		expect(plain.cutCount).toBeUndefined();
+		const guillo = computeMaterial(mat, 1.8, true);
+		expect(guillo.cutCount).toBeGreaterThan(0);
+		expect(guillo.layout.kind).toBe('sheet');
 	});
 });
 

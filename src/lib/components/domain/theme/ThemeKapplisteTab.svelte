@@ -25,6 +25,7 @@
 		transportEnabled: boolean;
 		transportMaxLengthMm: number;
 		transportMaxWidthMm: number;
+		guillotine: boolean;
 		materials: Material[];
 		sortOrder: number;
 		updatedAt: string;
@@ -130,6 +131,7 @@
 					transportEnabled: list.transportEnabled,
 					transportMaxLengthMm: list.transportMaxLengthMm,
 					transportMaxWidthMm: list.transportMaxWidthMm,
+					guillotine: list.guillotine,
 					materials: list.materials
 				})
 			});
@@ -214,7 +216,7 @@
 	</p>
 
 	{#each lists as list (list.id)}
-		{@const total = computeCutList(list.materials, list.kerfMm)}
+		{@const total = computeCutList(list.materials, list.kerfMm, list.guillotine)}
 		<section class="card">
 			<header class="card-head">
 				<input
@@ -247,6 +249,17 @@
 					>
 				</label>
 				<span class="kerf-hint">Trekkes fra mellom kapp ved beregning</span>
+			</div>
+
+			<div class="kerf-line guillotine-line">
+				<label class="tp-toggle">
+					<Checkbox
+						checked={list.guillotine}
+						onChange={(e) => patchList(list.id, { guillotine: (e.currentTarget as HTMLInputElement).checked })}
+					/>
+					<span>Sagbare kutt (guillotine)</span>
+				</label>
+				<span class="kerf-hint">Legger platekapp slik at hvert snitt går kant-til-kant. Færre og enklere kutt, kan bruke litt mer materiale.</span>
 			</div>
 
 			<div class="kerf-line transport-line">
@@ -291,7 +304,7 @@
 			</div>
 
 			{#each list.materials as mat (mat.id)}
-				{@const res = computeMaterial(mat, list.kerfMm)}
+				{@const res = computeMaterial(mat, list.kerfMm, list.guillotine)}
 				{@const transport = planMaterialTransport(res, { maxLengthMm: list.transportMaxLengthMm, maxWidthMm: list.transportMaxWidthMm } satisfies TransportLimit)}
 				<div class="material" class:is-open={isMaterialOpen(mat.id)}>
 					<div class="mat-bar">
@@ -525,7 +538,7 @@
 									</div>
 								{/if}
 								<p class="plan-note">
-									{res.kind === 'sheet' ? 'Forenklet kappeplan (estimat) — ' : ''}grå felt er kapp til overs.
+									{#if res.cutCount != null}≈ {res.cutCount} sagsnitt · {/if}{res.kind === 'sheet' ? 'Forenklet kappeplan (estimat) — ' : ''}grå felt er kapp til overs.
 								</p>
 							{/if}
 						</div>

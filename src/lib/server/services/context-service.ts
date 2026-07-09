@@ -66,7 +66,7 @@ export class ContextService {
 
 		let out = '\n--- KAPPLISTER I PROSJEKTET (materialberegning) ---\n';
 		for (const list of withMaterials) {
-			const res = computeCutList(list.materials ?? [], list.kerfMm);
+			const res = computeCutList(list.materials ?? [], list.kerfMm, list.guillotine);
 			out += `\n${list.title}:\n`;
 			for (const mat of res.materials) {
 				if (mat.tooBig.length > 0) {
