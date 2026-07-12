@@ -503,6 +503,14 @@
 	<FlowSheet flow={FLOWS['birthday_interview']} context={ctx.birthdayInterviewFlowContext} onclose={() => { ctx.birthdayInterviewFlowOpen = false; }} oncomplete={() => { ctx.birthdayInterviewFlowOpen = false; void ctx.loadActionCandidates(); }} />
 {/if}
 
+{#if ctx.livsintervjuFlowOpen}
+	<FlowSheet flow={FLOWS['livsintervju']} context={ctx.livsintervjuFlowContext} onclose={() => { ctx.livsintervjuFlowOpen = false; }} oncomplete={() => { ctx.livsintervjuFlowOpen = false; void ctx.loadActionCandidates(); }} />
+{/if}
+
+{#if ctx.retningKvartalFlowOpen}
+	<FlowSheet flow={FLOWS['retning_kvartal']} context={ctx.retningKvartalFlowContext} onclose={() => { ctx.retningKvartalFlowOpen = false; }} oncomplete={() => { ctx.retningKvartalFlowOpen = false; void ctx.loadActionCandidates(); }} />
+{/if}
+
 <!-- Snooze-meny -->
 {#if ctx.snoozeMenuChipId}
 	<button class="snooze-backdrop" aria-label="Lukk snooze-meny" onclick={ctx.closeSnoozeMenu}></button>

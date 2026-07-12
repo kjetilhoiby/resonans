@@ -22,6 +22,8 @@ import { trainingProgramProducer } from './action-producers/training-program';
 import { screenTimeOnboardingProducer } from './action-producers/screen-time-onboarding';
 import { birthdayInterviewProducer } from './action-producers/birthday-interview';
 import { birthdayKavalkadeProducer } from './action-producers/birthday-kavalkade';
+import { livsintervjuProducer } from './action-producers/livsintervju';
+import { retningKvartalProducer } from './action-producers/retning-kvartal';
 
 export interface EgenfrekvensContext {
 	today: {
@@ -67,7 +69,9 @@ const PRODUCERS: ActionProducer[] = [
 	trainingProgramProducer,
 	screenTimeOnboardingProducer,
 	birthdayInterviewProducer,
-	birthdayKavalkadeProducer
+	birthdayKavalkadeProducer,
+	livsintervjuProducer,
+	retningKvartalProducer
 ];
 
 async function loadPlannedContexts(userId: string) {
@@ -130,7 +134,7 @@ const PRODUCER_NAMES = [
 	'focus-timer', 'reflection-light', 'quick-win',
 	'inbox-note', 'sort-inbox', 'plan-tomorrow', 'plan-week',
 	'plan-month', 'training-program', 'screen-time-onboarding',
-	'selvangivelse', 'kavalkade'
+	'selvangivelse', 'kavalkade', 'livsintervju', 'retning-kvartal'
 ];
 
 export async function produceActions(userId: string): Promise<ActionCandidate[]> {

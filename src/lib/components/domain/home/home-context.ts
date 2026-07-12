@@ -363,6 +363,14 @@ export interface HomeContext {
 	birthdayInterviewFlowOpen: boolean;
 	birthdayInterviewFlowContext: FlowContext;
 
+	// ── Livsintervjuet (langsiktig retning) ──
+	livsintervjuFlowOpen: boolean;
+	livsintervjuFlowContext: FlowContext;
+
+	// ── Retningssamtalen (kvartalsvis) ──
+	retningKvartalFlowOpen: boolean;
+	retningKvartalFlowContext: FlowContext;
+
 	// ── Dato/derivert ──
 	dateLabel: string;
 

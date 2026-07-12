@@ -15,6 +15,10 @@ export type ReflectionKind =
 	| 'birthday_photos'
 	| 'birthday_prophecy'
 	| 'birthday_greetings'
+	| 'livsintervju'
+	| 'livsintervju_chat'
+	| 'retningssamtale'
+	| 'retningsgap'
 	| 'ad_hoc';
 
 export interface ReflectionScores {

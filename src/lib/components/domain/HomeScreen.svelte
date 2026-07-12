@@ -498,6 +498,54 @@
 		birthdayInterviewFlowOpen = true;
 	}
 
+	// ── Livsintervjuet (langsiktig retning) ───────────────────────────────
+	let livsintervjuFlowOpen = $state(false);
+	let livsintervjuFlowContext = $state<import('$lib/flows/types').FlowContext>({});
+
+	async function openLivsintervju() {
+		// Eksisterende retning + verdier + forrige intervju til stegene — flyten åpner uansett
+		try {
+			const res = await fetch('/api/retning/interview-context');
+			if (res.ok) {
+				const ctx = await res.json() as { eksisterendeRetning: string; verdierNaa: string; forrigeIntervju: string };
+				livsintervjuFlowContext = {
+					initialData: {
+						_eksisterendeRetning: ctx.eksisterendeRetning,
+						_verdierNaa: ctx.verdierNaa,
+						_forrigeIntervju: ctx.forrigeIntervju
+					}
+				};
+			}
+		} catch {
+			livsintervjuFlowContext = {};
+		}
+		livsintervjuFlowOpen = true;
+	}
+
+	// ── Retningssamtalen (kvartalsvis) ────────────────────────────────────
+	let retningKvartalFlowOpen = $state(false);
+	let retningKvartalFlowContext = $state<import('$lib/flows/types').FlowContext>({});
+
+	async function openRetningKvartal() {
+		// Retning + verdier + ferske synteser til konfrontasjonen — flyten åpner uansett
+		try {
+			const res = await fetch('/api/retning/interview-context');
+			if (res.ok) {
+				const ctx = await res.json() as { eksisterendeRetning: string; verdierNaa: string; synteser: string };
+				retningKvartalFlowContext = {
+					initialData: {
+						_eksisterendeRetning: ctx.eksisterendeRetning,
+						_verdierNaa: ctx.verdierNaa,
+						_synteser: ctx.synteser
+					}
+				};
+			}
+		} catch {
+			retningKvartalFlowContext = {};
+		}
+		retningKvartalFlowOpen = true;
+	}
+
 	// ── Action dispatch ───────────────────────────────────────────────────
 	function dispatchActionIntent(intent: ActionIntent): void {
 		switch (intent.kind) {
@@ -507,6 +555,8 @@
 				else if (intent.flowId === 'quick_win') void openQuickWin();
 				else if (intent.flowId === 'inbox_note') inboxNoteFlowOpen = true;
 				else if (intent.flowId === 'birthday_interview') void openBirthdayInterview();
+				else if (intent.flowId === 'livsintervju') void openLivsintervju();
+				else if (intent.flowId === 'retning_kvartal') void openRetningKvartal();
 				else if (intent.flowId === 'egenfrekvens_quick') { egenfrekvensActiveSlot = currentSlotFromTime(); egenfrekvensQuickFlowOpen = true; }
 				else if (intent.flowId === 'egenfrekvens_checkin') { egenfrekvensActiveSlot = currentSlotFromTime(); egenfrekvensFlowOpen = true; void loadEgenfrekvensContext(); }
 				else console.warn('[home] unhandled flow intent', intent.flowId);
@@ -1084,6 +1134,10 @@
 		get quickWinOpenItems() { return quickWinOpenItems; },
 		get birthdayInterviewFlowOpen() { return birthdayInterviewFlowOpen; }, set birthdayInterviewFlowOpen(v) { birthdayInterviewFlowOpen = v; },
 		get birthdayInterviewFlowContext() { return birthdayInterviewFlowContext; },
+		get livsintervjuFlowOpen() { return livsintervjuFlowOpen; }, set livsintervjuFlowOpen(v) { livsintervjuFlowOpen = v; },
+		get livsintervjuFlowContext() { return livsintervjuFlowContext; },
+		get retningKvartalFlowOpen() { return retningKvartalFlowOpen; }, set retningKvartalFlowOpen(v) { retningKvartalFlowOpen = v; },
+		get retningKvartalFlowContext() { return retningKvartalFlowContext; },
 
 		get dateLabel() { return dateLabel; },
 
