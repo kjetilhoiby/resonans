@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
-import { upsertReflectionForPeriod } from '$lib/server/reflections';
+import { createReflection, upsertReflectionForPeriod } from '$lib/server/reflections';
 import { DreamService } from '$lib/server/services/dream-service';
-import { addCanonicalEventMessage } from '$lib/server/conversations';
+import { addCanonicalEventMessage, getConversationByIdForUser } from '$lib/server/conversations';
 import { quarterPeriodKey } from '$lib/flows/retning-kvartal';
 import type { RequestHandler } from './$types';
 
@@ -24,19 +24,33 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 
 	const periodKey = quarterPeriodKey(new Date());
 
-	if (gap) {
-		await upsertReflectionForPeriod({ userId, kind: 'retningsgap', periodKey, content: gap });
+	// Gap-notatet er «current state» (upsert); transkriptet er arkiv (append-only)
+	const gapReflection = gap
+		? await upsertReflectionForPeriod({ userId, kind: 'retningsgap', periodKey, content: gap })
+		: null;
+	const transcriptReflection = transcript
+		? await createReflection({ userId, kind: 'retningssamtale', periodKey, content: transcript })
+		: null;
+
+	// Rå-samtalen i messages-tabellen — valideres før kobling
+	const rawConversationId = typeof body?.conversationId === 'string' ? body.conversationId : '';
+	let conversationId: string | null = null;
+	if (rawConversationId) {
+		const conversation = await getConversationByIdForUser(rawConversationId, userId);
+		conversationId = conversation?.id ?? null;
 	}
-	if (transcript) {
-		await upsertReflectionForPeriod({
-			userId,
-			kind: 'retningssamtale',
-			periodKey,
-			content: transcript
-		});
-	}
+
 	if (visjon) {
-		await DreamService.saveAuthoredVision(userId, { horizon: 'vision_quarterly', summary: visjon });
+		await DreamService.saveAuthoredVision(userId, {
+			horizon: 'vision_quarterly',
+			summary: visjon,
+			inputRefs: {
+				reflectionIds: [gapReflection?.id, transcriptReflection?.id].filter(
+					(id): id is string => Boolean(id)
+				),
+				conversationIds: conversationId ? [conversationId] : undefined
+			}
+		});
 	}
 
 	void addCanonicalEventMessage(userId, {

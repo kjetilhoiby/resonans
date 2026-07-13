@@ -91,6 +91,8 @@ Fokusøkter, quick wins, oppgavesporing. Integrert med ukeplanen.
 ### Retning (livsintervju og visjoner)
 `/drommer` er Retning-flaten: brukerforfattede visjoner for ett, fem og ti år pluss verdier, skapt gjennom **livsintervjuet** — en dyp, utfordrende samtale (verdier → 10 år → 5 år → 1 år → speil) som gjentas årlig. **Retningssamtalen** er den kvartalsvise ærlighetssjekken: retningen holdes opp mot ferske synteser, og gap-notatet blir del av chat-konteksten («KJENTE GAP»). Revisjoner superseder forrige versjon — historikken viser hvordan retningen har flyttet seg. LLM-genererte visjoner finnes fortsatt, men som eksplisitt merkede AI-utkast.
 
+Rå-samtalen er primærkilden, i tre lag: intervjuene er egne, titulerte samtaler i `messages` (ordrett, varig), transkript-refleksjonene er append-only arkiv, og destillatene er kun indeks. AI-en henter fullteksten ved behov (`query_reflections`), og hver visjon peker tilbake til samtalen den kom fra.
+
 ### Ukeplan
 Sentral planleggingsflate: ukens oppgaver (med frekvens-slots), daglig sjekkliste, dagplannotat, målbilde og retning. Automatisk autocheck matcher gjennomførte treningsøkter mot mål.
 

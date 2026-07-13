@@ -328,6 +328,8 @@ export class DreamService {
 			summary: string;
 			keyPhrases?: string[];
 			frictions?: string[];
+			/** Kildekobling: refleksjonene (destillat + transkript) og rå-samtalen visjonen kom fra. */
+			inputRefs?: { reflectionIds?: string[]; conversationIds?: string[] };
 			now?: Date;
 		}
 	) {
@@ -352,7 +354,8 @@ export class DreamService {
 			previousId: previous?.id,
 			model: 'user',
 			confidence: 'user_confirmed',
-			originKind: 'user_authored'
+			originKind: 'user_authored',
+			inputRefs: args.inputRefs
 		});
 	}
 
@@ -687,6 +690,7 @@ export class DreamService {
 				goalIds?: string[];
 				themeIds?: string[];
 				memoryIds?: string[];
+				conversationIds?: string[];
 			};
 		}
 	) {

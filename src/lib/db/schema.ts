@@ -958,6 +958,7 @@ export const dreams = pgTable('dreams', {
 		previousBriefId?: string;
 		childBriefIds?: string[];
 		memoryIds?: string[];
+		conversationIds?: string[];
 	}>(),
 	goalIds: uuid('goal_ids').array(),
 	themeIds: uuid('theme_ids').array(),

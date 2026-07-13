@@ -46,6 +46,18 @@ describe('buildDirectionBlock', () => {
 		expect(proposed).not.toContain('pek på gapet eksplisitt');
 	});
 
+	it('peker på query_reflections for fulltekst kun ved brukerforfattet retning', () => {
+		const authored = buildDirectionBlock([
+			{ kind: 'vision_yearly', summary: 'Ettårsbildet', originKind: 'user_authored' }
+		]);
+		expect(authored).toContain('query_reflections');
+
+		const proposed = buildDirectionBlock([
+			{ kind: 'vision_yearly', summary: 'Ettårsbildet', originKind: 'llm_proposed' }
+		]);
+		expect(proposed).not.toContain('query_reflections');
+	});
+
 	it('rendrer verdier og gap-notat', () => {
 		const block = buildDirectionBlock(
 			[{ kind: 'vision_yearly', summary: 'Ettårsbildet', originKind: 'user_authored' }],

@@ -49,6 +49,10 @@
 		}))
 	);
 	const hasRetning = $derived(data.authored.length > 0);
+	// Rå-samtalen bak retningen — første visjon med kildekobling peker på intervjusamtalen
+	const intervjuSamtaleId = $derived(
+		data.authored.flatMap((v) => v.conversationIds ?? [])[0] ?? null
+	);
 
 	// ── Livsintervjuet ────────────────────────────────────────────────────
 	let livsintervjuOpen = $state(false);
@@ -231,6 +235,19 @@
 				{/each}
 			</ul>
 		</section>
+	{/if}
+
+	<!-- SEKSJON 2b: Rå-samtalen — hele intervjuet, ikke bare destillatet -->
+	{#if data.intervjuTranskript}
+		<details class="transkript" data-track="retning:vis-intervju">
+			<summary>📜 Hele intervjuet ({data.intervjuTranskript.periodKey ?? new Date(data.intervjuTranskript.createdAt).getFullYear()})</summary>
+			{#if intervjuSamtaleId}
+				<a class="samtale-lenke" href={`/samtaler?conversation=${intervjuSamtaleId}`} data-track="retning:aapne-intervjusamtale">
+					Åpne intervjusamtalen →
+				</a>
+			{/if}
+			<pre class="transkript-tekst">{data.intervjuTranskript.content}</pre>
+		</details>
 	{/if}
 
 	<div class="grid">
@@ -471,6 +488,34 @@
 		flex-direction: column;
 		gap: 0.5rem;
 		padding: 1.5rem 1rem 0;
+	}
+
+	.transkript {
+		margin: 1rem 1rem 0;
+	}
+
+	.transkript summary {
+		cursor: pointer;
+		padding: 0.5rem 0;
+	}
+
+	.samtale-lenke {
+		display: inline-block;
+		margin: 0.25rem 0 0.5rem;
+		font-size: 0.875rem;
+	}
+
+	.transkript-tekst {
+		white-space: pre-wrap;
+		font: inherit;
+		font-size: 0.875rem;
+		line-height: 1.6;
+		color: var(--text-muted, #aaa);
+		border-left: 3px solid var(--border, #444);
+		padding-left: 0.75rem;
+		margin: 0;
+		max-height: 60vh;
+		overflow-y: auto;
 	}
 
 	.verdier h2 {

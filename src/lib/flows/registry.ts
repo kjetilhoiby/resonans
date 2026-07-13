@@ -14,7 +14,7 @@ import {
 	parseStatusBlock
 } from './birthday-interview';
 import { livskompassDoorOpeners } from './livsintervju';
-import { parseVisionBlock } from './retning-kvartal';
+import { parseVisionBlock, quarterPeriodKey } from './retning-kvartal';
 import {
 	ACTIONS_PYRAMID,
 	ACTIONS_SLIDER_LABELS,
@@ -1258,6 +1258,8 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 		trigger: 'manual',
 		focus: true,
 		resumable: true,
+		// Egen varig samtale — selvangivelsen skal ikke blandes inn i hovedchatten
+		conversationTitle: () => `Selvangivelsen ${new Date().getFullYear()}`,
 		// Dyp, refleksiv samtale uten verktøybehov — bruk sterkeste modell, ikke hurtigveien.
 		chatModel: 'gpt-5.4',
 		estimatedMinutes: 20,
@@ -1609,6 +1611,8 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 		trigger: 'manual',
 		focus: true,
 		resumable: true,
+		// Egen varig samtale — rå-intervjuet er førsteklasses data, ikke bare destillatet
+		conversationTitle: () => `Livsintervjuet ${new Date().getFullYear()}`,
 		// Dyp, refleksiv samtale uten verktøybehov — sterkeste modell, som selvangivelsen.
 		chatModel: 'gpt-5.4',
 		estimatedMinutes: 30,
@@ -1811,6 +1815,8 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 					verdier,
 					visions: { ettAar, femAar, tiAar },
 					speil,
+					// Rå-samtalen i messages-tabellen — kobles til visjonene som kilde
+					conversationId: typeof data._conversationId === 'string' ? data._conversationId : null,
 					// «Samtalen er data»: hele chattene arkiveres som transkript
 					threads: {
 						verdier: formatThreadTranscript(data.verdier_thread),
@@ -1834,6 +1840,8 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 		trigger: 'auto_suggest',
 		focus: true,
 		resumable: true,
+		// Egen varig samtale per kvartal
+		conversationTitle: () => `Retningssamtalen ${quarterPeriodKey(new Date())}`,
 		// Konfronterende refleksjonssamtale — sterkeste modell, som livsintervjuet.
 		chatModel: 'gpt-5.4',
 		estimatedMinutes: 10,
@@ -1881,6 +1889,7 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 				body: JSON.stringify({
 					gap,
 					visjon,
+					conversationId: typeof data._conversationId === 'string' ? data._conversationId : null,
 					// «Samtalen er data»: hele chatten arkiveres som transkript
 					transcript: formatThreadTranscript(data.samtale_thread)
 				})

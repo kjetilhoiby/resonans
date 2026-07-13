@@ -62,6 +62,23 @@
 			if (built?.systemPrompt) return built.systemPrompt;
 			return step.systemPrompt ?? undefined;
 		},
+		// Flyter med conversationTitle eier sin egen samtale: fersk, titulert samtale i
+		// stedet for å appende til nyeste web-samtale («samtalen er data» — intervjuet
+		// blir en varig, gjenfinnbar tråd).
+		forceNewConversation: Boolean(flow?.conversationTitle),
+		conversationTitle: () => {
+			const title = flow?.conversationTitle;
+			return typeof title === 'function' ? title(flowData) : title;
+		},
+		// Gjenoppta samme samtale etter reload av et resumable-utkast
+		getOrCreateConversationId: async () => (flowData._conversationId as string | undefined) ?? null,
+		onPayload: (data) => {
+			// Samtale-id-en inn i flowData: overlever utkast i localStorage og følger
+			// med til flow.onComplete slik at artefaktene kan peke på rå-samtalen.
+			if (flow?.conversationTitle && typeof data.conversationId === 'string' && data.conversationId) {
+				flowData._conversationId = data.conversationId;
+			}
+		},
 		onAssistantMessage: (msg, _data) => {
 			const parsed = parseChatMessage(msg.text);
 			chatMessages = [...chatMessages, {
@@ -148,6 +165,8 @@
 	function restartFlow() {
 		const f = flow;
 		flowChat.reset();
+		// reset() bevarer conversationId — en omstart skal derimot få fersk samtale
+		flowChat.setConversationId(null);
 		if (f?.resumable && typeof localStorage !== 'undefined') {
 			try {
 				localStorage.removeItem(flowDraftKey(f.id));

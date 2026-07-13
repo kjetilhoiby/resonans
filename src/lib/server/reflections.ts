@@ -101,6 +101,14 @@ export async function getReflectionForPeriod(
 	});
 }
 
+/** Nyeste refleksjon av en gitt type, uavhengig av periode. */
+export async function getLatestReflection(userId: string, kind: ReflectionKind) {
+	return db.query.reflections.findFirst({
+		where: and(eq(reflections.userId, userId), eq(reflections.kind, kind)),
+		orderBy: [desc(reflections.createdAt)]
+	});
+}
+
 export async function getRecentReflections(userId: string, opts: { kinds?: ReflectionKind[]; sinceDays?: number; limit?: number } = {}) {
 	const { kinds, sinceDays = 7, limit = 20 } = opts;
 	const since = new Date();

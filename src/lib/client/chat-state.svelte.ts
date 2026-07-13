@@ -53,6 +53,11 @@ export interface ChatStateOptions {
 	preferredModel?: string | (() => string | undefined);
 	/** System-prompt-prefiks. Kan være en funksjon som evalueres ved hvert kall. */
 	systemPrompt?: string | (() => string | undefined);
+	/** Opprett en fersk samtale på første melding (flyt-samtaler) i stedet for å
+	 *  appende til nyeste web-samtale. Gjelder kun når conversationId mangler. */
+	forceNewConversation?: boolean;
+	/** Tittel på samtalen som forceNewConversation oppretter (f.eks. flytens navn). */
+	conversationTitle?: string | (() => string | undefined);
 	/** Kalles med hele complete-payloaden — for spesialbehandling per kontekst. */
 	onPayload?: (data: Record<string, unknown>) => void | Promise<void>;
 	/**
@@ -244,6 +249,12 @@ export class ChatState {
 			const data = await streamProxyChat({
 				message: displayText,
 				conversationId: this.conversationId,
+				// Kun aller første melding uten kjent samtale — deretter binder
+				// conversationId (bevares gjennom reset()) alle steg til samme samtale.
+				forceNewConversation: Boolean(this.#opts.forceNewConversation && !this.conversationId),
+				conversationTitle: typeof this.#opts.conversationTitle === 'function'
+					? this.#opts.conversationTitle()
+					: this.#opts.conversationTitle,
 				imageUrl,
 				attachment: effectiveAttachment,
 				preferredModel: typeof this.#opts.preferredModel === 'function'

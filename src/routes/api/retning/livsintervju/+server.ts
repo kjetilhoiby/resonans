@@ -1,8 +1,8 @@
 import { json } from '@sveltejs/kit';
-import { upsertReflectionForPeriod } from '$lib/server/reflections';
+import { createReflection, upsertReflectionForPeriod } from '$lib/server/reflections';
 import { DreamService } from '$lib/server/services/dream-service';
 import { MemoryService } from '$lib/server/services/memory-service';
-import { addCanonicalEventMessage } from '$lib/server/conversations';
+import { addCanonicalEventMessage, getConversationByIdForUser } from '$lib/server/conversations';
 import { buildLivsintervjuMarkdown, parseValueLines } from '$lib/flows/livsintervju';
 import type { RequestHandler } from './$types';
 
@@ -44,18 +44,60 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		content
 	});
 
+	// Chattene arkiveres append-only («samtalen er data» — et re-intervju skal
+	// aldri slette forrige samtale). Lagres FØR visjonene så de kan refereres.
+	const threads = body?.threads as
+		| { verdier?: unknown; tiAar?: unknown; femAar?: unknown; ettAar?: unknown; speil?: unknown }
+		| undefined;
+	const transcriptParts: string[] = [];
+	const threadSections: Array<[string, unknown]> = [
+		['Verdiene mine', threads?.verdier],
+		['Om ti år', threads?.tiAar],
+		['Om fem år', threads?.femAar],
+		['Om ett år', threads?.ettAar],
+		['Speilet', threads?.speil]
+	];
+	for (const [heading, thread] of threadSections) {
+		if (typeof thread === 'string' && thread.trim()) {
+			transcriptParts.push(`## ${heading}\n${thread.trim()}`);
+		}
+	}
+	let transcript: Awaited<ReturnType<typeof createReflection>> = null;
+	if (transcriptParts.length > 0) {
+		transcript = await createReflection({
+			userId,
+			kind: 'livsintervju_chat',
+			periodKey,
+			content: transcriptParts.join('\n\n')
+		});
+	}
+
+	// Rå-samtalen i messages-tabellen — valideres før den kobles til visjonene
+	const rawConversationId = typeof body?.conversationId === 'string' ? body.conversationId : '';
+	let conversationId: string | null = null;
+	if (rawConversationId) {
+		const conversation = await getConversationByIdForUser(rawConversationId, userId);
+		conversationId = conversation?.id ?? null;
+	}
+
+	// Kildekobling: hver visjon peker tilbake til destillat, transkript og samtale
+	const inputRefs = {
+		reflectionIds: [reflection?.id, transcript?.id].filter((id): id is string => Boolean(id)),
+		conversationIds: conversationId ? [conversationId] : undefined
+	};
+
 	// Visjonene: brukerforfattet, user_confirmed — superseder forrige per horisont
 	const savedVisions: string[] = [];
 	if (tiAar) {
-		await DreamService.saveAuthoredVision(userId, { horizon: 'vision_10year', summary: tiAar });
+		await DreamService.saveAuthoredVision(userId, { horizon: 'vision_10year', summary: tiAar, inputRefs });
 		savedVisions.push('vision_10year');
 	}
 	if (femAar) {
-		await DreamService.saveAuthoredVision(userId, { horizon: 'vision_5year', summary: femAar });
+		await DreamService.saveAuthoredVision(userId, { horizon: 'vision_5year', summary: femAar, inputRefs });
 		savedVisions.push('vision_5year');
 	}
 	if (ettAar) {
-		await DreamService.saveAuthoredVision(userId, { horizon: 'vision_yearly', summary: ettAar });
+		await DreamService.saveAuthoredVision(userId, { horizon: 'vision_yearly', summary: ettAar, inputRefs });
 		savedVisions.push('vision_yearly');
 	}
 
@@ -73,32 +115,6 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 			{ confidence: 'user_confirmed' }
 		);
 		if (created) valuesCreated++;
-	}
-
-	// Chattene arkiveres som egen refleksjon — destillatet bor i 'livsintervju'
-	const threads = body?.threads as
-		| { verdier?: unknown; tiAar?: unknown; femAar?: unknown; ettAar?: unknown; speil?: unknown }
-		| undefined;
-	const transcriptParts: string[] = [];
-	const threadSections: Array<[string, unknown]> = [
-		['Verdiene mine', threads?.verdier],
-		['Om ti år', threads?.tiAar],
-		['Om fem år', threads?.femAar],
-		['Om ett år', threads?.ettAar],
-		['Speilet', threads?.speil]
-	];
-	for (const [heading, thread] of threadSections) {
-		if (typeof thread === 'string' && thread.trim()) {
-			transcriptParts.push(`## ${heading}\n${thread.trim()}`);
-		}
-	}
-	if (transcriptParts.length > 0) {
-		await upsertReflectionForPeriod({
-			userId,
-			kind: 'livsintervju_chat',
-			periodKey,
-			content: transcriptParts.join('\n\n')
-		});
 	}
 
 	// Fire-and-forget: hendelseskort i dagboken

@@ -3,12 +3,13 @@ import type { PageServerLoad } from './$types';
 import { db } from '$lib/db';
 import { dreams, memories } from '$lib/db/schema';
 import { and, desc, eq, isNull } from 'drizzle-orm';
+import { getLatestReflection } from '$lib/server/reflections';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const userId = locals.userId;
 	if (!userId) throw redirect(303, '/auth');
 
-	const [all, valueMemories] = await Promise.all([
+	const [all, valueMemories, intervjuTranskript] = await Promise.all([
 		db.query.dreams.findMany({
 			where: eq(dreams.userId, userId),
 			orderBy: [desc(dreams.createdAt)],
@@ -22,7 +23,9 @@ export const load: PageServerLoad = async ({ locals }) => {
 			),
 			orderBy: [desc(memories.importance), desc(memories.createdAt)],
 			limit: 12
-		})
+		}),
+		// Rå-samtalen er førsteklasses: siste intervju-transkript vises på siden
+		getLatestReflection(userId, 'livsintervju_chat')
 	]);
 
 	// Grupper: nyeste per kind for "aktive", resten i historikk.
@@ -60,7 +63,14 @@ export const load: PageServerLoad = async ({ locals }) => {
 			content: m.content,
 			importance: m.importance,
 			createdAt: m.createdAt.toISOString()
-		}))
+		})),
+		intervjuTranskript: intervjuTranskript
+			? {
+					periodKey: intervjuTranskript.periodKey,
+					content: intervjuTranskript.content,
+					createdAt: intervjuTranskript.createdAt.toISOString()
+				}
+			: null
 	};
 };
 
@@ -70,6 +80,7 @@ function serialize(d: typeof dreams.$inferSelect) {
 		kind: d.kind,
 		summary: d.summary,
 		highlights: d.highlights,
+		conversationIds: d.inputs?.conversationIds ?? [],
 		scopeStart: d.scopeStart.toISOString(),
 		scopeEnd: d.scopeEnd.toISOString(),
 		relevanceUntil: d.relevanceUntil?.toISOString() ?? null,

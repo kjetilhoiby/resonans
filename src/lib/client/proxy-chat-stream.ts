@@ -2,6 +2,8 @@ interface ProxyChatStreamOptions {
 	message: string;
 	conversationId?: string | null;
 	forceNewConversation?: boolean;
+	/** Tittel når forceNewConversation oppretter samtalen (f.eks. flytens navn). */
+	conversationTitle?: string;
 	imageUrl?: string;
 	attachment?: unknown;
 	preferredModel?: string;
@@ -21,6 +23,7 @@ export async function streamProxyChat({
 	message,
 	conversationId = null,
 	forceNewConversation = false,
+	conversationTitle,
 	imageUrl,
 	attachment,
 	preferredModel,
@@ -43,6 +46,7 @@ export async function streamProxyChat({
 			message,
 			conversationId,
 			forceNewConversation,
+			conversationTitle,
 			imageUrl,
 			attachment,
 			preferredModel,

@@ -4,6 +4,7 @@ import { and, desc, eq, gte, isNull, ne } from 'drizzle-orm';
 import { getRecentReflections } from '$lib/server/reflections';
 import { DreamService } from '$lib/server/services/dream-service';
 import { buildDirectionBlock } from '$lib/server/services/direction-context';
+import { buildReflectionsBlock } from '$lib/server/services/reflection-block';
 import { touchMemory } from '$lib/server/memories';
 import { computeCutList, formatNok } from '$lib/kappliste/calc';
 
@@ -176,14 +177,8 @@ export class ContextService {
 	}
 
 	private static async recentReflections(userId: string): Promise<string> {
-		const rows = await getRecentReflections(userId, { sinceDays: 7, limit: 6 });
-		if (rows.length === 0) return '';
-		let out = '\n--- SISTE REFLEKSJONER ---\n';
-		for (const ref of rows) {
-			const dateStr = ref.createdAt.toISOString().slice(0, 10);
-			out += `[${ref.kind} · ${dateStr}] ${ref.content}\n`;
-		}
-		out += '--- SLUTT PÅ REFLEKSJONER ---\n';
-		return out;
+		// Over-henting kompenserer for at transkript-kinds filtreres bort i blokken.
+		const rows = await getRecentReflections(userId, { sinceDays: 7, limit: 12 });
+		return buildReflectionsBlock(rows, { maxRows: 6 });
 	}
 }

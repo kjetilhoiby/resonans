@@ -3,6 +3,10 @@
 Dato: 2026-07-12
 Status: ferdig (fase 1–3 implementert, ende-til-ende-verifisering gjenstår i dev)
 
+> Oppfølging: `2026-07-13-samtalen-er-data.md` — transkriptene ble gjort append-only,
+> intervjuene fikk egne titulerte samtaler, og fullteksten ble lesbar for AI-en
+> (`query_reflections`) og på Retning-siden.
+
 ## Kontekst
 
 Resonans oppsto etter en lang ChatGPT-tråd der brukeren ble intervjuet om hvem han vil
