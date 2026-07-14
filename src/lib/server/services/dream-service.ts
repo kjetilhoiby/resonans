@@ -27,10 +27,14 @@ export type DreamKind =
 	| 'weekly_dream'
 	| 'monthly_dream'
 	| 'yearly_dream'
+	| 'vision_10year'
 	| 'vision_5year'
 	| 'vision_yearly'
 	| 'vision_quarterly'
 	| 'vision_themed';
+
+/** Horisonter en bruker kan forfatte selv (livsintervjuet og Retning-siden). */
+export type VisionHorizon = 'vision_10year' | 'vision_5year' | 'vision_yearly' | 'vision_quarterly';
 
 export type DreamConfidence = 'user_confirmed' | 'llm_inferred' | 'llm_decomposed';
 export type DreamOriginKind = 'synthesis' | 'user_authored' | 'llm_proposed' | 'decomposition';
@@ -59,6 +63,7 @@ const RELEVANCE_HOURS: Record<DreamKind, number | null> = {
 	weekly_dream: 8 * 24,
 	monthly_dream: 35 * 24,
 	yearly_dream: 366 * 24,
+	vision_10year: null, // ingen utløp
 	vision_5year: null, // ingen utløp
 	vision_yearly: 365 * 24,
 	vision_quarterly: 95 * 24,
@@ -308,6 +313,49 @@ export class DreamService {
 			originKind: 'llm_proposed',
 			themeIds: args.themeId ? [args.themeId] : undefined,
 			inputRefs: { memoryIds: stableMemories.map((m) => m.id), themeIds: args.themeId ? [args.themeId] : undefined }
+		});
+	}
+
+	/**
+	 * Lagrer en brukerforfattet visjon (fra livsintervjuet eller Retning-siden).
+	 * I motsetning til envision er dette brukerens egne ord — ingen LLM-runde.
+	 * Forrige visjon for samme horisont supersederes automatisk via persist.
+	 */
+	static async saveAuthoredVision(
+		userId: string,
+		args: {
+			horizon: VisionHorizon;
+			summary: string;
+			keyPhrases?: string[];
+			frictions?: string[];
+			/** Kildekobling: refleksjonene (destillat + transkript) og rå-samtalen visjonen kom fra. */
+			inputRefs?: { reflectionIds?: string[]; conversationIds?: string[] };
+			now?: Date;
+		}
+	) {
+		const summary = args.summary.trim();
+		if (!summary) return null;
+		const now = args.now ?? new Date();
+		const previous = await this.getLatest(userId, args.horizon);
+		return this.persist(userId, {
+			kind: args.horizon,
+			scopeStart: now,
+			scopeEnd: now,
+			payload: {
+				summary,
+				highlights: {
+					mode: 'steady',
+					rationale: 'Brukerforfattet visjon',
+					wins: args.keyPhrases ?? [],
+					frictions: args.frictions ?? [],
+					signals: []
+				}
+			},
+			previousId: previous?.id,
+			model: 'user',
+			confidence: 'user_confirmed',
+			originKind: 'user_authored',
+			inputRefs: args.inputRefs
 		});
 	}
 
@@ -642,6 +690,7 @@ export class DreamService {
 				goalIds?: string[];
 				themeIds?: string[];
 				memoryIds?: string[];
+				conversationIds?: string[];
 			};
 		}
 	) {

@@ -15,6 +15,10 @@ export type ReflectionKind =
 	| 'birthday_photos'
 	| 'birthday_prophecy'
 	| 'birthday_greetings'
+	| 'livsintervju'
+	| 'livsintervju_chat'
+	| 'retningssamtale'
+	| 'retningsgap'
 	| 'ad_hoc';
 
 export interface ReflectionScores {
@@ -93,6 +97,14 @@ export async function getReflectionForPeriod(
 			eq(reflections.kind, kind),
 			eq(reflections.periodKey, periodKey)
 		),
+		orderBy: [desc(reflections.createdAt)]
+	});
+}
+
+/** Nyeste refleksjon av en gitt type, uavhengig av periode. */
+export async function getLatestReflection(userId: string, kind: ReflectionKind) {
+	return db.query.reflections.findFirst({
+		where: and(eq(reflections.userId, userId), eq(reflections.kind, kind)),
 		orderBy: [desc(reflections.createdAt)]
 	});
 }

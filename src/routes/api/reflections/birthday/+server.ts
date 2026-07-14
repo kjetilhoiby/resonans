@@ -2,7 +2,7 @@ import { json } from '@sveltejs/kit';
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '$lib/db';
 import { goals, persons } from '$lib/db/schema';
-import { upsertReflectionForPeriod } from '$lib/server/reflections';
+import { createReflection, upsertReflectionForPeriod } from '$lib/server/reflections';
 import { getBirthdayWindows } from '$lib/server/kavalkade';
 import {
 	buildInterviewMarkdown,
@@ -85,7 +85,8 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		transcriptParts.push(`## Året i speilet\n${threads.speil.trim()}`);
 	}
 	if (transcriptParts.length > 0) {
-		await upsertReflectionForPeriod({
+		// Append-only: en ny gjennomkjøring skal aldri slette forrige samtale
+		await createReflection({
 			userId,
 			kind: 'birthday_interview_chat',
 			periodKey,

@@ -25,6 +25,8 @@ export type FlowId =
 	| 'egenfrekvens_slot'
 	| 'reflection_light'
 	| 'birthday_interview'
+	| 'livsintervju'
+	| 'retning_kvartal'
 	| 'quick_win'
 	| 'inbox_note'
 	| 'jobb_focus_timer';
@@ -170,6 +172,12 @@ export interface Flow {
 	/** Foretrukket chat-modell for alle chat-steg i flyten. Settes for dype, refleksive
 	 *  flyter (selvangivelsen) der vi vil ha en sterkere modell enn standard hurtigvei. */
 	chatModel?: string;
+	/**
+	 * Flyten eier sin egen samtale: første chat-melding oppretter en fersk, titulert
+	 * samtale i stedet for å appende til nyeste web-samtale. Samtale-id-en legges i
+	 * flowData._conversationId og følger med til onComplete («samtalen er data»).
+	 */
+	conversationTitle?: string | ((data: Record<string, any>) => string);
 	steps?: FlowStep[];
 	onComplete?: (data: Record<string, any>, context: FlowContext) => Promise<void>;
 	badge?: string;

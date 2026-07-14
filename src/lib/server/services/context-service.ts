@@ -1,8 +1,10 @@
 import { db } from '$lib/db';
-import { memories, themeFiles, planArtifacts, cutLists } from '$lib/db/schema';
-import { and, desc, eq, gte } from 'drizzle-orm';
+import { memories, reflections, themeFiles, planArtifacts, cutLists } from '$lib/db/schema';
+import { and, desc, eq, gte, isNull, ne } from 'drizzle-orm';
 import { getRecentReflections } from '$lib/server/reflections';
 import { DreamService } from '$lib/server/services/dream-service';
+import { buildDirectionBlock } from '$lib/server/services/direction-context';
+import { buildReflectionsBlock } from '$lib/server/services/reflection-block';
 import { touchMemory } from '$lib/server/memories';
 import { computeCutList, formatNok } from '$lib/kappliste/calc';
 
@@ -93,26 +95,41 @@ export class ContextService {
 	}
 
 	private static async activeVision(userId: string): Promise<string> {
-		const horizons = ['vision_5year', 'vision_yearly', 'vision_quarterly'] as const;
-		const found = await Promise.all(horizons.map((k) => DreamService.getActive(userId, k)));
+		const horizons = ['vision_10year', 'vision_5year', 'vision_yearly', 'vision_quarterly'] as const;
+		const [found, valueRows, gapReflection] = await Promise.all([
+			Promise.all(horizons.map((k) => DreamService.getActive(userId, k))),
+			db.query.memories.findMany({
+				where: and(
+					eq(memories.userId, userId),
+					eq(memories.category, 'values'),
+					isNull(memories.supersededBy)
+				),
+				orderBy: [desc(memories.importance), desc(memories.createdAt)],
+				limit: 10
+			}),
+			// Siste gap-notat, men ikke eldre enn ~ett kvartal — foreldede gap skal ikke henge igjen
+			db.query.reflections.findFirst({
+				where: and(
+					eq(reflections.userId, userId),
+					eq(reflections.kind, 'retningsgap'),
+					gte(reflections.createdAt, new Date(Date.now() - 120 * 86_400_000))
+				),
+				orderBy: [desc(reflections.createdAt)]
+			})
+		]);
 		const visions = found.filter((v): v is NonNullable<typeof v> => Boolean(v?.summary));
-		if (visions.length === 0) return '';
 
-		let out = '\n--- LANGSIKTIG RETNING (visjon) ---\n';
-		for (const v of visions) {
-			const label =
-				v.kind === 'vision_5year' ? '5 år frem' :
-				v.kind === 'vision_yearly' ? 'i år' :
-				v.kind === 'vision_quarterly' ? 'kommende kvartal' : v.kind;
-			out += `[${label}] ${v.summary}\n`;
-		}
-		out += '--- SLUTT PÅ VISJON ---\n';
-		return out;
+		return buildDirectionBlock(
+			visions.map((v) => ({ kind: v.kind, summary: v.summary ?? '', originKind: v.originKind })),
+			valueRows.map((m) => m.content),
+			gapReflection?.content
+		);
 	}
 
 	private static async stableMemories(userId: string) {
+		// Verdier rendres i retningsblokken (activeVision) — utelates her for å unngå dobbel oppføring.
 		const rows = await db.query.memories.findMany({
-			where: eq(memories.userId, userId),
+			where: and(eq(memories.userId, userId), ne(memories.category, 'values')),
 			orderBy: [desc(memories.importance), desc(memories.lastAccessedAt)],
 			limit: 20
 		});
@@ -160,14 +177,8 @@ export class ContextService {
 	}
 
 	private static async recentReflections(userId: string): Promise<string> {
-		const rows = await getRecentReflections(userId, { sinceDays: 7, limit: 6 });
-		if (rows.length === 0) return '';
-		let out = '\n--- SISTE REFLEKSJONER ---\n';
-		for (const ref of rows) {
-			const dateStr = ref.createdAt.toISOString().slice(0, 10);
-			out += `[${ref.kind} · ${dateStr}] ${ref.content}\n`;
-		}
-		out += '--- SLUTT PÅ REFLEKSJONER ---\n';
-		return out;
+		// Over-henting kompenserer for at transkript-kinds filtreres bort i blokken.
+		const rows = await getRecentReflections(userId, { sinceDays: 7, limit: 12 });
+		return buildReflectionsBlock(rows, { maxRows: 6 });
 	}
 }

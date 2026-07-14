@@ -53,14 +53,18 @@ export class MemoryService {
 	 * Aksepterer en kandidat: dedup mot eksisterende memories, og enten
 	 * skriver ny eller supersederer matching eldre.
 	 */
-	static async accept(userId: string, candidate: MemoryCandidate) {
+	static async accept(
+		userId: string,
+		candidate: MemoryCandidate,
+		opts: { confidence?: 'user_confirmed' | 'llm_inferred' | 'imported' } = {}
+	) {
 		const match = await this.findSimilar(userId, candidate.content, candidate.category);
 		const created = await createMemory({
 			userId,
 			category: candidate.category,
 			content: candidate.content,
 			importance: candidate.importance,
-			confidence: 'llm_inferred',
+			confidence: opts.confidence ?? 'llm_inferred',
 			sourceRef: candidate.sourceRef
 		});
 		if (match && created) {

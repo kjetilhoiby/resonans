@@ -58,9 +58,11 @@ function generateConversationTitle(content: string) {
  */
 export type ConversationSource = 'web' | 'ekko' | 'ekko-assistant';
 
-export async function createConversation(userId: string, source: ConversationSource = 'web') {
+export async function createConversation(userId: string, source: ConversationSource = 'web', title?: string) {
 	await ensureConversationThemeIdColumn();
-	const result = await db.insert(conversations).values({ userId, title: 'Ny samtale', source }).returning();
+	// Eksplisitt tittel (f.eks. «Livsintervjuet 2026» fra en flyt) overlever auto-titling,
+	// som kun overstyrer generiske titler.
+	const result = await db.insert(conversations).values({ userId, title: title?.trim() || 'Ny samtale', source }).returning();
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	return (result as any[])[0];
 }

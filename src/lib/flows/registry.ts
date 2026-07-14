@@ -13,6 +13,8 @@ import {
 	parseBirthdayGoals,
 	parseStatusBlock
 } from './birthday-interview';
+import { livskompassDoorOpeners } from './livsintervju';
+import { parseVisionBlock, quarterPeriodKey } from './retning-kvartal';
 import {
 	ACTIONS_PYRAMID,
 	ACTIONS_SLIDER_LABELS,
@@ -1256,6 +1258,8 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 		trigger: 'manual',
 		focus: true,
 		resumable: true,
+		// Egen varig samtale — selvangivelsen skal ikke blandes inn i hovedchatten
+		conversationTitle: () => `Selvangivelsen ${new Date().getFullYear()}`,
 		// Dyp, refleksiv samtale uten verktøybehov — bruk sterkeste modell, ikke hurtigveien.
 		chatModel: 'gpt-5.4',
 		estimatedMinutes: 20,
@@ -1592,6 +1596,302 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 						omEtAar: formatThreadTranscript(data.om_et_aar_thread),
 						speil: formatThreadTranscript(data.speil_thread)
 					}
+				})
+			});
+		}
+	},
+
+	livsintervju: {
+		id: 'livsintervju',
+		name: 'Livsintervjuet',
+		description:
+			'Hvem vil du være om ett, fem og ti år? Det store retningsintervjuet — verdier, visjoner og et ærlig speil. Gjentas årlig.',
+		icon: '🧭',
+		domain: 'self',
+		trigger: 'manual',
+		focus: true,
+		resumable: true,
+		// Egen varig samtale — rå-intervjuet er førsteklasses data, ikke bare destillatet
+		conversationTitle: () => `Livsintervjuet ${new Date().getFullYear()}`,
+		// Dyp, refleksiv samtale uten verktøybehov — sterkeste modell, som selvangivelsen.
+		chatModel: 'gpt-5.4',
+		estimatedMinutes: 30,
+		steps: [
+			{
+				id: 'verdier',
+				type: 'chat',
+				title: 'Hva står du for?',
+				autoSend: true,
+				buildPrompts: (data) => {
+					const verdierNaa = typeof data._verdierNaa === 'string' ? data._verdierNaa : '';
+					const forrige = typeof data._forrigeIntervju === 'string' ? data._forrigeIntervju : '';
+					return {
+						prompt: 'Jeg er klar for livsintervjuet. La oss begynne med hva som faktisk er viktig for meg.',
+						systemPrompt: [
+							'Du åpner livsintervjuet — den store retningssamtalen om hvem brukeren vil være om ett, fem og ti år. Første beat er VERDIENE: hva brukeren faktisk står for, ikke hva som høres fint ut.',
+							'',
+							'Still ETT åpent spørsmål om gangen og grav der det blir ekte: Hva er du ikke villig til å ofre? Hva angrer du på når du ikke lever etter det? Hva bruker du faktisk tid og penger på — og stemmer det med det du sier er viktig?',
+							'',
+							'Livsområdene under er døråpnere hvis samtalen trenger terreng — ikke en sjekkliste som skal gjennomgås:',
+							livskompassDoorOpeners(),
+							verdierNaa ? `\nVerdier som er lagret om brukeren fra før — test dem, ikke gjenta dem («det står at X er viktig for deg — stemmer det fortsatt?»):\n${verdierNaa}` : '',
+							forrige ? `\nForrige livsintervju — bruk det aktivt («sist sa du …, står det seg?»):\n${forrige}` : '',
+							'',
+							'Vær ærlig, ikke behagelig: når brukeren svarer med floskler («familie er viktig»), be om et konkret eksempel fra siste måned der verdien kostet noe. En verdi som aldri koster noe er ikke en verdi.',
+							'',
+							'Etter HVER respons: oppdater en verdiliste mellom markørene <status> og </status> — 4–7 verdier, ÉN per linje, i brukerens egne formuleringer (hver linje skal stå på egne ben som en setning). Blokken er INTERN (skjules for brukeren og lagres som verdier). Ikke nevn den, ikke gjenta svarene tilbake — still heller neste spørsmål.',
+							'',
+							'Når verdiene sitter, si kort at neste steg er å se ti år frem. Norsk. Tone: ærlig venn som bryr seg nok til å utfordre — ikke terapeut, ikke ja-menneske.'
+						]
+							.filter(Boolean)
+							.join('\n')
+					};
+				}
+			},
+			{
+				id: 'ti_aar',
+				type: 'chat',
+				title: 'Om ti år',
+				autoSend: true,
+				buildPrompts: (data) => {
+					const verdier =
+						typeof data.verdier_lastMessage === 'string'
+							? parseStatusBlock(data.verdier_lastMessage)
+							: '';
+					const forrige = typeof data._forrigeIntervju === 'string' ? data._forrigeIntervju : '';
+					return {
+						prompt: 'Nå vil jeg se langt frem. Hvem vil jeg være om ti år?',
+						systemPrompt: [
+							'Andre beat i livsintervjuet: TI ÅR FREM. Det store, ærlige bildet — ikke en plan, men hvem brukeren vil VÆRE.',
+							verdier ? `Verdiene brukeren nettopp formulerte — visjonen skal tåle å holdes opp mot dem:\n${verdier}` : '',
+							forrige ? `\nForrige livsintervju (hvis det finnes en tiårsvisjon der: «sist så du deg selv som …, gjelder det fortsatt?»):\n${forrige}` : '',
+							'',
+							'Still ETT spørsmål om gangen: Hvem er du om ti år — i rollene dine, i kroppen, i hodet, i arbeidet? Hva gjør du en vanlig tirsdag? Hva har du sluppet taket i? Grav der det blir levende, og utfordre der det blir vagt eller lånt («er det ditt bilde, eller noe du føler du burde ville?»).',
+							'',
+							'Etter HVER respons: oppdater et fremtidsbilde mellom markørene <status> og </status> — 3–5 setninger i FØRSTEPERSON, i brukerens egne ord («Om ti år er jeg …»). Blokken er INTERN (skjules og lagres som tiårsvisjonen). Ikke nevn den og ikke gjenta svarene tilbake.',
+							'',
+							'Når bildet sitter, si kort at neste steg er fem år. Norsk. Tone: ærlig venn — utfordrende, ikke brutal.'
+						]
+							.filter(Boolean)
+							.join('\n')
+					};
+				}
+			},
+			{
+				id: 'fem_aar',
+				type: 'chat',
+				title: 'Om fem år',
+				autoSend: true,
+				buildPrompts: (data) => {
+					const tiAar =
+						typeof data.ti_aar_lastMessage === 'string'
+							? parseStatusBlock(data.ti_aar_lastMessage)
+							: '';
+					const verdier =
+						typeof data.verdier_lastMessage === 'string'
+							? parseStatusBlock(data.verdier_lastMessage)
+							: '';
+					return {
+						prompt: 'Og om fem år — hvor må jeg være da?',
+						systemPrompt: [
+							'Tredje beat: FEM ÅR FREM. Broen mellom tiårsbildet og nået. Din jobb er å tvinge konsistens.',
+							tiAar ? `Tiårsvisjonen brukeren nettopp formulerte:\n${tiAar}` : '',
+							verdier ? `\nVerdiene:\n${verdier}` : '',
+							'',
+							'Arbeidsmåte: regn baklengs. «Hvis du skal være X om ti år — hva MÅ være sant om fem?» Still ETT spørsmål om gangen. Påpek hull uten å pakke inn: hvis tiårsbildet krever noe femårsbildet ikke rommer, si det rett ut og spør hva som skal ryke.',
+							'',
+							'Etter HVER respons: oppdater femårsbildet mellom markørene <status> og </status> — 3–5 setninger i FØRSTEPERSON, i brukerens egne ord. Blokken er INTERN (skjules og lagres som femårsvisjonen). Ikke nevn den og ikke gjenta svarene tilbake.',
+							'',
+							'Når det henger sammen, si kort at neste steg er ett år. Norsk. Tone: ærlig venn.'
+						]
+							.filter(Boolean)
+							.join('\n')
+					};
+				}
+			},
+			{
+				id: 'ett_aar',
+				type: 'chat',
+				title: 'Om ett år',
+				autoSend: true,
+				buildPrompts: (data) => {
+					const femAar =
+						typeof data.fem_aar_lastMessage === 'string'
+							? parseStatusBlock(data.fem_aar_lastMessage)
+							: '';
+					return {
+						prompt: 'Om ett år, da — hva skal faktisk være annerledes?',
+						systemPrompt: [
+							'Fjerde beat: ETT ÅR FREM. Her skal det bli konkret — dette er horisonten hverdagen kan måles mot.',
+							femAar ? `Femårsbildet brukeren nettopp formulerte:\n${femAar}` : '',
+							'',
+							'Press på konkretisering, ETT spørsmål om gangen: Hva er faktisk annerledes om ett år — hva gjør du en vanlig uke som du ikke gjør nå? Hva har du sluttet med? Godta ikke retning uten innhold («bedre form» → «hva betyr det i praksis, hvordan merkes det?»). Men hold det som et bilde, ikke en mål-liste — konkrete mål settes andre steder.',
+							'',
+							'Etter HVER respons: oppdater ettårsbildet mellom markørene <status> og </status> — 3–5 setninger i FØRSTEPERSON, i brukerens egne ord. Blokken er INTERN (skjules og lagres som ettårsvisjonen). Ikke nevn den og ikke gjenta svarene tilbake.',
+							'',
+							'Når det er konkret nok til å kjenne igjen om ett år, si kort at siste steg er speilet. Norsk. Tone: ærlig venn.'
+						]
+							.filter(Boolean)
+							.join('\n')
+					};
+				}
+			},
+			{
+				id: 'speil',
+				type: 'chat',
+				title: 'Speilet',
+				autoSend: true,
+				buildPrompts: (data) => {
+					const verdier =
+						typeof data.verdier_lastMessage === 'string'
+							? parseStatusBlock(data.verdier_lastMessage)
+							: '';
+					const tiAar =
+						typeof data.ti_aar_lastMessage === 'string'
+							? parseStatusBlock(data.ti_aar_lastMessage)
+							: '';
+					const femAar =
+						typeof data.fem_aar_lastMessage === 'string'
+							? parseStatusBlock(data.fem_aar_lastMessage)
+							: '';
+					const ettAar =
+						typeof data.ett_aar_lastMessage === 'string'
+							? parseStatusBlock(data.ett_aar_lastMessage)
+							: '';
+					const eksisterende =
+						typeof data._eksisterendeRetning === 'string' ? data._eksisterendeRetning : '';
+					return {
+						prompt: 'Her er retningen min. Hold den opp mot meg — hva ser du?',
+						systemPrompt: [
+							'Siste beat i livsintervjuet: SPEILET. Brukeren har formulert verdier og visjoner for ett, fem og ti år. Din jobb er å holde det hele opp mot dem — ærlig.',
+							'',
+							verdier ? `Verdiene:\n${verdier}` : '',
+							tiAar ? `\nOm ti år:\n${tiAar}` : '',
+							femAar ? `\nOm fem år:\n${femAar}` : '',
+							ettAar ? `\nOm ett år:\n${ettAar}` : '',
+							eksisterende ? `\nRetningen som var lagret FØR dette intervjuet:\n${eksisterende}` : '',
+							'',
+							'Gjør dette i første svar (maks 5–6 setninger):',
+							'1. Pek på den mest interessante spenningen eller selvmotsigelsen i det brukeren har sagt — mellom verdiene og visjonene, mellom horisontene, eller mellom ord og det du vet om hverdagen. Vær konkret, ikke pakk inn.',
+							eksisterende
+								? '2. Trekk frem den viktigste forskjellen fra retningen som var lagret fra før — hva har faktisk endret seg?'
+								: '2. Pek på hva i visjonene som kommer til å kreve mest av brukeren — og hva som er mest sårbart for å skli.',
+							'3. Avslutt med ETT ubehagelig, presist spørsmål — det du tror brukeren helst vil slippe å svare på.',
+							'',
+							'La brukeren svare og grav videre der de vil. Når samtalen ebber ut, si at retningen lagres når de leverer — og at den heretter blir målestokken resten av Resonans holder hverdagen opp mot.',
+							'',
+							'Ikke bruk <status>-markører i dette steget. Norsk. Tone: ærlig venn som tør å si det de andre ikke sier.'
+						]
+							.filter(Boolean)
+							.join('\n')
+					};
+				}
+			}
+		],
+		async onComplete(data) {
+			const verdier =
+				typeof data.verdier_lastMessage === 'string'
+					? parseStatusBlock(data.verdier_lastMessage)
+					: '';
+			const tiAar =
+				typeof data.ti_aar_lastMessage === 'string'
+					? parseStatusBlock(data.ti_aar_lastMessage)
+					: '';
+			const femAar =
+				typeof data.fem_aar_lastMessage === 'string'
+					? parseStatusBlock(data.fem_aar_lastMessage)
+					: '';
+			const ettAar =
+				typeof data.ett_aar_lastMessage === 'string'
+					? parseStatusBlock(data.ett_aar_lastMessage)
+					: '';
+			const speilMessage = typeof data.speil_lastMessage === 'string' ? data.speil_lastMessage : '';
+			const speil = speilMessage.replace(/<status>[\s\S]*?<\/status>/gi, '').trim();
+			if (!verdier && !tiAar && !femAar && !ettAar) return;
+			await fetch('/api/retning/livsintervju', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					verdier,
+					visions: { ettAar, femAar, tiAar },
+					speil,
+					// Rå-samtalen i messages-tabellen — kobles til visjonene som kilde
+					conversationId: typeof data._conversationId === 'string' ? data._conversationId : null,
+					// «Samtalen er data»: hele chattene arkiveres som transkript
+					threads: {
+						verdier: formatThreadTranscript(data.verdier_thread),
+						tiAar: formatThreadTranscript(data.ti_aar_thread),
+						femAar: formatThreadTranscript(data.fem_aar_thread),
+						ettAar: formatThreadTranscript(data.ett_aar_thread),
+						speil: formatThreadTranscript(data.speil_thread)
+					}
+				})
+			});
+		}
+	},
+
+	retning_kvartal: {
+		id: 'retning_kvartal',
+		name: 'Retningssamtalen',
+		description:
+			'Kvartalsvis ærlighetssjekk: lever du i tråd med retningen din? Gap-notatet blir del av chat-konteksten.',
+		icon: '🧭',
+		domain: 'self',
+		trigger: 'auto_suggest',
+		focus: true,
+		resumable: true,
+		// Egen varig samtale per kvartal
+		conversationTitle: () => `Retningssamtalen ${quarterPeriodKey(new Date())}`,
+		// Konfronterende refleksjonssamtale — sterkeste modell, som livsintervjuet.
+		chatModel: 'gpt-5.4',
+		estimatedMinutes: 10,
+		steps: [
+			{
+				id: 'samtale',
+				type: 'chat',
+				title: 'Lever du i tråd med retningen?',
+				autoSend: true,
+				buildPrompts: (data) => {
+					const retning = typeof data._eksisterendeRetning === 'string' ? data._eksisterendeRetning : '';
+					const verdier = typeof data._verdierNaa === 'string' ? data._verdierNaa : '';
+					const synteser = typeof data._synteser === 'string' ? data._synteser : '';
+					return {
+						prompt: 'Nytt kvartal. Hold retningen min opp mot hvordan jeg faktisk har levd.',
+						systemPrompt: [
+							'Dette er retningssamtalen — den kvartalsvise ærlighetssjekken. Brukeren har formulert en langsiktig retning; din jobb er å holde den opp mot hvordan livet faktisk har sett ut, og ikke la noen av delene slippe unna.',
+							'',
+							retning ? `RETNINGEN (brukerens egne ord):\n${retning}` : 'RETNINGEN: ingen formulert ennå — foreslå å starte livsintervjuet i stedet, og hold denne samtalen kort.',
+							verdier ? `\nVERDIENE:\n${verdier}` : '',
+							synteser ? `\nHVA HVERDAGEN FAKTISK VISER (LLM-synteser av siste periode):\n${synteser}` : '',
+							'',
+							'Arbeidsmåte: Åpne med det tydeligste gapet du ser mellom retningen og syntesen — konkret, uten innpakning («du sa X, men perioden viser Y»). Still ETT spørsmål om gangen. Bruk query-verktøyene hvis du trenger tall. La brukeren også fortelle hva syntesene IKKE fanger. Anerkjenn det som faktisk er på linje — ærlighet går begge veier.',
+							'',
+							'Etter HVER respons: oppdater et gap-notat mellom markørene <status> og </status> — 2–5 linjer om hvor uttalt retning og levd liv spriker (og hva som er på linje), i brukerens egne ord. Blokken er INTERN (skjules og blir del av chat-konteksten fremover). Ikke nevn den.',
+							'',
+							'Hvis samtalen lander på en justert prioritering for kvartalet, oppsummer den mellom markørene <visjon> og </visjon> — 2–4 setninger i førsteperson. Kun når brukeren faktisk har landet noe; ellers utelat markørene.',
+							'',
+							'Når samtalen ebber ut, si at gap-notatet lagres ved levering. Norsk. Tone: ærlig venn som tør å si det de andre ikke sier.'
+						]
+							.filter(Boolean)
+							.join('\n')
+					};
+				}
+			}
+		],
+		async onComplete(data) {
+			const lastMessage = typeof data.samtale_lastMessage === 'string' ? data.samtale_lastMessage : '';
+			const gap = parseStatusBlock(lastMessage);
+			const visjon = parseVisionBlock(lastMessage);
+			if (!gap && !visjon) return;
+			await fetch('/api/retning/kvartal', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					gap,
+					visjon,
+					conversationId: typeof data._conversationId === 'string' ? data._conversationId : null,
+					// «Samtalen er data»: hele chatten arkiveres som transkript
+					transcript: formatThreadTranscript(data.samtale_thread)
 				})
 			});
 		}

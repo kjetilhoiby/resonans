@@ -12,6 +12,8 @@ To bærende designprinsipper:
 
 **Samtalen er data.** Det brukeren skriver i chat er førsteklasses innhold — ikke bare rå-materiale for en AI-oppsummering. Refleksjoner, planer og innsikter formulert i samtale skal bevares med sin fulle rikdom. Oppsummeringer er indeks, ikke erstatning.
 
+**Retningen er målestokken.** Brukerens egne, bekreftede formuleringer om hvem han vil være — verdier og visjoner for ett, fem og ti år, skapt gjennom livsintervjuet — er førsteklasses kontekst i hver samtale. Coachen skal være ærlig, ikke behagelig: når hverdagen (mål, planer, synteser, refleksjoner) spriker fra retningen, påpekes gapet eksplisitt. En brukerforfattet retning er noe annet enn et AI-utkast — bare den første gir coachen mandat til å konfrontere.
+
 ## Arkitekturprinsipper
 
 ### Signaler, ikke data
@@ -85,6 +87,11 @@ Smarte enheter (strømmålere, IoT). Rutiner og prosedyrer. Prosjektsporing.
 Fokusøkter, quick wins, oppgavesporing. Integrert med ukeplanen.
 
 ## Planlegging og handling
+
+### Retning (livsintervju og visjoner)
+`/drommer` er Retning-flaten: brukerforfattede visjoner for ett, fem og ti år pluss verdier, skapt gjennom **livsintervjuet** — en dyp, utfordrende samtale (verdier → 10 år → 5 år → 1 år → speil) som gjentas årlig. **Retningssamtalen** er den kvartalsvise ærlighetssjekken: retningen holdes opp mot ferske synteser, og gap-notatet blir del av chat-konteksten («KJENTE GAP»). Revisjoner superseder forrige versjon — historikken viser hvordan retningen har flyttet seg. LLM-genererte visjoner finnes fortsatt, men som eksplisitt merkede AI-utkast.
+
+Rå-samtalen er primærkilden, i tre lag: intervjuene er egne, titulerte samtaler i `messages` (ordrett, varig), transkript-refleksjonene er append-only arkiv, og destillatene er kun indeks. AI-en henter fullteksten ved behov (`query_reflections`), og hver visjon peker tilbake til samtalen den kom fra.
 
 ### Ukeplan
 Sentral planleggingsflate: ukens oppgaver (med frekvens-slots), daglig sjekkliste, dagplannotat, målbilde og retning. Automatisk autocheck matcher gjennomførte treningsøkter mot mål.

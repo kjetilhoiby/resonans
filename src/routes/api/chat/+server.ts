@@ -18,6 +18,7 @@ import { createTaskTool } from '$lib/ai/tools/create-task';
 import { logActivityTool } from '$lib/ai/tools/log-activity';
 import { createMemoryTool } from '$lib/ai/tools/create-memory';
 import { queryEconomicsTool } from '$lib/ai/tools/query-economics';
+import { queryReflectionsTool } from '$lib/ai/tools/query-reflections';
 import { queryFoodTool } from '$lib/ai/tools/query-food';
 import { manageRecipeTool } from '$lib/ai/tools/manage-recipe';
 import { queryFamilyTool } from '$lib/ai/tools/query-family';
@@ -623,6 +624,33 @@ const tools = [
 					dateISO: {
 						type: 'string',
 						description: 'Valgfritt for dagsbilde: datoen bildet gjelder (YYYY-MM-DD). Default leses fra bildet.'
+					}
+				},
+				required: []
+			}
+		}
+	},
+	{
+		type: 'function' as const,
+		function: {
+			name: 'query_reflections',
+			description:
+				"Hent brukerens lagrede refleksjoner og samtale-transkripter i FULLTEKST. Oppsummeringene i konteksten er indeks — bruk dette når du trenger brukerens egne ord: hele livsintervjuet (kind 'livsintervju_chat'), retningssamtalene ('retningssamtale'), selvangivelsen ('birthday_interview_chat'), eller andre refleksjoner ('day_close', 'week_review', 'month_review'). Typisk når brukeren spør «hva sa jeg egentlig om …» eller du vil sitere presist i stedet for å parafrasere.",
+			parameters: {
+				type: 'object',
+				properties: {
+					kind: {
+						type: 'string',
+						description:
+							"Refleksjonstype, f.eks. 'livsintervju_chat', 'livsintervju', 'retningssamtale', 'retningsgap', 'birthday_interview_chat', 'week_review'. Utelat for alle typer."
+					},
+					periodKey: {
+						type: 'string',
+						description: "Periode, f.eks. '2026' (år) eller '2026-Q3' (kvartal). Utelat for nyeste."
+					},
+					limit: {
+						type: 'number',
+						description: 'Antall refleksjoner (default 3, maks 10)'
 					}
 				},
 				required: []
@@ -1549,6 +1577,8 @@ export interface _RunChatRequestParams {
 		conversationId?: string;
 		attachment?: unknown;
 		forceNewConversation?: boolean;
+		/** Tittel for samtalen når forceNewConversation oppretter den (f.eks. flytens navn). */
+		conversationTitle?: string;
 	};
 	userId: string;
 	requestUrl: string;
@@ -1570,6 +1600,7 @@ function getToolProgressMessage(toolName: string) {
 		query_sensor_data: 'Henter sensordata...',
 		query_tesla_vehicle: 'Sjekker bilen...',
 		query_economics: 'Henter økonomidata...',
+		query_reflections: 'Leser refleksjoner...',
 		query_food: 'Henter mat-data...',
 		manage_procedure: 'Lagrer fremgangsmåte...',
 		manage_recipe: 'Oppdaterer oppskrift...',
@@ -1824,7 +1855,8 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		}
 
 		if (message && typeof message === 'string') {
-			if (!resolvedConversationId) {
+			// forceNewConversation (flyt-samtaler) skal ikke tema-kapres av første melding
+			if (!resolvedConversationId && !body.forceNewConversation) {
 				// New conversation: run theme detection
 				const { detectThemeForMessage } = await import('$lib/server/themes');
 				themeRoutingDecision = await detectThemeForMessage(message, userId);
@@ -1858,7 +1890,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 				? ((await getConversationByIdForUser(resolvedConversationId, userId)) ??
 					(await getOrCreateConversation(userId)))
 				: body.forceNewConversation
-					? await createConversation(userId)
+					? await createConversation(userId, 'web', body.conversationTitle)
 					: await getOrCreateConversation(userId);
 
 		await emitProgress(onProgress, 'conversation_ready', 'Samtalen er klar.', {
@@ -2393,6 +2425,11 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 						content: JSON.stringify(result),
 						tool_call_id: toolCall.id
 					});
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'query_reflections') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  📖 Querying reflections:', args);
+					const result = await queryReflectionsTool.execute({ userId, ...args });
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'query_economics') {
 					const args = JSON.parse(toolCall.function.arguments);
 

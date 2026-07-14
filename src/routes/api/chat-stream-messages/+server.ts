@@ -51,6 +51,7 @@ interface StreamRequest {
 	attachment?: unknown;
 	preferredModel?: string;
 	forceNewConversation?: boolean;
+	conversationTitle?: string;
 	routing: any;
 	systemPrompt: string;
 	messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
@@ -80,7 +81,8 @@ export const POST: RequestHandler = async ({ request, locals, fetch, url }) => {
 			imageUrl,
 			attachment,
 			preferredModel,
-			forceNewConversation
+			forceNewConversation,
+			conversationTitle
 		} = body;
 
 		const encoder = new TextEncoder();
@@ -104,7 +106,9 @@ export const POST: RequestHandler = async ({ request, locals, fetch, url }) => {
 									message,
 									conversationId,
 									imageUrl,
-									attachment
+									attachment,
+									forceNewConversation,
+									conversationTitle
 								},
 								userId,
 								requestUrl: `${url.origin}/api/chat`,
