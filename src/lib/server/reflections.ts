@@ -20,6 +20,7 @@ export type ReflectionKind =
 	| 'livsintervju_kilde'
 	| 'retningssamtale'
 	| 'retningsgap'
+	| 'notat'
 	| 'ad_hoc';
 
 export interface ReflectionScores {

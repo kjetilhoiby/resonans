@@ -19,6 +19,7 @@ Bruk dette når du trenger mer enn oppsummeringene i konteksten:
 - Retningssamtalene: kind 'retningsgap' (gap-notat) eller 'retningssamtale' (fullt transkript)
 - Selvangivelsen: kind 'birthday_interview' / 'birthday_interview_chat'
 - Andre refleksjoner: 'day_close', 'week_review', 'month_review', 'goal_check', 'reflection_light'
+- Reisedagbok: kind 'feriedagbok' (periodKey = ISO-dato). Frittstående dagsnotater: kind 'notat'
 
 Typisk: brukeren spør «hva sa jeg egentlig i livsintervjuet om X?» eller du vil sitere
 brukerens egne ord presist i stedet for å parafrasere fra oppsummeringen.
