@@ -9,7 +9,7 @@
  * og klient (som rendrer dem).
  */
 
-export type ChatEventCardKind = 'checkin' | 'workout' | 'nudge' | 'flow' | 'generic';
+export type ChatEventCardKind = 'checkin' | 'workout' | 'nudge' | 'flow' | 'note' | 'generic';
 
 export interface ChatEventCard {
 	kind: ChatEventCardKind;
@@ -34,6 +34,23 @@ export function truncateReflection(text: string, max = 160): string {
 	const clean = text.replace(/\s+/g, ' ').trim();
 	if (clean.length <= max) return clean;
 	return clean.slice(0, max - 1).trimEnd() + '…';
+}
+
+/**
+ * Bygger et dagbok-kort for et lagret notat (typisk talenotat fra Ekko).
+ * Med tema lenker kortet til temaets dataflik der dagboka bor.
+ */
+export function buildNoteEventCard(input: {
+	content: string;
+	theme?: { id: string; name: string } | null;
+}): ChatEventCard {
+	return {
+		kind: 'note',
+		icon: '🎙️',
+		title: input.theme ? `Notat – ${input.theme.name}` : 'Notat',
+		detail: truncateReflection(input.content),
+		href: input.theme ? `/tema/${input.theme.id}?tab=data` : null
+	};
 }
 
 /**
