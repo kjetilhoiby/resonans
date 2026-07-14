@@ -46,6 +46,13 @@ describe('buildDirectionBlock', () => {
 		expect(proposed).not.toContain('pek på gapet eksplisitt');
 	});
 
+	it('rammer konfrontasjonen inn med varme — se først, utfordre så', () => {
+		const authored = buildDirectionBlock([
+			{ kind: 'vision_5year', summary: 'Femårsbildet', originKind: 'user_authored' }
+		]);
+		expect(authored).toContain('konfrontasjonen skal komme fra varme');
+	});
+
 	it('peker på query_reflections for fulltekst kun ved brukerforfattet retning', () => {
 		const authored = buildDirectionBlock([
 			{ kind: 'vision_yearly', summary: 'Ettårsbildet', originKind: 'user_authored' }

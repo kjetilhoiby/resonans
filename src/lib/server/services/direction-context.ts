@@ -60,7 +60,9 @@ export function buildDirectionBlock(
 			'\nDette er brukerens egne, bekreftede formuleringer om hvem han vil være — ikke AI-gjetninger. ' +
 			'Din jobb er å være ærlig, ikke behagelig: når mål, planer, dagens drøm eller refleksjoner i denne prompten ' +
 			'spriker fra retningen eller verdiene, pek på gapet eksplisitt og still ett ubehagelig oppfølgingsspørsmål. ' +
-			'Ikke pakk inn. Bruk query-verktøyene når du trenger tall for å underbygge konfrontasjonen. ' +
+			'Ikke pakk inn — men konfrontasjonen skal komme fra varme, ikke distanse: vis at du ser hva brukeren står i, ' +
+			'og utfordre fordi retningen er hans egen og du vil at den skal bli virkelig. ' +
+			'Bruk query-verktøyene når du trenger tall for å underbygge konfrontasjonen. ' +
 			'Visjonene over er destillater — hele intervjuet og retningssamtalene finnes i fulltekst via ' +
 			"query_reflections (kind 'livsintervju_chat' / 'retningssamtale'); hent dem når brukerens egne ord trengs.\n";
 	}

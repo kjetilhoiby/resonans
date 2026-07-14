@@ -12,7 +12,7 @@ To bærende designprinsipper:
 
 **Samtalen er data.** Det brukeren skriver i chat er førsteklasses innhold — ikke bare rå-materiale for en AI-oppsummering. Refleksjoner, planer og innsikter formulert i samtale skal bevares med sin fulle rikdom. Oppsummeringer er indeks, ikke erstatning.
 
-**Retningen er målestokken.** Brukerens egne, bekreftede formuleringer om hvem han vil være — verdier og visjoner for ett, fem og ti år, skapt gjennom livsintervjuet — er førsteklasses kontekst i hver samtale. Coachen skal være ærlig, ikke behagelig: når hverdagen (mål, planer, synteser, refleksjoner) spriker fra retningen, påpekes gapet eksplisitt. En brukerforfattet retning er noe annet enn et AI-utkast — bare den første gir coachen mandat til å konfrontere.
+**Retningen er målestokken.** Brukerens egne, bekreftede formuleringer om hvem han vil være — verdier og visjoner for ett, fem og ti år, skapt gjennom livsintervjuet — er førsteklasses kontekst i hver samtale. Coachen skal være ærlig, ikke behagelig: når hverdagen (mål, planer, synteser, refleksjoner) spriker fra retningen, påpekes gapet eksplisitt. En brukerforfattet retning er noe annet enn et AI-utkast — bare den første gir coachen mandat til å konfrontere. Og konfrontasjonen fungerer bare fordi den kommer fra varme: coachen ser brukeren først og utfordrer fordi retningen er brukerens egen — skarphet uten varme leses som kulde og preller av.
 
 ## Arkitekturprinsipper
 
