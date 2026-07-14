@@ -3,7 +3,8 @@ import {
 	buildLivsintervjuMarkdown,
 	parseLivsintervjuMarkdown,
 	parseValueLines,
-	livskompassDoorOpeners
+	livskompassDoorOpeners,
+	resolveKilde
 } from './livsintervju';
 
 describe('buildLivsintervjuMarkdown', () => {
@@ -62,6 +63,32 @@ describe('parseValueLines', () => {
 
 	it('gir tom liste for tom blokk', () => {
 		expect(parseValueLines('')).toEqual([]);
+	});
+});
+
+describe('resolveKilde', () => {
+	it('prioriterer fersk innliming over tidligere import', () => {
+		expect(resolveKilde({ kilde: 'Ny tekst', _kildemateriale: 'Gammel import' })).toBe('Ny tekst');
+	});
+
+	it('faller tilbake til tidligere import', () => {
+		expect(resolveKilde({ kilde: '   ', _kildemateriale: 'Gammel import' })).toBe('Gammel import');
+	});
+
+	it('gir tom streng uten kilde', () => {
+		expect(resolveKilde({})).toBe('');
+		expect(resolveKilde({ kilde: 42 })).toBe('');
+	});
+
+	it('kutter lange kilder med markør om at fullteksten er lagret', () => {
+		const lang = 'a'.repeat(10_000);
+		const result = resolveKilde({ kilde: lang }, 100);
+		expect(result).toContain('… [forkortet — fullteksten er lagret]');
+		expect(result.length).toBeLessThan(200);
+	});
+
+	it('lar korte kilder stå urørt', () => {
+		expect(resolveKilde({ kilde: 'Kort notat' })).toBe('Kort notat');
 	});
 });
 

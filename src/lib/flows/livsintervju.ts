@@ -63,6 +63,22 @@ export function parseValueLines(status: string): string[] {
 }
 
 /**
+ * Kildemateriale til intervjuet (f.eks. Balanse-tråden fra ChatGPT): fersk
+ * innliming fra kilde-steget prioriteres, ellers tidligere import fra
+ * konteksten. Trimmes og kuttes for prompt-bruk — fullteksten lagres alltid
+ * i originalformat (reflection 'livsintervju_kilde').
+ */
+export function resolveKilde(data: Record<string, unknown>, maxChars = 8000): string {
+	const fersk = typeof data.kilde === 'string' ? data.kilde.trim() : '';
+	const importert = typeof data._kildemateriale === 'string' ? data._kildemateriale.trim() : '';
+	const kilde = fersk || importert;
+	if (!kilde) return '';
+	return kilde.length > maxChars
+		? `${kilde.slice(0, maxChars).trimEnd()} … [forkortet — fullteksten er lagret]`
+		: kilde;
+}
+
+/**
  * Livskompassets 12 dimensjoner gruppert per område — brukes som døråpnere i
  * verdi-steget, så intervjuet dekker hele terrenget uten å bli et skjema.
  */

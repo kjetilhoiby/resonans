@@ -11,6 +11,7 @@
 /** Arkiv-kinds som aldri skal dumpes inline i systemprompten. */
 export const TRANSCRIPT_REFLECTION_KINDS: readonly string[] = [
 	'livsintervju_chat',
+	'livsintervju_kilde', // rått innlimt materiale (f.eks. Balanse-tråden) — kan være svært langt
 	'birthday_interview_chat',
 	'retningssamtale',
 	'birthday_photos' // JSON-blob, ikke prosa

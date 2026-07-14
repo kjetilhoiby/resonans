@@ -13,7 +13,7 @@ import {
 	parseBirthdayGoals,
 	parseStatusBlock
 } from './birthday-interview';
-import { livskompassDoorOpeners } from './livsintervju';
+import { livskompassDoorOpeners, resolveKilde } from './livsintervju';
 import { parseVisionBlock, quarterPeriodKey } from './retning-kvartal';
 import {
 	ACTIONS_PYRAMID,
@@ -1618,6 +1618,23 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 		estimatedMinutes: 30,
 		steps: [
 			{
+				id: 'kilde',
+				type: 'form',
+				title: 'Balanse-materialet',
+				prompt:
+					'Har du råmateriale fra tidligere dype samtaler — som Balanse-tråden? Lim inn det som betyr noe. Alt lagres i originalformat og brukes som konfrontasjonsmateriale i intervjuet: hva du har sagt om identitet, hva du har stått i, hvilke grep du tok og hvilke mål du satte. Hopp over hvis ingenting nytt — tidligere import er allerede med.',
+				fields: [
+					{
+						id: 'kilde',
+						type: 'textarea',
+						label: 'Råmateriale fra Balanse',
+						hideLabel: true,
+						placeholder:
+							'Lim inn — alt lagres i originalformat, bare det viktigste brukes i samtalen'
+					}
+				]
+			},
+			{
 				id: 'verdier',
 				type: 'chat',
 				title: 'Hva står du for?',
@@ -1625,6 +1642,7 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 				buildPrompts: (data) => {
 					const verdierNaa = typeof data._verdierNaa === 'string' ? data._verdierNaa : '';
 					const forrige = typeof data._forrigeIntervju === 'string' ? data._forrigeIntervju : '';
+					const kilde = resolveKilde(data);
 					return {
 						prompt: 'Jeg er klar for livsintervjuet. La oss begynne med hva som faktisk er viktig for meg.',
 						systemPrompt: [
@@ -1636,6 +1654,7 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 							livskompassDoorOpeners(),
 							verdierNaa ? `\nVerdier som er lagret om brukeren fra før — test dem, ikke gjenta dem («det står at X er viktig for deg — stemmer det fortsatt?»):\n${verdierNaa}` : '',
 							forrige ? `\nForrige livsintervju — bruk det aktivt («sist sa du …, står det seg?»):\n${forrige}` : '',
+							kilde ? `\nBrukerens eget råmateriale fra en tidligere dyp samtale (Balanse). Les det etter fire ting: hva han har sagt om IDENTITET, hva han har STÅTT I, hvilke GREP han tok, og hvilke MÅL han satte. Han var ofte mer konkret og direkte der enn nå — bruk formuleringene som døråpnere og test dem mot det han sier i dag; der dagens svar er vagere enn den gang, si det:\n${kilde}` : '',
 							'',
 							'Vær ærlig, ikke behagelig: når brukeren svarer med floskler («familie er viktig»), be om et konkret eksempel fra siste måned der verdien kostet noe. En verdi som aldri koster noe er ikke en verdi.',
 							'',
@@ -1659,12 +1678,14 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 							? parseStatusBlock(data.verdier_lastMessage)
 							: '';
 					const forrige = typeof data._forrigeIntervju === 'string' ? data._forrigeIntervju : '';
+					const kilde = resolveKilde(data, 6000);
 					return {
 						prompt: 'Nå vil jeg se langt frem. Hvem vil jeg være om ti år?',
 						systemPrompt: [
 							'Andre beat i livsintervjuet: TI ÅR FREM. Det store, ærlige bildet — ikke en plan, men hvem brukeren vil VÆRE.',
 							verdier ? `Verdiene brukeren nettopp formulerte — visjonen skal tåle å holdes opp mot dem:\n${verdier}` : '',
 							forrige ? `\nForrige livsintervju (hvis det finnes en tiårsvisjon der: «sist så du deg selv som …, gjelder det fortsatt?»):\n${forrige}` : '',
+							kilde ? `\nRåmateriale fra en tidligere dyp samtale (Balanse) — hold tiårsbildet opp mot identiteten og målene han formulerte da: hva står seg, hva er forlatt, og er det forlatt med vilje?\n${kilde}` : '',
 							'',
 							'Still ETT spørsmål om gangen: Hvem er du om ti år — i rollene dine, i kroppen, i hodet, i arbeidet? Hva gjør du en vanlig tirsdag? Hva har du sluppet taket i? Grav der det blir levende, og utfordre der det blir vagt eller lånt («er det ditt bilde, eller noe du føler du burde ville?»).',
 							'',
@@ -1760,6 +1781,7 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 							: '';
 					const eksisterende =
 						typeof data._eksisterendeRetning === 'string' ? data._eksisterendeRetning : '';
+					const kilde = resolveKilde(data);
 					return {
 						prompt: 'Her er retningen min. Hold den opp mot meg — hva ser du?',
 						systemPrompt: [
@@ -1770,6 +1792,7 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 							femAar ? `\nOm fem år:\n${femAar}` : '',
 							ettAar ? `\nOm ett år:\n${ettAar}` : '',
 							eksisterende ? `\nRetningen som var lagret FØR dette intervjuet:\n${eksisterende}` : '',
+							kilde ? `\nRåmateriale fra en tidligere dyp samtale (Balanse) — sammenlign årets svar med dette på fire akser: identitetsutsagnene den gang mot nå; hva han sto i da mot nå; grepene han tok — holdt de? og målene han satte — ble de nådd, droppet eller glemt? Hvis materialet fra den gang er skarpere eller mer konkret enn årets svar, pek på det — hva har blitt vagere, og hvorfor?\n${kilde}` : '',
 							'',
 							'Gjør dette i første svar (maks 5–6 setninger):',
 							'1. Pek på den mest interessante spenningen eller selvmotsigelsen i det brukeren har sagt — mellom verdiene og visjonene, mellom horisontene, eller mellom ord og det du vet om hverdagen. Vær konkret, ikke pakk inn.',
@@ -1807,7 +1830,8 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 					: '';
 			const speilMessage = typeof data.speil_lastMessage === 'string' ? data.speil_lastMessage : '';
 			const speil = speilMessage.replace(/<status>[\s\S]*?<\/status>/gi, '').trim();
-			if (!verdier && !tiAar && !femAar && !ettAar) return;
+			const kilde = typeof data.kilde === 'string' ? data.kilde.trim() : '';
+			if (!verdier && !tiAar && !femAar && !ettAar && !kilde) return;
 			await fetch('/api/retning/livsintervju', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
@@ -1815,6 +1839,8 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 					verdier,
 					visions: { ettAar, femAar, tiAar },
 					speil,
+					// Balanse-materialet i full, utrimmet form — lagres i originalformat
+					kilde,
 					// Rå-samtalen i messages-tabellen — kobles til visjonene som kilde
 					conversationId: typeof data._conversationId === 'string' ? data._conversationId : null,
 					// «Samtalen er data»: hele chattene arkiveres som transkript

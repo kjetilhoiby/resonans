@@ -17,6 +17,7 @@ export type ReflectionKind =
 	| 'birthday_greetings'
 	| 'livsintervju'
 	| 'livsintervju_chat'
+	| 'livsintervju_kilde'
 	| 'retningssamtale'
 	| 'retningsgap'
 	| 'ad_hoc';

@@ -3,6 +3,7 @@ import { and, desc, eq, isNull } from 'drizzle-orm';
 import { db } from '$lib/db';
 import { memories, reflections } from '$lib/db/schema';
 import { DreamService, type VisionHorizon } from '$lib/server/services/dream-service';
+import { getLatestReflection } from '$lib/server/reflections';
 import type { RequestHandler } from './$types';
 
 const HORIZON_LABELS: Record<VisionHorizon, string> = {
@@ -21,7 +22,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 	const userId = locals.userId;
 
 	const horizons = Object.keys(HORIZON_LABELS) as VisionHorizon[];
-	const [visions, valueMemories, forrigeIntervju, weeklyDream, monthlyDream] = await Promise.all([
+	const [visions, valueMemories, forrigeIntervju, weeklyDream, monthlyDream, kilde] = await Promise.all([
 		Promise.all(horizons.map((k) => DreamService.getActive(userId, k))),
 		db.query.memories.findMany({
 			where: and(
@@ -38,7 +39,9 @@ export const GET: RequestHandler = async ({ locals }) => {
 		}),
 		// Ferske synteser — brukes av retningssamtalen som «hva hverdagen faktisk viser»
 		DreamService.getActive(userId, 'weekly_dream'),
-		DreamService.getActive(userId, 'monthly_dream')
+		DreamService.getActive(userId, 'monthly_dream'),
+		// Balanse-materialet — full tekst; trimming for prompt skjer i buildPrompts
+		getLatestReflection(userId, 'livsintervju_kilde')
 	]);
 
 	const retningLines = visions
@@ -58,6 +61,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 		eksisterendeRetning: retningLines.join('\n'),
 		verdierNaa: valueMemories.map((m) => `- ${m.content}`).join('\n'),
 		forrigeIntervju: forrigeIntervju?.content ?? '',
-		synteser: synteseLines.join('\n')
+		synteser: synteseLines.join('\n'),
+		kildemateriale: kilde?.content ?? ''
 	});
 };
