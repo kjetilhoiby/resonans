@@ -66,12 +66,14 @@
 					eksisterendeRetning: string;
 					verdierNaa: string;
 					forrigeIntervju: string;
+					kildemateriale: string;
 				};
 				livsintervjuContext = {
 					initialData: {
 						_eksisterendeRetning: ctx.eksisterendeRetning,
 						_verdierNaa: ctx.verdierNaa,
-						_forrigeIntervju: ctx.forrigeIntervju
+						_forrigeIntervju: ctx.forrigeIntervju,
+						_kildemateriale: ctx.kildemateriale
 					}
 				};
 			}

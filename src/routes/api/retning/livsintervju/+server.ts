@@ -23,8 +23,9 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	const femAar = typeof rawVisions.femAar === 'string' ? rawVisions.femAar.trim() : '';
 	const tiAar = typeof rawVisions.tiAar === 'string' ? rawVisions.tiAar.trim() : '';
 	const speil = typeof body?.speil === 'string' ? body.speil.trim() : '';
+	const kilde = typeof body?.kilde === 'string' ? body.kilde.trim() : '';
 
-	if (!verdier && !ettAar && !femAar && !tiAar) {
+	if (!verdier && !ettAar && !femAar && !tiAar && !kilde) {
 		return json({ error: 'Tomt intervju' }, { status: 400 });
 	}
 
@@ -72,6 +73,17 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		});
 	}
 
+	// Balanse-materialet: rått innlimt kildemateriale i originalformat, append-only
+	let kildeReflection: Awaited<ReturnType<typeof createReflection>> = null;
+	if (kilde) {
+		kildeReflection = await createReflection({
+			userId,
+			kind: 'livsintervju_kilde',
+			periodKey,
+			content: kilde
+		});
+	}
+
 	// Rå-samtalen i messages-tabellen — valideres før den kobles til visjonene
 	const rawConversationId = typeof body?.conversationId === 'string' ? body.conversationId : '';
 	let conversationId: string | null = null;
@@ -80,9 +92,11 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		conversationId = conversation?.id ?? null;
 	}
 
-	// Kildekobling: hver visjon peker tilbake til destillat, transkript og samtale
+	// Kildekobling: hver visjon peker tilbake til destillat, transkript, kildemateriale og samtale
 	const inputRefs = {
-		reflectionIds: [reflection?.id, transcript?.id].filter((id): id is string => Boolean(id)),
+		reflectionIds: [reflection?.id, transcript?.id, kildeReflection?.id].filter(
+			(id): id is string => Boolean(id)
+		),
 		conversationIds: conversationId ? [conversationId] : undefined
 	};
 

@@ -635,14 +635,14 @@ const tools = [
 		function: {
 			name: 'query_reflections',
 			description:
-				"Hent brukerens lagrede refleksjoner og samtale-transkripter i FULLTEKST. Oppsummeringene i konteksten er indeks — bruk dette når du trenger brukerens egne ord: hele livsintervjuet (kind 'livsintervju_chat'), retningssamtalene ('retningssamtale'), selvangivelsen ('birthday_interview_chat'), eller andre refleksjoner ('day_close', 'week_review', 'month_review'). Typisk når brukeren spør «hva sa jeg egentlig om …» eller du vil sitere presist i stedet for å parafrasere.",
+				"Hent brukerens lagrede refleksjoner og samtale-transkripter i FULLTEKST. Oppsummeringene i konteksten er indeks — bruk dette når du trenger brukerens egne ord: hele livsintervjuet (kind 'livsintervju_chat'), Balanse-materialet ('livsintervju_kilde' — rått kildemateriale fra tidligere dype samtaler), retningssamtalene ('retningssamtale'), selvangivelsen ('birthday_interview_chat'), eller andre refleksjoner ('day_close', 'week_review', 'month_review'). Typisk når brukeren spør «hva sa jeg egentlig om …» eller du vil sitere presist i stedet for å parafrasere.",
 			parameters: {
 				type: 'object',
 				properties: {
 					kind: {
 						type: 'string',
 						description:
-							"Refleksjonstype, f.eks. 'livsintervju_chat', 'livsintervju', 'retningssamtale', 'retningsgap', 'birthday_interview_chat', 'week_review'. Utelat for alle typer."
+							"Refleksjonstype, f.eks. 'livsintervju_chat', 'livsintervju', 'livsintervju_kilde', 'retningssamtale', 'retningsgap', 'birthday_interview_chat', 'week_review'. Utelat for alle typer."
 					},
 					periodKey: {
 						type: 'string',

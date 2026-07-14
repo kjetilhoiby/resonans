@@ -507,12 +507,13 @@
 		try {
 			const res = await fetch('/api/retning/interview-context');
 			if (res.ok) {
-				const ctx = await res.json() as { eksisterendeRetning: string; verdierNaa: string; forrigeIntervju: string };
+				const ctx = await res.json() as { eksisterendeRetning: string; verdierNaa: string; forrigeIntervju: string; kildemateriale: string };
 				livsintervjuFlowContext = {
 					initialData: {
 						_eksisterendeRetning: ctx.eksisterendeRetning,
 						_verdierNaa: ctx.verdierNaa,
-						_forrigeIntervju: ctx.forrigeIntervju
+						_forrigeIntervju: ctx.forrigeIntervju,
+						_kildemateriale: ctx.kildemateriale
 					}
 				};
 			}

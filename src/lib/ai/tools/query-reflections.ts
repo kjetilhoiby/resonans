@@ -15,6 +15,7 @@ export const queryReflectionsTool = {
 
 Bruk dette når du trenger mer enn oppsummeringene i konteksten:
 - Hele livsintervjuet: kind 'livsintervju' (destillat) eller 'livsintervju_chat' (fullt transkript)
+- Balanse-materialet (rått innlimt kildemateriale fra tidligere dype samtaler): kind 'livsintervju_kilde'
 - Retningssamtalene: kind 'retningsgap' (gap-notat) eller 'retningssamtale' (fullt transkript)
 - Selvangivelsen: kind 'birthday_interview' / 'birthday_interview_chat'
 - Andre refleksjoner: 'day_close', 'week_review', 'month_review', 'goal_check', 'reflection_light'
