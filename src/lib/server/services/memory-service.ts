@@ -1,8 +1,16 @@
 import { db } from '$lib/db';
 import { dreams, memories } from '$lib/db/schema';
-import { and, desc, eq, ilike, or } from 'drizzle-orm';
+import { and, cosineDistance, desc, eq, ilike, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { createMemory } from '$lib/server/memories';
+import { generateEmbedding } from '$lib/server/services/embedding-service';
 import type { DreamHighlights } from '$lib/server/services/dream-service';
+
+/**
+ * Minste cosine-likhet for at to memories regnes som «samme sak».
+ * text-embedding-3-small på korte norske setninger: omformuleringer av samme
+ * verdi lander typisk 0.6–0.8; urelaterte utsagn under 0.4.
+ */
+const SIMILARITY_THRESHOLD = 0.6;
 
 export interface MemoryCandidate {
 	content: string;
@@ -74,11 +82,34 @@ export class MemoryService {
 	}
 
 	/**
-	 * Finner en eksisterende memory som tilsynelatende handler om det samme.
-	 * Bruker enkel ILIKE-overlapp i første runde — kan oppgraderes til
-	 * embedding-likhet når vi har vector-støtte.
+	 * Finner en eksisterende memory som handler om det samme. Primært
+	 * embedding-likhet (cosine) — fanger omformuleringer («Nærvær med barna» ≈
+	 * «Være til stede for ungene»). Faller tilbake til ILIKE-token-overlapp når
+	 * embedding ikke kan genereres (API-feil, tom tekst).
 	 */
 	static async findSimilar(userId: string, content: string, category: string) {
+		const embedding = await generateEmbedding(content);
+		if (embedding) {
+			const similarity = sql<number>`1 - (${cosineDistance(memories.embedding, embedding)})`;
+			const [match] = await db
+				.select({ memory: memories, similarity })
+				.from(memories)
+				.where(
+					and(
+						eq(memories.userId, userId),
+						eq(memories.category, category),
+						isNotNull(memories.embedding),
+						// Aldri match en supersedert rad — accept() ville brutt kjeden dens
+						isNull(memories.supersededBy)
+					)
+				)
+				.orderBy(desc(similarity))
+				.limit(1);
+			if (match && match.similarity >= SIMILARITY_THRESHOLD) return match.memory;
+			// Embedding fantes men ingenting lignet — ikke fall tilbake til løsere ILIKE
+			return null;
+		}
+
 		const tokens = content
 			.toLowerCase()
 			.split(/\s+/)

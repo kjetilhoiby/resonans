@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, integer, bigint, bigserial, boolean, jsonb, decimal, doublePrecision, unique, index, uniqueIndex, date, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, timestamp, integer, bigint, bigserial, boolean, jsonb, decimal, doublePrecision, unique, index, uniqueIndex, date, vector, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 
 
@@ -870,6 +870,8 @@ export const memories = pgTable('memories', {
 	source: text('source'),
 	sourceRef: jsonb('source_ref').$type<{ kind: string; id?: string }>(), // Strukturert sporbarhet, f.eks. { kind: 'reflection', id: '…' }
 	supersededBy: uuid('superseded_by'),
+	// Semantisk likhet (text-embedding-3-small) — null til backfill/skriving har generert
+	embedding: vector('embedding', { dimensions: 1536 }),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull(),
 	lastAccessedAt: timestamp('last_accessed_at').defaultNow().notNull()
@@ -895,6 +897,8 @@ export const reflections = pgTable('reflections', {
 		[key: string]: unknown;
 	}>(),
 	flowRunId: text('flow_run_id'),
+	// Semantisk søk (text-embedding-3-small) — fylles i steg 2; kolonnen ligger klar
+	embedding: vector('embedding', { dimensions: 1536 }),
 	createdAt: timestamp('created_at').defaultNow().notNull()
 }, (table) => ({
 	idxReflectionsUserCreated: index('reflections_user_created_idx').on(table.userId, table.createdAt),

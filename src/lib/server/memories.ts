@@ -1,6 +1,7 @@
 import { db } from '$lib/db';
 import { memories } from '$lib/db/schema';
 import { and, eq, desc } from 'drizzle-orm';
+import { generateEmbedding } from '$lib/server/services/embedding-service';
 
 export interface CreateMemoryParams {
 	userId: string;
@@ -24,6 +25,8 @@ export interface CreateMemoryParams {
  * - theme_files.parsed_content for fil-innhold
  */
 export async function createMemory(params: CreateMemoryParams) {
+	// Embedding er berikelse — null ved feil, raden lagres uansett
+	const embedding = await generateEmbedding(params.content);
 	const [memory] = await db
 		.insert(memories)
 		.values({
@@ -35,7 +38,8 @@ export async function createMemory(params: CreateMemoryParams) {
 			importance: params.importance ?? 'medium',
 			confidence: params.confidence ?? 'user_confirmed',
 			source: params.source,
-			sourceRef: params.sourceRef
+			sourceRef: params.sourceRef,
+			embedding
 		})
 		.returning();
 	return memory;
