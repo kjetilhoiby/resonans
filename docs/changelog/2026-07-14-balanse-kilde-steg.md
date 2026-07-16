@@ -45,6 +45,41 @@ og hvilke **mål** han satte.
   HomeScreen og /drommer.
 - `query_reflections`-beskrivelsene (verktøyfil + chat-rute) nevner `livsintervju_kilde`.
 
+### Tonejustering: varm + skarp
+
+Brukerinnsikt: det som overrasket positivt i Balanse-tråden var ikke direktheten alene, men at
+svarene var **varme og innsiktsfulle** — varmen er fundamentet som gjør konfrontasjonen mulig å
+ta imot. Livsintervju-promptene hadde mistet ordet «varm» på veien (i motsetning til
+selvangivelsens «varm, nysgjerrig — venn, ikke terapeut»). Justert:
+
+- Tone-linjene i alle livsintervju-steg + retningssamtalen: «varm og skarp — utfordringen
+  kommer fra omsorg, ikke distanse. Se først, utfordre så.»
+- Speilet åpner nå med hva som er mest levende og ekte i det brukeren har formulert, FØR
+  spenningene og det ubehagelige spørsmålet.
+- Konfrontasjonsinstruksen i chat-konteksten (`direction-context.ts`) rammer inn gapene med
+  varme (testet).
+- Prinsippet er skrevet inn i VISION.md under «Retningen er målestokken».
+
+### FlowSheet-robusthet: bevar chat-state ved navigasjon, vern usendt tekst
+
+Reell hendelse under første bruk: bruker trykket «Neste» i stedet for «Send» med tekst i
+feltet, gikk «Tilbake» — og steget startet på nytt (autoSend re-fyrte). Tre rotårsaker fikset:
+
+- **Kontinuerlig tråd-synk:** `{stepId}_thread`/`{stepId}_lastMessage` skrives nå etter hvert
+  replikkskifte (via `syncChatStepData` + rene hjelpere `serializeChatThread`/
+  `rehydrateChatMessages` i flow-helpers, testet) — ikke bare ved «Neste». Trådene bærer nå
+  også `rawText` så `<status>`-blokker overlever rehydrering. En økt som aldri når «Neste»
+  mister ingenting.
+- **Rehydrering i stedet for omstart:** `initChatStep` gjenoppretter lagret tråd ved
+  tilbake-navigasjon og gjenopptatte utkast, og hopper over autoSend. `handleNext` skriver
+  kun når steget fikk nye replikkskifter (`chatStepDirty`) — en urørt visning overskriver
+  aldri lagret tråd. «Start på nytt» gir fortsatt ekte omstart.
+- **Vern mot usendt tekst:** input-utkastet løftes via `onTextChange` → «Neste» disables med
+  hint («Send eller tøm meldingen først»), og `{#key currentStep.id}` gir fersk ChatInput per
+  steg så tekst ikke henger igjen på neste steg.
+
+Gjelder alle chat-flyter (livsintervjuet, selvangivelsen, retningssamtalen, day_plan osv.).
+
 ## Beslutninger
 
 - **Full tekst lagres, utdrag brukes**: samme prinsipp som resten av «samtalen er data» —

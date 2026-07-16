@@ -4,8 +4,39 @@ import {
 	flowDraftKey,
 	parseChatMessage,
 	parseFlowDraft,
+	rehydrateChatMessages,
+	serializeChatThread,
 	serializeFlowDraft
 } from './flow-helpers';
+
+describe('chat-tråd serialisering/rehydrering', () => {
+	it('runder tur-retur med rawText bevart', () => {
+		const messages = [
+			{ role: 'user' as const, text: 'Hei' },
+			{ role: 'assistant' as const, text: 'Svar uten markører', rawText: 'Svar uten markører\n<status>Internt destillat</status>' }
+		];
+		const rehydrated = rehydrateChatMessages(serializeChatThread(messages));
+		expect(rehydrated).toHaveLength(2);
+		expect(rehydrated[1].rawText).toContain('<status>Internt destillat</status>');
+		expect(rehydrated[1].text).toBe('Svar uten markører');
+	});
+
+	it('utelater rawText når den er lik visningsteksten', () => {
+		const saved = serializeChatThread([{ role: 'assistant', text: 'Samme', rawText: 'Samme' }]);
+		expect(saved[0]).toEqual({ role: 'assistant', text: 'Samme' });
+	});
+
+	it('rehydrerer gamle tråder uten rawText (bakoverkompatibelt)', () => {
+		const rehydrated = rehydrateChatMessages([{ role: 'user', text: 'Gammel melding' }]);
+		expect(rehydrated).toEqual([{ role: 'user', text: 'Gammel melding' }]);
+	});
+
+	it('gir tom liste for korrupt eller ukjent form', () => {
+		expect(rehydrateChatMessages(undefined)).toEqual([]);
+		expect(rehydrateChatMessages('tekst')).toEqual([]);
+		expect(rehydrateChatMessages([{ role: 'robot', text: 'x' }, null, { role: 'user' }])).toEqual([]);
+	});
+});
 
 describe('parseChatMessage', () => {
 	it('stripper <status>-blokken så den ikke lekker ut i chatten', () => {

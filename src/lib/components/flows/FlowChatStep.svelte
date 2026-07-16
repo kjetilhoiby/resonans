@@ -12,6 +12,8 @@
 		chatMessagesEl?: HTMLDivElement | null;
 		onsend: (text: string) => void;
 		onretry?: () => void;
+		/** Løfter input-utkastet til FlowSheet så «Neste» kan blokkeres på usendt tekst. */
+		onTextChange?: (text: string) => void;
 	}
 
 	let {
@@ -20,7 +22,8 @@
 		autoSendLabel = 'Starter…',
 		chatMessagesEl = $bindable(null),
 		onsend,
-		onretry
+		onretry,
+		onTextChange
 	}: Props = $props();
 </script>
 
@@ -66,6 +69,7 @@
 		placeholder="Skriv svar…"
 		disabled={flowChat.loading}
 		onsubmit={(text) => onsend(text)}
+		{onTextChange}
 	/>
 </div>
 

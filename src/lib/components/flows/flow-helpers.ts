@@ -155,6 +155,44 @@ export interface RichChatMsg {
 	confirmAction?: string;
 }
 
+// ── Chat-tråd: serialisering og rehydrering ──────────────────────────────────
+// Tråden synkes fortløpende inn i flowData (og dermed localStorage-utkastet) og
+// gjenopprettes ved tilbake-navigasjon/reload — et chat-steg skal aldri starte
+// på nytt når en tråd allerede finnes.
+
+export interface SavedChatMsg {
+	role: 'user' | 'assistant';
+	text: string;
+	/** Råtekst med interne markør-blokker (<status> …) — trengs for at onComplete-
+	 *  parserne overlever en rehydrering. Utelates når lik text. */
+	rawText?: string;
+}
+
+export function serializeChatThread(messages: RichChatMsg[]): SavedChatMsg[] {
+	return messages.map((m) => ({
+		role: m.role,
+		text: m.text,
+		...(m.rawText && m.rawText !== m.text ? { rawText: m.rawText } : {})
+	}));
+}
+
+/** Gjenopprett en lagret tråd til visningsmeldinger. Tom liste ved ukjent/korrupt form. */
+export function rehydrateChatMessages(saved: unknown): RichChatMsg[] {
+	if (!Array.isArray(saved)) return [];
+	return saved
+		.filter(
+			(m): m is SavedChatMsg =>
+				!!m &&
+				((m as SavedChatMsg).role === 'user' || (m as SavedChatMsg).role === 'assistant') &&
+				typeof (m as SavedChatMsg).text === 'string'
+		)
+		.map((m) => ({
+			role: m.role,
+			text: m.text,
+			...(typeof m.rawText === 'string' ? { rawText: m.rawText } : {})
+		}));
+}
+
 // ── Flow-utkast: delvis gjennomføring som kan gjenopptas ─────────────────────
 // Flows med `resumable: true` lagrer flowData + steg fortløpende i localStorage
 // (per enhet). FlowSheet gjenoppretter ved neste åpning og rydder ved levering.
