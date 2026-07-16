@@ -178,6 +178,14 @@ export interface Flow {
 	 * flowData._conversationId og følger med til onComplete («samtalen er data»).
 	 */
 	conversationTitle?: string | ((data: Record<string, any>) => string);
+	/**
+	 * Rekonstruer steg-tråder fra flytens varige DB-samtale (rå meldinger per steg-id).
+	 * Kalles etter utkast-gjenoppretting; den rikeste versjonen per steg vinner —
+	 * DB er fasit, localStorage-utkastet bare en kopi. Returner null når utilgjengelig.
+	 */
+	recoverThreads?: (
+		data: Record<string, any>
+	) => Promise<Record<string, Array<{ role: 'user' | 'assistant'; content: string }>> | null>;
 	steps?: FlowStep[];
 	onComplete?: (data: Record<string, any>, context: FlowContext) => Promise<void>;
 	badge?: string;

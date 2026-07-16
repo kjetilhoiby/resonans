@@ -13,7 +13,7 @@ import {
 	parseBirthdayGoals,
 	parseStatusBlock
 } from './birthday-interview';
-import { livskompassDoorOpeners, resolveKilde } from './livsintervju';
+import { livskompassDoorOpeners, livsintervjuStepPrompt, resolveKilde } from './livsintervju';
 import { parseVisionBlock, quarterPeriodKey } from './retning-kvartal';
 import {
 	ACTIONS_PYRAMID,
@@ -1613,6 +1613,23 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 		resumable: true,
 		// Egen varig samtale — rå-intervjuet er førsteklasses data, ikke bare destillatet
 		conversationTitle: () => `Livsintervjuet ${new Date().getFullYear()}`,
+		// DB-samtalen er fasit: rekonstruer steg-trådene derfra hvis utkastet er tynnere
+		async recoverThreads(data) {
+			const conversationId = typeof data._conversationId === 'string' ? data._conversationId : '';
+			if (!conversationId) return null;
+			try {
+				const res = await fetch('/api/retning/recover-threads', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ conversationId })
+				});
+				if (!res.ok) return null;
+				const json = await res.json();
+				return json?.threads ?? null;
+			} catch {
+				return null;
+			}
+		},
 		// Dyp, refleksiv samtale uten verktøybehov — sterkeste modell, som selvangivelsen.
 		chatModel: 'gpt-5.4',
 		estimatedMinutes: 30,
@@ -1644,7 +1661,7 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 					const forrige = typeof data._forrigeIntervju === 'string' ? data._forrigeIntervju : '';
 					const kilde = resolveKilde(data);
 					return {
-						prompt: 'Jeg er klar for livsintervjuet. La oss begynne med hva som faktisk er viktig for meg.',
+						prompt: livsintervjuStepPrompt('verdier'),
 						systemPrompt: [
 							'Du åpner livsintervjuet — den store retningssamtalen om hvem brukeren vil være om ett, fem og ti år. Første beat er VERDIENE: hva brukeren faktisk står for, ikke hva som høres fint ut.',
 							'',
@@ -1680,7 +1697,7 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 					const forrige = typeof data._forrigeIntervju === 'string' ? data._forrigeIntervju : '';
 					const kilde = resolveKilde(data, 6000);
 					return {
-						prompt: 'Nå vil jeg se langt frem. Hvem vil jeg være om ti år?',
+						prompt: livsintervjuStepPrompt('ti_aar'),
 						systemPrompt: [
 							'Andre beat i livsintervjuet: TI ÅR FREM. Det store, ærlige bildet — ikke en plan, men hvem brukeren vil VÆRE.',
 							verdier ? `Verdiene brukeren nettopp formulerte — visjonen skal tåle å holdes opp mot dem:\n${verdier}` : '',
@@ -1713,7 +1730,7 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 							? parseStatusBlock(data.verdier_lastMessage)
 							: '';
 					return {
-						prompt: 'Og om fem år — hvor må jeg være da?',
+						prompt: livsintervjuStepPrompt('fem_aar'),
 						systemPrompt: [
 							'Tredje beat: FEM ÅR FREM. Broen mellom tiårsbildet og nået. Din jobb er å tvinge konsistens.',
 							tiAar ? `Tiårsvisjonen brukeren nettopp formulerte:\n${tiAar}` : '',
@@ -1741,7 +1758,7 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 							? parseStatusBlock(data.fem_aar_lastMessage)
 							: '';
 					return {
-						prompt: 'Om ett år, da — hva skal faktisk være annerledes?',
+						prompt: livsintervjuStepPrompt('ett_aar'),
 						systemPrompt: [
 							'Fjerde beat: ETT ÅR FREM. Her skal det bli konkret — dette er horisonten hverdagen kan måles mot.',
 							femAar ? `Femårsbildet brukeren nettopp formulerte:\n${femAar}` : '',
@@ -1783,7 +1800,7 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 						typeof data._eksisterendeRetning === 'string' ? data._eksisterendeRetning : '';
 					const kilde = resolveKilde(data);
 					return {
-						prompt: 'Her er retningen min. Hold den opp mot meg — hva ser du?',
+						prompt: livsintervjuStepPrompt('speil'),
 						systemPrompt: [
 							'Siste beat i livsintervjuet: SPEILET. Brukeren har formulert verdier og visjoner for ett, fem og ti år. Din jobb er å holde det hele opp mot dem — ærlig.',
 							'',
