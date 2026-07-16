@@ -60,6 +60,26 @@ selvangivelsens «varm, nysgjerrig — venn, ikke terapeut»). Justert:
   varme (testet).
 - Prinsippet er skrevet inn i VISION.md under «Retningen er målestokken».
 
+### FlowSheet-robusthet: bevar chat-state ved navigasjon, vern usendt tekst
+
+Reell hendelse under første bruk: bruker trykket «Neste» i stedet for «Send» med tekst i
+feltet, gikk «Tilbake» — og steget startet på nytt (autoSend re-fyrte). Tre rotårsaker fikset:
+
+- **Kontinuerlig tråd-synk:** `{stepId}_thread`/`{stepId}_lastMessage` skrives nå etter hvert
+  replikkskifte (via `syncChatStepData` + rene hjelpere `serializeChatThread`/
+  `rehydrateChatMessages` i flow-helpers, testet) — ikke bare ved «Neste». Trådene bærer nå
+  også `rawText` så `<status>`-blokker overlever rehydrering. En økt som aldri når «Neste»
+  mister ingenting.
+- **Rehydrering i stedet for omstart:** `initChatStep` gjenoppretter lagret tråd ved
+  tilbake-navigasjon og gjenopptatte utkast, og hopper over autoSend. `handleNext` skriver
+  kun når steget fikk nye replikkskifter (`chatStepDirty`) — en urørt visning overskriver
+  aldri lagret tråd. «Start på nytt» gir fortsatt ekte omstart.
+- **Vern mot usendt tekst:** input-utkastet løftes via `onTextChange` → «Neste» disables med
+  hint («Send eller tøm meldingen først»), og `{#key currentStep.id}` gir fersk ChatInput per
+  steg så tekst ikke henger igjen på neste steg.
+
+Gjelder alle chat-flyter (livsintervjuet, selvangivelsen, retningssamtalen, day_plan osv.).
+
 ## Beslutninger
 
 - **Full tekst lagres, utdrag brukes**: samme prinsipp som resten av «samtalen er data» —

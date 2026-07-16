@@ -9,14 +9,19 @@
 		canProceed: boolean;
 		completing: boolean;
 		currentStep: FlowStep | undefined;
+		/** Kort forklaring på hvorfor «Neste» er blokkert (f.eks. usendt tekst i chat-feltet). */
+		blockedHint?: string | null;
 		onprevious: () => void;
 		onnext: () => void;
 		onsecondary: () => void;
 	}
 
-	let { isFocus, isFirstStep, isLastStep, canProceed, completing, currentStep, onprevious, onnext, onsecondary }: Props = $props();
+	let { isFocus, isFirstStep, isLastStep, canProceed, completing, currentStep, blockedHint = null, onprevious, onnext, onsecondary }: Props = $props();
 </script>
 
+{#if blockedHint && !completing}
+	<p class="fs-footer-hint" role="status">{blockedHint}</p>
+{/if}
 <div class="fs-footer" class:fs-focus-footer={isFocus}>
 	{#if isFocus}
 		{#if !isFirstStep}
@@ -78,6 +83,14 @@
 </div>
 
 <style>
+	.fs-footer-hint {
+		margin: 0;
+		padding: 6px 20px 0;
+		font-size: 0.8rem;
+		color: #8a8a9a;
+		text-align: right;
+	}
+
 	.fs-footer {
 		display: flex;
 		gap: 10px;

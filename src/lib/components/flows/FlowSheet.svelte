@@ -14,6 +14,8 @@
 		flowDraftKey,
 		parseFlowDraft,
 		serializeFlowDraft,
+		serializeChatThread,
+		rehydrateChatMessages,
 		type FlowChecklistItem,
 		type WeatherData,
 		type RichChatMsg
@@ -51,6 +53,29 @@
 	// ── Chat state ───────────────────────────────────────────────────
 	let chatMessages = $state<RichChatMsg[]>([]);
 	let chatMessagesEl = $state<HTMLDivElement | null>(null);
+	// Usendt tekst i chat-input — «Neste» skal ikke være mulig med tekst i feltet
+	// (brukeren mister den ellers stille ved stegbytte).
+	let chatInputDraft = $state('');
+	// Om steget har fått nye replikkskifter siden init — en rehydrert-men-urørt
+	// visning skal ikke overskrive lagret tråd/lastMessage ved «Neste».
+	let chatStepDirty = $state(false);
+
+	/**
+	 * Kontinuerlig synk av chat-steget inn i flowData (og dermed localStorage-
+	 * utkastet): tråden og siste assistent-råtekst lagres etter hvert
+	 * replikkskifte — ikke bare ved «Neste». En økt som aldri når «Neste»
+	 * mister dermed ingenting.
+	 */
+	function syncChatStepData(stepId: string) {
+		const lastAssistant = [...chatMessages].reverse().find((m) => m.role === 'assistant');
+		flowData = {
+			...flowData,
+			[`${stepId}_thread`]: serializeChatThread(chatMessages),
+			...(lastAssistant
+				? { [`${stepId}_lastMessage`]: lastAssistant.rawText ?? lastAssistant.text }
+				: {})
+		};
+	}
 
 	const flowChat = new ChatState({
 		preferredModel: () => flow?.chatModel,
@@ -88,6 +113,9 @@
 				confirmAction: parsed.confirmAction,
 				statusWidget: msg.statusWidget
 			}];
+			chatStepDirty = true;
+			const stepId = currentStep?.id;
+			if (stepId) syncChatStepData(stepId);
 			return false;
 		}
 	});
@@ -119,9 +147,14 @@
 		flow?.steps ? findNextStepIndex(flow, currentStepIndex, flowData) >= flow.steps.length : true
 	);
 
+	// Usendt tekst i input-feltet blokkerer «Neste» — den ville ellers gått tapt stille
+	const hasUnsentChatDraft = $derived(
+		currentStep?.type === 'chat' && chatInputDraft.trim().length > 0
+	);
+
 	const canProceed = $derived.by(() => {
 		if (!currentStep) return false;
-	if (currentStep?.type === 'chat') return chatMessages.some((m) => m.role === 'assistant');	if (currentStep.type === 'checklist') return true;
+	if (currentStep?.type === 'chat') return chatMessages.some((m) => m.role === 'assistant') && !hasUnsentChatDraft;	if (currentStep.type === 'checklist') return true;
 		if (currentStep.type === 'decision-list') return true;
 		const fields = currentStep.fields ?? [];
 		return fields.every((field) => {
@@ -391,8 +424,21 @@
 		if (chatMessagesEl) chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
 	}
 
-	/** Init et chat-steg: tøm tråden og send autoSend-prompten (eller vis åpningsmeldingen). */
+	/**
+	 * Init et chat-steg. Finnes en lagret tråd i flowData (tilbake-navigasjon eller
+	 * gjenopptatt utkast), rehydreres den — samtalen fortsetter der den slapp i
+	 * stedet for å starte på nytt (autoSend ville re-fyrt og duplisert åpningen i
+	 * den varige DB-samtalen). Ellers: fersk init med autoSend/åpningsmelding.
+	 */
 	function initChatStep(step: NonNullable<typeof currentStep>) {
+		chatStepDirty = false;
+		chatInputDraft = '';
+		const saved = rehydrateChatMessages(flowData[`${step.id}_thread`]);
+		if (saved.length > 0) {
+			chatMessages = saved;
+			void scrollChatToBottom();
+			return;
+		}
 		const built = step.buildPrompts?.(flowData);
 		const prompt = context.prompts?.[step.id] ?? built?.prompt ?? step.prompt;
 		chatMessages = [];
@@ -405,7 +451,12 @@
 
 	async function sendChatMessage(text: string, isAutoSend = false) {
 		if (flowChat.loading) return;
-		if (!isAutoSend) chatMessages = [...chatMessages, { role: 'user', text }];
+		if (!isAutoSend) {
+			chatMessages = [...chatMessages, { role: 'user', text }];
+			// Synk umiddelbart — brukermeldingen skal være lagret selv om svaret aldri kommer
+			chatStepDirty = true;
+			if (currentStep) syncChatStepData(currentStep.id);
+		}
 		await scrollChatToBottom();
 		await flowChat.send(text);
 		await scrollChatToBottom();
@@ -430,17 +481,10 @@
 
 		validationError = null;
 
-		if (currentStep.type === 'chat') {
-			const lastAssistant = [...chatMessages].reverse().find((m) => m.role === 'assistant');
-			if (lastAssistant) {
-				flowData = {
-					...flowData,
-					[`${currentStep.id}_lastMessage`]: lastAssistant.rawText ?? lastAssistant.text
-				};
-			}
-			if (chatMessages.length > 0) {
-				flowData = { ...flowData, [`${currentStep.id}_thread`]: chatMessages.map((m) => ({ role: m.role, text: m.text })) };
-			}
+		if (currentStep.type === 'chat' && chatStepDirty) {
+			// Siste synk før stegbytte — kun når steget faktisk fikk nye replikkskifter,
+			// så en rehydrert-men-urørt visning aldri overskriver den lagrede tråden.
+			syncChatStepData(currentStep.id);
 		}
 
 		if (isLastStep) {
@@ -531,14 +575,18 @@
 
 			<!-- CHAT -->
 			{#if currentStep.type === 'chat'}
-				<FlowChatStep
-					{chatMessages}
-					{flowChat}
-					autoSendLabel={currentStep.autoSend ? 'Starter…' : 'Si hva du tenker på…'}
-					bind:chatMessagesEl
-					onsend={(text) => void sendChatMessage(text)}
-					onretry={() => flowChat.retry()}
-				/>
+				<!-- key: hvert steg får fersk ChatInput — usendt tekst skal ikke henge igjen på neste steg -->
+				{#key currentStep.id}
+					<FlowChatStep
+						{chatMessages}
+						{flowChat}
+						autoSendLabel={currentStep.autoSend ? 'Starter…' : 'Si hva du tenker på…'}
+						bind:chatMessagesEl
+						onsend={(text) => void sendChatMessage(text)}
+						onretry={() => flowChat.retry()}
+						onTextChange={(text) => { chatInputDraft = text; }}
+					/>
+				{/key}
 			{/if}
 
 			<!-- FORM / MIXED -->
@@ -608,6 +656,7 @@
 		{canProceed}
 		{completing}
 		{currentStep}
+		blockedHint={hasUnsentChatDraft ? 'Send eller tøm meldingen først' : null}
 		onprevious={handlePrevious}
 		onnext={() => void handleNext()}
 		onsecondary={handleSecondaryAction}
