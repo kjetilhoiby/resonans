@@ -4,7 +4,9 @@ import {
 	parseLivsintervjuMarkdown,
 	parseValueLines,
 	livskompassDoorOpeners,
-	resolveKilde
+	resolveKilde,
+	segmentConversationBySteps,
+	LIVSINTERVJU_STEP_PROMPTS
 } from './livsintervju';
 
 describe('buildLivsintervjuMarkdown', () => {
@@ -89,6 +91,51 @@ describe('resolveKilde', () => {
 
 	it('lar korte kilder stå urørt', () => {
 		expect(resolveKilde({ kilde: 'Kort notat' })).toBe('Kort notat');
+	});
+});
+
+describe('segmentConversationBySteps', () => {
+	const tiAarPrompt = LIVSINTERVJU_STEP_PROMPTS.find((s) => s.stepId === 'ti_aar')!.prompt;
+	const femAarPrompt = LIVSINTERVJU_STEP_PROMPTS.find((s) => s.stepId === 'fem_aar')!.prompt;
+
+	it('segmenterer samtalen per steg og utelater selve prompten', () => {
+		const segments = segmentConversationBySteps([
+			{ role: 'user', content: tiAarPrompt },
+			{ role: 'assistant', content: 'Se for deg en tirsdag.' },
+			{ role: 'user', content: 'Jeg står opp tidlig og løper.' },
+			{ role: 'user', content: femAarPrompt },
+			{ role: 'assistant', content: 'Hva må være sant om fem år?' }
+		]);
+		expect(segments.ti_aar).toEqual([
+			{ role: 'assistant', content: 'Se for deg en tirsdag.' },
+			{ role: 'user', content: 'Jeg står opp tidlig og løper.' }
+		]);
+		expect(segments.fem_aar).toEqual([{ role: 'assistant', content: 'Hva må være sant om fem år?' }]);
+	});
+
+	it('lar lengste segment vinne ved omstarts-duplikater', () => {
+		const segments = segmentConversationBySteps([
+			{ role: 'user', content: tiAarPrompt },
+			{ role: 'assistant', content: 'Lang natt-samtale, del 1 <status>Om ti år er jeg fri.</status>' },
+			{ role: 'user', content: 'Mye innhold her.' },
+			{ role: 'assistant', content: 'Lang natt-samtale, del 2.' },
+			// Omstart (historisk bug): samme prompt på nytt, kort segment
+			{ role: 'user', content: tiAarPrompt },
+			{ role: 'assistant', content: 'Da går vi dit. Se for deg en tirsdag.' }
+		]);
+		expect(segments.ti_aar).toHaveLength(3);
+		expect(segments.ti_aar[0].content).toContain('del 1');
+	});
+
+	it('ignorerer meldinger før første steg-prompt og tåler tom liste', () => {
+		expect(segmentConversationBySteps([])).toEqual({});
+		const segments = segmentConversationBySteps([
+			{ role: 'user', content: 'Løs prat før intervjuet' },
+			{ role: 'assistant', content: 'Svar på løs prat' },
+			{ role: 'user', content: tiAarPrompt },
+			{ role: 'assistant', content: 'Første ekte melding' }
+		]);
+		expect(Object.keys(segments)).toEqual(['ti_aar']);
 	});
 });
 

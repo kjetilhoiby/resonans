@@ -80,6 +80,26 @@ feltet, gikk «Tilbake» — og steget startet på nytt (autoSend re-fyrte). Tre
 
 Gjelder alle chat-flyter (livsintervjuet, selvangivelsen, retningssamtalen, day_plan osv.).
 
+### Recovery: DB-samtalen er fasit for flow-tråder
+
+Oppfølging av navigasjonsbuggen: brukerens natt-tråd var borte fra localStorage-utkastet
+(overskrevet under frem/tilbake-klikking på gammel kode), men hele samtalen lå ordrett i
+den varige DB-samtalen — inkludert `<status>`-blokkene. Ny mekanisme gjør databasen til
+fasit:
+
+- `segmentConversationBySteps` (`livsintervju.ts`, testet): autoSend-promptene lagres som
+  brukermeldinger i samtalen og brukes som steg-grenser; ved historiske
+  omstarts-duplikater vinner lengste segment. Prompt-tekstene er nå delte konstanter
+  (`LIVSINTERVJU_STEP_PROMPTS`) brukt av både flow-definisjonen og segmenteringen.
+- Nytt endepunkt `api/retning/recover-threads` (POST, eierskapsvalidert): laster hele
+  samtalen og returnerer rå steg-tråder.
+- Generisk krok `Flow.recoverThreads` + merge i FlowSheet etter utkast-gjenoppretting:
+  rikeste versjon per steg vinner (`{stepId}_thread` + `_lastMessage` fra råtekst), og
+  gjeldende chat-steg re-initieres så den gjenopprettede tråden vises. Best effort —
+  recovery-feil velter aldri flyten.
+- Kjent avgrensning: recovery kjører etter utkast-gjenoppretting; helt uten utkast (ny
+  enhet) starter flyten fortsatt ferskt.
+
 ## Beslutninger
 
 - **Full tekst lagres, utdrag brukes**: samme prinsipp som resten av «samtalen er data» —

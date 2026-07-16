@@ -191,8 +191,55 @@
 			flowData = { ...draft.data, ...(context.initialData ?? {}) };
 			currentStepIndex = Math.max(0, Math.min(draft.stepIndex, (f.steps?.length ?? 1) - 1));
 			draftNotice = true;
+			// DB-samtalen er fasit: rekonstruer steg-tråder derfra hvis utkastet er tynnere
+			void recoverThreadsFromConversation(f);
 		});
 	});
+
+	/**
+	 * Rekonstruer steg-tråder fra flytens varige DB-samtale og erstatt utkastets
+	 * versjon der samtalen er rikere (flere meldinger). Healer utkast som ble
+	 * overskrevet eller tapt (historiske bugs, tømt cache). Best effort — feil
+	 * skal aldri velte flyten.
+	 */
+	async function recoverThreadsFromConversation(f: Flow) {
+		if (!f.recoverThreads) return;
+		try {
+			const recovered = await f.recoverThreads(flowData);
+			if (!recovered) return;
+
+			let currentStepRecovered = false;
+			const updates: Record<string, unknown> = {};
+			for (const [stepId, rawMsgs] of Object.entries(recovered)) {
+				if (!Array.isArray(rawMsgs) || rawMsgs.length === 0) continue;
+				const savedLength = rehydrateChatMessages(flowData[`${stepId}_thread`]).length;
+				if (rawMsgs.length <= savedLength) continue;
+
+				const thread: RichChatMsg[] = rawMsgs.map((m) =>
+					m.role === 'assistant'
+						? { role: 'assistant' as const, text: parseChatMessage(m.content).text, rawText: m.content }
+						: { role: 'user' as const, text: m.content }
+				);
+				updates[`${stepId}_thread`] = serializeChatThread(thread);
+				const lastAssistant = [...thread].reverse().find((m) => m.role === 'assistant');
+				if (lastAssistant) {
+					updates[`${stepId}_lastMessage`] = lastAssistant.rawText ?? lastAssistant.text;
+				}
+				if (currentStep?.id === stepId) currentStepRecovered = true;
+			}
+			if (Object.keys(updates).length === 0) return;
+
+			flowData = { ...flowData, ...updates };
+			// Vis den gjenopprettede tråden hvis brukeren står på et berørt chat-steg —
+			// reset avbryter en eventuell autoSend-strøm som rakk å starte.
+			if (currentStepRecovered && currentStep?.type === 'chat') {
+				flowChat.reset();
+				initChatStep(currentStep);
+			}
+		} catch {
+			// Recovery er best effort — flyten fortsetter med utkastets tråder
+		}
+	}
 
 	/** Forkast et gjenopprettet utkast og start flyten på nytt fra første steg. */
 	function restartFlow() {
