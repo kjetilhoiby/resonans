@@ -1,13 +1,11 @@
 #!/usr/bin/env node
 /**
- * Backfill av embeddings for eksisterende memories (embedding IS NULL).
- * Idempotent — kan kjøres flere ganger; hopper over rader som allerede har
- * embedding. Kjøres manuelt (ikke i deploy-pipelinen, siden den kaller OpenAI):
+ * Backfill av embeddings for eksisterende memories og reflections
+ * (embedding IS NULL). Idempotent — kan kjøres flere ganger; hopper over
+ * rader som allerede har embedding. Kjøres manuelt (ikke i deploy-pipelinen,
+ * siden den kaller OpenAI):
  *
  *   DATABASE_URL=... OPENAI_API_KEY=... node scripts/backfill-embeddings.mjs
- *
- * Reflections backfilles bevisst IKKE ennå — kolonnen ligger klar, men
- * semantisk søk i refleksjoner er steg 2 (se changelog).
  */
 import postgres from 'postgres';
 
@@ -39,27 +37,31 @@ async function embedBatch(texts) {
 	return json.data.sort((a, b) => a.index - b.index).map((d) => d.embedding);
 }
 
-let total = 0;
-for (;;) {
-	const rows = await sql`
-		SELECT id, content FROM memories
-		WHERE embedding IS NULL AND content <> ''
-		ORDER BY created_at
-		LIMIT ${BATCH_SIZE}
-	`;
-	if (rows.length === 0) break;
-
-	const embeddings = await embedBatch(rows.map((r) => r.content));
-	for (let i = 0; i < rows.length; i++) {
-		await sql`
-			UPDATE memories
-			SET embedding = ${JSON.stringify(embeddings[i])}::vector
-			WHERE id = ${rows[i].id} AND embedding IS NULL
+async function backfillTable(table) {
+	let total = 0;
+	for (;;) {
+		const rows = await sql`
+			SELECT id, content FROM ${sql(table)}
+			WHERE embedding IS NULL AND content <> ''
+			ORDER BY created_at
+			LIMIT ${BATCH_SIZE}
 		`;
+		if (rows.length === 0) break;
+
+		const embeddings = await embedBatch(rows.map((r) => r.content));
+		for (let i = 0; i < rows.length; i++) {
+			await sql`
+				UPDATE ${sql(table)}
+				SET embedding = ${JSON.stringify(embeddings[i])}::vector
+				WHERE id = ${rows[i].id} AND embedding IS NULL
+			`;
+		}
+		total += rows.length;
+		console.log(`Backfillet ${total} ${table} …`);
 	}
-	total += rows.length;
-	console.log(`Backfillet ${total} memories …`);
+	console.log(`Ferdig — ${total} ${table} fikk embedding.`);
 }
 
-console.log(`Ferdig — ${total} memories fikk embedding.`);
+await backfillTable('memories');
+await backfillTable('reflections');
 await sql.end();
