@@ -13,7 +13,7 @@ import {
 	parseBirthdayGoals,
 	parseStatusBlock
 } from './birthday-interview';
-import { livskompassDoorOpeners, livsintervjuStepPrompt, resolveKilde } from './livsintervju';
+import { livskompassDoorOpeners, livsintervjuStepPrompt, parseLongTermGoals, resolveKilde } from './livsintervju';
 import { parseVisionBlock, quarterPeriodKey } from './retning-kvartal';
 import {
 	ACTIONS_PYRAMID,
@@ -1819,6 +1819,14 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 								: '3. Pek på hva i visjonene som kommer til å kreve mest av brukeren — og hva som er mest sårbart for å skli.',
 							'4. Avslutt med ETT ubehagelig, presist spørsmål — det du tror brukeren helst vil slippe å svare på.',
 							'',
+							'MÅLBARE LANGTIDSMÅL: Foreslå deretter 2–4 målbare mål som gjør visjonene etterprøvbare — typisk vekt (kg), beste 10 km-tid (min) og månedlig sparing (kr/mnd), men bare der visjonene faktisk peker dit. Etter HVER respons der mål er tema, list gjeldende forslag mellom markørene <langtidsmål> og </langtidsmål>, én per linje på formen «Tittel: verdi enhet innen ÅÅÅÅ»:',
+							'<langtidsmål>',
+							'Vekt: 80 kg innen 2031',
+							'10 km: 50 min innen 2029',
+							'Sparing: 8000 kr/mnd innen 2027',
+							'</langtidsmål>',
+							'Brukeren kan justere i chat — hold listen oppdatert. Ved levering opprettes målene automatisk og vises under visjonene på Retning-fanen med målt fremdrift.',
+							'',
 							'La brukeren svare og grav videre der de vil. Når samtalen ebber ut, si at retningen lagres når de leverer — og at den heretter blir målestokken resten av Resonans holder hverdagen opp mot.',
 							'',
 							'Ikke bruk <status>-markører i dette steget. Norsk. Tone: varm og skarp — du tør å si det de andre ikke sier fordi du er på brukerens side. Konfrontasjonen kommer fra omsorg, ikke distanse.'
@@ -1847,7 +1855,10 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 					? parseStatusBlock(data.ett_aar_lastMessage)
 					: '';
 			const speilMessage = typeof data.speil_lastMessage === 'string' ? data.speil_lastMessage : '';
-			const speil = speilMessage.replace(/<status>[\s\S]*?<\/status>/gi, '').trim();
+			const speil = speilMessage
+				.replace(/<status>[\s\S]*?<\/status>/gi, '')
+				.replace(/<langtidsmål>[\s\S]*?<\/langtidsmål>/gi, '')
+				.trim();
 			const kilde = typeof data.kilde === 'string' ? data.kilde.trim() : '';
 			if (!verdier && !tiAar && !femAar && !ettAar && !kilde) return;
 			await fetch('/api/retning/livsintervju', {
@@ -1859,6 +1870,8 @@ Språk: norsk. Tone: vennlig, kortfattet. Ikke skriv mer enn 2-3 setninger utenf
 					speil,
 					// Balanse-materialet i full, utrimmet form — lagres i originalformat
 					kilde,
+					// Speilets målbare langtidsmål — opprettes som goals med visionHorizon
+					langtidsmaal: parseLongTermGoals(speilMessage),
 					// Rå-samtalen i messages-tabellen — kobles til visjonene som kilde
 					conversationId: typeof data._conversationId === 'string' ? data._conversationId : null,
 					// «Samtalen er data»: hele chattene arkiveres som transkript

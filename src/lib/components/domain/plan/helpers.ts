@@ -153,6 +153,28 @@ export function formatMetricValue(value: number): string {
 	return `${Math.round(value * 10) / 10}`;
 }
 
+/** Sekunder → «mm:ss» (eller «t:mm:ss» over en time). Brukes for 10 km-tid. */
+export function formatSecondsAsTime(seconds: number): string {
+	const total = Math.max(0, Math.round(seconds));
+	const h = Math.floor(total / 3600);
+	const m = Math.floor((total % 3600) / 60);
+	const s = total % 60;
+	if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+	return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+/** Metrikk-bevisst visningsverdi for langtidsmål. */
+export function formatLongTermValue(metricId: string | null, value: number, unit?: string | null): string {
+	if (metricId === 'running_10k_time') return formatSecondsAsTime(value);
+	if (metricId === 'monthly_savings') {
+		// Manuelt tusenskille (vanlig mellomrom) — toLocaleString gir smalt no-break space i enkelte runtimes
+		const kr = Math.round(value).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+		return `${kr} kr`;
+	}
+	if (metricId === 'weight_change' || unit === 'kg') return `${Math.round(value * 10) / 10} kg`;
+	return `${formatMetricValue(value)}${unit ? ` ${unit}` : ''}`;
+}
+
 export function computePaceEstimate(opts: {
 	startDate: string;
 	endDate: string;

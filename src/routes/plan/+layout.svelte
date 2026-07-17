@@ -60,11 +60,26 @@
 		top: 0;
 		background: var(--bg-primary);
 		z-index: 5;
+		/* Fire faner overflower på smal viewport — scroll horisontalt uten synlig scrollbar */
+		overflow-x: auto;
+		overflow-y: hidden;
+		-webkit-overflow-scrolling: touch;
+		scrollbar-width: none;
+	}
+	.plan-tabs::-webkit-scrollbar {
+		display: none;
+	}
+	@media (max-width: 760px) {
+		.plan-tabs {
+			mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
+		}
 	}
 	.plan-tab {
 		display: inline-flex;
 		gap: 6px;
 		align-items: center;
+		flex: 0 0 auto;
+		white-space: nowrap;
 		padding: 0.55rem 0.95rem;
 		border-radius: 999px 999px 0 0;
 		font: inherit;

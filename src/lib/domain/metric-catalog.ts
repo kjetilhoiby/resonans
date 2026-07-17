@@ -2,12 +2,14 @@ export type MetricDirection = 'higher_is_better' | 'lower_is_better' | 'towards_
 
 export type MetricId =
 	| 'running_distance'
+	| 'running_10k_time'
 	| 'sleep_avg_night'
 	| 'sleep_lag'
 	| 'steps_avg_day'
 	| 'active_minutes_avg_day'
 	| 'weight_change'
-	| 'grocery_spend';
+	| 'grocery_spend'
+	| 'monthly_savings';
 
 export interface MetricDefinition {
 	id: MetricId;
@@ -30,6 +32,16 @@ export const METRIC_CATALOG: Record<MetricId, MetricDefinition> = {
 		widgetMetricType: 'distance',
 		visualizationFamily: 'trajectory',
 		supportedWindows: ['7d', '30d', '365d', 'week', 'month', 'quarter', 'year']
+	},
+	running_10k_time: {
+		id: 'running_10k_time',
+		// Beste 10 km-tid i vinduet (fra canonical_workouts.bestEfforts['10k']), sekunder
+		label: 'Beste 10 km-tid',
+		aliases: ['running_10k_time', '10k', '10 km', '10km', '10 km tid', 'mila'],
+		defaultUnit: 'sek',
+		direction: 'lower_is_better',
+		visualizationFamily: 'trajectory',
+		supportedWindows: ['30d', '365d', 'month', 'quarter', 'year']
 	},
 	sleep_avg_night: {
 		id: 'sleep_avg_night',
@@ -88,6 +100,17 @@ export const METRIC_CATALOG: Record<MetricId, MetricDefinition> = {
 		widgetMetricType: 'amount',
 		visualizationFamily: 'trajectory',
 		supportedWindows: ['7d', '30d', '365d', 'week', 'month', 'quarter', 'year']
+	},
+	monthly_savings: {
+		id: 'monthly_savings',
+		// Sum av 'sparing'-kategoriserte transaksjoner per måned (categorized_events)
+		label: 'Månedlig sparebeløp',
+		aliases: ['monthly_savings', 'sparing', 'sparebeløp', 'sparerate', 'savings'],
+		defaultUnit: 'kr',
+		direction: 'higher_is_better',
+		widgetMetricType: 'amount',
+		visualizationFamily: 'trajectory',
+		supportedWindows: ['month', 'quarter', 'year']
 	}
 };
 

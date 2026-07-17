@@ -6,6 +6,8 @@ import {
 	livskompassDoorOpeners,
 	resolveKilde,
 	segmentConversationBySteps,
+	parseLongTermGoals,
+	horizonForYear,
 	LIVSINTERVJU_STEP_PROMPTS
 } from './livsintervju';
 
@@ -136,6 +138,50 @@ describe('segmentConversationBySteps', () => {
 			{ role: 'assistant', content: 'Første ekte melding' }
 		]);
 		expect(Object.keys(segments)).toEqual(['ti_aar']);
+	});
+});
+
+describe('parseLongTermGoals', () => {
+	it('parser tittel, verdi, enhet og målår', () => {
+		const goals = parseLongTermGoals(
+			'Bra!\n<langtidsmål>\nVekt: 80 kg innen 2031\n10 km: 50 min innen 2029\nSparing: 8000 kr/mnd innen 2027\n</langtidsmål>'
+		);
+		expect(goals).toEqual([
+			{ title: 'Vekt', value: 80, unit: 'kg', year: 2031 },
+			{ title: '10 km', value: 50, unit: 'min', year: 2029 },
+			{ title: 'Sparing', value: 8000, unit: 'kr/mnd', year: 2027 }
+		]);
+	});
+
+	it('tåler linjer uten tall og uten år', () => {
+		const goals = parseLongTermGoals('<langtidsmål>\nLøpe Oslo maraton\nVekt: 80 kg\n</langtidsmål>');
+		expect(goals[0]).toEqual({ title: 'Løpe Oslo maraton', value: null, unit: null, year: null });
+		expect(goals[1]).toEqual({ title: 'Vekt', value: 80, unit: 'kg', year: null });
+	});
+
+	it('gir tom liste uten markører — løs prosa blir aldri mål', () => {
+		expect(parseLongTermGoals('Kanskje du bør veie 80 kg innen 2031?')).toEqual([]);
+	});
+
+	it('begrenser til maks 5', () => {
+		const lines = Array.from({ length: 8 }, (_, i) => `Mål ${i}: ${i} stk innen 2030`).join('\n');
+		expect(parseLongTermGoals(`<langtidsmål>\n${lines}\n</langtidsmål>`)).toHaveLength(5);
+	});
+});
+
+describe('horizonForYear', () => {
+	const naa = new Date(2026, 6, 15); // juli 2026
+
+	it('mapper målår til riktig visjonshorisont', () => {
+		expect(horizonForYear(2026, naa)).toBe('vision_yearly');
+		expect(horizonForYear(2027, naa)).toBe('vision_yearly'); // slutten av 2027 er ~17 mnd unna
+		expect(horizonForYear(2029, naa)).toBe('vision_5year');
+		expect(horizonForYear(2031, naa)).toBe('vision_5year'); // ~65 mnd
+		expect(horizonForYear(2033, naa)).toBe('vision_10year');
+	});
+
+	it('faller tilbake til fem år uten målår', () => {
+		expect(horizonForYear(null, naa)).toBe('vision_5year');
 	});
 });
 
