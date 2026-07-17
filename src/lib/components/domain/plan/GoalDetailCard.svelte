@@ -1,15 +1,17 @@
 <!--
   GoalDetailCard — Viser et enkelt mål med sammendrag (alltid synlig),
-  sensor-/vektfremdrift, og ekspanderbar detaljvisning med oppgaver,
-  trajektori-graf, metadata og handlinger.
+  sensor-/vekt-/skjermtidsfremdrift, og ekspanderbar detaljvisning med
+  oppgaver, trajektori-graf, metadata og handlinger.
 
   Props:
     goal               mål-objekt
     sensorProgress     løpedistanse-data (valgfritt)
     weightProgress     vektdata (valgfritt)
+    screenTimeEval     skjermtidsmål-evaluering (valgfritt)
     expanded           om detaljene er utfoldet
     onToggle           kalt ved klikk for å folde ut/inn
     onArchive          kalt med goalId ved arkivering
+    onComplete         kalt med goalId når et nådd mål fullføres
     onDelete           kalt med goalId og title ved sletting
 -->
 <script lang="ts">
@@ -24,17 +26,28 @@
 		getIntentEvaluationLabel,
 		getIntentFailureReasonLabel,
 		formatDate,
-		formatMetricValue
+		formatMetricValue,
+		formatMinutesShort
 	} from './helpers.js';
-	import type { GoalItem, SensorProgress, WeightProgress } from './types.js';
+	import TargetZoneBar from '$lib/components/visualizations/TargetZoneBar.svelte';
+	import {
+		isGoalExpired,
+		isRunningGoalReached,
+		isWeightGoalReached
+	} from '$lib/domain/goal-validation';
+	import { noonAxisToHHMM, type SleepGoalEval } from '$lib/domain/sleep-goals';
+	import type { GoalItem, ScreenTimeGoalEval, SensorProgress, WeightProgress } from './types.js';
 
 	interface Props {
 		goal: GoalItem;
 		sensorProgress?: SensorProgress | null;
 		weightProgress?: WeightProgress | null;
+		screenTimeEval?: ScreenTimeGoalEval | null;
+		sleepEval?: SleepGoalEval | null;
 		expanded?: boolean;
 		onToggle?: () => void;
 		onArchive?: (goalId: string) => void;
+		onComplete?: (goalId: string) => void;
 		onDelete?: (goalId: string, title: string) => void;
 	}
 
@@ -42,11 +55,22 @@
 		goal,
 		sensorProgress = null,
 		weightProgress = null,
+		screenTimeEval = null,
+		sleepEval = null,
 		expanded = false,
 		onToggle,
 		onArchive,
+		onComplete,
 		onDelete
 	}: Props = $props();
+
+	function formatSleepValue(value: number): string {
+		if (!sleepEval) return `${value}`;
+		if (sleepEval.kind === 'duration') {
+			return `${(Math.round(value * 10) / 10).toString().replace('.', ',')}t`;
+		}
+		return noonAxisToHHMM(value);
+	}
 
 	const goalProgress = $derived(calculateGoalProgress(goal));
 	const goalTrackLabel = $derived(formatGoalTrack(goal));
@@ -55,6 +79,18 @@
 	const intentFailureReason = $derived(getIntentFailureReasonLabel(goal));
 	const startDate = $derived(formatDate(goal.metadata?.startDate));
 	const endDate = $derived(formatDate(goal.metadata?.endDate));
+
+	// Livssyklus: nådd (målbar progresjon har krysset target) og utløpt frist
+	const reached = $derived(
+		goal.status === 'active' &&
+			((weightProgress
+				? isWeightGoalReached(weightProgress.startWeight, weightProgress.currentWeight, weightProgress.targetWeight)
+				: false) ||
+				(sensorProgress ? isRunningGoalReached(sensorProgress.currentKm, sensorProgress.targetKm) : false))
+	);
+	const expired = $derived(
+		goal.status === 'active' && !reached && isGoalExpired(goal.metadata?.endDate ?? goal.targetDate)
+	);
 </script>
 
 <div id={`goal-${goal.id}`} class="goal-card" class:expanded>
@@ -67,6 +103,11 @@
 		<div class="goal-summary-left">
 			<div class="goal-title-row">
 				<h2>{goal.title}</h2>
+				{#if reached}
+					<span class="goal-reached-badge">🎉 Nådd</span>
+				{:else if expired}
+					<span class="goal-expired-badge">Frist passert</span>
+				{/if}
 			</div>
 			{#if goal.category}
 				<div class="goal-category">{goal.category.icon || '📌'} {goal.category.name}</div>
@@ -107,6 +148,56 @@
 						<span class="sensor-pct">{weightProgress.pct}%</span>
 					</div>
 				</div>
+			{:else if screenTimeEval}
+				<div class="st-goal" class:over={screenTimeEval.withinTarget === false}>
+					<div class="st-goal-bar">
+						<div
+							class="st-goal-fill"
+							class:over={screenTimeEval.withinTarget === false}
+							style={`width:${Math.min(100, Math.round((screenTimeEval.pct ?? 0) * 100))}%`}
+						></div>
+					</div>
+					<div class="sensor-progress-label">
+						<span class="st-goal-current" class:over={screenTimeEval.withinTarget === false}>
+							{screenTimeEval.currentMinutes === null ? '–' : formatMinutesShort(screenTimeEval.currentMinutes)}
+						</span>
+						<span class="sensor-target">av {formatMinutesShort(screenTimeEval.targetMinutes)} · {screenTimeEval.basisLabel}</span>
+						{#if screenTimeEval.withinTarget !== null}
+							<span class="sensor-pct">{screenTimeEval.withinTarget ? '✅' : '⚠️ over'}</span>
+						{/if}
+					</div>
+				</div>
+			{:else if sleepEval}
+				<div class="sleep-goal">
+					{#if sleepEval.value !== null}
+						<TargetZoneBar
+							value={sleepEval.value}
+							domainMin={sleepEval.domainMin}
+							domainMax={sleepEval.domainMax}
+							targetMin={sleepEval.targetMin}
+							targetMax={sleepEval.targetMax}
+							mode={sleepEval.mode}
+							height={10}
+							trackColor="var(--border-color)"
+							markerColor="var(--text-primary)"
+							zoneStroke="var(--success-text)"
+							formatValue={formatSleepValue}
+							title={goal.title}
+						/>
+						<div class="sensor-progress-label">
+							<span class="sleep-current" class:off={sleepEval.withinTarget === false}>{sleepEval.currentLabel}</span>
+							<span class="sensor-target">mål {sleepEval.targetLabel} · {sleepEval.nightCount} netter</span>
+							{#if sleepEval.withinTarget !== null}
+								<span class="sensor-pct">{sleepEval.withinTarget ? '✅' : '⚠️'}</span>
+							{/if}
+						</div>
+					{:else}
+						<div class="sleep-empty">Ingen søvndata siste uke — mål {sleepEval.targetLabel}</div>
+					{/if}
+					{#if sleepEval.napCount > 0}
+						<div class="sleep-naps">💤 {sleepEval.napCount} powernap{sleepEval.napCount === 1 ? '' : 's'} siste uke</div>
+					{/if}
+				</div>
 			{:else if goal.tasks.length > 0}
 				<div class="progress-section">
 					<div class="progress-bar">
@@ -129,6 +220,12 @@
 			{/if}
 
 			<GoalTrajectorySection {sensorProgress} {weightProgress} />
+
+			{#if screenTimeEval}
+				<a class="st-goal-link" href="/skjermtid" data-track="maal:skjermtid-detaljer">
+					Se full skjermtidsoversikt →
+				</a>
+			{/if}
 
 			<div class="goal-meta-row">
 				{#if startDate && endDate}
@@ -190,6 +287,15 @@
 			{/if}
 
 			<div class="goal-actions">
+				{#if reached}
+					<button
+						class="btn-complete"
+						data-track="maal:fullfoer"
+						onclick={() => onComplete?.(goal.id)}
+					>
+						Fullfør
+					</button>
+				{/if}
 				<button
 					class="btn-archive"
 					onclick={() => onArchive?.(goal.id)}
@@ -381,6 +487,111 @@
 		margin-top: 0.4rem;
 		font-size: 0.76rem;
 		color: #ff9b9b;
+	}
+
+	.goal-reached-badge {
+		flex-shrink: 0;
+		padding: 0.25rem 0.6rem;
+		border-radius: 999px;
+		background: var(--success-bg);
+		border: 1px solid var(--success-border);
+		color: var(--success-text);
+		font-size: 0.75rem;
+		font-weight: 600;
+		white-space: nowrap;
+	}
+
+	.goal-expired-badge {
+		flex-shrink: 0;
+		padding: 0.25rem 0.6rem;
+		border-radius: 999px;
+		background: var(--warning-bg);
+		border: 1px solid var(--warning-border);
+		color: var(--warning-text);
+		font-size: 0.75rem;
+		white-space: nowrap;
+	}
+
+	/* Skjermtidsmål — samme bar-uttrykk som ScreenTimeCard (lavere er bedre) */
+	.st-goal {
+		margin-top: 0.75rem;
+	}
+
+	.st-goal-bar {
+		height: 8px;
+		background: var(--border-color);
+		border-radius: 4px;
+		overflow: hidden;
+		margin-bottom: 0.35rem;
+	}
+
+	.st-goal-fill {
+		height: 100%;
+		background: var(--success-text);
+		border-radius: 4px;
+		transition: width 0.3s ease;
+	}
+
+	.st-goal-fill.over {
+		background: var(--warning-text);
+	}
+
+	.st-goal-current {
+		font-size: 1rem;
+		font-weight: 700;
+		color: var(--success-text);
+	}
+
+	.st-goal-current.over {
+		color: var(--warning-text);
+	}
+
+	.st-goal-link {
+		display: inline-block;
+		margin: 0.75rem 0 0;
+		font-size: 0.82rem;
+		color: var(--accent-light);
+		text-decoration: none;
+	}
+
+	.st-goal-link:hover {
+		text-decoration: underline;
+	}
+
+	/* Søvnmål — TargetZoneBar trenger luft over seg (markøren stikker opp) */
+	.sleep-goal {
+		margin-top: 0.75rem;
+		padding-top: 1.5rem;
+	}
+
+	.sleep-goal :global(.zone-labels) {
+		height: 20px;
+		margin-top: 4px;
+	}
+
+	.sleep-goal :global(.zone-target-label) {
+		font-size: 0.78rem;
+	}
+
+	.sleep-current {
+		font-size: 1rem;
+		font-weight: 700;
+		color: var(--success-text);
+	}
+
+	.sleep-current.off {
+		color: var(--warning-text);
+	}
+
+	.sleep-empty {
+		font-size: 0.85rem;
+		color: var(--text-muted);
+	}
+
+	.sleep-naps {
+		margin-top: 0.4rem;
+		font-size: 0.8rem;
+		color: var(--text-tertiary);
 	}
 
 	.sensor-progress {

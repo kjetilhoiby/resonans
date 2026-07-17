@@ -6,6 +6,7 @@ import { generateWeeks, generateMonths, generateYears, generateDays, getCurrentW
 import type { WeekPeriod, MonthPeriod, YearPeriod, DayPeriod } from './time-periods';
 import { classifyEffortFamily, type EffortFamily } from '$lib/server/services/effort-service';
 import { computeSleepLag } from '$lib/server/services/sleep-lag';
+import { isNapSleepEvent } from '$lib/domain/sleep-goals';
 
 type WeeklyEffortMetric = NonNullable<NonNullable<typeof sensorAggregates.$inferSelect.metrics>['weeklyEffort']>;
 
@@ -317,7 +318,11 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 
 		const weights = events.map((e) => e.data?.weight).filter((v): v is number => v !== undefined);
 		const steps = events.map((e) => e.data?.steps).filter((v): v is number => v !== undefined);
-		const sleepDurations = events.map((e) => e.data?.sleepDuration).filter((v): v is number => v !== undefined);
+		// Powernaps (korte dagtidsøvn-events) holdes ute av nattsnittet — de trakk det ned
+		const sleepDurations = events
+			.filter((e) => e.data?.sleepDuration === undefined || !isNapSleepEvent(e))
+			.map((e) => e.data?.sleepDuration)
+			.filter((v): v is number => v !== undefined);
 		const calories = events.map((e) => e.data?.calories).filter((v): v is number => v !== undefined);
 		const distances = events.map((e) => e.data?.distance).filter((v): v is number => v !== undefined);
 		const heartRates = events.map((e) => e.data?.hr_average).filter((v): v is number => v !== undefined);
@@ -412,7 +417,11 @@ export async function aggregateMonthlyData(userId: string, months?: MonthPeriod[
 
 		const weights = events.map((e) => e.data?.weight).filter((v): v is number => v !== undefined);
 		const steps = events.map((e) => e.data?.steps).filter((v): v is number => v !== undefined);
-		const sleepDurations = events.map((e) => e.data?.sleepDuration).filter((v): v is number => v !== undefined);
+		// Powernaps (korte dagtidsøvn-events) holdes ute av nattsnittet — de trakk det ned
+		const sleepDurations = events
+			.filter((e) => e.data?.sleepDuration === undefined || !isNapSleepEvent(e))
+			.map((e) => e.data?.sleepDuration)
+			.filter((v): v is number => v !== undefined);
 		const calories = events.map((e) => e.data?.calories).filter((v): v is number => v !== undefined);
 		const distances = events.map((e) => e.data?.distance).filter((v): v is number => v !== undefined);
 		const heartRates = events.map((e) => e.data?.hr_average).filter((v): v is number => v !== undefined);
@@ -492,7 +501,11 @@ export async function aggregateYearlyData(userId: string, years?: YearPeriod[]) 
 
 		const weights = events.map((e) => e.data?.weight).filter((v): v is number => v !== undefined);
 		const steps = events.map((e) => e.data?.steps).filter((v): v is number => v !== undefined);
-		const sleepDurations = events.map((e) => e.data?.sleepDuration).filter((v): v is number => v !== undefined);
+		// Powernaps (korte dagtidsøvn-events) holdes ute av nattsnittet — de trakk det ned
+		const sleepDurations = events
+			.filter((e) => e.data?.sleepDuration === undefined || !isNapSleepEvent(e))
+			.map((e) => e.data?.sleepDuration)
+			.filter((v): v is number => v !== undefined);
 		const calories = events.map((e) => e.data?.calories).filter((v): v is number => v !== undefined);
 		const distances = events.map((e) => e.data?.distance).filter((v): v is number => v !== undefined);
 		const heartRates = events.map((e) => e.data?.hr_average).filter((v): v is number => v !== undefined);

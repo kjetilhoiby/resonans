@@ -262,6 +262,19 @@ body {
 }
 .btn-restore:hover { background: rgba(124, 142, 245, 0.15); }
 
+.btn-complete {
+	padding: 0.4rem 0.9rem;
+	border-radius: var(--radius-sm);
+	border: 1px solid var(--success-border);
+	background: var(--success-bg);
+	color: var(--success-text);
+	font: inherit;
+	font-size: 0.8rem;
+	cursor: pointer;
+	transition: background 0.15s, border-color 0.15s;
+}
+.btn-complete:hover { border-color: var(--success-text); }
+
 .btn-icon {
 	width: 32px;
 	height: 32px;
