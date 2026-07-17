@@ -635,10 +635,15 @@ const tools = [
 		function: {
 			name: 'query_reflections',
 			description:
-				"Hent brukerens lagrede refleksjoner og samtale-transkripter i FULLTEKST. Oppsummeringene i konteksten er indeks — bruk dette når du trenger brukerens egne ord: hele livsintervjuet (kind 'livsintervju_chat'), Balanse-materialet ('livsintervju_kilde' — rått kildemateriale fra tidligere dype samtaler), retningssamtalene ('retningssamtale'), selvangivelsen ('birthday_interview_chat'), eller andre refleksjoner ('day_close', 'week_review', 'month_review'). Typisk når brukeren spør «hva sa jeg egentlig om …» eller du vil sitere presist i stedet for å parafrasere.",
+				"Hent brukerens lagrede refleksjoner og samtale-transkripter i FULLTEKST. Oppsummeringene i konteksten er indeks — bruk dette når du trenger brukerens egne ord: hele livsintervjuet (kind 'livsintervju_chat'), Balanse-materialet ('livsintervju_kilde' — rått kildemateriale fra tidligere dype samtaler), retningssamtalene ('retningssamtale'), selvangivelsen ('birthday_interview_chat'), eller andre refleksjoner ('day_close', 'week_review', 'month_review'). SEMANTISK SØK: sett 'query' til et tema/spørsmål for å finne de mest relevante refleksjonene på tvers av typer — bruk dette når du ikke vet hvilken kind svaret bor i. Typisk når brukeren spør «hva sa jeg egentlig om …» eller du vil sitere presist i stedet for å parafrasere.",
 			parameters: {
 				type: 'object',
 				properties: {
+					query: {
+						type: 'string',
+						description:
+							'Semantisk søk: tema eller spørsmål («trening og motivasjon») — mest relevante først, på tvers av typer. Utelat for nyeste.'
+					},
 					kind: {
 						type: 'string',
 						description:

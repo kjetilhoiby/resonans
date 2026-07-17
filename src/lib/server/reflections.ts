@@ -1,6 +1,7 @@
 import { db } from '$lib/db';
 import { reflections } from '$lib/db/schema';
 import { and, desc, eq, gte } from 'drizzle-orm';
+import { generateEmbedding } from '$lib/server/services/embedding-service';
 
 export type ReflectionKind =
 	| 'day_close'
@@ -44,6 +45,8 @@ export interface CreateReflectionParams {
 export async function createReflection(params: CreateReflectionParams) {
 	const trimmed = params.content?.trim();
 	if (!trimmed) return null;
+	// Embedding er berikelse — null ved feil, refleksjonen lagres uansett
+	const embedding = await generateEmbedding(trimmed);
 	const [row] = await db
 		.insert(reflections)
 		.values({
@@ -54,7 +57,8 @@ export async function createReflection(params: CreateReflectionParams) {
 			periodKey: params.periodKey ?? null,
 			content: trimmed,
 			scores: params.scores,
-			flowRunId: params.flowRunId
+			flowRunId: params.flowRunId,
+			embedding
 		})
 		.returning();
 	return row ?? null;
@@ -78,9 +82,11 @@ export async function upsertReflectionForPeriod(params: CreateReflectionParams &
 	});
 
 	if (existing) {
+		// Nytt innhold → ny embedding, ellers blir likheten mot gammel tekst stående
+		const embedding = await generateEmbedding(trimmed);
 		const [updated] = await db
 			.update(reflections)
-			.set({ content: trimmed, scores: params.scores, themeId: params.themeId ?? null })
+			.set({ content: trimmed, scores: params.scores, themeId: params.themeId ?? null, embedding })
 			.where(eq(reflections.id, existing.id))
 			.returning();
 		return updated ?? null;

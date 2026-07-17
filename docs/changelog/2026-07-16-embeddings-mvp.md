@@ -31,10 +31,20 @@ og `cosineDistance`, OpenAI-nøkkelen finnes.
   idempotent, batcher 50 om gangen, kun `embedding IS NULL`. Kjøres manuelt (kaller
   OpenAI, hører ikke hjemme i deploy-pipelinen).
 
-### Steg 2 (senere)
-Semantisk søk i `query_reflections`: embed spørring → nærmeste refleksjoner på tvers av
-kinds («hva har jeg sagt om X» uten å vite om det bor i livsintervju, retningssamtale
-eller dagbok). Krever embedding-generering i `createReflection` + backfill av reflections.
+### Steg 2: semantisk søk i refleksjoner (ferdig samme dag)
+- `createReflection` genererer embedding ved skriving; `upsertReflectionForPeriod`
+  regenererer ved innholds-oppdatering (ellers ville likheten pekt på gammel tekst).
+- `query_reflections` fikk `query`-parameter: embed spørringen → cosine-rangerte
+  refleksjoner på tvers av kinds, med `similarity`-score i svaret og kind/periodKey som
+  valgfrie filtre. ILIKE-fallback ved embedding-feil (`searchMode` i svaret viser hvilken
+  vei som ble brukt). Verktøybeskrivelsene (fil + chat-rutens JSON-schema) oppdatert.
+- Backfill-scriptet dekker nå både `memories` og `reflections`.
+
+### Retning inn i Plan-flaten
+Retning/drømmer-siden flyttet fra egen rute til fane i `/plan` (Mål | Oppgaver | Rutiner |
+Retning 🧭) — retningen hører hjemme ved siden av det den skal måles mot. `/drommer`
+redirecter til `/plan/drommer` (samme mønster som `/maal`), så hendelseskort og gamle
+lenker virker. Side-chrome (AppPage/PageHeader) eies nå av plan-layouten.
 
 ## Beslutninger
 - **Terskel 0.6** for «samme sak» på korte norske setninger — omformuleringer lander
