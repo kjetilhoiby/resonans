@@ -3,7 +3,8 @@ import { createReflection, upsertReflectionForPeriod } from '$lib/server/reflect
 import { DreamService } from '$lib/server/services/dream-service';
 import { MemoryService } from '$lib/server/services/memory-service';
 import { addCanonicalEventMessage, getConversationByIdForUser } from '$lib/server/conversations';
-import { buildLivsintervjuMarkdown, parseValueLines } from '$lib/flows/livsintervju';
+import { buildLivsintervjuMarkdown, parseValueLines, type LongTermGoal } from '$lib/flows/livsintervju';
+import { createLongTermGoal } from '$lib/server/retning-goals';
 import type { RequestHandler } from './$types';
 
 /**
@@ -131,6 +132,20 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		if (created) valuesCreated++;
 	}
 
+	// Speilets målbare langtidsmål → goals med visionHorizon (dedup i helperen)
+	const rawLongTermGoals = Array.isArray(body?.langtidsmaal)
+		? (body.langtidsmaal as LongTermGoal[])
+		: [];
+	let goalsCreated = 0;
+	for (const goal of rawLongTermGoals.slice(0, 5)) {
+		try {
+			const created = await createLongTermGoal(userId, goal);
+			if (created) goalsCreated++;
+		} catch (err) {
+			console.error('[retning] langtidsmål feilet:', err);
+		}
+	}
+
 	// Fire-and-forget: hendelseskort i dagboken
 	void addCanonicalEventMessage(userId, {
 		kind: 'flow',
@@ -144,6 +159,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 		id: reflection?.id ?? null,
 		periodKey,
 		savedVisions,
-		valuesCreated
+		valuesCreated,
+		goalsCreated
 	});
 };

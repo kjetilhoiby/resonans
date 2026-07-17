@@ -74,6 +74,22 @@ export const METRIC_VISUALIZATION_PRESETS: Record<MetricId, MetricVisualizationP
 		thresholdMode: 'at_most',
 		preferredComparators: ['budget_cap', 'expected_spend_by_now'],
 		notes: 'Kumulativt forbruk mot budsjett eller kostnadstak.'
+	},
+	running_10k_time: {
+		metricId: 'running_10k_time',
+		summary: 'timeline_marker',
+		detail: 'trajectory',
+		thresholdMode: 'at_most',
+		preferredComparators: ['target_time', 'best_effort_window'],
+		notes: 'Beste 10 km-tid i vinduet mot måltid; lavere er bedre.'
+	},
+	monthly_savings: {
+		metricId: 'monthly_savings',
+		summary: 'progress_bar',
+		detail: 'comparison_trend',
+		thresholdMode: 'at_least',
+		preferredComparators: ['target_monthly', 'rolling_average'],
+		notes: 'Månedlig sparebeløp mot mål; 3-måneders snitt som sammenligning.'
 	}
 };
 

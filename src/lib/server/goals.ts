@@ -25,6 +25,8 @@ export interface GoalCreationParams {
 	startDate?: string; // For date-bounded goals (running) and baseline tracking (weight)
 	endDate?: string;   // For explicit period end (running goals)
 	startValue?: number; // Baseline value for trajectory goals (weight)
+	/** Kobler målet til en brukerforfattet visjon (Retning-fanen). */
+	visionHorizon?: 'vision_yearly' | 'vision_5year' | 'vision_10year';
 }
 
 export interface TaskCreationParams {
@@ -153,6 +155,7 @@ export async function createGoal(params: GoalCreationParams) {
 	// Build health-aware metadata
 	const metadata = {
 		metricId: resolvedMetricId,
+		...(params.visionHorizon ? { visionHorizon: params.visionHorizon } : {}),
 		startDate: params.startDate || null,
 		endDate: params.endDate || null,
 		startValue: typeof params.startValue === 'number' && Number.isFinite(params.startValue) ? params.startValue : null,

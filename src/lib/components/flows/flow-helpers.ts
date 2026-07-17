@@ -35,6 +35,8 @@ export function parseChatMessage(raw: string): ParsedChatMessage {
 	text = text
 		.replace(/<status>[\s\S]*?<\/status>/gi, '')
 		.replace(/<bursdagsmål>[\s\S]*?<\/bursdagsmål>/gi, '')
+		.replace(/<langtidsmål>[\s\S]*?<\/langtidsmål>/gi, '')
+		.replace(/<visjon>[\s\S]*?<\/visjon>/gi, '')
 		.trim();
 
 	// Reformater <oppgaver>...</oppgaver>-blokker som bullet-liste for visning.

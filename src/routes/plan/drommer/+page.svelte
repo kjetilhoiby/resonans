@@ -48,6 +48,64 @@
 		}))
 	);
 	const hasRetning = $derived(data.authored.length > 0);
+	const maalPerHorisont = $derived.by(() => {
+		const map = new Map<string, typeof data.langtidsmaal>();
+		for (const maal of data.langtidsmaal) {
+			const list = map.get(maal.horizon) ?? [];
+			list.push(maal);
+			map.set(maal.horizon, list);
+		}
+		return map;
+	});
+
+	// ── Manuelt målbart langtidsmål ───────────────────────────────────────
+	const MAAL_PRESETS = [
+		{ id: 'vekt', label: 'Vekt (kg)', title: 'Vekt', unit: 'kg' },
+		{ id: '10k', label: '10 km-tid (min)', title: '10 km', unit: 'min' },
+		{ id: 'sparing', label: 'Sparing (kr/mnd)', title: 'Sparing', unit: 'kr/mnd' },
+		{ id: 'annet', label: 'Annet', title: '', unit: '' }
+	];
+	let nyttMaalOpen = $state(false);
+	let maalPreset = $state('vekt');
+	let maalTittel = $state('Vekt');
+	let maalVerdi = $state('');
+	let maalAar = $state(String(new Date().getFullYear() + 5));
+
+	function velgPreset(id: string) {
+		maalPreset = id;
+		const preset = MAAL_PRESETS.find((p) => p.id === id);
+		if (preset && preset.title) maalTittel = preset.title;
+		if (id === 'annet') maalTittel = '';
+	}
+
+	async function lagreNyttMaal() {
+		const verdi = parseFloat(maalVerdi.replace(',', '.'));
+		const aar = parseInt(maalAar, 10);
+		if (!maalTittel.trim() || !Number.isFinite(verdi)) return;
+		busy = 'nytt-maal';
+		try {
+			const preset = MAAL_PRESETS.find((p) => p.id === maalPreset);
+			const res = await fetch('/api/retning/goal', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					title: maalTittel.trim(),
+					value: verdi,
+					unit: preset?.unit || null,
+					year: Number.isFinite(aar) ? aar : null
+				})
+			});
+			if (!res.ok) throw new Error(`Lagring feilet: ${res.status}`);
+			nyttMaalOpen = false;
+			maalVerdi = '';
+			await invalidateAll();
+		} catch (err) {
+			console.error(err);
+			alert('Kunne ikke lagre målet. Sjekk konsollen.');
+		} finally {
+			busy = null;
+		}
+	}
 	// Rå-samtalen bak retningen — første visjon med kildekobling peker på intervjusamtalen
 	const intervjuSamtaleId = $derived(
 		data.authored.flatMap((v) => v.conversationIds ?? [])[0] ?? null
@@ -179,9 +237,32 @@
 					? 'Dine egne ord om hvem du vil være. Resten av Resonans holder hverdagen opp mot dette.'
 					: 'Ingen retning ennå. Livsintervjuet er en dyp samtale om hvem du vil være om ett, fem og ti år.'}
 			</p>
-			<button class="btn-primary" data-track="retning:start-livsintervju" onclick={() => void openLivsintervju()}>
-				{hasRetning ? '🧭 Oppdater retningen' : '🧭 Start livsintervjuet'}
-			</button>
+			<div class="retning-cta">
+				<button class="btn-primary" data-track="retning:start-livsintervju" onclick={() => void openLivsintervju()}>
+					{hasRetning ? '🧭 Oppdater retningen' : '🧭 Start livsintervjuet'}
+				</button>
+				<button class="btn-secondary" data-track="retning:nytt-maalbart-maal" onclick={() => { nyttMaalOpen = !nyttMaalOpen; }}>
+					➕ Målbart mål
+				</button>
+			</div>
+
+			{#if nyttMaalOpen}
+				<div class="nytt-maal">
+					<select data-track="retning:maal-type" value={maalPreset} onchange={(e) => velgPreset(e.currentTarget.value)}>
+						{#each MAAL_PRESETS as preset (preset.id)}
+							<option value={preset.id}>{preset.label}</option>
+						{/each}
+					</select>
+					{#if maalPreset === 'annet'}
+						<input type="text" placeholder="Tittel" data-track="retning:maal-tittel" bind:value={maalTittel} />
+					{/if}
+					<input type="number" placeholder="Målverdi" data-track="retning:maal-verdi" bind:value={maalVerdi} />
+					<input type="number" placeholder="Målår" data-track="retning:maal-aar" bind:value={maalAar} />
+					<button class="btn-secondary" data-track="retning:lagre-maal" onclick={() => void lagreNyttMaal()} disabled={busy === 'nytt-maal'}>
+						{busy === 'nytt-maal' ? 'Lagrer …' : 'Lagre'}
+					</button>
+				</div>
+			{/if}
 		</div>
 
 		<div class="hero-grid">
@@ -217,6 +298,23 @@
 						<p class="meta">Sist revidert {new Date(vision.createdAt).toLocaleDateString('nb-NO')}</p>
 					{:else}
 						<p class="empty">Ikke formulert ennå — kommer fra livsintervjuet.</p>
+					{/if}
+
+					{#if (maalPerHorisont.get(kind) ?? []).length > 0}
+						<ul class="maal-liste">
+							{#each maalPerHorisont.get(kind) ?? [] as maal (maal.id)}
+								<li class="maal-rad">
+									<span class="maal-tittel">{maal.title}</span>
+									<span class="maal-verdi">
+										{#if maal.currentLabel}{maal.currentLabel} → {/if}{maal.targetLabel ?? ''}
+										{#if maal.targetYear}<span class="maal-aar">innen {maal.targetYear}</span>{/if}
+									</span>
+									{#if maal.pct !== null}
+										<span class="maal-pct">{maal.pct}%</span>
+									{/if}
+								</li>
+							{/each}
+						</ul>
 					{/if}
 				</article>
 			{/each}
@@ -416,6 +514,71 @@
 		align-items: flex-start;
 	}
 
+	.retning-cta {
+		display: flex;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+	}
+
+	.nytt-maal {
+		display: flex;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+		align-items: center;
+	}
+
+	.nytt-maal select,
+	.nytt-maal input {
+		background: var(--bg-input);
+		border: 1px solid var(--border-color);
+		border-radius: var(--radius-sm);
+		color: var(--text-primary);
+		padding: 0.45rem 0.6rem;
+		font: inherit;
+		font-size: 0.875rem;
+	}
+
+	.nytt-maal input[type='number'] {
+		width: 7rem;
+	}
+
+	.maal-liste {
+		list-style: none;
+		margin: 0.25rem 0 0;
+		padding: 0.5rem 0 0;
+		border-top: 1px solid var(--border-subtle);
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+	}
+
+	.maal-rad {
+		display: flex;
+		gap: 0.5rem;
+		align-items: baseline;
+		font-size: 0.83rem;
+	}
+
+	.maal-tittel {
+		color: var(--text-secondary);
+		flex: 1;
+	}
+
+	.maal-verdi {
+		color: var(--text-primary);
+		white-space: nowrap;
+	}
+
+	.maal-aar {
+		color: var(--text-tertiary);
+		margin-left: 0.3rem;
+	}
+
+	.maal-pct {
+		color: var(--accent-light);
+		font-weight: 600;
+	}
+
 	.hero-grid {
 		display: grid;
 		grid-template-columns: 1fr;
@@ -429,47 +592,29 @@
 	}
 
 	.dream.hero {
-		border-left: 4px solid #22d3ee;
+		border-left: 4px solid var(--accent-primary);
 	}
 
 	.dream.hero.empty-card {
-		border-left-color: var(--border, #444);
+		border-left-color: var(--border-color);
 		opacity: 0.75;
 	}
 
 	.meta {
 		margin: 0;
 		font-size: 0.75rem;
-		color: var(--text-muted, #888);
+		color: var(--text-tertiary);
 	}
 
-	.btn-primary {
-		padding: 0.6rem 1.1rem;
-		border: none;
-		border-radius: 0.5rem;
-		background: #22d3ee;
-		color: #06282e;
-		font-weight: 600;
-		cursor: pointer;
-		font-size: 0.9rem;
-	}
-
-	.btn-ghost {
-		padding: 0.25rem 0.5rem;
-		border: none;
-		border-radius: 0.5rem;
-		background: transparent;
-		cursor: pointer;
-		font-size: 0.875rem;
-	}
+	/* .btn-primary / .btn-secondary / .btn-ghost kommer fra app.css — ingen lokale skygger */
 
 	.edit-area {
 		width: 100%;
 		box-sizing: border-box;
-		border: 1px solid var(--border, #444);
-		border-radius: 0.5rem;
-		background: var(--surface-2, rgba(255, 255, 255, 0.04));
-		color: inherit;
+		border: 1px solid var(--border-color);
+		border-radius: var(--radius-sm);
+		background: var(--bg-input);
+		color: var(--text-primary);
 		padding: 0.5rem;
 		font: inherit;
 		line-height: 1.5;
@@ -501,6 +646,7 @@
 		display: inline-block;
 		margin: 0.25rem 0 0.5rem;
 		font-size: 0.875rem;
+		color: var(--accent-light);
 	}
 
 	.transkript-tekst {
@@ -508,8 +654,8 @@
 		font: inherit;
 		font-size: 0.875rem;
 		line-height: 1.6;
-		color: var(--text-muted, #aaa);
-		border-left: 3px solid var(--border, #444);
+		color: var(--text-secondary);
+		border-left: 3px solid var(--border-color);
 		padding-left: 0.75rem;
 		margin: 0;
 		max-height: 60vh;
@@ -553,31 +699,31 @@
 
 	.hint {
 		margin: 0;
-		color: var(--text-muted, #888);
+		color: var(--text-secondary);
 		font-size: 0.875rem;
 	}
 
 	.empty {
 		font-style: italic;
-		color: var(--text-muted, #888);
+		color: var(--text-tertiary);
 	}
 
 	.dream {
-		border: 1px solid var(--border, #e0e0e0);
-		border-radius: 0.75rem;
-		padding: 1rem;
-		background: var(--surface, #fff);
+		border: 1px solid var(--card-border);
+		border-radius: var(--radius-lg);
+		padding: var(--card-padding);
+		background: var(--card-bg);
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
 	}
 
 	.dream.vision {
-		border-left: 4px solid #6366f1;
+		border-left: 4px solid var(--accent-light);
 	}
 
 	.dream.synthesis {
-		border-left: 4px solid #f59e0b;
+		border-left: 4px solid var(--warning-text);
 	}
 
 	.dream header {
@@ -600,27 +746,28 @@
 		font-size: 0.75rem;
 		padding: 0.125rem 0.5rem;
 		border-radius: 1rem;
-		background: var(--surface-2, #f3f4f6);
+		background: var(--card-bg-subtle);
+		color: var(--text-secondary);
 	}
 
 	.tag.llm {
-		background: #fef3c7;
-		color: #92400e;
+		background: var(--warning-bg);
+		color: var(--warning-text);
 	}
 
 	.tag.mode-least_effort {
-		background: #dbeafe;
-		color: #1e40af;
+		background: var(--info-bg);
+		color: var(--accent-light);
 	}
 
 	.tag.mode-steady {
-		background: #d1fae5;
-		color: #065f46;
+		background: var(--success-bg);
+		color: var(--success-text);
 	}
 
 	.tag.mode-push {
-		background: #fee2e2;
-		color: #991b1b;
+		background: var(--error-bg);
+		color: var(--error-text);
 	}
 
 	.summary {
@@ -631,7 +778,7 @@
 	.rationale {
 		margin: 0;
 		font-size: 0.875rem;
-		color: var(--text-muted, #666);
+		color: var(--text-secondary);
 	}
 
 	.bullets {
@@ -653,25 +800,23 @@
 		gap: 0.5rem;
 	}
 
-	.actions button,
-	.btn-secondary {
+	.actions button {
 		padding: 0.5rem 0.875rem;
-		border: 1px solid var(--border, #e0e0e0);
-		border-radius: 0.5rem;
-		background: var(--surface, #fff);
+		border: 1px solid var(--card-border);
+		border-radius: var(--radius-sm);
+		background: var(--card-bg);
+		color: var(--text-secondary);
 		cursor: pointer;
 		font-size: 0.875rem;
 	}
 
-	.actions button:disabled,
-	.btn-secondary:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
+	.actions button:hover {
+		background: var(--bg-hover);
 	}
 
-	.btn-secondary {
-		align-self: flex-start;
-		background: #fef3c7;
+	.actions button:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 
 	.historical {
@@ -685,6 +830,6 @@
 
 	.historical ul {
 		font-size: 0.875rem;
-		color: var(--text-muted, #555);
+		color: var(--text-tertiary);
 	}
 </style>

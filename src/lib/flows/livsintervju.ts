@@ -92,6 +92,63 @@ export const LIVSINTERVJU_STEP_PROMPTS: Array<{ stepId: string; prompt: string }
 	{ stepId: 'speil', prompt: 'Her er retningen min. Hold den opp mot meg — hva ser du?' }
 ];
 
+// ── Målbare langtidsmål fra speil-steget ─────────────────────────────────────
+
+export interface LongTermGoal {
+	title: string;
+	value: number | null;
+	unit: string | null;
+	/** Målåret, f.eks. 2031 */
+	year: number | null;
+}
+
+/**
+ * Hent foreslåtte målbare langtidsmål fra speil-meldingen — linjene mellom
+ * <langtidsmål>-markørene. Format «Tittel: 80 kg innen 2031»; linjer uten
+ * tall blir intensjonsmål uten verdi. Maks 5. Tom liste uten markører
+ * (bevisst strengt, så løs prosa aldri blir mål).
+ */
+export function parseLongTermGoals(message: string): LongTermGoal[] {
+	const match = message.match(/<langtidsmål>([\s\S]*?)<\/langtidsmål>/i);
+	if (!match) return [];
+	const goals: LongTermGoal[] = [];
+	for (const raw of match[1].split('\n')) {
+		const line = raw.trim().replace(/^[-*•·]\s*/, '');
+		if (!line || line.length > 160) continue;
+
+		// «innen ÅÅÅÅ» på slutten (valgfritt)
+		const yearMatch = line.match(/\binnen\s+(\d{4})\s*$/i);
+		const year = yearMatch ? parseInt(yearMatch[1], 10) : null;
+		const withoutYear = yearMatch ? line.slice(0, yearMatch.index).trim() : line;
+
+		const m = withoutYear.match(/^(.+?):\s*(\d+(?:[.,]\d+)?)\s*(.*)$/);
+		if (m) {
+			goals.push({
+				title: m[1].trim(),
+				value: parseFloat(m[2].replace(',', '.')),
+				unit: m[3].trim() || null,
+				year
+			});
+		} else {
+			goals.push({ title: withoutYear.replace(/:$/, '').trim(), value: null, unit: null, year });
+		}
+	}
+	return goals.slice(0, 5);
+}
+
+/** Utled visjonshorisont fra målår: ≤18 mnd → i år, ≤6 år → fem år, ellers ti år. */
+export function horizonForYear(
+	year: number | null,
+	now = new Date()
+): 'vision_yearly' | 'vision_5year' | 'vision_10year' {
+	if (!year) return 'vision_5year';
+	// Regn til slutten av målåret
+	const monthsAway = (year - now.getFullYear()) * 12 + (11 - now.getMonth());
+	if (monthsAway <= 18) return 'vision_yearly';
+	if (monthsAway <= 72) return 'vision_5year';
+	return 'vision_10year';
+}
+
 /** Oppslag: autoSend-prompt for et gitt steg (kaster ved ukjent steg — programmeringsfeil). */
 export function livsintervjuStepPrompt(stepId: string): string {
 	const entry = LIVSINTERVJU_STEP_PROMPTS.find((s) => s.stepId === stepId);

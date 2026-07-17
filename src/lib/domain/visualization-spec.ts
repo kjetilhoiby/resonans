@@ -182,6 +182,34 @@ export const VISUALIZATION_SPECS: Record<MetricId, VisualizationSpec> = {
 			M: { component: 'progress_bar', fallback: 'dash' },
 			L: { component: 'trajectory', fallback: 'skeleton' }
 		}
+	},
+
+	running_10k_time: {
+		metricId: 'running_10k_time',
+		semantic: 'lower',
+		timeModel: 'trajectory',
+		thresholdMode: 'at_most',
+		direction: 'lower_is_better',
+		tolerancePct: 0.05,
+		contexts: {
+			S: { component: 'timeline_marker', fallback: 'dash' },
+			M: { component: 'timeline_marker', fallback: 'dash' },
+			L: { component: 'trajectory', fallback: 'skeleton' }
+		}
+	},
+
+	monthly_savings: {
+		metricId: 'monthly_savings',
+		semantic: 'higher',
+		timeModel: 'rolling_avg',
+		thresholdMode: 'at_least',
+		direction: 'higher_is_better',
+		tolerancePct: 0.1,
+		contexts: {
+			S: { component: 'progress_bar', fallback: 'dash' },
+			M: { component: 'progress_bar', fallback: 'dash' },
+			L: { component: 'comparison_trend', fallback: 'skeleton' }
+		}
 	}
 };
 
