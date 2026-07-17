@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
-	import { AppPage, PageHeader, PageSection } from '$lib/components/ui';
 	import FlowSheet from '$lib/components/flows/FlowSheet.svelte';
 	import { FLOWS } from '$lib/flows/registry';
 	import type { FlowContext } from '$lib/flows/types';
@@ -170,11 +169,9 @@
 	}
 </script>
 
-<AppPage>
-	<PageSection>
-	<PageHeader title="Retning" subtitle="Hvem du vil være — og hva som faktisk skjedde" titleHref="/" />
+<!-- Rendres inne i /plan-layoutens faner — layouten eier header og ramme -->
 
-	<!-- SEKSJON 1: Retningen (brukerforfattet) -->
+<!-- SEKSJON 1: Retningen (brukerforfattet) -->
 	<section class="retning">
 		<div class="retning-intro">
 			<p class="hint">
@@ -393,8 +390,6 @@
 			</ul>
 		</details>
 	{/if}
-	</PageSection>
-</AppPage>
 
 {#if livsintervjuOpen}
 	<FlowSheet
@@ -410,7 +405,8 @@
 		display: flex;
 		flex-direction: column;
 		gap: 1rem;
-		padding: 1rem 1rem 0;
+		/* plan-layouten eier horisontal padding */
+		padding: 0;
 	}
 
 	.retning-intro {
@@ -489,11 +485,11 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
-		padding: 1.5rem 1rem 0;
+		padding: 1.5rem 0 0;
 	}
 
 	.transkript {
-		margin: 1rem 1rem 0;
+		margin: 1rem 0 0;
 	}
 
 	.transkript summary {
@@ -535,7 +531,7 @@
 		display: grid;
 		grid-template-columns: 1fr;
 		gap: 1.5rem;
-		padding: 1rem;
+		padding: 1rem 0;
 	}
 
 	@media (min-width: 720px) {
@@ -679,7 +675,7 @@
 	}
 
 	.historical {
-		margin: 1rem;
+		margin: 1rem 0;
 	}
 
 	.historical summary {

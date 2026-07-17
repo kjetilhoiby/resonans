@@ -40,6 +40,12 @@ og `cosineDistance`, OpenAI-nøkkelen finnes.
   vei som ble brukt). Verktøybeskrivelsene (fil + chat-rutens JSON-schema) oppdatert.
 - Backfill-scriptet dekker nå både `memories` og `reflections`.
 
+### Retning inn i Plan-flaten
+Retning/drømmer-siden flyttet fra egen rute til fane i `/plan` (Mål | Oppgaver | Rutiner |
+Retning 🧭) — retningen hører hjemme ved siden av det den skal måles mot. `/drommer`
+redirecter til `/plan/drommer` (samme mønster som `/maal`), så hendelseskort og gamle
+lenker virker. Side-chrome (AppPage/PageHeader) eies nå av plan-layouten.
+
 ## Beslutninger
 - **Terskel 0.6** for «samme sak» på korte norske setninger — omformuleringer lander
   typisk 0.6–0.8, urelaterte under 0.4. Justeres empirisk om dedup blir for grådig/slapp.
