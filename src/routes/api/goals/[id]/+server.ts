@@ -30,10 +30,17 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 		updatedAt: new Date()
 	};
 
+	const ALLOWED_STATUSES = ['active', 'completed', 'archived'];
+
 	if (title !== undefined) updateData.title = title;
 	if (description !== undefined) updateData.description = description;
 	if (targetDate !== undefined) updateData.targetDate = targetDate ? new Date(targetDate) : null;
-	if (status !== undefined) updateData.status = status;
+	if (status !== undefined) {
+		if (!ALLOWED_STATUSES.includes(status)) {
+			return json({ error: `Ugyldig status: ${status}` }, { status: 400 });
+		}
+		updateData.status = status;
+	}
 	if (metadata !== undefined) updateData.metadata = metadata;
 	if (themeId !== undefined) updateData.themeId = typeof themeId === 'string' && themeId.length > 0 ? themeId : null;
 

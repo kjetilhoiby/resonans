@@ -84,6 +84,16 @@ export type WeightProgress = {
 	pct: number;
 };
 
+/** Serialisert skjermtidsmål-evaluering fra loaderen (klient-trygg — uten $lib/server-import). */
+export type ScreenTimeGoalEval = {
+	currentMinutes: number | null;
+	targetMinutes: number;
+	withinTarget: boolean | null;
+	pct: number | null;
+	deltaMinutes: number | null;
+	basisLabel: string;
+};
+
 export type PaceEstimate = {
 	diffLabel: string;
 	diffTone: 'ahead' | 'behind' | 'neutral';

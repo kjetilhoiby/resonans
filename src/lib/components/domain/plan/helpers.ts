@@ -163,6 +163,16 @@ export function formatSecondsAsTime(seconds: number): string {
 	return `${m}:${String(s).padStart(2, '0')}`;
 }
 
+/** Minutter → «2t 15m» (samme format som skjermtid-kortet, klient-trygg). */
+export function formatMinutesShort(min: number | null | undefined): string {
+	if (typeof min !== 'number' || !Number.isFinite(min) || min <= 0) return '0m';
+	const h = Math.floor(min / 60);
+	const m = Math.round(min % 60);
+	if (h <= 0) return `${m}m`;
+	if (m <= 0) return `${h}t`;
+	return `${h}t ${m}m`;
+}
+
 /** Metrikk-bevisst visningsverdi for langtidsmål. */
 export function formatLongTermValue(metricId: string | null, value: number, unit?: string | null): string {
 	if (metricId === 'running_10k_time') return formatSecondsAsTime(value);

@@ -12,8 +12,8 @@
  */
 
 import { db } from '$lib/db';
-import { goals } from '$lib/db/schema';
-import { and, eq } from 'drizzle-orm';
+import { goals, sensorAggregates } from '$lib/db/schema';
+import { and, desc, eq } from 'drizzle-orm';
 import { formatScreenTime, type ScreenTimeCategories } from './screen-time';
 
 export type ScreenTimeGoalKind = 'total' | 'social' | 'window';
@@ -57,6 +57,34 @@ export interface ScreenTimeGoalEvaluation extends ScreenTimeGoalRecord {
 	prevMinutes: number | null;
 	deltaMinutes: number | null; // current - prev (negativ = bedre)
 	basisLabel: string;
+}
+
+/** Les skjermtid-metrikken ut av et sensor_aggregates-radobjekt (uke-aggregat). */
+export function screenTimeMetricFromAggregate(
+	row: { metrics: unknown } | undefined | null
+): ScreenTimeMetric | null {
+	const m = (row?.metrics as Record<string, unknown> | undefined)?.screenTime as
+		| ScreenTimeMetric
+		| undefined;
+	return m ?? null;
+}
+
+/**
+ * Nyeste uke med skjermtidsdata + uka før — grunnlaget for målevaluering
+ * utenfor /skjermtid-siden (f.eks. Mål-fanen).
+ */
+export async function getLatestScreenTimeWeekMetrics(
+	userId: string
+): Promise<{ thisWeek: ScreenTimeMetric | null; prevWeek: ScreenTimeMetric | null }> {
+	const rows = await db.query.sensorAggregates.findMany({
+		where: and(eq(sensorAggregates.userId, userId), eq(sensorAggregates.period, 'week')),
+		orderBy: [desc(sensorAggregates.startDate)],
+		limit: 8
+	});
+	const withMetric = rows
+		.map((row) => screenTimeMetricFromAggregate(row))
+		.filter((m): m is ScreenTimeMetric => m !== null);
+	return { thisWeek: withMetric[0] ?? null, prevWeek: withMetric[1] ?? null };
 }
 
 function sumWindow(byHour: number[] | undefined, fromHour: number, toHour: number): number {
@@ -133,7 +161,7 @@ export function summarizeGoalEvaluation(e: ScreenTimeGoalEvaluation): string {
 
 /* ── Persistens (goals-tabellen) ─────────────────────────── */
 
-function readGoalMetadata(metadata: unknown): ScreenTimeGoal | null {
+export function readScreenTimeGoalMetadata(metadata: unknown): ScreenTimeGoal | null {
 	if (!metadata || typeof metadata !== 'object') return null;
 	const stg = (metadata as Record<string, unknown>).screenTimeGoal;
 	if (!stg || typeof stg !== 'object') return null;
@@ -156,7 +184,7 @@ export async function listScreenTimeGoals(userId: string): Promise<ScreenTimeGoa
 	});
 	const out: ScreenTimeGoalRecord[] = [];
 	for (const row of rows) {
-		const goal = readGoalMetadata(row.metadata);
+		const goal = readScreenTimeGoalMetadata(row.metadata);
 		if (!goal) continue;
 		out.push({ id: row.id, title: row.title, description: row.description, goal });
 	}
@@ -198,7 +226,7 @@ export async function deleteScreenTimeGoal(userId: string, goalId: string): Prom
 	const existing = await db.query.goals.findFirst({
 		where: and(eq(goals.id, goalId), eq(goals.userId, userId))
 	});
-	if (!existing || !readGoalMetadata(existing.metadata)) return false;
+	if (!existing || !readScreenTimeGoalMetadata(existing.metadata)) return false;
 	await db
 		.update(goals)
 		.set({ status: 'archived', updatedAt: new Date() })

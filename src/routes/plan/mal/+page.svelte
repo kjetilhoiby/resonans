@@ -8,13 +8,17 @@
 		computePaceEstimate,
 		formatMetricValue
 	} from '$lib/components/domain/plan/helpers.js';
-	import type { GoalItem, SensorProgress, WeightProgress } from '$lib/components/domain/plan/types.js';
+	import { goalHorizon, type GoalHorizon } from '$lib/domain/goal-validation';
+	import type { SleepGoalEval } from '$lib/domain/sleep-goals';
+	import type { GoalItem, ScreenTimeGoalEval, SensorProgress, WeightProgress } from '$lib/components/domain/plan/types.js';
 
 	interface Props {
 		data: {
 			goals: GoalItem[];
 			sensorProgressMap: Record<string, SensorProgress>;
 			weightProgressMap: Record<string, WeightProgress>;
+			screenTimeEvalMap: Record<string, ScreenTimeGoalEval>;
+			sleepEvalMap: Record<string, SleepGoalEval>;
 		};
 	}
 
@@ -24,9 +28,46 @@
 	let assessment = $state<string | null>(null);
 	let assessmentLoading = $state(false);
 	let archivedExpanded = $state(false);
+	let completedExpanded = $state(false);
+	let unmeasuredExpanded = $state(false);
+	let horizonFilter = $state<GoalHorizon | 'alle'>('kort');
 
-	const activeGoals = $derived(data.goals.filter((g) => g.status !== 'archived'));
+	const HORIZON_OPTIONS: Array<{ value: GoalHorizon | 'alle'; label: string }> = [
+		{ value: 'kort', label: 'Neste tre måneder' },
+		{ value: 'lang', label: 'På lang sikt' },
+		{ value: 'alle', label: 'Alle' }
+	];
+
+	const activeGoals = $derived(data.goals.filter((g) => g.status !== 'archived' && g.status !== 'completed'));
+	const completedGoals = $derived(data.goals.filter((g) => g.status === 'completed'));
 	const archivedGoals = $derived(data.goals.filter((g) => g.status === 'archived'));
+
+	function horizonOf(goal: GoalItem): GoalHorizon {
+		return goalHorizon(goal.metadata?.endDate ?? goal.targetDate);
+	}
+
+	function hasMeasurement(goal: GoalItem): boolean {
+		return Boolean(
+			data.sensorProgressMap[goal.id] ||
+				data.weightProgressMap[goal.id] ||
+				data.screenTimeEvalMap[goal.id] ||
+				data.sleepEvalMap[goal.id]
+		);
+	}
+
+	const horizonGoals = $derived(
+		horizonFilter === 'alle' ? activeGoals : activeGoals.filter((g) => horizonOf(g) === horizonFilter)
+	);
+
+	// Sortering innenfor filteret: målbar fremdrift først, så oppgavemål.
+	// Intensjonsmål uten måling havner i egen kompakt «Uten måling»-gruppe.
+	const mainGoals = $derived([
+		...horizonGoals.filter(hasMeasurement),
+		...horizonGoals.filter((g) => !hasMeasurement(g) && g.tasks.length > 0)
+	]);
+	const unmeasuredGoals = $derived(
+		horizonGoals.filter((g) => !hasMeasurement(g) && g.tasks.length === 0)
+	);
 
 	onMount(() => {
 		const params = new URLSearchParams(window.location.search);
@@ -158,6 +199,25 @@
 		}
 	}
 
+	async function completeGoal(goalId: string) {
+		try {
+			const response = await fetch(`/api/goals/${goalId}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ status: 'completed' })
+			});
+			const result = await response.json();
+			if (!response.ok) {
+				throw new Error(result.error || 'Kunne ikke fullføre målet');
+			}
+			data.goals = data.goals.map((g) => g.id === goalId ? { ...g, status: 'completed' } : g);
+			expandedGoals = new Set([...expandedGoals].filter((id) => id !== goalId));
+			completedExpanded = true;
+		} catch (error) {
+			alert(`Feil ved fullføring: ${error instanceof Error ? error.message : 'Ukjent feil'}`);
+		}
+	}
+
 	async function unarchiveGoal(goalId: string) {
 		try {
 			const response = await fetch(`/api/goals/${goalId}`, {
@@ -184,26 +244,113 @@
 	{/if}
 
 	<main class="content">
-		{#if activeGoals.length === 0 && archivedGoals.length === 0}
+		{#if activeGoals.length === 0 && completedGoals.length === 0 && archivedGoals.length === 0}
 			<div class="empty-state">
 				<div class="empty-icon"><Icon name="goals" size={48} /></div>
 				<p>Ingen mål ennå</p>
 				<a href="/" class="btn-primary">Start i chatten</a>
 			</div>
 		{:else}
-			<div class="goals-list">
-				{#each activeGoals as goal}
-					<GoalDetailCard
-						{goal}
-						sensorProgress={data.sensorProgressMap[goal.id]}
-						weightProgress={data.weightProgressMap[goal.id]}
-						expanded={expandedGoals.has(goal.id)}
-						onToggle={() => toggleGoal(goal.id)}
-						onArchive={archiveGoal}
-						onDelete={deleteGoal}
-					/>
+			<div class="horizon-filter" role="group" aria-label="Tidshorisont">
+				{#each HORIZON_OPTIONS as opt}
+					<button
+						class="btn-chip"
+						class:active={horizonFilter === opt.value}
+						data-track="maal:horisont-filter"
+						aria-pressed={horizonFilter === opt.value}
+						onclick={() => (horizonFilter = opt.value)}
+					>
+						{opt.label}
+					</button>
 				{/each}
 			</div>
+
+			{#if mainGoals.length === 0 && unmeasuredGoals.length === 0}
+				<p class="horizon-empty">
+					{horizonFilter === 'lang'
+						? 'Ingen mål på lang sikt ennå.'
+						: horizonFilter === 'kort'
+							? 'Ingen mål de neste tre månedene.'
+							: 'Ingen aktive mål.'}
+				</p>
+			{:else}
+				<div class="goals-list">
+					{#each mainGoals as goal}
+						<GoalDetailCard
+							{goal}
+							sensorProgress={data.sensorProgressMap[goal.id]}
+							weightProgress={data.weightProgressMap[goal.id]}
+							screenTimeEval={data.screenTimeEvalMap[goal.id]}
+							sleepEval={data.sleepEvalMap[goal.id]}
+							expanded={expandedGoals.has(goal.id)}
+							onToggle={() => toggleGoal(goal.id)}
+							onArchive={archiveGoal}
+							onComplete={completeGoal}
+							onDelete={deleteGoal}
+						/>
+					{/each}
+				</div>
+			{/if}
+
+			{#if unmeasuredGoals.length > 0}
+				<div class="group-section">
+					<button class="archived-toggle" onclick={() => (unmeasuredExpanded = !unmeasuredExpanded)}>
+						<span class="archived-toggle-label">Uten måling ({unmeasuredGoals.length})</span>
+						<span class="chevron" class:open={unmeasuredExpanded}>›</span>
+					</button>
+					{#if unmeasuredExpanded}
+						<div class="compact-list">
+							{#each unmeasuredGoals as goal}
+								<div class="compact-row">
+									<div class="compact-row-main">
+										<span class="compact-title">{goal.title}</span>
+										{#if goal.category}
+											<span class="compact-category">{goal.category.icon || '📌'} {goal.category.name}</span>
+										{/if}
+									</div>
+									<button
+										class="btn-archive"
+										data-track="maal:arkiver-uten-maaling"
+										onclick={() => archiveGoal(goal.id)}
+									>
+										Arkiver
+									</button>
+								</div>
+							{/each}
+						</div>
+					{/if}
+				</div>
+			{/if}
+
+			{#if completedGoals.length > 0}
+				<div class="group-section">
+					<button class="archived-toggle" onclick={() => (completedExpanded = !completedExpanded)}>
+						<span class="archived-toggle-label">Fullførte mål ({completedGoals.length})</span>
+						<span class="chevron" class:open={completedExpanded}>›</span>
+					</button>
+					{#if completedExpanded}
+						<div class="compact-list">
+							{#each completedGoals as goal}
+								<div class="compact-row completed-row">
+									<div class="compact-row-main">
+										<span class="compact-title">🎉 {goal.title}</span>
+										{#if goal.category}
+											<span class="compact-category">{goal.category.icon || '📌'} {goal.category.name}</span>
+										{/if}
+									</div>
+									<button
+										class="btn-restore"
+										data-track="maal:gjenaapne-fullfoert"
+										onclick={() => unarchiveGoal(goal.id)}
+									>
+										Gjenåpne
+									</button>
+								</div>
+							{/each}
+						</div>
+					{/if}
+				</div>
+			{/if}
 
 			{#if archivedGoals.length > 0}
 				<div class="archived-section">
@@ -405,6 +552,64 @@
 	.goal-category {
 		font-size: 0.85rem;
 		color: var(--text-tertiary);
+	}
+
+	.horizon-filter {
+		display: flex;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+		margin-bottom: 1.25rem;
+	}
+
+	.horizon-empty {
+		color: var(--text-muted);
+		font-size: 0.9rem;
+		padding: 1.5rem 0;
+		text-align: center;
+	}
+
+	.group-section {
+		margin-top: 2rem;
+	}
+
+	.compact-list {
+		margin-top: 0.75rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.compact-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		padding: 0.65rem 1rem;
+		background: var(--bg-elevated);
+		border: 1px solid var(--border-color);
+		border-radius: var(--radius-sm);
+	}
+
+	.compact-row-main {
+		display: flex;
+		flex-direction: column;
+		gap: 0.15rem;
+		min-width: 0;
+	}
+
+	.compact-title {
+		font-size: 0.92rem;
+		font-weight: 500;
+		color: var(--text-secondary);
+	}
+
+	.completed-row .compact-title {
+		color: var(--text-primary);
+	}
+
+	.compact-category {
+		font-size: 0.78rem;
+		color: var(--text-muted);
 	}
 
 	.archived-section {

@@ -11,18 +11,13 @@ import {
 	listScreenTimeGoals,
 	evaluateScreenTimeGoal,
 	basisLabel,
-	type ScreenTimeMetric
+	screenTimeMetricFromAggregate
 } from '$lib/server/integrations/screen-time-goals';
 import {
 	buildCumulativeWeekSeries,
 	hourlyArrayFromBuckets
 } from '$lib/utils/screen-time-series';
 import { isoWeekKeyToMonday } from '$lib/server/integrations/time-periods';
-
-function metricFromAggregate(row: { metrics: unknown } | undefined | null): ScreenTimeMetric | null {
-	const m = (row?.metrics as Record<string, unknown> | undefined)?.screenTime as ScreenTimeMetric | undefined;
-	return m ?? null;
-}
 
 function toISODate(d: Date): string {
 	const y = d.getFullYear();
@@ -55,7 +50,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 			orderBy: [desc(sensorAggregates.startDate)],
 			limit: 16
 		})
-	).filter((w) => metricFromAggregate(w) !== null);
+	).filter((w) => screenTimeMetricFromAggregate(w) !== null);
 
 	const goalRecords = await listScreenTimeGoals(userId);
 	const goalsForManagement = goalRecords.map((g) => ({ id: g.id, title: g.title, basisLabel: basisLabel(g.goal) }));
@@ -119,7 +114,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 			59,
 			999
 		);
-		const metric = metricFromAggregate(agg)!;
+		const metric = screenTimeMetricFromAggregate(agg)!;
 
 		// Fast man–søn-array (7 slots), totaler fra dagsevents i ukens datointervall.
 		const dayISOs: string[] = [];
@@ -171,7 +166,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 			: [];
 
 		// Mål evaluert mot denne uka vs. uka før (neste i desc-rekkefølge).
-		const prevMetric = metricFromAggregate(weekAggs[idx + 1]);
+		const prevMetric = screenTimeMetricFromAggregate(weekAggs[idx + 1]);
 		const goals = goalRecords.map((g) => evaluateScreenTimeGoal(g, metric, prevMetric));
 
 		return {

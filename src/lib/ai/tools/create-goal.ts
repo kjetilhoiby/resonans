@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { createGoal } from '$lib/server/goals';
+import { isMetaGoalTitle } from '$lib/domain/goal-validation';
 
 /**
  * Delt AI-verktøy: opprett et nytt mål. Logikken (tidligere inline i `/api/chat`) bor nå her, så
@@ -52,6 +53,13 @@ export const createGoalTool = {
 		unit?: string;
 		durationDays?: number;
 	}) => {
+		// Hard guard — «ALDRI meta-titler»-regelen var tidligere kun prompt-tekst og lakk
+		if (isMetaGoalTitle(args.title)) {
+			return {
+				success: false as const,
+				error: `«${args.title}» er en meta-tittel, ikke et konkret livsmål. Lag et mål som beskriver hva som faktisk skal oppnås — f.eks. «Løpe 60 km i juli» eller «Redusere vekt til 85 kg» — eller dropp målet hvis det ikke finnes noe konkret.`
+			};
+		}
 		try {
 			const goal = await createGoal({
 				userId: args.userId,

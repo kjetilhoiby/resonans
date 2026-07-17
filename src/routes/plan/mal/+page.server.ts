@@ -2,13 +2,21 @@ import { db } from '$lib/db';
 import { goals } from '$lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { getRunningSummaryForRange, readWeightProgress, type WeightProgress } from '$lib/server/goal-progress';
+import {
+	evaluateScreenTimeGoal,
+	getLatestScreenTimeWeekMetrics,
+	readScreenTimeGoalMetadata
+} from '$lib/server/integrations/screen-time-goals';
+import { readSleepNights } from '$lib/server/integrations/sleep-goals';
+import { evaluateSleepGoal, readSleepGoalMetadata, type SleepGoalEval } from '$lib/domain/sleep-goals';
+import type { ScreenTimeGoalEval } from '$lib/components/domain/plan/types';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const t0 = performance.now();
 	const userId = locals.userId;
 
-	const userGoals = await db.query.goals.findMany({
+	const allGoals = await db.query.goals.findMany({
 		where: eq(goals.userId, userId),
 		with: {
 			category: true,
@@ -23,6 +31,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 		},
 		orderBy: (goals, { desc }) => [desc(goals.createdAt)]
 	});
+	// Internt maskineri («Planlegging»-målet for oppgavekobling) skal aldri vises
+	const userGoals = allGoals.filter((g) => !(g.metadata as any)?.isPlanningGoal);
 	console.log(`[perf][goals/load] user=${userId} step=goals_query ms=${(performance.now() - t0).toFixed(0)} count=${userGoals.length}`);
 
 	// For goals with running_distance metric and dates, fetch accumulated km
@@ -70,11 +80,53 @@ export const load: PageServerLoad = async ({ locals }) => {
 		if (progress) weightProgressMap[goal.id] = progress;
 	}
 
+	// Skjermtidsmål: evaluer mot nyeste uke med data (samme maskineri som /skjermtid)
+	const screenTimeGoals = userGoals
+		.map((g) => ({ row: g, stGoal: readScreenTimeGoalMetadata(g.metadata) }))
+		.filter((g): g is { row: (typeof userGoals)[number]; stGoal: NonNullable<ReturnType<typeof readScreenTimeGoalMetadata>> } => g.stGoal !== null);
+	let screenTimeEvalMap: Record<string, ScreenTimeGoalEval> = {};
+	if (screenTimeGoals.length > 0) {
+		const tSt = performance.now();
+		const { thisWeek, prevWeek } = await getLatestScreenTimeWeekMetrics(userId);
+		for (const { row: goal, stGoal } of screenTimeGoals) {
+			const evaluated = evaluateScreenTimeGoal(
+				{ id: goal.id, title: goal.title, description: goal.description, goal: stGoal },
+				thisWeek,
+				prevWeek
+			);
+			screenTimeEvalMap[goal.id] = {
+				currentMinutes: evaluated.currentMinutes,
+				targetMinutes: evaluated.targetMinutes,
+				withinTarget: evaluated.withinTarget,
+				pct: evaluated.pct,
+				deltaMinutes: evaluated.deltaMinutes,
+				basisLabel: evaluated.basisLabel
+			};
+		}
+		console.log(`[perf][goals/load] user=${userId} step=screen_time ms=${(performance.now() - tSt).toFixed(0)} goals=${screenTimeGoals.length}`);
+	}
+
+	// Søvnmål: evaluer mot netter fra siste ~7 døgn (naps skilles ut i domenelogikken)
+	const sleepGoals = userGoals
+		.map((g) => ({ row: g, sleepGoal: readSleepGoalMetadata(g.metadata) }))
+		.filter((g): g is { row: (typeof userGoals)[number]; sleepGoal: NonNullable<ReturnType<typeof readSleepGoalMetadata>> } => g.sleepGoal !== null);
+	let sleepEvalMap: Record<string, SleepGoalEval> = {};
+	if (sleepGoals.length > 0) {
+		const tSl = performance.now();
+		const nights = await readSleepNights(userId);
+		for (const { row: goal, sleepGoal } of sleepGoals) {
+			sleepEvalMap[goal.id] = evaluateSleepGoal(sleepGoal, nights);
+		}
+		console.log(`[perf][goals/load] user=${userId} step=sleep ms=${(performance.now() - tSl).toFixed(0)} goals=${sleepGoals.length} nights=${nights.length}`);
+	}
+
 	console.log(`[perf][goals/load] user=${userId} step=total ms=${(performance.now() - t0).toFixed(0)} goals=${userGoals.length}`);
 
 	return {
 		goals: userGoals,
 		sensorProgressMap,
-		weightProgressMap
+		weightProgressMap,
+		screenTimeEvalMap,
+		sleepEvalMap
 	};
 };

@@ -141,7 +141,22 @@ export const FLOWS: Record<Exclude<FlowId, 'egenfrekvens_slot'>, Flow> = {
 					}
 				]
 			}
-		]
+		],
+		// Persister målene — tidligere ble targetHours/bedtimeGoal samlet inn og kastet
+		onComplete: async (data) => {
+			const targetHours = Number(data['targetHours']);
+			const bedtimeGoal = typeof data['bedtimeGoal'] === 'string' ? data['bedtimeGoal'].trim() : '';
+			if (!Number.isFinite(targetHours) && !bedtimeGoal) return;
+
+			await fetch('/api/soevn/goals', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					...(Number.isFinite(targetHours) ? { targetHours } : {}),
+					...(bedtimeGoal ? { bedtimeGoal } : {})
+				})
+			});
+		}
 	},
 
 	health_training_onboarding: {
