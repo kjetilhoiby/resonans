@@ -5,6 +5,7 @@ import { db } from '$lib/db';
 import { checklistItems, checklists, goals, progress, tasks, themes, sensorEvents, sensors } from '$lib/db/schema';
 import { parseListRepeatCount } from '$lib/server/list-repeat-parser';
 import { getPlanArtifact, getPlanArtifactsByParent, upsertPlanArtifactField } from '$lib/server/plan-artifacts';
+import { getLivskompassGoalsForWeek } from '$lib/server/livskompass-checkin';
 import { WorkoutProjectionService } from '$lib/server/services/workout-projection-service';
 import { materializeRoutinesForDates } from '$lib/server/services/routine-service';
 import { resolveDomainFromInput, type DomainType } from '$lib/domains';
@@ -215,7 +216,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	console.log(`[perf][ukeplan/load] user=${userId} step=spond_sensor_lookup ms=${(performance.now() - tSpondSensor).toFixed(0)} found=${spondSensor ? 1 : 0}`);
 
 	const tPrefetch = performance.now();
-	const [weekChecklist, weekTasks, weekProgressRows, weekArtifact, longTermGoals, dayChecklists, dayArtifacts, previousWeekChecklist, previousWeekArtifact, previousWeekTasks, previousWeekProgressRows, travelThemes, rawSpondEvents, routinesByDate, ferieThemes] = await Promise.all([
+	const [weekChecklist, weekTasks, weekProgressRows, weekArtifact, longTermGoals, dayChecklists, dayArtifacts, previousWeekChecklist, previousWeekArtifact, previousWeekTasks, previousWeekProgressRows, travelThemes, rawSpondEvents, routinesByDate, ferieThemes, livskompassGoals] = await Promise.all([
 		db.query.checklists.findFirst({
 			where: and(eq(checklists.userId, userId), eq(checklists.context, week.contextKey)),
 			with: {
@@ -288,7 +289,9 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			  })
 			: Promise.resolve([] as Array<{ id: string; timestamp: Date; data: unknown; metadata: unknown }>),
 		materializeRoutinesForDates(userId, week.days.map(d => d.isoDate)),
-		loadFerieThemes(userId)
+		loadFerieThemes(userId),
+		// Ukas ett-poengs-mål fra livskompass-coachingen (tåler manglende events → [])
+		getLivskompassGoalsForWeek(userId, week.dashedKey).catch(() => [])
 	]);
 	console.log(
 		`[perf][ukeplan/load] user=${userId} step=prefetch_bundle ms=${(performance.now() - tPrefetch).toFixed(0)} weekTasks=${weekTasks.length} weekProgress=${weekProgressRows.length} longTermGoals=${longTermGoals.length} dayChecklists=${dayChecklists.length} dayArtifacts=${dayArtifacts.length} prevWeekTasks=${previousWeekTasks.length} prevWeekProgress=${previousWeekProgressRows.length} spondEvents=${rawSpondEvents.length}`
@@ -652,6 +655,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		),
 		dayNotes: dayNoteMap,
 		dayHeadlines: dayHeadlineMap,
+		livskompassGoals,
 		activeTrips,
 		activeFerie,
 		spondEventsByDay,

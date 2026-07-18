@@ -132,6 +132,11 @@ dimensjon, ingen persistert intensjon, og neste innsjekk visste ingenting om må
   (✓/·-liste). Coaching-prompt og seed får mål-utfallet (`evaluateWeekGoals`/`describeGoalOutcome`),
   og prompten instruerer modellen om å tagge nye tiltak med dimensjon.
 - **Ukeplan/hjem:** `ChecklistItemRow` viser 🧭 på punkter med `source: 'livskompass'`.
+- **Mål-stripe i ukeplanen:** `LivskompassGoalStrip` over ukelista viser ukas kompass-mål
+  («🧭 Ukas kompass-mål: Egen tid 2 → 3 · tiltak 1/2») med dimensjonsfarge og live tiltakstelling
+  fra klient-staten (`livskompassGoalViews` i `week-tasks-logic.ts`). Målene lastes i
+  `+page.server.ts` via `getLivskompassGoalsForWeek` for den viste uka (også historiske uker).
+  Rendrer ingenting uten mål → ingen visuell baseline-churn.
 - Drive-by: sensor-config `sliderRange` rettet fra `'1_5'` til `'1_10'` (stalt etter fase 6).
 
 ## Beslutninger

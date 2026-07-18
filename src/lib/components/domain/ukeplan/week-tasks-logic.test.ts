@@ -6,7 +6,8 @@ import {
 	formatStructuredTaskMeta,
 	getTaskIntentBadge,
 	getTaskIntentFailureReasonLabel,
-	getTaskEvaluationLabel
+	getTaskEvaluationLabel,
+	livskompassGoalViews
 } from './week-tasks-logic';
 import type { WeekChecklist, WeekTask } from './types';
 
@@ -162,5 +163,47 @@ describe('getTaskEvaluationLabel', () => {
 		expect(getTaskEvaluationLabel(mkTask())).toBeNull();
 		expect(getTaskEvaluationLabel(mkTask({ metadata: { intentEvaluation: { currentValue: 'x', targetValue: 2 } } }))).toBeNull();
 		expect(getTaskEvaluationLabel(mkTask({ metadata: { intentEvaluation: { currentValue: 1, targetValue: 0 } } }))).toBeNull();
+	});
+});
+
+describe('livskompassGoalViews', () => {
+	const goal = { dimensionId: 'egentid', fromMatch: 2, target: 3 };
+
+	function mkKompassChecklist(): WeekChecklist {
+		return {
+			id: 'c1',
+			title: 'Uka',
+			emoji: '📋',
+			completedAt: null,
+			items: [
+				{ id: 'i1', text: 'Skjermfri (1/3)', checked: true, metadata: { source: 'livskompass', livskompassDimension: 'egentid' } },
+				{ id: 'i2', text: 'Skjermfri (2/3)', checked: false, metadata: { source: 'livskompass', livskompassDimension: 'egentid' } },
+				{ id: 'i3', text: 'Handle inn', checked: true, metadata: null }
+			]
+		};
+	}
+
+	it('beriker mål med label, farge og live tiltaksstatus', () => {
+		const [view] = livskompassGoalViews(mkKompassChecklist(), [goal]);
+		expect(view.label).toBe('Egen tid');
+		expect(view.color).toBeTruthy();
+		expect(view.itemsTotal).toBe(2);
+		expect(view.itemsChecked).toBe(1);
+	});
+
+	it('teller ikke utaggede punkter, og gir 0/0 uten liste', () => {
+		const [view] = livskompassGoalViews(null, [goal]);
+		expect(view.itemsTotal).toBe(0);
+		expect(view.itemsChecked).toBe(0);
+	});
+
+	it('gir tom liste uten mål', () => {
+		expect(livskompassGoalViews(mkKompassChecklist(), [])).toEqual([]);
+		expect(livskompassGoalViews(mkKompassChecklist(), null)).toEqual([]);
+	});
+
+	it('faller tilbake til dimensjons-id som label for ukjent dimensjon', () => {
+		const [view] = livskompassGoalViews(null, [{ dimensionId: 'ukjent', fromMatch: 2, target: 3 }]);
+		expect(view.label).toBe('ukjent');
 	});
 });
