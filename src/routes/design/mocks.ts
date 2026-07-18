@@ -1476,3 +1476,27 @@ export const mockChatStarredApi = {
 		return chatStarredMock;
 	}
 };
+
+// ── Mat / matplan ────────────────────────────────────────────────
+
+export const foodMealPlansMock = [
+	{ id: 'fp-1', date: '2026-07-20', mealType: 'dinner' as const, mealId: 'm-1', notes: null, servings: 5, photoUrl: null, mealTitle: 'Taco' },
+	{ id: 'fp-2', date: '2026-07-21', mealType: 'dinner' as const, mealId: 'm-2', notes: null, servings: 5, photoUrl: null, mealTitle: 'Fiskegrateng' },
+	{ id: 'fp-3', date: '2026-07-22', mealType: 'dinner' as const, mealId: 'm-3', notes: null, servings: 5, photoUrl: null, mealTitle: 'Kyllingform med ris' },
+	{ id: 'fp-4', date: '2026-07-22', mealType: 'dinner' as const, mealId: 'm-4', notes: null, servings: 2, photoUrl: null, mealTitle: 'Pastasalat (barnevariant)' }
+];
+
+export const foodPantryMock = [
+	{ id: 'pi-1', name: 'Havregryn', location: 'pantry' as const, quantity: '1', unit: 'pk', expiresAt: null, isStaple: false },
+	{ id: 'pi-2', name: 'Epler', location: 'fridge' as const, quantity: '4', unit: 'stk', expiresAt: null, isStaple: true },
+	{ id: 'pi-3', name: 'Cashewnøtter', location: 'pantry' as const, quantity: '0', unit: 'pose', expiresAt: null, isStaple: true },
+	{ id: 'pi-4', name: 'Kyllingfilet', location: 'freezer' as const, quantity: '2', unit: 'pk', expiresAt: '2026-07-24', isStaple: false }
+];
+
+export const foodShoppingListItemsMock = [
+	{ id: 'sl-1', name: 'Kjøttdeig (800 g)', normalizedName: 'kjøttdeig', quantity: 800, unit: 'g', sources: ['Taco'], checked: false, manual: false, odaUrl: 'https://oda.com/no/search/?q=kj%C3%B8ttdeig' },
+	{ id: 'sl-2', name: 'Taco-lefser', normalizedName: 'taco-lefser', quantity: 2, unit: 'pk', sources: ['Taco'], checked: true, manual: false, odaUrl: 'https://oda.com/no/search/?q=taco-lefser' },
+	{ id: 'sl-3', name: 'Fløte', normalizedName: 'fløte', quantity: 0.5, unit: 'l', sources: ['Fiskegrateng'], checked: false, manual: false, odaUrl: 'https://oda.com/no/search/?q=fl%C3%B8te' },
+	{ id: 'sl-4', name: 'Cashewnøtter', normalizedName: 'cashewnøtter', quantity: null, unit: null, sources: ['fast vare'], checked: false, manual: false, odaUrl: 'https://oda.com/no/search/?q=cashewn%C3%B8tter' },
+	{ id: 'sl-5', name: 'Tannkrem barn', normalizedName: 'tannkrem barn', quantity: null, unit: null, sources: ['manuell'], checked: false, manual: true, odaUrl: 'https://oda.com/no/search/?q=tannkrem%20barn' }
+];

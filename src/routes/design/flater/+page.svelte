@@ -7,13 +7,15 @@
 	import Hjem from '../sections/hjem.svelte';
 	import Boker from '../sections/boker.svelte';
 	import Reise from '../sections/reise.svelte';
+	import Mat from '../sections/mat.svelte';
 
 	const sections = [
 		{ id: 'ukeplan', label: 'Ukeplan' },
 		{ id: 'kavalkade', label: 'Kavalkade' },
 		{ id: 'hjem', label: 'Hjemskjerm-elementer' },
 		{ id: 'boker', label: 'Bøker' },
-		{ id: 'reise', label: 'Reise' }
+		{ id: 'reise', label: 'Reise' },
+		{ id: 'mat', label: 'Mat & matplan' }
 	] as const;
 </script>
 
@@ -50,6 +52,7 @@
 		<Hjem />
 		<Boker />
 		<Reise />
+		<Mat />
 
 	</main>
 	</div>
