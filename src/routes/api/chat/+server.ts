@@ -16,6 +16,7 @@ import { filmResearchToolDefinition, executeFilmResearch } from '$lib/ai/tools/f
 import { createGoalTool } from '$lib/ai/tools/create-goal';
 import { createTaskTool } from '$lib/ai/tools/create-task';
 import { logActivityTool } from '$lib/ai/tools/log-activity';
+import { logNapTool } from '$lib/ai/tools/log-nap';
 import { createMemoryTool } from '$lib/ai/tools/create-memory';
 import { queryEconomicsTool } from '$lib/ai/tools/query-economics';
 import { queryReflectionsTool } from '$lib/ai/tools/query-reflections';
@@ -377,6 +378,32 @@ const tools = [
 					}
 				},
 				required: ['type', 'metrics']
+			}
+		}
+	},
+	{
+		type: 'function' as const,
+		function: {
+			name: 'log_nap',
+			description:
+				'Registrer en powernap/hvil på dagtid — «tok en powernap», «hvilte en halvtime i ettermiddag», «la meg nedpå i stad». Kall verktøyet én gang per hvil (to hvileøkter = to kall). Bruk time når brukeren oppgir omtrentlig tidspunkt; utelat hvis hvilen nettopp ble avsluttet.',
+			parameters: {
+				type: 'object',
+				properties: {
+					durationMinutes: {
+						type: 'number',
+						description: 'Varighet i minutter (5–180). Anslå 20 hvis brukeren ikke sier noe.'
+					},
+					time: {
+						type: 'string',
+						description: 'Starttidspunkt i dag som HH:MM lokal tid (f.eks. "14:30"). Utelat hvis hvilen nettopp ble avsluttet.'
+					},
+					note: {
+						type: 'string',
+						description: 'Kort notat, f.eks. hvorfor («sliten etter dårlig natt»)'
+					}
+				},
+				required: ['durationMinutes']
 			}
 		}
 	},
@@ -2338,6 +2365,14 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'log_activity') {
 					const args = JSON.parse(toolCall.function.arguments);
 					const result = await logActivityTool.execute({ userId, ...args });
+					messages.push({
+						role: 'tool',
+						content: JSON.stringify(result),
+						tool_call_id: toolCall.id
+					});
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'log_nap') {
+					const args = JSON.parse(toolCall.function.arguments);
+					const result = await logNapTool.execute({ userId, ...args });
 					messages.push({
 						role: 'tool',
 						content: JSON.stringify(result),

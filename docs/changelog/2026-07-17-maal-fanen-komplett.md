@@ -70,6 +70,24 @@ skal visualiseres der, ikke gjemmes. Og søvnmål ønskes (leggetid, oppvåkning
   bedtime/waketime = range rundt måltid) + nap-linje («💤 2 powernaps siste uke»).
   Naps registreres automatisk fra Withings — ingen manuell registrering.
 
+### Fase 3: Manuell powernap-registrering
+
+Withings fanger bare søvn utstyret måler — hvileøkter på sofaen fantes ingen steder.
+
+- **Eksplisitt flagg**: `data.isNap: true|false` på en sleep-event overstyrer inferensen
+  (en hvil kl. 21:30 er nap når brukeren sier det). Manuelle naps skrives som vanlige
+  'sleep'-events (sensor `manual_nap`, `type: 'manual_log'`) og flyter dermed automatisk
+  inn i nap-tellingen og holdes ute av nattsnittet.
+- **`logNap`/`deleteNap`/`listRecentNaps`** i server-modulen; ny rute
+  `POST/GET/DELETE /api/soevn/nap` (HH:MM tolkes som i dag Oslo-tid via `todayAtLocalTime`,
+  testet; DELETE rører aldri sensor-synkede events).
+- **Chat-verktøy `log_nap`** («tok en powernap», «hvilte en halvtime i ettermiddag») —
+  registrert i både chat og assistent, ett kall per hvil, retroaktiv via time-parameter.
+- **Nytt målslag `nap`**: `{kind:'nap', maxPerWeek}` → «Maks 2 powernaps/uke» med
+  at_most-sone på Mål-fanen; `POST /api/soevn/goals` tar `napMaxPerWeek`.
+- **Hurtigregistrering**: chips (15/20/30/45 min) i ekspandert søvnmål-kort
+  (`data-track="maal:registrer-powernap"`), lokal delta-oppdatering av nap-linjen.
+
 ## Beslutninger
 
 - **Filter på tidshorisont, ikke kategori-gruppering** — brukervalg; to vektmål med

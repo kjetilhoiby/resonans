@@ -9,7 +9,7 @@
  *  - waketime: mål-oppvåkning HH:MM ± slingring
  */
 
-export type SleepGoalKind = 'duration' | 'bedtime' | 'waketime';
+export type SleepGoalKind = 'duration' | 'bedtime' | 'waketime' | 'nap';
 
 export interface SleepGoal {
 	kind: SleepGoalKind;
@@ -19,6 +19,8 @@ export interface SleepGoal {
 	targetTime?: string;
 	/** bedtime/waketime: slingring i minutter rundt måltid (default 30) */
 	toleranceMinutes?: number;
+	/** nap: maks antall powernaps per uke */
+	maxPerWeek?: number;
 }
 
 export const SLEEP_GOAL_DEFAULT_TOLERANCE_MIN = 30;
@@ -62,7 +64,7 @@ export function isNap(start: Date, durationHours: number, tz = OSLO_TZ): boolean
 /** Rå event-form slik den kommer fra sensor_events (og aggregation.ts). */
 export interface RawSleepEventLike {
 	timestamp: Date;
-	data?: { sleepDuration?: number } | null;
+	data?: { sleepDuration?: number; isNap?: boolean } | null;
 	/** sensor_events.metadata er løst typet i schemaet — leses med guard */
 	metadata?: unknown;
 }
@@ -72,8 +74,13 @@ function sleepEventEnddateSec(event: RawSleepEventLike): number | null {
 	return typeof endSec === 'number' && Number.isFinite(endSec) ? endSec : null;
 }
 
-/** Er en rå 'sleep'-event en nap? Brukes også av aggregeringen for å holde naps ute av nattsnittet. */
+/**
+ * Er en rå 'sleep'-event en nap? Eksplisitt `data.isNap` (manuell registrering)
+ * vinner over inferensen — en hvil kl. 21:30 er nap når brukeren sier det.
+ * Brukes også av aggregeringen for å holde naps ute av nattsnittet.
+ */
 export function isNapSleepEvent(event: RawSleepEventLike, tz = OSLO_TZ): boolean {
+	if (typeof event.data?.isNap === 'boolean') return event.data.isNap;
 	const durationH = sleepEventDurationHours(event);
 	if (durationH === null) return false;
 	return isNap(event.timestamp, durationH, tz);
@@ -103,7 +110,7 @@ export function toSleepNights(events: RawSleepEventLike[], tz = OSLO_TZ): SleepN
 			start: event.timestamp,
 			end: endSec !== null ? new Date(endSec * 1000) : null,
 			durationH: Math.round(durationH * 100) / 100,
-			isNap: isNap(event.timestamp, durationH, tz)
+			isNap: isNapSleepEvent(event, tz)
 		});
 	}
 	return nights;
@@ -127,6 +134,34 @@ export function parseTimeToNoonAxis(time: string | undefined | null): number | n
 	const minute = Number(m[2]);
 	if (hour > 23 || minute > 59) return null;
 	return (hour * 60 + minute - 720 + 1440) % 1440;
+}
+
+/**
+ * 'HH:MM' → Date på dagens dato i gitt tidssone (for retroaktiv nap-registrering
+ * «hvilte rundt 14»). Null ved ugyldig format.
+ */
+export function todayAtLocalTime(time: string, now = new Date(), tz = OSLO_TZ): Date | null {
+	const m = time.trim().match(/^(\d{1,2})[:.](\d{2})$/);
+	if (!m) return null;
+	const hour = Number(m[1]);
+	const minute = Number(m[2]);
+	if (hour > 23 || minute > 59) return null;
+
+	// Start fra ønsket klokkeslett som UTC på dagens lokale dato, korriger med observert avvik
+	const localDate = new Intl.DateTimeFormat('en-CA', {
+		timeZone: tz,
+		year: 'numeric',
+		month: '2-digit',
+		day: '2-digit'
+	}).format(now);
+	const candidate = new Date(
+		`${localDate}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00Z`
+	);
+	const got = localHourMinute(candidate, tz);
+	let diffMin = hour * 60 + minute - (got.hour * 60 + got.minute);
+	if (diffMin > 720) diffMin -= 1440;
+	if (diffMin < -720) diffMin += 1440;
+	return new Date(candidate.getTime() + diffMin * 60_000);
 }
 
 /** Minutter på middag-aksen → 'HH:MM'. */
@@ -166,15 +201,15 @@ export interface SleepGoalEval {
 	kind: SleepGoalKind;
 	/** Nåverdi: timer (duration) eller middag-akse-minutter (bedtime/waketime). Null uten data. */
 	value: number | null;
-	/** Menneskelesbar nåverdi («7,2t» / «23:12») */
+	/** Menneskelesbar nåverdi («7,2t» / «23:12» / «2») */
 	currentLabel: string | null;
-	/** Menneskelesbar målformulering («minst 7,5t/natt» / «23:00 ± 30 min») */
+	/** Menneskelesbar målformulering («minst 7,5t/natt» / «23:00 ± 30 min» / «maks 2/uke») */
 	targetLabel: string;
 	targetMin: number | null;
 	targetMax: number | null;
 	domainMin: number;
 	domainMax: number;
-	mode: 'at_least' | 'range';
+	mode: 'at_least' | 'at_most' | 'range';
 	withinTarget: boolean | null;
 	/** Antall ekte netter i grunnlaget */
 	nightCount: number;
@@ -190,6 +225,24 @@ function formatHours(h: number): string {
 export function evaluateSleepGoal(goal: SleepGoal, nights: SleepNight[], tz = OSLO_TZ): SleepGoalEval {
 	const realNights = nights.filter((n) => !n.isNap);
 	const napCount = nights.length - realNights.length;
+
+	if (goal.kind === 'nap') {
+		const max = goal.maxPerWeek ?? 2;
+		return {
+			kind: 'nap',
+			value: napCount,
+			currentLabel: `${napCount}`,
+			targetLabel: `maks ${max}/uke`,
+			targetMin: null,
+			targetMax: max,
+			domainMin: 0,
+			domainMax: Math.max(max + 3, napCount + 1),
+			mode: 'at_most',
+			withinTarget: napCount <= max,
+			nightCount: realNights.length,
+			napCount
+		};
+	}
 
 	if (goal.kind === 'duration') {
 		const target = goal.targetHours ?? 8;
@@ -258,10 +311,14 @@ export function readSleepGoalMetadata(metadata: unknown): SleepGoal | null {
 	const sg = (metadata as Record<string, unknown>).sleepGoal;
 	if (!sg || typeof sg !== 'object') return null;
 	const g = sg as Record<string, unknown>;
-	if (g.kind !== 'duration' && g.kind !== 'bedtime' && g.kind !== 'waketime') return null;
+	if (g.kind !== 'duration' && g.kind !== 'bedtime' && g.kind !== 'waketime' && g.kind !== 'nap') return null;
 	if (g.kind === 'duration') {
 		if (typeof g.targetHours !== 'number' || !Number.isFinite(g.targetHours)) return null;
 		return { kind: 'duration', targetHours: g.targetHours };
+	}
+	if (g.kind === 'nap') {
+		if (typeof g.maxPerWeek !== 'number' || !Number.isFinite(g.maxPerWeek) || g.maxPerWeek < 0) return null;
+		return { kind: 'nap', maxPerWeek: g.maxPerWeek };
 	}
 	if (typeof g.targetTime !== 'string' || parseTimeToNoonAxis(g.targetTime) === null) return null;
 	return {
@@ -278,6 +335,7 @@ export function defaultSleepGoalTitle(goal: SleepGoal): string {
 	if (goal.kind === 'duration') {
 		return `Søvn over ${formatHours(goal.targetHours ?? 8)}/natt`;
 	}
+	if (goal.kind === 'nap') return `Maks ${goal.maxPerWeek ?? 2} powernaps/uke`;
 	if (goal.kind === 'bedtime') return `Leggetid rundt ${goal.targetTime}`;
 	return `Våken rundt ${goal.targetTime}`;
 }

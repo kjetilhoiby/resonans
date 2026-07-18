@@ -5,7 +5,7 @@ import type { RequestHandler } from './$types';
 
 /**
  * Søvnmål fra onboarding-flyten (health_sleep_onboarding) eller andre flater.
- * Body: { targetHours?: number, bedtimeGoal?: 'HH:MM', waketimeGoal?: 'HH:MM' }
+ * Body: { targetHours?: number, bedtimeGoal?: 'HH:MM', waketimeGoal?: 'HH:MM', napMaxPerWeek?: number }
  * Opprettelse er idempotent per type (eksisterende mål av samme kind oppdateres).
  */
 export const POST: RequestHandler = async ({ locals, request }) => {
@@ -27,6 +27,11 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	const waketime = typeof body?.waketimeGoal === 'string' ? body.waketimeGoal.trim() : '';
 	if (waketime && parseTimeToNoonAxis(waketime) !== null) {
 		goalsToCreate.push({ kind: 'waketime', targetTime: waketime });
+	}
+
+	const napMax = Number(body?.napMaxPerWeek);
+	if (Number.isFinite(napMax) && napMax >= 0 && napMax <= 14) {
+		goalsToCreate.push({ kind: 'nap', maxPerWeek: Math.round(napMax) });
 	}
 
 	if (goalsToCreate.length === 0) {

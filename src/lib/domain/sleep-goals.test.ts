@@ -10,6 +10,7 @@ import {
 	noonAxisToHHMM,
 	parseTimeToNoonAxis,
 	readSleepGoalMetadata,
+	todayAtLocalTime,
 	toSleepNights,
 	type RawSleepEventLike
 } from './sleep-goals';
@@ -138,6 +139,71 @@ describe('evaluateSleepGoal', () => {
 		const empty = evaluateSleepGoal({ kind: 'duration', targetHours: 7 }, []);
 		expect(empty.value).toBeNull();
 		expect(empty.withinTarget).toBeNull();
+	});
+});
+
+describe('eksplisitt isNap-flagg (manuell registrering)', () => {
+	it('flagget vinner over inferensen — kveldshvil 21:30 er nap når brukeren sier det', () => {
+		// 19:30 UTC = 21:30 Oslo (sommertid) — utenfor 09–21-vinduet, ville blitt natt
+		const manual: RawSleepEventLike = {
+			timestamp: new Date('2026-07-17T19:30:00Z'),
+			data: { sleepDuration: 30 * 60, isNap: true },
+			metadata: { manual: true }
+		};
+		expect(isNapSleepEvent(manual)).toBe(true);
+		expect(toSleepNights([manual])[0].isNap).toBe(true);
+	});
+
+	it('isNap: false overstyrer også — kort dagsøvn kan eksplisitt være natt (skiftarbeid)', () => {
+		const notNap: RawSleepEventLike = {
+			timestamp: new Date('2026-07-17T11:00:00Z'),
+			data: { sleepDuration: 2 * 3600, isNap: false },
+			metadata: {}
+		};
+		expect(isNapSleepEvent(notNap)).toBe(false);
+	});
+});
+
+describe('nap-mål (maks per uke)', () => {
+	const nights = toSleepNights([
+		sleepEvent('2026-07-12T21:00:00Z', 7.5),
+		sleepEvent('2026-07-14T12:00:00Z', 0.5), // nap
+		sleepEvent('2026-07-15T13:00:00Z', 0.4) // nap
+	]);
+
+	it('innenfor når antall naps ≤ maks, over når flere', () => {
+		const within = evaluateSleepGoal({ kind: 'nap', maxPerWeek: 2 }, nights);
+		expect(within.value).toBe(2);
+		expect(within.withinTarget).toBe(true);
+		expect(within.mode).toBe('at_most');
+		expect(within.targetLabel).toBe('maks 2/uke');
+
+		const over = evaluateSleepGoal({ kind: 'nap', maxPerWeek: 1 }, nights);
+		expect(over.withinTarget).toBe(false);
+	});
+
+	it('metadata og tittel for nap-mål', () => {
+		expect(readSleepGoalMetadata({ sleepGoal: { kind: 'nap', maxPerWeek: 2 } })).toEqual({
+			kind: 'nap',
+			maxPerWeek: 2
+		});
+		expect(readSleepGoalMetadata({ sleepGoal: { kind: 'nap' } })).toBeNull();
+		expect(defaultSleepGoalTitle({ kind: 'nap', maxPerWeek: 2 })).toBe('Maks 2 powernaps/uke');
+	});
+});
+
+describe('todayAtLocalTime', () => {
+	it('HH:MM tolkes som dagens dato i Oslo-tid', () => {
+		const now = new Date('2026-07-17T10:00:00Z');
+		const at = todayAtLocalTime('14:30', now);
+		expect(at).not.toBeNull();
+		// 14:30 Oslo sommertid = 12:30 UTC
+		expect(at!.toISOString()).toBe('2026-07-17T12:30:00.000Z');
+	});
+
+	it('ugyldig format → null', () => {
+		expect(todayAtLocalTime('halv tre', new Date())).toBeNull();
+		expect(todayAtLocalTime('25:00', new Date())).toBeNull();
 	});
 });
 

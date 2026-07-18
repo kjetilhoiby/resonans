@@ -69,8 +69,38 @@
 		if (sleepEval.kind === 'duration') {
 			return `${(Math.round(value * 10) / 10).toString().replace('.', ',')}t`;
 		}
+		if (sleepEval.kind === 'nap') return `${Math.round(value)}`;
 		return noonAxisToHHMM(value);
 	}
+
+	// Manuell powernap-registrering — lokal delta gir umiddelbar tilbakemelding
+	const NAP_PRESETS = [15, 20, 30, 45];
+	let napDelta = $state(0);
+	let napBusy = $state(false);
+	let napFeedback = $state<string | null>(null);
+
+	async function registerNap(durationMinutes: number) {
+		if (napBusy) return;
+		napBusy = true;
+		napFeedback = null;
+		try {
+			const response = await fetch('/api/soevn/nap', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ durationMinutes })
+			});
+			const result = await response.json();
+			if (!response.ok) throw new Error(result.error || 'Kunne ikke registrere powernap');
+			napDelta += 1;
+			napFeedback = `💤 ${durationMinutes} min registrert`;
+		} catch (error) {
+			napFeedback = error instanceof Error ? error.message : 'Ukjent feil';
+		} finally {
+			napBusy = false;
+		}
+	}
+
+	const displayedNapCount = $derived((sleepEval?.napCount ?? 0) + napDelta);
 
 	const goalProgress = $derived(calculateGoalProgress(goal));
 	const goalTrackLabel = $derived(formatGoalTrack(goal));
@@ -168,12 +198,17 @@
 					</div>
 				</div>
 			{:else if sleepEval}
+				{@const isNapGoal = sleepEval.kind === 'nap'}
+				{@const effectiveValue = isNapGoal ? (sleepEval.value ?? 0) + napDelta : sleepEval.value}
+				{@const effectiveWithin = isNapGoal && sleepEval.targetMax !== null
+					? (effectiveValue ?? 0) <= sleepEval.targetMax
+					: sleepEval.withinTarget}
 				<div class="sleep-goal">
-					{#if sleepEval.value !== null}
+					{#if effectiveValue !== null}
 						<TargetZoneBar
-							value={sleepEval.value}
+							value={effectiveValue}
 							domainMin={sleepEval.domainMin}
-							domainMax={sleepEval.domainMax}
+							domainMax={Math.max(sleepEval.domainMax, effectiveValue + 1)}
 							targetMin={sleepEval.targetMin}
 							targetMax={sleepEval.targetMax}
 							mode={sleepEval.mode}
@@ -185,17 +220,21 @@
 							title={goal.title}
 						/>
 						<div class="sensor-progress-label">
-							<span class="sleep-current" class:off={sleepEval.withinTarget === false}>{sleepEval.currentLabel}</span>
-							<span class="sensor-target">mål {sleepEval.targetLabel} · {sleepEval.nightCount} netter</span>
-							{#if sleepEval.withinTarget !== null}
-								<span class="sensor-pct">{sleepEval.withinTarget ? '✅' : '⚠️'}</span>
+							<span class="sleep-current" class:off={effectiveWithin === false}>
+								{isNapGoal ? effectiveValue : sleepEval.currentLabel}
+							</span>
+							<span class="sensor-target">
+								mål {sleepEval.targetLabel}{isNapGoal ? '' : ` · ${sleepEval.nightCount} netter`}
+							</span>
+							{#if effectiveWithin !== null}
+								<span class="sensor-pct">{effectiveWithin ? '✅' : '⚠️'}</span>
 							{/if}
 						</div>
 					{:else}
 						<div class="sleep-empty">Ingen søvndata siste uke — mål {sleepEval.targetLabel}</div>
 					{/if}
-					{#if sleepEval.napCount > 0}
-						<div class="sleep-naps">💤 {sleepEval.napCount} powernap{sleepEval.napCount === 1 ? '' : 's'} siste uke</div>
+					{#if !isNapGoal && displayedNapCount > 0}
+						<div class="sleep-naps">💤 {displayedNapCount} powernap{displayedNapCount === 1 ? '' : 's'} siste uke</div>
 					{/if}
 				</div>
 			{:else if goal.tasks.length > 0}
@@ -225,6 +264,27 @@
 				<a class="st-goal-link" href="/skjermtid" data-track="maal:skjermtid-detaljer">
 					Se full skjermtidsoversikt →
 				</a>
+			{/if}
+
+			{#if sleepEval}
+				<div class="nap-register">
+					<span class="nap-register-label">💤 Registrer powernap nå:</span>
+					<div class="nap-register-chips">
+						{#each NAP_PRESETS as minutes}
+							<button
+								class="btn-chip"
+								data-track="maal:registrer-powernap"
+								disabled={napBusy}
+								onclick={() => registerNap(minutes)}
+							>
+								{minutes} min
+							</button>
+						{/each}
+					</div>
+					{#if napFeedback}
+						<div class="nap-register-feedback">{napFeedback}</div>
+					{/if}
+				</div>
 			{/if}
 
 			<div class="goal-meta-row">
@@ -592,6 +652,31 @@
 		margin-top: 0.4rem;
 		font-size: 0.8rem;
 		color: var(--text-tertiary);
+	}
+
+	.nap-register {
+		margin: 1rem 0 0.25rem;
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.nap-register-label {
+		font-size: 0.82rem;
+		color: var(--text-tertiary);
+	}
+
+	.nap-register-chips {
+		display: flex;
+		gap: 0.4rem;
+		flex-wrap: wrap;
+	}
+
+	.nap-register-feedback {
+		width: 100%;
+		font-size: 0.78rem;
+		color: var(--success-text);
 	}
 
 	.sensor-progress {
