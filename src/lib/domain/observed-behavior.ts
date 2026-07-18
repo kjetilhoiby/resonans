@@ -54,6 +54,40 @@ export function classifyNapLoad(napCount: number, maxPerWeek: number | null): Si
 	return 'high';
 }
 
+/* ── Floke-stagnasjon (knute-risiko) ────────────────────── */
+
+export type FlokeStage = 'i_bevegelse' | 'stillestaaende' | 'knute_risiko';
+
+/** Dager uten bevegelse før en floke regnes som stillestående / på vei til å bli knute. */
+export const FLOKE_STAGNANT_DAYS = 14;
+export const FLOKE_KNOT_RISK_DAYS = 28;
+
+/**
+ * Klassifiser en flokes tilstand fra dager siden siste bevegelse (steg gjort,
+ * steg lagt til, eller opprettelse). VISION: «Floker kan bli til knuter om de
+ * ikke løses rolig» — signalet fanger dem FØR de strammes.
+ */
+export function classifyFlokeStagnation(daysSinceMovement: number): FlokeStage {
+	if (daysSinceMovement >= FLOKE_KNOT_RISK_DAYS) return 'knute_risiko';
+	if (daysSinceMovement >= FLOKE_STAGNANT_DAYS) return 'stillestaaende';
+	return 'i_bevegelse';
+}
+
+export interface FlokeStatus {
+	title: string;
+	/** 'active' = under nedbryting (har steg), 'planning' = aldri brutt ned */
+	status: 'active' | 'planning';
+	daysSinceMovement: number;
+	stage: FlokeStage;
+}
+
+/** Alvorlighetsgrad for floke-stagnasjonssignalet. */
+export function classifyFlokeLoad(floker: FlokeStatus[]): SignalSeverity {
+	if (floker.some((f) => f.stage === 'knute_risiko')) return 'high';
+	if (floker.some((f) => f.stage === 'stillestaaende')) return 'medium';
+	return 'info';
+}
+
 /* ── Prompt-blokk: OBSERVERT ATFERD ─────────────────────── */
 
 export interface ObservedBehaviorInputs {
@@ -63,8 +97,9 @@ export interface ObservedBehaviorInputs {
 	routineAdherencePct?: number | null;
 	/** Siste hodedump («skaffer oversikt») innen 7 dager */
 	oversikt?: { daysAgo: number } | null;
-	/** Floker fra hodedump: aktive (under nedbryting) og åpne (planning) prosjekter */
-	floker?: { active: number; open: number } | null;
+	/** Floker fra hodedump: aktive (under nedbryting) og åpne (planning) prosjekter,
+	 *  med evt. stillestående floker (≥14 dager uten bevegelse — knute-risiko) */
+	floker?: { active: number; open: number; stillestaaende?: FlokeStatus[] } | null;
 	/** Åpne løkker: uavsjekkede innboks-punkter (tapper energi så lenge de er åpne) */
 	aapneLokker?: { inbox: number } | null;
 }
@@ -128,7 +163,16 @@ export function buildObservedBehaviorLines(inputs: ObservedBehaviorInputs): stri
 		const parts: string[] = [];
 		if (floker.active > 0) parts.push(`${floker.active} under nedbryting`);
 		if (floker.open > 0) parts.push(`${floker.open} åpne som prosjekter`);
-		lines.push(`- Floker: ${parts.join(', ')}.`);
+		let line = `- Floker: ${parts.join(', ')}.`;
+		const verst = [...(floker.stillestaaende ?? [])].sort(
+			(a, b) => b.daysSinceMovement - a.daysSinceMovement
+		)[0];
+		if (verst) {
+			line += ` «${verst.title}» har ligget ${verst.daysSinceMovement} dager uten bevegelse${
+				verst.stage === 'knute_risiko' ? ' — på vei til å bli knute' : ''
+			}.`;
+		}
+		lines.push(line);
 	}
 
 	if (inputs.aapneLokker && inputs.aapneLokker.inbox > 0) {

@@ -83,15 +83,6 @@ function calculateSleepLag(events: any[]): number | undefined {
 }
 
 /**
- * Calculate early wake metric
- * Your logic: % of time asleep between 06:00 and 08:00
- */
-function calculateEarlyWake(events: any[]): number | undefined {
-	// TODO: Implement your specific early wake calculation
-	return undefined;
-}
-
-/**
  * Skjermtid-aggregat for en periode. Leser `screen_time`-dagsevents (totaler +
  * evt. kategorier/time-for-time) og — for ukesperioder — den autoritative
  * `screen_time_week`-oppsummeringen når den finnes.
@@ -366,8 +357,7 @@ export async function aggregateWeeklyData(userId: string, weeks?: WeekPeriod[]) 
 
 		const sleepLag = calculateSleepLag(events);
 		if (sleepLag !== undefined) metrics.sleepLag = sleepLag;
-		const earlyWake = calculateEarlyWake(events);
-		if (earlyWake !== undefined) metrics.earlyWake = earlyWake;
+		// earlyWake-stubben er fjernet — waketime-søvnmål måler oppvåkning fra events
 
 		rows.push({ userId, period: 'week', periodKey: week.yearweek, year: week.year, startDate: week.startTime, endDate: week.endTime, metrics, eventCount: events.length });
 	}

@@ -9,11 +9,12 @@ import { computeBalanceState } from '$lib/server/tracks/balance';
 import { queryCanonicalTransactions } from '$lib/server/integrations/categorized-events';
 import { isoWeekKeyForDate } from '$lib/server/iso-week';
 import {
+	collectFlokeStatus,
 	collectFollowThrough7d,
 	collectNaps7d,
 	collectProactivity7d
 } from '$lib/server/services/observed-behavior-service';
-import { classifyFollowThrough, classifyNapLoad } from '$lib/domain/observed-behavior';
+import { classifyFlokeLoad, classifyFollowThrough, classifyNapLoad } from '$lib/domain/observed-behavior';
 
 type Severity = 'info' | 'low' | 'medium' | 'high';
 
@@ -1387,6 +1388,55 @@ async function produceProactiveActions7d(userId: string, now: Date) {
 	return total;
 }
 
+/**
+ * Floke-stagnasjon: hodedump-floker uten bevegelse (steg gjort/lagt til).
+ * VISION («Løkker, floker og knuter»): floker som ikke løses rolig blir knuter —
+ * signalet fanger dem ved ≥14 dager (stillestående) og ≥28 dager (knute-risiko).
+ * Null uten åpne floker.
+ */
+async function produceFlokeStagnation(userId: string, now: Date) {
+	await ensureSignalContract({
+		signalType: 'floke_stagnation',
+		ownerDomain: 'home',
+		allowedConsumerDomains: ['home', 'health', 'relationship'],
+		description:
+			'Hodedump-floker (prosjekter med source=hodedump) uten bevegelse: ≥14 dager = stillestående, ≥28 = knute-risiko. Antall stillestående som verdi, verste floke i konteksten.'
+	});
+
+	const floker = await collectFlokeStatus(userId, now);
+	if (floker.length === 0) return null;
+
+	const stagnant = floker.filter((f) => f.stage !== 'i_bevegelse');
+	const severity = classifyFlokeLoad(floker);
+	const verst = [...stagnant].sort((a, b) => b.daysSinceMovement - a.daysSinceMovement)[0] ?? null;
+
+	await upsertDomainSignal({
+		signalType: 'floke_stagnation',
+		ownerDomain: 'home',
+		userId,
+		valueNumber: stagnant.length,
+		valueText: verst ? `«${verst.title}»: ${verst.daysSinceMovement} dager uten bevegelse` : 'alle i bevegelse',
+		valueBool: stagnant.length === 0,
+		severity,
+		confidence: 0.9,
+		windowStart: daysAgo(now, 30),
+		windowEnd: now,
+		observedAt: now,
+		context: {
+			flokeCount: floker.length,
+			stagnantCount: stagnant.length,
+			floker: floker.map((f) => ({
+				title: f.title,
+				status: f.status,
+				daysSinceMovement: f.daysSinceMovement,
+				stage: f.stage
+			}))
+		}
+	});
+
+	return stagnant.length;
+}
+
 export async function runDomainSignalProducers(now: Date = new Date()) {
 	const allUsers = await db.select({ id: users.id, partnerUserId: users.partnerUserId }).from(users);
 
@@ -1412,7 +1462,8 @@ export async function runDomainSignalProducers(now: Date = new Date()) {
 		familyParentTimeLow7d: 0,
 		sleepPowernaps7d: 0,
 		actionFollowThrough7d: 0,
-		proactiveActions7d: 0
+		proactiveActions7d: 0,
+		flokeStagnation: 0
 	};
 	const errors: Array<{ userId: string; error: string }> = [];
 
@@ -1481,6 +1532,12 @@ export async function runDomainSignalProducers(now: Date = new Date()) {
 			if (proactiveActions7d !== null) {
 				produced += 1;
 				producerBreakdown.proactiveActions7d += 1;
+			}
+
+			const flokeStagnation = await produceFlokeStagnation(user.id, now);
+			if (flokeStagnation !== null) {
+				produced += 1;
+				producerBreakdown.flokeStagnation += 1;
 			}
 
 			const effortVsThreshold = await produceHealthEffortVsThreshold(user.id, now);
