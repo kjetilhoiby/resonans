@@ -690,6 +690,9 @@ export const checklistItems = pgTable('checklist_items', {
 		// Meal linking — for "middag: kjøttkaker"-prefiks på dag-items
 		linkedMealId?: string;
 		mealType?: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+		// Kobling til meal_plans-raden dette dag-punktet speiler (matplan-synk).
+		// Må overleve tekstredigering — skal IKKE strippes av PARSE_DERIVED_METADATA_KEYS.
+		linkedMealPlanId?: string;
 		// Wake-time intent
 		wakeTargetHour?: number;
 		wakeTargetMinute?: number;
@@ -830,10 +833,12 @@ export const mealPlans = pgTable('meal_plans', {
 	notes: text('notes'),
 	servings: integer('servings').default(2).notNull(),
 	photoUrl: text('photo_url'), // Cloudinary-URL for "what we ate"
-	createdAt: timestamp('created_at').defaultNow().notNull()
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
 }, (table) => ({
 	idxMealPlansUserWeek: index('meal_plans_user_week_idx').on(table.userId, table.weekContext),
-	idxMealPlansUserDate: index('meal_plans_user_date_idx').on(table.userId, table.date)
+	idxMealPlansUserDate: index('meal_plans_user_date_idx').on(table.userId, table.date),
+	idxMealPlansUserMeal: index('meal_plans_user_meal_idx').on(table.userId, table.mealId)
 }));
 
 // Pantry-items — lett oversikt over innhold i skap, kjøleskap og fryser
@@ -851,6 +856,155 @@ export const pantryItems = pgTable('pantry_items', {
 }, (table) => ({
 	idxPantryUserLocation: index('pantry_items_user_location_idx').on(table.userId, table.location),
 	idxPantryUserExpires: index('pantry_items_user_expires_idx').on(table.userId, table.expiresAt)
+}));
+
+// Handlelister — ett strukturert artefakt per (bruker, uke, kind). Genereres fra
+// ukens meal_plans minus pantry i «onsdagsøkta», og brukes som grunnlag for
+// Oda-bestilling (søkelenker) og senere kvitteringssammenligning (normalizedName).
+export const shoppingLists = pgTable('shopping_lists', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	weekContext: text('week_context').notNull(), // f.eks. '2026-W31'
+	kind: text('kind').notNull().default('week'), // 'week' (rom for flere senere)
+	status: text('status').notNull().default('draft'), // 'draft' | 'final'
+	items: jsonb('items').$type<Array<{
+		id: string;
+		name: string;
+		normalizedName: string;
+		quantity?: number | null;
+		unit?: string | null;
+		sources: string[]; // hvilke retter varen kommer fra, eller 'manuell'
+		checked: boolean;
+		manual: boolean; // lagt til av bruker, overlever regenerering
+	}>>().notNull().default([]),
+	meta: jsonb('meta').$type<{
+		pantrySkipped?: number;
+		mealCount?: number;
+		planIds?: string[];
+	}>().notNull().default({}),
+	generatedAt: timestamp('generated_at').defaultNow().notNull(),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	uniqUserWeekKind: uniqueIndex('shopping_lists_user_week_kind_idx').on(table.userId, table.weekContext, table.kind)
+}));
+
+// ─── Matpakker ─────────────────────────────────────────────────
+// Matpakke-preferanser per barn (persons med kind='child'). Grunnlag for
+// forslag/rotasjon og for å unngå bommerter.
+export const lunchboxProfiles = pgTable('lunchbox_profiles', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	personId: uuid('person_id').references((): AnyPgColumn => persons.id, { onDelete: 'cascade' }).notNull(),
+	likes: text('likes').array().notNull().default(sql`ARRAY[]::text[]`),
+	dislikes: text('dislikes').array().notNull().default(sql`ARRAY[]::text[]`),
+	allergies: text('allergies').array().notNull().default(sql`ARRAY[]::text[]`),
+	appetite: text('appetite').notNull().default('middels'), // 'liten' | 'middels' | 'stor'
+	notes: text('notes'),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	uniqUserPerson: uniqueIndex('lunchbox_profiles_user_person_idx').on(table.userId, table.personId)
+}));
+
+// Matpakke-komponenter — atomære byggeklosser (pålegg, brød, frukt, grønt, nøtter).
+// Egen tabell (ikke meals med tag): komponentene har kind + retur-vekting, ingen oppskrift.
+export const lunchboxComponents = pgTable('lunchbox_components', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	name: text('name').notNull(),
+	kind: text('kind').notNull(), // 'palegg' | 'brod' | 'frukt' | 'gront' | 'notter' | 'annet'
+	tags: text('tags').array().notNull().default(sql`ARRAY[]::text[]`),
+	active: boolean('active').notNull().default(true),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	idxUserKind: index('lunchbox_components_user_kind_idx').on(table.userId, table.kind, table.active)
+}));
+
+// Matpakke-historikk — hva som ble foreslått/pakket per barn per dag.
+// packed_at null = kun forslag; satt = bekreftet pakket. Grunnlag for rotasjon.
+export const lunchboxEntries = pgTable('lunchbox_entries', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	personId: uuid('person_id').references((): AnyPgColumn => persons.id, { onDelete: 'cascade' }).notNull(),
+	date: date('date').notNull(),
+	items: jsonb('items').$type<Array<{
+		componentId?: string;
+		name: string;
+		kind: string;
+	}>>().notNull().default([]),
+	source: text('source').notNull().default('suggested'), // 'suggested' | 'manual'
+	packedAt: timestamp('packed_at'),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => ({
+	uniqUserPersonDate: uniqueIndex('lunchbox_entries_user_person_date_idx').on(table.userId, table.personId, table.date),
+	idxUserDate: index('lunchbox_entries_user_date_idx').on(table.userId, table.date)
+}));
+
+// Retur-logg — hva som kom tilbake i matpakken («8 skiver i retur»).
+// Lærer forslagsmotoren hva som funker per barn, og gir innsikt i svinn.
+export const lunchboxReturns = pgTable('lunchbox_returns', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	personId: uuid('person_id').references((): AnyPgColumn => persons.id, { onDelete: 'cascade' }).notNull(),
+	date: date('date').notNull(),
+	entryId: uuid('entry_id').references(() => lunchboxEntries.id, { onDelete: 'set null' }),
+	componentId: uuid('component_id').references(() => lunchboxComponents.id, { onDelete: 'set null' }),
+	itemName: text('item_name').notNull(), // fritekst-fallback ('brødskive med hvitost')
+	quantity: integer('quantity'), // f.eks. 2 (skiver)
+	degree: text('degree').notNull().default('noe'), // 'alt' | 'mesteparten' | 'noe'
+	note: text('note'),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => ({
+	idxUserPersonDate: index('lunchbox_returns_user_person_date_idx').on(table.userId, table.personId, table.date),
+	idxComponent: index('lunchbox_returns_component_idx').on(table.componentId, table.date)
+}));
+
+// ─── Dagligvare-ordrer (Oda) ───────────────────────────────────
+// Strukturerte ordrer/kvitteringer parset fra e-post (email_rules processingType
+// 'oda_receipt'). Kvittering etter levering oppdaterer ordrebekreftelsens rad
+// via unik (user, provider, order_ref).
+export const groceryOrders = pgTable('grocery_orders', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	provider: text('provider').notNull().default('oda'),
+	orderRef: text('order_ref'), // Odas ordrenummer fra e-posten
+	kind: text('kind').notNull().default('receipt'), // 'order_confirmation' | 'receipt'
+	orderDate: date('order_date'),
+	deliveryDate: date('delivery_date'),
+	weekContext: text('week_context').notNull(), // ISO-uke fra leveringsdato ?? ordredato
+	totalAmount: decimal('total_amount'),
+	currency: text('currency').notNull().default('NOK'),
+	gmailMessageId: text('gmail_message_id'), // idempotens per e-post
+	emailSubject: text('email_subject'),
+	shoppingListId: uuid('shopping_list_id').references(() => shoppingLists.id, { onDelete: 'set null' }),
+	pantryAppliedAt: timestamp('pantry_applied_at'), // null = ikke lagt i lager ennå
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	uniqUserGmail: uniqueIndex('grocery_orders_user_gmail_idx').on(table.userId, table.gmailMessageId),
+	uniqUserProviderRef: uniqueIndex('grocery_orders_user_provider_ref_idx').on(table.userId, table.provider, table.orderRef),
+	idxUserWeek: index('grocery_orders_user_week_idx').on(table.userId, table.weekContext)
+}));
+
+// Varelinjer fra Oda-ordre. pantry_item_id settes når linja er lagt i lager.
+export const groceryOrderLines = pgTable('grocery_order_lines', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	orderId: uuid('order_id').references(() => groceryOrders.id, { onDelete: 'cascade' }).notNull(),
+	name: text('name').notNull(),
+	quantity: decimal('quantity'),
+	unit: text('unit'),
+	unitPrice: decimal('unit_price'),
+	totalPrice: decimal('total_price'),
+	category: text('category').notNull().default('annet'), // 'frukt_gront'|'meieri'|'brod'|'kjott_fisk'|'torrvarer'|'frys'|'drikke'|'snacks'|'husholdning'|'pant_gebyr'|'annet'
+	pantryLocationGuess: text('pantry_location_guess'), // 'pantry' | 'fridge' | 'freezer' | null
+	pantryItemId: uuid('pantry_item_id').references(() => pantryItems.id, { onDelete: 'set null' }),
+	sortOrder: integer('sort_order').notNull().default(0),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => ({
+	idxOrder: index('grocery_order_lines_order_idx').on(table.orderId)
 }));
 
 // Memories - Stabile, kuraterte fakta om brukeren som AI husker.
