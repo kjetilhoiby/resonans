@@ -473,6 +473,8 @@
 	<LivskompassCheckin
 		prefillImportance={ctx.livskompassPrefill}
 		initialScores={ctx.livskompassInitialScores}
+		previousScores={ctx.livskompassPrevious?.scores ?? null}
+		weekGoals={ctx.livskompassWeekGoals}
 		needsOnboarding={ctx.livskompassNeedsOnboarding}
 		startStage={ctx.livskompassStartStage}
 		onSaveImportance={handleLivskompassSaveImportance}

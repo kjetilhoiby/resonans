@@ -62,6 +62,15 @@ er startverdi for samsvar-slideren.
 - Viktighet forhåndsutfylles nå fra: denne ukas innsjekk → nyeste innsjekk → onboarding-profil → defaults.
 - Viktighets-markøren og samsvar-thumben deler samme spor-posisjon siden begge er 1–10.
 
+### Fase 6b: Gap-relative samsvar-ankerord (2026-07-18)
+`matchLabel` var absolutt (avstand fra 10: «Langt unna» … «Helt på linje») og kranglet med
+gap-modellen: viktighet 3 / samsvar 3 fikk «Litt unna» selv om uka traff akkurat det brukeren
+ønsket, og viktighet 10 / samsvar 8 fikk «Ganske på linje» tross et reelt gap. Nå tar
+`matchLabel(match, importance)` begge akser og setter ord på gapet: «Langt under det viktige»
+(gap ≥5), «Klart under det viktige» (gap ≥3, speiler ute-av-synk-terskelen), «Litt under»
+(gap ≥1), «På linje» (gap −2…0), «Mer rom enn viktigheten tilsier» (gap ≤ −3). Tallet
+`(n/10)` vises fortsatt rått ved siden av.
+
 ### Fase 7: Funn via egenfrekvens-temaet + helge-nudge (2026-06-20)
 **Oppdagbarhet:** Livskompasset vises nå i Egenfrekvens-temaets data-fane (`ThemeDataTab`, gated på
 `activeDashboardKind === 'egenfrekvens'`) som `LivskompassWidget`. Tapp → `goto('/?flow=livskompass')`.
@@ -103,6 +112,27 @@ Coaching-chatten kan nå føre avtalte, målbare tiltak rett på en ukes sjekkli
   går via `_runChatRequest`, så verktøyet er tilgjengelig der.
 - `buildCoachingSystemPrompt` instruerer AI-en om å bruke verktøyet (weekOffset=1) når dere blir enige
   om tiltak og brukeren vil føre dem opp.
+
+### Fase 10: Lukket mål-sløyfe — ukesmål spores fra coaching til neste innsjekk (2026-07-18)
+Coachingens ett-poengs-mål forsvant tidligere i ukelista som anonyme punkter: ingen kobling til
+dimensjon, ingen persistert intensjon, og neste innsjekk visste ingenting om målet. Nå lukkes sløyfa:
+
+- **Dimensjons-tagging:** `add_to_week_plan` tar punkter som `{ text, dimension? }` (strenger støttes
+  fortsatt). Gyldig dimensjons-id (validert i `normalizeWeekPlanItems`, `week-plan-items.ts`) stempler
+  item-metadata med `source: 'livskompass'` + `livskompassDimension`. Begge tool-schemas oppdatert
+  (chat-endepunktet med enum fra `LIVSKOMPASS_DIMENSION_IDS`, assistentens shared-tools).
+- **Persistert intensjon:** dimensjons-taggede kall skriver et `livskompass_goal`-sensor-event
+  (`recordLivskompassGoals`): `{ week, goals: [{ dimensionId, fromMatch, target }] }` der fromMatch
+  hentes fra siste innsjekk og target = fromMatch + 1 (capped på 10). Flere events for samme uke
+  flettes ved lesing (nyeste vinner per dimensjon).
+- **Status-berikelse:** `getLivskompassStatus` returnerer nå `previous` (siste innsjekk før uka) og
+  `weekGoals` (ukas mål + tiltaksstatus talt opp fra ukelistas taggede punkter).
+- **Innsjekk-UI:** spøkelses-markør under slider-sporet viser forrige ukes samsvar; dimensjoner med
+  mål får «🧭 Ukas mål: 2 → 3 · tiltak 2/3»; resultatsteget åpner med «Målet fra forrige helg»
+  (✓/·-liste). Coaching-prompt og seed får mål-utfallet (`evaluateWeekGoals`/`describeGoalOutcome`),
+  og prompten instruerer modellen om å tagge nye tiltak med dimensjon.
+- **Ukeplan/hjem:** `ChecklistItemRow` viser 🧭 på punkter med `source: 'livskompass'`.
+- Drive-by: sensor-config `sliderRange` rettet fra `'1_5'` til `'1_10'` (stalt etter fase 6).
 
 ## Beslutninger
 

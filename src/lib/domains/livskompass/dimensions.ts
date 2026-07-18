@@ -70,13 +70,19 @@ export const MATCH_MAX = 10;
 /** Nøytral startverdi for samsvar-slideren (midt på 1–10). */
 export const NEUTRAL_MATCH = 5;
 
-/** Grovt ord for et samsvar på 1–10 (anker, ikke én etikett per trinn). */
-export function matchLabel(v: number): string {
-	if (v <= 2) return 'Langt unna';
-	if (v <= 4) return 'Litt unna';
-	if (v <= 6) return 'Sånn passe';
-	if (v <= 8) return 'Ganske på linje';
-	return 'Helt på linje';
+/**
+ * Grovt ord for ukens samsvar, relativt til hvor viktig dimensjonen er.
+ * Gapet (viktighet − samsvar) er signalet — ikke avstanden fra 10. En uviktig
+ * dimensjon med lavt samsvar er på linje; en avgjørende dimensjon med samsvar 8
+ * er fortsatt litt under. Tersklene speiler «ute av synk»-logikken (gap ≥ 3).
+ */
+export function matchLabel(match: number, importance: number): string {
+	const gap = importance - match;
+	if (gap >= 5) return 'Langt under det viktige';
+	if (gap >= 3) return 'Klart under det viktige';
+	if (gap >= 1) return 'Litt under';
+	if (gap >= -2) return 'På linje';
+	return 'Mer rom enn viktigheten tilsier';
 }
 
 /** Grovt ord for en viktighet på 1–10 (anker, ikke én etikett per trinn). */
@@ -155,20 +161,75 @@ export function buildChatSeed(outOfSync: OutOfSyncItem[]): string {
 /** Hvor mange av de største avvikene coachingen fokuserer på. */
 export const COACHING_TOP_GAPS = 3;
 
+// ── Ukesmål (ett-poengs-intensjonen) ────────────────────────────────────────
+// Når coachingen fører tiltak på ukelista, persisteres intensjonen som et
+// `livskompass_goal`-event: dimensjon + samsvar da målet ble satt + mål-samsvar.
+// Ved neste innsjekk lukkes sløyfa: nådde uka målet, og ble tiltakene gjort?
+
+export interface LivskompassGoal {
+	dimensionId: string;
+	/** Samsvar (1–10) da målet ble satt — typisk forrige ukes innsjekk. */
+	fromMatch: number;
+	/** Mål-samsvar for uka (typisk fromMatch + 1). */
+	target: number;
+}
+
+/** Ukas mål beriket med tiltaksstatus fra ukelistas taggede punkter. */
+export interface LivskompassWeekGoal extends LivskompassGoal {
+	label: string;
+	itemsTotal: number;
+	itemsChecked: number;
+}
+
+/** Målet vurdert mot ukens faktiske samsvar-scoring. */
+export interface LivskompassGoalOutcome extends LivskompassWeekGoal {
+	match: number;
+	achieved: boolean;
+}
+
+/** Vurderer ukas mål mot scorene brukeren setter nå. */
+export function evaluateWeekGoals(
+	scores: LivskompassScores,
+	weekGoals: LivskompassWeekGoal[] | null | undefined
+): LivskompassGoalOutcome[] {
+	return (weekGoals ?? []).map((g) => {
+		const match = scores[g.dimensionId]?.match ?? NEUTRAL_MATCH;
+		return { ...g, match, achieved: match >= g.target };
+	});
+}
+
+/** Én tekstlinje per mål-utfall — delt mellom prompt, seed og UI-nære tester. */
+export function describeGoalOutcome(o: LivskompassGoalOutcome): string {
+	const tiltak = o.itemsTotal > 0 ? ` · tiltak gjennomført ${o.itemsChecked}/${o.itemsTotal}` : '';
+	return `«${o.label}»: mål ${o.fromMatch} → ${o.target}, ble ${o.match} ${o.achieved ? '✓ nådd' : '— ikke nådd'}${tiltak}`;
+}
+
 /**
  * System-prompt-prefiks som gjør hjem-chatten til en ACT-coach for ukens kompass.
  * Sendes som prefiks på toppen av den vanlige modulære prompten (server: systemPromptPrefix).
  */
-export function buildCoachingSystemPrompt(scores: LivskompassScores): string {
+export function buildCoachingSystemPrompt(
+	scores: LivskompassScores,
+	opts?: { weekGoals?: LivskompassWeekGoal[] | null }
+): string {
 	const oos = computeOutOfSync(scores).slice(0, COACHING_TOP_GAPS);
 	const gapLines = oos.length
 		? oos
-				.map((d, i) => `${i + 1}. «${d.label}» — viktighet ${d.importance}/10, samsvar ${d.match}/10 (gap ${d.gap})`)
+				.map((d, i) => `${i + 1}. «${d.label}» (id: ${d.id}) — viktighet ${d.importance}/10, samsvar ${d.match}/10 (gap ${d.gap})`)
 				.join('\n')
 		: '(ingen store avvik denne uka)';
+	const outcomes = evaluateWeekGoals(scores, opts?.weekGoals);
+	const goalSection = outcomes.length
+		? [
+				'',
+				'FORRIGE UKES MÅL (satt i forrige coaching — start med å anerkjenne disse, både det som gikk og det som ikke gikk, uten moralisering):',
+				...outcomes.map((o) => `- ${describeGoalOutcome(o)}`)
+			]
+		: [];
 	return [
 		'Du er en varm, konkret ACT-coach (Acceptance and Commitment Therapy).',
 		'Brukeren har nettopp fylt ut Livskompasset — en ukentlig verdi-innsjekk der hvert livsområde scores på to akser: hvor viktig det er (1–10) og hvor godt uka som gikk samsvarte med det (1–10). Gapet mellom dem er det som er «ute av synk».',
+		...goalSection,
 		'',
 		'OMRÅDER MED STØRST GAP DENNE UKA:',
 		gapLines,
@@ -179,21 +240,34 @@ export function buildCoachingSystemPrompt(scores: LivskompassScores): string {
 		'- Hold det varmt og kort — én ting om gangen, ikke lange lister.',
 		'- Det handler om verdier og retning, ikke prestasjon eller moralisering.',
 		'- Avslutt med ett tydelig neste-steg brukeren kan ta denne uka.',
-		'- Når dere blir enige om konkrete, målbare tiltak og brukeren vil føre dem opp: bruk verktøyet `add_to_week_plan` med weekOffset=1 (neste uke). Skriv frekvens rett i teksten, f.eks. «Skjermfri 16–19 tre kvelder» eller «Legge meg før kl. 21 en gang».'
+		'- Når dere blir enige om konkrete, målbare tiltak og brukeren vil føre dem opp: bruk verktøyet `add_to_week_plan` med weekOffset=1 (neste uke). Send hvert tiltak som objekt med `text` og `dimension` (dimensjons-id-en fra listen over, f.eks. egentid) — da spores målet frem til neste innsjekk. Skriv frekvens rett i teksten, f.eks. «Skjermfri 16–19 tre kvelder» eller «Legge meg før kl. 21 en gang».'
 	].join('\n');
 }
 
 /** Førsteperson-åpningsmelding som inviterer coachingen mot ett-poengs-målet. */
-export function buildCoachingSeed(scores: LivskompassScores, note?: string | null): string {
+export function buildCoachingSeed(
+	scores: LivskompassScores,
+	note?: string | null,
+	opts?: { weekGoals?: LivskompassWeekGoal[] | null }
+): string {
 	const oos = computeOutOfSync(scores);
 	const cleanNote = note?.trim();
+	// Hadde uka et mål fra forrige coaching? Nevn utfallet først, så sløyfa lukkes i samtalen.
+	const outcomes = evaluateWeekGoals(scores, opts?.weekGoals);
+	let prefix = '';
+	if (outcomes.length) {
+		const o = outcomes[0];
+		prefix = o.achieved
+			? `Forrige uke satte jeg mål om å heve ${o.label.toLowerCase()} fra ${o.fromMatch} til ${o.target} — det ble ${o.match}, så det gikk! `
+			: `Forrige uke satte jeg mål om å heve ${o.label.toLowerCase()} fra ${o.fromMatch} til ${o.target}, men det ble ${o.match}. `;
+	}
 	if (!oos.length) {
-		const base = 'Jeg fylte ut ukens livskompass, og det meste føltes på linje. Er det likevel noe verdt å styrke litt neste uke?';
+		const base = `${prefix}Jeg fylte ut ukens livskompass, og det meste føltes på linje. Er det likevel noe verdt å styrke litt neste uke?`;
 		return cleanNote ? `${base} ${cleanNote}` : base;
 	}
 	const top = oos[0];
 	const second = oos[1];
-	let msg = `Jeg fylte ut ukens livskompass. Det som er mest ute av synk er ${top.label.toLowerCase()}`;
+	let msg = `${prefix}Jeg fylte ut ukens livskompass. Det som er mest ute av synk er ${top.label.toLowerCase()}`;
 	if (second) msg += ` og ${second.label.toLowerCase()}`;
 	msg += '. Jeg vil gjerne klare å heve ett poeng på ett av dem neste uke — kan du hjelpe meg finne ett konkret grep?';
 	if (cleanNote) msg += ` ${cleanNote}`;

@@ -30,6 +30,7 @@ import { logNapTool } from '$lib/ai/tools/log-nap';
 import { createMemoryTool } from '$lib/ai/tools/create-memory';
 import { createNoteTool } from '$lib/ai/tools/create-note';
 import { queryReflectionsTool } from '$lib/ai/tools/query-reflections';
+import { LIVSKOMPASS_DIMENSION_IDS } from '$lib/domains/livskompass/dimensions';
 import { ASSISTANT_SOURCE } from './conversation';
 
 /**
@@ -169,12 +170,27 @@ export const SHARED_ASSISTANT_TOOLS: AssistantTool[] = [
 	adaptSharedTool(manageThemeTool),
 	adaptSharedTool(addToWeekPlanTool, {
 		description:
-			'Legg konkrete punkter inn i ukeplanen. weekOffset 0 = denne uka, 1 = neste. items er korte tekster.',
+			'Legg konkrete punkter inn i ukeplanen. weekOffset 0 = denne uka, 1 = neste. Hvert punkt er {text, dimension?} — dimension er en livskompass-dimensjons-id og settes kun for kompass-mål fra livskompass-coachingen.',
 		parametersSchema: {
 			type: 'object',
 			properties: {
 				weekOffset: { type: 'number', description: '0 = denne uka, 1 = neste uke' },
-				items: { type: 'array', items: { type: 'string' }, description: 'Punkter som skal legges til' }
+				items: {
+					type: 'array',
+					description: 'Punkter som skal legges til',
+					items: {
+						type: 'object',
+						properties: {
+							text: { type: 'string', description: 'Punktteksten' },
+							dimension: {
+								type: 'string',
+								enum: LIVSKOMPASS_DIMENSION_IDS,
+								description: 'Livskompass-dimensjon punktet skal heve (kun kompass-mål)'
+							}
+						},
+						required: ['text']
+					}
+				}
 			},
 			required: ['items']
 		}

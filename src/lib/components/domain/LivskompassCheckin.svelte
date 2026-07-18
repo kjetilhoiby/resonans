@@ -11,9 +11,11 @@
 		computeOutOfSync,
 		averageMatch,
 		defaultScores,
+		evaluateWeekGoals,
 		buildCoachingSeed,
 		buildCoachingSystemPrompt,
-		type LivskompassScores
+		type LivskompassScores,
+		type LivskompassWeekGoal
 	} from '$lib/domains/livskompass/dimensions';
 
 	type Stage = 'onboarding' | 'scoring' | 'result';
@@ -23,6 +25,10 @@
 		prefillImportance?: Record<string, number> | null;
 		/** Eksisterende scorer (om uka allerede er påbegynt) — overstyrer prefill. */
 		initialScores?: LivskompassScores | null;
+		/** Forrige registrerte kompass — spøkelses-markør på samsvar-slideren. */
+		previousScores?: LivskompassScores | null;
+		/** Ett-poengs-mål som peker på denne uka (fra forrige coaching), med tiltaksstatus. */
+		weekGoals?: LivskompassWeekGoal[] | null;
 		/** Vis viktighets-onboarding først (bruker har aldri rangert viktighet). */
 		needsOnboarding?: boolean;
 		/** Start direkte på et bestemt steg (f.eks. resultat når man åpner et registrert kompass). */
@@ -37,6 +43,8 @@
 	let {
 		prefillImportance = null,
 		initialScores = null,
+		previousScores = null,
+		weekGoals = null,
 		needsOnboarding = false,
 		startStage = 'scoring',
 		onSaveImportance,
@@ -67,9 +75,15 @@
 
 	const outOfSync = $derived(computeOutOfSync(scores));
 	const avg = $derived(averageMatch(scores).toFixed(1));
+	// Ukas mål vurdert mot scorene brukeren setter nå — oppdateres live under scoring.
+	const goalOutcomes = $derived(evaluateWeekGoals(scores, weekGoals));
 
 	function grouped(areaId: string) {
 		return LIVSKOMPASS_DIMENSIONS.filter((d) => d.area === areaId);
+	}
+
+	function goalFor(dimId: string): LivskompassWeekGoal | undefined {
+		return (weekGoals ?? []).find((g) => g.dimensionId === dimId);
 	}
 
 	function complete() {
@@ -81,8 +95,8 @@
 		onContinueChat({
 			scores: snapshot,
 			note: note.trim(),
-			seed: buildCoachingSeed(snapshot, note),
-			systemPrompt: buildCoachingSystemPrompt(snapshot)
+			seed: buildCoachingSeed(snapshot, note, { weekGoals }),
+			systemPrompt: buildCoachingSystemPrompt(snapshot, { weekGoals })
 		});
 	}
 </script>
@@ -141,10 +155,12 @@
 					<div class="lk-area">
 						<div class="lk-area-label" style:color={area.color}>{area.label}</div>
 						{#each grouped(area.id) as dim (dim.id)}
+							{@const dimGoal = goalFor(dim.id)}
+							{@const prevMatch = previousScores?.[dim.id]?.match}
 							<div class="lk-row">
 								<div class="lk-row-head">
 									<span class="lk-dim-label">{dim.label}</span>
-									<span class="lk-match-val">{matchLabel(scores[dim.id].match)} ({scores[dim.id].match}/{MATCH_MAX})</span>
+									<span class="lk-match-val">{matchLabel(scores[dim.id].match, scores[dim.id].importance)} ({scores[dim.id].match}/{MATCH_MAX})</span>
 								</div>
 								<div class="lk-slider-wrap">
 									<span
@@ -153,6 +169,13 @@
 										style:background={dim.color}
 										title="Viktighet: {scores[dim.id].importance}/{IMPORTANCE_MAX}"
 									></span>
+									{#if prevMatch !== undefined}
+										<span
+											class="lk-prev-tick"
+											style:left="{tickPct(prevMatch)}%"
+											title="Forrige uke: {prevMatch}/{MATCH_MAX}"
+										></span>
+									{/if}
 									<input
 										class="lk-slider"
 										type="range"
@@ -165,6 +188,11 @@
 										data-track="livskompass:samsvar-{dim.id}"
 									/>
 								</div>
+								{#if dimGoal}
+									<div class="lk-goal-hint">
+										🧭 Ukas mål: {dimGoal.fromMatch} → {dimGoal.target}{dimGoal.itemsTotal > 0 ? ` · tiltak ${dimGoal.itemsChecked}/${dimGoal.itemsTotal}` : ''}
+									</div>
+								{/if}
 								{#if showImportance}
 									<div class="lk-imp-row">
 										<span class="lk-imp-label">Viktighet: {importanceLabel(scores[dim.id].importance)} ({scores[dim.id].importance}/{IMPORTANCE_MAX})</span>
@@ -198,6 +226,19 @@
 				</div>
 
 				<div class="lk-sync">
+					{#if goalOutcomes.length}
+						<h3>Målet fra forrige helg</h3>
+						<ul class="lk-sync-list lk-goal-list">
+							{#each goalOutcomes as o (o.dimensionId)}
+								<li>
+									<span class="lk-goal-mark" class:lk-goal-mark-hit={o.achieved}>{o.achieved ? '✓' : '·'}</span>
+									<span class="lk-sync-text">
+										<strong>{o.label}</strong> — mål {o.fromMatch} → {o.target}, ble {o.match}{o.achieved ? ' 🎯' : ''}{o.itemsTotal > 0 ? ` · tiltak ${o.itemsChecked}/${o.itemsTotal}` : ''}
+									</span>
+								</li>
+							{/each}
+						</ul>
+					{/if}
 					{#if outOfSync.length}
 						<h3>Ute av synk denne uka</h3>
 						<ul class="lk-sync-list">
@@ -326,6 +367,37 @@
 		transform: translateX(-1px);
 		pointer-events: none;
 		z-index: 2;
+	}
+	/* Forrige ukes samsvar: kort hvit strek under sporet (viktighet er farget, over). */
+	.lk-prev-tick {
+		position: absolute;
+		bottom: -6px;
+		width: 2px;
+		height: 9px;
+		border-radius: 1px;
+		background: rgba(255, 255, 255, 0.45);
+		transform: translateX(-1px);
+		pointer-events: none;
+		z-index: 2;
+	}
+	.lk-goal-hint {
+		margin-top: 0.35rem;
+		font-size: 0.72rem;
+		color: rgba(255, 255, 255, 0.5);
+	}
+	.lk-goal-list {
+		margin-bottom: 1.4rem;
+	}
+	.lk-goal-mark {
+		flex: none;
+		width: 14px;
+		text-align: center;
+		margin-top: 0.15rem;
+		color: rgba(255, 255, 255, 0.35);
+		font-weight: 700;
+	}
+	.lk-goal-mark-hit {
+		color: #7fd8a4;
 	}
 	.lk-imp-row {
 		display: flex;

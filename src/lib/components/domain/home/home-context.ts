@@ -12,7 +12,7 @@ import type { ChatState } from '$lib/client/chat-state.svelte';
 import type { ActionCandidate, ActionIntent } from '$lib/types/actions';
 import type { FlowContext } from '$lib/flows/types';
 import type { PeriodSlot } from '$lib/domains/egenfrekvens/period-slots';
-import type { LivskompassScores } from '$lib/domains/livskompass/dimensions';
+import type { LivskompassScores, LivskompassWeekGoal } from '$lib/domains/livskompass/dimensions';
 
 export const HOME_CTX = Symbol('home');
 
@@ -332,6 +332,10 @@ export interface HomeContext {
 	livskompassChip: boolean;
 	/** Siste registrerte kompass (til hjem-widget) */
 	livskompassLatest: { week: string; scores: LivskompassScores } | null;
+	/** Siste innsjekk før inneværende uke — spøkelses-markør i innsjekket */
+	livskompassPrevious: { week: string; scores: LivskompassScores } | null;
+	/** Ett-poengs-mål som peker på inneværende uke, med tiltaksstatus */
+	livskompassWeekGoals: LivskompassWeekGoal[];
 	loadLivskompass: () => Promise<void>;
 	openLivskompass: (opts?: { startStage?: 'scoring' | 'result' }) => void;
 
