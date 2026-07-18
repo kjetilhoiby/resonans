@@ -37,7 +37,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			quantity: body.quantity != null ? String(body.quantity) : null,
 			unit: body.unit ?? null,
 			expiresAt: body.expiresAt ?? null,
-			notes: body.notes ?? null
+			notes: body.notes ?? null,
+			isStaple: body.isStaple === true
 		})
 		.returning();
 
@@ -58,6 +59,7 @@ export const PATCH: RequestHandler = async ({ request, locals }) => {
 	if ('expiresAt' in body) updates.expiresAt = body.expiresAt;
 	if ('notes' in body) updates.notes = body.notes;
 	if ('lastUsedAt' in body) updates.lastUsedAt = body.lastUsedAt ? new Date(body.lastUsedAt) : null;
+	if ('isStaple' in body) updates.isStaple = body.isStaple === true;
 
 	const [updated] = await db
 		.update(pantryItems)

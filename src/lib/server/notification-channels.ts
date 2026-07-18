@@ -12,7 +12,8 @@ export type NotificationRouteKey =
 	| 'programReadiness'
 	| 'programAdaptive'
 	| 'applianceCycleStart'
-	| 'applianceCycleFinish';
+	| 'applianceCycleFinish'
+	| 'groceryWeekly';
 
 export type GoogleChatChannel = {
 	id: string;

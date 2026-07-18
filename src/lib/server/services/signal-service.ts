@@ -1,6 +1,6 @@
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { db, pgClient, rowsOf } from '$lib/db';
-import { users } from '$lib/db/schema';
+import { users, foodSettings } from '$lib/db/schema';
 import { fitBestEffortWeightModel, predictDeltaKg } from '$lib/util/effort-weight-model';
 import { buildEffortWeightInputs } from '$lib/server/health/effort-weight-data';
 import { getEnduranceWorkouts, getStrengthSessions } from '$lib/server/tracks/repository';
@@ -483,9 +483,17 @@ async function produceEconomicsGrocerySpendWeekly(userId: string, now: Date) {
 	const spendWeekToDate = sumAbs(weekRows);
 	const baselineWeeklyAvg = sumAbs(baselineRows) / 4;
 
-	// Prorate baseline mot hvor langt uka er kommet (minst én dag).
+	// Ukebudsjett (food_settings) trumfer historisk snitt som referanse når satt.
+	const settingsRow = await db.query.foodSettings.findFirst({
+		where: eq(foodSettings.userId, userId)
+	});
+	const budgetWeekly =
+		settingsRow?.groceryBudgetWeekly != null ? Number(settingsRow.groceryBudgetWeekly) : null;
+	const referenceWeekly = budgetWeekly != null && budgetWeekly > 0 ? budgetWeekly : baselineWeeklyAvg;
+
+	// Prorate referansen mot hvor langt uka er kommet (minst én dag).
 	const daysElapsed = Math.max(1, (now.getTime() - weekStart.getTime()) / 86400000);
-	const expectedToDate = baselineWeeklyAvg * (Math.min(7, daysElapsed) / 7);
+	const expectedToDate = referenceWeekly * (Math.min(7, daysElapsed) / 7);
 	const ratio = expectedToDate > 0 ? spendWeekToDate / expectedToDate : 1;
 	const severity = toSeverityFromRatio(ratio);
 	const pressureBand = severity === 'high' ? 'high' : severity === 'medium' ? 'medium' : 'low';
@@ -497,13 +505,15 @@ async function produceEconomicsGrocerySpendWeekly(userId: string, now: Date) {
 		valueNumber: ratio,
 		valueText: pressureBand,
 		severity,
-		confidence: baselineWeeklyAvg > 0 ? 0.85 : 0.4,
+		confidence: referenceWeekly > 0 ? 0.85 : 0.4,
 		windowStart: weekStart,
 		windowEnd: now,
 		observedAt: now,
 		context: {
 			spendWeekToDate,
 			baselineWeeklyAvg,
+			budgetWeekly,
+			referenceSource: budgetWeekly != null && budgetWeekly > 0 ? 'budget' : 'baseline',
 			expectedToDate,
 			ratio,
 			transactionCount: weekRows.length,

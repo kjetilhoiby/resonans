@@ -193,6 +193,7 @@
 			pantry: foodDashboard.pantry,
 			expiringSoon: foodDashboard.expiringSoon,
 			shoppingList: foodDashboard.shoppingList ?? null,
+			groceryBudgetWeekly: foodDashboard.groceryBudgetWeekly ?? null,
 			nextWeek: foodDashboard.nextWeek
 		};
 	});

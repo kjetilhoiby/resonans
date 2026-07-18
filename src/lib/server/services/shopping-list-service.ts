@@ -150,10 +150,23 @@ export async function buildWeekShoppingList(
 	);
 
 	const pantry = await db.select().from(pantryItems).where(eq(pantryItems.userId, userId));
-	const pantryNames = new Set(pantry.map((p) => normalizeIngredientName(p.name)));
+	const today = new Date().toISOString().slice(0, 10);
+	// Tomme varer (quantity 0) og utgåtte varer teller ikke som «på lager» —
+	// de skal ikke undertrykke ingredienser fra oppskriftene.
+	const inStock = (p: (typeof pantry)[number]) =>
+		!(p.quantity != null && Number(p.quantity) === 0) && !(p.expiresAt && p.expiresAt < today);
+	const pantryNames = new Set(pantry.filter(inStock).map((p) => normalizeIngredientName(p.name)));
 
 	const aggregated = aggregateIngredients(plans, mealsById, pantryNames, opts);
 	const items = aggregated.map((entry) => toShoppingListItem(entry));
+
+	// Faste varer (staples — frukt/grønt/nøtter m.m.): legg på lista når de er
+	// tomme eller utgått, så det alltid finnes lettvinte matpakke-alternativer.
+	for (const staple of pantry.filter((p) => p.isStaple && !inStock(p))) {
+		const normalized = normalizeIngredientName(staple.name);
+		if (items.some((item) => item.normalizedName === normalized)) continue;
+		items.push(toShoppingListItem({ name: staple.name, sources: ['fast vare'] }));
+	}
 
 	for (const extra of opts.extraItems ?? []) {
 		const name = extra.trim();

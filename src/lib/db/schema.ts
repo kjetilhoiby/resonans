@@ -23,6 +23,7 @@ export const users = pgTable('users', {
 				egenfrekvensCheckin?: string[];
 				applianceCycleStart?: string[];
 				applianceCycleFinish?: string[];
+				groceryWeekly?: string[];
 			};
 		};
 		dailyCheckIn?: { enabled: boolean; time: string }; // format: "09:00"
@@ -43,6 +44,8 @@ export const users = pgTable('users', {
 		workoutImports?: { enabled: boolean };
 		applianceCycles?: { enabled: boolean; notifyStart?: boolean; notifyFinish?: boolean };
 		inactivityAlerts?: { enabled: boolean; daysThreshold: number };
+		// Ukentlig dagligvare-oppsummering (mandag): forbruk forrige uke vs. snitt/budsjett
+		groceryWeekly?: { enabled: boolean; time?: string }; // default "09:00"
 	}>(),
 	timezone: text('timezone').default('Europe/Oslo'),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -852,11 +855,22 @@ export const pantryItems = pgTable('pantry_items', {
 	expiresAt: date('expires_at'),
 	addedAt: timestamp('added_at').defaultNow().notNull(),
 	lastUsedAt: timestamp('last_used_at'),
-	notes: text('notes')
+	notes: text('notes'),
+	// Fast vare — skal alltid finnes hjemme (frukt, grønt, nøtter til matpakkene).
+	// Tomme staples (quantity 0 / utgått) legges automatisk på ukas handleliste.
+	isStaple: boolean('is_staple').notNull().default(false)
 }, (table) => ({
 	idxPantryUserLocation: index('pantry_items_user_location_idx').on(table.userId, table.location),
 	idxPantryUserExpires: index('pantry_items_user_expires_idx').on(table.userId, table.expiresAt)
 }));
+
+// Matinnstillinger — én rad per bruker (ukebudsjett for dagligvarer m.m.)
+export const foodSettings = pgTable('food_settings', {
+	userId: text('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+	groceryBudgetWeekly: decimal('grocery_budget_weekly'),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+});
 
 // Handlelister — ett strukturert artefakt per (bruker, uke, kind). Genereres fra
 // ukens meal_plans minus pantry i «onsdagsøkta», og brukes som grunnlag for

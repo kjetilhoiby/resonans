@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
-import { themes, pantryItems } from '$lib/db/schema';
+import { themes, pantryItems, foodSettings } from '$lib/db/schema';
 import { resolveThemeDashboardKind } from '$lib/domain/theme-dashboard-registry';
 import { and, eq, gte, lte, asc } from 'drizzle-orm';
 import { addDaysIso, isoWeekKeyForDate } from '$lib/server/iso-week';
@@ -64,11 +64,17 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 		)
 		.orderBy(asc(pantryItems.expiresAt));
 
+	const settings = await db.query.foodSettings.findFirst({
+		where: eq(foodSettings.userId, userId)
+	});
+
 	return json({
 		weekContext,
 		mealPlans: enrichedPlans,
 		pantry,
 		expiringSoon,
+		groceryBudgetWeekly:
+			settings?.groceryBudgetWeekly != null ? Number(settings.groceryBudgetWeekly) : null,
 		nextWeek: {
 			weekContext: nextWeekContext,
 			mealPlans: nextWeekPlans,
