@@ -14,8 +14,9 @@ describe('normalizeGroceryName', () => {
 		expect(normalizeGroceryName('Kjøttdeig 400 g')).toBe('kjøttdeig');
 	});
 
-	it('fjerner parenteser', () => {
-		expect(normalizeGroceryName('Gulrot (norsk)')).toBe('gulrot');
+	it('fjerner mengde-parenteser men beholder variant-parenteser', () => {
+		expect(normalizeGroceryName('Kjøttdeig (400 g)')).toBe('kjøttdeig');
+		expect(normalizeGroceryName('Gulrot (norsk)')).toBe('gulrot (norsk)');
 	});
 });
 

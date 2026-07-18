@@ -9,8 +9,8 @@
 
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '$lib/db';
-import { foodSettings, groceryOrders, groceryOrderLines, nudgeEvents, shoppingLists, themes, users } from '$lib/db/schema';
-import { queryCanonicalTransactions } from '$lib/server/integrations/categorized-events';
+import { groceryOrders, groceryOrderLines, nudgeEvents, shoppingLists, themes, users } from '$lib/db/schema';
+import { getGroceryWeekSpend } from '$lib/server/services/grocery-insights';
 import { createNudgeEvent, markNudgeSent } from '$lib/server/nudge-events';
 import {
 	getGoogleChatWebhooksForRoutes,
@@ -20,7 +20,7 @@ import {
 import { sendGoogleChatMessage } from '$lib/server/google-chat';
 import { PushDeliveryService } from '$lib/server/services/push-delivery-service';
 import { localHm, isWithinRecentMinutesWindow } from '$lib/server/nudge-time';
-import { addDaysIso, datesForIsoWeek, isoWeekKeyForDate } from '$lib/server/iso-week';
+import { addDaysIso, datesForIsoWeek, isoWeekKeyForDate, osloTodayIso } from '$lib/server/iso-week';
 import { compareShoppingListToOrder } from '$lib/domains/food/grocery';
 import { resolveThemeDashboardKind } from '$lib/domain/theme-dashboard-registry';
 import type { ShoppingListItem } from '$lib/server/services/shopping-list-service';
@@ -66,8 +66,8 @@ export async function sendGroceryWeeklyNudge(
 		}
 	}
 
-	// Forrige hele uke (man–søn)
-	const todayIso = now.toISOString().slice(0, 10);
+	// Forrige hele uke (man–søn) — Oslo-dato, ikke UTC (mandag 00–01 norsk tid)
+	const todayIso = osloTodayIso(now);
 	const lastWeekKey = isoWeekKeyForDate(addDaysIso(todayIso, -7));
 	const lastWeekDays = datesForIsoWeek(lastWeekKey);
 	if (lastWeekDays.length === 0) return { sent: false, reason: 'invalid-week' };
@@ -87,38 +87,18 @@ export async function sendGroceryWeeklyNudge(
 		return { sent: false, reason: 'already-sent-this-week' };
 	}
 
-	// Forbruk forrige uke + 4-ukers baseline (kategori dagligvarer)
-	const sumAbs = (rows: Array<{ amount: unknown }>) =>
-		rows.reduce((sum, row) => sum + Math.abs(Number(row.amount) || 0), 0);
+	// Ingen leveringsruter → ikke gjør transaksjonsanalysen i det hele tatt
+	const routes = resolveRoutesForNotification(user, 'groceryWeekly');
+	if (routes.length === 0) return { sent: false, reason: 'no-routes' };
 
-	const [weekRows, baselineRows] = await Promise.all([
-		queryCanonicalTransactions({
-			userId,
-			from: weekStart,
-			to: weekEnd,
-			category: 'dagligvarer',
-			spendingOnly: true
-		}),
-		queryCanonicalTransactions({
-			userId,
-			from: new Date(weekStart.getTime() - 28 * 86400000),
-			to: weekStart,
-			category: 'dagligvarer',
-			spendingOnly: true
-		})
-	]);
-	const spend = sumAbs(weekRows);
-	const baselineWeekly = sumAbs(baselineRows) / 4;
+	// Forbruk forrige uke + baseline + budsjett — samme beregning som
+	// economics_grocery_spend_weekly-signalet (delt helper).
+	const { spend, baselineWeeklyAvg: baselineWeekly, budgetWeekly: budget } =
+		await getGroceryWeekSpend(userId, weekStart, weekEnd);
 
 	if (spend === 0 && baselineWeekly === 0) {
 		return { sent: false, reason: 'no-grocery-data' };
 	}
-
-	// Budsjett (valgfritt)
-	const settingsRow = await db.query.foodSettings.findFirst({
-		where: eq(foodSettings.userId, userId)
-	});
-	const budget = settingsRow?.groceryBudgetWeekly != null ? Number(settingsRow.groceryBudgetWeekly) : null;
 
 	// Plan-vs-kjøp fra ukas Oda-ordre (hvis både ordre og handleliste finnes)
 	let planVsKjop: { bought: number; missing: number; impulse: number } | null = null;
@@ -187,9 +167,6 @@ export async function sendGroceryWeeklyNudge(
 		mode: 'interactive',
 		context: { weekContext: lastWeekKey, spend, baselineWeekly, budget }
 	});
-
-	const routes = resolveRoutesForNotification(user, 'groceryWeekly');
-	if (routes.length === 0) return { sent: false, reason: 'no-routes' };
 
 	let sent = false;
 

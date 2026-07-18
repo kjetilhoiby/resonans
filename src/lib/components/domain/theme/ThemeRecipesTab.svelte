@@ -246,7 +246,7 @@
 	}
 	.recipes-import-error {
 		margin: 0;
-		color: #e07070;
+		color: var(--error-text);
 		font-size: 0.82rem;
 	}
 	.recipes-create-input,
@@ -260,10 +260,10 @@
 		font-size: 0.95rem;
 	}
 	.recipes-create-btn {
-		background: var(--accent-bg, rgba(124, 142, 245, 0.18));
+		background: color-mix(in srgb, var(--accent-light) 18%, transparent);
 		border: none;
 		border-radius: 12px;
-		color: var(--accent-fg, #aab8ff);
+		color: var(--accent-light);
 		padding: 0 18px;
 		font-size: 0.9rem;
 		font-weight: 600;

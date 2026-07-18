@@ -221,7 +221,7 @@
 	}
 	.lp-tab.active {
 		background: rgba(124, 142, 245, 0.18);
-		color: var(--accent-fg, #aab8ff);
+		color: var(--accent-light);
 	}
 	.lp-body {
 		overflow-y: auto;
@@ -275,7 +275,7 @@
 	.lp-seg-btn.active {
 		background: rgba(124, 142, 245, 0.18);
 		border-color: rgba(124, 142, 245, 0.4);
-		color: var(--accent-fg, #aab8ff);
+		color: var(--accent-light);
 	}
 	.lp-desc {
 		margin: 0;
@@ -292,7 +292,7 @@
 		background: rgba(124, 142, 245, 0.18);
 		border: none;
 		border-radius: 10px;
-		color: var(--accent-fg, #aab8ff);
+		color: var(--accent-light);
 		font-size: 1.1rem;
 		cursor: pointer;
 	}

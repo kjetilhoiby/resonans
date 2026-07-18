@@ -187,6 +187,4 @@ export async function getLunchboxOverview(
 }
 
 /** Oslo-dato (YYYY-MM-DD) — matpakker følger norsk lokaltid, ikke UTC. */
-export function osloToday(now = new Date()): string {
-	return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Oslo' }).format(now);
-}
+export { osloTodayIso as osloToday } from '$lib/server/iso-week';

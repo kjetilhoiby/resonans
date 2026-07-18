@@ -4,6 +4,8 @@ import { db } from '$lib/db';
 import { checklists, checklistItems } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { dayContextForDate } from '$lib/server/iso-week';
+import { moveMealPlanToDate } from '$lib/server/services/meal-plan-sync';
+import { runInBackground } from '$lib/server/run-in-background';
 
 /**
  * POST /api/checklists/[id]/items/[itemId]/snooze
@@ -73,6 +75,15 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 		...original.metadata,
 		snoozedToItemId: copy.id
 	};
+
+	// Måltidspunkt: kopien overtar meal_plans-koblingen (matplan-synk), og
+	// plan-raden flyttes til måldagen så ukemeny/handleliste følger med.
+	// Originalen mister linkedMealPlanId — sletting av det strøkne punktet skal
+	// ikke slette planen kopien nå eier.
+	if (original.metadata?.linkedMealPlanId) {
+		delete nextOriginalMetadata.linkedMealPlanId;
+		runInBackground(moveMealPlanToDate(userId, original.metadata.linkedMealPlanId, targetDate));
+	}
 
 	const updatedRows = await db
 		.update(checklistItems)

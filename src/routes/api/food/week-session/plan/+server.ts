@@ -2,7 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { mealPlans } from '$lib/db/schema';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 import { FAMILY_DEFAULT_SERVINGS } from '$lib/domains/food';
 import {
 	upsertMealPlan,
@@ -17,8 +17,10 @@ type DayInput = {
 };
 
 // POST /api/food/week-session/plan — lagre middagsvalgene fra onsdagsøkta.
-// Diffes per dag mot eksisterende dinner-planer: gjenbruk rader der mulig,
-// opprett nye, slett fjernede. Synk til ukeplanen skjer via upsert/delete.
+// Diffes per dag mot eksisterende dinner-planer MED måltid: gjenbruk rader der
+// mulig (bevarer rad-id-en ukeplan-punktet peker på), opprett nye, slett
+// fjernede. Planer uten mealId (rene notat-planer) ligger utenfor øktas modell
+// og røres aldri. Synk til ukeplanen skjer via upsert/delete.
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const userId = locals.userId;
 	const body = (await request.json()) as {
@@ -32,50 +34,63 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	}
 	const servings = body.servings ?? FAMILY_DEFAULT_SERVINGS;
 
+	// Alle ukas dinner-planer i én spørring (diffes per dag under)
+	const dates = body.days.map((d) => d.date).filter(Boolean);
+	const allExisting = dates.length
+		? await db
+				.select()
+				.from(mealPlans)
+				.where(
+					and(
+						eq(mealPlans.userId, userId),
+						eq(mealPlans.mealType, 'dinner'),
+						isNotNull(mealPlans.mealId),
+						inArray(mealPlans.date, dates)
+					)
+				)
+		: [];
+
 	for (const day of body.days) {
 		if (!day.date) continue;
+		const existing = allExisting.filter((plan) => plan.date === day.date);
 
-		const existing = await db
-			.select()
-			.from(mealPlans)
-			.where(
-				and(
-					eq(mealPlans.userId, userId),
-					eq(mealPlans.date, day.date),
-					eq(mealPlans.mealType, 'dinner')
-				)
-			);
-
-		// Løs ønskede mealIds (fritekst → findOrCreateMealId)
+		// Løs ønskede mealIds (fritekst → findOrCreateMealId, eksakt match —
+		// «Taco» skal ikke kobles til «Tacosuppe»)
 		const desired: string[] = [];
 		for (const choice of day.meals ?? []) {
 			const mealId =
 				choice.mealId ??
-				(choice.mealTitle ? await findOrCreateMealId(userId, choice.mealTitle) : null);
+				(choice.mealTitle
+					? await findOrCreateMealId(userId, choice.mealTitle, { match: 'exact' })
+					: null);
 			if (mealId) desired.push(mealId);
 		}
 
-		const keep = new Set<string>();
 		const toCreate: string[] = [];
 		const unmatched = [...existing];
 
 		for (const mealId of desired) {
 			const matchIndex = unmatched.findIndex((plan) => plan.mealId === mealId);
 			if (matchIndex >= 0) {
-				keep.add(unmatched[matchIndex].id);
 				unmatched.splice(matchIndex, 1);
 			} else {
 				toCreate.push(mealId);
 			}
 		}
 
-		// Gjenbruk overtallige rader for nye valg (oppdater i stedet for slett+opprett)
-		for (const mealId of [...toCreate]) {
-			const reusable = unmatched.shift();
-			if (!reusable) break;
-			await upsertMealPlan(userId, { id: reusable.id, mealId, servings });
-			keep.add(reusable.id);
-			toCreate.splice(toCreate.indexOf(mealId), 1);
+		// Gjenbruk overtallige rader for nye valg — bevarer rad-id-en som
+		// ukeplan-punktets linkedMealPlanId peker på. date/weekContext settes
+		// eksplisitt så en rad med avvikende weekContext normaliseres.
+		while (toCreate.length > 0 && unmatched.length > 0) {
+			const reusable = unmatched.shift()!;
+			const mealId = toCreate.shift()!;
+			await upsertMealPlan(userId, {
+				id: reusable.id,
+				mealId,
+				servings,
+				date: day.date,
+				weekContext: body.weekContext
+			});
 		}
 
 		for (const mealId of toCreate) {

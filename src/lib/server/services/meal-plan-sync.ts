@@ -35,15 +35,24 @@ type ItemMetadata = NonNullable<ChecklistItemRow['metadata']>;
 
 // ─── Rene beslutningshjelpere (testbare uten db) ───────────────
 
-/** Kan dette dag-punktet adopteres som speil for en meal_plan? */
+/**
+ * Kan dette dag-punktet adopteres som speil for en meal_plan? Krever samme
+ * måltidstype OG samme tittel — adopsjon skal gjenkjenne punktet som allerede
+ * beskriver planen, aldri omskrive et bruker-skrevet punkt om noe annet.
+ */
 export function shouldAdoptItem(
 	item: { checked: boolean; text: string; metadata?: { linkedMealPlanId?: string; mealType?: string } | null },
-	mealType: MealType
+	mealType: MealType,
+	title: string
 ): boolean {
 	if (item.checked) return false;
 	if (item.metadata?.linkedMealPlanId) return false;
 	const meal = detectMealPrefix(item.text);
-	return meal !== null && meal.mealType === mealType;
+	return (
+		meal !== null &&
+		meal.mealType === mealType &&
+		meal.cleanTitle.toLowerCase() === title.trim().toLowerCase()
+	);
 }
 
 /** Bygg tekst + metadata-endringer for et dag-punkt som speiler en meal_plan. */
@@ -115,7 +124,7 @@ export async function syncMealPlanToDayItem(userId: string, plan: MealPlanRow): 
 
 	const linked = items.find((item) => item.metadata?.linkedMealPlanId === plan.id);
 	const target =
-		linked ?? items.find((item) => shouldAdoptItem(item, plan.mealType as MealType)) ?? null;
+		linked ?? items.find((item) => shouldAdoptItem(item, plan.mealType as MealType, title)) ?? null;
 
 	if (target) {
 		const fields = mealItemFieldsFor(plan, title, (target.metadata ?? {}) as Record<string, unknown>);
@@ -155,12 +164,42 @@ export async function removeDayItemForMealPlan(userId: string, plan: MealPlanRow
 
 	const items = await db.query.checklistItems.findMany({
 		where: and(eq(checklistItems.checklistId, checklist.id), eq(checklistItems.userId, userId)),
-		columns: { id: true, metadata: true }
+		columns: { id: true, metadata: true, checked: true, skippedAt: true }
 	});
 	const target = items.find((item) => item.metadata?.linkedMealPlanId === plan.id);
-	if (target) {
-		await db.delete(checklistItems).where(eq(checklistItems.id, target.id));
+	if (!target) return;
+
+	await db.delete(checklistItems).where(eq(checklistItems.id, target.id));
+
+	// Var middagen siste ubehandlede punkt, er dagen nå ferdig — speiler
+	// syncChecklistCompletion i checklist-endepunktet (som denne veien ikke går via).
+	const remaining = items.filter((item) => item.id !== target.id);
+	if (remaining.length > 0 && remaining.every((item) => item.checked || item.skippedAt)) {
+		await db
+			.update(checklists)
+			.set({ completedAt: new Date() })
+			.where(and(eq(checklists.id, checklist.id), sql`${checklists.completedAt} IS NULL`));
 	}
+}
+
+/**
+ * Flytt en meal_plan til ny dato (brukes av snooze av «middag: …»-punkter).
+ * Oppdaterer date + weekContext uten dag-item-synk — snooze-endepunktet eier
+ * selve punktene (original + kopi).
+ */
+export async function moveMealPlanToDate(
+	userId: string,
+	planId: string,
+	newDateIso: string
+): Promise<void> {
+	await db
+		.update(mealPlans)
+		.set({
+			date: newDateIso,
+			weekContext: isoWeekKeyForDate(newDateIso),
+			updatedAt: new Date()
+		})
+		.where(and(eq(mealPlans.id, planId), eq(mealPlans.userId, userId)));
 }
 
 // ─── Retning B: dag-item → meal_plan ───────────────────────────
@@ -228,11 +267,23 @@ export async function afterMealItemWritten(
 		.returning({ id: mealPlans.id });
 
 	if (created) {
+		// Re-les metadata rett før skriving: hooken kjører i bakgrunnen, og en
+		// rask PATCH kan ha oppdatert punktet siden snapshotet vårt. Merge inn
+		// i FERSK metadata i stedet for å skrive tilbake det gamle objektet.
+		const fresh = await db.query.checklistItems.findFirst({
+			where: and(eq(checklistItems.id, item.id), eq(checklistItems.userId, userId)),
+			columns: { metadata: true }
+		});
+		if (!fresh) {
+			// Punktet er slettet i mellomtiden — rydd opp plan-raden vi nettopp laget.
+			await db.delete(mealPlans).where(eq(mealPlans.id, created.id));
+			return;
+		}
 		await db
 			.update(checklistItems)
 			.set({
 				metadata: {
-					...meta,
+					...((fresh.metadata ?? {}) as Record<string, unknown>),
 					linkedMealPlanId: created.id,
 					...(mealId ? { linkedMealId: mealId } : {})
 				} as ItemMetadata
@@ -279,9 +330,11 @@ export async function upsertMealPlan(
 ): Promise<MealPlanRow | null> {
 	const syncToDay = opts.syncToDay !== false;
 
+	// Eksplisitt navngitte måltider (fra AI-verktøy/økta) matches kun eksakt —
+	// «Taco» skal opprette ny rett, ikke kobles til «Tacosuppe».
 	let mealId: string | null | undefined = params.mealId;
 	if (mealId === undefined && params.mealName) {
-		mealId = await findOrCreateMealId(userId, params.mealName);
+		mealId = await findOrCreateMealId(userId, params.mealName, { match: 'exact' });
 	}
 
 	if (params.id) {

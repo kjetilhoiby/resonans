@@ -11,8 +11,13 @@ describe('normalizeIngredientName', () => {
 		expect(normalizeIngredientName('  Kjøttdeig ')).toBe('kjøttdeig');
 	});
 
-	it('fjerner parentes-innhold', () => {
+	it('fjerner mengde-parenteser', () => {
 		expect(normalizeIngredientName('kjøttdeig (400 g)')).toBe('kjøttdeig');
+	});
+
+	it('beholder variant-parenteser uten sifre', () => {
+		expect(normalizeIngredientName('melk (laktosefri)')).toBe('melk (laktosefri)');
+		expect(normalizeIngredientName('paprika (rød)')).toBe('paprika (rød)');
 	});
 
 	it('kollapser mellomrom', () => {

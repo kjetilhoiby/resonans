@@ -170,10 +170,10 @@
 		color: var(--color-text-secondary, #999);
 	}
 	.gr-apply {
-		background: var(--accent-bg, rgba(124, 142, 245, 0.22));
+		background: color-mix(in srgb, var(--accent-light) 18%, transparent);
 		border: none;
 		border-radius: 10px;
-		color: var(--accent-fg, #aab8ff);
+		color: var(--accent-light);
 		padding: 9px 14px;
 		font-size: 0.84rem;
 		font-weight: 600;
@@ -181,7 +181,7 @@
 		white-space: nowrap;
 	}
 	.gr-applied {
-		color: #7fbf8f;
+		color: var(--success-text);
 		font-size: 0.8rem;
 		white-space: nowrap;
 	}
@@ -193,7 +193,7 @@
 		font-size: 0.8rem;
 	}
 	.gr-warn {
-		color: #e0b070;
+		color: var(--warning-text);
 	}
 	.gr-toggle {
 		background: none;

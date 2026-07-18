@@ -4,7 +4,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { openai } from '$lib/server/openai';
 import type { ChatCompletionContentPart } from 'openai/resources/chat/completions';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
-import { findOrCreateEmailSensor, type InboundEmailPayload } from './shared';
+import { findOrCreateEmailSensor, stripHtml, type InboundEmailPayload } from './shared';
 import { addDatedItems, type DatedItem } from './day-checklist';
 import { createConversation, addMessage } from '$lib/server/conversations';
 import { PushDeliveryService } from '$lib/server/services/push-delivery-service';
@@ -26,19 +26,6 @@ interface Extraction {
 	sammendrag: string;
 	digest: string; // tapsfri gjengivelse av ALT innhold — sikkerhetsnett mot at funn-strukturen glipper
 	funn: Finding[];
-}
-
-function stripHtml(html: string): string {
-	return html
-		.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-		.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-		.replace(/<[^>]+>/g, ' ')
-		.replace(/&nbsp;/g, ' ')
-		.replace(/&amp;/g, '&')
-		.replace(/&lt;/g, '<')
-		.replace(/&gt;/g, '>')
-		.replace(/\s+/g, ' ')
-		.trim();
 }
 
 function osloIsoDate(now: Date): string {

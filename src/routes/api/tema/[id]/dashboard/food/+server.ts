@@ -4,7 +4,7 @@ import { db } from '$lib/db';
 import { themes, pantryItems, foodSettings } from '$lib/db/schema';
 import { resolveThemeDashboardKind } from '$lib/domain/theme-dashboard-registry';
 import { and, eq, gte, lte, asc } from 'drizzle-orm';
-import { addDaysIso, isoWeekKeyForDate } from '$lib/server/iso-week';
+import { addDaysIso, isoWeekKeyForDate, osloTodayIso } from '$lib/server/iso-week';
 import { getWeekMealPlansWithTitles } from '$lib/server/services/meal-plan-sync';
 import { getWeekShoppingList, type ShoppingListItem } from '$lib/server/services/shopping-list-service';
 
@@ -34,39 +34,29 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 		return json({ error: 'Temaet har ikke matdashboard.' }, { status: 400 });
 	}
 
-	const today = new Date().toISOString().slice(0, 10);
+	const today = osloTodayIso();
 	const weekContext = url.searchParams.get('weekContext') ?? isoWeekKeyForDate(today);
 	const nextWeekContext = isoWeekKeyForDate(addDaysIso(today, 7));
 
-	const [enrichedPlans, nextWeekPlans, weekList, nextWeekList] = await Promise.all([
-		getWeekMealPlansWithTitles(userId, weekContext),
-		getWeekMealPlansWithTitles(userId, nextWeekContext),
-		getWeekShoppingList(userId, weekContext),
-		getWeekShoppingList(userId, nextWeekContext)
-	]);
+	const [enrichedPlans, nextWeekPlans, weekList, nextWeekList, pantry, settings] =
+		await Promise.all([
+			getWeekMealPlansWithTitles(userId, weekContext),
+			getWeekMealPlansWithTitles(userId, nextWeekContext),
+			getWeekShoppingList(userId, weekContext),
+			getWeekShoppingList(userId, nextWeekContext),
+			db
+				.select()
+				.from(pantryItems)
+				.where(eq(pantryItems.userId, userId))
+				.orderBy(asc(pantryItems.location), asc(pantryItems.name)),
+			db.query.foodSettings.findFirst({ where: eq(foodSettings.userId, userId) })
+		]);
 
-	const pantry = await db
-		.select()
-		.from(pantryItems)
-		.where(eq(pantryItems.userId, userId))
-		.orderBy(asc(pantryItems.location), asc(pantryItems.name));
-
+	// «Går snart ut» utledes fra pantry-lista vi allerede har — ingen egen spørring.
 	const horizon = addDaysIso(today, 7);
-	const expiringSoon = await db
-		.select()
-		.from(pantryItems)
-		.where(
-			and(
-				eq(pantryItems.userId, userId),
-				gte(pantryItems.expiresAt, today),
-				lte(pantryItems.expiresAt, horizon)
-			)
-		)
-		.orderBy(asc(pantryItems.expiresAt));
-
-	const settings = await db.query.foodSettings.findFirst({
-		where: eq(foodSettings.userId, userId)
-	});
+	const expiringSoon = pantry
+		.filter((item) => item.expiresAt && item.expiresAt >= today && item.expiresAt <= horizon)
+		.sort((a, b) => (a.expiresAt! < b.expiresAt! ? -1 : 1));
 
 	return json({
 		weekContext,

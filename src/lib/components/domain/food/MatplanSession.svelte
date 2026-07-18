@@ -115,6 +115,10 @@
 					}
 				: d
 		);
+		closePicker();
+	}
+
+	function closePicker() {
 		pickerDayIndex = null;
 		pickerMode = 'replace';
 	}
@@ -122,7 +126,7 @@
 	function skipDay() {
 		if (pickerDayIndex === null) return;
 		days = days.map((d, i) => (i === pickerDayIndex ? { ...d, chosen: [], skipped: true } : d));
-		pickerDayIndex = null;
+		closePicker();
 	}
 
 	function removeMeal(dayIndex: number, mealIndex: number) {
@@ -133,7 +137,7 @@
 
 	function askAi() {
 		const date = pickerDayIndex !== null ? days[pickerDayIndex].date : null;
-		pickerDayIndex = null;
+		closePicker();
 		onclose();
 		onOpenChat?.(
 			date
@@ -338,7 +342,7 @@
 		onpick={pickMeal}
 		onskip={skipDay}
 		onaskai={askAi}
-		onclose={() => (pickerDayIndex = null)}
+		onclose={closePicker}
 	/>
 {/if}
 
@@ -390,7 +394,7 @@
 		background: rgba(255, 255, 255, 0.12);
 	}
 	.ms-dot.active {
-		background: var(--accent-fg, #7c8ef5);
+		background: var(--accent-light);
 	}
 	.ms-dot.done {
 		background: rgba(124, 142, 245, 0.45);
@@ -419,7 +423,7 @@
 		background: rgba(124, 142, 245, 0.12);
 		border: 1px dashed rgba(124, 142, 245, 0.4);
 		border-radius: 12px;
-		color: var(--accent-fg, #aab8ff);
+		color: var(--accent-light);
 		padding: 11px;
 		font-size: 0.88rem;
 		font-weight: 600;
@@ -495,7 +499,7 @@
 		color: rgba(154, 164, 214, 0.9);
 	}
 	.ms-error {
-		color: #e07070;
+		color: var(--error-text);
 		font-size: 0.85rem;
 		margin-top: 12px;
 	}
@@ -505,7 +509,7 @@
 	}
 	.ms-next {
 		width: 100%;
-		background: var(--accent-bg, #5865c9);
+		background: var(--accent-primary);
 		border: none;
 		border-radius: 14px;
 		color: #fff;

@@ -51,6 +51,14 @@
 		ingredients = ingredients.filter((_, i) => i !== index);
 	}
 
+	// Norsk mobiltastatur gir komma i desimalfelt — Number('0,5') er NaN.
+	function parseDecimalInput(value: unknown): number | null {
+		const text = String(value ?? '').trim().replace(',', '.');
+		if (!text) return null;
+		const parsed = Number(text);
+		return Number.isFinite(parsed) ? parsed : null;
+	}
+
 	async function save() {
 		if (!title.trim()) {
 			error = 'Oppskriften trenger et navn.';
@@ -66,7 +74,7 @@
 				.filter((ing) => ing.name.trim())
 				.map((ing) => ({
 					name: ing.name.trim(),
-					quantity: ing.quantity != null && String(ing.quantity) !== '' ? Number(ing.quantity) : null,
+					quantity: parseDecimalInput(ing.quantity),
 					unit: ing.unit?.trim() || null,
 					...(ing.optional ? { optional: true } : {})
 				})),
@@ -74,9 +82,9 @@
 				.split('\n')
 				.map((line) => line.trim())
 				.filter(Boolean),
-			prepTimeMin: prepTimeMin ? Number(prepTimeMin) : null,
-			cookTimeMin: cookTimeMin ? Number(cookTimeMin) : null,
-			servings: servings ? Number(servings) : 5,
+			prepTimeMin: parseDecimalInput(prepTimeMin),
+			cookTimeMin: parseDecimalInput(cookTimeMin),
+			servings: parseDecimalInput(servings) ?? 5,
 			tags: tagsText
 				.split(',')
 				.map((t) => t.trim())
@@ -297,7 +305,7 @@
 		text-align: center;
 	}
 	.rs-error {
-		color: #e07070;
+		color: var(--error-text);
 		font-size: 0.85rem;
 		margin: 0;
 	}
@@ -312,7 +320,7 @@
 	.rs-delete {
 		background: none;
 		border: none;
-		color: #e07070;
+		color: var(--error-text);
 		font-size: 0.9rem;
 		cursor: pointer;
 		padding: 8px 4px;

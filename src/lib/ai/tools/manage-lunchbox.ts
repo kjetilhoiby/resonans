@@ -3,6 +3,7 @@ import { db } from '$lib/db';
 import { lunchboxComponents, lunchboxEntries, lunchboxProfiles, lunchboxReturns, persons } from '$lib/db/schema';
 import { and, eq, ilike } from 'drizzle-orm';
 import { getLunchboxOverview, osloToday } from '$lib/server/services/lunchbox-service';
+import { escapeLike } from '$lib/utils/like-escape';
 
 // Slår opp et barn på navn (case-insensitivt, også kallenavn/alias-prefiks).
 async function findChild(userId: string, name: string) {
@@ -131,7 +132,7 @@ Datoer er YYYY-MM-DD; default i dag (Oslo-tid).`,
 				.where(
 					and(
 						eq(lunchboxComponents.userId, args.userId),
-						ilike(lunchboxComponents.name, `%${args.itemName.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`)
+						ilike(lunchboxComponents.name, `%${escapeLike(args.itemName)}%`)
 					)
 				)
 				.limit(1);

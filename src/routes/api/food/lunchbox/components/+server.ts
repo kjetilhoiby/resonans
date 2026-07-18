@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { lunchboxComponents } from '$lib/db/schema';
 import { and, asc, eq, ilike } from 'drizzle-orm';
+import { escapeLike } from '$lib/utils/like-escape';
 
 const VALID_KINDS = ['palegg', 'brod', 'frukt', 'gront', 'notter', 'annet'];
 
@@ -37,7 +38,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const existing = await db
 		.select()
 		.from(lunchboxComponents)
-		.where(and(eq(lunchboxComponents.userId, userId), ilike(lunchboxComponents.name, name.replace(/[\\%_]/g, (ch) => `\\${ch}`))))
+		.where(and(eq(lunchboxComponents.userId, userId), ilike(lunchboxComponents.name, escapeLike(name))))
 		.limit(1);
 
 	if (existing.length > 0) {

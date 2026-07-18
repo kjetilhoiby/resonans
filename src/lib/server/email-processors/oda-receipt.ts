@@ -18,9 +18,10 @@ import { findOrCreateEmailSensor, stripHtml, type InboundEmailPayload } from './
 import {
 	guessCategory,
 	guessPantryLocation,
-	weekContextForDate,
+	normalizeGroceryName,
 	type GroceryCategory
 } from '$lib/domains/food/grocery';
+import { isoWeekKeyForDate, osloTodayIso } from '$lib/server/iso-week';
 
 type EmailRule = typeof emailRules.$inferSelect;
 
@@ -121,10 +122,6 @@ function isIsoDate(value: unknown): value is string {
 	return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
-function osloIsoDate(now: Date): string {
-	return now.toLocaleDateString('sv-SE', { timeZone: 'Europe/Oslo' });
-}
-
 export async function processOdaReceiptEmail(
 	userId: string,
 	payload: InboundEmailPayload,
@@ -148,8 +145,8 @@ export async function processOdaReceiptEmail(
 	if (!extraction) return { skipped: true, reason: 'no_lines_extracted' };
 
 	const kind = extraction.type === 'ordrebekreftelse' ? 'order_confirmation' : 'receipt';
-	const effectiveDate = extraction.leveringsdato ?? extraction.ordredato ?? osloIsoDate(new Date());
-	const weekContext = weekContextForDate(effectiveDate);
+	const effectiveDate = extraction.leveringsdato ?? extraction.ordredato ?? osloTodayIso();
+	const weekContext = isoWeekKeyForDate(effectiveDate);
 
 	// Koble til ukas handleliste (DEL A) hvis den finnes — muliggjør plan-vs-kjøp.
 	const weekList = await db.query.shoppingLists.findFirst({
@@ -160,6 +157,9 @@ export async function processOdaReceiptEmail(
 		),
 		columns: { id: true }
 	});
+
+	// Bevarte lager-koblinger fra linjer som erstattes (normalisert navn → pantry_item_id)
+	const appliedPantryByName = new Map<string, string>();
 
 	// Kvittering erstatter ordrebekreftelse for samme ordrenummer.
 	const existing = extraction.ordrenummer
@@ -174,6 +174,26 @@ export async function processOdaReceiptEmail(
 
 	let orderId: string;
 	if (existing) {
+		// Retningsvern: en ordrebekreftelse som prosesseres ETTER kvitteringen
+		// (ute-av-rekkefølge-polling/backfill) skal ikke nedgradere kvitteringen
+		// eller erstatte dens varelinjer.
+		if (existing.kind === 'receipt' && kind === 'order_confirmation') {
+			return { skipped: true, reason: 'receipt_already_imported', orderId: existing.id };
+		}
+
+		// Bevar lager-koblinger fra de gamle linjene: samme normaliserte navn →
+		// kopiér pantry_item_id over, så apply-pantry-guarden (line.pantryItemId)
+		// fortsatt hindrer dobbelt-addering etter at kvitteringen erstattet
+		// ordrebekreftelsen.
+		const oldLines = await db
+			.select({ name: groceryOrderLines.name, pantryItemId: groceryOrderLines.pantryItemId })
+			.from(groceryOrderLines)
+			.where(eq(groceryOrderLines.orderId, existing.id));
+		for (const line of oldLines) {
+			if (!line.pantryItemId) continue;
+			appliedPantryByName.set(normalizeGroceryName(line.name), line.pantryItemId);
+		}
+
 		await db
 			.update(groceryOrders)
 			.set({
@@ -185,6 +205,9 @@ export async function processOdaReceiptEmail(
 				gmailMessageId: gmailMessageId ?? existing.gmailMessageId,
 				emailSubject: payload.Subject ?? existing.emailSubject,
 				shoppingListId: existing.shoppingListId ?? weekList?.id ?? null,
+				// Nye/endrede linjer skal kunne legges i lager — nullstill kun hvis
+				// noe var lagt inn fra før (ellers behold null → knappen vises uansett).
+				pantryAppliedAt: null,
 				updatedAt: new Date()
 			})
 			.where(eq(groceryOrders.id, existing.id));
@@ -226,6 +249,7 @@ export async function processOdaReceiptEmail(
 					totalPrice: line.totalpris != null ? String(line.totalpris) : null,
 					category,
 					pantryLocationGuess: guessPantryLocation(category, line.navn),
+					pantryItemId: appliedPantryByName.get(normalizeGroceryName(line.navn)) ?? null,
 					sortOrder: index
 				};
 			})

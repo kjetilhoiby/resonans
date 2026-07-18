@@ -12,6 +12,7 @@ import { db } from '$lib/db';
 import { mealPlans, meals, pantryItems, shoppingLists } from '$lib/db/schema';
 import { and, eq, inArray } from 'drizzle-orm';
 import { normalizeIngredientName, odaSearchUrl } from '$lib/domains/food/oda';
+import { osloTodayIso } from '$lib/server/iso-week';
 
 type Ingredient = {
 	name: string;
@@ -150,7 +151,7 @@ export async function buildWeekShoppingList(
 	);
 
 	const pantry = await db.select().from(pantryItems).where(eq(pantryItems.userId, userId));
-	const today = new Date().toISOString().slice(0, 10);
+	const today = osloTodayIso();
 	// Tomme varer (quantity 0) og utgåtte varer teller ikke som «på lager» —
 	// de skal ikke undertrykke ingredienser fra oppskriftene.
 	const inStock = (p: (typeof pantry)[number]) =>

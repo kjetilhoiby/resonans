@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { meals, mealPlans } from '$lib/db/schema';
 import { eq, desc, and, ilike, sql } from 'drizzle-orm';
+import { escapeLike } from '$lib/utils/like-escape';
 
 // GET /api/food/recipes?q=&tag=&withStats=1 — oppskriftskartoteket.
 // withStats beriker hver oppskrift med timesPlanned + lastPlannedDate fra meal_plans.
@@ -14,8 +15,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 
 	const conditions = [eq(meals.userId, userId)];
 	if (q) {
-		const safe = q.replace(/[\\%_]/g, (ch) => `\\${ch}`);
-		conditions.push(ilike(meals.title, `%${safe}%`));
+		conditions.push(ilike(meals.title, `%${escapeLike(q)}%`));
 	}
 	if (tag) {
 		conditions.push(sql`${tag} = ANY(${meals.tags})`);

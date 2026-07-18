@@ -258,7 +258,7 @@
 						<div class="email-rule-header">
 							<div class="email-rule-info">
 								<strong>{rule.name}</strong>
-								<span class="email-rule-type">{rule.processingType === 'ai_extraction' ? 'AI-ekstraksjon' : rule.processingType === 'workout_files' ? 'Treningsfiler' : rule.processingType === 'library' ? 'Bibliotek' : rule.processingType === 'school_plan' ? 'Skole/barnehage' : 'Rå lagring'}</span>
+								<span class="email-rule-type">{rule.processingType === 'ai_extraction' ? 'AI-ekstraksjon' : rule.processingType === 'workout_files' ? 'Treningsfiler' : rule.processingType === 'library' ? 'Bibliotek' : rule.processingType === 'school_plan' ? 'Skole/barnehage' : rule.processingType === 'oda_receipt' ? 'Oda-kvittering' : 'Rå lagring'}</span>
 								{#if rule.personId}
 									<span class="email-rule-person">Person: {people.find((p) => p.id === rule.personId)?.name ?? '—'}</span>
 								{/if}
@@ -324,6 +324,7 @@
 						<option value="library">Bibliotek (lånefrist → sjekkliste)</option>
 						<option value="ai_extraction">AI-ekstraksjon (GPT trekker ut data)</option>
 						<option value="school_plan">Skole/barnehage (planer → dagsoppgaver + nudge)</option>
+						<option value="oda_receipt">Oda-kvittering (varelinjer → lager + plan-vs-kjøp)</option>
 						<option value="raw_store">Rå lagring (lagre som tekst)</option>
 					</Select>
 				</div>

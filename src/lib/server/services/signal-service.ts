@@ -1,12 +1,12 @@
-import { eq, sql } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { db, pgClient, rowsOf } from '$lib/db';
-import { users, foodSettings } from '$lib/db/schema';
+import { users } from '$lib/db/schema';
 import { fitBestEffortWeightModel, predictDeltaKg } from '$lib/util/effort-weight-model';
 import { buildEffortWeightInputs } from '$lib/server/health/effort-weight-data';
 import { getEnduranceWorkouts, getStrengthSessions } from '$lib/server/tracks/repository';
 import { getRecentRouteLabels } from '$lib/server/tracks/routes-repository';
 import { computeBalanceState } from '$lib/server/tracks/balance';
-import { queryCanonicalTransactions } from '$lib/server/integrations/categorized-events';
+import { getGroceryWeekSpend } from '$lib/server/services/grocery-insights';
 import { isoWeekKeyForDate } from '$lib/server/iso-week';
 
 type Severity = 'info' | 'low' | 'medium' | 'high';
@@ -458,37 +458,10 @@ async function produceEconomicsGrocerySpendWeekly(userId: string, now: Date) {
 	});
 
 	const weekStart = startOfIsoWeekUtc(now);
-	const baselineStart = daysAgo(weekStart, 28);
-
-	const [weekRows, baselineRows] = await Promise.all([
-		queryCanonicalTransactions({
-			userId,
-			from: weekStart,
-			to: now,
-			category: 'dagligvarer',
-			spendingOnly: true
-		}),
-		queryCanonicalTransactions({
-			userId,
-			from: baselineStart,
-			to: weekStart,
-			category: 'dagligvarer',
-			spendingOnly: true
-		})
-	]);
-
-	const sumAbs = (rows: Array<{ amount: unknown }>) =>
-		rows.reduce((sum, row) => sum + Math.abs(Number(row.amount) || 0), 0);
-
-	const spendWeekToDate = sumAbs(weekRows);
-	const baselineWeeklyAvg = sumAbs(baselineRows) / 4;
+	const { spend: spendWeekToDate, baselineWeeklyAvg, budgetWeekly, transactionCount } =
+		await getGroceryWeekSpend(userId, weekStart, now);
 
 	// Ukebudsjett (food_settings) trumfer historisk snitt som referanse når satt.
-	const settingsRow = await db.query.foodSettings.findFirst({
-		where: eq(foodSettings.userId, userId)
-	});
-	const budgetWeekly =
-		settingsRow?.groceryBudgetWeekly != null ? Number(settingsRow.groceryBudgetWeekly) : null;
 	const referenceWeekly = budgetWeekly != null && budgetWeekly > 0 ? budgetWeekly : baselineWeeklyAvg;
 
 	// Prorate referansen mot hvor langt uka er kommet (minst én dag).
@@ -516,7 +489,7 @@ async function produceEconomicsGrocerySpendWeekly(userId: string, now: Date) {
 			referenceSource: budgetWeekly != null && budgetWeekly > 0 ? 'budget' : 'baseline',
 			expectedToDate,
 			ratio,
-			transactionCount: weekRows.length,
+			transactionCount,
 			weekContext: isoWeekKeyForDate(now.toISOString().slice(0, 10))
 		}
 	});

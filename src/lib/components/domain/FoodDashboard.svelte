@@ -5,7 +5,7 @@
   egne seksjoner (DEL B).
 -->
 <script lang="ts">
-	import { MEAL_TYPES, PANTRY_LOCATIONS, type MealType, type PantryLocation } from '$lib/domains/food';
+	import { MEAL_TYPES, PANTRY_LOCATIONS, FAMILY_DEFAULT_SERVINGS, type MealType, type PantryLocation } from '$lib/domains/food';
 	import SectionCard from '../ui/SectionCard.svelte';
 	import SectionLabel from '../ui/SectionLabel.svelte';
 	import MatplanSession from './food/MatplanSession.svelte';
@@ -64,16 +64,24 @@
 	let budgetInput = $state(groceryBudgetWeekly != null ? String(groceryBudgetWeekly) : '');
 	let budgetSaved = $state<number | null>(groceryBudgetWeekly);
 
+	let budgetError = $state(false);
+
 	async function saveBudget() {
 		const value = budgetInput.trim() ? Number(budgetInput.replace(',', '.')) : null;
 		if (value !== null && (!Number.isFinite(value) || value < 0)) return;
-		await fetch('/api/food/settings', {
-			method: 'PATCH',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ groceryBudgetWeekly: value })
-		});
-		budgetSaved = value;
-		budgetEditing = false;
+		budgetError = false;
+		try {
+			const res = await fetch('/api/food/settings', {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ groceryBudgetWeekly: value })
+			});
+			if (!res.ok) throw new Error('save_failed');
+			budgetSaved = value;
+			budgetEditing = false;
+		} catch {
+			budgetError = true;
+		}
 	}
 
 	async function toggleStaple(item: PantryRow) {
@@ -227,7 +235,7 @@
 							{#each day.plans as plan}
 								<span class="fd-meal">
 									{MEAL_TYPES[plan.mealType].emoji} {plan.mealTitle ?? '—'}
-									{#if plan.servings && plan.servings !== 5}<span class="fd-servings">×{plan.servings}</span>{/if}
+									{#if plan.servings && plan.servings !== FAMILY_DEFAULT_SERVINGS}<span class="fd-servings">×{plan.servings}</span>{/if}
 								</span>
 							{/each}
 						</span>
@@ -302,8 +310,9 @@
 				/>
 				<button class="fd-budget-save" onclick={saveBudget} data-track="matplan:lagre-budsjett">Lagre</button>
 			</div>
+			{#if budgetError}<p class="fd-budget-error">Klarte ikke lagre budsjettet. Prøv igjen.</p>{/if}
 		{:else}
-			<button class="fd-budget-row" onclick={() => (budgetEditing = true)} data-track="matplan:rediger-budsjett">
+			<button class="fd-budget-row" onclick={() => { budgetInput = budgetSaved != null ? String(budgetSaved) : ''; budgetEditing = true; }} data-track="matplan:rediger-budsjett">
 				💰 Ukebudsjett dagligvarer:
 				{budgetSaved != null ? `${Math.round(budgetSaved).toLocaleString('no-NO')} kr` : 'ikke satt'}
 				<span class="fd-muted">✎</span>
@@ -357,7 +366,7 @@
 		line-height: 1.4;
 	}
 	.fd-cta {
-		background: var(--accent-bg, #5865c9);
+		background: var(--accent-primary);
 		color: #fff;
 		border: none;
 		border-radius: 12px;
@@ -451,7 +460,7 @@
 	.fd-link {
 		background: none;
 		border: none;
-		color: var(--accent-fg, #aab8ff);
+		color: var(--accent-light);
 		cursor: pointer;
 		font-size: 0.88rem;
 		padding: 0;
@@ -522,6 +531,11 @@
 		font-size: 0.74rem;
 		color: var(--color-text-secondary, #888);
 	}
+	.fd-budget-error {
+		margin: 6px 0 0;
+		font-size: 0.78rem;
+		color: var(--error-text);
+	}
 	.fd-budget-edit {
 		display: flex;
 		align-items: center;
@@ -541,10 +555,10 @@
 		width: 110px;
 	}
 	.fd-budget-save {
-		background: var(--accent-bg, rgba(124, 142, 245, 0.2));
+		background: color-mix(in srgb, var(--accent-light) 18%, transparent);
 		border: none;
 		border-radius: 8px;
-		color: var(--accent-fg, #aab8ff);
+		color: var(--accent-light);
 		padding: 8px 14px;
 		font-size: 0.84rem;
 		font-weight: 600;

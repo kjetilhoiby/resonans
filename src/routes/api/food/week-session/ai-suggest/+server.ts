@@ -4,7 +4,7 @@ import { db } from '$lib/db';
 import { mealPlans, meals, pantryItems } from '$lib/db/schema';
 import { and, eq, gte, sql } from 'drizzle-orm';
 import { openai } from '$lib/server/openai';
-import { addDaysIso, datesForIsoWeek, isoWeekKeyForDate } from '$lib/server/iso-week';
+import { addDaysIso, datesForIsoWeek, isoWeekKeyForDate, osloTodayIso } from '$lib/server/iso-week';
 
 // POST /api/food/week-session/ai-suggest — GPT-forslag for hele uka.
 // Supplement til den regelbaserte motoren: tar hensyn til hva familien faktisk
@@ -15,7 +15,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const userId = locals.userId;
 	const body = await request.json().catch(() => ({}));
 
-	const today = new Date().toISOString().slice(0, 10);
+	const today = osloTodayIso();
 	const weekContext: string = body.weekContext ?? isoWeekKeyForDate(addDaysIso(today, 7));
 	const days = datesForIsoWeek(weekContext);
 	if (days.length === 0) return json({ error: 'Ugyldig weekContext' }, { status: 400 });

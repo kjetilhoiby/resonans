@@ -44,8 +44,9 @@ export const users = pgTable('users', {
 		workoutImports?: { enabled: boolean };
 		applianceCycles?: { enabled: boolean; notifyStart?: boolean; notifyFinish?: boolean };
 		inactivityAlerts?: { enabled: boolean; daysThreshold: number };
-		// Ukentlig dagligvare-oppsummering (mandag): forbruk forrige uke vs. snitt/budsjett
-		groceryWeekly?: { enabled: boolean; time?: string }; // default "09:00"
+		// Ukentlig dagligvare-oppsummering (mandag): forbruk forrige uke vs. snitt/budsjett.
+		// Fraværende felt/enabled = på (opt-out); time default "09:00".
+		groceryWeekly?: { enabled?: boolean; time?: string };
 	}>(),
 	timezone: text('timezone').default('Europe/Oslo'),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -834,7 +835,7 @@ export const mealPlans = pgTable('meal_plans', {
 	mealType: text('meal_type').notNull(), // 'breakfast' | 'lunch' | 'dinner' | 'snack'
 	mealId: uuid('meal_id').references((): AnyPgColumn => meals.id, { onDelete: 'set null' }),
 	notes: text('notes'),
-	servings: integer('servings').default(2).notNull(),
+	servings: integer('servings').default(5).notNull(), // FAMILY_DEFAULT_SERVINGS — 2 voksne + 3 barn
 	photoUrl: text('photo_url'), // Cloudinary-URL for "what we ate"
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
@@ -933,7 +934,9 @@ export const lunchboxComponents = pgTable('lunchbox_components', {
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
 }, (table) => ({
-	idxUserKind: index('lunchbox_components_user_kind_idx').on(table.userId, table.kind, table.active)
+	idxUserKind: index('lunchbox_components_user_kind_idx').on(table.userId, table.kind, table.active),
+	// Må matche migrasjon 0039 — utelates den her, dropper drizzle push indeksen.
+	uniqUserName: uniqueIndex('lunchbox_components_user_name_idx').on(table.userId, sql`lower(${table.name})`)
 }));
 
 // Matpakke-historikk — hva som ble foreslått/pakket per barn per dag.
