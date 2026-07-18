@@ -135,6 +135,22 @@ export interface FoodDashboardData {
 		unit: string | null;
 		expiresAt: string | null;
 	}>;
+	shoppingList?: FoodShoppingListSummary | null;
+	nextWeek?: {
+		weekContext: string;
+		mealPlans: FoodDashboardData['mealPlans'];
+		shoppingList?: FoodShoppingListSummary | null;
+	};
+	/** Matpakke-data (DEL B) — optional så eldre cache-payloads ikke brekker. */
+	lunchbox?: unknown;
+	groceryOrders?: unknown;
+}
+
+export interface FoodShoppingListSummary {
+	id: string;
+	status: string;
+	itemCount: number;
+	uncheckedCount: number;
 }
 
 export interface EgenfrekvensReflectionMessageData {

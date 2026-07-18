@@ -191,7 +191,9 @@
 			weekContext: foodDashboard.weekContext,
 			mealPlans: foodDashboard.mealPlans,
 			pantry: foodDashboard.pantry,
-			expiringSoon: foodDashboard.expiringSoon
+			expiringSoon: foodDashboard.expiringSoon,
+			shoppingList: foodDashboard.shoppingList ?? null,
+			nextWeek: foodDashboard.nextWeek
 		};
 	});
 
@@ -564,6 +566,8 @@
 	{#if foodDashboardProps}
 		<FoodDashboard
 			{...foodDashboardProps}
+			onOpenChat={(prefill) => onSwitchToChat?.(prefill)}
+			onRefresh={() => void refresh()}
 		/>
 	{/if}
 

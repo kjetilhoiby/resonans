@@ -27,6 +27,7 @@ import { managePersonTool } from '$lib/ai/tools/manage-person';
 import { manageRelationTool } from '$lib/ai/tools/manage-relation';
 import { manageMealPlanTool } from '$lib/ai/tools/manage-meal-plan';
 import { managePantryTool } from '$lib/ai/tools/manage-pantry';
+import { manageLunchboxTool } from '$lib/ai/tools/manage-lunchbox';
 import { generateShoppingListTool } from '$lib/ai/tools/generate-shopping-list';
 import { analyzeMealImageTool } from '$lib/ai/tools/analyze-meal-image';
 import {
@@ -40,6 +41,7 @@ import { getMetricByKey } from '$lib/server/services/metric-definition-service';
 import { aggregateSingleMetric } from '$lib/server/integrations/aggregation';
 import { runInBackground } from '$lib/server/run-in-background';
 import { buildChecklistItemFields } from '$lib/server/checklist-item-builder';
+import { afterMealItemWritten } from '$lib/server/services/meal-plan-sync';
 import { PersonMentionService } from '$lib/server/services/person-mention-service';
 import { syncStaysForDate } from '$lib/server/stays';
 import {
@@ -1141,6 +1143,31 @@ const tools = [
 			{
 				type: 'function' as const,
 				function: {
+					name: 'manage_lunchbox',
+					description: 'Matpakke-hjelperen: dagens forslag per barn (get_suggestions), marker pakket (log_packed), logg retur («Ola hadde med 2 skiver hjem» → log_return med childName+itemName), oppdater preferanser (set_preferences), legg til komponent i biblioteket (add_component).',
+					parameters: {
+						type: 'object',
+						properties: {
+							action: { type: 'string', enum: ['get_suggestions', 'log_packed', 'log_return', 'set_preferences', 'add_component'] },
+							childName: { type: 'string' },
+							date: { type: 'string', description: 'YYYY-MM-DD, default i dag' },
+							itemName: { type: 'string' },
+							quantity: { type: 'number' },
+							degree: { type: 'string', enum: ['alt', 'mesteparten', 'noe'] },
+							likes: { type: 'array', items: { type: 'string' } },
+							dislikes: { type: 'array', items: { type: 'string' } },
+							allergies: { type: 'array', items: { type: 'string' } },
+							appetite: { type: 'string', enum: ['liten', 'middels', 'stor'] },
+							componentName: { type: 'string' },
+							componentKind: { type: 'string', enum: ['palegg', 'brod', 'frukt', 'gront', 'notter', 'annet'] }
+						},
+						required: ['action']
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
 					name: 'generate_shopping_list',
 					description: 'Bygg handleliste fra ukemenyens måltider, minus ingredienser som finnes i pantry. Returnerer dedupliserte items klare for å bli lagt inn i en sjekkliste.',
 					parameters: {
@@ -1653,6 +1680,7 @@ function getToolProgressMessage(toolName: string) {
 		manage_recipe: 'Oppdaterer oppskrift...',
 		manage_meal_plan: 'Oppdaterer ukemeny...',
 		manage_pantry: 'Oppdaterer pantry...',
+		manage_lunchbox: 'Ordner matpakker...',
 		generate_shopping_list: 'Lager handleliste...',
 		analyze_meal_image: 'Analyserer matbilde...',
 		record_tracking_event: 'Registrerer tracking-hendelse...',
@@ -2533,6 +2561,11 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 					console.log('  🍽️ Manage pantry:', args.action);
 					const result = await managePantryTool.execute({ userId, ...args });
 					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'manage_lunchbox') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  🥪 Manage lunchbox:', args.action);
+					const result = await manageLunchboxTool.execute({ userId, ...args });
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'generate_shopping_list') {
 					const args = JSON.parse(toolCall.function.arguments);
 					console.log('  🍽️ Generate shopping list:', args.weekContext);
@@ -3149,6 +3182,11 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 							for (const f of built) {
 								if (f.locationDayIso) runInBackground(syncStaysForDate(userId, f.locationDayIso));
 							}
+							for (const item of createdItems) {
+								if (item.metadata?.mealType) {
+									runInBackground(afterMealItemWritten(userId, item, checklist.context));
+								}
+							}
 						}
 
 						checklistCreated = true;
@@ -3283,6 +3321,11 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 							}
 							for (const f of built) {
 								if (f.locationDayIso) runInBackground(syncStaysForDate(userId, f.locationDayIso));
+							}
+							for (const item of createdItems) {
+								if (item.metadata?.mealType) {
+									runInBackground(afterMealItemWritten(userId, item, checklist.context));
+								}
 							}
 
 							if (checklist.completedAt) {
@@ -3429,6 +3472,11 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 							}
 							if (built.some((f) => f.locationDayIso)) {
 								runInBackground(syncStaysForDate(userId, args.dayIso));
+							}
+							for (const item of createdItems) {
+								if (item.metadata?.mealType) {
+									runInBackground(afterMealItemWritten(userId, item, dayContext));
+								}
 							}
 						}
 

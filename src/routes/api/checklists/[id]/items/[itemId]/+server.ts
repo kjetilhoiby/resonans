@@ -12,6 +12,7 @@ import {
 import { PersonMentionService } from '$lib/server/services/person-mention-service';
 import { runInBackground } from '$lib/server/run-in-background';
 import { syncStaysForDate } from '$lib/server/stays';
+import { afterMealItemWritten, afterMealItemDeleted } from '$lib/server/services/meal-plan-sync';
 import { shouldParentBeChecked } from '$lib/components/domain/ukeplan/week-schedule-logic';
 
 async function syncChecklistCompletion(checklistId: string) {
@@ -108,11 +109,14 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 	const updates: Record<string, unknown> = {};
 	// Sted-punkt som re-parses til et sted skal trigge opphold-synk for dagen.
 	let reparseLocationDayIso: string | null = null;
+	// Kontekst for matplan-synk når teksten redigeres (dag-punkter).
+	let editedContext: string | null = null;
 	if (body.text !== undefined) {
 		const itemChecklist = await db.query.checklists.findFirst({
 			where: eq(checklists.id, existingItem.checklistId),
 			columns: { context: true }
 		});
+		editedContext = itemChecklist?.context ?? null;
 
 		// Parse-avledede metadata-nøkler nullstilles og bygges på nytt; øvrige
 		// nøkler (f.eks. progressRecordId) beholdes.
@@ -188,6 +192,17 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 		runInBackground(syncStaysForDate(userId, reparseLocationDayIso));
 	}
 
+	// Måltidspunkt redigert → speil endringen til meal_plans (matplan-synk).
+	// Gjelder også når prefikset redigeres BORT (linkedMealPlanId uten mealType → rydd).
+	if (
+		body.text !== undefined &&
+		updated &&
+		!existingItem.parentId &&
+		(updated.metadata?.mealType || updated.metadata?.linkedMealPlanId)
+	) {
+		runInBackground(afterMealItemWritten(userId, updated, editedContext));
+	}
+
 	// (Av)krysning: kjør link-bivirkninger for punktet (fremdrift + speiling til
 	// koblet ukeliste-punkt), og kaskader oppover ved nedbrytning.
 	if (body.checked !== undefined) {
@@ -237,6 +252,13 @@ export const DELETE: RequestHandler = async ({ locals, params }) => {
 
 	const deletedArray = Array.isArray(deleted) ? deleted : [];
 	if (!deletedArray.length) return json({ error: 'Ikke funnet' }, { status: 404 });
+
+	// Slettet måltidspunkt → slett meal_plans-raden det speilet (matplan-synk).
+	for (const item of deletedArray) {
+		if (item.metadata?.linkedMealPlanId) {
+			runInBackground(afterMealItemDeleted(userId, item));
+		}
+	}
 
 	await syncChecklistCompletion(params.id);
 

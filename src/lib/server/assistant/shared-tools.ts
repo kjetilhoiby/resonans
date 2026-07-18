@@ -10,6 +10,7 @@ import { queryTeslaVehicleTool } from '$lib/ai/tools/query-tesla-vehicle';
 import { manageRecipeTool } from '$lib/ai/tools/manage-recipe';
 import { manageMealPlanTool } from '$lib/ai/tools/manage-meal-plan';
 import { managePantryTool } from '$lib/ai/tools/manage-pantry';
+import { manageLunchboxTool } from '$lib/ai/tools/manage-lunchbox';
 import { generateShoppingListTool } from '$lib/ai/tools/generate-shopping-list';
 import { managePersonTool } from '$lib/ai/tools/manage-person';
 import { manageRelationTool } from '$lib/ai/tools/manage-relation';
@@ -155,6 +156,7 @@ export const SHARED_ASSISTANT_TOOLS: AssistantTool[] = [
 	adaptSharedTool(manageRecipeTool),
 	adaptSharedTool(manageMealPlanTool),
 	adaptSharedTool(managePantryTool),
+	adaptSharedTool(manageLunchboxTool),
 	adaptSharedTool(generateShoppingListTool),
 	// Familie
 	adaptSharedTool(managePersonTool),

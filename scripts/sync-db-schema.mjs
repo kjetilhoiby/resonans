@@ -171,7 +171,17 @@ const DATA_MIGRATIONS = [
 	 SET achieved_at = NULL, sensor_event_id = NULL, updated_at = NOW()
 	 WHERE criteria->>'metric' = 'ukes_lop_km'
 	   AND achieved_at IS NOT NULL
-	   AND achieved_at < TIMESTAMP '2026-07-07 00:00:00'`
+	   AND achieved_at < TIMESTAMP '2026-07-07 00:00:00'`,
+	// 2026-07 (matplan): Oda-kvitteringer parses nå strukturert. Opprett
+	// e-postregel for brukere som ikke har en oda_receipt-regel fra før —
+	// labelen 'resonans/oda' polles allerede av Gmail Apps Script. Idempotent.
+	`INSERT INTO email_rules (user_id, name, label_pattern, sender_pattern, processing_type, event_type, data_type, is_active)
+	 SELECT u.id, 'Oda-kvitteringer', 'resonans/oda', '*oda.com*', 'oda_receipt', 'grocery_receipt', 'grocery_order', true
+	 FROM users u
+	 WHERE NOT EXISTS (
+	   SELECT 1 FROM email_rules r
+	   WHERE r.user_id = u.id AND r.processing_type = 'oda_receipt'
+	 )`
 ];
 
 if (DATA_MIGRATIONS.length > 0) {

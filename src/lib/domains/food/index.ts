@@ -55,6 +55,7 @@ export const FOOD_DOMAIN_PROMPT = `
 - Bruk manage_recipe, manage_meal_plan, manage_pantry for å lagre endringer
 - Bruk generate_shopping_list for å bygge handleliste fra ukemeny minus pantry
 - Bruk analyze_meal_image hvis bruker laster opp matbilde og vil ha estimat av rett/næring
+- Bruk manage_lunchbox for matpakker: dagens forslag per barn, logg retur («Ola hadde med 2 skiver hjem»), preferanser og komponentbibliotek
 - Foreslå handleliste når ukemeny endres
 - Vær konkret om porsjoner og tilberedningstid
 - Når bruker beskriver enkel matplan ("fisk til middag"), foreslå oppskrift, sjekk pantry og bygg handleliste i samme svar
@@ -107,6 +108,24 @@ export function detectMealPrefix(title: string): {
   if (!mealType) return null;
   return { mealType, emoji: MEAL_TYPES[mealType].emoji, cleanTitle };
 }
+
+// Kanonisk revers av MEAL_PREFIX_MAP — brukes når synken bygger task-tekst
+// fra en meal_plan-rad. Round-trip-garanti: detectMealPrefix(buildMealItemText(t, x))
+// gir alltid { mealType: t, cleanTitle: x }.
+export const MEAL_TYPE_TO_PREFIX: Record<MealType, string> = {
+	dinner: 'middag',
+	breakfast: 'frokost',
+	lunch: 'lunsj',
+	snack: 'kveldsmat'
+};
+
+/** Bygg dag-item-tekst for et måltid, f.eks. buildMealItemText('dinner', 'Taco') → 'middag: Taco'. */
+export function buildMealItemText(mealType: MealType, title: string): string {
+	return `${MEAL_TYPE_TO_PREFIX[mealType]}: ${title.trim()}`;
+}
+
+// 2 voksne + 3 barn — default porsjoner for familie-middagsplaner.
+export const FAMILY_DEFAULT_SERVINGS = 5;
 
 export function detectFoodCategory(input: string): FoodCategory | null {
   for (const [category, pattern] of Object.entries(FOOD_CATEGORY_TRIGGERS)) {

@@ -9,6 +9,7 @@ import { processAiExtractionEmail } from '$lib/server/email-processors/ai-extrac
 import { processRawStoreEmail } from '$lib/server/email-processors/raw-store';
 import { processLibraryEmail } from '$lib/server/email-processors/library';
 import { processSchoolPlanEmail } from '$lib/server/email-processors/school-plan';
+import { processOdaReceiptEmail } from '$lib/server/email-processors/oda-receipt';
 import { findOrCreateEmailSensor, type InboundEmailPayload } from '$lib/server/email-processors/shared';
 
 export const config = { maxDuration: 60 };
@@ -60,6 +61,9 @@ async function executeRule(userId: string, rule: RuleMatch, payload: InboundEmai
 		}
 		case 'school_plan': {
 			return await processSchoolPlanEmail(userId, payload, rule, appUrl);
+		}
+		case 'oda_receipt': {
+			return await processOdaReceiptEmail(userId, payload, rule);
 		}
 		case 'ai_extraction': {
 			const sensor = await findOrCreateEmailSensor(userId, 'email_ai_extraction');
