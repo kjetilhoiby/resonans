@@ -26,12 +26,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			? `\nAllerede trukket ut: ${existing.map((t) => `"${t}"`).join(', ')}`
 			: '';
 
-	const systemPrompt = `Brukeren har tømt hodet i fritekst — alt som surrer og stjeler fokus. Din jobb er å trekke ut de DISKRETE punktene, så hvert av dem kan få en plass (brytes ned, gjøres i dag, parkeres eller slippes).
+	const systemPrompt = `Brukeren har tømt hodet i fritekst — alt som surrer og stjeler fokus. Din jobb er å trekke ut de DISKRETE åpne løkkene, så hver av dem kan få en plass (brytes ned, gjøres i dag, parkeres eller slippes). Åpne løkker tapper energi så lenge hodet holder dem; ekstraksjonen er det som lar hodet slippe taket.
 
 Regler:
-- Ett punkt per distinkt ting i dumpen — ikke slå sammen, ikke finn på nye
+- Én løkke per distinkt ting i dumpen — ikke slå sammen, ikke finn på nye
 - Behold brukerens egne ord der det går; maks 6-8 ord per punkt
-- Bekymringer og uro er også punkter («Uro rundt forsikringssaken»), ikke bare oppgaver
+- Bekymringer og uro er også løkker («Uro rundt forsikringssaken»), ikke bare oppgaver
 - Ikke gjenta punkter som allerede er trukket ut
 - Svar KUN med et JSON-array av strenger, ingen annen tekst
 

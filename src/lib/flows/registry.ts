@@ -1178,7 +1178,7 @@ export const FLOWS: Record<Exclude<FlowId, 'egenfrekvens_slot'>, Flow> = {
 	hodedump: {
 		id: 'hodedump',
 		name: 'Tøm hodet',
-		description: 'Fra fullt hode til tomt: dump alt, sorter, og gi hvert punkt en plass',
+		description: 'Åpne løkker tapper energi. Dump alt, gi hvert punkt en plass — og løsne én floke rolig.',
 		icon: '🧺',
 		domain: 'self',
 		trigger: 'manual',

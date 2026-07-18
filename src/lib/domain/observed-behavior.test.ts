@@ -106,4 +106,11 @@ describe('buildObservedBehaviorLines', () => {
 		expect(buildObservedBehaviorLines({ oversikt: { daysAgo: 0 } })[0]).toContain('i dag');
 		expect(buildObservedBehaviorLines({ floker: { active: 0, open: 0 } })).toEqual([]);
 	});
+
+	it('åpne løkker i innboksen telles — de tapper energi så lenge de er åpne', () => {
+		expect(buildObservedBehaviorLines({ aapneLokker: { inbox: 14 } })).toEqual([
+			'- Åpne løkker: 14 i innboksen.'
+		]);
+		expect(buildObservedBehaviorLines({ aapneLokker: { inbox: 0 } })).toEqual([]);
+	});
 });

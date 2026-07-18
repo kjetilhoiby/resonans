@@ -65,6 +65,8 @@ export interface ObservedBehaviorInputs {
 	oversikt?: { daysAgo: number } | null;
 	/** Floker fra hodedump: aktive (under nedbryting) og åpne (planning) prosjekter */
 	floker?: { active: number; open: number } | null;
+	/** Åpne løkker: uavsjekkede innboks-punkter (tapper energi så lenge de er åpne) */
+	aapneLokker?: { inbox: number } | null;
 }
 
 function formatHoursShort(h: number): string {
@@ -127,6 +129,10 @@ export function buildObservedBehaviorLines(inputs: ObservedBehaviorInputs): stri
 		if (floker.active > 0) parts.push(`${floker.active} under nedbryting`);
 		if (floker.open > 0) parts.push(`${floker.open} åpne som prosjekter`);
 		lines.push(`- Floker: ${parts.join(', ')}.`);
+	}
+
+	if (inputs.aapneLokker && inputs.aapneLokker.inbox > 0) {
+		lines.push(`- Åpne løkker: ${inputs.aapneLokker.inbox} i innboksen.`);
 	}
 
 	return lines;

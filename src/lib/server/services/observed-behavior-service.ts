@@ -141,6 +141,18 @@ export async function collectObservedBehaviorInputs(
 		})
 	]);
 
+	// Åpne løkker: uavsjekkede innboks-punkter (VISION: «Løkker, floker og knuter»)
+	const inboxRows = await db.execute(sql`
+		SELECT COUNT(ci.id)::int AS n
+		FROM checklists c
+		JOIN checklist_items ci ON ci.checklist_id = c.id
+		WHERE c.user_id = ${userId}
+		  AND c.context = 'inbox'
+		  AND ci.checked = false
+		  AND ci.skipped_at IS NULL
+	`);
+	const openInbox = toNumber(rowsOf<{ n: number }>(inboxRows)[0]?.n);
+
 	const routineFresh =
 		routineSignal && now.getTime() - routineSignal.observedAt.getTime() < 3 * 86_400_000;
 
@@ -165,7 +177,8 @@ export async function collectObservedBehaviorInputs(
 						active: flokeProjects.filter((p) => p.status === 'active').length,
 						open: flokeProjects.filter((p) => p.status === 'planning').length
 					}
-				: null
+				: null,
+		aapneLokker: openInbox > 0 ? { inbox: openInbox } : null
 	};
 }
 
@@ -180,7 +193,7 @@ export async function buildObservedBehaviorBlock(userId: string, now = new Date(
 	let out = '\n--- OBSERVERT ATFERD (siste 7 dager) ---\n';
 	out += lines.join('\n') + '\n';
 	out +=
-		'Bruk dette varsomt til speiling: valider når selvbildet er hardere enn tallene, utfordre varmt når det er motsatt. Vev inn når det er relevant — ikke ramse opp.\n';
+		'Bruk dette varsomt til speiling: valider når selvbildet er hardere enn tallene, utfordre varmt når det er motsatt. Vev inn når det er relevant — ikke ramse opp. Brukerens begrepsfamilie: åpne løkker tapper energi, løkker som blir liggende vikler seg til floker, floker som ikke løses rolig blir knuter — bruk vokabularet naturlig (f.eks. ved mange åpne løkker + lav gjennomføring: foreslå «Tøm hodet»-øvelsen varsomt).\n';
 	out += '--- SLUTT PÅ OBSERVERT ATFERD ---\n';
 	return out;
 }

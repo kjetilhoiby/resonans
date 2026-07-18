@@ -102,6 +102,25 @@ Morgen-nudge foreslår dagens prioriteringer basert på sjekkliste, vær, trenin
 ### Innboks → Gjøres → Ugjort
 Oppgaver triages fra innboks (AI-assistert: estimat, tema, delsteg) til "gjøres" (klare oppgaver med estimat og tema) eller "ugjort" (passerte frist).
 
+### Løkker, floker og knuter (mental belastning)
+Brukerinnsikt (juli 2026): executive paralysis oppstår typisk i ustrukturert alenetid —
+flere åpne prosjekter, men det tar likevel lang tid å komme i gang. Begrepsfamilien som
+beskriver mekanismen:
+
+- **Åpne løkker** tapper energi så lenge de er åpne — hodet holder dem selv når de ikke
+  jobbes med. Mange nok løkker samtidig gir paralyse: ingen enkelt tråd å gripe i.
+- **Floker** oppstår når løkker blir liggende og vikler seg i hverandre — det er ikke
+  lenger klart hvor man skal ta tak.
+- **Knuter** er floker som ikke ble løst rolig — strammet av press eller tid, og nå
+  vesentlig tyngre å åpne.
+
+Designimplikasjoner: løkker skal **eksternaliseres tidlig** (innboksen/hodedumpen er
+lukking-nok — hodet slipper taket når punktet har en gjenfinnbar plass). Floker skal
+**løses rolig**: én om gangen, minste steg først, aldri alle samtidig. Hodedump-flyten
+(«Tøm hodet») er den operative motgiften: dump → punkter (løkkene ut) → triage → én
+floke løses → mental landing. Coachen bruker samme vokabular i speiling («X åpne
+løkker i innboksen», «floken har ligget i tre uker — på vei til å bli knute?»).
+
 ## Integrasjon med Ekko
 
 Ekko er en iOS-app for live treningsoppfølging. Resonans fungerer som backend:

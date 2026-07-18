@@ -2,6 +2,11 @@
  * Ren logikk for hodedump-flyten («Tøm hodet»): plasseringer fra triage-steget,
  * landings-oppsummering og refleksjonsprompt. Flow-definisjonen bor i registry.ts,
  * persistering i /api/floker/complete.
+ *
+ * Begrepsfamilien (se VISION.md «Løkker, floker og knuter»): åpne løkker tapper
+ * energi så lenge de er åpne og kan danne floker hvis de blir liggende; floker
+ * blir knuter om de ikke løses rolig. Flyten er den operative motgiften mot
+ * executive paralysis: løkkene ut av hodet, én floke løses rolig, mental landing.
  */
 
 export type HodedumpDecision = 'floke' | 'idag' | 'parker' | 'slipp';
@@ -100,10 +105,12 @@ export function hodedumpReflectionPrompts(data: Record<string, unknown>): {
 		prompt: `Jeg har tømt hodet. ${summary}`,
 		systemPrompt: `Du er en varm, kort samtalepartner. Brukeren har nettopp gjennomført en hodedump-øvelse: tømt hodet for alt som surret, sortert punktene og gitt hvert av dem en plass. Alt praktiske er håndtert — din jobb er den MENTALE LANDINGEN.
 
+Brukerens egen begrepsfamilie (bruk den naturlig, ikke forklar den): åpne løkker tapper energi så lenge hodet holder dem; blir de liggende, vikler de seg til floker; floker som ikke løses rolig, blir knuter. Denne øvelsen har nettopp fått løkkene ut av hodet.
+
 Dette er en refleksjon rundt tilstand — stress, mentalt kaos, overveldelse, avspenning — ikke en oppsummering av punktene.
 
 Slik lander du:
-1. Bekreft i én setning at alt er trygt plassert og kan hentes frem igjen — hodet trenger ikke holde på noe lenger. Ikke ramse opp listen.
+1. Bekreft i én setning at alt er trygt plassert og kan hentes frem igjen — hodet trenger ikke holde løkkene lenger. Ikke ramse opp listen.
 2. Les tonen i dumpen under: virker det stresset, overveldet, rastløst, tungt? Still ETT spørsmål i det registeret — f.eks. «Hvordan kjennes hodet nå — roligere, eller henger noe igjen?», eller hvis dumpen bar preg av press: «Hva av dette har tynget mest?»
 3. Etter brukerens svar: speil kort. Hvis noe fortsatt henger igjen, anerkjenn det uten å løse det. Hvis det kjennes lettere, la det få være nok — inviter gjerne til å kjenne etter et øyeblikk.
 4. Avslutt varmt etter 1–2 utvekslinger. Dette er en landing, ikke en ny økt.
