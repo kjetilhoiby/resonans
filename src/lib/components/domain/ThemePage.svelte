@@ -28,6 +28,7 @@
 	import ThemeChatTab from './theme/ThemeChatTab.svelte';
 	import ThemeTasksTab from './theme/ThemeTasksTab.svelte';
 	import ThemeKapplisteTab from './theme/ThemeKapplisteTab.svelte';
+	import ThemeRecipesTab from './theme/ThemeRecipesTab.svelte';
 	import ThemeDataTab from './theme/ThemeDataTab.svelte';
 
 	/* ── Types ──────────────────────────────────────────── */
@@ -126,7 +127,7 @@
 	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '', selectedWorkout = null, tripProfile = null, tripLists = [], ferieProfile = null, themeFiles: initialThemeFiles = [], metricSettings: initialMetricSettings = {}, projects = [], isHomeProject = false, projectProfile = null, tasks = [], cutLists = [] }: Props = $props();
 
 	/* ── Subtab-tilstand ────────────────────────────────── */
-	type Tab = 'chat' | 'data' | 'mål' | 'flyter' | 'filer' | 'lister' | 'oppgaver' | 'kapp';
+	type Tab = 'chat' | 'data' | 'mål' | 'flyter' | 'filer' | 'lister' | 'oppgaver' | 'kapp' | 'oppskrifter';
 	const activeDashboardKind = $derived(resolveThemeDashboardKind(theme?.name));
 	const activeDashboard = $derived(getThemeDashboardDefinition(theme?.name));
 	const hasThemeDashboard = $derived(activeDashboardKind !== null);
@@ -148,12 +149,14 @@
 						? ['chat', 'data', 'filer']
 						: activeDashboardKind === 'egenfrekvens'
 							? ['chat', 'data', 'mål', 'flyter', 'filer']
-							: ['chat', 'data', 'mål', 'filer']
+							: activeDashboardKind === 'food'
+								? ['chat', 'data', 'oppskrifter', 'mål', 'filer']
+								: ['chat', 'data', 'mål', 'filer']
 	);
 	const requestedPrompt = get(page).url.searchParams.get('prompt') ?? '';
 	const hasLinkedWorkout = $derived(Boolean(selectedWorkout));
 	const isHandoff = get(page).url.searchParams.get('handoff') === '1';
-	const validTabs: Tab[] = ['chat', 'data', 'mål', 'flyter', 'filer', 'lister', 'oppgaver', 'kapp'];
+	const validTabs: Tab[] = ['chat', 'data', 'mål', 'flyter', 'filer', 'lister', 'oppgaver', 'kapp', 'oppskrifter'];
 	let tab = $state<Tab>(
 		hasLinkedWorkout
 			? 'chat'
@@ -367,6 +370,7 @@
 					{:else if t === 'lister'}📋 Lister
 					{:else if t === 'oppgaver'}✅ Oppgaver
 					{:else if t === 'kapp'}📐 Kapp
+					{:else if t === 'oppskrifter'}🍲 Oppskrifter
 					{:else}📁 Filer{/if}
 				</button>
 			{/each}
@@ -449,6 +453,10 @@
 				themeId={theme.id}
 				initialCutLists={cutLists}
 			/>
+
+		<!-- OPPSKRIFTER (mat-tema) -->
+		{:else if tab === 'oppskrifter'}
+			<ThemeRecipesTab />
 
 		<!-- FILER -->
 		{:else}

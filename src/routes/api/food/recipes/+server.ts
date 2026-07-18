@@ -1,17 +1,57 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
-import { meals } from '$lib/db/schema';
-import { eq, desc } from 'drizzle-orm';
+import { meals, mealPlans } from '$lib/db/schema';
+import { eq, desc, and, ilike, sql } from 'drizzle-orm';
 
-export const GET: RequestHandler = async ({ locals }) => {
+// GET /api/food/recipes?q=&tag=&withStats=1 — oppskriftskartoteket.
+// withStats beriker hver oppskrift med timesPlanned + lastPlannedDate fra meal_plans.
+export const GET: RequestHandler = async ({ url, locals }) => {
 	const userId = locals.userId;
+	const q = url.searchParams.get('q')?.trim();
+	const tag = url.searchParams.get('tag')?.trim();
+	const withStats = url.searchParams.get('withStats') === '1';
+
+	const conditions = [eq(meals.userId, userId)];
+	if (q) {
+		const safe = q.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+		conditions.push(ilike(meals.title, `%${safe}%`));
+	}
+	if (tag) {
+		conditions.push(sql`${tag} = ANY(${meals.tags})`);
+	}
+
 	const rows = await db
 		.select()
 		.from(meals)
-		.where(eq(meals.userId, userId))
+		.where(and(...conditions))
 		.orderBy(desc(meals.createdAt));
-	return json({ meals: rows });
+
+	if (!withStats || rows.length === 0) {
+		return json({ meals: rows });
+	}
+
+	const stats = await db
+		.select({
+			mealId: mealPlans.mealId,
+			timesPlanned: sql<number>`count(*)::int`,
+			lastPlannedDate: sql<string | null>`max(${mealPlans.date})`
+		})
+		.from(mealPlans)
+		.where(eq(mealPlans.userId, userId))
+		.groupBy(mealPlans.mealId);
+
+	const statsByMeal = new Map(stats.map((s) => [s.mealId, s]));
+	const enriched = rows.map((meal) => {
+		const stat = statsByMeal.get(meal.id);
+		return {
+			...meal,
+			timesPlanned: stat?.timesPlanned ?? 0,
+			lastPlannedDate: stat?.lastPlannedDate ?? null
+		};
+	});
+
+	return json({ meals: enriched });
 };
 
 export const POST: RequestHandler = async ({ request, locals }) => {
