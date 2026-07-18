@@ -8,6 +8,12 @@ import { getRecentRouteLabels } from '$lib/server/tracks/routes-repository';
 import { computeBalanceState } from '$lib/server/tracks/balance';
 import { queryCanonicalTransactions } from '$lib/server/integrations/categorized-events';
 import { isoWeekKeyForDate } from '$lib/server/iso-week';
+import {
+	collectFollowThrough7d,
+	collectNaps7d,
+	collectProactivity7d
+} from '$lib/server/services/observed-behavior-service';
+import { classifyFollowThrough, classifyNapLoad } from '$lib/domain/observed-behavior';
 
 type Severity = 'info' | 'low' | 'medium' | 'high';
 
@@ -1245,6 +1251,142 @@ async function produceFamilyParentTimeLow7d(userId: string, now: Date) {
 	}
 }
 
+/**
+ * Powernaps siste 7 dager (detekterte + manuelle), hver koblet mot natten før.
+ * Kontekstens `shortNightNaps` er konfrontasjonsmaterialet: naps etter netter
+ * under 6,5t peker på søvnunderskudd som driver. Null uten søvndata.
+ */
+async function produceSleepPowernaps7d(userId: string, now: Date) {
+	const windowStart = daysAgo(now, 7);
+
+	await ensureSignalContract({
+		signalType: 'sleep_powernaps_7d',
+		ownerDomain: 'health',
+		allowedConsumerDomains: ['health', 'home', 'relationship'],
+		description:
+			'Antall powernaps siste 7 dager (Withings-detekterte + manuelt registrerte), hver koblet mot søvntimer natten før. Mål-bevisst severity når et nap-mål (maxPerWeek) finnes.'
+	});
+
+	const naps = await collectNaps7d(userId, now);
+	if (!naps.hasSleepData) return null;
+
+	const severity = classifyNapLoad(naps.count, naps.maxPerWeek);
+	const shortNightNaps = naps.withPriorNights.filter(
+		(n) => n.priorNightHours !== null && n.priorNightHours < 6.5
+	);
+
+	await upsertDomainSignal({
+		signalType: 'sleep_powernaps_7d',
+		ownerDomain: 'health',
+		userId,
+		valueNumber: naps.count,
+		valueText: naps.maxPerWeek !== null ? (naps.count <= naps.maxPerWeek ? 'within_goal' : 'over_goal') : null,
+		valueBool: naps.maxPerWeek !== null ? naps.count <= naps.maxPerWeek : null,
+		severity,
+		confidence: 0.85,
+		windowStart,
+		windowEnd: now,
+		observedAt: now,
+		context: {
+			napCount: naps.count,
+			totalMinutes: naps.totalMinutes,
+			maxPerWeek: naps.maxPerWeek,
+			shortNightNapCount: shortNightNaps.length,
+			naps: naps.withPriorNights.map((n) => ({
+				start: n.start.toISOString(),
+				durationMinutes: n.durationMinutes,
+				priorNightHours: n.priorNightHours
+			}))
+		}
+	});
+
+	return naps.count;
+}
+
+/**
+ * Gjennomføring siste 7 dager: dagsplan-punkter planlagt → fullført, med
+ * snoozet/skippet eksplisitt talt — den observerte «gjort»-dimensjonen fra
+ * egenfrekvens-pyramiden. Null uten planlagte punkter.
+ */
+async function produceActionFollowThrough7d(userId: string, now: Date) {
+	const windowStart = daysAgo(now, 7);
+
+	await ensureSignalContract({
+		signalType: 'action_follow_through_7d',
+		ownerDomain: 'home',
+		allowedConsumerDomains: ['home', 'health', 'relationship'],
+		description:
+			'Andel planlagte dagsplan-punkter fullført siste 7 dager, med snoozet/skippet talt separat. Observert motstykke til egenfrekvens-pyramidens handlingsdimensjon (gjort).'
+	});
+
+	const counts = await collectFollowThrough7d(userId, now);
+	const result = classifyFollowThrough(counts);
+	if (result.pct === null) return null;
+
+	await upsertDomainSignal({
+		signalType: 'action_follow_through_7d',
+		ownerDomain: 'home',
+		userId,
+		valueNumber: result.pct,
+		valueText: result.band,
+		severity: result.severity,
+		confidence: counts.plannedItems >= 5 ? 0.85 : 0.55,
+		windowStart,
+		windowEnd: now,
+		observedAt: now,
+		context: {
+			plannedItems: counts.plannedItems,
+			checkedItems: counts.checkedItems,
+			skippedItems: counts.skippedItems,
+			snoozedItems: counts.snoozedItems,
+			followThroughPct: result.pct
+		}
+	});
+
+	return result.pct;
+}
+
+/**
+ * Proaktivitet siste 7 dager: quick wins og fokusøkter — «tar tak»-vokabularet
+ * observert. Events skrives allerede men ble ikke konsumert av noe signal.
+ * Null når ingen av delene finnes i vinduet.
+ */
+async function produceProactiveActions7d(userId: string, now: Date) {
+	const windowStart = daysAgo(now, 7);
+
+	await ensureSignalContract({
+		signalType: 'proactive_actions_7d',
+		ownerDomain: 'home',
+		allowedConsumerDomains: ['home', 'health', 'relationship'],
+		description:
+			'Quick wins og fokusøkter siste 7 dager (sensor_events quick_win/focus_session). Observert proaktivitet — egenfrekvens-pyramidens «tar tak»/«fullfører noe».'
+	});
+
+	const pro = await collectProactivity7d(userId, now);
+	const total = pro.quickWins + pro.focusSessions;
+	if (total === 0) return null;
+
+	await upsertDomainSignal({
+		signalType: 'proactive_actions_7d',
+		ownerDomain: 'home',
+		userId,
+		valueNumber: total,
+		valueText: `${pro.quickWins} quick wins, ${pro.focusSessions} fokusøkter`,
+		severity: 'info',
+		confidence: 0.9,
+		windowStart,
+		windowEnd: now,
+		observedAt: now,
+		context: {
+			quickWins: pro.quickWins,
+			focusSessions: pro.focusSessions,
+			focusMinutes: pro.focusMinutes
+		}
+	});
+
+	return total;
+}
+
 export async function runDomainSignalProducers(now: Date = new Date()) {
 	const allUsers = await db.select({ id: users.id, partnerUserId: users.partnerUserId }).from(users);
 
@@ -1267,7 +1409,10 @@ export async function runDomainSignalProducers(now: Date = new Date()) {
 		relationshipLogisticsStressIndex14d: 0,
 		familyBirthdayUpcoming7d: 0,
 		familyRelationNeglect30d: 0,
-		familyParentTimeLow7d: 0
+		familyParentTimeLow7d: 0,
+		sleepPowernaps7d: 0,
+		actionFollowThrough7d: 0,
+		proactiveActions7d: 0
 	};
 	const errors: Array<{ userId: string; error: string }> = [];
 
@@ -1318,6 +1463,24 @@ export async function runDomainSignalProducers(now: Date = new Date()) {
 			if (eveningScreenWork7d !== null) {
 				produced += 1;
 				producerBreakdown.eveningScreenWork7d += 1;
+			}
+
+			const sleepPowernaps7d = await produceSleepPowernaps7d(user.id, now);
+			if (sleepPowernaps7d !== null) {
+				produced += 1;
+				producerBreakdown.sleepPowernaps7d += 1;
+			}
+
+			const actionFollowThrough7d = await produceActionFollowThrough7d(user.id, now);
+			if (actionFollowThrough7d !== null) {
+				produced += 1;
+				producerBreakdown.actionFollowThrough7d += 1;
+			}
+
+			const proactiveActions7d = await produceProactiveActions7d(user.id, now);
+			if (proactiveActions7d !== null) {
+				produced += 1;
+				producerBreakdown.proactiveActions7d += 1;
 			}
 
 			const effortVsThreshold = await produceHealthEffortVsThreshold(user.id, now);

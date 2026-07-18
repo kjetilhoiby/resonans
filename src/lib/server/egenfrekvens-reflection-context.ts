@@ -1,6 +1,8 @@
 import { and, desc, eq } from 'drizzle-orm';
 import { db } from '$lib/db';
 import { checklists, sensorEvents } from '$lib/db/schema';
+import { collectObservedBehaviorInputs } from '$lib/server/services/observed-behavior-service';
+import { buildObservedBehaviorLines } from '$lib/domain/observed-behavior';
 
 const DEFAULT_RECENT_LIMIT = 5;
 
@@ -21,6 +23,8 @@ export interface EgenfrekvensReflectionContext {
 		headline: string | null;
 		items: Array<{ text: string; checked: boolean }>;
 	} | null;
+	/** Observert atferd siste 7 dager (gjennomføring, powernaps, proaktivitet) */
+	observedLines: string[];
 	systemPrompt: string;
 }
 
@@ -132,6 +136,15 @@ function buildSystemPrompt(
 		}
 	}
 
+	if (ctx.observedLines.length > 0) {
+		lines.push('');
+		lines.push('OBSERVERT ATFERD SISTE UKE:');
+		lines.push(...ctx.observedLines);
+		lines.push(
+			'Bruk dette til forsiktig speiling mot det brukeren selv rangerer: valider når selvbildet er hardere enn tallene («du er strengere med deg selv enn uka ser ut»), og utfordre varmt når det er motsatt. Aldri ramse opp tallene — vev inn ett relevant poeng når det treffer.'
+		);
+	}
+
 	if (ctx.recentCheckins.length === 0 && !ctx.dayPlan) {
 		lines.push('');
 		lines.push('(Ingen historikk eller dagsplan tilgjengelig.)');
@@ -173,6 +186,14 @@ export async function buildEgenfrekvensReflectionContext(
 		};
 	});
 
+	// Observert atferd — best effort, refleksjonssteget skal aldri velte på dette
+	let observedLines: string[] = [];
+	try {
+		observedLines = buildObservedBehaviorLines(await collectObservedBehaviorInputs(userId));
+	} catch (error) {
+		console.warn('[egenfrekvens] observert atferd utilgjengelig:', error);
+	}
+
 	let dayPlan: EgenfrekvensReflectionContext['dayPlan'] = null;
 	const checklistContext = contextForDay(day);
 	if (checklistContext) {
@@ -196,7 +217,7 @@ export async function buildEgenfrekvensReflectionContext(
 		}
 	}
 
-	const partial = { recentCheckins, dayPlan };
+	const partial = { recentCheckins, dayPlan, observedLines };
 	return {
 		...partial,
 		systemPrompt: buildSystemPrompt(partial, slot)

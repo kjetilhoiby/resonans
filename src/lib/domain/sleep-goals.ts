@@ -194,6 +194,42 @@ export function medianWakeMinutes(nights: SleepNight[], tz = OSLO_TZ): number | 
 	);
 }
 
+/** En nap koblet mot natten før — råstoff for «søvnunderskudd → nap»-speiling. */
+export interface NapWithPriorNight {
+	start: Date;
+	durationMinutes: number;
+	/** Søvntimer natten før nappen, null når ingen natt finnes innen 24t før */
+	priorNightHours: number | null;
+}
+
+/**
+ * Koble hver nap mot den siste ekte natten som sluttet før nappen startet
+ * (innen 24 timer). Ren funksjon — grunnlaget for powernap-signalet.
+ */
+export function pairNapsWithPriorNights(nights: SleepNight[]): NapWithPriorNight[] {
+	const realNights = nights
+		.filter((n) => !n.isNap)
+		.sort((a, b) => a.start.getTime() - b.start.getTime());
+	const naps = nights.filter((n) => n.isNap).sort((a, b) => a.start.getTime() - b.start.getTime());
+
+	return naps.map((nap) => {
+		let prior: SleepNight | null = null;
+		for (const night of realNights) {
+			const nightEnd = night.end ?? new Date(night.start.getTime() + night.durationH * 3_600_000);
+			if (nightEnd.getTime() <= nap.start.getTime()) {
+				if (nap.start.getTime() - nightEnd.getTime() <= 24 * 3_600_000) prior = night;
+			} else {
+				break;
+			}
+		}
+		return {
+			start: nap.start,
+			durationMinutes: Math.round(nap.durationH * 60),
+			priorNightHours: prior ? Math.round(prior.durationH * 10) / 10 : null
+		};
+	});
+}
+
 /* ── Evaluering ─────────────────────────────────────────── */
 
 /** Serialiserbar målevaluering for visning (TargetZoneBar på Mål-fanen). */

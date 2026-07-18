@@ -10,6 +10,7 @@ import {
 	noonAxisToHHMM,
 	parseTimeToNoonAxis,
 	readSleepGoalMetadata,
+	pairNapsWithPriorNights,
 	todayAtLocalTime,
 	toSleepNights,
 	type RawSleepEventLike
@@ -189,6 +190,32 @@ describe('nap-mål (maks per uke)', () => {
 		});
 		expect(readSleepGoalMetadata({ sleepGoal: { kind: 'nap' } })).toBeNull();
 		expect(defaultSleepGoalTitle({ kind: 'nap', maxPerWeek: 2 })).toBe('Maks 2 powernaps/uke');
+	});
+});
+
+describe('pairNapsWithPriorNights', () => {
+	it('kobler nap mot siste natt som sluttet før nappen (innen 24t)', () => {
+		const nights = toSleepNights([
+			sleepEvent('2026-07-13T21:00:00Z', 5.5), // kort natt, våken ~02:30Z (04:30 Oslo)
+			sleepEvent('2026-07-14T11:00:00Z', 0.5), // nap kl. 13 Oslo → natten før = 5.5t
+			sleepEvent('2026-07-14T21:30:00Z', 7.8),
+			sleepEvent('2026-07-15T13:00:00Z', 0.4) // nap → natten før = 7.8t
+		]);
+		const paired = pairNapsWithPriorNights(nights);
+		expect(paired).toHaveLength(2);
+		expect(paired[0].priorNightHours).toBeCloseTo(5.5, 1);
+		expect(paired[0].durationMinutes).toBe(30);
+		expect(paired[1].priorNightHours).toBeCloseTo(7.8, 1);
+	});
+
+	it('nap uten natt innen 24t før → priorNightHours null', () => {
+		const nights = toSleepNights([
+			sleepEvent('2026-07-10T21:00:00Z', 7),
+			sleepEvent('2026-07-14T11:00:00Z', 0.5) // nap fire dager senere
+		]);
+		const paired = pairNapsWithPriorNights(nights);
+		expect(paired).toHaveLength(1);
+		expect(paired[0].priorNightHours).toBeNull();
 	});
 });
 
