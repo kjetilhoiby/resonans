@@ -2,7 +2,48 @@
  * Ren forretningslogikk for WeekTasks — løftet ut av komponenten
  * for testbarhet (se week-tasks-logic.test.ts).
  */
+import { dimensionById, type LivskompassGoal } from '$lib/domains/livskompass/dimensions';
 import type { WeekChecklist, WeekTask } from './types';
+
+// ── Livskompass-mål i ukeplanen ─────────────────────────────────────────────
+
+export interface KompassGoalView extends LivskompassGoal {
+	label: string;
+	color: string;
+	itemsTotal: number;
+	itemsChecked: number;
+}
+
+/**
+ * Beriker ukas kompass-mål med label/farge og live tiltaksstatus fra ukelista
+ * (punkter med metadata.source = 'livskompass'). Telles fra klient-staten så
+ * stripa oppdateres i det brukeren huker av.
+ */
+export function livskompassGoalViews(
+	checklist: WeekChecklist | null,
+	goals: LivskompassGoal[] | null | undefined
+): KompassGoalView[] {
+	if (!goals?.length) return [];
+	const counts: Record<string, { total: number; checked: number }> = {};
+	for (const item of checklist?.items ?? []) {
+		if (item.metadata?.source !== 'livskompass') continue;
+		const dim = item.metadata?.livskompassDimension;
+		if (!dim) continue;
+		const entry = (counts[dim] ??= { total: 0, checked: 0 });
+		entry.total += 1;
+		if (item.checked) entry.checked += 1;
+	}
+	return goals.map((g) => {
+		const def = dimensionById(g.dimensionId);
+		return {
+			...g,
+			label: def?.label ?? g.dimensionId,
+			color: def?.color ?? '#7c8ef5',
+			itemsTotal: counts[g.dimensionId]?.total ?? 0,
+			itemsChecked: counts[g.dimensionId]?.checked ?? 0
+		};
+	});
+}
 
 export function checklistProgress(checklist: WeekChecklist | null): { done: number; total: number; pct: number } {
 	const counted = (checklist?.items ?? []).filter((item) => {

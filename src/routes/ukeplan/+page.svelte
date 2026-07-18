@@ -15,6 +15,8 @@
 
 	import WeekNote from '$lib/components/domain/ukeplan/WeekNote.svelte';
 	import WeekTasks from '$lib/components/domain/ukeplan/WeekTasks.svelte';
+	import LivskompassGoalStrip from '$lib/components/domain/ukeplan/LivskompassGoalStrip.svelte';
+	import type { LivskompassGoal } from '$lib/domains/livskompass/dimensions';
 	import DaySection from '$lib/components/domain/ukeplan/DaySection.svelte';
 	import WeekGoals from '$lib/components/domain/ukeplan/WeekGoals.svelte';
 	import AutoCheckModal from '$lib/components/domain/ukeplan/AutoCheckModal.svelte';
@@ -56,6 +58,7 @@
 			dayRoutines: Record<string, DayRoutine[]>;
 			dayNotes: Record<string, string>;
 			dayHeadlines: Record<string, string>;
+			livskompassGoals: LivskompassGoal[];
 			activeTrips: ActiveTrip[];
 			activeFerie: { id: string; name: string; emoji: string; startDate: string; endDate: string }[];
 			spondEventsByDay: Record<string, SpondEvent[]>;
@@ -587,6 +590,8 @@
 	{/if}
 
 	<WeekNote weekNote={weekNoteValue} saveState={saveStates.weekNote} onSaveStateChange={(state) => setSaveState('weekNote', state)} onSave={saveWeekNote} />
+
+	<LivskompassGoalStrip goals={data.livskompassGoals ?? []} weekChecklist={weekChecklistState} />
 
 	<WeekTasks
 		weekTasks={weekTasksState} {weekChecklistState} dashedKey={data.week.dashedKey} {weekPlanJustCompleted}
