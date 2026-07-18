@@ -1,5 +1,5 @@
 import { db } from '$lib/db';
-import { canonicalWorkouts, categorizedEvents, sensorEvents } from '$lib/db/schema';
+import { canonicalWorkouts, categorizedEvents, sensorAggregates, sensorEvents } from '$lib/db/schema';
 import { and, desc, eq, gte, isNotNull, lte } from 'drizzle-orm';
 import { buildUnifiedWorkoutActivities } from '$lib/server/activity-layer';
 import { WorkoutProjectionService } from '$lib/server/services/workout-projection-service';
@@ -160,8 +160,12 @@ export type TenKBest = {
 	date: string;
 };
 
-/** Beste 10 km-tid (sekunder) i vinduet — fra canonical_workouts.bestEfforts. */
-export async function read10kBest(userId: string, sinceDays = 90): Promise<TenKBest | null> {
+/** Beste tid (sekunder) for en bestEfforts-distanse i vinduet — fra canonical_workouts. */
+export async function readBestEffort(
+	userId: string,
+	distanceKey: '1k' | '3k' | '5k' | '10k',
+	sinceDays = 90
+): Promise<TenKBest | null> {
 	const since = new Date(Date.now() - sinceDays * 86_400_000);
 	const rows = await db
 		.select({ startTime: canonicalWorkouts.startTime, bestEfforts: canonicalWorkouts.bestEfforts })
@@ -176,13 +180,97 @@ export async function read10kBest(userId: string, sinceDays = 90): Promise<TenKB
 
 	let best: TenKBest | null = null;
 	for (const row of rows) {
-		const seconds = row.bestEfforts?.['10k'];
+		const seconds = row.bestEfforts?.[distanceKey];
 		if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0) continue;
 		if (!best || seconds < best.bestSeconds) {
 			best = { bestSeconds: Math.round(seconds), date: row.startTime.toISOString().slice(0, 10) };
 		}
 	}
 	return best;
+}
+
+/** Beste 10 km-tid (sekunder) i vinduet — beholdt for eksisterende kallere. */
+export async function read10kBest(userId: string, sinceDays = 90): Promise<TenKBest | null> {
+	return readBestEffort(userId, '10k', sinceDays);
+}
+
+/** Hvilepuls-proxy: snitt av søvn-events' hr_average siste `sinceDays` døgn (naps ekskludert implisitt — de mangler oftest puls, og få nok til å ikke skjevfordele). */
+export async function readRestingHeartRate(userId: string, sinceDays = 7): Promise<number | null> {
+	const since = new Date(Date.now() - sinceDays * 86_400_000);
+	const rows = await db
+		.select({ data: sensorEvents.data })
+		.from(sensorEvents)
+		.where(
+			and(
+				eq(sensorEvents.userId, userId),
+				eq(sensorEvents.dataType, 'sleep'),
+				gte(sensorEvents.timestamp, since)
+			)
+		);
+	const values = rows
+		.map((row) => Number((row.data as { hr_average?: number } | null)?.hr_average))
+		.filter((v) => Number.isFinite(v) && v > 0);
+	if (values.length === 0) return null;
+	return Math.round((values.reduce((s, v) => s + v, 0) / values.length) * 10) / 10;
+}
+
+export type WeeklyEffortReading = {
+	total: number;
+	/** 4-ukers baseline-snitt fra aggregatet, null når det mangler */
+	p4wAvg: number | null;
+	periodKey: string;
+};
+
+/** Ukens treningsbelastning fra siste uke-aggregat med weeklyEffort. */
+export async function readWeeklyEffort(userId: string): Promise<WeeklyEffortReading | null> {
+	const rows = await db.query.sensorAggregates.findMany({
+		where: and(eq(sensorAggregates.userId, userId), eq(sensorAggregates.period, 'week')),
+		orderBy: [desc(sensorAggregates.startDate)],
+		limit: 4
+	});
+	for (const row of rows) {
+		const effort = (row.metrics as { weeklyEffort?: { total?: number; baseline?: { p4wAvg?: number } } } | null)
+			?.weeklyEffort;
+		if (effort && typeof effort.total === 'number') {
+			return {
+				total: Math.round(effort.total * 10) / 10,
+				p4wAvg: typeof effort.baseline?.p4wAvg === 'number' ? effort.baseline.p4wAvg : null,
+				periodKey: row.periodKey
+			};
+		}
+	}
+	return null;
+}
+
+export type BodyComposition = {
+	fatMassKg: number | null;
+	muscleMassKg: number | null;
+	date: string;
+};
+
+/** Siste kroppssammensetning fra Withings-vekta (data.fatMass/muscleMass). */
+export async function readBodyComposition(userId: string): Promise<BodyComposition | null> {
+	const rows = await db
+		.select({ timestamp: sensorEvents.timestamp, data: sensorEvents.data })
+		.from(sensorEvents)
+		.where(and(eq(sensorEvents.userId, userId), eq(sensorEvents.dataType, 'weight')))
+		.orderBy(desc(sensorEvents.timestamp))
+		.limit(30);
+	for (const row of rows) {
+		const data = row.data as { fatMass?: number; muscleMass?: number } | null;
+		const fat = Number(data?.fatMass);
+		const muscle = Number(data?.muscleMass);
+		const hasFat = Number.isFinite(fat) && fat > 0;
+		const hasMuscle = Number.isFinite(muscle) && muscle > 0;
+		if (hasFat || hasMuscle) {
+			return {
+				fatMassKg: hasFat ? Math.round(fat * 10) / 10 : null,
+				muscleMassKg: hasMuscle ? Math.round(muscle * 10) / 10 : null,
+				date: row.timestamp.toISOString().slice(0, 10)
+			};
+		}
+	}
+	return null;
 }
 
 export type MonthlySavings = {

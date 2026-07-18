@@ -54,6 +54,20 @@ export function classifyNapLoad(napCount: number, maxPerWeek: number | null): Si
 	return 'high';
 }
 
+/* ── Hvilepuls-forhøyning ───────────────────────────────── */
+
+/**
+ * Klassifiser forhøyet hvilepuls: snitt siste 7 netter mot baseline (nettene
+ * 8–28 dager tilbake). Forhøyet hvilepuls varsler sykdom, overtrening eller
+ * søvnunderskudd — lavere/uendret er info.
+ */
+export function classifyRestingHrElevation(deltaBpm: number): SignalSeverity {
+	if (deltaBpm >= 5) return 'high';
+	if (deltaBpm >= 3) return 'medium';
+	if (deltaBpm >= 1.5) return 'low';
+	return 'info';
+}
+
 /* ── Floke-stagnasjon (knute-risiko) ────────────────────── */
 
 export type FlokeStage = 'i_bevegelse' | 'stillestaaende' | 'knute_risiko';

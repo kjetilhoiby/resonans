@@ -26,6 +26,7 @@
 		getIntentEvaluationLabel,
 		getIntentFailureReasonLabel,
 		formatDate,
+		formatLongTermValue,
 		formatMetricValue,
 		formatMinutesShort
 	} from './helpers.js';
@@ -36,6 +37,7 @@
 		isWeightGoalReached
 	} from '$lib/domain/goal-validation';
 	import { noonAxisToHHMM, type SleepGoalEval } from '$lib/domain/sleep-goals';
+	import type { MetricGoalEval } from '$lib/domain/metric-goal-eval';
 	import type { GoalItem, ScreenTimeGoalEval, SensorProgress, WeightProgress } from './types.js';
 
 	interface Props {
@@ -44,6 +46,7 @@
 		weightProgress?: WeightProgress | null;
 		screenTimeEval?: ScreenTimeGoalEval | null;
 		sleepEval?: SleepGoalEval | null;
+		metricEval?: MetricGoalEval | null;
 		expanded?: boolean;
 		onToggle?: () => void;
 		onArchive?: (goalId: string) => void;
@@ -57,6 +60,7 @@
 		weightProgress = null,
 		screenTimeEval = null,
 		sleepEval = null,
+		metricEval = null,
 		expanded = false,
 		onToggle,
 		onArchive,
@@ -177,6 +181,42 @@
 						<span class="sensor-target">mål {weightProgress.targetWeight} kg</span>
 						<span class="sensor-pct">{weightProgress.pct}%</span>
 					</div>
+				</div>
+			{:else if metricEval}
+				<div class="sleep-goal">
+					{#if metricEval.current !== null}
+						<TargetZoneBar
+							value={metricEval.current}
+							domainMin={metricEval.domainMin}
+							domainMax={metricEval.domainMax}
+							targetMin={metricEval.mode === 'at_least' ? metricEval.target : null}
+							targetMax={metricEval.mode === 'at_most' ? metricEval.target : null}
+							mode={metricEval.mode}
+							height={10}
+							trackColor="var(--border-color)"
+							markerColor="var(--text-primary)"
+							zoneStroke="var(--success-text)"
+							formatValue={(v) => formatLongTermValue(metricEval.metricId, v, metricEval.unit)}
+							title={goal.title}
+						/>
+						<div class="sensor-progress-label">
+							<span class="sleep-current" class:off={metricEval.withinTarget === false}>
+								{formatLongTermValue(metricEval.metricId, metricEval.current, metricEval.unit)}
+							</span>
+							<span class="sensor-target">
+								mål {metricEval.mode === 'at_most' ? 'maks' : 'minst'}
+								{formatLongTermValue(metricEval.metricId, metricEval.target, metricEval.unit)}{metricEval.contextLabel ? ` · ${metricEval.contextLabel}` : ''}
+							</span>
+							{#if metricEval.withinTarget !== null}
+								<span class="sensor-pct">{metricEval.withinTarget ? '✅' : '⚠️'}</span>
+							{/if}
+						</div>
+					{:else}
+						<div class="sleep-empty">
+							Ingen måledata ennå — mål {metricEval.mode === 'at_most' ? 'maks' : 'minst'}
+							{formatLongTermValue(metricEval.metricId, metricEval.target, metricEval.unit)}
+						</div>
+					{/if}
 				</div>
 			{:else if screenTimeEval}
 				<div class="st-goal" class:over={screenTimeEval.withinTarget === false}>

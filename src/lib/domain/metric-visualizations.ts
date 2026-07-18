@@ -90,6 +90,46 @@ export const METRIC_VISUALIZATION_PRESETS: Record<MetricId, MetricVisualizationP
 		thresholdMode: 'at_least',
 		preferredComparators: ['target_monthly', 'rolling_average'],
 		notes: 'Månedlig sparebeløp mot mål; 3-måneders snitt som sammenligning.'
+	},
+	running_5k_time: {
+		metricId: 'running_5k_time',
+		summary: 'timeline_marker',
+		detail: 'trajectory',
+		thresholdMode: 'at_most',
+		preferredComparators: ['target_time', 'best_effort_window'],
+		notes: 'Beste 5 km-tid i vinduet mot måltid; lavere er bedre.'
+	},
+	resting_heart_rate: {
+		metricId: 'resting_heart_rate',
+		summary: 'target_zone_bar',
+		detail: 'comparison_trend',
+		thresholdMode: 'at_most',
+		preferredComparators: ['target_max', 'rolling_average'],
+		notes: 'Snittpuls under søvn siste 7 netter mot øvre mål; lavere er bedre.'
+	},
+	weekly_effort: {
+		metricId: 'weekly_effort',
+		summary: 'target_zone_bar',
+		detail: 'comparison_trend',
+		thresholdMode: 'at_least',
+		preferredComparators: ['target_min', 'p4w_baseline'],
+		notes: 'Ukens effort-sum mot minimumsmål; 4-ukers baseline som sammenligning.'
+	},
+	fat_mass: {
+		metricId: 'fat_mass',
+		summary: 'timeline_marker',
+		detail: 'trajectory',
+		thresholdMode: 'trajectory',
+		preferredComparators: ['target_mass', 'expected_by_now'],
+		notes: 'Siste fettmasse-måling mot tidsbestemt mål; lavere er bedre.'
+	},
+	muscle_mass: {
+		metricId: 'muscle_mass',
+		summary: 'timeline_marker',
+		detail: 'trajectory',
+		thresholdMode: 'trajectory',
+		preferredComparators: ['target_mass', 'expected_by_now'],
+		notes: 'Siste muskelmasse-måling mot tidsbestemt mål; høyere er bedre.'
 	}
 };
 

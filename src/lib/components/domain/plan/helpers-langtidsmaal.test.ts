@@ -23,6 +23,14 @@ describe('formatLongTermValue', () => {
 		expect(formatLongTermValue('running_10k_time', 3000)).toBe('50:00');
 	});
 
+	it('viser 5 km-tid som mm:ss', () => {
+		expect(formatLongTermValue('running_5k_time', 1500)).toBe('25:00');
+	});
+
+	it('viser hvilepuls med enhet', () => {
+		expect(formatLongTermValue('resting_heart_rate', 55, 'slag/min')).toBe('55 slag/min');
+	});
+
 	it('viser sparing som kroner', () => {
 		expect(formatLongTermValue('monthly_savings', 8000)).toBe('8 000 kr');
 	});

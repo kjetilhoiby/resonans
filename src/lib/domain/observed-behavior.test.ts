@@ -4,7 +4,8 @@ import {
 	classifyFlokeLoad,
 	classifyFlokeStagnation,
 	classifyFollowThrough,
-	classifyNapLoad
+	classifyNapLoad,
+	classifyRestingHrElevation
 } from './observed-behavior';
 
 describe('classifyFollowThrough', () => {
@@ -130,6 +131,16 @@ describe('buildObservedBehaviorLines', () => {
 		expect(lines).toHaveLength(1);
 		// Verste floken (flest dager) trekkes frem
 		expect(lines[0]).toContain('«Forsikringssaken» har ligget 31 dager uten bevegelse — på vei til å bli knute');
+	});
+});
+
+describe('classifyRestingHrElevation', () => {
+	it('graderer forhøyet hvilepuls: +1,5 low, +3 medium, +5 high', () => {
+		expect(classifyRestingHrElevation(0)).toBe('info');
+		expect(classifyRestingHrElevation(-2)).toBe('info');
+		expect(classifyRestingHrElevation(1.5)).toBe('low');
+		expect(classifyRestingHrElevation(3.2)).toBe('medium');
+		expect(classifyRestingHrElevation(5.5)).toBe('high');
 	});
 });
 

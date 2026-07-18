@@ -14,7 +14,12 @@ import {
 	collectNaps7d,
 	collectProactivity7d
 } from '$lib/server/services/observed-behavior-service';
-import { classifyFlokeLoad, classifyFollowThrough, classifyNapLoad } from '$lib/domain/observed-behavior';
+import {
+	classifyFlokeLoad,
+	classifyFollowThrough,
+	classifyNapLoad,
+	classifyRestingHrElevation
+} from '$lib/domain/observed-behavior';
 
 type Severity = 'info' | 'low' | 'medium' | 'high';
 
@@ -1437,6 +1442,70 @@ async function produceFlokeStagnation(userId: string, now: Date) {
 	return stagnant.length;
 }
 
+/**
+ * Forhøyet hvilepuls: snittpuls under søvn siste 7 netter mot baseline
+ * (nettene 8–28 dager tilbake). Varsler sykdom/overtrening/søvnunderskudd.
+ * Null uten nok netter med puls i begge vinduer (≥3 hver).
+ */
+async function produceRestingHrElevated7d(userId: string, now: Date) {
+	const windowStart = daysAgo(now, 7);
+	const baselineStart = daysAgo(now, 28);
+
+	await ensureSignalContract({
+		signalType: 'resting_hr_elevated_7d',
+		ownerDomain: 'health',
+		allowedConsumerDomains: ['health', 'home', 'relationship'],
+		description:
+			'Snittpuls under søvn siste 7 netter mot baseline (nettene 8–28 dager tilbake). Positiv delta = forhøyet hvilepuls (sykdom/overtrening/søvnunderskudd).'
+	});
+
+	const rows = await db.execute(sql`
+		SELECT timestamp, (data->>'hr_average')::numeric AS hr
+		FROM sensor_events
+		WHERE user_id = ${userId}
+		  AND data_type = 'sleep'
+		  AND data->>'hr_average' IS NOT NULL
+		  AND timestamp >= ${baselineStart}
+		  AND timestamp < ${now}
+	`);
+	const typed = rowsOf<{ timestamp: Date | string; hr: number }>(rows)
+		.map((r) => ({ ts: new Date(r.timestamp), hr: toNumber(r.hr) }))
+		.filter((r) => r.hr > 0);
+
+	const recent = typed.filter((r) => r.ts >= windowStart).map((r) => r.hr);
+	const baseline = typed.filter((r) => r.ts < windowStart).map((r) => r.hr);
+	if (recent.length < 3 || baseline.length < 3) return null;
+
+	const avg = (v: number[]) => v.reduce((s, x) => s + x, 0) / v.length;
+	const recentAvg = Math.round(avg(recent) * 10) / 10;
+	const baselineAvg = Math.round(avg(baseline) * 10) / 10;
+	const delta = Math.round((recentAvg - baselineAvg) * 10) / 10;
+	const severity = classifyRestingHrElevation(delta);
+
+	await upsertDomainSignal({
+		signalType: 'resting_hr_elevated_7d',
+		ownerDomain: 'health',
+		userId,
+		valueNumber: delta,
+		valueText: `${recentAvg} mot baseline ${baselineAvg}`,
+		valueBool: delta >= 1.5,
+		severity,
+		confidence: recent.length >= 5 ? 0.85 : 0.6,
+		windowStart,
+		windowEnd: now,
+		observedAt: now,
+		context: {
+			recentAvg,
+			baselineAvg,
+			delta,
+			recentNights: recent.length,
+			baselineNights: baseline.length
+		}
+	});
+
+	return delta;
+}
+
 export async function runDomainSignalProducers(now: Date = new Date()) {
 	const allUsers = await db.select({ id: users.id, partnerUserId: users.partnerUserId }).from(users);
 
@@ -1463,7 +1532,8 @@ export async function runDomainSignalProducers(now: Date = new Date()) {
 		sleepPowernaps7d: 0,
 		actionFollowThrough7d: 0,
 		proactiveActions7d: 0,
-		flokeStagnation: 0
+		flokeStagnation: 0,
+		restingHrElevated7d: 0
 	};
 	const errors: Array<{ userId: string; error: string }> = [];
 
@@ -1538,6 +1608,12 @@ export async function runDomainSignalProducers(now: Date = new Date()) {
 			if (flokeStagnation !== null) {
 				produced += 1;
 				producerBreakdown.flokeStagnation += 1;
+			}
+
+			const restingHrElevated7d = await produceRestingHrElevated7d(user.id, now);
+			if (restingHrElevated7d !== null) {
+				produced += 1;
+				producerBreakdown.restingHrElevated7d += 1;
 			}
 
 			const effortVsThreshold = await produceHealthEffortVsThreshold(user.id, now);
