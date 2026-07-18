@@ -3,6 +3,11 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { mealPlans } from '$lib/db/schema';
 import { and, eq, asc } from 'drizzle-orm';
+import {
+	upsertMealPlan,
+	deleteMealPlan,
+	type UpsertMealPlanParams
+} from '$lib/server/services/meal-plan-sync';
 
 export const GET: RequestHandler = async ({ url, locals }) => {
 	const userId = locals.userId;
@@ -28,19 +33,15 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		return json({ error: 'weekContext, date and mealType required' }, { status: 400 });
 	}
 
-	const [created] = await db
-		.insert(mealPlans)
-		.values({
-			userId,
-			weekContext: body.weekContext,
-			date: body.date,
-			mealType: body.mealType,
-			mealId: body.mealId ?? null,
-			notes: body.notes ?? null,
-			servings: body.servings ?? 2,
-			photoUrl: body.photoUrl ?? null
-		})
-		.returning();
+	const created = await upsertMealPlan(userId, {
+		weekContext: body.weekContext,
+		date: body.date,
+		mealType: body.mealType,
+		mealId: body.mealId ?? null,
+		notes: body.notes ?? null,
+		servings: body.servings,
+		photoUrl: body.photoUrl ?? null
+	});
 
 	return json({ mealPlan: created }, { status: 201 });
 };
@@ -51,17 +52,12 @@ export const PATCH: RequestHandler = async ({ request, locals }) => {
 
 	if (!body.id) return json({ error: 'id required' }, { status: 400 });
 
-	const updates: Record<string, unknown> = {};
+	const params: Record<string, unknown> = { id: body.id };
 	for (const key of ['date', 'mealType', 'mealId', 'notes', 'servings', 'photoUrl']) {
-		if (key in body) updates[key] = body[key];
+		if (key in body) params[key] = body[key];
 	}
 
-	const [updated] = await db
-		.update(mealPlans)
-		.set(updates)
-		.where(and(eq(mealPlans.id, body.id), eq(mealPlans.userId, userId)))
-		.returning();
-
+	const updated = await upsertMealPlan(userId, params as UpsertMealPlanParams);
 	if (!updated) return json({ error: 'Not found' }, { status: 404 });
 	return json({ mealPlan: updated });
 };
@@ -71,11 +67,7 @@ export const DELETE: RequestHandler = async ({ url, locals }) => {
 	const id = url.searchParams.get('id');
 	if (!id) return json({ error: 'id required' }, { status: 400 });
 
-	const deleted = await db
-		.delete(mealPlans)
-		.where(and(eq(mealPlans.id, id), eq(mealPlans.userId, userId)))
-		.returning({ id: mealPlans.id });
-
-	if (deleted.length === 0) return json({ error: 'Not found' }, { status: 404 });
+	const deleted = await deleteMealPlan(userId, id);
+	if (!deleted) return json({ error: 'Not found' }, { status: 404 });
 	return json({ deleted: true });
 };

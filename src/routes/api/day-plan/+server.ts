@@ -4,6 +4,7 @@ import { db } from '$lib/db';
 import { checklists, checklistItems } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { buildChecklistItemFields } from '$lib/server/checklist-item-builder';
+import { afterMealItemWritten } from '$lib/server/services/meal-plan-sync';
 import { upsertPlanArtifactField } from '$lib/server/plan-artifacts';
 import { syncStaysForDate } from '$lib/server/stays';
 import { PersonMentionService } from '$lib/server/services/person-mention-service';
@@ -95,6 +96,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			// Sted-punkt → skriv opphold automatisk til reise-/ferieplan som dekker dagen.
 			if (built.some((f) => f.locationDayIso)) {
 				runInBackground(syncStaysForDate(userId, dayIso));
+			}
+
+			// Måltidspunkter → speil til meal_plans (matplan-synk).
+			for (const item of createdItems) {
+				if (item.metadata?.mealType) {
+					runInBackground(afterMealItemWritten(userId, item, dayContext));
+				}
 			}
 		}
 	}

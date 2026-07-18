@@ -1,26 +1,8 @@
 import { z } from 'zod';
-import { db } from '$lib/db';
-import { meals, mealPlans } from '$lib/db/schema';
-import { eq, and, ilike } from 'drizzle-orm';
-
-async function findOrCreateMealId(userId: string, name: string): Promise<string | null> {
-	const trimmed = name.trim();
-	if (!trimmed) return null;
-	const safe = trimmed.replace(/[\\%_]/g, (ch) => `\\${ch}`);
-
-	const exact = await db
-		.select({ id: meals.id })
-		.from(meals)
-		.where(and(eq(meals.userId, userId), ilike(meals.title, safe)))
-		.limit(2);
-	if (exact.length === 1) return exact[0].id;
-
-	const [created] = await db
-		.insert(meals)
-		.values({ userId, title: trimmed })
-		.returning({ id: meals.id });
-	return created?.id ?? null;
-}
+import {
+	upsertMealPlan,
+	deleteMealPlan
+} from '$lib/server/services/meal-plan-sync';
 
 export const manageMealPlanTool = {
 	name: 'manage_meal_plan',
@@ -28,7 +10,8 @@ export const manageMealPlanTool = {
 
 Use this to build or edit the user's weekly menu. Either link to a saved meal via mealId,
 or pass mealName to auto-create a lightweight meal row (name only — recipe details can
-be filled in later via manage_recipe).`,
+be filled in later via manage_recipe). Changes are mirrored automatically to the day's
+checklist in ukeplan as a "middag: …" item (and vice versa).`,
 
 	parameters: z.object({
 		userId: z.string(),
@@ -57,59 +40,43 @@ be filled in later via manage_recipe).`,
 		servings?: number;
 		photoUrl?: string;
 	}) => {
-		const resolveMealId = async (): Promise<string | null | undefined> => {
-			if (args.mealId !== undefined) return args.mealId;
-			if (args.mealName) return findOrCreateMealId(args.userId, args.mealName);
-			return undefined;
-		};
-
 		if (args.action === 'create') {
 			if (!args.weekContext || !args.date || !args.mealType) {
 				return { error: 'weekContext, date and mealType required for create' };
 			}
-			const mealId = (await resolveMealId()) ?? null;
-			const [created] = await db
-				.insert(mealPlans)
-				.values({
-					userId: args.userId,
-					weekContext: args.weekContext,
-					date: args.date,
-					mealType: args.mealType,
-					mealId,
-					notes: args.notes,
-					servings: args.servings ?? 2,
-					photoUrl: args.photoUrl
-				})
-				.returning();
-			return { mealPlan: created };
+			const created = await upsertMealPlan(args.userId, {
+				weekContext: args.weekContext,
+				date: args.date,
+				mealType: args.mealType,
+				mealId: args.mealId,
+				mealName: args.mealName,
+				notes: args.notes,
+				servings: args.servings,
+				photoUrl: args.photoUrl
+			});
+			return created ? { mealPlan: created } : { error: 'could not create meal plan' };
 		}
 
 		if (args.action === 'update') {
 			if (!args.id) return { error: 'id required for update' };
-			const updates: Record<string, unknown> = {};
-			if (args.date !== undefined) updates.date = args.date;
-			if (args.mealType !== undefined) updates.mealType = args.mealType;
-			const resolved = await resolveMealId();
-			if (resolved !== undefined) updates.mealId = resolved;
-			if (args.notes !== undefined) updates.notes = args.notes;
-			if (args.servings !== undefined) updates.servings = args.servings;
-			if (args.photoUrl !== undefined) updates.photoUrl = args.photoUrl;
-
-			const [updated] = await db
-				.update(mealPlans)
-				.set(updates)
-				.where(and(eq(mealPlans.id, args.id), eq(mealPlans.userId, args.userId)))
-				.returning();
+			const updated = await upsertMealPlan(args.userId, {
+				id: args.id,
+				weekContext: args.weekContext,
+				date: args.date,
+				mealType: args.mealType,
+				mealId: args.mealId,
+				mealName: args.mealName,
+				notes: args.notes,
+				servings: args.servings,
+				photoUrl: args.photoUrl
+			});
 			return updated ? { mealPlan: updated } : { error: 'meal plan not found' };
 		}
 
 		if (args.action === 'delete') {
 			if (!args.id) return { error: 'id required for delete' };
-			const deleted = await db
-				.delete(mealPlans)
-				.where(and(eq(mealPlans.id, args.id), eq(mealPlans.userId, args.userId)))
-				.returning({ id: mealPlans.id });
-			return { deleted: deleted.length > 0 };
+			const deleted = await deleteMealPlan(args.userId, args.id);
+			return { deleted };
 		}
 	}
 };

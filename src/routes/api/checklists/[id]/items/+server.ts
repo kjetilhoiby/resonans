@@ -10,6 +10,7 @@ import { parseTaskDateTime } from '$lib/server/date-time-parser';
 import { buildChecklistItemFields } from '$lib/server/checklist-item-builder';
 import { PersonMentionService } from '$lib/server/services/person-mention-service';
 import { runInBackground } from '$lib/server/run-in-background';
+import { afterMealItemWritten } from '$lib/server/services/meal-plan-sync';
 
 // POST /api/checklists/[id]/items — legg til et nytt punkt
 export const POST: RequestHandler = async ({ locals, params, request }) => {
@@ -119,6 +120,11 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
 		// Sted-punkt → skriv opphold automatisk til reise-/ferieplan som dekker dagen.
 		if (fields.locationDayIso) {
 			runInBackground(syncStaysForDate(userId, fields.locationDayIso));
+		}
+
+		// Måltidspunkt på dag-nivå → speil til meal_plans (matplan-synk).
+		if (created.metadata?.mealType) {
+			runInBackground(afterMealItemWritten(userId, created, checklist.context));
 		}
 
 		return json([created], { status: 201 });

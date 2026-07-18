@@ -39,6 +39,7 @@ import { getMetricByKey } from '$lib/server/services/metric-definition-service';
 import { aggregateSingleMetric } from '$lib/server/integrations/aggregation';
 import { runInBackground } from '$lib/server/run-in-background';
 import { buildChecklistItemFields } from '$lib/server/checklist-item-builder';
+import { afterMealItemWritten } from '$lib/server/services/meal-plan-sync';
 import { PersonMentionService } from '$lib/server/services/person-mention-service';
 import { syncStaysForDate } from '$lib/server/stays';
 import {
@@ -3099,6 +3100,11 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 							for (const f of built) {
 								if (f.locationDayIso) runInBackground(syncStaysForDate(userId, f.locationDayIso));
 							}
+							for (const item of createdItems) {
+								if (item.metadata?.mealType) {
+									runInBackground(afterMealItemWritten(userId, item, checklist.context));
+								}
+							}
 						}
 
 						checklistCreated = true;
@@ -3233,6 +3239,11 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 							}
 							for (const f of built) {
 								if (f.locationDayIso) runInBackground(syncStaysForDate(userId, f.locationDayIso));
+							}
+							for (const item of createdItems) {
+								if (item.metadata?.mealType) {
+									runInBackground(afterMealItemWritten(userId, item, checklist.context));
+								}
 							}
 
 							if (checklist.completedAt) {
@@ -3379,6 +3390,11 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 							}
 							if (built.some((f) => f.locationDayIso)) {
 								runInBackground(syncStaysForDate(userId, args.dayIso));
+							}
+							for (const item of createdItems) {
+								if (item.metadata?.mealType) {
+									runInBackground(afterMealItemWritten(userId, item, dayContext));
+								}
 							}
 						}
 
