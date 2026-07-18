@@ -55,6 +55,7 @@ export const FOOD_DOMAIN_PROMPT = `
 - Bruk manage_recipe, manage_meal_plan, manage_pantry for å lagre endringer
 - Bruk generate_shopping_list for å bygge handleliste fra ukemeny minus pantry
 - Bruk analyze_meal_image hvis bruker laster opp matbilde og vil ha estimat av rett/næring
+- Bruk manage_lunchbox for matpakker: dagens forslag per barn, logg retur («Ola hadde med 2 skiver hjem»), preferanser og komponentbibliotek
 - Foreslå handleliste når ukemeny endres
 - Vær konkret om porsjoner og tilberedningstid
 - Når bruker beskriver enkel matplan ("fisk til middag"), foreslå oppskrift, sjekk pantry og bygg handleliste i samme svar

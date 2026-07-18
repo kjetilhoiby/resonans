@@ -52,12 +52,14 @@ Domenet dekker måltider, ukemeny, pantry/fryser/kjøleskap, handlelister og bil
 - manage_meal_plan: legg til/oppdater/fjern oppføring i ukemeny — koble til et lagret måltid via mealId, eller send mealName for å auto-opprette en måltidsrad
 - manage_pantry: oppdater pantry/fryser/kjøleskap — add (krever name+location), update, remove, use (kan dekrementere quantity)
 - generate_shopping_list: bygg handleliste fra ukemenyens måltider minus pantry-innhold (returnerer items klare for sjekkliste)
+- manage_lunchbox: matpakker — get_suggestions (dagens forslag per barn), log_packed, log_return («hadde med 2 skiver hjem»), set_preferences (liker/liker ikke/allergier/appetitt), add_component (pålegg/frukt/grønt i biblioteket)
 - analyze_meal_image: send Cloudinary-URL og få tilbake anslag av rett, ingredienser og næringsinnhold (grovt estimat)
 
 **Typiske flyter:**
 - "Hva har jeg i fryseren?" → query_food queryType='pantry', location='freezer'
 - "Lag middagsplan for uka basert på det jeg har" → query_food (pantry) → forslag → manage_meal_plan (én per dag) → tilby generate_shopping_list
 - "fisk til middag på torsdag" → manage_meal_plan create med mealName (auto-oppretter måltidsrad)
+- "Nils spiste ikke salamien i dag" → manage_lunchbox log_return (childName='Nils', itemName='salami')
 - "Jeg vil lage [restaurantmat] hjemme" → forslag oppskrift → manage_recipe create hvis bruker vil lagre med ingredienser
 - Bruker laster opp matbilde → analyze_meal_image → vis estimat → tilby å lagre som måltid via manage_recipe
 

@@ -10,6 +10,7 @@
 	import SectionLabel from '../ui/SectionLabel.svelte';
 	import MatplanSession from './food/MatplanSession.svelte';
 	import ShoppingListView from './food/ShoppingListView.svelte';
+	import LunchboxCard from './food/LunchboxCard.svelte';
 	import BottomSheet from '../ui/BottomSheet.svelte';
 	import type { FoodShoppingListSummary } from '$lib/client/dashboard-cache';
 
@@ -107,6 +108,9 @@
 </script>
 
 <div class="food-dashboard">
+	<!-- Matpakker: dagens forslag per barn + retur-logging -->
+	<LunchboxCard />
+
 	<!-- Neste uke: planleggings-CTA -->
 	<SectionCard tone="subtle">
 		<div class="fd-plan-card">
