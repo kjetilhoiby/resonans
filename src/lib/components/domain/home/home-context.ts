@@ -360,6 +360,7 @@ export interface HomeContext {
 	focusTimerFlowOpen: boolean;
 	reflectionLightFlowOpen: boolean;
 	inboxNoteFlowOpen: boolean;
+	hodedumpFlowOpen: boolean;
 	quickWinFlowOpen: boolean;
 	quickWinOpenItems: Array<{ id: string; text: string }>;
 

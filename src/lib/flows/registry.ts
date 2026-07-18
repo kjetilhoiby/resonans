@@ -16,6 +16,12 @@ import {
 import { livskompassDoorOpeners, livsintervjuStepPrompt, parseLongTermGoals, resolveKilde } from './livsintervju';
 import { parseVisionBlock, quarterPeriodKey } from './retning-kvartal';
 import {
+	HODEDUMP_DECISION_OPTIONS,
+	hodedumpFlokeOptions,
+	hodedumpPlacements,
+	hodedumpReflectionPrompts
+} from './hodedump';
+import {
 	ACTIONS_PYRAMID,
 	ACTIONS_SLIDER_LABELS,
 	FEELINGS_PYRAMID,
@@ -1165,6 +1171,103 @@ export const FLOWS: Record<Exclude<FlowId, 'egenfrekvens_slot'>, Flow> = {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ level, slot, note })
+			});
+		}
+	},
+
+	hodedump: {
+		id: 'hodedump',
+		name: 'Tøm hodet',
+		description: 'Åpne løkker tapper energi. Dump alt, gi hvert punkt en plass — og løsne én floke rolig.',
+		icon: '🧺',
+		domain: 'self',
+		trigger: 'manual',
+		estimatedMinutes: 8,
+		steps: [
+			{
+				id: 'dump',
+				type: 'form',
+				title: 'Tøm hodet',
+				fields: [
+					{
+						id: 'dump',
+						type: 'textarea',
+						label: 'Hva surrer? Skriv alt — stikkord holder, usortert er helt greit.',
+						placeholder: 'Garasjen. Forsikringssaken. Har ikke svart Ola. Bursdagsgave…',
+						required: true
+					}
+				]
+			},
+			{
+				id: 'punkter',
+				type: 'checklist',
+				title: 'Punktene fra hodet ditt',
+				aiSuggestionsFromField: 'dump',
+				aiSuggestionsEndpoint: '/api/floker/extract',
+				aiSuggestionsSelected: true,
+				enableAiRefinement: true
+			},
+			{
+				id: 'triage',
+				type: 'decision-list',
+				title: 'Gi hvert punkt en plass',
+				itemsFromDataKey: 'selectedTasks',
+				defaultDecision: 'parker',
+				decisionOptions: HODEDUMP_DECISION_OPTIONS,
+				skipIf: (data) => !Array.isArray(data['selectedTasks']) || data['selectedTasks'].length === 0
+			},
+			{
+				id: 'floke_valg',
+				type: 'form',
+				title: 'Hvilken floke vil du løsne nå?',
+				skipIf: (data) => hodedumpFlokeOptions(data).length === 0,
+				fields: [
+					{
+						id: 'valgtFloke',
+						type: 'select',
+						label: 'Velg én — resten blir liggende som prosjekter du kan ta senere',
+						optionsFn: (data) => hodedumpFlokeOptions(data)
+					}
+				]
+			},
+			{
+				id: 'floke_steg',
+				type: 'checklist',
+				title: 'Første steg for å løsne floken',
+				skipIf: (data) => hodedumpFlokeOptions(data).length === 0 || !data['valgtFloke'],
+				aiSuggestionsFromField: 'valgtFloke',
+				aiSuggestionsEndpoint: '/api/floker/steps',
+				aiSuggestionsSelected: true,
+				enableAiRefinement: true
+			},
+			{
+				id: 'refleksjon',
+				type: 'chat',
+				title: 'Landing',
+				autoSend: true,
+				buildPrompts: (data) => hodedumpReflectionPrompts(data)
+			}
+		],
+		async onComplete(data) {
+			const placements = hodedumpPlacements(data);
+			const valgtFloke =
+				typeof data['valgtFloke'] === 'string' && data['valgtFloke'] ? data['valgtFloke'] : null;
+			// selectedTasks holder floke-stegene KUN når floke_steg-steget kjørte —
+			// ellers står punkter-stegets verdier der fortsatt
+			const flokeSteg =
+				valgtFloke && Array.isArray(data['selectedTasks']) ? (data['selectedTasks'] as string[]) : [];
+
+			await fetch('/api/floker/complete', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					dump: typeof data['dump'] === 'string' ? data['dump'] : '',
+					placements,
+					valgtFloke,
+					flokeSteg,
+					refleksjon:
+						typeof data['refleksjon_lastMessage'] === 'string' ? data['refleksjon_lastMessage'] : null
+				})
 			});
 		}
 	},

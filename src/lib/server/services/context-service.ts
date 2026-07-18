@@ -4,6 +4,7 @@ import { and, desc, eq, gte, isNull, ne } from 'drizzle-orm';
 import { getRecentReflections } from '$lib/server/reflections';
 import { DreamService } from '$lib/server/services/dream-service';
 import { buildDirectionBlock } from '$lib/server/services/direction-context';
+import { buildObservedBehaviorBlock } from '$lib/server/services/observed-behavior-service';
 import { buildReflectionsBlock } from '$lib/server/services/reflection-block';
 import { touchMemory } from '$lib/server/memories';
 import { computeCutList, formatNok } from '$lib/kappliste/calc';
@@ -22,17 +23,18 @@ interface BuildContextArgs {
  */
 export class ContextService {
 	static async buildForChat({ userId, themeId }: BuildContextArgs): Promise<string> {
-		const [fileBlock, cutListBlock, dreamBlock, visionBlock, memoriesBlock, plansBlock, reflectionsBlock] = await Promise.all([
+		const [fileBlock, cutListBlock, dreamBlock, visionBlock, memoriesBlock, plansBlock, reflectionsBlock, observedBlock] = await Promise.all([
 			this.themeFiles(userId, themeId),
 			this.cutLists(userId, themeId),
 			this.activeDream(userId),
 			this.activeVision(userId),
 			this.stableMemories(userId),
 			this.recentPlans(userId),
-			this.recentReflections(userId)
+			this.recentReflections(userId),
+			this.observedBehavior(userId)
 		]);
 
-		const sections = [fileBlock, cutListBlock, dreamBlock, visionBlock, memoriesBlock.text, plansBlock, reflectionsBlock]
+		const sections = [fileBlock, cutListBlock, dreamBlock, visionBlock, memoriesBlock.text, plansBlock, reflectionsBlock, observedBlock]
 			.filter(Boolean)
 			.join('');
 
@@ -180,5 +182,16 @@ export class ContextService {
 		// Over-henting kompenserer for at transkript-kinds filtreres bort i blokken.
 		const rows = await getRecentReflections(userId, { sinceDays: 7, limit: 12 });
 		return buildReflectionsBlock(rows, { maxRows: 6 });
+	}
+
+	private static async observedBehavior(userId: string): Promise<string> {
+		// Observert atferd siste 7 dager (gjennomføring, powernaps, proaktivitet) —
+		// speilingsmateriale; best effort, blokken er aldri kritisk for chatten.
+		try {
+			return await buildObservedBehaviorBlock(userId);
+		} catch (error) {
+			console.warn('[context] observert atferd-blokk feilet:', error);
+			return '';
+		}
 	}
 }
