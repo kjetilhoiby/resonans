@@ -69,6 +69,8 @@
 	let isExpanded = $derived(expandedParentIds.has(item.id));
 	let itemTimed = $derived(showTime && item.metadata?.timeHour !== undefined);
 	let itemTravel = $derived(showTravel ? getTravelMode(item) : null);
+	// Kompass-mål fra livskompass-coachingen — merkes med 🧭 så uka viser hva som er ukas mål.
+	let itemKompass = $derived(item.metadata?.source === 'livskompass');
 	let itemSkipped = $derived(!!item.skippedAt);
 	let itemIsLocation = $derived(isLocationItem(item));
 	let cR = 8;
@@ -182,6 +184,9 @@
 							{#if itemTravel}
 								<span class="cli-travel-icon" aria-hidden="true">{travelModeIcon(itemTravel)}</span>
 							{/if}
+							{#if itemKompass}
+								<span class="cli-kompass-icon" title="Ukas kompass-mål">🧭</span>
+							{/if}
 							<span class="cli-text"><TaskTitle title={itemTimed ? stripTimeFromText(item.text) : item.text} /></span>
 						</span>
 					{/if}
@@ -237,6 +242,9 @@
 						{/if}
 						{#if itemTravel}
 							<span class="cli-travel-icon" aria-hidden="true">{travelModeIcon(itemTravel)}</span>
+						{/if}
+						{#if itemKompass}
+							<span class="cli-kompass-icon" title="Ukas kompass-mål">🧭</span>
 						{/if}
 						<span class="cli-text"><TaskTitle title={itemTimed ? stripTimeFromText(item.text) : item.text} /></span>
 					</span>
@@ -469,6 +477,18 @@
 
 	.cli-travel-icon-small {
 		font-size: 0.8rem;
+	}
+
+	.cli-kompass-icon {
+		font-size: 0.85rem;
+		line-height: 1;
+		flex-shrink: 0;
+		opacity: 0.85;
+	}
+
+	.cli-item-checked .cli-kompass-icon,
+	.cli-item-skipped .cli-kompass-icon {
+		opacity: 0.35;
 	}
 
 	.cli-item-checked .cli-travel-icon,

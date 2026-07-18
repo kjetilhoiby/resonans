@@ -1,7 +1,11 @@
 <script lang="ts">
 	import LivskompassCheckin from '$lib/components/domain/LivskompassCheckin.svelte';
 	import LivskompassWidget from '$lib/components/domain/LivskompassWidget.svelte';
-	import { defaultScores, type LivskompassScores } from '$lib/domains/livskompass/dimensions';
+	import {
+		defaultScores,
+		type LivskompassScores,
+		type LivskompassWeekGoal
+	} from '$lib/domains/livskompass/dimensions';
 
 	// Demo-scorer med litt variasjon (begge akser 1–10), så hjul og widget viser noe levende.
 	const demoScores: LivskompassScores = {
@@ -19,6 +23,17 @@
 		natur: { importance: 8, match: 2 },
 		kultur: { importance: 5, match: 5 }
 	};
+
+	// Forrige ukes kompass (spøkelses-markør) + ett-poengs-mål med tiltaksstatus,
+	// så den lukkede sløyfa («Målet fra forrige helg», 🧭-hint per dimensjon) kan inspiseres her.
+	const demoPreviousScores: LivskompassScores = {
+		...demoScores,
+		egentid: { importance: 8, match: 2 },
+		natur: { importance: 8, match: 4 }
+	};
+	const demoWeekGoals: LivskompassWeekGoal[] = [
+		{ dimensionId: 'egentid', fromMatch: 2, target: 3, label: 'Egen tid', itemsTotal: 3, itemsChecked: 2 }
+	];
 
 	let open = $state(false);
 	let onboarding = $state(false);
@@ -59,6 +74,8 @@
 	{#if open}
 		<LivskompassCheckin
 			initialScores={demoScores}
+			previousScores={demoPreviousScores}
+			weekGoals={demoWeekGoals}
 			startStage="scoring"
 			onComplete={() => (open = false)}
 			onContinueChat={() => (open = false)}

@@ -18,6 +18,10 @@ export interface ChecklistItemLike {
 		activityType?: string;
 		autoChecked?: boolean;
 		hasBreakdown?: boolean;
+		/** 'livskompass' for kompass-mål ført opp fra livskompass-coachingen. */
+		source?: string;
+		/** Livskompass-dimensjonen et kompass-mål skal heve (f.eks. 'egentid'). */
+		livskompassDimension?: string;
 		[key: string]: unknown;
 	} | null;
 }

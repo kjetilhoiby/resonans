@@ -113,6 +113,27 @@ Coaching-chatten kan nå føre avtalte, målbare tiltak rett på en ukes sjekkli
 - `buildCoachingSystemPrompt` instruerer AI-en om å bruke verktøyet (weekOffset=1) når dere blir enige
   om tiltak og brukeren vil føre dem opp.
 
+### Fase 10: Lukket mål-sløyfe — ukesmål spores fra coaching til neste innsjekk (2026-07-18)
+Coachingens ett-poengs-mål forsvant tidligere i ukelista som anonyme punkter: ingen kobling til
+dimensjon, ingen persistert intensjon, og neste innsjekk visste ingenting om målet. Nå lukkes sløyfa:
+
+- **Dimensjons-tagging:** `add_to_week_plan` tar punkter som `{ text, dimension? }` (strenger støttes
+  fortsatt). Gyldig dimensjons-id (validert i `normalizeWeekPlanItems`, `week-plan-items.ts`) stempler
+  item-metadata med `source: 'livskompass'` + `livskompassDimension`. Begge tool-schemas oppdatert
+  (chat-endepunktet med enum fra `LIVSKOMPASS_DIMENSION_IDS`, assistentens shared-tools).
+- **Persistert intensjon:** dimensjons-taggede kall skriver et `livskompass_goal`-sensor-event
+  (`recordLivskompassGoals`): `{ week, goals: [{ dimensionId, fromMatch, target }] }` der fromMatch
+  hentes fra siste innsjekk og target = fromMatch + 1 (capped på 10). Flere events for samme uke
+  flettes ved lesing (nyeste vinner per dimensjon).
+- **Status-berikelse:** `getLivskompassStatus` returnerer nå `previous` (siste innsjekk før uka) og
+  `weekGoals` (ukas mål + tiltaksstatus talt opp fra ukelistas taggede punkter).
+- **Innsjekk-UI:** spøkelses-markør under slider-sporet viser forrige ukes samsvar; dimensjoner med
+  mål får «🧭 Ukas mål: 2 → 3 · tiltak 2/3»; resultatsteget åpner med «Målet fra forrige helg»
+  (✓/·-liste). Coaching-prompt og seed får mål-utfallet (`evaluateWeekGoals`/`describeGoalOutcome`),
+  og prompten instruerer modellen om å tagge nye tiltak med dimensjon.
+- **Ukeplan/hjem:** `ChecklistItemRow` viser 🧭 på punkter med `source: 'livskompass'`.
+- Drive-by: sensor-config `sliderRange` rettet fra `'1_5'` til `'1_10'` (stalt etter fase 6).
+
 ## Beslutninger
 
 - **Gapet er signalet**, ikke samsvaret alene. `computeOutOfSync` krever gap ≥2 og viktighet ≥3.

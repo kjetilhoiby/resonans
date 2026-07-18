@@ -6,6 +6,8 @@ import {
 	NEUTRAL_MATCH,
 	computeOutOfSync,
 	averageMatch,
+	evaluateWeekGoals,
+	describeGoalOutcome,
 	buildChatSeed,
 	buildCoachingSeed,
 	buildCoachingSystemPrompt,
@@ -155,6 +157,70 @@ describe('ACT-coaching (heve ett poeng)', () => {
 	it('coaching-seed håndterer «alt på linje»', () => {
 		const seed = buildCoachingSeed(scoresFrom({})); // baseline = samsvar på maks
 		expect(seed.toLowerCase()).toContain('på linje');
+	});
+});
+
+describe('ukesmål (lukket sløyfe)', () => {
+	const goal = { dimensionId: 'egentid', fromMatch: 3, target: 4, label: 'Egen tid', itemsTotal: 3, itemsChecked: 2 };
+
+	it('evaluateWeekGoals vurderer målet mot ukens samsvar', () => {
+		const hit = evaluateWeekGoals(scoresFrom({ egentid: { importance: 8, match: 5 } }), [goal]);
+		expect(hit[0].achieved).toBe(true);
+		expect(hit[0].match).toBe(5);
+
+		const miss = evaluateWeekGoals(scoresFrom({ egentid: { importance: 8, match: 3 } }), [goal]);
+		expect(miss[0].achieved).toBe(false);
+	});
+
+	it('evaluateWeekGoals tåler null/tom mål-liste', () => {
+		expect(evaluateWeekGoals(scoresFrom({}), null)).toEqual([]);
+		expect(evaluateWeekGoals(scoresFrom({}), [])).toEqual([]);
+	});
+
+	it('describeGoalOutcome oppsummerer mål, utfall og tiltak', () => {
+		const [o] = evaluateWeekGoals(scoresFrom({ egentid: { importance: 8, match: 5 } }), [goal]);
+		expect(describeGoalOutcome(o)).toBe('«Egen tid»: mål 3 → 4, ble 5 ✓ nådd · tiltak gjennomført 2/3');
+	});
+
+	it('describeGoalOutcome utelater tiltak når ingen punkter er tagget', () => {
+		const [o] = evaluateWeekGoals(scoresFrom({ egentid: { importance: 8, match: 3 } }), [
+			{ ...goal, itemsTotal: 0, itemsChecked: 0 }
+		]);
+		expect(describeGoalOutcome(o)).toBe('«Egen tid»: mål 3 → 4, ble 3 — ikke nådd');
+	});
+
+	it('coaching-prompten anerkjenner forrige ukes mål og ber om dimensjons-tagging', () => {
+		const prompt = buildCoachingSystemPrompt(
+			scoresFrom({ egentid: { importance: 8, match: 5 }, natur: { importance: 9, match: 2 } }),
+			{ weekGoals: [goal] }
+		);
+		expect(prompt).toContain('FORRIGE UKES MÅL');
+		expect(prompt).toContain('«Egen tid»: mål 3 → 4, ble 5 ✓ nådd');
+		expect(prompt).toContain('`dimension`');
+		// gap-listen eksponerer id-en modellen skal bruke som dimension
+		expect(prompt).toContain('(id: natur)');
+	});
+
+	it('coaching-prompten er uendret strukturelt uten mål', () => {
+		const prompt = buildCoachingSystemPrompt(scoresFrom({ natur: { importance: 9, match: 2 } }));
+		expect(prompt).not.toContain('FORRIGE UKES MÅL');
+		expect(prompt).toContain('OMRÅDER MED STØRST GAP DENNE UKA');
+	});
+
+	it('coaching-seed åpner med utfallet av forrige ukes mål', () => {
+		const seedHit = buildCoachingSeed(
+			scoresFrom({ egentid: { importance: 8, match: 5 }, natur: { importance: 9, match: 2 } }),
+			null,
+			{ weekGoals: [goal] }
+		);
+		expect(seedHit).toContain('heve egen tid fra 3 til 4');
+		expect(seedHit).toContain('det gikk');
+		expect(seedHit.toLowerCase()).toContain('natur');
+
+		const seedMiss = buildCoachingSeed(scoresFrom({ egentid: { importance: 8, match: 3 } }), null, {
+			weekGoals: [goal]
+		});
+		expect(seedMiss).toContain('men det ble 3');
 	});
 });
 

@@ -40,6 +40,8 @@ export interface ChecklistItem {
 		locationName?: string;
 		travelMode?: 'drive' | 'boat' | 'flight';
 		destination?: string;
+		source?: string;
+		livskompassDimension?: string;
 	} | null;
 }
 

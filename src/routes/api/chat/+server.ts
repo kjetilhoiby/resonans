@@ -50,6 +50,7 @@ import { routeChatRequest, aiRouteChatRequest } from '$lib/server/chat-router';
 import { db } from '$lib/db';
 import { checklists, checklistItems, users } from '$lib/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
+import { LIVSKOMPASS_DIMENSION_IDS } from '$lib/domains/livskompass/dimensions';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 
 type AttachmentKind = 'image' | 'audio' | 'document' | 'other';
@@ -1537,7 +1538,7 @@ Bruk key-feltet direkte som metricKey i propose_widget.`,
 		type: 'function' as const,
 		function: {
 			name: 'add_to_week_plan',
-			description: 'Legg målbare tiltak på en ukes sjekkliste (ukelista) — finner eller oppretter ukas liste automatisk. Bruk når brukeren vil føre opp konkrete mål/tiltak for en uke, f.eks. fra livskompass-coachingen («legg dette på neste ukes liste»). Skriv frekvens rett i teksten («Skjermfri 16–19 tre kvelder», «Legge meg før kl. 21 en gang») — systemet lager riktig antall punkter og trekker ut klokkeslett.',
+			description: 'Legg målbare tiltak på en ukes sjekkliste (ukelista) — finner eller oppretter ukas liste automatisk. Bruk når brukeren vil føre opp konkrete mål/tiltak for en uke, f.eks. fra livskompass-coachingen («legg dette på neste ukes liste»). Skriv frekvens rett i teksten («Skjermfri 16–19 tre kvelder», «Legge meg før kl. 21 en gang») — systemet lager riktig antall punkter og trekker ut klokkeslett. Kommer tiltaket fra livskompass-coachingen: sett dimension til dimensjons-id-en tiltaket skal heve, så spores målet frem til neste innsjekk.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1548,7 +1549,21 @@ Bruk key-feltet direkte som metricKey i propose_widget.`,
 					items: {
 						type: 'array',
 						description: 'Tiltakene som skal føres opp, med frekvens i teksten der det er relevant.',
-						items: { type: 'string' }
+						items: {
+							type: 'object',
+							properties: {
+								text: {
+									type: 'string',
+									description: 'Tiltaket, med frekvens i teksten der det er relevant («Skjermfri 16–19 tre kvelder»).'
+								},
+								dimension: {
+									type: 'string',
+									enum: LIVSKOMPASS_DIMENSION_IDS,
+									description: 'Livskompass-dimensjonen tiltaket skal heve. Kun for kompass-mål fra livskompass-coachingen — utelat ellers.'
+								}
+							},
+							required: ['text']
+						}
 					}
 				},
 				required: ['items']

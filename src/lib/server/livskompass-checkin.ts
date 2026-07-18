@@ -1,16 +1,21 @@
 import { db } from '$lib/db';
-import { sensorEvents, sensors } from '$lib/db/schema';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { checklists, sensorEvents, sensors } from '$lib/db/schema';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { SensorEventService } from '$lib/server/services/sensor-event-service';
 import {
 	LIVSKOMPASS_DIMENSIONS,
+	LIVSKOMPASS_DIMENSION_IDS,
 	IMPORTANCE_MAX,
 	MATCH_MAX,
+	NEUTRAL_MATCH,
 	computeOutOfSync,
+	dimensionById,
 	isValidImportanceMap,
 	isValidWeekKey,
 	localIsoWeek,
+	type LivskompassGoal,
 	type LivskompassScores,
+	type LivskompassWeekGoal,
 	type OutOfSyncItem
 } from '$lib/domains/livskompass/dimensions';
 
@@ -18,6 +23,7 @@ export class LivskompassCheckinError extends Error {}
 
 const DATA_TYPE = 'livskompass_checkin';
 const IMPORTANCE_DATA_TYPE = 'livskompass_importance';
+const GOAL_DATA_TYPE = 'livskompass_goal';
 
 export interface LivskompassCheckin {
 	eventId: string;
@@ -32,6 +38,10 @@ export interface LivskompassStatus {
 	week: string;
 	submitted: boolean;
 	latest: LivskompassCheckin | null;
+	/** Siste innsjekk FØR denne uka — spøkelses-markør og delta i neste innsjekk. */
+	previous: { week: string; scores: LivskompassScores } | null;
+	/** Ett-poengs-mål som peker på denne uka, med tiltaksstatus fra ukelista. */
+	weekGoals: LivskompassWeekGoal[];
 	/** Viktighet fra onboarding/forrige uke — forhåndsutfyller neste innsjekk. */
 	prefillImportance: Record<string, number>;
 	/** Bruker har aldri satt viktighet (ingen profil + ingen innsjekk) → vis onboarding. */
@@ -52,7 +62,7 @@ async function getOrCreateLivskompassSensor(userId: string) {
 			subtype: 'livskompass_weekly',
 			name: 'Livskompasset',
 			isActive: true,
-			config: { sliderRange: '1_5', cadence: 'weekly' }
+			config: { sliderRange: '1_10', cadence: 'weekly' }
 		})
 		.returning();
 	return created;
@@ -119,6 +129,110 @@ async function latestImportanceProfileRow(userId: string) {
 	return rows[0] ?? null;
 }
 
+// ── Ukesmål (livskompass_goal) ──────────────────────────────────────────────
+
+/**
+ * Persisterer ett-poengs-intensjonen når coachingen fører tiltak på ukelista.
+ * fromMatch hentes fra siste innsjekk (den coachingen nettopp tok utgangspunkt
+ * i); målet er ett poeng opp, capped på skala-maks.
+ */
+export async function recordLivskompassGoals(params: {
+	userId: string;
+	/** Uka tiltakene ble ført på (målaka), f.eks. «2026-W30». */
+	week: string;
+	dimensionIds: string[];
+}): Promise<LivskompassGoal[]> {
+	const valid = [...new Set(params.dimensionIds)].filter((id) => LIVSKOMPASS_DIMENSION_IDS.includes(id));
+	if (!valid.length || !isValidWeekKey(params.week)) return [];
+
+	const latest = await latestCheckinRow(params.userId);
+	const scores = latest
+		? (((latest.data ?? {}) as Record<string, unknown>).scores as LivskompassScores | undefined)
+		: undefined;
+
+	const goals: LivskompassGoal[] = valid.map((dimensionId) => {
+		const fromMatch = scores?.[dimensionId]?.match ?? NEUTRAL_MATCH;
+		return { dimensionId, fromMatch, target: Math.min(MATCH_MAX, fromMatch + 1) };
+	});
+
+	const sensor = await getOrCreateLivskompassSensor(params.userId);
+	await SensorEventService.write({
+		userId: params.userId,
+		sensorId: sensor.id,
+		eventType: 'measurement',
+		dataType: GOAL_DATA_TYPE,
+		timestamp: new Date(),
+		data: { week: params.week, goals },
+		source: 'livskompass_coaching'
+	});
+	return goals;
+}
+
+/** Alle mål som peker på en uke, flettet på tvers av events (nyeste vinner per dimensjon). */
+export async function getLivskompassGoalsForWeek(userId: string, week: string): Promise<LivskompassGoal[]> {
+	const rows = await db
+		.select({ data: sensorEvents.data })
+		.from(sensorEvents)
+		.where(
+			and(
+				eq(sensorEvents.userId, userId),
+				eq(sensorEvents.dataType, GOAL_DATA_TYPE),
+				sql`${sensorEvents.data}->>'week' = ${week}`
+			)
+		)
+		.orderBy(asc(sensorEvents.timestamp));
+
+	const byDimension = new Map<string, LivskompassGoal>();
+	for (const row of rows) {
+		const goals = ((row.data ?? {}) as Record<string, unknown>).goals;
+		if (!Array.isArray(goals)) continue;
+		for (const g of goals) {
+			const dimensionId = typeof g?.dimensionId === 'string' ? g.dimensionId : null;
+			if (!dimensionId || !LIVSKOMPASS_DIMENSION_IDS.includes(dimensionId)) continue;
+			const fromMatch = Number(g?.fromMatch);
+			const target = Number(g?.target);
+			if (!Number.isFinite(fromMatch) || !Number.isFinite(target)) continue;
+			byDimension.set(dimensionId, { dimensionId, fromMatch, target });
+		}
+	}
+	return [...byDimension.values()];
+}
+
+/** Tiltaksstatus per dimensjon fra ukelistas livskompass-taggede punkter. */
+async function livskompassItemStatus(
+	userId: string,
+	week: string
+): Promise<Record<string, { total: number; checked: number }>> {
+	const list = await db.query.checklists.findFirst({
+		where: and(eq(checklists.userId, userId), eq(checklists.context, `week:${week}`)),
+		with: { items: { columns: { checked: true, metadata: true } } }
+	});
+	const byDimension: Record<string, { total: number; checked: number }> = {};
+	for (const item of list?.items ?? []) {
+		const meta = (item.metadata ?? {}) as Record<string, unknown>;
+		if (meta.source !== 'livskompass') continue;
+		const dim = typeof meta.livskompassDimension === 'string' ? meta.livskompassDimension : null;
+		if (!dim) continue;
+		const entry = (byDimension[dim] ??= { total: 0, checked: 0 });
+		entry.total += 1;
+		if (item.checked) entry.checked += 1;
+	}
+	return byDimension;
+}
+
+/** Ukas mål med label og tiltaksstatus — det innsjekk-UI-et og coachingen trenger. */
+export async function getLivskompassWeekGoals(userId: string, week: string): Promise<LivskompassWeekGoal[]> {
+	const goals = await getLivskompassGoalsForWeek(userId, week);
+	if (!goals.length) return [];
+	const itemStatus = await livskompassItemStatus(userId, week);
+	return goals.map((g) => ({
+		...g,
+		label: dimensionById(g.dimensionId)?.label ?? g.dimensionId,
+		itemsTotal: itemStatus[g.dimensionId]?.total ?? 0,
+		itemsChecked: itemStatus[g.dimensionId]?.checked ?? 0
+	}));
+}
+
 export async function getLivskompassStatus(
 	userId: string,
 	week: string = localIsoWeek()
@@ -131,6 +245,14 @@ export async function getLivskompassStatus(
 	// Forhåndsutfyll viktighet: denne ukas innsjekk → nyeste innsjekk → onboarding-profil.
 	const checkinRow = thisWeekRow ?? (await latestCheckinRow(userId));
 	const profileRow = await latestImportanceProfileRow(userId);
+
+	// Sløyfe-kontekst: forrige innsjekk (spøkelses-markør) + ukas mål (oppfølging).
+	const [recent, weekGoals] = await Promise.all([
+		getLivskompassRecent(userId, 8),
+		getLivskompassWeekGoals(userId, week)
+	]);
+	const previousCheckin = recent.find((c) => c.week !== '' && c.week < week) ?? null;
+	const previous = previousCheckin ? { week: previousCheckin.week, scores: previousCheckin.scores } : null;
 	const prefillImportance: Record<string, number> = {};
 	if (checkinRow) {
 		const scores = ((checkinRow.data ?? {}) as Record<string, unknown>).scores as LivskompassScores | undefined;
@@ -150,6 +272,8 @@ export async function getLivskompassStatus(
 		week,
 		submitted: latest !== null,
 		latest,
+		previous,
+		weekGoals,
 		prefillImportance,
 		// Onboarding trengs bare når bruker aldri har satt viktighet (verken profil eller innsjekk).
 		needsOnboarding: !checkinRow && !profileRow

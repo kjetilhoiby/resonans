@@ -108,6 +108,7 @@
 		localIsoWeek,
 		livskompassWeekStorageKey,
 		type LivskompassScores,
+		type LivskompassWeekGoal,
 	} from '$lib/domains/livskompass/dimensions';
 
 	import {
@@ -394,6 +395,8 @@
 	let livskompassWeek = $state<string>(localIsoWeek());
 	let livskompassPrefill = $state<Record<string, number>>({});
 	let livskompassLatest = $state<{ week: string; scores: LivskompassScores } | null>(null);
+	let livskompassPrevious = $state<{ week: string; scores: LivskompassScores } | null>(null);
+	let livskompassWeekGoals = $state<LivskompassWeekGoal[]>([]);
 	let livskompassInitialScores = $state<LivskompassScores | null>(null);
 	let livskompassStartStage = $state<'scoring' | 'result'>('scoring');
 	let livskompassNeedsOnboarding = $state(false);
@@ -419,6 +422,8 @@
 			livskompassPrefill = status.prefillImportance ?? {};
 			livskompassNeedsOnboarding = status.needsOnboarding === true;
 			livskompassLatest = status.latest ? { week: status.latest.week, scores: status.latest.scores } : null;
+			livskompassPrevious = status.previous ?? null;
+			livskompassWeekGoals = status.weekGoals ?? [];
 		} catch { /* best-effort */ }
 	}
 
@@ -936,6 +941,8 @@
 				livskompassPrefill = status.prefillImportance ?? {};
 				livskompassNeedsOnboarding = status.needsOnboarding === true;
 				livskompassLatest = status.latest ? { week: status.latest.week, scores: status.latest.scores } : null;
+				livskompassPrevious = status.previous ?? null;
+				livskompassWeekGoals = status.weekGoals ?? [];
 				if (status.isWeekendNow !== true) return; // gaten gjelder bare i helga
 				if (status.submitted) return; // allerede tatt denne uka
 				const seen = typeof localStorage !== 'undefined'
@@ -1115,6 +1122,8 @@
 		get livskompassNeedsOnboarding() { return livskompassNeedsOnboarding; }, set livskompassNeedsOnboarding(v) { livskompassNeedsOnboarding = v; },
 		get livskompassChip() { return livskompassChip; }, set livskompassChip(v) { livskompassChip = v; },
 		get livskompassLatest() { return livskompassLatest; }, set livskompassLatest(v) { livskompassLatest = v; },
+		get livskompassPrevious() { return livskompassPrevious; }, set livskompassPrevious(v) { livskompassPrevious = v; },
+		get livskompassWeekGoals() { return livskompassWeekGoals; }, set livskompassWeekGoals(v) { livskompassWeekGoals = v; },
 		loadLivskompass,
 		openLivskompass,
 
