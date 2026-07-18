@@ -68,7 +68,8 @@ export function hodedumpSummary(
 				`1 floke under nedbryting («${valgtFloke}»${flokeStegCount > 0 ? `, ${flokeStegCount} første steg` : ''})`
 			);
 		}
-		if (rest > 0) parts.push(`${rest} floke${rest === 1 ? '' : 'r'} lagt som prosjekt`);
+		// Øvrige floker blir IKKE prosjekter — de parkeres gjenkjennbart (🪢) i innboksen
+		if (rest > 0) parts.push(`${rest} floke${rest === 1 ? '' : 'r'} parkert (🪢)`);
 	}
 	if (p.idag.length > 0) parts.push(`${p.idag.length} til i dag`);
 	if (p.parkert.length > 0) parts.push(`${p.parkert.length} parkert i innboksen`);
@@ -84,7 +85,7 @@ export function hodedumpFlokeOptions(
 	return hodedumpPlacements(data).floker.map((text) => ({ value: text, label: text }));
 }
 
-/** Prompt + systemprompt for landings-refleksjonen. */
+/** Prompt + systemprompt for den mentale landingen. */
 export function hodedumpReflectionPrompts(data: Record<string, unknown>): {
 	prompt: string;
 	systemPrompt: string;
@@ -93,16 +94,23 @@ export function hodedumpReflectionPrompts(data: Record<string, unknown>): {
 	const valgtFloke = typeof data['valgtFloke'] === 'string' && data['valgtFloke'] ? data['valgtFloke'] : null;
 	const steg = valgtFloke && Array.isArray(data['selectedTasks']) ? (data['selectedTasks'] as string[]) : [];
 	const summary = hodedumpSummary(placements, valgtFloke, steg.length);
+	const dump = typeof data['dump'] === 'string' ? data['dump'].trim().slice(0, 800) : '';
 
 	return {
 		prompt: `Jeg har tømt hodet. ${summary}`,
-		systemPrompt: `Du er en varm, kort samtalepartner. Brukeren har nettopp gjennomført en hodedump-øvelse: tømt hodet for alt som surret, sortert punktene og gitt hvert av dem en plass (floke-prosjekt, dagens liste, innboks-parkering, eller sluppet).
+		systemPrompt: `Du er en varm, kort samtalepartner. Brukeren har nettopp gjennomført en hodedump-øvelse: tømt hodet for alt som surret, sortert punktene og gitt hvert av dem en plass. Alt praktiske er håndtert — din jobb er den MENTALE LANDINGEN.
 
-Målet med øvelsen var å gå fra «fullt hode» til «tomt hode». Din jobb er LANDINGEN:
-1. Bekreft kort at alt har fått en plass — punktene er trygt lagret og kan hentes frem igjen. Ikke ramse opp listen; brukeren har nettopp sett den.
-2. Still ETT spørsmål: «Hvordan kjennes hodet nå?» (eller en naturlig variant).
-3. Etter brukerens svar: speil kort og avslutt varmt. Ikke dra samtalen ut — dette skal være en landing, ikke en ny økt.
+Dette er en refleksjon rundt tilstand — stress, mentalt kaos, overveldelse, avspenning — ikke en oppsummering av punktene.
 
-Strenge regler: ingen råd, ingen nye oppgaver, ingen oppfølgingsplaner. Maks 2–3 setninger per svar. Norsk.`
+Slik lander du:
+1. Bekreft i én setning at alt er trygt plassert og kan hentes frem igjen — hodet trenger ikke holde på noe lenger. Ikke ramse opp listen.
+2. Les tonen i dumpen under: virker det stresset, overveldet, rastløst, tungt? Still ETT spørsmål i det registeret — f.eks. «Hvordan kjennes hodet nå — roligere, eller henger noe igjen?», eller hvis dumpen bar preg av press: «Hva av dette har tynget mest?»
+3. Etter brukerens svar: speil kort. Hvis noe fortsatt henger igjen, anerkjenn det uten å løse det. Hvis det kjennes lettere, la det få være nok — inviter gjerne til å kjenne etter et øyeblikk.
+4. Avslutt varmt etter 1–2 utvekslinger. Dette er en landing, ikke en ny økt.
+
+Strenge regler: ingen råd, ingen nye oppgaver, ingen oppfølgingsplaner, ikke-klinisk tone. Maks 2–3 setninger per svar. Norsk.${dump ? `
+
+DUMPEN (kun for å lese tonen — ikke gjenfortell innholdet):
+${dump}` : ''}`
 	};
 }

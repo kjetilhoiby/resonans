@@ -46,16 +46,16 @@ describe('hodedumpSummary', () => {
 		const s = hodedumpSummary(p, 'Rydde garasjen', 3);
 		expect(s).toContain('5 punkter ut av hodet');
 		expect(s).toContain('1 floke under nedbryting («Rydde garasjen», 3 første steg)');
-		expect(s).toContain('1 floke lagt som prosjekt');
+		expect(s).toContain('1 floke parkert (🪢)');
 		expect(s).toContain('1 til i dag');
 		expect(s).toContain('1 parkert i innboksen');
 		expect(s).toContain('1 sluppet');
 	});
 
-	it('uten valgt floke telles alle floker som prosjekter', () => {
+	it('uten valgt floke parkeres alle floker — ingen blir prosjekter', () => {
 		const p = hodedumpPlacements(flowData);
 		const s = hodedumpSummary(p, null, 0);
-		expect(s).toContain('2 floker lagt som prosjekt');
+		expect(s).toContain('2 floker parkert (🪢)');
 		expect(s).not.toContain('under nedbryting');
 	});
 });
@@ -70,15 +70,20 @@ describe('hodedumpFlokeOptions', () => {
 });
 
 describe('hodedumpReflectionPrompts', () => {
-	it('prompt inneholder oppsummeringen, systemprompt landings-instruksen', () => {
+	it('prompt inneholder oppsummeringen, systemprompt den mentale landingen', () => {
 		const { prompt, systemPrompt } = hodedumpReflectionPrompts({
 			...flowData,
+			dump: 'Alt hoper seg opp. Garasjen, forsikringssaken, får ikke sove.',
 			valgtFloke: 'Rydde garasjen',
 			selectedTasks: ['Kjøp sekker', 'Sett av lørdag formiddag']
 		});
 		expect(prompt).toContain('Jeg har tømt hodet');
 		expect(prompt).toContain('2 første steg');
+		// Landingen er tilstands-orientert: stress/kaos/overveldelse, med dumpen som tone-kontekst
+		expect(systemPrompt).toContain('MENTALE LANDINGEN');
+		expect(systemPrompt).toContain('overveldelse');
 		expect(systemPrompt).toContain('Hvordan kjennes hodet nå');
-		expect(systemPrompt).toContain('landing');
+		expect(systemPrompt).toContain('Alt hoper seg opp');
+		expect(systemPrompt).toContain('ikke gjenfortell');
 	});
 });

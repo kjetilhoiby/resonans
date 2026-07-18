@@ -10,9 +10,9 @@ import { createReflection } from '$lib/server/reflections';
 /**
  * Persistering av hodedump-flyten («Tøm hodet»). Alt får en plass:
  *  - rå dump + triage → reflection kind 'hodedump' (append-only, «samtalen er data»)
- *  - valgt floke → aktivt prosjekt med første steg som checklist-items (projectId
- *    kobler dem til /prosjekt/[id]-fremdriften)
- *  - øvrige floker → prosjekter i planning (synlige på /prosjekter)
+ *  - KUN valgt floke → aktivt prosjekt med første steg som checklist-items (projectId
+ *    kobler dem til /prosjekt/[id]-fremdriften). Øvrige floker parkeres i innboksen
+ *    med 🪢-prefiks — øvelsen skal avlaste, ikke bygge prosjekt-backlog.
  *  - «i dag» → dagens dagsplan-sjekkliste (finn-eller-opprett, som /api/day-plan)
  *  - parkert → innboksen (synlig i quick-win-widgeten)
  *  - sluppet → kun i refleksjonen
@@ -64,23 +64,24 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const flokeSteg = clean(body.flokeSteg);
 	const dayIso = new Date().toISOString().slice(0, 10);
 
-	// 1) Floker → prosjekter. Den valgte blir aktiv med steg; resten planning.
+	// 1) Kun den VALGTE floken blir prosjekt (den har steg og jobbes med nå).
+	//    Øvrige floker parkeres gjenkjennbart i innboksen — ikke prosjekt-inflasjon.
 	let activeProjectId: string | null = null;
-	for (const flokeTitle of floker) {
-		const isChosen = valgtFloke !== null && flokeTitle === valgtFloke;
+	if (valgtFloke && floker.includes(valgtFloke)) {
 		const [project] = await db
 			.insert(projects)
 			.values({
 				userId,
-				title: flokeTitle,
+				title: valgtFloke,
 				description: `Floke fra hodedump ${dayIso}`,
-				status: isChosen ? 'active' : 'planning',
-				startedAt: isChosen ? new Date() : null,
+				status: 'active',
+				startedAt: new Date(),
 				metadata: { emoji: '🪢', source: 'hodedump', dumpDay: dayIso }
 			})
 			.returning();
-		if (isChosen) activeProjectId = project.id;
+		activeProjectId = project.id;
 	}
+	const parkedFloker = floker.filter((t) => t !== valgtFloke).map((t) => `🪢 ${t}`);
 
 	// 2) Første steg for valgt floke → checklist med projectId-koblede items
 	if (activeProjectId && flokeSteg.length > 0) {
@@ -144,15 +145,17 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		}
 	}
 
-	// 4) Parkert → innboksen (gjenfinnbar plass — hodet kan slippe taket)
-	if (parkert.length > 0) {
-		await addInboxItems(userId, parkert);
+	// 4) Parkert + uvalgte floker → innboksen (gjenfinnbar plass — hodet kan slippe taket)
+	const toInbox = [...parkedFloker, ...parkert];
+	if (toInbox.length > 0) {
+		await addInboxItems(userId, toInbox);
 	}
 
 	// 5) Rå dump + triage → append-only refleksjon (samtalen er data)
 	const sections: string[] = [`## Dump\n${dump || '(tom)'}`];
 	const placementLines: string[] = [];
-	for (const t of floker) placementLines.push(`- 🪢 ${t}${t === valgtFloke ? ' (valgt å løsne nå)' : ''}`);
+	for (const t of floker)
+		placementLines.push(`- 🪢 ${t}${t === valgtFloke ? ' (valgt å løsne nå → prosjekt)' : ' → parkert i innboksen'}`);
 	for (const t of idag) placementLines.push(`- ☑️ ${t} → i dag`);
 	for (const t of parkert) placementLines.push(`- 📥 ${t} → innboksen`);
 	for (const t of sluppet) placementLines.push(`- 🕊️ ${t} → sluppet`);
