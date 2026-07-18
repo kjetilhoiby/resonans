@@ -6,6 +6,8 @@ import { buildEffortWeightInputs } from '$lib/server/health/effort-weight-data';
 import { getEnduranceWorkouts, getStrengthSessions } from '$lib/server/tracks/repository';
 import { getRecentRouteLabels } from '$lib/server/tracks/routes-repository';
 import { computeBalanceState } from '$lib/server/tracks/balance';
+import { queryCanonicalTransactions } from '$lib/server/integrations/categorized-events';
+import { isoWeekKeyForDate } from '$lib/server/iso-week';
 
 type Severity = 'info' | 'low' | 'medium' | 'high';
 
@@ -437,6 +439,75 @@ async function produceEconomicsBudgetPressure7d(userId: string, now: Date) {
 			baselineWeekly,
 			ratio,
 			baselineWindowDays: 30
+		}
+	});
+
+	return severity;
+}
+
+// Ukentlig dagligvareforbruk (kategori 'dagligvarer') mot snitt av 4 foregående
+// hele uker, prorated for hvor langt uka er kommet. Leser via
+// queryCanonicalTransactions (foretrukket lesevei — håndterer overrides og
+// merchant-mappings, inkl. Oda). Del av matplan-prosjektet.
+async function produceEconomicsGrocerySpendWeekly(userId: string, now: Date) {
+	await ensureSignalContract({
+		signalType: 'economics_grocery_spend_weekly',
+		ownerDomain: 'economics',
+		allowedConsumerDomains: ['economics', 'home'],
+		description: 'Grocery spend week-to-date vs. 4-week weekly average (prorated ratio). Supports the meal-planning loop (Oda).'
+	});
+
+	const weekStart = startOfIsoWeekUtc(now);
+	const baselineStart = daysAgo(weekStart, 28);
+
+	const [weekRows, baselineRows] = await Promise.all([
+		queryCanonicalTransactions({
+			userId,
+			from: weekStart,
+			to: now,
+			category: 'dagligvarer',
+			spendingOnly: true
+		}),
+		queryCanonicalTransactions({
+			userId,
+			from: baselineStart,
+			to: weekStart,
+			category: 'dagligvarer',
+			spendingOnly: true
+		})
+	]);
+
+	const sumAbs = (rows: Array<{ amount: unknown }>) =>
+		rows.reduce((sum, row) => sum + Math.abs(Number(row.amount) || 0), 0);
+
+	const spendWeekToDate = sumAbs(weekRows);
+	const baselineWeeklyAvg = sumAbs(baselineRows) / 4;
+
+	// Prorate baseline mot hvor langt uka er kommet (minst én dag).
+	const daysElapsed = Math.max(1, (now.getTime() - weekStart.getTime()) / 86400000);
+	const expectedToDate = baselineWeeklyAvg * (Math.min(7, daysElapsed) / 7);
+	const ratio = expectedToDate > 0 ? spendWeekToDate / expectedToDate : 1;
+	const severity = toSeverityFromRatio(ratio);
+	const pressureBand = severity === 'high' ? 'high' : severity === 'medium' ? 'medium' : 'low';
+
+	await upsertDomainSignal({
+		signalType: 'economics_grocery_spend_weekly',
+		ownerDomain: 'economics',
+		userId,
+		valueNumber: ratio,
+		valueText: pressureBand,
+		severity,
+		confidence: baselineWeeklyAvg > 0 ? 0.85 : 0.4,
+		windowStart: weekStart,
+		windowEnd: now,
+		observedAt: now,
+		context: {
+			spendWeekToDate,
+			baselineWeeklyAvg,
+			expectedToDate,
+			ratio,
+			transactionCount: weekRows.length,
+			weekContext: isoWeekKeyForDate(now.toISOString().slice(0, 10))
 		}
 	});
 
@@ -1185,6 +1256,7 @@ export async function runDomainSignalProducers(now: Date = new Date()) {
 		taskCompletionWeekly: 0,
 		trackingSeriesWeekly: 0,
 		economicsBudgetPressure7d: 0,
+		economicsGrocerySpendWeekly: 0,
 		homeOverdueSharedTasks7d: 0,
 		homePlanningReliability14d: 0,
 		routineAdherence7d: 0,
@@ -1223,6 +1295,10 @@ export async function runDomainSignalProducers(now: Date = new Date()) {
 			const budgetPressureSeverity = await produceEconomicsBudgetPressure7d(user.id, now);
 			produced += 1;
 			producerBreakdown.economicsBudgetPressure7d += 1;
+
+			await produceEconomicsGrocerySpendWeekly(user.id, now);
+			produced += 1;
+			producerBreakdown.economicsGrocerySpendWeekly += 1;
 
 			const overdueCount7d = await produceHomeOverdueSharedTasks7d(user.id, now);
 			produced += 1;
