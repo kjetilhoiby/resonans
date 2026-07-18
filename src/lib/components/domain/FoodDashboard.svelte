@@ -11,6 +11,7 @@
 	import MatplanSession from './food/MatplanSession.svelte';
 	import ShoppingListView from './food/ShoppingListView.svelte';
 	import LunchboxCard from './food/LunchboxCard.svelte';
+	import GroceryReceiptCard from './food/GroceryReceiptCard.svelte';
 	import BottomSheet from '../ui/BottomSheet.svelte';
 	import type { FoodShoppingListSummary } from '$lib/client/dashboard-cache';
 
@@ -167,6 +168,9 @@
 			</button>
 		</SectionCard>
 	{/if}
+
+	<!-- Siste Oda-kvittering: legg i lager + plan-vs-kjøp -->
+	<GroceryReceiptCard />
 
 	<!-- Denne uka -->
 	<section>
