@@ -1,17 +1,22 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
-import { themes, mealPlans, meals, pantryItems } from '$lib/db/schema';
+import { themes, pantryItems } from '$lib/db/schema';
 import { resolveThemeDashboardKind } from '$lib/domain/theme-dashboard-registry';
-import { and, eq, gte, lte, asc, inArray } from 'drizzle-orm';
+import { and, eq, gte, lte, asc } from 'drizzle-orm';
+import { addDaysIso, isoWeekKeyForDate } from '$lib/server/iso-week';
+import { getWeekMealPlansWithTitles } from '$lib/server/services/meal-plan-sync';
+import { getWeekShoppingList, type ShoppingListItem } from '$lib/server/services/shopping-list-service';
 
-function getIsoWeekContext(now = new Date()): string {
-	const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-	const day = d.getUTCDay() || 7;
-	d.setUTCDate(d.getUTCDate() + 4 - day);
-	const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-	const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-	return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+function shoppingListSummary(list: Awaited<ReturnType<typeof getWeekShoppingList>>) {
+	if (!list) return null;
+	const items = list.items as ShoppingListItem[];
+	return {
+		id: list.id,
+		status: list.status,
+		itemCount: items.length,
+		uncheckedCount: items.filter((item) => !item.checked).length
+	};
 }
 
 export const GET: RequestHandler = async ({ params, locals, url }) => {
@@ -29,24 +34,16 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 		return json({ error: 'Temaet har ikke matdashboard.' }, { status: 400 });
 	}
 
-	const weekContext = url.searchParams.get('weekContext') ?? getIsoWeekContext();
+	const today = new Date().toISOString().slice(0, 10);
+	const weekContext = url.searchParams.get('weekContext') ?? isoWeekKeyForDate(today);
+	const nextWeekContext = isoWeekKeyForDate(addDaysIso(today, 7));
 
-	const plans = await db
-		.select()
-		.from(mealPlans)
-		.where(and(eq(mealPlans.userId, userId), eq(mealPlans.weekContext, weekContext)))
-		.orderBy(asc(mealPlans.date), asc(mealPlans.mealType));
-
-	const mealIds = plans.map((p) => p.mealId).filter((id): id is string => !!id);
-	const linkedMeals = mealIds.length
-		? await db.select().from(meals).where(and(eq(meals.userId, userId), inArray(meals.id, mealIds)))
-		: [];
-	const mealsById = new Map(linkedMeals.map((m) => [m.id, m]));
-
-	const enrichedPlans = plans.map((p) => ({
-		...p,
-		mealTitle: p.mealId ? mealsById.get(p.mealId)?.title ?? null : null
-	}));
+	const [enrichedPlans, nextWeekPlans, weekList, nextWeekList] = await Promise.all([
+		getWeekMealPlansWithTitles(userId, weekContext),
+		getWeekMealPlansWithTitles(userId, nextWeekContext),
+		getWeekShoppingList(userId, weekContext),
+		getWeekShoppingList(userId, nextWeekContext)
+	]);
 
 	const pantry = await db
 		.select()
@@ -54,8 +51,7 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 		.where(eq(pantryItems.userId, userId))
 		.orderBy(asc(pantryItems.location), asc(pantryItems.name));
 
-	const today = new Date().toISOString().slice(0, 10);
-	const horizon = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+	const horizon = addDaysIso(today, 7);
 	const expiringSoon = await db
 		.select()
 		.from(pantryItems)
@@ -72,6 +68,12 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 		weekContext,
 		mealPlans: enrichedPlans,
 		pantry,
-		expiringSoon
+		expiringSoon,
+		nextWeek: {
+			weekContext: nextWeekContext,
+			mealPlans: nextWeekPlans,
+			shoppingList: shoppingListSummary(nextWeekList)
+		},
+		shoppingList: shoppingListSummary(weekList)
 	});
 };
