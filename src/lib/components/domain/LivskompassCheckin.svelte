@@ -144,7 +144,7 @@
 							<div class="lk-row">
 								<div class="lk-row-head">
 									<span class="lk-dim-label">{dim.label}</span>
-									<span class="lk-match-val">{matchLabel(scores[dim.id].match)} ({scores[dim.id].match}/{MATCH_MAX})</span>
+									<span class="lk-match-val">{matchLabel(scores[dim.id].match, scores[dim.id].importance)} ({scores[dim.id].match}/{MATCH_MAX})</span>
 								</div>
 								<div class="lk-slider-wrap">
 									<span

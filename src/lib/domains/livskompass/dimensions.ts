@@ -70,13 +70,19 @@ export const MATCH_MAX = 10;
 /** Nøytral startverdi for samsvar-slideren (midt på 1–10). */
 export const NEUTRAL_MATCH = 5;
 
-/** Grovt ord for et samsvar på 1–10 (anker, ikke én etikett per trinn). */
-export function matchLabel(v: number): string {
-	if (v <= 2) return 'Langt unna';
-	if (v <= 4) return 'Litt unna';
-	if (v <= 6) return 'Sånn passe';
-	if (v <= 8) return 'Ganske på linje';
-	return 'Helt på linje';
+/**
+ * Grovt ord for ukens samsvar, relativt til hvor viktig dimensjonen er.
+ * Gapet (viktighet − samsvar) er signalet — ikke avstanden fra 10. En uviktig
+ * dimensjon med lavt samsvar er på linje; en avgjørende dimensjon med samsvar 8
+ * er fortsatt litt under. Tersklene speiler «ute av synk»-logikken (gap ≥ 3).
+ */
+export function matchLabel(match: number, importance: number): string {
+	const gap = importance - match;
+	if (gap >= 5) return 'Langt under det viktige';
+	if (gap >= 3) return 'Klart under det viktige';
+	if (gap >= 1) return 'Litt under';
+	if (gap >= -2) return 'På linje';
+	return 'Mer rom enn viktigheten tilsier';
 }
 
 /** Grovt ord for en viktighet på 1–10 (anker, ikke én etikett per trinn). */

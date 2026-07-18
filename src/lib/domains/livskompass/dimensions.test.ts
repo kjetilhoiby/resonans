@@ -92,11 +92,21 @@ describe('averageMatch', () => {
 	});
 });
 
-describe('matchLabel', () => {
-	it('gir grove ankerord langs 1–10', () => {
-		expect(matchLabel(1)).toBe('Langt unna');
-		expect(matchLabel(5)).toBe('Sånn passe');
-		expect(matchLabel(10)).toBe('Helt på linje');
+describe('matchLabel (relativt til viktighet)', () => {
+	it('setter ord på gapet mellom viktighet og samsvar', () => {
+		expect(matchLabel(1, 9)).toBe('Langt under det viktige'); // gap 8
+		expect(matchLabel(5, 9)).toBe('Klart under det viktige'); // gap 4 (≥ ute-av-synk-terskel)
+		expect(matchLabel(8, 10)).toBe('Litt under'); // gap 2
+	});
+
+	it('lavt samsvar på en uviktig dimensjon er på linje', () => {
+		expect(matchLabel(3, 3)).toBe('På linje'); // gap 0
+		expect(matchLabel(2, 3)).toBe('Litt under'); // gap 1
+	});
+
+	it('samsvar over viktigheten er på linje — til det bikker over', () => {
+		expect(matchLabel(9, 7)).toBe('På linje'); // gap −2
+		expect(matchLabel(9, 4)).toBe('Mer rom enn viktigheten tilsier'); // gap −5
 	});
 });
 

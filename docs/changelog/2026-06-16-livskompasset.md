@@ -62,6 +62,15 @@ er startverdi for samsvar-slideren.
 - Viktighet forhåndsutfylles nå fra: denne ukas innsjekk → nyeste innsjekk → onboarding-profil → defaults.
 - Viktighets-markøren og samsvar-thumben deler samme spor-posisjon siden begge er 1–10.
 
+### Fase 6b: Gap-relative samsvar-ankerord (2026-07-18)
+`matchLabel` var absolutt (avstand fra 10: «Langt unna» … «Helt på linje») og kranglet med
+gap-modellen: viktighet 3 / samsvar 3 fikk «Litt unna» selv om uka traff akkurat det brukeren
+ønsket, og viktighet 10 / samsvar 8 fikk «Ganske på linje» tross et reelt gap. Nå tar
+`matchLabel(match, importance)` begge akser og setter ord på gapet: «Langt under det viktige»
+(gap ≥5), «Klart under det viktige» (gap ≥3, speiler ute-av-synk-terskelen), «Litt under»
+(gap ≥1), «På linje» (gap −2…0), «Mer rom enn viktigheten tilsier» (gap ≤ −3). Tallet
+`(n/10)` vises fortsatt rått ved siden av.
+
 ### Fase 7: Funn via egenfrekvens-temaet + helge-nudge (2026-06-20)
 **Oppdagbarhet:** Livskompasset vises nå i Egenfrekvens-temaets data-fane (`ThemeDataTab`, gated på
 `activeDashboardKind === 'egenfrekvens'`) som `LivskompassWidget`. Tapp → `goto('/?flow=livskompass')`.
