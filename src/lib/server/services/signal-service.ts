@@ -155,7 +155,7 @@ async function ensureSignalContract(input: {
 		VALUES (
 			${input.signalType},
 			${input.ownerDomain},
-			${input.allowedConsumerDomains},
+			${`{${input.allowedConsumerDomains.join(',')}}`}::text[],
 			1,
 			'active',
 			${input.description},

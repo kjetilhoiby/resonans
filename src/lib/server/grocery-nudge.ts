@@ -229,13 +229,17 @@ export async function sendGroceryWeeklyNudge(
 	return { sent, reason: sent ? 'ok' : 'delivery-failed' };
 }
 
-export async function sendGroceryWeeklyNudgesForAllUsers(appUrl: string, now: Date = new Date()) {
+export async function sendGroceryWeeklyNudgesForAllUsers(
+	appUrl: string,
+	now: Date = new Date(),
+	opts: { force?: boolean } = {}
+) {
 	const allUsers = await db.query.users.findMany();
 	const results: Array<{ userId: string; sent: boolean; reason: string }> = [];
 
 	for (const user of allUsers) {
 		try {
-			const result = await sendGroceryWeeklyNudge(user.id, user, appUrl, now);
+			const result = await sendGroceryWeeklyNudge(user.id, user, appUrl, now, opts);
 			results.push({ userId: user.id, ...result });
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
