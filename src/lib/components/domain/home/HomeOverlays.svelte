@@ -501,6 +501,10 @@
 	<FlowSheet flow={FLOWS['inbox_note']} onclose={() => { ctx.inboxNoteFlowOpen = false; }} oncomplete={() => { ctx.inboxNoteFlowOpen = false; void ctx.loadActionCandidates(); }} />
 {/if}
 
+{#if ctx.hodedumpFlowOpen}
+	<FlowSheet flow={FLOWS['hodedump']} onclose={() => { ctx.hodedumpFlowOpen = false; }} oncomplete={() => { ctx.hodedumpFlowOpen = false; void ctx.loadActionCandidates(); }} />
+{/if}
+
 {#if ctx.birthdayInterviewFlowOpen}
 	<FlowSheet flow={FLOWS['birthday_interview']} context={ctx.birthdayInterviewFlowContext} onclose={() => { ctx.birthdayInterviewFlowOpen = false; }} oncomplete={() => { ctx.birthdayInterviewFlowOpen = false; void ctx.loadActionCandidates(); }} />
 {/if}

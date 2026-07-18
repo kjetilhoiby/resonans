@@ -4,9 +4,9 @@
  * klassifisering og formattering bor i `$lib/domain/observed-behavior.ts`.
  */
 
-import { sql, and, desc, eq } from 'drizzle-orm';
+import { sql, and, desc, eq, gte, inArray } from 'drizzle-orm';
 import { db, rowsOf } from '$lib/db';
-import { domainSignals } from '$lib/db/schema';
+import { domainSignals, projects, reflections } from '$lib/db/schema';
 import { listSleepGoals, readSleepNights } from '$lib/server/integrations/sleep-goals';
 import { pairNapsWithPriorNights, type NapWithPriorNight } from '$lib/domain/sleep-goals';
 import {
@@ -112,7 +112,7 @@ export async function collectObservedBehaviorInputs(
 	userId: string,
 	now = new Date()
 ): Promise<ObservedBehaviorInputs> {
-	const [followThroughCounts, naps, proactivity, routineSignal] = await Promise.all([
+	const [followThroughCounts, naps, proactivity, routineSignal, lastDump, flokeProjects] = await Promise.all([
 		collectFollowThrough7d(userId, now),
 		collectNaps7d(userId, now),
 		collectProactivity7d(userId, now),
@@ -120,6 +120,24 @@ export async function collectObservedBehaviorInputs(
 		db.query.domainSignals.findFirst({
 			where: and(eq(domainSignals.userId, userId), eq(domainSignals.signalType, 'routine_adherence_7d')),
 			orderBy: [desc(domainSignals.observedAt)]
+		}),
+		// Siste hodedump («skaffer oversikt») innen 7 dager
+		db.query.reflections.findFirst({
+			where: and(
+				eq(reflections.userId, userId),
+				eq(reflections.kind, 'hodedump'),
+				gte(reflections.createdAt, new Date(now.getTime() - 7 * 86_400_000))
+			),
+			orderBy: [desc(reflections.createdAt)]
+		}),
+		// Floker fra hodedump som fortsatt er åpne
+		db.query.projects.findMany({
+			where: and(
+				eq(projects.userId, userId),
+				inArray(projects.status, ['planning', 'active']),
+				sql`${projects.metadata}->>'source' = 'hodedump'`
+			),
+			columns: { status: true }
 		})
 	]);
 
@@ -137,7 +155,17 @@ export async function collectObservedBehaviorInputs(
 		naps: naps.hasSleepData ? naps : null,
 		proactivity,
 		routineAdherencePct:
-			routineFresh && routineSignal?.valueNumber != null ? Number(routineSignal.valueNumber) : null
+			routineFresh && routineSignal?.valueNumber != null ? Number(routineSignal.valueNumber) : null,
+		oversikt: lastDump
+			? { daysAgo: Math.floor((now.getTime() - lastDump.createdAt.getTime()) / 86_400_000) }
+			: null,
+		floker:
+			flokeProjects.length > 0
+				? {
+						active: flokeProjects.filter((p) => p.status === 'active').length,
+						open: flokeProjects.filter((p) => p.status === 'planning').length
+					}
+				: null
 	};
 }
 

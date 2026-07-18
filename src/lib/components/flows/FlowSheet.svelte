@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Flow, FlowContext } from '$lib/flows/types';
+	import type { Flow, FlowContext, FlowStep } from '$lib/flows/types';
 	import { ChatState } from '$lib/client/chat-state.svelte';
 	import { onMount, onDestroy, tick, untrack } from 'svelte';
 	import { fly, fade } from 'svelte/transition';
@@ -130,7 +130,9 @@
 	let refinementHistory = $state<string[]>([]);
 
 	// ── Decision-list state ──────────────────────────────────────────
-	let decisions = $state<Record<string, 'carryover' | 'unsolved'>>({});
+	let decisions = $state<Record<string, string>>({});
+	/** Items for aktivt decision-list-steg når de bygges fra flowData (itemsFromDataKey). */
+	let decisionDataItems = $state<Array<{ id: string; text: string }>>([]);
 
 	// ── Weather ──────────────────────────────────────────────────────
 	let weather = $state<WeatherData | null>(null);
@@ -167,7 +169,8 @@
 	const openItemsForDecision = $derived.by(() => {
 		const step = currentStep;
 		if (step?.type !== 'decision-list') return [];
-		return step.openItemsKey ? (context as Record<string, any>)[step.openItemsKey] ?? [] : [];
+		// decisionDataItems settes i steg-init for begge kilder (context/flowData)
+		return decisionDataItems;
 	});
 
 	const carryoverCount = $derived(
@@ -350,7 +353,7 @@
 		}
 
 		if (step.type === 'decision-list') {
-			untrack(() => initDecisionListStep(step.openItemsKey));
+			untrack(() => initDecisionListStep(step));
 		}
 	});
 
@@ -378,30 +381,61 @@
 		loadingAiSuggestions = true;
 		try {
 			const alreadyHave = checklistItems.map((i) => i.text);
-			const suggestions = await api.fetchDaySuggestions({
-				headline: headline?.trim() ?? '',
-				dayLabel: context.dayLabel ?? '',
-				carryovers: context.carryovers ?? [],
-				weekTasks: context.weekTasks ?? [],
-				...(refinementPrompt ? { refinementPrompt } : {})
-			});
+			const step = currentStep;
+			let suggestions: string[];
+			if (step?.aiSuggestionsEndpoint) {
+				// Steg-spesifikt endepunkt (f.eks. hodedump-ekstraksjon) — samme kontrakt
+				suggestions = await fetchSuggestionsFromEndpoint(step.aiSuggestionsEndpoint, {
+					headline: headline?.trim() ?? '',
+					existing: alreadyHave,
+					...(refinementPrompt ? { refinementPrompt } : {})
+				});
+			} else {
+				suggestions = await api.fetchDaySuggestions({
+					headline: headline?.trim() ?? '',
+					dayLabel: context.dayLabel ?? '',
+					carryovers: context.carryovers ?? [],
+					weekTasks: context.weekTasks ?? [],
+					...(refinementPrompt ? { refinementPrompt } : {})
+				});
+			}
 			const toAdd = suggestions.filter((s) => {
 				const key = s.trim().toLowerCase();
 				return key && !alreadyHave.some((t) => t.trim().toLowerCase() === key);
 			});
 			if (toAdd.length > 0) {
+				const selected = step?.aiSuggestionsSelected ?? false;
 				checklistItems = [
 					...checklistItems,
 					...toAdd.map((text) => ({
 						id: `ai:${text.toLowerCase()}`,
 						text,
 						source: 'ai' as const,
-						selected: false
+						selected
 					}))
 				];
+				if (selected) flowData['selectedTasks'] = selectedTasks(checklistItems);
 			}
 		} finally {
 			loadingAiSuggestions = false;
+		}
+	}
+
+	async function fetchSuggestionsFromEndpoint(
+		endpoint: string,
+		body: Record<string, unknown>
+	): Promise<string[]> {
+		try {
+			const res = await fetch(endpoint, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(body)
+			});
+			if (!res.ok) return [];
+			const data = (await res.json()) as { suggestions?: string[] };
+			return Array.isArray(data.suggestions) ? data.suggestions : [];
+		} catch {
+			return [];
 		}
 	}
 
@@ -417,10 +451,22 @@
 	}
 
 	// ── Decision-list helpers ────────────────────────────────────────
-	function initDecisionListStep(openItemsKey?: string) {
-		const items: Array<{ id: string; text: string }> =
-			openItemsKey ? (context as Record<string, any>)[openItemsKey] ?? [] : [];
-		decisions = Object.fromEntries(items.map((i) => [i.id, 'carryover' as const]));
+	function initDecisionListStep(step: FlowStep) {
+		let items: Array<{ id: string; text: string }>;
+		if (step.itemsFromDataKey) {
+			// Items fra forrige stegs flowData (f.eks. selectedTasks) — snapshotes
+			// til flowData så onComplete kan lese tekstene etter senere overskriving
+			const texts: string[] = Array.isArray(flowData[step.itemsFromDataKey])
+				? flowData[step.itemsFromDataKey]
+				: [];
+			items = texts.map((text, i) => ({ id: `p${i}`, text }));
+			flowData[`${step.id}_items`] = items;
+		} else {
+			items = step.openItemsKey ? (context as Record<string, any>)[step.openItemsKey] ?? [] : [];
+		}
+		decisionDataItems = items;
+		const initial = step.defaultDecision ?? 'carryover';
+		decisions = Object.fromEntries(items.map((i) => [i.id, initial]));
 		flowData['decisions'] = decisions;
 		flowData['carryoverIds'] = items.filter((i) => decisions[i.id] === 'carryover').map((i) => i.id);
 	}
@@ -430,9 +476,19 @@
 			...decisions,
 			[id]: decisions[id] === 'carryover' ? 'unsolved' : 'carryover'
 		};
-		const openItems: Array<{ id: string }> = context.openItems ?? [];
+		syncDecisionData();
+	}
+
+	function selectDecision(id: string, value: string) {
+		decisions = { ...decisions, [id]: value };
+		syncDecisionData();
+	}
+
+	function syncDecisionData() {
 		flowData['decisions'] = decisions;
-		flowData['carryoverIds'] = openItems.filter((i) => decisions[i.id] === 'carryover').map((i) => i.id);
+		flowData['carryoverIds'] = decisionDataItems
+			.filter((i) => decisions[i.id] === 'carryover')
+			.map((i) => i.id);
 	}
 
 	// ── Auto-advance ────────────────────────────────────────────────
@@ -683,7 +739,9 @@
 					openItems={openItemsForDecision}
 					{decisions}
 					{carryoverCount}
+					options={currentStep.decisionOptions}
 					onToggle={toggleDecision}
+					onSelect={selectDecision}
 				/>
 			{/if}
 

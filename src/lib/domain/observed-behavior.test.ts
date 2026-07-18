@@ -93,4 +93,17 @@ describe('buildObservedBehaviorLines', () => {
 		expect(lines[0]).toContain('3 quick wins og 2 fokusøkter (50 min)');
 		expect(lines[1]).toContain('72%');
 	});
+
+	it('hodedump og floker speiles («skaffer oversikt» / «løser floker»)', () => {
+		const lines = buildObservedBehaviorLines({
+			oversikt: { daysAgo: 2 },
+			floker: { active: 1, open: 2 }
+		});
+		expect(lines).toHaveLength(2);
+		expect(lines[0]).toBe('- Skaffet oversikt: hodedump for 2 dager siden.');
+		expect(lines[1]).toBe('- Floker: 1 under nedbryting, 2 åpne som prosjekter.');
+
+		expect(buildObservedBehaviorLines({ oversikt: { daysAgo: 0 } })[0]).toContain('i dag');
+		expect(buildObservedBehaviorLines({ floker: { active: 0, open: 0 } })).toEqual([]);
+	});
 });

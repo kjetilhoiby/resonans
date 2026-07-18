@@ -474,6 +474,7 @@
 	let focusTimerFlowOpen = $state(false);
 	let reflectionLightFlowOpen = $state(false);
 	let inboxNoteFlowOpen = $state(false);
+	let hodedumpFlowOpen = $state(false);
 	let quickWinFlowOpen = $state(false);
 	let quickWinOpenItems = $state<Array<{ id: string; text: string }>>([]);
 
@@ -560,6 +561,7 @@
 				else if (intent.flowId === 'reflection_light') reflectionLightFlowOpen = true;
 				else if (intent.flowId === 'quick_win') void openQuickWin();
 				else if (intent.flowId === 'inbox_note') inboxNoteFlowOpen = true;
+				else if (intent.flowId === 'hodedump') hodedumpFlowOpen = true;
 				else if (intent.flowId === 'birthday_interview') void openBirthdayInterview();
 				else if (intent.flowId === 'livsintervju') void openLivsintervju();
 				else if (intent.flowId === 'retning_kvartal') void openRetningKvartal();
@@ -1140,6 +1142,7 @@
 		get focusTimerFlowOpen() { return focusTimerFlowOpen; }, set focusTimerFlowOpen(v) { focusTimerFlowOpen = v; },
 		get reflectionLightFlowOpen() { return reflectionLightFlowOpen; }, set reflectionLightFlowOpen(v) { reflectionLightFlowOpen = v; },
 		get inboxNoteFlowOpen() { return inboxNoteFlowOpen; }, set inboxNoteFlowOpen(v) { inboxNoteFlowOpen = v; },
+		get hodedumpFlowOpen() { return hodedumpFlowOpen; }, set hodedumpFlowOpen(v) { hodedumpFlowOpen = v; },
 		get quickWinFlowOpen() { return quickWinFlowOpen; }, set quickWinFlowOpen(v) { quickWinFlowOpen = v; },
 		get quickWinOpenItems() { return quickWinOpenItems; },
 		get birthdayInterviewFlowOpen() { return birthdayInterviewFlowOpen; }, set birthdayInterviewFlowOpen(v) { birthdayInterviewFlowOpen = v; },

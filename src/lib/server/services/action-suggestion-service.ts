@@ -17,6 +17,7 @@ import { planMonthProducer } from './action-producers/plan-month';
 import { reflectionLightProducer } from './action-producers/reflection-light';
 import { quickWinProducer } from './action-producers/quick-win';
 import { inboxNoteProducer } from './action-producers/inbox-note';
+import { hodedumpProducer } from './action-producers/hodedump';
 import { sortInboxProducer } from './action-producers/sort-inbox';
 import { trainingProgramProducer } from './action-producers/training-program';
 import { screenTimeOnboardingProducer } from './action-producers/screen-time-onboarding';
@@ -62,6 +63,7 @@ const PRODUCERS: ActionProducer[] = [
 	reflectionLightProducer,
 	quickWinProducer,
 	inboxNoteProducer,
+	hodedumpProducer,
 	sortInboxProducer,
 	planTomorrowProducer,
 	planWeekProducer,

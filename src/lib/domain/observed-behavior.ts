@@ -61,6 +61,10 @@ export interface ObservedBehaviorInputs {
 	naps?: { count: number; totalMinutes: number; withPriorNights: NapWithPriorNight[]; maxPerWeek: number | null } | null;
 	proactivity?: { quickWins: number; focusSessions: number; focusMinutes: number } | null;
 	routineAdherencePct?: number | null;
+	/** Siste hodedump («skaffer oversikt») innen 7 dager */
+	oversikt?: { daysAgo: number } | null;
+	/** Floker fra hodedump: aktive (under nedbryting) og åpne (planning) prosjekter */
+	floker?: { active: number; open: number } | null;
 }
 
 function formatHoursShort(h: number): string {
@@ -109,6 +113,20 @@ export function buildObservedBehaviorLines(inputs: ObservedBehaviorInputs): stri
 
 	if (typeof inputs.routineAdherencePct === 'number') {
 		lines.push(`- Rutine-etterlevelse: ${Math.round(inputs.routineAdherencePct)}%.`);
+	}
+
+	if (inputs.oversikt) {
+		const d = inputs.oversikt.daysAgo;
+		const when = d === 0 ? 'i dag' : d === 1 ? 'i går' : `for ${d} dager siden`;
+		lines.push(`- Skaffet oversikt: hodedump ${when}.`);
+	}
+
+	const floker = inputs.floker;
+	if (floker && (floker.active > 0 || floker.open > 0)) {
+		const parts: string[] = [];
+		if (floker.active > 0) parts.push(`${floker.active} under nedbryting`);
+		if (floker.open > 0) parts.push(`${floker.open} åpne som prosjekter`);
+		lines.push(`- Floker: ${parts.join(', ')}.`);
 	}
 
 	return lines;

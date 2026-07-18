@@ -21,6 +21,7 @@ export type ReflectionKind =
 	| 'livsintervju_kilde'
 	| 'retningssamtale'
 	| 'retningsgap'
+	| 'hodedump'
 	| 'notat'
 	| 'ad_hoc';
 

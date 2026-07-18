@@ -29,6 +29,7 @@ export type FlowId =
 	| 'retning_kvartal'
 	| 'quick_win'
 	| 'inbox_note'
+	| 'hodedump'
 	| 'jobb_focus_timer';
 
 export type FlowDomain = 'health' | 'economics' | 'food' | 'family' | 'planning' | 'general' | 'self' | 'jobb';
@@ -54,10 +55,22 @@ export interface FlowStep {
 	extraItemsKey?: string;
 	/** For checklist: whether to fetch AI suggestions based on a headline field id */
 	aiSuggestionsFromField?: string;
+	/** For checklist: eget forslags-endepunkt (POST {headline, existing, refinementPrompt?} → {suggestions}).
+	 *  Uten denne brukes dagsplan-endepunktet. */
+	aiSuggestionsEndpoint?: string;
+	/** For checklist: AI-forslag hakes av som valgt (for ekstraksjon av brukerens egne punkter). */
+	aiSuggestionsSelected?: boolean;
 	/** For checklist: show an inline refinement prompt so the user can ask for more/different suggestions */
 	enableAiRefinement?: boolean;
 	/** For decision-list: which contextData key holds the open items */
 	openItemsKey?: string;
+	/** For decision-list: bygg items fra en flowData-nøkkel (string[]) i stedet for context.
+	 *  Items snapshotes til flowData['{stepId}_items'] så onComplete kan lese tekstene. */
+	itemsFromDataKey?: string;
+	/** For decision-list: egne valg per punkt (chips) i stedet for binær →/×-veksling. */
+	decisionOptions?: Array<{ value: string; label: string }>;
+	/** For decision-list: startverdi per punkt (default 'carryover'). */
+	defaultDecision?: string;
 	validation?: (data: Record<string, any>) => boolean | string;
 	/** Skip this step entirely if predicate returns true. Evaluated against current flow data. */
 	skipIf?: (data: Record<string, any>) => boolean;
