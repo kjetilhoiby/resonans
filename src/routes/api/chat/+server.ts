@@ -29,6 +29,7 @@ import { manageMealPlanTool } from '$lib/ai/tools/manage-meal-plan';
 import { managePantryTool } from '$lib/ai/tools/manage-pantry';
 import { manageLunchboxTool } from '$lib/ai/tools/manage-lunchbox';
 import { findRecipesTool } from '$lib/ai/tools/find-recipes';
+import { manageFoodSettingsTool } from '$lib/ai/tools/manage-food-settings';
 import { generateShoppingListTool } from '$lib/ai/tools/generate-shopping-list';
 import { analyzeMealImageTool } from '$lib/ai/tools/analyze-meal-image';
 import {
@@ -1188,6 +1189,22 @@ const tools = [
 			{
 				type: 'function' as const,
 				function: {
+					name: 'manage_food_settings',
+					description: 'Familiens matinnstillinger på husholdningsnivå (ikke per barn): weekRhythmNote (faste ukemønstre og myke føringer som «fredag = taco», «onsdag Oda-dag», «mandager holder vi det enkelt») og ukebudsjett. get leser, set oppdaterer. Kall get først når du legger til én ting, så du bygger videre på eksisterende tekst.',
+					parameters: {
+						type: 'object',
+						properties: {
+							action: { type: 'string', enum: ['get', 'set'] },
+							weekRhythmNote: { type: 'string', description: 'Full ny ukerytme-tekst (erstatter eksisterende)' },
+							groceryBudgetWeekly: { type: 'number', description: 'Ukebudsjett i kr, eller null for å fjerne' }
+						},
+						required: ['action']
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
 					name: 'generate_shopping_list',
 					description: 'Bygg handleliste fra ukemenyens måltider, minus ingredienser som finnes i pantry. Returnerer dedupliserte items klare for å bli lagt inn i en sjekkliste.',
 					parameters: {
@@ -1702,6 +1719,7 @@ function getToolProgressMessage(toolName: string) {
 		manage_pantry: 'Oppdaterer pantry...',
 		manage_lunchbox: 'Ordner matpakker...',
 		find_recipes: 'Leter etter oppskrifter...',
+		manage_food_settings: 'Oppdaterer matinnstillinger...',
 		generate_shopping_list: 'Lager handleliste...',
 		analyze_meal_image: 'Analyserer matbilde...',
 		record_tracking_event: 'Registrerer tracking-hendelse...',
@@ -2591,6 +2609,11 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 					const args = JSON.parse(toolCall.function.arguments);
 					console.log('  🍽️ Find recipes:', args.action);
 					const result = await findRecipesTool.execute({ userId, ...args });
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'manage_food_settings') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  🍽️ Manage food settings:', args.action);
+					const result = await manageFoodSettingsTool.execute({ userId, ...args });
 					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'generate_shopping_list') {
 					const args = JSON.parse(toolCall.function.arguments);

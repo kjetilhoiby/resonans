@@ -12,6 +12,7 @@ import { manageMealPlanTool } from '$lib/ai/tools/manage-meal-plan';
 import { managePantryTool } from '$lib/ai/tools/manage-pantry';
 import { manageLunchboxTool } from '$lib/ai/tools/manage-lunchbox';
 import { findRecipesTool } from '$lib/ai/tools/find-recipes';
+import { manageFoodSettingsTool } from '$lib/ai/tools/manage-food-settings';
 import { generateShoppingListTool } from '$lib/ai/tools/generate-shopping-list';
 import { managePersonTool } from '$lib/ai/tools/manage-person';
 import { manageRelationTool } from '$lib/ai/tools/manage-relation';
@@ -160,6 +161,7 @@ export const SHARED_ASSISTANT_TOOLS: AssistantTool[] = [
 	adaptSharedTool(manageLunchboxTool),
 	adaptSharedTool(generateShoppingListTool),
 	adaptSharedTool(findRecipesTool),
+	adaptSharedTool(manageFoodSettingsTool),
 	// Familie
 	adaptSharedTool(managePersonTool),
 	adaptSharedTool(manageRelationTool),

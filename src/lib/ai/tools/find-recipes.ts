@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { db } from '$lib/db';
-import { pantryItems, lunchboxProfiles, persons } from '$lib/db/schema';
+import { pantryItems, lunchboxProfiles, persons, foodSettings } from '$lib/db/schema';
 import { and, eq, inArray } from 'drizzle-orm';
 import { tavilySearch } from '$lib/server/web/tavily';
 import { importRecipeFromUrl } from '$lib/server/services/recipe-import-service';
@@ -119,6 +119,13 @@ Typisk flyt: «finn en middag med kyllingen i fryseren» → search (query='kyll
 
 		const avoid = await gatherAvoidList(args.userId);
 
+		// Familiens ukerytme/føringer — myk kontekst modellen kan vekte kandidatene
+		// mot (tas ikke inn i selve søkestrengen, som ville forurenset treffene).
+		const settings = await db.query.foodSettings.findFirst({
+			where: eq(foodSettings.userId, args.userId)
+		});
+		const weekRhythm = settings?.weekRhythmNote?.trim() || null;
+
 		const queryParts = [
 			'oppskrift middag',
 			args.query ?? '',
@@ -142,7 +149,7 @@ Typisk flyt: «finn en middag med kyllingen i fryseren» → search (query='kyll
 		}
 
 		return {
-			searchedFor: { ingredients, constraints: args.constraints ?? null, avoid, usedPantry, expiringUsed },
+			searchedFor: { ingredients, constraints: args.constraints ?? null, avoid, weekRhythm, usedPantry, expiringUsed },
 			candidates: hits.map((hit) => ({
 				title: hit.title,
 				url: hit.url,

@@ -865,10 +865,16 @@ export const pantryItems = pgTable('pantry_items', {
 	idxPantryUserExpires: index('pantry_items_user_expires_idx').on(table.userId, table.expiresAt)
 }));
 
-// Matinnstillinger — én rad per bruker (ukebudsjett for dagligvarer m.m.)
+// Matinnstillinger — én rad per bruker (ukebudsjett, ukerytme, onboarding).
 export const foodSettings = pgTable('food_settings', {
 	userId: text('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
 	groceryBudgetWeekly: decimal('grocery_budget_weekly'),
+	// Familiens ukerytme og myke føringer i fritekst — leses av ai-suggest og
+	// find_recipes («fredag = taco», «onsdag Oda-dag», «mandager holder vi det enkelt»).
+	weekRhythmNote: text('week_rhythm_note'),
+	// Settes når matplan-onboardingen er fullført eller hoppet over, så
+	// oppsett-wizarden ikke maser mer.
+	onboardedAt: timestamp('onboarded_at'),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
 });

@@ -138,6 +138,8 @@ export interface FoodDashboardData {
 	}>;
 	shoppingList?: FoodShoppingListSummary | null;
 	groceryBudgetWeekly?: number | null;
+	weekRhythmNote?: string | null;
+	onboarded?: boolean;
 	nextWeek?: {
 		weekContext: string;
 		mealPlans: FoodDashboardData['mealPlans'];
