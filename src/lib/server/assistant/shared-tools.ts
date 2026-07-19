@@ -31,6 +31,7 @@ import { createGoalTool } from '$lib/ai/tools/create-goal';
 import { logActivityTool } from '$lib/ai/tools/log-activity';
 import { logNapTool } from '$lib/ai/tools/log-nap';
 import { logChoreTool } from '$lib/ai/tools/log-chore';
+import { logParentTimeTool } from '$lib/ai/tools/log-parent-time';
 import { createMemoryTool } from '$lib/ai/tools/create-memory';
 import { createNoteTool } from '$lib/ai/tools/create-note';
 import { queryReflectionsTool } from '$lib/ai/tools/query-reflections';
@@ -221,6 +222,7 @@ export const SHARED_ASSISTANT_TOOLS: AssistantTool[] = [
 	adaptSharedTool(logActivityTool),
 	adaptSharedTool(logNapTool),
 	adaptSharedTool(logChoreTool),
+	adaptSharedTool(logParentTimeTool),
 	// `source` settes server-side til assistent-kilden, ikke av modellen
 	adaptSharedTool(createMemoryTool, { inject: { source: ASSISTANT_SOURCE } }),
 	adaptSharedTool(createNoteTool, { inject: { source: ASSISTANT_SOURCE } })

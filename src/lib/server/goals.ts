@@ -29,6 +29,8 @@ export interface GoalCreationParams {
 	visionHorizon?: 'vision_yearly' | 'vision_5year' | 'vision_10year';
 	/** For category_spend-mål: hvilken categorized_events-kategori taket gjelder. */
 	spendCategory?: string;
+	/** For parent_time-mål: hvilket barn timene gjelder. */
+	childName?: string;
 }
 
 export interface TaskCreationParams {
@@ -160,6 +162,9 @@ export async function createGoal(params: GoalCreationParams) {
 		...(params.visionHorizon ? { visionHorizon: params.visionHorizon } : {}),
 		...(resolvedMetricId === 'category_spend' && params.spendCategory
 			? { spendCategory: params.spendCategory }
+			: {}),
+		...(resolvedMetricId === 'parent_time' && params.childName
+			? { childName: params.childName }
 			: {}),
 		startDate: params.startDate || null,
 		endDate: params.endDate || null,

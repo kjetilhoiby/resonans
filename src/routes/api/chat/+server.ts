@@ -18,6 +18,7 @@ import { createTaskTool } from '$lib/ai/tools/create-task';
 import { logActivityTool } from '$lib/ai/tools/log-activity';
 import { logNapTool } from '$lib/ai/tools/log-nap';
 import { logChoreTool } from '$lib/ai/tools/log-chore';
+import { logParentTimeTool } from '$lib/ai/tools/log-parent-time';
 import { createMemoryTool } from '$lib/ai/tools/create-memory';
 import { queryEconomicsTool } from '$lib/ai/tools/query-economics';
 import { queryReflectionsTool } from '$lib/ai/tools/query-reflections';
@@ -271,6 +272,10 @@ const tools = [
 						type: 'string',
 						description: 'Kun for metricId=category_spend: forbrukskategorien taket gjelder (canonical CategoryId: kafe_og_restaurant, medier_og_underholdning, barn, reise, klaer_og_utstyr, hobby_og_fritid, helse_og_velvaere, hjem_og_hage, bil_og_transport).'
 					},
+					childName: {
+						type: 'string',
+						description: 'Kun for metricId=parent_time: barnets fornavn timene gjelder. targetValue = timer per uke.'
+					},
 					goalKind: {
 						type: 'string',
 						description: 'Hvordan målet evalueres i dashboardet',
@@ -441,6 +446,32 @@ const tools = [
 					}
 				},
 				required: ['task', 'doneBy']
+			}
+		}
+	},
+	{
+		type: 'function' as const,
+		function: {
+			name: 'log_parent_time',
+			description:
+				'Logg fokusert tid med ett barn — «leste en halvtime med Emma», «fotball med Noah i to timer». Kall verktøyet én gang per barn. Brukes til foreldretid-mål og ukesoversikt.',
+			parameters: {
+				type: 'object',
+				properties: {
+					childName: {
+						type: 'string',
+						description: 'Barnets fornavn, f.eks. «Emma»'
+					},
+					minutes: {
+						type: 'number',
+						description: 'Antall minutter fokusert tid'
+					},
+					activity: {
+						type: 'string',
+						description: 'Kort hva dere gjorde, f.eks. «lesing», «fotball» (valgfritt)'
+					}
+				},
+				required: ['childName', 'minutes']
 			}
 		}
 	},
@@ -2495,6 +2526,14 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'log_chore') {
 					const args = JSON.parse(toolCall.function.arguments);
 					const result = await logChoreTool.execute({ userId, ...args });
+					messages.push({
+						role: 'tool',
+						content: JSON.stringify(result),
+						tool_call_id: toolCall.id
+					});
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'log_parent_time') {
+					const args = JSON.parse(toolCall.function.arguments);
+					const result = await logParentTimeTool.execute({ userId, ...args });
 					messages.push({
 						role: 'tool',
 						content: JSON.stringify(result),

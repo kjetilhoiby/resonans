@@ -196,6 +196,35 @@ export function classifyMoodTrend(trend: MoodTrend): SignalSeverity {
 	return base;
 }
 
+/* ── Foreldretid per barn (familie) ─────────────────────── */
+
+export interface ParentTimeChild {
+	childName: string;
+	minutes: number;
+	hours: number;
+}
+
+/** Aggregér foreldretid-logger til timer per barn, sortert lavest først. */
+export function aggregateParentTime(
+	logs: Array<{ childName: string; minutes: number }>
+): ParentTimeChild[] {
+	const byChild = new Map<string, number>();
+	for (const log of logs) {
+		if (!log.childName || !Number.isFinite(log.minutes) || log.minutes <= 0) continue;
+		byChild.set(log.childName, (byChild.get(log.childName) ?? 0) + log.minutes);
+	}
+	return [...byChild.entries()]
+		.map(([childName, minutes]) => ({ childName, minutes, hours: Math.round((minutes / 60) * 10) / 10 }))
+		.sort((a, b) => a.minutes - b.minutes);
+}
+
+/** «3t» / «45 min» — kompakt timer/minutter for foreldretid-linja. */
+export function formatParentTimeDuration(minutes: number): string {
+	if (minutes < 60) return `${Math.round(minutes)} min`;
+	const h = Math.round((minutes / 60) * 10) / 10;
+	return `${h.toString().replace('.', ',')}t`;
+}
+
 /* ── Hvilepuls-forhøyning ───────────────────────────────── */
 
 /**
@@ -262,6 +291,8 @@ export interface ObservedBehaviorInputs {
 	choreBalance?: ChoreBalance | null;
 	/** Humør-/egenfrekvens-trend (fersk uke mot baseline) */
 	moodTrend?: MoodTrend | null;
+	/** Foreldretid per barn siste uke (timer), lavest først */
+	parentTime?: ParentTimeChild[] | null;
 }
 
 function formatHoursShort(h: number): string {
@@ -358,6 +389,12 @@ export function buildObservedBehaviorLines(inputs: ObservedBehaviorInputs): stri
 		if (cb.deviation > 0.1) tail = ' — du bærer mer enn halvparten';
 		else if (cb.deviation < -0.1) tail = ' — partner bærer mer enn halvparten';
 		lines.push(`- Husarbeid siste to uker: du ${mine} %, partner ${andre} % (ideal 50/50)${tail}.`);
+	}
+
+	const pt = inputs.parentTime;
+	if (pt && pt.length > 0) {
+		const parts = pt.map((c) => `${c.childName} ${formatParentTimeDuration(c.minutes)}`);
+		lines.push(`- Foreldretid siste uke: ${parts.join(', ')}.`);
 	}
 
 	return lines;

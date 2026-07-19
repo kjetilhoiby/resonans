@@ -9,6 +9,7 @@ import { db, rowsOf } from '$lib/db';
 import { domainSignals, reflections, sensorEvents } from '$lib/db/schema';
 import { listSleepGoals, readSleepNights } from '$lib/server/integrations/sleep-goals';
 import { readChoreBalance } from '$lib/server/services/chore-service';
+import { readParentTimeByChild } from '$lib/server/services/parent-time-service';
 import { pairNapsWithPriorNights, type NapWithPriorNight } from '$lib/domain/sleep-goals';
 import {
 	buildObservedBehaviorLines,
@@ -186,7 +187,7 @@ export async function collectObservedBehaviorInputs(
 	userId: string,
 	now = new Date()
 ): Promise<ObservedBehaviorInputs> {
-	const [followThroughCounts, naps, proactivity, routineSignal, lastDump, flokeStatus, choreBalance, moodTrend] = await Promise.all([
+	const [followThroughCounts, naps, proactivity, routineSignal, lastDump, flokeStatus, choreBalance, moodTrend, parentTime] = await Promise.all([
 		collectFollowThrough7d(userId, now),
 		collectNaps7d(userId, now),
 		collectProactivity7d(userId, now),
@@ -209,7 +210,9 @@ export async function collectObservedBehaviorInputs(
 		// Husarbeid-balanse siste to uker (mot 50/50)
 		readChoreBalance(userId, 14),
 		// Humør-/egenfrekvens-trend (fersk uke mot baseline)
-		readMoodTrend(userId, now)
+		readMoodTrend(userId, now),
+		// Foreldretid per barn siste uke
+		readParentTimeByChild(userId, 7)
 	]);
 
 	// Åpne løkker: uavsjekkede innboks-punkter (VISION: «Løkker, floker og knuter»)
@@ -252,7 +255,8 @@ export async function collectObservedBehaviorInputs(
 				: null,
 		aapneLokker: openInbox > 0 ? { inbox: openInbox } : null,
 		choreBalance,
-		moodTrend
+		moodTrend,
+		parentTime
 	};
 }
 

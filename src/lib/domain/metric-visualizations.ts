@@ -123,6 +123,14 @@ export const METRIC_VISUALIZATION_PRESETS: Record<MetricId, MetricVisualizationP
 		preferredComparators: ['budget_cap', 'rolling_average'],
 		notes: 'Månedlig forbruk i en kategori mot tak; 3-måneders snitt som sammenligning.'
 	},
+	parent_time: {
+		metricId: 'parent_time',
+		summary: 'target_zone_bar',
+		detail: 'comparison_trend',
+		thresholdMode: 'at_least',
+		preferredComparators: ['target_min', 'rolling_average'],
+		notes: 'Loggede timer fokusert tid med ett barn per uke mot minstemål.'
+	},
 	fat_mass: {
 		metricId: 'fat_mass',
 		summary: 'timeline_marker',

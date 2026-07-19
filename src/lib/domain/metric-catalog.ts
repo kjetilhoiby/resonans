@@ -15,7 +15,8 @@ export type MetricId =
 	| 'weight_change'
 	| 'grocery_spend'
 	| 'category_spend'
-	| 'monthly_savings';
+	| 'monthly_savings'
+	| 'parent_time';
 
 export interface MetricDefinition {
 	id: MetricId;
@@ -168,6 +169,17 @@ export const METRIC_CATALOG: Record<MetricId, MetricDefinition> = {
 		widgetMetricType: 'amount',
 		visualizationFamily: 'trajectory',
 		supportedWindows: ['month', 'quarter', 'year']
+	},
+	parent_time: {
+		id: 'parent_time',
+		// Loggede timer fokusert tid med ett barn per uke (parent_time_log-events);
+		// barnet bæres i goals.metadata.childName. Høyere er bedre.
+		label: 'Foreldretid per uke',
+		aliases: ['parent_time', 'foreldretid', 'tid med barna', 'barnetid'],
+		defaultUnit: 't',
+		direction: 'higher_is_better',
+		visualizationFamily: 'target_zone',
+		supportedWindows: ['week', 'month', 'quarter', 'year']
 	},
 	monthly_savings: {
 		id: 'monthly_savings',
