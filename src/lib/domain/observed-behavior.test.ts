@@ -1,11 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import {
 	buildObservedBehaviorLines,
+	classifyBudgetPressure,
+	classifyChoreBalance,
 	classifyFlokeLoad,
 	classifyFlokeStagnation,
 	classifyFollowThrough,
 	classifyNapLoad,
-	classifyRestingHrElevation
+	classifyRestingHrElevation,
+	computeChoreBalance,
+	projectBudget
 } from './observed-behavior';
 
 describe('classifyFollowThrough', () => {
@@ -131,6 +135,70 @@ describe('buildObservedBehaviorLines', () => {
 		expect(lines).toHaveLength(1);
 		// Verste floken (flest dager) trekkes frem
 		expect(lines[0]).toContain('«Forsikringssaken» har ligget 31 dager uten bevegelse — på vei til å bli knute');
+	});
+});
+
+describe('computeChoreBalance + classifyChoreBalance', () => {
+	it('regner andel mot 50/50 og signert avvik', () => {
+		const b = computeChoreBalance(13, 7)!;
+		expect(b.total).toBe(20);
+		expect(b.myShare).toBe(0.65);
+		expect(b.deviation).toBeCloseTo(0.15, 5);
+		expect(classifyChoreBalance(b)).toBe('low');
+	});
+
+	it('symmetrisk severity — å bære for lite vurderes likt som for mye', () => {
+		expect(classifyChoreBalance(computeChoreBalance(6, 4)!)).toBe('info'); // 60/40 innenfor ±10pp
+		expect(classifyChoreBalance(computeChoreBalance(7, 3)!)).toBe('low'); // 70/30
+		expect(classifyChoreBalance(computeChoreBalance(8, 2)!)).toBe('medium'); // 80/20
+		expect(classifyChoreBalance(computeChoreBalance(9, 1)!)).toBe('high'); // 90/10
+		// speilvendt: partner bærer 90 % → jeg 10 %, samme alvor
+		expect(classifyChoreBalance(computeChoreBalance(1, 9)!)).toBe('high');
+	});
+
+	it('under minimum → null (for få oppgaver til å si noe)', () => {
+		expect(computeChoreBalance(2, 1)).toBeNull();
+		expect(computeChoreBalance(3, 1)).not.toBeNull(); // 4 = minimum
+	});
+
+	it('linje i OBSERVERT ATFERD navngir hvem som bærer mer', () => {
+		const over = buildObservedBehaviorLines({ choreBalance: computeChoreBalance(15, 5) });
+		expect(over[0]).toContain('du 75 %, partner 25 %');
+		expect(over[0]).toContain('du bærer mer enn halvparten');
+
+		const under = buildObservedBehaviorLines({ choreBalance: computeChoreBalance(4, 12) });
+		expect(under[0]).toContain('partner bærer mer enn halvparten');
+
+		const jevnt = buildObservedBehaviorLines({ choreBalance: computeChoreBalance(5, 5) });
+		expect(jevnt[0]).toContain('jevnt fordelt');
+	});
+});
+
+describe('projectBudget + classifyBudgetPressure', () => {
+	it('framskriver månedsforbruk lineært etter dag-i-måneden', () => {
+		// 800 kr brukt på dag 10 av 30 → ligger an til 2400
+		const p = projectBudget(800, 2000, 10, 30);
+		expect(p.projected).toBe(2400);
+		expect(p.exceeded).toBe(false);
+		expect(p.onTrackToExceed).toBe(true);
+		expect(classifyBudgetPressure(p)).toBe('medium');
+	});
+
+	it('over taket allerede → high', () => {
+		const p = projectBudget(2200, 2000, 20, 30);
+		expect(p.exceeded).toBe(true);
+		expect(classifyBudgetPressure(p)).toBe('high');
+	});
+
+	it('godt innenfor → info; nær grensen (≥85 %) → low', () => {
+		expect(classifyBudgetPressure(projectBudget(300, 2000, 15, 30))).toBe('info');
+		// 900 på dag 15 av 30 → framskrevet 1800 = 90 % av 2000
+		expect(classifyBudgetPressure(projectBudget(900, 2000, 15, 30))).toBe('low');
+	});
+
+	it('tåler dag utenfor [1, daysInMonth]', () => {
+		expect(projectBudget(500, 2000, 0, 30).projected).toBe(15000); // dag klemt til 1
+		expect(projectBudget(2000, 2000, 40, 30).projected).toBe(2000); // dag klemt til 30
 	});
 });
 

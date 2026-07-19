@@ -17,6 +17,7 @@ import { createGoalTool } from '$lib/ai/tools/create-goal';
 import { createTaskTool } from '$lib/ai/tools/create-task';
 import { logActivityTool } from '$lib/ai/tools/log-activity';
 import { logNapTool } from '$lib/ai/tools/log-nap';
+import { logChoreTool } from '$lib/ai/tools/log-chore';
 import { createMemoryTool } from '$lib/ai/tools/create-memory';
 import { queryEconomicsTool } from '$lib/ai/tools/query-economics';
 import { queryReflectionsTool } from '$lib/ai/tools/query-reflections';
@@ -264,7 +265,11 @@ const tools = [
 					},
 					metricId: {
 						type: 'string',
-						description: 'Canonical metric id når målet er målbart. Bruk f.eks. running_distance, weight_change, grocery_spend, sleep_avg_night, steps_avg_day eller active_minutes_avg_day.'
+						description: 'Canonical metric id når målet er målbart. Bruk f.eks. running_distance, weight_change, grocery_spend, category_spend (forbrukstak i en kategori), sleep_avg_night, steps_avg_day eller active_minutes_avg_day.'
+					},
+					spendCategory: {
+						type: 'string',
+						description: 'Kun for metricId=category_spend: forbrukskategorien taket gjelder (canonical CategoryId: kafe_og_restaurant, medier_og_underholdning, barn, reise, klaer_og_utstyr, hobby_og_fritid, helse_og_velvaere, hjem_og_hage, bil_og_transport).'
 					},
 					goalKind: {
 						type: 'string',
@@ -409,6 +414,33 @@ const tools = [
 					}
 				},
 				required: ['durationMinutes']
+			}
+		}
+	},
+	{
+		type: 'function' as const,
+		function: {
+			name: 'log_chore',
+			description:
+				'Logg en gjennomført husarbeids-oppgave og hvem som gjorde den — «jeg tok oppvasken», «kona støvsuget stua». Brukes til å følge fordelingen av husarbeid mot 50/50. Kall verktøyet én gang per oppgave.',
+			parameters: {
+				type: 'object',
+				properties: {
+					task: {
+						type: 'string',
+						description: 'Kort beskrivelse, f.eks. «oppvask», «støvsuge stua», «klesvask»'
+					},
+					doneBy: {
+						type: 'string',
+						enum: ['meg', 'partner'],
+						description: '«meg» = brukeren selv, «partner» = ektefelle/samboer'
+					},
+					minutes: {
+						type: 'number',
+						description: 'Anslått tidsbruk i minutter (valgfritt)'
+					}
+				},
+				required: ['task', 'doneBy']
 			}
 		}
 	},
@@ -2455,6 +2487,14 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'log_nap') {
 					const args = JSON.parse(toolCall.function.arguments);
 					const result = await logNapTool.execute({ userId, ...args });
+					messages.push({
+						role: 'tool',
+						content: JSON.stringify(result),
+						tool_call_id: toolCall.id
+					});
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'log_chore') {
+					const args = JSON.parse(toolCall.function.arguments);
+					const result = await logChoreTool.execute({ userId, ...args });
 					messages.push({
 						role: 'tool',
 						content: JSON.stringify(result),

@@ -54,6 +54,102 @@ export function classifyNapLoad(napCount: number, maxPerWeek: number | null): Si
 	return 'high';
 }
 
+/* ── Husarbeid-balanse (familie) ────────────────────────── */
+
+export interface ChoreBalance {
+	myCount: number;
+	otherCount: number;
+	total: number;
+	/** Min andel 0..1 av loggede husarbeids-oppgaver */
+	myShare: number;
+	/** Avvik fra 50/50-idealet, signert (+ = jeg gjør mer, − = partner gjør mer) */
+	deviation: number;
+}
+
+export const CHORE_IDEAL_SHARE = 0.5;
+
+/**
+ * Balanse i husarbeid mot 50/50-idealet. Ren funksjon — teller loggede
+ * oppgaver gjort av meg vs. andre (partner). Returnerer null under et minimum
+ * (for få oppgaver til å si noe meningsfullt).
+ */
+export function computeChoreBalance(
+	myCount: number,
+	otherCount: number,
+	minTotal = 4
+): ChoreBalance | null {
+	const total = myCount + otherCount;
+	if (total < minTotal) return null;
+	const myShare = myCount / total;
+	return {
+		myCount,
+		otherCount,
+		total,
+		myShare,
+		deviation: myShare - CHORE_IDEAL_SHARE
+	};
+}
+
+/**
+ * Alvorlighetsgrad for husarbeids-skjevhet. Symmetrisk på avstand fra 50 % —
+ * både å bære for mye og for lite er verdt å vite. ±10pp balansert, ±20pp low,
+ * ±30pp medium, over det high.
+ */
+export function classifyChoreBalance(balance: ChoreBalance): SignalSeverity {
+	// Rund bort flyttallsstøy (0.8 − 0.5 = 0.3000…04) før terskelsjekk
+	const gap = Math.round(Math.abs(balance.deviation) * 100) / 100;
+	if (gap <= 0.1) return 'info';
+	if (gap <= 0.2) return 'low';
+	if (gap <= 0.3) return 'medium';
+	return 'high';
+}
+
+/* ── Budsjettpress per kategori ─────────────────────────── */
+
+export interface BudgetProjection {
+	/** Forbruk hittil i måneden */
+	spent: number;
+	/** Månedstaket */
+	cap: number;
+	/** Framskrevet månedsslutt basert på forbruk hittil og dag-i-måneden */
+	projected: number;
+	/** Allerede over taket */
+	exceeded: boolean;
+	/** På vei over (framskrevet > tak) selv om ikke over ennå */
+	onTrackToExceed: boolean;
+}
+
+/**
+ * Framskriv månedsforbruk i en kategori mot taket. `dayOfMonth`/`daysInMonth`
+ * gir lineær pace-projeksjon — «du har brukt 800 av 2000 på kafé, men er bare
+ * 10 dager inn → ligger an til 2400».
+ */
+export function projectBudget(
+	spent: number,
+	cap: number,
+	dayOfMonth: number,
+	daysInMonth: number
+): BudgetProjection {
+	const safeDay = Math.max(1, Math.min(dayOfMonth, daysInMonth));
+	const projected = Math.round((spent / safeDay) * daysInMonth);
+	return {
+		spent: Math.round(spent),
+		cap,
+		projected,
+		exceeded: spent > cap,
+		onTrackToExceed: projected > cap
+	};
+}
+
+/** Alvorlighetsgrad for budsjettpress: over taket = high, på vei over = medium. */
+export function classifyBudgetPressure(p: BudgetProjection): SignalSeverity {
+	if (p.exceeded) return 'high';
+	if (p.onTrackToExceed) return 'medium';
+	// Nær grensen (framskrevet ≥ 85 % av taket) → low
+	if (p.cap > 0 && p.projected >= p.cap * 0.85) return 'low';
+	return 'info';
+}
+
 /* ── Hvilepuls-forhøyning ───────────────────────────────── */
 
 /**
@@ -116,6 +212,8 @@ export interface ObservedBehaviorInputs {
 	floker?: { active: number; open: number; stillestaaende?: FlokeStatus[] } | null;
 	/** Åpne løkker: uavsjekkede innboks-punkter (tapper energi så lenge de er åpne) */
 	aapneLokker?: { inbox: number } | null;
+	/** Husarbeid-balanse siste to uker (mot 50/50-idealet) */
+	choreBalance?: ChoreBalance | null;
 }
 
 function formatHoursShort(h: number): string {
@@ -191,6 +289,16 @@ export function buildObservedBehaviorLines(inputs: ObservedBehaviorInputs): stri
 
 	if (inputs.aapneLokker && inputs.aapneLokker.inbox > 0) {
 		lines.push(`- Åpne løkker: ${inputs.aapneLokker.inbox} i innboksen.`);
+	}
+
+	const cb = inputs.choreBalance;
+	if (cb) {
+		const mine = Math.round(cb.myShare * 100);
+		const andre = 100 - mine;
+		let tail = ' — jevnt fordelt';
+		if (cb.deviation > 0.1) tail = ' — du bærer mer enn halvparten';
+		else if (cb.deviation < -0.1) tail = ' — partner bærer mer enn halvparten';
+		lines.push(`- Husarbeid siste to uker: du ${mine} %, partner ${andre} % (ideal 50/50)${tail}.`);
 	}
 
 	return lines;

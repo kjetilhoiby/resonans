@@ -81,7 +81,11 @@ Spond-aktiviteter synket nattlig. Familiemedlemmer med relasjoner og Spond-mappi
 Daglig selvinnsjekk (humør, energi, overskudd). Parsjekk med partner (synkronisert reveal). Refleksjonssynteser. Signaler for mental helse-trend. **Livskompasset** legger en ukentlig (helg) verdi-akse over dette: ACT-basert scoring av livets verdiområder på to akser — viktighet og ukens samsvar — der gapet mellom dem er det chatten tar tak i.
 
 ### Hjem
-Smarte enheter (strømmålere, IoT). Rutiner og prosedyrer. Prosjektsporing.
+Smarte enheter (strømmålere, IoT). Rutiner og prosedyrer. Prosjektsporing. Husarbeid
+(apparat-sykluser → gjøremål, chore-budsjett). **Balansen i husarbeid mellom partnere har
+ett fast ideal: 50/50** — ingen forhandlede kvoter. Loggede oppgaver attribueres til hvem
+som gjorde dem, og avvik fra 50 % (i begge retninger) er verdt å speile. Den fysiske
+oppgaven er «hjem», men fordelingen er en relasjons-/familiesak.
 
 ### Jobb
 Fokusøkter, quick wins, oppgavesporing. Integrert med ukeplanen.

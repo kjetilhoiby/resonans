@@ -1,7 +1,8 @@
 import { db } from '$lib/db';
-import { checklists, checklistItems } from '$lib/db/schema';
+import { checklists, checklistItems, sensors, sensorEvents } from '$lib/db/schema';
 import { and, eq, gte, sql, asc, desc } from 'drizzle-orm';
 import { choresForAppliance, computeChoreStats, type ChoreStats } from '$lib/domains/home/appliance-chores';
+import { computeChoreBalance, type ChoreBalance } from '$lib/domain/observed-behavior';
 import { dayContextForDate } from '$lib/server/iso-week';
 
 /** Context-nøkkel for den ene husarbeid-lista per bruker (chores-view på hjem). */
@@ -114,6 +115,72 @@ export async function getChoreStats(userId: string, windowDays = 7): Promise<Cho
 			)
 		);
 	return computeChoreStats(rows, windowDays);
+}
+
+/* ── Husarbeid-balanse (hvem gjør hva, mot 50/50) ───────── */
+
+/** Sensor for chat-loggede husarbeids-oppgaver med attribusjon (hvem gjorde den). */
+async function ensureChoreLogSensor(userId: string) {
+	const existing = await db.query.sensors.findFirst({
+		where: and(eq(sensors.userId, userId), eq(sensors.provider, 'chore_log'))
+	});
+	if (existing) return existing;
+	const [created] = await db
+		.insert(sensors)
+		.values({ userId, provider: 'chore_log', type: 'manual_log', subtype: 'chore', name: 'Husarbeid', isActive: true, config: {} })
+		.returning();
+	return created;
+}
+
+/**
+ * Logg en gjennomført husarbeids-oppgave med attribusjon. Skrives som
+ * `chore_done`-event — egen kilde for balanse, uavhengig av det single-user
+ * chore-budsjettet (metadata.chore på checklist-items).
+ */
+export async function logChore(
+	userId: string,
+	args: { task: string; doneBy: 'meg' | 'partner'; minutes?: number; at?: Date }
+): Promise<void> {
+	const sensor = await ensureChoreLogSensor(userId);
+	await db.insert(sensorEvents).values({
+		userId,
+		sensorId: sensor.id,
+		eventType: 'activity',
+		dataType: 'chore_done',
+		timestamp: args.at ?? new Date(),
+		data: {
+			task: args.task,
+			doneBy: args.doneBy,
+			...(typeof args.minutes === 'number' ? { minutes: args.minutes } : {})
+		},
+		metadata: { manual: true }
+	});
+}
+
+/**
+ * Balanse i husarbeid siste `windowDays` dager, mot 50/50-idealet.
+ * Teller `chore_done`-events per part. Null under minimum (for få oppgaver).
+ */
+export async function readChoreBalance(userId: string, windowDays = 14): Promise<ChoreBalance | null> {
+	const cutoff = new Date(Date.now() - windowDays * 86_400_000);
+	const rows = await db
+		.select({ data: sensorEvents.data })
+		.from(sensorEvents)
+		.where(
+			and(
+				eq(sensorEvents.userId, userId),
+				eq(sensorEvents.dataType, 'chore_done'),
+				gte(sensorEvents.timestamp, cutoff)
+			)
+		);
+	let myCount = 0;
+	let otherCount = 0;
+	for (const row of rows) {
+		const doneBy = (row.data as { doneBy?: string } | null)?.doneBy;
+		if (doneBy === 'partner') otherCount += 1;
+		else myCount += 1; // default/«meg»
+	}
+	return computeChoreBalance(myCount, otherCount);
 }
 
 export interface PendingChore {
