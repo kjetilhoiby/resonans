@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+	aggregateParentTime,
 	buildObservedBehaviorLines,
 	classifyBudgetPressure,
 	classifyChoreBalance,
@@ -7,8 +8,11 @@ import {
 	classifyFlokeStagnation,
 	classifyFollowThrough,
 	classifyNapLoad,
+	classifyMoodTrend,
 	classifyRestingHrElevation,
 	computeChoreBalance,
+	computeMoodTrend,
+	formatParentTimeDuration,
 	projectBudget
 } from './observed-behavior';
 
@@ -138,6 +142,41 @@ describe('buildObservedBehaviorLines', () => {
 	});
 });
 
+describe('computeMoodTrend + classifyMoodTrend', () => {
+	it('retning: nedgang/bedring/stabil rundt ±0,4', () => {
+		expect(computeMoodTrend(3.0, 3.2).direction).toBe('stabil');
+		expect(computeMoodTrend(2.5, 3.5).direction).toBe('nedgang');
+		expect(computeMoodTrend(4.0, 3.2).direction).toBe('bedring');
+	});
+
+	it('asymmetrisk severity — bare nedgang hever, bedring er info', () => {
+		expect(classifyMoodTrend(computeMoodTrend(4.2, 3.0))).toBe('info'); // bedring
+		expect(classifyMoodTrend(computeMoodTrend(3.2, 3.0))).toBe('info'); // stabil
+		expect(classifyMoodTrend(computeMoodTrend(3.4, 3.9))).toBe('low'); // −0,5
+		expect(classifyMoodTrend(computeMoodTrend(3.0, 3.9))).toBe('medium'); // −0,9
+		expect(classifyMoodTrend(computeMoodTrend(2.5, 3.9))).toBe('high'); // −1,4
+	});
+
+	it('lavt absolutt nivå (≤2) løfter minst til medium', () => {
+		// liten nedgang, men nivået er lavt → medium i stedet for low
+		expect(classifyMoodTrend(computeMoodTrend(1.8, 2.3))).toBe('medium');
+		// stabil, men lavt nivå → medium i stedet for info
+		expect(classifyMoodTrend(computeMoodTrend(1.9, 2.0))).toBe('medium');
+	});
+
+	it('OBSERVERT ATFERD-linje kun ved endring, med varm hale ved nedgang', () => {
+		const ned = buildObservedBehaviorLines({ moodTrend: computeMoodTrend(2.5, 3.5) });
+		expect(ned[0]).toContain('nedgang');
+		expect(ned[0]).toContain('verdt å høre hvordan det står til');
+
+		const opp = buildObservedBehaviorLines({ moodTrend: computeMoodTrend(4.0, 3.2) });
+		expect(opp[0]).toContain('bedring');
+
+		// stabil → ingen linje
+		expect(buildObservedBehaviorLines({ moodTrend: computeMoodTrend(3.0, 3.1) })).toEqual([]);
+	});
+});
+
 describe('computeChoreBalance + classifyChoreBalance', () => {
 	it('regner andel mot 50/50 og signert avvik', () => {
 		const b = computeChoreBalance(13, 7)!;
@@ -228,5 +267,55 @@ describe('floke-stagnasjon (knute-risiko)', () => {
 		expect(classifyFlokeLoad([fersk])).toBe('info');
 		expect(classifyFlokeLoad([fersk, stille])).toBe('medium');
 		expect(classifyFlokeLoad([fersk, stille, knute])).toBe('high');
+	});
+});
+
+describe('aggregateParentTime', () => {
+	it('summerer minutter per barn og sorterer lavest først', () => {
+		const r = aggregateParentTime([
+			{ childName: 'Emma', minutes: 30 },
+			{ childName: 'Noah', minutes: 90 },
+			{ childName: 'Emma', minutes: 45 }
+		]);
+		expect(r).toEqual([
+			{ childName: 'Emma', minutes: 75, hours: 1.3 },
+			{ childName: 'Noah', minutes: 90, hours: 1.5 }
+		]);
+	});
+
+	it('ignorerer tomme navn og ikke-positive varigheter', () => {
+		const r = aggregateParentTime([
+			{ childName: '', minutes: 30 },
+			{ childName: 'Noah', minutes: 0 },
+			{ childName: 'Emma', minutes: -10 },
+			{ childName: 'Emma', minutes: 60 }
+		]);
+		expect(r).toEqual([{ childName: 'Emma', minutes: 60, hours: 1 }]);
+	});
+});
+
+describe('formatParentTimeDuration', () => {
+	it('viser minutter under en time, timer med komma over', () => {
+		expect(formatParentTimeDuration(45)).toBe('45 min');
+		expect(formatParentTimeDuration(60)).toBe('1t');
+		expect(formatParentTimeDuration(90)).toBe('1,5t');
+		expect(formatParentTimeDuration(180)).toBe('3t');
+	});
+});
+
+describe('buildObservedBehaviorLines — foreldretid', () => {
+	it('rendrer foreldretid-linje med barn og varighet', () => {
+		const lines = buildObservedBehaviorLines({
+			parentTime: [
+				{ childName: 'Emma', minutes: 45, hours: 0.8 },
+				{ childName: 'Noah', minutes: 120, hours: 2 }
+			]
+		});
+		expect(lines).toContain('- Foreldretid siste uke: Emma 45 min, Noah 2t.');
+	});
+
+	it('ingen foreldretid → ingen linje', () => {
+		const lines = buildObservedBehaviorLines({ parentTime: [] });
+		expect(lines.some((l) => l.includes('Foreldretid'))).toBe(false);
 	});
 });

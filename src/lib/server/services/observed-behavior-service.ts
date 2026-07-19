@@ -6,15 +6,18 @@
 
 import { sql, and, desc, eq, gte } from 'drizzle-orm';
 import { db, rowsOf } from '$lib/db';
-import { domainSignals, reflections } from '$lib/db/schema';
+import { domainSignals, reflections, sensorEvents } from '$lib/db/schema';
 import { listSleepGoals, readSleepNights } from '$lib/server/integrations/sleep-goals';
 import { readChoreBalance } from '$lib/server/services/chore-service';
+import { readParentTimeByChild } from '$lib/server/services/parent-time-service';
 import { pairNapsWithPriorNights, type NapWithPriorNight } from '$lib/domain/sleep-goals';
 import {
 	buildObservedBehaviorLines,
 	classifyFlokeStagnation,
+	computeMoodTrend,
 	type FlokeStatus,
 	type FollowThroughCounts,
+	type MoodTrend,
 	type ObservedBehaviorInputs
 } from '$lib/domain/observed-behavior';
 
@@ -147,12 +150,44 @@ export async function collectFlokeStatus(userId: string, now = new Date()): Prom
 	});
 }
 
+/**
+ * Humør-trend fra egenfrekvens-checkins: snitt `level` (1–5) siste 7 dager mot
+ * baseline (nettene 8–28 dager tilbake). Null uten nok checkins (≥2 i hvert vindu).
+ */
+export async function readMoodTrend(userId: string, now = new Date()): Promise<MoodTrend | null> {
+	const windowStart = new Date(now.getTime() - 7 * 86_400_000);
+	const baselineStart = new Date(now.getTime() - 28 * 86_400_000);
+	const rows = await db
+		.select({ timestamp: sensorEvents.timestamp, data: sensorEvents.data })
+		.from(sensorEvents)
+		.where(
+			and(
+				eq(sensorEvents.userId, userId),
+				eq(sensorEvents.dataType, 'egenfrekvens_checkin'),
+				gte(sensorEvents.timestamp, baselineStart)
+			)
+		);
+
+	const recent: number[] = [];
+	const baseline: number[] = [];
+	for (const row of rows) {
+		const level = Number((row.data as { level?: number } | null)?.level);
+		if (!Number.isFinite(level) || level <= 0) continue;
+		if (row.timestamp >= windowStart) recent.push(level);
+		else baseline.push(level);
+	}
+	if (recent.length < 2 || baseline.length < 2) return null;
+
+	const avg = (v: number[]) => v.reduce((s, x) => s + x, 0) / v.length;
+	return computeMoodTrend(avg(recent), avg(baseline));
+}
+
 /** Alt observert samlet — grunnlaget for både prompt-blokk og egenfrekvens-speiling. */
 export async function collectObservedBehaviorInputs(
 	userId: string,
 	now = new Date()
 ): Promise<ObservedBehaviorInputs> {
-	const [followThroughCounts, naps, proactivity, routineSignal, lastDump, flokeStatus, choreBalance] = await Promise.all([
+	const [followThroughCounts, naps, proactivity, routineSignal, lastDump, flokeStatus, choreBalance, moodTrend, parentTime] = await Promise.all([
 		collectFollowThrough7d(userId, now),
 		collectNaps7d(userId, now),
 		collectProactivity7d(userId, now),
@@ -173,7 +208,11 @@ export async function collectObservedBehaviorInputs(
 		// Floker fra hodedump som fortsatt er åpne, med bevegelses-status
 		collectFlokeStatus(userId, now),
 		// Husarbeid-balanse siste to uker (mot 50/50)
-		readChoreBalance(userId, 14)
+		readChoreBalance(userId, 14),
+		// Humør-/egenfrekvens-trend (fersk uke mot baseline)
+		readMoodTrend(userId, now),
+		// Foreldretid per barn siste uke
+		readParentTimeByChild(userId, 7)
 	]);
 
 	// Åpne løkker: uavsjekkede innboks-punkter (VISION: «Løkker, floker og knuter»)
@@ -215,7 +254,9 @@ export async function collectObservedBehaviorInputs(
 					}
 				: null,
 		aapneLokker: openInbox > 0 ? { inbox: openInbox } : null,
-		choreBalance
+		choreBalance,
+		moodTrend,
+		parentTime
 	};
 }
 

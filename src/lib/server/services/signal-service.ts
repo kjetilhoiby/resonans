@@ -24,7 +24,8 @@ import {
 } from '$lib/domain/observed-behavior';
 import { readCategorySpend } from '$lib/server/goal-progress';
 import { readChoreBalance } from '$lib/server/services/chore-service';
-import { classifyChoreBalance } from '$lib/domain/observed-behavior';
+import { readMoodTrend } from '$lib/server/services/observed-behavior-service';
+import { classifyChoreBalance, classifyMoodTrend } from '$lib/domain/observed-behavior';
 import { CATEGORIES } from '$lib/integrations/transaction-categories-client';
 
 type Severity = 'info' | 'low' | 'medium' | 'high';
@@ -1616,6 +1617,48 @@ async function produceChoreBalance14d(userId: string, now: Date) {
 	return myShare;
 }
 
+/**
+ * Egenfrekvens-trend siste uke mot baseline (8–28 dager). Mental-helse-signal:
+ * nedgang i selvrapportert nivå hever severity (asymmetrisk), lavt absolutt
+ * nivå løfter minst til medium. Null uten nok checkins.
+ */
+async function produceEgenfrekvensTrend7d(userId: string, now: Date) {
+	const trend = await readMoodTrend(userId, now);
+	if (!trend) return null;
+
+	await ensureSignalContract({
+		signalType: 'egenfrekvens_trend_7d',
+		ownerDomain: 'health',
+		allowedConsumerDomains: ['health', 'home', 'relationship'],
+		description:
+			'Trend i egenfrekvens-nivå (1–5) siste uke mot baseline (8–28 dager). Nedgang = mental-helse-varsel; asymmetrisk severity, lavt absolutt nivå løfter minst til medium.'
+	});
+
+	const severity = classifyMoodTrend(trend);
+
+	await upsertDomainSignal({
+		signalType: 'egenfrekvens_trend_7d',
+		ownerDomain: 'health',
+		userId,
+		valueNumber: trend.recentAvg,
+		valueText: `${trend.direction}: ${trend.recentAvg} mot baseline ${trend.baselineAvg}`,
+		valueBool: trend.direction === 'nedgang',
+		severity,
+		confidence: 0.75,
+		windowStart: daysAgo(now, 7),
+		windowEnd: now,
+		observedAt: now,
+		context: {
+			recentAvg: trend.recentAvg,
+			baselineAvg: trend.baselineAvg,
+			delta: trend.delta,
+			direction: trend.direction
+		}
+	});
+
+	return trend.delta;
+}
+
 export async function runDomainSignalProducers(now: Date = new Date()) {
 	const allUsers = await db.select({ id: users.id, partnerUserId: users.partnerUserId }).from(users);
 
@@ -1645,7 +1688,8 @@ export async function runDomainSignalProducers(now: Date = new Date()) {
 		flokeStagnation: 0,
 		restingHrElevated7d: 0,
 		categoryBudgetPressure: 0,
-		choreBalance14d: 0
+		choreBalance14d: 0,
+		egenfrekvensTrend7d: 0
 	};
 	const errors: Array<{ userId: string; error: string }> = [];
 
@@ -1738,6 +1782,12 @@ export async function runDomainSignalProducers(now: Date = new Date()) {
 			if (choreBalance14d !== null) {
 				produced += 1;
 				producerBreakdown.choreBalance14d += 1;
+			}
+
+			const egenfrekvensTrend7d = await produceEgenfrekvensTrend7d(user.id, now);
+			if (egenfrekvensTrend7d !== null) {
+				produced += 1;
+				producerBreakdown.egenfrekvensTrend7d += 1;
 			}
 
 			const effortVsThreshold = await produceHealthEffortVsThreshold(user.id, now);

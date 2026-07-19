@@ -31,6 +31,10 @@ export const createGoalTool = {
 			.string()
 			.optional()
 			.describe('Kun for metricId=category_spend: hvilken forbrukskategori taket gjelder (canonical CategoryId, f.eks. kafe_og_restaurant, medier_og_underholdning, barn, reise, klaer_og_utstyr).'),
+		childName: z
+			.string()
+			.optional()
+			.describe('Kun for metricId=parent_time: hvilket barn timene gjelder (fornavn). targetValue = timer per uke.'),
 		goalKind: z.enum(['level', 'change', 'trajectory']).optional().describe('Hvordan målet evalueres i dashboardet'),
 		goalWindow: z
 			.enum(['week', 'month', 'quarter', 'year', 'custom'])
@@ -52,6 +56,7 @@ export const createGoalTool = {
 		endDate?: string;
 		metricId?: string;
 		spendCategory?: string;
+		childName?: string;
 		goalKind?: 'level' | 'change' | 'trajectory';
 		goalWindow?: 'week' | 'month' | 'quarter' | 'year' | 'custom';
 		targetValue?: number;
@@ -77,6 +82,7 @@ export const createGoalTool = {
 				endDate: args.endDate,
 				metricId: args.metricId,
 				spendCategory: args.spendCategory,
+				childName: args.childName,
 				goalKind: args.goalKind,
 				goalWindow: args.goalWindow,
 				targetValue: args.targetValue,

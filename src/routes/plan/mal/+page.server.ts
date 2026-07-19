@@ -19,6 +19,7 @@ import {
 	readScreenTimeGoalMetadata
 } from '$lib/server/integrations/screen-time-goals';
 import { readSleepNights } from '$lib/server/integrations/sleep-goals';
+import { readParentTimeForChild } from '$lib/server/services/parent-time-service';
 import { evaluateSleepGoal, readSleepGoalMetadata, type SleepGoalEval } from '$lib/domain/sleep-goals';
 import type { ScreenTimeGoalEval } from '$lib/components/domain/plan/types';
 import type { PageServerLoad } from './$types';
@@ -126,7 +127,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 		'weekly_effort',
 		'fat_mass',
 		'muscle_mass',
-		'category_spend'
+		'category_spend',
+		'parent_time'
 	]);
 	let metricEvalMap: Record<string, MetricGoalEval> = {};
 	const metricGoals = userGoals.filter((g) => {
@@ -161,6 +163,19 @@ export const load: PageServerLoad = async ({ locals }) => {
 				[...spendCategories].map(
 					async (cat) => [cat, await readCategorySpend(userId, cat)] as const
 				)
+			)
+		);
+
+		// Foreldretid: hvert distinkt barn leses maks én gang (timer siste uke)
+		const childNames = new Set(
+			metricGoals
+				.filter((g) => (g.metadata as any).metricId === 'parent_time')
+				.map((g) => (g.metadata as any).childName)
+				.filter((c): c is string => typeof c === 'string' && c.length > 0)
+		);
+		const parentTimeMap = new Map(
+			await Promise.all(
+				[...childNames].map(async (name) => [name, await readParentTimeForChild(userId, name)] as const)
 			)
 		);
 
@@ -201,6 +216,12 @@ export const load: PageServerLoad = async ({ locals }) => {
 					current = spend?.currentMonth ?? null;
 					if (spend?.threeMonthAvg != null) contextLabel = `3-mnd snitt: ${spend.threeMonthAvg} kr/mnd`;
 					else contextLabel = 'hittil i måneden';
+					break;
+				}
+				case 'parent_time': {
+					const child = meta.childName as string | undefined;
+					current = child ? (parentTimeMap.get(child) ?? null) : null;
+					contextLabel = child ? `med ${child}, siste uke` : 'siste uke';
 					break;
 				}
 			}

@@ -226,6 +226,20 @@ export const VISUALIZATION_SPECS: Record<MetricId, VisualizationSpec> = {
 		}
 	},
 
+	parent_time: {
+		metricId: 'parent_time',
+		semantic: 'higher',
+		timeModel: 'accumulated',
+		thresholdMode: 'at_least',
+		direction: 'higher_is_better',
+		tolerancePct: 0.1,
+		contexts: {
+			S: { component: 'target_zone_bar', fallback: 'dash' },
+			M: { component: 'target_zone_bar', fallback: 'dash' },
+			L: { component: 'comparison_trend', fallback: 'skeleton' }
+		}
+	},
+
 	running_5k_time: {
 		metricId: 'running_5k_time',
 		semantic: 'lower',
