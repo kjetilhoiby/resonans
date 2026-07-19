@@ -5,7 +5,7 @@
   egne seksjoner (DEL B).
 -->
 <script lang="ts">
-	import { MEAL_TYPES, PANTRY_LOCATIONS, type MealType, type PantryLocation } from '$lib/domains/food';
+	import { MEAL_TYPES, PANTRY_LOCATIONS, FAMILY_DEFAULT_SERVINGS, type MealType, type PantryLocation } from '$lib/domains/food';
 	import SectionCard from '../ui/SectionCard.svelte';
 	import SectionLabel from '../ui/SectionLabel.svelte';
 	import MatplanSession from './food/MatplanSession.svelte';
@@ -33,6 +33,7 @@
 		quantity: string | null;
 		unit: string | null;
 		expiresAt: string | null;
+		isStaple?: boolean;
 	}
 
 	interface Props {
@@ -41,6 +42,7 @@
 		pantry: PantryRow[];
 		expiringSoon: PantryRow[];
 		shoppingList?: FoodShoppingListSummary | null;
+		groceryBudgetWeekly?: number | null;
 		nextWeek?: {
 			weekContext: string;
 			mealPlans: MealPlanRow[];
@@ -50,7 +52,47 @@
 		onRefresh?: () => void;
 	}
 
-	let { weekContext, mealPlans, pantry, expiringSoon, shoppingList = null, nextWeek, onOpenChat, onRefresh }: Props = $props();
+	let { weekContext, mealPlans, pantry, expiringSoon, shoppingList = null, groceryBudgetWeekly = null, nextWeek, onOpenChat, onRefresh }: Props = $props();
+
+	// Lokal kopi av lageret så staple-stjerner kan toggles optimistisk
+	let pantryLocal = $state<PantryRow[]>([...pantry]);
+	$effect(() => {
+		pantryLocal = [...pantry];
+	});
+
+	let budgetEditing = $state(false);
+	let budgetInput = $state(groceryBudgetWeekly != null ? String(groceryBudgetWeekly) : '');
+	let budgetSaved = $state<number | null>(groceryBudgetWeekly);
+
+	let budgetError = $state(false);
+
+	async function saveBudget() {
+		const value = budgetInput.trim() ? Number(budgetInput.replace(',', '.')) : null;
+		if (value !== null && (!Number.isFinite(value) || value < 0)) return;
+		budgetError = false;
+		try {
+			const res = await fetch('/api/food/settings', {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ groceryBudgetWeekly: value })
+			});
+			if (!res.ok) throw new Error('save_failed');
+			budgetSaved = value;
+			budgetEditing = false;
+		} catch {
+			budgetError = true;
+		}
+	}
+
+	async function toggleStaple(item: PantryRow) {
+		const next = !item.isStaple;
+		pantryLocal = pantryLocal.map((p) => (p.id === item.id ? { ...p, isStaple: next } : p));
+		await fetch('/api/food/pantry', {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ id: item.id, isStaple: next })
+		});
+	}
 
 	let matplanOpen = $state(false);
 	let listSheetOpen = $state(false);
@@ -84,7 +126,7 @@
 
 	const grouped = $derived.by(() => {
 		const out: Record<PantryLocation, PantryRow[]> = { pantry: [], fridge: [], freezer: [] };
-		for (const item of pantry) out[item.location].push(item);
+		for (const item of pantryLocal) out[item.location].push(item);
 		return out;
 	});
 
@@ -193,7 +235,7 @@
 							{#each day.plans as plan}
 								<span class="fd-meal">
 									{MEAL_TYPES[plan.mealType].emoji} {plan.mealTitle ?? '—'}
-									{#if plan.servings && plan.servings !== 5}<span class="fd-servings">×{plan.servings}</span>{/if}
+									{#if plan.servings && plan.servings !== FAMILY_DEFAULT_SERVINGS}<span class="fd-servings">×{plan.servings}</span>{/if}
 								</span>
 							{/each}
 						</span>
@@ -220,6 +262,7 @@
 	<!-- Lager -->
 	<section>
 		<SectionLabel tag="h3">Lager</SectionLabel>
+		<p class="fd-staple-hint">⭐ = fast vare — legges automatisk på handlelista når den er tom.</p>
 		<div class="fd-locations">
 			{#each Object.entries(PANTRY_LOCATIONS) as [loc, meta]}
 				<div class="fd-location">
@@ -229,11 +272,20 @@
 					{:else}
 						<ul>
 							{#each grouped[loc as PantryLocation] as item}
-								<li>
-									{item.name}
-									{#if item.quantity}
-										<span class="fd-muted">({item.quantity}{item.unit ? ' ' + item.unit : ''})</span>
-									{/if}
+								<li class="fd-pantry-item">
+									<button
+										class="fd-staple"
+										class:active={item.isStaple}
+										onclick={() => toggleStaple(item)}
+										aria-label={item.isStaple ? `Fjern ${item.name} som fast vare` : `Gjør ${item.name} til fast vare`}
+										data-track="matplan:fast-vare"
+									>{item.isStaple ? '⭐' : '☆'}</button>
+									<span>
+										{item.name}
+										{#if item.quantity}
+											<span class="fd-muted">({item.quantity}{item.unit ? ' ' + item.unit : ''})</span>
+										{/if}
+									</span>
 								</li>
 							{/each}
 						</ul>
@@ -241,6 +293,32 @@
 				</div>
 			{/each}
 		</div>
+	</section>
+
+	<!-- Ukebudsjett for dagligvarer -->
+	<section class="fd-budget">
+		{#if budgetEditing}
+			<div class="fd-budget-edit">
+				<span class="fd-budget-label">Ukebudsjett dagligvarer (kr):</span>
+				<input
+					class="fd-budget-input"
+					bind:value={budgetInput}
+					inputmode="numeric"
+					placeholder="f.eks. 2500"
+					onkeydown={(e) => e.key === 'Enter' && saveBudget()}
+					data-track="matplan:ukebudsjett"
+				/>
+				<button class="fd-budget-save" onclick={saveBudget} data-track="matplan:lagre-budsjett">Lagre</button>
+			</div>
+			{#if budgetError}<p class="fd-budget-error">Klarte ikke lagre budsjettet. Prøv igjen.</p>{/if}
+		{:else}
+			<button class="fd-budget-row" onclick={() => { budgetInput = budgetSaved != null ? String(budgetSaved) : ''; budgetEditing = true; }} data-track="matplan:rediger-budsjett">
+				💰 Ukebudsjett dagligvarer:
+				{budgetSaved != null ? `${Math.round(budgetSaved).toLocaleString('no-NO')} kr` : 'ikke satt'}
+				<span class="fd-muted">✎</span>
+			</button>
+			<p class="fd-budget-hint">Brukes i dagligvaresignalet og mandagsoppsummeringen.</p>
+		{/if}
 	</section>
 </div>
 
@@ -288,7 +366,7 @@
 		line-height: 1.4;
 	}
 	.fd-cta {
-		background: var(--accent-bg, #5865c9);
+		background: var(--accent-primary);
 		color: #fff;
 		border: none;
 		border-radius: 12px;
@@ -382,7 +460,7 @@
 	.fd-link {
 		background: none;
 		border: none;
-		color: var(--accent-fg, #aab8ff);
+		color: var(--accent-light);
 		cursor: pointer;
 		font-size: 0.88rem;
 		padding: 0;
@@ -416,6 +494,75 @@
 	.fd-location li {
 		padding: 2px 0;
 		font-size: 0.86rem;
+	}
+	.fd-pantry-item {
+		display: flex;
+		align-items: baseline;
+		gap: 6px;
+	}
+	.fd-staple {
+		background: none;
+		border: none;
+		cursor: pointer;
+		font-size: 0.8rem;
+		padding: 0;
+		opacity: 0.5;
+	}
+	.fd-staple.active {
+		opacity: 1;
+	}
+	.fd-staple-hint {
+		margin: 0 0 8px;
+		font-size: 0.74rem;
+		color: var(--color-text-secondary, #888);
+	}
+
+	.fd-budget-row {
+		background: none;
+		border: none;
+		color: inherit;
+		cursor: pointer;
+		font-size: 0.88rem;
+		padding: 0;
+		text-align: left;
+	}
+	.fd-budget-hint {
+		margin: 4px 0 0;
+		font-size: 0.74rem;
+		color: var(--color-text-secondary, #888);
+	}
+	.fd-budget-error {
+		margin: 6px 0 0;
+		font-size: 0.78rem;
+		color: var(--error-text);
+	}
+	.fd-budget-edit {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex-wrap: wrap;
+	}
+	.fd-budget-label {
+		font-size: 0.85rem;
+	}
+	.fd-budget-input {
+		background: var(--input-bg, rgba(255, 255, 255, 0.05));
+		border: 1px solid var(--input-border, rgba(255, 255, 255, 0.12));
+		border-radius: 8px;
+		color: inherit;
+		padding: 8px 10px;
+		font-size: 0.88rem;
+		width: 110px;
+	}
+	.fd-budget-save {
+		background: color-mix(in srgb, var(--accent-light) 18%, transparent);
+		border: none;
+		border-radius: 8px;
+		color: var(--accent-light);
+		padding: 8px 14px;
+		font-size: 0.84rem;
+		font-weight: 600;
+		cursor: pointer;
 	}
 
 	.fd-sheet-body {

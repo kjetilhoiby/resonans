@@ -126,6 +126,7 @@ export interface FoodDashboardData {
 		quantity: string | null;
 		unit: string | null;
 		expiresAt: string | null;
+		isStaple?: boolean;
 	}>;
 	expiringSoon: Array<{
 		id: string;
@@ -136,6 +137,7 @@ export interface FoodDashboardData {
 		expiresAt: string | null;
 	}>;
 	shoppingList?: FoodShoppingListSummary | null;
+	groceryBudgetWeekly?: number | null;
 	nextWeek?: {
 		weekContext: string;
 		mealPlans: FoodDashboardData['mealPlans'];

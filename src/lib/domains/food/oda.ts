@@ -10,14 +10,15 @@ export type ShoppingListItemLike = {
 };
 
 /**
- * Normalisert varenavn for dedup og kvitteringsmatching:
- * lowercase, trimmet, uten parentes-innhold og mengdesuffiks.
- * Deles med DEL B slik at handleliste og kvitteringslinjer matcher likt.
+ * Normalisert varenavn for dedup og kvitteringsmatching: lowercase, trimmet,
+ * uten MENGDE-parenteser. Kun parenteser som inneholder sifre strippes —
+ * «kjøttdeig (400 g)» → «kjøttdeig», men «melk (laktosefri)» og
+ * «paprika (rød)» beholder kvalifikatoren og forblir distinkte varer.
  */
 export function normalizeIngredientName(name: string): string {
 	return name
 		.toLowerCase()
-		.replace(/\([^)]*\)/g, ' ') // «kjøttdeig (400 g)» → «kjøttdeig»
+		.replace(/\([^)]*\d[^)]*\)/g, ' ') // kun mengde-parenteser («(400 g)», «(2 stk)»)
 		.replace(/\s+/g, ' ')
 		.trim();
 }

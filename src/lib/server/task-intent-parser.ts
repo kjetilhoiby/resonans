@@ -1,7 +1,7 @@
 import { and, eq, ilike } from 'drizzle-orm';
 import { db } from '$lib/db';
 import { goals, meals, tasks } from '$lib/db/schema';
-import { detectMealPrefix, type MealType } from '$lib/domains/food';
+import { detectMealPrefix, FAMILY_DEFAULT_SERVINGS, type MealType } from '$lib/domains/food';
 import { parseTaskIntentWithLlmFallback } from '$lib/server/intent-llm-fallback';
 
 export type ActivityType =
@@ -130,9 +130,15 @@ function escapeLikePattern(value: string): string {
 
 // Finds an existing meal by title for the user; creates a bare meal row
 // (name-only, no recipe/instructions) if nothing matches. Returns the meal id.
-// Tries exact (case-insensitive) match first, then prefix, then substring —
-// only commits to a match when it's unambiguous.
-export async function findOrCreateMealId(userId: string, title: string): Promise<string | null> {
+// Default ('fuzzy', for sjekkliste-parsing): eksakt (case-insensitiv) match
+// først, så prefiks, så substring — commit kun ved entydig treff.
+// match: 'exact' (for eksplisitte navn fra manage_meal_plan/onsdagsøkta):
+// kun eksakt match — «Taco» skal ikke kobles til «Tacosuppe».
+export async function findOrCreateMealId(
+	userId: string,
+	title: string,
+	opts: { match?: 'fuzzy' | 'exact' } = {}
+): Promise<string | null> {
 	const trimmed = title.trim();
 	if (!trimmed) return null;
 	const safe = escapeLikePattern(trimmed);
@@ -147,15 +153,16 @@ export async function findOrCreateMealId(userId: string, title: string): Promise
 	};
 
 	const existing =
-		(await tryQuery(safe)) ??
-		(await tryQuery(`${safe}%`)) ??
-		(await tryQuery(`%${safe}%`));
+		opts.match === 'exact'
+			? await tryQuery(safe)
+			: ((await tryQuery(safe)) ?? (await tryQuery(`${safe}%`)) ?? (await tryQuery(`%${safe}%`)));
 
 	if (existing) return existing;
 
+	// Navn-bare måltider antas å mette familien (skala 1× i handlelisten).
 	const [created] = await db
 		.insert(meals)
-		.values({ userId, title: trimmed })
+		.values({ userId, title: trimmed, servings: FAMILY_DEFAULT_SERVINGS })
 		.returning({ id: meals.id });
 	return created?.id ?? null;
 }

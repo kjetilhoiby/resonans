@@ -2,15 +2,31 @@ import { describe, it, expect } from 'vitest';
 import { shouldAdoptItem, mealItemFieldsFor, dayDateFromContext } from './meal-plan-sync';
 
 describe('shouldAdoptItem', () => {
-	it('adopterer uavkrysset middagspunkt uten kobling', () => {
+	it('adopterer uavkrysset middagspunkt med samme tittel', () => {
 		expect(
-			shouldAdoptItem({ checked: false, text: 'middag: Taco', metadata: {} }, 'dinner')
+			shouldAdoptItem({ checked: false, text: 'middag: Taco', metadata: {} }, 'dinner', 'Taco')
 		).toBe(true);
+	});
+
+	it('adopterer med case-insensitiv tittelmatch', () => {
+		expect(
+			shouldAdoptItem({ checked: false, text: 'middag: taco', metadata: {} }, 'dinner', 'TACO')
+		).toBe(true);
+	});
+
+	it('adopterer ikke punkter med annen tittel — brukertekst skal aldri omskrives', () => {
+		expect(
+			shouldAdoptItem(
+				{ checked: false, text: 'middag: Fiskegrateng', metadata: {} },
+				'dinner',
+				'Taco'
+			)
+		).toBe(false);
 	});
 
 	it('adopterer ikke avkryssede punkter', () => {
 		expect(
-			shouldAdoptItem({ checked: true, text: 'middag: Taco', metadata: {} }, 'dinner')
+			shouldAdoptItem({ checked: true, text: 'middag: Taco', metadata: {} }, 'dinner', 'Taco')
 		).toBe(false);
 	});
 
@@ -18,21 +34,22 @@ describe('shouldAdoptItem', () => {
 		expect(
 			shouldAdoptItem(
 				{ checked: false, text: 'middag: Taco', metadata: { linkedMealPlanId: 'abc' } },
-				'dinner'
+				'dinner',
+				'Taco'
 			)
 		).toBe(false);
 	});
 
 	it('adopterer ikke punkter med annen måltidstype', () => {
 		expect(
-			shouldAdoptItem({ checked: false, text: 'frokost: Grøt', metadata: {} }, 'dinner')
+			shouldAdoptItem({ checked: false, text: 'frokost: Grøt', metadata: {} }, 'dinner', 'Grøt')
 		).toBe(false);
 	});
 
 	it('adopterer ikke punkter uten måltidsprefiks', () => {
-		expect(shouldAdoptItem({ checked: false, text: 'Handle mat', metadata: {} }, 'dinner')).toBe(
-			false
-		);
+		expect(
+			shouldAdoptItem({ checked: false, text: 'Handle mat', metadata: {} }, 'dinner', 'Taco')
+		).toBe(false);
 	});
 });
 

@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { mealPlans, meals, pantryItems } from '$lib/db/schema';
 import { and, eq, gte, lte, sql } from 'drizzle-orm';
-import { addDaysIso, datesForIsoWeek, isoWeekKeyForDate } from '$lib/server/iso-week';
+import { addDaysIso, datesForIsoWeek, isoWeekKeyForDate, osloTodayIso } from '$lib/server/iso-week';
 import { suggestWeekDinners, type SuggestibleMeal } from '$lib/domains/food/meal-suggestions';
 import { getWeekShoppingList } from '$lib/server/services/shopping-list-service';
 import { getWeekMealPlansWithTitles } from '$lib/server/services/meal-plan-sync';
@@ -12,7 +12,7 @@ import { getWeekMealPlansWithTitles } from '$lib/server/services/meal-plan-sync'
 // Default-uke er NESTE uke (økta kjøres typisk onsdag for uka etter).
 export const GET: RequestHandler = async ({ url, locals }) => {
 	const userId = locals.userId;
-	const today = new Date().toISOString().slice(0, 10);
+	const today = osloTodayIso();
 	const weekContext = url.searchParams.get('weekContext') ?? isoWeekKeyForDate(addDaysIso(today, 7));
 	const days = datesForIsoWeek(weekContext);
 	if (days.length === 0) return json({ error: 'Ugyldig weekContext' }, { status: 400 });

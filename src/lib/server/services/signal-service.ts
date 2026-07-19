@@ -6,7 +6,7 @@ import { buildEffortWeightInputs } from '$lib/server/health/effort-weight-data';
 import { getEnduranceWorkouts, getStrengthSessions } from '$lib/server/tracks/repository';
 import { getRecentRouteLabels } from '$lib/server/tracks/routes-repository';
 import { computeBalanceState } from '$lib/server/tracks/balance';
-import { queryCanonicalTransactions } from '$lib/server/integrations/categorized-events';
+import { getGroceryWeekSpend } from '$lib/server/services/grocery-insights';
 import { isoWeekKeyForDate } from '$lib/server/iso-week';
 import {
 	collectFlokeStatus,
@@ -167,7 +167,7 @@ async function ensureSignalContract(input: {
 		VALUES (
 			${input.signalType},
 			${input.ownerDomain},
-			${input.allowedConsumerDomains},
+			${`{${input.allowedConsumerDomains.join(',')}}`}::text[],
 			1,
 			'active',
 			${input.description},
@@ -470,34 +470,15 @@ async function produceEconomicsGrocerySpendWeekly(userId: string, now: Date) {
 	});
 
 	const weekStart = startOfIsoWeekUtc(now);
-	const baselineStart = daysAgo(weekStart, 28);
+	const { spend: spendWeekToDate, baselineWeeklyAvg, budgetWeekly, transactionCount } =
+		await getGroceryWeekSpend(userId, weekStart, now);
 
-	const [weekRows, baselineRows] = await Promise.all([
-		queryCanonicalTransactions({
-			userId,
-			from: weekStart,
-			to: now,
-			category: 'dagligvarer',
-			spendingOnly: true
-		}),
-		queryCanonicalTransactions({
-			userId,
-			from: baselineStart,
-			to: weekStart,
-			category: 'dagligvarer',
-			spendingOnly: true
-		})
-	]);
+	// Ukebudsjett (food_settings) trumfer historisk snitt som referanse når satt.
+	const referenceWeekly = budgetWeekly != null && budgetWeekly > 0 ? budgetWeekly : baselineWeeklyAvg;
 
-	const sumAbs = (rows: Array<{ amount: unknown }>) =>
-		rows.reduce((sum, row) => sum + Math.abs(Number(row.amount) || 0), 0);
-
-	const spendWeekToDate = sumAbs(weekRows);
-	const baselineWeeklyAvg = sumAbs(baselineRows) / 4;
-
-	// Prorate baseline mot hvor langt uka er kommet (minst én dag).
+	// Prorate referansen mot hvor langt uka er kommet (minst én dag).
 	const daysElapsed = Math.max(1, (now.getTime() - weekStart.getTime()) / 86400000);
-	const expectedToDate = baselineWeeklyAvg * (Math.min(7, daysElapsed) / 7);
+	const expectedToDate = referenceWeekly * (Math.min(7, daysElapsed) / 7);
 	const ratio = expectedToDate > 0 ? spendWeekToDate / expectedToDate : 1;
 	const severity = toSeverityFromRatio(ratio);
 	const pressureBand = severity === 'high' ? 'high' : severity === 'medium' ? 'medium' : 'low';
@@ -509,16 +490,18 @@ async function produceEconomicsGrocerySpendWeekly(userId: string, now: Date) {
 		valueNumber: ratio,
 		valueText: pressureBand,
 		severity,
-		confidence: baselineWeeklyAvg > 0 ? 0.85 : 0.4,
+		confidence: referenceWeekly > 0 ? 0.85 : 0.4,
 		windowStart: weekStart,
 		windowEnd: now,
 		observedAt: now,
 		context: {
 			spendWeekToDate,
 			baselineWeeklyAvg,
+			budgetWeekly,
+			referenceSource: budgetWeekly != null && budgetWeekly > 0 ? 'budget' : 'baseline',
 			expectedToDate,
 			ratio,
-			transactionCount: weekRows.length,
+			transactionCount,
 			weekContext: isoWeekKeyForDate(now.toISOString().slice(0, 10))
 		}
 	});

@@ -19,6 +19,10 @@
 	let newTitle = $state('');
 	let creating = $state(false);
 	let selected = $state<RecipeRow | null>(null);
+	let importOpen = $state(false);
+	let importUrl = $state('');
+	let importing = $state(false);
+	let importError = $state('');
 
 	onMount(load);
 
@@ -67,6 +71,33 @@
 		}
 	}
 
+	async function importFromUrl() {
+		const url = importUrl.trim();
+		if (!url || importing) return;
+		importing = true;
+		importError = '';
+		try {
+			const res = await fetch('/api/food/recipes/import', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ url })
+			});
+			const data = await res.json();
+			if (!res.ok) {
+				importError = data.error ?? 'Importen feilet.';
+				return;
+			}
+			recipes = [{ ...data.meal, timesPlanned: 0, lastPlannedDate: null }, ...recipes];
+			importUrl = '';
+			importOpen = false;
+			selected = data.meal; // åpne for gjennomsyn
+		} catch {
+			importError = 'Importen feilet. Prøv igjen.';
+		} finally {
+			importing = false;
+		}
+	}
+
 	function timeLabel(recipe: RecipeRow): string | null {
 		if (recipe.prepTimeMin == null && recipe.cookTimeMin == null) return null;
 		const total = (recipe.prepTimeMin ?? 0) + (recipe.cookTimeMin ?? 0);
@@ -111,6 +142,26 @@
 			</button>
 		{/if}
 	</div>
+
+	{#if importOpen}
+		<div class="recipes-import">
+			<input
+				class="recipes-create-input"
+				bind:value={importUrl}
+				placeholder="https://… (lenke til oppskrift)"
+				onkeydown={(e) => e.key === 'Enter' && importFromUrl()}
+				data-track="oppskrifter:import-url"
+			/>
+			<button class="recipes-create-btn" onclick={importFromUrl} disabled={importing} data-track="oppskrifter:importer">
+				{importing ? 'Henter…' : 'Importer'}
+			</button>
+		</div>
+		{#if importError}<p class="recipes-import-error">{importError}</p>{/if}
+	{:else}
+		<button class="recipes-import-toggle" onclick={() => (importOpen = true)} data-track="oppskrifter:vis-import">
+			✨ Importer oppskrift fra lenke
+		</button>
+	{/if}
 
 	{#if recipes.length > 6 || query}
 		<input
@@ -178,9 +229,25 @@
 		gap: 14px;
 		padding: 16px var(--page-px, 20px) 40px;
 	}
-	.recipes-create {
+	.recipes-create,
+	.recipes-import {
 		display: flex;
 		gap: 8px;
+	}
+	.recipes-import-toggle {
+		background: none;
+		border: none;
+		color: var(--color-text-secondary, #999);
+		cursor: pointer;
+		font-size: 0.8rem;
+		padding: 0;
+		text-align: left;
+		text-decoration: underline;
+	}
+	.recipes-import-error {
+		margin: 0;
+		color: var(--error-text);
+		font-size: 0.82rem;
 	}
 	.recipes-create-input,
 	.recipes-search {
@@ -193,10 +260,10 @@
 		font-size: 0.95rem;
 	}
 	.recipes-create-btn {
-		background: var(--accent-bg, rgba(124, 142, 245, 0.18));
+		background: color-mix(in srgb, var(--accent-light) 18%, transparent);
 		border: none;
 		border-radius: 12px;
-		color: var(--accent-fg, #aab8ff);
+		color: var(--accent-light);
 		padding: 0 18px;
 		font-size: 0.9rem;
 		font-weight: 600;

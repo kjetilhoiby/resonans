@@ -28,6 +28,15 @@ export function addDaysIso(isoDate: string, days: number): string {
 	return date.toISOString().slice(0, 10);
 }
 
+/**
+ * Dagens dato (YYYY-MM-DD) i Europe/Oslo — IKKE UTC. Bruk denne for alle
+ * «hvilken dag/uke er det nå»-beregninger: mellom midnatt og 01/02 norsk tid
+ * er UTC-datoen fortsatt i går, og uke-nøkler bommer med én uke på mandager.
+ */
+export function osloTodayIso(now = new Date()): string {
+	return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Oslo' }).format(now);
+}
+
 /** All 7 ISO dates (Mon–Sun) for an ISO week key like "2026-W31". */
 export function datesForIsoWeek(weekKey: string): string[] {
 	const match = weekKey.match(/^(\d{4})-W(\d{2})$/);

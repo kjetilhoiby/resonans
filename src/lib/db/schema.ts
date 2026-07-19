@@ -23,6 +23,7 @@ export const users = pgTable('users', {
 				egenfrekvensCheckin?: string[];
 				applianceCycleStart?: string[];
 				applianceCycleFinish?: string[];
+				groceryWeekly?: string[];
 			};
 		};
 		dailyCheckIn?: { enabled: boolean; time: string }; // format: "09:00"
@@ -43,6 +44,9 @@ export const users = pgTable('users', {
 		workoutImports?: { enabled: boolean };
 		applianceCycles?: { enabled: boolean; notifyStart?: boolean; notifyFinish?: boolean };
 		inactivityAlerts?: { enabled: boolean; daysThreshold: number };
+		// Ukentlig dagligvare-oppsummering (mandag): forbruk forrige uke vs. snitt/budsjett.
+		// Fraværende felt/enabled = på (opt-out); time default "09:00".
+		groceryWeekly?: { enabled?: boolean; time?: string };
 	}>(),
 	timezone: text('timezone').default('Europe/Oslo'),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -831,7 +835,7 @@ export const mealPlans = pgTable('meal_plans', {
 	mealType: text('meal_type').notNull(), // 'breakfast' | 'lunch' | 'dinner' | 'snack'
 	mealId: uuid('meal_id').references((): AnyPgColumn => meals.id, { onDelete: 'set null' }),
 	notes: text('notes'),
-	servings: integer('servings').default(2).notNull(),
+	servings: integer('servings').default(5).notNull(), // FAMILY_DEFAULT_SERVINGS — 2 voksne + 3 barn
 	photoUrl: text('photo_url'), // Cloudinary-URL for "what we ate"
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
@@ -852,11 +856,22 @@ export const pantryItems = pgTable('pantry_items', {
 	expiresAt: date('expires_at'),
 	addedAt: timestamp('added_at').defaultNow().notNull(),
 	lastUsedAt: timestamp('last_used_at'),
-	notes: text('notes')
+	notes: text('notes'),
+	// Fast vare — skal alltid finnes hjemme (frukt, grønt, nøtter til matpakkene).
+	// Tomme staples (quantity 0 / utgått) legges automatisk på ukas handleliste.
+	isStaple: boolean('is_staple').notNull().default(false)
 }, (table) => ({
 	idxPantryUserLocation: index('pantry_items_user_location_idx').on(table.userId, table.location),
 	idxPantryUserExpires: index('pantry_items_user_expires_idx').on(table.userId, table.expiresAt)
 }));
+
+// Matinnstillinger — én rad per bruker (ukebudsjett for dagligvarer m.m.)
+export const foodSettings = pgTable('food_settings', {
+	userId: text('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+	groceryBudgetWeekly: decimal('grocery_budget_weekly'),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+});
 
 // Handlelister — ett strukturert artefakt per (bruker, uke, kind). Genereres fra
 // ukens meal_plans minus pantry i «onsdagsøkta», og brukes som grunnlag for
@@ -919,7 +934,9 @@ export const lunchboxComponents = pgTable('lunchbox_components', {
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
 }, (table) => ({
-	idxUserKind: index('lunchbox_components_user_kind_idx').on(table.userId, table.kind, table.active)
+	idxUserKind: index('lunchbox_components_user_kind_idx').on(table.userId, table.kind, table.active),
+	// Må matche migrasjon 0039 — utelates den her, dropper drizzle push indeksen.
+	uniqUserName: uniqueIndex('lunchbox_components_user_name_idx').on(table.userId, sql`lower(${table.name})`)
 }));
 
 // Matpakke-historikk — hva som ble foreslått/pakket per barn per dag.

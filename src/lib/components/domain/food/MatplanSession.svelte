@@ -115,6 +115,10 @@
 					}
 				: d
 		);
+		closePicker();
+	}
+
+	function closePicker() {
 		pickerDayIndex = null;
 		pickerMode = 'replace';
 	}
@@ -122,7 +126,7 @@
 	function skipDay() {
 		if (pickerDayIndex === null) return;
 		days = days.map((d, i) => (i === pickerDayIndex ? { ...d, chosen: [], skipped: true } : d));
-		pickerDayIndex = null;
+		closePicker();
 	}
 
 	function removeMeal(dayIndex: number, mealIndex: number) {
@@ -133,13 +137,55 @@
 
 	function askAi() {
 		const date = pickerDayIndex !== null ? days[pickerDayIndex].date : null;
-		pickerDayIndex = null;
+		closePicker();
 		onclose();
 		onOpenChat?.(
 			date
 				? `Foreslå en middag for ${dayLabel(date)} (${date}) og legg den i ukemenyen.`
 				: 'Hjelp meg planlegge ukens middager.'
 		);
+	}
+
+	let aiLoading = $state(false);
+
+	// «Foreslå uka med AI» — GPT-forslag som tar hensyn til lager, historikk og
+	// variasjon. Overskriver dagens valg (hopp-over-dager beholdes).
+	async function aiSuggestWeek() {
+		if (aiLoading) return;
+		aiLoading = true;
+		error = '';
+		try {
+			const res = await fetch('/api/food/week-session/ai-suggest', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ weekContext })
+			});
+			if (!res.ok) {
+				const data = await res.json().catch(() => ({}));
+				error = data.error ?? 'AI-forslaget feilet. Prøv igjen.';
+				return;
+			}
+			const data = await res.json();
+			const byDate = new Map<string, { mealId: string | null; title: string; reason: string }>(
+				(data.days ?? [])
+					.filter((d: { suggestion: unknown }) => d.suggestion)
+					.map((d: { date: string; suggestion: { mealId: string | null; title: string; reason: string } }) => [d.date, d.suggestion])
+			);
+			days = days.map((day) => {
+				if (day.skipped) return day;
+				const suggestion = byDate.get(day.date);
+				if (!suggestion) return day;
+				return {
+					...day,
+					chosen: [{ mealId: suggestion.mealId ?? undefined, title: suggestion.title }],
+					suggestion: suggestion.mealId
+						? { mealId: suggestion.mealId, title: suggestion.title, reason: suggestion.reason }
+						: day.suggestion
+				};
+			});
+		} finally {
+			aiLoading = false;
+		}
 	}
 
 	async function saveAndBuildList() {
@@ -214,6 +260,9 @@
 			</div>
 		{:else if step === 1}
 			<p class="ms-hint">Forslagene er basert på favoritter, variasjon og det som ligger i skap og fryser. Tapp en dag for å bytte.</p>
+			<button class="ms-ai-btn" onclick={aiSuggestWeek} disabled={aiLoading} data-track="matplan:ai-foresla-uka">
+				{aiLoading ? '✨ Tenker…' : '✨ Foreslå uka med AI'}
+			</button>
 			<div class="ms-days">
 				{#each days as day, dayIndex (day.date)}
 					<div class="ms-day" class:skipped={day.skipped}>
@@ -293,7 +342,7 @@
 		onpick={pickMeal}
 		onskip={skipDay}
 		onaskai={askAi}
-		onclose={() => (pickerDayIndex = null)}
+		onclose={closePicker}
 	/>
 {/if}
 
@@ -345,7 +394,7 @@
 		background: rgba(255, 255, 255, 0.12);
 	}
 	.ms-dot.active {
-		background: var(--accent-fg, #7c8ef5);
+		background: var(--accent-light);
 	}
 	.ms-dot.done {
 		background: rgba(124, 142, 245, 0.45);
@@ -368,6 +417,22 @@
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
+	}
+	.ms-ai-btn {
+		width: 100%;
+		background: rgba(124, 142, 245, 0.12);
+		border: 1px dashed rgba(124, 142, 245, 0.4);
+		border-radius: 12px;
+		color: var(--accent-light);
+		padding: 11px;
+		font-size: 0.88rem;
+		font-weight: 600;
+		cursor: pointer;
+		margin-bottom: 12px;
+	}
+	.ms-ai-btn:disabled {
+		opacity: 0.6;
+		cursor: default;
 	}
 	.ms-days {
 		display: flex;
@@ -434,7 +499,7 @@
 		color: rgba(154, 164, 214, 0.9);
 	}
 	.ms-error {
-		color: #e07070;
+		color: var(--error-text);
 		font-size: 0.85rem;
 		margin-top: 12px;
 	}
@@ -444,7 +509,7 @@
 	}
 	.ms-next {
 		width: 100%;
-		background: var(--accent-bg, #5865c9);
+		background: var(--accent-primary);
 		border: none;
 		border-radius: 14px;
 		color: #fff;

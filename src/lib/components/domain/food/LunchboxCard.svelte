@@ -26,7 +26,8 @@
 	let children = $state<Child[]>([]);
 	let components = $state<Component[]>([]);
 	let loading = $state(true);
-	let seedByChild = $state<Record<string, number>>({});
+	// Ett globalt shuffle-seed: API-et regenererer alle upakkede barns forslag samlet
+	let shuffleSeed = $state(0);
 	let prefsChild = $state<Child | null>(null);
 
 	onMount(load);
@@ -64,10 +65,9 @@
 		await load();
 	}
 
-	async function reshuffle(child: Child) {
-		const next = (seedByChild[child.personId] ?? 0) + 1;
-		seedByChild = { ...seedByChild, [child.personId]: next };
-		await load(next);
+	async function reshuffle() {
+		shuffleSeed += 1;
+		await load(shuffleSeed);
 	}
 
 	function returnsFor(child: Child, item: Item) {
@@ -175,7 +175,7 @@
 								<button class="lb-action lb-primary" onclick={() => pack(child)} data-track="matpakke:pakk">
 									Pakk denne
 								</button>
-								<button class="lb-action" onclick={() => reshuffle(child)} data-track="matpakke:nytt-forslag">
+								<button class="lb-action" onclick={reshuffle} data-track="matpakke:nytt-forslag">
 									Foreslå annet
 								</button>
 							</div>
@@ -208,7 +208,7 @@
 	.lb-link {
 		background: none;
 		border: none;
-		color: var(--accent-fg, #aab8ff);
+		color: var(--accent-light);
 		cursor: pointer;
 		text-decoration: underline;
 		font-size: 0.88rem;
@@ -250,7 +250,7 @@
 	}
 	.lb-status {
 		font-size: 0.74rem;
-		color: #7fbf8f;
+		color: var(--success-text);
 	}
 	.lb-status-suggested {
 		color: var(--color-text-secondary, #999);
@@ -286,7 +286,7 @@
 		border-color: rgba(224, 112, 112, 0.4);
 	}
 	.lb-return-count {
-		color: #e09090;
+		color: var(--error-text);
 		font-size: 0.74rem;
 		margin-left: 4px;
 	}
@@ -318,7 +318,7 @@
 		cursor: pointer;
 	}
 	.lb-primary {
-		background: var(--accent-bg, rgba(124, 142, 245, 0.22));
-		color: var(--accent-fg, #aab8ff);
+		background: color-mix(in srgb, var(--accent-light) 18%, transparent);
+		color: var(--accent-light);
 	}
 </style>

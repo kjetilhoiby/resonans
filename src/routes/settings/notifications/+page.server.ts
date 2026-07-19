@@ -108,7 +108,10 @@ export const actions = {
 			})
 			.filter((value): value is { id: string; name: string; webhook: string; enabled: boolean } => Boolean(value));
 
+		// Bevar ruting for nøkler skjemaet ikke redigerer (groceryWeekly,
+		// appliance-syklusene m.fl.) — skjemaet eier bare sine egne fem.
 		const routing: Partial<Record<NotificationRouteKey, string[]>> = {
+			...(existing?.notificationChannels?.routing ?? {}),
 			dailyCheckIn: data.getAll('route_dailyCheckIn').map((v) => String(v)),
 			dayPlanning: data.getAll('route_dayPlanning').map((v) => String(v)),
 			dayClose: data.getAll('route_dayClose').map((v) => String(v)),

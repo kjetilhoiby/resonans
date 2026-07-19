@@ -28,6 +28,7 @@ import { manageRelationTool } from '$lib/ai/tools/manage-relation';
 import { manageMealPlanTool } from '$lib/ai/tools/manage-meal-plan';
 import { managePantryTool } from '$lib/ai/tools/manage-pantry';
 import { manageLunchboxTool } from '$lib/ai/tools/manage-lunchbox';
+import { findRecipesTool } from '$lib/ai/tools/find-recipes';
 import { generateShoppingListTool } from '$lib/ai/tools/generate-shopping-list';
 import { analyzeMealImageTool } from '$lib/ai/tools/analyze-meal-image';
 import {
@@ -1168,6 +1169,25 @@ const tools = [
 			{
 				type: 'function' as const,
 				function: {
+					name: 'find_recipes',
+					description: 'Finn ekte oppskrifter på norske oppskriftssider basert på ingredienser (default: lageret, utløpsvarer prioriteres) og preferanser; barnas allergier ekskluderes automatisk. action=search gir kandidater med URL; action=import henter valgt oppskrift inn i kartoteket. Bruk ved «hva kan jeg lage med …», «finn en oppskrift på …».',
+					parameters: {
+						type: 'object',
+						properties: {
+							action: { type: 'string', enum: ['search', 'import'] },
+							query: { type: 'string', description: 'Frisøk, f.eks. "rask fiskemiddag"' },
+							ingredients: { type: 'array', items: { type: 'string' } },
+							constraints: { type: 'string', description: 'F.eks. "barnevennlig, under 30 min"' },
+							maxResults: { type: 'number' },
+							url: { type: 'string', description: 'Kandidat-URL for action=import' }
+						},
+						required: ['action']
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
 					name: 'generate_shopping_list',
 					description: 'Bygg handleliste fra ukemenyens måltider, minus ingredienser som finnes i pantry. Returnerer dedupliserte items klare for å bli lagt inn i en sjekkliste.',
 					parameters: {
@@ -1681,6 +1701,7 @@ function getToolProgressMessage(toolName: string) {
 		manage_meal_plan: 'Oppdaterer ukemeny...',
 		manage_pantry: 'Oppdaterer pantry...',
 		manage_lunchbox: 'Ordner matpakker...',
+		find_recipes: 'Leter etter oppskrifter...',
 		generate_shopping_list: 'Lager handleliste...',
 		analyze_meal_image: 'Analyserer matbilde...',
 		record_tracking_event: 'Registrerer tracking-hendelse...',
@@ -2565,6 +2586,11 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 					const args = JSON.parse(toolCall.function.arguments);
 					console.log('  🥪 Manage lunchbox:', args.action);
 					const result = await manageLunchboxTool.execute({ userId, ...args });
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'find_recipes') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  🍽️ Find recipes:', args.action);
+					const result = await findRecipesTool.execute({ userId, ...args });
 					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'generate_shopping_list') {
 					const args = JSON.parse(toolCall.function.arguments);

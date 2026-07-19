@@ -38,6 +38,14 @@ describe('scoreComponent', () => {
 		expect(result.reason).toBe('allergi');
 	});
 
+	it('ekskluderer IKKE generiske navn via revers-inneslutning', () => {
+		const result = scoreComponent(component({ id: '1', name: 'Smør' }), {
+			...BASE,
+			profile: profile({ dislikes: ['peanøttsmør'] })
+		});
+		expect(result.excluded).toBe(false);
+	});
+
 	it('ekskluderer dislikes', () => {
 		const result = scoreComponent(component({ id: '1', name: 'Leverpostei' }), {
 			...BASE,

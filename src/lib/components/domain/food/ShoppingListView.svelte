@@ -198,7 +198,7 @@
 		text-overflow: ellipsis;
 	}
 	.slv-oda {
-		color: var(--accent-fg, #aab8ff);
+		color: var(--accent-light);
 		text-decoration: none;
 		font-size: 1rem;
 		padding: 6px 10px;
@@ -240,7 +240,7 @@
 		text-decoration: none;
 	}
 	.slv-action-primary {
-		background: var(--accent-bg, rgba(124, 142, 245, 0.2));
-		color: var(--accent-fg, #aab8ff);
+		background: color-mix(in srgb, var(--accent-light) 18%, transparent);
+		color: var(--accent-light);
 	}
 </style>

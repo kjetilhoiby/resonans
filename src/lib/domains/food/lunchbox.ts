@@ -89,14 +89,19 @@ function norm(s: string): string {
 	return s.toLowerCase().trim();
 }
 
-/** Matcher et komponentnavn mot en preferanseliste (navn eller tags, case-insensitivt). */
+/**
+ * Matcher et komponentnavn mot en preferanseliste (navn eller tags,
+ * case-insensitivt). Kun én retning: preferansen må være inneholdt i
+ * komponentnavnet («nøtter» treffer «Cashewnøtter») — aldri omvendt, ellers
+ * ville dislike «peanøttsmør» hardekskludert komponenten «Smør».
+ */
 function matchesList(component: LunchboxComponentLike, list: string[]): boolean {
 	const name = norm(component.name);
 	const tags = component.tags.map(norm);
 	return list.some((entry) => {
 		const e = norm(entry);
 		if (!e) return false;
-		return name.includes(e) || e.includes(name) || tags.includes(e);
+		return name === e || name.includes(e) || tags.includes(e);
 	});
 }
 

@@ -2,13 +2,13 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { groceryOrders, groceryOrderLines, pantryItems } from '$lib/db/schema';
-import { and, eq, ilike } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { isFoodLine, normalizeGroceryName } from '$lib/domains/food/grocery';
 
 // POST /api/food/grocery-orders/[id]/apply-pantry — «Legg matvarene i lager».
 // Ett-trykks bekreftelse (ikke automatisk): matvarelinjer upsertes mot
-// pantry_items på normalisert navn; pant/gebyr/husholdning hoppes over.
-// Body: { excludeLineIds?: string[] } for avhuking.
+// pantry_items; pant/gebyr/husholdning og alt lagt inn tidligere
+// (line.pantryItemId satt) hoppes over. Body: { excludeLineIds?: string[] }.
 export const POST: RequestHandler = async ({ params, request, locals }) => {
 	const userId = locals.userId;
 	const body = await request.json().catch(() => ({}));
@@ -19,10 +19,31 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 	});
 	if (!order) return json({ error: 'Not found' }, { status: 404 });
 
-	const lines = await db
-		.select()
-		.from(groceryOrderLines)
-		.where(eq(groceryOrderLines.orderId, order.id));
+	// Hent linjer og HELE lageret én gang — matching skjer i JS (toveis
+	// inneslutning på normaliserte navn: «tine lettmelk» ↔ «lettmelk»).
+	const [lines, pantry] = await Promise.all([
+		db.select().from(groceryOrderLines).where(eq(groceryOrderLines.orderId, order.id)),
+		db.select().from(pantryItems).where(eq(pantryItems.userId, userId))
+	]);
+
+	const pantryNormalized = pantry.map((item) => ({
+		item,
+		normalized: normalizeGroceryName(item.name)
+	}));
+
+	function findPantryMatch(lineNormalized: string) {
+		if (!lineNormalized) return null;
+		return (
+			pantryNormalized.find((p) => p.normalized === lineNormalized) ??
+			pantryNormalized.find(
+				(p) =>
+					p.normalized.length >= 3 &&
+					lineNormalized.length >= 3 &&
+					(lineNormalized.includes(p.normalized) || p.normalized.includes(lineNormalized))
+			) ??
+			null
+		);
+	}
 
 	let applied = 0;
 	let skipped = 0;
@@ -34,21 +55,11 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		}
 
 		const normalized = normalizeGroceryName(line.name);
-		if (!normalized) {
-			skipped++;
-			continue;
-		}
-
-		// Finn eksisterende lagervare på normalisert navn (case-insensitivt)
-		const escaped = normalized.replace(/[\\%_]/g, (ch) => `\\${ch}`);
-		const [existing] = await db
-			.select()
-			.from(pantryItems)
-			.where(and(eq(pantryItems.userId, userId), ilike(pantryItems.name, `%${escaped}%`)))
-			.limit(1);
+		const match = findPantryMatch(normalized);
 
 		let pantryItemId: string;
-		if (existing) {
+		if (match) {
+			const existing = match.item;
 			const addQty = line.quantity != null ? Number(line.quantity) : null;
 			const newQty =
 				addQty != null && existing.quantity != null
@@ -60,6 +71,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 				.update(pantryItems)
 				.set({ quantity: newQty, addedAt: new Date() })
 				.where(eq(pantryItems.id, existing.id));
+			existing.quantity = newQty;
 			pantryItemId = existing.id;
 		} else {
 			const [created] = await db
@@ -71,7 +83,9 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 					quantity: line.quantity,
 					unit: line.unit
 				})
-				.returning({ id: pantryItems.id });
+				.returning();
+			// Nye varer skal kunne matches av senere linjer i samme kvittering
+			pantryNormalized.push({ item: created, normalized: normalizeGroceryName(created.name) });
 			pantryItemId = created.id;
 		}
 

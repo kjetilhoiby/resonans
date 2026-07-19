@@ -85,6 +85,12 @@ const JOBS: CronJob[] = [
 		maxDurationSeconds: 120
 	},
 	{
+		path: '/api/cron/grocery-nudge',
+		schedule: '0 * * * *', // hver time; nudgen gater selv på mandag + lokal tid
+		description: 'Ukentlig dagligvare-oppsummering (forrige uke vs. snitt/budsjett, plan-vs-kjøp)',
+		maxDurationSeconds: 120
+	},
+	{
 		path: '/api/notifications/egenfrekvens-checkin',
 		schedule: '*/5 * * * *',
 		description: 'Egenfrekvens daglig sjekkin-nudge (lokal tid per bruker, 5-min vindu)',
