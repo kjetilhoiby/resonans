@@ -809,6 +809,12 @@ export const meals = pgTable('meals', {
 	cookTimeMin: integer('cook_time_min'),
 	servings: integer('servings').default(2).notNull(),
 	tags: text('tags').array().notNull().default(sql`ARRAY[]::text[]`),
+	// Sammensetning — komponert rett fyller disse; komplett rett (suppe/taco/pizza) lar dem stå tomme.
+	mainProtein: text('main_protein'), // kanonisk nøkkel, se food/composition.ts
+	mainCarb: text('main_carb'),
+	greens: text('greens'),
+	wantMore: boolean('want_more').notNull().default(false), // «ønsker mer av» — løfter i forslag/tinder
+	effortLevel: text('effort_level'), // 'lav' | 'middels' | 'høy'
 	imageUrl: text('image_url'), // Cloudinary-URL fra felles bilde-pipeline
 	sourceUrl: text('source_url'),
 	nutritionEstimate: jsonb('nutrition_estimate').$type<{

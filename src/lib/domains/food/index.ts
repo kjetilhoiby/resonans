@@ -53,6 +53,7 @@ export const FOOD_DOMAIN_PROMPT = `
 - Bruker spør om mat, middag, ukemeny, oppskrifter eller skap-/fryserinnhold
 - Bruk query_food for å lese eksisterende ukemeny, oppskrifter og pantry
 - Bruk manage_recipe, manage_meal_plan, manage_pantry for å lagre endringer
+- Strukturér gjerne komponerte middager med mainProtein/mainCarb/greens i manage_recipe (gir varianter ved bytte); sett wantMore for retter familien vil ha mer av. La feltene stå tomme for suppe/taco/pizza o.l.
 - Bruk generate_shopping_list for å bygge handleliste fra ukemeny minus pantry
 - Bruk analyze_meal_image hvis bruker laster opp matbilde og vil ha estimat av rett/næring
 - Bruk manage_lunchbox for matpakker: dagens forslag per barn, logg retur («Ola hadde med 2 skiver hjem»), preferanser og komponentbibliotek

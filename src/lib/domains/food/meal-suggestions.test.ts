@@ -47,6 +47,13 @@ describe('scoreMeal', () => {
 		const { reasons } = scoreMeal(meal({ id: '1', title: 'Lasagne', lastPlannedDate: '2026-07-01' }), REF);
 		expect(reasons.some((r) => r.includes('uker siden sist'))).toBe(true);
 	});
+
+	it('løfter retter markert «ønsker mer av»', () => {
+		const wanted = scoreMeal(meal({ id: '1', title: 'Fisk', wantMore: true }), REF);
+		const plain = scoreMeal(meal({ id: '2', title: 'Fisk' }), REF);
+		expect(wanted.score).toBeGreaterThan(plain.score);
+		expect(wanted.reasons).toContain('ønsker mer av');
+	});
 });
 
 describe('suggestWeekDinners', () => {

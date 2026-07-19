@@ -74,6 +74,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			cookTimeMin: body.cookTimeMin ?? null,
 			servings: body.servings ?? 2,
 			tags: Array.isArray(body.tags) ? body.tags : [],
+			mainProtein: body.mainProtein ?? null,
+			mainCarb: body.mainCarb ?? null,
+			greens: body.greens ?? null,
+			wantMore: body.wantMore ?? false,
+			effortLevel: body.effortLevel ?? null,
 			imageUrl: body.imageUrl ?? null,
 			sourceUrl: body.sourceUrl ?? null,
 			nutritionEstimate: body.nutritionEstimate ?? null
