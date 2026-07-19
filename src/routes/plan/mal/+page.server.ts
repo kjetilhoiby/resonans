@@ -1,7 +1,17 @@
 import { db } from '$lib/db';
 import { goals } from '$lib/db/schema';
 import { eq } from 'drizzle-orm';
-import { getRunningSummaryForRange, readWeightProgress, type WeightProgress } from '$lib/server/goal-progress';
+import {
+	getRunningSummaryForRange,
+	readBestEffort,
+	readBodyComposition,
+	readRestingHeartRate,
+	readWeeklyEffort,
+	readWeightProgress,
+	type WeightProgress
+} from '$lib/server/goal-progress';
+import { buildMetricGoalEval, type MetricGoalEval } from '$lib/domain/metric-goal-eval';
+import { METRIC_CATALOG, type MetricId } from '$lib/domain/metric-catalog';
 import {
 	evaluateScreenTimeGoal,
 	getLatestScreenTimeWeekMetrics,
@@ -106,6 +116,81 @@ export const load: PageServerLoad = async ({ locals }) => {
 		console.log(`[perf][goals/load] user=${userId} step=screen_time ms=${(performance.now() - tSt).toFixed(0)} goals=${screenTimeGoals.length}`);
 	}
 
+	// Generiske målbare mål (hvilepuls, belastning, 5k/10k, fett-/muskelmasse):
+	// nåverdi leses per metrikk, sone-evaluering bygges i domenelogikken
+	const GENERIC_METRICS = new Set<MetricId>([
+		'running_10k_time',
+		'running_5k_time',
+		'resting_heart_rate',
+		'weekly_effort',
+		'fat_mass',
+		'muscle_mass'
+	]);
+	let metricEvalMap: Record<string, MetricGoalEval> = {};
+	const metricGoals = userGoals.filter((g) => {
+		const meta = g.metadata as any;
+		return (
+			GENERIC_METRICS.has(meta?.metricId) &&
+			typeof meta?.goalTrack?.targetValue === 'number' &&
+			g.status !== 'archived'
+		);
+	});
+	if (metricGoals.length > 0) {
+		const tM = performance.now();
+		// Hent hver kilde maks én gang uansett antall mål
+		const needed = new Set(metricGoals.map((g) => (g.metadata as any).metricId as MetricId));
+		const [best5k, best10k, restingHr, weeklyEffort, bodyComp] = await Promise.all([
+			needed.has('running_5k_time') ? readBestEffort(userId, '5k') : null,
+			needed.has('running_10k_time') ? readBestEffort(userId, '10k') : null,
+			needed.has('resting_heart_rate') ? readRestingHeartRate(userId) : null,
+			needed.has('weekly_effort') ? readWeeklyEffort(userId) : null,
+			needed.has('fat_mass') || needed.has('muscle_mass') ? readBodyComposition(userId) : null
+		]);
+
+		for (const goal of metricGoals) {
+			const meta = goal.metadata as any;
+			const metricId = meta.metricId as MetricId;
+			const target: number = meta.goalTrack.targetValue;
+			let current: number | null = null;
+			let contextLabel: string | null = null;
+			switch (metricId) {
+				case 'running_5k_time':
+					current = best5k?.bestSeconds ?? null;
+					if (best5k) contextLabel = `beste økt ${best5k.date}`;
+					break;
+				case 'running_10k_time':
+					current = best10k?.bestSeconds ?? null;
+					if (best10k) contextLabel = `beste økt ${best10k.date}`;
+					break;
+				case 'resting_heart_rate':
+					current = restingHr;
+					contextLabel = 'snitt under søvn siste 7 netter';
+					break;
+				case 'weekly_effort':
+					current = weeklyEffort?.total ?? null;
+					if (weeklyEffort?.p4wAvg != null) contextLabel = `4-ukers snitt: ${weeklyEffort.p4wAvg}`;
+					break;
+				case 'fat_mass':
+					current = bodyComp?.fatMassKg ?? null;
+					if (bodyComp) contextLabel = `målt ${bodyComp.date}`;
+					break;
+				case 'muscle_mass':
+					current = bodyComp?.muscleMassKg ?? null;
+					if (bodyComp) contextLabel = `målt ${bodyComp.date}`;
+					break;
+			}
+			metricEvalMap[goal.id] = buildMetricGoalEval({
+				metricId,
+				direction: METRIC_CATALOG[metricId].direction,
+				current,
+				target,
+				unit: meta.goalTrack.unit || METRIC_CATALOG[metricId].defaultUnit,
+				contextLabel
+			});
+		}
+		console.log(`[perf][goals/load] user=${userId} step=metric_evals ms=${(performance.now() - tM).toFixed(0)} goals=${metricGoals.length}`);
+	}
+
 	// Søvnmål: evaluer mot netter fra siste ~7 døgn (naps skilles ut i domenelogikken)
 	const sleepGoals = userGoals
 		.map((g) => ({ row: g, sleepGoal: readSleepGoalMetadata(g.metadata) }))
@@ -127,6 +212,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 		sensorProgressMap,
 		weightProgressMap,
 		screenTimeEvalMap,
-		sleepEvalMap
+		sleepEvalMap,
+		metricEvalMap
 	};
 };

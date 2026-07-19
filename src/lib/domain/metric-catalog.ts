@@ -3,6 +3,11 @@ export type MetricDirection = 'higher_is_better' | 'lower_is_better' | 'towards_
 export type MetricId =
 	| 'running_distance'
 	| 'running_10k_time'
+	| 'running_5k_time'
+	| 'resting_heart_rate'
+	| 'weekly_effort'
+	| 'fat_mass'
+	| 'muscle_mass'
 	| 'sleep_avg_night'
 	| 'sleep_lag'
 	| 'steps_avg_day'
@@ -40,6 +45,56 @@ export const METRIC_CATALOG: Record<MetricId, MetricDefinition> = {
 		aliases: ['running_10k_time', '10k', '10 km', '10km', '10 km tid', 'mila'],
 		defaultUnit: 'sek',
 		direction: 'lower_is_better',
+		visualizationFamily: 'trajectory',
+		supportedWindows: ['30d', '365d', 'month', 'quarter', 'year']
+	},
+	running_5k_time: {
+		id: 'running_5k_time',
+		// Beste 5 km-tid i vinduet (fra canonical_workouts.bestEfforts['5k']), sekunder
+		label: 'Beste 5 km-tid',
+		aliases: ['running_5k_time', '5k', '5 km', '5km', '5 km tid', 'femmern'],
+		defaultUnit: 'sek',
+		direction: 'lower_is_better',
+		visualizationFamily: 'trajectory',
+		supportedWindows: ['30d', '365d', 'month', 'quarter', 'year']
+	},
+	resting_heart_rate: {
+		id: 'resting_heart_rate',
+		// Snittpuls under søvn siste 7 netter (proxy for hvilepuls)
+		label: 'Hvilepuls',
+		aliases: ['resting_heart_rate', 'hvilepuls', 'sleepHeartRate', 'restingHr', 'puls i hvile'],
+		defaultUnit: 'slag/min',
+		direction: 'lower_is_better',
+		visualizationFamily: 'target_zone',
+		supportedWindows: ['7d', '30d', '365d', 'week', 'month', 'quarter', 'year']
+	},
+	weekly_effort: {
+		id: 'weekly_effort',
+		// Sum av per-økt effort-score (TRIMP/MET) per uke, fra sensor_aggregates.weeklyEffort
+		label: 'Ukentlig treningsbelastning',
+		aliases: ['weekly_effort', 'weeklyEffort', 'belastning', 'treningsbelastning', 'effort'],
+		defaultUnit: 'poeng',
+		direction: 'higher_is_better',
+		visualizationFamily: 'target_zone',
+		supportedWindows: ['week', 'month', 'quarter', 'year']
+	},
+	fat_mass: {
+		id: 'fat_mass',
+		// Siste fettmasse-måling fra Withings-vekta (data.fatMass)
+		label: 'Fettmasse',
+		aliases: ['fat_mass', 'fatMass', 'fettmasse', 'fettprosent', 'fett'],
+		defaultUnit: 'kg',
+		direction: 'lower_is_better',
+		visualizationFamily: 'trajectory',
+		supportedWindows: ['30d', '365d', 'month', 'quarter', 'year']
+	},
+	muscle_mass: {
+		id: 'muscle_mass',
+		// Siste muskelmasse-måling fra Withings-vekta (data.muscleMass)
+		label: 'Muskelmasse',
+		aliases: ['muscle_mass', 'muscleMass', 'muskelmasse', 'muskler'],
+		defaultUnit: 'kg',
+		direction: 'higher_is_better',
 		visualizationFamily: 'trajectory',
 		supportedWindows: ['30d', '365d', 'month', 'quarter', 'year']
 	},

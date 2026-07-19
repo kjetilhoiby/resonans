@@ -9,9 +9,9 @@ import type { MetricId } from '$lib/domain/metric-catalog';
 /**
  * Opprettelse av målbare langtidsmål knyttet til retningen (visjonene).
  * Brukes av både livsintervjuets speil-steg og den manuelle knappen på
- * Retning-fanen. Deterministisk metrikk-mapping for de tre støttede
- * målene (vekt, 10 km-tid, sparing); alt annet går via createGoals
- * vanlige klassifisering.
+ * Retning-fanen. Deterministisk metrikk-mapping for de støttede målene
+ * (vekt, 5/10 km-tid, hvilepuls, belastning, fett-/muskelmasse, sparing);
+ * alt annet går via createGoals vanlige klassifisering.
  */
 
 interface ResolvedMetric {
@@ -24,6 +24,24 @@ interface ResolvedMetric {
 
 async function resolveLongTermMetric(userId: string, goal: LongTermGoal): Promise<ResolvedMetric> {
 	const text = `${goal.title} ${goal.unit ?? ''}`.toLowerCase();
+
+	// Kroppssammensetning sjekkes FØR vekt — «muskelmasse 38 kg» skal ikke bli vektmål
+	if (/muskel/.test(text) && typeof goal.value === 'number') {
+		return { metricId: 'muscle_mass', targetValue: Math.round(goal.value * 10) / 10, unit: 'kg', categoryName: 'Helse' };
+	}
+	if (/fettmasse|fettprosent|\bfett\b/.test(text) && typeof goal.value === 'number') {
+		return { metricId: 'fat_mass', targetValue: Math.round(goal.value * 10) / 10, unit: 'kg', categoryName: 'Helse' };
+	}
+
+	// Hvilepuls: slag/min, lavere er bedre
+	if (/hvilepuls|puls/.test(text) && typeof goal.value === 'number') {
+		return { metricId: 'resting_heart_rate', targetValue: Math.round(goal.value), unit: 'slag/min', categoryName: 'Helse' };
+	}
+
+	// Treningsbelastning: ukentlig effort-sum
+	if (/belastning|effort/.test(text) && typeof goal.value === 'number') {
+		return { metricId: 'weekly_effort', targetValue: Math.round(goal.value), unit: 'poeng', categoryName: 'Helse' };
+	}
 
 	// Vekt: lagres som weight_change-delta fra siste måling (slik /plan/mal leser det)
 	if (/vekt|\bkg\b/.test(text) && typeof goal.value === 'number') {
@@ -45,6 +63,17 @@ async function resolveLongTermMetric(userId: string, goal: LongTermGoal): Promis
 		const isMinutes = !goal.unit || /min/.test(goal.unit.toLowerCase());
 		return {
 			metricId: 'running_10k_time',
+			targetValue: isMinutes ? Math.round(goal.value * 60) : Math.round(goal.value),
+			unit: 'sek',
+			categoryName: 'Helse'
+		};
+	}
+
+	// 5 km-tid: samme mønster som 10k
+	if (/5\s*k|femmern/.test(text) && typeof goal.value === 'number') {
+		const isMinutes = !goal.unit || /min/.test(goal.unit.toLowerCase());
+		return {
+			metricId: 'running_5k_time',
 			targetValue: isMinutes ? Math.round(goal.value * 60) : Math.round(goal.value),
 			unit: 'sek',
 			categoryName: 'Helse'

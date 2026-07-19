@@ -4,13 +4,15 @@
  * klassifisering og formattering bor i `$lib/domain/observed-behavior.ts`.
  */
 
-import { sql, and, desc, eq, gte, inArray } from 'drizzle-orm';
+import { sql, and, desc, eq, gte } from 'drizzle-orm';
 import { db, rowsOf } from '$lib/db';
-import { domainSignals, projects, reflections } from '$lib/db/schema';
+import { domainSignals, reflections } from '$lib/db/schema';
 import { listSleepGoals, readSleepNights } from '$lib/server/integrations/sleep-goals';
 import { pairNapsWithPriorNights, type NapWithPriorNight } from '$lib/domain/sleep-goals';
 import {
 	buildObservedBehaviorLines,
+	classifyFlokeStagnation,
+	type FlokeStatus,
 	type FollowThroughCounts,
 	type ObservedBehaviorInputs
 } from '$lib/domain/observed-behavior';
@@ -107,12 +109,49 @@ export async function collectNaps7d(userId: string, now = new Date()): Promise<N
 	};
 }
 
+/**
+ * Floke-status for hodedump-prosjekter: dager siden siste bevegelse (steg
+ * hakket av, steg lagt til, eller prosjektet opprettet). Floker som blir
+ * liggende er på vei til å bli knuter — signalet fanger dem før de strammes.
+ */
+export async function collectFlokeStatus(userId: string, now = new Date()): Promise<FlokeStatus[]> {
+	const rows = await db.execute(sql`
+		SELECT
+			p.title,
+			p.status,
+			GREATEST(
+				p.created_at,
+				COALESCE(MAX(ci.checked_at), p.created_at),
+				COALESCE(MAX(ci.created_at), p.created_at)
+			) AS last_movement
+		FROM projects p
+		LEFT JOIN checklist_items ci ON ci.project_id = p.id
+		WHERE p.user_id = ${userId}
+		  AND p.status IN ('planning', 'active')
+		  AND p.metadata->>'source' = 'hodedump'
+		GROUP BY p.id, p.title, p.status, p.created_at
+	`);
+	return rowsOf<{ title: string; status: string; last_movement: Date | string }>(rows).map((row) => {
+		const lastMovement = new Date(row.last_movement);
+		const daysSinceMovement = Math.max(
+			0,
+			Math.floor((now.getTime() - lastMovement.getTime()) / 86_400_000)
+		);
+		return {
+			title: row.title,
+			status: row.status === 'active' ? ('active' as const) : ('planning' as const),
+			daysSinceMovement,
+			stage: classifyFlokeStagnation(daysSinceMovement)
+		};
+	});
+}
+
 /** Alt observert samlet — grunnlaget for både prompt-blokk og egenfrekvens-speiling. */
 export async function collectObservedBehaviorInputs(
 	userId: string,
 	now = new Date()
 ): Promise<ObservedBehaviorInputs> {
-	const [followThroughCounts, naps, proactivity, routineSignal, lastDump, flokeProjects] = await Promise.all([
+	const [followThroughCounts, naps, proactivity, routineSignal, lastDump, flokeStatus] = await Promise.all([
 		collectFollowThrough7d(userId, now),
 		collectNaps7d(userId, now),
 		collectProactivity7d(userId, now),
@@ -130,15 +169,8 @@ export async function collectObservedBehaviorInputs(
 			),
 			orderBy: [desc(reflections.createdAt)]
 		}),
-		// Floker fra hodedump som fortsatt er åpne
-		db.query.projects.findMany({
-			where: and(
-				eq(projects.userId, userId),
-				inArray(projects.status, ['planning', 'active']),
-				sql`${projects.metadata}->>'source' = 'hodedump'`
-			),
-			columns: { status: true }
-		})
+		// Floker fra hodedump som fortsatt er åpne, med bevegelses-status
+		collectFlokeStatus(userId, now)
 	]);
 
 	// Åpne løkker: uavsjekkede innboks-punkter (VISION: «Løkker, floker og knuter»)
@@ -172,10 +204,11 @@ export async function collectObservedBehaviorInputs(
 			? { daysAgo: Math.floor((now.getTime() - lastDump.createdAt.getTime()) / 86_400_000) }
 			: null,
 		floker:
-			flokeProjects.length > 0
+			flokeStatus.length > 0
 				? {
-						active: flokeProjects.filter((p) => p.status === 'active').length,
-						open: flokeProjects.filter((p) => p.status === 'planning').length
+						active: flokeStatus.filter((f) => f.status === 'active').length,
+						open: flokeStatus.filter((f) => f.status === 'planning').length,
+						stillestaaende: flokeStatus.filter((f) => f.stage !== 'i_bevegelse')
 					}
 				: null,
 		aapneLokker: openInbox > 0 ? { inbox: openInbox } : null

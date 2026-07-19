@@ -10,6 +10,7 @@
 	} from '$lib/components/domain/plan/helpers.js';
 	import { goalHorizon, type GoalHorizon } from '$lib/domain/goal-validation';
 	import type { SleepGoalEval } from '$lib/domain/sleep-goals';
+	import type { MetricGoalEval } from '$lib/domain/metric-goal-eval';
 	import type { GoalItem, ScreenTimeGoalEval, SensorProgress, WeightProgress } from '$lib/components/domain/plan/types.js';
 
 	interface Props {
@@ -19,6 +20,7 @@
 			weightProgressMap: Record<string, WeightProgress>;
 			screenTimeEvalMap: Record<string, ScreenTimeGoalEval>;
 			sleepEvalMap: Record<string, SleepGoalEval>;
+			metricEvalMap: Record<string, MetricGoalEval>;
 		};
 	}
 
@@ -51,7 +53,8 @@
 			data.sensorProgressMap[goal.id] ||
 				data.weightProgressMap[goal.id] ||
 				data.screenTimeEvalMap[goal.id] ||
-				data.sleepEvalMap[goal.id]
+				data.sleepEvalMap[goal.id] ||
+				data.metricEvalMap[goal.id]
 		);
 	}
 
@@ -282,6 +285,7 @@
 							weightProgress={data.weightProgressMap[goal.id]}
 							screenTimeEval={data.screenTimeEvalMap[goal.id]}
 							sleepEval={data.sleepEvalMap[goal.id]}
+							metricEval={data.metricEvalMap[goal.id]}
 							expanded={expandedGoals.has(goal.id)}
 							onToggle={() => toggleGoal(goal.id)}
 							onArchive={archiveGoal}

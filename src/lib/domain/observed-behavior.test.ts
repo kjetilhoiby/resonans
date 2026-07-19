@@ -1,8 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
 	buildObservedBehaviorLines,
+	classifyFlokeLoad,
+	classifyFlokeStagnation,
 	classifyFollowThrough,
-	classifyNapLoad
+	classifyNapLoad,
+	classifyRestingHrElevation
 } from './observed-behavior';
 
 describe('classifyFollowThrough', () => {
@@ -112,5 +115,50 @@ describe('buildObservedBehaviorLines', () => {
 			'- Åpne løkker: 14 i innboksen.'
 		]);
 		expect(buildObservedBehaviorLines({ aapneLokker: { inbox: 0 } })).toEqual([]);
+	});
+
+	it('stillestående floke nevnes med dager — knute-risiko markeres', () => {
+		const lines = buildObservedBehaviorLines({
+			floker: {
+				active: 1,
+				open: 1,
+				stillestaaende: [
+					{ title: 'Rydde garasjen', status: 'active', daysSinceMovement: 16, stage: 'stillestaaende' },
+					{ title: 'Forsikringssaken', status: 'planning', daysSinceMovement: 31, stage: 'knute_risiko' }
+				]
+			}
+		});
+		expect(lines).toHaveLength(1);
+		// Verste floken (flest dager) trekkes frem
+		expect(lines[0]).toContain('«Forsikringssaken» har ligget 31 dager uten bevegelse — på vei til å bli knute');
+	});
+});
+
+describe('classifyRestingHrElevation', () => {
+	it('graderer forhøyet hvilepuls: +1,5 low, +3 medium, +5 high', () => {
+		expect(classifyRestingHrElevation(0)).toBe('info');
+		expect(classifyRestingHrElevation(-2)).toBe('info');
+		expect(classifyRestingHrElevation(1.5)).toBe('low');
+		expect(classifyRestingHrElevation(3.2)).toBe('medium');
+		expect(classifyRestingHrElevation(5.5)).toBe('high');
+	});
+});
+
+describe('floke-stagnasjon (knute-risiko)', () => {
+	it('klassifiserer etter dager uten bevegelse: <14 i bevegelse, ≥14 stillestående, ≥28 knute-risiko', () => {
+		expect(classifyFlokeStagnation(3)).toBe('i_bevegelse');
+		expect(classifyFlokeStagnation(13)).toBe('i_bevegelse');
+		expect(classifyFlokeStagnation(14)).toBe('stillestaaende');
+		expect(classifyFlokeStagnation(27)).toBe('stillestaaende');
+		expect(classifyFlokeStagnation(28)).toBe('knute_risiko');
+	});
+
+	it('signal-severity styres av verste floke', () => {
+		const fersk = { title: 'A', status: 'active' as const, daysSinceMovement: 2, stage: 'i_bevegelse' as const };
+		const stille = { title: 'B', status: 'planning' as const, daysSinceMovement: 15, stage: 'stillestaaende' as const };
+		const knute = { title: 'C', status: 'planning' as const, daysSinceMovement: 30, stage: 'knute_risiko' as const };
+		expect(classifyFlokeLoad([fersk])).toBe('info');
+		expect(classifyFlokeLoad([fersk, stille])).toBe('medium');
+		expect(classifyFlokeLoad([fersk, stille, knute])).toBe('high');
 	});
 });

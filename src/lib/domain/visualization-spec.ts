@@ -210,6 +210,76 @@ export const VISUALIZATION_SPECS: Record<MetricId, VisualizationSpec> = {
 			M: { component: 'progress_bar', fallback: 'dash' },
 			L: { component: 'comparison_trend', fallback: 'skeleton' }
 		}
+	},
+
+	running_5k_time: {
+		metricId: 'running_5k_time',
+		semantic: 'lower',
+		timeModel: 'trajectory',
+		thresholdMode: 'at_most',
+		direction: 'lower_is_better',
+		tolerancePct: 0.05,
+		contexts: {
+			S: { component: 'timeline_marker', fallback: 'dash' },
+			M: { component: 'timeline_marker', fallback: 'dash' },
+			L: { component: 'trajectory', fallback: 'skeleton' }
+		}
+	},
+
+	resting_heart_rate: {
+		metricId: 'resting_heart_rate',
+		semantic: 'lower',
+		timeModel: 'rolling_avg',
+		thresholdMode: 'at_most',
+		direction: 'lower_is_better',
+		tolerancePct: 0.05,
+		contexts: {
+			S: { component: 'target_zone_bar', fallback: 'dash' },
+			M: { component: 'target_zone_bar', fallback: 'dash' },
+			L: { component: 'comparison_trend', fallback: 'skeleton' }
+		}
+	},
+
+	weekly_effort: {
+		metricId: 'weekly_effort',
+		semantic: 'higher',
+		timeModel: 'rolling_avg',
+		thresholdMode: 'at_least',
+		direction: 'higher_is_better',
+		tolerancePct: 0.1,
+		contexts: {
+			S: { component: 'target_zone_bar', fallback: 'dash' },
+			M: { component: 'target_zone_bar', fallback: 'dash' },
+			L: { component: 'comparison_trend', fallback: 'skeleton' }
+		}
+	},
+
+	fat_mass: {
+		metricId: 'fat_mass',
+		semantic: 'target',
+		timeModel: 'trajectory',
+		thresholdMode: 'trajectory',
+		direction: 'towards_target',
+		tolerancePct: 0.05,
+		contexts: {
+			S: { component: 'timeline_marker', fallback: 'dash' },
+			M: { component: 'timeline_marker', fallback: 'dash' },
+			L: { component: 'trajectory', fallback: 'skeleton' }
+		}
+	},
+
+	muscle_mass: {
+		metricId: 'muscle_mass',
+		semantic: 'target',
+		timeModel: 'trajectory',
+		thresholdMode: 'trajectory',
+		direction: 'towards_target',
+		tolerancePct: 0.05,
+		contexts: {
+			S: { component: 'timeline_marker', fallback: 'dash' },
+			M: { component: 'timeline_marker', fallback: 'dash' },
+			L: { component: 'trajectory', fallback: 'skeleton' }
+		}
 	}
 };
 

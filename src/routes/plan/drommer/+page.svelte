@@ -62,6 +62,10 @@
 	const MAAL_PRESETS = [
 		{ id: 'vekt', label: 'Vekt (kg)', title: 'Vekt', unit: 'kg' },
 		{ id: '10k', label: '10 km-tid (min)', title: '10 km', unit: 'min' },
+		{ id: '5k', label: '5 km-tid (min)', title: '5 km', unit: 'min' },
+		{ id: 'hvilepuls', label: 'Hvilepuls (slag/min)', title: 'Hvilepuls', unit: 'slag/min' },
+		{ id: 'belastning', label: 'Treningsbelastning (poeng/uke)', title: 'Treningsbelastning', unit: 'poeng' },
+		{ id: 'muskelmasse', label: 'Muskelmasse (kg)', title: 'Muskelmasse', unit: 'kg' },
 		{ id: 'sparing', label: 'Sparing (kr/mnd)', title: 'Sparing', unit: 'kr/mnd' },
 		{ id: 'annet', label: 'Annet', title: '', unit: '' }
 	];

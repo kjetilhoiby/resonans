@@ -175,7 +175,7 @@ export function formatMinutesShort(min: number | null | undefined): string {
 
 /** Metrikk-bevisst visningsverdi for langtidsmål. */
 export function formatLongTermValue(metricId: string | null, value: number, unit?: string | null): string {
-	if (metricId === 'running_10k_time') return formatSecondsAsTime(value);
+	if (metricId === 'running_10k_time' || metricId === 'running_5k_time') return formatSecondsAsTime(value);
 	if (metricId === 'monthly_savings') {
 		// Manuelt tusenskille (vanlig mellomrom) — toLocaleString gir smalt no-break space i enkelte runtimes
 		const kr = Math.round(value).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
