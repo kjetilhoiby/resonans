@@ -150,6 +150,52 @@ export function classifyBudgetPressure(p: BudgetProjection): SignalSeverity {
 	return 'info';
 }
 
+/* ── Humør-/egenfrekvens-trend (mental helse) ───────────── */
+
+export type MoodDirection = 'bedring' | 'stabil' | 'nedgang';
+
+export interface MoodTrend {
+	/** Snitt egenfrekvens-nivå (1–5) siste uke */
+	recentAvg: number;
+	/** Snitt over baseline-vinduet (8–28 dager tilbake) */
+	baselineAvg: number;
+	/** recent − baseline (positiv = bedring) */
+	delta: number;
+	direction: MoodDirection;
+}
+
+/**
+ * Trend i egenfrekvens-nivå (1–5): fersk uke mot baseline. Ren funksjon.
+ * Endring under ±0,4 regnes som stabil.
+ */
+export function computeMoodTrend(recentAvg: number, baselineAvg: number): MoodTrend {
+	const delta = Math.round((recentAvg - baselineAvg) * 100) / 100;
+	const direction: MoodDirection = delta <= -0.4 ? 'nedgang' : delta >= 0.4 ? 'bedring' : 'stabil';
+	return {
+		recentAvg: Math.round(recentAvg * 100) / 100,
+		baselineAvg: Math.round(baselineAvg * 100) / 100,
+		delta,
+		direction
+	};
+}
+
+/**
+ * Alvorlighetsgrad for humør-trend. **Asymmetrisk** — bare nedgang hever
+ * severity (bedring/stabil er info). Nedgang: −0,4 low, −0,8 medium, −1,2 high.
+ * Lavt absolutt nivå (recent ≤ 2) løfter minst til medium uansett trend.
+ */
+export function classifyMoodTrend(trend: MoodTrend): SignalSeverity {
+	let base: SignalSeverity = 'info';
+	if (trend.delta <= -1.2) base = 'high';
+	else if (trend.delta <= -0.8) base = 'medium';
+	else if (trend.delta <= -0.4) base = 'low';
+
+	if (trend.recentAvg <= 2 && base !== 'high') {
+		return base === 'medium' ? 'high' : 'medium';
+	}
+	return base;
+}
+
 /* ── Hvilepuls-forhøyning ───────────────────────────────── */
 
 /**
@@ -214,6 +260,8 @@ export interface ObservedBehaviorInputs {
 	aapneLokker?: { inbox: number } | null;
 	/** Husarbeid-balanse siste to uker (mot 50/50-idealet) */
 	choreBalance?: ChoreBalance | null;
+	/** Humør-/egenfrekvens-trend (fersk uke mot baseline) */
+	moodTrend?: MoodTrend | null;
 }
 
 function formatHoursShort(h: number): string {
@@ -289,6 +337,17 @@ export function buildObservedBehaviorLines(inputs: ObservedBehaviorInputs): stri
 
 	if (inputs.aapneLokker && inputs.aapneLokker.inbox > 0) {
 		lines.push(`- Åpne løkker: ${inputs.aapneLokker.inbox} i innboksen.`);
+	}
+
+	const mt = inputs.moodTrend;
+	if (mt && mt.direction !== 'stabil') {
+		const retning =
+			mt.direction === 'nedgang'
+				? `ned fra ${mt.baselineAvg.toString().replace('.', ',')} til ${mt.recentAvg.toString().replace('.', ',')} av 5`
+				: `opp fra ${mt.baselineAvg.toString().replace('.', ',')} til ${mt.recentAvg.toString().replace('.', ',')} av 5`;
+		lines.push(
+			`- Egenfrekvens siste uke: ${mt.direction} (${retning})${mt.direction === 'nedgang' ? ' — verdt å høre hvordan det står til' : ''}.`
+		);
 	}
 
 	const cb = inputs.choreBalance;

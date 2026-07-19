@@ -7,8 +7,10 @@ import {
 	classifyFlokeStagnation,
 	classifyFollowThrough,
 	classifyNapLoad,
+	classifyMoodTrend,
 	classifyRestingHrElevation,
 	computeChoreBalance,
+	computeMoodTrend,
 	projectBudget
 } from './observed-behavior';
 
@@ -135,6 +137,41 @@ describe('buildObservedBehaviorLines', () => {
 		expect(lines).toHaveLength(1);
 		// Verste floken (flest dager) trekkes frem
 		expect(lines[0]).toContain('«Forsikringssaken» har ligget 31 dager uten bevegelse — på vei til å bli knute');
+	});
+});
+
+describe('computeMoodTrend + classifyMoodTrend', () => {
+	it('retning: nedgang/bedring/stabil rundt ±0,4', () => {
+		expect(computeMoodTrend(3.0, 3.2).direction).toBe('stabil');
+		expect(computeMoodTrend(2.5, 3.5).direction).toBe('nedgang');
+		expect(computeMoodTrend(4.0, 3.2).direction).toBe('bedring');
+	});
+
+	it('asymmetrisk severity — bare nedgang hever, bedring er info', () => {
+		expect(classifyMoodTrend(computeMoodTrend(4.2, 3.0))).toBe('info'); // bedring
+		expect(classifyMoodTrend(computeMoodTrend(3.2, 3.0))).toBe('info'); // stabil
+		expect(classifyMoodTrend(computeMoodTrend(3.4, 3.9))).toBe('low'); // −0,5
+		expect(classifyMoodTrend(computeMoodTrend(3.0, 3.9))).toBe('medium'); // −0,9
+		expect(classifyMoodTrend(computeMoodTrend(2.5, 3.9))).toBe('high'); // −1,4
+	});
+
+	it('lavt absolutt nivå (≤2) løfter minst til medium', () => {
+		// liten nedgang, men nivået er lavt → medium i stedet for low
+		expect(classifyMoodTrend(computeMoodTrend(1.8, 2.3))).toBe('medium');
+		// stabil, men lavt nivå → medium i stedet for info
+		expect(classifyMoodTrend(computeMoodTrend(1.9, 2.0))).toBe('medium');
+	});
+
+	it('OBSERVERT ATFERD-linje kun ved endring, med varm hale ved nedgang', () => {
+		const ned = buildObservedBehaviorLines({ moodTrend: computeMoodTrend(2.5, 3.5) });
+		expect(ned[0]).toContain('nedgang');
+		expect(ned[0]).toContain('verdt å høre hvordan det står til');
+
+		const opp = buildObservedBehaviorLines({ moodTrend: computeMoodTrend(4.0, 3.2) });
+		expect(opp[0]).toContain('bedring');
+
+		// stabil → ingen linje
+		expect(buildObservedBehaviorLines({ moodTrend: computeMoodTrend(3.0, 3.1) })).toEqual([]);
 	});
 });
 
