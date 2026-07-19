@@ -23,6 +23,8 @@ import {
 	projectBudget
 } from '$lib/domain/observed-behavior';
 import { readCategorySpend } from '$lib/server/goal-progress';
+import { readChoreBalance } from '$lib/server/services/chore-service';
+import { classifyChoreBalance } from '$lib/domain/observed-behavior';
 import { CATEGORIES } from '$lib/integrations/transaction-categories-client';
 
 type Severity = 'info' | 'low' | 'medium' | 'high';
@@ -1570,6 +1572,50 @@ async function produceCategoryBudgetPressure(userId: string, now: Date) {
 	return produced;
 }
 
+/**
+ * Husarbeid-balanse siste to uker mot 50/50-idealet. Teller chore_done-events
+ * per part (meg/partner). Symmetrisk severity på avstand fra 50 % — både å
+ * bære for mye og for lite er verdt å vite. Null under minimum loggede oppgaver.
+ */
+async function produceChoreBalance14d(userId: string, now: Date) {
+	const balance = await readChoreBalance(userId, 14);
+	if (!balance) return null;
+
+	await ensureSignalContract({
+		signalType: 'chore_balance_14d',
+		ownerDomain: 'home',
+		allowedConsumerDomains: ['home', 'relationship'],
+		description:
+			'Fordeling av loggede husarbeids-oppgaver (chore_done) mellom bruker og partner siste 14 dager, mot 50/50-idealet. Symmetrisk severity på avstand fra 50 %.'
+	});
+
+	const myShare = Math.round(balance.myShare * 100);
+	const severity = classifyChoreBalance(balance);
+
+	await upsertDomainSignal({
+		signalType: 'chore_balance_14d',
+		ownerDomain: 'home',
+		userId,
+		valueNumber: myShare,
+		valueText: `du ${myShare} %, partner ${100 - myShare} % (${balance.total} oppgaver)`,
+		valueBool: severity === 'info',
+		severity,
+		confidence: balance.total >= 8 ? 0.85 : 0.6,
+		windowStart: daysAgo(now, 14),
+		windowEnd: now,
+		observedAt: now,
+		context: {
+			myCount: balance.myCount,
+			otherCount: balance.otherCount,
+			total: balance.total,
+			myShare: balance.myShare,
+			deviation: balance.deviation
+		}
+	});
+
+	return myShare;
+}
+
 export async function runDomainSignalProducers(now: Date = new Date()) {
 	const allUsers = await db.select({ id: users.id, partnerUserId: users.partnerUserId }).from(users);
 
@@ -1598,7 +1644,8 @@ export async function runDomainSignalProducers(now: Date = new Date()) {
 		proactiveActions7d: 0,
 		flokeStagnation: 0,
 		restingHrElevated7d: 0,
-		categoryBudgetPressure: 0
+		categoryBudgetPressure: 0,
+		choreBalance14d: 0
 	};
 	const errors: Array<{ userId: string; error: string }> = [];
 
@@ -1685,6 +1732,12 @@ export async function runDomainSignalProducers(now: Date = new Date()) {
 			if (categoryBudgetPressure !== null) {
 				produced += categoryBudgetPressure;
 				producerBreakdown.categoryBudgetPressure += categoryBudgetPressure;
+			}
+
+			const choreBalance14d = await produceChoreBalance14d(user.id, now);
+			if (choreBalance14d !== null) {
+				produced += 1;
+				producerBreakdown.choreBalance14d += 1;
 			}
 
 			const effortVsThreshold = await produceHealthEffortVsThreshold(user.id, now);
