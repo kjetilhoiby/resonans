@@ -8,6 +8,8 @@ interface ProxyChatStreamOptions {
 	attachment?: unknown;
 	preferredModel?: string;
 	systemPrompt?: string;
+	/** La coaching-konteksten bruke verktøy selv om den er samtalende. */
+	allowToolsInConversation?: boolean;
 	signal?: AbortSignal;
 	onStatus?: (message: string) => void;
 	onToken?: (token: string) => void;
@@ -28,6 +30,7 @@ export async function streamProxyChat({
 	attachment,
 	preferredModel,
 	systemPrompt,
+	allowToolsInConversation,
 	signal,
 	onStatus,
 	onToken,
@@ -52,6 +55,7 @@ export async function streamProxyChat({
 			preferredModel,
 			routing: {},
 			systemPrompt: systemPrompt ?? '',
+			allowToolsInConversation: allowToolsInConversation ?? false,
 			messages: []
 		}),
 		signal

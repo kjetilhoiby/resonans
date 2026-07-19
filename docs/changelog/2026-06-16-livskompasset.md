@@ -139,6 +139,20 @@ dimensjon, ingen persistert intensjon, og neste innsjekk visste ingenting om må
   Rendrer ingenting uten mål → ingen visuell baseline-churn.
 - Drive-by: sensor-config `sliderRange` rettet fra `'1_5'` til `'1_10'` (stalt etter fase 6).
 
+### Fase 10b: Bugfix — coaching-chatten kunne aldri lage oppgaver (2026-07-19)
+Symptom: en gjennomført innsjekk laget ingen oppgaver, selv via «Snakk om det». Årsak: coaching-chatten
+setter `systemPromptPrefix`, og `_runChatRequest` regner alt med prefiks som «conversational mode» —
+en modus som med vilje dropper verktøy på det første modell-kallet (bok-/filmchat skal ikke mutere).
+Uten verktøy fikk svaret ingen `tool_calls`, så verktøy-loopen (og det andre kallet som *faktisk*
+sender med `tools`) kjørte aldri. `add_to_week_plan` ble derfor aldri tilbudt modellen — funksjonen
+fra fase 9 hadde i praksis aldri virket fra coaching-chatten.
+
+Fiks: nytt flagg `allowToolsInConversation` treet fra coaching-kallet (`HomeScreen` →
+`ChatState`/`proxy-chat-stream` → `chat-stream-messages` → `_runChatRequest`). Regelen er løftet ut
+til en ren, testet predikat-funksjon `shouldOfferToolsInitially` (`$lib/server/chat/tool-availability.ts`)
+med regresjonsvakt. Coaching-chatten beholder den samtalende tonen, men får `add_to_week_plan`
+tilgjengelig fra første kall. Andre samtalende kontekster (bok/film) er uendret.
+
 ## Beslutninger
 
 - **Gapet er signalet**, ikke samsvaret alene. `computeOutOfSync` krever gap ≥2 og viktighet ≥3.

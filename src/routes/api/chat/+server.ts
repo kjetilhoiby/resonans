@@ -51,6 +51,7 @@ import { db } from '$lib/db';
 import { checklists, checklistItems, users } from '$lib/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
 import { LIVSKOMPASS_DIMENSION_IDS } from '$lib/domains/livskompass/dimensions';
+import { shouldOfferToolsInitially } from '$lib/server/chat/tool-availability';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 
 type AttachmentKind = 'image' | 'audio' | 'document' | 'other';
@@ -1633,6 +1634,13 @@ export interface _RunChatRequestParams {
 	onProgress?: (event: _ChatProgressEvent) => void | Promise<void>;
 	systemPromptPrefix?: string;
 	preferredModel?: string;
+	/**
+	 * La modellen bruke verktøy selv i conversational-modus. Vanligvis dropper
+	 * en spesialisert kontekst (systemPromptPrefix) verktøy — literært/reflekterende.
+	 * Livskompass-coachingen er unntaket: den trenger `add_to_week_plan` for å føre
+	 * tiltak på ukelista, men vil beholde den samtalende tonen.
+	 */
+	allowToolsInConversation?: boolean;
 }
 
 function getToolProgressMessage(toolName: string) {
@@ -1794,7 +1802,7 @@ function chooseChatModel(params: {
 	return { model: 'gpt-4o-mini', reason: 'default_followup_fast_path' };
 }
 
-export async function _runChatRequest({ body, userId, requestUrl, requestFetch, onProgress, systemPromptPrefix, preferredModel }: _RunChatRequestParams) {
+export async function _runChatRequest({ body, userId, requestUrl, requestFetch, onProgress, systemPromptPrefix, preferredModel, allowToolsInConversation }: _RunChatRequestParams) {
 	try {
 		await emitProgress(onProgress, 'validating', 'Validerer forespørsel...');
 
@@ -2215,6 +2223,9 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		const aiSuggestsConversation = routingDecision.mode === 'conversation';
 		const isHighCapabilityModel = preferredModel?.startsWith('gpt-5') ?? false;
 		const isConversationalMode = Boolean(systemPromptPrefix) || aiSuggestsConversation || isHighCapabilityModel;
+		// Conversational-modus dropper normalt verktøy (literært/reflekterende). Coaching-
+		// konteksten er unntaket: den er samtalende, men må kunne føre tiltak på ukelista.
+		const offerToolsInitially = shouldOfferToolsInitially({ isConversationalMode, allowToolsInConversation });
 
 		const resolvedModel = preferredModel
 			?? (isConversationalMode ? (routingDecision.modelSuggestion ?? 'gpt-5.4') : undefined);
@@ -2236,7 +2247,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		let completion = await openai.chat.completions.create({
 			model: initialModelDecision.model,
 			messages,
-			...(isConversationalMode ? {} : { tools, tool_choice: 'auto' as const }),
+			...(offerToolsInitially ? { tools, tool_choice: 'auto' as const } : {}),
 			temperature: 0.8,
 			...(initialModelDecision.model.startsWith('gpt-5')
 				? { max_completion_tokens: isConversationalMode ? 2000 : 1000 }

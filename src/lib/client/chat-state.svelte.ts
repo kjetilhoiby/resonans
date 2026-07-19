@@ -53,6 +53,12 @@ export interface ChatStateOptions {
 	preferredModel?: string | (() => string | undefined);
 	/** System-prompt-prefiks. Kan være en funksjon som evalueres ved hvert kall. */
 	systemPrompt?: string | (() => string | undefined);
+	/**
+	 * La modellen bruke verktøy selv i samtalende (systemPrompt-)kontekster.
+	 * Coaching-chatten trenger dette for `add_to_week_plan`. Kan være en funksjon
+	 * som evalueres ved hvert kall (f.eks. bare når coaching-prompten er aktiv).
+	 */
+	allowToolsInConversation?: boolean | (() => boolean | undefined);
 	/** Opprett en fersk samtale på første melding (flyt-samtaler) i stedet for å
 	 *  appende til nyeste web-samtale. Gjelder kun når conversationId mangler. */
 	forceNewConversation?: boolean;
@@ -263,6 +269,9 @@ export class ChatState {
 				systemPrompt: typeof this.#opts.systemPrompt === 'function'
 					? this.#opts.systemPrompt()
 					: this.#opts.systemPrompt,
+				allowToolsInConversation: typeof this.#opts.allowToolsInConversation === 'function'
+					? this.#opts.allowToolsInConversation()
+					: this.#opts.allowToolsInConversation,
 				signal: controller.signal,
 				onStatus: (status) => {
 					if (gen !== this.#generation) return;

@@ -52,6 +52,8 @@ interface StreamRequest {
 	preferredModel?: string;
 	forceNewConversation?: boolean;
 	conversationTitle?: string;
+	/** La coaching-konteksten bruke verktøy selv om den er samtalende (se _runChatRequest). */
+	allowToolsInConversation?: boolean;
 	routing: any;
 	systemPrompt: string;
 	messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
@@ -82,7 +84,8 @@ export const POST: RequestHandler = async ({ request, locals, fetch, url }) => {
 			attachment,
 			preferredModel,
 			forceNewConversation,
-			conversationTitle
+			conversationTitle,
+			allowToolsInConversation
 		} = body;
 
 		const encoder = new TextEncoder();
@@ -112,7 +115,7 @@ export const POST: RequestHandler = async ({ request, locals, fetch, url }) => {
 								},
 								userId,
 								requestUrl: `${url.origin}/api/chat`,
-								requestFetch: fetch,							preferredModel: preferredModel || undefined,								systemPromptPrefix: systemPrompt || undefined,
+								requestFetch: fetch,							preferredModel: preferredModel || undefined,								systemPromptPrefix: systemPrompt || undefined,								allowToolsInConversation: allowToolsInConversation || undefined,
 								onProgress: async (event) => {
 									// Routing events must be forwarded with their real type so the client can handle them
 									const routingEventTypes = ['book_routed', 'film_routed', 'theme_routed', 'theme_suggested', 'routing_complete'];

@@ -607,6 +607,8 @@
 
 	const homeChat = new ChatState({
 		systemPrompt: () => livskompassCoachingPrompt ?? undefined,
+		// Coaching-chatten er samtalende, men må kunne føre tiltak på ukelista (add_to_week_plan).
+		allowToolsInConversation: () => livskompassCoachingPrompt != null,
 		// Fri hjem-chat akkumulerer i den kanoniske «dagbok»-tråden (ryggraden) i stedet
 		// for å lage en ny samtale hver gang. Se docs/changelog/2026-07-01-kanonisk-chat.md.
 		getOrCreateConversationId: async () => { const res = await fetch('/api/conversations/canonical', { method: 'POST' }); if (!res.ok) return null; return (await res.json()).conversationId ?? null; },
