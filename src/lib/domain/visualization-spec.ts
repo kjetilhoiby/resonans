@@ -212,6 +212,20 @@ export const VISUALIZATION_SPECS: Record<MetricId, VisualizationSpec> = {
 		}
 	},
 
+	category_spend: {
+		metricId: 'category_spend',
+		semantic: 'lower',
+		timeModel: 'accumulated',
+		thresholdMode: 'at_most',
+		direction: 'lower_is_better',
+		tolerancePct: 0.05,
+		contexts: {
+			S: { component: 'progress_bar', fallback: 'dash' },
+			M: { component: 'progress_bar', fallback: 'dash' },
+			L: { component: 'comparison_trend', fallback: 'skeleton' }
+		}
+	},
+
 	running_5k_time: {
 		metricId: 'running_5k_time',
 		semantic: 'lower',

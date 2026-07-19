@@ -14,6 +14,7 @@ export type MetricId =
 	| 'active_minutes_avg_day'
 	| 'weight_change'
 	| 'grocery_spend'
+	| 'category_spend'
 	| 'monthly_savings';
 
 export interface MetricDefinition {
@@ -155,6 +156,18 @@ export const METRIC_CATALOG: Record<MetricId, MetricDefinition> = {
 		widgetMetricType: 'amount',
 		visualizationFamily: 'trajectory',
 		supportedWindows: ['7d', '30d', '365d', 'week', 'month', 'quarter', 'year']
+	},
+	category_spend: {
+		id: 'category_spend',
+		// Månedlig forbruk i en valgt kategori (categorized_events); kategorien
+		// bæres i goals.metadata.spendCategory. Forbrukstak — lavere er bedre.
+		label: 'Månedlig forbruk (kategori)',
+		aliases: ['category_spend', 'kategoriforbruk', 'forbrukstak', 'budsjett'],
+		defaultUnit: 'kr',
+		direction: 'lower_is_better',
+		widgetMetricType: 'amount',
+		visualizationFamily: 'trajectory',
+		supportedWindows: ['month', 'quarter', 'year']
 	},
 	monthly_savings: {
 		id: 'monthly_savings',

@@ -15,11 +15,15 @@ import {
 	collectProactivity7d
 } from '$lib/server/services/observed-behavior-service';
 import {
+	classifyBudgetPressure,
 	classifyFlokeLoad,
 	classifyFollowThrough,
 	classifyNapLoad,
-	classifyRestingHrElevation
+	classifyRestingHrElevation,
+	projectBudget
 } from '$lib/domain/observed-behavior';
+import { readCategorySpend } from '$lib/server/goal-progress';
+import { CATEGORIES } from '$lib/integrations/transaction-categories-client';
 
 type Severity = 'info' | 'low' | 'medium' | 'high';
 
@@ -1489,6 +1493,83 @@ async function produceRestingHrElevated7d(userId: string, now: Date) {
 	return delta;
 }
 
+/**
+ * Budsjettpress per kategori: for hvert aktivt category_spend-mål framskrives
+ * månedsforbruket mot taket. Over taket = high, på vei over = medium. Ett signal
+ * per kategori (window_end + signalType unikt — bruker kategorien i signalType).
+ * Returnerer antall mål vurdert, eller null uten category_spend-mål.
+ */
+async function produceCategoryBudgetPressure(userId: string, now: Date) {
+	const rows = await db.execute(sql`
+		SELECT title, metadata
+		FROM goals
+		WHERE user_id = ${userId}
+		  AND status = 'active'
+		  AND metadata->>'metricId' = 'category_spend'
+		  AND metadata->>'spendCategory' IS NOT NULL
+		  AND metadata->'goalTrack'->>'targetValue' IS NOT NULL
+	`);
+	const goalRows = rowsOf<{ title: string; metadata: Record<string, unknown> }>(rows);
+	if (goalRows.length === 0) return null;
+
+	const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+	const dayOfMonth = now.getDate();
+	let produced = 0;
+
+	for (const row of goalRows) {
+		const meta = row.metadata as {
+			spendCategory?: string;
+			goalTrack?: { targetValue?: number };
+		};
+		const category = meta.spendCategory;
+		const cap = Number(meta.goalTrack?.targetValue);
+		if (!category || !Number.isFinite(cap) || cap <= 0) continue;
+
+		const spend = await readCategorySpend(userId, category, now);
+		if (!spend) continue;
+
+		const projection = projectBudget(spend.currentMonth, cap, dayOfMonth, daysInMonth);
+		const severity = classifyBudgetPressure(projection);
+		const label = CATEGORIES[category as keyof typeof CATEGORIES]?.label ?? category;
+		const signalType = `category_budget_pressure_${category}`;
+
+		await ensureSignalContract({
+			signalType,
+			ownerDomain: 'economics',
+			allowedConsumerDomains: ['economics', 'home', 'relationship'],
+			description: `Framskrevet månedsforbruk (${label}) mot category_spend-tak. Over = high, på vei over = medium, nær = low.`
+		});
+
+		await upsertDomainSignal({
+			signalType,
+			ownerDomain: 'economics',
+			userId,
+			valueNumber: projection.projected,
+			valueText: `${label}: ${projection.spent} av ${cap} kr hittil, ligger an til ${projection.projected}`,
+			valueBool: projection.exceeded || projection.onTrackToExceed,
+			severity,
+			confidence: dayOfMonth >= 7 ? 0.85 : 0.5,
+			windowStart: new Date(now.getFullYear(), now.getMonth(), 1),
+			windowEnd: now,
+			observedAt: now,
+			context: {
+				category,
+				categoryLabel: label,
+				spent: projection.spent,
+				cap,
+				projected: projection.projected,
+				exceeded: projection.exceeded,
+				onTrackToExceed: projection.onTrackToExceed,
+				dayOfMonth,
+				daysInMonth
+			}
+		});
+		produced += 1;
+	}
+
+	return produced;
+}
+
 export async function runDomainSignalProducers(now: Date = new Date()) {
 	const allUsers = await db.select({ id: users.id, partnerUserId: users.partnerUserId }).from(users);
 
@@ -1516,7 +1597,8 @@ export async function runDomainSignalProducers(now: Date = new Date()) {
 		actionFollowThrough7d: 0,
 		proactiveActions7d: 0,
 		flokeStagnation: 0,
-		restingHrElevated7d: 0
+		restingHrElevated7d: 0,
+		categoryBudgetPressure: 0
 	};
 	const errors: Array<{ userId: string; error: string }> = [];
 
@@ -1597,6 +1679,12 @@ export async function runDomainSignalProducers(now: Date = new Date()) {
 			if (restingHrElevated7d !== null) {
 				produced += 1;
 				producerBreakdown.restingHrElevated7d += 1;
+			}
+
+			const categoryBudgetPressure = await produceCategoryBudgetPressure(user.id, now);
+			if (categoryBudgetPressure !== null) {
+				produced += categoryBudgetPressure;
+				producerBreakdown.categoryBudgetPressure += categoryBudgetPressure;
 			}
 
 			const effortVsThreshold = await produceHealthEffortVsThreshold(user.id, now);

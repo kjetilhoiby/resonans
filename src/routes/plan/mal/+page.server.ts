@@ -5,6 +5,7 @@ import {
 	getRunningSummaryForRange,
 	readBestEffort,
 	readBodyComposition,
+	readCategorySpend,
 	readRestingHeartRate,
 	readWeeklyEffort,
 	readWeightProgress,
@@ -124,7 +125,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 		'resting_heart_rate',
 		'weekly_effort',
 		'fat_mass',
-		'muscle_mass'
+		'muscle_mass',
+		'category_spend'
 	]);
 	let metricEvalMap: Record<string, MetricGoalEval> = {};
 	const metricGoals = userGoals.filter((g) => {
@@ -146,6 +148,21 @@ export const load: PageServerLoad = async ({ locals }) => {
 			needed.has('weekly_effort') ? readWeeklyEffort(userId) : null,
 			needed.has('fat_mass') || needed.has('muscle_mass') ? readBodyComposition(userId) : null
 		]);
+
+		// Kategori-forbruk: hver distinkt kategori leses maks én gang
+		const spendCategories = new Set(
+			metricGoals
+				.filter((g) => (g.metadata as any).metricId === 'category_spend')
+				.map((g) => (g.metadata as any).spendCategory)
+				.filter((c): c is string => typeof c === 'string' && c.length > 0)
+		);
+		const categorySpendMap = new Map(
+			await Promise.all(
+				[...spendCategories].map(
+					async (cat) => [cat, await readCategorySpend(userId, cat)] as const
+				)
+			)
+		);
 
 		for (const goal of metricGoals) {
 			const meta = goal.metadata as any;
@@ -178,6 +195,14 @@ export const load: PageServerLoad = async ({ locals }) => {
 					current = bodyComp?.muscleMassKg ?? null;
 					if (bodyComp) contextLabel = `målt ${bodyComp.date}`;
 					break;
+				case 'category_spend': {
+					const cat = meta.spendCategory as string | undefined;
+					const spend = cat ? categorySpendMap.get(cat) : null;
+					current = spend?.currentMonth ?? null;
+					if (spend?.threeMonthAvg != null) contextLabel = `3-mnd snitt: ${spend.threeMonthAvg} kr/mnd`;
+					else contextLabel = 'hittil i måneden';
+					break;
+				}
 			}
 			metricEvalMap[goal.id] = buildMetricGoalEval({
 				metricId,

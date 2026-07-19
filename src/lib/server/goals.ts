@@ -27,6 +27,8 @@ export interface GoalCreationParams {
 	startValue?: number; // Baseline value for trajectory goals (weight)
 	/** Kobler målet til en brukerforfattet visjon (Retning-fanen). */
 	visionHorizon?: 'vision_yearly' | 'vision_5year' | 'vision_10year';
+	/** For category_spend-mål: hvilken categorized_events-kategori taket gjelder. */
+	spendCategory?: string;
 }
 
 export interface TaskCreationParams {
@@ -156,6 +158,9 @@ export async function createGoal(params: GoalCreationParams) {
 	const metadata = {
 		metricId: resolvedMetricId,
 		...(params.visionHorizon ? { visionHorizon: params.visionHorizon } : {}),
+		...(resolvedMetricId === 'category_spend' && params.spendCategory
+			? { spendCategory: params.spendCategory }
+			: {}),
 		startDate: params.startDate || null,
 		endDate: params.endDate || null,
 		startValue: typeof params.startValue === 'number' && Number.isFinite(params.startValue) ? params.startValue : null,

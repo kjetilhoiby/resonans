@@ -280,6 +280,63 @@ export type MonthlySavings = {
 	threeMonthAvg: number;
 };
 
+export type CategorySpend = {
+	/** Forbruk hittil i inneværende kalendermåned (absoluttverdi) */
+	currentMonth: number;
+	/** Snitt per hel måned over de tre foregående kalendermånedene */
+	threeMonthAvg: number | null;
+};
+
+/**
+ * Månedlig forbruk i én kategori (categorized_events): forbruk hittil i
+ * inneværende måned + snitt over de tre foregående hele månedene som kontekst.
+ * For forbrukstak-mål (lavere er bedre). Returnerer null uten transaksjoner.
+ */
+export async function readCategorySpend(
+	userId: string,
+	category: string,
+	now = new Date()
+): Promise<CategorySpend | null> {
+	// Vindu: fra og med tre måneder tilbake til nå (dekker snitt-basis + inneværende)
+	const windowStart = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+	const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+	const rows = await db
+		.select({ timestamp: categorizedEvents.timestamp, amount: categorizedEvents.amount })
+		.from(categorizedEvents)
+		.where(
+			and(
+				eq(categorizedEvents.userId, userId),
+				eq(categorizedEvents.resolvedCategory, category),
+				gte(categorizedEvents.timestamp, windowStart),
+				lte(categorizedEvents.timestamp, now)
+			)
+		);
+
+	if (rows.length === 0) return null;
+
+	let currentMonth = 0;
+	const priorMonths = new Map<string, number>();
+	for (const row of rows) {
+		const amount = Math.abs(Number(row.amount));
+		if (!Number.isFinite(amount)) continue;
+		if (row.timestamp >= monthStart) {
+			currentMonth += amount;
+		} else {
+			const key = row.timestamp.toISOString().slice(0, 7);
+			priorMonths.set(key, (priorMonths.get(key) ?? 0) + amount);
+		}
+	}
+
+	const priorTotals = [...priorMonths.values()];
+	const threeMonthAvg =
+		priorTotals.length > 0
+			? Math.round(priorTotals.reduce((s, v) => s + v, 0) / priorTotals.length)
+			: null;
+
+	return { currentMonth: Math.round(currentMonth), threeMonthAvg };
+}
+
 /** Månedlig sparebeløp: sum av 'sparing'-kategoriserte transaksjoner (absoluttverdi). */
 export async function readMonthlySavings(userId: string, now = new Date()): Promise<MonthlySavings | null> {
 	// Vindu: de tre siste hele kalendermånedene

@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import {
 	buildObservedBehaviorLines,
+	classifyBudgetPressure,
 	classifyFlokeLoad,
 	classifyFlokeStagnation,
 	classifyFollowThrough,
 	classifyNapLoad,
-	classifyRestingHrElevation
+	classifyRestingHrElevation,
+	projectBudget
 } from './observed-behavior';
 
 describe('classifyFollowThrough', () => {
@@ -131,6 +133,34 @@ describe('buildObservedBehaviorLines', () => {
 		expect(lines).toHaveLength(1);
 		// Verste floken (flest dager) trekkes frem
 		expect(lines[0]).toContain('«Forsikringssaken» har ligget 31 dager uten bevegelse — på vei til å bli knute');
+	});
+});
+
+describe('projectBudget + classifyBudgetPressure', () => {
+	it('framskriver månedsforbruk lineært etter dag-i-måneden', () => {
+		// 800 kr brukt på dag 10 av 30 → ligger an til 2400
+		const p = projectBudget(800, 2000, 10, 30);
+		expect(p.projected).toBe(2400);
+		expect(p.exceeded).toBe(false);
+		expect(p.onTrackToExceed).toBe(true);
+		expect(classifyBudgetPressure(p)).toBe('medium');
+	});
+
+	it('over taket allerede → high', () => {
+		const p = projectBudget(2200, 2000, 20, 30);
+		expect(p.exceeded).toBe(true);
+		expect(classifyBudgetPressure(p)).toBe('high');
+	});
+
+	it('godt innenfor → info; nær grensen (≥85 %) → low', () => {
+		expect(classifyBudgetPressure(projectBudget(300, 2000, 15, 30))).toBe('info');
+		// 900 på dag 15 av 30 → framskrevet 1800 = 90 % av 2000
+		expect(classifyBudgetPressure(projectBudget(900, 2000, 15, 30))).toBe('low');
+	});
+
+	it('tåler dag utenfor [1, daysInMonth]', () => {
+		expect(projectBudget(500, 2000, 0, 30).projected).toBe(15000); // dag klemt til 1
+		expect(projectBudget(2000, 2000, 40, 30).projected).toBe(2000); // dag klemt til 30
 	});
 });
 

@@ -54,6 +54,52 @@ export function classifyNapLoad(napCount: number, maxPerWeek: number | null): Si
 	return 'high';
 }
 
+/* ── Budsjettpress per kategori ─────────────────────────── */
+
+export interface BudgetProjection {
+	/** Forbruk hittil i måneden */
+	spent: number;
+	/** Månedstaket */
+	cap: number;
+	/** Framskrevet månedsslutt basert på forbruk hittil og dag-i-måneden */
+	projected: number;
+	/** Allerede over taket */
+	exceeded: boolean;
+	/** På vei over (framskrevet > tak) selv om ikke over ennå */
+	onTrackToExceed: boolean;
+}
+
+/**
+ * Framskriv månedsforbruk i en kategori mot taket. `dayOfMonth`/`daysInMonth`
+ * gir lineær pace-projeksjon — «du har brukt 800 av 2000 på kafé, men er bare
+ * 10 dager inn → ligger an til 2400».
+ */
+export function projectBudget(
+	spent: number,
+	cap: number,
+	dayOfMonth: number,
+	daysInMonth: number
+): BudgetProjection {
+	const safeDay = Math.max(1, Math.min(dayOfMonth, daysInMonth));
+	const projected = Math.round((spent / safeDay) * daysInMonth);
+	return {
+		spent: Math.round(spent),
+		cap,
+		projected,
+		exceeded: spent > cap,
+		onTrackToExceed: projected > cap
+	};
+}
+
+/** Alvorlighetsgrad for budsjettpress: over taket = high, på vei over = medium. */
+export function classifyBudgetPressure(p: BudgetProjection): SignalSeverity {
+	if (p.exceeded) return 'high';
+	if (p.onTrackToExceed) return 'medium';
+	// Nær grensen (framskrevet ≥ 85 % av taket) → low
+	if (p.cap > 0 && p.projected >= p.cap * 0.85) return 'low';
+	return 'info';
+}
+
 /* ── Hvilepuls-forhøyning ───────────────────────────────── */
 
 /**

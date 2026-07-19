@@ -115,6 +115,14 @@ export const METRIC_VISUALIZATION_PRESETS: Record<MetricId, MetricVisualizationP
 		preferredComparators: ['target_min', 'p4w_baseline'],
 		notes: 'Ukens effort-sum mot minimumsmål; 4-ukers baseline som sammenligning.'
 	},
+	category_spend: {
+		metricId: 'category_spend',
+		summary: 'progress_bar',
+		detail: 'comparison_trend',
+		thresholdMode: 'at_most',
+		preferredComparators: ['budget_cap', 'rolling_average'],
+		notes: 'Månedlig forbruk i en kategori mot tak; 3-måneders snitt som sammenligning.'
+	},
 	fat_mass: {
 		metricId: 'fat_mass',
 		summary: 'timeline_marker',

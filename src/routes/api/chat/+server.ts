@@ -263,7 +263,11 @@ const tools = [
 					},
 					metricId: {
 						type: 'string',
-						description: 'Canonical metric id når målet er målbart. Bruk f.eks. running_distance, weight_change, grocery_spend, sleep_avg_night, steps_avg_day eller active_minutes_avg_day.'
+						description: 'Canonical metric id når målet er målbart. Bruk f.eks. running_distance, weight_change, grocery_spend, category_spend (forbrukstak i en kategori), sleep_avg_night, steps_avg_day eller active_minutes_avg_day.'
+					},
+					spendCategory: {
+						type: 'string',
+						description: 'Kun for metricId=category_spend: forbrukskategorien taket gjelder (canonical CategoryId: kafe_og_restaurant, medier_og_underholdning, barn, reise, klaer_og_utstyr, hobby_og_fritid, helse_og_velvaere, hjem_og_hage, bil_og_transport).'
 					},
 					goalKind: {
 						type: 'string',
