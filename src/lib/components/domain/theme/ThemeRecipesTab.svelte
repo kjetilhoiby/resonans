@@ -7,6 +7,7 @@
 	import SectionLabel from '../../ui/SectionLabel.svelte';
 	import Skeleton from '../../ui/Skeleton.svelte';
 	import RecipeSheet, { type RecipeLike } from '../food/RecipeSheet.svelte';
+	import { componentEmoji, isComposed } from '$lib/domains/food/composition';
 
 	type RecipeRow = RecipeLike & {
 		timesPlanned?: number;
@@ -104,6 +105,17 @@
 		return `⏱ ${total} min`;
 	}
 
+	function compositionEmojis(recipe: RecipeRow): string {
+		if (!isComposed(recipe)) return '';
+		return [
+			componentEmoji('protein', recipe.mainProtein),
+			componentEmoji('carb', recipe.mainCarb),
+			componentEmoji('greens', recipe.greens)
+		]
+			.filter(Boolean)
+			.join('');
+	}
+
 	function lastPlannedLabel(recipe: RecipeRow): string | null {
 		if (!recipe.lastPlannedDate) return null;
 		const then = new Date(recipe.lastPlannedDate + 'T12:00:00');
@@ -193,8 +205,12 @@
 			{#each filtered as recipe (recipe.id)}
 				<button class="recipe-card" onclick={() => (selected = recipe)} data-track="oppskrifter:apne">
 					<div class="recipe-card-main">
-						<span class="recipe-title">{recipe.title}</span>
+						<span class="recipe-title">
+							{#if recipe.wantMore}<span class="recipe-star" title="Ønsker mer av">⭐</span>{/if}
+							{recipe.title}
+						</span>
 						<div class="recipe-meta">
+							{#if compositionEmojis(recipe)}<span class="recipe-comp">{compositionEmojis(recipe)}</span>{/if}
 							{#if timeLabel(recipe)}<span>{timeLabel(recipe)}</span>{/if}
 							{#if lastPlannedLabel(recipe)}<span>{lastPlannedLabel(recipe)}</span>{/if}
 							{#if recipe.ingredients.length > 0}<span>{recipe.ingredients.length} ingredienser</span>{/if}
@@ -296,6 +312,12 @@
 	.recipe-title {
 		font-weight: 600;
 		font-size: 0.95rem;
+	}
+	.recipe-star {
+		font-size: 0.85rem;
+	}
+	.recipe-comp {
+		letter-spacing: 1px;
 	}
 	.recipe-meta {
 		display: flex;

@@ -1122,6 +1122,11 @@ const tools = [
 							cookTimeMin: { type: 'number' },
 							servings: { type: 'number' },
 							tags: { type: 'array', items: { type: 'string' } },
+							mainProtein: { type: 'string', description: 'kjøtt/kylling/svin/fisk/torsk/vegetar/egg — la stå tom for retter uten fast protein-struktur' },
+							mainCarb: { type: 'string', description: 'pasta/potet/ris/brød/couscous/nudler' },
+							greens: { type: 'string', description: 'salat/kokte grønnsaker/rotgrønnsaker osv.' },
+							wantMore: { type: 'boolean', description: 'true hvis familien ønsker mer av denne — løftes i forslag' },
+							effortLevel: { type: 'string', enum: ['lav', 'middels', 'høy'] },
 							imageUrl: { type: 'string' },
 							sourceUrl: { type: 'string' }
 						},

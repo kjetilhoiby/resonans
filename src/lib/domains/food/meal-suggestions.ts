@@ -13,6 +13,7 @@ export type SuggestibleMeal = {
 	ingredients: Array<{ name: string }>;
 	lastPlannedDate: string | null; // ISO-dato
 	timesPlanned: number;
+	wantMore?: boolean; // «ønsker mer av» — brukerens ambisjon, løfter retten
 };
 
 export type DaySuggestion = {
@@ -78,6 +79,11 @@ export function scoreMeal(
 	if (lowerTags.some((t) => FAVORITE_TAGS.includes(t))) {
 		score += 2;
 		reasons.push('familiefavoritt');
+	}
+
+	if (meal.wantMore) {
+		score += 2;
+		reasons.push('ønsker mer av');
 	}
 
 	if (meal.lastPlannedDate) {

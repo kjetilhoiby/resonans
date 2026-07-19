@@ -4,7 +4,8 @@ import { db } from '$lib/db';
 import { mealPlans, meals, pantryItems } from '$lib/db/schema';
 import { and, eq, gte, lte, sql } from 'drizzle-orm';
 import { addDaysIso, datesForIsoWeek, isoWeekKeyForDate, osloTodayIso } from '$lib/server/iso-week';
-import { suggestWeekDinners, type SuggestibleMeal } from '$lib/domains/food/meal-suggestions';
+import { suggestWeekDinners, scoreMeal, type SuggestibleMeal } from '$lib/domains/food/meal-suggestions';
+import { generateVariants } from '$lib/domains/food/composition';
 import { getWeekShoppingList } from '$lib/server/services/shopping-list-service';
 import { getWeekMealPlansWithTitles } from '$lib/server/services/meal-plan-sync';
 
@@ -38,7 +39,8 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		cookTimeMin: meal.cookTimeMin,
 		ingredients: (meal.ingredients as Array<{ name: string }>) ?? [],
 		lastPlannedDate: statsByMeal.get(meal.id)?.lastPlannedDate ?? null,
-		timesPlanned: statsByMeal.get(meal.id)?.timesPlanned ?? 0
+		timesPlanned: statsByMeal.get(meal.id)?.timesPlanned ?? 0,
+		wantMore: meal.wantMore
 	}));
 
 	// Varer som går ut innen uka — booster retter som bruker dem
@@ -63,6 +65,32 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	const existingPlans = await getWeekMealPlansWithTitles(userId, weekContext);
 	const shoppingList = await getWeekShoppingList(userId, weekContext);
 
+	// Flat kandidatbunke for «middagstinder»: hele kartoteket scoret og sortert,
+	// pluss genererte varianter (rekombinert av kjente råvarer) til slutt.
+	const referenceDate = days[0];
+	const expiringNames = expiring.map((e) => e.name);
+	const scoredPool = suggestible
+		.map((meal) => ({ meal, ...scoreMeal(meal, { referenceDate, expiringPantryNames: expiringNames }) }))
+		.sort((a, b) => b.score - a.score || a.meal.title.localeCompare(b.meal.title, 'nb'));
+
+	const mealCandidates = scoredPool.map((s) => ({
+		mealId: s.meal.id,
+		title: s.meal.title,
+		reason: s.reasons[0] ?? 'på rotasjon',
+		isVariant: false as const
+	}));
+
+	const variantCandidates = generateVariants({
+		meals: allMeals.map((m) => ({ mainProtein: m.mainProtein, mainCarb: m.mainCarb, greens: m.greens })),
+		seed: weekContext,
+		limit: 8
+	}).map((v) => ({
+		title: v.title,
+		reason: v.reason,
+		isVariant: true as const,
+		composition: { mainProtein: v.mainProtein, mainCarb: v.mainCarb, greens: v.greens }
+	}));
+
 	return json({
 		weekContext,
 		days: days.map((date, index) => ({
@@ -71,6 +99,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 			suggestion: suggestions[index]?.suggestion ?? null,
 			alternatives: suggestions[index]?.alternatives ?? []
 		})),
+		candidates: [...mealCandidates, ...variantCandidates],
 		recipeCount: allMeals.length,
 		shoppingList: shoppingList
 			? { id: shoppingList.id, status: shoppingList.status, itemCount: shoppingList.items.length }

@@ -28,6 +28,11 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 		'cookTimeMin',
 		'servings',
 		'tags',
+		'mainProtein',
+		'mainCarb',
+		'greens',
+		'wantMore',
+		'effortLevel',
 		'imageUrl',
 		'sourceUrl',
 		'nutritionEstimate'

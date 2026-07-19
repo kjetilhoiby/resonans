@@ -8,6 +8,7 @@
 	import { onMount } from 'svelte';
 	import { fade } from 'svelte/transition';
 	import MealPickerSheet from './MealPickerSheet.svelte';
+	import MiddagsTinder, { type TinderCard } from './MiddagsTinder.svelte';
 	import ShoppingListView from './ShoppingListView.svelte';
 	import Skeleton from '../../ui/Skeleton.svelte';
 
@@ -47,6 +48,8 @@
 	let weekContext = $state('');
 	let days = $state<DayState[]>([]);
 	let recipes = $state<Array<{ id: string; title: string; tags: string[] }>>([]);
+	let candidates = $state<TinderCard[]>([]);
+	let tinderOpen = $state(false);
 	let pickerDayIndex = $state<number | null>(null);
 	let listId = $state<string | null>(null);
 	let listItems = $state<ShoppingItem[]>([]);
@@ -61,6 +64,7 @@
 			if (!sessionRes.ok) throw new Error('load_failed');
 			const session = await sessionRes.json();
 			weekContext = session.weekContext;
+			candidates = session.candidates ?? [];
 			days = (session.days ?? []).map((day: {
 				date: string;
 				existingPlans: Array<{ mealId: string | null; mealTitle: string | null }>;
@@ -127,6 +131,23 @@
 		if (pickerDayIndex === null) return;
 		days = days.map((d, i) => (i === pickerDayIndex ? { ...d, chosen: [], skipped: true } : d));
 		closePicker();
+	}
+
+	// Middagstinder: fyll ledige dager (uten valgt middag) — eller hele uka om alt
+	// allerede er fylt, så «start på nytt med tinder» funker.
+	const tinderDays = $derived.by(() => {
+		const open = days.filter((d) => !d.skipped && d.chosen.length === 0);
+		const pool = open.length > 0 ? open : days.filter((d) => !d.skipped);
+		return pool.map((d) => ({ date: d.date, label: dayLabel(d.date) }));
+	});
+
+	function applyTinder(assignments: Array<{ date: string; mealId?: string; title: string }>) {
+		const byDate = new Map(assignments.map((a) => [a.date, a]));
+		days = days.map((d) => {
+			const a = byDate.get(d.date);
+			return a ? { ...d, chosen: [{ mealId: a.mealId, title: a.title }], skipped: false } : d;
+		});
+		tinderOpen = false;
 	}
 
 	function removeMeal(dayIndex: number, mealIndex: number) {
@@ -260,9 +281,14 @@
 			</div>
 		{:else if step === 1}
 			<p class="ms-hint">Forslagene er basert på favoritter, variasjon og det som ligger i skap og fryser. Tapp en dag for å bytte.</p>
-			<button class="ms-ai-btn" onclick={aiSuggestWeek} disabled={aiLoading} data-track="matplan:ai-foresla-uka">
-				{aiLoading ? '✨ Tenker…' : '✨ Foreslå uka med AI'}
-			</button>
+			<div class="ms-quick-actions">
+				<button class="ms-tinder-btn" onclick={() => (tinderOpen = true)} disabled={tinderDays.length === 0} data-track="matplan:apne-tinder">
+					🔥 Middagstinder
+				</button>
+				<button class="ms-ai-btn" onclick={aiSuggestWeek} disabled={aiLoading} data-track="matplan:ai-foresla-uka">
+					{aiLoading ? '✨ Tenker…' : '✨ Foreslå uka med AI'}
+				</button>
+			</div>
 			<div class="ms-days">
 				{#each days as day, dayIndex (day.date)}
 					<div class="ms-day" class:skipped={day.skipped}>
@@ -332,6 +358,15 @@
 		{/if}
 	</footer>
 </div>
+
+{#if tinderOpen}
+	<MiddagsTinder
+		{candidates}
+		openDays={tinderDays}
+		onclose={() => (tinderOpen = false)}
+		oncommit={applyTinder}
+	/>
+{/if}
 
 {#if pickerDayIndex !== null}
 	<MealPickerSheet
@@ -418,7 +453,14 @@
 		flex-direction: column;
 		gap: 10px;
 	}
-	.ms-ai-btn {
+	.ms-quick-actions {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 8px;
+		margin-bottom: 12px;
+	}
+	.ms-ai-btn,
+	.ms-tinder-btn {
 		width: 100%;
 		background: rgba(124, 142, 245, 0.12);
 		border: 1px dashed rgba(124, 142, 245, 0.4);
@@ -428,9 +470,13 @@
 		font-size: 0.88rem;
 		font-weight: 600;
 		cursor: pointer;
-		margin-bottom: 12px;
 	}
-	.ms-ai-btn:disabled {
+	.ms-tinder-btn {
+		background: color-mix(in srgb, var(--accent-light) 14%, transparent);
+		border-style: solid;
+	}
+	.ms-ai-btn:disabled,
+	.ms-tinder-btn:disabled {
 		opacity: 0.6;
 		cursor: default;
 	}
