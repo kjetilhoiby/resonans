@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
-import { mealPlans, meals, pantryItems } from '$lib/db/schema';
+import { mealPlans, meals, pantryItems, foodSettings } from '$lib/db/schema';
 import { and, eq, gte, sql } from 'drizzle-orm';
 import { openai } from '$lib/server/openai';
 import { addDaysIso, datesForIsoWeek, isoWeekKeyForDate, osloTodayIso } from '$lib/server/iso-week';
@@ -69,6 +69,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		})
 		.join('\n');
 
+	// Familiens faste ukerytme/føringer (onboarding) — gjelder alltid, i tillegg
+	// til en eventuell engangs-note for denne uka.
+	const settings = await db.query.foodSettings.findFirst({
+		where: eq(foodSettings.userId, userId)
+	});
+	const weekRhythmNote = settings?.weekRhythmNote?.trim();
+
 	const systemPrompt = `Du planlegger ukemiddager for en norsk familie: 2 voksne og 3 barn med varierende smak.
 Familien vil ha variasjon, bruke det som ligger i lageret (særlig det som går ut på dato), og unngå retter de nylig har spist.
 Hverdager bør være enklere/raskere; helg kan være mer ambisiøs. Velg PRIMÆRT fra kartoteket (bruk id).
@@ -93,7 +100,8 @@ Returner KUN gyldig JSON:
 		'',
 		'LAGER:',
 		inStock || '(tomt)',
-		...(body.note ? ['', `FØRING FRA FAMILIEN: ${String(body.note).slice(0, 500)}`] : [])
+		...(weekRhythmNote ? ['', `FAMILIENS UKERYTME (gjelder alltid): ${weekRhythmNote}`] : []),
+		...(body.note ? ['', `FØRING FOR DENNE UKA: ${String(body.note).slice(0, 500)}`] : [])
 	].join('\n');
 
 	const completion = await openai.chat.completions.create({

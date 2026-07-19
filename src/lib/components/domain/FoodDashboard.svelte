@@ -12,6 +12,7 @@
 	import ShoppingListView from './food/ShoppingListView.svelte';
 	import LunchboxCard from './food/LunchboxCard.svelte';
 	import GroceryReceiptCard from './food/GroceryReceiptCard.svelte';
+	import MatplanOnboarding from './food/MatplanOnboarding.svelte';
 	import BottomSheet from '../ui/BottomSheet.svelte';
 	import type { FoodShoppingListSummary } from '$lib/client/dashboard-cache';
 
@@ -43,6 +44,7 @@
 		expiringSoon: PantryRow[];
 		shoppingList?: FoodShoppingListSummary | null;
 		groceryBudgetWeekly?: number | null;
+		onboarded?: boolean;
 		nextWeek?: {
 			weekContext: string;
 			mealPlans: MealPlanRow[];
@@ -52,7 +54,12 @@
 		onRefresh?: () => void;
 	}
 
-	let { weekContext, mealPlans, pantry, expiringSoon, shoppingList = null, groceryBudgetWeekly = null, nextWeek, onOpenChat, onRefresh }: Props = $props();
+	let { weekContext, mealPlans, pantry, expiringSoon, shoppingList = null, groceryBudgetWeekly = null, onboarded = true, nextWeek, onOpenChat, onRefresh }: Props = $props();
+
+	// Vis oppsett-CTA til onboardingen er fullført/hoppet over. Lokal state så
+	// «Sett opp»-kortet forsvinner umiddelbart etter fullføring.
+	let onboardingOpen = $state(false);
+	let onboardingDone = $state(onboarded);
 
 	// Lokal kopi av lageret så staple-stjerner kan toggles optimistisk
 	let pantryLocal = $state<PantryRow[]>([...pantry]);
@@ -151,6 +158,21 @@
 </script>
 
 <div class="food-dashboard">
+	<!-- Oppsett-CTA: vises til matplan-onboardingen er gjort -->
+	{#if !onboardingDone}
+		<SectionCard tone="subtle">
+			<div class="fd-onboard">
+				<div class="fd-onboard-copy">
+					<h3 class="fd-onboard-title">👋 Kom i gang med matplan</h3>
+					<p class="fd-onboard-sub">Sett opp barnas preferanser og familiens ukerytme, så treffer forslagene bedre. Tar et par minutter.</p>
+				</div>
+				<button class="fd-onboard-cta" onclick={() => (onboardingOpen = true)} data-track="matplan-onboarding:start">
+					Sett opp →
+				</button>
+			</div>
+		</SectionCard>
+	{/if}
+
 	<!-- Matpakker: dagens forslag per barn + retur-logging -->
 	<LunchboxCard />
 
@@ -330,6 +352,13 @@
 	/>
 {/if}
 
+{#if onboardingOpen}
+	<MatplanOnboarding
+		onclose={() => { onboardingOpen = false; onboardingDone = true; }}
+		oncompleted={() => { onboardingOpen = false; onboardingDone = true; onRefresh?.(); }}
+	/>
+{/if}
+
 {#if listSheetOpen && listSheetId}
 	<BottomSheet onclose={() => (listSheetOpen = false)} ariaLabel="Handleliste">
 		<div class="fd-sheet-body">
@@ -346,6 +375,36 @@
 		gap: 18px;
 		/* Horisontal padding kommer fra .data-panel (var(--page-px)) */
 		padding: 0;
+	}
+
+	.fd-onboard {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 14px;
+	}
+	.fd-onboard-title {
+		margin: 0 0 3px;
+		font-size: 1rem;
+		font-weight: 700;
+	}
+	.fd-onboard-sub {
+		margin: 0;
+		font-size: 0.82rem;
+		color: var(--color-text-secondary, #999);
+		line-height: 1.4;
+	}
+	.fd-onboard-cta {
+		background: var(--accent-primary);
+		color: #fff;
+		border: none;
+		border-radius: 12px;
+		padding: 12px 16px;
+		font-size: 0.88rem;
+		font-weight: 700;
+		cursor: pointer;
+		white-space: nowrap;
+		flex-shrink: 0;
 	}
 
 	.fd-plan-card {

@@ -54,6 +54,7 @@ Domenet dekker måltider, ukemeny, pantry/fryser/kjøleskap, handlelister og bil
 - generate_shopping_list: bygg handleliste fra ukemenyens måltider minus pantry-innhold (returnerer items klare for sjekkliste)
 - manage_lunchbox: matpakker — get_suggestions (dagens forslag per barn), log_packed, log_return («hadde med 2 skiver hjem»), set_preferences (liker/liker ikke/allergier/appetitt), add_component (pålegg/frukt/grønt i biblioteket)
 - find_recipes: søk ekte oppskrifter på norske sider (search: ingredienser default fra lageret, utløpsvarer prioriteres, barnas allergier ekskluderes; import: lagre valgt URL i kartoteket)
+- manage_food_settings: familiens ukerytme (weekRhythmNote — faste mønstre/føringer) og ukebudsjett på husholdningsnivå
 - analyze_meal_image: send Cloudinary-URL og få tilbake anslag av rett, ingredienser og næringsinnhold (grovt estimat)
 
 **Typiske flyter:**

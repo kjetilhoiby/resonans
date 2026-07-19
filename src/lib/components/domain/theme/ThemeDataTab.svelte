@@ -194,6 +194,7 @@
 			expiringSoon: foodDashboard.expiringSoon,
 			shoppingList: foodDashboard.shoppingList ?? null,
 			groceryBudgetWeekly: foodDashboard.groceryBudgetWeekly ?? null,
+			onboarded: foodDashboard.onboarded ?? true,
 			nextWeek: foodDashboard.nextWeek
 		};
 	});

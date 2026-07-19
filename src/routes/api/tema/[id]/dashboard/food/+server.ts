@@ -65,6 +65,8 @@ export const GET: RequestHandler = async ({ params, locals, url }) => {
 		expiringSoon,
 		groceryBudgetWeekly:
 			settings?.groceryBudgetWeekly != null ? Number(settings.groceryBudgetWeekly) : null,
+		weekRhythmNote: settings?.weekRhythmNote ?? null,
+		onboarded: !!settings?.onboardedAt,
 		nextWeek: {
 			weekContext: nextWeekContext,
 			mealPlans: nextWeekPlans,

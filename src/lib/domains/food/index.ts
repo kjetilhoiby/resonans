@@ -57,6 +57,7 @@ export const FOOD_DOMAIN_PROMPT = `
 - Bruk analyze_meal_image hvis bruker laster opp matbilde og vil ha estimat av rett/næring
 - Bruk manage_lunchbox for matpakker: dagens forslag per barn, logg retur («Ola hadde med 2 skiver hjem»), preferanser og komponentbibliotek
 - Bruk find_recipes for å finne ekte oppskrifter på nettet fra det som ligger i lageret («hva kan jeg lage med …») — search gir kandidater, import lagrer valgt oppskrift i kartoteket
+- Bruk manage_food_settings for familiens ukerytme og ukebudsjett («fredag er tacodag», «vi handler Oda onsdag»); manage_lunchbox for barnas preferanser
 - Foreslå handleliste når ukemeny endres
 - Vær konkret om porsjoner og tilberedningstid
 - Når bruker beskriver enkel matplan ("fisk til middag"), foreslå oppskrift, sjekk pantry og bygg handleliste i samme svar
