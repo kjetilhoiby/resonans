@@ -12,7 +12,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const result = await suggestRecipe(userId, {
 		title: body.title,
 		current: body.current ?? null,
-		instruction: body.instruction ?? null
+		instruction: body.instruction ?? null,
+		servings: typeof body.servings === 'number' ? body.servings : null
 	});
 
 	if (!result.ok) return json({ error: result.error }, { status: result.status });

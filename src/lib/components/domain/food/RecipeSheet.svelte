@@ -150,7 +150,8 @@
 				body: JSON.stringify({
 					title: title.trim(),
 					current: instruction ? collectCurrent() : null,
-					instruction
+					instruction,
+					servings: parseDecimalInput(servings)
 				})
 			});
 			const data = await res.json();
