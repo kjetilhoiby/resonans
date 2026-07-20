@@ -3,6 +3,7 @@ import { db } from '$lib/db';
 import { lunchboxComponents, lunchboxEntries, lunchboxProfiles, lunchboxReturns, persons } from '$lib/db/schema';
 import { and, eq, ilike } from 'drizzle-orm';
 import { getLunchboxOverview, osloToday } from '$lib/server/services/lunchbox-service';
+import { suggestLunchboxComponents } from '$lib/server/services/lunchbox-suggest-service';
 import { escapeLike } from '$lib/utils/like-escape';
 
 // Slår opp et barn på navn (case-insensitivt, også kallenavn/alias-prefiks).
@@ -34,12 +35,13 @@ Actions:
 - log_return: logg at noe kom i retur («Ola hadde med 2 skiver hjem») — childName + itemName kreves
 - set_preferences: oppdater liker/liker ikke/allergier/appetitt for et barn
 - add_component: legg en ny komponent i biblioteket (pålegg/brod/frukt/gront/notter/annet)
+- suggest_components: foreslå NYE komponenter til biblioteket basert på barnas preferanser, hva de har fra før og hva som kommer i retur. Valgfritt componentKind (fokusér én kategori) og instruction (fritekst-ønske, «mer frukt»). Lagrer ingenting — presenter forslagene; bruk add_component for å legge til det brukeren vil ha.
 
 Datoer er YYYY-MM-DD; default i dag (Oslo-tid).`,
 
 	parameters: z.object({
 		userId: z.string(),
-		action: z.enum(['get_suggestions', 'log_packed', 'log_return', 'set_preferences', 'add_component']),
+		action: z.enum(['get_suggestions', 'log_packed', 'log_return', 'set_preferences', 'add_component', 'suggest_components']),
 		childName: z.string().optional(),
 		date: z.string().optional().describe('YYYY-MM-DD, default i dag'),
 		itemName: z.string().optional().describe('Vare for log_return, f.eks. "brødskive med hvitost"'),
@@ -50,12 +52,13 @@ Datoer er YYYY-MM-DD; default i dag (Oslo-tid).`,
 		allergies: z.array(z.string()).optional(),
 		appetite: z.enum(['liten', 'middels', 'stor']).optional(),
 		componentName: z.string().optional(),
-		componentKind: z.enum(['palegg', 'brod', 'frukt', 'gront', 'notter', 'annet']).optional()
+		componentKind: z.enum(['palegg', 'brod', 'frukt', 'gront', 'notter', 'annet']).optional(),
+		instruction: z.string().optional().describe('Fritekst-ønske for suggest_components, f.eks. «mer frukt, uten brød»')
 	}),
 
 	execute: async (args: {
 		userId: string;
-		action: 'get_suggestions' | 'log_packed' | 'log_return' | 'set_preferences' | 'add_component';
+		action: 'get_suggestions' | 'log_packed' | 'log_return' | 'set_preferences' | 'add_component' | 'suggest_components';
 		childName?: string;
 		date?: string;
 		itemName?: string;
@@ -67,6 +70,7 @@ Datoer er YYYY-MM-DD; default i dag (Oslo-tid).`,
 		appetite?: 'liten' | 'middels' | 'stor';
 		componentName?: string;
 		componentKind?: 'palegg' | 'brod' | 'frukt' | 'gront' | 'notter' | 'annet';
+		instruction?: string;
 	}) => {
 		const date = args.date ?? osloToday();
 
@@ -193,6 +197,18 @@ Datoer er YYYY-MM-DD; default i dag (Oslo-tid).`,
 				.values({ userId: args.userId, name: args.componentName.trim(), kind: args.componentKind })
 				.returning();
 			return { component: created };
+		}
+
+		if (args.action === 'suggest_components') {
+			const result = await suggestLunchboxComponents(args.userId, {
+				kind: args.componentKind ?? null,
+				instruction: args.instruction ?? null
+			});
+			if (!result.ok) return { error: result.error };
+			return {
+				suggestions: result.suggestions,
+				hint: 'Presenter forslagene; legg til det brukeren vil ha med add_component (componentName + componentKind).'
+			};
 		}
 	}
 };

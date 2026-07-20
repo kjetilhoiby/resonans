@@ -34,6 +34,13 @@
 	let newName = $state('');
 	let newKind = $state<ComponentKind>('palegg');
 
+	type Suggestion = { name: string; kind: ComponentKind; tags: string[]; reason: string | null };
+	let suggestions = $state<Suggestion[]>([]);
+	let suggesting = $state(false);
+	let suggestInstruction = $state('');
+	let suggestError = $state('');
+	let addingName = $state<string | null>(null);
+
 	const KINDS = Object.entries(KIND_META) as Array<[ComponentKind, { label: string; emoji: string }]>;
 
 	function parseList(text: string): string[] {
@@ -79,6 +86,51 @@
 	async function removeComponent(component: Component) {
 		await fetch(`/api/food/lunchbox/components?id=${component.id}`, { method: 'DELETE' });
 		localComponents = localComponents.filter((c) => c.id !== component.id);
+	}
+
+	async function suggestMore() {
+		if (suggesting) return;
+		suggesting = true;
+		suggestError = '';
+		try {
+			const res = await fetch('/api/food/lunchbox/suggest-components', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ instruction: suggestInstruction.trim() || null })
+			});
+			const data = await res.json();
+			if (!res.ok) {
+				suggestError = data.error ?? 'Forslaget feilet. Prøv igjen.';
+				return;
+			}
+			// Skjul forslag som allerede finnes lokalt (kan ha blitt lagt til nettopp).
+			const have = new Set(localComponents.map((c) => c.name.toLowerCase()));
+			suggestions = (data.suggestions ?? []).filter((s: Suggestion) => !have.has(s.name.toLowerCase()));
+			if (suggestions.length === 0 && !suggestError) suggestError = 'Fant ingen nye forslag akkurat nå.';
+		} catch {
+			suggestError = 'Forslaget feilet. Prøv igjen.';
+		} finally {
+			suggesting = false;
+		}
+	}
+
+	async function acceptSuggestion(s: Suggestion) {
+		if (addingName) return;
+		addingName = s.name;
+		try {
+			const res = await fetch('/api/food/lunchbox/components', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name: s.name, kind: s.kind, tags: s.tags })
+			});
+			if (res.ok) {
+				const data = await res.json();
+				localComponents = [...localComponents.filter((c) => c.id !== data.component.id), data.component];
+				suggestions = suggestions.filter((x) => x.name !== s.name);
+			}
+		} finally {
+			addingName = null;
+		}
 	}
 
 	function grouped(): Array<[ComponentKind, Component[]]> {
@@ -154,6 +206,42 @@
 				</select>
 				<button class="lp-add-btn" onclick={addComponent} aria-label="Legg til komponent">+</button>
 			</div>
+
+			<div class="lp-suggest">
+				<div class="lp-suggest-row">
+					<input
+						class="lp-input"
+						bind:value={suggestInstruction}
+						placeholder="Ønske (valgfritt): «mer frukt», «uten brød»…"
+						onkeydown={(e) => e.key === 'Enter' && suggestMore()}
+						disabled={suggesting}
+						data-track="matpakke:foresla-instruksjon"
+					/>
+					<button class="lp-suggest-btn" onclick={suggestMore} disabled={suggesting} data-track="matpakke:foresla-flere">
+						{suggesting ? '✨ Tenker…' : '✨ Foreslå flere'}
+					</button>
+				</div>
+				{#if suggestError}<p class="lp-suggest-error">{suggestError}</p>{/if}
+				{#if suggestions.length > 0}
+					<p class="lp-hint">Tapp for å legge til i biblioteket:</p>
+					<div class="lp-suggest-chips">
+						{#each suggestions as s (s.name)}
+							<button
+								class="lp-suggest-chip"
+								onclick={() => acceptSuggestion(s)}
+								disabled={addingName === s.name}
+								title={s.reason ?? ''}
+								data-track="matpakke:godta-forslag"
+							>
+								<span class="lp-suggest-emoji">{KIND_META[s.kind].emoji}</span>
+								{s.name}
+								<span class="lp-suggest-plus">{addingName === s.name ? '…' : '+'}</span>
+							</button>
+						{/each}
+					</div>
+				{/if}
+			</div>
+
 			{#each grouped() as [kind, items]}
 				{#if items.length > 0}
 					<div class="lp-group">
@@ -295,6 +383,65 @@
 		color: var(--accent-light);
 		font-size: 1.1rem;
 		cursor: pointer;
+	}
+	.lp-suggest {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		padding: 12px;
+		background: color-mix(in srgb, var(--accent-light) 8%, transparent);
+		border: 1px solid color-mix(in srgb, var(--accent-light) 22%, transparent);
+		border-radius: 12px;
+	}
+	.lp-suggest-row {
+		display: grid;
+		grid-template-columns: 1fr auto;
+		gap: 6px;
+	}
+	.lp-suggest-btn {
+		background: color-mix(in srgb, var(--accent-light) 16%, transparent);
+		border: none;
+		border-radius: 10px;
+		color: var(--accent-light);
+		padding: 0 14px;
+		font-size: 0.85rem;
+		font-weight: 600;
+		cursor: pointer;
+		white-space: nowrap;
+	}
+	.lp-suggest-btn:disabled {
+		opacity: 0.6;
+		cursor: default;
+	}
+	.lp-suggest-error {
+		margin: 0;
+		font-size: 0.82rem;
+		color: var(--color-text-secondary, #9aa4d6);
+	}
+	.lp-suggest-chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+	.lp-suggest-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		background: rgba(255, 255, 255, 0.06);
+		border: 1px dashed color-mix(in srgb, var(--accent-light) 40%, transparent);
+		border-radius: 999px;
+		color: inherit;
+		padding: 6px 11px;
+		font-size: 0.82rem;
+		cursor: pointer;
+	}
+	.lp-suggest-chip:disabled {
+		opacity: 0.6;
+		cursor: default;
+	}
+	.lp-suggest-plus {
+		color: var(--accent-light);
+		font-weight: 700;
 	}
 	.lp-group {
 		display: flex;

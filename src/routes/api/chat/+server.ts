@@ -1214,11 +1214,11 @@ const tools = [
 				type: 'function' as const,
 				function: {
 					name: 'manage_lunchbox',
-					description: 'Matpakke-hjelperen: dagens forslag per barn (get_suggestions), marker pakket (log_packed), logg retur («Ola hadde med 2 skiver hjem» → log_return med childName+itemName), oppdater preferanser (set_preferences), legg til komponent i biblioteket (add_component).',
+					description: 'Matpakke-hjelperen: dagens forslag per barn (get_suggestions), marker pakket (log_packed), logg retur («Ola hadde med 2 skiver hjem» → log_return med childName+itemName), oppdater preferanser (set_preferences), legg til komponent i biblioteket (add_component), foreslå NYE komponenter (suggest_components — basert på preferanser, bibliotek og retur; presenter og legg til valgte med add_component).',
 					parameters: {
 						type: 'object',
 						properties: {
-							action: { type: 'string', enum: ['get_suggestions', 'log_packed', 'log_return', 'set_preferences', 'add_component'] },
+							action: { type: 'string', enum: ['get_suggestions', 'log_packed', 'log_return', 'set_preferences', 'add_component', 'suggest_components'] },
 							childName: { type: 'string' },
 							date: { type: 'string', description: 'YYYY-MM-DD, default i dag' },
 							itemName: { type: 'string' },
@@ -1229,7 +1229,8 @@ const tools = [
 							allergies: { type: 'array', items: { type: 'string' } },
 							appetite: { type: 'string', enum: ['liten', 'middels', 'stor'] },
 							componentName: { type: 'string' },
-							componentKind: { type: 'string', enum: ['palegg', 'brod', 'frukt', 'gront', 'notter', 'annet'] }
+							componentKind: { type: 'string', enum: ['palegg', 'brod', 'frukt', 'gront', 'notter', 'annet'] },
+							instruction: { type: 'string', description: 'Fritekst-ønske for suggest_components, f.eks. «mer frukt»' }
 						},
 						required: ['action']
 					}
