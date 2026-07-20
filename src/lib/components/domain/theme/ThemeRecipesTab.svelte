@@ -64,8 +64,11 @@
 			});
 			if (res.ok) {
 				const data = await res.json();
-				recipes = [{ ...data.meal, timesPlanned: 0, lastPlannedDate: null }, ...recipes];
+				const row = { ...data.meal, timesPlanned: 0, lastPlannedDate: null };
+				recipes = [row, ...recipes];
 				newTitle = '';
+				// Åpne kortet med en gang, så «✨ Foreslå oppskrift» er rett for hånden.
+				selected = row;
 			}
 		} finally {
 			creating = false;
