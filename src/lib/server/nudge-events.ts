@@ -16,7 +16,8 @@ export async function createNudgeEvent(params: {
 		| 'livskompasset_weekend'
 		| 'program_morning_readiness'
 		| 'program_adaptive_recalc'
-		| 'grocery_weekly';
+		| 'grocery_weekly'
+		| 'project_followup';
 	mode: 'interactive' | 'digest' | 'announce';
 	channel?: string;
 	context?: Record<string, unknown>;

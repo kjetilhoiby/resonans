@@ -199,6 +199,7 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 				id: t.id,
 				name: t.name,
 				emoji: t.emoji,
+				kind: (profile.kind as string | undefined) ?? null,
 				room: (profile.room as string | undefined) ?? null,
 				status: (profile.status as string | undefined) ?? null,
 				targetDate: (profile.targetDate as string | undefined) ?? null,

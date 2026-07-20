@@ -4,6 +4,7 @@
 	import { goto } from '$app/navigation';
 	import type { ProjectProgress } from '$lib/server/services/project-metrics-service';
 	import { SEASONS, currentSeason } from '$lib/domains/home';
+	import { PROJECT_KINDS, resolveProjectKind, type ProjectKind } from '$lib/domain/project-kinds';
 
 	interface ProjectRow {
 		id: string;
@@ -82,6 +83,7 @@
 		id: string;
 		name: string;
 		emoji: string | null;
+		kind?: string | null;
 		room: string | null;
 		status: string | null;
 		targetDate: string | null;
@@ -188,8 +190,10 @@
 	}
 
 	// Prosjekt = undertema av Hjem. Opprett-form lager et nytt undertema (egen chat, oppgaver, filer) og navigerer dit.
+	// `newKind` styrer hvilke faner prosjektet får (kappliste vs. kontakter).
 	let creating = $state(false);
 	let newName = $state('');
+	let newKind = $state<ProjectKind>('bygg');
 	let submitting = $state(false);
 
 	async function createProject() {
@@ -200,7 +204,7 @@
 			const res = await fetch('/api/hjem/prosjekt/create', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ name })
+				body: JSON.stringify({ name, kind: newKind })
 			});
 			if (res.ok) {
 				const { themeId } = await res.json();
@@ -472,16 +476,33 @@
 		</div>
 		{#if creating}
 			<form class="new-project" onsubmit={(e) => { e.preventDefault(); createProject(); }}>
-				<input
-					type="text"
-					placeholder="Navn, f.eks. Bygg terrasse"
-					data-track="prosjekter:nytt-prosjekt-navn"
-					bind:value={newName}
-					disabled={submitting}
-				/>
-				<button type="submit" class="create-submit" disabled={submitting || !newName.trim()}>
-					{submitting ? '...' : 'Opprett'}
-				</button>
+				<div class="kind-picker" role="radiogroup" aria-label="Prosjekttype">
+					{#each PROJECT_KINDS as k (k.key)}
+						<button
+							type="button"
+							class="kind-chip"
+							class:active={newKind === k.key}
+							role="radio"
+							aria-checked={newKind === k.key}
+							title={k.hint}
+							data-track="prosjekter:velg-type"
+							onclick={() => (newKind = k.key)}
+						>{k.emoji} {k.label}</button>
+					{/each}
+				</div>
+				<p class="kind-hint">{resolveProjectKind(newKind).hint}</p>
+				<div class="new-project-row">
+					<input
+						type="text"
+						placeholder="Navn, f.eks. Bygg terrasse"
+						data-track="prosjekter:nytt-prosjekt-navn"
+						bind:value={newName}
+						disabled={submitting}
+					/>
+					<button type="submit" class="create-submit" disabled={submitting || !newName.trim()}>
+						{submitting ? '...' : 'Opprett'}
+					</button>
+				</div>
 			</form>
 		{/if}
 		{#if projectThemes.length === 0}
@@ -491,7 +512,7 @@
 				{#each projectThemes as p (p.id)}
 					<button class="project-card" onclick={() => goto(`/tema/${p.id}`)}>
 						<div class="project-head">
-							<span class="project-emoji">{p.emoji ?? '🔨'}</span>
+							<span class="project-emoji">{p.emoji ?? resolveProjectKind(p.kind).emoji}</span>
 							<span class="project-name">{p.name}</span>
 						</div>
 						{#if p.room}
@@ -589,8 +610,38 @@
 	}
 	.new-project {
 		display: flex;
-		gap: 0.5rem;
+		flex-direction: column;
+		gap: 0.6rem;
 		margin-bottom: 0.75rem;
+	}
+	.kind-picker {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+	}
+	.kind-chip {
+		padding: 0.35rem 0.7rem;
+		border-radius: 999px;
+		border: 1px solid var(--border-color);
+		background: transparent;
+		color: var(--text-secondary);
+		font: inherit;
+		font-size: 0.8rem;
+		cursor: pointer;
+	}
+	.kind-chip.active {
+		border-color: var(--accent-primary);
+		background: var(--bg-hover);
+		color: var(--accent-light);
+	}
+	.kind-hint {
+		margin: 0;
+		font-size: 0.78rem;
+		color: var(--text-tertiary);
+	}
+	.new-project-row {
+		display: flex;
+		gap: 0.5rem;
 	}
 	.new-project input {
 		flex: 1;

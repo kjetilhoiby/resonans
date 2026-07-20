@@ -49,6 +49,11 @@ const JOBS: CronJob[] = [
 		description: 'Timebasert lokal nudge for planlegg dag (07:00), parsjekk morgen (08:30) og avslutt dag (21:00)'
 	},
 	{
+		path: '/api/cron/project-followup-nudges',
+		schedule: '0 * * * *',
+		description: 'Timebasert lokal purre-nudge for prosjekt-oppfølging (kontakter med forfalt oppfølgingsdato, default 09:00)'
+	},
+	{
 		path: '/api/cron/domain-signals',
 		schedule: '15 * * * *',
 		description: 'Produserer avledede cross-domain signaler for temaer og domene-kontrakter',
