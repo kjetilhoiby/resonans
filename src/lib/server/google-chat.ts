@@ -452,6 +452,72 @@ export function buildNudgeDigestMessage(data: {
 }
 
 /**
+ * Bygg purre-nudge for prosjekt-oppfølging: kontakter med forfalt oppfølgingsdato
+ * i kommunikasjons-/arrangement-prosjekter. Grupperer per prosjekt.
+ */
+export function buildProjectFollowUpNudgeMessage(data: {
+	appUrl: string;
+	userName?: string | null;
+	projects: Array<{
+		themeId: string;
+		themeName: string;
+		contacts: Array<{ name: string; role: string | null }>;
+	}>;
+	nudgeEventId?: string;
+}): GoogleChatMessage {
+	const { appUrl, userName, projects, nudgeEventId } = data;
+	const greeting = userName ? `Hei ${userName}!` : 'Hei!';
+	const eventParam = nudgeEventId ? `?nudgeEventId=${encodeURIComponent(nudgeEventId)}` : '';
+	const totalContacts = projects.reduce((sum, p) => sum + p.contacts.length, 0);
+
+	const sections = projects.map((p) => {
+		const lines = p.contacts
+			.map((c) => `• ${c.name}${c.role ? ` <i>(${c.role})</i>` : ''}`)
+			.join('<br>');
+		return {
+			widgets: [
+				{ textParagraph: { text: `<b>${p.themeName}</b><br>${lines}` } },
+				{
+					buttons: [
+						{
+							textButton: {
+								text: 'Åpne prosjekt',
+								onClick: {
+									openLink: { url: `${appUrl}/tema/${p.themeId}?tab=kontakter${eventParam ? `&${eventParam.slice(1)}` : ''}` }
+								}
+							}
+						}
+					]
+				}
+			]
+		};
+	});
+
+	return {
+		cards: [
+			{
+				header: {
+					title: '📇 Oppfølging',
+					subtitle: `${totalContacts} kontakt${totalContacts === 1 ? '' : 'er'} å purre`
+				},
+				sections: [
+					{
+						widgets: [
+							{
+								textParagraph: {
+									text: `<b>${greeting}</b><br>Noen kontakter venter på oppfølging.`
+								}
+							}
+						]
+					},
+					...sections
+				]
+			}
+		]
+	};
+}
+
+/**
  * Bygg milestone notification
  */
 export function buildMilestoneMessage(data: {

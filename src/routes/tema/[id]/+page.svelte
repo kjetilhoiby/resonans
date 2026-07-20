@@ -41,6 +41,7 @@
 		projectProfile={data.projectProfile}
 		tasks={data.tasks}
 		cutLists={data.cutLists}
+		contacts={data.contacts}
 	/>
 	{/key}
 	{/if}

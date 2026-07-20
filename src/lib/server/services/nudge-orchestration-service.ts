@@ -7,6 +7,7 @@ import { runDayPlanningAndCloseNudges } from '$lib/server/day-planning-nudges';
 import { runEgenfrekvensCheckInNudges, type EgenfrekvensCheckInNudgeResult } from '$lib/server/egenfrekvens-nudges';
 import { runLivskompassWeekendNudges } from '$lib/server/livskompass-nudges';
 import { runProgramReadinessNudges, type ProgramReadinessNudgeResult } from '$lib/server/programs/readiness-nudges';
+import { runProjectFollowUpNudges } from '$lib/server/project-followup-nudges';
 import { localHm, isWithinRecentMinutesWindow } from '$lib/server/nudge-time';
 import { eq } from 'drizzle-orm';
 
@@ -167,6 +168,10 @@ export class NudgeOrchestrationService {
 		userId?: string;
 	}) {
 		return runProgramReadinessNudges(args);
+	}
+
+	static async runProjectFollowUpNudges(args: { appUrl: string; now?: Date }) {
+		return runProjectFollowUpNudges(args.appUrl, args.now);
 	}
 }
 
