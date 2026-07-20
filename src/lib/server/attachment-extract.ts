@@ -29,6 +29,8 @@ export interface AttachmentExtraction {
 		| 'vision'
 		| 'audio_transcript'
 		| 'video_audio_transcript'
+		| 'video_transcript_and_frames'
+		| 'video_frames'
 		| 'pdf_text'
 		| 'docx_text'
 		| 'sheet_text'
@@ -84,6 +86,64 @@ export function detectAttachmentKind(file: File): AttachmentKind {
 
 export function normalizeAttachmentSource(value: unknown): AttachmentSource {
 	return value === 'camera' || value === 'file' || value === 'voice' ? value : 'file';
+}
+
+const VIDEO_EXTENSIONS = ['.mp4', '.mov', '.m4v', '.webm'];
+
+/** Er dette en videofil (etter mime-type eller filendelse)? */
+export function isVideoFile(file: File): boolean {
+	const mime = file.type.toLowerCase();
+	const name = file.name.toLowerCase();
+	return mime.startsWith('video/') || VIDEO_EXTENSIONS.some((ext) => name.endsWith(ext));
+}
+
+/** Maks antall keyframes vi sampler fra en video (kostnadstak for vision). */
+const MAX_VIDEO_FRAMES = 6;
+
+/**
+ * Velg tidspunkter (sekunder) for keyframe-sampling, jevnt fordelt og med
+ * bevisst klaring til start (ofte svart) og slutt. Ren funksjon — testbar.
+ */
+export function pickFrameOffsets(durationSec: number, maxFrames = MAX_VIDEO_FRAMES): number[] {
+	if (!Number.isFinite(durationSec) || durationSec <= 0) return [];
+	const count = Math.min(maxFrames, Math.max(2, Math.floor(durationSec / 8)));
+	const offsets: number[] = [];
+	for (let k = 1; k <= count; k++) {
+		const t = (durationSec * k) / (count + 1);
+		offsets.push(Math.round(t * 10) / 10);
+	}
+	return [...new Set(offsets)].filter((t) => t > 0 && t < durationSec);
+}
+
+/** Sekunder → «m:ss». */
+export function formatTimestamp(sec: number): string {
+	const total = Math.max(0, Math.round(sec));
+	const m = Math.floor(total / 60);
+	const s = total % 60;
+	return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Flett transkribert tale og keyframe-beskrivelse til ett innholdsfelt, og
+ * velg riktig `extractionKind`. Ren funksjon — testbar.
+ */
+export function mergeVideoContent(
+	transcript: string,
+	frameText: string
+): { contentText: string; extractionKind: AttachmentExtraction['extractionKind'] } {
+	const t = transcript.trim();
+	const f = frameText.trim();
+	const parts: string[] = [];
+	if (t) parts.push(`[Tale (transkribert)]\n${t}`);
+	if (f) parts.push(`[Visuelt innhold (keyframes)]\n${f}`);
+
+	let extractionKind: AttachmentExtraction['extractionKind'];
+	if (t && f) extractionKind = 'video_transcript_and_frames';
+	else if (f) extractionKind = 'video_frames';
+	else if (t) extractionKind = 'video_audio_transcript';
+	else extractionKind = 'metadata_only';
+
+	return { contentText: parts.join('\n\n'), extractionKind };
 }
 
 function decodeXmlEntities(value: string): string {
@@ -215,8 +275,7 @@ export async function extractTextContent(
 ): Promise<AttachmentExtraction> {
 	const mimeType = file.type.toLowerCase();
 	const fileName = file.name.toLowerCase();
-	const isVideoSource =
-		mimeType.startsWith('video/') || ['.mp4', '.mov', '.m4v', '.webm'].some((ext) => fileName.endsWith(ext));
+	const isVideoSource = isVideoFile(file);
 
 	if (kind === 'audio') {
 		try {
@@ -268,6 +327,67 @@ export async function extractTextContent(
 }
 
 /**
+ * Beskriv en videos visuelle innhold ved å sample keyframes fra Cloudinary
+ * (så_<sekund>-thumbnails) og sende dem samlet til GPT-4o vision. Ett kall med
+ * alle bildene gir en sammenhengende beskrivelse på tvers av tid.
+ *
+ * Sideeffekt (nettverk + vision-kostnad) — dekkes ikke av enhetstester.
+ */
+async function describeVideoFrames(publicId: string, offsets: number[]): Promise<string> {
+	if (offsets.length === 0) return '';
+
+	const content: Array<
+		{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string; detail: 'low' } }
+	> = [
+		{
+			type: 'text',
+			text: `Under følger ${offsets.length} keyframes hentet fra en video, i kronologisk rekkefølge med tidsstempel.`
+		}
+	];
+
+	for (const sec of offsets) {
+		const url = cloudinary.url(publicId, {
+			resource_type: 'video',
+			format: 'jpg',
+			secure: true,
+			start_offset: String(sec),
+			width: 640,
+			height: 640,
+			crop: 'limit',
+			quality: 'auto:good'
+		});
+		content.push({ type: 'text', text: `Bilde ved ${formatTimestamp(sec)}:` });
+		content.push({ type: 'image_url', image_url: { url, detail: 'low' } });
+	}
+
+	const response = await openai.chat.completions.create({
+		model: 'gpt-4o',
+		max_tokens: 500,
+		messages: [
+			{
+				role: 'user',
+				content: [
+					{
+						type: 'text',
+						text: `Du ekstraherer nyttig informasjon fra en video for kontekst i en personlig coaching-app.
+
+Beskriv på norsk hva videoen viser, basert på keyframene under. Fokuser på:
+- Hva som skjer og hvordan det utvikler seg over tid
+- All synlig tekst, tall, data (skjermbilder, tabeller, grafer)
+- Personer, aktiviteter, omgivelser relevante for trening, helse, familie eller hverdag
+
+Vær presis og kortfattet. Maks 300 ord. Ikke gjett vilt — beskriv det du faktisk ser.`
+					},
+					...content
+				]
+			}
+		]
+	});
+
+	return cleanExtractedText(response.choices[0]?.message?.content ?? '');
+}
+
+/**
  * Laster opp en fil til Cloudinary og trekker ut innhold. Returnerer selve
  * vedleggsobjektet samt buffer/extraction slik at den kalde triagen kan bygge
  * videre (bilde-signatur, byte-hash, osv.) uten å laste opp på nytt.
@@ -280,7 +400,7 @@ export async function uploadAndExtractAttachment(
 	const kind = detectAttachmentKind(file);
 	const arrayBuffer = await file.arrayBuffer();
 	const buffer = BufferGlobal.from(arrayBuffer);
-	const extraction = await extractTextContent(file, buffer, kind);
+	const baseExtraction = await extractTextContent(file, buffer, kind);
 	const base64 = buffer.toString('base64');
 	const dataUri = `data:${file.type || 'application/octet-stream'};base64,${base64}`;
 
@@ -303,6 +423,29 @@ export async function uploadAndExtractAttachment(
 				};
 
 	const uploaded = await cloudinary.uploader.upload(dataUri, uploadOptions);
+
+	// For video: sampl keyframes og beskriv dem visuelt, flett så inn i den
+	// eksisterende transkripsjonen. Feiler dette (kostnad/nettverk) beholder vi
+	// transkripsjonen alene — video er fortsatt nyttig uten det visuelle.
+	let extraction = baseExtraction;
+	if (isVideoFile(file) && uploaded.resource_type === 'video') {
+		try {
+			const duration = (uploaded as { duration?: number }).duration;
+			const offsets = pickFrameOffsets(typeof duration === 'number' ? duration : NaN);
+			if (offsets.length > 0) {
+				const frameText = await describeVideoFrames(uploaded.public_id, offsets);
+				if (frameText) {
+					const merged = mergeVideoContent(baseExtraction.contentText, frameText);
+					extraction = {
+						contentText: limitContent(merged.contentText),
+						extractionKind: merged.extractionKind
+					};
+				}
+			}
+		} catch (error) {
+			console.error('Video keyframe extraction failed:', error);
+		}
+	}
 
 	const attachment: ExtractedAttachment = {
 		url: uploaded.secure_url,
