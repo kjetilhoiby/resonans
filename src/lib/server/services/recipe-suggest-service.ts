@@ -77,8 +77,9 @@ export async function suggestRecipe(
 	// enkelt enhet — ellers ender «5 porsjoner» opp som «5 pizzabunner».
 	const scaleRule = refining
 		? `- Behold porsjonsstørrelsen og mengde-skalaen i den nåværende oppskriften. IKKE skaler opp eller ned med mindre ønsket eksplisitt ber om det.`
-		: `- «servings» betyr hvor mange PERSONER retten metter — ikke antall enheter. Sikt på ${targetServings} porsjoner.
-- For enhetsbaserte retter (pizza, pannekaker, wraps, burgere, lomper o.l.): skriv oppskriften for ÉN enkelt enhet (f.eks. én pizza) som utgangspunkt, sett «servings» til hvor mange den ene enheten realistisk metter, og nevn i «note» at den kan dobles/tredobles ved behov. Ikke multipliser hele oppskriften opp til familiestørrelse.`;
+		: `- «servings» betyr hvor mange PERSONER retten metter — ikke antall enheter.
+- For vanlige middager: skalér mengdene til ${targetServings} porsjoner.
+- For enhets-/batch-baserte retter (pizza, pannekaker, vafler, boller, wraps, lomper): bruk rettens NATURLIGE grunnoppskrift slik den vanligvis skrives — f.eks. per pizza, pannekakerøre på ca. 1 liter melk, én vaffelrøre — og sett «servings» til hvor mange den grunnoppskriften metter. Verken multipliser opp til familiestørrelse eller krymp til én enkelt enhet når retten lages i en omgang. Nevn i «note» hva grunnmålet er (f.eks. «røre på 1 liter melk, ~20 pannekaker») og at den kan dobles ved behov.`;
 
 	const systemPrompt = `Du lager norske familieoppskrifter for et hushold med 2 voksne og 3 barn. Returner KUN gyldig JSON:
 {
