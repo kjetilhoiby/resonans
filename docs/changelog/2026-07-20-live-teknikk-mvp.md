@@ -74,6 +74,23 @@ Vurderingen (se samtalehistorikk) landet på:
 - Kamera + live pose-deteksjon kan ikke kjøres i CI (krever ekte kamera + WebGL);
   må testes manuelt på enhet. Den rene analyselogikken er dekket av tester.
 
+## Beslutning: den levende delen hører hjemme i Ekko
+
+Etter MVP-en ble det avklart at den *raske løkka* (kamera, pose-estimering,
+rep-telling, lyd-cues) hører hjemme i **Ekko-iOS-appen**, ikke i Resonans-web:
+
+- Ekko eier live treningsoppfølging (se `docs/VISION.md` § Integrasjon med Ekko).
+- Native gir iOS Vision-framework (innebygd kroppspose), pålitelig kamera og
+  bedre batteri/termal enn MediaPipe-WASM i en webview.
+- Sømmen faller sammen med to-løkke-splittet: rask løkke → Ekko (native),
+  treg løkke (LLM-coaching) → Resonans-backend, helst via eksisterende
+  `POST /api/apps/coach` (ikke det duplikate `/api/trening/teknikk/oppsummering`).
+
+**Det som overlever:** den rene analysatoren (`src/lib/pose/`) + de 22 testene
+er nå en **referanseimplementasjon og oppførselsspec** for Swift-porten —
+skrevet ut i `docs/archive/EKKO_TEKNIKK_INTEGRATION.md`. Web-siden +
+MediaPipe-wrapperen står som prototype/fallback.
+
 ## Videre (ikke i denne endringen)
 
 - **Yoga-positurer:** sammenlign live keypoints mot en målpositur, gi cues per ledd.
