@@ -2960,6 +2960,38 @@ export const emailRulesRelations = relations(emailRules, ({ one }) => ({
 }));
 
 // ============================================
+// FUNN — Triage-innboks for lagrede lenker/reels (Instagram m.m.)
+// ============================================
+// Kommer inn via e-post (email_rules.processing_type = 'find_triage'): GPT
+// klassifiserer «hva er dette», henter OpenGraph-meta fra lenka, og lander
+// funnet her for triage. Oppskrifter promoteres til meals (meal_id peker dit).
+export const finds = pgTable('finds', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	title: text('title').notNull(),
+	summary: text('summary'),
+	theme: text('theme'), // DomainType-nøkkel eller 'annet' — se src/lib/domains
+	kind: text('kind'), // fri klassifisering: 'oppskrift' | 'teknikk' | 'tips' | ...
+	sourceUrl: text('source_url'),
+	thumbnailUrl: text('thumbnail_url'),
+	rawText: text('raw_text'), // caption/OG-beskrivelse/e-posttekst brukt til triage
+	extracted: jsonb('extracted').$type<Record<string, unknown> | null>(),
+	status: text('status').notNull().default('inbox'), // 'inbox' | 'kept' | 'discarded'
+	mealId: uuid('meal_id').references((): AnyPgColumn => meals.id, { onDelete: 'set null' }), // satt hvis promotert til oppskrift
+	emailFrom: text('email_from'),
+	emailSubject: text('email_subject'),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	idxFindsUserStatus: index('finds_user_status_idx').on(table.userId, table.status, table.createdAt)
+}));
+
+export const findsRelations = relations(finds, ({ one }) => ({
+	user: one(users, { fields: [finds.userId], references: [users.id] }),
+	meal: one(meals, { fields: [finds.mealId], references: [meals.id] })
+}));
+
+// ============================================
 // PROCEDURES — Gjenbrukbare oppskrifter/fremgangsmåter
 // ============================================
 
