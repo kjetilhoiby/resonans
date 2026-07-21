@@ -17,7 +17,7 @@
 	</div>
 	<input
 		type="file"
-		accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,text/*"
+		accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,text/*,video/*,.mp4,.mov,.m4v,.webm"
 		style="display:none"
 		bind:this={ctx.fileFlowInput}
 		onchange={ctx.handleFileFlowSelect}
@@ -58,7 +58,7 @@
 			<button class="upload-zone" onclick={() => ctx.fileFlowInput?.click()}>
 				<span class="upload-zone-icon"><Icon name="file" size={28} /></span>
 				<p class="upload-zone-label">Velg fil</p>
-				<p class="upload-zone-sub">PDF · Word · Excel · Tekst</p>
+				<p class="upload-zone-sub">PDF · Word · Excel · Tekst · Video</p>
 			</button>
 			{#if ctx.fileHistory.length > 0}
 				<div class="media-history">

@@ -13,7 +13,7 @@
 <div class="flow-panel">
 	<div class="flow-header">
 		<button class="flow-back" onclick={ctx.closeVoiceFlow} aria-label="Tilbake"><Icon name="back" size={18} /></button>
-		<span class="flow-title">Lyd</span>
+		<span class="flow-title">Lyd/video</span>
 	</div>
 	<input
 		bind:this={ctx.voiceFileInput}

@@ -128,7 +128,7 @@ export const QUICK_ACTIONS: QuickAction[] = [
 	},
 	{
 		id: 'voice',
-		label: 'Lyd',
+		label: 'Lyd/video',
 		icon: 'wave',
 		description: 'Bruk stemmen, eller last opp en video med lyd, når du vil få noe ut raskt uten å formulere deg perfekt.',
 		placeholder: 'Skriv stikkord for det du ville sagt høyt.',
@@ -146,9 +146,9 @@ export const QUICK_ACTIONS: QuickAction[] = [
 		id: 'file',
 		label: 'Fil',
 		icon: 'file',
-		description: 'Ta inn dokumenter, utsnitt eller annet innhold som bør triageres videre.',
+		description: 'Ta inn dokumenter, video eller annet innhold som bør triageres videre.',
 		placeholder: 'Hva inneholder filen, og hva vil du at vi skal gjøre med den?',
-		helper: 'Kan være PDF, eksport, skjermdump eller annet materiale du vil rute til riktig tema.'
+		helper: 'Kan være PDF, eksport, skjermdump, video eller annet materiale du vil rute til riktig tema.'
 	}
 ];
 
