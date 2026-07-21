@@ -274,6 +274,7 @@ export interface HomeContext {
 	voiceFileInput: HTMLInputElement | null;
 	voiceSelectedFile: File | null;
 	voiceUploading: boolean;
+	voiceProgress: number;
 	voiceError: boolean;
 	voiceHistory: MediaHistoryItem[];
 	voiceHistoryLoading: boolean;
@@ -285,6 +286,7 @@ export interface HomeContext {
 	fileFlowMode: 'local' | 'sheet';
 	fileFlowNote: string;
 	fileFlowUploading: boolean;
+	fileFlowProgress: number;
 	fileFlowError: boolean;
 	sheetFlowUrl: string;
 	sheetFlowRange: string;

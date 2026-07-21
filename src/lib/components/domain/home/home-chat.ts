@@ -44,12 +44,13 @@ function buildRawBody(file: File, note: string, source: AttachmentSource): FormD
 async function buildAttachmentBody(
 	file: File,
 	note: string,
-	source: AttachmentSource
+	source: AttachmentSource,
+	onProgress?: (fraction: number) => void
 ): Promise<FormData> {
 	if (isVideoFile(file)) {
 		// 1) Direkte-til-Cloudinary → transkript + frames server-side.
 		try {
-			const { publicId, durationSec } = await uploadVideoToCloudinary(file);
+			const { publicId, durationSec } = await uploadVideoToCloudinary(file, onProgress);
 			const formData = new FormData();
 			formData.append('mode', 'video-remote');
 			formData.append('publicId', publicId);
@@ -156,9 +157,10 @@ export const QUICK_ACTIONS: QuickAction[] = [
 export async function requestAttachmentTriage(
 	file: File,
 	note: string,
-	source: AttachmentSource
+	source: AttachmentSource,
+	onProgress?: (fraction: number) => void
 ): Promise<AttachmentTriageResponse> {
-	const body = await buildAttachmentBody(file, note, source);
+	const body = await buildAttachmentBody(file, note, source, onProgress);
 	const response = await fetch('/api/attachment-triage', {
 		method: 'POST',
 		body
@@ -179,9 +181,10 @@ export async function requestAttachmentTriage(
 export async function requestAttachmentUpload(
 	file: File,
 	note: string,
-	source: AttachmentSource
+	source: AttachmentSource,
+	onProgress?: (fraction: number) => void
 ): Promise<AttachmentRef> {
-	const body = await buildAttachmentBody(file, note, source);
+	const body = await buildAttachmentBody(file, note, source, onProgress);
 	const response = await fetch('/api/attachment-extract', { method: 'POST', body });
 	if (!response.ok) {
 		throw new Error('Attachment upload failed');

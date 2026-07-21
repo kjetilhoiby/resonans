@@ -109,6 +109,7 @@ export interface VoiceState {
 	voiceFileInput: HTMLInputElement | null;
 	voiceSelectedFile: File | null;
 	voiceUploading: boolean;
+	voiceProgress: number;
 	voiceError: boolean;
 	voiceHistory: MediaHistoryItem[];
 	voiceHistoryLoading: boolean;
@@ -121,6 +122,7 @@ export function createVoiceState(): VoiceState {
 		voiceFileInput: null,
 		voiceSelectedFile: null,
 		voiceUploading: false,
+		voiceProgress: 0,
 		voiceError: false,
 		voiceHistory: [],
 		voiceHistoryLoading: false,
@@ -161,16 +163,20 @@ export async function submitVoice(
 ): Promise<void> {
 	if (!state.voiceSelectedFile) return;
 	state.voiceUploading = true;
+	state.voiceProgress = 0;
 	state.voiceError = false;
 	try {
 		const caption = state.voiceText.trim();
-		const attachment = await requestAttachmentUpload(state.voiceSelectedFile, caption, 'voice');
+		const attachment = await requestAttachmentUpload(state.voiceSelectedFile, caption, 'voice', (f) => {
+			state.voiceProgress = f;
+		});
 		closeFn();
 		onReady(attachment, caption);
 	} catch {
 		state.voiceError = true;
 	} finally {
 		state.voiceUploading = false;
+		state.voiceProgress = 0;
 	}
 }
 
@@ -194,6 +200,7 @@ export interface FileFlowState {
 	fileFlowMode: 'local' | 'sheet';
 	fileFlowNote: string;
 	fileFlowUploading: boolean;
+	fileFlowProgress: number;
 	fileFlowError: boolean;
 	sheetFlowUrl: string;
 	sheetFlowRange: string;
@@ -211,6 +218,7 @@ export function createFileFlowState(): FileFlowState {
 		fileFlowMode: 'local',
 		fileFlowNote: '',
 		fileFlowUploading: false,
+		fileFlowProgress: 0,
 		fileFlowError: false,
 		sheetFlowUrl: '',
 		sheetFlowRange: '',
@@ -258,8 +266,11 @@ export function submitFile(
 	const selectedFile = state.fileFlowSelected;
 	const note = state.fileFlowNote.trim();
 	state.fileFlowUploading = true;
+	state.fileFlowProgress = 0;
 	state.fileFlowError = false;
-	requestAttachmentUpload(selectedFile, note, 'file')
+	requestAttachmentUpload(selectedFile, note, 'file', (f) => {
+		state.fileFlowProgress = f;
+	})
 		.then((attachment) => {
 			closeFn();
 			onReady(attachment, note);
@@ -269,6 +280,7 @@ export function submitFile(
 		})
 		.finally(() => {
 			state.fileFlowUploading = false;
+			state.fileFlowProgress = 0;
 		});
 }
 

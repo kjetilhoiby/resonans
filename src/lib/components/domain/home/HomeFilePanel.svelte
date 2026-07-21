@@ -102,7 +102,13 @@
 				<p class="flow-error">Noe gikk galt. Prøv igjen.</p>
 			{/if}
 			<button class="flow-submit" onclick={ctx.submitFile} disabled={ctx.fileFlowUploading}>
-				{ctx.fileFlowUploading ? 'Triagerer…' : 'Last opp og triager →'}
+				{#if ctx.fileFlowUploading}
+					{ctx.fileFlowProgress > 0 && ctx.fileFlowProgress < 1
+						? `Laster opp… ${Math.round(ctx.fileFlowProgress * 100)}%`
+						: 'Triagerer…'}
+				{:else}
+					Last opp og triager →
+				{/if}
 			</button>
 			<button class="flow-ghost" onclick={() => {
 				ctx.fileFlowSelected = null;

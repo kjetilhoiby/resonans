@@ -739,6 +739,7 @@
 	let voiceFileInput = $state<HTMLInputElement | null>(null);
 	let voiceSelectedFile = $state<File | null>(null);
 	let voiceUploading = $state(false);
+	let voiceProgress = $state(0);
 	let voiceError = $state(false);
 	let voiceHistory = $state<MediaHistoryItem[]>([]);
 	let voiceHistoryLoading = $state(false);
@@ -750,6 +751,7 @@
 	let fileFlowMode = $state<'local' | 'sheet'>('local');
 	let fileFlowNote = $state('');
 	let fileFlowUploading = $state(false);
+	let fileFlowProgress = $state(0);
 	let fileFlowError = $state(false);
 	let sheetFlowUrl = $state('');
 	let sheetFlowRange = $state('');
@@ -1085,6 +1087,7 @@
 		get voiceFileInput() { return voiceFileInput; }, set voiceFileInput(v) { voiceFileInput = v; },
 		get voiceSelectedFile() { return voiceSelectedFile; }, set voiceSelectedFile(v) { voiceSelectedFile = v; },
 		get voiceUploading() { return voiceUploading; },
+		get voiceProgress() { return voiceProgress; }, set voiceProgress(v) { voiceProgress = v; },
 		get voiceError() { return voiceError; }, set voiceError(v) { voiceError = v; },
 		get voiceHistory() { return voiceHistory; },
 		get voiceHistoryLoading() { return voiceHistoryLoading; },
@@ -1095,6 +1098,7 @@
 		get fileFlowMode() { return fileFlowMode; }, set fileFlowMode(v) { fileFlowMode = v; },
 		get fileFlowNote() { return fileFlowNote; }, set fileFlowNote(v) { fileFlowNote = v; },
 		get fileFlowUploading() { return fileFlowUploading; },
+		get fileFlowProgress() { return fileFlowProgress; }, set fileFlowProgress(v) { fileFlowProgress = v; },
 		get fileFlowError() { return fileFlowError; },
 		get sheetFlowUrl() { return sheetFlowUrl; }, set sheetFlowUrl(v) { sheetFlowUrl = v; },
 		get sheetFlowRange() { return sheetFlowRange; }, set sheetFlowRange(v) { sheetFlowRange = v; },

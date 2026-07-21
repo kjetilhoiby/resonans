@@ -106,6 +106,22 @@ klipp), men er den eneste veien til lyd. On-device-frames (rask, ingen stor
 opplasting, uten lyd) står som fallback. Et eksplisitt «hopp over lyd»-valg i
 UI-et er et naturlig neste steg.
 
+### Fase 5: Chunked opplasting + progresjon
+
+To ting som trengs for at store klipp faktisk skal virke og føles greit:
+
+- **Chunked opplasting** (`cloudinary-video.ts`): Cloudinarys synkrone opplasting
+  har en per-request-grense (ofte ~100 MB), så en 160 MB video i én POST kan bli
+  avvist. Filer over 20 MB sendes nå i 20 MB-chunks med `X-Unique-Upload-Id` +
+  `Content-Range` — den robuste veien for store filer. Siste chunk gir det
+  fullstendige svaret (publicId/duration).
+- **Opplastingsprogresjon**: `uploadVideoToCloudinary` rapporterer en samlet
+  fraksjon (på tvers av chunks), tredd gjennom `requestAttachmentUpload`/
+  `requestAttachmentTriage` → `submitVoice`/`submitFile` → `voiceProgress`/
+  `fileFlowProgress` i state → knappetekst «Laster opp … NN %». Uten dette ser en
+  fleminutters opplasting frosset ut. Progresjon er additivt og påvirker ikke
+  andre opplastinger (fraksjonen forblir 0 → «Triagerer …» som før).
+
 ## Beslutninger
 
 - **Én vision-melding med flere bilder** framfor ett kall per frame: billigere og
