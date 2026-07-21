@@ -35,6 +35,30 @@ Alt i `src/lib/server/attachment-extract.ts`:
   chat-/triage-prompts — ingen switch eller DB-enum å oppdatere).
 - Feiler frame-uttrekket (kostnad/nettverk), beholdes transkripsjonen alene.
 
+### Fase 2: On-device frame-uttrekk (store videoer)
+
+Vercel serverless-funksjoner har ~4,5 MB body-grense. En 160 MB video (typisk
+telefonklipp) kommer aldri gjennom `/api/attachment-extract` eller
+`/api/attachment-triage` rått. Siden vi bare trenger 6 frames, trekker vi dem nå
+ut **on-device** og laster opp bare de små JPEG-ene.
+
+- `src/lib/media/video-frame-timing.ts` — de rene funksjonene (`pickFrameOffsets`,
+  `formatTimestamp`) flyttet hit, delt mellom klient og server.
+- `src/lib/client/video-frames.ts` — `extractVideoFrames`: laster video via
+  `createObjectURL` (streames, ikke inn i JS-minnet), søker til tidspunktene,
+  tegner til `<canvas>` nedskalert til 640px, eksporterer JPEG. HEVC-`.mov`
+  dekodes fint på iOS Safari; canvas blir ikke «tainted» (same-origin object-URL).
+- `uploadAndExtractVideoFrames` + `parseVideoFramesForm` i `attachment-extract.ts`
+  — server kjører vision direkte på de mottatte JPEG-ene (data-URI, ingen
+  Cloudinary-video), laster opp første frame som miniatyr, returnerer samme form
+  som enkeltfil-stien. Vision-funksjonen er generalisert (`describeFrameImages`)
+  til å ta både Cloudinary-URL-er og data-URI-er.
+- Begge endepunktene detekterer `mode=video-frames`. Klienten (`home-chat.ts`,
+  `buildAttachmentBody`) ruter video gjennom frames-stien, med fallback til rå
+  opplasting hvis nettleseren ikke klarer å dekode (virker fortsatt for små klipp).
+- **Lyd håndteres ikke i on-device-stien** — `extractionKind` blir `video_frames`.
+  Transkripsjon av store videoer er et eget, senere steg (se «Videre»).
+
 ## Beslutninger
 
 - **Én vision-melding med flere bilder** framfor ett kall per frame: billigere og

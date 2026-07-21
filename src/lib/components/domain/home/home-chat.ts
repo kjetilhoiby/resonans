@@ -7,11 +7,59 @@
 
 import type { AttachmentRef, QuickAction, QuickActionId, MediaHistoryItem } from './home-context';
 import type { ChatState } from '$lib/client/chat-state.svelte';
+import { extractVideoFrames } from '$lib/client/video-frames';
 
 // ── Typer ───────────────────────────────────────────────────────────────
 
 type AttachmentKind = 'image' | 'audio' | 'document' | 'other';
 type AttachmentSource = 'camera' | 'file' | 'voice' | 'sheet';
+
+// ── Opplastings-body (video → keyframes on-device) ───────────────────────
+
+const VIDEO_EXTENSIONS = ['.mp4', '.mov', '.m4v', '.webm'];
+
+function isVideoFile(file: File): boolean {
+	const mime = file.type.toLowerCase();
+	const name = file.name.toLowerCase();
+	return mime.startsWith('video/') || VIDEO_EXTENSIONS.some((ext) => name.endsWith(ext));
+}
+
+function buildRawBody(file: File, note: string, source: AttachmentSource): FormData {
+	const formData = new FormData();
+	formData.append('file', file);
+	formData.append('note', note);
+	formData.append('source', source);
+	return formData;
+}
+
+/**
+ * Bygg opplastings-body. For video trekker vi ut keyframes on-device og sender
+ * bare de små JPEG-ene (unngår Vercels ~4,5 MB body-grense på store videoer).
+ * Feiler uttrekket (nettleser kan ikke dekode), faller vi tilbake til rå
+ * opplasting — som fortsatt virker for små klipp.
+ */
+async function buildAttachmentBody(
+	file: File,
+	note: string,
+	source: AttachmentSource
+): Promise<FormData> {
+	if (isVideoFile(file)) {
+		try {
+			const { frames } = await extractVideoFrames(file);
+			const formData = new FormData();
+			formData.append('mode', 'video-frames');
+			formData.append('note', note);
+			formData.append('source', source);
+			formData.append('name', file.name);
+			formData.append('timestamps', JSON.stringify(frames.map((f) => f.timestampSec)));
+			frames.forEach((f, i) => formData.append('frames', f.blob, `frame-${i}.jpg`));
+			return formData;
+		} catch (err) {
+			console.warn('On-device frame-uttrekk feilet, faller tilbake til rå opplasting:', err);
+		}
+	}
+	return buildRawBody(file, note, source);
+}
 
 export interface AttachmentTriageResponse {
 	attachment: AttachmentRef;
@@ -92,13 +140,10 @@ export async function requestAttachmentTriage(
 	note: string,
 	source: AttachmentSource
 ): Promise<AttachmentTriageResponse> {
-	const formData = new FormData();
-	formData.append('file', file);
-	formData.append('note', note);
-	formData.append('source', source);
+	const body = await buildAttachmentBody(file, note, source);
 	const response = await fetch('/api/attachment-triage', {
 		method: 'POST',
-		body: formData
+		body
 	});
 	if (!response.ok) {
 		throw new Error('Attachment triage failed');
@@ -118,11 +163,8 @@ export async function requestAttachmentUpload(
 	note: string,
 	source: AttachmentSource
 ): Promise<AttachmentRef> {
-	const formData = new FormData();
-	formData.append('file', file);
-	formData.append('note', note);
-	formData.append('source', source);
-	const response = await fetch('/api/attachment-extract', { method: 'POST', body: formData });
+	const body = await buildAttachmentBody(file, note, source);
+	const response = await fetch('/api/attachment-extract', { method: 'POST', body });
 	if (!response.ok) {
 		throw new Error('Attachment upload failed');
 	}

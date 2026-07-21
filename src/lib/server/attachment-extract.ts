@@ -15,6 +15,7 @@
 import { v2 as cloudinary } from 'cloudinary';
 import { env } from '$env/dynamic/private';
 import { openai } from '$lib/server/openai';
+import { pickFrameOffsets, formatTimestamp } from '$lib/media/video-frame-timing';
 import JSZip from 'jszip';
 
 // @ts-ignore - Buffer is available in Node.js runtime
@@ -95,32 +96,6 @@ export function isVideoFile(file: File): boolean {
 	const mime = file.type.toLowerCase();
 	const name = file.name.toLowerCase();
 	return mime.startsWith('video/') || VIDEO_EXTENSIONS.some((ext) => name.endsWith(ext));
-}
-
-/** Maks antall keyframes vi sampler fra en video (kostnadstak for vision). */
-const MAX_VIDEO_FRAMES = 6;
-
-/**
- * Velg tidspunkter (sekunder) for keyframe-sampling, jevnt fordelt og med
- * bevisst klaring til start (ofte svart) og slutt. Ren funksjon — testbar.
- */
-export function pickFrameOffsets(durationSec: number, maxFrames = MAX_VIDEO_FRAMES): number[] {
-	if (!Number.isFinite(durationSec) || durationSec <= 0) return [];
-	const count = Math.min(maxFrames, Math.max(2, Math.floor(durationSec / 8)));
-	const offsets: number[] = [];
-	for (let k = 1; k <= count; k++) {
-		const t = (durationSec * k) / (count + 1);
-		offsets.push(Math.round(t * 10) / 10);
-	}
-	return [...new Set(offsets)].filter((t) => t > 0 && t < durationSec);
-}
-
-/** Sekunder → «m:ss». */
-export function formatTimestamp(sec: number): string {
-	const total = Math.max(0, Math.round(sec));
-	const m = Math.floor(total / 60);
-	const s = total % 60;
-	return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
 /**
@@ -327,37 +302,27 @@ export async function extractTextContent(
 }
 
 /**
- * Beskriv en videos visuelle innhold ved å sample keyframes fra Cloudinary
- * (så_<sekund>-thumbnails) og sende dem samlet til GPT-4o vision. Ett kall med
- * alle bildene gir en sammenhengende beskrivelse på tvers av tid.
+ * Beskriv en videos visuelle innhold ved å sende keyframes samlet til GPT-4o
+ * vision. Ett kall med alle bildene (hver med tidsstempel-etikett) gir en
+ * sammenhengende beskrivelse på tvers av tid. `url` kan være en Cloudinary-URL
+ * eller en data-URI — vision aksepterer begge.
  *
  * Sideeffekt (nettverk + vision-kostnad) — dekkes ikke av enhetstester.
  */
-async function describeVideoFrames(publicId: string, offsets: number[]): Promise<string> {
-	if (offsets.length === 0) return '';
+async function describeFrameImages(images: Array<{ label: string; url: string }>): Promise<string> {
+	if (images.length === 0) return '';
 
 	const content: Array<
 		{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string; detail: 'low' } }
 	> = [
 		{
 			type: 'text',
-			text: `Under følger ${offsets.length} keyframes hentet fra en video, i kronologisk rekkefølge med tidsstempel.`
+			text: `Under følger ${images.length} keyframes hentet fra en video, i kronologisk rekkefølge med tidsstempel.`
 		}
 	];
-
-	for (const sec of offsets) {
-		const url = cloudinary.url(publicId, {
-			resource_type: 'video',
-			format: 'jpg',
-			secure: true,
-			start_offset: String(sec),
-			width: 640,
-			height: 640,
-			crop: 'limit',
-			quality: 'auto:good'
-		});
-		content.push({ type: 'text', text: `Bilde ved ${formatTimestamp(sec)}:` });
-		content.push({ type: 'image_url', image_url: { url, detail: 'low' } });
+	for (const image of images) {
+		content.push({ type: 'text', text: `Bilde ved ${image.label}:` });
+		content.push({ type: 'image_url', image_url: { url: image.url, detail: 'low' } });
 	}
 
 	const response = await openai.chat.completions.create({
@@ -385,6 +350,24 @@ Vær presis og kortfattet. Maks 300 ord. Ikke gjett vilt — beskriv det du fakt
 	});
 
 	return cleanExtractedText(response.choices[0]?.message?.content ?? '');
+}
+
+/** Keyframes fra en video som allerede ligger i Cloudinary (so_<sekund>-thumbnails). */
+async function describeVideoFramesFromCloudinary(publicId: string, offsets: number[]): Promise<string> {
+	const images = offsets.map((sec) => ({
+		label: formatTimestamp(sec),
+		url: cloudinary.url(publicId, {
+			resource_type: 'video',
+			format: 'jpg',
+			secure: true,
+			start_offset: String(sec),
+			width: 640,
+			height: 640,
+			crop: 'limit',
+			quality: 'auto:good'
+		})
+	}));
+	return describeFrameImages(images);
 }
 
 /**
@@ -433,7 +416,7 @@ export async function uploadAndExtractAttachment(
 			const duration = (uploaded as { duration?: number }).duration;
 			const offsets = pickFrameOffsets(typeof duration === 'number' ? duration : NaN);
 			if (offsets.length > 0) {
-				const frameText = await describeVideoFrames(uploaded.public_id, offsets);
+				const frameText = await describeVideoFramesFromCloudinary(uploaded.public_id, offsets);
 				if (frameText) {
 					const merged = mergeVideoContent(baseExtraction.contentText, frameText);
 					extraction = {
@@ -461,4 +444,106 @@ export async function uploadAndExtractAttachment(
 	};
 
 	return { attachment, buffer, extraction };
+}
+
+export interface VideoFrameInput {
+	buffer: Buffer;
+	timestampSec: number;
+}
+
+/**
+ * Video-som-frames-varianten: klienten har trukket ut keyframes on-device (for
+ * å komme under Vercels body-grense på store videoer) og sender bare de små
+ * JPEG-ene hit. Vi kjører vision på dem direkte (data-URI, ingen Cloudinary-
+ * video), laster opp første frame som miniatyr, og returnerer samme form som
+ * `uploadAndExtractAttachment` slik at både chat- og triage-flyten er uendret.
+ *
+ * NB: dekker kun det VISUELLE — lyd/transkripsjon håndteres ikke i denne stien
+ * (eget steg). `extractionKind` blir `video_frames`.
+ */
+export async function uploadAndExtractVideoFrames(
+	frames: VideoFrameInput[],
+	note: string,
+	source: AttachmentSource,
+	name: string
+): Promise<{ attachment: ExtractedAttachment; buffer: Buffer; extraction: AttachmentExtraction }> {
+	if (frames.length === 0) throw new Error('Ingen frames mottatt');
+
+	const ordered = [...frames].sort((a, b) => a.timestampSec - b.timestampSec);
+	const images = ordered.map((f) => ({
+		label: formatTimestamp(f.timestampSec),
+		url: `data:image/jpeg;base64,${f.buffer.toString('base64')}`
+	}));
+
+	const frameText = await describeFrameImages(images).catch((error) => {
+		console.error('Video frame vision failed:', error);
+		return '';
+	});
+	const merged = mergeVideoContent('', frameText);
+
+	// Første frame som miniatyr for visning i tråden.
+	const firstBuffer = ordered[0].buffer;
+	const uploaded = await cloudinary.uploader.upload(
+		`data:image/jpeg;base64,${firstBuffer.toString('base64')}`,
+		{
+			folder: 'resonans',
+			resource_type: 'image' as const,
+			transformation: [{ width: 1600, height: 1600, crop: 'limit' }, { quality: 'auto:good' }, { fetch_format: 'auto' }]
+		}
+	);
+
+	const attachment: ExtractedAttachment = {
+		url: uploaded.secure_url,
+		publicId: uploaded.public_id,
+		kind: 'image',
+		name,
+		mimeType: 'image/jpeg',
+		note,
+		source,
+		sizeBytes: ordered.reduce((sum, f) => sum + f.buffer.length, 0),
+		contentText: limitContent(merged.contentText),
+		extractionKind: merged.extractionKind
+	};
+
+	return { attachment, buffer: firstBuffer, extraction: { contentText: attachment.contentText, extractionKind: attachment.extractionKind } };
+}
+
+/**
+ * Les video-frames fra et FormData (mode=`video-frames`). Klienten legger hver
+ * JPEG under feltet `frames` og en parallell `timestamps`-JSON-liste.
+ * Returnerer null hvis dette ikke er en frames-opplasting.
+ */
+export async function parseVideoFramesForm(
+	formData: FormData
+): Promise<{ frames: VideoFrameInput[]; note: string; source: AttachmentSource; name: string } | null> {
+	if (formData.get('mode') !== 'video-frames') return null;
+
+	const files = formData.getAll('frames').filter((f): f is File => f instanceof File);
+	if (files.length === 0) return null;
+
+	let timestamps: number[] = [];
+	const tsRaw = formData.get('timestamps');
+	if (typeof tsRaw === 'string') {
+		try {
+			const parsed = JSON.parse(tsRaw);
+			if (Array.isArray(parsed)) timestamps = parsed.map((v) => Number(v) || 0);
+		} catch {
+			timestamps = [];
+		}
+	}
+
+	const frames: VideoFrameInput[] = [];
+	for (let i = 0; i < files.length; i++) {
+		const arrayBuffer = await files[i].arrayBuffer();
+		frames.push({ buffer: BufferGlobal.from(arrayBuffer), timestampSec: timestamps[i] ?? 0 });
+	}
+
+	const noteValue = formData.get('note');
+	const nameValue = formData.get('name');
+	return {
+		frames,
+		note: typeof noteValue === 'string' ? noteValue.trim() : '',
+		source: normalizeAttachmentSource(formData.get('source')),
+		name: typeof nameValue === 'string' && nameValue ? nameValue : 'video.mov'
+	};
 }
