@@ -59,6 +59,24 @@ ut **on-device** og laster opp bare de små JPEG-ene.
 - **Lyd håndteres ikke i on-device-stien** — `extractionKind` blir `video_frames`.
   Transkripsjon av store videoer er et eget, senere steg (se «Videre»).
 
+### Fase 3: Innholdsbevisst keyframe-utvalg
+
+I stedet for seks jevnt fordelte tidspunkt (blind for innhold) scrubber vi nå
+gjennom videoen og velger de mest informative framene.
+
+- `src/lib/media/keyframe-selection.ts` — ren logikk: gråtone-signatur-differanse,
+  median-basert klipp-deteksjon, og «farthest-point»-diversitetsutvalg. Hybrid:
+  klipp-representanter hvis klipp finnes, ellers maks-diversitet, med jevn
+  fordeling som fallback.
+- `src/lib/client/video-frames.ts` — `sampleSignatures` spiller videoen av i høy
+  hastighet (playbackRate 8) og samler små 32×32 gråtone-signaturer via
+  `requestVideoFrameCallback` (mye raskere enn å søke frem/tilbake), throttlet på
+  0,4 s og begrenset til 120 kandidater. Deretter velges tidspunktene, og full
+  JPEG trekkes ut kun der.
+- Faller tilbake til jevn fordeling hvis nettleseren mangler
+  `requestVideoFrameCallback` (f.eks. Firefox) eller videoen er < 4 s.
+- 11 nye enhetstester for den rene utvalgslogikken.
+
 ## Beslutninger
 
 - **Én vision-melding med flere bilder** framfor ett kall per frame: billigere og

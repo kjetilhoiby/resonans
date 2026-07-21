@@ -15,6 +15,7 @@
  */
 
 import { pickFrameOffsets, MAX_VIDEO_FRAMES } from '$lib/media/video-frame-timing';
+import { selectKeyframeOffsets, type FrameSample } from '$lib/media/keyframe-selection';
 
 export interface ExtractedFrame {
 	blob: Blob;
@@ -32,6 +33,82 @@ export interface ExtractVideoFramesOptions {
 	maxDimension?: number;
 	/** JPEG-kvalitet 0..1. */
 	quality?: number;
+	/**
+	 * Scrubb gjennom videoen for å velge de mest informative framene (klipp /
+	 * store endringer) i stedet for jevnt fordelte. Faller tilbake til jevn
+	 * fordeling hvis nettleseren mangler requestVideoFrameCallback eller
+	 * samplingen gir for få kandidater.
+	 */
+	contentAware?: boolean;
+}
+
+interface VideoFrameCallbackMeta {
+	mediaTime: number;
+}
+type VideoWithFrameCallback = HTMLVideoElement & {
+	requestVideoFrameCallback(cb: (now: number, metadata: VideoFrameCallbackMeta) => void): number;
+};
+
+function hasVideoFrameCallback(video: HTMLVideoElement): video is VideoWithFrameCallback {
+	return 'requestVideoFrameCallback' in video;
+}
+
+/** Liten gråtone-signatur av gjeldende videoframe (for endrings-måling). */
+function computeSignature(ctx: CanvasRenderingContext2D, video: HTMLVideoElement, size: number): number[] {
+	ctx.drawImage(video, 0, 0, size, size);
+	const { data } = ctx.getImageData(0, 0, size, size);
+	const sig = new Array<number>(size * size);
+	for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+		sig[p] = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+	}
+	return sig;
+}
+
+/**
+ * Spol gjennom videoen (avspilt i høy hastighet) og samle gråtone-signaturer via
+ * requestVideoFrameCallback — mye raskere enn å søke frem og tilbake. Throttlet
+ * på `minGapSec` og begrenset til `maxSamples`.
+ */
+async function sampleSignatures(
+	video: VideoWithFrameCallback,
+	{ minGapSec = 0.4, maxSamples = 120, size = 32, playbackRate = 8 } = {}
+): Promise<FrameSample[]> {
+	const canvas = document.createElement('canvas');
+	canvas.width = size;
+	canvas.height = size;
+	const ctx = canvas.getContext('2d', { willReadFrequently: true });
+	if (!ctx) return [];
+
+	const samples: FrameSample[] = [];
+	let lastTs = -Infinity;
+	video.muted = true;
+	video.playbackRate = playbackRate;
+
+	return new Promise<FrameSample[]>((resolve) => {
+		let done = false;
+		const finish = () => {
+			if (done) return;
+			done = true;
+			video.pause();
+			resolve(samples);
+		};
+		const onFrame = (_now: number, metadata: VideoFrameCallbackMeta) => {
+			if (done) return;
+			const t = metadata?.mediaTime ?? video.currentTime;
+			if (t - lastTs >= minGapSec) {
+				lastTs = t;
+				samples.push({ timestampSec: t, signature: computeSignature(ctx, video, size) });
+			}
+			if (samples.length >= maxSamples) {
+				finish();
+				return;
+			}
+			video.requestVideoFrameCallback(onFrame);
+		};
+		video.addEventListener('ended', finish, { once: true });
+		video.requestVideoFrameCallback(onFrame);
+		video.play().catch(() => finish());
+	});
 }
 
 function waitForEvent(el: HTMLMediaElement, event: string, timeoutMs = 15000): Promise<void> {
@@ -70,7 +147,7 @@ function seekTo(video: HTMLVideoElement, timeSec: number): Promise<void> {
  */
 export async function extractVideoFrames(
 	file: File,
-	{ maxFrames = MAX_VIDEO_FRAMES, maxDimension = 640, quality = 0.7 }: ExtractVideoFramesOptions = {}
+	{ maxFrames = MAX_VIDEO_FRAMES, maxDimension = 640, quality = 0.7, contentAware = true }: ExtractVideoFramesOptions = {}
 ): Promise<VideoFramesResult> {
 	const url = URL.createObjectURL(file);
 	const video = document.createElement('video');
@@ -95,9 +172,23 @@ export async function extractVideoFrames(
 		const ctx = canvas.getContext('2d');
 		if (!ctx) throw new Error('Fikk ikke 2d-kontekst');
 
-		const offsets = pickFrameOffsets(duration, maxFrames);
-		const frames: ExtractedFrame[] = [];
+		// Innholdsbevisst utvalg: spol gjennom, mål endring, velg de mest
+		// informative framene. Faller tilbake til jevn fordeling ved behov.
+		let offsets = pickFrameOffsets(duration, maxFrames);
+		if (contentAware && duration >= 4 && hasVideoFrameCallback(video)) {
+			try {
+				const samples = await sampleSignatures(video);
+				if (samples.length > maxFrames) {
+					offsets = selectKeyframeOffsets(samples, maxFrames);
+				}
+			} catch {
+				// behold jevn fordeling
+			} finally {
+				video.playbackRate = 1;
+			}
+		}
 
+		const frames: ExtractedFrame[] = [];
 		for (const sec of offsets) {
 			await seekTo(video, sec);
 			ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
