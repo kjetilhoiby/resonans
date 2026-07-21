@@ -29,6 +29,12 @@
 	const dragging = $derived(pullStartY !== null && pullDistance > 0);
 	const armed = $derived(pullDistance >= TRIGGER_PX);
 	const offset = $derived(refreshing ? HOLD_PX : pullDistance);
+	// `transform`/`will-change` gjør .ptr-content til et containing block for alle
+	// `position: fixed`-etterkommere. Ligger de på permanent (som før), forankres
+	// paneler/modaler/menyer til sideinnholdet i stedet for viewporten og havner
+	// «laaangt nede på siden». Vi bærer dem derfor bare når vi faktisk forskyver
+	// innholdet (drar/holder/animerer tilbake) — i ro er de borte.
+	const shifted = $derived(offset > 0);
 
 	function atDocumentTop() {
 		if (typeof window === 'undefined') return true;
@@ -117,7 +123,11 @@
 			{/if}
 		</div>
 	</div>
-	<div class="ptr-content" style:transform={`translate3d(0, ${offset}px, 0)`}>
+	<div
+		class="ptr-content"
+		class:is-shifted={shifted}
+		style:transform={shifted ? `translate3d(0, ${offset}px, 0)` : undefined}
+	>
 		{@render children()}
 	</div>
 </div>
@@ -150,6 +160,10 @@
 	.ptr-content {
 		width: 100%;
 		transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+	}
+
+	/* Kun mens innholdet forskyves — se `shifted` i script for hvorfor. */
+	.ptr-content.is-shifted {
 		will-change: transform;
 	}
 
