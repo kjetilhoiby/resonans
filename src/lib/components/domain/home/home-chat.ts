@@ -7,11 +7,78 @@
 
 import type { AttachmentRef, QuickAction, QuickActionId, MediaHistoryItem } from './home-context';
 import type { ChatState } from '$lib/client/chat-state.svelte';
+import { extractVideoFrames } from '$lib/client/video-frames';
+import { uploadVideoToCloudinary } from '$lib/client/cloudinary-video';
 
 // ── Typer ───────────────────────────────────────────────────────────────
 
 type AttachmentKind = 'image' | 'audio' | 'document' | 'other';
 type AttachmentSource = 'camera' | 'file' | 'voice' | 'sheet';
+
+// ── Opplastings-body (video → keyframes on-device) ───────────────────────
+
+const VIDEO_EXTENSIONS = ['.mp4', '.mov', '.m4v', '.webm'];
+
+function isVideoFile(file: File): boolean {
+	const mime = file.type.toLowerCase();
+	const name = file.name.toLowerCase();
+	return mime.startsWith('video/') || VIDEO_EXTENSIONS.some((ext) => name.endsWith(ext));
+}
+
+function buildRawBody(file: File, note: string, source: AttachmentSource): FormData {
+	const formData = new FormData();
+	formData.append('file', file);
+	formData.append('note', note);
+	formData.append('source', source);
+	return formData;
+}
+
+/**
+ * Bygg opplastings-body. For video:
+ *   1. Full: last opp rett til Cloudinary (utenom Vercels ~4,5 MB body-grense)
+ *      og send publicId — server transkriberer lyd + henter keyframes.
+ *   2. Fallback: trekk ut keyframes on-device og send bare de små JPEG-ene
+ *      (visuelt, uten lyd) hvis direkte-opplasting ikke er tilgjengelig.
+ *   3. Siste utvei: rå opplasting (virker for små klipp).
+ */
+async function buildAttachmentBody(
+	file: File,
+	note: string,
+	source: AttachmentSource,
+	onProgress?: (fraction: number) => void
+): Promise<FormData> {
+	if (isVideoFile(file)) {
+		// 1) Direkte-til-Cloudinary → transkript + frames server-side.
+		try {
+			const { publicId, durationSec } = await uploadVideoToCloudinary(file, onProgress);
+			const formData = new FormData();
+			formData.append('mode', 'video-remote');
+			formData.append('publicId', publicId);
+			if (durationSec != null) formData.append('durationSec', String(durationSec));
+			formData.append('note', note);
+			formData.append('source', source);
+			formData.append('name', file.name);
+			return formData;
+		} catch (err) {
+			console.warn('Direkte Cloudinary-opplasting feilet, prøver frames on-device:', err);
+		}
+		// 2) Frames on-device (visuelt, uten lyd).
+		try {
+			const { frames } = await extractVideoFrames(file);
+			const formData = new FormData();
+			formData.append('mode', 'video-frames');
+			formData.append('note', note);
+			formData.append('source', source);
+			formData.append('name', file.name);
+			formData.append('timestamps', JSON.stringify(frames.map((f) => f.timestampSec)));
+			frames.forEach((f, i) => formData.append('frames', f.blob, `frame-${i}.jpg`));
+			return formData;
+		} catch (err) {
+			console.warn('On-device frame-uttrekk feilet, faller tilbake til rå opplasting:', err);
+		}
+	}
+	return buildRawBody(file, note, source);
+}
 
 export interface AttachmentTriageResponse {
 	attachment: AttachmentRef;
@@ -61,7 +128,7 @@ export const QUICK_ACTIONS: QuickAction[] = [
 	},
 	{
 		id: 'voice',
-		label: 'Lyd',
+		label: 'Lyd/video',
 		icon: 'wave',
 		description: 'Bruk stemmen, eller last opp en video med lyd, når du vil få noe ut raskt uten å formulere deg perfekt.',
 		placeholder: 'Skriv stikkord for det du ville sagt høyt.',
@@ -79,9 +146,9 @@ export const QUICK_ACTIONS: QuickAction[] = [
 		id: 'file',
 		label: 'Fil',
 		icon: 'file',
-		description: 'Ta inn dokumenter, utsnitt eller annet innhold som bør triageres videre.',
+		description: 'Ta inn dokumenter, video eller annet innhold som bør triageres videre.',
 		placeholder: 'Hva inneholder filen, og hva vil du at vi skal gjøre med den?',
-		helper: 'Kan være PDF, eksport, skjermdump eller annet materiale du vil rute til riktig tema.'
+		helper: 'Kan være PDF, eksport, skjermdump, video eller annet materiale du vil rute til riktig tema.'
 	}
 ];
 
@@ -90,15 +157,13 @@ export const QUICK_ACTIONS: QuickAction[] = [
 export async function requestAttachmentTriage(
 	file: File,
 	note: string,
-	source: AttachmentSource
+	source: AttachmentSource,
+	onProgress?: (fraction: number) => void
 ): Promise<AttachmentTriageResponse> {
-	const formData = new FormData();
-	formData.append('file', file);
-	formData.append('note', note);
-	formData.append('source', source);
+	const body = await buildAttachmentBody(file, note, source, onProgress);
 	const response = await fetch('/api/attachment-triage', {
 		method: 'POST',
-		body: formData
+		body
 	});
 	if (!response.ok) {
 		throw new Error('Attachment triage failed');
@@ -116,13 +181,11 @@ export async function requestAttachmentTriage(
 export async function requestAttachmentUpload(
 	file: File,
 	note: string,
-	source: AttachmentSource
+	source: AttachmentSource,
+	onProgress?: (fraction: number) => void
 ): Promise<AttachmentRef> {
-	const formData = new FormData();
-	formData.append('file', file);
-	formData.append('note', note);
-	formData.append('source', source);
-	const response = await fetch('/api/attachment-extract', { method: 'POST', body: formData });
+	const body = await buildAttachmentBody(file, note, source, onProgress);
+	const response = await fetch('/api/attachment-extract', { method: 'POST', body });
 	if (!response.ok) {
 		throw new Error('Attachment upload failed');
 	}

@@ -15,6 +15,7 @@
 import { v2 as cloudinary } from 'cloudinary';
 import { env } from '$env/dynamic/private';
 import { openai } from '$lib/server/openai';
+import { pickFrameOffsets, formatTimestamp } from '$lib/media/video-frame-timing';
 import JSZip from 'jszip';
 
 // @ts-ignore - Buffer is available in Node.js runtime
@@ -29,6 +30,8 @@ export interface AttachmentExtraction {
 		| 'vision'
 		| 'audio_transcript'
 		| 'video_audio_transcript'
+		| 'video_transcript_and_frames'
+		| 'video_frames'
 		| 'pdf_text'
 		| 'docx_text'
 		| 'sheet_text'
@@ -84,6 +87,38 @@ export function detectAttachmentKind(file: File): AttachmentKind {
 
 export function normalizeAttachmentSource(value: unknown): AttachmentSource {
 	return value === 'camera' || value === 'file' || value === 'voice' ? value : 'file';
+}
+
+const VIDEO_EXTENSIONS = ['.mp4', '.mov', '.m4v', '.webm'];
+
+/** Er dette en videofil (etter mime-type eller filendelse)? */
+export function isVideoFile(file: File): boolean {
+	const mime = file.type.toLowerCase();
+	const name = file.name.toLowerCase();
+	return mime.startsWith('video/') || VIDEO_EXTENSIONS.some((ext) => name.endsWith(ext));
+}
+
+/**
+ * Flett transkribert tale og keyframe-beskrivelse til ett innholdsfelt, og
+ * velg riktig `extractionKind`. Ren funksjon — testbar.
+ */
+export function mergeVideoContent(
+	transcript: string,
+	frameText: string
+): { contentText: string; extractionKind: AttachmentExtraction['extractionKind'] } {
+	const t = transcript.trim();
+	const f = frameText.trim();
+	const parts: string[] = [];
+	if (t) parts.push(`[Tale (transkribert)]\n${t}`);
+	if (f) parts.push(`[Visuelt innhold (keyframes)]\n${f}`);
+
+	let extractionKind: AttachmentExtraction['extractionKind'];
+	if (t && f) extractionKind = 'video_transcript_and_frames';
+	else if (f) extractionKind = 'video_frames';
+	else if (t) extractionKind = 'video_audio_transcript';
+	else extractionKind = 'metadata_only';
+
+	return { contentText: parts.join('\n\n'), extractionKind };
 }
 
 function decodeXmlEntities(value: string): string {
@@ -215,8 +250,7 @@ export async function extractTextContent(
 ): Promise<AttachmentExtraction> {
 	const mimeType = file.type.toLowerCase();
 	const fileName = file.name.toLowerCase();
-	const isVideoSource =
-		mimeType.startsWith('video/') || ['.mp4', '.mov', '.m4v', '.webm'].some((ext) => fileName.endsWith(ext));
+	const isVideoSource = isVideoFile(file);
 
 	if (kind === 'audio') {
 		try {
@@ -268,6 +302,75 @@ export async function extractTextContent(
 }
 
 /**
+ * Beskriv en videos visuelle innhold ved å sende keyframes samlet til GPT-4o
+ * vision. Ett kall med alle bildene (hver med tidsstempel-etikett) gir en
+ * sammenhengende beskrivelse på tvers av tid. `url` kan være en Cloudinary-URL
+ * eller en data-URI — vision aksepterer begge.
+ *
+ * Sideeffekt (nettverk + vision-kostnad) — dekkes ikke av enhetstester.
+ */
+async function describeFrameImages(images: Array<{ label: string; url: string }>): Promise<string> {
+	if (images.length === 0) return '';
+
+	const content: Array<
+		{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string; detail: 'low' } }
+	> = [
+		{
+			type: 'text',
+			text: `Under følger ${images.length} keyframes hentet fra en video, i kronologisk rekkefølge med tidsstempel.`
+		}
+	];
+	for (const image of images) {
+		content.push({ type: 'text', text: `Bilde ved ${image.label}:` });
+		content.push({ type: 'image_url', image_url: { url: image.url, detail: 'low' } });
+	}
+
+	const response = await openai.chat.completions.create({
+		model: 'gpt-4o',
+		max_tokens: 500,
+		messages: [
+			{
+				role: 'user',
+				content: [
+					{
+						type: 'text',
+						text: `Du ekstraherer nyttig informasjon fra en video for kontekst i en personlig coaching-app.
+
+Beskriv på norsk hva videoen viser, basert på keyframene under. Fokuser på:
+- Hva som skjer og hvordan det utvikler seg over tid
+- All synlig tekst, tall, data (skjermbilder, tabeller, grafer)
+- Personer, aktiviteter, omgivelser relevante for trening, helse, familie eller hverdag
+
+Vær presis og kortfattet. Maks 300 ord. Ikke gjett vilt — beskriv det du faktisk ser.`
+					},
+					...content
+				]
+			}
+		]
+	});
+
+	return cleanExtractedText(response.choices[0]?.message?.content ?? '');
+}
+
+/** Keyframes fra en video som allerede ligger i Cloudinary (so_<sekund>-thumbnails). */
+async function describeVideoFramesFromCloudinary(publicId: string, offsets: number[]): Promise<string> {
+	const images = offsets.map((sec) => ({
+		label: formatTimestamp(sec),
+		url: cloudinary.url(publicId, {
+			resource_type: 'video',
+			format: 'jpg',
+			secure: true,
+			start_offset: String(sec),
+			width: 640,
+			height: 640,
+			crop: 'limit',
+			quality: 'auto:good'
+		})
+	}));
+	return describeFrameImages(images);
+}
+
+/**
  * Laster opp en fil til Cloudinary og trekker ut innhold. Returnerer selve
  * vedleggsobjektet samt buffer/extraction slik at den kalde triagen kan bygge
  * videre (bilde-signatur, byte-hash, osv.) uten å laste opp på nytt.
@@ -280,7 +383,7 @@ export async function uploadAndExtractAttachment(
 	const kind = detectAttachmentKind(file);
 	const arrayBuffer = await file.arrayBuffer();
 	const buffer = BufferGlobal.from(arrayBuffer);
-	const extraction = await extractTextContent(file, buffer, kind);
+	const baseExtraction = await extractTextContent(file, buffer, kind);
 	const base64 = buffer.toString('base64');
 	const dataUri = `data:${file.type || 'application/octet-stream'};base64,${base64}`;
 
@@ -304,6 +407,29 @@ export async function uploadAndExtractAttachment(
 
 	const uploaded = await cloudinary.uploader.upload(dataUri, uploadOptions);
 
+	// For video: sampl keyframes og beskriv dem visuelt, flett så inn i den
+	// eksisterende transkripsjonen. Feiler dette (kostnad/nettverk) beholder vi
+	// transkripsjonen alene — video er fortsatt nyttig uten det visuelle.
+	let extraction = baseExtraction;
+	if (isVideoFile(file) && uploaded.resource_type === 'video') {
+		try {
+			const duration = (uploaded as { duration?: number }).duration;
+			const offsets = pickFrameOffsets(typeof duration === 'number' ? duration : NaN);
+			if (offsets.length > 0) {
+				const frameText = await describeVideoFramesFromCloudinary(uploaded.public_id, offsets);
+				if (frameText) {
+					const merged = mergeVideoContent(baseExtraction.contentText, frameText);
+					extraction = {
+						contentText: limitContent(merged.contentText),
+						extractionKind: merged.extractionKind
+					};
+				}
+			}
+		} catch (error) {
+			console.error('Video keyframe extraction failed:', error);
+		}
+	}
+
 	const attachment: ExtractedAttachment = {
 		url: uploaded.secure_url,
 		publicId: uploaded.public_id,
@@ -318,4 +444,224 @@ export async function uploadAndExtractAttachment(
 	};
 
 	return { attachment, buffer, extraction };
+}
+
+export interface VideoFrameInput {
+	buffer: Buffer;
+	timestampSec: number;
+}
+
+/**
+ * Video-som-frames-varianten: klienten har trukket ut keyframes on-device (for
+ * å komme under Vercels body-grense på store videoer) og sender bare de små
+ * JPEG-ene hit. Vi kjører vision på dem direkte (data-URI, ingen Cloudinary-
+ * video), laster opp første frame som miniatyr, og returnerer samme form som
+ * `uploadAndExtractAttachment` slik at både chat- og triage-flyten er uendret.
+ *
+ * NB: dekker kun det VISUELLE — lyd/transkripsjon håndteres ikke i denne stien
+ * (eget steg). `extractionKind` blir `video_frames`.
+ */
+export async function uploadAndExtractVideoFrames(
+	frames: VideoFrameInput[],
+	note: string,
+	source: AttachmentSource,
+	name: string
+): Promise<{ attachment: ExtractedAttachment; buffer: Buffer; extraction: AttachmentExtraction }> {
+	if (frames.length === 0) throw new Error('Ingen frames mottatt');
+
+	const ordered = [...frames].sort((a, b) => a.timestampSec - b.timestampSec);
+	const images = ordered.map((f) => ({
+		label: formatTimestamp(f.timestampSec),
+		url: `data:image/jpeg;base64,${f.buffer.toString('base64')}`
+	}));
+
+	const frameText = await describeFrameImages(images).catch((error) => {
+		console.error('Video frame vision failed:', error);
+		return '';
+	});
+	const merged = mergeVideoContent('', frameText);
+
+	// Første frame som miniatyr for visning i tråden.
+	const firstBuffer = ordered[0].buffer;
+	const uploaded = await cloudinary.uploader.upload(
+		`data:image/jpeg;base64,${firstBuffer.toString('base64')}`,
+		{
+			folder: 'resonans',
+			resource_type: 'image' as const,
+			transformation: [{ width: 1600, height: 1600, crop: 'limit' }, { quality: 'auto:good' }, { fetch_format: 'auto' }]
+		}
+	);
+
+	const attachment: ExtractedAttachment = {
+		url: uploaded.secure_url,
+		publicId: uploaded.public_id,
+		kind: 'image',
+		name,
+		mimeType: 'image/jpeg',
+		note,
+		source,
+		sizeBytes: ordered.reduce((sum, f) => sum + f.buffer.length, 0),
+		contentText: limitContent(merged.contentText),
+		extractionKind: merged.extractionKind
+	};
+
+	return { attachment, buffer: firstBuffer, extraction: { contentText: attachment.contentText, extractionKind: attachment.extractionKind } };
+}
+
+/**
+ * Les video-frames fra et FormData (mode=`video-frames`). Klienten legger hver
+ * JPEG under feltet `frames` og en parallell `timestamps`-JSON-liste.
+ * Returnerer null hvis dette ikke er en frames-opplasting.
+ */
+export async function parseVideoFramesForm(
+	formData: FormData
+): Promise<{ frames: VideoFrameInput[]; note: string; source: AttachmentSource; name: string } | null> {
+	if (formData.get('mode') !== 'video-frames') return null;
+
+	const files = formData.getAll('frames').filter((f): f is File => f instanceof File);
+	if (files.length === 0) return null;
+
+	let timestamps: number[] = [];
+	const tsRaw = formData.get('timestamps');
+	if (typeof tsRaw === 'string') {
+		try {
+			const parsed = JSON.parse(tsRaw);
+			if (Array.isArray(parsed)) timestamps = parsed.map((v) => Number(v) || 0);
+		} catch {
+			timestamps = [];
+		}
+	}
+
+	const frames: VideoFrameInput[] = [];
+	for (let i = 0; i < files.length; i++) {
+		const arrayBuffer = await files[i].arrayBuffer();
+		frames.push({ buffer: BufferGlobal.from(arrayBuffer), timestampSec: timestamps[i] ?? 0 });
+	}
+
+	const noteValue = formData.get('note');
+	const nameValue = formData.get('name');
+	return {
+		frames,
+		note: typeof noteValue === 'string' ? noteValue.trim() : '',
+		source: normalizeAttachmentSource(formData.get('source')),
+		name: typeof nameValue === 'string' && nameValue ? nameValue : 'video.mov'
+	};
+}
+
+// ── Video-remote: direkte-til-Cloudinary + server-transkripsjon ──────────
+//
+// For store videoer (> Vercels ~4,5 MB body-grense) laster klienten videoen rett
+// til Cloudinary og sender bare publicId hit. Serveren transkriberer fra en
+// komprimert lyd-versjon Cloudinary genererer (16 kHz / 32 kbps → langt under
+// Whisper-grensen på 25 MB), og henter keyframes fra samme video.
+
+const WHISPER_MAX_BYTES = 25 * 1024 * 1024;
+
+/** Komprimert, tale-egnet lyd-URL fra en Cloudinary-video (mp3, 16 kHz, 32 kbps). */
+export function cloudinaryAudioUrl(publicId: string): string {
+	return cloudinary.url(publicId, {
+		resource_type: 'video',
+		format: 'mp3',
+		secure: true,
+		audio_frequency: 16000,
+		bit_rate: '32k'
+	});
+}
+
+async function transcribeCloudinaryVideo(publicId: string): Promise<string> {
+	const res = await fetch(cloudinaryAudioUrl(publicId));
+	if (!res.ok) throw new Error(`Cloudinary audio fetch feilet: ${res.status}`);
+	const arrayBuffer = await res.arrayBuffer();
+	if (arrayBuffer.byteLength > WHISPER_MAX_BYTES) {
+		console.warn('Cloudinary-lyd over Whisper-grensen (25 MB) — hopper over transkripsjon');
+		return '';
+	}
+	const transcription = await openai.audio.transcriptions.create({
+		file: new File([new Uint8Array(BufferGlobal.from(arrayBuffer))], `${publicId.split('/').pop() ?? 'audio'}.mp3`, {
+			type: 'audio/mpeg'
+		}),
+		model: 'gpt-4o-mini-transcribe'
+	});
+	return cleanExtractedText(transcription.text ?? '');
+}
+
+/**
+ * Full uttrekk fra en video som allerede ligger i Cloudinary: transkripsjon
+ * (via komprimert lyd) + keyframes (via so_-thumbnails), flettet. Returnerer
+ * samme form som de andre uttrekkerne slik at chat-/triage-flyten er uendret.
+ */
+export async function extractFromCloudinaryVideo(params: {
+	publicId: string;
+	note: string;
+	source: AttachmentSource;
+	name: string;
+	durationSec?: number;
+}): Promise<{ attachment: ExtractedAttachment; buffer: Buffer; extraction: AttachmentExtraction }> {
+	const { publicId, note, source, name, durationSec } = params;
+
+	const transcript = await transcribeCloudinaryVideo(publicId).catch((error) => {
+		console.error('Video transcription (Cloudinary) failed:', error);
+		return '';
+	});
+
+	const offsets = pickFrameOffsets(typeof durationSec === 'number' ? durationSec : Number.NaN);
+	const frameText = offsets.length
+		? await describeVideoFramesFromCloudinary(publicId, offsets).catch((error) => {
+				console.error('Video frame vision (Cloudinary) failed:', error);
+				return '';
+			})
+		: '';
+
+	const merged = mergeVideoContent(transcript, frameText);
+
+	const thumbUrl = cloudinary.url(publicId, {
+		resource_type: 'video',
+		format: 'jpg',
+		secure: true,
+		start_offset: offsets.length ? String(offsets[0]) : '0',
+		width: 1600,
+		height: 1600,
+		crop: 'limit',
+		quality: 'auto:good'
+	});
+
+	const attachment: ExtractedAttachment = {
+		url: thumbUrl,
+		publicId,
+		kind: 'image',
+		name,
+		mimeType: 'video/mp4',
+		note,
+		source,
+		sizeBytes: 0,
+		contentText: limitContent(merged.contentText),
+		extractionKind: merged.extractionKind
+	};
+
+	return {
+		attachment,
+		buffer: BufferGlobal.alloc(0),
+		extraction: { contentText: attachment.contentText, extractionKind: attachment.extractionKind }
+	};
+}
+
+/** Les video-remote-parametre fra FormData (mode=`video-remote`). Null ellers. */
+export function parseCloudinaryVideoForm(
+	formData: FormData
+): { publicId: string; note: string; source: AttachmentSource; name: string; durationSec?: number } | null {
+	if (formData.get('mode') !== 'video-remote') return null;
+	const publicId = formData.get('publicId');
+	if (typeof publicId !== 'string' || !publicId) return null;
+
+	const durationRaw = formData.get('durationSec');
+	const durationSec = typeof durationRaw === 'string' ? Number(durationRaw) : Number.NaN;
+	const noteValue = formData.get('note');
+	const nameValue = formData.get('name');
+	return {
+		publicId,
+		note: typeof noteValue === 'string' ? noteValue.trim() : '',
+		source: normalizeAttachmentSource(formData.get('source')),
+		name: typeof nameValue === 'string' && nameValue ? nameValue : 'video.mp4',
+		durationSec: Number.isFinite(durationSec) ? durationSec : undefined
+	};
 }

@@ -16,8 +16,12 @@ import {
 	formatScreenTime
 } from '$lib/server/integrations/screen-time';
 import {
+	extractFromCloudinaryVideo,
 	normalizeAttachmentSource,
+	parseCloudinaryVideoForm,
+	parseVideoFramesForm,
 	uploadAndExtractAttachment,
+	uploadAndExtractVideoFrames,
 	type AttachmentExtraction,
 	type AttachmentKind,
 	type AttachmentSource
@@ -245,26 +249,51 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		}
 
 		const formData = await request.formData();
-		const file = formData.get('file');
-		const noteValue = formData.get('note');
-		const sourceValue = formData.get('source');
 
-		if (!(file instanceof File)) {
-			return json({ error: 'No file provided' }, { status: 400 });
+		// Video-remote (direkte-til-Cloudinary), video-som-frames (on-device) eller
+		// vanlig enkeltfil.
+		const remoteInput = parseCloudinaryVideoForm(formData);
+		const framesInput = remoteInput ? null : await parseVideoFramesForm(formData);
+		let attachment, buffer, extraction;
+		let note: string;
+		let source: AttachmentSource;
+		let meta: { name: string; mimeType: string; sizeBytes: number };
+
+		if (remoteInput) {
+			note = remoteInput.note;
+			source = remoteInput.source;
+			({ attachment, buffer, extraction } = await extractFromCloudinaryVideo(remoteInput));
+			meta = { name: remoteInput.name, mimeType: attachment.mimeType, sizeBytes: 0 };
+		} else if (framesInput) {
+			note = framesInput.note;
+			source = framesInput.source;
+			({ attachment, buffer, extraction } = await uploadAndExtractVideoFrames(
+				framesInput.frames,
+				note,
+				source,
+				framesInput.name
+			));
+			meta = { name: framesInput.name, mimeType: attachment.mimeType, sizeBytes: attachment.sizeBytes };
+		} else {
+			const file = formData.get('file');
+			if (!(file instanceof File)) {
+				return json({ error: 'No file provided' }, { status: 400 });
+			}
+			source = normalizeAttachmentSource(formData.get('source'));
+			const noteValue = formData.get('note');
+			note = typeof noteValue === 'string' ? noteValue.trim() : '';
+			// Delt kjerne: last opp + trekk ut innhold (samme som det slanke endepunktet).
+			({ attachment, buffer, extraction } = await uploadAndExtractAttachment(file, note, source));
+			meta = { name: file.name, mimeType: file.type, sizeBytes: file.size };
 		}
 
-		const source: AttachmentSource = normalizeAttachmentSource(sourceValue);
-		const note = typeof noteValue === 'string' ? noteValue.trim() : '';
-
-		// Delt kjerne: last opp + trekk ut innhold (samme som det slanke endepunktet).
-		const { attachment, buffer, extraction } = await uploadAndExtractAttachment(file, note, source);
 		const kind = attachment.kind;
 
 		const triage = await generateTriage({
 			attachmentUrl: attachment.url,
-			name: file.name,
-			mimeType: file.type,
-			sizeBytes: file.size,
+			name: meta.name,
+			mimeType: meta.mimeType,
+			sizeBytes: meta.sizeBytes,
 			kind,
 			note,
 			source,

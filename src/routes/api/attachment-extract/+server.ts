@@ -1,7 +1,14 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
-import { normalizeAttachmentSource, uploadAndExtractAttachment } from '$lib/server/attachment-extract';
+import {
+	extractFromCloudinaryVideo,
+	normalizeAttachmentSource,
+	parseCloudinaryVideoForm,
+	parseVideoFramesForm,
+	uploadAndExtractAttachment,
+	uploadAndExtractVideoFrames
+} from '$lib/server/attachment-extract';
 
 /**
  * Slankt vedleggs-endepunkt: laster opp + trekker ut innhold, uten kald
@@ -16,6 +23,26 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	try {
 		const formData = await request.formData();
+
+		// Video-remote: klienten lastet videoen rett til Cloudinary (stor fil).
+		const remoteInput = parseCloudinaryVideoForm(formData);
+		if (remoteInput) {
+			const { attachment } = await extractFromCloudinaryVideo(remoteInput);
+			return json({ success: true, attachment });
+		}
+
+		// Video-som-frames: klienten har trukket ut keyframes on-device.
+		const framesInput = await parseVideoFramesForm(formData);
+		if (framesInput) {
+			const { attachment } = await uploadAndExtractVideoFrames(
+				framesInput.frames,
+				framesInput.note,
+				framesInput.source,
+				framesInput.name
+			);
+			return json({ success: true, attachment });
+		}
+
 		const file = formData.get('file');
 		const noteValue = formData.get('note');
 		const sourceValue = formData.get('source');
