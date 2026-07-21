@@ -77,6 +77,35 @@ gjennom videoen og velger de mest informative framene.
   `requestVideoFrameCallback` (f.eks. Firefox) eller videoen er < 4 s.
 - 11 nye enhetstester for den rene utvalgslogikken.
 
+### Fase 4: Lyd/transkripsjon for store videoer (direkte-til-Cloudinary)
+
+On-device-framestien (fase 2) dekket det visuelle uten opplasting, men lyden
+gikk tapt: Whisper har 25 MB-grense, og hele videoen kommer ikke gjennom Vercel.
+Løsning: klienten laster videoen **rett til Cloudinary** (utenom Vercel-
+funksjonen → ingen body-grense), og serveren transkriberer fra en komprimert
+lyd-versjon Cloudinary genererer.
+
+- `src/routes/api/cloudinary/sign/+server.ts` — signerer direkte klient-
+  opplasting. `api_secret` forblir på server; `api_key` (ikke hemmelig) sendes med.
+- `src/lib/client/cloudinary-video.ts` — `uploadVideoToCloudinary` POSTer fila
+  rett til Cloudinary via XHR (med progresjon).
+- `attachment-extract.ts`:
+  - `cloudinaryAudioUrl` — mp3, 16 kHz, 32 kbps (langt under 25 MB for typiske
+    klipp; ~100 min tak).
+  - `transcribeCloudinaryVideo` — henter den komprimerte lyden server-side (utgående
+    fetch, ingen body-grense) → Whisper. Størrelsesvakt mot 25 MB.
+  - `extractFromCloudinaryVideo` — transkript + keyframes (so_-thumbnails) fra
+    samme publicId, flettet via `mergeVideoContent`.
+  - `parseCloudinaryVideoForm` — leser `mode=video-remote`.
+- Begge endepunktene håndterer nå `video-remote` (i tillegg til `video-frames`).
+- Klienten (`buildAttachmentBody`) prøver video-remote først (lyd + frames), med
+  on-device frames (kun visuelt) og rå opplasting som fallback.
+
+**Avveining:** video-remote laster opp hele videoen (treg/mobildata for store
+klipp), men er den eneste veien til lyd. On-device-frames (rask, ingen stor
+opplasting, uten lyd) står som fallback. Et eksplisitt «hopp over lyd»-valg i
+UI-et er et naturlig neste steg.
+
 ## Beslutninger
 
 - **Én vision-melding med flere bilder** framfor ett kall per frame: billigere og

@@ -8,6 +8,7 @@
 import type { AttachmentRef, QuickAction, QuickActionId, MediaHistoryItem } from './home-context';
 import type { ChatState } from '$lib/client/chat-state.svelte';
 import { extractVideoFrames } from '$lib/client/video-frames';
+import { uploadVideoToCloudinary } from '$lib/client/cloudinary-video';
 
 // ── Typer ───────────────────────────────────────────────────────────────
 
@@ -33,10 +34,12 @@ function buildRawBody(file: File, note: string, source: AttachmentSource): FormD
 }
 
 /**
- * Bygg opplastings-body. For video trekker vi ut keyframes on-device og sender
- * bare de små JPEG-ene (unngår Vercels ~4,5 MB body-grense på store videoer).
- * Feiler uttrekket (nettleser kan ikke dekode), faller vi tilbake til rå
- * opplasting — som fortsatt virker for små klipp.
+ * Bygg opplastings-body. For video:
+ *   1. Full: last opp rett til Cloudinary (utenom Vercels ~4,5 MB body-grense)
+ *      og send publicId — server transkriberer lyd + henter keyframes.
+ *   2. Fallback: trekk ut keyframes on-device og send bare de små JPEG-ene
+ *      (visuelt, uten lyd) hvis direkte-opplasting ikke er tilgjengelig.
+ *   3. Siste utvei: rå opplasting (virker for små klipp).
  */
 async function buildAttachmentBody(
 	file: File,
@@ -44,6 +47,21 @@ async function buildAttachmentBody(
 	source: AttachmentSource
 ): Promise<FormData> {
 	if (isVideoFile(file)) {
+		// 1) Direkte-til-Cloudinary → transkript + frames server-side.
+		try {
+			const { publicId, durationSec } = await uploadVideoToCloudinary(file);
+			const formData = new FormData();
+			formData.append('mode', 'video-remote');
+			formData.append('publicId', publicId);
+			if (durationSec != null) formData.append('durationSec', String(durationSec));
+			formData.append('note', note);
+			formData.append('source', source);
+			formData.append('name', file.name);
+			return formData;
+		} catch (err) {
+			console.warn('Direkte Cloudinary-opplasting feilet, prøver frames on-device:', err);
+		}
+		// 2) Frames on-device (visuelt, uten lyd).
 		try {
 			const { frames } = await extractVideoFrames(file);
 			const formData = new FormData();

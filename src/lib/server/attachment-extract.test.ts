@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mergeVideoContent } from './attachment-extract';
+import { mergeVideoContent, parseCloudinaryVideoForm } from './attachment-extract';
 
 describe('mergeVideoContent', () => {
 	it('fletter tale og keyframes', () => {
@@ -27,5 +27,44 @@ describe('mergeVideoContent', () => {
 		const { contentText, extractionKind } = mergeVideoContent('   ', '');
 		expect(extractionKind).toBe('metadata_only');
 		expect(contentText).toBe('');
+	});
+});
+
+describe('parseCloudinaryVideoForm', () => {
+	it('returnerer null uten riktig mode', () => {
+		const fd = new FormData();
+		fd.append('publicId', 'resonans/abc');
+		expect(parseCloudinaryVideoForm(fd)).toBeNull();
+	});
+
+	it('returnerer null når publicId mangler', () => {
+		const fd = new FormData();
+		fd.append('mode', 'video-remote');
+		expect(parseCloudinaryVideoForm(fd)).toBeNull();
+	});
+
+	it('parser publicId, note, source, name og varighet', () => {
+		const fd = new FormData();
+		fd.append('mode', 'video-remote');
+		fd.append('publicId', 'resonans/abc');
+		fd.append('durationSec', '42.5');
+		fd.append('note', '  klipp fra økta  ');
+		fd.append('source', 'file');
+		fd.append('name', 'IMG_0515.mov');
+		expect(parseCloudinaryVideoForm(fd)).toEqual({
+			publicId: 'resonans/abc',
+			note: 'klipp fra økta',
+			source: 'file',
+			name: 'IMG_0515.mov',
+			durationSec: 42.5
+		});
+	});
+
+	it('utelater varighet når den er ugyldig', () => {
+		const fd = new FormData();
+		fd.append('mode', 'video-remote');
+		fd.append('publicId', 'resonans/abc');
+		fd.append('durationSec', 'tull');
+		expect(parseCloudinaryVideoForm(fd)?.durationSec).toBeUndefined();
 	});
 });

@@ -547,3 +547,121 @@ export async function parseVideoFramesForm(
 		name: typeof nameValue === 'string' && nameValue ? nameValue : 'video.mov'
 	};
 }
+
+// ── Video-remote: direkte-til-Cloudinary + server-transkripsjon ──────────
+//
+// For store videoer (> Vercels ~4,5 MB body-grense) laster klienten videoen rett
+// til Cloudinary og sender bare publicId hit. Serveren transkriberer fra en
+// komprimert lyd-versjon Cloudinary genererer (16 kHz / 32 kbps → langt under
+// Whisper-grensen på 25 MB), og henter keyframes fra samme video.
+
+const WHISPER_MAX_BYTES = 25 * 1024 * 1024;
+
+/** Komprimert, tale-egnet lyd-URL fra en Cloudinary-video (mp3, 16 kHz, 32 kbps). */
+export function cloudinaryAudioUrl(publicId: string): string {
+	return cloudinary.url(publicId, {
+		resource_type: 'video',
+		format: 'mp3',
+		secure: true,
+		audio_frequency: 16000,
+		bit_rate: '32k'
+	});
+}
+
+async function transcribeCloudinaryVideo(publicId: string): Promise<string> {
+	const res = await fetch(cloudinaryAudioUrl(publicId));
+	if (!res.ok) throw new Error(`Cloudinary audio fetch feilet: ${res.status}`);
+	const arrayBuffer = await res.arrayBuffer();
+	if (arrayBuffer.byteLength > WHISPER_MAX_BYTES) {
+		console.warn('Cloudinary-lyd over Whisper-grensen (25 MB) — hopper over transkripsjon');
+		return '';
+	}
+	const transcription = await openai.audio.transcriptions.create({
+		file: new File([new Uint8Array(BufferGlobal.from(arrayBuffer))], `${publicId.split('/').pop() ?? 'audio'}.mp3`, {
+			type: 'audio/mpeg'
+		}),
+		model: 'gpt-4o-mini-transcribe'
+	});
+	return cleanExtractedText(transcription.text ?? '');
+}
+
+/**
+ * Full uttrekk fra en video som allerede ligger i Cloudinary: transkripsjon
+ * (via komprimert lyd) + keyframes (via so_-thumbnails), flettet. Returnerer
+ * samme form som de andre uttrekkerne slik at chat-/triage-flyten er uendret.
+ */
+export async function extractFromCloudinaryVideo(params: {
+	publicId: string;
+	note: string;
+	source: AttachmentSource;
+	name: string;
+	durationSec?: number;
+}): Promise<{ attachment: ExtractedAttachment; buffer: Buffer; extraction: AttachmentExtraction }> {
+	const { publicId, note, source, name, durationSec } = params;
+
+	const transcript = await transcribeCloudinaryVideo(publicId).catch((error) => {
+		console.error('Video transcription (Cloudinary) failed:', error);
+		return '';
+	});
+
+	const offsets = pickFrameOffsets(typeof durationSec === 'number' ? durationSec : Number.NaN);
+	const frameText = offsets.length
+		? await describeVideoFramesFromCloudinary(publicId, offsets).catch((error) => {
+				console.error('Video frame vision (Cloudinary) failed:', error);
+				return '';
+			})
+		: '';
+
+	const merged = mergeVideoContent(transcript, frameText);
+
+	const thumbUrl = cloudinary.url(publicId, {
+		resource_type: 'video',
+		format: 'jpg',
+		secure: true,
+		start_offset: offsets.length ? String(offsets[0]) : '0',
+		width: 1600,
+		height: 1600,
+		crop: 'limit',
+		quality: 'auto:good'
+	});
+
+	const attachment: ExtractedAttachment = {
+		url: thumbUrl,
+		publicId,
+		kind: 'image',
+		name,
+		mimeType: 'video/mp4',
+		note,
+		source,
+		sizeBytes: 0,
+		contentText: limitContent(merged.contentText),
+		extractionKind: merged.extractionKind
+	};
+
+	return {
+		attachment,
+		buffer: BufferGlobal.alloc(0),
+		extraction: { contentText: attachment.contentText, extractionKind: attachment.extractionKind }
+	};
+}
+
+/** Les video-remote-parametre fra FormData (mode=`video-remote`). Null ellers. */
+export function parseCloudinaryVideoForm(
+	formData: FormData
+): { publicId: string; note: string; source: AttachmentSource; name: string; durationSec?: number } | null {
+	if (formData.get('mode') !== 'video-remote') return null;
+	const publicId = formData.get('publicId');
+	if (typeof publicId !== 'string' || !publicId) return null;
+
+	const durationRaw = formData.get('durationSec');
+	const durationSec = typeof durationRaw === 'string' ? Number(durationRaw) : Number.NaN;
+	const noteValue = formData.get('note');
+	const nameValue = formData.get('name');
+	return {
+		publicId,
+		note: typeof noteValue === 'string' ? noteValue.trim() : '',
+		source: normalizeAttachmentSource(formData.get('source')),
+		name: typeof nameValue === 'string' && nameValue ? nameValue : 'video.mp4',
+		durationSec: Number.isFinite(durationSec) ? durationSec : undefined
+	};
+}

@@ -16,7 +16,9 @@ import {
 	formatScreenTime
 } from '$lib/server/integrations/screen-time';
 import {
+	extractFromCloudinaryVideo,
 	normalizeAttachmentSource,
+	parseCloudinaryVideoForm,
 	parseVideoFramesForm,
 	uploadAndExtractAttachment,
 	uploadAndExtractVideoFrames,
@@ -248,14 +250,21 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 		const formData = await request.formData();
 
-		// Video-som-frames (on-device-uttrekk) eller vanlig enkeltfil.
-		const framesInput = await parseVideoFramesForm(formData);
+		// Video-remote (direkte-til-Cloudinary), video-som-frames (on-device) eller
+		// vanlig enkeltfil.
+		const remoteInput = parseCloudinaryVideoForm(formData);
+		const framesInput = remoteInput ? null : await parseVideoFramesForm(formData);
 		let attachment, buffer, extraction;
 		let note: string;
 		let source: AttachmentSource;
 		let meta: { name: string; mimeType: string; sizeBytes: number };
 
-		if (framesInput) {
+		if (remoteInput) {
+			note = remoteInput.note;
+			source = remoteInput.source;
+			({ attachment, buffer, extraction } = await extractFromCloudinaryVideo(remoteInput));
+			meta = { name: remoteInput.name, mimeType: attachment.mimeType, sizeBytes: 0 };
+		} else if (framesInput) {
 			note = framesInput.note;
 			source = framesInput.source;
 			({ attachment, buffer, extraction } = await uploadAndExtractVideoFrames(
