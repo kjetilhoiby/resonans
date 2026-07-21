@@ -951,6 +951,29 @@ const tools = [
 			{
 				type: 'function' as const,
 				function: {
+					name: 'manage_project_contacts',
+					description: "Styr kontaktlista til et kommunikasjons-/arrangement-prosjekt (tema-undertema av Hjem). Bruk når prosjektet handler om å følge opp folk: samle kontaktinfo, sette oppfølgingsdato (purredato) og registrere status. action: 'create' (ny kontakt), 'update' (endre felter/status/oppfølging), 'delete', 'list' (hent alle). themeId er prosjektets tema-id (oppgitt i PROSJEKTKONTAKTER-konteksten). status: 'todo' (ikke kontaktet), 'venter' (venter på svar), 'ferdig' (avklart). followUpAt (YYYY-MM-DD) driver purre-nudgen: forfalte kontakter som ikke er 'ferdig' varsles. Selve e-postene/samtalene formulerer du i chatten — dette verktøyet lagrer kontaktene og oppfølgingen.",
+					parameters: {
+						type: 'object',
+						properties: {
+							themeId: { type: 'string', description: 'Prosjektets tema-id' },
+							action: { type: 'string', enum: ['create', 'update', 'delete', 'list'] },
+							contactId: { type: 'string', description: 'Kontakt-id (for update/delete)' },
+							name: { type: 'string', description: 'Navn på kontakten' },
+							role: { type: 'string', description: 'Rolle, f.eks. Rørlegger, Nabo, Leverandør' },
+							phone: { type: 'string', description: 'Telefonnummer' },
+							email: { type: 'string', description: 'E-postadresse' },
+							status: { type: 'string', enum: ['todo', 'venter', 'ferdig'] },
+							notes: { type: 'string', description: 'Fritt notat om kontakten' },
+							followUpAt: { type: 'string', description: 'Oppfølging/purredato YYYY-MM-DD' }
+						},
+						required: ['themeId', 'action']
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
 					name: 'manage_training_program',
 					description: "Forklar og ENDRE brukerens adaptive treningsprogram direkte når brukeren foreslår justeringer (typisk etter et varsel om at planen ble rekalkulert). Ring ALLTID action='get' først for å se uker, økter (med sessionId) og siste automatiske justeringer — bruk det til å forklare hva som endret seg og hvorfor, og til å finne riktig sessionId. Deretter: 'move_session' (flytt økt til annen ukedag, dayNumber 1=man..7=søn), 'set_pace' (sett tempo i sek/km på én økt via sessionId, eller alle fremtidige av en runType), 'scale_volume' (skaler distanse/varighet, factor f.eks. 0.9=−10% eller 1.1=+10%, for én weekNumber eller fra fromWeek og fremover), 'set_preference' (varige føringer som den ukentlige automatiske justeringen respekterer: pinnedDays=ukedager løp ikke skal flyttes fra, lockPace=lås tempoet, volumeBias=ønsket volumnivå 0.5–1.5, note=fri føring). programId er valgfri — utelat den for brukerens aktive program. Bekreft konkrete endringer med brukeren før du gjør dem hvis det er tvil.",
 					parameters: {
@@ -1214,11 +1237,11 @@ const tools = [
 				type: 'function' as const,
 				function: {
 					name: 'manage_lunchbox',
-					description: 'Matpakke-hjelperen: dagens forslag per barn (get_suggestions), marker pakket (log_packed), logg retur («Ola hadde med 2 skiver hjem» → log_return med childName+itemName), oppdater preferanser (set_preferences), legg til komponent i biblioteket (add_component).',
+					description: 'Matpakke-hjelperen: dagens forslag per barn (get_suggestions), marker pakket (log_packed), logg retur («Ola hadde med 2 skiver hjem» → log_return med childName+itemName), oppdater preferanser (set_preferences), legg til komponent i biblioteket (add_component), foreslå NYE komponenter (suggest_components — basert på preferanser, bibliotek og retur; presenter og legg til valgte med add_component).',
 					parameters: {
 						type: 'object',
 						properties: {
-							action: { type: 'string', enum: ['get_suggestions', 'log_packed', 'log_return', 'set_preferences', 'add_component'] },
+							action: { type: 'string', enum: ['get_suggestions', 'log_packed', 'log_return', 'set_preferences', 'add_component', 'suggest_components'] },
 							childName: { type: 'string' },
 							date: { type: 'string', description: 'YYYY-MM-DD, default i dag' },
 							itemName: { type: 'string' },
@@ -1229,7 +1252,8 @@ const tools = [
 							allergies: { type: 'array', items: { type: 'string' } },
 							appetite: { type: 'string', enum: ['liten', 'middels', 'stor'] },
 							componentName: { type: 'string' },
-							componentKind: { type: 'string', enum: ['palegg', 'brod', 'frukt', 'gront', 'notter', 'annet'] }
+							componentKind: { type: 'string', enum: ['palegg', 'brod', 'frukt', 'gront', 'notter', 'annet'] },
+							instruction: { type: 'string', description: 'Fritekst-ønske for suggest_components, f.eks. «mer frukt»' }
 						},
 						required: ['action']
 					}
@@ -2195,6 +2219,35 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			}
 		}
 
+		// Prosjektkontakter-kontekst (kommunikasjons-/arrangement-prosjekt): gir AI-en kontaktlista
+		// MED id-er, så manage_project_contacts kan referere contactId presist og formulere oppfølging.
+		let contactsContext = '';
+		if (conversation.themeId) {
+			try {
+				const { projectContacts } = await import('$lib/db/schema');
+				const contactRows = await db
+					.select()
+					.from(projectContacts)
+					.where(eq(projectContacts.themeId, conversation.themeId));
+				if (contactRows.length > 0) {
+					contactRows.sort((a, b) => a.sortOrder - b.sortOrder);
+					contactsContext = `\n\n--- PROSJEKTKONTAKTER (themeId: ${conversation.themeId}) ---\nBruk verktøyet manage_project_contacts med denne themeId-en for å legge til / endre / slette kontakter og sette oppfølgingsdato. contactId refererer id-ene under. status: todo|venter|ferdig.\n`;
+					for (const c of contactRows) {
+						const bits = [`"${c.name}"`];
+						if (c.role) bits.push(`(${c.role})`);
+						bits.push(`status ${c.status}`);
+						if (c.phone) bits.push(`tlf ${c.phone}`);
+						if (c.email) bits.push(`epost ${c.email}`);
+						if (c.followUpAt) bits.push(`oppfølging ${c.followUpAt}`);
+						contactsContext += `- ${bits.join(', ')} (id: ${c.id})\n`;
+					}
+					contactsContext += '--- SLUTT PROSJEKTKONTAKTER ---\n';
+				}
+			} catch (err) {
+				console.warn('[chat] kunne ikke laste prosjektkontakter:', err);
+			}
+		}
+
 		// Sjekk om samtalen har en koblet fremgangsmåte
 		let procedureContext = '';
 		try {
@@ -2279,7 +2332,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		});
 
 		const messages: ChatCompletionMessageParam[] = [
-			{ role: 'system', content: promptPrefix + systemPrompt + memoryContext + personContext + goalsContext + checklistContext + procedureContext + sourceContextPrompt + dateContext + dayContext + ferieContext }
+			{ role: 'system', content: promptPrefix + systemPrompt + memoryContext + personContext + goalsContext + checklistContext + contactsContext + procedureContext + sourceContextPrompt + dateContext + dayContext + ferieContext }
 		];
 
 		// Legg til historikk (unntatt den siste brukermeldingen som allerede er der)
@@ -2741,6 +2794,16 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 					console.log('  ✅ Manage project tasks:', args.action);
 					const { manageProjectTasksTool } = await import('$lib/ai/tools/manage-project-tasks');
 					const result = await manageProjectTasksTool.execute({
+						...args,
+						userId,
+						themeId: args.themeId || conversation.themeId
+					});
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'manage_project_contacts') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  📇 Manage project contacts:', args.action);
+					const { manageProjectContactsTool } = await import('$lib/ai/tools/manage-project-contacts');
+					const result = await manageProjectContactsTool.execute({
 						...args,
 						userId,
 						themeId: args.themeId || conversation.themeId

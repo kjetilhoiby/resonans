@@ -71,8 +71,107 @@
 	let saving = $state(false);
 	let error = $state('');
 
+	// AI-forslag / forbedring
+	let suggesting = $state(false);
+	let refineText = $state('');
+	let suggestError = $state('');
+	let suggestNote = $state<string | null>(null);
+
+	const hasContent = $derived(
+		ingredients.some((i) => i.name.trim()) || instructionsText.trim().length > 0
+	);
+
 	function toggleEffort(value: string) {
 		effortLevel = effortLevel === value ? '' : value;
+	}
+
+	function collectCurrent() {
+		return {
+			title: title.trim(),
+			description: description.trim() || null,
+			ingredients: ingredients
+				.filter((ing) => ing.name.trim())
+				.map((ing) => ({ name: ing.name.trim(), quantity: parseDecimalInput(ing.quantity), unit: ing.unit?.trim() || null })),
+			instructions: instructionsText.split('\n').map((l) => l.trim()).filter(Boolean),
+			prepTimeMin: parseDecimalInput(prepTimeMin),
+			cookTimeMin: parseDecimalInput(cookTimeMin),
+			servings: parseDecimalInput(servings) ?? 5,
+			tags: tagsText.split(',').map((t) => t.trim()).filter(Boolean),
+			mainProtein: mainProtein || null,
+			mainCarb: mainCarb || null,
+			greens: greens || null,
+			effortLevel: effortLevel || null
+		};
+	}
+
+	type Suggestion = {
+		description: string | null;
+		ingredients: Ingredient[];
+		instructions: string[];
+		prepTimeMin: number | null;
+		cookTimeMin: number | null;
+		servings: number;
+		tags: string[];
+		mainProtein: string | null;
+		mainCarb: string | null;
+		greens: string | null;
+		effortLevel: string | null;
+		nutritionEstimate: { kcal?: number; proteinG?: number } | null;
+		note: string | null;
+	};
+
+	function applySuggestion(s: Suggestion) {
+		if (s.description != null) description = s.description;
+		if (s.ingredients.length > 0) ingredients = s.ingredients.map((i) => ({ ...i }));
+		if (s.instructions.length > 0) instructionsText = s.instructions.join('\n');
+		if (s.prepTimeMin != null) prepTimeMin = String(s.prepTimeMin);
+		if (s.cookTimeMin != null) cookTimeMin = String(s.cookTimeMin);
+		if (s.servings) servings = String(s.servings);
+		if (s.tags.length > 0) tagsText = s.tags.join(', ');
+		// Sammensetning og innsats speiler modellens fulle svar (null = bevisst tomt).
+		mainProtein = s.mainProtein ?? '';
+		mainCarb = s.mainCarb ?? '';
+		greens = s.greens ?? '';
+		effortLevel = s.effortLevel ?? '';
+		if (s.nutritionEstimate) {
+			if (s.nutritionEstimate.kcal != null) kcal = String(s.nutritionEstimate.kcal);
+			if (s.nutritionEstimate.proteinG != null) proteinG = String(s.nutritionEstimate.proteinG);
+		}
+	}
+
+	async function runSuggest(instruction: string | null) {
+		if (!title.trim() || suggesting) return;
+		suggesting = true;
+		suggestError = '';
+		try {
+			const res = await fetch('/api/food/recipes/suggest', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					title: title.trim(),
+					current: instruction ? collectCurrent() : null,
+					instruction,
+					servings: parseDecimalInput(servings)
+				})
+			});
+			const data = await res.json();
+			if (!res.ok) {
+				suggestError = data.error ?? 'Forslaget feilet. Prøv igjen.';
+				return;
+			}
+			applySuggestion(data.suggestion);
+			suggestNote = data.suggestion.note ?? null;
+			if (instruction) refineText = '';
+		} catch {
+			suggestError = 'Forslaget feilet. Prøv igjen.';
+		} finally {
+			suggesting = false;
+		}
+	}
+
+	function refine() {
+		if (!refineText.trim()) return;
+		runSuggest(refineText.trim());
 	}
 
 	function addIngredientRow() {
@@ -186,6 +285,32 @@
 			<span class="rs-label">Navn</span>
 			<input class="rs-input" bind:value={title} placeholder="F.eks. Fiskegrateng" data-track="oppskrifter:navn" />
 		</label>
+
+		<div class="rs-assist">
+			<button
+				class="rs-suggest"
+				onclick={() => runSuggest(null)}
+				disabled={suggesting || !title.trim()}
+				data-track="oppskrifter:foresla"
+			>
+				{suggesting && !refineText ? '✨ Lager forslag…' : hasContent ? '✨ Foreslå på nytt' : '✨ Foreslå oppskrift'}
+			</button>
+			<div class="rs-refine">
+				<input
+					class="rs-input rs-refine-input"
+					bind:value={refineText}
+					placeholder="Forbedre: «enklere, uten laktose, for 5»"
+					onkeydown={(e) => e.key === 'Enter' && refine()}
+					disabled={suggesting}
+					data-track="oppskrifter:forbedre-tekst"
+				/>
+				<button class="rs-refine-btn" onclick={refine} disabled={suggesting || !refineText.trim()} aria-label="Send forbedring">
+					{suggesting && refineText ? '…' : '↑'}
+				</button>
+			</div>
+			{#if suggestNote}<p class="rs-suggest-note">💡 {suggestNote}</p>{/if}
+			{#if suggestError}<p class="rs-error">{suggestError}</p>{/if}
+		</div>
 
 		<label class="rs-field">
 			<span class="rs-label">Beskrivelse</span>
@@ -377,6 +502,57 @@
 		text-transform: none;
 		letter-spacing: 0;
 		font-weight: 400;
+	}
+	.rs-assist {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		padding: 12px;
+		background: color-mix(in srgb, var(--accent-light) 8%, transparent);
+		border: 1px solid color-mix(in srgb, var(--accent-light) 22%, transparent);
+		border-radius: 12px;
+	}
+	.rs-suggest {
+		width: 100%;
+		background: color-mix(in srgb, var(--accent-light) 16%, transparent);
+		border: none;
+		border-radius: 10px;
+		color: var(--accent-light);
+		padding: 11px;
+		font-size: 0.9rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.rs-suggest:disabled {
+		opacity: 0.6;
+		cursor: default;
+	}
+	.rs-refine {
+		display: flex;
+		gap: 8px;
+	}
+	.rs-refine-input {
+		flex: 1;
+	}
+	.rs-refine-btn {
+		flex-shrink: 0;
+		width: 44px;
+		background: var(--accent-primary);
+		border: none;
+		border-radius: 10px;
+		color: #fff;
+		font-size: 1.05rem;
+		cursor: pointer;
+	}
+	.rs-refine-btn:disabled {
+		opacity: 0.45;
+		cursor: default;
+	}
+	.rs-suggest-note {
+		margin: 0;
+		font-size: 0.82rem;
+		color: var(--color-text-secondary, #9aa4d6);
+		line-height: 1.4;
 	}
 	.rs-row3 {
 		display: grid;

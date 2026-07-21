@@ -3,9 +3,9 @@
 Spec for å flytte live pull-up-analyse til Ekko-iOS-appen. Ekko eier den raske,
 kamerabaserte sanntidsløkka (on-device); Resonans eier LLM-coachingen etterpå.
 
-> **Status:** utkast, juli 2026. Referanseimplementasjon (TypeScript) finnes i
-> Resonans under `src/lib/pose/` med 22 enhetstester — denne speccen er utledet
-> derfra. Swift-porten deler ikke kode, men skal replikere oppførselen og
+> **Status:** referanseimplementasjon (TypeScript) finnes i Resonans under
+> `src/lib/pose/` med 22 enhetstester (`npm test`). Speccen og koden holdes i
+> sync. Swift-porten deler ikke kode, men skal replikere oppførselen og
 > testvektorene i §7.
 
 ---
@@ -59,7 +59,7 @@ Hvert punkt: `{ x, y, score }` der `score` = Visions `confidence`.
 ## 3. PullupAnalyzer — deterministisk kjerne
 
 Matet med én `PoseFrame` per videoframe + en monotont økende `ts` (ms).
-Holder tilstand mellom frames.
+Holder tilstand mellom frames. Referanse: `src/lib/pose/pullup-analyzer.ts`.
 
 ### 3.1 Albuevinkel (primærsignal)
 
@@ -159,7 +159,7 @@ Rekkefølge — første som slår til vinner:
 | 4 | ellers | «Bra rep! {index}.» | `form-ok` |
 
 No-person: «Jeg ser deg ikke helt — steg litt tilbake så hele kroppen er i
-bildet.»
+bildet.» (`cueKind` = `no-person`).
 
 Lyd er hovedkanalen (man ser ikke skjermen i stanga). Norsk TTS (`AVSpeechSynthesizer`,
 `nb-NO`) + et kort pip ved hver fullført rep. Demp overlappende tale (~900 ms
@@ -169,12 +169,9 @@ minsteavstand).
 
 ## 6. Backend: øktoppsummering (den trege løkka)
 
-**Anbefalt: gjenbruk `POST /api/apps/coach`** (se `EKKO_PROGRAMS_INTEGRATION.md`
+**Anbefalt: gjenbruk `POST /api/apps/coach`** (se `docs/archive/EKKO_PROGRAMS_INTEGRATION.md`
 § coach). Det tar allerede fri-tekst + efemær `context` (live-metrikk) og
 håndterer etter-økt-vurdering.
-
-> Resonans har i dag et prototype-endepunkt `POST /api/trening/teknikk/oppsummering`
-> fra web-MVP-en. Det bør fases ut til fordel for `/api/apps/coach` når Ekko tar over.
 
 **Request:**
 ```
@@ -188,7 +185,8 @@ Content-Type: application/json
 }
 ```
 
-`context` bygges fra `SessionSummary` (§ under). Send ALDRI video, bilder eller
+`context` bygges fra `SessionSummary` via `buildCoachContext()`
+(`src/lib/pose/session-summary.ts`). Send ALDRI video, bilder eller
 per-frame-data — bare de aggregerte tallene.
 
 **Response:** `{ ok: true, text: "<coaching på norsk>" }`

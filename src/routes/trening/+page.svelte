@@ -105,15 +105,6 @@
 	<PageSection>
 		<PageHeader title="Trening" subtitle="To løp — styrke og utholdenhet" titleHref="/" />
 
-		<a class="teknikk-link" href="/trening/teknikk" data-track="trening:apne-teknikk">
-			<span class="teknikk-emoji">🎯</span>
-			<span class="teknikk-copy">
-				<span class="teknikk-title">Live teknikk-analyse</span>
-				<span class="teknikk-sub">Tell pull-ups og få tilbakemelding på utføring via kameraet</span>
-			</span>
-			<span class="teknikk-arrow">→</span>
-		</a>
-
 		{#if !data.plan}
 			<!-- Oppsett-modus -->
 			<section class="setup-card">
@@ -249,44 +240,6 @@
 </AppPage>
 
 <style>
-	.teknikk-link {
-		display: flex;
-		align-items: center;
-		gap: var(--space-md);
-		background: var(--card-bg-subtle, #141414);
-		border: 1px solid var(--card-border, #242424);
-		border-radius: var(--card-radius, 16px);
-		padding: var(--space-lg);
-		text-decoration: none;
-		color: var(--text-primary);
-		transition: border-color 0.2s ease;
-	}
-	.teknikk-link:hover {
-		border-color: var(--accent-primary);
-	}
-	.teknikk-emoji {
-		font-size: 1.6rem;
-		line-height: 1;
-	}
-	.teknikk-copy {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-		flex: 1;
-		min-width: 0;
-	}
-	.teknikk-title {
-		font-weight: 700;
-	}
-	.teknikk-sub {
-		font-size: var(--font-size-caption);
-		color: var(--text-secondary);
-	}
-	.teknikk-arrow {
-		color: var(--text-tertiary);
-		font-size: 1.2rem;
-	}
-
 	.setup-card,
 	.today-card {
 		background: var(--card-bg-subtle, #141414);

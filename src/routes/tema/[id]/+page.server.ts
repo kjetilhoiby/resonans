@@ -1,6 +1,8 @@
 import { db } from '$lib/db';
-import { themes, goals, messages as messagesTable, conversations, themeFiles, themeLists, checklistItems, cutLists } from '$lib/db/schema';
+import { themes, goals, messages as messagesTable, conversations, themeFiles, themeLists, checklistItems, cutLists, projectContacts } from '$lib/db/schema';
 import { mapTaskItem } from '$lib/server/project-tasks';
+import { mapContact } from '$lib/server/project-contacts';
+import { projectHasContacts } from '$lib/domain/project-kinds';
 import { getThemeInstruction } from '$lib/server/theme-instructions';
 import { ensureConversationThemeIdColumn } from '$lib/server/conversation-schema';
 import { getConversationsByTheme } from '$lib/server/conversations';
@@ -62,9 +64,11 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 
 	// Prosjekt-undertema av Hjem → har oppgave-fane (checklist_items knyttet til temaet).
 	const isHomeProject = theme.parentTheme === 'Hjem';
+	// Kontakter lastes kun for prosjekttyper som har kontakter-fane (kommunikasjon/arrangement).
+	const wantsContacts = isHomeProject && projectHasContacts(theme.projectProfile ?? null);
 
 	// Last alle uavhengige data parallelt
-	const [themeConversations, msgs, themeGoals, instruction, uploadedFiles, tripListsRaw, selectedWorkout, themeProjects, themeTasksRaw, cutListsRaw] =
+	const [themeConversations, msgs, themeGoals, instruction, uploadedFiles, tripListsRaw, selectedWorkout, themeProjects, themeTasksRaw, cutListsRaw, contactsRaw] =
 		await Promise.all([
 			getConversationsByTheme(locals.userId, theme.id),
 			db
@@ -115,6 +119,13 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 						.from(cutLists)
 						.where(and(eq(cutLists.themeId, theme.id), eq(cutLists.userId, locals.userId)))
 						.orderBy(asc(cutLists.sortOrder), asc(cutLists.createdAt))
+				: Promise.resolve([]),
+			wantsContacts
+				? db
+						.select()
+						.from(projectContacts)
+						.where(and(eq(projectContacts.themeId, theme.id), eq(projectContacts.userId, locals.userId)))
+						.orderBy(asc(projectContacts.sortOrder), asc(projectContacts.createdAt))
 				: Promise.resolve([])
 		]);
 
@@ -166,6 +177,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		ferieProfile: theme.ferieProfile ?? null,
 		isHomeProject,
 		projectProfile: theme.projectProfile ?? null,
+		contacts: contactsRaw.map(mapContact),
 		tasks: themeTasksRaw.map(mapTaskItem),
 		cutLists: cutListsRaw.map((c) => ({
 			id: c.id,

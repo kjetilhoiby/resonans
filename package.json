@@ -47,7 +47,6 @@
 	},
 	"dependencies": {
 		"@auth/sveltekit": "^1.11.1",
-		"@mediapipe/tasks-vision": "^0.10.35",
 		"@mozilla/readability": "^0.5.0",
 		"@neondatabase/serverless": "^1.0.2",
 		"@prisma/client": "^6.18.0",

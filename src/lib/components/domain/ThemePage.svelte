@@ -28,8 +28,10 @@
 	import ThemeChatTab from './theme/ThemeChatTab.svelte';
 	import ThemeTasksTab from './theme/ThemeTasksTab.svelte';
 	import ThemeKapplisteTab from './theme/ThemeKapplisteTab.svelte';
+	import ThemeKontakterTab, { type ProjectContact } from './theme/ThemeKontakterTab.svelte';
 	import ThemeRecipesTab from './theme/ThemeRecipesTab.svelte';
 	import ThemeDataTab from './theme/ThemeDataTab.svelte';
+	import { projectTabsForKind } from '$lib/domain/project-kinds';
 
 	/* ── Types ──────────────────────────────────────────── */
 	interface Theme {
@@ -122,19 +124,20 @@
 		projectProfile?: Record<string, unknown> | null;
 		tasks?: import('./theme/ThemeTasksTab.svelte').ProjectTask[];
 		cutLists?: Array<{ id: string; title: string; kerfMm: number; transportEnabled: boolean; transportMaxLengthMm: number; transportMaxWidthMm: number; guillotine: boolean; materials: import('$lib/kappliste/calc').Material[]; sortOrder: number; updatedAt: string }>;
+		contacts?: ProjectContact[];
 	}
 
-	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '', selectedWorkout = null, tripProfile = null, tripLists = [], ferieProfile = null, themeFiles: initialThemeFiles = [], metricSettings: initialMetricSettings = {}, projects = [], isHomeProject = false, projectProfile = null, tasks = [], cutLists = [] }: Props = $props();
+	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '', selectedWorkout = null, tripProfile = null, tripLists = [], ferieProfile = null, themeFiles: initialThemeFiles = [], metricSettings: initialMetricSettings = {}, projects = [], isHomeProject = false, projectProfile = null, tasks = [], cutLists = [], contacts = [] }: Props = $props();
 
 	/* ── Subtab-tilstand ────────────────────────────────── */
-	type Tab = 'chat' | 'data' | 'mål' | 'flyter' | 'filer' | 'lister' | 'oppgaver' | 'kapp' | 'oppskrifter';
+	type Tab = 'chat' | 'data' | 'mål' | 'flyter' | 'filer' | 'lister' | 'oppgaver' | 'kapp' | 'kontakter' | 'oppskrifter';
 	const activeDashboardKind = $derived(resolveThemeDashboardKind(theme?.name));
 	const activeDashboard = $derived(getThemeDashboardDefinition(theme?.name));
 	const hasThemeDashboard = $derived(activeDashboardKind !== null);
 	const requestedTab = get(page).url.searchParams.get('tab');
 	const availableTabs = $derived<Tab[]>(
 		isHomeProject
-			? ['chat', 'oppgaver', 'kapp', 'filer']
+			? (projectTabsForKind(projectProfile) as Tab[])
 			: activeDashboardKind === 'health'
 			? ['chat', 'data', 'mål', 'flyter', 'filer']
 			: activeDashboardKind === 'economics'
@@ -156,7 +159,7 @@
 	const requestedPrompt = get(page).url.searchParams.get('prompt') ?? '';
 	const hasLinkedWorkout = $derived(Boolean(selectedWorkout));
 	const isHandoff = get(page).url.searchParams.get('handoff') === '1';
-	const validTabs: Tab[] = ['chat', 'data', 'mål', 'flyter', 'filer', 'lister', 'oppgaver', 'kapp', 'oppskrifter'];
+	const validTabs: Tab[] = ['chat', 'data', 'mål', 'flyter', 'filer', 'lister', 'oppgaver', 'kapp', 'kontakter', 'oppskrifter'];
 	let tab = $state<Tab>(
 		hasLinkedWorkout
 			? 'chat'
@@ -370,6 +373,7 @@
 					{:else if t === 'lister'}📋 Lister
 					{:else if t === 'oppgaver'}✅ Oppgaver
 					{:else if t === 'kapp'}📐 Kapp
+					{:else if t === 'kontakter'}📇 Kontakter
 					{:else if t === 'oppskrifter'}🍲 Oppskrifter
 					{:else}📁 Filer{/if}
 				</button>
@@ -452,6 +456,15 @@
 			<ThemeKapplisteTab
 				themeId={theme.id}
 				initialCutLists={cutLists}
+			/>
+
+		<!-- KONTAKTER (kommunikasjons-/arrangement-prosjekt) -->
+		{:else if tab === 'kontakter'}
+			<ThemeKontakterTab
+				themeId={theme.id}
+				projectName={theme.name}
+				initialContacts={contacts}
+				onSwitchToChat={goToChat}
 			/>
 
 		<!-- OPPSKRIFTER (mat-tema) -->
