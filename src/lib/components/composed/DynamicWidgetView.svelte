@@ -7,6 +7,8 @@
 	import { tweened } from 'svelte/motion';
 	import { cubicOut } from 'svelte/easing';
 	import GoalRing from '../ui/GoalRing.svelte';
+	import { longpress } from '$lib/actions/longpress';
+	import { portal } from '$lib/actions/portal';
 	import type { WidgetData } from '$lib/client/widget-data-cache';
 
 	interface Props {
@@ -64,44 +66,29 @@
 		prevCurrent = d.current;
 	});
 
-	// Long-press for unpin
-	let pressTimer: ReturnType<typeof setTimeout> | null = null;
+	// Long-press for widget-meny. Vi bruker `longpress`-action-en så trykket
+	// avbrytes ved bevegelse (sveip mellom widget-sider trigger ikke menyen) og
+	// det påfølgende klikket svelges automatisk.
 	let showUnpin = $state(false);
 	let popupStyle = $state('');
-	let dwEl: HTMLDivElement | null = null;
 
-	function handlePressStart() {
-		pressTimer = setTimeout(() => {
-			// Plasser popupen basert på faktisk posisjon til widgeten
-			if (dwEl) {
-				const r = dwEl.getBoundingClientRect();
-				const popupW = 150;
-				const popupH = 110; // estimert høyde for tre knapper
-				const margin = 8;
-				// Senter horisontalt, klamper til skjermkanten
-				let left = r.left + r.width / 2 - popupW / 2;
-				left = Math.max(margin, Math.min(left, window.innerWidth - popupW - margin));
-				// Vis over widgeten hvis det er plass, ellers under
-				const spaceAbove = r.top;
-				if (spaceAbove >= popupH + margin) {
-					const bottom = window.innerHeight - r.top + 6;
-					popupStyle = `position:fixed; left:${left}px; bottom:${bottom}px; width:${popupW}px;`;
-				} else {
-					const top = r.bottom + 6;
-					popupStyle = `position:fixed; left:${left}px; top:${top}px; width:${popupW}px;`;
-				}
-			}
-			showUnpin = true;
-		}, 600);
-	}
-
-	function handlePressEnd(e: PointerEvent) {
-		if (pressTimer) {
-			clearTimeout(pressTimer);
-			pressTimer = null;
+	function openMenu(rect: DOMRect) {
+		const popupW = 150;
+		const popupH = 150; // estimert høyde for fire knapper
+		const margin = 8;
+		// Senter horisontalt, klamper til skjermkanten
+		let left = rect.left + rect.width / 2 - popupW / 2;
+		left = Math.max(margin, Math.min(left, window.innerWidth - popupW - margin));
+		// Vis over widgeten hvis det er plass, ellers under
+		const spaceAbove = rect.top;
+		if (spaceAbove >= popupH + margin) {
+			const bottom = window.innerHeight - rect.top + 6;
+			popupStyle = `left:${left}px; bottom:${bottom}px; width:${popupW}px;`;
+		} else {
+			const top = rect.bottom + 6;
+			popupStyle = `left:${left}px; top:${top}px; width:${popupW}px;`;
 		}
-		// Hindre click-event fra å fyre etter langt trykk
-		if (showUnpin) e.preventDefault();
+		showUnpin = true;
 	}
 
 	function handleClick() {
@@ -151,13 +138,10 @@
 </script>
 
 <div
-	bind:this={dwEl}
 	class="dw"
 	role="button"
 	tabindex="0"
-	onpointerdown={handlePressStart}
-	onpointerup={handlePressEnd}
-	onpointerleave={handlePressEnd}
+	use:longpress={{ onLongPress: openMenu, duration: 600 }}
 	onclick={handleClick}
 	onkeydown={(e) => e.key === 'Enter' && handleClick()}
 	style:--c={displayColor}
@@ -185,8 +169,10 @@
 		<!-- Label -->
 		<div class="dw-label" style:color={displayColor}>{displayUnit}</div>
 
-		<!-- Unpin popup -->
+		<!-- Widget-meny. Portalert til <body> så den slipper unna PullToRefresh sitt
+		     transform-/will-change-lag og tegnes over widget-kortet, ikke klippet av det. -->
 		{#if showUnpin}
+			<div class="dw-menu-portal" use:portal>
 			<!-- Overlay fanger klikk utenfor popupen og lukker den -->
 			<div
 				class="dw-overlay"
@@ -226,6 +212,7 @@
 				>
 					Avbryt
 				</button>
+			</div>
 			</div>
 		{/if}
 	{/if}
@@ -334,7 +321,8 @@
 	}
 
 	.dw-popup {
-		/* Posisjon settes via inline style (fixed, beregnet i handlePressStart) */
+		/* Koordinater (left/top/bottom/width) settes via inline style, beregnet i openMenu */
+		position: fixed;
 		background: #1e1e1e;
 		border: 1px solid #333;
 		border-radius: 10px;
