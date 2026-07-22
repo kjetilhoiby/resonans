@@ -30,7 +30,7 @@ npm run test:visual:review    # LLM-drevet visuell review (Playwright + GPT-4o, 
 
 ---
 
-## Fem prinsipper
+## Seks prinsipper
 
 Alle endringer i dette repoet skal følge disse prinsippene. En agent som gjør en endring skal bruke og vedlikeholde hvert relevante system.
 
@@ -121,6 +121,31 @@ Sidevisninger, oppmerksomhetstid og klikk logges automatisk fra rot-layouten (`$
 - Sjekk at nye kontroller ikke ender som anonyme labels (`✕`, `input[text]`, `<div>`) — det gjør bruksstatistikken ulesbar.
 - Bruksdata hentes med `GET /api/usage/summary?days=30` (sider, oppmerksomhetstid, økter, topp-interaksjoner).
 
+### 6. Unngå bloat — gjenbruk før du bygger nytt
+
+Repoet vokste raskt i en eksplorativ fase og har allerede gode generelle rammer. Bloaten oppstår når en ny feature håndruller en parallell variant i stedet for å bruke rammen som finnes. **Sjekk alltid om det finnes en generell mekanisme før du lager en ny spesialisert.** Se `docs/changelog/2026-07-22-oppryddingsplan.md` for kjente konsolideringer.
+
+**Nye tabeller:**
+- Sjekk om en eksisterende tabellfamilie dekker behovet før du legger til en tabell. Utvid heller med en kolonne enn å lage en parallell tabell.
+- Foretrekk **polymorf/tagget** design (`source_type` + `source_id`, eller en `domain`/`kind`-kolonne) fremfor N parallelle tabeller for samme konsept. Presedens: `classification_overrides` (`domain`-kolonne) og `share_tokens` (polymorf).
+- Aldri to systemer for samme konsept. Ikke innfør en tredje måte å gruppere data (vi har allerede domener + temaer + prosjekter — bruk `themes` som container; `domain` er en tag, ikke en ny struktur).
+- Ikke legg nye rader inn i pensjonerte systemer (`program_*` avløses av `track_*`).
+
+**Nye AI-verktøy (`src/lib/ai/tools/`):**
+- CRUD/oppslag skal gå gjennom de generiske verktøyene, ikke et nytt `manage_x`/`query_x` per domene. Lag bespoke verktøy **bare** når det er ekte domenelogikk (aggregering, adaptive beregninger), ikke for ren tabell-CRUD.
+- Definer verktøyskjema **én gang** som zod-`parameters`. Registrer verktøy via den zod-avledede mekanismen — ikke re-håndskriv skjema som inline JSON.
+- For record-logging: bruk den generiske `record_tracking_event`, ikke nye hardkodede `log_x`-verktøy.
+
+**Ny sync / signal / nudge / AI-kall:**
+- Ny integrasjon: bruk sync-abstraksjonen (`SyncProvider`/`batch-runner`) — ikke håndrull token-refresh og batch-skriving på nytt.
+- Nytt signal, nudge eller suggestion: **registrer i registeret** (`action-producers`-mønsteret), ikke legg til en gren i en håndrullet runner.
+- LLM-kall som returnerer JSON: bruk den delte `generateJson`-hjelperen — ikke kopier `openai.chat.completions.create({ response_format })` med egen try/catch.
+
+**Kode og mapper:**
+- Ingen lekegrind-/utforsknings-sider i `src/routes` (bortsett fra `/design`). Prototyper hører utenfor `routes` eller bak et flag.
+- Død kode slettes eller flyttes til `docs/archive/`. Ingen `.future`-filer i `src/`.
+- Sjekk eksisterende mappe før du lager en ny. Ikke lag navne-dubletter (`util`/`utils`).
+
 ---
 
 ## Arkitektur
@@ -175,6 +200,7 @@ Tre prioritetsnivåer: manuelle overrides → LLM-merchant-mappings → regelbas
 - Data-migreringer: `DATA_MIGRATIONS`-arrayen i `scripts/sync-db-schema.mjs` (idempotente).
 - Deploy-pipeline: `scripts/sync-db-schema.mjs` → SQL-migrasjoner → drizzle push → build.
 - Primary keys: `uuid` med `defaultRandom()`. Timestamps: `created_at`/`updated_at` med `defaultNow()`. Alle tabeller har `userId text` FK.
+- **Før du legger til en tabell:** se prinsipp 6 (unngå bloat). Utvid en eksisterende tabellfamilie eller bruk en polymorf/tagget kolonne fremfor en ny parallell tabell.
 
 ---
 
