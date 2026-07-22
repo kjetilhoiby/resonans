@@ -6,6 +6,10 @@ import {
 	farthestPointIndices,
 	selectKeyframeIndices,
 	selectKeyframeOffsets,
+	visualNovelty,
+	fusedSaliency,
+	selectSalientIndices,
+	selectSalientOffsets,
 	type FrameSample
 } from './keyframe-selection';
 
@@ -83,5 +87,74 @@ describe('selectKeyframeOffsets', () => {
 	it('mapper valgte indekser til tidsstempler', () => {
 		const samples = [sample(0.5, 0), sample(1.5, 10), sample(2.5, 20)];
 		expect(selectKeyframeOffsets(samples, 6)).toEqual([0.5, 1.5, 2.5]);
+	});
+});
+
+const withAudio = (timestampSec: number, value: number, audioEnergy: number): FrameSample => ({
+	timestampSec,
+	signature: [value, value, value, value],
+	audioEnergy
+});
+
+describe('visualNovelty', () => {
+	it('er høy ved endring, lav i rolige partier', () => {
+		// to mørke, så to lyse — endringen ligger mellom indeks 1 og 2.
+		const samples = [sample(0, 0), sample(1, 0), sample(2, 255), sample(3, 255)];
+		const nov = visualNovelty(samples);
+		expect(nov[1]).toBeGreaterThan(nov[0]);
+		expect(nov[2]).toBeGreaterThan(nov[3]);
+	});
+});
+
+describe('fusedSaliency', () => {
+	it('uten lyd = normalisert bevegelse', () => {
+		const samples = [sample(0, 0), sample(1, 0), sample(2, 255), sample(3, 255)];
+		const s = fusedSaliency(samples);
+		expect(Math.max(...s)).toBeCloseTo(1);
+		expect(Math.min(...s)).toBeCloseTo(0);
+	});
+
+	it('vekter inn lyd-energi når den finnes', () => {
+		// Identiske signaturer (ingen bevegelse) → saliens styres av lyd.
+		const samples = [
+			withAudio(0, 100, 0),
+			withAudio(1, 100, 10),
+			withAudio(2, 100, 0),
+			withAudio(3, 100, 0)
+		];
+		const s = fusedSaliency(samples);
+		expect(s.indexOf(Math.max(...s))).toBe(1);
+	});
+});
+
+describe('selectSalientIndices', () => {
+	it('returnerer alle når det er færre enn ønsket', () => {
+		const samples = [sample(0, 0), sample(1, 10), sample(2, 20)];
+		expect(selectSalientIndices(samples, 6)).toEqual([0, 1, 2]);
+	});
+
+	it('velger mest fremtredende frame per tids-bin (én per bin)', () => {
+		// 12 identiske signaturer; lyd-topper i indeks 1, 5, 10 (én per bin).
+		const samples = Array.from({ length: 12 }, (_, i) =>
+			withAudio(i, 100, i === 1 || i === 5 || i === 10 ? 10 : 0)
+		);
+		expect(selectSalientIndices(samples, 3)).toEqual([1, 5, 10]);
+	});
+
+	it('gir temporal spredning', () => {
+		const samples = Array.from({ length: 12 }, (_, i) => sample(i, i * 20));
+		const idx = selectSalientIndices(samples, 3);
+		expect(idx).toHaveLength(3);
+		expect(idx[0]).toBeLessThan(4);
+		expect(idx[2]).toBeGreaterThanOrEqual(8);
+	});
+});
+
+describe('selectSalientOffsets', () => {
+	it('mapper til tidsstempler', () => {
+		const samples = Array.from({ length: 12 }, (_, i) =>
+			withAudio(i * 0.5, 100, i === 1 || i === 5 || i === 10 ? 10 : 0)
+		);
+		expect(selectSalientOffsets(samples, 3)).toEqual([0.5, 2.5, 5]);
 	});
 });
