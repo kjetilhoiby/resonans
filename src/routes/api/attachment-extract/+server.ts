@@ -38,7 +38,8 @@ export const POST: RequestHandler = async ({ request }) => {
 				framesInput.frames,
 				framesInput.note,
 				framesInput.source,
-				framesInput.name
+				framesInput.name,
+				framesInput.audioPublicId
 			);
 			return json({ success: true, attachment });
 		}

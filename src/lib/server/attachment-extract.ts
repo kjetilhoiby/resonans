@@ -465,7 +465,8 @@ export async function uploadAndExtractVideoFrames(
 	frames: VideoFrameInput[],
 	note: string,
 	source: AttachmentSource,
-	name: string
+	name: string,
+	audioPublicId?: string
 ): Promise<{ attachment: ExtractedAttachment; buffer: Buffer; extraction: AttachmentExtraction }> {
 	if (frames.length === 0) throw new Error('Ingen frames mottatt');
 
@@ -475,11 +476,21 @@ export async function uploadAndExtractVideoFrames(
 		url: `data:image/jpeg;base64,${f.buffer.toString('base64')}`
 	}));
 
-	const frameText = await describeFrameImages(images).catch((error) => {
-		console.error('Video frame vision failed:', error);
-		return '';
-	});
-	const merged = mergeVideoContent('', frameText);
+	// Vision på de (kuraterte) framene + valgfri transkripsjon fra videoens
+	// lyd (når brukeren har valgt «ta med lyd» → videoen ligger i Cloudinary).
+	const [frameText, transcript] = await Promise.all([
+		describeFrameImages(images).catch((error) => {
+			console.error('Video frame vision failed:', error);
+			return '';
+		}),
+		audioPublicId
+			? transcribeCloudinaryVideo(audioPublicId).catch((error) => {
+					console.error('Video transcription (frames+audio) failed:', error);
+					return '';
+				})
+			: Promise.resolve('')
+	]);
+	const merged = mergeVideoContent(transcript, frameText);
 
 	// Første frame som miniatyr for visning i tråden.
 	const firstBuffer = ordered[0].buffer;
@@ -515,7 +526,13 @@ export async function uploadAndExtractVideoFrames(
  */
 export async function parseVideoFramesForm(
 	formData: FormData
-): Promise<{ frames: VideoFrameInput[]; note: string; source: AttachmentSource; name: string } | null> {
+): Promise<{
+	frames: VideoFrameInput[];
+	note: string;
+	source: AttachmentSource;
+	name: string;
+	audioPublicId?: string;
+} | null> {
 	if (formData.get('mode') !== 'video-frames') return null;
 
 	const files = formData.getAll('frames').filter((f): f is File => f instanceof File);
@@ -540,11 +557,13 @@ export async function parseVideoFramesForm(
 
 	const noteValue = formData.get('note');
 	const nameValue = formData.get('name');
+	const audioValue = formData.get('audioPublicId');
 	return {
 		frames,
 		note: typeof noteValue === 'string' ? noteValue.trim() : '',
 		source: normalizeAttachmentSource(formData.get('source')),
-		name: typeof nameValue === 'string' && nameValue ? nameValue : 'video.mov'
+		name: typeof nameValue === 'string' && nameValue ? nameValue : 'video.mov',
+		audioPublicId: typeof audioValue === 'string' && audioValue ? audioValue : undefined
 	};
 }
 

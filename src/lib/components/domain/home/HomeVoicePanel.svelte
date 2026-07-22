@@ -79,6 +79,10 @@
 					<span class="flow-hint">Disse {ctx.voicePreview.videoThumbs.length} bildene sendes til analyse.</span>
 					<button class="frame-edit" onclick={() => (pickerOpen = true)} data-track="lyd:rediger-bilder">Rediger bilder</button>
 				</div>
+				<label class="audio-toggle">
+					<input type="checkbox" bind:checked={ctx.voicePreview.includeAudio} data-track="lyd:ta-med-lyd" />
+					<span>Ta med lyd — transkriber tale <em>(laster opp hele videoen)</em></span>
+				</label>
 			{/if}
 			<p class="flow-hint">Legg til litt kontekst hvis du vil at triagen skal forstå hva lydfilen gjelder.</p>
 			<textarea
@@ -187,6 +191,23 @@
 		cursor: pointer;
 		padding: 0;
 		flex-shrink: 0;
+	}
+	.audio-toggle {
+		display: flex;
+		align-items: flex-start;
+		gap: 8px;
+		font-size: 0.82rem;
+		color: #bbb;
+		cursor: pointer;
+	}
+	.audio-toggle input {
+		margin-top: 2px;
+		accent-color: #4a5af0;
+		flex-shrink: 0;
+	}
+	.audio-toggle em {
+		color: #666;
+		font-style: normal;
 	}
 
 	.flow-textarea {
