@@ -55,6 +55,18 @@ den eksisterende e-post-inntaks-pipelinen: brukeren sender en reel til seg selv
   eierskaps-sjekket), DELETE.
 - Snarvei fra hjem-skjermen (`HomeTitleZone.svelte`, stjerne-ikon → `/funn`).
 
+### Fase 5: Hint, lenketype-ruting og dedup
+- **Hint:** brukeren kan skrive `Hint: <tekst>` (eller `Hint - …`) på egen linje i
+  e-posten. `extractHint()` plukker det ut og løfter det øverst i triage-prompten
+  med tung vekt — styrer tema, og brukes gjerne som tittel («underskap til seng»).
+  Lagres i `finds.extracted.hint`.
+- **Oppskrifts-ruting etter lenketype** (`isWalledMediaUrl()`): fetchbare sider
+  (blogg/nettbutikk/artikkel) hentes i sin helhet via `importRecipeFromUrl`
+  (JSON-LD), med fallback til caption-tekst; murte IG/YT-lenker bruker
+  `importRecipeFromText` på caption/OG-teksten.
+- **Dedup:** samme `sourceUrl` sendt på nytt lager ikke et nytt funn (unngår
+  dobbelt-funn og dobbel oppskrifts-import ved gjentatte delinger).
+
 ## Beslutninger
 
 - **Ingen Instagram-OAuth.** Lagret innhold er ikke API-tilgjengelig; e-post er den

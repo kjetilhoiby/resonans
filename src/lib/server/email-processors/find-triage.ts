@@ -1,20 +1,24 @@
 /**
  * find-triage.ts — «hva er dette»-triage for lagrede lenker/reels.
  *
- * Brukeren sender en Instagram-reel (eller annen lenke) til seg selv på
- * e-post, gjerne med caption limt inn. Processoren:
- *   1. finner lenka i e-posten og henter OpenGraph-meta (tittel/beskrivelse/bilde),
- *   2. lar GPT klassifisere hva funnet er (tema + type + kort sammendrag),
- *   3. promoterer oppskrifter til mat-temaet (meals) via importRecipeFromText,
- *   4. lander funnet i «Funn»-innboksen (finds) for triage.
+ * Brukeren sender en lenke (Instagram-reel, YouTube-short, blogg, nettbutikk
+ * osv.) til seg selv på e-post, gjerne med et hint om hva det er. Processoren:
+ *   1. finner lenka + et eventuelt «Hint: …» i e-posten,
+ *   2. henter OpenGraph-meta (tittel/beskrivelse/bilde) fra lenka,
+ *   3. lar GPT klassifisere hva funnet er (tema + type + kort sammendrag),
+ *      med hintet vektet tungt,
+ *   4. promoterer oppskrifter til mat-temaet (meals) — hele siden hentes for
+ *      fetchbare sider (blogg/nettbutikk), caption brukes for murte IG/YT-lenker,
+ *   5. lander funnet i «Funn»-innboksen (finds) for triage.
  */
 
 import { openai } from '$lib/server/openai';
 import { db } from '$lib/db';
 import { finds, type emailRules } from '$lib/db/schema';
+import { and, eq } from 'drizzle-orm';
 import { stripHtml, type InboundEmailPayload } from './shared';
 import { extractFirstUrl, fetchLinkPreview, type LinkPreview } from '$lib/server/web/og-tags';
-import { importRecipeFromText } from '$lib/server/services/recipe-import-service';
+import { importRecipeFromText, importRecipeFromUrl } from '$lib/server/services/recipe-import-service';
 
 type EmailRule = typeof emailRules.$inferSelect;
 
@@ -30,24 +34,37 @@ export interface TriageResult {
 	isRecipe: boolean;
 }
 
-const TRIAGE_SYSTEM_PROMPT = `Du er en triage-assistent for «funn» — lenker og reels en person har lagret fordi de virket nyttige (oppskrifter, snekker-teknikker, treningstips, inspirasjon osv.). Du får e-postens emne/tekst og metadata hentet fra lenka. Finn ut HVA dette er.
+const TRIAGE_SYSTEM_PROMPT = `Du er en triage-assistent for «funn» — lenker en person har lagret fordi de virket nyttige (oppskrifter, snekker-teknikker, treningstips, produkter, artikler, inspirasjon osv.). Lenka kan være en Instagram-reel, en YouTube-video, et blogginnlegg eller en nettbutikk-side. Du får e-postens emne/tekst, et eventuelt hint fra brukeren, og metadata hentet fra lenka. Finn ut HVA dette er.
 
 Returner KUN gyldig JSON:
 {
   "title": "kort, beskrivende tittel på norsk",
   "summary": "1-3 setninger: hva dette er / hva man lærer / kort essens",
   "theme": "food|home|health|family|self|jobb|economics|annet",
-  "kind": "oppskrift|teknikk|tips|trening|inspirasjon|annet",
+  "kind": "oppskrift|teknikk|tips|trening|produkt|artikkel|inspirasjon|annet",
   "isRecipe": true
 }
 
-theme-guide: mat/oppskrift/drikke → food; snekring/oppussing/hage/husarbeid/reparasjon → home; trening/kosthold/søvn/helse → health; barn/samliv/relasjoner → family; refleksjon/mental/identitet → self; jobb/produktivitet/karriere → jobb; penger/sparing/økonomi → economics; ellers → annet.
+theme-guide: mat/oppskrift/drikke → food; snekring/oppussing/hage/husarbeid/reparasjon/møbler → home; trening/kosthold/søvn/helse → health; barn/samliv/relasjoner → family; refleksjon/mental/identitet → self; jobb/produktivitet/karriere → jobb; penger/sparing/økonomi → economics; ellers → annet.
+Hvis brukeren har skrevet et HINT, vekt det tungt — det er brukerens egen intensjon. Bruk det til å avgjøre tema, og gjerne som tittel (f.eks. hint «underskap til seng» → tittel «Underskap til seng», theme «home»).
 isRecipe: true KUN når innholdet faktisk er en matoppskrift (ingredienser + fremgangsmåte). En video om snekring er ikke en oppskrift.`;
 
-/** Bygg brukermeldingen til triagen fra e-post + lenke-preview. Ren funksjon. */
-export function buildTriageContent(payload: InboundEmailPayload, preview: LinkPreview | null): string {
+/** Trekk ut et eksplisitt «Hint: …»/«Hint - …» fra e-postteksten. Ren funksjon. */
+export function extractHint(payload: InboundEmailPayload): string | null {
+	const body = payload.TextBody || (payload.HtmlBody ? stripHtml(payload.HtmlBody) : '');
+	const m = body.match(/^\s*hint\s*[:\-–]\s*(.+)$/im);
+	return m ? m[1].trim().slice(0, 200) : null;
+}
+
+/** Bygg brukermeldingen til triagen fra e-post + lenke-preview + hint. Ren funksjon. */
+export function buildTriageContent(
+	payload: InboundEmailPayload,
+	preview: LinkPreview | null,
+	hint: string | null = null
+): string {
 	const body = payload.TextBody || (payload.HtmlBody ? stripHtml(payload.HtmlBody) : '');
 	return [
+		hint ? `BRUKERENS HINT (vekt tungt): ${hint}` : '',
 		`Emne: ${payload.Subject ?? '(ingen)'}`,
 		preview?.siteName ? `Kilde: ${preview.siteName}` : '',
 		preview?.title ? `Lenke-tittel: ${preview.title}` : '',
@@ -81,6 +98,12 @@ export function parseTriageResult(raw: string): TriageResult {
 	return { title, summary, theme, kind, isRecipe };
 }
 
+/** IG/YT-sider er murt bak innlogging — der har vi bare caption/OG, ikke sideinnhold. */
+export function isWalledMediaUrl(url: string | null | undefined): boolean {
+	if (!url) return false;
+	return /instagram\.com|youtube\.com|youtu\.be/i.test(url);
+}
+
 export async function processFindTriageEmail(
 	userId: string,
 	payload: InboundEmailPayload,
@@ -88,13 +111,25 @@ export async function processFindTriageEmail(
 ) {
 	const body = payload.TextBody || (payload.HtmlBody ? stripHtml(payload.HtmlBody) : '');
 	const url = extractFirstUrl(body) ?? extractFirstUrl(payload.Subject);
+	const hint = extractHint(payload);
+
+	// Dedup: samme lenke sendt på nytt skal ikke lage et nytt funn.
+	if (url) {
+		const existing = await db.query.finds.findFirst({
+			where: and(eq(finds.userId, userId), eq(finds.sourceUrl, url))
+		});
+		if (existing) {
+			return { success: true, findId: existing.id, deduped: true, theme: existing.theme };
+		}
+	}
+
 	const preview = url ? await fetchLinkPreview(url) : null;
 
 	const completion = await openai.chat.completions.create({
 		model: 'gpt-4o-mini',
 		messages: [
 			{ role: 'system', content: TRIAGE_SYSTEM_PROMPT },
-			{ role: 'user', content: buildTriageContent(payload, preview) }
+			{ role: 'user', content: buildTriageContent(payload, preview, hint) }
 		],
 		response_format: { type: 'json_object' },
 		temperature: 0.2,
@@ -103,7 +138,7 @@ export async function processFindTriageEmail(
 
 	const triage = parseTriageResult(completion.choices[0]?.message?.content ?? '{}');
 
-	// Tekst tilgjengelig for oppskrifts-uttrekk: caption + OG-beskrivelse + emne.
+	// Tekst tilgjengelig for oppskrifts-uttrekk fra murte medier: caption + OG + emne.
 	const captionText = [preview?.title, preview?.description, body]
 		.filter(Boolean)
 		.join('\n\n')
@@ -113,19 +148,36 @@ export async function processFindTriageEmail(
 	let theme: FindTheme = triage.theme;
 	const extracted: Record<string, unknown> = {};
 	if (triage.kind) extracted.kind = triage.kind;
+	if (hint) extracted.hint = hint;
 
-	if (triage.isRecipe && captionText) {
+	if (triage.isRecipe) {
 		try {
-			const recipe = await importRecipeFromText(userId, {
-				text: captionText,
-				sourceUrl: url ?? undefined,
-				imageUrl: preview?.image ?? undefined
-			});
-			if (recipe.ok) {
+			let recipe = null;
+			if (url && !isWalledMediaUrl(url)) {
+				// Fetchbar side (blogg/nettbutikk/artikkel) → hent hele oppskriften (JSON-LD).
+				recipe = await importRecipeFromUrl(userId, url);
+				// Faller tilbake til caption/OG-tekst hvis sidehenting ikke ga oppskrift.
+				if (!recipe.ok && captionText) {
+					recipe = await importRecipeFromText(userId, {
+						text: captionText,
+						sourceUrl: url,
+						imageUrl: preview?.image ?? undefined
+					});
+				}
+			} else if (captionText) {
+				// Murt IG/YT-lenke → bruk caption/OG-teksten vi klarte å hente.
+				recipe = await importRecipeFromText(userId, {
+					text: captionText,
+					sourceUrl: url ?? undefined,
+					imageUrl: preview?.image ?? undefined
+				});
+			}
+
+			if (recipe?.ok) {
 				mealId = recipe.meal.id;
 				theme = 'food';
 				extracted.promotedMealId = recipe.meal.id;
-			} else {
+			} else if (recipe) {
 				extracted.recipePromotion = { failed: true, reason: recipe.error };
 			}
 		} catch (err) {
@@ -133,7 +185,7 @@ export async function processFindTriageEmail(
 		}
 	}
 
-	const title = triage.title || preview?.title || payload.Subject || 'Funn';
+	const title = triage.title || hint || preview?.title || payload.Subject || 'Funn';
 
 	const [row] = await db
 		.insert(finds)

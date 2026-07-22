@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { buildTriageContent, parseTriageResult } from './find-triage';
+import {
+	buildTriageContent,
+	parseTriageResult,
+	extractHint,
+	isWalledMediaUrl
+} from './find-triage';
 import type { InboundEmailPayload } from './shared';
 import type { LinkPreview } from '$lib/server/web/og-tags';
 
@@ -33,6 +38,40 @@ describe('buildTriageContent', () => {
 		const content = buildTriageContent(payload, null);
 		expect(content).toContain('Emne: Reel');
 		expect(content).not.toContain('Kilde:');
+	});
+
+	it('løfter hintet øverst når det er satt', () => {
+		const content = buildTriageContent(payload, preview, 'underskap til seng');
+		expect(content).toContain('BRUKERENS HINT (vekt tungt): underskap til seng');
+	});
+});
+
+describe('extractHint', () => {
+	it('plukker ut «Hint: …» fra e-postteksten', () => {
+		expect(extractHint({ ...payload, TextBody: 'https://x\nHint: trearbeid' })).toBe('trearbeid');
+	});
+
+	it('takler «Hint - …» og store bokstaver', () => {
+		expect(extractHint({ ...payload, TextBody: 'HINT - underskap til seng' })).toBe(
+			'underskap til seng'
+		);
+	});
+
+	it('returnerer null uten hint-linje', () => {
+		expect(extractHint({ ...payload, TextBody: 'bare en lenke https://x' })).toBeNull();
+	});
+});
+
+describe('isWalledMediaUrl', () => {
+	it('kjenner igjen IG/YT-lenker', () => {
+		expect(isWalledMediaUrl('https://www.instagram.com/reel/x')).toBe(true);
+		expect(isWalledMediaUrl('https://youtube.com/shorts/x')).toBe(true);
+		expect(isWalledMediaUrl('https://youtu.be/x')).toBe(true);
+	});
+
+	it('behandler blogg/nettbutikk som fetchbar', () => {
+		expect(isWalledMediaUrl('https://trinesmatblogg.no/oppskrift')).toBe(false);
+		expect(isWalledMediaUrl(null)).toBe(false);
 	});
 });
 
