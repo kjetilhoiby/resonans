@@ -122,6 +122,25 @@ To ting som trengs for at store klipp faktisk skal virke og føles greit:
   fleminutters opplasting frosset ut. Progresjon er additivt og påvirker ikke
   andre opplastinger (fraksjonen forblir 0 → «Triagerer …» som før).
 
+### Fase 6: Forhåndsvisning av keyframes før analyse
+
+Velger du en video i Lyd/video- eller Fil-panelet, trekkes keyframene ut
+on-device med én gang og vises som miniatyr-stripe — du ser nøyaktig hvilke
+bilder som sendes til vision før du bekrefter. «Last opp og triager» sender så
+akkurat de framene (ingen dobbelt-uttrekk, ingen stor opplasting).
+
+- `home-media.ts`: `VideoPreviewFields` + `runVideoPreview`/`clearVideoPreview`.
+  Kjøres fra `handleVoiceFileSelect`/`handleFileFlowSelect`; ryddes i close +
+  `clearVoiceSelection`/`clearFileSelection` (revokerer object-URL-er).
+- `voicePreview`/`filePreview` (nested $state) eksponert via ctx; panelene viser
+  «Henter bilder …» og miniatyr-stripa.
+- `requestAttachmentUpload`/`buildAttachmentBody` tar `preFrames` — er de satt,
+  sendes de direkte (frames-sti), foran Cloudinary/rå.
+
+Merk: forhåndsvisning bruker frames-stien (visuelt), så video via panelene får
+ikke lyd-transkripsjon i denne stien. Cloudinary-lyd er fortsatt tilgjengelig
+for video uten forhåndsviste frames (f.eks. chat-vedlegg).
+
 ## Beslutninger
 
 - **Én vision-melding med flere bilder** framfor ett kall per frame: billigere og
