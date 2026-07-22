@@ -81,25 +81,25 @@ describe('parseTriageResult', () => {
 			JSON.stringify({
 				title: 'Tomatsuppe',
 				summary: 'Rask suppe.',
-				theme: 'food',
+				domain: 'food',
 				kind: 'Oppskrift',
 				isRecipe: true
 			})
 		);
 		expect(r.title).toBe('Tomatsuppe');
-		expect(r.theme).toBe('food');
+		expect(r.domain).toBe('food');
 		expect(r.kind).toBe('oppskrift'); // normalisert til lowercase
 		expect(r.isRecipe).toBe(true);
 	});
 
-	it('klemmer ukjent tema til «annet»', () => {
-		expect(parseTriageResult('{"theme":"vitenskap"}').theme).toBe('annet');
-		expect(parseTriageResult('{}').theme).toBe('annet');
+	it('klemmer ukjent domene til «annet»', () => {
+		expect(parseTriageResult('{"domain":"vitenskap"}').domain).toBe('annet');
+		expect(parseTriageResult('{}').domain).toBe('annet');
 	});
 
 	it('takler ugyldig JSON uten å kaste', () => {
 		const r = parseTriageResult('ikke json');
-		expect(r.theme).toBe('annet');
+		expect(r.domain).toBe('annet');
 		expect(r.isRecipe).toBe(false);
 		expect(r.title).toBe('');
 	});

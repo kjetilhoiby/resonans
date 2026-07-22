@@ -8,6 +8,7 @@ import { ensureConversationThemeIdColumn } from '$lib/server/conversation-schema
 import { getConversationsByTheme } from '$lib/server/conversations';
 import { getWorkoutContextForUser } from '$lib/server/workout-context';
 import { ProjectMetricsService } from '$lib/server/services/project-metrics-service';
+import { getThemeFindsByName } from '$lib/server/services/finds-service';
 import { listThemeResearch } from '$lib/server/services/theme-research-service';
 import { eq, and, asc } from 'drizzle-orm';
 import { error } from '@sveltejs/kit';
@@ -69,7 +70,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const wantsContacts = isHomeProject && projectHasContacts(theme.projectProfile ?? null);
 
 	// Last alle uavhengige data parallelt
-	const [themeConversations, msgs, themeGoals, instruction, uploadedFiles, tripListsRaw, selectedWorkout, themeProjects, themeTasksRaw, cutListsRaw, contactsRaw, research] =
+	const [themeConversations, msgs, themeGoals, instruction, uploadedFiles, tripListsRaw, selectedWorkout, themeProjects, themeTasksRaw, cutListsRaw, contactsRaw, research, themeFindsRaw] =
 		await Promise.all([
 			getConversationsByTheme(locals.userId, theme.id),
 			db
@@ -128,7 +129,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 						.where(and(eq(projectContacts.themeId, theme.id), eq(projectContacts.userId, locals.userId)))
 						.orderBy(asc(projectContacts.sortOrder), asc(projectContacts.createdAt))
 				: Promise.resolve([]),
-			listThemeResearch(theme.id, locals.userId)
+			listThemeResearch(theme.id, locals.userId),
+			getThemeFindsByName(locals.userId, theme.name)
 		]);
 
 	console.log(`[perf][tema/:id] user=${locals.userId} theme=${theme.name} step=total ms=${(performance.now() - t0).toFixed(0)} msgs=${msgs.length} goals=${themeGoals.length} projects=${themeProjects.length}`);
@@ -162,6 +164,18 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 			fileType: f.fileType,
 			mimeType: f.mimeType,
 			sizeBytes: f.sizeBytes,
+			createdAt: f.createdAt.toISOString()
+		})),
+		finds: themeFindsRaw.map((f) => ({
+			id: f.id,
+			title: f.title,
+			summary: f.summary,
+			domain: f.domain,
+			kind: f.kind,
+			sourceUrl: f.sourceUrl,
+			thumbnailUrl: f.thumbnailUrl,
+			status: f.status,
+			mealId: f.mealId,
 			createdAt: f.createdAt.toISOString()
 		})),
 		themeResearch: research,

@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/db';
 import { finds } from '$lib/db/schema';
 import { and, eq } from 'drizzle-orm';
-import { FIND_THEMES } from '$lib/server/email-processors/find-triage';
+import { FIND_DOMAINS } from '$lib/server/email-processors/find-triage';
 
 const STATUSES = ['inbox', 'kept', 'discarded'] as const;
 type FindStatus = (typeof STATUSES)[number];
@@ -13,7 +13,7 @@ function serialize(row: typeof finds.$inferSelect) {
 		id: row.id,
 		title: row.title,
 		summary: row.summary,
-		theme: row.theme,
+		domain: row.domain,
 		kind: row.kind,
 		sourceUrl: row.sourceUrl,
 		thumbnailUrl: row.thumbnailUrl,
@@ -26,13 +26,17 @@ function serialize(row: typeof finds.$inferSelect) {
 
 export const GET: RequestHandler = async ({ locals, url }) => {
 	const statusParam = url.searchParams.get('status');
-	const where =
-		statusParam && (STATUSES as readonly string[]).includes(statusParam)
-			? and(eq(finds.userId, locals.userId), eq(finds.status, statusParam))
-			: eq(finds.userId, locals.userId);
+	const domainParam = url.searchParams.get('domain');
+	const conds = [eq(finds.userId, locals.userId)];
+	if (statusParam && (STATUSES as readonly string[]).includes(statusParam)) {
+		conds.push(eq(finds.status, statusParam));
+	}
+	if (domainParam && (FIND_DOMAINS as readonly string[]).includes(domainParam)) {
+		conds.push(eq(finds.domain, domainParam));
+	}
 
 	const rows = await db.query.finds.findMany({
-		where,
+		where: and(...conds),
 		orderBy: (f, { desc }) => [desc(f.createdAt)],
 		limit: 300
 	});
@@ -41,7 +45,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 };
 
 export const PATCH: RequestHandler = async ({ request, locals }) => {
-	const body = (await request.json()) as { id: string; status?: string; theme?: string };
+	const body = (await request.json()) as { id: string; status?: string; domain?: string };
 	if (!body.id) {
 		return json({ error: 'ID er påkrevd' }, { status: 400 });
 	}
@@ -53,11 +57,11 @@ export const PATCH: RequestHandler = async ({ request, locals }) => {
 		}
 		updates.status = body.status as FindStatus;
 	}
-	if (body.theme !== undefined) {
-		if (!(FIND_THEMES as readonly string[]).includes(body.theme)) {
-			return json({ error: 'Ugyldig tema' }, { status: 400 });
+	if (body.domain !== undefined) {
+		if (!(FIND_DOMAINS as readonly string[]).includes(body.domain)) {
+			return json({ error: 'Ugyldig domene' }, { status: 400 });
 		}
-		updates.theme = body.theme;
+		updates.domain = body.domain;
 	}
 
 	const [updated] = await db

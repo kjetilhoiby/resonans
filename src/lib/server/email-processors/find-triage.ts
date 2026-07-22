@@ -5,7 +5,7 @@
  * osv.) til seg selv på e-post, gjerne med et hint om hva det er. Processoren:
  *   1. finner lenka + et eventuelt «Hint: …» i e-posten,
  *   2. henter OpenGraph-meta (tittel/beskrivelse/bilde) fra lenka,
- *   3. lar GPT klassifisere hva funnet er (tema + type + kort sammendrag),
+ *   3. lar GPT klassifisere hva funnet er (domene + type + kort sammendrag),
  *      med hintet vektet tungt,
  *   4. promoterer oppskrifter til mat-temaet (meals) — hele siden hentes for
  *      fetchbare sider (blogg/nettbutikk), caption brukes for murte IG/YT-lenker,
@@ -22,14 +22,14 @@ import { importRecipeFromText, importRecipeFromUrl } from '$lib/server/services/
 
 type EmailRule = typeof emailRules.$inferSelect;
 
-/** Temaer et funn kan klassifiseres til (DomainType-nøkler + 'annet'). */
-export const FIND_THEMES = ['food', 'home', 'health', 'family', 'self', 'jobb', 'economics', 'annet'] as const;
-export type FindTheme = (typeof FIND_THEMES)[number];
+/** Domener et funn kan klassifiseres til (DomainType-nøkler + 'annet'). */
+export const FIND_DOMAINS = ['food', 'home', 'health', 'family', 'self', 'jobb', 'economics', 'annet'] as const;
+export type FindDomain = (typeof FIND_DOMAINS)[number];
 
 export interface TriageResult {
 	title: string;
 	summary: string | null;
-	theme: FindTheme;
+	domain: FindDomain;
 	kind: string | null;
 	isRecipe: boolean;
 }
@@ -40,13 +40,13 @@ Returner KUN gyldig JSON:
 {
   "title": "kort, beskrivende tittel på norsk",
   "summary": "1-3 setninger: hva dette er / hva man lærer / kort essens",
-  "theme": "food|home|health|family|self|jobb|economics|annet",
+  "domain": "food|home|health|family|self|jobb|economics|annet",
   "kind": "oppskrift|teknikk|tips|trening|produkt|artikkel|inspirasjon|annet",
   "isRecipe": true
 }
 
-theme-guide: mat/oppskrift/drikke → food; snekring/oppussing/hage/husarbeid/reparasjon/møbler → home; trening/kosthold/søvn/helse → health; barn/samliv/relasjoner → family; refleksjon/mental/identitet → self; jobb/produktivitet/karriere → jobb; penger/sparing/økonomi → economics; ellers → annet.
-Hvis brukeren har skrevet et HINT, vekt det tungt — det er brukerens egen intensjon. Bruk det til å avgjøre tema, og gjerne som tittel (f.eks. hint «underskap til seng» → tittel «Underskap til seng», theme «home»).
+domain-guide: mat/oppskrift/drikke → food; snekring/oppussing/hage/husarbeid/reparasjon/møbler → home; trening/kosthold/søvn/helse → health; barn/samliv/relasjoner → family; refleksjon/mental/identitet → self; jobb/produktivitet/karriere → jobb; penger/sparing/økonomi → economics; ellers → annet.
+Hvis brukeren har skrevet et HINT, vekt det tungt — det er brukerens egen intensjon. Bruk det til å avgjøre domene, og gjerne som tittel (f.eks. hint «underskap til seng» → tittel «Underskap til seng», domain «home»).
 isRecipe: true KUN når innholdet faktisk er en matoppskrift (ingredienser + fremgangsmåte). En video om snekring er ikke en oppskrift.`;
 
 /** Trekk ut et eksplisitt «Hint: …»/«Hint - …» fra e-postteksten. Ren funksjon. */
@@ -76,7 +76,7 @@ export function buildTriageContent(
 		.join('\n');
 }
 
-/** Tolk og normaliser triage-JSON. Klemmer tema til gyldig verdi. Ren funksjon. */
+/** Tolk og normaliser triage-JSON. Klemmer domene til gyldig verdi. Ren funksjon. */
 export function parseTriageResult(raw: string): TriageResult {
 	let obj: Record<string, unknown> = {};
 	try {
@@ -85,9 +85,9 @@ export function parseTriageResult(raw: string): TriageResult {
 		obj = {};
 	}
 
-	const themeRaw = typeof obj.theme === 'string' ? obj.theme.toLowerCase().trim() : '';
-	const theme: FindTheme = (FIND_THEMES as readonly string[]).includes(themeRaw)
-		? (themeRaw as FindTheme)
+	const domainRaw = typeof obj.domain === 'string' ? obj.domain.toLowerCase().trim() : '';
+	const domain: FindDomain = (FIND_DOMAINS as readonly string[]).includes(domainRaw)
+		? (domainRaw as FindDomain)
 		: 'annet';
 
 	const title = typeof obj.title === 'string' && obj.title.trim() ? obj.title.trim() : '';
@@ -95,7 +95,7 @@ export function parseTriageResult(raw: string): TriageResult {
 	const kind = typeof obj.kind === 'string' && obj.kind.trim() ? obj.kind.trim().toLowerCase() : null;
 	const isRecipe = obj.isRecipe === true || obj.isRecipe === 'true';
 
-	return { title, summary, theme, kind, isRecipe };
+	return { title, summary, domain, kind, isRecipe };
 }
 
 /** IG/YT-sider er murt bak innlogging — der har vi bare caption/OG, ikke sideinnhold. */
@@ -119,7 +119,7 @@ export async function processFindTriageEmail(
 			where: and(eq(finds.userId, userId), eq(finds.sourceUrl, url))
 		});
 		if (existing) {
-			return { success: true, findId: existing.id, deduped: true, theme: existing.theme };
+			return { success: true, findId: existing.id, deduped: true, domain: existing.domain };
 		}
 	}
 
@@ -145,7 +145,7 @@ export async function processFindTriageEmail(
 		.trim();
 
 	let mealId: string | null = null;
-	let theme: FindTheme = triage.theme;
+	let domain: FindDomain = triage.domain;
 	const extracted: Record<string, unknown> = {};
 	if (triage.kind) extracted.kind = triage.kind;
 	if (hint) extracted.hint = hint;
@@ -175,7 +175,7 @@ export async function processFindTriageEmail(
 
 			if (recipe?.ok) {
 				mealId = recipe.meal.id;
-				theme = 'food';
+				domain = 'food';
 				extracted.promotedMealId = recipe.meal.id;
 			} else if (recipe) {
 				extracted.recipePromotion = { failed: true, reason: recipe.error };
@@ -193,7 +193,7 @@ export async function processFindTriageEmail(
 			userId,
 			title: title.slice(0, 300),
 			summary: triage.summary,
-			theme,
+			domain,
 			kind: triage.kind,
 			sourceUrl: url ?? null,
 			thumbnailUrl: preview?.image ?? null,
@@ -206,5 +206,5 @@ export async function processFindTriageEmail(
 		})
 		.returning();
 
-	return { success: true, findId: row?.id, theme, promotedMealId: mealId };
+	return { success: true, findId: row?.id, domain, promotedMealId: mealId };
 }

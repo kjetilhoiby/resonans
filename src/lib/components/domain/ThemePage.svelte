@@ -106,6 +106,19 @@
 		createdAt: string;
 	}
 
+	interface ThemeFind {
+		id: string;
+		title: string;
+		summary: string | null;
+		domain: string | null;
+		kind: string | null;
+		sourceUrl: string | null;
+		thumbnailUrl: string | null;
+		status: string;
+		mealId: string | null;
+		createdAt: string;
+	}
+
 	interface ThemeResearchItem {
 		id: string;
 		themeId: string;
@@ -127,6 +140,7 @@
 		tripLists?: import('./trip-api').ThemeList[];
 		ferieProfile?: Record<string, unknown> | null;
 		themeFiles?: ThemeFile[];
+		finds?: ThemeFind[];
 		themeResearch?: ThemeResearchItem[];
 		metricSettings?: MetricSettingsMap;
 		projects?: ThemeProject[];
@@ -137,7 +151,7 @@
 		contacts?: ProjectContact[];
 	}
 
-	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '', selectedWorkout = null, tripProfile = null, tripLists = [], ferieProfile = null, themeFiles: initialThemeFiles = [], themeResearch: initialThemeResearch = [], metricSettings: initialMetricSettings = {}, projects = [], isHomeProject = false, projectProfile = null, tasks = [], cutLists = [], contacts = [] }: Props = $props();
+	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '', selectedWorkout = null, tripProfile = null, tripLists = [], ferieProfile = null, themeFiles: initialThemeFiles = [], finds = [], themeResearch: initialThemeResearch = [], metricSettings: initialMetricSettings = {}, projects = [], isHomeProject = false, projectProfile = null, tasks = [], cutLists = [], contacts = [] }: Props = $props();
 
 	/* ── Subtab-tilstand ────────────────────────────────── */
 	type Tab = 'chat' | 'data' | 'mål' | 'flyter' | 'filer' | 'lister' | 'oppgaver' | 'kapp' | 'kontakter' | 'oppskrifter';
@@ -488,6 +502,7 @@
 				themeFiles={initialThemeFiles}
 				themeResearch={initialThemeResearch}
 				themeInstruction={themeInstruction}
+				finds={finds}
 			/>
 		{/if}
 		</div>

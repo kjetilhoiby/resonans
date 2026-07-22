@@ -8,6 +8,7 @@ import { buildObservedBehaviorBlock } from '$lib/server/services/observed-behavi
 import { buildReflectionsBlock } from '$lib/server/services/reflection-block';
 import { touchMemory } from '$lib/server/memories';
 import { computeCutList, formatNok } from '$lib/kappliste/calc';
+import { getFindsForTheme, buildFindsContextBlock } from '$lib/server/services/finds-service';
 
 interface BuildContextArgs {
 	userId: string;
@@ -23,8 +24,9 @@ interface BuildContextArgs {
  */
 export class ContextService {
 	static async buildForChat({ userId, themeId }: BuildContextArgs): Promise<string> {
-		const [fileBlock, cutListBlock, dreamBlock, visionBlock, memoriesBlock, plansBlock, reflectionsBlock, observedBlock] = await Promise.all([
+		const [fileBlock, findsBlock, cutListBlock, dreamBlock, visionBlock, memoriesBlock, plansBlock, reflectionsBlock, observedBlock] = await Promise.all([
 			this.themeFiles(userId, themeId),
+			this.finds(userId, themeId),
 			this.cutLists(userId, themeId),
 			this.activeDream(userId),
 			this.activeVision(userId),
@@ -34,7 +36,7 @@ export class ContextService {
 			this.observedBehavior(userId)
 		]);
 
-		const sections = [fileBlock, cutListBlock, dreamBlock, visionBlock, memoriesBlock.text, plansBlock, reflectionsBlock, observedBlock]
+		const sections = [fileBlock, findsBlock, cutListBlock, dreamBlock, visionBlock, memoriesBlock.text, plansBlock, reflectionsBlock, observedBlock]
 			.filter(Boolean)
 			.join('');
 
@@ -57,6 +59,12 @@ export class ContextService {
 		for (const file of withContent) out += `\n${file.parsedContent}\n`;
 		out += '--- SLUTT PÅ TEMA-FILER ---\n';
 		return out;
+	}
+
+	private static async finds(userId: string, themeId?: string | null): Promise<string> {
+		if (!themeId) return '';
+		const rows = await getFindsForTheme(userId, themeId);
+		return buildFindsContextBlock(rows);
 	}
 
 	private static async cutLists(userId: string, themeId?: string | null): Promise<string> {

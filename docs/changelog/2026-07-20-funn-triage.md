@@ -67,6 +67,21 @@ den eksisterende e-post-inntaks-pipelinen: brukeren sender en reel til seg selv
 - **Dedup:** samme `sourceUrl` sendt på nytt lager ikke et nytt funn (unngår
   dobbelt-funn og dobbel oppskrifts-import ved gjentatte delinger).
 
+### Fase 6: Funn på tema-sider + i chat-kontekst + rename domain
+- **Rename `finds.theme` → `finds.domain`** (migrasjon `0045`): kolonnen lagret et
+  domene (food/home/…), ikke et brukertema. Ryddet i schema, `FIND_THEMES`→
+  `FIND_DOMAINS`, `TriageResult.domain`, GPT-JSON-feltet, API-param og UI.
+- **Domene-utleding for tema** (`finds-service.ts`, `resolveThemeDomain`): tema har
+  ingen domene-kolonne, så domenet utledes fra tema-navnet — først via
+  `resolveThemeDashboardKind` (mappet: `egenfrekvens`→`self`), ellers via
+  `resolveDomainFromInput` (fanger jobb/self). Reise/bøker/film/kjøretøy → null.
+- **Funn-seksjon i «Filer»-fanen** (`ThemeFilesTab.svelte`): viser funn for temaets
+  domene (status `inbox` + `kept`), med Behold/Arkiver direkte fra tema-siden.
+  Lastes i tema-loaderen via `getThemeFindsByName`.
+- **Chat-kontekst** (`ContextService.finds` → `buildFindsContextBlock`): en
+  `--- FUNN I TEMAET ---`-blokk følger med system-prompten på tema-chatten, så
+  AI-en kjenner de lagrede lenkene. Mirrorer `themeFiles`-mønsteret.
+
 ## Beslutninger
 
 - **Ingen Instagram-OAuth.** Lagret innhold er ikke API-tilgjengelig; e-post er den

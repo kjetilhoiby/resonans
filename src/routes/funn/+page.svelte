@@ -14,7 +14,7 @@
 	let items = $state<Find[]>(data.finds);
 	let tab = $state<'inbox' | 'kept' | 'discarded'>('inbox');
 
-	const THEMES: Array<{ key: string; label: string; emoji: string }> = [
+	const DOMAINS: Array<{ key: string; label: string; emoji: string }> = [
 		{ key: 'food', label: 'Mat', emoji: '🍽️' },
 		{ key: 'home', label: 'Hjem', emoji: '🏠' },
 		{ key: 'health', label: 'Helse', emoji: '❤️' },
@@ -25,8 +25,8 @@
 		{ key: 'annet', label: 'Annet', emoji: '🔖' }
 	];
 
-	function themeMeta(key: string | null) {
-		return THEMES.find((t) => t.key === key) ?? THEMES[THEMES.length - 1];
+	function domainMeta(key: string | null) {
+		return DOMAINS.find((t) => t.key === key) ?? DOMAINS[DOMAINS.length - 1];
 	}
 
 	const filtered = $derived(items.filter((f) => f.status === tab));
@@ -36,7 +36,7 @@
 		discarded: items.filter((f) => f.status === 'discarded').length
 	});
 
-	async function patch(id: string, changes: { status?: string; theme?: string }) {
+	async function patch(id: string, changes: { status?: string; domain?: string }) {
 		const res = await fetch('/api/funn', {
 			method: 'PATCH',
 			headers: { 'content-type': 'application/json' },
@@ -104,7 +104,7 @@
 						{/if}
 						<div class="body">
 							<div class="chips">
-								<span class="chip theme">{themeMeta(find.theme).emoji} {themeMeta(find.theme).label}</span>
+								<span class="chip theme">{domainMeta(find.domain).emoji} {domainMeta(find.domain).label}</span>
 								{#if find.kind}<span class="chip kind">{find.kind}</span>{/if}
 								{#if find.mealId}<span class="chip recipe">✓ Lagret som oppskrift</span>{/if}
 							</div>
@@ -119,11 +119,11 @@
 
 							<div class="actions">
 								<Select
-									value={find.theme ?? 'annet'}
+									value={find.domain ?? 'annet'}
 									className="theme-select"
-									onChange={(e: Event) => patch(find.id, { theme: (e.target as HTMLSelectElement).value })}
+									onChange={(e: Event) => patch(find.id, { domain: (e.target as HTMLSelectElement).value })}
 								>
-									{#each THEMES as t}
+									{#each DOMAINS as t}
 										<option value={t.key}>{t.emoji} {t.label}</option>
 									{/each}
 								</Select>
