@@ -6,11 +6,18 @@
 
   Innholdet (children) eier header/scroll/footer selv — skallet er
   flex-kolonne med overflow hidden.
+
+  Backdrop og sheet portaleres til <body> (use:portal). Uten dette fester
+  `position: fixed` seg til nærmeste transformerte stamfar — f.eks.
+  `PullToRefresh` sin `.ptr-content` (will-change: transform) som wrapper
+  tema-, ukeplan- og hjemsidene. Da havner panelet i bunnen av HELE
+  sideinnholdet i stedet for nederst i viewporten («laaangt nede på siden»).
 -->
 <script lang="ts">
 	import { fade, fly } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
 	import type { Snippet } from 'svelte';
+	import { portal } from '$lib/actions/portal';
 
 	interface Props {
 		onclose: () => void;
@@ -22,10 +29,11 @@
 	let { onclose, ariaLabel, maxWidth = 520, children }: Props = $props();
 </script>
 
-<div class="bs-backdrop" transition:fade={{ duration: 200 }} onclick={onclose} role="presentation"></div>
+<div class="bs-backdrop" use:portal transition:fade={{ duration: 200 }} onclick={onclose} role="presentation"></div>
 
 <div
 	class="bs-sheet"
+	use:portal
 	transition:fly={{ y: 40, duration: 350, easing: cubicOut }}
 	role="dialog"
 	aria-modal="true"

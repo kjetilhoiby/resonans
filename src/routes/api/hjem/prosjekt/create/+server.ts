@@ -4,16 +4,23 @@ import { db } from '$lib/db';
 import { themes } from '$lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { ensureThemeForUser } from '$lib/server/themes';
+import { isProjectKind, resolveProjectKind, DEFAULT_PROJECT_KIND } from '$lib/domain/project-kinds';
 
 // Oppretter et hus-prosjekt som undertema av Hjem (parentTheme='Hjem'), analogt med
 // hvordan /api/ferie/create lager ferie-undertemaer av Familie. Prosjektet arver
-// egen chat, filer-fane og oppgave-fane fra tema-systemet.
+// egen chat, filer-fane og oppgave-fane fra tema-systemet. `kind` avgjør hvilke øvrige
+// faner det får (kappliste vs. kontakter) — se $lib/domain/project-kinds.
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const body = await request.json().catch(() => null);
 	const name = typeof body?.name === 'string' ? body.name.trim() : '';
 	const room = typeof body?.room === 'string' ? body.room.trim() : undefined;
 	const targetDate = typeof body?.targetDate === 'string' ? body.targetDate.trim() : undefined;
-	const emoji = typeof body?.emoji === 'string' && body.emoji.trim() ? body.emoji.trim() : '🔨';
+	const kind = isProjectKind(body?.kind) ? body.kind : DEFAULT_PROJECT_KIND;
+	// Standard-emoji følger prosjekttypen når klienten ikke sender en egen.
+	const emoji =
+		typeof body?.emoji === 'string' && body.emoji.trim()
+			? body.emoji.trim()
+			: resolveProjectKind(kind).emoji;
 
 	if (!name) {
 		return json({ error: 'Mangler prosjektnavn' }, { status: 400 });
@@ -32,6 +39,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			.update(themes)
 			.set({
 				projectProfile: {
+					kind,
 					...(room ? { room } : {}),
 					status: 'planning',
 					...(targetDate ? { targetDate } : {})
@@ -41,5 +49,5 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			.where(and(eq(themes.id, theme.id), eq(themes.userId, locals.userId)));
 	}
 
-	return json({ themeId: theme.id, name, created });
+	return json({ themeId: theme.id, name, kind, created });
 };

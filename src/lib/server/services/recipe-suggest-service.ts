@@ -25,6 +25,8 @@ export type RecipeSuggestInput = {
 	current?: Partial<SuggestedRecipe> | null;
 	/** Fritekst-instruksjon for forbedring, f.eks. «gjør den enklere, uten laktose». */
 	instruction?: string | null;
+	/** Måltall for porsjoner (antall personen retten skal mette). Default familiestørrelse. */
+	servings?: number | null;
 };
 
 export type RecipeSuggestResult =
@@ -65,8 +67,21 @@ export async function suggestRecipe(
 	const greensKeys = GREENS.map((g) => g.key).join(', ');
 
 	const refining = Boolean(input.instruction?.trim());
+	const targetServings =
+		typeof input.servings === 'number' && input.servings > 0
+			? Math.round(input.servings)
+			: FAMILY_DEFAULT_SERVINGS;
 
-	const systemPrompt = `Du lager norske familieoppskrifter for et hushold med 2 voksne og 3 barn (${FAMILY_DEFAULT_SERVINGS} porsjoner som default). Returner KUN gyldig JSON:
+	// Skala-regelen skiller mellom vanlige middager (skalér til porsjoner) og
+	// enhetsbaserte retter (pizza, pannekaker, wraps, burgere), som skrives per
+	// enkelt enhet — ellers ender «5 porsjoner» opp som «5 pizzabunner».
+	const scaleRule = refining
+		? `- Behold porsjonsstørrelsen og mengde-skalaen i den nåværende oppskriften. IKKE skaler opp eller ned med mindre ønsket eksplisitt ber om det.`
+		: `- «servings» betyr hvor mange PERSONER retten metter — ikke antall enheter.
+- For vanlige middager: skalér mengdene til ${targetServings} porsjoner.
+- For enhets-/batch-baserte retter (pizza, pannekaker, vafler, boller, wraps, lomper): bruk rettens NATURLIGE grunnoppskrift slik den vanligvis skrives — f.eks. per pizza, pannekakerøre på ca. 1 liter melk, én vaffelrøre — og sett «servings» til hvor mange den grunnoppskriften metter. Verken multipliser opp til familiestørrelse eller krymp til én enkelt enhet når retten lages i en omgang. Nevn i «note» hva grunnmålet er (f.eks. «røre på 1 liter melk, ~20 pannekaker») og at den kan dobles ved behov.`;
+
+	const systemPrompt = `Du lager norske familieoppskrifter for et hushold med 2 voksne og 3 barn. Returner KUN gyldig JSON:
 {
   "title": "rettens navn på norsk",
   "description": "én kort, fristende setning, eller null",
@@ -74,7 +89,7 @@ export async function suggestRecipe(
   "instructions": ["kort imperativt steg", "..."],
   "prepTimeMin": 15,
   "cookTimeMin": 25,
-  "servings": ${FAMILY_DEFAULT_SERVINGS},
+  "servings": ${targetServings},
   "tags": ["fisk", "rask"],
   "mainProtein": "en av [${proteinKeys}] eller null",
   "mainCarb": "en av [${carbKeys}] eller null",
@@ -84,7 +99,8 @@ export async function suggestRecipe(
   "note": "én kort setning om hva du endret/valgte, eller null"
 }
 Regler:
-- Skaler mengder til ${FAMILY_DEFAULT_SERVINGS} porsjoner. Mengder som tall (null hvis ukjent), norske ingrediensnavn.
+${scaleRule}
+- Mengder som tall (null hvis ukjent), norske ingrediensnavn.
 - mainProtein/mainCarb/greens: fyll dem KUN når retten passer sammensetnings-modellen (protein + karbo + evt. grønt). La dem stå null for retter som ikke passer (suppe, taco, pizza, pannekaker, gryte, gratengrelaterte helretter).
 - nutritionEstimate er et grovt estimat PER PORSJON.
 - Hold det barnevennlig og gjennomførbart på en travel hverdag.${

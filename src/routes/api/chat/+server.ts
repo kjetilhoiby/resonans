@@ -13,6 +13,8 @@ import { buildDayContextBlock } from '$lib/server/day-location-context';
 import { buildTripContext } from '$lib/server/ferie-context';
 import { bookResearchToolDefinition, executeBookResearch } from '$lib/ai/tools/book-research';
 import { filmResearchToolDefinition, executeFilmResearch } from '$lib/ai/tools/film-research';
+import { runWebResearch } from '$lib/server/web/web-research';
+import { saveThemeResearch } from '$lib/server/services/theme-research-service';
 import { createGoalTool } from '$lib/ai/tools/create-goal';
 import { createTaskTool } from '$lib/ai/tools/create-task';
 import { logActivityTool } from '$lib/ai/tools/log-activity';
@@ -127,63 +129,26 @@ function getDefaultAttachmentLabel(attachment: AttachmentPayload | null): string
 }
 
 async function executeWebSearch(query: string) {
-	// DuckDuckGo HTML lite – faktisk nettsøk, ikke bare Instant Answer API
-	const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-	const response = await fetch(searchUrl, {
-		headers: {
-			'User-Agent': 'Mozilla/5.0 (compatible; Resonans/1.0)',
-			'Accept': 'text/html,application/xhtml+xml'
-		}
-	});
+	// Tavily-basert research: søk → ekstraher sideinnhold → oppsummer med kilder.
+	// Samme pipeline som book_research/film_research, men uten domenebinding.
+	const { findings, sources } = await runWebResearch(query);
 
-	if (!response.ok) {
-		throw new Error(`Web search failed with status ${response.status}`);
-	}
-
-	const html = await response.text();
-
-	// Parse resultater fra DDG HTML-respons
-	const results: Array<{ title: string; snippet: string; url: string }> = [];
-
-	// Hent tittel + URL fra <a class="result__a" ...>
-	const linkRe = /<a[^>]+class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
-	// Hent snippet fra <a class="result__snippet" ...>
-	const snippetRe = /<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
-
-	const links: Array<{ title: string; url: string }> = [];
-	let m: RegExpExecArray | null;
-	while ((m = linkRe.exec(html)) !== null && links.length < 8) {
-		const rawUrl = m[1];
-		const title = m[2].replace(/<[^>]+>/g, '').trim();
-		// DDG wraps URLs via redirect – extract uddg param or use as-is
-		let url = rawUrl;
-		try {
-			const uddg = new URL('https://x.com' + rawUrl).searchParams.get('uddg');
-			if (uddg) url = decodeURIComponent(uddg);
-		} catch { /* keep raw */ }
-		if (title) links.push({ title, url });
-	}
-
-	const snippets: string[] = [];
-	while ((m = snippetRe.exec(html)) !== null && snippets.length < 8) {
-		snippets.push(m[1].replace(/<[^>]+>/g, '').trim());
-	}
-
-	for (let i = 0; i < links.length; i++) {
-		results.push({
-			title: links[i].title,
-			snippet: snippets[i] ?? '',
-			url: links[i].url
-		});
+	if (sources.length === 0) {
+		return {
+			success: false,
+			query,
+			findings: '',
+			sources: [],
+			message: `Ingen brukbare treff for "${query}". (Mangler evt. TAVILY_API_KEY.)`
+		};
 	}
 
 	return {
 		success: true,
 		query,
-		results,
-		message: results.length > 0
-			? `Fant ${results.length} treff for "${query}".`
-			: `Ingen treff for "${query}".`
+		findings,
+		sources,
+		message: `Fant og oppsummerte ${sources.length} kilder for "${query}".`
 	};
 }
 
@@ -951,6 +916,29 @@ const tools = [
 			{
 				type: 'function' as const,
 				function: {
+					name: 'manage_project_contacts',
+					description: "Styr kontaktlista til et kommunikasjons-/arrangement-prosjekt (tema-undertema av Hjem). Bruk når prosjektet handler om å følge opp folk: samle kontaktinfo, sette oppfølgingsdato (purredato) og registrere status. action: 'create' (ny kontakt), 'update' (endre felter/status/oppfølging), 'delete', 'list' (hent alle). themeId er prosjektets tema-id (oppgitt i PROSJEKTKONTAKTER-konteksten). status: 'todo' (ikke kontaktet), 'venter' (venter på svar), 'ferdig' (avklart). followUpAt (YYYY-MM-DD) driver purre-nudgen: forfalte kontakter som ikke er 'ferdig' varsles. Selve e-postene/samtalene formulerer du i chatten — dette verktøyet lagrer kontaktene og oppfølgingen.",
+					parameters: {
+						type: 'object',
+						properties: {
+							themeId: { type: 'string', description: 'Prosjektets tema-id' },
+							action: { type: 'string', enum: ['create', 'update', 'delete', 'list'] },
+							contactId: { type: 'string', description: 'Kontakt-id (for update/delete)' },
+							name: { type: 'string', description: 'Navn på kontakten' },
+							role: { type: 'string', description: 'Rolle, f.eks. Rørlegger, Nabo, Leverandør' },
+							phone: { type: 'string', description: 'Telefonnummer' },
+							email: { type: 'string', description: 'E-postadresse' },
+							status: { type: 'string', enum: ['todo', 'venter', 'ferdig'] },
+							notes: { type: 'string', description: 'Fritt notat om kontakten' },
+							followUpAt: { type: 'string', description: 'Oppfølging/purredato YYYY-MM-DD' }
+						},
+						required: ['themeId', 'action']
+					}
+				}
+			},
+			{
+				type: 'function' as const,
+				function: {
 					name: 'manage_training_program',
 					description: "Forklar og ENDRE brukerens adaptive treningsprogram direkte når brukeren foreslår justeringer (typisk etter et varsel om at planen ble rekalkulert). Ring ALLTID action='get' først for å se uker, økter (med sessionId) og siste automatiske justeringer — bruk det til å forklare hva som endret seg og hvorfor, og til å finne riktig sessionId. Deretter: 'move_session' (flytt økt til annen ukedag, dayNumber 1=man..7=søn), 'set_pace' (sett tempo i sek/km på én økt via sessionId, eller alle fremtidige av en runType), 'scale_volume' (skaler distanse/varighet, factor f.eks. 0.9=−10% eller 1.1=+10%, for én weekNumber eller fra fromWeek og fremover), 'set_preference' (varige føringer som den ukentlige automatiske justeringen respekterer: pinnedDays=ukedager løp ikke skal flyttes fra, lockPace=lås tempoet, volumeBias=ønsket volumnivå 0.5–1.5, note=fri føring). programId er valgfri — utelat den for brukerens aktive program. Bekreft konkrete endringer med brukeren før du gjør dem hvis det er tvil.",
 					parameters: {
@@ -1330,13 +1318,17 @@ const tools = [
 				type: 'function' as const,
 				function: {
 					name: 'web_search',
-					description: 'Søk på web når brukeren spør om aktuelle hendelser, nyheter, tidsavhengige fakta, krig, politikk, personer, referanser eller annen kunnskap som ikke finnes i brukerdata eller samtalehistorikken. Bruk dette før du svarer på spørsmål om hva som skjer nå eller nylig har skjedd.',
+					description: 'Søk på web og få et kort, kildebasert sammendrag (Tavily). Bruk når brukeren spør om aktuelle hendelser, tidsavhengige fakta, steder/aktiviteter, personer, referanser eller annen kunnskap som ikke finnes i brukerdata. Verktøyet henter sider, oppsummerer og returnerer kilder. Sett saveToTheme=true når brukeren undersøker noe som hører til det aktive temaet og bør tas vare på (f.eks. «hva kan jeg gjøre i Hornbæk» på et ferietema) — da lagres runden som funn i Research-seksjonen i Filer på temasiden.',
 					parameters: {
 						type: 'object',
 						properties: {
 							query: {
 								type: 'string',
-								description: 'Konkret søkestreng for web, gjerne med tema, navn, sted og tidsrom, for eksempel "Iran war update April 2026".'
+								description: 'Konkret søkestreng for web, gjerne med tema, navn, sted og tidsrom, for eksempel "aktiviteter i Hornbæk om sommeren" eller "Iran war update April 2026".'
+							},
+							saveToTheme: {
+								type: 'boolean',
+								description: 'Sett true for å lagre denne research-runden som funn på det aktive temaet. Bruk kun når brukeren undersøker noe knyttet til temaet og vil ha det tatt vare på.'
 							}
 						},
 						required: ['query']
@@ -2196,6 +2188,35 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 			}
 		}
 
+		// Prosjektkontakter-kontekst (kommunikasjons-/arrangement-prosjekt): gir AI-en kontaktlista
+		// MED id-er, så manage_project_contacts kan referere contactId presist og formulere oppfølging.
+		let contactsContext = '';
+		if (conversation.themeId) {
+			try {
+				const { projectContacts } = await import('$lib/db/schema');
+				const contactRows = await db
+					.select()
+					.from(projectContacts)
+					.where(eq(projectContacts.themeId, conversation.themeId));
+				if (contactRows.length > 0) {
+					contactRows.sort((a, b) => a.sortOrder - b.sortOrder);
+					contactsContext = `\n\n--- PROSJEKTKONTAKTER (themeId: ${conversation.themeId}) ---\nBruk verktøyet manage_project_contacts med denne themeId-en for å legge til / endre / slette kontakter og sette oppfølgingsdato. contactId refererer id-ene under. status: todo|venter|ferdig.\n`;
+					for (const c of contactRows) {
+						const bits = [`"${c.name}"`];
+						if (c.role) bits.push(`(${c.role})`);
+						bits.push(`status ${c.status}`);
+						if (c.phone) bits.push(`tlf ${c.phone}`);
+						if (c.email) bits.push(`epost ${c.email}`);
+						if (c.followUpAt) bits.push(`oppfølging ${c.followUpAt}`);
+						contactsContext += `- ${bits.join(', ')} (id: ${c.id})\n`;
+					}
+					contactsContext += '--- SLUTT PROSJEKTKONTAKTER ---\n';
+				}
+			} catch (err) {
+				console.warn('[chat] kunne ikke laste prosjektkontakter:', err);
+			}
+		}
+
 		// Sjekk om samtalen har en koblet fremgangsmåte
 		let procedureContext = '';
 		try {
@@ -2280,7 +2301,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		});
 
 		const messages: ChatCompletionMessageParam[] = [
-			{ role: 'system', content: promptPrefix + systemPrompt + memoryContext + personContext + goalsContext + checklistContext + procedureContext + sourceContextPrompt + dateContext + dayContext + ferieContext }
+			{ role: 'system', content: promptPrefix + systemPrompt + memoryContext + personContext + goalsContext + checklistContext + contactsContext + procedureContext + sourceContextPrompt + dateContext + dayContext + ferieContext }
 		];
 
 		// Legg til historikk (unntatt den siste brukermeldingen som allerede er der)
@@ -2747,6 +2768,16 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 						themeId: args.themeId || conversation.themeId
 					});
 					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
+				} else if (toolCall.type === 'function' && toolCall.function.name === 'manage_project_contacts') {
+					const args = JSON.parse(toolCall.function.arguments);
+					console.log('  📇 Manage project contacts:', args.action);
+					const { manageProjectContactsTool } = await import('$lib/ai/tools/manage-project-contacts');
+					const result = await manageProjectContactsTool.execute({
+						...args,
+						userId,
+						themeId: args.themeId || conversation.themeId
+					});
+					messages.push({ role: 'tool', content: JSON.stringify(result), tool_call_id: toolCall.id });
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'manage_training_program') {
 					const args = JSON.parse(toolCall.function.arguments);
 					console.log('  🏃 Manage training program:', args.action);
@@ -2917,7 +2948,11 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 						tool_call_id: toolCall.id
 					});
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'web_search') {
-					const args = JSON.parse(toolCall.function.arguments) as { query?: string };
+					const args = JSON.parse(toolCall.function.arguments) as {
+						query?: string;
+						saveToTheme?: boolean;
+						themeId?: string;
+					};
 					const searchQuery = typeof args.query === 'string' ? args.query.trim() : '';
 
 					if (!searchQuery) {
@@ -2934,9 +2969,30 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 
 					try {
 						const result = await executeWebSearch(searchQuery);
+
+						// Lagre research-runden som funn på temaet når modellen ber om det.
+						// themeId hentes fra samtalens tema med mindre modellen oppgir et eksplisitt.
+						let saved: { savedToTheme: boolean; themeName?: string } = { savedToTheme: false };
+						const targetThemeId =
+							(typeof args.themeId === 'string' && args.themeId) || conversation.themeId || null;
+						if (args.saveToTheme && result.success && targetThemeId) {
+							try {
+								const persisted = await saveThemeResearch({
+									themeId: targetThemeId,
+									userId,
+									query: searchQuery,
+									summary: result.findings,
+									sources: result.sources
+								});
+								if (persisted) saved = { savedToTheme: true, themeName: persisted.themeName };
+							} catch (saveError) {
+								console.warn('  🌐 Kunne ikke lagre research til tema:', saveError);
+							}
+						}
+
 						messages.push({
 							role: 'tool',
-							content: JSON.stringify(result),
+							content: JSON.stringify({ ...result, ...saved }),
 							tool_call_id: toolCall.id
 						});
 					} catch (error) {

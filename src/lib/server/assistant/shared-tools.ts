@@ -18,6 +18,7 @@ import { managePersonTool } from '$lib/ai/tools/manage-person';
 import { manageRelationTool } from '$lib/ai/tools/manage-relation';
 import { manageProjectTool } from '$lib/ai/tools/manage-project';
 import { manageProjectTasksTool } from '$lib/ai/tools/manage-project-tasks';
+import { manageProjectContactsTool } from '$lib/ai/tools/manage-project-contacts';
 import { manageRoutineTool } from '$lib/ai/tools/manage-routine';
 import { manageHomeRoutineTool } from '$lib/ai/tools/manage-home-routine';
 import { manageProcedureTool } from '$lib/ai/tools/manage-procedure';
@@ -170,6 +171,7 @@ export const SHARED_ASSISTANT_TOOLS: AssistantTool[] = [
 	// Prosjekter
 	adaptSharedTool(manageProjectTool),
 	adaptSharedTool(manageProjectTasksTool),
+	adaptSharedTool(manageProjectContactsTool),
 	adaptSharedTool(linkToProjectTool),
 	// Rutiner, prosedyrer, tema, ukeplan
 	adaptSharedTool(manageRoutineTool),

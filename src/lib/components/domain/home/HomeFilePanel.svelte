@@ -6,8 +6,10 @@
 	import { getContext } from 'svelte';
 	import Icon from '../../ui/Icon.svelte';
 	import { HOME_CTX, type HomeContext } from './home-context';
+	import VideoFramePicker from './VideoFramePicker.svelte';
 
 	const ctx = getContext<HomeContext>(HOME_CTX);
+	let pickerOpen = $state(false);
 </script>
 
 <div class="flow-panel">
@@ -17,7 +19,7 @@
 	</div>
 	<input
 		type="file"
-		accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,text/*"
+		accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,text/*,video/*,.mp4,.mov,.m4v,.webm"
 		style="display:none"
 		bind:this={ctx.fileFlowInput}
 		onchange={ctx.handleFileFlowSelect}
@@ -58,7 +60,7 @@
 			<button class="upload-zone" onclick={() => ctx.fileFlowInput?.click()}>
 				<span class="upload-zone-icon"><Icon name="file" size={28} /></span>
 				<p class="upload-zone-label">Velg fil</p>
-				<p class="upload-zone-sub">PDF · Word · Excel · Tekst</p>
+				<p class="upload-zone-sub">PDF · Word · Excel · Tekst · Video</p>
 			</button>
 			{#if ctx.fileHistory.length > 0}
 				<div class="media-history">
@@ -90,8 +92,25 @@
 			<div class="file-chip">
 				<span class="file-chip-icon"><Icon name="file" size={18} /></span>
 				<span class="file-chip-name">{ctx.fileFlowSelected.name}</span>
-				<button class="preview-clear" onclick={() => ctx.fileFlowSelected = null} aria-label="Fjern fil"><Icon name="close" size={13} /></button>
+				<button class="preview-clear" onclick={ctx.clearFileSelection} aria-label="Fjern fil"><Icon name="close" size={13} /></button>
 			</div>
+			{#if ctx.filePreview.videoExtracting}
+				<p class="flow-hint">Henter bilder fra videoen…</p>
+			{:else if ctx.filePreview.videoThumbs && ctx.filePreview.videoThumbs.length > 0}
+				<div class="frame-strip">
+					{#each ctx.filePreview.videoThumbs as url}
+						<img class="frame-thumb" src={url} alt="Utsnitt fra video" />
+					{/each}
+				</div>
+				<div class="frame-meta">
+					<span class="flow-hint">Disse {ctx.filePreview.videoThumbs.length} bildene sendes til analyse.</span>
+					<button class="frame-edit" onclick={() => (pickerOpen = true)} data-track="fil:rediger-bilder">Rediger bilder</button>
+				</div>
+				<label class="audio-toggle">
+					<input type="checkbox" bind:checked={ctx.filePreview.includeAudio} data-track="fil:ta-med-lyd" />
+					<span>Ta med lyd — transkriber tale <em>(laster opp hele videoen)</em></span>
+				</label>
+			{/if}
 			<textarea
 				class="flow-textarea"
 				placeholder="Hva vil du gjøre med denne filen? (valgfritt)"
@@ -102,7 +121,13 @@
 				<p class="flow-error">Noe gikk galt. Prøv igjen.</p>
 			{/if}
 			<button class="flow-submit" onclick={ctx.submitFile} disabled={ctx.fileFlowUploading}>
-				{ctx.fileFlowUploading ? 'Triagerer…' : 'Last opp og triager →'}
+				{#if ctx.fileFlowUploading}
+					{ctx.fileFlowProgress > 0 && ctx.fileFlowProgress < 1
+						? `Laster opp… ${Math.round(ctx.fileFlowProgress * 100)}%`
+						: 'Triagerer…'}
+				{:else}
+					Last opp og triager →
+				{/if}
 			</button>
 			<button class="flow-ghost" onclick={() => {
 				ctx.fileFlowSelected = null;
@@ -113,6 +138,10 @@
 		{/if}
 	</div>
 </div>
+
+{#if pickerOpen && ctx.fileFlowSelected}
+	<VideoFramePicker file={ctx.fileFlowSelected} preview={ctx.filePreview} onClose={() => (pickerOpen = false)} />
+{/if}
 
 <style>
 	.flow-panel {
@@ -162,6 +191,55 @@
 		margin: 0;
 		font-size: 0.85rem;
 		color: #555;
+	}
+
+	.frame-strip {
+		display: flex;
+		gap: 6px;
+		overflow-x: auto;
+		padding-bottom: 4px;
+	}
+	.frame-thumb {
+		height: 64px;
+		width: auto;
+		border-radius: 8px;
+		border: 1px solid #2a2a2a;
+		flex-shrink: 0;
+		object-fit: cover;
+	}
+	.frame-meta {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+	}
+	.frame-edit {
+		background: none;
+		border: none;
+		color: #7c8ef5;
+		font: inherit;
+		font-size: 0.8rem;
+		font-weight: 600;
+		cursor: pointer;
+		padding: 0;
+		flex-shrink: 0;
+	}
+	.audio-toggle {
+		display: flex;
+		align-items: flex-start;
+		gap: 8px;
+		font-size: 0.82rem;
+		color: #bbb;
+		cursor: pointer;
+	}
+	.audio-toggle input {
+		margin-top: 2px;
+		accent-color: #4a5af0;
+		flex-shrink: 0;
+	}
+	.audio-toggle em {
+		color: #666;
+		font-style: normal;
 	}
 
 	.flow-textarea {

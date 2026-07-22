@@ -6,14 +6,16 @@
 	import { getContext } from 'svelte';
 	import Icon from '../../ui/Icon.svelte';
 	import { HOME_CTX, type HomeContext } from './home-context';
+	import VideoFramePicker from './VideoFramePicker.svelte';
 
 	const ctx = getContext<HomeContext>(HOME_CTX);
+	let pickerOpen = $state(false);
 </script>
 
 <div class="flow-panel">
 	<div class="flow-header">
 		<button class="flow-back" onclick={ctx.closeVoiceFlow} aria-label="Tilbake"><Icon name="back" size={18} /></button>
-		<span class="flow-title">Lyd</span>
+		<span class="flow-title">Lyd/video</span>
 	</div>
 	<input
 		bind:this={ctx.voiceFileInput}
@@ -61,14 +63,27 @@
 						<small>{Math.max(1, Math.round(ctx.voiceSelectedFile.size / 1024))} KB</small>
 					</div>
 				</div>
-				<button class="selected-file-chip__clear" onclick={() => {
-					ctx.voiceSelectedFile = null;
-					ctx.voiceError = false;
-					if (ctx.voiceFileInput) ctx.voiceFileInput.value = '';
-				}} aria-label="Fjern lydfil">
+				<button class="selected-file-chip__clear" onclick={ctx.clearVoiceSelection} aria-label="Fjern lydfil">
 					<Icon name="close" size={13} />
 				</button>
 			</div>
+			{#if ctx.voicePreview.videoExtracting}
+				<p class="flow-hint">Henter bilder fra videoen…</p>
+			{:else if ctx.voicePreview.videoThumbs && ctx.voicePreview.videoThumbs.length > 0}
+				<div class="frame-strip">
+					{#each ctx.voicePreview.videoThumbs as url}
+						<img class="frame-thumb" src={url} alt="Utsnitt fra video" />
+					{/each}
+				</div>
+				<div class="frame-meta">
+					<span class="flow-hint">Disse {ctx.voicePreview.videoThumbs.length} bildene sendes til analyse.</span>
+					<button class="frame-edit" onclick={() => (pickerOpen = true)} data-track="lyd:rediger-bilder">Rediger bilder</button>
+				</div>
+				<label class="audio-toggle">
+					<input type="checkbox" bind:checked={ctx.voicePreview.includeAudio} data-track="lyd:ta-med-lyd" />
+					<span>Ta med lyd — transkriber tale <em>(laster opp hele videoen)</em></span>
+				</label>
+			{/if}
 			<p class="flow-hint">Legg til litt kontekst hvis du vil at triagen skal forstå hva lydfilen gjelder.</p>
 			<textarea
 				class="flow-textarea flow-textarea--lg"
@@ -80,11 +95,21 @@
 				<p class="flow-error">Noe gikk galt. Prøv igjen.</p>
 			{/if}
 			<button class="flow-submit" onclick={ctx.submitVoice} disabled={ctx.voiceUploading}>
-				{ctx.voiceUploading ? 'Triagerer…' : 'Last opp og triager →'}
+				{#if ctx.voiceUploading}
+					{ctx.voiceProgress > 0 && ctx.voiceProgress < 1
+						? `Laster opp… ${Math.round(ctx.voiceProgress * 100)}%`
+						: 'Triagerer…'}
+				{:else}
+					Last opp og triager →
+				{/if}
 			</button>
 		{/if}
 	</div>
 </div>
+
+{#if pickerOpen && ctx.voiceSelectedFile}
+	<VideoFramePicker file={ctx.voiceSelectedFile} preview={ctx.voicePreview} onClose={() => (pickerOpen = false)} />
+{/if}
 
 <style>
 	.flow-panel {
@@ -134,6 +159,55 @@
 		margin: 0;
 		font-size: 0.85rem;
 		color: #555;
+	}
+
+	.frame-strip {
+		display: flex;
+		gap: 6px;
+		overflow-x: auto;
+		padding-bottom: 4px;
+	}
+	.frame-thumb {
+		height: 64px;
+		width: auto;
+		border-radius: 8px;
+		border: 1px solid #2a2a2a;
+		flex-shrink: 0;
+		object-fit: cover;
+	}
+	.frame-meta {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+	}
+	.frame-edit {
+		background: none;
+		border: none;
+		color: #7c8ef5;
+		font: inherit;
+		font-size: 0.8rem;
+		font-weight: 600;
+		cursor: pointer;
+		padding: 0;
+		flex-shrink: 0;
+	}
+	.audio-toggle {
+		display: flex;
+		align-items: flex-start;
+		gap: 8px;
+		font-size: 0.82rem;
+		color: #bbb;
+		cursor: pointer;
+	}
+	.audio-toggle input {
+		margin-top: 2px;
+		accent-color: #4a5af0;
+		flex-shrink: 0;
+	}
+	.audio-toggle em {
+		color: #666;
+		font-style: normal;
 	}
 
 	.flow-textarea {

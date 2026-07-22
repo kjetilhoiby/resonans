@@ -268,7 +268,10 @@ export const themes = pgTable('themes', {
 	}>(),
 	// Hus-prosjekt-tema (parentTheme='Hjem'): prosjekt-metadata. Oppgaver bor i
 	// checklist_items (themeId), filer i theme_files, chat i conversationId.
+	// `kind` styrer hvilke faner prosjektet får (se $lib/domain/project-kinds).
+	// Mangler kind → behandles som 'bygg' (bakoverkompatibelt: får kappliste som før).
 	projectProfile: jsonb('project_profile').$type<{
+		kind?: string;          // 'bygg' | 'kommunikasjon' | 'arrangement' | 'innkjop' | 'generell'
 		room?: string;          // f.eks. "Terrasse", "Bad", "Kjøkken"
 		status?: 'planning' | 'active' | 'paused' | 'done';
 		startDate?: string;     // ISO 'YYYY-MM-DD'
@@ -332,6 +335,22 @@ export const themeFiles = pgTable('theme_files', {
 	idxThemeId: index('theme_files_theme_id_idx').on(table.themeId)
 }));
 
+// Lagrede websøk-runder («research») knyttet til et tema. Chatten kan gjøre et
+// Tavily-søk (web_search) og lagre den oppsummerte runden her når brukeren
+// undersøker noe som hører til temaet. Vises som Research-seksjon i Filer.
+// NB: ikke å forveksle med `finds` (global e-post-triage-innboks).
+export const themeResearch = pgTable('theme_research', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	themeId: uuid('theme_id').references(() => themes.id, { onDelete: 'cascade' }).notNull(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	query: text('query').notNull(),
+	summary: text('summary').notNull(),
+	sources: jsonb('sources').$type<Array<{ url: string; source: string; snippet: string }>>().notNull().default([]),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => ({
+	idxThemeId: index('theme_research_theme_id_idx').on(table.themeId)
+}));
+
 // Kapplister — materialkalkulator knyttet til et prosjekt (tema).
 // Hver kappliste eier en JSONB-array med MATERIALER. Et materiale er enten en
 // lengdevare (lekt/bjelke, meterpris) eller en plate (plate-pris), og har ett
@@ -374,6 +393,30 @@ export const cutLists = pgTable('cut_lists', {
 }, (table) => ({
 	idxTheme: index('cut_lists_theme_idx').on(table.themeId),
 	idxUser: index('cut_lists_user_idx').on(table.userId)
+}));
+
+// Prosjekt-kontakter — for kommunikasjons-/arrangement-prosjekter (parentTheme='Hjem').
+// Et prosjekt som handler om å purre, samle kontaktinfo og ta noen telefoner/mailer
+// bruker denne i stedet for kappliste. `followUpAt` (ISO-dato) driver purre-nudgen:
+// kontakter med forfalt oppfølging og status != 'ferdig' varsles daglig.
+export const projectContacts = pgTable('project_contacts', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	themeId: uuid('theme_id').references(() => themes.id, { onDelete: 'cascade' }).notNull(),
+	name: text('name').notNull(),
+	role: text('role'), // f.eks. "Rørlegger", "Nabo", "Leverandør"
+	phone: text('phone'),
+	email: text('email'),
+	status: text('status').notNull().default('todo'), // 'todo' | 'venter' | 'ferdig'
+	notes: text('notes'),
+	followUpAt: text('follow_up_at'), // ISO 'YYYY-MM-DD' — når vi skal purre/følge opp
+	lastContactedAt: timestamp('last_contacted_at'),
+	sortOrder: integer('sort_order').notNull().default(0),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+	idxTheme: index('project_contacts_theme_idx').on(table.themeId),
+	idxUserFollowUp: index('project_contacts_user_followup_idx').on(table.userId, table.followUpAt)
 }));
 
 // Mål (overordnede målsetninger)
@@ -1468,6 +1511,7 @@ export const usersRelations = relations(users, ({ many }) => ({
 	backgroundJobs: many(backgroundJobs),
 	themeLists: many(themeLists),
 	themeFiles: many(themeFiles),
+	themeResearch: many(themeResearch),
 	trackingSeries: many(trackingSeries),
 	trackingSeriesExamples: many(trackingSeriesExamples),
 	nudgeEvents: many(nudgeEvents),
@@ -1537,10 +1581,23 @@ export const themesRelations = relations(themes, ({ one, many }) => ({
 	planArtifacts: many(planArtifacts),
 	lists: many(themeLists),
 	files: many(themeFiles),
+	research: many(themeResearch),
+	contacts: many(projectContacts),
 	trackingSeries: many(trackingSeries),
 	books: many(books),
 	films: many(films),
 	filmLists: many(filmLists)
+}));
+
+export const projectContactsRelations = relations(projectContacts, ({ one }) => ({
+	user: one(users, {
+		fields: [projectContacts.userId],
+		references: [users.id]
+	}),
+	theme: one(themes, {
+		fields: [projectContacts.themeId],
+		references: [themes.id]
+	})
 }));
 
 export const goalsRelations = relations(goals, ({ one, many }) => ({
@@ -2863,6 +2920,17 @@ export const themeFilesRelations = relations(themeFiles, ({ one }) => ({
 	}),
 	user: one(users, {
 		fields: [themeFiles.userId],
+		references: [users.id]
+	})
+}));
+
+export const themeResearchRelations = relations(themeResearch, ({ one }) => ({
+	theme: one(themes, {
+		fields: [themeResearch.themeId],
+		references: [themes.id]
+	}),
+	user: one(users, {
+		fields: [themeResearch.userId],
 		references: [users.id]
 	})
 }));

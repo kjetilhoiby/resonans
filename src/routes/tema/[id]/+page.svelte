@@ -32,6 +32,7 @@
 		themeInstruction={data.themeInstruction}
 		themeFiles={data.themeFiles}
 		finds={data.finds}
+		themeResearch={data.themeResearch}
 		tripProfile={data.tripProfile}
 		ferieProfile={data.ferieProfile}
 		tripLists={data.tripLists}
@@ -42,6 +43,7 @@
 		projectProfile={data.projectProfile}
 		tasks={data.tasks}
 		cutLists={data.cutLists}
+		contacts={data.contacts}
 	/>
 	{/key}
 	{/if}
