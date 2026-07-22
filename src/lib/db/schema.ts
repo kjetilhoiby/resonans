@@ -335,6 +335,22 @@ export const themeFiles = pgTable('theme_files', {
 	idxThemeId: index('theme_files_theme_id_idx').on(table.themeId)
 }));
 
+// Lagrede websøk-runder («research») knyttet til et tema. Chatten kan gjøre et
+// Tavily-søk (web_search) og lagre den oppsummerte runden her når brukeren
+// undersøker noe som hører til temaet. Vises som Research-seksjon i Filer.
+// NB: ikke å forveksle med `finds` (global e-post-triage-innboks).
+export const themeResearch = pgTable('theme_research', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	themeId: uuid('theme_id').references(() => themes.id, { onDelete: 'cascade' }).notNull(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+	query: text('query').notNull(),
+	summary: text('summary').notNull(),
+	sources: jsonb('sources').$type<Array<{ url: string; source: string; snippet: string }>>().notNull().default([]),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => ({
+	idxThemeId: index('theme_research_theme_id_idx').on(table.themeId)
+}));
+
 // Kapplister — materialkalkulator knyttet til et prosjekt (tema).
 // Hver kappliste eier en JSONB-array med MATERIALER. Et materiale er enten en
 // lengdevare (lekt/bjelke, meterpris) eller en plate (plate-pris), og har ett
@@ -1495,6 +1511,7 @@ export const usersRelations = relations(users, ({ many }) => ({
 	backgroundJobs: many(backgroundJobs),
 	themeLists: many(themeLists),
 	themeFiles: many(themeFiles),
+	themeResearch: many(themeResearch),
 	trackingSeries: many(trackingSeries),
 	trackingSeriesExamples: many(trackingSeriesExamples),
 	nudgeEvents: many(nudgeEvents),
@@ -1564,6 +1581,7 @@ export const themesRelations = relations(themes, ({ one, many }) => ({
 	planArtifacts: many(planArtifacts),
 	lists: many(themeLists),
 	files: many(themeFiles),
+	research: many(themeResearch),
 	contacts: many(projectContacts),
 	trackingSeries: many(trackingSeries),
 	books: many(books),
@@ -2902,6 +2920,17 @@ export const themeFilesRelations = relations(themeFiles, ({ one }) => ({
 	}),
 	user: one(users, {
 		fields: [themeFiles.userId],
+		references: [users.id]
+	})
+}));
+
+export const themeResearchRelations = relations(themeResearch, ({ one }) => ({
+	theme: one(themes, {
+		fields: [themeResearch.themeId],
+		references: [themes.id]
+	}),
+	user: one(users, {
+		fields: [themeResearch.userId],
 		references: [users.id]
 	})
 }));

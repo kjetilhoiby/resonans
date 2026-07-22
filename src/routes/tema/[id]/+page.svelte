@@ -31,6 +31,7 @@
 		themeConversations={data.themeConversations}
 		themeInstruction={data.themeInstruction}
 		themeFiles={data.themeFiles}
+		themeResearch={data.themeResearch}
 		tripProfile={data.tripProfile}
 		ferieProfile={data.ferieProfile}
 		tripLists={data.tripLists}

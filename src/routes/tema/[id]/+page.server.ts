@@ -8,6 +8,7 @@ import { ensureConversationThemeIdColumn } from '$lib/server/conversation-schema
 import { getConversationsByTheme } from '$lib/server/conversations';
 import { getWorkoutContextForUser } from '$lib/server/workout-context';
 import { ProjectMetricsService } from '$lib/server/services/project-metrics-service';
+import { listThemeResearch } from '$lib/server/services/theme-research-service';
 import { eq, and, asc } from 'drizzle-orm';
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
@@ -68,7 +69,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const wantsContacts = isHomeProject && projectHasContacts(theme.projectProfile ?? null);
 
 	// Last alle uavhengige data parallelt
-	const [themeConversations, msgs, themeGoals, instruction, uploadedFiles, tripListsRaw, selectedWorkout, themeProjects, themeTasksRaw, cutListsRaw, contactsRaw] =
+	const [themeConversations, msgs, themeGoals, instruction, uploadedFiles, tripListsRaw, selectedWorkout, themeProjects, themeTasksRaw, cutListsRaw, contactsRaw, research] =
 		await Promise.all([
 			getConversationsByTheme(locals.userId, theme.id),
 			db
@@ -126,7 +127,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 						.from(projectContacts)
 						.where(and(eq(projectContacts.themeId, theme.id), eq(projectContacts.userId, locals.userId)))
 						.orderBy(asc(projectContacts.sortOrder), asc(projectContacts.createdAt))
-				: Promise.resolve([])
+				: Promise.resolve([]),
+			listThemeResearch(theme.id, locals.userId)
 		]);
 
 	console.log(`[perf][tema/:id] user=${locals.userId} theme=${theme.name} step=total ms=${(performance.now() - t0).toFixed(0)} msgs=${msgs.length} goals=${themeGoals.length} projects=${themeProjects.length}`);
@@ -162,6 +164,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 			sizeBytes: f.sizeBytes,
 			createdAt: f.createdAt.toISOString()
 		})),
+		themeResearch: research,
 		projects: themeProjects.map((p) => ({
 			id: p.id,
 			title: p.title,
