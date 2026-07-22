@@ -10,6 +10,7 @@
 import type { Checklist } from '../../composed/ChecklistWidget.svelte';
 import type { ChatState } from '$lib/client/chat-state.svelte';
 import type { ActionCandidate, ActionIntent } from '$lib/types/actions';
+import type { VideoPreviewFields } from './home-media';
 import type { FlowContext } from '$lib/flows/types';
 import type { PeriodSlot } from '$lib/domains/egenfrekvens/period-slots';
 import type { LivskompassScores, LivskompassWeekGoal } from '$lib/domains/livskompass/dimensions';
@@ -276,6 +277,7 @@ export interface HomeContext {
 	voiceUploading: boolean;
 	voiceProgress: number;
 	voiceError: boolean;
+	voicePreview: VideoPreviewFields;
 	voiceHistory: MediaHistoryItem[];
 	voiceHistoryLoading: boolean;
 
@@ -288,6 +290,7 @@ export interface HomeContext {
 	fileFlowUploading: boolean;
 	fileFlowProgress: number;
 	fileFlowError: boolean;
+	filePreview: VideoPreviewFields;
 	sheetFlowUrl: string;
 	sheetFlowRange: string;
 	sheetFlowUploading: boolean;
@@ -401,6 +404,8 @@ export interface HomeContext {
 	handleCameraFileSelect: (event: Event) => void;
 	handleVoiceFileSelect: (event: Event) => void;
 	handleFileFlowSelect: (event: Event) => void;
+	clearVoiceSelection: () => void;
+	clearFileSelection: () => void;
 	submitCamera: () => Promise<void>;
 	submitVoice: () => Promise<void>;
 	submitFile: () => void;

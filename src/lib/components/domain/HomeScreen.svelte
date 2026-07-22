@@ -120,11 +120,14 @@
 		closeVoiceFlow as voiceCloseHandler,
 		submitVoice as voiceSubmitHandler,
 		reuseVoiceMedia as voiceReuseHandler,
+		clearVoiceSelection as voiceClearHandler,
 		handleFileFlowSelect as fileFlowSelectHandler,
 		closeFileFlow as fileCloseHandler,
 		submitFile as fileSubmitHandler,
 		submitSheetSnapshot as sheetSnapshotHandler,
 		reuseFileMedia as fileReuseHandler,
+		clearFileSelection as fileClearHandler,
+		emptyVideoPreview,
 	} from './home/home-media';
 
 	import {
@@ -741,6 +744,7 @@
 	let voiceUploading = $state(false);
 	let voiceProgress = $state(0);
 	let voiceError = $state(false);
+	let voicePreview = $state(emptyVideoPreview());
 	let voiceHistory = $state<MediaHistoryItem[]>([]);
 	let voiceHistoryLoading = $state(false);
 
@@ -753,6 +757,7 @@
 	let fileFlowUploading = $state(false);
 	let fileFlowProgress = $state(0);
 	let fileFlowError = $state(false);
+	let filePreview = $state(emptyVideoPreview());
 	let sheetFlowUrl = $state('');
 	let sheetFlowRange = $state('');
 	let sheetFlowUploading = $state(false);
@@ -773,9 +778,11 @@
 	function closeVoiceFlow() { voiceCloseHandler(ctx, returnToChatAfterFlow, (v) => chatOpen = v, (v) => chatInputAutoFocus = v, (v) => returnToChatAfterFlow = v); }
 	async function submitVoice() { await voiceSubmitHandler(ctx, closeVoiceFlow, stageAttachment); }
 	async function reuseVoiceMedia(item: MediaHistoryItem) { await voiceReuseHandler(ctx, item); }
+	function clearVoiceSelection() { voiceClearHandler(ctx); }
 	function handleFileFlowSelect(event: Event) { fileFlowSelectHandler(ctx, event); }
 	function closeFileFlow() { fileCloseHandler(ctx, returnToChatAfterFlow, (v) => chatOpen = v, (v) => chatInputAutoFocus = v, (v) => returnToChatAfterFlow = v); }
 	function submitFile() { fileSubmitHandler(ctx, closeFileFlow, stageAttachment); }
+	function clearFileSelection() { fileClearHandler(ctx); }
 	async function submitSheetSnapshot() { await sheetSnapshotHandler(ctx, homeChat, pendingActionHandlers, sendChat, closeFileFlow, (v) => selectedQuickAction = v, (v) => chatOpen = v, (v) => returnToChatAfterFlow = v, (v) => chatPrefill = v); }
 	async function reuseFileMedia(item: MediaHistoryItem) { await fileReuseHandler(ctx, item); }
 
@@ -1089,6 +1096,7 @@
 		get voiceUploading() { return voiceUploading; }, set voiceUploading(v) { voiceUploading = v; },
 		get voiceProgress() { return voiceProgress; }, set voiceProgress(v) { voiceProgress = v; },
 		get voiceError() { return voiceError; }, set voiceError(v) { voiceError = v; },
+		get voicePreview() { return voicePreview; },
 		get voiceHistory() { return voiceHistory; },
 		get voiceHistoryLoading() { return voiceHistoryLoading; },
 
@@ -1100,6 +1108,7 @@
 		get fileFlowUploading() { return fileFlowUploading; }, set fileFlowUploading(v) { fileFlowUploading = v; },
 		get fileFlowProgress() { return fileFlowProgress; }, set fileFlowProgress(v) { fileFlowProgress = v; },
 		get fileFlowError() { return fileFlowError; }, set fileFlowError(v) { fileFlowError = v; },
+		get filePreview() { return filePreview; },
 		get sheetFlowUrl() { return sheetFlowUrl; }, set sheetFlowUrl(v) { sheetFlowUrl = v; },
 		get sheetFlowRange() { return sheetFlowRange; }, set sheetFlowRange(v) { sheetFlowRange = v; },
 		get sheetFlowUploading() { return sheetFlowUploading; }, set sheetFlowUploading(v) { sheetFlowUploading = v; },
@@ -1162,6 +1171,7 @@
 		openEgenfrekvensFlow, openEgenfrekvensQuick, openEgenfrekvensFull, sendChat, stopChat,
 		closeCameraFlow, closeVoiceFlow, closeFileFlow,
 		handleCameraFileSelect, handleVoiceFileSelect, handleFileFlowSelect,
+		clearVoiceSelection, clearFileSelection,
 		submitCamera, submitVoice, submitFile, submitSheetSnapshot,
 		handleWidgetPagerScroll, goToWidgetPage, handleChecklistPlan,
 		openWidgetConfigSheet, navigateForWidget, unpinWidget, repinWidget, moveWidget, deleteWidget, saveWidgetConfig,

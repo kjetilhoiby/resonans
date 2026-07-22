@@ -61,14 +61,20 @@
 						<small>{Math.max(1, Math.round(ctx.voiceSelectedFile.size / 1024))} KB</small>
 					</div>
 				</div>
-				<button class="selected-file-chip__clear" onclick={() => {
-					ctx.voiceSelectedFile = null;
-					ctx.voiceError = false;
-					if (ctx.voiceFileInput) ctx.voiceFileInput.value = '';
-				}} aria-label="Fjern lydfil">
+				<button class="selected-file-chip__clear" onclick={ctx.clearVoiceSelection} aria-label="Fjern lydfil">
 					<Icon name="close" size={13} />
 				</button>
 			</div>
+			{#if ctx.voicePreview.videoExtracting}
+				<p class="flow-hint">Henter bilder fra videoen…</p>
+			{:else if ctx.voicePreview.videoThumbs && ctx.voicePreview.videoThumbs.length > 0}
+				<div class="frame-strip">
+					{#each ctx.voicePreview.videoThumbs as url}
+						<img class="frame-thumb" src={url} alt="Utsnitt fra video" />
+					{/each}
+				</div>
+				<p class="flow-hint">Disse {ctx.voicePreview.videoThumbs.length} bildene sendes til analyse.</p>
+			{/if}
 			<p class="flow-hint">Legg til litt kontekst hvis du vil at triagen skal forstå hva lydfilen gjelder.</p>
 			<textarea
 				class="flow-textarea flow-textarea--lg"
@@ -140,6 +146,21 @@
 		margin: 0;
 		font-size: 0.85rem;
 		color: #555;
+	}
+
+	.frame-strip {
+		display: flex;
+		gap: 6px;
+		overflow-x: auto;
+		padding-bottom: 4px;
+	}
+	.frame-thumb {
+		height: 64px;
+		width: auto;
+		border-radius: 8px;
+		border: 1px solid #2a2a2a;
+		flex-shrink: 0;
+		object-fit: cover;
 	}
 
 	.flow-textarea {

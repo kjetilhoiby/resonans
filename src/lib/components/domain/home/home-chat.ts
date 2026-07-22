@@ -7,7 +7,7 @@
 
 import type { AttachmentRef, QuickAction, QuickActionId, MediaHistoryItem } from './home-context';
 import type { ChatState } from '$lib/client/chat-state.svelte';
-import { extractVideoFrames } from '$lib/client/video-frames';
+import { extractVideoFrames, type ExtractedFrame } from '$lib/client/video-frames';
 import { uploadVideoToCloudinary } from '$lib/client/cloudinary-video';
 
 // ── Typer ───────────────────────────────────────────────────────────────
@@ -33,21 +33,43 @@ function buildRawBody(file: File, note: string, source: AttachmentSource): FormD
 	return formData;
 }
 
+/** Bygg video-frames-body fra allerede uttrukne keyframes. */
+function framesFormData(
+	frames: ExtractedFrame[],
+	name: string,
+	note: string,
+	source: AttachmentSource
+): FormData {
+	const formData = new FormData();
+	formData.append('mode', 'video-frames');
+	formData.append('note', note);
+	formData.append('source', source);
+	formData.append('name', name);
+	formData.append('timestamps', JSON.stringify(frames.map((f) => f.timestampSec)));
+	frames.forEach((f, i) => formData.append('frames', f.blob, `frame-${i}.jpg`));
+	return formData;
+}
+
 /**
  * Bygg opplastings-body. For video:
- *   1. Full: last opp rett til Cloudinary (utenom Vercels ~4,5 MB body-grense)
- *      og send publicId — server transkriberer lyd + henter keyframes.
- *   2. Fallback: trekk ut keyframes on-device og send bare de små JPEG-ene
- *      (visuelt, uten lyd) hvis direkte-opplasting ikke er tilgjengelig.
+ *   0. Har vi allerede uttrukne keyframes (fra panelets forhåndsvisning)?
+ *      Send akkurat dem — det brukeren så er det som analyseres.
+ *   1. Ellers direkte-til-Cloudinary (transkript + frames server-side).
+ *   2. Ellers keyframes on-device (visuelt, uten lyd).
  *   3. Siste utvei: rå opplasting (virker for små klipp).
  */
 async function buildAttachmentBody(
 	file: File,
 	note: string,
 	source: AttachmentSource,
-	onProgress?: (fraction: number) => void
+	onProgress?: (fraction: number) => void,
+	preFrames?: ExtractedFrame[]
 ): Promise<FormData> {
 	if (isVideoFile(file)) {
+		// 0) Forhåndsviste frames — send akkurat det brukeren bekreftet.
+		if (preFrames && preFrames.length > 0) {
+			return framesFormData(preFrames, file.name, note, source);
+		}
 		// 1) Direkte-til-Cloudinary → transkript + frames server-side.
 		try {
 			const { publicId, durationSec } = await uploadVideoToCloudinary(file, onProgress);
@@ -65,14 +87,7 @@ async function buildAttachmentBody(
 		// 2) Frames on-device (visuelt, uten lyd).
 		try {
 			const { frames } = await extractVideoFrames(file);
-			const formData = new FormData();
-			formData.append('mode', 'video-frames');
-			formData.append('note', note);
-			formData.append('source', source);
-			formData.append('name', file.name);
-			formData.append('timestamps', JSON.stringify(frames.map((f) => f.timestampSec)));
-			frames.forEach((f, i) => formData.append('frames', f.blob, `frame-${i}.jpg`));
-			return formData;
+			return framesFormData(frames, file.name, note, source);
 		} catch (err) {
 			console.warn('On-device frame-uttrekk feilet, faller tilbake til rå opplasting:', err);
 		}
@@ -182,9 +197,10 @@ export async function requestAttachmentUpload(
 	file: File,
 	note: string,
 	source: AttachmentSource,
-	onProgress?: (fraction: number) => void
+	onProgress?: (fraction: number) => void,
+	preFrames?: ExtractedFrame[]
 ): Promise<AttachmentRef> {
-	const body = await buildAttachmentBody(file, note, source, onProgress);
+	const body = await buildAttachmentBody(file, note, source, onProgress, preFrames);
 	const response = await fetch('/api/attachment-extract', { method: 'POST', body });
 	if (!response.ok) {
 		throw new Error('Attachment upload failed');

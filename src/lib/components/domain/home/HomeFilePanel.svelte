@@ -90,8 +90,18 @@
 			<div class="file-chip">
 				<span class="file-chip-icon"><Icon name="file" size={18} /></span>
 				<span class="file-chip-name">{ctx.fileFlowSelected.name}</span>
-				<button class="preview-clear" onclick={() => ctx.fileFlowSelected = null} aria-label="Fjern fil"><Icon name="close" size={13} /></button>
+				<button class="preview-clear" onclick={ctx.clearFileSelection} aria-label="Fjern fil"><Icon name="close" size={13} /></button>
 			</div>
+			{#if ctx.filePreview.videoExtracting}
+				<p class="flow-hint">Henter bilder fra videoen…</p>
+			{:else if ctx.filePreview.videoThumbs && ctx.filePreview.videoThumbs.length > 0}
+				<div class="frame-strip">
+					{#each ctx.filePreview.videoThumbs as url}
+						<img class="frame-thumb" src={url} alt="Utsnitt fra video" />
+					{/each}
+				</div>
+				<p class="flow-hint">Disse {ctx.filePreview.videoThumbs.length} bildene sendes til analyse.</p>
+			{/if}
 			<textarea
 				class="flow-textarea"
 				placeholder="Hva vil du gjøre med denne filen? (valgfritt)"
@@ -168,6 +178,21 @@
 		margin: 0;
 		font-size: 0.85rem;
 		color: #555;
+	}
+
+	.frame-strip {
+		display: flex;
+		gap: 6px;
+		overflow-x: auto;
+		padding-bottom: 4px;
+	}
+	.frame-thumb {
+		height: 64px;
+		width: auto;
+		border-radius: 8px;
+		border: 1px solid #2a2a2a;
+		flex-shrink: 0;
+		object-fit: cover;
 	}
 
 	.flow-textarea {

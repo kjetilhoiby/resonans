@@ -7,6 +7,7 @@
 
 import type { AttachmentRef, MediaHistoryItem } from './home-context';
 import type { ChatState } from '$lib/client/chat-state.svelte';
+import { extractVideoFrames, type ExtractedFrame } from '$lib/client/video-frames';
 import {
 	requestAttachmentUpload,
 	presentAttachmentTriage,
@@ -15,6 +16,59 @@ import {
 	previewSheetRows,
 	type AttachmentTriageResponse,
 } from './home-chat';
+
+// ── Video-forhåndsvisning (keyframes on-device) ───────────────────────────
+
+const VIDEO_EXTENSIONS = ['.mp4', '.mov', '.m4v', '.webm'];
+
+function isVideoFile(file: File): boolean {
+	const mime = file.type.toLowerCase();
+	const name = file.name.toLowerCase();
+	return mime.startsWith('video/') || VIDEO_EXTENSIONS.some((ext) => name.endsWith(ext));
+}
+
+/** State-form for video-forhåndsvisning som lyd- og fil-flyten deler. */
+export interface VideoPreviewFields {
+	videoExtracting: boolean;
+	videoFrames: ExtractedFrame[] | null;
+	videoThumbs: string[] | null;
+}
+
+export function emptyVideoPreview(): VideoPreviewFields {
+	return { videoExtracting: false, videoFrames: null, videoThumbs: null };
+}
+
+/** Frigjør object-URL-er og nullstill forhåndsvisningen. */
+export function clearVideoPreview(state: VideoPreviewFields): void {
+	if (state.videoThumbs) {
+		for (const url of state.videoThumbs) URL.revokeObjectURL(url);
+	}
+	state.videoExtracting = false;
+	state.videoFrames = null;
+	state.videoThumbs = null;
+}
+
+/**
+ * Hvis fila er en video: trekk ut keyframes on-device og lag miniatyrer, slik at
+ * brukeren ser nøyaktig hva som sendes til analyse. Ikke-video → ingen effekt.
+ */
+export async function runVideoPreview(state: VideoPreviewFields, file: File): Promise<void> {
+	clearVideoPreview(state);
+	if (!isVideoFile(file)) return;
+	state.videoExtracting = true;
+	try {
+		const { frames } = await extractVideoFrames(file);
+		state.videoFrames = frames;
+		state.videoThumbs = frames.map((f) => URL.createObjectURL(f.blob));
+	} catch {
+		// Klarte ikke å trekke ut lokalt — la det stå tomt; submit faller tilbake
+		// til vanlig video-håndtering (Cloudinary/rå).
+		state.videoFrames = null;
+		state.videoThumbs = null;
+	} finally {
+		state.videoExtracting = false;
+	}
+}
 
 // ── Kamera-state ──────────────────────────────────────────────────────
 
@@ -111,6 +165,7 @@ export interface VoiceState {
 	voiceUploading: boolean;
 	voiceProgress: number;
 	voiceError: boolean;
+	voicePreview: VideoPreviewFields;
 	voiceHistory: MediaHistoryItem[];
 	voiceHistoryLoading: boolean;
 }
@@ -124,6 +179,7 @@ export function createVoiceState(): VoiceState {
 		voiceUploading: false,
 		voiceProgress: 0,
 		voiceError: false,
+		voicePreview: emptyVideoPreview(),
 		voiceHistory: [],
 		voiceHistoryLoading: false,
 	};
@@ -135,6 +191,15 @@ export function handleVoiceFileSelect(state: VoiceState, event: Event): void {
 	if (!file) return;
 	state.voiceSelectedFile = file;
 	state.voiceError = false;
+	void runVideoPreview(state.voicePreview, file);
+}
+
+/** Fjern valgt lydfil/video + forhåndsvisning. */
+export function clearVoiceSelection(state: VoiceState): void {
+	state.voiceSelectedFile = null;
+	state.voiceError = false;
+	clearVideoPreview(state.voicePreview);
+	if (state.voiceFileInput) state.voiceFileInput.value = '';
 }
 
 export function closeVoiceFlow(
@@ -148,6 +213,7 @@ export function closeVoiceFlow(
 	state.voiceText = '';
 	state.voiceSelectedFile = null;
 	state.voiceError = false;
+	clearVideoPreview(state.voicePreview);
 	if (state.voiceFileInput) state.voiceFileInput.value = '';
 	if (returnToChatAfterFlow) {
 		setChatOpen(true);
@@ -167,9 +233,15 @@ export async function submitVoice(
 	state.voiceError = false;
 	try {
 		const caption = state.voiceText.trim();
-		const attachment = await requestAttachmentUpload(state.voiceSelectedFile, caption, 'voice', (f) => {
-			state.voiceProgress = f;
-		});
+		const attachment = await requestAttachmentUpload(
+			state.voiceSelectedFile,
+			caption,
+			'voice',
+			(f) => {
+				state.voiceProgress = f;
+			},
+			state.voicePreview.videoFrames ?? undefined
+		);
 		closeFn();
 		onReady(attachment, caption);
 	} catch {
@@ -202,6 +274,7 @@ export interface FileFlowState {
 	fileFlowUploading: boolean;
 	fileFlowProgress: number;
 	fileFlowError: boolean;
+	filePreview: VideoPreviewFields;
 	sheetFlowUrl: string;
 	sheetFlowRange: string;
 	sheetFlowUploading: boolean;
@@ -220,6 +293,7 @@ export function createFileFlowState(): FileFlowState {
 		fileFlowUploading: false,
 		fileFlowProgress: 0,
 		fileFlowError: false,
+		filePreview: emptyVideoPreview(),
 		sheetFlowUrl: '',
 		sheetFlowRange: '',
 		sheetFlowUploading: false,
@@ -232,7 +306,16 @@ export function createFileFlowState(): FileFlowState {
 export function handleFileFlowSelect(state: FileFlowState, event: Event): void {
 	const input = event.target as HTMLInputElement;
 	const file = input.files?.[0];
-	if (file) state.fileFlowSelected = file;
+	if (!file) return;
+	state.fileFlowSelected = file;
+	void runVideoPreview(state.filePreview, file);
+}
+
+/** Fjern valgt fil/video + forhåndsvisning. */
+export function clearFileSelection(state: FileFlowState): void {
+	state.fileFlowSelected = null;
+	clearVideoPreview(state.filePreview);
+	if (state.fileFlowInput) state.fileFlowInput.value = '';
 }
 
 export function closeFileFlow(
@@ -247,6 +330,7 @@ export function closeFileFlow(
 	state.fileFlowMode = 'local';
 	state.fileFlowNote = '';
 	state.fileFlowError = false;
+	clearVideoPreview(state.filePreview);
 	state.sheetFlowUrl = '';
 	state.sheetFlowRange = '';
 	state.sheetFlowError = '';
@@ -268,9 +352,15 @@ export function submitFile(
 	state.fileFlowUploading = true;
 	state.fileFlowProgress = 0;
 	state.fileFlowError = false;
-	requestAttachmentUpload(selectedFile, note, 'file', (f) => {
-		state.fileFlowProgress = f;
-	})
+	requestAttachmentUpload(
+		selectedFile,
+		note,
+		'file',
+		(f) => {
+			state.fileFlowProgress = f;
+		},
+		state.filePreview.videoFrames ?? undefined
+	)
 		.then((attachment) => {
 			closeFn();
 			onReady(attachment, note);
