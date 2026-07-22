@@ -6,8 +6,10 @@
 	import { getContext } from 'svelte';
 	import Icon from '../../ui/Icon.svelte';
 	import { HOME_CTX, type HomeContext } from './home-context';
+	import VideoFramePicker from './VideoFramePicker.svelte';
 
 	const ctx = getContext<HomeContext>(HOME_CTX);
+	let pickerOpen = $state(false);
 </script>
 
 <div class="flow-panel">
@@ -73,7 +75,14 @@
 						<img class="frame-thumb" src={url} alt="Utsnitt fra video" />
 					{/each}
 				</div>
-				<p class="flow-hint">Disse {ctx.voicePreview.videoThumbs.length} bildene sendes til analyse.</p>
+				<div class="frame-meta">
+					<span class="flow-hint">Disse {ctx.voicePreview.videoThumbs.length} bildene sendes til analyse.</span>
+					<button class="frame-edit" onclick={() => (pickerOpen = true)} data-track="lyd:rediger-bilder">Rediger bilder</button>
+				</div>
+				<label class="audio-toggle">
+					<input type="checkbox" bind:checked={ctx.voicePreview.includeAudio} data-track="lyd:ta-med-lyd" />
+					<span>Ta med lyd — transkriber tale <em>(laster opp hele videoen)</em></span>
+				</label>
 			{/if}
 			<p class="flow-hint">Legg til litt kontekst hvis du vil at triagen skal forstå hva lydfilen gjelder.</p>
 			<textarea
@@ -97,6 +106,10 @@
 		{/if}
 	</div>
 </div>
+
+{#if pickerOpen && ctx.voiceSelectedFile}
+	<VideoFramePicker file={ctx.voiceSelectedFile} preview={ctx.voicePreview} onClose={() => (pickerOpen = false)} />
+{/if}
 
 <style>
 	.flow-panel {
@@ -161,6 +174,40 @@
 		border: 1px solid #2a2a2a;
 		flex-shrink: 0;
 		object-fit: cover;
+	}
+	.frame-meta {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+	}
+	.frame-edit {
+		background: none;
+		border: none;
+		color: #7c8ef5;
+		font: inherit;
+		font-size: 0.8rem;
+		font-weight: 600;
+		cursor: pointer;
+		padding: 0;
+		flex-shrink: 0;
+	}
+	.audio-toggle {
+		display: flex;
+		align-items: flex-start;
+		gap: 8px;
+		font-size: 0.82rem;
+		color: #bbb;
+		cursor: pointer;
+	}
+	.audio-toggle input {
+		margin-top: 2px;
+		accent-color: #4a5af0;
+		flex-shrink: 0;
+	}
+	.audio-toggle em {
+		color: #666;
+		font-style: normal;
 	}
 
 	.flow-textarea {

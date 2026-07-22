@@ -271,7 +271,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				framesInput.frames,
 				note,
 				source,
-				framesInput.name
+				framesInput.name,
+				framesInput.audioPublicId
 			));
 			meta = { name: framesInput.name, mimeType: attachment.mimeType, sizeBytes: attachment.sizeBytes };
 		} else {

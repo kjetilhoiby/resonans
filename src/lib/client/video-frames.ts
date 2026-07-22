@@ -142,6 +142,34 @@ function seekTo(video: HTMLVideoElement, timeSec: number): Promise<void> {
 }
 
 /**
+ * Fang én frame fra et allerede lastet videoelement på gitt tidspunkt, som
+ * nedskalert JPEG. Brukes av den manuelle frame-pickeren (brukeren spoler og
+ * fanger). Videoelementet må ha metadata lastet (videoWidth/Height satt).
+ */
+export async function captureFrameAt(
+	video: HTMLVideoElement,
+	timeSec: number,
+	{ maxDimension = 640, quality = 0.7 }: { maxDimension?: number; quality?: number } = {}
+): Promise<ExtractedFrame> {
+	await seekTo(video, timeSec);
+	const vw = video.videoWidth;
+	const vh = video.videoHeight;
+	if (!vw || !vh) throw new Error('Videoen har ingen dimensjoner');
+	const scale = Math.min(1, maxDimension / Math.max(vw, vh));
+	const canvas = document.createElement('canvas');
+	canvas.width = Math.round(vw * scale);
+	canvas.height = Math.round(vh * scale);
+	const ctx = canvas.getContext('2d');
+	if (!ctx) throw new Error('Fikk ikke 2d-kontekst');
+	ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+	const blob = await new Promise<Blob | null>((resolve) =>
+		canvas.toBlob(resolve, 'image/jpeg', quality)
+	);
+	if (!blob) throw new Error('toBlob feilet');
+	return { blob, timestampSec: Math.round(timeSec * 10) / 10 };
+}
+
+/**
  * Trekk ut keyframes fra en videofil. Kaster hvis nettleseren ikke klarer å
  * dekode videoen (så kalleren kan falle tilbake til rå opplasting).
  */

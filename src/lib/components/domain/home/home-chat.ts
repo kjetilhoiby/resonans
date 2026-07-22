@@ -38,7 +38,8 @@ function framesFormData(
 	frames: ExtractedFrame[],
 	name: string,
 	note: string,
-	source: AttachmentSource
+	source: AttachmentSource,
+	audioPublicId?: string
 ): FormData {
 	const formData = new FormData();
 	formData.append('mode', 'video-frames');
@@ -47,6 +48,7 @@ function framesFormData(
 	formData.append('name', name);
 	formData.append('timestamps', JSON.stringify(frames.map((f) => f.timestampSec)));
 	frames.forEach((f, i) => formData.append('frames', f.blob, `frame-${i}.jpg`));
+	if (audioPublicId) formData.append('audioPublicId', audioPublicId);
 	return formData;
 }
 
@@ -63,11 +65,23 @@ async function buildAttachmentBody(
 	note: string,
 	source: AttachmentSource,
 	onProgress?: (fraction: number) => void,
-	preFrames?: ExtractedFrame[]
+	preFrames?: ExtractedFrame[],
+	includeAudio?: boolean
 ): Promise<FormData> {
 	if (isVideoFile(file)) {
 		// 0) Forhåndsviste frames — send akkurat det brukeren bekreftet.
 		if (preFrames && preFrames.length > 0) {
+			// «Ta med lyd»: last også opp videoen til Cloudinary for transkripsjon,
+			// men behold de kuraterte framene for vision. Feiler lyd-opplasting,
+			// sender vi framene uten lyd.
+			if (includeAudio) {
+				try {
+					const { publicId } = await uploadVideoToCloudinary(file, onProgress);
+					return framesFormData(preFrames, file.name, note, source, publicId);
+				} catch (err) {
+					console.warn('Lyd-opplasting feilet, sender frames uten lyd:', err);
+				}
+			}
 			return framesFormData(preFrames, file.name, note, source);
 		}
 		// 1) Direkte-til-Cloudinary → transkript + frames server-side.
@@ -198,9 +212,10 @@ export async function requestAttachmentUpload(
 	note: string,
 	source: AttachmentSource,
 	onProgress?: (fraction: number) => void,
-	preFrames?: ExtractedFrame[]
+	preFrames?: ExtractedFrame[],
+	includeAudio?: boolean
 ): Promise<AttachmentRef> {
-	const body = await buildAttachmentBody(file, note, source, onProgress, preFrames);
+	const body = await buildAttachmentBody(file, note, source, onProgress, preFrames, includeAudio);
 	const response = await fetch('/api/attachment-extract', { method: 'POST', body });
 	if (!response.ok) {
 		throw new Error('Attachment upload failed');

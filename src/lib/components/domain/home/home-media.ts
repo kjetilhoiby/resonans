@@ -32,10 +32,12 @@ export interface VideoPreviewFields {
 	videoExtracting: boolean;
 	videoFrames: ExtractedFrame[] | null;
 	videoThumbs: string[] | null;
+	/** «Ta med lyd»: last også opp videoen for tale-transkripsjon. */
+	includeAudio: boolean;
 }
 
 export function emptyVideoPreview(): VideoPreviewFields {
-	return { videoExtracting: false, videoFrames: null, videoThumbs: null };
+	return { videoExtracting: false, videoFrames: null, videoThumbs: null, includeAudio: false };
 }
 
 /** Frigjør object-URL-er og nullstill forhåndsvisningen. */
@@ -46,6 +48,7 @@ export function clearVideoPreview(state: VideoPreviewFields): void {
 	state.videoExtracting = false;
 	state.videoFrames = null;
 	state.videoThumbs = null;
+	state.includeAudio = false;
 }
 
 /**
@@ -240,7 +243,8 @@ export async function submitVoice(
 			(f) => {
 				state.voiceProgress = f;
 			},
-			state.voicePreview.videoFrames ?? undefined
+			state.voicePreview.videoFrames ?? undefined,
+			state.voicePreview.includeAudio
 		);
 		closeFn();
 		onReady(attachment, caption);
@@ -359,7 +363,8 @@ export function submitFile(
 		(f) => {
 			state.fileFlowProgress = f;
 		},
-		state.filePreview.videoFrames ?? undefined
+		state.filePreview.videoFrames ?? undefined,
+		state.filePreview.includeAudio
 	)
 		.then((attachment) => {
 			closeFn();
