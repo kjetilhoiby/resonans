@@ -2970,7 +2970,7 @@ export const finds = pgTable('finds', {
 	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
 	title: text('title').notNull(),
 	summary: text('summary'),
-	theme: text('theme'), // DomainType-nøkkel eller 'annet' — se src/lib/domains
+	domain: text('domain'), // DomainType-nøkkel eller 'annet' — se src/lib/domains
 	kind: text('kind'), // fri klassifisering: 'oppskrift' | 'teknikk' | 'tips' | ...
 	sourceUrl: text('source_url'),
 	thumbnailUrl: text('thumbnail_url'),

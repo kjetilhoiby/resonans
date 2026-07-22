@@ -6,6 +6,7 @@ import { ensureConversationThemeIdColumn } from '$lib/server/conversation-schema
 import { getConversationsByTheme } from '$lib/server/conversations';
 import { getWorkoutContextForUser } from '$lib/server/workout-context';
 import { ProjectMetricsService } from '$lib/server/services/project-metrics-service';
+import { getThemeFindsByName } from '$lib/server/services/finds-service';
 import { eq, and, asc } from 'drizzle-orm';
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
@@ -64,7 +65,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const isHomeProject = theme.parentTheme === 'Hjem';
 
 	// Last alle uavhengige data parallelt
-	const [themeConversations, msgs, themeGoals, instruction, uploadedFiles, tripListsRaw, selectedWorkout, themeProjects, themeTasksRaw, cutListsRaw] =
+	const [themeConversations, msgs, themeGoals, instruction, uploadedFiles, tripListsRaw, selectedWorkout, themeProjects, themeTasksRaw, cutListsRaw, themeFindsRaw] =
 		await Promise.all([
 			getConversationsByTheme(locals.userId, theme.id),
 			db
@@ -115,7 +116,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 						.from(cutLists)
 						.where(and(eq(cutLists.themeId, theme.id), eq(cutLists.userId, locals.userId)))
 						.orderBy(asc(cutLists.sortOrder), asc(cutLists.createdAt))
-				: Promise.resolve([])
+				: Promise.resolve([]),
+			getThemeFindsByName(locals.userId, theme.name)
 		]);
 
 	console.log(`[perf][tema/:id] user=${locals.userId} theme=${theme.name} step=total ms=${(performance.now() - t0).toFixed(0)} msgs=${msgs.length} goals=${themeGoals.length} projects=${themeProjects.length}`);
@@ -149,6 +151,18 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 			fileType: f.fileType,
 			mimeType: f.mimeType,
 			sizeBytes: f.sizeBytes,
+			createdAt: f.createdAt.toISOString()
+		})),
+		finds: themeFindsRaw.map((f) => ({
+			id: f.id,
+			title: f.title,
+			summary: f.summary,
+			domain: f.domain,
+			kind: f.kind,
+			sourceUrl: f.sourceUrl,
+			thumbnailUrl: f.thumbnailUrl,
+			status: f.status,
+			mealId: f.mealId,
 			createdAt: f.createdAt.toISOString()
 		})),
 		projects: themeProjects.map((p) => ({

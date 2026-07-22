@@ -104,6 +104,19 @@
 		createdAt: string;
 	}
 
+	interface ThemeFind {
+		id: string;
+		title: string;
+		summary: string | null;
+		domain: string | null;
+		kind: string | null;
+		sourceUrl: string | null;
+		thumbnailUrl: string | null;
+		status: string;
+		mealId: string | null;
+		createdAt: string;
+	}
+
 	interface Props {
 		theme: Theme;
 		initialMessages: Message[];
@@ -116,6 +129,7 @@
 		tripLists?: import('./trip-api').ThemeList[];
 		ferieProfile?: Record<string, unknown> | null;
 		themeFiles?: ThemeFile[];
+		finds?: ThemeFind[];
 		metricSettings?: MetricSettingsMap;
 		projects?: ThemeProject[];
 		isHomeProject?: boolean;
@@ -124,7 +138,7 @@
 		cutLists?: Array<{ id: string; title: string; kerfMm: number; transportEnabled: boolean; transportMaxLengthMm: number; transportMaxWidthMm: number; guillotine: boolean; materials: import('$lib/kappliste/calc').Material[]; sortOrder: number; updatedAt: string }>;
 	}
 
-	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '', selectedWorkout = null, tripProfile = null, tripLists = [], ferieProfile = null, themeFiles: initialThemeFiles = [], metricSettings: initialMetricSettings = {}, projects = [], isHomeProject = false, projectProfile = null, tasks = [], cutLists = [] }: Props = $props();
+	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '', selectedWorkout = null, tripProfile = null, tripLists = [], ferieProfile = null, themeFiles: initialThemeFiles = [], finds = [], metricSettings: initialMetricSettings = {}, projects = [], isHomeProject = false, projectProfile = null, tasks = [], cutLists = [] }: Props = $props();
 
 	/* ── Subtab-tilstand ────────────────────────────────── */
 	type Tab = 'chat' | 'data' | 'mål' | 'flyter' | 'filer' | 'lister' | 'oppgaver' | 'kapp' | 'oppskrifter';
@@ -464,6 +478,7 @@
 				themeId={theme.id}
 				themeFiles={initialThemeFiles}
 				themeInstruction={themeInstruction}
+				finds={finds}
 			/>
 		{/if}
 		</div>

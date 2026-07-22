@@ -13,15 +13,29 @@
 		createdAt: string;
 	}
 
+	interface Find {
+		id: string;
+		title: string;
+		summary: string | null;
+		domain: string | null;
+		kind: string | null;
+		sourceUrl: string | null;
+		thumbnailUrl: string | null;
+		status: string;
+		mealId: string | null;
+		createdAt: string;
+	}
+
 	interface Props {
 		themeId: string;
 		themeFiles: ThemeFile[];
 		themeInstruction: string;
+		finds?: Find[];
 		/** Called when files list changes (upload or delete) */
 		onFilesChanged?: (files: ThemeFile[]) => void;
 	}
 
-	let { themeId, themeFiles: initialFiles, themeInstruction = '' }: Props = $props();
+	let { themeId, themeFiles: initialFiles, themeInstruction = '', finds = [] }: Props = $props();
 
 	let themeFiles = $state<ThemeFile[]>(initialFiles);
 	let fileUploading = $state(false);
@@ -31,6 +45,25 @@
 	$effect(() => {
 		themeFiles = initialFiles;
 	});
+
+	/* ── Funn (lagrede lenker) ── */
+	let findsState = $state<Find[]>(finds);
+	$effect(() => {
+		findsState = finds;
+	});
+
+	async function patchFind(id: string, status: 'kept' | 'discarded') {
+		// Arkiverte forsvinner fra seksjonen; beholdte blir stående (kun badge endres).
+		findsState =
+			status === 'discarded'
+				? findsState.filter((f) => f.id !== id)
+				: findsState.map((f) => (f.id === id ? { ...f, status } : f));
+		await fetch('/api/funn', {
+			method: 'PATCH',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ id, status })
+		});
+	}
 
 	/* ── Instruksjon ── */
 	const instructionFileName = 'instrukser';
@@ -130,6 +163,46 @@
 
 	{#if fileUploadError}
 		<p class="file-upload-error">{fileUploadError}</p>
+	{/if}
+
+	<!-- Funn (lagrede lenker for dette domenet) -->
+	{#if findsState.length > 0}
+		<section class="funn-section">
+			<div class="funn-head">
+				<span class="funn-label">Funn</span>
+				<a class="funn-all" href="/funn">Alle funn →</a>
+			</div>
+			<ul class="funn-list">
+				{#each findsState as f (f.id)}
+					<li class="funn-row">
+						{#if f.thumbnailUrl}
+							<a class="funn-thumb" href={f.sourceUrl ?? undefined} target="_blank" rel="noopener noreferrer">
+								<img src={f.thumbnailUrl} alt="" loading="lazy" referrerpolicy="no-referrer" />
+							</a>
+						{/if}
+						<div class="funn-body">
+							<div class="funn-chips">
+								{#if f.status === 'inbox'}<span class="funn-chip new">ny</span>{/if}
+								{#if f.kind}<span class="funn-chip">{f.kind}</span>{/if}
+								{#if f.mealId}<span class="funn-chip recipe">✓ oppskrift</span>{/if}
+							</div>
+							{#if f.sourceUrl}
+								<a class="funn-title" href={f.sourceUrl} target="_blank" rel="noopener noreferrer">{f.title}</a>
+							{:else}
+								<span class="funn-title">{f.title}</span>
+							{/if}
+							{#if f.summary}<p class="funn-summary">{f.summary}</p>{/if}
+						</div>
+						<div class="funn-actions">
+							{#if f.status === 'inbox'}
+								<button class="funn-act keep" data-track="tema-funn:behold" onclick={() => patchFind(f.id, 'kept')}>Behold</button>
+							{/if}
+							<button class="funn-act archive" data-track="tema-funn:arkiver" onclick={() => patchFind(f.id, 'discarded')}>Arkiver</button>
+						</div>
+					</li>
+				{/each}
+			</ul>
+		</section>
 	{/if}
 
 	<!-- Instruksjonsfil -->
@@ -374,5 +447,141 @@ Eksempel:
 
 	.uploaded-file-delete:hover {
 		opacity: 1;
+	}
+
+	/* ── Funn ── */
+	.funn-section {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+
+	.funn-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	.funn-label {
+		font-size: 0.72rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: #8a99c4;
+	}
+
+	.funn-all {
+		font-size: 0.75rem;
+		color: #7c8ef5;
+		text-decoration: none;
+	}
+	.funn-all:hover {
+		text-decoration: underline;
+	}
+
+	.funn-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.funn-row {
+		display: flex;
+		gap: 10px;
+		padding: 10px 12px;
+		border: 1px solid #242424;
+		border-radius: 12px;
+		background: #131313;
+	}
+
+	.funn-thumb {
+		flex-shrink: 0;
+		width: 56px;
+		height: 56px;
+		border-radius: 9px;
+		overflow: hidden;
+		background: #0f0f0f;
+	}
+	.funn-thumb img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		display: block;
+	}
+
+	.funn-body {
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+		min-width: 0;
+		flex: 1;
+	}
+
+	.funn-chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px;
+	}
+	.funn-chip {
+		font-size: 0.68rem;
+		padding: 1px 6px;
+		border-radius: 5px;
+		background: #1a1a2a;
+		color: #9a9ac0;
+		text-transform: capitalize;
+	}
+	.funn-chip.recipe {
+		background: #16311f;
+		color: #6ee7a8;
+	}
+	.funn-chip.new {
+		background: #2a2410;
+		color: #d8c169;
+	}
+
+	.funn-title {
+		font-size: 0.86rem;
+		font-weight: 600;
+		color: #c4c4c4;
+		text-decoration: none;
+		word-break: break-word;
+	}
+	a.funn-title:hover {
+		color: #c8c8f8;
+	}
+
+	.funn-summary {
+		margin: 0;
+		font-size: 0.8rem;
+		color: #888;
+		line-height: 1.45;
+	}
+
+	.funn-actions {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		flex-shrink: 0;
+	}
+	.funn-act {
+		font-size: 0.74rem;
+		padding: 3px 10px;
+		border-radius: 7px;
+		border: 1px solid #2a2a2a;
+		background: transparent;
+		color: #888;
+		cursor: pointer;
+		white-space: nowrap;
+	}
+	.funn-act.keep:hover {
+		border-color: #10b981;
+		color: #6ee7a8;
+	}
+	.funn-act.archive:hover {
+		border-color: #7a5a2a;
+		color: #d8b06a;
 	}
 </style>

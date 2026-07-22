@@ -15,7 +15,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 			id: row.id,
 			title: row.title,
 			summary: row.summary,
-			theme: row.theme,
+			domain: row.domain,
 			kind: row.kind,
 			sourceUrl: row.sourceUrl,
 			thumbnailUrl: row.thumbnailUrl,
