@@ -32,6 +32,7 @@
 						onclick={() => startNavMetric('home', 'tema')}
 					>{ferie.emoji}</a>
 				{/each}
+				<a href="/funn" class="icon-link" aria-label="Funn"><Icon name="star" size={18} /></a>
 				<a href="/plan/mal" class="icon-link" aria-label="Mål"><Icon name="goals" size={20} /></a>
 				<a href="/settings" class="icon-link" aria-label="Innstillinger"><Icon name="settings" size={18} /></a>
 			{/snippet}

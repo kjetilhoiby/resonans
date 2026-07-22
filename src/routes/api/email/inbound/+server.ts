@@ -10,6 +10,7 @@ import { processRawStoreEmail } from '$lib/server/email-processors/raw-store';
 import { processLibraryEmail } from '$lib/server/email-processors/library';
 import { processSchoolPlanEmail } from '$lib/server/email-processors/school-plan';
 import { processOdaReceiptEmail } from '$lib/server/email-processors/oda-receipt';
+import { processFindTriageEmail } from '$lib/server/email-processors/find-triage';
 import { findOrCreateEmailSensor, type InboundEmailPayload } from '$lib/server/email-processors/shared';
 
 export const config = { maxDuration: 60 };
@@ -64,6 +65,9 @@ async function executeRule(userId: string, rule: RuleMatch, payload: InboundEmai
 		}
 		case 'oda_receipt': {
 			return await processOdaReceiptEmail(userId, payload, rule);
+		}
+		case 'find_triage': {
+			return await processFindTriageEmail(userId, payload, rule);
 		}
 		case 'ai_extraction': {
 			const sensor = await findOrCreateEmailSensor(userId, 'email_ai_extraction');
