@@ -41,17 +41,23 @@
 		createdAt: string;
 	}
 
+	interface ResearchDomains {
+		include?: string[];
+		exclude?: string[];
+	}
+
 	interface Props {
 		themeId: string;
 		themeFiles: ThemeFile[];
 		themeResearch?: ThemeResearchItem[];
+		themeResearchDomains?: ResearchDomains;
 		themeInstruction: string;
 		finds?: Find[];
 		/** Called when files list changes (upload or delete) */
 		onFilesChanged?: (files: ThemeFile[]) => void;
 	}
 
-	let { themeId, themeFiles: initialFiles, themeResearch: initialResearch = [], themeInstruction = '', finds = [] }: Props = $props();
+	let { themeId, themeFiles: initialFiles, themeResearch: initialResearch = [], themeResearchDomains: initialDomains = {}, themeInstruction = '', finds = [] }: Props = $props();
 
 	let themeFiles = $state<ThemeFile[]>(initialFiles);
 	let research = $state<ThemeResearchItem[]>(initialResearch);
@@ -75,6 +81,45 @@
 			return new Date(iso).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short', year: 'numeric' });
 		} catch {
 			return '';
+		}
+	}
+
+	/* ── Foretrukne kilder (per tema) ── */
+	let sourcesOpen = $state(false);
+	let includeDraft = $state((initialDomains.include ?? []).join('\n'));
+	let excludeDraft = $state((initialDomains.exclude ?? []).join('\n'));
+	let domainsSaving = $state(false);
+	let domainsSaved = $state(false);
+
+	function parseDomains(text: string): string[] {
+		return text
+			.split(/[\n,]+/)
+			.map((s) => s.trim())
+			.filter(Boolean);
+	}
+
+	async function saveDomains() {
+		domainsSaving = true;
+		domainsSaved = false;
+		try {
+			const res = await fetch(`/api/tema/${themeId}/research-domains`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					include: parseDomains(includeDraft),
+					exclude: parseDomains(excludeDraft)
+				})
+			});
+			if (!res.ok) throw new Error('Lagring feilet');
+			const saved = (await res.json()) as ResearchDomains;
+			includeDraft = (saved.include ?? []).join('\n');
+			excludeDraft = (saved.exclude ?? []).join('\n');
+			domainsSaved = true;
+			setTimeout(() => { domainsSaved = false; }, 1400);
+		} catch {
+			/* stille — beholder utkast */
+		} finally {
+			domainsSaving = false;
 		}
 	}
 	let fileUploading = $state(false);
@@ -350,6 +395,57 @@ Eksempel:
 			</ul>
 		</div>
 	{/if}
+
+	<!-- Foretrukne kilder for websøk på dette temaet -->
+	<div class="sources-section">
+		<button
+			class="sources-toggle"
+			onclick={() => (sourcesOpen = !sourcesOpen)}
+			aria-expanded={sourcesOpen}
+			data-track="tema-research:kilder-innstillinger"
+		>
+			<span class="research-chevron" class:open={sourcesOpen}>›</span>
+			<span class="sources-toggle-label">Foretrukne kilder</span>
+		</button>
+
+		{#if sourcesOpen}
+			<div class="sources-body">
+				<p class="sources-hint">
+					Ett domene per linje. Prioriterte kilder styrer hvor websøket helst leter;
+					ekskluderte holdes unna. Tomt = bruk standard, kuraterte kilder.
+				</p>
+
+				<label class="sources-field">
+					<span class="sources-label">Prioriter (f.eks. visitnorway.no)</span>
+					<textarea
+						class="sources-input"
+						bind:value={includeDraft}
+						rows="3"
+						placeholder="visitnorway.no&#10;wikivoyage.org"
+						data-track="tema-research:prioriter-kilder"
+					></textarea>
+				</label>
+
+				<label class="sources-field">
+					<span class="sources-label">Ekskluder</span>
+					<textarea
+						class="sources-input"
+						bind:value={excludeDraft}
+						rows="2"
+						placeholder="pinterest.com"
+						data-track="tema-research:ekskluder-kilder"
+					></textarea>
+				</label>
+
+				<div class="sources-foot">
+					<button class="files-save-btn" onclick={saveDomains} disabled={domainsSaving} aria-label="Lagre foretrukne kilder">
+						{domainsSaving ? 'Lagrer…' : 'Lagre kilder'}
+					</button>
+					{#if domainsSaved}<span class="instruction-saved">Lagret</span>{/if}
+				</div>
+			</div>
+		{/if}
+	</div>
 </div>
 
 <style>
@@ -825,5 +921,77 @@ Eksempel:
 	.research-source a:hover {
 		color: #b4b4f0;
 		border-color: #3c3c55;
+	}
+
+	/* ── Foretrukne kilder ── */
+	.sources-section {
+		display: flex;
+		flex-direction: column;
+	}
+
+	.sources-toggle {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		background: none;
+		border: none;
+		cursor: pointer;
+		font: inherit;
+		padding: 4px 0;
+		color: #888;
+	}
+
+	.sources-toggle-label {
+		font-size: 0.8rem;
+		font-weight: 600;
+	}
+
+	.sources-body {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		padding: 10px 0 4px 24px;
+	}
+
+	.sources-hint {
+		margin: 0;
+		font-size: 0.75rem;
+		color: #555;
+		line-height: 1.4;
+	}
+
+	.sources-field {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.sources-label {
+		font-size: 0.74rem;
+		color: #777;
+	}
+
+	.sources-input {
+		width: 100%;
+		border-radius: 10px;
+		border: 1px solid #2a2a2a;
+		background: #0f0f0f;
+		color: #d4d4d4;
+		font: inherit;
+		font-size: 0.85rem;
+		line-height: 1.5;
+		padding: 8px 10px;
+		resize: vertical;
+	}
+
+	.sources-input:focus {
+		outline: none;
+		border-color: #3c4f9f;
+	}
+
+	.sources-foot {
+		display: flex;
+		align-items: center;
+		gap: 10px;
 	}
 </style>

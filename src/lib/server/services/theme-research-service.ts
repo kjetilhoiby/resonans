@@ -8,6 +8,7 @@ import { db } from '$lib/db';
 import { themeResearch, themes } from '$lib/db/schema';
 import { and, desc, eq } from 'drizzle-orm';
 import type { WebResearchSource } from '$lib/server/web/web-research';
+import { normalizeDomains, type ThemeResearchDomains } from '$lib/server/web/research-domains';
 
 export interface ThemeResearchRow {
 	id: string;
@@ -96,4 +97,41 @@ export async function deleteThemeResearch(
 		.where(and(eq(themeResearch.id, researchId), eq(themeResearch.userId, userId)))
 		.returning({ id: themeResearch.id });
 	return deleted.length > 0;
+}
+
+/** Hent temaets foretrukne/ekskluderte kilder (null hvis temaet ikke eies). */
+export async function getThemeResearchDomains(
+	themeId: string,
+	userId: string
+): Promise<ThemeResearchDomains | null> {
+	const theme = await db.query.themes.findFirst({
+		where: and(eq(themes.id, themeId), eq(themes.userId, userId)),
+		columns: { researchDomains: true }
+	});
+	if (!theme) return null;
+	return theme.researchDomains ?? { include: [], exclude: [] };
+}
+
+/**
+ * Sett temaets foretrukne/ekskluderte kilder (domenene normaliseres).
+ * Returnerer det lagrede settet, eller null hvis temaet ikke eies av brukeren.
+ */
+export async function setThemeResearchDomains(
+	themeId: string,
+	userId: string,
+	domains: ThemeResearchDomains
+): Promise<ThemeResearchDomains | null> {
+	const cleaned: ThemeResearchDomains = {
+		include: normalizeDomains(domains.include),
+		exclude: normalizeDomains(domains.exclude)
+	};
+
+	const updated = await db
+		.update(themes)
+		.set({ researchDomains: cleaned })
+		.where(and(eq(themes.id, themeId), eq(themes.userId, userId)))
+		.returning({ id: themes.id });
+
+	if (updated.length === 0) return null;
+	return cleaned;
 }

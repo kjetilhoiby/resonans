@@ -179,6 +179,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 			createdAt: f.createdAt.toISOString()
 		})),
 		themeResearch: research,
+		themeResearchDomains: theme.researchDomains ?? { include: [], exclude: [] },
 		projects: themeProjects.map((p) => ({
 			id: p.id,
 			title: p.title,

@@ -288,6 +288,9 @@ export const themes = pgTable('themes', {
 		weight?: { goal?: number; thresholdWarn?: number; thresholdSuccess?: number };
 	}>(),
 	instructions: text('instructions'),
+	// Foretrukne/ekskluderte kilder for websøk (web_search) på dette temaet.
+	// Styrer Tavily include_domains/exclude_domains i tillegg til kuraterte sett.
+	researchDomains: jsonb('research_domains').$type<{ include?: string[]; exclude?: string[] }>(),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	updatedAt: timestamp('updated_at').defaultNow().notNull()
 });

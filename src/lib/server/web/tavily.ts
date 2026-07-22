@@ -25,6 +25,10 @@ export interface TavilySearchOptions {
 	excludeDomains?: string[];
 	includeRawContent?: boolean;
 	searchDepth?: 'basic' | 'advanced';
+	/** 'news' snevrer inn til nyhetskilder og aktiverer `days`-vinduet. */
+	topic?: 'general' | 'news';
+	/** Kun for topic='news': hvor mange dager tilbake treff kan være. */
+	days?: number;
 	timeoutMs?: number;
 }
 
@@ -64,6 +68,8 @@ export async function tavilySearch(
 		};
 		if (opts.includeDomains?.length) body.include_domains = opts.includeDomains;
 		if (opts.excludeDomains?.length) body.exclude_domains = opts.excludeDomains;
+		if (opts.topic) body.topic = opts.topic;
+		if (opts.topic === 'news' && typeof opts.days === 'number') body.days = opts.days;
 
 		const response = await fetch(TAVILY_ENDPOINT, {
 			method: 'POST',

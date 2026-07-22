@@ -14,7 +14,8 @@ import { buildTripContext } from '$lib/server/ferie-context';
 import { bookResearchToolDefinition, executeBookResearch } from '$lib/ai/tools/book-research';
 import { filmResearchToolDefinition, executeFilmResearch } from '$lib/ai/tools/film-research';
 import { runWebResearch } from '$lib/server/web/web-research';
-import { saveThemeResearch } from '$lib/server/services/theme-research-service';
+import { resolveResearchScope, type ThemeResearchDomains } from '$lib/server/web/research-domains';
+import { saveThemeResearch, getThemeResearchDomains } from '$lib/server/services/theme-research-service';
 import { createGoalTool } from '$lib/ai/tools/create-goal';
 import { createTaskTool } from '$lib/ai/tools/create-task';
 import { logActivityTool } from '$lib/ai/tools/log-activity';
@@ -128,10 +129,22 @@ function getDefaultAttachmentLabel(attachment: AttachmentPayload | null): string
 	return `📎 ${attachment.name || 'Vedlegg'}`;
 }
 
-async function executeWebSearch(query: string) {
+async function executeWebSearch(
+	query: string,
+	opts: { themeDomains?: ThemeResearchDomains | null; deep?: boolean } = {}
+) {
 	// Tavily-basert research: søk → ekstraher sideinnhold → oppsummer med kilder.
-	// Samme pipeline som book_research/film_research, men uten domenebinding.
-	const { findings, sources } = await runWebResearch(query);
+	// Kildevalg (kuraterte + per-tema domener), topic/tidsvindu og evt. dyp modus
+	// utledes fra spørsmålet via resolveResearchScope.
+	const scope = resolveResearchScope(query, opts.themeDomains ?? null);
+	const { findings, sources } = await runWebResearch(query, {
+		includeDomains: scope.includeDomains,
+		excludeDomains: scope.excludeDomains,
+		topic: scope.tavilyTopic,
+		days: scope.days,
+		deep: opts.deep,
+		deepTopic: scope.topic
+	});
 
 	if (sources.length === 0) {
 		return {
@@ -1329,6 +1342,10 @@ const tools = [
 							saveToTheme: {
 								type: 'boolean',
 								description: 'Sett true for å lagre denne research-runden som funn på det aktive temaet. Bruk kun når brukeren undersøker noe knyttet til temaet og vil ha det tatt vare på.'
+							},
+							deep: {
+								type: 'boolean',
+								description: 'Sett true for grundigere research: flere vinkel-søk flettes sammen (f.eks. severdigheter + mat + praktisk for et reisemål). Bruk ved planlegging eller når brukeren vil ha en bred oversikt.'
 							}
 						},
 						required: ['query']
@@ -2373,6 +2390,10 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		const isHighCapabilityModel = preferredModel?.startsWith('gpt-5') ?? false;
 		const isConversationalMode = Boolean(systemPromptPrefix) || aiSuggestsConversation || isHighCapabilityModel;
 
+		// Ruteren kan tvinge websøk for steds-/ferske spørsmål. Da slår vi på
+		// verktøy (selv i conversational-modus) og låser første kall til web_search.
+		const forceWebSearch = Boolean(routingDecision.forceWebSearch) && !isSpecializedContext;
+
 		const resolvedModel = preferredModel
 			?? (isConversationalMode ? (routingDecision.modelSuggestion ?? 'gpt-5.4') : undefined);
 
@@ -2393,7 +2414,11 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 		let completion = await openai.chat.completions.create({
 			model: initialModelDecision.model,
 			messages,
-			...(isConversationalMode ? {} : { tools, tool_choice: 'auto' as const }),
+			...(forceWebSearch
+				? { tools, tool_choice: { type: 'function' as const, function: { name: 'web_search' } } }
+				: isConversationalMode
+					? {}
+					: { tools, tool_choice: 'auto' as const }),
 			temperature: 0.8,
 			...(initialModelDecision.model.startsWith('gpt-5')
 				? { max_completion_tokens: isConversationalMode ? 2000 : 1000 }
@@ -2952,6 +2977,7 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 						query?: string;
 						saveToTheme?: boolean;
 						themeId?: string;
+						deep?: boolean;
 					};
 					const searchQuery = typeof args.query === 'string' ? args.query.trim() : '';
 
@@ -2968,13 +2994,22 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 					}
 
 					try {
-						const result = await executeWebSearch(searchQuery);
-
-						// Lagre research-runden som funn på temaet når modellen ber om det.
 						// themeId hentes fra samtalens tema med mindre modellen oppgir et eksplisitt.
-						let saved: { savedToTheme: boolean; themeName?: string } = { savedToTheme: false };
 						const targetThemeId =
 							(typeof args.themeId === 'string' && args.themeId) || conversation.themeId || null;
+
+						// Hent temaets foretrukne/ekskluderte kilder for kildestyring.
+						const themeDomains = targetThemeId
+							? await getThemeResearchDomains(targetThemeId, userId).catch(() => null)
+							: null;
+
+						const result = await executeWebSearch(searchQuery, {
+							themeDomains,
+							deep: args.deep === true
+						});
+
+						// Lagre research-runden som funn på temaet når modellen ber om det.
+						let saved: { savedToTheme: boolean; themeName?: string } = { savedToTheme: false };
 						if (args.saveToTheme && result.success && targetThemeId) {
 							try {
 								const persisted = await saveThemeResearch({

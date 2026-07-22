@@ -54,6 +54,12 @@ const JOBS: CronJob[] = [
 		description: 'Timebasert lokal purre-nudge for prosjekt-oppfølging (kontakter med forfalt oppfølgingsdato, default 09:00)'
 	},
 	{
+		path: '/api/cron/theme-research',
+		schedule: '20 4 * * *', // 04:20 UTC = 06:20 Oslo — forhåndshent research for kommende reiser
+		description: 'Forhåndshenter research for kommende reise-temaer (destinasjon + startdato i nær framtid, uten funn fra før)',
+		maxDurationSeconds: 120
+	},
+	{
 		path: '/api/cron/domain-signals',
 		schedule: '15 * * * *',
 		description: 'Produserer avledede cross-domain signaler for temaer og domene-kontrakter',

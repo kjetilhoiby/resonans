@@ -142,6 +142,7 @@
 		themeFiles?: ThemeFile[];
 		finds?: ThemeFind[];
 		themeResearch?: ThemeResearchItem[];
+		themeResearchDomains?: { include?: string[]; exclude?: string[] };
 		metricSettings?: MetricSettingsMap;
 		projects?: ThemeProject[];
 		isHomeProject?: boolean;
@@ -151,7 +152,7 @@
 		contacts?: ProjectContact[];
 	}
 
-	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '', selectedWorkout = null, tripProfile = null, tripLists = [], ferieProfile = null, themeFiles: initialThemeFiles = [], finds = [], themeResearch: initialThemeResearch = [], metricSettings: initialMetricSettings = {}, projects = [], isHomeProject = false, projectProfile = null, tasks = [], cutLists = [], contacts = [] }: Props = $props();
+	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '', selectedWorkout = null, tripProfile = null, tripLists = [], ferieProfile = null, themeFiles: initialThemeFiles = [], finds = [], themeResearch: initialThemeResearch = [], themeResearchDomains: initialThemeResearchDomains = {}, metricSettings: initialMetricSettings = {}, projects = [], isHomeProject = false, projectProfile = null, tasks = [], cutLists = [], contacts = [] }: Props = $props();
 
 	/* ── Subtab-tilstand ────────────────────────────────── */
 	type Tab = 'chat' | 'data' | 'mål' | 'flyter' | 'filer' | 'lister' | 'oppgaver' | 'kapp' | 'kontakter' | 'oppskrifter';
@@ -501,6 +502,7 @@
 				themeId={theme.id}
 				themeFiles={initialThemeFiles}
 				themeResearch={initialThemeResearch}
+				themeResearchDomains={initialThemeResearchDomains}
 				themeInstruction={themeInstruction}
 				finds={finds}
 			/>

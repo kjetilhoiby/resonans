@@ -53,6 +53,41 @@ nettet og slå opp info før den svarer. To behov:
   dato), oppsummering og kilde-chips ved åpning, med slett-knapp per rad.
 - `data-track`-attributter (`tema-research:apne|slett|kilde`) for brukslogging.
 
+### Fase 4: Pålitelig utløsing + kilde-styring (oppfølging)
+
+Etter fase 1–3 skjedde research kun når modellen selv valgte å kalle
+`web_search`. Denne fasen gjør at research faktisk *blir* utført, og fra kilder
+vi stoler på.
+
+**Utløsing:**
+- `chat-router.ts` fikk `forceWebSearch` + `classifyResearchTopic`-basert
+  deteksjon. Reise/steds-spørsmål og ferske/tidsavhengige spørsmål tvinger nå
+  `tool_choice: web_search` på første modellkall (i `chat/+server.ts`), også i
+  conversational-modus.
+- `base.ts`-systemprompten styrket: eksplisitt om steds-/reisespørsmål,
+  `deep=true` ved planlegging og `saveToTheme=true` når det hører til temaet.
+
+**Kilde-styring (foretrukne + LLM-vennlige):**
+- Ny `research-domains.ts`: kuraterte sett (`TRAVEL_DOMAINS`, `NEWS_DOMAINS`),
+  støyfilter (`LOW_QUALITY_DOMAINS` — pinterest/quora/sosiale medier),
+  `classifyResearchTopic` og ren `resolveResearchScope` som fletter kuraterte
+  domener med temaets egne preferanser og velger Tavily-topic/tidsvindu.
+- Per-tema kilder: ny kolonne `themes.research_domains` (migrasjon `0046`),
+  service-getter/setter, API `GET/PUT /api/tema/[id]/research-domains`, og en
+  «Foretrukne kilder»-editor i `ThemeFilesTab`.
+- Tavily-wrapperen støtter nå `topic` + `days`.
+
+**Dyp research:**
+- `runWebResearch` fikk `deep`-modus: `expandResearchQueries` gir flere
+  vinkel-søk (severdigheter / mat / praktisk for reise) som flettes og dedupes
+  på URL før oppsummering. `web_search` fikk `deep`-parameter.
+
+**Proaktiv research:**
+- `proactive-research-service.ts` + cron `/api/cron/theme-research` (daglig
+  04:20 UTC): forhåndshenter dypt reise-søk for reise-temaer med destinasjon og
+  startdato innen 45 dager som ennå ikke har funn. Instrumentert med
+  `withCronTracking`, registrert i cron-jobbregisteret.
+
 ## Beslutninger
 
 - **Kombinert søk + lagring i ett verktøy** framfor et eget
@@ -67,6 +102,8 @@ nettet og slå opp info før den svarer. To behov:
 ## Verifisering
 
 - `npm run check`: 0 errors, 0 warnings.
-- `npm test`: 1652 tester grønne (inkl. 8 nye i `web-research.test.ts`).
+- `npm test`: 1676 tester grønne. Nye rene enhetstester dekker `web-research`,
+  `research-domains` (topic-klassifisering + scope-fletting), ruter-tvangen
+  (`forceWebSearch`) og reise-vinduet i proaktiv research.
 - Uten `TAVILY_API_KEY` degraderer `web_search` til `success: false` med tom
-  kildeliste (ingen krasj), og ingenting lagres.
+  kildeliste (ingen krasj), og ingenting lagres — også i proaktiv cron.

@@ -14,9 +14,10 @@
  * runWebResearch returnerer da findings='' med tom kildeliste.
  */
 
-import { tavilySearch } from './tavily';
+import { tavilySearch, type TavilyHit } from './tavily';
 import { fetchAndExtract } from './extract';
 import { openai } from '$lib/server/openai';
+import { expandResearchQueries, type ResearchTopic } from './research-domains';
 
 export interface WebResearchSource {
 	url: string;
@@ -34,8 +35,21 @@ export interface WebResearchOptions {
 	maxResults?: number;
 	/** Maks antall treff å ekstrahere/oppsummere fra (default 4). */
 	maxExtract?: number;
-	/** Begrens søket til gitte domener. */
+	/** Prioriter disse domenene (Tavily include_domains). */
 	includeDomains?: string[];
+	/** Filtrer ut disse domenene (Tavily exclude_domains). */
+	excludeDomains?: string[];
+	/** Tavily-topic: 'news' aktiverer tidsvinduet `days`. */
+	topic?: 'general' | 'news';
+	/** Kun for topic='news': dager tilbake i tid. */
+	days?: number;
+	/**
+	 * Dyp modus: kjør flere vinkel-søk og flett treffene før oppsummering.
+	 * Krever `deepTopic` for å velge vinkler. Gir bredere, mer komplett dekning.
+	 */
+	deep?: boolean;
+	/** Emnetype som styrer vinkel-variantene i dyp modus. */
+	deepTopic?: ResearchTopic;
 }
 
 const MAX_SNIPPET_CHARS = 600;
@@ -87,6 +101,33 @@ async function summarizeFindings(query: string, rawSources: string[]): Promise<s
 	return completion.choices[0]?.message?.content?.trim() ?? '';
 }
 
+/** Slå opp treff for én eller flere søkestrenger og flett dem (dedup på URL). */
+async function gatherHits(queries: string[], opts: WebResearchOptions): Promise<TavilyHit[]> {
+	const perQuery = await Promise.all(
+		queries.map((q) =>
+			tavilySearch(q, {
+				maxResults: opts.maxResults ?? 6,
+				includeDomains: opts.includeDomains,
+				excludeDomains: opts.excludeDomains,
+				includeRawContent: true,
+				searchDepth: 'advanced',
+				topic: opts.topic,
+				days: opts.days
+			})
+		)
+	);
+
+	// Flett og dedup på URL, behold høyeste score.
+	const byUrl = new Map<string, TavilyHit>();
+	for (const hits of perQuery) {
+		for (const hit of hits) {
+			const existing = byUrl.get(hit.url);
+			if (!existing || hit.score > existing.score) byUrl.set(hit.url, hit);
+		}
+	}
+	return Array.from(byUrl.values()).sort((a, b) => b.score - a.score);
+}
+
 export async function runWebResearch(
 	query: string,
 	opts: WebResearchOptions = {}
@@ -94,17 +135,18 @@ export async function runWebResearch(
 	const trimmed = query.trim();
 	if (!trimmed) return { findings: '', sources: [] };
 
-	const hits = await tavilySearch(trimmed, {
-		maxResults: opts.maxResults ?? 6,
-		includeDomains: opts.includeDomains,
-		includeRawContent: true,
-		searchDepth: 'advanced'
-	});
+	const queries =
+		opts.deep && opts.deepTopic ? expandResearchQueries(trimmed, opts.deepTopic) : [trimmed];
+
+	const hits = await gatherHits(queries, opts);
+
+	// Dyp modus fortjener flere kilder i oppsummeringen.
+	const extractLimit = opts.maxExtract ?? (opts.deep ? 6 : 4);
 
 	const sources: WebResearchSource[] = [];
 	const raw: string[] = [];
 
-	for (const hit of hits.slice(0, opts.maxExtract ?? 4)) {
+	for (const hit of hits.slice(0, extractLimit)) {
 		let text = hit.rawContent ?? hit.content ?? '';
 		if (!text || text.length < MIN_USABLE_TEXT) {
 			const extracted = await fetchAndExtract(hit.url);
