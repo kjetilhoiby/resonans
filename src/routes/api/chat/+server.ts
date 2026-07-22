@@ -13,6 +13,8 @@ import { buildDayContextBlock } from '$lib/server/day-location-context';
 import { buildTripContext } from '$lib/server/ferie-context';
 import { bookResearchToolDefinition, executeBookResearch } from '$lib/ai/tools/book-research';
 import { filmResearchToolDefinition, executeFilmResearch } from '$lib/ai/tools/film-research';
+import { runWebResearch } from '$lib/server/web/web-research';
+import { saveThemeResearch } from '$lib/server/services/theme-research-service';
 import { createGoalTool } from '$lib/ai/tools/create-goal';
 import { createTaskTool } from '$lib/ai/tools/create-task';
 import { logActivityTool } from '$lib/ai/tools/log-activity';
@@ -127,63 +129,26 @@ function getDefaultAttachmentLabel(attachment: AttachmentPayload | null): string
 }
 
 async function executeWebSearch(query: string) {
-	// DuckDuckGo HTML lite – faktisk nettsøk, ikke bare Instant Answer API
-	const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-	const response = await fetch(searchUrl, {
-		headers: {
-			'User-Agent': 'Mozilla/5.0 (compatible; Resonans/1.0)',
-			'Accept': 'text/html,application/xhtml+xml'
-		}
-	});
+	// Tavily-basert research: søk → ekstraher sideinnhold → oppsummer med kilder.
+	// Samme pipeline som book_research/film_research, men uten domenebinding.
+	const { findings, sources } = await runWebResearch(query);
 
-	if (!response.ok) {
-		throw new Error(`Web search failed with status ${response.status}`);
-	}
-
-	const html = await response.text();
-
-	// Parse resultater fra DDG HTML-respons
-	const results: Array<{ title: string; snippet: string; url: string }> = [];
-
-	// Hent tittel + URL fra <a class="result__a" ...>
-	const linkRe = /<a[^>]+class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
-	// Hent snippet fra <a class="result__snippet" ...>
-	const snippetRe = /<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
-
-	const links: Array<{ title: string; url: string }> = [];
-	let m: RegExpExecArray | null;
-	while ((m = linkRe.exec(html)) !== null && links.length < 8) {
-		const rawUrl = m[1];
-		const title = m[2].replace(/<[^>]+>/g, '').trim();
-		// DDG wraps URLs via redirect – extract uddg param or use as-is
-		let url = rawUrl;
-		try {
-			const uddg = new URL('https://x.com' + rawUrl).searchParams.get('uddg');
-			if (uddg) url = decodeURIComponent(uddg);
-		} catch { /* keep raw */ }
-		if (title) links.push({ title, url });
-	}
-
-	const snippets: string[] = [];
-	while ((m = snippetRe.exec(html)) !== null && snippets.length < 8) {
-		snippets.push(m[1].replace(/<[^>]+>/g, '').trim());
-	}
-
-	for (let i = 0; i < links.length; i++) {
-		results.push({
-			title: links[i].title,
-			snippet: snippets[i] ?? '',
-			url: links[i].url
-		});
+	if (sources.length === 0) {
+		return {
+			success: false,
+			query,
+			findings: '',
+			sources: [],
+			message: `Ingen brukbare treff for "${query}". (Mangler evt. TAVILY_API_KEY.)`
+		};
 	}
 
 	return {
 		success: true,
 		query,
-		results,
-		message: results.length > 0
-			? `Fant ${results.length} treff for "${query}".`
-			: `Ingen treff for "${query}".`
+		findings,
+		sources,
+		message: `Fant og oppsummerte ${sources.length} kilder for "${query}".`
 	};
 }
 
@@ -1353,13 +1318,17 @@ const tools = [
 				type: 'function' as const,
 				function: {
 					name: 'web_search',
-					description: 'Søk på web når brukeren spør om aktuelle hendelser, nyheter, tidsavhengige fakta, krig, politikk, personer, referanser eller annen kunnskap som ikke finnes i brukerdata eller samtalehistorikken. Bruk dette før du svarer på spørsmål om hva som skjer nå eller nylig har skjedd.',
+					description: 'Søk på web og få et kort, kildebasert sammendrag (Tavily). Bruk når brukeren spør om aktuelle hendelser, tidsavhengige fakta, steder/aktiviteter, personer, referanser eller annen kunnskap som ikke finnes i brukerdata. Verktøyet henter sider, oppsummerer og returnerer kilder. Sett saveToTheme=true når brukeren undersøker noe som hører til det aktive temaet og bør tas vare på (f.eks. «hva kan jeg gjøre i Hornbæk» på et ferietema) — da lagres runden som funn i Research-seksjonen i Filer på temasiden.',
 					parameters: {
 						type: 'object',
 						properties: {
 							query: {
 								type: 'string',
-								description: 'Konkret søkestreng for web, gjerne med tema, navn, sted og tidsrom, for eksempel "Iran war update April 2026".'
+								description: 'Konkret søkestreng for web, gjerne med tema, navn, sted og tidsrom, for eksempel "aktiviteter i Hornbæk om sommeren" eller "Iran war update April 2026".'
+							},
+							saveToTheme: {
+								type: 'boolean',
+								description: 'Sett true for å lagre denne research-runden som funn på det aktive temaet. Bruk kun når brukeren undersøker noe knyttet til temaet og vil ha det tatt vare på.'
 							}
 						},
 						required: ['query']
@@ -2979,7 +2948,11 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 						tool_call_id: toolCall.id
 					});
 				} else if (toolCall.type === 'function' && toolCall.function.name === 'web_search') {
-					const args = JSON.parse(toolCall.function.arguments) as { query?: string };
+					const args = JSON.parse(toolCall.function.arguments) as {
+						query?: string;
+						saveToTheme?: boolean;
+						themeId?: string;
+					};
 					const searchQuery = typeof args.query === 'string' ? args.query.trim() : '';
 
 					if (!searchQuery) {
@@ -2996,9 +2969,30 @@ export async function _runChatRequest({ body, userId, requestUrl, requestFetch, 
 
 					try {
 						const result = await executeWebSearch(searchQuery);
+
+						// Lagre research-runden som funn på temaet når modellen ber om det.
+						// themeId hentes fra samtalens tema med mindre modellen oppgir et eksplisitt.
+						let saved: { savedToTheme: boolean; themeName?: string } = { savedToTheme: false };
+						const targetThemeId =
+							(typeof args.themeId === 'string' && args.themeId) || conversation.themeId || null;
+						if (args.saveToTheme && result.success && targetThemeId) {
+							try {
+								const persisted = await saveThemeResearch({
+									themeId: targetThemeId,
+									userId,
+									query: searchQuery,
+									summary: result.findings,
+									sources: result.sources
+								});
+								if (persisted) saved = { savedToTheme: true, themeName: persisted.themeName };
+							} catch (saveError) {
+								console.warn('  🌐 Kunne ikke lagre research til tema:', saveError);
+							}
+						}
+
 						messages.push({
 							role: 'tool',
-							content: JSON.stringify(result),
+							content: JSON.stringify({ ...result, ...saved }),
 							tool_call_id: toolCall.id
 						});
 					} catch (error) {

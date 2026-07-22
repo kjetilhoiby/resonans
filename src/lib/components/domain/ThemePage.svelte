@@ -106,6 +106,15 @@
 		createdAt: string;
 	}
 
+	interface ThemeResearchItem {
+		id: string;
+		themeId: string;
+		query: string;
+		summary: string;
+		sources: Array<{ url: string; source: string; snippet: string }>;
+		createdAt: string;
+	}
+
 	interface Props {
 		theme: Theme;
 		initialMessages: Message[];
@@ -118,6 +127,7 @@
 		tripLists?: import('./trip-api').ThemeList[];
 		ferieProfile?: Record<string, unknown> | null;
 		themeFiles?: ThemeFile[];
+		themeResearch?: ThemeResearchItem[];
 		metricSettings?: MetricSettingsMap;
 		projects?: ThemeProject[];
 		isHomeProject?: boolean;
@@ -127,7 +137,7 @@
 		contacts?: ProjectContact[];
 	}
 
-	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '', selectedWorkout = null, tripProfile = null, tripLists = [], ferieProfile = null, themeFiles: initialThemeFiles = [], metricSettings: initialMetricSettings = {}, projects = [], isHomeProject = false, projectProfile = null, tasks = [], cutLists = [], contacts = [] }: Props = $props();
+	let { theme, initialMessages, goals, conversationId, themeConversations = [], themeInstruction = '', selectedWorkout = null, tripProfile = null, tripLists = [], ferieProfile = null, themeFiles: initialThemeFiles = [], themeResearch: initialThemeResearch = [], metricSettings: initialMetricSettings = {}, projects = [], isHomeProject = false, projectProfile = null, tasks = [], cutLists = [], contacts = [] }: Props = $props();
 
 	/* ── Subtab-tilstand ────────────────────────────────── */
 	type Tab = 'chat' | 'data' | 'mål' | 'flyter' | 'filer' | 'lister' | 'oppgaver' | 'kapp' | 'kontakter' | 'oppskrifter';
@@ -476,6 +486,7 @@
 			<ThemeFilesTab
 				themeId={theme.id}
 				themeFiles={initialThemeFiles}
+				themeResearch={initialThemeResearch}
 				themeInstruction={themeInstruction}
 			/>
 		{/if}

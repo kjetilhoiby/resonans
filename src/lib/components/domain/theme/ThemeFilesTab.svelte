@@ -13,17 +13,56 @@
 		createdAt: string;
 	}
 
+	interface ResearchSource {
+		url: string;
+		source: string;
+		snippet: string;
+	}
+
+	interface ThemeResearchItem {
+		id: string;
+		themeId: string;
+		query: string;
+		summary: string;
+		sources: ResearchSource[];
+		createdAt: string;
+	}
+
 	interface Props {
 		themeId: string;
 		themeFiles: ThemeFile[];
+		themeResearch?: ThemeResearchItem[];
 		themeInstruction: string;
 		/** Called when files list changes (upload or delete) */
 		onFilesChanged?: (files: ThemeFile[]) => void;
 	}
 
-	let { themeId, themeFiles: initialFiles, themeInstruction = '' }: Props = $props();
+	let { themeId, themeFiles: initialFiles, themeResearch: initialResearch = [], themeInstruction = '' }: Props = $props();
 
 	let themeFiles = $state<ThemeFile[]>(initialFiles);
+	let research = $state<ThemeResearchItem[]>(initialResearch);
+	let expandedResearch = $state<string | null>(null);
+
+	$effect(() => {
+		research = initialResearch;
+	});
+
+	function toggleResearch(id: string) {
+		expandedResearch = expandedResearch === id ? null : id;
+	}
+
+	async function deleteResearch(id: string) {
+		research = research.filter((r) => r.id !== id);
+		await fetch(`/api/tema/${themeId}/research/${id}`, { method: 'DELETE' });
+	}
+
+	function formatDate(iso: string): string {
+		try {
+			return new Date(iso).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short', year: 'numeric' });
+		} catch {
+			return '';
+		}
+	}
 	let fileUploading = $state(false);
 	let fileUploadError = $state('');
 
@@ -183,6 +222,60 @@ Eksempel:
 				</li>
 			{/each}
 		</ul>
+	{/if}
+
+	<!-- Research: lagrede websøk-runder fra chatten -->
+	{#if research.length > 0}
+		<div class="research-section">
+			<div class="research-head">
+				<span class="research-title">Research</span>
+				<span class="research-count">{research.length}</span>
+			</div>
+			<p class="research-hint">Websøk fra chatten, lagret som funn på dette temaet.</p>
+
+			<ul class="research-list">
+				{#each research as r (r.id)}
+					{@const open = expandedResearch === r.id}
+					<li class="research-row" class:open>
+						<div class="research-row-head">
+							<button
+								class="research-toggle"
+								onclick={() => toggleResearch(r.id)}
+								aria-expanded={open}
+								data-track="tema-research:apne"
+							>
+								<span class="research-chevron" class:open>›</span>
+								<span class="research-query">{r.query}</span>
+								<span class="research-date">{formatDate(r.createdAt)}</span>
+							</button>
+							<button
+								class="research-delete"
+								onclick={() => deleteResearch(r.id)}
+								aria-label="Slett research «{r.query}»"
+								data-track="tema-research:slett"
+							>🗑</button>
+						</div>
+
+						{#if open}
+							<div class="research-body">
+								<p class="research-summary">{r.summary}</p>
+								{#if r.sources.length > 0}
+									<ul class="research-sources">
+										{#each r.sources as src (src.url)}
+											<li class="research-source">
+												<a href={src.url} target="_blank" rel="noopener noreferrer" data-track="tema-research:kilde">
+													{src.source}
+												</a>
+											</li>
+										{/each}
+									</ul>
+								{/if}
+							</div>
+						{/if}
+					</li>
+				{/each}
+			</ul>
+		</div>
 	{/if}
 </div>
 
@@ -374,5 +467,162 @@ Eksempel:
 
 	.uploaded-file-delete:hover {
 		opacity: 1;
+	}
+
+	/* ── Research-seksjon ── */
+	.research-section {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		margin-top: 4px;
+	}
+
+	.research-head {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.research-title {
+		font-size: 0.86rem;
+		font-weight: 600;
+		color: #aaa;
+	}
+
+	.research-count {
+		font-size: 0.7rem;
+		color: #666;
+		background: #1a1a1a;
+		border: 1px solid #2a2a2a;
+		border-radius: 99px;
+		padding: 1px 8px;
+	}
+
+	.research-hint {
+		margin: 0;
+		font-size: 0.75rem;
+		color: #555;
+	}
+
+	.research-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.research-row {
+		border: 1px solid #242424;
+		border-radius: 12px;
+		background: #131313;
+		overflow: hidden;
+	}
+
+	.research-row.open {
+		border-color: #2f2f3a;
+	}
+
+	.research-row-head {
+		display: flex;
+		align-items: center;
+	}
+
+	.research-toggle {
+		flex: 1;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		background: none;
+		border: none;
+		cursor: pointer;
+		font: inherit;
+		text-align: left;
+		padding: 10px 12px;
+		color: #c4c4c4;
+		min-width: 0;
+	}
+
+	.research-chevron {
+		flex-shrink: 0;
+		font-size: 1.1rem;
+		color: #666;
+		transition: transform 0.15s;
+		line-height: 1;
+	}
+
+	.research-chevron.open {
+		transform: rotate(90deg);
+	}
+
+	.research-query {
+		flex: 1;
+		font-size: 0.86rem;
+		font-weight: 500;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.research-date {
+		flex-shrink: 0;
+		font-size: 0.72rem;
+		color: #555;
+	}
+
+	.research-delete {
+		background: none;
+		border: none;
+		cursor: pointer;
+		font-size: 0.85rem;
+		opacity: 0.4;
+		padding: 8px 12px;
+		flex-shrink: 0;
+		transition: opacity 0.12s;
+	}
+
+	.research-delete:hover {
+		opacity: 1;
+	}
+
+	.research-body {
+		padding: 0 12px 12px 32px;
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+
+	.research-summary {
+		margin: 0;
+		font-size: 0.9rem;
+		line-height: 1.55;
+		color: #cfcfcf;
+		white-space: pre-wrap;
+	}
+
+	.research-sources {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+
+	.research-source a {
+		display: inline-block;
+		font-size: 0.74rem;
+		color: #8a8ac8;
+		text-decoration: none;
+		background: #17171f;
+		border: 1px solid #262633;
+		border-radius: 99px;
+		padding: 3px 10px;
+	}
+
+	.research-source a:hover {
+		color: #b4b4f0;
+		border-color: #3c3c55;
 	}
 </style>
