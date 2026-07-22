@@ -6,8 +6,10 @@
 	import { getContext } from 'svelte';
 	import Icon from '../../ui/Icon.svelte';
 	import { HOME_CTX, type HomeContext } from './home-context';
+	import VideoFramePicker from './VideoFramePicker.svelte';
 
 	const ctx = getContext<HomeContext>(HOME_CTX);
+	let pickerOpen = $state(false);
 </script>
 
 <div class="flow-panel">
@@ -100,7 +102,10 @@
 						<img class="frame-thumb" src={url} alt="Utsnitt fra video" />
 					{/each}
 				</div>
-				<p class="flow-hint">Disse {ctx.filePreview.videoThumbs.length} bildene sendes til analyse.</p>
+				<div class="frame-meta">
+					<span class="flow-hint">Disse {ctx.filePreview.videoThumbs.length} bildene sendes til analyse.</span>
+					<button class="frame-edit" onclick={() => (pickerOpen = true)} data-track="fil:rediger-bilder">Rediger bilder</button>
+				</div>
 			{/if}
 			<textarea
 				class="flow-textarea"
@@ -129,6 +134,10 @@
 		{/if}
 	</div>
 </div>
+
+{#if pickerOpen && ctx.fileFlowSelected}
+	<VideoFramePicker file={ctx.fileFlowSelected} preview={ctx.filePreview} onClose={() => (pickerOpen = false)} />
+{/if}
 
 <style>
 	.flow-panel {
@@ -193,6 +202,23 @@
 		border: 1px solid #2a2a2a;
 		flex-shrink: 0;
 		object-fit: cover;
+	}
+	.frame-meta {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+	}
+	.frame-edit {
+		background: none;
+		border: none;
+		color: #7c8ef5;
+		font: inherit;
+		font-size: 0.8rem;
+		font-weight: 600;
+		cursor: pointer;
+		padding: 0;
+		flex-shrink: 0;
 	}
 
 	.flow-textarea {
