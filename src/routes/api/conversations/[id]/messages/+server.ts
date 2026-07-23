@@ -22,7 +22,8 @@ function serialize(m: MessageRow) {
 		widgetFlow: meta?.widgetFlow ?? null,
 		statusWidget: meta?.statusWidget ?? null,
 		photoAnnotation: meta?.photoAnnotation ?? null,
-		photoAnnotationImageUrl: meta?.photoAnnotationImageUrl ?? null
+		photoAnnotationImageUrl: meta?.photoAnnotationImageUrl ?? null,
+		researchCard: meta?.researchCard ?? null
 	};
 }
 

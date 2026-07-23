@@ -12,6 +12,7 @@ import type { WidgetCreationFlow } from '$lib/flows/widget-creation/flow';
 import type { WeatherStatusWidget } from '$lib/ai/tools/weather-forecast';
 import type { PhotoAnnotationResult } from '$lib/ai/tools/annotate-photo';
 import type { ChatEventCard } from '$lib/chat/event-cards';
+import type { ResearchCard } from '$lib/chat/research-card';
 
 export interface ChatAction {
 	id: string;
@@ -40,6 +41,8 @@ export interface ChatMessage {
 	photoAnnotationImageUrl?: string | null;
 	/** Inline hendelseskort i den kanoniske tråden (egenfrekvens, økt, nudge …). */
 	eventCard?: ChatEventCard | null;
+	/** Kilde-kort fra web_search (bunnpanel med kilder, bilder og evt. kart). */
+	researchCard?: ResearchCard | null;
 }
 
 export interface ChatStateOptions {
@@ -329,6 +332,7 @@ export class ChatState {
 				photoAnnotation: (data.photoAnnotation ?? data.metadata?.photoAnnotation) as PhotoAnnotationResult | null ?? null,
 				photoAnnotationImageUrl: (data.photoAnnotationImageUrl ?? data.metadata?.photoAnnotationImageUrl) as string | null ?? null,
 				eventCard: (data.eventCard ?? data.metadata?.eventCard) as ChatEventCard | null ?? null,
+				researchCard: (data.researchCard ?? data.metadata?.researchCard) as ResearchCard | null ?? null,
 			};
 
 			const transformed = this.#opts.onAssistantMessage?.(assistantMsg, data);

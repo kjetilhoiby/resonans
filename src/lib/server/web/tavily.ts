@@ -29,7 +29,15 @@ export interface TavilySearchOptions {
 	topic?: 'general' | 'news';
 	/** Kun for topic='news': hvor mange dager tilbake treff kan være. */
 	days?: number;
+	/** Be Tavily returnere relevante bilder for søket (til kilde-kort). */
+	includeImages?: boolean;
 	timeoutMs?: number;
+}
+
+export interface TavilySearchResult {
+	hits: TavilyHit[];
+	/** Bilde-URL-er (kun når includeImages=true). */
+	images: string[];
 }
 
 let lastRequestAt = 0;
@@ -43,14 +51,18 @@ async function rateLimit(): Promise<void> {
 	lastRequestAt = Date.now();
 }
 
-export async function tavilySearch(
+/**
+ * Kjerne-søk mot Tavily. Returnerer både treff og (valgfritt) bilder.
+ * Degraderer til tomt resultat uten API-nøkkel eller ved feil.
+ */
+export async function tavilySearchDetailed(
 	query: string,
 	opts: TavilySearchOptions = {}
-): Promise<TavilyHit[]> {
+): Promise<TavilySearchResult> {
 	const apiKey = process.env.TAVILY_API_KEY;
 	if (!apiKey) {
 		console.warn('[tavily] TAVILY_API_KEY not set — returning empty results');
-		return [];
+		return { hits: [], images: [] };
 	}
 
 	await rateLimit();
@@ -70,6 +82,7 @@ export async function tavilySearch(
 		if (opts.excludeDomains?.length) body.exclude_domains = opts.excludeDomains;
 		if (opts.topic) body.topic = opts.topic;
 		if (opts.topic === 'news' && typeof opts.days === 'number') body.days = opts.days;
+		if (opts.includeImages) body.include_images = true;
 
 		const response = await fetch(TAVILY_ENDPOINT, {
 			method: 'POST',
@@ -81,7 +94,7 @@ export async function tavilySearch(
 		if (!response.ok) {
 			const text = await response.text().catch(() => '');
 			console.warn(`[tavily] ${response.status} ${text.slice(0, 200)}`);
-			return [];
+			return { hits: [], images: [] };
 		}
 
 		const json = (await response.json()) as {
@@ -93,9 +106,11 @@ export async function tavilySearch(
 				score?: number;
 				published_date?: string;
 			}>;
+			// Tavily kan returnere images som string[] eller {url,description}[].
+			images?: Array<string | { url?: string }>;
 		};
 
-		return (json.results ?? [])
+		const hits = (json.results ?? [])
 			.filter((r) => r.url && r.title)
 			.map((r) => ({
 				title: r.title ?? '',
@@ -105,11 +120,26 @@ export async function tavilySearch(
 				score: r.score ?? 0,
 				publishedDate: r.published_date
 			}));
+
+		const images = (json.images ?? [])
+			.map((img) => (typeof img === 'string' ? img : img?.url ?? ''))
+			.filter((u): u is string => typeof u === 'string' && u.length > 0);
+
+		return { hits, images };
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
 		console.warn(`[tavily] search failed for "${query.slice(0, 80)}": ${msg}`);
-		return [];
+		return { hits: [], images: [] };
 	} finally {
 		clearTimeout(timer);
 	}
+}
+
+/** Bakoverkompatibel treff-bare-variant (bok/film/kritiker-research bruker denne). */
+export async function tavilySearch(
+	query: string,
+	opts: TavilySearchOptions = {}
+): Promise<TavilyHit[]> {
+	const { hits } = await tavilySearchDetailed(query, opts);
+	return hits;
 }

@@ -53,6 +53,7 @@
 		photoAnnotation?: PhotoAnnotationResult | null;
 		photoAnnotationImageUrl?: string | null;
 		eventCard?: ChatEventCard | null;
+		researchCard?: import('$lib/chat/research-card').ResearchCard | null;
 	}
 
 	interface Props {
@@ -87,7 +88,8 @@
 				statusWidget: m.statusWidget ?? null,
 				photoAnnotation: m.photoAnnotation ?? null,
 				photoAnnotationImageUrl: m.photoAnnotationImageUrl ?? null,
-				eventCard: m.eventCard ?? null
+				eventCard: m.eventCard ?? null,
+				researchCard: m.researchCard ?? null
 			}));
 	}
 
